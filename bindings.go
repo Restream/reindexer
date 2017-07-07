@@ -1,4 +1,4 @@
-// go:generate make -j4
+//go:generate make -j4
 package reindexer
 
 import (
