@@ -2,7 +2,7 @@
 
 
 ## Data
-We are using dataset with 100K documents for this benchmarks. The documents containts 3 field, and have the following go struct representation:
+We are using data set with 100K documents for this benchmarks. The documents containts 3 fields, and uses the following go struct representation:
 
 ```go
 type Item struct {
@@ -12,23 +12,25 @@ type Item struct {
 }
 ```
 
-The `ID` field is the primary key, and each document has an uniq ID in range from 0 to documents count. `Name` and `Year` fields are filled with some random data.
+The `ID` field is the primary key. Each document in data set has an uniq `ID` in the range from 0 to documents count. `Name` and `Year` fields are filled with some random data.
 The easyjson library is used in benchmarks for unmarshaling documents to golang objects, except sqlite. For sqlite sqlx package was used.
 
 ## Results with Go 1.8.1 and clang-802.0.42 on a 2.7 GHz Intel Core i7 (MacBook Pro Retina 15-inch, Mid 2016):
 
-The results of beches are compared with the following databases:
+The results of benchmarks are compared with the following databases:
 - Tarantool 1.7.4.18
 - Elasticsearch 5.4.3
 - Mongo 3.4.5
-- Sqlite 3.17.0 from github.com/mattn/go-sqlite3/
+- Sqlite 3.17.0 from github.com/mattn/go-sqlite3
 - Boltdb from github.com/boltdb/bolt
 
-## Get document by primary key (id).
+## Get document by primary key (id). Object cache is disabled
 
-In this benchmark documents are fetched from DB by ID and unmarshaling it to golang object.
+In this benchmark the documents are fetched from DB by ID and unmarshaled to golang objects.
 
 ```
+benchmark                                 iter              time/iter              bytes alloc       allocs
+---------                                 ----              ---------              -----------       ------
 BenchmarkElasticGetByID                     3000            369109 ns/op           91226 B/op        196 allocs/op
 BenchmarkMongoGetByID                      10000            115321 ns/op            3004 B/op         93 allocs/op
 BenchmarkTarantoolGetByID                  30000             56921 ns/op             688 B/op         19 allocs/op
@@ -38,56 +40,67 @@ BenchmarkReindexGetByID                   300000              4443 ns/op        
 BenchmarkBolt                             500000              3142 ns/op             935 B/op         14 allocs/op
 ```
 
-## Get document by primary key (id) using object cache
+## Get document by primary key (id). Object cache is enabled
 
-Reindexer have an deserialized objects cache. The following benchmark exposes how it influences to performace. 
+Reindexer have an deserialized objects cache. The following benchmark exposes how it influences to performace.
 For other databases unmarshaler was not called after fetching documents from DB, and so there are no objects was returned.
 
 ```
+benchmark                                iter                time/iter               bytes alloc      allocs
+---------                                ----                ---------               -----------      ------
 BenchmarkRedisGetByIDNoObject              50000             32026 ns/op             263 B/op          9 allocs/op
 BenchmarkSqliteGetByIDNoObject            100000             15916 ns/op             859 B/op         26 allocs/op
 BenchmarkReindexGetByIDObjCache          1000000              2176 ns/op               0 B/op          0 allocs/op
 BenchmarkBoltNoObject                    1000000              1641 ns/op             584 B/op          9 allocs/op
 ```
 
-## Query documents with 1 condition
+## Query documents with 1 condition. Object cache is disbaled
 
 In this benchmark the query `SELECT ... FROM ... WHERE year > ? LIMIT 10` is executing, and fetched documents are marshaled to golang objects.
 
 
 ```
+benchmark                                 iter              time/iter              bytes alloc       allocs
+---------                                 ----              ---------              -----------       ------
 BenchmarkElastic1CondQuery                  3000            364084 ns/op           90152 B/op        174 allocs/op
 BenchmarkMongo1CondQuery                   10000            173854 ns/op            7507 B/op        374 allocs/op
 BenchmarkSqliteQuery1Cond                  30000             39794 ns/op            2512 B/op        113 allocs/op
 BenchmarkReindexQuery1Cond                100000             20011 ns/op            3512 B/op         50 allocs/op
 ```
 
-## Query documents with 1 condition, using object cache
+## Query documents with 1 condition. Object cache is enabled
 
 The following benchmark exposes how object cache is influences to perormace.
 For other databases unmarshaler was not called after fetching documents from DB, and so there are no objects was returned.
 
 ```
+benchmark                                 iter              time/iter              bytes alloc       allocs
+---------                                 ----              ---------              -----------       ------
 BenchmarkElasticQuery1CondNoObjects         5000            355908 ns/op           90121 B/op        173 allocs/op
 BenchmarkMongoQuery1CondNoObjects          10000            155489 ns/op            6646 B/op        252 allocs/op
 BenchmarkSqliteQuery1CondNoObjects         50000             31712 ns/op            1863 B/op         80 allocs/op
 BenchmarkReindexQuery1CondObjCache        300000              3650 ns/op               0 B/op          0 allocs/op
 ```
 
-## Query documents with 2 conditions
+## Query documents with 2 conditions. Object cache is disabled
 
 In this benchmark the query  `SELECT ... FROM ... WHERE year > ? AND name = ? LIMIT 10` is executing, and fetched documents are marshaled to golang objects.
 
 ```
+benchmark                                 iter              time/iter              bytes alloc       allocs
+---------                                 ----              ---------              -----------       ------
 BenchmarkElasticQuery2Cond                  3000            356729 ns/op           90152 B/op        174 allocs/op
 BenchmarkMongoQuery2Cond                   10000            131600 ns/op            2878 B/op         63 allocs/op
 BenchmarkSqliteQuery2Cond                  30000             49771 ns/op            2451 B/op        107 allocs/op
 BenchmarkReindexQuery2Cond                 50000             25047 ns/op            3158 B/op         45 allocs/op
 ```
+## Query documents with 2 conditions. Object cache is enabled
 
 The following benchmark exposes how object cache is influences to perormace.
 For other databases unmarshaler was not called after fetching documents from DB, and so there are no objects was returned.
 ```
+benchmark                                 iter              time/iter              bytes alloc       allocs
+---------                                 ----              ---------              -----------       ------
 BenchmarkElasticQuery2CondNoObjects         5000            356544 ns/op           90120 B/op        173 allocs/op
 BenchmarkMongoQuery2CondNoObjects          10000            133504 ns/op            2878 B/op         63 allocs/op
 BenchmarkSqliteQuery2CondNoObjects         30000             40768 ns/op            1875 B/op         78 allocs/op
@@ -95,13 +108,12 @@ BenchmarkReindexQuery2CondObjCache        200000             10004 ns/op        
 ```
 ## Internal Reindexer benchmarks
 
-Reindexer test suite contains additional benchmarks with various queries conditions, and complex document structures. This suite run on dataset of 500K documents with the following structure:
+Reindexer test suite contains additional benchmarks with various queries conditions and complex document structures. This suite run on data set of 500K documents with the following structure:
 
 ```golang
 type TestItemBench struct {
 	Prices  []*TestJoinItem `reindex:"prices,,joined"`
 	Pricesx []*TestJoinItem `reindex:"pricesx,,joined"`
-	//	TestItemBase
 	ID         int      `reindex:"id,,pk"`
 	Genre      int64    `reindex:"genre,tree"`
 	Year       int      `reindex:"year,tree"`
@@ -114,13 +126,15 @@ type TestItemBench struct {
 	StartTime  int      `reindex:"start_time,tree"`
 }
 ```
-The obect cache is used by default in all tests. For more details about this benchmark see the reindexer_bench_test.go source file.
+The obect cache is used by default in these tests. For more details about this benchmark see the [reindexer_bench_test.go](../reindexer_bench_test.go) source file.
 
 
 ### Results of internal Reindexer benchmarks
 
 
 ```
+benchmark                                 iter              time/iter             bytes alloc         allocs
+---------                                 ----              ---------             -----------         ------
 BenchmarkSimpleInsert-8                   200000              5506 ns/op              55 B/op          3 allocs/op
 BenchmarkSimpleUpdate-8                   200000              5794 ns/op              55 B/op          3 allocs/op
 BenchmarkSimpleCmplxPKUpsert-8            200000              7110 ns/op              86 B/op          4 allocs/op
