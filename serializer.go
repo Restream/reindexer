@@ -146,13 +146,18 @@ func (s *serializer) writeValue(v reflect.Value) error {
 		} else {
 			s.writeCInt(0)
 		}
-	case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int8,
-		reflect.Uint, reflect.Uint16, reflect.Uint32:
+	case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int8:
 		s.writeCInt(valueInt)
 		s.writeCInt(int(v.Int()))
-	case reflect.Int64, reflect.Uint64:
+	case reflect.Uint, reflect.Uint16, reflect.Uint32:
+		s.writeCInt(valueInt)
+		s.writeCInt(int(v.Uint()))
+	case reflect.Int64:
 		s.writeCInt(valueInt64)
 		s.writeInt64(v.Int())
+	case reflect.Uint64:
+		s.writeCInt(valueInt64)
+		s.writeInt64(int64(v.Uint()))
 	case reflect.String:
 		s.writeCInt(valueString)
 		s.writeString(v.String())
