@@ -7,15 +7,29 @@ import (
 	"sync"
 
 	"github.com/restream/reindexer/bindings"
+	"github.com/restream/reindexer/cjson"
 )
 
 // Constants for query serialization
 const (
-	queryCondition = bindings.QueryCondition
-	queryDistinct  = bindings.QueryDistinct
-	querySortIndex = bindings.QuerySortIndex
-	queryJoinOn    = bindings.QueryJoinOn
-	queryEnd       = bindings.QueryEnd
+	queryCondition    = bindings.QueryCondition
+	queryDistinct     = bindings.QueryDistinct
+	querySortIndex    = bindings.QuerySortIndex
+	queryJoinOn       = bindings.QueryJoinOn
+	queryLimit        = bindings.QueryLimit
+	queryOffset       = bindings.QueryOffset
+	queryReqTotal     = bindings.QueryReqTotal
+	queryDebugLevel   = bindings.QueryDebugLevel
+	queryAggregation  = bindings.QueryAggregation
+	querySelectFilter = bindings.QuerySelectFilter
+	queryEnd          = bindings.QueryEnd
+)
+
+// Constants for calc total
+const (
+	modeNoCalc        = bindings.ModeNoCalc
+	modeCachedTotal   = bindings.ModeCachedTotal
+	modeAccurateTotal = bindings.ModeAccurateTotal
 )
 
 // Operator
@@ -30,27 +44,40 @@ const (
 	innerJoin   = bindings.InnerJoin
 	orInnerJoin = bindings.OrInnerJoin
 	leftJoin    = bindings.LeftJoin
+	merge       = bindings.Merge
+)
+
+const (
+	cInt32Max   = bindings.CInt32Max
+	valueInt    = bindings.ValueInt
+	valueInt64  = bindings.ValueInt64
+	valueDouble = bindings.ValueDouble
+	valueString = bindings.ValueString
 )
 
 // Query to DB object
 type Query struct {
-	bindings.Query
-	db           *Reindexer
-	totalCount   int
-	nextOp       int
-	ser          serializer
-	root         *Query
-	joinQueries  []*Query
-	joinToFields []string
-	context      interface{}
-	joinType     int
-	closed       bool
-	initBuf      [256]byte
-	iterator     Iterator
-	items        []interface{}
-	subitems     []interface{}
-	copy         bool
-	noObjCache   bool
+	Namespace     string
+	db            *Reindexer
+	nextOp        int
+	ser           cjson.Serializer
+	root          *Query
+	joinQueries   []*Query
+	mergedQueries []*Query
+	joinToFields  []string
+	joinHandlers  []JoinHandler
+	context       interface{}
+	joinType      int
+	closed        bool
+	initBuf       [256]byte
+	nsArray       []*reindexerNamespace
+	iterator      Iterator
+	jsonIterator  JSONIterator
+	items         []interface{}
+	json          []byte
+	jsonOffsets   []int
+	totalName     string
+	executed      bool
 }
 
 var queryPool sync.Pool
@@ -64,25 +91,28 @@ func newQuery(db *Reindexer, namespace string) *Query {
 	}
 	if q == nil {
 		q = &Query{}
-		q.ser.buf = q.initBuf[:0:cap(q.initBuf)]
+		q.ser = cjson.NewSerializer(q.initBuf[:0])
 	} else {
-		q.totalCount = 0
 		q.nextOp = 0
 		q.root = nil
 		q.joinType = 0
 		q.context = nil
 		q.joinToFields = q.joinToFields[:0]
 		q.joinQueries = q.joinQueries[:0]
-		q.ser.buf = q.ser.buf[:0]
+		q.joinHandlers = q.joinHandlers[:0]
+		q.mergedQueries = q.mergedQueries[:0]
+		q.ser = cjson.NewSerializer(q.ser.Bytes()[:0])
 		q.closed = false
-		q.copy = false
+		q.totalName = ""
+		q.executed = false
+		q.nsArray = q.nsArray[:0]
 	}
 
-	q.Query = bindings.Query{Namespace: namespace}
+	q.Namespace = namespace
 	q.db = db
 	q.nextOp = opAND
 
-	q.ser.writeString(namespace)
+	q.ser.PutString(namespace)
 	return q
 }
 
@@ -91,34 +121,75 @@ func (q *Query) Where(index string, condition int, keys interface{}) *Query {
 	t := reflect.TypeOf(keys)
 	v := reflect.ValueOf(keys)
 
-	q.ser.writeCInt(queryCondition)
-	q.ser.writeString(index)
-	q.ser.writeCInt(q.nextOp)
-	q.ser.writeCInt(condition)
+	q.ser.PutCInt(queryCondition)
+	q.ser.PutString(index)
+	q.ser.PutCInt(q.nextOp)
+	q.ser.PutCInt(condition)
 	q.nextOp = opAND
 
 	if keys == nil {
-		q.ser.writeCInt(0)
+		q.ser.PutCInt(0)
 	} else if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
-		q.ser.writeCInt(v.Len())
+		q.ser.PutCInt(v.Len())
 		for i := 0; i < v.Len(); i++ {
-			q.ser.writeValue(v.Index(i))
+			q.putValue(v.Index(i))
 		}
 	} else {
-		q.ser.writeCInt(1).writeValue(v)
+		q.ser.PutCInt(1)
+		q.putValue(v)
 	}
 	return q
+}
+
+func (q *Query) putValue(v reflect.Value) error {
+
+	k := v.Kind()
+	if k == reflect.Ptr || k == reflect.Interface {
+		v = v.Elem()
+		k = v.Kind()
+	}
+
+	switch k {
+	case reflect.Bool:
+		q.ser.PutCInt(valueInt)
+		if v.Bool() {
+			q.ser.PutCInt(1)
+		} else {
+			q.ser.PutCInt(0)
+		}
+	case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int8:
+		q.ser.PutCInt(valueInt)
+		q.ser.PutCInt(int(v.Int()))
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32:
+		q.ser.PutCInt(valueInt)
+		q.ser.PutCInt(int(v.Uint()))
+	case reflect.Int64:
+		q.ser.PutCInt(valueInt64)
+		q.ser.PutInt64(v.Int())
+	case reflect.Uint64:
+		q.ser.PutCInt(valueInt64)
+		q.ser.PutInt64(int64(v.Uint()))
+	case reflect.String:
+		q.ser.PutCInt(valueString)
+		q.ser.PutString(v.String())
+	case reflect.Float32, reflect.Float64:
+		q.ser.PutCInt(valueDouble)
+		q.ser.PutDouble(v.Float())
+	default:
+		panic(fmt.Errorf("rq: Invalid reflection type %s", v.Kind().String()))
+	}
+	return nil
 }
 
 // WhereInt - Add where condition to DB query with int args
 func (q *Query) WhereInt(index string, condition int, keys ...int) *Query {
 
-	q.ser.writeCInt(queryCondition).writeString(index).writeCInt(q.nextOp).writeCInt(condition)
+	q.ser.PutCInt(queryCondition).PutString(index).PutCInt(q.nextOp).PutCInt(condition)
 	q.nextOp = opAND
 
-	q.ser.writeCInt(len(keys))
+	q.ser.PutCInt(len(keys))
 	for _, v := range keys {
-		q.ser.writeCInt(valueInt).writeCInt(v)
+		q.ser.PutCInt(valueInt).PutCInt(v)
 	}
 	return q
 }
@@ -126,12 +197,12 @@ func (q *Query) WhereInt(index string, condition int, keys ...int) *Query {
 // WhereInt64 - Add where condition to DB query with int64 args
 func (q *Query) WhereInt64(index string, condition int, keys ...int64) *Query {
 
-	q.ser.writeCInt(queryCondition).writeString(index).writeCInt(q.nextOp).writeCInt(condition)
+	q.ser.PutCInt(queryCondition).PutString(index).PutCInt(q.nextOp).PutCInt(condition)
 	q.nextOp = opAND
 
-	q.ser.writeCInt(len(keys))
+	q.ser.PutCInt(len(keys))
 	for _, v := range keys {
-		q.ser.writeCInt(valueInt64).writeInt64(v)
+		q.ser.PutCInt(valueInt64).PutInt64(v)
 	}
 	return q
 }
@@ -139,25 +210,31 @@ func (q *Query) WhereInt64(index string, condition int, keys ...int64) *Query {
 // WhereString - Add where condition to DB query with string args
 func (q *Query) WhereString(index string, condition int, keys ...string) *Query {
 
-	q.ser.writeCInt(queryCondition).writeString(index).writeCInt(q.nextOp).writeCInt(condition)
+	q.ser.PutCInt(queryCondition).PutString(index).PutCInt(q.nextOp).PutCInt(condition)
 	q.nextOp = opAND
 
-	q.ser.writeCInt(len(keys))
+	q.ser.PutCInt(len(keys))
 	for _, v := range keys {
-		q.ser.writeCInt(valueString).writeString(v)
+		q.ser.PutCInt(valueString).PutString(v)
 	}
 	return q
+}
+
+// WhereString - Add where condition to DB query with string args
+func (q *Query) Match(index string, keys ...string) *Query {
+
+	return q.WhereString(index, EQ, keys...)
 }
 
 // WhereString - Add where condition to DB query with bool args
 func (q *Query) WhereBool(index string, condition int, keys ...bool) *Query {
 
-	q.ser.writeCInt(queryCondition).writeString(index).writeCInt(q.nextOp).writeCInt(condition)
+	q.ser.PutCInt(queryCondition).PutString(index).PutCInt(q.nextOp).PutCInt(condition)
 	q.nextOp = opAND
 
-	q.ser.writeCInt(len(keys))
+	q.ser.PutCInt(len(keys))
 	for _, v := range keys {
-		q.ser.writeCInt(valueInt).writeBool(v)
+		q.ser.PutCInt(valueInt).PutBool(v)
 	}
 	return q
 }
@@ -165,25 +242,37 @@ func (q *Query) WhereBool(index string, condition int, keys ...bool) *Query {
 // WhereDouble - Add where condition to DB query with float args
 func (q *Query) WhereDouble(index string, condition int, keys ...float64) *Query {
 
-	q.ser.writeCInt(queryCondition).writeString(index).writeCInt(q.nextOp).writeCInt(condition)
+	q.ser.PutCInt(queryCondition).PutString(index).PutCInt(q.nextOp).PutCInt(condition)
 	q.nextOp = opAND
 
-	q.ser.writeCInt(len(keys))
+	q.ser.PutCInt(len(keys))
 	for _, v := range keys {
-		q.ser.writeCInt(valueDouble).writeDouble(v)
+		q.ser.PutCInt(valueDouble).PutDouble(v)
 	}
 	return q
 }
 
-// Sort - Apply sort order to returned from query items
-func (q *Query) Sort(sortIndex string, desc bool) *Query {
+// Aggregate - Return aggregation of field
+func (q *Query) Aggregate(index string, aggType int) *Query {
 
-	q.ser.writeCInt(querySortIndex)
-	q.ser.writeString(sortIndex)
+	q.ser.PutCInt(queryAggregation).PutString(index).PutCInt(aggType)
+	return q
+}
+
+// Sort - Apply sort order to returned from query items
+func (q *Query) Sort(sortIndex string, desc bool, values ...interface{}) *Query {
+
+	q.ser.PutCInt(querySortIndex)
+	q.ser.PutString(sortIndex)
 	if desc {
-		q.ser.writeCInt(1)
+		q.ser.PutCInt(1)
 	} else {
-		q.ser.writeCInt(0)
+		q.ser.PutCInt(0)
+	}
+
+	q.ser.PutCInt(len(values))
+	for i := 0; i < len(values); i++ {
+		q.putValue(reflect.ValueOf(values[i]))
 	}
 
 	return q
@@ -203,55 +292,55 @@ func (q *Query) Not() *Query {
 
 // Distinct - Return only items with uniq value of field
 func (q *Query) Distinct(distinctIndex string) *Query {
-	q.ser.writeCInt(queryDistinct)
-	q.ser.writeString(distinctIndex)
+	q.ser.PutCInt(queryDistinct)
+	q.ser.PutString(distinctIndex)
 	return q
 }
 
 // ReqTotal Request total items calculation
-func (q *Query) ReqTotal() *Query {
-	q.ReqTotalCount = true
+func (q *Query) ReqTotal(totalNames ...string) *Query {
+	q.ser.PutCInt(queryReqTotal)
+	q.ser.PutCInt(modeAccurateTotal)
+	if len(totalNames) != 0 {
+		q.totalName = totalNames[0]
+	}
+	return q
+}
+
+// CachedTotal Request cached total items calculation
+func (q *Query) CachedTotal(totalNames ...string) *Query {
+	q.ser.PutCInt(queryReqTotal)
+	q.ser.PutCInt(modeCachedTotal)
+	if len(totalNames) != 0 {
+		q.totalName = totalNames[0]
+	}
 	return q
 }
 
 // Limit - Set limit (count) of returned items
 func (q *Query) Limit(limitItems int) *Query {
-	q.LimitItems = limitItems
+	if limitItems != 0 {
+		if limitItems > cInt32Max {
+			limitItems = cInt32Max
+		}
+		// temporary
+		q.ser.PutCInt(queryLimit).PutCInt(limitItems)
+	}
 	return q
 }
 
 // Offset - Set start offset of returned items
 func (q *Query) Offset(startOffset int) *Query {
-	q.StartOffset = startOffset
-	return q
-}
-
-// GetTotal - return total items in DB for query
-func (q *Query) GetTotal() int {
-	if q.closed {
-		panic(errors.New("query.GetTotal call on already closed query. You shoud create new Query"))
+	if startOffset > cInt32Max {
+		startOffset = cInt32Max
 	}
-	return q.totalCount
-}
-
-// NoObjCache - Disable object cache
-func (q *Query) NoObjCache() *Query {
-	q.noObjCache = true
+	q.ser.PutCInt(queryOffset).PutCInt(startOffset)
 	return q
 }
 
 // Debug - Set debug level
 func (q *Query) Debug(level int) *Query {
-	q.DebugLevel = level
-	return q
-}
-
-// Copy - performs copy of objects. returned slice will contain pointers to object copies
-func (q *Query) CopyResults() *Query {
-	if q.root != nil {
-		q = q.root
-	}
-	q.copy = true
+	q.ser.PutCInt(queryDebugLevel).PutCInt(level)
 	return q
 }
 
@@ -273,10 +362,36 @@ func (q *Query) Exec() *Iterator {
 	if q.closed {
 		panic(errors.New("Exec call on already closed query. You shoud create new Query"))
 	}
-	return q.db.selectQuery(q)
+	if q.executed {
+		panic(errors.New("Exec call on already executed query. You shoud create new Query"))
+	}
+	q.executed = true
+
+	return q.db.execQuery(q)
 }
 
-func (q *Query) Close() {
+// ExecAsJson will execute query, and return iterator
+func (q *Query) ExecToJson(jsonRoots ...string) *JSONIterator {
+	if q.root != nil {
+		q = q.root
+	}
+	if q.closed {
+		panic(errors.New("Exec call on already closed query. You shoud create new Query"))
+	}
+	if q.executed {
+		panic(errors.New("Exec call on already executed query. You shoud create new Query"))
+	}
+	q.executed = true
+
+	jsonRoot := q.Namespace
+	if len(jsonRoots) != 0 && len(jsonRoots[0]) != 0 {
+		jsonRoot = jsonRoots[0]
+	}
+
+	return q.db.execJSONQuery(q, jsonRoot)
+}
+
+func (q *Query) close() {
 	if q.root != nil {
 		q = q.root
 	}
@@ -284,11 +399,22 @@ func (q *Query) Close() {
 		panic(errors.New("Close call on already closed query."))
 	}
 
-	for _, jq := range q.joinQueries {
+	for i, jq := range q.joinQueries {
 		jq.closed = true
 		queryPool.Put(jq)
+		q.joinQueries[i] = nil
 	}
-	q.joinQueries = q.joinQueries[:0]
+
+	for i, mq := range q.mergedQueries {
+		mq.closed = true
+		queryPool.Put(mq)
+		q.mergedQueries[i] = nil
+	}
+
+	for i := range q.joinHandlers {
+		q.joinHandlers[i] = nil
+	}
+
 	q.closed = true
 	queryPool.Put(q)
 }
@@ -299,14 +425,11 @@ func (q *Query) Delete() (int, error) {
 	if q.root != nil || len(q.joinQueries) != 0 {
 		return 0, errors.New("Delete does not support joined queries")
 	}
-	if q.LimitItems != 0 || q.StartOffset != 0 || q.ReqTotalCount {
-		return 0, errors.New("Delete does not support limit/offset arguments")
-	}
 	if q.closed {
 		panic(errors.New("Delete call on already closed query. You shoud create new Query"))
 	}
 
-	defer q.Close()
+	defer q.close()
 	return q.db.deleteQuery(q)
 }
 
@@ -321,12 +444,26 @@ func (q *Query) MustExec() *Iterator {
 
 // Get will execute query, and return 1 st item, panic on error
 func (q *Query) Get() (item interface{}, found bool) {
-	res, _ := q.MustExec().PtrSlice()
-	defer q.Close()
-	if len(res) == 0 {
+	iter := q.Limit(1).MustExec()
+	defer iter.Close()
+	if iter.Next() {
+		return iter.Object(), true
+	}
+	return nil, false
+}
+
+// Get will execute query, and return 1 st item, panic on error
+func (q *Query) GetJson() (json []byte, found bool) {
+	it := q.Limit(1).ExecToJson()
+	defer it.Close()
+	if it.Error() != nil {
+		panic(it.Error())
+	}
+	if !it.Next() {
 		return nil, false
 	}
-	return res[0], true
+
+	return it.JSON(), true
 }
 
 // Join joins 2 queries
@@ -338,6 +475,7 @@ func (q *Query) join(q2 *Query, field string, joinType int) *Query {
 	q2.root = q
 	q.joinQueries = append(q.joinQueries, q2)
 	q.joinToFields = append(q.joinToFields, field)
+	q.joinHandlers = append(q.joinHandlers, nil)
 	return q2
 }
 
@@ -361,6 +499,30 @@ func (q *Query) LeftJoin(q2 *Query, field string) *Query {
 	return q.join(q2, field, leftJoin)
 }
 
+// JoinHandler sets handler for join results
+func (q *Query) JoinHandler(field string, handler JoinHandler) *Query {
+	index := -1
+	for i := range q.joinToFields {
+		if q.joinToFields[i] == field {
+			index = i
+		}
+	}
+	if index != -1 {
+		q.joinHandlers[index] = handler
+	}
+	return q
+}
+
+// Merge 2 queries
+func (q *Query) Merge(q2 *Query) *Query {
+	if q.root != nil {
+		q = q.root
+	}
+	q2.root = q
+	q.mergedQueries = append(q.mergedQueries, q2)
+	return q
+}
+
 // On Add Join condition
 func (q *Query) On(index string, condition int, joinIndex string) *Query {
 	if q.closed {
@@ -369,9 +531,20 @@ func (q *Query) On(index string, condition int, joinIndex string) *Query {
 	if q.root == nil {
 		panic(fmt.Errorf("Can't join on root query"))
 	}
-	q.ser.writeCInt(queryJoinOn)
-	q.ser.writeCInt(condition)
-	q.ser.writeString(index)
-	q.ser.writeString(joinIndex)
+	q.ser.PutCInt(queryJoinOn)
+	q.ser.PutCInt(q.nextOp)
+	q.ser.PutCInt(condition)
+	q.ser.PutString(index)
+	q.ser.PutString(joinIndex)
+	q.nextOp = opAND
+
+	return q
+}
+
+// Select add filter to  fields of result's objects
+func (q *Query) Select(fields ...string) *Query {
+	for _, field := range fields {
+		q.ser.PutCInt(querySelectFilter).PutString(field)
+	}
 	return q
 }

@@ -1,0 +1,561 @@
+.build/core/aggregator.o: core/aggregator.cc core/aggregator.h \
+  core/keyvalue/keyvalue.h core/keyvalue/keyref.h \
+  core/payload/payloadvalue.h core/type_consts.h estl/h_vector.h \
+  core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h tools/errors.h \
+  core/payload/payloadiface.h core/payload/fieldsset.h \
+  core/payload/payloadfieldvalue.h core/payload/payloadfieldtype.h \
+  core/payload/payloadtype.h estl/cow.h estl/fast_hash_map.h \
+  vendor/hopscotch/hopscotch_map.h vendor/hopscotch/hopscotch_hash.h
+.build/core/cbinding/reindexer_c.o: core/cbinding/reindexer_c.cc core/cbinding/reindexer_c.h \
+  core/cbinding/reindexer_ctypes.h core/type_consts.h core/reindexer.h \
+  core/namespace.h core/index/index.h core/idset.h \
+  vendor/cpp-btree/btree_set.h vendor/cpp-btree/btree.h \
+  vendor/cpp-btree/btree_container.h estl/h_vector.h \
+  core/index/keyentry.h tools/errors.h core/keyvalue/keyvalue.h \
+  core/keyvalue/keyref.h core/payload/payloadvalue.h \
+  core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h core/payload/payloadiface.h \
+  core/payload/fieldsset.h core/payload/payloadfieldvalue.h \
+  core/payload/payloadfieldtype.h core/payload/payloadtype.h estl/cow.h \
+  estl/fast_hash_map.h vendor/hopscotch/hopscotch_map.h \
+  vendor/hopscotch/hopscotch_hash.h core/selectkeyresult.h \
+  core/comparator.h tools/stringstools.h core/ft/fulltextctx.h \
+  core/item.h core/cjson/tagsmatcher.h core/cjson/tagsmatcherimpl.h \
+  core/cjson/ctag.h core/cjson/tagspathcache.h tools/serializer.h \
+  vendor/gason/gason.h core/nsdescriber/nsdescriber.h core/query/query.h \
+  core/query/querywhere.h core/query/queryresults.h \
+  core/cjson/jsonencoder.h core/nsselecter/nsselecter.h \
+  core/aggregator.h core/nsselecter/selectiterator.h \
+  core/sqlfunc/sqlfunc.h estl/tokenizer.h estl/fast_hash_set.h \
+  vendor/hopscotch/hopscotch_set.h estl/shared_mutex.h \
+  core/namespacedef.h core/query/querycache.h core/lrucache.h \
+  vendor/murmurhash/MurmurHash3.h tools/logger.h debug/allocdebug.h \
+  core/cbinding/resultserializer.h
+.build/core/cbinding/resultserializer.o: core/cbinding/resultserializer.cc \
+  core/cbinding/resultserializer.h core/query/queryresults.h \
+  core/cjson/jsonencoder.h core/item.h core/cjson/tagsmatcher.h \
+  core/cjson/tagsmatcherimpl.h core/payload/payloadtype.h estl/cow.h \
+  estl/fast_hash_map.h vendor/hopscotch/hopscotch_map.h \
+  vendor/hopscotch/hopscotch_hash.h core/payload/payloadfieldtype.h \
+  core/type_consts.h core/cjson/ctag.h core/cjson/tagspathcache.h \
+  estl/h_vector.h tools/errors.h tools/serializer.h \
+  core/keyvalue/keyref.h core/payload/payloadvalue.h \
+  core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h core/keyvalue/keyvalue.h \
+  tools/stringstools.h core/payload/payloadiface.h \
+  core/payload/fieldsset.h core/payload/payloadfieldvalue.h \
+  vendor/gason/gason.h
+.build/core/cjson/cjsondecoder.o: core/cjson/cjsondecoder.cc core/cjson/cjsondecoder.h \
+  core/item.h core/cjson/tagsmatcher.h core/cjson/tagsmatcherimpl.h \
+  core/payload/payloadtype.h estl/cow.h estl/fast_hash_map.h \
+  vendor/hopscotch/hopscotch_map.h vendor/hopscotch/hopscotch_hash.h \
+  core/payload/payloadfieldtype.h core/type_consts.h core/cjson/ctag.h \
+  core/cjson/tagspathcache.h estl/h_vector.h tools/errors.h \
+  tools/serializer.h core/keyvalue/keyref.h core/payload/payloadvalue.h \
+  core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h core/keyvalue/keyvalue.h \
+  tools/stringstools.h core/payload/payloadiface.h \
+  core/payload/fieldsset.h core/payload/payloadfieldvalue.h \
+  vendor/gason/gason.h core/cjson/cjsonencoder.h
+.build/core/cjson/cjsonencoder.o: core/cjson/cjsonencoder.cc core/cjson/cjsonencoder.h \
+  core/item.h core/cjson/tagsmatcher.h core/cjson/tagsmatcherimpl.h \
+  core/payload/payloadtype.h estl/cow.h estl/fast_hash_map.h \
+  vendor/hopscotch/hopscotch_map.h vendor/hopscotch/hopscotch_hash.h \
+  core/payload/payloadfieldtype.h core/type_consts.h core/cjson/ctag.h \
+  core/cjson/tagspathcache.h estl/h_vector.h tools/errors.h \
+  tools/serializer.h core/keyvalue/keyref.h core/payload/payloadvalue.h \
+  core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h core/keyvalue/keyvalue.h \
+  tools/stringstools.h core/payload/payloadiface.h \
+  core/payload/fieldsset.h core/payload/payloadfieldvalue.h \
+  vendor/gason/gason.h
+.build/core/cjson/jsondecoder.o: core/cjson/jsondecoder.cc core/cjson/jsondecoder.h \
+  core/item.h core/cjson/tagsmatcher.h core/cjson/tagsmatcherimpl.h \
+  core/payload/payloadtype.h estl/cow.h estl/fast_hash_map.h \
+  vendor/hopscotch/hopscotch_map.h vendor/hopscotch/hopscotch_hash.h \
+  core/payload/payloadfieldtype.h core/type_consts.h core/cjson/ctag.h \
+  core/cjson/tagspathcache.h estl/h_vector.h tools/errors.h \
+  tools/serializer.h core/keyvalue/keyref.h core/payload/payloadvalue.h \
+  core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h core/keyvalue/keyvalue.h \
+  tools/stringstools.h core/payload/payloadiface.h \
+  core/payload/fieldsset.h core/payload/payloadfieldvalue.h \
+  vendor/gason/gason.h tools/json2kv.h
+.build/core/cjson/jsonencoder.o: core/cjson/jsonencoder.cc core/cjson/jsonencoder.h \
+  core/item.h core/cjson/tagsmatcher.h core/cjson/tagsmatcherimpl.h \
+  core/payload/payloadtype.h estl/cow.h estl/fast_hash_map.h \
+  vendor/hopscotch/hopscotch_map.h vendor/hopscotch/hopscotch_hash.h \
+  core/payload/payloadfieldtype.h core/type_consts.h core/cjson/ctag.h \
+  core/cjson/tagspathcache.h estl/h_vector.h tools/errors.h \
+  tools/serializer.h core/keyvalue/keyref.h core/payload/payloadvalue.h \
+  core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h core/keyvalue/keyvalue.h \
+  tools/stringstools.h core/payload/payloadiface.h \
+  core/payload/fieldsset.h core/payload/payloadfieldvalue.h \
+  vendor/gason/gason.h core/query/queryresults.h
+.build/core/comparator.o: core/comparator.cc core/comparator.h \
+  core/keyvalue/keyvalue.h core/keyvalue/keyref.h \
+  core/payload/payloadvalue.h core/type_consts.h estl/h_vector.h \
+  core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h tools/errors.h \
+  core/payload/payloadiface.h core/payload/fieldsset.h \
+  core/payload/payloadfieldvalue.h core/payload/payloadfieldtype.h \
+  core/payload/payloadtype.h estl/cow.h estl/fast_hash_map.h \
+  vendor/hopscotch/hopscotch_map.h vendor/hopscotch/hopscotch_hash.h \
+  tools/stringstools.h
+.build/core/ft/config/baseconfig.o: core/ft/config/baseconfig.cc core/ft/config/baseconfig.h \
+  estl/fast_hash_set.h vendor/hopscotch/hopscotch_set.h \
+  vendor/hopscotch/hopscotch_hash.h vendor/gason/gason.h \
+  core/ft/stopwords/stop.h tools/errors.h core/type_consts.h
+.build/core/ft/config/ftfastconfig.o: core/ft/config/ftfastconfig.cc \
+  core/ft/config/ftfastconfig.h core/ft/config/baseconfig.h \
+  estl/fast_hash_set.h vendor/hopscotch/hopscotch_set.h \
+  vendor/hopscotch/hopscotch_hash.h vendor/gason/gason.h \
+  core/ft/stopwords/stop.h tools/errors.h core/type_consts.h
+.build/core/ft/config/ftfuzzyconfig.o: core/ft/config/ftfuzzyconfig.cc \
+  core/ft/config/ftfuzzyconfig.h core/ft/config/baseconfig.h \
+  estl/fast_hash_set.h vendor/hopscotch/hopscotch_set.h \
+  vendor/hopscotch/hopscotch_hash.h vendor/gason/gason.h \
+  core/ft/stopwords/stop.h tools/errors.h core/type_consts.h
+.build/core/ft/ft_fuzzy/advacedpackedvec.o: core/ft/ft_fuzzy/advacedpackedvec.cc \
+  core/ft/ft_fuzzy/advacedpackedvec.h estl/packed_vector.h \
+  estl/h_vector.h core/ft/idrelset.h
+.build/core/ft/ft_fuzzy/dataholder/basebuildedholder.o: core/ft/ft_fuzzy/dataholder/basebuildedholder.cc \
+  core/ft/ft_fuzzy/dataholder/basebuildedholder.h \
+  core/ft/config/ftfastconfig.h core/ft/config/baseconfig.h \
+  estl/fast_hash_set.h vendor/hopscotch/hopscotch_set.h \
+  vendor/hopscotch/hopscotch_hash.h vendor/gason/gason.h \
+  core/ft/config/ftfuzzyconfig.h core/ft/ft_fuzzy/advacedpackedvec.h \
+  estl/packed_vector.h estl/h_vector.h core/ft/idrelset.h core/idset.h \
+  core/type_consts.h vendor/cpp-btree/btree_set.h \
+  vendor/cpp-btree/btree.h vendor/cpp-btree/btree_container.h \
+  core/ft/ft_fuzzy/dataholder/datastruct.h \
+  core/ft/ft_fuzzy/dataholder/smardeque.h estl/fast_hash_map.h \
+  vendor/hopscotch/hopscotch_map.h tools/customhash.h
+.build/core/ft/ft_fuzzy/dataholder/smardeque.o: core/ft/ft_fuzzy/dataholder/smardeque.cc \
+  core/ft/ft_fuzzy/dataholder/smardeque.h \
+  core/ft/ft_fuzzy/dataholder/datastruct.h core/idset.h \
+  core/type_consts.h vendor/cpp-btree/btree_set.h \
+  vendor/cpp-btree/btree.h vendor/cpp-btree/btree_container.h \
+  estl/h_vector.h
+.build/core/ft/ft_fuzzy/dumper/fulltextdumper.o: core/ft/ft_fuzzy/dumper/fulltextdumper.cc \
+  core/ft/ft_fuzzy/dumper/fulltextdumper.h \
+  core/ft/ft_fuzzy/dataholder/basebuildedholder.h \
+  core/ft/config/ftfastconfig.h core/ft/config/baseconfig.h \
+  estl/fast_hash_set.h vendor/hopscotch/hopscotch_set.h \
+  vendor/hopscotch/hopscotch_hash.h vendor/gason/gason.h \
+  core/ft/config/ftfuzzyconfig.h core/ft/ft_fuzzy/advacedpackedvec.h \
+  estl/packed_vector.h estl/h_vector.h core/ft/idrelset.h core/idset.h \
+  core/type_consts.h vendor/cpp-btree/btree_set.h \
+  vendor/cpp-btree/btree.h vendor/cpp-btree/btree_container.h \
+  core/ft/ft_fuzzy/dataholder/datastruct.h \
+  core/ft/ft_fuzzy/dataholder/smardeque.h estl/fast_hash_map.h \
+  vendor/hopscotch/hopscotch_map.h tools/customhash.h core/namespace.h \
+  core/index/index.h core/index/keyentry.h tools/errors.h \
+  core/keyvalue/keyvalue.h core/keyvalue/keyref.h \
+  core/payload/payloadvalue.h core/keyvalue/key_string.h \
+  estl/intrusive_ptr.h core/keyvalue/keyarray.h core/keyvalue/p_string.h \
+  tools/slice.h tools/varint.h core/payload/payloadiface.h \
+  core/payload/fieldsset.h core/payload/payloadfieldvalue.h \
+  core/payload/payloadfieldtype.h core/payload/payloadtype.h estl/cow.h \
+  core/selectkeyresult.h core/comparator.h tools/stringstools.h \
+  core/ft/fulltextctx.h core/item.h core/cjson/tagsmatcher.h \
+  core/cjson/tagsmatcherimpl.h core/cjson/ctag.h \
+  core/cjson/tagspathcache.h tools/serializer.h \
+  core/nsdescriber/nsdescriber.h core/query/query.h \
+  core/query/querywhere.h core/query/queryresults.h \
+  core/cjson/jsonencoder.h core/nsselecter/nsselecter.h \
+  core/aggregator.h core/nsselecter/selectiterator.h \
+  core/sqlfunc/sqlfunc.h estl/tokenizer.h estl/shared_mutex.h \
+  core/namespacedef.h core/query/querycache.h core/lrucache.h \
+  vendor/murmurhash/MurmurHash3.h tools/logger.h
+.build/core/ft/ft_fuzzy/merger/basemerger.o: core/ft/ft_fuzzy/merger/basemerger.cc \
+  core/ft/ft_fuzzy/merger/basemerger.h core/ft/config/ftfuzzyconfig.h \
+  core/ft/config/baseconfig.h estl/fast_hash_set.h \
+  vendor/hopscotch/hopscotch_set.h vendor/hopscotch/hopscotch_hash.h \
+  vendor/gason/gason.h core/ft/ft_fuzzy/advacedpackedvec.h \
+  estl/packed_vector.h estl/h_vector.h \
+  core/ft/ft_fuzzy/dataholder/basebuildedholder.h \
+  core/ft/config/ftfastconfig.h core/ft/idrelset.h core/idset.h \
+  core/type_consts.h vendor/cpp-btree/btree_set.h \
+  vendor/cpp-btree/btree.h vendor/cpp-btree/btree_container.h \
+  core/ft/ft_fuzzy/dataholder/datastruct.h \
+  core/ft/ft_fuzzy/dataholder/smardeque.h estl/fast_hash_map.h \
+  vendor/hopscotch/hopscotch_map.h tools/customhash.h \
+  core/ft/ft_fuzzy/searchers/isearcher.h core/ft/ftdsl.h \
+  core/ft/ft_fuzzy/merger/dataset.h
+.build/core/ft/ft_fuzzy/prefilter/prefilter.o: core/ft/ft_fuzzy/prefilter/prefilter.cc \
+  core/ft/ft_fuzzy/prefilter/prefilter.h vendor/murmurhash/MurmurHash3.h
+.build/core/ft/ft_fuzzy/searchengine.o: core/ft/ft_fuzzy/searchengine.cc \
+  core/ft/ft_fuzzy/searchengine.h core/ft/config/ftfuzzyconfig.h \
+  core/ft/config/baseconfig.h estl/fast_hash_set.h \
+  vendor/hopscotch/hopscotch_set.h vendor/hopscotch/hopscotch_hash.h \
+  vendor/gason/gason.h core/ft/ftdsl.h core/type_consts.h \
+  estl/fast_hash_map.h vendor/hopscotch/hopscotch_map.h estl/h_vector.h \
+  core/idset.h vendor/cpp-btree/btree_set.h vendor/cpp-btree/btree.h \
+  vendor/cpp-btree/btree_container.h \
+  core/ft/ft_fuzzy/dataholder/basebuildedholder.h \
+  core/ft/config/ftfastconfig.h core/ft/ft_fuzzy/advacedpackedvec.h \
+  estl/packed_vector.h core/ft/idrelset.h \
+  core/ft/ft_fuzzy/dataholder/datastruct.h \
+  core/ft/ft_fuzzy/dataholder/smardeque.h tools/customhash.h \
+  core/ft/ft_fuzzy/searchers/base_searcher/baseseacher.h \
+  core/ft/ft_fuzzy/merger/basemerger.h \
+  core/ft/ft_fuzzy/searchers/isearcher.h \
+  core/ft/ft_fuzzy/merger/dataset.h tools/stringstools.h tools/slice.h \
+  core/ft/ft_fuzzy/searchers/kblayout.h \
+  core/ft/ft_fuzzy/searchers/translit.h
+.build/core/ft/ft_fuzzy/searchers/base_searcher/baseseacher.o: core/ft/ft_fuzzy/searchers/base_searcher/baseseacher.cc \
+  core/ft/ft_fuzzy/searchers/base_searcher/baseseacher.h \
+  core/ft/config/ftfastconfig.h core/ft/config/baseconfig.h \
+  estl/fast_hash_set.h vendor/hopscotch/hopscotch_set.h \
+  vendor/hopscotch/hopscotch_hash.h vendor/gason/gason.h \
+  core/ft/ft_fuzzy/dataholder/basebuildedholder.h \
+  core/ft/config/ftfuzzyconfig.h core/ft/ft_fuzzy/advacedpackedvec.h \
+  estl/packed_vector.h estl/h_vector.h core/ft/idrelset.h core/idset.h \
+  core/type_consts.h vendor/cpp-btree/btree_set.h \
+  vendor/cpp-btree/btree.h vendor/cpp-btree/btree_container.h \
+  core/ft/ft_fuzzy/dataholder/datastruct.h \
+  core/ft/ft_fuzzy/dataholder/smardeque.h estl/fast_hash_map.h \
+  vendor/hopscotch/hopscotch_map.h tools/customhash.h \
+  core/ft/ft_fuzzy/merger/basemerger.h \
+  core/ft/ft_fuzzy/searchers/isearcher.h core/ft/ftdsl.h \
+  core/ft/ft_fuzzy/merger/dataset.h \
+  core/ft/ft_fuzzy/searchers/kblayout.h \
+  core/ft/ft_fuzzy/searchers/translit.h tools/stringstools.h \
+  tools/slice.h
+.build/core/ft/ft_fuzzy/searchers/kblayout.o: core/ft/ft_fuzzy/searchers/kblayout.cc \
+  core/ft/ft_fuzzy/searchers/kblayout.h \
+  core/ft/ft_fuzzy/searchers/isearcher.h \
+  core/ft/ft_fuzzy/dataholder/datastruct.h core/idset.h \
+  core/type_consts.h vendor/cpp-btree/btree_set.h \
+  vendor/cpp-btree/btree.h vendor/cpp-btree/btree_container.h \
+  estl/h_vector.h core/ft/ft_fuzzy/dataholder/smardeque.h \
+  tools/customhash.h
+.build/core/ft/ft_fuzzy/searchers/translit.o: core/ft/ft_fuzzy/searchers/translit.cc \
+  core/ft/ft_fuzzy/searchers/translit.h \
+  core/ft/ft_fuzzy/searchers/isearcher.h \
+  core/ft/ft_fuzzy/dataholder/datastruct.h core/idset.h \
+  core/type_consts.h vendor/cpp-btree/btree_set.h \
+  vendor/cpp-btree/btree.h vendor/cpp-btree/btree_container.h \
+  estl/h_vector.h core/ft/ft_fuzzy/dataholder/smardeque.h \
+  tools/customhash.h
+.build/core/ft/ftdsl.o: core/ft/ftdsl.cc core/ft/ftdsl.h core/type_consts.h \
+  estl/fast_hash_map.h vendor/hopscotch/hopscotch_map.h \
+  vendor/hopscotch/hopscotch_hash.h estl/fast_hash_set.h \
+  vendor/hopscotch/hopscotch_set.h estl/h_vector.h tools/customlocal.h \
+  tools/errors.h tools/stringstools.h tools/slice.h
+.build/core/ft/idrelset.o: core/ft/idrelset.cc core/ft/idrelset.h estl/h_vector.h \
+  estl/packed_vector.h tools/varint.h
+stop_en.o: core/ft/stopwords/stop_en.cc
+stop_ru.o: core/ft/stopwords/stop_ru.cc
+.build/core/ft/typos.o: core/ft/typos.cc core/ft/typos.h tools/stringstools.h \
+  core/type_consts.h tools/slice.h
+.build/core/idset.o: core/idset.cc core/idset.h core/type_consts.h \
+  vendor/cpp-btree/btree_set.h vendor/cpp-btree/btree.h \
+  vendor/cpp-btree/btree_container.h estl/h_vector.h
+.build/core/index/index.o: core/index/index.cc core/index/index.h core/idset.h \
+  core/type_consts.h vendor/cpp-btree/btree_set.h \
+  vendor/cpp-btree/btree.h vendor/cpp-btree/btree_container.h \
+  estl/h_vector.h core/index/keyentry.h tools/errors.h \
+  core/keyvalue/keyvalue.h core/keyvalue/keyref.h \
+  core/payload/payloadvalue.h core/keyvalue/key_string.h \
+  estl/intrusive_ptr.h core/keyvalue/keyarray.h core/keyvalue/p_string.h \
+  tools/customhash.h tools/slice.h tools/varint.h \
+  core/payload/payloadiface.h core/payload/fieldsset.h \
+  core/payload/payloadfieldvalue.h core/payload/payloadfieldtype.h \
+  core/payload/payloadtype.h estl/cow.h estl/fast_hash_map.h \
+  vendor/hopscotch/hopscotch_map.h vendor/hopscotch/hopscotch_hash.h \
+  core/selectkeyresult.h core/comparator.h tools/stringstools.h \
+  core/ft/fulltextctx.h core/index/indexordered.tcc \
+  core/index/indexordered.h core/index/indexunordered.h \
+  core/idsetcache.h core/lrucache.h core/index/indexstore.h \
+  core/index/string_map.h vendor/cpp-btree/btree_map.h \
+  tools/customlocal.h core/index/payload_map.h \
+  core/index/updatetracker.h estl/fast_hash_set.h \
+  vendor/hopscotch/hopscotch_set.h tools/logger.h \
+  core/index/indexstore.tcc core/index/indextext/fasttextsearch.tcc \
+  core/ft/bm25.h core/index/indextext/fasttextsearch.h \
+  core/ft/config/ftfastconfig.h core/ft/config/baseconfig.h \
+  vendor/gason/gason.h core/index/indextext/indextext.tcc \
+  core/ft/ft_fuzzy/searchers/kblayout.h \
+  core/ft/ft_fuzzy/searchers/isearcher.h \
+  core/ft/ft_fuzzy/dataholder/datastruct.h \
+  core/ft/ft_fuzzy/dataholder/smardeque.h \
+  core/ft/ft_fuzzy/searchers/translit.h core/ft/typos.h \
+  core/index/indextext/indextext.h core/ft/ftdsl.h core/ft/ftsetcashe.h \
+  core/ft/idrelset.h estl/packed_vector.h core/ft/stemmer.h \
+  vendor/libstemmer/include/libstemmer.h estl/flat_str_map.h \
+  estl/suffix_map.h vendor/libdivsufsort/divsufsort.h \
+  core/index/indextext/fuzzytextsearch.tcc \
+  core/index/indextext/fuzzytextsearch.h core/ft/ft_fuzzy/searchengine.h \
+  core/ft/config/ftfuzzyconfig.h \
+  core/ft/ft_fuzzy/dataholder/basebuildedholder.h \
+  core/ft/ft_fuzzy/advacedpackedvec.h \
+  core/ft/ft_fuzzy/searchers/base_searcher/baseseacher.h \
+  core/ft/ft_fuzzy/merger/basemerger.h core/ft/ft_fuzzy/merger/dataset.h \
+  core/index/indexunordered.tcc
+.build/core/item.o: core/item.cc core/item.h core/cjson/tagsmatcher.h \
+  core/cjson/tagsmatcherimpl.h core/payload/payloadtype.h estl/cow.h \
+  estl/fast_hash_map.h vendor/hopscotch/hopscotch_map.h \
+  vendor/hopscotch/hopscotch_hash.h core/payload/payloadfieldtype.h \
+  core/type_consts.h core/cjson/ctag.h core/cjson/tagspathcache.h \
+  estl/h_vector.h tools/errors.h tools/serializer.h \
+  core/keyvalue/keyref.h core/payload/payloadvalue.h \
+  core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h core/keyvalue/keyvalue.h \
+  tools/stringstools.h core/payload/payloadiface.h \
+  core/payload/fieldsset.h core/payload/payloadfieldvalue.h \
+  vendor/gason/gason.h core/cjson/cjsondecoder.h \
+  core/cjson/cjsonencoder.h core/cjson/jsondecoder.h \
+  core/cjson/jsonencoder.h
+.build/core/keyvalue/keyref.o: core/keyvalue/keyref.cc core/keyvalue/keyref.h \
+  core/payload/payloadvalue.h core/type_consts.h estl/h_vector.h \
+  core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h tools/errors.h tools/stringstools.h
+.build/core/keyvalue/keyvalue.o: core/keyvalue/keyvalue.cc core/keyvalue/keyvalue.h \
+  core/keyvalue/keyref.h core/payload/payloadvalue.h core/type_consts.h \
+  estl/h_vector.h core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h tools/errors.h
+.build/core/lrucache.o: core/lrucache.cc core/ft/ftsetcashe.h core/ft/fulltextctx.h \
+  core/type_consts.h core/idset.h vendor/cpp-btree/btree_set.h \
+  vendor/cpp-btree/btree.h vendor/cpp-btree/btree_container.h \
+  estl/h_vector.h core/idsetcache.h core/keyvalue/keyvalue.h \
+  core/keyvalue/keyref.h core/payload/payloadvalue.h \
+  core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h tools/errors.h core/lrucache.h \
+  core/query/querycache.h core/query/query.h core/query/querywhere.h \
+  tools/serializer.h vendor/murmurhash/MurmurHash3.h tools/logger.h
+.build/core/namespace.o: core/namespace.cc core/namespace.h core/index/index.h \
+  core/idset.h core/type_consts.h vendor/cpp-btree/btree_set.h \
+  vendor/cpp-btree/btree.h vendor/cpp-btree/btree_container.h \
+  estl/h_vector.h core/index/keyentry.h tools/errors.h \
+  core/keyvalue/keyvalue.h core/keyvalue/keyref.h \
+  core/payload/payloadvalue.h core/keyvalue/key_string.h \
+  estl/intrusive_ptr.h core/keyvalue/keyarray.h core/keyvalue/p_string.h \
+  tools/customhash.h tools/slice.h tools/varint.h \
+  core/payload/payloadiface.h core/payload/fieldsset.h \
+  core/payload/payloadfieldvalue.h core/payload/payloadfieldtype.h \
+  core/payload/payloadtype.h estl/cow.h estl/fast_hash_map.h \
+  vendor/hopscotch/hopscotch_map.h vendor/hopscotch/hopscotch_hash.h \
+  core/selectkeyresult.h core/comparator.h tools/stringstools.h \
+  core/ft/fulltextctx.h core/item.h core/cjson/tagsmatcher.h \
+  core/cjson/tagsmatcherimpl.h core/cjson/ctag.h \
+  core/cjson/tagspathcache.h tools/serializer.h vendor/gason/gason.h \
+  core/nsdescriber/nsdescriber.h core/query/query.h \
+  core/query/querywhere.h core/query/queryresults.h \
+  core/cjson/jsonencoder.h core/nsselecter/nsselecter.h \
+  core/aggregator.h core/nsselecter/selectiterator.h \
+  core/sqlfunc/sqlfunc.h estl/tokenizer.h estl/fast_hash_set.h \
+  vendor/hopscotch/hopscotch_set.h estl/shared_mutex.h \
+  core/namespacedef.h core/query/querycache.h core/lrucache.h \
+  vendor/murmurhash/MurmurHash3.h tools/logger.h tools/fsops.h \
+  tools/timetools.h
+.build/core/namespacedef.o: core/namespacedef.cc core/namespacedef.h tools/errors.h \
+  core/type_consts.h vendor/gason/gason.h
+.build/core/nsdescriber/nsdescriber.o: core/nsdescriber/nsdescriber.cc core/cjson/jsondecoder.h \
+  core/item.h core/cjson/tagsmatcher.h core/cjson/tagsmatcherimpl.h \
+  core/payload/payloadtype.h estl/cow.h estl/fast_hash_map.h \
+  vendor/hopscotch/hopscotch_map.h vendor/hopscotch/hopscotch_hash.h \
+  core/payload/payloadfieldtype.h core/type_consts.h core/cjson/ctag.h \
+  core/cjson/tagspathcache.h estl/h_vector.h tools/errors.h \
+  tools/serializer.h core/keyvalue/keyref.h core/payload/payloadvalue.h \
+  core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h core/keyvalue/keyvalue.h \
+  tools/stringstools.h core/payload/payloadiface.h \
+  core/payload/fieldsset.h core/payload/payloadfieldvalue.h \
+  vendor/gason/gason.h core/namespace.h core/index/index.h core/idset.h \
+  vendor/cpp-btree/btree_set.h vendor/cpp-btree/btree.h \
+  vendor/cpp-btree/btree_container.h core/index/keyentry.h \
+  core/selectkeyresult.h core/comparator.h core/ft/fulltextctx.h \
+  core/nsdescriber/nsdescriber.h core/query/query.h \
+  core/query/querywhere.h core/query/queryresults.h \
+  core/cjson/jsonencoder.h core/nsselecter/nsselecter.h \
+  core/aggregator.h core/nsselecter/selectiterator.h \
+  core/sqlfunc/sqlfunc.h estl/tokenizer.h estl/fast_hash_set.h \
+  vendor/hopscotch/hopscotch_set.h estl/shared_mutex.h \
+  core/namespacedef.h core/query/querycache.h core/lrucache.h \
+  vendor/murmurhash/MurmurHash3.h tools/logger.h
+.build/core/nsselecter/nsselecter.o: core/nsselecter/nsselecter.cc core/cjson/jsondecoder.h \
+  core/item.h core/cjson/tagsmatcher.h core/cjson/tagsmatcherimpl.h \
+  core/payload/payloadtype.h estl/cow.h estl/fast_hash_map.h \
+  vendor/hopscotch/hopscotch_map.h vendor/hopscotch/hopscotch_hash.h \
+  core/payload/payloadfieldtype.h core/type_consts.h core/cjson/ctag.h \
+  core/cjson/tagspathcache.h estl/h_vector.h tools/errors.h \
+  tools/serializer.h core/keyvalue/keyref.h core/payload/payloadvalue.h \
+  core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h core/keyvalue/keyvalue.h \
+  tools/stringstools.h core/payload/payloadiface.h \
+  core/payload/fieldsset.h core/payload/payloadfieldvalue.h \
+  vendor/gason/gason.h core/namespace.h core/index/index.h core/idset.h \
+  vendor/cpp-btree/btree_set.h vendor/cpp-btree/btree.h \
+  vendor/cpp-btree/btree_container.h core/index/keyentry.h \
+  core/selectkeyresult.h core/comparator.h core/ft/fulltextctx.h \
+  core/nsdescriber/nsdescriber.h core/query/query.h \
+  core/query/querywhere.h core/query/queryresults.h \
+  core/cjson/jsonencoder.h core/nsselecter/nsselecter.h \
+  core/aggregator.h core/nsselecter/selectiterator.h \
+  core/sqlfunc/sqlfunc.h estl/tokenizer.h estl/fast_hash_set.h \
+  vendor/hopscotch/hopscotch_set.h estl/shared_mutex.h \
+  core/namespacedef.h core/query/querycache.h core/lrucache.h \
+  vendor/murmurhash/MurmurHash3.h tools/logger.h
+.build/core/nsselecter/selectiterator.o: core/nsselecter/selectiterator.cc \
+  core/nsselecter/selectiterator.h core/selectkeyresult.h \
+  core/comparator.h core/keyvalue/keyvalue.h core/keyvalue/keyref.h \
+  core/payload/payloadvalue.h core/type_consts.h estl/h_vector.h \
+  core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h tools/errors.h \
+  core/payload/payloadiface.h core/payload/fieldsset.h \
+  core/payload/payloadfieldvalue.h core/payload/payloadfieldtype.h \
+  core/payload/payloadtype.h estl/cow.h estl/fast_hash_map.h \
+  vendor/hopscotch/hopscotch_map.h vendor/hopscotch/hopscotch_hash.h \
+  tools/stringstools.h core/ft/fulltextctx.h core/idset.h \
+  vendor/cpp-btree/btree_set.h vendor/cpp-btree/btree.h \
+  vendor/cpp-btree/btree_container.h
+.build/core/payload/payloadfieldtype.o: core/payload/payloadfieldtype.cc \
+  core/payload/payloadfieldtype.h core/type_consts.h \
+  core/payload/payloadfieldvalue.h core/keyvalue/keyref.h \
+  core/payload/payloadvalue.h estl/h_vector.h core/keyvalue/key_string.h \
+  estl/intrusive_ptr.h core/keyvalue/keyarray.h core/keyvalue/p_string.h \
+  tools/customhash.h tools/slice.h tools/varint.h tools/errors.h
+.build/core/payload/payloadfieldvalue.o: core/payload/payloadfieldvalue.cc \
+  core/payload/payloadfieldvalue.h core/keyvalue/keyref.h \
+  core/payload/payloadvalue.h core/type_consts.h estl/h_vector.h \
+  core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h tools/errors.h \
+  core/payload/payloadfieldtype.h
+.build/core/payload/payloadiface.o: core/payload/payloadiface.cc core/keyvalue/keyvalue.h \
+  core/keyvalue/keyref.h core/payload/payloadvalue.h core/type_consts.h \
+  estl/h_vector.h core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h tools/errors.h vendor/itoa/itoa.h \
+  core/payload/payloadiface.h core/payload/fieldsset.h \
+  core/payload/payloadfieldvalue.h core/payload/payloadfieldtype.h \
+  core/payload/payloadtype.h estl/cow.h estl/fast_hash_map.h \
+  vendor/hopscotch/hopscotch_map.h vendor/hopscotch/hopscotch_hash.h
+.build/core/payload/payloadtype.o: core/payload/payloadtype.cc core/payload/payloadtype.h \
+  estl/cow.h estl/fast_hash_map.h vendor/hopscotch/hopscotch_map.h \
+  vendor/hopscotch/hopscotch_hash.h core/payload/payloadfieldtype.h \
+  core/type_consts.h core/keyvalue/keyvalue.h core/keyvalue/keyref.h \
+  core/payload/payloadvalue.h estl/h_vector.h core/keyvalue/key_string.h \
+  estl/intrusive_ptr.h core/keyvalue/keyarray.h core/keyvalue/p_string.h \
+  tools/customhash.h tools/slice.h tools/varint.h tools/errors.h
+.build/core/payload/payloadvalue.o: core/payload/payloadvalue.cc core/payload/payloadvalue.h \
+  tools/errors.h core/type_consts.h
+.build/core/query/dslparsetools.o: core/query/dslparsetools.cc core/query/dslparsetools.h \
+  core/query/query.h core/query/querywhere.h core/idset.h \
+  core/type_consts.h vendor/cpp-btree/btree_set.h \
+  vendor/cpp-btree/btree.h vendor/cpp-btree/btree_container.h \
+  estl/h_vector.h core/keyvalue/keyvalue.h core/keyvalue/keyref.h \
+  core/payload/payloadvalue.h core/keyvalue/key_string.h \
+  estl/intrusive_ptr.h core/keyvalue/keyarray.h core/keyvalue/p_string.h \
+  tools/customhash.h tools/slice.h tools/varint.h tools/errors.h \
+  tools/serializer.h vendor/gason/gason.h estl/fast_hash_map.h \
+  vendor/hopscotch/hopscotch_map.h vendor/hopscotch/hopscotch_hash.h \
+  tools/json2kv.h tools/stringstools.h
+.build/core/query/query.o: core/query/query.cc core/query/dslparsetools.h \
+  core/query/query.h core/query/querywhere.h core/idset.h \
+  core/type_consts.h vendor/cpp-btree/btree_set.h \
+  vendor/cpp-btree/btree.h vendor/cpp-btree/btree_container.h \
+  estl/h_vector.h core/keyvalue/keyvalue.h core/keyvalue/keyref.h \
+  core/payload/payloadvalue.h core/keyvalue/key_string.h \
+  estl/intrusive_ptr.h core/keyvalue/keyarray.h core/keyvalue/p_string.h \
+  tools/customhash.h tools/slice.h tools/varint.h tools/errors.h \
+  tools/serializer.h vendor/gason/gason.h estl/flat_str_map.h \
+  vendor/hopscotch/hopscotch_map.h vendor/hopscotch/hopscotch_hash.h \
+  estl/tokenizer.h tools/json2kv.h tools/logger.h
+.build/core/query/queryresults.o: core/query/queryresults.cc core/query/queryresults.h \
+  core/cjson/jsonencoder.h core/item.h core/cjson/tagsmatcher.h \
+  core/cjson/tagsmatcherimpl.h core/payload/payloadtype.h estl/cow.h \
+  estl/fast_hash_map.h vendor/hopscotch/hopscotch_map.h \
+  vendor/hopscotch/hopscotch_hash.h core/payload/payloadfieldtype.h \
+  core/type_consts.h core/cjson/ctag.h core/cjson/tagspathcache.h \
+  estl/h_vector.h tools/errors.h tools/serializer.h \
+  core/keyvalue/keyref.h core/payload/payloadvalue.h \
+  core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h core/keyvalue/keyvalue.h \
+  tools/stringstools.h core/payload/payloadiface.h \
+  core/payload/fieldsset.h core/payload/payloadfieldvalue.h \
+  vendor/gason/gason.h tools/logger.h
+.build/core/query/querywhere.o: core/query/querywhere.cc core/query/querywhere.h \
+  core/idset.h core/type_consts.h vendor/cpp-btree/btree_set.h \
+  vendor/cpp-btree/btree.h vendor/cpp-btree/btree_container.h \
+  estl/h_vector.h core/keyvalue/keyvalue.h core/keyvalue/keyref.h \
+  core/payload/payloadvalue.h core/keyvalue/key_string.h \
+  estl/intrusive_ptr.h core/keyvalue/keyarray.h core/keyvalue/p_string.h \
+  tools/customhash.h tools/slice.h tools/varint.h tools/errors.h \
+  estl/tokenizer.h tools/logger.h
+.build/core/reindexer.o: core/reindexer.cc core/reindexer.h core/namespace.h \
+  core/index/index.h core/idset.h core/type_consts.h \
+  vendor/cpp-btree/btree_set.h vendor/cpp-btree/btree.h \
+  vendor/cpp-btree/btree_container.h estl/h_vector.h \
+  core/index/keyentry.h tools/errors.h core/keyvalue/keyvalue.h \
+  core/keyvalue/keyref.h core/payload/payloadvalue.h \
+  core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h core/payload/payloadiface.h \
+  core/payload/fieldsset.h core/payload/payloadfieldvalue.h \
+  core/payload/payloadfieldtype.h core/payload/payloadtype.h estl/cow.h \
+  estl/fast_hash_map.h vendor/hopscotch/hopscotch_map.h \
+  vendor/hopscotch/hopscotch_hash.h core/selectkeyresult.h \
+  core/comparator.h tools/stringstools.h core/ft/fulltextctx.h \
+  core/item.h core/cjson/tagsmatcher.h core/cjson/tagsmatcherimpl.h \
+  core/cjson/ctag.h core/cjson/tagspathcache.h tools/serializer.h \
+  vendor/gason/gason.h core/nsdescriber/nsdescriber.h core/query/query.h \
+  core/query/querywhere.h core/query/queryresults.h \
+  core/cjson/jsonencoder.h core/nsselecter/nsselecter.h \
+  core/aggregator.h core/nsselecter/selectiterator.h \
+  core/sqlfunc/sqlfunc.h estl/tokenizer.h estl/fast_hash_set.h \
+  vendor/hopscotch/hopscotch_set.h estl/shared_mutex.h \
+  core/namespacedef.h core/query/querycache.h core/lrucache.h \
+  vendor/murmurhash/MurmurHash3.h tools/logger.h vendor/kx/kxsort.h \
+  tools/fsops.h
+.build/core/sqlfunc/sqlfunc.o: core/sqlfunc/sqlfunc.cc core/sqlfunc/sqlfunc.h \
+  estl/tokenizer.h tools/errors.h core/type_consts.h tools/logger.h
+.build/tools/customhash.o: tools/customhash.cc tools/customhash.h
+.build/tools/customlocal.o: tools/customlocal.cc tools/customlocal.h
+.build/tools/errors.o: tools/errors.cc tools/errors.h core/type_consts.h
+.build/tools/fsops.o: tools/fsops.cc tools/fsops.h
+.build/tools/json2kv.o: tools/json2kv.cc tools/json2kv.h core/keyvalue/keyvalue.h \
+  core/keyvalue/keyref.h core/payload/payloadvalue.h core/type_consts.h \
+  estl/h_vector.h core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h tools/errors.h vendor/gason/gason.h
+.build/tools/logger.o: tools/logger.cc tools/logger.h
+.build/tools/serializer.o: tools/serializer.cc tools/serializer.h \
+  core/keyvalue/keyref.h core/payload/payloadvalue.h core/type_consts.h \
+  estl/h_vector.h core/keyvalue/key_string.h estl/intrusive_ptr.h \
+  core/keyvalue/keyarray.h core/keyvalue/p_string.h tools/customhash.h \
+  tools/slice.h tools/varint.h tools/errors.h core/keyvalue/keyvalue.h \
+  vendor/itoa/itoa.h
+.build/tools/stringstools.o: tools/stringstools.cc vendor/convertutf/convertutf.h \
+  tools/customlocal.h tools/stringstools.h core/type_consts.h \
+  tools/slice.h
+.build/tools/timetools.o: tools/timetools.cc tools/timetools.h tools/errors.h \
+  core/type_consts.h tools/stringstools.h tools/slice.h
+.build/vendor/gason/gason.o: vendor/gason/gason.cc vendor/gason/gason.h
+itoa.o: vendor/itoa/itoa.cc
+.build/vendor/murmurhash/MurmurHash3.o: vendor/murmurhash/MurmurHash3.cc \
+  vendor/murmurhash/MurmurHash3.h
+.build/estl/tokenizer.o: estl/tokenizer.cc estl/tokenizer.h
+.build/debug/allocdebug.o: debug/allocdebug.cc core/type_consts.h tools/logger.h
+allocdebug_fake.o: debug/allocdebug_fake.cc
+backtrace.o: debug/backtrace.cc

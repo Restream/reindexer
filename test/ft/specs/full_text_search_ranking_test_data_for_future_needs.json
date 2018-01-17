@@ -1,0 +1,680 @@
+[
+  {
+    "test_case_description": "For English language, for single relevant word in a sentence should prefer items matching exactly with single word from query",
+    "all_documents": [
+      "Legally Speaking assists businesses to overcome law-related challenges in a cost-effective and astute manner while achieving commercial goals.",
+      "Twenty-six states and the District of Columbia currently have laws that make marijuana legal in some form.",
+      "In law, one can become illegal entity if ...",
+      "In law, a legal entity is an entity that is capable of bearing rights"
+    ],
+    "expected_documents_order": [
+      "Twenty-six states and the District of Columbia currently have laws that make marijuana legal in some form.",
+      "In law, a legal entity is an entity that is capable of bearing rights",
+      "Legally Speaking assists businesses to overcome law-related challenges in a cost-effective and astute manner while achieving commercial goals.",
+      "In law, one can become illegal entity if ..."
+    ],
+    "any_order_classes": [
+      [
+        "Legally Speaking assists businesses to overcome law-related challenges in a cost-effective and astute manner while achieving commercial goals.",
+        "In law, one can become illegal entity if ..."
+      ],
+      [
+        "Twenty-six states and the District of Columbia currently have laws that make marijuana legal in some form.",
+        "In law, a legal entity is an entity that is capable of bearing rights"
+      ]
+    ],
+    "queries": [
+      "*legal*"
+    ]
+  },
+  {
+    "test_case_description": "For English language, for single relevant word in a sentence should prefer shortest items matching with misspelled word from query",
+    "all_documents": [
+      "Legally Speaking assists businesses to overcome law-related challenges in a cost-effective and astute manner while achieving commercial goals.",
+      "Twenty-six states and the District of Columbia currently have laws that make marijuana legal in some form.",
+      "In law, one can become illegal entity if ...",
+      "In law, a legal entity is an entity that is capable of bearing rights"
+    ],
+    "expected_documents_order": [
+      "Twenty-six states and the District of Columbia currently have laws that make marijuana legal in some form.",
+      "In law, a legal entity is an entity that is capable of bearing rights",
+      "Legally Speaking assists businesses to overcome law-related challenges in a cost-effective and astute manner while achieving commercial goals.",
+      "In law, one can become illegal entity if ..."
+    ],
+    "any_order_classes": [
+      [
+        "Legally Speaking assists businesses to overcome law-related challenges in a cost-effective and astute manner while achieving commercial goals.",
+        "In law, one can become illegal entity if ..."
+      ],
+      [
+        "Twenty-six states and the District of Columbia currently have laws that make marijuana legal in some form.",
+        "In law, a legal entity is an entity that is capable of bearing rights"
+      ]
+    ],
+    "queries": [
+      "*ligal*~"
+    ]
+  },
+  {
+    "test_case_description": "For English language, for single relevant word in a sentence should prefer shortest items matching with incomplete word from query",
+    "all_documents": [
+      "Legally Speaking assists businesses to overcome law-related challenges in a cost-effective and astute manner while achieving commercial goals.",
+      "Twenty-six states and the District of Columbia currently have laws that make marijuana legal in some form.",
+      "In law, one can become illegal entity if ...",
+      "In law, a legal entity is an entity that is capable of bearing rights"
+    ],
+    "expected_documents_order": [
+      "Twenty-six states and the District of Columbia currently have laws that make marijuana legal in some form.",
+      "In law, a legal entity is an entity that is capable of bearing rights",
+      "Legally Speaking assists businesses to overcome law-related challenges in a cost-effective and astute manner while achieving commercial goals.",
+      "In law, one can become illegal entity if ..."
+    ],
+    "any_order_classes": [
+      [
+        "Legally Speaking assists businesses to overcome law-related challenges in a cost-effective and astute manner while achieving commercial goals.",
+        "In law, one can become illegal entity if ..."
+      ],
+      [
+        "Twenty-six states and the District of Columbia currently have laws that make marijuana legal in some form.",
+        "In law, a legal entity is an entity that is capable of bearing rights"
+      ]
+    ],
+    "queries": [
+      "*lega*"
+    ]
+  },
+  {
+    "test_case_description": "For English language, for single relevant phrase in a sentence should prefer items matching exactly with single phrase from query",
+    "all_documents": [
+      "ado repeating one more time!",
+      "ado repeat one more time!",
+      "Please, do repeating one more time!",
+      "Please, do repeat one more time!"
+    ],
+    "expected_documents_order": [
+      "Please, do repeat one more time!",
+      "ado repeat one more time!",
+      "Please, do repeating one more time!",
+      "ado repeating one more time!"
+    ],
+    "any_order_classes": [
+      [
+        "ado repeat one more time!",
+        "Please, do repeating one more time!"
+      ]
+    ],
+    "queries": [
+      "*do +repeat*"
+    ]
+  },
+  {
+    "test_case_description": "For English language, for single relevant phrase in a sentence should prefer shortest items matching with misspelled phrase from query",
+    "all_documents": [
+      "ado repeating one more time!",
+      "ado repeat one more time!",
+      "Please, do repeating one more time!",
+      "Please, do repeat one more time!"
+    ],
+    "expected_documents_order": [
+      "Please, do repeat one more time!",
+      "ado repeat one more time!",
+      "Please, do repeating one more time!",
+      "ado repeating one more time!"
+    ],
+    "any_order_classes": [
+      [
+        "ado repeat one more time!",
+        "Please, do repeating one more time!"
+      ]
+    ],
+    "queries": [
+      "*da~ +ripeat*~"
+    ]
+  },
+  {
+    "test_case_description": "For English language, for single relevant phrase in a sentence should prefer shortest items matching with incomplete phrase from query",
+    "all_documents": [
+      "ado repeating one more time!",
+      "ado repeat one more time!",
+      "Please, do repeating one more time!",
+      "Please, do repeat one more time!"
+    ],
+    "expected_documents_order": [
+      "Please, do repeat one more time!",
+      "ado repeat one more time!",
+      "Please, do repeating one more time!",
+      "ado repeating one more time!"
+    ],
+    "any_order_classes": [
+      [
+        "ado repeat one more time!",
+        "Please, do repeating one more time!"
+      ]
+    ],
+    "queries": [
+      "*do +repeat*"
+    ]
+  },
+  {
+    "test_case_description": "For English language, for multiple relevant words in a sentence should prefer items matching exactly with single word from query",
+    "all_documents": [
+      "We were going really, really fast!",
+      "This looks almost nonreal. Really.",
+      "This looks almost unreal. Really.",
+      "Did he really have a strange dream last night.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "Make it real! Make it real! Make it real!"
+    ],
+    "expected_documents_order": [
+      "Make it real! Make it real! Make it real!",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "We were going really, really fast!",
+      "This looks almost unreal. Really.",
+      "This looks almost nonreal. Really.",
+      "Did he really have a strange dream last night."
+    ],
+    "any_order_classes": [
+      [
+        "We were going really, really fast!",
+        "This looks almost nonreal. Really.",
+        "This looks almost unreal. Really."
+      ]
+    ],
+    "queries": [
+      "*real*"
+    ]
+  },
+  {
+    "test_case_description": "For English language, for multiple relevant words in a sentence should prefer shortest items matching with misspelled word from query",
+    "all_documents": [
+      "We were going really, really fast!",
+      "This looks almost nonreal. Really.",
+      "This looks almost unreal. Really.",
+      "Did he really have a strange dream last night.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "Make it real! Make it real! Make it real!"
+    ],
+    "expected_documents_order": [
+      "Make it real! Make it real! Make it real!",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "We were going really, really fast!",
+      "This looks almost unreal. Really.",
+      "This looks almost nonreal. Really.",
+      "Did he really have a strange dream last night."
+    ],
+    "any_order_classes": [
+      [
+        "We were going really, really fast!",
+        "This looks almost nonreal. Really.",
+        "This looks almost unreal. Really."
+      ]
+    ],
+    "queries": [
+      "*rial*~"
+    ]
+  },
+  {
+    "test_case_description": "For English language, for multiple relevant words in a sentence should prefer shortest items matching with incomplete word from query",
+    "all_documents": [
+      "We were going really, really fast!",
+      "This looks almost nonreal. Really.",
+      "This looks almost unreal. Really.",
+      "Did he really have a strange dream last night.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "Make it real! Make it real! Make it real!"
+    ],
+    "expected_documents_order": [
+      "Make it real! Make it real! Make it real!",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "We were going really, really fast!",
+      "This looks almost unreal. Really.",
+      "This looks almost nonreal. Really.",
+      "Did he really have a strange dream last night."
+    ],
+    "any_order_classes": [
+      [
+        "We were going really, really fast!",
+        "This looks almost nonreal. Really.",
+        "This looks almost unreal. Really."
+      ]
+    ],
+    "queries": [
+      "*eal*"
+    ]
+  },
+  {
+    "test_case_description": "For English language, for multiple relevant phrases in a sentence should prefer items matching exactly with single phrase from query",
+    "all_documents": [
+      "We were going 'phrase of interesting', 'phrase of interesting' fast!",
+      "This looks almost 'paraphrase of interesting'. 'phrase of interesting'.",
+      "This looks almost 'pphrase of interesting'. 'phrase of interesting'.",
+      "Did he 'phrase of interesting' have a strange dream last night.",
+      "It is 'phrase of interest' hard to come up with a good idea. Such is the 'phrase of interesting'.",
+      "I tried 'phrase of interest', 'phrase of interest' hard. It didn't work out for me, 'phrase of interesting'.",
+      "Make it 'phrase of interest'! Make it 'phrase of interest'! Make it 'phrase of interest'!"
+    ],
+    "expected_documents_order": [
+      "Make it 'phrase of interest'! Make it 'phrase of interest'! Make it 'phrase of interest'!",
+      "I tried 'phrase of interest', 'phrase of interest' hard. It didn't work out for me, 'phrase of interesting'.",
+      "It is 'phrase of interest' hard to come up with a good idea. Such is the 'phrase of interesting'.",
+      "We were going 'phrase of interesting', 'phrase of interesting' fast!",
+      "This looks almost 'pphrase of interesting'. 'phrase of interesting'.",
+      "This looks almost 'paraphrase of interesting'. 'phrase of interesting'.",
+      "Did he 'phrase of interesting' have a strange dream last night."
+    ],
+    "any_order_classes": [
+      [
+        "We were going 'phrase of interesting', 'phrase of interesting' fast!",
+        "This looks almost 'pphrase of interesting'. 'phrase of interesting'."
+      ]
+    ],
+    "queries": [
+      "*phrase +of +interest*"
+    ]
+  },
+  {
+    "test_case_description": "For English language, for multiple relevant phrases in a sentence should prefer shortest items matching with misspelled phrase from query",
+    "all_documents": [
+      "We were going 'phrase of interesting', 'phrase of interesting' fast!",
+      "This looks almost 'paraphrase of interesting'. 'phrase of interesting'.",
+      "This looks almost 'pphrase of interesting'. 'phrase of interesting'.",
+      "Did he 'phrase of interesting' have a strange dream last night.",
+      "It is 'phrase of interest' hard to come up with a good idea. Such is the 'phrase of interesting'.",
+      "I tried 'phrase of interest', 'phrase of interest' hard. It didn't work out for me, 'phrase of interesting'.",
+      "Make it 'phrase of interest'! Make it 'phrase of interest'! Make it 'phrase of interest'!"
+    ],
+    "expected_documents_order": [
+      "Make it 'phrase of interest'! Make it 'phrase of interest'! Make it 'phrase of interest'!",
+      "I tried 'phrase of interest', 'phrase of interest' hard. It didn't work out for me, 'phrase of interesting'.",
+      "It is 'phrase of interest' hard to come up with a good idea. Such is the 'phrase of interesting'.",
+      "We were going 'phrase of interesting', 'phrase of interesting' fast!",
+      "This looks almost 'pphrase of interesting'. 'phrase of interesting'.",
+      "This looks almost 'paraphrase of interesting'. 'phrase of interesting'.",
+      "Did he 'phrase of interesting' have a strange dream last night."
+    ],
+    "any_order_classes": [
+      [
+        "We were going 'phrase of interesting', 'phrase of interesting' fast!",
+        "This looks almost 'pphrase of interesting'. 'phrase of interesting'."
+      ]
+    ],
+    "queries": [
+      "*pfrase~ +o* +interest*"
+    ]
+  },
+  {
+    "test_case_description": "For English language, for multiple relevant phrases in a sentence should prefer shortest items matching with incomplete phrase from query",
+    "all_documents": [
+      "We were going 'phrase of interesting', 'phrase of interesting' fast!",
+      "This looks almost 'paraphrase of interesting'. 'phrase of interesting'.",
+      "This looks almost 'pphrase of interesting'. 'phrase of interesting'.",
+      "Did he 'phrase of interesting' have a strange dream last night.",
+      "It is 'phrase of interest' hard to come up with a good idea. Such is the 'phrase of interesting'.",
+      "I tried 'phrase of interest', 'phrase of interest' hard. It didn't work out for me, 'phrase of interesting'.",
+      "Make it 'phrase of interest'! Make it 'phrase of interest'! Make it 'phrase of interest'!"
+    ],
+    "expected_documents_order": [
+      "Make it 'phrase of interest'! Make it 'phrase of interest'! Make it 'phrase of interest'!",
+      "I tried 'phrase of interest', 'phrase of interest' hard. It didn't work out for me, 'phrase of interesting'.",
+      "It is 'phrase of interest' hard to come up with a good idea. Such is the 'phrase of interesting'.",
+      "We were going 'phrase of interesting', 'phrase of interesting' fast!",
+      "This looks almost 'pphrase of interesting'. 'phrase of interesting'.",
+      "This looks almost 'paraphrase of interesting'. 'phrase of interesting'.",
+      "Did he 'phrase of interesting' have a strange dream last night."
+    ],
+    "any_order_classes": [
+      [
+        "We were going 'phrase of interesting', 'phrase of interesting' fast!",
+        "This looks almost 'pphrase of interesting'. 'phrase of interesting'."
+      ]
+    ],
+    "queries": [
+      "*rase +of +inter*"
+    ]
+  },
+  {
+    "test_case_description": "For Russian language, for single relevant word in a sentence should prefer items matching exactly with single word from query",
+    "all_documents": [
+      "Это законно.",
+      "Законодательство Российской Федерации говорит, что ...",
+      "Телепередача 'Человек и закон' начинается в 19:00 по Московскому времени.",
+      "Планируется ввести закон о запрете некоторых интернет-ресурсов на территории РФ."
+    ],
+    "expected_documents_order": [
+      "Телепередача 'Человек и закон' начинается в 19:00 по Московскому времени.",
+      "Планируется ввести закон о запрете некоторых интернет-ресурсов на территории РФ.",
+      "Это законно.",
+      "Законодательство Российской Федерации говорит, что ..."
+    ],
+    "any_order_classes": [
+      [
+        "Это законно.",
+        "Законодательство Российской Федерации говорит, что ..."
+      ],
+      [
+        "Телепередача 'Человек и закон' начинается в 19:00 по Московскому времени.",
+        "Планируется ввести закон о запрете некоторых интернет-ресурсов на территории РФ."
+      ]
+    ],
+    "queries": [
+      "закон*"
+    ]
+  },
+  {
+    "test_case_description": "For Russian language, for single relevant word in a sentence should prefer shortest items matching with misspelled word from query",
+    "all_documents": [
+      "Это законно.",
+      "Законодательство Российской Федерации говорит, что ...",
+      "Телепередача 'Человек и закон' начинается в 19:00 по Московскому времени.",
+      "Планируется ввести закон о запрете некоторых интернет-ресурсов на территории РФ."
+    ],
+    "expected_documents_order": [
+      "Телепередача 'Человек и закон' начинается в 19:00 по Московскому времени.",
+      "Планируется ввести закон о запрете некоторых интернет-ресурсов на территории РФ.",
+      "Это законно.",
+      "Законодательство Российской Федерации говорит, что ..."
+    ],
+    "any_order_classes": [
+      [
+        "Это законно.",
+        "Законодательство Российской Федерации говорит, что ..."
+      ],
+      [
+        "Телепередача 'Человек и закон' начинается в 19:00 по Московскому времени.",
+        "Планируется ввести закон о запрете некоторых интернет-ресурсов на территории РФ."
+      ]
+    ],
+    "queries": [
+      "зoкон*~"
+    ]
+  },
+  {
+    "test_case_description": "For Russian language, for single relevant word in a sentence should prefer shortest items matching with incomplete word from query",
+    "all_documents": [
+      "Это законно.",
+      "Законодательство Российской Федерации говорит, что ...",
+      "Телепередача 'Человек и закон' начинается в 19:00 по Московскому времени.",
+      "Планируется ввести закон о запрете некоторых интернет-ресурсов на территории РФ."
+    ],
+    "expected_documents_order": [
+      "Телепередача 'Человек и закон' начинается в 19:00 по Московскому времени.",
+      "Планируется ввести закон о запрете некоторых интернет-ресурсов на территории РФ.",
+      "Это законно.",
+      "Законодательство Российской Федерации говорит, что ..."
+    ],
+    "any_order_classes": [
+      [
+        "Это законно.",
+        "Законодательство Российской Федерации говорит, что ..."
+      ],
+      [
+        "Телепередача 'Человек и закон' начинается в 19:00 по Московскому времени.",
+        "Планируется ввести закон о запрете некоторых интернет-ресурсов на территории РФ."
+      ]
+    ],
+    "queries": [
+      "*акон*"
+    ]
+  },
+  {
+    "test_case_description": "For Russian language, for single relevant phrase in a sentence should prefer items matching exactly with single phrase from query",
+    "all_documents": [
+      "Требуется переделать повторяющуюся фразу.",
+      "Попросили сделать повтор.",
+      "Делать повторение упраженения необходимо для его закрепления.",
+      "Делать повтор - это обязанность оператора."
+    ],
+    "expected_documents_order": [
+      "Делать повтор - это обязанность оператора.",
+      "Попросили сделать повтор.",
+      "Делать повторение упраженения необходимо для его закрепления.",
+      "Требуется переделать повторяющуюся фразу."
+    ],
+    "any_order_classes": [
+      [
+        "Попросили сделать повтор.",
+        "Делать повторение упраженения необходимо для его закрепления."
+      ]
+    ],
+    "queries": [
+      "*делать +повтор*"
+    ]
+  },
+  {
+    "test_case_description": "For Russian language, for single relevant phrase in a sentence should prefer shortest items matching with misspelled phrase from query",
+    "all_documents": [
+      "Требуется переделать повторяющуюся фразу.",
+      "Попросили сделать повтор.",
+      "Делать повторение упраженения необходимо для его закрепления.",
+      "Делать повтор - это обязанность оператора."
+    ],
+    "expected_documents_order": [
+      "Делать повтор - это обязанность оператора.",
+      "Попросили сделать повтор.",
+      "Делать повторение упраженения необходимо для его закрепления.",
+      "Требуется переделать повторяющуюся фразу."
+    ],
+    "any_order_classes": [
+      [
+        "Попросили сделать повтор.",
+        "Делать повторение упраженения необходимо для его закрепления."
+      ]
+    ],
+    "queries": [
+      "*лелать~ +павтор*~"
+    ]
+  },
+  {
+    "test_case_description": "For Russian language, for single relevant phrase in a sentence should prefer shortest items matching with incomplete phrase from query",
+    "all_documents": [
+      "Требуется переделать повторяющуюся фразу.",
+      "Попросили сделать повтор.",
+      "Делать повторение упраженения необходимо для его закрепления.",
+      "Делать повтор - это обязанность оператора."
+    ],
+    "expected_documents_order": [
+      "Делать повтор - это обязанность оператора.",
+      "Попросили сделать повтор.",
+      "Делать повторение упраженения необходимо для его закрепления.",
+      "Требуется переделать повторяющуюся фразу."
+    ],
+    "any_order_classes": [
+      [
+        "Попросили сделать повтор.",
+        "Делать повторение упраженения необходимо для его закрепления."
+      ]
+    ],
+    "queries": [
+      "*лать +повто*"
+    ]
+  },
+  {
+    "test_case_description": "For Russian language, for multiple relevant words in a sentence should prefer items matching exactly with single word from query",
+    "all_documents": [
+      "Мы ехали суперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Сделаем супер! Сделаем супер! Сделаем супер!"
+    ],
+    "expected_documents_order": [
+      "Сделаем супер! Сделаем супер! Сделаем супер!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Мы ехали суперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?"
+    ],
+    "any_order_classes": [
+      [
+        "Мы ехали суперски, суперски быстро!",
+        "Это выглядит суперски. Ну прямо суперски нереальным.",
+        "Это выглядит суперски. Суперски!"
+      ]
+    ],
+    "queries": [
+      "супер*"
+    ]
+  },
+  {
+    "test_case_description": "For Russian language, for multiple relevant words in a sentence should prefer shortest items matching with misspelled word from query",
+    "all_documents": [
+      "Мы ехали суперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Сделаем супер! Сделаем супер! Сделаем супер!"
+    ],
+    "expected_documents_order": [
+      "Сделаем супер! Сделаем супер! Сделаем супер!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Мы ехали суперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?"
+    ],
+    "any_order_classes": [
+      [
+        "Мы ехали суперски, суперски быстро!",
+        "Это выглядит суперски. Ну прямо суперски нереальным.",
+        "Это выглядит суперски. Суперски!"
+      ]
+    ],
+    "queries": [
+      "пупер*~"
+    ]
+  },
+  {
+    "test_case_description": "For Russian language, for multiple relevant words in a sentence should prefer shortest items matching with incomplete word from query",
+    "all_documents": [
+      "Мы ехали суперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Сделаем супер! Сделаем супер! Сделаем супер!"
+    ],
+    "expected_documents_order": [
+      "Сделаем супер! Сделаем супер! Сделаем супер!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Мы ехали суперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?"
+    ],
+    "any_order_classes": [
+      [
+        "Мы ехали суперски, суперски быстро!",
+        "Это выглядит суперски. Ну прямо суперски нереальным.",
+        "Это выглядит суперски. Суперски!"
+      ]
+    ],
+    "queries": [
+      "супе*"
+    ]
+  },
+  {
+    "test_case_description": "For Russian language, for multiple relevant phrases in a sentence should prefer items matching exactly with single phrase from query",
+    "all_documents": [
+      "Мы ехали 'изменяемое словосочетание', 'изменяемое словосочетание' быстро!",
+      "Это выглядит 'неизменяемое слово'. Ну прямо 'неизменяемое слово' нереальным.",
+      "Это выглядит 'неизменяемое словосочетание'. 'изменяемое словосочетание'!",
+      "У него действительно был 'изменяемое словосочетание' странный сон вчера ?",
+      "Это 'изменяемое слово' тяжело - придумать хорошую идею. 'изменяемое словосочетание' тяжело!",
+      "Я пытался 'изменяемое слово' 'изменяемое слово' сильно. Но мне 'изменяемое словосочетание' не повезло ...",
+      "Сделаем 'изменяемое слово'! Сделаем 'изменяемое слово'! Сделаем 'изменяемое слово'!"
+    ],
+    "expected_documents_order": [
+      "Мы ехали 'изменяемое словосочетание', 'изменяемое словосочетание' быстро!",
+      "Это выглядит 'неизменяемое слово'. Ну прямо 'неизменяемое слово' нереальным.",
+      "Это выглядит 'неизменяемое словосочетание'. 'изменяемое словосочетание'!",
+      "У него действительно был 'изменяемое словосочетание' странный сон вчера ?",
+      "Это 'изменяемое слово' тяжело - придумать хорошую идею. 'изменяемое словосочетание' тяжело!",
+      "Я пытался 'изменяемое слово' 'изменяемое слово' сильно. Но мне 'изменяемое словосочетание' не повезло ...",
+      "Сделаем 'изменяемое слово'! Сделаем 'изменяемое слово'! Сделаем 'изменяемое слово'!"
+    ],
+    "any_order_classes": [
+      [
+        "Мы ехали 'изменяемое словосочетание', 'изменяемое словосочетание' быстро!",
+        "Это выглядит 'неизменяемое слово'. Ну прямо 'неизменяемое слово' нереальным."
+      ]
+    ],
+    "queries": [
+      "*изменяемое +слово*"
+    ]
+  },
+  {
+    "test_case_description": "For Russian language, for multiple relevant phrases in a sentence should prefer shortest items matching with misspelled phrase from query",
+    "all_documents": [
+      "Мы ехали 'изменяемое словосочетание', 'изменяемое словосочетание' быстро!",
+      "Это выглядит 'неизменяемое слово'. Ну прямо 'неизменяемое слово' нереальным.",
+      "Это выглядит 'неизменяемое словосочетание'. 'изменяемое словосочетание'!",
+      "У него действительно был 'изменяемое словосочетание' странный сон вчера ?",
+      "Это 'изменяемое слово' тяжело - придумать хорошую идею. 'изменяемое словосочетание' тяжело!",
+      "Я пытался 'изменяемое слово' 'изменяемое слово' сильно. Но мне 'изменяемое словосочетание' не повезло ...",
+      "Сделаем 'изменяемое слово'! Сделаем 'изменяемое слово'! Сделаем 'изменяемое слово'!"
+    ],
+    "expected_documents_order": [
+      "Мы ехали 'изменяемое словосочетание', 'изменяемое словосочетание' быстро!",
+      "Это выглядит 'неизменяемое слово'. Ну прямо 'неизменяемое слово' нереальным.",
+      "Это выглядит 'неизменяемое словосочетание'. 'изменяемое словосочетание'!",
+      "У него действительно был 'изменяемое словосочетание' странный сон вчера ?",
+      "Это 'изменяемое слово' тяжело - придумать хорошую идею. 'изменяемое словосочетание' тяжело!",
+      "Я пытался 'изменяемое слово' 'изменяемое слово' сильно. Но мне 'изменяемое словосочетание' не повезло ...",
+      "Сделаем 'изменяемое слово'! Сделаем 'изменяемое слово'! Сделаем 'изменяемое слово'!"
+    ],
+    "any_order_classes": [
+      [
+        "Мы ехали 'изменяемое словосочетание', 'изменяемое словосочетание' быстро!",
+        "Это выглядит 'неизменяемое слово'. Ну прямо 'неизменяемое слово' нереальным."
+      ]
+    ],
+    "queries": [
+      "*изминяемое~ +злово*~"
+    ]
+  },
+  {
+    "test_case_description": "For Russian language, for multiple relevant phrases in a sentence should prefer shortest items matching with incomplete phrase from query",
+    "all_documents": [
+      "Мы ехали 'изменяемое словосочетание', 'изменяемое словосочетание' быстро!",
+      "Это выглядит 'неизменяемое слово'. Ну прямо 'неизменяемое слово' нереальным.",
+      "Это выглядит 'неизменяемое словосочетание'. 'изменяемое словосочетание'!",
+      "У него действительно был 'изменяемое словосочетание' странный сон вчера ?",
+      "Это 'изменяемое слово' тяжело - придумать хорошую идею. 'изменяемое словосочетание' тяжело!",
+      "Я пытался 'изменяемое слово' 'изменяемое слово' сильно. Но мне 'изменяемое словосочетание' не повезло ...",
+      "Сделаем 'изменяемое слово'! Сделаем 'изменяемое слово'! Сделаем 'изменяемое слово'!"
+    ],
+    "expected_documents_order": [
+      "Мы ехали 'изменяемое словосочетание', 'изменяемое словосочетание' быстро!",
+      "Это выглядит 'неизменяемое слово'. Ну прямо 'неизменяемое слово' нереальным.",
+      "Это выглядит 'неизменяемое словосочетание'. 'изменяемое словосочетание'!",
+      "У него действительно был 'изменяемое словосочетание' странный сон вчера ?",
+      "Это 'изменяемое слово' тяжело - придумать хорошую идею. 'изменяемое словосочетание' тяжело!",
+      "Я пытался 'изменяемое слово' 'изменяемое слово' сильно. Но мне 'изменяемое словосочетание' не повезло ...",
+      "Сделаем 'изменяемое слово'! Сделаем 'изменяемое слово'! Сделаем 'изменяемое слово'!"
+    ],
+    "any_order_classes": [
+      [
+        "Мы ехали 'изменяемое словосочетание', 'изменяемое словосочетание' быстро!",
+        "Это выглядит 'неизменяемое слово'. Ну прямо 'неизменяемое слово' нереальным."
+      ]
+    ],
+    "queries": [
+      "*меняемое +слов*"
+    ]
+  }
+]

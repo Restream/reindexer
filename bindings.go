@@ -1,138 +1,136 @@
-//go:generate make -j4
+//go:generate make -j4 -C cpp_src
 package reindexer
 
 import (
 	"fmt"
 	"reflect"
+	"strconv"
+	"unsafe"
+
 	"strings"
 
 	"github.com/restream/reindexer/bindings"
-)
-
-// IndexDescription types
-const (
-	// HashMap index. Fast. Unordered. Items can't be sorted by this index. Query range unavailble
-	IndexHash = bindings.IndexHash
-	// TreeMap string index. Bit slowly than HashMap index. Ordered. Items can be sorted by this index. Query range is possible
-	IndexTree = bindings.IndexTree
-	// TreeMap int index. Ordered, Items can be sorted by this index. Query range is possible
-	IndexInt = bindings.IndexInt
-	// HashMap int index. Unordered. Items can't be sorted by this index. Query range unavailble
-	IndexIntHash = bindings.IndexIntHash
-	// TreeMap int64 index. Ordered, Items can be sorted by this index. Query range is possible
-	IndexInt64 = bindings.IndexInt64
-	// HashMap int64 index. Unordered. Items can't be sorted by this index. Query range unavailble
-	IndexInt64Hash = bindings.IndexInt64Hash
-	// TreeMap double index. Ordered, Items can be sorted by this index. Query range is possible
-	IndexDouble = bindings.IndexDouble
-	// FullText
-	IndexFullText = bindings.IndexFullText
-	// NewFullText
-	IndexNewFullText = bindings.IndexNewFullText
-	// Composite, tree
-	IndexComposite = bindings.IndexComposite
-	// Composite, unordered
-	IndexCompositeHash = bindings.IndexCompositeHash
-	// Bool, store
-	IndexBool = bindings.IndexBool
-	// Int store
-	IndexIntStore = bindings.IndexIntStore
-	// Int64 store
-	IndexInt64Store = bindings.IndexInt64Store
-	// Int64 store
-	IndexStrStore = bindings.IndexStrStore
-	// Double store
-	IndexDoubleStore = bindings.IndexDoubleStore
-)
-
-// Condition types
-const (
-	// Equal '='
-	EQ = bindings.EQ
-	// Greater '>'
-	GT = bindings.GT
-	// Lower '<'
-	LT = bindings.LT
-	// Greater or equal '>=' (GT|EQ)
-	GE = bindings.GE
-	// Lower or equal '<'
-	LE = bindings.LE
-	// One of set 'IN []'
-	SET = bindings.SET
-	// All of set
-	ALLSET = bindings.ALLSET
-	// In range
-	RANGE = bindings.RANGE
-	// Any value
-	ANY = bindings.ANY
-	// Empty value (usualy zero len array)
-	EMPTY = bindings.EMPTY
-)
-
-const (
-	// ERROR Log level
-	ERROR = bindings.ERROR
-	// WARNING Log level
-	WARNING = bindings.WARNING
-	// INFO Log level
-	INFO = bindings.INFO
-	// TRACE Log level
-	TRACE = bindings.TRACE
+	"github.com/restream/reindexer/cjson"
 )
 
 type CInt bindings.CInt
 
-func (db *Reindexer) deleteItem(data []byte) (iddel int, version int, err error) {
+const (
+	modeInsert = bindings.ModeInsert
+	modeUpdate = bindings.ModeUpdate
+	modeUpsert = bindings.ModeUpsert
+	modeDelete = bindings.ModeDelete
+)
 
-	out, err := db.binding.DeleteItem(data)
+func (db *Reindexer) modifyItem(namespace string, ns *reindexerNamespace, item interface{}, json []byte, mode int, precepts ...string) (count int, err error) {
+
+	if ns == nil {
+		ns, err = db.getNS(namespace)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	ser := cjson.NewPoolSerializer()
+	defer ser.Close()
+
+	if err = packItem(ns, item, json, ser, precepts...); err != nil {
+		return
+	}
+
+	out, err := db.binding.ModifyItem(ser.Bytes(), mode)
+
 	defer out.Free()
 	if err != nil {
-		return 0, 0, err
+		return 0, err
 	}
 
 	rdSer := newSerializer(out.GetBuf())
+	rawQueryParams := rdSer.readRawQueryParams()
 
-	rdSer.readCInt()
-	rdSer.readCInt()
-	iddel = rdSer.readCInt()
-	version = rdSer.readCInt()
-	return iddel, version, err
+	if rawQueryParams.count == 0 {
+		return 0, err
+	}
+
+	resultp := rdSer.readRawtItemParams()
+
+	ns.cacheLock.Lock()
+	delete(ns.cacheItems, resultp.id)
+	ns.cacheLock.Unlock()
+
+	return rawQueryParams.count, err
 }
 
-func (db *Reindexer) upsertItem(data []byte) (id int, version int, err error) {
+func packItem(ns *reindexerNamespace, item interface{}, json []byte, ser *cjson.Serializer, precepts ...string) error {
 
-	out, err := db.binding.UpsertItem(data)
-	defer out.Free()
-	if err != nil {
-		return 0, 0, err
+	ser.PutString(ns.name)
+
+	if item != nil {
+		json, _ = item.([]byte)
 	}
 
-	rdSer := newSerializer(out.GetBuf())
+	if json == nil {
+		t := reflect.TypeOf(item)
+		if t.Kind() == reflect.Ptr {
+			t = t.Elem()
+		}
+		if ns.rtype.Name() != t.Name() {
+			panic(ErrWrongType)
+		}
 
-	rdSer.readCInt()
-	rdSer.readCInt()
-	id = rdSer.readCInt()
-	version = rdSer.readCInt()
-	return id, version, err
+		ser.PutCInt(bindings.FormatCJson)
+
+		// reserve int for save len
+		pos := len(ser.Bytes())
+		ser.PutCInt(0)
+		pos1 := len(ser.Bytes())
+
+		enc := ns.cjsonState.NewEncoder()
+		if err := enc.Encode(item, ser); err != nil {
+			return err
+		}
+
+		*(*CInt)(unsafe.Pointer(&ser.Bytes()[pos])) = CInt(len(ser.Bytes()) - pos1)
+	} else {
+		ser.PutCInt(bindings.FormatJson)
+		ser.PutBytes(json)
+	}
+
+	ser.PutCInt(len(precepts))
+	for _, precept := range precepts {
+		ser.PutString(precept)
+	}
+
+	return nil
+}
+
+func (db *Reindexer) getNS(namespace string) (*reindexerNamespace, error) {
+	db.lock.RLock()
+	defer db.lock.RUnlock()
+	ns, ok := db.ns[namespace]
+	if !ok {
+		return nil, errNsNotFound
+	}
+	return ns, nil
 }
 
 func (db *Reindexer) putMeta(namespace, key string, data []byte) error {
 
-	var ser serializer
-	ser.writeString(namespace)
-	ser.writeString(key)
-	ser.writeBytes(data)
+	var ser cjson.Serializer
+	ser.PutString(namespace)
+	ser.PutString(key)
+	ser.PutBytes(data)
 
-	return db.binding.PutMeta(ser.buf)
+	return db.binding.PutMeta(ser.Bytes())
 }
 
 func (db *Reindexer) getMeta(namespace, key string) ([]byte, error) {
 
-	var ser serializer
-	ser.writeString(namespace)
-	ser.writeString(key)
+	var ser cjson.Serializer
+	ser.PutString(namespace)
+	ser.PutString(key)
 
-	out, err := db.binding.GetMeta(ser.GetBuf())
+	out, err := db.binding.GetMeta(ser.Bytes())
 	defer out.Free()
 
 	if err != nil {
@@ -140,382 +138,238 @@ func (db *Reindexer) getMeta(namespace, key string) ([]byte, error) {
 	}
 
 	rdSer := newSerializer(out.GetBuf())
-	b := rdSer.readBytes()
+	b := rdSer.GetBytes()
 	bb := make([]byte, len(b), cap(b))
 	copy(bb, b)
 	return bb, nil
 }
 
-func getJoinedField(val reflect.Value, fields []reindexerField, name string) (ret reflect.Value) {
-
-	for _, f := range fields {
-		v := reflect.Indirect(reflect.Indirect(val).Field(f.fieldIdx))
-		if !v.IsValid() {
-			continue
-		}
-		if f.fieldType == reflect.Struct {
-			if r := getJoinedField(v, f.subField, name); r.IsValid() {
-				return r
-			}
-		}
-		if f.isJoined && name == f.idxName {
-			return v
-		}
-	}
-	return ret
-}
-
-func getFromCache(ns *reindexerNamespace, id int) interface{} {
-	if item, ok := ns.cacheItems[id]; ok {
-		return item.item
-	}
-	panic(fmt.Errorf("Internal error - not found item id='%d' on namespace '%s'", id, ns.name))
-}
-
-func (db *Reindexer) loadToCache(ns []*reindexerNamespace, rawResult []byte) /*[]map[int]cacheItem,*/ error {
-
-	ser := newSerializer(rawResult)
-
-	// skip total count
-	_ = ser.readCInt()
-
-	count := ser.readCInt()
-	var res [][]int
-
-	walkUniqNamespaces(ns, func(ns *reindexerNamespace) { ns.cacheLock.RLock() })
-	for i := 0; i < count; i++ {
-		id := ser.readCInt()
-		version := ser.readCInt()
-		if it, ok := ns[0].cacheItems[id]; !ok || version > it.version {
-			_ = version
-			if res == nil {
-				res = make([][]int, len(ns))
-			}
-			res[0] = append(res[0], id)
-		}
-		jres := ser.readCInt()
-		for j := 0; j < jres; j++ {
-			jires := ser.readCInt()
-
-			for ji := 0; ji < jires; ji++ {
-				id = ser.readCInt()
-				version = ser.readCInt()
-				if it, ok := ns[j+1].cacheItems[id]; !ok || version > it.version {
-					if res == nil {
-						res = make([][]int, len(ns))
-					}
-					res[j+1] = append(res[j+1], id)
-				}
-			}
-		}
-	}
-	walkUniqNamespaces(ns, func(ns *reindexerNamespace) { ns.cacheLock.RUnlock() })
-
-	for n, ids := range res {
-		items, err := db.getItems(ns[n], ids)
-
-		if err != nil {
-			return err
-		}
-		ns[n].cacheLock.Lock()
-		for i, id := range ids {
-			ns[n].cacheItems[id] = items[i]
-		}
-		ns[n].cacheLock.Unlock()
-	}
-	return nil
-}
-
-func (db *Reindexer) rawResultToPtrSlice(
-	ns []*reindexerNamespace,
-	rawResult []byte,
-	initItems []interface{},
-	initSubitems []interface{},
-	copy bool,
-	useCache bool,
-) (
-	items []interface{},
-	subitems []interface{},
-	totalCount int,
-	err error,
-) {
+func unpackItem(ns *reindexerNamespace, params rawResultItemParams, allowUnsafe bool) (item interface{}, err error) {
+	useCache := ns.deepCopyIface || allowUnsafe
+	needCopy := ns.deepCopyIface && !allowUnsafe
 
 	if useCache {
-		if err := db.loadToCache(ns, rawResult); err != nil {
-			return nil, nil, 0, err
+		ns.cacheLock.RLock()
+		if citem, ok := ns.cacheItems[params.id]; ok && citem.version == params.version {
+			item = citem.item
 		}
-	}
-	ser := newSerializer(rawResult)
-	totalCount = ser.readCInt()
-	count := ser.readCInt()
-
-	if initSubitems == nil && len(ns) > 1 {
-		// if we have >1 namespaces, then reserve approx count of subitems.
-		subitems = make([]interface{}, 0, (len(rawResult)/8)-count)
-	} else {
-		subitems = initSubitems[:0]
-	}
-	if initItems == nil {
-		items = make([]interface{}, 0, count)
-	} else {
-		items = initItems[:0]
+		ns.cacheLock.RUnlock()
 	}
 
-	var cloner Clonable
-
-	walkUniqNamespaces(ns, func(ns *reindexerNamespace) { ns.cacheLock.RLock() })
-	for i := 0; i < count; i++ {
-		id := ser.readCInt()
-		_ = ser.readCInt()
-		var item interface{}
+	if item == nil {
 		if useCache {
-			item = getFromCache(ns[0], id)
-		} else {
-			item, err = db.deserializeItem(&ser, ns[0])
-			if err != nil {
-				return nil, nil, 0, err
-			}
-		}
-		jres := ser.readCInt()
-		for j := 0; j < jres; j++ {
-			jires := ser.readCInt()
-			for ji := 0; ji < jires; ji++ {
-				iid := ser.readCInt()
-				_ = ser.readCInt()
-				if useCache {
-					subitems = append(subitems, getFromCache(ns[j+1], iid))
-				} else {
-					subitem, err := db.deserializeItem(&ser, ns[j+1])
-					if err != nil {
-						return nil, nil, 0, err
-					}
-					subitems = append(subitems, subitem)
-				}
-			}
-		}
-
-		if (jres != 0 || copy) && cloner == nil {
-			if c, ok := item.(Clonable); ok {
-				cloner = c
+			ns.cacheLock.Lock()
+			if citem, ok := ns.cacheItems[params.id]; ok && citem.version == params.version {
+				item = citem.item
 			} else {
-				jtype := reflect.TypeOf(item).Elem()
-				jitem := reflect.Indirect(reflect.New(jtype))
-				jitem.Set(reflect.ValueOf(item).Elem())
-				item = jitem.Addr().Interface()
+				item = reflect.New(ns.rtype).Interface()
+				dec := ns.cjsonState.NewDecoder()
+				if err = dec.Decode(params.cptr, item); err != nil {
+					ns.cacheLock.Unlock()
+					return
+				}
+				ns.cacheItems[params.id] = cacheItem{item: item, version: params.version}
 			}
+			ns.cacheLock.Unlock()
+		} else {
+			item = reflect.New(ns.rtype).Interface()
+			dec := ns.cjsonState.NewDecoder()
+			if err = dec.Decode(params.cptr, item); err != nil {
+				return
+			}
+			// Reset needCopy, because item already separate
+			needCopy = false
 		}
-		items = append(items, item)
-	}
-	walkUniqNamespaces(ns, func(ns *reindexerNamespace) { ns.cacheLock.RUnlock() })
-
-	if cloner != nil {
-		items = cloner.ClonePtrSlice(items)
 	}
 
-	return items, subitems, totalCount, err
+	if needCopy {
+		if deepCopy, ok := item.(DeepCopy); ok {
+			item = deepCopy.DeepCopy()
+		} else {
+			panic(fmt.Errorf("Internal error %s must implement DeepCopy interface", reflect.TypeOf(item).Name()))
+		}
+	}
+
+	return
 }
 
-func (db *Reindexer) joinResults(ns []*reindexerNamespace, rawResult []byte, jnames []string, items, subitems []interface{}, ctx interface{}, useCache bool) {
-
-	if len(ns) < 2 {
-		return
+func (db *Reindexer) updatePayloadTypes(ns []*reindexerNamespace, ser *resultSerializer, rawQueryParams rawResultQueryParams) {
+	if rawQueryParams.nsCount != len(ns) {
+		panic(fmt.Errorf("Internal error: wrong namespaces count. Expected %d, got %d", len(ns), rawQueryParams.nsCount))
 	}
+	for i := 0; i < rawQueryParams.nsCount; i++ {
+		if ns[i].cjsonState.PayloadTypeVersion() != rawQueryParams.nsVersions[i] {
+			b, err := db.binding.GetPayloadType(ser.Bytes(), i)
+			if err != nil {
+				panic(err)
+			}
+			ns[i].cjsonState.ReadPayloadType(b.GetBuf())
+			if ns[i].cjsonState.PayloadTypeVersion() != rawQueryParams.nsVersions[i] {
+				panic(fmt.Errorf(
+					"Internal error: wrong tagsMatcher version. Expected %d, got %d",
+					rawQueryParams.nsVersions[i],
+					ns[i].cjsonState.PayloadTypeVersion()),
+				)
+			}
+		}
+	}
+}
+
+func (db *Reindexer) rawResultToJson(rawResult []byte, jsonName string, totalName string, initJson []byte, initOffsets []int) (json []byte, offsets []int, err error) {
 
 	ser := newSerializer(rawResult)
-	_ = ser.readCInt()
-	count := ser.readCInt()
+	rawQueryParams := ser.readRawQueryParams()
 
-	scnt := 0
-	for i := 0; i < count; i++ {
-		ser.skipCInts(2)
-		if !useCache {
-			ser.readBytes()
-		}
-		item := items[i]
-		jres := ser.readCInt()
-		if jres != 0 {
-			if jjitem, ok := item.(Joinable); ok {
-				for j := 0; j < jres; j++ {
-					jires := ser.readCInt()
-					if jires != 0 {
-						for ji := 0; ji < jires; ji++ {
-							ser.skipCInts(2)
-							if !useCache {
-								ser.readBytes()
-							}
-						}
-						jjitem.Join(jnames[j], subitems[scnt:scnt+jires], ctx)
-						scnt += jires
-					}
-				}
-			} else {
-				// No Joinable inteface, using reflect. slow
-				for j := 0; j < jres; j++ {
-					jires := ser.readCInt()
-					if jires != 0 {
-						v := getJoinedField(reflect.ValueOf(item), ns[0].fields, jnames[j])
-						if !v.IsValid() {
-							panic(fmt.Errorf("Can't find field with tag '%s' in struct '%s' for put join results from '%s'",
-								jnames[j],
-								ns[0].rtype,
-								ns[j+1].name))
-						}
-						v.Set(reflect.MakeSlice(reflect.SliceOf(reflect.PtrTo(ns[j+1].rtype)), jires, jires))
-						for ji := 0; ji < jires; ji++ {
-							ser.skipCInts(2)
-							if !useCache {
-								ser.readBytes()
-							}
-							v.Index(ji).Set(reflect.ValueOf(subitems[scnt]))
-							scnt++
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
-func (db *Reindexer) deserializeItem(ser *serializer, ns *reindexerNamespace) (interface{}, error) {
-	b := ser.readBytes()
-	item := reflect.New(ns.rtype).Interface()
-	if err := ns.codec.Decode(b, item); err != nil {
-		return nil, err
-	}
-	_ = b
-	return item, nil
-	//		db.strPool.mergeStrings(reflect.Indirect(reflect.ValueOf(item)), ns.fields)
-}
-
-func (db *Reindexer) getItems(ns *reindexerNamespace, ids []int) (res []cacheItem, err error) {
-
-	var ser serializer
-	ser.writeString(ns.name)
-	ser.writeCInt(len(ids))
-
-	for _, id := range ids {
-		ser.writeCInt(id)
-	}
-
-	out, err := db.binding.GetItems(ser.GetBuf())
-	defer out.Free()
-	if err != nil {
-		return nil, err
-	}
-
-	rdSer := newSerializer(out.GetBuf())
-	res = make([]cacheItem, 0, len(ids))
-
-	for !rdSer.eof() {
-		id := rdSer.readCInt()
-		version := rdSer.readCInt()
-		item, err := db.deserializeItem(&rdSer, ns)
-		if err != nil {
-			return nil, err
-		}
-		if id != ids[len(res)] {
-			panic(0)
-		}
-		res = append(res, cacheItem{item: item, version: version})
-	}
-	return res, nil
-}
-
-// Select items from database. Query is SQL statement
-// Return slice of interfaces to items
-func (db *Reindexer) Select(query string) *Iterator {
-
-	// TODO: do not parse query string twice in go and cpp
-	namespace := ""
-	querySlice := strings.Split(strings.ToLower(query), " ")
-
-	if len(querySlice) == 2 && querySlice[0] == "describe" {
-		if querySlice[1] == "*" {
-			descs, err := db.DescribeNamespaces()
-			if err != nil {
-				return newIterator(nil, err, nil)
-			}
-			res := []interface{}{}
-			for _, desc := range descs {
-				res = append(res, desc)
-			}
-			return newIterator(res, nil, reflect.TypeOf(NamespaceDescription{}))
-
-		}
-		desc, err := db.DescribeNamespace(querySlice[1])
-		return newIterator([]interface{}{desc}, err, reflect.TypeOf(NamespaceDescription{}))
-	}
-
-	for i := range querySlice {
-		if strings.Compare(querySlice[i], "from") == 0 && i+1 < len(querySlice) {
-			namespace = querySlice[i+1]
-			break
-		}
-	}
-
-	nsArray := make([]*reindexerNamespace, 0, 3)
-	if ns, err := db.getNS(namespace); err == nil {
-		ns.lock.RLock()
-		defer ns.lock.RUnlock()
-		nsArray = append(nsArray, ns)
+	jsonReserveLen := len(rawResult) + len(totalName) + len(jsonName) + 20
+	if cap(initJson) < jsonReserveLen {
+		initJson = make([]byte, 0, jsonReserveLen)
 	} else {
-		return newIterator(nil, err, nil)
+		initJson = initJson[:0]
+	}
+	jsonBuf := cjson.NewSerializer(initJson)
+
+	if cap(initOffsets) < rawQueryParams.count {
+		offsets = make([]int, 0, rawQueryParams.count)
+	} else {
+		offsets = initOffsets[:0]
 	}
 
-	useCache := true
-	result, err := db.binding.Select(query, !useCache)
-	defer result.Free()
-	if err != nil {
-		return newIterator(nil, err, nil)
+	jsonBuf.WriteString("{\"")
+
+	if len(totalName) != 0 {
+		jsonBuf.WriteString(totalName)
+		jsonBuf.WriteString("\":")
+		jsonBuf.WriteString(strconv.Itoa(rawQueryParams.totalcount))
+		jsonBuf.WriteString(",\"")
 	}
 
-	items, _, _, err := db.rawResultToPtrSlice(nsArray, result.GetBuf(), nil, nil, false, useCache)
-	return newIterator(items, err, nsArray[0].rtype)
+	jsonBuf.WriteString(jsonName)
+	jsonBuf.WriteString("\":[")
+
+	for i := 0; i < rawQueryParams.count; i++ {
+		_ = ser.readRawtItemParams()
+		if i != 0 {
+			jsonBuf.WriteString(",")
+		}
+		offsets = append(offsets, len(jsonBuf.Bytes()))
+		jsonBuf.Write(ser.GetBytes())
+
+		if ser.GetCInt() != 0 {
+			panic("Sorry, not implemented: Can't return join query results as json")
+		}
+	}
+	jsonBuf.WriteString("]}")
+
+	return jsonBuf.Bytes(), offsets, nil
 }
 
-// Execute query
-func (db *Reindexer) selectQuery(q *Query) *Iterator {
-
-	var nsArrayP [16]*reindexerNamespace
-	nsArray := nsArrayP[:0:16]
+func (db *Reindexer) prepareQuery(q *Query, asJson bool) (result bindings.RawBuffer, err error) {
+	if len(q.joinQueries) != 0 && len(q.mergedQueries) != 0 {
+		return nil, ErrMergeAndJoinInOneQuery
+	}
 
 	if ns, err := db.getNS(q.Namespace); err == nil {
-		nsArray = append(nsArray, ns)
+		q.nsArray = append(q.nsArray, ns)
 	} else {
-		return initIterator(&q.iterator, nil, err, nil)
+		return nil, err
 	}
 
 	ser := q.ser
-	ser.writeCInt(queryEnd)
+	ser.PutCInt(queryEnd)
 	for _, sq := range q.joinQueries {
-		ser.writeCInt(sq.joinType)
-		ser.append(sq.ser)
-		ser.writeCInt(queryEnd)
+		ser.PutCInt(sq.joinType)
+		ser.Append(sq.ser)
+		ser.PutCInt(queryEnd)
 		if ns, err := db.getNS(sq.Namespace); err == nil {
-			nsArray = append(nsArray, ns)
+			q.nsArray = append(q.nsArray, ns)
 		} else {
-			return initIterator(&q.iterator, nil, err, nil)
+			return nil, err
+		}
+	}
+	for _, sq := range q.mergedQueries {
+		ser.PutCInt(merge)
+		ser.Append(sq.ser)
+		ser.PutCInt(queryEnd)
+		if ns, err := db.getNS(sq.Namespace); err == nil {
+			q.nsArray = append(q.nsArray, ns)
+		} else {
+			return nil, err
 		}
 	}
 
-	walkUniqNamespaces(nsArray, func(ns *reindexerNamespace) { ns.lock.RLock() })
+	result, err = db.binding.SelectQuery(asJson, ser.Bytes())
 
-	useCache := !q.noObjCache
-	result, err := db.binding.SelectQuery(&q.Query, !useCache, ser.GetBuf())
-	defer result.Free()
-
-	if err != nil || result.GetBuf() == nil {
-		walkUniqNamespaces(nsArray, func(ns *reindexerNamespace) { ns.lock.RUnlock() })
-		return initIterator(&q.iterator, nil, err, nil)
+	if err == nil && result.GetBuf() == nil {
+		panic(fmt.Errorf("result.Buffer is nil"))
 	}
+	return
+}
 
-	items, subitems, totalCount, err := db.rawResultToPtrSlice(nsArray, result.GetBuf(), q.items, q.subitems, q.copy, useCache)
-	q.items = items
-	q.subitems = subitems
-	walkUniqNamespaces(nsArray, func(ns *reindexerNamespace) { ns.lock.RUnlock() })
-	db.joinResults(nsArray, result.GetBuf(), q.joinToFields, items, subitems, q.context, useCache)
-	q.totalCount = totalCount
-	return initIterator(&q.iterator, items, err, nsArray[0].rtype)
+// Execute query
+func (db *Reindexer) execQuery(q *Query) *Iterator {
+	result, err := db.prepareQuery(q, false)
+	if err != nil {
+		return errIterator(err)
+	}
+	iter := newIterator(q, result, q.nsArray, q.joinToFields, q.joinHandlers, q.context)
+	db.updatePayloadTypes(q.nsArray, &iter.ser, iter.rawQueryParams)
+	return iter
+}
+
+func (db *Reindexer) execJSONQuery(q *Query, jsonRoot string) *JSONIterator {
+	result, err := db.prepareQuery(q, true)
+	if err != nil {
+		return errJSONIterator(err)
+	}
+	defer result.Free()
+	q.json, q.jsonOffsets, err = db.rawResultToJson(result.GetBuf(), jsonRoot, q.totalName, q.json, q.jsonOffsets)
+	if err != nil {
+		return errJSONIterator(err)
+	}
+	return newJSONIterator(q, q.json, q.jsonOffsets)
+}
+
+func (db *Reindexer) prepareSQL(namespace, query string, asJson bool) (result bindings.RawBuffer, nsArray []*reindexerNamespace, err error) {
+	nsArray = make([]*reindexerNamespace, 0, 3)
+	querySlice := strings.Split(strings.ToLower(query), " ")
+	if len(querySlice) > 0 && querySlice[0] == "describe" {
+		nsArray = append(nsArray, &reindexerNamespace{
+			rtype:      reflect.TypeOf(NamespaceDescription{}),
+			cjsonState: cjson.NewState(),
+		})
+	} else {
+		var ns *reindexerNamespace
+		if ns, err = db.getNS(namespace); err == nil {
+			nsArray = append(nsArray, ns)
+		} else {
+			return
+		}
+	}
+	result, err = db.binding.Select(query, asJson)
+	return
+}
+
+func (db *Reindexer) execSQL(namespace, query string) *Iterator {
+	result, nsArray, err := db.prepareSQL(namespace, query, false)
+	if err != nil {
+		return errIterator(err)
+	}
+	iter := newIterator(nil, result, nsArray, nil, nil, nil)
+	db.updatePayloadTypes(nsArray, &iter.ser, iter.rawQueryParams)
+	return iter
+}
+
+func (db *Reindexer) execSQLAsJSON(namespace string, query string) *JSONIterator {
+	result, _, err := db.prepareSQL(namespace, query, true)
+	if err != nil {
+		return errJSONIterator(err)
+	}
+	defer result.Free()
+	json, jsonOffsets, err := db.rawResultToJson(result.GetBuf(), namespace, "", nil, nil)
+	if err != nil {
+		return errJSONIterator(err)
+	}
+	return newJSONIterator(nil, json, jsonOffsets)
 }
 
 // Execute query
@@ -526,10 +380,7 @@ func (db *Reindexer) deleteQuery(q *Query) (int, error) {
 		return 0, err
 	}
 
-	ns.lock.Lock()
-	defer ns.lock.Unlock()
-
-	result, err := db.binding.DeleteQuery(&q.Query, q.ser.GetBuf())
+	result, err := db.binding.DeleteQuery(q.ser.Bytes())
 	defer result.Free()
 	if err != nil {
 		return 0, err
@@ -537,36 +388,25 @@ func (db *Reindexer) deleteQuery(q *Query) (int, error) {
 
 	ser := newSerializer(result.GetBuf())
 	// skip total count
-	_ = ser.readCInt()
-	cnt := ser.readCInt()
+	rawQueryParams := ser.readRawQueryParams()
 
 	ns.cacheLock.Lock()
-	for i := 0; i < cnt; i++ {
-		iddel := ser.readCInt()
-		_ = ser.readCInt()
-		_ = ser.readCInt()
+	for i := 0; i < rawQueryParams.count; i++ {
+		params := ser.readRawtItemParams()
+		jres := ser.GetCInt()
+		if jres != 0 {
+			panic("Internal error: joined items in delete query result")
+		}
 		// Update cache
-		if _, ok := ns.cacheItems[iddel]; ok {
-			//	db.strPool.deleteStrings(reflect.Indirect(reflect.ValueOf(it.item)), ns.fields)
-			delete(ns.cacheItems, iddel)
+		if _, ok := ns.cacheItems[params.id]; ok {
+			delete(ns.cacheItems, params.id)
 		}
 
 	}
-	if !ser.eof() {
-		panic("something wrong with deletequery response")
+	ns.cacheLock.Unlock()
+	if !ser.Eof() {
+		panic("Internal error: data after end of delete query result")
 	}
 
-	ns.cacheLock.Unlock()
-
-	return cnt, err
-}
-
-// Get local thread reindexer usage stats
-func (db *Reindexer) GetStats() bindings.Stats {
-	return db.binding.GetStats()
-}
-
-// Reset local thread reindexer usage stats
-func (db *Reindexer) ResetStats() {
-	db.binding.ResetStats()
+	return rawQueryParams.count, err
 }

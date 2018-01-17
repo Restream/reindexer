@@ -1,0 +1,24 @@
+/**
+@mainpage Welcome to Reindexer documentation!
+# Reindexer
+Reindexer is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
+
+Reindexer's goal is to provide fast search with complex queries. We at Restream weren't happy with Elasticsearch and created Reindexer as a more performant alternative.
+
+The core is written in C++ and the application level API is in Go. 
+
+## Features
+
+Key features:
+
+- Sortable indices 
+- Aggregation queries
+- Indices on array fields
+- Complex primary keys
+- Composite indices
+- Join operations
+- Full-text search
+- Up to 64 indices for one namespace
+- ORM-like query interface 
+- SQL queries 
+*/

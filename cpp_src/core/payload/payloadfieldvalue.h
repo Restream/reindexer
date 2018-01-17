@@ -1,0 +1,27 @@
+#pragma once
+
+#include "core/keyvalue/keyref.h"
+#include "payloadfieldtype.h"
+
+namespace reindexer {
+
+// Helper field's' value object
+class PayloadFieldValue {
+public:
+	struct Array {
+		unsigned offset;
+		int len;
+	};
+	// Construct object
+	PayloadFieldValue(const PayloadFieldType &t, uint8_t *v) : t_(t), p_(v) {}
+	// Single value operations
+	void Set(KeyRef kv);
+	KeyRef Get() const;
+
+	// Type of value, not owning
+	const PayloadFieldType &t_;
+	// Value data, not owning
+	uint8_t *p_;
+};
+
+}  // namespace reindexer

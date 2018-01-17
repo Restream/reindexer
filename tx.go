@@ -36,20 +36,37 @@ func (tx *Tx) startTx() error {
 	return err
 }
 
+// Insert (only) item to index
+func (tx *Tx) Insert(s interface{}) (int, error) {
+	if err := tx.startTx(); err != nil {
+		return 0, err
+	}
+	return tx.db.modifyItem(tx.txNs.name, tx.txNs, s, nil, modeInsert)
+}
+
+func (tx *Tx) Update(s interface{}) (int, error) {
+	if err := tx.startTx(); err != nil {
+		return 0, err
+	}
+	return tx.db.modifyItem(tx.txNs.name, tx.txNs, s, nil, modeUpdate)
+}
+
 // Upsert (Insert or Update) item to index
 func (tx *Tx) Upsert(s interface{}) error {
 	if err := tx.startTx(); err != nil {
 		return err
 	}
-	return tx.db.upsert(tx.txNs, s)
+	_, err := tx.db.modifyItem(tx.txNs.name, tx.txNs, s, nil, modeUpsert)
+	return err
 }
 
 // UpsertJSON (Insert or Update) item to index
-func (tx *Tx) UpsertJSON(b []byte) error {
+func (tx *Tx) UpsertJSON(json []byte) error {
 	if err := tx.startTx(); err != nil {
 		return err
 	}
-	return tx.db.upsertJSON(tx.txNs, b)
+	_, err := tx.db.modifyItem(tx.txNs.name, tx.txNs, nil, json, modeUpsert)
+	return err
 }
 
 // Delete - remove item by id from namespace
@@ -57,15 +74,17 @@ func (tx *Tx) Delete(s interface{}) error {
 	if err := tx.startTx(); err != nil {
 		return err
 	}
-	return tx.db.delete(tx.txNs, s)
+	_, err := tx.db.modifyItem(tx.txNs.name, tx.txNs, s, nil, modeDelete)
+	return err
 }
 
 // DeleteJSON - remove item by id from namespace
-func (tx *Tx) DeleteJSON(b []byte) error {
+func (tx *Tx) DeleteJSON(json []byte) error {
 	if err := tx.startTx(); err != nil {
 		return err
 	}
-	return tx.db.deleteJSON(tx.txNs, b)
+	_, err := tx.db.modifyItem(tx.txNs.name, tx.txNs, json, nil, modeDelete)
+	return err
 }
 
 // Commit apply changes
@@ -77,7 +96,7 @@ func (tx *Tx) Commit(updatedAt *time.Time) error {
 		return err
 	}
 	if updatedAt == nil {
-		now := time.Now()
+		now := time.Now().UTC()
 		updatedAt = &now
 	}
 	tx.db.setUpdatedAt(tx.txNs, *updatedAt)

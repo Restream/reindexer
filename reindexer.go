@@ -4,71 +4,64 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"io"
-
 	"github.com/restream/reindexer/bindings"
+	"github.com/restream/reindexer/cjson"
 	"github.com/restream/reindexer/dsl"
 )
 
+// Condition types
+const (
+	// Equal '='
+	EQ = bindings.EQ
+	// Greater '>'
+	GT = bindings.GT
+	// Lower '<'
+	LT = bindings.LT
+	// Greater or equal '>=' (GT|EQ)
+	GE = bindings.GE
+	// Lower or equal '<'
+	LE = bindings.LE
+	// One of set 'IN []'
+	SET = bindings.SET
+	// All of set
+	ALLSET = bindings.ALLSET
+	// In range
+	RANGE = bindings.RANGE
+	// Any value
+	ANY = bindings.ANY
+	// Empty value (usualy zero len array)
+	EMPTY = bindings.EMPTY
+)
+
+const (
+	// ERROR Log level
+	ERROR = bindings.ERROR
+	// WARNING Log level
+	WARNING = bindings.WARNING
+	// INFO Log level
+	INFO = bindings.INFO
+	// TRACE Log level
+	TRACE = bindings.TRACE
+)
+
+const (
+	AggAvg = bindings.AggAvg
+	AggSum = bindings.AggSum
+)
+
 var logger Logger = &nullLogger{}
-
-// Map from cond name to index type
-var queryTypes = map[string]int{
-	"EQ":     EQ,
-	"GT":     GT,
-	"LT":     LT,
-	"GE":     GE,
-	"LE":     LE,
-	"SET":    SET,
-	"RANGE":  RANGE,
-	"ANY":    ANY,
-	"EMPTY":  EMPTY,
-	"ALLSET": ALLSET,
-}
-
-func GetCondType(name string) (int, error) {
-	cond, ok := queryTypes[strings.ToUpper(name)]
-	if ok {
-		return cond, nil
-	} else {
-		return 0, ErrCondType
-	}
-}
-
-// Map from index type to cond name
-var queryNames = map[int]string{
-	EQ:    "EQ",
-	GT:    "GT",
-	LT:    "LT",
-	GE:    "GE",
-	LE:    "LE",
-	SET:   "SET",
-	RANGE: "RANGE",
-	ANY:   "ANY",
-	EMPTY: "EMPTY",
-}
-
-func GetCondName(cond int) (string, error) {
-	name, ok := queryNames[cond]
-	if ok {
-		return name, nil
-	} else {
-		return "", ErrCondType
-	}
-}
 
 // Reindexer The reindxer state struct
 type Reindexer struct {
 	lock        sync.RWMutex
 	ns          map[string]*reindexerNamespace
 	storagePath string
-	strPool     stringPool
 	binding     bindings.RawBinding
 	debugLevels map[string]int
 }
@@ -77,35 +70,17 @@ type cacheItem struct {
 	item interface{}
 	// version of item, for cachins
 	version int
-	// timestamp of last read
-	readTimestamp int
 }
 
 type reindexerNamespace struct {
-	Item       interface{}
-	UpdatedAt  time.Time
-	cacheItems map[int]cacheItem
-	cacheLock  sync.RWMutex
-	fields     []reindexerField
-	rtype      reflect.Type
-	name       string
-	lock       sync.RWMutex
-	codec      ItemCodec
-	opts       NamespaceOptions
-	storageErr error
-}
-
-type reindexerField struct {
-	idxName   string
-	jsonPath  string
-	idxType   int
-	fieldIdx  int
-	isPK      bool
-	isDict    bool
-	isJoined  bool
-	fieldType reflect.Kind
-	elemType  reflect.Kind // elemType > 0 for fieldType's values slice and array
-	subField  []reindexerField
+	cacheItems    map[int]cacheItem
+	cacheLock     sync.RWMutex
+	joined        map[string][]int
+	rtype         reflect.Type
+	deepCopyIface bool
+	name          string
+	opts          NamespaceOptions
+	cjsonState    *cjson.State
 }
 
 // Interface for append joined items
@@ -113,8 +88,12 @@ type Joinable interface {
 	Join(field string, subitems []interface{}, context interface{})
 }
 
-type Clonable interface {
-	ClonePtrSlice(src []interface{}) []interface{}
+// JoinHandler it's function for handle join results.
+// Returns bool, that indicates is values will be applied to structs.
+type JoinHandler func(field string, item interface{}, subitems []interface{}) (isContinue bool)
+
+type DeepCopy interface {
+	DeepCopy() interface{}
 }
 
 // Logger interface for reindexer
@@ -125,37 +104,25 @@ type Logger interface {
 type nullLogger struct {
 }
 
-type ItemCodec interface {
-	Encode(item interface{}, wr io.Writer) error
-	Decode(data []byte, item interface{}) error
-}
-
-type jsonCodec struct {
-}
-
-func (jsonCodec) Encode(item interface{}, wr io.Writer) error {
-	return json.NewEncoder(wr).Encode(item)
-}
-
-func (jsonCodec) Decode(data []byte, item interface{}) error {
-	return json.Unmarshal(data, item)
-}
-
 func (nullLogger) Printf(level int, fmt string, msg ...interface{}) {
 }
 
 var (
-	errNsNotFound        = errors.New("rq: Namespace is not found")
-	errNsExists          = errors.New("rq: Namespace is already exists")
-	errInvalidReflection = errors.New("rq: Invalid reflection type of index")
-	errStorageNotEnabled = errors.New("rq: Storage is not enabled, can't save")
-	ErrEmptyNamespace    = errors.New("rq: empty namespace name")
-	ErrEmptyFieldName    = errors.New("rq: empty field name in filter")
-	ErrCondType          = errors.New("rq: cond type not found")
-	ErrOpInvalid         = errors.New("rq: op is invalid")
-	ErrNoPK              = errors.New("rq: No pk field in struct")
-	ErrWrongType         = errors.New("rq: Wrong type of item")
-	ErrMustBePointer     = errors.New("rq: Argument must be a pointer to element, not element")
+	errNsNotFound             = errors.New("rq: Namespace is not found")
+	errNsExists               = errors.New("rq: Namespace is already exists")
+	errInvalidReflection      = errors.New("rq: Invalid reflection type of index")
+	errStorageNotEnabled      = errors.New("rq: Storage is not enabled, can't save")
+	errIteratorNotReady       = errors.New("rq: Iterator not ready. Next() must be called before")
+	errJoinUnexpectedField    = errors.New("rq: Unexpected join field")
+	ErrEmptyNamespace         = errors.New("rq: empty namespace name")
+	ErrEmptyFieldName         = errors.New("rq: empty field name in filter")
+	ErrCondType               = errors.New("rq: cond type not found")
+	ErrOpInvalid              = errors.New("rq: op is invalid")
+	ErrNoPK                   = errors.New("rq: No pk field in struct")
+	ErrWrongType              = errors.New("rq: Wrong type of item")
+	ErrMustBePointer          = errors.New("rq: Argument must be a pointer to element, not element")
+	ErrMergeAndJoinInOneQuery = errors.New("rq: Can't be merge and join in one query")
+	ErrNotFound               = errors.New("rq: Not found")
 )
 
 // NewReindex Create new instanse of Reindexer DB
@@ -170,7 +137,6 @@ func NewReindex(uri string) *Reindexer {
 
 	return &Reindexer{
 		ns:          make(map[string]*reindexerNamespace, 100),
-		strPool:     stringPool{strings: make(map[string]stringEntry, 1000)},
 		binding:     binding,
 		debugLevels: make(map[string]int, 100),
 	}
@@ -178,9 +144,9 @@ func NewReindex(uri string) *Reindexer {
 
 // EnableStorage enables persistent storage of data
 // Current implemetation is GOB based, slow
-func (db *Reindexer) EnableStorage(storagePath string) {
-	os.MkdirAll(storagePath, os.ModePerm)
+func (db *Reindexer) EnableStorage(storagePath string) error {
 	db.storagePath = storagePath + "/"
+	return db.binding.EnableStorage(storagePath)
 }
 
 // SetLogger sets logger interface for output reindexer logs
@@ -197,26 +163,37 @@ func (db *Reindexer) SetLogger(log Logger) {
 
 // NamespaceOptions is options for namespace
 type NamespaceOptions struct {
-	// TTL of objects in cache
-	CacheTTL int
-	// Force Cache data on upser
-	ForceCacheUpsert bool
 	// Only in memory namespace
-	NoPersistent bool
+	enableStorage bool
+	// Drop ns on index mismatch error
+	dropOnIndexesConflict bool
+	// Drop on file errors
+	dropOnFileFormatError bool
+}
+
+func (opts *NamespaceOptions) NoStorage() *NamespaceOptions {
+	opts.enableStorage = false
+	return opts
+}
+
+func (opts *NamespaceOptions) DropOnIndexesConflict() *NamespaceOptions {
+	opts.dropOnIndexesConflict = true
+	return opts
+}
+
+func (opts *NamespaceOptions) DropOnFileFormatError() *NamespaceOptions {
+	opts.dropOnFileFormatError = true
+	return opts
 }
 
 // DefaultNamespaceOptions return defailt namespace options
-func DefaultNamespaceOptions() NamespaceOptions {
-	return NamespaceOptions{
-		CacheTTL:         0,
-		ForceCacheUpsert: false,
-		NoPersistent:     false,
-	}
+func DefaultNamespaceOptions() *NamespaceOptions {
+	return &NamespaceOptions{enableStorage: true}
 }
 
-// NewNamespace Create new namespace and index based on passed struct.
+// OpenNamespace Open or create new namespace and indexes based on passed struct.
 // IndexDescription fields of struct are marked by `reindex:` tag
-func (db *Reindexer) NewNamespace(namespace string, opts NamespaceOptions, s interface{}) error {
+func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s interface{}) (err error) {
 	t := reflect.TypeOf(s)
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
@@ -234,382 +211,62 @@ func (db *Reindexer) NewNamespace(namespace string, opts NamespaceOptions, s int
 		return nil
 	}
 
-	err := db.binding.AddNamespace(namespace)
-	if err != nil {
-		db.lock.Unlock()
-		return err
-	}
+	enableStorage := len(db.storagePath) != 0 && opts.enableStorage
+
+	_, haveDeepCopy := reflect.New(t).Interface().(DeepCopy)
 
 	ns := &reindexerNamespace{
-		Item:       s,
-		cacheItems: make(map[int]cacheItem, 100),
-		rtype:      t,
-		name:       namespace,
-		codec:      new(jsonCodec),
-		opts:       opts,
+		cacheItems:    make(map[int]cacheItem, 100),
+		rtype:         t,
+		name:          namespace,
+		joined:        make(map[string][]int),
+		opts:          *opts,
+		cjsonState:    cjson.NewState(),
+		deepCopyIface: haveDeepCopy,
 	}
-	ns.fields, err = db.createIndex(namespace, t, false, "")
-	if err != nil {
-		db.lock.Unlock()
-		return err
-	}
-
 	db.ns[namespace] = ns
 	db.lock.Unlock()
 
-	if len(db.storagePath) != 0 && !opts.NoPersistent {
-
-		if ns.storageErr = db.binding.EnableStorage(namespace, db.storagePath); ns.storageErr != nil {
-			return ns.storageErr
+	for retry := 0; retry < 2; retry++ {
+		if err = db.binding.OpenNamespace(namespace, enableStorage, opts.dropOnFileFormatError); err != nil {
+			break
 		}
 
-		if b, err := db.getMeta(namespace, "updated"); err == nil {
-			err = json.Unmarshal(b, &ns.UpdatedAt)
-			if err != nil {
-				logger.Printf(ERROR, "Can't unmarashal %s to ts", string(b))
+		if err = db.createIndex(namespace, t, false, "", "", &ns.joined); err != nil {
+			rerr, ok := err.(bindings.Error)
+			if ok && rerr.Code() == bindings.ErrConflict && opts.dropOnIndexesConflict {
+				db.binding.DropNamespace(namespace)
+				continue
 			}
+			db.binding.CloseNamespace(namespace)
+			break
 		}
+
+		// Initial query to update payloadType
+		db.Query(namespace).Limit(0).Exec()
+		break
+	}
+	if err != nil {
+		db.lock.Lock()
+		delete(db.ns, namespace)
+		db.lock.Unlock()
 	}
 
-	return nil
+	return err
 }
 
-// CreateIndex Create new namespace and index based on passed struct.
-// IndexDescription fields of struct are marked by `reindex:` tag
+// CreateIndex [[depreacted]]
 func (db *Reindexer) CreateIndex(namespace string, s interface{}) error {
-	return db.NewNamespace(namespace, DefaultNamespaceOptions(), s)
+	return db.OpenNamespace(namespace, DefaultNamespaceOptions(), s)
 }
 
-// Create new namespace and index based on passed struct.
-// IndexDescription fields of struct are marked by `reindex:` tag
-func (db *Reindexer) createIndex(namespace string, st reflect.Type, subArray bool, jsonBasePath string) (fields []reindexerField, err error) {
-
-	if len(jsonBasePath) != 0 {
-		jsonBasePath = jsonBasePath + "."
-	}
-	fields = make([]reindexerField, 0, 100)
-
-	for i := 0; i < st.NumField(); i++ {
-
-		t := st.Field(i).Type
-		if t.Kind() == reflect.Ptr {
-			t = t.Elem()
-		}
-		f := reindexerField{fieldIdx: i, fieldType: t.Kind()}
-		// Get and parse tags
-		tagsSlice := strings.Split(st.Field(i).Tag.Get("reindex"), ",")
-
-		jsonPaths := strings.Split(st.Field(i).Tag.Get("json"), ",")
-
-		jsonPath := jsonPaths[0]
-		if len(jsonPath) == 0 && !st.Field(i).Anonymous {
-			jsonPath = st.Field(i).Name
-		}
-		jsonPath = jsonBasePath + jsonPath
-
-		if len(tagsSlice) > 0 && tagsSlice[0] == "-" {
-			continue
-		}
-
-		if len(tagsSlice) > 2 && tagsSlice[2] == "composite" && t.Kind() == reflect.Struct {
-			if t.Kind() != reflect.Struct || t.NumField() != 0 {
-				return nil, fmt.Errorf("'composite' tag allowed only on empty on structs: Invalid tags %v on field %s", tagsSlice, st.Field(i).Name)
-			}
-			db.binding.AddIndex(namespace, tagsSlice[0], "", IndexCompositeHash, false, false)
-			continue
-		}
-
-		if t.Kind() == reflect.Struct {
-			if subfields, err := db.createIndex(namespace, t, subArray, jsonPath); err != nil {
-				return nil, err
-			} else if len(subfields) > 0 {
-				f.subField = subfields
-			} else {
-				continue
-			}
-		} else if (t.Kind() == reflect.Slice || t.Kind() == reflect.Array) &&
-			(t.Elem().Kind() == reflect.Struct ||
-				(t.Elem().Kind() == reflect.Ptr && t.Elem().Elem().Kind() == reflect.Struct)) {
-			// Check if field nested slice of struct
-			if len(tagsSlice) > 0 && len(tagsSlice[0]) > 0 {
-				if len(tagsSlice) > 2 && tagsSlice[2] == "joined" {
-					f.isJoined = true
-					f.idxName = tagsSlice[0]
-				} else {
-					return nil, fmt.Errorf("Only 'joined' tags allowed on []struct. Invalid tags %v on field %s", tagsSlice, st.Field(i).Name)
-				}
-			} else if subfields, err := db.createIndex(namespace, t.Elem(), true, jsonPath); err != nil {
-				return nil, err
-			} else if len(subfields) > 0 {
-				f.subField = subfields
-			} else {
-				continue
-			}
-		} else {
-			if len(tagsSlice) < 1 {
-				continue
-			}
-			f.idxName = tagsSlice[0]
-			reqIdxType := ""
-			if len(tagsSlice) > 1 {
-				reqIdxType = tagsSlice[1]
-			}
-			if len(tagsSlice) > 2 {
-				f.isDict = (tagsSlice[2] == "dict")
-				f.isPK = (tagsSlice[2] == "pk")
-				if f.isPK && len(f.idxName) == 0 {
-					f.idxName = st.Field(i).Name
-				}
-			}
-			isArray := t.Kind() == reflect.Slice || t.Kind() == reflect.Array || subArray
-
-			if len(f.idxName) > 0 {
-				if f.idxType, err = getIndexByType(t, reqIdxType); err != nil {
-					return nil, err
-				}
-				if err = db.binding.AddIndex(namespace, f.idxName, jsonPath, f.idxType, isArray, f.isPK); err != nil {
-					return nil, err
-				}
-			}
-			if len(f.idxName) == 0 && !f.isPK && !f.isDict {
-				continue
-			}
-			if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
-				f.elemType = t.Elem().Kind()
-			}
-		}
-
-		fields = append(fields, f)
-	}
-	return fields, nil
+// NewNamespace [[depreacted]]
+func (db *Reindexer) NewNamespace(namespace string, opts *NamespaceOptions, s interface{}) error {
+	return db.OpenNamespace(namespace, opts, s)
 }
 
-// Upsert (Insert or Update) item in index
-// Item must be the same type as item passed to CreateIndex
-func (db *Reindexer) Upsert(namespace string, s interface{}) error {
-	ns, err := db.getNS(namespace)
-	if err != nil {
-		return err
-	}
-	ns.lock.Lock()
-	defer ns.lock.Unlock()
-
-	if err := db.upsert(ns, s); err != nil {
-		return err
-	}
-	return db.binding.Commit(namespace)
-}
-
-func (db *Reindexer) getNS(namespace string) (*reindexerNamespace, error) {
-	db.lock.RLock()
-	defer db.lock.RUnlock()
-	ns, ok := db.ns[namespace]
-	if !ok {
-		return nil, errNsNotFound
-	}
-	return ns, nil
-
-}
-
-func (db *Reindexer) upsert(ns *reindexerNamespace, s interface{}) error {
-
-	v := reflect.Indirect(reflect.ValueOf(s))
-	t := reflect.TypeOf(s)
-
-	ser := newPoolSerializer()
-	defer ser.close()
-
-	ser.writeString(ns.name)
-
-	if b, ok := s.([]byte); !ok {
-		if t.Kind() == reflect.Ptr {
-			t = t.Elem()
-		} else {
-			// Get pointer of element
-			panic(ErrMustBePointer)
-		}
-		if ns.rtype.Name() != t.Name() {
-			panic(ErrWrongType)
-		}
-
-		// reserve int for save len
-		p := ser.pos
-		ser.writeCInt(0)
-
-		if err := ns.codec.Encode(s, ser); err != nil {
-			return err
-		}
-
-		pp := ser.pos
-		ser.pos = p
-		ser.writeCInt(pp - p - 4)
-		ser.pos = pp
-
-	} else {
-		ser.writeBytes(b)
-	}
-
-	id, version, err := db.upsertItem(ser.buf)
-
-	if err != nil {
-		return err
-	}
-
-	// Save to cache
-	if ns.opts.ForceCacheUpsert {
-		db.strPool.mergeStrings(v, ns.fields)
-		ns.cacheLock.Lock()
-		ns.cacheItems[id] = cacheItem{item: s, version: version}
-		ns.cacheLock.Unlock()
-	}
-
-	return nil
-}
-
-func (db *Reindexer) upsertJSON(ns *reindexerNamespace, b []byte) error {
-
-	ser := newPoolSerializer()
-	defer ser.close()
-
-	ser.writeString(ns.name)
-	ser.writeBytes(b)
-
-	_, _, err := db.upsertItem(ser.buf)
-	return err
-}
-
-func (db *Reindexer) packItem(val reflect.Value, fields []reindexerField, ser *serializer) error {
-
-	for _, f := range fields {
-		v := reflect.Indirect(val.Field(f.fieldIdx))
-		if !v.IsValid() || f.isJoined {
-			continue
-		}
-		tk := f.fieldType
-		if (tk == reflect.Slice || tk == reflect.Array) && f.subField != nil {
-			// Check if field nested slice of struct
-			for i := 0; i < v.Len(); i++ {
-				if err := db.packItem(v.Index(i), f.subField, ser); err != nil {
-					return err
-				}
-			}
-			continue
-		}
-		if tk == reflect.Struct {
-			if err := db.packItem(v, f.subField, ser); err != nil {
-				return err
-			}
-			continue
-		}
-
-		if len(f.idxName) == 0 || !f.isPK {
-			continue
-		}
-
-		ser.writeString(f.idxName)
-		if tk == reflect.Slice || tk == reflect.Array {
-			// Upsert slice of elements
-			ser.writeCInt(v.Len())
-			for j := 0; j < v.Len(); j++ {
-				if err := ser.writeValue(v.Index(j)); err != nil {
-					return err
-				}
-			}
-		} else {
-			// Upsert simple element
-			ser.writeCInt(1)
-			if err := ser.writeValue(v); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// Delete - remove item by pk from namespace
-func (db *Reindexer) Delete(namespace string, s interface{}) error {
-
-	ns, err := db.getNS(namespace)
-	if err != nil {
-		return err
-	}
-	ns.lock.Lock()
-	defer ns.lock.Unlock()
-
-	if err := db.delete(ns, s); err != nil {
-		return err
-	}
-	err = db.binding.Commit(namespace)
-	return err
-}
-
-func (db *Reindexer) delete(ns *reindexerNamespace, s interface{}) error {
-
-	b, ok := s.([]byte)
-
-	ser := newPoolSerializer()
-	defer ser.close()
-	ser.writeString(ns.name)
-
-	if !ok {
-		t := reflect.TypeOf(s)
-		if t.Kind() == reflect.Ptr {
-			t = t.Elem()
-		}
-		if ns.rtype.Name() != t.Name() {
-			panic(ErrWrongType)
-		}
-		// delete by packed pk values
-		ser.writeCInt(1)
-		if err := db.packItem(reflect.Indirect(reflect.ValueOf(s)), ns.fields, ser); err != nil {
-			return err
-		}
-	} else {
-		// delete by json. c++ code will extract pk from json
-		ser.writeCInt(0)
-		ser.writeBytes(b)
-	}
-
-	iddel, _, err := db.deleteItem(ser.buf)
-	if err != nil {
-		return err
-	}
-	// Update cache
-	ns.cacheLock.Lock()
-	if it, ok := ns.cacheItems[iddel]; ok {
-		db.strPool.deleteStrings(reflect.Indirect(reflect.ValueOf(it.item)), ns.fields)
-		delete(ns.cacheItems, iddel)
-	}
-	ns.cacheLock.Unlock()
-	return err
-}
-
-func (db *Reindexer) deleteJSON(ns *reindexerNamespace, b []byte) error {
-
-	ser := newPoolSerializer()
-	defer ser.close()
-	ser.writeString(ns.name)
-
-	// delete by json. c++ code will extract pk from json
-	ser.writeCInt(0)
-	ser.writeBytes(b)
-
-	iddel, _, err := db.deleteItem(ser.buf)
-	if err != nil {
-		return err
-	}
-	// Update cache
-	ns.cacheLock.Lock()
-	if it, ok := ns.cacheItems[iddel]; ok {
-		db.strPool.deleteStrings(reflect.Indirect(reflect.ValueOf(it.item)), ns.fields)
-		delete(ns.cacheItems, iddel)
-	}
-	ns.cacheLock.Unlock()
-	return err
-}
-
-// DeleteNamespace - delete whole namespace from DB
-func (db *Reindexer) DeleteNamespace(namespace string) error {
+// DropNamespace - drop whole namespace from DB
+func (db *Reindexer) DropNamespace(namespace string) error {
 	db.lock.Lock()
 	_, ok := db.ns[namespace]
 	if !ok {
@@ -619,7 +276,26 @@ func (db *Reindexer) DeleteNamespace(namespace string) error {
 	delete(db.ns, namespace)
 	db.lock.Unlock()
 
-	return db.binding.DeleteNamespace(namespace)
+	return db.binding.DropNamespace(namespace)
+}
+
+// CloseNamespace - close namespace, but keep storage
+func (db *Reindexer) CloseNamespace(namespace string) error {
+	db.lock.Lock()
+	_, ok := db.ns[namespace]
+	if !ok {
+		db.lock.Unlock()
+		return errNsNotFound
+	}
+	delete(db.ns, namespace)
+	db.lock.Unlock()
+
+	return db.binding.CloseNamespace(namespace)
+}
+
+// DeleteNamespace [[deprecated]]
+func (db *Reindexer) DeleteNamespace(namespace string) error {
+	return db.DropNamespace(namespace)
 }
 
 // RenameNamespace - rename namespace in DB. If dst namespace already exists, it will be overwriten
@@ -651,15 +327,13 @@ func (db *Reindexer) CloneNamespace(src string, dst string) error {
 		return errNsExists
 	}
 
-	srcNs.lock.RLock()
 	dstNs := &reindexerNamespace{
-		Item:       srcNs.Item,
-		UpdatedAt:  srcNs.UpdatedAt,
-		cacheItems: make(map[int]cacheItem, len(srcNs.cacheItems)),
-		fields:     srcNs.fields,
-		rtype:      srcNs.rtype,
-		name:       dst,
-		codec:      srcNs.codec,
+		cacheItems:    make(map[int]cacheItem, len(srcNs.cacheItems)),
+		joined:        srcNs.joined,
+		rtype:         srcNs.rtype,
+		name:          dst,
+		cjsonState:    srcNs.cjsonState,
+		deepCopyIface: srcNs.deepCopyIface,
 	}
 
 	srcNs.cacheLock.RLock()
@@ -668,13 +342,49 @@ func (db *Reindexer) CloneNamespace(src string, dst string) error {
 	}
 	srcNs.cacheLock.RUnlock()
 
-	srcNs.lock.RUnlock()
-
 	db.ns[dst] = dstNs
 
 	db.lock.Unlock()
 
 	return db.binding.CloneNamespace(src, dst)
+}
+
+// Upsert (Insert or Update) item to index
+// Item must be the same type as item passed to NewNamespace, or []byte with json
+func (db *Reindexer) Upsert(namespace string, item interface{}, precepts ...string) error {
+	_, err := db.modifyItem(namespace, nil, item, nil, modeUpsert, precepts...)
+	return err
+}
+
+// Insert item to namespace.
+// Item must be the same type as item passed to NewNamespace, or []byte with json data
+// Return 0, if no item was inserted, 1 if item was inserted
+func (db *Reindexer) Insert(namespace string, item interface{}, precepts ...string) (int, error) {
+	return db.modifyItem(namespace, nil, item, nil, modeInsert, precepts...)
+}
+
+// Update item to namespace.
+// Item must be the same type as item passed to NewNamespace, or []byte with json data
+// Return 0, if no item was updated, 1 if item was updated
+func (db *Reindexer) Update(namespace string, item interface{}, precepts ...string) (int, error) {
+	return db.modifyItem(namespace, nil, item, nil, modeUpdate, precepts...)
+}
+
+// Delete - remove item  from namespace
+// Item must be the same type as item passed to NewNamespace, or []byte with json data
+func (db *Reindexer) Delete(namespace string, item interface{}, precepts ...string) error {
+	_, err := db.modifyItem(namespace, nil, item, nil, modeDelete, precepts...)
+	return err
+}
+
+// ConfigureIndex - congigure index.
+// config argument must be struct with index configuration
+func (db *Reindexer) ConfigureIndex(namespace, index string, config interface{}) error {
+	json, err := json.Marshal(config)
+	if err != nil {
+		return err
+	}
+	return db.binding.ConfigureIndex(namespace, index, string(json))
 }
 
 // SetDefaultQueryDebug sets default debug level for queries to namespaces
@@ -688,17 +398,85 @@ func (db *Reindexer) SetDefaultQueryDebug(namespace string, level int) {
 func (db *Reindexer) Query(namespace string) *Query {
 	dbgLvl := 0
 	ok := false
-	db.lock.Lock()
+	db.lock.RLock()
 	if dbgLvl, ok = db.debugLevels[namespace]; !ok {
 		if dbgLvl, ok = db.debugLevels["*"]; !ok {
 			dbgLvl = 0
 		}
 	}
-	db.lock.Unlock()
+	db.lock.RUnlock()
 
 	q := newQuery(db, namespace)
-	q.DebugLevel = dbgLvl
+	if dbgLvl != 0 {
+		q.Debug(dbgLvl)
+	}
 	return q
+}
+
+// ExecSQL make query to database. Query is SQL statement
+// Return Iterator
+func (db *Reindexer) ExecSQL(query string) *Iterator {
+	// TODO: do not parse query string twice in go and cpp
+	namespace := ""
+	querySlice := strings.Split(strings.ToLower(query), " ")
+
+	if len(querySlice) > 0 && querySlice[0] == "describe" {
+		return db.execSQL("", query)
+	}
+
+	for i := range querySlice {
+		if querySlice[i] == "from" && i+1 < len(querySlice) {
+			namespace = querySlice[i+1]
+			break
+		}
+	}
+
+	return db.execSQL(namespace, query)
+}
+
+func (db *Reindexer) ExecSQLToJSON(query string) *JSONIterator {
+	// TODO: do not parse query string twice in go and cpp
+	namespace := ""
+	querySlice := strings.Split(strings.ToLower(query), " ")
+
+	for i := range querySlice {
+		if querySlice[i] == "from" && i+1 < len(querySlice) {
+			namespace = querySlice[i+1]
+			break
+		}
+	}
+
+	return db.execSQLAsJSON(namespace, query)
+}
+
+// DescribeNamespaces makes a 'describe *' query to database.
+// Return NamespaceDescription results, error
+func (db *Reindexer) DescribeNamespaces() ([]*NamespaceDescription, error) {
+	result := []*NamespaceDescription{}
+
+	descs, err := db.execSQL("", "DESCRIBE *").FetchAll()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, desc := range descs {
+		nsdesc, ok := desc.(*NamespaceDescription)
+		if ok {
+			result = append(result, nsdesc)
+		}
+	}
+
+	return result, nil
+}
+
+// DescribeNamespace makes a 'describe NAMESPACE' query to database.
+// Return NamespaceDescription results, error
+func (db *Reindexer) DescribeNamespace(namespace string) (*NamespaceDescription, error) {
+	desc, err := db.execSQL("", "DESCRIBE "+namespace).FetchOne()
+	if err != nil {
+		return nil, err
+	}
+	return desc.(*NamespaceDescription), nil
 }
 
 // BeginTx - start update transaction
@@ -715,73 +493,29 @@ func (db *Reindexer) MustBeginTx(namespace string) *Tx {
 	return tx
 }
 
-func getIndexByType(t reflect.Type, reqType string) (int, error) {
-
-	switch t.Kind() {
-	case reflect.Bool:
-		return IndexBool, nil
-	case reflect.Int, reflect.Int8, reflect.Int32, reflect.Int16,
-		reflect.Uint, reflect.Uint8, reflect.Uint32, reflect.Uint16:
-		if reqType == "tree" {
-			return IndexInt, nil
-		} else if reqType == "hash" || reqType == "" {
-			return IndexIntHash, nil
-		} else if reqType == "-" {
-			return IndexIntStore, nil
-		}
-	case reflect.Int64, reflect.Uint64:
-		if reqType == "tree" {
-			return IndexInt64, nil
-		} else if reqType == "hash" || reqType == "" {
-			return IndexInt64Hash, nil
-		} else if reqType == "-" {
-			return IndexInt64Store, nil
-		}
-	case reflect.String:
-		if reqType == "fulltext" {
-			return IndexNewFullText, nil
-		} else if reqType == "text" {
-			return IndexFullText, nil
-		} else if reqType == "tree" {
-			return IndexTree, nil
-		} else if reqType == "hash" || reqType == "" {
-			return IndexHash, nil
-		} else if reqType == "-" {
-			return IndexStrStore, nil
-		}
-	case reflect.Float32, reflect.Float64:
-		if reqType == "tree" || reqType == "" {
-			return IndexDouble, nil
-		} else if reqType == "-" {
-			return IndexDoubleStore, nil
-		}
-	case reflect.Array, reflect.Slice, reflect.Ptr:
-		return getIndexByType(t.Elem(), reqType)
-	}
-	return -1, errInvalidReflection
-}
-
-// SetUpdatedAt - set updated at time for namespace
+// TODO make func as void
+// setUpdatedAt - set updated at time for namespace
 func (db *Reindexer) setUpdatedAt(ns *reindexerNamespace, updatedAt time.Time) error {
-	ns.UpdatedAt = updatedAt
-	b, _ := json.Marshal(ns.UpdatedAt)
+	str := strconv.FormatInt(updatedAt.UnixNano(), 10)
 
-	if len(db.storagePath) != 0 && !ns.opts.NoPersistent {
-		if err := db.putMeta(ns.name, "updated", b); err != nil {
-			logger.Printf(INFO, "rq: Can't put meta to '%s'", ns.name)
-		}
-	}
+	db.putMeta(ns.name, "updated", []byte(str))
+
 	return nil
 }
 
 // GetUpdatedAt - get updated at time of namespace
 func (db *Reindexer) GetUpdatedAt(namespace string) (*time.Time, error) {
-	ns, err := db.getNS(namespace)
+	b, err := db.getMeta(namespace, "updated")
 	if err != nil {
 		return nil, err
 	}
 
-	return &ns.UpdatedAt, nil
+	updatedAtUnixNano, err := strconv.ParseInt(string(b), 10, 64)
+
+	// will return 1970-01-01 on parser error
+	updatedAt := time.Unix(0, updatedAtUnixNano).UTC()
+
+	return &updatedAt, nil
 }
 
 func (db *Reindexer) QueryFrom(d dsl.DSL) (*Query, error) {
@@ -795,7 +529,7 @@ func (db *Reindexer) QueryFrom(d dsl.DSL) (*Query, error) {
 		q.Distinct(d.Distinct)
 	}
 	if d.Sort.Field != "" {
-		q.Sort(d.Sort.Field, d.Sort.Desc)
+		q.Sort(d.Sort.Field, d.Sort.Desc, d.Sort.Values...)
 	}
 
 	for _, filter := range d.Filters {
@@ -824,17 +558,12 @@ func (db *Reindexer) QueryFrom(d dsl.DSL) (*Query, error) {
 	return q, nil
 }
 
-func walkUniqNamespaces(nsArray []*reindexerNamespace, visitor func(ns *reindexerNamespace)) {
-	for i := 0; i < len(nsArray); i++ {
-		uniq := true
-		for j := 0; j < i; j++ {
-			if nsArray[j] == nsArray[i] {
-				uniq = false
-				break
-			}
-		}
-		if uniq {
-			visitor(nsArray[i])
-		}
-	}
+// Get local thread reindexer usage stats
+func (db *Reindexer) GetStats() bindings.Stats {
+	return db.binding.GetStats()
+}
+
+// Reset local thread reindexer usage stats
+func (db *Reindexer) ResetStats() {
+	db.binding.ResetStats()
 }

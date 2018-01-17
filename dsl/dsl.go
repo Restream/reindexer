@@ -3,6 +3,7 @@ package dsl
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -20,9 +21,12 @@ type DSL struct {
 	Filters   []Filter `json:"filters"`
 }
 
+type sort Sort
+
 type Sort struct {
-	Field string `json:"field"`
-	Desc  bool   `json:"desc"`
+	Field  string        `json:"field"`
+	Desc   bool          `json:"desc"`
+	Values []interface{} `json:"values,omitempty"`
 }
 
 type Filter struct {
@@ -41,6 +45,35 @@ type filter struct {
 
 type value struct {
 	data string
+}
+
+func (s *Sort) UnmarshalJSON(data []byte) error {
+	sort := sort{}
+	err := json.Unmarshal(data, &sort)
+	if err != nil {
+		return err
+	}
+
+	s.Field = sort.Field
+	s.Desc = sort.Desc
+	s.Values = sort.Values
+	return s.CheckValuesType()
+}
+
+func (s *Sort) CheckValuesType() error {
+	if len(s.Values) == 0 {
+		return nil
+	}
+
+	t := reflect.TypeOf(s.Values[0])
+
+	for _, value := range s.Values {
+		if t != reflect.TypeOf(value) {
+			return errors.New("array must be homogeneous")
+		}
+	}
+
+	return nil
 }
 
 func (v *value) UnmarshalJSON(data []byte) error {

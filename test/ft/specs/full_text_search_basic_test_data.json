@@ -1,0 +1,1728 @@
+[
+  {
+    "test_case_description": "For English language it should allow for searching by single word",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "Aftermath - the consequences or aftereffects of a significant unpleasant event",
+      "Food prices soared in the aftermath of the drought",
+      "In the aftermath of the war ..."
+    ],
+    "documents_expected_to_match": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries"
+    ],
+    "valid_queries": [
+      "entity"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For English language it should allow for searching by single word without any regard for letter register",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "Aftermath - the consequences or aftereffects of a significant unpleasant event",
+      "Food prices soared in the aftermath of the drought",
+      "In the aftermath of the war ..."
+    ],
+    "documents_expected_to_match": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries"
+    ],
+    "valid_queries": [
+      "EnTiTy"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For English language it should allow for searching by single character word",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "Aftermath - the consequences or aftereffects of a significant unpleasant event",
+      "Food prices soared in the aftermath of the drought",
+      "In the aftermath of the war ...",
+      "Item is any tangible or intangible, visible or invisible 'thing.'",
+      "The item from all of the available evidence",
+      "Which items do we need to purchase for our new client ?",
+      "Sentence with 7, 13 and 141 numbers.",
+      "A sentence with word and number8 written together.",
+      "A sentence with special characters: /, (, +."
+    ],
+    "documents_expected_to_match": [
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "Aftermath - the consequences or aftereffects of a significant unpleasant event",
+      "A sentence with word and number8 written together.",
+      "A sentence with special characters: /, (, +."
+    ],
+    "valid_queries": [
+      "a"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For English language it should allow for searching by single word with a number mixed in it",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "Aftermath - the consequences or aftereffects of a significant unpleasant event",
+      "Food prices soared in the aftermath of the drought",
+      "In the aftermath of the war ...",
+      "Item is any tangible or intangible, visible or invisible 'thing.'",
+      "The item from all of the available evidence",
+      "Which items do we need to purchase for our new client ?",
+      "Sentence with 7, 13 and 141 numbers.",
+      "A sentence with word and number8 written together.",
+      "A sentence with special characters: /, (, +."
+    ],
+    "documents_expected_to_match": [
+      "A sentence with word and number8 written together."
+    ],
+    "valid_queries": [
+      "number8"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For English language it should allow for searching by two words separated by -",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "Aftermath - the consequences or aftereffects of a significant unpleasant event",
+      "Food prices soared in the aftermath of the drought",
+      "In the aftermath of the war ...",
+      "Item is any tangible or intangible, visible or invisible 'thing.'",
+      "The item from all of the available evidence",
+      "Which items do we need to purchase for our new client ?",
+      "Sentence with 7, 13 and 141 numbers.",
+      "A sentence with word and number8 written together.",
+      "A sentence with special characters: /, (, +.",
+      "The two co-founders both attended the ceremony."
+    ],
+    "documents_expected_to_match": [
+      "The two co-founders both attended the ceremony."
+    ],
+    "valid_queries": [
+      "co-founders"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For English language it should allow for searching by misspelled word",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "Aftermath - the consequences or aftereffects of a significant unpleasant event",
+      "Food prices soared in the aftermath of the drought",
+      "In the aftermath of the war ...",
+      "Item is any tangible or intangible, visible or invisible 'thing.'",
+      "The item from all of the available evidence",
+      "Which items do we need to purchase for our new client ?",
+      "Sentence with 7, 13 and 141 numbers.",
+      "A sentence with word and number8 written together.",
+      "A sentence with special characters: /, (, +.",
+      "The two co-founders both attended the ceremony.",
+      "We were going really, really fast!",
+      "This looks almost nonreal. Really.",
+      "This looks almost unreal. Really.",
+      "Did he really have a strange dream last night.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "Make it real! Make it real! Make it real!"
+    ],
+    "documents_expected_to_match": [
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "Make it real! Make it real! Make it real!"
+    ],
+    "valid_queries": [
+      "*rial*~"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For English language it should allow for searching by incomplete word",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "Aftermath - the consequences or aftereffects of a significant unpleasant event",
+      "Food prices soared in the aftermath of the drought",
+      "In the aftermath of the war ...",
+      "Item is any tangible or intangible, visible or invisible 'thing.'",
+      "The item from all of the available evidence",
+      "Which items do we need to purchase for our new client ?",
+      "Sentence with 7, 13 and 141 numbers.",
+      "A sentence with word and number8 written together.",
+      "A sentence with special characters: /, (, +.",
+      "The two co-founders both attended the ceremony.",
+      "We were going really, really fast!",
+      "This looks almost nonreal. Really.",
+      "This looks almost unreal. Really.",
+      "Did he really have a strange dream last night.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "Make it real! Make it real! Make it real!"
+    ],
+    "documents_expected_to_match": [
+      "We were going really, really fast!",
+      "This looks almost nonreal. Really.",
+      "This looks almost unreal. Really.",
+      "Did he really have a strange dream last night.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "Make it real! Make it real! Make it real!"
+    ],
+    "valid_queries": [
+      "*eal*"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For English language it should allow for searching by phrase of two words",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "Aftermath - the consequences or aftereffects of a significant unpleasant event",
+      "Food prices soared in the aftermath of the drought",
+      "In the aftermath of the war ...",
+      "Item is any tangible or intangible, visible or invisible 'thing.'",
+      "The item from all of the available evidence",
+      "Which items do we need to purchase for our new client ?",
+      "Sentence with 7, 13 and 141 numbers.",
+      "A sentence with word and number8 written together.",
+      "A sentence with special characters: /, (, +.",
+      "The two co-founders both attended the ceremony.",
+      "We were going really, really fast!",
+      "This looks almost nonreal. Really.",
+      "This looks almost unreal. Really.",
+      "Did he really have a strange dream last night.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "Make it real! Make it real! Make it real!",
+      "Sentence that contains a phrase we are looking for.",
+      "A phrase we are looking for is here!"
+    ],
+    "documents_expected_to_match": [
+      "Sentence that contains a phrase we are looking for.",
+      "A phrase we are looking for is here!"
+    ],
+    "valid_queries": [
+      "looking +for"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For English language it should allow for searching by phrase of three words",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "Aftermath - the consequences or aftereffects of a significant unpleasant event",
+      "Food prices soared in the aftermath of the drought",
+      "In the aftermath of the war ...",
+      "Item is any tangible or intangible, visible or invisible 'thing.'",
+      "The item from all of the available evidence",
+      "Which items do we need to purchase for our new client ?",
+      "Sentence with 7, 13 and 141 numbers.",
+      "A sentence with word and number8 written together.",
+      "A sentence with special characters: /, (, +.",
+      "The two co-founders both attended the ceremony.",
+      "We were going really, really fast!",
+      "This looks almost nonreal. Really.",
+      "This looks almost unreal. Really.",
+      "Did he really have a strange dream last night.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "Make it real! Make it real! Make it real!",
+      "Sentence that contains a phrase we are looking for.",
+      "A phrase we are looking for is here!"
+    ],
+    "documents_expected_to_match": [
+      "Sentence that contains a phrase we are looking for.",
+      "A phrase we are looking for is here!"
+    ],
+    "valid_queries": [
+      "are +looking +for"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For English language it should allow for searching by phrase of two words without any regard for letter register",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "Aftermath - the consequences or aftereffects of a significant unpleasant event",
+      "Food prices soared in the aftermath of the drought",
+      "In the aftermath of the war ...",
+      "Item is any tangible or intangible, visible or invisible 'thing.'",
+      "The item from all of the available evidence",
+      "Which items do we need to purchase for our new client ?",
+      "Sentence with 7, 13 and 141 numbers.",
+      "A sentence with word and number8 written together.",
+      "A sentence with special characters: /, (, +.",
+      "The two co-founders both attended the ceremony.",
+      "We were going really, really fast!",
+      "This looks almost nonreal. Really.",
+      "This looks almost unreal. Really.",
+      "Did he really have a strange dream last night.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "Make it real! Make it real! Make it real!",
+      "Sentence that contains a phrase we are looking for.",
+      "A phrase we are looking for is here!"
+    ],
+    "documents_expected_to_match": [
+      "Sentence that contains a phrase we are looking for.",
+      "A phrase we are looking for is here!"
+    ],
+    "valid_queries": [
+      "LoOkIng +foR"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For English language it should allow for searching by phrase of three words without any regard for letter register",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "Aftermath - the consequences or aftereffects of a significant unpleasant event",
+      "Food prices soared in the aftermath of the drought",
+      "In the aftermath of the war ...",
+      "Item is any tangible or intangible, visible or invisible 'thing.'",
+      "The item from all of the available evidence",
+      "Which items do we need to purchase for our new client ?",
+      "Sentence with 7, 13 and 141 numbers.",
+      "A sentence with word and number8 written together.",
+      "A sentence with special characters: /, (, +.",
+      "The two co-founders both attended the ceremony.",
+      "We were going really, really fast!",
+      "This looks almost nonreal. Really.",
+      "This looks almost unreal. Really.",
+      "Did he really have a strange dream last night.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "Make it real! Make it real! Make it real!",
+      "Sentence that contains a phrase we are looking for.",
+      "A phrase we are looking for is here!"
+    ],
+    "documents_expected_to_match": [
+      "Sentence that contains a phrase we are looking for.",
+      "A phrase we are looking for is here!"
+    ],
+    "valid_queries": [
+      "ArE +LoOkIng +foR"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For English language it should allow for searching by phrase of two words with a number mixed in it",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "Aftermath - the consequences or aftereffects of a significant unpleasant event",
+      "Food prices soared in the aftermath of the drought",
+      "In the aftermath of the war ...",
+      "Item is any tangible or intangible, visible or invisible 'thing.'",
+      "The item from all of the available evidence",
+      "Which items do we need to purchase for our new client ?",
+      "Sentence with 7, 13 and 141 numbers.",
+      "A sentence with word and number8 written together.",
+      "A sentence with special characters: /, (, +.",
+      "The two co-founders both attended the ceremony.",
+      "We were going really, really fast!",
+      "This looks almost nonreal. Really.",
+      "This looks almost unreal. Really.",
+      "Did he really have a strange dream last night.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "Make it real! Make it real! Make it real!",
+      "Sentence that contains a phrase we are looking for.",
+      "A phrase we are looking for is here!",
+      "A sentence with number 4815162342 in it"
+    ],
+    "documents_expected_to_match": [
+      "A sentence with number 4815162342 in it"
+    ],
+    "valid_queries": [
+      "number +4815162342"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For English language it should allow for searching by phrase of three words with a number mixed in it",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "Aftermath - the consequences or aftereffects of a significant unpleasant event",
+      "Food prices soared in the aftermath of the drought",
+      "In the aftermath of the war ...",
+      "Item is any tangible or intangible, visible or invisible 'thing.'",
+      "The item from all of the available evidence",
+      "Which items do we need to purchase for our new client ?",
+      "Sentence with 7, 13 and 141 numbers.",
+      "A sentence with word and number8 written together.",
+      "A sentence with special characters: /, (, +.",
+      "The two co-founders both attended the ceremony.",
+      "We were going really, really fast!",
+      "This looks almost nonreal. Really.",
+      "This looks almost unreal. Really.",
+      "Did he really have a strange dream last night.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "Make it real! Make it real! Make it real!",
+      "Sentence that contains a phrase we are looking for.",
+      "A phrase we are looking for is here!",
+      "A sentence with number 4815162342 in it"
+    ],
+    "documents_expected_to_match": [
+      "A sentence with number 4815162342 in it"
+    ],
+    "valid_queries": [
+      "number +4815162342 +in"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For English language it should allow for searching by misspelled phrase of two words",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "Aftermath - the consequences or aftereffects of a significant unpleasant event",
+      "Food prices soared in the aftermath of the drought",
+      "In the aftermath of the war ...",
+      "Item is any tangible or intangible, visible or invisible 'thing.'",
+      "The item from all of the available evidence",
+      "Which items do we need to purchase for our new client ?",
+      "Sentence with 7, 13 and 141 numbers.",
+      "A sentence with word and number8 written together.",
+      "A sentence with special characters: /, (, +.",
+      "The two co-founders both attended the ceremony.",
+      "We were going really, really fast!",
+      "This looks almost nonreal. Really.",
+      "This looks almost unreal. Really.",
+      "Did he really have a strange dream last night.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "Make it real! Make it real! Make it real!",
+      "Sentence that contains a phrase we are looking for.",
+      "A phrase we are looking for is here!",
+      "A sentence with number 4815162342 in it"
+    ],
+    "documents_expected_to_match": [
+      "Sentence that contains a phrase we are looking for.",
+      "A phrase we are looking for is here!"
+    ],
+    "valid_queries": [
+      "kooking~ +for"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For English language it should allow for searching by misspelled phrase of three words",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "Aftermath - the consequences or aftereffects of a significant unpleasant event",
+      "Food prices soared in the aftermath of the drought",
+      "In the aftermath of the war ...",
+      "Item is any tangible or intangible, visible or invisible 'thing.'",
+      "The item from all of the available evidence",
+      "Which items do we need to purchase for our new client ?",
+      "Sentence with 7, 13 and 141 numbers.",
+      "A sentence with word and number8 written together.",
+      "A sentence with special characters: /, (, +.",
+      "The two co-founders both attended the ceremony.",
+      "We were going really, really fast!",
+      "This looks almost nonreal. Really.",
+      "This looks almost unreal. Really.",
+      "Did he really have a strange dream last night.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "Make it real! Make it real! Make it real!",
+      "Sentence that contains a phrase we are looking for.",
+      "A phrase we are looking for is here!",
+      "A sentence with number 4815162342 in it"
+    ],
+    "documents_expected_to_match": [
+      "Sentence that contains a phrase we are looking for.",
+      "A phrase we are looking for is here!"
+    ],
+    "valid_queries": [
+      "are +kooking~ +for"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For English language it should allow for searching by incomplete phrase of two words",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "Aftermath - the consequences or aftereffects of a significant unpleasant event",
+      "Food prices soared in the aftermath of the drought",
+      "In the aftermath of the war ...",
+      "Item is any tangible or intangible, visible or invisible 'thing.'",
+      "The item from all of the available evidence",
+      "Which items do we need to purchase for our new client ?",
+      "Sentence with 7, 13 and 141 numbers.",
+      "A sentence with word and number8 written together.",
+      "A sentence with special characters: /, (, +.",
+      "The two co-founders both attended the ceremony.",
+      "We were going really, really fast!",
+      "This looks almost nonreal. Really.",
+      "This looks almost unreal. Really.",
+      "Did he really have a strange dream last night.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "Make it real! Make it real! Make it real!",
+      "Sentence that contains a phrase we are looking for.",
+      "A phrase we are looking for is here!",
+      "A sentence with number 4815162342 in it"
+    ],
+    "documents_expected_to_match": [
+      "Sentence that contains a phrase we are looking for.",
+      "A phrase we are looking for is here!"
+    ],
+    "valid_queries": [
+      "*ooking +fo*"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For English language it should allow for searching by incomplete phrase of three words",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "Aftermath - the consequences or aftereffects of a significant unpleasant event",
+      "Food prices soared in the aftermath of the drought",
+      "In the aftermath of the war ...",
+      "Item is any tangible or intangible, visible or invisible 'thing.'",
+      "The item from all of the available evidence",
+      "Which items do we need to purchase for our new client ?",
+      "Sentence with 7, 13 and 141 numbers.",
+      "A sentence with word and number8 written together.",
+      "A sentence with special characters: /, (, +.",
+      "The two co-founders both attended the ceremony.",
+      "We were going really, really fast!",
+      "This looks almost nonreal. Really.",
+      "This looks almost unreal. Really.",
+      "Did he really have a strange dream last night.",
+      "It is real hard to come up with a good idea. Such is the reality.",
+      "I tried real, real hard. It didn't work out for me, really.",
+      "Make it real! Make it real! Make it real!",
+      "Sentence that contains a phrase we are looking for.",
+      "A phrase we are looking for is here!",
+      "A sentence with number 4815162342 in it"
+    ],
+    "documents_expected_to_match": [
+      "Sentence that contains a phrase we are looking for.",
+      "A phrase we are looking for is here!"
+    ],
+    "valid_queries": [
+      "*en *er +looking +fo*"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Russian language it should allow for searching by single word",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Уполномоченным лицом (заявителем) могут быть только физические лица",
+      "Последствия - результат значительного неприятного события",
+      "Цены на продукты возрасли в результате последствий засухи",
+      "Как одно из последствий войны ..."
+    ],
+    "documents_expected_to_match": [
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права"
+    ],
+    "valid_queries": [
+      "лицо"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Russian language it should allow for searching by single word without any regard for letter register",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Уполномоченным лицом (заявителем) могут быть только физические лица",
+      "Последствия - результат значительного неприятного события",
+      "Цены на продукты возрасли в результате последствий засухи",
+      "Как одно из последствий войны ..."
+    ],
+    "documents_expected_to_match": [
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права"
+    ],
+    "valid_queries": [
+      "лИцО"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Russian language it should allow for searching by single character word",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Уполномоченным лицом (заявителем) могут быть только физические лица",
+      "Последствия - результат значительного неприятного события",
+      "Цены на продукты возрасли в результате последствий засухи",
+      "Как одно из последствий войны ...",
+      "Предмет - это любая материальная или неосязаемая, видимая или невидимая вещь.",
+      "Тот самый предмет из всех имеющихся улик",
+      "Какой предмет нам бы приобрести для нашего нового клиента ?",
+      "Предложение со словом и числом8, написанным слитно со словом.",
+      "Предложение со спец. символами: /, (, +."
+    ],
+    "documents_expected_to_match": [
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Цены на продукты возрасли в результате последствий засухи"
+    ],
+    "valid_queries": [
+      "в"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Russian language it should allow for searching by single word with a number mixed in it",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Уполномоченным лицом (заявителем) могут быть только физические лица",
+      "Последствия - результат значительного неприятного события",
+      "Цены на продукты возрасли в результате последствий засухи",
+      "Как одно из последствий войны ...",
+      "Предмет - это любая материальная или неосязаемая, видимая или невидимая вещь.",
+      "Тот самый предмет из всех имеющихся улик",
+      "Какой предмет нам бы приобрести для нашего нового клиента ?",
+      "Предложение со словом и числом8, написанным слитно со словом.",
+      "Предложение со спец. символами: /, (, +."
+    ],
+    "documents_expected_to_match": [
+      "Предложение со словом и числом8, написанным слитно со словом."
+    ],
+    "valid_queries": [
+      "числом8"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Russian language it should allow for searching by two words separated by -",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Уполномоченным лицом (заявителем) могут быть только физические лица",
+      "Последствия - результат значительного неприятного события",
+      "Цены на продукты возрасли в результате последствий засухи",
+      "Как одно из последствий войны ...",
+      "Предмет - это любая материальная или неосязаемая, видимая или невидимая вещь.",
+      "Тот самый предмет из всех имеющихся улик",
+      "Какой предмет нам бы приобрести для нашего нового клиента ?",
+      "Предложение со словом и числом8, написанным слитно со словом.",
+      "Предложение со спец. символами: /, (, +.",
+      "Оба со-учередителя посетили церемонию."
+    ],
+    "documents_expected_to_match": [
+      "Оба со-учередителя посетили церемонию."
+    ],
+    "valid_queries": [
+      "со-учередителя"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Russian language it should allow for searching by misspelled word",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Уполномоченным лицом (заявителем) могут быть только физические лица",
+      "Последствия - результат значительного неприятного события",
+      "Цены на продукты возрасли в результате последствий засухи",
+      "Как одно из последствий войны ...",
+      "Предмет - это любая материальная или неосязаемая, видимая или невидимая вещь.",
+      "Тот самый предмет из всех имеющихся улик",
+      "Какой предмет нам бы приобрести для нашего нового клиента ?",
+      "Предложение со словом и числом8, написанным слитно со словом.",
+      "Предложение со спец. символами: /, (, +.",
+      "Оба со-учередителя посетили церемонию.",
+      "Мы ехали пуперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Сделаем супер! Сделаем супер! Сделаем супер!"
+    ],
+    "documents_expected_to_match": [
+      "Мы ехали пуперски, суперски быстро!",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Сделаем супер! Сделаем супер! Сделаем супер!"
+    ],
+    "valid_queries": [
+      "пупер*~"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Russian language it should allow for searching by incomplete word",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Уполномоченным лицом (заявителем) могут быть только физические лица",
+      "Последствия - результат значительного неприятного события",
+      "Цены на продукты возрасли в результате последствий засухи",
+      "Как одно из последствий войны ...",
+      "Предмет - это любая материальная или неосязаемая, видимая или невидимая вещь.",
+      "Тот самый предмет из всех имеющихся улик",
+      "Какой предмет нам бы приобрести для нашего нового клиента ?",
+      "Предложение со словом и числом8, написанным слитно со словом.",
+      "Предложение со спец. символами: /, (, +.",
+      "Оба со-учередителя посетили церемонию.",
+      "Мы ехали суперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Сделаем супер! Сделаем супер! Сделаем супер!"
+    ],
+    "documents_expected_to_match": [
+      "Мы ехали суперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Сделаем супер! Сделаем супер! Сделаем супер!"
+    ],
+    "valid_queries": [
+      "супе*"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Russian language it should allow for searching by phrase of two words",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Уполномоченным лицом (заявителем) могут быть только физические лица",
+      "Последствия - результат значительного неприятного события",
+      "Цены на продукты возрасли в результате последствий засухи",
+      "Как одно из последствий войны ...",
+      "Предмет - это любая материальная или неосязаемая, видимая или невидимая вещь.",
+      "Тот самый предмет из всех имеющихся улик",
+      "Какой предмет нам бы приобрести для нашего нового клиента ?",
+      "Предложение со словом и числом8, написанным слитно со словом.",
+      "Предложение со спец. символами: /, (, +.",
+      "Оба со-учередителя посетили церемонию.",
+      "Мы ехали суперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Сделаем супер! Сделаем супер! Сделаем супер!",
+      "Предложение с фразой, которую мы ищем.",
+      "Фраза, которую мы ищем, находится тут!"
+    ],
+    "documents_expected_to_match": [
+      "Предложение с фразой, которую мы ищем.",
+      "Фраза, которую мы ищем, находится тут!"
+    ],
+    "valid_queries": [
+      "мы +ищем"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Russian language it should allow for searching by phrase of three words",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Уполномоченным лицом (заявителем) могут быть только физические лица",
+      "Последствия - результат значительного неприятного события",
+      "Цены на продукты возрасли в результате последствий засухи",
+      "Как одно из последствий войны ...",
+      "Предмет - это любая материальная или неосязаемая, видимая или невидимая вещь.",
+      "Тот самый предмет из всех имеющихся улик",
+      "Какой предмет нам бы приобрести для нашего нового клиента ?",
+      "Предложение со словом и числом8, написанным слитно со словом.",
+      "Предложение со спец. символами: /, (, +.",
+      "Оба со-учередителя посетили церемонию.",
+      "Мы ехали суперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Сделаем супер! Сделаем супер! Сделаем супер!",
+      "Предложение с фразой, которую мы ищем.",
+      "Фраза, которую мы ищем, находится тут!"
+    ],
+    "documents_expected_to_match": [
+      "Предложение с фразой, которую мы ищем.",
+      "Фраза, которую мы ищем, находится тут!"
+    ],
+    "valid_queries": [
+      "которую +мы +ищем"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Russian language it should allow for searching by phrase of two words without any regard for letter register",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Уполномоченным лицом (заявителем) могут быть только физические лица",
+      "Последствия - результат значительного неприятного события",
+      "Цены на продукты возрасли в результате последствий засухи",
+      "Как одно из последствий войны ...",
+      "Предмет - это любая материальная или неосязаемая, видимая или невидимая вещь.",
+      "Тот самый предмет из всех имеющихся улик",
+      "Какой предмет нам бы приобрести для нашего нового клиента ?",
+      "Предложение со словом и числом8, написанным слитно со словом.",
+      "Предложение со спец. символами: /, (, +.",
+      "Оба со-учередителя посетили церемонию.",
+      "Мы ехали суперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Сделаем супер! Сделаем супер! Сделаем супер!",
+      "Предложение с фразой, которую мы ищем.",
+      "Фраза, которую мы ищем, находится тут!"
+    ],
+    "documents_expected_to_match": [
+      "Предложение с фразой, которую мы ищем.",
+      "Фраза, которую мы ищем, находится тут!"
+    ],
+    "valid_queries": [
+      "Мы +иЩЕм"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Russian language it should allow for searching by phrase of three words without any regard for letter register",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Уполномоченным лицом (заявителем) могут быть только физические лица",
+      "Последствия - результат значительного неприятного события",
+      "Цены на продукты возрасли в результате последствий засухи",
+      "Как одно из последствий войны ...",
+      "Предмет - это любая материальная или неосязаемая, видимая или невидимая вещь.",
+      "Тот самый предмет из всех имеющихся улик",
+      "Какой предмет нам бы приобрести для нашего нового клиента ?",
+      "Предложение со словом и числом8, написанным слитно со словом.",
+      "Предложение со спец. символами: /, (, +.",
+      "Оба со-учередителя посетили церемонию.",
+      "Мы ехали суперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Сделаем супер! Сделаем супер! Сделаем супер!",
+      "Предложение с фразой, которую мы ищем.",
+      "Фраза, которую мы ищем, находится тут!"
+    ],
+    "documents_expected_to_match": [
+      "Предложение с фразой, которую мы ищем.",
+      "Фраза, которую мы ищем, находится тут!"
+    ],
+    "valid_queries": [
+      "коТорУю +Мы +иЩЕм"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Russian language it should allow for searching by phrase of two words with a number mixed in it",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Уполномоченным лицом (заявителем) могут быть только физические лица",
+      "Последствия - результат значительного неприятного события",
+      "Цены на продукты возрасли в результате последствий засухи",
+      "Как одно из последствий войны ...",
+      "Предмет - это любая материальная или неосязаемая, видимая или невидимая вещь.",
+      "Тот самый предмет из всех имеющихся улик",
+      "Какой предмет нам бы приобрести для нашего нового клиента ?",
+      "Предложение со словом и числом8, написанным слитно со словом.",
+      "Предложение со спец. символами: /, (, +.",
+      "Оба со-учередителя посетили церемонию.",
+      "Мы ехали суперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Сделаем супер! Сделаем супер! Сделаем супер!",
+      "Предложение с фразой, которую мы ищем.",
+      "Фраза, которую мы ищем, находится тут!",
+      "Предлоежние с номером 4815162342 внутри"
+    ],
+    "documents_expected_to_match": [
+      "Предлоежние с номером 4815162342 внутри"
+    ],
+    "valid_queries": [
+      "номером +4815162342"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Russian language it should allow for searching by phrase of three words with a number mixed in it",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Уполномоченным лицом (заявителем) могут быть только физические лица",
+      "Последствия - результат значительного неприятного события",
+      "Цены на продукты возрасли в результате последствий засухи",
+      "Как одно из последствий войны ...",
+      "Предмет - это любая материальная или неосязаемая, видимая или невидимая вещь.",
+      "Тот самый предмет из всех имеющихся улик",
+      "Какой предмет нам бы приобрести для нашего нового клиента ?",
+      "Предложение со словом и числом8, написанным слитно со словом.",
+      "Предложение со спец. символами: /, (, +.",
+      "Оба со-учередителя посетили церемонию.",
+      "Мы ехали суперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Сделаем супер! Сделаем супер! Сделаем супер!",
+      "Предложение с фразой, которую мы ищем.",
+      "Фраза, которую мы ищем, находится тут!",
+      "Предлоежние с номером 4815162342 внутри"
+    ],
+    "documents_expected_to_match": [
+      "Предлоежние с номером 4815162342 внутри"
+    ],
+    "valid_queries": [
+      "номером +4815162342 +внутри"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Russian language it should allow for searching by misspelled phrase of two words",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Уполномоченным лицом (заявителем) могут быть только физические лица",
+      "Последствия - результат значительного неприятного события",
+      "Цены на продукты возрасли в результате последствий засухи",
+      "Как одно из последствий войны ...",
+      "Предмет - это любая материальная или неосязаемая, видимая или невидимая вещь.",
+      "Тот самый предмет из всех имеющихся улик",
+      "Какой предмет нам бы приобрести для нашего нового клиента ?",
+      "Предложение со словом и числом8, написанным слитно со словом.",
+      "Предложение со спец. символами: /, (, +.",
+      "Оба со-учередителя посетили церемонию.",
+      "Мы ехали суперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Сделаем супер! Сделаем супер! Сделаем супер!",
+      "Предложение с фразой, которую мы ищем.",
+      "Фраза, которую мы ищем, находится тут!",
+      "Предлоежние с номером 4815162342 внутри"
+    ],
+    "documents_expected_to_match": [
+      "Предложение с фразой, которую мы ищем.",
+      "Фраза, которую мы ищем, находится тут!"
+    ],
+    "valid_queries": [
+      "вы~ +ищем"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Russian language it should allow for searching by misspelled phrase of three words",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Уполномоченным лицом (заявителем) могут быть только физические лица",
+      "Последствия - результат значительного неприятного события",
+      "Цены на продукты возрасли в результате последствий засухи",
+      "Как одно из последствий войны ...",
+      "Предмет - это любая материальная или неосязаемая, видимая или невидимая вещь.",
+      "Тот самый предмет из всех имеющихся улик",
+      "Какой предмет нам бы приобрести для нашего нового клиента ?",
+      "Предложение со словом и числом8, написанным слитно со словом.",
+      "Предложение со спец. символами: /, (, +.",
+      "Оба со-учередителя посетили церемонию.",
+      "Мы ехали суперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Сделаем супер! Сделаем супер! Сделаем супер!",
+      "Предложение с фразой, которую мы ищем.",
+      "Фраза, которую мы ищем, находится тут!",
+      "Предлоежние с номером 4815162342 внутри"
+    ],
+    "documents_expected_to_match": [
+      "Предложение с фразой, которую мы ищем.",
+      "Фраза, которую мы ищем, находится тут!"
+    ],
+    "valid_queries": [
+      "которую +вы~ +ищем"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Russian language it should allow for searching by incomplete phrase of two words",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Уполномоченным лицом (заявителем) могут быть только физические лица",
+      "Последствия - результат значительного неприятного события",
+      "Цены на продукты возрасли в результате последствий засухи",
+      "Как одно из последствий войны ...",
+      "Предмет - это любая материальная или неосязаемая, видимая или невидимая вещь.",
+      "Тот самый предмет из всех имеющихся улик",
+      "Какой предмет нам бы приобрести для нашего нового клиента ?",
+      "Предложение со словом и числом8, написанным слитно со словом.",
+      "Предложение со спец. символами: /, (, +.",
+      "Оба со-учередителя посетили церемонию.",
+      "Мы ехали суперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Сделаем супер! Сделаем супер! Сделаем супер!",
+      "Предложение с фразой, которую мы ищем.",
+      "Фраза, которую мы ищем, находится тут!",
+      "Предлоежние с номером 4815162342 внутри"
+    ],
+    "documents_expected_to_match": [
+      "Предложение с фразой, которую мы ищем.",
+      "Фраза, которую мы ищем, находится тут!"
+    ],
+    "valid_queries": [
+      "*ы +ище*"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Russian language it should allow for searching by incomplete phrase of three words",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "In politics, entity is used as term for territorial divisions of some countries",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Уполномоченным лицом (заявителем) могут быть только физические лица",
+      "Последствия - результат значительного неприятного события",
+      "Цены на продукты возрасли в результате последствий засухи",
+      "Как одно из последствий войны ...",
+      "Предмет - это любая материальная или неосязаемая, видимая или невидимая вещь.",
+      "Тот самый предмет из всех имеющихся улик",
+      "Какой предмет нам бы приобрести для нашего нового клиента ?",
+      "Предложение со словом и числом8, написанным слитно со словом.",
+      "Предложение со спец. символами: /, (, +.",
+      "Оба со-учередителя посетили церемонию.",
+      "Мы ехали суперски, суперски быстро!",
+      "Это выглядит суперски. Ну прямо суперски нереальным.",
+      "Это выглядит суперски. Суперски!",
+      "У него действительно был суперски странный сон вчера ?",
+      "Это супер тяжело - придумать хорошую идею. Суперски тяжело!",
+      "Я пытался супер супер сильно. Но мне суперски не повезло ...",
+      "Сделаем супер! Сделаем супер! Сделаем супер!",
+      "Предложение с фразой, которую мы ищем.",
+      "Фраза, которую мы ищем, находится тут!",
+      "Предлоежние с номером 4815162342 внутри"
+    ],
+    "documents_expected_to_match": [
+      "Предложение с фразой, которую мы ищем.",
+      "Фраза, которую мы ищем, находится тут!"
+    ],
+    "valid_queries": [
+      "*торую +мы +ищ*"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Numbers it should allow for searching by single digit number",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Sentence with 7, 13 and 141 numbers.",
+      "Предложение с числами 7, 13 и 141.",
+      "A sentence with word and number8 written together.",
+      "Предложение со словом и числом8, написанным слитно со словом."
+    ],
+    "documents_expected_to_match": [
+      "Sentence with 7, 13 and 141 numbers.",
+      "Предложение с числами 7, 13 и 141."
+    ],
+    "valid_queries": [
+      "7"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Numbers it should allow for searching by double digit number",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Sentence with 7, 13 and 141 numbers.",
+      "Предложение с числами 7, 13 и 141.",
+      "A sentence with word and number8 written together.",
+      "Предложение со словом и числом8, написанным слитно со словом."
+    ],
+    "documents_expected_to_match": [
+      "Sentence with 7, 13 and 141 numbers.",
+      "Предложение с числами 7, 13 и 141."
+    ],
+    "valid_queries": [
+      "13"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Numbers it should allow for searching by multiple digit number",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Sentence with 7, 13 and 141 numbers.",
+      "Предложение с числами 7, 13 и 141.",
+      "A sentence with word and number8 written together.",
+      "Предложение со словом и числом8, написанным слитно со словом."
+    ],
+    "documents_expected_to_match": [
+      "Sentence with 7, 13 and 141 numbers.",
+      "Предложение с числами 7, 13 и 141."
+    ],
+    "valid_queries": [
+      "141"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Numbers it should allow for searching by part of a number",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Sentence with 7, 13 and 141 numbers.",
+      "Предложение с числами 7, 13 и 141.",
+      "A sentence with word and number8 written together.",
+      "Предложение со словом и числом8, написанным слитно со словом."
+    ],
+    "documents_expected_to_match": [
+      "Sentence with 7, 13 and 141 numbers.",
+      "Предложение с числами 7, 13 и 141."
+    ],
+    "valid_queries": [
+      "*41"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Numbers it should allow for searching by number that was mixed with english/russian words",
+    "all_documents": [
+      "An entity is something that exists as itself",
+      "In law, a legal entity is an entity that is capable of bearing legal rights",
+      "Юридическое лицо — организация, которая имеет обособленное имущество",
+      "В законодательстве юридическое лицо является лицом, которое может иметь юридические права",
+      "Sentence with 7, 13 and 141 numbers.",
+      "Предложение с числами 7, 13 и 141.",
+      "A sentence with word and number81 written together.",
+      "Предложение со словом и числом81, написанным слитно со словом."
+    ],
+    "documents_expected_to_match": [
+      "A sentence with word and number81 written together.",
+      "Предложение со словом и числом81, написанным слитно со словом."
+    ],
+    "valid_queries": [
+      "*81"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it shouldn't allow for searching by slash character",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [],
+    "valid_queries": [
+      "/"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it shouldn't allow for searching by plus character",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [],
+    "valid_queries": [
+      "+"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it shouldn't allow for searching by dot character",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [],
+    "valid_queries": [
+      "."
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it shouldn't allow for searching by question mark character",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [],
+    "valid_queries": [
+      "?"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it shouldn't allow for searching by opening bracket character",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [],
+    "valid_queries": [
+      "("
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it should allow for searching by english words that contain '?'",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [
+      "Sentence that contains a word with question? in it."
+    ],
+    "valid_queries": [
+      "question?"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it should allow for searching by russian words that contain '?'",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [
+      "Предложение, которое содержит вопрос?, который слился со словом."
+    ],
+    "valid_queries": [
+      "вопрос?"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it should allow for searching by english words that contain '.'",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [
+      "Sentence that contains a word with dot. in it."
+    ],
+    "valid_queries": [
+      "dot."
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it should allow for searching by russian words that contain '.'",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [
+      "Предложение, которое содержит точку., которая слилась со словом."
+    ],
+    "valid_queries": [
+      "точку."
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it should allow for searching by english words that contain ''",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [
+      "Sentence that contains a word with 'quotes' around it.",
+      "Sentence that contains a word with \"double quotes\" around it."
+    ],
+    "valid_queries": [
+      "'quotes'"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it should allow for searching by russian words that contain ''",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Предложение, которое содержит слово с \"двойными кавычками\"."
+    ],
+    "valid_queries": [
+      "'кавычками'"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it should allow for searching by english words that contain \"\"",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [
+      "Sentence that contains a word with \"double quotes\" around it."
+    ],
+    "valid_queries": [
+      "\"double +quotes\""
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it should allow for searching by russian words that contain \"\"",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [
+      "Предложение, которое содержит слово с \"двойными кавычками\"."
+    ],
+    "valid_queries": [
+      "\"двойными +кавычками\""
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it should allow for searching by english words that contain /",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [
+      "Sentence that contains a word with / in it: slash/character "
+    ],
+    "valid_queries": [
+      "slash/character"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it should allow for searching by russian words that contain /",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [
+      "Предложение, которое содержит слово с / символом: слеш/символ"
+    ],
+    "valid_queries": [
+      "слеш/символ"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it should allow for searching by english words that contain +",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [
+      "Sentence that contains a word with + in it: when you are 18+"
+    ],
+    "valid_queries": [
+      "you +are +18+"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it should allow for searching by russian words that contain +",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [
+      "Предложение, которое содержит слово с + символом: когда тебе 18+"
+    ],
+    "valid_queries": [
+      "тебе +18+"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it should allow for searching by english words that contain ()",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)"
+    ],
+    "valid_queries": [
+      "Mortal +Combat(Ultimatum)"
+    ],
+    "invalid_queries": []
+  },
+  {
+    "test_case_description": "For Special Characters it should allow for searching by russian words that contain ()",
+    "all_documents": [
+      "Sentence that contains a word with question? in it.",
+      "Предложение, которое содержит вопрос?, который слился со словом.",
+      "Sentence that contains a word with dot. in it.",
+      "Предложение, которое содержит точку., которая слилась со словом.",
+      "Sentence that contains a word with 'quotes' around it.",
+      "Предложение, которое содержит слово с 'кавычками'.",
+      "Sentence that contains a word with \"double quotes\" around it.",
+      "Предложение, которое содержит слово с \"двойными кавычками\".",
+      "Sentence that contains a word with / in it: slash/character ",
+      "Предложение, которое содержит слово с / символом: слеш/символ",
+      "Sentence that contains a word with + in it: when you are 18+",
+      "Предложение, которое содержит слово с + символом: когда тебе 18+",
+      "Sentence that contains a word with () in it: Mortal Combat(Ultimatum)",
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "documents_expected_to_match": [
+      "Предложение, которое содержит слово с () символами: Мортал Комбат(Ультиматум)"
+    ],
+    "valid_queries": [
+      "Мортал +Комбат(Ультиматум)"
+    ],
+    "invalid_queries": []
+  }
+]

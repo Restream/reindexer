@@ -1,0 +1,80 @@
+#pragma once
+
+#include <functional>
+#include <type_traits>
+#include "core/idsetcache.h"
+#include "core/index/indexstore.h"
+#include "core/index/payload_map.h"
+#include "core/index/string_map.h"
+#include "core/index/updatetracker.h"
+#include "estl/fast_hash_set.h"
+
+namespace reindexer {
+
+template <typename T>
+class IndexUnordered : public IndexStore<typename T::key_type> {
+public:
+	// Constructor specialization for any map or unordered_map
+	template <typename U = T>
+	IndexUnordered(IndexType _type, const string &_name, const IndexOpts &opts,
+				   typename std::enable_if<!is_string_unord_map_key<U>::value && !is_string_map_key<U>::value>::type * = 0)
+		: IndexStore<typename T::key_type>(_type, _name, opts) {}
+
+	// Constructor specialization for payload_unordered_map
+	template <typename U = T>
+	IndexUnordered(IndexType _type, const string &_name, const IndexOpts &opts, const PayloadType::Ptr payloadType, const FieldsSet &fields,
+				   typename std::enable_if<is_payload_unord_map_key<U>::value>::type * = 0)
+		: IndexStore<typename T::key_type>(_type, _name, opts, payloadType, fields),
+		  idx_map(1000, hash_composite(payloadType, fields), equal_composite(payloadType, fields)) {}
+
+	// Constructor specialization for payload_map
+	template <typename U = T>
+	IndexUnordered(IndexType _type, const string &_name, const IndexOpts &opts, const PayloadType::Ptr payloadType, const FieldsSet &fields,
+				   typename std::enable_if<is_payload_map_key<U>::value>::type * = 0)
+		: IndexStore<typename T::key_type>(_type, _name, opts, payloadType, fields), idx_map(less_composite(payloadType, fields)) {}
+
+	// Constructor specialization for unordered_str_map
+	template <typename U = T>
+	IndexUnordered(IndexType _type, const string &_name, const IndexOpts &opts,
+				   typename std::enable_if<is_string_unord_map_key<U>::value>::type * = 0)
+		: IndexStore<typename T::key_type>(_type, _name, opts), idx_map(1000, hash_sptr(opts.CollateMode), equal_sptr(opts.CollateMode)) {}
+
+	// Constructor specialization for str_map
+	template <typename U = T>
+	IndexUnordered(IndexType _type, const string &_name, const IndexOpts &opts,
+				   typename std::enable_if<is_string_map_key<U>::value>::type * = 0)
+		: IndexStore<typename T::key_type>(_type, _name, opts), idx_map(comparator_sptr(opts.CollateMode)) {}
+
+	KeyRef Upsert(const KeyRef &key, IdType id) override;
+	void Delete(const KeyRef &key, IdType id) override;
+	void DumpKeys() override;
+	SelectKeyResults SelectKey(const KeyValues &keys, CondType condition, SortType stype, Index::ResultType res_type) override;
+	void Commit(const CommitContext &ctx) override;
+	void UpdateSortedIds(const UpdateSortedContext &) override;
+	Index *Clone() override;
+	size_t Size() const override { return idx_map.size(); }
+
+	IdSetRef Find(const KeyRef &key) override {
+		auto res = this->find(key);
+		return (res != idx_map.end()) ? res->second.Sorted(0) : IdSetRef();
+	}
+
+protected:
+	void tryIdsetCache(const KeyValues &keys, CondType condition, SortType sortId, std::function<void(SelectKeyResult &)> selector,
+					   SelectKeyResult &res);
+
+	template <typename U = T, typename std::enable_if<is_string_map_key<U>::value || is_string_unord_map_key<T>::value>::type * = nullptr>
+	typename T::iterator find(const KeyRef &key);
+	template <typename U = T, typename std::enable_if<!is_string_map_key<U>::value && !is_string_unord_map_key<T>::value>::type * = nullptr>
+	typename T::iterator find(const KeyRef &key);
+	// Index map
+	T idx_map;
+	// Merged idsets cache
+	shared_ptr<IdSetCache> cache_;
+	// Empty ids
+	Index::KeyEntry empty_ids_;
+	// Tracker of updates
+	UpdateTracker<T> tracker_;
+};
+
+}  // namespace reindexer

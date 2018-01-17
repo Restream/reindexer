@@ -6,6 +6,37 @@ Reindexer's goal is to provide fast search with complex queries. We at Restream 
 
 The core is written in C++ and the application level API is in Go. 
 
+# Table of contents:
+
+- [Features](#features)
+	- [Performance](#performance)
+	- [Memory Consumption](#memory-consumption)
+	- [Full text search](#full-text-search)
+	- [Disk Storage](#disk-storage)
+- [Usage](#usage)
+	- [SQL compatible interface](#sql-compatible-interface)
+- [Installation](#installation)
+	- [Prerequirements](#prerequirements)
+	- [Get Reindexer](#get-reindexer)
+- [Advanced Usage](#advanced-usage)
+	- [Index Types and Their Capabilites](#index-types-and-their-capabilites)
+	- [Nested Structs](#nested-structs)
+	- [Join](#join)
+		- [Joinable interface](#joinable-interface)
+	- [Complex Primary Keys and Composite Indices](#complex-primary-keys-and-composite-indices)
+	- [Aggregations](#aggregations)
+	- [Direct JSON operations](#direct-json-operations)
+		- [Upsert data in JSON format](#upsert-data-in-json-format)
+		- [Get Query results in JSON format](#get-query-results-in-json-format)
+	- [Using object cache](#using-object-cache)
+		- [DeepCopy interface](#deepcopy-interface)
+		- [Get shared objects from object cache (USE WITH CAUTION)](#get-shared-objects-from-object-cache-use-with-caution)
+- [Logging, debug and profiling](#logging-debug-and-profiling)
+	- [Turn on logger](#turn-on-logger)
+	- [Debug queries](#debug-queries)
+	- [Profiling](#profiling)
+- [Limitations and known issues](#limitations-and-known-issues)
+
 ## Features
 
 Key features:
@@ -44,18 +75,19 @@ To achieve that, several optimizations are employed, both on the C++ and Go leve
 
 - Memory overhead is about 32 bytes per document + ≈4-16 bytes per each search index.
 
-- There is an object cache on the Go level for deserialized documents produced after query execution. Future queries use pre-deserialized documents, which cuts repeated deserialization and allocation costs.
+- There is an object cache on the Go level for deserialized documents produced after query execution. Future queries use pre-deserialized documents, which cuts repeated deserialization and allocation costs
 
 - The Query interface uses `sync.Pool` for reusing internal structures and buffers. 
 Combining of these techings let's Reindexer execute most of queries without any allocations.
 
+### Full text search
+Reindexer has internal full text search engine. Full text search usage documentation and examples are [here](fulltext.md)
 
 ### Disk Storage
 
 Reindexer can store documents to and load documents from disk via LevelDB. Documents are written to the storage backend asynchronously by large batches automatically in background.
 
 When a namespace is created, all its documents are stored into RAM, so the queries on these documents run entirely in in-memory mode.
-
 
 ## Usage
 
@@ -90,7 +122,7 @@ func main() {
 	db.EnableStorage("/tmp/reindex/")
 
 	// Create new namespace with name 'items', which will store structs of type 'Item'
-	db.NewNamespace("items", reindexer.DefaultNamespaceOptions(), Item{})
+	db.OpenNamespace("items", reindexer.DefaultNamespaceOptions(), Item{})
 
 	// Generate dataset
 	for i := 0; i < 100000; i++ {
@@ -125,83 +157,57 @@ func main() {
 		Offset(0).                                    // from 0 position
 		ReqTotal()                                    // Calculate the total count of matching documents
 
-	// `defer query.Close` is optional but lets Reindexer reuse internal buffers, and avoid extra allocs
-	defer query.Close()
 	// Execute the query and return an iterator
 	iterator := query.Exec()
+	// Iterator must be closed
+	defer iterator.Close()
 
-	// Check the error
-	if err := iterator.Error(); err != nil {
-		panic(err)
-	}
-
-	fmt.Println("Found", query.GetTotal(), "total documents, first", iterator.Len(), "documents:")
+	fmt.Println("Found", iterator.TotalCount(), "total documents, first", iterator.Count(), "documents:")
 
 	// Iterate over results
 	for iterator.Next() {
 		// Get the next document and cast it to a pointer
-		elem := iterator.Ptr().(*Item)
+		elem := iterator.Object().(*Item)
 		fmt.Println(*elem)
+	}
+	// Check the error
+	if err := iterator.Error(); err != nil {
+		panic(err)
 	}
 }
 ``` 
+### SQL compatible interface
+
+As alternative to Query builder Reindexer provides SQL compatible query interface. Here is sample of SQL interface usage:
+
+```go
+    ...
+	iterator := db.ExecSQL ("SELECT * FROM items WHERE name='Vasya' AND year > 2020 AND articles IN (6,1,8) ORDER BY year LIMIT 10")
+    ...
+```
+Please note, that Query builder interface is prefferable way: It have more features, and faster than SQL interface
 
 ## Installation
 ### Prerequirements
 
 Reindexer's core is written in C++11 and uses LevelDB as the storage backend, so the C++11 toolchain and LevelDB must be installed before installing Reindexer. 
 
-To build Reindexer, g++ 4.7+ or clang 3.3+ is required.
+To build Reindexer, g++ 4.8+ or clang 3.3+ is required.
 
+### Optional dependencies
 
-#### OSX
-
-Assuming [homebrew](https://brew.sh/index.html) is installed:
-
-```bash
-brew install leveldb snappy
-```
-
-
-#### Ubuntu 14.04+, Debian 7+
-
-```bash
-sudo apt-get install -y build-essential g++ libsnappy-dev make curl
-curl -L https://github.com/google/leveldb/archive/v1.20.tar.gz | tar xzv 
-cd leveldb-1.20 && make -j4 && sudo mv out-static/libleveldb.* /usr/local/lib
-cd include && sudo cp -R leveldb /usr/local/include
-sudo ldconfig
-```
-
-#### Fedora, RHEL, Centos 7+
-```bash
-sudo yum install -y gcc-c++ make snappy-devel findutils curl
-curl -L https://github.com/google/leveldb/archive/v1.20.tar.gz | tar xzv 
-cd leveldb-1.20 && make -j4 && sudo mv out-static/libleveldb.* /usr/local/lib
-cd include && sudo cp -R leveldb /usr/local/include
-sudo ldconfig
-```
-
-#### Centos 6
-```bash
-sudo yum -y install centos-release-scl
-sudo yum -y install devtoolset-4-gcc devtoolset-4-gcc-c++ make snappy-devel findutils curl
-source scl_source enable devtoolset-4
-curl -L https://github.com/google/leveldb/archive/v1.20.tar.gz | tar xzv 
-cd leveldb-1.20 && make -j4 && sudo mv out-static/libleveldb.* /usr/local/lib
-cd include && sudo cp -R leveldb /usr/local/include
-sudo ldconfig
-```
+- `Doxygen` package is also required for building a documentation of the project.
+- `cmake`, `gtest`,`gbenchmark` for run C++ tests and benchmarks
+- `gperftools` for memory and performance profiling
 
 ### Get Reindexer
 
 ```bash
 go get -a github.com/restream/reindexer
+bash $GOPATH/src/github.com/restream/reindexer/dependencies.sh
 go generate github.com/restream/reindexer
 ```
-
 ## Advanced Usage
-
 ### Index Types and Their Capabilites
 
 Internally, structs are split into two parts:
@@ -214,17 +220,18 @@ Queries are possible only on the indexed fields, marked with `reindex` tag. The 
 
 - `name` – index name.
 - `type` – index type:
-
-    - `hash` – fast select by EQ and SET match. Does not allow sorting results by field. Used by default.
-    - `tree` – fast select by RANGE, GT, and LT matches. A bit slower for EQ and SET matches than `hash` index. Allows sorting results by field.
-    - `fulltext` – full text search index. 
-    - `text` – simple and fast full text search index.
+    - `hash` – fast select by EQ and SET match. Does not allow sorting results by field. Used by default. Allows *slow* and uneffecient sorting by field
+    - `tree` – fast select by RANGE, GT, and LT matches. A bit slower for EQ and SET matches than `hash` index. Allows fast sorting results by field.
+    - `text` – full text search index. Usage details of full text search is described [here](fulltext.md)
     - `-` – column index. Can't perform fast select because it's implemented with full-scan technic. Has the smallest memory overhead.
 - `opts` – additional index options:
-    - `pk` – field is part of a primary key.
+    - `pk` – field is part of a primary key. Struct must have at least 1 field tagged with `pk`
     - `composite` – create composite index. The field type must be an empty struct: `struct{}`.
     - `joined` – field is a recipient for join. The field type must be `[]*SubitemType`.
-
+	- `dense` - reduce index size. For `hash` and `tree` it will save 8 bytes per unique key value. For `-` it will save 4-8 bytes per each element. Useful for indexes with high sectivity, but for `tree` and `hash` indexes with low selectivity can seriously decrease update performance. Also `dense` will slow down wide fullscan queries on `-` indexes, due to lack of CPU cache optimization.
+	- `collate_numeric` - create string index that provides values order in numeric sequence. The field type must be a string.
+	- `collate_ascii` - create case-insensitive string index works with ASCII. The field type must be a string.
+	- `collate_utf8` - create case-insensitive string index works with UTF8. The field type must be a string.
 
 ### Nested Structs
 
@@ -278,34 +285,14 @@ type ItemWithJoin struct {
 
 In this example, Reindexer uses reflection under the hood to create Actor slice and copy Actor struct. 
 
+#### Joinable interface
 
-#### Joinable and Clonable inerfaces
-
-To avoid using reflection, `Item` can implement `Joinable` and `Clonable` interfaces. If they are implemented, Reindexer uses them instead of the slow reflection-based implementation. This increases overall performance by 10-20%, and reduces the amount of allocations.
+To avoid using reflection, `Item` can implement `Joinable` interface. If that implemented, Reindexer uses this instead of the slow reflection-based implementation. This increases overall performance by 10-20%, and reduces the amount of allocations.
 
 
 ```go
-// Clonable interface implementation.
-// ClonePtrSlice must create slice of pointers to object copies.
-// WARNING: ClonePtrSlice is called under the Reindexer namespace lock. Therefore calls from ClonePtrSlice to any Reindexer function can produce deadlock.
-func (item *ItemWithJoin) ClonePtrSlice(src []interface{}) []interface{} {
-	// Create a single slice of objects to avoid separate allocation of each object
-	objSlice := make([]ItemWithJoin, 0, len(src))
-	for i := 0; i < len(src); i++ {
-		objSlice = append(objSlice, *src[i].(*ItemWithJoin))
-	}
-
-	// Fill the slice with pointers to elements.
-	// It is possible to reuse original src slice.
-	for i := 0; i < len(src); i++ {
-		src[i] = &objSlice[i]
-	}
-	return src
-}
-
 // Joinable interface implementation.
 // Join adds items from the joined namespace to the `ItemWithJoin` object.
-// Join is called from lock-free context, so calling Reindexer functions from Join is safe.
 // When calling Joinable interface, additional context variable can be passed to implement extra logic in Join.
 func (item *ItemWithJoin) Join(field string, subitems []interface{}, context interface{}) {
 
@@ -317,7 +304,6 @@ func (item *ItemWithJoin) Join(field string, subitems []interface{}, context int
 	}
 }
 ```
-
 
 ### Complex Primary Keys and Composite Indices
 
@@ -355,7 +341,7 @@ Also composite indices are useful for sorting results by multiple fields:
 
 ```go
 type Item struct {
-	ID     int64 `reindex:"id,-,pk"`
+	ID     int64 `reindex:"id,,pk"`
 	Rating int   `reindex:"rating"`
 	Year   int   `reindex:"year"`
 
@@ -369,13 +355,159 @@ type Item struct {
 
 ```
 
+### Aggregations
+
+Reindexer allows to do aggregation queries. Currently Average and Sum aggregations are supported. To support aggregation `Query` has 2 methods: `Aggregate` and `GetAggreatedValue`.
+`Aggregate` should be called before Query execution - to ask reindexer calculate aggregation and `GetAggreatedValue` after Query execution to obtain aggregated value
+
+
+### Direct JSON operations
+
+#### Upsert data in JSON format
+
+If source data is available in JSON format, then it is possible to improve performance of Upsert/Delete operations by directly passing JSON to reindexer. JSON deserialization will be done by C++ code, without extra allocs/deserialization in Go code. 
+
+Upsert or Delete functions can process JSON just by passing []byte argument with json 
+```go
+	json := []byte (`{"id":1,"name":"test"}`)
+	db.UpsertJSON ("items",json)
+```
+
+It is just faster equalent of:
+```go
+	item := &Item{}
+	json.Unmarshal ([]byte (`{"id":1,"name":"test"}`),item)
+	db.Upsert ("items",item)
+```
+
+#### Get Query results in JSON format
+
+In case of requiment to serialize results of Query in JSON format, then it is possible to improve performance by directly obtaining results in JSON format from reindexer. JSON serialization will be done by C++ code, without extra allocs/serialization in Go code. 
+
+```go
+...		
+	iterator := db.Query("items").
+		Select ("id","name").        // Filter output JSON: Select only "id" and "name" fields of items, another fields will be ommited
+		Limit (1).
+		ExecToJson ("root_object")   // Name of root object of output JSON
+
+	json,err := iterator.JsonAll()
+	// Check the error
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf ("%s\n",string (json))
+...
+```
+This code will print something like:
+```json
+{"root_object":[{"id":1,"name":"test"}]}
+```
+### Using object cache
+
+To avoid race conditions, by default object cache is turned off and all objects are allocated and deserialized from reindexer internal format (called `CJSON`) per each query. 
+The deserialization is uses reflection, so it's speed is not optimal (in fact `CJSON` deserialization is ~3-10x faster than `JSON`, and ~1.2x faster than `GOB`), but perfrormance is still seriously limited by reflection overhead.
+
+There are 2 ways to enable object cache:
+
+- Provide DeepCopy interface
+- Ask query return shared objects from cache
+
+#### DeepCopy interface
+
+If object is implements DeepCopy intreface, then reindexer will turn on object cache and use DeepCopy interface to copy objects from cache to query results. The DeepCopy interface is responsible to 
+make deep copy of source object.
+
+Here is sample of DeepCopy interface implementation
+```go
+func (item *Item) DeepCopy () interface {} {
+	copyItem := &Item{
+		ID: item.ID,
+		Name: item.Name,
+		Articles: make ([]int,cap (item.Articles),len (item.Articles)),
+		Year: item.Year,
+	}
+	copy (copyItem.Articles,item.Articles)
+	return copyItem
+}
+```
+
+There are availbale code generation tool [gencopy](../gencopy), which can automatically generate DeepCopy interface for structs. 
+
+#### Get shared objects from object cache (USE WITH CAUTION)
+
+To speed up queries and do not allocate new objects per each query it is possible ask query return objects directly from object cache. For enable this behaviour, call `AllowUnsafe(true)` on `Iterator`.
+
+WARNING: when used `AllowUnsafe(true)` queries returns shared pointers to structs in object cache. Therefore application MUST NOT modify returned objects. 
+
+```go
+	res, err := db.Query("items").WhereInt ("id",reindexer.EQ,1).Exec().AllowUnsafe(true).FetchAll()
+	if err != nil {
+		panic (err)
+	}
+
+	if len (res) > 1 {
+		// item is SHARED pointer to struct in object cache
+		item = res[0].(*Item)
+
+		// It's OK - fmt.Printf will not modify item
+		fmt.Printf ("%v",item)
+
+		// It's WRONG - can race, and will corrupt data in object cache
+		item.Name = "new name"
+	}
+```
+## Logging, debug and profiling
+
+### Turn on logger
+Reindexer logger can be turned on by `db.SetLogger()` method, just like in this snippet of code:
+```go
+type Logger struct {
+}
+func (Logger) Printf(level int, format string, msg ...interface{}) {
+	log.Printf(format, msg...)
+}
+...
+	db.SetLogger (Logger{})
+```
+
+### Debug queries
+
+Another useful feature is debug print of processed Queries. To debug print queries details there are 2 methods:
+- `db.SetDefaultQueryDebug(namespace string,level int)` - it globally enables print details of all queries by namespace
+- `query.Debug(level int)` - print details of query execution
+
+`level` is level of verbosity:
+- `reindexer.INFO` - will print only query conditions
+- `reindexer.TRACE` - will print query conditions and execution details with timings
+
+### Profiling
+
+Because reindexer core is written in C++ all calls to reindexer and their memory consumption are not visible for go profiler. To profile reindexer core there are cgo profiler available. cgo profiler now is part of reindexer, but it can be used with any another cgo code.
+
+Usage of cgo profiler is very similar with usage of [go profiler](https://golang.org/pkg/net/http/pprof/).
+
+1. Add import:
+```go
+import _ "github.com/restream/reindexer/pprof"
+```
+
+2. If your application is not already running an http server, you need to start one. Add "net/http" and "log" to your imports and the following code to your main function:
+
+```go
+go func() {
+	log.Println(http.ListenAndServe("localhost:6060", nil))
+}()
+```
+3. Run application with envirnoment variable `HEAPPROFILE=/tmp/pprof`
+4. Then use the pprof tool to look at the heap profile:
+```bash
+pprof -symbolize remote http://localhost:6060/debug/cgo/pprof/heap
+```
 
 ## Limitations and known issues
 
 Currently Reindexer is stable and production ready, but it is still a work in progress, so there are some limitations and issues:
 
-- Current `Iterator` implementation is not optimal and always deserializes all documents returned by Query. Therefore queries which return big datasets without `.Limit ()` can be pretty slow.
-- Slow switching between write and read modes. For example, a loop with a single upsert followed by a select will run slowly. 
 - There is no standalone server mode. Only embeded (`builtin`) binding is supported for now.
 - Internal C++ API is not stabilized and is subject to change.
-- It's impossible to change index structure if it already contains data. If index structure changes, the storage is dropped or an error is returned (depends on the namespace options; default behavior is drop the storage).

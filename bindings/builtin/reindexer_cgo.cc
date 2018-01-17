@@ -1,11 +1,12 @@
 
 #include "reindexer_cgo.h"
 #include <string.h>
-#include "cbinding/reindexer_c.h"
+#include "core/cbinding/reindexer_c.h"
 #include "tools/logger.h"
 
+extern "C" {
 #include <_cgo_export.h>
-
+}
 using namespace reindexer;
 
 void reindexer_enable_go_logger() {

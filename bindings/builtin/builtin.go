@@ -1,25 +1,30 @@
 package builtin
 
-// #cgo CXXFLAGS: -std=c++11 -g -O2 -Wall -Wpedantic -Wextra -I../..
-// #cgo CFLAGS: -std=c99 -g -O2 -Wall -Wpedantic -Wno-unused-variable -I../..
-// #cgo LDFLAGS: -lreindexer -lleveldb -lsnappy -L${SRCDIR}/../../.build -lstdc++
-// #include "cbinding/reindexer_c.h"
+// #cgo CXXFLAGS: -std=c++11 -g -O2 -Wall -Wpedantic -Wextra -I../../cpp_src
+// #cgo CFLAGS: -std=c99 -g -O2 -Wall -Wpedantic -Wno-unused-variable -I../../cpp_src
+// #cgo LDFLAGS: -lreindexer -lleveldb -lsnappy -L${SRCDIR}/../../cpp_src/.build -lstdc++ -g
+// #include "core/cbinding/reindexer_c.h"
 // #include "reindexer_cgo.h"
 // #include <stdlib.h>
 import "C"
 import (
 	"errors"
 	"reflect"
+	"runtime"
 	"sync"
 	"unsafe"
 
 	"time"
 
-	"github.com/restream/reindexer"
 	"github.com/restream/reindexer/bindings"
 )
 
-var logger reindexer.Logger
+// Logger interface for reindexer
+type Logger interface {
+	Printf(level int, fmt string, msg ...interface{})
+}
+
+var logger Logger
 
 var bufPool sync.Pool
 
@@ -27,12 +32,18 @@ type Builtin struct {
 }
 
 type RawCBuffer struct {
-	cbuf C.reindexer_buffer
+	cbuf         C.reindexer_buffer
+	hasFinalizer bool
+}
+
+func (buf *RawCBuffer) FreeFinalized() {
+	buf.hasFinalizer = false
+	buf.Free()
 }
 
 func (buf *RawCBuffer) Free() {
 	if buf.cbuf.data != nil {
-		C.free(unsafe.Pointer(buf.cbuf.data))
+		C.reindexer_free_buffer(buf.cbuf)
 	}
 	buf.cbuf.data = nil
 	bufPool.Put(buf)
@@ -60,19 +71,23 @@ func str2c(str string) C.reindexer_string {
 	return C.reindexer_string{p: unsafe.Pointer(hdr.Data), n: C.int(hdr.Len)}
 }
 func err2go(ret C.reindexer_error) error {
-	defer C.free(unsafe.Pointer(ret.what))
 	if ret.what != nil {
-		return errors.New("rq:" + C.GoString(ret.what))
+		defer C.free(unsafe.Pointer(ret.what))
+		return bindings.NewError("rq:"+C.GoString(ret.what), int(ret.code))
 	}
 	return nil
 }
 
 func ret2go(ret C.reindexer_ret) (*RawCBuffer, error) {
-	defer C.free(unsafe.Pointer(ret.err.what))
 	rbuf := newRawCBuffer()
 	rbuf.cbuf = ret.out
 	if ret.err.what != nil {
+		defer C.free(unsafe.Pointer(ret.err.what))
 		return rbuf, errors.New("rq:" + C.GoString(ret.err.what))
+	}
+	if !rbuf.hasFinalizer {
+		runtime.SetFinalizer(rbuf, (*RawCBuffer).FreeFinalized)
+		rbuf.hasFinalizer = true
 	}
 	return rbuf, nil
 }
@@ -99,20 +114,27 @@ func bool2cint(v bool) C.int {
 	return 0
 }
 
-func (binding *Builtin) DeleteItem(data []byte) (bindings.RawBuffer, error) {
-	return ret2go(C.reindexer_delete(buf2c(data)))
+func (binding *Builtin) ModifyItem(data []byte, mode int) (bindings.RawBuffer, error) {
+	return ret2go(C.reindexer_modify_item(buf2c(data), C.int(mode)))
 }
 
-func (binding *Builtin) UpsertItem(data []byte) (bindings.RawBuffer, error) {
-	return ret2go(C.reindexer_upsert(buf2c(data)))
+func (binding *Builtin) OpenNamespace(namespace string, enableStorage, dropOnFormatError bool) error {
+	opts := C.StorageOpts{
+		IsEnabled:               bool2cint(enableStorage),
+		IsDropOnFileFormatError: bool2cint(dropOnFormatError),
+		IsCreateIfMissing:       bool2cint(true),
+		IsDropOnIndexesConflict: bool2cint(false),
+	}
+	return err2go(C.reindexer_open_namespace(str2c(namespace), opts))
+}
+func (binding *Builtin) CloseNamespace(namespace string) error {
+	return err2go(C.reindexer_close_namespace(str2c(namespace)))
 }
 
-func (binding *Builtin) AddNamespace(namespace string) error {
-	return err2go(C.reindexer_addnamespace(str2c(namespace)))
+func (binding *Builtin) DropNamespace(namespace string) error {
+	return err2go(C.reindexer_drop_namespace(str2c(namespace)))
 }
-func (binding *Builtin) DeleteNamespace(namespace string) error {
-	return err2go(C.reindexer_delete_namespace(str2c(namespace)))
-}
+
 func (binding *Builtin) CloneNamespace(src string, dst string) error {
 	return err2go(C.reindexer_clone_namespace(str2c(src), str2c(dst)))
 }
@@ -120,13 +142,23 @@ func (binding *Builtin) RenameNamespace(src string, dst string) error {
 	return err2go(C.reindexer_rename_namespace(str2c(src), str2c(dst)))
 }
 
-func (binding *Builtin) EnableStorage(namespace string, path string) error {
-	return err2go(C.reindexer_enable_storage(str2c(namespace), str2c(path)))
+func (binding *Builtin) EnableStorage(path string) error {
+	return err2go(C.reindexer_enable_storage(str2c(path)))
 }
 
-func (binding *Builtin) AddIndex(namespace, index, jsonPath string, indexType int, isArray, isPK bool) error {
-	opts := C.IndexOpts{IsArray: bool2cint(isArray), IsPK: bool2cint(isPK)}
-	return err2go(C.reindexer_addindex(str2c(namespace), str2c(index), str2c(jsonPath), C.IndexType(indexType), opts))
+func (binding *Builtin) AddIndex(namespace, index, jsonPath, indexType, fieldType string, isArray, isPK, isDense, isAppendable bool, collateMode int) error {
+	opts := C.IndexOpts{
+		IsArray:       bool2cint(isArray),
+		IsPK:          bool2cint(isPK),
+		IsDense:       bool2cint(isDense),
+		IsAppendable:  bool2cint(isAppendable),
+		CollateMode:   C.int(collateMode),
+	}
+	return err2go(C.reindexer_add_index(str2c(namespace), str2c(index), str2c(jsonPath), str2c(indexType), str2c(fieldType), opts))
+}
+
+func (binding *Builtin) ConfigureIndex(namespace, index, config string) error {
+	return err2go(C.reindexer_configure_index(str2c(namespace), str2c(index), str2c(config)))
 }
 
 func (binding *Builtin) PutMeta(data []byte) error {
@@ -136,36 +168,22 @@ func (binding *Builtin) PutMeta(data []byte) error {
 func (binding *Builtin) GetMeta(data []byte) (bindings.RawBuffer, error) {
 	return ret2go(C.reindexer_get_meta(buf2c(data)))
 }
-
-func (binding *Builtin) GetItems(data []byte) (bindings.RawBuffer, error) {
-	return ret2go(C.reindexer_get_items(buf2c(data)))
+func (binding *Builtin) GetPayloadType(resBuf []byte, nsid int) (bindings.RawBuffer, error) {
+	cbuf := buf2c(resBuf)
+	cbuf.results_flag = 1
+	return ret2go(C.reindexer_get_payload_type(cbuf, C.int(nsid)))
 }
 
 func (binding *Builtin) Select(query string, withItems bool) (bindings.RawBuffer, error) {
 	return ret2go(C.reindexer_select(str2c(query), bool2cint(withItems)))
 }
 
-func (binding *Builtin) SelectQuery(q *bindings.Query, withItems bool, data []byte) (bindings.RawBuffer, error) {
-
-	query := C.reindexer_query{
-		limit:       C.int(q.LimitItems),
-		offset:      C.int(q.StartOffset),
-		debug_level: C.int(q.DebugLevel),
-		calc_total:  bool2cint(q.ReqTotalCount),
-	}
-	return ret2go(C.reindexer_select_query(query, bool2cint(withItems), buf2c(data)))
+func (binding *Builtin) SelectQuery(withItems bool, data []byte) (bindings.RawBuffer, error) {
+	return ret2go(C.reindexer_select_query(bool2cint(withItems), buf2c(data)))
 }
 
-func (binding *Builtin) DeleteQuery(q *bindings.Query, data []byte) (bindings.RawBuffer, error) {
-
-	query := C.reindexer_query{
-		limit:       C.int(q.LimitItems),
-		offset:      C.int(q.StartOffset),
-		debug_level: C.int(q.DebugLevel),
-		calc_total:  bool2cint(q.ReqTotalCount),
-	}
-
-	return ret2go(C.reindexer_delete_query(query, buf2c(data)))
+func (binding *Builtin) DeleteQuery(data []byte) (bindings.RawBuffer, error) {
+	return ret2go(C.reindexer_delete_query(buf2c(data)))
 }
 
 func (binding *Builtin) Commit(namespace string) error {
@@ -195,6 +213,10 @@ func (binding *Builtin) GetStats() bindings.Stats {
 	stats := C.reindexer_get_stats()
 
 	return bindings.Stats{
+		TimeInsert:   time.Microsecond * time.Duration(int(stats.time_insert)),
+		CountInsert:  int(stats.count_insert),
+		TimeUpdate:   time.Microsecond * time.Duration(int(stats.time_update)),
+		CountUpdate:  int(stats.count_update),
 		TimeUpsert:   time.Microsecond * time.Duration(int(stats.time_upsert)),
 		CountUpsert:  int(stats.count_upsert),
 		TimeDelete:   time.Microsecond * time.Duration(int(stats.time_delete)),

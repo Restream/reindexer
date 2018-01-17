@@ -2,42 +2,46 @@
 
 
 ## Data
-We are using data set with 100K documents for this benchmarks. The documents containts 3 fields, and uses the following go struct representation:
+We are using data set with 100K documents for this benchmarks. The documents containts 4 fields, and uses the following go struct representation:
 
 ```go
 type Item struct {
 	ID   int64  `reindex:"id,,pk" json:"id" db:"id"`
 	Name string `reindex:"name" json:"name"  db:"name"`
 	Year int    `reindex:"year,tree" json:"year" db:"year"`
+	Description string `reindex:"description,text" json:"description"  db:"description"`
 }
 ```
 
-The `ID` field is the primary key. Each document in data set has an uniq `ID` in the range from 0 to documents count. `Name` and `Year` fields are filled with some random data.
-The easyjson library is used in benchmarks for unmarshaling documents to golang objects, except sqlite. For sqlite sqlx package was used.
+The `ID` field is the primary key. Each document in data set has an uniq `ID` in the range from 0 to documents count. `Name` and `Year` fields are filled with some random data, `Description` field is contains random text generated from 100k english words vocabulary.
 
-## Results with Go 1.8.1 and clang-802.0.42 on a 2.7 GHz Intel Core i7 (MacBook Pro Retina 15-inch, Mid 2016):
+## Results with Go 1.9.3 and clang-802.0.42 on a 2.7 GHz Intel Core i7 (MacBook Pro Retina 15-inch, Mid 2016):
 
 The results of benchmarks are compared with the following databases:
-- Tarantool 1.7.4.18
+- Tarantool 1.7.6.12
 - Elasticsearch 5.4.3
 - Mongo 3.4.5
 - Sqlite 3.17.0 from github.com/mattn/go-sqlite3
-- Boltdb from github.com/boltdb/bolt
+- Sphinx 2.2.11
+- Redis 2.3.9
+- Mysql 5.7.19
+
+All benchmarks are run in single CPU core
 
 ## Get document by primary key (id). Object cache is disabled
 
 In this benchmark the documents are fetched from DB by ID and unmarshaled to golang objects.
 
 ```
-benchmark                                 iter              time/iter              bytes alloc       allocs
----------                                 ----              ---------              -----------       ------
-BenchmarkElasticGetByID                     3000            369109 ns/op           91226 B/op        196 allocs/op
-BenchmarkMongoGetByID                      10000            115321 ns/op            3004 B/op         93 allocs/op
-BenchmarkTarantoolGetByID                  30000             56921 ns/op             688 B/op         19 allocs/op
-BenchmarkRedisGetByID                      50000             36203 ns/op             662 B/op         15 allocs/op
-BenchmarkSqliteGetByID                    100000             20795 ns/op            1330 B/op         42 allocs/op
-BenchmarkReindexGetByID                   300000              4443 ns/op             351 B/op          5 allocs/op
-BenchmarkBolt                             500000              3142 ns/op             935 B/op         14 allocs/op
+benchmark                           iter               time/iter          bytes alloc               allocs
+---------                           ----               ---------          -----------               ------
+BenchmarkReindexGetByID           300000              4224 ns/op             567 B/op          3 allocs/op
+BenchmarkSqliteGetByID             50000             23735 ns/op            2885 B/op         48 allocs/op
+BenchmarkRedisGetByID              30000             47492 ns/op            2230 B/op         15 allocs/op
+BenchmarkTarantoolGetByID          20000             64870 ns/op            2715 B/op         22 allocs/op
+BenchmarkMysqlGetByID              20000             85500 ns/op            1664 B/op         32 allocs/op
+BenchmarkMongoGetByID              10000            124410 ns/op            4623 B/op         99 allocs/op
+BenchmarkElasticGetByID             2000            521843 ns/op           92979 B/op        191 allocs/op
 ```
 
 ## Get document by primary key (id). Object cache is enabled
@@ -46,12 +50,12 @@ Reindexer have an deserialized objects cache. The following benchmark exposes ho
 For other databases unmarshaler was not called after fetching documents from DB, and so there are no objects was returned.
 
 ```
-benchmark                                iter                time/iter               bytes alloc      allocs
----------                                ----                ---------               -----------      ------
-BenchmarkRedisGetByIDNoObject              50000             32026 ns/op             263 B/op          9 allocs/op
-BenchmarkSqliteGetByIDNoObject            100000             15916 ns/op             859 B/op         26 allocs/op
-BenchmarkReindexGetByIDObjCache          1000000              2176 ns/op               0 B/op          0 allocs/op
-BenchmarkBoltNoObject                    1000000              1641 ns/op             584 B/op          9 allocs/op
+benchmark                           iter               time/iter          bytes alloc               allocs
+---------                           ----               ---------          -----------               ------
+BenchmarkReindexGetByIDUnsafe     500000              2530 ns/op               0 B/op          0 allocs/op
+BenchmarkSqliteGetByIDNoObject    100000             20615 ns/op            2198 B/op         45 allocs/op
+BenchmarkRedisGetByIDNoObject      50000             36324 ns/op             778 B/op          7 allocs/op
+BenchmarkMysqlGetByIDNoObject      20000             80989 ns/op             992 B/op         29 allocs/op
 ```
 
 ## Query documents with 1 condition. Object cache is disbaled
@@ -60,12 +64,15 @@ In this benchmark the query `SELECT ... FROM ... WHERE year > ? LIMIT 10` is exe
 
 
 ```
-benchmark                                 iter              time/iter              bytes alloc       allocs
----------                                 ----              ---------              -----------       ------
-BenchmarkElastic1CondQuery                  3000            364084 ns/op           90152 B/op        174 allocs/op
-BenchmarkMongo1CondQuery                   10000            173854 ns/op            7507 B/op        374 allocs/op
-BenchmarkSqliteQuery1Cond                  30000             39794 ns/op            2512 B/op        113 allocs/op
-BenchmarkReindexQuery1Cond                100000             20011 ns/op            3512 B/op         50 allocs/op
+benchmark                           iter               time/iter          bytes alloc               allocs
+---------                           ----               ---------          -----------               ------
+BenchmarkReindex1Cond             100000             17403 ns/op            5728 B/op         30 allocs/op
+BenchmarkSqlite1Cond               20000             60749 ns/op           18256 B/op        155 allocs/op
+BenchmarkTarantool1Cond            20000             78152 ns/op           14168 B/op        102 allocs/op
+BenchmarkRedis1Cond                10000            126484 ns/op           20880 B/op        112 allocs/op
+BenchmarkMysql1Cond                10000            135248 ns/op            7856 B/op        104 allocs/op
+BenchmarkMongo1Cond                10000            174690 ns/op           24721 B/op        465 allocs/op
+BenchmarkElastic1Cond               1000           1187006 ns/op          129663 B/op        379 allocs/op
 ```
 
 ## Query documents with 1 condition. Object cache is enabled
@@ -74,12 +81,15 @@ The following benchmark exposes how object cache is influences to perormace.
 For other databases unmarshaler was not called after fetching documents from DB, and so there are no objects was returned.
 
 ```
-benchmark                                 iter              time/iter              bytes alloc       allocs
----------                                 ----              ---------              -----------       ------
-BenchmarkElasticQuery1CondNoObjects         5000            355908 ns/op           90121 B/op        173 allocs/op
-BenchmarkMongoQuery1CondNoObjects          10000            155489 ns/op            6646 B/op        252 allocs/op
-BenchmarkSqliteQuery1CondNoObjects         50000             31712 ns/op            1863 B/op         80 allocs/op
-BenchmarkReindexQuery1CondObjCache        300000              3650 ns/op               0 B/op          0 allocs/op
+benchmark                           iter               time/iter          bytes alloc               allocs
+---------                           ----               ---------          -----------               ------
+BenchmarkReindex1CondObjCache     300000              3738 ns/op               0 B/op          0 allocs/op
+BenchmarkSqlite1CondNoObj          30000             47023 ns/op           12287 B/op        113 allocs/op
+BenchmarkRedis1CondNoObject        30000             53056 ns/op            6400 B/op         32 allocs/op
+BenchmarkTarantool1CondNoObj       20000             75840 ns/op           13608 B/op         92 allocs/op
+BenchmarkMysql1CondNoObj           10000            118977 ns/op            1728 B/op         62 allocs/op
+BenchmarkMongo1CondNoObj           10000            157125 ns/op           18528 B/op        303 allocs/op
+BenchmarkElastic1CondNoObj          2000           1095203 ns/op          119107 B/op        283 allocs/op
 ```
 
 ## Query documents with 2 conditions. Object cache is disabled
@@ -87,76 +97,47 @@ BenchmarkReindexQuery1CondObjCache        300000              3650 ns/op        
 In this benchmark the query  `SELECT ... FROM ... WHERE year > ? AND name = ? LIMIT 10` is executing, and fetched documents are marshaled to golang objects.
 
 ```
-benchmark                                 iter              time/iter              bytes alloc       allocs
----------                                 ----              ---------              -----------       ------
-BenchmarkElasticQuery2Cond                  3000            356729 ns/op           90152 B/op        174 allocs/op
-BenchmarkMongoQuery2Cond                   10000            131600 ns/op            2878 B/op         63 allocs/op
-BenchmarkSqliteQuery2Cond                  30000             49771 ns/op            2451 B/op        107 allocs/op
-BenchmarkReindexQuery2Cond                 50000             25047 ns/op            3158 B/op         45 allocs/op
+benchmark                           iter               time/iter          bytes alloc               allocs
+---------                           ----               ---------          -----------               ------
+BenchmarkReindex2Cond             100000             22531 ns/op            5193 B/op         27 allocs/op
+BenchmarkSqlite2CondQuery          20000             61354 ns/op           18544 B/op        156 allocs/op
+BenchmarkTarantool2Cond            20000             80595 ns/op           14884 B/op        105 allocs/op
+BenchmarkMysql2CondQuery           10000            163772 ns/op            7008 B/op         96 allocs/op
+BenchmarkMongo2Cond                 5000            230338 ns/op           24764 B/op        469 allocs/op
+BenchmarkElastic2Cond               1000           1247815 ns/op          133573 B/op        426 allocs/op
 ```
 ## Query documents with 2 conditions. Object cache is enabled
 
 The following benchmark exposes how object cache is influences to perormace.
 For other databases unmarshaler was not called after fetching documents from DB, and so there are no objects was returned.
 ```
-benchmark                                 iter              time/iter              bytes alloc       allocs
----------                                 ----              ---------              -----------       ------
-BenchmarkElasticQuery2CondNoObjects         5000            356544 ns/op           90120 B/op        173 allocs/op
-BenchmarkMongoQuery2CondNoObjects          10000            133504 ns/op            2878 B/op         63 allocs/op
-BenchmarkSqliteQuery2CondNoObjects         30000             40768 ns/op            1875 B/op         78 allocs/op
-BenchmarkReindexQuery2CondObjCache        200000             10004 ns/op              15 B/op          1 allocs/op
-```
-## Internal Reindexer benchmarks
-
-Reindexer test suite contains additional benchmarks with various queries conditions and complex document structures. This suite run on data set of 500K documents with the following structure:
-
-```golang
-type TestItemBench struct {
-	Prices  []*TestJoinItem `reindex:"prices,,joined"`
-	Pricesx []*TestJoinItem `reindex:"pricesx,,joined"`
-	ID         int      `reindex:"id,,pk"`
-	Genre      int64    `reindex:"genre,tree"`
-	Year       int      `reindex:"year,tree"`
-	Packages   []int    `reindex:"packages,hash"`
-	Countries  []string `reindex:"countries,tree"`
-	Age        int      `reindex:"age,hash"`
-	PricesIDs  []int    `reindex:"price_id"`
-	LocationID string   `reindex:"location"`
-	EndTime    int      `reindex:"end_time,-"`
-	StartTime  int      `reindex:"start_time,tree"`
-}
-```
-The obect cache is used by default in these tests. For more details about this benchmark see the [reindexer_bench_test.go](../reindexer_bench_test.go) source file.
-
-
-### Results of internal Reindexer benchmarks
-
+benchmark                           iter               time/iter          bytes alloc               allocs
+---------                           ----               ---------          -----------               ------
+BenchmarkReindex2CondObjCache     200000              7591 ns/op              15 B/op          1 allocs/op
+BenchmarkSqlite2CondNoObj          30000             49181 ns/op           12224 B/op        114 allocs/op
+BenchmarkTarantool2CondNoObj       20000             82000 ns/op           14329 B/op         95 allocs/op
+BenchmarkMongo2CondNoObj            5000            215070 ns/op           18584 B/op        307 allocs/op
+BenchmarkMysql2CondNoObj           10000            147743 ns/op            1792 B/op         62 allocs/op
+BenchmarkElastic2CondNoObj          1000           1240421 ns/op          133578 B/op        426 allocs/op
 
 ```
-benchmark                                 iter              time/iter             bytes alloc         allocs
----------                                 ----              ---------             -----------         ------
-BenchmarkSimpleInsert-8                   200000              5506 ns/op              55 B/op          3 allocs/op
-BenchmarkSimpleUpdate-8                   200000              5794 ns/op              55 B/op          3 allocs/op
-BenchmarkSimpleCmplxPKUpsert-8            200000              7110 ns/op              86 B/op          4 allocs/op
-BenchmarkInsert-8                          50000             26300 ns/op             679 B/op          9 allocs/op
-BenchmarkUpdate-8                          50000             31131 ns/op             597 B/op          9 allocs/op
-BenchmarkDeleteAndUpdate-8                 30000             43956 ns/op             917 B/op         13 allocs/op
-Benchmark4CondQuery-8                      50000             25552 ns/op               0 B/op          0 allocs/op
-Benchmark4CondQueryTotal-8                 10000            108447 ns/op               0 B/op          0 allocs/op
-Benchmark4CondRangeQuery-8                 50000             32038 ns/op               0 B/op          0 allocs/op
-Benchmark4CondRangeQueryTotal-8            10000            171957 ns/op               0 B/op          0 allocs/op
-Benchmark3CondQuery-8                     100000             11706 ns/op               0 B/op          0 allocs/op
-Benchmark3CondQueryTotal-8                 10000            150312 ns/op               0 B/op          0 allocs/op
-Benchmark3CondQueryKillIdsCache-8          10000            160523 ns/op             160 B/op          1 allocs/op
-Benchmark3CondQueryRestoreIdsCache-8       50000             32632 ns/op               0 B/op          0 allocs/op
-Benchmark2CondQuery-8                     200000              6582 ns/op               0 B/op          0 allocs/op
-Benchmark2CondQueryTotal-8                 50000             34520 ns/op               0 B/op          0 allocs/op
-Benchmark2CondQueryLeftJoin-8              20000             76520 ns/op            5888 B/op          2 allocs/op
-Benchmark2CondQueryLeftJoinTotal-8         20000             89817 ns/op            5888 B/op          2 allocs/op
-Benchmark2CondQueryInnerJoin-8             20000             74647 ns/op            5888 B/op          2 allocs/op
-Benchmark2CondQueryInnerJoinTotal-8          500           2406532 ns/op            5899 B/op          2 allocs/op
-Benchmark1CondQuery-8                     300000              4740 ns/op               0 B/op          0 allocs/op
-Benchmark1CondQueryTotal-8                300000              4724 ns/op               0 B/op          0 allocs/op
-BenchmarkByIdQuery-8                      500000              2173 ns/op               0 B/op          0 allocs/op
-BenchmarkFullScan-8                          100          10094076 ns/op              38 B/op          0 allocs/op
-```
+## Full text search benchmarks
+
+### Exact match test
+BenchmarkReindexFullText           30000             39722 ns/op             109 B/op          1 allocs/op
+BenchmarkMysqlFullText              5000            294697 ns/op            7715 B/op        106 allocs/op
+BenchmarkSphinxFullText             2000            529136 ns/op            2015 B/op         21 allocs/op
+BenchmarkMongoFullText              2000            586470 ns/op           24613 B/op        467 allocs/op
+BenchmarkElasticFullText            1000           1245806 ns/op          129806 B/op        372 allocs/op
+BenchmarkSqliteFullText             1000           1274902 ns/op           11528 B/op         54 allocs/op
+
+### Fuzzy match test
+
+benchmark                           iter               time/iter          bytes alloc               allocs
+---------                           ----               ---------          -----------               ------
+BenchmarkReindexFullText3Fuzzy      5000            425837 ns/op             142 B/op          1 allocs/op
+BenchmarkMysqlFullText3Fuzzy        3000            481149 ns/op            7727 B/op        106 allocs/op
+BenchmarkElasticFullText3Fuzzy      1000           1565921 ns/op          129932 B/op        373 allocs/op
+BenchmarkSphinxFullText3Fuzzy       1000           1693271 ns/op            2190 B/op         22 allocs/op
+BenchmarkSqliteFullText3Fuzzy       1000           2505292 ns/op           11647 B/op         55 allocs/op
+
