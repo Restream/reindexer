@@ -23,10 +23,10 @@ set(
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED ON)
 find_library(LevelDB_LIBRARY NAMES leveldb)
-find_package(Gperftools REQUIRED OFF)
+find_package(Gperftools)
 find_package(Snappy REQUIRED ON)
-find_package(GTest REQUIRED OFF)
-find_package(GBenchmark REQUIRED OFF)
+find_package(GTest)
+find_package(GBenchmark)
 
 set(
   CMAKE_ARCHIVE_OUTPUT_DIRECTORY

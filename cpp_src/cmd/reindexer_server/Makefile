@@ -8,7 +8,7 @@ REINDEXER_SERVER := reindexer_server
 SWAGGER_VERSION ?= 2.x
 
 CXXFLAGS  := -I. -I$(LIBDIR) -I$(LIBDIR)/vendor -std=c++11 -Wall -Wpedantic -Wextra
-LDFLAGS   :=  -L$(LIBDIR)/.build -lreindexer -lleveldb -lsnappy -lev -lpthread -ltcmalloc
+LDFLAGS   :=  -L$(LIBDIR)/.build -lreindexer -lleveldb -lsnappy -lpthread
 
 ifeq ($(DEBUG_BUILD),1)
 CXXFLAGS    := $(CXXFLAGS) -fsanitize=thread -O0

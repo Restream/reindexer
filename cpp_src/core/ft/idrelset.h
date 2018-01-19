@@ -41,7 +41,7 @@ struct IdRelType {
 		unsigned fpos;
 	};
 
-	VDocIdType id;
+	VDocIdType id = 0;
 	h_vector<PosType, 6> pos;
 };
 

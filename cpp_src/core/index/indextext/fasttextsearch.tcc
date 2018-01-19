@@ -239,10 +239,9 @@ void FastIndexText<T>::processVariants(FtSelectContext &ctx) {
 			if (!withSuffixes && suffixLen) continue;
 			if (!withPrefixes && suffixes_.word_len_at(wordId) != matchLen) break;
 
-			int proc = int(std::max(
-				int((variant.proc -
-					 std::abs(long(suffixes_.word_len_at(wordId) - matchLen + suffixLen)) * kPrefixStepProc / std::max(matchLen / 3, 1))),
-				suffixLen ? kSuffixMinProc : kPrefixMinProc));
+			int proc = int(std::max(int((variant.proc - std::abs(long(suffixes_.word_len_at(wordId) - matchLen + suffixLen)) *
+															kPrefixStepProc / std::max(matchLen / 3, 1))),
+									suffixLen ? kSuffixMinProc : kPrefixMinProc));
 
 			auto it = ctx.foundWords.find(wordId);
 			if (it == ctx.foundWords.end()) {
@@ -373,7 +372,7 @@ void FastIndexText<T>::mergeItaration(TextSearchResults &rawRes, vector<bool> &e
 				exists[vid] = true;
 				if (simple) continue;
 				// prepare for intersect with next terms
-				merged_rd.push_back({IdRelType(std::move(relid)), {0, {}}, int(rank), rawRes.term.opts.qpos});
+				merged_rd.push_back({IdRelType(std::move(relid)), IdRelType(), int(rank), rawRes.term.opts.qpos});
 				curExists[vid] = true;
 				idoffsets[vid] = merged.size() - 1;
 			}

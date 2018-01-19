@@ -218,17 +218,18 @@ void NsSelecter::applyCustomSort(QueryResults &queryResult, const SelectCtx &ctx
 
 	KeyRefs firstItemValue;
 	KeyRefs secondItemValue;
-	std::sort(queryResult.begin(), sortEnd, [&sortMap, &payloadType, idx, &firstItemValue, &secondItemValue](ItemRef &lhs, ItemRef &rhs) {
-		ConstPayload(payloadType, lhs.value).Get(idx, firstItemValue);
-		assertf(!firstItemValue.empty(), "Item lost in query results%s", "");
-		assertf(sortMap.find(firstItemValue[0]) != sortMap.end(), "Item not found in 'sortMap'%s", "");
+	std::sort(queryResult.begin(), sortEnd,
+			  [&sortMap, &payloadType, idx, &firstItemValue, &secondItemValue](const ItemRef &lhs, const ItemRef &rhs) {
+				  ConstPayload(payloadType, lhs.value).Get(idx, firstItemValue);
+				  assertf(!firstItemValue.empty(), "Item lost in query results%s", "");
+				  assertf(sortMap.find(firstItemValue[0]) != sortMap.end(), "Item not found in 'sortMap'%s", "");
 
-		ConstPayload(payloadType, rhs.value).Get(idx, secondItemValue);
-		assertf(sortMap.find(secondItemValue[0]) != sortMap.end(), "Item not found in 'sortMap'%s", "");
-		assertf(!secondItemValue.empty(), "Item lost in query results%s", "");
+				  ConstPayload(payloadType, rhs.value).Get(idx, secondItemValue);
+				  assertf(sortMap.find(secondItemValue[0]) != sortMap.end(), "Item not found in 'sortMap'%s", "");
+				  assertf(!secondItemValue.empty(), "Item lost in query results%s", "");
 
-		return sortMap.find(firstItemValue[0])->second < sortMap.find(secondItemValue[0])->second;
-	});
+				  return sortMap.find(firstItemValue[0])->second < sortMap.find(secondItemValue[0])->second;
+			  });
 }
 
 void NsSelecter::applyGeneralSort(QueryResults &queryResult, const SelectCtx &ctx, int collateMode) {
@@ -243,7 +244,7 @@ void NsSelecter::applyGeneralSort(QueryResults &queryResult, const SelectCtx &ct
 	KeyRefs firstValue;
 	KeyRefs secondValue;
 	std::sort(queryResult.begin(), queryResult.end(),
-			  [&payloadType, fieldIdx, &firstValue, &secondValue, sortAsc, collateMode](ItemRef &lhs, ItemRef &rhs) {
+			  [&payloadType, fieldIdx, &firstValue, &secondValue, sortAsc, collateMode](const ItemRef &lhs, const ItemRef &rhs) {
 				  ConstPayload(payloadType, lhs.value).Get(fieldIdx, firstValue);
 				  ConstPayload(payloadType, rhs.value).Get(fieldIdx, secondValue);
 
