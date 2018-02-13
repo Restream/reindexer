@@ -33,7 +33,7 @@ struct Slice {
 	 * Create a slice object based on a pointer to character buffer with its size computing
 	 * @param p a constant character buffer pointer
 	 */
-	Slice(const char *p) : ptr_(p), size_(strlen(p)) {}
+	Slice(const char *p) : ptr_(p), size_(p ? strlen(p) : 0) {}
 
 	/**
 	 * Create a slice object based on string

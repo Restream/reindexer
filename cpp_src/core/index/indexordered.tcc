@@ -19,10 +19,10 @@ KeyRef IndexOrdered<T>::Upsert(const KeyRef &key, IdType id) {
 
 	if (keyIt == this->idx_map.end() || !found)
 		keyIt = this->idx_map.insert(keyIt, {static_cast<typename T::key_type>(key), typename T::mapped_type()});
-	keyIt->second.Unsorted().Add(id, this->opts_.IsPK ? IdSet::Ordered : IdSet::Auto);
+	keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto);
 	this->tracker_.markUpdated(this->idx_map, &*keyIt);
 
-	if (this->KeyType() == KeyValueString && this->opts_.CollateMode != CollateNone) {
+	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
 		return IndexStore<typename T::key_type>::Upsert(key, id);
 	}
 

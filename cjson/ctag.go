@@ -64,7 +64,7 @@ func mkctag(ctagType int, ctagName int, ctagField int) uint64 {
 
 const countBits = 24
 
-type carraytag CInt
+type carraytag uint32
 
 func (t carraytag) Count() int {
 	return int(t) & ((1 << countBits) - 1)
@@ -74,6 +74,6 @@ func (t carraytag) Tag() int {
 	return int(t) >> countBits
 }
 
-func mkcarraytag(count int, tag int) int {
-	return count | (tag << countBits)
+func mkcarraytag(count int, tag int) uint32 {
+	return uint32(count | (tag << countBits))
 }

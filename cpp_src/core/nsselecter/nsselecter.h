@@ -63,7 +63,7 @@ private:
 	h_vector<Aggregator, 4> getAggregators(const Query &q);
 	int getCompositeIndex(const FieldsSet &fieldsmask);
 	bool mergeQueryEntries(QueryEntry *lhs, QueryEntry *rhs);
-	void setLimitsAfterSortByUnorderedIndex(QueryResults &result, const SelectCtx &ctx);
+	void setLimitsAndOffset(QueryResults &result, const SelectCtx &ctx);
 
 	Namespace *ns_;
 };

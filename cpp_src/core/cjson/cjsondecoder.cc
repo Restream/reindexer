@@ -20,7 +20,6 @@ Error CJsonDecoder::Decode(Payload *pl, Serializer &rdser, WrSerializer &wrser) 
 
 KeyRef cjsonValueToKeyRef(int tag, Serializer &rdser, const PayloadFieldType &pt) {
 	auto t = pt.Type();
-	static string nullstr;
 	switch (tag) {
 		case TAG_VARINT: {
 			auto v = rdser.GetVarint();
@@ -105,7 +104,7 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 	if (field >= 0) {
 		KeyRefs kvs;
 		if (tagType == TAG_ARRAY) {
-			carraytag atag = rdser.GetInt();
+			carraytag atag = rdser.GetUInt32();
 			kvs.reserve(atag.Count());
 			for (int count = 0; count < atag.Count(); count++) {
 				ctag tag = atag.Tag() != TAG_OBJECT ? atag.Tag() : rdser.GetVarUint();
@@ -124,8 +123,8 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 				}
 				break;
 			case TAG_ARRAY: {
-				carraytag atag = rdser.GetInt();
-				wrser.PutInt(atag);
+				carraytag atag = rdser.GetUInt32();
+				wrser.PutUInt32(atag);
 				for (int count = 0; count < atag.Count(); count++) {
 					switch (atag.Tag()) {
 						case TAG_OBJECT:

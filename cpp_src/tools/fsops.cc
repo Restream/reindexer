@@ -10,6 +10,11 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#ifdef WIN32
+#include <direct.h>
+#define getcwd _getcwd;
+#endif
+
 namespace reindexer {
 int MkDirAll(const string &path) {
 	char tmp[0x8000], *p = nullptr;
@@ -72,6 +77,11 @@ int ReadDir(const string &path, vector<DirEntry> &content) {
 
 	closedir(dir);
 	return 0;
+}
+
+string GetCwd() {
+	char buff[FILENAME_MAX];
+	return std::string(getcwd(buff, FILENAME_MAX));
 }
 
 }  // namespace reindexer

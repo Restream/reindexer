@@ -157,7 +157,7 @@ void swap(shared_lock<_Mutex>& __x, shared_lock<_Mutex>& __y) noexcept {
 }
 
 class shared_timed_mutex : public __shared_mutex_pthread {};
-}
+}  // namespace reindexer
 
 #endif
 namespace reindexer {

@@ -1,0 +1,32 @@
+#!/bin/sh
+
+set -e
+
+case "$1" in
+    configure)
+        update-rc.d reindexer defaults
+        if ! getent passwd reindexer >/dev/null 2>&1; then
+            adduser --system --no-create-home reindexer
+            addgroup --system reindexer
+            adduser reindexer reindexer
+        fi
+
+        if [ ! -d /var/lib/reindexer ]; then
+            mkdir -p /var/lib/reindexer
+            chown reindexer:reindexer /var/lib/reindexer
+        fi
+
+        if [ ! -d /var/log/reindexer ]; then
+            mkdir -p /var/log/reindexer
+            chown reindexer:reindexer /var/log/reindexer
+        fi
+    ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+    ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+    ;;
+esac

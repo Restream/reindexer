@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 
 # NO COLOR
 NC='\033[0m'
@@ -14,32 +14,33 @@ GREEN_BOLD='\033[0;32;1m'
 LBLUE_BOLD='\033[01;34;1m'
 YELLOW_BOLD='\033[0;33;1m'
 
-function success_msg() {
+success_msg() {
 	printf "${GREEN_BOLD}[ OK ] ${NC}$1\n"
 }
 
-function info_msg() {
+info_msg() {
     printf "${LBLUE_BOLD}[ INFO ] ${NC}$1\n"
 }
 
-function warning_msg() {
+warning_msg() {
     printf "${YELLOW_BOLD}[ WARNING ] ${NC}$1\n"
 }
 
-function error_msg() {
+error_msg() {
     printf "${RED_BOLD}[ ERROR ] ${NC}$1\n"
 }
 
 # declare dependencies arrays for systems
-declare -a osx_deps=("gperftools" "leveldb" "snappy")
-declare -a centos7_debs=("gcc-c++" "make" "google-perftools-devel"  "snappy-devel" "findutils" "curl" "tar")
-declare -a centos6_debs=("centos-release-scl" "devtoolset-4-gcc" "devtoolset-4-gcc-c++" "make" "snappy-devel" "findutils" "curl" "tar")
-declare -a debian_debs=("build-essential" "g++" "libgoogle-perftools-dev" "libsnappy-dev" "make" "curl" )
+osx_deps="gperftools leveldb snappy cmake git"
+centos7_debs="gcc-c++ make snappy-devel findutils curl tar cmake unzip rpm-build rpmdevtools git"
+centos6_debs="centos-release-scl devtoolset-4-gcc devtoolset-4-gcc-c++ make snappy-devel findutils curl tar cmake unzip rpm-build git"
+debian_debs="build-essential g++ libsnappy-dev libleveldb-dev make curl cmake unzip git"
+alpine_apks="g++ snappy-dev libexecinfo-dev make curl cmake unzip git"
 
-function install_leveldb() {
+install_leveldb() {
     info_msg "Installing 'leveldb' package ....."
     curl -L -s https://github.com/google/leveldb/archive/v1.20.tar.gz | tar xz -C /tmp
-    if [ ${PIPESTATUS[0]} -ne 0 -o ${PIPESTATUS[1]} -ne 0 ]; then
+    if [ $? -ne 0 ]; then
         error_msg "Could not download 'leveldb'." && return 1
     fi
 
@@ -48,15 +49,13 @@ function install_leveldb() {
         error_msg "Could not install 'leveldb' libraries." && return 1
     fi
 
-    cd include && cp -R leveldb /usr/local/include &>/dev/null
+    mkdir -p /usr/local/include
+    cd include && cp -R leveldb /usr/local/include  >/dev/null 2>&1
     if [ $? -ne 0 ]; then
         error_msg "Could not copy 'leveldb' header files." && return 1
     fi
 
     ldconfig
-    if [ $? -ne 0 ]; then
-        error_msg "'ldconfig' was failed." && return 1
-    fi
 
     # delete temporary files
     rm -rf /tmp/leveldb-1.20
@@ -64,14 +63,15 @@ function install_leveldb() {
     success_msg "Package 'leveldb' was installed successfully." && return
 }
 
-function install_osx() {
-    for pkg in "${osx_deps[@]}"
+install_osx() {
+    for pkg in $osx_deps
     do
         if brew list -1 | grep -q "^${pkg}\$"; then
             info_msg "Package $pkg already installed. Skip ....."
         else
             info_msg "Installing $pkg package ....."
-            IFS=":" read STATUS MESSAGE <<< $(brew install ${pkg} 2>&1 | grep -i -E "error|warning" | tr '[:upper:]' '[:lower:]')
+            brew install ${pkg} 2>&1 | grep -i -E "error|warning" | tr '[:upper:]' '[:lower:]' >/tmp/.status
+            IFS=":" read STATUS MESSAGE < /tmp/.status
             if [ -n "$STATUS" ]; then
                 print_result="${STATUS}_msg \"$MESSAGE\""
                 eval "${print_result}"
@@ -84,8 +84,8 @@ function install_osx() {
     return
 }
 
-function install_centos7() {
-    for pkg in "${centos7_debs[@]}"
+install_centos7() {
+    for pkg in ${centos7_debs}
     do
         if rpm -qa | grep -qw ${pkg}; then
             info_msg "Package '$pkg' already installed. Skip ....."
@@ -103,14 +103,14 @@ function install_centos7() {
     return $?
 }
 
-function install_centos6() {
-    for pkg in "${centos6_debs[@]}"
+install_centos6() {
+    for pkg in ${centos6_debs}
     do
         if rpm -qa | grep -qw ${pkg}; then
             info_msg "Package '$pkg' already installed. Skip ....."
         else
             info_msg "Installing '$pkg' package ....."
-            yum install -y ${pkg} &>/dev/null
+            yum install -y ${pkg}  >/dev/null 2>&1
             if [ $? -eq 0 ]; then
                 success_msg "Package '$pkg' was installed successfully."
             else
@@ -123,17 +123,38 @@ function install_centos6() {
     return $?
 }
 
-function install_debian() {
+install_debian() {
     info_msg "Updating packages....."
-    apt-get -y update &>/dev/null
-    for pkg in "${debian_debs[@]}"
+    apt-get -y update >/dev/null 2>&1
+    for pkg in ${debian_debs}
     do
-        dpkg -s ${pkg} &>/dev/null
+        dpkg -s ${pkg} >/dev/null 2>&1
         if [ $? -eq 0 ]; then
             info_msg "Package '$pkg' already installed. Skip ....."
         else
             info_msg "Installing '$pkg' package ....."
-            apt-get install -y ${pkg} &> /dev/null
+            apt-get install -y ${pkg} >/dev/null 2>&1
+            if [ $? -eq 0 ]; then
+                success_msg "Package '$pkg' was installed successfully."
+            else
+                error_msg "Could not install '$pkg' package. Try 'apt-get update && apt-get install $pkg'" && return 1
+            fi
+        fi
+    done
+    return $?
+}
+
+install_alpine() {
+    info_msg "Updating packages....."
+    apk update >/dev/null 2>&1
+    for pkg in ${alpine_apks}
+    do
+        local info=`apk info | grep ${pkg}`
+        if [ _"$info" != _"" ]; then
+            info_msg "Package '$pkg' already installed. Skip ....."
+        else
+            info_msg "Installing '$pkg' package ....."
+            apk add ${pkg} >/dev/null 2>&1
             if [ $? -eq 0 ]; then
                 success_msg "Package '$pkg' was installed successfully."
             else
@@ -145,15 +166,17 @@ function install_debian() {
     return $?
 }
 
-function detect_installer() {
+detect_installer() {
     if [ -f /etc/os-release ]; then
         . /etc/os-release
         # It is "ubuntu/debian" ?
         local OS=$(echo ${ID} | tr '[:upper:]' '[:lower:]')
-        if [ "$OS" == "ubuntu" -o "$OS" == "debian" -o "$OS" == "linuxmint" ]; then
+        if [ "$OS" = "ubuntu" -o "$OS" = "debian" -o "$OS" = "linuxmint" ]; then
             OS_TYPE="debian" && return
-        elif [ "$OS" == "centos" -o "$OS" == "fedora" -o "$OS" == "rhel" ]; then
+        elif [ "$OS" = "centos" -o "$OS" = "fedora" -o "$OS" = "rhel" ]; then
             OS_TYPE="centos7" && return
+        elif [ "$OS" = "alpine" ]; then
+            OS_TYPE="alpine" && return
         else
             return 1
         fi
@@ -169,8 +192,6 @@ function detect_installer() {
         return 1
     fi
 }
-
-
 
 detect_installer
 if [ $? -eq 0 ]; then

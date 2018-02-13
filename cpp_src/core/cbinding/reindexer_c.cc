@@ -15,7 +15,8 @@ static Reindexer *db;
 
 void init_reindexer() {
 	db = new Reindexer();
-	setvbuf(stdout, 0, 0, _IONBF);
+	setvbuf(stdout, 0, _IONBF, 0);
+	setvbuf(stderr, 0, _IONBF, 0);
 	setlocale(LC_CTYPE, "");
 	setlocale(LC_NUMERIC, "C");
 }
@@ -41,37 +42,14 @@ static reindexer_ret ret2c(const Error &err_, const reindexer_buffer &out) {
 
 static string str2c(reindexer_string gs) { return string(reinterpret_cast<const char *>(gs.p), gs.n); }
 
-static void results2c(const QueryResults *result, struct reindexer_buffer *results, int with_items = 0) {
-	ResultSerializer ser(false);
+static void results2c(const QueryResults *result, struct reindexer_buffer *results, int with_items = 0, int32_t *pt_versions = nullptr) {
+	int flags = with_items ? kResultsWithJson : kResultsWithPtrs;
 
-	ser.PutQueryParams(result);
+	flags |= (pt_versions && with_items == 0) ? kResultsWithPayloadTypes : 0;
 
-	for (unsigned i = 0; i < result->size(); i++) {
-		// Put Item ID and version
-		auto &it = result->at(i);
-		ser.PutItemParams(it);
-		if (with_items) {
-			if (i == 10) ser.Reserve(16ULL + result->size() * ser.Len() * 11 / 100ULL);
-			result->GetJSON(i, ser);
-		}
-
-		auto jres = result->joined_.find(it.id);
-		if (jres == result->joined_.end()) {
-			ser.PutInt(0);
-			continue;
-		}
-		// Put count of joined subqueires for item ID
-		ser.PutInt(jres->second.size());
-		for (auto &jfres : jres->second) {
-			// Put count of returned items from joined namespace
-			ser.PutInt(jfres.size());
-			for (unsigned j = 0; j < jfres.size(); j++) {
-				auto &iit = jfres[j];
-				ser.PutItemParams(iit);
-				if (with_items) jfres.GetJSON(j, ser);
-			}
-		}
-	}
+	ResultFetchOpts opts{flags, pt_versions, 0, INT_MAX, -1};
+	ResultSerializer ser(false, opts);
+	ser.PutResults(result);
 
 	results->len = ser.Len();
 	results->data = ser.DetachBuffer();
@@ -85,8 +63,8 @@ reindexer_ret reindexer_modify_item(reindexer_buffer in, int mode) {
 	Error err = err_not_init;
 	if (db) {
 		Serializer ser(in.data, in.len);
-		string ns = ser.GetString();
-		int format = ser.GetInt();
+		string ns = ser.GetVString().ToString();
+		int format = ser.GetVarUint();
 		auto item = unique_ptr<Item>(db->NewItem(ns));
 		if (item->Status().ok()) {
 			switch (format) {
@@ -100,10 +78,10 @@ reindexer_ret reindexer_modify_item(reindexer_buffer in, int mode) {
 					err = Error(-1, "Invalid source item format %d", format);
 			}
 			if (err.ok()) {
-				unsigned preceptsCount = ser.GetInt();
+				unsigned preceptsCount = ser.GetVarUint();
 				vector<string> precepts;
 				for (unsigned prIndex = 0; prIndex < preceptsCount; prIndex++) {
-					string precept = ser.GetString();
+					string precept = ser.GetVString().ToString();
 					precepts.push_back(precept);
 				}
 				item->SetPrecepts(precepts);
@@ -132,9 +110,7 @@ reindexer_ret reindexer_modify_item(reindexer_buffer in, int mode) {
 }
 
 reindexer_error reindexer_open_namespace(reindexer_string _namespace, StorageOpts opts) {
-	NamespaceDef nsDef(str2c(_namespace), opts);
-
-	return error2c(!db ? err_not_init : db->OpenNamespace(nsDef));
+	return error2c(!db ? err_not_init : db->OpenNamespace(str2c(_namespace), opts));
 }
 
 reindexer_error reindexer_drop_namespace(reindexer_string _namespace) {
@@ -165,22 +141,23 @@ reindexer_error reindexer_configure_index(reindexer_string _namespace, reindexer
 }
 
 reindexer_error reindexer_enable_storage(reindexer_string path) {
-	//
-	return error2c(!db ? err_not_init : db->EnableStorage(str2c(path)));
+	// Enable storage
+	// TODO: Do not skip placeholder check
+	return error2c(!db ? err_not_init : db->EnableStorage(str2c(path), true));
 }
 
-reindexer_ret reindexer_select(reindexer_string query, int with_items) {
+reindexer_ret reindexer_select(reindexer_string query, int with_items, int32_t *pt_versions) {
 	reindexer_buffer out = {0, 0, nullptr};
 	Error res = err_not_init;
 	if (db) {
 		auto result = new QueryResults;
 		res = db->Select(str2c(query), *result);
-		results2c(result, &out, with_items);
+		results2c(result, &out, with_items, pt_versions);
 	}
 	return ret2c(res, out);
 }
 
-reindexer_ret reindexer_select_query(int with_items, struct reindexer_buffer in) {
+reindexer_ret reindexer_select_query(struct reindexer_buffer in, int with_items, int32_t *pt_versions) {
 	Error res = err_not_init;
 	reindexer_buffer out = {0, 0, nullptr};
 	if (db) {
@@ -191,7 +168,7 @@ reindexer_ret reindexer_select_query(int with_items, struct reindexer_buffer in)
 		q.Deserialize(ser);
 		while (!ser.Eof()) {
 			Query q1;
-			q1.joinType = JoinType(ser.GetInt());
+			q1.joinType = JoinType(ser.GetVarUint());
 			q1.Deserialize(ser);
 			q1.debugLevel = q.debugLevel;
 			if (q1.joinType == JoinType::Merge) {
@@ -204,7 +181,7 @@ reindexer_ret reindexer_select_query(int with_items, struct reindexer_buffer in)
 		auto result = new QueryResults;
 		res = db->Select(q, *result);
 		if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what().c_str());
-		results2c(result, &out, with_items);
+		results2c(result, &out, with_items, pt_versions);
 	}
 	return ret2c(res, out);
 }
@@ -226,74 +203,26 @@ reindexer_ret reindexer_delete_query(reindexer_buffer in) {
 	return ret2c(res, out);
 }
 
-reindexer_error reindexer_put_meta(reindexer_buffer in) {
+reindexer_error reindexer_put_meta(reindexer_string ns, reindexer_string key, reindexer_string data) {
 	Error res = err_not_init;
 	if (db) {
-		res = Error(errOK, "");
-		Serializer ser(in.data, in.len);
-		auto ns = ser.GetString();
-		auto key = ser.GetString();
-		auto data = ser.GetSlice();
-		res = db->PutMeta(ns, key, data);
+		res = db->PutMeta(str2c(ns), str2c(key), str2c(data));
 	}
 	return error2c(res);
 }
 
-reindexer_ret reindexer_get_meta(reindexer_buffer in) {
+reindexer_ret reindexer_get_meta(reindexer_string ns, reindexer_string key) {
 	reindexer_buffer out{0, 0, nullptr};
 	Error res = err_not_init;
 	if (db) {
-		res = Error(errOK, "");
-		Serializer ser(in.data, in.len);
 		WrSerializer wrSer(false);
-		auto ns = ser.GetString();
-		auto key = ser.GetString();
 		string data;
-		res = db->GetMeta(ns, key, data);
-		wrSer.PutSlice(Slice(data));
+		res = db->GetMeta(str2c(ns), str2c(key), data);
+		wrSer.PutVString(data);
 		out.len = wrSer.Len();
 		out.data = wrSer.DetachBuffer();
 	}
 	return ret2c(res, out);
-}
-
-reindexer_ret reindexer_get_payload_type(reindexer_buffer in, int nsid) {
-	reindexer_buffer out{0, 0, nullptr};
-
-	assert(in.results_flag);
-
-	// in MUST be a buffer with query results
-	auto addr = *reinterpret_cast<uint64_t *>(in.data);
-	auto results = reinterpret_cast<QueryResults *>(addr);
-
-	assert(nsid < int(results->ctxs.size()));
-	const PayloadType &t = *results->ctxs[nsid].type_;
-	const TagsMatcher &m = results->ctxs[nsid].tagsMatcher_;
-
-	WrSerializer wrSer(false);
-
-	// Serialize tags matcher
-	wrSer.PutInt(m.version());
-	wrSer.PutInt(m.size());
-	for (unsigned i = 0; i < m.size(); i++) {
-		wrSer.PutString(m.tag2name(i + 1));
-	}
-
-	// Serialize payload type
-	wrSer.PutInt(base_key_string::export_hdr_offset());
-	wrSer.PutInt(t.NumFields());
-	for (int i = 0; i < t.NumFields(); i++) {
-		wrSer.PutInt(t.Field(i).Type());
-		wrSer.PutString(t.Field(i).Name());
-		wrSer.PutInt(t.Field(i).Offset());
-		wrSer.PutInt(t.Field(i).ElemSizeof());
-		wrSer.PutInt(t.Field(i).IsArray());
-	}
-
-	out.len = wrSer.Len();
-	out.data = wrSer.DetachBuffer();
-
-	return ret2c(0, out);
 }
 
 reindexer_error reindexer_commit(reindexer_string _namespace) { return error2c(!db ? err_not_init : db->Commit(str2c(_namespace))); }

@@ -80,7 +80,7 @@ func (dec *Decoder) skipStruct(pl *payloadIface, rdser *Serializer, fieldsoutcnt
 			for dec.skipStruct(pl, rdser, fieldsoutcnt, ctag(rdser.GetVarUInt())) {
 			}
 		case TAG_ARRAY:
-			atag := carraytag(rdser.GetCInt())
+			atag := carraytag(rdser.GetUInt32())
 			count := atag.Count()
 			subtag := atag.Tag()
 			for i := 0; i < count; i++ {
@@ -221,7 +221,7 @@ func mkValue(ctagType int) (v reflect.Value) {
 }
 
 func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.Value, fieldsoutcnt []int, cctagsPath []int) {
-	atag := carraytag(rdser.GetCInt())
+	atag := carraytag(rdser.GetUInt32())
 	count := atag.Count()
 	subtag := atag.Tag()
 
@@ -503,7 +503,7 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 	return true
 }
 
-func (dec *Decoder) Decode(cptr uintptr, dest interface{}) (err error) {
+func (dec *Decoder) DecodeCPtr(cptr uintptr, dest interface{}) (err error) {
 
 	pl := &payloadIface{p: cptr, t: &dec.state.payloadType}
 
@@ -541,12 +541,45 @@ func (dec *Decoder) Decode(cptr uintptr, dest interface{}) (err error) {
 	return err
 }
 
+func (dec *Decoder) Decode(cjson []byte, dest interface{}) (err error) {
+
+	dec.state.lock.RLock()
+	defer dec.state.lock.RUnlock()
+
+	ser := &Serializer{buf: cjson}
+
+	defer func() {
+		if ret := recover(); ret != nil {
+			fmt.Printf(
+				"Interface: %#v\nRead position: %d\nTags(v%d): %v\nTags cache: %+v\nData dump:\n%s\nError: %v\n",
+				dest,
+				ser.Pos(),
+				dec.state.PayloadTypeVersion(),
+				dec.state.tagsMatcher.Names,
+				dec.state.ctagsCache,
+				hex.Dump(ser.Bytes()),
+				ret,
+			)
+			err = ret.(error)
+		}
+	}()
+
+	fieldsoutcnt := make([]int, 64, 64)
+	ctagsPath := make([]int, 0, 8)
+
+	dec.decodeValue(nil, ser, reflect.ValueOf(dest), fieldsoutcnt, ctagsPath)
+	if !ser.Eof() {
+		panic(fmt.Errorf("Internal error - left unparsed data"))
+	}
+	return err
+}
+
 func (dec *Decoder) DecodeX(tuple []byte, dest interface{}) {
 	dec.state.lock.RLock()
 	defer dec.state.lock.RUnlock()
 
 	ser := &Serializer{buf: tuple}
-	to := ser.GetCInt()
+	to := ser.GetUInt32()
 
 	dec.decodeValue(nil, ser, reflect.ValueOf(dest), make([]int, 64, 64), make([]int, 0, 8))
 	_ = to

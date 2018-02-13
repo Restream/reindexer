@@ -59,7 +59,7 @@ public:
 
 	ReindexerApi() { reindexer = make_shared<Reindexer>(); }
 	void CreateNamespace(const std::string &ns) {
-		auto err = reindexer->OpenNamespace(reindexer::NamespaceDef(ns, false));
+		auto err = reindexer->OpenNamespace(ns, StorageOpts().Enabled());
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 

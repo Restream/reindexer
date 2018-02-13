@@ -3,7 +3,6 @@
 namespace reindexer {
 
 KeyRef jsonValue2KeyRef(JsonValue &v, KeyValueType t) {
-	static string nullstr;
 	switch (v.getTag()) {
 		case JSON_NUMBER:
 			switch (t) {

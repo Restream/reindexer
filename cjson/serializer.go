@@ -2,20 +2,14 @@ package cjson
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"unsafe"
 
 	"sync"
-
-	"github.com/restream/reindexer/bindings"
 )
 
 import "C"
-
-type CInt C.int
-type CUInt8 bindings.CUInt8
-type CInt16 bindings.CInt16
-type CInt8 bindings.CInt8
 
 var serPool sync.Pool
 
@@ -77,23 +71,8 @@ func (s *Serializer) Append(s2 Serializer) {
 	}
 }
 
-func (s *Serializer) PutCInt(v int) *Serializer {
-	vx := CInt(v)
-	s.writeIntBits(int64(vx), unsafe.Sizeof(vx))
-	return s
-}
-
-func (s *Serializer) PutBool(v bool) *Serializer {
-	vx := CInt(0)
-	if v {
-		vx = CInt(1)
-	}
-	s.writeIntBits(int64(vx), unsafe.Sizeof(vx))
-	return s
-}
-
-func (s *Serializer) PutInt64(v int64) *Serializer {
-	s.writeIntBits(v, unsafe.Sizeof(v))
+func (s *Serializer) PutUInt32(v uint32) *Serializer {
+	s.writeIntBits(int64(v), unsafe.Sizeof(v))
 	return s
 }
 
@@ -111,13 +90,6 @@ func (s *Serializer) writeIntBits(v int64, sz uintptr) {
 	}
 }
 
-func (s *Serializer) PutString(vx string) *Serializer {
-
-	v := []byte(vx)
-	s.PutBytes(v)
-	return s
-}
-
 func (s *Serializer) WriteString(vx string) *Serializer {
 
 	v := []byte(vx)
@@ -128,7 +100,18 @@ func (s *Serializer) WriteString(vx string) *Serializer {
 
 func (s *Serializer) PutBytes(v []byte) *Serializer {
 	sl := len(v)
-	s.PutCInt(sl)
+	s.PutUInt32(uint32(sl))
+	l := len(s.buf)
+	s.grow(sl)
+	for i := 0; i < sl; i++ {
+		s.buf[i+l] = v[i]
+	}
+	return s
+}
+
+func (s *Serializer) PutVBytes(v []byte) *Serializer {
+	sl := len(v)
+	s.PutVarUInt(uint64(sl))
 	l := len(s.buf)
 	s.grow(sl)
 	for i := 0; i < sl; i++ {
@@ -154,14 +137,19 @@ func (s *Serializer) PutVarInt(v int64) {
 	s.buf = s.buf[:rl+l]
 }
 
-func (s *Serializer) PutVarUInt(v uint64) {
+func (s *Serializer) PutVarUInt(v uint64) *Serializer {
 	l := len(s.buf)
 	s.grow(10)
 	rl := binary.PutUvarint(s.buf[l:], v)
 	s.buf = s.buf[:rl+l]
+	return s
 }
 
-func (s *Serializer) PutVString(v string) {
+func (s *Serializer) PutVarCUInt(v int) *Serializer {
+	return s.PutVarUInt(uint64(v))
+}
+
+func (s *Serializer) PutVString(v string) *Serializer {
 	sl := len(v)
 
 	s.PutVarUInt(uint64(sl))
@@ -171,36 +159,11 @@ func (s *Serializer) PutVString(v string) {
 	for i := 0; i < sl; i++ {
 		s.buf[i+l] = v[i]
 	}
+	return s
 }
 
-func (s *Serializer) GetCInt() (v int) {
-	vx := CInt(0)
-	return int(s.readIntBits(unsafe.Sizeof(vx)))
-}
-func (s *Serializer) GetCUInt8() (v int) {
-	vx := CUInt8(0)
-	return int(s.readIntBits(unsafe.Sizeof(vx)))
-}
-func (s *Serializer) GetCInt8() (v int) {
-	vx := CInt8(0)
-	return int(s.readIntBits(unsafe.Sizeof(vx)))
-}
-func (s *Serializer) GetCInt16() (v int) {
-	vx := CInt16(0)
-	return int(s.readIntBits(unsafe.Sizeof(vx)))
-}
-
-func (s *Serializer) SkipCInts(cnt int) {
-
-	l := cnt * int(unsafe.Sizeof(CInt(0)))
-	if s.pos+l > len(s.buf) {
-		panic(0)
-	}
-	s.pos += l
-}
-
-func (s *Serializer) GetInt64() (v int64) {
-	return s.readIntBits(unsafe.Sizeof(v))
+func (s *Serializer) GetUInt32() (v uint32) {
+	return uint32(s.readIntBits(unsafe.Sizeof(v)))
 }
 
 func (s *Serializer) GetUInt64() (v uint64) {
@@ -212,13 +175,22 @@ func (s *Serializer) GetDouble() (v float64) {
 }
 
 func (s *Serializer) GetBytes() (v []byte) {
-	l := s.GetCInt()
+	l := int(s.GetUInt32())
 	if s.pos+l > len(s.buf) {
-		panic(0)
+		panic(fmt.Errorf("Internal error: serializer need %d bytes, but only %d available", l, len(s.buf)-s.pos))
 	}
 
 	v = s.buf[s.pos : s.pos+l]
-	//log.Printf("lll=%d,pos=%d,len(v)=%d,len(buf)=%d", l, s.pos, len(v), len(s.buf))
+	s.pos += l
+	return v
+}
+func (s *Serializer) GetVBytes() (v []byte) {
+	l := int(s.GetVarUInt())
+	if s.pos+l > len(s.buf) {
+		panic(fmt.Errorf("Internal error: serializer need %d bytes, but only %d available", l, len(s.buf)-s.pos))
+	}
+
+	v = s.buf[s.pos : s.pos+l]
 	s.pos += l
 	return v
 }
@@ -261,7 +233,7 @@ func (s *Serializer) GetVarInt() int64 {
 func (s *Serializer) GetVString() (v string) {
 	l := int(s.GetVarUInt())
 	if s.pos+l > len(s.buf) {
-		panic(0)
+		panic(fmt.Errorf("Internal error: serializer need %d bytes, but only %d available", l, len(s.buf)-s.pos))
 	}
 
 	v = string(s.buf[s.pos : s.pos+l])

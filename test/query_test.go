@@ -20,6 +20,18 @@ const (
 	opOR
 )
 
+var queryNames = map[int]string{
+	reindexer.EQ:    "==",
+	reindexer.GT:    ">",
+	reindexer.LT:    "<",
+	reindexer.GE:    ">=",
+	reindexer.LE:    "<=",
+	reindexer.SET:   "SET",
+	reindexer.RANGE: "in",
+	reindexer.ANY:   "ANY",
+	reindexer.EMPTY: "EMPTY",
+}
+
 type queryTestEntry struct {
 	index     string
 	condition int
@@ -112,44 +124,10 @@ func (tx *txTest) MustCommit(updatedAt *time.Time) {
 	tx.tx.MustCommit(updatedAt)
 }
 
-func (qt *queryTest) removeMissingItemsFromSortValues(items []interface{}) {
-	if len(qt.sortValues) == 0 {
-		return
-	}
-
-	// build sort map
-	sortMap := map[string]bool{}
-	for _, item := range qt.sortValues {
-		value := reflect.Indirect(reflect.ValueOf(item))
-		key := fmt.Sprintf("%v", value)
-		sortMap[key] = false
-	}
-
-	// mark values in 'sortValues' to 'true' if exists it in query results
-	for i := 0; i < len(items); i++ {
-		vals := getValues(items[i], qt.ns.fieldsIdx[qt.sortIndex])
-		if len(vals) != 1 {
-			log.Fatalf("Found len(values) != 1 on sort index %s in item %+v", qt.sortIndex, items[i])
-		}
-
-		key := fmt.Sprintf("%v", vals[0])
-
-		if _, ok := sortMap[key]; ok {
-			sortMap[key] = true
-		}
-	}
-
-	// remove missed items in 'sortValues'
-	for i := len(qt.sortValues) - 1; i >= 0; i-- {
-		value := reflect.Indirect(reflect.ValueOf(qt.sortValues[i]))
-		key := fmt.Sprintf("%v", value)
-		if !sortMap[key] {
-			qt.sortValues = append(qt.sortValues[:i], qt.sortValues[i+1:]...)
-		}
-	}
-}
-
 func (qt *queryTest) toString() (ret string) {
+	if len(qt.entries) > 0 {
+		ret += " WHERE "
+	}
 	for i, qc := range qt.entries {
 		if i != 0 {
 			switch qc.op {
@@ -161,7 +139,7 @@ func (qt *queryTest) toString() (ret string) {
 				ret += " OR "
 			}
 		}
-		//	ret += qc.index + " " + queryNames[qc.condition] + " "
+		ret += qc.index + " " + queryNames[qc.condition] + " "
 		if len(qc.keys) > 1 {
 			ret += "("
 		}
@@ -179,6 +157,13 @@ func (qt *queryTest) toString() (ret string) {
 		ret += " ORDER BY " + qt.sortIndex
 		if qt.sortDesc {
 			ret += " DESC"
+		}
+		if len(qt.sortValues) > 0 {
+			ret += "( "
+			for _, val := range qt.sortValues {
+				ret += fmt.Sprintf("%v ", val)
+			}
+			ret += ")"
 		}
 	}
 	if qt.limitItems != 0 {
@@ -358,37 +343,20 @@ func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
 
 	// Check sorting
 	if len(qt.sortIndex) > 0 {
-		if len(qt.sortValues) > 0 {
-			// check custom sort order
-			qt.removeMissingItemsFromSortValues(items)
-			checker := newSortOrderChecker(qt.sortValues)
-			for idx := range items {
-				vals := getValues(items[idx], sortIdx)
-				if len(vals) != 1 {
-					log.Fatalf("Found len(values) != 1 on sort index %s in item %+v", qt.sortIndex, items[idx])
-				}
+		var prevVals []reflect.Value
+		for i := 0; i < len(items); i++ {
+			vals := getValues(items[i], sortIdx)
+			if len(vals) != 1 {
+				log.Fatalf("Found len(values) != 1 on sort index %s in item %+v", qt.sortIndex, items[i])
+			}
 
-				if !checker.Check(vals[0]) {
-					log.Fatalf("Sort error on index '%s'... value=%v, position=%d", qt.sortIndex, vals[0], idx)
+			if len(prevVals) > 0 {
+				res := compareValues(prevVals[0], vals[0])
+				if (res > 0 && !qt.sortDesc) || (res < 0 && qt.sortDesc) {
+					log.Fatalf("Sort error on index %s,desc=%v ... %v ... %v .... ", qt.sortIndex, qt.sortDesc, prevVals[0], vals[0])
 				}
 			}
-		} else {
-			// check normal sort
-			var prevVals []reflect.Value
-			for i := 0; i < len(items); i++ {
-				vals := getValues(items[i], sortIdx)
-				if len(vals) != 1 {
-					log.Fatalf("Found len(values) != 1 on sort index %s in item %+v", qt.sortIndex, items[i])
-				}
-
-				if len(prevVals) > 0 {
-					res := compareValues(prevVals[0], vals[0])
-					if (res > 0 && !qt.sortDesc) || (res < 0 && qt.sortDesc) {
-						log.Fatalf("Sort error on index %s,desc=%v ... %v ... %v .... ", qt.sortIndex, qt.sortDesc, prevVals[0], vals[0])
-					}
-				}
-				prevVals = vals
-			}
+			prevVals = vals
 		}
 	}
 

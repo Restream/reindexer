@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 typedef enum KeyValueType {
 	KeyValueInt,
 	KeyValueInt64,
@@ -65,7 +67,7 @@ typedef enum CondType {
 	CondEmpty = 9,
 } CondType;
 
-enum ErrorCode { errOK = 0, errParseSQL, errQueryExec, errParams, errLogic, errParseJson, errParseDSL, errConflict };
+enum ErrorCode { errOK = 0, errParseSQL, errQueryExec, errParams, errLogic, errParseJson, errParseDSL, errConflict, errParseBin };
 
 enum OpType { OpOr = 1, OpAnd = 2, OpNot = 3 };
 
@@ -79,6 +81,8 @@ enum CollateMode { CollateNone = 0, CollateASCII, CollateUTF8, CollateNumeric };
 
 enum CalcTotalMode { ModeNoTotal, ModeCachedTotal, ModeAccurateTotal };
 
+enum DataFormat { FormatJson, FormatCJson };
+
 typedef int IdType;
 typedef unsigned SortType;
 
@@ -87,36 +91,103 @@ static const SortType SortIdUnexists = -2;
 
 typedef enum LogLevel { LogNone, LogError, LogWarning, LogInfo, LogTrace } LogLevel;
 
+enum {
+	kResultsPure = 0x0,
+	kResultsWithPtrs = 0x1,
+	kResultsWithCJson = 0x2,
+	kResultsWithJson = 0x3,
+	kResultsWithPayloadTypes = 0x8,
+	kResultsClose = 0x10
+};
+
+typedef enum IndexOpt { kIndexOptPK = 1 << 7, kIndexOptArray = 1 << 6, kIndexOptDense = 1 << 5, kIndexOptAppendable = 1 << 4 } IndexOpt;
+
+typedef enum StotageOpt {
+	kStorageOptEnabled = 1 << 0,
+	kStorageOptDropOnFileFormatError = 1 << 1,
+	kStorageOptCreateIfMissing = 1 << 2,
+	kStorageOptVerifyChecksums = 1 << 3,
+	kStorageOptFillCache = 1 << 4,
+	kStorageOptSync = 1 << 5
+} StorageOpt;
+
 typedef struct IndexOpts {
 #ifdef __cplusplus
-	IndexOpts(bool array = false, bool pk = false, bool dense = false, bool appendable = false, int collateMode = CollateNone)
-		: IsArray(array), IsPK(pk), IsDense(dense), IsAppendable(appendable), CollateMode(collateMode) {}
+	IndexOpts(uint8_t flags = 0, CollateMode mode = CollateNone) : options(flags), collate(mode) {}
 
-	// [[deprecated]]
-	IndexOpts(const int src[3]) : IsArray(src[0]), IsPK(src[1]), IsDense(src[2]) {
-		IsAppendable = 0;
-		CollateMode = CollateNone;
-	};
+	bool IsPK() const { return options & kIndexOptPK; }
+	bool IsArray() const { return options & kIndexOptArray; }
+	bool IsDense() const { return options & kIndexOptDense; }
+	bool IsAppendable() const { return options & kIndexOptAppendable; }
+	CollateMode GetCollateMode() const { return static_cast<CollateMode>(collate); }
+
+	IndexOpts& PK(bool value = true) {
+		options = value ? options | kIndexOptPK : options & ~(kIndexOptPK);
+		return *this;
+	}
+	IndexOpts& Array(bool value = true) {
+		options = value ? options | kIndexOptArray : options & ~(kIndexOptArray);
+		return *this;
+	}
+	IndexOpts& Dense(bool value = true) {
+		options = value ? options | kIndexOptDense : options & ~(kIndexOptDense);
+		return *this;
+	}
+	IndexOpts& Appendable(bool value = true) {
+		options = value ? options | kIndexOptAppendable : options & ~(kIndexOptAppendable);
+		return *this;
+	}
+	IndexOpts& SetCollateMode(CollateMode mode) {
+		collate = mode;
+		return *this;
+	}
 #endif
-	int IsArray;
-	int IsPK;
-	int IsDense;
-	int IsAppendable;
-	int CollateMode;
+	uint8_t options;
+	uint8_t collate;
 } IndexOpts;
 
 typedef struct StorageOpts {
 #ifdef __cplusplus
-	StorageOpts(bool enabled = true, bool dropOnIndexesConflict = false, bool dropOnFileFormatError = false, bool createIfMissing = true)
-		: IsEnabled(enabled),
-		  IsDropOnIndexesConflict(dropOnIndexesConflict),
-		  IsDropOnFileFormatError(dropOnFileFormatError),
-		  IsCreateIfMissing(createIfMissing) {}
+	StorageOpts() : options(0) {}
+
+	bool IsEnabled() const { return options & kStorageOptEnabled; }
+	bool IsDropOnFileFormatError() const { return options & kStorageOptDropOnFileFormatError; }
+	bool IsCreateIfMissing() const { return options & kStorageOptCreateIfMissing; }
+	bool IsVerifyChecksums() const { return options & kStorageOptVerifyChecksums; }
+	bool IsFillCache() const { return options & kStorageOptFillCache; }
+	bool IsSync() const { return options & kStorageOptSync; }
+
+	StorageOpts& Enabled(bool value = true) {
+		options = value ? options | kStorageOptEnabled : options & ~(kStorageOptEnabled);
+		return *this;
+	}
+
+	StorageOpts& DropOnFileFormatError(bool value = true) {
+		options = value ? options | kStorageOptDropOnFileFormatError : options & ~(kStorageOptDropOnFileFormatError);
+		return *this;
+	}
+
+	StorageOpts& CreateIfMissing(bool value = true) {
+		options = value ? options | kStorageOptCreateIfMissing : options & ~(kStorageOptCreateIfMissing);
+		return *this;
+	}
+
+	StorageOpts& VerifyChecksums(bool value = true) {
+		options = value ? options | kStorageOptVerifyChecksums : options & ~(kStorageOptVerifyChecksums);
+		return *this;
+	}
+
+	StorageOpts& FillCache(bool value = true) {
+		options = value ? options | kStorageOptFillCache : options & ~(kStorageOptFillCache);
+		return *this;
+	}
+
+	StorageOpts& Sync(bool value = true) {
+		options = value ? options | kStorageOptSync : options & ~(kStorageOptSync);
+		return *this;
+	}
 #endif
-	int IsEnabled;
-	int IsDropOnIndexesConflict;
-	int IsDropOnFileFormatError;
-	int IsCreateIfMissing;
+	uint8_t options;
 } StorageOpts;
 
 typedef struct reindexer_stat {

@@ -90,16 +90,39 @@ void QueryResults::EncodeJSON(int idx, WrSerializer &ser) const {
 void QueryResults::GetJSON(int idx, WrSerializer &ser, bool withHdrLen) const {
 	if (withHdrLen) {
 		// reserve place for size
-		int saveLen = ser.Len();
-		ser.PutInt(0);
+		uint32_t saveLen = ser.Len();
+		ser.PutUInt32(0);
 
 		EncodeJSON(idx, ser);
 
 		// put real json size
-		int realSize = ser.Len() - saveLen - sizeof(int);
-		memcpy(ser.Buf() + saveLen, &realSize, sizeof(int));
+		int realSize = ser.Len() - saveLen - sizeof(saveLen);
+		memcpy(ser.Buf() + saveLen, &realSize, sizeof(saveLen));
 	} else {
 		EncodeJSON(idx, ser);
+	}
+}
+
+void QueryResults::GetCJSON(int idx, WrSerializer &ser, bool withHdrLen) const {
+	auto &itemRef = at(idx);
+	assert(ctxs.size() > itemRef.nsid);
+	auto &ctx = ctxs[itemRef.nsid];
+
+	ConstPayload pl(ctx.type_, itemRef.value);
+	CJsonEncoder cjsonEncoder(ctx.tagsMatcher_);
+
+	if (withHdrLen) {
+		// reserve place for size
+		uint32_t saveLen = ser.Len();
+		ser.PutUInt32(0);
+
+		cjsonEncoder.Encode(&pl, ser);
+
+		// put real json size
+		int realSize = ser.Len() - saveLen - sizeof(saveLen);
+		memcpy(ser.Buf() + saveLen, &realSize, sizeof(saveLen));
+	} else {
+		cjsonEncoder.Encode(&pl, ser);
 	}
 }
 

@@ -39,16 +39,16 @@ type payloadType struct {
 }
 
 func (pt *payloadType) Read(ser *Serializer) {
-	pt.PStringHdrOffset = uintptr(ser.GetCInt())
-	fieldsCount := ser.GetCInt()
+	pt.PStringHdrOffset = uintptr(ser.GetVarUInt())
+	fieldsCount := int(ser.GetVarUInt())
 	pt.Fields = make([]payloadFieldType, fieldsCount, fieldsCount)
 
 	for i := 0; i < fieldsCount; i++ {
-		pt.Fields[i].Type = ser.GetCInt()
-		pt.Fields[i].Name = string(ser.GetBytes())
-		pt.Fields[i].Offset = uintptr(ser.GetCInt())
-		pt.Fields[i].Size = uintptr(ser.GetCInt())
-		pt.Fields[i].IsArray = ser.GetCInt() != 0
+		pt.Fields[i].Type = int(ser.GetVarUInt())
+		pt.Fields[i].Name = ser.GetVString()
+		pt.Fields[i].Offset = uintptr(ser.GetVarUInt())
+		pt.Fields[i].Size = uintptr(ser.GetVarUInt())
+		pt.Fields[i].IsArray = ser.GetVarUInt() != 0
 	}
 }
 

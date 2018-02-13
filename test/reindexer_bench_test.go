@@ -3,6 +3,7 @@ package reindexer
 import (
 	"encoding/json"
 	"math/rand"
+	"sync"
 	"testing"
 
 	"github.com/restream/reindexer"
@@ -97,7 +98,7 @@ func BenchmarkPrepare(b *testing.B) {
 	}
 	prepared = true
 	DB.SetLogger(nil)
-	FillTestItemsBench(0, 500000, 10)
+	FillTestItemsBench(0, *benchmarkSeedCount, 10)
 	FillTestJoinItems(7000, 500)
 	// force commit and make sort orders
 	DB.Query("test_items_bench").Where("year", reindexer.EQ, 1).Sort("year", false).Limit(1).MustExec().Close()
@@ -589,10 +590,20 @@ func newTestBenchItem(id int, pkgCount int) *TestItemBench {
 }
 
 func FillTestItemsBench(start int, count int, pkgsCount int) {
-	for i := 0; i < count; i++ {
-		item := newTestBenchItem(mkID(start+i), pkgsCount)
-		if err := DB.Upsert("test_items_bench", item); err != nil {
-			panic(err)
+
+	wg := sync.WaitGroup{}
+	seeder := func(start int, count int) {
+		for i := 0; i < count; i++ {
+			item := newTestBenchItem(mkID(start+i), pkgsCount)
+			if err := DB.Upsert("test_items_bench", item); err != nil {
+				panic(err)
+			}
 		}
+		wg.Done()
 	}
+	for i := 0; i < *benchmarkSeedCPU; i++ {
+		wg.Add(1)
+		go seeder(start + i*count / *benchmarkSeedCPU, count / *benchmarkSeedCPU)
+	}
+	wg.Wait()
 }

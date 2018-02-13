@@ -1,31 +1,46 @@
 package reindexer
 
 import (
+	"flag"
 	"log"
 	"math/rand"
+	"net/url"
 	"os"
 	"testing"
 
 	"github.com/restream/reindexer"
 	_ "github.com/restream/reindexer/bindings/builtin"
-	//	_ "github.com/restream/reindexer/pprof"
+	_ "github.com/restream/reindexer/bindings/cproto"
+	// _ "github.com/restream/reindexer/pprof"
 )
 
 var DB *reindexer.Reindexer
 
 var tnamespaces map[string]interface{} = make(map[string]interface{}, 100)
 
-func TestMain(m *testing.M) {
-	DB = reindexer.NewReindex("builtin")
+var dsn = flag.String("dsn", "builtin:///tmp/reindex_test/", "reindex db dsn")
+var benchmarkSeedCount = flag.Int("seedcount", 500000, "count of items for benchmark seed")
+var benchmarkSeedCPU = flag.Int("seedcpu", 1, "number threads of for seeding")
 
-	os.RemoveAll("/tmp/reindex_test/")
-	DB.EnableStorage("/tmp/reindex_test/")
+func TestMain(m *testing.M) {
+
+	flag.Parse()
+
+	udsn, err := url.Parse(*dsn)
+	if err != nil {
+		panic(err)
+	}
+	if udsn.Scheme == "builtin" {
+		os.RemoveAll("/tmp/reindex_test/")
+	}
+	DB = reindexer.NewReindex(*dsn)
 
 	if testing.Verbose() {
 		DB.SetLogger(&TestLogger{})
 	}
 	for k, v := range tnamespaces {
-		if err := DB.CreateIndex(k, v); err != nil {
+		DB.DropNamespace(k)
+		if err := DB.OpenNamespace(k, reindexer.DefaultNamespaceOptions(), v); err != nil {
 			panic(err)
 		}
 		newTestNamespace(k, v)

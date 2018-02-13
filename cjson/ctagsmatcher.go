@@ -5,18 +5,18 @@ import "fmt"
 type tagsMatcher struct {
 	Tags    []string
 	Names   map[string]int
-	Version int
+	Version int32
 	Updated int
 }
 
 func (tm *tagsMatcher) Read(ser *Serializer) {
-	tm.Version = ser.GetCInt()
-	tagsCount := ser.GetCInt()
+	tm.Version = int32(ser.GetVarUInt())
+	tagsCount := int(ser.GetVarUInt())
 	tm.Tags = make([]string, tagsCount, tagsCount)
 	tm.Names = make(map[string]int)
 
 	for i := 0; i < tagsCount; i++ {
-		tm.Tags[i] = string(ser.GetBytes())
+		tm.Tags[i] = ser.GetVString()
 		tm.Names[tm.Tags[i]] = i
 	}
 }

@@ -2,7 +2,7 @@
 
 namespace reindexer {
 
-CJsonEncoder::CJsonEncoder(TagsMatcher &tagsMatcher) : tagsMatcher_(tagsMatcher) {}
+CJsonEncoder::CJsonEncoder(const TagsMatcher &tagsMatcher) : tagsMatcher_(tagsMatcher) {}
 
 void CJsonEncoder::Encode(ConstPayload *pl, WrSerializer &wrser) {
 	KeyRefs kref;
@@ -119,7 +119,7 @@ bool CJsonEncoder::encodeCJson(ConstPayload *pl, Serializer &rdser, WrSerializer
 		if (tagType == TAG_ARRAY) {
 			int count = rdser.GetVarUint();
 			int subtag = kvType2TagType(pl->Type().Field(tagField).Type());
-			wrser.PutInt(carraytag(count, subtag));
+			wrser.PutUInt32(carraytag(count, subtag));
 			pl->Get(tagField, kr);
 			while (count--) {
 				assertf(*cnt < int(kr.size()), "No data in field '%s.%s', got %d items.", pl->Type().Name().c_str(),
@@ -141,8 +141,8 @@ bool CJsonEncoder::encodeCJson(ConstPayload *pl, Serializer &rdser, WrSerializer
 				}
 				break;
 			case TAG_ARRAY: {
-				carraytag atag = rdser.GetInt();
-				wrser.PutInt(atag);
+				carraytag atag = rdser.GetUInt32();
+				wrser.PutUInt32(atag);
 				for (int count = 0; count < atag.Count(); count++) {
 					switch (atag.Tag()) {
 						case TAG_OBJECT:

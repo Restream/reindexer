@@ -32,7 +32,6 @@ public:
 	virtual Slice GetJSON() = 0;
 	virtual Error Status() = 0;
 	virtual ItemRef GetRef() = 0;
-
 	virtual Slice GetCJSON() = 0;
 	virtual Error FromCJSON(const Slice &) = 0;
 

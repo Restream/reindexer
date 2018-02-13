@@ -9,11 +9,10 @@ public:
 	void SetUp() {
 		reindexer.reset(new Reindexer);
 		CreateNamespace(default_namespace);
-		IndexOpts opts{false, true, false};
+		//		IndexOpts opts{false, true, false};
 
-		DefineNamespaceDataset(default_namespace,
-							   {tuple<const char*, const char*, const char*, IndexOpts>{"id", "hash", "int", opts},
-								tuple<const char*, const char*, const char*, IndexOpts>{"ft1", "fulltext", "string", IndexOpts()}});
+		DefineNamespaceDataset(default_namespace, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK()},
+												   IndexDeclaration{"ft1", "fulltext", "string", IndexOpts()}});
 	}
 
 	void FillData(int64_t count) {

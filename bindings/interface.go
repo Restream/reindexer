@@ -6,6 +6,7 @@ package bindings
 // #include "core/cbinding/reindexer_ctypes.h"
 import "C"
 import (
+	"net/url"
 	"time"
 )
 
@@ -87,6 +88,21 @@ const (
 	ModeCachedTotal   = int(C.ModeCachedTotal)
 	ModeAccurateTotal = int(C.ModeAccurateTotal)
 
+	ResultsPure             = int(C.kResultsPure)
+	ResultsWithPtrs         = int(C.kResultsWithPtrs)
+	ResultsWithCJson        = int(C.kResultsWithCJson)
+	ResultsWithJson         = int(C.kResultsWithJson)
+	ResultsWithPayloadTypes = int(C.kResultsWithPayloadTypes)
+	ResultsClose            = int(C.kResultsClose)
+
+	IndexOptPK         = uint8(C.kIndexOptPK)
+	IndexOptArray      = uint8(C.kIndexOptArray)
+	IndexOptDense      = uint8(C.kIndexOptDense)
+	IndexOptAppendable = uint8(C.kIndexOptAppendable)
+
+	StorageOptEnabled               = uint8(C.kStorageOptEnabled)
+	StorageOptDropOnFileFormatError = uint8(C.kStorageOptDropOnFileFormatError)
+
 	ErrOK        = int(C.errOK)
 	ErrParseSQL  = int(C.errParseSQL)
 	ErrQueryExec = int(C.errQueryExec)
@@ -97,10 +113,79 @@ const (
 	ErrConflict  = int(C.errConflict)
 )
 
-type CInt C.int
-type CUInt8 C.uint8_t
-type CInt8 C.int8_t
-type CInt16 C.int16_t
+type IndexOptions uint8
+
+func (indexOpts *IndexOptions) PK(value bool) *IndexOptions {
+	if value {
+		*indexOpts |= IndexOptions(IndexOptPK)
+	} else {
+		*indexOpts &= ^IndexOptions(IndexOptPK)
+	}
+	return indexOpts
+}
+
+func (indexOpts *IndexOptions) Array(value bool) *IndexOptions {
+	if value {
+		*indexOpts |= IndexOptions(IndexOptArray)
+	} else {
+		*indexOpts &= ^IndexOptions(IndexOptArray)
+	}
+	return indexOpts
+}
+
+func (indexOpts *IndexOptions) Dense(value bool) *IndexOptions {
+	if value {
+		*indexOpts |= IndexOptions(IndexOptDense)
+	} else {
+		*indexOpts &= ^IndexOptions(IndexOptDense)
+	}
+	return indexOpts
+}
+
+func (indexOpts *IndexOptions) Appendable(value bool) *IndexOptions {
+	if value {
+		*indexOpts |= IndexOptions(IndexOptAppendable)
+	} else {
+		*indexOpts &= ^IndexOptions(IndexOptAppendable)
+	}
+	return indexOpts
+}
+
+func (indexOpts *IndexOptions) IsPK() bool {
+	return uint8(*indexOpts)&IndexOptPK != 0
+}
+
+func (indexOpts *IndexOptions) IsArray() bool {
+	return uint8(*indexOpts)&IndexOptArray != 0
+}
+
+func (indexOpts *IndexOptions) IsDense() bool {
+	return uint8(*indexOpts)&IndexOptDense != 0
+}
+
+func (indexOpts *IndexOptions) IsAppendable() bool {
+	return uint8(*indexOpts)&IndexOptAppendable != 0
+}
+
+type StorageOptions uint8
+
+func (so *StorageOptions) Enabled(value bool) *StorageOptions {
+	if value {
+		*so |= StorageOptions(StorageOptEnabled | C.kStorageOptCreateIfMissing)
+	} else {
+		*so &= ^StorageOptions(StorageOptEnabled | C.kStorageOptEnabled)
+	}
+	return so
+}
+
+func (so *StorageOptions) DropOnFileFormatError(value bool) *StorageOptions {
+	if value {
+		*so |= StorageOptions(StorageOptDropOnFileFormatError)
+	} else {
+		*so &= ^StorageOptions(StorageOptDropOnFileFormatError)
+	}
+	return so
+}
 
 // go interface to reindexer_c.h interface
 type RawBuffer interface {
@@ -149,24 +234,25 @@ type Stats struct {
 
 // Raw binding to reindexer
 type RawBinding interface {
+	Init(u *url.URL) error
 	OpenNamespace(namespace string, enableStorage, dropOnFileFormatError bool) error
 	CloseNamespace(namespace string) error
 	DropNamespace(namespace string) error
 	CloneNamespace(src string, dst string) error
 	RenameNamespace(src string, dst string) error
 	EnableStorage(namespace string) error
-	AddIndex(namespace, index, jsonPath, indexType, fieldType string, isArray, isPK, isDense, isAppendable bool, mode int) error
+	AddIndex(namespace, index, jsonPath, indexType, fieldType string, opts IndexOptions, collateMode int) error
 	ConfigureIndex(namespace, index, config string) error
-	PutMeta(raw []byte) error
-	GetMeta(raw []byte) (RawBuffer, error)
-	GetPayloadType(resBuf []byte, nsid int) (RawBuffer, error)
+	PutMeta(namespace, key, data string) error
+	GetMeta(namespace, key string) (RawBuffer, error)
 	ModifyItem(data []byte, mode int) (RawBuffer, error)
-	Select(query string, withItems bool) (RawBuffer, error)
-	SelectQuery(withItems bool, rawQuery []byte) (RawBuffer, error)
+	Select(query string, withItems bool, ptVersions []int32) (RawBuffer, error)
+	SelectQuery(rawQuery []byte, withItems bool, ptVersions []int32) (RawBuffer, error)
 	DeleteQuery(rawQuery []byte) (RawBuffer, error)
 	Commit(namespace string) error
 	EnableLogger(logger Logger)
 	DisableLogger()
+	Ping() error
 
 	GetStats() Stats
 	ResetStats()
@@ -179,6 +265,7 @@ func RegisterBinding(name string, binding RawBinding) {
 }
 
 func GetBinding(name string) RawBinding {
+
 	b, ok := availableBindings[name]
 	if !ok {
 		return nil

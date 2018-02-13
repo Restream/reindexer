@@ -15,24 +15,24 @@ class QueriesApi : public ReindexerApi {
 public:
 	void SetUp() override {
 		indexesOptions = {
-			{id, IndexOpts(false, true, false)},
+			{id, IndexOpts().PK()},
 			{genre, IndexOpts()},
 			{year, IndexOpts()},
-			{packages, IndexOpts(true, false, false)},
+			{packages, IndexOpts().Array()},
 			{name, IndexOpts()},
-			{countries, IndexOpts(true, false, false)},
+			{countries, IndexOpts().Array()},
 			{age, IndexOpts()},
 			{description, IndexOpts()},
 			{rate, IndexOpts()},
 			{isDeleted, IndexOpts()},
-			{actor, IndexOpts(false, false, false, false, CollateUTF8)},
-			{priceId, IndexOpts(true, false, false)},
-			{location, IndexOpts(false, false, false, false, CollateNone)},
+			{actor, IndexOpts().SetCollateMode(CollateUTF8)},
+			{priceId, IndexOpts().Array()},
+			{location, IndexOpts().SetCollateMode(CollateNone)},
 			{endTime, IndexOpts()},
 			{startTime, IndexOpts()},
 			{phone, IndexOpts()},
-			{temp, IndexOpts(false, true, false, false, CollateASCII)},
-			{numeric, IndexOpts(false, false, false, false, CollateUTF8)},
+			{temp, IndexOpts().PK().SetCollateMode(CollateASCII)},
+			{numeric, IndexOpts().SetCollateMode(CollateUTF8)},
 			{string(id + compositePlus + temp), IndexOpts()},
 			{string(age + compositePlus + genre), IndexOpts()},
 		};
@@ -67,14 +67,12 @@ public:
 		defaultNsPks.push_back(16);
 
 		CreateNamespace(testSimpleNs);
-		DefineNamespaceDataset(
-			testSimpleNs,
-			{
-				tuple<const char*, const char*, const char*, IndexOpts>{id, "hash", "int", IndexOpts(false, true, false)},
-				tuple<const char*, const char*, const char*, IndexOpts>{year, "tree", "int", IndexOpts()},
-				tuple<const char*, const char*, const char*, IndexOpts>{name, "text", "string", IndexOpts()},
-				tuple<const char*, const char*, const char*, IndexOpts>{phone, "text", "string", IndexOpts()},
-			});
+		DefineNamespaceDataset(testSimpleNs, {
+												 IndexDeclaration{id, "hash", "int", IndexOpts().PK()},
+												 IndexDeclaration{year, "tree", "int", IndexOpts()},
+												 IndexDeclaration{name, "text", "string", IndexOpts()},
+												 IndexDeclaration{phone, "text", "string", IndexOpts()},
+											 });
 		simpleTestNsPks.push_back(1);
 	}
 
@@ -202,27 +200,27 @@ protected:
 		for (const KeyRef& fieldValue : fieldValues) {
 			switch (qentry.condition) {
 				case CondEq:
-					result = (fieldValue.Compare(qentry.values[0], opts.CollateMode) == 0);
+					result = (fieldValue.Compare(qentry.values[0], opts.GetCollateMode()) == 0);
 					break;
 				case CondGe:
-					result = (fieldValue.Compare(qentry.values[0], opts.CollateMode) >= 0);
+					result = (fieldValue.Compare(qentry.values[0], opts.GetCollateMode()) >= 0);
 					break;
 				case CondGt:
-					result = (fieldValue.Compare(qentry.values[0], opts.CollateMode) > 0);
+					result = (fieldValue.Compare(qentry.values[0], opts.GetCollateMode()) > 0);
 					break;
 				case CondLt:
-					result = (fieldValue.Compare(qentry.values[0], opts.CollateMode) < 0);
+					result = (fieldValue.Compare(qentry.values[0], opts.GetCollateMode()) < 0);
 					break;
 				case CondLe:
-					result = (fieldValue.Compare(qentry.values[0], opts.CollateMode) <= 0);
+					result = (fieldValue.Compare(qentry.values[0], opts.GetCollateMode()) <= 0);
 					break;
 				case CondRange:
-					result = (fieldValue.Compare(qentry.values[0], opts.CollateMode) >= 0) &&
-							 (fieldValue.Compare(qentry.values[1], opts.CollateMode) <= 0);
+					result = (fieldValue.Compare(qentry.values[0], opts.GetCollateMode()) >= 0) &&
+							 (fieldValue.Compare(qentry.values[1], opts.GetCollateMode()) <= 0);
 					break;
 				case CondSet:
 					for (const KeyValue& kv : qentry.values) {
-						result = (fieldValue.Compare(kv, opts.CollateMode) == 0);
+						result = (fieldValue.Compare(kv, opts.GetCollateMode()) == 0);
 						if (result) break;
 					}
 					break;
@@ -335,28 +333,25 @@ protected:
 						default_namespace,
 						Query(default_namespace).Where(name, CondEq, RandString()).Distinct(distinct.c_str()).Sort(sortIdx, sortOrder));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Where(rate, CondEq, static_cast<double>(rand() % 100) / 10)
-										 .Distinct(distinct.c_str())
-										 .Sort(sortIdx, sortOrder));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(rate, CondEq, static_cast<double>(rand() % 100) / 10)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Where(genre, CondGt, randomGenre)
-										 .Distinct(distinct.c_str())
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(genre, CondGt, randomGenre)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder)
+															.Debug(LogTrace));
 
 					ExecuteAndVerify(
 						default_namespace,
 						Query(default_namespace).Where(name, CondGt, RandString()).Distinct(distinct.c_str()).Sort(sortIdx, sortOrder));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Where(rate, CondGt, static_cast<double>(rand() % 100) / 10)
-										 .Distinct(distinct.c_str())
-										 .Sort(sortIdx, sortOrder));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(rate, CondGt, static_cast<double>(rand() % 100) / 10)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
 
 					ExecuteAndVerify(
 						default_namespace,
@@ -366,24 +361,21 @@ protected:
 						default_namespace,
 						Query(default_namespace).Where(name, CondLt, RandString()).Distinct(distinct.c_str()).Sort(sortIdx, sortOrder));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Where(rate, CondLt, static_cast<double>(rand() % 100) / 10)
-										 .Distinct(distinct.c_str())
-										 .Sort(sortIdx, sortOrder));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(rate, CondLt, static_cast<double>(rand() % 100) / 10)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Where(genre, CondRange, {randomGenreLower, randomGenreUpper})
-										 .Distinct(distinct.c_str())
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(genre, CondRange, {randomGenreLower, randomGenreUpper})
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder)
+															.Debug(LogTrace));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Where(name, CondRange, {RandString(), RandString()})
-										 .Distinct(distinct.c_str())
-										 .Sort(sortIdx, sortOrder));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(name, CondRange, {RandString(), RandString()})
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
 
 					ExecuteAndVerify(
 						default_namespace,
@@ -392,11 +384,10 @@ protected:
 							.Distinct(distinct.c_str())
 							.Sort(sortIdx, sortOrder));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Where(packages, CondSet, RandIntVector(10, 10000, 50))
-										 .Distinct(distinct.c_str())
-										 .Sort(sortIdx, sortOrder));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(packages, CondSet, RandIntVector(10, 10000, 50))
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
 
 					ExecuteAndVerify(
 						default_namespace,
@@ -410,128 +401,116 @@ protected:
 						default_namespace,
 						Query(default_namespace).Where(isDeleted, CondEq, 1).Distinct(distinct.c_str()).Sort(sortIdx, sortOrder));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Distinct(distinct.c_str())
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(genre, CondEq, 5)
-										 .Where(age, CondEq, 3)
-										 .Where(year, CondGe, 2010)
-										 .Where(packages, CondSet, RandIntVector(5, 10000, 50))
-										 .Debug(LogTrace));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder)
+															.Debug(LogTrace)
+															.Where(genre, CondEq, 5)
+															.Where(age, CondEq, 3)
+															.Where(year, CondGe, 2010)
+															.Where(packages, CondSet, RandIntVector(5, 10000, 50))
+															.Debug(LogTrace));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Distinct(distinct.c_str())
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(year, CondGt, 2002)
-										 .Where(genre, CondEq, 4)
-										 .Where(age, CondEq, 3)
-										 .Where(isDeleted, CondEq, 3)
-										 .Or()
-										 .Where(year, CondGt, 2001)
-										 .Where(packages, CondSet, RandIntVector(5, 10000, 50))
-										 .Debug(LogTrace));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder)
+															.Debug(LogTrace)
+															.Where(year, CondGt, 2002)
+															.Where(genre, CondEq, 4)
+															.Where(age, CondEq, 3)
+															.Where(isDeleted, CondEq, 3)
+															.Or()
+															.Where(year, CondGt, 2001)
+															.Where(packages, CondSet, RandIntVector(5, 10000, 50))
+															.Debug(LogTrace));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Distinct(distinct.c_str())
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(age, CondSet, {1, 2, 3, 4})
-										 .Where(id, CondEq, rand() % 5000)
-										 .Where(temp, CondEq, "")
-										 .Where(isDeleted, CondEq, 1)
-										 .Or()
-										 .Where(year, CondGt, 2001)
-										 .Debug(LogTrace));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder)
+															.Debug(LogTrace)
+															.Where(age, CondSet, {1, 2, 3, 4})
+															.Where(id, CondEq, rand() % 5000)
+															.Where(temp, CondEq, "")
+															.Where(isDeleted, CondEq, 1)
+															.Or()
+															.Where(year, CondGt, 2001)
+															.Debug(LogTrace));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Distinct(distinct.c_str())
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(genre, CondSet, {5, 1, 7})
-										 .Where(year, CondLt, 2010)
-										 .Where(genre, CondEq, 3)
-										 .Where(packages, CondSet, RandIntVector(5, 10000, 50))
-										 .Or()
-										 .Where(packages, CondEmpty, 0)
-										 .Debug(LogTrace));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder)
+															.Debug(LogTrace)
+															.Where(genre, CondSet, {5, 1, 7})
+															.Where(year, CondLt, 2010)
+															.Where(genre, CondEq, 3)
+															.Where(packages, CondSet, RandIntVector(5, 10000, 50))
+															.Or()
+															.Where(packages, CondEmpty, 0)
+															.Debug(LogTrace));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Distinct(distinct.c_str())
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(genre, CondSet, {5, 1, 7})
-										 .Where(year, CondLt, 2010)
-										 .Or()
-										 .Where(packages, CondAny, 0)
-										 .Where(packages, CondSet, RandIntVector(5, 10000, 50))
-										 .Debug(LogTrace));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder)
+															.Debug(LogTrace)
+															.Where(genre, CondSet, {5, 1, 7})
+															.Where(year, CondLt, 2010)
+															.Or()
+															.Where(packages, CondAny, 0)
+															.Where(packages, CondSet, RandIntVector(5, 10000, 50))
+															.Debug(LogTrace));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Distinct(distinct.c_str())
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(genre, CondEq, 5)
-										 .Or()
-										 .Where(genre, CondEq, 6)
-										 .Where(year, CondRange, {2001, 2020})
-										 .Where(packages, CondSet, RandIntVector(5, 10000, 50)));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder)
+															.Debug(LogTrace)
+															.Where(genre, CondEq, 5)
+															.Or()
+															.Where(genre, CondEq, 6)
+															.Where(year, CondRange, {2001, 2020})
+															.Where(packages, CondSet, RandIntVector(5, 10000, 50)));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Distinct(distinct.c_str())
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(actor, CondEq, RandString()));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder)
+															.Debug(LogTrace)
+															.Where(actor, CondEq, RandString()));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Distinct(distinct.c_str())
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Not()
-										 .Where(genre, CondEq, 5)
-										 .Where(year, CondRange, {2001, 2020})
-										 .Where(packages, CondSet, RandIntVector(5, 10000, 50)));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder)
+															.Debug(LogTrace)
+															.Not()
+															.Where(genre, CondEq, 5)
+															.Where(year, CondRange, {2001, 2020})
+															.Where(packages, CondSet, RandIntVector(5, 10000, 50)));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Distinct(distinct.c_str())
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(genre, CondEq, 5)
-										 .Not()
-										 .Where(year, CondRange, {2001, 2020})
-										 .Where(packages, CondSet, RandIntVector(5, 10000, 50)));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder)
+															.Debug(LogTrace)
+															.Where(genre, CondEq, 5)
+															.Not()
+															.Where(year, CondRange, {2001, 2020})
+															.Where(packages, CondSet, RandIntVector(5, 10000, 50)));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Distinct(distinct.c_str())
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Not()
-										 .Where(year, CondEq, 10));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder)
+															.Debug(LogTrace)
+															.Not()
+															.Where(year, CondEq, 10));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Distinct(distinct.c_str())
-										 .Sort(numeric, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(numeric, CondGt, to_string(5)));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Distinct(distinct.c_str())
+															.Sort(numeric, sortOrder)
+															.Debug(LogTrace)
+															.Where(numeric, CondGt, to_string(5)));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Distinct(distinct.c_str())
-										 .Sort(numeric, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(numeric, CondLt, to_string(600)));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Distinct(distinct.c_str())
+															.Sort(numeric, sortOrder)
+															.Debug(LogTrace)
+															.Where(numeric, CondLt, to_string(600)));
 
 					ExecuteAndVerify(default_namespace,
 									 Query(default_namespace)
@@ -635,17 +614,18 @@ protected:
 		fflush(stdout);
 	}
 
-	void PrintFailedSortOrdered(const Query& query, const QueryResults& qr, size_t itemIndex) {
-		const size_t range = 5;
+	void PrintFailedSortOrdered(const Query& query, const QueryResults& qr, int itemIndex) {
+		const int range = 5;
 		printf("Sort order or last items: ");
 		if (itemIndex > 0) {
-			for (size_t i = itemIndex; i >= (itemIndex - range >= 0 ? itemIndex - range : 0); ++i) {
+			for (int i = itemIndex; i >= (itemIndex - range >= 0 ? itemIndex - range : 0); ++i) {
 				unique_ptr<reindexer::Item> item(qr.GetItem(static_cast<int>(i)));
 				auto* itemr = reinterpret_cast<reindexer::ItemImpl*>(item.get());
 				printf("%s, ", KeyValue(itemr->GetField(query.sortBy)).toString().c_str());
 			}
 		}
-		for (size_t i = itemIndex + 1; i < (itemIndex + range < qr.size() ? itemIndex + range : qr.size() - 1); ++i) {
+		int numResults = qr.size();
+		for (int i = itemIndex + 1; i < (itemIndex + range < numResults ? itemIndex + range : numResults - 1); ++i) {
 			unique_ptr<reindexer::Item> item(qr.GetItem(static_cast<int>(i)));
 			auto* itemr = reinterpret_cast<reindexer::ItemImpl*>(item.get());
 			printf("%s, ", KeyValue(itemr->GetField(query.sortBy)).toString().c_str());

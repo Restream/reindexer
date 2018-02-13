@@ -39,12 +39,14 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 		}
 		FillDefaultNamespace(rand() % 100, 1, 0);
 
-		itToRemove = items.begin();
-		std::advance(itToRemove, rand() % 100);
-		if (itToRemove != items.end()) {
-			Error err = reindexer->Delete(default_namespace, itToRemove->second.get());
-			EXPECT_TRUE(err.ok()) << err.what();
-			items.erase(itToRemove);
+		if (!items.empty()) {
+			itToRemove = items.begin();
+			std::advance(itToRemove, rand() % std::min(100, int(items.size())));
+			if (itToRemove != items.end()) {
+				Error err = reindexer->Delete(default_namespace, itToRemove->second.get());
+				EXPECT_TRUE(err.ok()) << err.what();
+				items.erase(itToRemove);
+			}
 		}
 	}
 

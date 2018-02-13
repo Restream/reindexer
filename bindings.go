@@ -1,4 +1,3 @@
-//go:generate make -j4 -C cpp_src
 package reindexer
 
 import (
@@ -12,8 +11,6 @@ import (
 	"github.com/restream/reindexer/bindings"
 	"github.com/restream/reindexer/cjson"
 )
-
-type CInt bindings.CInt
 
 const (
 	modeInsert = bindings.ModeInsert
@@ -40,10 +37,10 @@ func (db *Reindexer) modifyItem(namespace string, ns *reindexerNamespace, item i
 
 	out, err := db.binding.ModifyItem(ser.Bytes(), mode)
 
-	defer out.Free()
 	if err != nil {
 		return 0, err
 	}
+	defer out.Free()
 
 	rdSer := newSerializer(out.GetBuf())
 	rawQueryParams := rdSer.readRawQueryParams()
@@ -63,7 +60,7 @@ func (db *Reindexer) modifyItem(namespace string, ns *reindexerNamespace, item i
 
 func packItem(ns *reindexerNamespace, item interface{}, json []byte, ser *cjson.Serializer, precepts ...string) error {
 
-	ser.PutString(ns.name)
+	ser.PutVString(ns.name)
 
 	if item != nil {
 		json, _ = item.([]byte)
@@ -78,11 +75,11 @@ func packItem(ns *reindexerNamespace, item interface{}, json []byte, ser *cjson.
 			panic(ErrWrongType)
 		}
 
-		ser.PutCInt(bindings.FormatCJson)
+		ser.PutVarCUInt(bindings.FormatCJson)
 
 		// reserve int for save len
 		pos := len(ser.Bytes())
-		ser.PutCInt(0)
+		ser.PutUInt32(0)
 		pos1 := len(ser.Bytes())
 
 		enc := ns.cjsonState.NewEncoder()
@@ -90,15 +87,15 @@ func packItem(ns *reindexerNamespace, item interface{}, json []byte, ser *cjson.
 			return err
 		}
 
-		*(*CInt)(unsafe.Pointer(&ser.Bytes()[pos])) = CInt(len(ser.Bytes()) - pos1)
+		*(*uint32)(unsafe.Pointer(&ser.Bytes()[pos])) = uint32(len(ser.Bytes()) - pos1)
 	} else {
-		ser.PutCInt(bindings.FormatJson)
+		ser.PutVarCUInt(bindings.FormatJson)
 		ser.PutBytes(json)
 	}
 
-	ser.PutCInt(len(precepts))
+	ser.PutVarCUInt(len(precepts))
 	for _, precept := range precepts {
-		ser.PutString(precept)
+		ser.PutVString(precept)
 	}
 
 	return nil
@@ -115,33 +112,20 @@ func (db *Reindexer) getNS(namespace string) (*reindexerNamespace, error) {
 }
 
 func (db *Reindexer) putMeta(namespace, key string, data []byte) error {
-
-	var ser cjson.Serializer
-	ser.PutString(namespace)
-	ser.PutString(key)
-	ser.PutBytes(data)
-
-	return db.binding.PutMeta(ser.Bytes())
+	return db.binding.PutMeta(namespace, key, string(data))
 }
 
 func (db *Reindexer) getMeta(namespace, key string) ([]byte, error) {
 
-	var ser cjson.Serializer
-	ser.PutString(namespace)
-	ser.PutString(key)
-
-	out, err := db.binding.GetMeta(ser.Bytes())
-	defer out.Free()
-
+	out, err := db.binding.GetMeta(namespace, key)
 	if err != nil {
 		return nil, err
 	}
+	defer out.Free()
 
 	rdSer := newSerializer(out.GetBuf())
-	b := rdSer.GetBytes()
-	bb := make([]byte, len(b), cap(b))
-	copy(bb, b)
-	return bb, nil
+	s := rdSer.GetVString()
+	return []byte(s), nil
 }
 
 func unpackItem(ns *reindexerNamespace, params rawResultItemParams, allowUnsafe bool) (item interface{}, err error) {
@@ -164,7 +148,14 @@ func unpackItem(ns *reindexerNamespace, params rawResultItemParams, allowUnsafe 
 			} else {
 				item = reflect.New(ns.rtype).Interface()
 				dec := ns.cjsonState.NewDecoder()
-				if err = dec.Decode(params.cptr, item); err != nil {
+				if params.cptr != 0 {
+					err = dec.DecodeCPtr(params.cptr, item)
+				} else if params.data != nil {
+					err = dec.Decode(params.data, item)
+				} else {
+					panic(fmt.Errorf("Internal error while decoding item id %d from ns %s: cptr and data are both null", params.id, ns.name))
+				}
+				if err != nil {
 					ns.cacheLock.Unlock()
 					return
 				}
@@ -174,7 +165,14 @@ func unpackItem(ns *reindexerNamespace, params rawResultItemParams, allowUnsafe 
 		} else {
 			item = reflect.New(ns.rtype).Interface()
 			dec := ns.cjsonState.NewDecoder()
-			if err = dec.Decode(params.cptr, item); err != nil {
+			if params.cptr != 0 {
+				err = dec.DecodeCPtr(params.cptr, item)
+			} else if params.data != nil {
+				err = dec.Decode(params.data, item)
+			} else {
+				panic(fmt.Errorf("Internal error while decoding item id %d from ns %s: cptr and data are both null", params.id, ns.name))
+			}
+			if err != nil {
 				return
 			}
 			// Reset needCopy, because item already separate
@@ -191,28 +189,6 @@ func unpackItem(ns *reindexerNamespace, params rawResultItemParams, allowUnsafe 
 	}
 
 	return
-}
-
-func (db *Reindexer) updatePayloadTypes(ns []*reindexerNamespace, ser *resultSerializer, rawQueryParams rawResultQueryParams) {
-	if rawQueryParams.nsCount != len(ns) {
-		panic(fmt.Errorf("Internal error: wrong namespaces count. Expected %d, got %d", len(ns), rawQueryParams.nsCount))
-	}
-	for i := 0; i < rawQueryParams.nsCount; i++ {
-		if ns[i].cjsonState.PayloadTypeVersion() != rawQueryParams.nsVersions[i] {
-			b, err := db.binding.GetPayloadType(ser.Bytes(), i)
-			if err != nil {
-				panic(err)
-			}
-			ns[i].cjsonState.ReadPayloadType(b.GetBuf())
-			if ns[i].cjsonState.PayloadTypeVersion() != rawQueryParams.nsVersions[i] {
-				panic(fmt.Errorf(
-					"Internal error: wrong tagsMatcher version. Expected %d, got %d",
-					rawQueryParams.nsVersions[i],
-					ns[i].cjsonState.PayloadTypeVersion()),
-				)
-			}
-		}
-	}
 }
 
 func (db *Reindexer) rawResultToJson(rawResult []byte, jsonName string, totalName string, initJson []byte, initOffsets []int) (json []byte, offsets []int, err error) {
@@ -247,14 +223,14 @@ func (db *Reindexer) rawResultToJson(rawResult []byte, jsonName string, totalNam
 	jsonBuf.WriteString("\":[")
 
 	for i := 0; i < rawQueryParams.count; i++ {
-		_ = ser.readRawtItemParams()
+		item := ser.readRawtItemParams()
 		if i != 0 {
 			jsonBuf.WriteString(",")
 		}
 		offsets = append(offsets, len(jsonBuf.Bytes()))
-		jsonBuf.Write(ser.GetBytes())
+		jsonBuf.Write(item.data)
 
-		if ser.GetCInt() != 0 {
+		if ser.GetVarUInt() != 0 {
 			panic("Sorry, not implemented: Can't return join query results as json")
 		}
 	}
@@ -275,11 +251,11 @@ func (db *Reindexer) prepareQuery(q *Query, asJson bool) (result bindings.RawBuf
 	}
 
 	ser := q.ser
-	ser.PutCInt(queryEnd)
+	ser.PutVarCUInt(queryEnd)
 	for _, sq := range q.joinQueries {
-		ser.PutCInt(sq.joinType)
+		ser.PutVarCUInt(sq.joinType)
 		ser.Append(sq.ser)
-		ser.PutCInt(queryEnd)
+		ser.PutVarCUInt(queryEnd)
 		if ns, err := db.getNS(sq.Namespace); err == nil {
 			q.nsArray = append(q.nsArray, ns)
 		} else {
@@ -287,9 +263,9 @@ func (db *Reindexer) prepareQuery(q *Query, asJson bool) (result bindings.RawBuf
 		}
 	}
 	for _, sq := range q.mergedQueries {
-		ser.PutCInt(merge)
+		ser.PutVarCUInt(merge)
 		ser.Append(sq.ser)
-		ser.PutCInt(queryEnd)
+		ser.PutVarCUInt(queryEnd)
 		if ns, err := db.getNS(sq.Namespace); err == nil {
 			q.nsArray = append(q.nsArray, ns)
 		} else {
@@ -297,7 +273,12 @@ func (db *Reindexer) prepareQuery(q *Query, asJson bool) (result bindings.RawBuf
 		}
 	}
 
-	result, err = db.binding.SelectQuery(asJson, ser.Bytes())
+	ptVersions := make([]int32, 0, 16)
+	for _, ns := range q.nsArray {
+		ptVersions = append(ptVersions, ns.cjsonState.PayloadTypeVersion())
+	}
+
+	result, err = db.binding.SelectQuery(ser.Bytes(), asJson, ptVersions)
 
 	if err == nil && result.GetBuf() == nil {
 		panic(fmt.Errorf("result.Buffer is nil"))
@@ -312,7 +293,6 @@ func (db *Reindexer) execQuery(q *Query) *Iterator {
 		return errIterator(err)
 	}
 	iter := newIterator(q, result, q.nsArray, q.joinToFields, q.joinHandlers, q.context)
-	db.updatePayloadTypes(q.nsArray, &iter.ser, iter.rawQueryParams)
 	return iter
 }
 
@@ -345,7 +325,13 @@ func (db *Reindexer) prepareSQL(namespace, query string, asJson bool) (result bi
 			return
 		}
 	}
-	result, err = db.binding.Select(query, asJson)
+
+	ptVersions := make([]int32, 0, 16)
+	for _, ns := range nsArray {
+		ptVersions = append(ptVersions, ns.cjsonState.PayloadTypeVersion())
+	}
+
+	result, err = db.binding.Select(query, asJson, ptVersions)
 	return
 }
 
@@ -355,7 +341,6 @@ func (db *Reindexer) execSQL(namespace, query string) *Iterator {
 		return errIterator(err)
 	}
 	iter := newIterator(nil, result, nsArray, nil, nil, nil)
-	db.updatePayloadTypes(nsArray, &iter.ser, iter.rawQueryParams)
 	return iter
 }
 
@@ -381,10 +366,10 @@ func (db *Reindexer) deleteQuery(q *Query) (int, error) {
 	}
 
 	result, err := db.binding.DeleteQuery(q.ser.Bytes())
-	defer result.Free()
 	if err != nil {
 		return 0, err
 	}
+	defer result.Free()
 
 	ser := newSerializer(result.GetBuf())
 	// skip total count
@@ -393,7 +378,7 @@ func (db *Reindexer) deleteQuery(q *Query) (int, error) {
 	ns.cacheLock.Lock()
 	for i := 0; i < rawQueryParams.count; i++ {
 		params := ser.readRawtItemParams()
-		jres := ser.GetCInt()
+		jres := ser.GetVarUInt()
 		if jres != 0 {
 			panic("Internal error: joined items in delete query result")
 		}

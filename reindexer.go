@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -127,12 +129,26 @@ var (
 
 // NewReindex Create new instanse of Reindexer DB
 // Returns pointer to created instance
-func NewReindex(uri string) *Reindexer {
+func NewReindex(dsn string) *Reindexer {
 
-	binding := bindings.GetBinding(uri)
+	if dsn == "builtin" {
+		dsn += "://"
+	}
+
+	u, err := url.Parse(dsn)
+	if err != nil {
+		panic(fmt.Errorf("Can't parse DB DSN '%s'", dsn))
+	}
+
+	binding := bindings.GetBinding(u.Scheme)
 
 	if binding == nil {
-		panic(fmt.Errorf("Reindex binding '%s' is not avalable, can't create DB, %d ", uri))
+		panic(fmt.Errorf("Reindex binding '%s' is not avalable, can't create DB, %d ", u.Scheme))
+	}
+
+	if err = binding.Init(u); err != nil {
+		panic(fmt.Errorf("Reindex binding '%s' init error: %s", u.Scheme, err.Error()))
+		return nil
 	}
 
 	return &Reindexer{
@@ -142,15 +158,7 @@ func NewReindex(uri string) *Reindexer {
 	}
 }
 
-// EnableStorage enables persistent storage of data
-// Current implemetation is GOB based, slow
-func (db *Reindexer) EnableStorage(storagePath string) error {
-	db.storagePath = storagePath + "/"
-	return db.binding.EnableStorage(storagePath)
-}
-
 // SetLogger sets logger interface for output reindexer logs
-// Current implemetation is GOB based, slow
 func (db *Reindexer) SetLogger(log Logger) {
 	if log != nil {
 		logger = log
@@ -159,6 +167,11 @@ func (db *Reindexer) SetLogger(log Logger) {
 		logger = &nullLogger{}
 		db.binding.DisableLogger()
 	}
+}
+
+// Ping checks connection with reindexer
+func (db *Reindexer) Ping() error {
+	return db.binding.Ping()
 }
 
 // NamespaceOptions is options for namespace
@@ -211,7 +224,7 @@ func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s i
 		return nil
 	}
 
-	enableStorage := len(db.storagePath) != 0 && opts.enableStorage
+	enableStorage := opts.enableStorage
 
 	_, haveDeepCopy := reflect.New(t).Interface().(DeepCopy)
 
@@ -255,24 +268,9 @@ func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s i
 	return err
 }
 
-// CreateIndex [[depreacted]]
-func (db *Reindexer) CreateIndex(namespace string, s interface{}) error {
-	return db.OpenNamespace(namespace, DefaultNamespaceOptions(), s)
-}
-
-// NewNamespace [[depreacted]]
-func (db *Reindexer) NewNamespace(namespace string, opts *NamespaceOptions, s interface{}) error {
-	return db.OpenNamespace(namespace, opts, s)
-}
-
 // DropNamespace - drop whole namespace from DB
 func (db *Reindexer) DropNamespace(namespace string) error {
 	db.lock.Lock()
-	_, ok := db.ns[namespace]
-	if !ok {
-		db.lock.Unlock()
-		return errNsNotFound
-	}
 	delete(db.ns, namespace)
 	db.lock.Unlock()
 
@@ -291,11 +289,6 @@ func (db *Reindexer) CloseNamespace(namespace string) error {
 	db.lock.Unlock()
 
 	return db.binding.CloseNamespace(namespace)
-}
-
-// DeleteNamespace [[deprecated]]
-func (db *Reindexer) DeleteNamespace(namespace string) error {
-	return db.DropNamespace(namespace)
 }
 
 // RenameNamespace - rename namespace in DB. If dst namespace already exists, it will be overwriten
@@ -343,10 +336,15 @@ func (db *Reindexer) CloneNamespace(src string, dst string) error {
 	srcNs.cacheLock.RUnlock()
 
 	db.ns[dst] = dstNs
-
 	db.lock.Unlock()
 
-	return db.binding.CloneNamespace(src, dst)
+	err := db.binding.CloneNamespace(src, dst)
+	if err != nil {
+		db.lock.Lock()
+		delete(db.ns, dst)
+		db.lock.Unlock()
+	}
+	return err
 }
 
 // Upsert (Insert or Update) item to index
@@ -566,4 +564,21 @@ func (db *Reindexer) GetStats() bindings.Stats {
 // Reset local thread reindexer usage stats
 func (db *Reindexer) ResetStats() {
 	db.binding.ResetStats()
+}
+
+// NewNamespace [[depreacted]]
+func (db *Reindexer) NewNamespace(namespace string, opts *NamespaceOptions, s interface{}) error {
+	return db.OpenNamespace(namespace, opts, s)
+}
+
+// DeleteNamespace [[deprecated]]
+func (db *Reindexer) DeleteNamespace(namespace string) error {
+	return db.DropNamespace(namespace)
+}
+
+// EnableStorage enables persistent storage of data
+// [[deprecated]] storage path should be passed as DSN part to reindexer.NewReindex (""), e.g. reindexer.NewReindexer ("builtin:///tmp/reindex")
+func (db *Reindexer) EnableStorage(storagePath string) error {
+	log.Println("Deprecated function reindexer.EnableStorage call")
+	return db.binding.EnableStorage(storagePath)
 }

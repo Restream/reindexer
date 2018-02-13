@@ -27,19 +27,17 @@ reindexer_error reindexer_add_index(reindexer_string _namespace, reindexer_strin
 reindexer_error reindexer_configure_index(reindexer_string _namespace, reindexer_string index, reindexer_string config);
 
 reindexer_ret reindexer_modify_item(reindexer_buffer in, int mode);
-reindexer_ret reindexer_select(reindexer_string query, int with_items);
+reindexer_ret reindexer_select(reindexer_string query, int with_items, int32_t *pt_versions);
 
-reindexer_ret reindexer_select_query(int with_items, reindexer_buffer in);
+reindexer_ret reindexer_select_query(reindexer_buffer in, int with_items, int32_t *pt_versions);
 reindexer_ret reindexer_delete_query(reindexer_buffer in);
 
 reindexer_error reindexer_free_buffer(reindexer_buffer in);
 
 reindexer_error reindexer_commit(reindexer_string _namespace);
 
-reindexer_error reindexer_put_meta(reindexer_buffer in);
-reindexer_ret reindexer_get_meta(reindexer_buffer in);
-
-reindexer_ret reindexer_get_payload_type(reindexer_buffer in, int nsid);
+reindexer_error reindexer_put_meta(reindexer_string ns, reindexer_string key, reindexer_string data);
+reindexer_ret reindexer_get_meta(reindexer_string ns, reindexer_string key);
 
 reindexer_error reindexer_reset_stats();
 reindexer_stat reindexer_get_stats();

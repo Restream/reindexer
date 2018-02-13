@@ -1,5 +1,6 @@
 #pragma once
 
+#include <time.h>
 #include <string>
 #include <vector>
 #include "core/type_consts.h"
@@ -24,5 +25,13 @@ string& utf16_to_utf8(const wstring& src, string& dst);
 wstring& utf8_to_utf16(const char* src, wstring& dst);
 
 size_t utf16_to_utf8(const wchar_t* src, size_t len, char* dst, size_t dstLen);
+
+int fast_strftime(char* buf, const tm* tm);
+void urldecode2(char* dst, const char* src);
+
+inline static char* strappend(char* dst, const char* src) {
+	while (*src) *dst++ = *src++;
+	return dst;
+}
 
 }  // namespace reindexer

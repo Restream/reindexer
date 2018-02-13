@@ -48,56 +48,56 @@ void Query::deserialize(Serializer &ser) {
 		QueryEntry qe;
 		QueryJoinEntry qje;
 
-		int qtype = ser.GetInt();
+		int qtype = ser.GetVarUint();
 		switch (qtype) {
 			case QueryCondition: {
-				qe.index = ser.GetString();
-				qe.op = OpType(ser.GetInt());
-				qe.condition = CondType(ser.GetInt());
-				int count = ser.GetInt();
+				qe.index = ser.GetVString().ToString();
+				qe.op = OpType(ser.GetVarUint());
+				qe.condition = CondType(ser.GetVarUint());
+				int count = ser.GetVarUint();
 				qe.values.reserve(count);
 				while (count--) qe.values.push_back(ser.GetValue());
 				entries.push_back(qe);
 				break;
 			}
 			case QueryAggregation:
-				aggregations_.push_back({ser.GetString(), AggType(ser.GetInt())});
+				aggregations_.push_back({ser.GetVString().ToString(), AggType(ser.GetVarUint())});
 				break;
 			case QueryDistinct:
-				qe.index = ser.GetString();
+				qe.index = ser.GetVString().ToString();
 				qe.distinct = true;
 				qe.condition = CondAny;
 				entries.push_back(qe);
 				break;
 			case QuerySortIndex: {
-				sortBy = ser.GetString();
-				sortDirDesc = bool(ser.GetInt());
-				int count = ser.GetInt();
+				sortBy = ser.GetVString().ToString();
+				sortDirDesc = bool(ser.GetVarUint());
+				int count = ser.GetVarUint();
 				forcedSortOrder.reserve(count);
 				while (count--) forcedSortOrder.push_back(ser.GetValue());
 				break;
 			}
 			case QueryJoinOn:
-				qje.op_ = OpType(ser.GetInt());
-				qje.condition_ = CondType(ser.GetInt());
-				qje.index_ = ser.GetString();
-				qje.joinIndex_ = ser.GetString();
+				qje.op_ = OpType(ser.GetVarUint());
+				qje.condition_ = CondType(ser.GetVarUint());
+				qje.index_ = ser.GetVString().ToString();
+				qje.joinIndex_ = ser.GetVString().ToString();
 				joinEntries_.push_back(std::move(qje));
 				break;
 			case QueryDebugLevel:
-				debugLevel = ser.GetInt();
+				debugLevel = ser.GetVarUint();
 				break;
 			case QueryLimit:
-				count = ser.GetInt();
+				count = ser.GetVarUint();
 				break;
 			case QueryOffset:
-				start = ser.GetInt();
+				start = ser.GetVarUint();
 				break;
 			case QueryReqTotal:
-				calcTotal = CalcTotalMode(ser.GetInt());
+				calcTotal = CalcTotalMode(ser.GetVarUint());
 				break;
 			case QuerySelectFilter:
-				selectFilter_.push_back(ser.GetString());
+				selectFilter_.push_back(ser.GetVString().ToString());
 				break;
 			case QueryEnd:
 				return;
@@ -214,88 +214,88 @@ string Query::DumpMerged() const {
 }
 
 void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
-	ser.PutString(_namespace);
+	ser.PutVString(_namespace);
 	for (auto &qe : entries) {
-		qe.distinct ? ser.PutInt(QueryDistinct) : ser.PutInt(QueryCondition);
-		ser.PutString(qe.index);
+		qe.distinct ? ser.PutVarUint(QueryDistinct) : ser.PutVarUint(QueryCondition);
+		ser.PutVString(qe.index);
 		if (qe.distinct) continue;
-		ser.PutInt(qe.op);
-		ser.PutInt(qe.condition);
-		ser.PutInt(qe.values.size());
+		ser.PutVarUint(qe.op);
+		ser.PutVarUint(qe.condition);
+		ser.PutVarUint(qe.values.size());
 		for (auto &kv : qe.values) ser.PutValue(kv);
 	}
 
 	for (auto &agg : aggregations_) {
-		ser.PutInt(QueryAggregation);
-		ser.PutString(agg.index_);
-		ser.PutInt(agg.type_);
+		ser.PutVarUint(QueryAggregation);
+		ser.PutVString(agg.index_);
+		ser.PutVarUint(agg.type_);
 	}
 
 	if (!sortBy.empty()) {
-		ser.PutInt(QuerySortIndex);
-		ser.PutString(sortBy);
-		ser.PutInt(sortDirDesc);
+		ser.PutVarUint(QuerySortIndex);
+		ser.PutVString(sortBy);
+		ser.PutVarUint(sortDirDesc);
 		int cnt = forcedSortOrder.size();
-		ser.PutInt(cnt);
+		ser.PutVarUint(cnt);
 		for (auto &kv : forcedSortOrder) ser.PutValue(kv);
 	}
 
 	for (auto &qje : joinEntries_) {
-		ser.PutInt(QueryJoinOn);
-		ser.PutInt(qje.op_);
-		ser.PutInt(qje.condition_);
-		ser.PutString(qje.index_);
-		ser.PutString(qje.joinIndex_);
+		ser.PutVarUint(QueryJoinOn);
+		ser.PutVarUint(qje.op_);
+		ser.PutVarUint(qje.condition_);
+		ser.PutVString(qje.index_);
+		ser.PutVString(qje.joinIndex_);
 	}
 
-	ser.PutInt(QueryDebugLevel);
-	ser.PutInt(debugLevel);
+	ser.PutVarUint(QueryDebugLevel);
+	ser.PutVarUint(debugLevel);
 
 	if (!(mode & SkipLimitOffset)) {
 		if (count) {
-			ser.PutInt(QueryLimit);
-			ser.PutInt(count);
+			ser.PutVarUint(QueryLimit);
+			ser.PutVarUint(count);
 		}
 		if (start) {
-			ser.PutInt(QueryOffset);
-			ser.PutInt(start);
+			ser.PutVarUint(QueryOffset);
+			ser.PutVarUint(start);
 		}
 	}
 
 	if (calcTotal) {
-		ser.PutInt(QueryReqTotal);
-		ser.PutInt(calcTotal);
+		ser.PutVarUint(QueryReqTotal);
+		ser.PutVarUint(calcTotal);
 	}
 
 	for (auto &sf : selectFilter_) {
-		ser.PutInt(QuerySelectFilter);
-		ser.PutString(sf);
+		ser.PutVarUint(QuerySelectFilter);
+		ser.PutVString(sf);
 	}
 
-	ser.PutInt(QueryEnd);  // finita la commedia... of root query
+	ser.PutVarUint(QueryEnd);  // finita la commedia... of root query
 
 	if (!(mode & SkipJoinQueries)) {
 		for (auto &jq : joinQueries_) {
-			ser.PutInt(static_cast<int>(jq.joinType));
+			ser.PutVarUint(static_cast<int>(jq.joinType));
 			jq.Serialize(ser);
 		}
 	}
 
 	if (!(mode & SkipMergeQueries)) {
 		for (auto &mq : mergeQueries_) {
-			ser.PutInt(static_cast<int>(mq.joinType));
+			ser.PutVarUint(static_cast<int>(mq.joinType));
 			mq.Serialize(ser);
 		}
 	}
 }
 
 void Query::Deserialize(Serializer &ser) {
-	_namespace = ser.GetString();
+	_namespace = ser.GetVString().ToString();
 	deserialize(ser);
 
 	while (!ser.Eof()) {
-		auto joinType = JoinType(ser.GetInt());
-		Query q1(ser.GetString());
+		auto joinType = JoinType(ser.GetVarUint());
+		Query q1(ser.GetVString().ToString());
 		q1.joinType = joinType;
 		q1.deserialize(ser);
 		q1.debugLevel = debugLevel;

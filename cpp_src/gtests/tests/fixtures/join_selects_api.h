@@ -1,6 +1,7 @@
 #pragma once
 
 #include <gtest/gtest.h>
+#include <map>
 #include "core/payload/payloadtype.h"
 #include "reindexer_api.h"
 
@@ -16,24 +17,18 @@ protected:
 		CreateNamespace(books_namespace);
 		CreateNamespace(genres_namespace);
 
-		IndexOpts opts(false, true, false);
-
-		DefineNamespaceDataset(genres_namespace,
-							   {tuple<const char*, const char*, const char*, IndexOpts>{genreid, "hash", "int", opts},
-								tuple<const char*, const char*, const char*, IndexOpts>{genrename, "text", "string", IndexOpts()}});
+		DefineNamespaceDataset(genres_namespace, {IndexDeclaration{genreid, "hash", "int", IndexOpts().PK()},
+												  IndexDeclaration{genrename, "text", "string", IndexOpts()}});
 
 		DefineNamespaceDataset(authors_namespace,
-							   {tuple<const char*, const char*, const char*, IndexOpts>{authorid, "hash", "int", opts},
-								tuple<const char*, const char*, const char*, IndexOpts>{name, "text", "string", IndexOpts()},
-								tuple<const char*, const char*, const char*, IndexOpts>{age, "hash", "int", IndexOpts()}});
+							   {IndexDeclaration{authorid, "hash", "int", IndexOpts().PK()},
+								IndexDeclaration{name, "text", "string", IndexOpts()}, IndexDeclaration{age, "hash", "int", IndexOpts()}});
 
-		DefineNamespaceDataset(books_namespace,
-							   {tuple<const char*, const char*, const char*, IndexOpts>{bookid, "hash", "int", opts},
-								tuple<const char*, const char*, const char*, IndexOpts>{title, "text", "string", IndexOpts()},
-								tuple<const char*, const char*, const char*, IndexOpts>{pages, "hash", "int", IndexOpts()},
-								tuple<const char*, const char*, const char*, IndexOpts>{price, "hash", "int", IndexOpts()},
-								tuple<const char*, const char*, const char*, IndexOpts>{genreId_fk, "hash", "int", IndexOpts()},
-								tuple<const char*, const char*, const char*, IndexOpts>{authorid_fk, "hash", "int", IndexOpts()}});
+		DefineNamespaceDataset(
+			books_namespace,
+			{IndexDeclaration{bookid, "hash", "int", IndexOpts().PK()}, IndexDeclaration{title, "text", "string", IndexOpts()},
+			 IndexDeclaration{pages, "hash", "int", IndexOpts()}, IndexDeclaration{price, "hash", "int", IndexOpts()},
+			 IndexDeclaration{genreId_fk, "hash", "int", IndexOpts()}, IndexDeclaration{authorid_fk, "hash", "int", IndexOpts()}});
 
 		FillGenresNamespace();
 		FillAuthorsNamespace(500);

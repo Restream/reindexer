@@ -4,9 +4,9 @@
 #include "core/namespace.h"
 #include "nsdescriber.h"
 
+using std::shared_ptr;
 using std::string;
 using std::stringstream;
-using std::shared_ptr;
 
 namespace reindexer {
 void NsDescriber::operator()(QueryResults &result) {
@@ -57,10 +57,13 @@ void NsDescriber::operator()(QueryResults &result) {
 				  << "\"" << index.name << "\",";
 		strStream << "\"field_type\":"
 				  << "\"" << index.TypeName() << "\",";
-		strStream << "\"is_array\":" << (index.opts_.IsArray ? "true" : "false") << ",";
+		strStream << "\"is_array\":" << (index.opts_.IsArray() ? "true" : "false") << ",";
 		strStream << "\"sortable\":" << (isSortable ? "true" : "false") << ",";
-		strStream << "\"pk\":" << (index.opts_.IsPK ? "true" : "false") << ",";
+		strStream << "\"pk\":" << (index.opts_.IsPK() ? "true" : "false") << ",";
 		strStream << "\"fulltext\":" << (isFulltext ? "true" : "false") << ",";
+		strStream << "\"collate_mode\":"
+				  << "\"" << index.CollateMode() << "\""
+				  << ",";
 
 		strStream << "\"conditions\": [";
 		auto conds = index.Conds();
@@ -81,7 +84,7 @@ void NsDescriber::operator()(QueryResults &result) {
 	}
 	strStream << "],";
 	strStream << "\"storage_enabled\":" << (ns_->dbpath_.length() ? "true" : "false") << ",";
-	strStream << "\"storage_ok\":" << (ns_->db_ != nullptr ? "true" : "false") << ",";
+	strStream << "\"storage_ok\":" << (ns_->storage_ != nullptr ? "true" : "false") << ",";
 
 	string storagePath = ns_->dbpath_.length() ? ns_->dbpath_ + '/' : "";
 	strStream << "\"storage_path\":"

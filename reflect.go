@@ -13,6 +13,11 @@ const (
 	CollateASCII   = bindings.CollateASCII
 	CollateUTF8    = bindings.CollateUTF8
 	CollateNumeric = bindings.CollateNumeric
+
+	IndexOptPK         = bindings.IndexOptPK
+	IndexOptArray      = bindings.IndexOptArray
+	IndexOptDense      = bindings.IndexOptDense
+	IndexOptAppendable = bindings.IndexOptAppendable
 )
 
 func (db *Reindexer) createIndex(namespace string, st reflect.Type, subArray bool, reindexBasePath, jsonBasePath string, joined *map[string][]int) (err error) {
@@ -65,7 +70,7 @@ func (db *Reindexer) createIndex(namespace string, st reflect.Type, subArray boo
 		if idxOpts == "composite" {
 			if t.Kind() != reflect.Struct || t.NumField() != 0 {
 				return fmt.Errorf("'composite' tag allowed only on empty on structs: Invalid tags %v on field %s", tagsSlice, st.Field(i).Name)
-			} else if err := db.binding.AddIndex(namespace, reindexPath, "", idxType, "composite", false, false, false, false, CollateNumeric); err != nil {
+			} else if err := db.binding.AddIndex(namespace, reindexPath, "", idxType, "composite", 0, CollateNumeric); err != nil {
 				return err
 			}
 		} else if t.Kind() == reflect.Struct {
@@ -81,7 +86,7 @@ func (db *Reindexer) createIndex(namespace string, st reflect.Type, subArray boo
 				return err
 			}
 		} else if len(idxName) > 0 {
-			collateMode:= CollateNone
+			collateMode := CollateNone
 			switch idxOpts {
 			case "collate_ascii":
 				collateMode = CollateASCII
@@ -91,6 +96,12 @@ func (db *Reindexer) createIndex(namespace string, st reflect.Type, subArray boo
 				collateMode = CollateNumeric
 			}
 
+			var opts bindings.IndexOptions
+			opts.Array(t.Kind() == reflect.Slice || t.Kind() == reflect.Array || subArray)
+			opts.PK(idxOpts == "pk")
+			opts.Dense(idxOpts == "dense")
+			opts.Appendable(idxOpts == "appendable")
+
 			if fieldType, err := getFieldType(t); err != nil {
 				return err
 			} else if err = db.binding.AddIndex(
@@ -99,10 +110,7 @@ func (db *Reindexer) createIndex(namespace string, st reflect.Type, subArray boo
 				jsonPath,
 				idxType,
 				fieldType,
-				t.Kind() == reflect.Slice || t.Kind() == reflect.Array || subArray,
-				(idxOpts == "pk"),
-				(idxOpts == "dense"),
-				(idxOpts == "appendable"),
+				opts,
 				collateMode,
 			); err != nil {
 				return err

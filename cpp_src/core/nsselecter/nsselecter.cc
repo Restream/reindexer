@@ -21,7 +21,6 @@ void NsSelecter::operator()(QueryResults &result, const SelectCtx &ctx) {
 	Index *sortIndex = nullptr;
 	bool unorderedIndexSort = false;
 	int collateMode = CollateMode::CollateNone;
-	bool forceAllOrigin = ctx.isForceAll;
 	bool forcedSort = !ctx.query.forcedSortOrder.empty();
 
 	bool enableTiming = ctx.query.debugLevel >= LogInfo;
@@ -64,11 +63,11 @@ void NsSelecter::operator()(QueryResults &result, const SelectCtx &ctx) {
 					  ns_->name.c_str(), ns_->indexes_[whereEntries[0].idxNo]->name.c_str(), ctx.query.sortBy.c_str());
 		} else {
 			// Query is sorted. Search for sort index
-			sortIndex = forcedSort ? nullptr : ns_->indexes_[ns_->getIndexByName(sortBy)].get();
+			sortIndex = ns_->indexes_[ns_->getIndexByName(sortBy)].get();
 			if (sortIndex && !sortIndex->IsOrdered()) {
 				const_cast<SelectCtx &>(ctx).isForceAll = true;
 				unorderedIndexSort = true;
-				collateMode = sortIndex->opts_.CollateMode;
+				collateMode = sortIndex->opts_.GetCollateMode();
 				sortIndex = nullptr;
 			}
 		}
@@ -181,9 +180,8 @@ void NsSelecter::operator()(QueryResults &result, const SelectCtx &ctx) {
 		applyCustomSort(result, ctx);
 	}
 
-	if (unorderedIndexSort && !forceAllOrigin) {
-		const_cast<SelectCtx &>(ctx).isForceAll = forceAllOrigin;
-		setLimitsAfterSortByUnorderedIndex(result, ctx);
+	if (unorderedIndexSort || ctx.isForceAll) {
+		setLimitsAndOffset(result, ctx);
 	}
 
 	if (ctx.query.calcTotal == ModeCachedTotal && needCalcTotal) {
@@ -261,18 +259,17 @@ void NsSelecter::applyGeneralSort(QueryResults &queryResult, const SelectCtx &ct
 			  });
 }
 
-void NsSelecter::setLimitsAfterSortByUnorderedIndex(QueryResults &queryResult, const SelectCtx &ctx) {
-	if (ctx.isForceAll) return;
-
-	const unsigned offset = ctx.query.start;
-	const unsigned limit = ctx.query.count;
-	const unsigned totalRows = queryResult.size();
+void NsSelecter::setLimitsAndOffset(QueryResults &queryResult, const SelectCtx &ctx) {
+	unsigned offset = ctx.query.start;
+	unsigned limit = ctx.query.count;
+	unsigned totalRows = queryResult.size();
 
 	if (offset > 0) {
-		queryResult.erase(queryResult.begin(), queryResult.begin() + offset);
+		auto end = offset < totalRows ? queryResult.begin() + offset : queryResult.end();
+		queryResult.erase(queryResult.begin(), end);
 	}
 
-	if (totalRows > limit) {
+	if (queryResult.size() > limit) {
 		queryResult.erase(queryResult.begin() + limit, queryResult.end());
 	}
 }
@@ -480,7 +477,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) {
 
 	for (auto &ag : q.aggregations_) {
 		int idx = ns_->getIndexByName(ag.index_);
-		ret.push_back(Aggregator(ns_->indexes_[idx]->KeyType(), ns_->indexes_[idx]->opts_.IsArray, nullptr, ag.type_));
+		ret.push_back(Aggregator(ns_->indexes_[idx]->KeyType(), ns_->indexes_[idx]->opts_.IsArray(), nullptr, ag.type_));
 		ret.back().Bind(ns_->payloadType_.get(), idx);
 	}
 

@@ -30,7 +30,9 @@ func newIterator(
 		it = &Iterator{}
 	}
 	it.ser = newSerializer(result.GetBuf())
-	it.rawQueryParams = it.ser.readRawQueryParams()
+	it.rawQueryParams = it.ser.readRawQueryParams(func(nsid int) {
+		nsArray[nsid].cjsonState.ReadPayloadType(&it.ser.Serializer)
+	})
 	it.result = result
 	it.nsArray = nsArray
 	it.joinToFields = joinToFields
@@ -98,14 +100,14 @@ func (it *Iterator) readItem() (item interface{}, rank int) {
 	if it.rawQueryParams.haveProcent {
 		rank = params.proc
 	}
-	subNSRes := it.ser.GetCInt()
+	subNSRes := int(it.ser.GetVarUInt())
 	item, it.err = unpackItem(it.nsArray[params.nsid], params, it.allowUnsafe && (subNSRes == 0))
 	if it.err != nil {
 		return
 	}
 	if subNSRes > 0 {
 		for nsIndex := 0; nsIndex < subNSRes; nsIndex++ {
-			siRes := it.ser.GetCInt()
+			siRes := int(it.ser.GetVarUInt())
 			if siRes == 0 {
 				continue
 			}

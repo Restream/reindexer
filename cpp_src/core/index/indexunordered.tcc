@@ -15,10 +15,10 @@ KeyRef IndexUnordered<T>::Upsert(const KeyRef &key, IdType id) {
 	auto keyIt = find(key);
 	if (keyIt == this->idx_map.end())
 		keyIt = this->idx_map.insert({static_cast<typename T::key_type>(key), typename T::mapped_type()}).first;
-	keyIt->second.Unsorted().Add(id, this->opts_.IsPK ? IdSet::Ordered : IdSet::Auto);
+	keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto);
 	tracker_.markUpdated(idx_map, &*keyIt);
 
-	if (this->KeyType() == KeyValueString && this->opts_.CollateMode != CollateNone) {
+	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
 		return IndexStore<typename T::key_type>::Upsert(key, id);
 	}
 
@@ -39,12 +39,12 @@ void IndexUnordered<T>::Delete(const KeyRef &key, IdType id) {
 	delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
-	assertf(this->opts_.IsArray || delcnt, "Delete unexists id from index '%s' id=%d,key=%s", this->name.c_str(), id,
+	assertf(this->opts_.IsArray() || delcnt, "Delete unexists id from index '%s' id=%d,key=%s", this->name.c_str(), id,
 			KeyValue(key).toString().c_str());
 
 	tracker_.markUpdated(idx_map, &*keyIt);
 
-	if (this->KeyType() == KeyValueString && this->opts_.CollateMode != CollateNone) {
+	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
 		IndexStore<typename T::key_type>::Delete(key, id);
 	}
 }

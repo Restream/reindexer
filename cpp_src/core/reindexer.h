@@ -21,14 +21,16 @@ public:
 	~Reindexer();
 
 	// Enable storage
-	Error EnableStorage(const string &storagePath);
+	Error EnableStorage(const string &storagePath, bool skipPlaceholderCheck = false);
 
-	Error OpenNamespace(const NamespaceDef &nsDef);
+	Error OpenNamespace(const string &_namespace, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing());
+	Error AddNamespace(const NamespaceDef &nsDef);
 	Error CloseNamespace(const string &_namespace);
 	Error DropNamespace(const string &_namespace);
 	Error CloneNamespace(const string &src, const string &dst);
 	Error RenameNamespace(const string &src, const string &dst);
 	Error AddIndex(const string &_namespace, const IndexDef &index);
+	Error EnumNamespaces(vector<NamespaceDef> &defs, bool bEnumAll);
 
 	Error ConfigureIndex(const string &_namespace, const string &index, const string &config);
 
@@ -48,6 +50,8 @@ public:
 	Error GetMeta(const string &_namespace, const string &key, string &data);
 	// Put meta data to storage by key
 	Error PutMeta(const string &_namespace, const string &key, const Slice &data);
+
+	Error EnumMeta(const string &_namespace, vector<string> &keys);
 
 	Error ResetStats();
 	Error GetStats(reindexer_stat &stat);
@@ -95,7 +99,6 @@ protected:
 		bool upgraded_ = false;
 	};
 
-	vector<string> getNamespacesNames();
 	void flusherThread();
 	Error closeNamespace(const string &_namespace, bool dropStorage);
 	Namespace::Ptr getNamespace(const string &_namespace);

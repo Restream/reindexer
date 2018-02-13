@@ -4,21 +4,12 @@ project(reindexer_tool)
 
 set(TARGET reindexer_tool)
 
-file(
-	GLOB_RECURSE
-	SRCS
-		${PROJECT_SOURCE_DIR}/*.cc
-        ${REINDEXER_SOURCE_PATH}/pprof/backtrace.cc
-)
-
+file(GLOB_RECURSE SRCS *.h *.cc)
 add_executable(${TARGET} ${SRCS})
+target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES})
 
-target_link_libraries(
-    ${TARGET}
-        reindexer
-        ${LevelDB_LIBRARY}
-        ${SNAPPY_LIBRARIES}
-        ${GPERFTOOLS_LIBRARIES}
-        ${CMAKE_THREAD_LIBS_INIT}
-  )
-  
+install(TARGETS ${TARGET}
+  RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+  LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+  ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+)

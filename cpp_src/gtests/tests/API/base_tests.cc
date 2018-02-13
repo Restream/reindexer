@@ -14,49 +14,43 @@
 using reindexer::Reindexer;
 
 TEST_F(ReindexerApi, AddNamespace) {
-	auto err = reindexer->OpenNamespace(reindexer::NamespaceDef(default_namespace, false));
+	auto err = reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 	ASSERT_EQ(true, err.ok());
 }
 
 TEST_F(ReindexerApi, AddExistingNamespace) {
 	CreateNamespace(default_namespace);
 
-	auto err = reindexer->OpenNamespace(reindexer::NamespaceDef(default_namespace, false));
+	auto err = reindexer->AddNamespace(reindexer::NamespaceDef(default_namespace, StorageOpts().Enabled(false)));
 	ASSERT_FALSE(err.ok()) << err.what();
 }
 
 TEST_F(ReindexerApi, AddIndex) {
-	IndexOpts opts = {false, true, false};  // IsArray = false, IsPK = true
-
 	CreateNamespace(default_namespace);
 
-	auto err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int", opts});
+	auto err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int", IndexOpts().PK()});
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 TEST_F(ReindexerApi, AddExistingIndex) {
-	IndexOpts opts = {false, true, false};  // IsArray = false, IsPK = true
-
-	auto err = reindexer->OpenNamespace(reindexer::NamespaceDef(default_namespace, false));
+	auto err = reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int", opts});
+	err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int", IndexOpts().PK()});
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int", opts});
+	err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int", IndexOpts().PK()});
 	ASSERT_TRUE(err.ok()) << err.what() << err.what();
 }
 
 TEST_F(ReindexerApi, AddExistingIndexWithDiffType) {
-	IndexOpts opts = {false, true, false};  // IsArray = false, IsPK = true
-
-	auto err = reindexer->OpenNamespace(reindexer::NamespaceDef(default_namespace, false));
+	auto err = reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int", opts});
+	err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int", IndexOpts().PK()});
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int64", opts});
+	err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int64", IndexOpts().PK()});
 	ASSERT_FALSE(err.ok());
 }
 
@@ -73,7 +67,7 @@ TEST_F(ReindexerApi, CloneNonExistingNamespace) {
 }
 
 TEST_F(ReindexerApi, CloneSameNamespaces) {
-	auto err = reindexer->OpenNamespace(reindexer::NamespaceDef(default_namespace, false));
+	auto err = reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled());
 	err = reindexer->CloneNamespace(default_namespace, default_namespace);
 	ASSERT_FALSE(err.ok()) << "Error: unexpected result of clone same namespaces.";
 }
@@ -91,8 +85,7 @@ TEST_F(ReindexerApi, DeleteNonExistingNamespace) {
 }
 
 TEST_F(ReindexerApi, NewItem) {
-	IndexOpts opts = {false, true, false};  // IsArray = false, IsPK = true
-	auto err = reindexer->OpenNamespace(reindexer::NamespaceDef(default_namespace, false));
+	auto err = reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled());
 
 	//	DefineNamespaceDataset(
 	//				default_namespace,
@@ -102,7 +95,7 @@ TEST_F(ReindexerApi, NewItem) {
 	//				});
 
 	ASSERT_TRUE(err.ok()) << err.what();
-	err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int", opts});
+	err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int", IndexOpts().PK()});
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = reindexer->AddIndex(default_namespace, {"value", "", "text", "string", IndexOpts()});
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -112,11 +105,10 @@ TEST_F(ReindexerApi, NewItem) {
 }
 
 TEST_F(ReindexerApi, Insert) {
-	IndexOpts opts = {false, true, false};  // IsArray = false, IsPK = true
-	auto err = reindexer->OpenNamespace(reindexer::NamespaceDef(default_namespace, false));
+	auto err = reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 
 	ASSERT_TRUE(err.ok()) << err.what();
-	err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int", opts});
+	err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int", IndexOpts().PK()});
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = reindexer->AddIndex(default_namespace, {"value", "", "text", "string", IndexOpts()});
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -145,12 +137,10 @@ TEST_F(ReindexerApi, Insert) {
 }
 
 TEST_F(ReindexerApi, DISABLED_DslSetOrder) {
-	IndexOpts opts = {false, true, false};  // IsArray = false, IsPK = true
-
-	auto err = reindexer->OpenNamespace(reindexer::NamespaceDef(default_namespace, false));
+	auto err = reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 
 	ASSERT_TRUE(err.ok()) << err.what();
-	err = reindexer->AddIndex(default_namespace, {"id", "", "tree", "int", opts});
+	err = reindexer->AddIndex(default_namespace, {"id", "", "tree", "int", IndexOpts().PK()});
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = reindexer->AddIndex(default_namespace, {"value", "", "hash", "string", IndexOpts()});
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -274,12 +264,10 @@ struct CollateComparer {
 };
 
 TEST_F(ReindexerApi, SortByUnorderedIndexes) {
-	IndexOpts opts = {false, true, false};
-
-	auto err = reindexer->OpenNamespace(reindexer::NamespaceDef(default_namespace, false));
+	auto err = reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int", opts});
+	err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int", IndexOpts().PK()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	err = reindexer->AddIndex(default_namespace, {"valueInt", "", "hash", "int", IndexOpts()});
@@ -288,16 +276,13 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 	err = reindexer->AddIndex(default_namespace, {"valueString", "", "hash", "string", IndexOpts()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->AddIndex(default_namespace,
-							  {"valueStringASCII", "", "hash", "string", IndexOpts(false, false, false, false, CollateASCII)});
+	err = reindexer->AddIndex(default_namespace, {"valueStringASCII", "", "hash", "string", IndexOpts().SetCollateMode(CollateASCII)});
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->AddIndex(default_namespace,
-							  {"valueStringNumeric", "", "hash", "string", IndexOpts(false, false, false, false, CollateNumeric)});
+	err = reindexer->AddIndex(default_namespace, {"valueStringNumeric", "", "hash", "string", IndexOpts().SetCollateMode(CollateNumeric)});
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->AddIndex(default_namespace,
-							  {"valueStringUTF8", "", "hash", "string", IndexOpts(false, false, false, false, CollateUTF8)});
+	err = reindexer->AddIndex(default_namespace, {"valueStringUTF8", "", "hash", "string", IndexOpts().SetCollateMode(CollateUTF8)});
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	deque<int> allIntValues;
@@ -378,7 +363,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 	auto collectQrStringFieldValues = [](const QueryResults& qr, const char* fieldName, vector<string>& selectedStrValues) {
 		selectedStrValues.clear();
 		for (size_t i = 0; i < qr.size(); ++i) {
-			std::unique_ptr<reindexer::Item> item(qr.GetItem((int)i));
+			std::unique_ptr<reindexer::Item> item(qr.GetItem(int(i)));
 			auto ritem = reinterpret_cast<reindexer::ItemImpl*>(item.get());
 			KeyRef value = ritem->GetField(fieldName);
 			selectedStrValues.push_back(*value.operator p_string().getCxxstr());
@@ -412,24 +397,23 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 }
 
 TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
-	IndexOpts opts = {false, true, false};
 	const string secondNamespace = "test_namespace_2";
 	vector<int> secondNamespacePKs;
 
-	auto err = reindexer->OpenNamespace(reindexer::NamespaceDef(default_namespace, false));
+	auto err = reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int", opts});
+	err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int", IndexOpts().PK()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	err = reindexer->AddIndex(default_namespace, {"fk", "", "hash", "int", IndexOpts()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	{
-		err = reindexer->OpenNamespace(reindexer::NamespaceDef(secondNamespace, false));
+		err = reindexer->OpenNamespace(secondNamespace, StorageOpts().Enabled(false));
 		EXPECT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->AddIndex(secondNamespace, {"pk", "", "hash", "int", opts});
+		err = reindexer->AddIndex(secondNamespace, {"pk", "", "hash", "int", IndexOpts().PK()});
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		for (int i = 0; i < 50; ++i) {

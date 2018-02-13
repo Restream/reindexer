@@ -18,9 +18,8 @@ func NewState() *State {
 	}
 }
 
-func (state *State) ReadPayloadType(rawBuf []byte) {
+func (state *State) ReadPayloadType(s *Serializer) {
 	state.lock.Lock()
-	s := &Serializer{buf: rawBuf}
 	state.tagsMatcher.Read(s)
 	state.payloadType.Read(s)
 	state.ctagsCache.Reset()
@@ -28,7 +27,7 @@ func (state *State) ReadPayloadType(rawBuf []byte) {
 	state.lock.Unlock()
 }
 
-func (state *State) PayloadTypeVersion() int {
+func (state *State) PayloadTypeVersion() int32 {
 	state.lock.RLock()
 	version := state.tagsMatcher.Version
 	state.lock.RUnlock()

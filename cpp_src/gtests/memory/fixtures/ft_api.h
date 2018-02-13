@@ -36,14 +36,11 @@ public:
 		reindexer.reset(new Reindexer);
 
 		CreateNamespace(default_namespace);
-		IndexOpts opts{false, true, false};
 
-		DefineNamespaceDataset(
-			default_namespace,
-			{tuple<const char *, const char *, const char *, IndexOpts>{"id", "hash", "int", opts},
-			 tuple<const char *, const char *, const char *, IndexOpts>{"ft1", type.c_str(), "string", IndexOpts()},
-			 tuple<const char *, const char *, const char *, IndexOpts>{"ft2", type.c_str(), "string", IndexOpts()},
-			 tuple<const char *, const char *, const char *, IndexOpts>{"ft1+ft2=target", type.c_str(), "composite", IndexOpts()}});
+		DefineNamespaceDataset(default_namespace, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK()},
+												   IndexDeclaration{"ft1", type.c_str(), "string", IndexOpts()},
+												   IndexDeclaration{"ft2", type.c_str(), "string", IndexOpts()},
+												   IndexDeclaration{"ft1+ft2=target", type.c_str(), "composite", IndexOpts()}});
 	}
 
 	FTApi() {
@@ -62,13 +59,12 @@ public:
 	}
 
 	void FillDataForTest(size_t kb) {
-		size_t current_size = get_alloc_size();
 		size_t total_size = 0;
-		while (total_size <= kb) {
+		while (total_size <= kb * KB) {
 			all_perphase_.push_back(CreatePerphase());
-			total_size = (get_alloc_size() - current_size) / KB;
+			total_size += all_perphase_.back().length();
 		}
-		stat.data_size = total_size;
+		stat.data_size = total_size / KB;
 		size_t before_upsert = get_alloc_size();
 		size_t before_upsert_cnt = get_alloc_cnt();
 		size_t counter = 0;
@@ -112,9 +108,9 @@ public:
 			total_size += res.size();
 		}
 		auto end = std::chrono::high_resolution_clock::now();
-		stat.res_per_request_cnt = total_size / (double)count;
+		stat.res_per_request_cnt = total_size / double(count);
 		std::chrono::duration<double, std::micro> fp_ms = end - start;
-		stat.middle_request_time = fp_ms.count() / (double)count;
+		stat.middle_request_time = fp_ms.count() / double(count);
 
 		stat.rps = (count / (fp_ms.count() / double(1000000)));
 	}
@@ -132,7 +128,7 @@ protected:
 	std::string CreatePerphase() {
 		size_t word_count = rand() % 3 + 2;
 		std::string result;
-		for (int i = 0; i < word_count; ++i) {
+		for (size_t i = 0; i < word_count; ++i) {
 			result += all_words_[rand() % all_words_.size()] + " ";
 		}
 		result.pop_back();

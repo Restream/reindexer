@@ -25,21 +25,21 @@ protected:
 	union {
 		IdSetRef::const_iterator begin_;
 		IdSetRef::const_reverse_iterator rbegin_;
-		int rBegin_;
+		int rBegin_ = 0;
 		int rrBegin_;
 	};
 
 	union {
 		IdSetRef::const_iterator end_;
 		IdSetRef::const_reverse_iterator rend_;
-		int rEnd_;
+		int rEnd_ = 0;
 		int rrEnd_;
 	};
 
 	union {
 		IdSetRef::const_iterator it_;
 		IdSetRef::const_reverse_iterator rit_;
-		int rIt_;
+		int rIt_ = 0;
 		int rrIt_;
 	};
 

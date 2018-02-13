@@ -1,366 +1,428 @@
-#include <stdio.h>
-#include <memory>
-
 #include "core/reindexer.h"
 #include "debug/backtrace.h"
+#include "tools/fsops.h"
 #include "tools/logger.h"
+#include "vendor/gason/gason.h"
 
-#include "cxxopts/cxxopts.hpp"
-
-template <typename T>
-using scoped_ptr = std::unique_ptr<T, std::function<void(T*)>>;
-
-typedef scoped_ptr<FILE> scoped_file_ptr;
-
-static auto db = std::make_shared<reindexer::Reindexer>();
+#include "args/args.hpp"
+#include "iotools.h"
 
 using std::string;
+using std::vector;
+using std::ifstream;
+using args::Options;
 
-static struct config {
-	enum actions { dump = 1, query = 2, dlt = 4, upsert = 8, meta = 16 };
+static auto db = std::make_shared<reindexer::Reindexer>();
+int llevel;
 
-	string value_;
-	string ns_;
-	string source_;
-	string dest_;
-	int logLevel_;
-	int action_;
-} config;
-
-inline bool isStdout(string const& v) { return v == "stdout" || v.empty(); }
-
-reindexer::Error parseOptions(int argc, char** argv, cxxopts::Options& opts) {
-	opts.add_options()("h,help", "show this message");
-
-	auto startGroup = opts.add_options("");
-
-	startGroup("d,dump", "dump whole namespace", cxxopts::value<string>(config.ns_), "NAMESPACE");
-	startGroup("q,query", "dump by query (in quotes)", cxxopts::value<string>(config.value_), "\"QUERY\"");
-	startGroup("r,delete", "delete item from namespace (JSON object in quotes)", cxxopts::value<string>(config.value_), "\"JSON\"");
-	startGroup("u,upsert", "Insert or update item in namespace (JSON object in quotes)", cxxopts::value<string>(config.value_), "\"JSON\"");
-	startGroup("m,meta", "dump meta information by KEY from namespace", cxxopts::value<string>(config.value_), "KEY");
-	startGroup("n,namespace", "needed for --delete, --upsert, --meta actions", cxxopts::value<string>(config.ns_), "NAMESPACE");
-
-	opts.add_options("source")("db", "path to 'reindexer' cache", cxxopts::value<string>(config.source_)->implicit_value(""), "DIRECTORY");
-
-	opts.add_options("dest")("o,out", "path to result output file (console by default)",
-							 cxxopts::value<string>(config.dest_)->default_value("stdout"), "FILE");
-
-	opts.add_options("logging")("l,log", "log level (MAX = 5)", cxxopts::value<int>(config.logLevel_)->default_value("3"), "INT");
-
+void InstallLogLevel(const vector<string>& args) {
 	try {
-		opts.parse(argc, argv);
-	} catch (cxxopts::OptionException& exc) {
-		return reindexer::Error(errParams, exc.what());
+		llevel = std::stoi(args.back());
+		if ((llevel < 1) || (llevel > 5)) {
+			throw std::out_of_range("value must be in range 1..5");
+		}
+	} catch (std::invalid_argument&) {
+		throw args::UsageError("Value must be integer.");
+	} catch (std::out_of_range& exc) {
+		std::cout << "WARNING: " << exc.what() << "\n"
+				  << "Logging level set to 3" << std::endl;
+		llevel = 3;
 	}
 
-	return reindexer::Error();
+	reindexer::logInstallWriter([](int level, char* buf) {
+		if (level <= llevel) {
+			fprintf(stdout, "%s\n", buf);
+		}
+	});
 }
 
-reindexer::Error validate(cxxopts::Options& opts) {
-	try {
-		int result_one_of = 0;
+args::Group progOptions("options");
+args::ValueFlag<string> storagePath(progOptions, "path", "path to 'reindexer' storage", {'s', "db"}, reindexer::GetCwd(),
+									Options::Single | Options::Global);
 
-		// All checks for option 'db'
-		{
-			cxxopts::check_required(opts, {"db"});
-			if (opts.count("db") > 1) {
-				return reindexer::Error(errParams, "Error in use options (must be one). See help: \n%s\n", opts.help({"source"}).c_str());
+args::ActionFlag logLevel(progOptions, "INT=1..5", "reindexer logging level", {'l', "log"}, 1, &InstallLogLevel,
+						  Options::Single | Options::Global);
+
+void ListCommand(args::Subparser& subparser) {
+	subparser.Parse();
+	auto err = db->EnableStorage(args::get(storagePath));
+	if (err) {
+		std::cerr << err.what() << std::endl;
+		return;
+	}
+
+	vector<reindexer::NamespaceDef> nsDefs;
+	err = db->EnumNamespaces(nsDefs, true);
+	if (err) {
+		std::cout << "ERROR: " << err.what().c_str() << std::endl;
+		return;
+	}
+	for (auto& nsDef : nsDefs) {
+		std::cout << nsDef.name << std::endl;
+	}
+}
+
+void DumpCommand(args::Subparser& subparser) {
+	args::Group dumpArgs(subparser, "dump options");
+	args::PositionalList<string> namespaces(dumpArgs, "<namespace>", "list of namespaces which need to dump");
+	args::ValueFlag<string> outFile(dumpArgs, "DIR", "output filename for dump namespace(s)", {'o', "out"}, "reindexer.dump");
+	args::HelpFlag dumpHelp(dumpArgs, "help", "help message for 'dump' command", {'h', "help"});
+	args::Flag showProgress(dumpArgs, "progress", "show dump progress", {'p', "progress"}, args::Options::Single);
+
+	subparser.Parse();
+
+	auto err = db->EnableStorage(args::get(storagePath));
+	if (err) throw err;
+
+	vector<reindexer::NamespaceDef> allNsDefs, doNsDefs;
+
+	err = db->EnumNamespaces(allNsDefs, true);
+	if (err) throw err;
+
+	if (namespaces) {
+		// build list of namespaces for dumped
+		for (auto& ns : namespaces) {
+			auto nsDef =
+				std::find_if(allNsDefs.begin(), allNsDefs.end(), [&ns](const reindexer::NamespaceDef& nsDef) { return ns == nsDef.name; });
+			if (nsDef != allNsDefs.end()) {
+				doNsDefs.push_back(std::move(*nsDef));
+				allNsDefs.erase(nsDef);
+			} else {
+				std::cout << "Namespace '" << ns << "' - skipped. (not found in storage)" << std::endl;
 			}
+		}
+	} else {
+		doNsDefs = std::move(allNsDefs);
+	}
 
-			if (config.source_.empty()) {
-				return reindexer::Error(errParams, "Parameter 'db' could not be empty. See help: \n%s\n", opts.help({"source"}).c_str());
+	string filename = args::get(outFile);
+
+	ofstream file(filename, std::ios::out | std::ios::trunc);
+
+	if (!file) {
+		std::cerr << "ERROR: " << strerror(errno) << std::endl;
+		return;
+	}
+
+	file << "-- Reindexer DB backup file" << std::endl;
+	file << "VERSION 1.0" << std::endl;
+
+	for (auto& nsDef : doNsDefs) {
+		std::cout << "Dumping namespace '" << nsDef.name << "' ..." << std::endl;
+
+		err = db->OpenNamespace(nsDef.name, StorageOpts().Enabled());
+		if (err) {
+			std::cerr << "ERROR: " << err.what() << std::endl;
+			continue;
+		}
+
+		reindexer::WrSerializer wrser;
+		nsDef.Print(wrser);
+		file << "NAMESPACE " << nsDef.name << " ";
+		file.write(reinterpret_cast<char*>(wrser.Buf()), wrser.Len());
+		file << "\n";
+
+		vector<string> meta;
+		err = db->EnumMeta(nsDef.name, meta);
+		if (err) {
+			std::cerr << "ERROR: " << err.what() << std::endl;
+			continue;
+		}
+		for (auto& mkey : meta) {
+			string mdata;
+			err = db->GetMeta(nsDef.name, mkey, mdata);
+			if (err) {
+				std::cerr << "ERROR: " << err.what() << std::endl;
+				continue;
+			}
+			file << "META " << nsDef.name << " " << mkey << " " << mdata << std::endl;
+		}
+
+		reindexer::Query q(nsDef.name);
+		QueryResults itemResults;
+		err = db->Select(q, itemResults);
+		if (err) {
+			std::cerr << "ERROR: " << err.what() << std::endl;
+		}
+
+		shared_ptr<ProgressPrinter> progressPrinter;
+		if (showProgress) {
+			progressPrinter = std::make_shared<ProgressPrinter>(itemResults.size());
+		}
+
+		reindexer::WrSerializer ser;
+		for (size_t i = 0; i < itemResults.size(); i++) {
+			ser.Reset();
+			itemResults.GetJSON(i, ser, false);
+			file << "INSERT " << nsDef.name << " ";
+			file.write(reinterpret_cast<char*>(ser.Buf()), ser.Len());
+			file << "\n";
+			if (progressPrinter) progressPrinter->Show(i);
+		}
+		if (progressPrinter) progressPrinter->Finish();
+
+		err = db->CloseNamespace(nsDef.name);
+		if (err) {
+			std::cerr << "ERROR: " << err.what() << std::endl;
+			continue;
+		}
+	}
+	file.close();
+}
+
+void RestoreCommand(args::Subparser& subparser) {
+	args::Group restoreArgs(subparser, "RESTORE options");
+	args::HelpFlag restoreHelp(restoreArgs, "restore", "show help message for 'RESTORE' command", {'h', "help"});
+	args::PositionalList<string> restoreList(restoreArgs, "<filepath>", "path to file", args::Options::Single | args::Options::Required);
+	args::Flag showProgress(restoreArgs, "print progress", "print restore progress", {'p', "progress"}, args::Options::Single);
+
+	subparser.Parse();
+
+	auto err = db->EnableStorage(args::get(storagePath));
+	if (err) throw err;
+
+	shared_ptr<ProgressPrinter> progressPrinter;
+	if (showProgress) {
+		progressPrinter = std::make_shared<ProgressPrinter>();
+	}
+
+	for (auto& path : restoreList) {
+		std::cout << "Process file: " << path << std::endl;
+		ifstream file(path);
+		if (!file) {
+			std::cout << "ERROR: " << strerror(errno) << " [SKIP]" << std::endl;
+			continue;
+		}
+
+		if (progressPrinter) progressPrinter->Reset(GetStreamSize(file));
+
+		string buffer;
+		int lineCount = -1;
+		err = 0;
+		while (!file.eof() && err.ok()) {
+			lineCount++;
+			std::getline(file, buffer);
+			if (buffer.empty()) continue;
+
+			LineParser parser(buffer);
+			auto token = reindexer::lower(parser.NextToken());
+
+			if (token == "namespace") {
+				// skip name
+				parser.NextToken();
+
+				reindexer::NamespaceDef def("");
+				err = def.Parse(const_cast<char*>(parser.CurPtr()));
+				if (err) {
+					std::cout << "ERROR: namespace structure is not valid [SKIP]" << std::endl;
+					continue;
+				}
+
+				std::cout << "restore namespace '" << def.name << "' ..." << std::endl;
+
+				def.storage.DropOnFileFormatError(true);
+				err = db->AddNamespace(def);
+				if (err) {
+					std::cout << "ERROR: " << err.what() << std::endl;
+					continue;
+				}
+			} else if (token == "insert") {
+				auto nsName = parser.NextToken();
+				std::unique_ptr<reindexer::Item> item(db->NewItem(nsName));
+				err = item->Status();
+				if (err) break;
+
+				err = item->FromJSON(const_cast<char*>(parser.CurPtr()));
+				if (err) break;
+
+				err = db->Upsert(nsName, item.get());
+				if (err) break;
+
+				if (progressPrinter) progressPrinter->Show(file.tellg());
+			} else if (token == "meta") {
+				auto nsName = parser.NextToken();
+				auto metaKey = parser.NextToken();
+				auto metaData = parser.NextToken();
+				err = db->PutMeta(nsName, metaKey, metaData);
+				if (err) break;
+			} else if (token == "--" || token.empty()) {
+				continue;
+			} else if (token == "version") {
+				continue;
+			} else {
+				err = reindexer::Error(errParseDSL, "Can't parse line token '%s'", token.c_str());
 			}
 		}
 
-		// Check for start options
-		result_one_of = opts.count("dump") + opts.count("query") + opts.count("upsert") + opts.count("delete") + opts.count("meta");
-
-		if (result_one_of != 1) {
-			return reindexer::Error(errParams, "Error in use options (must be one). See help: \n%s\n", opts.help(opts.groups()).c_str());
+		if (err) {
+			std::cout << "ERROR: " << err.what() << " [SKIP], at line " << lineCount << std::endl;
+			continue;
 		}
+		if (progressPrinter) progressPrinter->Finish();
 
-		config.action_ = ((opts.count("dump") > 0 ? config::dump : 0) | (opts.count("meta") > 0 ? config::meta : 0) |
-						  (opts.count("query") > 0 ? config::query : 0) | (opts.count("delete") > 0 ? config::dlt : 0) |
-						  (opts.count("upsert") > 0 ? config::upsert : 0));
-
-		switch (config.action_) {
-			case config::dump:
-				if (config.ns_.empty()) {
-					return reindexer::Error(errParams, "For 'dump' required namespace name. See help: \n%s\n",
-											opts.help({"start"}).c_str());
-				}
-				break;
-
-			case config::query:
-				if (opts.count("namespace") != 0) {
-					return reindexer::Error(errParams, "For 'query' namespace is not needed. See help: \n%s\n",
-											opts.help({"start"}).c_str());
-				}
-
-				if (config.value_.empty()) {
-					return reindexer::Error(errParams, "Parameter 'query' could not be empty. See help: \n%s\n",
-											opts.help({"start"}).c_str());
-				}
-				break;
-
-			case config::dlt:
-			case config::upsert:
-			case config::meta:
-				cxxopts::check_required(opts, {"namespace"});
-
-				if (config.value_.empty()) {
-					return reindexer::Error(errParams, "Parameter 'delete|upsert|meta' could not be empty. See help: \n%s\n",
-											opts.help({"start"}).c_str());
-				}
-				break;
-
-			default:
-				return reindexer::Error(reindexer::Error(errParams, "Unknown actions. See help: \n%s\n", opts.help(opts.groups()).c_str()));
-		}
-
-		// Checks for 'out' parameter
-		if (opts.count("out") > 1) {
-			return reindexer::Error(errParams, "Error in use dest options. See help: \n%s\n", opts.help({"dest"}).c_str());
-		}
-
-		// Checks for 'log' parameter
-		if (opts.count("log") > 1) {
-			return reindexer::Error(errParams, "Error in use logging options. See help: \n%s\n", opts.help({"logging"}).c_str());
-		}
-
-	} catch (cxxopts::OptionException& exc) {
-		return reindexer::Error(errParams, "%s. %s", exc.what(), opts.help(opts.groups()).c_str());
+		// err = db->CloseNamespace(nsDef.name);
+		// if (err) {
+		// 	std::cout << "ERROR: " << err.what() << std::endl;
+		// 	continue;
+		// }
 	}
-
-	return reindexer::Error();
 }
 
-string extractNamespace(const string& str) {
-	string delimiter(" ");
-	string ns;
-	std::vector<string> tokens;
+void QueryCommand(args::Subparser& subparser) {
+	args::Group queryArgs(subparser, "QUERY options");
+	args::HelpFlag queryHelp(queryArgs, "help", "Show help message for 'query' command", {'h', "help"});
+	args::Positional<string> sqlBody(queryArgs, "<SQL>", "SQL-like query text in quotes", args::Options::Single | args::Options::Required);
+	args::ValueFlag<string> outputFile(queryArgs, "<PATH>", "Output file for dump query result", {'o', "file"});
 
-	string::size_type lastPos = str.find_first_not_of(delimiter, 0);
-	string::size_type pos = str.find_first_of(delimiter, lastPos);
+	subparser.Parse();
 
-	while (string::npos != pos || string::npos != lastPos) {
-		tokens.push_back(str.substr(lastPos, pos - lastPos));
+	auto err = db->EnableStorage(args::get(storagePath));
+	if (err) throw err;
 
-		lastPos = str.find_first_not_of(delimiter, pos);
-		pos = str.find_first_of(delimiter, lastPos);
-	}
-
-	auto it = std::find(tokens.begin(), tokens.end(), "from");
-	if ((it != tokens.end()) && (it++ != tokens.end())) {
-		ns = *it;
-	}
-
-	return ns;
-}
-
-reindexer::Error prepareSelectQuery(string& query, reindexer::Query& q) {
-	reindexer::Error result;
-	try {
-		q.Parse(query);
-	} catch (const reindexer::Error& err) {
-		result = err;
-	}
-	return result;
-}
-
-int openNamespace(const string& ns) {
-	auto status = db->EnableStorage(config.source_);
-	if (!status.ok()) {
-		printf("Enable storage error: %s\n", status.what().c_str());
-		return -1;
-	}
-
-	status = db->OpenNamespace(reindexer::NamespaceDef(ns, StorageOpts(true, false, false, false)));
-	if (!status.ok()) {
-		printf("Open namespace error: %s\n", status.what().c_str());
-		return -1;
-	}
-	return 0;
-}
-
-int invokeRead(int action) {
-	string ns;
 	reindexer::Query q;
+	q.Parse(args::get(sqlBody));
 
-	auto status = reindexer::Error();
+	err = db->OpenNamespace(q.describe ? q.namespacesNames_.back() : q._namespace, StorageOpts().Enabled());
+	if (err) throw err;
 
-	if (action == config::dump) {
-		ns = config.ns_;
-		q = reindexer::Query(ns);
-	}
+	reindexer::QueryResults results;
+	err = db->Select(q, results);
+	if (err) throw err;
 
-	if (action == config::query) {
-		ns = extractNamespace(config.value_);
-		status = prepareSelectQuery(config.value_, q);
-	}
-
-	if (!status.ok()) {
-		printf("Prepare query error: %s\n", status.what().c_str());
-		return -1;
-	}
-
-	if (openNamespace(ns) < 0) {
-		return -1;
-	}
-
-	scoped_file_ptr file;
-	if (isStdout(config.dest_)) {
-		file = scoped_file_ptr(stdout, [](FILE*) { ; });
-	} else {
-		file = scoped_file_ptr(fopen(config.dest_.c_str(), "w"), [](FILE* f) {
-			if (f != nullptr) fclose(f);
-		});
-	}
-
-	if (!file) {
-		printf("Open file error: %s. Path: %s\n", strerror(errno), config.dest_.c_str());
-		return -1;
-	}
-
-	reindexer::QueryResults res;
-	status = db->Select(q, res);
-	if (!status.ok()) {
-		printf("Query error: %s\n", status.what().c_str());
-		return -1;
-	}
-
-	string begin_data("{ \"items\": [ ");
-	string total("], \"total_items\": ");
-	string end_data("}");
-	std::size_t total_items = 0;
-
-	fwrite(begin_data.data(), 1, begin_data.size(), file.get());
-	reindexer::WrSerializer ser;
-
-	for (unsigned i = 0; i < res.size(); i++, total_items++) {
-		ser.Reset();
-		if (i != 0) ser.PutChar(',');
-		res.GetJSON(i, ser, false);
-		fwrite(ser.Buf(), 1, ser.Len(), file.get());
-	}
-	total += std::to_string(total_items);
-	fwrite(total.data(), 1, total.size(), file.get());
-	fwrite(end_data.data(), 1, end_data.size(), file.get());
-	return 0;
+	Output output(args::get(outputFile));
+	output() << "[" << results << "]" << std::endl;
 }
 
-int invokeWrite(int action) {
-	if (openNamespace(config.ns_) < 0) {
-		return -1;
-	}
+void MetaCommand(args::Subparser& subparser) {
+	args::Group metaArgs(subparser, "META options");
+	args::HelpFlag help(metaArgs, "help", "show help message for 'meta' command", {'h', "help"});
+	args::ValueFlag<string> key(metaArgs, "key", "key name for dumping", {"key"}, args::Options::Required);
+	args::Positional<string> ns(metaArgs, "<namespace>", "namespace", args::Options::Required);
 
-	reindexer::Slice json(config.value_);
-	auto item = db->NewItem(config.ns_);
-	auto status = item->FromJSON(json);
+	subparser.Parse();
 
-	if (!status.ok()) {
-		printf("Item error: %s\n", status.what().c_str());
-		return -1;
-	}
+	auto err = db->EnableStorage(args::get(storagePath));
+	if (err) throw err;
 
-	if (action == config::dlt) {
-		status = db->Delete(config.ns_, item);
-		if (!status.ok()) {
-			printf("Delete error: %s\n", status.what().c_str());
-			return -1;
-		}
-	}
+	err = db->OpenNamespace(args::get(ns), StorageOpts().Enabled());
+	if (err) throw err;
 
-	if (action == config::upsert) {
-		status = db->Upsert(config.ns_, item);
-		if (!status.ok()) {
-			printf("Upsert error: %s\n", status.what().c_str());
-			return -1;
-		}
-	}
+	std::string data;
+	err = db->GetMeta(args::get(ns), args::get(key), data);
+	if (err) throw err;
 
-	status = db->Commit(config.ns_);
-	if (!status.ok()) {
-		printf("Commit error: %s\n", status.what().c_str());
-	} else {
-		printf("%s", "Success!");
-	}
-	return 0;
+	std::cout << data << std::endl;
 }
 
-int invokeMeta() {
-	if (openNamespace(config.ns_) < 0) {
-		return -1;
-	}
+void UpsertCommand(args::Subparser& subparser) {
+	args::Group upsertGroup(subparser, "UPSERT options");
+	args::HelpFlag upsertHelp(upsertGroup, "help", "show help message for 'UPSERT' command", {'h', "help"});
+	args::Positional<string> ns(upsertGroup, "<namespace>", "namespace where the element will be inserted", args::Options::Required);
+	args::Positional<string> itemJson(upsertGroup, "<JSON>", "item which will be upserted in JSON-syntax", args::Options::Required);
+	args::Group upsertModes(subparser, "UPSERT modes", args::Group::Validators::Xor);
+	args::Flag insert(upsertModes, "INSERT", "allow insert only", {"insert"});
+	args::Flag update(upsertModes, "UPDATE", "allow update only", {"update"});
 
-	string data;
-	auto status = db->GetMeta(config.ns_, config.value_, data);
-	if (!status.ok()) {
-		printf("Meta error: %s\n", status.what().c_str());
-		return -1;
-	}
+	subparser.Parse();
 
-	scoped_file_ptr file;
-	if (isStdout(config.dest_)) {
-		file = scoped_file_ptr(stdout, [](FILE*) { ; });
+	auto json = args::get(itemJson);
+
+	auto err = db->EnableStorage(args::get(storagePath));
+	if (err) throw err;
+
+	err = db->OpenNamespace(args::get(ns), StorageOpts().Enabled());
+	if (err) throw err;
+
+	auto item = std::unique_ptr<reindexer::Item>(db->NewItem(args::get(ns)));
+	err = item->Status();
+	if (err) throw err;
+
+	reindexer::Slice slice(json.data(), json.size());
+	err = item->FromJSON(slice);
+	if (err) throw err;
+
+	string action;
+	if (insert) {
+		err = db->Insert(args::get(ns), item.get());
+		action = "inserted";
+	} else if (update) {
+		err = db->Update(args::get(ns), item.get());
+		action = "updated";
 	} else {
-		file = scoped_file_ptr(fopen(config.dest_.c_str(), "w"), [](FILE* f) {
-			if (f != nullptr) fclose(f);
-		});
+		err = db->Upsert(args::get(ns), item.get());
+		action = "upserted";
 	}
+	if (err) throw err;
 
-	if (!file) {
-		printf("Open file error: %s. Path: %s\n", strerror(errno), config.dest_.c_str());
-		return -1;
-	}
+	err = db->Commit(args::get(ns));
+	if (err) throw err;
 
-	fwrite(data.data(), 1, data.size(), file.get());
+	std::cout << "Item" << (item->GetRef().id == -1 ? " not " : " ") << action << std::endl;
+}
 
-	return 0;
+void DeleteCommand(args::Subparser& subparser) {
+	args::Group deleteGroup(subparser, "DELETE group");
+	args::HelpFlag upsertHelp(deleteGroup, "help", "show help message for 'DELETE' command", {'h', "help"});
+	args::Positional<string> ns(deleteGroup, "<namespace>", "namespace where the element will be inserted", args::Options::Required);
+	args::Positional<string> itemJson(deleteGroup, "<JSON>", "item which will be upserted in JSON-syntax", args::Options::Required);
+
+	subparser.Parse();
+
+	auto json = args::get(itemJson);
+
+	auto err = db->EnableStorage(args::get(storagePath));
+	if (err) throw err;
+
+	err = db->OpenNamespace(args::get(ns), StorageOpts().Enabled());
+	if (err) throw err;
+
+	auto item = std::unique_ptr<reindexer::Item>(db->NewItem(args::get(ns)));
+	err = item->Status();
+	if (err) throw err;
+
+	reindexer::Slice slice(json.data(), json.size());
+	err = item->FromJSON(slice);
+	if (err) throw err;
+
+	err = db->Delete(args::get(ns), item.get());
+	if (err) throw err;
+
+	err = db->Commit(args::get(ns));
+	if (err) throw err;
+
+	std::cout << "Item" << (item->GetRef().id == -1 ? " not " : " ") << "deleted" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
 	backtrace_init();
-	cxxopts::Options opts("reindexer_dump", "");
-	auto status = parseOptions(argc, argv, opts);
 
-	if (!status.ok()) {
-		printf("Parameters error: %s\n\n", status.what().c_str());
-		printf("%s", opts.help(opts.groups()).c_str());
-		return -1;
+	args::ArgumentParser parser("Reindexer dump tool");
+	args::HelpFlag help(parser, "help", "show this message", {'h', "help"});
+
+	args::Group commands(parser, "commands");
+
+	args::Command list(commands, "list", "list namespaces in storage", &ListCommand);
+	args::Command dump(commands, "dump", "Dump whole namespace(s)", &DumpCommand);
+	args::Command query(commands, "query", "Execute SQL-like query", &QueryCommand);
+	args::Command meta(commands, "meta", "Get meta info by key from storage", &MetaCommand);
+	args::Command restore(commands, "restore", "Write to 'reindexer'", &RestoreCommand);
+	args::Command upsert(commands, "upsert", "Upsert item(s) to 'reindexer'", &UpsertCommand);
+	args::Command del(commands, "delete", "Delete item(s) or whole namespace", &DeleteCommand);
+
+	args::GlobalOptions globals(parser, progOptions);
+
+	try {
+		parser.ParseCLI(argc, argv);
+	} catch (args::Help) {
+		std::cout << parser;
+	} catch (args::Error& e) {
+		std::cerr << "ERROR: " << e.what() << std::endl;
+		std::cout << parser.Help() << std::endl;
+		return 1;
+	} catch (reindexer::Error& re) {
+		std::cerr << "ERROR: " << re.what() << std::endl;
+		return 1;
 	}
 
-	if (opts.count("help")) {
-		printf("%s", opts.help(opts.groups()).c_str());
-		return 0;
-	}
-
-	status = validate(opts);
-	if (!status.ok()) {
-		printf("%s", status.what().c_str());
-		return -1;
-	}
-
-	reindexer::logInstallWriter([](int level, char* buf) {
-		if (level <= config.logLevel_) {
-			fprintf(stderr, "%s\n", buf);
-		}
-	});
-
-	if (config.action_ == config::dump || config.action_ == config::query) {
-		return invokeRead(config.action_);
-	}
-
-	if (config.action_ == config::dlt || config.action_ == config::upsert) {
-		return invokeWrite(config.action_);
-	}
-
-	if (config.action_ == config::meta) {
-		return invokeMeta();
-	}
-
-	printf("%s", opts.help(opts.groups()).c_str());
-
-	return -1;
+	return 0;
 }

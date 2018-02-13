@@ -49,6 +49,7 @@ PointerAlignment: Left
 DisableFormat:   false
 ExperimentalAutoDetectBinPacking: false
 ForEachMacros:   [ foreach, Q_FOREACH, BOOST_FOREACH ]
+FixNamespaceComments: true
 IncludeCategories: 
   - Regex:           '^<.*\.h>'
     Priority:        1
@@ -80,6 +81,7 @@ PointerAlignment: Left
 ReflowComments:  true
 SortIncludes:    true
 SpaceAfterCStyleCast: false
+SpaceAfterTemplateKeyword: true
 SpaceBeforeAssignmentOperators: true
 SpaceBeforeParens: ControlStatements
 SpaceInEmptyParentheses: false
@@ -89,6 +91,7 @@ SpacesInContainerLiterals: true
 SpacesInCStyleCastParentheses: false
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
+SortUsingDeclarations: false
 Standard:        Auto
 TabWidth:        4
 UseTab:          Always

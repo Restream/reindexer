@@ -97,7 +97,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 		for (const std::pair<const IdType, vector<QueryResults>>& itempair : joinQueryRes.joined_) {
 			if (itempair.second.empty()) continue;
 			const QueryResults& joinedQueryRes(itempair.second[0]);
-			for (int i = 0; i < joinedQueryRes.size(); ++i) {
+			for (size_t i = 0; i < joinedQueryRes.size(); ++i) {
 				unique_ptr<reindexer::Item> item(joinedQueryRes.GetItem(i));
 				auto* ritem = reinterpret_cast<reindexer::ItemImpl*>(item.get());
 

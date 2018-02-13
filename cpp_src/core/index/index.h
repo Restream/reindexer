@@ -49,6 +49,7 @@ public:
 
 	string TypeName();
 	vector<string> Conds();
+	string CollateMode();
 
 public:
 	// Index type. Can be one of enum IndexType

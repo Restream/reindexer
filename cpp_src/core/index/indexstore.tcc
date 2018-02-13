@@ -48,7 +48,7 @@ KeyRef IndexStore<PayloadValue>::Upsert(const KeyRef &key, IdType /*id*/) {
 
 template <typename T>
 KeyRef IndexStore<T>::Upsert(const KeyRef &key, IdType id) {
-	if (!opts_.IsArray && !opts_.IsDense) {
+	if (!opts_.IsArray() && !opts_.IsDense()) {
 		idx_data.resize(std::max(id + 1, int(idx_data.size())));
 		idx_data[id] = static_cast<T>(key);
 	}
@@ -78,7 +78,7 @@ SelectKeyResults IndexStore<T>::SelectKey(const KeyValues &keys, CondType condit
 
 	SelectKeyResult res;
 	res.comparators_.push_back(
-		Comparator(condition, KeyType(), keys, opts_.IsArray, idx_data.size() ? idx_data.data() : nullptr, opts_.CollateMode));
+		Comparator(condition, KeyType(), keys, opts_.IsArray(), idx_data.size() ? idx_data.data() : nullptr, opts_.GetCollateMode()));
 	return SelectKeyResults(res);
 }
 

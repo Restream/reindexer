@@ -1,7 +1,5 @@
 #pragma once
 
-#include <leveldb/db.h>
-#include <leveldb/write_batch.h>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -16,6 +14,7 @@
 #include "namespacedef.h"
 #include "payload/payloadiface.h"
 #include "query/querycache.h"
+#include "storage/idatastorage.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -92,12 +91,13 @@ public:
 
 	void Insert(Item *item, bool store = true);
 	void Update(Item *item, bool store = true);
-
 	void Upsert(Item *item, bool store = true);
 
 	void Delete(Item *item);
 	void Select(QueryResults &result, const SelectCtx &params);
 	void Describe(QueryResults &result);
+	NamespaceDef GetDefinition();
+	vector<string> EnumMeta();
 	void Delete(const Query &query, QueryResults &result);
 	void FlushStorage();
 
@@ -148,9 +148,9 @@ protected:
 	// Tags matcher
 	TagsMatcher tagsMatcher_;
 
-	shared_ptr<leveldb::DB> db_;
-	const leveldb::Snapshot *snapshot_;
-	leveldb::WriteBatch batch_;
+	shared_ptr<datastorage::IDataStorage> storage_;
+	datastorage::Snapshot::Ptr storageSnapshot_;
+	datastorage::UpdatesCollection::Ptr updates_;
 	int unflushedCount_;
 
 	shared_timed_mutex mtx_;

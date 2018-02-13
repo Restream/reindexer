@@ -171,7 +171,7 @@ func (enc *Encoder) encodeSlice(v reflect.Value, rdser *Serializer, f fieldInfo,
 			subTag = TAG_BOOL
 		}
 
-		rdser.PutCInt(mkcarraytag(l, subTag))
+		rdser.PutUInt32(mkcarraytag(l, subTag))
 
 		var ptr unsafe.Pointer
 		if f.kind == reflect.Slice {
@@ -343,14 +343,14 @@ func (enc *Encoder) encodeValue(v reflect.Value, rdser *Serializer, f fieldInfo,
 
 func (enc *Encoder) Encode(src interface{}, rdser *Serializer) error {
 	pos := len(rdser.Bytes())
-	rdser.PutCInt(0)
+	rdser.PutUInt32(0)
 
 	v := reflect.ValueOf(src)
 	enc.state.lock.Lock()
 	enc.encodeValue(v, rdser, mkFieldInfo(v, 0, false), make([]int, 0, 10))
 
 	if enc.state.tagsMatcher.Updated != 0 {
-		*(*CInt)(unsafe.Pointer(&rdser.Bytes()[pos])) = CInt(len(rdser.buf) - pos)
+		*(*uint32)(unsafe.Pointer(&rdser.Bytes()[pos])) = uint32(len(rdser.buf) - pos)
 		enc.state.tagsMatcher.WriteUpdated(rdser)
 	}
 	enc.state.lock.Unlock()

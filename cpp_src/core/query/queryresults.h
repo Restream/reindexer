@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include "core/cjson/cjsonencoder.h"
 #include "core/cjson/jsonencoder.h"
 #include "core/item.h"
 #include "estl/h_vector.h"
@@ -23,12 +24,14 @@ public:
 	QueryResults(const QueryResults &) = delete;
 	QueryResults(QueryResults &&) = default;
 	~QueryResults();
-	QueryResults &operator=(const QueryResults &qr) = delete;
-	QueryResults &operator=(QueryResults &&qr) = default;
+	QueryResults &operator=(const QueryResults &) = delete;
+	QueryResults &operator=(QueryResults &&) = default;
 
 	void Add(const ItemRef &i);
 	void Dump() const;
 	void GetJSON(int idx, WrSerializer &wrser, bool withHdrLen = true) const;
+	void GetCJSON(int idx, WrSerializer &wrser, bool withHdrLen = true) const;
+
 	Item *GetItem(int idx) const;
 
 	// joinded fields 0 - 1st joined ns, 1 - second joined

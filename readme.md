@@ -115,12 +115,12 @@ type Item struct {
 }
 
 func main() {
-	// Init a database instance and choose the binding
-	db := reindexer.NewReindex("builtin")
+	// Init a database instance and choose the binding (builtin)
+	db := reindexer.NewReindex("builtin:///tmp/reindex/")
 
-	// Enable persistent storage (optional)
-	db.EnableStorage("/tmp/reindex/")
-
+	// OR - Init a database instance and choose the binding (connect to server)
+	db := reindexer.NewReindex("cproto://127.0.0.1:6534/")
+	
 	// Create new namespace with name 'items', which will store structs of type 'Item'
 	db.OpenNamespace("items", reindexer.DefaultNamespaceOptions(), Item{})
 
@@ -205,7 +205,7 @@ To build Reindexer, g++ 4.8+ or clang 3.3+ is required.
 ```bash
 go get -a github.com/restream/reindexer
 bash $GOPATH/src/github.com/restream/reindexer/dependencies.sh
-go generate github.com/restream/reindexer
+go generate github.com/restream/reindexer/bindings/builtin
 ```
 ## Advanced Usage
 ### Index Types and Their Capabilites
@@ -509,5 +509,4 @@ pprof -symbolize remote http://localhost:6060/debug/cgo/pprof/heap
 
 Currently Reindexer is stable and production ready, but it is still a work in progress, so there are some limitations and issues:
 
-- There is no standalone server mode. Only embeded (`builtin`) binding is supported for now.
 - Internal C++ API is not stabilized and is subject to change.

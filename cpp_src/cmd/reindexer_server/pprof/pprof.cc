@@ -38,7 +38,7 @@ int Pprof::Profile(http::Context & /*ctx*/) {
 int Pprof::Symbol(http::Context &ctx) {
 	char *req = nullptr, *token = nullptr, *endp;
 	if (!strcmp(ctx.request->method, "POST")) {
-		req = (char *)alloca(ctx.body->Pending() + 1);
+		req = reinterpret_cast<char *>(alloca(ctx.body->Pending() + 1));
 		ssize_t nread = ctx.body->Read(req, ctx.body->Pending());
 		req[nread] = 0;
 	} else if (ctx.request->params.size()) {

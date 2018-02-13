@@ -42,23 +42,29 @@ void JsonDecoder::decodeJsonObject(Payload *pl, WrSerializer &wrser, JsonValue &
 			// Indexed field. extract it
 			KeyRefs kvs;
 			int count = 0;
+			KeyValueType kvType = pl->Type().Field(field).Type();
 			if (elem->value.getTag() == JSON_ARRAY) {
 				for (auto subelem : elem->value) {
-					kvs.push_back(jsonValue2KeyRef(subelem->value, pl->Type().Field(field).Type()));
-					count++;
+					kvs.push_back(jsonValue2KeyRef(subelem->value, kvType));
+					++count;
 				}
 			} else if (elem->value.getTag() != JSON_NULL) {
-				kvs.push_back(jsonValue2KeyRef(elem->value, pl->Type().Field(field).Type()));
+				kvs.push_back(jsonValue2KeyRef(elem->value, kvType));
 			}
-			if (kvs.size()) {
+			if (!kvs.empty()) {
 				pl->Set(field, kvs, true);
 			}
 
 			// Put special tag :link data to indexed field
 			switch (elem->value.getTag()) {
-				case JSON_NUMBER:
-					wrser.PutVarUint(ctag(TAG_VARINT, tagName, field));
-					break;
+				case JSON_NUMBER: {
+					double value = elem->value.toNumber(), intpart;
+					if (std::modf(value, &intpart) == 0.0) {
+						wrser.PutVarUint(ctag(TAG_VARINT, tagName, field));
+					} else {
+						wrser.PutVarUint(ctag(TAG_DOUBLE, tagName, field));
+					}
+				} break;
 				case JSON_STRING:
 					wrser.PutVarUint(ctag(TAG_STRING, tagName, field));
 					break;
@@ -118,7 +124,7 @@ void JsonDecoder::decodeJson(Payload *pl, WrSerializer &wrser, JsonValue &v, int
 			unsigned pos = wrser.Len();
 			int count = 0;
 			// reserve for len
-			wrser.PutInt(0);
+			wrser.PutUInt32(0);
 			for (auto elem : v) {
 				decodeJson(pl, wrser, elem->value, 0);
 				count++;

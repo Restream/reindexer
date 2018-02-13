@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <cstring>
 #include "itoa/itoa.h"
+#include "tools/errors.h"
 
 #include "tools/varint.h"
 namespace reindexer {
@@ -12,70 +13,38 @@ Serializer::Serializer(const void *_buf, int _len) : buf(static_cast<const uint8
 bool Serializer::Eof() { return pos >= len; }
 
 KeyValue Serializer::GetValue() {
-	switch (GetInt()) {
+	int t = GetVarUint();
+	switch (t) {
 		case KeyValueInt:
-			return KeyValue(GetInt());
+			return KeyValue(int(GetVarint()));
 		case KeyValueInt64:
-			return KeyValue(GetInt64());
+			return KeyValue(int64_t(GetVarint()));
 		case KeyValueDouble:
 			return KeyValue(GetDouble());
 		case KeyValueString:
-			return KeyValue(GetString());
+			return KeyValue(GetVString().ToString());
 		default:
-			abort();
+			throw Error(errParseBin, "Unknown type %d while parsing binary buffer", t);
 	}
 }
 
-KeyRef Serializer::GetRef() {
-	switch (GetInt()) {
-		case KeyValueInt:
-			return KeyRef(GetInt());
-		case KeyValueInt64:
-			return KeyRef(GetInt64());
-		case KeyValueDouble:
-			return KeyRef(GetDouble());
-		case KeyValueString:
-			return KeyRef(GetPString());
-		default:
-			abort();
+inline static void checkbound(int pos, int need, int len) {
+	if (pos + need > len) {
+		throw Error(errParseBin, "Binary buffer underflow. Need more %d bytes, pos=%d,len=%d", need, pos, len);
 	}
-}
-
-string Serializer::GetString() {
-	int l = GetInt();
-	const char *ret = reinterpret_cast<const char *>(buf + pos);
-	assert(pos + l <= len);
-	pos += l;
-	return string(ret, l);
-}
-
-p_string Serializer::GetPString() {
-	auto ret = reinterpret_cast<const l_string_hdr *>(buf + pos);
-	int l = GetInt();
-	assert(pos + l <= len);
-	pos += l;
-	return p_string(ret);
 }
 
 Slice Serializer::GetSlice() {
-	int l = GetInt();
+	uint32_t l = GetUInt32();
 	Slice b(reinterpret_cast<const char *>(buf + pos), l);
-	assert(pos + b.size() <= len);
+	checkbound(pos, b.size(), len);
 	pos += b.size();
 	return b;
 }
 
-int Serializer::GetInt() {
-	int ret;
-	assert(pos + sizeof(ret) <= len);
-	memcpy(&ret, buf + pos, sizeof(ret));
-	pos += sizeof(ret);
-	return ret;
-}
-
-int64_t Serializer::GetInt64() {
-	int64_t ret;
-	assert(pos + sizeof(ret) <= len);
+uint32_t Serializer::GetUInt32() {
+	uint32_t ret;
+	checkbound(pos, sizeof(ret), len);
 	memcpy(&ret, buf + pos, sizeof(ret));
 	pos += sizeof(ret);
 	return ret;
@@ -83,7 +52,7 @@ int64_t Serializer::GetInt64() {
 
 double Serializer::GetDouble() {
 	double ret;
-	assert(pos + sizeof(ret) <= len);
+	checkbound(pos, sizeof(ret), len);
 	memcpy(&ret, buf + pos, sizeof(ret));
 	pos += sizeof(ret);
 	return ret;
@@ -91,20 +60,20 @@ double Serializer::GetDouble() {
 
 int64_t Serializer::GetVarint() {
 	int l = scan_varint(len - pos, buf + pos);
-	assert(pos + l <= len);
+	checkbound(pos, l, len);
 	pos += l;
 	return unzigzag64(parse_uint64(l, buf + pos - l));
 }
 uint64_t Serializer::GetVarUint() {
 	int l = scan_varint(len - pos, buf + pos);
-	assert(pos + l <= len);
+	checkbound(pos, l, len);
 	pos += l;
 	return parse_uint64(l, buf + pos - l);
 }
 
 Slice Serializer::GetVString() {
 	int l = GetVarUint();
-	assert(pos + l <= len);
+	checkbound(pos, l, len);
 	pos += l;
 	return Slice(reinterpret_cast<const char *>(buf + pos - l), l);
 }
@@ -112,7 +81,7 @@ Slice Serializer::GetVString() {
 p_string Serializer::GetPVString() {
 	auto ret = reinterpret_cast<const v_string_hdr *>(buf + pos);
 	int l = GetVarUint();
-	assert(pos + l <= len);
+	checkbound(pos, l, len);
 	pos += l;
 	return p_string(ret);
 }
@@ -127,54 +96,33 @@ WrSerializer::~WrSerializer() {
 }
 
 void WrSerializer::PutValue(const KeyValue &kv) {
-	PutInt(kv.Type());
+	PutVarUint(kv.Type());
 	switch (kv.Type()) {
 		case KeyValueInt:
-			PutInt(kv.toInt());
+			PutVarint(kv.toInt());
 			break;
 		case KeyValueInt64:
-			PutInt64(kv.toInt64());
+			PutVarint(kv.toInt64());
 			break;
 		case KeyValueDouble:
 			PutDouble(kv.toDouble());
 			break;
 		case KeyValueString:
-			PutString(kv.toString());
+			PutVString(kv.toString());
 			break;
 		default:
 			abort();
 	}
 }
 
-void WrSerializer::PutString(const string &str) { PutSlice(Slice(str)); }
-
 void WrSerializer::PutSlice(const Slice &slice) {
-	PutInt(slice.size());
+	PutUInt32(slice.size());
 	grow(slice.size());
 	memcpy(&buf_[len_], slice.data(), slice.size());
 	len_ += slice.size();
 }
 
-void WrSerializer::PutInt(int v) {
-	grow(sizeof v);
-	memcpy(&buf_[len_], &v, sizeof v);
-	len_ += sizeof v;
-}
-void WrSerializer::PutUInt8(uint8_t v) {
-	grow(sizeof v);
-	buf_[len_++] = v;
-}
-void WrSerializer::PutInt8(int8_t v) {
-	grow(sizeof v);
-	buf_[len_++] = v;
-}
-void WrSerializer::PutInt16(int16_t v) {
-	grow(sizeof v);
-	memcpy(&buf_[len_], &v, sizeof v);
-	len_ += sizeof v;
-}
-
-void WrSerializer::PutInt64(int64_t v) {
+void WrSerializer::PutUInt32(uint32_t v) {
 	grow(sizeof v);
 	memcpy(&buf_[len_], &v, sizeof v);
 	len_ += sizeof v;

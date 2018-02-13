@@ -1,4 +1,3 @@
-
 #include "core/index/index.h"
 #include "core/index/indexordered.tcc"
 #include "core/index/indexstore.tcc"
@@ -10,13 +9,13 @@ namespace reindexer {
 
 Index::Index(IndexType _type, const string& _name, const IndexOpts& opts, const PayloadType::Ptr payloadType, const FieldsSet& fields)
 	: type(_type), name(_name), opts_(opts), payloadType_(payloadType), fields_(fields) {
-	logPrintf(LogTrace, "Index::Index (%s)%s", _name.c_str(), opts.IsPK ? ",pk" : "");
+	logPrintf(LogTrace, "Index::Index (%s)%s", _name.c_str(), opts.IsPK() ? ",pk" : "");
 }
 
 Index::~Index() { logPrintf(LogTrace, "Index::~Index (%s)", name.c_str()); }
 
 Index* Index::New(IndexType type, const string& name, const IndexOpts& opts) {
-	bool dense = opts.IsPK || opts.IsDense;
+	bool dense = opts.IsPK() || opts.IsDense();
 	switch (type) {
 		case IndexStrHash:
 			return dense ? static_cast<Index*>(new IndexUnordered<unordered_str_map<KeyEntryPlain>>(type, name, opts))
@@ -63,7 +62,7 @@ Index* Index::New(IndexType type, const string& name, const IndexOpts& opts) {
 Index* Index::NewComposite(IndexType type, const string& name, const IndexOpts& opts, const PayloadType::Ptr payloadType,
 						   const FieldsSet& fields) {
 	logPrintf(LogInfo, "Index::NewComposite (%s,%d)\n", name.c_str(), type);
-	bool dense = opts.IsPK || opts.IsDense;
+	bool dense = opts.IsPK() || opts.IsDense();
 
 	switch (type) {
 		case IndexCompositeText:
@@ -166,5 +165,19 @@ vector<string> Index::Conds() {
 			return {};
 	}
 	return {};
+}
+
+string Index::CollateMode() {
+	switch (opts_.GetCollateMode()) {
+		case CollateASCII:
+			return "ascii";
+		case CollateUTF8:
+			return "utf8";
+		case CollateNumeric:
+			return "numeric";
+		case CollateNone:
+			return "none";
+	}
+	return "none";
 }
 }  // namespace reindexer

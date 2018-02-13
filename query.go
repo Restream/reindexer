@@ -112,7 +112,7 @@ func newQuery(db *Reindexer, namespace string) *Query {
 	q.db = db
 	q.nextOp = opAND
 
-	q.ser.PutString(namespace)
+	q.ser.PutVString(namespace)
 	return q
 }
 
@@ -121,21 +121,21 @@ func (q *Query) Where(index string, condition int, keys interface{}) *Query {
 	t := reflect.TypeOf(keys)
 	v := reflect.ValueOf(keys)
 
-	q.ser.PutCInt(queryCondition)
-	q.ser.PutString(index)
-	q.ser.PutCInt(q.nextOp)
-	q.ser.PutCInt(condition)
+	q.ser.PutVarCUInt(queryCondition)
+	q.ser.PutVString(index)
+	q.ser.PutVarCUInt(q.nextOp)
+	q.ser.PutVarCUInt(condition)
 	q.nextOp = opAND
 
 	if keys == nil {
-		q.ser.PutCInt(0)
+		q.ser.PutVarUInt(0)
 	} else if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
-		q.ser.PutCInt(v.Len())
+		q.ser.PutVarCUInt(v.Len())
 		for i := 0; i < v.Len(); i++ {
 			q.putValue(v.Index(i))
 		}
 	} else {
-		q.ser.PutCInt(1)
+		q.ser.PutVarCUInt(1)
 		q.putValue(v)
 	}
 	return q
@@ -151,29 +151,29 @@ func (q *Query) putValue(v reflect.Value) error {
 
 	switch k {
 	case reflect.Bool:
-		q.ser.PutCInt(valueInt)
+		q.ser.PutVarCUInt(valueInt)
 		if v.Bool() {
-			q.ser.PutCInt(1)
+			q.ser.PutVarInt(1)
 		} else {
-			q.ser.PutCInt(0)
+			q.ser.PutVarInt(0)
 		}
 	case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int8:
-		q.ser.PutCInt(valueInt)
-		q.ser.PutCInt(int(v.Int()))
+		q.ser.PutVarCUInt(valueInt)
+		q.ser.PutVarInt(v.Int())
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32:
-		q.ser.PutCInt(valueInt)
-		q.ser.PutCInt(int(v.Uint()))
+		q.ser.PutVarCUInt(valueInt)
+		q.ser.PutVarInt(int64(v.Uint()))
 	case reflect.Int64:
-		q.ser.PutCInt(valueInt64)
-		q.ser.PutInt64(v.Int())
+		q.ser.PutVarCUInt(valueInt64)
+		q.ser.PutVarInt(v.Int())
 	case reflect.Uint64:
-		q.ser.PutCInt(valueInt64)
-		q.ser.PutInt64(int64(v.Uint()))
+		q.ser.PutVarCUInt(valueInt64)
+		q.ser.PutVarInt(int64(v.Uint()))
 	case reflect.String:
-		q.ser.PutCInt(valueString)
-		q.ser.PutString(v.String())
+		q.ser.PutVarCUInt(valueString)
+		q.ser.PutVString(v.String())
 	case reflect.Float32, reflect.Float64:
-		q.ser.PutCInt(valueDouble)
+		q.ser.PutVarCUInt(valueDouble)
 		q.ser.PutDouble(v.Float())
 	default:
 		panic(fmt.Errorf("rq: Invalid reflection type %s", v.Kind().String()))
@@ -184,12 +184,12 @@ func (q *Query) putValue(v reflect.Value) error {
 // WhereInt - Add where condition to DB query with int args
 func (q *Query) WhereInt(index string, condition int, keys ...int) *Query {
 
-	q.ser.PutCInt(queryCondition).PutString(index).PutCInt(q.nextOp).PutCInt(condition)
+	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
 
-	q.ser.PutCInt(len(keys))
+	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
-		q.ser.PutCInt(valueInt).PutCInt(v)
+		q.ser.PutVarCUInt(valueInt).PutVarInt(int64(v))
 	}
 	return q
 }
@@ -197,12 +197,12 @@ func (q *Query) WhereInt(index string, condition int, keys ...int) *Query {
 // WhereInt64 - Add where condition to DB query with int64 args
 func (q *Query) WhereInt64(index string, condition int, keys ...int64) *Query {
 
-	q.ser.PutCInt(queryCondition).PutString(index).PutCInt(q.nextOp).PutCInt(condition)
+	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
 
-	q.ser.PutCInt(len(keys))
+	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
-		q.ser.PutCInt(valueInt64).PutInt64(v)
+		q.ser.PutVarCUInt(valueInt64).PutVarInt(v)
 	}
 	return q
 }
@@ -210,12 +210,12 @@ func (q *Query) WhereInt64(index string, condition int, keys ...int64) *Query {
 // WhereString - Add where condition to DB query with string args
 func (q *Query) WhereString(index string, condition int, keys ...string) *Query {
 
-	q.ser.PutCInt(queryCondition).PutString(index).PutCInt(q.nextOp).PutCInt(condition)
+	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
 
-	q.ser.PutCInt(len(keys))
+	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
-		q.ser.PutCInt(valueString).PutString(v)
+		q.ser.PutVarCUInt(valueString).PutVString(v)
 	}
 	return q
 }
@@ -229,12 +229,17 @@ func (q *Query) Match(index string, keys ...string) *Query {
 // WhereString - Add where condition to DB query with bool args
 func (q *Query) WhereBool(index string, condition int, keys ...bool) *Query {
 
-	q.ser.PutCInt(queryCondition).PutString(index).PutCInt(q.nextOp).PutCInt(condition)
+	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
 
-	q.ser.PutCInt(len(keys))
+	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
-		q.ser.PutCInt(valueInt).PutBool(v)
+		q.ser.PutVarCUInt(valueInt)
+		if v {
+			q.ser.PutVarInt(1)
+		} else {
+			q.ser.PutVarInt(0)
+		}
 	}
 	return q
 }
@@ -242,12 +247,12 @@ func (q *Query) WhereBool(index string, condition int, keys ...bool) *Query {
 // WhereDouble - Add where condition to DB query with float args
 func (q *Query) WhereDouble(index string, condition int, keys ...float64) *Query {
 
-	q.ser.PutCInt(queryCondition).PutString(index).PutCInt(q.nextOp).PutCInt(condition)
+	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
 
-	q.ser.PutCInt(len(keys))
+	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
-		q.ser.PutCInt(valueDouble).PutDouble(v)
+		q.ser.PutVarCUInt(valueDouble).PutDouble(v)
 	}
 	return q
 }
@@ -255,22 +260,22 @@ func (q *Query) WhereDouble(index string, condition int, keys ...float64) *Query
 // Aggregate - Return aggregation of field
 func (q *Query) Aggregate(index string, aggType int) *Query {
 
-	q.ser.PutCInt(queryAggregation).PutString(index).PutCInt(aggType)
+	q.ser.PutVarCUInt(queryAggregation).PutVString(index).PutVarCUInt(aggType)
 	return q
 }
 
 // Sort - Apply sort order to returned from query items
 func (q *Query) Sort(sortIndex string, desc bool, values ...interface{}) *Query {
 
-	q.ser.PutCInt(querySortIndex)
-	q.ser.PutString(sortIndex)
+	q.ser.PutVarCUInt(querySortIndex)
+	q.ser.PutVString(sortIndex)
 	if desc {
-		q.ser.PutCInt(1)
+		q.ser.PutVarUInt(1)
 	} else {
-		q.ser.PutCInt(0)
+		q.ser.PutVarUInt(0)
 	}
 
-	q.ser.PutCInt(len(values))
+	q.ser.PutVarCUInt(len(values))
 	for i := 0; i < len(values); i++ {
 		q.putValue(reflect.ValueOf(values[i]))
 	}
@@ -292,15 +297,15 @@ func (q *Query) Not() *Query {
 
 // Distinct - Return only items with uniq value of field
 func (q *Query) Distinct(distinctIndex string) *Query {
-	q.ser.PutCInt(queryDistinct)
-	q.ser.PutString(distinctIndex)
+	q.ser.PutVarCUInt(queryDistinct)
+	q.ser.PutVString(distinctIndex)
 	return q
 }
 
 // ReqTotal Request total items calculation
 func (q *Query) ReqTotal(totalNames ...string) *Query {
-	q.ser.PutCInt(queryReqTotal)
-	q.ser.PutCInt(modeAccurateTotal)
+	q.ser.PutVarCUInt(queryReqTotal)
+	q.ser.PutVarCUInt(modeAccurateTotal)
 	if len(totalNames) != 0 {
 		q.totalName = totalNames[0]
 	}
@@ -309,8 +314,8 @@ func (q *Query) ReqTotal(totalNames ...string) *Query {
 
 // CachedTotal Request cached total items calculation
 func (q *Query) CachedTotal(totalNames ...string) *Query {
-	q.ser.PutCInt(queryReqTotal)
-	q.ser.PutCInt(modeCachedTotal)
+	q.ser.PutVarCUInt(queryReqTotal)
+	q.ser.PutVarCUInt(modeCachedTotal)
 	if len(totalNames) != 0 {
 		q.totalName = totalNames[0]
 	}
@@ -324,7 +329,7 @@ func (q *Query) Limit(limitItems int) *Query {
 			limitItems = cInt32Max
 		}
 		// temporary
-		q.ser.PutCInt(queryLimit).PutCInt(limitItems)
+		q.ser.PutVarCUInt(queryLimit).PutVarCUInt(limitItems)
 	}
 	return q
 }
@@ -334,13 +339,13 @@ func (q *Query) Offset(startOffset int) *Query {
 	if startOffset > cInt32Max {
 		startOffset = cInt32Max
 	}
-	q.ser.PutCInt(queryOffset).PutCInt(startOffset)
+	q.ser.PutVarCUInt(queryOffset).PutVarCUInt(startOffset)
 	return q
 }
 
 // Debug - Set debug level
 func (q *Query) Debug(level int) *Query {
-	q.ser.PutCInt(queryDebugLevel).PutCInt(level)
+	q.ser.PutVarCUInt(queryDebugLevel).PutVarCUInt(level)
 	return q
 }
 
@@ -531,11 +536,11 @@ func (q *Query) On(index string, condition int, joinIndex string) *Query {
 	if q.root == nil {
 		panic(fmt.Errorf("Can't join on root query"))
 	}
-	q.ser.PutCInt(queryJoinOn)
-	q.ser.PutCInt(q.nextOp)
-	q.ser.PutCInt(condition)
-	q.ser.PutString(index)
-	q.ser.PutString(joinIndex)
+	q.ser.PutVarCUInt(queryJoinOn)
+	q.ser.PutVarCUInt(q.nextOp)
+	q.ser.PutVarCUInt(condition)
+	q.ser.PutVString(index)
+	q.ser.PutVString(joinIndex)
 	q.nextOp = opAND
 
 	return q
@@ -544,7 +549,7 @@ func (q *Query) On(index string, condition int, joinIndex string) *Query {
 // Select add filter to  fields of result's objects
 func (q *Query) Select(fields ...string) *Query {
 	for _, field := range fields {
-		q.ser.PutCInt(querySelectFilter).PutString(field)
+		q.ser.PutVarCUInt(querySelectFilter).PutVString(field)
 	}
 	return q
 }

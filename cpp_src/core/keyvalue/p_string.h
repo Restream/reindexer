@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <string>
+#include <vector>
 #include "tools/customhash.h"
 #include "tools/slice.h"
 #include "tools/varint.h"
@@ -29,14 +30,17 @@ struct p_string {
 	constexpr static uint64_t tagCxxstr = 0x2ULL;
 	// ptr points to varint len header, followed by string's char array
 	constexpr static uint64_t tagVstr = 0x3ULL;
+	// ptr points to slice object
+	constexpr static uint64_t tagSlice = 0x4ULL;
 	// offset of tag in pointer
-	constexpr static uint64_t tagShift = 60ULL;
-	constexpr static uint64_t tagMask = 0x3ULL << tagShift;
+	constexpr static uint64_t tagShift = 59ULL;
+	constexpr static uint64_t tagMask = 0x7ULL << tagShift;
 
 	explicit p_string(const l_string_hdr *lstr) : v(reinterpret_cast<uint64_t>(lstr) | (tagLstr << tagShift)) {}
 	explicit p_string(const v_string_hdr *vstr) : v(reinterpret_cast<uint64_t>(vstr) | (tagVstr << tagShift)) {}
 	explicit p_string(const char *cstr) : v(reinterpret_cast<uint64_t>(cstr) | (tagCstr << tagShift)) {}
 	explicit p_string(const string *str) : v(reinterpret_cast<uint64_t>(str) | (tagCxxstr << tagShift)) {}
+	explicit p_string(const Slice *ptr) : v(reinterpret_cast<uint64_t>(ptr) | (tagSlice << tagShift)) {}
 	p_string() : v(0) {}
 
 	operator Slice() const { return Slice(data(), length()); }
@@ -46,6 +50,8 @@ struct p_string {
 				return reinterpret_cast<const char *>(ptr());
 			case tagCxxstr:
 				return (reinterpret_cast<const string *>(ptr()))->data();
+			case tagSlice:
+				return (reinterpret_cast<const Slice *>(ptr()))->data();
 			case tagLstr:
 				return &(reinterpret_cast<const l_string_hdr *>(ptr()))->data[0];
 			case tagVstr: {
@@ -64,6 +70,8 @@ struct p_string {
 				return strlen(reinterpret_cast<const char *>(ptr()));
 			case tagCxxstr:
 				return (reinterpret_cast<const string *>(ptr()))->length();
+			case tagSlice:
+				return (reinterpret_cast<const Slice *>(ptr()))->size();
 			case tagLstr:
 				return (reinterpret_cast<const l_string_hdr *>(ptr()))->length;
 			case tagVstr: {
@@ -87,11 +95,12 @@ struct p_string {
 	bool operator>=(p_string other) const { return compare(other) >= 0; }
 	bool operator<=(p_string other) const { return compare(other) <= 0; }
 	const string *getCxxstr() {
-		assert(((v & tagMask) >> tagShift) == tagCxxstr);
+		assert(type() == tagCxxstr);
 		return reinterpret_cast<const string *>(ptr());
 	};
 
 	int type() const { return (v & tagMask) >> tagShift; }
+	string toString() { return string(data(), length()); }
 
 protected:
 	const void *ptr() const { return v ? reinterpret_cast<const void *>(v & ~tagMask) : ""; }

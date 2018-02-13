@@ -140,7 +140,8 @@ reindexer::Error Rndxr::DefineNamespaceIndexes(const string& ns, initializer_lis
 	return err;
 }
 
-Error Rndxr::FillTestItemsBench(unsigned start, unsigned count, int pkgsCount) {
+Error Rndxr::FillTestItemsBench(unsigned /*start*/, unsigned count, int pkgsCount) {
+	// TODO: possible error - start was not used
 	Error err;
 	ItemPtr item;
 	for (unsigned i = 0; i < count; i++) {
@@ -152,7 +153,8 @@ Error Rndxr::FillTestItemsBench(unsigned start, unsigned count, int pkgsCount) {
 	return 0;
 }
 
-Error Rndxr::FillTestJoinItem(unsigned start, unsigned count) {
+Error Rndxr::FillTestJoinItem(unsigned /*start*/, unsigned count) {
+	// TODO: possible error - start was not used
 	Error err;
 	ItemPtr item;
 
@@ -290,70 +292,73 @@ string Rndxr::randString(const string prefix) {
 string Rndxr::randDevice() { return devices_[static_cast<size_t>(rand()) % devices_.size()]; }
 
 reindexer::Error Rndxr::PrepareDefaultNamespace() {
-	Error err = GetDB()->OpenNamespace(NamespaceDef(defaultNamespace, {1, 1, 1, 1}));
+	auto opts = StorageOpts().Enabled().DropOnFileFormatError().CreateIfMissing();
+	Error err = GetDB()->OpenNamespace(defaultNamespace, opts);
 	if (err) return err;
 
-	err =
-		DefineNamespaceIndexes(defaultNamespace,
-							   {IndexDeclaration{"id", "", "int", {0, 1, 0, 0}},  // IsPK = true
-								IndexDeclaration{"genre", "tree", "int64", {}}, IndexDeclaration{"year", "tree", "int", {}},
-								IndexDeclaration{"packages", "hash", "int", {1}},										   // IsArray = true
-								IndexDeclaration{"countries", "tree", "string", {1}},									   // IsArray = true
-								IndexDeclaration{"age", "hash", "int", {}}, IndexDeclaration{"price_id", "", "int", {1}},  // IsArray = true
-								IndexDeclaration{"location", "", "string", {}}, IndexDeclaration{"end_time", "", "int", {}},
-								IndexDeclaration{"start_time", "tree", "int", {}}});
+	err = DefineNamespaceIndexes(
+		defaultNamespace,
+		{IndexDeclaration{"id", "", "int", IndexOpts().PK()},  // IsPK = true
+		 IndexDeclaration{"genre", "tree", "int64", IndexOpts()}, IndexDeclaration{"year", "tree", "int", IndexOpts()},
+		 IndexDeclaration{"packages", "hash", "int", IndexOpts().Array()},
+		 IndexDeclaration{"countries", "tree", "string", IndexOpts().Array()}, IndexDeclaration{"age", "hash", "int", IndexOpts()},
+		 IndexDeclaration{"price_id", "", "int", IndexOpts().Array()}, IndexDeclaration{"location", "", "string", IndexOpts()},
+		 IndexDeclaration{"end_time", "", "int", IndexOpts()}, IndexDeclaration{"start_time", "tree", "int", IndexOpts()}});
 
 	return err;
 }
 
 reindexer::Error Rndxr::PrepareJoinNamespace() {
-	Error err = GetDB()->OpenNamespace(NamespaceDef(defaultJoinNamespace, {1, 1, 1, 1}));
+	Error err = GetDB()->OpenNamespace(defaultJoinNamespace, StorageOpts().Enabled().DropOnFileFormatError().CreateIfMissing());
 	if (!err.ok()) return err;
 
-	err = DefineNamespaceIndexes(defaultJoinNamespace,
-								 {
-									 IndexDeclaration{"id", "", "int", {0, 1, 0, 0}}, IndexDeclaration{"name", "tree", "string", {}},
-									 IndexDeclaration{"location", "", "string", {}}, IndexDeclaration{"device", "", "string", {}},
-								 });
+	err = DefineNamespaceIndexes(defaultJoinNamespace, {
+														   IndexDeclaration{"id", "", "int", IndexOpts().PK()},
+														   IndexDeclaration{"name", "tree", "string", IndexOpts()},
+														   IndexDeclaration{"location", "", "string", IndexOpts()},
+														   IndexDeclaration{"device", "", "string", IndexOpts()},
+													   });
 
 	return err;
 }
 
 reindexer::Error Rndxr::PrepareSimpleNamespace() {
-	Error err = GetDB()->OpenNamespace(NamespaceDef(defaultSimpleNamespace, {1, 1, 1, 1}));
+	Error err = GetDB()->OpenNamespace(defaultSimpleNamespace, StorageOpts().Enabled().DropOnFileFormatError().CreateIfMissing());
 	if (!err.ok()) return err;
 
 	err = DefineNamespaceIndexes(defaultSimpleNamespace,
-								 {IndexDeclaration{"id", "", "int", {0, 1, 0, 0}}, IndexDeclaration{"year", "tree", "int", {}},
-								  IndexDeclaration{"name", "", "string", {}}});
+								 {IndexDeclaration{"id", "", "int", IndexOpts().PK()}, IndexDeclaration{"year", "tree", "int", IndexOpts()},
+								  IndexDeclaration{"name", "", "string", IndexOpts()}});
 
 	return err;
 }
 
 reindexer::Error Rndxr::PrepareSimpleCmplxPKNamespace() {
-	Error err = GetDB()->OpenNamespace(NamespaceDef(defaultSimpleCmplxPKNamespace, {1, 1, 1, 1}));
+	Error err = GetDB()->OpenNamespace(defaultSimpleCmplxPKNamespace, StorageOpts().Enabled().DropOnFileFormatError().CreateIfMissing());
 	if (err) return err;
 
-	err = DefineNamespaceIndexes(defaultSimpleCmplxPKNamespace,
-								 {IndexDeclaration{"id", "", "int", {0, 1, 0, 0}}, IndexDeclaration{"year", "tree", "int", {}},
-								  IndexDeclaration{"name", "", "string", {}}, IndexDeclaration{"subid", "", "string", {0, 1, 0, 0}}});
+	err = DefineNamespaceIndexes(
+		defaultSimpleCmplxPKNamespace,
+		{IndexDeclaration{"id", "", "int", IndexOpts().PK()}, IndexDeclaration{"year", "tree", "int", IndexOpts()},
+		 IndexDeclaration{"name", "", "string", IndexOpts()}, IndexDeclaration{"subid", "", "string", IndexOpts().PK()}});
 	return err;
 }
 
 reindexer::Error Rndxr::PrepareInsertNamespace() {
-	Error err = GetDB()->OpenNamespace(NamespaceDef(defaultInsertNamespace, {1, 1, 1, 1}));
+	Error err = GetDB()->OpenNamespace(defaultInsertNamespace, StorageOpts().Enabled().DropOnFileFormatError().CreateIfMissing());
 	if (err) return err;
 
-	err = DefineNamespaceIndexes(defaultInsertNamespace,
-								 {IndexDeclaration{"id", "", "int", {0, 1, 0, 0}}, IndexDeclaration{"genre", "tree", "int64", {}},
-								  IndexDeclaration{"year", "tree", "int", {}}, IndexDeclaration{"packages", "hash", "int", {1}},
-								  IndexDeclaration{"name", "tree", "string", {}}, IndexDeclaration{"countries", "tree", "string", {1}},
-								  IndexDeclaration{"age", "hash", "int", {}}, IndexDeclaration{"description", "fulltext", "string", {}},
-								  IndexDeclaration{"rate", "tree", "double", {}}, IndexDeclaration{"isdeleted", "", "bool", {}},
-								  IndexDeclaration{"actor", "", "string", {}}, IndexDeclaration{"price_id", "", "int", {1}},
-								  IndexDeclaration{"location_id", "", "string", {}}, IndexDeclaration{"end_time", "", "int", {}},
-								  IndexDeclaration{"start_time", "tree", "int", {}}, IndexDeclaration{"tmp", "", "string", {0, 1, 0, 0}},
-								  IndexDeclaration{"id+tmp", "", "composite", {}}, IndexDeclaration{"age+genre", "", "composite", {}}});
+	err = DefineNamespaceIndexes(
+		defaultInsertNamespace,
+		{IndexDeclaration{"id", "", "int", IndexOpts().PK()}, IndexDeclaration{"genre", "tree", "int64", IndexOpts()},
+		 IndexDeclaration{"year", "tree", "int", IndexOpts()}, IndexDeclaration{"packages", "hash", "int", IndexOpts().Array()},
+		 IndexDeclaration{"name", "tree", "string", IndexOpts()}, IndexDeclaration{"countries", "tree", "string", IndexOpts().Array()},
+		 IndexDeclaration{"age", "hash", "int", IndexOpts()}, IndexDeclaration{"description", "fulltext", "string", IndexOpts()},
+		 IndexDeclaration{"rate", "tree", "double", IndexOpts()}, IndexDeclaration{"isdeleted", "", "bool", IndexOpts()},
+		 IndexDeclaration{"actor", "", "string", IndexOpts()}, IndexDeclaration{"price_id", "", "int", IndexOpts().Array()},
+		 IndexDeclaration{"location_id", "", "string", IndexOpts()}, IndexDeclaration{"end_time", "", "int", IndexOpts()},
+		 IndexDeclaration{"start_time", "tree", "int", IndexOpts()}, IndexDeclaration{"tmp", "", "string", IndexOpts().PK()},
+		 IndexDeclaration{"id+tmp", "", "composite", IndexOpts()}, IndexDeclaration{"age+genre", "", "composite", IndexOpts()}});
 
 	return err;
 }

@@ -1188,9 +1188,8 @@ private:
 		new_map.swap(*this);
 	}
 
-	template <
-		typename U = value_type,
-		typename std::enable_if<std::is_copy_constructible<U>::value && !std::is_nothrow_move_constructible<U>::value>::type* = nullptr>
+	template <typename U = value_type, typename std::enable_if<std::is_copy_constructible<U>::value &&
+															   !std::is_nothrow_move_constructible<U>::value>::type* = nullptr>
 	void rehash_internal(size_type count) {
 		hopscotch_hash new_map = new_hopscotch_hash(count);
 

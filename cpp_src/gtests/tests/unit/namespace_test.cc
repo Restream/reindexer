@@ -3,14 +3,12 @@
 TEST_F(NsApi, UpsertWithPrecepts) {
 	CreateNamespace(default_namespace);
 
-	IndexOpts idOpts{false, true, false};
-	DefineNamespaceDataset(
-		default_namespace,
-		{IndexDeclaration{"id", "hash", "int", idOpts}, IndexDeclaration{updatedTimeSecFieldName.c_str(), "", "int64", IndexOpts()},
-		 IndexDeclaration{updatedTimeMSecFieldName.c_str(), "", "int64", IndexOpts()},
-		 IndexDeclaration{updatedTimeUSecFieldName.c_str(), "", "int64", IndexOpts()},
-		 IndexDeclaration{updatedTimeNSecFieldName.c_str(), "", "int64", IndexOpts()},
-		 IndexDeclaration{serialFieldName.c_str(), "", "int64", IndexOpts()}});
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK()},
+											   IndexDeclaration{updatedTimeSecFieldName.c_str(), "", "int64", IndexOpts()},
+											   IndexDeclaration{updatedTimeMSecFieldName.c_str(), "", "int64", IndexOpts()},
+											   IndexDeclaration{updatedTimeUSecFieldName.c_str(), "", "int64", IndexOpts()},
+											   IndexDeclaration{updatedTimeNSecFieldName.c_str(), "", "int64", IndexOpts()},
+											   IndexDeclaration{serialFieldName.c_str(), "", "int64", IndexOpts()}});
 
 	auto item = AddData(default_namespace, "id", idNum);
 

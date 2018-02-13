@@ -1,11 +1,12 @@
 #pragma once
 
 #include <string>
-#include "http/router.h"
+#include "net/http/router.h"
 
 namespace reindexer_server {
 
 using std::string;
+using namespace reindexer::net;
 
 class Pprof {
 public:

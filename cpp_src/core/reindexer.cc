@@ -2,18 +2,19 @@
 #include <stdio.h>
 #include <chrono>
 #include <thread>
+#include "core/cjson/jsondecoder.h"
 #include "kx/kxsort.h"
 #include "namespacedef.h"
 #include "tools/errors.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
 
+using std::chrono::duration_cast;
+using std::chrono::high_resolution_clock;
+using std::chrono::microseconds;
+using std::lock_guard;
 using std::string;
 using std::vector;
-using std::chrono::duration_cast;
-using std::chrono::microseconds;
-using std::chrono::high_resolution_clock;
-using std::lock_guard;
 
 namespace reindexer {
 
@@ -48,57 +49,113 @@ Reindexer::~Reindexer() {
 	}
 }
 
-Error Reindexer::EnableStorage(const string& storagePath) {
-	storagePath_ = storagePath;
-	if (!storagePath_.length()) return errOK;
-	if (MkDirAll(storagePath_) < 0) {
-		return Error(errParams, "Can't create directory '%s' for reindexer storage - reason %s", storagePath_.c_str(), strerror(errno));
+const char* kStoragePlaceholderFilename = ".reindexer.storage";
+
+Error Reindexer::EnableStorage(const string& storagePath, bool skipPlaceholderCheck) {
+	storagePath_.clear();
+	if (storagePath.empty()) return errOK;
+	if (MkDirAll(storagePath) < 0) {
+		return Error(errParams, "Can't create directory '%s' for reindexer storage - reason %s", storagePath.c_str(), strerror(errno));
 	}
 
+	vector<reindexer::DirEntry> dirEntries;
+	bool isEmpty = true;
+	if (ReadDir(storagePath, dirEntries) < 0) {
+		return Error(errParams, "Can't read contents of directory '%s' for reindexer storage - reason %s", storagePath.c_str(),
+					 strerror(errno));
+	}
+	for (auto& entry : dirEntries) {
+		if (entry.name != "." && entry.name != ".." && entry.name != kStoragePlaceholderFilename) {
+			isEmpty = false;
+		}
+	}
+
+	if (!isEmpty && !skipPlaceholderCheck) {
+		FILE* f = fopen(JoinPath(storagePath, kStoragePlaceholderFilename).c_str(), "r");
+		if (f) {
+			fclose(f);
+		} else {
+			return Error(errParams, "Cowadly refusing to use directory '%s' - it's not empty, and doesn't contains reindexer placeholder",
+						 storagePath.c_str());
+		}
+	} else {
+		FILE* f = fopen(JoinPath(storagePath, kStoragePlaceholderFilename).c_str(), "w");
+		if (f) {
+			fwrite("leveldb", 7, 1, f);
+			fclose(f);
+		} else {
+			return Error(errParams, "Can't create placeholder in directory '%s' for reindexer storage - reason %s", storagePath.c_str(),
+						 strerror(errno));
+		}
+	}
+
+	storagePath_ = storagePath;
 	flusher_ = std::thread([this]() { this->flusherThread(); });
 
 	return errOK;
 }
 
-Error Reindexer::OpenNamespace(const NamespaceDef& nsDef) {
+Error Reindexer::AddNamespace(const NamespaceDef& nsDef) {
 	shared_ptr<Namespace> ns;
 	try {
 		{
 #ifndef REINDEX_SINGLETHREAD
 			lock_guard<shared_timed_mutex> lock(ns_mutex);
 #endif
-
 			if (namespaces.find(nsDef.name) != namespaces.end()) {
-				return Error(errParams, "Namespace '%s' is already exists", nsDef.name.c_str());
+				return Error(errParams, "Namespace '%s' already exists", nsDef.name.c_str());
 			}
 		}
-
 		for (;;) {
 			ns = std::make_shared<Namespace>(nsDef.name);
-			if (nsDef.storage.IsEnabled) {
+			if (nsDef.storage.IsEnabled() && !storagePath_.empty()) {
 				ns->EnableStorage(storagePath_, nsDef.storage);
 			}
 
-			try {
-				for (auto& idx : nsDef.indexes) {
-					ns->AddIndex(idx.name, idx.jsonPath, idx.Type(), idx.opts);
-				}
-			} catch (const Error& err) {
-				if (err.code() == errConflict && nsDef.storage.IsDropOnIndexesConflict) {
-					ns->DeleteStorage();
-					continue;
+			for (auto& idx : nsDef.indexes) {
+				vector<string> jPaths;
+				if (idx.jsonPath.empty()) {
+					ns->AddIndex(idx.name, "", idx.Type(), idx.opts);
+				} else {
+					for (auto& p : split(idx.jsonPath, ",", true, jPaths)) {
+						ns->AddIndex(idx.name, p, idx.Type(), idx.opts);
+					}
 				}
 			}
-
 			break;
 		}
-		if (nsDef.storage.IsEnabled) {
+		if (nsDef.storage.IsEnabled()) {
 			ns->LoadFromStorage();
 		}
 #ifndef REINDEX_SINGLETHREAD
 		lock_guard<shared_timed_mutex> lock(ns_mutex);
 #endif
 		namespaces.insert({nsDef.name, ns});
+	} catch (const Error& err) {
+		return err;
+	}
+	return 0;
+}
+Error Reindexer::OpenNamespace(const string& name, const StorageOpts& storage) {
+	shared_ptr<Namespace> ns;
+	try {
+		{
+#ifndef REINDEX_SINGLETHREAD
+			lock_guard<shared_timed_mutex> lock(ns_mutex);
+#endif
+			if (namespaces.find(name) != namespaces.end()) {
+				return 0;
+			}
+		}
+		ns = std::make_shared<Namespace>(name);
+		if (storage.IsEnabled() && !storagePath_.empty()) {
+			ns->EnableStorage(storagePath_, storage);
+			ns->LoadFromStorage();
+		}
+#ifndef REINDEX_SINGLETHREAD
+		lock_guard<shared_timed_mutex> lock(ns_mutex);
+#endif
+		namespaces.insert({name, ns});
 	} catch (const Error& err) {
 		return err;
 	}
@@ -117,7 +174,7 @@ Error Reindexer::closeNamespace(const string& _namespace, bool dropStorage) {
 		auto nsIt = namespaces.find(_namespace);
 
 		if (nsIt == namespaces.end()) {
-			return Error(errParams, "Namespace '%s' is not exists", _namespace.c_str());
+			return Error(errParams, "Namespace '%s' does not exist", _namespace.c_str());
 		}
 
 		// Temporary save namespace. This will call destructor without lock
@@ -150,11 +207,11 @@ Error Reindexer::CloneNamespace(const string& src, const string& dst) {
 		auto srcIt = namespaces.find(src);
 
 		if (srcIt == namespaces.end()) {
-			return Error(errParams, "Namespace '%s' is not exists", src.c_str());
+			return Error(errParams, "Namespace '%s' does not exist", src.c_str());
 		}
 
 		if (namespaces.find(dst) != namespaces.end()) {
-			return Error(errParams, "Namespace '%s' is already exists", dst.c_str());
+			return Error(errParams, "Namespace '%s' already exists", dst.c_str());
 		}
 
 		srcNamespace = srcIt->second;
@@ -185,7 +242,7 @@ Error Reindexer::RenameNamespace(const string& src, const string& dst) {
 
 	if (srcIt == namespaces.end()) {
 		ns_mutex.unlock();
-		return Error(errParams, "Namespace '%s' is not exists", src.c_str());
+		return Error(errParams, "Namespace '%s' ", src.c_str());
 	}
 
 	auto dstIt = namespaces.find(dst);
@@ -271,6 +328,15 @@ Error Reindexer::PutMeta(const string& _namespace, const string& key, const Slic
 	return 0;
 }
 
+Error Reindexer::EnumMeta(const string& _namespace, vector<string>& keys) {
+	try {
+		keys = getNamespace(_namespace)->EnumMeta();
+	} catch (const Error& err) {
+		return err;
+	}
+	return 0;
+}
+
 Error Reindexer::Delete(const string& _namespace, Item* item) {
 	STAT_FUNC(delete);
 	try {
@@ -327,7 +393,11 @@ Error Reindexer::Select(const Query& q, QueryResults& result) {
 		if (q.describe) {
 			auto namespaceNames = q.namespacesNames_;
 			if (namespaceNames.empty()) {
-				namespaceNames = getNamespacesNames();
+				vector<NamespaceDef> nsDefs;
+				EnumNamespaces(nsDefs, false);
+				for (auto& nsDef : nsDefs) {
+					namespaceNames.push_back(nsDef.name);
+				}
 			}
 
 			for (auto& name : namespaceNames) {
@@ -432,7 +502,7 @@ Error Reindexer::Select(const Query& q, QueryResults& result) {
 			SelectCtx ctx(q, lockUpgrader);
 			ctx.joinedSelectors = &joinedSelectors;
 			ctx.nsid = 0;
-			ctx.isForceAll = !q.mergeQueries_.empty();
+			ctx.isForceAll = !q.mergeQueries_.empty() || !q.forcedSortOrder.empty();
 			ns->Select(result, ctx);
 		}
 		if (!q.mergeQueries_.empty()) {
@@ -460,6 +530,16 @@ Error Reindexer::Select(const Query& q, QueryResults& result) {
 			if (q.calcTotal) {
 				result.totalCount = result.size();
 			}
+
+			if (q.start > 0) {
+				auto end = q.start < result.size() ? result.begin() + q.start : result.end();
+				result.erase(result.begin(), end);
+			}
+
+			if (result.size() > q.count) {
+				result.erase(result.begin() + q.count, result.end());
+			}
+
 			if (q.start) {
 				result.erase(result.begin(), result.begin() + q.start);
 			}
@@ -512,7 +592,7 @@ shared_ptr<Namespace> Reindexer::getNamespace(const string& _namespace) {
 	auto nsIt = namespaces.find(_namespace);
 
 	if (nsIt == namespaces.end()) {
-		throw Error(errParams, "Namespace '%s' is not exists", _namespace.c_str());
+		throw Error(errParams, "Namespace '%s' does not exist", _namespace.c_str());
 	}
 
 	assert(nsIt->second);
@@ -538,8 +618,7 @@ Error Reindexer::AddIndex(const string& _namespace, const IndexDef& idx) {
 			ns = nullptr;
 			auto err = CloseNamespace(_namespace);
 			assertf(err.ok(), "%s", err.what().c_str());
-			NamespaceDef nsDef(_namespace);
-			err = OpenNamespace(nsDef);
+			err = OpenNamespace(_namespace, StorageOpts().Enabled());
 			return err;
 		}
 
@@ -549,17 +628,32 @@ Error Reindexer::AddIndex(const string& _namespace, const IndexDef& idx) {
 	return 0;
 }
 
-vector<string> Reindexer::getNamespacesNames() {
+Error Reindexer::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll) {
 #ifndef REINDEX_SINGLETHREAD
 	shared_lock<shared_timed_mutex> lock(ns_mutex);
 #endif
-	vector<string> names;
 
 	for (auto& ns : namespaces) {
-		names.push_back(ns.first);
+		defs.push_back(ns.second->GetDefinition());
 	}
 
-	return names;
+	if (bEnumAll && !storagePath_.empty()) {
+		vector<DirEntry> dirs;
+		if (reindexer::ReadDir(storagePath_, dirs) != 0) return Error(errLogic, "Could not read database dir");
+
+		for (auto& d : dirs) {
+			if (d.isDir && d.name != "." && d.name != ".." && namespaces.find(d.name) == namespaces.end()) {
+				string dbpath = JoinPath(storagePath_, d.name);
+				unique_ptr<Namespace> tmpNs(new Namespace(d.name));
+				try {
+					tmpNs->EnableStorage(storagePath_, StorageOpts());
+					defs.push_back(tmpNs->GetDefinition());
+				} catch (reindexer::Error) {
+				}
+			}
+		}
+	}
+	return 0;
 }
 
 void Reindexer::flusherThread() {

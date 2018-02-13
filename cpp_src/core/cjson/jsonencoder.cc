@@ -205,7 +205,7 @@ bool JsonEncoder::encodeJson(ConstPayload* pl, Serializer& rdser, WrSerializer& 
 	switch (tagType) {
 		case TAG_ARRAY: {
 			if (visible) wrser.PutChar('[');
-			carraytag atag = rdser.GetInt();
+			carraytag atag = rdser.GetUInt32();
 			for (int i = 0; i < atag.Count(); i++) {
 				if (i != 0 && atag.Tag() != TAG_OBJECT && visible) wrser.PutChar(',');
 				switch (atag.Tag()) {

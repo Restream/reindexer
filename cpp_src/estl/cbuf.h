@@ -57,6 +57,20 @@ public:
 		full_ = false;
 		return s_ins;
 	}
+	size_t peek(T *p_ins, size_t s_ins) {
+		if (s_ins > size()) s_ins = size();
+
+		if (!s_ins) return 0;
+
+		size_t lSize = buf_size_ - tail_;
+
+		memcpy(p_ins, buf_ + tail_, std::min(s_ins, lSize) * sizeof(T));
+
+		if (s_ins > lSize) memcpy(p_ins + lSize, buf_, (s_ins - lSize));
+
+		return s_ins;
+	}
+
 	size_t erase(size_t s_erase, bool from_back = false) {
 		if (s_erase > size()) s_erase = size();
 

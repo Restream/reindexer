@@ -6,7 +6,7 @@ namespace reindexer {
 
 class CJsonEncoder {
 public:
-	CJsonEncoder(TagsMatcher &tagsMatcher);
+	CJsonEncoder(const TagsMatcher &tagsMatcher);
 
 	void Encode(ConstPayload *pl, WrSerializer &wrSer);
 

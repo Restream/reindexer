@@ -6,11 +6,10 @@ find_package(Doxygen)
 
 if(DOXYGEN_FOUND)
     set(doxyfile ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile)
-
     add_custom_target(doc
         ALL
-        COMMAND ${DOXYGEN_EXECUTABLE} ${doxyfile}
-        WORKING_DIRECTORY ${CMAKE_DOC_OUTPUT_DIRECTORY}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMAND sh -c "DOXYGEN_OUTPUT_DIRECTORY=${PROJECT_BINARY_DIR} ${DOXYGEN_EXECUTABLE} ${doxyfile}"
         COMMENT "Generating Reindexer documentation with Doxygen"
     )
 endif()

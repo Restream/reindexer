@@ -40,7 +40,7 @@ Error ItemImpl::FromCJSON(const Slice &slice) {
 	Reset();
 	Serializer rdser(slice.data(), slice.size());
 	// check tags matcher update
-	int tmOffset = rdser.GetInt();
+	uint32_t tmOffset = rdser.GetUInt32();
 	if (tmOffset) {
 		// read tags matcher update
 		Serializer tser(slice.data() + tmOffset, slice.size() - tmOffset);
@@ -52,7 +52,7 @@ Error ItemImpl::FromCJSON(const Slice &slice) {
 	auto err = decoder.Decode(this, rdser, ser_);
 
 	if (err.ok()) {
-		assertf(rdser.Eof() || int(rdser.Pos()) == tmOffset, "Internal error - left unparsed data %d", int(rdser.Pos()));
+		assertf(rdser.Eof() || rdser.Pos() == tmOffset, "Internal error - left unparsed data %d", int(rdser.Pos()));
 		tupleData_ = make_key_string(reinterpret_cast<const char *>(ser_.Buf()), ser_.Len());
 		Set(0, {KeyRef(tupleData_)});
 	}
@@ -99,7 +99,7 @@ Slice ItemImpl::GetCJSON() {
 	CJsonEncoder encoder(tagsMatcher_);
 
 	ser_.Reset();
-	ser_.PutInt(0);
+	ser_.PutUInt32(0);
 	encoder.Encode(&pl, ser_);
 
 	return Slice(reinterpret_cast<const char *>(ser_.Buf()), ser_.Len());

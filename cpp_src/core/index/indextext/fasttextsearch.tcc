@@ -239,9 +239,9 @@ void FastIndexText<T>::processVariants(FtSelectContext &ctx) {
 			if (!withSuffixes && suffixLen) continue;
 			if (!withPrefixes && suffixes_.word_len_at(wordId) != matchLen) break;
 
-			int proc = int(std::max(int((variant.proc - std::abs(long(suffixes_.word_len_at(wordId) - matchLen + suffixLen)) *
-															kPrefixStepProc / std::max(matchLen / 3, 1))),
-									suffixLen ? kSuffixMinProc : kPrefixMinProc));
+			int matchDif = std::abs(long(suffixes_.word_len_at(wordId) - matchLen + suffixLen));
+			int proc = std::max(variant.proc - matchDif * kPrefixStepProc / std::max(matchLen / 3, 1),
+								suffixLen ? kSuffixMinProc : kPrefixMinProc);
 
 			auto it = ctx.foundWords.find(wordId);
 			if (it == ctx.foundWords.end()) {

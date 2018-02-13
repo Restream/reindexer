@@ -1,12 +1,14 @@
 #define __STDC_FORMAT_MACROS 1
+#include <cstring>
+
+#ifdef REINDEX_WITH_EXECINFO
+
 #include <cxxabi.h>
 #include <execinfo.h>
 #include <inttypes.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <cstring>
-
 char* resolve_symbol(void* addr, bool onlyName) {
 	char filename[512], symbol[512], out[512];
 	uintptr_t address = uintptr_t(addr), offset = 0;
@@ -53,3 +55,7 @@ void backtrace_init() {
 	signal(SIGABRT, sighandler);
 	signal(SIGBUS, sighandler);
 }
+#else
+void backtrace_init() {}
+char* resolve_symbol(void*, bool) { return strdup(""); }
+#endif

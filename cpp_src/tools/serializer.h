@@ -13,12 +13,8 @@ public:
 	Serializer(const void *_buf, int _len);
 	bool Eof();
 	KeyValue GetValue();
-	KeyRef GetRef();
-	string GetString();
-	p_string GetPString();
 	Slice GetSlice();
-	int GetInt();
-	int64_t GetInt64();
+	uint32_t GetUInt32();
 	double GetDouble();
 
 	int64_t GetVarint();
@@ -75,18 +71,13 @@ public:
 	// Put value
 	void PutValue(const KeyValue &kv);
 
-	// Put string or slice with 4 bytes len header
-	void PutString(const string &);
+	// Put slice with 4 bytes len header
 	void PutSlice(const Slice &slice);
 
 	// Put raw data
-	void PutInt(int);
-	void PutUInt8(uint8_t);
-	void PutInt8(int8_t);
-	void PutInt16(int16_t);
+	void PutUInt32(uint32_t);
 
 	void PutUInt64(uint64_t);
-	void PutInt64(int64_t);
 	void PutDouble(double);
 	void PutChar(char c) {
 		if (len_ + 1 >= cap_) grow(1);
