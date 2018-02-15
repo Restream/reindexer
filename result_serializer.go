@@ -3,8 +3,8 @@ package reindexer
 import (
 	"fmt"
 
-	"git.itv.restr.im/itv-backend/reindexer/bindings"
-	"git.itv.restr.im/itv-backend/reindexer/cjson"
+	"github.com/restream/reindexer/bindings"
+	"github.com/restream/reindexer/cjson"
 )
 
 type rawResultItemParams struct {
