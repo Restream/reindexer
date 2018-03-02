@@ -18,7 +18,7 @@ func errJSONIterator(err error) *JSONIterator {
 func newIterator(
 	q *Query,
 	result bindings.RawBuffer,
-	nsArray []*reindexerNamespace,
+	nsArray []nsArrayEntry,
 	joinToFields []string,
 	joinHandlers []JoinHandler,
 	queryContext interface{},
@@ -29,20 +29,18 @@ func newIterator(
 	} else {
 		it = &Iterator{}
 	}
-	it.ser = newSerializer(result.GetBuf())
-	it.rawQueryParams = it.ser.readRawQueryParams(func(nsid int) {
-		nsArray[nsid].cjsonState.ReadPayloadType(&it.ser.Serializer)
-	})
-	it.result = result
 	it.nsArray = nsArray
 	it.joinToFields = joinToFields
 	it.joinHandlers = joinHandlers
 	it.queryContext = queryContext
+	it.resPtr = 0
 	it.ptr = 0
 	it.err = nil
 	if len(it.joinToFields) > 0 {
 		it.current.joinObj = make([][]interface{}, len(it.joinToFields))
 	}
+	it.setBuffer(result)
+
 	return
 }
 
@@ -66,12 +64,13 @@ type Iterator struct {
 	ser            resultSerializer
 	rawQueryParams rawResultQueryParams
 	result         bindings.RawBuffer
-	nsArray        []*reindexerNamespace
+	nsArray        []nsArrayEntry
 	joinToFields   []string
 	joinHandlers   []JoinHandler
 	queryContext   interface{}
 	query          *Query
 	allowUnsafe    bool
+	resPtr         int
 	ptr            int
 	current        struct {
 		obj     interface{}
@@ -81,18 +80,30 @@ type Iterator struct {
 	err error
 }
 
+func (it *Iterator) setBuffer(result bindings.RawBuffer) {
+	it.ser = newSerializer(result.GetBuf())
+	it.result = result
+	it.rawQueryParams = it.ser.readRawQueryParams(func(nsid int) {
+		it.nsArray[nsid].localCjsonState = it.nsArray[nsid].cjsonState.ReadPayloadType(&it.ser.Serializer)
+	})
+}
+
 // Next moves iterator pointer to the next element.
 // Returns bool, that indicates the availability of the next elements.
 func (it *Iterator) Next() (hasNext bool) {
-	if it.ptr >= it.rawQueryParams.count || it.err != nil {
+	if it.ptr >= it.rawQueryParams.qcount || it.err != nil {
 		return
+	}
+	if it.needMore() {
+		it.fetchResults()
 	}
 	it.current.obj, it.current.rank = it.readItem()
 	if it.err != nil {
 		return
 	}
+	it.resPtr++
 	it.ptr++
-	return it.ptr <= it.rawQueryParams.count
+	return it.ptr <= it.rawQueryParams.qcount
 }
 
 func (it *Iterator) readItem() (item interface{}, rank int) {
@@ -122,6 +133,31 @@ func (it *Iterator) readItem() (item interface{}, rank int) {
 			it.current.joinObj[nsIndex] = subitems
 			it.join(nsIndex, item)
 		}
+	}
+	return
+}
+
+func (it *Iterator) needMore() bool {
+	if it.resPtr >= it.rawQueryParams.count && it.ptr <= it.rawQueryParams.qcount {
+		return true
+	}
+	return false
+}
+
+func (it *Iterator) fetchResults() {
+	if fetchMore, ok := it.result.(bindings.FetchMore); ok {
+		fetchCount := defaultFetchCount
+		if it.query != nil {
+			fetchCount = it.query.fetchCount
+		}
+
+		if it.err = fetchMore.Fetch(it.ptr, fetchCount, false); it.err != nil {
+			return
+		}
+		it.resPtr = 0
+		it.setBuffer(it.result)
+	} else {
+		panic(fmt.Errorf("unexpected behavior: have the partial query but binding not support that"))
 	}
 	return
 }
@@ -160,7 +196,7 @@ func (it *Iterator) join(nsIndex int, item interface{}) {
 // Object returns current object.
 // Will panic when pointer was not moved, Next() must be called before.
 func (it *Iterator) Object() interface{} {
-	if it.ptr == 0 {
+	if it.resPtr == 0 {
 		panic(errIteratorNotReady)
 	}
 	return it.current.obj
@@ -169,7 +205,7 @@ func (it *Iterator) Object() interface{} {
 // Rank returns current object search rank.
 // Will panic when pointer was not moved, Next() must be called before.
 func (it *Iterator) Rank() int {
-	if it.ptr == 0 {
+	if it.resPtr == 0 {
 		panic(errIteratorNotReady)
 	}
 	return it.current.rank
@@ -177,7 +213,7 @@ func (it *Iterator) Rank() int {
 
 // JoinedObjects returns objects slice, that result of join for the given field
 func (it *Iterator) JoinedObjects(field string) (objects []interface{}, err error) {
-	if it.ptr == 0 {
+	if it.resPtr == 0 {
 		return nil, errIteratorNotReady
 	}
 	idx := it.findJoinFieldIndex(field)
@@ -189,7 +225,7 @@ func (it *Iterator) JoinedObjects(field string) (objects []interface{}, err erro
 
 // Count returns count if query results
 func (it *Iterator) Count() int {
-	return it.rawQueryParams.count
+	return it.rawQueryParams.qcount
 }
 
 // TotalCount returns total count of objects (ignoring conditions of limit and offset)
@@ -214,7 +250,7 @@ func (it *Iterator) FetchAll() (items []interface{}, err error) {
 	if !it.Next() {
 		return nil, it.err
 	}
-	items = make([]interface{}, it.rawQueryParams.count)
+	items = make([]interface{}, it.rawQueryParams.qcount)
 	for i := range items {
 		items[i] = it.Object()
 		if !it.Next() {
@@ -244,8 +280,8 @@ func (it *Iterator) FetchAllWithRank() (items []interface{}, ranks []int, err er
 	if !it.Next() {
 		return nil, nil, it.err
 	}
-	items = make([]interface{}, it.rawQueryParams.count)
-	ranks = make([]int, it.rawQueryParams.count)
+	items = make([]interface{}, it.rawQueryParams.qcount)
+	ranks = make([]int, it.rawQueryParams.qcount)
 	for i := range items {
 		items[i] = it.Object()
 		ranks[i] = it.Rank()

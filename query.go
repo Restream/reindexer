@@ -55,6 +55,15 @@ const (
 	valueString = bindings.ValueString
 )
 
+const (
+	defaultFetchCount = 100
+)
+
+type nsArrayEntry struct {
+	*reindexerNamespace
+	localCjsonState cjson.State
+}
+
 // Query to DB object
 type Query struct {
 	Namespace     string
@@ -70,7 +79,7 @@ type Query struct {
 	joinType      int
 	closed        bool
 	initBuf       [256]byte
-	nsArray       []*reindexerNamespace
+	nsArray       []nsArrayEntry
 	iterator      Iterator
 	jsonIterator  JSONIterator
 	items         []interface{}
@@ -78,6 +87,7 @@ type Query struct {
 	jsonOffsets   []int
 	totalName     string
 	executed      bool
+	fetchCount    int
 }
 
 var queryPool sync.Pool
@@ -111,6 +121,7 @@ func newQuery(db *Reindexer, namespace string) *Query {
 	q.Namespace = namespace
 	q.db = db
 	q.nextOp = opAND
+	q.fetchCount = defaultFetchCount
 
 	q.ser.PutVString(namespace)
 	return q
@@ -488,6 +499,7 @@ func (q *Query) join(q2 *Query, field string, joinType int) *Query {
 func (q *Query) InnerJoin(q2 *Query, field string) *Query {
 
 	if q.nextOp == opOR {
+		q.nextOp = opAND
 		return q.join(q2, field, orInnerJoin)
 	}
 
@@ -551,5 +563,12 @@ func (q *Query) Select(fields ...string) *Query {
 	for _, field := range fields {
 		q.ser.PutVarCUInt(querySelectFilter).PutVString(field)
 	}
+	return q
+}
+
+// FetchCount sets the number of items that will be fetched by one operation
+// When n <= 0 query will fetch all results in one operation
+func (q *Query) FetchCount(n int) *Query {
+	q.fetchCount = n
 	return q
 }

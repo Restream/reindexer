@@ -22,6 +22,10 @@ import (
 	"github.com/restream/reindexer/bindings"
 )
 
+const cgoLimit = 2000
+
+var cgoLimiter = make(chan struct{}, cgoLimit)
+
 // Logger interface for reindexer
 type Logger interface {
 	Printf(level int, fmt string, msg ...interface{})
@@ -46,6 +50,8 @@ func (buf *RawCBuffer) FreeFinalized() {
 
 func (buf *RawCBuffer) Free() {
 	if buf.cbuf.data != nil {
+		cgoLimiter <- struct{}{}
+		defer func() { <-cgoLimiter }()
 		C.reindexer_free_buffer(buf.cbuf)
 	}
 	buf.cbuf.data = nil
@@ -131,6 +137,8 @@ func (binding *Builtin) Ping() error {
 }
 
 func (binding *Builtin) ModifyItem(data []byte, mode int) (bindings.RawBuffer, error) {
+	cgoLimiter <- struct{}{}
+	defer func() { <-cgoLimiter }()
 	return ret2go(C.reindexer_modify_item(buf2c(data), C.int(mode)))
 }
 
@@ -148,13 +156,6 @@ func (binding *Builtin) CloseNamespace(namespace string) error {
 
 func (binding *Builtin) DropNamespace(namespace string) error {
 	return err2go(C.reindexer_drop_namespace(str2c(namespace)))
-}
-
-func (binding *Builtin) CloneNamespace(src string, dst string) error {
-	return err2go(C.reindexer_clone_namespace(str2c(src), str2c(dst)))
-}
-func (binding *Builtin) RenameNamespace(src string, dst string) error {
-	return err2go(C.reindexer_rename_namespace(str2c(src), str2c(dst)))
 }
 
 func (binding *Builtin) EnableStorage(path string) error {
@@ -185,12 +186,15 @@ func (binding *Builtin) GetMeta(namespace, key string) (bindings.RawBuffer, erro
 	return ret2go(C.reindexer_get_meta(str2c(namespace), str2c(key)))
 }
 
-func (binding *Builtin) Select(query string, withItems bool, ptVersions []int32) (bindings.RawBuffer, error) {
-
+func (binding *Builtin) Select(query string, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
+	cgoLimiter <- struct{}{}
+	defer func() { <-cgoLimiter }()
 	return ret2go(C.reindexer_select(str2c(query), bool2cint(withItems), (*C.int32_t)(unsafe.Pointer(&ptVersions[0]))))
 }
 
-func (binding *Builtin) SelectQuery(data []byte, withItems bool, ptVersions []int32) (bindings.RawBuffer, error) {
+func (binding *Builtin) SelectQuery(data []byte, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
+	cgoLimiter <- struct{}{}
+	defer func() { <-cgoLimiter }()
 	return ret2go(C.reindexer_select_query(buf2c(data), bool2cint(withItems), (*C.int32_t)(unsafe.Pointer(&ptVersions[0]))))
 }
 

@@ -1,6 +1,7 @@
 #include <sstream>
 
-#include "core/cjson/jsondecoder.h"
+// #include "core/cjson/jsondecoder.h"
+#include "core/cjson/jsonencoder.h"
 #include "core/namespace.h"
 #include "nsselecter.h"
 #include "tools/stringstools.h"
@@ -28,13 +29,15 @@ void NsSelecter::operator()(QueryResults &result, const SelectCtx &ctx) {
 	TIMEPOINT(tmStart);
 
 	bool needCalcTotal = ctx.query.calcTotal == ModeAccurateTotal;
+	bool needPutCachedTotal = false;
 
 	if (ctx.query.calcTotal == ModeCachedTotal) {
 		auto cached = ns_->queryCache->Get({ctx.query});
-		if (cached.key) {
+		if (cached.key && cached.val.total_count >= 0) {
 			result.totalCount = cached.val.total_count;
 			logPrintf(LogTrace, "[*] using value from cache: %d\t namespace: %s\n", result.totalCount, ns_->name.c_str());
 		} else {
+			needPutCachedTotal = (cached.key != nullptr);
 			logPrintf(LogTrace, "[*] value for cache will be calculated by query. namespace: %s\n", ns_->name.c_str());
 			needCalcTotal = true;
 		}
@@ -44,7 +47,14 @@ void NsSelecter::operator()(QueryResults &result, const SelectCtx &ctx) {
 
 	bool containsFullText = isContainsFullText(whereEntries);
 	if (!containsFullText) substituteCompositeIndexes(whereEntries);
-	auto &sortBy = (containsFullText || ctx.query.sortBy.length()) ? ctx.query.sortBy : getOptimalSortOrder(whereEntries);
+
+	// DO NOT use deducted sort order in the following cases:
+	// - query contains explicity specified sort order
+	// - query is nested to join (preReult query, and join query).
+	// - query contains FullText query.
+	bool disableOptimizeSortOrder = !ctx.query.sortBy.empty() || ctx.preResult || ctx.rsltAsSrtOrdrs;
+
+	auto &sortBy = (containsFullText || disableOptimizeSortOrder) ? ctx.query.sortBy : ns_->getOptimalSortOrder(whereEntries);
 
 	// Check if commit needed
 	if (!whereEntries.empty() || !sortBy.empty()) {
@@ -135,8 +145,7 @@ void NsSelecter::operator()(QueryResults &result, const SelectCtx &ctx) {
 	assert(qres.size());
 	for (auto r = qres.begin() + 1; r != qres.end(); r++) r->SetExpectMaxIterations(iters);
 
-	result.ctxs.push_back(
-		QueryResults::Context(ns_->payloadType_, ns_->tagsMatcher_, JsonPrintFilter(ns_->tagsMatcher_, ctx.query.selectFilter_)));
+	result.addNSContext(ns_->payloadType_, ns_->tagsMatcher_, JsonPrintFilter(ns_->tagsMatcher_, ctx.query.selectFilter_));
 
 	TIMEPOINT(tm3);
 	LoopCtx lctx(ctx);
@@ -160,10 +169,11 @@ void NsSelecter::operator()(QueryResults &result, const SelectCtx &ctx) {
 		logPrintf(LogInfo, ctx.query.Dump().c_str());
 		logPrintf(LogInfo,
 				  "Got %d items in %d µs [prepare %d µs, select %d µs, postprocess "
-				  "%d µs loop %d µs]",
+				  "%d µs loop %d µs], sortindex %s",
 				  int(result.size()), duration_cast<microseconds>(tm4 - tmStart).count(),
 				  duration_cast<microseconds>(tm1 - tmStart).count(), duration_cast<microseconds>(tm2 - tm1).count(),
-				  duration_cast<microseconds>(tm3 - tm2).count(), duration_cast<microseconds>(tm4 - tm3).count());
+				  duration_cast<microseconds>(tm3 - tm2).count(), duration_cast<microseconds>(tm4 - tm3).count(),
+				  sortIndex ? sortIndex->name.c_str() : "");
 		if (ctx.query.debugLevel >= LogTrace) {
 			for (auto &r : qres)
 				logPrintf(LogInfo, "%s: %d idsets, %d comparators, cost %g, matched %d", r.name.c_str(), r.size(), r.comparators_.size(),
@@ -184,7 +194,7 @@ void NsSelecter::operator()(QueryResults &result, const SelectCtx &ctx) {
 		setLimitsAndOffset(result, ctx);
 	}
 
-	if (ctx.query.calcTotal == ModeCachedTotal && needCalcTotal) {
+	if (needPutCachedTotal) {
 		logPrintf(LogTrace, "[*] put totalCount value into query cache: %d\t namespace: %s\n", result.totalCount, ns_->name.c_str());
 		ns_->queryCache->Put({ctx.query}, {static_cast<size_t>(result.totalCount)});
 	}
@@ -266,11 +276,11 @@ void NsSelecter::setLimitsAndOffset(QueryResults &queryResult, const SelectCtx &
 
 	if (offset > 0) {
 		auto end = offset < totalRows ? queryResult.begin() + offset : queryResult.end();
-		queryResult.erase(queryResult.begin(), end);
+		queryResult.Erase(queryResult.begin(), end);
 	}
 
 	if (queryResult.size() > limit) {
-		queryResult.erase(queryResult.begin() + limit, queryResult.end());
+		queryResult.Erase(queryResult.begin() + limit, queryResult.end());
 	}
 }
 
@@ -332,14 +342,14 @@ void NsSelecter::selectWhere(const QueryEntries &entries, RawQueryResult &result
 			switch (qe.op) {
 				case OpOr:
 					if (!result.size()) throw Error(errQueryExec, "OR operator in first condition");
-					result.back().AppendAndBind(res, ns_->payloadType_.get(), qe.idxNo);
+					result.back().AppendAndBind(res, ns_->payloadType_, qe.idxNo);
 					result.back().distinct |= qe.distinct;
 					result.back().name += " OR " + qe.index;
 					break;
 				case OpNot:
 				case OpAnd:
 					result.push_back(SelectIterator(res, qe.op, qe.distinct, qe.index, is_ft_current));
-					result.back().Bind(ns_->payloadType_.get(), qe.idxNo);
+					result.back().Bind(ns_->payloadType_, qe.idxNo);
 					break;
 				default:
 					throw Error(errQueryExec, "Unknown operator (code %d) in condition", qe.op);
@@ -418,7 +428,8 @@ void NsSelecter::selectLoop(const LoopCtx &ctx, QueryResults &result) {
 			}
 
 			// inner join process
-			ConstPayload pl(ns_->payloadType_, ns_->items_[realVal]);
+			PayloadValue pv = ns_->items_[realVal];
+			ConstPayload pl(ns_->payloadType_, pv);
 			if (haveInnerJoin && ctx.joinedSelectors) {
 				for (auto &joinedSelector : *ctx.joinedSelectors) {
 					if (joinedSelector.type == JoinType::InnerJoin) found &= joinedSelector.func(realVal, pl, match);
@@ -478,7 +489,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) {
 	for (auto &ag : q.aggregations_) {
 		int idx = ns_->getIndexByName(ag.index_);
 		ret.push_back(Aggregator(ns_->indexes_[idx]->KeyType(), ns_->indexes_[idx]->opts_.IsArray(), nullptr, ag.type_));
-		ret.back().Bind(ns_->payloadType_.get(), idx);
+		ret.back().Bind(ns_->payloadType_, idx);
 	}
 
 	return ret;
@@ -496,7 +507,7 @@ void NsSelecter::substituteCompositeIndexes(QueryEntries &entries) {
 		int found = getCompositeIndex(fields);
 		if (found >= 0) {
 			// composite idx found: replace conditions
-			PayloadValue d(ns_->payloadType_->TotalSize());
+			PayloadValue d(ns_->payloadType_.TotalSize());
 			Payload pl(ns_->payloadType_, d);
 			for (auto e = first; e != cur + 1; e++) {
 				if (ns_->indexes_[found]->fields_.contains(e->idxNo)) {
@@ -514,22 +525,6 @@ void NsSelecter::substituteCompositeIndexes(QueryEntries &entries) {
 			fields.clear();
 		}
 	}
-}
-
-const string &NsSelecter::getOptimalSortOrder(const QueryEntries &entries) {
-	Index *maxIdx = nullptr;
-	static string no = "";
-	for (auto c = entries.begin(); c != entries.end(); c++) {
-		if ((c->condition == CondGe || c->condition == CondGt || c->condition == CondLe || c->condition == CondLt ||
-			 c->condition == CondRange) &&
-			!c->distinct && ns_->indexes_[c->idxNo]->sort_id) {
-			if (!maxIdx || ns_->indexes_[c->idxNo]->Size() > maxIdx->Size()) {
-				maxIdx = ns_->indexes_[c->idxNo].get();
-			}
-		}
-	}
-
-	return maxIdx ? maxIdx->name : no;
 }
 
 int NsSelecter::getCompositeIndex(const FieldsSet &fields) {

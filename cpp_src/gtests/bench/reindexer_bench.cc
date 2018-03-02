@@ -10,13 +10,14 @@
 #include "debug/backtrace.h"
 
 using std::unique_ptr;
+using std::shared_ptr;
 
 using benchmark::State;
 
 using reindexer::KeyValue;
 using reindexer::QueryResults;
 
-shared_ptr<Reindexer> DB = make_shared<Reindexer>();
+shared_ptr<Reindexer> DB = std::make_shared<Reindexer>();
 
 namespace aux {
 string keyRefs2string(KeyRefs& pkgs) {
@@ -24,7 +25,7 @@ string keyRefs2string(KeyRefs& pkgs) {
 	auto it = pkgs.begin();
 	while (it != pkgs.end()) {
 		KeyValue kv = *it;
-		result += std::to_string(kv.toInt());
+		result += kv.As<string>();
 		result += (it != pkgs.end() - 1) ? "," : "";
 		it++;
 	}
@@ -49,12 +50,12 @@ string string_format(const std::string& format, Args... args) {
 	return string(buf.get(), buf.get() + size - 1);
 }
 
-vector<KeyRef> keyArray2vector(KeyRefs& krs) {
-	vector<KeyRef> result;
-	for (auto const& v : krs) result.emplace_back(v);
+// vector<KeyRef> keyArray2vector(KeyRefs& krs) {
+// 	vector<KeyRef> result;
+// 	for (auto const& v : krs) result.emplace_back(v);
 
-	return result;
-}
+// 	return result;
+// }
 }  // namespace aux
 
 struct AllocsTracker {
@@ -77,12 +78,18 @@ protected:
 };
 bool AllocsTracker::inited = false;
 
+#if REINDEX_WITH_ASAN
+const int kItemsInBenchDataset = 50000;
+#else
+const int kItemsInBenchDataset = 500000;
+#endif
+
 BENCHMARK_F(Rndxr, Prepare)(State& state) {
 	Error err;
 
 	AllocsTracker allocsTracker(state);
 	while (state.KeepRunning()) {
-		if ((err = FillTestItemsBench(0, 500000, 10))) {
+		if ((err = FillTestItemsBench(0, kItemsInBenchDataset, 10))) {
 			state.SkipWithError(err.what().c_str());
 			return;
 		}
@@ -161,7 +168,7 @@ constexpr inline int mkID(int i) { return i * 17 + 8000000; }
 BENCHMARK_F(Rndxr, GetByID)(State& state) {
 	AllocsTracker allocsTracker(state);
 	while (state.KeepRunning()) {
-		auto q = reindexer::Query(defaultNamespace).Where("id", CondEq, mkID(rand() % 500000)).Limit(1);
+		auto q = reindexer::Query(defaultNamespace).Where("id", CondEq, mkID(rand() % kItemsInBenchDataset)).Limit(1);
 		reindexer::QueryResults res;
 
 		auto err = GetDB()->Select(q, res);
@@ -169,7 +176,7 @@ BENCHMARK_F(Rndxr, GetByID)(State& state) {
 			printf("!!%s\n", err.what().c_str());
 			abort();
 		}
-		res.GetItem(0);
+		// Item item(res.GetItem(0));
 	}
 }
 
@@ -184,20 +191,19 @@ BENCHMARK_F(Rndxr, Query1Cond)(State& state) {
 
 BENCHMARK_F(Rndxr, SimpleInsert)(State& state) {
 	Error err;
-	ItemPtr item;
 
 	AllocsTracker allocsTracker(state);
 
 	while (state.KeepRunning()) {
-		item.reset();
+		Item item;
 
 		if ((err = newTestSimpleItem(static_cast<int>(state.iterations()), item))) {
 			state.SkipWithError(err.what().c_str());
 			return;
 		}
 
-		err = GetDB()->Insert(defaultSimpleNamespace, item.get());
-		//		err = err ? err : item->Status();
+		err = GetDB()->Insert(defaultSimpleNamespace, item);
+		//		err = err ? err : item.Status();
 
 		if (err) {
 			state.SkipWithError(err.what().c_str());
@@ -208,20 +214,19 @@ BENCHMARK_F(Rndxr, SimpleInsert)(State& state) {
 
 BENCHMARK_F(Rndxr, SimpleCmplxPKUpsert)(State& state) {
 	Error err;
-	ItemPtr item;
 
 	AllocsTracker allocsTracker(state);
 
 	while (state.KeepRunning()) {
-		item.reset();
+		Item item;
 
 		if ((err = newTestSimpleCmplxPKItem(static_cast<int>(state.iterations()), item))) {
 			state.SkipWithError(err.what().c_str());
 			return;
 		}
 
-		err = GetDB()->Upsert(defaultSimpleCmplxPKNamespace, item.get());
-		err = err ? err : item->Status();
+		err = GetDB()->Upsert(defaultSimpleCmplxPKNamespace, item);
+		err = err ? err : item.Status();
 
 		if (err) {
 			state.SkipWithError(err.what().c_str());
@@ -232,20 +237,19 @@ BENCHMARK_F(Rndxr, SimpleCmplxPKUpsert)(State& state) {
 
 BENCHMARK_F(Rndxr, SimpleUpdate)(State& state) {
 	Error err;
-	ItemPtr item;
 
 	AllocsTracker allocsTracker(state);
 
 	while (state.KeepRunning()) {
-		item.reset();
+		Item item;
 
 		if ((err = newTestSimpleItem(static_cast<int>(state.iterations()), item))) {
 			state.SkipWithError(err.what().c_str());
 			return;
 		}
 
-		err = GetDB()->Update(defaultSimpleNamespace, item.get());
-		err = err ? err : item->Status();
+		err = GetDB()->Update(defaultSimpleNamespace, item);
+		err = err ? err : item.Status();
 
 		if (err) {
 			state.SkipWithError(err.what().c_str());
@@ -256,20 +260,19 @@ BENCHMARK_F(Rndxr, SimpleUpdate)(State& state) {
 
 BENCHMARK_F(Rndxr, Insert)(State& state) {
 	Error err;
-	ItemPtr item;
 
 	AllocsTracker allocsTracker(state);
 
 	while (state.KeepRunning()) {
-		item.reset();
+		Item item;
 
 		if ((err = newTestInsertItem(static_cast<int>(state.iterations()), item))) {
 			state.SkipWithError(err.what().c_str());
 			return;
 		}
 
-		err = GetDB()->Insert(defaultInsertNamespace, item.get());
-		//		err = err ? err : item->Status();
+		err = GetDB()->Insert(defaultInsertNamespace, item);
+		//		err = err ? err : item.Status();
 
 		if (err) {
 			state.SkipWithError(err.what().c_str());
@@ -281,12 +284,12 @@ BENCHMARK_F(Rndxr, Insert)(State& state) {
 BENCHMARK_F(Rndxr, Query4Cond)(State& state) {
 	AllocsTracker allocsTracker(state);
 	while (state.KeepRunning()) {
-		auto q = reindexer::Query(defaultInsertNamespace)
-					 .Where("genre", CondGt, 5)
-					 .Where("age", CondEq, "2")
-					 .Where("year", CondRange, {2010, 2016})
-					 .Where("packages", CondSet, aux::keyArray2vector(pkgs_[static_cast<size_t>(rand()) % pkgs_.size()]))
-					 .Limit(20);
+		auto q = reindexer::Query(defaultInsertNamespace);
+		q.Where("genre", CondGt, 5)
+			.Where("age", CondEq, "2")
+			.Where("year", CondRange, {2010, 2011})
+			.Where("packages", CondSet, pkgs_[static_cast<size_t>(rand()) % pkgs_.size()])
+			.Limit(20);
 		reindexer::QueryResults res;
 		auto err = GetDB()->Select(q, res);
 	}

@@ -1,5 +1,6 @@
 /**
 @mainpage Welcome to Reindexer documentation!
+@section Reindexer
 # Reindexer
 Reindexer is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
 
@@ -21,4 +22,70 @@ Key features:
 - Up to 64 indices for one namespace
 - ORM-like query interface 
 - SQL queries 
+
+## Essential C++ API reference
+
+- \ref reindexer::Reindexer - Reindexer database interface
+- \ref reindexer::Query - Database query builder
+- \ref reindexer::QueryResults - Query results acquiring interface
+- \ref reindexer::Item - Data manipulation interface
+
+## Basic sample of usage
+
+````C
+#include <iostream>
+#include "reindexer.h"
+
+using namespace reindexer;
+
+int main() {
+	//// Initialize database
+	Reindexer db;
+	//// Create namespace and add index
+	db.OpenNamespace("mytable");
+	db.AddIndex("mytable", {"id", "id", "hash", "int", IndexOpts().PK()});
+	db.AddIndex("mytable", {"genre", "genre", "hash", "string", IndexOpts()});
+
+	//// Insert some data in JSON format
+	Item item = db.NewItem("mytable");
+	string data = "{\"id\":100,\"name\":\"Some name\" \"genre\":\"some genre\"}";
+	item.FromJSON(data);
+	db.Upsert("mytable", item);
+
+	//// Build & execute query
+	auto query = Query("mytable").Where("id", CondEq, 100);
+	QueryResults results;
+	Error err = db.Select(query, results);
+	if (!err.ok()) {
+		std::cerr << "Select error" << err.what();
+		return -1;
+	}
+
+	//  // Fetch and print results
+	for (unsigned i = 0; i < results.size(); i++) {
+		Item item = results.GetItem(i);
+		//  // Get complete JSON
+		std::cout << "JSON: " << item.GetJSON().ToString() << std::endl;
+
+		//// OR Iterate indexed fields
+		std::cout << "Fields: ";
+		for (int field = 1; field < item.NumFields(); field++) {
+			std::cout << item[field].Name() << "=" << item[field].As<string>() << "; ";
+		}
+		std::cout << std::endl;
+
+		//// OR Get indexed field by name
+		std::cout << "Genre: " << item["genre"].As<string>() << std::endl;
+
+		return 0;
+	}
+}
+````
+### Compile sample:
+
+````bash
+g++ cli.cc -L reindexer/cpp_src/build -I reindexer/cpp_src -I reindexer/cpp_src/core -std=c++11 -lreindexer -lleveldb -lpthread
+````
+
 */
+

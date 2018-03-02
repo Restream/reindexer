@@ -60,6 +60,9 @@ protected:
 		ssize_t Write(const char (&str)[N]) {
 			return Write(str, N - 1);
 		}
+		bool IsRespSent() { return respSend_; }
+		virtual int RespCode() override final { return code_; };
+		virtual int Written() override final { return written_; };
 
 	protected:
 		bool isChunkedResponse() { return contentLength_ == -1; }
@@ -67,7 +70,7 @@ protected:
 		int code_ = StatusOK;
 		h_vector<char, 0x200> headers_;
 		bool respSend_ = false;
-		ssize_t contentLength_ = -1;
+		ssize_t contentLength_ = -1, written_ = 0;
 		Connection *conn_;
 	};
 

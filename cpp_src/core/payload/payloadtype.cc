@@ -3,14 +3,14 @@
 
 namespace reindexer {
 
-size_t PayloadType::TotalSize() const {
+size_t PayloadTypeImpl::TotalSize() const {
 	if (fields_.size()) {
 		return fields_.back().Offset() + fields_.back().Sizeof();
 	}
 	return 0;
 }
 
-string PayloadType::ToString() const {
+string PayloadTypeImpl::ToString() const {
 	string ret;
 
 	for (auto &f : fields_) {
@@ -21,7 +21,7 @@ string PayloadType::ToString() const {
 	return ret;
 }
 
-void PayloadType::Add(PayloadFieldType f) {
+void PayloadTypeImpl::Add(PayloadFieldType f) {
 	auto it = fieldsByName_.find(f.Name());
 	if (it != fieldsByName_.end()) {
 		// Non unique name -> check type, and upgrade to array if types are the same
@@ -63,13 +63,50 @@ void PayloadType::Add(PayloadFieldType f) {
 		fields_.push_back(f);
 	}
 }
-int PayloadType::FieldByName(const string &field) const {
+
+bool PayloadTypeImpl::Drop(const string &field) {
+	auto it = fieldsByName_.find(field);
+	if (it == fieldsByName_.end()) return false;
+
+	int fieldIdx = it->second;
+	for (auto &it : fieldsByName_) {
+		if (it.second > fieldIdx) --it.second;
+	}
+	for (auto &it : fieldsByJsonPath_) {
+		if (it.second > fieldIdx) --it.second;
+	}
+
+	KeyValueType fieldType = fields_[fieldIdx].Type();
+	for (auto it = strFields_.begin(); it != strFields_.end();) {
+		if ((*it == fieldIdx) && (fieldType == KeyValueString)) {
+			it = strFields_.erase(it);
+			continue;
+		} else if (*it > fieldIdx)
+			--(*it);
+		++it;
+	}
+
+	fieldsByJsonPath_.erase(field);
+	fieldsByName_.erase(field);
+
+	fields_.erase(fields_.begin() + fieldIdx);
+	for (size_t idx = static_cast<size_t>(fieldIdx); idx < fields_.size(); ++idx) {
+		const PayloadFieldType &plTypePrev(fields_[idx - 1]);
+		fields_[idx].SetOffset(plTypePrev.Offset() + plTypePrev.Sizeof());
+	}
+
+	return true;
+}
+
+bool PayloadTypeImpl::Contains(const string &field) const { return fieldsByName_.find(field) != fieldsByName_.end(); }
+
+int PayloadTypeImpl::FieldByName(const string &field) const {
 	auto it = fieldsByName_.find(field);
 	if (it == fieldsByName_.end()) throw Error(errLogic, "Field '%s' not found in namespace '%s'", field.c_str(), Name().c_str());
 	return it->second;
 }
 
-int PayloadType::FieldByJsonPath(const string &jsonPath) const {
+int PayloadTypeImpl::FieldByJsonPath(const string &jsonPath) const {
 	auto it = fieldsByJsonPath_.find(jsonPath);
 	if (it == fieldsByJsonPath_.end()) return -1;
 	return it->second;

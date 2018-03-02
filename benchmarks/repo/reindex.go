@@ -6,6 +6,7 @@ import (
 
 	"github.com/restream/reindexer"
 	_ "github.com/restream/reindexer/bindings/builtin"
+	_ "github.com/restream/reindexer/bindings/cproto"
 )
 
 type ReindexRepo struct {
@@ -22,9 +23,9 @@ func (TestLogger) Printf(level int, format string, msg ...interface{}) {
 
 func (repo *ReindexRepo) Init() bool {
 
-	repo.db = reindexer.NewReindex("builtin")
+	repo.db = reindexer.NewReindex("builtin:///tmp/reindex/")
+	// repo.db = reindexer.NewReindex("cproto://127.0.0.1:6534/tst")
 
-	repo.db.EnableStorage("/tmp/reindex/")
 	if err := repo.db.OpenNamespace("items", reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), Item{}); err != nil {
 		panic(err)
 	}

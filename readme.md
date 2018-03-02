@@ -190,14 +190,14 @@ Please note, that Query builder interface is prefferable way: It have more featu
 ## Installation
 ### Prerequirements
 
-Reindexer's core is written in C++11 and uses LevelDB as the storage backend, so the C++11 toolchain and LevelDB must be installed before installing Reindexer. 
+Reindexer's core is written in C++11 and uses LevelDB as the storage backend, so the Cmake, C++11 toolchain and LevelDB must be installed before installing Reindexer. 
 
 To build Reindexer, g++ 4.8+ or clang 3.3+ is required.
 
 ### Optional dependencies
 
 - `Doxygen` package is also required for building a documentation of the project.
-- `cmake`, `gtest`,`gbenchmark` for run C++ tests and benchmarks
+- `gtest`,`gbenchmark` for run C++ tests and benchmarks
 - `gperftools` for memory and performance profiling
 
 ### Get Reindexer
@@ -205,7 +205,7 @@ To build Reindexer, g++ 4.8+ or clang 3.3+ is required.
 ```bash
 go get -a github.com/restream/reindexer
 bash $GOPATH/src/github.com/restream/reindexer/dependencies.sh
-go generate github.com/restream/reindexer/bindings/builtin
+go generate github.com/restream/reindexer
 ```
 ## Advanced Usage
 ### Index Types and Their Capabilites

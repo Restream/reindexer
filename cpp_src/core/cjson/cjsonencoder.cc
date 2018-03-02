@@ -1,4 +1,6 @@
 #include "cjsonencoder.h"
+#include "tagsmatcher.h"
+#include "tools/serializer.h"
 
 namespace reindexer {
 

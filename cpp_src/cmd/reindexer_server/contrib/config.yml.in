@@ -1,0 +1,27 @@
+# Reindexer server configuration file
+storage: 
+  path: /var/lib/reindexer
+  engine: leveldb
+
+# Network configuration
+net:
+  httpaddr: 0:9088
+  rpcaddr: 0:6534
+  webroot: ${CMAKE_INSTALL_PREFIX}/share/reindexer/web
+  security: false
+
+# Logger configuration
+logger:
+  rpclog: true
+  httplog: true
+  loglevel: 3
+
+# System options
+system:
+  user: reindexer
+
+# Debugging features
+debug:
+  pprof: false
+  allocs: false
+

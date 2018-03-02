@@ -11,7 +11,7 @@ import (
 	"github.com/restream/reindexer"
 	_ "github.com/restream/reindexer/bindings/builtin"
 	_ "github.com/restream/reindexer/bindings/cproto"
-	// _ "github.com/restream/reindexer/pprof"
+	//	_ "github.com/restream/reindexer/pprof"
 )
 
 var DB *reindexer.Reindexer
@@ -58,7 +58,9 @@ type TestLogger struct {
 }
 
 func (TestLogger) Printf(level int, format string, msg ...interface{}) {
-	log.Printf(format, msg...)
+	if level <= reindexer.TRACE {
+		log.Printf(format, msg...)
+	}
 }
 
 func randString() string {

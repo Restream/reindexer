@@ -1,7 +1,9 @@
 #pragma once
 
 #include <gtest/gtest.h>
+#include <deque>
 #include <map>
+#include "gason/gason.h"
 #include "reindexer_api.h"
 
 using reindexer::Item;
@@ -15,8 +17,7 @@ protected:
 	const string pkField = "bookid";
 	const int32_t itemsCount = 100000;
 	const char *jsonPattern = "{\"bookid\":%d,\"title\":\"title\",\"pages\":200,\"price\":299,\"genreid_fk\":3,\"authorid_fk\":10}";
-	map<int, unique_ptr<Item>> items_;
-	vector<string> jsons_;
+	map<int, Item> items_;
 
 	void SetUp() override {
 		ReindexerApi::SetUp();
@@ -36,9 +37,8 @@ protected:
 		for (int i = 1; i < itemsCount; ++i) {
 			int id = i;
 			snprintf(&buf[0], bufSize, jsonPattern, id);
-			unique_ptr<reindexer::Item> item(reindexer->NewItem(default_namespace));
-			jsons_.push_back(buf);
-			Error err = item->FromJSON(jsons_.back());
+			Item item(reindexer->NewItem(default_namespace));
+			Error err = item.FromJSON(buf);
 			ASSERT_TRUE(err.ok()) << err.what();
 			items_[id] = std::move(item);
 		}
@@ -50,22 +50,22 @@ protected:
 		JsonAllocator jsonAllocator;
 		for (auto &pair : items_) {
 			auto &&item = pair.second;
-			Error err = reindexer->Upsert(default_namespace, item.get());
+			Error err = reindexer->Upsert(default_namespace, item);
 			ASSERT_TRUE(err.ok()) << err.what();
-			reindexer::Slice jsonSlice = item->GetJSON();
+			reindexer::Slice jsonSlice = item.GetJSON();
 			int status = jsonParse(const_cast<char *>(jsonSlice.data()), &endptr, &jsonValue, jsonAllocator);
 			ASSERT_TRUE(status == JSON_OK);
 		}
 		reindexer->Commit(default_namespace);
 	}
 
-	Item *getItemById(int id) {
+	Item getItemById(int id) {
 		auto itItem = items_.find(id);
 		if (itItem == items_.end()) {
-			return nullptr;
+			return Item();
 		}
 		auto &&item = itItem->second;
-		return item.get();
+		return std::move(item);
 	}
 
 	void verifyJsonsOfUpsertedItems() {
@@ -77,14 +77,14 @@ protected:
 			<< to_string(itemsCount - 1) << " items upserted, but selected only " << qres.size();
 
 		for (size_t i = 0; i < qres.size(); ++i) {
-			unique_ptr<Item> item(qres.GetItem(static_cast<int>(i)));
-			string jsonRead(item->GetJSON().ToString());
+			Item item(qres.GetItem(static_cast<int>(i)));
+			string jsonRead(item.GetJSON().ToString());
 
-			int itemId = KeyValue(item->GetField(pkField)).toInt();
+			int itemId = item[pkField].Get<int>();
 			auto originalItem = getItemById(itemId);
-			ASSERT_TRUE(originalItem != nullptr) << "No item for this id: " << to_string(itemId);
+			ASSERT_TRUE(originalItem) << "No item for this id: " << to_string(itemId);
 
-			string originalJson = originalItem->GetJSON().ToString();
+			string originalJson = originalItem.GetJSON().ToString();
 			ASSERT_TRUE(originalJson == jsonRead) << "Inserted and selected items' jsons are different."
 												  << "\nExpected: " << jsonRead << "\nGot:" << originalJson;
 		}

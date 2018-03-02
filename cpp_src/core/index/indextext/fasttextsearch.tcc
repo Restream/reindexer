@@ -59,7 +59,7 @@ h_vector<pair<const string *, int>, 8> FastIndexText<unordered_payload_map<Index
 		pl.Get(field, krefs);
 		for (auto kref : krefs) {
 			if (kref.Type() != KeyValueString) {
-				strsBuf.emplace_back(unique_ptr<string>(new string(KeyValue(kref).toString())));
+				strsBuf.emplace_back(unique_ptr<string>(new string(kref.As<string>())));
 				ret.push_back({strsBuf.back().get(), fieldPos});
 
 			} else {

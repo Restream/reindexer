@@ -11,9 +11,12 @@
 
 using namespace reindexer;
 
-static Reindexer *db;
+static Reindexer *db = nullptr;
 
 void init_reindexer() {
+	if (db) {
+		abort();
+	}
 	db = new Reindexer();
 	setvbuf(stdout, 0, _IONBF, 0);
 	setvbuf(stderr, 0, _IONBF, 0);
@@ -65,15 +68,16 @@ reindexer_ret reindexer_modify_item(reindexer_buffer in, int mode) {
 		Serializer ser(in.data, in.len);
 		string ns = ser.GetVString().ToString();
 		int format = ser.GetVarUint();
-		auto item = unique_ptr<Item>(db->NewItem(ns));
-		if (item->Status().ok()) {
+		Item item = db->NewItem(ns);
+		if (item.Status().ok()) {
 			switch (format) {
 				case FormatJson:
-					err = item->FromJSON(ser.GetSlice());
+					err = item.Unsafe().FromJSON(ser.GetSlice());
 					break;
-				case FormatCJson:
-					err = item->FromCJSON(ser.GetSlice());
+				case FormatCJson: {
+					err = item.Unsafe().FromCJSON(ser.GetSlice());
 					break;
+				}
 				default:
 					err = Error(-1, "Invalid source item format %d", format);
 			}
@@ -84,26 +88,30 @@ reindexer_ret reindexer_modify_item(reindexer_buffer in, int mode) {
 					string precept = ser.GetVString().ToString();
 					precepts.push_back(precept);
 				}
-				item->SetPrecepts(precepts);
+				item.SetPrecepts(precepts);
 
 				switch (mode) {
 					case ModeUpsert:
-						err = db->Upsert(ns, item.get());
+						err = db->Upsert(ns, item);
 						break;
 					case ModeInsert:
-						err = db->Insert(ns, item.get());
+						err = db->Insert(ns, item);
 						break;
 					case ModeUpdate:
-						err = db->Update(ns, item.get());
+						err = db->Update(ns, item);
 						break;
 					case ModeDelete:
-						err = db->Delete(ns, item.get());
+						err = db->Delete(ns, item);
 						break;
 				}
-				results2c(item->GetRef().id == -1 ? new QueryResults() : new QueryResults({item->GetRef()}), &out);
+				QueryResults *res = new QueryResults();
+				res->AddItem(item);
+				int32_t ptVers = -1;
+				bool tmUpdated = item.IsTagsUpdated();
+				results2c(res, &out, 0, tmUpdated ? &ptVers : nullptr);
 			}
 		} else {
-			err = item->Status();
+			err = item.Status();
 		}
 	}
 	return ret2c(err, out);
@@ -119,14 +127,6 @@ reindexer_error reindexer_drop_namespace(reindexer_string _namespace) {
 
 reindexer_error reindexer_close_namespace(reindexer_string _namespace) {
 	return error2c(!db ? err_not_init : db->CloseNamespace(str2c(_namespace)));
-}
-
-reindexer_error reindexer_clone_namespace(reindexer_string src, reindexer_string dst) {
-	return error2c(!db ? err_not_init : db->CloneNamespace(str2c(src), str2c(dst)));
-}
-
-reindexer_error reindexer_rename_namespace(reindexer_string src, reindexer_string dst) {
-	return error2c(!db ? err_not_init : db->RenameNamespace(str2c(src), str2c(dst)));
 }
 
 reindexer_error reindexer_add_index(reindexer_string _namespace, reindexer_string index, reindexer_string json_path,
@@ -172,9 +172,9 @@ reindexer_ret reindexer_select_query(struct reindexer_buffer in, int with_items,
 			q1.Deserialize(ser);
 			q1.debugLevel = q.debugLevel;
 			if (q1.joinType == JoinType::Merge) {
-				q.mergeQueries_.push_back(q1);
+				q.mergeQueries_.emplace_back(std::move(q1));
 			} else {
-				q.joinQueries_.push_back(q1);
+				q.joinQueries_.emplace_back(std::move(q1));
 			}
 		}
 

@@ -7,32 +7,37 @@ namespace net {
 namespace cproto {
 enum CmdCode {
 	kCmdPing = 0,
-	kCmdOpenNamespace = 1,
-	kCmdCloseNamespace = 2,
-	kCmdDropNamespace = 3,
-	kCmdRenameNamespace = 4,
-	kCmdCloneNamespace = 5,
-	kCmdAddIndex = 6,
-	kCmdEnumNamespaces = 7,
-	kCmdConfigureIndex = 8,
+	kCmdLogin = 1,
+	kCmdOpenDatabase = 2,
+	kCmdCloseDatabase = 3,
+	kCmdDropDatabase = 4,
+	kCmdOpenNamespace = 16,
+	kCmdCloseNamespace = 17,
+	kCmdDropNamespace = 18,
+	kCmdAddIndex = 21,
+	kCmdEnumNamespaces = 22,
+	kCmdConfigureIndex = 23,
 
-	kCmdCommit = 16,
-	kCmdModifyItem = 17,
-	kCmdDeleteQuery = 18,
+	kCmdCommit = 32,
+	kCmdModifyItem = 33,
+	kCmdDeleteQuery = 34,
 
-	kCmdSelect = 32,
-	kCmdSelectSQL = 33,
-	kCmdFetchResults = 34,
+	kCmdSelect = 48,
+	kCmdSelectSQL = 49,
+	kCmdFetchResults = 50,
+	kCmdCloseResults = 51,
 
-	kCmdGetMeta = 48,
-	kCmdPutMeta = 49,
-	kCmdEnumMeta = 50,
+	kCmdGetMeta = 64,
+	kCmdPutMeta = 65,
+	kCmdEnumMeta = 66,
 
 	kCmdCodeMax = 128
 };
 
+const char *CmdName(CmdCode code);
+
 // Maximum number of active queries per cleint
-const uint32_t kMaxConcurentQueries = 4;
+const uint32_t kMaxConcurentQueries = 40;
 
 const uint32_t kCprotoMagic = 0xEEDD1132;
 const uint32_t kCprotoVersion = 0x100;

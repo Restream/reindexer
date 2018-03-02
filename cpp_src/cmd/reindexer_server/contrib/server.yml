@@ -9,6 +9,8 @@ info:
 host: ""
 basePath: "/api/v1"
 tags:
+- name: "databases"
+  description: "Databases managment"
 - name: "namespaces"
   description: "Namespaces managment"
 - name: "items"
@@ -20,7 +22,67 @@ tags:
 schemes:
 - "http"
 paths:
-  /namespaces:
+  /db:
+    post:
+      tags:
+      - "databases"
+      summary: "Create a database"
+      description: ""
+      operationId: "createDatabase"
+      consumes:
+      - "application/json"
+      produces:
+      - "application/json"
+      parameters:
+      - in: "body"
+        name: "body"
+        description: "Database definintion"
+        required: true
+        schema:
+          $ref: "#/definitions/DatabaseDef"
+      responses:
+        200:
+          description: "successful operation"
+        400:
+          description: "Invalid parameters"
+    get:
+      tags:
+      - "databases"
+      summary: "Databases list description"
+      description: ""
+      operationId: "describeDatabases"
+      produces:
+      - "application/json"
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/Databases"
+        400:
+          description: "Invalid arguments supplied"
+
+  /db/{database}:
+      delete:
+        tags:
+        - "databases"
+        summary: "Drop database"
+        description: ""
+        operationId: "dropDatabase"
+        produces:
+        - "application/json"
+        parameters:
+        - name: "database"
+          in: "path"
+          type: "string"
+          description: "Database name"
+          required: true
+        responses:
+          200:
+            description: "successful operation"
+          400:
+            description: "Invalid arguments supplied"
+
+  /db/{database}/namespaces:
     post:
       tags:
       - "namespaces"
@@ -38,6 +100,11 @@ paths:
         required: true
         schema:
           $ref: "#/definitions/Namespace"
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
       responses:
         200:
           description: "successful operation"
@@ -51,6 +118,19 @@ paths:
       operationId: "describeNamespaces"
       produces:
       - "application/json"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "sort_order"
+        in: "query"
+        type: "string"
+        description: "Sort Order"
+        enum:
+        - "asc"
+        - "desc"
       responses:
         200:
           description: "successful operation"
@@ -59,7 +139,7 @@ paths:
         400:
           description: "Invalid arguments supplied"
 
-  /namespaces/{name}:
+  /db/{database}/namespaces/{name}:
       get:
         tags:
         - "namespaces"
@@ -69,6 +149,11 @@ paths:
         produces:
         - "application/json"
         parameters:
+        - name: "database"
+          in: "path"
+          type: "string"
+          description: "Database name"
+          required: true
         - name: "name"
           in: "path"
           type: "string"
@@ -90,6 +175,11 @@ paths:
         produces:
         - "application/json"
         parameters:
+        - name: "database"
+          in: "path"
+          type: "string"
+          description: "Database name"
+          required: true
         - name: "name"
           in: "path"
           type: "string"
@@ -101,7 +191,7 @@ paths:
           400:
             description: "Invalid arguments supplied"
 
-  /namespaces/{name}/items:
+  /db/{database}/namespaces/{name}/items:
     delete:
       tags:
       - "items"
@@ -116,6 +206,11 @@ paths:
         name: "body"
         schema:
           type: "object"
+        required: true
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
         required: true
       - name: "name"
         in: "path"
@@ -142,6 +237,11 @@ paths:
         schema:
           type: "object"
         required: true
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
       - name: "name"
         in: "path"
         type: "string"
@@ -167,6 +267,11 @@ paths:
         schema:
           type: "object"
         required: true
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
       - name: "name"
         in: "path"
         type: "string"
@@ -188,6 +293,11 @@ paths:
       produces:
       - "application/json"
       parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
       - name: "name"
         in: "path"
         type: "string"
@@ -218,7 +328,7 @@ paths:
         400:
           description: "Invalid arguments supplied"
 
-  /namespaces/{name}/indexes:
+  /db/{database}/namespaces/{name}/indexes:
     get:
       tags:
       - "indexes"
@@ -228,6 +338,11 @@ paths:
       produces:
       - "application/json"
       parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
       - name: "name"
         in: "path"
         type: "string"
@@ -256,6 +371,11 @@ paths:
         schema:
           $ref: "#/definitions/IndexDef"
         required: true
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
       - name: "name"
         in: "path"
         type: "string"
@@ -267,7 +387,39 @@ paths:
         400:
           description: "Invalid status value"
 
-  /query:
+  /db/{database}/namespaces/{name}/indexes/{indexname}:
+    delete:
+      tags:
+      - "indexes"
+      summary: "Delete index from namespace"
+      operationId: "deleteIndex"
+      produces:
+      - "application/json"
+      consumes:
+      - "application/json"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "name"
+        in: "path"
+        type: "string"
+        description: "Namespace name"
+        required: true
+      - name: "indexname"
+        in: "path"
+        type: "string"
+        description: "Index name"
+        required: true
+      responses:
+        200:
+          description: "successful operation"
+        400:
+          description: "Invalid status value"
+
+  /db/{database}/query:
     get:
       tags:
       - "queries"
@@ -276,6 +428,11 @@ paths:
       produces:
       - "application/json"
       parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
       - name: "q"
         in: "query"
         type: "string"
@@ -298,6 +455,11 @@ paths:
       consumes:
       - "application/json"
       parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
       - in: "body"
         name: "body"
         description: "DSL query"
@@ -311,6 +473,22 @@ paths:
           description: "Invalid status value"
 
 definitions:
+  Databases:
+    type: "object"
+    properties:
+      total_items:
+         type: "integer"
+      items:
+         type: "array"
+         items:
+           type: "string"
+
+  DatabaseDef:
+    type: "object"
+    properties:
+      name:
+        type: "string"
+
   Namespaces:
     type: "object"
     properties:
@@ -326,6 +504,7 @@ definitions:
       total_items:
         type: "integer"
         description: "Total count of namespaces"
+
   Namespace:
     type: "object"
     properties:
@@ -344,8 +523,7 @@ definitions:
         type: "array"
         items: 
           $ref: "#/definitions/IndexDef"
-      storage_enabled:
-        type: "boolean"
+
   IndexDef:
     type: "object"
     properties:
@@ -388,6 +566,7 @@ definitions:
         - "ascii"
         - "utf8"
         - "numeric"
+
   Query:
     type: "object"
     properties:
@@ -406,6 +585,7 @@ definitions:
       sort:
         type: "object"
         $ref: "#/definitions/SortDef"
+
   FilterDef:
     type: "object"
     properties:
@@ -430,6 +610,7 @@ definitions:
         - "NOT"
       value:
         type: "object"
+
   SortDef:
     type: "object"
     properties:
@@ -439,15 +620,17 @@ definitions:
         type: "object"
       desc:
         type: "boolean"
+
   Items:
     type: "object"
     properties:
-      total_count:
+      total_items:
          type: "integer"
       items:
          type: "array"
          items:
            type: "object"
+
   Indexes:
     type: "object"
     properties:

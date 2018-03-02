@@ -14,9 +14,39 @@ class SingleSelectKeyResult {
 
 public:
 	SingleSelectKeyResult() {}
-	SingleSelectKeyResult(const IdSetRef &ids) : ids_(ids), isRange_(false) {}
-	SingleSelectKeyResult(IdSet::Ptr ids) : tempIds_(ids), ids_(ids.get()), isRange_(false) {}
-	SingleSelectKeyResult(IdType rBegin, IdType rEnd) : rBegin_(rBegin), rEnd_(rEnd), isRange_(true) {}
+	explicit SingleSelectKeyResult(const IdSetRef &ids) : ids_(ids), isRange_(false) {}
+	explicit SingleSelectKeyResult(IdSet::Ptr ids) : tempIds_(ids), ids_(ids.get()), isRange_(false) {}
+	explicit SingleSelectKeyResult(IdType rBegin, IdType rEnd) : rBegin_(rBegin), rEnd_(rEnd), isRange_(true) {}
+	SingleSelectKeyResult(const SingleSelectKeyResult &other)
+		: tempIds_(other.tempIds_), ids_(other.ids_), bsearch_(other.bsearch_), isRange_(other.isRange_) {
+		if (isRange_) {
+			rBegin_ = other.rBegin_;
+			rEnd_ = other.rEnd_;
+			rIt_ = other.rIt_;
+		} else {
+			begin_ = other.begin_;
+			end_ = other.end_;
+			it_ = other.it_;
+		}
+	}
+	SingleSelectKeyResult &operator=(const SingleSelectKeyResult &other) {
+		if (&other != this) {
+			tempIds_ = other.tempIds_;
+			ids_ = other.ids_;
+			bsearch_ = other.bsearch_;
+			isRange_ = other.isRange_;
+			if (isRange_) {
+				rBegin_ = other.rBegin_;
+				rEnd_ = other.rEnd_;
+				rIt_ = other.rIt_;
+			} else {
+				begin_ = other.begin_;
+				end_ = other.end_;
+				it_ = other.it_;
+			}
+		}
+		return *this;
+	}
 
 protected:
 	IdSet::Ptr tempIds_;

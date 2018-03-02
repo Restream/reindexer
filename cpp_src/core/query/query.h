@@ -4,10 +4,6 @@
 #include <initializer_list>
 #include "querywhere.h"
 #include "tools/errors.h"
-#include "tools/serializer.h"
-
-using std::string;
-using std::vector;
 
 /**
  * @namespace reindexer
@@ -15,8 +11,10 @@ using std::vector;
  */
 namespace reindexer {
 
+class WrSerializer;
+class Serializer;
 /**
- * @class Query.
+ * @class Query
  * Allows to select data from DB.
  * Analog to ansi-sql select query.
  */
@@ -114,6 +112,25 @@ public:
 		qe.condition = cond;
 		qe.index = idx;
 		qe.op = nextOp_;
+		for (auto it = l.begin(); it != l.end(); it++) qe.values.push_back(KeyValue(*it));
+		entries.push_back(qe);
+		nextOp_ = OpAnd;
+		return *this;
+	}
+	/**
+	 * @public
+	 * Adds a condition with several values. Analog to sql Where clause.
+	 * @param idx - index used in condition clause.
+	 * @param cond - type of condition.
+	 * @param l - vector of indexes' values to be compared with.
+	 * @return Query object ready to be executed.
+	 */
+	Query &Where(const char *idx, CondType cond, const KeyRefs &l) {
+		QueryEntry qe;
+		qe.condition = cond;
+		qe.index = idx;
+		qe.op = nextOp_;
+		qe.values.reserve(l.size());
 		for (auto it = l.begin(); it != l.end(); it++) qe.values.push_back(KeyValue(*it));
 		entries.push_back(qe);
 		nextOp_ = OpAnd;

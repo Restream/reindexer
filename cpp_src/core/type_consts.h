@@ -67,7 +67,20 @@ typedef enum CondType {
 	CondEmpty = 9,
 } CondType;
 
-enum ErrorCode { errOK = 0, errParseSQL, errQueryExec, errParams, errLogic, errParseJson, errParseDSL, errConflict, errParseBin };
+enum ErrorCode {
+	errOK = 0,
+	errParseSQL,
+	errQueryExec,
+	errParams,
+	errLogic,
+	errParseJson,
+	errParseDSL,
+	errConflict,
+	errParseBin,
+	errForbidden,
+	errWasRelock,
+	errNotValid,
+};
 
 enum OpType { OpOr = 1, OpAnd = 2, OpNot = 3 };
 
@@ -97,7 +110,6 @@ enum {
 	kResultsWithCJson = 0x2,
 	kResultsWithJson = 0x3,
 	kResultsWithPayloadTypes = 0x8,
-	kResultsClose = 0x10
 };
 
 typedef enum IndexOpt { kIndexOptPK = 1 << 7, kIndexOptArray = 1 << 6, kIndexOptDense = 1 << 5, kIndexOptAppendable = 1 << 4 } IndexOpt;

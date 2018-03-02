@@ -117,7 +117,7 @@ string QueryWhere::toString() const {
 		if (e.values.size() > 1) res += "(";
 		for (auto &v : e.values) {
 			if (&v != &*e.values.begin()) res += ",";
-			res += "'" + v.toString() + "'";
+			res += "'" + v.As<string>() + "'";
 		}
 		res += (e.values.size() > 1) ? ") " : " ";
 	}
@@ -153,7 +153,7 @@ string QueryEntry::Dump() const {
 		if (severalValues) result += "(";
 		for (auto &v : values) {
 			if (&v != &*values.begin()) result += ",";
-			result += "'" + v.toString() + "'";
+			result += "'" + v.As<string>() + "'";
 		}
 		result += (severalValues) ? ") " : " ";
 	}

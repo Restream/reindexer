@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstddef>
 #include <string>
 #include "estl/intrusive_ptr.h"
 

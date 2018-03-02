@@ -1,8 +1,12 @@
 #pragma once
 
-#include "core/item.h"
+#include "core/payload/payloadiface.h"
 
 namespace reindexer {
+
+class TagsMatcher;
+class WrSerializer;
+class Serializer;
 
 class CJsonEncoder {
 public:

@@ -13,8 +13,8 @@ class PayloadIface {
 	friend class PayloadIface;
 
 public:
-	PayloadIface(const PayloadType &t, T *v);
-	PayloadIface(const PayloadType::Ptr t, T &v);
+	PayloadIface(const PayloadType &t, T &v);
+	PayloadIface(const PayloadTypeImpl &t, T &v);
 
 	void Reset() { memset(v_->Ptr(), 0, t_.TotalSize()); }
 	// Get element(s) by field index
@@ -26,6 +26,11 @@ public:
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
 	void Set(const string &field, const KeyRefs &keys, bool append = false);
 
+	// Copies current payload value to a new one
+	// according to PayloadType format
+	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
+	T CopyTo(PayloadType t, bool newFields = true);
+
 	// Get element(s) by field index
 	KeyRefs &Get(const string &field, KeyRefs &) const;
 
@@ -34,8 +39,9 @@ public:
 
 	// Real size of payload with arrays
 	size_t RealSize() const;
+
 	inline const uint8_t *Ptr() const { return v_->Ptr(); }
-	const PayloadType &Type() const { return t_; }
+	const PayloadTypeImpl &Type() const { return t_; }
 	const T *Value() const { return v_; }
 
 	// Get primary key for elem
@@ -45,12 +51,12 @@ public:
 	// Get PK hash
 	size_t GetHash(const FieldsSet &fields) const;
 	// Compare is EQ by field mask
-	bool IsEQ(const T *other, const FieldsSet &fields) const;
+	bool IsEQ(const T &other, const FieldsSet &fields) const;
 	// Compare is EQ
-	bool IsEQ(const T *other) const;
+	bool IsEQ(const T &other) const;
 
 	// Compare is PK less
-	bool Less(const T *other, const FieldsSet &fields) const;
+	bool Less(const T &other, const FieldsSet &fields) const;
 
 	// Get PayloadFieldValue by field index
 	PayloadFieldValue Field(int field) const;
@@ -63,9 +69,16 @@ public:
 	// Item values' string for printing
 	std::string Dump();
 
+private:
+	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
+	T CopyWithNewOrUpdatedFields(PayloadType t);
+
+	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
+	T CopyWithRemovedFields(PayloadType t);
+
 protected:
 	// Array of elements types , not owning
-	const PayloadType &t_;
+	const PayloadTypeImpl &t_;
 	// Data of elements, not owning
 	T *v_;
 };

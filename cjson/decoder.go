@@ -215,7 +215,7 @@ func mkValue(ctagType int) (v reflect.Value) {
 	case TAG_ARRAY:
 		v = reflect.New(ifaceSliceType).Elem()
 	default:
-		panic(0)
+		panic(fmt.Errorf("Invalid ctagType=%d", ctagType))
 	}
 	return v
 }
@@ -519,7 +519,7 @@ func (dec *Decoder) DecodeCPtr(cptr uintptr, dest interface{}) (err error) {
 				"Interface: %#v\nRead position: %d\nTags(v%d): %v\nPayload Type: %+v\nPayload Value: %v\nTags cache: %+v\nData dump:\n%s\nError: %v\n",
 				dest,
 				ser.Pos(),
-				dec.state.PayloadTypeVersion(),
+				dec.state.Version,
 				dec.state.tagsMatcher.Names,
 				dec.state.payloadType.Fields,
 				pl.getAsMap(),
@@ -554,7 +554,7 @@ func (dec *Decoder) Decode(cjson []byte, dest interface{}) (err error) {
 				"Interface: %#v\nRead position: %d\nTags(v%d): %v\nTags cache: %+v\nData dump:\n%s\nError: %v\n",
 				dest,
 				ser.Pos(),
-				dec.state.PayloadTypeVersion(),
+				dec.state.Version,
 				dec.state.tagsMatcher.Names,
 				dec.state.ctagsCache,
 				hex.Dump(ser.Bytes()),
@@ -568,19 +568,8 @@ func (dec *Decoder) Decode(cjson []byte, dest interface{}) (err error) {
 	ctagsPath := make([]int, 0, 8)
 
 	dec.decodeValue(nil, ser, reflect.ValueOf(dest), fieldsoutcnt, ctagsPath)
-	if !ser.Eof() {
-		panic(fmt.Errorf("Internal error - left unparsed data"))
-	}
+	// if !ser.Eof() {
+	// 	panic(fmt.Errorf("Internal error - left unparsed data"))
+	// }
 	return err
-}
-
-func (dec *Decoder) DecodeX(tuple []byte, dest interface{}) {
-	dec.state.lock.RLock()
-	defer dec.state.lock.RUnlock()
-
-	ser := &Serializer{buf: tuple}
-	to := ser.GetUInt32()
-
-	dec.decodeValue(nil, ser, reflect.ValueOf(dest), make([]int, 64, 64), make([]int, 0, 8))
-	_ = to
 }

@@ -55,6 +55,8 @@ func QueryTextHandler(ctx *fasthttp.RequestCtx) {
 		dsl = "%s | %s"
 	case "mongo":
 		dsl = "%s %s"
+	case "arango":
+		dsl = "%s,|%s"
 	}
 
 	items := repo.Get(r).QueryFullText(func() string { return fmt.Sprintf(dsl, randStringWord(), randStringWord()) }, 1, 10)
@@ -73,6 +75,8 @@ func QueryTextPrefixHandler(ctx *fasthttp.RequestCtx) {
 		dsl = "%s* OR %s*"
 	case "sphinx":
 		dsl = "%s* | %s*"
+	case "arango":
+		dsl = "prefix:%s,|prefix:%s"
 	}
 
 	items := repo.Get(r).QueryFullText(func() string { return fmt.Sprintf(dsl, randStringPref(), randStringPref()) }, 1, 10)
@@ -96,6 +100,9 @@ func StartHTTP() {
 	router.GET("/text_prefix/:repo", QueryTextPrefixHandler)
 	router.GET("/update/:repo", UpdateHandler)
 
-	log.Printf("Starting listen")
-	fasthttp.ListenAndServe(":8080", router.Handler)
+	log.Printf("Starting listen fasthttp on 8081")
+	err := fasthttp.ListenAndServe(":8081", router.Handler)
+	if err != nil {
+		panic(err)
+	}
 }

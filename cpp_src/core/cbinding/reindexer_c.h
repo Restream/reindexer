@@ -18,8 +18,6 @@ typedef struct reindexer_ret {
 reindexer_error reindexer_open_namespace(reindexer_string _namespace, StorageOpts opts);
 reindexer_error reindexer_drop_namespace(reindexer_string _namespace);
 reindexer_error reindexer_close_namespace(reindexer_string _namespace);
-reindexer_error reindexer_clone_namespace(reindexer_string src, reindexer_string dst);
-reindexer_error reindexer_rename_namespace(reindexer_string src, reindexer_string dst);
 
 reindexer_error reindexer_add_index(reindexer_string _namespace, reindexer_string index, reindexer_string json_path,
 									reindexer_string index_type, reindexer_string field_type, IndexOpts opts);

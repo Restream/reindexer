@@ -32,7 +32,7 @@ public:
 	void Reatach(ev::dynamic_loop &loop) override final;
 
 	// Writer iterface implementation
-	void WriteRPCReturn(RPCCall *call, const Args &args) override final { responceRPC(call, errOK, args); }
+	void WriteRPCReturn(Context &ctx, const Args &args) override final { responceRPC(ctx, errOK, args); }
 	void SetClientData(ClientData::Ptr data) override final { clientData_ = data; }
 	ClientData::Ptr GetClientData() override final { return clientData_; }
 
@@ -45,9 +45,9 @@ protected:
 	void timeout_cb(ev::periodic &watcher, int);
 
 	void closeConn();
-	void handleRPC(RPCCall *call);
+	void handleRPC(Context &ctx);
 	void parseRPC();
-	void responceRPC(RPCCall *call, const Error &error, const Args &args);
+	void responceRPC(Context &ctx, const Error &error, const Args &args);
 
 	ev::io io_;
 	ev::timer timeout_;

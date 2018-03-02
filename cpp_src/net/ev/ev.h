@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #endif
 
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <vector>
@@ -57,6 +58,8 @@ using loop_backend = loop_select_backend;
 
 class io;
 class timer;
+class async;
+class sig;
 class dynamic_loop {
 	friend class loop_ref;
 	friend class loop_epoll_backend;
@@ -64,14 +67,21 @@ class dynamic_loop {
 
 public:
 	dynamic_loop();
+	~dynamic_loop();
 	void run();
 	void break_loop();
 
 protected:
 	void set(int fd, io *watcher, int events);
 	void set(timer *watcher, double t);
+	void set(async *watcher);
+	void set(sig *watcher);
 	void stop(int fd);
 	void stop(timer *watcher);
+	void stop(async *watcher);
+	void stop(sig *watcher);
+	void send(async *watcher);
+
 	void callback(int fd, int events);
 
 	struct fd_handler {
@@ -81,13 +91,18 @@ protected:
 
 	std::vector<fd_handler> fds_;
 	std::vector<timer *> timers_;
+	std::vector<async *> asyncs_;
+	std::vector<sig *> sigs_;
 	bool break_ = false;
 	loop_backend backend_;
+	int async_fds_[2] = {-1, -1};
 };
 
 class loop_ref {
 	friend class io;
 	friend class timer;
+	friend class sig;
+	friend class async;
 
 public:
 	void break_loop() {
@@ -98,17 +113,17 @@ public:
 	}
 
 protected:
-	void set(int fd, io *watcher, int events) {
-		if (loop_) loop_->set(fd, watcher, events);
+	template <typename... Args>
+	void set(Args... args) {
+		if (loop_) loop_->set(args...);
 	}
-	void set(timer *watcher, double t) {
-		if (loop_) loop_->set(watcher, t);
+	template <typename... Args>
+	void stop(Args... args) {
+		if (loop_) loop_->stop(args...);
 	}
-	void stop(int fd) {
-		if (loop_) loop_->stop(fd);
-	}
-	void stop(timer *watcher) {
-		if (loop_) loop_->stop(watcher);
+	template <typename... Args>
+	void send(Args... args) {
+		if (loop_) loop_->send(args...);
 	}
 	dynamic_loop *loop_ = nullptr;
 };
@@ -131,27 +146,20 @@ public:
 
 	template <typename K, void (K::*func)(io &, int events)>
 	void set(K *object) {
-		func_ = func_wrapper<K, func>;
-		object_ = object;
+		func_ = [object](io &watcher, int events) { (static_cast<K *>(object)->*func)(watcher, events); };
 	}
+	void set(std::function<void(io &watcher, int events)> func) { func_ = func; }
 
 	int fd = -1;
 	loop_ref loop;
 
 protected:
-	template <class K, void (K::*func)(io &, int events)>
-	static void func_wrapper(void *obj, io &watcher, int events) {
-		return (static_cast<K *>(obj)->*func)(watcher, events);
-	}
 	void callback(int events) {
 		assert(func_ != nullptr);
-		func_(object_, *this, events);
+		func_(*this, events);
 	}
-
-	std::function<void(void *obj, io &watcher, int events)> func_ = nullptr;
-	void *object_;
+	std::function<void(io &watcher, int events)> func_ = nullptr;
 };
-
 class timer {
 	friend class dynamic_loop;
 
@@ -169,32 +177,95 @@ public:
 
 	template <typename K, void (K::*func)(timer &, int t)>
 	void set(K *object) {
-		func_ = func_wrapper<K, func>;
-		object_ = object;
+		func_ = [object](timer &watcher, int t) { (static_cast<K *>(object)->*func)(watcher, t); };
 	}
+	void set(std::function<void(timer &, int)> func) { func_ = func; }
 
 	loop_ref loop;
 	std::chrono::time_point<std::chrono::steady_clock> deadline_;
 
 protected:
-	template <class K, void (K::*func)(timer &, int t)>
-	static void func_wrapper(void *obj, timer &watcher, int t) {
-		return (static_cast<K *>(obj)->*func)(watcher, t);
-	}
 	void callback(int tv) {
 		assert(func_ != nullptr);
-		func_(object_, *this, tv);
+		func_(*this, tv);
 		if (period_ > 0.00000001) {
 			loop.set(this, period_);
 		}
 	}
 
-	std::function<void(void *obj, timer &watcher, int t)> func_ = nullptr;
-	void *object_;
+	std::function<void(timer &watcher, int t)> func_ = nullptr;
 	double period_ = 0;
 };
 
 using periodic = timer;
+
+class sig {
+	friend class dynamic_loop;
+
+public:
+	sig(){};
+	sig(const sig &) = delete;
+	~sig() { stop(); }
+
+	void set(dynamic_loop &loop_) { loop.loop_ = &loop_; }
+	void start(int signum) {
+		signum_ = signum;
+		loop.set(this);
+	}
+	void stop() { loop.stop(this); }
+
+	template <typename K, void (K::*func)(sig &)>
+	void set(K *object) {
+		func_ = [object](sig &watcher) { (static_cast<K *>(object)->*func)(watcher); };
+	}
+	void set(std::function<void(sig &)> func) { func_ = func; }
+
+	loop_ref loop;
+
+protected:
+	void callback() {
+		assert(func_ != nullptr);
+		func_(*this);
+	}
+
+	std::function<void(sig &watcher)> func_ = nullptr;
+	void (*old_handler_)(int) = nullptr;
+	int signum_;
+};
+
+class async {
+	friend class dynamic_loop;
+
+public:
+	async() : sent_(false){};
+	async(const sig &) = delete;
+	~async() { stop(); }
+
+	void set(dynamic_loop &loop_) { loop.loop_ = &loop_; }
+	void start() { loop.set(this); }
+	void stop() { loop.stop(this); }
+	void send() {
+		sent_ = true;
+		loop.send(this);
+	}
+
+	template <typename K, void (K::*func)(async &)>
+	void set(K *object) {
+		func_ = [object](async &watcher) { (static_cast<K *>(object)->*func)(watcher); };
+	}
+	void set(std::function<void(async &)> func) { func_ = func; }
+
+	loop_ref loop;
+
+protected:
+	void callback() {
+		assert(func_ != nullptr);
+		func_(*this);
+	}
+
+	std::function<void(async &watcher)> func_ = nullptr;
+	std::atomic<bool> sent_;
+};
 
 extern bool gEnableBusyLoop;
 

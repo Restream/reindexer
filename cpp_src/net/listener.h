@@ -3,6 +3,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <vector>
 #include "iconnection.h"
 #include "net/ev/ev.h"
@@ -22,38 +23,41 @@ public:
 	/// @param maxListeners - Maximum number of threads, which listener will utilize. std::thread::hardware_concurrency() by default
 	Listener(ev::dynamic_loop &loop, ConnectionFactory connFactory, int maxListeners = 0);
 	~Listener();
-	/// Bind listener to specified port
-	/// @param port - tcp port for bind
+	/// Bind listener to specified host:port
+	/// @param addr - tcp host:port for bind
 	/// @return true - if bind successful, false - on bind error
-	bool Bind(int port);
-	/// Run listener loop. Block execution of current thread until signal interrupt
-	void Run();
+	bool Bind(std::string addr);
 	/// Fork preforks additional listener threads
 	/// @param clones - Number of threads
 	void Fork(int clones);
+	/// Stop synchroniusly stops listener
+	void Stop();
 
 protected:
 	void reserveStack();
-	void clone();
 	void io_accept(ev::io &watcher, int revents);
 	void timeout_cb(ev::periodic &watcher, int);
+	void async_cb(ev::async &watcher);
 
 	struct Shared {
 		Shared(ConnectionFactory connFactory, int maxListeners);
 		~Shared();
 		int fd_;
 		int maxListeners_;
-		int port_ = 0;
 		std::atomic<int> count_;
 		vector<Listener *> listeners_;
 		std::mutex lck_;
 		ConnectionFactory connFactory_;
+		std::atomic<bool> terminating_;
+		std::string addr_;
 	};
 	Listener(ev::dynamic_loop &loop, std::shared_ptr<Shared> shared);
+	static void clone(std::shared_ptr<Shared>);
 
 	ev::io io_;
 	ev::periodic timer_;
 	ev::dynamic_loop &loop_;
+	ev::async async_;
 	std::shared_ptr<Shared> shared_;
 	vector<std::unique_ptr<IConnection>> connectons_;
 	std::atomic<int> connCount_;

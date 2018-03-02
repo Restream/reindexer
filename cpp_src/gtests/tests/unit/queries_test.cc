@@ -12,7 +12,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 	int itemsCount = 0;
 	InsertedItemsByPk& items = insertedItems[default_namespace];
 	for (auto it = items.begin(); it != items.end();) {
-		Error err = reindexer->Delete(default_namespace, it->second.get());
+		Error err = reindexer->Delete(default_namespace, it->second);
 		EXPECT_TRUE(err.ok()) << err.what();
 		it = items.erase(it);
 		if (++itemsCount == 4000) break;
@@ -22,9 +22,9 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 	FillDefaultNamespace(0, 1000, 5);
 
 	itemsCount = 0;
-	items = insertedItems[default_namespace];
+	// items = insertedItems[default_namespace];
 	for (auto it = items.begin(); it != items.end();) {
-		Error err = reindexer->Delete(default_namespace, it->second.get());
+		Error err = reindexer->Delete(default_namespace, it->second);
 		EXPECT_TRUE(err.ok()) << err.what();
 		it = items.erase(it);
 		if (++itemsCount == 5000) break;
@@ -33,7 +33,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 	for (size_t i = 0; i < 5000; ++i) {
 		auto itToRemove = items.begin();
 		if (itToRemove != items.end()) {
-			Error err = reindexer->Delete(default_namespace, itToRemove->second.get());
+			Error err = reindexer->Delete(default_namespace, itToRemove->second);
 			EXPECT_TRUE(err.ok()) << err.what();
 			items.erase(itToRemove);
 		}
@@ -43,7 +43,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 			itToRemove = items.begin();
 			std::advance(itToRemove, rand() % std::min(100, int(items.size())));
 			if (itToRemove != items.end()) {
-				Error err = reindexer->Delete(default_namespace, itToRemove->second.get());
+				Error err = reindexer->Delete(default_namespace, itToRemove->second);
 				EXPECT_TRUE(err.ok()) << err.what();
 				items.erase(itToRemove);
 			}
@@ -51,7 +51,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 	}
 
 	for (auto it = items.begin(); it != items.end();) {
-		Error err = reindexer->Delete(default_namespace, it->second.get());
+		Error err = reindexer->Delete(default_namespace, it->second);
 		EXPECT_TRUE(err.ok()) << err.what();
 		it = items.erase(it);
 	}

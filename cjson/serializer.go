@@ -161,6 +161,9 @@ func (s *Serializer) PutVString(v string) *Serializer {
 	}
 	return s
 }
+func (s *Serializer) Truncate(pos int) {
+	s.buf = s.buf[:pos]
+}
 
 func (s *Serializer) GetUInt32() (v uint32) {
 	return uint32(s.readIntBits(unsafe.Sizeof(v)))
@@ -197,7 +200,7 @@ func (s *Serializer) GetVBytes() (v []byte) {
 
 func (s *Serializer) readIntBits(sz uintptr) (v int64) {
 	if s.pos+int(sz) > len(s.buf) {
-		panic(0)
+		panic(fmt.Errorf("Internal error: serializer need %d bytes, but only %d available", s.pos+int(sz), len(s.buf)-s.pos))
 	}
 
 	for i := int(sz) - 1; i >= 0; i-- {
@@ -208,7 +211,7 @@ func (s *Serializer) readIntBits(sz uintptr) (v int64) {
 }
 func (s *Serializer) readUIntBits(sz uintptr) (v uint64) {
 	if s.pos+int(sz) > len(s.buf) {
-		panic(0)
+		panic(fmt.Errorf("Internal error: serializer need %d bytes, but only %d available", s.pos+int(sz), len(s.buf)-s.pos))
 	}
 
 	for i := int(sz) - 1; i >= 0; i-- {

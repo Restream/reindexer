@@ -95,9 +95,11 @@ public:
 	JsonAllocator(const JsonAllocator &) = delete;
 	JsonAllocator &operator=(const JsonAllocator &) = delete;
 	JsonAllocator(JsonAllocator &&x) : head(x.head) { x.head = nullptr; }
-	JsonAllocator &operator=(JsonAllocator &&x) {
-		head = x.head;
-		x.head = nullptr;
+	JsonAllocator &operator=(JsonAllocator &&x) noexcept {
+		if (this != &x) {
+			head = x.head;
+			x.head = nullptr;
+		}
 		return *this;
 	}
 	~JsonAllocator() { deallocate(); }

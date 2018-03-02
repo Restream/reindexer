@@ -18,7 +18,7 @@ struct QueryCacheVal {
 
 	size_t Size() const { return sizeof total_count; }
 
-	size_t total_count = 0;
+	int total_count = -1;
 };
 
 struct QueryCacheKey {
@@ -36,8 +36,7 @@ struct QueryCacheKey {
 
 struct EqQueryCacheKey {
 	bool operator()(const QueryCacheKey& lhs, const QueryCacheKey& rhs) const {
-		return (lhs.buf.size() == rhs.buf.size()) &&
-			   (memcmp(lhs.buf.data(), rhs.buf.data(), std::max(lhs.buf.size(), lhs.buf.size())) == 0);
+		return (lhs.buf.size() == rhs.buf.size()) && (memcmp(lhs.buf.data(), rhs.buf.data(), lhs.buf.size()) == 0);
 	}
 };
 

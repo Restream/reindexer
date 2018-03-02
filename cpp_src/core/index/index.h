@@ -22,7 +22,7 @@ public:
 	using KeyEntry = reindexer::KeyEntry<IdSet>;
 	using KeyEntryPlain = reindexer::KeyEntry<IdSetPlain>;
 
-	Index(IndexType _type, const string& _name, const IndexOpts& opts = IndexOpts(), const PayloadType::Ptr payloadType = nullptr,
+	Index(IndexType _type, const string& _name, const IndexOpts& opts = IndexOpts(), const PayloadType payloadType = PayloadType(),
 		  const FieldsSet& fields = FieldsSet());
 	Index& operator=(const Index&) = delete;
 	virtual ~Index();
@@ -41,10 +41,10 @@ public:
 	virtual Index* Clone() = 0;
 	virtual void Configure(const string&) {}
 	virtual bool IsOrdered() const { return false; }
-	void UpdatePayloadType(const PayloadType::Ptr payloadType) { payloadType_ = payloadType; }
+	void UpdatePayloadType(const PayloadType payloadType) { payloadType_ = payloadType; }
 
 	static Index* New(IndexType type, const string& _name, const IndexOpts& opts);
-	static Index* NewComposite(IndexType type, const string& _name, const IndexOpts& opts, const PayloadType::Ptr payloadType,
+	static Index* NewComposite(IndexType type, const string& _name, const IndexOpts& opts, const PayloadType payloadType,
 							   const FieldsSet& fields_);
 
 	string TypeName();
@@ -63,7 +63,7 @@ public:
 	// Index options
 	IndexOpts opts_;
 	// Payload type of items
-	mutable PayloadType::Ptr payloadType_;
+	mutable PayloadType payloadType_;
 	// Fields in index. Valid only for composite indexes
 	FieldsSet fields_;
 };

@@ -139,17 +139,18 @@ void Connection::closeConn() {
 		fd_ = -1;
 	}
 	timeout_.stop();
-
+	if (dispatcher_.onClose_) {
+		Context ctx{nullptr, this};
+		dispatcher_.onClose_(ctx, errOK);
+	}
 	clientData_.reset();
 }
 
-void Connection::handleRPC(RPCCall *call) {
-	Context ctx{call, this};
-
+void Connection::handleRPC(Context &ctx) {
 	Error err = dispatcher_.handle(ctx);
 
 	if (!respSent_) {
-		responceRPC(call, err, Args());
+		responceRPC(ctx, err, Args());
 	}
 }
 
@@ -157,17 +158,18 @@ void Connection::parseRPC() {
 	CProtoHeader hdr;
 
 	while (!closeConn_) {
+		Context ctx{nullptr, this};
 		auto len = rdBuf_.peek(reinterpret_cast<char *>(&hdr), sizeof(hdr));
 
 		if (len < sizeof(hdr)) return;
 		if (hdr.magic != kCprotoMagic || hdr.version != kCprotoVersion) {
-			responceRPC(nullptr, Error(errParams, "Invalid cproto header: magic=%08x or version=%08x", hdr.magic, hdr.version), Args());
+			responceRPC(ctx, Error(errParams, "Invalid cproto header: magic=%08x or version=%08x", hdr.magic, hdr.version), Args());
 			closeConn_ = true;
 			return;
 		}
 
 		if (hdr.len + sizeof(hdr) > kRPCReadbufSize) {
-			responceRPC(nullptr, Error(errParams, "Too big request: len=%08x", hdr.len), Args());
+			responceRPC(ctx, Error(errParams, "Too big request: len=%08x", hdr.len), Args());
 			closeConn_ = true;
 			return;
 		}
@@ -184,17 +186,17 @@ void Connection::parseRPC() {
 		assert(it.len >= hdr.len);
 
 		RPCCall call;
+		ctx.call = &call;
 		try {
 			call.cmd = CmdCode(hdr.cmd);
 			call.seq = hdr.seq;
 			Serializer ser(it.data, hdr.len);
 			call.args.Unpack(ser);
-			// printf("handle cmd=%d, args=%d data len=%d\n", int(hdr.cmd), int(call.args.size()), int(hdr.len));
-			handleRPC(&call);
+			handleRPC(ctx);
 		} catch (const Error &err) {
 			// Execption occurs on unrecoverble error. Send responce, and drop connection
 			fprintf(stderr, "drop connect, reason: %s\n", err.what().c_str());
-			responceRPC(&call, err, Args());
+			responceRPC(ctx, err, Args());
 			closeConn_ = true;
 		}
 
@@ -204,12 +206,13 @@ void Connection::parseRPC() {
 	}
 }
 
-void Connection::responceRPC(RPCCall *call, const Error &status, const Args &args) {
-	//	fprintf(stderr, "resp: err=%s,args=%d\n", status.what().c_str(), int(args.size()));
-
+void Connection::responceRPC(Context &ctx, const Error &status, const Args &args) {
 	if (respSent_) {
 		fprintf(stderr, "Warning - RPC responce already sent\n");
 		return;
+	}
+	if (dispatcher_.logger_ != nullptr) {
+		dispatcher_.logger_(ctx, status, args);
 	}
 
 	WrSerializer ser;
@@ -222,9 +225,9 @@ void Connection::responceRPC(RPCCall *call, const Error &status, const Args &arg
 	hdr.len = ser.Len();
 	hdr.magic = kCprotoMagic;
 	hdr.version = kCprotoVersion;
-	if (call != nullptr) {
-		hdr.cmd = call->cmd;
-		hdr.seq = call->seq;
+	if (ctx.call != nullptr) {
+		hdr.cmd = ctx.call->cmd;
+		hdr.seq = ctx.call->seq;
 	} else {
 		hdr.cmd = 0;
 		hdr.seq = 0;

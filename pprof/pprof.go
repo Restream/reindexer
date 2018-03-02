@@ -1,8 +1,6 @@
 package pprof
 
-// #cgo CXXFLAGS:  -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free
-// #cgo CFLAGS: -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free
-// #cgo LDFLAGS: -ltcmalloc -lprofiler -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free
+// #cgo LDFLAGS: -ltcmalloc -lprofiler
 // #include <stdlib.h>
 // #include "pprof.h"
 import "C"

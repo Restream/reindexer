@@ -46,7 +46,8 @@ RUN go get -insecure github.com/restream/reindexer && \
     go get github.com/mailru/easyjson/...
 RUN go get github.com/boltdb/bolt && \
     go get github.com/kshvakov/clickhouse && \
-    go get -tags fts5 github.com/mattn/go-sqlite3 
+    go get -tags fts5 github.com/mattn/go-sqlite3 && \
+    go get github.com/labstack/echo
 
 # Build Reindexer
 RUN make -C /go/src/github.com/restream/reindexer/cpp_src -j8 EXTRA_CFLAGS=-DNDEBUG
@@ -135,6 +136,23 @@ RUN apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4 && \
     apt-get -y install clickhouse-client clickhouse-server-common
 RUN sed -i_ "s/<listen_host>::1<\/listen_host>//" /etc/clickhouse-server/config.xml
 
+# Install arangoDB 
+RUN curl -L https://download.arangodb.com/arangodb33/xUbuntu_16.04/Release.key | apt-key add - && \
+    echo 'deb https://download.arangodb.com/arangodb33/xUbuntu_16.04/ /' | tee /etc/apt/sources.list.d/arangodb.list && \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y arangodb3=3.3.3
+
+RUN go get github.com/arangodb/go-driver
+
+# Install rethink DB
+RUN echo "deb http://download.rethinkdb.com/apt xenial main" | tee /etc/apt/sources.list.d/rethinkdb.list && \
+    curl -L https://download.rethinkdb.com/apt/pubkey.gpg | apt-key add - && \
+    apt-get -y update && \
+    apt-get -y install rethinkdb
+
+RUN cp /etc/rethinkdb/default.conf.sample /etc/rethinkdb/instances.d/instance1.conf
+RUN go get gopkg.in/gorethink/gorethink.v4
+
 # Create entrypoint
 ###################
 RUN echo "#!/bin/sh" >/entrypoint.sh&& \
@@ -145,6 +163,8 @@ RUN echo "#!/bin/sh" >/entrypoint.sh&& \
     echo "mongod --config /etc/mongod.conf --fork" >>/entrypoint.sh && \
     echo "/etc/init.d/tarantool start" >>/entrypoint.sh && \
     echo "/etc/init.d/clickhouse-server start" >>/entrypoint.sh && \
+    echo "/etc/init.d/rethinkdb start" >>/entrypoint.sh && \
+    echo "/etc/init.d/arangodb3 start &" >>/entrypoint.sh && \
     echo "exec \"\$@\"" >>/entrypoint.sh && \
     chmod +x /entrypoint.sh 
 

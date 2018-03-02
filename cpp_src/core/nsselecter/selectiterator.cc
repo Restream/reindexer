@@ -8,7 +8,7 @@ namespace reindexer {
 using std::min;
 using std::max;
 
-void SelectIterator::Bind(const PayloadType *type, int field) {
+void SelectIterator::Bind(PayloadType type, int field) {
 	for (auto &cmp : comparators_) cmp.Bind(type, field);
 }
 
@@ -190,7 +190,7 @@ void SelectIterator::ExcludeLastSet() {
 	assert(!comparators_.size());
 }
 
-void SelectIterator::AppendAndBind(SelectKeyResult &other, const PayloadType *type, int field) {
+void SelectIterator::AppendAndBind(SelectKeyResult &other, PayloadType type, int field) {
 	for (auto &r : other) push_back(std::move(r));
 	for (auto &c : other.comparators_) {
 		c.Bind(type, field);

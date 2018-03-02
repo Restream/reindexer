@@ -55,6 +55,7 @@ public:
 			cap_ = other.cap_;
 
 			if (other.buf_ == other.inBuf_) {
+				buf_ = inBuf_;
 				memcpy(buf_, other.buf_, other.len_ * sizeof(other.inBuf_[0]));
 			} else {
 				buf_ = other.buf_;

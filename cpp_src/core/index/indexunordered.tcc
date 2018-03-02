@@ -40,7 +40,7 @@ void IndexUnordered<T>::Delete(const KeyRef &key, IdType id) {
 	(void)delcnt;
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
 	assertf(this->opts_.IsArray() || delcnt, "Delete unexists id from index '%s' id=%d,key=%s", this->name.c_str(), id,
-			KeyValue(key).toString().c_str());
+			KeyRef(key).As<string>().c_str());
 
 	tracker_.markUpdated(idx_map, &*keyIt);
 
@@ -75,7 +75,7 @@ void IndexUnordered<T>::tryIdsetCache(const KeyValues &keys, CondType condition,
 			selector(res);
 			cache_->Put(*cached.key, res.mergeIdsets());
 		} else
-			res.push_back(cached.val.ids);
+			res.push_back(SingleSelectKeyResult(cached.val.ids));
 	} else
 		selector(res);
 }
@@ -90,12 +90,12 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const KeyValues &keys, CondType co
 
 	switch (condition) {
 		case CondEmpty:
-			res.push_back(this->empty_ids_.Sorted(sortId));
+			res.push_back(SingleSelectKeyResult(this->empty_ids_.Sorted(sortId)));
 			break;
 		case CondAny:
 			// Get set of any keys
 			res.reserve(this->idx_map.size());
-			for (auto &keyIt : this->idx_map) res.push_back(keyIt.second.Sorted(sortId));
+			for (auto &keyIt : this->idx_map) res.push_back(SingleSelectKeyResult(keyIt.second.Sorted(sortId)));
 			break;
 		// Get set of keys or single key
 		case CondEq:
@@ -110,7 +110,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const KeyValues &keys, CondType co
 					res.reserve(keys.size());
 					for (auto key : keys) {
 						auto keyIt = i_map->find(static_cast<typename T::key_type>(key));
-						if (keyIt != i_map->end()) res.push_back(keyIt->second.Sorted(sortId));
+						if (keyIt != i_map->end()) res.push_back(SingleSelectKeyResult(keyIt->second.Sorted(sortId)));
 					}
 				};
 
@@ -133,7 +133,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const KeyValues &keys, CondType co
 					rslts.push_back(res1);
 					return rslts;
 				}
-				res1.push_back(keyIt->second.Sorted(sortId));
+				res1.push_back(SingleSelectKeyResult(keyIt->second.Sorted(sortId)));
 				rslts.push_back(res1);
 			}
 			return rslts;
@@ -157,7 +157,7 @@ void IndexUnordered<T>::DumpKeys() {
 	fprintf(stderr, "Dumping index: %s,keys=%d\n", this->name.c_str(), int(this->idx_map.size()));
 	for (auto &k : this->idx_map) {
 		string buf;
-		buf += KeyValue(k.first).toString() + ":";
+		buf += KeyRef(k.first).As<string>() + ":";
 		if (!k.second.Unsorted().size()) {
 			buf += "<no ids>";
 		} else {

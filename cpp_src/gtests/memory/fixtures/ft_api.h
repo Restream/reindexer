@@ -70,11 +70,12 @@ public:
 		size_t counter = 0;
 		auto start = std::chrono::high_resolution_clock::now();
 		for (auto &perphase : all_perphase_) {
-			auto item = AddData(default_namespace, "id", int(counter));
+			Item item = NewItem(default_namespace);
+			item["id"] = int(counter);
 			if (counter % 2) {
-				AddData(default_namespace, "ft1", perphase, item);
+				item["ft1"] = perphase;
 			} else {
-				AddData(default_namespace, "ft2", perphase, item);
+				item["ft2"] = perphase;
 			}
 			Upsert(default_namespace, item);
 			counter++;
@@ -117,8 +118,7 @@ public:
 	Statistic GetStat() { return stat; }
 
 	QueryResults Select(string word) {
-		Query qr;
-		this->FillQuery(default_namespace, word, "target", OpAnd, CondEq, qr);
+		Query qr = Query(default_namespace).Where("target", CondEq, word);
 		QueryResults res;
 		reindexer->Select(qr, res);
 		return res;

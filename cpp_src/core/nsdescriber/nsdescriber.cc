@@ -1,6 +1,7 @@
 #include <sstream>
 
 #include "core/cjson/jsondecoder.h"
+#include "core/cjson/jsonencoder.h"
 #include "core/namespace.h"
 #include "nsdescriber.h"
 
@@ -10,23 +11,23 @@ using std::stringstream;
 
 namespace reindexer {
 void NsDescriber::operator()(QueryResults &result) {
-	PayloadType::Ptr payloadType;
+	PayloadType payloadType;
 	TagsMatcher tagsMatcher;
 	Namespace::RLock rlock(ns_->mtx_);
 
 	if (result.ctxs.size() == 0) {
-		payloadType = PayloadType::Ptr(new PayloadType(ns_->name));
-		payloadType.clone()->Add(PayloadFieldType(KeyValueString, "-tuple", "", false));
+		payloadType = PayloadType(ns_->name);
+		payloadType.Add(PayloadFieldType(KeyValueString, "-tuple", "", false));
 		tagsMatcher = TagsMatcher(payloadType);
-		result.ctxs.push_back(QueryResults::Context(payloadType, tagsMatcher, JsonPrintFilter()));
+		result.addNSContext(payloadType, tagsMatcher, JsonPrintFilter());
 	} else {
-		payloadType = result.ctxs.back().type_;
-		tagsMatcher = result.ctxs.back().tagsMatcher_;
+		payloadType = result.getPayloadType(0);
+		tagsMatcher = result.getTagsMatcher(0);
 	}
 
 	JsonValue jsonValue;
 	JsonAllocator jsonAllocator;
-	PayloadValue payloadValue(payloadType->TotalSize());
+	PayloadValue payloadValue(payloadType.TotalSize());
 	char *endptr;
 
 	// prepare json
@@ -104,7 +105,7 @@ void NsDescriber::operator()(QueryResults &result) {
 	Payload payload(payloadType, payloadValue);
 
 	WrSerializer wrSer;
-	JsonDecoder decoder(result.ctxs.back().tagsMatcher_);
+	JsonDecoder decoder(result.getTagsMatcher(0));
 
 	auto err = decoder.Decode(&payload, wrSer, jsonValue);
 	if (!err.ok()) {

@@ -7,7 +7,7 @@
 
 namespace reindexer {
 
-Index::Index(IndexType _type, const string& _name, const IndexOpts& opts, const PayloadType::Ptr payloadType, const FieldsSet& fields)
+Index::Index(IndexType _type, const string& _name, const IndexOpts& opts, const PayloadType payloadType, const FieldsSet& fields)
 	: type(_type), name(_name), opts_(opts), payloadType_(payloadType), fields_(fields) {
 	logPrintf(LogTrace, "Index::Index (%s)%s", _name.c_str(), opts.IsPK() ? ",pk" : "");
 }
@@ -59,9 +59,8 @@ Index* Index::New(IndexType type, const string& name, const IndexOpts& opts) {
 	return nullptr;
 }
 
-Index* Index::NewComposite(IndexType type, const string& name, const IndexOpts& opts, const PayloadType::Ptr payloadType,
+Index* Index::NewComposite(IndexType type, const string& name, const IndexOpts& opts, const PayloadType payloadType,
 						   const FieldsSet& fields) {
-	logPrintf(LogInfo, "Index::NewComposite (%s,%d)\n", name.c_str(), type);
 	bool dense = opts.IsPK() || opts.IsDense();
 
 	switch (type) {

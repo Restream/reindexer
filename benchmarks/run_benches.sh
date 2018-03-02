@@ -2,7 +2,7 @@
 
 set -e
 
-databases='reindex sqlite tarantool redis mysql mongo clickhouse elastic sphinx'
+databases='reindex sqlite tarantool redis mysql mongo clickhouse elastic sphinx arango rethink'
 benches='byid 1cond 2cond text text_prefix update'
 
 function run_benchmark  {
@@ -10,7 +10,7 @@ function run_benchmark  {
     bench=$2
     result=''
     for try in `seq 10`; do
-       ret=`wrk -d2s -t2 -c50 http://127.0.0.1:8080/$bench/$db | grep 'Requests\/sec' | sed 's/Requests\/sec:\(.*\)/\1/'`
+       ret=`wrk -d2s -t2 -c50 http://127.0.0.1:8081/$bench/$db | grep 'Requests\/sec' | sed 's/Requests\/sec:\(.*\)/\1/'`
        result="$result $ret"
        sleep 1
     done
@@ -23,7 +23,7 @@ function run_benchmark  {
 for db in $databases; do
     for bench in $benches; do
         case "$db $bench" in
-            "redis 2cond"|"redis text"*|"sphinx byid"|"sphinx 1cond"|"sphinx 2cond"|"clickhouse text"*)
+            "redis 2cond"|"redis text"*|"sphinx byid"|"sphinx 1cond"|"sphinx 2cond"|"clickhouse text"*|"rethink text"*)
             ;;
             *)
             run_benchmark $db $bench

@@ -3,6 +3,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <algorithm>
+#include <csignal>
 
 namespace reindexer {
 namespace net {
@@ -42,7 +43,7 @@ void loop_epoll_backend::stop(int fd) {
 }
 
 int loop_epoll_backend::runonce(int64_t t) {
-	int ret = syscall(SYS_epoll_wait, ctlfd_, &events_[0], events_.size(), t != -1 ? t / 1000 : -1);
+	int ret = epoll_wait(ctlfd_, &events_[0], events_.size(), t != -1 ? t / 1000 : -1);
 	if (ret < 0) {
 		perror("epoll_wait");
 	}
@@ -107,9 +108,23 @@ int loop_select_backend::runonce(int64_t t) {
 	return ret;
 }
 
+static thread_local std::atomic<int> signalsMask;
+
+extern "C" void net_ev_sighandler(int signum) { signalsMask |= (1 << signum); }
+
 dynamic_loop::dynamic_loop() {
 	fds_.reserve(2048);
 	backend_.init(this);
+}
+
+dynamic_loop::~dynamic_loop() {
+	if (async_fds_[0] >= 0) {
+		stop(async_fds_[0]);
+		close(async_fds_[0]);
+	}
+	if (async_fds_[1] >= 0) {
+		close(async_fds_[1]);
+	}
 }
 
 void dynamic_loop::run() {
@@ -124,6 +139,18 @@ void dynamic_loop::run() {
 			if (tv < 0) tv = 0;
 		}
 		int ret = backend_.runonce(tv);
+		int pendingSignalsMask = signalsMask.exchange(0);
+		if (pendingSignalsMask) {
+			for (auto sig : sigs_) {
+				if ((1 << (sig->signum_)) & pendingSignalsMask) {
+					sig->callback();
+					pendingSignalsMask &= ~(1 << (sig->signum_));
+				}
+			}
+		}
+		if (pendingSignalsMask) {
+			printf("Unexpected signals %08X", pendingSignalsMask);
+		}
 
 		if (ret >= 0 && timers_.size()) {
 			if (!gEnableBusyLoop || !(++count % 100)) {
@@ -186,8 +213,73 @@ void dynamic_loop::stop(timer *watcher) {
 	}
 }
 
+void dynamic_loop::set(sig *watcher) {
+	auto it = std::find(sigs_.begin(), sigs_.end(), watcher);
+	if (it != sigs_.end()) {
+		printf("sig %d already set\n", watcher->signum_);
+		return;
+	}
+	sigs_.push_back(watcher);
+	assert(watcher->old_handler_ == nullptr);
+	watcher->old_handler_ = std::signal(watcher->signum_, net_ev_sighandler);
+}
+
+void dynamic_loop::stop(sig *watcher) {
+	auto it = std::find(sigs_.begin(), sigs_.end(), watcher);
+	if (it == sigs_.end()) {
+		printf("sig %d is not set\n", watcher->signum_);
+		return;
+	}
+	sigs_.erase(it);
+	std::signal(watcher->signum_, watcher->old_handler_);
+}
+
+void dynamic_loop::set(async *watcher) {
+	auto it = std::find(asyncs_.begin(), asyncs_.end(), watcher);
+	if (it != asyncs_.end()) {
+		printf("async is already set\n");
+		return;
+	}
+	if (async_fds_[0] < 0) {
+		if (pipe(async_fds_) < 0) {
+			perror("pipe:");
+		}
+		set(async_fds_[0], nullptr, READ);
+	}
+
+	asyncs_.push_back(watcher);
+}
+
+void dynamic_loop::stop(async *watcher) {
+	auto it = std::find(asyncs_.begin(), asyncs_.end(), watcher);
+	if (it == asyncs_.end()) {
+		printf("async is not set\n");
+		return;
+	}
+	asyncs_.erase(it);
+}
+
+void dynamic_loop::send(async *watcher) {
+	watcher->sent_ = true;
+	int res = write(async_fds_[1], " ", 1);
+	(void)res;
+}
+
 void dynamic_loop::callback(int fd, int events) {
 	if (fd < 0 || fd > int(fds_.size())) {
+		return;
+	}
+
+	if (fd == async_fds_[0]) {
+		char tmpBuf[256];
+		int res = read(fd, tmpBuf, sizeof(tmpBuf));
+		(void)res;
+		for (auto async : asyncs_) {
+			if (async->sent_) {
+				async->callback();
+				async->sent_ = false;
+			}
+		}
 		return;
 	}
 	if (fds_[fd].watcher_) {

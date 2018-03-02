@@ -5,13 +5,14 @@
 #include "payloadiface.h"
 #include "payloadvalue.h"
 
+using std::pair;
+
 namespace reindexer {
 
 template <typename T>
-PayloadIface<T>::PayloadIface(const PayloadType &t, T *p) : t_(t), v_(p) {}
-
+PayloadIface<T>::PayloadIface(const PayloadType &t, T &v) : t_(*t.get()), v_(&v) {}
 template <typename T>
-PayloadIface<T>::PayloadIface(const PayloadType::Ptr t, T &v) : t_(*t), v_(&v) {}
+PayloadIface<T>::PayloadIface(const PayloadTypeImpl &t, T &v) : t_(t), v_(&v) {}
 
 template <typename T>
 KeyRefs &PayloadIface<T>::Get(int field, KeyRefs &keys) const {
@@ -153,7 +154,7 @@ std::string PayloadIface<T>::Dump() {
 
 		for (size_t j = 0; j < fieldValues.size(); ++j) {
 			auto &fieldValue = fieldValues[j];
-			printString += reindexer::KeyValue(fieldValue).toString();
+			printString += fieldValue.As<string>();
 			if (j != fieldValues.size() - 1) {
 				printString += ", ";
 			}
@@ -173,7 +174,7 @@ size_t PayloadIface<T>::GetHash(const FieldsSet &fields) const {
 }
 
 template <typename T>
-bool PayloadIface<T>::IsEQ(const T *other, const FieldsSet &fields) const {
+bool PayloadIface<T>::IsEQ(const T &other, const FieldsSet &fields) const {
 	PayloadIface<const T> o(t_, other);
 	KeyRefs keys1, keys2;
 	for (auto field : fields)
@@ -182,7 +183,7 @@ bool PayloadIface<T>::IsEQ(const T *other, const FieldsSet &fields) const {
 }
 
 template <typename T>
-bool PayloadIface<T>::IsEQ(const T *other) const {
+bool PayloadIface<T>::IsEQ(const T &other) const {
 	PayloadIface<const T> o(t_, other);
 	KeyRefs keys1, keys2;
 	for (int field = 0; field < NumFields(); ++field)
@@ -191,7 +192,7 @@ bool PayloadIface<T>::IsEQ(const T *other) const {
 }
 
 template <typename T>
-bool PayloadIface<T>::Less(const T *other, const FieldsSet &fields) const {
+bool PayloadIface<T>::Less(const T &other, const FieldsSet &fields) const {
 	PayloadIface<const T> o(t_, other);
 	for (auto field : fields) {
 		int res = Field(field).Get().Compare(o.Field(field).Get());
@@ -241,8 +242,76 @@ void PayloadIface<T>::ReleaseStrings() {
 	}
 }
 
+template <typename T>
+template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
+T PayloadIface<T>::CopyTo(PayloadType modifiedType, bool newOrUpdatedFields) {
+	if (newOrUpdatedFields) {
+		return CopyWithNewOrUpdatedFields(modifiedType);
+	} else {
+		return CopyWithRemovedFields(modifiedType);
+	}
+}
+
+template <typename T>
+template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
+T PayloadIface<T>::CopyWithNewOrUpdatedFields(PayloadType modifiedType) {
+	size_t totalGrow = 0;
+	for (int idx = 1; idx < modifiedType.NumFields(); ++idx) {
+		if (!t_.Contains(modifiedType.Field(idx).Name())) {
+			const PayloadFieldType &fieldType = modifiedType.Field(idx);
+			totalGrow += fieldType.IsArray() ? sizeof(PayloadFieldValue::Array) : fieldType.Sizeof();
+		} else {
+			if (modifiedType.Field(idx).IsArray() && !t_.Field(idx).IsArray()) {
+				totalGrow += sizeof(PayloadFieldValue::Array) - t_.Field(idx).Sizeof();
+			}
+		}
+	}
+
+	T pv(RealSize() + totalGrow);
+	PayloadIface<T> copyValueInterface(modifiedType, pv);
+	for (int idx = 0; idx < t_.NumFields(); ++idx) {
+		KeyRefs kr;
+		Get(idx, kr);
+		copyValueInterface.Set(idx, kr, false);
+	}
+
+	return pv;
+}
+
+template <typename T>
+template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
+T PayloadIface<T>::CopyWithRemovedFields(PayloadType modifiedType) {
+	size_t totalReduce = 0;
+	std::vector<string> fieldsLeft;
+	for (int idx = 0; idx < t_.NumFields(); ++idx) {
+		const string &fieldname(t_.Field(idx).Name());
+		if (modifiedType.Contains(fieldname)) {
+			fieldsLeft.emplace_back(fieldname);
+		} else {
+			const PayloadFieldType &fieldType = t_.Field(idx);
+			totalReduce += fieldType.IsArray() ? sizeof(PayloadFieldValue::Array) : fieldType.Sizeof();
+		}
+	}
+
+	KeyRefs kr;
+	T pv(RealSize() - totalReduce);
+	PayloadIface<T> copyValueInterface(modifiedType, pv);
+	for (size_t i = 0; i < fieldsLeft.size(); ++i) {
+		const string &fieldname(fieldsLeft[i]);
+		Get(fieldname, kr);
+		copyValueInterface.Set(fieldname, kr, false);
+	}
+
+	return pv;
+}
+
 template class PayloadIface<PayloadValue>;
 template class PayloadIface<const PayloadValue>;
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(string const &, KeyRefs const &, bool);
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(int, KeyRefs const &, bool);
+
+template PayloadValue PayloadIface<PayloadValue>::CopyTo<PayloadValue, static_cast<void *>(0)>(PayloadType t, bool newFields);
+template PayloadValue PayloadIface<PayloadValue>::CopyWithNewOrUpdatedFields<PayloadValue, static_cast<void *>(0)>(PayloadType t);
+template PayloadValue PayloadIface<PayloadValue>::CopyWithRemovedFields<PayloadValue, static_cast<void *>(0)>(PayloadType t);
+
 }  // namespace reindexer

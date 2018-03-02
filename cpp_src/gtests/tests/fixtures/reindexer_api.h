@@ -36,27 +36,6 @@ protected:
 	typedef tuple<const char *, const char *, const char *, IndexOpts> IndexDeclaration;
 
 public:
-	void FillQuery(const std::string &ns, const string &data, const std::string &index, OpType op, CondType cond, Query &qr) {
-		QueryEntry entry;
-		entry.index = index;
-		entry.condition = cond;
-		entry.op = op;
-		entry.values.push_back(KeyValue(make_key_string(data)));
-		qr._namespace = ns;
-		qr.entries.push_back(entry);
-	}
-
-	template <class T>
-	void FillQuery(const std::string &ns, T data, const std::string &index, OpType op, CondType cond, Query &qr) {
-		QueryEntry entry;
-		entry.index = index;
-		entry.condition = cond;
-		entry.op = op;
-		entry.values.push_back(KeyValue(data));
-		qr._namespace = ns;
-		qr.entries.push_back(entry);
-	}
-
 	ReindexerApi() { reindexer = make_shared<Reindexer>(); }
 	void CreateNamespace(const std::string &ns) {
 		auto err = reindexer->OpenNamespace(ns, StorageOpts().Enabled());
@@ -73,74 +52,33 @@ public:
 		err = reindexer->Commit(ns);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
+	Item NewItem(const std::string &ns) { return reindexer->NewItem(ns); }
 
-	Item *AddData(const std::string &ns, const string &index, const string &data, Item *item = nullptr) {
-		if (!item) {
-			item = reindexer->NewItem(ns);
-		}
-		assert(item);
-		assert(item->Status().ok());
-		cache_.push_back(data);
-		KeyRefs refs;
-		refs.push_back(KeyRef{p_string(&cache_.back())});
-		auto err = item->SetField(index, refs);
-		assert(err.ok());
-		return item;
-	}
 	void Commit(const std::string &ns) { reindexer->Commit(ns); }
-
-	template <class T>
-	Item *AddData(const std::string &ns, const string &index, const T data, Item *item = nullptr) {
-		KeyRefs refs;
-		refs.push_back(KeyRef{data});
-		return AddData(ns, index, refs, item);
-	}
-	template <class T>
-	Item *AddData(const std::string &ns, const string &index, const vector<T> data, Item *item = nullptr) {
-		KeyRefs refs;
-		for (const T &item : data) {
-			refs.push_back(KeyRef{item});
-		}
-		return AddData(ns, index, refs, item);
-	}
-	Item *AddData(const std::string &ns, const string &index, const KeyRefs &refs, Item *item = nullptr) {
-		if (!item) {
-			item = reindexer->NewItem(ns);
-		}
-		assert(item);
-		assert(item->Status().ok());
-		auto err = item->SetField(index, refs);
-		assert(err.ok());
-		return item;
-	}
-	void Upsert(const std::string &ns, Item *item) {
+	void Upsert(const std::string &ns, Item &item) {
 		assert(item);
 		auto err = reindexer->Upsert(ns, item);
-		assert(err.ok());
+		assertf(err.ok(), "%s", err.what().c_str());
 	}
 
 	void PrintQueryResults(const std::string &ns, const QueryResults &res) {
 		{
-			auto dummy = reindexer->NewItem(ns);
-			auto rdummy = reinterpret_cast<reindexer::ItemImpl *>(dummy);
+			Item rdummy(reindexer->NewItem(ns));
 			std::string outBuf;
-			for (auto idx = 1; idx < rdummy->NumFields(); idx++) {
+			for (auto idx = 1; idx < rdummy.NumFields(); idx++) {
 				outBuf += "\t";
-				outBuf += rdummy->Type().Field(idx).Name();
+				outBuf += rdummy[idx].Name();
 			}
 			TestCout() << outBuf << std::endl;
-			delete dummy;
-			rdummy = nullptr;
 		}
 
 		for (size_t i = 0; i < res.size(); ++i) {
-			std::unique_ptr<reindexer::Item> item(res.GetItem(i));
-			auto ritem = reinterpret_cast<reindexer::ItemImpl *>(item.get());
+			Item ritem(res.GetItem(i));
 			std::string outBuf = "";
-			for (auto idx = 1; idx < ritem->NumFields(); idx++) {
-				auto field = ritem->Type().Field(idx).Name();
+			for (auto idx = 1; idx < ritem.NumFields(); idx++) {
+				auto field = ritem[idx].Name();
 				outBuf += "\t";
-				outBuf += reindexer::KeyValue(ritem->GetField(field)).toString();
+				outBuf += ritem[field].As<string>();
 			}
 			TestCout() << outBuf << std::endl;
 		}
@@ -168,7 +106,6 @@ public:
 	}
 
 public:
-	list<std::string> cache_;
 	const string default_namespace = "test_namespace";
 	const string letters = "abcdefghijklmnopqrstuvwxyz";
 	shared_ptr<Reindexer> reindexer;

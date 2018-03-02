@@ -28,16 +28,17 @@ public:
 	virtual ~ClientData() = default;
 };
 
+struct Context;
 class Writer {
 public:
 	virtual ~Writer() = default;
-	virtual void WriteRPCReturn(RPCCall *call, const Args &args) = 0;
+	virtual void WriteRPCReturn(Context &ctx, const Args &args) = 0;
 	virtual void SetClientData(ClientData::Ptr data) = 0;
 	virtual ClientData::Ptr GetClientData() = 0;
 };
 
 struct Context {
-	void Return(const Args &args) { writer->WriteRPCReturn(call, args); }
+	void Return(const Args &args) { writer->WriteRPCReturn(*this, args); }
 	void SetClientData(ClientData::Ptr data) { writer->SetClientData(data); };
 	ClientData::Ptr GetClientData() { return writer->GetClientData(); }
 
@@ -62,10 +63,36 @@ public:
 	void Register(CmdCode cmd, K *object, Error (K::*func)(Context &, Args... args)) {
 		auto wrapper = [func](void *obj, Context &ctx) {
 			if (sizeof...(Args) > ctx.call->args.size())
-				return Error(errParams, "Invalid args of RPC call expected %d, got %d", int(sizeof...(Args)), int(ctx.call->args.size()));
+				return Error(errParams, "Invalid args of %s call expected %d, got %d", CmdName(ctx.call->cmd), int(sizeof...(Args)),
+							 int(ctx.call->args.size()));
 			return func_wrapper(obj, func, ctx);
 		};
 		handlers_[cmd] = {wrapper, object};
+	}
+
+	/// Add middleware for commands
+	/// @param object - handler class object
+	/// @param func - handler
+	template <class K>
+	void Middleware(K *object, Error (K::*func)(Context &)) {
+		auto wrapper = [func](void *obj, Context &ctx) { return func_wrapper(obj, func, ctx); };
+		middlewares_.push_back({wrapper, object});
+	}
+
+	/// Set logger for commands
+	/// @param object - logger class object
+	/// @param func - logger
+	template <class K>
+	void Logger(K *object, void (K::*func)(Context &ctx, const Error &err, const Args &ret)) {
+		logger_ = [=](Context &ctx, const Error &err, const Args &ret) { (static_cast<K *>(object)->*func)(ctx, err, ret); };
+	}
+
+	/// Set closer notifier
+	/// @param object close class object
+	/// @param func function, to be called on connecion close
+	template <class K>
+	void OnClose(K *object, void (K::*func)(Context &ctx, const Error &err)) {
+		onClose_ = [=](Context &ctx, const Error &err) { (static_cast<K *>(object)->*func)(ctx, err); };
 	}
 
 protected:
@@ -104,6 +131,10 @@ protected:
 	};
 
 	std::vector<Handler> handlers_;
+	std::vector<Handler> middlewares_;
+
+	std::function<void(Context &ctx, const Error &err, const Args &args)> logger_;
+	std::function<void(Context &ctx, const Error &err)> onClose_;
 };
 }  // namespace cproto
 }  // namespace net

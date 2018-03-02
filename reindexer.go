@@ -82,7 +82,7 @@ type reindexerNamespace struct {
 	deepCopyIface bool
 	name          string
 	opts          NamespaceOptions
-	cjsonState    *cjson.State
+	cjsonState    cjson.State
 }
 
 // Interface for append joined items
@@ -244,6 +244,7 @@ func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s i
 		if err = db.binding.OpenNamespace(namespace, enableStorage, opts.dropOnFileFormatError); err != nil {
 			break
 		}
+		db.Query(namespace).Limit(0).Exec().Close()
 
 		if err = db.createIndex(namespace, t, false, "", "", &ns.joined); err != nil {
 			rerr, ok := err.(bindings.Error)
@@ -256,7 +257,7 @@ func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s i
 		}
 
 		// Initial query to update payloadType
-		db.Query(namespace).Limit(0).Exec()
+		db.Query(namespace).Limit(0).Exec().Close()
 		break
 	}
 	if err != nil {
@@ -291,85 +292,29 @@ func (db *Reindexer) CloseNamespace(namespace string) error {
 	return db.binding.CloseNamespace(namespace)
 }
 
-// RenameNamespace - rename namespace in DB. If dst namespace already exists, it will be overwriten
-func (db *Reindexer) RenameNamespace(src string, dst string) error {
-	db.lock.Lock()
-	srcNs, ok := db.ns[src]
-	if !ok {
-		db.lock.Unlock()
-		return errNsNotFound
-	}
-	delete(db.ns, src)
-	srcNs.name = dst
-	db.ns[dst] = srcNs
-	db.lock.Unlock()
-	return db.binding.RenameNamespace(src, dst)
-}
-
-// CloneNamespace - make a copy of namespace in DB. If dst namespace already exists, method will fail
-func (db *Reindexer) CloneNamespace(src string, dst string) error {
-	db.lock.Lock()
-	srcNs, ok := db.ns[src]
-	if !ok {
-		db.lock.Unlock()
-		return errNsNotFound
-	}
-	_, ok = db.ns[dst]
-	if ok {
-		db.lock.Unlock()
-		return errNsExists
-	}
-
-	dstNs := &reindexerNamespace{
-		cacheItems:    make(map[int]cacheItem, len(srcNs.cacheItems)),
-		joined:        srcNs.joined,
-		rtype:         srcNs.rtype,
-		name:          dst,
-		cjsonState:    srcNs.cjsonState,
-		deepCopyIface: srcNs.deepCopyIface,
-	}
-
-	srcNs.cacheLock.RLock()
-	for k, v := range srcNs.cacheItems {
-		dstNs.cacheItems[k] = v
-	}
-	srcNs.cacheLock.RUnlock()
-
-	db.ns[dst] = dstNs
-	db.lock.Unlock()
-
-	err := db.binding.CloneNamespace(src, dst)
-	if err != nil {
-		db.lock.Lock()
-		delete(db.ns, dst)
-		db.lock.Unlock()
-	}
-	return err
-}
-
 // Upsert (Insert or Update) item to index
-// Item must be the same type as item passed to NewNamespace, or []byte with json
+// Item must be the same type as item passed to OpenNamespace, or []byte with json
 func (db *Reindexer) Upsert(namespace string, item interface{}, precepts ...string) error {
 	_, err := db.modifyItem(namespace, nil, item, nil, modeUpsert, precepts...)
 	return err
 }
 
 // Insert item to namespace.
-// Item must be the same type as item passed to NewNamespace, or []byte with json data
+// Item must be the same type as item passed to OpenNamespace, or []byte with json data
 // Return 0, if no item was inserted, 1 if item was inserted
 func (db *Reindexer) Insert(namespace string, item interface{}, precepts ...string) (int, error) {
 	return db.modifyItem(namespace, nil, item, nil, modeInsert, precepts...)
 }
 
 // Update item to namespace.
-// Item must be the same type as item passed to NewNamespace, or []byte with json data
+// Item must be the same type as item passed to OpenNamespace, or []byte with json data
 // Return 0, if no item was updated, 1 if item was updated
 func (db *Reindexer) Update(namespace string, item interface{}, precepts ...string) (int, error) {
 	return db.modifyItem(namespace, nil, item, nil, modeUpdate, precepts...)
 }
 
 // Delete - remove item  from namespace
-// Item must be the same type as item passed to NewNamespace, or []byte with json data
+// Item must be the same type as item passed to OpenNamespace, or []byte with json data
 func (db *Reindexer) Delete(namespace string, item interface{}, precepts ...string) error {
 	_, err := db.modifyItem(namespace, nil, item, nil, modeDelete, precepts...)
 	return err
@@ -564,16 +509,6 @@ func (db *Reindexer) GetStats() bindings.Stats {
 // Reset local thread reindexer usage stats
 func (db *Reindexer) ResetStats() {
 	db.binding.ResetStats()
-}
-
-// NewNamespace [[depreacted]]
-func (db *Reindexer) NewNamespace(namespace string, opts *NamespaceOptions, s interface{}) error {
-	return db.OpenNamespace(namespace, opts, s)
-}
-
-// DeleteNamespace [[deprecated]]
-func (db *Reindexer) DeleteNamespace(namespace string) error {
-	return db.DropNamespace(namespace)
 }
 
 // EnableStorage enables persistent storage of data

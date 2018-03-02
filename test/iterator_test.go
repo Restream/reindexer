@@ -1,6 +1,7 @@
 package reindexer
 
 import (
+	"fmt"
 	"math/rand"
 	"sync"
 	"testing"
@@ -62,6 +63,12 @@ func TestRaceConditions(t *testing.T) {
 	done := make(chan bool)
 	wg := sync.WaitGroup{}
 	writer := func() {
+		defer func() {
+			if p := recover(); p != nil {
+				fmt.Println("Panic silenced:", p)
+				wg.Done()
+			}
+		}()
 		for {
 			select {
 			case <-done:
@@ -73,6 +80,12 @@ func TestRaceConditions(t *testing.T) {
 		}
 	}
 	reader := func() {
+		defer func() {
+			if p := recover(); p != nil {
+				fmt.Println("Panic silenced:", p)
+				wg.Done()
+			}
+		}()
 		for {
 			select {
 			case <-done:
@@ -105,16 +118,23 @@ func TestRaceConditions(t *testing.T) {
 					_ = it.Object().(*TestItem)
 				}
 				it.Close()
+				_ = q
 			}
 		}
 	}
 	openCloser := func() {
+		defer func() {
+			if p := recover(); p != nil {
+				fmt.Println("Panic silenced:", p)
+				wg.Done()
+			}
+		}()
 		for {
 			select {
 			case <-done:
 				wg.Done()
 				return
-			case <-time.After(time.Millisecond * 50):
+			case <-time.After(time.Millisecond * 10):
 				DB.CloseNamespace("test_items_iter")
 				DB.OpenNamespace("test_items_iter", reindexer.DefaultNamespaceOptions(), TestItem{})
 				tx, _ := DB.BeginTx("test_join_items")
@@ -125,15 +145,15 @@ func TestRaceConditions(t *testing.T) {
 	}
 
 	for i := 0; i < 4; i++ {
+		wg.Add(1)
 		go writer()
 		wg.Add(1)
 		go reader()
 		wg.Add(1)
 		go openCloser()
-		wg.Add(1)
 	}
 
-	time.Sleep(time.Millisecond * 2000)
+	time.Sleep(time.Millisecond * 20000)
 	close(done)
 	wg.Wait()
 }

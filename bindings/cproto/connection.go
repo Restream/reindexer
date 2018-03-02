@@ -8,38 +8,42 @@ import (
 
 	"bufio"
 	"bytes"
+
 	"github.com/restream/reindexer/cjson"
 )
 
-type sig chan []byte
+type sig chan *NetBuffer
 
 const bufsCap = 16 * 1024
-const queueSize = 64
+const queueSize = 40
 
 const cprotoMagic = 0xEEDD1132
 const cprotoVersion = 0x100
 const cprotoHdrLen = 20
 
 const (
-	cmdPing            = 0
-	cmdOpenNamespace   = 1
-	cmdCloseNamespace  = 2
-	cmdDropNamespace   = 3
-	cmdRenameNamespace = 4
-	cmdCloneNamespace  = 5
-	cmdAddIndex        = 6
-	cmdEnumNamespaces  = 7
-	cmdConfigureIndex  = 8
-	cmdCommit          = 16
-	cmdModifyItem      = 17
-	cmdDeleteQuery     = 18
-	cmdSelect          = 32
-	cmdSelectSQL       = 33
-	cmdFetchResults    = 34
-	cmdGetMeta         = 48
-	cmdPutMeta         = 49
-	cmdEnumMeta        = 50
-	cmdCodeMax         = 128
+	cmdPing           = 0
+	cmdLogin          = 1
+	cmdOpenDatabase   = 2
+	cmdCloseDatabase  = 3
+	cmdDropDatabase   = 4
+	cmdOpenNamespace  = 16
+	cmdCloseNamespace = 17
+	cmdDropNamespace  = 18
+	cmdAddIndex       = 21
+	cmdEnumNamespaces = 22
+	cmdConfigureIndex = 23
+	cmdCommit         = 32
+	cmdModifyItem     = 33
+	cmdDeleteQuery    = 34
+	cmdSelect         = 48
+	cmdSelectSQL      = 49
+	cmdFetchResults   = 50
+	cmdCloseResults   = 51
+	cmdGetMeta        = 64
+	cmdPutMeta        = 65
+	cmdEnumMeta       = 66
+	cmdCodeMax        = 128
 )
 
 type connection struct {
@@ -51,8 +55,9 @@ type connection struct {
 
 	rdBuf *bufio.Reader
 	repl  [queueSize]sig
-	seqs  chan int
-	lock  sync.RWMutex
+
+	seqs chan int
+	lock sync.RWMutex
 
 	err   error
 	errCh chan struct{}
@@ -65,12 +70,26 @@ func newConnection(owner *NetCProto) (c *connection, err error) {
 		wrBuf2: bytes.NewBuffer(make([]byte, 0, bufsCap)),
 		wrKick: make(chan struct{}, 1),
 		seqs:   make(chan int, queueSize),
+		errCh:  make(chan struct{}),
 	}
 	for i := 0; i < queueSize; i++ {
 		c.seqs <- i
 		c.repl[i] = make(sig)
 	}
 	if err = c.connect(); err != nil {
+		c.onError(err)
+	}
+
+	password, username, path := "", "", owner.url.Path
+	if owner.url.User != nil {
+		username = owner.url.User.Username()
+		password, _ = owner.url.User.Password()
+	}
+	if len(path) > 0 && path[0] == '/' {
+		path = path[1:]
+	}
+
+	if _, err = c.rpcCall(cmdLogin, username, password, path); err != nil {
 		c.err = err
 	}
 	return
@@ -79,12 +98,10 @@ func newConnection(owner *NetCProto) (c *connection, err error) {
 func (c *connection) connect() (err error) {
 	c.conn, err = net.Dial("tcp", c.owner.url.Host)
 	if err != nil {
-		c.err = err
 		return err
 	}
 	c.conn.(*net.TCPConn).SetNoDelay(true)
 	c.rdBuf = bufio.NewReaderSize(c.conn, bufsCap)
-	c.errCh = make(chan struct{})
 
 	go c.writeLoop()
 	go c.readLoop()
@@ -109,7 +126,7 @@ func (c *connection) readReply(hdr []byte) (err error) {
 	ser := cjson.NewSerializer(hdr)
 	magic := ser.GetUInt32()
 	version := ser.GetUInt32()
-	size := ser.GetUInt32()
+	size := int(ser.GetUInt32())
 	_ = int(ser.GetUInt32())
 	rseq := int32(ser.GetUInt32())
 	if magic != cprotoMagic {
@@ -121,9 +138,10 @@ func (c *connection) readReply(hdr []byte) (err error) {
 	}
 
 	repCh := c.repl[rseq]
-	answ := make([]byte, size)
+	answ := newNetBuffer()
+	answ.reset(size, c)
 
-	if _, err = io.ReadFull(c.rdBuf, answ); err != nil {
+	if _, err = io.ReadFull(c.rdBuf, answ.buf); err != nil {
 		return
 	}
 
@@ -169,7 +187,7 @@ func (c *connection) writeLoop() {
 	}
 }
 
-func (c *connection) rpcCall(cmd int, args ...interface{}) (ret []interface{}, err error) {
+func (c *connection) rpcCall(cmd int, args ...interface{}) (buf *NetBuffer, err error) {
 	seq := <-c.seqs
 	reply := c.repl[seq]
 	in := newRPCEncoder(cmd, seq)
@@ -193,9 +211,8 @@ func (c *connection) rpcCall(cmd int, args ...interface{}) (ret []interface{}, e
 	c.write(in.ser.Bytes())
 	in.ser.Close()
 
-	var answer []byte
 	select {
-	case answer = <-reply:
+	case buf = <-reply:
 	case <-c.errCh:
 		c.lock.RLock()
 		err = c.err
@@ -205,29 +222,28 @@ func (c *connection) rpcCall(cmd int, args ...interface{}) (ret []interface{}, e
 	if err != nil {
 		return
 	}
-
-	out := newRPCDecoder(answer)
-	err = out.errCode()
-	if err != nil {
-		// fmt.Printf("error: %s\n", err.Error())
-		return nil, err
+	if err = buf.parseArgs(); err != nil {
+		return
 	}
-	retCount := out.argsCount()
-	ret = make([]interface{}, retCount, retCount)
-	for i := 0; i < retCount; i++ {
-		ret[i] = out.intfArg()
-	}
-	// fmt.Printf("ret %v\n", ret)
+	return
+}
 
-	return ret, nil
+func (c *connection) rpcCallNoResults(cmd int, args ...interface{}) error {
+	buf, err := c.rpcCall(cmd, args...)
+	buf.Free()
+	return err
 }
 
 func (c *connection) onError(err error) {
 	c.lock.Lock()
-	c.err = err
-	c.conn.Close()
+	if c.err == nil {
+		c.err = err
+		if c.conn != nil {
+			c.conn.Close()
+		}
+		close(c.errCh)
+	}
 	c.lock.Unlock()
-	close(c.errCh)
 }
 
 func (c *connection) hasError() (has bool) {

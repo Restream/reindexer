@@ -1,3 +1,5 @@
+#include <unordered_map>
+#include <unordered_set>
 #include "join_selects_api.h"
 
 TEST_F(JoinSelectsApi, InnerJoinTest) {
@@ -21,9 +23,8 @@ TEST_F(JoinSelectsApi, InnerJoinTest) {
 
 	if (err.ok()) {
 		for (size_t i = 0; i < pureSelectRes.size(); ++i) {
-			unique_ptr<reindexer::Item> booksItem(pureSelectRes.GetItem(i));
-			auto* booksItemr = reinterpret_cast<reindexer::ItemImpl*>(booksItem.get());
-			KeyRef authorIdKeyRef = booksItemr->GetField(authorid_fk);
+			Item booksItem(pureSelectRes.GetItem(i));
+			KeyRef authorIdKeyRef = booksItem[authorid_fk];
 
 			reindexer::QueryResults authorsSelectRes;
 			Query authorsQuery = Query(authors_namespace).Where(authorid, CondEq, authorIdKeyRef);
@@ -31,13 +32,13 @@ TEST_F(JoinSelectsApi, InnerJoinTest) {
 			EXPECT_TRUE(err.ok()) << err.what();
 
 			if (err.ok()) {
-				KeyRef bookIdKeyRef = booksItemr->GetField(bookid);
-				QueryResultRow& pureSelectRow = pureSelectRows[static_cast<int>(bookIdKeyRef)];
+				int bookId = booksItem[bookid].Get<int>();
+				QueryResultRow& pureSelectRow = pureSelectRows[bookId];
 
-				FillQueryResultFromItem(booksItem.get(), pureSelectRow);
+				FillQueryResultFromItem(booksItem, pureSelectRow);
 				for (size_t i = 0; i < authorsSelectRes.size(); ++i) {
-					unique_ptr<reindexer::Item> authorsItem(authorsSelectRes.GetItem(i));
-					FillQueryResultFromItem(authorsItem.get(), pureSelectRow);
+					Item authorsItem(authorsSelectRes.GetItem(i));
+					FillQueryResultFromItem(authorsItem, pureSelectRow);
 				}
 			}
 		}
@@ -59,12 +60,10 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 
 	if (err.ok()) {
 		for (size_t i = 0; i < booksQueryRes.size(); ++i) {
-			unique_ptr<reindexer::Item> item(booksQueryRes.GetItem(i));
-			auto* ritem = reinterpret_cast<reindexer::ItemImpl*>(item.get());
-			KeyRef bookIdKeyRef = ritem->GetField(bookid);
-			BookId bookId = static_cast<int>(bookIdKeyRef);
+			Item item(booksQueryRes.GetItem(i));
+			BookId bookId = item[bookid].Get<int>();
 			QueryResultRow& resultRow = pureSelectRows[bookId];
-			FillQueryResultFromItem(item.get(), resultRow);
+			FillQueryResultFromItem(item, resultRow);
 		}
 	}
 
@@ -79,16 +78,14 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 		std::unordered_set<int> presentedAuthorIds;
 		std::unordered_map<int, int> rowidsIndexes;
 		for (size_t i = 0; i < joinQueryRes.size(); ++i) {
-			unique_ptr<reindexer::Item> item(joinQueryRes.GetItem(i));
-			auto* ritem = reinterpret_cast<reindexer::ItemImpl*>(item.get());
-			KeyRef authorIdKeyRef1 = ritem->GetField(authorid);
+			Item item(joinQueryRes.GetItem(i));
+			KeyRef authorIdKeyRef1 = item[authorid];
 			const reindexer::ItemRef& rowid = joinQueryRes[i];
 			vector<QueryResults>& queryResults = joinQueryRes.joined_[rowid.id];
 			for (const QueryResults& queryRes : queryResults) {
-				unique_ptr<reindexer::Item> item2(queryRes.GetItem(0));
-				auto* ritem2 = reinterpret_cast<reindexer::ItemImpl*>(item2.get());
-				KeyRef authorIdKeyRef2 = ritem2->GetField(authorid_fk);
-				EXPECT_EQ(authorIdKeyRef1, authorIdKeyRef2);
+				Item item2(queryRes.GetItem(0));
+				KeyRef authorIdKeyRef2 = item2[authorid_fk];
+				EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
 			}
 			presentedAuthorIds.insert(static_cast<int>(authorIdKeyRef1));
 			rowidsIndexes.insert({rowid.id, i});
@@ -98,10 +95,9 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 			if (itempair.second.empty()) continue;
 			const QueryResults& joinedQueryRes(itempair.second[0]);
 			for (size_t i = 0; i < joinedQueryRes.size(); ++i) {
-				unique_ptr<reindexer::Item> item(joinedQueryRes.GetItem(i));
-				auto* ritem = reinterpret_cast<reindexer::ItemImpl*>(item.get());
+				Item item(joinedQueryRes.GetItem(i));
 
-				KeyRef authorIdKeyRef1 = ritem->GetField(authorid_fk);
+				KeyRef authorIdKeyRef1 = item[authorid_fk];
 				int authorId = static_cast<int>(authorIdKeyRef1);
 
 				auto itAutorid(presentedAuthorIds.find(authorId));
@@ -112,10 +108,9 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 				EXPECT_TRUE(itRowidIndex != rowidsIndexes.end());
 
 				if (itRowidIndex != rowidsIndexes.end()) {
-					unique_ptr<reindexer::Item> item2(joinQueryRes.GetItem(rowid));
-					auto* ritem2 = reinterpret_cast<reindexer::ItemImpl*>(item2.get());
-					KeyRef authorIdKeyRef2 = ritem2->GetField(authorid);
-					EXPECT_EQ(authorIdKeyRef1, authorIdKeyRef2);
+					Item item2(joinQueryRes.GetItem(rowid));
+					KeyRef authorIdKeyRef2 = item2[authorid];
+					EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
 				}
 			}
 		}
@@ -141,31 +136,25 @@ TEST_F(JoinSelectsApi, OrInnerJoinTest) {
 
 	if (err.ok()) {
 		for (size_t i = 0; i < queryRes.size(); ++i) {
-			unique_ptr<reindexer::Item> item(queryRes.GetItem(i));
-			auto* ritem = reinterpret_cast<reindexer::ItemImpl*>(item.get());
+			Item item(queryRes.GetItem(i));
 			reindexer::ItemRef& itemRef(queryRes[i]);
 			vector<QueryResults>& joinedResult = queryRes.joined_[itemRef.id];
 			QueryResults& authorNsJoinResults = joinedResult[authorsNsJoinIndex];
 			QueryResults& genresNsJoinResults = joinedResult[genresNsJoinIndex];
 
-			KeyRef authorIdKeyRef1 = ritem->GetField(authorid_fk);
+			KeyRef authorIdKeyRef1 = item[authorid_fk];
 			for (size_t j = 0; j < authorNsJoinResults.size(); ++j) {
-				KeyRefs authorIdKeyRefs;
-				unique_ptr<reindexer::Item> authorsItem(authorNsJoinResults.GetItem(j));
-				auto* authorsRItem = reinterpret_cast<reindexer::ItemImpl*>(authorsItem.get());
-				authorsRItem->Get(authorid, authorIdKeyRefs);
-				KeyRef authorIdKeyRef2 = authorIdKeyRefs[0];
-				EXPECT_EQ(authorIdKeyRef1, authorIdKeyRef2);
+				Item authorsItem(authorNsJoinResults.GetItem(j));
+				KeyRef authorIdKeyRef2 = authorsItem[authorid];
+				EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
 			}
 
-			KeyRef genresIdKeyRef1 = ritem->GetField(genreId_fk);
+			KeyRef genresIdKeyRef1 = item[genreId_fk];
 			for (size_t k = 0; k < genresNsJoinResults.size(); ++k) {
 				KeyRefs genreIdKeyRef;
-				unique_ptr<reindexer::Item> genresItem(genresNsJoinResults.GetItem(k));
-				auto* genresRItem = reinterpret_cast<reindexer::ItemImpl*>(genresItem.get());
-				genresRItem->Get(genreid, genreIdKeyRef);
-				KeyRef genresIdKeyRef2 = genreIdKeyRef[0];
-				EXPECT_EQ(genresIdKeyRef1, genresIdKeyRef2);
+				Item genresItem(genresNsJoinResults.GetItem(k));
+				KeyRef genresIdKeyRef2 = genresItem[genreid];
+				EXPECT_TRUE(genresIdKeyRef1 == genresIdKeyRef2);
 			}
 		}
 	}

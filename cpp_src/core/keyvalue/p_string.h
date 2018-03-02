@@ -94,13 +94,13 @@ struct p_string {
 	bool operator==(p_string other) const { return compare(other) == 0; }
 	bool operator>=(p_string other) const { return compare(other) >= 0; }
 	bool operator<=(p_string other) const { return compare(other) <= 0; }
-	const string *getCxxstr() {
+	const string *getCxxstr() const {
 		assert(type() == tagCxxstr);
 		return reinterpret_cast<const string *>(ptr());
 	};
 
 	int type() const { return (v & tagMask) >> tagShift; }
-	string toString() { return string(data(), length()); }
+	string toString() const { return string(data(), length()); }
 
 protected:
 	const void *ptr() const { return v ? reinterpret_cast<const void *>(v & ~tagMask) : ""; }

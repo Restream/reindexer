@@ -22,5 +22,6 @@ func main() {
 		reindexRepo.(*repo.ReindexRepo).ForceObjCache()
 	}
 
+	go StartEchoHTTP()
 	StartHTTP()
 }

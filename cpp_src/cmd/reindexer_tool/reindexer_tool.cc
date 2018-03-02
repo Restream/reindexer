@@ -2,6 +2,7 @@
 #include "debug/backtrace.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
+#include "tools/stringstools.h"
 #include "vendor/gason/gason.h"
 
 #include "args/args.hpp"
@@ -10,6 +11,7 @@
 using std::string;
 using std::vector;
 using std::ifstream;
+using std::shared_ptr;
 using args::Options;
 
 static auto db = std::make_shared<reindexer::Reindexer>();
@@ -228,14 +230,14 @@ void RestoreCommand(args::Subparser& subparser) {
 				}
 			} else if (token == "insert") {
 				auto nsName = parser.NextToken();
-				std::unique_ptr<reindexer::Item> item(db->NewItem(nsName));
-				err = item->Status();
+				auto item = db->NewItem(nsName);
+				err = item.Status();
 				if (err) break;
 
-				err = item->FromJSON(const_cast<char*>(parser.CurPtr()));
+				err = item.Unsafe().FromJSON(const_cast<char*>(parser.CurPtr()));
 				if (err) break;
 
-				err = db->Upsert(nsName, item.get());
+				err = db->Upsert(nsName, item);
 				if (err) break;
 
 				if (progressPrinter) progressPrinter->Show(file.tellg());
@@ -333,23 +335,22 @@ void UpsertCommand(args::Subparser& subparser) {
 	err = db->OpenNamespace(args::get(ns), StorageOpts().Enabled());
 	if (err) throw err;
 
-	auto item = std::unique_ptr<reindexer::Item>(db->NewItem(args::get(ns)));
-	err = item->Status();
+	auto item = db->NewItem(args::get(ns));
+	err = item.Status();
 	if (err) throw err;
 
-	reindexer::Slice slice(json.data(), json.size());
-	err = item->FromJSON(slice);
+	err = item.Unsafe().FromJSON(json);
 	if (err) throw err;
 
 	string action;
 	if (insert) {
-		err = db->Insert(args::get(ns), item.get());
+		err = db->Insert(args::get(ns), item);
 		action = "inserted";
 	} else if (update) {
-		err = db->Update(args::get(ns), item.get());
+		err = db->Update(args::get(ns), item);
 		action = "updated";
 	} else {
-		err = db->Upsert(args::get(ns), item.get());
+		err = db->Upsert(args::get(ns), item);
 		action = "upserted";
 	}
 	if (err) throw err;
@@ -357,7 +358,7 @@ void UpsertCommand(args::Subparser& subparser) {
 	err = db->Commit(args::get(ns));
 	if (err) throw err;
 
-	std::cout << "Item" << (item->GetRef().id == -1 ? " not " : " ") << action << std::endl;
+	std::cout << "Item" << (item.GetID() == -1 ? " not " : " ") << action << std::endl;
 }
 
 void DeleteCommand(args::Subparser& subparser) {
@@ -376,21 +377,20 @@ void DeleteCommand(args::Subparser& subparser) {
 	err = db->OpenNamespace(args::get(ns), StorageOpts().Enabled());
 	if (err) throw err;
 
-	auto item = std::unique_ptr<reindexer::Item>(db->NewItem(args::get(ns)));
-	err = item->Status();
+	auto item = db->NewItem(args::get(ns));
+	err = item.Status();
 	if (err) throw err;
 
-	reindexer::Slice slice(json.data(), json.size());
-	err = item->FromJSON(slice);
+	err = item.Unsafe().FromJSON(json);
 	if (err) throw err;
 
-	err = db->Delete(args::get(ns), item.get());
+	err = db->Delete(args::get(ns), item);
 	if (err) throw err;
 
 	err = db->Commit(args::get(ns));
 	if (err) throw err;
 
-	std::cout << "Item" << (item->GetRef().id == -1 ? " not " : " ") << "deleted" << std::endl;
+	std::cout << "Item" << (item.GetID() == -1 ? " not " : " ") << "deleted" << std::endl;
 }
 
 int main(int argc, char* argv[]) {

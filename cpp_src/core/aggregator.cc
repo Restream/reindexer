@@ -6,7 +6,7 @@ namespace reindexer {
 Aggregator::Aggregator(KeyValueType type, bool isArray, void *rawData, AggType aggType)
 	: type_(type), isArray_(isArray), rawData_(static_cast<uint8_t *>(rawData)), aggType_(aggType) {}
 
-void Aggregator::Bind(const PayloadType *type, int field) {
+void Aggregator::Bind(PayloadType type, int field) {
 	offset_ = type->Field(field).Offset();
 	sizeof_ = type->Field(field).ElemSizeof();
 }

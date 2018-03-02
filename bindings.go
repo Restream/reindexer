@@ -43,7 +43,9 @@ func (db *Reindexer) modifyItem(namespace string, ns *reindexerNamespace, item i
 	defer out.Free()
 
 	rdSer := newSerializer(out.GetBuf())
-	rawQueryParams := rdSer.readRawQueryParams()
+	rawQueryParams := rdSer.readRawQueryParams(func(nsid int) {
+		ns.cjsonState.ReadPayloadType(&rdSer.Serializer)
+	})
 
 	if rawQueryParams.count == 0 {
 		return 0, err
@@ -128,7 +130,7 @@ func (db *Reindexer) getMeta(namespace, key string) ([]byte, error) {
 	return []byte(s), nil
 }
 
-func unpackItem(ns *reindexerNamespace, params rawResultItemParams, allowUnsafe bool) (item interface{}, err error) {
+func unpackItem(ns nsArrayEntry, params rawResultItemParams, allowUnsafe bool) (item interface{}, err error) {
 	useCache := ns.deepCopyIface || allowUnsafe
 	needCopy := ns.deepCopyIface && !allowUnsafe
 
@@ -147,7 +149,7 @@ func unpackItem(ns *reindexerNamespace, params rawResultItemParams, allowUnsafe 
 				item = citem.item
 			} else {
 				item = reflect.New(ns.rtype).Interface()
-				dec := ns.cjsonState.NewDecoder()
+				dec := ns.localCjsonState.NewDecoder()
 				if params.cptr != 0 {
 					err = dec.DecodeCPtr(params.cptr, item)
 				} else if params.data != nil {
@@ -164,7 +166,7 @@ func unpackItem(ns *reindexerNamespace, params rawResultItemParams, allowUnsafe 
 			ns.cacheLock.Unlock()
 		} else {
 			item = reflect.New(ns.rtype).Interface()
-			dec := ns.cjsonState.NewDecoder()
+			dec := ns.localCjsonState.NewDecoder()
 			if params.cptr != 0 {
 				err = dec.DecodeCPtr(params.cptr, item)
 			} else if params.data != nil {
@@ -245,7 +247,7 @@ func (db *Reindexer) prepareQuery(q *Query, asJson bool) (result bindings.RawBuf
 	}
 
 	if ns, err := db.getNS(q.Namespace); err == nil {
-		q.nsArray = append(q.nsArray, ns)
+		q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
 	} else {
 		return nil, err
 	}
@@ -257,7 +259,7 @@ func (db *Reindexer) prepareQuery(q *Query, asJson bool) (result bindings.RawBuf
 		ser.Append(sq.ser)
 		ser.PutVarCUInt(queryEnd)
 		if ns, err := db.getNS(sq.Namespace); err == nil {
-			q.nsArray = append(q.nsArray, ns)
+			q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
 		} else {
 			return nil, err
 		}
@@ -267,7 +269,7 @@ func (db *Reindexer) prepareQuery(q *Query, asJson bool) (result bindings.RawBuf
 		ser.Append(sq.ser)
 		ser.PutVarCUInt(queryEnd)
 		if ns, err := db.getNS(sq.Namespace); err == nil {
-			q.nsArray = append(q.nsArray, ns)
+			q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
 		} else {
 			return nil, err
 		}
@@ -275,10 +277,14 @@ func (db *Reindexer) prepareQuery(q *Query, asJson bool) (result bindings.RawBuf
 
 	ptVersions := make([]int32, 0, 16)
 	for _, ns := range q.nsArray {
-		ptVersions = append(ptVersions, ns.cjsonState.PayloadTypeVersion())
+		ptVersions = append(ptVersions, ns.localCjsonState.Version^ns.localCjsonState.CacheToken)
 	}
-
-	result, err = db.binding.SelectQuery(ser.Bytes(), asJson, ptVersions)
+	fetchCount := q.fetchCount
+	if asJson {
+		// json iterator not support fetch queries
+		fetchCount = -1
+	}
+	result, err = db.binding.SelectQuery(ser.Bytes(), asJson, ptVersions, fetchCount)
 
 	if err == nil && result.GetBuf() == nil {
 		panic(fmt.Errorf("result.Buffer is nil"))
@@ -309,29 +315,26 @@ func (db *Reindexer) execJSONQuery(q *Query, jsonRoot string) *JSONIterator {
 	return newJSONIterator(q, q.json, q.jsonOffsets)
 }
 
-func (db *Reindexer) prepareSQL(namespace, query string, asJson bool) (result bindings.RawBuffer, nsArray []*reindexerNamespace, err error) {
-	nsArray = make([]*reindexerNamespace, 0, 3)
+func (db *Reindexer) prepareSQL(namespace, query string, asJson bool) (result bindings.RawBuffer, nsArray []nsArrayEntry, err error) {
+	nsArray = make([]nsArrayEntry, 0, 3)
+	var ns *reindexerNamespace
 	querySlice := strings.Split(strings.ToLower(query), " ")
 	if len(querySlice) > 0 && querySlice[0] == "describe" {
-		nsArray = append(nsArray, &reindexerNamespace{
+		ns = &reindexerNamespace{
 			rtype:      reflect.TypeOf(NamespaceDescription{}),
 			cjsonState: cjson.NewState(),
-		})
-	} else {
-		var ns *reindexerNamespace
-		if ns, err = db.getNS(namespace); err == nil {
-			nsArray = append(nsArray, ns)
-		} else {
-			return
 		}
+	} else if ns, err = db.getNS(namespace); err != nil {
+		return
 	}
+	nsArray = append(nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
 
 	ptVersions := make([]int32, 0, 16)
 	for _, ns := range nsArray {
-		ptVersions = append(ptVersions, ns.cjsonState.PayloadTypeVersion())
+		ptVersions = append(ptVersions, ns.localCjsonState.Version^ns.localCjsonState.CacheToken)
 	}
 
-	result, err = db.binding.Select(query, asJson, ptVersions)
+	result, err = db.binding.Select(query, asJson, ptVersions, defaultFetchCount)
 	return
 }
 

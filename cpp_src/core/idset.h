@@ -6,10 +6,9 @@
 #include "cpp-btree/btree_set.h"
 #include "estl/h_vector.h"
 
+namespace reindexer {
 using std::string;
 using std::shared_ptr;
-
-namespace reindexer {
 
 class CommitContext {
 public:

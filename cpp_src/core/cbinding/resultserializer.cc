@@ -1,5 +1,7 @@
 #include "resultserializer.h"
+#include "core/cjson/tagsmatcher.h"
 #include "core/query/queryresults.h"
+
 namespace reindexer {
 
 ResultSerializer::ResultSerializer(bool allowInBuf, const ResultFetchOpts& opts) : WrSerializer(allowInBuf), opts_(opts) {}
@@ -27,12 +29,14 @@ void ResultSerializer::putQueryParams(const QueryResults* results) {
 	if (opts_.flags & kResultsWithPayloadTypes) {
 		assert(opts_.ptVersions);
 		int cnt = 0;
-		for (size_t i = 0; i < results->ctxs.size(); i++) {
-			if (opts_.ptVersions && results->ctxs[i].tagsMatcher_.version() != opts_.ptVersions[i]) cnt++;
+		for (int i = 0; i < results->getMergedNSCount(); i++) {
+			const TagsMatcher& tm = results->getTagsMatcher(i);
+			if (int32_t(tm.version() ^ tm.cacheToken()) != opts_.ptVersions[i]) cnt++;
 		}
 		PutVarUint(cnt);
-		for (size_t i = 0; i < results->ctxs.size(); i++) {
-			if (opts_.ptVersions && results->ctxs[i].tagsMatcher_.version() != opts_.ptVersions[i]) {
+		for (int i = 0; i < results->getMergedNSCount(); i++) {
+			const TagsMatcher& tm = results->getTagsMatcher(i);
+			if (int32_t(tm.version() ^ tm.cacheToken()) != opts_.ptVersions[i]) {
 				PutVarUint(i);
 				putPayloadType(results, i);
 			}
@@ -49,8 +53,10 @@ void ResultSerializer::putAggregationParams(const QueryResults* results) {
 	for (auto ar : results->aggregationResults) PutDouble(ar);
 }
 
-void ResultSerializer::putItemParams(const QueryResults* result, int idx) {
-	auto& it = result->at(idx + opts_.fetchOffset);
+void ResultSerializer::putItemParams(const QueryResults* result, int idx, bool useOffset) {
+	int ridx = idx + (useOffset ? opts_.fetchOffset : 0);
+
+	auto& it = result->at(ridx);
 
 	PutVarUint(it.id);
 	PutVarUint(it.version);
@@ -66,10 +72,10 @@ void ResultSerializer::putItemParams(const QueryResults* result, int idx) {
 
 	switch (format) {
 		case kResultsWithJson:
-			result->GetJSON(idx, *this);
+			result->GetJSON(ridx, *this);
 			break;
 		case kResultsWithCJson:
-			result->GetCJSON(idx, *this);
+			result->GetCJSON(ridx, *this);
 			break;
 		case kResultsWithPtrs:
 			PutUInt64(uintptr_t(it.value.Ptr()));
@@ -82,16 +88,13 @@ void ResultSerializer::putItemParams(const QueryResults* result, int idx) {
 }
 
 void ResultSerializer::putPayloadType(const QueryResults* results, int nsid) {
-	assert(nsid < int(results->ctxs.size()));
-	const PayloadType& t = *results->ctxs[nsid].type_;
-	const TagsMatcher& m = results->ctxs[nsid].tagsMatcher_;
+	const PayloadType& t = results->getPayloadType(nsid);
+	const TagsMatcher& m = results->getTagsMatcher(nsid);
 
 	// Serialize tags matcher
+	PutVarUint(m.cacheToken());
 	PutVarUint(m.version());
-	PutVarUint(m.size());
-	for (unsigned i = 0; i < m.size(); i++) {
-		PutVString(m.tag2name(i + 1));
-	}
+	m.serialize(*this);
 
 	// Serialize payload type
 	PutVarUint(base_key_string::export_hdr_offset());
@@ -105,7 +108,7 @@ void ResultSerializer::putPayloadType(const QueryResults* results, int nsid) {
 	}
 }
 
-void ResultSerializer::PutResults(const QueryResults* result) {
+bool ResultSerializer::PutResults(const QueryResults* result) {
 	if (opts_.fetchOffset > result->size()) {
 		opts_.fetchOffset = result->size();
 	}
@@ -118,9 +121,9 @@ void ResultSerializer::PutResults(const QueryResults* result) {
 
 	for (unsigned i = 0; i < opts_.fetchLimit; i++) {
 		// Put Item ID and version
-		auto& it = result->at(i + opts_.fetchOffset);
-		putItemParams(result, i);
+		putItemParams(result, i, true);
 
+		auto& it = result->at(i + opts_.fetchOffset);
 		auto jres = result->joined_.find(it.id);
 		if (jres == result->joined_.end()) {
 			PutVarUint(0);
@@ -132,10 +135,11 @@ void ResultSerializer::PutResults(const QueryResults* result) {
 			// Put count of returned items from joined namespace
 			PutVarUint(jfres.size());
 			for (unsigned j = 0; j < jfres.size(); j++) {
-				putItemParams(&jfres, j);
+				putItemParams(&jfres, j, false);
 			}
 		}
 	}
+	return opts_.fetchOffset + opts_.fetchLimit >= result->size();
 }
 
 }  // namespace reindexer

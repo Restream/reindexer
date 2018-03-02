@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 2.8)
 project(reindexer_server)
 
 set (SWAGGER_VERSION "2.x")
-set (FACE_BRANCH "develop")
+set (FACE_BRANCH "master")
 
 set(TARGET reindexer_server)
 
@@ -43,12 +43,22 @@ install(DIRECTORY ${PROJECT_BINARY_DIR}/swagger ${PROJECT_BINARY_DIR}/face
     DESTINATION share/reindexer/web OPTIONAL
 )
 
-install (CODE "configure_file(${PROJECT_SOURCE_DIR}/contrib/sysvinit.in ${PROJECT_BINARY_DIR}/contrib/sysvinit)")
 
-install (FILES ${PROJECT_BINARY_DIR}/contrib/sysvinit DESTINATION ${DESTDIR}/etc/init.d RENAME reindexer PERMISSIONS OWNER_WRITE OWNER_EXECUTE OWNER_READ)
+set (DESTINATION_ETC_DIR etc)
+if (NOT APPLE)
+  set (DESTINATION_ETC_DIR ${DESTDIR}/etc)
+  install (CODE "configure_file(${PROJECT_SOURCE_DIR}/contrib/sysvinit.in ${PROJECT_BINARY_DIR}/contrib/sysvinit)")
+  install (FILES ${PROJECT_BINARY_DIR}/contrib/sysvinit DESTINATION ${DESTINATION_ETC_DIR}/init.d RENAME reindexer PERMISSIONS OWNER_WRITE OWNER_EXECUTE OWNER_READ GROUP_READ WORLD_READ)
+endif()
+
+install (CODE "configure_file(${PROJECT_SOURCE_DIR}/contrib/config.yml.in ${PROJECT_BINARY_DIR}/contrib/config.yml)")
+install (FILES ${PROJECT_BINARY_DIR}/contrib/config.yml DESTINATION ${DESTINATION_ETC_DIR} RENAME reindexer.conf.pkg PERMISSIONS OWNER_WRITE OWNER_READ GROUP_READ WORLD_READ)
 
 SET(CPACK_PACKAGE_NAME "reindexer_server")
 SET(CPACK_PACKAGE_DESCRIPTION_SUMMARY "ReindexerDB server package")
-SET(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA ${PROJECT_SOURCE_DIR}/contrib/deb/postinst)
-SET(CPACK_RPM_POST_INSTALL_SCRIPT_FILE ${PROJECT_SOURCE_DIR}/contrib/rpm/postinst)
-INCLUDE(CPack)
+if (CPACK_GENERATOR EQUAL "DEB")
+  SET(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA ${PROJECT_SOURCE_DIR}/contrib/deb/postinst)
+elseif (CPACK_GENERATOR EQUAL "RPM")
+  SET(CPACK_RPM_POST_INSTALL_SCRIPT_FILE ${PROJECT_SOURCE_DIR}/contrib/rpm/postinst)
+endif()
+include(CPack)

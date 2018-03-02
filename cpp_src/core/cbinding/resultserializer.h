@@ -16,11 +16,11 @@ class ResultSerializer : public WrSerializer {
 public:
 	ResultSerializer(bool allowInBuf, const ResultFetchOpts& opts = {0, nullptr, 0, 0, 0});
 
-	void PutResults(const QueryResults* results);
+	bool PutResults(const QueryResults* results);
 
 private:
 	void putQueryParams(const QueryResults* query);
-	void putItemParams(const QueryResults* result, int idx);
+	void putItemParams(const QueryResults* result, int idx, bool useOffset);
 	void putAggregationParams(const QueryResults* query);
 	void putPayloadType(const QueryResults* results, int nsId);
 	ResultFetchOpts opts_;

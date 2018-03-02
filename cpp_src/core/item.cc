@@ -1,108 +1,67 @@
-#include "core/item.h"
-#include "core/cjson/cjsondecoder.h"
-#include "core/cjson/cjsonencoder.h"
-#include "core/cjson/jsondecoder.h"
-#include "core/cjson/jsonencoder.h"
 
-using std::move;
+#include "item.h"
+#include "itemimpl.h"
 
 namespace reindexer {
 
-Error ItemImpl::SetField(const string &index, const KeyRefs &krs) {
-	try {
-		payloadData_.AllocOrClone(0);
-		Set(index, krs, true);
-	} catch (const Error &err) {
-		return err;
-	}
-	return 0;
-}
-Error ItemImpl::SetField(const string &index, const KeyRef &kr) {
-	try {
-		KeyRefs krs;
-		krs.push_back(kr);
-		payloadData_.AllocOrClone(0);
-		Set(index, krs, false);
-	} catch (const Error &err) {
-		return err;
-	}
-	return 0;
+Item::Item(Item &&other) noexcept : impl_(other.impl_), status_(std::move(other.status_)), id_(other.id_), version_(other.version_) {
+	other.impl_ = nullptr;
 }
 
-KeyRef ItemImpl::GetField(const string &index) {
+Item &Item::operator=(Item &&other) noexcept {
+	if (&other != this) {
+		delete impl_;
+		impl_ = other.impl_;
+		status_ = std::move(other.status_);
+		id_ = other.id_;
+		version_ = other.version_;
+		other.impl_ = nullptr;
+	}
+	return *this;
+}
+
+const string &Item::FieldRef::Name() { return impl_->Type().Field(field_).Name(); }
+
+Item::FieldRef::operator KeyRef() {
 	KeyRefs kr;
-	Get(index, kr);
+	impl_->GetPayload().Get(field_, kr);
+	if (kr.size() != 1) {
+		throw Error(errParams, "Invalid array access");
+	}
 	return kr[0];
 }
-
-// Construct item from compressed json
-Error ItemImpl::FromCJSON(const Slice &slice) {
-	Reset();
-	Serializer rdser(slice.data(), slice.size());
-	// check tags matcher update
-	uint32_t tmOffset = rdser.GetUInt32();
-	if (tmOffset) {
-		// read tags matcher update
-		Serializer tser(slice.data() + tmOffset, slice.size() - tmOffset);
-		tagsMatcher_.deserialize(tser);
-		tagsMatcher_.setUpdated();
-	}
-
-	CJsonDecoder decoder(tagsMatcher_);
-	auto err = decoder.Decode(this, rdser, ser_);
-
-	if (err.ok()) {
-		assertf(rdser.Eof() || rdser.Pos() == tmOffset, "Internal error - left unparsed data %d", int(rdser.Pos()));
-		tupleData_ = make_key_string(reinterpret_cast<const char *>(ser_.Buf()), ser_.Len());
-		Set(0, {KeyRef(tupleData_)});
-	}
-
-	return err;
+Item::FieldRef::operator KeyRefs() {
+	KeyRefs kr;
+	return impl_->GetPayload().Get(field_, kr);
 }
 
-Error ItemImpl::FromJSON(const Slice &slice, char **endp = nullptr) {
-	const char *json = slice.data();
-	payloadData_.AllocOrClone(0);
-	char *endptr = nullptr;
-	JsonValue value;
-	int status = jsonParse(const_cast<char *>(json), &endptr, &value, jsonAllocator_);
-	if (status != JSON_OK) return Error(errLogic, "Error parsing json - status %d\n", status);
-	if (endp) {
-		*endp = endptr;
-	}
-
-	// Split parsed json into indexes and tuple
-	JsonDecoder decoder(tagsMatcher_);
-	auto err = decoder.Decode(this, ser_, value);
-
-	if (err.ok()) {
-		// Put tuple to field[0]
-		tupleData_ = make_key_string(reinterpret_cast<const char *>(ser_.Buf()), ser_.Len());
-		Set(0, {KeyRef(tupleData_)});
-	}
-	return err;
-}  // namespace reindexer
-
-Slice ItemImpl::GetJSON() {
-	ConstPayload pl(Type(), Value());
-	JsonPrintFilter filter;
-	JsonEncoder encoder(tagsMatcher_, filter);
-
-	ser_.Reset();
-	encoder.Encode(&pl, ser_);
-
-	return Slice(reinterpret_cast<const char *>(ser_.Buf()), ser_.Len());
+Item::FieldRef &Item::FieldRef::operator=(KeyRef kr) {
+	impl_->SetField(field_, KeyRefs{kr});
+	return *this;
 }
 
-Slice ItemImpl::GetCJSON() {
-	ConstPayload pl(Type(), Value());
-	CJsonEncoder encoder(tagsMatcher_);
+Item::FieldRef &Item::FieldRef::operator=(const KeyRefs &krs) {
+	impl_->SetField(field_, krs);
+	return *this;
+}
 
-	ser_.Reset();
-	ser_.PutUInt32(0);
-	encoder.Encode(&pl, ser_);
-
-	return Slice(reinterpret_cast<const char *>(ser_.Buf()), ser_.Len());
+Item::~Item() { delete impl_; }
+Error Item::FromJSON(const Slice &slice, char **endp) { return impl_->FromJSON(slice, endp); }
+Error Item::FromCJSON(const Slice &slice) { return impl_->FromCJSON(slice); }
+Slice Item::GetCJSON() { return impl_->GetCJSON(); }
+Slice Item::GetJSON() { return impl_->GetJSON(); }
+int Item::NumFields() { return impl_->Type().NumFields(); }
+Item::FieldRef Item::operator[](int field) {
+	assert(field >= 0 && field < impl_->Type().NumFields());
+	return FieldRef(field, impl_);
+}
+Item::FieldRef Item::operator[](const string &name) { return FieldRef(impl_->Type().FieldByName(name), impl_); }
+Item::FieldRef Item::operator[](const char *name) { return FieldRef(impl_->Type().FieldByName(name), impl_); }
+void Item::SetPrecepts(const vector<string> &precepts) { impl_->SetPrecepts(precepts); }
+bool Item::IsTagsUpdated() { return impl_->tagsMatcher().isUpdated(); }
+Item &Item::Unsafe(bool enable) {
+	impl_->Unsafe(enable);
+	return *this;
 }
 
 }  // namespace reindexer

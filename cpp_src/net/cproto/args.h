@@ -14,6 +14,7 @@ public:
 	using KeyRefs::KeyRefs;
 	void Unpack(Serializer &ser);
 	void Pack(WrSerializer &ser) const;
+	void Dump(WrSerializer &ser) const;
 };
 }  // namespace cproto
 }  // namespace net

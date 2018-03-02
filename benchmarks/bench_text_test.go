@@ -24,6 +24,10 @@ func BenchmarkSphinxFullText(b *testing.B) {
 func BenchmarkReindexFullText(b *testing.B) {
 	repo.Get("reindex").QueryFullText(func() string { return "=" + randStringWord() + " =" + randStringWord() }, b.N, 10)
 }
+func BenchmarkArangoFullText(b *testing.B) {
+	repo.Get("arango").QueryFullText(func() string { return randStringWord() + ",|" + randStringWord() }, b.N, 10)
+}
+
 func BenchmarkElasticFullTextPref(b *testing.B) {
 	repo.Get("elastic").QueryFullText(func() string { return randStringPref() + "* " + randStringPref() + "* " }, b.N, 10)
 }
@@ -38,6 +42,9 @@ func BenchmarkSphinxFullTextPref(b *testing.B) {
 }
 func BenchmarkReindexFullTextPref(b *testing.B) {
 	repo.Get("reindex").QueryFullText(func() string { return randStringPref() + "* " + randStringPref() + "* " }, b.N, 10)
+}
+func BenchmarkArangoFullTextPref(b *testing.B) {
+	repo.Get("arango").QueryFullText(func() string { return "prefix:" + randStringPref() + ",|prefix:" + randStringPref() + "* " }, b.N, 10)
 }
 func BenchmarkElasticFullText3Fuzzy(b *testing.B) {
 	repo.Get("elastic").QueryFullText(func() string { return randStringWord() + "*~ " + randStringWord() + "*~ " + randStringWord() + "*~ " }, b.N, 10)

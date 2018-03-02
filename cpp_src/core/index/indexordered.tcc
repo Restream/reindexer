@@ -125,7 +125,8 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const KeyValues &keys, CondType cond
 		if (count < 50 || res_type == Index::ForceIdset) {
 			T *i_map = &this->idx_map;
 			auto selector = [&keys, sortId, i_map, startIt, endIt](SelectKeyResult &res) {
-				for (auto it = startIt; it != endIt && it != i_map->end(); it++) res.push_back(it->second.Sorted(sortId));
+				for (auto it = startIt; it != endIt && it != i_map->end(); it++)
+					res.push_back(SingleSelectKeyResult(it->second.Sorted(sortId)));
 			};
 
 			if (count > 1 && res_type != Index::ForceIdset)
@@ -156,7 +157,7 @@ void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext &ctx) {
 				logPrintf(
 					LogError,
 					"Internal error: Index '%s' is broken. Item with key '%s' contains id=%d, which is not present in allIds,totalids=%d\n",
-					this->name.c_str(), KeyValue(keyIt.first).toString().c_str(), id, int(totalIds));
+					this->name.c_str(), KeyRef(keyIt.first).As<string>().c_str(), id, int(totalIds));
 				this->DumpKeys();
 				assert(0);
 			}

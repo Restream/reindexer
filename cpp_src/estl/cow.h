@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdio.h>
 #include <memory>
 
 namespace reindexer {
@@ -7,7 +8,7 @@ namespace reindexer {
 template <typename T>
 class shared_cow_ptr {
 public:
-	shared_cow_ptr(T* ptr) : payload_(ptr) {}
+	explicit shared_cow_ptr(std::shared_ptr<T> ptr) : payload_(ptr) {}
 	shared_cow_ptr() {}
 
 	const T* operator->() const { return payload_.get(); }

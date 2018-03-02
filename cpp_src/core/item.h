@@ -1,145 +1,179 @@
 #pragma once
 
-#include <vector>
-#include "core/cjson/tagsmatcher.h"
-#include "core/keyvalue/keyvalue.h"
-#include "core/payload/payloadiface.h"
-#include "gason/gason.h"
-#include "tools/serializer.h"
-
-using std::vector;
+#include "core/keyvalue/keyref.h"
+#include "tools/errors.h"
 
 namespace reindexer {
 
-struct ItemRef {
-	ItemRef(IdType iid = 0, int iversion = 0) : id(iid), version(iversion) {}
-	ItemRef(IdType iid, int iversion, const PayloadValue &ivalue, uint8_t iproc = 0, uint8_t insid = 0)
-		: id(iid), version(iversion), proc(iproc), nsid(insid), value(ivalue) {}
-	IdType id;
-	int16_t version;
-	uint8_t proc;
-	uint8_t nsid;
-	PayloadValue value;
-};
+using std::vector;
+
+class ItemImpl;
+
+/// Item is the interface for data manipulating. It holds and control one database document (record)<br>
+/// *Lifetime*: Item is uses Copy-On-Write semantics, and have independent lifetime and state - e.g., aquired from Reindexer Item will not
+/// changed externally, even in case, when data in database was changed, or deleted.
+/// *Thread safety*: Item is thread safe againist Reindexer, but not thread safe itself.
+/// Usage of single Item from different threads will race
 
 class Item {
 public:
-	virtual ~Item() {}
-	virtual Error SetField(const string &index, const KeyRefs &kvs) = 0;
-	virtual Error SetField(const string &index, const KeyRef &kvs) = 0;
-	virtual KeyRef GetField(const string &index) = 0;
-	virtual Error FromJSON(const Slice &slice, char **endp = nullptr) = 0;
-	virtual Slice GetJSON() = 0;
-	virtual Error Status() = 0;
-	virtual ItemRef GetRef() = 0;
-	virtual Slice GetCJSON() = 0;
-	virtual Error FromCJSON(const Slice &) = 0;
+	/// Construct empty Item
+	Item() : impl_(nullptr), status_(errNotValid) {}
+	/// Destroy Item
+	~Item();
+	Item(const Item &) = delete;
+	Item(Item &&) noexcept;
+	Item &operator=(const Item &) = delete;
+	Item &operator=(Item &&) noexcept;
 
-	virtual void SetPrecepts(const vector<string> &precepts) = 0;
-	virtual const vector<string> &GetPrecepts() = 0;
-};
+	/// Reference to field. Interface for field data manipulation
+	class FieldRef {
+		friend class Item;
 
-class ItemImpl : public Item, public Payload {
-public:
-	// Construct empty item
-	ItemImpl(PayloadType::Ptr type, const TagsMatcher &tagsMatcher)
-		: Payload(type, payloadData_),
-		  payloadType_(type),
-		  payloadData_(type->TotalSize(), 0, type->TotalSize() + 0x100),
-		  tagsMatcher_(tagsMatcher) {
-		tagsMatcher_.clearUpdated();
-	}
-
-	// Construct item with payload copy
-	ItemImpl(const Payload &pl, const TagsMatcher &tagsMatcher)
-		: Payload(pl.Type(), &payloadData_), payloadData_(*pl.Value()), tagsMatcher_(tagsMatcher) {
-		tagsMatcher_.clearUpdated();
-	}
-
-	// Construct with error
-	ItemImpl(const Error &err) : Payload(nullptr, payloadData_), tagsMatcher_(nullptr), err_(err) {}
-	ItemImpl() : Payload(nullptr, payloadData_), tagsMatcher_(nullptr) {}
-
-	ItemImpl(const ItemImpl &) = delete;
-	ItemImpl(ItemImpl &&o) noexcept
-		: Payload(o.payloadType_, o.payloadData_),
-		  payloadType_(move(o.payloadType_)),
-		  payloadData_(move(o.payloadData_)),
-		  tagsMatcher_(move(o.tagsMatcher_)),
-		  err_(o.err_),
-		  id_(o.id_),
-		  jsonAllocator_(move(o.jsonAllocator_)),
-		  ser_(move(o.ser_)),
-		  tupleData_(move(o.tupleData_)),
-		  precepts_(move(o.precepts_)) {
-		o.payloadType_ = nullptr;
-	}
-	~ItemImpl() {}
-	ItemImpl &operator=(const ItemImpl &) = delete;
-	ItemImpl &operator=(ItemImpl &&other) noexcept {
-		if (this != &other) {
-			payloadType_ = other.payloadType_;
-			payloadData_ = move(other.payloadData_);
-			tagsMatcher_ = move(other.tagsMatcher_);
-
-			err_ = other.err_;
-			id_ = other.id_;
-
-			ser_ = move(other.ser_);
-			tupleData_ = move(other.tupleData_);
-			jsonAllocator_ = move(other.jsonAllocator_);
-
-			precepts_ = move(other.precepts_);
-
-			other.payloadType_ = nullptr;
+	public:
+		/// Get field value. Strong type check. T must be same as field type. Throws reindexer::Error, if type mismatched
+		/// If field type is array, and not contains exact 1 element, then throws reindexer::Error
+		/// @tparam T - type. Must be one of: int, int64_t, double or Slice
+		/// @return value of field
+		template <typename T>
+		const T Get() {
+			return static_cast<T>(operator KeyRef());
+		}
+		/// Get field value as specified type, convert type if neccesary. In case when convertion fails throws reindexer::Error
+		/// If field is array, and not contains exact 1 element, then throws reindexer::Error
+		/// @tparam T - type. Must be one of: int, int64_t, double or std::string
+		/// @return value of field
+		template <typename T>
+		T As() {
+			return (operator KeyRef()).As<T>();
+		}
+		/// Set single fundamental type value
+		/// @tparam T - type. Must be one of: int, int64_t, double
+		/// @param val - value, which will be setted to field
+		template <typename T>
+		FieldRef &operator=(const T &val) {
+			return operator=(KeyRef(val));
+		}
+		/// Set array of values to field
+		/// @tparam T - type. Must be one of: int, int64_t, double
+		/// @param arr - std::vector of T values, which will be setted to field
+		template <typename T>
+		FieldRef &operator=(const std::vector<T> &arr) {
+			KeyRefs krs;
+			krs.reserve(arr.size());
+			for (auto &t : arr) krs.push_back(KeyRef(t));
+			return operator=(krs);
 		}
 
-		return *this;
+		/// Set string value to field
+		/// If Item is in Unsafe Mode, then Item will not store str, but just keep pointer to str,
+		/// application *MUST* hold str until end of life of Item
+		/// @param str - pointer to C null-terminated string, which will be setted to field
+		FieldRef &operator=(const char *str) { return operator=(p_string(str)); }
+		/// Set string value<br>
+		/// If Item is in Unsafe Mode, then Item will not store str, but just keep pointer to str,
+		/// application *MUST* hold str until end of life of Item
+		/// @param str - std::string, which will be setted to field
+		FieldRef &operator=(const string &str) { return operator=(p_string(&str)); }
+
+		/// Get field index name
+		const string &Name();
+
+		/// Get KeyRef with field value
+		/// If field is array, and contains not exact 1 element, then throws reindexer::Error
+		/// @return KeyRef object with field value
+		operator KeyRef();
+		/// Get KeyRefs with field values. If field is not array, then 1 elemnt will be returned
+		/// @return KeyRefs with field values
+		operator KeyRefs();
+		/// Set field value
+		/// @param kr - key reference object, which will be setted to field
+		FieldRef &operator=(KeyRef kr);
+		/// Set field value
+		/// @param krs - key reference object, which will be setted to field
+		FieldRef &operator=(const KeyRefs &krs);
+
+	private:
+		FieldRef(int field, ItemImpl *impl) : field_(field), impl_(impl){};
+		int field_;
+		ItemImpl *impl_;
+	};
+
+	/// Build item from JSON<br>
+	/// If Item is in *Unsafe Mode*, then Item will not store slice, but just keep pointer to data in slice,
+	/// application *MUST* hold slice until end of life of Item
+	/// @param slice - data slice with Json.
+	/// @param endp - pounter to end of parsed part of slice
+	Error FromJSON(const Slice &slice, char **endp = nullptr);
+
+	/// Build item from JSON<br>
+	/// If Item is in *Unsafe Mode*, then Item will not store slice, but just keep pointer to data in slice,
+	/// application *MUST* hold slice until end of life of Item
+	/// @param slice - data slice with CJson
+	Error FromCJSON(const Slice &slice);
+	/// Serialize item to CJSON.<br>
+	/// If Item is in *Unfafe Mode*, then returned slice is allocated in temporary buffer, and can be invalidated by any next operation with
+	/// Item
+	/// @return data slice with CJSON
+	Slice GetCJSON();
+	/// Serialize item to JSON.<br>
+	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next operation
+	/// with Item
+	Slice GetJSON();
+	/// Get status of item
+	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next operation
+	/// with Item
+	Error Status() { return status_; }
+	/// Get internal ID of item
+	/// @return ID of item
+	int GetID() { return id_; }
+	/// Get internal version of item
+	/// @return version of item
+	int GetVersion() { return version_; }
+	/// Get count of indexed field
+	/// @return count of  field
+	int NumFields();
+	/// Get field by number
+	/// @param field - number of field. Must be >= 0 && < NumFields
+	/// @return FieldRef which contains reference to indexed field
+	FieldRef operator[](int field);
+	/// Get field by name
+	/// @param name - name of field
+	/// @return FieldRef which contains reference to indexed field
+	FieldRef operator[](const string &name);
+	/// Get field by name
+	/// @param name - name of field
+	/// @return FieldRef which contains reference to indexed field
+	FieldRef operator[](const char *name);
+	/// Set additional percepts for modify operation
+	/// @param precepts - strings in format "fieldName=Func()"
+	void SetPrecepts(const vector<string> &precepts);
+	/// Check was names tags updated while modify operation
+	/// @return true: tags was updated.
+	bool IsTagsUpdated();
+	/// Check is item valid. If is not valid, then any futher operations with item will raise nullptr dereference
+	operator bool() const { return impl_ != nullptr; }
+	/// Enable Unsafe Mode<br>.
+	/// USE WITH CAUTION. In unsafe mode most of Item methods will not store  strings and slices, passed from/to application.<br>
+	/// The advantage of unsafe mode is speed. It does not call extra memory allocation from heap and copying data.<br>
+	/// The disadvantage of unsafe mode is potentially danger code. Most of C++ stl containters in many cases invalidates references -
+	/// and in unsafe mode caller is responsibe to guarantee, that all resources passed to Item will keep valid
+	Item &Unsafe(bool enable = true);
+
+private:
+	explicit Item(ItemImpl *impl) : impl_(impl) {}
+	explicit Item(const Error &err) : impl_(nullptr), status_(err) {}
+	void setID(int id, int version) {
+		id_ = id;
+		version_ = version;
 	}
 
-	Error SetField(const string &index, const KeyRefs &krs) override final;
-	Error SetField(const string &index, const KeyRef &kr) override final;
-	KeyRef GetField(const string &index) override final;
-
-	Slice GetJSON() final override;
-	Error FromJSON(const Slice &slice, char **endp) override final;
-
-	Slice GetCJSON() final override;
-	Error FromCJSON(const Slice &slice) override final;
-
-	Error Status() override final { return err_; }
-
-	ItemRef GetRef() override final { return id_; }
-
-	// Internal interface
-	void SetID(IdType id, int version) {
-		id_.id = id;
-		id_.version = version;
-
-		err_ = id == -1 ? Error(errLogic, "Item has not been updated/inserted") : 0;
-	}
-
-	TagsMatcher &getTagsMatcher() { return tagsMatcher_; }
-
-	void SetPrecepts(const vector<string> &precepts) override final { precepts_ = precepts; }
-	const vector<string> &GetPrecepts() override final { return precepts_; }
-
-protected:
-	// Index fields payload data
-	PayloadType::Ptr payloadType_;
-	PayloadValue payloadData_;
-
-	TagsMatcher tagsMatcher_;
-
-	// Status
-	Error err_;
-
-	ItemRef id_;
-	JsonAllocator jsonAllocator_;
-	WrSerializer ser_;
-	key_string tupleData_;
-
-	vector<string> precepts_;
+	ItemImpl *impl_;
+	Error status_;
+	int id_ = -1, version_ = -1;
+	friend class Namespace;
+	friend class QueryResults;
+	friend class ReindexerImpl;
 };
 
 }  // namespace reindexer

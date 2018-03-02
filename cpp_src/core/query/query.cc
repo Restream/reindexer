@@ -10,6 +10,7 @@
 #include "tools/errors.h"
 #include "tools/json2kv.h"
 #include "tools/logger.h"
+#include "tools/serializer.h"
 
 namespace reindexer {
 
@@ -300,9 +301,9 @@ void Query::Deserialize(Serializer &ser) {
 		q1.deserialize(ser);
 		q1.debugLevel = debugLevel;
 		if (joinType == JoinType::Merge) {
-			mergeQueries_.push_back(q1);
+			mergeQueries_.emplace_back(std::move(q1));
 		} else {
-			joinQueries_.push_back(q1);
+			joinQueries_.emplace_back(std::move(q1));
 		}
 	}
 }

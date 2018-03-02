@@ -1,9 +1,11 @@
 #include "jsonencoder.h"
-#include "core/query/queryresults.h"
+#include "core/payload/payloadtuple.h"
+#include "tagsmatcher.h"
+#include "tools/serializer.h"
 
 namespace reindexer {
 
-JsonPrintFilter::JsonPrintFilter(const TagsMatcher tagsMatcher, const h_vector<string, 4>& filter) {
+JsonPrintFilter::JsonPrintFilter(const TagsMatcher& tagsMatcher, const h_vector<string, 4>& filter) {
 	for (auto& str : filter) {
 		int tag = tagsMatcher.name2tag(str.c_str());
 		if (!filter_.size()) filter_.push_back(true);
@@ -106,7 +108,7 @@ static void encodeKeyRef(WrSerializer& wrser, KeyRef kr, int tagType) {
 			wrser.PrintJsonString(p_string(kr));
 			break;
 		default:
-			wrser.PutChars("null");
+			std::abort();
 	}
 }
 
@@ -232,62 +234,13 @@ bool JsonEncoder::encodeJson(ConstPayload* pl, Serializer& rdser, WrSerializer& 
 	return true;
 }
 
-key_string JsonEncoder::buildPlTuple(ConstPayload* pl) {
-	WrSerializer wrser;
-	wrser.PutVarUint(ctag(TAG_OBJECT, 0));
-
-	for (int idx = 1; idx < pl->NumFields(); ++idx) {
-		KeyRefs keyRefs;
-		pl->Get(idx, keyRefs);
-
-		string fieldName = pl->Type().Field(idx).Name();
-		int tagName = tagsMatcher_.name2tag(fieldName.c_str());
-		if (!tagName) {
-			tagName = const_cast<TagsMatcher&>(tagsMatcher_).name2tag(fieldName.c_str(), true);
-		}
-		assert(tagName);
-
-		int field = idx;
-		if (pl->Type().Field(field).IsArray()) {
-			wrser.PutVarUint(ctag(TAG_ARRAY, tagName, field));
-			wrser.PutVarUint(keyRefs.size());
-		} else {
-			for (const KeyRef& keyRef : keyRefs) {
-				switch (keyRef.Type()) {
-					case KeyValueInt:
-						wrser.PutVarUint(ctag(TAG_VARINT, tagName, field));
-						break;
-					case KeyValueInt64:
-						wrser.PutVarUint(ctag(TAG_VARINT, tagName, static_cast<int64_t>(field)));
-						break;
-					case KeyValueDouble:
-						wrser.PutVarUint(ctag(TAG_DOUBLE, tagName, field));
-						break;
-					case KeyValueString:
-						wrser.PutVarUint(ctag(TAG_STRING, tagName, field));
-						break;
-					case KeyValueUndefined:
-					case KeyValueEmpty:
-						wrser.PutVarUint(ctag(TAG_NULL, tagName));
-						break;
-					default:
-						std::abort();
-				}
-			}
-		}
-	}
-
-	wrser.PutVarUint(ctag(TAG_END, 0));
-	return make_key_string(reinterpret_cast<const char*>(wrser.Buf()), wrser.Len());
-}
-
 key_string& JsonEncoder::getPlTuple(ConstPayload* pl, key_string& plTuple) {
 	KeyRefs kref;
 	pl->Get(0, kref);
 	plTuple = static_cast<key_string>(kref[0]);
 
 	if (plTuple->size() == 0) {
-		plTuple = buildPlTuple(pl).get();
+		plTuple = BuildPayloadTuple(*pl, tagsMatcher_).get();
 	}
 
 	return plTuple;

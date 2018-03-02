@@ -93,7 +93,6 @@ const (
 	ResultsWithCJson        = int(C.kResultsWithCJson)
 	ResultsWithJson         = int(C.kResultsWithJson)
 	ResultsWithPayloadTypes = int(C.kResultsWithPayloadTypes)
-	ResultsClose            = int(C.kResultsClose)
 
 	IndexOptPK         = uint8(C.kIndexOptPK)
 	IndexOptArray      = uint8(C.kIndexOptArray)
@@ -193,6 +192,11 @@ type RawBuffer interface {
 	Free()
 }
 
+// FetchMore interface for partial loading results (used in cproto)
+type FetchMore interface {
+	Fetch(offset, limit int, withItems bool) (err error)
+}
+
 // Logger interface for reindexer
 type Logger interface {
 	Printf(level int, fmt string, msg ...interface{})
@@ -238,16 +242,14 @@ type RawBinding interface {
 	OpenNamespace(namespace string, enableStorage, dropOnFileFormatError bool) error
 	CloseNamespace(namespace string) error
 	DropNamespace(namespace string) error
-	CloneNamespace(src string, dst string) error
-	RenameNamespace(src string, dst string) error
 	EnableStorage(namespace string) error
 	AddIndex(namespace, index, jsonPath, indexType, fieldType string, opts IndexOptions, collateMode int) error
 	ConfigureIndex(namespace, index, config string) error
 	PutMeta(namespace, key, data string) error
 	GetMeta(namespace, key string) (RawBuffer, error)
 	ModifyItem(data []byte, mode int) (RawBuffer, error)
-	Select(query string, withItems bool, ptVersions []int32) (RawBuffer, error)
-	SelectQuery(rawQuery []byte, withItems bool, ptVersions []int32) (RawBuffer, error)
+	Select(query string, withItems bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
+	SelectQuery(rawQuery []byte, withItems bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
 	DeleteQuery(rawQuery []byte) (RawBuffer, error)
 	Commit(namespace string) error
 	EnableLogger(logger Logger)

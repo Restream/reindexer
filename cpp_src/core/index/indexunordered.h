@@ -22,14 +22,14 @@ public:
 
 	// Constructor specialization for payload_unordered_map
 	template <typename U = T>
-	IndexUnordered(IndexType _type, const string &_name, const IndexOpts &opts, const PayloadType::Ptr payloadType, const FieldsSet &fields,
+	IndexUnordered(IndexType _type, const string &_name, const IndexOpts &opts, const PayloadType payloadType, const FieldsSet &fields,
 				   typename std::enable_if<is_payload_unord_map_key<U>::value>::type * = 0)
 		: IndexStore<typename T::key_type>(_type, _name, opts, payloadType, fields),
 		  idx_map(1000, hash_composite(payloadType, fields), equal_composite(payloadType, fields)) {}
 
 	// Constructor specialization for payload_map
 	template <typename U = T>
-	IndexUnordered(IndexType _type, const string &_name, const IndexOpts &opts, const PayloadType::Ptr payloadType, const FieldsSet &fields,
+	IndexUnordered(IndexType _type, const string &_name, const IndexOpts &opts, const PayloadType payloadType, const FieldsSet &fields,
 				   typename std::enable_if<is_payload_map_key<U>::value>::type * = 0)
 		: IndexStore<typename T::key_type>(_type, _name, opts, payloadType, fields), idx_map(less_composite(payloadType, fields)) {}
 

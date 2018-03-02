@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdlib.h>
 #include <string>
 
 #include "core/payload/payloadtype.h"
@@ -14,7 +15,8 @@ using std::string;
 
 class TagsMatcherImpl {
 public:
-	TagsMatcherImpl(PayloadType::Ptr payloadType = nullptr) : payloadType_(payloadType), version_(0) {}
+	TagsMatcherImpl() : version_(0), cacheToken_(rand()) {}
+	TagsMatcherImpl(PayloadType payloadType) : payloadType_(payloadType), version_(0), cacheToken_(rand()) {}
 	~TagsMatcherImpl() {
 		//	if (tags2names_.size()) printf("~TagsMatcherImpl::TagsMatcherImpl %d\n", int(tags2names_.size()));
 	}
@@ -51,7 +53,12 @@ public:
 	const string &tag2name(int tag) const {
 		tag &= (1 << ctag::nameBits) - 1;
 		static string emptystr;
-		if (tag == 0 || tag - 1 >= int(tags2names_.size())) return emptystr;
+		if (tag == 0) return emptystr;
+
+		if (tag - 1 >= int(tags2names_.size())) {
+			throw Error(errLogic, "Unknown tag %d in cjson", tag);
+		}
+
 		return tags2names_[tag - 1];
 	}
 
@@ -74,6 +81,12 @@ public:
 			}
 		}
 	}
+	void updatePayloadType(PayloadType payloadType, bool &updated) {
+		updated = true;
+		payloadType_ = payloadType;
+		version_++;
+		buildTagsCache(updated);
+	}
 
 	void serialize(WrSerializer &ser) const {
 		ser.PutVarUint(tags2names_.size());
@@ -90,6 +103,7 @@ public:
 			tags2names_[tag] = name;
 		}
 		version_++;
+		assert(ser.Eof());
 	}
 
 	bool merge(const TagsMatcherImpl &tm) {
@@ -114,13 +128,14 @@ public:
 			tags2names_[it->second] = it->first;
 		}
 
-		version_ = std::max(version_, tm.version_);
+		version_ = std::max(version_, tm.version_) + 1;
 
 		return true;
 	}
 
 	size_t size() const { return tags2names_.size(); }
 	int version() const { return version_; }
+	int cacheToken() const { return cacheToken_; }
 
 	void clear() {
 		names2tags_.clear();
@@ -165,9 +180,9 @@ protected:
 
 	fast_hash_map<string, int, hash_str, equal_str> names2tags_;
 	vector<string> tags2names_;
-	PayloadType::Ptr payloadType_;
-	int version_;
-
+	PayloadType payloadType_;
+	int32_t version_;
+	int32_t cacheToken_;
 	TagsPathCache pathCache_;
 };
 }  // namespace reindexer

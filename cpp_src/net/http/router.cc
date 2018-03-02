@@ -137,6 +137,12 @@ int Router::handle(Context &ctx) {
 				if ((asteriskPtr && strncmp(urlPtr, routePtr, asteriskPtr - routePtr)) || (!asteriskPtr && strcmp(urlPtr, routePtr))) break;
 
 				int res = 0;
+				for (auto &mw : middlewares_) {
+					auto ret = mw.func_(mw.object_, ctx);
+					if (ret != 0) {
+						return ret;
+					}
+				}
 
 				if (enableStats_) {
 					auto tm0 = std::chrono::high_resolution_clock::now();
@@ -149,7 +155,9 @@ int Router::handle(Context &ctx) {
 				} else {
 					res = r.h_.func_(r.h_.object_, ctx);
 				}
-
+				if (logger_) {
+					logger_(ctx);
+				}
 				return res;
 			}
 
@@ -172,7 +180,6 @@ int Router::handle(Context &ctx) {
 			if (routePtr != endRoutePtr) routePtr++;
 		}
 	}
-
 	return notFoundHandler_.object_ != nullptr ? notFoundHandler_.func_(notFoundHandler_.object_, ctx)
 											   : ctx.String(StatusNotFound, "Not found");
 }

@@ -54,24 +54,6 @@ TEST_F(ReindexerApi, AddExistingIndexWithDiffType) {
 	ASSERT_FALSE(err.ok());
 }
 
-TEST_F(ReindexerApi, CloneNamespace) {
-	CreateNamespace(default_namespace);
-
-	auto err = reindexer->CloneNamespace(default_namespace, default_namespace + "new");
-	ASSERT_TRUE(err.ok());
-}
-
-TEST_F(ReindexerApi, CloneNonExistingNamespace) {
-	auto err = reindexer->CloneNamespace(default_namespace, default_namespace + "new");
-	ASSERT_FALSE(err.ok()) << "Error: unexpected result of clone non-existing namespace.";
-}
-
-TEST_F(ReindexerApi, CloneSameNamespaces) {
-	auto err = reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled());
-	err = reindexer->CloneNamespace(default_namespace, default_namespace);
-	ASSERT_FALSE(err.ok()) << "Error: unexpected result of clone same namespaces.";
-}
-
 TEST_F(ReindexerApi, DeleteNamespace) {
 	CreateNamespace(default_namespace);
 
@@ -99,9 +81,9 @@ TEST_F(ReindexerApi, NewItem) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = reindexer->AddIndex(default_namespace, {"value", "", "text", "string", IndexOpts()});
 	ASSERT_TRUE(err.ok()) << err.what();
-	auto item = reindexer->NewItem(default_namespace);
-	ASSERT_TRUE(item != nullptr);
-	ASSERT_TRUE(item->Status().ok()) << item->Status().what();
+	Item item(reindexer->NewItem(default_namespace));
+	ASSERT_TRUE(item);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 }
 
 TEST_F(ReindexerApi, Insert) {
@@ -112,24 +94,14 @@ TEST_F(ReindexerApi, Insert) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = reindexer->AddIndex(default_namespace, {"value", "", "text", "string", IndexOpts()});
 	ASSERT_TRUE(err.ok()) << err.what();
-	auto item = reindexer->NewItem(default_namespace);
-	ASSERT_TRUE(item != nullptr);
-	ASSERT_TRUE(item->Status().ok()) << item->Status().what();
+	Item item(reindexer->NewItem(default_namespace));
+	ASSERT_TRUE(item);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 	// Set field 'id'
-	reindexer::KeyRefs refs;
-	reindexer::KeyRef id(1);
-	refs.push_back(id);
-	err = item->SetField("id", refs);
-	ASSERT_TRUE(err.ok()) << err.what();
-
+	item["id"] = 1;
 	// Set field 'value'
-	refs.clear();
-	reindexer::p_string p("value of item");
-	reindexer::KeyRef value(p);
-	// reindexer::KeyRef value(make_shared<string>("value of field"));
-	refs.push_back(value);
-	err = item->SetField("value", refs);
+	item["value"] = "value of item";
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = reindexer->Insert(default_namespace, item);
@@ -151,86 +123,42 @@ TEST_F(ReindexerApi, DISABLED_DslSetOrder) {
 	//	});
 
 	{
-		auto item = reindexer->NewItem(default_namespace);
-		ASSERT_TRUE(item != nullptr);
-		ASSERT_TRUE(item->Status().ok()) << item->Status().what();
+		Item item(reindexer->NewItem(default_namespace));
+		ASSERT_TRUE(item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
-		reindexer::KeyRefs ids;
-		reindexer::KeyRef id(static_cast<int>(3));
-		ids.push_back(id);
-		err = item->SetField("id", ids);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		reindexer::KeyRefs values;
-
-		auto str = reindexer::make_key_string("val3");
-
-		reindexer::KeyRef val(str);
-		values.push_back(val);
-		err = item->SetField("value", values);
-		ASSERT_TRUE(err.ok()) << err.what();
-
+		item["id"] = 3;
+		item["value"] = "val3";
 		err = reindexer->Upsert(default_namespace, item);
 		ASSERT_TRUE(err.ok()) << err.what();
-
-		delete item;
 	}
 
 	{
-		auto item = reindexer->NewItem(default_namespace);
-		ASSERT_TRUE(item != nullptr);
-		ASSERT_TRUE(item->Status().ok()) << item->Status().what();
+		Item item(reindexer->NewItem(default_namespace));
+		ASSERT_TRUE(item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
-		reindexer::KeyRefs ids;
-		reindexer::KeyRef id(static_cast<int>(2));
-		ids.push_back(id);
-		err = item->SetField("id", ids);
-		ASSERT_TRUE(err.ok()) << err.what();
+		item["id"] = 2;
+		item["value"] = "val2";
 
-		reindexer::KeyRefs values;
-
-		auto str = reindexer::make_key_string("val2");
-
-		reindexer::KeyRef val(str);
-		values.push_back(val);
-
-		err = item->SetField("value", values);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		std::cout << item->GetJSON().data() << std::endl;
+		std::cout << item.GetJSON().data() << std::endl;
 
 		err = reindexer->Upsert(default_namespace, item);
 		ASSERT_TRUE(err.ok()) << err.what();
-
-		delete item;
 	}
 
 	{
-		auto item = reindexer->NewItem(default_namespace);
-		ASSERT_TRUE(item != nullptr);
-		ASSERT_TRUE(item->Status().ok()) << item->Status().what();
+		Item item(reindexer->NewItem(default_namespace));
+		ASSERT_TRUE(item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
-		reindexer::KeyRefs ids;
-		reindexer::KeyRef id(static_cast<int>(1));
-		ids.push_back(id);
-		err = item->SetField("id", ids);
-		ASSERT_TRUE(err.ok()) << err.what();
+		item["id"] = 1;
+		item["value"] = "val1";
 
-		reindexer::KeyRefs values;
-		auto str = reindexer::make_key_string("val1");
-
-		reindexer::KeyRef val(str);
-		values.push_back(val);
-
-		err = item->SetField("value", values);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		std::cout << item->GetJSON().data() << std::endl;
+		std::cout << item.GetJSON().data() << std::endl;
 
 		err = reindexer->Upsert(default_namespace, item);
 		ASSERT_TRUE(err.ok()) << err.what();
-
-		delete item;
 	}
 
 	err = reindexer->Commit(default_namespace);
@@ -291,33 +219,31 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 	std::set<string, CollateComparer<CollateNumeric>> allStrValuesNumeric;
 	std::set<string, CollateComparer<CollateUTF8>> allStrValuesUTF8;
 	for (int i = 0; i < 100; ++i) {
-		auto item = reindexer->NewItem(default_namespace);
-		EXPECT_TRUE(item != nullptr);
-		EXPECT_TRUE(item->Status().ok()) << item->Status().what();
+		Item item(reindexer->NewItem(default_namespace));
+		EXPECT_TRUE(item);
+		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
-		AddData(default_namespace, "id", i, item);
-		AddData(default_namespace, "valueInt", i, item);
+		item["id"] = i;
+		item["valueInt"] = i;
 		allIntValues.push_front(i);
 
 		string strCollateNone = RandString().c_str();
-		AddData(default_namespace, "valueString", strCollateNone, item);
+		item["valueString"] = strCollateNone;
 		allStrValues.insert(strCollateNone);
 
 		string strASCII(strCollateNone + "ASCII");
-		AddData(default_namespace, "valueStringASCII", strASCII, item);
+		item["valueStringASCII"] = strASCII;
 		allStrValuesASCII.insert(strASCII);
 
 		string strNumeric(std::to_string(i + 1));
-		AddData(default_namespace, "valueStringNumeric", strNumeric, item);
+		item["valueStringNumeric"] = strNumeric;
 		allStrValuesNumeric.insert(strNumeric);
 
-		AddData(default_namespace, "valueStringUTF8", strCollateNone, item);
+		item["valueStringUTF8"] = strCollateNone;
 		allStrValuesUTF8.insert(strCollateNone);
 
 		err = reindexer->Upsert(default_namespace, item);
 		EXPECT_TRUE(err.ok()) << err.what();
-
-		delete item;
 	}
 
 	err = reindexer->Commit(default_namespace);
@@ -334,13 +260,12 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 
 	deque<int> selectedIntValues;
 	for (size_t i = 0; i < sortByIntQr.size(); ++i) {
-		std::unique_ptr<reindexer::Item> item(sortByIntQr.GetItem(static_cast<int>(i)));
-		auto ritem = reinterpret_cast<reindexer::ItemImpl*>(item.get());
-		KeyRef value = ritem->GetField("valueInt");
-		selectedIntValues.push_back(static_cast<int>(value));
+		Item item(sortByIntQr.GetItem(static_cast<int>(i)));
+		int value = item["valueInt"].Get<int>();
+		selectedIntValues.push_back(value);
 	}
 
-	EXPECT_TRUE(std::equal(allIntValues.begin() + offset, allIntValues.begin() + limit, selectedIntValues.begin()));
+	EXPECT_TRUE(std::equal(allIntValues.begin() + offset, allIntValues.begin() + offset + limit, selectedIntValues.begin()));
 
 	QueryResults sortByStrQr, sortByASCIIStrQr, sortByNumericStrQr, sortByUTF8StrQr;
 	Query sortByStrQuery = Query(default_namespace).Sort("valueString", !descending);
@@ -363,10 +288,8 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 	auto collectQrStringFieldValues = [](const QueryResults& qr, const char* fieldName, vector<string>& selectedStrValues) {
 		selectedStrValues.clear();
 		for (size_t i = 0; i < qr.size(); ++i) {
-			std::unique_ptr<reindexer::Item> item(qr.GetItem(int(i)));
-			auto ritem = reinterpret_cast<reindexer::ItemImpl*>(item.get());
-			KeyRef value = ritem->GetField(fieldName);
-			selectedStrValues.push_back(*value.operator p_string().getCxxstr());
+			Item item(qr.GetItem(int(i)));
+			selectedStrValues.push_back(item[fieldName].As<string>());
 		}
 	};
 
@@ -417,50 +340,33 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		for (int i = 0; i < 50; ++i) {
-			auto item = reindexer->NewItem(secondNamespace);
-			EXPECT_TRUE(item != nullptr);
-			EXPECT_TRUE(item->Status().ok()) << item->Status().what();
+			Item item(reindexer->NewItem(secondNamespace));
+			EXPECT_TRUE(item);
+			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
-			reindexer::KeyRefs ids;
-			reindexer::KeyRef id(static_cast<int>(i));
-			ids.push_back(id);
 			secondNamespacePKs.push_back(i);
-			err = item->SetField("pk", ids);
-			EXPECT_TRUE(err.ok()) << err.what();
+			item["pk"] = i;
 
 			err = reindexer->Upsert(secondNamespace, item);
 			EXPECT_TRUE(err.ok()) << err.what();
-
-			delete item;
 		}
 
 		err = reindexer->Commit(secondNamespace);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
-	for (size_t i = 0; i < 100; ++i) {
-		auto item = reindexer->NewItem(default_namespace);
-		EXPECT_TRUE(item != nullptr);
-		EXPECT_TRUE(item->Status().ok()) << item->Status().what();
+	for (int i = 0; i < 100; ++i) {
+		Item item(reindexer->NewItem(default_namespace));
+		EXPECT_TRUE(item);
+		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
-		reindexer::KeyRefs ids;
-		reindexer::KeyRef id(static_cast<int>(i));
-		ids.push_back(id);
-		err = item->SetField("id", ids);
-		EXPECT_TRUE(err.ok()) << err.what();
+		item["id"] = i;
 
 		int fk = secondNamespacePKs[rand() % (secondNamespacePKs.size() - 1)];
-		reindexer::KeyRef value(static_cast<int>(fk));
-		reindexer::KeyRefs values;
-		values.push_back(value);
-
-		err = item->SetField("fk", values);
-		EXPECT_TRUE(err.ok()) << err.what();
+		item["fk"] = fk;
 
 		err = reindexer->Upsert(default_namespace, item);
 		EXPECT_TRUE(err.ok()) << err.what();
-
-		delete item;
 	}
 
 	err = reindexer->Commit(default_namespace);

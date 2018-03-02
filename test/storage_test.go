@@ -3,6 +3,7 @@ package reindexer
 import (
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"os"
 	"testing"
 	"time"
@@ -214,13 +215,18 @@ func TestStorageChangeFormat(t *testing.T) {
 		panic(fmt.Errorf("expected 0 items in ns,found %d", stat.ItemsCount))
 	}
 
-	// Test7
-	// Try to create DB on exists file path - must fail
-	ioutil.WriteFile("/tmp/reindex_test/blocked_storage", []byte{}, os.ModePerm)
-	err = DB.OpenNamespace("blocked_storage", reindexer.DefaultNamespaceOptions(), TestItemV1{})
-
-	if err == nil {
-		panic(fmt.Errorf("Expecting storage error, but it's ok"))
+	udsn, err := url.Parse(*dsn)
+	if err != nil {
+		panic(err)
 	}
+	if udsn.Scheme == "builtin" {
+		// Test7
+		// Try to create DB on exists file path - must fail
+		ioutil.WriteFile(udsn.Path+"blocked_storage", []byte{}, os.ModePerm)
+		err = DB.OpenNamespace("blocked_storage", reindexer.DefaultNamespaceOptions(), TestItemV1{})
 
+		if err == nil {
+			panic(fmt.Errorf("Expecting storage error, but it's ok"))
+		}
+	}
 }

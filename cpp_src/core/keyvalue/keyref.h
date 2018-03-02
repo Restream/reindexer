@@ -51,6 +51,10 @@ public:
 		assertKeyType(type, KeyValueString);
 		return value_string;
 	}
+	explicit operator Slice() const {
+		assertKeyType(type, KeyValueString);
+		return Slice(value_string.data(), value_string.size());
+	}
 
 	explicit operator const PayloadValue *() const {
 		assertKeyType(type, KeyValueComposite);
@@ -65,6 +69,8 @@ public:
 		assertKeyType(type, KeyValueString);
 		return make_key_string(value_string.data(), value_string.length());
 	}
+	template <typename T>
+	T As() const;
 
 	bool operator==(const KeyRef &other) const { return Compare(other) == 0; }
 	bool operator!=(const KeyRef &other) const { return Compare(other) != 0; }

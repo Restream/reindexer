@@ -2,9 +2,10 @@
 
 #include <string>
 #include <vector>
-#include "gason/gason.h"
 #include "tools/errors.h"
 #include "type_consts.h"
+
+union JsonValue;
 
 namespace reindexer {
 
@@ -13,7 +14,6 @@ using std::vector;
 
 struct Slice;
 class WrSerializer;
-
 struct IndexDef {
 	string name;
 	string jsonPath;

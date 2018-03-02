@@ -1,5 +1,6 @@
 #include "cjsondecoder.h"
-#include "cjsonencoder.h"
+#include "tagsmatcher.h"
+#include "tools/serializer.h"
 
 namespace reindexer {
 
@@ -95,7 +96,11 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 
 	int tagName = tag.Name();
 
-	if (tagName) tagsPath_.push_back(tagName);
+	if (tagName) {
+		// Check
+		(void)tagsMatcher_.tag2name(tagName);
+		tagsPath_.push_back(tagName);
+	}
 
 	int field = tagsMatcher_.tags2field(tagsPath_.data(), tagsPath_.size());
 

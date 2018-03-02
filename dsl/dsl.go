@@ -3,13 +3,10 @@ package dsl
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
-)
-
-var (
-	ErrCondType = errors.New("cond type not found")
 )
 
 type DSL struct {
@@ -190,7 +187,7 @@ func (f *Filter) ParseValue(data string) error {
 	case "ANY", "EMPTY":
 		f.Value = 0
 	default:
-		return ErrCondType
+		return fmt.Errorf("cond type %s not found", f.Cond)
 	}
 
 	return nil

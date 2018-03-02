@@ -17,16 +17,6 @@ Reindexer dump tool is an utility to view the dump of the reindex persistent.
 - Dump meta info by KEY
 - Dump a partial list of elements ('limit', 'offset' options)
 
-## Installation
-
-For installation you need to build app in the source directory.
-Execute following command:
-
-```sh
-make
-```
-Utility will be put in the directory: `.build/`
-
 ## Usage
 
 ```sh

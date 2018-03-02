@@ -3,21 +3,25 @@ package cjson
 import "fmt"
 
 type tagsMatcher struct {
-	Tags    []string
-	Names   map[string]int
-	Version int32
-	Updated int
+	Tags  []string
+	Names map[string]int
 }
 
-func (tm *tagsMatcher) Read(ser *Serializer) {
-	tm.Version = int32(ser.GetVarUInt())
-	tagsCount := int(ser.GetVarUInt())
-	tm.Tags = make([]string, tagsCount, tagsCount)
-	tm.Names = make(map[string]int)
+func (tm *tagsMatcher) Read(ser *Serializer, skip bool) {
 
-	for i := 0; i < tagsCount; i++ {
-		tm.Tags[i] = ser.GetVString()
-		tm.Names[tm.Tags[i]] = i
+	tagsCount := int(ser.GetVarUInt())
+	if !skip {
+		tm.Tags = make([]string, tagsCount, tagsCount)
+		tm.Names = make(map[string]int)
+
+		for i := 0; i < tagsCount; i++ {
+			tm.Tags[i] = ser.GetVString()
+			tm.Names[tm.Tags[i]] = i
+		}
+	} else {
+		for i := 0; i < tagsCount; i++ {
+			ser.GetVString()
+		}
 	}
 }
 
@@ -26,7 +30,6 @@ func (tm *tagsMatcher) WriteUpdated(ser *Serializer) {
 	for i := 0; i < len(tm.Tags); i++ {
 		ser.PutVString(tm.Tags[i])
 	}
-	tm.Updated = 0
 }
 
 func (tm *tagsMatcher) tag2name(tag int) string {
@@ -41,18 +44,21 @@ func (tm *tagsMatcher) tag2name(tag int) string {
 	return tm.Tags[tag-1]
 }
 
-func (tm *tagsMatcher) name2tag(name string) int {
+func (tm *tagsMatcher) name2tag(name string, canAdd bool) int {
 
 	tag, ok := tm.Names[name]
 
 	if !ok {
-		if tm.Names == nil {
-			tm.Names = make(map[string]int)
+		if canAdd {
+			if tm.Names == nil {
+				tm.Names = make(map[string]int)
+			}
+			tag = len(tm.Tags)
+			tm.Names[name] = tag
+			tm.Tags = append(tm.Tags, name)
+		} else {
+			return 0
 		}
-		tag = len(tm.Tags)
-		tm.Names[name] = tag
-		tm.Tags = append(tm.Tags, name)
-		tm.Updated++
 	}
 	return tag + 1
 }

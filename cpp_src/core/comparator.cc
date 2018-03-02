@@ -23,7 +23,7 @@ Comparator::Comparator(CondType cond, KeyValueType type, const KeyValues &values
 	}
 }
 
-void Comparator::Bind(const PayloadType *type, int field) {
+void Comparator::Bind(PayloadType type, int field) {
 	offset_ = type->Field(field).Offset();
 	sizeof_ = type->Field(field).ElemSizeof();
 }

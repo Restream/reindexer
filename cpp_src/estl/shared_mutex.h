@@ -14,11 +14,11 @@
 using std::shared_timed_mutex;
 using std::shared_lock;
 #else
-namespace reindexer {
-
 #include <assert.h>
 #include <errno.h>
 #include <pthread.h>
+
+namespace reindexer {
 
 class __shared_mutex_pthread {
 #ifdef PTHREAD_RWLOCK_INITIALIZER

@@ -76,7 +76,7 @@ type TextItem struct {
 
 func createReindexDbInstance(namespace string) *reindexer.Reindexer {
 	reindexDB := reindexer.NewReindex("builtin")
-	err := reindexDB.NewNamespace(namespace, reindexer.DefaultNamespaceOptions(), TextItem{})
+	err := reindexDB.OpenNamespace(namespace, reindexer.DefaultNamespaceOptions(), TextItem{})
 	if err != nil {
 		panic(fmt.Errorf("Couldn't create namespace: "+namespace, err))
 	}

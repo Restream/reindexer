@@ -4,12 +4,13 @@
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
+#include <cmath>
 #include "reindexer_api.h"
 using std::unordered_map;
 using std::unordered_set;
 using std::map;
 using std::numeric_limits;
-using std::abs;
+
 
 class QueriesApi : public ReindexerApi {
 public:
@@ -38,33 +39,31 @@ public:
 		};
 
 		CreateNamespace(default_namespace);
-		DefineNamespaceDataset(
-			default_namespace,
-			{
-				tuple<const char*, const char*, const char*, IndexOpts>{id, "hash", "int", indexesOptions[id]},
-				tuple<const char*, const char*, const char*, IndexOpts>{genre, "tree", "int", indexesOptions[genre]},
-				tuple<const char*, const char*, const char*, IndexOpts>{year, "tree", "int", indexesOptions[year]},
-				tuple<const char*, const char*, const char*, IndexOpts>{packages, "hash", "int", indexesOptions[packages]},
-				tuple<const char*, const char*, const char*, IndexOpts>{name, "tree", "string", indexesOptions[name]},
-				tuple<const char*, const char*, const char*, IndexOpts>{countries, "tree", "string", indexesOptions[countries]},
-				tuple<const char*, const char*, const char*, IndexOpts>{age, "hash", "int", indexesOptions[age]},
-				tuple<const char*, const char*, const char*, IndexOpts>{description, "fulltext", "string", indexesOptions[description]},
-				tuple<const char*, const char*, const char*, IndexOpts>{rate, "tree", "double", indexesOptions[rate]},
-				tuple<const char*, const char*, const char*, IndexOpts>{isDeleted, "-", "bool", indexesOptions[isDeleted]},
-				tuple<const char*, const char*, const char*, IndexOpts>{actor, "tree", "string", indexesOptions[actor]},
-				tuple<const char*, const char*, const char*, IndexOpts>{priceId, "hash", "int", indexesOptions[priceId]},
-				tuple<const char*, const char*, const char*, IndexOpts>{location, "tree", "string", indexesOptions[location]},
-				tuple<const char*, const char*, const char*, IndexOpts>{endTime, "hash", "int", indexesOptions[endTime]},
-				tuple<const char*, const char*, const char*, IndexOpts>{startTime, "tree", "int", indexesOptions[startTime]},
-				tuple<const char*, const char*, const char*, IndexOpts>{temp, "tree", "string", indexesOptions[temp]},
-				tuple<const char*, const char*, const char*, IndexOpts>{numeric, "tree", "string", indexesOptions[numeric]},
-				tuple<const char*, const char*, const char*, IndexOpts>{string(id + compositePlus + temp).c_str(), "tree", "composite",
-																		indexesOptions[id + compositePlus + temp]},
-				tuple<const char*, const char*, const char*, IndexOpts>{string(age + compositePlus + genre).c_str(), "hash", "composite",
-																		indexesOptions[age + compositePlus + genre]},
-			});
-		defaultNsPks.push_back(1);
-		defaultNsPks.push_back(16);
+		DefineNamespaceDataset(default_namespace, {
+													  IndexDeclaration{id, "hash", "int", indexesOptions[id]},
+													  IndexDeclaration{genre, "tree", "int", indexesOptions[genre]},
+													  IndexDeclaration{year, "tree", "int", indexesOptions[year]},
+													  IndexDeclaration{packages, "hash", "int", indexesOptions[packages]},
+													  IndexDeclaration{name, "tree", "string", indexesOptions[name]},
+													  IndexDeclaration{countries, "tree", "string", indexesOptions[countries]},
+													  IndexDeclaration{age, "hash", "int", indexesOptions[age]},
+													  IndexDeclaration{description, "fulltext", "string", indexesOptions[description]},
+													  IndexDeclaration{rate, "tree", "double", indexesOptions[rate]},
+													  IndexDeclaration{isDeleted, "-", "bool", indexesOptions[isDeleted]},
+													  IndexDeclaration{actor, "tree", "string", indexesOptions[actor]},
+													  IndexDeclaration{priceId, "hash", "int", indexesOptions[priceId]},
+													  IndexDeclaration{location, "tree", "string", indexesOptions[location]},
+													  IndexDeclaration{endTime, "hash", "int", indexesOptions[endTime]},
+													  IndexDeclaration{startTime, "tree", "int", indexesOptions[startTime]},
+													  IndexDeclaration{temp, "tree", "string", indexesOptions[temp]},
+													  IndexDeclaration{numeric, "tree", "string", indexesOptions[numeric]},
+													  IndexDeclaration{string(id + compositePlus + temp).c_str(), "tree", "composite",
+																	   indexesOptions[id + compositePlus + temp]},
+													  IndexDeclaration{string(age + compositePlus + genre).c_str(), "hash", "composite",
+																	   indexesOptions[age + compositePlus + genre]},
+												  });
+		defaultNsPks.push_back(id);
+		defaultNsPks.push_back(temp);
 
 		CreateNamespace(testSimpleNs);
 		DefineNamespaceDataset(testSimpleNs, {
@@ -73,7 +72,7 @@ public:
 												 IndexDeclaration{name, "text", "string", IndexOpts()},
 												 IndexDeclaration{phone, "text", "string", IndexOpts()},
 											 });
-		simpleTestNsPks.push_back(1);
+		simpleTestNsPks.push_back(id);
 	}
 
 	void ExecuteAndVerify(const string& ns, const Query& query) {
@@ -92,25 +91,24 @@ public:
 
 		size_t itemsCount = 0;
 		for (size_t i = 0; i < qr.size(); ++i) {
-			unique_ptr<reindexer::Item> item(qr.GetItem(static_cast<int>(i)));
-			auto* itemr = reinterpret_cast<reindexer::ItemImpl*>(item.get());
+			Item itemr(qr.GetItem(static_cast<int>(i)));
 
-			auto pk = getPkString(itemr, default_namespace);
+			auto pk = getPkString(itemr, ns);
 			EXPECT_TRUE(pks.insert(pk).second) << "Duplicated primary key: " + pk;
 
 			InsertedItemsByPk& insertedItemsByPk = insertedItems[ns];
 			auto itInsertedItem = insertedItemsByPk.find(pk);
 			EXPECT_TRUE(itInsertedItem != insertedItemsByPk.end()) << "Item with such PK has not been inserted yet: " + pk;
 			if (itInsertedItem != insertedItemsByPk.end()) {
-				std::shared_ptr<reindexer::Item> insertedItem = itInsertedItem->second;
-				bool eq = (insertedItem->GetJSON().ToString() == item->GetJSON().ToString());
+				Item& insertedItem = itInsertedItem->second;
+				bool eq = (insertedItem.GetJSON().ToString() == itemr.GetJSON().ToString());
 				EXPECT_TRUE(eq) << "Items' jsons are different!";
 			}
 
 			reindexer::QueryEntries failedEntries;
 			bool conditionsSatisfied = checkConditions(itemr, query, failedEntries);
 			if (conditionsSatisfied) ++itemsCount;
-			EXPECT_TRUE(conditionsSatisfied) << "Item doesn't match conditions: " + item->GetJSON().ToString();
+			EXPECT_TRUE(conditionsSatisfied) << "Item doesn't match conditions: " + itemr.GetJSON().ToString();
 			if (!conditionsSatisfied) {
 				printf("Query: %s\n", query.Dump().c_str());
 				PrintFailedQueryEntries(failedEntries);
@@ -118,7 +116,7 @@ public:
 			EXPECT_TRUE(checkDistincts(itemr, query, distincts)) << "Distinction check failed";
 
 			if (!query.sortBy.empty() && query.forcedSortOrder.empty()) {
-				KeyRef sortedValue = itemr->GetField(query.sortBy);
+				KeyRef sortedValue = itemr[query.sortBy];
 				if (lastSortemColumnValue.Type() != KeyValueEmpty) {
 					int cmpRes = lastSortemColumnValue.Compare(sortedValue);
 					bool sortOrderSatisfied = (query.sortDirDesc && cmpRes > 0) || (!query.sortDirDesc && cmpRes < 0) || (cmpRes == 0);
@@ -136,9 +134,8 @@ public:
 			EXPECT_TRUE(query.forcedSortOrder.size() <= qr.size()) << "Size of QueryResults is incorrect!";
 			if (query.forcedSortOrder.size() <= qr.size()) {
 				for (size_t i = 0; i < qr.size(); ++i) {
-					unique_ptr<reindexer::Item> item(qr.GetItem(static_cast<int>(i)));
-					auto* itemr = reinterpret_cast<reindexer::ItemImpl*>(item.get());
-					KeyRef sortedValue = itemr->GetField(query.sortBy);
+					Item item(qr.GetItem(static_cast<int>(i)));
+					KeyRef sortedValue = item[query.sortBy];
 					EXPECT_EQ(query.forcedSortOrder[i].Compare(sortedValue), 0) << "Forced sort order is incorrect!";
 				}
 			}
@@ -146,12 +143,17 @@ public:
 	}
 
 protected:
-	string getPkString(reindexer::ItemImpl* item, const string& ns) {
-		reindexer::FieldsSet& fds((ns == default_namespace) ? defaultNsPks : simpleTestNsPks);
-		return item->GetPK(fds);
+	string getPkString(reindexer::Item& item, const string& ns) {
+		vector<string>& pkFields((ns == default_namespace) ? defaultNsPks : simpleTestNsPks);
+		string ret;
+		for (auto& field : pkFields) {
+			ret += item[field].As<string>() + "#";
+		}
+
+		return ret;
 	}
 
-	bool checkConditions(reindexer::ItemImpl* item, const Query& qr, reindexer::QueryEntries& failedEntries) {
+	bool checkConditions(reindexer::Item& item, const Query& qr, reindexer::QueryEntries& failedEntries) {
 		bool result = true;
 		for (const QueryEntry& qentry : qr.entries) {
 			if (qentry.distinct) continue;
@@ -181,9 +183,8 @@ protected:
 		return result;
 	}
 
-	bool checkCondition(reindexer::ItemImpl* item, const QueryEntry& qentry) {
-		reindexer::KeyRefs fieldValues;
-		item->Get(qentry.index.c_str(), fieldValues);
+	bool checkCondition(Item& item, const QueryEntry& qentry) {
+		KeyRefs fieldValues = item[qentry.index];
 
 		IndexOpts& opts = indexesOptions[qentry.index];
 
@@ -233,79 +234,81 @@ protected:
 		return result;
 	}
 
-	bool checkDistincts(reindexer::ItemImpl* item, const Query& qr, unordered_map<string, unordered_set<string>>& distincts) {
+	bool checkDistincts(reindexer::Item& item, const Query& qr, unordered_map<string, unordered_set<string>>& distincts) {
 		bool result = true;
 		for (const QueryEntry& qentry : qr.entries) {
 			if (!qentry.distinct) continue;
 
-			reindexer::KeyRefs fieldValue;
-			item->Get(qentry.index, fieldValue);
+			reindexer::KeyRefs fieldValue = item[qentry.index];
 
 			EXPECT_TRUE(fieldValue.size() == 1) << "Distinct field's size cannot be > 1";
 
 			unordered_set<string>& values = distincts[qentry.index];
 			KeyValue keyValue(fieldValue[0]);
-			bool inserted = values.insert(keyValue.toString()).second;
-			EXPECT_TRUE(inserted) << "Duplicate distinct item for index: " << keyValue.toString() << ", " << std::to_string(qentry.idxNo);
+			bool inserted = values.insert(keyValue.As<string>()).second;
+			EXPECT_TRUE(inserted) << "Duplicate distinct item for index: " << keyValue.As<string>() << ", " << std::to_string(qentry.idxNo);
 			result &= inserted;
 		}
 		return result;
 	}
 
 	void FillTestSimpleNamespace() {
-		auto item1 = AddData(testSimpleNs, id, 1);
-		AddData(testSimpleNs, year, 2002, item1);
-		AddData(testSimpleNs, name, string("SSS"), item1);
+		Item item1 = NewItem(testSimpleNs);
+		item1[id] = 1;
+		item1[year] = 2002;
+		item1[name] = "SSS";
 		Upsert(testSimpleNs, item1);
 
-		string pkString = getPkString(reinterpret_cast<reindexer::ItemImpl*>(item1), testSimpleNs);
-		insertedItems[testSimpleNs].insert({pkString, std::shared_ptr<reindexer::Item>(item1)});
+		string pkString = getPkString(item1, testSimpleNs);
+		insertedItems[testSimpleNs].emplace(pkString, std::move(item1));
 
-		auto item2 = AddData(testSimpleNs, id, 2);
-		AddData(testSimpleNs, year, 1989, item2);
-		AddData(testSimpleNs, name, string("MMM"), item2);
+		Item item2 = NewItem(testSimpleNs);
+		item2[id] = 2;
+		item2[year] = 1989;
+		item2[name] = "MMM";
 		Upsert(testSimpleNs, item2);
 
-		pkString = getPkString(reinterpret_cast<reindexer::ItemImpl*>(item2), testSimpleNs);
-		insertedItems[testSimpleNs].insert({pkString, std::shared_ptr<reindexer::Item>(item2)});
+		pkString = getPkString(item2, testSimpleNs);
+		insertedItems[testSimpleNs].emplace(pkString, std::move(item2));
 
 		Commit(testSimpleNs);
 	}
 
 	void FillDefaultNamespace(int start, int count, int packagesCount) {
 		for (int i = 0; i < count; ++i) {
-			auto item = GenerateDefaultNsItem(start + i, static_cast<size_t>(packagesCount));
+			Item item(GenerateDefaultNsItem(start + i, static_cast<size_t>(packagesCount)));
 			Upsert(default_namespace, item);
 
-			string pkString = getPkString(reinterpret_cast<reindexer::ItemImpl*>(item), default_namespace);
-			insertedItems[default_namespace].insert({pkString, std::shared_ptr<reindexer::Item>(item)});
+			string pkString = getPkString(item, default_namespace);
+			insertedItems[default_namespace].emplace(pkString, std::move(item));
 		}
 		Commit(default_namespace);
 	}
 
-	reindexer::Item* GenerateDefaultNsItem(int idValue, size_t packagesCount) {
-		auto item = AddData(default_namespace, id, idValue);
-		AddData(default_namespace, year, rand() % 50 + 2000, item);
-		AddData(default_namespace, genre, rand() % 50, item);
-		AddData(default_namespace, name, RandString(), item);
-		AddData(default_namespace, age, rand() % 5, item);
-		AddData(default_namespace, description, RandString(), item);
+	Item GenerateDefaultNsItem(int idValue, size_t packagesCount) {
+		Item item = NewItem(default_namespace);
+		item[id] = idValue;
+		item[year] = rand() % 50 + 2000;
+		item[genre] = rand() % 50;
+		item[name] = RandString().c_str();
+		item[age] = rand() % 5;
+		item[description] = RandString().c_str();
 
 		auto packagesVec(RandIntVector(packagesCount, 10000, 50));
-		AddData(default_namespace, packages, packagesVec, item);
+		item[packages] = packagesVec;
 
-		AddData(default_namespace, rate, static_cast<double>(rand() % 100) / 10, item);
-		AddData(default_namespace, age, static_cast<int>(rand() % 2), item);
+		item[rate] = static_cast<double>(rand() % 100) / 10;
+		item[age] = static_cast<int>(rand() % 2);
 
 		auto pricesIds(RandIntVector(10, 7000, 50));
-		AddData(default_namespace, priceId, pricesIds, item);
+		item[priceId] = pricesIds;
 
 		int stTime = rand() % 50000;
-		AddData(default_namespace, location, RandString(), item);
-		AddData(default_namespace, startTime, stTime, item);
-		AddData(default_namespace, endTime, stTime + (rand() % 5) * 1000, item);
-		AddData(default_namespace, actor, RandString(), item);
-		AddData(default_namespace, numeric, to_string(rand() % 1000), item);
+		item[location] = RandString().c_str();
+		item[startTime] = stTime;
+		item[endTime] = stTime + (rand() % 5) * 1000;
+		item[actor] = RandString().c_str();
+		item[numeric] = to_string(rand() % 1000);
 
 		return item;
 	}
@@ -545,9 +548,8 @@ protected:
 
 		double yearSum = 0.0;
 		for (size_t i = 0; i < checkQr.size(); ++i) {
-			unique_ptr<reindexer::Item> item(checkQr.GetItem(static_cast<int>(i)));
-			auto* ritem = reinterpret_cast<reindexer::ItemImpl*>(item.get());
-			yearSum += static_cast<int>(ritem->GetField(year));
+			Item item(checkQr.GetItem(static_cast<int>(i)));
+			yearSum += item[year].Get<int>();
 		}
 
 		EXPECT_TRUE(AreDoublesEqual(testQr.aggregationResults[1], yearSum)) << "Aggregation Sum result is incorrect!";
@@ -560,31 +562,24 @@ protected:
 		const Query checkQuery =
 			Query(default_namespace, 0, 10000000).Where(year, CondGt, 2016).Where(genre, CondSet, {1, 2, 3}).Sort(year, true);
 
-		reindexer::QueryResults sqlQr;
+		QueryResults sqlQr;
 		Error err = reindexer->Select(sqlQuery, sqlQr);
 		EXPECT_TRUE(err.ok()) << err.what();
 
-		reindexer::QueryResults checkQr;
+		QueryResults checkQr;
 		err = reindexer->Select(checkQuery, checkQr);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		EXPECT_EQ(sqlQr.size(), checkQr.size());
 		if (sqlQr.size() == checkQr.size()) {
 			for (size_t i = 0; i < checkQr.size(); ++i) {
-				unique_ptr<reindexer::Item> item1(checkQr.GetItem(static_cast<int>(i)));
-				unique_ptr<reindexer::Item> item2(sqlQr.GetItem(static_cast<int>(i)));
-				auto* ritem1 = reinterpret_cast<reindexer::ItemImpl*>(item1.get());
-				auto* ritem2 = reinterpret_cast<reindexer::ItemImpl*>(item2.get());
-				EXPECT_EQ(ritem1->NumFields(), ritem2->NumFields());
-				if (ritem1->NumFields() == ritem2->NumFields()) {
-					for (int idx = 1; idx < ritem1->NumFields(); ++idx) {
-						std::string fieldName = ritem1->Type().Field(idx).Name();
-
-						reindexer::KeyRefs lhs;
-						ritem1->Get(fieldName, lhs);
-
-						reindexer::KeyRefs rhs;
-						ritem2->Get(fieldName, rhs);
+				Item ritem1(checkQr.GetItem(static_cast<int>(i)));
+				Item ritem2(sqlQr.GetItem(static_cast<int>(i)));
+				EXPECT_EQ(ritem1.NumFields(), ritem2.NumFields());
+				if (ritem1.NumFields() == ritem2.NumFields()) {
+					for (int idx = 1; idx < ritem1.NumFields(); ++idx) {
+						KeyRefs lhs = ritem1[idx];
+						KeyRefs rhs = ritem2[idx];
 
 						EXPECT_EQ(lhs.size(), rhs.size());
 						if (lhs.size() == rhs.size()) {
@@ -600,7 +595,7 @@ protected:
 		Verify(default_namespace, checkQr, checkQuery);
 	}
 
-	static bool AreDoublesEqual(double lhs, double rhs) { return abs(lhs - rhs) < numeric_limits<double>::epsilon(); }
+	static bool AreDoublesEqual(double lhs, double rhs) { return std::abs(lhs - rhs) < numeric_limits<double>::epsilon(); }
 
 	void PrintFailedQueryEntries(const reindexer::QueryEntries& failedEntries) {
 		printf("Failed entries: ");
@@ -619,23 +614,21 @@ protected:
 		printf("Sort order or last items: ");
 		if (itemIndex > 0) {
 			for (int i = itemIndex; i >= (itemIndex - range >= 0 ? itemIndex - range : 0); ++i) {
-				unique_ptr<reindexer::Item> item(qr.GetItem(static_cast<int>(i)));
-				auto* itemr = reinterpret_cast<reindexer::ItemImpl*>(item.get());
-				printf("%s, ", KeyValue(itemr->GetField(query.sortBy)).toString().c_str());
+				Item item(qr.GetItem(static_cast<int>(i)));
+				printf("%s, ", item[query.sortBy].As<string>().c_str());
 			}
 		}
 		int numResults = qr.size();
 		for (int i = itemIndex + 1; i < (itemIndex + range < numResults ? itemIndex + range : numResults - 1); ++i) {
-			unique_ptr<reindexer::Item> item(qr.GetItem(static_cast<int>(i)));
-			auto* itemr = reinterpret_cast<reindexer::ItemImpl*>(item.get());
-			printf("%s, ", KeyValue(itemr->GetField(query.sortBy)).toString().c_str());
+			Item item(qr.GetItem(static_cast<int>(i)));
+			printf("%s, ", item[query.sortBy].As<string>().c_str());
 		}
 		printf("\n\n");
 		fflush(stdout);
 	}
 
 	using NamespaceName = string;
-	using InsertedItemsByPk = std::map<string, std::shared_ptr<reindexer::Item>>;
+	using InsertedItemsByPk = std::map<string, reindexer::Item>;
 	std::unordered_map<NamespaceName, InsertedItemsByPk> insertedItems;
 	std::unordered_map<string, IndexOpts> indexesOptions;
 
@@ -660,6 +653,6 @@ protected:
 	const string compositePlus = "+";
 	const string testSimpleNs = "test_simple_namespace";
 
-	reindexer::FieldsSet defaultNsPks;
-	reindexer::FieldsSet simpleTestNsPks;
+	vector<string> defaultNsPks;
+	vector<string> simpleTestNsPks;
 };

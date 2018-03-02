@@ -1,15 +1,17 @@
 #pragma once
 
-#include "core/item.h"
+#include "core/payload/payloadiface.h"
 
 namespace reindexer {
 
-class QueryResults;
+class TagsMatcher;
+class WrSerializer;
+class Serializer;
 
 class JsonPrintFilter {
 public:
 	JsonPrintFilter(){};
-	JsonPrintFilter(const TagsMatcher tagsMatcher, const h_vector<string, 4> &filter);
+	JsonPrintFilter(const TagsMatcher &tagsMatcher, const h_vector<string, 4> &filter);
 	bool Match(int tag) const { return !filter_.size() || (tag < int(filter_.size()) && filter_[tag]); }
 
 protected:
@@ -38,7 +40,6 @@ protected:
 	bool encodeJoinedItem(WrSerializer &wrSer, ConstPayload &pl);
 	bool encodeJoinedItems(WrSerializer &wrSer, IJsonEncoderDatasourceWithJoins &ds, size_t joinedIdx);
 
-	key_string buildPlTuple(ConstPayload *pl);
 	key_string &getPlTuple(ConstPayload *pl, key_string &plTuple);
 
 	const TagsMatcher &tagsMatcher_;

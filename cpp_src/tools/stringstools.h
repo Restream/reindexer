@@ -34,4 +34,6 @@ inline static char* strappend(char* dst, const char* src) {
 	return dst;
 }
 
+bool validateObjectName(const char* name);
+
 }  // namespace reindexer

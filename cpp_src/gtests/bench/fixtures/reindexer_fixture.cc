@@ -22,8 +22,6 @@ using reindexer::Error;
 using reindexer::make_key_string;
 using reindexer::p_string;
 
-using ItemPtr = Rndxr::ItemPtr;
-
 string const Rndxr::defaultStorage = "/tmp/reindexer_bench/";
 string const Rndxr::defaultNamespace = "test_items_bench";
 string const Rndxr::defaultJoinNamespace = "test_join_items";
@@ -143,11 +141,10 @@ reindexer::Error Rndxr::DefineNamespaceIndexes(const string& ns, initializer_lis
 Error Rndxr::FillTestItemsBench(unsigned /*start*/, unsigned count, int pkgsCount) {
 	// TODO: possible error - start was not used
 	Error err;
-	ItemPtr item;
 	for (unsigned i = 0; i < count; i++) {
-		item.reset();
+		Item item;
 		if ((err = newTestItemBench(aux::mkID(i), pkgsCount, item))) return err;
-		if ((err = GetDB()->Upsert(defaultNamespace, item.get()))) return err;
+		if ((err = GetDB()->Upsert(defaultNamespace, item))) return err;
 	}
 	//	GetDB()->Commit(defaultNamespace);
 	return 0;
@@ -156,119 +153,119 @@ Error Rndxr::FillTestItemsBench(unsigned /*start*/, unsigned count, int pkgsCoun
 Error Rndxr::FillTestJoinItem(unsigned /*start*/, unsigned count) {
 	// TODO: possible error - start was not used
 	Error err;
-	ItemPtr item;
 
 	for (unsigned i = 0; i < count; i++) {
-		item.reset();
+		Item item;
 		if ((err = newTestJoinItem(aux::mkID(i), item))) return err;
-		if ((err = GetDB()->Upsert(defaultJoinNamespace, item.get()))) return err;
+		if ((err = GetDB()->Upsert(defaultJoinNamespace, item))) return err;
 	}
 	//	GetDB()->Commit(defaultJoinNamespace);
 	return 0;
 }
 
-Error Rndxr::newTestJoinItem(int id, ItemPtr& item) {
+Error Rndxr::newTestJoinItem(int id, Item& item) {
 	Error err;
 	if (!item) {
-		item.reset(GetDB()->NewItem(defaultJoinNamespace));
-		err = item->Status();
+		item = GetDB()->NewItem(defaultJoinNamespace);
+		err = item.Status();
 		if (err) return err;
 	}
 
-	if ((err = item->SetField("id", KeyRef(id)))) return err;
-	if ((err = item->SetField("name", KeyRef(p_string(randString("price").c_str()))))) return err;
-	if ((err = item->SetField("location", KeyRef(p_string(randLocation().c_str()))))) return err;
-	if ((err = item->SetField("device", KeyRef(p_string(randDevice().c_str()))))) return err;
+	item["id"] = id;
+	item["name"] = randName();
+	item["location"] = randLocation();
+	item["device"] = randDevice();
 
 	return 0;
 }
 
-Error Rndxr::newTestSimpleItem(int id, ItemPtr& item) {
+Error Rndxr::newTestSimpleItem(int id, Item& item) {
 	Error err;
 	if (!item) {
-		item.reset(GetDB()->NewItem(defaultSimpleNamespace));
-		err = item->Status();
+		item = GetDB()->NewItem(defaultSimpleNamespace);
+		err = item.Status();
 		if (!err.ok()) return err;
 	}
 
-	if ((err = item->SetField("id", KeyRef(id)))) return err;
-	if ((err = item->SetField("year", KeyRef(rand() % 1000 + 10)))) return err;
-	if ((err = item->SetField("name", KeyRef(p_string(randString().c_str()))))) return err;
+	item["id"] = id;
+	item["year"] = rand() % 1000 + 10;
+	item["name"] = randName();
 
 	return 0;
 }
 
-reindexer::Error Rndxr::newTestSimpleCmplxPKItem(int id, Rndxr::ItemPtr& item) {
+reindexer::Error Rndxr::newTestSimpleCmplxPKItem(int id, Item& item) {
 	Error err;
 	if (!item) {
-		item.reset(GetDB()->NewItem(defaultSimpleCmplxPKNamespace));
-		err = item->Status();
+		item = GetDB()->NewItem(defaultSimpleCmplxPKNamespace);
+		err = item.Status();
 		if (err) return err;
 	}
 
-	if ((err = item->SetField("id", KeyRef(id)))) return err;
-	if ((err = item->SetField("year", KeyRef(rand() % 1000 + 10)))) return err;
-	if ((err = item->SetField("name", KeyRef(p_string(randString().c_str()))))) return err;
-	if ((err = item->SetField("subid", KeyRef(p_string(randString().c_str()))))) return err;
+	item["subid"] = randString().c_str();
+	item.Unsafe();
+	item["id"] = id;
+	item["year"] = rand() % 1000 + 10;
+	item["name"] = randName();
 
 	return 0;
 }
 
-reindexer::Error Rndxr::newTestInsertItem(int id, ItemPtr& item) {
+reindexer::Error Rndxr::newTestInsertItem(int id, Item& item) {
 	Error err;
 	if (!item) {
-		item.reset(GetDB()->NewItem(defaultInsertNamespace));
-		err = item->Status();
+		item = GetDB()->NewItem(defaultInsertNamespace);
+		err = item.Status();
 		if (err) return err;
 	}
 
 	int startTime = rand() % 50000;
 	int endTime = startTime + (rand() % 5) * 1000;
 
-	if ((err = item->SetField("id", KeyRef(id)))) return err;
-	if ((err = item->SetField("year", KeyRef(rand() % 1000 + 10)))) return err;
-	if ((err = item->SetField("genre", KeyRef(static_cast<int64_t>(rand() % 50))))) return err;
-	if ((err = item->SetField("name", KeyRef(p_string(randString().c_str()))))) return err;
-	if ((err = item->SetField("age", KeyRef(rand() % 5)))) return err;
-	if ((err = item->SetField("description", KeyRef(p_string(randString().c_str()))))) return err;
-	if ((err = item->SetField("packages", randIntArr(10, 10000, 50)))) return err;
-	if ((err = item->SetField("rate", KeyRef(static_cast<double>((rand() % 100) / 10.0))))) return err;
-	if ((err = item->SetField("isdeleted", KeyRef(rand() % 2)))) return err;
-	if ((err = item->SetField("price_id", priceIDs_[static_cast<size_t>(rand()) % priceIDs_.size()]))) return err;
-	if ((err = item->SetField("location_id", KeyRef(p_string(randLocation().c_str()))))) return err;
-	if ((err = item->SetField("start_time", KeyRef(startTime)))) return err;
-	if ((err = item->SetField("end_time", KeyRef(endTime)))) return err;
-	if ((err = item->SetField("actor", KeyRef(p_string(randString().c_str()))))) return err;
+	item["description"] = randString().c_str();
+	item["actor"] = randString().c_str();
+
+	// Turn on unsafe mode. The following fields are holded by bench
+	item.Unsafe(true)["id"] = id;
+	item["year"] = rand() % 1000 + 10;
+	item["genre"] = static_cast<int64_t>(rand() % 50);
+	item["name"] = randName();
+	item["age"] = rand() % 5;
+	item["packages"] = randIntArr(10, 10000, 50);
+	item["rate"] = static_cast<double>((rand() % 100) / 10.0);
+	item["isdeleted"] = rand() % 2;
+	item["price_id"] = priceIDs_[static_cast<size_t>(rand()) % priceIDs_.size()];
+	item["location_id"] = randLocation();
+	item["start_time"] = startTime;
+	item["end_time"] = endTime;
 
 	return 0;
 }
 
-Error Rndxr::newTestItemBench(int id, int pkgCount, ItemPtr& item) {
+Error Rndxr::newTestItemBench(int id, int pkgCount, Item& item) {
 	Error err;
 	if (!item) {
-		item.reset(GetDB()->NewItem(defaultNamespace));
-		err = item->Status();
+		item = GetDB()->NewItem(defaultNamespace);
+		err = item.Status();
 		if (!err.ok()) return err;
 	}
 
 	int startTime = rand() % 50000;
 	int endTime = startTime + (rand() % 5) * 1000;
 
-	if ((err = item->SetField("id", KeyRef(id)))) return err;
-	if ((err = item->SetField("year", KeyRef(rand() % 50 + 2000)))) return err;
-	if ((err = item->SetField("genre", KeyRef(static_cast<int64_t>(rand() % 50))))) return err;
-	if ((err = item->SetField("age", KeyRef(rand() % 5)))) return err;
-	//	item->SetField("countries", {countries});
-	if ((err = item->SetField("packages", randIntArr(pkgCount, 10000, 50)))) return err;
-	if ((err = item->SetField("price_id", priceIDs_[static_cast<size_t>(rand()) % priceIDs_.size()]))) return err;
-	if ((err = item->SetField("location", KeyRef(p_string(randLocation().c_str()))))) return err;
-	if ((err = item->SetField("start_time", KeyRef(startTime)))) return err;
-	if ((err = item->SetField("end_time", KeyRef(endTime)))) return err;
+	item.Unsafe()["id"] = id;
+	item["year"] = rand() % 50 + 2000;
+	item["genre"] = static_cast<int64_t>(rand() % 50);
+	item["age"] = rand() % 5;
+	//	item["countries"] = {countries});
+	item["packages"] = randIntArr(pkgCount, 10000, 50);
+	item["price_id"] = priceIDs_[static_cast<size_t>(rand()) % priceIDs_.size()];
+	item["location"] = randLocation();
+	item["start_time"] = startTime;
+	item["end_time"] = endTime;
 
 	return 0;
 }
-
-string Rndxr::randLocation() { return locations_[static_cast<size_t>(rand()) % locations_.size()].c_str(); }
 
 KeyRefs Rndxr::randIntArr(int cnt, int start, int rng) {
 	KeyRefs arr;
@@ -289,7 +286,13 @@ string Rndxr::randString(const string prefix) {
 	return value;
 }
 
-string Rndxr::randDevice() { return devices_[static_cast<size_t>(rand()) % devices_.size()]; }
+const char* Rndxr::randLocation() { return locations_[static_cast<size_t>(rand()) % locations_.size()].c_str(); }
+
+const char* Rndxr::randDevice() { return devices_[static_cast<size_t>(rand()) % devices_.size()].c_str(); }
+
+const char* Rndxr::randAdjectives() { return adjectives_[static_cast<size_t>(rand()) % adjectives_.size()].c_str(); }
+
+const char* Rndxr::randName() { return names_[static_cast<size_t>(rand()) % names_.size()].c_str(); }
 
 reindexer::Error Rndxr::PrepareDefaultNamespace() {
 	auto opts = StorageOpts().Enabled().DropOnFileFormatError().CreateIfMissing();

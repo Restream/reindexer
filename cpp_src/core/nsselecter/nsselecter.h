@@ -18,17 +18,23 @@ struct JoinedSelector {
 };
 typedef vector<JoinedSelector> JoinedSelectors;
 
+class SelectLockUpgrader {
+public:
+	virtual ~SelectLockUpgrader() = default;
+	virtual void Upgrade() = 0;
+};
+
 struct SelectCtx {
 	typedef shared_ptr<SelectCtx> Ptr;
 
-	explicit SelectCtx(const Query &query_, std::function<void()> lockUpgrader) : query(query_), lockUpgrader(lockUpgrader) {}
+	explicit SelectCtx(const Query &query_, SelectLockUpgrader *lockUpgrader) : query(query_), lockUpgrader(lockUpgrader) {}
 	const Query &query;
 	JoinedSelectors *joinedSelectors = nullptr;
 	const IdSet *preResult = nullptr;
 	bool rsltAsSrtOrdrs = false;
 	uint8_t nsid = 0;
 	bool isForceAll = false;
-	std::function<void()> lockUpgrader;
+	SelectLockUpgrader *lockUpgrader;
 };
 
 class NsSelecter {
@@ -59,7 +65,6 @@ private:
 	void selectWhere(const QueryEntries &entries, RawQueryResult &result, SortType sortId, bool is_ft);
 	QueryEntries lookupQueryIndexes(const QueryEntries &entries);
 	void substituteCompositeIndexes(QueryEntries &entries);
-	const string &getOptimalSortOrder(const QueryEntries &qe);
 	h_vector<Aggregator, 4> getAggregators(const Query &q);
 	int getCompositeIndex(const FieldsSet &fieldsmask);
 	bool mergeQueryEntries(QueryEntry *lhs, QueryEntry *rhs);

@@ -3,77 +3,50 @@ package cproto
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
-	"sync"
 
 	"github.com/restream/reindexer/bindings"
 )
 
 const connPoolSize = 8
 
-var bufPool sync.Pool
+func init() {
+	bindings.RegisterBinding("cproto", new(NetCProto))
+}
 
 type NetCProto struct {
 	url  url.URL
-	pool [connPoolSize]*connection
-	seqs chan int
+	pool chan *connection
 }
 
-type NetBuffer struct {
-	buf   []byte
-	conn  *connection
-	reqID int
-}
-
-func (buf *NetBuffer) Free() {
-	bufPool.Put(buf)
-}
-
-func (buf *NetBuffer) GetBuf() []byte {
-	return buf.buf
-}
-
-func newNetBuffer() *NetBuffer {
-	obj := bufPool.Get()
-	if obj != nil {
-		return obj.(*NetBuffer)
-	}
-	return &NetBuffer{}
-}
-
-func init() {
-	nc := &NetCProto{}
-
-	bindings.RegisterBinding("cproto", nc)
-}
 func (binding *NetCProto) Init(u *url.URL) (err error) {
 	binding.url = *u
-	binding.seqs = make(chan int, len(binding.pool))
-	for i := 0; i < len(binding.pool); i++ {
-		var cerr error
-		binding.pool[i], cerr = newConnection(binding)
+	binding.pool = make(chan *connection, connPoolSize)
+	for i := 0; i < connPoolSize; i++ {
+		conn, cerr := newConnection(binding)
 		if cerr != nil {
 			err = cerr
 		}
-		binding.seqs <- i
+		binding.pool <- conn
 	}
-	return nil
+	return
 }
 
 func (binding *NetCProto) Ping() error {
 	conn := binding.getConn()
-	_, err := conn.rpcCall(cmdPing)
-	return err
+	return conn.rpcCallNoResults(cmdPing)
 }
 
 func (binding *NetCProto) ModifyItem(data []byte, mode int) (bindings.RawBuffer, error) {
 	conn := binding.getConn()
-	res, err := conn.rpcCall(cmdModifyItem, data, mode)
+	buf, err := conn.rpcCall(cmdModifyItem, data, mode)
 	if err != nil {
 		return nil, err
 	}
-
-	return &NetBuffer{buf: res[0].([]byte), reqID: -1}, nil
+	buf.result = buf.args[0].([]byte)
+	buf.reqID = -1
+	return buf, nil
 }
 
 type storageOpts struct {
@@ -91,34 +64,22 @@ func (binding *NetCProto) OpenNamespace(namespace string, enableStorage, dropOnF
 	}
 
 	bsops, err := json.Marshal(sops)
+	if err != nil {
+		return err
+	}
 
 	conn := binding.getConn()
-	_, err = conn.rpcCall(cmdOpenNamespace, namespace, bsops)
-	return err
+	return conn.rpcCallNoResults(cmdOpenNamespace, namespace, bsops)
 }
 
 func (binding *NetCProto) CloseNamespace(namespace string) error {
 	conn := binding.getConn()
-	_, err := conn.rpcCall(cmdCloseNamespace, namespace)
-	return err
+	return conn.rpcCallNoResults(cmdCloseNamespace, namespace)
 }
 
 func (binding *NetCProto) DropNamespace(namespace string) error {
 	conn := binding.getConn()
-	_, err := conn.rpcCall(cmdDropNamespace, namespace)
-	return err
-}
-
-func (binding *NetCProto) CloneNamespace(src string, dst string) error {
-	conn := binding.getConn()
-	_, err := conn.rpcCall(cmdCloneNamespace, src, dst)
-	return err
-}
-
-func (binding *NetCProto) RenameNamespace(src string, dst string) error {
-	conn := binding.getConn()
-	_, err := conn.rpcCall(cmdRenameNamespace, src, dst)
-	return err
+	return conn.rpcCallNoResults(cmdDropNamespace, namespace)
 }
 
 type indexDef struct {
@@ -134,7 +95,6 @@ type indexDef struct {
 }
 
 func (binding *NetCProto) AddIndex(namespace, index, jsonPath, indexType, fieldType string, opts bindings.IndexOptions, collateMode int) error {
-	conn := binding.getConn()
 
 	cm := ""
 	switch collateMode {
@@ -159,83 +119,99 @@ func (binding *NetCProto) AddIndex(namespace, index, jsonPath, indexType, fieldT
 	}
 
 	bidef, err := json.Marshal(idef)
-	_, err = conn.rpcCall(cmdAddIndex, namespace, bidef)
-	return err
+	if err != nil {
+		return err
+	}
+
+	conn := binding.getConn()
+	return conn.rpcCallNoResults(cmdAddIndex, namespace, bidef)
 }
 
 func (binding *NetCProto) ConfigureIndex(namespace, index, config string) error {
 	conn := binding.getConn()
-	_, err := conn.rpcCall(cmdConfigureIndex, index, config)
-	return err
+	return conn.rpcCallNoResults(cmdConfigureIndex, namespace, index, config)
 }
 
 func (binding *NetCProto) PutMeta(namespace, key, data string) error {
 	conn := binding.getConn()
-	_, err := conn.rpcCall(cmdPutMeta, namespace, key, data)
-	return err
+	return conn.rpcCallNoResults(cmdPutMeta, namespace, key, data)
 }
 
 func (binding *NetCProto) GetMeta(namespace, key string) (bindings.RawBuffer, error) {
 	conn := binding.getConn()
-	res, err := conn.rpcCall(cmdGetMeta, namespace, key)
+	buf, err := conn.rpcCall(cmdGetMeta, namespace, key)
 	if err != nil {
+		buf.Free()
 		return nil, err
 	}
-	return &NetBuffer{buf: res[0].([]byte), reqID: -1}, nil
+	buf.result = buf.args[0].([]byte)
+	buf.reqID = -1
+	return buf, nil
 }
 
-func (binding *NetCProto) Select(query string, withItems bool, ptVersions []int32) (bindings.RawBuffer, error) {
+func (binding *NetCProto) Select(query string, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	conn := binding.getConn()
-
 	flags := bindings.ResultsWithPayloadTypes
-	flags |= bindings.ResultsClose
 	if withItems {
 		flags |= bindings.ResultsWithJson
 	} else {
 		flags |= bindings.ResultsWithCJson
 	}
 
-	res, err := conn.rpcCall(cmdSelectSQL, query, flags, int32(0x7FFFFFFF), int64(-1), ptVersions)
+	if fetchCount <= 0 {
+		fetchCount = math.MaxInt32
+	}
+
+	buf, err := conn.rpcCall(cmdSelectSQL, query, flags, int32(fetchCount), int64(-1), ptVersions)
 	if err != nil {
+		buf.Free()
 		return nil, err
 	}
-	return &NetBuffer{buf: res[0].([]byte), reqID: res[1].(int)}, nil
+	buf.result = buf.args[0].([]byte)
+	buf.reqID = buf.args[1].(int)
+	buf.needClose = buf.reqID != -1
+	return buf, nil
 }
 
-func (binding *NetCProto) SelectQuery(data []byte, withItems bool, ptVersions []int32) (bindings.RawBuffer, error) {
+func (binding *NetCProto) SelectQuery(data []byte, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	conn := binding.getConn()
-
 	flags := bindings.ResultsWithPayloadTypes
-	flags |= bindings.ResultsClose
 	if withItems {
 		flags |= bindings.ResultsWithJson
 	} else {
 		flags |= bindings.ResultsWithCJson
 	}
 
-	res, err := conn.rpcCall(cmdSelect, data, flags, int32(0x7FFFFFFF), int64(-1), ptVersions)
+	if fetchCount <= 0 {
+		fetchCount = math.MaxInt32
+	}
+
+	buf, err := conn.rpcCall(cmdSelect, data, flags, int32(fetchCount), int64(-1), ptVersions)
 	if err != nil {
+		buf.Free()
 		return nil, err
 	}
-	return &NetBuffer{buf: res[0].([]byte), reqID: res[1].(int)}, nil
+	buf.result = buf.args[0].([]byte)
+	buf.reqID = buf.args[1].(int)
+	buf.needClose = buf.reqID != -1
+	return buf, nil
 }
 
 func (binding *NetCProto) DeleteQuery(data []byte) (bindings.RawBuffer, error) {
 	conn := binding.getConn()
 
-	res, err := conn.rpcCall(cmdDeleteQuery, data)
+	buf, err := conn.rpcCall(cmdDeleteQuery, data)
 	if err != nil {
+		buf.Free()
 		return nil, err
 	}
-	b := res[0].([]byte)
-	return &NetBuffer{buf: b, reqID: res[1].(int)}, nil
+	buf.result = buf.args[0].([]byte)
+	return buf, nil
 }
 
 func (binding *NetCProto) Commit(namespace string) error {
 	conn := binding.getConn()
-
-	_, err := conn.rpcCall(cmdCommit, namespace)
-	return err
+	return conn.rpcCallNoResults(cmdCommit, namespace)
 }
 
 func (binding *NetCProto) EnableLogger(log bindings.Logger) {
@@ -260,11 +236,10 @@ func (binding *NetCProto) EnableStorage(path string) error {
 }
 
 func (binding *NetCProto) getConn() (conn *connection) {
-	index := <-binding.seqs
-	if binding.pool[index].hasError() {
-		binding.pool[index], _ = newConnection(binding)
+	conn = <-binding.pool
+	if conn.hasError() {
+		conn, _ = newConnection(binding)
 	}
-	conn = binding.pool[index]
-	binding.seqs <- index
+	binding.pool <- conn
 	return
 }

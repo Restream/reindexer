@@ -11,6 +11,12 @@ namespace cproto {
 
 Error Dispatcher::handle(Context &ctx) {
 	if (ctx.call->cmd < handlers_.size()) {
+		for (auto &middleware : middlewares_) {
+			auto ret = middleware.func_(middleware.object_, ctx);
+			if (!ret.ok()) {
+				return ret;
+			}
+		}
 		auto handler = handlers_[ctx.call->cmd];
 		if (handler.func_) {
 			return handler.func_(handler.object_, ctx);

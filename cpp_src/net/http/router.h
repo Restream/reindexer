@@ -63,8 +63,9 @@ struct Param {
 };
 
 struct Request {
-	const char *path;
+	const char *uri;
 	const char *method;
+	char path[1024];
 
 	h_vector<Header, 16> headers;
 	h_vector<Param, 8> params;
@@ -86,6 +87,9 @@ public:
 	virtual bool SetRespCode(int code) = 0;
 	virtual bool SetContentLength(size_t len) = 0;
 	virtual bool SetConnectionClose() = 0;
+
+	virtual int RespCode() = 0;
+	virtual int Written() = 0;
 	virtual ~Writer(){};
 };
 
@@ -95,6 +99,12 @@ public:
 	virtual std::string Read(size_t size = INT_MAX) = 0;
 	virtual ssize_t Pending() const = 0;
 	virtual ~Reader(){};
+};
+
+class ClientData {
+public:
+	typedef std::shared_ptr<ClientData> Ptr;
+	virtual ~ClientData() = default;
 };
 
 struct Context {
@@ -108,6 +118,7 @@ struct Context {
 	Writer *writer;
 
 	Reader *body;
+	ClientData::Ptr clientData;
 };
 
 class Connection;
@@ -165,6 +176,22 @@ public:
 	void HEAD(const char *path, K *object) {
 		addRoute<K, func>(kMethodHEAD, path, object);
 	}
+	/// Add middleware
+	/// @param object - handler class object
+	/// @tparam func - handler
+	template <class K, int (K::*func)(Context &)>
+	void Middleware(K *object) {
+		Handler h{func_wrapper<K, func>, object};
+		middlewares_.push_back(h);
+	}
+	/// Add logger for requests
+	/// @param object - logger class object
+	/// @tparam func - logger
+	template <class K, void (K::*func)(Context &)>
+	void Logger(K *object) {
+		logger_ = [=](Context &ctx) { (static_cast<K *>(object)->*func)(ctx); };
+	}
+
 	/// Add default handler for not found URI's
 	/// @tparam func - handler
 	template <class K, int (K::*func)(Context &)>
@@ -218,12 +245,14 @@ protected:
 	};
 
 	std::vector<Route> routes_[kMaxMethod];
+	std::vector<Handler> middlewares_;
 	Stats writeStats_;
 
 	bool enableStats_ = false;
 	std::mutex lockStats_;
 
 	Handler notFoundHandler_;
+	std::function<void(Context &ctx)> logger_;
 };
 }  // namespace http
 }  // namespace net

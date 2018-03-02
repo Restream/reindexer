@@ -1,5 +1,7 @@
 #include "jsondecoder.h"
+#include "tagsmatcher.h"
 #include "tools/json2kv.h"
+#include "tools/serializer.h"
 
 namespace reindexer {
 

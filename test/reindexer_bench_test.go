@@ -51,7 +51,7 @@ var testItemsSeed = make([]*TestItem, 0)
 var testItemsJsonSeed = make([][]byte, 0)
 var testItemsCJsonSeed = make([][]byte, 0)
 var testItemsGobSeed = make([][]byte, 0)
-var cjsonState cjson.State
+var cjsonState = cjson.NewState()
 
 func init() {
 	for i := 0; i < 10; i++ {
@@ -73,7 +73,7 @@ func init() {
 		testItemsJsonSeed = append(testItemsJsonSeed, json)
 
 		ser := &cjson.Serializer{}
-		cjenc.Encode(newTestItem(i, 20), ser)
+		cjenc.EncodeRaw(newTestItem(i, 20), ser)
 		testItemsCJsonSeed = append(testItemsCJsonSeed, ser.Bytes())
 
 		// gobenc.Encode(*newTestItem(i, 20))
@@ -178,7 +178,7 @@ func BenchmarkCJsonDecode(b *testing.B) {
 	dec := cjsonState.NewDecoder()
 	for i := 0; i < b.N; i++ {
 		ti := TestItem{}
-		dec.DecodeX(testItemsCJsonSeed[i%len(testItemsCJsonSeed)], &ti)
+		dec.Decode(testItemsCJsonSeed[i%len(testItemsCJsonSeed)], &ti)
 	}
 }
 

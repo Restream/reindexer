@@ -7,6 +7,99 @@ namespace reindexer {
 
 using std::hash;
 
+template <>
+string KeyRef::As<string>() const {
+	switch (type) {
+		case KeyValueInt:
+			return std::to_string(value_int);
+		case KeyValueInt64:
+			return std::to_string(value_int64);
+		case KeyValueDouble:
+			return std::to_string(value_double);
+		case KeyValueString:
+			if (value_string.type() == p_string::tagCxxstr) {
+				return *value_string.getCxxstr();
+			}
+			return value_string.toString();
+		case KeyValueComposite:
+			return string();
+		default:
+			abort();
+	}
+}
+
+template <>
+int KeyRef::As<int>() const {
+	try {
+		switch (type) {
+			case KeyValueInt:
+				return value_int;
+			case KeyValueInt64:
+				return value_int64;
+			case KeyValueDouble:
+				return int(value_double);
+			case KeyValueString: {
+				size_t idx = 0;
+				auto res = std::stoi(value_string.data(), &idx);
+				if (idx != value_string.length()) {
+					throw std::exception();
+				}
+				return res;
+			}
+			default:
+				abort();
+		}
+	} catch (...) {
+		throw Error(errParams, "Can't convert %s to number\n", value_string.data());
+	}
+}
+
+template <>
+int64_t KeyRef::As<int64_t>() const {
+	try {
+		switch (type) {
+			case KeyValueInt:
+				return value_int;
+			case KeyValueInt64:
+				return value_int64;
+			case KeyValueDouble:
+				return int64_t(value_double);
+			case KeyValueString: {
+				size_t idx = 0;
+				auto res = std::stoull(value_string.data(), &idx);
+				if (idx != value_string.length()) {
+					throw std::exception();
+				}
+				return res;
+			}
+			default:
+				abort();
+		}
+	} catch (...) {
+		throw Error(errParams, "Can't convert %s to number\n", value_string.data());
+	}
+}
+
+template <>
+double KeyRef::As<double>() const {
+	try {
+		switch (type) {
+			case KeyValueInt:
+				return double(value_int);
+			case KeyValueInt64:
+				return double(value_int64);
+			case KeyValueDouble:
+				return value_double;
+			case KeyValueString:
+				return std::stod(value_string.data());
+			default:
+				abort();
+		}
+	} catch (...) {
+		throw Error(errParams, "Can't convert %s to number\n", value_string.data());
+	}
+}
+
 int KeyRef::Compare(const KeyRef &other, int collateMode) const {
 	switch (Type()) {
 		case KeyValueInt:

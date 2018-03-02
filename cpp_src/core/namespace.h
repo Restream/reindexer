@@ -3,10 +3,9 @@
 #include <memory>
 #include <mutex>
 #include <vector>
+#include "core/cjson/tagsmatcher.h"
 #include "core/index/index.h"
 #include "core/item.h"
-#include "core/nsdescriber/nsdescriber.h"
-#include "core/nsselecter/nsselecter.h"
 #include "core/sqlfunc/sqlfunc.h"
 #include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
@@ -27,11 +26,16 @@ using std::unique_lock;
 using std::unique_ptr;
 using std::vector;
 
+class QueryResults;
+struct SelectCtx;
+class SelectLockUpgrader;
+class Index;
+
 class Namespace {
 protected:
 	friend class NsSelecter;
 	friend class NsDescriber;
-	friend class Reindexer;
+	friend class ReindexerImpl;
 	class NSCommitContext : public CommitContext {
 	public:
 		NSCommitContext(const Namespace &ns, int phases, const FieldsSet *indexes = nullptr)
@@ -76,24 +80,23 @@ public:
 	typedef shared_ptr<Namespace> Ptr;
 
 	Namespace(const string &_name);
-
 	Namespace &operator=(const Namespace &) = delete;
-
 	~Namespace();
 
 	void EnableStorage(const string &path, StorageOpts opts);
 	void LoadFromStorage();
 	void DeleteStorage();
 
-	bool AddIndex(const string &index, const string &jsonPath, IndexType type, IndexOpts opts);
+	void AddIndex(const string &index, const string &jsonPath, IndexType type, IndexOpts opts);
+	bool DropIndex(const string &index);
 	bool AddCompositeIndex(const string &index, IndexType type, IndexOpts opts);
 	void ConfigureIndex(const string &index, const string &config);
 
-	void Insert(Item *item, bool store = true);
-	void Update(Item *item, bool store = true);
-	void Upsert(Item *item, bool store = true);
+	void Insert(Item &item, bool store = true);
+	void Update(Item &item, bool store = true);
+	void Upsert(Item &item, bool store = true);
 
-	void Delete(Item *item);
+	void Delete(Item &item);
 	void Select(QueryResults &result, const SelectCtx &params);
 	void Describe(QueryResults &result);
 	NamespaceDef GetDefinition();
@@ -101,14 +104,12 @@ public:
 	void Delete(const Query &query, QueryResults &result);
 	void FlushStorage();
 
-	void NewItem(Item **item);
+	Item NewItem();
 
 	// Get meta data from storage by key
 	string GetMeta(const string &key);
 	// Put meta data to storage by key
 	void PutMeta(const string &key, const Slice &data);
-	// Lock reads to snapshot
-	void LockSnapshot();
 
 	int getIndexByName(const string &index);
 
@@ -117,15 +118,20 @@ public:
 protected:
 	void saveIndexesToStorage();
 	bool loadIndexesFromStorage();
-	void markUpdated(IdType id);
+	void markUpdated();
 	void upsert(ItemImpl *ritem, IdType id, bool doUpdate);
-	void upsertInternal(Item *ritem, bool store = true, uint8_t mode = (INSERT_MODE | UPDATE_MODE));
+	void upsertInternal(Item &item, bool store = true, uint8_t mode = (INSERT_MODE | UPDATE_MODE));
 	void updateTagsMatcherFromItem(ItemImpl *ritem, string &jsonSliceBuf);
-
+	void updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields);
 	void _delete(IdType id);
-	void commit(const NSCommitContext &ctx, std::function<void()> lockUpgrader);
+	void commit(const NSCommitContext &ctx, SelectLockUpgrader *lockUpgrader);
 	void insertIndex(Index *newIndex, int idxNo, const string &realName);
 	bool addIndex(const string &index, const string &jsonPath, IndexType type, IndexOpts opts);
+	bool dropIndex(const string &index);
+	void recreateCompositeIndexes(int startIdx);
+
+	string getMeta(const string &key);
+	void putMeta(const string &key, const Slice &data);
 
 	pair<IdType, bool> findByPK(ItemImpl *ritem);
 
@@ -134,6 +140,7 @@ protected:
 	void setFieldsBasedOnPrecepts(ItemImpl *ritem);
 
 	int64_t funcGetSerial(SqlFuncStruct sqlFuncStruct);
+	const string &getOptimalSortOrder(const QueryEntries &entries);
 
 	vector<unique_ptr<Index>> indexes_;
 	fast_hash_map<string, int> indexesNames_;
@@ -143,13 +150,12 @@ protected:
 	// Namespace name
 	string name;
 	// Payload types
-	PayloadType::Ptr payloadType_;
+	PayloadType payloadType_;
 
 	// Tags matcher
 	TagsMatcher tagsMatcher_;
 
 	shared_ptr<datastorage::IDataStorage> storage_;
-	datastorage::Snapshot::Ptr storageSnapshot_;
 	datastorage::UpdatesCollection::Ptr updates_;
 	int unflushedCount_;
 
@@ -164,6 +170,9 @@ protected:
 	string dbpath_;
 
 	shared_ptr<QueryCache> queryCache;
+
+	// shows if each subindex was PK
+	fast_hash_map<string, bool> compositeIndexesPkState_;
 
 private:
 	Namespace(const Namespace &src);

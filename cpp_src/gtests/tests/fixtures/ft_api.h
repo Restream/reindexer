@@ -17,12 +17,13 @@ public:
 
 	void FillData(int64_t count) {
 		for (int i = 0; i < count; ++i) {
-			auto item = AddData(default_namespace, "id", counter_);
+			Item item = NewItem(default_namespace);
+			item["id"] = counter_;
 			auto ft1 = RandString();
 
 			counter_++;
 
-			AddData(default_namespace, "ft1", ft1, item);
+			item["ft1"] = ft1;
 
 			Upsert(default_namespace, item);
 			Commit(default_namespace);
@@ -30,17 +31,17 @@ public:
 	}
 	void Add(const std::string& ft1) { Add(default_namespace, ft1); }
 	void Add(const std::string& ns, const std::string& ft1) {
-		auto item = AddData(ns, "id", counter_);
+		Item item = NewItem(ns);
+		item["id"] = counter_;
 		counter_++;
-		AddData(ns, "ft1", ft1, item);
+		item["ft1"] = ft1;
 
 		Upsert(ns, item);
 		Commit(ns);
 	}
 	QueryResults SimpleCompositeSelect(string word) {
-		Query qr, qr1;
-		FillQuery(default_namespace, word, "ft1", OpAnd, CondEq, qr);
-		QueryResults res, res1;
+		Query qr = Query(default_namespace).Where("ft1", CondEq, word);
+		QueryResults res;
 		reindexer->Select(qr, res);
 
 		return res;

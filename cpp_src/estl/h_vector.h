@@ -125,7 +125,7 @@ private:
 	inline bool EQ(Iterator lhs, Iterator rhs) const { return lhs == rhs; }
 };
 
-template <typename T, int holdSize = 4>
+template <typename T, int holdSize = 4, int objSize = sizeof(T)>
 class h_vector {
 public:
 	typedef T value_type;
@@ -353,7 +353,7 @@ protected:
 
 	union {
 		edata e_;
-		uint8_t hdata_[holdSize > 0 ? holdSize * sizeof(T) : 1];
+		uint8_t hdata_[holdSize > 0 ? holdSize* objSize : 1];
 	};
 	size_type size_ : 31;
 	size_type is_hdata_ : 1;

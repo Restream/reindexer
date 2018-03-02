@@ -6,7 +6,10 @@
 #include <string>
 #include <thread>
 #include "core/aggregator.h"
+#include "core/nsdescriber/nsdescriber.h"
+#include "core/nsselecter/nsselecter.h"
 #include "core/sqlfunc/sqlfunc.h"
+#include "itemimpl.h"
 #include "storage/storagefactory.h"
 #include "tools/errors.h"
 #include "tools/fsops.h"
@@ -48,7 +51,6 @@ Namespace::Namespace(const Namespace &src)
 	  payloadType_(src.payloadType_),
 	  tagsMatcher_(src.tagsMatcher_),
 	  storage_(src.storage_),
-	  storageSnapshot_(src.storageSnapshot_),
 	  updates_(src.updates_),
 	  unflushedCount_(0),
 	  sortOrdersBuilt_(false),
@@ -62,7 +64,7 @@ Namespace::Namespace(const Namespace &src)
 
 Namespace::Namespace(const string &_name)
 	: name(_name),
-	  payloadType_(PayloadType::Ptr(new PayloadType(_name))),
+	  payloadType_(_name),
 	  tagsMatcher_(payloadType_),
 	  unflushedCount_(0),
 	  sortOrdersBuilt_(false),
@@ -75,18 +77,159 @@ Namespace::Namespace(const string &_name)
 }
 
 Namespace::~Namespace() {
-	logPrintf(LogTrace, "Namespace::~Namespace (%s), %d items %s", name.c_str(), items_.size(), storageSnapshot_ ? "(snapshot)" : "");
-	if (storage_ && storageSnapshot_) storage_->ReleaseSnapshot(storageSnapshot_);
+	WLock wlock(mtx_);
+	logPrintf(LogTrace, "Namespace::~Namespace (%s), %d items", name.c_str(), items_.size());
 }
 
-bool Namespace::AddIndex(const string &index, const string &jsonPath, IndexType type, IndexOpts opts) {
+void Namespace::recreateCompositeIndexes(int startIdx) {
+	for (int i = startIdx; i < static_cast<int>(indexes_.size()); ++i) {
+		std::unique_ptr<reindexer::Index> &index(indexes_[i]);
+		if (index->type == IndexCompositeBTree || index->type == IndexCompositeHash || index->type == IndexCompositeText ||
+			index->type == IndexCompositeNewText) {
+			index.reset(Index::NewComposite(index->type, index->name, index->opts_, payloadType_, index->fields_));
+			for (IdType rowId = 0; rowId < static_cast<int>(items_.size()); ++rowId) {
+				if (!items_[rowId].IsFree()) {
+					indexes_[i]->Upsert(KeyRef(items_[rowId]), rowId);
+				}
+			}
+		}
+	}
+}
+
+void Namespace::updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields) {
+	assert(oldPlType->NumFields() + deltaFields == payloadType_->NumFields());
+
+	int compositeStartIdx = deltaFields >= 0 ? payloadType_.NumFields() : oldPlType.NumFields();
+
+	if (deltaFields < 0) {
+		recreateCompositeIndexes(compositeStartIdx);
+	}
+
+	for (auto &idx : indexes_) {
+		idx->UpdatePayloadType(payloadType_);
+	}
+
+	KeyRefs krefs, skrefs;
+	ItemImpl newItem(payloadType_, tagsMatcher_);
+	newItem.Unsafe(true);
+	for (size_t rowId = 0; rowId < items_.size(); rowId++) {
+		if (items_[rowId].IsFree()) {
+			continue;
+		}
+		PayloadValue &plCurr = items_[rowId];
+		Payload oldValue(oldPlType, plCurr);
+		ItemImpl oldItem(oldPlType, plCurr, tagsMatcher_);
+		oldItem.Unsafe(true);
+		newItem.FromCJSON(&oldItem);
+
+		PayloadValue plNew = oldValue.CopyTo(payloadType_, deltaFields >= 0);
+		Payload newValue(payloadType_, plNew);
+
+		for (int fieldIdx = compositeStartIdx; fieldIdx < int(indexes_.size()); ++fieldIdx) {
+			indexes_[fieldIdx]->Delete(KeyRef(plCurr), rowId);
+		}
+
+		for (auto fieldIdx : changedFields) {
+			auto &index = *indexes_[fieldIdx];
+
+			if ((fieldIdx == 0) || deltaFields <= 0) {
+				oldValue.Get(fieldIdx, krefs);
+				for (auto key : krefs) index.Delete(key, rowId);
+				if (krefs.empty()) index.Delete(KeyRef(), rowId);
+			}
+
+			if ((fieldIdx == 0) || deltaFields >= 0) {
+				newValue.Get(fieldIdx, krefs);
+				skrefs.resize(0);
+				for (auto key : krefs) skrefs.push_back(index.Upsert(key, rowId));
+
+				newValue.Set(fieldIdx, skrefs);
+				if (skrefs.empty()) index.Upsert(KeyRef(), rowId);
+			}
+		}
+
+		for (int fieldIdx = compositeStartIdx; fieldIdx < int(indexes_.size()); ++fieldIdx) {
+			indexes_[fieldIdx]->Upsert(KeyRef(plNew), rowId);
+		}
+
+		plCurr = std::move(plNew);
+	}
+	markUpdated();
+}
+
+void Namespace::AddIndex(const string &index, const string &jsonPath, IndexType type, IndexOpts opts) {
 	WLock wlock(mtx_);
-	bool idxChanged = addIndex(index, jsonPath, type, opts);
-	bool haveData = bool(items_.size());
+	if (addIndex(index, jsonPath, type, opts)) {
+		saveIndexesToStorage();
+	}
+}
 
-	if (storage_ && idxChanged) saveIndexesToStorage();
+bool Namespace::DropIndex(const string &index) {
+	WLock wlock(mtx_);
+	if (dropIndex(index)) {
+		saveIndexesToStorage();
+		return true;
+	}
+	return false;
+}
 
-	return idxChanged && haveData;
+bool Namespace::dropIndex(const string &index) {
+	auto itIdxName = indexesNames_.find(index);
+	if (itIdxName == indexesNames_.end()) {
+		const char *errMsg = "Cannot remove index %s: doesn't exist";
+		logPrintf(LogError, errMsg, index.c_str());
+		throw Error(errParams, errMsg, index.c_str());
+	}
+
+	int fieldIdx = itIdxName->second;
+	// Check, that index to remove is not part of composite index
+	for (int compositeIdx = payloadType_.NumFields(); compositeIdx < int(indexes_.size()); ++compositeIdx) {
+		if (indexes_[compositeIdx]->fields_.contains(fieldIdx))
+			throw Error(LogError, "Cannot remove index %: it's a part of a composite index %s", index.c_str(),
+						indexes_[compositeIdx]->name.c_str());
+	}
+	for (auto &namePair : indexesNames_) {
+		if (namePair.second >= fieldIdx) {
+			namePair.second--;
+		}
+	}
+
+	const unique_ptr<Index> &indexToRemove = indexes_[fieldIdx];
+	if (indexToRemove->opts_.IsPK()) {
+		if (indexToRemove->KeyType() == KeyValueComposite) {
+			auto itCompositeIdxState = compositeIndexesPkState_.find(indexToRemove->name);
+			if (itCompositeIdxState == compositeIndexesPkState_.end()) {
+				throw Error(LogError, "Composite index % is not PK", indexToRemove->name.c_str());
+			}
+			bool eachSubIndexPk = itCompositeIdxState->second;
+			if (eachSubIndexPk) {
+				for (int idx : indexToRemove->fields_) {
+					indexes_[idx]->opts_.PK(true);
+				}
+			}
+		} else {
+			pkFields_.erase(fieldIdx);
+		}
+	}
+
+	FieldsSet newPKFields;
+	for (auto idx : pkFields_) {
+		newPKFields.push_back(idx < fieldIdx ? idx : idx - 1);
+	}
+	pkFields_ = std::move(newPKFields);
+
+	IndexType type = indexToRemove->type;
+	if ((type != IndexCompositeBTree) && (type != IndexCompositeHash) && (type != IndexCompositeText) && (type != IndexCompositeNewText)) {
+		PayloadType oldPlType = payloadType_;
+		payloadType_.Drop(index);
+		tagsMatcher_.updatePayloadType(payloadType_);
+		FieldsSet changedFields{0, fieldIdx};
+		updateItems(oldPlType, changedFields, -1);
+	}
+
+	indexes_.erase(indexes_.begin() + fieldIdx);
+	indexesNames_.erase(itIdxName);
+	return true;
 }
 
 bool Namespace::addIndex(const string &index, const string &jsonPath, IndexType type, IndexOpts opts) {
@@ -107,13 +250,14 @@ bool Namespace::addIndex(const string &index, const string &jsonPath, IndexType 
 						index.c_str());
 		}
 
-		// Create new index object
 		insertIndex(Index::New(type, index, opts), idxNo, index);
 
-		// Add payload field corresponding to index
-		payloadType_.clone()->Add(PayloadFieldType(indexes_[idxNo]->KeyType(), index, jsonPath, opts.IsArray()));
+		PayloadType oldPlType = payloadType_;
+
+		payloadType_.Add(PayloadFieldType(indexes_[idxNo]->KeyType(), index, jsonPath, opts.IsArray()));
 		tagsMatcher_.updatePayloadType(payloadType_);
-		for (auto &idx : indexes_) idx->UpdatePayloadType(payloadType_);
+		FieldsSet changedFields{0, idxNo};
+		updateItems(oldPlType, changedFields, 1);
 
 		// Notify caller what indexes was changed
 		return true;
@@ -141,10 +285,13 @@ bool Namespace::addIndex(const string &index, const string &jsonPath, IndexType 
 						jsonPath.c_str());
 		}
 
-		indexes_[idxNo]->opts_.Array();
-		payloadType_.clone()->Add(PayloadFieldType(indexes_[idxNo]->KeyType(), index, jsonPath, opts.IsArray()));
+		indexes_[idxNo]->opts_.Array(true);
+
+		PayloadType oldPlType = payloadType_;
+		payloadType_.Add(PayloadFieldType(indexes_[idxNo]->KeyType(), index, jsonPath, opts.IsArray()));
 		tagsMatcher_.updatePayloadType(payloadType_);
-		for (auto &idx : indexes_) idx->UpdatePayloadType(payloadType_);
+		FieldsSet changedFields{0, idxNo};
+		updateItems(oldPlType, changedFields, 0);
 		return true;
 	}
 
@@ -152,47 +299,67 @@ bool Namespace::addIndex(const string &index, const string &jsonPath, IndexType 
 }
 
 bool Namespace::AddCompositeIndex(const string &index, IndexType type, IndexOpts opts) {
-	FieldsSet ff;
-	vector<string> subIdxes;
-	bool allPK = true;
-	string idxContent = index, realName = index;
+	string idxContent = index;
+	string realName = index;
 	auto pos = idxContent.find_first_of("=");
 	if (pos != string::npos) {
 		realName = idxContent.substr(pos + 1);
 		idxContent = idxContent.substr(0, pos);
 	}
 
-	for (auto subIdx : split(idxContent, "+", true, subIdxes)) {
+	FieldsSet fields;
+
+	bool eachSubIdxPK = true;
+	vector<string> subIdxs;
+	for (auto subIdx : split(idxContent, "+", true, subIdxs)) {
 		auto idxNameIt = indexesNames_.find(subIdx);
-		if (idxNameIt == indexesNames_.end())
+		if (idxNameIt == indexesNames_.end()) {
 			throw Error(errParams, "Subindex '%s' not found for composite index '%s'", subIdx.c_str(), index.c_str());
-		ff.push_back(idxNameIt->second);
-		if (!indexes_[idxNameIt->second]->opts_.IsPK()) allPK = false;
+		}
+
+		fields.push_back(idxNameIt->second);
+		if (!indexes_[idxNameIt->second]->opts_.IsPK()) {
+			eachSubIdxPK = false;
+		}
 	}
+
+	bool result = false;
 
 	auto idxNameIt = indexesNames_.find(realName);
 	if (idxNameIt == indexesNames_.end()) {
-		if (allPK) {
+		if (eachSubIdxPK) {
 			logPrintf(LogInfo, "Using composite index instead of single %s", index.c_str());
-			for (auto i : ff) indexes_[i]->opts_.PK(false);
+			for (auto i : fields) indexes_[i]->opts_.PK(false);
 		}
-		opts.PK(opts.IsPK() || allPK);
-		int idxNo = indexes_.size();
-		insertIndex(Index::NewComposite(type, index, opts, payloadType_, ff), idxNo, realName);
-		return true;
+
+		bool isPk(opts.IsPK() || eachSubIdxPK);
+		opts.PK(isPk);
+		if (isPk) {
+			compositeIndexesPkState_.emplace(realName, eachSubIdxPK);
+		}
+
+		int idxPos = indexes_.size();
+		insertIndex(Index::NewComposite(type, index, opts, payloadType_, fields), idxPos, realName);
+
+		for (IdType rowId = 0; rowId < int(items_.size()); rowId++) {
+			if (!items_[rowId].IsFree()) {
+				indexes_[idxPos]->Upsert(KeyRef(items_[rowId]), rowId);
+			}
+		}
+
+		result = true;
+	} else {
+		// Existing index
+		if (indexes_[idxNameIt->second]->type != type) {
+			throw Error(errConflict, "Index '%s' already exists with different type", index.c_str());
+		}
+
+		if (indexes_[idxNameIt->second]->fields_ != fields) {
+			throw Error(errConflict, "Index '%s' already exists with different fields", index.c_str());
+		}
 	}
 
-	// Existing index
-
-	// Check conflicts.
-	if (indexes_[idxNameIt->second]->type != type) {
-		throw Error(errConflict, "Index '%s' already exists with different type", index.c_str());
-	}
-
-	if (indexes_[idxNameIt->second]->fields_ != ff) {
-		throw Error(errConflict, "Index '%s' already exists with different fields", index.c_str());
-	}
-	return false;
+	return result;
 }
 
 void Namespace::insertIndex(Index *newIndex, int idxNo, const string &realName) {
@@ -221,28 +388,28 @@ void Namespace::insertIndex(Index *newIndex, int idxNo, const string &realName) 
 
 void Namespace::ConfigureIndex(const string &index, const string &config) { indexes_[getIndexByName(index)]->Configure(config); }
 
-void Namespace::Insert(Item *item, bool store) { upsertInternal(item, store, INSERT_MODE); }
+void Namespace::Insert(Item &item, bool store) { upsertInternal(item, store, INSERT_MODE); }
 
-void Namespace::Update(Item *item, bool store) { upsertInternal(item, store, UPDATE_MODE); }
+void Namespace::Update(Item &item, bool store) { upsertInternal(item, store, UPDATE_MODE); }
 
-void Namespace::Upsert(Item *item, bool store) { upsertInternal(item, store, INSERT_MODE | UPDATE_MODE); }
+void Namespace::Upsert(Item &item, bool store) { upsertInternal(item, store, INSERT_MODE | UPDATE_MODE); }
 
-void Namespace::Delete(Item *item) {
-	ItemImpl *ritem = reinterpret_cast<ItemImpl *>(item);
+void Namespace::Delete(Item &item) {
+	ItemImpl *ritem = item.impl_;
 	string jsonSliceBuf;
 
 	WLock lock(mtx_);
 
 	updateTagsMatcherFromItem(ritem, jsonSliceBuf);
 
-	auto exists = findByPK(ritem);
-	IdType id = exists.first;
+	auto itItem = findByPK(ritem);
+	IdType id = itItem.first;
 
-	if (!exists.second) {
+	if (!itItem.second) {
 		return;
 	}
 
-	reinterpret_cast<ItemImpl *>(item)->SetID(id, items_[id].GetVersion());
+	item.setID(id, items_[id].GetVersion());
 	_delete(id);
 }
 
@@ -274,7 +441,7 @@ void Namespace::_delete(IdType id) {
 
 	// free PayloadValue
 	items_[id].Free();
-	markUpdated(id);
+	markUpdated();
 	free_.emplace(id);
 }
 
@@ -300,23 +467,24 @@ void Namespace::upsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 
 	// Inplace payload
 	Payload pl(payloadType_, plData);
+	Payload plNew = ritem->GetPayload();
 	if (doUpdate) {
 		plData.AllocOrClone(pl.RealSize());
 	}
-	markUpdated(id);
+	markUpdated();
 
 	KeyRefs krefs, skrefs;
 
 	// Delete from composite indexes first
 	int field = 0;
-	for (field = ritem->NumFields(); field < int(indexes_.size()); ++field)
+	for (field = plNew.NumFields(); field < int(indexes_.size()); ++field)
 		if (doUpdate) indexes_[field]->Delete(KeyRef(plData), id);
 
 	// Upsert fields to regular indexes
-	for (field = 0; field < ritem->NumFields(); ++field) {
+	for (field = 0; field < plNew.NumFields(); ++field) {
 		auto &index = *indexes_[field];
 
-		ritem->Get(field, skrefs);
+		plNew.Get(field, skrefs);
 
 		// Check for update
 		if (doUpdate) {
@@ -338,80 +506,81 @@ void Namespace::upsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 }
 
 void Namespace::updateTagsMatcherFromItem(ItemImpl *ritem, string &jsonSliceBuf) {
-	if (ritem->getTagsMatcher().isUpdated()) {
-		logPrintf(LogTrace, "Updated TagsMatcher of namespace '%s' on modify:\n%s", name.c_str(), ritem->getTagsMatcher().dump().c_str());
+	if (ritem->tagsMatcher().isUpdated()) {
+		logPrintf(LogTrace, "Updated TagsMatcher of namespace '%s' on modify:\n%s", name.c_str(), ritem->tagsMatcher().dump().c_str());
 	}
 
-	if (&ritem->Type() != payloadType_.get() || !tagsMatcher_.try_merge(ritem->getTagsMatcher())) {
+	if (ritem->Type().get() != payloadType_.get() || !tagsMatcher_.try_merge(ritem->tagsMatcher())) {
 		jsonSliceBuf = ritem->GetJSON().ToString();
 		logPrintf(LogInfo, "Conflict TagsMatcher of namespace '%s' on modify: item:\n%s\ntm is\nnew tm is\n %s\n", name.c_str(),
-				  jsonSliceBuf.c_str(), tagsMatcher_.dump().c_str(), ritem->getTagsMatcher().dump().c_str());
+				  jsonSliceBuf.c_str(), tagsMatcher_.dump().c_str(), ritem->tagsMatcher().dump().c_str());
 
 		ItemImpl tmpItem(payloadType_, tagsMatcher_);
+		tmpItem.Unsafe(true);
 
 		auto err = tmpItem.FromJSON(jsonSliceBuf, nullptr);
-		*ritem = move(tmpItem);
-
 		if (!err.ok()) throw err;
-		if (!tagsMatcher_.try_merge(ritem->getTagsMatcher())) throw Error(errLogic, "Could not insert item. TagsMatcher was not merged.");
+
+		*ritem = std::move(tmpItem);
+
+		if (!tagsMatcher_.try_merge(ritem->tagsMatcher())) throw Error(errLogic, "Could not insert item. TagsMatcher was not merged.");
+		ritem->tagsMatcher() = tagsMatcher_;
+		ritem->tagsMatcher().setUpdated();
 	}
 }
 
-void Namespace::upsertInternal(Item *item, bool store, uint8_t mode) {
+void Namespace::upsertInternal(Item &item, bool store, uint8_t mode) {
 	// Item to upsert
-	ItemImpl *ritem = reinterpret_cast<ItemImpl *>(item);
+	ItemImpl *itemImpl = item.impl_;
 	string jsonSlice;
 
 	WLock lock(mtx_);
 
-	if (storageSnapshot_) {
-		throw Error(errLogic, "Could not insert item to readonly snapshot of '%s'", name.c_str());
-	}
+	updateTagsMatcherFromItem(itemImpl, jsonSlice);
 
-	updateTagsMatcherFromItem(ritem, jsonSlice);
-
-	auto realItem = findByPK(ritem);
+	auto realItem = findByPK(itemImpl);
 	IdType id = realItem.first;
 	bool exists = realItem.second;
+	auto newValue = itemImpl->GetPayload();
 
 	switch (mode) {
 		case INSERT_MODE:
 			if (!exists) {
 				// Check if payload not created yet, create it
-				id = createItem(ritem->RealSize());
+				id = createItem(newValue.RealSize());
 			} else {
-				reinterpret_cast<ItemImpl *>(item)->SetID(-1, -1);
+				item.setID(-1, -1);
 				return;
 			}
 			break;
 
 		case UPDATE_MODE:
 			if (!exists) {
-				reinterpret_cast<ItemImpl *>(item)->SetID(-1, -1);
+				item.setID(-1, -1);
 				return;
 			}
 			break;
 
 		case (INSERT_MODE | UPDATE_MODE):
-			if (!exists) id = createItem(ritem->RealSize());
+			if (!exists) id = createItem(newValue.RealSize());
 			break;
 
 		default:
 			throw Error(errLogic, "Unknown write mode");
 	}
 
-	setFieldsBasedOnPrecepts(ritem);
+	setFieldsBasedOnPrecepts(itemImpl);
 
-	upsert(ritem, id, exists);
-	reinterpret_cast<ItemImpl *>(item)->SetID(id, items_[id].GetVersion());
+	upsert(itemImpl, id, exists);
+	item.setID(id, items_[id].GetVersion());
 
 	if (storage_ && store) {
 		char pk[512];
 		auto prefLen = strlen(kStorageItemPrefix);
 		memcpy(pk, kStorageItemPrefix, prefLen);
-		ritem->GetPK(pk + prefLen, sizeof(pk) - prefLen, pkFields_);
-		Slice b = ritem->GetCJSON();
-		updates_->Put(Slice(pk), Slice(b.data(), b.size()));
+		newValue.GetPK(pk + prefLen, sizeof(pk) - prefLen, pkFields_);
+		Slice b = itemImpl->GetCJSON();
+		updates_->Put(Slice(pk), b);
 		++unflushedCount_;
 	}
 }
@@ -421,15 +590,20 @@ pair<IdType, bool> Namespace::findByPK(ItemImpl *ritem) {
 	h_vector<IdSetRef, 4> ids;
 	h_vector<IdSetRef::iterator, 4> idsIt;
 
+	if (!pkFields_.size()) {
+		throw Error(errLogic, "Trying to modify namespace '%s', but it's have no PK indexes", name.c_str());
+	}
+
+	Payload pl = ritem->GetPayload();
 	// It's faster equalent of "select ID from namespace where pk1 = 'item.pk1' and pk2 = 'item.pk2' "
 	// Get pkey values from pk fields
 	for (int field = 0; field < int(indexes_.size()); ++field)
 		if (indexes_[field]->opts_.IsPK()) {
 			KeyRefs krefs;
-			if (field < ritem->NumFields())
-				ritem->Get(field, krefs);
+			if (field < pl.NumFields())
+				pl.Get(field, krefs);
 			else
-				krefs.push_back(KeyRef(*ritem->Value()));
+				krefs.push_back(KeyRef(*pl.Value()));
 			assertf(krefs.size() == 1, "Pkey field must contain 1 key, but there '%d' in '%s.%s'", int(krefs.size()), name.c_str(),
 					payloadType_->Field(field).Name().c_str());
 			ids.push_back(indexes_[field]->Find(krefs[0]));
@@ -460,7 +634,7 @@ pair<IdType, bool> Namespace::findByPK(ItemImpl *ritem) {
 	return {-1, false};
 }
 
-void Namespace::commit(const NSCommitContext &ctx, std::function<void()> lockUpgrader) {
+void Namespace::commit(const NSCommitContext &ctx, SelectLockUpgrader *lockUpgrader) {
 	bool needCommit = (!sortOrdersBuilt_ && (ctx.phases() & CommitContext::MakeSortOrders));
 
 	if (ctx.indexes())
@@ -470,7 +644,7 @@ void Namespace::commit(const NSCommitContext &ctx, std::function<void()> lockUpg
 		return;
 	}
 
-	if (lockUpgrader) lockUpgrader();
+	if (lockUpgrader) lockUpgrader->Upgrade();
 
 	// Commit changes
 	if ((ctx.phases() & CommitContext::MakeIdsets) && !commitedIndexes_.containsAll(indexes_.size())) {
@@ -528,7 +702,7 @@ void Namespace::commit(const NSCommitContext &ctx, std::function<void()> lockUpg
 	}
 }
 
-void Namespace::markUpdated(IdType /*id*/) {
+void Namespace::markUpdated() {
 	sortOrdersBuilt_ = false;
 	preparedIndexes_.clear();
 	commitedIndexes_.clear();
@@ -611,7 +785,7 @@ bool Namespace::loadIndexesFromStorage() {
 		}
 	}
 
-	logPrintf(LogInfo, "Loaded index structure of namespace '%s'\n%s", name.c_str(), payloadType_->ToString().c_str());
+	logPrintf(LogTrace, "Loaded index structure of namespace '%s'\n%s", name.c_str(), payloadType_->ToString().c_str());
 
 	def.clear();
 	status = storage_->Read(StorageOpts().FillCache(), Slice(kStorageTagsPrefix), def);
@@ -626,6 +800,8 @@ bool Namespace::loadIndexesFromStorage() {
 }
 
 void Namespace::saveIndexesToStorage() {
+	if (!storage_) return;
+
 	logPrintf(LogTrace, "Namespace::saveIndexesToStorage (%s)", name.c_str());
 
 	WrSerializer ser;
@@ -696,36 +872,33 @@ void Namespace::LoadFromStorage() {
 	opts.FillCache(false);
 	size_t ldcount = 0;
 
-	logPrintf(LogTrace, "Loading items to '%s' from cache", name.c_str());
+	logPrintf(LogTrace, "Loading items to '%s' from storage", name.c_str());
 	unique_ptr<datastorage::Cursor> dbIter(storage_->GetCursor(opts));
 	ItemImpl item(payloadType_, tagsMatcher_);
+	item.Unsafe(true);
 	for (dbIter->Seek(kStorageItemPrefix);
 		 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), Slice(kStorageItemPrefix "\xFF")) < 0; dbIter->Next()) {
 		Slice dataSlice = dbIter->Value();
 		if (dataSlice.size() > 0) {
-			auto err = item.FromCJSON(Slice(dataSlice.data(), dataSlice.size()));
+			auto err = item.FromCJSON(dataSlice);
 			if (!err.ok()) {
-				logPrintf(LogError, "Error load item to '%s' from cache: '%s'", name.c_str(), err.what().c_str());
+				logPrintf(LogError, "Error load item to '%s' from storage: '%s'", name.c_str(), err.what().c_str());
 				throw err;
 			}
 
 			IdType id = items_.size();
-			items_.emplace_back(PayloadValue(item.RealSize()));
+			items_.emplace_back(PayloadValue(item.GetPayload().RealSize()));
 			upsert(&item, id, false);
 
 			ldcount += dataSlice.size();
 		}
 	}
-	logPrintf(LogTrace, "[%s] Done loading cache. %d items loaded, total size=%dM", name.c_str(), int(items_.size()),
+	logPrintf(LogInfo, "[%s] Done loading storage. %d items loaded, total size=%dM", name.c_str(), int(items_.size()),
 			  int(ldcount / (1024 * 1024)));
 }
 
 void Namespace::FlushStorage() {
 	WLock wlock(mtx_);
-
-	if (storageSnapshot_) {
-		return;
-	}
 
 	if (storage_) {
 		if (tagsMatcher_.isUpdated()) {
@@ -747,19 +920,25 @@ void Namespace::FlushStorage() {
 }
 
 void Namespace::DeleteStorage() {
+	WLock lck(mtx_);
 	if (!dbpath_.empty()) {
 		storage_->Destroy(dbpath_.c_str());
 		storage_.reset();
 	}
 }
 
-void Namespace::NewItem(Item **item) {
+Item Namespace::NewItem() {
 	RLock lock(mtx_);
-	*item = new ItemImpl(payloadType_, tagsMatcher_);
+	return Item(new ItemImpl(payloadType_, tagsMatcher_));
 }
 
 // Get meta data from storage by key
 string Namespace::GetMeta(const string &key) {
+	RLock lock(mtx_);
+	return getMeta(key);
+}
+
+string Namespace::getMeta(const string &key) {
 	auto it = meta_.find(key);
 	if (it != meta_.end()) {
 		return it->second;
@@ -778,6 +957,12 @@ string Namespace::GetMeta(const string &key) {
 
 // Put meta data to storage by key
 void Namespace::PutMeta(const string &key, const Slice &data) {
+	WLock lock(mtx_);
+	putMeta(key, data);
+}
+
+// Put meta data to storage by key
+void Namespace::putMeta(const string &key, const Slice &data) {
 	meta_[key] = data.ToString();
 
 	if (storage_) {
@@ -809,14 +994,6 @@ vector<string> Namespace::EnumMeta() {
 		}
 	}
 	return ret;
-}
-
-// Lock reads to snapshot
-void Namespace::LockSnapshot() {
-	if (!storage_) return;
-	if (storageSnapshot_) storage_->ReleaseSnapshot(storageSnapshot_);
-	storageSnapshot_ = storage_->MakeSnapshot();
-	assert(storageSnapshot_);
 }
 
 int Namespace::getIndexByName(const string &index) {
@@ -866,9 +1043,9 @@ void Namespace::setFieldsBasedOnPrecepts(ItemImpl *ritem) {
 		SqlFunc sqlFunc;
 		SqlFuncStruct sqlFuncStruct = sqlFunc.Parse(precept);
 
-		KeyValue field = ritem->GetField(sqlFuncStruct.field);
+		KeyRefs krs;
+		KeyValue field = ritem->GetPayload().Get(sqlFuncStruct.field, krs)[0];
 
-		KeyRefs refs;
 		KeyValue value(sqlFuncStruct.value);
 
 		if (sqlFuncStruct.isFunction) {
@@ -886,28 +1063,40 @@ void Namespace::setFieldsBasedOnPrecepts(ItemImpl *ritem) {
 		}
 
 		value.convert(field.Type());
-		refs.push_back(value);
+		KeyRefs refs{value};
 
-		Error err = ritem->SetField(sqlFuncStruct.field, refs);
-		if (!err.ok()) {
-			throw Error(errParams, "Namespace '%s' doesn't contain field '%s' for setting value '%s'", name.c_str(),
-						sqlFuncStruct.field.c_str(), sqlFuncStruct.value.c_str());
-		}
+		ritem->GetPayload().Set(sqlFuncStruct.field, refs, false);
 	}
 }
 
 int64_t Namespace::funcGetSerial(SqlFuncStruct sqlFuncStruct) {
 	int64_t counter = kStorageSerialInitial;
 
-	string ser = GetMeta("_SERIAL_" + sqlFuncStruct.field);
+	string ser = getMeta("_SERIAL_" + sqlFuncStruct.field);
 	if (ser != "") {
 		counter = stoi(ser) + 1;
 	}
 
 	string s = to_string(counter);
-	PutMeta("_SERIAL_" + sqlFuncStruct.field, Slice(s));
+	putMeta("_SERIAL_" + sqlFuncStruct.field, Slice(s));
 
 	return counter;
+}
+
+const string &Namespace::getOptimalSortOrder(const QueryEntries &entries) {
+	Index *maxIdx = nullptr;
+	static string no = "";
+	for (auto c = entries.begin(); c != entries.end(); c++) {
+		if ((c->condition == CondGe || c->condition == CondGt || c->condition == CondLe || c->condition == CondLt ||
+			 c->condition == CondRange) &&
+			!c->distinct && indexes_[c->idxNo]->IsOrdered()) {
+			if (!maxIdx || indexes_[c->idxNo]->Size() > maxIdx->Size()) {
+				maxIdx = indexes_[c->idxNo].get();
+			}
+		}
+	}
+
+	return maxIdx ? maxIdx->name : no;
 }
 
 }  // namespace reindexer

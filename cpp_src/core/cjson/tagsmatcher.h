@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdlib.h>
 #include "core/cjson/tagsmatcherimpl.h"
 #include "core/payload/payloadtype.h"
 #include "estl/cow.h"
@@ -10,7 +11,8 @@ namespace reindexer {
 
 class TagsMatcher {
 public:
-	TagsMatcher(PayloadType::Ptr payloadType = nullptr) : impl_(new TagsMatcherImpl(payloadType)), updated_(false) {}
+	TagsMatcher() : impl_(std::make_shared<TagsMatcherImpl>()), updated_(false) {}
+	TagsMatcher(PayloadType payloadType) : impl_(std::make_shared<TagsMatcherImpl>(payloadType)), updated_(false) {}
 
 	int name2tag(const char* name) const { return impl_->name2tag(name); }
 	int name2tag(const string& name, const string& path) { return impl_.clone()->name2tag(name, path, updated_); }
@@ -20,6 +22,7 @@ public:
 	int version() const { return impl_->version(); }
 	size_t size() const { return impl_->size(); }
 	bool isUpdated() const { return updated_; }
+	uint32_t cacheToken() const { return impl_->cacheToken(); }
 	void clear() { impl_.clone()->clear(); }
 	void serialize(WrSerializer& ser) const { impl_->serialize(ser); }
 	void deserialize(Serializer& ser) {
@@ -40,13 +43,8 @@ public:
 		}
 		return true;
 	}
-	void updatePayloadType(PayloadType::Ptr payloadType) {
-		auto old = impl_;
-		impl_ = new TagsMatcherImpl(payloadType);
-		impl_.clone()->merge(*old.get());
-		impl_.clone()->buildTagsCache(updated_);
-		updated_ = true;
-	}
+	void updatePayloadType(PayloadType payloadType) { impl_.clone()->updatePayloadType(payloadType, updated_); }
+
 	string dump() { return impl_->dumpTags() + "\n" + impl_->dumpPaths(); }
 
 protected:

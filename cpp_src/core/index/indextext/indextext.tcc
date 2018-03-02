@@ -79,7 +79,7 @@ h_vector<pair<const string *, int>, 8> IndexText<unordered_payload_map<Index::Ke
 		pl.Get(field, krefs);
 		for (auto kref : krefs) {
 			if (kref.Type() != KeyValueString) {
-				strsBuf.emplace_back(unique_ptr<string>(new string(KeyValue(kref).toString())));
+				strsBuf.emplace_back(unique_ptr<string>(new string(kref.As<string>())));
 				ret.push_back({strsBuf.back().get(), fieldPos});
 
 			} else {
@@ -105,7 +105,7 @@ SelectKeyResults IndexText<T>::SelectKey(const KeyValues &keys, CondType conditi
 			need_put = true;
 			//;
 		} else {
-			res.push_back(cache_ft.val.ids);
+			res.push_back(SingleSelectKeyResult(cache_ft.val.ids));
 			SelectKeyResults r(res);
 			r.ctx = cache_ft.val.ctx;
 			return r;
@@ -113,14 +113,14 @@ SelectKeyResults IndexText<T>::SelectKey(const KeyValues &keys, CondType conditi
 	}
 
 	if (cfg_->logLevel >= LogInfo) {
-		logPrintf(LogInfo, "Searching for '%s' in '%s'", keys[0].toString().c_str(),
+		logPrintf(LogInfo, "Searching for '%s' in '%s'", keys[0].As<string>().c_str(),
 				  this->payloadType_ ? this->payloadType_->Name().c_str() : "");
 	}
 
 	FullTextCtx::Ptr ftctx = std::make_shared<FullTextCtx>();
 	// STEP 1: Parse search query dsl
 	FtDSLQuery dsl(this->ftFields_, this->cfg_->stopWords);
-	dsl.parse(keys[0].toString());
+	dsl.parse(keys[0].As<string>());
 	auto mergedIds = Select(ftctx, dsl);
 
 	if (need_put && mergedIds->size()) cache_ft_->Put(*cache_ft.key, FtIdSetCacheVal{mergedIds, ftctx});

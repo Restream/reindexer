@@ -38,17 +38,20 @@ type payloadType struct {
 	PStringHdrOffset uintptr
 }
 
-func (pt *payloadType) Read(ser *Serializer) {
+func (pt *payloadType) Read(ser *Serializer, skip bool) {
 	pt.PStringHdrOffset = uintptr(ser.GetVarUInt())
 	fieldsCount := int(ser.GetVarUInt())
-	pt.Fields = make([]payloadFieldType, fieldsCount, fieldsCount)
+	fields := make([]payloadFieldType, fieldsCount, fieldsCount)
 
 	for i := 0; i < fieldsCount; i++ {
-		pt.Fields[i].Type = int(ser.GetVarUInt())
-		pt.Fields[i].Name = ser.GetVString()
-		pt.Fields[i].Offset = uintptr(ser.GetVarUInt())
-		pt.Fields[i].Size = uintptr(ser.GetVarUInt())
-		pt.Fields[i].IsArray = ser.GetVarUInt() != 0
+		fields[i].Type = int(ser.GetVarUInt())
+		fields[i].Name = ser.GetVString()
+		fields[i].Offset = uintptr(ser.GetVarUInt())
+		fields[i].Size = uintptr(ser.GetVarUInt())
+		fields[i].IsArray = ser.GetVarUInt() != 0
+	}
+	if !skip {
+		pt.Fields = fields
 	}
 }
 

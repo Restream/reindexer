@@ -13,6 +13,8 @@ include(GNUInstallDirs)
 
 project(reindexer)
 
+string( REPLACE "-DNDEBUG" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
+
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wextra -Werror -Wold-style-cast")
 
@@ -21,6 +23,11 @@ set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake/modules 
 if (WITH_ASAN)
   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
   set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
+  add_definitions(-DREINDEX_WITH_ASAN)
+  elseif (WITH_TSAN)
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=thread")
+  set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=thread")
+  add_definitions(-DREINDEX_WITH_TSAN)
 else ()
   find_package(Gperftools)
 endif ()
@@ -38,6 +45,8 @@ find_path(EXECINFO_INCLUDE_PATH execinfo.h)
 set(TARGET reindexer)
 
 set(REINDEXER_SOURCE_PATH ${PROJECT_SOURCE_DIR} )
+
+set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 
 file (
   GLOB_RECURSE 
@@ -84,7 +93,9 @@ if (benchmark_FOUND)
     add_subdirectory(gtests/bench)
 endif()
 
-execute_process(WORKING_DIRECTORY ${REINDEXER_SOURCE_PATH} COMMAND git describe --tags OUTPUT_VARIABLE REINDEXER_VERSION_FULL OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(EXISTS ${PROJECT_SOURCE_DIR}/.git OR EXISTS ${PROJECT_SOURCE_DIR}/../.git )
+  execute_process(WORKING_DIRECTORY ${REINDEXER_SOURCE_PATH} COMMAND git describe --tags OUTPUT_VARIABLE REINDEXER_VERSION_FULL OUTPUT_STRIP_TRAILING_WHITESPACE)
+endif ()
 
 if (NOT REINDEXER_VERSION_FULL)
 set (REINDEXER_VERSION_FULL "0.0.0-localbuild")

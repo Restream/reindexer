@@ -319,7 +319,6 @@ func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
 				panic(fmt.Errorf("found item not equal to original \n%#v\n%#v", item, qt.ns.items[pk]))
 			}
 		}
-
 		if !verifyConditions(qt.ns, qt.entries, item) {
 			json1, _ := json.Marshal(item)
 			log.Fatalf("Found item id=%s, not match condition '%s'\n%+v\n", pk, qt.toString(), string(json1))

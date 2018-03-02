@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"sort"
 
-	. "github.com/restream/reindexer/test/ft/specs"
 	"github.com/restream/reindexer"
 	_ "github.com/restream/reindexer/bindings/builtin"
+	. "github.com/restream/reindexer/test/ft/specs"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -64,7 +64,7 @@ type TextItem struct {
 
 func createReindexDbInstance(namespace string) *reindexer.Reindexer {
 	reindexDB := reindexer.NewReindex("builtin")
-	err := reindexDB.NewNamespace(namespace, reindexer.DefaultNamespaceOptions(), TextItem{})
+	err := reindexDB.OpenNamespace(namespace, reindexer.DefaultNamespaceOptions(), TextItem{})
 	if err != nil {
 		panic(fmt.Errorf("Couldn't create namespace: "+namespace, err))
 	}

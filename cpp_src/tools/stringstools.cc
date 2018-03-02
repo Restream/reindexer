@@ -240,4 +240,16 @@ int fast_strftime(char *buf, const tm *tm) {
 	return d - buf;
 }
 
+bool validateObjectName(const char *name) {
+	if (!*name) {
+		return false;
+	}
+	for (const char *p = name; *p; p++) {
+		if (!(std::isalpha(*name) || std::isdigit(*name) || *name == '_' || *name == '-')) {
+			return false;
+		}
+	}
+	return true;
+}
+
 }  // namespace reindexer

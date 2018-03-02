@@ -10,15 +10,7 @@
 ### END INIT INFO
 # chkconfig: 2345 95 05
 
-
-db_path=/var/lib/reindexer
-http_port=9088
-rpc_port=6534
-web_root=${CMAKE_INSTALL_PREFIX}/share/reindexer/web
-
-dir=""
-user="reindexer"
-cmd="${CMAKE_INSTALL_PREFIX}/bin/reindexer_server --httpport=$http_port --rpcport=$rpc_port --webroot=$web_root --db=$db_path --user $user"
+cmd="${CMAKE_INSTALL_PREFIX}/bin/reindexer_server -c /etc/reindexer.conf"
 
 name=reindexer
 pid_file="/var/run/$name.pid"
@@ -38,7 +30,6 @@ case "$1" in
         echo "Already started"
     else
         echo "Starting $name"
-        cd "$dir"
         $cmd >> "$stdout_log" 2>&1 &
         echo $! > "$pid_file"
         if ! is_running; then

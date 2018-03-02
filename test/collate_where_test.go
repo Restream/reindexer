@@ -66,7 +66,6 @@ var testCollateWhereAsciiData = []*TestCollateWhereAsciiItem{
 	{10, "Xerox"},
 }
 
-
 func init() {
 	tnamespaces[testCollateWhereNumeric] = TestCollateWhereNumericItem{}
 	tnamespaces[testCollateWhereAscii] = TestCollateWhereAsciiItem{}
@@ -113,7 +112,7 @@ func CollateEq() {
 		panic(err)
 	}
 
-	if (len(results) == 0) {
+	if len(results) == 0 {
 		panic(fmt.Errorf("No results of '%s' are found", keyWord))
 	}
 
@@ -133,7 +132,7 @@ func CollateEq() {
 		}
 	}
 
-	if (wordsCountWritten != wordsCountReceived) {
+	if wordsCountWritten != wordsCountReceived {
 		panic(fmt.Errorf("ASCII EQ gives wrong result"))
 	}
 
@@ -144,7 +143,7 @@ func CollateEq() {
 		panic(err)
 	}
 
-	if (len(results) == 0) {
+	if len(results) == 0 {
 		panic(fmt.Errorf("No results of '%s' are found", keyWord))
 	}
 
@@ -164,7 +163,7 @@ func CollateEq() {
 		}
 	}
 
-	if (wordsCountWritten != wordsCountReceived) {
+	if wordsCountWritten != wordsCountReceived {
 		panic(fmt.Errorf("UTF EQ gives wrong result"))
 	}
 
@@ -175,7 +174,7 @@ func CollateEq() {
 		panic(err)
 	}
 
-	if (len(results) == 0) {
+	if len(results) == 0 {
 		panic(fmt.Errorf("No results of '%s' are found", keyWord))
 	}
 
@@ -195,7 +194,7 @@ func CollateEq() {
 		}
 	}
 
-	if (wordsCountWritten != wordsCountReceived) {
+	if wordsCountWritten != wordsCountReceived {
 		panic(fmt.Errorf("UTF EQ gives wrong result"))
 	}
 }
@@ -209,7 +208,7 @@ func CollateLt() {
 	}
 
 	// two words apple
-	if (len(results) != 2) {
+	if len(results) != 2 {
 		panic(fmt.Errorf("ASCII LT gives wrong result %d, expected 2", len(results)))
 	}
 
@@ -221,7 +220,7 @@ func CollateLt() {
 	}
 
 	// two words ананас
-	if (len(results) != 2) {
+	if len(results) != 2 {
 		panic(fmt.Errorf("UTF LT gives wrong result %d, expected 2", len(results)))
 	}
 
@@ -233,7 +232,7 @@ func CollateLt() {
 	}
 
 	// two words less than -5apple
-	if (len(results) != 2) {
+	if len(results) != 2 {
 		panic(fmt.Errorf("NUMERIC LT gives wrong result %d, expected 2", len(results)))
 	}
 }
@@ -247,7 +246,7 @@ func CollateLe() {
 	}
 
 	// two words apple and three words apricot
-	if (len(results) != 5) {
+	if len(results) != 5 {
 		panic(fmt.Errorf("ASCII LE gives wrong result %d, expected 5", len(results)))
 	}
 
@@ -259,7 +258,7 @@ func CollateLe() {
 	}
 
 	// two words ананас and two words апельсин
-	if (len(results) != 4) {
+	if len(results) != 4 {
 		panic(fmt.Errorf("UTF LE gives wrong result %d, expected 4", len(results)))
 	}
 
@@ -271,7 +270,7 @@ func CollateLe() {
 	}
 
 	// three words less or equal -5apple
-	if (len(results) != 3) {
+	if len(results) != 3 {
 		panic(fmt.Errorf("NUMERIC LE gives wrong result %d, expected 3", len(results)))
 	}
 }
@@ -285,7 +284,7 @@ func CollateGt() {
 	}
 
 	// one word Xerox
-	if (len(results) != 1) {
+	if len(results) != 1 {
 		panic(fmt.Errorf("ASCII GT gives wrong result %d, expected 1", len(results)))
 	}
 
@@ -297,7 +296,7 @@ func CollateGt() {
 	}
 
 	// two words яблоко
-	if (len(results) != 2) {
+	if len(results) != 2 {
 		panic(fmt.Errorf("UTF GT gives wrong result %d, expected 2", len(results)))
 	}
 
@@ -309,11 +308,11 @@ func CollateGt() {
 	}
 
 	// two words 100АнАнАс and 78яблоко greater than 52яблоко
-	if (len(results) != 2) {
+	if len(results) != 2 {
 		panic(fmt.Errorf("NUMERIC GT gives wrong result %d, expected 2", len(results)))
 	}
 }
-	
+
 func CollateGe() {
 	// ASCII
 	keyWord := "coURgette"
@@ -323,7 +322,7 @@ func CollateGe() {
 	}
 
 	// one word Xerox and two Courgette
-	if (len(results) != 3) {
+	if len(results) != 3 {
 		panic(fmt.Errorf("ASCII GT gives wrong result %d, expected 3", len(results)))
 	}
 
@@ -335,7 +334,7 @@ func CollateGe() {
 	}
 
 	// two words яблоко and two вишня
-	if (len(results) != 4) {
+	if len(results) != 4 {
 		panic(fmt.Errorf("UTF GT gives wrong result %d, expected 4", len(results)))
 	}
 
@@ -347,7 +346,7 @@ func CollateGe() {
 	}
 
 	// three words 52яблоко and 100АнАнАс and 78яблоко greater or equal 52яблоко
-	if (len(results) != 3) {
+	if len(results) != 3 {
 		panic(fmt.Errorf("NUMERIC GT gives wrong result %d, expected 3", len(results)))
 	}
 }

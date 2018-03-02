@@ -11,7 +11,9 @@ import (
 )
 
 type Encoder struct {
-	state *State
+	state       *State
+	tagsMatcher *tagsMatcher
+	tmUpdated   bool
 }
 
 type fieldInfo struct {
@@ -95,7 +97,7 @@ func (enc *Encoder) encodeStruct(v reflect.Value, rdser *Serializer, idx []int) 
 		} else {
 			// We have not interface fields on top level, so using cache
 			iidx = append(idx, field)
-			ce = enc.state.ctagsWCache.Lookup(iidx)
+			ce = enc.state.ctagsWCache.Lookup(iidx, true)
 		}
 
 		if ce.ctagName == 0 && !ce.isPrivate {
@@ -105,17 +107,40 @@ func (enc *Encoder) encodeStruct(v reflect.Value, rdser *Serializer, idx []int) 
 			name, skip, omitempty := parseStructField(f)
 			ctagName := 0
 			if !skip {
-				ctagName = enc.state.tagsMatcher.name2tag(name)
+				ctagName = enc.name2tag(name)
 			}
+			if enc.tmUpdated {
+				// if tagsMatcher or lock is updated - we have temporary tags, do not cache them
+				ce = &ctagsWCacheEntry{}
+			}
+
 			ce.fieldInfo = mkFieldInfo(vv, ctagName, f.Anonymous)
 			ce.isPrivate = len(f.PkgPath) != 0 || skip
 			ce.isOmitEmpty = omitempty
 		}
+
 		if !ce.isPrivate {
 			// process field, except private unexported fields
 			enc.encodeValue(v.Field(field), rdser, ce.fieldInfo, iidx)
 		}
 	}
+}
+
+func (enc *Encoder) name2tag(name string) int {
+
+	tagName := enc.tagsMatcher.name2tag(name, false)
+
+	if tagName == 0 {
+		if !enc.tmUpdated {
+			enc.tagsMatcher = &tagsMatcher{Tags: enc.state.tagsMatcher.Tags, Names: make(map[string]int)}
+			for k, v := range enc.state.tagsMatcher.Names {
+				enc.tagsMatcher.Names[k] = v
+			}
+			enc.tmUpdated = true
+		}
+		tagName = enc.tagsMatcher.name2tag(name, true)
+	}
+	return tagName
 }
 
 func (enc *Encoder) encodeMap(v reflect.Value, rdser *Serializer, idx []int) {
@@ -142,7 +167,7 @@ func (enc *Encoder) encodeMap(v reflect.Value, rdser *Serializer, idx []int) {
 			panic(fmt.Errorf("Unsupported map key type %s ", k.Type().Kind().String()))
 		}
 
-		f.ctagName = enc.state.tagsMatcher.name2tag(keyName)
+		f.ctagName = enc.name2tag(keyName)
 		enc.encodeValue(vv, rdser, f, idx)
 	}
 }
@@ -341,19 +366,42 @@ func (enc *Encoder) encodeValue(v reflect.Value, rdser *Serializer, f fieldInfo,
 	}
 }
 
-func (enc *Encoder) Encode(src interface{}, rdser *Serializer) error {
-	pos := len(rdser.Bytes())
-	rdser.PutUInt32(0)
+func (enc *Encoder) Encode(src interface{}, wrser *Serializer) error {
+	pos := len(wrser.Bytes())
 
 	v := reflect.ValueOf(src)
 	enc.state.lock.Lock()
-	enc.encodeValue(v, rdser, mkFieldInfo(v, 0, false), make([]int, 0, 10))
 
-	if enc.state.tagsMatcher.Updated != 0 {
-		*(*uint32)(unsafe.Pointer(&rdser.Bytes()[pos])) = uint32(len(rdser.buf) - pos)
-		enc.state.tagsMatcher.WriteUpdated(rdser)
+	wrser.Truncate(pos)
+	wrser.PutUInt32(0)
+	enc.tagsMatcher = &enc.state.tagsMatcher
+	enc.tmUpdated = false
+	enc.encodeValue(v, wrser, mkFieldInfo(v, 0, false), make([]int, 0, 10))
+
+	*(*uint32)(unsafe.Pointer(&wrser.Bytes()[pos])) = uint32(len(wrser.buf) - pos)
+	wrser.PutVarUInt(uint64(enc.state.CacheToken))
+	if enc.tmUpdated {
+		enc.tagsMatcher.WriteUpdated(wrser)
 	}
+
+	enc.state.lock.Unlock()
+	return nil
+}
+
+func (enc *Encoder) EncodeRaw(src interface{}, wrser *Serializer) error {
+
+	v := reflect.ValueOf(src)
+	enc.state.lock.Lock()
+	enc.tmUpdated = false
+
+	enc.tagsMatcher = &enc.state.tagsMatcher
+	enc.encodeValue(v, wrser, mkFieldInfo(v, 0, false), make([]int, 0, 10))
+	if enc.tmUpdated {
+		enc.state.tagsMatcher = *enc.tagsMatcher
+	}
+
 	enc.state.lock.Unlock()
 
 	return nil
+
 }

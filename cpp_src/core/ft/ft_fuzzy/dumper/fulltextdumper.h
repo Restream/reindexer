@@ -6,7 +6,7 @@
 #include <deque>
 #include <thread>
 #include "core/ft/ft_fuzzy/dataholder/basebuildedholder.h"
-#include "core/namespace.h"
+#include "core/query/queryresults.h"
 
 namespace search_engine {
 using std::thread;

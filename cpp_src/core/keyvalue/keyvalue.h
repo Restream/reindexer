@@ -20,10 +20,6 @@ public:
 		assertKeyType(type, KeyValueString);
 		return h_value_string;
 	}
-	string toString() const;
-	int toInt() const;
-	int64_t toInt64() const;
-	double toDouble() const;
 	int convert(KeyValueType type);
 
 protected:

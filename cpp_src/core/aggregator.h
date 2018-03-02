@@ -12,7 +12,7 @@ public:
 	Aggregator(){};
 	~Aggregator(){};
 	void Aggregate(const PayloadValue &lhs, int idx);
-	void Bind(const PayloadType *type, int field);
+	void Bind(PayloadType type, int field);
 	double GetResult() const {
 		switch (aggType_) {
 			case AggAvg:

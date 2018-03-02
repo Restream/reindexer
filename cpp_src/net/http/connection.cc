@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include "itoa/itoa.h"
 #include "time/fast_time.h"
+#include "tools/errors.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
@@ -148,15 +149,22 @@ void Connection::handleRequest(Request &req) {
 	ResponseWriter writer(this);
 	BodyReader reader(this);
 
-	Context ctx{&req, &writer, &reader};
+	Context ctx{&req, &writer, &reader, nullptr};
 
-	router_.handle(ctx);
+	try {
+		router_.handle(ctx);
+	} catch (const Error &err) {
+		if (!writer.IsRespSent()) {
+			ctx.String(http::StatusInternalServerError, err.what());
+		}
+	}
+
 	ctx.writer->Write(0, 0);
 }
 
 void Connection::badRequest(int code, const char *msg) {
 	ResponseWriter writer(this);
-	Context ctx{nullptr, &writer, nullptr};
+	Context ctx{nullptr, &writer, nullptr, nullptr};
 	closeConn_ = true;
 	ctx.String(code, msg);
 }
@@ -216,7 +224,7 @@ void Connection::parseRequest() {
 
 			num_headers = kHttpMaxHeaders;
 			minor_version = 0;
-			int res = phr_parse_request(it.data, it.len, &request_.method, &method_len, &request_.path, &path_len, &minor_version, headers,
+			int res = phr_parse_request(it.data, it.len, &request_.method, &method_len, &request_.uri, &path_len, &minor_version, headers,
 										&num_headers, 0);
 			assert(res <= int(it.len));
 
@@ -230,9 +238,12 @@ void Connection::parseRequest() {
 				badRequest(StatusBadRequest, "");
 				return;
 			}
+
 			enableHttp11_ = (minor_version >= 1);
 			const_cast<char *>(request_.method)[method_len] = 0;
-			const_cast<char *>(request_.path)[path_len] = 0;
+			const_cast<char *>(request_.uri)[path_len] = 0;
+			strncpy(request_.path, request_.uri, sizeof(request_.path));
+			request_.path[sizeof(request_.path) - 1] = 0;
 			request_.headers.clear();
 			request_.params.clear();
 
@@ -243,23 +254,26 @@ void Connection::parseRequest() {
 			}
 
 			formData_ = false;
+			char *tmpHdrVal = reinterpret_cast<char *>(alloca(res)), *d;
 			for (int i = 0; i < int(num_headers); i++) {
 				Header hdr{headers[i].name, headers[i].value};
 				const_cast<char *>(hdr.name)[headers[i].name_len] = 0;
 				const_cast<char *>(hdr.val)[headers[i].value_len] = 0;
 				for (char *p = const_cast<char *>(hdr.name); *p; ++p) *p = tolower(*p);
-				for (char *p = const_cast<char *>(hdr.val); *p; ++p) *p = tolower(*p);
+				d = tmpHdrVal;
+				for (const char *p = hdr.val; *p; ++p, ++d) *d = tolower(*p);
+				*d++ = 0;
 
 				if (!strcmp(hdr.name, "content-length")) {
 					bodyLeft_ = atoi(hdr.val);
-				} else if (!strcmp(hdr.name, "transfer-encoding") && !strcmp(hdr.val, "chunked")) {
+				} else if (!strcmp(hdr.name, "transfer-encoding") && !strcmp(tmpHdrVal, "chunked")) {
 					bodyLeft_ = -1;
 					memset(&chunked_decoder_, 0, sizeof(chunked_decoder_));
-				} else if (!strcmp(hdr.name, "content-type") && !strcmp(hdr.val, "application/x-www-form-urlencoded")) {
+				} else if (!strcmp(hdr.name, "content-type") && !strcmp(tmpHdrVal, "application/x-www-form-urlencoded")) {
 					formData_ = true;
-				} else if (!strcmp(hdr.name, "connection") && !strcmp(hdr.val, "close")) {
+				} else if (!strcmp(hdr.name, "connection") && !strcmp(tmpHdrVal, "close")) {
 					enableHttp11_ = false;
-				} else if (!strcmp(hdr.name, "expect") && !strcmp(hdr.val, "100-continue")) {
+				} else if (!strcmp(hdr.name, "expect") && !strcmp(tmpHdrVal, "100-continue")) {
 					expectContinue_ = true;
 				}
 				request_.headers.push_back(hdr);
@@ -377,6 +391,7 @@ ssize_t Connection::ResponseWriter::Write(const void *buf, size_t size) {
 	}
 
 	conn_->wrBuf_.write(reinterpret_cast<const char *>(buf), size);
+	written_ += size;
 	if (isChunkedResponse()) {
 		conn_->wrBuf_.write(kStrEOL, sizeof(kStrEOL) - 1);
 	}

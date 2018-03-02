@@ -3,7 +3,6 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include "core/idset.h"
 #include "core/keyvalue/keyvalue.h"
 #include "estl/h_vector.h"
 

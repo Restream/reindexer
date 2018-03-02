@@ -10,7 +10,7 @@ public:
 	IndexOrdered(IndexType _type, const string &_name, const IndexOpts &opts) : IndexUnordered<T>(_type, _name, opts) {}
 
 	template <typename U = T>
-	IndexOrdered(IndexType _type, const string &_name, const IndexOpts &opts, const PayloadType::Ptr payloadType, const FieldsSet &fields,
+	IndexOrdered(IndexType _type, const string &_name, const IndexOpts &opts, const PayloadType payloadType, const FieldsSet &fields,
 				 typename std::enable_if<is_payload_map_key<U>::value>::type * = 0)
 		: IndexUnordered<T>(_type, _name, opts, payloadType, fields) {}
 

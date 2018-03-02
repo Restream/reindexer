@@ -1,9 +1,12 @@
 #pragma once
 
-#include "core/item.h"
+#include "core/payload/payloadiface.h"
 
 namespace reindexer {
 
+class TagsMatcher;
+class Serializer;
+class WrSerializer;
 class CJsonDecoder {
 public:
 	CJsonDecoder(TagsMatcher &tagsMatcher);
@@ -17,5 +20,7 @@ protected:
 
 	h_vector<int, 8> tagsPath_;
 };
+
+void copyCJsonValue(int tagType, Serializer &rdser, WrSerializer &wrser);
 
 }  // namespace reindexer

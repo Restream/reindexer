@@ -99,16 +99,16 @@ void WrSerializer::PutValue(const KeyValue &kv) {
 	PutVarUint(kv.Type());
 	switch (kv.Type()) {
 		case KeyValueInt:
-			PutVarint(kv.toInt());
+			PutVarint(kv.As<int>());
 			break;
 		case KeyValueInt64:
-			PutVarint(kv.toInt64());
+			PutVarint(kv.As<int64_t>());
 			break;
 		case KeyValueDouble:
-			PutDouble(kv.toDouble());
+			PutDouble(kv.As<double>());
 			break;
 		case KeyValueString:
-			PutVString(kv.toString());
+			PutVString(kv.As<string>());
 			break;
 		default:
 			abort();

@@ -1,12 +1,9 @@
 #pragma once
-#include "core/query/query.h"
 #include "core/query/queryresults.h"
 
 namespace reindexer {
 
-using std::string;
-using std::vector;
-
+class Namespace;
 class NsDescriber {
 public:
 	NsDescriber(Namespace *parent) : ns_(parent) {}

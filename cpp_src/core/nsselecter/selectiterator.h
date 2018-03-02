@@ -60,7 +60,7 @@ public:
 	int Pos() { return lastIt_->it_ - lastIt_->begin_ - 1; }
 
 	// Comparators stuff
-	void Bind(const PayloadType *type, int field);
+	void Bind(PayloadType type, int field);
 	bool TryCompare(const PayloadValue *item, int idx) {
 		for (auto &cmp : comparators_)
 			if (cmp.Compare(*item, idx)) {
@@ -71,7 +71,7 @@ public:
 	}
 	int GetMatchedCount() { return matchedCount_; }
 	void ExcludeLastSet();
-	void AppendAndBind(SelectKeyResult &other, const PayloadType *type, int field);
+	void AppendAndBind(SelectKeyResult &other, PayloadType type, int field);
 	double Cost(int totalIds) const;
 	int GetMaxIterations() const;
 	void SetExpectMaxIterations(int expectedIterations_);

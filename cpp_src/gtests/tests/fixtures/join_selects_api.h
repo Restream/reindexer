@@ -2,8 +2,9 @@
 
 #include <gtest/gtest.h>
 #include <map>
-#include "core/payload/payloadtype.h"
+#include "gason/gason.h"
 #include "reindexer_api.h"
+#include "tools/serializer.h"
 
 class JoinSelectsApi : public ReindexerApi {
 protected:
@@ -28,7 +29,8 @@ protected:
 			books_namespace,
 			{IndexDeclaration{bookid, "hash", "int", IndexOpts().PK()}, IndexDeclaration{title, "text", "string", IndexOpts()},
 			 IndexDeclaration{pages, "hash", "int", IndexOpts()}, IndexDeclaration{price, "hash", "int", IndexOpts()},
-			 IndexDeclaration{genreId_fk, "hash", "int", IndexOpts()}, IndexDeclaration{authorid_fk, "hash", "int", IndexOpts()}});
+			 IndexDeclaration{genreId_fk, "hash", "int", IndexOpts()}, IndexDeclaration{authorid_fk, "hash", "int", IndexOpts()},
+			 IndexDeclaration{string(pages + string("+") + bookid).c_str(), "hash", "composite", IndexOpts()}});
 
 		FillGenresNamespace();
 		FillAuthorsNamespace(500);
@@ -43,9 +45,10 @@ protected:
 			authorIdValue = *itMaxIt;
 		}
 		for (int32_t i = 0; i < count; ++i) {
-			auto item = AddData(authors_namespace, authorid, ++authorIdValue);
-			AddData(authors_namespace, name, name + underscore + RandString(), item);
-			AddData(authors_namespace, age, rand() % 80 + 20, item);
+			Item item = NewItem(authors_namespace);
+			item[authorid] = ++authorIdValue;
+			item[name] = name + underscore + RandString();
+			item[age] = rand() % 80 + 20;
 
 			Upsert(authors_namespace, item);
 			Commit(authors_namespace);
@@ -56,13 +59,13 @@ protected:
 
 	void FillBooksNamespace(int32_t count) {
 		for (int32_t i = 0; i < count; ++i) {
-			auto item = AddData(books_namespace, bookid, i);
-			AddData(books_namespace, title, title + underscore + RandString(), item);
-			AddData(books_namespace, pages, rand() % 10000, item);
-			AddData(books_namespace, price, rand() % 1000, item);
-			AddData(books_namespace, authorid_fk, authorsIds[rand() % (authorsIds.size() - 1)], item);
-			AddData(books_namespace, genreId_fk, genresIds[rand() % (genresIds.size() - 1)], item);
-
+			Item item = NewItem(books_namespace);
+			item[bookid] = i;
+			item[title] = title + underscore + RandString();
+			item[pages] = rand() % 10000;
+			item[price] = rand() % 1000;
+			item[authorid_fk] = authorsIds[rand() % (authorsIds.size() - 1)];
+			item[genreId_fk] = genresIds[rand() % (genresIds.size() - 1)];
 			Upsert(books_namespace, item);
 			Commit(books_namespace);
 		}
@@ -76,28 +79,26 @@ protected:
 	}
 
 	void AddGenre(int id, const std::string& name) {
-		auto item = AddData(genres_namespace, genreid, id);
-		AddData(genres_namespace, genrename, name, item);
+		Item item = NewItem(genres_namespace);
+		item[genreid] = id;
+		item[genrename] = name;
 		Upsert(genres_namespace, item);
 		Commit(genres_namespace);
 		genresIds.push_back(id);
 	}
 
-	void FillQueryResultFromItem(reindexer::Item* item, QueryResultRow& resultRow) {
-		auto* ritem = reinterpret_cast<reindexer::ItemImpl*>(item);
-		for (int idx = 1; idx < ritem->NumFields(); idx++) {
-			std::string fieldName = ritem->Type().Field(idx).Name();
-			reindexer::KeyRefs& fieldValue = resultRow[fieldName];
-			ritem->Get(idx, fieldValue);
+	void FillQueryResultFromItem(Item& item, QueryResultRow& resultRow) {
+		for (int idx = 1; idx < item.NumFields(); idx++) {
+			std::string fieldName = item[idx].Name();
+			resultRow[fieldName] = item[idx];
 		}
 	}
 
-	int ParseItemJsonWithJoins(const reindexer::QueryResults& queryRes) {
+	int ParseItemJsonWithJoins(const QueryResults& queryRes) {
+		if (queryRes.empty()) return JSON_OK;
 		reindexer::WrSerializer wrSer;
 		queryRes.GetJSON(0, wrSer, false);
 		string json = reindexer::Slice(reinterpret_cast<const char*>(wrSer.Buf()), wrSer.Len()).ToString();
-		//		puts(json.c_str());
-		//		fflush(stdout);
 
 		char* endptr = nullptr;
 		JsonValue value;
@@ -107,21 +108,19 @@ protected:
 
 	void FillQueryResultRows(reindexer::QueryResults& reindexerRes, QueryResultRows& testRes) {
 		for (size_t i = 0; i < reindexerRes.size(); ++i) {
-			unique_ptr<reindexer::Item> item(reindexerRes.GetItem(i));
-			auto* ritem = reinterpret_cast<reindexer::ItemImpl*>(item.get());
+			Item item(reindexerRes.GetItem(i));
 
-			KeyRef bookIdKeyRef = ritem->GetField(bookid);
-			BookId bookId = static_cast<int>(bookIdKeyRef);
+			BookId bookId = item[bookid].Get<int>();
 			QueryResultRow& resultRow = testRes[bookId];
 
-			FillQueryResultFromItem(item.get(), resultRow);
+			FillQueryResultFromItem(item, resultRow);
 
 			const reindexer::ItemRef& rowid = reindexerRes[i];
 			vector<QueryResults>& joinQueryRes(reindexerRes.joined_[rowid.id]);
 			const QueryResults& joinResult(joinQueryRes[0]);
 			for (size_t i = 0; i < joinResult.size(); ++i) {
-				unique_ptr<reindexer::Item> joinItem(joinResult.GetItem(i));
-				FillQueryResultFromItem(joinItem.get(), resultRow);
+				Item joinItem(joinResult.GetItem(i));
+				FillQueryResultFromItem(joinItem, resultRow);
 			}
 		}
 	}

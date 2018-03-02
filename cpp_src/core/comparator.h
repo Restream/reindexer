@@ -84,7 +84,7 @@ public:
 	Comparator(){};
 	~Comparator(){};
 	bool Compare(const PayloadValue &lhs, int idx);
-	void Bind(const PayloadType *type, int field);
+	void Bind(PayloadType type, int field);
 
 protected:
 	bool compare(void *ptr) {
