@@ -220,7 +220,7 @@ void SelectIterator::SetExpectMaxIterations(int expectedIterations) {
 
 int SelectIterator::GetMaxIterations() const {
 	int cnt = 0;
-	for (auto &r : *this) cnt += r.isRange_ ? (r.rEnd_ - r.rBegin_) : r.ids_.size();
+	for (auto &r : *this) cnt += r.isRange_ ? std::abs(r.rEnd_ - r.rBegin_) : r.ids_.size();
 	return cnt;
 }
 

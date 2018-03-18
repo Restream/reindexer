@@ -55,7 +55,7 @@ void PayloadValue::AllocOrClone(size_t size) {
 		// Release old data
 		release();
 	} else {
-		memset(pn + sizeof(dataHeader), 0, header()->cap);
+		memset(pn + sizeof(dataHeader), 0, size);
 	}
 
 	p_ = pn;

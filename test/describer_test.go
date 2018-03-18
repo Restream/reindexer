@@ -13,7 +13,7 @@ type TestDescribeStruct struct {
 	Foo       string `reindex:"foo,hash"`
 	Qwe       string `reindex:"qwe,tree"`
 	Bar       []int  `reindex:"bar"`
-	Search    string `reindex:"search,fulltext"`
+	Search    string `reindex:"search,fuzzytext"`
 	SubStruct TestDescribeSubStruct
 	TestDescribeBuiltinSubStruct
 	Bla string `reindex:",,dict"`
@@ -35,7 +35,7 @@ func init() {
 var hashIdxConds = []string{"SET", "EQ", "ANY", "EMPTY", "LT", "LE", "GT", "GE", "RANGE"}
 var treeIdxConds = []string{"SET", "EQ", "ANY", "EMPTY", "LT", "LE", "GT", "GE", "RANGE"}
 var boolIdxConds = []string{"SET", "EQ", "ANY", "EMPTY"}
-var textIdxConds = []string{"EQ"}
+var textIdxConds = []string{"MATCH"}
 
 func TestDescribe(t *testing.T) {
 	testDescribeStruct := TestDescribeStruct{ID: 42}
@@ -76,8 +76,8 @@ func TestDescribe(t *testing.T) {
 		panic(fmt.Sprint("field 'id' must be PK"))
 	}
 
-	if desc.Indices[0].Sortable {
-		panic(fmt.Sprint("index must not be sortable"))
+	if !desc.Indices[0].Sortable {
+		panic(fmt.Sprint("index must  be sortable"))
 	}
 
 	if desc.Indices[0].Fulltext {
@@ -102,8 +102,8 @@ func TestDescribe(t *testing.T) {
 		panic(fmt.Sprint("field 'foo' must not be PK"))
 	}
 
-	if desc.Indices[1].Sortable {
-		panic(fmt.Sprint("index must not be sortable"))
+	if !desc.Indices[1].Sortable {
+		panic(fmt.Sprint("index must be sortable"))
 	}
 
 	if desc.Indices[1].Fulltext {
@@ -154,8 +154,8 @@ func TestDescribe(t *testing.T) {
 		panic(fmt.Sprint("field 'bar' must not be PK"))
 	}
 
-	if desc.Indices[3].Sortable {
-		panic(fmt.Sprint("index must not be sortable"))
+	if !desc.Indices[3].Sortable {
+		panic(fmt.Sprint("index must  be sortable"))
 	}
 
 	if desc.Indices[3].Fulltext {

@@ -102,9 +102,9 @@ public:
 
 	// Buffer manipulation functions
 	uint8_t *DetachBuffer();
-	uint8_t *Buf();
+	uint8_t *Buf() const;
 	void Reset() { len_ = 0; }
-	size_t Len() { return len_; }
+	size_t Len() const { return len_; }
 	void Reserve(size_t cap);
 
 protected:

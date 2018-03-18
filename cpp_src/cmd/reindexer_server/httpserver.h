@@ -3,9 +3,11 @@
 #include <memory>
 #include "core/reindexer.h"
 #include "dbmanager.h"
+#include "loggerwrapper.h"
 #include "net/http/router.h"
 #include "net/listener.h"
 #include "pprof/pprof.h"
+#include "tools/logger.h"
 
 namespace reindexer_server {
 
@@ -18,7 +20,8 @@ struct HTTPClientData : public http::ClientData {
 
 class HTTPServer {
 public:
-	HTTPServer(DBManager &dbMgr, const string &webRoot, bool enableLog);
+	HTTPServer(DBManager &dbMgr, const string &webRoot);
+	HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper logger, bool allocDebug = false);
 	~HTTPServer();
 
 	bool Start(const string &addr, ev::dynamic_loop &loop);
@@ -57,10 +60,12 @@ protected:
 	Pprof pprof_;
 
 	string webRoot_;
-	bool enableLog_;
 
 	http::Router router_;
 	std::unique_ptr<Listener> listener_;
+
+	LoggerWrapper logger_;
+	bool allocDebug_;
 
 	static const int limit_default = 10;
 	static const int limit_max = 100;

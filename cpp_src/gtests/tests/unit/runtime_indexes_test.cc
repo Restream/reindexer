@@ -115,10 +115,18 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesRemoveAndSelect) {
 	}
 
 	AddRuntimeCompositeIndex();
+	FillNamespace(0, 100);
+
+	CheckSelectValidity(
+		Query(default_namespace)
+			.WhereComposite(getRuntimeCompositeIndexName(false).c_str(), CondEq, {{KeyValue(rand()), KeyValue(RandString())}}));
 
 	DropRuntimeStringIndex(1);
 
 	CheckSelectValidity(Query(default_namespace));
 	CheckSelectValidity(Query(default_namespace).Where(getRuntimeStringIndexName(2).c_str(), CondGt, RandString()));
-	// CheckSelectValidity(Query(default_namespace).Where(getRuntimeCompositeIndexName(false).c_str(), CondGt, RandString()));
+
+	CheckSelectValidity(
+		Query(default_namespace)
+			.WhereComposite(getRuntimeCompositeIndexName(false).c_str(), CondGt, {{KeyValue(rand()), KeyValue(RandString())}}));
 }

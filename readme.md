@@ -21,9 +21,11 @@ The core is written in C++ and the application level API is in Go.
 - [Advanced Usage](#advanced-usage)
 	- [Index Types and Their Capabilites](#index-types-and-their-capabilites)
 	- [Nested Structs](#nested-structs)
+	- [Complex Primary Keys and Composite Indexes](#complex-primary-keys-and-composite-indexes)
 	- [Join](#join)
 		- [Joinable interface](#joinable-interface)
 	- [Complex Primary Keys and Composite Indices](#complex-primary-keys-and-composite-indices)
+	- [Atomic on update functions](#atomic-on-update-functions)
 	- [Aggregations](#aggregations)
 	- [Direct JSON operations](#direct-json-operations)
 		- [Upsert data in JSON format](#upsert-data-in-json-format)
@@ -116,10 +118,10 @@ type Item struct {
 
 func main() {
 	// Init a database instance and choose the binding (builtin)
-	db := reindexer.NewReindex("builtin:///tmp/reindex/")
+	db := reindexer.NewReindex("builtin:///tmp/reindex/testdb")
 
 	// OR - Init a database instance and choose the binding (connect to server)
-	db := reindexer.NewReindex("cproto://127.0.0.1:6534/")
+	// db := reindexer.NewReindex("cproto://127.0.0.1:6534/testdb")
 	
 	// Create new namespace with name 'items', which will store structs of type 'Item'
 	db.OpenNamespace("items", reindexer.DefaultNamespaceOptions(), Item{})
@@ -205,7 +207,7 @@ To build Reindexer, g++ 4.8+ or clang 3.3+ is required.
 ```bash
 go get -a github.com/restream/reindexer
 bash $GOPATH/src/github.com/restream/reindexer/dependencies.sh
-go generate github.com/restream/reindexer
+go generate github.com/restream/reindexer/bindings/builtin
 ```
 ## Advanced Usage
 ### Index Types and Their Capabilites
@@ -304,29 +306,28 @@ func (item *ItemWithJoin) Join(field string, subitems []interface{}, context int
 	}
 }
 ```
+### Complex Primary Keys and Composite Indexes
 
-### Complex Primary Keys and Composite Indices
-
-A Document can have multiple fields as its primary key. Reindexer checks unique composition of all pk fields during upserts:
+A Document can have multiple fields as a primary key. Reindexer checks unique composition of all pk fields during upserts:
 
 ```go
 type Item struct {
-	ID    int64 `reindex:"id,,pk"`     // 'id' is a part of primary key
-	SubID int   `reindex:"sub_id,,pk"` // 'sub_id' is a part of primary key
+	ID    int64 `reindex:"id,,pk"`     // 'id' is a part of a primary key
+	SubID int   `reindex:"sub_id,,pk"` // 'sub_id' is a part of a primary key
 	// Fields
 	//	....
 }
 ```
 
-Too complex primary key (>2 fields) can slow down upsert and select operations, because Reindexer has to do separate selects to each index, and intersect results.
+Too complex primary key (>2 fields) can slow down upsert and select operations, because Reindexer has to perform separate selects to each index, and intersect results.
 
-Composite index feature exists to speed things up. Reindexer can create composite index using multiple fields and use it instead of several separate indices.
+Composite index is an index that involves multiple fields, it can be used instead of several separate indexes.
 
 ```go
 type Item struct {
-	ID       int64 `reindex:"id,-,pk"`         // 'id' is part of primary key, WITHOUT personal searchable index
-	SubID    int   `reindex:"sub_id,-,pk"`     // 'sub_id' is part of primary key, WITHOUT personal searchable index
-	SubSubID int   `reindex:"sub_sub_id,-,pk"` // 'sub_sub_id' is part of primary key WITHOUT personal searchable index
+	ID       int64 `reindex:"id,-,pk"`         // 'id' is a part of primary key, WITHOUT personal searchable index
+	SubID    int   `reindex:"sub_id,-,pk"`     // 'sub_id' is a part of a primary key, WITHOUT a personal searchable index
+	SubSubID int   `reindex:"sub_sub_id,-,pk"` // 'sub_sub_id' is a part of a primary key WITHOUT a personal searchable index
 
 	// Fields
 	// ....
@@ -337,7 +338,7 @@ type Item struct {
 
 ```
 
-Also composite indices are useful for sorting results by multiple fields: 
+Also composite indexes are useful for sorting results by multiple fields: 
 
 ```go
 type Item struct {
@@ -353,6 +354,15 @@ type Item struct {
 	// Sort query resuls by rating first, then by year
 	query := db.Query("items").Sort("rating+year", true)
 
+	// Sort query resuls by rating first, then by year, and put item where rating == 5 and year == 2010 first
+	query := db.Query("items").Sort("rating+year", true,[]interface{}{5,2010})
+```
+
+For make query to the composite index, pass []interface{} to `.WhereComposite` function of Query builder:
+
+```go
+	// Get results where rating == 5 and year == 2010
+	query := db.Query("items").WhereComposite("rating+year", reindexer.EQ,[]interface{}{5,2010})
 ```
 
 ### Aggregations
@@ -360,6 +370,26 @@ type Item struct {
 Reindexer allows to do aggregation queries. Currently Average and Sum aggregations are supported. To support aggregation `Query` has 2 methods: `Aggregate` and `GetAggreatedValue`.
 `Aggregate` should be called before Query execution - to ask reindexer calculate aggregation and `GetAggreatedValue` after Query execution to obtain aggregated value
 
+### Atomic on update functions
+
+There are atomic functions, which executes under namespace lock, and therefore guarantes data consistency:
+
+- serial - sequence of integer, useful for uniq ID generation
+- timestamp - current time stamp of operation, useful for data syncronisation
+
+These functions can be passed to Upsert/Insert/Update in 3-rd and next arguments. 
+
+```go
+   // set ID field from serial generator   
+   db.Insert ("items",&item,"id=serial()")
+
+   // set current timestamp in nanoseconds to updated_at field 
+   db.Update ("items",&item,"updated_at=now(NSEC)")
+
+   // set current timestamp and ID
+   db.Upsert ("items",&item,"updated_at=now(NSEC)","id=serial()")
+
+```
 
 ### Direct JSON operations
 

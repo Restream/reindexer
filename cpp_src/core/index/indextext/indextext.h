@@ -1,13 +1,13 @@
 #pragma once
 
-#include "core/ft/config/baseconfig.h"
+#include "core/ft/config/baseftconfig.h"
 #include "core/ft/ft_fuzzy/searchers/isearcher.h"
 #include "core/ft/ftdsl.h"
 #include "core/ft/ftsetcashe.h"
-#include "core/ft/fulltextctx.h"
 #include "core/ft/idrelset.h"
 #include "core/ft/stemmer.h"
 #include "core/index/indexunordered.h"
+#include "core/selectfunc/ctx/ftctx.h"
 #include "estl/fast_hash_map.h"
 #include "estl/flat_str_map.h"
 #include "estl/suffix_map.h"
@@ -39,11 +39,12 @@ public:
 		initSearchers();
 	}
 
-	SelectKeyResults SelectKey(const KeyValues& keys, CondType condition, SortType stype, Index::ResultType res_type) override final;
+	SelectKeyResults SelectKey(const KeyValues& keys, CondType condition, SortType stype, Index::ResultType res_type,
+							   BaseFunctionCtx::Ptr ctx) override final;
 	void Commit(const CommitContext& ctx) override final;
 	void UpdateSortedIds(const UpdateSortedContext&) override {}
 	void Configure(const string& config) override;
-	virtual IdSet::Ptr Select(FullTextCtx::Ptr fctx, FtDSLQuery& dsl) = 0;
+	virtual IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) = 0;
 	virtual void Commit() = 0;
 
 protected:
@@ -64,7 +65,6 @@ protected:
 
 	vector<search_engine::ISeacher::Ptr> searchers_;
 	shared_ptr<FtIdSetCache> cache_ft_;
-
 	fast_hash_map<string, int> ftFields_;
 	unique_ptr<BaseFTConfig> cfg_;
 };

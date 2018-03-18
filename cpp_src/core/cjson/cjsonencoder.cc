@@ -2,6 +2,8 @@
 #include "tagsmatcher.h"
 #include "tools/serializer.h"
 
+#include "core/payload/payloadtuple.h"
+
 namespace reindexer {
 
 CJsonEncoder::CJsonEncoder(const TagsMatcher &tagsMatcher) : tagsMatcher_(tagsMatcher) {}
@@ -11,6 +13,12 @@ void CJsonEncoder::Encode(ConstPayload *pl, WrSerializer &wrser) {
 	pl->Get(0, kref);
 
 	p_string tuple(kref[0]);
+	key_string pseudo_tuple;
+
+	if (tuple.size() == 0) {
+		pseudo_tuple = BuildPayloadTuple(*pl, tagsMatcher_).get();
+		tuple = p_string(pseudo_tuple.get());
+	}
 	Serializer rdser(tuple.data(), tuple.size());
 
 	for (int i = 0; i < pl->NumFields(); ++i) fieldsoutcnt_[i] = 0;

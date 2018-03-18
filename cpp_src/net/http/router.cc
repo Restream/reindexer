@@ -144,20 +144,12 @@ int Router::handle(Context &ctx) {
 					}
 				}
 
-				if (enableStats_) {
-					auto tm0 = std::chrono::high_resolution_clock::now();
-					int a0 = get_alloc_cnt_total();
-					res = r.h_.func_(r.h_.object_, ctx);
-					auto tm1 = std::chrono::high_resolution_clock::now();
-					int a1 = get_alloc_cnt_total();
-					std::lock_guard<std::mutex> lock(lockStats_);
-					r.stat_.add(std::chrono::duration_cast<std::chrono::microseconds>(tm1 - tm0).count(), a1 - a0);
-				} else {
-					res = r.h_.func_(r.h_.object_, ctx);
-				}
+				res = r.h_.func_(r.h_.object_, ctx);
+
 				if (logger_) {
 					logger_(ctx);
 				}
+
 				return res;
 			}
 
@@ -183,26 +175,6 @@ int Router::handle(Context &ctx) {
 	return notFoundHandler_.object_ != nullptr ? notFoundHandler_.func_(notFoundHandler_.object_, ctx)
 											   : ctx.String(StatusNotFound, "Not found");
 }
-
-void Router::printStats() {
-	if (!enableStats_) {
-		return;
-	}
-
-	printf("Method URI                      Min     Max     Avg    Total    Count    Allocs\n");
-	printf("------ ---                      ---     ---     ---    -----    -----    ------\n");
-
-	std::lock_guard<std::mutex> lock(lockStats_);
-	for (int m = 0; m < kMaxMethod; m++) {
-		for (auto &r : routes_[m]) {
-			printf("%-6s %-20s %5dus %5dus %5dus %6dms %8d %8d\n", mathodNames[m], r.path_.c_str(), r.stat_.min, r.stat_.max, r.stat_.avg,
-				   r.stat_.total / 1000, r.stat_.count, r.stat_.allocs);
-		}
-	}
-	printf("%-6s %-20s %5dus %5dus %5dus %6dms %8d %8d\n", "-", "WRITE", writeStats_.min, writeStats_.max, writeStats_.avg,
-		   writeStats_.total / 1000, writeStats_.count, writeStats_.allocs);
-}
-
 }  // namespace http
 }  // namespace net
 }  // namespace reindexer

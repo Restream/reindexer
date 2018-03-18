@@ -61,9 +61,9 @@ public:
 
 	// Comparators stuff
 	void Bind(PayloadType type, int field);
-	bool TryCompare(const PayloadValue *item, int idx) {
+	bool TryCompare(const PayloadValue &pl, int idx) {
 		for (auto &cmp : comparators_)
-			if (cmp.Compare(*item, idx)) {
+			if (cmp.Compare(pl, idx)) {
 				matchedCount_++;
 				return true;
 			}

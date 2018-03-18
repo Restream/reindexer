@@ -3,9 +3,18 @@
 #include "keyref.h"
 
 namespace reindexer {
+class PayloadType;
+class FieldsSet;
+
 class KeyValue : public KeyRef {
 public:
 	KeyValue() {}
+	explicit KeyValue(const KeyArray<KeyValue, 2> &values) {
+		for (const KeyValue &kv : values) {
+			h_composite_values.emplace_back(kv);
+		}
+		type = KeyValueComposite;
+	}
 	explicit KeyValue(const string &v) : h_value_string(make_key_string(v.data(), v.length())) { type = KeyValueString, relink(); }
 	explicit KeyValue(const key_string &v) : h_value_string(v) { type = KeyValueString, relink(); }
 	explicit KeyValue(const PayloadValue &v) : KeyRef(h_value_composite), h_value_composite(v) {}
@@ -21,6 +30,7 @@ public:
 		return h_value_string;
 	}
 	int convert(KeyValueType type);
+	void convertToComposite(const PayloadType &, const FieldsSet &);
 
 protected:
 	void relink() {
@@ -30,6 +40,7 @@ protected:
 
 	PayloadValue h_value_composite;
 	key_string h_value_string;
+	std::vector<KeyValue> h_composite_values;
 };
 
 using KeyValues = KeyArray<KeyValue, 2>;

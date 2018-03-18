@@ -1,7 +1,6 @@
 #include "core/query/queryresults.h"
 #include "core/cjson/cjsonencoder.h"
 #include "core/cjson/jsonencoder.h"
-#include "core/itemimpl.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -24,44 +23,63 @@ QueryResults::QueryResults() = default;
 QueryResults::QueryResults(QueryResults &&) = default;
 QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	if (this != &obj) {
-		Erase(begin(), end());
+		unlockResults();
 		ItemRefVector::operator=(static_cast<ItemRefVector &&>(obj));
 		joined_ = std::move(obj.joined_);
 		aggregationResults = std::move(obj.aggregationResults);
 		totalCount = std::move(obj.totalCount);
 		haveProcent = std::move(obj.haveProcent);
 		ctxs = std::move(obj.ctxs);
+		nonCacheableData = std::move(obj.nonCacheableData);
+		lockedResults_ = std::move(obj.lockedResults_);
 	}
 	return *this;
 }
 
-QueryResults::~QueryResults() {
-	for (auto &itemRef : *this) {
-		if (!itemRef.value.IsFree()) {
-			assert(ctxs.size() > back().nsid);
-			Payload(ctxs[itemRef.nsid].type_, itemRef.value).ReleaseStrings();
-		}
-	}
-}
+QueryResults::~QueryResults() { unlockResults(); }
 
 void QueryResults::Erase(iterator start, iterator finish) {
-	for (auto it = start; it != finish; it++) {
-		auto &itemRef = *it;
+	assert(!lockedResults_);
+	ItemRefVector::erase(start, finish);
+}
+
+void QueryResults::lockResults() {
+	assert(!lockedResults_);
+	for (auto &itemRef : *this) {
 		if (!itemRef.value.IsFree()) {
-			assert(ctxs.size() > back().nsid);
+			assert(ctxs.size() > itemRef.nsid);
+			Payload(ctxs[itemRef.nsid].type_, itemRef.value).AddRefStrings();
+		}
+	}
+	if (joined_) {
+		for (auto &jr : *joined_) {
+			for (auto &jqr : jr.second) {
+				jqr.lockResults();
+			}
+		}
+	}
+	lockedResults_ = true;
+}
+
+void QueryResults::unlockResults() {
+	if (!lockedResults_) return;
+	for (auto &itemRef : *this) {
+		if (!itemRef.value.IsFree()) {
+			assert(ctxs.size() > itemRef.nsid);
 			Payload(ctxs[itemRef.nsid].type_, itemRef.value).ReleaseStrings();
 		}
 	}
-	ItemRefVector::erase(start, finish);
+	lockedResults_ = false;
 }
 
 void QueryResults::Add(const ItemRef &i) {
 	push_back(i);
 
-	auto &itemRef = back();
-	if (!itemRef.value.IsFree()) {
+	if (!lockedResults_) return;
+
+	if (!i.value.IsFree()) {
 		assert(ctxs.size() > back().nsid);
-		Payload(ctxs[itemRef.nsid].type_, itemRef.value).AddRefStrings();
+		Payload(ctxs[back().nsid].type_, back().value).AddRefStrings();
 	}
 }
 
@@ -70,17 +88,19 @@ void QueryResults::Dump() const {
 	for (auto &r : *this) {
 		if (&r != &*(*this).begin()) buf += ",";
 		buf += std::to_string(r.id);
-		auto it = joined_.find(r.id);
-		if (it != joined_.end()) {
-			buf += "[";
-			for (auto &ra : it->second) {
-				if (&ra != &*it->second.begin()) buf += ";";
-				for (auto &rr : ra) {
-					if (&rr != &*ra.begin()) buf += ",";
-					buf += std::to_string(rr.id);
+		if (joined_) {
+			auto it = joined_->find(r.id);
+			if (it != joined_->end()) {
+				buf += "[";
+				for (auto &ra : it->second) {
+					if (&ra != &*it->second.begin()) buf += ";";
+					for (auto &rr : ra) {
+						if (&rr != &*ra.begin()) buf += ",";
+						buf += std::to_string(rr.id);
+					}
 				}
+				buf += "]";
 			}
-			buf += "]";
 		}
 	}
 	logPrintf(LogInfo, "Query returned: [%s]; total=%d", buf.c_str(), this->totalCount);
@@ -88,7 +108,7 @@ void QueryResults::Dump() const {
 
 class QueryResults::JsonEncoderDatasourceWithJoins : public IJsonEncoderDatasourceWithJoins {
 public:
-	JsonEncoderDatasourceWithJoins(const vector<QueryResults> &joined, const ContextsVector &ctxs) : joined_(joined), ctxs_(ctxs) {}
+	JsonEncoderDatasourceWithJoins(const QRVector &joined, const ContextsVector &ctxs) : joined_(joined), ctxs_(ctxs) {}
 	~JsonEncoderDatasourceWithJoins() {}
 
 	size_t GetJoinedRowsCount() final { return joined_.size(); }
@@ -108,7 +128,7 @@ public:
 	}
 
 private:
-	const vector<QueryResults> &joined_;
+	const QRVector &joined_;
 	const ContextsVector &ctxs_;
 };
 
@@ -117,18 +137,19 @@ void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 	assert(ctxs.size() > itemRef.nsid);
 	auto &ctx = ctxs[itemRef.nsid];
 
-	auto itJoined(joined_.find(itemRef.id));
-	bool withJoins((itJoined != joined_.end()) && !itJoined->second.empty());
-
 	ConstPayload pl(ctx.type_, itemRef.value);
 	JsonEncoder jsonEncoder(ctx.tagsMatcher_, ctx.jsonFilter_);
 
-	if (withJoins) {
-		JsonEncoderDatasourceWithJoins ds(itJoined->second, ctxs);
-		jsonEncoder.Encode(&pl, ser, ds);
-	} else {
-		jsonEncoder.Encode(&pl, ser);
+	if (joined_) {
+		auto itJoined(joined_->find(itemRef.id));
+		bool withJoins((itJoined != joined_->end()) && !itJoined->second.empty());
+		if (withJoins) {
+			JsonEncoderDatasourceWithJoins ds(itJoined->second, ctxs);
+			jsonEncoder.Encode(&pl, ser, ds);
+			return;
+		}
 	}
+	jsonEncoder.Encode(&pl, ser);
 }
 
 void QueryResults::GetJSON(int idx, WrSerializer &ser, bool withHdrLen) const {

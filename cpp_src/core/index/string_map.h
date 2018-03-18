@@ -19,40 +19,24 @@ using std::tolower;
 using std::unordered_map;
 
 struct comparator_sptr {
-	explicit comparator_sptr() : collateMode_() {}
-	comparator_sptr(const int collateMode) : collateMode_(collateMode) {}
+	comparator_sptr(CollateMode collateMode = CollateNone) : collateMode_(collateMode) {}
 	bool operator()(const key_string& lhs, const key_string& rhs) const {
 		return collateCompare(Slice(*lhs), Slice(*rhs), collateMode_) < 0;
 	}
-	int collateMode_ = CollateNone;
+	CollateMode collateMode_;
 };  // namespace reindexer
 
 struct equal_sptr {
-	explicit equal_sptr() : collateMode_() {}
-	equal_sptr(const int collateMode) : collateMode_(collateMode) {}
+	equal_sptr(CollateMode collateMode = CollateNone) : collateMode_(collateMode) {}
 	bool operator()(const key_string& lhs, const key_string& rhs) const {
 		return collateCompare(Slice(*lhs), Slice(*rhs), collateMode_) == 0;
 	}
-	int collateMode_ = CollateNone;
+	CollateMode collateMode_;
 };
 struct hash_sptr {
-	explicit hash_sptr() : collateMode_() {}
-	hash_sptr(const int collateMode) : collateMode_(collateMode) {}
-	size_t operator()(const key_string& s) const {
-		if (collateMode_ == CollateUTF8) {
-			wstring u16str;
-
-			utf8_to_utf16(*s, u16str);
-			ToLower(u16str);
-
-			return std::hash<std::wstring>()(u16str);
-		} else if (collateMode_ == CollateASCII) {
-			return static_cast<size_t>(Hash(*s, true));
-		}
-
-		return std::hash<std::string>()(*s);
-	}
-	int collateMode_ = CollateNone;
+	hash_sptr(CollateMode collateMode = CollateNone) : collateMode_(collateMode) {}
+	size_t operator()(const key_string& s) const { return collateHash(*s, collateMode_); }
+	CollateMode collateMode_;
 };
 
 template <typename T1>

@@ -112,7 +112,7 @@ func (it *Iterator) readItem() (item interface{}, rank int) {
 		rank = params.proc
 	}
 	subNSRes := int(it.ser.GetVarUInt())
-	item, it.err = unpackItem(it.nsArray[params.nsid], params, it.allowUnsafe && (subNSRes == 0))
+	item, it.err = unpackItem(it.nsArray[params.nsid], params, it.allowUnsafe && (subNSRes == 0), it.rawQueryParams.nonCacheableData)
 	if it.err != nil {
 		return
 	}
@@ -125,7 +125,7 @@ func (it *Iterator) readItem() (item interface{}, rank int) {
 			subitems := make([]interface{}, siRes)
 			for i := 0; i < siRes; i++ {
 				params = it.ser.readRawtItemParams()
-				subitems[i], it.err = unpackItem(it.nsArray[nsIndex+1], params, it.allowUnsafe)
+				subitems[i], it.err = unpackItem(it.nsArray[nsIndex+1], params, it.allowUnsafe, it.rawQueryParams.nonCacheableData)
 				if it.err != nil {
 					return
 				}

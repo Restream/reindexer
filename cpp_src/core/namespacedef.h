@@ -2,10 +2,8 @@
 
 #include <string>
 #include <vector>
+#include "indexdef.h"
 #include "tools/errors.h"
-#include "type_consts.h"
-
-union JsonValue;
 
 namespace reindexer {
 
@@ -14,18 +12,6 @@ using std::vector;
 
 struct Slice;
 class WrSerializer;
-struct IndexDef {
-	string name;
-	string jsonPath;
-	string indexType;
-	string fieldType;
-	IndexOpts opts;
-	IndexType Type() const;
-
-	void FromType(IndexType type);
-	Error Parse(char *json);
-	Error Parse(JsonValue &jvalue);
-};
 
 struct NamespaceDef {
 	NamespaceDef(const string &iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing()) : name(iname), storage(istorage) {}
@@ -39,11 +25,12 @@ struct NamespaceDef {
 		return *this;
 	}
 
+	Error FromJSON(char *json);
+	void GetJSON(WrSerializer &);
+
+public:
 	string name;
 	StorageOpts storage;
 	vector<IndexDef> indexes;
-	Error Parse(char *json);
-	void Print(WrSerializer &);
-	void PrintIndexes(WrSerializer &ser, const char *jsonIndexFieldName = "indexes");
 };
 }  // namespace reindexer

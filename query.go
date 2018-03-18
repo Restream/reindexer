@@ -12,17 +12,18 @@ import (
 
 // Constants for query serialization
 const (
-	queryCondition    = bindings.QueryCondition
-	queryDistinct     = bindings.QueryDistinct
-	querySortIndex    = bindings.QuerySortIndex
-	queryJoinOn       = bindings.QueryJoinOn
-	queryLimit        = bindings.QueryLimit
-	queryOffset       = bindings.QueryOffset
-	queryReqTotal     = bindings.QueryReqTotal
-	queryDebugLevel   = bindings.QueryDebugLevel
-	queryAggregation  = bindings.QueryAggregation
-	querySelectFilter = bindings.QuerySelectFilter
-	queryEnd          = bindings.QueryEnd
+	queryCondition      = bindings.QueryCondition
+	queryDistinct       = bindings.QueryDistinct
+	querySortIndex      = bindings.QuerySortIndex
+	queryJoinOn         = bindings.QueryJoinOn
+	queryLimit          = bindings.QueryLimit
+	queryOffset         = bindings.QueryOffset
+	queryReqTotal       = bindings.QueryReqTotal
+	queryDebugLevel     = bindings.QueryDebugLevel
+	queryAggregation    = bindings.QueryAggregation
+	querySelectFilter   = bindings.QuerySelectFilter
+	QuerySelectFunction = bindings.QuerySelectFunction
+	queryEnd            = bindings.QueryEnd
 )
 
 // Constants for calc total
@@ -48,11 +49,12 @@ const (
 )
 
 const (
-	cInt32Max   = bindings.CInt32Max
-	valueInt    = bindings.ValueInt
-	valueInt64  = bindings.ValueInt64
-	valueDouble = bindings.ValueDouble
-	valueString = bindings.ValueString
+	cInt32Max      = bindings.CInt32Max
+	valueInt       = bindings.ValueInt
+	valueInt64     = bindings.ValueInt64
+	valueDouble    = bindings.ValueDouble
+	valueString    = bindings.ValueString
+	valueComposite = bindings.ValueComposite
 )
 
 const (
@@ -128,6 +130,7 @@ func newQuery(db *Reindexer, namespace string) *Query {
 }
 
 // Where - Add where condition to DB query
+// For composite indexes keys must be []interface{}, with value of each subindex
 func (q *Query) Where(index string, condition int, keys interface{}) *Query {
 	t := reflect.TypeOf(keys)
 	v := reflect.ValueOf(keys)
@@ -153,7 +156,6 @@ func (q *Query) Where(index string, condition int, keys interface{}) *Query {
 }
 
 func (q *Query) putValue(v reflect.Value) error {
-
 	k := v.Kind()
 	if k == reflect.Ptr || k == reflect.Interface {
 		v = v.Elem()
@@ -186,6 +188,12 @@ func (q *Query) putValue(v reflect.Value) error {
 	case reflect.Float32, reflect.Float64:
 		q.ser.PutVarCUInt(valueDouble)
 		q.ser.PutDouble(v.Float())
+	case reflect.Slice, reflect.Array:
+		q.ser.PutVarCUInt(valueComposite)
+		q.ser.PutVarCUInt(v.Len())
+		for i := 0; i < v.Len(); i++ {
+			q.putValue(v.Index(i))
+		}
 	default:
 		panic(fmt.Errorf("rq: Invalid reflection type %s", v.Kind().String()))
 	}
@@ -229,6 +237,11 @@ func (q *Query) WhereString(index string, condition int, keys ...string) *Query 
 		q.ser.PutVarCUInt(valueString).PutVString(v)
 	}
 	return q
+}
+
+// WhereComposite - Add where condition to DB query with interface args for composite indexes
+func (q *Query) WhereComposite(index string, condition int, keys ...interface{}) *Query {
+	return q.Where(index, condition, keys)
 }
 
 // WhereString - Add where condition to DB query with string args
@@ -276,6 +289,8 @@ func (q *Query) Aggregate(index string, aggType int) *Query {
 }
 
 // Sort - Apply sort order to returned from query items
+// If values argument specified, then items equal to values, if found will be placed in the top positions
+// For composite indexes values must be []interface{}, with value of each subindex
 func (q *Query) Sort(sortIndex string, desc bool, values ...interface{}) *Query {
 
 	q.ser.PutVarCUInt(querySortIndex)
@@ -335,13 +350,10 @@ func (q *Query) CachedTotal(totalNames ...string) *Query {
 
 // Limit - Set limit (count) of returned items
 func (q *Query) Limit(limitItems int) *Query {
-	if limitItems != 0 {
-		if limitItems > cInt32Max {
-			limitItems = cInt32Max
-		}
-		// temporary
-		q.ser.PutVarCUInt(queryLimit).PutVarCUInt(limitItems)
+	if limitItems > cInt32Max {
+		limitItems = cInt32Max
 	}
+	q.ser.PutVarCUInt(queryLimit).PutVarCUInt(limitItems)
 	return q
 }
 
@@ -487,6 +499,9 @@ func (q *Query) join(q2 *Query, field string, joinType int) *Query {
 	if q.root != nil {
 		q = q.root
 	}
+	if q2.root != nil {
+		panic(errors.New("query.Join call on already joined query. You shoud create new Query"))
+	}
 	q2.joinType = joinType
 	q2.root = q
 	q.joinQueries = append(q.joinQueries, q2)
@@ -570,5 +585,13 @@ func (q *Query) Select(fields ...string) *Query {
 // When n <= 0 query will fetch all results in one operation
 func (q *Query) FetchCount(n int) *Query {
 	q.fetchCount = n
+	return q
+}
+
+// Select add filter to  fields of result's objects
+func (q *Query) Functions(fields ...string) *Query {
+	for _, field := range fields {
+		q.ser.PutVarCUInt(QuerySelectFunction).PutVString(field)
+	}
 	return q
 }

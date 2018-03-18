@@ -393,7 +393,6 @@ func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
 
 // Get value of items's reindex field by name
 func getValues(item interface{}, fieldIdx [][]int) (ret []reflect.Value) {
-
 	vt := reflect.Indirect(reflect.ValueOf(item))
 
 	for _, idx := range fieldIdx {
@@ -443,19 +442,80 @@ func compareValues(v1 reflect.Value, v2 reflect.Value) int {
 		} else {
 			return -1
 		}
+	case reflect.Array, reflect.Slice:
+		if v1.Len() != v2.Len() {
+			panic("Array sizes are different!")
+		}
+		for i := 0; i < v1.Len(); i++ {
+			res := compareValues(v1.Index(i), v2.Index(i))
+			if res > 0 {
+				return 1
+			}
+			if res < 0 {
+				return -1
+			}
+		}
+		return 0
 	}
 	return -1
 }
 
+func compareComposite(vals []reflect.Value, keyValue interface{}, item interface{}) int {
+
+	if reflect.ValueOf(keyValue).Len() != len(vals) {
+		panic("Amount of subindexes and values to compare are different!")
+	}
+	cmpRes := 0
+	for j := 0; j < reflect.ValueOf(keyValue).Len() && cmpRes == 0; j++ {
+		subKey := reflect.ValueOf(keyValue).Index(j)
+		cmpRes = compareValues(vals[j], reflect.ValueOf(subKey.Interface()))
+	}
+	return cmpRes
+}
+
+func checkCompositeCondition(vals []reflect.Value, cond queryTestEntry, item interface{}) bool {
+	keys := cond.ikeys.([]interface{})
+	result := false
+
+	switch cond.condition {
+	case reindexer.EQ:
+		result = compareComposite(vals, keys[0], item) == 0
+	case reindexer.GT:
+		result = compareComposite(vals, keys[0], item) > 0
+	case reindexer.GE:
+		result = compareComposite(vals, keys[0], item) >= 0
+	case reindexer.LT:
+		result = compareComposite(vals, keys[0], item) < 0
+	case reindexer.LE:
+		result = compareComposite(vals, keys[0], item) <= 0
+	case reindexer.RANGE:
+		result = compareComposite(vals, keys[0], item) >= 0 && compareComposite(vals, keys[1], item) <= 0
+	case reindexer.SET:
+		for i := range keys {
+			result = compareComposite(vals, keys[i], item) == 0
+			if result {
+				break
+			}
+		}
+	}
+
+	return result
+}
+
 func checkCondition(ns *testNamespace, cond queryTestEntry, item interface{}) bool {
 	vals := getValues(item, cond.fieldIdx)
-	found := false
 
 	switch cond.condition {
 	case reindexer.EMPTY:
 		return len(vals) == 0
 	case reindexer.ANY:
 		return len(vals) > 0
+	}
+
+	found := false
+
+	if len(vals) > 1 && len(cond.fieldIdx) > 1 {
+		return checkCompositeCondition(vals, cond, item)
 	}
 
 	for _, v := range vals {
@@ -504,6 +564,7 @@ func verifyConditions(ns *testNamespace, conditions []queryTestEntry, item inter
 			found = found || curFound
 		}
 	}
+	//fmt.Printf("Verification result: %t\n\n", found)
 	return found
 }
 
@@ -512,26 +573,37 @@ func prepareStruct(ns *testNamespace, t reflect.Type, basePath []int, reindexBas
 		reindexBasePath += "."
 	}
 
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
+	indexes := make(map[string]int)
 
-		tags := strings.Split(f.Tag.Get("reindex"), ",")
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		tags := strings.Split(field.Tag.Get("reindex"), ",")
 
 		idxName := tags[0]
-
 		if idxName == "-" {
 			continue
 		}
+
 		reindexPath := reindexBasePath + idxName
 		path := append(basePath, i)
+		indexes[idxName] = i
 
-		tk := f.Type.Kind()
+		tk := field.Type.Kind()
 		if tk == reflect.Struct {
-			prepareStruct(ns, f.Type, path, reindexPath)
+			if len(idxName) > 0 && len(tags) >= 3 && tags[2] == "composite" {
+				subIdxs := strings.Split(idxName, "+")
+				ns.fieldsIdx[reindexPath] = make([][]int, len(subIdxs))
+				for j := 0; j < len(subIdxs); j++ {
+					ns.fieldsIdx[reindexPath][j] = make([]int, 1)
+					ns.fieldsIdx[reindexPath][j][0] = indexes[subIdxs[j]]
+				}
+			} else {
+				prepareStruct(ns, field.Type, path, reindexPath)
+			}
 			continue
 		}
-		if (tk == reflect.Array || tk == reflect.Slice) && f.Type.Elem().Kind() == reflect.Struct {
-			panic(fmt.Errorf("TestQuery does not supported indexed struct arrays (struct=%s, field=%s)\n", t.Name(), f.Name))
+		if (tk == reflect.Array || tk == reflect.Slice) && field.Type.Elem().Kind() == reflect.Struct {
+			panic(fmt.Errorf("TestQuery does not supported indexed struct arrays (struct=%s, field=%s)\n", t.Name(), field.Name))
 		}
 
 		if len(tags) > 2 && tags[2] == "pk" {

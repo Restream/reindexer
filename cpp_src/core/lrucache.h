@@ -27,6 +27,8 @@ public:
 	// Put cached val
 	void Put(const K &k, const V &v);
 
+	bool Empty() const { return items_.empty(); }
+
 protected:
 	void eraseLRU();
 

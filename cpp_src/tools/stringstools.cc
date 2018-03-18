@@ -5,61 +5,39 @@
 #include <string>
 #include <vector>
 
-#include "convertutf/convertutf.h"
 #include "itoa/itoa.h"
 #include "tools/customlocal.h"
 #include "tools/stringstools.h"
+#include "utf8cpp/utf8.h"
 
 using std::min;
 using std::stoi;
 using std::transform;
+using std::distance;
+using std::make_pair;
 
 namespace reindexer {
 
 wstring &utf8_to_utf16(const string &src, wstring &dst) {
-	assert(sizeof(UTF32) == sizeof(wchar_t));
-	const UTF8 *srcStart = reinterpret_cast<const UTF8 *>(src.data());
-	size_t len = src.length();
-	dst.resize(len + 1);
-	UTF32 *tgt = reinterpret_cast<UTF32 *>(&dst[0]);
-	UTF32 *tgtStart = tgt;
-	ConvertUTF8toUTF32(&srcStart, srcStart + len, &tgtStart, tgt + len, lenientConversion);
-	dst.resize(tgtStart - tgt);
+	dst.resize(src.length());
+	auto end = utf8::unchecked::utf8to32(src.begin(), src.end(), dst.begin());
+	dst.resize(std::distance(dst.begin(), end));
 	return dst;
 }
 
 wstring &utf8_to_utf16(const char *src, wstring &dst) {
-	assert(sizeof(UTF32) == sizeof(wchar_t));
-	const UTF8 *srcStart = reinterpret_cast<const UTF8 *>(src);
 	size_t len = strlen(src);
-	dst.resize(len + 1);
-	UTF32 *tgt = reinterpret_cast<UTF32 *>(&dst[0]);
-	UTF32 *tgtStart = tgt;
-	ConvertUTF8toUTF32(&srcStart, srcStart + len, &tgtStart, tgt + len, lenientConversion);
-	dst.resize(tgtStart - tgt);
+	dst.resize(len);
+	auto end = utf8::unchecked::utf8to32(src, src + len, dst.begin());
+	dst.resize(std::distance(dst.begin(), end));
 	return dst;
 }
 
 string &utf16_to_utf8(const wstring &src, string &dst) {
-	assert(sizeof(UTF32) == sizeof(wchar_t));
-	const UTF32 *srcStart = reinterpret_cast<const UTF32 *>(src.data());
-	size_t len = src.length();
-	dst.resize(len * 4 + 1);
-	UTF8 *tgt = reinterpret_cast<UTF8 *>(&dst[0]);
-	UTF8 *tgtStart = tgt;
-	ConvertUTF32toUTF8(&srcStart, srcStart + len, &tgtStart, tgt + len * 4, lenientConversion);
-	dst.resize(tgtStart - tgt);
+	dst.resize(src.length() * 4);
+	auto end = utf8::unchecked::utf32to8(src.begin(), src.end(), dst.begin());
+	dst.resize(std::distance(dst.begin(), end));
 	return dst;
-}
-
-size_t utf16_to_utf8(const wchar_t *src, size_t len, char *dst, size_t dstLen) {
-	assert(sizeof(UTF32) == sizeof(wchar_t));
-	const UTF32 *srcStart = reinterpret_cast<const UTF32 *>(src);
-	UTF8 *tgt = reinterpret_cast<UTF8 *>(dst);
-	UTF8 *tgtStart = tgt;
-	ConvertUTF32toUTF8(&srcStart, srcStart + len, &tgtStart, tgt + dstLen, lenientConversion);
-	*tgtStart = 0;
-	return tgtStart - tgt;
 }
 
 wstring utf8_to_utf16(const string &src) {
@@ -86,27 +64,47 @@ vector<string> &split(const string &str, const string &delimiters, bool trimEmpt
 	return tokens;
 }
 
-void split(const string &utf8Str, wstring &utf16str, string &buf, vector<const char *> &words) {
-	utf8_to_utf16(utf8Str, utf16str);
-	buf.resize(utf8Str.length());
-	words.resize(0);
-	size_t outSz = 0;
-	for (auto it = utf16str.begin(); it != utf16str.end();) {
-		while (it != utf16str.end() && !IsAlpha(*it) && !std::isdigit(*it)) it++;
+// This functions calc how many bytes takes limit symbols in UTF8 forward
+size_t calcUTf8Size(const char *str, size_t size, size_t limit) {
+	const char *ptr;
+	for (ptr = str; limit && ptr < str + size; limit--) utf8::unchecked::next(ptr);
+	return ptr - str;
+}
 
-		auto begIt = it;
-		while (it != utf16str.end() && (IsAlpha(*it) || std::isdigit(*it) || *it == '+' || *it == '-' || *it == '/')) {
-			*it = ToLower(*it);
-			it++;
+// This functions calc how many bytes takes limit symbols in UTF8 backward
+size_t calcUTf8SizeEnd(const char *end, int pos, size_t limit) {
+	const char *ptr;
+	for (ptr = end; limit && ptr >= end - pos; limit--) utf8::unchecked::prior(ptr);
+	return end - ptr;
+}
+
+void splitWithPos(const string &str, string &buf, vector<pair<const char *, int>> &words) {
+	buf.resize(str.length());
+	words.resize(0);
+	auto bufIt = buf.begin();
+
+	for (auto it = str.begin(); it != str.end();) {
+		auto wordStartIt = it;
+		auto ch = utf8::unchecked::next(it);
+
+		while (it != str.end() && !IsAlpha(ch) && !std::isdigit(ch)) {
+			wordStartIt = it;
+			ch = utf8::unchecked::next(it);
 		}
-		size_t sz = it - begIt;
-		if (sz) {
-			sz = utf16_to_utf8(&*begIt, sz, &buf[outSz], buf.size() - outSz);
-			words.push_back(&buf[outSz]);
+
+		auto begIt = bufIt;
+		while (it != str.end() && (IsAlpha(ch) || std::isdigit(ch) || ch == '+' || ch == '-' || ch == '/')) {
+			ch = ToLower(ch);
+			bufIt = utf8::unchecked::append(ch, bufIt);
+			ch = utf8::unchecked::next(it);
 		}
-		outSz += sz + 1;
+		if (begIt != bufIt) {
+			*bufIt++ = 0;
+			words.push_back({&*begIt, std::distance(str.begin(), wordStartIt)});
+		}
 	}
 }
+
 void split(const string &utf8Str, wstring &utf16str, vector<std::wstring> &words) {
 	utf8_to_utf16(utf8Str, utf16str);
 	words.resize(0);
@@ -134,12 +132,15 @@ string lower(string s) {
 
 int collateCompare(const Slice &lhs, const Slice &rhs, int collateMode) {
 	if (collateMode == CollateASCII) {
-		size_t itl = 0;
-		size_t itr = 0;
+		auto itl = lhs.data();
+		auto itr = rhs.data();
 
-		for (; itl < lhs.size() && itr < rhs.size(); itl++, itr++) {
-			if (tolower(lhs.data()[itl]) > tolower(rhs.data()[itr])) return 1;
-			if (tolower(lhs.data()[itl]) < tolower(rhs.data()[itr])) return -1;
+		for (; itl != lhs.data() + lhs.size() && itr != rhs.size() + rhs.data();) {
+			auto chl = ToLower(*itl++);
+			auto chr = ToLower(*itr++);
+
+			if (chl > chr) return 1;
+			if (chl < chr) return -1;
 		}
 
 		if (lhs.size() > rhs.size()) {
@@ -150,30 +151,35 @@ int collateCompare(const Slice &lhs, const Slice &rhs, int collateMode) {
 
 		return 0;
 	} else if (collateMode == CollateUTF8) {
-		wstring lu16str;
-		wstring ru16str;
+		auto itl = lhs.data();
+		auto itr = rhs.data();
 
-		utf8_to_utf16(lhs.data(), lu16str);
-		utf8_to_utf16(rhs.data(), ru16str);
+		for (; itl != lhs.data() + lhs.size() && itr != rhs.size() + rhs.data();) {
+			auto chl = ToLower(utf8::unchecked::next(itl));
+			auto chr = ToLower(utf8::unchecked::next(itr));
 
-		ToLower(lu16str);
-		ToLower(ru16str);
+			if (chl > chr) return 1;
+			if (chl < chr) return -1;
+		}
 
-		return lu16str.compare(ru16str);
+		if (lhs.size() > rhs.size()) {
+			return 1;
+		} else if (lhs.size() < rhs.size()) {
+			return -1;
+		}
+		return 0;
 	} else if (collateMode == CollateNumeric) {
-		size_t posl = string::npos;
-		size_t posr = string::npos;
+		char *posl = nullptr;
+		char *posr = nullptr;
 
-		int numl = stoi(lhs.data(), &posl);
-		int numr = stoi(rhs.data(), &posr);
+		int numl = strtol(lhs.data(), &posl, 10);
+		int numr = strtol(rhs.data(), &posr, 10);
 
 		if (numl == numr) {
-			auto minlen = min(lhs.size() - posl, rhs.size() - posr);
-			auto res = strncmp(lhs.data() + posl, rhs.data() + posr, minlen);
+			auto minlen = min(lhs.size() - (posl - lhs.data()), rhs.size() - (posr - rhs.data()));
+			auto res = strncmp(posl, posr, minlen);
 
-			if (res != 0) {
-				return res;
-			}
+			if (res != 0) return res;
 
 			return lhs.size() > rhs.size() ? 1 : (lhs.size() > rhs.size() ? -1 : 0);
 		}

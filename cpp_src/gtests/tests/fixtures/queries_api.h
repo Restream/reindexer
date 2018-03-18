@@ -1,16 +1,15 @@
 #pragma once
 
+#include <cmath>
 #include <limits>
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
-#include <cmath>
 #include "reindexer_api.h"
 using std::unordered_map;
 using std::unordered_set;
 using std::map;
 using std::numeric_limits;
-
 
 class QueriesApi : public ReindexerApi {
 public:
@@ -47,7 +46,7 @@ public:
 													  IndexDeclaration{name, "tree", "string", indexesOptions[name]},
 													  IndexDeclaration{countries, "tree", "string", indexesOptions[countries]},
 													  IndexDeclaration{age, "hash", "int", indexesOptions[age]},
-													  IndexDeclaration{description, "fulltext", "string", indexesOptions[description]},
+													  IndexDeclaration{description, "fuzzytext", "string", indexesOptions[description]},
 													  IndexDeclaration{rate, "tree", "double", indexesOptions[rate]},
 													  IndexDeclaration{isDeleted, "-", "bool", indexesOptions[isDeleted]},
 													  IndexDeclaration{actor, "tree", "string", indexesOptions[actor]},

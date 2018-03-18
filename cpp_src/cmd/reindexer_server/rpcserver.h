@@ -5,6 +5,7 @@
 #include "core/keyvalue/keyref.h"
 #include "core/reindexer.h"
 #include "dbmanager.h"
+#include "loggerwrapper.h"
 #include "net/cproto/dispatcher.h"
 #include "net/listener.h"
 
@@ -23,7 +24,8 @@ struct RPCClientData : public cproto::ClientData {
 
 class RPCServer {
 public:
-	RPCServer(DBManager &dbMgr, bool enableLog);
+	RPCServer(DBManager &dbMgr);
+	RPCServer(DBManager &dbMgr, LoggerWrapper logger, bool allocDebug = false);
 	~RPCServer();
 
 	bool Start(const string &addr, ev::dynamic_loop &loop);
@@ -70,9 +72,11 @@ protected:
 	shared_ptr<Reindexer> getDB(cproto::Context &ctx, UserRole role);
 
 	DBManager &dbMgr_;
-	bool enableLog_;
 	cproto::Dispatcher dispatcher;
 	std::unique_ptr<Listener> listener_;
+
+	LoggerWrapper logger_;
+	bool allocDebug_;
 };
 
 }  // namespace reindexer_server

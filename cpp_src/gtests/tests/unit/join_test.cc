@@ -81,17 +81,21 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 			Item item(joinQueryRes.GetItem(i));
 			KeyRef authorIdKeyRef1 = item[authorid];
 			const reindexer::ItemRef& rowid = joinQueryRes[i];
-			vector<QueryResults>& queryResults = joinQueryRes.joined_[rowid.id];
-			for (const QueryResults& queryRes : queryResults) {
-				Item item2(queryRes.GetItem(0));
-				KeyRef authorIdKeyRef2 = item2[authorid_fk];
-				EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
+			auto it = joinQueryRes.joined_->find(rowid.id);
+			if (it != joinQueryRes.joined_->end()) {
+				reindexer::QRVector& queryResults = it->second;
+				for (const QueryResults& queryRes : queryResults) {
+					Item item2(queryRes.GetItem(0));
+					KeyRef authorIdKeyRef2 = item2[authorid_fk];
+					EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
+				}
 			}
+
 			presentedAuthorIds.insert(static_cast<int>(authorIdKeyRef1));
 			rowidsIndexes.insert({rowid.id, i});
 		}
 
-		for (const std::pair<const IdType, vector<QueryResults>>& itempair : joinQueryRes.joined_) {
+		for (const std::pair<const IdType, reindexer::QRVector>& itempair : *joinQueryRes.joined_) {
 			if (itempair.second.empty()) continue;
 			const QueryResults& joinedQueryRes(itempair.second[0]);
 			for (size_t i = 0; i < joinedQueryRes.size(); ++i) {
@@ -138,23 +142,27 @@ TEST_F(JoinSelectsApi, OrInnerJoinTest) {
 		for (size_t i = 0; i < queryRes.size(); ++i) {
 			Item item(queryRes.GetItem(i));
 			reindexer::ItemRef& itemRef(queryRes[i]);
-			vector<QueryResults>& joinedResult = queryRes.joined_[itemRef.id];
-			QueryResults& authorNsJoinResults = joinedResult[authorsNsJoinIndex];
-			QueryResults& genresNsJoinResults = joinedResult[genresNsJoinIndex];
 
-			KeyRef authorIdKeyRef1 = item[authorid_fk];
-			for (size_t j = 0; j < authorNsJoinResults.size(); ++j) {
-				Item authorsItem(authorNsJoinResults.GetItem(j));
-				KeyRef authorIdKeyRef2 = authorsItem[authorid];
-				EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
-			}
+			auto it = queryRes.joined_->find(itemRef.id);
+			if (it != queryRes.joined_->end()) {
+				reindexer::QRVector& joinedResult = queryRes.joined_->at(itemRef.id);
+				QueryResults& authorNsJoinResults = joinedResult[authorsNsJoinIndex];
+				QueryResults& genresNsJoinResults = joinedResult[genresNsJoinIndex];
 
-			KeyRef genresIdKeyRef1 = item[genreId_fk];
-			for (size_t k = 0; k < genresNsJoinResults.size(); ++k) {
-				KeyRefs genreIdKeyRef;
-				Item genresItem(genresNsJoinResults.GetItem(k));
-				KeyRef genresIdKeyRef2 = genresItem[genreid];
-				EXPECT_TRUE(genresIdKeyRef1 == genresIdKeyRef2);
+				KeyRef authorIdKeyRef1 = item[authorid_fk];
+				for (size_t j = 0; j < authorNsJoinResults.size(); ++j) {
+					Item authorsItem(authorNsJoinResults.GetItem(j));
+					KeyRef authorIdKeyRef2 = authorsItem[authorid];
+					EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
+				}
+
+				KeyRef genresIdKeyRef1 = item[genreId_fk];
+				for (size_t k = 0; k < genresNsJoinResults.size(); ++k) {
+					KeyRefs genreIdKeyRef;
+					Item genresItem(genresNsJoinResults.GetItem(k));
+					KeyRef genresIdKeyRef2 = genresItem[genreid];
+					EXPECT_TRUE(genresIdKeyRef1 == genresIdKeyRef2);
+				}
 			}
 		}
 	}

@@ -1,15 +1,10 @@
-#include <unordered_map>
 
-#include "core/query/dslparsetools.h"
 #include "core/query/query.h"
+#include "core/query/dslparsetools.h"
 #include "core/type_consts.h"
-#include "dslparsetools.h"
-#include "estl/flat_str_map.h"
 #include "estl/tokenizer.h"
 #include "gason/gason.h"
 #include "tools/errors.h"
-#include "tools/json2kv.h"
-#include "tools/logger.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -58,7 +53,7 @@ void Query::deserialize(Serializer &ser) {
 				int count = ser.GetVarUint();
 				qe.values.reserve(count);
 				while (count--) qe.values.push_back(ser.GetValue());
-				entries.push_back(qe);
+				entries.push_back(std::move(qe));
 				break;
 			}
 			case QueryAggregation:
@@ -68,7 +63,7 @@ void Query::deserialize(Serializer &ser) {
 				qe.index = ser.GetVString().ToString();
 				qe.distinct = true;
 				qe.condition = CondAny;
-				entries.push_back(qe);
+				entries.push_back(std::move(qe));
 				break;
 			case QuerySortIndex: {
 				sortBy = ser.GetVString().ToString();
@@ -99,6 +94,9 @@ void Query::deserialize(Serializer &ser) {
 				break;
 			case QuerySelectFilter:
 				selectFilter_.push_back(ser.GetVString().ToString());
+				break;
+			case QuerySelectFunction:
+				selectFunctions_.push_back(ser.GetVString().ToString());
 				break;
 			case QueryEnd:
 				return;

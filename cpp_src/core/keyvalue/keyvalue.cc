@@ -1,5 +1,6 @@
 #include "keyvalue.h"
 #include <cstring>
+#include "core/payload/payloadiface.h"
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -13,6 +14,7 @@ KeyValue::KeyValue(const KeyRef &other) : KeyRef(other) {
 KeyValue::KeyValue(const KeyValue &other) : KeyRef(other) {
 	h_value_composite = other.h_value_composite;
 	h_value_string = other.h_value_string;
+	h_composite_values = other.h_composite_values;
 	relink();
 }
 
@@ -21,6 +23,7 @@ KeyValue &KeyValue::operator=(const KeyValue &other) {
 		KeyRef::operator=(other);
 		h_value_composite = other.h_value_composite;
 		h_value_string = other.h_value_string;
+		h_composite_values = other.h_composite_values;
 		relink();
 	}
 	return *this;
@@ -48,6 +51,28 @@ int KeyValue::convert(KeyValueType _type) {
 	}
 	type = _type;
 	return 0;
+}
+
+void KeyValue::convertToComposite(const PayloadType &payloadType, const FieldsSet &fields) {
+	assert(type == KeyValueComposite);
+	if (!h_value_composite.IsFree()) {
+		return;
+	}
+
+	if (h_composite_values.size() != fields.size()) {
+		throw Error(errLogic, "Invalid count of arguments for composite index, expected %d, got %d", int(fields.size()),
+					int(h_composite_values.size()));
+	}
+	h_value_composite.AllocOrClone(payloadType.TotalSize());
+
+	Payload pv(payloadType, h_value_composite);
+
+	auto field = fields.begin();
+	for (const KeyValue &compositeValue : h_composite_values) {
+		pv.Set(*field, {compositeValue});
+		field++;
+	}
+	h_composite_values.clear();
 }
 
 }  // namespace reindexer

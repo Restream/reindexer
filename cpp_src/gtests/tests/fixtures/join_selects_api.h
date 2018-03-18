@@ -116,7 +116,12 @@ protected:
 			FillQueryResultFromItem(item, resultRow);
 
 			const reindexer::ItemRef& rowid = reindexerRes[i];
-			vector<QueryResults>& joinQueryRes(reindexerRes.joined_[rowid.id]);
+			auto it = reindexerRes.joined_->find(rowid.id);
+			if (it == reindexerRes.joined_->end()) {
+				continue;
+			}
+
+			reindexer::QRVector& joinQueryRes(it->second);
 			const QueryResults& joinResult(joinQueryRes[0]);
 			for (size_t i = 0; i < joinResult.size(); ++i) {
 				Item joinItem(joinResult.GetItem(i));

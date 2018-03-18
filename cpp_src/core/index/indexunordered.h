@@ -49,16 +49,13 @@ public:
 	KeyRef Upsert(const KeyRef &key, IdType id) override;
 	void Delete(const KeyRef &key, IdType id) override;
 	void DumpKeys() override;
-	SelectKeyResults SelectKey(const KeyValues &keys, CondType condition, SortType stype, Index::ResultType res_type) override;
+	SelectKeyResults SelectKey(const KeyValues &keys, CondType condition, SortType stype, Index::ResultType res_type,
+							   BaseFunctionCtx::Ptr ctx) override;
 	void Commit(const CommitContext &ctx) override;
 	void UpdateSortedIds(const UpdateSortedContext &) override;
 	Index *Clone() override;
-	size_t Size() const override { return idx_map.size(); }
-
-	IdSetRef Find(const KeyRef &key) override {
-		auto res = this->find(key);
-		return (res != idx_map.end()) ? res->second.Sorted(0) : IdSetRef();
-	}
+	size_t Size() const override final { return idx_map.size(); }
+	IdSetRef Find(const KeyRef &key) override final;
 
 protected:
 	void tryIdsetCache(const KeyValues &keys, CondType condition, SortType sortId, std::function<void(SelectKeyResult &)> selector,
@@ -77,5 +74,8 @@ protected:
 	// Tracker of updates
 	UpdateTracker<T> tracker_;
 };
+
+Index *IndexUnordered_New(IndexType type, const string &_name, const IndexOpts &opts, const PayloadType payloadType,
+						  const FieldsSet &fields_);
 
 }  // namespace reindexer

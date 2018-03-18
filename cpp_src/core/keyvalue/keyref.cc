@@ -2,6 +2,7 @@
 #include <functional>
 
 #include "tools/stringstools.h"
+#include "utf8cpp/utf8.h"
 
 namespace reindexer {
 
@@ -100,7 +101,7 @@ double KeyRef::As<double>() const {
 	}
 }
 
-int KeyRef::Compare(const KeyRef &other, int collateMode) const {
+int KeyRef::Compare(const KeyRef &other, CollateMode collateMode) const {
 	switch (Type()) {
 		case KeyValueInt:
 			if (value_int == other.value_int)
@@ -149,6 +150,14 @@ size_t KeyRef::Hash() const {
 			return hash<p_string>()(p_string(value_string));
 		default:
 			abort();
+	}
+}
+
+void KeyRef::EnsureUTF8() const {
+	if (type == KeyValueString) {
+		if (!utf8::is_valid(value_string.data(), value_string.data() + value_string.size())) {
+			throw Error(errParams, "Invalid UTF8 string passed to index with CollateUTF8 mode");
+		}
 	}
 }
 

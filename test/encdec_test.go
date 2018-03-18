@@ -36,7 +36,7 @@ type TestItemEncDec struct {
 	FPackages64   []float64       `reindex:"fpackages64,tree"`
 	Name          string          `reindex:"name,tree"`
 	Countries     []string        `reindex:"countries,tree"`
-	Description   string          `reindex:"description,fulltext"`
+	Description   string          `reindex:"description,fuzzytext"`
 	Rate          float64         `reindex:"rate,tree"`
 	IsDeleted     bool            `reindex:"isdeleted,-"`
 	PNested       *TestNest       `reindex:"-"`

@@ -111,7 +111,7 @@ public:
 	template <class Upn>
 	trivial_reverse_iterator& operator=(Upn ptr) {
 		static_assert(std::is_pointer<Upn>::value, "attempting assign a non-trivial pointer");
-		if (current_ != ptr) current_ = ptr;
+		/*if (current_ != ptr)*/ current_ = ptr;
 		return *this;
 	}
 
@@ -141,6 +141,10 @@ public:
 	typedef std::ptrdiff_t difference_type;
 	h_vector() noexcept : e_{0, 0}, size_(0), is_hdata_(1) {}
 	h_vector(std::initializer_list<T> l) : e_{0, 0}, size_(0), is_hdata_(1) { insert(begin(), l.begin(), l.end()); }
+	template <typename InputIt>
+	h_vector(InputIt first, InputIt last) : e_{0, 0}, size_(0), is_hdata_(1) {
+		insert(begin(), first, last);
+	}
 	h_vector(const h_vector& other) : e_{0, 0}, size_(0), is_hdata_(1) {
 		reserve(other.size());
 		for (size_type i = 0; i < other.size(); i++) new (ptr() + i) T(other.ptr()[i]);
@@ -323,6 +327,11 @@ public:
 		std::move_backward(begin() + i, end() - cnt, end());
 		std::copy(first, last, begin() + i);
 		return begin() + i;
+	}
+	template <class InputIt>
+	void assign(InputIt first, InputIt last) {
+		clear();
+		insert(begin(), first, last);
 	}
 	iterator erase(const_iterator first, const_iterator last) {
 		size_type i = first - ptr();

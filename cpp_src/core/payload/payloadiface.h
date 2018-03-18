@@ -1,6 +1,7 @@
 #pragma once
 
 #include <type_traits>
+#include "core/keyvalue/keyvalue.h"
 #include "fieldsset.h"
 #include "payloadfieldvalue.h"
 #include "payloadtype.h"
@@ -19,6 +20,8 @@ public:
 	void Reset() { memset(v_->Ptr(), 0, t_.TotalSize()); }
 	// Get element(s) by field index
 	KeyRefs &Get(int field, KeyRefs &) const;
+	// Get element(s) by field index
+	KeyValues &Get(int field, KeyValues &) const;
 	// Set element or array by field index
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
 	void Set(int field, const KeyRefs &keys, bool append = false);
@@ -33,6 +36,8 @@ public:
 
 	// Get element(s) by field index
 	KeyRefs &Get(const string &field, KeyRefs &) const;
+	// Get element(s) by field index
+	KeyValues &Get(const string &field, KeyValues &) const;
 
 	// Get fields count
 	int NumFields() const { return t_.NumFields(); }
@@ -55,8 +60,8 @@ public:
 	// Compare is EQ
 	bool IsEQ(const T &other) const;
 
-	// Compare is PK less
-	bool Less(const T &other, const FieldsSet &fields) const;
+	// Compare 2 objects by field mask
+	int Compare(const T &other, const FieldsSet &fields, CollateMode collateMode = CollateNone) const;
 
 	// Get PayloadFieldValue by field index
 	PayloadFieldValue Field(int field) const;

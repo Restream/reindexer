@@ -33,8 +33,9 @@ static const fast_hash_map<string, Filter> filter_map = {
 // additional for 'filter::cond' field
 
 static const fast_hash_map<string, CondType> cond_map = {
-	{"any", CondAny}, {"eq", CondEq},		{"lt", CondLt},   {"le", CondLe},		  {"gt", CondGt},
-	{"ge", CondGe},   {"range", CondRange}, {"set", CondSet}, {"allset", CondAllSet}, {"empty", CondEmpty}};
+	{"any", CondAny},	 {"eq", CondEq},   {"lt", CondLt},			{"le", CondLe},		  {"gt", CondGt},	{"ge", CondGe},
+	{"range", CondRange}, {"set", CondSet}, {"allset", CondAllSet}, {"empty", CondEmpty}, {"match", CondEq},
+};
 
 static const fast_hash_map<string, OpType> op_map = {{"or", OpOr}, {"and", OpAnd}, {"not", OpNot}};
 

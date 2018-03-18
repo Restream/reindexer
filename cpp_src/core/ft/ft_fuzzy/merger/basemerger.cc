@@ -94,7 +94,7 @@ SearchResult BaseMerger::Merge(MergeCtx& ctx) {
 			pos++;
 		}
 	}
-	std::sort(data_set.data_->begin(), data_set.data_->end(), [this](const MergedData& lhs, const MergedData& rhs) {
+	std::sort(data_set.data_->begin(), data_set.data_->end(), [](const MergedData& lhs, const MergedData& rhs) {
 		if (lhs.proc_ == rhs.proc_) {
 			return lhs.id_ < rhs.id_;
 		}

@@ -17,12 +17,13 @@ type rawResultItemParams struct {
 }
 
 type rawResultQueryParams struct {
-	totalcount  int
-	qcount      int
-	count       int
-	haveProcent bool
-	nsCount     int
-	aggResults  []float64
+	totalcount       int
+	qcount           int
+	count            int
+	haveProcent      bool
+	nonCacheableData bool
+	nsCount          int
+	aggResults       []float64
 }
 
 type resultSerializer struct {
@@ -65,6 +66,7 @@ func (s *resultSerializer) readRawQueryParams(updatePayloadType ...updatePayload
 	v.qcount = int(s.GetVarUInt())
 	v.count = int(s.GetVarUInt())
 	v.haveProcent = (s.GetVarUInt() != 0)
+	v.nonCacheableData = (s.GetVarUInt() != 0)
 	v.nsCount = int(s.GetVarUInt())
 
 	ptCount := int(s.GetVarUInt())

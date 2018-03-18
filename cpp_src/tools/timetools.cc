@@ -36,7 +36,7 @@ int64_t getTimeNow(string mode = "sec") {
 		return static_cast<int64_t>(cnt);
 	}
 
-	throw Error(errParams, "Unknown parameter `%s` in getTimeNow function.");
+	throw Error(errParams, "Unknown parameter in getTimeNow function.");
 }
 
 }  // namespace reindexer

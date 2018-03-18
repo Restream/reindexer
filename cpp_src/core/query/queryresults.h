@@ -2,11 +2,14 @@
 
 #include <unordered_map>
 #include "core/item.h"
+#include "core/itemimpl.h"
 #include "estl/h_vector.h"
+
 namespace reindexer {
 
 using std::string;
 using std::unordered_map;
+using std::unique_ptr;
 
 static const int kDefaultQueryResultsSize = 32;
 struct ItemRef {
@@ -26,6 +29,7 @@ class TagsMatcher;
 class PayloadType;
 class JsonPrintFilter;
 class WrSerializer;
+class QRVector;
 
 /// QueryResults is the interface for iterating documents, returned by Query from Reindexer.<br>
 /// *Lifetime*: QueryResults is uses Copy-On-Write semantics, so it have independent lifetime and state - e.g., aquired from Reindexer
@@ -41,6 +45,7 @@ public:
 	using ItemRefVector::empty;
 	using ItemRefVector::at;
 	using ItemRefVector::difference_type;
+	using ItemRefVector::reserve;
 	using ItemRefVector::operator[];
 
 	QueryResults(std::initializer_list<ItemRef> l);
@@ -51,7 +56,6 @@ public:
 	~QueryResults();
 	QueryResults &operator=(const QueryResults &) = delete;
 	QueryResults &operator=(QueryResults &&obj) noexcept;
-
 	void Add(const ItemRef &i);
 	void AddItem(Item &item);
 	void Dump() const;
@@ -62,10 +66,11 @@ public:
 	Item GetItem(int idx) const;
 
 	// joinded fields 0 - 1st joined ns, 1 - second joined
-	unordered_map<IdType, vector<QueryResults>> joined_;  // joinded items
+	unique_ptr<unordered_map<IdType, QRVector>> joined_;  // joinded items
 	h_vector<double> aggregationResults;
 	int totalCount = 0;
 	bool haveProcent = false;
+	bool nonCacheableData = false;
 
 	struct Context;
 	// precalc context size
@@ -79,12 +84,20 @@ public:
 	TagsMatcher &getTagsMatcher(int nsid);
 	PayloadType &getPayloadType(int nsid);
 	int getMergedNSCount() const;
+	void lockResults();
 
 protected:
 	class JsonEncoderDatasourceWithJoins;
 
 private:
+	void unlockResults();
 	void encodeJSON(int idx, WrSerializer &ser) const;
+	bool lockedResults_ = false;
+};
+
+class QRVector : public h_vector<QueryResults, 2> {
+public:
+	using h_vector<QueryResults, 2>::h_vector;
 };
 
 }  // namespace reindexer

@@ -3,7 +3,7 @@
 #include <string.h>
 #include <locale>
 #include "core/reindexer.h"
-#include "core/sqlfunc/sqlfunc.h"
+#include "core/selectfunc/selectfuncparser.h"
 #include "debug/allocdebug.h"
 #include "resultserializer.h"
 #include "tools/logger.h"

@@ -29,9 +29,32 @@ KeyRefs &PayloadIface<T>::Get(int field, KeyRefs &keys) const {
 		keys.push_back(Field(field).Get());
 	return keys;
 }
+
+template <typename T>
+KeyValues &PayloadIface<T>::Get(int field, KeyValues &keys) const {
+	keys.resize(0);
+	if (t_.Field(field).IsArray()) {
+		auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
+		keys.reserve(arr->len);
+
+		for (int i = 0; i < arr->len; i++) {
+			PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
+			keys.push_back(pv.Get());
+		}
+	} else
+		keys.push_back(Field(field).Get());
+	return keys;
+}
+
 // Get element(s) by field index
 template <typename T>
 KeyRefs &PayloadIface<T>::Get(const string &field, KeyRefs &kvs) const {
+	return Get(t_.FieldByName(field), kvs);
+}
+
+// Get element(s) by field index
+template <typename T>
+KeyValues &PayloadIface<T>::Get(const string &field, KeyValues &kvs) const {
 	return Get(t_.FieldByName(field), kvs);
 }
 
@@ -192,14 +215,14 @@ bool PayloadIface<T>::IsEQ(const T &other) const {
 }
 
 template <typename T>
-bool PayloadIface<T>::Less(const T &other, const FieldsSet &fields) const {
+int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, CollateMode collateMode) const {
 	PayloadIface<const T> o(t_, other);
 	for (auto field : fields) {
-		int res = Field(field).Get().Compare(o.Field(field).Get());
-		if (res < 0) return true;
-		if (res > 0) return false;
+		int res = Field(field).Get().Compare(o.Field(field).Get(), collateMode);
+		if (res > 0) return 1;
+		if (res < 0) return -1;
 	}
-	return false;
+	return 0;
 }
 
 template <typename T>

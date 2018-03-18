@@ -15,6 +15,7 @@ public:
 	using base_fields_set::end;
 	using base_fields_set::iterator;
 	using base_fields_set::size;
+	using base_fields_set::empty;
 	using base_fields_set::operator[];
 	FieldsSet() = default;
 	FieldsSet(std::initializer_list<int> l) : mask_(0) {

@@ -16,7 +16,7 @@ using std::unordered_map;
 
 /// Possible user roles
 enum UserRole {
-	kUnauthorized,	/// User is not authorized
+	kUnauthorized,   /// User is not authorized
 	kRoleNone,		 /// User is authenticaTed, but has no any righs
 	kRoleDataRead,   /// User can read data from database
 	kRoleDataWrite,  /// User can write data to database

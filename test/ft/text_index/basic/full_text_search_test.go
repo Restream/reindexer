@@ -1,26 +1,32 @@
 package basic
 
 import (
+	"flag"
 	"fmt"
+	"strconv"
 
 	"sort"
 
 	"github.com/restream/reindexer"
 	_ "github.com/restream/reindexer/bindings/builtin"
+	_ "github.com/restream/reindexer/bindings/cproto"
 	. "github.com/restream/reindexer/test/ft/specs"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
+var dsn = flag.String("dsn", "builtin://", "reindex db dsn")
+
 var _ = Describe("", func() {
-	for _, testC := range ParseBasicTestCases() {
+	flag.Parse()
+
+	for i, testC := range ParseBasicTestCases() {
 		// Need to make a local copy to use it in the closure below
 		testCase := testC
 
-		namespace := testCase.Description
+		namespace := "ft_" + strconv.Itoa(i)
 		reindexDB := createReindexDbInstance(namespace)
 		fillReindexWithData(reindexDB, namespace, testCase.AllDocuments)
-
 		Context("Running test case: "+testCase.Description, func() {
 			for _, validQ := range testCase.ValidQueries {
 				// Need to make a local copy to use it in the closure below
@@ -71,11 +77,11 @@ var _ = Describe("", func() {
 
 type TextItem struct {
 	ID        int    `reindex:"id,,pk"`
-	TextField string `reindex:"text_field,fulltext"`
+	TextField string `reindex:"text_field,fuzzytext"`
 }
 
 func createReindexDbInstance(namespace string) *reindexer.Reindexer {
-	reindexDB := reindexer.NewReindex("builtin")
+	reindexDB := reindexer.NewReindex(*dsn)
 	err := reindexDB.OpenNamespace(namespace, reindexer.DefaultNamespaceOptions(), TextItem{})
 	if err != nil {
 		panic(fmt.Errorf("Couldn't create namespace: "+namespace, err))

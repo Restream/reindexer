@@ -119,7 +119,7 @@ void DumpCommand(args::Subparser& subparser) {
 		}
 
 		reindexer::WrSerializer wrser;
-		nsDef.Print(wrser);
+		nsDef.GetJSON(wrser);
 		file << "NAMESPACE " << nsDef.name << " ";
 		file.write(reinterpret_cast<char*>(wrser.Buf()), wrser.Len());
 		file << "\n";
@@ -214,7 +214,7 @@ void RestoreCommand(args::Subparser& subparser) {
 				parser.NextToken();
 
 				reindexer::NamespaceDef def("");
-				err = def.Parse(const_cast<char*>(parser.CurPtr()));
+				err = def.FromJSON(const_cast<char*>(parser.CurPtr()));
 				if (err) {
 					std::cout << "ERROR: namespace structure is not valid [SKIP]" << std::endl;
 					continue;

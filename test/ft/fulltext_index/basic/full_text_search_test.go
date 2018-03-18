@@ -59,7 +59,7 @@ var _ = Describe("", func() {
 
 type TextItem struct {
 	ID        int    `reindex:"id,,pk"`
-	TextField string `reindex:"text_field,fulltext"`
+	TextField string `reindex:"text_field,fuzzytext"`
 }
 
 func createReindexDbInstance(namespace string) *reindexer.Reindexer {

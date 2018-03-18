@@ -22,6 +22,7 @@ void ResultSerializer::putQueryParams(const QueryResults* results) {
 	PutVarUint(opts_.fetchLimit);
 
 	PutVarUint(results->haveProcent);
+	PutVarUint(results->nonCacheableData);
 
 	// Count of namespaces
 	PutVarUint(results->ctxs.size());
@@ -123,9 +124,13 @@ bool ResultSerializer::PutResults(const QueryResults* result) {
 		// Put Item ID and version
 		putItemParams(result, i, true);
 
+		if (!result->joined_) {
+			PutVarUint(0);
+			continue;
+		}
 		auto& it = result->at(i + opts_.fetchOffset);
-		auto jres = result->joined_.find(it.id);
-		if (jres == result->joined_.end()) {
+		auto jres = result->joined_->find(it.id);
+		if (jres == result->joined_->end()) {
 			PutVarUint(0);
 			continue;
 		}

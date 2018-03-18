@@ -24,13 +24,28 @@ if (WITH_ASAN)
   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
   set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
   add_definitions(-DREINDEX_WITH_ASAN)
-  elseif (WITH_TSAN)
+elseif (WITH_TSAN)
   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=thread")
   set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=thread")
   add_definitions(-DREINDEX_WITH_TSAN)
 else ()
   find_package(Gperftools)
 endif ()
+
+if (WITH_COVERAGE)
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-arcs -ftest-coverage")
+  set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fprofile-arcs -ftest-coverage")
+endif ()
+
+
+add_custom_target(collect_coverage
+  WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+  COMMAND lcov --directory . --capture -o coverage.info
+  COMMAND lcov --remove coverage.info '/usr/*' '/Library/*' '${PROJECT_SOURCE_DIR}/vendor/*' -o coverage_filtered.info
+  COMMAND genhtml coverage_filtered.info -o coverage_output
+  COMMENT "Coollecting Reindexer coverage"
+)
+
 
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 find_package(Threads REQUIRED ON)

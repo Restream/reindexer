@@ -130,7 +130,7 @@ public:
 	};
 
 	const typename K::value_type *word_at(int idx) const { return &text_[words_[idx]]; }
-	int word_len_at(int idx) const { return words_len_[idx]; }
+	int16_t word_len_at(int idx) const { return words_len_[idx]; }
 
 	void build() {
 		if (built_) return;

@@ -11,21 +11,22 @@ import (
 const testNs string = "test_items_force_sort_order"
 
 type TestForceSortOrderItem struct {
-	ID    int    `reindex:"id,,pk"`
-	Year  int    `reindex:"year,tree"`
-	Name  string `reindex:"name"`
-	Phone string `reindex:"phone"`
+	ID      int      `reindex:"id,,pk"`
+	Year    int      `reindex:"year,tree"`
+	Name    string   `reindex:"name"`
+	Phone   string   `reindex:"phone"`
+	IdPhone struct{} `reindex:"id+phone,,composite"`
 }
 
 var forceSortOrderData = []*TestForceSortOrderItem{
-	{1, 2007, "item1", "111111"},
-	{2, 2000, "item2", "222222"},
-	{7, 2003, "item7", "333333"},
-	{3, 2001, "item3", "444444"},
-	{6, 2006, "item6", "111111"},
-	{5, 2005, "item5", "222222"},
-	{8, 2004, "item8", "333333"},
-	{4, 2002, "item4", "444444"},
+	{ID: 1, Year: 2007, Name: "item1", Phone: "111111"},
+	{ID: 2, Year: 2000, Name: "item2", Phone: "222222"},
+	{ID: 7, Year: 2003, Name: "item7", Phone: "333333"},
+	{ID: 3, Year: 2001, Name: "item3", Phone: "444444"},
+	{ID: 6, Year: 2006, Name: "item6", Phone: "111111"},
+	{ID: 5, Year: 2005, Name: "item5", Phone: "222222"},
+	{ID: 8, Year: 2004, Name: "item8", Phone: "333333"},
+	{ID: 4, Year: 2002, Name: "item4", Phone: "444444"},
 }
 
 func init() {
@@ -96,8 +97,8 @@ func execAndVerifyForceSortOrderQuery(query *queryTest) {
 			// log.Println(" --- ", items[i].(*TestForceSortOrderItem), " == ", checkItems[i].(*TestForceSortOrderItem))
 			v1 := getValues(items[i], sortIdx)
 			v2 := getValues(checkItems[i], sortIdx)
-			if len(v1) != 1 || len(v2) != 1 {
-				log.Fatalf("Found len(values) != 1 on sort index %s in item %+v", query.sortIndex, items[i])
+			if len(v1) != len(v2) {
+				log.Fatalf("Found len(values) != len(sort) on sort index %s in item %+v", query.sortIndex, items[i])
 			}
 
 			if compareValues(v1[0], v2[0]) != 0 {
@@ -131,6 +132,13 @@ func CheckTestItemsForceSorted() {
 	execAndVerifyForceSortOrderQuery(newTestQuery(DB, testNs).Sort("id", false, 11, 3, 16, 2, 15, 1))
 	execAndVerifyForceSortOrderQuery(newTestQuery(DB, testNs).Sort("id", false, 18, 17, 16, 15))
 	execAndVerifyForceSortOrderQuery(newTestQuery(DB, testNs).Where("phone", reindexer.SET, []string{"111111", "222222"}).Sort("id", true, 1, 6, 2, 5).Offset(1).Limit(3))
+
+	execAndVerifyForceSortOrderQuery(newTestQuery(DB, testNs).Sort("id+phone", false,
+		[]interface{}{7, "333333"},
+		[]interface{}{4, "444444"},
+		[]interface{}{5, "222222"},
+	))
+
 }
 
 func TestForceSortOrder(b *testing.T) {

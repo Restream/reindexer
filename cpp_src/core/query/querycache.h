@@ -1,8 +1,7 @@
 #pragma once
 
-#include <vector>
-
 #include "core/lrucache.h"
+#include "estl/h_vector.h"
 #include "query.h"
 #include "tools/serializer.h"
 #include "vendor/murmurhash/MurmurHash3.h"
@@ -31,7 +30,7 @@ struct QueryCacheKey {
 	}
 
 	QueryCacheKey(WrSerializer& ser) : buf(ser.Buf(), ser.Buf() + ser.Len()) {}
-	vector<uint8_t> buf;
+	h_vector<uint8_t, 256> buf;
 };
 
 struct EqQueryCacheKey {
@@ -48,8 +47,6 @@ struct HashQueryCacheKey {
 	}
 };
 
-struct QueryCache : LRUCache<QueryCacheKey, QueryCacheVal, HashQueryCacheKey, EqQueryCacheKey> {
-	bool Empty() const { return items_.empty(); }
-};
+struct QueryCache : LRUCache<QueryCacheKey, QueryCacheVal, HashQueryCacheKey, EqQueryCacheKey> {};
 
 }  // namespace reindexer

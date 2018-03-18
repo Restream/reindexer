@@ -4,7 +4,7 @@
 #include <string.h>
 #include "core/ft/stopwords/stop.h"
 #include "tools/errors.h"
-
+#include "tools/jsontools.h"
 namespace reindexer {
 
 void FtFuzzyConfig::parse(char *json) {

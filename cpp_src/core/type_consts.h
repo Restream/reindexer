@@ -20,17 +20,17 @@ typedef enum IndexType {
 	IndexInt64BTree = 4,
 	IndexInt64Hash = 5,
 	IndexDoubleBTree = 6,
-	IndexFullText = 7,
-	IndexNewFullText = 8,
+	IndexFastFT = 7,
+	IndexFuzzyFT = 8,
 	IndexCompositeBTree = 9,
 	IndexCompositeHash = 10,
-	IndexCompositeText = 11,
+	IndexCompositeFastFT = 11,
 	IndexBool = 12,
 	IndexIntStore = 13,
 	IndexInt64Store = 14,
 	IndexStrStore = 15,
 	IndexDoubleStore = 16,
-	IndexCompositeNewText = 17,
+	IndexCompositeFuzzyFT = 17,
 } IndexType;
 
 typedef enum QueryItemType {
@@ -44,6 +44,7 @@ typedef enum QueryItemType {
 	QueryDebugLevel,
 	QueryAggregation,
 	QuerySelectFilter,
+	QuerySelectFunction,
 	QueryEnd
 } QueryItemType;
 

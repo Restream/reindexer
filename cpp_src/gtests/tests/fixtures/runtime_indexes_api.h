@@ -85,7 +85,7 @@ protected:
 
 	void AddRuntimeCompositeIndex(bool pk = false) {
 		string indexName(getRuntimeCompositeIndexName(pk));
-		Error err = reindexer->AddIndex(default_namespace, {indexName, indexName, "hash", "composite", IndexOpts().PK()});
+		Error err = reindexer->AddIndex(default_namespace, {indexName, indexName, "tree", "composite", IndexOpts().PK()});
 		EXPECT_TRUE(err.ok()) << err.what();
 		err = reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();

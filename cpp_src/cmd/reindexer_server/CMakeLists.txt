@@ -27,11 +27,18 @@ add_custom_target(swagger
 )
 
 add_custom_target(face
-    COMMAND rm -rf face
-    COMMAND curl -L https://github.com/restream/reindexer-face/-/jobs/artifacts/${FACE_BRANCH}/download?job=build -o /tmp/face.zip
-    COMMAND unzip -o /tmp/face.zip
-    COMMAND mv dist face
-)
+    COMMAND rm -rf face/*
+    COMMAND mkdir -p face
+    COMMAND curl -L https://codeload.github.com/restream/reindexer-face-dist/tar.gz/${FACE_BRANCH} | tar xzv -C face reindexer-face-dist-${FACE_BRANCH}
+    COMMAND mv -f "face/reindexer-face-dist-${FACE_BRANCH}/*" "face/"
+    )
+
+# add_custom_target(face
+#     COMMAND rm -rf face
+#     COMMAND curl -L https://github.com/restream/reindexer-face/-/jobs/artifacts/${FACE_BRANCH}/download?job=build -o /tmp/face.zip
+#     COMMAND unzip -o /tmp/face.zip
+#     COMMAND mv dist face
+# )
 
 install(TARGETS ${TARGET}
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"

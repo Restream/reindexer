@@ -20,7 +20,7 @@ type TestItem struct {
 	Name        string          `reindex:"name,tree"`
 	Countries   []string        `reindex:"countries,tree"`
 	Age         int             `reindex:"age,hash"`
-	Description string          `reindex:"description,fulltext"`
+	Description string          `reindex:"description,fuzzytext"`
 	Rate        float64         `reindex:"rate,tree"`
 	IsDeleted   bool            `reindex:"isdeleted,-"`
 	Actor       Actor           `reindex:"actor"`
@@ -31,6 +31,7 @@ type TestItem struct {
 	Tmp         string          `reindex:"tmp,-,pk"`
 	_           struct{}        `reindex:"id+tmp,,composite"`
 	_           struct{}        `reindex:"age+genre,,composite"`
+	_           struct{}        `reindex:"location+rate,,composite"`
 }
 
 type TestItemSimple struct {
@@ -330,6 +331,64 @@ func CheckTestItemsQueries() {
 				newTestQuery(DB, "test_items_not").ReqTotal().
 					Where("year", reindexer.EQ, 2002).
 					Not().Where("name", reindexer.EQ, "sss").
+					ExecAndVerify()
+
+				compositeValues := []interface{}{[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)}}
+
+				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
+					Where("age+genre", reindexer.EQ, compositeValues).
+					ExecAndVerify()
+
+				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
+					Where("age+genre", reindexer.LE, compositeValues).
+					ExecAndVerify()
+
+				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
+					Where("age+genre", reindexer.LT, compositeValues).
+					ExecAndVerify()
+
+				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
+					Where("age+genre", reindexer.GT, compositeValues).
+					ExecAndVerify()
+
+				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
+					Where("age+genre", reindexer.GE, compositeValues).
+					ExecAndVerify()
+
+				compositeValues = []interface{}{[]interface{}{randLocation(), float64(rand.Int()%100) / 10}}
+
+				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
+					Where("location+rate", reindexer.EQ, compositeValues).
+					ExecAndVerify()
+
+				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
+					Where("location+rate", reindexer.GT, compositeValues).
+					ExecAndVerify()
+
+				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
+					Where("location+rate", reindexer.LT, compositeValues).
+					ExecAndVerify()
+
+				compositeValues = []interface{}{
+					[]interface{}{randLocation(), float64(rand.Int()%100) / 10},
+					[]interface{}{randLocation(), float64(rand.Int()%100) / 10},
+				}
+				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
+					Where("location+rate", reindexer.RANGE, compositeValues).
+					ExecAndVerify()
+
+				compositeValues = []interface{}{
+					[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
+					[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
+					[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
+					[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
+					[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
+					[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
+					[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
+					[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
+				}
+				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
+					Where("age+genre", reindexer.SET, compositeValues).
 					ExecAndVerify()
 
 			}

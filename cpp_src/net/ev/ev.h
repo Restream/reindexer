@@ -11,6 +11,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <functional>
 #include <vector>
 
@@ -229,7 +230,7 @@ protected:
 	}
 
 	std::function<void(sig &watcher)> func_ = nullptr;
-	void (*old_handler_)(int) = nullptr;
+	struct sigaction old_action_;
 	int signum_;
 };
 

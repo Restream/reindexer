@@ -1,6 +1,6 @@
 # Full text search with Reindexer
 
-Reindexer has builtin full text search engine. This document describes usage of full text search. 
+Reindexer has builtin full text search engine. This document describes usage of full text search.
 
 - [Define full text index fields](#define-full-text-index-fields)
 - [Query to full text index](#query-to-full-text-index)
@@ -11,6 +11,7 @@ Reindexer has builtin full text search engine. This document describes usage of 
 - [Examples of text queris](#examples-of-text-queris)
 - [Natural language processing](#natural-language-processing)
 - [Merging queries results](#merging-queries-results)
+- [Using select fucntions](#using-select-functions)
 - [Performance and memory usage](#performance-and-memory-usage)
 - [Configuration](#configuration)
 	- [Limitations and know issues](#limitations-and-know-issues)
@@ -43,7 +44,7 @@ Full text index is case insensitive. The source text is tokenized to set of word
 
 ## Query to full text index
 
-Queries to full text index are constructed by usual query interface 
+Queries to full text index are constructed by usual query interface
 
 ```go
 	query := db.Query ("items").
@@ -79,7 +80,7 @@ The format of query is:
 - `^x` - boost matches term by x. default boost value is 1.
 
 ### Field selection
-- `@` - comma separated list of fields to search 
+- `@` - comma separated list of fields to search
 - `*` - search in all fields
 - `^x` - boost matches in field by x. default boost value is 1.
 
@@ -128,14 +129,48 @@ It is possible to merge multiple queries results and sort final result by releva
 				fmt.Printf ("%v,rank=%d\n",*elem,iterator.Rank())
 			case AnotherItem:
 				fmt.Printf ("%v,rank=%d\n",*elem,iterator.Rank())
-		}	
+		}
 	}
 ```
+## Using select fucntions
+It is possible to use select functions to process result data.
+For now you can use snippet and highlight
+You can not put [,)\0] symbols in functions params
+
+highlight - only highlights text area that was found
+it has two arguments -
+- `first` string that will be inserted before found text area
+- `second` string that will be inserted after found text area
+
+Example:
+word: "some text"
+
+```go
+b.Query("items").Match("text", query).Limit(limit).Offset(offset).Functions("text.highlight(<b>,</b>)")
+```
+result: "some <b>text</b>"
+
+snippet -  highlights text area and erase other text
+it has six arguments - last two is default
+- `first` string that will be inserted before found text area
+- `second` string that will be inserted after found text area
+- `third`  number of symbols that will be placed before area
+- `fourth`  number of symbols that will be placed after area
+- `fifth` delimiter before snippets ,default  space
+- `sixth` delimiter after snippets ,default  nothing
+
+Example:
+word: "some text"
+
+```go
+b.Query("items").Match("text", query).Limit(limit).Offset(offset).Functions("text.snippet(<b>,</b>,2,0)")
+```
+result: "e <b>text</b>"
 
 ## Performance and memory usage
 
 Internally reindexer uses enhanced suffix array of unique words, and compresed reverse index of documents. Typically size of index is about 30%-80% of source text. But can vary in corner cases.
- 
+
 The `Upsert` operation does not perform actual indexing, but just stores text. There are lazy indexing is implemented. So actually, full text index is building on first Query on fulltext field. The indexing is uses several threads, so it is efficently utilizes resources of modern multi core CPU. Therefore the indexing speed is very high. On modern hardware indexing speed is about ~50MB/sec
 
 But on huge text size lazy indexing can seriously slow down first Query to text index. To avoid this side-effect it is possible to warmup text index: just by dummy Query after last `Upsert`

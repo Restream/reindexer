@@ -6,6 +6,7 @@
 #include <mutex>
 #include <string>
 #include "estl/h_vector.h"
+#include "net/stat.h"
 #include "tools/slice.h"
 
 namespace reindexer {
@@ -116,9 +117,10 @@ struct Context {
 
 	Request *request;
 	Writer *writer;
-
 	Reader *body;
 	ClientData::Ptr clientData;
+
+	Stat stat;
 };
 
 class Connection;
@@ -199,11 +201,6 @@ public:
 		notFoundHandler_ = Handler{func_wrapper<K, func>, object};
 	}
 
-	/// Enable calcultion of routes performance and allocations statistics
-	void enableStats() { enableStats_ = true; }
-	/// Print to stdout routes performance and allocations statistics
-	void printStats();
-
 protected:
 	int handle(Context &ctx);
 
@@ -224,32 +221,15 @@ protected:
 		void *object_;
 	};
 
-	struct Stats {
-		void add(int t, int a) {
-			count++;
-			if (max < t) max = t;
-			if (!min || min > t) min = t;
-			total += t;
-			avg = total / count;
-			allocs += a;
-		}
-		int count = 0, avg = 0, min = 0, max = 0, total = 0, allocs = 0;
-	};
-
 	struct Route {
 		Route(string path, Handler h) : path_(path), h_(h) {}
 
 		string path_;
 		Handler h_;
-		Stats stat_;
 	};
 
 	std::vector<Route> routes_[kMaxMethod];
 	std::vector<Handler> middlewares_;
-	Stats writeStats_;
-
-	bool enableStats_ = false;
-	std::mutex lockStats_;
 
 	Handler notFoundHandler_;
 	std::function<void(Context &ctx)> logger_;

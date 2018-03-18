@@ -16,22 +16,24 @@ typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(
 
 	std::lock_guard<mutex> lk(lock_);
 
-	auto it = items_.emplace(key, Entry{});
+	auto it = items_.find(key);
 
-	if (it.second)
+	if (it == items_.end()) {
+		it = items_.emplace(key, Entry{}).first;
 		totalCacheSize_ += kElemSizeOverhead;
-	else
-		lru_.erase(it.first->second.lruPos);
-
-	it.first->second.lruPos = lru_.insert(lru_.end(), &it.first->first);
-	if (++it.first->second.hitCount < hitCountToCache_) {
+		it->second.lruPos = lru_.insert(lru_.end(), &it->first);
+	} else if (std::next(it->second.lruPos) != lru_.end()) {
+		lru_.splice(lru_.end(), lru_, it->second.lruPos, std::next(it->second.lruPos));
+		it->second.lruPos = std::prev(lru_.end());
+	}
+	if (++it->second.hitCount < hitCountToCache_) {
 		return Iterator();
 	}
 	++getCount_;
 
 	// logPrintf(LogInfo, "Cache::Get (cond=%d,sortId=%d,keys=%d), total in cache items=%d,size=%d", key.cond, key.sort,
 	// 		  (int)key.keys.size(), items_.size(), totalCacheSize_);
-	return Iterator(&it.first->first, it.first->second.val);
+	return Iterator(&it->first, it->second.val);
 }
 
 template <typename K, typename V, typename hash, typename equal>

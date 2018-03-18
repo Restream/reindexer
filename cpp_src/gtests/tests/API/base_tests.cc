@@ -69,13 +69,6 @@ TEST_F(ReindexerApi, DeleteNonExistingNamespace) {
 TEST_F(ReindexerApi, NewItem) {
 	auto err = reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled());
 
-	//	DefineNamespaceDataset(
-	//				default_namespace,
-	//				{
-	//					{"id", IndexIntHash, &opts},
-	//					{"value", IndexFullText, nullptr}
-	//				});
-
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = reindexer->AddIndex(default_namespace, {"id", "", "hash", "int", IndexOpts().PK()});
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -386,7 +379,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 
 	for (size_t i = 0; i < queryResult.size(); ++i) {
 		const reindexer::ItemRef& itemRef = queryResult[i];
-		auto itFind(queryResult.joined_.find(itemRef.id));
-		EXPECT_TRUE(itFind != queryResult.joined_.end());
+		auto itFind(queryResult.joined_->find(itemRef.id));
+		EXPECT_TRUE(itFind != queryResult.joined_->end());
 	}
 }

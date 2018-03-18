@@ -1,4 +1,5 @@
 #include "tools/serializer.h"
+#include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <cstring>
@@ -13,8 +14,8 @@ Serializer::Serializer(const void *_buf, int _len) : buf(static_cast<const uint8
 bool Serializer::Eof() { return pos >= len; }
 
 KeyValue Serializer::GetValue() {
-	int t = GetVarUint();
-	switch (t) {
+	int type = GetVarUint();
+	switch (type) {
 		case KeyValueInt:
 			return KeyValue(int(GetVarint()));
 		case KeyValueInt64:
@@ -23,8 +24,16 @@ KeyValue Serializer::GetValue() {
 			return KeyValue(GetDouble());
 		case KeyValueString:
 			return KeyValue(GetVString().ToString());
+		case KeyValueComposite: {
+			KeyValues compositeValues;
+			uint64_t count = GetVarUint();
+			for (size_t i = 0; i < count; ++i) {
+				compositeValues.push_back(GetValue());
+			}
+			return KeyValue(std::move(compositeValues));
+		}
 		default:
-			throw Error(errParseBin, "Unknown type %d while parsing binary buffer", t);
+			throw Error(errParseBin, "Unknown type %d while parsing binary buffer", type);
 	}
 }
 
@@ -160,11 +169,24 @@ void WrSerializer::Reserve(size_t cap) {
 }
 
 void WrSerializer::Printf(const char *fmt, ...) {
-	grow(100);
+	int ret = 0, sz = 100;
 	va_list args;
 	va_start(args, fmt);
-	len_ += vsnprintf(reinterpret_cast<char *>(buf_ + len_), len_ - cap_, fmt, args);
+	for (;;) {
+		grow(sz);
+
+		va_list cargs;
+		va_copy(cargs, args);
+		ret = vsnprintf(reinterpret_cast<char *>(buf_ + len_), cap_ - len_, fmt, cargs);
+		va_end(cargs);
+		if (ret < 0) {
+			abort();
+		}
+		if (size_t(ret) < cap_ - len_) break;
+		sz = ret + 1;
+	}
 	va_end(args);
+	len_ += ret;
 }
 
 void WrSerializer::PutVarint(int64_t v) {
@@ -265,6 +287,6 @@ uint8_t *WrSerializer::DetachBuffer() {
 	return b;
 }
 
-uint8_t *WrSerializer::Buf() { return buf_; }
+uint8_t *WrSerializer::Buf() const { return buf_; }
 
 }  // namespace reindexer

@@ -6,16 +6,16 @@
 #include "core/keyvalue/keyvalue.h"
 #include "estl/h_vector.h"
 
+namespace reindexer {
+
 using std::string;
 using std::vector;
-
-namespace reindexer {
 
 class QueryWhere;
 class tokenizer;
 
 struct QueryEntry {
-	QueryEntry(OpType o, CondType cond, string idx, int idxN, bool dist = false)
+	QueryEntry(OpType o, CondType cond, const string &idx, int idxN, bool dist = false)
 		: op(o), condition(cond), index(idx), idxNo(idxN), distinct(dist) {}
 	QueryEntry() = default;
 
@@ -34,9 +34,10 @@ struct QueryJoinEntry {
 	CondType condition_;
 	string index_;
 	string joinIndex_;
+	int idxNo = -1;
 };
 
-struct QueryEntries : public h_vector<QueryEntry, 2> {};
+struct QueryEntries : public h_vector<QueryEntry, 4> {};
 
 struct AggregateEntry {
 	string index_;

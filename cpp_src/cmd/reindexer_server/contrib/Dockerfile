@@ -1,18 +1,22 @@
-FROM ubuntu:latest
+FROM alpine:latest
 
-RUN apt-get update && \
-    apt-get install -y g++ libsnappy-dev make libleveldb-dev curl
+RUN mkdir /src && \
+    cd /src && \
+    apk update && \
+    apk add curl git && \ 
+    git clone https://github.com/restream/reindexer && \
+    cd reindexer && \
+    ./dependencies.sh && \
+    mkdir build && \
+    cd build && \
+    cmake -DCMAKE_BUILD_TYPE=Release .. && \
+    make -j8 reindexer_server && \
+    make face swagger && \
+    make install -C cpp_src/cmd/reindexer_server && \
+    cd / && \
+    rm -rf /src && \
+    apk del g++ cmake make git curl unzip && \
+    rm -rf /var/cache/apk/* /usr/local/lib/*.a /usr/local/include/*
 
-RUN curl -L https://github.com/Restream/reindexer/archive/master.tar.gz | tar xzv && \
-    cd reindexer-master && \
-    sed -i_ "s/-lev//" cpp_src/cmd/reindexer_server/Makefile && \
-    sed -i_ "s/-ltcmalloc//" cpp_src/cmd/reindexer_server/Makefile && \
-    make -C cpp_src/cmd/reindexer_server -j4 && \
-    make -C cpp_src/cmd/reindexer_server swagger && \
-    cp cpp_src/cmd/reindexer_server/reindexer_server /usr/bin && \
-    mkdir -p /usr/share/reindexer && \
-    cp -a cpp_src/cmd/reindexer_server/doc /usr/share/reindexer && \
-    cd .. && rm -rf  reindexer-master
-
-EXPOSE 9088
-CMD reindexer_server --db /var/lib/reindexer --port 9088 --webroot /usr/share/reindexer/
+EXPOSE 9088 6534
+CMD reindexer_server --db /db --httpaddr 0:9088 --rpcaddr 0:6534 --webroot /usr/local/share/reindexer/web

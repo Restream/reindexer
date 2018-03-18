@@ -1,6 +1,6 @@
 #pragma once
 
-#include "baseconfig.h"
+#include "baseftconfig.h"
 
 namespace reindexer {
 

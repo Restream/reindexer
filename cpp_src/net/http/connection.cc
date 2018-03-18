@@ -6,7 +6,6 @@
 #include <netinet/tcp.h>
 #include <time.h>
 #include <unistd.h>
-#include <chrono>
 #include <ctime>
 #include <unordered_map>
 #include "itoa/itoa.h"
@@ -76,14 +75,7 @@ void Connection::callback(ev::io & /*watcher*/, int revents) {
 		revents |= ev::WRITE;
 	}
 	if (revents & ev::WRITE) {
-		std::chrono::high_resolution_clock::time_point tm0;
-		if (router_.enableStats_) tm0 = std::chrono::high_resolution_clock::now();
 		write_cb();
-		if (router_.enableStats_) {
-			auto tm1 = std::chrono::high_resolution_clock::now();
-			std::lock_guard<std::mutex> lock(router_.lockStats_);
-			router_.writeStats_.add(std::chrono::duration_cast<std::chrono::microseconds>(tm1 - tm0).count(), 0);
-		}
 		if (!wrBuf_.size()) wrBuf_.clear();
 	}
 
@@ -148,8 +140,12 @@ void Connection::read_cb() {
 void Connection::handleRequest(Request &req) {
 	ResponseWriter writer(this);
 	BodyReader reader(this);
-
-	Context ctx{&req, &writer, &reader, nullptr};
+	Stat stat;
+	Context ctx;
+	ctx.request = &req;
+	ctx.writer = &writer;
+	ctx.body = &reader;
+	ctx.stat = stat;
 
 	try {
 		router_.handle(ctx);
@@ -164,7 +160,14 @@ void Connection::handleRequest(Request &req) {
 
 void Connection::badRequest(int code, const char *msg) {
 	ResponseWriter writer(this);
-	Context ctx{nullptr, &writer, nullptr, nullptr};
+	Stat stat;
+	Context ctx;
+	ctx.request = nullptr;
+	ctx.writer = &writer;
+	ctx.body = nullptr;
+	ctx.clientData = nullptr;
+	ctx.stat = stat;
+
 	closeConn_ = true;
 	ctx.String(code, msg);
 }

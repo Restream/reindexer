@@ -5,10 +5,10 @@
 #include "base64/base64.h"
 #include "core/type_consts.h"
 #include "gason/gason.h"
+#include "loggerwrapper.h"
 #include "net/http/connection.h"
 #include "net/listener.h"
 #include "tools/fsops.h"
-#include "tools/logger.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 
@@ -18,8 +18,9 @@ using std::to_string;
 
 namespace reindexer_server {
 
-HTTPServer::HTTPServer(DBManager &dbMgr, const string &webRoot, bool enableLog)
-	: dbMgr_(dbMgr), webRoot_(reindexer::JoinPath(webRoot, "")), enableLog_(enableLog) {}
+HTTPServer::HTTPServer(DBManager &dbMgr, const string &webRoot) : dbMgr_(dbMgr), webRoot_(reindexer::JoinPath(webRoot, "")) {}
+HTTPServer::HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper logger, bool allocDebug)
+	: dbMgr_(dbMgr), webRoot_(reindexer::JoinPath(webRoot, "")), logger_(logger), allocDebug_(allocDebug) {}
 HTTPServer::~HTTPServer() {}
 
 enum { ModeUpdate, ModeInsert, ModeUpsert, ModeDelete };
@@ -195,15 +196,9 @@ int HTTPServer::GetNamespace(http::Context &ctx) {
 
 	vector<reindexer::NamespaceDef> nsDefs;
 	db->EnumNamespaces(nsDefs, false);
+	auto nsDefIt = std::find_if(nsDefs.begin(), nsDefs.end(), [&](const NamespaceDef &nsDef) { return nsDef.name == nsName; });
 
-	reindexer::NamespaceDef *nsDefPtr = nullptr;
-	for (auto &nsdef : nsDefs) {
-		if (nsdef.name == nsName) {
-			nsDefPtr = &nsdef;
-		}
-	}
-
-	if (!nsDefPtr) {
+	if (nsDefIt == nsDefs.end()) {
 		return jsonStatus(ctx, false, http::StatusNotFound, "Namespace is not found");
 	}
 
@@ -211,9 +206,8 @@ int HTTPServer::GetNamespace(http::Context &ctx) {
 	ctx.writer->SetRespCode(http::StatusOK);
 
 	reindexer::WrSerializer wrSer(true);
-	reindexer::NamespaceDef &nsDef = *nsDefPtr;
 
-	nsDef.Print(wrSer);
+	nsDefIt->GetJSON(wrSer);
 	ctx.writer->Write(wrSer.Buf(), wrSer.Len());
 
 	return 0;
@@ -225,7 +219,7 @@ int HTTPServer::PostNamespace(http::Context &ctx) {
 	string nsdefJson = ctx.body->Read();
 	reindexer::NamespaceDef nsdef("");
 
-	auto status = nsdef.Parse(const_cast<char *>(nsdefJson.c_str()));
+	auto status = nsdef.FromJSON(const_cast<char *>(nsdefJson.c_str()));
 	if (!status.ok()) {
 		return jsonStatus(ctx, false, http::StatusInternalServerError, status.what());
 	}
@@ -336,31 +330,30 @@ int HTTPServer::GetIndexes(http::Context &ctx) {
 
 	vector<reindexer::NamespaceDef> nsDefs;
 	db->EnumNamespaces(nsDefs, false);
+	auto nsDefIt = std::find_if(nsDefs.begin(), nsDefs.end(), [&](const NamespaceDef &nsDef) { return nsDef.name == nsName; });
 
-	reindexer::NamespaceDef *nsDefPtr = nullptr;
-	for (auto &nsdef : nsDefs) {
-		if (!strcmp(nsdef.name.c_str(), nsName)) {
-			nsDefPtr = &nsdef;
-		}
-	}
-
-	if (!nsDefPtr) {
+	if (nsDefIt == nsDefs.end()) {
 		return jsonStatus(ctx, false, http::StatusNotFound, "Namespace is not found");
 	}
 
 	ctx.writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
 	ctx.writer->SetRespCode(http::StatusOK);
 
-	reindexer::NamespaceDef &nsDef = *nsDefPtr;
-
 	ctx.writer->Write("{");
 
 	reindexer::WrSerializer wrSer(true);
-	nsDef.PrintIndexes(wrSer, "indexes");
+
+	wrSer.PutChars("\"indexes\":[");
+	for (size_t i = 0; i < nsDefIt->indexes.size(); i++) {
+		if (i != 0) wrSer.PutChar(',');
+		nsDefIt->indexes[i].GetJSON(wrSer);
+	}
+	wrSer.PutChars("]");
+
 	ctx.writer->Write(wrSer.Buf(), wrSer.Len());
 
 	ctx.writer->Write(",\"total_items\":");
-	string total = to_string(nsDef.indexes.size());
+	string total = to_string(nsDefIt->indexes.size());
 	ctx.writer->Write(total.c_str(), total.length());
 	ctx.writer->Write("}");
 
@@ -381,17 +374,15 @@ int HTTPServer::PostIndex(http::Context &ctx) {
 
 	vector<reindexer::NamespaceDef> nsDefs;
 	db->EnumNamespaces(nsDefs, false);
+	auto nsDefIt = std::find_if(nsDefs.begin(), nsDefs.end(), [&](const NamespaceDef &nsDef) { return nsDef.name == nsName; });
 
 	reindexer::IndexDef idxDef;
-	idxDef.Parse(&json[0]);
+	idxDef.FromJSON(&json[0]);
 
-	for (auto &nsdef : nsDefs) {
-		if (!strcmp(nsdef.name.c_str(), nsName)) {
-			for (auto &idx : nsdef.indexes) {
-				if (idx.name == newIdxName) {
-					return jsonStatus(ctx, false, http::StatusBadRequest, "Index already exists");
-				}
-			}
+	if (nsDefIt != nsDefs.end()) {
+		auto &indexes = nsDefIt->indexes;
+		if (std::find_if(indexes.begin(), indexes.end(), [&](const IndexDef &idx) { return idx.name == newIdxName; }) == indexes.end()) {
+			return jsonStatus(ctx, false, http::StatusBadRequest, "Index already exists");
 		}
 	}
 
@@ -516,7 +507,7 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 
 	router_.Middleware<HTTPServer, &HTTPServer::CheckAuth>(this);
 
-	if (enableLog_) {
+	if (logger_) {
 		router_.Logger<HTTPServer, &HTTPServer::Logger>(this);
 	}
 
@@ -705,7 +696,15 @@ int HTTPServer::CheckAuth(http::Context &ctx) {
 }
 
 void HTTPServer::Logger(http::Context &ctx) {
-	logPrintf(LogInfo, "HTTP: %s %s %d %d", ctx.request->method, ctx.request->uri, ctx.writer->RespCode(), ctx.writer->Written());
+	if (allocDebug_) {
+		Stat statDiff = Stat() - ctx.stat;
+
+		logger_.info("{0} {1} {2} {3} | elapsed: {4}us, allocs: {5}, allocated: {6} byte(s)", ctx.request->method, ctx.request->uri,
+					 ctx.writer->RespCode(), ctx.writer->Written(), statDiff.GetTimeElapsed(), statDiff.GetAllocsCnt(),
+					 statDiff.GetAllocsBytes());
+	} else {
+		logger_.info("{0} {1} {2} {3}", ctx.request->method, ctx.request->uri, ctx.writer->RespCode(), ctx.writer->Written());
+	}
 }
 
 }  // namespace reindexer_server

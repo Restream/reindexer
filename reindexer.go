@@ -466,7 +466,11 @@ func (db *Reindexer) QueryFrom(d dsl.DSL) (*Query, error) {
 		return nil, ErrEmptyNamespace
 	}
 
-	q := db.Query(d.Namespace).Offset(d.Offset).Limit(d.Limit)
+	q := db.Query(d.Namespace).Offset(d.Offset)
+
+	if d.Limit > 0 {
+		q.Limit(d.Limit)
+	}
 
 	if d.Distinct != "" {
 		q.Distinct(d.Distinct)

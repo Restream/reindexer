@@ -1,11 +1,12 @@
 #pragma once
 #include <functional>
 #include "core/aggregator.h"
-#include "core/ft/fulltextctx.h"
-#include "core/index/index.h"
 #include "core/nsselecter/selectiterator.h"
 #include "core/query/query.h"
 #include "core/query/queryresults.h"
+#include "core/selectfunc/ctx/basefunctionctx.h"
+#include "core/selectfunc/ctx/ftctx.h"
+#include "core/selectfunc/selectfunc.h"
 
 namespace reindexer {
 
@@ -14,6 +15,7 @@ using std::vector;
 
 struct JoinedSelector {
 	JoinType type;
+	bool nodata;
 	std::function<bool(IdType, ConstPayload, bool)> func;
 };
 typedef vector<JoinedSelector> JoinedSelectors;
@@ -25,51 +27,65 @@ public:
 };
 
 struct SelectCtx {
-	typedef shared_ptr<SelectCtx> Ptr;
-
 	explicit SelectCtx(const Query &query_, SelectLockUpgrader *lockUpgrader) : query(query_), lockUpgrader(lockUpgrader) {}
 	const Query &query;
 	JoinedSelectors *joinedSelectors = nullptr;
-	const IdSet *preResult = nullptr;
-	bool rsltAsSrtOrdrs = false;
+
 	uint8_t nsid = 0;
 	bool isForceAll = false;
+	bool skipIndexesLookup = false;
 	SelectLockUpgrader *lockUpgrader;
+	SelectFunctionsHolder *functions = nullptr;
+	struct PreResult {
+		enum Mode { ModeBuild, ModeIterators, ModeIdSet };
+
+		typedef shared_ptr<PreResult> Ptr;
+		IdSet ids;
+		h_vector<SelectIterator> iterators;
+		Mode mode;
+		string sortBy;
+	};
+	bool matchedAtLeastOnce = false;
+	bool reqMatchedOnceFlag = false;
+	PreResult::Ptr preResult;
 };
 
 class NsSelecter {
 public:
 	typedef vector<JoinedSelector> JoinedSelectors;
 	NsSelecter(Namespace *parent) : ns_(parent) {}
-	struct RawQueryResult : public h_vector<SelectIterator> {
-		h_vector<FullTextCtx::Ptr> ctxs;
-	};
+	struct RawQueryResult : public h_vector<SelectIterator> {};
 
-	void operator()(QueryResults &result, const SelectCtx &ctx);
+	void operator()(QueryResults &result, SelectCtx &ctx);
 
 private:
-	struct LoopCtx : public SelectCtx {
-		LoopCtx(const SelectCtx &ctx) : SelectCtx(ctx) {}
+	struct LoopCtx {
+		LoopCtx(SelectCtx &ctx) : sctx(ctx) {}
 		RawQueryResult *qres = nullptr;
 		Index *sortIndex = nullptr;
 		bool ftIndex = false;
 		bool calcTotal = false;
+		SelectCtx &sctx;
 	};
 
 	template <bool reverse, bool haveComparators, bool haveDistinct>
-	void selectLoop(const LoopCtx &ctx, QueryResults &result);
+	void selectLoop(LoopCtx &ctx, QueryResults &result);
 	void applyCustomSort(QueryResults &result, const SelectCtx &ctx);
-	void applyGeneralSort(QueryResults &result, const SelectCtx &ctx, int collateMode);
+	void applyGeneralSort(QueryResults &result, const SelectCtx &ctx, CollateMode collateMode);
 
 	bool isContainsFullText(const QueryEntries &entries);
 	void selectWhere(const QueryEntries &entries, RawQueryResult &result, SortType sortId, bool is_ft);
 	QueryEntries lookupQueryIndexes(const QueryEntries &entries);
 	void substituteCompositeIndexes(QueryEntries &entries);
+	const string &getOptimalSortOrder(const QueryEntries &entries);
 	h_vector<Aggregator, 4> getAggregators(const Query &q);
 	int getCompositeIndex(const FieldsSet &fieldsmask);
 	bool mergeQueryEntries(QueryEntry *lhs, QueryEntry *rhs);
 	void setLimitsAndOffset(QueryResults &result, const SelectCtx &ctx);
+	void updateCompositeIndexesValues(QueryEntries &qe);
 
 	Namespace *ns_;
+	SelectFunction::Ptr fnc_;
+	FtCtx::Ptr ft_ctx_;
 };
 }  // namespace reindexer

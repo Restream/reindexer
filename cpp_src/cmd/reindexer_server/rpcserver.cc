@@ -1,4 +1,3 @@
-
 #include "rpcserver.h"
 #include <sys/stat.h>
 #include <unistd.h>
@@ -6,13 +5,13 @@
 #include "net/cproto/connection.h"
 #include "net/cproto/cproto.h"
 #include "net/listener.h"
-#include "tools/logger.h"
 
 namespace reindexer_server {
 
 enum { ModeUpdate, ModeInsert, ModeUpsert, ModeDelete };
 
-RPCServer::RPCServer(DBManager &dbMgr, bool enableLog) : dbMgr_(dbMgr), enableLog_(enableLog) {}
+RPCServer::RPCServer(DBManager &dbMgr) : dbMgr_(dbMgr) {}
+RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper logger, bool allocDebug) : dbMgr_(dbMgr), logger_(logger), allocDebug_(allocDebug) {}
 RPCServer::~RPCServer() {}
 
 Error RPCServer::Ping(cproto::Context &) {
@@ -78,7 +77,8 @@ Error RPCServer::CheckAuth(cproto::Context &ctx) {
 void RPCServer::OnClose(cproto::Context &ctx, const Error &err) {
 	(void)ctx;
 	(void)err;
-	logPrintf(LogInfo, "RPC: Client disconnected");
+
+	logger_.info("RPC: Client disconnected");
 }
 
 void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Args &ret) {
@@ -103,8 +103,17 @@ void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Arg
 		ser.PutChars(" ");
 		ret.Dump(ser);
 	}
+
+	if (allocDebug_) {
+		Stat statDiff = Stat() - ctx.stat;
+
+		ser.Printf(" | elapsed: %fus, allocs: %d, allocated: %d byte(s)", statDiff.GetTimeElapsed(), statDiff.GetAllocsCnt(),
+				   statDiff.GetAllocsBytes());
+	}
+
 	ser.PutChar(0);
-	logPrintf(LogInfo, "RPC: %s", reinterpret_cast<char *>(ser.Buf()));
+
+	logger_.info("{0}", reinterpret_cast<char *>(ser.Buf()));
 }
 
 Error RPCServer::OpenNamespace(cproto::Context &ctx, p_string ns, p_string nsDef) {
@@ -135,7 +144,7 @@ Error RPCServer::EnumNamespaces(cproto::Context &ctx) {
 
 Error RPCServer::AddIndex(cproto::Context &ctx, p_string ns, p_string indexDef) {
 	IndexDef iDef;
-	auto err = iDef.Parse(const_cast<char *>(indexDef.toString().c_str()));
+	auto err = iDef.FromJSON(const_cast<char *>(indexDef.toString().c_str()));
 	if (!err.ok()) {
 		return err;
 	}
@@ -394,7 +403,7 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	dispatcher.Middleware(this, &RPCServer::CheckAuth);
 	dispatcher.OnClose(this, &RPCServer::OnClose);
 
-	if (enableLog_) {
+	if (logger_) {
 		dispatcher.Logger(this, &RPCServer::Logger);
 	}
 

@@ -47,7 +47,6 @@ public:
 private:
 	bool first_ = true;
 	ResultMerger prev_;
-	size_t total_size_;
 	word_size_map::iterator size_it_;
 };
 struct SearchResult {

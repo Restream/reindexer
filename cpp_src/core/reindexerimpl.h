@@ -83,7 +83,7 @@ protected:
 
 		Namespace::Ptr Get(const string &name) {
 			for (auto it = begin(); it != end(); it++)
-				if (it->first->name == name) return it->first;
+				if (it->first->name_ == name) return it->first;
 			return nullptr;
 		}
 
@@ -91,9 +91,9 @@ protected:
 		bool locked_ = false;
 		bool upgraded_ = false;
 	};
-	void doSelect(const Query &q, QueryResults &res, JoinedSelectors &joinedSelectors, NsLocker &locker);
+	void doSelect(const Query &q, QueryResults &res, JoinedSelectors &joinedSelectors, NsLocker &locker, SelectFunctionsHolder &func);
 	JoinedSelectors prepareJoinedSelectors(const Query &q, QueryResults &result, NsLocker &locks, h_vector<Query, 4> &queries,
-										   h_vector<IdSet, 4> &preResults);
+										   SelectFunctionsHolder &func);
 
 	void flusherThread();
 	Error closeNamespace(const string &_namespace, bool dropStorage);

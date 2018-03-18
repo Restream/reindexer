@@ -1,4 +1,23 @@
 
+# Version 1.6.0 (18.03.2018)
+
+## C++ core
+- [fea] Composite indexes direct queries support
+- [fea] Fulltext support functions `snippet` and `highlight`
+- [fix] Added utf8 strings validation
+- [fix] WrSerializer::Printf incorrect buffer maxlen calculation
+- [ref] utf8 collates does not allocate extra memory
+- [ref] sort by unordered indexes optimizstions
+- [ref] Join queries optimizations
+
+## Go connector
+- [ref] Raise panic on Query reuse in Join
+- [fea] Composite indexes direct queries support
+
+## Reindexer server beta
+- [fea] Write components logs to seprate files
+- [ref] Protocol breaking changes
+
 # Version 1.5.0 (02.03.2018)
 
 ## Reindexer server beta released:

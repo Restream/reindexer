@@ -3,6 +3,7 @@
 #include <chrono>
 #include <thread>
 #include "core/cjson/jsondecoder.h"
+#include "core/selectfunc/selectfunc.h"
 #include "kx/kxsort.h"
 #include "namespacedef.h"
 #include "tools/errors.h"
@@ -48,6 +49,10 @@ ReindexerImpl::~ReindexerImpl() {
 const char* kStoragePlaceholderFilename = ".reindexer.storage";
 
 Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlaceholderCheck) {
+	if (!storagePath_.empty()) {
+		return Error(errParams, "Storage already enabled\n");
+	}
+
 	storagePath_.clear();
 	if (storagePath.empty()) return errOK;
 	if (MkDirAll(storagePath) < 0) {
@@ -318,6 +323,7 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result) {
 					namespaceNames.push_back(nsDef.name);
 				}
 			}
+			result.lockResults();
 			for (auto& name : namespaceNames) {
 				getNamespace(name)->Describe(result);
 			}
@@ -335,10 +341,13 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result) {
 
 	for (;;) {
 		try {
+			SelectFunctionsHolder func;
 			h_vector<Query, 4> queries;
-			h_vector<IdSet, 4> preResults;
-			JoinedSelectors joinedSelectors = prepareJoinedSelectors(q, result, locks, queries, preResults);
-			doSelect(q, result, joinedSelectors, locks);
+			JoinedSelectors joinedSelectors = prepareJoinedSelectors(q, result, locks, queries, func);
+			doSelect(q, result, joinedSelectors, locks, func);
+			result.lockResults();
+			func.Process(result);
+
 			break;
 		} catch (const Error& err) {
 			if (err.code() == errWasRelock) {
@@ -354,35 +363,32 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result) {
 }
 
 JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResults& result, NsLocker& locks, h_vector<Query, 4>& queries,
-													  h_vector<IdSet, 4>& preResults) {
+													  SelectFunctionsHolder& func) {
 	JoinedSelectors joinedSelectors;
 	queries.reserve(q.joinQueries_.size());
-	preResults.reserve(q.joinQueries_.size());
+	auto ns = locks.Get(q._namespace);
 
+	if (!q.joinQueries_.empty()) {
+		result.joined_.reset(new unordered_map<IdType, QRVector>());
+	}
 	// For each joined queries
 	for (auto& jq : q.joinQueries_) {
 		// Get common results from joined namespaces
 		auto jns = locks.Get(jq._namespace);
 
-		preResults.push_back(IdSet());
-		IdSet* preResult = &preResults.back();
-
 		Query jjq(jq);
 
-		if (jjq.sortBy.empty()) {
-			for (auto& je : jjq.entries) je.idxNo = jns->getIndexByName(je.index);
-			jjq.sortBy = jns->getOptimalSortOrder (jjq.entries);
-		}
-
+		SelectCtx::PreResult::Ptr preResult;
 		if (jjq.entries.size()) {
 			QueryResults jr;
 			jjq.sortDirDesc = false;
-			jjq.Limit(INT_MAX);
+			jjq.Limit(UINT_MAX);
 			SelectCtx ctx(jjq, &locks);
-			ctx.rsltAsSrtOrdrs = true;
+			ctx.preResult = preResult = std::make_shared<SelectCtx::PreResult>();
+			ctx.preResult->mode = SelectCtx::PreResult::ModeBuild;
+			ctx.functions = &func;
 			jns->Select(jr, ctx);
-			preResult->reserve(jr.size());
-			for (auto& it : jr) preResult->Add(it.id, IdSet::Unordered);
+			assert(ctx.preResult->mode != SelectCtx::PreResult::ModeBuild);
 		}
 
 		// Do join for each item in main result
@@ -395,46 +401,48 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 		// Construct join conditions
 		for (auto& je : jq.joinEntries_) {
 			QueryEntry qe(je.op_, je.condition_, je.joinIndex_, jns->getIndexByName(je.joinIndex_));
+			const_cast<QueryJoinEntry&>(je).idxNo = ns->getIndexByName(je.index_);
 			jItemQ.entries.push_back(qe);
 		}
 		queries.push_back(std::move(jItemQ));
 		Query* pjItemQ = &queries.back();
 
-		auto joinedSelector = [&result, &jq, jns, preResult, pos, pjItemQ, &locks](IdType id, ConstPayload payload, bool match) {
+		auto joinedSelector = [&result, &jq, jns, preResult, pos, pjItemQ, &locks, &func](IdType id, ConstPayload payload, bool match) {
 			local_stat.count_join++;  // Do not measure each join time (expensive). Just give count
-			KeyRefs krefs;
 			// Put values to join conditions
 			int cnt = 0;
 			for (auto& je : jq.joinEntries_) {
-				payload.Get(je.index_, krefs);
-				pjItemQ->entries[cnt].values.resize(0);
-				pjItemQ->entries[cnt].values.reserve(krefs.size());
-				for (auto kref : krefs) pjItemQ->entries[cnt].values.push_back(KeyValue(kref));
+				payload.Get(je.idxNo, pjItemQ->entries[cnt].values);
 				cnt++;
 			}
-			pjItemQ->Limit(match ? jq.count : 1);
+			pjItemQ->Limit(match ? jq.count : 0);
 			QueryResults joinItemR;
 
 			SelectCtx ctx(*pjItemQ, &locks);
 			if (jq.entries.size()) ctx.preResult = preResult;
+			ctx.matchedAtLeastOnce = false;
+			ctx.reqMatchedOnceFlag = true;
+			ctx.skipIndexesLookup = true;
+			ctx.functions = &func;
 			jns->Select(joinItemR, ctx);
 
 			bool found = joinItemR.size();
 			if (match && found) {
-				auto& jres = result.joined_.emplace(id, vector<QueryResults>()).first->second;
+				auto& jres = result.joined_->emplace(id, QRVector()).first->second;
 
 				if (pos >= jres.size()) jres.resize(pos + 1);
 
 				jres[pos] = std::move(joinItemR);
 			}
-			return found;
+			return ctx.matchedAtLeastOnce;
 		};
-		joinedSelectors.push_back({jq.joinType, joinedSelector});
+		joinedSelectors.push_back({jq.joinType, jq.count == 0, joinedSelector});
 	}
 	return joinedSelectors;
 }
 
-void ReindexerImpl::doSelect(const Query& q, QueryResults& result, JoinedSelectors& joinedSelectors, NsLocker& locks) {
+void ReindexerImpl::doSelect(const Query& q, QueryResults& result, JoinedSelectors& joinedSelectors, NsLocker& locks,
+							 SelectFunctionsHolder& func) {
 	auto ns = locks.Get(q._namespace);
 	if (!ns) {
 		throw Error(errParams, "Namespace '%s' is not exists", q._namespace.c_str());
@@ -443,6 +451,7 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, JoinedSelecto
 	{
 		STAT_FUNC(select);
 		SelectCtx ctx(q, &locks);
+		ctx.functions = &func;
 		ctx.joinedSelectors = &joinedSelectors;
 		ctx.nsid = 0;
 		ctx.isForceAll = !q.mergeQueries_.empty() || !q.forcedSortOrder.empty();
@@ -457,6 +466,8 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, JoinedSelecto
 			SelectCtx ctx(mq, &locks);
 			ctx.nsid = ++counter;
 			ctx.isForceAll = true;
+			ctx.functions = &func;
+
 			mns->Select(result, ctx);
 		}
 
@@ -492,6 +503,7 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, JoinedSelecto
 		Query tmpq(jq._namespace);
 		tmpq.Limit(0);
 		SelectCtx ctx(tmpq, &locks);
+		ctx.functions = &func;
 		jns->Select(result, ctx);
 	}
 }

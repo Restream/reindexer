@@ -1,17 +1,8 @@
 #include "customhash.h"
-
-using std::tolower;
+#include "customlocal.h"
+#include "utf8cpp/utf8.h"
 
 namespace reindexer {
-
-/**we use this becouse default c++ hash function use size_t
-size_t on our platform is 8 bytes - but it is very big hash for us
-we really need only 4 bytes for hash
-Thats why we use standard hash function from libstdc++ for size_t = 4 bytes (changed size_t to uint32_t)
-Hash algoritm - MurmurHashUnaligned2
-https://gcc.gnu.org/viewcvs/gcc/tags/gcc_6_1_0_release/libstdc%2B%2B-v3/libsupc%2B%2B/hash_bytes.cc?view=log
-https://gcc.gnu.org/viewcvs/gcc/tags/gcc_6_1_0_release/libstdc%2B%2B-v3/libsupc%2B%2B/hash_bytes.cc?view=co&revision=235474&content-type=text%2Fplain
-**/
 
 static const uint32_t seed = 3339675911UL;
 
@@ -61,8 +52,7 @@ uint32_t _Hash_bytes(const void* ptr, uint32_t len) {
 	return hash;
 }
 
-// Implementation of Murmur hash for 32-bit size_t.
-uint32_t _Hash_bytes_ascii_collate(const void* ptr, uint32_t len) {
+uint32_t _Hash_bytes_collate_ascii(const void* ptr, uint32_t len) {
 	const uint32_t m = 0x5bd1e995;
 	uint32_t hash = seed ^ len;
 	const char* buf = static_cast<const char*>(ptr);
@@ -103,10 +93,45 @@ uint32_t _Hash_bytes_ascii_collate(const void* ptr, uint32_t len) {
 	return hash;
 }
 
-uint32_t Hash(const wstring& s) noexcept { return _Hash_bytes(s.data(), s.length() * sizeof(wchar_t)); }
-uint32_t Hash(const string& s, bool caseInsensitive) noexcept {
-	return caseInsensitive ? _Hash_bytes_ascii_collate(s.data(), s.length() * sizeof(char))
-						   : _Hash_bytes(s.data(), s.length() * sizeof(char));
+uint32_t _Hash_bytes_collate_utf8(const void* ptr, uint32_t len) {
+	const uint32_t m = 0x5bd1e995;
+	uint32_t hash = seed ^ len;
+	const char* buf = static_cast<const char*>(ptr);
+	const char* begin = buf;
+
+	while (begin + len != buf) {
+		uint32_t k = utf8::unchecked::next(buf);
+
+		k = ToLower(k);
+
+		k *= m;
+		k ^= k >> 24;
+		k *= m;
+		hash *= m;
+		hash ^= k;
+	}
+
+	// Do a few final mixes of the hash.
+	hash ^= hash >> 13;
+
+	hash *= m;
+
+	hash ^= hash >> 15;
+
+	return hash;
 }
+
+uint32_t Hash(const wstring& s) noexcept { return _Hash_bytes(s.data(), s.length() * sizeof(wchar_t)); }
+uint32_t collateHash(const string& s, CollateMode collateMode) noexcept {
+	switch (collateMode) {
+		case CollateASCII:
+			return _Hash_bytes_collate_ascii(s.data(), s.length());
+		case CollateUTF8:
+			return _Hash_bytes_collate_utf8(s.data(), s.length());
+		default:
+			return std::hash<std::string>()(s);
+	}
+}
+
 uint32_t HashTreGram(const wchar_t* ptr) noexcept { return _Hash_bytes(ptr, 3 * sizeof(wchar_t)); }
 }  // namespace reindexer

@@ -5,10 +5,9 @@
 #include <memory>
 #include <string>
 #include <thread>
-#include "core/aggregator.h"
+#include "core/index/index.h"
 #include "core/nsdescriber/nsdescriber.h"
 #include "core/nsselecter/nsselecter.h"
-#include "core/sqlfunc/sqlfunc.h"
 #include "itemimpl.h"
 #include "storage/storagefactory.h"
 #include "tools/errors.h"
@@ -47,7 +46,7 @@ Namespace::Namespace(const Namespace &src)
 	: indexesNames_(src.indexesNames_),
 	  items_(src.items_),
 	  free_(src.free_),
-	  name(src.name),
+	  name_(src.name_),
 	  payloadType_(src.payloadType_),
 	  tagsMatcher_(src.tagsMatcher_),
 	  storage_(src.storage_),
@@ -57,19 +56,19 @@ Namespace::Namespace(const Namespace &src)
 	  pkFields_(src.pkFields_),
 	  meta_(src.meta_),
 	  dbpath_(src.dbpath_),
-	  queryCache(src.queryCache) {
+	  queryCache_(src.queryCache_) {
 	for (auto &idxIt : src.indexes_) indexes_.push_back(unique_ptr<Index>(idxIt->Clone()));
-	logPrintf(LogTrace, "Namespace::Namespace (clone %s)", name.c_str());
+	logPrintf(LogTrace, "Namespace::Namespace (clone %s)", name_.c_str());
 }
 
-Namespace::Namespace(const string &_name)
-	: name(_name),
-	  payloadType_(_name),
+Namespace::Namespace(const string &name)
+	: name_(name),
+	  payloadType_(name),
 	  tagsMatcher_(payloadType_),
 	  unflushedCount_(0),
 	  sortOrdersBuilt_(false),
-	  queryCache(make_shared<QueryCache>()) {
-	logPrintf(LogTrace, "Namespace::Namespace (%s)", name.c_str());
+	  queryCache_(make_shared<QueryCache>()) {
+	logPrintf(LogTrace, "Namespace::Namespace (%s)", name_.c_str());
 	items_.reserve(10000);
 
 	// Add index and payload field for tuple of non indexed fields
@@ -78,15 +77,14 @@ Namespace::Namespace(const string &_name)
 
 Namespace::~Namespace() {
 	WLock wlock(mtx_);
-	logPrintf(LogTrace, "Namespace::~Namespace (%s), %d items", name.c_str(), items_.size());
+	logPrintf(LogTrace, "Namespace::~Namespace (%s), %d items", name_.c_str(), items_.size());
 }
 
 void Namespace::recreateCompositeIndexes(int startIdx) {
 	for (int i = startIdx; i < static_cast<int>(indexes_.size()); ++i) {
 		std::unique_ptr<reindexer::Index> &index(indexes_[i]);
-		if (index->type == IndexCompositeBTree || index->type == IndexCompositeHash || index->type == IndexCompositeText ||
-			index->type == IndexCompositeNewText) {
-			index.reset(Index::NewComposite(index->type, index->name, index->opts_, payloadType_, index->fields_));
+		if (isComposite(index->Type())) {
+			index.reset(Index::New(index->Type(), index->Name(), index->Opts(), payloadType_, index->Fields()));
 			for (IdType rowId = 0; rowId < static_cast<int>(items_.size()); ++rowId) {
 				if (!items_[rowId].IsFree()) {
 					indexes_[i]->Upsert(KeyRef(items_[rowId]), rowId);
@@ -184,9 +182,9 @@ bool Namespace::dropIndex(const string &index) {
 	int fieldIdx = itIdxName->second;
 	// Check, that index to remove is not part of composite index
 	for (int compositeIdx = payloadType_.NumFields(); compositeIdx < int(indexes_.size()); ++compositeIdx) {
-		if (indexes_[compositeIdx]->fields_.contains(fieldIdx))
+		if (indexes_[compositeIdx]->Fields().contains(fieldIdx))
 			throw Error(LogError, "Cannot remove index %: it's a part of a composite index %s", index.c_str(),
-						indexes_[compositeIdx]->name.c_str());
+						indexes_[compositeIdx]->Name().c_str());
 	}
 	for (auto &namePair : indexesNames_) {
 		if (namePair.second >= fieldIdx) {
@@ -195,16 +193,17 @@ bool Namespace::dropIndex(const string &index) {
 	}
 
 	const unique_ptr<Index> &indexToRemove = indexes_[fieldIdx];
-	if (indexToRemove->opts_.IsPK()) {
+	if (indexToRemove->Opts().IsPK()) {
 		if (indexToRemove->KeyType() == KeyValueComposite) {
-			auto itCompositeIdxState = compositeIndexesPkState_.find(indexToRemove->name);
+			auto itCompositeIdxState = compositeIndexesPkState_.find(indexToRemove->Name());
 			if (itCompositeIdxState == compositeIndexesPkState_.end()) {
-				throw Error(LogError, "Composite index % is not PK", indexToRemove->name.c_str());
+				throw Error(LogError, "Composite index % is not PK", indexToRemove->Name().c_str());
 			}
 			bool eachSubIndexPk = itCompositeIdxState->second;
 			if (eachSubIndexPk) {
-				for (int idx : indexToRemove->fields_) {
-					indexes_[idx]->opts_.PK(true);
+				for (int idx : indexToRemove->Fields()) {
+					auto opts = indexes_[idx]->Opts();
+					indexes_[idx]->SetOpts(opts.PK(true));
 				}
 			}
 		} else {
@@ -218,8 +217,7 @@ bool Namespace::dropIndex(const string &index) {
 	}
 	pkFields_ = std::move(newPKFields);
 
-	IndexType type = indexToRemove->type;
-	if ((type != IndexCompositeBTree) && (type != IndexCompositeHash) && (type != IndexCompositeText) && (type != IndexCompositeNewText)) {
+	if (!isComposite(indexToRemove->Type())) {
 		PayloadType oldPlType = payloadType_;
 		payloadType_.Drop(index);
 		tagsMatcher_.updatePayloadType(payloadType_);
@@ -233,7 +231,7 @@ bool Namespace::dropIndex(const string &index) {
 }
 
 bool Namespace::addIndex(const string &index, const string &jsonPath, IndexType type, IndexOpts opts) {
-	if (type == IndexCompositeBTree || type == IndexCompositeHash || type == IndexCompositeText || type == IndexCompositeNewText) {
+	if (isComposite(type)) {
 		// special handling of composite indexes;
 		return AddCompositeIndex(index, type, opts);
 	}
@@ -246,11 +244,11 @@ bool Namespace::addIndex(const string &index, const string &jsonPath, IndexType 
 	if (idxNameIt == indexesNames_.end()) {
 		// Check PK conflict
 		if (opts.IsPK() && fieldByJsonPath != -1) {
-			throw Error(errConflict, "Can't add PK Index '%s.%s', already exists another index with same json path", name.c_str(),
+			throw Error(errConflict, "Can't add PK Index '%s.%s', already exists another index with same json path", name_.c_str(),
 						index.c_str());
 		}
 
-		insertIndex(Index::New(type, index, opts), idxNo, index);
+		insertIndex(Index::New(type, index, opts, PayloadType(), FieldsSet()), idxNo, index);
 
 		PayloadType oldPlType = payloadType_;
 
@@ -270,22 +268,22 @@ bool Namespace::addIndex(const string &index, const string &jsonPath, IndexType 
 	assert(idxNo < payloadType_->NumFields());
 
 	// Check conflicts.
-	if (indexes_[idxNameIt->second]->type != type) {
-		throw Error(errConflict, "Index '%s.%s' already exists with different type", name.c_str(), index.c_str());
+	if (indexes_[idxNameIt->second]->Type() != type) {
+		throw Error(errConflict, "Index '%s.%s' already exists with different type", name_.c_str(), index.c_str());
 	}
 
 	if (pkFields_.contains(idxNo) != bool(opts.IsPK())) {
-		throw Error(errConflict, "Index '%s.%s' already exists with different PK attribute", name.c_str(), index.c_str());
+		throw Error(errConflict, "Index '%s.%s' already exists with different PK attribute", name_.c_str(), index.c_str());
 	}
 
 	// append different indexes
 	if (fieldByJsonPath != idxNo && jsonPath.length()) {
 		if (!opts.IsAppendable()) {
-			throw Error(errConflict, "Index '%s.%s' already exists with different json path '%s' ", name.c_str(), index.c_str(),
+			throw Error(errConflict, "Index '%s.%s' already exists with different json path '%s' ", name_.c_str(), index.c_str(),
 						jsonPath.c_str());
 		}
-
-		indexes_[idxNo]->opts_.Array(true);
+		auto opts1 = indexes_[idxNo]->Opts();
+		indexes_[idxNo]->SetOpts(opts1.Array(true));
 
 		PayloadType oldPlType = payloadType_;
 		payloadType_.Add(PayloadFieldType(indexes_[idxNo]->KeyType(), index, jsonPath, opts.IsArray()));
@@ -317,8 +315,12 @@ bool Namespace::AddCompositeIndex(const string &index, IndexType type, IndexOpts
 			throw Error(errParams, "Subindex '%s' not found for composite index '%s'", subIdx.c_str(), index.c_str());
 		}
 
+		if (indexes_[idxNameIt->second]->Opts().IsArray() && (type == IndexCompositeBTree || type == IndexCompositeHash)) {
+			throw Error(errParams, "Can't add array subindex '%s' to composite index '%s'", subIdx.c_str(), index.c_str());
+		}
+
 		fields.push_back(idxNameIt->second);
-		if (!indexes_[idxNameIt->second]->opts_.IsPK()) {
+		if (!indexes_[idxNameIt->second]->Opts().IsPK()) {
 			eachSubIdxPK = false;
 		}
 	}
@@ -329,7 +331,10 @@ bool Namespace::AddCompositeIndex(const string &index, IndexType type, IndexOpts
 	if (idxNameIt == indexesNames_.end()) {
 		if (eachSubIdxPK) {
 			logPrintf(LogInfo, "Using composite index instead of single %s", index.c_str());
-			for (auto i : fields) indexes_[i]->opts_.PK(false);
+			for (auto i : fields) {
+				auto opts = indexes_[i]->Opts();
+				indexes_[i]->SetOpts(opts.PK(false));
+			}
 		}
 
 		bool isPk(opts.IsPK() || eachSubIdxPK);
@@ -339,7 +344,7 @@ bool Namespace::AddCompositeIndex(const string &index, IndexType type, IndexOpts
 		}
 
 		int idxPos = indexes_.size();
-		insertIndex(Index::NewComposite(type, index, opts, payloadType_, fields), idxPos, realName);
+		insertIndex(Index::New(type, index, opts, payloadType_, fields), idxPos, realName);
 
 		for (IdType rowId = 0; rowId < int(items_.size()); rowId++) {
 			if (!items_[rowId].IsFree()) {
@@ -350,11 +355,11 @@ bool Namespace::AddCompositeIndex(const string &index, IndexType type, IndexOpts
 		result = true;
 	} else {
 		// Existing index
-		if (indexes_[idxNameIt->second]->type != type) {
+		if (indexes_[idxNameIt->second]->Type() != type) {
 			throw Error(errConflict, "Index '%s' already exists with different type", index.c_str());
 		}
 
-		if (indexes_[idxNameIt->second]->fields_ != fields) {
+		if (indexes_[idxNameIt->second]->Fields() != fields) {
 			throw Error(errConflict, "Index '%s' already exists with different fields", index.c_str());
 		}
 	}
@@ -363,8 +368,8 @@ bool Namespace::AddCompositeIndex(const string &index, IndexType type, IndexOpts
 }
 
 void Namespace::insertIndex(Index *newIndex, int idxNo, const string &realName) {
-	if (newIndex->opts_.IsPK() && newIndex->opts_.IsArray()) {
-		throw Error(errParams, "Can't add index '%s' in namespace '%s'. PK field can't be array", newIndex->name.c_str(), name.c_str());
+	if (newIndex->Opts().IsPK() && newIndex->Opts().IsArray()) {
+		throw Error(errParams, "Can't add index '%s' in namespace '%s'. PK field can't be array", newIndex->Name().c_str(), name_.c_str());
 	}
 
 	indexes_.insert(indexes_.begin() + idxNo, unique_ptr<Index>(newIndex));
@@ -377,15 +382,22 @@ void Namespace::insertIndex(Index *newIndex, int idxNo, const string &realName) 
 
 	indexesNames_.insert({realName, idxNo});
 
-	if (newIndex->opts_.IsPK()) {
+	if (newIndex->Opts().IsPK()) {
 		if (newIndex->KeyType() == KeyValueComposite) {
-			for (auto i : newIndex->fields_) pkFields_.push_back(i);
+			for (auto i : newIndex->Fields()) pkFields_.push_back(i);
 		} else {
 			pkFields_.push_back(idxNo);
 		}
 	}
 }
 
+int Namespace::getIndexByName(const string &index) const {
+	auto idxIt = indexesNames_.find(index);
+
+	if (idxIt == indexesNames_.end()) throw Error(errParams, "Index '%s' not found in '%s'", index.c_str(), name_.c_str());
+
+	return idxIt->second;
+}
 void Namespace::ConfigureIndex(const string &index, const string &config) { indexes_[getIndexByName(index)]->Configure(config); }
 
 void Namespace::Insert(Item &item, bool store) { upsertInternal(item, store, INSERT_MODE); }
@@ -448,8 +460,8 @@ void Namespace::_delete(IdType id) {
 void Namespace::Delete(const Query &q, QueryResults &result) {
 	WLock lock(mtx_);
 	NsSelecter selecter(this);
-
-	selecter(result, SelectCtx(q, nullptr));
+	SelectCtx ctx(q, nullptr);
+	selecter(result, ctx);
 
 	auto tmStart = high_resolution_clock::now();
 	for (auto r : result) _delete(r.id);
@@ -486,6 +498,9 @@ void Namespace::upsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 
 		plNew.Get(field, skrefs);
 
+		if (index.Opts().GetCollateMode() == CollateUTF8)
+			for (auto &key : skrefs) key.EnsureUTF8();
+
 		// Check for update
 		if (doUpdate) {
 			pl.Get(field, krefs);
@@ -507,12 +522,12 @@ void Namespace::upsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 
 void Namespace::updateTagsMatcherFromItem(ItemImpl *ritem, string &jsonSliceBuf) {
 	if (ritem->tagsMatcher().isUpdated()) {
-		logPrintf(LogTrace, "Updated TagsMatcher of namespace '%s' on modify:\n%s", name.c_str(), ritem->tagsMatcher().dump().c_str());
+		logPrintf(LogTrace, "Updated TagsMatcher of namespace '%s' on modify:\n%s", name_.c_str(), ritem->tagsMatcher().dump().c_str());
 	}
 
 	if (ritem->Type().get() != payloadType_.get() || !tagsMatcher_.try_merge(ritem->tagsMatcher())) {
 		jsonSliceBuf = ritem->GetJSON().ToString();
-		logPrintf(LogInfo, "Conflict TagsMatcher of namespace '%s' on modify: item:\n%s\ntm is\nnew tm is\n %s\n", name.c_str(),
+		logPrintf(LogInfo, "Conflict TagsMatcher of namespace '%s' on modify: item:\n%s\ntm is\nnew tm is\n %s\n", name_.c_str(),
 				  jsonSliceBuf.c_str(), tagsMatcher_.dump().c_str(), ritem->tagsMatcher().dump().c_str());
 
 		ItemImpl tmpItem(payloadType_, tagsMatcher_);
@@ -591,20 +606,20 @@ pair<IdType, bool> Namespace::findByPK(ItemImpl *ritem) {
 	h_vector<IdSetRef::iterator, 4> idsIt;
 
 	if (!pkFields_.size()) {
-		throw Error(errLogic, "Trying to modify namespace '%s', but it's have no PK indexes", name.c_str());
+		throw Error(errLogic, "Trying to modify namespace '%s', but it's have no PK indexes", name_.c_str());
 	}
 
 	Payload pl = ritem->GetPayload();
 	// It's faster equalent of "select ID from namespace where pk1 = 'item.pk1' and pk2 = 'item.pk2' "
 	// Get pkey values from pk fields
 	for (int field = 0; field < int(indexes_.size()); ++field)
-		if (indexes_[field]->opts_.IsPK()) {
+		if (indexes_[field]->Opts().IsPK()) {
 			KeyRefs krefs;
 			if (field < pl.NumFields())
 				pl.Get(field, krefs);
 			else
 				krefs.push_back(KeyRef(*pl.Value()));
-			assertf(krefs.size() == 1, "Pkey field must contain 1 key, but there '%d' in '%s.%s'", int(krefs.size()), name.c_str(),
+			assertf(krefs.size() == 1, "Pkey field must contain 1 key, but there '%d' in '%s.%s'", int(krefs.size()), name_.c_str(),
 					payloadType_->Field(field).Name().c_str());
 			ids.push_back(indexes_[field]->Find(krefs[0]));
 		}
@@ -660,7 +675,7 @@ void Namespace::commit(const NSCommitContext &ctx, SelectLockUpgrader *lockUpgra
 				}
 			}
 		} while (++field != payloadType_->NumFields());
-		if (was) logPrintf(LogTrace, "Namespace::Commit ('%s'),%d items", name.c_str(), items_.size());
+		if (was) logPrintf(LogTrace, "Namespace::Commit ('%s'),%d items", name_.c_str(), items_.size());
 		//	items_.shrink_to_fit();
 	}
 
@@ -670,8 +685,7 @@ void Namespace::commit(const NSCommitContext &ctx, SelectLockUpgrader *lockUpgra
 		int i = 1;
 		for (auto &idxIt : indexes_) {
 			if (idxIt->IsOrdered()) {
-				idxIt->sort_id = i++;
-				NSUpdateSortedContext sortCtx(*this, idxIt->sort_id);
+				NSUpdateSortedContext sortCtx(*this, i++);
 				idxIt->MakeSortOrders(sortCtx);
 				// Build in multiple threads
 				int maxIndexWorkers = std::thread::hardware_concurrency();
@@ -709,7 +723,7 @@ void Namespace::markUpdated() {
 	invalidateQueryCache();
 }
 
-void Namespace::Select(QueryResults &result, const SelectCtx &params) {
+void Namespace::Select(QueryResults &result, SelectCtx &params) {
 	NsSelecter selecter(this);
 	selecter(result, params);
 }
@@ -723,13 +737,13 @@ NamespaceDef Namespace::GetDefinition() {
 	RLock rlock(mtx_);
 	auto pt = this->payloadType_;
 
-	NamespaceDef nsDef(name, StorageOpts().Enabled(!dbpath_.empty()));
+	NamespaceDef nsDef(name_, StorageOpts().Enabled(!dbpath_.empty()));
 
 	for (size_t idx = 1; idx < indexes_.size(); idx++) {
 		IndexDef indexDef;
-		indexDef.FromType(indexes_[idx]->type);
-		indexDef.name = indexes_[idx]->name;
-		indexDef.opts = indexes_[idx]->opts_;
+		indexDef.FromType(indexes_[idx]->Type());
+		indexDef.name = indexes_[idx]->Name();
+		indexDef.opts = indexes_[idx]->Opts();
 
 		if (int(idx) < pt->NumFields()) {
 			for (auto &p : pt->Field(idx).JsonPaths()) indexDef.jsonPath += p + ",";
@@ -785,7 +799,7 @@ bool Namespace::loadIndexesFromStorage() {
 		}
 	}
 
-	logPrintf(LogTrace, "Loaded index structure of namespace '%s'\n%s", name.c_str(), payloadType_->ToString().c_str());
+	logPrintf(LogTrace, "Loaded index structure of namespace '%s'\n%s", name_.c_str(), payloadType_->ToString().c_str());
 
 	def.clear();
 	status = storage_->Read(StorageOpts().FillCache(), Slice(kStorageTagsPrefix), def);
@@ -793,7 +807,7 @@ bool Namespace::loadIndexesFromStorage() {
 		Serializer ser(def.data(), def.size());
 		tagsMatcher_.deserialize(ser);
 		tagsMatcher_.clearUpdated();
-		logPrintf(LogTrace, "Loaded tags of namespace %s:\n%s", name.c_str(), tagsMatcher_.dump().c_str());
+		logPrintf(LogTrace, "Loaded tags of namespace %s:\n%s", name_.c_str(), tagsMatcher_.dump().c_str());
 	}
 
 	return true;
@@ -802,7 +816,7 @@ bool Namespace::loadIndexesFromStorage() {
 void Namespace::saveIndexesToStorage() {
 	if (!storage_) return;
 
-	logPrintf(LogTrace, "Namespace::saveIndexesToStorage (%s)", name.c_str());
+	logPrintf(LogTrace, "Namespace::saveIndexesToStorage (%s)", name_.c_str());
 
 	WrSerializer ser;
 	ser.PutUInt32(kStorageMagic);
@@ -810,7 +824,7 @@ void Namespace::saveIndexesToStorage() {
 
 	ser.PutVarUint(indexes_.size() - 1);
 	for (int f = 1; f < int(indexes_.size()); f++) {
-		ser.PutVString(indexes_[f]->name);
+		ser.PutVString(indexes_[f]->Name());
 
 		if (f < payloadType_->NumFields()) {
 			ser.PutVarUint(payloadType_->Field(f).JsonPaths().size());
@@ -819,12 +833,12 @@ void Namespace::saveIndexesToStorage() {
 			ser.PutVarUint(0);
 		}
 
-		ser.PutVarUint(indexes_[f]->type);
-		ser.PutVarUint(indexes_[f]->opts_.IsArray());
-		ser.PutVarUint(indexes_[f]->opts_.IsPK());
-		ser.PutVarUint(indexes_[f]->opts_.IsDense());
-		ser.PutVarUint(indexes_[f]->opts_.IsAppendable());
-		ser.PutVarUint(indexes_[f]->opts_.GetCollateMode());
+		ser.PutVarUint(indexes_[f]->Type());
+		ser.PutVarUint(indexes_[f]->Opts().IsArray());
+		ser.PutVarUint(indexes_[f]->Opts().IsPK());
+		ser.PutVarUint(indexes_[f]->Opts().IsDense());
+		ser.PutVarUint(indexes_[f]->Opts().IsAppendable());
+		ser.PutVarUint(indexes_[f]->Opts().GetCollateMode());
 	}
 
 	storage_->Write(StorageOpts().FillCache(), Slice(kStorageIndexesPrefix), Slice(reinterpret_cast<const char *>(ser.Buf()), ser.Len()));
@@ -832,10 +846,10 @@ void Namespace::saveIndexesToStorage() {
 
 void Namespace::EnableStorage(const string &path, StorageOpts opts) {
 	if (storage_) {
-		throw Error(errLogic, "Storage already enabled for namespace '%s' on path '%s'", name.c_str(), path.c_str());
+		throw Error(errLogic, "Storage already enabled for namespace '%s' on path '%s'", name_.c_str(), path.c_str());
 	}
 
-	string dbpath = JoinPath(path, name);
+	string dbpath = JoinPath(path, name_);
 	datastorage::StorageType storageType = datastorage::StorageType::LevelDB;
 
 	WLock lock(mtx_);
@@ -846,13 +860,13 @@ void Namespace::EnableStorage(const string &path, StorageOpts opts) {
 		Error status = storage_->Open(dbpath, opts);
 		if (!status.ok()) {
 			if (!opts.IsDropOnFileFormatError()) {
-				throw Error(errLogic, "Can't enable storage for namespace '%s' on path '%s' - %s", name.c_str(), path.c_str(),
+				throw Error(errLogic, "Can't enable storage for namespace '%s' on path '%s' - %s", name_.c_str(), path.c_str(),
 							status.what().c_str());
 			}
 		} else {
 			success = loadIndexesFromStorage();
 			if (!success && !opts.IsDropOnFileFormatError()) {
-				throw Error(errLogic, "Can't enable storage for namespace '%s' on path '%s': format error", name.c_str(), dbpath.c_str());
+				throw Error(errLogic, "Can't enable storage for namespace '%s' on path '%s': format error", name_.c_str(), dbpath.c_str());
 			}
 		}
 		if (!success && opts.IsDropOnFileFormatError()) {
@@ -872,7 +886,7 @@ void Namespace::LoadFromStorage() {
 	opts.FillCache(false);
 	size_t ldcount = 0;
 
-	logPrintf(LogTrace, "Loading items to '%s' from storage", name.c_str());
+	logPrintf(LogTrace, "Loading items to '%s' from storage", name_.c_str());
 	unique_ptr<datastorage::Cursor> dbIter(storage_->GetCursor(opts));
 	ItemImpl item(payloadType_, tagsMatcher_);
 	item.Unsafe(true);
@@ -882,7 +896,7 @@ void Namespace::LoadFromStorage() {
 		if (dataSlice.size() > 0) {
 			auto err = item.FromCJSON(dataSlice);
 			if (!err.ok()) {
-				logPrintf(LogError, "Error load item to '%s' from storage: '%s'", name.c_str(), err.what().c_str());
+				logPrintf(LogError, "Error load item to '%s' from storage: '%s'", name_.c_str(), err.what().c_str());
 				throw err;
 			}
 
@@ -893,7 +907,7 @@ void Namespace::LoadFromStorage() {
 			ldcount += dataSlice.size();
 		}
 	}
-	logPrintf(LogInfo, "[%s] Done loading storage. %d items loaded, total size=%dM", name.c_str(), int(items_.size()),
+	logPrintf(LogInfo, "[%s] Done loading storage. %d items loaded, total size=%dM", name_.c_str(), int(items_.size()),
 			  int(ldcount / (1024 * 1024)));
 }
 
@@ -907,12 +921,12 @@ void Namespace::FlushStorage() {
 			updates_->Put(Slice(kStorageTagsPrefix), Slice(reinterpret_cast<const char *>(ser.Buf()), ser.Len()));
 			unflushedCount_++;
 			tagsMatcher_.clearUpdated();
-			logPrintf(LogTrace, "Saving tags of namespace %s:\n%s", name.c_str(), tagsMatcher_.dump().c_str());
+			logPrintf(LogTrace, "Saving tags of namespace %s:\n%s", name_.c_str(), tagsMatcher_.dump().c_str());
 		}
 
 		if (unflushedCount_) {
 			Error status = storage_->Write(StorageOpts().FillCache(), *(updates_.get()));
-			if (!status.ok()) throw Error(errLogic, "Error write ns '%s' to storage:", name.c_str(), status.what().c_str());
+			if (!status.ok()) throw Error(errLogic, "Error write ns '%s' to storage:", name_.c_str(), status.what().c_str());
 			updates_->Clear();
 			unflushedCount_ = 0;
 		}
@@ -996,14 +1010,6 @@ vector<string> Namespace::EnumMeta() {
 	return ret;
 }
 
-int Namespace::getIndexByName(const string &index) {
-	auto idxIt = indexesNames_.find(index);
-
-	if (idxIt == indexesNames_.end()) throw Error(errParams, "Index '%s' not found in '%s'", index.c_str(), name.c_str());
-
-	return idxIt->second;
-}
-
 Namespace *Namespace::Clone(Namespace::Ptr ns) {
 	RLock lock(ns->mtx_);
 	return new Namespace(*ns);
@@ -1032,16 +1038,16 @@ IdType Namespace::createItem(size_t realSize) {
 }
 
 void Namespace::invalidateQueryCache() {
-	if (!queryCache->Empty()) {
-		logPrintf(LogTrace, "[*] invalidate query cache. namespace: %s\n", name.c_str());
-		queryCache.reset(new QueryCache);
+	if (!queryCache_->Empty()) {
+		logPrintf(LogTrace, "[*] invalidate query cache. namespace: %s\n", name_.c_str());
+		queryCache_.reset(new QueryCache);
 	}
 }
 
 void Namespace::setFieldsBasedOnPrecepts(ItemImpl *ritem) {
 	for (auto &precept : ritem->GetPrecepts()) {
-		SqlFunc sqlFunc;
-		SqlFuncStruct sqlFuncStruct = sqlFunc.Parse(precept);
+		SelectFuncParser sqlFunc;
+		SelectFuncStruct sqlFuncStruct = sqlFunc.Parse(precept);
 
 		KeyRefs krs;
 		KeyValue field = ritem->GetPayload().Get(sqlFuncStruct.field, krs)[0];
@@ -1051,7 +1057,7 @@ void Namespace::setFieldsBasedOnPrecepts(ItemImpl *ritem) {
 		if (sqlFuncStruct.isFunction) {
 			if (sqlFuncStruct.funcName == "now") {
 				string mode = "sec";
-				if (sqlFuncStruct.funcArgs.size()) {
+				if (sqlFuncStruct.funcArgs.size() && !sqlFuncStruct.funcArgs.front().empty()) {
 					mode = sqlFuncStruct.funcArgs.front();
 				}
 				value = KeyValue(getTimeNow(mode));
@@ -1069,7 +1075,7 @@ void Namespace::setFieldsBasedOnPrecepts(ItemImpl *ritem) {
 	}
 }
 
-int64_t Namespace::funcGetSerial(SqlFuncStruct sqlFuncStruct) {
+int64_t Namespace::funcGetSerial(SelectFuncStruct sqlFuncStruct) {
 	int64_t counter = kStorageSerialInitial;
 
 	string ser = getMeta("_SERIAL_" + sqlFuncStruct.field);
@@ -1081,22 +1087,6 @@ int64_t Namespace::funcGetSerial(SqlFuncStruct sqlFuncStruct) {
 	putMeta("_SERIAL_" + sqlFuncStruct.field, Slice(s));
 
 	return counter;
-}
-
-const string &Namespace::getOptimalSortOrder(const QueryEntries &entries) {
-	Index *maxIdx = nullptr;
-	static string no = "";
-	for (auto c = entries.begin(); c != entries.end(); c++) {
-		if ((c->condition == CondGe || c->condition == CondGt || c->condition == CondLe || c->condition == CondLt ||
-			 c->condition == CondRange) &&
-			!c->distinct && indexes_[c->idxNo]->IsOrdered()) {
-			if (!maxIdx || indexes_[c->idxNo]->Size() > maxIdx->Size()) {
-				maxIdx = indexes_[c->idxNo].get();
-			}
-		}
-	}
-
-	return maxIdx ? maxIdx->name : no;
 }
 
 }  // namespace reindexer

@@ -130,8 +130,8 @@ func (db *Reindexer) getMeta(namespace, key string) ([]byte, error) {
 	return []byte(s), nil
 }
 
-func unpackItem(ns nsArrayEntry, params rawResultItemParams, allowUnsafe bool) (item interface{}, err error) {
-	useCache := ns.deepCopyIface || allowUnsafe
+func unpackItem(ns nsArrayEntry, params rawResultItemParams, allowUnsafe bool, nonCacheableData bool) (item interface{}, err error) {
+	useCache := (ns.deepCopyIface || allowUnsafe) && !nonCacheableData
 	needCopy := ns.deepCopyIface && !allowUnsafe
 
 	if useCache {

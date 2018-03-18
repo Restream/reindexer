@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <unistd.h>
+#include "net/stat.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -140,7 +141,12 @@ void Connection::closeConn() {
 	}
 	timeout_.stop();
 	if (dispatcher_.onClose_) {
-		Context ctx{nullptr, this};
+		Stat stat;
+		Context ctx;
+		ctx.call = nullptr;
+		ctx.writer = this;
+		ctx.stat = stat;
+
 		dispatcher_.onClose_(ctx, errOK);
 	}
 	clientData_.reset();
@@ -158,7 +164,12 @@ void Connection::parseRPC() {
 	CProtoHeader hdr;
 
 	while (!closeConn_) {
-		Context ctx{nullptr, this};
+		Stat stat;
+		Context ctx;
+		ctx.call = nullptr;
+		ctx.writer = this;
+		ctx.stat = stat;
+
 		auto len = rdBuf_.peek(reinterpret_cast<char *>(&hdr), sizeof(hdr));
 
 		if (len < sizeof(hdr)) return;

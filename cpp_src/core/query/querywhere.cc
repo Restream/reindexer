@@ -1,7 +1,6 @@
 #include "querywhere.h"
 #include "estl/tokenizer.h"
 #include "tools/errors.h"
-#include "tools/logger.h"
 
 namespace reindexer {
 

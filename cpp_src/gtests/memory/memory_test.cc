@@ -58,7 +58,7 @@ TEST_F(FTApi, CompareSearchMemorySmall) {
 	FillDataForTest(900);
 	CalcRps(300);
 	auto text_stat = GetStat();
-	Reinit("fulltext");
+	Reinit("fuzzytext");
 	FillDataForTest(900);
 	CalcRps(300);
 	auto ft_stat = GetStat();
@@ -69,7 +69,7 @@ TEST_F(FTApi, CompareSearchMemoryBig) {
 	/  FillDataForTest(1000);
 	  CalcRps(1000);
 	  auto text_stat = GetStat();
-	  Reinit("fulltext");
+	  Reinit("fuzzytext");
 	  FillDataForTest(1000);
 	  CalcRps(1000);
 	  auto ft_stat = GetStat();

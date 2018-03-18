@@ -4,6 +4,7 @@
 #include "dbmanager.h"
 #include "gason/gason.h"
 #include "tools/fsops.h"
+#include "tools/jsontools.h"
 #include "tools/logger.h"
 #include "tools/stringstools.h"
 
@@ -160,14 +161,6 @@ Error DBManager::Login(const string &dbName, AuthContext &auth) {
 	logPrintf(LogInfo, "Authorized user '%s', to db '%s', role=%s\n", auth.login_.c_str(), dbName.c_str(), UserRoleName(auth.role_));
 
 	return 0;
-}
-
-static void parseJsonField(const char *name, string &ref, JsonNode *elem) {
-	if (strcmp(name, elem->key)) return;
-	if (elem->value.getTag() == JSON_STRING) {
-		ref = elem->value.toString();
-	} else
-		throw Error(errParseJson, "Expected string setting '%s' of config", name);
 }
 
 Error DBManager::readUsers() {

@@ -13,10 +13,12 @@ namespace reindexer {
 void NsDescriber::operator()(QueryResults &result) {
 	PayloadType payloadType;
 	TagsMatcher tagsMatcher;
+	NamespaceDef nsDef = ns_->GetDefinition();
+
 	Namespace::RLock rlock(ns_->mtx_);
 
 	if (result.ctxs.size() == 0) {
-		payloadType = PayloadType(ns_->name);
+		payloadType = PayloadType(nsDef.name);
 		payloadType.Add(PayloadFieldType(KeyValueString, "-tuple", "", false));
 		tagsMatcher = TagsMatcher(payloadType);
 		result.addNSContext(payloadType, tagsMatcher, JsonPrintFilter());
@@ -33,8 +35,7 @@ void NsDescriber::operator()(QueryResults &result) {
 	// prepare json
 	stringstream strStream;
 	strStream << "{";
-	strStream << "\"name\":"
-			  << "\"" << ns_->name << "\",";
+	strStream << "\"name\":\"" << nsDef.name << "\",";
 
 	string updated = ns_->GetMeta("updated");
 	if (updated.empty()) {
@@ -43,54 +44,36 @@ void NsDescriber::operator()(QueryResults &result) {
 
 	strStream << "\"updated_unix_nano\":" << updated << ",";
 	strStream << "\"indexes\":[";
+	strStream << std::boolalpha;
 
-	// skip first "-tuple" index
-	unsigned indexesLength = ns_->indexes_.size();
-	for (unsigned i = 1; i < indexesLength; i++) {
-		auto &index = *ns_->indexes_[i];
+	for (unsigned i = 0; i < nsDef.indexes.size(); i++) {
+		auto &index = nsDef.indexes[i];
 
-		bool isSortable =
-			index.type == IndexStrBTree || index.type == IndexIntBTree || index.type == IndexDoubleBTree || index.type == IndexInt64BTree;
-		bool isFulltext = index.type == IndexFullText || index.type == IndexNewFullText;
+		IndexType type = index.Type();
+
+		if (i != 0) strStream << ",";
 
 		strStream << "{";
-		strStream << "\"name\":"
-				  << "\"" << index.name << "\",";
-		strStream << "\"field_type\":"
-				  << "\"" << index.TypeName() << "\",";
-		strStream << "\"is_array\":" << (index.opts_.IsArray() ? "true" : "false") << ",";
-		strStream << "\"sortable\":" << (isSortable ? "true" : "false") << ",";
-		strStream << "\"pk\":" << (index.opts_.IsPK() ? "true" : "false") << ",";
-		strStream << "\"fulltext\":" << (isFulltext ? "true" : "false") << ",";
-		strStream << "\"collate_mode\":"
-				  << "\"" << index.CollateMode() << "\""
-				  << ",";
+		strStream << "\"name\":\"" << index.name << "\",";
+		strStream << "\"field_type\":\"" << index.fieldType << "\",";
+		strStream << "\"is_array\":" << index.opts.IsArray() << ",";
+		strStream << "\"sortable\":" << isSortable(type) << ",";
+		strStream << "\"pk\":" << index.opts.IsPK() << ",";
+		strStream << "\"fulltext\":" << isFullText(type) << ",";
+		strStream << "\"collate_mode\":\"" << index.CollateMode() << "\",";
 
 		strStream << "\"conditions\": [";
-		auto conds = index.Conds();
-		unsigned condsLength = conds.size();
-		for (unsigned j = 0; j < condsLength; j++) {
+		auto conds = index.Conditions();
+		for (unsigned j = 0; j < conds.size(); j++) {
+			if (j != 0) strStream << ",";
 			strStream << "\"" << conds.at(j) << "\"";
-
-			if (j < condsLength - 1) {
-				strStream << ",";
-			}
 		}
-		strStream << "]";
-
-		strStream << "}";
-		if (i < indexesLength - 1) {
-			strStream << ",";
-		}
+		strStream << "]}";
 	}
 	strStream << "],";
-	strStream << "\"storage_enabled\":" << (ns_->dbpath_.length() ? "true" : "false") << ",";
-	strStream << "\"storage_ok\":" << (ns_->storage_ != nullptr ? "true" : "false") << ",";
-
-	string storagePath = ns_->dbpath_.length() ? ns_->dbpath_ + '/' : "";
-	strStream << "\"storage_path\":"
-			  << "\"" << storagePath << "\",";
-
+	strStream << "\"storage_enabled\":" << nsDef.storage.IsEnabled() << ",";
+	strStream << "\"storage_ok\":" << bool(ns_->storage_ != nullptr) << ",";
+	strStream << "\"storage_path\":\"" << ns_->dbpath_ << "\",";
 	strStream << "\"items_count\":" << ns_->items_.size() - ns_->free_.size();
 	strStream << "}";
 

@@ -4,21 +4,19 @@
 #include <mutex>
 #include <vector>
 #include "core/cjson/tagsmatcher.h"
-#include "core/index/index.h"
 #include "core/item.h"
-#include "core/sqlfunc/sqlfunc.h"
+#include "core/selectfunc/selectfunc.h"
 #include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
 #include "estl/shared_mutex.h"
+#include "index/keyentry.h"
 #include "namespacedef.h"
 #include "payload/payloadiface.h"
 #include "query/querycache.h"
 #include "storage/idatastorage.h"
-#include "tools/logger.h"
 
 namespace reindexer {
 
-using std::mutex;
 using std::pair;
 using std::shared_ptr;
 using std::string;
@@ -35,7 +33,9 @@ class Namespace {
 protected:
 	friend class NsSelecter;
 	friend class NsDescriber;
+	friend class NsSelectFuncInterface;
 	friend class ReindexerImpl;
+
 	class NSCommitContext : public CommitContext {
 	public:
 		NSCommitContext(const Namespace &ns, int phases, const FieldsSet *indexes = nullptr)
@@ -97,7 +97,7 @@ public:
 	void Upsert(Item &item, bool store = true);
 
 	void Delete(Item &item);
-	void Select(QueryResults &result, const SelectCtx &params);
+	void Select(QueryResults &result, SelectCtx &params);
 	void Describe(QueryResults &result);
 	NamespaceDef GetDefinition();
 	vector<string> EnumMeta();
@@ -111,7 +111,7 @@ public:
 	// Put meta data to storage by key
 	void PutMeta(const string &key, const Slice &data);
 
-	int getIndexByName(const string &index);
+	int getIndexByName(const string &index) const;
 
 	static Namespace *Clone(Namespace::Ptr);
 
@@ -139,8 +139,7 @@ protected:
 
 	void setFieldsBasedOnPrecepts(ItemImpl *ritem);
 
-	int64_t funcGetSerial(SqlFuncStruct sqlFuncStruct);
-	const string &getOptimalSortOrder(const QueryEntries &entries);
+	int64_t funcGetSerial(SelectFuncStruct sqlFuncStruct);
 
 	vector<unique_ptr<Index>> indexes_;
 	fast_hash_map<string, int> indexesNames_;
@@ -148,7 +147,7 @@ protected:
 	Items items_;
 	fast_hash_set<IdType> free_;
 	// Namespace name
-	string name;
+	string name_;
 	// Payload types
 	PayloadType payloadType_;
 
@@ -169,7 +168,7 @@ protected:
 
 	string dbpath_;
 
-	shared_ptr<QueryCache> queryCache;
+	shared_ptr<QueryCache> queryCache_;
 
 	// shows if each subindex was PK
 	fast_hash_map<string, bool> compositeIndexesPkState_;

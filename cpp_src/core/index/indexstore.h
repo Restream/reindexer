@@ -13,13 +13,18 @@ public:
 	KeyRef Upsert(const KeyRef &key, IdType id) override;
 	void Delete(const KeyRef &key, IdType id) override;
 	void DumpKeys() override {}
-	SelectKeyResults SelectKey(const KeyValues &keys, CondType condition, SortType stype, ResultType res_type) override;
+	SelectKeyResults SelectKey(const KeyValues &keys, CondType condition, SortType stype, ResultType res_type,
+							   BaseFunctionCtx::Ptr ctx) override;
 	void Commit(const CommitContext &) override;
 	void UpdateSortedIds(const UpdateSortedContext & /*ctx*/) override {}
 	Index *Clone() override;
 	IdSetRef Find(const KeyRef & /*key*/) override {
 		// can't
 		return IdSetRef();
+	}
+	KeyValueType KeyType() override final {
+		static T a;
+		return KeyRef(a).Type();
 	}
 
 protected:
@@ -29,5 +34,7 @@ protected:
 
 	key_string tmpKeyVal_ = make_key_string();
 };
+
+Index *IndexStore_New(IndexType type, const string &_name, const IndexOpts &opts, const PayloadType payloadType, const FieldsSet &fields_);
 
 }  // namespace reindexer

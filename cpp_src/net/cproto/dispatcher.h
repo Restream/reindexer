@@ -7,6 +7,7 @@
 #include <vector>
 #include "args.h"
 #include "cproto.h"
+#include "net/stat.h"
 #include "tools/errors.h"
 #include "tools/slice.h"
 
@@ -44,6 +45,7 @@ struct Context {
 
 	RPCCall *call;
 	Writer *writer;
+	Stat stat;
 };
 
 class Connection;

@@ -4,8 +4,8 @@
 #include <memory>
 
 #include "core/comparator.h"
-#include "core/ft/fulltextctx.h"
 #include "core/idset.h"
+
 namespace reindexer {
 
 class SingleSelectKeyResult {
@@ -114,7 +114,6 @@ public:
 	SelectKeyResults(std::initializer_list<SelectKeyResult> l) { insert(end(), l.begin(), l.end()); }
 	SelectKeyResults(const SelectKeyResult &res) { push_back(res); }
 	SelectKeyResults() {}
-	FullTextCtx::Ptr ctx;
 };
 
 }  // namespace reindexer

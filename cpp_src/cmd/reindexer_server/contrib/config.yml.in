@@ -12,9 +12,11 @@ net:
 
 # Logger configuration
 logger:
-  rpclog: true
-  httplog: true
-  loglevel: 3
+  rpclog: ""
+  httplog: ""
+  corelog: stdout
+  serverlog: stdout
+  loglevel: info
 
 # System options
 system:

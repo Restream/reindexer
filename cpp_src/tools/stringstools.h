@@ -9,12 +9,16 @@
 using std::string;
 using std::vector;
 using std::wstring;
+using std::pair;
 
 namespace reindexer {
 
 vector<string>& split(const string& str, const string& delimiters, bool trimEmpty, vector<string>&);
-void split(const string& utf8Str, wstring& utf16str, string& buf, vector<const char*>& words);
 void split(const string& utf8Str, wstring& utf16str, vector<std::wstring>& words);
+void splitWithPos(const string& str, string& buf, vector<pair<const char*, int>>& words);
+size_t calcUTf8Size(const char* s, size_t size, size_t limit);
+size_t calcUTf8SizeEnd(const char* end, int pos, size_t limit);
+
 string lower(string s);
 int collateCompare(const Slice& lhs, const Slice& rhs, int mode);
 

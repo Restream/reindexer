@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <algorithm>
 #include <csignal>
+#include <stdio.h>
 
 namespace reindexer {
 namespace net {
@@ -22,7 +23,7 @@ void loop_epoll_backend::init(dynamic_loop *owner) {
 
 void loop_epoll_backend::set(int fd, int events, int oldevents) {
 	epoll_event ev;
-	ev.events = ((events & READ) ? (int)EPOLLIN | (int)EPOLLHUP : 0) | ((events & WRITE) ? (int)EPOLLOUT : 0) | EPOLLET;
+	ev.events = ((events & READ) ? int(EPOLLIN) | int(EPOLLHUP) : 0) | ((events & WRITE) ? int(EPOLLOUT) : 0) | EPOLLET;
 	ev.data.fd = fd;
 	if (epoll_ctl(ctlfd_, oldevents == 0 ? EPOLL_CTL_ADD : EPOLL_CTL_MOD, fd, &ev) < 0) {
 		perror("epoll_ctl EPOLL_CTL_MOD");
@@ -220,8 +221,19 @@ void dynamic_loop::set(sig *watcher) {
 		return;
 	}
 	sigs_.push_back(watcher);
-	assert(watcher->old_handler_ == nullptr);
-	watcher->old_handler_ = std::signal(watcher->signum_, net_ev_sighandler);
+
+	struct sigaction new_action, old_action;
+	new_action.sa_handler = net_ev_sighandler;
+	sigemptyset(&new_action.sa_mask);
+	new_action.sa_flags = 0;
+
+	auto res = sigaction(watcher->signum_, &new_action, &old_action);
+	if (res < 0) {
+		printf("sigaction error: %d\n", res);
+		return;
+	}
+
+	watcher->old_action_ = old_action;
 }
 
 void dynamic_loop::stop(sig *watcher) {
@@ -231,7 +243,12 @@ void dynamic_loop::stop(sig *watcher) {
 		return;
 	}
 	sigs_.erase(it);
-	std::signal(watcher->signum_, watcher->old_handler_);
+
+	auto res = sigaction(watcher->signum_, &(watcher->old_action_), 0);
+	if (res < 0) {
+		printf("sigaction error: %d\n", res);
+		return;
+	}
 }
 
 void dynamic_loop::set(async *watcher) {
