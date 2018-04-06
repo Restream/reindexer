@@ -31,6 +31,7 @@ reindexer_ret reindexer_select_query(reindexer_buffer in, int with_items, int32_
 reindexer_ret reindexer_delete_query(reindexer_buffer in);
 
 reindexer_error reindexer_free_buffer(reindexer_buffer in);
+reindexer_error reindexer_free_buffers(reindexer_buffer *in, int count);
 
 reindexer_error reindexer_commit(reindexer_string _namespace);
 

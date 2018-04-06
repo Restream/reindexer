@@ -11,6 +11,7 @@ namespace reindexer {
 
 class WrSerializer;
 class Serializer;
+using std::initializer_list;
 
 /// @class Query
 /// Allows to select data from DB.
@@ -27,6 +28,9 @@ public:
 	/// Creates an empty object.
 	Query() {}
 
+	/// Allows to compare 2 Query objects.
+	bool operator==(const Query &) const;
+
 	/// Parses pure sql select query and initializes Query object data members as a result.
 	/// @param q - sql query.
 	/// @return always returns 0.
@@ -39,15 +43,6 @@ public:
 
 	/// Logs query in 'Select field1, ... field N from namespace ...' format.
 	string Dump() const;
-
-	/// Builds print version of a query with join in sql format.
-	/// @return query sql string.
-	string DumpJoined() const;
-
-	/// @public
-	/// Builds a print version of a query with merge queries in sql format.
-	/// @return query sql string.
-	string DumpMerged() const;
 
 	/// Adds a condition with a single value. Analog to sql Where clause.
 	/// @param idx - index used in condition clause.
@@ -122,7 +117,7 @@ public:
 	/// in case of CondRange) belongs to "bookid" and l[0][1] (and l[1][1] in case of CondRange)
 	/// belongs to "price" indexes.
 	/// @return Query object ready to be executed.
-	Query &WhereComposite(const char *idx, CondType cond, std::initializer_list<KeyValues> l) {
+	Query &WhereComposite(const char *idx, CondType cond, initializer_list<KeyValues> l) {
 		entries.resize(entries.size() + 1);
 		QueryEntry &qe = entries.back();
 		qe.condition = cond;
@@ -130,6 +125,19 @@ public:
 		qe.op = nextOp_;
 		qe.values.reserve(l.size());
 		for (auto it = l.begin(); it != l.end(); it++) {
+			qe.values.push_back(KeyValue(*it));
+		}
+		nextOp_ = OpAnd;
+		return *this;
+	}
+	Query &WhereComposite(const char *idx, CondType cond, const vector<KeyValues> &v) {
+		entries.resize(entries.size() + 1);
+		QueryEntry &qe = entries.back();
+		qe.condition = cond;
+		qe.index = idx;
+		qe.op = nextOp_;
+		qe.values.reserve(v.size());
+		for (auto it = v.begin(); it != v.end(); it++) {
 			qe.values.push_back(KeyValue(*it));
 		}
 		nextOp_ = OpAnd;
@@ -167,15 +175,12 @@ public:
 		return Join(JoinType::InnerJoin, index, joinIndex, cond, OpAnd, qr);
 	}
 
-	/**
-	 * @public
-	 * Left Join of this namespace with another one.
-	 * @param index - name of the field in the namespace of this Query object.
-	 * @param joinIndex - name of the field in the namespace of qr Query object.
-	 * @param cond - condition type (Eq, Leq, Geq, etc).
-	 * @param qr - query of the namespace that is going to be joined with this one.
-	 * @return Query object ready to be executed.
-	 */
+	/// Left Join of this namespace with another one.
+	/// @param index - name of the field in the namespace of this Query object.
+	/// @param joinIndex - name of the field in the namespace of qr Query object.
+	/// @param cond - condition type (Eq, Leq, Geq, etc).
+	/// @param qr - query of the namespace that is going to be joined with this one.
+	/// @return Query object ready to be executed.
 	Query &LeftJoin(const char *index, const char *joinIndex, CondType cond, Query &qr) {
 		return Join(JoinType::LeftJoin, index, joinIndex, cond, OpAnd, qr);
 	}
@@ -271,37 +276,37 @@ public:
 		return *this;
 	}
 
-	/**
-	 * @public
-	 * Set the total count calculation mode to Accurate
-	 * @return Query object
-	 */
+	/// Set the total count calculation mode to Accurate
+	/// @return Query object
 	Query &ReqTotal() {
 		calcTotal = ModeAccurateTotal;
 		return *this;
 	}
 
-	/**
-	 * Set the total count calculation mode to Cached.
-	 * It will be use LRUCache for total count result
-	 * @return Query object
-	 */
+	/// Set the total count calculation mode to Cached.
+	/// It will be use LRUCache for total count result
+	/// @return Query object
 	Query &CachedTotal() {
 		calcTotal = ModeCachedTotal;
 		return *this;
 	}
 
-	/**
-	 * @public
-	 * Serializes query data to stream.
-	 * @param ser - serializer object for write.
-	 * @param mode - serialization mode.
-	 */
+	/// Serializes query data to stream.
+	/// @param ser - serializer object for write.
+	/// @param mode - serialization mode.
 	void Serialize(WrSerializer &ser, uint8_t mode = Normal) const;
 
 	/// Deserializes query data from stream.
 	/// @param ser - serializer object.
 	void Deserialize(Serializer &ser);
+
+	/// returns structure of a query in JSON format
+	string GetJSON();
+
+	/// Get  readaby Join Type
+	/// @param type - join tyoe
+	/// @return string with join type name
+	static const char *JoinTypeName(JoinType type);
 
 protected:
 	/// Parses query.
@@ -327,10 +332,31 @@ protected:
 	/// @param ser - serializer object.
 	void deserialize(Serializer &ser);
 
+	/// Parse join entries
+	void parseJoin(JoinType type, tokenizer &tok);
+
+	/// Parse join entries
+	void parseJoinEntries(tokenizer &tok, const string &mainNs);
+
+	/// Parse merge entries
+	void parseMerge(tokenizer &parser);
+
+	/// Builds print version of a query with join in sql format.
+	/// @return query sql string.
+	string dumpJoined() const;
+
+	/// Builds a print version of a query with merge queries in sql format.
+	/// @return query sql string.
+	string dumpMerged() const;
+
+	/// Builds a print version of a query's order by statement
+	/// @return query sql string.
+	string dumpOrderBy() const;
+
+public:
 	/// Next operation constant.
 	OpType nextOp_ = OpAnd;
 
-public:
 	/// Name of the namespace.
 	string _namespace;
 
@@ -371,10 +397,8 @@ public:
 
 	/// List of columns in a final result set.
 	h_vector<string, 4> selectFilter_;
-	/**
-	 * @protected
-	 * List of sql functions
-	 */
+
+	/// List of sql functions
 	h_vector<string, 1> selectFunctions_;
 };
 

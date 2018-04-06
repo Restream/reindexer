@@ -104,7 +104,7 @@ public:
 	}
 
 	bool Compare(CondType cond, PayloadValue &leftValue) {
-		assert(!values_.empty());
+		assert(!values_.empty() || !valuesSet_->empty());
 		assert(fields_.size() > 0);
 		PayloadValue *rightValue(&values_[0]);
 		Payload lhs(payloadType_, leftValue);

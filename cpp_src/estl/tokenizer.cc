@@ -7,12 +7,19 @@ static inline bool isalpha(char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' 
 static inline bool isdigit(char c) { return (c >= '0' && c <= '9'); }
 static inline char tolower(char c) { return (c >= 'A' && c <= 'Z') ? c + 'a' - 'A' : c; }
 
-tokenizer::tokenizer(const string &query) : cur(query.c_str()) {}
+tokenizer::tokenizer(const string &query) : cur(query.c_str()), beg(query.c_str()) {}
 
 bool tokenizer::end() const { return !*cur; }
 
 void tokenizer::skip_space() {
-	while (*cur == ' ' || *cur == '\t') cur++;
+	for (;;) {
+		while (*cur == ' ' || *cur == '\t' || *cur == '\n') cur++;
+		if (*cur == '-' && *(cur + 1) == '-') {
+			cur += 2;
+			while (*cur && *cur != '\n') cur++;
+		} else
+			return;
+	}
 }
 
 token tokenizer::next_token(bool to_lower) {
@@ -54,6 +61,19 @@ token tokenizer::next_token(bool to_lower) {
 
 	//	printf("tok=%s\n", res.text.c_str());
 	return res;
+}
+
+string tokenizer::where() const {
+	int line = 1;
+	int col = 0;
+	for (const char *pos = beg; pos != cur; pos++) {
+		if (*pos == '\n') {
+			line++;
+			col = 0;
+		} else
+			col++;
+	}
+	return "line: " + std::to_string(line) + " column: " + std::to_string(col);
 }
 
 token tokenizer::peek_token(bool to_lower) {

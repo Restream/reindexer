@@ -53,6 +53,14 @@ paths:
       operationId: "describeDatabases"
       produces:
       - "application/json"
+      parameters:
+      - name: "sort_order"
+        in: "query"
+        type: "string"
+        description: "Sort Order"
+        enum:
+        - "asc"
+        - "desc"
       responses:
         200:
           description: "successful operation"
@@ -289,7 +297,7 @@ paths:
       - "items"
       summary: "Items list description"
       description: ""
-      operationId: "describeNamespaces"
+      operationId: "getItems"
       produces:
       - "application/json"
       parameters:
@@ -367,7 +375,7 @@ paths:
       parameters:
       - in: "body"
         name: "body"
-        descriotion: "Index definition"
+        description: "Index definition"
         schema:
           $ref: "#/definitions/IndexDef"
         required: true
@@ -419,7 +427,7 @@ paths:
         400:
           description: "Invalid status value"
 
-  /db/{database}/query:
+  /{database}/query:
     get:
       tags:
       - "queries"
@@ -469,6 +477,33 @@ paths:
       responses:
         200:
           description: "successful operation"
+        400:
+          description: "Invalid status value"
+  /{database}/sqlquery:
+    post:
+      tags:
+      - "queries"
+      summary: "Query documents from namespace"
+      operationId: "postSQLQuery"
+      produces:
+      - "application/json"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "q"
+        in: "body"
+        schema:
+          type: "string"
+        description: "SQL query"
+        required: true
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: '#/definitions/Items'
         400:
           description: "Invalid status value"
 
@@ -578,13 +613,39 @@ definitions:
         type: "integer"
       distinct:
         type: "string"
+  
+      req_total:
+        type: "string"
+        enum:
+        - "disabled"
+        - "enabled"
+        - "cached"
       filters:
         type: "array"
         items: 
           $ref: "#/definitions/FilterDef"
       sort:
-        type: "object"
         $ref: "#/definitions/SortDef"
+      joined:
+        type: "array"
+        items:
+          $ref: "#/definitions/JoinedDef"
+      merged:
+        type: "array"
+        items:
+          $ref: "#/definitions/Query"
+      select_filter:
+        type: "array"
+        items:
+          type: "string"
+      select_functions:
+        type: "array"
+        items:
+          type: "string"
+      aggregations:
+        type: "array"
+        items:
+          $ref: "#/definitions/AggregationsDef"
 
   FilterDef:
     type: "object"
@@ -617,9 +678,77 @@ definitions:
       field:
         type: "string"
       values:
-        type: "object"
+        type: "array"
+        items:
+          type: "object"
       desc:
         type: "boolean"
+
+  JoinedDef:
+    type: "object"
+    properties:
+      namespace:
+        type: "string"
+      type:
+        type: "string"
+      op:
+        type: "string"
+        enum:
+        - "AND"
+        - "OR"
+        - "NOT"
+      filters:
+        type: "array"
+        items: 
+          $ref: "#/definitions/FilterDef"
+      sort:
+        type: "object"
+        $ref: "#/definitions/SortDef"
+      limit:
+        type: "integer"
+      offset:
+        type: "integer"
+      on:
+        type: "array"
+        items: 
+          $ref: "#/definitions/OnDef"
+
+
+  OnDef:
+    type: "object"
+    properties:
+      left_field:
+        type: "string"
+      right_field:
+        type: "string"
+      condition:
+        type: "string"
+        enum:
+        - "EQ"
+        - "GT"
+        - "GE"
+        - "LE"
+        - "LT"
+        - "RANGE"
+        - "SET"
+        - "EMPTY"
+      op:
+        type: "string"
+        enum:
+        - "AND"
+        - "OR"
+        - "NOT"
+
+  AggregationsDef:
+    type: "object"
+    properties:
+      field:
+        type: "string"
+      type:
+        type: "string"
+        enum:
+        - "sum"
+        - "avg"
 
   Items:
     type: "object"

@@ -101,7 +101,6 @@ endif()
 
 if (GTEST_FOUND)
     add_subdirectory(gtests/tests)
-    add_subdirectory(gtests/memory)
 endif()
 
 if (benchmark_FOUND)

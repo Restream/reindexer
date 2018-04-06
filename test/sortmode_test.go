@@ -180,7 +180,7 @@ func TestSortDataIndexMode(t *testing.T) {
 
 	for i := 0; i < len(nums); i += 2 {
 		if nums[i] > nums[i+1] {
-			panic(fmt.Errorf("Numeric collate doesn't provide sorted results. Expected %i <= %i", nums[i], nums[i+1]))
+			panic(fmt.Errorf("Numeric collate doesn't provide sorted results. Expected %d <= %d", nums[i], nums[i+1]))
 		}
 	}
 

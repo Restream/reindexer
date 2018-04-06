@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdarg.h>
+#include <memory>
 #include <random>
 #include <string>
 #include <vector>
@@ -9,6 +11,7 @@
 
 using std::string;
 using std::vector;
+using std::unique_ptr;
 
 using reindexer::KeyRef;
 using reindexer::KeyRefs;
@@ -59,3 +62,7 @@ vector<T> randomNumArray(int count, int start, int region) {
 	for (int i = 0; i < count; i++) result.emplace_back(random<T>(start, start + region));
 	return result;
 }
+
+string FormatString(const char* msg, va_list args);
+string FormatString(const char* msg, ...);
+string HumanReadableNumber(size_t number, bool si, const string& unitLabel = "");

@@ -124,7 +124,7 @@ bool ResultSerializer::PutResults(const QueryResults* result) {
 		// Put Item ID and version
 		putItemParams(result, i, true);
 
-		if (!result->joined_) {
+		if (!result->joined_ || (opts_.flags & 0x3) == kResultsWithJson) {
 			PutVarUint(0);
 			continue;
 		}

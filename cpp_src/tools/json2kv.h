@@ -7,5 +7,6 @@
 namespace reindexer {
 
 KeyRef jsonValue2KeyRef(JsonValue &v, KeyValueType t);
+KeyValue jsonValue2KeyValue(JsonValue &values);
 
 }  // namespace reindexer

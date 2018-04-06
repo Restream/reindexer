@@ -49,7 +49,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	if (!ctx.skipIndexesLookup) {
 		whereEntries = &tmpWhereEntries;
 	}
-	bool containsFullText = isContainsFullText(*whereEntries);
+	bool containsFullText = containsFullTextIndexes(*whereEntries);
 
 	if (!ctx.skipIndexesLookup) {
 		if (!containsFullText) substituteCompositeIndexes(tmpWhereEntries);
@@ -237,6 +237,17 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 			for (auto &r : qres)
 				logPrintf(LogInfo, "%s: %d idsets, %d comparators, cost %g, matched %d", r.name.c_str(), r.size(), r.comparators_.size(),
 						  r.Cost(iters), r.GetMatchedCount());
+			if (ctx.joinedSelectors) {
+				for (auto &js : *ctx.joinedSelectors) {
+					if (js.type == JoinType::LeftJoin || js.type == JoinType::Merge) {
+						logPrintf(LogInfo, "%s %s: called %d\n", Query::JoinTypeName(js.type), js.ns.c_str(), js.called);
+					} else {
+						logPrintf(LogInfo, "%s %s: called %d, matched %d\n", Query::JoinTypeName(js.type), js.ns.c_str(), js.called,
+								  js.matched);
+					}
+				}
+			}
+
 			result.Dump();
 		}
 	}
@@ -325,7 +336,7 @@ void NsSelecter::applyCustomSort(QueryResults &queryResult, const SelectCtx &ctx
 		auto sortEnd = std::stable_partition(queryResult.begin(), queryResult.end(),
 											 [&sortMap](ItemRef &itemRef) { return (sortMap.find(itemRef.value) != sortMap.end()); });
 
-		std::sort(queryResult.begin(), sortEnd, [&payloadType, &fields, &sortMap](const ItemRef &lhs, const ItemRef &rhs) {
+		std::sort(queryResult.begin(), sortEnd, [&sortMap](const ItemRef &lhs, const ItemRef &rhs) {
 			return sortMap.find(lhs.value)->second < sortMap.find(rhs.value)->second;
 		});
 	}
@@ -379,13 +390,15 @@ void NsSelecter::setLimitsAndOffset(QueryResults &queryResult, const SelectCtx &
 	}
 }
 
-bool NsSelecter::isContainsFullText(const QueryEntries &entries) {
-	for (auto &entrie : entries) {
-		if (isFullText(ns_->indexes_[entrie.idxNo]->Type())) {
-			return true;
+bool NsSelecter::containsFullTextIndexes(const QueryEntries &entries) {
+	bool result = false;
+	for (auto &entry : entries) {
+		if (isFullText(ns_->indexes_[entry.idxNo]->Type())) {
+			result = true;
+			break;
 		}
 	}
-	return false;
+	return result;
 }
 
 QueryEntries NsSelecter::lookupQueryIndexes(const QueryEntries &entries) {
@@ -481,12 +494,10 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 	bool finish = (count == 0) && !sctx.reqMatchedOnceFlag && !calcTotal;
 
 	bool haveInnerJoin = false;
-	size_t lastOrInnerJoinIdx = 0;
 	if (sctx.joinedSelectors) {
 		for (size_t i = 0; i < sctx.joinedSelectors->size(); i++) {
 			auto &joinedSelector = sctx.joinedSelectors->at(i);
 			haveInnerJoin |= (joinedSelector.type == JoinType::InnerJoin || joinedSelector.type == JoinType::OrInnerJoin);
-			if (joinedSelector.type == JoinType::OrInnerJoin) lastOrInnerJoinIdx = i;
 		}
 	}
 
@@ -547,16 +558,31 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 			if (haveInnerJoin && sctx.joinedSelectors) {
 				for (size_t i = 0; i < sctx.joinedSelectors->size(); i++) {
 					auto &joinedSelector = sctx.joinedSelectors->at(i);
+					bool res = false;
+					joinedSelector.called++;
 
 					if (joinedSelector.type == JoinType::InnerJoin) {
-						if (found || i < lastOrInnerJoinIdx) found &= joinedSelector.func(realVal, pl, match);
+						if (found) {
+							res = joinedSelector.func(realVal, pl, match);
+							found &= res;
+						}
 					}
 					if (joinedSelector.type == JoinType::OrInnerJoin) {
-						if (!found || !joinedSelector.nodata) found |= joinedSelector.func(realVal, pl, match);
+						if (!found || !joinedSelector.nodata) {
+							res = joinedSelector.func(realVal, pl, match);
+							found |= res;
+						}
+					}
+					if (res) {
+						joinedSelector.matched++;
+					}
+					// If not found, and next op is not OR, then ballout
+					if (!found &&
+						!(i + 1 < sctx.joinedSelectors->size() && sctx.joinedSelectors->at(i + 1).type == JoinType::OrInnerJoin)) {
+						break;
 					}
 				}
 			}
-
 			// left join process
 			if (match && found && sctx.joinedSelectors)
 				for (auto &joinedSelector : *sctx.joinedSelectors)
@@ -612,6 +638,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) {
 
 	return ret;
 }
+
 void NsSelecter::substituteCompositeIndexes(QueryEntries &entries) {
 	FieldsSet fields;
 	for (auto cur = entries.begin(), first = entries.begin(); cur != entries.end(); cur++) {

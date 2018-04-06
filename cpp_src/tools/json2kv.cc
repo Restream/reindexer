@@ -46,4 +46,16 @@ KeyRef jsonValue2KeyRef(JsonValue &v, KeyValueType t) {
 	}
 	return KeyRef();
 }
+
+KeyValue jsonValue2KeyValue(JsonValue &values) {
+	KeyValues kvs;
+	for (auto elem : values) {
+		if (elem->value.getTag() != JSON_NULL) {
+			KeyValue kv(jsonValue2KeyRef(elem->value, KeyValueUndefined));
+			kvs.push_back(kv);
+		}
+	}
+	return KeyValue(kvs);
+}
+
 }  // namespace reindexer

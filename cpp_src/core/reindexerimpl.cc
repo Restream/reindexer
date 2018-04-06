@@ -436,7 +436,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 			}
 			return ctx.matchedAtLeastOnce;
 		};
-		joinedSelectors.push_back({jq.joinType, jq.count == 0, joinedSelector});
+		joinedSelectors.push_back({jq.joinType, jq.count == 0, joinedSelector, 0, 0, jns->name_});
 	}
 	return joinedSelectors;
 }
@@ -502,6 +502,7 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, JoinedSelecto
 		auto jns = locks.Get(jq._namespace);
 		Query tmpq(jq._namespace);
 		tmpq.Limit(0);
+		tmpq.selectFilter_ = jq.selectFilter_;
 		SelectCtx ctx(tmpq, &locks);
 		ctx.functions = &func;
 		jns->Select(result, ctx);

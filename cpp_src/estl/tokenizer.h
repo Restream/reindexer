@@ -24,9 +24,11 @@ public:
 	token peek_token(bool to_lower = true);
 	void skip_space();
 	bool end() const;
+	string where() const;
 
 protected:
 	const char *cur;
+	const char *beg;
 };
 
 }  // namespace reindexer

@@ -25,7 +25,7 @@ HTTPServer::~HTTPServer() {}
 
 enum { ModeUpdate, ModeInsert, ModeUpsert, ModeDelete };
 
-int HTTPServer::GetQuery(http::Context &ctx) {
+int HTTPServer::GetSQLQuery(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
 	reindexer::QueryResults res;
 	const char *sqlQuery = nullptr;
@@ -36,6 +36,23 @@ int HTTPServer::GetQuery(http::Context &ctx) {
 
 	if (!sqlQuery) {
 		return jsonStatus(ctx, false, http::StatusBadRequest, "Missed `q` parameter");
+	}
+
+	auto ret = db->Select(sqlQuery, res);
+
+	if (!ret.ok()) {
+		return jsonStatus(ctx, false, http::StatusInternalServerError, ret.what());
+	}
+	return queryResults(ctx, res, "items");
+}
+
+int HTTPServer::PostSQLQuery(http::Context &ctx) {
+	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
+	reindexer::QueryResults res;
+	string sqlQuery = ctx.body->Read();
+
+	if (!sqlQuery.length()) {
+		return jsonStatus(ctx, false, http::StatusBadRequest, "Query is empty");
 	}
 
 	auto ret = db->Select(sqlQuery, res);
@@ -68,7 +85,30 @@ int HTTPServer::GetDatabases(http::Context &ctx) {
 	ctx.writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
 	ctx.writer->SetRespCode(http::StatusOK);
 
+	const char *sortOrder = "";
+	for (auto p : ctx.request->params) {
+		if (!strcmp(p.name, "sort_order")) sortOrder = p.val;
+	}
+
 	auto dbs = dbMgr_.EnumDatabases();
+
+	int sortDirection = 0;
+	if (!strcmp(sortOrder, "asc")) {
+		sortDirection = 1;
+	} else if (!strcmp(sortOrder, "desc")) {
+		sortDirection = -1;
+	} else if (*sortOrder) {
+		return jsonStatus(ctx, false, http::StatusBadRequest, "Invalid `sort_order` parameter");
+	}
+
+	if (sortDirection) {
+		std::sort(dbs.begin(), dbs.end(), [sortDirection](const string &lhs, const string &rhs) {
+			if (sortDirection > 0)
+				return collateCompare(lhs, rhs, CollateASCII) < 0;
+			else
+				return collateCompare(lhs, rhs, CollateASCII) > 0;
+		});
+	}
 
 	ctx.writer->Write("{");
 	ctx.writer->Write("\"items\":[");
@@ -150,12 +190,16 @@ int HTTPServer::GetNamespaces(http::Context &ctx) {
 		sortDirection = 1;
 	} else if (!strcmp(sortOrder, "desc")) {
 		sortDirection = -1;
+	} else if (*sortOrder) {
+		return jsonStatus(ctx, false, http::StatusBadRequest, "Invalid `sort_order` parameter");
 	}
 
 	if (sortDirection) {
 		std::sort(nsDefs.begin(), nsDefs.end(), [sortDirection](const NamespaceDef &lhs, const NamespaceDef &rhs) {
-			return sortDirection > 0 ? !(collateCompare(lhs.name, rhs.name, CollateASCII) > 0)
-									 : !(collateCompare(lhs.name, rhs.name, CollateASCII) < 0);
+			if (sortDirection > 0)
+				return collateCompare(lhs.name, rhs.name, CollateASCII) < 0;
+			else
+				return collateCompare(lhs.name, rhs.name, CollateASCII) > 0;
 		});
 	}
 
@@ -381,7 +425,9 @@ int HTTPServer::PostIndex(http::Context &ctx) {
 
 	if (nsDefIt != nsDefs.end()) {
 		auto &indexes = nsDefIt->indexes;
-		if (std::find_if(indexes.begin(), indexes.end(), [&](const IndexDef &idx) { return idx.name == newIdxName; }) == indexes.end()) {
+		auto foundIndexIt =
+			std::find_if(indexes.begin(), indexes.end(), [&newIdxName](const IndexDef &idx) { return idx.name == newIdxName; });
+		if (foundIndexIt != indexes.end()) {
 			return jsonStatus(ctx, false, http::StatusBadRequest, "Index already exists");
 		}
 	}
@@ -484,8 +530,9 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 
 	router_.GET<HTTPServer, &HTTPServer::Check>("/api/v1/check", this);
 
-	router_.GET<HTTPServer, &HTTPServer::GetQuery>("/api/v1/db/:db/query", this);
+	router_.GET<HTTPServer, &HTTPServer::GetSQLQuery>("/api/v1/:db/query", this);
 	router_.POST<HTTPServer, &HTTPServer::PostQuery>("/api/v1/:db/query", this);
+	router_.POST<HTTPServer, &HTTPServer::PostSQLQuery>("/api/v1/:db/sqlquery", this);
 
 	router_.GET<HTTPServer, &HTTPServer::GetDatabases>("/api/v1/db", this);
 	router_.POST<HTTPServer, &HTTPServer::PostDatabase>("/api/v1/db", this);
@@ -574,7 +621,24 @@ int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, c
 	ctx.writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
 	ctx.writer->SetRespCode(http::StatusOK);
 	reindexer::WrSerializer wrSer(true);
-	ctx.writer->Write("{\"");
+	ctx.writer->Write("{");
+	if (res.totalCount) {
+		ctx.writer->Write("\"total_items\":");
+		string total = to_string(res.totalCount);
+		ctx.writer->Write(total.c_str(), total.length());
+		ctx.writer->Write(",");
+	}
+	if (!res.aggregationResults.empty()) {
+		ctx.writer->Write("\"aggregations\": [");
+		for (unsigned i = 0; i < res.aggregationResults.size(); i++) {
+			if (i) ctx.writer->Write(",");
+			string agg = to_string(res.aggregationResults[i]);
+			ctx.writer->Write(agg.c_str(), agg.length());
+		}
+		ctx.writer->Write("],");
+	}
+
+	ctx.writer->Write("\"");
 	ctx.writer->Write(name, strlen(name));
 	ctx.writer->Write("\":[");
 	for (size_t i = 0; i < res.size(); i++) {

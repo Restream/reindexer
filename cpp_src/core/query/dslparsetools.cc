@@ -12,20 +12,36 @@ void parseValues(JsonValue& values, KeyValues& kvs);
 
 // additional for parse root DSL fields
 
-enum class Root { Namespace, Limit, Offset, Distinct, Filters, Sort };
-
-static const fast_hash_map<string, Root> root_map = {{"namespace", Root::Namespace}, {"limit", Root::Limit},	 {"offset", Root::Offset},
-													 {"distinct", Root::Distinct},   {"filters", Root::Filters}, {"sort", Root::Sort}};
+static const fast_hash_map<string, Root> root_map = {{"namespace", Root::Namespace},
+													 {"limit", Root::Limit},
+													 {"offset", Root::Offset},
+													 {"distinct", Root::Distinct},
+													 {"filters", Root::Filters},
+													 {"sort", Root::Sort},
+													 {"join_queries", Root::Joined},
+													 {"merge_queries", Root::Merged},
+													 {"select_filter", Root::SelectFilter},
+													 {"select_functions", Root::SelectFunctions},
+													 {"req_total", Root::ReqTotal},
+													 {"aggregations", Root::Aggregations},
+													 {"next_op", Root::NextOp}};
 
 // additional for parse field 'sort'
 
-enum class Sort { Desc, Field, Values };
-
 static const fast_hash_map<string, Sort> sort_map = {{"desc", Sort::Desc}, {"field", Sort::Field}, {"values", Sort::Values}};
 
-// additionalfor parse field 'filters'
+// additional for parse field 'joined'
 
-enum class Filter { Cond, Op, Field, Value };
+static const fast_hash_map<string, JoinRoot> joins_map = {
+	{"type", JoinRoot::Type},   {"namespace", JoinRoot::Namespace}, {"filters", JoinRoot::Filters}, {"sort", JoinRoot::Sort},
+	{"limit", JoinRoot::Limit}, {"offset", JoinRoot::Offset},		{"on", JoinRoot::On},			{"op", JoinRoot::Op}};
+
+static const fast_hash_map<string, JoinEntry> joined_entry_map = {
+	{"left_field", JoinEntry::LetfField}, {"right_field", JoinEntry::RightField}, {"cond", JoinEntry::Cond}, {"op", JoinEntry::Op}};
+
+static const fast_hash_map<string, JoinType> join_types = {{"inner", InnerJoin}, {"left", LeftJoin}, {"orinner", OrInnerJoin}};
+
+// additionalfor parse field 'filters'
 
 static const fast_hash_map<string, Filter> filter_map = {
 	{"cond", Filter::Cond}, {"op", Filter::Op}, {"field", Filter::Field}, {"value", Filter::Value}};
@@ -39,10 +55,33 @@ static const fast_hash_map<string, CondType> cond_map = {
 
 static const fast_hash_map<string, OpType> op_map = {{"or", OpOr}, {"and", OpAnd}, {"not", OpNot}};
 
+// additional for 'Root::ReqTotal' field
+
+static const fast_hash_map<string, CalcTotalMode> reqtotal_values = {
+	{"disabled", ModeNoTotal}, {"enabled", ModeAccurateTotal}, {"cached", ModeCachedTotal}};
+
+// additional for 'Root::Aggregations' field
+
+static const fast_hash_map<string, Aggregation> aggregation_map = {{"field", Aggregation::Field}, {"type", Aggregation::Type}};
+static const fast_hash_map<string, AggType> aggregation_types = {{"sum", AggSum}, {"avg", AggAvg}};
+
+void checkJsonValueType(JsonValue& val, const string& name, JsonTag expectedType) {
+	if (val.getTag() != expectedType) throw Error(errParseJson, "Wrong type of field '%s'", name.c_str());
+}
+
 template <typename T>
 T get(fast_hash_map<string, T> const& m, string const& name) {
 	auto it = m.find(name);
 	return it != m.end() ? it->second : T(-1);
+}
+
+template <typename T, int holdSize>
+void parseStringArray(JsonValue& stringArray, h_vector<T, holdSize>& array) {
+	for (auto element : stringArray) {
+		auto& value = element->value;
+		checkJsonValueType(value, "string array item", JSON_STRING);
+		array.push_back(value.toString());
+	}
 }
 
 void parseSort(JsonValue& sort, Query& q) {
@@ -57,7 +96,7 @@ void parseSort(JsonValue& sort, Query& q) {
 				break;
 
 			case Sort::Field:
-				if (v.getTag() != JSON_STRING) throw Error(errParseJson, "Wrong type of field '%s'", name.c_str());
+				checkJsonValueType(v, name, JSON_STRING);
 				q.sortBy.assign(v.toString());
 				break;
 
@@ -71,12 +110,14 @@ void parseSort(JsonValue& sort, Query& q) {
 void parseValues(JsonValue& values, KeyValues& kvs) {
 	if (values.getTag() == JSON_ARRAY) {
 		for (auto elem : values) {
-			if (elem->value.getTag() != JSON_NULL) {
-				KeyValue kv(jsonValue2KeyRef(elem->value, KeyValueUndefined));
-				if (kvs.size() > 1 && kvs.back().Type() != kv.Type())
-					throw Error(errParseJson, "Array of filter values must be homogeneous.");
-				kvs.push_back(kv);
+			KeyValue kv;
+			if (elem->value.getTag() == JSON_ARRAY) {
+				kv = std::move(jsonValue2KeyValue(elem->value));
+			} else if (elem->value.getTag() != JSON_NULL) {
+				kv = std::move(jsonValue2KeyRef(elem->value, KeyValueUndefined));
 			}
+			if (kvs.size() > 1 && kvs.back().Type() != kv.Type()) throw Error(errParseJson, "Array of filter values must be homogeneous.");
+			kvs.push_back(std::move(kv));
 		}
 	} else if (values.getTag() != JSON_NULL) {
 		kvs.push_back(KeyValue(jsonValue2KeyRef(values, KeyValueUndefined)));
@@ -85,18 +126,18 @@ void parseValues(JsonValue& values, KeyValues& kvs) {
 
 void parseFilter(JsonValue& filter, Query& q) {
 	QueryEntry qe;
-	if (filter.getTag() != JSON_OBJECT) throw Error(errParseJson, "Wrong field filters element type");
+	checkJsonValueType(filter, "filter", JSON_OBJECT);
 	for (auto elem : filter) {
 		auto& v = elem->value;
 		auto name = lower(elem->key);
 		switch (get(filter_map, name)) {
 			case Filter::Cond:
-				if (v.getTag() != JSON_STRING) throw Error(errParseJson, "Wrong type of field '%s'", name.c_str());
+				checkJsonValueType(v, name, JSON_STRING);
 				qe.condition = get(cond_map, lower(v.toString()));
 				break;
 
 			case Filter::Op:
-				if (v.getTag() != JSON_STRING) throw Error(errParseJson, "Wrong type of field '%s'", name.c_str());
+				checkJsonValueType(v, name, JSON_STRING);
 				qe.op = get(op_map, lower(v.toString()));
 				break;
 
@@ -105,7 +146,7 @@ void parseFilter(JsonValue& filter, Query& q) {
 				break;
 
 			case Filter::Field:
-				if (v.getTag() != JSON_STRING) throw Error(errParseJson, "Wrong type of field '%s'", name.c_str());
+				checkJsonValueType(v, name, JSON_STRING);
 				qe.index.assign(v.toString());
 				break;
 		}
@@ -144,23 +185,133 @@ void parseFilter(JsonValue& filter, Query& q) {
 	q.entries.push_back(qe);
 }
 
+void parseJoinedEntries(JsonValue& joinEntries, Query& qjoin) {
+	checkJsonValueType(joinEntries, "Joined", JSON_ARRAY);
+	for (auto element : joinEntries) {
+		auto& joinEntry = element->value;
+		checkJsonValueType(joinEntry, "Joined", JSON_OBJECT);
+
+		QueryJoinEntry qjoinEntry;
+		for (auto subelement : joinEntry) {
+			auto& value = subelement->value;
+			string name = lower(subelement->key);
+			switch (get(joined_entry_map, name)) {
+				case JoinEntry::LetfField:
+					checkJsonValueType(value, name, JSON_STRING);
+					qjoinEntry.index_ = value.toString();
+					break;
+				case JoinEntry::RightField:
+					checkJsonValueType(value, name, JSON_STRING);
+					qjoinEntry.joinIndex_ = value.toString();
+					break;
+				case JoinEntry::Cond:
+					checkJsonValueType(value, name, JSON_STRING);
+					qjoinEntry.condition_ = get(cond_map, lower(value.toString()));
+					break;
+				case JoinEntry::Op:
+					checkJsonValueType(value, name, JSON_STRING);
+					qjoinEntry.op_ = get(op_map, lower(value.toString()));
+					break;
+			}
+		}
+		qjoin.joinEntries_.emplace_back(qjoinEntry);
+	}
+}
+
+void parseJoins(JsonValue& joins, Query& query) {
+	for (auto element : joins) {
+		auto& join = element->value;
+		checkJsonValueType(join, "Joined", JSON_OBJECT);
+
+		Query qjoin;
+		for (auto subelement : join) {
+			auto& value = subelement->value;
+			string name = lower(subelement->key);
+			switch (get(joins_map, name)) {
+				case JoinRoot::Type:
+					checkJsonValueType(value, name, JSON_STRING);
+					qjoin.joinType = get(join_types, lower(value.toString()));
+					break;
+				case JoinRoot::Namespace:
+					checkJsonValueType(value, name, JSON_STRING);
+					qjoin._namespace = value.toString();
+					break;
+				case JoinRoot::Op:
+					checkJsonValueType(value, name, JSON_STRING);
+					qjoin.nextOp_ = get(op_map, lower(value.toString()));
+					break;
+				case JoinRoot::Filters:
+					checkJsonValueType(value, name, JSON_ARRAY);
+					for (auto filter : value) parseFilter(filter->value, qjoin);
+					break;
+				case JoinRoot::Sort:
+					checkJsonValueType(value, name, JSON_OBJECT);
+					parseSort(value, qjoin);
+					break;
+				case JoinRoot::Limit:
+					checkJsonValueType(value, name, JSON_NUMBER);
+					qjoin.count = static_cast<unsigned>(value.toNumber());
+					break;
+				case JoinRoot::Offset:
+					checkJsonValueType(value, name, JSON_NUMBER);
+					qjoin.start = static_cast<unsigned>(value.toNumber());
+					break;
+				case JoinRoot::On:
+					parseJoinedEntries(value, qjoin);
+					break;
+			}
+		}
+		query.joinQueries_.emplace_back(qjoin);
+	}
+}
+
+void parseMergeQueries(JsonValue& mergeQueries, Query& query) {
+	for (auto element : mergeQueries) {
+		auto& merged = element->value;
+		checkJsonValueType(merged, "Merged", JSON_OBJECT);
+		Query qmerged;
+		parse(merged, qmerged);
+		query.mergeQueries_.emplace_back(qmerged);
+	}
+}
+
+void parseAggregation(JsonValue& aggregation, Query& query) {
+	checkJsonValueType(aggregation, "Aggregation", JSON_OBJECT);
+	AggregateEntry aggEntry;
+	for (auto element : aggregation) {
+		auto& value = element->value;
+		string name = lower(element->key);
+		switch (get(aggregation_map, name)) {
+			case Aggregation::Field:
+				checkJsonValueType(value, name, JSON_STRING);
+				aggEntry.index_ = value.toString();
+				break;
+			case Aggregation::Type:
+				checkJsonValueType(value, name, JSON_STRING);
+				aggEntry.type_ = get(aggregation_types, lower(value.toString()));
+				break;
+		}
+	}
+	query.aggregations_.push_back(aggEntry);
+}
+
 void parse(JsonValue& root, Query& q) {
 	for (auto elem : root) {
 		auto& v = elem->value;
 		auto name = lower(elem->key);
 		switch (get(root_map, name)) {
 			case Root::Namespace:
-				if (v.getTag() != JSON_STRING) throw Error(errParseJson, "Wrong type of field '%s'", name.c_str());
+				checkJsonValueType(v, name, JSON_STRING);
 				q._namespace.assign(v.toString());
 				break;
 
 			case Root::Limit:
-				if (v.getTag() != JSON_NUMBER) throw Error(errParseJson, "Wrong type of field '%s'", name.c_str());
+				checkJsonValueType(v, name, JSON_NUMBER);
 				q.count = static_cast<unsigned>(v.toNumber());
 				break;
 
 			case Root::Offset:
-				if (v.getTag() != JSON_NUMBER) throw Error(errParseJson, "Wrong type of field '%s'", name.c_str());
+				checkJsonValueType(v, name, JSON_NUMBER);
 				q.start = static_cast<unsigned>(v.toNumber());
 				break;
 
@@ -169,14 +320,42 @@ void parse(JsonValue& root, Query& q) {
 				break;
 
 			case Root::Filters:
-				if (v.getTag() != JSON_ARRAY) throw Error(errParseJson, "Wrong type of field '%s'", name.c_str());
+				checkJsonValueType(v, name, JSON_ARRAY);
 				for (auto filter : v) parseFilter(filter->value, q);
 				break;
 
+			case Root::NextOp:
+				checkJsonValueType(v, name, JSON_STRING);
+				q.nextOp_ = get(op_map, v.toString());
+				break;
+
 			case Root::Sort:
-				if (v.getTag() != JSON_OBJECT) throw Error(errParseJson, "Wrong type of field '%s'", name.c_str());
+				checkJsonValueType(v, name, JSON_OBJECT);
 				parseSort(v, q);
 				break;
+			case Root::Joined:
+				checkJsonValueType(v, name, JSON_ARRAY);
+				parseJoins(v, q);
+				break;
+			case Root::Merged:
+				checkJsonValueType(v, name, JSON_ARRAY);
+				parseMergeQueries(v, q);
+				break;
+			case Root::SelectFilter:
+				checkJsonValueType(v, name, JSON_ARRAY);
+				parseStringArray(v, q.selectFilter_);
+				break;
+			case Root::SelectFunctions:
+				checkJsonValueType(v, name, JSON_ARRAY);
+				parseStringArray(v, q.selectFunctions_);
+				break;
+			case Root::ReqTotal:
+				checkJsonValueType(v, name, JSON_STRING);
+				q.calcTotal = get(reqtotal_values, v.toString());
+				break;
+			case Root::Aggregations:
+				checkJsonValueType(v, name, JSON_ARRAY);
+				for (auto aggregation : v) parseAggregation(aggregation->value, q);
 		}
 	}
 }

@@ -40,11 +40,14 @@ public:
 		}
 	}
 
-	BaseFixture(Reindexer* db, const string& name, size_t maxItems, size_t idStart = 1)
-		: db_(db), nsdef_(name), id_seq_(std::make_shared<Sequence>(idStart, maxItems, 1)) {}
+	BaseFixture(Reindexer* db, const string& name, size_t maxItems, size_t idStart = 1, bool useBenchamrkPrefixName = true)
+		: db_(db),
+		  nsdef_(name),
+		  id_seq_(std::make_shared<Sequence>(idStart, maxItems, 1)),
+		  useBenchamrkPrefixName_(useBenchamrkPrefixName) {}
 
-	BaseFixture(Reindexer* db, NamespaceDef& nsdef, size_t maxItems, size_t idStart = 1)
-		: db_(db), nsdef_(nsdef), id_seq_(make_shared<Sequence>(idStart, maxItems, 1)) {}
+	BaseFixture(Reindexer* db, NamespaceDef& nsdef, size_t maxItems, size_t idStart = 1, bool useBenchamrkPrefixName = true)
+		: db_(db), nsdef_(nsdef), id_seq_(make_shared<Sequence>(idStart, maxItems, 1)), useBenchamrkPrefixName_(useBenchamrkPrefixName) {}
 
 	virtual BaseFixture& AddIndex(const string& name, const string& jsonPath, const string& indexType, const string& fieldType,
 								  IndexOpts opts = IndexOpts());
@@ -63,24 +66,12 @@ protected:
 
 	template <typename Fn, typename Cl>
 	Benchmark* Register(const string& name, Fn fn, Cl* cl) {
-		return benchmark::RegisterBenchmark((nsdef_.name + "/" + name).c_str(), std::bind(fn, cl, _1));
-	}
-
-protected:
-	// helper functions
-
-	template <typename Predicate>
-	IndexDef* findIndex(State& state, Predicate pred) {
-		auto it = std::find_if(nsdef_.indexes.begin(), nsdef_.indexes.end(), pred);
-		if (it == nsdef_.indexes.end()) {
-			state.SkipWithError("Index for query condition not found");
-			return nullptr;
-		}
-		return it.base();
+		return benchmark::RegisterBenchmark(((useBenchamrkPrefixName_ ? nsdef_.name + "/" : "") + name).c_str(), std::bind(fn, cl, _1));
 	}
 
 protected:
 	Reindexer* db_;
 	NamespaceDef nsdef_;
 	shared_ptr<Sequence> id_seq_;
+	bool useBenchamrkPrefixName_;
 };

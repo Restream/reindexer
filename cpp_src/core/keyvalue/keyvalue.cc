@@ -29,6 +29,20 @@ KeyValue &KeyValue::operator=(const KeyValue &other) {
 	return *this;
 }
 
+bool KeyValue::operator==(const KeyValue &other) const {
+	if ((type != KeyValueComposite) && (type != KeyValueString)) {
+		return KeyRef::operator==(other);
+	}
+	if (type == KeyValueComposite) {
+		if (h_composite_values != other.h_composite_values) return false;
+	} else if (type == KeyValueString) {
+		if (h_value_string != other.h_value_string) return false;
+	}
+	return true;
+}
+
+bool KeyValue::operator!=(const KeyValue &other) const { return !operator==(other); }
+
 int KeyValue::convert(KeyValueType _type) {
 	if (_type == type) return 0;
 	switch (_type) {
@@ -74,5 +88,7 @@ void KeyValue::convertToComposite(const PayloadType &payloadType, const FieldsSe
 	}
 	h_composite_values.clear();
 }
+
+const std::vector<KeyValue> &KeyValue::getCompositeValues() const { return h_composite_values; }
 
 }  // namespace reindexer

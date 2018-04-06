@@ -98,6 +98,11 @@ void splitWithPos(const string &str, string &buf, vector<pair<const char *, int>
 			bufIt = utf8::unchecked::append(ch, bufIt);
 			ch = utf8::unchecked::next(it);
 		}
+		if ((IsAlpha(ch) || std::isdigit(ch) || ch == '+' || ch == '-' || ch == '/')) {
+			ch = ToLower(ch);
+			bufIt = utf8::unchecked::append(ch, bufIt);
+		}
+
 		if (begIt != bufIt) {
 			*bufIt++ = 0;
 			words.push_back({&*begIt, std::distance(str.begin(), wordStartIt)});

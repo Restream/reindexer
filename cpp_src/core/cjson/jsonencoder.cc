@@ -41,11 +41,9 @@ void JsonEncoder::Encode(ConstPayload* pl, WrSerializer& wrSer, IJsonEncoderData
 	}
 
 	const size_t joinedItemsCount = ds.GetJoinedRowsCount();
+	bool first = true;
 	for (size_t i = 0; i < joinedItemsCount; ++i) {
-		encodeJoinedItems(wrSer, ds, i);
-		if (i != joinedItemsCount - 1) {
-			wrSer.PutChar(',');
-		}
+		encodeJoinedItems(wrSer, ds, i, first);
 	}
 
 	wrSer.PutChar('}');
@@ -122,26 +120,30 @@ bool JsonEncoder::encodeJoinedItem(WrSerializer& wrSer, ConstPayload& pl) {
 	return encodeJson(&pl, rdser, wrSer, first, true);
 }
 
-bool JsonEncoder::encodeJoinedItems(WrSerializer& wrSer, IJsonEncoderDatasourceWithJoins& ds, size_t rowid) {
+void JsonEncoder::encodeJoinedItems(WrSerializer& wrSer, IJsonEncoderDatasourceWithJoins& ds, size_t rowid, bool& first) {
 	const size_t itemsCount = ds.GetJoinedRowItemsCount(rowid);
-	if (!itemsCount) return false;
+	if (!itemsCount) return;
+
+	if (!first) {
+		wrSer.PutChar(',');
+	} else
+		first = false;
 
 	string nsTagName("joined." + ds.GetJoinedItemNamespace(rowid));
 	wrSer.PrintJsonString(nsTagName);
 	wrSer.PutChar(':');
 	wrSer.PutChar('[');
 
+	JsonEncoder subEnc(ds.GetJoinedItemTagsMatcher(rowid), ds.GetJoinedItemJsonFilter(rowid));
 	for (size_t i = 0; i < itemsCount; ++i) {
-		ConstPayload pl(ds.GetJoinedItemPayload(rowid, i));
-		encodeJoinedItem(wrSer, pl);
-		if (i != itemsCount - 1) {
+		if (i) {
 			wrSer.PutChar(',');
 		}
+		ConstPayload pl(ds.GetJoinedItemPayload(rowid, i));
+		subEnc.encodeJoinedItem(wrSer, pl);
 	}
 
 	wrSer.PutChar(']');
-
-	return true;
 }
 
 bool JsonEncoder::encodeJson(ConstPayload* pl, Serializer& rdser, WrSerializer& wrser, bool& first, bool visible) {
@@ -166,6 +168,8 @@ bool JsonEncoder::encodeJson(ConstPayload* pl, Serializer& rdser, WrSerializer& 
 
 	// get field from indexed field
 	if (tagField >= 0) {
+		assert(tagField < pl->NumFields());
+
 		KeyRefs kr;
 		int* cnt = &fieldsoutcnt_[tagField];
 

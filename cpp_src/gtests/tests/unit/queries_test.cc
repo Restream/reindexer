@@ -3,11 +3,15 @@
 TEST_F(QueriesApi, QueriesStandardTestSet) {
 	FillDefaultNamespace(0, 2500, 20);
 	FillDefaultNamespace(2500, 2500, 0);
+	FillCompositeIndexesNamespace(0, 1000);
 	FillTestSimpleNamespace();
+	FillComparatorsNamespace();
 
 	CheckStandartQueries();
 	CheckAggregationQueries();
 	CheckSqlQueries();
+	CheckCompositeIndexesQueries();
+	CheckComparatorsQueries();
 
 	int itemsCount = 0;
 	InsertedItemsByPk& items = insertedItems[default_namespace];
@@ -58,8 +62,12 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 
 	FillDefaultNamespace(3000, 1000, 20);
 	FillDefaultNamespace(1000, 500, 00);
+	FillCompositeIndexesNamespace(1000, 1000);
+	FillComparatorsNamespace();
 
 	CheckStandartQueries();
 	CheckAggregationQueries();
 	CheckSqlQueries();
+	CheckCompositeIndexesQueries();
+	CheckComparatorsQueries();
 }

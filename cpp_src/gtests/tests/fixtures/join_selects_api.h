@@ -53,7 +53,7 @@ protected:
 			Upsert(authors_namespace, item);
 			Commit(authors_namespace);
 
-			authorsIds.push_back(i);
+			authorsIds.push_back(authorIdValue);
 		}
 	}
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"unicode/utf8"
 
 	"./repo"
 
@@ -36,8 +37,14 @@ func randStringWord() string { return repo.RandStringWord() }
 
 func randStringPref() string {
 	s := randStringWord()
-	if len(s) > 4 {
-		s = s[:len(s)-2]
+	if utf8.RuneCountInString(s) > 4 {
+		ns := ""
+		for i, r := range s {
+			ns += string(r)
+			if i+1 == 4 {
+				return ns
+			}
+		}
 	}
 	return s
 }

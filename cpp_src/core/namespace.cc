@@ -137,7 +137,11 @@ void Namespace::updateItems(PayloadType oldPlType, const FieldsSet &changedField
 			}
 
 			if ((fieldIdx == 0) || deltaFields >= 0) {
-				newValue.Get(fieldIdx, krefs);
+				if (fieldIdx == 0) {
+					newItem.GetPayload().Get(fieldIdx, krefs);
+				} else {
+					newValue.Get(fieldIdx, krefs);
+				}
 				skrefs.resize(0);
 				for (auto key : krefs) skrefs.push_back(index.Upsert(key, rowId));
 

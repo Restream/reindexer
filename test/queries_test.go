@@ -397,10 +397,22 @@ func CheckTestItemsQueries() {
 }
 
 func CheckTestItemsSQLQueries() {
-	if res, err := DB.ExecSQL("SELECT ID,Year,Genre FROM test_items WHERE year > '2016' AND genre IN ('1',2,'3') ORDER BY year DESC LIMIT 10000000").FetchAll(); err != nil {
+	if res, err := DB.ExecSQL("SELECT ID,Year,Genre FROM test_items WHERE year > '2016' AND genre IN ('1',2,'3') ORDER BY year DESC LIMIT 10000000 ; ").FetchAll(); err != nil {
 		panic(err)
 	} else {
 		newTestQuery(DB, "test_items").Where("year", reindexer.GT, 2016).Where("genre", reindexer.SET, []int{1, 2, 3}).Sort("year", true).Verify(res, false)
+	}
+
+	if res, err := DB.ExecSQL("SELECT * FROM test_items WHERE year <= '2016' OR genre < 5 ORDER BY year ASC ").FetchAll(); err != nil {
+		panic(err)
+	} else {
+		newTestQuery(DB, "test_items").Where("year", reindexer.LE, 2016).Or().Where("genre", reindexer.LT, 5).Sort("year", false).Verify(res, true)
+	}
+
+	if res, err := DB.ExecSQL("SELECT COUNT(*), * FROM test_items WHERE year >= '2016' OR rate = '1.1' OR year RANGE (2010,2014)").FetchAll(); err != nil {
+		panic(err)
+	} else {
+		newTestQuery(DB, "test_items").Where("year", reindexer.GE, 2016).Or().Where("rate", reindexer.EQ, 1.1).Or().Where("year", reindexer.RANGE, []int{2010, 2014}).Verify(res, true)
 	}
 }
 

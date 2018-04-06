@@ -19,6 +19,9 @@ struct QueryEntry {
 		: op(o), condition(cond), index(idx), idxNo(idxN), distinct(dist) {}
 	QueryEntry() = default;
 
+	bool operator==(const QueryEntry &) const;
+	bool operator!=(const QueryEntry &) const;
+
 	OpType op = OpAnd;
 	CondType condition = CondType::CondAny;
 	string index;
@@ -30,6 +33,7 @@ struct QueryEntry {
 };
 
 struct QueryJoinEntry {
+	bool operator==(const QueryJoinEntry &) const;
 	OpType op_;
 	CondType condition_;
 	string index_;
@@ -40,6 +44,8 @@ struct QueryJoinEntry {
 struct QueryEntries : public h_vector<QueryEntry, 4> {};
 
 struct AggregateEntry {
+	bool operator==(const AggregateEntry &) const;
+	bool operator!=(const AggregateEntry &) const;
 	string index_;
 	AggType type_;
 };
@@ -48,9 +54,12 @@ class QueryWhere {
 public:
 	QueryWhere() {}
 
+	bool operator==(const QueryWhere &) const;
+
 protected:
 	int ParseWhere(tokenizer &tok);
 	string toString() const;
+	static CondType getCondType(const string &cond);
 
 public:
 	QueryEntries entries;

@@ -120,15 +120,10 @@ Error ItemImpl::FromJSON(const Slice &slice, char **endp) {
 }
 
 Error ItemImpl::FromCJSON(ItemImpl *other) {
-	KeyRefs kr;
-	p_string tuple(other->GetPayload().Get(0, kr)[0]);
-	if (tuple.size() > 0) {
-		auto cjson = other->GetCJSON();
-		auto err = FromCJSON(cjson);
-		assert(err.ok());
-		return err;
-	}
-	return Error(errOK);
+	auto cjson = other->GetCJSON();
+	auto err = FromCJSON(cjson);
+	assert(err.ok());
+	return err;
 }
 
 Slice ItemImpl::GetJSON() {

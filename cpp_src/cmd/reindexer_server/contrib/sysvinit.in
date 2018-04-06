@@ -16,6 +16,9 @@ name=reindexer
 pid_file="/var/run/$name.pid"
 stdout_log="/var/log/reindexer/$name.log"
 
+stop_attempts=5
+stop_timeout_sec=5
+
 get_pid() {
     cat "$pid_file"
 }
@@ -42,26 +45,27 @@ case "$1" in
     if is_running; then
         echo -n "Stopping $name.."
         kill `get_pid`
-        for i in 1 2 3 4 5 6 7 8 9 10
-        # for i in `seq 10`
+        i=0
+        while [ $i -lt $stop_attempts ]
         do
             if ! is_running; then
                 break
             fi
 
             echo -n "."
-            sleep 1
+            sleep $stop_timeout_sec
+            i=`expr $i + 1`
         done
         echo
 
         if is_running; then
-            echo "Not stopped; may still be shutting down or shutdown may have failed"
-            exit 1
-        else
-            echo "Stopped"
-            if [ -f "$pid_file" ]; then
-                rm "$pid_file"
-            fi
+            echo "Not stopped; Halting.."
+            kill -9 `get_pid`
+        fi
+
+        echo "Stopped"
+        if [ -f "$pid_file" ]; then
+            rm "$pid_file"
         fi
     else
         echo "Not running"

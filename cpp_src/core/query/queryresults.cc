@@ -122,6 +122,15 @@ public:
 		const Context &ctx = ctxs_[rowid + 1];
 		return ConstPayload(ctx.type_, itemRef.value);
 	}
+	const TagsMatcher &GetJoinedItemTagsMatcher(size_t rowid) final {
+		const Context &ctx = ctxs_[rowid + 1];
+		return ctx.tagsMatcher_;
+	}
+	virtual const JsonPrintFilter &GetJoinedItemJsonFilter(size_t rowid) final {
+		const Context &ctx = ctxs_[rowid + 1];
+		return ctx.jsonFilter_;
+	}
+
 	const string &GetJoinedItemNamespace(size_t rowid) final {
 		const Context &ctx = ctxs_[rowid + 1];
 		return ctx.type_->Name();

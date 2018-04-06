@@ -12,7 +12,7 @@ class JsonPrintFilter {
 public:
 	JsonPrintFilter(){};
 	JsonPrintFilter(const TagsMatcher &tagsMatcher, const h_vector<string, 4> &filter);
-	bool Match(int tag) const { return !filter_.size() || (tag < int(filter_.size()) && filter_[tag]); }
+	bool Match(int tag) const { return filter_.empty() || (tag < int(filter_.size()) && filter_[tag]); }
 
 protected:
 	h_vector<uint8_t, 32> filter_;
@@ -27,6 +27,8 @@ public:
 	virtual size_t GetJoinedRowItemsCount(size_t rowId) = 0;
 	virtual ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) = 0;
 	virtual const string &GetJoinedItemNamespace(size_t rowid) = 0;
+	virtual const TagsMatcher &GetJoinedItemTagsMatcher(size_t rowid) = 0;
+	virtual const JsonPrintFilter &GetJoinedItemJsonFilter(size_t rowid) = 0;
 };
 
 class JsonEncoder {
@@ -38,7 +40,7 @@ public:
 protected:
 	bool encodeJson(ConstPayload *pl, Serializer &rdser, WrSerializer &wrser, bool &first, bool visible);
 	bool encodeJoinedItem(WrSerializer &wrSer, ConstPayload &pl);
-	bool encodeJoinedItems(WrSerializer &wrSer, IJsonEncoderDatasourceWithJoins &ds, size_t joinedIdx);
+	void encodeJoinedItems(WrSerializer &wrSer, IJsonEncoderDatasourceWithJoins &ds, size_t joinedIdx, bool &first);
 
 	key_string &getPlTuple(ConstPayload *pl, key_string &plTuple);
 

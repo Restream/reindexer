@@ -25,12 +25,16 @@ public:
 	KeyValue(const KeyValue &other);
 	KeyValue &operator=(const KeyValue &other);
 
+	bool operator==(const KeyValue &other) const;
+	bool operator!=(const KeyValue &other) const;
+
 	explicit operator key_string() const {
 		assertKeyType(type, KeyValueString);
 		return h_value_string;
 	}
 	int convert(KeyValueType type);
 	void convertToComposite(const PayloadType &, const FieldsSet &);
+	const std::vector<KeyValue> &getCompositeValues() const;
 
 protected:
 	void relink() {

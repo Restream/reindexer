@@ -247,3 +247,10 @@ reindexer_error reindexer_free_buffer(reindexer_buffer in) {
 	free(in.data);
 	return error2c(Error(errOK));
 }
+
+reindexer_error reindexer_free_buffers(reindexer_buffer *in, int count) {
+	for (int i = 0; i < count; i++) {
+		reindexer_free_buffer(in[i]);
+	}
+	return error2c(Error(errOK));
+}

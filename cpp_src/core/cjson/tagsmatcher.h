@@ -45,7 +45,7 @@ public:
 	}
 	void updatePayloadType(PayloadType payloadType) { impl_.clone()->updatePayloadType(payloadType, updated_); }
 
-	string dump() { return impl_->dumpTags() + "\n" + impl_->dumpPaths(); }
+	string dump() const { return impl_->dumpTags() + "\n" + impl_->dumpPaths(); }
 
 protected:
 	shared_cow_ptr<TagsMatcherImpl> impl_;

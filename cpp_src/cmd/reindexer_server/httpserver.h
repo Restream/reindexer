@@ -30,8 +30,9 @@ public:
 	int NotFoundHandler(http::Context &ctx);
 	int DocHandler(http::Context &ctx);
 	int Check(http::Context &ctx);
-	int GetQuery(http::Context &ctx);
 	int PostQuery(http::Context &ctx);
+	int GetSQLQuery(http::Context &ctx);
+	int PostSQLQuery(http::Context &ctx);
 	int GetDatabases(http::Context &ctx);
 	int PostDatabase(http::Context &ctx);
 	int DeleteDatabase(http::Context &ctx);

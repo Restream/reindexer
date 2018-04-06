@@ -45,10 +45,10 @@ const (
 	OpOr  = int(C.OpOr)
 	OpNot = int(C.OpNot)
 
-	ValueInt    = int(C.KeyValueInt)
-	ValueInt64  = int(C.KeyValueInt64)
-	ValueDouble = int(C.KeyValueDouble)
-	ValueString = int(C.KeyValueString)
+	ValueInt       = int(C.KeyValueInt)
+	ValueInt64     = int(C.KeyValueInt64)
+	ValueDouble    = int(C.KeyValueDouble)
+	ValueString    = int(C.KeyValueString)
 	ValueComposite = int(C.KeyValueComposite)
 
 	QueryCondition      = int(C.QueryCondition)

@@ -19,6 +19,7 @@ using reindexer::Item;
 using reindexer::KeyRef;
 using reindexer::KeyRefs;
 using reindexer::KeyValue;
+using reindexer::KeyValues;
 using reindexer::Query;
 using reindexer::QueryEntry;
 using reindexer::QueryResults;
@@ -46,7 +47,7 @@ public:
 								initializer_list<const tuple<const char *, const char *, const char *, const IndexOpts>> fields) {
 		auto err = Error();
 		for (auto field : fields) {
-			err = reindexer->AddIndex(ns, {get<0>(field), "", get<1>(field), get<2>(field), get<3>(field)});
+			err = reindexer->AddIndex(ns, {get<0>(field), get<0>(field), get<1>(field), get<2>(field), get<3>(field)});
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
 		err = reindexer->Commit(ns);

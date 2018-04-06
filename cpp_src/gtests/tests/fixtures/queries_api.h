@@ -10,68 +10,94 @@ using std::unordered_map;
 using std::unordered_set;
 using std::map;
 using std::numeric_limits;
+using reindexer::KeyArray;
 
 class QueriesApi : public ReindexerApi {
 public:
 	void SetUp() override {
 		indexesOptions = {
-			{id, IndexOpts().PK()},
-			{genre, IndexOpts()},
-			{year, IndexOpts()},
-			{packages, IndexOpts().Array()},
-			{name, IndexOpts()},
-			{countries, IndexOpts().Array()},
-			{age, IndexOpts()},
-			{description, IndexOpts()},
-			{rate, IndexOpts()},
-			{isDeleted, IndexOpts()},
-			{actor, IndexOpts().SetCollateMode(CollateUTF8)},
-			{priceId, IndexOpts().Array()},
-			{location, IndexOpts().SetCollateMode(CollateNone)},
-			{endTime, IndexOpts()},
-			{startTime, IndexOpts()},
-			{phone, IndexOpts()},
-			{temp, IndexOpts().PK().SetCollateMode(CollateASCII)},
-			{numeric, IndexOpts().SetCollateMode(CollateUTF8)},
-			{string(id + compositePlus + temp), IndexOpts()},
-			{string(age + compositePlus + genre), IndexOpts()},
+			{kFieldNameId, IndexOpts().PK()},
+			{kFieldNameGenre, IndexOpts()},
+			{kFieldNameYear, IndexOpts()},
+			{kFieldNamePackages, IndexOpts().Array()},
+			{kFieldNameName, IndexOpts()},
+			{kFieldNameCountries, IndexOpts().Array()},
+			{kFieldNameAge, IndexOpts()},
+			{kFieldNameDescription, IndexOpts()},
+			{kFieldNameRate, IndexOpts()},
+			{kFieldNameIsDeleted, IndexOpts()},
+			{kFieldNameActor, IndexOpts().SetCollateMode(CollateUTF8)},
+			{kFieldNamePriceId, IndexOpts().Array()},
+			{kFieldNameLocation, IndexOpts().SetCollateMode(CollateNone)},
+			{kFieldNameEndTime, IndexOpts()},
+			{kFieldNameStartTime, IndexOpts()},
+			{kFieldNamePhone, IndexOpts()},
+			{kFieldNameTemp, IndexOpts().PK().SetCollateMode(CollateASCII)},
+			{kFieldNameNumeric, IndexOpts().SetCollateMode(CollateUTF8)},
+			{string(kFieldNameId + compositePlus + kFieldNameTemp), IndexOpts()},
+			{string(kFieldNameAge + compositePlus + kFieldNameGenre), IndexOpts()},
 		};
 
 		CreateNamespace(default_namespace);
-		DefineNamespaceDataset(default_namespace, {
-													  IndexDeclaration{id, "hash", "int", indexesOptions[id]},
-													  IndexDeclaration{genre, "tree", "int", indexesOptions[genre]},
-													  IndexDeclaration{year, "tree", "int", indexesOptions[year]},
-													  IndexDeclaration{packages, "hash", "int", indexesOptions[packages]},
-													  IndexDeclaration{name, "tree", "string", indexesOptions[name]},
-													  IndexDeclaration{countries, "tree", "string", indexesOptions[countries]},
-													  IndexDeclaration{age, "hash", "int", indexesOptions[age]},
-													  IndexDeclaration{description, "fuzzytext", "string", indexesOptions[description]},
-													  IndexDeclaration{rate, "tree", "double", indexesOptions[rate]},
-													  IndexDeclaration{isDeleted, "-", "bool", indexesOptions[isDeleted]},
-													  IndexDeclaration{actor, "tree", "string", indexesOptions[actor]},
-													  IndexDeclaration{priceId, "hash", "int", indexesOptions[priceId]},
-													  IndexDeclaration{location, "tree", "string", indexesOptions[location]},
-													  IndexDeclaration{endTime, "hash", "int", indexesOptions[endTime]},
-													  IndexDeclaration{startTime, "tree", "int", indexesOptions[startTime]},
-													  IndexDeclaration{temp, "tree", "string", indexesOptions[temp]},
-													  IndexDeclaration{numeric, "tree", "string", indexesOptions[numeric]},
-													  IndexDeclaration{string(id + compositePlus + temp).c_str(), "tree", "composite",
-																	   indexesOptions[id + compositePlus + temp]},
-													  IndexDeclaration{string(age + compositePlus + genre).c_str(), "hash", "composite",
-																	   indexesOptions[age + compositePlus + genre]},
-												  });
-		defaultNsPks.push_back(id);
-		defaultNsPks.push_back(temp);
+		DefineNamespaceDataset(default_namespace,
+							   {
+								   IndexDeclaration{kFieldNameId, "hash", "int", indexesOptions[kFieldNameId]},
+								   IndexDeclaration{kFieldNameGenre, "tree", "int", indexesOptions[kFieldNameGenre]},
+								   IndexDeclaration{kFieldNameYear, "tree", "int", indexesOptions[kFieldNameYear]},
+								   IndexDeclaration{kFieldNamePackages, "hash", "int", indexesOptions[kFieldNamePackages]},
+								   IndexDeclaration{kFieldNameName, "tree", "string", indexesOptions[kFieldNameName]},
+								   IndexDeclaration{kFieldNameCountries, "tree", "string", indexesOptions[kFieldNameCountries]},
+								   IndexDeclaration{kFieldNameAge, "hash", "int", indexesOptions[kFieldNameAge]},
+								   IndexDeclaration{kFieldNameDescription, "fuzzytext", "string", indexesOptions[kFieldNameDescription]},
+								   IndexDeclaration{kFieldNameRate, "tree", "double", indexesOptions[kFieldNameRate]},
+								   IndexDeclaration{kFieldNameIsDeleted, "-", "bool", indexesOptions[kFieldNameIsDeleted]},
+								   IndexDeclaration{kFieldNameActor, "tree", "string", indexesOptions[kFieldNameActor]},
+								   IndexDeclaration{kFieldNamePriceId, "hash", "int", indexesOptions[kFieldNamePriceId]},
+								   IndexDeclaration{kFieldNameLocation, "tree", "string", indexesOptions[kFieldNameLocation]},
+								   IndexDeclaration{kFieldNameEndTime, "hash", "int", indexesOptions[kFieldNameEndTime]},
+								   IndexDeclaration{kFieldNameStartTime, "tree", "int", indexesOptions[kFieldNameStartTime]},
+								   IndexDeclaration{kFieldNameTemp, "tree", "string", indexesOptions[kFieldNameTemp]},
+								   IndexDeclaration{kFieldNameNumeric, "tree", "string", indexesOptions[kFieldNameNumeric]},
+								   IndexDeclaration{string(kFieldNameId + compositePlus + kFieldNameTemp).c_str(), "tree", "composite",
+													indexesOptions[kFieldNameId + compositePlus + kFieldNameTemp]},
+								   IndexDeclaration{string(kFieldNameAge + compositePlus + kFieldNameGenre).c_str(), "hash", "composite",
+													indexesOptions[kFieldNameAge + compositePlus + kFieldNameGenre]},
+							   });
+		defaultNsPks.push_back(kFieldNameId);
+		defaultNsPks.push_back(kFieldNameTemp);
 
 		CreateNamespace(testSimpleNs);
 		DefineNamespaceDataset(testSimpleNs, {
-												 IndexDeclaration{id, "hash", "int", IndexOpts().PK()},
-												 IndexDeclaration{year, "tree", "int", IndexOpts()},
-												 IndexDeclaration{name, "text", "string", IndexOpts()},
-												 IndexDeclaration{phone, "text", "string", IndexOpts()},
+												 IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK()},
+												 IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts()},
+												 IndexDeclaration{kFieldNameName, "text", "string", IndexOpts()},
+												 IndexDeclaration{kFieldNamePhone, "text", "string", IndexOpts()},
 											 });
-		simpleTestNsPks.push_back(id);
+		simpleTestNsPks.push_back(kFieldNameId);
+
+		CreateNamespace(compositeIndexesNs);
+		DefineNamespaceDataset(compositeIndexesNs, {IndexDeclaration{kFieldNameBookid, "hash", "int", IndexOpts().PK()},
+													IndexDeclaration{kFieldNameBookid2, "hash", "int", IndexOpts().PK()},
+													IndexDeclaration{kFieldNameTitle, "text", "string", IndexOpts()},
+													IndexDeclaration{kFieldNamePages, "hash", "int", IndexOpts()},
+													IndexDeclaration{kFieldNamePrice, "hash", "int", IndexOpts()},
+													IndexDeclaration{kFieldNameName, "text", "string", IndexOpts()},
+													IndexDeclaration{kCompositeFieldPricePages.c_str(), "hash", "composite", IndexOpts()},
+													IndexDeclaration{kCompositeFieldTitleName.c_str(), "tree", "composite", IndexOpts()}});
+
+		compositeIndexesNsPks.push_back(kFieldNameBookid);
+		compositeIndexesNsPks.push_back(kFieldNameBookid2);
+
+		CreateNamespace(comparatorsNs);
+		DefineNamespaceDataset(
+			comparatorsNs,
+			{IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts()}, IndexDeclaration{kFieldNameColumnInt, "hash", "int", IndexOpts()},
+			 IndexDeclaration{kFieldNameColumnInt64, "hash", "int64", IndexOpts().PK()},
+			 IndexDeclaration{kFieldNameColumnDouble, "tree", "double", IndexOpts()},
+			 IndexDeclaration{kFieldNameColumnString, "-", "string", IndexOpts()},
+			 IndexDeclaration{kFieldNameColumnFullText, "text", "string", IndexOpts()},
+			 IndexDeclaration{kFieldNameColumnStringNumeric, "-", "string", IndexOpts().SetCollateMode(CollateNumeric)}});
+		comparatorsNsPks.push_back(kFieldNameColumnInt64);
 	}
 
 	void ExecuteAndVerify(const string& ns, const Query& query) {
@@ -142,13 +168,20 @@ public:
 	}
 
 protected:
+	const std::vector<string>& getNsPks(const string& ns) {
+		if (ns == default_namespace) return defaultNsPks;
+		if (ns == testSimpleNs) return simpleTestNsPks;
+		if (ns == compositeIndexesNs) return compositeIndexesNsPks;
+		if (ns == comparatorsNs) return comparatorsNsPks;
+		std::abort();
+	}
+
 	string getPkString(reindexer::Item& item, const string& ns) {
-		vector<string>& pkFields((ns == default_namespace) ? defaultNsPks : simpleTestNsPks);
 		string ret;
-		for (auto& field : pkFields) {
+		const vector<string>& pkFields(getNsPks(ns));
+		for (const string& field : pkFields) {
 			ret += item[field].As<string>() + "#";
 		}
-
 		return ret;
 	}
 
@@ -182,52 +215,138 @@ protected:
 		return result;
 	}
 
-	bool checkCondition(Item& item, const QueryEntry& qentry) {
-		KeyRefs fieldValues = item[qentry.index];
+	bool isIndexComposite(Item& item, const QueryEntry& qentry) {
+		if (qentry.idxNo >= item.NumFields()) return true;
+		return (qentry.values[0].Type() == KeyValueComposite);
+	}
 
-		IndexOpts& opts = indexesOptions[qentry.index];
+	bool compareValues(CondType condition, const KeyRef& key, const KeyValues& values, const IndexOpts& opts) {
+		bool result = false;
+		switch (condition) {
+			case CondEq:
+				result = (key.Compare(values[0], opts.GetCollateMode()) == 0);
+				break;
+			case CondGe:
+				result = (key.Compare(values[0], opts.GetCollateMode()) >= 0);
+				break;
+			case CondGt:
+				result = (key.Compare(values[0], opts.GetCollateMode()) > 0);
+				break;
+			case CondLt:
+				result = (key.Compare(values[0], opts.GetCollateMode()) < 0);
+				break;
+			case CondLe:
+				result = (key.Compare(values[0], opts.GetCollateMode()) <= 0);
+				break;
+			case CondRange:
+				result = (key.Compare(values[0], opts.GetCollateMode()) >= 0) && (key.Compare(values[1], opts.GetCollateMode()) <= 0);
+				break;
+			case CondSet:
+				for (const KeyValue& kv : values) {
+					result = (key.Compare(kv, opts.GetCollateMode()) == 0);
+					if (result) break;
+				}
+				break;
+			default:
+				std::abort();
+		}
+		return result;
+	}
+
+	KeyValues getValues(Item& item, const std::vector<string>& indexes) {
+		KeyValues kvalues;
+		for (const string& idxName : indexes) {
+			kvalues.push_back(KeyValue(static_cast<KeyRef>(item[idxName])));
+		}
+		return kvalues;
+	}
+
+	int compareCompositeValues(const KeyValues& indexesValues, const KeyValue& keyValue, uint8_t collateMode) {
+		const std::vector<KeyValue>& compositeValues = keyValue.getCompositeValues();
+		EXPECT_TRUE(indexesValues.size() == compositeValues.size());
+
+		int cmpRes = 0;
+		for (size_t i = 0; i < indexesValues.size() && (cmpRes == 0); ++i) {
+			cmpRes = indexesValues[i].Compare(compositeValues[i], static_cast<CollateMode>(collateMode));
+		}
+
+		return cmpRes;
+	}
+
+	bool checkCompositeValues(Item& item, const QueryEntry& qentry, const IndexOpts& opts) {
+		vector<string> subIndexes;
+		reindexer::split(qentry.index, "+", true, subIndexes);
+
+		KeyValues indexesValues = getValues(item, subIndexes);
+		const KeyValues& keyValues = qentry.values;
 
 		switch (qentry.condition) {
 			case CondEmpty:
-				return fieldValues.size() == 0;
+				return indexesValues.size() == 0;
 			case CondAny:
-				return fieldValues.size() > 0;
+				return indexesValues.size() > 0;
 			default:
 				break;
 		}
 
 		bool result = false;
-		for (const KeyRef& fieldValue : fieldValues) {
+		switch (qentry.condition) {
+			case CondEq:
+				result = (compareCompositeValues(indexesValues, keyValues[0], opts.collate) == 0);
+				break;
+			case CondGe:
+				result = (compareCompositeValues(indexesValues, keyValues[0], opts.collate) >= 0);
+				break;
+			case CondGt:
+				result = (compareCompositeValues(indexesValues, keyValues[0], opts.collate) > 0);
+				break;
+			case CondLt:
+				result = (compareCompositeValues(indexesValues, keyValues[0], opts.collate) < 0);
+				break;
+			case CondLe:
+				result = (compareCompositeValues(indexesValues, keyValues[0], opts.collate) <= 0);
+				break;
+			case CondRange:
+				EXPECT_TRUE(keyValues.size() == 2);
+				result = (compareCompositeValues(indexesValues, keyValues[0], opts.collate) >= 0) &&
+						 (compareCompositeValues(indexesValues, keyValues[1], opts.collate) <= 0);
+				break;
+			case CondSet:
+				for (const KeyValue& kv : keyValues) {
+					result = (compareCompositeValues(indexesValues, kv, opts.collate) == 0);
+					if (result) break;
+				}
+				break;
+			default:
+				std::abort();
+		}
+
+		return result;
+	}
+
+	bool checkCondition(Item& item, const QueryEntry& qentry) {
+		EXPECT_TRUE(item.NumFields() > 0);
+		EXPECT_TRUE(qentry.values.size() > 0);
+
+		bool result = false;
+		IndexOpts& opts = indexesOptions[qentry.index];
+
+		if (isIndexComposite(item, qentry)) {
+			return checkCompositeValues(item, qentry, opts);
+		} else {
+			KeyRefs fieldValues = item[qentry.index];
 			switch (qentry.condition) {
-				case CondEq:
-					result = (fieldValue.Compare(qentry.values[0], opts.GetCollateMode()) == 0);
-					break;
-				case CondGe:
-					result = (fieldValue.Compare(qentry.values[0], opts.GetCollateMode()) >= 0);
-					break;
-				case CondGt:
-					result = (fieldValue.Compare(qentry.values[0], opts.GetCollateMode()) > 0);
-					break;
-				case CondLt:
-					result = (fieldValue.Compare(qentry.values[0], opts.GetCollateMode()) < 0);
-					break;
-				case CondLe:
-					result = (fieldValue.Compare(qentry.values[0], opts.GetCollateMode()) <= 0);
-					break;
-				case CondRange:
-					result = (fieldValue.Compare(qentry.values[0], opts.GetCollateMode()) >= 0) &&
-							 (fieldValue.Compare(qentry.values[1], opts.GetCollateMode()) <= 0);
-					break;
-				case CondSet:
-					for (const KeyValue& kv : qentry.values) {
-						result = (fieldValue.Compare(kv, opts.GetCollateMode()) == 0);
-						if (result) break;
-					}
-					break;
+				case CondEmpty:
+					return fieldValues.size() == 0;
+				case CondAny:
+					return fieldValues.size() > 0;
 				default:
 					break;
 			}
-			if (result) break;
+			for (const KeyRef& fieldValue : fieldValues) {
+				result = compareValues(qentry.condition, fieldValue, qentry.values, opts);
+				if (result) break;
+			}
 		}
 
 		return result;
@@ -251,26 +370,78 @@ protected:
 		return result;
 	}
 
+	void FillCompositeIndexesNamespace(size_t since, size_t till) {
+		for (size_t i = since; i < till; ++i) {
+			int idValue(static_cast<int>(i));
+			Item item = NewItem(compositeIndexesNs);
+			item[this->kFieldNameBookid] = idValue;
+			item[this->kFieldNameBookid2] = idValue + 77777;
+			item[this->kFieldNameTitle] = kFieldNameTitle + RandString();
+			item[this->kFieldNamePages] = rand() % 1000 + 10;
+			item[this->kFieldNamePrice] = rand() % 1000 + 150;
+			item[this->kFieldNameName] = kFieldNameName + RandString();
+
+			Upsert(compositeIndexesNs, item);
+			Commit(compositeIndexesNs);
+
+			string pkString = getPkString(item, compositeIndexesNs);
+			insertedItems[compositeIndexesNs].emplace(pkString, std::move(item));
+		}
+
+		Item lastItem = NewItem(compositeIndexesNs);
+		lastItem[this->kFieldNameBookid] = 300;
+		lastItem[this->kFieldNameBookid2] = 3000;
+		lastItem[this->kFieldNameTitle] = "test book1 title";
+		lastItem[this->kFieldNamePages] = 88888;
+		lastItem[this->kFieldNamePrice] = 77777;
+		lastItem[this->kFieldNameName] = "test book1 name";
+		Upsert(compositeIndexesNs, lastItem);
+		Commit(compositeIndexesNs);
+
+		string pkString = getPkString(lastItem, compositeIndexesNs);
+		insertedItems[compositeIndexesNs].emplace(pkString, std::move(lastItem));
+	}
+
 	void FillTestSimpleNamespace() {
 		Item item1 = NewItem(testSimpleNs);
-		item1[id] = 1;
-		item1[year] = 2002;
-		item1[name] = "SSS";
+		item1[kFieldNameId] = 1;
+		item1[kFieldNameYear] = 2002;
+		item1[kFieldNameName] = "SSS";
 		Upsert(testSimpleNs, item1);
 
 		string pkString = getPkString(item1, testSimpleNs);
 		insertedItems[testSimpleNs].emplace(pkString, std::move(item1));
 
 		Item item2 = NewItem(testSimpleNs);
-		item2[id] = 2;
-		item2[year] = 1989;
-		item2[name] = "MMM";
+		item2[kFieldNameId] = 2;
+		item2[kFieldNameYear] = 1989;
+		item2[kFieldNameName] = "MMM";
 		Upsert(testSimpleNs, item2);
 
 		pkString = getPkString(item2, testSimpleNs);
 		insertedItems[testSimpleNs].emplace(pkString, std::move(item2));
 
 		Commit(testSimpleNs);
+	}
+
+	void FillComparatorsNamespace() {
+		for (size_t i = 0; i < 1000; ++i) {
+			Item item(reindexer->NewItem(comparatorsNs));
+			item[kFieldNameId] = static_cast<int>(i);
+			item[kFieldNameColumnInt] = rand();
+			item[kFieldNameColumnInt64] = static_cast<int64_t>(rand());
+			item[kFieldNameColumnDouble] = static_cast<double>(rand()) / RAND_MAX;
+			item[kFieldNameColumnString] = RandString();
+			item[kFieldNameColumnStringNumeric] = std::to_string(i);
+			item[kFieldNameColumnFullText] = RandString();
+
+			Upsert(comparatorsNs, item);
+
+			string pkString = getPkString(item, comparatorsNs);
+			insertedItems[comparatorsNs].emplace(pkString, std::move(item));
+		}
+
+		Commit(comparatorsNs);
 	}
 
 	void FillDefaultNamespace(int start, int count, int packagesCount) {
@@ -286,36 +457,38 @@ protected:
 
 	Item GenerateDefaultNsItem(int idValue, size_t packagesCount) {
 		Item item = NewItem(default_namespace);
-		item[id] = idValue;
-		item[year] = rand() % 50 + 2000;
-		item[genre] = rand() % 50;
-		item[name] = RandString().c_str();
-		item[age] = rand() % 5;
-		item[description] = RandString().c_str();
+		item[kFieldNameId] = idValue;
+		item[kFieldNameYear] = rand() % 50 + 2000;
+		item[kFieldNameGenre] = rand() % 50;
+		item[kFieldNameName] = RandString().c_str();
+		item[kFieldNameAge] = rand() % 5;
+		item[kFieldNameDescription] = RandString().c_str();
 
 		auto packagesVec(RandIntVector(packagesCount, 10000, 50));
-		item[packages] = packagesVec;
+		item[kFieldNamePackages] = packagesVec;
 
-		item[rate] = static_cast<double>(rand() % 100) / 10;
-		item[age] = static_cast<int>(rand() % 2);
+		item[kFieldNameRate] = static_cast<double>(rand() % 100) / 10;
+		item[kFieldNameAge] = static_cast<int>(rand() % 2);
 
 		auto pricesIds(RandIntVector(10, 7000, 50));
-		item[priceId] = pricesIds;
+		item[kFieldNamePriceId] = pricesIds;
 
 		int stTime = rand() % 50000;
-		item[location] = RandString().c_str();
-		item[startTime] = stTime;
-		item[endTime] = stTime + (rand() % 5) * 1000;
-		item[actor] = RandString().c_str();
-		item[numeric] = to_string(rand() % 1000);
+		item[kFieldNameLocation] = RandString().c_str();
+		item[kFieldNameStartTime] = stTime;
+		item[kFieldNameEndTime] = stTime + (rand() % 5) * 1000;
+		item[kFieldNameActor] = RandString().c_str();
+		item[kFieldNameNumeric] = to_string(rand() % 1000);
 
 		return item;
 	}
 
 	void CheckStandartQueries() {
-		const char* sortIdxs[] = {name, year, rate};
-		const vector<string> distincts = {year, rate};
+		const char* sortIdxs[] = {kFieldNameName, kFieldNameYear, kFieldNameRate};
+		const vector<string> distincts = {kFieldNameYear, kFieldNameRate};
 		const vector<bool> sortOrders = {true, false};
+
+		const string compositeIndexName(kFieldNameAge + compositePlus + kFieldNameGenre);
 
 		for (const bool sortOrder : sortOrders) {
 			for (const char* sortIdx : sortIdxs) {
@@ -327,206 +500,220 @@ protected:
 					ExecuteAndVerify(default_namespace,
 									 Query(default_namespace).Distinct(distinct.c_str()).Sort(sortIdx, sortOrder).Limit(1));
 
-					ExecuteAndVerify(
-						default_namespace,
-						Query(default_namespace).Where(genre, CondEq, randomGenre).Distinct(distinct.c_str()).Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(
-						default_namespace,
-						Query(default_namespace).Where(name, CondEq, RandString()).Distinct(distinct.c_str()).Sort(sortIdx, sortOrder));
-
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
-															.Where(rate, CondEq, static_cast<double>(rand() % 100) / 10)
+															.Where(kFieldNameGenre, CondEq, randomGenre)
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder));
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
-															.Where(genre, CondGt, randomGenre)
+															.Where(kFieldNameName, CondEq, RandString())
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameRate, CondEq, static_cast<double>(rand() % 100) / 10)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameGenre, CondGt, randomGenre)
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder)
 															.Debug(LogTrace));
 
-					ExecuteAndVerify(
-						default_namespace,
-						Query(default_namespace).Where(name, CondGt, RandString()).Distinct(distinct.c_str()).Sort(sortIdx, sortOrder));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameName, CondGt, RandString())
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
-															.Where(rate, CondGt, static_cast<double>(rand() % 100) / 10)
+															.Where(kFieldNameRate, CondGt, static_cast<double>(rand() % 100) / 10)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameGenre, CondLt, randomGenre)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameName, CondLt, RandString())
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameRate, CondLt, static_cast<double>(rand() % 100) / 10)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameGenre, CondRange, {randomGenreLower, randomGenreUpper})
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder)
+															.Debug(LogTrace));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameName, CondRange, {RandString(), RandString()})
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(default_namespace,
+									 Query(default_namespace)
+										 .Where(kFieldNameRate, CondRange,
+												{static_cast<double>(rand() % 100) / 10, static_cast<double>(rand() % 100) / 10})
+										 .Distinct(distinct.c_str())
+										 .Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNamePackages, CondSet, RandIntVector(10, 10000, 50))
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNamePackages, CondEmpty, 0)
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder));
 
 					ExecuteAndVerify(
 						default_namespace,
-						Query(default_namespace).Where(genre, CondLt, randomGenre).Distinct(distinct.c_str()).Sort(sortIdx, sortOrder));
+						Query(default_namespace).Where(kFieldNamePackages, CondAny, 0).Distinct(distinct.c_str()).Sort(sortIdx, sortOrder));
 
 					ExecuteAndVerify(
 						default_namespace,
-						Query(default_namespace).Where(name, CondLt, RandString()).Distinct(distinct.c_str()).Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(default_namespace, Query(default_namespace)
-															.Where(rate, CondLt, static_cast<double>(rand() % 100) / 10)
-															.Distinct(distinct.c_str())
-															.Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(default_namespace, Query(default_namespace)
-															.Where(genre, CondRange, {randomGenreLower, randomGenreUpper})
-															.Distinct(distinct.c_str())
-															.Sort(sortIdx, sortOrder)
-															.Debug(LogTrace));
-
-					ExecuteAndVerify(default_namespace, Query(default_namespace)
-															.Where(name, CondRange, {RandString(), RandString()})
-															.Distinct(distinct.c_str())
-															.Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(
-						default_namespace,
-						Query(default_namespace)
-							.Where(rate, CondRange, {static_cast<double>(rand() % 100) / 10, static_cast<double>(rand() % 100) / 10})
-							.Distinct(distinct.c_str())
-							.Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(default_namespace, Query(default_namespace)
-															.Where(packages, CondSet, RandIntVector(10, 10000, 50))
-															.Distinct(distinct.c_str())
-															.Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(
-						default_namespace,
-						Query(default_namespace).Where(packages, CondEmpty, 0).Distinct(distinct.c_str()).Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(
-						default_namespace,
-						Query(default_namespace).Where(packages, CondAny, 0).Distinct(distinct.c_str()).Sort(sortIdx, sortOrder));
-
-					ExecuteAndVerify(
-						default_namespace,
-						Query(default_namespace).Where(isDeleted, CondEq, 1).Distinct(distinct.c_str()).Sort(sortIdx, sortOrder));
+						Query(default_namespace).Where(kFieldNameIsDeleted, CondEq, 1).Distinct(distinct.c_str()).Sort(sortIdx, sortOrder));
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder)
 															.Debug(LogTrace)
-															.Where(genre, CondEq, 5)
-															.Where(age, CondEq, 3)
-															.Where(year, CondGe, 2010)
-															.Where(packages, CondSet, RandIntVector(5, 10000, 50))
+															.Where(kFieldNameGenre, CondEq, 5)
+															.Where(kFieldNameAge, CondEq, 3)
+															.Where(kFieldNameYear, CondGe, 2010)
+															.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
 															.Debug(LogTrace));
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder)
 															.Debug(LogTrace)
-															.Where(year, CondGt, 2002)
-															.Where(genre, CondEq, 4)
-															.Where(age, CondEq, 3)
-															.Where(isDeleted, CondEq, 3)
+															.Where(kFieldNameYear, CondGt, 2002)
+															.Where(kFieldNameGenre, CondEq, 4)
+															.Where(kFieldNameAge, CondEq, 3)
+															.Where(kFieldNameIsDeleted, CondEq, 3)
 															.Or()
-															.Where(year, CondGt, 2001)
-															.Where(packages, CondSet, RandIntVector(5, 10000, 50))
+															.Where(kFieldNameYear, CondGt, 2001)
+															.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
 															.Debug(LogTrace));
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder)
 															.Debug(LogTrace)
-															.Where(age, CondSet, {1, 2, 3, 4})
-															.Where(id, CondEq, rand() % 5000)
-															.Where(temp, CondEq, "")
-															.Where(isDeleted, CondEq, 1)
+															.Where(kFieldNameAge, CondSet, {1, 2, 3, 4})
+															.Where(kFieldNameId, CondEq, rand() % 5000)
+															.Where(kFieldNameTemp, CondEq, "")
+															.Where(kFieldNameIsDeleted, CondEq, 1)
 															.Or()
-															.Where(year, CondGt, 2001)
+															.Where(kFieldNameYear, CondGt, 2001)
 															.Debug(LogTrace));
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder)
 															.Debug(LogTrace)
-															.Where(genre, CondSet, {5, 1, 7})
-															.Where(year, CondLt, 2010)
-															.Where(genre, CondEq, 3)
-															.Where(packages, CondSet, RandIntVector(5, 10000, 50))
+															.Where(kFieldNameGenre, CondSet, {5, 1, 7})
+															.Where(kFieldNameYear, CondLt, 2010)
+															.Where(kFieldNameGenre, CondEq, 3)
+															.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
 															.Or()
-															.Where(packages, CondEmpty, 0)
+															.Where(kFieldNamePackages, CondEmpty, 0)
 															.Debug(LogTrace));
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder)
 															.Debug(LogTrace)
-															.Where(genre, CondSet, {5, 1, 7})
-															.Where(year, CondLt, 2010)
+															.Where(kFieldNameGenre, CondSet, {5, 1, 7})
+															.Where(kFieldNameYear, CondLt, 2010)
 															.Or()
-															.Where(packages, CondAny, 0)
-															.Where(packages, CondSet, RandIntVector(5, 10000, 50))
+															.Where(kFieldNamePackages, CondAny, 0)
+															.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
 															.Debug(LogTrace));
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder)
 															.Debug(LogTrace)
-															.Where(genre, CondEq, 5)
+															.Where(kFieldNameGenre, CondEq, 5)
 															.Or()
-															.Where(genre, CondEq, 6)
-															.Where(year, CondRange, {2001, 2020})
-															.Where(packages, CondSet, RandIntVector(5, 10000, 50)));
+															.Where(kFieldNameGenre, CondEq, 6)
+															.Where(kFieldNameYear, CondRange, {2001, 2020})
+															.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50)));
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder)
 															.Debug(LogTrace)
-															.Where(actor, CondEq, RandString()));
+															.Where(kFieldNameActor, CondEq, RandString()));
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder)
 															.Debug(LogTrace)
 															.Not()
-															.Where(genre, CondEq, 5)
-															.Where(year, CondRange, {2001, 2020})
-															.Where(packages, CondSet, RandIntVector(5, 10000, 50)));
+															.Where(kFieldNameGenre, CondEq, 5)
+															.Where(kFieldNameYear, CondRange, {2001, 2020})
+															.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50)));
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder)
 															.Debug(LogTrace)
-															.Where(genre, CondEq, 5)
+															.Where(kFieldNameGenre, CondEq, 5)
 															.Not()
-															.Where(year, CondRange, {2001, 2020})
-															.Where(packages, CondSet, RandIntVector(5, 10000, 50)));
+															.Where(kFieldNameYear, CondRange, {2001, 2020})
+															.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50)));
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder)
 															.Debug(LogTrace)
 															.Not()
-															.Where(year, CondEq, 10));
+															.Where(kFieldNameYear, CondEq, 10));
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.Distinct(distinct.c_str())
-															.Sort(numeric, sortOrder)
+															.Sort(kFieldNameNumeric, sortOrder)
 															.Debug(LogTrace)
-															.Where(numeric, CondGt, to_string(5)));
+															.Where(kFieldNameNumeric, CondGt, to_string(5)));
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.Distinct(distinct.c_str())
-															.Sort(numeric, sortOrder)
+															.Sort(kFieldNameNumeric, sortOrder)
 															.Debug(LogTrace)
-															.Where(numeric, CondLt, to_string(600)));
+															.Where(kFieldNameNumeric, CondLt, to_string(600)));
 
 					ExecuteAndVerify(default_namespace,
 									 Query(default_namespace)
 										 .Distinct(distinct.c_str())
 										 .Sort(sortIdx, sortOrder)
 										 .Debug(LogTrace)
-										 .Where(numeric, CondRange, {to_string(rand() % 100), to_string(rand() % 100 + 500)}));
+										 .Where(kFieldNameNumeric, CondRange, {to_string(rand() % 100), to_string(rand() % 100 + 500)}));
 
-					ExecuteAndVerify(testSimpleNs, Query(testSimpleNs).Where(name, CondEq, "SSS"));
-					ExecuteAndVerify(testSimpleNs, Query(testSimpleNs).Where(year, CondEq, 2002));
-					ExecuteAndVerify(testSimpleNs, Query(testSimpleNs).Where(year, CondEq, 2002).Not().Where(name, CondEq, 2002));
-					ExecuteAndVerify(testSimpleNs, Query(testSimpleNs).Where(name, CondEq, "SSS").Not().Where(year, CondEq, 2002));
-					ExecuteAndVerify(testSimpleNs, Query(testSimpleNs).Where(name, CondEq, "SSS").Not().Where(year, CondEq, 1989));
-					ExecuteAndVerify(testSimpleNs, Query(testSimpleNs).Where(year, CondEq, 2002).Not().Where(name, CondEq, "MMM"));
+					ExecuteAndVerify(testSimpleNs, Query(testSimpleNs).Where(kFieldNameName, CondEq, "SSS"));
+					ExecuteAndVerify(testSimpleNs, Query(testSimpleNs).Where(kFieldNameYear, CondEq, 2002));
+					ExecuteAndVerify(testSimpleNs,
+									 Query(testSimpleNs).Where(kFieldNameYear, CondEq, 2002).Not().Where(kFieldNameName, CondEq, 2002));
+					ExecuteAndVerify(testSimpleNs,
+									 Query(testSimpleNs).Where(kFieldNameName, CondEq, "SSS").Not().Where(kFieldNameYear, CondEq, 2002));
+					ExecuteAndVerify(testSimpleNs,
+									 Query(testSimpleNs).Where(kFieldNameName, CondEq, "SSS").Not().Where(kFieldNameYear, CondEq, 1989));
+					ExecuteAndVerify(testSimpleNs,
+									 Query(testSimpleNs).Where(kFieldNameYear, CondEq, 2002).Not().Where(kFieldNameName, CondEq, "MMM"));
+
+					ExecuteAndVerify(
+						default_namespace,
+						Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondLe, {{KeyValue(27), KeyValue(10000)}}));
 				}
 			}
 		}
@@ -534,8 +721,12 @@ protected:
 
 	void CheckAggregationQueries() {
 		const int limit = 100;
-		Query testQuery = Query(default_namespace).Where(genre, CondEq, 10).Limit(limit).Aggregate(year, AggAvg).Aggregate(year, AggSum);
-		Query checkQuery = Query(default_namespace).Where(genre, CondEq, 10).Limit(limit);
+		Query testQuery = Query(default_namespace)
+							  .Where(kFieldNameGenre, CondEq, 10)
+							  .Limit(limit)
+							  .Aggregate(kFieldNameYear, AggAvg)
+							  .Aggregate(kFieldNameYear, AggSum);
+		Query checkQuery = Query(default_namespace).Where(kFieldNameGenre, CondEq, 10).Limit(limit);
 
 		reindexer::QueryResults testQr;
 		Error err = reindexer->Select(testQuery, testQr);
@@ -548,7 +739,7 @@ protected:
 		double yearSum = 0.0;
 		for (size_t i = 0; i < checkQr.size(); ++i) {
 			Item item(checkQr.GetItem(static_cast<int>(i)));
-			yearSum += item[year].Get<int>();
+			yearSum += item[kFieldNameYear].Get<int>();
 		}
 
 		EXPECT_TRUE(AreDoublesEqual(testQr.aggregationResults[1], yearSum)) << "Aggregation Sum result is incorrect!";
@@ -558,8 +749,10 @@ protected:
 	void CheckSqlQueries() {
 		const string sqlQuery =
 			"SELECT ID, Year, Genre FROM test_namespace WHERE year > '2016' AND genre IN ('1',2,'3') ORDER BY year DESC LIMIT 10000000";
-		const Query checkQuery =
-			Query(default_namespace, 0, 10000000).Where(year, CondGt, 2016).Where(genre, CondSet, {1, 2, 3}).Sort(year, true);
+		const Query checkQuery = Query(default_namespace, 0, 10000000)
+									 .Where(kFieldNameYear, CondGt, 2016)
+									 .Where(kFieldNameGenre, CondSet, {1, 2, 3})
+									 .Sort(kFieldNameYear, true);
 
 		QueryResults sqlQr;
 		Error err = reindexer->Select(sqlQuery, sqlQr);
@@ -592,6 +785,99 @@ protected:
 		}
 
 		Verify(default_namespace, checkQr, checkQuery);
+	}
+
+	void CheckCompositeIndexesQueries() {
+		int priceValue = 77777;
+		int pagesValue = 88888;
+		const char* titleValue = "test book1 title";
+		const char* nameValue = "test book1 name";
+
+		ExecuteAndVerify(compositeIndexesNs,
+						 Query(compositeIndexesNs)
+							 .WhereComposite(kCompositeFieldPricePages.c_str(), CondEq, {{KeyValue(priceValue), KeyValue(pagesValue)}}));
+		ExecuteAndVerify(compositeIndexesNs,
+						 Query(compositeIndexesNs)
+							 .WhereComposite(kCompositeFieldPricePages.c_str(), CondLt, {{KeyValue(priceValue), KeyValue(pagesValue)}}));
+		ExecuteAndVerify(compositeIndexesNs,
+						 Query(compositeIndexesNs)
+							 .WhereComposite(kCompositeFieldPricePages.c_str(), CondLe, {{KeyValue(priceValue), KeyValue(pagesValue)}}));
+		ExecuteAndVerify(compositeIndexesNs,
+						 Query(compositeIndexesNs)
+							 .WhereComposite(kCompositeFieldPricePages.c_str(), CondGt, {{KeyValue(priceValue), KeyValue(pagesValue)}}));
+		ExecuteAndVerify(compositeIndexesNs,
+						 Query(compositeIndexesNs)
+							 .WhereComposite(kCompositeFieldPricePages.c_str(), CondGe, {{KeyValue(priceValue), KeyValue(pagesValue)}}));
+		ExecuteAndVerify(compositeIndexesNs,
+						 Query(compositeIndexesNs)
+							 .WhereComposite(kCompositeFieldPricePages.c_str(), CondRange,
+											 {{KeyValue(1), KeyValue(1)}, {KeyValue(priceValue), KeyValue(pagesValue)}}));
+
+		vector<KeyValues> intKeys;
+		for (int i = 0; i < 10; ++i) {
+			intKeys.emplace_back(KeyValues{KeyValue(i), KeyValue(i * 5)});
+		}
+		ExecuteAndVerify(compositeIndexesNs, Query(compositeIndexesNs).WhereComposite(kCompositeFieldPricePages.c_str(), CondSet, intKeys));
+
+		ExecuteAndVerify(compositeIndexesNs, Query(compositeIndexesNs)
+												 .WhereComposite(kCompositeFieldTitleName.c_str(), CondEq,
+																 {{KeyValue(string(titleValue)), KeyValue(string(nameValue))}}));
+		ExecuteAndVerify(compositeIndexesNs, Query(compositeIndexesNs)
+												 .WhereComposite(kCompositeFieldTitleName.c_str(), CondGe,
+																 {{KeyValue(string(titleValue)), KeyValue(string(nameValue))}}));
+
+		ExecuteAndVerify(compositeIndexesNs, Query(compositeIndexesNs)
+												 .WhereComposite(kCompositeFieldTitleName.c_str(), CondLt,
+																 {{KeyValue(string(titleValue)), KeyValue(string(nameValue))}}));
+		ExecuteAndVerify(compositeIndexesNs, Query(compositeIndexesNs)
+												 .WhereComposite(kCompositeFieldTitleName.c_str(), CondLe,
+																 {{KeyValue(string(titleValue)), KeyValue(string(nameValue))}}));
+		vector<KeyValues> stringKeys;
+		for (size_t i = 0; i < 1010; ++i) {
+			stringKeys.emplace_back(KeyValues{KeyValue(RandString()), KeyValue(RandString())});
+		}
+		ExecuteAndVerify(compositeIndexesNs,
+						 Query(compositeIndexesNs).WhereComposite(kCompositeFieldTitleName.c_str(), CondSet, stringKeys));
+
+		ExecuteAndVerify(compositeIndexesNs, Query(compositeIndexesNs)
+												 .Where(kFieldNameName, CondEq, nameValue)
+												 .WhereComposite(kCompositeFieldTitleName.c_str(), CondEq,
+																 {{KeyValue(string(titleValue)), KeyValue(string(nameValue))}}));
+
+		ExecuteAndVerify(compositeIndexesNs, Query(compositeIndexesNs));
+	}
+
+	void CheckComparatorsQueries() {
+		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnInt64", CondLe, {KeyRef(static_cast<int64_t>(10000))}));
+
+		vector<double> doubleSet;
+		for (size_t i = 0; i < 1010; i++) {
+			doubleSet.emplace_back(static_cast<double>(rand()) / RAND_MAX);
+		}
+		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnDouble", CondSet, doubleSet));
+		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnString", CondGe, string("test_string1")));
+		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnString", CondLe, string("test_string2")));
+		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnString", CondEq, string("test_string3")));
+
+		vector<string> stringSet;
+		for (size_t i = 0; i < 1010; i++) {
+			stringSet.emplace_back(RandString());
+		}
+		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnString", CondSet, stringSet));
+
+		stringSet.clear();
+		for (size_t i = 0; i < 100; i++) {
+			stringSet.emplace_back(to_string(i + 20000));
+		}
+		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnStringNumeric", CondSet, stringSet));
+
+		stringSet.clear();
+		for (size_t i = 0; i < 100; i++) {
+			stringSet.emplace_back(to_string(i + 1));
+		}
+		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnStringNumeric", CondSet, stringSet));
+		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnStringNumeric", CondEq, string("777")));
+		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnFullText", CondEq, RandString()));
 	}
 
 	static bool AreDoublesEqual(double lhs, double rhs) { return std::abs(lhs - rhs) < numeric_limits<double>::epsilon(); }
@@ -631,27 +917,47 @@ protected:
 	std::unordered_map<NamespaceName, InsertedItemsByPk> insertedItems;
 	std::unordered_map<string, IndexOpts> indexesOptions;
 
-	const char* id = "id";
-	const char* genre = "genre";
-	const char* year = "year";
-	const char* packages = "packages";
-	const char* name = "name";
-	const char* countries = "countries";
-	const char* age = "age";
-	const char* description = "description";
-	const char* rate = "rate";
-	const char* isDeleted = "is_deleted";
-	const char* actor = "actor";
-	const char* priceId = "price_id";
-	const char* location = "location";
-	const char* endTime = "end_time";
-	const char* startTime = "start_time";
-	const char* phone = "phone";
-	const char* temp = "tmp";
-	const char* numeric = "numeric";
+	const char* kFieldNameId = "id";
+	const char* kFieldNameGenre = "genre";
+	const char* kFieldNameYear = "year";
+	const char* kFieldNamePackages = "packages";
+	const char* kFieldNameName = "name";
+	const char* kFieldNameCountries = "countries";
+	const char* kFieldNameAge = "age";
+	const char* kFieldNameDescription = "description";
+	const char* kFieldNameRate = "rate";
+	const char* kFieldNameIsDeleted = "is_deleted";
+	const char* kFieldNameActor = "actor";
+	const char* kFieldNamePriceId = "price_id";
+	const char* kFieldNameLocation = "location";
+	const char* kFieldNameEndTime = "end_time";
+	const char* kFieldNameStartTime = "start_time";
+	const char* kFieldNamePhone = "phone";
+	const char* kFieldNameTemp = "tmp";
+	const char* kFieldNameNumeric = "numeric";
+	const char* kFieldNameBookid = "bookid";
+	const char* kFieldNameBookid2 = "bookid2";
+	const char* kFieldNameTitle = "title";
+	const char* kFieldNamePages = "pages";
+	const char* kFieldNamePrice = "price";
+
+	const char* kFieldNameColumnInt = "columnInt";
+	const char* kFieldNameColumnInt64 = "columnInt64";
+	const char* kFieldNameColumnDouble = "columnDouble";
+	const char* kFieldNameColumnString = "columnString";
+	const char* kFieldNameColumnFullText = "columnFullText";
+	const char* kFieldNameColumnStringNumeric = "columnStringNumeric";
+
 	const string compositePlus = "+";
 	const string testSimpleNs = "test_simple_namespace";
+	const string compositeIndexesNs = "composite_indexes_namespace";
+	const string comparatorsNs = "comparators_namespace";
+
+	const string kCompositeFieldPricePages = kFieldNamePrice + compositePlus + kFieldNamePages;
+	const string kCompositeFieldTitleName = kFieldNameTitle + compositePlus + kFieldNameName;
 
 	vector<string> defaultNsPks;
 	vector<string> simpleTestNsPks;
+	vector<string> compositeIndexesNsPks;
+	vector<string> comparatorsNsPks;
 };

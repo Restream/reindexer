@@ -10,18 +10,23 @@ key_string BuildPayloadTuple(ConstPayload &pl, const TagsMatcher &tagsMatcher) {
 	wrser.PutVarUint(ctag(TAG_OBJECT, 0));
 
 	for (int idx = 1; idx < pl.NumFields(); ++idx) {
+		const PayloadFieldType &fieldType(pl.Type().Field(idx));
+		if (fieldType.JsonPaths().size() < 1 || fieldType.JsonPaths()[0].empty()) continue;
+
 		KeyRefs keyRefs;
 		pl.Get(idx, keyRefs);
 
-		string fieldName = pl.Type().Field(idx).Name();
-		int tagName = tagsMatcher.name2tag(fieldName.c_str());
+		int tagName = tagsMatcher.name2tag(fieldType.JsonPaths()[0].c_str());
 		if (!tagName) {
-			tagName = const_cast<TagsMatcher &>(tagsMatcher).name2tag(fieldName.c_str(), true);
+			printf("BuildPayloadTuple() failed:\n");
+			puts(tagsMatcher.dump().c_str());
+			puts(fieldType.JsonPaths()[0].c_str());
+			fflush(stdout);
 		}
-		assert(tagName);
+		assert(tagName != 0);
 
 		int field = idx;
-		if (pl.Type().Field(field).IsArray()) {
+		if (fieldType.IsArray()) {
 			wrser.PutVarUint(ctag(TAG_ARRAY, tagName, field));
 			wrser.PutVarUint(keyRefs.size());
 		} else {

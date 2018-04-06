@@ -214,7 +214,7 @@ func (db *Reindexer) rawResultToJson(rawResult []byte, jsonName string, totalNam
 
 	jsonBuf.WriteString("{\"")
 
-	if len(totalName) != 0 {
+	if len(totalName) != 0 && rawQueryParams.totalcount != 0 {
 		jsonBuf.WriteString(totalName)
 		jsonBuf.WriteString("\":")
 		jsonBuf.WriteString(strconv.Itoa(rawQueryParams.totalcount))
@@ -353,7 +353,7 @@ func (db *Reindexer) execSQLAsJSON(namespace string, query string) *JSONIterator
 		return errJSONIterator(err)
 	}
 	defer result.Free()
-	json, jsonOffsets, err := db.rawResultToJson(result.GetBuf(), namespace, "", nil, nil)
+	json, jsonOffsets, err := db.rawResultToJson(result.GetBuf(), namespace, "total", nil, nil)
 	if err != nil {
 		return errJSONIterator(err)
 	}

@@ -15,9 +15,8 @@ import (
 	"reflect"
 	"runtime"
 	"sync"
-	"unsafe"
-
 	"time"
+	"unsafe"
 
 	"github.com/restream/reindexer/bindings"
 )
@@ -25,6 +24,8 @@ import (
 const cgoLimit = 2000
 
 var cgoLimiter = make(chan struct{}, cgoLimit)
+
+var bufFree = newBufFreeBatcher()
 
 // Logger interface for reindexer
 type Logger interface {
@@ -49,13 +50,7 @@ func (buf *RawCBuffer) FreeFinalized() {
 }
 
 func (buf *RawCBuffer) Free() {
-	if buf.cbuf.data != nil {
-		cgoLimiter <- struct{}{}
-		defer func() { <-cgoLimiter }()
-		C.reindexer_free_buffer(buf.cbuf)
-	}
-	buf.cbuf.data = nil
-	bufPool.Put(buf)
+	bufFree.add(buf)
 }
 
 func (buf *RawCBuffer) GetBuf() []byte {
@@ -199,6 +194,8 @@ func (binding *Builtin) SelectQuery(data []byte, withItems bool, ptVersions []in
 }
 
 func (binding *Builtin) DeleteQuery(data []byte) (bindings.RawBuffer, error) {
+	cgoLimiter <- struct{}{}
+	defer func() { <-cgoLimiter }()
 	return ret2go(C.reindexer_delete_query(buf2c(data)))
 }
 
@@ -248,4 +245,71 @@ func (binding *Builtin) GetStats() bindings.Stats {
 
 func (binding *Builtin) ResetStats() {
 	C.reindexer_reset_stats()
+}
+
+func newBufFreeBatcher() (bf *bufFreeBatcher) {
+	bf = &bufFreeBatcher{
+		bufs:   make([]*RawCBuffer, 0, 100),
+		bufs2:  make([]*RawCBuffer, 0, 100),
+		kickCh: make(chan struct{}, 1),
+	}
+	go bf.loop()
+	return
+}
+
+type bufFreeBatcher struct {
+	bufs   []*RawCBuffer
+	bufs2  []*RawCBuffer
+	cbufs  []C.reindexer_buffer
+	lock   sync.Mutex
+	kickCh chan struct{}
+}
+
+func (bf *bufFreeBatcher) loop() {
+	for {
+		<-bf.kickCh
+
+		bf.lock.Lock()
+		if len(bf.bufs) == 0 {
+			bf.lock.Unlock()
+			continue
+		}
+		bf.bufs, bf.bufs2 = bf.bufs2, bf.bufs
+		bf.lock.Unlock()
+
+		for _, buf := range bf.bufs2 {
+			bf.cbufs = append(bf.cbufs, buf.cbuf)
+		}
+
+		C.reindexer_free_buffers((*C.reindexer_buffer)(unsafe.Pointer(&bf.cbufs[0])), C.int(len(bf.cbufs)))
+
+		for _, buf := range bf.bufs2 {
+			buf.cbuf.data = nil
+			bf.toPool(buf)
+		}
+		bf.cbufs = bf.cbufs[:0]
+		bf.bufs2 = bf.bufs2[:0]
+	}
+}
+
+func (bf *bufFreeBatcher) add(buf *RawCBuffer) {
+	if buf.cbuf.data != nil {
+		bf.toFree(buf)
+	} else {
+		bf.toPool(buf)
+	}
+}
+
+func (bf *bufFreeBatcher) toFree(buf *RawCBuffer) {
+	bf.lock.Lock()
+	bf.bufs = append(bf.bufs, buf)
+	bf.lock.Unlock()
+	select {
+	case bf.kickCh <- struct{}{}:
+	default:
+	}
+}
+
+func (bf *bufFreeBatcher) toPool(buf *RawCBuffer) {
+	bufPool.Put(buf)
 }

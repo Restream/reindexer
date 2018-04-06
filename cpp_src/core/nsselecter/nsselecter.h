@@ -17,6 +17,8 @@ struct JoinedSelector {
 	JoinType type;
 	bool nodata;
 	std::function<bool(IdType, ConstPayload, bool)> func;
+	int called, matched;
+	string ns;
 };
 typedef vector<JoinedSelector> JoinedSelectors;
 
@@ -73,7 +75,7 @@ private:
 	void applyCustomSort(QueryResults &result, const SelectCtx &ctx);
 	void applyGeneralSort(QueryResults &result, const SelectCtx &ctx, CollateMode collateMode);
 
-	bool isContainsFullText(const QueryEntries &entries);
+	bool containsFullTextIndexes(const QueryEntries &entries);
 	void selectWhere(const QueryEntries &entries, RawQueryResult &result, SortType sortId, bool is_ft);
 	QueryEntries lookupQueryIndexes(const QueryEntries &entries);
 	void substituteCompositeIndexes(QueryEntries &entries);

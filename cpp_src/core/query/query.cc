@@ -1,5 +1,6 @@
 
 #include "core/query/query.h"
+#include "core/query/dslencoder.h"
 #include "core/query/dslparsetools.h"
 #include "core/type_consts.h"
 #include "estl/tokenizer.h"
@@ -11,6 +12,30 @@ namespace reindexer {
 
 Query::Query(const string &__namespace, unsigned _start, unsigned _count, CalcTotalMode _calcTotal)
 	: _namespace(__namespace), calcTotal(_calcTotal), start(_start), count(_count) {}
+
+bool Query::operator==(const Query &obj) const {
+	if (!QueryWhere::operator==(obj)) return false;
+
+	if (nextOp_ != obj.nextOp_) return false;
+	if (_namespace != obj._namespace) return false;
+	if (sortBy != obj.sortBy) return false;
+	if (sortDirDesc != obj.sortDirDesc) return false;
+	if (calcTotal != obj.calcTotal) return false;
+	if (describe != obj.describe) return false;
+	if (start != obj.start) return false;
+	if (count != obj.count) return false;
+	if (debugLevel != obj.debugLevel) return false;
+	if (joinType != obj.joinType) return false;
+	if (forcedSortOrder != obj.forcedSortOrder) return false;
+	if (namespacesNames_ != obj.namespacesNames_) return false;
+
+	if (selectFilter_ != obj.selectFilter_) return false;
+	if (selectFunctions_ != obj.selectFunctions_) return false;
+	if (joinQueries_ != obj.joinQueries_) return false;
+	if (mergeQueries_ != obj.mergeQueries_) return false;
+
+	return true;
+}
 
 int Query::Parse(const string &q) {
 	tokenizer parser(q);
@@ -108,62 +133,143 @@ int Query::Parse(tokenizer &parser) {
 	token tok = parser.next_token();
 
 	if (tok.text == "describe") {
-		return describeParse(parser);
+		describeParse(parser);
 	} else if (tok.text == "select") {
-		return selectParse(parser);
+		selectParse(parser);
 	} else {
-		throw Error(errParams, "Syntax error at or near '%s'", tok.text.c_str());
+		throw Error(errParams, "Syntax error at or near '%s', %s", tok.text.c_str(), parser.where().c_str());
 	}
+	tok = parser.next_token();
+	if (tok.text == ";") {
+		tok = parser.next_token();
+	}
+	parser.skip_space();
+	if (tok.text != "" || !parser.end()) throw Error(errParseSQL, "Unexpected '%s' in query, %s", tok.text.c_str(), parser.where().c_str());
 
 	return 0;
 }
 
 int Query::selectParse(tokenizer &parser) {
 	// Get filter
-	token tok = parser.next_token(false);
-	if (tok.text != "*") {
-		while (!parser.end()) {
-			selectFilter_.push_back(tok.text);
-			tok = parser.peek_token();
-			if (tok.text != ",") break;
+	token tok;
+	while (!parser.end()) {
+		auto nameWithCase = parser.peek_token(false).text;
+		auto name = parser.next_token().text;
+		tok = parser.peek_token();
+		if (tok.text == "(") {
 			parser.next_token();
-			tok = parser.next_token(false);
+			tok = parser.next_token();
+			if (name == "avg") {
+				aggregations_.push_back({tok.text, AggAvg});
+			} else if (name == "sum") {
+				aggregations_.push_back({tok.text, AggSum});
+			} else if (name == "count") {
+				calcTotal = ModeAccurateTotal;
+				count = 0;
+			} else {
+				throw Error(errParams, "Unknown function name SQL - %s, %s", name.c_str(), parser.where().c_str());
+			}
+			tok = parser.next_token();
+			if (tok.text != ")") {
+				throw Error(errParams, "Expected ')', but found %s, %s", tok.text.c_str(), parser.where().c_str());
+			}
+			tok = parser.peek_token();
+
+		} else if (name != "*") {
+			selectFilter_.push_back(nameWithCase);
+			count = INT_MAX;
+		} else if (name == "*") {
+			count = INT_MAX;
 		}
+		if (tok.text != ",") break;
+		tok = parser.next_token();
 	}
 
-	if (parser.next_token().text != "from") throw Error(errParams, "Expected 'FROM', but found '%s' in query", tok.text.c_str());
+	if (parser.next_token().text != "from")
+		throw Error(errParams, "Expected 'FROM', but found '%s' in query, %s", tok.text.c_str(), parser.where().c_str());
 
 	_namespace = parser.next_token().text;
 	parser.skip_space();
 
 	while (!parser.end()) {
-		tok = parser.next_token();
+		tok = parser.peek_token();
 		if (tok.text == "where") {
+			parser.next_token();
 			ParseWhere(parser);
 		} else if (tok.text == "limit") {
+			parser.next_token();
 			tok = parser.next_token();
-			if (tok.type != TokenNumber) return -1;
+			if (tok.type != TokenNumber)
+				throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text.c_str(), parser.where().c_str());
 			count = stoi(tok.text);
 		} else if (tok.text == "offset") {
+			parser.next_token();
 			tok = parser.next_token();
-			if (tok.type != TokenNumber) return -1;
+			if (tok.type != TokenNumber)
+				throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text.c_str(), parser.where().c_str());
 			start = stoi(tok.text);
 		} else if (tok.text == "order") {
+			parser.next_token();
 			// Just skip token (BY)
 			parser.next_token();
+			auto nameWithCase = parser.peek_token().text;
 			tok = parser.next_token(false);
-			if (tok.type != TokenName) throw Error(errParseSQL, "Expected name, but found '%s' in query", tok.text.c_str());
+			if (tok.type != TokenName)
+				throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text.c_str(), parser.where().c_str());
 			sortBy = tok.text;
 			tok = parser.peek_token();
+			if (tok.text == "(" && nameWithCase == "field") {
+				parser.next_token();
+				tok = parser.next_token(false);
+				if (tok.type != TokenName)
+					throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text.c_str(), parser.where().c_str());
+				sortBy = tok.text;
+				for (;;) {
+					tok = parser.next_token();
+					if (tok.text == ")") break;
+					if (tok.text != ",")
+						throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text.c_str(),
+									parser.where().c_str());
+					tok = parser.next_token();
+					if (tok.type != TokenNumber && tok.type != TokenString)
+						throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text.c_str(),
+									parser.where().c_str());
+					forcedSortOrder.push_back(KeyValue(tok.text));
+				}
+				tok = parser.peek_token();
+			}
+
 			if (tok.text == "asc" || tok.text == "desc") {
 				sortDirDesc = bool(tok.text == "desc");
 				parser.next_token();
 			}
+		} else if (tok.text == "join") {
+			parser.next_token();
+			parseJoin(JoinType::LeftJoin, parser);
+		} else if (tok.text == "left") {
+			parser.next_token();
+			if (parser.next_token().text != "join") {
+				throw Error(errParseSQL, "Expected JOIN, but found '%s' in query, %s", tok.text.c_str(), parser.where().c_str());
+			}
+			parseJoin(JoinType::LeftJoin, parser);
+		} else if (tok.text == "inner") {
+			parser.next_token();
+			if (parser.next_token().text != "join") {
+				throw Error(errParseSQL, "Expected JOIN, but found '%s' in query, %s", tok.text.c_str(), parser.where().c_str());
+			}
+			auto jtype = nextOp_ == OpOr ? JoinType::OrInnerJoin : JoinType::InnerJoin;
+			nextOp_ = OpAnd;
+			parseJoin(jtype, parser);
+		} else if (tok.text == "merge") {
+			parser.next_token();
+			parseMerge(parser);
+		} else if (tok.text == "or") {
+			parser.next_token();
+			nextOp_ = OpOr;
 		} else {
-			throw Error(errParseSQL, "Unexpected '%s' in query", tok.text.c_str());
+			break;
 		}
 	}
-
 	return 0;
 }
 
@@ -179,7 +285,7 @@ int Query::describeParse(tokenizer &parser) {
 			if (tok.text != ",") {
 				token nextTok = parser.next_token(false);
 				if (nextTok.text.length()) {
-					throw Error(errParseSQL, "Unexpected '%s' in query", tok.text.c_str());
+					throw Error(errParseSQL, "Unexpected '%s' in query, %s", tok.text.c_str(), parser.where().c_str());
 				}
 				break;
 			}
@@ -197,19 +303,120 @@ int Query::describeParse(tokenizer &parser) {
 	return 0;
 }
 
-string Query::DumpMerged() const {
-	string ret;
-	for (auto &me : mergeQueries_) {
-		if (me.joinType == JoinType::Merge) {
-			ret += "Merge ";
-		} else {
-			ret += "Wrong Merge Type";
+void Query::parseJoin(JoinType type, tokenizer &parser) {
+	Query jquery;
+	auto tok = parser.next_token();
+	if (tok.text == "(") {
+		tok = parser.next_token();
+		if (tok.text != "select") {
+			throw Error(errParseSQL, "Expected 'SELECT', but found %s, %s", tok.text.c_str(), parser.where().c_str());
 		}
+		jquery.selectParse(parser);
+		tok = parser.next_token();
+		if (tok.text != ")") {
+			throw Error(errParseSQL, "Expected ')', but found %s, %s", tok.text.c_str(), parser.where().c_str());
+		}
+	} else {
+		jquery._namespace = tok.text;
+	}
+	jquery.joinType = type;
+	jquery.parseJoinEntries(parser, _namespace);
 
-		ret += me.QueryWhere::toString();
+	joinQueries_.push_back(std::move(jquery));
+}
+
+void Query::parseMerge(tokenizer &parser) {
+	Query mquery;
+	auto tok = parser.next_token();
+	if (tok.text == "(") {
+		tok = parser.next_token();
+		if (tok.text != "select") {
+			throw Error(errParseSQL, "Expected 'SELECT', but found %s, %s", tok.text.c_str(), parser.where().c_str());
+		}
+		mquery.selectParse(parser);
+		tok = parser.next_token();
+		if (tok.text != ")") {
+			throw Error(errParseSQL, "Expected ')', but found %s, %s", tok.text.c_str(), parser.where().c_str());
+		}
+	}
+	mquery.joinType = JoinType::Merge;
+
+	mergeQueries_.push_back(std::move(mquery));
+}
+
+// parse [table.]field
+// return field
+string parseDotStr(tokenizer &parser, string &str1) {
+	auto tok = parser.next_token();
+	if (tok.type != TokenName && tok.type != TokenString) {
+		throw Error(errParseSQL, "Expected name, but found %s, %s", tok.text.c_str(), parser.where().c_str());
+	}
+	if (parser.peek_token().text != ".") {
+		return tok.text;
+	}
+	parser.next_token();
+	str1 = tok.text;
+
+	tok = parser.next_token();
+	if (tok.type != TokenName && tok.type != TokenString) {
+		throw Error(errParseSQL, "Expected name, but found %s, %s", tok.text.c_str(), parser.where().c_str());
+	}
+	return tok.text;
+}
+
+void Query::parseJoinEntries(tokenizer &parser, const string &mainNs) {
+	parser.skip_space();
+	QueryJoinEntry je;
+	auto tok = parser.next_token();
+	if (tok.text != "on") {
+		throw Error(errParseSQL, "Expected 'ON', but found %s, %s", tok.text.c_str(), parser.where().c_str());
 	}
 
-	return ret;
+	tok = parser.peek_token();
+
+	bool braces = tok.text == "(";
+	if (braces) parser.next_token();
+
+	while (!parser.end()) {
+		auto tok = parser.peek_token();
+		if (tok.text == "or") {
+			nextOp_ = OpOr;
+			parser.next_token();
+			tok = parser.peek_token();
+		} else if (tok.text == "and") {
+			nextOp_ = OpAnd;
+			parser.next_token();
+			tok = parser.peek_token();
+		}
+
+		if (braces && tok.text == ")") {
+			parser.next_token();
+			return;
+		}
+
+		string ns1 = mainNs, ns2 = _namespace;
+		string idx1 = parseDotStr(parser, ns1);
+		je.condition_ = getCondType(parser.next_token().text);
+		string idx2 = parseDotStr(parser, ns2);
+
+		if (ns1 == mainNs && ns2 == _namespace) {
+			je.index_ = idx1;
+			je.joinIndex_ = idx2;
+		} else if (ns2 == mainNs && ns1 == _namespace) {
+			je.index_ = idx2;
+			je.joinIndex_ = idx1;
+		} else {
+			throw Error(errParseSQL, "Unexpected tables with ON statement: ('%s' and '%s') but expected ('%s' and '%s'), %s", ns1.c_str(),
+						ns2.c_str(), mainNs.c_str(), _namespace.c_str(), parser.where().c_str());
+		}
+
+		je.op_ = nextOp_;
+		nextOp_ = OpAnd;
+		joinEntries_.push_back(std::move(je));
+		if (!braces) {
+			return;
+		}
+	}
 }
 
 void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
@@ -306,38 +513,78 @@ void Query::Deserialize(Serializer &ser) {
 	}
 }
 
-string Query::DumpJoined() const {
+string Query::GetJSON() { return dsl::toDsl(*this); }
+
+const char *Query::JoinTypeName(JoinType type) {
+	switch (type) {
+		case JoinType::InnerJoin:
+			return "INNER JOIN";
+		case JoinType::OrInnerJoin:
+			return "OR INNER JOIN";
+		case JoinType::LeftJoin:
+			return "LEFT JOIN";
+		case JoinType::Merge:
+			return "MERGE";
+		default:
+			return "<unknown>";
+	}
+}
+
+string Query::dumpJoined() const {
 	extern const char *condNames[];
 	string ret;
 	for (auto &je : joinQueries_) {
-		switch (je.joinType) {
-			case JoinType::InnerJoin:
-				ret += "INNER JOIN ";
-				break;
-			case JoinType::OrInnerJoin:
-				ret += "OR INNER JOIN ";
-				break;
-			case JoinType::LeftJoin:
-				ret += "LEFT JOIN ";
-				break;
-			case JoinType::Merge:
-				break;
+		ret += string(" ") + JoinTypeName(je.joinType);
+
+		if (je.entries.empty() && je.count == INT_MAX) {
+			ret += " " + je._namespace + " ON ";
+		} else {
+			ret += " (" + je.Dump() + ") ON ";
 		}
-		ret += je._namespace + " ON ";
+		if (je.joinEntries_.size() != 1) ret += "(";
 		for (auto &e : je.joinEntries_) {
-			if (&e != &*je.joinEntries_.begin()) ret += "AND ";
-			ret += je._namespace + "." + e.joinIndex_ + " " + condNames[e.condition_] + " " + _namespace + "." + e.index_ + " ";
+			if (&e != &*je.joinEntries_.begin()) {
+				ret += (e.op_ == OpOr) ? " OR " : " AND ";
+			}
+			ret += je._namespace + "." + e.joinIndex_ + " " + condNames[e.condition_] + " " + _namespace + "." + e.index_;
 		}
-		ret += je.QueryWhere::toString();
+		if (je.joinEntries_.size() != 1) ret += ")";
 	}
 
 	return ret;
 }
 
+string Query::dumpMerged() const {
+	string ret;
+	for (auto &me : mergeQueries_) {
+		ret += " " + string(JoinTypeName(me.joinType)) + "( " + me.Dump() + ")";
+	}
+	return ret;
+}
+
+string Query::dumpOrderBy() const {
+	string ret;
+	if (sortBy.empty()) {
+		return ret;
+	}
+	ret = " ORDER BY ";
+	if (forcedSortOrder.empty()) {
+		ret += sortBy;
+	} else {
+		ret += "FIELD(" + sortBy;
+		for (auto &v : forcedSortOrder) {
+			ret += ", '" + v.As<string>() + "'";
+		}
+		ret += ")";
+	}
+
+	return ret + (sortDirDesc ? " DESC" : "");
+}
+
 string Query::Dump() const {
 	string lim, filt;
-	if (start != 0) lim += "OFFSET " + std::to_string(start) + " ";
-	if (count != UINT_MAX) lim += "LIMIT " + std::to_string(count);
+	if (start != 0) lim += " OFFSET " + std::to_string(start);
+	if (count != UINT_MAX) lim += " LIMIT " + std::to_string(count);
 
 	if (aggregations_.size()) {
 		for (auto &a : aggregations_) {
@@ -362,14 +609,10 @@ string Query::Dump() const {
 		}
 	} else
 		filt = "*";
+	if (calcTotal) filt += ", COUNT(*)";
 
-	const int bufSize = 4096;
-	char buf[bufSize];
-	snprintf(buf, bufSize, "SELECT %s FROM %s %s%s%s%s%s%s%s", filt.c_str(), _namespace.c_str(), QueryWhere::toString().c_str(),
-			 DumpJoined().c_str(), DumpMerged().c_str(), sortBy.length() ? (string("ORDER BY ") + sortBy).c_str() : "",
-			 sortDirDesc ? " DESC " : "", lim.c_str(), calcTotal ? " REQTOTAL " : "");
-
-	return string(buf);
+	string buf = "SELECT " + filt + " FROM " + _namespace + QueryWhere::toString() + dumpJoined() + dumpMerged() + dumpOrderBy() + lim;
+	return buf;
 }
 
 }  // namespace reindexer

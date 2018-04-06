@@ -205,6 +205,19 @@ public:
 		}
 		return *this;
 	}
+
+	bool operator==(const h_vector& other) const noexcept {
+		if (&other != this) {
+			if (size() != other.size()) return false;
+			for (size_t i = 0; i < size(); ++i) {
+				if (at(i) != other.at(i)) return false;
+			}
+			return true;
+		}
+		return true;
+	}
+	bool operator!=(const h_vector& other) const noexcept { return !operator==(other); }
+
 	void clear() {
 		resize(0);
 		if (!is_hdata()) operator delete(static_cast<void*>(e_.data_));

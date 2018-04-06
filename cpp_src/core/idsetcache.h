@@ -33,7 +33,7 @@ struct IdSetCacheVal {
 
 struct equal_idset_cache_key {
 	bool operator()(const IdSetCacheKey &lhs, const IdSetCacheKey &rhs) const {
-		return lhs.cond == rhs.cond && lhs.sort == rhs.sort && lhs.keys->EQ(*rhs.keys);
+		return lhs.cond == rhs.cond && lhs.sort == rhs.sort && *lhs.keys == *rhs.keys;
 	}
 };
 struct hash_idset_cache_key {

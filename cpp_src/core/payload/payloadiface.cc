@@ -16,6 +16,7 @@ PayloadIface<T>::PayloadIface(const PayloadTypeImpl &t, T &v) : t_(t), v_(&v) {}
 
 template <typename T>
 KeyRefs &PayloadIface<T>::Get(int field, KeyRefs &keys) const {
+	assert(field < NumFields());
 	keys.resize(0);
 	if (t_.Field(field).IsArray()) {
 		auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
@@ -32,6 +33,7 @@ KeyRefs &PayloadIface<T>::Get(int field, KeyRefs &keys) const {
 
 template <typename T>
 KeyValues &PayloadIface<T>::Get(int field, KeyValues &keys) const {
+	assert(field < NumFields());
 	keys.resize(0);
 	if (t_.Field(field).IsArray()) {
 		auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);

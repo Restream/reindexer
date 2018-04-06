@@ -1,4 +1,21 @@
 
+#Version 1.7.0 (15.04.2018)
+
+## C++ core
+
+- [fea] Support join, marge, aggregations in json DSL & SQL queris
+- [fea] Added multiline form and comments in SQL query
+- [fix] Last symbol of documents was not used by fulltext indexer
+- [fix] Potential data corruption after removing index
+
+## Go connector
+- [fea] Batching of free c-buffers calls
+- [fea] Added cgo limiter for deleteQuery call
+
+## Reindexer server beta
+- [fea] POST /api/v1/:db/sqlquery method
+- [fea] Added sort_order to GET /api/v1/db method
+
 # Version 1.6.0 (18.03.2018)
 
 ## C++ core
