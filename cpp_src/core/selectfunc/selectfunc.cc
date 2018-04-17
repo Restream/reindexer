@@ -40,9 +40,9 @@ SelectFunction::Ptr SelectFunctionsHolder::AddNamespace(const Query &q, const Na
 }
 
 SelectFunction::SelectFunction(const Query &q, NsSelectFuncInterface &nm) : nm_(nm) {
-	SelectFuncParser parser;
 	functions_.reserve(q.selectFunctions_.size());
 	for (auto &func : q.selectFunctions_) {
+		SelectFuncParser parser;
 		SelectFuncStruct &result = parser.Parse(func);
 		if (!result.isFunction) continue;
 		createFunc(result);

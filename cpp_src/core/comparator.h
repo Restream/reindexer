@@ -3,6 +3,7 @@
 #include <functional>
 #include <unordered_set>
 #include "core/index/payload_map.h"
+#include "core/indexopts.h"
 #include "core/keyvalue/keyvalue.h"
 #include "core/payload/fieldsset.h"
 #include "core/type_consts.h"
@@ -53,26 +54,26 @@ public:
 		}
 	}
 
-	bool Compare(CondType cond, const p_string &lhs, int collateMode) {
+	bool Compare(CondType cond, const p_string &lhs, const CollateOpts &collateOpts) {
 		const p_string &rhs = values_[0];
 		switch (cond) {
 			case CondEq:
-				return collateCompare(Slice(lhs), Slice(rhs), collateMode) == 0;
+				return collateCompare(Slice(lhs), Slice(rhs), collateOpts) == 0;
 			case CondGe:
-				return collateCompare(Slice(lhs), Slice(rhs), collateMode) >= 0;
+				return collateCompare(Slice(lhs), Slice(rhs), collateOpts) >= 0;
 			case CondLe:
-				return collateCompare(Slice(lhs), Slice(rhs), collateMode) <= 0;
+				return collateCompare(Slice(lhs), Slice(rhs), collateOpts) <= 0;
 			case CondLt:
-				return collateCompare(Slice(lhs), Slice(rhs), collateMode) < 0;
+				return collateCompare(Slice(lhs), Slice(rhs), collateOpts) < 0;
 			case CondGt:
-				return collateCompare(Slice(lhs), Slice(rhs), collateMode) > 0;
+				return collateCompare(Slice(lhs), Slice(rhs), collateOpts) > 0;
 			case CondRange:
-				return collateCompare(Slice(lhs), Slice(rhs), collateMode) >= 0 &&
-					   collateCompare(Slice(lhs), Slice(values_[1]), collateMode) <= 0;
+				return collateCompare(Slice(lhs), Slice(rhs), collateOpts) >= 0 &&
+					   collateCompare(Slice(lhs), Slice(values_[1]), collateOpts) <= 0;
 			case CondSet:
-				if (collateMode == CollateNone) return valuesS_->find(lhs) != valuesS_->end();
+				if (collateOpts.mode == CollateNone) return valuesS_->find(lhs) != valuesS_->end();
 				for (auto it : *valuesS_) {
-					if (!collateCompare(Slice(lhs), Slice(it), collateMode)) return true;
+					if (!collateCompare(Slice(lhs), Slice(it), collateOpts)) return true;
 				}
 				return false;
 			default:
@@ -103,26 +104,26 @@ public:
 		}
 	}
 
-	bool Compare(CondType cond, PayloadValue &leftValue) {
+	bool Compare(CondType cond, PayloadValue &leftValue, const CollateOpts &collateOpts) {
 		assert(!values_.empty() || !valuesSet_->empty());
 		assert(fields_.size() > 0);
 		PayloadValue *rightValue(&values_[0]);
 		Payload lhs(payloadType_, leftValue);
 		switch (cond) {
 			case CondEq:
-				return (lhs.Compare(*rightValue, fields_) == 0);
+				return (lhs.Compare(*rightValue, fields_, collateOpts) == 0);
 			case CondGe:
-				return (lhs.Compare(*rightValue, fields_) >= 0);
+				return (lhs.Compare(*rightValue, fields_, collateOpts) >= 0);
 			case CondGt:
-				return (lhs.Compare(*rightValue, fields_) > 0);
+				return (lhs.Compare(*rightValue, fields_, collateOpts) > 0);
 			case CondLe:
-				return (lhs.Compare(*rightValue, fields_) <= 0);
+				return (lhs.Compare(*rightValue, fields_, collateOpts) <= 0);
 			case CondLt: {
-				return (lhs.Compare(*rightValue, fields_) < 0);
+				return (lhs.Compare(*rightValue, fields_, collateOpts) < 0);
 			}
 			case CondRange: {
 				PayloadValue *upperValue(&values_[1]);
-				return (lhs.Compare(*rightValue, fields_) >= 0) && (lhs.Compare(*upperValue, fields_) <= 0);
+				return (lhs.Compare(*rightValue, fields_, collateOpts) >= 0) && (lhs.Compare(*upperValue, fields_, collateOpts) <= 0);
 			}
 			case CondSet:
 				return valuesSet_->find(leftValue) != valuesSet_->end();
@@ -141,7 +142,7 @@ class Comparator {
 public:
 	Comparator();
 	Comparator(CondType cond, KeyValueType type, const KeyValues &values, bool isArray, PayloadType payloadType, const FieldsSet &fields,
-			   void *rawData = nullptr, int collateMode = CollateNone);
+			   void *rawData = nullptr, const CollateOpts &collateOpts = CollateOpts());
 	~Comparator();
 
 	bool Compare(const PayloadValue &lhs, int idx);
@@ -157,9 +158,9 @@ protected:
 			case KeyValueDouble:
 				return cmpDouble.Compare(cond_, *static_cast<double *>(ptr));
 			case KeyValueString:
-				return cmpString.Compare(cond_, *static_cast<p_string *>(ptr), collateMode_);
+				return cmpString.Compare(cond_, *static_cast<p_string *>(ptr), collateOpts_);
 			case KeyValueComposite:
-				return cmpComposite.Compare(cond_, *static_cast<PayloadValue *>(ptr));
+				return cmpComposite.Compare(cond_, *static_cast<PayloadValue *>(ptr), collateOpts_);
 			default:
 				abort();
 		}
@@ -178,7 +179,7 @@ protected:
 	size_t sizeof_ = 0;
 	bool isArray_ = false;
 	uint8_t *rawData_ = nullptr;
-	int collateMode_ = CollateNone;
+	CollateOpts collateOpts_;
 
 	PayloadType payloadType_;
 	FieldsSet fields_;

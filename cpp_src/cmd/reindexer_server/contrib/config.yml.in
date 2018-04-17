@@ -12,10 +12,10 @@ net:
 
 # Logger configuration
 logger:
-  rpclog: ""
+  serverlog: /var/log/reindexer/reindexer_server.log
+  corelog: /var/log/reindexer/reindexer_server.log
   httplog: ""
-  corelog: stdout
-  serverlog: stdout
+  rpclog: ""
   loglevel: info
 
 # System options

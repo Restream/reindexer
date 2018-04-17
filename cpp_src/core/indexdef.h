@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include "indexopts.h"
 #include "tools/errors.h"
 #include "type_consts.h"
 
@@ -16,7 +17,7 @@ struct Slice;
 class WrSerializer;
 struct IndexDef {
 	IndexType Type() const;
-	string CollateMode() const;
+	string getCollateMode() const;
 	const vector<string> &Conditions() const;
 	void FromType(IndexType type);
 	Error FromJSON(char *json);

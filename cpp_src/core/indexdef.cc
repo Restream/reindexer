@@ -44,8 +44,9 @@ std::unordered_map<IndexType, IndexInfo,std::hash<int>,std::equal_to<int> > avai
 std::unordered_map<CollateMode, const string, std::hash<int>, std::equal_to<int> > availableCollates = {
 	{CollateASCII,   "ascii"},
 	{CollateUTF8,    "utf8"},
-	{CollateNumeric, "numeric"}, 
-	{CollateNone,    "none"},
+        {CollateNumeric, "numeric"},
+        {CollateCustom,  "custom"},
+        {CollateNone,    "none"},
 };
 
 // clang-format on
@@ -75,7 +76,7 @@ const vector<string> &IndexDef::Conditions() const { return availableIndexes.fin
 bool isComposite(IndexType type) { return availableIndexes.at(type).caps & CapComposite; }
 bool isFullText(IndexType type) { return availableIndexes.at(type).caps & CapFullText; }
 bool isSortable(IndexType type) { return availableIndexes.at(type).caps & CapSortable; }
-string IndexDef::CollateMode() const { return availableCollates.at(opts.GetCollateMode()); }
+string IndexDef::getCollateMode() const { return availableCollates.at(opts.GetCollateMode()); }
 
 Error IndexDef::FromJSON(char *json) {
 	JsonAllocator jalloc;
@@ -92,6 +93,7 @@ Error IndexDef::FromJSON(char *json) {
 
 Error IndexDef::FromJSON(JsonValue &jvalue) {
 	try {
+		CollateMode collateValue = CollateNone;
 		bool isPk = false, isArray = false, isDense = false, isAppendable = false;
 		for (auto elem : jvalue) {
 			parseJsonField("name", name, elem);
@@ -103,18 +105,28 @@ Error IndexDef::FromJSON(JsonValue &jvalue) {
 			parseJsonField("is_dense", isDense, elem);
 			parseJsonField("is_appendable", isAppendable, elem);
 
-			string collate;
-			parseJsonField("collate_mode", collate, elem);
-			if (collate != "") {
+			string collateStr;
+			parseJsonField("collate_mode", collateStr, elem);
+			if (collateStr != "") {
 				bool found = false;
 				for (auto it : availableCollates) {
-					if (it.second == collate) {
+					if (it.second == collateStr) {
 						found = true;
-						opts.SetCollateMode(it.first);
-						break;
+						collateValue = it.first;
+						opts.SetCollateMode(collateValue);
+						if (collateValue != CollateCustom) break;
 					}
 				}
-				if (!found) return Error(errParams, "Unknown collate mode %s", collate.c_str());
+				if (!found) return Error(errParams, "Unknown collate mode %s", collateStr.c_str());
+			}
+
+			if (collateValue == CollateCustom) {
+				string sortOrderLetters;
+				parseJsonField("sort_order_letters", sortOrderLetters, elem);
+				if (!sortOrderLetters.empty()) {
+					opts.collateOpts_ = CollateOpts(sortOrderLetters);
+					break;
+				}
 			}
 		}
 		opts.PK(isPk).Array(isArray).Dense(isDense).Appendable(isAppendable);
@@ -135,7 +147,8 @@ void IndexDef::GetJSON(WrSerializer &ser) {
 	ser.Printf("\"is_array\":%s,", opts.IsArray() ? "true" : "false");
 	ser.Printf("\"is_dense\":%s,", opts.IsDense() ? "true" : "false");
 	ser.Printf("\"is_appendable\":%s,", opts.IsAppendable() ? "true" : "false");
-	ser.Printf("\"collate_mode\":\"%s\"", CollateMode().c_str());
+	ser.Printf("\"collate_mode\":\"%s\"", getCollateMode().c_str());
+	ser.Printf("\"sort_order_letters\":\"%s\"", opts.collateOpts_.sortOrderTable.GetSortOrderCharacters().c_str());
 	ser.PutChars("}");
 }
 

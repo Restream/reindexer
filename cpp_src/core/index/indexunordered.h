@@ -38,13 +38,13 @@ public:
 	IndexUnordered(IndexType _type, const string &_name, const IndexOpts &opts,
 				   typename std::enable_if<is_string_unord_map_key<U>::value>::type * = 0)
 		: IndexStore<typename T::key_type>(_type, _name, opts),
-		  idx_map(1000, hash_sptr(opts.GetCollateMode()), equal_sptr(opts.GetCollateMode())) {}
+		  idx_map(1000, hash_sptr(opts.GetCollateMode()), equal_sptr(opts.collateOpts_)) {}
 
 	// Constructor specialization for str_map
 	template <typename U = T>
 	IndexUnordered(IndexType _type, const string &_name, const IndexOpts &opts,
 				   typename std::enable_if<is_string_map_key<U>::value>::type * = 0)
-		: IndexStore<typename T::key_type>(_type, _name, opts), idx_map(comparator_sptr(opts.GetCollateMode())) {}
+		: IndexStore<typename T::key_type>(_type, _name, opts), idx_map(comparator_sptr(opts.collateOpts_)) {}
 
 	KeyRef Upsert(const KeyRef &key, IdType id) override;
 	void Delete(const KeyRef &key, IdType id) override;

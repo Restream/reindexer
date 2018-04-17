@@ -35,7 +35,7 @@ bool Snippet::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 		throw Error(errParams, "Invalid snippet param front - %s is not a number", func.funcArgs[3].c_str());
 	}
 
-	vector<Area> sva(*area->GetAreas(func.fieldNo));
+	AreaVec sva(*area->GetAreas(func.fieldNo));
 
 	for (auto &a : sva) {
 		a.start_ -= calcUTf8SizeEnd(data->data() + a.start_, a.start_, back);

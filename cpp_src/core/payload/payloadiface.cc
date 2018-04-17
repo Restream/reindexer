@@ -217,10 +217,10 @@ bool PayloadIface<T>::IsEQ(const T &other) const {
 }
 
 template <typename T>
-int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, CollateMode collateMode) const {
+int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, const CollateOpts &collateOpts) const {
 	PayloadIface<const T> o(t_, other);
 	for (auto field : fields) {
-		int res = Field(field).Get().Compare(o.Field(field).Get(), collateMode);
+		int res = Field(field).Get().Compare(o.Field(field).Get(), collateOpts);
 		if (res > 0) return 1;
 		if (res < 0) return -1;
 	}

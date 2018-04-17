@@ -1,5 +1,21 @@
 
-#Version 1.7.0 (15.04.2018)
+# Version 1.8.0 (17.04.2018)
+
+## C++ core
+
+- [fea] Support of custom letters order set for string collates
+- [fea] Full text indexing memory consumption optimization
+- [fea] Thread russian letter `ё` as `е` in full text index
+- [fix] Fixed incorrect behaviour of full text search with term `*<stop-word>`
+- [fix] Fixed full text behaviour with FtDSL started with `+`
+- [fix] Fix conflict of with leveldb's and reindexer's tcmalloc library
+
+## Reindexer server
+- [fea] Added daemonize mode to reindexer_server
+- [fix] init.d script fixes
+- [fea] Added CPU profiling mode to built-in HTTP pprof server
+
+# Version 1.7.0 (05.04.2018)
 
 ## C++ core
 

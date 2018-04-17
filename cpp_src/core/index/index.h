@@ -3,6 +3,7 @@
 #include <vector>
 #include "core/idset.h"
 #include "core/index/keyentry.h"
+#include "core/indexopts.h"
 #include "core/keyvalue/keyvalue.h"
 #include "core/payload/payloadiface.h"
 #include "core/selectfunc/ctx/basefunctionctx.h"

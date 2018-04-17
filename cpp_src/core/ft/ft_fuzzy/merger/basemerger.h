@@ -13,7 +13,7 @@ namespace search_engine {
 using namespace reindexer;
 
 struct IDCtx {
-	const h_vector<IdRelType::PosType, 6> *data;
+	const h_vector<IdRelType::PosType, 3> *data;
 	int pos;
 	double *max_proc;
 	size_t total_size;

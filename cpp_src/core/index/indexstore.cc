@@ -78,7 +78,7 @@ SelectKeyResults IndexStore<T>::SelectKey(const KeyValues &keys, CondType condit
 	}
 	SelectKeyResult res;
 	res.comparators_.push_back(Comparator(condition, KeyType(), keys, opts_.IsArray(), payloadType_, fields_,
-										  idx_data.size() ? idx_data.data() : nullptr, opts_.GetCollateMode()));
+										  idx_data.size() ? idx_data.data() : nullptr, opts_.collateOpts_));
 	return SelectKeyResults(res);
 }
 

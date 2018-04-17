@@ -101,7 +101,7 @@ double KeyRef::As<double>() const {
 	}
 }
 
-int KeyRef::Compare(const KeyRef &other, CollateMode collateMode) const {
+int KeyRef::Compare(const KeyRef &other, const CollateOpts &collateOpts) const {
 	switch (Type()) {
 		case KeyValueInt:
 			if (value_int == other.value_int)
@@ -131,7 +131,7 @@ int KeyRef::Compare(const KeyRef &other, CollateMode collateMode) const {
 			Slice lhs(value_string.data(), l1);
 			Slice rhs(other.value_string.data(), l2);
 
-			return collateCompare(lhs, rhs, collateMode);
+			return collateCompare(lhs, rhs, collateOpts);
 		}
 		default:
 			abort();

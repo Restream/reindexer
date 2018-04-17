@@ -92,9 +92,10 @@ type indexDef struct {
 	IsDense      bool   `json:"is_dense"`
 	IsAppendable bool   `json:"is_appendable"`
 	CollateMode  string `json:"collate_mode"`
+	SortOrder    string `json:"sort_order_letters"`
 }
 
-func (binding *NetCProto) AddIndex(namespace, index, jsonPath, indexType, fieldType string, opts bindings.IndexOptions, collateMode int) error {
+func (binding *NetCProto) AddIndex(namespace, index, jsonPath, indexType, fieldType string, opts bindings.IndexOptions, collateMode int, sortOrder string) error {
 
 	cm := ""
 	switch collateMode {
@@ -104,6 +105,8 @@ func (binding *NetCProto) AddIndex(namespace, index, jsonPath, indexType, fieldT
 		cm = "utf8"
 	case bindings.CollateNumeric:
 		cm = "numeric"
+	case bindings.CollateCustom:
+		cm = "custom"
 	}
 
 	idef := indexDef{
@@ -116,6 +119,7 @@ func (binding *NetCProto) AddIndex(namespace, index, jsonPath, indexType, fieldT
 		IsDense:      opts.IsDense(),
 		IsAppendable: opts.IsAppendable(),
 		CollateMode:  cm,
+		SortOrder:    sortOrder,
 	}
 
 	bidef, err := json.Marshal(idef)

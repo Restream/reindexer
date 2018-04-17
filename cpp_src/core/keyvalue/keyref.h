@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/indexopts.h"
 #include "core/payload/payloadvalue.h"
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
@@ -78,9 +79,9 @@ public:
 	bool operator>(const KeyRef &other) const { return Compare(other) > 0; }
 	bool operator>=(const KeyRef &other) const { return Compare(other) >= 0; }
 
-	int Compare(const KeyRef &other, CollateMode collateMode = CollateMode::CollateNone) const;
+	int Compare(const KeyRef &other, const CollateOpts &collateOpts = CollateOpts()) const;
 	size_t Hash() const;
-	void EnsureUTF8 () const;
+	void EnsureUTF8() const;
 
 	KeyValueType Type() const { return type; }
 	static const char *TypeName(KeyValueType t);

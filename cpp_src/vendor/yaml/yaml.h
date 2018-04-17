@@ -420,7 +420,10 @@ public:
 	 */
 	template <typename T>
 	T As(const T &defaultValue) const {
-		return impl::StringConverter<T>::Get(AsString(), defaultValue);
+		if (IsNone()) return defaultValue;
+
+		// return impl::StringConverter<T>::Get(AsString(), defaultValue);
+		return impl::StringConverter<T>::Get(AsString());
 	}
 
 	/**

@@ -9,7 +9,6 @@
 #include "dbmanager.h"
 #include "debug/allocdebug.h"
 #include "debug/backtrace.h"
-#include "estl/fast_hash_map.h"
 #include "httpserver.h"
 #include "loggerwrapper.h"
 #include "rpcserver.h"
@@ -26,6 +25,8 @@ struct ServerConfig {
 	string HTTPAddr = "0:9088";
 	string RPCAddr = "0:6534";
 	string UserName;
+	bool Daemonize = false;
+	string DaemonPidFile = "/tmp/reindexer.pid";
 	bool EnableSecurity = false;
 	string LogLevel = "info";
 	string ServerLog = "stdout";
@@ -37,6 +38,7 @@ struct ServerConfig {
 };
 
 ServerConfig config;
+LoggerWrapper logger;
 LoggerWrapper coreLogger;
 LogLevel logLevel = LogNone;
 
@@ -55,16 +57,16 @@ static void changeUser(const char *userName) {
 			errno = res;
 			perror("getpwnam_r");
 		}
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 
 	if (setgid(pwd.pw_gid) != 0) {
 		fprintf(stderr, "Can't change user to %s\n", userName);
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 	if (setuid(pwd.pw_uid) != 0) {
 		fprintf(stderr, "Can't change user to %s\n", userName);
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 }
 
@@ -108,11 +110,13 @@ void parseConfigFile(const string &filePath) {
 		config.WebRoot = root["net"]["webroot"].As<std::string>(config.WebRoot);
 		config.EnableSecurity = root["net"]["security"].As<bool>(config.EnableSecurity);
 		config.UserName = root["system"]["user"].As<std::string>(config.UserName);
+		config.Daemonize = root["system"]["daemonize"].As<bool>(config.Daemonize);
+		config.DaemonPidFile = root["system"]["pidfile"].As<std::string>(config.DaemonPidFile);
 		config.DebugAllocs = root["debug"]["allocs"].As<bool>(config.DebugAllocs);
 		config.DebugPprof = root["debug"]["allocs"].As<bool>(config.DebugPprof);
 	} catch (Yaml::Exception ex) {
 		fprintf(stderr, "Error with config file '%s': %s\n", filePath.c_str(), ex.Message());
-		exit(-1);
+		exit(EXIT_FAILURE);
 	}
 }
 
@@ -124,8 +128,10 @@ void parseCmdLine(int argc, char **argv) {
 	args::ArgumentParser parser("reindexer server");
 	args::HelpFlag help(parser, "help", "Show this message", {'h', "help"});
 	args::ValueFlag<string> userF(parser, "USER", "System user name", {'u', "user"}, config.UserName, args::Options::Single);
+	args::Flag daemonizeF(parser, "", "Run in daemon mode", {'d', "daemonize"});
+	args::ValueFlag<string> daemonPidFileF(parser, "", "Custom daemon pid file", {"pidfile"}, config.DaemonPidFile, args::Options::Single);
 	args::Flag securityF(parser, "", "Enable per-user security", {"security"});
-	args::ValueFlag<string> configF(parser, "CONFIG", "Path to reidexer config file", {'c', "config"}, args::Options::Single);
+	args::ValueFlag<string> configF(parser, "CONFIG", "Path to reindexer config file", {'c', "config"}, args::Options::Single);
 
 	args::Group dbGroup(parser, "Database options");
 	args::ValueFlag<string> storageF(dbGroup, "PATH", "path to 'reindexer' storage", {'s', "db"}, config.StoragePath,
@@ -148,10 +154,10 @@ void parseCmdLine(int argc, char **argv) {
 		parser.ParseCLI(argc, argv);
 	} catch (args::Help) {
 		std::cout << parser;
-		exit(0);
+		exit(EXIT_SUCCESS);
 	} catch (args::Error &e) {
 		std::cerr << e.what() << std::endl << parser;
-		exit(1);
+		exit(EXIT_FAILURE);
 	}
 
 	if (configF) {
@@ -164,6 +170,8 @@ void parseCmdLine(int argc, char **argv) {
 	if (rpcAddrF) config.RPCAddr = args::get(rpcAddrF);
 	if (webRootF) config.WebRoot = args::get(webRootF);
 	if (userF) config.UserName = args::get(userF);
+	if (daemonizeF) config.Daemonize = args::get(daemonizeF);
+	if (daemonPidFileF) config.DaemonPidFile = args::get(daemonPidFileF);
 	if (securityF) config.EnableSecurity = args::get(securityF);
 	if (serverLogF) config.ServerLog = args::get(serverLogF);
 	if (coreLogF) config.CoreLog = args::get(coreLogF);
@@ -174,7 +182,7 @@ void parseCmdLine(int argc, char **argv) {
 static void loggerConfigure() {
 	spdlog::drop_all();
 
-	spdlog::set_async_mode(4096);
+	spdlog::set_async_mode(4096, spdlog::async_overflow_policy::block_retry, nullptr, std::chrono::seconds(2));
 
 	vector<pair<string, string>> loggers = {
 		{"server", config.ServerLog}, {"core", config.CoreLog}, {"http", config.HttpLog}, {"rpc", config.RpcLog}};
@@ -186,6 +194,29 @@ static void loggerConfigure() {
 			spdlog::basic_logger_mt(logger.first, logger.second);
 		}
 	}
+}
+
+int createPidFile() {
+	int fd = open(config.DaemonPidFile.c_str(), O_RDWR | O_CREAT, 0600);
+	if (fd < 0) {
+		fprintf(stderr, "Unable to open PID file %s\n", config.DaemonPidFile.c_str());
+		exit(EXIT_FAILURE);
+	}
+
+	int res = lockf(fd, F_TLOCK, 0);
+	if (res < 0) {
+		fprintf(stderr, "Unable to lock PID file %s\n", config.DaemonPidFile.c_str());
+		exit(EXIT_FAILURE);
+	}
+
+	char str[16];
+	pid_t processPid = getpid();
+	snprintf(str, sizeof(str), "%d", int(processPid));
+
+	auto sz = write(fd, str, strlen(str));
+	(void)sz;
+
+	return fd;
 }
 
 int main(int argc, char **argv) {
@@ -213,11 +244,37 @@ int main(int argc, char **argv) {
 		logLevel = configLevelIt->second;
 	}
 
+	int pidFileFd = -1;
+
+	if (config.Daemonize) {
+		pid_t pid = fork();
+		if (pid < 0) {
+			fprintf(stderr, "Can't fork the process\n");
+			exit(EXIT_FAILURE);
+		}
+
+		if (pid > 0) {
+			return 0;
+		}
+
+		umask(0);
+		setsid();
+		if (chdir("/")) {
+			fprintf(stderr, "Unable to change working directory\n");
+			exit(EXIT_FAILURE);
+		};
+
+		pidFileFd = createPidFile();
+
+		close(STDIN_FILENO);
+		close(STDOUT_FILENO);
+		close(STDERR_FILENO);
+	}
+
 	loggerConfigure();
 
+	logger = LoggerWrapper("server");
 	coreLogger = LoggerWrapper("core");
-	LoggerWrapper logger("server");
-
 	reindexer::logInstallWriter(logWrite);
 
 	try {
@@ -225,7 +282,7 @@ int main(int argc, char **argv) {
 		auto status = dbMgr.Init();
 		if (!status.ok()) {
 			logger.error("Error init database manager: {0}", status.what());
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 
 		logger.info("Starting reindexer_server ({0}) on {1} HTTP, {2} RPC, with db '{3}'", STR(REINDEX_VERSION), config.HTTPAddr,
@@ -235,14 +292,14 @@ int main(int argc, char **argv) {
 		HTTPServer httpServer(dbMgr, config.WebRoot, httpLogger, config.DebugAllocs);
 		if (!httpServer.Start(config.HTTPAddr, loop)) {
 			logger.error("Can't listen HTTP on '{0}'", config.HTTPAddr);
-			exit(-1);
+			exit(EXIT_FAILURE);
 		}
 
 		LoggerWrapper rpcLogger("rpc");
 		RPCServer rpcServer(dbMgr, rpcLogger, config.DebugAllocs);
 		if (!rpcServer.Start(config.RPCAddr, loop)) {
 			logger.error("Can't listen RPC on '{0}'", config.RPCAddr);
-			exit(-1);
+			exit(EXIT_FAILURE);
 		}
 
 		bool terminate = false;
@@ -279,6 +336,15 @@ int main(int argc, char **argv) {
 		logger.error("Unhandled exception occuried: {0}", err.what());
 	}
 	logger.info("Reindexer server shutdown completed.");
+
+	spdlog::drop_all();
+
+	if (config.Daemonize) {
+		if (pidFileFd != -1) {
+			close(pidFileFd);
+			unlink(config.DaemonPidFile.c_str());
+		}
+	}
 
 	return 0;
 }

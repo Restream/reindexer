@@ -37,6 +37,7 @@ const (
 	CollateASCII   = int(C.CollateASCII)
 	CollateUTF8    = int(C.CollateUTF8)
 	CollateNumeric = int(C.CollateNumeric)
+	CollateCustom  = int(C.CollateCustom)
 )
 
 // private go consts from type_consts.h and reindexer_ctypes.h
@@ -245,7 +246,7 @@ type RawBinding interface {
 	CloseNamespace(namespace string) error
 	DropNamespace(namespace string) error
 	EnableStorage(namespace string) error
-	AddIndex(namespace, index, jsonPath, indexType, fieldType string, opts IndexOptions, collateMode int) error
+	AddIndex(namespace, index, jsonPath, indexType, fieldType string, opts IndexOptions, collateMode int, sortOrderStr string) error
 	ConfigureIndex(namespace, index, config string) error
 	PutMeta(namespace, key, data string) error
 	GetMeta(namespace, key string) (RawBuffer, error)

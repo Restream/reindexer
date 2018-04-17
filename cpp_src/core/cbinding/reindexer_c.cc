@@ -130,10 +130,10 @@ reindexer_error reindexer_close_namespace(reindexer_string _namespace) {
 }
 
 reindexer_error reindexer_add_index(reindexer_string _namespace, reindexer_string index, reindexer_string json_path,
-									reindexer_string index_type, reindexer_string field_type, IndexOpts indexOpts) {
-	return error2c(
-		!db ? err_not_init
-			: db->AddIndex(str2c(_namespace), IndexDef{str2c(index), str2c(json_path), str2c(index_type), str2c(field_type), indexOpts}));
+									reindexer_string index_type, reindexer_string field_type, IndexOptsC indexOpts) {
+	return error2c(!db ? err_not_init
+					   : db->AddIndex(str2c(_namespace), IndexDef{str2c(index), str2c(json_path), str2c(index_type), str2c(field_type),
+																  IndexOpts(indexOpts)}));
 }
 
 reindexer_error reindexer_configure_index(reindexer_string _namespace, reindexer_string index, reindexer_string config) {

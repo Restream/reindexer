@@ -49,7 +49,21 @@ add_custom_target(collect_coverage
 
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 find_package(Threads REQUIRED ON)
-find_library(LevelDB_LIBRARY NAMES leveldb)
+
+# The code below allows to search just for static library 'leveldb'
+# to avoid conflicts when it will be linking.
+# Shared version of 'leveldb' depends on "tcmalloc" library.
+# But this causes conflict in 'tcmalloc_and_profiler'.
+if(GPERFTOOLS_TCMALLOC)
+    set(LIBRARY_SUFFIXES ${CMAKE_FIND_LIBRARY_SUFFIXES})
+    set(CMAKE_FIND_LIBRARY_SUFFIXES .a)
+    find_library(LevelDB_LIBRARY NAMES leveldb)
+    set(CMAKE_FIND_LIBRARY_SUFFIXES ${LIBRARY_SUFFIXES})
+    unset(LIBRARY_SUFFIXES)
+else()
+    find_library(LevelDB_LIBRARY NAMES leveldb)
+endif()
+
 find_package(Snappy REQUIRED ON)
 find_package(GTest)
 find_package(GBenchmark)

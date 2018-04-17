@@ -98,16 +98,10 @@ TEST_F(JoinSelectsApi, SelectFunctionsDSLTest) {
 	ASSERT_TRUE(query == testLoadDslQuery);
 }
 
-void printString(const string& str) {
-	puts(str.c_str());
-	fflush(stdout);
-}
-
 TEST_F(JoinSelectsApi, CompositeValuesDSLTest) {
 	string pagesBookidIndex = string(pages + string("+") + bookid);
 	Query query = Query(books_namespace).WhereComposite(pagesBookidIndex.c_str(), CondGe, {{KeyValue(500), KeyValue(10)}});
 	string dsl = query.GetJSON();
-	printString(dsl);
 	Query testLoadDslQuery;
 	Error err = testLoadDslQuery.ParseJson(dsl);
 	ASSERT_TRUE(err.ok());

@@ -10,11 +10,10 @@
 ### END INIT INFO
 # chkconfig: 2345 95 05
 
-cmd="${CMAKE_INSTALL_PREFIX}/bin/reindexer_server -c /etc/reindexer.conf"
+service="reindexer_server"
+pid_file="/var/run/reindexer/$service.pid"
 
-name=reindexer
-pid_file="/var/run/$name.pid"
-stdout_log="/var/log/reindexer/$name.log"
+cmd="${CMAKE_INSTALL_PREFIX}/bin/$service -c /etc/reindexer.conf -d --pidfile=$pid_file"
 
 stop_attempts=5
 stop_timeout_sec=5
@@ -29,67 +28,59 @@ is_running() {
 
 case "$1" in
     start)
-    if is_running; then
-        echo "Already started"
-    else
-        echo "Starting $name"
-        $cmd >> "$stdout_log" 2>&1 &
-        echo $! > "$pid_file"
         if ! is_running; then
-            echo "Unable to start, see $stdout_log"
-            exit 1
+            echo "Starting $service"
+            $cmd
+        else
+            echo "Service $service is already running"
         fi
-    fi
     ;;
     stop)
-    if is_running; then
-        echo -n "Stopping $name.."
-        kill `get_pid`
-        i=0
-        while [ $i -lt $stop_attempts ]
-        do
-            if ! is_running; then
-                break
+        if is_running; then
+            echo -n "Stopping $service.."
+            kill `get_pid`
+
+            i=0
+            while [ $i -lt $stop_attempts ]
+            do
+                if ! is_running; then
+                    break
+                fi
+
+                echo -n "."
+                sleep $stop_timeout_sec
+                i=`expr $i + 1`
+            done
+
+            if is_running; then
+                echo "Not stopped; Halting.."
+                kill -9 `get_pid`
             fi
 
-            echo -n "."
-            sleep $stop_timeout_sec
-            i=`expr $i + 1`
-        done
-        echo
-
-        if is_running; then
-            echo "Not stopped; Halting.."
-            kill -9 `get_pid`
+            echo "Stopped"
+        else
+            echo "Not running"
         fi
-
-        echo "Stopped"
-        if [ -f "$pid_file" ]; then
-            rm "$pid_file"
-        fi
-    else
-        echo "Not running"
-    fi
     ;;
     restart)
-    $0 stop
-    if is_running; then
-        echo "Unable to stop, will not attempt to start"
-        exit 1
-    fi
-    $0 start
+        $0 stop
+        if is_running; then
+            echo "Unable to stop, will not attempt to start"
+            exit 1
+        fi
+        $0 start
     ;;
     status)
-    if is_running; then
-        echo "Running"
-    else
-        echo "Stopped"
-        exit 1
-    fi
+        if is_running; then
+            echo "Running"
+        else
+            echo "Stopped"
+            exit 1
+        fi
     ;;
     *)
-    echo "Usage: $0 {start|stop|restart|status}"
-    exit 1
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
     ;;
 esac
 

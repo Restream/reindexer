@@ -19,19 +19,19 @@ using std::tolower;
 using std::unordered_map;
 
 struct comparator_sptr {
-	comparator_sptr(CollateMode collateMode = CollateNone) : collateMode_(collateMode) {}
+	comparator_sptr(const CollateOpts& collateOpts = CollateOpts()) : collateOpts_(collateOpts) {}
 	bool operator()(const key_string& lhs, const key_string& rhs) const {
-		return collateCompare(Slice(*lhs), Slice(*rhs), collateMode_) < 0;
+		return collateCompare(Slice(*lhs), Slice(*rhs), collateOpts_) < 0;
 	}
-	CollateMode collateMode_;
+	CollateOpts collateOpts_;
 };  // namespace reindexer
 
 struct equal_sptr {
-	equal_sptr(CollateMode collateMode = CollateNone) : collateMode_(collateMode) {}
+	equal_sptr(const CollateOpts& collateOpts = CollateOpts()) : collateOpts_(collateOpts) {}
 	bool operator()(const key_string& lhs, const key_string& rhs) const {
-		return collateCompare(Slice(*lhs), Slice(*rhs), collateMode_) == 0;
+		return collateCompare(Slice(*lhs), Slice(*rhs), collateOpts_) == 0;
 	}
-	CollateMode collateMode_;
+	CollateOpts collateOpts_;
 };
 struct hash_sptr {
 	hash_sptr(CollateMode collateMode = CollateNone) : collateMode_(collateMode) {}

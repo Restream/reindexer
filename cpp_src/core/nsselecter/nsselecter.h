@@ -73,7 +73,7 @@ private:
 	template <bool reverse, bool haveComparators, bool haveDistinct>
 	void selectLoop(LoopCtx &ctx, QueryResults &result);
 	void applyCustomSort(QueryResults &result, const SelectCtx &ctx);
-	void applyGeneralSort(QueryResults &result, const SelectCtx &ctx, CollateMode collateMode);
+	void applyGeneralSort(QueryResults &result, const SelectCtx &ctx, const CollateOpts &collateOpts);
 
 	bool containsFullTextIndexes(const QueryEntries &entries);
 	void selectWhere(const QueryEntries &entries, RawQueryResult &result, SortType sortId, bool is_ft);

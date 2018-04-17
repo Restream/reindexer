@@ -7,12 +7,12 @@ Comparator::Comparator() : fields_(), cmpComposite(payloadType_, fields_) {}
 Comparator::~Comparator() {}
 
 Comparator::Comparator(CondType cond, KeyValueType type, const KeyValues &values, bool isArray, PayloadType payloadType,
-					   const FieldsSet &fields, void *rawData, int collateMode)
+					   const FieldsSet &fields, void *rawData, const CollateOpts &collateOpts)
 	: cond_(cond),
 	  type_(type),
 	  isArray_(isArray),
 	  rawData_(reinterpret_cast<uint8_t *>(rawData)),
-	  collateMode_(collateMode),
+	  collateOpts_(collateOpts),
 	  payloadType_(payloadType),
 	  fields_(fields),
 	  cmpComposite(payloadType_, fields_) {

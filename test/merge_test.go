@@ -126,8 +126,8 @@ func CheckTestItemsMergeQueries() {
 	second := randLangString()
 	third := randLangString()
 
-	q1 := DB.Query("test_full_text_simple_item").Where("name", reindexer.EQ, first).Sort("name", false)
-	qq1 := DB.Query("test_full_text_simple_item").Where("name", reindexer.EQ, first).Sort("name", false)
+	q1 := DB.Query("test_full_text_simple_item").Where("name", reindexer.EQ, first)
+	qq1 := DB.Query("test_full_text_simple_item").Where("name", reindexer.EQ, first)
 	q2 := DB.Query("test_full_text_merged_item").Where("description", reindexer.EQ, second)
 	q3 := DB.Query("test_full_text_item").Where("name", reindexer.EQ, third)
 	merge, q1Procs, _ := q1.Merge(q2).Merge(q3).MustExec().FetchAllWithRank()

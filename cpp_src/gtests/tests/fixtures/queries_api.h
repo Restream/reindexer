@@ -220,30 +220,30 @@ protected:
 		return (qentry.values[0].Type() == KeyValueComposite);
 	}
 
-	bool compareValues(CondType condition, const KeyRef& key, const KeyValues& values, const IndexOpts& opts) {
+	bool compareValues(CondType condition, const KeyRef& key, const KeyValues& values, const CollateOpts& opts) {
 		bool result = false;
 		switch (condition) {
 			case CondEq:
-				result = (key.Compare(values[0], opts.GetCollateMode()) == 0);
+				result = (key.Compare(values[0], opts) == 0);
 				break;
 			case CondGe:
-				result = (key.Compare(values[0], opts.GetCollateMode()) >= 0);
+				result = (key.Compare(values[0], opts) >= 0);
 				break;
 			case CondGt:
-				result = (key.Compare(values[0], opts.GetCollateMode()) > 0);
+				result = (key.Compare(values[0], opts) > 0);
 				break;
 			case CondLt:
-				result = (key.Compare(values[0], opts.GetCollateMode()) < 0);
+				result = (key.Compare(values[0], opts) < 0);
 				break;
 			case CondLe:
-				result = (key.Compare(values[0], opts.GetCollateMode()) <= 0);
+				result = (key.Compare(values[0], opts) <= 0);
 				break;
 			case CondRange:
-				result = (key.Compare(values[0], opts.GetCollateMode()) >= 0) && (key.Compare(values[1], opts.GetCollateMode()) <= 0);
+				result = (key.Compare(values[0], opts) >= 0) && (key.Compare(values[1], opts) <= 0);
 				break;
 			case CondSet:
 				for (const KeyValue& kv : values) {
-					result = (key.Compare(kv, opts.GetCollateMode()) == 0);
+					result = (key.Compare(kv, opts) == 0);
 					if (result) break;
 				}
 				break;
@@ -261,19 +261,19 @@ protected:
 		return kvalues;
 	}
 
-	int compareCompositeValues(const KeyValues& indexesValues, const KeyValue& keyValue, uint8_t collateMode) {
+	int compareCompositeValues(const KeyValues& indexesValues, const KeyValue& keyValue, const CollateOpts& opts) {
 		const std::vector<KeyValue>& compositeValues = keyValue.getCompositeValues();
 		EXPECT_TRUE(indexesValues.size() == compositeValues.size());
 
 		int cmpRes = 0;
 		for (size_t i = 0; i < indexesValues.size() && (cmpRes == 0); ++i) {
-			cmpRes = indexesValues[i].Compare(compositeValues[i], static_cast<CollateMode>(collateMode));
+			cmpRes = indexesValues[i].Compare(compositeValues[i], opts);
 		}
 
 		return cmpRes;
 	}
 
-	bool checkCompositeValues(Item& item, const QueryEntry& qentry, const IndexOpts& opts) {
+	bool checkCompositeValues(Item& item, const QueryEntry& qentry, const CollateOpts& opts) {
 		vector<string> subIndexes;
 		reindexer::split(qentry.index, "+", true, subIndexes);
 
@@ -292,28 +292,28 @@ protected:
 		bool result = false;
 		switch (qentry.condition) {
 			case CondEq:
-				result = (compareCompositeValues(indexesValues, keyValues[0], opts.collate) == 0);
+				result = (compareCompositeValues(indexesValues, keyValues[0], opts) == 0);
 				break;
 			case CondGe:
-				result = (compareCompositeValues(indexesValues, keyValues[0], opts.collate) >= 0);
+				result = (compareCompositeValues(indexesValues, keyValues[0], opts) >= 0);
 				break;
 			case CondGt:
-				result = (compareCompositeValues(indexesValues, keyValues[0], opts.collate) > 0);
+				result = (compareCompositeValues(indexesValues, keyValues[0], opts) > 0);
 				break;
 			case CondLt:
-				result = (compareCompositeValues(indexesValues, keyValues[0], opts.collate) < 0);
+				result = (compareCompositeValues(indexesValues, keyValues[0], opts) < 0);
 				break;
 			case CondLe:
-				result = (compareCompositeValues(indexesValues, keyValues[0], opts.collate) <= 0);
+				result = (compareCompositeValues(indexesValues, keyValues[0], opts) <= 0);
 				break;
 			case CondRange:
 				EXPECT_TRUE(keyValues.size() == 2);
-				result = (compareCompositeValues(indexesValues, keyValues[0], opts.collate) >= 0) &&
-						 (compareCompositeValues(indexesValues, keyValues[1], opts.collate) <= 0);
+				result = (compareCompositeValues(indexesValues, keyValues[0], opts) >= 0) &&
+						 (compareCompositeValues(indexesValues, keyValues[1], opts) <= 0);
 				break;
 			case CondSet:
 				for (const KeyValue& kv : keyValues) {
-					result = (compareCompositeValues(indexesValues, kv, opts.collate) == 0);
+					result = (compareCompositeValues(indexesValues, kv, opts) == 0);
 					if (result) break;
 				}
 				break;
@@ -332,7 +332,7 @@ protected:
 		IndexOpts& opts = indexesOptions[qentry.index];
 
 		if (isIndexComposite(item, qentry)) {
-			return checkCompositeValues(item, qentry, opts);
+			return checkCompositeValues(item, qentry, opts.collateOpts_);
 		} else {
 			KeyRefs fieldValues = item[qentry.index];
 			switch (qentry.condition) {
@@ -344,7 +344,7 @@ protected:
 					break;
 			}
 			for (const KeyRef& fieldValue : fieldValues) {
-				result = compareValues(qentry.condition, fieldValue, qentry.values, opts);
+				result = compareValues(qentry.condition, fieldValue, qentry.values, opts.collateOpts_);
 				if (result) break;
 			}
 		}

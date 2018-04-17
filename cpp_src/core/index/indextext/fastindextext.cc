@@ -28,6 +28,10 @@ using std::chrono::high_resolution_clock;
 
 template <typename T>
 void FastIndexText<T>::buildTyposMap() {
+	if (!GetConfig()->maxTyposInWord) {
+		return;
+	}
+
 	typos_context tctx[kMaxTyposInWord];
 	auto &typos = typos_;
 	typos_.clear();
@@ -77,7 +81,8 @@ void FastIndexText<T>::buildWordsMap(fast_hash_map<string, WordEntry> &words_um)
 		fast_hash_map<string, WordEntry> words_um;
 		std::thread thread;
 	};
-	int maxIndexWorkers = std::thread::hardware_concurrency();
+
+	int maxIndexWorkers = !this->opts_.IsDense() ? std::thread::hardware_concurrency() : 0;
 	if (!maxIndexWorkers) maxIndexWorkers = 1;
 	unique_ptr<context[]> ctxs(new context[maxIndexWorkers]);
 
@@ -120,7 +125,7 @@ void FastIndexText<T>::buildWordsMap(fast_hash_map<string, WordEntry> &words_um)
 							auto idxIt = ctx->words_um.find(word);
 							if (idxIt == ctx->words_um.end()) {
 								idxIt = ctx->words_um.emplace(word, WordEntry()).first;
-								idxIt->second.vids_.reserve(16);
+								// idxIt->second.vids_.reserve(16);
 							}
 
 							int mfcnt = idxIt->second.vids_.Add(j, w.second, rfield);
@@ -148,9 +153,10 @@ void FastIndexText<T>::buildWordsMap(fast_hash_map<string, WordEntry> &words_um)
 				} else {
 					idxIt->second.vids_.reserve(it->second.vids_.size() + idxIt->second.vids_.size());
 					for (auto &r : it->second.vids_) idxIt->second.vids_.push_back(std::move(r));
-					it->second.vids_.clear();
+					it->second.vids_ = std::move(IdRelSet());
 				}
 			}
+			ctxs[i].words_um = std::move(fast_hash_map<string, WordEntry>());
 		}
 	}
 
@@ -381,7 +387,6 @@ void FastIndexText<T>::mergeItaration(TextSearchResults &rawRes, vector<bool> &e
 					for (auto pos : relid.pos) {
 						info.holder->AddWord(pos.pos(), r.wordLen_, pos.field());
 					}
-					info.holder->Commit();
 				}
 				merged.push_back(move(info));
 				exists[vid] = true;
@@ -425,6 +430,7 @@ IdSet::Ptr FastIndexText<T>::mergeResults(vector<TextSearchResults> &rawResults,
 		idoffsets.resize(this->vdocs_.size());
 		merged_rd.reserve(std::min(GetConfig()->mergeLimit, idsMaxCnt));
 	}
+	rawResults[0].term.opts.op = OpOr;
 	for (auto &rawRes : rawResults) {
 		mergeItaration(rawRes, exists, merged, merged_rd, idoffsets, ctx->NeedArea());
 

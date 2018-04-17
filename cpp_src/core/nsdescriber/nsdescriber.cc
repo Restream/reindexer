@@ -60,7 +60,7 @@ void NsDescriber::operator()(QueryResults &result) {
 		strStream << "\"sortable\":" << isSortable(type) << ",";
 		strStream << "\"pk\":" << index.opts.IsPK() << ",";
 		strStream << "\"fulltext\":" << isFullText(type) << ",";
-		strStream << "\"collate_mode\":\"" << index.CollateMode() << "\",";
+		strStream << "\"collate_mode\":\"" << index.getCollateMode() << "\",";
 
 		strStream << "\"conditions\": [";
 		auto conds = index.Conditions();

@@ -180,7 +180,8 @@ struct CollateComparer {
 	bool operator()(const string& lhs, const string& rhs) const {
 		reindexer::Slice sl1(lhs.c_str(), lhs.length());
 		reindexer::Slice sl2(rhs.c_str(), rhs.length());
-		return collateCompare(sl1, sl2, collateMode) < 0;
+		CollateOpts opts(collateMode);
+		return collateCompare(sl1, sl2, opts) < 0;
 	}
 };
 
@@ -211,6 +212,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 	std::set<string, CollateComparer<CollateASCII>> allStrValuesASCII;
 	std::set<string, CollateComparer<CollateNumeric>> allStrValuesNumeric;
 	std::set<string, CollateComparer<CollateUTF8>> allStrValuesUTF8;
+
 	for (int i = 0; i < 100; ++i) {
 		Item item(reindexer->NewItem(default_namespace));
 		EXPECT_TRUE(item);
@@ -221,19 +223,19 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 		allIntValues.push_front(i);
 
 		string strCollateNone = RandString().c_str();
-		item["valueString"] = strCollateNone;
 		allStrValues.insert(strCollateNone);
+		item["valueString"] = strCollateNone;
 
 		string strASCII(strCollateNone + "ASCII");
-		item["valueStringASCII"] = strASCII;
 		allStrValuesASCII.insert(strASCII);
+		item["valueStringASCII"] = strASCII;
 
 		string strNumeric(std::to_string(i + 1));
-		item["valueStringNumeric"] = strNumeric;
 		allStrValuesNumeric.insert(strNumeric);
+		item["valueStringNumeric"] = strNumeric;
 
-		item["valueStringUTF8"] = strCollateNone;
 		allStrValuesUTF8.insert(strCollateNone);
+		item["valueStringUTF8"] = strCollateNone;
 
 		err = reindexer->Upsert(default_namespace, item);
 		EXPECT_TRUE(err.ok()) << err.what();

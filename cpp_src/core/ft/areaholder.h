@@ -4,10 +4,12 @@
 #include <set>
 #include <vector>
 #include "estl/fast_hash_map.h"
+#include "estl/h_vector.h"
 
 namespace reindexer {
 using namespace std;
 struct Area {
+	Area() : start_(0), end_(0) {}
 	Area(int start, int end) : start_(start), end_(end) {}
 
 	bool inline IsIn(int pos, bool exect = false) {
@@ -31,29 +33,30 @@ struct Area {
 	int end_;
 };
 
+using AreaVec = h_vector<Area, 2>;
 class AreaHolder {
 public:
-	typedef fast_hash_map<int, std::vector<Area>> area_type;
 	typedef shared_ptr<AreaHolder> Ptr;
 	typedef unique_ptr<AreaHolder> UniquePtr;
 
 	AreaHolder(int buffer_size, int total_size, int space_size)
-		: buffer_size_(buffer_size), total_size_(total_size), space_size_(space_size) {}
-	AreaHolder() {}
+		: buffer_size_(buffer_size), total_size_(total_size), space_size_(space_size), commited_(false) {}
+	AreaHolder() : commited_(false) {}
 	void Reserve(int size);
 	void ReserveField(int size);
 	void AddTreeGramm(int pos, int filed);
 	void Commit();
 	int GetSize() { return total_size_; }
 	void AddWord(int start_pos, int size, int filed);
-	vector<Area> GetSnippet(int field, int front, int back, int total_size);
-	vector<Area> *GetAreas(int field);
+	AreaVec GetSnippet(int field, int front, int back, int total_size);
+	AreaVec *GetAreas(int field);
 
 private:
 	void insertArea(const Area &area, int filed);
 	int buffer_size_;
 	int total_size_;
 	int space_size_;
-	vector<vector<Area>> areas;
+	bool commited_;
+	h_vector<AreaVec, 3> areas;
 };
 }  // namespace reindexer

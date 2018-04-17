@@ -20,9 +20,9 @@ namespace reindexer {
 	std::chrono::high_resolution_clock::time_point n; \
 	if (enableTiming) n = high_resolution_clock::now()
 void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
+	CollateOpts collateOpts;
 	Index *sortIndex = nullptr;
 	bool unorderedIndexSort = false;
-	CollateMode collateMode = CollateMode::CollateNone;
 	bool forcedSort = !ctx.query.forcedSortOrder.empty();
 
 	bool enableTiming = ctx.query.debugLevel >= LogInfo;
@@ -92,20 +92,13 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	}
 
 	if (!sortBy.empty()) {
-		if (containsFullText) {
-			logPrintf(LogError,
-					  "Full text search on '%s.%s' with foreing sort on '%s' is not "
-					  "supported now. sort will be ignored\n",
-					  ns_->name_.c_str(), ns_->indexes_[whereEntries->at(0).idxNo]->Name().c_str(), ctx.query.sortBy.c_str());
-		} else {
-			// Query is sorted. Search for sort index
-			sortIndex = ns_->indexes_[ns_->getIndexByName(sortBy)].get();
-			if (sortIndex && !sortIndex->IsOrdered()) {
-				ctx.isForceAll = true;
-				unorderedIndexSort = true;
-				collateMode = sortIndex->Opts().GetCollateMode();
-				sortIndex = nullptr;
-			}
+		// Query is sorted. Search for sort index
+		sortIndex = ns_->indexes_[ns_->getIndexByName(sortBy)].get();
+		if ((sortIndex && !sortIndex->IsOrdered()) || containsFullText) {
+			ctx.isForceAll = true;
+			unorderedIndexSort = true;
+			collateOpts = sortIndex->Opts().collateOpts_;
+			sortIndex = nullptr;
 		}
 	}
 
@@ -253,7 +246,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	}
 
 	if (unorderedIndexSort) {
-		applyGeneralSort(result, ctx, collateMode);
+		applyGeneralSort(result, ctx, collateOpts);
 	}
 
 	if (!ctx.query.forcedSortOrder.empty()) {
@@ -342,7 +335,7 @@ void NsSelecter::applyCustomSort(QueryResults &queryResult, const SelectCtx &ctx
 	}
 }
 
-void NsSelecter::applyGeneralSort(QueryResults &queryResult, const SelectCtx &ctx, CollateMode collateMode) {
+void NsSelecter::applyGeneralSort(QueryResults &queryResult, const SelectCtx &ctx, const CollateOpts &collateOpts) {
 	if (ctx.query.mergeQueries_.size() > 1) throw Error(errLogic, "Sorting cannot be applied to merged queries.");
 
 	auto &payloadType = ns_->payloadType_;
@@ -364,12 +357,12 @@ void NsSelecter::applyGeneralSort(QueryResults &queryResult, const SelectCtx &ct
 	int limit = std::min(ctx.query.count + ctx.query.start, queryResult.size());
 
 	std::partial_sort(queryResult.begin(), queryResult.begin() + limit, queryResult.end(),
-					  [&payloadType, &fields, sortAsc, collateMode](const ItemRef &lhs, const ItemRef &rhs) {
+					  [&payloadType, &fields, sortAsc, collateOpts](const ItemRef &lhs, const ItemRef &rhs) {
 						  bool comparisonResult = false;
 						  if (sortAsc) {
-							  comparisonResult = ConstPayload(payloadType, lhs.value).Compare(rhs.value, fields, collateMode) < 0;
+							  comparisonResult = ConstPayload(payloadType, lhs.value).Compare(rhs.value, fields, collateOpts) < 0;
 						  } else {
-							  comparisonResult = ConstPayload(payloadType, lhs.value).Compare(rhs.value, fields, collateMode) > 0;
+							  comparisonResult = ConstPayload(payloadType, lhs.value).Compare(rhs.value, fields, collateOpts) > 0;
 						  }
 						  return comparisonResult;
 					  });

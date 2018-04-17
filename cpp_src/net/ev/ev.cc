@@ -1,10 +1,10 @@
 #include "ev.h"
+#include <stdio.h>
 #include <string.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <algorithm>
 #include <csignal>
-#include <stdio.h>
 
 namespace reindexer {
 namespace net {

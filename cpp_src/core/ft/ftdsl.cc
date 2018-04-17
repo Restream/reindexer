@@ -81,6 +81,7 @@ void FtDSLQuery::parse(wstring &utf16str) {
 		auto begIt = it;
 		while (it != utf16str.end() && is_term(*it)) {
 			*it = ToLower(*it);
+			check_for_replacement(*it);
 			it++;
 		}
 		auto endIt = it;
@@ -103,7 +104,7 @@ void FtDSLQuery::parse(wstring &utf16str) {
 		if (endIt != begIt) {
 			fte.pattern.assign(begIt, endIt);
 			string utf8str = utf16_to_utf8(fte.pattern);
-			if (!fte.opts.pref && !fte.opts.suff && stopWords_.find(utf8str) != stopWords_.end()) {
+			if (stopWords_.find(utf8str) != stopWords_.end()) {
 				continue;
 			}
 

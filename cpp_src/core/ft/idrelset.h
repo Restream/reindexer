@@ -30,7 +30,7 @@ struct IdRelType {
 	// packed_vector callbacks
 	size_t pack(uint8_t* buf) const;
 	size_t unpack(const uint8_t* buf, unsigned len);
-	size_t maxpackedsize() const { return 2 * (sizeof(VDocIdType) + 1) + (pos.size() * (sizeof(uint16_t) + 1)); }
+	size_t maxpackedsize() const { return 2 * (sizeof(VDocIdType) + 1) + (pos.size() * (sizeof(uint32_t) + 1)); }
 
 	struct PosType {
 		static const int posBits = 24;
@@ -41,8 +41,8 @@ struct IdRelType {
 		unsigned fpos;
 	};
 
+	h_vector<PosType, 3> pos;
 	VDocIdType id = 0;
-	h_vector<PosType, 6> pos;
 };
 
 class IdRelSet : public h_vector<IdRelType, 0> {

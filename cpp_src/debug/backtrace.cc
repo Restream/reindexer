@@ -9,6 +9,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+
 char* resolve_symbol(void* addr, bool onlyName) {
 	char filename[512], symbol[512], out[512];
 	uintptr_t address = uintptr_t(addr), offset = 0;

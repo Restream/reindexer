@@ -1994,6 +1994,11 @@ bool ValidateQuote(const std::string &input) {
 		if (input.size() == 1) {
 			return false;
 		}
+
+		if (input.size() == 2 && input[0] == input[1]) {
+			return true;
+		}
+
 		token = input[0];
 		searchPos = 1;
 	}

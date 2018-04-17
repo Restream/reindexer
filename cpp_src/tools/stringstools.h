@@ -3,6 +3,7 @@
 #include <time.h>
 #include <string>
 #include <vector>
+#include "core/indexopts.h"
 #include "core/type_consts.h"
 #include "tools/slice.h"
 
@@ -20,7 +21,7 @@ size_t calcUTf8Size(const char* s, size_t size, size_t limit);
 size_t calcUTf8SizeEnd(const char* end, int pos, size_t limit);
 
 string lower(string s);
-int collateCompare(const Slice& lhs, const Slice& rhs, int mode);
+int collateCompare(const Slice& lhs, const Slice& rhs, const CollateOpts& collateOpts);
 
 wstring utf8_to_utf16(const string& src);
 string utf16_to_utf8(const wstring& src);
@@ -29,6 +30,8 @@ string& utf16_to_utf8(const wstring& src, string& dst);
 wstring& utf8_to_utf16(const char* src, wstring& dst);
 
 size_t utf16_to_utf8(const wchar_t* src, size_t len, char* dst, size_t dstLen);
+void check_for_replacement(wchar_t& ch);
+void check_for_replacement(uint32_t& ch);
 
 int fast_strftime(char* buf, const tm* tm);
 void urldecode2(char* dst, const char* src);

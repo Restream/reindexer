@@ -27,10 +27,16 @@ type TestSortModeAsciiItemHash struct {
 	InsItem string `reindex:"item_ascii_hash,hash,collate_ascii"`
 }
 
+type TestSortModeCustomItem struct {
+	ID      int    `reindex:"id,,pk"`
+	InsItem string `reindex:"item_custom,hash,collate_custom=А-ЯA-Z0-9"`
+}
+
 var testSortDataNumeric = "test_sort_data_numeric"
 var testSortDataAscii = "test_sort_data_ascii"
 var testSortDataUtf = "test_sort_data_utf8"
 var testSortDataAsciiHash = "test_sort_data_ascii_hash"
+var testSortDataCustom = "test_sort_data_custom"
 
 var testSortModeDataNumeric = []*TestSortModeNumericItem{
 	{1, "-99Apple"},
@@ -84,11 +90,52 @@ var testSortModeDataAsciiHash = []*TestSortModeAsciiItemHash{
 	{10, "CHERRY"},
 }
 
+var testSortModeDataCustomSource = []*TestSortModeCustomItem{
+	{1, "Вася"},
+	{2, "Johny"},
+	{3, "Mary"},
+	{4, "Иван"},
+	{5, "Петр"},
+	{6, "Emmarose"},
+	{7, "Gabriela"},
+	{8, "Антон"},
+	{9, "1й Петр"},
+	{10, "2й Петр"},
+	{11, "3й Петр"},
+	{12, "Maxwell"},
+	{13, "Anthony"},
+	{14, "1й Павел"},
+	{15, "Jane"},
+	{16, "2й Павел"},
+	{17, "3й Павел"},
+}
+
+var testSortModeDataCustomSorted = []*TestSortModeCustomItem{
+	{1, "Антон"},
+	{2, "Вася"},
+	{3, "Иван"},
+	{4, "Петр"},
+	{5, "Anthony"},
+	{6, "Emmarose"},
+	{7, "Gabriela"},
+	{8, "Jane"},
+	{9, "Johny"},
+	{10, "Mary"},
+	{11, "Maxwell"},
+	{12, "1й Павел"},
+	{13, "1й Петр"},
+	{14, "2й Павел"},
+	{15, "2й Петр"},
+	{16, "3й Павел"},
+	{17, "3й Петр"},
+}
+
 func init() {
 	tnamespaces[testSortDataNumeric] = TestSortModeNumericItem{}
 	tnamespaces[testSortDataAscii] = TestSortModeAsciiItem{}
 	tnamespaces[testSortDataUtf] = TestSortModeUtfItem{}
 	tnamespaces[testSortDataAsciiHash] = TestSortModeAsciiItemHash{}
+	tnamespaces[testSortDataCustom] = TestSortModeCustomItem{}
 }
 
 func FillTestItemsWithInsensitiveIndex() {
@@ -124,6 +171,16 @@ func FillTestItemsWithInsensitiveIndex() {
 
 	tx = newTestTx(DB, testSortDataAsciiHash)
 	for _, item := range testSortModeDataAsciiHash {
+		if cnt, err := tx.Insert(item); err != nil {
+			panic(err)
+		} else if cnt == 0 {
+			panic(fmt.Errorf("Could not insert item: %+v", *item))
+		}
+	}
+	tx.MustCommit(nil)
+
+	tx = newTestTx(DB, testSortDataCustom)
+	for _, item := range testSortModeDataCustomSource {
 		if cnt, err := tx.Insert(item); err != nil {
 			panic(err)
 		} else if cnt == 0 {
@@ -209,6 +266,24 @@ func TestSortDataIndexMode(t *testing.T) {
 	for i := 0; i < len(results); i += 2 {
 		lword := results[i].(*TestSortModeUtfItem).InsItem
 		rword := results[i+1].(*TestSortModeUtfItem).InsItem
+		if strings.ToLower(lword) != strings.ToLower(rword) {
+			panic(fmt.Errorf("Expected words %s and %s are the same", lword, rword))
+		}
+	}
+
+	// Custom
+	results, err = DB.Query(testSortDataCustom).Sort("item_custom", false).Exec().FetchAll()
+	if err != nil {
+		panic(err)
+	}
+
+	// Test: Custom mode words are sorted
+	if len(results) != len(testSortModeDataCustomSorted) {
+		panic(fmt.Errorf("Custom mode containers have different sizes"))
+	}
+	for i := 0; i < len(results); i++ {
+		lword := results[i].(*TestSortModeCustomItem).InsItem
+		rword := testSortModeDataCustomSorted[i].InsItem
 		if strings.ToLower(lword) != strings.ToLower(rword) {
 			panic(fmt.Errorf("Expected words %s and %s are the same", lword, rword))
 		}

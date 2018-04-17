@@ -161,12 +161,15 @@ func (binding *Builtin) EnableStorage(path string) error {
 	return err2go(C.reindexer_enable_storage(str2c(path)))
 }
 
-func (binding *Builtin) AddIndex(namespace, index, jsonPath, indexType, fieldType string, indexOpts bindings.IndexOptions, collateMode int) error {
-	opts := C.IndexOpts{
-		options: C.uint8_t(indexOpts),
-		collate: C.uint8_t(collateMode),
+func (binding *Builtin) AddIndex(namespace, index, jsonPath, indexType, fieldType string, indexOpts bindings.IndexOptions, collateMode int, sortOrderStr string) error {
+	opts := C.IndexOptsC{
+		options:   C.uint8_t(indexOpts),
+		collate:   C.uint8_t(collateMode),
+		sortOrderLetters: C.CString(sortOrderStr),
 	}
-	return err2go(C.reindexer_add_index(str2c(namespace), str2c(index), str2c(jsonPath), str2c(indexType), str2c(fieldType), opts))
+	err := err2go(C.reindexer_add_index(str2c(namespace), str2c(index), str2c(jsonPath), str2c(indexType), str2c(fieldType), opts))
+	C.free(unsafe.Pointer(opts.sortOrderLetters))
+	return err
 }
 
 func (binding *Builtin) ConfigureIndex(namespace, index, config string) error {

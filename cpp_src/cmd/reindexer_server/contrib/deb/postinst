@@ -20,6 +20,12 @@ case "$1" in
             mkdir -p /var/log/reindexer
             chown reindexer:reindexer /var/log/reindexer
         fi
+
+        if [ ! -d /var/run/reindexer ]; then
+            mkdir -p /var/run/reindexer
+            chown reindexer:reindexer /var/run/reindexer
+        fi
+
         if [ ! -f /etc/reindexer.conf ]; then
             cp /etc/reindexer.conf.pkg /etc/reindexer.conf
         fi

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <type_traits>
+#include "core/indexopts.h"
 #include "core/keyvalue/keyvalue.h"
 #include "fieldsset.h"
 #include "payloadfieldvalue.h"
@@ -61,7 +62,7 @@ public:
 	bool IsEQ(const T &other) const;
 
 	// Compare 2 objects by field mask
-	int Compare(const T &other, const FieldsSet &fields, CollateMode collateMode = CollateNone) const;
+	int Compare(const T &other, const FieldsSet &fields, const CollateOpts &collateOpts = CollateOpts()) const;
 
 	// Get PayloadFieldValue by field index
 	PayloadFieldValue Field(int field) const;

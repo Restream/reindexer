@@ -13,6 +13,7 @@ const (
 	CollateASCII   = bindings.CollateASCII
 	CollateUTF8    = bindings.CollateUTF8
 	CollateNumeric = bindings.CollateNumeric
+	CollateCustom  = bindings.CollateCustom
 
 	IndexOptPK         = bindings.IndexOptPK
 	IndexOptArray      = bindings.IndexOptArray
@@ -67,10 +68,16 @@ func (db *Reindexer) createIndex(namespace string, st reflect.Type, subArray boo
 
 		reindexPath := reindexBasePath + idxName
 
-		if idxOpts == "composite" {
+		var opts bindings.IndexOptions
+		opts.Array(t.Kind() == reflect.Slice || t.Kind() == reflect.Array || subArray)
+		opts.PK(strings.Index(idxOpts, "pk") >= 0)
+		opts.Dense(strings.Index(idxOpts, "dense") >= 0)
+		opts.Appendable(strings.Index(idxOpts, "appendable") >= 0)
+
+		if strings.Index(idxOpts, "composite") >= 0 {
 			if t.Kind() != reflect.Struct || t.NumField() != 0 {
 				return fmt.Errorf("'composite' tag allowed only on empty on structs: Invalid tags %v on field %s", tagsSlice, st.Field(i).Name)
-			} else if err := db.binding.AddIndex(namespace, reindexPath, "", idxType, "composite", 0, CollateNumeric); err != nil {
+			} else if err := db.binding.AddIndex(namespace, reindexPath, "", idxType, "composite", 0, CollateNone, ""); err != nil {
 				return err
 			}
 		} else if t.Kind() == reflect.Struct {
@@ -96,11 +103,14 @@ func (db *Reindexer) createIndex(namespace string, st reflect.Type, subArray boo
 				collateMode = CollateNumeric
 			}
 
-			var opts bindings.IndexOptions
-			opts.Array(t.Kind() == reflect.Slice || t.Kind() == reflect.Array || subArray)
-			opts.PK(idxOpts == "pk")
-			opts.Dense(idxOpts == "dense")
-			opts.Appendable(idxOpts == "appendable")
+			var sortOrderLetters string
+			if collateMode == CollateNone {
+				const collateCustomPrefix = "collate_custom="
+				if strings.Contains(idxOpts, collateCustomPrefix) == true {
+					sortOrderLetters = strings.TrimPrefix(idxOpts, collateCustomPrefix)
+					collateMode = CollateCustom
+				}
+			}
 
 			if fieldType, err := getFieldType(t); err != nil {
 				return err
@@ -112,6 +122,7 @@ func (db *Reindexer) createIndex(namespace string, st reflect.Type, subArray boo
 				fieldType,
 				opts,
 				collateMode,
+				sortOrderLetters,
 			); err != nil {
 				return err
 			}

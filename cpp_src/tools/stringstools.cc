@@ -78,6 +78,18 @@ size_t calcUTf8SizeEnd(const char *end, int pos, size_t limit) {
 	return end - ptr;
 }
 
+void check_for_replacement(wchar_t &ch) {
+	if (ch == L'ё') {
+		ch = L'е';
+	}
+}
+
+void check_for_replacement(uint32_t &ch) {
+	if (ch == L'ё') {
+		ch = L'е';
+	}
+}
+
 void splitWithPos(const string &str, string &buf, vector<pair<const char *, int>> &words) {
 	buf.resize(str.length());
 	words.resize(0);
@@ -95,11 +107,14 @@ void splitWithPos(const string &str, string &buf, vector<pair<const char *, int>
 		auto begIt = bufIt;
 		while (it != str.end() && (IsAlpha(ch) || std::isdigit(ch) || ch == '+' || ch == '-' || ch == '/')) {
 			ch = ToLower(ch);
+			check_for_replacement(ch);
 			bufIt = utf8::unchecked::append(ch, bufIt);
 			ch = utf8::unchecked::next(it);
 		}
 		if ((IsAlpha(ch) || std::isdigit(ch) || ch == '+' || ch == '-' || ch == '/')) {
 			ch = ToLower(ch);
+			check_for_replacement(ch);
+
 			bufIt = utf8::unchecked::append(ch, bufIt);
 		}
 
@@ -135,8 +150,8 @@ string lower(string s) {
 	return s;
 }
 
-int collateCompare(const Slice &lhs, const Slice &rhs, int collateMode) {
-	if (collateMode == CollateASCII) {
+int collateCompare(const Slice &lhs, const Slice &rhs, const CollateOpts &collateOpts) {
+	if (collateOpts.mode == CollateASCII) {
 		auto itl = lhs.data();
 		auto itr = rhs.data();
 
@@ -155,7 +170,7 @@ int collateCompare(const Slice &lhs, const Slice &rhs, int collateMode) {
 		}
 
 		return 0;
-	} else if (collateMode == CollateUTF8) {
+	} else if (collateOpts.mode == CollateUTF8) {
 		auto itl = lhs.data();
 		auto itr = rhs.data();
 
@@ -173,7 +188,7 @@ int collateCompare(const Slice &lhs, const Slice &rhs, int collateMode) {
 			return -1;
 		}
 		return 0;
-	} else if (collateMode == CollateNumeric) {
+	} else if (collateOpts.mode == CollateNumeric) {
 		char *posl = nullptr;
 		char *posr = nullptr;
 
@@ -190,6 +205,26 @@ int collateCompare(const Slice &lhs, const Slice &rhs, int collateMode) {
 		}
 
 		return numl > numr ? 1 : (numl < numr ? -1 : 0);
+	} else if (collateOpts.mode == CollateCustom) {
+		auto itl = lhs.data();
+		auto itr = rhs.data();
+
+		for (; itl != lhs.data() + lhs.size() && itr != rhs.size() + rhs.data();) {
+			auto chl = utf8::unchecked::next(itl);
+			auto chr = utf8::unchecked::next(itr);
+
+			int chlPriority = collateOpts.sortOrderTable.GetPriority(chl);
+			int chrPriority = collateOpts.sortOrderTable.GetPriority(chr);
+
+			if (chlPriority > chrPriority) return 1;
+			if (chlPriority < chrPriority) return -1;
+		}
+
+		if (lhs.size() > rhs.size()) {
+			return 1;
+		} else if (lhs.size() < rhs.size()) {
+			return -1;
+		}
 	}
 
 	size_t l1 = lhs.size();

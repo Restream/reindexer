@@ -127,6 +127,7 @@ uint32_t collateHash(const string& s, CollateMode collateMode) noexcept {
 		case CollateASCII:
 			return _Hash_bytes_collate_ascii(s.data(), s.length());
 		case CollateUTF8:
+		case CollateCustom:
 			return _Hash_bytes_collate_utf8(s.data(), s.length());
 		default:
 			return std::hash<std::string>()(s);

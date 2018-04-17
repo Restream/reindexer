@@ -91,8 +91,6 @@ enum { TAG_VARINT, TAG_DOUBLE, TAG_STRING, TAG_ARRAY, TAG_BOOL, TAG_NULL, TAG_OB
 
 enum JoinType { LeftJoin, InnerJoin, OrInnerJoin, Merge };
 
-enum CollateMode { CollateNone = 0, CollateASCII, CollateUTF8, CollateNumeric };
-
 enum CalcTotalMode { ModeNoTotal, ModeCachedTotal, ModeAccurateTotal };
 
 enum DataFormat { FormatJson, FormatCJson };
@@ -124,40 +122,13 @@ typedef enum StotageOpt {
 	kStorageOptSync = 1 << 5
 } StorageOpt;
 
-typedef struct IndexOpts {
-#ifdef __cplusplus
-	IndexOpts(uint8_t flags = 0, CollateMode mode = CollateNone) : options(flags), collate(mode) {}
+enum CollateMode { CollateNone = 0, CollateASCII, CollateUTF8, CollateNumeric, CollateCustom };
 
-	bool IsPK() const { return options & kIndexOptPK; }
-	bool IsArray() const { return options & kIndexOptArray; }
-	bool IsDense() const { return options & kIndexOptDense; }
-	bool IsAppendable() const { return options & kIndexOptAppendable; }
-	CollateMode GetCollateMode() const { return static_cast<CollateMode>(collate); }
-
-	IndexOpts& PK(bool value = true) {
-		options = value ? options | kIndexOptPK : options & ~(kIndexOptPK);
-		return *this;
-	}
-	IndexOpts& Array(bool value = true) {
-		options = value ? options | kIndexOptArray : options & ~(kIndexOptArray);
-		return *this;
-	}
-	IndexOpts& Dense(bool value = true) {
-		options = value ? options | kIndexOptDense : options & ~(kIndexOptDense);
-		return *this;
-	}
-	IndexOpts& Appendable(bool value = true) {
-		options = value ? options | kIndexOptAppendable : options & ~(kIndexOptAppendable);
-		return *this;
-	}
-	IndexOpts& SetCollateMode(CollateMode mode) {
-		collate = mode;
-		return *this;
-	}
-#endif
+typedef struct IndexOptsC {
 	uint8_t options;
 	uint8_t collate;
-} IndexOpts;
+	const char* sortOrderLetters;
+} IndexOptsC;
 
 typedef struct StorageOpts {
 #ifdef __cplusplus
