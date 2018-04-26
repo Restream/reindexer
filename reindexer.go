@@ -361,7 +361,7 @@ func (db *Reindexer) Query(namespace string) *Query {
 func (db *Reindexer) ExecSQL(query string) *Iterator {
 	// TODO: do not parse query string twice in go and cpp
 	namespace := ""
-	querySlice := strings.Split(strings.ToLower(query), " ")
+	querySlice := strings.Fields(strings.ToLower(query))
 
 	if len(querySlice) > 0 && querySlice[0] == "describe" {
 		return db.execSQL("", query)
@@ -380,7 +380,7 @@ func (db *Reindexer) ExecSQL(query string) *Iterator {
 func (db *Reindexer) ExecSQLToJSON(query string) *JSONIterator {
 	// TODO: do not parse query string twice in go and cpp
 	namespace := ""
-	querySlice := strings.Split(strings.ToLower(query), " ")
+	querySlice := strings.Fields(strings.ToLower(query))
 
 	for i := range querySlice {
 		if querySlice[i] == "from" && i+1 < len(querySlice) {

@@ -12,6 +12,8 @@
 #include "estl/flat_str_map.h"
 #include "estl/suffix_map.h"
 
+// #define REINDEX_FT_EXTRA_DEBUG 1
+
 namespace reindexer {
 using std::pair;
 using std::unique_ptr;
@@ -49,6 +51,9 @@ public:
 
 protected:
 	struct VDocEntry {
+#ifdef REINDEX_FT_EXTRA_DEBUG
+		const typename T::key_type* keyDoc;
+#endif
 		typename T::mapped_type* keyEntry;
 		h_vector<float, 3> wordsCount;
 		h_vector<float, 3> mostFreqWordCount;

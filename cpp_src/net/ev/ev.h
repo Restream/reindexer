@@ -2,7 +2,7 @@
 
 #include <assert.h>
 
-#ifndef __APPLE__
+#ifdef __linux__
 #include <sys/epoll.h>
 #else
 #include <sys/select.h>
@@ -38,7 +38,7 @@ protected:
 	int maxfd_;
 };
 
-#ifndef __APPLE__
+#ifdef __linux__
 class loop_epoll_backend {
 public:
 	void init(dynamic_loop *owner);

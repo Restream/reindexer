@@ -44,9 +44,9 @@ std::unordered_map<IndexType, IndexInfo,std::hash<int>,std::equal_to<int> > avai
 std::unordered_map<CollateMode, const string, std::hash<int>, std::equal_to<int> > availableCollates = {
 	{CollateASCII,   "ascii"},
 	{CollateUTF8,    "utf8"},
-        {CollateNumeric, "numeric"},
-        {CollateCustom,  "custom"},
-        {CollateNone,    "none"},
+	{CollateNumeric, "numeric"},
+	{CollateCustom,  "custom"},
+	{CollateNone,    "none"},
 };
 
 // clang-format on
@@ -147,7 +147,7 @@ void IndexDef::GetJSON(WrSerializer &ser) {
 	ser.Printf("\"is_array\":%s,", opts.IsArray() ? "true" : "false");
 	ser.Printf("\"is_dense\":%s,", opts.IsDense() ? "true" : "false");
 	ser.Printf("\"is_appendable\":%s,", opts.IsAppendable() ? "true" : "false");
-	ser.Printf("\"collate_mode\":\"%s\"", getCollateMode().c_str());
+	ser.Printf("\"collate_mode\":\"%s\",", getCollateMode().c_str());
 	ser.Printf("\"sort_order_letters\":\"%s\"", opts.collateOpts_.sortOrderTable.GetSortOrderCharacters().c_str());
 	ser.PutChars("}");
 }

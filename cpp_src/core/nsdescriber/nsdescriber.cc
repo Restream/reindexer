@@ -2,6 +2,7 @@
 
 #include "core/cjson/jsondecoder.h"
 #include "core/cjson/jsonencoder.h"
+#include "core/index/index.h"
 #include "core/namespace.h"
 #include "nsdescriber.h"
 
@@ -48,13 +49,15 @@ void NsDescriber::operator()(QueryResults &result) {
 
 	for (unsigned i = 0; i < nsDef.indexes.size(); i++) {
 		auto &index = nsDef.indexes[i];
+		assert(i + 1 < ns_->indexes_.size());
+		auto &idx = ns_->indexes_[i + 1];
 
 		IndexType type = index.Type();
 
 		if (i != 0) strStream << ",";
 
 		strStream << "{";
-		strStream << "\"name\":\"" << index.name << "\",";
+		strStream << "\"name\":\"" << idx->Name() << "\",";
 		strStream << "\"field_type\":\"" << index.fieldType << "\",";
 		strStream << "\"is_array\":" << index.opts.IsArray() << ",";
 		strStream << "\"sortable\":" << isSortable(type) << ",";

@@ -573,11 +573,11 @@ func prepareStruct(ns *testNamespace, t reflect.Type, basePath []int, reindexBas
 		reindexBasePath += "."
 	}
 
-	indexes := make(map[string]int)
+	indexes := make(map[string][]int)
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		tags := strings.Split(field.Tag.Get("reindex"), ",")
+		tags := strings.SplitN(field.Tag.Get("reindex"), ",", 3)
 
 		idxName := tags[0]
 		if idxName == "-" {
@@ -586,16 +586,20 @@ func prepareStruct(ns *testNamespace, t reflect.Type, basePath []int, reindexBas
 
 		reindexPath := reindexBasePath + idxName
 		path := append(basePath, i)
-		indexes[idxName] = i
+		indexes[idxName] = path
 
 		tk := field.Type.Kind()
+		isPk := len(tags) > 2 && strings.Index(tags[2], "pk") >= 0
+
 		if tk == reflect.Struct {
-			if len(idxName) > 0 && len(tags) >= 3 && tags[2] == "composite" {
+			if len(idxName) > 0 && len(tags) > 2 && strings.Index(tags[2], "composite") >= 0 {
 				subIdxs := strings.Split(idxName, "+")
 				ns.fieldsIdx[reindexPath] = make([][]int, len(subIdxs))
-				for j := 0; j < len(subIdxs); j++ {
-					ns.fieldsIdx[reindexPath][j] = make([]int, 1)
-					ns.fieldsIdx[reindexPath][j][0] = indexes[subIdxs[j]]
+				for j, subIdx := range subIdxs {
+					ns.fieldsIdx[reindexPath][j] = indexes[subIdx]
+					if isPk {
+						ns.pkIdx = append(ns.pkIdx, indexes[subIdx])
+					}
 				}
 			} else {
 				prepareStruct(ns, field.Type, path, reindexPath)
@@ -606,7 +610,7 @@ func prepareStruct(ns *testNamespace, t reflect.Type, basePath []int, reindexBas
 			panic(fmt.Errorf("TestQuery does not supported indexed struct arrays (struct=%s, field=%s)\n", t.Name(), field.Name))
 		}
 
-		if len(tags) > 2 && tags[2] == "pk" {
+		if isPk {
 			ns.pkIdx = append(ns.pkIdx, path)
 		}
 

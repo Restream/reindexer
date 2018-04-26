@@ -1,3 +1,21 @@
+# Version 1.8.1 (26.04.2018)
+
+## C++ core
+
+- [fix] Fix KeyValue::operator == for strings (IdSetCache isn't worked due this)
+- [fix] Describe for composite indexes will return name alias
+- [fix] Check for invalid PK indexes: Throw error on '-' (scan) PK
+- [fix] Add missed comma in IndexDef JSON serializer 
+- [fix] Relevancy in case when first term from query found in non boosted field first
+- [opt] Optimize AND performance in ft1
+- [fea] Add extra debug output to ft1
+
+
+## Go connector
+- [fix] Golang SQL query pseudo preparser accept all whitespace chars, not only ' ' 
+- [fix] Correct composite PK handling in QueryTest
+- [fix] Support of multiply index options in struct tag
+
 
 # Version 1.8.0 (17.04.2018)
 

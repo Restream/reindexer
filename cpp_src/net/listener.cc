@@ -91,7 +91,7 @@ bool Listener::Bind(string addr) {
 	if (setsockopt(shared_->fd_, SOL_TCP, TCP_NODELAY, &enable, sizeof(int)) < 0) {
 		perror("setsockopt(TCP_NODELAY) failed");
 	}
-#ifndef __APPLE__
+#ifdef __linux__
 	if (setsockopt(shared_->fd_, SOL_TCP, TCP_DEFER_ACCEPT, &enable, sizeof(int)) < 0) {
 		perror("setsockopt(TCP_DEFER_ACCEPT) failed");
 	}
@@ -128,7 +128,7 @@ void Listener::io_accept(ev::io &watcher, int revents) {
 	struct sockaddr client_addr;
 	memset(&client_addr, 0, sizeof(client_addr));
 	socklen_t client_len = sizeof(client_addr);
-#ifndef __APPLE__
+#ifdef __linux__
 	int client_fd = accept4(watcher.fd, &client_addr, &client_len, SOCK_NONBLOCK);
 #else
 	int client_fd = accept(watcher.fd, &client_addr, &client_len);

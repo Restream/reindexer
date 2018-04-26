@@ -10,7 +10,7 @@ namespace reindexer {
 namespace net {
 namespace ev {
 
-#ifndef __APPLE__
+#ifdef __linux__
 void loop_epoll_backend::init(dynamic_loop *owner) {
 	owner_ = owner;
 	ctlfd_ = epoll_create1(EPOLL_CLOEXEC);

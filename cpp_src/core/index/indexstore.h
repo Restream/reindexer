@@ -19,8 +19,7 @@ public:
 	void UpdateSortedIds(const UpdateSortedContext & /*ctx*/) override {}
 	Index *Clone() override;
 	IdSetRef Find(const KeyRef & /*key*/) override {
-		// can't
-		return IdSetRef();
+		throw Error(errLogic, "IndexStore::Find of '%s' is not implemented. Do not use '-' index as pk?", this->name_.c_str());
 	}
 	KeyValueType KeyType() override final {
 		static T a;

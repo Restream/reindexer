@@ -276,7 +276,7 @@ bool Namespace::addIndex(const string &index, const string &jsonPath, IndexType 
 		throw Error(errConflict, "Index '%s.%s' already exists with different type", name_.c_str(), index.c_str());
 	}
 
-	if (pkFields_.contains(idxNo) != bool(opts.IsPK())) {
+	if (!pkFields_.contains(idxNo) && opts.IsPK()) {
 		throw Error(errConflict, "Index '%s.%s' already exists with different PK attribute", name_.c_str(), index.c_str());
 	}
 

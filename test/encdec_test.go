@@ -25,7 +25,7 @@ type TestNest struct {
 type TestCustom []byte
 
 type TestItemEncDec struct {
-	ID int `reindex:"id,,pk"`
+	ID int `reindex:"id,-"`
 	*TestEmbedItem
 	Prices        []*TestJoinItem `reindex:"prices,,joined"`
 	Pricesx       []*TestJoinItem `reindex:"pricesx,,joined"`
@@ -52,7 +52,7 @@ type TestItemEncDec struct {
 	StartTime     uint64  `reindex:"start_time,tree"`
 	PStrNull      *string
 	PStr          *string
-	Tmp           string `reindex:"tmp,-,pk"`
+	Tmp           string `reindex:"tmp,-"`
 	Map1          map[string]int
 	Map2          map[int64]Actor
 	Map3          map[int]*Actor
@@ -78,7 +78,7 @@ type TestItemEncDec struct {
 	Time   time.Time
 	PTime  *time.Time
 
-	_ struct{} `reindex:"id+tmp,,composite"`
+	_ struct{} `reindex:"id+tmp,,composite;pk"`
 	_ struct{} `reindex:"age+genre,,composite"`
 }
 

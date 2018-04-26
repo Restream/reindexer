@@ -13,7 +13,7 @@ import (
 type TestItem struct {
 	Prices      []*TestJoinItem `reindex:"prices,,joined"`
 	Pricesx     []*TestJoinItem `reindex:"pricesx,,joined"`
-	ID          int             `reindex:"id,,pk"`
+	ID          int             `reindex:"id,-"`
 	Genre       int64           `reindex:"genre,tree"`
 	Year        int             `reindex:"year,tree"`
 	Packages    []int           `reindex:"packages,hash"`
@@ -28,8 +28,8 @@ type TestItem struct {
 	LocationID  string          `reindex:"location"`
 	EndTime     int             `reindex:"end_time,-"`
 	StartTime   int             `reindex:"start_time,tree"`
-	Tmp         string          `reindex:"tmp,-,pk"`
-	_           struct{}        `reindex:"id+tmp,,composite"`
+	Tmp         string          `reindex:"tmp,-"`
+	_           struct{}        `reindex:"id+tmp,,composite,pk"`
 	_           struct{}        `reindex:"age+genre,,composite"`
 	_           struct{}        `reindex:"location+rate,,composite"`
 }

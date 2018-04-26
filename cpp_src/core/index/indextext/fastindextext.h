@@ -39,6 +39,7 @@ protected:
 
 	struct TextSearchResult {
 		const PackedIdRelSet* vids_;
+		const char* pattern;
 		int proc_;
 		int16_t wordLen_;
 	};
@@ -72,6 +73,7 @@ protected:
 	void mergeItaration(TextSearchResults& rawRes, vector<bool>& exists, vector<MergeInfo>& merged, vector<MergedIdRel>& merged_rd,
 						h_vector<int16_t>& idoffsets, bool need_area);
 
+	void debugMergeStep(const char* msg, int vid, float normBm25, float normDist, int finalRank, int prevRank);
 	void processVariants(FtSelectContext&);
 	void prepareVariants(FtSelectContext&, FtDSLEntry&, std::vector<string>& langs);
 	void processTypos(FtSelectContext&, FtDSLEntry&);

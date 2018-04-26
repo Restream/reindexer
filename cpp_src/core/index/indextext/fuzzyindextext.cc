@@ -46,7 +46,11 @@ void FuzzyIndexText<T>::Commit() {
 
 	for (auto& doc : this->idx_map) {
 		auto res = this->getDocFields(doc.first, bufStrs);
+#ifdef REINDEX_FT_EXTRA_DEBUG
+		this->vdocs_.push_back({&doc.first, &doc.second, {}, {}});
+#else
 		this->vdocs_.push_back({&doc.second, {}, {}});
+#endif
 		for (auto& r : res) {
 			engine_.AddData(r.first, this->vdocs_.size() - 1, r.second);
 		}

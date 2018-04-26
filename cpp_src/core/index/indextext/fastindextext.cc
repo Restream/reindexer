@@ -19,7 +19,7 @@ const int kTypoProc = 85;
 // Relevancy step of typo match
 const int kTypoStepProc = 15;
 // Decrease procent of relevancy if pattern found by word stem
-const int kStemProcDecrease = 15;
+const int kStemProcDecrease = 5;
 
 using std::thread;
 using std::chrono::duration_cast;
@@ -94,7 +94,11 @@ void FastIndexText<T>::buildWordsMap(fast_hash_map<string, WordEntry> &words_um)
 	this->vdocs_.reserve(this->idx_map.size());
 	vdocsTexts.reserve(this->idx_map.size());
 	for (auto &doc : this->idx_map) {
+#ifdef REINDEX_FT_EXTRA_DEBUG
+		this->vdocs_.push_back({&doc.first, &doc.second, {}, {}});
+#else
 		this->vdocs_.push_back({&doc.second, {}, {}});
+#endif
 		vdocsTexts.push_back(getDocFields(doc.first, bufStrs));
 	}
 
@@ -179,7 +183,7 @@ void FastIndexText<T>::buildWordsMap(fast_hash_map<string, WordEntry> &words_um)
 		}
 		logPrintf(LogInfo, "Potential stop words: %s", str.c_str());
 	}
-}
+}  // namespace reindexer
 
 template <typename T>
 void FastIndexText<T>::prepareVariants(FtSelectContext &ctx, FtDSLEntry &term, std::vector<string> &langs) {
@@ -211,6 +215,9 @@ void FastIndexText<T>::prepareVariants(FtSelectContext &ctx, FtDSLEntry &term, s
 				if (tmpstr != stembuf) {
 					FtDslOpts opts = term.opts;
 					opts.pref = true;
+
+					if (&v != &variantsUtf16[0]) opts.suff = false;
+
 					ctx.variants.push_back({stembuf, opts, v.second - kStemProcDecrease});
 				}
 			}
@@ -223,6 +230,9 @@ void FastIndexText<T>::processVariants(FtSelectContext &ctx) {
 	TextSearchResults &res = ctx.rawResults.back();
 
 	for (auto &variant : ctx.variants) {
+		if (variant.opts.op == OpAnd) {
+			ctx.foundWords.clear();
+		}
 		auto &tmpstr = variant.pattern;
 		//  Lookup current variant in suffixes array
 		auto keyIt = suffixes_.lower_bound(tmpstr);
@@ -250,7 +260,7 @@ void FastIndexText<T>::processVariants(FtSelectContext &ctx) {
 
 			auto it = ctx.foundWords.find(wordId);
 			if (it == ctx.foundWords.end()) {
-				res.push_back({&words_[wordId].vids_, proc, suffixes_.word_len_at(wordId)});
+				res.push_back({&words_[wordId].vids_, keyIt->first, proc, suffixes_.word_len_at(wordId)});
 				res.idsCnt_ += words_[wordId].vids_.size();
 
 				ctx.foundWords.emplace(wordId, std::make_pair(ctx.rawResults.size() - 1, res.size() - 1));
@@ -287,7 +297,7 @@ void FastIndexText<T>::processTypos(FtSelectContext &ctx, FtDSLEntry &term) {
 			int proc = kTypoProc - tcount * kTypoStepProc / std::max((suffixes_.word_len_at(wordId) - tcount) / 3, 1);
 			auto it = ctx.foundWords.find(wordId);
 			if (it == ctx.foundWords.end()) {
-				res.push_back({&words_[wordId].vids_, proc, suffixes_.word_len_at(wordId)});
+				res.push_back({&words_[wordId].vids_, typoIt->first, proc, suffixes_.word_len_at(wordId)});
 				res.idsCnt_ += words_[wordId].vids_.size();
 				ctx.foundWords.emplace(wordId, std::make_pair(ctx.rawResults.size() - 1, res.size() - 1));
 
@@ -307,6 +317,31 @@ void FastIndexText<T>::processTypos(FtSelectContext &ctx, FtDSLEntry &term) {
 double bound(double k, double weight, double boost) { return (1.0 - weight) + k * boost * weight; }
 
 template <typename T>
+void FastIndexText<T>::debugMergeStep(const char *msg, int vid, float normBm25, float normDist, int finalRank, int prevRank) {
+#ifdef REINDEX_FT_EXTRA_DEBUG
+
+	if (GetConfig()->logLevel < LogTrace) return;
+
+	vector<unique_ptr<string>> bufStrs;
+	auto fieldStrVec = getDocFields(*this->vdocs_[vid].keyDoc, bufStrs);
+	string text = *fieldStrVec[0].first;
+	if (text.length() > 48) {
+		text = text.substr(0, 48) + "...";
+	}
+
+	logPrintf(LogTrace, "%s - '%s' (vid %d), bm25 %f, dist %f, rank %d (prev rank %d)", msg, text.c_str(), vid, normBm25, normDist,
+			  finalRank, prevRank);
+#else
+	(void)msg;
+	(void)vid;
+	(void)normBm25;
+	(void)normDist;
+	(void)finalRank;
+	(void)prevRank;
+#endif
+}
+
+template <typename T>
 void FastIndexText<T>::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, vector<MergeInfo> &merged,
 									  vector<MergedIdRel> &merged_rd, h_vector<int16_t> &idoffsets, bool need_area) {
 	int totalDocsCount = this->vdocs_.size();
@@ -322,11 +357,21 @@ void FastIndexText<T>::mergeItaration(TextSearchResults &rawRes, vector<bool> &e
 	for (auto &r : rawRes) {
 		auto idf = IDF(totalDocsCount, r.vids_->size());
 		auto termLenBoost = bound(rawRes.term.opts.boost, GetConfig()->termLenWeight, GetConfig()->termLenBoost);
+		if (GetConfig()->logLevel >= LogTrace) {
+			logPrintf(LogTrace, "Pattern %s, idf %f, termLenBoost %f", r.pattern, idf, termLenBoost);
+		}
 
 		for (auto &relid : *r.vids_) {
-			int field = relid.pos[0].field();
 			int vid = relid.id;
+
+			// Do not calc anithing if
+			if (op == OpAnd && !exists[vid]) {
+				continue;
+			}
+
 			assert(vid < int(exists.size()));
+
+			int field = relid.pos[0].field();
 			assert(field < int(this->vdocs_[vid].wordsCount.size()));
 			assert(field < int(rawRes.term.opts.fieldsBoost.size()));
 
@@ -336,16 +381,19 @@ void FastIndexText<T>::mergeItaration(TextSearchResults &rawRes, vector<bool> &e
 				continue;
 			};
 
+			// raw bm25
 			auto bm25 = idf * bm25score(relid.wordsInField(field), this->vdocs_[vid].mostFreqWordCount[field],
 										this->vdocs_[vid].wordsCount[field], avgWordsCount_[field]);
 
+			// normalized bm25
+			auto normBm25 = bound(bm25, GetConfig()->bm25Weight, GetConfig()->bm25Boost);
+
 			// final term rank calculation
-			double rank =
-				fboost * bound(bm25, GetConfig()->bm25Weight, GetConfig()->bm25Boost) * r.proc_ * rawRes.term.opts.boost * termLenBoost;
+			double termRank = fboost * r.proc_ * normBm25 * rawRes.term.opts.boost * termLenBoost;
 
 			if (!simple) {
 				auto moffset = idoffsets[vid];
-				if (exists[vid] && merged_rd[moffset].qpos != rawRes.term.opts.qpos) {
+				if (exists[vid]) {
 					assert(relid.pos.size());
 					assert(merged_rd[moffset].cur.pos.size());
 
@@ -355,32 +403,47 @@ void FastIndexText<T>::mergeItaration(TextSearchResults &rawRes, vector<bool> &e
 						exists[vid] = false;
 					} else {
 						// Calculate words distance
-						int distance = merged_rd[moffset].cur.distance(relid, INT_MAX);
-						int irank =
-							rank * bound(1.0 / double(std::max(distance, 1)), GetConfig()->distanceWeight, GetConfig()->distanceBoost);
-						if (distance <= rawRes.term.opts.distance && (!curExists[vid] || irank > merged_rd[moffset].rank)) {
+						int distance = 0;
+						float normDist = 1;
+
+						if (merged_rd[moffset].qpos != rawRes.term.opts.qpos) {
+							distance = merged_rd[moffset].cur.distance(relid, INT_MAX);
+
+							// Normaized distance
+							normDist = bound(1.0 / double(std::max(distance, 1)), GetConfig()->distanceWeight, GetConfig()->distanceBoost);
+						}
+						int finalRank = normDist * termRank;
+
+						if (distance <= rawRes.term.opts.distance && (!curExists[vid] || finalRank > merged_rd[moffset].rank)) {
 							// distance and rank is better, than prev. update rank
 							if (curExists[vid]) {
-								merged_rd[moffset].rank -= merged_rd[moffset].rank;
+								merged[moffset].proc -= merged_rd[moffset].rank;
+								debugMergeStep("merged better score ", vid, normBm25, normDist, finalRank, merged_rd[moffset].rank);
+							} else {
+								debugMergeStep("merged new ", vid, normBm25, normDist, finalRank, merged_rd[moffset].rank);
 							}
-							merged[moffset].proc += irank;
+							merged[moffset].proc += finalRank;
 							if (need_area) {
 								for (auto pos : relid.pos) {
-									merged[moffset].holder->AddWord(pos.pos(), r.wordLen_, pos.field());
+									if (!merged[moffset].holder->AddWord(pos.pos(), r.wordLen_, pos.field())) {
+										break;
+									}
 								}
 							}
-							merged_rd[moffset].rank = irank;
+							merged_rd[moffset].rank = finalRank;
 							merged_rd[moffset].next = std::move(relid);
 							curExists[vid] = true;
+						} else {
+							debugMergeStep("skiped ", vid, normBm25, normDist, finalRank, merged_rd[moffset].rank);
 						}
 					}
 				}
 			}
-			if (int(merged.size()) < GetConfig()->mergeLimit && op == OpOr && !exists[relid.id]) {
+			if (int(merged.size()) < GetConfig()->mergeLimit && op == OpOr && !exists[vid]) {
 				// match of 1-st term
 				MergeInfo info;
-				info.id = relid.id;
-				info.proc = rank;
+				info.id = vid;
+				info.proc = termRank;
 				if (need_area) {
 					info.holder.reset(new AreaHolder);
 					info.holder->ReserveField(this->fields_.size());
@@ -392,17 +455,18 @@ void FastIndexText<T>::mergeItaration(TextSearchResults &rawRes, vector<bool> &e
 				exists[vid] = true;
 				if (simple) continue;
 				// prepare for intersect with next terms
-				merged_rd.push_back({IdRelType(std::move(relid)), IdRelType(), int(rank), rawRes.term.opts.qpos});
+				merged_rd.push_back({IdRelType(std::move(relid)), IdRelType(), int(termRank), rawRes.term.opts.qpos});
 				curExists[vid] = true;
 				idoffsets[vid] = merged.size() - 1;
 			}
 		}
 	}
 	if (op == OpAnd) {
-		for (size_t id = 0; id < this->vdocs_.size(); id++) {
-			if (exists[id] && !curExists[id]) {
-				merged[idoffsets[id]].proc = 0;
-				exists[id] = false;
+		for (auto &info : merged) {
+			auto vid = info.id;
+			if (exists[vid] && !curExists[vid]) {
+				info.proc = 0;
+				exists[vid] = false;
 			}
 		}
 	}

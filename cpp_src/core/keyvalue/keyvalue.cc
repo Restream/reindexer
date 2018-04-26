@@ -30,15 +30,10 @@ KeyValue &KeyValue::operator=(const KeyValue &other) {
 }
 
 bool KeyValue::operator==(const KeyValue &other) const {
-	if ((type != KeyValueComposite) && (type != KeyValueString)) {
-		return KeyRef::operator==(other);
-	}
 	if (type == KeyValueComposite) {
-		if (h_composite_values != other.h_composite_values) return false;
-	} else if (type == KeyValueString) {
-		if (h_value_string != other.h_value_string) return false;
+		return (h_composite_values == other.h_composite_values);
 	}
-	return true;
+	return KeyRef::operator==(other);
 }
 
 bool KeyValue::operator!=(const KeyValue &other) const { return !operator==(other); }

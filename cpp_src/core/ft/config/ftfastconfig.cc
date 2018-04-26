@@ -23,7 +23,7 @@ void FtFastConfig::parse(char *json) {
 		if (elem->value.getTag() == JSON_NULL) continue;
 
 		parseJsonField("bm25_boost", bm25Boost, elem, 0, 10);
-		parseJsonField("bm25_weight", bm25Boost, elem, 0, 1);
+		parseJsonField("bm25_weight", bm25Weight, elem, 0, 1);
 		parseJsonField("distance_boost", distanceBoost, elem, 0, 10);
 		parseJsonField("distance_weight", distanceWeight, elem, 0, 1);
 		parseJsonField("term_len_boost", termLenBoost, elem, 0, 10);

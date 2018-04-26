@@ -42,7 +42,7 @@ func (db *Reindexer) createIndex(namespace string, st reflect.Type, subArray boo
 			t = t.Elem()
 		}
 		// Get and parse tags
-		tagsSlice := strings.Split(st.Field(i).Tag.Get("reindex"), ",")
+		tagsSlice := strings.SplitN(st.Field(i).Tag.Get("reindex"), ",", 3)
 		jsonPath := strings.Split(st.Field(i).Tag.Get("json"), ",")[0]
 
 		if len(jsonPath) == 0 && !st.Field(i).Anonymous {
@@ -62,10 +62,6 @@ func (db *Reindexer) createIndex(namespace string, st reflect.Type, subArray boo
 			idxOpts = tagsSlice[2]
 		}
 
-		if idxOpts == "pk" && strings.TrimSpace(idxName) == "" {
-			return fmt.Errorf("No index name is specified for primary key in field %s", st.Field(i).Name)
-		}
-
 		reindexPath := reindexBasePath + idxName
 
 		var opts bindings.IndexOptions
@@ -74,10 +70,14 @@ func (db *Reindexer) createIndex(namespace string, st reflect.Type, subArray boo
 		opts.Dense(strings.Index(idxOpts, "dense") >= 0)
 		opts.Appendable(strings.Index(idxOpts, "appendable") >= 0)
 
+		if opts.IsPK() && strings.TrimSpace(idxName) == "" {
+			return fmt.Errorf("No index name is specified for primary key in field %s", st.Field(i).Name)
+		}
+
 		if strings.Index(idxOpts, "composite") >= 0 {
 			if t.Kind() != reflect.Struct || t.NumField() != 0 {
 				return fmt.Errorf("'composite' tag allowed only on empty on structs: Invalid tags %v on field %s", tagsSlice, st.Field(i).Name)
-			} else if err := db.binding.AddIndex(namespace, reindexPath, "", idxType, "composite", 0, CollateNone, ""); err != nil {
+			} else if err := db.binding.AddIndex(namespace, reindexPath, "", idxType, "composite", opts, CollateNone, ""); err != nil {
 				return err
 			}
 		} else if t.Kind() == reflect.Struct {

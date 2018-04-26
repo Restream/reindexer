@@ -47,12 +47,12 @@ public:
 	void AddTreeGramm(int pos, int filed);
 	void Commit();
 	int GetSize() { return total_size_; }
-	void AddWord(int start_pos, int size, int filed);
+	bool AddWord(int start_pos, int size, int filed);
 	AreaVec GetSnippet(int field, int front, int back, int total_size);
 	AreaVec *GetAreas(int field);
 
 private:
-	void insertArea(const Area &area, int filed);
+	bool insertArea(const Area &area, int filed);
 	int buffer_size_;
 	int total_size_;
 	int space_size_;
