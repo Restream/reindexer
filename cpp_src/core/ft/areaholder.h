@@ -42,6 +42,7 @@ public:
 	AreaHolder(int buffer_size, int total_size, int space_size)
 		: buffer_size_(buffer_size), total_size_(total_size), space_size_(space_size), commited_(false) {}
 	AreaHolder() : commited_(false) {}
+	~AreaHolder();
 	void Reserve(int size);
 	void ReserveField(int size);
 	void AddTreeGramm(int pos, int filed);

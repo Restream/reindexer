@@ -6,6 +6,8 @@ using std::vector;
 // Maximum highlighted areas in eash result
 const int kMaxAreasInResult = 5;
 
+AreaHolder::~AreaHolder() {}
+
 void AreaHolder::Reserve(int size) { areas.reserve(size); }
 
 void AreaHolder::AddTreeGramm(int pos, int filed) {
