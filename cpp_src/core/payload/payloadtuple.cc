@@ -1,9 +1,9 @@
 #include "payloadtuple.h"
+#include <cstdlib>
 #include "core/cjson/ctag.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/payload/payloadiface.h"
 #include "tools/serializer.h"
-
 namespace reindexer {
 key_string BuildPayloadTuple(ConstPayload &pl, const TagsMatcher &tagsMatcher) {
 	WrSerializer wrser;

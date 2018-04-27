@@ -1,4 +1,5 @@
 #include "jsonencoder.h"
+#include <cstdlib>
 #include "core/payload/payloadtuple.h"
 #include "tagsmatcher.h"
 #include "tools/serializer.h"
