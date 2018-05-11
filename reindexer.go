@@ -143,7 +143,7 @@ func NewReindex(dsn string) *Reindexer {
 	binding := bindings.GetBinding(u.Scheme)
 
 	if binding == nil {
-		panic(fmt.Errorf("Reindex binding '%s' is not avalable, can't create DB, %d ", u.Scheme))
+		panic(fmt.Errorf("Reindex binding '%s' is not available, can't create DB, %d ", u.Scheme))
 	}
 
 	if err = binding.Init(u); err != nil {
