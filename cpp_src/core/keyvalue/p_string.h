@@ -36,11 +36,11 @@ struct p_string {
 	constexpr static uint64_t tagShift = 59ULL;
 	constexpr static uint64_t tagMask = 0x7ULL << tagShift;
 
-	explicit p_string(const l_string_hdr *lstr) : v(reinterpret_cast<uint64_t>(lstr) | (tagLstr << tagShift)) {}
-	explicit p_string(const v_string_hdr *vstr) : v(reinterpret_cast<uint64_t>(vstr) | (tagVstr << tagShift)) {}
-	explicit p_string(const char *cstr) : v(reinterpret_cast<uint64_t>(cstr) | (tagCstr << tagShift)) {}
-	explicit p_string(const string *str) : v(reinterpret_cast<uint64_t>(str) | (tagCxxstr << tagShift)) {}
-	explicit p_string(const Slice *ptr) : v(reinterpret_cast<uint64_t>(ptr) | (tagSlice << tagShift)) {}
+	explicit p_string(const l_string_hdr *lstr) : v((uintptr_t(lstr) & ~tagMask) | (tagLstr << tagShift)) {}
+	explicit p_string(const v_string_hdr *vstr) : v((uintptr_t(vstr) & ~tagMask) | (tagVstr << tagShift)) {}
+	explicit p_string(const char *cstr) : v((uintptr_t(cstr) & ~tagMask) | (tagCstr << tagShift)) {}
+	explicit p_string(const string *str) : v((uintptr_t(str) & ~tagMask) | (tagCxxstr << tagShift)) {}
+	explicit p_string(const Slice *ptr) : v((uintptr_t(ptr) & ~tagMask) | (tagSlice << tagShift)) {}
 	p_string() : v(0) {}
 
 	operator Slice() const { return Slice(data(), length()); }

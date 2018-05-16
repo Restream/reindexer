@@ -21,6 +21,7 @@ using std::unique_ptr;
 class WordEntry {
 public:
 	IdRelSet vids_;
+	bool virtualWord = false;
 };
 
 class PackedWordEntry {

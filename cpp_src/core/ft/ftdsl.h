@@ -20,6 +20,7 @@ struct FtDslOpts {
 	bool pref = false;
 	bool typos = false;
 	bool exact = false;
+	bool number = false;
 	OpType op = OpOr;
 	float boost = 1.0;
 	float termLenBoost = 1.0;

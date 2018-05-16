@@ -8,10 +8,16 @@
 #include "estl/h_vector.h"
 #include "net/stat.h"
 #include "tools/slice.h"
+#include "tools/ssize_t.h"
 
 namespace reindexer {
 namespace net {
 namespace http {
+
+// Thank's to windows.h include
+#ifdef DELETE
+#undef DELETE
+#endif
 
 using std::string;
 

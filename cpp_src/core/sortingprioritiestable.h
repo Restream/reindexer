@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <map>
 #include <memory>
 #include <string>
 #include "type_consts.h"
@@ -22,16 +23,22 @@ public:
 
 	/// Returns priority of a character.
 	/// @param ch - character.
-	/// @return int priority value
+	/// @returns int priority value
 	int GetPriority(wchar_t ch) const;
 
 	/// @returns string of sort order characters
 	const std::string& GetSortOrderCharacters() const;
 
 private:
+	/// Checks whether ch is in existing ranges ir not.
+	/// @param ch - character to check.
+	/// @returns true, if character is in one of existing ranges already.
+	bool checkForRangeIntersection(wchar_t ch);
+
 	static const uint32_t tableSize = 0x10000;
 	using SortOrderTable = std::array<uint16_t, tableSize>;
 	using SortOrderTablePtr = std::shared_ptr<SortOrderTable>;
 	SortOrderTablePtr sortOrder_;
 	std::string sortOrderCharacters_;
+	std::map<uint16_t, uint16_t> ranges_;
 };

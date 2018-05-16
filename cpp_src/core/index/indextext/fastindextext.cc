@@ -2,6 +2,7 @@
 #include <chrono>
 #include <thread>
 #include "core/ft/bm25.h"
+#include "core/ft/numtotext.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -19,7 +20,9 @@ const int kTypoProc = 85;
 // Relevancy step of typo match
 const int kTypoStepProc = 15;
 // Decrease procent of relevancy if pattern found by word stem
-const int kStemProcDecrease = 5;
+const int kStemProcDecrease = 15;
+
+const int kDigitUtfSizeof = 1;
 
 using std::thread;
 using std::chrono::duration_cast;
@@ -77,13 +80,13 @@ h_vector<pair<const string *, int>, 8> FastIndexText<unordered_payload_map<Index
 
 template <typename T>
 void FastIndexText<T>::buildWordsMap(fast_hash_map<string, WordEntry> &words_um) {
+	int maxIndexWorkers = !this->opts_.IsDense() ? std::thread::hardware_concurrency() : 0;
+	if (!maxIndexWorkers) maxIndexWorkers = 1;
+
 	struct context {
 		fast_hash_map<string, WordEntry> words_um;
 		std::thread thread;
 	};
-
-	int maxIndexWorkers = !this->opts_.IsDense() ? std::thread::hardware_concurrency() : 0;
-	if (!maxIndexWorkers) maxIndexWorkers = 1;
 	unique_ptr<context[]> ctxs(new context[maxIndexWorkers]);
 
 	// buffer strings, for printing non text fields
@@ -103,46 +106,52 @@ void FastIndexText<T>::buildWordsMap(fast_hash_map<string, WordEntry> &words_um)
 	}
 
 	int fieldscount = std::max(1, int(this->fields_.size()));
-	auto &vdocs = this->vdocs_;
 	auto *cfg = GetConfig();
 	// build words map parallel in maxIndexWorkers threads
-	for (int i = 0; i < maxIndexWorkers; i++)
-		ctxs[i].thread = thread(
-			[&ctxs, &vdocsTexts, maxIndexWorkers, &vdocs, fieldscount, &cfg](int i) {
+	for (int t = 0; t < maxIndexWorkers; t++)
+		ctxs[t].thread = thread(
+			[this, &ctxs, &vdocsTexts, maxIndexWorkers, fieldscount, &cfg](int i) {
 				auto ctx = &ctxs[i];
 				string word, str;
 				vector<pair<const char *, int>> wrds;
+				std::vector<string> virtualWords;
 				for (VDocIdType j = i; j < VDocIdType(vdocsTexts.size()); j += maxIndexWorkers) {
-					vdocs[j].wordsCount.insert(vdocs[j].wordsCount.begin(), fieldscount, 0.0);
-					vdocs[j].mostFreqWordCount.insert(vdocs[j].mostFreqWordCount.begin(), fieldscount, 0.0);
+					this->vdocs_[j].wordsCount.insert(this->vdocs_[j].wordsCount.begin(), fieldscount, 0.0);
+					this->vdocs_[j].mostFreqWordCount.insert(this->vdocs_[j].mostFreqWordCount.begin(), fieldscount, 0.0);
 
 					for (size_t field = 0; field < vdocsTexts[j].size(); ++field) {
 						splitWithPos(*vdocsTexts[j][field].first, str, wrds);
 						int rfield = vdocsTexts[j][field].second;
 						assert(rfield < fieldscount);
 
-						vdocs[j].wordsCount[rfield] = wrds.size();
+						this->vdocs_[j].wordsCount[rfield] = wrds.size();
 
 						for (auto w : wrds) {
 							word.assign(w.first);
 							if (!word.length() || cfg->stopWords.find(word) != cfg->stopWords.end()) continue;
+
+							size_t insertPos = w.second;
 							auto idxIt = ctx->words_um.find(word);
 							if (idxIt == ctx->words_um.end()) {
 								idxIt = ctx->words_um.emplace(word, WordEntry()).first;
 								// idxIt->second.vids_.reserve(16);
 							}
 
-							int mfcnt = idxIt->second.vids_.Add(j, w.second, rfield);
-							if (mfcnt > vdocs[j].mostFreqWordCount[rfield]) {
-								vdocs[j].mostFreqWordCount[rfield] = mfcnt;
+							int mfcnt = idxIt->second.vids_.Add(j, insertPos, rfield);
+							if (mfcnt > this->vdocs_[j].mostFreqWordCount[rfield]) {
+								this->vdocs_[j].mostFreqWordCount[rfield] = mfcnt;
+							}
+
+							if (cfg->enableNumbersSearch && is_number(word)) {
+								buildVirtualWord(word, ctx->words_um, j, field, insertPos, virtualWords);
 							}
 						}
 					}
 				}
 			},
-			i);
+			t);
 
-	// If was 1 build thread. Just return it's build resultes
+	// If there was only 1 build thread. Just return it's build results
 	if (maxIndexWorkers == 1) {
 		ctxs[0].thread.join();
 		words_um.swap(ctxs[0].words_um);
@@ -186,17 +195,37 @@ void FastIndexText<T>::buildWordsMap(fast_hash_map<string, WordEntry> &words_um)
 }  // namespace reindexer
 
 template <typename T>
+void FastIndexText<T>::buildVirtualWord(const string &word, fast_hash_map<string, WordEntry> &words_um, VDocIdType docType, int rfield,
+										size_t insertPos, std::vector<string> &output) {
+	auto &vdoc(this->vdocs_[docType]);
+	NumToText::convert(word, output);
+	for (const string &numberWord : output) {
+		WordEntry wentry;
+		wentry.virtualWord = true;
+		auto idxIt = words_um.emplace(numberWord, std::move(wentry)).first;
+		int mfcnt = idxIt->second.vids_.Add(docType, insertPos, rfield);
+		if (mfcnt > vdoc.mostFreqWordCount[rfield]) {
+			vdoc.mostFreqWordCount[rfield] = mfcnt;
+		}
+		++vdoc.wordsCount[rfield];
+		insertPos += kDigitUtfSizeof;
+	}
+}
+
+template <typename T>
 void FastIndexText<T>::prepareVariants(FtSelectContext &ctx, FtDSLEntry &term, std::vector<string> &langs) {
 	ctx.variants.clear();
 
 	vector<pair<std::wstring, search_engine::ProcType>> variantsUtf16{{term.pattern, kFullMatchProc}};
 
-	// Make translit and kblayout variants
-	if (GetConfig()->enableTranslit && this->searchers_.size() > 0 && !term.opts.exact) {
-		this->searchers_[0]->Build(term.pattern.data(), term.pattern.length(), variantsUtf16);
-	}
-	if (GetConfig()->enableKbLayout && this->searchers_.size() > 1 && !term.opts.exact) {
-		this->searchers_[1]->Build(term.pattern.data(), term.pattern.length(), variantsUtf16);
+	if (!GetConfig()->enableNumbersSearch || !term.opts.number) {
+		// Make translit and kblayout variants
+		if (GetConfig()->enableTranslit && this->searchers_.size() > 0 && !term.opts.exact) {
+			this->searchers_[0]->Build(term.pattern.data(), term.pattern.length(), variantsUtf16);
+		}
+		if (GetConfig()->enableKbLayout && this->searchers_.size() > 1 && !term.opts.exact) {
+			this->searchers_[1]->Build(term.pattern.data(), term.pattern.length(), variantsUtf16);
+		}
 	}
 
 	// Apply stemmers
@@ -225,6 +254,11 @@ void FastIndexText<T>::prepareVariants(FtSelectContext &ctx, FtDSLEntry &term, s
 	}
 }
 
+void printLine(int line) {
+	printf("line: %d\n", line);
+	fflush(stdout);
+}
+
 template <typename T>
 void FastIndexText<T>::processVariants(FtSelectContext &ctx) {
 	TextSearchResults &res = ctx.rawResults.back();
@@ -247,26 +281,28 @@ void FastIndexText<T>::processVariants(FtSelectContext &ctx) {
 
 			auto wordId = keyIt->second;
 			assert(wordId < WordIdType(words_.size()));
+			const string::value_type *word = suffixes_.word_at(wordId);
 
-			ptrdiff_t suffixLen = keyIt->first - suffixes_.word_at(wordId);
+			int16_t wordLength = suffixes_.word_len_at(wordId);
+
+			ptrdiff_t suffixLen = keyIt->first - word;
 			int matchLen = tmpstr.length();
 
 			if (!withSuffixes && suffixLen) continue;
-			if (!withPrefixes && suffixes_.word_len_at(wordId) != matchLen) break;
+			if (!withPrefixes && wordLength != matchLen) break;
 
-			int matchDif = std::abs(long(suffixes_.word_len_at(wordId) - matchLen + suffixLen));
+			int matchDif = std::abs(long(wordLength - matchLen + suffixLen));
 			int proc = std::max(variant.proc - matchDif * kPrefixStepProc / std::max(matchLen / 3, 1),
 								suffixLen ? kSuffixMinProc : kPrefixMinProc);
 
 			auto it = ctx.foundWords.find(wordId);
 			if (it == ctx.foundWords.end()) {
-				res.push_back({&words_[wordId].vids_, keyIt->first, proc, suffixes_.word_len_at(wordId)});
+				res.push_back({&words_[wordId].vids_, keyIt->first, proc, suffixes_.virtual_word_len(wordId)});
 				res.idsCnt_ += words_[wordId].vids_.size();
-
 				ctx.foundWords.emplace(wordId, std::make_pair(ctx.rawResults.size() - 1, res.size() - 1));
 				if (GetConfig()->logLevel >= LogTrace)
-					logPrintf(LogTrace, " matched %s '%s' of word '%s', %d vids, %d%%", suffixLen ? "suffix" : "prefix", keyIt->first,
-							  suffixes_.word_at(wordId), int(words_[wordId].vids_.size()), proc);
+					logPrintf(LogTrace, " matched %s '%s' of word '%s', %d vids, %d%%", suffixLen ? "suffix" : "prefix", keyIt->first, word,
+							  int(words_[wordId].vids_.size()), proc);
 				matched++;
 				vids += words_[wordId].vids_.size();
 			} else {
@@ -294,10 +330,12 @@ void FastIndexText<T>::processTypos(FtSelectContext &ctx, FtDSLEntry &term) {
 		for (auto typoIt = typoRng.first; typoIt != typoRng.second; typoIt++) {
 			auto wordId = typoIt->second;
 			assert(wordId < WordIdType(words_.size()));
-			int proc = kTypoProc - tcount * kTypoStepProc / std::max((suffixes_.word_len_at(wordId) - tcount) / 3, 1);
+			// bool virtualWord = suffixes_.is_word_virtual(wordId);
+			uint8_t wordLength = suffixes_.word_len_at(wordId);
+			int proc = kTypoProc - tcount * kTypoStepProc / std::max((wordLength - tcount) / 3, 1);
 			auto it = ctx.foundWords.find(wordId);
 			if (it == ctx.foundWords.end()) {
-				res.push_back({&words_[wordId].vids_, typoIt->first, proc, suffixes_.word_len_at(wordId)});
+				res.push_back({&words_[wordId].vids_, typoIt->first, proc, suffixes_.virtual_word_len(wordId)});
 				res.idsCnt_ += words_[wordId].vids_.size();
 				ctx.foundWords.emplace(wordId, std::make_pair(ctx.rawResults.size() - 1, res.size() - 1));
 
@@ -451,7 +489,7 @@ void FastIndexText<T>::mergeItaration(TextSearchResults &rawRes, vector<bool> &e
 						info.holder->AddWord(pos.pos(), r.wordLen_, pos.field());
 					}
 				}
-				merged.push_back(move(info));
+				merged.push_back(std::move(info));
 				exists[vid] = true;
 				if (simple) continue;
 				// prepare for intersect with next terms
@@ -542,7 +580,7 @@ IdSet::Ptr FastIndexText<T>::mergeResults(vector<TextSearchResults> &rawResults,
 			str += " ";
 			i = j;
 		}
-		logPrintf(LogInfo, "Relevancy(%d): %s", ctx->GetSize(), str.c_str());
+		logPrintf(LogInfo, "Relevancy(%d): %s", int(ctx->GetSize()), str.c_str());
 	}
 	assert(mergedIds->size() == ctx->GetSize());
 	return mergedIds;
@@ -560,7 +598,7 @@ void FastIndexText<T>::Commit() {
 	typos_.clear();
 	auto tm0 = high_resolution_clock::now();
 
-	// Step 1: parse all documents and build hash map of all uniq words
+	// Step 1: parse all documents and build hash map of all unique words
 	fast_hash_map<string, WordEntry> words_um;
 	buildWordsMap(words_um);
 
@@ -576,7 +614,12 @@ void FastIndexText<T>::Commit() {
 	// Step 3: Build words array
 	suffixes_.reserve(words_um.size() * 20, words_um.size());
 	for (auto keyIt = words_um.begin(); keyIt != words_um.end(); keyIt++) {
-		suffixes_.insert(keyIt->first, words_.size());
+		WordIdType idx = words_.size();
+		if (GetConfig()->enableNumbersSearch && keyIt->second.virtualWord) {
+			suffixes_.insert(keyIt->first, idx, kDigitUtfSizeof);
+		} else {
+			suffixes_.insert(keyIt->first, idx);
+		}
 		keyIt->second.vids_.Commit();
 		words_.emplace_back(PackedWordEntry());
 	}
@@ -609,6 +652,7 @@ void FastIndexText<T>::Commit() {
 
 	// Step 6: Build typos hash map
 	buildTyposMap();
+
 	auto tm5 = high_resolution_clock::now();
 
 	idrelsetCommitThread.join();
@@ -622,8 +666,9 @@ void FastIndexText<T>::Commit() {
 	logPrintf(LogInfo,
 			  "FastIndexText::Commit elapsed %d ms total [ build words %d ms, build typos %d ms | build suffixarry %d ms | sort "
 			  "idrelsets %d ms]",
-			  duration_cast<milliseconds>(tm6 - tm0), duration_cast<milliseconds>(tm2 - tm0), duration_cast<milliseconds>(tm5 - tm3),
-			  duration_cast<milliseconds>(tm3 - tm2), duration_cast<milliseconds>(tm4 - tm2));
+			  int(duration_cast<milliseconds>(tm6 - tm0).count()), int(duration_cast<milliseconds>(tm2 - tm0).count()),
+			  int(duration_cast<milliseconds>(tm5 - tm3).count()), int(duration_cast<milliseconds>(tm3 - tm2).count()),
+			  int(duration_cast<milliseconds>(tm4 - tm2).count()));
 }
 
 template <typename T>

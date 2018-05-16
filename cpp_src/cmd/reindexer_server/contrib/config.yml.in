@@ -5,16 +5,16 @@ storage:
 
 # Network configuration
 net:
-  httpaddr: 0:9088
-  rpcaddr: 0:6534
-  webroot: ${CMAKE_INSTALL_PREFIX}/share/reindexer/web
+  httpaddr: 0.0.0.0:9088
+  rpcaddr: 0.0.0.0:6534
+  webroot: ${REINDEXER_INSTALL_PREFIX}/share/reindexer/web
   security: false
 
 # Logger configuration
 logger:
   serverlog: /var/log/reindexer/reindexer_server.log
   corelog: /var/log/reindexer/reindexer_server.log
-  httplog: ""
+  httplog: /var/log/reindexer/reindexer_server.log
   rpclog: ""
   loglevel: info
 

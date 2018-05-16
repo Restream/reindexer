@@ -27,11 +27,15 @@ brew install reindexer
 
 Repositories with packages is comming soon. Now it is possible to install reindexer from sources
 
+## Windows
+
+Download and install [64 bit](http://www.reindexer.org/dist/reindexer_server-win64.exe) or [32 bit](http://www.reindexer.org/dist/reindexer_server-win32.exe) 
+
 ## Installing from sources
 
 ### Dependencies
 
-Reindexer's core is written in C++11 and uses LevelDB as the storage backend, so the Cmake, C++11 toolchain and LevelDB must be installed before installing Reindexer.  To build Reindexer, g++ 4.8+ or clang 3.3+ is required.  
+Reindexer's core is written in C++11 and uses LevelDB as the storage backend, so the Cmake, C++11 toolchain and LevelDB must be installed before installing Reindexer.  To build Reindexer, g++ 4.8+, clang 3.3+ or MSVC 2015+ is required.  
 Dependencies can be installed automatically by this script:
 
 ```bash

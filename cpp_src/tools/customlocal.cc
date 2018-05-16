@@ -105,17 +105,19 @@ public:
 		}
 	}
 	wchar_t ToLower(wchar_t ch) {
-		if (ch < UINT16_MAX && ch > 0) {
-			ch = custom_local_[ch].lower;
+		uint32_t ofs = ch;
+		if (ofs < UINT16_MAX) {
+			ch = custom_local_[ofs].lower;
 		}
 		return ch;
 	}
 
 	bool IsAlpha(wchar_t ch) {
-		if (ch >= UINT16_MAX || ch < 0) {
+		uint32_t ofs = ch;
+		if (ofs >= custom_local_.size()) {
 			return false;
 		}
-		return custom_local_[ch].is_alfa;
+		return custom_local_[ofs].is_alfa;
 	}
 
 private:
@@ -149,4 +151,5 @@ void ToLower(wstring& data) { CustomLocal::Init().ToLower(data); }
 wchar_t ToLower(wchar_t ch) { return CustomLocal::Init().ToLower(ch); }
 
 bool IsAlpha(wchar_t ch) { return CustomLocal::Init().IsAlpha(ch); }
+bool IsDigit(wchar_t ch) { return ch >= '0' && ch <= '9'; }
 }  // namespace reindexer

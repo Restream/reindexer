@@ -15,6 +15,8 @@ import (
 	"github.com/restream/reindexer/bindings"
 	"github.com/restream/reindexer/cjson"
 	"github.com/restream/reindexer/dsl"
+
+	_ "github.com/restream/reindexer/bindings/cproto"
 )
 
 // Condition types
@@ -143,7 +145,7 @@ func NewReindex(dsn string) *Reindexer {
 	binding := bindings.GetBinding(u.Scheme)
 
 	if binding == nil {
-		panic(fmt.Errorf("Reindex binding '%s' is not available, can't create DB, %d ", u.Scheme))
+		panic(fmt.Errorf("Reindex binding '%s' is not available, can't create DB", u.Scheme))
 	}
 
 	if err = binding.Init(u); err != nil {

@@ -45,7 +45,7 @@ size_t Prefilter::GetSimDistance(const std::bitset<32> first, const std::bitset<
 std::vector<int> Prefilter::findMin(const std::wstring& data) {
 	std::vector<int> sig(seeds_.size());
 	for (size_t g = 0; g < seeds_.size(); ++g) {
-		size_t min_hash = UINT64_MAX;
+		uint64_t min_hash = UINT64_MAX;
 
 		for (size_t i = 0; i < data.size() - 1; ++i) {
 			uint32_t hash[2];

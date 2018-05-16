@@ -15,7 +15,6 @@ using btree::btree_map;
 using std::min;
 using std::stoi;
 using std::to_string;
-using std::tolower;
 using std::unordered_map;
 
 struct comparator_sptr {

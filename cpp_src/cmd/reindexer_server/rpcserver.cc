@@ -1,6 +1,5 @@
 #include "rpcserver.h"
 #include <sys/stat.h>
-#include <unistd.h>
 #include <sstream>
 #include "net/cproto/connection.h"
 #include "net/cproto/cproto.h"

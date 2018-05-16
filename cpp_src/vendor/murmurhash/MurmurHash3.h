@@ -3,8 +3,6 @@
 // domain. The author hereby disclaims copyright to this source code.
 
 #pragma once
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wold-style-cast"
 //-----------------------------------------------------------------------------
 // Platform-specific functions and macros
 
@@ -33,4 +31,3 @@ void MurmurHash3_x86_128(const void* key, int len, uint32_t seed, void* out);
 void MurmurHash3_x64_128(const void* key, int len, uint32_t seed, void* out);
 
 //-----------------------------------------------------------------------------
-#pragma GCC diagnostic pop

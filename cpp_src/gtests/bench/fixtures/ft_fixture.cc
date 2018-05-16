@@ -38,7 +38,7 @@ reindexer::Error FullText::Initialize() {
 	ifstream file;
 	file.open(DATA_PATH);
 
-	if (!file) return Error(errNotValid, strerror(errno));
+	if (!file) return Error(errNotValid, "%s",strerror(errno));
 	words_.reserve(140000);
 	std::copy(istream_iterator<string>(file), istream_iterator<string>(), back_inserter(words_));
 

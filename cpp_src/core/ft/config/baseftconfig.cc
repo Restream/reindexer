@@ -14,6 +14,7 @@ BaseFTConfig::BaseFTConfig() {
 
 void BaseFTConfig::parseBase(const JsonNode *elem) {
 	parseJsonField("enable_translit", enableTranslit, elem);
+	parseJsonField("enable_numbers_search", enableNumbersSearch, elem);
 	parseJsonField("enable_kb_layout", enableKbLayout, elem);
 	parseJsonField("merge_limit", mergeLimit, elem, 0, 65535);
 	parseJsonField("log_level", logLevel, elem, 0, 5);

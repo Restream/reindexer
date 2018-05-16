@@ -32,7 +32,7 @@ error_msg() {
 
 # declare dependencies arrays for systems
 osx_deps="gperftools leveldb snappy cmake git"
-centos7_debs="gcc-c++ make snappy-devel findutils curl tar cmake unzip rpm-build rpmdevtools git"
+centos7_debs="gcc-c++ cmake make snappy-devel findutils curl tar unzip rpm-build rpmdevtools git"
 centos6_debs="centos-release-scl devtoolset-4-gcc devtoolset-4-gcc-c++ make snappy-devel findutils curl tar cmake unzip rpm-build git"
 debian_debs="build-essential g++ libsnappy-dev libleveldb-dev make curl cmake unzip git"
 alpine_apks="g++ snappy-dev libexecinfo-dev make curl cmake unzip git"
@@ -87,7 +87,7 @@ install_osx() {
 install_centos7() {
     for pkg in ${centos7_debs}
     do
-        if rpm -qa | grep -qw ${pkg}; then
+        if rpm -qa | grep -qw ${pkg} ; then
             info_msg "Package '$pkg' already installed. Skip ....."
         else
             info_msg "Installing '$pkg' package ....."

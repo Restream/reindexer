@@ -6,6 +6,8 @@
 #include "estl/h_vector.h"
 #include "net/ev/ev.h"
 #include "net/iconnection.h"
+#include "net/socket.h"
+#include "tools/ssize_t.h"
 
 namespace reindexer {
 namespace net {
@@ -14,8 +16,8 @@ namespace cproto {
 using reindexer::cbuf;
 using reindexer::h_vector;
 
-const ssize_t kRPCReadbufSize = 0x8000;
-const ssize_t kRPCWriteBufSize = 0x8000;
+const ssize_t kRPCReadbufSize = 0x20000;
+const ssize_t kRPCWriteBufSize = 0x20000;
 
 class Connection : public IConnection, public Writer {
 public:
@@ -27,7 +29,7 @@ public:
 		return [&dispatcher](ev::dynamic_loop &loop, int fd) { return new Connection(fd, loop, dispatcher); };
 	};
 
-	bool IsFinished() override final { return fd_ < 0; }
+	bool IsFinished() override final { return !sock_.valid(); }
 	bool Restart(int fd) override final;
 	void Reatach(ev::dynamic_loop &loop) override final;
 
@@ -51,7 +53,7 @@ protected:
 
 	ev::io io_;
 	ev::timer timeout_;
-	int fd_;
+	socket sock_;
 	int curEvents_ = 0;
 	bool closeConn_ = false;
 	bool respSent_ = false;

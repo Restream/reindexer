@@ -1,7 +1,12 @@
 #pragma once
 
+#ifndef _MSC_VER
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wold-style-cast"
+#else
+#pragma warning( push )
+#pragma warning( disable : 4267 4146)
+#endif
 
 #include <stdint.h>
 #include <string.h>
@@ -257,4 +262,8 @@ static unsigned scan_varint(unsigned len, const uint8_t *data) {
 	return i + 1;
 }
 
+#ifndef _MSC_VER
 #pragma GCC diagnostic pop
+#else
+#pragma warning( push )
+#endif

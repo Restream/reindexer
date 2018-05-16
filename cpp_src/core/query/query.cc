@@ -59,7 +59,7 @@ void Query::parseJson(const string &dsl) {
 
 	auto error = jsonParse(src, &endptr, &root, allocator);
 	if (error != JSON_OK) {
-		throw Error(errParseJson, "Could not parse JSON-query: %s at %zd", jsonStrError(error), endptr - src);
+		throw Error(errParseJson, "Could not parse JSON-query: %s at %d", jsonStrError(error), int(endptr - src));
 	}
 	dsl::parse(root, *this);
 }
@@ -530,8 +530,9 @@ const char *Query::JoinTypeName(JoinType type) {
 	}
 }
 
+extern const char *condNames[];
+
 string Query::dumpJoined() const {
-	extern const char *condNames[];
 	string ret;
 	for (auto &je : joinQueries_) {
 		ret += string(" ") + JoinTypeName(je.joinType);

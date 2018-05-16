@@ -1,6 +1,7 @@
 #pragma once
 
 #include <limits.h>
+#include <algorithm>
 #include "estl/h_vector.h"
 #include "estl/packed_vector.h"
 namespace reindexer {

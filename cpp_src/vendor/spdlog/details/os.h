@@ -156,7 +156,7 @@ inline void prevent_child_fd(FILE *f)
 
 #ifdef _WIN32
 #if !defined(__cplusplus_winrt)
-    auto file_handle = (HANDLE)_get_osfhandle(_fileno(f));
+    auto file_handle = HANDLE(_get_osfhandle(_fileno(f)));
     if (!::SetHandleInformation(file_handle, HANDLE_FLAG_INHERIT, 0))
         throw spdlog_ex("SetHandleInformation failed", errno);
 #endif

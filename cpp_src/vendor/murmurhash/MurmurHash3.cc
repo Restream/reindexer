@@ -6,8 +6,7 @@
 // algorithms are optimized for their respective platforms. You can still
 // compile and run any of them on any platform, but your performance with the
 // non-native version will be less than optimal.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wold-style-cast"
+
 #include "MurmurHash3.h"
 
 //-----------------------------------------------------------------------------
@@ -29,6 +28,9 @@
 // Other compilers
 
 #else  // defined(_MSC_VER)
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
 
 #define FORCE_INLINE inline __attribute__((always_inline))
 
@@ -401,6 +403,5 @@ void MurmurHash3_x64_128(const void *key, const int len, const uint32_t seed, vo
 	((uint64_t *)out)[0] = h1;
 	((uint64_t *)out)[1] = h2;
 }
-#pragma GCC diagnostic pop
 
 //-----------------------------------------------------------------------------

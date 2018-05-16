@@ -1,3 +1,38 @@
+# Version 1.9.1 (17.05.2018)
+
+## Reindexer server
+- [fix] path to queries API
+
+## Face
+- [fix] error on create indexes
+- [fix] show 'new database windows 'in case of start without any databases 
+
+# Version 1.9.0 (16.05.2018)
+
+## C++ core
+
+- [fea] Search digits by words representation (now only for Russian language) in ft1
+- [fix] Forced flush all batched writes to disk on exit
+- [fix] Incorrect total count for queries without where clause
+- [fea] custom collate now accepts sequence of letters
+- [fix] Build issues with clang 3.9
+- [fix] Cmake build dependencies, leveldb and snappy optinally added as ExternalProject
+- [port] Windows and BSD build
+- [port] 32 bit build
+
+## Reindexer tool
+- [fea] Ability to input/output dump from stdin/stdout
+
+## Reindexer server
+- [ref] Flags `create_if_missed` and `drop_on_format_error` are removed from namespaces API
+- [fix] Correct behaviour on logging different loggers to the same file
+- [fix] CPU profiler error in case of 
+- [port] Ability to run as Windows service and cmake Windows NSIS installer
+
+## Go connector
+- [fea] Removed cproto connector dependency on cgo
+- [fea] cproto connector are compiled by default
+
 # Version 1.8.1 (26.04.2018)
 
 ## C++ core

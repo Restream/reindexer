@@ -90,7 +90,7 @@ static const char *lookupContentType(const char *path) {
 int Context::File(int code, const char *path) {
 	std::string content;
 
-	if (reindexer::ReadFile(path, content) < 0) {
+	if (fs::ReadFile(path, content) < 0) {
 		return String(http::StatusNotFound, "File not found");
 	}
 

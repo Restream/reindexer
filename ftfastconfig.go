@@ -43,6 +43,8 @@ type FtFastConfig struct {
 	StopWords []string `json:"stop_words"`
 	// Log level of full text search engine
 	LogLevel int `json:"log_level"`
+	// Enable search by numbers as words and backwards
+	EnableNumbersSearch bool `json:"enable_numbers_search"`
 }
 
 func DefaultFtFastConfig() FtFastConfig {

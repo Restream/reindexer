@@ -282,7 +282,7 @@ static const char *parse_headers(const char *buf, const char *buf_end, struct ph
             /* parsing name, but do not discard SP before colon, see
              * http://www.mozilla.org/security/announce/2006/mfsa2006-33.html */
             headers[*num_headers].name = buf;
-            static const char ranges1[] __attribute__((aligned(16))) = "\x00 "  /* control chars and up to SP */
+            static const char  ALIGNED(16) ranges1[] = "\x00 "  /* control chars and up to SP */
                                                                        "\"\""   /* 0x22 */
                                                                        "()"     /* 0x28,0x29 */
                                                                        ",,"     /* 0x2c */

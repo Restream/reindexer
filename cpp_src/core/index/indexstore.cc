@@ -58,7 +58,7 @@ KeyRef IndexStore<T>::Upsert(const KeyRef &key, IdType id) {
 template <typename T>
 void IndexStore<T>::Commit(const CommitContext &ctx) {
 	if (ctx.phases() & CommitContext::MakeIdsets) {
-		logPrintf(LogTrace, "IndexStore::Commit (%s) %d uniq strings", name_.c_str(), str_map.size());
+		logPrintf(LogTrace, "IndexStore::Commit (%s) %d uniq strings", name_.c_str(), int(str_map.size()));
 
 		for (auto keyIt = str_map.begin(); keyIt != str_map.end();) {
 			if (!keyIt->second)
@@ -74,7 +74,7 @@ template <typename T>
 SelectKeyResults IndexStore<T>::SelectKey(const KeyValues &keys, CondType condition, SortType /*sortId*/, ResultType res_type,
 										  BaseFunctionCtx::Ptr /*ctx*/) {
 	if (res_type == Index::ForceIdset) {
-		throw Error(errLogic, "Can't return idset from '%d'. DISTINCT is allowed only on indexed fields", name_.c_str());
+		throw Error(errLogic, "Can't return idset from '%s'. DISTINCT is allowed only on indexed fields", name_.c_str());
 	}
 	SelectKeyResult res;
 	res.comparators_.push_back(Comparator(condition, KeyType(), keys, opts_.IsArray(), payloadType_, fields_,

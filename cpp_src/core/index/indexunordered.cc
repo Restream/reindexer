@@ -190,7 +190,7 @@ void IndexUnordered<T>::Commit(const CommitContext &ctx) {
 		// reset cache
 		if (!cache_ || !cache_->Empty()) cache_.reset(new IdSetCache());
 
-		logPrintf(LogTrace, "IndexUnordered::Commit (%s) %d uniq keys, %d empty, %s", this->name_.c_str(), this->idx_map.size(),
+		logPrintf(LogTrace, "IndexUnordered::Commit (%s) %d uniq keys, %d empty, %s", this->name_.c_str(), int(this->idx_map.size()),
 				  this->empty_ids_.Unsorted().size(), tracker_.completeUpdated_ ? "complete" : "partial");
 
 		this->empty_ids_.Unsorted().Commit(ctx);
@@ -213,7 +213,7 @@ void IndexUnordered<T>::Commit(const CommitContext &ctx) {
 
 template <typename T>
 void IndexUnordered<T>::UpdateSortedIds(const UpdateSortedContext &ctx) {
-	logPrintf(LogTrace, "IndexUnordered::UpdateSortedIds (%s) %d uniq keys, %d empty", this->name_.c_str(), this->idx_map.size(),
+	logPrintf(LogTrace, "IndexUnordered::UpdateSortedIds (%s) %d uniq keys, %d empty", this->name_.c_str(), int(this->idx_map.size()),
 			  this->empty_ids_.Unsorted().size());
 	// For all keys in index
 	for (auto &keyIt : this->idx_map) {

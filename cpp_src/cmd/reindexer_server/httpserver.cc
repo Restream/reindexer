@@ -1,6 +1,5 @@
 #include "httpserver.h"
 #include <sys/stat.h>
-#include <unistd.h>
 #include <sstream>
 #include "base64/base64.h"
 #include "core/type_consts.h"
@@ -18,9 +17,9 @@ using std::to_string;
 
 namespace reindexer_server {
 
-HTTPServer::HTTPServer(DBManager &dbMgr, const string &webRoot) : dbMgr_(dbMgr), webRoot_(reindexer::JoinPath(webRoot, "")) {}
+HTTPServer::HTTPServer(DBManager &dbMgr, const string &webRoot) : dbMgr_(dbMgr), webRoot_(reindexer::fs::JoinPath(webRoot, "")) {}
 HTTPServer::HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper logger, bool allocDebug)
-	: dbMgr_(dbMgr), webRoot_(reindexer::JoinPath(webRoot, "")), logger_(logger), allocDebug_(allocDebug) {}
+	: dbMgr_(dbMgr), webRoot_(reindexer::fs::JoinPath(webRoot, "")), logger_(logger), allocDebug_(allocDebug) {}
 HTTPServer::~HTTPServer() {}
 
 enum { ModeUpdate, ModeInsert, ModeUpsert, ModeDelete };
@@ -387,7 +386,7 @@ int HTTPServer::GetIndexes(http::Context &ctx) {
 
 	reindexer::WrSerializer wrSer(true);
 
-	wrSer.PutChars("\"indexes\":[");
+	wrSer.PutChars("\"items\":[");
 	for (size_t i = 0; i < nsDefIt->indexes.size(); i++) {
 		if (i != 0) wrSer.PutChar(',');
 		nsDefIt->indexes[i].GetJSON(wrSer);
@@ -467,20 +466,19 @@ int HTTPServer::DocHandler(http::Context &ctx) {
 	string path = ctx.request->path + 1;
 	string target = webRoot_ + path;
 
-	struct stat stat;
-	int res = lstat(target.c_str(), &stat);
-	if (res >= 0) {
-		if (S_ISDIR(stat.st_mode)) {
+	switch (fs::Stat(target)) {
+		case fs::StatError:
+			target += "/index.html";
+			break;
+		case fs::StatDir:
 			if (!path.empty() && path.back() != '/') {
 				return ctx.Redirect((path += '/').c_str());
 			}
 
 			target += "index.html";
-		}
-
-		return ctx.File(http::StatusOK, target.c_str());
-	} else {
-		target += "/index.html";
+			return ctx.File(http::StatusOK, target.c_str());
+		case fs::StatFile:
+			return ctx.File(http::StatusOK, target.c_str());
 	}
 
 	char *targetPtr = &target[0];
@@ -492,8 +490,7 @@ int HTTPServer::DocHandler(http::Context &ctx) {
 			break;
 		}
 
-		int res = lstat(targetPtr, &stat);
-		if (res >= 0) {
+		if (fs::Stat(targetPtr) == fs::StatFile) {
 			return ctx.File(http::StatusOK, targetPtr);
 		}
 
@@ -530,9 +527,9 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 
 	router_.GET<HTTPServer, &HTTPServer::Check>("/api/v1/check", this);
 
-	router_.GET<HTTPServer, &HTTPServer::GetSQLQuery>("/api/v1/:db/query", this);
-	router_.POST<HTTPServer, &HTTPServer::PostQuery>("/api/v1/:db/query", this);
-	router_.POST<HTTPServer, &HTTPServer::PostSQLQuery>("/api/v1/:db/sqlquery", this);
+	router_.GET<HTTPServer, &HTTPServer::GetSQLQuery>("/api/v1/db/:db/query", this);
+	router_.POST<HTTPServer, &HTTPServer::PostQuery>("/api/v1/db/:db/query", this);
+	router_.POST<HTTPServer, &HTTPServer::PostSQLQuery>("/api/v1/db/:db/sqlquery", this);
 
 	router_.GET<HTTPServer, &HTTPServer::GetDatabases>("/api/v1/db", this);
 	router_.POST<HTTPServer, &HTTPServer::PostDatabase>("/api/v1/db", this);
@@ -708,7 +705,11 @@ string HTTPServer::getNameFromJson(string json) {
 
 	int status = jsonParse(&json[0], &endp, &jvalue, jalloc);
 	if (status != JSON_OK) {
-		throw Error(http::StatusBadRequest, jsonStrError(status));
+		throw Error(http::StatusBadRequest, "%s", jsonStrError(status));
+	}
+
+	if (jvalue.getTag() != JSON_OBJECT) {
+		throw Error(http::StatusBadRequest, "Json is malformed: %d", jvalue.getTag());
 	}
 
 	string dbName;

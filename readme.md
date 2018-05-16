@@ -16,8 +16,10 @@ The core is written in C++ and the application level API is in Go.
 - [Usage](#usage)
 	- [SQL compatible interface](#sql-compatible-interface)
 - [Installation](#installation)
-	- [Prerequirements](#prerequirements)
-	- [Get Reindexer](#get-reindexer)
+    - [Instalation for server mode](instalation-for-server-mode)
+    - [Instalation for embeded mode](instalation-for-embeded-mode)
+		- [Prerequirements](#prerequirements)
+		- [Get Reindexer](#get-reindexer)
 - [Advanced Usage](#advanced-usage)
 	- [Index Types and Their Capabilites](#index-types-and-their-capabilites)
 	- [Nested Structs](#nested-structs)
@@ -38,6 +40,7 @@ The core is written in C++ and the application level API is in Go.
 	- [Debug queries](#debug-queries)
 	- [Profiling](#profiling)
 - [Limitations and known issues](#limitations-and-known-issues)
+- [Getting help](#getting-help)
 
 ## Features
 
@@ -106,6 +109,7 @@ import (
 	"github.com/restream/reindexer"
 	// choose how the Reindexer binds to the app (in this case "builtin," which means link Reindexer as a static library)
 	_ "github.com/restream/reindexer/bindings/builtin"
+
 )
 
 // Define struct with reindex tags
@@ -190,25 +194,32 @@ As alternative to Query builder Reindexer provides SQL compatible query interfac
 Please note, that Query builder interface is prefferable way: It have more features, and faster than SQL interface
 
 ## Installation
-### Prerequirements
 
-Reindexer's core is written in C++11 and uses LevelDB as the storage backend, so the Cmake, C++11 toolchain and LevelDB must be installed before installing Reindexer. 
+Reindexer can run in 2 different modes: 
+ - `embeded (builtin)` Reindexer is embeded into application as static library, and does not reuqire separate server proccess.
+ - `standalone` Reindexer run as standalone server,  application connects to Reindexer via network
 
-To build Reindexer, g++ 4.8+ or clang 3.3+ is required.
+### Instalation for server mode
 
-### Optional dependencies
+ 1. [Install Reindexer Server](cpp_src/readme.md#installation)
+ 2. go get -a github.com/restream/reindexer
 
-- `Doxygen` package is also required for building a documentation of the project.
-- `gtest`,`gbenchmark` for run C++ tests and benchmarks
-- `gperftools` for memory and performance profiling
+### Instalation for embeded mode
 
-### Get Reindexer
+#### Prerequirements
+
+Reindexer's core is written in C++11 and uses LevelDB as the storage backend, so the Cmake, C++11 toolchain and LevelDB must be installed before installing Reindexer.
+
+To build Reindexer, g++ 4.8+, clang 3.3+ or [mingw64](https://sourceforge.net/projects/mingw-w64/) is required.
+
+#### Get Reindexer
 
 ```bash
 go get -a github.com/restream/reindexer
 bash $GOPATH/src/github.com/restream/reindexer/dependencies.sh
 go generate github.com/restream/reindexer/bindings/builtin
 ```
+
 ## Advanced Usage
 ### Index Types and Their Capabilites
 
@@ -234,6 +245,7 @@ Queries are possible only on the indexed fields, marked with `reindex` tag. The 
 	- `collate_numeric` - create string index that provides values order in numeric sequence. The field type must be a string.
 	- `collate_ascii` - create case-insensitive string index works with ASCII. The field type must be a string.
 	- `collate_utf8` - create case-insensitive string index works with UTF8. The field type must be a string.
+	- `collate_custom=<ORDER>` - create custom order string index. The field type must be a string. `<ORDER>` is sequence of letters, which defines sort order.
 
 ### Nested Structs
 
@@ -540,3 +552,11 @@ pprof -symbolize remote http://localhost:6060/debug/cgo/pprof/heap
 Currently Reindexer is stable and production ready, but it is still a work in progress, so there are some limitations and issues:
 
 - Internal C++ API is not stabilized and is subject to change.
+
+## Getting help
+
+You can get help in several ways:
+
+1. Join Reindexer [Telegramm group](https://t.me/reindexer)
+2. Write [an issue](https://github.com/restream/reindexer/issues/new)
+

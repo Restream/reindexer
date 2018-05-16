@@ -1,4 +1,6 @@
+#ifndef _MSC_VER
 #pragma GCC diagnostic ignored "-Wunused-parameter"
+#endif
 
 /*
  * MIT License
@@ -963,7 +965,7 @@ public:
 			PostProcessLines();
 			// Print();
 			ParseRoot(root);
-		} catch (Exception e) {
+		} catch (const Exception &) {
 			root.Clear();
 			throw;
 		}
@@ -1668,7 +1670,7 @@ void Parse(Node &root, std::iostream &stream) {
 		pImp = new ParseImp;
 		pImp->Parse(root, stream);
 		delete pImp;
-	} catch (const Exception e) {
+	} catch (const Exception &) {
 		delete pImp;
 		throw;
 	}

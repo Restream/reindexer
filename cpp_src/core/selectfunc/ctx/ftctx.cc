@@ -1,7 +1,7 @@
 #include "ftctx.h"
 namespace reindexer {
 FtCtx::FtCtx() {
-	data_ = make_shared<Data>();
+	data_ = std::make_shared<Data>();
 	this->type = BaseFunctionCtx::kFtCtx;
 }
 
@@ -20,12 +20,12 @@ bool FtCtx::PrepareAreas(fast_hash_map<string, int> &fields, const string &name)
 
 	if (data_->is_composite_) {
 		for (auto &field : fields) {
-			data_->need_area_ = CheckFucnction(field.first, {SelectFuncStruct::SelectFuncStruct::kSelectFuncSnippet,
-															 SelectFuncStruct::SelectFuncStruct::kSelectFuncHighlight});
+			data_->need_area_ = CheckFunction(field.first, {SelectFuncStruct::SelectFuncStruct::kSelectFuncSnippet,
+															SelectFuncStruct::SelectFuncStruct::kSelectFuncHighlight});
 			if (data_->need_area_) return true;
 		}
 	}
-	data_->need_area_ = CheckFucnction(
+	data_->need_area_ = CheckFunction(
 		name, {SelectFuncStruct::SelectFuncStruct::kSelectFuncSnippet, SelectFuncStruct::SelectFuncStruct::kSelectFuncHighlight});
 	return data_->need_area_;
 }

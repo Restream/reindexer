@@ -74,7 +74,7 @@ public:
 using base_idsetset = btree::btree_set<int>;
 
 // maxmimum size of idset without building btree
-const int kMaxPlainIdsetSize = 64;
+const int kMaxPlainIdsetSize = 16;
 
 class IdSet : public IdSetPlain {
 public:

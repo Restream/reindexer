@@ -1,5 +1,7 @@
+#include <iostream>
 #include <unordered_set>
 #include "ft_api.h"
+#include "tools/stringstools.h"
 using std::unordered_set;
 TEST_F(FTApi, CompositeSelect) {
 	Add("An entity is something|", "| that in exists entity as itself");
@@ -31,4 +33,25 @@ TEST_F(FTApi, CompositeSelect) {
 		}
 	}
 	EXPECT_TRUE(data.empty());
+}
+
+TEST_F(FTApi, NumberToWordsSelect) {
+	auto err = reindexer->ConfigureIndex(
+		"nm1", "ft3",
+		R"xxx({"enable_translit": true,"enable_numbers_search": true,"enable_kb_layout": true,"merge_limit": 20000,"log_level": 1})xxx");
+	EXPECT_TRUE(err.ok());
+
+	Add("оценка 5 майкл джордан 23", "");
+
+	auto res = SimpleSelect("пять +двадцать +три");
+	EXPECT_TRUE(res.size() == 1);
+
+	const string result = "оценка !5! майкл джордан !23!";
+
+	for (size_t i = 0; i < res.size(); ++i) {
+		Item ritem(res.GetItem(i));
+		string val = ritem["ft1"].As<string>();
+		std::cout << val << std::endl;
+		EXPECT_TRUE(result == val);
+	}
 }

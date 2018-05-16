@@ -27,7 +27,7 @@ public:
 	Output& operator=(const Output&) = default;
 
 	ostream& operator()() {
-		if (!isCout_ && !f_.is_open()) throw Error(errLogic, strerror(errState_));
+		if (!isCout_ && !f_.is_open()) throw Error(errLogic, "%s", strerror(errState_));
 		return isCout_ ? std::cout : f_;
 	}
 

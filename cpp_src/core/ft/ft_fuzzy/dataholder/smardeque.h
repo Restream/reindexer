@@ -72,7 +72,6 @@ public:
 
 	pointer operator[](size_t num) const;
 	void Swap(SmartDeque& rhs) noexcept;
-	void SetMinMax(size_t min, size_t max);
 	~SmartDeque();
 
 private:

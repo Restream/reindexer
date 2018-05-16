@@ -1,28 +1,17 @@
 
+
 #include "connection.h"
 #include <errno.h>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <unistd.h>
-#include "net/stat.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
 namespace net {
 namespace cproto {
 
-#ifndef SOL_TCP
-#define SOL_TCP IPPROTO_TCP
-#endif
-
 const auto kCProtoTimeoutSec = 300.;
 
 Connection::Connection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher)
-	: fd_(fd), curEvents_(0), wrBuf_(kRPCWriteBufSize), rdBuf_(kRPCReadbufSize), dispatcher_(dispatcher) {
-	int flag = 1;
-	setsockopt(fd, SOL_TCP, TCP_NODELAY, &flag, sizeof(flag));
-
+	: sock_(fd), curEvents_(0), wrBuf_(kRPCWriteBufSize), rdBuf_(kRPCReadbufSize), dispatcher_(dispatcher) {
 	io_.set<Connection, &Connection::callback>(this);
 	io_.set(loop);
 	timeout_.set<Connection, &Connection::timeout_cb>(this);
@@ -33,17 +22,15 @@ Connection::Connection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher)
 }
 
 Connection::~Connection() {
-	if (fd_ >= 0) {
-		close(fd_);
+	if (sock_.valid()) {
+		sock_.close();
 		io_.stop();
 	}
 }
 
 bool Connection::Restart(int fd) {
-	assert(fd_ < 0);
-	fd_ = fd;
-	int flag = 1;
-	setsockopt(fd, SOL_TCP, TCP_NODELAY, &flag, sizeof(flag));
+	assert(!sock_.valid());
+	sock_ = fd;
 
 	wrBuf_.clear();
 	rdBuf_.clear();
@@ -59,7 +46,7 @@ void Connection::Reatach(ev::dynamic_loop &loop) {
 	io_.stop();
 	io_.set<Connection, &Connection::callback>(this);
 	io_.set(loop);
-	io_.start(fd_, curEvents_);
+	io_.start(sock_.fd(), curEvents_);
 	timeout_.stop();
 	timeout_.set<Connection, &Connection::timeout_cb>(this);
 	timeout_.set(loop);
@@ -81,8 +68,8 @@ void Connection::callback(ev::io & /*watcher*/, int revents) {
 
 	int nevents = ev::READ | (wrBuf_.size() ? ev::WRITE : 0);
 
-	if (curEvents_ != nevents && fd_ >= 0) {
-		(curEvents_) ? io_.set(nevents) : io_.start(fd_, nevents);
+	if (curEvents_ != nevents && sock_.valid()) {
+		(curEvents_) ? io_.set(nevents) : io_.start(sock_.fd(), nevents);
 		curEvents_ = nevents;
 	}
 }
@@ -91,12 +78,14 @@ void Connection::callback(ev::io & /*watcher*/, int revents) {
 void Connection::write_cb() {
 	while (wrBuf_.size()) {
 		auto it = wrBuf_.tail();
-		ssize_t written = ::send(fd_, it.data, it.len, 0);
 
-		if (written < 0 && errno == EINTR) continue;
+		ssize_t written = sock_.send(it.data, it.len);
+		int err = sock_.last_error();
+
+		if (written < 0 && err == EINTR) continue;
 
 		if (written < 0) {
-			if (errno != EAGAIN && errno != EWOULDBLOCK) {
+			if (!socket::would_block(err)) {
 				closeConn();
 			}
 			return;
@@ -114,11 +103,12 @@ void Connection::write_cb() {
 void Connection::read_cb() {
 	while (!closeConn_) {
 		auto it = rdBuf_.head();
-		ssize_t nread = ::recv(fd_, it.data, it.len, 0);
+		ssize_t nread = sock_.recv(it.data, it.len);
+		int err = sock_.last_error();
 
-		if (nread < 0 && errno == EINTR) continue;
+		if (nread < 0 && err == EINTR) continue;
 
-		if ((nread < 0 && (errno != EAGAIN && errno != EWOULDBLOCK)) || nread == 0) {
+		if ((nread < 0 && !socket::would_block(err)) || nread == 0) {
 			closeConn();
 			return;
 		} else if (nread > 0) {
@@ -134,10 +124,9 @@ void Connection::timeout_cb(ev::periodic & /*watcher*/, int /*time*/) { closeCon
 void Connection::closeConn() {
 	io_.loop.break_loop();
 
-	if (fd_ >= 0) {
+	if (sock_.valid()) {
 		io_.stop();
-		close(fd_);
-		fd_ = -1;
+		sock_.close();
 	}
 	timeout_.stop();
 	if (dispatcher_.onClose_) {

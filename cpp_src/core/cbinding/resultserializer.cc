@@ -65,7 +65,7 @@ void ResultSerializer::putItemParams(const QueryResults* result, int idx, bool u
 	PutVarUint(it.proc);
 	int format = (opts_.flags & 0x3);
 
-	if (idx < 63 && !(opts_.fetchDataMask & (1 << idx))) {
+	if (idx < 63 && !(opts_.fetchDataMask & (1ULL << idx))) {
 		format = kResultsPure;
 	}
 

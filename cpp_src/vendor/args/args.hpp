@@ -1656,7 +1656,7 @@ namespace args
                     {
                         parserCoroutine(coro.Parser());
                     }
-                    catch (args::SubparserError)
+                    catch (const args::SubparserError &)
                     {
                     }
 #else

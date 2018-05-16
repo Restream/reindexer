@@ -219,13 +219,13 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 
 	if (ctx.query.debugLevel >= LogInfo) {
 		int count = (ctx.preResult && ctx.preResult->mode == SelectCtx::PreResult::ModeBuild) ? ctx.preResult->ids.size() : result.size();
-		logPrintf(LogInfo, ctx.query.Dump().c_str());
+		logPrintf(LogInfo, "%s", ctx.query.Dump().c_str());
 		logPrintf(LogInfo,
 				  "Got %d items in %d µs [prepare %d µs, select %d µs, postprocess "
 				  "%d µs loop %d µs], sortindex %s",
-				  count, duration_cast<microseconds>(tm4 - tmStart).count(), duration_cast<microseconds>(tm1 - tmStart).count(),
-				  duration_cast<microseconds>(tm2 - tm1).count(), duration_cast<microseconds>(tm3 - tm2).count(),
-				  duration_cast<microseconds>(tm4 - tm3).count(), sortIndex ? sortIndex->Name().c_str() : "");
+				  count, int(duration_cast<microseconds>(tm4 - tmStart).count()), int(duration_cast<microseconds>(tm1 - tmStart).count()),
+				  int(duration_cast<microseconds>(tm2 - tm1).count()), int(duration_cast<microseconds>(tm3 - tm2).count()),
+				  int(duration_cast<microseconds>(tm4 - tm3).count()), sortIndex ? sortIndex->Name().c_str() : "-");
 		if (ctx.query.debugLevel >= LogTrace) {
 			for (auto &r : qres)
 				logPrintf(LogInfo, "%s: %d idsets, %d comparators, cost %g, matched %d", r.name.c_str(), r.size(), r.comparators_.size(),
@@ -434,7 +434,7 @@ void NsSelecter::selectWhere(const QueryEntries &entries, RawQueryResult &result
 			type = Index::ForceIdset;
 
 		auto ctx = fnc_ ? fnc_->CreateCtx(qe.idxNo) : BaseFunctionCtx::Ptr{};
-		if (ctx && ctx->type == BaseFunctionCtx::kFtCtx) ft_ctx_ = reinterpret_pointer_cast<FtCtx>(ctx);
+		if (ctx && ctx->type == BaseFunctionCtx::kFtCtx) ft_ctx_ = reindexer::reinterpret_pointer_cast<FtCtx>(ctx);
 
 		if (index->Opts().GetCollateMode() == CollateUTF8 || is_ft_current)
 			for (auto &key : qe.values) key.EnsureUTF8();
@@ -617,7 +617,13 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 	}
 
 	// Get total count for simple query with 1 condition and 1 idset
-	if (ctx.calcTotal && !calcTotal) result.totalCount = (*ctx.qres)[0].GetMaxIterations();
+	if (ctx.calcTotal && !calcTotal) {
+		if (sctx.query.entries.size()) {
+			result.totalCount = (*ctx.qres)[0].GetMaxIterations();
+		} else {
+			result.totalCount = ns_->items_.size() - ns_->free_.size();
+		}
+	}
 }
 
 h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) {

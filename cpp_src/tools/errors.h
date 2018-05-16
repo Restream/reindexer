@@ -10,7 +10,11 @@ using std::string;
 class Error {
 public:
 	Error(int code = errOK);
-	Error(int code, const char *fmt, ...);
+	Error(int code, const char *fmt, ...)
+#ifndef _MSC_VER
+		__attribute__((format(printf, 3, 4)))
+#endif
+		;
 
 	const string &what() const;
 	int code() const;

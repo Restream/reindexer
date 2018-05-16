@@ -1,7 +1,9 @@
 #pragma once
 
+#ifndef _MSC_VER
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wold-style-cast"
+#endif
 
 #include <assert.h>
 #include <stddef.h>
@@ -22,7 +24,7 @@ union JsonValue {
 
 	JsonValue(double x) : fval(x) {}
 	JsonValue(JsonTag tag = JSON_NULL, void *payload = nullptr) {
-		assert((uintptr_t)payload <= JSON_VALUE_PAYLOAD_MASK);
+		// assert((uintptr_t)payload <= JSON_VALUE_PAYLOAD_MASK);
 		ival = JSON_VALUE_NAN_MASK | ((uint64_t)tag << JSON_VALUE_TAG_SHIFT) | (uintptr_t)payload;
 	}
 	bool isDouble() const { return (int64_t)ival <= (int64_t)JSON_VALUE_NAN_MASK; }
@@ -109,4 +111,6 @@ public:
 
 int jsonParse(char *str, char **endptr, JsonValue *value, JsonAllocator &allocator);
 
+#ifndef _MSC_VER
 #pragma GCC diagnostic pop
+#endif

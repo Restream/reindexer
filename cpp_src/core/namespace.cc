@@ -77,7 +77,7 @@ Namespace::Namespace(const string &name)
 
 Namespace::~Namespace() {
 	WLock wlock(mtx_);
-	logPrintf(LogTrace, "Namespace::~Namespace (%s), %d items", name_.c_str(), items_.size());
+	logPrintf(LogTrace, "Namespace::~Namespace (%s), %d items", name_.c_str(), int(items_.size()));
 }
 
 void Namespace::recreateCompositeIndexes(int startIdx) {
@@ -187,7 +187,7 @@ bool Namespace::dropIndex(const string &index) {
 	// Check, that index to remove is not part of composite index
 	for (int compositeIdx = payloadType_.NumFields(); compositeIdx < int(indexes_.size()); ++compositeIdx) {
 		if (indexes_[compositeIdx]->Fields().contains(fieldIdx))
-			throw Error(LogError, "Cannot remove index %: it's a part of a composite index %s", index.c_str(),
+			throw Error(LogError, "Cannot remove index %s : it's a part of a composite index %s", index.c_str(),
 						indexes_[compositeIdx]->Name().c_str());
 	}
 	for (auto &namePair : indexesNames_) {
@@ -201,7 +201,7 @@ bool Namespace::dropIndex(const string &index) {
 		if (indexToRemove->KeyType() == KeyValueComposite) {
 			auto itCompositeIdxState = compositeIndexesPkState_.find(indexToRemove->Name());
 			if (itCompositeIdxState == compositeIndexesPkState_.end()) {
-				throw Error(LogError, "Composite index % is not PK", indexToRemove->Name().c_str());
+				throw Error(LogError, "Composite index %s is not PK", indexToRemove->Name().c_str());
 			}
 			bool eachSubIndexPk = itCompositeIdxState->second;
 			if (eachSubIndexPk) {
@@ -472,7 +472,7 @@ void Namespace::Delete(const Query &q, QueryResults &result) {
 
 	if (q.debugLevel >= LogInfo) {
 		logPrintf(LogInfo, "Deleted %d items in %d µs", result.size(),
-				  duration_cast<microseconds>(high_resolution_clock::now() - tmStart).count());
+				  int(duration_cast<microseconds>(high_resolution_clock::now() - tmStart).count()));
 	}
 }
 
@@ -531,7 +531,7 @@ void Namespace::updateTagsMatcherFromItem(ItemImpl *ritem, string &jsonSliceBuf)
 
 	if (ritem->Type().get() != payloadType_.get() || !tagsMatcher_.try_merge(ritem->tagsMatcher())) {
 		jsonSliceBuf = ritem->GetJSON().ToString();
-		logPrintf(LogInfo, "Conflict TagsMatcher of namespace '%s' on modify: item:\n%s\ntm is\nnew tm is\n %s\n", name_.c_str(),
+		logPrintf(LogInfo, "Conflict TagsMatcher of namespace '%s' on modify: item:\n%s\ntm is\n%s\nnew tm is\n %s\n", name_.c_str(),
 				  jsonSliceBuf.c_str(), tagsMatcher_.dump().c_str(), ritem->tagsMatcher().dump().c_str());
 
 		ItemImpl tmpItem(payloadType_, tagsMatcher_);
@@ -679,7 +679,7 @@ void Namespace::commit(const NSCommitContext &ctx, SelectLockUpgrader *lockUpgra
 				}
 			}
 		} while (++field != payloadType_->NumFields());
-		if (was) logPrintf(LogTrace, "Namespace::Commit ('%s'),%d items", name_.c_str(), items_.size());
+		if (was) logPrintf(LogTrace, "Namespace::Commit ('%s'),%d items", name_.c_str(), int(items_.size()));
 		//	items_.shrink_to_fit();
 	}
 
@@ -853,7 +853,7 @@ void Namespace::EnableStorage(const string &path, StorageOpts opts) {
 		throw Error(errLogic, "Storage already enabled for namespace '%s' on path '%s'", name_.c_str(), path.c_str());
 	}
 
-	string dbpath = JoinPath(path, name_);
+	string dbpath = fs::JoinPath(path, name_);
 	datastorage::StorageType storageType = datastorage::StorageType::LevelDB;
 
 	WLock lock(mtx_);
@@ -930,7 +930,7 @@ void Namespace::FlushStorage() {
 
 		if (unflushedCount_) {
 			Error status = storage_->Write(StorageOpts().FillCache(), *(updates_.get()));
-			if (!status.ok()) throw Error(errLogic, "Error write ns '%s' to storage:", name_.c_str(), status.what().c_str());
+			if (!status.ok()) throw Error(errLogic, "Error write ns '%s' to storage: %s", name_.c_str(), status.what().c_str());
 			updates_->Clear();
 			unflushedCount_ = 0;
 		}

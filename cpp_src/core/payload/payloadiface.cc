@@ -332,6 +332,11 @@ T PayloadIface<T>::CopyWithRemovedFields(PayloadType modifiedType) {
 
 template class PayloadIface<PayloadValue>;
 template class PayloadIface<const PayloadValue>;
+
+#ifdef _MSC_VER
+#pragma warning(disable : 5037)
+#endif
+
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(string const &, KeyRefs const &, bool);
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(int, KeyRefs const &, bool);
 

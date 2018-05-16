@@ -1,6 +1,5 @@
 package cjson
 
-import "github.com/restream/reindexer/bindings"
 import "fmt"
 
 type ctag int
@@ -9,14 +8,14 @@ const typeBits = 3
 const nameBits = 12
 
 const (
-	TAG_VARINT = bindings.TAG_VARINT
-	TAG_OBJECT = bindings.TAG_OBJECT
-	TAG_END    = bindings.TAG_END
-	TAG_ARRAY  = bindings.TAG_ARRAY
-	TAG_BOOL   = bindings.TAG_BOOL
-	TAG_STRING = bindings.TAG_STRING
-	TAG_DOUBLE = bindings.TAG_DOUBLE
-	TAG_NULL   = bindings.TAG_NULL
+	TAG_VARINT = 0
+	TAG_DOUBLE = 1
+	TAG_STRING = 2
+	TAG_ARRAY  = 3
+	TAG_BOOL   = 4
+	TAG_NULL   = 5
+	TAG_OBJECT = 6
+	TAG_END    = 7
 )
 
 func (c ctag) Name() int {

@@ -16,9 +16,10 @@ class BaseFunctionCtx {
 public:
 	typedef shared_ptr<BaseFunctionCtx> Ptr;
 	enum CtxType { kFtCtx = 0 };
+	virtual ~BaseFunctionCtx() {}
 
-	void AddFucntion(const string& name, SelectFuncStruct::Type function) { functions_[name].insert(function); }
-	bool CheckFucnction(const string& name, const vector<SelectFuncStruct::Type>& types) {
+	void AddFunction(const string& name, SelectFuncStruct::Type function) { functions_[name].insert(function); }
+	bool CheckFunction(const string& name, const vector<SelectFuncStruct::Type>& types) {
 		auto it = functions_.find(name);
 
 		if (it == functions_.end()) return false;

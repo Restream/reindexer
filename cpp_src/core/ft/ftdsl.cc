@@ -12,9 +12,9 @@ using std::string;
 // Format: see fulltext.md
 
 bool is_dslbegin(int ch) {
-	return IsAlpha(ch) || std::isdigit(ch) || ch == '+' || ch == '-' || ch == '*' || ch == '\'' || ch == '\"' || ch == '@' || ch == '=';
+	return IsAlpha(ch) || IsDigit(ch) || ch == '+' || ch == '-' || ch == '*' || ch == '\'' || ch == '\"' || ch == '@' || ch == '=';
 }
-bool is_term(int ch) { return IsAlpha(ch) || std::isdigit(ch) || ch == '+' || ch == '-' || ch == '/'; }
+bool is_term(int ch) { return IsAlpha(ch) || IsDigit(ch) || ch == '+' || ch == '-' || ch == '/'; }
 void FtDSLQuery::parse(const string &q) {
 	wstring utf16str;
 	utf8_to_utf16(q, utf16str);
@@ -104,6 +104,7 @@ void FtDSLQuery::parse(wstring &utf16str) {
 		if (endIt != begIt) {
 			fte.pattern.assign(begIt, endIt);
 			string utf8str = utf16_to_utf8(fte.pattern);
+			if (is_number(utf8str)) fte.opts.number = true;
 			if (stopWords_.find(utf8str) != stopWords_.end()) {
 				continue;
 			}
@@ -131,10 +132,10 @@ void FtDSLQuery::parseFields(wstring &utf16str, wstring::iterator &it, h_vector<
 	for (auto &b : fieldsBoost) b = 0.0;
 
 	while (it != utf16str.end()) {
-		while (it != utf16str.end() && !(IsAlpha(*it) || std::isdigit(*it) || *it == '*' || *it == '_')) it++;
+		while (it != utf16str.end() && !(IsAlpha(*it) || IsDigit(*it) || *it == '*' || *it == '_')) it++;
 
 		auto begIt = it;
-		while (it != utf16str.end() && (IsAlpha(*it) || std::isdigit(*it) || *it == '*' || *it == '_')) it++;
+		while (it != utf16str.end() && (IsAlpha(*it) || IsDigit(*it) || *it == '*' || *it == '_')) it++;
 		auto endIt = it;
 
 		float boost = 1.0;
@@ -152,7 +153,7 @@ void FtDSLQuery::parseFields(wstring &utf16str, wstring::iterator &it, h_vector<
 			string fname = utf16_to_utf8(wstring(&*begIt, endIt - begIt));
 			auto f = fields_.find(fname);
 			if (f == fields_.end()) {
-				throw Error(errLogic, "Field '%s',is not included to full text index '%s' in namespace", fname.c_str());
+				throw Error(errLogic, "Field '%s',is not included to full text index", fname.c_str());
 			}
 			assertf(f->second < int(fieldsBoost.size()), "f=%d,fieldsBoost.size()=%d", f->second, int(fieldsBoost.size()));
 			fieldsBoost[f->second] = boost;

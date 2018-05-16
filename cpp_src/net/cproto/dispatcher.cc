@@ -10,7 +10,7 @@ namespace net {
 namespace cproto {
 
 Error Dispatcher::handle(Context &ctx) {
-	if (ctx.call->cmd < handlers_.size()) {
+	if (uint32_t(ctx.call->cmd) < uint32_t(handlers_.size())) {
 		for (auto &middleware : middlewares_) {
 			auto ret = middleware.func_(middleware.object_, ctx);
 			if (!ret.ok()) {

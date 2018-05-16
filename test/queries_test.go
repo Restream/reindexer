@@ -194,7 +194,7 @@ func CheckAggregateQueries() {
 		panic(fmt.Errorf("%f != %f", sum, it.GetAggreatedValue(1)))
 	}
 	if sum/float64(len(res)) != it.GetAggreatedValue(0) {
-		panic(fmt.Errorf("%f != %f", sum/float64(len(res)), it.GetAggreatedValue(1)))
+		panic(fmt.Errorf("%f != %f,len=%d", sum/float64(len(res)), it.GetAggreatedValue(0), len(res)))
 	}
 }
 

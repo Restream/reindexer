@@ -742,8 +742,8 @@ protected:
 			yearSum += item[kFieldNameYear].Get<int>();
 		}
 
-		EXPECT_TRUE(AreDoublesEqual(testQr.aggregationResults[1], yearSum)) << "Aggregation Sum result is incorrect!";
-		EXPECT_TRUE(AreDoublesEqual(testQr.aggregationResults[0], yearSum / checkQr.size())) << "Aggregation Sum result is incorrect!";
+		EXPECT_DOUBLE_EQ(testQr.aggregationResults[1], yearSum) << "Aggregation Sum result is incorrect!";
+		EXPECT_DOUBLE_EQ(testQr.aggregationResults[0], yearSum / checkQr.size()) << "Aggregation Sum result is incorrect!";
 	}
 
 	void CheckSqlQueries() {
@@ -879,8 +879,6 @@ protected:
 		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnStringNumeric", CondEq, string("777")));
 		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnFullText", CondEq, RandString()));
 	}
-
-	static bool AreDoublesEqual(double lhs, double rhs) { return std::abs(lhs - rhs) < numeric_limits<double>::epsilon(); }
 
 	void PrintFailedQueryEntries(const reindexer::QueryEntries& failedEntries) {
 		printf("Failed entries: ");

@@ -1,31 +1,24 @@
 
 #include "fsops.h"
-#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <ftw.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <sys/time.h>
-#include <unistd.h>
-
-#ifdef WIN32
-#include <direct.h>
-#define getcwd _getcwd;
-#endif
+#include "tools/oscompat.h"
 
 namespace reindexer {
+namespace fs {
+
 int MkDirAll(const string &path) {
-	char tmp[0x8000], *p = nullptr;
+	char tmp[0x1000], *p = nullptr;
 	size_t len;
 	int err;
 
 	snprintf(tmp, sizeof(tmp), "%s", path.c_str());
 	len = strlen(tmp);
-	if (tmp[len - 1] == '/') tmp[len - 1] = 0;
+	if (tmp[len - 1] == '/' || tmp[len - 1] == '\\') tmp[len - 1] = 0;
 	for (p = tmp + 1; *p; p++) {
-		if (*p == '/') {
+		if (*p == '/' || *p == '\\') {
 			*p = 0;
 			err = mkdir(tmp, S_IRWXU);
 			if ((err < 0) && (errno != EEXIST)) return err;
@@ -36,24 +29,31 @@ int MkDirAll(const string &path) {
 }
 
 int RmDirAll(const string &path) {
+#ifndef _WIN32
 	return nftw(path.c_str(), [](const char *fpath, const struct stat *, int, struct FTW *) { return ::remove(fpath); }, 64,
 				FTW_DEPTH | FTW_PHYS);
+#else
+	(void)path;
+	return 0;
+#endif
 }
 
 int ReadFile(const string &path, string &content) {
-	int fd = open(path.c_str(), O_RDONLY);
-	if (fd < 0) {
+	FILE *f = fopen(path.c_str(), "r");
+	if (!f) {
 		return -1;
 	}
-	size_t sz = lseek(fd, 0, SEEK_END);
+	fseek(f, 0, SEEK_END);
+	size_t sz = ftell(f);
 	content.resize(sz);
-	lseek(fd, 0, SEEK_SET);
-	auto nread = read(fd, &content[0], sz);
-	close(fd);
+	fseek(f, 0, SEEK_SET);
+	auto nread = fread(&content[0], 1, sz, f);
+	fclose(f);
 	return nread;
 }
 
 int ReadDir(const string &path, vector<DirEntry> &content) {
+#ifndef _WIN32
 	struct dirent *entry;
 	auto dir = opendir(path.c_str());
 
@@ -76,6 +76,22 @@ int ReadDir(const string &path, vector<DirEntry> &content) {
 	};
 
 	closedir(dir);
+#else
+	HANDLE hFind;
+	WIN32_FIND_DATA entry;
+
+	if ((hFind = FindFirstFile((path + "/*.*").c_str(), &entry)) != INVALID_HANDLE_VALUE) {
+		do {
+			if (entry.cFileName[0] == '.') {
+				continue;
+			}
+			bool isDir = entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
+			content.push_back({entry.cFileName, isDir});
+		} while (FindNextFile(hFind, &entry));
+		FindClose(hFind);
+	}
+
+#endif
 	return 0;
 }
 
@@ -84,4 +100,31 @@ string GetCwd() {
 	return std::string(getcwd(buff, FILENAME_MAX));
 }
 
+string GetTempDir() {
+#ifdef _WIN32
+	char tmpBuf[512];
+	*tmpBuf = 0;
+	::GetTempPathA(sizeof(tmpBuf), tmpBuf);
+	return tmpBuf;
+#else
+	if (const char *tmpDir = getenv("TMPDIR")) {
+		if (tmpDir && *tmpDir) return tmpDir;
+	}
+	return "/tmp";
+#endif
+}
+
+FileStatus Stat(const string &path) {
+#ifdef _WIN32
+	struct _stat state;
+	if (_stat(path.c_str(), &state) < 0) return StatError;
+	return (state.st_mode & _S_IFDIR) ? StatDir : StatFile;
+#else
+	struct stat state;
+	if (stat(path.c_str(), &state) < 0) return StatError;
+	return S_ISDIR(state.st_mode) ? StatDir : StatFile;
+#endif
+}
+
+}  // namespace fs
 }  // namespace reindexer

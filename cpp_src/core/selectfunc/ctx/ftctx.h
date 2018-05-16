@@ -26,7 +26,7 @@ public:
 	size_t GetSize();
 
 	template <typename InputIterator>
-	void Add(InputIterator begin, InputIterator end, int16_t proc, AreaHolder::UniquePtr &&holder = {});
+	void Add(InputIterator begin, InputIterator end, int16_t proc, AreaHolder::UniquePtr &&holder = nullptr);
 	void Reserve(size_t size);
 	size_t Size();
 	bool NeedArea();

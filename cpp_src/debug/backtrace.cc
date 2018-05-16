@@ -11,7 +11,7 @@
 #include <stdlib.h>
 
 char* resolve_symbol(void* addr, bool onlyName) {
-	char filename[512], symbol[512], out[512];
+	char filename[512], symbol[512], out[1024];
 	uintptr_t address = uintptr_t(addr), offset = 0;
 	char** symbols = backtrace_symbols(&addr, 1);
 	*filename = *symbol = 0;
@@ -25,7 +25,7 @@ char* resolve_symbol(void* addr, bool onlyName) {
 
 	free(symbols);
 	if (ret < 4 && onlyName) {
-		sprintf(out, "%s@%" PRIxPTR, filename, address);
+		snprintf(out, sizeof(out), "%s@%" PRIxPTR, filename, address);
 		return strdup(out);
 	}
 

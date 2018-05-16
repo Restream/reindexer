@@ -21,11 +21,11 @@ public:
 	explicit KeyRef(const key_string &v) : type(KeyValueString), value_string(v.get()) {}
 	explicit KeyRef(p_string v) : type(KeyValueString), value_string(v) {}
 	explicit KeyRef(const PayloadValue &v) : type(KeyValueComposite), value_composite(&v) {}
-	KeyRef(const KeyRef &other) : type(other.type), value_int64(other.value_int64) {}
+	KeyRef(const KeyRef &other) : type(other.type), value_uint64(other.value_uint64) {}
 	KeyRef &operator=(const KeyRef &other) {
 		if (this != &other) {
 			type = other.type;
-			value_int64 = other.value_int64;
+			value_uint64 = other.value_uint64;
 		}
 		return *this;
 	}
@@ -91,6 +91,7 @@ protected:
 	union {
 		int value_int;
 		int64_t value_int64;
+		uint64_t value_uint64;
 		double value_double;
 		p_string value_string;
 		const PayloadValue *value_composite;

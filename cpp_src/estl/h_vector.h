@@ -368,10 +368,12 @@ protected:
 	pointer ptr() noexcept { return is_hdata() ? reinterpret_cast<pointer>(hdata_) : e_.data_; }
 	const_pointer ptr() const noexcept { return is_hdata() ? reinterpret_cast<const_pointer>(hdata_) : e_.data_; }
 
+#pragma pack(push, 1)
 	struct edata {
 		pointer data_;
 		size_type cap_;
-	} __attribute__((packed));
+	};
+#pragma pack(pop)
 
 	union {
 		edata e_;

@@ -161,7 +161,7 @@ reindexer_ret reindexer_select_query(struct reindexer_buffer in, int with_items,
 	Error res = err_not_init;
 	reindexer_buffer out = {0, 0, nullptr};
 	if (db) {
-		res = Error(errOK, "");
+		res = Error(errOK);
 		Serializer ser(in.data, in.len);
 
 		Query q;
@@ -190,7 +190,7 @@ reindexer_ret reindexer_delete_query(reindexer_buffer in) {
 	reindexer_buffer out{0, 0, nullptr};
 	Error res = err_not_init;
 	if (db) {
-		res = Error(errOK, "");
+		res = Error(errOK);
 		Serializer ser(in.data, in.len);
 
 		Query q;

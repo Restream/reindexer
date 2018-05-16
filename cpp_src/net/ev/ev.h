@@ -1,19 +1,17 @@
 #pragma once
 
 #include <assert.h>
-
-#ifdef __linux__
-#include <sys/epoll.h>
-#else
-#include <sys/select.h>
-#include <sys/types.h>
-#endif
-
 #include <atomic>
 #include <chrono>
 #include <csignal>
 #include <functional>
+#include <memory>
 #include <vector>
+
+// Thank's to windows.h include
+#ifdef ERROR
+#undef ERROR
+#endif
 
 namespace reindexer {
 namespace net {
@@ -25,33 +23,74 @@ const int ERROR = 0x08;
 
 class dynamic_loop;
 
-class loop_select_backend {
+class loop_posix_base {
 public:
+	void enable_asyncs();
+	void send_async();
+
+protected:
+	loop_posix_base();
+	~loop_posix_base();
+	bool check_async(int fd);
+
+	int async_fds_[2] = {-1, -1};
+	dynamic_loop *owner_ = nullptr;
+};
+
+class loop_select_backend_private;
+class loop_select_backend : public loop_posix_base {
+public:
+	loop_select_backend();
+	~loop_select_backend();
 	void init(dynamic_loop *owner);
 	void set(int fd, int events, int oldevents);
 	void stop(int fd);
 	int runonce(int64_t tv);
+	static int capacity();
 
 protected:
-	dynamic_loop *owner_;
-	fd_set rfds_, wfds_;
-	int maxfd_;
+	std::unique_ptr<loop_select_backend_private> private_;
 };
 
 #ifdef __linux__
-class loop_epoll_backend {
+class loop_epoll_backend_private;
+class loop_epoll_backend : public loop_posix_base {
 public:
+	loop_epoll_backend();
+	~loop_epoll_backend();
 	void init(dynamic_loop *owner);
 	void set(int fd, int events, int oldevents);
 	void stop(int fd);
 	int runonce(int64_t tv);
+	static int capacity();
+
+protected:
+	std::unique_ptr<loop_epoll_backend_private> private_;
+};
+using loop_backend = loop_epoll_backend;
+#elif defined(_WIN32)
+
+class loop_wsa_backend_private;
+class loop_wsa_backend {
+public:
+	loop_wsa_backend();
+	~loop_wsa_backend();
+	void init(dynamic_loop *owner);
+	void set(int fd, int events, int oldevents);
+	void stop(int fd);
+	int runonce(int64_t tv);
+	void enable_asyncs();
+	void send_async();
+
+	static int capacity();
 
 protected:
 	dynamic_loop *owner_;
-	int ctlfd_ = -1;
-	std::vector<epoll_event> events_;
+	std::unique_ptr<loop_wsa_backend_private> private_;
 };
-using loop_backend = loop_epoll_backend;
+
+using loop_backend = loop_wsa_backend;
+
 #else
 using loop_backend = loop_select_backend;
 
@@ -65,6 +104,8 @@ class dynamic_loop {
 	friend class loop_ref;
 	friend class loop_epoll_backend;
 	friend class loop_select_backend;
+	friend class loop_wsa_backend;
+	friend class loop_posix_base;
 
 public:
 	dynamic_loop();
@@ -83,7 +124,8 @@ protected:
 	void stop(sig *watcher);
 	void send(async *watcher);
 
-	void callback(int fd, int events);
+	void io_callback(int fd, int events);
+	void async_callback();
 
 	struct fd_handler {
 		int emask_ = 0;
@@ -96,7 +138,6 @@ protected:
 	std::vector<sig *> sigs_;
 	bool break_ = false;
 	loop_backend backend_;
-	int async_fds_[2] = {-1, -1};
 };
 
 class loop_ref {
@@ -230,7 +271,11 @@ protected:
 	}
 
 	std::function<void(sig &watcher)> func_ = nullptr;
+#ifndef _WIN32
 	struct sigaction old_action_;
+#else
+	void (*old_handler_)(int);
+#endif
 	int signum_;
 };
 

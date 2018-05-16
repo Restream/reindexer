@@ -99,7 +99,7 @@ SelectKeyResults IndexText<T>::SelectKey(const KeyValues &keys, CondType conditi
 	if (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
 		throw Error(errParams, "Full text index support only EQ or SET condition with 1 or 2 parameter");
 	}
-	FtCtx::Ptr ftctx = reinterpret_pointer_cast<FtCtx>(ctx);
+	FtCtx::Ptr ftctx = reindexer::reinterpret_pointer_cast<FtCtx>(ctx);
 	assert(ftctx);
 	ftctx->PrepareAreas(ftFields_, this->name_);
 

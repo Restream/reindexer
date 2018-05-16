@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <memory.h>
 #include <algorithm>
+#include <cctype>
 #include <locale>
 #include <string>
 #include <vector>
@@ -79,15 +80,21 @@ size_t calcUTf8SizeEnd(const char *end, int pos, size_t limit) {
 }
 
 void check_for_replacement(wchar_t &ch) {
-	if (ch == L'ё') {
-		ch = L'е';
+	if (ch == 0x451) {  // 'ё'
+		ch = 0x435;		// 'е'
 	}
 }
 
 void check_for_replacement(uint32_t &ch) {
-	if (ch == L'ё') {
-		ch = L'е';
+	if (ch == 0x451) {  // 'ё'
+		ch = 0x435;		// 'е'
 	}
+}
+
+bool is_number(const string &str) {
+	uint16_t i = 0;
+	while ((i < str.length() && IsDigit(str[i]))) i++;
+	return (i == str.length());
 }
 
 void splitWithPos(const string &str, string &buf, vector<pair<const char *, int>> &words) {
@@ -99,19 +106,19 @@ void splitWithPos(const string &str, string &buf, vector<pair<const char *, int>
 		auto wordStartIt = it;
 		auto ch = utf8::unchecked::next(it);
 
-		while (it != str.end() && !IsAlpha(ch) && !std::isdigit(ch)) {
+		while (it != str.end() && !IsAlpha(ch) && !IsDigit(ch)) {
 			wordStartIt = it;
 			ch = utf8::unchecked::next(it);
 		}
 
 		auto begIt = bufIt;
-		while (it != str.end() && (IsAlpha(ch) || std::isdigit(ch) || ch == '+' || ch == '-' || ch == '/')) {
+		while (it != str.end() && (IsAlpha(ch) || IsDigit(ch) || ch == '+' || ch == '-' || ch == '/')) {
 			ch = ToLower(ch);
 			check_for_replacement(ch);
 			bufIt = utf8::unchecked::append(ch, bufIt);
 			ch = utf8::unchecked::next(it);
 		}
-		if ((IsAlpha(ch) || std::isdigit(ch) || ch == '+' || ch == '-' || ch == '/')) {
+		if ((IsAlpha(ch) || IsDigit(ch) || ch == '+' || ch == '-' || ch == '/')) {
 			ch = ToLower(ch);
 			check_for_replacement(ch);
 
@@ -130,10 +137,10 @@ void split(const string &utf8Str, wstring &utf16str, vector<std::wstring> &words
 	words.resize(0);
 	size_t outSz = 0;
 	for (auto it = utf16str.begin(); it != utf16str.end();) {
-		while (it != utf16str.end() && !IsAlpha(*it) && !std::isdigit(*it)) it++;
+		while (it != utf16str.end() && !IsAlpha(*it) && !IsDigit(*it)) it++;
 
 		auto begIt = it;
-		while (it != utf16str.end() && (IsAlpha(*it) || std::isdigit(*it) || *it == '+' || *it == '-' || *it == '/')) {
+		while (it != utf16str.end() && (IsAlpha(*it) || IsDigit(*it) || *it == '+' || *it == '-' || *it == '/')) {
 			*it = ToLower(*it);
 			it++;
 		}

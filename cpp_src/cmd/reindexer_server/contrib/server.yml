@@ -6,7 +6,6 @@ info:
   license:
     name: "Apache 2.0"
     url: "http://www.apache.org/licenses/LICENSE-2.0.html"
-host: ""
 basePath: "/api/v1"
 tags:
 - name: "databases"
@@ -39,7 +38,7 @@ paths:
         description: "Database definintion"
         required: true
         schema:
-          $ref: "#/definitions/DatabaseDef"
+          $ref: "#/definitions/Database"
       responses:
         200:
           description: "successful operation"
@@ -377,7 +376,7 @@ paths:
         name: "body"
         description: "Index definition"
         schema:
-          $ref: "#/definitions/IndexDef"
+          $ref: "#/definitions/Index"
         required: true
       - name: "database"
         in: "path"
@@ -427,7 +426,7 @@ paths:
         400:
           description: "Invalid status value"
 
-  /{database}/query:
+  /db/{database}/query:
     get:
       tags:
       - "queries"
@@ -479,7 +478,7 @@ paths:
           description: "successful operation"
         400:
           description: "Invalid status value"
-  /{database}/sqlquery:
+  /db/{database}/sqlquery:
     post:
       tags:
       - "queries"
@@ -518,7 +517,7 @@ definitions:
          items:
            type: "string"
 
-  DatabaseDef:
+  Database:
     type: "object"
     properties:
       name:
@@ -550,16 +549,12 @@ definitions:
         properties:
           enabled:
             type: "boolean"
-          drop_on_file_format_error:
-            type: "boolean"
-          create_if_missing:
-            type: "boolean"
       indexes:
         type: "array"
         items: 
-          $ref: "#/definitions/IndexDef"
+          $ref: "#/definitions/Index"
 
-  IndexDef:
+  Index:
     type: "object"
     properties:
       name: 
@@ -601,6 +596,9 @@ definitions:
         - "ascii"
         - "utf8"
         - "numeric"
+      sort_order_letters:
+        type: "string"
+        description: "Sort order letters"
 
   Query:
     type: "object"
@@ -763,10 +761,10 @@ definitions:
   Indexes:
     type: "object"
     properties:
-      indexes:
+      items:
         type: "array"
         items:
-          $ref: "#/definitions/IndexDef"
+          $ref: "#/definitions/Index"
       total_items:
         type: "integer"
         description: "Total count of namespaces"

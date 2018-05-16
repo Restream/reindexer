@@ -32,6 +32,7 @@ wstring& utf8_to_utf16(const char* src, wstring& dst);
 size_t utf16_to_utf8(const wchar_t* src, size_t len, char* dst, size_t dstLen);
 void check_for_replacement(wchar_t& ch);
 void check_for_replacement(uint32_t& ch);
+bool is_number(const string& str);
 
 int fast_strftime(char* buf, const tm* tm);
 void urldecode2(char* dst, const char* src);

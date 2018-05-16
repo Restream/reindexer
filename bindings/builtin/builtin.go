@@ -1,10 +1,5 @@
-//go:generate sh -c "cd ../.. && mkdir -p build && cd build && cmake .. && make reindexer -j8"
-
 package builtin
 
-// #cgo CXXFLAGS: -std=c++11 -g -O2 -Wall -Wpedantic -Wextra -I../../cpp_src
-// #cgo CFLAGS: -std=c99 -g -O2 -Wall -Wpedantic -Wno-unused-variable -I../../cpp_src
-// #cgo LDFLAGS: -lreindexer -lleveldb -lsnappy -L${SRCDIR}/../../build/cpp_src/ -lstdc++ -g
 // #include "core/cbinding/reindexer_c.h"
 // #include "reindexer_cgo.h"
 // #include <stdlib.h>
@@ -163,8 +158,8 @@ func (binding *Builtin) EnableStorage(path string) error {
 
 func (binding *Builtin) AddIndex(namespace, index, jsonPath, indexType, fieldType string, indexOpts bindings.IndexOptions, collateMode int, sortOrderStr string) error {
 	opts := C.IndexOptsC{
-		options:   C.uint8_t(indexOpts),
-		collate:   C.uint8_t(collateMode),
+		options:          C.uint8_t(indexOpts),
+		collate:          C.uint8_t(collateMode),
 		sortOrderLetters: C.CString(sortOrderStr),
 	}
 	err := err2go(C.reindexer_add_index(str2c(namespace), str2c(index), str2c(jsonPath), str2c(indexType), str2c(fieldType), opts))

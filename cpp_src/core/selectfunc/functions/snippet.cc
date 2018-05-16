@@ -9,7 +9,7 @@ bool Snippet::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 	if (!func.ctx) return false;
 	if (func.funcArgs.size() < 4) throw Error(errParams, "Invalid snippet params need minimum 4 - have %d", int(func.funcArgs.size()));
 
-	FtCtx::Ptr ftctx = reinterpret_pointer_cast<FtCtx>(func.ctx);
+	FtCtx::Ptr ftctx = reindexer::reinterpret_pointer_cast<FtCtx>(func.ctx);
 	AreaHolder::Ptr area = ftctx->Area(res.id);
 	if (!area) return false;
 	Payload pl(pl_type, res.value);
@@ -25,13 +25,13 @@ bool Snippet::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 	int back = data->size();
 	try {
 		back = stoi(func.funcArgs[2]);
-	} catch (std::exception e) {
+	} catch (std::exception &) {
 		throw Error(errParams, "Invalid snippet param back - %s is not a number", func.funcArgs[2].c_str());
 	}
 
 	try {
 		front = stoi(func.funcArgs[3]);
-	} catch (std::exception e) {
+	} catch (std::exception &) {
 		throw Error(errParams, "Invalid snippet param front - %s is not a number", func.funcArgs[3].c_str());
 	}
 

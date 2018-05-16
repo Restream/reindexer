@@ -1,32 +1,30 @@
-#include <pwd.h>
 #include <stdio.h>
-#include <sys/types.h>
-#include <unistd.h>
 #include <csignal>
-#include <thread>
+#include <unordered_map>
 #include "args/args.hpp"
-#include "core/reindexer.h"
 #include "dbmanager.h"
 #include "debug/allocdebug.h"
 #include "debug/backtrace.h"
 #include "httpserver.h"
-#include "loggerwrapper.h"
 #include "rpcserver.h"
-#include "spdlog/spdlog.h"
-#include "time/fast_time.h"
-#include "tools/fsops.h"
+#include "winservice.h"
 #include "yaml/yaml.h"
 
 using namespace reindexer_server;
 struct ServerConfig {
+#ifndef _WIN32
 	string StoragePath = "/tmp/reindex";
-	string WebRoot;
-	string StorageEngine = "leveldb";
-	string HTTPAddr = "0:9088";
-	string RPCAddr = "0:6534";
 	string UserName;
 	bool Daemonize = false;
 	string DaemonPidFile = "/tmp/reindexer.pid";
+#else
+	string StoragePath = "\\reindexer";
+	bool InstallSvc = false, RemoveSvc = false, SvcMode = false;
+#endif
+	string WebRoot;
+	string StorageEngine = "leveldb";
+	string HTTPAddr = "0.0.0.0:9088";
+	string RPCAddr = "0.0.0.0:6534";
 	bool EnableSecurity = false;
 	string LogLevel = "info";
 	string ServerLog = "stdout";
@@ -44,6 +42,11 @@ LogLevel logLevel = LogNone;
 
 #define STR_EXPAND(tok) #tok
 #define STR(tok) STR_EXPAND(tok)
+
+#ifndef _WIN32
+
+#include <pwd.h>
+#include <unistd.h>
 
 static void changeUser(const char *userName) {
 	struct passwd pwd, *result;
@@ -69,6 +72,52 @@ static void changeUser(const char *userName) {
 		exit(EXIT_FAILURE);
 	}
 }
+static int createPidFile() {
+	int fd = open(config.DaemonPidFile.c_str(), O_RDWR | O_CREAT, 0600);
+	if (fd < 0) {
+		fprintf(stderr, "Unable to open PID file %s\n", config.DaemonPidFile.c_str());
+		exit(EXIT_FAILURE);
+	}
+
+	int res = lockf(fd, F_TLOCK, 0);
+	if (res < 0) {
+		fprintf(stderr, "Unable to lock PID file %s\n", config.DaemonPidFile.c_str());
+		exit(EXIT_FAILURE);
+	}
+
+	char str[16];
+	pid_t processPid = getpid();
+	snprintf(str, sizeof(str), "%d", int(processPid));
+
+	auto sz = write(fd, str, strlen(str));
+	(void)sz;
+
+	return fd;
+}
+
+static void daemonize() {
+	pid_t pid = fork();
+	if (pid < 0) {
+		fprintf(stderr, "Can't fork the process\n");
+		exit(EXIT_FAILURE);
+	}
+
+	if (pid > 0) {
+		exit(0);
+	}
+
+	umask(0);
+	setsid();
+	if (chdir("/")) {
+		fprintf(stderr, "Unable to change working directory\n");
+		exit(EXIT_FAILURE);
+	};
+
+	close(STDIN_FILENO);
+	close(STDOUT_FILENO);
+	close(STDERR_FILENO);
+}
+#endif
 
 static void logWrite(int level, char *buf) {
 	if (level <= logLevel) {
@@ -109,12 +158,14 @@ void parseConfigFile(const string &filePath) {
 		config.RPCAddr = root["net"]["rpcaddr"].As<std::string>(config.RPCAddr);
 		config.WebRoot = root["net"]["webroot"].As<std::string>(config.WebRoot);
 		config.EnableSecurity = root["net"]["security"].As<bool>(config.EnableSecurity);
+#ifndef _WIN32
 		config.UserName = root["system"]["user"].As<std::string>(config.UserName);
 		config.Daemonize = root["system"]["daemonize"].As<bool>(config.Daemonize);
 		config.DaemonPidFile = root["system"]["pidfile"].As<std::string>(config.DaemonPidFile);
+#endif
 		config.DebugAllocs = root["debug"]["allocs"].As<bool>(config.DebugAllocs);
 		config.DebugPprof = root["debug"]["allocs"].As<bool>(config.DebugPprof);
-	} catch (Yaml::Exception ex) {
+	} catch (const Yaml::Exception &ex) {
 		fprintf(stderr, "Error with config file '%s': %s\n", filePath.c_str(), ex.Message());
 		exit(EXIT_FAILURE);
 	}
@@ -122,14 +173,11 @@ void parseConfigFile(const string &filePath) {
 
 void parseCmdLine(int argc, char **argv) {
 	string execFile = string(argv[0]);
-	size_t lastSlashPos = execFile.find_last_of('/');
+	size_t lastSlashPos = execFile.find_last_of("/\\");
 	config.WebRoot = execFile.substr(0, lastSlashPos + 1);
 
 	args::ArgumentParser parser("reindexer server");
 	args::HelpFlag help(parser, "help", "Show this message", {'h', "help"});
-	args::ValueFlag<string> userF(parser, "USER", "System user name", {'u', "user"}, config.UserName, args::Options::Single);
-	args::Flag daemonizeF(parser, "", "Run in daemon mode", {'d', "daemonize"});
-	args::ValueFlag<string> daemonPidFileF(parser, "", "Custom daemon pid file", {"pidfile"}, config.DaemonPidFile, args::Options::Single);
 	args::Flag securityF(parser, "", "Enable per-user security", {"security"});
 	args::ValueFlag<string> configF(parser, "CONFIG", "Path to reindexer config file", {'c', "config"}, args::Options::Single);
 
@@ -150,12 +198,25 @@ void parseCmdLine(int argc, char **argv) {
 	args::ValueFlag<string> httpLogF(logGroup, "", "Http log file", {"httplog"}, config.HttpLog, args::Options::Single);
 	args::ValueFlag<string> rpcLogF(logGroup, "", "Rpc log file", {"rpclog"}, config.RpcLog, args::Options::Single);
 
+#ifndef _WIN32
+	args::Group unixDaemonGroup(parser, "Unix daemon options");
+	args::ValueFlag<string> userF(unixDaemonGroup, "USER", "System user name", {'u', "user"}, config.UserName, args::Options::Single);
+	args::Flag daemonizeF(unixDaemonGroup, "", "Run in daemon mode", {'d', "daemonize"});
+	args::ValueFlag<string> daemonPidFileF(unixDaemonGroup, "", "Custom daemon pid file", {"pidfile"}, config.DaemonPidFile,
+										   args::Options::Single);
+#else
+	args::Group winSvcGroup(parser, "Windows service options");
+	args::Flag installF(winSvcGroup, "", "Install reindexer windows service", {"install"});
+	args::Flag removeF(winSvcGroup, "", "Remove reindexer windows service", {"remove"});
+	args::Flag serviceF(winSvcGroup, "", "Run in service mode", {"service"});
+#endif
+
 	try {
 		parser.ParseCLI(argc, argv);
-	} catch (args::Help) {
+	} catch (const args::Help &) {
 		std::cout << parser;
 		exit(EXIT_SUCCESS);
-	} catch (args::Error &e) {
+	} catch (const args::Error &e) {
 		std::cerr << e.what() << std::endl << parser;
 		exit(EXIT_FAILURE);
 	}
@@ -169,9 +230,16 @@ void parseCmdLine(int argc, char **argv) {
 	if (httpAddrF) config.HTTPAddr = args::get(httpAddrF);
 	if (rpcAddrF) config.RPCAddr = args::get(rpcAddrF);
 	if (webRootF) config.WebRoot = args::get(webRootF);
+#ifndef _WIN32
 	if (userF) config.UserName = args::get(userF);
 	if (daemonizeF) config.Daemonize = args::get(daemonizeF);
 	if (daemonPidFileF) config.DaemonPidFile = args::get(daemonPidFileF);
+#else
+	if (installF) config.InstallSvc = args::get(installF);
+	if (removeF) config.RemoveSvc = args::get(removeF);
+	if (serviceF) config.SvcMode = args::get(serviceF);
+
+#endif
 	if (securityF) config.EnableSecurity = args::get(securityF);
 	if (serverLogF) config.ServerLog = args::get(serverLogF);
 	if (coreLogF) config.CoreLog = args::get(coreLogF);
@@ -187,54 +255,30 @@ static void loggerConfigure() {
 	vector<pair<string, string>> loggers = {
 		{"server", config.ServerLog}, {"core", config.CoreLog}, {"http", config.HttpLog}, {"rpc", config.RpcLog}};
 
+	std::unordered_map<string, std::shared_ptr<spdlog::sinks::simple_file_sink_mt>> sinks;
+
 	for (auto &logger : loggers) {
-		if (logger.second == "stdout" || logger.second == "-") {
-			spdlog::stdout_color_mt(logger.first);
-		} else if (!logger.second.empty()) {
-			spdlog::basic_logger_mt(logger.first, logger.second);
+		auto &fileName = logger.second;
+		try {
+			if (fileName == "stdout" || fileName == "-") {
+				spdlog::stdout_color_mt(logger.first);
+			} else if (!fileName.empty()) {
+				auto sink = sinks.find(fileName);
+				if (sink == sinks.end()) {
+					sink = sinks.emplace(fileName, std::make_shared<spdlog::sinks::simple_file_sink_mt>(fileName)).first;
+				}
+				spdlog::create(logger.first, sink->second);
+			}
+		} catch (const spdlog::spdlog_ex &e) {
+			fprintf(stderr, "Can't create logger for '%s' to file '%s': %s\n", logger.first.c_str(), logger.second.c_str(), e.what());
 		}
 	}
 }
 
-int createPidFile() {
-	int fd = open(config.DaemonPidFile.c_str(), O_RDWR | O_CREAT, 0600);
-	if (fd < 0) {
-		fprintf(stderr, "Unable to open PID file %s\n", config.DaemonPidFile.c_str());
-		exit(EXIT_FAILURE);
-	}
-
-	int res = lockf(fd, F_TLOCK, 0);
-	if (res < 0) {
-		fprintf(stderr, "Unable to lock PID file %s\n", config.DaemonPidFile.c_str());
-		exit(EXIT_FAILURE);
-	}
-
-	char str[16];
-	pid_t processPid = getpid();
-	snprintf(str, sizeof(str), "%d", int(processPid));
-
-	auto sz = write(fd, str, strlen(str));
-	(void)sz;
-
-	return fd;
-}
-
-int main(int argc, char **argv) {
-	ev::dynamic_loop loop;
-
-	backtrace_init();
-
-	parseCmdLine(argc, argv);
-
-	if (!config.UserName.empty()) {
-		changeUser(config.UserName.c_str());
-	}
+int startServer() {
 	if (config.DebugAllocs) {
 		allocdebug_init();
 	}
-
-	setvbuf(stdout, 0, _IONBF, 0);
-	setvbuf(stderr, 0, _IONBF, 0);
 
 	fast_hash_map<string, LogLevel> levels = {
 		{"none", LogNone}, {"warning", LogWarning}, {"error", LogError}, {"info", LogInfo}, {"trace", LogTrace}};
@@ -244,33 +288,6 @@ int main(int argc, char **argv) {
 		logLevel = configLevelIt->second;
 	}
 
-	int pidFileFd = -1;
-
-	if (config.Daemonize) {
-		pid_t pid = fork();
-		if (pid < 0) {
-			fprintf(stderr, "Can't fork the process\n");
-			exit(EXIT_FAILURE);
-		}
-
-		if (pid > 0) {
-			return 0;
-		}
-
-		umask(0);
-		setsid();
-		if (chdir("/")) {
-			fprintf(stderr, "Unable to change working directory\n");
-			exit(EXIT_FAILURE);
-		};
-
-		pidFileFd = createPidFile();
-
-		close(STDIN_FILENO);
-		close(STDOUT_FILENO);
-		close(STDERR_FILENO);
-	}
-
 	loggerConfigure();
 
 	logger = LoggerWrapper("server");
@@ -278,6 +295,8 @@ int main(int argc, char **argv) {
 	reindexer::logInstallWriter(logWrite);
 
 	try {
+		ev::dynamic_loop loop;
+
 		DBManager dbMgr(config.StoragePath, !config.EnableSecurity);
 		auto status = dbMgr.Init();
 		if (!status.ok()) {
@@ -308,10 +327,6 @@ int main(int argc, char **argv) {
 			terminate = true;
 			sig.loop.break_loop();
 		};
-		auto sigHupCallback = [&](ev::sig &sig) {
-			(void)sig;
-			loggerConfigure();
-		};
 
 		ev::sig sterm, sint, shup;
 		sterm.set(loop);
@@ -320,9 +335,15 @@ int main(int argc, char **argv) {
 		sint.set(loop);
 		sint.set(sigCallback);
 		sint.start(SIGINT);
+#ifndef _WIN32
+		auto sigHupCallback = [&](ev::sig &sig) {
+			(void)sig;
+			loggerConfigure();
+		};
 		shup.set(loop);
 		shup.set(sigHupCallback);
 		shup.start(SIGHUP);
+#endif
 
 		while (!terminate) {
 			loop.run();
@@ -339,12 +360,62 @@ int main(int argc, char **argv) {
 
 	spdlog::drop_all();
 
+	return 0;
+}
+
+int main(int argc, char **argv) {
+	backtrace_init();
+	setvbuf(stdout, 0, _IONBF, 0);
+	setvbuf(stderr, 0, _IONBF, 0);
+	parseCmdLine(argc, argv);
+
+#ifndef _WIN32
+	if (!config.UserName.empty()) {
+		changeUser(config.UserName.c_str());
+	}
+	int pidFileFd = -1;
+	if (config.Daemonize) {
+		daemonize();
+		pidFileFd = createPidFile();
+	}
+	startServer();
 	if (config.Daemonize) {
 		if (pidFileFd != -1) {
 			close(pidFileFd);
 			unlink(config.DaemonPidFile.c_str());
 		}
 	}
-
-	return 0;
+#else
+	bool running = false;
+	reindexer_server::WinService svc("reindexer", "Reindexer server",
+									 [&]() {
+										 running = true;
+										 startServer();
+										 running = false;
+									 },
+									 []() {  //
+										 raise(SIGTERM);
+									 },
+									 [&]() {  //
+										 return running;
+									 });
+	if (config.InstallSvc) {
+		char cmdline[4096];
+		strcpy(cmdline, argv[0]);
+		for (int i = 1; i < argc; ++i) {
+			strcat(cmdline, " ");
+			if (strcmp(argv[i], "--install"))
+				strcat(cmdline, argv[i]);
+			else
+				strcat(cmdline, "--service");
+		}
+		svc.Install(cmdline);
+	} else if (config.RemoveSvc) {
+		svc.Remove();
+	} else if (config.SvcMode) {
+		svc.Start();
+	} else {
+		startServer();
+	}
+#endif
 }

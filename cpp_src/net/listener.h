@@ -7,6 +7,7 @@
 #include <vector>
 #include "iconnection.h"
 #include "net/ev/ev.h"
+#include "socket.h"
 
 namespace reindexer {
 namespace net {
@@ -42,7 +43,7 @@ protected:
 	struct Shared {
 		Shared(ConnectionFactory connFactory, int maxListeners);
 		~Shared();
-		int fd_;
+		socket sock_;
 		int maxListeners_;
 		std::atomic<int> count_;
 		vector<Listener *> listeners_;

@@ -55,13 +55,13 @@ Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlacehold
 
 	storagePath_.clear();
 	if (storagePath.empty()) return errOK;
-	if (MkDirAll(storagePath) < 0) {
+	if (fs::MkDirAll(storagePath) < 0) {
 		return Error(errParams, "Can't create directory '%s' for reindexer storage - reason %s", storagePath.c_str(), strerror(errno));
 	}
 
-	vector<reindexer::DirEntry> dirEntries;
+	vector<fs::DirEntry> dirEntries;
 	bool isEmpty = true;
-	if (ReadDir(storagePath, dirEntries) < 0) {
+	if (fs::ReadDir(storagePath, dirEntries) < 0) {
 		return Error(errParams, "Can't read contents of directory '%s' for reindexer storage - reason %s", storagePath.c_str(),
 					 strerror(errno));
 	}
@@ -72,7 +72,7 @@ Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlacehold
 	}
 
 	if (!isEmpty && !skipPlaceholderCheck) {
-		FILE* f = fopen(JoinPath(storagePath, kStoragePlaceholderFilename).c_str(), "r");
+		FILE* f = fopen(fs::JoinPath(storagePath, kStoragePlaceholderFilename).c_str(), "r");
 		if (f) {
 			fclose(f);
 		} else {
@@ -80,7 +80,7 @@ Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlacehold
 						 storagePath.c_str());
 		}
 	} else {
-		FILE* f = fopen(JoinPath(storagePath, kStoragePlaceholderFilename).c_str(), "w");
+		FILE* f = fopen(fs::JoinPath(storagePath, kStoragePlaceholderFilename).c_str(), "w");
 		if (f) {
 			fwrite("leveldb", 7, 1, f);
 			fclose(f);
@@ -579,12 +579,12 @@ Error ReindexerImpl::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll) {
 	}
 
 	if (bEnumAll && !storagePath_.empty()) {
-		vector<DirEntry> dirs;
-		if (reindexer::ReadDir(storagePath_, dirs) != 0) return Error(errLogic, "Could not read database dir");
+		vector<fs::DirEntry> dirs;
+		if (fs::ReadDir(storagePath_, dirs) != 0) return Error(errLogic, "Could not read database dir");
 
 		for (auto& d : dirs) {
 			if (d.isDir && d.name != "." && d.name != ".." && namespaces.find(d.name) == namespaces.end()) {
-				string dbpath = JoinPath(storagePath_, d.name);
+				string dbpath = fs::JoinPath(storagePath_, d.name);
 				unique_ptr<Namespace> tmpNs(new Namespace(d.name));
 				try {
 					tmpNs->EnableStorage(storagePath_, StorageOpts());
@@ -599,7 +599,8 @@ Error ReindexerImpl::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll) {
 
 void ReindexerImpl::flusherThread() {
 	vector<string> nsarray;
-	while (!stopFlusher_) {
+
+	auto nsFlush = [&]() {
 		nsarray.clear();
 		{
 			shared_lock<shared_timed_mutex> lock(ns_mutex);
@@ -613,8 +614,14 @@ void ReindexerImpl::flusherThread() {
 			} catch (...) {
 			}
 		}
+	};
+
+	while (!stopFlusher_) {
+		nsFlush();
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
+
+	nsFlush();
 }
 }  // namespace reindexer

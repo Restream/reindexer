@@ -207,42 +207,42 @@ func (enc *Encoder) encodeSlice(v reflect.Value, rdser *Serializer, f fieldInfo,
 
 		switch f.elemKind {
 		case reflect.Int:
-			sl := (*[1 << 30]int)(ptr)[:l:l]
+			sl := (*[1 << 28]int)(ptr)[:l:l]
 			for _, v := range sl {
 				rdser.PutVarInt(int64(v))
 			}
 		case reflect.Uint:
-			sl := (*[1 << 30]uint)(ptr)[:l:l]
+			sl := (*[1 << 28]uint)(ptr)[:l:l]
 			for _, v := range sl {
 				rdser.PutVarInt(int64(v))
 			}
 		case reflect.Int32:
-			sl := (*[1 << 30]int32)(ptr)[:l:l]
+			sl := (*[1 << 28]int32)(ptr)[:l:l]
 			for _, v := range sl {
 				rdser.PutVarInt(int64(v))
 			}
 		case reflect.Uint32:
-			sl := (*[1 << 30]uint32)(ptr)[:l:l]
+			sl := (*[1 << 28]uint32)(ptr)[:l:l]
 			for _, v := range sl {
 				rdser.PutVarInt(int64(v))
 			}
 		case reflect.Int16:
-			sl := (*[1 << 30]int16)(ptr)[:l:l]
+			sl := (*[1 << 29]int16)(ptr)[:l:l]
 			for _, v := range sl {
 				rdser.PutVarInt(int64(v))
 			}
 		case reflect.Uint16:
-			sl := (*[1 << 30]uint16)(ptr)[:l:l]
+			sl := (*[1 << 29]uint16)(ptr)[:l:l]
 			for _, v := range sl {
 				rdser.PutVarInt(int64(v))
 			}
 		case reflect.Int64:
-			sl := (*[1 << 30]int64)(ptr)[:l:l]
+			sl := (*[1 << 27]int64)(ptr)[:l:l]
 			for _, v := range sl {
 				rdser.PutVarInt(int64(v))
 			}
 		case reflect.Uint64:
-			sl := (*[1 << 30]uint64)(ptr)[:l:l]
+			sl := (*[1 << 27]uint64)(ptr)[:l:l]
 			for _, v := range sl {
 				rdser.PutVarInt(int64(v))
 			}
@@ -252,17 +252,17 @@ func (enc *Encoder) encodeSlice(v reflect.Value, rdser *Serializer, f fieldInfo,
 				rdser.PutVarInt(int64(v))
 			}
 		case reflect.Float32:
-			sl := (*[1 << 30]float32)(ptr)[:l:l]
+			sl := (*[1 << 28]float32)(ptr)[:l:l]
 			for _, v := range sl {
 				rdser.PutDouble(float64(v))
 			}
 		case reflect.Float64:
-			sl := (*[1 << 30]float64)(ptr)[:l:l]
+			sl := (*[1 << 27]float64)(ptr)[:l:l]
 			for _, v := range sl {
 				rdser.PutDouble(v)
 			}
 		case reflect.String:
-			sl := (*[1 << 30]string)(ptr)[:l:l]
+			sl := (*[1 << 27]string)(ptr)[:l:l]
 			for _, v := range sl {
 				rdser.PutVString(v)
 			}

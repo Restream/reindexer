@@ -43,59 +43,59 @@ Error LevelDbStorage::Open(const string& path, const StorageOpts& opts) {
 		return Error();
 	}
 
-	return Error(errLogic, status.ToString().c_str());
+	return Error(errLogic, "%s", status.ToString().c_str());
 }
 
 Error LevelDbStorage::Read(const StorageOpts& opts, const Slice& key, string& value) {
-	if (!db_) throw Error(errParams, storageNotInitialized);
+	if (!db_) throw Error(errParams, "%s", storageNotInitialized);
 
 	leveldb::ReadOptions options;
 	toReadOptions(opts, options);
 	leveldb::Status status = db_->Get(options, leveldb::Slice(key.data(), key.size()), &value);
 	if (status.ok()) return Error();
-	return Error(errLogic, status.ToString().c_str());
+	return Error(errLogic, "%s", status.ToString().c_str());
 }
 
 Error LevelDbStorage::Write(const StorageOpts& opts, const Slice& key, const Slice& value) {
-	if (!db_) throw Error(errParams, storageNotInitialized);
+	if (!db_) throw Error(errParams, "%s", storageNotInitialized);
 
 	leveldb::WriteOptions options;
 	toWriteOptions(opts, options);
 	leveldb::Status status = db_->Put(options, leveldb::Slice(key.data(), key.size()), leveldb::Slice(value.data(), value.size()));
 	if (status.ok()) return Error();
-	return Error(errLogic, status.ToString().c_str());
+	return Error(errLogic, "%s", status.ToString().c_str());
 }
 
 Error LevelDbStorage::Write(const StorageOpts& opts, UpdatesCollection& buffer) {
-	if (!db_) throw Error(errParams, storageNotInitialized);
+	if (!db_) throw Error(errParams, "%s", storageNotInitialized);
 
 	leveldb::WriteOptions options;
 	toWriteOptions(opts, options);
 	LevelDbBatchBuffer* batchBuffer = static_cast<LevelDbBatchBuffer*>(&buffer);
 	leveldb::Status status = db_->Write(options, &batchBuffer->batchWrite_);
 	if (status.ok()) return Error();
-	return Error(errLogic, status.ToString().c_str());
+	return Error(errLogic, "%s", status.ToString().c_str());
 }
 
 Error LevelDbStorage::Delete(const StorageOpts& opts, const Slice& key) {
-	if (!db_) throw Error(errParams, storageNotInitialized);
+	if (!db_) throw Error(errParams, "%s", storageNotInitialized);
 
 	leveldb::WriteOptions options;
 	toWriteOptions(opts, options);
 	leveldb::Status status = db_->Delete(options, leveldb::Slice(key.data(), key.size()));
 	if (status.ok()) return Error();
-	return Error(errLogic, status.ToString().c_str());
+	return Error(errLogic, "%s", status.ToString().c_str());
 }
 
 Snapshot::Ptr LevelDbStorage::MakeSnapshot() {
-	if (!db_) throw Error(errParams, storageNotInitialized);
+	if (!db_) throw Error(errParams, "%s", storageNotInitialized);
 	const leveldb::Snapshot* ldbSnapshot = db_->GetSnapshot();
 	assert(ldbSnapshot);
 	return std::make_shared<LevelDbSnapshot>(ldbSnapshot);
 }
 
 void LevelDbStorage::ReleaseSnapshot(Snapshot::Ptr snapshot) {
-	if (!db_) throw Error(errParams, storageNotInitialized);
+	if (!db_) throw Error(errParams, "%s", storageNotInitialized);
 	if (!snapshot) throw Error(errParams, "Storage pointer is null");
 	const LevelDbSnapshot* levelDbSnpshot = static_cast<const LevelDbSnapshot*>(snapshot.get());
 	db_->ReleaseSnapshot(levelDbSnpshot->snapshot_);
@@ -123,7 +123,7 @@ void LevelDbStorage::Destroy(const string& path) {
 }
 
 Cursor* LevelDbStorage::GetCursor(StorageOpts& opts) {
-	if (!db_) throw Error(errParams, storageNotInitialized);
+	if (!db_) throw Error(errParams, "%s", storageNotInitialized);
 	leveldb::ReadOptions options;
 	toReadOptions(opts, options);
 	options.fill_cache = false;

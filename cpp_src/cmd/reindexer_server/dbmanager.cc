@@ -12,15 +12,15 @@ namespace reindexer_server {
 DBManager::DBManager(const string &dbpath, bool noSecurity) : dbpath_(dbpath), noSecurity_(noSecurity) {}
 
 Error DBManager::Init() {
-	MkDirAll(dbpath_);
+	fs::MkDirAll(dbpath_);
 
 	auto status = readUsers();
 	if (!status.ok() && !noSecurity_) {
 		return status;
 	}
 
-	vector<reindexer::DirEntry> foundDb;
-	if (reindexer::ReadDir(dbpath_, foundDb) < 0) {
+	vector<fs::DirEntry> foundDb;
+	if (fs::ReadDir(dbpath_, foundDb) < 0) {
 		return Error(errParams, "Can't read reindexer dir %s", dbpath_.c_str());
 	}
 
@@ -52,7 +52,7 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 			return Error(errParams, "Database '%s' not found", dbName.c_str());
 		}
 		if (auth.role_ < kRoleDBAdmin) {
-			return Error(errForbidden, "Forbidden to create database", dbName.c_str());
+			return Error(errForbidden, "Forbidden to create database %s", dbName.c_str());
 		}
 
 		if (!validateObjectName(dbName.c_str())) {
@@ -68,7 +68,7 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 }
 
 Error DBManager::loadOrCreateDatabase(const string &dbName) {
-	string storagePath = JoinPath(dbpath_, dbName);
+	string storagePath = fs::JoinPath(dbpath_, dbName);
 
 	logPrintf(LogInfo, "Loading database %s", dbName.c_str());
 	auto db = std::make_shared<reindexer::Reindexer>();
@@ -77,8 +77,8 @@ Error DBManager::loadOrCreateDatabase(const string &dbName) {
 		return status;
 	}
 
-	vector<reindexer::DirEntry> foundNs;
-	if (ReadDir(storagePath, foundNs) < 0) {
+	vector<fs::DirEntry> foundNs;
+	if (fs::ReadDir(storagePath, foundNs) < 0) {
 		return Error(errParams, "Can't read database dir %s", storagePath.c_str());
 	}
 
@@ -110,7 +110,7 @@ Error DBManager::DropDatabase(AuthContext &auth) {
 	dbs_.erase(it);
 	auth.ResetDB();
 
-	RmDirAll(JoinPath(dbpath_, dbName));
+	fs::RmDirAll(fs::JoinPath(dbpath_, dbName));
 	return 0;
 }
 
@@ -166,7 +166,7 @@ Error DBManager::Login(const string &dbName, AuthContext &auth) {
 Error DBManager::readUsers() {
 	users_.clear();
 	string content;
-	int res = ReadFile(JoinPath(dbpath_, "users.json"), content);
+	int res = fs::ReadFile(fs::JoinPath(dbpath_, "users.json"), content);
 	if (res < 0) {
 		return Error(errParams, "Can't read users.json file");
 	}

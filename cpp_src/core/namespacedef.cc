@@ -26,13 +26,13 @@ Error NamespaceDef::FromJSON(char *json) {
 				if (elem->value.getTag() != JSON_OBJECT) {
 					return Error(errParseJson, "Expected object in 'storage' field, but found %d", elem->value.getTag());
 				}
+				bool isEnabled = true, isDropOnFileFormatError = false, isCreateIfMissing = true;
 				for (auto selem : elem->value) {
-					bool isEnabled = true, isDropOnFileFormatError = false, isCreateIfMissing = false;
 					parseJsonField("enabled", isEnabled, selem);
 					parseJsonField("drop_on_file_format_error", isDropOnFileFormatError, selem);
 					parseJsonField("create_if_missing", isCreateIfMissing, selem);
-					storage.Enabled(isEnabled).DropOnFileFormatError(isDropOnFileFormatError).CreateIfMissing(isCreateIfMissing);
 				}
+				storage.Enabled(isEnabled).DropOnFileFormatError(isDropOnFileFormatError).CreateIfMissing(isCreateIfMissing);
 
 			} else if (!strcmp("indexes", elem->key)) {
 				if (elem->value.getTag() != JSON_ARRAY) {
@@ -55,9 +55,7 @@ void NamespaceDef::GetJSON(WrSerializer &ser) {
 	ser.PutChar('{');
 	ser.Printf("\"name\":\"%s\",", name.c_str());
 	ser.PutChars("\"storage\":{");
-	ser.Printf("\"enabled\":%s,", storage.IsEnabled() ? "true" : "false");
-	ser.Printf("\"drop_on_file_format_error\":%s,", storage.IsDropOnFileFormatError() ? "true" : "false");
-	ser.Printf("\"create_if_missing\":%s", storage.IsCreateIfMissing() ? "true" : "false");
+	ser.Printf("\"enabled\":%s", storage.IsEnabled() ? "true" : "false");
 	ser.PutChars("},");
 
 	ser.PutChars("\"indexes\":[");

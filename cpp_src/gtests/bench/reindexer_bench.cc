@@ -24,7 +24,7 @@ const int kItemsInBenchDataset = 500000;
 #endif
 
 int main(int argc, char** argv) {
-	if (reindexer::RmDirAll(STORAGE_PATH) < 0 && errno != ENOENT) {
+	if (reindexer::fs::RmDirAll(STORAGE_PATH) < 0 && errno != ENOENT) {
 		std::cerr << "Could not clean working dir '" << STORAGE_PATH << "'.";
 		std::cerr << "Reason: " << strerror(errno) << std::endl;
 

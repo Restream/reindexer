@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <vector>
 #include "libdivsufsort/divsufsort.h"
 
@@ -119,18 +120,22 @@ public:
 		return end();
 	}
 
-	int insert(const K &word, const V &val) {
+	int insert(const K &word, const V &val, int virtual_len = -1) {
+		if (virtual_len == -1) virtual_len = word.length();
 		int wpos = text_.length();
+		size_t real_len = word.length();
 		text_ += word + '\0';
-		mapped_.insert(mapped_.end(), word.length() + 1, val);
+		mapped_.insert(mapped_.end(), real_len + 1, val);
 		words_.push_back(wpos);
-		words_len_.push_back(word.length());
+		words_len_.push_back(std::make_pair(real_len, virtual_len));
 		built_ = false;
 		return wpos;
-	};
+	}
 
 	const typename K::value_type *word_at(int idx) const { return &text_[words_[idx]]; }
-	int16_t word_len_at(int idx) const { return words_len_[idx]; }
+
+	int16_t word_len_at(int idx) const { return words_len_[idx].first; }
+	int16_t virtual_word_len(int idx) { return words_len_[idx].second; }
 
 	void build() {
 		if (built_) return;
@@ -179,7 +184,8 @@ protected:
 	}
 
 	std::vector<int> sa_, words_;
-	std::vector<int16_t> lcp_, words_len_;
+	std::vector<int16_t> lcp_;
+	std::vector<std::pair<uint8_t, uint8_t>> words_len_;
 	vector<V> mapped_;
 	K text_;
 	bool built_ = false;

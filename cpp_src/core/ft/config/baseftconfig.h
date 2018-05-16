@@ -21,6 +21,7 @@ public:
 	vector<string> stemmers = {"en", "ru"};
 	bool enableTranslit = true;
 	bool enableKbLayout = true;
+	bool enableNumbersSearch = false;
 	fast_hash_set<string> stopWords;
 	int logLevel = 0;
 

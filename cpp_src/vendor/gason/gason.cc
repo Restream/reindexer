@@ -1,4 +1,6 @@
+#ifndef _MSC_VER
 #pragma GCC diagnostic ignored "-Wold-style-cast"
+#endif
 
 #include "gason.h"
 #include <stdlib.h>

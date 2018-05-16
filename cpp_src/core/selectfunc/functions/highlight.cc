@@ -8,7 +8,7 @@ bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 
 	if (!func.ctx || func.ctx->type != BaseFunctionCtx::kFtCtx) return false;
 
-	FtCtx::Ptr ftctx = reinterpret_pointer_cast<FtCtx>(func.ctx);
+	FtCtx::Ptr ftctx = reindexer::reinterpret_pointer_cast<FtCtx>(func.ctx);
 	AreaHolder::Ptr area = ftctx->Area(res.id);
 	if (!area) {
 		return false;

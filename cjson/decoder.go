@@ -250,42 +250,42 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 	if subtag != TAG_OBJECT {
 		switch v.Type().Elem().Kind() {
 		case reflect.Int:
-			sl := (*[1 << 30]int)(ptr)[:count:count]
+			sl := (*[1 << 28]int)(ptr)[:count:count]
 			for i := 0; i < count; i++ {
 				sl[i] = int(asInt(rdser, subtag))
 			}
 		case reflect.Uint:
-			sl := (*[1 << 30]uint)(ptr)[:count:count]
+			sl := (*[1 << 28]uint)(ptr)[:count:count]
 			for i := 0; i < count; i++ {
 				sl[i] = uint(asInt(rdser, subtag))
 			}
 		case reflect.Int64:
-			sl := (*[1 << 30]int64)(ptr)[:count:count]
+			sl := (*[1 << 27]int64)(ptr)[:count:count]
 			for i := 0; i < count; i++ {
 				sl[i] = int64(asInt(rdser, subtag))
 			}
 		case reflect.Uint64:
-			sl := (*[1 << 30]uint64)(ptr)[:count:count]
+			sl := (*[1 << 27]uint64)(ptr)[:count:count]
 			for i := 0; i < count; i++ {
 				sl[i] = uint64(asInt(rdser, subtag))
 			}
 		case reflect.Int32:
-			sl := (*[1 << 30]int32)(ptr)[:count:count]
+			sl := (*[1 << 28]int32)(ptr)[:count:count]
 			for i := 0; i < count; i++ {
 				sl[i] = int32(asInt(rdser, subtag))
 			}
 		case reflect.Uint32:
-			sl := (*[1 << 30]uint32)(ptr)[:count:count]
+			sl := (*[1 << 28]uint32)(ptr)[:count:count]
 			for i := 0; i < count; i++ {
 				sl[i] = uint32(asInt(rdser, subtag))
 			}
 		case reflect.Int16:
-			sl := (*[1 << 30]int16)(ptr)[:count:count]
+			sl := (*[1 << 29]int16)(ptr)[:count:count]
 			for i := 0; i < count; i++ {
 				sl[i] = int16(asInt(rdser, subtag))
 			}
 		case reflect.Uint16:
-			sl := (*[1 << 30]uint16)(ptr)[:count:count]
+			sl := (*[1 << 29]uint16)(ptr)[:count:count]
 			for i := 0; i < count; i++ {
 				sl[i] = uint16(asInt(rdser, subtag))
 			}
@@ -300,27 +300,27 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 				sl[i] = uint8(asInt(rdser, subtag))
 			}
 		case reflect.Float32:
-			sl := (*[1 << 30]float32)(ptr)[:count:count]
+			sl := (*[1 << 28]float32)(ptr)[:count:count]
 			for i := 0; i < count; i++ {
 				sl[i] = float32(asFloat(rdser, subtag))
 			}
 		case reflect.Float64:
-			sl := (*[1 << 30]float64)(ptr)[:count:count]
+			sl := (*[1 << 27]float64)(ptr)[:count:count]
 			for i := 0; i < count; i++ {
 				sl[i] = asFloat(rdser, subtag)
 			}
 		case reflect.Bool:
-			sl := (*[1 << 30]bool)(ptr)[:count:count]
+			sl := (*[1 << 27]bool)(ptr)[:count:count]
 			for i := 0; i < count; i++ {
 				sl[i] = rdser.GetVarInt() != 0
 			}
 		case reflect.String:
-			sl := (*[1 << 30]string)(ptr)[:count:count]
+			sl := (*[1 << 27]string)(ptr)[:count:count]
 			for i := 0; i < count; i++ {
 				sl[i] = asString(rdser, subtag)
 			}
 		case reflect.Interface:
-			sl := (*[1 << 30]interface{})(ptr)[:count:count]
+			sl := (*[1 << 27]interface{})(ptr)[:count:count]
 			for i := 0; i < count; i++ {
 				sl[i] = asIface(rdser, subtag)
 			}

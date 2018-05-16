@@ -5,6 +5,7 @@
 #include "estl/h_vector.h"
 #include "net/ev/ev.h"
 #include "net/iconnection.h"
+#include "net/socket.h"
 #include "picohttpparser/picohttpparser.h"
 #include "router.h"
 
@@ -15,8 +16,8 @@ namespace http {
 using reindexer::cbuf;
 using reindexer::h_vector;
 
-const ssize_t kHttpReadbufSize = 0x8000;
-const ssize_t kHttpWriteBufSize = 0x8000;
+const ssize_t kHttpReadbufSize = 0x20000;
+const ssize_t kHttpWriteBufSize = 0x20000;
 const ssize_t kHttpMaxHeaders = 128;
 
 class Connection : public IConnection {
@@ -28,7 +29,7 @@ public:
 		return [&router](ev::dynamic_loop &loop, int fd) { return new Connection(fd, loop, router); };
 	};
 
-	bool IsFinished() override final { return fd_ < 0; }
+	bool IsFinished() override final { return !sock_.valid(); }
 	bool Restart(int fd) override final;
 	void Reatach(ev::dynamic_loop &loop) override final;
 
@@ -82,7 +83,7 @@ protected:
 	void writeHttpResponse(int code);
 
 	ev::io io_;
-	int fd_;
+	socket sock_;
 	int curEvents_ = 0;
 	cbuf<char> wrBuf_, rdBuf_;
 	Router &router_;

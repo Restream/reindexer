@@ -1,5 +1,6 @@
 #include "selectfunc.h"
 #include <memory>
+#include <cctype>
 #include "core/namespacedef.h"
 #include "ctx/ftctx.h"
 #include "functions/highlight.h"
@@ -54,7 +55,7 @@ void SelectFunction::createFunc(SelectFuncStruct &data) {
 	if (data.indexNo == -1) {
 		try {
 			indexNo = nm_.getIndexByName(data.field);
-		} catch (const Error &err) {
+		} catch (const Error &) {
 			std::size_t found = data.field.find("=");
 			if (found != std::string::npos) data.field.erase(0, found + 1);
 			trim(data.field);
@@ -181,7 +182,7 @@ BaseFunctionCtx::Ptr SelectFunction::createCtx(SelectFuncStruct &data, BaseFunct
 				} else {
 					data.ctx = ctx;
 				}
-				data.ctx->AddFucntion(nm_.getIndexName(data.indexNo), data.type);
+				data.ctx->AddFunction(nm_.getIndexName(data.indexNo), data.type);
 			}
 	}
 	return data.ctx;

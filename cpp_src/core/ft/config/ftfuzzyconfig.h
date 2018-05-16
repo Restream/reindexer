@@ -23,4 +23,6 @@ struct FtFuzzyConfig : public BaseFTConfig {
 	size_t spaceSize = 2;
 };
 
+const size_t maxFuzzyFTBufferSize = 10;
+
 }  // namespace reindexer

@@ -51,6 +51,14 @@ public:
 		Upsert(ns, item);
 		Commit(ns);
 	}
+	QueryResults SimpleSelect(string word) {
+		Query qr = Query("nm1").Where("ft3", CondEq, word);
+		QueryResults res;
+		qr.selectFunctions_.push_back("ft3 = highlight(!,!)");
+		reindexer->Select(qr, res);
+
+		return res;
+	}
 	QueryResults SimpleCompositeSelect(string word) {
 		Query qr = Query("nm1").Where("ft3", CondEq, word);
 		QueryResults res;

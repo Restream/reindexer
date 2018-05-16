@@ -50,7 +50,7 @@ pair<bool, size_t> BaseSearcher::GetData(BaseHolder::Ptr holder, unsigned int i,
 
 size_t BaseSearcher::ParseData(BaseHolder::Ptr holder, const wstring &src_data, int &max_id, int &min_id, std::vector<FirstResult> &rusults,
 							   const FtDslOpts &opts, double proc) {
-	wchar_t res_buf[holder->cfg_.bufferSize];
+	wchar_t res_buf[maxFuzzyFTBufferSize];
 	size_t total_size = 0;
 	size_t size = src_data.size();
 	unsigned int i = 0;
@@ -135,7 +135,7 @@ void BaseSearcher::AddIndex(BaseHolder::Ptr holder, const string *src_data, cons
 	std::wstring utf16str;
 	vector<std::wstring> wrds;
 	split(*src_data, utf16str, wrds);
-	wchar_t res_buf[holder->cfg_.bufferSize];
+	wchar_t res_buf[maxFuzzyFTBufferSize];
 	size_t total_size = 0;
 	for (auto &term : wrds) {
 		unsigned int i = 0;

@@ -7,7 +7,6 @@
 #include "estl/h_vector.h"
 
 namespace reindexer {
-using namespace std;
 struct Area {
 	Area() : start_(0), end_(0) {}
 	Area(int start, int end) : start_(start), end_(end) {}
@@ -36,8 +35,8 @@ struct Area {
 using AreaVec = h_vector<Area, 2>;
 class AreaHolder {
 public:
-	typedef shared_ptr<AreaHolder> Ptr;
-	typedef unique_ptr<AreaHolder> UniquePtr;
+	typedef std::shared_ptr<AreaHolder> Ptr;
+	typedef std::unique_ptr<AreaHolder> UniquePtr;
 
 	AreaHolder(int buffer_size, int total_size, int space_size)
 		: buffer_size_(buffer_size), total_size_(total_size), space_size_(space_size), commited_(false) {}

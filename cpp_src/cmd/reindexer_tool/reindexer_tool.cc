@@ -39,7 +39,7 @@ void InstallLogLevel(const vector<string>& args) {
 }
 
 args::Group progOptions("options");
-args::ValueFlag<string> storagePath(progOptions, "path", "path to 'reindexer' storage", {'s', "db"}, reindexer::GetCwd(),
+args::ValueFlag<string> storagePath(progOptions, "path", "path to 'reindexer' storage", {'s', "db"}, reindexer::fs::GetCwd(),
 									Options::Single | Options::Global);
 
 args::ActionFlag logLevel(progOptions, "INT=1..5", "reindexer logging level", {'l', "log"}, 1, &InstallLogLevel,
@@ -64,10 +64,51 @@ void ListCommand(args::Subparser& subparser) {
 	}
 }
 
+static std::vector<char> charsForEscaping = {'\n', '\t', ',', '\0', '\\'};
+
+string escapeName(const string& str) {
+	string dst = "";
+
+	dst.reserve(str.length());
+
+	for (auto it = str.begin(); it != str.end(); it++) {
+		auto findIt = std::find(charsForEscaping.begin(), charsForEscaping.end(), *it);
+
+		if (findIt != charsForEscaping.end()) {
+			dst.push_back('\\');
+		}
+
+		dst.push_back(*it);
+	}
+
+	return dst;
+}
+
+string unescapeName(const string& str) {
+	string dst = "";
+
+	dst.reserve(str.length());
+
+	for (auto it = str.begin(); it != str.end(); it++) {
+		if (*it == '\\') {
+			it++;
+
+			auto findIt = std::find(charsForEscaping.begin(), charsForEscaping.end(), *it);
+			if (findIt == charsForEscaping.end()) {
+				dst.push_back('\\');
+			}
+		}
+
+		dst.push_back(*it);
+	}
+
+	return dst;
+}
+
 void DumpCommand(args::Subparser& subparser) {
 	args::Group dumpArgs(subparser, "dump options");
 	args::PositionalList<string> namespaces(dumpArgs, "<namespace>", "list of namespaces which need to dump");
-	args::ValueFlag<string> outFile(dumpArgs, "DIR", "output filename for dump namespace(s)", {'o', "out"}, "reindexer.dump");
+	args::ValueFlag<string> outFile(dumpArgs, "FILE", "output filename for dump namespace(s)", {'f', "file"}, "");
 	args::HelpFlag dumpHelp(dumpArgs, "help", "help message for 'dump' command", {'h', "help"});
 	args::Flag showProgress(dumpArgs, "progress", "show dump progress", {'p', "progress"}, args::Options::Single);
 
@@ -90,7 +131,7 @@ void DumpCommand(args::Subparser& subparser) {
 				doNsDefs.push_back(std::move(*nsDef));
 				allNsDefs.erase(nsDef);
 			} else {
-				std::cout << "Namespace '" << ns << "' - skipped. (not found in storage)" << std::endl;
+				std::cout << "-- Namespace '" << ns << "' - skipped. (not found in storage)" << std::endl;
 			}
 		}
 	} else {
@@ -98,11 +139,11 @@ void DumpCommand(args::Subparser& subparser) {
 	}
 
 	string filename = args::get(outFile);
+	ofstream fileDescriptor(filename, std::ios::out | std::ios::trunc);
+	std::ostream& file = !filename.empty() ? fileDescriptor : std::cout;
 
-	ofstream file(filename, std::ios::out | std::ios::trunc);
-
-	if (!file) {
-		std::cerr << "ERROR: " << strerror(errno) << std::endl;
+	if (filename.length() && !fileDescriptor) {
+		std::cerr << "-- ERROR: " << strerror(errno) << std::endl;
 		return;
 	}
 
@@ -110,45 +151,45 @@ void DumpCommand(args::Subparser& subparser) {
 	file << "VERSION 1.0" << std::endl;
 
 	for (auto& nsDef : doNsDefs) {
-		std::cout << "Dumping namespace '" << nsDef.name << "' ..." << std::endl;
+		std::cout << "-- Dumping namespace '" << nsDef.name << "' ..." << std::endl;
 
 		err = db->OpenNamespace(nsDef.name, StorageOpts().Enabled());
 		if (err) {
-			std::cerr << "ERROR: " << err.what() << std::endl;
+			std::cerr << "-- ERROR: " << err.what() << std::endl;
 			continue;
 		}
 
 		reindexer::WrSerializer wrser;
 		nsDef.GetJSON(wrser);
-		file << "NAMESPACE " << nsDef.name << " ";
+		file << "NAMESPACE " << escapeName(nsDef.name) << " ";
 		file.write(reinterpret_cast<char*>(wrser.Buf()), wrser.Len());
 		file << "\n";
 
 		vector<string> meta;
 		err = db->EnumMeta(nsDef.name, meta);
 		if (err) {
-			std::cerr << "ERROR: " << err.what() << std::endl;
+			std::cerr << "-- ERROR: " << err.what() << std::endl;
 			continue;
 		}
 		for (auto& mkey : meta) {
 			string mdata;
 			err = db->GetMeta(nsDef.name, mkey, mdata);
 			if (err) {
-				std::cerr << "ERROR: " << err.what() << std::endl;
+				std::cerr << "-- ERROR: " << err.what() << std::endl;
 				continue;
 			}
-			file << "META " << nsDef.name << " " << mkey << " " << mdata << std::endl;
+			file << "META " << escapeName(nsDef.name) << " " << escapeName(mkey) << " " << escapeName(mdata) << std::endl;
 		}
 
 		reindexer::Query q(nsDef.name);
 		QueryResults itemResults;
 		err = db->Select(q, itemResults);
 		if (err) {
-			std::cerr << "ERROR: " << err.what() << std::endl;
+			std::cerr << "-- ERROR: " << err.what() << std::endl;
 		}
 
 		shared_ptr<ProgressPrinter> progressPrinter;
-		if (showProgress) {
+		if (fileDescriptor && showProgress) {
 			progressPrinter = std::make_shared<ProgressPrinter>(itemResults.size());
 		}
 
@@ -156,7 +197,7 @@ void DumpCommand(args::Subparser& subparser) {
 		for (size_t i = 0; i < itemResults.size(); i++) {
 			ser.Reset();
 			itemResults.GetJSON(i, ser, false);
-			file << "INSERT " << nsDef.name << " ";
+			file << "INSERT " << escapeName(nsDef.name) << " ";
 			file.write(reinterpret_cast<char*>(ser.Buf()), ser.Len());
 			file << "\n";
 			if (progressPrinter) progressPrinter->Show(i);
@@ -165,108 +206,120 @@ void DumpCommand(args::Subparser& subparser) {
 
 		err = db->CloseNamespace(nsDef.name);
 		if (err) {
-			std::cerr << "ERROR: " << err.what() << std::endl;
+			std::cerr << "-- ERROR: " << err.what() << std::endl;
 			continue;
 		}
 	}
-	file.close();
+
+	if (fileDescriptor) {
+		fileDescriptor.close();
+	}
 }
 
 void RestoreCommand(args::Subparser& subparser) {
 	args::Group restoreArgs(subparser, "RESTORE options");
 	args::HelpFlag restoreHelp(restoreArgs, "restore", "show help message for 'RESTORE' command", {'h', "help"});
-	args::PositionalList<string> restoreList(restoreArgs, "<filepath>", "path to file", args::Options::Single | args::Options::Required);
+	args::ValueFlag<string> restorePath(restoreArgs, "dump file", "specify a dump file for restore", {'f', "file"}, "",
+										args::Options::Single);
 	args::Flag showProgress(restoreArgs, "print progress", "print restore progress", {'p', "progress"}, args::Options::Single);
 
 	subparser.Parse();
 
+	string path = args::get(restorePath);
+
 	auto err = db->EnableStorage(args::get(storagePath));
 	if (err) throw err;
 
+	ifstream fileDescriptor(path);
+	std::istream& file = !path.empty() ? fileDescriptor : std::cin;
+	if (path.length()) {
+		if (!fileDescriptor) {
+			std::cout << "ERROR: " << strerror(errno) << " [SKIP]" << std::endl;
+		}
+		std::cout << "Process file: " << path << std::endl;
+	}
+
 	shared_ptr<ProgressPrinter> progressPrinter;
-	if (showProgress) {
+	if (fileDescriptor && showProgress) {
 		progressPrinter = std::make_shared<ProgressPrinter>();
 	}
 
-	for (auto& path : restoreList) {
-		std::cout << "Process file: " << path << std::endl;
-		ifstream file(path);
-		if (!file) {
-			std::cout << "ERROR: " << strerror(errno) << " [SKIP]" << std::endl;
-			continue;
-		}
+	if (progressPrinter) progressPrinter->Reset(GetStreamSize(file));
 
-		if (progressPrinter) progressPrinter->Reset(GetStreamSize(file));
+	int lineCount = -1;
+	err = 0;
+	for (string buffer; std::getline(file, buffer);) {
+		lineCount++;
 
-		string buffer;
-		int lineCount = -1;
-		err = 0;
-		while (!file.eof() && err.ok()) {
-			lineCount++;
-			std::getline(file, buffer);
-			if (buffer.empty()) continue;
+		LineParser parser(buffer);
+		auto token = reindexer::lower(parser.NextToken());
 
-			LineParser parser(buffer);
-			auto token = reindexer::lower(parser.NextToken());
+		if (token == "namespace") {
+			auto nsName = unescapeName(parser.NextToken());
 
-			if (token == "namespace") {
-				// skip name
-				parser.NextToken();
-
-				reindexer::NamespaceDef def("");
-				err = def.FromJSON(const_cast<char*>(parser.CurPtr()));
-				if (err) {
-					std::cout << "ERROR: namespace structure is not valid [SKIP]" << std::endl;
-					continue;
-				}
-
-				std::cout << "restore namespace '" << def.name << "' ..." << std::endl;
-
-				def.storage.DropOnFileFormatError(true);
-				err = db->AddNamespace(def);
-				if (err) {
-					std::cout << "ERROR: " << err.what() << std::endl;
-					continue;
-				}
-			} else if (token == "insert") {
-				auto nsName = parser.NextToken();
-				auto item = db->NewItem(nsName);
-				err = item.Status();
-				if (err) break;
-
-				err = item.Unsafe().FromJSON(const_cast<char*>(parser.CurPtr()));
-				if (err) break;
-
-				err = db->Upsert(nsName, item);
-				if (err) break;
-
-				if (progressPrinter) progressPrinter->Show(file.tellg());
-			} else if (token == "meta") {
-				auto nsName = parser.NextToken();
-				auto metaKey = parser.NextToken();
-				auto metaData = parser.NextToken();
-				err = db->PutMeta(nsName, metaKey, metaData);
-				if (err) break;
-			} else if (token == "--" || token.empty()) {
+			reindexer::NamespaceDef def("");
+			err = def.FromJSON(const_cast<char*>(parser.CurPtr()));
+			if (err) {
+				std::cout << "ERROR: namespace structure is not valid [SKIP]" << std::endl;
 				continue;
-			} else if (token == "version") {
-				continue;
-			} else {
-				err = reindexer::Error(errParseDSL, "Can't parse line token '%s'", token.c_str());
 			}
-		}
 
-		if (err) {
-			std::cout << "ERROR: " << err.what() << " [SKIP], at line " << lineCount << std::endl;
+			std::cout << "Restore namespace '" << nsName << "' ..." << std::endl;
+
+			def.storage.DropOnFileFormatError(true);
+			def.storage.CreateIfMissing(true);
+
+			err = db->AddNamespace(def);
+			if (err) {
+				std::cout << "ERROR: " << err.what() << std::endl;
+				continue;
+			}
+		} else if (token == "insert") {
+			auto nsName = unescapeName(parser.NextToken());
+
+			auto item = db->NewItem(nsName);
+			err = item.Status();
+			if (err) {
+				std::cout << "ERROR: " << err.what() << std::endl;
+				continue;
+			}
+
+			err = item.Unsafe().FromJSON(const_cast<char*>(parser.CurPtr()));
+			if (err) {
+				std::cout << "ERROR: " << err.what() << std::endl;
+				continue;
+			}
+
+			err = db->Upsert(nsName, item);
+			if (err) {
+				std::cout << "ERROR: " << err.what() << std::endl;
+				continue;
+			}
+
+			if (progressPrinter) progressPrinter->Show(file.tellg());
+		} else if (token == "meta") {
+			auto nsName = unescapeName(parser.NextToken());
+			auto metaKey = unescapeName(parser.NextToken());
+			auto metaData = unescapeName(parser.NextToken());
+			err = db->PutMeta(nsName, metaKey, metaData);
+			if (err) break;
+		} else if (token == "--" || token.empty()) {
+			continue;
+		} else if (token == "version") {
+			continue;
+		} else {
 			continue;
 		}
-		if (progressPrinter) progressPrinter->Finish();
+	}
 
-		// err = db->CloseNamespace(nsDef.name);
-		// if (err) {
-		// 	std::cout << "ERROR: " << err.what() << std::endl;
-		// 	continue;
-		// }
+	if (err) {
+		std::cout << "ERROR: " << err.what() << " [SKIP], at line " << lineCount << std::endl;
+	}
+
+	if (progressPrinter) progressPrinter->Finish();
+
+	if (fileDescriptor) {
+		fileDescriptor.close();
 	}
 }
 
@@ -413,9 +466,9 @@ int main(int argc, char* argv[]) {
 
 	try {
 		parser.ParseCLI(argc, argv);
-	} catch (args::Help) {
+	} catch (const args::Help &) {
 		std::cout << parser;
-	} catch (args::Error& e) {
+	} catch (const args::Error& e) {
 		std::cerr << "ERROR: " << e.what() << std::endl;
 		std::cout << parser.Help() << std::endl;
 		return 1;

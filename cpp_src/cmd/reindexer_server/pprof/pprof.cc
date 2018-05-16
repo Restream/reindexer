@@ -17,6 +17,7 @@ static void ProfilerStop(void) { return; }
 #define NAME_PREFIX "reindexer_server"
 
 namespace reindexer_server {
+using namespace reindexer;
 
 void Pprof::Attach(http::Router &router) {
 	router.GET<Pprof, &Pprof::Profile>("/debug/pprof/profile", this);
@@ -40,7 +41,7 @@ void Pprof::Attach(http::Router &router) {
 int Pprof::Profile(http::Context &ctx) {
 	long long seconds = 30;
 	const char *secondsParam = nullptr;
-	string filePath;
+	string filePath = fs::GetTempDir();
 
 	for (auto p : ctx.request->params) {
 		if (!strcmp(p.name, "seconds")) secondsParam = p.val;
@@ -49,19 +50,13 @@ int Pprof::Profile(http::Context &ctx) {
 	if (secondsParam != nullptr) seconds = atoll(secondsParam);
 	if (seconds < 1) seconds = 30;
 
-	if (const char *tmpDir = getenv("TMPDIR")) {
-		if (tmpDir) filePath = tmpDir;
-	} else {
-		filePath = reindexer::GetCwd();
-	}
-
-	filePath = reindexer::JoinPath(filePath, string(NAME_PREFIX) + ".profile");
+	filePath = fs::JoinPath(filePath, string(NAME_PREFIX) + ".profile");
 
 	ProfilerStart(filePath.c_str());
 	std::this_thread::sleep_for(std::chrono::seconds(seconds));
 	ProfilerStop();
 	string content;
-	if (reindexer::ReadFile(filePath, content) < 0) {
+	if (fs::ReadFile(filePath, content) < 0) {
 		return ctx.String(http::StatusNotFound, "File not found");
 	}
 	return ctx.String(http::StatusOK, content);

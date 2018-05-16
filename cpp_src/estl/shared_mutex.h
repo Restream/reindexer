@@ -1,7 +1,9 @@
 
 #pragma once
 
-#if __cplusplus >= 201402
+#ifdef _MSC_VER
+#define REINDEX_USE_STD_SHARED_MUTEX 1
+#elif __cplusplus >= 201402
 // refuse to use std::shared_timed_mutex - it's much slower, than pthread_rwlock implementaion
 // disable
 #define REINDEX_USE_STD_SHARED_MUTEX 0
@@ -68,7 +70,7 @@ public:
 		int __ret;
 		do
 			__ret = pthread_rwlock_rdlock(&_M_rwlock);
-		while (__ret == EAGAIN);
+		while (__ret == EAGAIN || __ret == EBUSY);
 		assert(__ret == 0);
 	}
 

@@ -1,6 +1,7 @@
 #include "customhash.h"
 #include "customlocal.h"
 #include "utf8cpp/utf8.h"
+#include <string.h>
 
 namespace reindexer {
 
@@ -8,7 +9,7 @@ static const uint32_t seed = 3339675911UL;
 
 inline uint32_t unaligned_load(const char* p) {
 	uint32_t result;
-	__builtin_memcpy(&result, p, sizeof(result));
+	memcpy(&result, p, sizeof(result));
 	return result;
 }
 

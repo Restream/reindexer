@@ -3,7 +3,7 @@ FROM alpine:latest
 RUN mkdir /src && \
     cd /src && \
     apk update && \
-    apk add curl git && \ 
+    apk add git curl && \ 
     git clone https://github.com/restream/reindexer && \
     cd reindexer && \
     ./dependencies.sh && \
@@ -15,7 +15,7 @@ RUN mkdir /src && \
     make install -C cpp_src/cmd/reindexer_server && \
     cd / && \
     rm -rf /src && \
-    apk del g++ cmake make git curl unzip && \
+    apk del g++ cmake make git curl && \
     rm -rf /var/cache/apk/* /usr/local/lib/*.a /usr/local/include/*
 
 EXPOSE 9088 6534

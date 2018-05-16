@@ -29,7 +29,7 @@ void AreaHolder::AddTreeGramm(int pos, int filed) {
 void AreaHolder::Commit() {
 	commited_ = true;
 	for (auto &area : areas) {
-		sort(area.begin(), area.end(), [](const Area &rhs, const Area &lhs) { return rhs.start_ < lhs.start_; });
+		std::sort(area.begin(), area.end(), [](const Area &rhs, const Area &lhs) { return rhs.start_ < lhs.start_; });
 		if (!area.empty()) {
 			for (auto vit = area.begin() + 1; vit != area.end(); ++vit) {
 				auto prev = vit - 1;

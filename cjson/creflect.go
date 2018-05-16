@@ -1,15 +1,5 @@
 package cjson
 
-// typedef struct ArrayHeader {
-// 	unsigned offset;
-// 	int len;
-// } ArrayHeader;
-// typedef struct PStringHeader {
-// 	void *cstr;
-// 	int len;
-// } PStringHeader;
-import "C"
-
 import (
 	"fmt"
 	"reflect"
@@ -24,6 +14,22 @@ const (
 	valueDouble = bindings.ValueDouble
 	valueString = bindings.ValueString
 )
+
+// to avoid gcc toolchain requirement
+// types from C. Danger expectation about go struct packing is like C struct packing
+type Cdouble float64
+type Cint int32
+type Cunsigned uint32
+
+type ArrayHeader struct {
+	offset Cunsigned
+	len    Cint
+}
+
+type PStringHeader struct {
+	cstr unsafe.Pointer
+	len  Cint
+}
 
 type payloadFieldType struct {
 	Type    int
@@ -83,7 +89,7 @@ func (pl *payloadIface) ptr(field, idx, typ int) unsafe.Pointer {
 		return p
 	}
 	// we have pointer to PayloadValue::Array struct
-	arr := (*C.ArrayHeader)(p)
+	arr := (*ArrayHeader)(p)
 	if idx >= int(arr.len) {
 		panic(fmt.Errorf("Index %d is out of bound %d on array field '%s'", idx, int(arr.len), f.Name))
 	}
@@ -92,7 +98,7 @@ func (pl *payloadIface) ptr(field, idx, typ int) unsafe.Pointer {
 
 func (pl *payloadIface) getInt(field, idx int) int {
 	p := pl.ptr(field, idx, valueInt)
-	return int(*(*C.int)(p))
+	return int(*(*Cint)(p))
 }
 
 func (pl *payloadIface) getInt64(field, idx int) int64 {
@@ -102,20 +108,20 @@ func (pl *payloadIface) getInt64(field, idx int) int64 {
 
 func (pl *payloadIface) getFloat64(field, idx int) float64 {
 	p := pl.ptr(field, idx, valueDouble)
-	return float64(*(*C.double)(p))
+	return float64(*(*Cdouble)(p))
 }
 
 func (pl *payloadIface) getBool(field, idx int) bool {
 	p := pl.ptr(field, idx, valueInt)
-	return *(*C.int)(p) != C.int(0)
+	return *(*Cint)(p) != Cint(0)
 }
 
 func (pl *payloadIface) getBytes(field, idx int) []byte {
 	p := pl.ptr(field, idx, valueString)
 	// p is pointer to p_string. see core/keyvalue/p_string.h
 
-	ppstring := (*(*uintptr)(p)) & ^uintptr((3 << 60))
-	strHdr := (*C.PStringHeader)(unsafe.Pointer(ppstring + pl.t.PStringHdrOffset))
+	ppstring := uintptr(*(*uint64)(p) & ^uint64((3 << 60)))
+	strHdr := (*PStringHeader)(unsafe.Pointer(ppstring + pl.t.PStringHdrOffset))
 
 	return (*[1 << 30]byte)(strHdr.cstr)[:strHdr.len:strHdr.len]
 }
@@ -133,7 +139,7 @@ func (pl *payloadIface) getArrayLen(field int) int {
 	p := unsafe.Pointer(pl.p + uintptr(pl.t.Fields[field].Offset))
 
 	// we have pointer to PayloadValue::Array struct
-	return int((*C.ArrayHeader)(p).len)
+	return int((*ArrayHeader)(p).len)
 }
 
 // get c reflect value and set to go reflect valie
@@ -181,8 +187,8 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 
 	switch pl.t.Fields[field].Type {
 	case valueInt:
-		pi := (*[1 << 30]C.int)(ptr)[:l:l]
-		pu := (*[1 << 30]C.unsigned)(ptr)[:l:l]
+		pi := (*[1 << 27]Cint)(ptr)[:l:l]
+		pu := (*[1 << 27]Cunsigned)(ptr)[:l:l]
 		switch a := v.Addr().Interface().(type) {
 		case *[]int:
 			*a = make([]int, cnt, cnt)
@@ -235,18 +241,18 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 	case valueInt64:
 		switch a := v.Addr().Interface().(type) {
 		case *[]int64:
-			pi := (*[1 << 30]int64)(ptr)[:l:l]
+			pi := (*[1 << 27]int64)(ptr)[:l:l]
 			*a = make([]int64, cnt, cnt)
 			copy(*a, pi)
 		case *[]uint64:
-			pi := (*[1 << 30]uint64)(ptr)[:l:l]
+			pi := (*[1 << 27]uint64)(ptr)[:l:l]
 			*a = make([]uint64, cnt, cnt)
 			copy(*a, pi)
 		default:
 			panic(fmt.Errorf("Can't set []uint to []%s", v.Type().Elem().Kind().String()))
 		}
 	case valueDouble:
-		pi := (*[1 << 30]C.double)(ptr)[:l:l]
+		pi := (*[1 << 27]Cdouble)(ptr)[:l:l]
 		switch a := v.Addr().Interface().(type) {
 		case *[]float64:
 			*a = make([]float64, cnt, cnt)
