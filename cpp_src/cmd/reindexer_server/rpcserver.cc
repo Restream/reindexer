@@ -116,9 +116,12 @@ void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Arg
 Error RPCServer::OpenNamespace(cproto::Context &ctx, p_string nsDefJson) {
 	NamespaceDef nsDef;
 	string json = nsDefJson.toString();
-	nsDef.FromJSON(const_cast<char *>(json.c_str()));
-
-	return getDB(ctx, kRoleDataRead)->OpenNamespace(nsDef.name, nsDef.storage, nsDef.cacheMode);
+	if (json[0] == '{') {
+		nsDef.FromJSON(const_cast<char *>(json.c_str()));
+		return getDB(ctx, kRoleDataRead)->OpenNamespace(nsDef.name, nsDef.storage, nsDef.cacheMode);
+	}
+	// tmp fix for compat
+	return getDB(ctx, kRoleDataRead)->OpenNamespace(json);
 }
 
 Error RPCServer::DropNamespace(cproto::Context &ctx, p_string ns) {
