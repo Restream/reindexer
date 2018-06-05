@@ -54,11 +54,13 @@ if (NOT APPLE AND NOT WIN32)
   install (FILES ${PROJECT_BINARY_DIR}/contrib/sysvinit DESTINATION ${DESTINATION_ETC_DIR}/init.d RENAME reindexer PERMISSIONS OWNER_WRITE OWNER_EXECUTE OWNER_READ GROUP_READ WORLD_READ)
 endif()
 
+
+install (CODE "
 if (NOT WIN32)
   set (REINDEXER_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX})
 endif()
-
-install (CODE "configure_file(${PROJECT_SOURCE_DIR}/contrib/config.yml.in ${PROJECT_BINARY_DIR}/contrib/config.yml)")
+configure_file(${PROJECT_SOURCE_DIR}/contrib/config.yml.in ${PROJECT_BINARY_DIR}/contrib/config.yml)
+")
 install (FILES ${PROJECT_BINARY_DIR}/contrib/config.yml DESTINATION ${DESTINATION_ETC_DIR} RENAME reindexer.conf.pkg PERMISSIONS OWNER_WRITE OWNER_READ GROUP_READ WORLD_READ)
 
 SET(CPACK_PACKAGE_NAME "reindexer_server")

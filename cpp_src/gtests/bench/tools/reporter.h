@@ -2,7 +2,7 @@
 
 #include <benchmark/benchmark.h>
 
-#include "aux.h"
+#include "helpers.h"
 #include "vendor/spdlog/spdlog.h"
 
 using benchmark::ConsoleReporter;

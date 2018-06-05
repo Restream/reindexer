@@ -157,7 +157,7 @@ string lower(string s) {
 	return s;
 }
 
-int collateCompare(const Slice &lhs, const Slice &rhs, const CollateOpts &collateOpts) {
+int collateCompare(const string_view &lhs, const string_view &rhs, const CollateOpts &collateOpts) {
 	if (collateOpts.mode == CollateASCII) {
 		auto itl = lhs.data();
 		auto itr = rhs.data();
@@ -241,10 +241,13 @@ int collateCompare(const Slice &lhs, const Slice &rhs, const CollateOpts &collat
 	return res ? res : ((l1 < l2) ? -1 : (l1 > l2) ? 1 : 0);
 }
 
-void urldecode2(char *dst, const char *src) {
+string_view urldecode2(char *buf, const string_view &str) {
 	char a, b;
-	while (*src) {
-		if ((*src == '%') && ((a = src[1]) && (b = src[2])) && (isxdigit(a) && isxdigit(b))) {
+	const char *src = str.data();
+	char *dst = buf;
+
+	for (size_t l = 0; l < str.length(); l++) {
+		if (l + 2 < str.length() && (*src == '%') && ((a = src[1]) && (b = src[2])) && (isxdigit(a) && isxdigit(b))) {
 			if (a >= 'a') a -= 'a' - 'A';
 			if (a >= 'A')
 				a -= ('A' - 10);
@@ -257,6 +260,7 @@ void urldecode2(char *dst, const char *src) {
 				b -= '0';
 			*dst++ = 16 * a + b;
 			src += 3;
+			l += 2;
 		} else if (*src == '+') {
 			*dst++ = ' ';
 			src++;
@@ -264,7 +268,15 @@ void urldecode2(char *dst, const char *src) {
 			*dst++ = *src++;
 		}
 	}
-	*dst++ = '\0';
+	*dst = '\0';
+	return string_view(buf, dst - buf);
+}
+
+string urldecode2(const string_view &str) {
+	string ret(str.length(), ' ');
+	string_view sret = urldecode2(&ret[0], str);
+	ret.resize(sret.size());
+	return ret;
 }
 
 // Sat Jul 15 14 : 18 : 56 2017 GMT

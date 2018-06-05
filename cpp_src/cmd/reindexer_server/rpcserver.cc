@@ -1,13 +1,11 @@
 #include "rpcserver.h"
 #include <sys/stat.h>
 #include <sstream>
-#include "net/cproto/connection.h"
 #include "net/cproto/cproto.h"
+#include "net/cproto/serverconnection.h"
 #include "net/listener.h"
 
 namespace reindexer_server {
-
-enum { ModeUpdate, ModeInsert, ModeUpsert, ModeDelete };
 
 RPCServer::RPCServer(DBManager &dbMgr) : dbMgr_(dbMgr) {}
 RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper logger, bool allocDebug) : dbMgr_(dbMgr), logger_(logger), allocDebug_(allocDebug) {}
@@ -115,10 +113,12 @@ void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Arg
 	logger_.info("{0}", reinterpret_cast<char *>(ser.Buf()));
 }
 
-Error RPCServer::OpenNamespace(cproto::Context &ctx, p_string ns, p_string nsDef) {
-	(void)nsDef;
-	// TODO
-	return getDB(ctx, kRoleDataRead)->OpenNamespace(ns.toString());
+Error RPCServer::OpenNamespace(cproto::Context &ctx, p_string nsDefJson) {
+	NamespaceDef nsDef;
+	string json = nsDefJson.toString();
+	nsDef.FromJSON(const_cast<char *>(json.c_str()));
+
+	return getDB(ctx, kRoleDataRead)->OpenNamespace(nsDef.name, nsDef.storage, nsDef.cacheMode);
 }
 
 Error RPCServer::DropNamespace(cproto::Context &ctx, p_string ns) {
@@ -148,6 +148,10 @@ Error RPCServer::AddIndex(cproto::Context &ctx, p_string ns, p_string indexDef) 
 		return err;
 	}
 	return getDB(ctx, kRoleDBAdmin)->AddIndex(ns.toString(), iDef);
+}
+
+Error RPCServer::DropIndex(cproto::Context &ctx, p_string ns, p_string index) {
+	return getDB(ctx, kRoleDBAdmin)->DropIndex(ns.toString(), index.toString());
 }
 
 Error RPCServer::ConfigureIndex(cproto::Context &ctx, p_string ns, p_string index, p_string config) {
@@ -207,8 +211,13 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string itemPack, int mode) {
 	QueryResults qres;
 	qres.AddItem(item);
 	int32_t ptVers = -1;
+	ResultFetchOpts opts;
+	if (tmUpdated) {
+		opts = ResultFetchOpts{kResultsWithPayloadTypes, &ptVers, 1, 0, INT_MAX, 0};
+	} else {
+		opts = ResultFetchOpts{0, nullptr, 0, 0, INT_MAX, 0};
+	}
 
-	ResultFetchOpts opts{tmUpdated ? kResultsWithPayloadTypes : 0, &ptVers, 0, INT_MAX, 0};
 	return sendResults(ctx, qres, -1, opts);
 }
 
@@ -222,7 +231,7 @@ Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin) {
 	if (!err.ok()) {
 		return err;
 	}
-	ResultFetchOpts opts{0, nullptr, 0, INT_MAX, 0};
+	ResultFetchOpts opts{0, nullptr, 0, 0, INT_MAX, 0};
 	return sendResults(ctx, qres, -1, opts);
 }
 
@@ -240,7 +249,7 @@ shared_ptr<Reindexer> RPCServer::getDB(cproto::Context &ctx, UserRole role) {
 }
 
 Error RPCServer::sendResults(cproto::Context &ctx, QueryResults &qres, int reqId, const ResultFetchOpts &opts) {
-	ResultSerializer rser(true, opts);
+	WrResultSerializer rser(true, opts);
 
 	bool doClose = rser.PutResults(&qres);
 
@@ -249,7 +258,7 @@ Error RPCServer::sendResults(cproto::Context &ctx, QueryResults &qres, int reqId
 		reqId = -1;
 	}
 
-	Slice resSlice(reinterpret_cast<char *>(rser.Buf()), rser.Len());
+	string_view resSlice(reinterpret_cast<char *>(rser.Buf()), rser.Len());
 	ctx.Return({cproto::Arg(p_string(&resSlice)), cproto::Arg(int(reqId))});
 	return 0;
 }
@@ -307,7 +316,7 @@ Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int 
 		return ret;
 	}
 	auto ptVersions = pack2vec(ptVersionsPck);
-	ResultFetchOpts opts{flags, ptVersions.data(), 0, unsigned(limit), fetchDataMask};
+	ResultFetchOpts opts{flags, ptVersions.data(), int(ptVersions.size()), 0, unsigned(limit), fetchDataMask};
 
 	return fetchResults(ctx, id, opts);
 }
@@ -321,7 +330,7 @@ Error RPCServer::SelectSQL(cproto::Context &ctx, p_string querySql, int flags, i
 		return ret;
 	}
 	auto ptVersions = pack2vec(ptVersionsPck);
-	ResultFetchOpts opts{flags, ptVersions.data(), 0, unsigned(limit), fetchDataMask};
+	ResultFetchOpts opts{flags, ptVersions.data(), int(ptVersions.size()), 0, unsigned(limit), fetchDataMask};
 
 	return fetchResults(ctx, id, opts);
 }
@@ -329,7 +338,7 @@ Error RPCServer::SelectSQL(cproto::Context &ctx, p_string querySql, int flags, i
 Error RPCServer::FetchResults(cproto::Context &ctx, int reqId, int flags, int offset, int limit, int64_t fetchDataMask) {
 	flags &= ~kResultsWithPayloadTypes;
 
-	ResultFetchOpts opts = {flags, nullptr, unsigned(offset), unsigned(limit), fetchDataMask};
+	ResultFetchOpts opts = {flags, nullptr, 0, unsigned(offset), unsigned(limit), fetchDataMask};
 	return fetchResults(ctx, reqId, opts);
 }
 
@@ -359,7 +368,7 @@ Error RPCServer::GetMeta(cproto::Context &ctx, p_string ns, p_string key) {
 
 	WrSerializer wrSer;
 	wrSer.PutVString(data);
-	Slice slData(reinterpret_cast<char *>(wrSer.Buf()), wrSer.Len());
+	string_view slData(reinterpret_cast<char *>(wrSer.Buf()), wrSer.Len());
 	ctx.Return({cproto::Arg(p_string(&slData))});
 	return 0;
 }
@@ -385,6 +394,7 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	dispatcher.Register(cproto::kCmdEnumNamespaces, this, &RPCServer::EnumNamespaces);
 
 	dispatcher.Register(cproto::kCmdAddIndex, this, &RPCServer::AddIndex);
+	dispatcher.Register(cproto::kCmdDropIndex, this, &RPCServer::DropIndex);
 	dispatcher.Register(cproto::kCmdConfigureIndex, this, &RPCServer::ConfigureIndex);
 	dispatcher.Register(cproto::kCmdCommit, this, &RPCServer::Commit);
 
@@ -406,7 +416,7 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 		dispatcher.Logger(this, &RPCServer::Logger);
 	}
 
-	listener_.reset(new Listener(loop, cproto::Connection::NewFactory(dispatcher)));
+	listener_.reset(new Listener(loop, cproto::ServerConnection::NewFactory(dispatcher)));
 	return listener_->Bind(addr);
 }
 

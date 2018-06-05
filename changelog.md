@@ -1,3 +1,25 @@
+# Version 1.9.2 (04.06.2018)
+
+## Core
+- [fea] SQL parser performance impooved
+- [fea] Caching of intemediate join results
+- [fix] Assert on error cjson parser disabled: server will not crash on application errors
+- [fix] Relaxed check of fields type on index addition and loading from storage
+- [fix] Potential field data corruption on runtime index addition
+
+## Reindexer server
+- [fix] Correct grow of input buffer for http and cproto connections
+- [ref] HTTP parser and router refactored.
+- [fix] gprof handlers fixes
+- [fix] packages dependencies fixed, installation errors on centos fixes, path to webroot fixed
+- [ci] added sanity tests of packages installations
+
+## Go connector
+- [fea] Checking for duplicate names in `json` struct's tags on OpenNamespace
+- [fea] Checking DeepCopy interface for correct return value on OpenNamespace
+- [fix] Fixed error with sync payload types, on json queries
+- [fix] Local imports of ./repo in benchmarks package broke gb
+
 # Version 1.9.1 (17.05.2018)
 
 ## Reindexer server

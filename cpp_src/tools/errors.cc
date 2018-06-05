@@ -13,6 +13,8 @@ Error::Error(int code, const char *fmt, ...) : code_(code) {
 	va_end(args);
 	what_ = buf;
 }
+Error::Error(int code, const string &what) : code_(code), what_(what) {}
+
 Error::Error(int code) : code_(code) {}
 
 const string &Error::what() const { return what_; }

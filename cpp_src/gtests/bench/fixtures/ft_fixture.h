@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "aux.h"
+#include "helpers.h"
 #include "base_fixture.h"
 
 using std::vector;

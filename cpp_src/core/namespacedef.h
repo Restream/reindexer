@@ -2,7 +2,7 @@
 
 #include <string>
 #include <vector>
-#include "indexdef.h"
+#include "core/indexdef.h"
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -10,11 +10,15 @@ namespace reindexer {
 using std::string;
 using std::vector;
 
-struct Slice;
+class string_view;
 class WrSerializer;
 
 struct NamespaceDef {
-	NamespaceDef(const string &iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing()) : name(iname), storage(istorage) {}
+	NamespaceDef() {}
+
+	NamespaceDef(const string &iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing(),
+				 CacheMode icacheMode = CacheMode::CacheModeOn)
+		: name(iname), storage(istorage), cacheMode(icacheMode) {}
 	NamespaceDef &AddIndex(const string &name, const string &jsonPath, const string &indexType, const string &fieldType,
 						   IndexOpts opts = IndexOpts()) {
 		indexes.push_back({name, jsonPath, indexType, fieldType, opts});
@@ -26,11 +30,12 @@ struct NamespaceDef {
 	}
 
 	Error FromJSON(char *json);
-	void GetJSON(WrSerializer &);
+	void GetJSON(WrSerializer &) const;
 
 public:
 	string name;
 	StorageOpts storage;
 	vector<IndexDef> indexes;
+	CacheMode cacheMode;
 };
 }  // namespace reindexer

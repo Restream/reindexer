@@ -42,11 +42,12 @@ protected:
 	bool encodeJoinedItem(WrSerializer &wrSer, ConstPayload &pl);
 	void encodeJoinedItems(WrSerializer &wrSer, IJsonEncoderDatasourceWithJoins &ds, size_t joinedIdx, bool &first);
 
-	key_string &getPlTuple(ConstPayload *pl, key_string &plTuple);
+	string_view getPlTuple(ConstPayload *pl);
 
 	const TagsMatcher &tagsMatcher_;
 	int fieldsoutcnt_[maxIndexes];
 	const JsonPrintFilter &filter_;
+	key_string tmpPlTuple_;
 };
 
 }  // namespace reindexer

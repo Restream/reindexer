@@ -7,6 +7,11 @@ namespace reindexer {
 
 using std::vector;
 
+namespace client {
+class ReindexerImpl;
+class Namespace;
+}  // namespace client
+
 class ItemImpl;
 
 /// Item is the interface for data manipulating. It holds and control one database document (record)<br>
@@ -33,7 +38,7 @@ public:
 	public:
 		/// Get field value. Strong type check. T must be same as field type. Throws reindexer::Error, if type mismatched
 		/// If field type is array, and not contains exact 1 element, then throws reindexer::Error
-		/// @tparam T - type. Must be one of: int, int64_t, double or Slice
+		/// @tparam T - type. Must be one of: int, int64_t, double or string_view
 		/// @return value of field
 		template <typename T>
 		const T Get() {
@@ -104,22 +109,22 @@ public:
 	/// application *MUST* hold slice until end of life of Item
 	/// @param slice - data slice with Json.
 	/// @param endp - pounter to end of parsed part of slice
-	Error FromJSON(const Slice &slice, char **endp = nullptr);
+	Error FromJSON(const string_view &slice, char **endp = nullptr);
 
 	/// Build item from JSON<br>
 	/// If Item is in *Unsafe Mode*, then Item will not store slice, but just keep pointer to data in slice,
 	/// application *MUST* hold slice until end of life of Item
 	/// @param slice - data slice with CJson
-	Error FromCJSON(const Slice &slice);
+	Error FromCJSON(const string_view &slice);
 	/// Serialize item to CJSON.<br>
 	/// If Item is in *Unfafe Mode*, then returned slice is allocated in temporary buffer, and can be invalidated by any next operation with
 	/// Item
 	/// @return data slice with CJSON
-	Slice GetCJSON();
+	string_view GetCJSON();
 	/// Serialize item to JSON.<br>
 	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next operation
 	/// with Item
-	Slice GetJSON();
+	string_view GetJSON();
 	/// Get status of item
 	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next operation
 	/// with Item
@@ -174,6 +179,8 @@ private:
 	friend class Namespace;
 	friend class QueryResults;
 	friend class ReindexerImpl;
+	friend class client::ReindexerImpl;
+	friend class client::Namespace;
 };
 
 }  // namespace reindexer

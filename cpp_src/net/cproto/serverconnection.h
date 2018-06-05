@@ -2,31 +2,22 @@
 
 #include <string.h>
 #include "dispatcher.h"
-#include "estl/cbuf.h"
-#include "estl/h_vector.h"
-#include "net/ev/ev.h"
-#include "net/iconnection.h"
-#include "net/socket.h"
-#include "tools/ssize_t.h"
+#include "net/connection.h"
+#include "net/iserverconnection.h"
 
 namespace reindexer {
 namespace net {
 namespace cproto {
 
-using reindexer::cbuf;
 using reindexer::h_vector;
 
-const ssize_t kRPCReadbufSize = 0x20000;
-const ssize_t kRPCWriteBufSize = 0x20000;
-
-class Connection : public IConnection, public Writer {
+class ServerConnection : public ConnectionST, public IServerConnection, public Writer {
 public:
-	Connection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher);
-	~Connection();
+	ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher);
 
-	// IConnection interface implementation
+	// IServerConnection interface implementation
 	static ConnectionFactory NewFactory(Dispatcher &dispatcher) {
-		return [&dispatcher](ev::dynamic_loop &loop, int fd) { return new Connection(fd, loop, dispatcher); };
+		return [&dispatcher](ev::dynamic_loop &loop, int fd) { return new ServerConnection(fd, loop, dispatcher); };
 	};
 
 	bool IsFinished() override final { return !sock_.valid(); }
@@ -39,26 +30,13 @@ public:
 	ClientData::Ptr GetClientData() override final { return clientData_; }
 
 protected:
-	// Generic callback
-	void callback(ev::io &watcher, int revents);
-	void write_cb();
-	void read_cb();
-
-	void timeout_cb(ev::periodic &watcher, int);
-
-	void closeConn();
+	void onRead() override;
+	void onClose() override;
 	void handleRPC(Context &ctx);
-	void parseRPC();
 	void responceRPC(Context &ctx, const Error &error, const Args &args);
 
-	ev::io io_;
-	ev::timer timeout_;
-	socket sock_;
-	int curEvents_ = 0;
-	bool closeConn_ = false;
 	bool respSent_ = false;
 
-	cbuf<char> wrBuf_, rdBuf_;
 	Dispatcher &dispatcher_;
 	ClientData::Ptr clientData_;
 };

@@ -7,14 +7,15 @@ class QueryResults;
 struct ResultFetchOpts {
 	int flags;
 	const int32_t* ptVersions;
+	int ptVersionsCount;
 	unsigned fetchOffset;
 	unsigned fetchLimit;
 	int64_t fetchDataMask;
 };
 
-class ResultSerializer : public WrSerializer {
+class WrResultSerializer : public WrSerializer {
 public:
-	ResultSerializer(bool allowInBuf, const ResultFetchOpts& opts = {0, nullptr, 0, 0, 0});
+	WrResultSerializer(bool allowInBuf, const ResultFetchOpts& opts = {0, nullptr, 0, 0, 0, 0});
 
 	bool PutResults(const QueryResults* results);
 
@@ -25,4 +26,5 @@ private:
 	void putPayloadType(const QueryResults* results, int nsId);
 	ResultFetchOpts opts_;
 };
+
 }  // namespace reindexer

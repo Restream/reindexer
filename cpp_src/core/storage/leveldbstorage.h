@@ -20,10 +20,10 @@ public:
 	~LevelDbStorage();
 
 	Error Open(const string& path, const StorageOpts& opts) final;
-	Error Read(const StorageOpts& opts, const Slice& key, string& value) final;
-	Error Write(const StorageOpts& opts, const Slice& key, const Slice& value) final;
+	Error Read(const StorageOpts& opts, const string_view& key, string& value) final;
+	Error Write(const StorageOpts& opts, const string_view& key, const string_view& value) final;
 	Error Write(const StorageOpts& opts, UpdatesCollection& buffer) final;
-	Error Delete(const StorageOpts& opts, const Slice& key) final;
+	Error Delete(const StorageOpts& opts, const string_view& key) final;
 
 	Snapshot::Ptr MakeSnapshot() final;
 	void ReleaseSnapshot(Snapshot::Ptr) final;
@@ -44,8 +44,8 @@ public:
 	LevelDbBatchBuffer();
 	~LevelDbBatchBuffer();
 
-	void Put(const Slice& key, const Slice& value) final;
-	void Remove(const Slice& key) final;
+	void Put(const string_view& key, const string_view& value) final;
+	void Remove(const string_view& key) final;
 	void Clear() final;
 
 private:
@@ -58,7 +58,7 @@ public:
 	LevelDbComparator() = default;
 	~LevelDbComparator() = default;
 
-	int Compare(const Slice& a, const Slice& b) const final;
+	int Compare(const string_view& a, const string_view& b) const final;
 };
 
 class LevelDbIterator : public Cursor {
@@ -69,12 +69,12 @@ public:
 	bool Valid() const final;
 	void SeekToFirst() final;
 	void SeekToLast() final;
-	void Seek(const Slice& target) final;
+	void Seek(const string_view& target) final;
 	void Next() final;
 	void Prev() final;
 
-	Slice Key() const final;
-	Slice Value() const final;
+	string_view Key() const final;
+	string_view Value() const final;
 
 	Comparator& GetComparator() final;
 

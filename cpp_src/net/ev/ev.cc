@@ -161,9 +161,7 @@ void loop_epoll_backend::stop(int fd) {
 
 int loop_epoll_backend::runonce(int64_t t) {
 	int ret = epoll_wait(private_->ctlfd_, &private_->events_[0], private_->events_.size(), t != -1 ? t / 1000 : -1);
-	if (ret < 0) {
-		perror("epoll_wait");
-	}
+
 	assert(ret <= static_cast<int>(private_->events_.size()));
 
 	for (int i = 0; i < ret; i++) {
@@ -448,7 +446,6 @@ void dynamic_loop::set(async *watcher) {
 void dynamic_loop::stop(async *watcher) {
 	auto it = std::find(asyncs_.begin(), asyncs_.end(), watcher);
 	if (it == asyncs_.end()) {
-		printf("async is not set\n");
 		return;
 	}
 	asyncs_.erase(it);

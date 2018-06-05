@@ -128,8 +128,8 @@ int KeyRef::Compare(const KeyRef &other, const CollateOpts &collateOpts) const {
 			size_t l1 = value_string.length();
 			size_t l2 = other.value_string.length();
 
-			Slice lhs(value_string.data(), l1);
-			Slice rhs(other.value_string.data(), l2);
+			string_view lhs(value_string.data(), l1);
+			string_view rhs(other.value_string.data(), l2);
 
 			return collateCompare(lhs, rhs, collateOpts);
 		}

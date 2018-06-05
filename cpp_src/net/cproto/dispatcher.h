@@ -7,9 +7,9 @@
 #include <vector>
 #include "args.h"
 #include "cproto.h"
+#include "estl/string_view.h"
 #include "net/stat.h"
 #include "tools/errors.h"
-#include "tools/slice.h"
 
 namespace reindexer {
 namespace net {
@@ -48,11 +48,11 @@ struct Context {
 	Stat stat;
 };
 
-class Connection;
+class ServerConnection;
 
 /// Reindexer cproto RPC dispatcher implementation.
 class Dispatcher {
-	friend class Connection;
+	friend class ServerConnection;
 
 public:
 	Dispatcher() : handlers_(kCmdCodeMax, {nullptr, nullptr}) {}

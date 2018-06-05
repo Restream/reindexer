@@ -1,6 +1,6 @@
 #include "selectfunc.h"
-#include <memory>
 #include <cctype>
+#include <memory>
 #include "core/namespacedef.h"
 #include "ctx/ftctx.h"
 #include "functions/highlight.h"

@@ -1,11 +1,14 @@
 #include <stdio.h>
 #include <csignal>
+#include <cstdlib>
 #include <unordered_map>
 #include "args/args.hpp"
+#include "core/reindexer.h"
 #include "dbmanager.h"
 #include "debug/allocdebug.h"
 #include "debug/backtrace.h"
 #include "httpserver.h"
+#include "loggerwrapper.h"
 #include "rpcserver.h"
 #include "winservice.h"
 #include "yaml/yaml.h"
@@ -164,7 +167,7 @@ void parseConfigFile(const string &filePath) {
 		config.DaemonPidFile = root["system"]["pidfile"].As<std::string>(config.DaemonPidFile);
 #endif
 		config.DebugAllocs = root["debug"]["allocs"].As<bool>(config.DebugAllocs);
-		config.DebugPprof = root["debug"]["allocs"].As<bool>(config.DebugPprof);
+		config.DebugPprof = root["debug"]["pprof"].As<bool>(config.DebugPprof);
 	} catch (const Yaml::Exception &ex) {
 		fprintf(stderr, "Error with config file '%s': %s\n", filePath.c_str(), ex.Message());
 		exit(EXIT_FAILURE);
@@ -247,6 +250,8 @@ void parseCmdLine(int argc, char **argv) {
 	if (rpcLogF) config.RpcLog = args::get(rpcLogF);
 }
 
+static std::unordered_map<string, std::shared_ptr<spdlog::sinks::simple_file_sink_mt>> sinks;
+
 static void loggerConfigure() {
 	spdlog::drop_all();
 
@@ -254,8 +259,6 @@ static void loggerConfigure() {
 
 	vector<pair<string, string>> loggers = {
 		{"server", config.ServerLog}, {"core", config.CoreLog}, {"http", config.HttpLog}, {"rpc", config.RpcLog}};
-
-	std::unordered_map<string, std::shared_ptr<spdlog::sinks::simple_file_sink_mt>> sinks;
 
 	for (auto &logger : loggers) {
 		auto &fileName = logger.second;
@@ -275,11 +278,13 @@ static void loggerConfigure() {
 	}
 }
 
-int startServer() {
-	if (config.DebugAllocs) {
-		allocdebug_init();
+static void loggerReopen() {
+	for (auto &sync : sinks) {
+		sync.second->reopen();
 	}
+}
 
+int startServer() {
 	fast_hash_map<string, LogLevel> levels = {
 		{"none", LogNone}, {"warning", LogWarning}, {"error", LogError}, {"info", LogInfo}, {"trace", LogTrace}};
 
@@ -292,6 +297,27 @@ int startServer() {
 
 	logger = LoggerWrapper("server");
 	coreLogger = LoggerWrapper("core");
+
+	if (config.DebugAllocs) {
+		allocdebug_init();
+#ifndef REINDEX_WITH_GPERFTOOLS
+		logger.warn("debug.allocs is enabled in config, but reindexer complied without gperftools - Can't enable feature.");
+#endif
+	}
+
+	if (config.DebugPprof) {
+#ifndef REINDEX_WITH_GPERFTOOLS
+		logger.warn("debug.pprof is enabled in config, but reindexer complied without gperftools - Can't enable feature.");
+#else
+		if (!std::getenv("HEAPPROFILE") && !std::getenv("TCMALLOC_SAMPLE_PARAMETER")) {
+			logger.warn(
+				"debug.pprof is enabled, but TCMALLOC_SAMPLE_PARAMETER and HEAPPROFILE environment varables are not set. Heap profiling is "
+				"not possible.");
+		}
+
+#endif
+	}
+
 	reindexer::logInstallWriter(logWrite);
 
 	try {
@@ -308,7 +334,7 @@ int startServer() {
 					config.RPCAddr, config.StoragePath);
 
 		LoggerWrapper httpLogger("http");
-		HTTPServer httpServer(dbMgr, config.WebRoot, httpLogger, config.DebugAllocs);
+		HTTPServer httpServer(dbMgr, config.WebRoot, httpLogger, config.DebugAllocs, config.DebugPprof);
 		if (!httpServer.Start(config.HTTPAddr, loop)) {
 			logger.error("Can't listen HTTP on '{0}'", config.HTTPAddr);
 			exit(EXIT_FAILURE);
@@ -338,7 +364,7 @@ int startServer() {
 #ifndef _WIN32
 		auto sigHupCallback = [&](ev::sig &sig) {
 			(void)sig;
-			loggerConfigure();
+			loggerReopen();
 		};
 		shup.set(loop);
 		shup.set(sigHupCallback);
@@ -359,7 +385,7 @@ int startServer() {
 	logger.info("Reindexer server shutdown completed.");
 
 	spdlog::drop_all();
-
+	sinks.clear();
 	return 0;
 }
 

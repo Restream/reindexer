@@ -21,7 +21,7 @@ struct HTTPClientData : public http::ClientData {
 class HTTPServer {
 public:
 	HTTPServer(DBManager &dbMgr, const string &webRoot);
-	HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper logger, bool allocDebug = false);
+	HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper logger, bool allocDebug = false, bool enablePprof = false);
 	~HTTPServer();
 
 	bool Start(const string &addr, ev::dynamic_loop &loop);
@@ -53,7 +53,8 @@ public:
 protected:
 	int modifyItem(http::Context &ctx, int mode);
 	int queryResults(http::Context &ctx, reindexer::QueryResults &res, const char *name);
-	int jsonStatus(http::Context &ctx, bool isSuccess = true, int respcode = http::StatusOK, const string &description = "");
+	int jsonStatus(http::Context &ctx, bool isSuccess = true, int respcode = http::StatusOK,
+				   const string_view &description = string_view());
 	shared_ptr<Reindexer> getDB(http::Context &ctx, UserRole role);
 	string getNameFromJson(string json);
 
@@ -67,6 +68,7 @@ protected:
 
 	LoggerWrapper logger_;
 	bool allocDebug_;
+	bool enablePprof_;
 
 	static const int limit_default = 10;
 	static const int limit_max = 100;

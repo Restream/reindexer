@@ -1,4 +1,4 @@
-#include "indexdef.h"
+#include "core/indexdef.h"
 #include <unordered_map>
 #include "string.h"
 #include "tools/errors.h"
@@ -137,7 +137,7 @@ Error IndexDef::FromJSON(JsonValue &jvalue) {
 	return 0;
 }
 
-void IndexDef::GetJSON(WrSerializer &ser) {
+void IndexDef::GetJSON(WrSerializer &ser) const {
 	ser.PutChar('{');
 	ser.Printf("\"name\":\"%s\",", name.c_str());
 	ser.Printf("\"json_path\":\"%s\",", jsonPath.c_str());

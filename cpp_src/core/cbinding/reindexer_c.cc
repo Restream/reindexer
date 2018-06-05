@@ -45,13 +45,14 @@ static reindexer_ret ret2c(const Error &err_, const reindexer_buffer &out) {
 
 static string str2c(reindexer_string gs) { return string(reinterpret_cast<const char *>(gs.p), gs.n); }
 
-static void results2c(const QueryResults *result, struct reindexer_buffer *results, int with_items = 0, int32_t *pt_versions = nullptr) {
+static void results2c(const QueryResults *result, struct reindexer_buffer *results, int with_items = 0, int32_t *pt_versions = nullptr,
+					  int pt_versions_count = 0) {
 	int flags = with_items ? kResultsWithJson : kResultsWithPtrs;
 
 	flags |= (pt_versions && with_items == 0) ? kResultsWithPayloadTypes : 0;
 
-	ResultFetchOpts opts{flags, pt_versions, 0, INT_MAX, -1};
-	ResultSerializer ser(false, opts);
+	ResultFetchOpts opts{flags, pt_versions, pt_versions_count, 0, INT_MAX, -1};
+	WrResultSerializer ser(false, opts);
 	ser.PutResults(result);
 
 	results->len = ser.Len();
@@ -108,7 +109,7 @@ reindexer_ret reindexer_modify_item(reindexer_buffer in, int mode) {
 				res->AddItem(item);
 				int32_t ptVers = -1;
 				bool tmUpdated = item.IsTagsUpdated();
-				results2c(res, &out, 0, tmUpdated ? &ptVers : nullptr);
+				results2c(res, &out, 0, tmUpdated ? &ptVers : nullptr, tmUpdated ? 1 : 0);
 			}
 		} else {
 			err = item.Status();
@@ -117,8 +118,8 @@ reindexer_ret reindexer_modify_item(reindexer_buffer in, int mode) {
 	return ret2c(err, out);
 }
 
-reindexer_error reindexer_open_namespace(reindexer_string _namespace, StorageOpts opts) {
-	return error2c(!db ? err_not_init : db->OpenNamespace(str2c(_namespace), opts));
+reindexer_error reindexer_open_namespace(reindexer_string _namespace, StorageOpts opts, uint8_t cacheMode) {
+	return error2c(!db ? err_not_init : db->OpenNamespace(str2c(_namespace), opts, static_cast<CacheMode>(cacheMode)));
 }
 
 reindexer_error reindexer_drop_namespace(reindexer_string _namespace) {
@@ -136,6 +137,10 @@ reindexer_error reindexer_add_index(reindexer_string _namespace, reindexer_strin
 																  IndexOpts(indexOpts)}));
 }
 
+reindexer_error reindexer_drop_index(reindexer_string _namespace, reindexer_string index) {
+	return error2c(!db ? err_not_init : db->DropIndex(str2c(_namespace), str2c(index)));
+}
+
 reindexer_error reindexer_configure_index(reindexer_string _namespace, reindexer_string index, reindexer_string config) {
 	return error2c(!db ? err_not_init : db->ConfigureIndex(str2c(_namespace), str2c(index), str2c(config)));
 }
@@ -146,18 +151,18 @@ reindexer_error reindexer_enable_storage(reindexer_string path) {
 	return error2c(!db ? err_not_init : db->EnableStorage(str2c(path), true));
 }
 
-reindexer_ret reindexer_select(reindexer_string query, int with_items, int32_t *pt_versions) {
+reindexer_ret reindexer_select(reindexer_string query, int with_items, int32_t *pt_versions, int pt_versions_count) {
 	reindexer_buffer out = {0, 0, nullptr};
 	Error res = err_not_init;
 	if (db) {
 		auto result = new QueryResults;
 		res = db->Select(str2c(query), *result);
-		results2c(result, &out, with_items, pt_versions);
+		results2c(result, &out, with_items, pt_versions, pt_versions_count);
 	}
 	return ret2c(res, out);
 }
 
-reindexer_ret reindexer_select_query(struct reindexer_buffer in, int with_items, int32_t *pt_versions) {
+reindexer_ret reindexer_select_query(struct reindexer_buffer in, int with_items, int32_t *pt_versions, int pt_versions_count) {
 	Error res = err_not_init;
 	reindexer_buffer out = {0, 0, nullptr};
 	if (db) {
@@ -181,7 +186,7 @@ reindexer_ret reindexer_select_query(struct reindexer_buffer in, int with_items,
 		auto result = new QueryResults;
 		res = db->Select(q, *result);
 		if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what().c_str());
-		results2c(result, &out, with_items, pt_versions);
+		results2c(result, &out, with_items, pt_versions, pt_versions_count);
 	}
 	return ret2c(res, out);
 }

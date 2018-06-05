@@ -132,13 +132,13 @@ func (binding *Builtin) ModifyItem(data []byte, mode int) (bindings.RawBuffer, e
 	return ret2go(C.reindexer_modify_item(buf2c(data), C.int(mode)))
 }
 
-func (binding *Builtin) OpenNamespace(namespace string, enableStorage, dropOnFormatError bool) error {
+func (binding *Builtin) OpenNamespace(namespace string, enableStorage, dropOnFormatError bool, cacheMode uint8) error {
 	var storageOptions bindings.StorageOptions
 	storageOptions.Enabled(enableStorage).DropOnFileFormatError(dropOnFormatError)
 	opts := C.StorageOpts{
 		options: C.uint8_t(storageOptions),
 	}
-	return err2go(C.reindexer_open_namespace(str2c(namespace), opts))
+	return err2go(C.reindexer_open_namespace(str2c(namespace), opts, C.uint8_t(cacheMode)))
 }
 func (binding *Builtin) CloseNamespace(namespace string) error {
 	return err2go(C.reindexer_close_namespace(str2c(namespace)))
@@ -167,6 +167,10 @@ func (binding *Builtin) AddIndex(namespace, index, jsonPath, indexType, fieldTyp
 	return err
 }
 
+func (binding *Builtin) DropIndex(namespace, index string) error {
+	return err2go(C.reindexer_drop_index(str2c(namespace), str2c(index)))
+}
+
 func (binding *Builtin) ConfigureIndex(namespace, index, config string) error {
 	return err2go(C.reindexer_configure_index(str2c(namespace), str2c(index), str2c(config)))
 }
@@ -182,13 +186,13 @@ func (binding *Builtin) GetMeta(namespace, key string) (bindings.RawBuffer, erro
 func (binding *Builtin) Select(query string, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	cgoLimiter <- struct{}{}
 	defer func() { <-cgoLimiter }()
-	return ret2go(C.reindexer_select(str2c(query), bool2cint(withItems), (*C.int32_t)(unsafe.Pointer(&ptVersions[0]))))
+	return ret2go(C.reindexer_select(str2c(query), bool2cint(withItems), (*C.int32_t)(unsafe.Pointer(&ptVersions[0])), C.int(len(ptVersions))))
 }
 
 func (binding *Builtin) SelectQuery(data []byte, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	cgoLimiter <- struct{}{}
 	defer func() { <-cgoLimiter }()
-	return ret2go(C.reindexer_select_query(buf2c(data), bool2cint(withItems), (*C.int32_t)(unsafe.Pointer(&ptVersions[0]))))
+	return ret2go(C.reindexer_select_query(buf2c(data), bool2cint(withItems), (*C.int32_t)(unsafe.Pointer(&ptVersions[0])), C.int(len(ptVersions))))
 }
 
 func (binding *Builtin) DeleteQuery(data []byte) (bindings.RawBuffer, error) {

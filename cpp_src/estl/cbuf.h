@@ -16,13 +16,40 @@ public:
 		size_t len;
 	};
 
-	cbuf(size_t bufsize) {
+	cbuf(size_t bufsize = 0) {
 		head_ = 0;
 		tail_ = 0;
 		full_ = false;
 		buf_size_ = bufsize;
-		buf_ = new T[buf_size_];
+		buf_ = bufsize ? new T[buf_size_] : nullptr;
 	}
+	cbuf(cbuf &&other) : head_(other.head_), tail_(other.tail_), full_(other.full_), buf_size_(other.buf_size_), buf_(other.buf_) {
+		other.head_ = 0;
+		other.tail_ = 0;
+		other.full_ = false;
+		other.buf_size_ = 0;
+		other.buf_ = nullptr;
+	}
+	cbuf &operator=(cbuf &&other) {
+		if (this != &other) {
+			if (buf_) {
+				delete buf_;
+			}
+			head_ = other.head_;
+			tail_ = other.tail_;
+			full_ = other.full_;
+			buf_size_ = other.buf_size_;
+			buf_ = other.buf_;
+			other.head_ = 0;
+			other.tail_ = 0;
+			other.full_ = false;
+			other.buf_size_ = 0;
+			other.buf_ = nullptr;
+		}
+		return *this;
+	}
+	cbuf(const cbuf &) = delete;
+	cbuf &operator=(const cbuf &) = delete;
 
 	~cbuf() { delete[] buf_; }
 
@@ -92,6 +119,8 @@ public:
 		return D;
 	}
 
+	size_t capacity() const { return buf_size_; }
+
 	chunk tail(size_t s_ins = INT_MAX) {
 		size_t cnt = ((tail_ > head_ || full_) ? buf_size_ : head_) - tail_;
 		return chunk{buf_ + tail_, (cnt > s_ins) ? s_ins : cnt};
@@ -111,6 +140,9 @@ public:
 	}
 	void unroll() { grow(0); }
 	size_t available() { return (buf_size_ - size()); }
+	void reserve(size_t sz) {
+		if (sz > capacity()) grow(sz - capacity());
+	}
 
 protected:
 	void grow(size_t sz) {

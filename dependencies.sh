@@ -32,9 +32,9 @@ error_msg() {
 
 # declare dependencies arrays for systems
 osx_deps="gperftools leveldb snappy cmake git"
-centos7_debs="gcc-c++ cmake make snappy-devel findutils curl tar unzip rpm-build rpmdevtools git"
-centos6_debs="centos-release-scl devtoolset-4-gcc devtoolset-4-gcc-c++ make snappy-devel findutils curl tar cmake unzip rpm-build git"
-debian_debs="build-essential g++ libsnappy-dev libleveldb-dev make curl cmake unzip git"
+centos7_debs="gcc-c++ cmake make snappy-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
+centos6_debs="centos-release-scl devtoolset-4-gcc devtoolset-4-gcc-c++ make snappy-devel gperftools-devel findutils curl tar cmake unzip rpm-build git"
+debian_debs="build-essential g++ libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl cmake unzip git"
 alpine_apks="g++ snappy-dev libexecinfo-dev make curl cmake unzip git"
 
 install_leveldb() {
@@ -85,6 +85,7 @@ install_osx() {
 }
 
 install_centos7() {
+    yum install -y epel-release >/dev/null 2>&1 || true
     for pkg in ${centos7_debs}
     do
         if rpm -qa | grep -qw ${pkg} ; then
@@ -104,6 +105,7 @@ install_centos7() {
 }
 
 install_centos6() {
+    yum install -y epel-release >/dev/null 2>&1 || true
     for pkg in ${centos6_debs}
     do
         if rpm -qa | grep -qw ${pkg}; then

@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"./repo"
+	"github.com/restream/reindexer/benchmarks/repo"
 )
 
 func BenchmarkElasticFullText(b *testing.B) {

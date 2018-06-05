@@ -1,5 +1,5 @@
-#include "core/reindexer.h"
 #include "debug/backtrace.h"
+#include "core/reindexer.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
 #include "tools/stringstools.h"
@@ -466,7 +466,7 @@ int main(int argc, char* argv[]) {
 
 	try {
 		parser.ParseCLI(argc, argv);
-	} catch (const args::Help &) {
+	} catch (const args::Help&) {
 		std::cout << parser;
 	} catch (const args::Error& e) {
 		std::cerr << "ERROR: " << e.what() << std::endl;

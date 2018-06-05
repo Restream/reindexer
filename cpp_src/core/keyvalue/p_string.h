@@ -3,8 +3,8 @@
 #include <assert.h>
 #include <string>
 #include <vector>
+#include "estl/string_view.h"
 #include "tools/customhash.h"
-#include "tools/slice.h"
 #include "tools/varint.h"
 
 namespace reindexer {
@@ -40,10 +40,10 @@ struct p_string {
 	explicit p_string(const v_string_hdr *vstr) : v((uintptr_t(vstr) & ~tagMask) | (tagVstr << tagShift)) {}
 	explicit p_string(const char *cstr) : v((uintptr_t(cstr) & ~tagMask) | (tagCstr << tagShift)) {}
 	explicit p_string(const string *str) : v((uintptr_t(str) & ~tagMask) | (tagCxxstr << tagShift)) {}
-	explicit p_string(const Slice *ptr) : v((uintptr_t(ptr) & ~tagMask) | (tagSlice << tagShift)) {}
+	explicit p_string(const string_view *ptr) : v((uintptr_t(ptr) & ~tagMask) | (tagSlice << tagShift)) {}
 	p_string() : v(0) {}
 
-	operator Slice() const { return Slice(data(), length()); }
+	operator string_view() const { return string_view(data(), length()); }
 	const char *data() const {
 		switch (type()) {
 			case tagCstr:
@@ -51,7 +51,7 @@ struct p_string {
 			case tagCxxstr:
 				return (reinterpret_cast<const string *>(ptr()))->data();
 			case tagSlice:
-				return (reinterpret_cast<const Slice *>(ptr()))->data();
+				return (reinterpret_cast<const string_view *>(ptr()))->data();
 			case tagLstr:
 				return &(reinterpret_cast<const l_string_hdr *>(ptr()))->data[0];
 			case tagVstr: {
@@ -71,7 +71,7 @@ struct p_string {
 			case tagCxxstr:
 				return (reinterpret_cast<const string *>(ptr()))->length();
 			case tagSlice:
-				return (reinterpret_cast<const Slice *>(ptr()))->size();
+				return (reinterpret_cast<const string_view *>(ptr()))->size();
 			case tagLstr:
 				return (reinterpret_cast<const l_string_hdr *>(ptr()))->length;
 			case tagVstr: {

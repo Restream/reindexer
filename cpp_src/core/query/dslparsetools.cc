@@ -296,6 +296,10 @@ void parseAggregation(JsonValue& aggregation, Query& query) {
 }
 
 void parse(JsonValue& root, Query& q) {
+	if (root.getTag() != JSON_OBJECT) {
+		throw Error(errParseJson, "Json is malformed: %d", root.getTag());
+	}
+
 	for (auto elem : root) {
 		auto& v = elem->value;
 		auto name = lower(elem->key);
@@ -316,7 +320,8 @@ void parse(JsonValue& root, Query& q) {
 				break;
 
 			case Root::Distinct:
-				// nothing?????
+				checkJsonValueType(v, name, JSON_STRING);
+				if (*v.toString()) q.Distinct(v.toString());
 				break;
 
 			case Root::Filters:

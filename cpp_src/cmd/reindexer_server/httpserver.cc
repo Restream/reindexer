@@ -5,7 +5,7 @@
 #include "core/type_consts.h"
 #include "gason/gason.h"
 #include "loggerwrapper.h"
-#include "net/http/connection.h"
+#include "net/http/serverconnection.h"
 #include "net/listener.h"
 #include "tools/fsops.h"
 #include "tools/serializer.h"
@@ -18,8 +18,8 @@ using std::to_string;
 namespace reindexer_server {
 
 HTTPServer::HTTPServer(DBManager &dbMgr, const string &webRoot) : dbMgr_(dbMgr), webRoot_(reindexer::fs::JoinPath(webRoot, "")) {}
-HTTPServer::HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper logger, bool allocDebug)
-	: dbMgr_(dbMgr), webRoot_(reindexer::fs::JoinPath(webRoot, "")), logger_(logger), allocDebug_(allocDebug) {}
+HTTPServer::HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper logger, bool allocDebug, bool enablePprof)
+	: dbMgr_(dbMgr), webRoot_(reindexer::fs::JoinPath(webRoot, "")), logger_(logger), allocDebug_(allocDebug), enablePprof_(enablePprof) {}
 HTTPServer::~HTTPServer() {}
 
 enum { ModeUpdate, ModeInsert, ModeUpsert, ModeDelete };
@@ -27,13 +27,9 @@ enum { ModeUpdate, ModeInsert, ModeUpsert, ModeDelete };
 int HTTPServer::GetSQLQuery(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
 	reindexer::QueryResults res;
-	const char *sqlQuery = nullptr;
+	string sqlQuery = urldecode2(ctx.request->params.Get("q"));
 
-	for (auto p : ctx.request->params) {
-		if (!strcmp(p.name, "q")) sqlQuery = p.val;
-	}
-
-	if (!sqlQuery) {
+	if (sqlQuery.empty()) {
 		return jsonStatus(ctx, false, http::StatusBadRequest, "Missed `q` parameter");
 	}
 
@@ -84,19 +80,16 @@ int HTTPServer::GetDatabases(http::Context &ctx) {
 	ctx.writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
 	ctx.writer->SetRespCode(http::StatusOK);
 
-	const char *sortOrder = "";
-	for (auto p : ctx.request->params) {
-		if (!strcmp(p.name, "sort_order")) sortOrder = p.val;
-	}
+	string_view sortOrder = ctx.request->params.Get("sort_order");
 
 	auto dbs = dbMgr_.EnumDatabases();
 
 	int sortDirection = 0;
-	if (!strcmp(sortOrder, "asc")) {
+	if (sortOrder == "asc") {
 		sortDirection = 1;
-	} else if (!strcmp(sortOrder, "desc")) {
+	} else if (sortOrder == "desc") {
 		sortDirection = -1;
-	} else if (*sortOrder) {
+	} else if (sortOrder.length()) {
 		return jsonStatus(ctx, false, http::StatusBadRequest, "Invalid `sort_order` parameter");
 	}
 
@@ -109,21 +102,21 @@ int HTTPServer::GetDatabases(http::Context &ctx) {
 		});
 	}
 
-	ctx.writer->Write("{");
-	ctx.writer->Write("\"items\":[");
+	ctx.writer->Write("{"_sv);
+	ctx.writer->Write("\"items\":["_sv);
 	for (auto &db : dbs) {
-		ctx.writer->Write("\"");
-		ctx.writer->Write(db.c_str(), db.length());
-		ctx.writer->Write("\"");
-		if (db != dbs.back()) ctx.writer->Write(",");
+		ctx.writer->Write("\""_sv);
+		ctx.writer->Write(db);
+		ctx.writer->Write("\""_sv);
+		if (db != dbs.back()) ctx.writer->Write(","_sv);
 	}
 
-	ctx.writer->Write("],");
-	ctx.writer->Write("\"total_items\":");
+	ctx.writer->Write("],"_sv);
+	ctx.writer->Write("\"total_items\":"_sv);
 
 	auto total = to_string(dbs.size());
-	ctx.writer->Write(total.c_str(), total.length());
-	ctx.writer->Write("}");
+	ctx.writer->Write(total);
+	ctx.writer->Write("}"_sv);
 
 	return 0;
 }
@@ -157,7 +150,7 @@ int HTTPServer::PostDatabase(http::Context &ctx) {
 
 int HTTPServer::DeleteDatabase(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
-	const char *dbName = ctx.request->urlParams[0];
+	string dbName = ctx.request->urlParams[0].ToString();
 	AuthContext actx;
 
 	auto status = dbMgr_.Login(dbName, actx);
@@ -176,20 +169,17 @@ int HTTPServer::DeleteDatabase(http::Context &ctx) {
 int HTTPServer::GetNamespaces(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
 
-	const char *sortOrder = "";
-	for (auto p : ctx.request->params) {
-		if (!strcmp(p.name, "sort_order")) sortOrder = p.val;
-	}
+	string_view sortOrder = ctx.request->params.Get("sort_order");
 
 	vector<reindexer::NamespaceDef> nsDefs;
 	db->EnumNamespaces(nsDefs, false);
 
 	int sortDirection = 0;
-	if (!strcmp(sortOrder, "asc")) {
+	if (sortOrder == "asc") {
 		sortDirection = 1;
-	} else if (!strcmp(sortOrder, "desc")) {
+	} else if (sortOrder == "desc") {
 		sortDirection = -1;
-	} else if (*sortOrder) {
+	} else if (sortOrder.length()) {
 		return jsonStatus(ctx, false, http::StatusBadRequest, "Invalid `sort_order` parameter");
 	}
 
@@ -205,25 +195,25 @@ int HTTPServer::GetNamespaces(http::Context &ctx) {
 	ctx.writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
 	ctx.writer->SetRespCode(http::StatusOK);
 
-	ctx.writer->Write("{");
-	ctx.writer->Write("\"items\":[");
+	ctx.writer->Write("{"_sv);
+	ctx.writer->Write("\"items\":["_sv);
 	for (auto &nsDef : nsDefs) {
-		ctx.writer->Write("{\"name\":\"");
+		ctx.writer->Write("{\"name\":\""_sv);
 		ctx.writer->Write(nsDef.name.c_str(), nsDef.name.length());
 		ctx.writer->Write("\",");
-		string isStorageEnabled = nsDef.storage.IsEnabled() ? "true" : "false";
-		ctx.writer->Write("\"storage_enabled\":");
-		ctx.writer->Write(isStorageEnabled.c_str(), isStorageEnabled.length());
-		ctx.writer->Write("}");
-		if (&nsDef != &nsDefs.back()) ctx.writer->Write(",");
+		string_view isStorageEnabled = nsDef.storage.IsEnabled() ? "true"_sv : "false"_sv;
+		ctx.writer->Write("\"storage_enabled\":"_sv);
+		ctx.writer->Write(isStorageEnabled);
+		ctx.writer->Write("}"_sv);
+		if (&nsDef != &nsDefs.back()) ctx.writer->Write(","_sv);
 	}
 
-	ctx.writer->Write("],");
-	ctx.writer->Write("\"total_items\":");
+	ctx.writer->Write("],"_sv);
+	ctx.writer->Write("\"total_items\":"_sv);
 
 	auto total = to_string(nsDefs.size());
-	ctx.writer->Write(total.c_str(), total.length());
-	ctx.writer->Write("}");
+	ctx.writer->Write(total);
+	ctx.writer->Write("}"_sv);
 
 	return 0;
 }
@@ -231,9 +221,9 @@ int HTTPServer::GetNamespaces(http::Context &ctx) {
 int HTTPServer::GetNamespace(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
 
-	const char *nsName = ctx.request->urlParams[1];
+	string nsName = ctx.request->urlParams[1].ToString();
 
-	if (!*nsName) {
+	if (!nsName.length()) {
 		return jsonStatus(ctx, false, http::StatusBadRequest, "Namespace is not specified");
 	}
 
@@ -278,9 +268,9 @@ int HTTPServer::PostNamespace(http::Context &ctx) {
 int HTTPServer::DeleteNamespace(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
 
-	const char *nsName = ctx.request->urlParams[1];
+	string nsName = ctx.request->urlParams[1].ToString();
 
-	if (!*nsName) {
+	if (nsName.empty()) {
 		return jsonStatus(ctx, false, http::StatusBadRequest, "Namespace is not specified");
 	}
 
@@ -295,41 +285,34 @@ int HTTPServer::DeleteNamespace(http::Context &ctx) {
 int HTTPServer::GetItems(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
 
-	const char *nsName = ctx.request->urlParams[1];
+	string nsName = ctx.request->urlParams[1].ToString();
 
-	const char *limitParam = nullptr;
-	const char *offsetParam = nullptr;
-	const char *sortField = nullptr;
-	const char *sortOrder = "asc";
+	string_view limitParam = ctx.request->params.Get("limit");
+	string_view offsetParam = ctx.request->params.Get("offset");
+	string_view sortField = ctx.request->params.Get("sort_field");
+	string_view sortOrder = ctx.request->params.Get("sort_order");
 
-	for (auto p : ctx.request->params) {
-		if (!strcmp(p.name, "limit")) limitParam = p.val;
-		if (!strcmp(p.name, "offset")) offsetParam = p.val;
-		if (!strcmp(p.name, "sort_field")) sortField = p.val;
-		if (!strcmp(p.name, "sort_order")) sortOrder = p.val;
-	}
-
-	if (!*nsName) {
+	if (nsName.empty()) {
 		return jsonStatus(ctx, false, http::StatusBadRequest, "Namespace is not specified");
 	}
 
 	int limit = limit_default;
 	int offset = offset_default;
-	if (limitParam != nullptr) {
-		limit = atoi(limitParam);
+	if (limitParam.length()) {
+		limit = stoi(limitParam);
 		if (limit < 0) limit = limit_default;
 		if (limit > limit_max) limit = limit_max;
 	}
-	if (offsetParam != nullptr) {
-		offset = atoi(offsetParam);
+	if (offsetParam.length()) {
+		offset = stoi(offsetParam);
 		if (offset < 0) offset = 0;
 	}
 
 	reindexer::Query query(nsName, offset, limit, ModeAccurateTotal);
 
-	if (sortField) {
-		bool isSortDesc = !strcmp(sortOrder, "desc");
-		query.Sort(sortField, isSortDesc);
+	if (sortField.length()) {
+		bool isSortDesc = sortOrder == "desc";
+		query.Sort(sortField.ToString(), isSortDesc);
 	}
 
 	reindexer::QueryResults res;
@@ -347,7 +330,7 @@ int HTTPServer::GetItems(http::Context &ctx) {
 		wrSer.Reset();
 		res.GetJSON(i, wrSer, false);
 		ctx.writer->Write(wrSer.Buf(), wrSer.Len());
-		if (i != res.size() - 1) ctx.writer->Write(",");
+		if (i != res.size() - 1) ctx.writer->Write(',');
 	}
 	ctx.writer->Write("],");
 	ctx.writer->Write("\"total_items\":");
@@ -365,9 +348,9 @@ int HTTPServer::PostItems(http::Context &ctx) { return modifyItem(ctx, ModeInser
 int HTTPServer::GetIndexes(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
 
-	const char *nsName = ctx.request->urlParams[1];
+	string nsName = ctx.request->urlParams[1].ToString();
 
-	if (!*nsName) {
+	if (!nsName.length()) {
 		return jsonStatus(ctx, false, http::StatusBadRequest, "Namespace is not specified");
 	}
 
@@ -382,7 +365,7 @@ int HTTPServer::GetIndexes(http::Context &ctx) {
 	ctx.writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
 	ctx.writer->SetRespCode(http::StatusOK);
 
-	ctx.writer->Write("{");
+	ctx.writer->Write('{');
 
 	reindexer::WrSerializer wrSer(true);
 
@@ -398,7 +381,7 @@ int HTTPServer::GetIndexes(http::Context &ctx) {
 	ctx.writer->Write(",\"total_items\":");
 	string total = to_string(nsDefIt->indexes.size());
 	ctx.writer->Write(total.c_str(), total.length());
-	ctx.writer->Write("}");
+	ctx.writer->Write('}');
 
 	return 0;
 }
@@ -406,9 +389,9 @@ int HTTPServer::GetIndexes(http::Context &ctx) {
 int HTTPServer::PostIndex(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
 
-	const char *nsName = ctx.request->urlParams[1];
+	string nsName = ctx.request->urlParams[1].ToString();
 
-	if (!*nsName) {
+	if (!nsName.length()) {
 		return jsonStatus(ctx, false, http::StatusBadRequest, "Namespace is not specified");
 	}
 
@@ -442,14 +425,14 @@ int HTTPServer::PostIndex(http::Context &ctx) {
 int HTTPServer::DeleteIndex(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
 
-	const char *nsName = ctx.request->urlParams[1];
-	const char *idxName = ctx.request->urlParams[2];
+	string nsName = ctx.request->urlParams[1].ToString();
+	string idxName = ctx.request->urlParams[2].ToString();
 
-	if (!*nsName) {
+	if (nsName.empty()) {
 		return jsonStatus(ctx, false, http::StatusBadRequest, "Namespace is not specified");
 	}
 
-	if (!*idxName) {
+	if (idxName.empty()) {
 		return jsonStatus(ctx, false, http::StatusBadRequest, "Index is not specified");
 	}
 
@@ -463,7 +446,7 @@ int HTTPServer::DeleteIndex(http::Context &ctx) {
 
 int HTTPServer::Check(http::Context &ctx) { return ctx.String(http::StatusOK, "Hello world"); }
 int HTTPServer::DocHandler(http::Context &ctx) {
-	string path = ctx.request->path + 1;
+	string path = ctx.request->path.substr(1).ToString();
 	string target = webRoot_ + path;
 
 	switch (fs::Stat(target)) {
@@ -555,9 +538,10 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 		router_.Logger<HTTPServer, &HTTPServer::Logger>(this);
 	}
 
-	pprof_.Attach(router_);
-
-	listener_.reset(new Listener(loop, http::Connection::NewFactory(router_)));
+	if (enablePprof_) {
+		pprof_.Attach(router_);
+	}
+	listener_.reset(new Listener(loop, http::ServerConnection::NewFactory(router_)));
 
 	return listener_->Bind(addr);
 }
@@ -565,11 +549,11 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataWrite);
 
-	const char *nsName = ctx.request->urlParams[1];
+	string nsName = ctx.request->urlParams[1].ToString();
 
 	string itemJson = ctx.body->Read();
 
-	if (!*nsName) {
+	if (nsName.empty()) {
 		return jsonStatus(ctx, false, http::StatusBadRequest, "Namespace is not specified");
 	}
 
@@ -582,7 +566,7 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 			return jsonStatus(ctx, false, http::StatusInternalServerError, item.Status().what());
 		}
 		char *prevPtr = 0;
-		auto status = item.Unsafe().FromJSON(reindexer::Slice(jsonPtr, jsonLeft), &jsonPtr);
+		auto status = item.Unsafe().FromJSON(reindexer::string_view(jsonPtr, jsonLeft), &jsonPtr);
 		jsonLeft -= (jsonPtr - prevPtr);
 
 		if (!status.ok()) {
@@ -615,57 +599,57 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 }
 
 int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, const char *name) {
-	ctx.writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
+	ctx.writer->SetHeader(http::Header{"Content-Type"_sv, "application/json; charset=utf-8"_sv});
 	ctx.writer->SetRespCode(http::StatusOK);
 	reindexer::WrSerializer wrSer(true);
-	ctx.writer->Write("{");
+	ctx.writer->Write('{');
 	if (res.totalCount) {
-		ctx.writer->Write("\"total_items\":");
+		ctx.writer->Write("\"total_items\":"_sv);
 		string total = to_string(res.totalCount);
 		ctx.writer->Write(total.c_str(), total.length());
 		ctx.writer->Write(",");
 	}
 	if (!res.aggregationResults.empty()) {
-		ctx.writer->Write("\"aggregations\": [");
+		ctx.writer->Write("\"aggregations\": ["_sv);
 		for (unsigned i = 0; i < res.aggregationResults.size(); i++) {
-			if (i) ctx.writer->Write(",");
+			if (i) ctx.writer->Write(',');
 			string agg = to_string(res.aggregationResults[i]);
 			ctx.writer->Write(agg.c_str(), agg.length());
 		}
-		ctx.writer->Write("],");
+		ctx.writer->Write("],"_sv);
 	}
 
-	ctx.writer->Write("\"");
+	ctx.writer->Write('\"');
 	ctx.writer->Write(name, strlen(name));
-	ctx.writer->Write("\":[");
+	ctx.writer->Write("\":["_sv);
 	for (size_t i = 0; i < res.size(); i++) {
 		wrSer.Reset();
-		if (i != 0) ctx.writer->Write(",");
+		if (i != 0) ctx.writer->Write(',');
 		res.GetJSON(i, wrSer, false);
 		ctx.writer->Write(wrSer.Buf(), wrSer.Len());
 	}
-	ctx.writer->Write("]}");
+	ctx.writer->Write("]}"_sv);
 	return 0;
 }
 
-int HTTPServer::jsonStatus(http::Context &ctx, bool isSuccess, int respcode, const string &description) {
-	ctx.writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
+int HTTPServer::jsonStatus(http::Context &ctx, bool isSuccess, int respcode, const string_view &description) {
+	ctx.writer->SetHeader(http::Header{"Content-Type"_sv, "application/json; charset=utf-8"_sv});
 	ctx.writer->SetRespCode(respcode);
-	ctx.writer->Write("{");
+	ctx.writer->Write('{');
 
 	if (isSuccess) {
-		ctx.writer->Write("\"success\":true");
+		ctx.writer->Write("\"success\":true"_sv);
 	} else {
-		ctx.writer->Write("\"success\":false,");
-		ctx.writer->Write("\"response_code\":");
+		ctx.writer->Write("\"success\":false,"_sv);
+		ctx.writer->Write("\"response_code\":"_sv);
 		string rcode = to_string(respcode);
-		ctx.writer->Write(rcode.c_str(), rcode.length());
-		ctx.writer->Write(",\"description\":\"");
-		ctx.writer->Write(description.c_str(), description.length());
-		ctx.writer->Write("\"");
+		ctx.writer->Write(rcode);
+		ctx.writer->Write(",\"description\":\""_sv);
+		ctx.writer->Write(description);
+		ctx.writer->Write('\"');
 	}
 
-	ctx.writer->Write("}");
+	ctx.writer->Write('}');
 
 	return 0;
 }
@@ -674,7 +658,7 @@ shared_ptr<Reindexer> HTTPServer::getDB(http::Context &ctx, UserRole role) {
 	(void)ctx;
 	shared_ptr<Reindexer> db;
 
-	const char *dbName = ctx.request->urlParams[0];
+	string dbName = ctx.request->urlParams[0].ToString();
 
 	AuthContext dummyCtx;
 
@@ -729,27 +713,23 @@ int HTTPServer::CheckAuth(http::Context &ctx) {
 		return 0;
 	}
 
-	const char *authHeader = nullptr;
-	for (auto &p : ctx.request->headers) {
-		if (!strcmp(p.name, "authorization")) authHeader = p.val;
-	}
+	string_view authHeader = ctx.request->headers.Get("authorization");
 
-	size_t authHdrLen = authHeader != nullptr ? strlen(authHeader) : 0;
-	if (!authHeader || authHdrLen < 6) {
-		ctx.writer->SetHeader({"WWW-Authenticate", "Basic realm=\"reindexer\""});
+	if (authHeader.length() < 6) {
+		ctx.writer->SetHeader({"WWW-Authenticate"_sv, "Basic realm=\"reindexer\""_sv});
 		ctx.String(http::StatusUnauthorized, "Forbidden");
 		return -1;
 	}
 
-	char *credBuf = reinterpret_cast<char *>(alloca(authHdrLen));
-	Base64decode(credBuf, authHeader + 6);
+	char *credBuf = reinterpret_cast<char *>(alloca(authHeader.length()));
+	Base64decode(credBuf, authHeader.data() + 6);
 	char *password = strchr(credBuf, ':');
 	if (password != nullptr) *password++ = 0;
 
 	AuthContext auth(credBuf, password ? password : "");
 	auto status = dbMgr_.Login("", auth);
 	if (!status.ok()) {
-		ctx.writer->SetHeader({"WWW-Authenticate", "Basic realm=\"reindexer\""});
+		ctx.writer->SetHeader({"WWW-Authenticate"_sv, "Basic realm=\"reindexer\""_sv});
 		ctx.String(http::StatusUnauthorized, status.what());
 		return -1;
 	}

@@ -2,7 +2,7 @@
 #include <cmath>
 namespace reindexer {
 
-KeyRef jsonValue2KeyRef(JsonValue &v, KeyValueType t) {
+KeyRef jsonValue2KeyRef(JsonValue &v, KeyValueType t, const char *fieldName) {
 	switch (v.getTag()) {
 		case JSON_NUMBER:
 			switch (t) {
@@ -20,7 +20,7 @@ KeyRef jsonValue2KeyRef(JsonValue &v, KeyValueType t) {
 				case KeyValueInt64:
 					return KeyRef(static_cast<int64_t>(v.toNumber()));
 				default:
-					throw Error(errLogic, "Error parsing json field - got number, expected %s", KeyValue::TypeName(t));
+					throw Error(errLogic, "Error parsing json field '%s' - got number, expected %s", fieldName, KeyValue::TypeName(t));
 			}
 		case JSON_STRING:
 			return KeyRef(p_string(v.toString()));
@@ -39,10 +39,14 @@ KeyRef jsonValue2KeyRef(JsonValue &v, KeyValueType t) {
 				case KeyValueString:
 					return KeyRef(p_string(static_cast<const char *>(nullptr)));
 				default:
-					throw Error(errLogic, "Error parsing json field - got null, expected %s", KeyValue::TypeName(t));
+					throw Error(errLogic, "Error parsing json field '%s' - got null, expected %s", fieldName, KeyValue::TypeName(t));
 			}
+		case JSON_OBJECT:
+			throw Error(errLogic, "Error parsing json field '%s' - got object, expected %s", fieldName, KeyValue::TypeName(t));
+		case JSON_ARRAY:
+			throw Error(errLogic, "Error parsing json field '%s' - got array, expected %s", fieldName, KeyValue::TypeName(t));
 		default:
-			throw Error(errLogic, "Error parsing json - invalid tag %d", v.getTag());
+			abort();
 	}
 	return KeyRef();
 }

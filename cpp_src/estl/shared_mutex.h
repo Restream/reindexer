@@ -207,4 +207,11 @@ private:
 	Mutex* mtx_;
 	bool unique_;
 };
+
+class dummy_mutex {
+public:
+	void lock() {}
+	void unlock() {}
+};
+
 }  // namespace reindexer

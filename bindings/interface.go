@@ -60,6 +60,7 @@ func (indexOpts *IndexOptions) IsAppendable() bool {
 }
 
 type StorageOptions uint8
+type CacheMode uint8
 
 func (so *StorageOptions) Enabled(value bool) *StorageOptions {
 	if value {
@@ -132,11 +133,12 @@ type Stats struct {
 // Raw binding to reindexer
 type RawBinding interface {
 	Init(u *url.URL) error
-	OpenNamespace(namespace string, enableStorage, dropOnFileFormatError bool) error
+	OpenNamespace(namespace string, enableStorage, dropOnFileFormatError bool, cacheMode uint8) error
 	CloseNamespace(namespace string) error
 	DropNamespace(namespace string) error
 	EnableStorage(namespace string) error
 	AddIndex(namespace, index, jsonPath, indexType, fieldType string, opts IndexOptions, collateMode int, sortOrderStr string) error
+	DropIndex(namespace, index string) error
 	ConfigureIndex(namespace, index, config string) error
 	PutMeta(namespace, key, data string) error
 	GetMeta(namespace, key string) (RawBuffer, error)

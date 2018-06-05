@@ -25,26 +25,25 @@ void tokenizer::skip_space() {
 token tokenizer::next_token(bool to_lower) {
 	skip_space();
 
-	if (!*cur) return token(TokenEnd, "");
+	if (!*cur) return token(TokenEnd);
 
-	token res;
-	res.type = TokenSymbol;
+	token res(TokenSymbol);
 
 	if (isalpha(*cur)) {
 		res.type = TokenName;
 		do {
-			res.text += to_lower ? tolower(*cur++) : *cur++;
+			res.text_.push_back(to_lower ? tolower(*cur++) : *cur++);
 		} while (isalpha(*cur) || isdigit(*cur) || *cur == '_');
 	} else if (isdigit(*cur) || *cur == '-' || *cur == '+') {
 		res.type = TokenNumber;
 		do {
-			res.text += *cur++;
+			res.text_.push_back(*cur++);
 		} while (isdigit(*cur));
 	} else if (*cur == '>' || *cur == '<' || *cur == '=') {
 		res.type = TokenOp;
 		do {
-			res.text += *cur++;
-		} while ((*cur == '=' || *cur == '>' || *cur == '<') && res.text.length() < 2);
+			res.text_.push_back(*cur++);
+		} while ((*cur == '=' || *cur == '>' || *cur == '<') && res.text_.size() < 2);
 	} else if (*cur == '"' || *cur == '\'' || *cur == '`') {
 		res.type = TokenString;
 		char quote_chr = *cur++;
@@ -54,12 +53,14 @@ token tokenizer::next_token(bool to_lower) {
 				break;
 			}
 			if (*cur == '\\' && !*++cur) break;
-			res.text += *cur++;
+			res.text_.push_back(*cur++);
 		};
 	} else
-		res.text = *cur++;
+		res.text_.push_back(*cur++);
 
-	//	printf("tok=%s\n", res.text.c_str());
+	// null terminate it
+	res.text_.reserve(res.text_.size() + 1);
+	*(res.text_.begin() + res.text_.size()) = 0;
 	return res;
 }
 

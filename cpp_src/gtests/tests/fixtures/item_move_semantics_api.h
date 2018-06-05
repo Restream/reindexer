@@ -8,7 +8,7 @@
 
 using reindexer::Item;
 using reindexer::ItemImpl;
-using reindexer::Slice;
+using reindexer::string_view;
 using std::to_string;
 using std::vector;
 
@@ -52,7 +52,7 @@ protected:
 			auto &&item = pair.second;
 			Error err = reindexer->Upsert(default_namespace, item);
 			ASSERT_TRUE(err.ok()) << err.what();
-			reindexer::Slice jsonSlice = item.GetJSON();
+			reindexer::string_view jsonSlice = item.GetJSON();
 			int status = jsonParse(const_cast<char *>(jsonSlice.data()), &endptr, &jsonValue, jsonAllocator);
 			ASSERT_TRUE(status == JSON_OK);
 		}

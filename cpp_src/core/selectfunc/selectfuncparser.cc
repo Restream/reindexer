@@ -17,11 +17,11 @@ SelectFuncStruct &SelectFuncParser::Parse(string query) {
 
 	token tok = parser.next_token(false);
 
-	selectFuncStruct_.field = tok.text;
+	selectFuncStruct_.field = tok.text().ToString();
 
 	tok = parser.next_token(false);
-	if (tok.text != "=" && tok.text != ".") {
-		throw Error(errParams, "`=` or '.' is expected, but found `%s`", tok.text.c_str());
+	if (tok.text() != "=" && tok.text() != ".") {
+		throw Error(errParams, "`=` or '.' is expected, but found `%s`", tok.text().data());
 	}
 
 	parseFunction(parser);
@@ -36,22 +36,22 @@ SelectFuncStruct &SelectFuncParser::Parse(string query) {
 
 void SelectFuncParser::parseFunction(tokenizer &parser) {
 	token tok = parser.next_token(true);
-	if (tok.text == "snippet") {
+	if (tok.text() == "snippet") {
 		selectFuncStruct_.type = SelectFuncStruct::kSelectFuncSnippet;
-	} else if (tok.text == "highlight") {
+	} else if (tok.text() == "highlight") {
 		selectFuncStruct_.type = SelectFuncStruct::kSelectFuncHighlight;
 	}
-	selectFuncStruct_.funcName = tok.text;
+	selectFuncStruct_.funcName = tok.text().ToString();
 
 	tok = parser.next_token(false);
-	if (tok.text == "(") {
+	if (tok.text() == "(") {
 		string agr;
 		while (!parser.end()) {
 			tok = parser.next_token(false);
-			if (tok.text == ")") {
+			if (tok.text() == ")") {
 				token nextTok = parser.next_token(false);
-				if (nextTok.text.length()) {
-					throw Error(errParseDSL, "Unexpected character `%s` after close parenthesis", nextTok.text.c_str());
+				if (nextTok.text().length()) {
+					throw Error(errParseDSL, "Unexpected character `%s` after close parenthesis", nextTok.text().data());
 				}
 				selectFuncStruct_.funcArgs.push_back(agr);
 
@@ -59,16 +59,16 @@ void SelectFuncParser::parseFunction(tokenizer &parser) {
 				break;
 			}
 
-			if (tok.text == ",") {
+			if (tok.text() == ",") {
 				selectFuncStruct_.funcArgs.push_back(agr);
 				agr.clear();
 
 			} else {
-				agr += tok.text;
+				agr += tok.text().ToString();
 			}
 		}
 	} else {
-		throw Error(errParseDSL, "An open parenthesis is required, but found `%s`", tok.text.c_str());
+		throw Error(errParseDSL, "An open parenthesis is required, but found `%s`", tok.text().data());
 	}
 }
 

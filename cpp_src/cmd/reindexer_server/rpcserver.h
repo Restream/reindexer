@@ -37,12 +37,13 @@ public:
 	Error CloseDatabase(cproto::Context &ctx);
 	Error DropDatabase(cproto::Context &ctx);
 
-	Error OpenNamespace(cproto::Context &ctx, p_string ns, p_string def);
+	Error OpenNamespace(cproto::Context &ctx, p_string nsDefJson);
 	Error DropNamespace(cproto::Context &ctx, p_string ns);
 	Error CloseNamespace(cproto::Context &ctx, p_string ns);
 	Error EnumNamespaces(cproto::Context &ctx);
 
 	Error AddIndex(cproto::Context &ctx, p_string ns, p_string indexDef);
+	Error DropIndex(cproto::Context &ctx, p_string ns, p_string index);
 	Error ConfigureIndex(cproto::Context &ctx, p_string ns, p_string index, p_string config);
 
 	Error Commit(cproto::Context &ctx, p_string ns);

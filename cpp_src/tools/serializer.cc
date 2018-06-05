@@ -10,6 +10,7 @@
 namespace reindexer {
 
 Serializer::Serializer(const void *_buf, int _len) : buf(static_cast<const uint8_t *>(_buf)), len(_len), pos(0) {}
+Serializer::Serializer(const string_view &buf) : buf(reinterpret_cast<const uint8_t *>(buf.data())), len(buf.length()), pos(0) {}
 
 bool Serializer::Eof() { return pos >= len; }
 
@@ -43,9 +44,9 @@ inline static void checkbound(int pos, int need, int len) {
 	}
 }
 
-Slice Serializer::GetSlice() {
+string_view Serializer::GetSlice() {
 	uint32_t l = GetUInt32();
-	Slice b(reinterpret_cast<const char *>(buf + pos), l);
+	string_view b(reinterpret_cast<const char *>(buf + pos), l);
 	checkbound(pos, b.size(), len);
 	pos += b.size();
 	return b;
@@ -80,11 +81,11 @@ uint64_t Serializer::GetVarUint() {
 	return parse_uint64(l, buf + pos - l);
 }
 
-Slice Serializer::GetVString() {
+string_view Serializer::GetVString() {
 	int l = GetVarUint();
 	checkbound(pos, l, len);
 	pos += l;
-	return Slice(reinterpret_cast<const char *>(buf + pos - l), l);
+	return string_view(reinterpret_cast<const char *>(buf + pos - l), l);
 }
 
 p_string Serializer::GetPVString() {
@@ -124,7 +125,7 @@ void WrSerializer::PutValue(const KeyValue &kv) {
 	}
 }
 
-void WrSerializer::PutSlice(const Slice &slice) {
+void WrSerializer::PutSlice(const string_view &slice) {
 	PutUInt32(slice.size());
 	grow(slice.size());
 	memcpy(&buf_[len_], slice.data(), slice.size());
@@ -209,12 +210,12 @@ void WrSerializer::PutVString(const char *str) {
 	len_ += string_pack(str, buf_ + len_);
 }
 
-void WrSerializer::PutVString(const Slice &str) {
+void WrSerializer::PutVString(const string_view &str) {
 	grow(str.size() + 10);
 	len_ += string_pack(str.data(), str.size(), buf_ + len_);
 }
 
-void WrSerializer::PrintJsonString(const Slice &str) {
+void WrSerializer::PrintJsonString(const string_view &str) {
 	const char *s = str.data();
 	size_t l = str.size();
 	grow(l * 6 + 3);

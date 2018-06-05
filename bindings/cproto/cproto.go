@@ -50,26 +50,36 @@ func (binding *NetCProto) ModifyItem(data []byte, mode int) (bindings.RawBuffer,
 }
 
 type storageOpts struct {
-	EnableStorage     bool `json:"enable_storage"`
+	EnableStorage     bool `json:"enabled"`
 	DropOnFormatError bool `json:"drop_on_file_format_error"`
 	CreateIfMissing   bool `json:"create_if_missing"`
 }
+type nsDef struct {
+	Namespace string      `json:"name"`
+	SOpts     storageOpts `json:"storage"`
+	CacheMode uint8       `json:"cached_mode"`
+}
 
-func (binding *NetCProto) OpenNamespace(namespace string, enableStorage, dropOnFormatError bool) error {
+func (binding *NetCProto) OpenNamespace(namespace string, enableStorage, dropOnFormatError bool, cacheMode uint8) error {
 
 	sops := storageOpts{
 		EnableStorage:     enableStorage,
 		DropOnFormatError: dropOnFormatError,
 		CreateIfMissing:   true,
 	}
+	nsdef := nsDef{
+		SOpts:     sops,
+		CacheMode: cacheMode,
+		Namespace: namespace,
+	}
 
-	bsops, err := json.Marshal(sops)
+	bsnsdef, err := json.Marshal(nsdef)
 	if err != nil {
 		return err
 	}
 
 	conn := binding.getConn()
-	return conn.rpcCallNoResults(cmdOpenNamespace, namespace, bsops)
+	return conn.rpcCallNoResults(cmdOpenNamespace, bsnsdef)
 }
 
 func (binding *NetCProto) CloseNamespace(namespace string) error {
@@ -131,6 +141,11 @@ func (binding *NetCProto) AddIndex(namespace, index, jsonPath, indexType, fieldT
 	return conn.rpcCallNoResults(cmdAddIndex, namespace, bidef)
 }
 
+func (binding *NetCProto) DropIndex(namespace, index string) error {
+	conn := binding.getConn()
+	return conn.rpcCallNoResults(cmdDropIndex, namespace, index)
+}
+
 func (binding *NetCProto) ConfigureIndex(namespace, index, config string) error {
 	conn := binding.getConn()
 	return conn.rpcCallNoResults(cmdConfigureIndex, namespace, index, config)
@@ -155,11 +170,11 @@ func (binding *NetCProto) GetMeta(namespace, key string) (bindings.RawBuffer, er
 
 func (binding *NetCProto) Select(query string, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	conn := binding.getConn()
-	flags := bindings.ResultsWithPayloadTypes
+	flags := 0
 	if withItems {
 		flags |= bindings.ResultsWithJson
 	} else {
-		flags |= bindings.ResultsWithCJson
+		flags |= bindings.ResultsWithCJson | bindings.ResultsWithPayloadTypes
 	}
 
 	if fetchCount <= 0 {
@@ -179,11 +194,11 @@ func (binding *NetCProto) Select(query string, withItems bool, ptVersions []int3
 
 func (binding *NetCProto) SelectQuery(data []byte, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	conn := binding.getConn()
-	flags := bindings.ResultsWithPayloadTypes
+	flags := 0
 	if withItems {
 		flags |= bindings.ResultsWithJson
 	} else {
-		flags |= bindings.ResultsWithCJson
+		flags |= bindings.ResultsWithCJson | bindings.ResultsWithPayloadTypes
 	}
 
 	if fetchCount <= 0 {

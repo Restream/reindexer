@@ -7,7 +7,7 @@
 #include "type_consts.h"
 
 namespace reindexer {
-struct Slice;
+class string_view;
 }
 
 /// Sorting priorities table for CollateCustom

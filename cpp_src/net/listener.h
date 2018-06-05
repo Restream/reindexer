@@ -5,7 +5,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
-#include "iconnection.h"
+#include "iserverconnection.h"
 #include "net/ev/ev.h"
 #include "socket.h"
 
@@ -20,7 +20,7 @@ class Listener {
 public:
 	/// Constructs new listner object.
 	/// @param loop - ev::loop of caller's thread, listener's socket will be binded to that loop.
-	/// @param connFactory - Connection factory, will create objects with IConnection interface implementation.
+	/// @param connFactory - Connection factory, will create objects with IServerConnection interface implementation.
 	/// @param maxListeners - Maximum number of threads, which listener will utilize. std::thread::hardware_concurrency() by default
 	Listener(ev::dynamic_loop &loop, ConnectionFactory connFactory, int maxListeners = 0);
 	~Listener();
@@ -60,7 +60,7 @@ protected:
 	ev::dynamic_loop &loop_;
 	ev::async async_;
 	std::shared_ptr<Shared> shared_;
-	vector<std::unique_ptr<IConnection>> connectons_;
+	vector<std::unique_ptr<IServerConnection>> connectons_;
 	std::atomic<int> connCount_;
 	int idleConns_;
 	int id_;

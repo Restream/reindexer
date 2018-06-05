@@ -98,7 +98,7 @@ protected:
 		if (queryRes.empty()) return JSON_OK;
 		reindexer::WrSerializer wrSer;
 		queryRes.GetJSON(0, wrSer, false);
-		string json = reindexer::Slice(reinterpret_cast<const char*>(wrSer.Buf()), wrSer.Len()).ToString();
+		string json = reindexer::string_view(reinterpret_cast<const char*>(wrSer.Buf()), wrSer.Len()).ToString();
 
 		char* endptr = nullptr;
 		JsonValue value;

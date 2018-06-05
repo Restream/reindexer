@@ -16,8 +16,8 @@ The core is written in C++ and the application level API is in Go.
 - [Usage](#usage)
 	- [SQL compatible interface](#sql-compatible-interface)
 - [Installation](#installation)
-    - [Instalation for server mode](#instalation-for-server-mode)
-    - [Instalation for embeded mode](#instalation-for-embeded-mode)
+    - [Installation for server mode](#installation-for-server-mode)
+    - [Installation for embeded mode](#installation-for-embeded-mode)
 		- [Prerequirements](#prerequirements)
 		- [Get Reindexer](#get-reindexer)
 - [Advanced Usage](#advanced-usage)
@@ -199,12 +199,12 @@ Reindexer can run in 2 different modes:
  - `embeded (builtin)` Reindexer is embeded into application as static library, and does not reuqire separate server proccess.
  - `standalone` Reindexer run as standalone server,  application connects to Reindexer via network
 
-### Instalation for server mode
+### Installation for server mode
 
  1. [Install Reindexer Server](cpp_src/readme.md#installation)
  2. go get -a github.com/restream/reindexer
 
-### Instalation for embeded mode
+### Installation for embeded mode
 
 #### Prerequirements
 

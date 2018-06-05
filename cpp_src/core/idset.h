@@ -35,6 +35,7 @@ public:
 	using iterator = base_idset::const_iterator;
 	using base_idset::clear;
 	using base_idset::size;
+	using base_idset::empty;
 	using base_idset::data;
 	using base_idset::erase;
 	using base_idset::reserve;

@@ -19,7 +19,7 @@ public:
 	int Symbol(http::Context &ctx);
 
 protected:
-	string resolveSymbol(uintptr_t ptr);
+	void resolveSymbol(uintptr_t ptr, http::Writer *out);
 };
 
 }  // namespace reindexer_server

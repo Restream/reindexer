@@ -21,6 +21,9 @@ Error NamespaceDef::FromJSON(char *json) {
 		for (auto elem : jvalue) {
 			if (elem->value.getTag() == JSON_NULL) continue;
 			parseJsonField("name", name, elem);
+			int cacheModeInt = -1;
+			parseJsonField("cached_mode", cacheModeInt, elem, 0, 2);
+			if (cacheModeInt != -1) cacheMode = static_cast<CacheMode>(cacheModeInt);
 
 			if (!strcmp("storage", elem->key)) {
 				if (elem->value.getTag() != JSON_OBJECT) {
@@ -51,9 +54,11 @@ Error NamespaceDef::FromJSON(char *json) {
 	return 0;
 }
 
-void NamespaceDef::GetJSON(WrSerializer &ser) {
+void NamespaceDef::GetJSON(WrSerializer &ser) const {
 	ser.PutChar('{');
 	ser.Printf("\"name\":\"%s\",", name.c_str());
+	ser.Printf("\"cached_mode\":%d,", static_cast<int>(cacheMode));
+
 	ser.PutChars("\"storage\":{");
 	ser.Printf("\"enabled\":%s", storage.IsEnabled() ? "true" : "false");
 	ser.PutChars("},");

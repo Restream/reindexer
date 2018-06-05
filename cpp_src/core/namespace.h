@@ -10,6 +10,7 @@
 #include "estl/fast_hash_set.h"
 #include "estl/shared_mutex.h"
 #include "index/keyentry.h"
+#include "joincache.h"
 #include "namespacedef.h"
 #include "payload/payloadiface.h"
 #include "query/querycache.h"
@@ -79,9 +80,11 @@ protected:
 public:
 	typedef shared_ptr<Namespace> Ptr;
 
-	Namespace(const string &_name);
+	Namespace(const string &_name, CacheMode cacheMode);
 	Namespace &operator=(const Namespace &) = delete;
 	~Namespace();
+
+	const string &GetName() { return name_; }
 
 	void EnableStorage(const string &path, StorageOpts opts);
 	void LoadFromStorage();
@@ -103,17 +106,20 @@ public:
 	vector<string> EnumMeta();
 	void Delete(const Query &query, QueryResults &result);
 	void FlushStorage();
+	void SetCacheMode(CacheMode cacheMode);
 
 	Item NewItem();
 
 	// Get meta data from storage by key
 	string GetMeta(const string &key);
 	// Put meta data to storage by key
-	void PutMeta(const string &key, const Slice &data);
+	void PutMeta(const string &key, const string_view &data);
 
 	int getIndexByName(const string &index) const;
 
 	static Namespace *Clone(Namespace::Ptr);
+
+	void FillResult(QueryResults &result, IdSet::Ptr ids, const h_vector<std::string, 4> &selectFilter);
 
 protected:
 	void saveIndexesToStorage();
@@ -131,7 +137,9 @@ protected:
 	void recreateCompositeIndexes(int startIdx);
 
 	string getMeta(const string &key);
-	void putMeta(const string &key, const Slice &data);
+	void putMeta(const string &key, const string_view &data);
+	void putCachedMode();
+	void getCachedMode();
 
 	pair<IdType, bool> findByPK(ItemImpl *ritem);
 
@@ -140,6 +148,10 @@ protected:
 	void setFieldsBasedOnPrecepts(ItemImpl *ritem);
 
 	int64_t funcGetSerial(SelectFuncStruct sqlFuncStruct);
+
+	void PutJoinPreResultToCache(JoinCacheRes &res, SelectCtx::PreResult::Ptr preResult);
+	void GetFromJoinCache(JoinCacheRes &ctx);
+	void GetIndsideFromJoinCache(JoinCacheRes &ctx);
 
 	vector<unique_ptr<Index>> indexes_;
 	fast_hash_map<string, int> indexesNames_;
@@ -159,6 +171,8 @@ protected:
 	int unflushedCount_;
 
 	shared_timed_mutex mtx_;
+	shared_timed_mutex cache_mtx_;
+
 	// Commit phases state
 	bool sortOrdersBuilt_;
 	FieldsSet preparedIndexes_, commitedIndexes_;
@@ -169,7 +183,6 @@ protected:
 	string dbpath_;
 
 	shared_ptr<QueryCache> queryCache_;
-
 	// shows if each subindex was PK
 	fast_hash_map<string, bool> compositeIndexesPkState_;
 
@@ -184,6 +197,10 @@ private:
 	IdType createItem(size_t realSize);
 
 	void invalidateQueryCache();
+	void invalidateJoinCache();
+	JoinCache::Ptr joinCache_;
+	CacheMode cacheMode_;
+	bool needPutCacheMode_;
 };
 
 }  // namespace reindexer

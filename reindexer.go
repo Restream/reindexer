@@ -127,6 +127,7 @@ var (
 	ErrMustBePointer          = errors.New("rq: Argument must be a pointer to element, not element")
 	ErrMergeAndJoinInOneQuery = errors.New("rq: Can't be merge and join in one query")
 	ErrNotFound               = errors.New("rq: Not found")
+	ErrDeepCopyType           = errors.New("rq: DeepCopy() returns wrong type")
 )
 
 // NewReindex Create new instanse of Reindexer DB
@@ -184,6 +185,8 @@ type NamespaceOptions struct {
 	dropOnIndexesConflict bool
 	// Drop on file errors
 	dropOnFileFormatError bool
+	// Cached mode options
+	cachedMode uint8
 }
 
 func (opts *NamespaceOptions) NoStorage() *NamespaceOptions {
@@ -201,9 +204,24 @@ func (opts *NamespaceOptions) DropOnFileFormatError() *NamespaceOptions {
 	return opts
 }
 
+func (opts *NamespaceOptions) CacheOff() *NamespaceOptions {
+	opts.cachedMode = bindings.CacheModeOff
+	return opts
+}
+
+func (opts *NamespaceOptions) CacheOn() *NamespaceOptions {
+	opts.cachedMode = bindings.CacheModeOn
+	return opts
+}
+
+func (opts *NamespaceOptions) CacheAggressive() *NamespaceOptions {
+	opts.cachedMode = bindings.CacheModeAggressive
+	return opts
+}
+
 // DefaultNamespaceOptions return defailt namespace options
 func DefaultNamespaceOptions() *NamespaceOptions {
-	return &NamespaceOptions{enableStorage: true}
+	return &NamespaceOptions{enableStorage: true, cachedMode: bindings.CacheModeOn}
 }
 
 // OpenNamespace Open or create new namespace and indexes based on passed struct.
@@ -228,7 +246,15 @@ func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s i
 
 	enableStorage := opts.enableStorage
 
-	_, haveDeepCopy := reflect.New(t).Interface().(DeepCopy)
+	copier, haveDeepCopy := reflect.New(t).Interface().(DeepCopy)
+	if haveDeepCopy {
+		cpy := copier.DeepCopy()
+		cpyType := reflect.TypeOf(reflect.Indirect(reflect.ValueOf(cpy)).Interface())
+		if cpyType != reflect.TypeOf(s) {
+			db.lock.Unlock()
+			return ErrDeepCopyType
+		}
+	}
 
 	ns := &reindexerNamespace{
 		cacheItems:    make(map[int]cacheItem, 100),
@@ -239,13 +265,20 @@ func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s i
 		cjsonState:    cjson.NewState(),
 		deepCopyIface: haveDeepCopy,
 	}
+
+	enc := ns.cjsonState.NewEncoder()
 	db.ns[namespace] = ns
 	db.lock.Unlock()
 
 	for retry := 0; retry < 2; retry++ {
-		if err = db.binding.OpenNamespace(namespace, enableStorage, opts.dropOnFileFormatError); err != nil {
+		if err = db.binding.OpenNamespace(namespace, enableStorage, opts.dropOnFileFormatError, opts.cachedMode); err != nil {
 			break
 		}
+
+		if err = enc.Validate(s); err != nil {
+			break
+		}
+
 		db.Query(namespace).Limit(0).Exec().Close()
 
 		if err = db.createIndex(namespace, t, false, "", "", &ns.joined); err != nil {

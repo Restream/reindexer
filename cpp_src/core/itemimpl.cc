@@ -3,6 +3,7 @@
 #include "core/cjson/cjsonencoder.h"
 #include "core/cjson/jsondecoder.h"
 #include "core/cjson/jsonencoder.h"
+#include "tools/logger.h"
 
 using std::move;
 
@@ -46,22 +47,22 @@ KeyRef ItemImpl::GetField(int field) {
 }
 
 // Construct item from compressed json
-Error ItemImpl::FromCJSON(const Slice &slice) {
+Error ItemImpl::FromCJSON(const string_view &slice) {
 	GetPayload().Reset();
-	Slice data = slice;
+	string_view data = slice;
 	if (!unsafe_) {
 		holder_.push_back(slice.ToString());
 		data = holder_.back();
 	}
 
-	Serializer rdser(data.data(), data.size());
+	Serializer rdser(data);
 	// check tags matcher update
 	uint32_t tmOffset = rdser.GetUInt32();
 	uint32_t cacheToken = 0;
 
 	if (tmOffset) {
 		// read tags matcher update
-		Serializer tser(slice.data() + tmOffset, slice.size() - tmOffset);
+		Serializer tser(slice.substr(tmOffset));
 		cacheToken = tser.GetVarUint();
 		if (cacheToken != tagsMatcher_.cacheToken()) {
 			return Error(errParams, "cacheToken mismatch:  %08X, need %08X. Can't process item\n", cacheToken, tagsMatcher_.cacheToken());
@@ -76,31 +77,24 @@ Error ItemImpl::FromCJSON(const Slice &slice) {
 	CJsonDecoder decoder(tagsMatcher_);
 	auto err = decoder.Decode(&pl, rdser, ser_);
 
-	if (err.ok()) {
-		assertf(rdser.Eof() || rdser.Pos() == tmOffset, "Internal error - left unparsed data %d", int(rdser.Pos()));
-		tupleData_ = make_key_string(reinterpret_cast<const char *>(ser_.Buf()), ser_.Len());
-		pl.Set(0, {KeyRef(tupleData_)});
-	} else {
-		printf("Error decode cjson %s dumping tm: %s, tmOffset=%d %08X\n", err.what().c_str(), tagsMatcher_.dump().c_str(), int(tmOffset),
-			   cacheToken);
-		abort();
-	}
+	if (!rdser.Eof() && rdser.Pos() != tmOffset) return Error(errParseJson, "Internal error - left unparsed data %d", int(rdser.Pos()));
 
+	tupleData_ = make_key_string(ser_.Slice());
+	pl.Set(0, {KeyRef(tupleData_)});
 	return err;
 }
 
-Error ItemImpl::FromJSON(const Slice &slice, char **endp) {
-	Slice data = slice;
+Error ItemImpl::FromJSON(const string_view &slice, char **endp) {
+	string_view data = slice;
 	if (!unsafe_ && endp == nullptr) {
 		holder_.push_back(slice.ToString());
 		data = holder_.back();
 	}
 
-	const char *json = data.data();
 	payloadValue_.AllocOrClone(0);
 	char *endptr = nullptr;
 	JsonValue value;
-	int status = jsonParse(const_cast<char *>(json), &endptr, &value, jsonAllocator_);
+	int status = jsonParse(const_cast<char *>(data.data()), &endptr, &value, jsonAllocator_);
 	if (status != JSON_OK) return Error(errLogic, "Error parsing json - status %d\n", status);
 	if (endp) {
 		*endp = endptr;
@@ -111,22 +105,18 @@ Error ItemImpl::FromJSON(const Slice &slice, char **endp) {
 	Payload pl = GetPayload();
 	auto err = decoder.Decode(&pl, ser_, value);
 
-	if (err.ok()) {
-		// Put tuple to field[0]
-		tupleData_ = make_key_string(reinterpret_cast<const char *>(ser_.Buf()), ser_.Len());
-		pl.Set(0, {KeyRef(tupleData_)});
-	}
+	// Put tuple to field[0]
+	tupleData_ = make_key_string(ser_.Slice());
+	pl.Set(0, {KeyRef(tupleData_)});
 	return err;
 }
 
 Error ItemImpl::FromCJSON(ItemImpl *other) {
 	auto cjson = other->GetCJSON();
-	auto err = FromCJSON(cjson);
-	assert(err.ok());
-	return err;
+	return FromCJSON(cjson);
 }
 
-Slice ItemImpl::GetJSON() {
+string_view ItemImpl::GetJSON() {
 	ConstPayload pl(payloadType_, payloadValue_);
 	JsonPrintFilter filter;
 	JsonEncoder encoder(tagsMatcher_, filter);
@@ -134,10 +124,10 @@ Slice ItemImpl::GetJSON() {
 	ser_.Reset();
 	encoder.Encode(&pl, ser_);
 
-	return Slice(reinterpret_cast<const char *>(ser_.Buf()), ser_.Len());
+	return ser_.Slice();
 }
 
-Slice ItemImpl::GetCJSON() {
+string_view ItemImpl::GetCJSON() {
 	ConstPayload pl(payloadType_, payloadValue_);
 	CJsonEncoder encoder(tagsMatcher_);
 
@@ -145,7 +135,7 @@ Slice ItemImpl::GetCJSON() {
 	ser_.PutUInt32(0);
 	encoder.Encode(&pl, ser_);
 
-	return Slice(reinterpret_cast<const char *>(ser_.Buf()), ser_.Len());
+	return ser_.Slice();
 }
 
 }  // namespace reindexer

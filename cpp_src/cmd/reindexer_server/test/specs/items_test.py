@@ -44,6 +44,28 @@ class ItemsTest(BaseTest):
         self.assertEqual(True, status == 200, body)
         self.assertEqual(True, item_body in body['items'], body)
 
+    def test_create_huge_item(self):
+        """Should be able to create huge items"""
+
+        index_count = 2
+        index_array_of_dicts = self.helper_index_array_construct(index_count)
+
+        for i in range(0, index_count):
+            status, body = self.api_create_index(
+                self.current_db, self.test_ns, index_array_of_dicts[i])
+            self.assertEqual(True, status == 200, body)
+
+        for i in range(0, 10):
+            item_body = self.helper_item_construct(5, i, i * 10000)
+
+            status, body = self.api_create_item(
+                self.current_db, self.current_ns, item_body)
+            self.assertEqual(True, status == 200, body)
+
+            status, body = self.api_get_items(self.current_db, self.current_ns)
+            self.assertEqual(True, status == 200, body)
+            self.assertEqual(True, item_body in body['items'], body)
+
     def test_update_item(self):
         """Should be able to update item"""
 

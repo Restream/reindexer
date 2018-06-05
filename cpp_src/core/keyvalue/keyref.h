@@ -52,9 +52,9 @@ public:
 		assertKeyType(type, KeyValueString);
 		return value_string;
 	}
-	explicit operator Slice() const {
+	explicit operator string_view() const {
 		assertKeyType(type, KeyValueString);
-		return Slice(value_string.data(), value_string.size());
+		return string_view(value_string.data(), value_string.size());
 	}
 
 	explicit operator const PayloadValue *() const {

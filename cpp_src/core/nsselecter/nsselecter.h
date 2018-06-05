@@ -14,9 +14,10 @@ using std::string;
 using std::vector;
 
 struct JoinedSelector {
+	typedef std::function<bool(IdType, ConstPayload, bool)> FuncType;
 	JoinType type;
 	bool nodata;
-	std::function<bool(IdType, ConstPayload, bool)> func;
+	FuncType func;
 	int called, matched;
 	string ns;
 };

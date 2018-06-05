@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <cassert>
 #include "tools/errors.h"
-#include "tools/slice.h"
 #include "tools/stringstools.h"
 
 using namespace reindexer;

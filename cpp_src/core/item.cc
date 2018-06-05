@@ -1,6 +1,6 @@
 
-#include "item.h"
-#include "itemimpl.h"
+#include "core/item.h"
+#include "core/itemimpl.h"
 
 namespace reindexer {
 
@@ -46,10 +46,10 @@ Item::FieldRef &Item::FieldRef::operator=(const KeyRefs &krs) {
 }
 
 Item::~Item() { delete impl_; }
-Error Item::FromJSON(const Slice &slice, char **endp) { return impl_->FromJSON(slice, endp); }
-Error Item::FromCJSON(const Slice &slice) { return impl_->FromCJSON(slice); }
-Slice Item::GetCJSON() { return impl_->GetCJSON(); }
-Slice Item::GetJSON() { return impl_->GetJSON(); }
+Error Item::FromJSON(const string_view &slice, char **endp) { return impl_->FromJSON(slice, endp); }
+Error Item::FromCJSON(const string_view &slice) { return impl_->FromCJSON(slice); }
+string_view Item::GetCJSON() { return impl_->GetCJSON(); }
+string_view Item::GetJSON() { return impl_->GetJSON(); }
 int Item::NumFields() { return impl_->Type().NumFields(); }
 Item::FieldRef Item::operator[](int field) {
 	assert(field >= 0 && field < impl_->Type().NumFields());

@@ -178,8 +178,8 @@ TEST_F(ReindexerApi, DISABLED_DslSetOrder) {
 template <int collateMode>
 struct CollateComparer {
 	bool operator()(const string& lhs, const string& rhs) const {
-		reindexer::Slice sl1(lhs.c_str(), lhs.length());
-		reindexer::Slice sl2(rhs.c_str(), rhs.length());
+		reindexer::string_view sl1(lhs.c_str(), lhs.length());
+		reindexer::string_view sl2(rhs.c_str(), rhs.length());
 		CollateOpts opts(collateMode);
 		return collateCompare(sl1, sl2, opts) < 0;
 	}

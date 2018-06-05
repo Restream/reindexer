@@ -95,6 +95,8 @@ enum CalcTotalMode { ModeNoTotal, ModeCachedTotal, ModeAccurateTotal };
 
 enum DataFormat { FormatJson, FormatCJson };
 
+enum CacheMode { CacheModeOn = 0, CacheModeAggressive = 1, CacheModeOff = 2 };
+
 typedef int IdType;
 typedef unsigned SortType;
 
@@ -123,6 +125,8 @@ typedef enum StotageOpt {
 } StorageOpt;
 
 enum CollateMode { CollateNone = 0, CollateASCII, CollateUTF8, CollateNumeric, CollateCustom };
+
+enum { ModeUpdate = 0, ModeInsert = 1, ModeUpsert = 2, ModeDelete = 3 };
 
 typedef struct IndexOptsC {
 	uint8_t options;

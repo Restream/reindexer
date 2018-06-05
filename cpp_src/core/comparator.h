@@ -58,22 +58,22 @@ public:
 		const p_string &rhs = values_[0];
 		switch (cond) {
 			case CondEq:
-				return collateCompare(Slice(lhs), Slice(rhs), collateOpts) == 0;
+				return collateCompare(string_view(lhs), string_view(rhs), collateOpts) == 0;
 			case CondGe:
-				return collateCompare(Slice(lhs), Slice(rhs), collateOpts) >= 0;
+				return collateCompare(string_view(lhs), string_view(rhs), collateOpts) >= 0;
 			case CondLe:
-				return collateCompare(Slice(lhs), Slice(rhs), collateOpts) <= 0;
+				return collateCompare(string_view(lhs), string_view(rhs), collateOpts) <= 0;
 			case CondLt:
-				return collateCompare(Slice(lhs), Slice(rhs), collateOpts) < 0;
+				return collateCompare(string_view(lhs), string_view(rhs), collateOpts) < 0;
 			case CondGt:
-				return collateCompare(Slice(lhs), Slice(rhs), collateOpts) > 0;
+				return collateCompare(string_view(lhs), string_view(rhs), collateOpts) > 0;
 			case CondRange:
-				return collateCompare(Slice(lhs), Slice(rhs), collateOpts) >= 0 &&
-					   collateCompare(Slice(lhs), Slice(values_[1]), collateOpts) <= 0;
+				return collateCompare(string_view(lhs), string_view(rhs), collateOpts) >= 0 &&
+					   collateCompare(string_view(lhs), string_view(values_[1]), collateOpts) <= 0;
 			case CondSet:
 				if (collateOpts.mode == CollateNone) return valuesS_->find(lhs) != valuesS_->end();
 				for (auto it : *valuesS_) {
-					if (!collateCompare(Slice(lhs), Slice(it), collateOpts)) return true;
+					if (!collateCompare(string_view(lhs), string_view(it), collateOpts)) return true;
 				}
 				return false;
 			default:

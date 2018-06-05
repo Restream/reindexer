@@ -44,14 +44,18 @@ void JsonDecoder::decodeJsonObject(Payload *pl, WrSerializer &wrser, JsonValue &
 			// Indexed field. extract it
 			KeyRefs kvs;
 			int count = 0;
-			KeyValueType kvType = pl->Type().Field(field).Type();
+			auto &f = pl->Type().Field(field);
 			if (elem->value.getTag() == JSON_ARRAY) {
+				if (!f.IsArray()) {
+					throw Error(errLogic, "Error parsing json field '%s' - got array, expected scalar %s", f.Name().c_str(),
+								KeyValue::TypeName(f.Type()));
+				}
 				for (auto subelem : elem->value) {
-					kvs.push_back(jsonValue2KeyRef(subelem->value, kvType));
+					kvs.push_back(jsonValue2KeyRef(subelem->value, f.Type(), f.Name().c_str()));
 					++count;
 				}
 			} else if (elem->value.getTag() != JSON_NULL) {
-				kvs.push_back(jsonValue2KeyRef(elem->value, kvType));
+				kvs.push_back(jsonValue2KeyRef(elem->value, f.Type(), f.Name().c_str()));
 			}
 			if (!kvs.empty()) {
 				pl->Set(field, kvs, true);

@@ -3,9 +3,9 @@
 #include <chrono>
 #include <thread>
 #include "core/cjson/jsondecoder.h"
+#include "core/namespacedef.h"
 #include "core/selectfunc/selectfunc.h"
 #include "kx/kxsort.h"
-#include "namespacedef.h"
 #include "tools/errors.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
@@ -16,6 +16,7 @@ using std::chrono::microseconds;
 using std::lock_guard;
 using std::string;
 using std::vector;
+using namespace std::placeholders;
 
 namespace reindexer {
 
@@ -109,7 +110,7 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-, are allowed");
 		}
 		for (;;) {
-			ns = std::make_shared<Namespace>(nsDef.name);
+			ns = std::make_shared<Namespace>(nsDef.name, nsDef.cacheMode);
 			if (nsDef.storage.IsEnabled() && !storagePath_.empty()) {
 				ns->EnableStorage(storagePath_, nsDef.storage);
 			}
@@ -136,19 +137,21 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef) {
 	}
 	return 0;
 }
-Error ReindexerImpl::OpenNamespace(const string& name, const StorageOpts& storage) {
+Error ReindexerImpl::OpenNamespace(const string& name, const StorageOpts& storage, CacheMode cacheMode) {
 	shared_ptr<Namespace> ns;
 	try {
 		{
 			lock_guard<shared_timed_mutex> lock(ns_mutex);
-			if (namespaces.find(name) != namespaces.end()) {
+			auto it = namespaces.find(name);
+			if (it != namespaces.end()) {
+				it->second->SetCacheMode(cacheMode);
 				return 0;
 			}
 		}
 		if (!validateObjectName(name.c_str())) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-, are allowed");
 		}
-		ns = std::make_shared<Namespace>(name);
+		ns = std::make_shared<Namespace>(name, cacheMode);
 		if (storage.IsEnabled() && !storagePath_.empty()) {
 			ns->EnableStorage(storagePath_, storage);
 			ns->LoadFromStorage();
@@ -241,7 +244,7 @@ Error ReindexerImpl::GetMeta(const string& _namespace, const string& key, string
 	return 0;
 }
 
-Error ReindexerImpl::PutMeta(const string& _namespace, const string& key, const Slice& data) {
+Error ReindexerImpl::PutMeta(const string& _namespace, const string& key, const string_view& data) {
 	try {
 		getNamespace(_namespace)->PutMeta(key, data);
 	} catch (const Error& err) {
@@ -367,7 +370,6 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 	JoinedSelectors joinedSelectors;
 	queries.reserve(q.joinQueries_.size());
 	auto ns = locks.Get(q._namespace);
-
 	if (!q.joinQueries_.empty()) {
 		result.joined_.reset(new unordered_map<IdType, QRVector>());
 	}
@@ -379,7 +381,13 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 		Query jjq(jq);
 
 		SelectCtx::PreResult::Ptr preResult;
-		if (jjq.entries.size()) {
+		size_t pos = joinedSelectors.size();
+
+		JoinCacheRes joinRes;
+		joinRes.key.SetData(0, jq);
+		jns->GetFromJoinCache(joinRes);
+		Query* pjItemQ = nullptr;
+		if (jjq.entries.size() && !joinRes.haveData) {
 			QueryResults jr;
 			jjq.sortDirDesc = false;
 			jjq.Limit(UINT_MAX);
@@ -390,9 +398,14 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 			jns->Select(jr, ctx);
 			assert(ctx.preResult->mode != SelectCtx::PreResult::ModeBuild);
 		}
+		if (joinRes.haveData) {
+			preResult = joinRes.it.val.preResult;
+		} else if (joinRes.needPut) {
+			jns->PutJoinPreResultToCache(joinRes, preResult);
+			jns->GetFromJoinCache(joinRes);
+		}
 
 		// Do join for each item in main result
-		size_t pos = joinedSelectors.size();
 		Query jItemQ(jq._namespace);
 		jItemQ.Debug(jq.debugLevel).Limit(jq.count).Sort(jjq.sortBy.c_str(), jq.sortDirDesc);
 
@@ -405,9 +418,14 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 			jItemQ.entries.push_back(qe);
 		}
 		queries.push_back(std::move(jItemQ));
-		Query* pjItemQ = &queries.back();
+		pjItemQ = &queries.back();
 
-		auto joinedSelector = [&result, &jq, jns, preResult, pos, pjItemQ, &locks, &func](IdType id, ConstPayload payload, bool match) {
+		auto joinedSelector = [&result, &jq, jns, preResult, pos, pjItemQ, &locks, &func, ns](JoinCacheRes& joinRes, IdType id,
+																							  ConstPayload payload, bool match) {
+			QueryResults joinItemR;
+
+			JoinCacheRes finalJoinRes;
+
 			local_stat.count_join++;  // Do not measure each join time (expensive). Just give count
 			// Put values to join conditions
 			int cnt = 0;
@@ -416,17 +434,52 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 				cnt++;
 			}
 			pjItemQ->Limit(match ? jq.count : 0);
-			QueryResults joinItemR;
 
-			SelectCtx ctx(*pjItemQ, &locks);
-			if (jq.entries.size()) ctx.preResult = preResult;
-			ctx.matchedAtLeastOnce = false;
-			ctx.reqMatchedOnceFlag = true;
-			ctx.skipIndexesLookup = true;
-			ctx.functions = &func;
-			jns->Select(joinItemR, ctx);
+			JoinCacheFinal::Iterator it;
+			JoinCacheKey key;
+			bool needPut = false;
+			bool haveCacheData = false;
+			bool found = false;
+			bool matchedAtLeastOnce = false;
 
-			bool found = joinItemR.size();
+			if (joinRes.haveData) {
+				key.SetData(0, *pjItemQ);
+				it = joinRes.it.val.cache_final_->Get(key);
+				if (it.key) {
+					if (!it.val.ids_) {
+						needPut = true;
+					} else {
+						haveCacheData = true;
+					}
+				}
+			} else {
+				jns->GetIndsideFromJoinCache(joinRes);
+			}
+			if (haveCacheData) {
+				found = it.val.ids_->size();
+				matchedAtLeastOnce = it.val.matchedAtLeastOnce;
+				jns->FillResult(joinItemR, it.val.ids_, pjItemQ->selectFilter_);
+			} else {
+				SelectCtx ctx(*pjItemQ, &locks);
+				if (jq.entries.size()) ctx.preResult = preResult;
+				ctx.matchedAtLeastOnce = false;
+				ctx.reqMatchedOnceFlag = true;
+				ctx.skipIndexesLookup = true;
+				ctx.functions = &func;
+				jns->Select(joinItemR, ctx);
+
+				found = joinItemR.size();
+				matchedAtLeastOnce = ctx.matchedAtLeastOnce;
+			}
+			if (needPut) {
+				JoinCacheFinalVal val;
+				val.ids_ = std::make_shared<IdSet>();
+				val.matchedAtLeastOnce = matchedAtLeastOnce;
+				for (auto& r : joinItemR) {
+					val.ids_->Add(r.id, IdSet::Unordered);
+				}
+				joinRes.it.val.cache_final_->Put(key, val);
+			}
 			if (match && found) {
 				auto& jres = result.joined_->emplace(id, QRVector()).first->second;
 
@@ -434,9 +487,11 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 
 				jres[pos] = std::move(joinItemR);
 			}
-			return ctx.matchedAtLeastOnce;
+			return matchedAtLeastOnce;
 		};
-		joinedSelectors.push_back({jq.joinType, jq.count == 0, joinedSelector, 0, 0, jns->name_});
+		auto cache_func_selector = std::bind(joinedSelector, std::move(joinRes), _1, _2, _3);
+
+		joinedSelectors.push_back({jq.joinType, jq.count == 0, cache_func_selector, 0, 0, jns->name_});
 	}
 	return joinedSelectors;
 }
@@ -447,16 +502,17 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, JoinedSelecto
 	if (!ns) {
 		throw Error(errParams, "Namespace '%s' is not exists", q._namespace.c_str());
 	}
+	SelectCtx ctx(q, &locks);
 
 	{
 		STAT_FUNC(select);
-		SelectCtx ctx(q, &locks);
 		ctx.functions = &func;
 		ctx.joinedSelectors = &joinedSelectors;
 		ctx.nsid = 0;
 		ctx.isForceAll = !q.mergeQueries_.empty() || !q.forcedSortOrder.empty();
 		ns->Select(result, ctx);
 	}
+
 	if (!q.mergeQueries_.empty()) {
 		uint8_t counter = 0;
 
@@ -503,9 +559,9 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, JoinedSelecto
 		Query tmpq(jq._namespace);
 		tmpq.Limit(0);
 		tmpq.selectFilter_ = jq.selectFilter_;
-		SelectCtx ctx(tmpq, &locks);
-		ctx.functions = &func;
-		jns->Select(result, ctx);
+		SelectCtx jctx(tmpq, &locks);
+		jctx.functions = &func;
+		jns->Select(result, jctx);
 	}
 }
 
@@ -585,7 +641,7 @@ Error ReindexerImpl::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll) {
 		for (auto& d : dirs) {
 			if (d.isDir && d.name != "." && d.name != ".." && namespaces.find(d.name) == namespaces.end()) {
 				string dbpath = fs::JoinPath(storagePath_, d.name);
-				unique_ptr<Namespace> tmpNs(new Namespace(d.name));
+				unique_ptr<Namespace> tmpNs(new Namespace(d.name, CacheMode::CacheModeOn));
 				try {
 					tmpNs->EnableStorage(storagePath_, StorageOpts());
 					defs.push_back(tmpNs->GetDefinition());
@@ -624,4 +680,5 @@ void ReindexerImpl::flusherThread() {
 
 	nsFlush();
 }
+
 }  // namespace reindexer

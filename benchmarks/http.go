@@ -6,7 +6,7 @@ import (
 	"log"
 	"unicode/utf8"
 
-	"./repo"
+	"github.com/restream/reindexer/benchmarks/repo"
 
 	"github.com/buaazp/fasthttprouter"
 	"github.com/valyala/fasthttp"

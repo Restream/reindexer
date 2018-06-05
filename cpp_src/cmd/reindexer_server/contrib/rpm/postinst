@@ -2,8 +2,6 @@
 
 if ! getent passwd reindexer >/dev/null 2>&1; then
     adduser --system --no-create-home reindexer
-    addgroup --system reindexer
-    adduser reindexer reindexer
 fi
 
 if [ ! -d /var/lib/reindexer ]; then

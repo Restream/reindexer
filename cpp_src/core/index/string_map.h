@@ -20,7 +20,7 @@ using std::unordered_map;
 struct comparator_sptr {
 	comparator_sptr(const CollateOpts& collateOpts = CollateOpts()) : collateOpts_(collateOpts) {}
 	bool operator()(const key_string& lhs, const key_string& rhs) const {
-		return collateCompare(Slice(*lhs), Slice(*rhs), collateOpts_) < 0;
+		return collateCompare(string_view(*lhs), string_view(*rhs), collateOpts_) < 0;
 	}
 	CollateOpts collateOpts_;
 };  // namespace reindexer
@@ -28,7 +28,7 @@ struct comparator_sptr {
 struct equal_sptr {
 	equal_sptr(const CollateOpts& collateOpts = CollateOpts()) : collateOpts_(collateOpts) {}
 	bool operator()(const key_string& lhs, const key_string& rhs) const {
-		return collateCompare(Slice(*lhs), Slice(*rhs), collateOpts_) == 0;
+		return collateCompare(string_view(*lhs), string_view(*rhs), collateOpts_) == 0;
 	}
 	CollateOpts collateOpts_;
 };

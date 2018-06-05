@@ -2,7 +2,7 @@
 #include "allocs_tracker.h"
 #include "core/reindexer.h"
 
-#include "aux.h"
+#include "helpers.h"
 
 using std::bind;
 using std::placeholders::_1;

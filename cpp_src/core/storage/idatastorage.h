@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include "estl/string_view.h"
 #include "tools/errors.h"
 
 struct StorageOpts;
@@ -9,7 +10,7 @@ namespace reindexer {
 
 using std::shared_ptr;
 
-struct Slice;
+class string_view;
 
 namespace datastorage {
 
@@ -42,14 +43,14 @@ public:
 	/// @param key - key value.
 	/// @param value - value data.
 	/// @return Error code or ok.
-	virtual Error Read(const StorageOpts& opts, const Slice& key, string& value) = 0;
+	virtual Error Read(const StorageOpts& opts, const string_view& key, string& value) = 0;
 
 	/// Writes data directly to a Storage.
 	/// @param opts - write options.
 	/// @param key - key value;
 	/// @param value - value.
 	/// @return Error code or ok.
-	virtual Error Write(const StorageOpts& opts, const Slice& key, const Slice& value) = 0;
+	virtual Error Write(const StorageOpts& opts, const string_view& key, const string_view& value) = 0;
 
 	/// Performs batch write of
 	/// updates' collection.
@@ -63,7 +64,7 @@ public:
 	/// @param opts - options.
 	/// @param key - key value of the entry to be deleted.
 	/// @return Error code or ok.
-	virtual Error Delete(const StorageOpts& opts, const Slice& key) = 0;
+	virtual Error Delete(const StorageOpts& opts, const string_view& key) = 0;
 
 	/// Makes a snapshot of a current Storage state.
 	/// Allows to iterate over a particular state.
@@ -108,11 +109,11 @@ public:
 	/// Puts data to collection.
 	/// @param key - key value.
 	/// @param value - value data.
-	virtual void Put(const Slice& key, const Slice& value) = 0;
+	virtual void Put(const string_view& key, const string_view& value) = 0;
 
 	/// Removes value from collection.
 	/// @param key - key of data to be removed.
-	virtual void Remove(const Slice& key) = 0;
+	virtual void Remove(const string_view& key) = 0;
 
 	/// Clears collection.
 	virtual void Clear() = 0;
@@ -139,7 +140,7 @@ public:
 	/// Positions at the first key in the source
 	/// that is at or past target.
 	/// @param target - target key to seek at.
-	virtual void Seek(const Slice& target) = 0;
+	virtual void Seek(const string_view& target) = 0;
 
 	/// Moves to the next entry in the source.
 	virtual void Next() = 0;
@@ -149,11 +150,11 @@ public:
 
 	/// Returns the key for the current entry.
 	/// @return Key for the current entry.
-	virtual Slice Key() const = 0;
+	virtual string_view Key() const = 0;
 
 	/// Return the value for the current entry.
 	/// @return Value for the current entry.
-	virtual Slice Value() const = 0;
+	virtual string_view Value() const = 0;
 
 	/// Returns default comparator object.
 	/// @return reference to a Comparator object.
@@ -170,7 +171,7 @@ public:
 	/// @return 1. < 0 if "a" < "b"
 	///         2. == 0 if "a" == "b"
 	///         3. > 0 if "a" > "b"
-	virtual int Compare(const Slice& a, const Slice& b) const = 0;
+	virtual int Compare(const string_view& a, const string_view& b) const = 0;
 };
 }  // namespace datastorage
 }  // namespace reindexer

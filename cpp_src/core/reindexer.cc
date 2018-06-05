@@ -9,7 +9,9 @@ Error Reindexer::EnableStorage(const string& storagePath, bool skipPlaceholderCh
 	return impl_->EnableStorage(storagePath, skipPlaceholderCheck);
 }
 Error Reindexer::AddNamespace(const NamespaceDef& nsDef) { return impl_->AddNamespace(nsDef); }
-Error Reindexer::OpenNamespace(const string& name, const StorageOpts& storage) { return impl_->OpenNamespace(name, storage); }
+Error Reindexer::OpenNamespace(const string& name, const StorageOpts& storage, CacheMode cacheMode) {
+	return impl_->OpenNamespace(name, storage, cacheMode);
+}
 Error Reindexer::DropNamespace(const string& _namespace) { return impl_->DropNamespace(_namespace); }
 Error Reindexer::CloseNamespace(const string& _namespace) { return impl_->CloseNamespace(_namespace); }
 Error Reindexer::Insert(const string& _namespace, Item& item) { return impl_->Insert(_namespace, item); }
@@ -18,7 +20,9 @@ Error Reindexer::Upsert(const string& _namespace, Item& item) { return impl_->Up
 Error Reindexer::Delete(const string& _namespace, Item& item) { return impl_->Delete(_namespace, item); }
 Item Reindexer::NewItem(const string& _namespace) { return impl_->NewItem(_namespace); }
 Error Reindexer::GetMeta(const string& _namespace, const string& key, string& data) { return impl_->GetMeta(_namespace, key, data); }
-Error Reindexer::PutMeta(const string& _namespace, const string& key, const Slice& data) { return impl_->PutMeta(_namespace, key, data); }
+Error Reindexer::PutMeta(const string& _namespace, const string& key, const string_view& data) {
+	return impl_->PutMeta(_namespace, key, data);
+}
 Error Reindexer::EnumMeta(const string& _namespace, vector<string>& keys) { return impl_->EnumMeta(_namespace, keys); }
 Error Reindexer::Delete(const Query& q, QueryResults& result) { return impl_->Delete(q, result); }
 Error Reindexer::Select(const string& query, QueryResults& result) { return impl_->Select(query, result); }

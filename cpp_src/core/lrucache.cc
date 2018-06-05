@@ -4,6 +4,7 @@
 #include "core/idsetcache.h"
 #include "core/keyvalue/keyvalue.h"
 #include "core/query/querycache.h"
+#include "joincache.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -42,7 +43,7 @@ void LRUCache<K, V, hash, equal>::Put(const K &key, const V &v) {
 
 	std::lock_guard<mutex> lk(lock_);
 	auto it = items_.find(key);
-	assert(it != items_.end());
+	if (it == items_.end()) return;
 
 	totalCacheSize_ += v.Size() - it->second.val.Size();
 	it->second.val = v;
@@ -77,9 +78,20 @@ void LRUCache<K, V, hash, equal>::eraseLRU() {
 		getCount_ = 0;
 	}
 }
+template <typename K, typename V, typename hash, typename equal>
+void LRUCache<K, V, hash, equal>::Invalidate() {
+	std::lock_guard<mutex> lk(lock_);
+
+	eraseCount_ += items_.size();
+	items_.clear();
+	lru_.clear();
+	totalCacheSize_ = 0;
+}
 
 template class LRUCache<IdSetCacheKey, IdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
 template class LRUCache<IdSetCacheKey, FtIdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
 template class LRUCache<QueryCacheKey, QueryCacheVal, HashQueryCacheKey, EqQueryCacheKey>;
+template class LRUCache<JoinCacheKey, JoinCacheVal, hash_join_cache_key, equal_join_cache_key>;
+template class LRUCache<JoinCacheKey, JoinCacheFinalVal, hash_join_cache_key, equal_join_cache_key>;
 
 }  // namespace reindexer

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <estl/fast_hash_set.h>
 #include <list>
 #include <mutex>
 #include <unordered_map>
@@ -28,6 +29,7 @@ public:
 	void Put(const K &k, const V &v);
 
 	bool Empty() const { return items_.empty(); }
+	void Invalidate();
 
 protected:
 	void eraseLRU();

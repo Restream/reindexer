@@ -4,6 +4,7 @@
 //
 
 #pragma once
+// clang-format off
 
 #include "base_sink.h"
 #include "../details/null_mutex.h"
@@ -37,6 +38,9 @@ public:
     void set_force_flush(bool force_flush)
     {
         _force_flush = force_flush;
+    }
+    void reopen () {
+        _file_helper.reopen(false);
     }
 
 protected:

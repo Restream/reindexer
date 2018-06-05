@@ -2,9 +2,9 @@
 
 #include <string>
 #include <vector>
-#include "indexopts.h"
+#include "core/indexopts.h"
+#include "core/type_consts.h"
 #include "tools/errors.h"
-#include "type_consts.h"
 
 union JsonValue;
 
@@ -13,7 +13,7 @@ namespace reindexer {
 using std::string;
 using std::vector;
 
-struct Slice;
+class string_view;
 class WrSerializer;
 struct IndexDef {
 	IndexType Type() const;
@@ -22,7 +22,7 @@ struct IndexDef {
 	void FromType(IndexType type);
 	Error FromJSON(char *json);
 	Error FromJSON(JsonValue &jvalue);
-	void GetJSON(WrSerializer &ser);
+	void GetJSON(WrSerializer &ser) const;
 
 public:
 	string name;

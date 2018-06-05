@@ -23,10 +23,6 @@ typedef struct reindexer_string {
 	int n;
 } reindexer_string;
 
-// enum DataType { NoItemsData, JsonItemsData, PtrItemsData, PlainItemsData };
-
-enum { ModeUpdate, ModeInsert, ModeUpsert, ModeDelete };
-
 #ifdef __cplusplus
 }
 #endif

@@ -1,15 +1,16 @@
 #include "pprof.h"
 #include <stdlib.h>
+#include <cstdlib>
 #include <thread>
 #include "debug/backtrace.h"
 #include "tools/fsops.h"
+#include "tools/stringstools.h"
 
 #if REINDEX_WITH_GPERFTOOLS
 #include <gperftools/heap-profiler.h>
 #include <gperftools/malloc_extension.h>
 #include <gperftools/profiler.h>
 #else
-static char *GetHeapProfile() { return nullptr; }
 static int ProfilerStart(const char *) { return 1; }
 static void ProfilerStop(void) { return; }
 #endif
@@ -36,18 +37,19 @@ void Pprof::Attach(http::Router &router) {
 	router.POST<Pprof, &Pprof::Symbol>("/debug/pprof/symbol", this);
 	router.GET<Pprof, &Pprof::Symbol>("/pprof/symbol", this);
 	router.POST<Pprof, &Pprof::Symbol>("/pprof/symbol", this);
+	router.POST<Pprof, &Pprof::Symbol>("/symbolz", this);
 }
 
 int Pprof::Profile(http::Context &ctx) {
 	long long seconds = 30;
-	const char *secondsParam = nullptr;
+	string_view secondsParam;
 	string filePath = fs::GetTempDir();
 
 	for (auto p : ctx.request->params) {
-		if (!strcmp(p.name, "seconds")) secondsParam = p.val;
+		if (p.name == "seconds") secondsParam = p.val;
 	}
 
-	if (secondsParam != nullptr) seconds = atoll(secondsParam);
+	if (secondsParam.length()) seconds = stoi(secondsParam);
 	if (seconds < 1) seconds = 30;
 
 	filePath = fs::JoinPath(filePath, string(NAME_PREFIX) + ".profile");
@@ -63,10 +65,19 @@ int Pprof::Profile(http::Context &ctx) {
 }
 
 int Pprof::ProfileHeap(http::Context &ctx) {
-	char *profile = GetHeapProfile();
-	int res = ctx.String(http::StatusOK, profile);
-	free(profile);
-	return res;
+#ifdef REINDEX_WITH_GPERFTOOLS
+	if (std::getenv("HEAPPROFILE")) {
+		char *profile = GetHeapProfile();
+		int res = ctx.String(http::StatusOK, profile);
+		free(profile);
+		return res;
+	}
+	string profile;
+	MallocExtension::instance()->GetHeapSample(&profile);
+	return ctx.String(http::StatusOK, profile);
+
+#endif
+	return ctx.String(http::StatusInternalServerError, "Reindexer was compiled without gperftools. Profiling is not available");
 }
 
 int Pprof::Growth(http::Context &ctx) {
@@ -75,7 +86,7 @@ int Pprof::Growth(http::Context &ctx) {
 	MallocExtension::instance()->GetHeapGrowthStacks(&output);
 	return ctx.String(http::StatusOK, output);
 #else
-	return ctx.String(http::StatusNotFound, "Not found");
+	return ctx.String(http::StatusInternalServerError, "Reindexer was compiled without gperftools. Profiling is not available");
 #endif
 }
 
@@ -83,25 +94,29 @@ int Pprof::CmdLine(http::Context &ctx) { return ctx.String(http::StatusOK, "rein
 
 int Pprof::Symbol(http::Context &ctx) {
 #ifdef REINDEX_WITH_GPERFTOOLS
-	char *req = nullptr, *token = nullptr, *endp;
-	if (!strcmp(ctx.request->method, "POST")) {
-		req = reinterpret_cast<char *>(alloca(ctx.body->Pending() + 1));
-		ssize_t nread = ctx.body->Read(req, ctx.body->Pending());
-		req[nread] = 0;
-		if (!nread) {
-			req = const_cast<char *>(ctx.request->params[0].name);
+	string req;
+	if (ctx.request->method == "POST") {
+		req = ctx.body->Read(ctx.body->Pending());
+		if (!req.length()) {
+			req = urldecode2(ctx.request->params[0].name);
 		}
 	} else if (ctx.request->params.size()) {
-		req = const_cast<char *>(ctx.request->params[0].name);
+		req = urldecode2(ctx.request->params[0].name);
 	} else {
-		ctx.writer->Write("num_symbols: 1\n");
+		ctx.writer->Write("num_symbols: 1\n"_sv);
+		return 0;
 	}
-
-	while ((token = strtok_r(req, " +", &req))) {
-		uintptr_t addr = strtoull(token, &endp, 16);
-		char tmpBuf[2048];
-		int n = snprintf(tmpBuf, sizeof(tmpBuf), "%p %s\n", reinterpret_cast<void *>(addr), resolveSymbol(addr).c_str());
+	size_t pos = req.find_first_of(" +", 0);
+	char *endp;
+	for (; pos != string::npos; pos = req.find_first_of(" +", pos)) {
+		pos = req.find_first_not_of(" +", pos);
+		if (pos == string::npos) break;
+		uintptr_t addr = strtoull(&req[pos], &endp, 16);
+		char tmpBuf[128];
+		int n = snprintf(tmpBuf, sizeof(tmpBuf), "%p\t", reinterpret_cast<void *>(addr));
 		ctx.writer->Write(tmpBuf, n);
+		resolveSymbol(addr, ctx.writer);
+		ctx.writer->Write("\n"_sv);
 	}
 #else
 	ctx.writer->Write("num_symbols: 0\n");
@@ -110,22 +125,24 @@ int Pprof::Symbol(http::Context &ctx) {
 	return 0;
 }
 
-string Pprof::resolveSymbol(uintptr_t ptr) {
+void Pprof::resolveSymbol(uintptr_t ptr, http::Writer *out) {
 	char *csym = resolve_symbol(reinterpret_cast<void *>(ptr), true);
-	string symbol = csym, out;
-
-	free(csym);
+	//	string symbol = csym, out;
+	string_view symbol = csym;
 
 	if (symbol.length() > 20 && symbol.substr(0, 3) == "_ZN") {
-		return symbol.substr(0, 20) + "...";
+		out->Write(symbol.substr(0, 20));
+		out->Write("...");
+		free(csym);
+		return;
 	}
 
 	int tmpl = 0;
 	for (unsigned p = 0; p < symbol.length(); p++) {
 		// strip out std:: and std::__1
 		if (symbol.substr(p, 10) == "std::__1::") {
-			p += 9;
-		} else if (symbol.substr(p, 4) == "std::__1::") {
+			p += 10;
+		} else if (symbol.substr(p, 4) == "std::") {
 			p += 4;
 		} else {
 			// strip out c++ templates args
@@ -137,10 +154,11 @@ string Pprof::resolveSymbol(uintptr_t ptr) {
 					tmpl--;
 					break;
 				default:
-					if (tmpl == 0) out += symbol[p];
+					if (tmpl == 0) out->Write(symbol.substr(p, 1));
 			}
 		}
 	}
-	return out;
+
+	free(csym);
 }
 }  // namespace reindexer_server

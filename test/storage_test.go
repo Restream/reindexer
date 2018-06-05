@@ -18,8 +18,9 @@ type SubStruct struct {
 }
 
 type TestItemV1 struct {
-	ID int    `reindex:"id,,pk"`
-	F1 int    `reindex:"f1"`
+	ID int `reindex:"id,,pk"`
+	F1 int `reindex:"f1"`
+	B1 bool
 	F2 string `reindex:"f2"`
 	T2 SubStruct
 	F3 int `reindex:"f3"`
@@ -33,6 +34,7 @@ type TestItemV2 struct {
 	F1 int    `reindex:"f1"`
 	T1 string // new field
 	//	T2 SubStruct - removed
+	B1 bool   `reindex:"b1"`
 	F2 string `reindex:"f2"`
 	// F3 int `reindex:"f3"` - removed
 	F4 int `reindex:"f4"` // new field
@@ -76,12 +78,13 @@ func init() {
 }
 
 func TestStorageChangeFormat(t *testing.T) {
-	//	DB.SetLogger(TestLogger{})
+	DB.SetLogger(TestLogger{})
 	tx := DB.MustBeginTx("test_items_storage")
 
 	tx.Upsert(&TestItemV1{
 		ID: 1,
 		F1: 100,
+		B1: true,
 		F2: "f2val",
 		F3: 300,
 		T2: SubStruct{
@@ -139,7 +142,9 @@ func TestStorageChangeFormat(t *testing.T) {
 	}
 	itemv2 := item.(*TestItemV2)
 
-	if itemv2.ID != 1 || itemv2.F1 != 100 || itemv2.F2 != "f2val" {
+	if itemv2.ID != 1 || itemv2.F1 != 100 || itemv2.F2 != "f2val" || itemv2.B1 != true {
+		j, _ := DB.Query("test_items_storage").ExecToJson().FetchAll()
+		fmt.Printf("%s", string(j))
 		panic(fmt.Errorf("%v", *itemv2))
 	}
 

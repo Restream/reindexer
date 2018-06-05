@@ -1,6 +1,6 @@
 #include "join_items.h"
 
-#include "aux.h"
+#include "helpers.h"
 
 reindexer::Error JoinItems::Initialize() {
 	assert(db_);

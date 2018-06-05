@@ -19,6 +19,7 @@ protected:
 	int fieldsoutcnt_[maxIndexes];
 
 	h_vector<int, 8> tagsPath_;
+	Error lastErr_;
 };
 
 void copyCJsonValue(int tagType, Serializer &rdser, WrSerializer &wrser);

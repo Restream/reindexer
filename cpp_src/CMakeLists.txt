@@ -26,7 +26,7 @@ string( REPLACE "-DNDEBUG" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_
 
 if (MSVC)
   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -MP")
-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -wd4244 -wd4267 -wd4996 -wd4717 -MP")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -wd4244 -wd4267 -wd4996 -wd4717 -wd4800 -wd4396 -wd4503 -MP")
 else()
   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror")
   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wextra -Werror -Wold-style-cast")
@@ -109,8 +109,8 @@ if(GPERFTOOLS_TCMALLOC AND NOT WIN32)
   # shared version of leveldb can conflict with tcmalloc, so force static version of leveldb, if tcmalloc enabled
   set (LevelDB_NAMES libleveldb.a)
 endif()
-find_library(LevelDB_LIBRARY NAMES ${LevelDB_NAMES} leveldb PATHS $ENV{LEVELDB_ROOT}/lib)
-find_path(LevelDB_INCLUDE_DIR NAMES leveldb/db.h PATHS $ENV{LEVELDB_ROOT}/include /opt/local/include /usr/local/include /usr/include)
+find_library(LevelDB_LIBRARY NAMES ${LevelDB_NAMES} leveldb HINTS $ENV{LEVELDB_ROOT}/lib)
+find_path(LevelDB_INCLUDE_DIR NAMES leveldb/db.h HINTS $ENV{LEVELDB_ROOT}/include /opt/local/include /usr/local/include /usr/include)
 
 if (NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR)
   # Leveldb not found. Download it
@@ -198,6 +198,27 @@ SET(CPACK_PACKAGE_VENDOR "Reindexer")
 SET(CPACK_PACKAGE_CONTACT "Oleg Gerasimov <ogerasimov@gmail.com>")
 SET(CPACK_PACKAGE_VERSION ${REINDEXER_VERSION})
 set(CPACK_RESOURCE_FILE_LICENSE ${REINDEXER_SOURCE_PATH}/../LICENSE)
+
+# Dependencies
+if (LevelDB_LIBRARY)
+  SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},libleveldb-dev")
+  SET(CPACK_RPM_PACKAGE_REQUIRES "${CPACK_RPM_PACKAGE_REQUIRES},leveldb")
+endif ()
+
+if (SNAPPY_FOUND)
+  SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},libsnappy-dev")
+  SET(CPACK_RPM_PACKAGE_REQUIRES "${CPACK_RPM_PACKAGE_REQUIRES},snappy")
+endif ()
+
+if (GPERFTOOLS_TCMALLOC)
+  SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},libgoogle-perftools4")
+  SET(CPACK_RPM_PACKAGE_REQUIRES "${CPACK_RPM_PACKAGE_REQUIRES},gperftools-libs")
+endif ()
+
+# Remove first ',' from list of dependencies
+string (SUBSTRING "${CPACK_DEBIAN_PACKAGE_DEPENDS}" 1 -1 CPACK_DEBIAN_PACKAGE_DEPENDS)
+string (SUBSTRING "${CPACK_RPM_PACKAGE_REQUIRES}" 1 -1 CPACK_RPM_PACKAGE_REQUIRES)
+
 
 add_subdirectory(cmd/reindexer_tool)
 add_subdirectory(cmd/reindexer_server)

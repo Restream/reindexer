@@ -33,12 +33,12 @@ public:
 	void SetField(int field, const KeyRefs &krs);
 	KeyRef GetField(int field);
 
-	Slice GetJSON();
-	Error FromJSON(const Slice &slice, char **endp = nullptr);
+	string_view GetJSON();
+	Error FromJSON(const string_view &slice, char **endp = nullptr);
 	Error FromCJSON(ItemImpl *other);
 
-	Slice GetCJSON();
-	Error FromCJSON(const Slice &slice);
+	string_view GetCJSON();
+	Error FromCJSON(const string_view &slice);
 
 	PayloadType Type() { return payloadType_; }
 	PayloadValue &Value() { return payloadValue_; }

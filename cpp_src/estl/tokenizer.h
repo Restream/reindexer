@@ -3,6 +3,8 @@
 #pragma once
 
 #include <string>
+#include "estl/h_vector.h"
+#include "estl/string_view.h"
 
 namespace reindexer {
 
@@ -13,10 +15,29 @@ enum token_type { TokenEnd, TokenName, TokenNumber, TokenString, TokenOp, TokenS
 class token {
 public:
 	token() : type(TokenSymbol) {}
-	token(token_type _type, const string &_text) : type(_type), text(_text) {}
+	token(token_type type) : type(type) {}
+	token(const token &) = delete;
+	token &operator=(const token &) = delete;
+	token(token &&other) : type(other.type), text_(std::move(other.text_)) {
+		text_.reserve(other.text_.size() + 1);
+		*(text_.begin() + text_.size()) = 0;
+	};
+	token &operator=(token &&other) {
+		if (&other != this) {
+			type = other.type;
+			text_ = std::move(other.text_);
+			text_.reserve(other.text_.size() + 1);
+			*(text_.begin() + text_.size()) = 0;
+		}
+		return *this;
+	};
+
+	string_view text() const { return string_view(text_.data(), text_.size()); }
+
 	token_type type;
-	string text;
+	h_vector<char, 20> text_;
 };
+
 class tokenizer {
 public:
 	tokenizer(const string &query);

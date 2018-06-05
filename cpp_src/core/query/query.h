@@ -50,7 +50,7 @@ public:
 	/// @param val - value of index to be compared with.
 	/// @return Query object ready to be executed.
 	template <typename Input>
-	Query &Where(const char *idx, CondType cond, Input val) {
+	Query &Where(const string &idx, CondType cond, Input val) {
 		return Where(idx, cond, {val});
 	}
 
@@ -60,7 +60,7 @@ public:
 	/// @param l - list of index values to be compared with.
 	/// @return Query object ready to be executed.
 	template <typename T>
-	Query &Where(const char *idx, CondType cond, std::initializer_list<T> l) {
+	Query &Where(const string &idx, CondType cond, std::initializer_list<T> l) {
 		entries.resize(entries.size() + 1);
 		QueryEntry &qe = entries.back();
 		qe.condition = cond;
@@ -77,7 +77,7 @@ public:
 	/// @param l - vector of index values to be compared with.
 	/// @return Query object ready to be executed.
 	template <typename T>
-	Query &Where(const char *idx, CondType cond, const std::vector<T> &l) {
+	Query &Where(const string &idx, CondType cond, const std::vector<T> &l) {
 		entries.resize(entries.size() + 1);
 		QueryEntry &qe = entries.back();
 		qe.condition = cond;
@@ -94,7 +94,7 @@ public:
 	/// @param cond - type of condition.
 	/// @param l - vector of index values to be compared with.
 	/// @return Query object ready to be executed.
-	Query &Where(const char *idx, CondType cond, const KeyRefs &l) {
+	Query &Where(const string &idx, CondType cond, const KeyRefs &l) {
 		entries.resize(entries.size() + 1);
 		QueryEntry &qe = entries.back();
 		qe.condition = cond;
@@ -117,7 +117,7 @@ public:
 	/// in case of CondRange) belongs to "bookid" and l[0][1] (and l[1][1] in case of CondRange)
 	/// belongs to "price" indexes.
 	/// @return Query object ready to be executed.
-	Query &WhereComposite(const char *idx, CondType cond, initializer_list<KeyValues> l) {
+	Query &WhereComposite(const string &idx, CondType cond, initializer_list<KeyValues> l) {
 		entries.resize(entries.size() + 1);
 		QueryEntry &qe = entries.back();
 		qe.condition = cond;
@@ -130,7 +130,7 @@ public:
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	Query &WhereComposite(const char *idx, CondType cond, const vector<KeyValues> &v) {
+	Query &WhereComposite(const string &idx, CondType cond, const vector<KeyValues> &v) {
 		entries.resize(entries.size() + 1);
 		QueryEntry &qe = entries.back();
 		qe.condition = cond;
@@ -152,7 +152,7 @@ public:
 	/// @param op - operation type (and, or, not).
 	/// @param qr - query of the namespace that is going to be joined with this one.
 	/// @return Query object ready to be executed.
-	Query &Join(JoinType joinType, const char *index, const char *joinIndex, CondType cond, OpType op, Query &qr) {
+	Query &Join(JoinType joinType, const string &index, const string &joinIndex, CondType cond, OpType op, Query &qr) {
 		QueryJoinEntry joinEntry;
 		joinEntry.op_ = op;
 		joinEntry.condition_ = cond;
@@ -171,7 +171,7 @@ public:
 	/// @param cond - condition type (Eq, Leq, Geq, etc).
 	/// @param qr - query of the namespace that is going to be joined with this one.
 	/// @return Query object ready to be executed.
-	Query &InnerJoin(const char *index, const char *joinIndex, CondType cond, Query &qr) {
+	Query &InnerJoin(const string &index, const string &joinIndex, CondType cond, Query &qr) {
 		return Join(JoinType::InnerJoin, index, joinIndex, cond, OpAnd, qr);
 	}
 
@@ -181,7 +181,7 @@ public:
 	/// @param cond - condition type (Eq, Leq, Geq, etc).
 	/// @param qr - query of the namespace that is going to be joined with this one.
 	/// @return Query object ready to be executed.
-	Query &LeftJoin(const char *index, const char *joinIndex, CondType cond, Query &qr) {
+	Query &LeftJoin(const string &index, const string &joinIndex, CondType cond, Query &qr) {
 		return Join(JoinType::LeftJoin, index, joinIndex, cond, OpAnd, qr);
 	}
 
@@ -191,7 +191,7 @@ public:
 	/// @param cond - condition type (Eq, Leq, Geq, etc).
 	/// @param qr - query of the namespace that is going to be joined with this one.
 	/// @return Not a reference to a query object ready to be executed.
-	Query OrInnerJoin(const char *index, const char *joinIndex, CondType cond, Query &qr) {
+	Query OrInnerJoin(const string &index, const string &joinIndex, CondType cond, Query &qr) {
 		Query &joinQr = Join(JoinType::OrInnerJoin, index, joinIndex, cond, OpAnd, qr);
 		joinQr.nextOp_ = OpOr;
 		Query innerJoinQr(joinQr);
@@ -211,7 +211,7 @@ public:
 	/// @param sort - sorting column name.
 	/// @param desc - is sorting direction descending or ascending.
 	/// @return Query object.
-	Query &Sort(const char *sort, bool desc) {
+	Query &Sort(const string &sort, bool desc) {
 		sortBy = sort;
 		sortDirDesc = desc;
 		return *this;
@@ -219,7 +219,7 @@ public:
 
 	/// Performs distinct for a certain index.
 	/// @param indexName - name of index for distict operation.
-	Query &Distinct(const char *indexName) {
+	Query &Distinct(const string &indexName) {
 		QueryEntry qentry;
 		qentry.index = indexName;
 		qentry.distinct = true;
@@ -239,7 +239,7 @@ public:
 	/// @param idx - name of the field to be aggregated.
 	/// @param type - aggregation function type (Sum, Avg).
 	/// @return Query object ready to be executed.
-	Query &Aggregate(const char *idx, AggType type) {
+	Query &Aggregate(const string &idx, AggType type) {
 		aggregations_.push_back({idx, type});
 		return *this;
 	}

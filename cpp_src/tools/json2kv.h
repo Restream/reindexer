@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-KeyRef jsonValue2KeyRef(JsonValue &v, KeyValueType t);
+KeyRef jsonValue2KeyRef(JsonValue &v, KeyValueType t, const char *fieldName = "");
 KeyValue jsonValue2KeyValue(JsonValue &values);
 
 }  // namespace reindexer

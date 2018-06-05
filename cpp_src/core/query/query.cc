@@ -132,19 +132,20 @@ void Query::deserialize(Serializer &ser) {
 int Query::Parse(tokenizer &parser) {
 	token tok = parser.next_token();
 
-	if (tok.text == "describe") {
+	if (tok.text() == "describe"_sv) {
 		describeParse(parser);
-	} else if (tok.text == "select") {
+	} else if (tok.text() == "select"_sv) {
 		selectParse(parser);
 	} else {
-		throw Error(errParams, "Syntax error at or near '%s', %s", tok.text.c_str(), parser.where().c_str());
+		throw Error(errParams, "Syntax error at or near '%s', %s", tok.text().data(), parser.where().c_str());
 	}
 	tok = parser.next_token();
-	if (tok.text == ";") {
+	if (tok.text() == ";") {
 		tok = parser.next_token();
 	}
 	parser.skip_space();
-	if (tok.text != "" || !parser.end()) throw Error(errParseSQL, "Unexpected '%s' in query, %s", tok.text.c_str(), parser.where().c_str());
+	if (tok.text() != "" || !parser.end())
+		throw Error(errParseSQL, "Unexpected '%s' in query, %s", tok.text().data(), parser.where().c_str());
 
 	return 0;
 }
@@ -153,117 +154,117 @@ int Query::selectParse(tokenizer &parser) {
 	// Get filter
 	token tok;
 	while (!parser.end()) {
-		auto nameWithCase = parser.peek_token(false).text;
-		auto name = parser.next_token().text;
+		auto nameWithCase = parser.peek_token(false);
+		auto name = parser.next_token();
 		tok = parser.peek_token();
-		if (tok.text == "(") {
+		if (tok.text() == "("_sv) {
 			parser.next_token();
 			tok = parser.next_token();
-			if (name == "avg") {
-				aggregations_.push_back({tok.text, AggAvg});
-			} else if (name == "sum") {
-				aggregations_.push_back({tok.text, AggSum});
-			} else if (name == "count") {
+			if (name.text() == "avg"_sv) {
+				aggregations_.push_back({tok.text().ToString(), AggAvg});
+			} else if (name.text() == "sum"_sv) {
+				aggregations_.push_back({tok.text().ToString(), AggSum});
+			} else if (name.text() == "count"_sv) {
 				calcTotal = ModeAccurateTotal;
 				count = 0;
 			} else {
-				throw Error(errParams, "Unknown function name SQL - %s, %s", name.c_str(), parser.where().c_str());
+				throw Error(errParams, "Unknown function name SQL - %s, %s", name.text().data(), parser.where().c_str());
 			}
 			tok = parser.next_token();
-			if (tok.text != ")") {
-				throw Error(errParams, "Expected ')', but found %s, %s", tok.text.c_str(), parser.where().c_str());
+			if (tok.text() != ")"_sv) {
+				throw Error(errParams, "Expected ')', but found %s, %s", tok.text().data(), parser.where().c_str());
 			}
 			tok = parser.peek_token();
 
-		} else if (name != "*") {
-			selectFilter_.push_back(nameWithCase);
+		} else if (name.text() != "*"_sv) {
+			selectFilter_.push_back(nameWithCase.text().ToString());
 			count = INT_MAX;
-		} else if (name == "*") {
+		} else if (name.text() == "*"_sv) {
 			count = INT_MAX;
 		}
-		if (tok.text != ",") break;
+		if (tok.text() != ","_sv) break;
 		tok = parser.next_token();
 	}
 
-	if (parser.next_token().text != "from")
-		throw Error(errParams, "Expected 'FROM', but found '%s' in query, %s", tok.text.c_str(), parser.where().c_str());
+	if (parser.next_token().text() != "from"_sv)
+		throw Error(errParams, "Expected 'FROM', but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
 
-	_namespace = parser.next_token().text;
+	_namespace = parser.next_token().text().ToString();
 	parser.skip_space();
 
 	while (!parser.end()) {
 		tok = parser.peek_token();
-		if (tok.text == "where") {
+		if (tok.text() == "where"_sv) {
 			parser.next_token();
 			ParseWhere(parser);
-		} else if (tok.text == "limit") {
+		} else if (tok.text() == "limit"_sv) {
 			parser.next_token();
 			tok = parser.next_token();
 			if (tok.type != TokenNumber)
-				throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text.c_str(), parser.where().c_str());
-			count = stoi(tok.text);
-		} else if (tok.text == "offset") {
+				throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+			count = atoi(tok.text().data());
+		} else if (tok.text() == "offset"_sv) {
 			parser.next_token();
 			tok = parser.next_token();
 			if (tok.type != TokenNumber)
-				throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text.c_str(), parser.where().c_str());
-			start = stoi(tok.text);
-		} else if (tok.text == "order") {
+				throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+			start = atoi(tok.text().data());
+		} else if (tok.text() == "order"_sv) {
 			parser.next_token();
 			// Just skip token (BY)
 			parser.next_token();
-			auto nameWithCase = parser.peek_token().text;
+			auto nameWithCase = parser.peek_token();
 			tok = parser.next_token(false);
 			if (tok.type != TokenName)
-				throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text.c_str(), parser.where().c_str());
-			sortBy = tok.text;
+				throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+			sortBy = tok.text().ToString();
 			tok = parser.peek_token();
-			if (tok.text == "(" && nameWithCase == "field") {
+			if (tok.text() == "("_sv && nameWithCase.text() == "field"_sv) {
 				parser.next_token();
 				tok = parser.next_token(false);
 				if (tok.type != TokenName)
-					throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text.c_str(), parser.where().c_str());
-				sortBy = tok.text;
+					throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+				sortBy = tok.text().ToString();
 				for (;;) {
 					tok = parser.next_token();
-					if (tok.text == ")") break;
-					if (tok.text != ",")
-						throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text.c_str(),
+					if (tok.text() == ")"_sv) break;
+					if (tok.text() != ","_sv)
+						throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text().data(),
 									parser.where().c_str());
 					tok = parser.next_token();
 					if (tok.type != TokenNumber && tok.type != TokenString)
-						throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text.c_str(),
+						throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text().data(),
 									parser.where().c_str());
-					forcedSortOrder.push_back(KeyValue(tok.text));
+					forcedSortOrder.push_back(KeyValue(tok.text().ToString()));
 				}
 				tok = parser.peek_token();
 			}
 
-			if (tok.text == "asc" || tok.text == "desc") {
-				sortDirDesc = bool(tok.text == "desc");
+			if (tok.text() == "asc"_sv || tok.text() == "desc"_sv) {
+				sortDirDesc = bool(tok.text() == "desc"_sv);
 				parser.next_token();
 			}
-		} else if (tok.text == "join") {
+		} else if (tok.text() == "join"_sv) {
 			parser.next_token();
 			parseJoin(JoinType::LeftJoin, parser);
-		} else if (tok.text == "left") {
+		} else if (tok.text() == "left"_sv) {
 			parser.next_token();
-			if (parser.next_token().text != "join") {
-				throw Error(errParseSQL, "Expected JOIN, but found '%s' in query, %s", tok.text.c_str(), parser.where().c_str());
+			if (parser.next_token().text() != "join"_sv) {
+				throw Error(errParseSQL, "Expected JOIN, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
 			}
 			parseJoin(JoinType::LeftJoin, parser);
-		} else if (tok.text == "inner") {
+		} else if (tok.text() == "inner"_sv) {
 			parser.next_token();
-			if (parser.next_token().text != "join") {
-				throw Error(errParseSQL, "Expected JOIN, but found '%s' in query, %s", tok.text.c_str(), parser.where().c_str());
+			if (parser.next_token().text() != "join") {
+				throw Error(errParseSQL, "Expected JOIN, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
 			}
 			auto jtype = nextOp_ == OpOr ? JoinType::OrInnerJoin : JoinType::InnerJoin;
 			nextOp_ = OpAnd;
 			parseJoin(jtype, parser);
-		} else if (tok.text == "merge") {
+		} else if (tok.text() == "merge"_sv) {
 			parser.next_token();
 			parseMerge(parser);
-		} else if (tok.text == "or") {
+		} else if (tok.text() == "or"_sv) {
 			parser.next_token();
 			nextOp_ = OpOr;
 		} else {
@@ -278,14 +279,14 @@ int Query::describeParse(tokenizer &parser) {
 	token tok = parser.next_token(false);
 	parser.skip_space();
 
-	if (tok.text != "*") {
+	if (tok.text() != "*"_sv) {
 		for (;;) {
-			namespacesNames_.push_back(tok.text);
+			namespacesNames_.push_back(tok.text().ToString());
 			tok = parser.peek_token();
-			if (tok.text != ",") {
+			if (tok.text() != ","_sv) {
 				token nextTok = parser.next_token(false);
-				if (nextTok.text.length()) {
-					throw Error(errParseSQL, "Unexpected '%s' in query, %s", tok.text.c_str(), parser.where().c_str());
+				if (nextTok.text().length()) {
+					throw Error(errParseSQL, "Unexpected '%s' in query, %s", tok.text().data(), parser.where().c_str());
 				}
 				break;
 			}
@@ -293,7 +294,7 @@ int Query::describeParse(tokenizer &parser) {
 			parser.next_token();
 			tok = parser.next_token(false);
 			if (parser.end()) {
-				namespacesNames_.push_back(tok.text);
+				namespacesNames_.push_back(tok.text().ToString());
 				break;
 			}
 		}
@@ -306,18 +307,18 @@ int Query::describeParse(tokenizer &parser) {
 void Query::parseJoin(JoinType type, tokenizer &parser) {
 	Query jquery;
 	auto tok = parser.next_token();
-	if (tok.text == "(") {
+	if (tok.text() == "("_sv) {
 		tok = parser.next_token();
-		if (tok.text != "select") {
-			throw Error(errParseSQL, "Expected 'SELECT', but found %s, %s", tok.text.c_str(), parser.where().c_str());
+		if (tok.text() != "select"_sv) {
+			throw Error(errParseSQL, "Expected 'SELECT', but found %s, %s", tok.text().data(), parser.where().c_str());
 		}
 		jquery.selectParse(parser);
 		tok = parser.next_token();
-		if (tok.text != ")") {
-			throw Error(errParseSQL, "Expected ')', but found %s, %s", tok.text.c_str(), parser.where().c_str());
+		if (tok.text() != ")"_sv) {
+			throw Error(errParseSQL, "Expected ')', but found %s, %s", tok.text().data(), parser.where().c_str());
 		}
 	} else {
-		jquery._namespace = tok.text;
+		jquery._namespace = tok.text().ToString();
 	}
 	jquery.joinType = type;
 	jquery.parseJoinEntries(parser, _namespace);
@@ -328,15 +329,15 @@ void Query::parseJoin(JoinType type, tokenizer &parser) {
 void Query::parseMerge(tokenizer &parser) {
 	Query mquery;
 	auto tok = parser.next_token();
-	if (tok.text == "(") {
+	if (tok.text() == "("_sv) {
 		tok = parser.next_token();
-		if (tok.text != "select") {
-			throw Error(errParseSQL, "Expected 'SELECT', but found %s, %s", tok.text.c_str(), parser.where().c_str());
+		if (tok.text() != "select"_sv) {
+			throw Error(errParseSQL, "Expected 'SELECT', but found %s, %s", tok.text().data(), parser.where().c_str());
 		}
 		mquery.selectParse(parser);
 		tok = parser.next_token();
-		if (tok.text != ")") {
-			throw Error(errParseSQL, "Expected ')', but found %s, %s", tok.text.c_str(), parser.where().c_str());
+		if (tok.text() != ")"_sv) {
+			throw Error(errParseSQL, "Expected ')', but found %s, %s", tok.text().data(), parser.where().c_str());
 		}
 	}
 	mquery.joinType = JoinType::Merge;
@@ -349,54 +350,54 @@ void Query::parseMerge(tokenizer &parser) {
 string parseDotStr(tokenizer &parser, string &str1) {
 	auto tok = parser.next_token();
 	if (tok.type != TokenName && tok.type != TokenString) {
-		throw Error(errParseSQL, "Expected name, but found %s, %s", tok.text.c_str(), parser.where().c_str());
+		throw Error(errParseSQL, "Expected name, but found %s, %s", tok.text().data(), parser.where().c_str());
 	}
-	if (parser.peek_token().text != ".") {
-		return tok.text;
+	if (parser.peek_token().text() != "."_sv) {
+		return tok.text().ToString();
 	}
 	parser.next_token();
-	str1 = tok.text;
+	str1 = tok.text().ToString();
 
 	tok = parser.next_token();
 	if (tok.type != TokenName && tok.type != TokenString) {
-		throw Error(errParseSQL, "Expected name, but found %s, %s", tok.text.c_str(), parser.where().c_str());
+		throw Error(errParseSQL, "Expected name, but found %s, %s", tok.text().data(), parser.where().c_str());
 	}
-	return tok.text;
+	return tok.text().ToString();
 }
 
 void Query::parseJoinEntries(tokenizer &parser, const string &mainNs) {
 	parser.skip_space();
 	QueryJoinEntry je;
 	auto tok = parser.next_token();
-	if (tok.text != "on") {
-		throw Error(errParseSQL, "Expected 'ON', but found %s, %s", tok.text.c_str(), parser.where().c_str());
+	if (tok.text() != "on"_sv) {
+		throw Error(errParseSQL, "Expected 'ON', but found %s, %s", tok.text().data(), parser.where().c_str());
 	}
 
 	tok = parser.peek_token();
 
-	bool braces = tok.text == "(";
+	bool braces = tok.text() == "("_sv;
 	if (braces) parser.next_token();
 
 	while (!parser.end()) {
 		auto tok = parser.peek_token();
-		if (tok.text == "or") {
+		if (tok.text() == "or"_sv) {
 			nextOp_ = OpOr;
 			parser.next_token();
 			tok = parser.peek_token();
-		} else if (tok.text == "and") {
+		} else if (tok.text() == "and"_sv) {
 			nextOp_ = OpAnd;
 			parser.next_token();
 			tok = parser.peek_token();
 		}
 
-		if (braces && tok.text == ")") {
+		if (braces && tok.text() == ")"_sv) {
 			parser.next_token();
 			return;
 		}
 
 		string ns1 = mainNs, ns2 = _namespace;
 		string idx1 = parseDotStr(parser, ns1);
-		je.condition_ = getCondType(parser.next_token().text);
+		je.condition_ = getCondType(parser.next_token().text());
 		string idx2 = parseDotStr(parser, ns2);
 
 		if (ns1 == mainNs && ns2 == _namespace) {

@@ -60,6 +60,10 @@ const (
 	OrInnerJoin = 2
 	Merge       = 3
 
+	CacheModeOn         = 0
+	CacheModeAggressive = 1
+	CacheModeOff        = 2
+
 	FormatJson  = 0
 	FormatCJson = 1
 

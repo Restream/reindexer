@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <atomic>
@@ -23,7 +24,8 @@ public:
 	~ReindexerImpl();
 
 	Error EnableStorage(const string &storagePath, bool skipPlaceholderCheck = false);
-	Error OpenNamespace(const string &_namespace, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing());
+	Error OpenNamespace(const string &_namespace, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing(),
+						CacheMode cacheMode = CacheMode::CacheModeOn);
 	Error AddNamespace(const NamespaceDef &nsDef);
 	Error CloseNamespace(const string &_namespace);
 	Error DropNamespace(const string &_namespace);
@@ -41,7 +43,7 @@ public:
 	Error Commit(const string &namespace_);
 	Item NewItem(const string &_namespace);
 	Error GetMeta(const string &_namespace, const string &key, string &data);
-	Error PutMeta(const string &_namespace, const string &key, const Slice &data);
+	Error PutMeta(const string &_namespace, const string &key, const string_view &data);
 	Error EnumMeta(const string &_namespace, vector<string> &keys);
 	Error ResetStats();
 	Error GetStats(reindexer_stat &stat);

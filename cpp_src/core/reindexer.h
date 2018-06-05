@@ -1,8 +1,8 @@
 #pragma once
 
-#include "namespacedef.h"
-#include "query/query.h"
-#include "query/queryresults.h"
+#include "core/namespacedef.h"
+#include "core/query/query.h"
+#include "core/query/queryresults.h"
 
 namespace reindexer {
 using std::vector;
@@ -35,8 +35,10 @@ public:
 	/// @param opts - Storage options. Can be one of <br>
 	/// StorageOpts::Enabled() - Enable storage. If storage is disabled, then namespace will be completely in-memory<br>
 	/// StorageOpts::CreateIfMissing () - Storage will be created, if missing
+	/// @param cacheMode - caching politcs to this namesapce
 	/// @return errOK - On success
-	Error OpenNamespace(const string &nsName, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing());
+	Error OpenNamespace(const string &nsName, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing(),
+						CacheMode cacheMode = CacheMode::CacheModeOn);
 	/// Create new namespace. Will fail, if namespace already exists
 	/// @param nsDef - NamespaceDef with namespace initial parameters
 	Error AddNamespace(const NamespaceDef &nsDef);
@@ -109,7 +111,7 @@ public:
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
 	/// @param data - string with meta data
-	Error PutMeta(const string &nsName, const string &key, const Slice &data);
+	Error PutMeta(const string &nsName, const string &key, const string_view &data);
 	/// Get list of all meta data keys
 	/// @param nsName - Name of namespace
 	/// @param keys - std::vector filled with meta keys

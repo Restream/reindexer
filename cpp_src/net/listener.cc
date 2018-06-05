@@ -3,7 +3,7 @@
 #include <chrono>
 #include <thread>
 #include "core/type_consts.h"
-#include "net/http/connection.h"
+#include "net/http/serverconnection.h"
 #include "tools/logger.h"
 
 #if REINDEX_WITH_GPERFTOOLS
@@ -81,7 +81,7 @@ void Listener::io_accept(ev::io & /*watcher*/, int revents) {
 	if (idleConns_) {
 		connectons_[--idleConns_]->Restart(client.fd());
 	} else {
-		connectons_.push_back(std::unique_ptr<IConnection>(shared_->connFactory_(loop_, client.fd())));
+		connectons_.push_back(std::unique_ptr<IServerConnection>(shared_->connFactory_(loop_, client.fd())));
 	}
 	connCount_++;
 	shared_->lck_.lock();

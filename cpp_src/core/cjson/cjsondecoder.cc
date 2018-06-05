@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-CJsonDecoder::CJsonDecoder(TagsMatcher &tagsMatcher) : tagsMatcher_(tagsMatcher) {}
+CJsonDecoder::CJsonDecoder(TagsMatcher &tagsMatcher) : tagsMatcher_(tagsMatcher), lastErr_(errOK) {}
 
 Error CJsonDecoder::Decode(Payload *pl, Serializer &rdser, WrSerializer &wrser) {
 	try {
@@ -16,10 +16,10 @@ Error CJsonDecoder::Decode(Payload *pl, Serializer &rdser, WrSerializer &wrser) 
 	catch (const Error &err) {
 		return err;
 	}
-	return 0;
+	return lastErr_;
 }
 
-KeyRef cjsonValueToKeyRef(int tag, Serializer &rdser, const PayloadFieldType &pt) {
+KeyRef cjsonValueToKeyRef(int tag, Serializer &rdser, const PayloadFieldType &pt, Error &err) {
 	auto t = pt.Type();
 	switch (tag) {
 		case TAG_VARINT: {
@@ -81,8 +81,9 @@ KeyRef cjsonValueToKeyRef(int tag, Serializer &rdser, const PayloadFieldType &pt
 			}
 	}
 
-	throw Error(errLogic, "Error parsing cjson field '%s': got '%s', expected %s", pt.Name().c_str(), ctag(tag).TypeName(),
+	err = Error(errLogic, "Error parsing cjson field '%s': got '%s', expected %s", pt.Name().c_str(), ctag(tag).TypeName(),
 				KeyValue::TypeName(t));
+	return KeyRef();
 }
 
 bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrser) {
@@ -104,24 +105,41 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 
 	int field = tagsMatcher_.tags2field(tagsPath_.data(), tagsPath_.size());
 
-	wrser.PutVarUint(ctag(tagType, tagName, field));
-
 	if (field >= 0) {
 		KeyRefs kvs;
+		Error err = errOK;
+		size_t savePos = rdser.Pos();
 		if (tagType == TAG_ARRAY) {
 			carraytag atag = rdser.GetUInt32();
 			kvs.reserve(atag.Count());
-			for (int count = 0; count < atag.Count(); count++) {
+			for (int count = 0; count < atag.Count() && err.ok(); count++) {
 				ctag tag = atag.Tag() != TAG_OBJECT ? atag.Tag() : rdser.GetVarUint();
-				kvs.push_back(cjsonValueToKeyRef(tag.Type(), rdser, pl->Type().Field(field)));
+				kvs.push_back(cjsonValueToKeyRef(tag.Type(), rdser, pl->Type().Field(field), err));
 			}
-			wrser.PutVarUint(atag.Count());
-
+			if (err.ok()) {
+				wrser.PutVarUint(ctag(tagType, tagName, field));
+				wrser.PutVarUint(atag.Count());
+			}
 		} else if (tagType != TAG_NULL) {
-			kvs.push_back(cjsonValueToKeyRef(tagType, rdser, pl->Type().Field(field)));
+			kvs.push_back(cjsonValueToKeyRef(tagType, rdser, pl->Type().Field(field), err));
+			if (err.ok()) {
+				wrser.PutVarUint(ctag(tagType, tagName, field));
+			}
 		}
-		if (kvs.size()) pl->Set(field, kvs, true);
-	} else {
+		if (err.ok()) {
+			// Field was succefully setted to index
+			if (kvs.size()) pl->Set(field, kvs, true);
+		} else {
+			// Type error occuried. Just store field, and do not put it to index
+			// rewind serializer, and set lastErr_ code
+			field = -1;
+			lastErr_ = err;
+			rdser.SetPos(savePos);
+		}
+	}
+
+	if (field < 0) {
+		wrser.PutVarUint(ctag(tagType, tagName, field));
 		switch (tagType) {
 			case TAG_OBJECT:
 				while (decodeCJson(pl, rdser, wrser)) {

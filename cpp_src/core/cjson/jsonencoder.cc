@@ -23,9 +23,8 @@ JsonPrintFilter::JsonPrintFilter(const TagsMatcher& tagsMatcher, const h_vector<
 JsonEncoder::JsonEncoder(const TagsMatcher& tagsMatcher, const JsonPrintFilter& filter) : tagsMatcher_(tagsMatcher), filter_(filter) {}
 
 void JsonEncoder::Encode(ConstPayload* pl, WrSerializer& wrSer) {
-	key_string plTuple;
-	getPlTuple(pl, plTuple);
-	Serializer rdser(plTuple->data(), plTuple->length());
+	string_view tuple = getPlTuple(pl);
+	Serializer rdser(tuple.data(), tuple.length());
 
 	for (int i = 0; i < pl->NumFields(); ++i) fieldsoutcnt_[i] = 0;
 	bool first = true;
@@ -112,9 +111,8 @@ static void encodeKeyRef(WrSerializer& wrser, KeyRef kr, int tagType) {
 }
 
 bool JsonEncoder::encodeJoinedItem(WrSerializer& wrSer, ConstPayload& pl) {
-	key_string plTuple;
-	getPlTuple(&pl, plTuple);
-	Serializer rdser(plTuple->data(), plTuple->length());
+	string_view tuple = getPlTuple(&pl);
+	Serializer rdser(tuple.data(), tuple.length());
 
 	bool first = true;
 	for (int i = 0; i < pl.NumFields(); ++i) fieldsoutcnt_[i] = 0;
@@ -239,16 +237,18 @@ bool JsonEncoder::encodeJson(ConstPayload* pl, Serializer& rdser, WrSerializer& 
 	return true;
 }
 
-key_string& JsonEncoder::getPlTuple(ConstPayload* pl, key_string& plTuple) {
+string_view JsonEncoder::getPlTuple(ConstPayload* pl) {
 	KeyRefs kref;
 	pl->Get(0, kref);
-	plTuple = static_cast<key_string>(kref[0]);
 
-	if (plTuple->size() == 0) {
-		plTuple = BuildPayloadTuple(*pl, tagsMatcher_).get();
+	p_string tuple(kref[0]);
+
+	if (tuple.size() == 0) {
+		tmpPlTuple_ = BuildPayloadTuple(*pl, tagsMatcher_);
+		return string_view(*tmpPlTuple_);
 	}
 
-	return plTuple;
+	return string_view(tuple);
 }
 
 }  // namespace reindexer

@@ -59,7 +59,7 @@ public:
 protected:
 	int ParseWhere(tokenizer &tok);
 	string toString() const;
-	static CondType getCondType(const string &cond);
+	static CondType getCondType(string_view cond);
 
 public:
 	QueryEntries entries;

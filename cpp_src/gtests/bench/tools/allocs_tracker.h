@@ -7,7 +7,7 @@
 
 #include <benchmark/benchmark.h>
 
-#include "aux.h"
+#include "helpers.h"
 #include "debug/allocdebug.h"
 #include "debug/backtrace.h"
 
@@ -57,7 +57,7 @@ private:
 	void init() {
 		static bool inited = false;
 		if (!inited) {
-			allocdebug_init();
+			allocdebug_init_mt();
 			backtrace_init();
 			inited = true;
 		}

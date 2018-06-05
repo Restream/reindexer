@@ -48,3 +48,11 @@ private:
 };
 
 }  // namespace reindexer_server
+
+#include "estl/string_view.h"
+
+namespace fmt {
+static inline void format_arg(fmt::BasicFormatter<char> &f, const char *&, reindexer::string_view s) {
+	f.writer() << fmt::BasicStringRef<char>(s.data(), s.length());
+}
+}  // namespace fmt

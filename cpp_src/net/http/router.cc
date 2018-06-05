@@ -36,19 +36,19 @@ std::unordered_map<int, const char *> kHTTPCodes = {
 	{StatusGatewayTimeout, "Gateway Timeout"},
 };
 
-int Context::JSON(int code, const reindexer::Slice &slice) {
+int Context::JSON(int code, const string_view &slice) {
 	writer->SetContentLength(slice.size());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
-	writer->Write(slice.data(), slice.size());
+	writer->Write(slice);
 	return 0;
 }
 
-int Context::String(int code, const reindexer::Slice &slice) {
+int Context::String(int code, const string_view &slice) {
 	writer->SetContentLength(slice.size());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type", "text/plain; charset=utf-8"});
-	writer->Write(slice.data(), slice.size());
+	writer->Write(slice);
 	return 0;
 }
 
@@ -103,9 +103,9 @@ int Context::File(int code, const char *path) {
 
 const char *mathodNames[] = {"GET", "POST", "OPTIONS", "HEAD", "PUT", "DELETE", nullptr};
 
-HttpMethod lookupMethod(const char *method) {
+HttpMethod lookupMethod(const string_view &method) {
 	for (const char **p = mathodNames; *p; p++)
-		if (!strcmp(method, *p)) return HttpMethod(p - mathodNames);
+		if (method == *p) return HttpMethod(p - mathodNames);
 	return HttpMethod(-1);
 }
 
@@ -114,66 +114,46 @@ int Router::handle(Context &ctx) {
 	if (method < 0) {
 		return ctx.String(StatusBadRequest, "Invalid method");
 	}
+	int res = 0;
 
-	string url;
-	auto &v = routes_[method];
-	for (auto &r : v) {
-		url.assign(ctx.request->path);
+	for (auto &r : routes_[method]) {
+		string_view url = ctx.request->path;
+		string_view route = r.path_;
 		ctx.request->urlParams.clear();
 
-		char *urlPtr = &url[0];
-		const char *routePtr = r.path_.c_str();
-
-		size_t urlLen = strlen(urlPtr);
-		size_t routeLen = r.path_.length();
-
-		char *endUrlPtr = urlPtr + urlLen;
-		const char *endRoutePtr = routePtr + routeLen;
-
 		for (;;) {
-			const char *patternPtr = strchr(routePtr, ':');
-			const char *asteriskPtr = strchr(routePtr, '*');
-			if (!patternPtr || asteriskPtr) {
-				if ((asteriskPtr && strncmp(urlPtr, routePtr, asteriskPtr - routePtr)) || (!asteriskPtr && strcmp(urlPtr, routePtr))) break;
+			auto patternPos = route.find(':');
+			auto asteriskPos = route.find('*');
+			if (patternPos == string_view::npos || asteriskPos != string_view::npos) {
+				if (url.substr(0, asteriskPos) != route.substr(0, asteriskPos)) break;
 
-				int res = 0;
 				for (auto &mw : middlewares_) {
-					auto ret = mw.func_(mw.object_, ctx);
-					if (ret != 0) {
-						return ret;
+					res = mw.func_(mw.object_, ctx);
+					if (res != 0) {
+						return res;
 					}
 				}
-
 				res = r.h_.func_(r.h_.object_, ctx);
-
-				if (logger_) {
-					logger_(ctx);
-				}
-
 				return res;
 			}
 
-			if (strncmp(urlPtr, routePtr, patternPtr - routePtr)) break;
+			if (url.substr(0, patternPos) != route.substr(0, patternPos)) break;
 
-			urlPtr += patternPtr - routePtr;
-			routePtr += patternPtr - routePtr;
+			url = url.substr(patternPos);
+			route = route.substr(patternPos);
 
-			char *paramEndPtr = strchr(urlPtr, '/');
-			routePtr = strchr(routePtr, '/');
+			auto nextUrlPos = url.find('/');
+			auto nextRoutePos = route.find('/');
 
-			if (paramEndPtr == nullptr) paramEndPtr = endUrlPtr;
-			if (routePtr == nullptr) routePtr = endRoutePtr;
+			ctx.request->urlParams.push_back(url.substr(0, nextUrlPos));
 
-			*paramEndPtr = '\0';
-			ctx.request->urlParams.push_back(urlPtr);
-
-			// skip \ overwritten by \0
-			urlPtr = paramEndPtr != endUrlPtr ? ++paramEndPtr : paramEndPtr;
-			if (routePtr != endRoutePtr) routePtr++;
+			url = url.substr(nextUrlPos == string_view::npos ? nextUrlPos : nextUrlPos + 1);
+			route = route.substr(nextRoutePos == string_view::npos ? nextRoutePos : nextRoutePos + 1);
 		}
 	}
-	return notFoundHandler_.object_ != nullptr ? notFoundHandler_.func_(notFoundHandler_.object_, ctx)
-											   : ctx.String(StatusNotFound, "Not found");
+	res = notFoundHandler_.object_ != nullptr ? notFoundHandler_.func_(notFoundHandler_.object_, ctx)
+											  : ctx.String(StatusNotFound, "Not found");
+	return res;
 }
 }  // namespace http
 }  // namespace net

@@ -11,18 +11,20 @@ using std::string;
 class Serializer {
 public:
 	Serializer(const void *_buf, int _len);
+	Serializer(const string_view &buf);
 	bool Eof();
 	KeyValue GetValue();
-	Slice GetSlice();
+	string_view GetSlice();
 	uint32_t GetUInt32();
 	double GetDouble();
 
 	int64_t GetVarint();
 	uint64_t GetVarUint();
-	Slice GetVString();
+	string_view GetVString();
 	p_string GetPVString();
 	bool GetBool();
 	size_t Pos() { return pos; }
+	void SetPos(size_t p) { pos = p; }
 
 protected:
 	const uint8_t *buf;
@@ -73,7 +75,7 @@ public:
 	void PutValue(const KeyValue &kv);
 
 	// Put slice with 4 bytes len header
-	void PutSlice(const Slice &slice);
+	void PutSlice(const string_view &slice);
 
 	// Put raw data
 	void PutUInt32(uint32_t);
@@ -91,14 +93,14 @@ public:
 	void Print(int);
 	void Print(int64_t);
 
-	void PrintJsonString(const Slice &str);
+	void PrintJsonString(const string_view &str);
 
 	// Protobuf formt like functions
 	void PutVarint(int64_t v);
 	void PutVarUint(uint64_t v);
 	void PutVString(const char *);
 	void PutBool(bool v);
-	void PutVString(const Slice &str);
+	void PutVString(const string_view &str);
 
 	// Buffer manipulation functions
 	uint8_t *DetachBuffer();
@@ -106,6 +108,7 @@ public:
 	void Reset() { len_ = 0; }
 	size_t Len() const { return len_; }
 	void Reserve(size_t cap);
+	string_view Slice() { return string_view(reinterpret_cast<const char *>(buf_), len_); }
 
 protected:
 	void grow(size_t sz);

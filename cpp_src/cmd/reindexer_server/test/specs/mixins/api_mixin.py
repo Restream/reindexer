@@ -4,10 +4,10 @@ from urllib.parse import urlencode
 
 
 class ApiMixin(object):
-    def _api_request(self, method, url, body=None, headers={}):
+    def _api_request(self, method, url, body=None, headers={}, as_json=True):
         self.api = http.client.HTTPConnection('127.0.0.1', 9088)
 
-        if body is not None:
+        if body is not None and as_json:
             body = json.dumps(body)
 
         self.api.request(method, url, body, headers)
@@ -102,3 +102,9 @@ class ApiMixin(object):
 
     def api_sql_exec(self, dbname, sql_query=''):
         return self._api_call('GET', '/db/' + dbname + '/query?' + urlencode({'q': sql_query}))
+
+    def api_sql_post(self, dbname, body):
+        return self._api_call('POST', '/db/' + dbname + '/sqlquery', body, headers={'Content-type': 'text/plain'}, as_json=False)
+
+    def api_query_dsl(self, dbname, body):
+        return self._api_call('POST', '/db/' + dbname + '/query', body)

@@ -18,6 +18,10 @@ cmd="${CMAKE_INSTALL_PREFIX}/bin/$service -c /etc/reindexer.conf -d --pidfile=$p
 stop_attempts=5
 stop_timeout_sec=5
 
+# set tcmalloc env var if profiling is enabled
+grep pprof /etc/reindexer.conf 2>/dev/null | grep true >/dev/null 2>&1
+[ $? -eq 0 ] && export TCMALLOC_SAMPLE_PARAMETER=524288
+
 get_pid() {
     cat "$pid_file"
 }

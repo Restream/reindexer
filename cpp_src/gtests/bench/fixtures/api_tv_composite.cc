@@ -1,5 +1,5 @@
 #include "api_tv_composite.h"
-#include "aux.h"
+#include "helpers.h"
 #include "core/keyvalue/keyvalue.h"
 #include "core/query/query.h"
 #include "core/query/queryresults.h"

@@ -1,5 +1,4 @@
 #include "leveldbstorage.h"
-#include "tools/slice.h"
 
 #include <leveldb/comparator.h>
 #include <leveldb/db.h>
@@ -46,7 +45,7 @@ Error LevelDbStorage::Open(const string& path, const StorageOpts& opts) {
 	return Error(errLogic, "%s", status.ToString().c_str());
 }
 
-Error LevelDbStorage::Read(const StorageOpts& opts, const Slice& key, string& value) {
+Error LevelDbStorage::Read(const StorageOpts& opts, const string_view& key, string& value) {
 	if (!db_) throw Error(errParams, "%s", storageNotInitialized);
 
 	leveldb::ReadOptions options;
@@ -56,7 +55,7 @@ Error LevelDbStorage::Read(const StorageOpts& opts, const Slice& key, string& va
 	return Error(errLogic, "%s", status.ToString().c_str());
 }
 
-Error LevelDbStorage::Write(const StorageOpts& opts, const Slice& key, const Slice& value) {
+Error LevelDbStorage::Write(const StorageOpts& opts, const string_view& key, const string_view& value) {
 	if (!db_) throw Error(errParams, "%s", storageNotInitialized);
 
 	leveldb::WriteOptions options;
@@ -77,7 +76,7 @@ Error LevelDbStorage::Write(const StorageOpts& opts, UpdatesCollection& buffer) 
 	return Error(errLogic, "%s", status.ToString().c_str());
 }
 
-Error LevelDbStorage::Delete(const StorageOpts& opts, const Slice& key) {
+Error LevelDbStorage::Delete(const StorageOpts& opts, const string_view& key) {
 	if (!db_) throw Error(errParams, "%s", storageNotInitialized);
 
 	leveldb::WriteOptions options;
@@ -136,11 +135,11 @@ LevelDbBatchBuffer::LevelDbBatchBuffer() {}
 
 LevelDbBatchBuffer::~LevelDbBatchBuffer() {}
 
-void LevelDbBatchBuffer::Put(const Slice& key, const Slice& value) {
+void LevelDbBatchBuffer::Put(const string_view& key, const string_view& value) {
 	batchWrite_.Put(leveldb::Slice(key.data(), key.size()), leveldb::Slice(value.data(), value.size()));
 }
 
-void LevelDbBatchBuffer::Remove(const Slice& key) { batchWrite_.Delete(leveldb::Slice(key.data())); }
+void LevelDbBatchBuffer::Remove(const string_view& key) { batchWrite_.Delete(leveldb::Slice(key.data())); }
 
 void LevelDbBatchBuffer::Clear() { batchWrite_.Clear(); }
 
@@ -154,25 +153,25 @@ void LevelDbIterator::SeekToFirst() { return iterator_->SeekToFirst(); }
 
 void LevelDbIterator::SeekToLast() { return iterator_->SeekToLast(); }
 
-void LevelDbIterator::Seek(const Slice& target) { return iterator_->Seek(leveldb::Slice(target.data(), target.size())); }
+void LevelDbIterator::Seek(const string_view& target) { return iterator_->Seek(leveldb::Slice(target.data(), target.size())); }
 
 void LevelDbIterator::Next() { return iterator_->Next(); }
 
 void LevelDbIterator::Prev() { return iterator_->Prev(); }
 
-Slice LevelDbIterator::Key() const {
+string_view LevelDbIterator::Key() const {
 	leveldb::Slice key = iterator_->key();
-	return reindexer::Slice(key.data(), key.size());
+	return string_view(key.data(), key.size());
 }
 
-Slice LevelDbIterator::Value() const {
+string_view LevelDbIterator::Value() const {
 	leveldb::Slice key = iterator_->value();
-	return reindexer::Slice(key.data(), key.size());
+	return string_view(key.data(), key.size());
 }
 
 Comparator& LevelDbIterator::GetComparator() { return comparator_; }
 
-int LevelDbComparator::Compare(const Slice& a, const Slice& b) const {
+int LevelDbComparator::Compare(const string_view& a, const string_view& b) const {
 	leveldb::Options options;
 	return options.comparator->Compare(leveldb::Slice(a.data(), a.size()), leveldb::Slice(b.data(), b.size()));
 }
