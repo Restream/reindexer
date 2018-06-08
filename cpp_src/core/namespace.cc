@@ -969,7 +969,7 @@ void Namespace::DeleteStorage() {
 
 Item Namespace::NewItem() {
 	RLock lock(mtx_);
-	return Item(new ItemImpl(payloadType_, tagsMatcher_));
+	return Item(new ItemImpl(payloadType_, tagsMatcher_, pkFields_));
 }
 
 // Get meta data from storage by key

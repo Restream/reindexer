@@ -79,7 +79,7 @@ func (binding *NetCProto) OpenNamespace(namespace string, enableStorage, dropOnF
 	}
 
 	conn := binding.getConn()
-	return conn.rpcCallNoResults(cmdOpenNamespace, bsnsdef)
+	return conn.rpcCallNoResults(cmdOpenNamespace, bsnsdef, "")
 }
 
 func (binding *NetCProto) CloseNamespace(namespace string) error {

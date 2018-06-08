@@ -1,0 +1,95 @@
+sudo: required
+dist: trusty
+
+language: cpp
+
+env:
+  global:
+    - BUILD_DIR=${TRAVIS_BUILD_DIR}/build
+    - GOPATH=$HOME/.gopath/
+
+cache:
+  directories:
+    - $HOME/.cache
+
+git:
+  depth: 100000
+
+
+.stage_build_linux_template: &stage_build_linux_template
+  async: true
+  fail_fast: true
+  os: linux
+  env:
+    - WITH_DOXYGEN=0 # set to 1 when doxy doc deploy is ready
+    - CMAKE_OPTS="-DCMAKE_BUILD_TYPE=Release"
+  before_install:
+    - mkdir -p ${BUILD_DIR}
+    - mkdir -p ${GOPATH}/src/github.com/restream && ln -s `pwd` ${GOPATH}/src/github.com/restream/reindexer
+  install:
+    - sudo apt-get -qq update > /dev/null && sudo apt-get -qq install -y -f build-essential binutils cmake curl git google-perftools libgoogle-perftools-dev libsnappy-dev libleveldb-dev flex python3-pip
+    - curl https://raw.githubusercontent.com/travis-ci/gimme/master/gimme > ~/gimme && chmod +x ~/gimme && ~/gimme 1.9
+  before_script:
+    - git clone https://github.com/google/googletest.git /tmp/dep_googletest && cd /tmp/dep_googletest && cmake -DCMAKE_BUILD_TYPE=Release . && make -j4 && sudo make install
+    - git clone https://github.com/google/benchmark.git /tmp/dep_googlebench && cd /tmp/dep_googlebench && git checkout tags/v1.4.0 -b v.1.4.0 && cmake -DCMAKE_BUILD_TYPE=Release . && make -j4 && sudo make install
+    - if [[ ${WITH_DOXYGEN} -eq 1 ]]; then git clone https://github.com/doxygen/doxygen.git /tmp/dep_doxygen && cd /tmp/dep_doxygen && cmake -DCMAKE_BUILD_TYPE=Release . && make -j4 && sudo make install; fi
+    - if [[ ${WITH_DOXYGEN} -eq 1 ]]; then git clone https://github.com/mosra/m.css.git /tmp/dep_mcss && sudo ln -s /tmp/dep_mcss/doxygen/dox2html5.py /usr/local/bin; fi
+    - go get github.com/onsi/ginkgo/ginkgo && go get github.com/onsi/gomega && go get github.com/cheggaaa/deepcopy
+  script:
+    - cd ${BUILD_DIR} && cmake ${CMAKE_OPTS} ${TRAVIS_BUILD_DIR} && make -j4
+    - ctest --verbose
+    - cd ${TRAVIS_BUILD_DIR} && go test ./test ./test/ft/text_index/... -bench . -cpu 1 -benchmem -benchtime 100ms && go test ./test  -run=TestRaceConditions -race
+  after_script:
+    - find . -name CMakeFiles | xargs -n1 rm -rf
+
+.stage_build_linux_asan_template: &stage_build_linux_asan_template
+  <<: *stage_build_linux_template
+  env:
+    - WITH_DOXYGEN=0
+    - CMAKE_OPTS="-DWITH_ASAN=On"
+  script:
+    - cd ${BUILD_DIR} && cmake ${CMAKE_OPTS} ${TRAVIS_BUILD_DIR} && make -j4
+    - ctest --verbose
+    - cd ${TRAVIS_BUILD_DIR} && CGO_LDFLAGS=-fsanitize=address go test ./test  -bench . -cpu 1 -benchmem -benchtime 100ms -seedcount 50000 && CGO_LDFLAGS=-fsanitize=address go test ./test/ft/text_index/...
+
+.stage_build_linux_tsan_template: &stage_build_linux_tsan_template
+  <<: *stage_build_linux_template
+  env:
+    - WITH_DOXYGEN=0
+    - CMAKE_OPTS="-DWITH_TSAN=On"
+
+.stage_build_linux_cov_template: &stage_build_linux_cov_template
+  <<: *stage_build_linux_template
+  env:
+    - WITH_DOXYGEN=0
+    - CMAKE_OPTS="-DWITH_COVERAGE=On"
+  script:
+    - cd ${BUILD_DIR} && cmake ${CMAKE_OPTS} ${TRAVIS_BUILD_DIR} && make -j4
+    - ctest --verbose
+
+.stage_build_osx_template: &stage_build_osx_template
+  <<: *stage_build_linux_template
+  os: osx
+  osx_image: xcode9.3
+  install:
+    - brew update > /dev/null && brew install gperftools leveldb snappy flex && brew upgrade python
+    - sudo sysctl -w kern.maxfiles=20480 && sudo sysctl -w kern.maxfilesperproc=20480 && sudo launchctl limit maxfiles 20480
+    - ulimit -S -n 20480 && ulimit -n
+
+
+jobs:
+  include:
+    - stage: build
+      <<: *stage_build_osx_template
+
+    - stage: build
+      <<: *stage_build_linux_template
+
+    - stage: build
+      <<: *stage_build_linux_asan_template
+
+    # - stage: build
+    #   <<: *stage_build_linux_tsan_template
+
+    - stage: build
+      <<: *stage_build_linux_cov_template

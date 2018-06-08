@@ -19,6 +19,7 @@ struct NamespaceDef {
 	NamespaceDef(const string &iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing(),
 				 CacheMode icacheMode = CacheMode::CacheModeOn)
 		: name(iname), storage(istorage), cacheMode(icacheMode) {}
+
 	NamespaceDef &AddIndex(const string &name, const string &jsonPath, const string &indexType, const string &fieldType,
 						   IndexOpts opts = IndexOpts()) {
 		indexes.push_back({name, jsonPath, indexType, fieldType, opts});

@@ -47,7 +47,7 @@ KeyRef ItemImpl::GetField(int field) {
 }
 
 // Construct item from compressed json
-Error ItemImpl::FromCJSON(const string_view &slice) {
+Error ItemImpl::FromCJSON(const string_view &slice, bool pkOnly) {
 	GetPayload().Reset();
 	string_view data = slice;
 	if (!unsafe_) {
@@ -74,7 +74,7 @@ Error ItemImpl::FromCJSON(const string_view &slice) {
 	}
 
 	Payload pl = GetPayload();
-	CJsonDecoder decoder(tagsMatcher_);
+	CJsonDecoder decoder(tagsMatcher_, pkOnly ? pkFields_ : FieldsSet{});
 	auto err = decoder.Decode(&pl, rdser, ser_);
 
 	if (!rdser.Eof() && rdser.Pos() != tmOffset) return Error(errParseJson, "Internal error - left unparsed data %d", int(rdser.Pos()));
@@ -84,8 +84,9 @@ Error ItemImpl::FromCJSON(const string_view &slice) {
 	return err;
 }
 
-Error ItemImpl::FromJSON(const string_view &slice, char **endp) {
+Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool pkOnly) {
 	string_view data = slice;
+
 	if (!unsafe_ && endp == nullptr) {
 		holder_.push_back(slice.ToString());
 		data = holder_.back();
@@ -101,8 +102,9 @@ Error ItemImpl::FromJSON(const string_view &slice, char **endp) {
 	}
 
 	// Split parsed json into indexes and tuple
-	JsonDecoder decoder(tagsMatcher_);
+	JsonDecoder decoder(tagsMatcher_, pkOnly ? pkFields_ : FieldsSet{});
 	Payload pl = GetPayload();
+
 	auto err = decoder.Decode(&pl, ser_, value);
 
 	// Put tuple to field[0]

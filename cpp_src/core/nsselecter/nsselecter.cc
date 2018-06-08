@@ -86,6 +86,9 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	if (!whereEntries->empty() || !sortBy.empty()) {
 		FieldsSet prepareIndexes;
 		for (auto &entry : *whereEntries) prepareIndexes.push_back(entry.idxNo);
+		for (unsigned i = ns_->payloadType_->NumFields(); i < ns_->indexes_.size(); i++) {
+			if (prepareIndexes.contains(ns_->indexes_[i]->Fields())) prepareIndexes.push_back(i);
+		}
 		ns_->commit(Namespace::NSCommitContext(*ns_, CommitContext::MakeIdsets | (sortBy.length() ? CommitContext::MakeSortOrders : 0),
 											   &prepareIndexes),
 					ctx.lockUpgrader);

@@ -99,7 +99,7 @@ public:
 		FieldRef &operator=(const KeyRefs &krs);
 
 	private:
-		FieldRef(int field, ItemImpl *impl) : field_(field), impl_(impl){};
+		FieldRef(int field, ItemImpl *impl) : field_(field), impl_(impl) {}
 		int field_;
 		ItemImpl *impl_;
 	};
@@ -108,14 +108,17 @@ public:
 	/// If Item is in *Unsafe Mode*, then Item will not store slice, but just keep pointer to data in slice,
 	/// application *MUST* hold slice until end of life of Item
 	/// @param slice - data slice with Json.
-	/// @param endp - pounter to end of parsed part of slice
-	Error FromJSON(const string_view &slice, char **endp = nullptr);
+	/// @param endp - pointer to end of parsed part of slice
+	/// @param pkOnly - if TRUE, that mean a JSON string will be parse only primary key fields
+	Error FromJSON(const string_view &slice, char **endp = nullptr, bool pkOnly = false);
 
 	/// Build item from JSON<br>
 	/// If Item is in *Unsafe Mode*, then Item will not store slice, but just keep pointer to data in slice,
 	/// application *MUST* hold slice until end of life of Item
 	/// @param slice - data slice with CJson
-	Error FromCJSON(const string_view &slice);
+	/// @param pkOnly - if TRUE, that mean a JSON string will be parse only primary key fields
+	Error FromCJSON(const string_view &slice, bool pkOnly = false);
+
 	/// Serialize item to CJSON.<br>
 	/// If Item is in *Unfafe Mode*, then returned slice is allocated in temporary buffer, and can be invalidated by any next operation with
 	/// Item

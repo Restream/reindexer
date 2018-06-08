@@ -566,7 +566,8 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 			return jsonStatus(ctx, false, http::StatusInternalServerError, item.Status().what());
 		}
 		char *prevPtr = 0;
-		auto status = item.Unsafe().FromJSON(reindexer::string_view(jsonPtr, jsonLeft), &jsonPtr);
+
+		auto status = item.Unsafe().FromJSON(reindexer::string_view(jsonPtr, jsonLeft), &jsonPtr, mode == ModeDelete);
 		jsonLeft -= (jsonPtr - prevPtr);
 
 		if (!status.ok()) {

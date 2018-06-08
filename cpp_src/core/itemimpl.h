@@ -15,8 +15,8 @@ namespace reindexer {
 class ItemImpl {
 public:
 	// Construct empty item
-	ItemImpl(PayloadType type, const TagsMatcher &tagsMatcher)
-		: payloadType_(type), payloadValue_(type.TotalSize(), 0, type.TotalSize() + 0x100), tagsMatcher_(tagsMatcher) {
+	ItemImpl(PayloadType type, const TagsMatcher &tagsMatcher, const FieldsSet &pkFields = {})
+		: payloadType_(type), payloadValue_(type.TotalSize(), 0, type.TotalSize() + 0x100), tagsMatcher_(tagsMatcher), pkFields_(pkFields) {
 		tagsMatcher_.clearUpdated();
 	}
 
@@ -34,11 +34,11 @@ public:
 	KeyRef GetField(int field);
 
 	string_view GetJSON();
-	Error FromJSON(const string_view &slice, char **endp = nullptr);
+	Error FromJSON(const string_view &slice, char **endp = nullptr, bool pkOnly = false);
 	Error FromCJSON(ItemImpl *other);
 
 	string_view GetCJSON();
-	Error FromCJSON(const string_view &slice);
+	Error FromCJSON(const string_view &slice, bool pkOnly = false);
 
 	PayloadType Type() { return payloadType_; }
 	PayloadValue &Value() { return payloadValue_; }
@@ -55,6 +55,7 @@ protected:
 	PayloadType payloadType_;
 	PayloadValue payloadValue_;
 	TagsMatcher tagsMatcher_;
+	FieldsSet pkFields_;
 
 	JsonAllocator jsonAllocator_;
 	WrSerializer ser_;

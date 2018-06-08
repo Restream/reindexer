@@ -16,7 +16,7 @@ struct is_safe_iterators_map<std::unordered_map<K, V, H>> : std::true_type {};
 template <typename K, typename V, typename H, typename E>
 struct is_safe_iterators_map<std::unordered_map<K, V, H, E>> : std::true_type {};
 template <typename K, typename V, typename H, typename E, typename A>
-struct is_safe_iterators_map<std::unordered_map<K, V, H, E,A>> : std::true_type {};
+struct is_safe_iterators_map<std::unordered_map<K, V, H, E, A>> : std::true_type {};
 template <typename T1>
 struct is_safe_iterators_map<unordered_str_map<T1>> : std::true_type {};
 

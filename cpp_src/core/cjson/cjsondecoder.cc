@@ -5,6 +5,8 @@
 namespace reindexer {
 
 CJsonDecoder::CJsonDecoder(TagsMatcher &tagsMatcher) : tagsMatcher_(tagsMatcher), lastErr_(errOK) {}
+CJsonDecoder::CJsonDecoder(TagsMatcher &tagsMatcher, const FieldsSet &filter)
+	: tagsMatcher_(tagsMatcher), filter_(filter), lastErr_(errOK) {}
 
 Error CJsonDecoder::Decode(Payload *pl, Serializer &rdser, WrSerializer &wrser) {
 	try {
@@ -106,67 +108,107 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 	int field = tagsMatcher_.tags2field(tagsPath_.data(), tagsPath_.size());
 
 	if (field >= 0) {
-		KeyRefs kvs;
-		Error err = errOK;
-		size_t savePos = rdser.Pos();
-		if (tagType == TAG_ARRAY) {
-			carraytag atag = rdser.GetUInt32();
-			kvs.reserve(atag.Count());
-			for (int count = 0; count < atag.Count() && err.ok(); count++) {
-				ctag tag = atag.Tag() != TAG_OBJECT ? atag.Tag() : rdser.GetVarUint();
-				kvs.push_back(cjsonValueToKeyRef(tag.Type(), rdser, pl->Type().Field(field), err));
+		if (filter_.contains(field) || filter_.empty()) {
+			KeyRefs kvs;
+			Error err = errOK;
+			size_t savePos = rdser.Pos();
+			if (tagType == TAG_ARRAY) {
+				carraytag atag = rdser.GetUInt32();
+				kvs.reserve(atag.Count());
+				for (int count = 0; count < atag.Count() && err.ok(); count++) {
+					ctag tag = atag.Tag() != TAG_OBJECT ? atag.Tag() : rdser.GetVarUint();
+					kvs.push_back(cjsonValueToKeyRef(tag.Type(), rdser, pl->Type().Field(field), err));
+				}
+				if (err.ok()) {
+					wrser.PutVarUint(ctag(tagType, tagName, field));
+					wrser.PutVarUint(atag.Count());
+				}
+			} else if (tagType != TAG_NULL) {
+				kvs.push_back(cjsonValueToKeyRef(tagType, rdser, pl->Type().Field(field), err));
+				if (err.ok()) {
+					wrser.PutVarUint(ctag(tagType, tagName, field));
+				}
 			}
 			if (err.ok()) {
-				wrser.PutVarUint(ctag(tagType, tagName, field));
-				wrser.PutVarUint(atag.Count());
+				// Field was succefully setted to index
+				if (kvs.size()) pl->Set(field, kvs, true);
+			} else {
+				// Type error occuried. Just store field, and do not put it to index
+				// rewind serializer, and set lastErr_ code
+				field = -1;
+				lastErr_ = err;
+				rdser.SetPos(savePos);
 			}
-		} else if (tagType != TAG_NULL) {
-			kvs.push_back(cjsonValueToKeyRef(tagType, rdser, pl->Type().Field(field), err));
-			if (err.ok()) {
-				wrser.PutVarUint(ctag(tagType, tagName, field));
-			}
-		}
-		if (err.ok()) {
-			// Field was succefully setted to index
-			if (kvs.size()) pl->Set(field, kvs, true);
 		} else {
-			// Type error occuried. Just store field, and do not put it to index
-			// rewind serializer, and set lastErr_ code
-			field = -1;
-			lastErr_ = err;
-			rdser.SetPos(savePos);
+			skipTag(tag, rdser);
 		}
 	}
 
 	if (field < 0) {
 		wrser.PutVarUint(ctag(tagType, tagName, field));
-		switch (tagType) {
-			case TAG_OBJECT:
-				while (decodeCJson(pl, rdser, wrser)) {
-				}
-				break;
-			case TAG_ARRAY: {
-				carraytag atag = rdser.GetUInt32();
-				wrser.PutUInt32(atag);
-				for (int count = 0; count < atag.Count(); count++) {
-					switch (atag.Tag()) {
-						case TAG_OBJECT:
-							decodeCJson(pl, rdser, wrser);
-							break;
-						default:
-							copyCJsonValue(atag.Tag(), rdser, wrser);
-							break;
-					}
-				}
-				break;
+
+		if (tagType == TAG_OBJECT) {
+			while (decodeCJson(pl, rdser, wrser)) {
 			}
-			default:
-				copyCJsonValue(tagType, rdser, wrser);
-				break;
+		} else if (!filter_.empty()) {
+			skipTag(tag, rdser);
+		} else if (tagType == TAG_ARRAY) {
+			carraytag atag = rdser.GetUInt32();
+			wrser.PutUInt32(atag);
+			for (int count = 0; count < atag.Count(); count++) {
+				switch (atag.Tag()) {
+					case TAG_OBJECT:
+						decodeCJson(pl, rdser, wrser);
+						break;
+					default:
+						copyCJsonValue(atag.Tag(), rdser, wrser);
+						break;
+				}
+			}
+		} else {
+			copyCJsonValue(tagType, rdser, wrser);
 		}
 	}
+
 	if (tagName) tagsPath_.pop_back();
 	return true;
+}
+
+void CJsonDecoder::skipTag(ctag &tag, Serializer &rdser) {
+	switch (tag.Type()) {
+		case TAG_ARRAY: {
+			carraytag atag = rdser.GetUInt32();
+			for (int i = 0; i < atag.Count(); i++) {
+				ctag t = atag.Tag();
+				skipTag(t, rdser);
+			}
+		} break;
+
+		case TAG_OBJECT: {
+			ctag otag = rdser.GetVarUint();
+			skipTag(otag, rdser);
+		} break;
+
+		case TAG_BOOL:
+			rdser.GetBool();
+			break;
+
+		case TAG_DOUBLE:
+			rdser.GetDouble();
+			break;
+
+		case TAG_NULL:
+
+			break;
+
+		case TAG_STRING:
+			rdser.GetVString();
+			break;
+
+		case TAG_VARINT:
+			rdser.GetVarint();
+			break;
+	}
 }
 
 }  // namespace reindexer

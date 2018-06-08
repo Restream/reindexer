@@ -82,6 +82,7 @@ template <typename T>
 void FastIndexText<T>::buildWordsMap(fast_hash_map<string, WordEntry> &words_um) {
 	int maxIndexWorkers = !this->opts_.IsDense() ? std::thread::hardware_concurrency() : 0;
 	if (!maxIndexWorkers) maxIndexWorkers = 1;
+	if (maxIndexWorkers > 8) maxIndexWorkers = 8;
 
 	struct context {
 		fast_hash_map<string, WordEntry> words_um;

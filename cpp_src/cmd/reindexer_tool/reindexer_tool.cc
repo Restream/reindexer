@@ -1,5 +1,5 @@
-#include "debug/backtrace.h"
 #include "core/reindexer.h"
+#include "debug/backtrace.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
 #include "tools/stringstools.h"
@@ -434,7 +434,7 @@ void DeleteCommand(args::Subparser& subparser) {
 	err = item.Status();
 	if (err) throw err;
 
-	err = item.Unsafe().FromJSON(json);
+	err = item.Unsafe().FromJSON(json, nullptr, true);
 	if (err) throw err;
 
 	err = db->Delete(args::get(ns), item);

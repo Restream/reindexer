@@ -411,6 +411,10 @@ func (enc *Encoder) validateLevel(src reflect.Type, fieldName string) error {
 
 func (enc *Encoder) Validate(src interface{}) error {
 	t := reflect.TypeOf(src)
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
 	return enc.validateLevel(t, "")
 }
 

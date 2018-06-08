@@ -1,8 +1,8 @@
 #include "api_tv_composite.h"
-#include "helpers.h"
 #include "core/keyvalue/keyvalue.h"
 #include "core/query/query.h"
 #include "core/query/queryresults.h"
+#include "helpers.h"
 
 using benchmark::RegisterBenchmark;
 using std::placeholders::_1;

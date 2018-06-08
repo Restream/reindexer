@@ -174,10 +174,10 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string itemPack, int mode) {
 	}
 	switch (format) {
 		case FormatJson:
-			err = item.Unsafe().FromJSON(ser.GetSlice());
+			err = item.Unsafe().FromJSON(ser.GetSlice(), nullptr, mode == ModeDelete);
 			break;
 		case FormatCJson:
-			err = item.Unsafe().FromCJSON(ser.GetSlice());
+			err = item.Unsafe().FromCJSON(ser.GetSlice(), mode == ModeDelete);
 			break;
 		default:
 			err = Error(-1, "Invalid source item format %d", format);

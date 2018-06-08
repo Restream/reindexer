@@ -3,8 +3,8 @@
 #include <string>
 #include <vector>
 
-#include "helpers.h"
 #include "base_fixture.h"
+#include "helpers.h"
 
 using std::vector;
 using std::string;

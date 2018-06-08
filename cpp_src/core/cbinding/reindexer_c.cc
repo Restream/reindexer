@@ -73,10 +73,10 @@ reindexer_ret reindexer_modify_item(reindexer_buffer in, int mode) {
 		if (item.Status().ok()) {
 			switch (format) {
 				case FormatJson:
-					err = item.Unsafe().FromJSON(ser.GetSlice());
+					err = item.Unsafe().FromJSON(ser.GetSlice(), nullptr, mode == ModeDelete);
 					break;
 				case FormatCJson: {
-					err = item.Unsafe().FromCJSON(ser.GetSlice());
+					err = item.Unsafe().FromCJSON(ser.GetSlice(), mode == ModeDelete);
 					break;
 				}
 				default:

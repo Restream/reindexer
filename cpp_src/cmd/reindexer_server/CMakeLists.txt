@@ -18,10 +18,15 @@ file(WRITE ${PROJECT_BINARY_DIR}/swagger_replace.cmake
   file(WRITE ${PROJECT_BINARY_DIR}/swagger/index.html \"\${indexhtml}\")"
 )
 
+if (${CMAKE_VERSION} VERSION_GREATER 3.1)
+  set (FLAG_DOWNLOAD_NO_PROGRESS DOWNLOAD_NO_PROGRESS 1)
+endif ()
+
 ExternalProject_Add (swagger
   URL "https://codeload.github.com/swagger-api/swagger-ui/tar.gz/${SWAGGER_VERSION}"
   DOWNLOAD_NAME "swagger.tar.gz"
-  CONFIGURE_COMMAND "" 
+  ${FLAG_DOWNLOAD_NO_PROGRESS}
+  CONFIGURE_COMMAND ""
   BUILD_COMMAND ""
   INSTALL_COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_BINARY_DIR}/swagger-prefix/src/swagger/dist" "${PROJECT_BINARY_DIR}/swagger"
   COMMAND ${CMAKE_COMMAND} -E copy "${PROJECT_SOURCE_DIR}/contrib/server.yml" "${PROJECT_BINARY_DIR}/swagger/swagger.yml"
@@ -32,6 +37,7 @@ ExternalProject_Add (swagger
 ExternalProject_Add (face
   URL "https://codeload.github.com/restream/reindexer-face-dist/tar.gz/${FACE_BRANCH}"
   DOWNLOAD_NAME "face.tar.gz"
+  ${FLAG_DOWNLOAD_NO_PROGRESS}
   CONFIGURE_COMMAND ""
   BUILD_COMMAND ""
   INSTALL_COMMAND ${CMAKE_COMMAND} -E copy_directory "${PROJECT_BINARY_DIR}/face-prefix/src/face" "${PROJECT_BINARY_DIR}/face"

@@ -6,12 +6,12 @@
 namespace reindexer {
 
 JsonDecoder::JsonDecoder(TagsMatcher &tagsMatcher) : tagsMatcher_(tagsMatcher) {}
+JsonDecoder::JsonDecoder(TagsMatcher &tagsMatcher, const FieldsSet &filter) : tagsMatcher_(tagsMatcher), filter_(filter) {}
 
 Error JsonDecoder::Decode(Payload *pl, WrSerializer &wrser, JsonValue &v) {
 	try {
 		wrser.Reset();
 		tagsPath_.clear();
-
 		decodeJson(pl, wrser, v, 0);
 	}
 
@@ -22,14 +22,7 @@ Error JsonDecoder::Decode(Payload *pl, WrSerializer &wrser, JsonValue &v) {
 }
 
 void JsonDecoder::decodeJsonObject(Payload *pl, WrSerializer &wrser, JsonValue &v) {
-	// int l = jsonPath_.length();
 	for (auto elem : v) {
-#if 0
-		if (l) jsonPath_.append(".");
-		jsonPath_.append(elem->key, strlen(elem->key));
-		int subtag = tagsMatcher_->name2tag(elem->key, jsonPath_);
-		int field = tagsMatcher_->tag2field(subtag);
-#else
 		int tagName = tagsMatcher_.name2tag(elem->key);
 		if (!tagName) {
 			tagName = tagsMatcher_.name2tag(elem->key, true);
@@ -37,10 +30,10 @@ void JsonDecoder::decodeJsonObject(Payload *pl, WrSerializer &wrser, JsonValue &
 		assert(tagName);
 		tagsPath_.push_back(tagName);
 		int field = tagsMatcher_.tags2field(tagsPath_.data(), tagsPath_.size());
-#endif
-		if (field < 0)
+
+		if (field < 0) {
 			decodeJson(pl, wrser, elem->value, tagName);
-		else {
+		} else if (filter_.empty() || filter_.contains(field)) {
 			// Indexed field. extract it
 			KeyRefs kvs;
 			int count = 0;
@@ -90,7 +83,7 @@ void JsonDecoder::decodeJsonObject(Payload *pl, WrSerializer &wrser, JsonValue &
 					break;
 			}
 		}
-		// jsonPath_.resize(l);
+
 		tagsPath_.pop_back();
 	}
 }
