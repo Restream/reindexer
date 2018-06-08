@@ -71,6 +71,6 @@ size_t get_alloc_size_total() { return ismt ? tracer_mt.alloced_sz_total.load() 
 size_t get_alloc_cnt_total() { return ismt ? tracer_mt.alloced_cnt_total.load() : tracer.alloced_cnt_total; }
 
 void allocdebug_show() {
-	reindexer::logPrintf(LogInfo, "meminfo (alloced %luM, %lu total allocs, %lu remain)", get_alloc_size() / (1024 * 1024),
-						 get_alloc_cnt_total(), get_alloc_cnt());
+	reindexer::logPrintf(LogInfo, "meminfo (alloced %dM, %d total allocs, %d remain)", int(get_alloc_size() / (1024 * 1024)),
+						 int(get_alloc_cnt_total()), int(get_alloc_cnt()));
 }
