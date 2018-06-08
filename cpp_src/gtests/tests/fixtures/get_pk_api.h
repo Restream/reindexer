@@ -23,19 +23,14 @@ using reindexer::KeyRef;
 
 class ExtractPK : public testing::Test {
 public:
-	typedef struct Data {
-		Data() = default;
-
+	struct Data {
 		int id;
 		int fk_id;
 		const char* name;
 		const char* color;
 		int weight;
 		int height;
-
-		Data& operator=(const Data&) = default;
-		Data(const Data&) = default;
-	} Data;
+	};
 
 	typedef fast_hash_map<string, NamespaceDef> DefsCacheType;
 
@@ -81,7 +76,7 @@ public:
 		typedef tuple<Error, Item, Data> ResultType;
 
 		Item item = db_->NewItem(ns);
-		if (!item.Status().ok()) return ResultType(item.Status(), std::move(item), Data{});
+		if (!item.Status().ok()) return ResultType(item.Status(), std::move(item), Data{0, 0, nullptr, nullptr, 0, 0});
 
 		Data data = (d == nullptr) ? randomItemData() : *d;
 		string json = StringFormat(jsonPattern, data.id, data.name, data.color, data.weight, data.height, data.fk_id);
