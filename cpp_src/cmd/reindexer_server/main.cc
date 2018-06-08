@@ -278,11 +278,13 @@ static void loggerConfigure() {
 	}
 }
 
+#ifndef _WIN32
 static void loggerReopen() {
 	for (auto &sync : sinks) {
 		sync.second->reopen();
 	}
 }
+#endif
 
 int startServer() {
 	fast_hash_map<string, LogLevel> levels = {
