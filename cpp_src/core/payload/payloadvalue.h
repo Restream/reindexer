@@ -9,7 +9,7 @@ namespace reindexer {
 // The full item's payload object. It must be speed & size optimized
 class PayloadValue {
 public:
-	typedef std::atomic<int16_t> refcounter;
+	typedef std::atomic<int32_t> refcounter;
 	struct dataHeader {
 		dataHeader() : refcount(1), version(1), cap(0) {}
 
@@ -52,6 +52,7 @@ public:
 	int GetVersion() const { return header()->version; }
 	bool IsFree() const { return bool(p_ == nullptr); }
 	void Free() { release(); }
+	size_t GetCapacity() const { return header()->cap; }
 
 protected:
 	uint8_t *alloc(size_t cap);

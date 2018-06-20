@@ -30,13 +30,17 @@ int HTTPServer::GetSQLQuery(http::Context &ctx) {
 	string sqlQuery = urldecode2(ctx.request->params.Get("q"));
 
 	if (sqlQuery.empty()) {
-		return jsonStatus(ctx, false, http::StatusBadRequest, "Missed `q` parameter");
+		http::HttpStatus httpStatus(http::StatusBadRequest, "Missed `q` parameter");
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	auto ret = db->Select(sqlQuery, res);
 
 	if (!ret.ok()) {
-		return jsonStatus(ctx, false, http::StatusInternalServerError, ret.what());
+		http::HttpStatus httpStatus(http::StatusInternalServerError, ret.what());
+
+		return jsonStatus(ctx, httpStatus);
 	}
 	return queryResults(ctx, res, "items");
 }
@@ -44,16 +48,19 @@ int HTTPServer::GetSQLQuery(http::Context &ctx) {
 int HTTPServer::PostSQLQuery(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
 	reindexer::QueryResults res;
-	string sqlQuery = ctx.body->Read();
 
+	string sqlQuery = ctx.body->Read();
 	if (!sqlQuery.length()) {
-		return jsonStatus(ctx, false, http::StatusBadRequest, "Query is empty");
+		http::HttpStatus httpStatus(http::StatusBadRequest, "Query is empty");
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	auto ret = db->Select(sqlQuery, res);
-
 	if (!ret.ok()) {
-		return jsonStatus(ctx, false, http::StatusInternalServerError, ret.what());
+		http::HttpStatus httpStatus(http::StatusBadRequest, ret.what());
+
+		return jsonStatus(ctx, httpStatus);
 	}
 	return queryResults(ctx, res, "items");
 }
@@ -66,20 +73,21 @@ int HTTPServer::PostQuery(http::Context &ctx) {
 	reindexer::Query q;
 	auto status = q.ParseJson(dsl);
 	if (!status.ok()) {
-		return jsonStatus(ctx, false, http::StatusInternalServerError, status.what());
+		http::HttpStatus httpStatus(status);
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	status = db->Select(q, res);
 	if (!status.ok()) {
-		return jsonStatus(ctx, false, http::StatusInternalServerError, status.what());
+		http::HttpStatus httpStatus(status);
+
+		return jsonStatus(ctx, httpStatus);
 	}
 	return queryResults(ctx, res, "items");
 }
 
 int HTTPServer::GetDatabases(http::Context &ctx) {
-	ctx.writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
-	ctx.writer->SetRespCode(http::StatusOK);
-
 	string_view sortOrder = ctx.request->params.Get("sort_order");
 
 	auto dbs = dbMgr_.EnumDatabases();
@@ -90,7 +98,9 @@ int HTTPServer::GetDatabases(http::Context &ctx) {
 	} else if (sortOrder == "desc") {
 		sortDirection = -1;
 	} else if (sortOrder.length()) {
-		return jsonStatus(ctx, false, http::StatusBadRequest, "Invalid `sort_order` parameter");
+		http::HttpStatus httpStatus(http::StatusBadRequest, "Invalid `sort_order` parameter");
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	if (sortDirection) {
@@ -102,6 +112,8 @@ int HTTPServer::GetDatabases(http::Context &ctx) {
 		});
 	}
 
+	ctx.writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
+	ctx.writer->SetRespCode(http::StatusOK);
 	ctx.writer->Write("{"_sv);
 	ctx.writer->Write("\"items\":["_sv);
 	for (auto &db : dbs) {
@@ -128,7 +140,9 @@ int HTTPServer::PostDatabase(http::Context &ctx) {
 	auto dbs = dbMgr_.EnumDatabases();
 	for (auto &db : dbs) {
 		if (db == newDbName) {
-			return jsonStatus(ctx, false, http::StatusBadRequest, "Database already exists");
+			http::HttpStatus httpStatus(http::StatusBadRequest, "Database already exists");
+
+			return jsonStatus(ctx, httpStatus);
 		}
 	}
 
@@ -142,25 +156,37 @@ int HTTPServer::PostDatabase(http::Context &ctx) {
 
 	auto status = dbMgr_.OpenDatabase(newDbName, *actx, true);
 	if (!status.ok()) {
-		return jsonStatus(ctx, false, http::StatusInternalServerError, status.what());
+		http::HttpStatus httpStatus(status);
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	return jsonStatus(ctx);
 }
 
 int HTTPServer::DeleteDatabase(http::Context &ctx) {
-	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
 	string dbName = ctx.request->urlParams[0].ToString();
-	AuthContext actx;
 
-	auto status = dbMgr_.Login(dbName, actx);
-	if (!status.ok()) {
-		return jsonStatus(ctx, false, http::StatusUnauthorized, status.what());
+	AuthContext dummyCtx;
+	AuthContext *actx = &dummyCtx;
+	if (!dbMgr_.IsNoSecurity()) {
+		auto clientData = dynamic_cast<HTTPClientData *>(ctx.clientData.get());
+		assert(clientData);
+		actx = &clientData->auth;
 	}
 
-	status = dbMgr_.DropDatabase(actx);
+	auto status = dbMgr_.Login(dbName, *actx);
 	if (!status.ok()) {
-		return jsonStatus(ctx, false, http::StatusInternalServerError, status.what());
+		http::HttpStatus httpStatus(http::StatusUnauthorized, status.what());
+
+		return jsonStatus(ctx, httpStatus);
+	}
+
+	status = dbMgr_.DropDatabase(*actx);
+	if (!status.ok()) {
+		http::HttpStatus httpStatus(status);
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	return jsonStatus(ctx);
@@ -180,7 +206,9 @@ int HTTPServer::GetNamespaces(http::Context &ctx) {
 	} else if (sortOrder == "desc") {
 		sortDirection = -1;
 	} else if (sortOrder.length()) {
-		return jsonStatus(ctx, false, http::StatusBadRequest, "Invalid `sort_order` parameter");
+		http::HttpStatus httpStatus(http::StatusBadRequest, "Invalid `sort_order` parameter");
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	if (sortDirection) {
@@ -221,10 +249,12 @@ int HTTPServer::GetNamespaces(http::Context &ctx) {
 int HTTPServer::GetNamespace(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
 
-	string nsName = ctx.request->urlParams[1].ToString();
+	string nsName = urldecode2(ctx.request->urlParams[1]);
 
 	if (!nsName.length()) {
-		return jsonStatus(ctx, false, http::StatusBadRequest, "Namespace is not specified");
+		http::HttpStatus httpStatus(http::StatusBadRequest, "Namespace is not specified");
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	vector<reindexer::NamespaceDef> nsDefs;
@@ -232,7 +262,9 @@ int HTTPServer::GetNamespace(http::Context &ctx) {
 	auto nsDefIt = std::find_if(nsDefs.begin(), nsDefs.end(), [&](const NamespaceDef &nsDef) { return nsDef.name == nsName; });
 
 	if (nsDefIt == nsDefs.end()) {
-		return jsonStatus(ctx, false, http::StatusNotFound, "Namespace is not found");
+		http::HttpStatus httpStatus(http::StatusNotFound, "Namespace is not found");
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	ctx.writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
@@ -248,18 +280,21 @@ int HTTPServer::GetNamespace(http::Context &ctx) {
 
 int HTTPServer::PostNamespace(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
-
 	string nsdefJson = ctx.body->Read();
 	reindexer::NamespaceDef nsdef("");
 
 	auto status = nsdef.FromJSON(const_cast<char *>(nsdefJson.c_str()));
 	if (!status.ok()) {
-		return jsonStatus(ctx, false, http::StatusInternalServerError, status.what());
+		http::HttpStatus httpStatus(status);
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	status = db->AddNamespace(nsdef);
 	if (!status.ok()) {
-		return jsonStatus(ctx, false, http::StatusInternalServerError, status.what());
+		http::HttpStatus httpStatus(status);
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	return jsonStatus(ctx);
@@ -267,16 +302,19 @@ int HTTPServer::PostNamespace(http::Context &ctx) {
 
 int HTTPServer::DeleteNamespace(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
-
-	string nsName = ctx.request->urlParams[1].ToString();
+	string nsName = urldecode2(ctx.request->urlParams[1]);
 
 	if (nsName.empty()) {
-		return jsonStatus(ctx, false, http::StatusBadRequest, "Namespace is not specified");
+		http::HttpStatus httpStatus(http::StatusBadRequest, "Namespace is not specified");
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	auto status = db->DropNamespace(nsName);
 	if (!status.ok()) {
-		return jsonStatus(ctx, false, http::StatusInternalServerError, status.what());
+		http::HttpStatus httpStatus(status);
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	return jsonStatus(ctx);
@@ -285,7 +323,7 @@ int HTTPServer::DeleteNamespace(http::Context &ctx) {
 int HTTPServer::GetItems(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
 
-	string nsName = ctx.request->urlParams[1].ToString();
+	string nsName = urldecode2(ctx.request->urlParams[1]);
 
 	string_view limitParam = ctx.request->params.Get("limit");
 	string_view offsetParam = ctx.request->params.Get("offset");
@@ -293,7 +331,9 @@ int HTTPServer::GetItems(http::Context &ctx) {
 	string_view sortOrder = ctx.request->params.Get("sort_order");
 
 	if (nsName.empty()) {
-		return jsonStatus(ctx, false, http::StatusBadRequest, "Namespace is not specified");
+		http::HttpStatus httpStatus(http::StatusBadRequest, "Namespace is not specified");
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	int limit = limit_default;
@@ -318,7 +358,9 @@ int HTTPServer::GetItems(http::Context &ctx) {
 	reindexer::QueryResults res;
 	auto status = db->Select(query, res);
 	if (!status.ok()) {
-		return jsonStatus(ctx, false, http::StatusInternalServerError, status.what());
+		http::HttpStatus httpStatus(status);
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	ctx.writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
@@ -348,10 +390,12 @@ int HTTPServer::PostItems(http::Context &ctx) { return modifyItem(ctx, ModeInser
 int HTTPServer::GetIndexes(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
 
-	string nsName = ctx.request->urlParams[1].ToString();
+	string nsName = urldecode2(ctx.request->urlParams[1]);
 
 	if (!nsName.length()) {
-		return jsonStatus(ctx, false, http::StatusBadRequest, "Namespace is not specified");
+		http::HttpStatus httpStatus(http::StatusBadRequest, "Namespace is not specified");
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	vector<reindexer::NamespaceDef> nsDefs;
@@ -359,7 +403,9 @@ int HTTPServer::GetIndexes(http::Context &ctx) {
 	auto nsDefIt = std::find_if(nsDefs.begin(), nsDefs.end(), [&](const NamespaceDef &nsDef) { return nsDef.name == nsName; });
 
 	if (nsDefIt == nsDefs.end()) {
-		return jsonStatus(ctx, false, http::StatusNotFound, "Namespace is not found");
+		http::HttpStatus httpStatus(http::StatusNotFound, "Namespace is not found");
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	ctx.writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
@@ -389,10 +435,11 @@ int HTTPServer::GetIndexes(http::Context &ctx) {
 int HTTPServer::PostIndex(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
 
-	string nsName = ctx.request->urlParams[1].ToString();
-
+	string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (!nsName.length()) {
-		return jsonStatus(ctx, false, http::StatusBadRequest, "Namespace is not specified");
+		http::HttpStatus httpStatus(http::StatusBadRequest, "Namespace is not specified");
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	string json = ctx.body->Read();
@@ -410,13 +457,17 @@ int HTTPServer::PostIndex(http::Context &ctx) {
 		auto foundIndexIt =
 			std::find_if(indexes.begin(), indexes.end(), [&newIdxName](const IndexDef &idx) { return idx.name == newIdxName; });
 		if (foundIndexIt != indexes.end()) {
-			return jsonStatus(ctx, false, http::StatusBadRequest, "Index already exists");
+			http::HttpStatus httpStatus(http::StatusBadRequest, "Index already exists");
+
+			return jsonStatus(ctx, httpStatus);
 		}
 	}
 
 	auto status = db->AddIndex(nsName, idxDef);
 	if (!status.ok()) {
-		return jsonStatus(ctx, false, http::StatusInternalServerError, status.what());
+		http::HttpStatus httpStatus(status);
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	return jsonStatus(ctx);
@@ -425,20 +476,26 @@ int HTTPServer::PostIndex(http::Context &ctx) {
 int HTTPServer::DeleteIndex(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
 
-	string nsName = ctx.request->urlParams[1].ToString();
-	string idxName = ctx.request->urlParams[2].ToString();
+	string nsName = urldecode2(ctx.request->urlParams[1]);
+	string idxName = urldecode2(ctx.request->urlParams[2]);
 
 	if (nsName.empty()) {
-		return jsonStatus(ctx, false, http::StatusBadRequest, "Namespace is not specified");
+		http::HttpStatus httpStatus(http::StatusBadRequest, "Namespace is not specified");
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	if (idxName.empty()) {
-		return jsonStatus(ctx, false, http::StatusBadRequest, "Index is not specified");
+		http::HttpStatus httpStatus(http::StatusBadRequest, "Index is not specified");
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	auto status = db->DropIndex(nsName, idxName);
 	if (!status.ok()) {
-		return jsonStatus(ctx, false, http::StatusInternalServerError, status.what());
+		http::HttpStatus httpStatus(status);
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	return jsonStatus(ctx);
@@ -496,7 +553,11 @@ int HTTPServer::DocHandler(http::Context &ctx) {
 	return ctx.File(http::StatusOK, target.c_str());
 }
 
-int HTTPServer::NotFoundHandler(http::Context &ctx) { return jsonStatus(ctx, false, http::StatusNotFound, "Not found"); }
+int HTTPServer::NotFoundHandler(http::Context &ctx) {
+	http::HttpStatus httpStatus(http::StatusNotFound, "Not found");
+
+	return jsonStatus(ctx, httpStatus);
+}
 
 bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	router_.NotFound<HTTPServer, &HTTPServer::NotFoundHandler>(this);
@@ -548,13 +609,13 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 
 int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataWrite);
-
-	string nsName = ctx.request->urlParams[1].ToString();
-
+	string nsName = urldecode2(ctx.request->urlParams[1]);
 	string itemJson = ctx.body->Read();
 
 	if (nsName.empty()) {
-		return jsonStatus(ctx, false, http::StatusBadRequest, "Namespace is not specified");
+		http::HttpStatus httpStatus(http::StatusBadRequest, "Namespace is not specified");
+
+		return jsonStatus(ctx, httpStatus);
 	}
 
 	char *jsonPtr = &itemJson[0];
@@ -563,7 +624,9 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 	while (jsonPtr && *jsonPtr) {
 		Item item = db->NewItem(nsName);
 		if (!item.Status().ok()) {
-			return jsonStatus(ctx, false, http::StatusInternalServerError, item.Status().what());
+			http::HttpStatus httpStatus(item.Status());
+
+			return jsonStatus(ctx, httpStatus);
 		}
 		char *prevPtr = 0;
 
@@ -571,7 +634,9 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 		jsonLeft -= (jsonPtr - prevPtr);
 
 		if (!status.ok()) {
-			return jsonStatus(ctx, false, http::StatusInternalServerError, status.what());
+			http::HttpStatus httpStatus(item.Status());
+
+			return jsonStatus(ctx, httpStatus);
 		}
 
 		switch (mode) {
@@ -590,7 +655,9 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 		}
 
 		if (!status.ok()) {
-			return jsonStatus(ctx, false, http::StatusInternalServerError, status.what());
+			http::HttpStatus httpStatus(status);
+
+			return jsonStatus(ctx, httpStatus);
 		}
 		cnt += item.GetID() == -1 ? 0 : 1;
 	}
@@ -633,20 +700,20 @@ int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, c
 	return 0;
 }
 
-int HTTPServer::jsonStatus(http::Context &ctx, bool isSuccess, int respcode, const string_view &description) {
+int HTTPServer::jsonStatus(http::Context &ctx, http::HttpStatus status) {
 	ctx.writer->SetHeader(http::Header{"Content-Type"_sv, "application/json; charset=utf-8"_sv});
-	ctx.writer->SetRespCode(respcode);
+	ctx.writer->SetRespCode(status.code);
 	ctx.writer->Write('{');
 
-	if (isSuccess) {
+	if (status.code == http::StatusOK) {
 		ctx.writer->Write("\"success\":true"_sv);
 	} else {
 		ctx.writer->Write("\"success\":false,"_sv);
 		ctx.writer->Write("\"response_code\":"_sv);
-		string rcode = to_string(respcode);
+		string rcode = to_string(status.code);
 		ctx.writer->Write(rcode);
 		ctx.writer->Write(",\"description\":\""_sv);
-		ctx.writer->Write(description);
+		ctx.writer->Write(status.what);
 		ctx.writer->Write('\"');
 	}
 
@@ -672,12 +739,12 @@ shared_ptr<Reindexer> HTTPServer::getDB(http::Context &ctx, UserRole role) {
 
 	auto status = dbMgr_.OpenDatabase(dbName, *actx, false);
 	if (!status.ok()) {
-		throw status;
+		throw http::HttpStatus(status);
 	}
 
 	status = actx->GetDB(role, &db);
 	if (!status.ok()) {
-		throw status;
+		throw http::HttpStatus(status);
 	}
 	assert(db);
 	return db;

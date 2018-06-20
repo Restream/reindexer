@@ -362,6 +362,12 @@ public:
 		clear();
 		*this = std::move(tmp);
 	}
+	size_t heap_size() const {
+		if (is_hdata())
+			return 0;
+		else
+			return capacity() * sizeof(T);
+	}
 
 protected:
 	bool is_hdata() const noexcept { return is_hdata_; }

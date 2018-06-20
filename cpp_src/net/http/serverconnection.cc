@@ -27,7 +27,12 @@ bool ServerConnection::Restart(int fd) {
 	return true;
 }
 
-void ServerConnection::Reatach(ev::dynamic_loop &loop) { reatach(loop); }
+void ServerConnection::Attach(ev::dynamic_loop &loop) {
+	if (!attached_) attach(loop);
+}
+void ServerConnection::Detach() {
+	if (attached_) detach();
+}
 
 void ServerConnection::onClose() {}
 
@@ -43,9 +48,13 @@ void ServerConnection::handleRequest(Request &req) {
 
 	try {
 		router_.handle(ctx);
-	} catch (const Error &err) {
+	} catch (const HttpStatus &status) {
 		if (!writer.IsRespSent()) {
-			ctx.String(http::StatusInternalServerError, err.what());
+			ctx.String(status.code, status.what);
+		}
+	} catch (const Error &status) {
+		if (!writer.IsRespSent()) {
+			ctx.String(StatusInternalServerError, status.what());
 		}
 	}
 	router_.log(ctx);
@@ -109,10 +118,6 @@ void ServerConnection::writeHttpResponse(int code) {
 	d = strappend(d, kStrEOL);
 
 	wrBuf_.write(tmpBuf, d - tmpBuf);
-}
-
-static bool inline iequals(const string_view &lhs, const string_view &rhs) {
-	return lhs.size() == rhs.size() && collateCompare(lhs, rhs, CollateOpts(CollateASCII)) == 0;
 }
 
 void ServerConnection::onRead() {

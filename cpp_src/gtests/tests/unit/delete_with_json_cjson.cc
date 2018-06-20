@@ -122,7 +122,13 @@ TEST_F(ExtractPK, DeleteByPKOnlyJSON) {
 }
 
 TEST_F(ExtractPK, ChangedTypeJSON) {
-	CHECK_SUCCESS(CreateNamespace(SIMPLE_ITEM_NAMESPACE));
+	CHECK_SUCCESS(CreateNamespace(NamespaceDef(SIMPLE_ITEM_NAMESPACE)
+									  .AddIndex("id", "id", "hash", "int", IndexOpts().PK())
+									  .AddIndex("name", "name", "text", "string", IndexOpts())
+									  .AddIndex("color", "color", "text", "string", IndexOpts())
+									  .AddIndex("weight", "weight", "tree", "int", IndexOpts())
+									  .AddIndex("height", "height", "tree", "int", IndexOpts())
+									  .AddIndex("fk_id", "fk_id", "tree", "int", IndexOpts().PK())));
 
 	Error err;
 	Item item;
@@ -205,7 +211,13 @@ TEST_F(ExtractPK, NestedJSON) {
 }
 
 TEST_F(ExtractPK, CJson2CJson_PrintJSON) {
-	CHECK_SUCCESS(CreateNamespace(SIMPLE_ITEM_NAMESPACE));
+	CHECK_SUCCESS(CreateNamespace(NamespaceDef(SIMPLE_ITEM_NAMESPACE)
+									  .AddIndex("id", "id", "hash", "int", IndexOpts().PK())
+									  .AddIndex("name", "name", "text", "string", IndexOpts())
+									  .AddIndex("color", "color", "text", "string", IndexOpts())
+									  .AddIndex("weight", "weight", "tree", "int", IndexOpts())
+									  .AddIndex("height", "height", "tree", "int", IndexOpts())
+									  .AddIndex("fk_id", "fk_id", "tree", "int", IndexOpts().PK())));
 
 	Error err;
 	Item item;
@@ -225,7 +237,13 @@ TEST_F(ExtractPK, CJson2CJson_PrintJSON) {
 }
 
 TEST_F(ExtractPK, SimpleCJSON) {
-	CHECK_SUCCESS(CreateNamespace(SIMPLE_ITEM_NAMESPACE));
+	CHECK_SUCCESS(CreateNamespace(NamespaceDef(SIMPLE_ITEM_NAMESPACE)
+									  .AddIndex("id", "id", "hash", "int", IndexOpts().PK())
+									  .AddIndex("name", "name", "text", "string", IndexOpts())
+									  .AddIndex("color", "color", "text", "string", IndexOpts())
+									  .AddIndex("weight", "weight", "tree", "int", IndexOpts())
+									  .AddIndex("height", "height", "tree", "int", IndexOpts())
+									  .AddIndex("fk_id", "fk_id", "tree", "int", IndexOpts().PK())));
 
 	Error err;
 	Item item;
@@ -266,7 +284,13 @@ TEST_F(ExtractPK, SimpleCJSON) {
 }
 
 TEST_F(ExtractPK, NestedCJSON) {
-	CHECK_SUCCESS(CreateNamespace(NESTED_ITEM_NAMESPACE));
+	CHECK_SUCCESS(CreateNamespace(NamespaceDef(NESTED_ITEM_NAMESPACE)
+									  .AddIndex("id", "id", "hash", "int", IndexOpts().PK())
+									  .AddIndex("name", "name", "text", "string", IndexOpts())
+									  .AddIndex("color", "desc.color", "text", "string", IndexOpts())
+									  .AddIndex("weight", "desc.weight", "tree", "int", IndexOpts())
+									  .AddIndex("height", "desc.height", "tree", "int", IndexOpts())
+									  .AddIndex("fk_id", "desc.fk_id", "tree", "int", IndexOpts().PK())));
 
 	Error err;
 	Item item;

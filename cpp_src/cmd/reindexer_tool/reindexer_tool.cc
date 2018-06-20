@@ -337,7 +337,7 @@ void QueryCommand(args::Subparser& subparser) {
 	reindexer::Query q;
 	q.Parse(args::get(sqlBody));
 
-	err = db->OpenNamespace(q.describe ? q.namespacesNames_.back() : q._namespace, StorageOpts().Enabled());
+	err = db->OpenNamespace(q._namespace, StorageOpts().Enabled());
 	if (err) throw err;
 
 	reindexer::QueryResults results;

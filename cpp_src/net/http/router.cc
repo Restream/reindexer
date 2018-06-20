@@ -36,6 +36,19 @@ std::unordered_map<int, const char *> kHTTPCodes = {
 	{StatusGatewayTimeout, "Gateway Timeout"},
 };
 
+HttpStatusCode HttpStatus::errCodeToHttpStatus(int errCode) {
+	switch (errCode) {
+		case errOK:
+			return StatusOK;
+		case errParams:
+			return StatusBadRequest;
+		case errForbidden:
+			return StatusForbidden;
+		default:
+			return StatusInternalServerError;
+	}
+}
+
 int Context::JSON(int code, const string_view &slice) {
 	writer->SetContentLength(slice.size());
 	writer->SetRespCode(code);

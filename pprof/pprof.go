@@ -25,6 +25,7 @@ func init() {
 	http.Handle("/debug/cgo/pprof/cmdline", http.HandlerFunc(Cmdline))
 	http.Handle("/debug/cgo/pprof/profile", http.HandlerFunc(Profile))
 	http.Handle("/debug/cgo/pprof/symbol", http.HandlerFunc(Symbol))
+	http.Handle("/debug/cgo/symbolz", http.HandlerFunc(Symbol))
 	//	http.Handle("/debug/cgo/pprof/trace", http.HandlerFunc(Trace))
 }
 

@@ -9,20 +9,22 @@
 #include "estl/h_vector.h"
 #include "estl/string_view.h"
 #include "net/stat.h"
+#include "tools/errors.h"
 #include "tools/ssize_t.h"
+#include "tools/stringstools.h"
 
 namespace reindexer {
 namespace net {
 namespace http {
 
-// Thank's to windows.h include
+// Thanks to windows.h include
 #ifdef DELETE
 #undef DELETE
 #endif
 
 using std::string;
 
-enum {
+enum HttpStatusCode {
 	StatusContinue = 100,
 	StatusOK = 200,
 	StatusCreated = 201,
@@ -60,6 +62,18 @@ enum HttpMethod {
 
 typedef string_view UrlParam;
 
+struct HttpStatus {
+	HttpStatus() { code = StatusOK; }
+	HttpStatus(HttpStatusCode httpcode, const string &httpwhat) : code(httpcode), what(httpwhat) {}
+	explicit HttpStatus(const Error &err) : what(err.what()) { code = errCodeToHttpStatus(err.code()); }
+
+	HttpStatusCode code;
+	string what;
+
+private:
+	HttpStatusCode errCodeToHttpStatus(int errCode);
+};
+
 struct Header {
 	string_view name;
 	string_view val;
@@ -74,10 +88,11 @@ class Headers : public h_vector<Header, 16> {
 public:
 	using h_vector::h_vector;
 	string_view Get(const string_view &name) {
-		auto it = std::find_if(begin(), end(), [=](const Header &hdr) { return name == hdr.name; });
+		auto it = std::find_if(begin(), end(), [=](const Header &hdr) { return iequals(name, hdr.name); });
 		return it != end() ? it->val : string_view();
 	}
 };
+
 class Params : public h_vector<Param, 8> {
 public:
 	using h_vector::h_vector;

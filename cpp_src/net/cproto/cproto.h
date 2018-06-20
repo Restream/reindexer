@@ -38,7 +38,7 @@ enum CmdCode {
 const char *CmdName(CmdCode code);
 
 // Maximum number of active queries per cleint
-const uint32_t kMaxConcurentQueries = 40;
+const uint32_t kMaxConcurentQueries = 256;
 
 const uint32_t kCprotoMagic = 0xEEDD1132;
 const uint32_t kCprotoVersion = 0x100;

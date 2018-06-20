@@ -51,6 +51,8 @@ protected:
 		ConnectionFactory connFactory_;
 		std::atomic<bool> terminating_;
 		std::string addr_;
+		vector<std::unique_ptr<IServerConnection>> idle_;
+		std::chrono::time_point<std::chrono::steady_clock> ts_;
 	};
 	Listener(ev::dynamic_loop &loop, std::shared_ptr<Shared> shared);
 	static void clone(std::shared_ptr<Shared>);
@@ -60,9 +62,7 @@ protected:
 	ev::dynamic_loop &loop_;
 	ev::async async_;
 	std::shared_ptr<Shared> shared_;
-	vector<std::unique_ptr<IServerConnection>> connectons_;
-	std::atomic<int> connCount_;
-	int idleConns_;
+	vector<std::unique_ptr<IServerConnection>> connections_;
 	int id_;
 };
 }  // namespace net

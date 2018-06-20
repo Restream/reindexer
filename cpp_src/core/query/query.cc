@@ -21,13 +21,11 @@ bool Query::operator==(const Query &obj) const {
 	if (sortBy != obj.sortBy) return false;
 	if (sortDirDesc != obj.sortDirDesc) return false;
 	if (calcTotal != obj.calcTotal) return false;
-	if (describe != obj.describe) return false;
 	if (start != obj.start) return false;
 	if (count != obj.count) return false;
 	if (debugLevel != obj.debugLevel) return false;
 	if (joinType != obj.joinType) return false;
 	if (forcedSortOrder != obj.forcedSortOrder) return false;
-	if (namespacesNames_ != obj.namespacesNames_) return false;
 
 	if (selectFilter_ != obj.selectFilter_) return false;
 	if (selectFunctions_ != obj.selectFunctions_) return false;
@@ -132,9 +130,7 @@ void Query::deserialize(Serializer &ser) {
 int Query::Parse(tokenizer &parser) {
 	token tok = parser.next_token();
 
-	if (tok.text() == "describe"_sv) {
-		describeParse(parser);
-	} else if (tok.text() == "select"_sv) {
+	if (tok.text() == "select"_sv) {
 		selectParse(parser);
 	} else {
 		throw Error(errParams, "Syntax error at or near '%s', %s", tok.text().data(), parser.where().c_str());
@@ -215,14 +211,14 @@ int Query::selectParse(tokenizer &parser) {
 			parser.next_token();
 			auto nameWithCase = parser.peek_token();
 			tok = parser.next_token(false);
-			if (tok.type != TokenName)
+			if (tok.type != TokenName && tok.type != TokenString)
 				throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
 			sortBy = tok.text().ToString();
 			tok = parser.peek_token();
 			if (tok.text() == "("_sv && nameWithCase.text() == "field"_sv) {
 				parser.next_token();
 				tok = parser.next_token(false);
-				if (tok.type != TokenName)
+				if (tok.type != TokenName && tok.type != TokenString)
 					throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
 				sortBy = tok.text().ToString();
 				for (;;) {
@@ -271,36 +267,6 @@ int Query::selectParse(tokenizer &parser) {
 			break;
 		}
 	}
-	return 0;
-}
-
-int Query::describeParse(tokenizer &parser) {
-	// Get namespaces
-	token tok = parser.next_token(false);
-	parser.skip_space();
-
-	if (tok.text() != "*"_sv) {
-		for (;;) {
-			namespacesNames_.push_back(tok.text().ToString());
-			tok = parser.peek_token();
-			if (tok.text() != ","_sv) {
-				token nextTok = parser.next_token(false);
-				if (nextTok.text().length()) {
-					throw Error(errParseSQL, "Unexpected '%s' in query, %s", tok.text().data(), parser.where().c_str());
-				}
-				break;
-			}
-
-			parser.next_token();
-			tok = parser.next_token(false);
-			if (parser.end()) {
-				namespacesNames_.push_back(tok.text().ToString());
-				break;
-			}
-		}
-	}
-	describe = true;
-
 	return 0;
 }
 
@@ -533,7 +499,7 @@ const char *Query::JoinTypeName(JoinType type) {
 
 extern const char *condNames[];
 
-string Query::dumpJoined() const {
+string Query::dumpJoined(bool stripArgs) const {
 	string ret;
 	for (auto &je : joinQueries_) {
 		ret += string(" ") + JoinTypeName(je.joinType);
@@ -541,7 +507,7 @@ string Query::dumpJoined() const {
 		if (je.entries.empty() && je.count == INT_MAX) {
 			ret += " " + je._namespace + " ON ";
 		} else {
-			ret += " (" + je.Dump() + ") ON ";
+			ret += " (" + je.Dump(stripArgs) + ") ON ";
 		}
 		if (je.joinEntries_.size() != 1) ret += "(";
 		for (auto &e : je.joinEntries_) {
@@ -556,15 +522,15 @@ string Query::dumpJoined() const {
 	return ret;
 }
 
-string Query::dumpMerged() const {
+string Query::dumpMerged(bool stripArgs) const {
 	string ret;
 	for (auto &me : mergeQueries_) {
-		ret += " " + string(JoinTypeName(me.joinType)) + "( " + me.Dump() + ")";
+		ret += " " + string(JoinTypeName(me.joinType)) + "( " + me.Dump(stripArgs) + ")";
 	}
 	return ret;
 }
 
-string Query::dumpOrderBy() const {
+string Query::dumpOrderBy(bool stripArgs) const {
 	string ret;
 	if (sortBy.empty()) {
 		return ret;
@@ -574,16 +540,20 @@ string Query::dumpOrderBy() const {
 		ret += sortBy;
 	} else {
 		ret += "FIELD(" + sortBy;
-		for (auto &v : forcedSortOrder) {
-			ret += ", '" + v.As<string>() + "'";
+		if (stripArgs) {
+			ret += '?';
+		} else {
+			for (auto &v : forcedSortOrder) {
+				ret += ", '" + v.As<string>() + "'";
+			}
 		}
 		ret += ")";
 	}
 
 	return ret + (sortDirDesc ? " DESC" : "");
-}
+}  // namespace reindexer
 
-string Query::Dump() const {
+string Query::Dump(bool stripArgs) const {
 	string lim, filt;
 	if (start != 0) lim += " OFFSET " + std::to_string(start);
 	if (count != UINT_MAX) lim += " LIMIT " + std::to_string(count);
@@ -613,7 +583,8 @@ string Query::Dump() const {
 		filt = "*";
 	if (calcTotal) filt += ", COUNT(*)";
 
-	string buf = "SELECT " + filt + " FROM " + _namespace + QueryWhere::toString() + dumpJoined() + dumpMerged() + dumpOrderBy() + lim;
+	string buf = "SELECT " + filt + " FROM " + _namespace + QueryWhere::toString(stripArgs) + dumpJoined(stripArgs) +
+				 dumpMerged(stripArgs) + dumpOrderBy(stripArgs) + lim;
 	return buf;
 }
 

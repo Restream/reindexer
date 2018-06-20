@@ -593,6 +593,20 @@ Index *FastIndexText<T>::Clone() {
 }
 
 template <typename T>
+IndexMemStat FastIndexText<T>::GetMemStat() {
+	auto ret = IndexUnordered<T>::GetMemStat();
+	ret.fulltextSize = typos_.heap_size() + suffixes_.heap_size();
+
+	for (auto &w : words_) {
+		ret.fulltextSize += sizeof(w) + w.vids_.heap_size();
+	}
+	ret.fulltextSize += this->vdocs_.capacity() * sizeof(typename IndexText<T>::VDocEntry);
+	if (this->cache_ft_) ret.idsetCache = this->cache_ft_->GetMemStat();
+
+	return ret;
+}
+
+template <typename T>
 void FastIndexText<T>::Commit() {
 	words_.clear();
 	suffixes_.clear();
@@ -642,8 +656,8 @@ void FastIndexText<T>::Commit() {
 			// Pack idrelset
 			wIt->vids_.insert(wIt->vids_.end(), keyIt->second.vids_.begin(), keyIt->second.vids_.end());
 			keyIt->second.vids_.clear();
-			idsetcnt += wIt->vids_.real_size();
 			wIt->vids_.shrink_to_fit();
+			idsetcnt += sizeof(*wIt) + wIt->vids_.heap_size();
 		}
 		tm4 = high_resolution_clock::now();
 	});
@@ -661,8 +675,7 @@ void FastIndexText<T>::Commit() {
 	auto tm6 = high_resolution_clock::now();
 
 	logPrintf(LogInfo, "FastIndexText built with [%d uniq words, %d typos, %dKB text size, %dKB suffixarray size, %dKB idrelsets size]",
-			  int(words_um.size()), int(typos_.size()), int(szCnt / 1024), int((3 * sizeof(int) + sizeof(char)) * suffixes_.size() / 1024),
-			  int(idsetcnt / 1024));
+			  int(words_um.size()), int(typos_.size()), int(szCnt / 1024), int(suffixes_.heap_size() / 1024), int(idsetcnt / 1024));
 
 	logPrintf(LogInfo,
 			  "FastIndexText::Commit elapsed %d ms total [ build words %d ms, build typos %d ms | build suffixarry %d ms | sort "

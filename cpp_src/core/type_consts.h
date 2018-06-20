@@ -177,13 +177,3 @@ typedef struct StorageOpts {
 #endif
 	uint8_t options;
 } StorageOpts;
-
-typedef struct reindexer_stat {
-	int count_get_item, time_get_item;
-	int count_select, time_select;
-	int count_insert, time_insert;
-	int count_update, time_update;
-	int count_upsert, time_upsert;
-	int count_delete, time_delete;
-	int count_join, time_join;
-} reindexer_stat;

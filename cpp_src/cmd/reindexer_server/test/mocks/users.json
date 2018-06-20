@@ -1,0 +1,26 @@
+{
+    "user_data_read": {
+        "hash": "123456",
+        "roles": {
+            "*": "data_read"
+        }
+    },
+    "user_data_write": {
+        "hash": "123456",
+        "roles": {
+            "*": "data_write"
+        }
+    },
+    "user_db_admin": {
+        "hash": "123456",
+        "roles": {
+            "*": "db_admin"
+        }
+    },
+    "user_owner": {
+        "hash": "123456",
+        "roles": {
+            "*": "owner"
+        }
+    }
+}

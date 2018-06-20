@@ -132,7 +132,7 @@ type Stats struct {
 
 // Raw binding to reindexer
 type RawBinding interface {
-	Init(u *url.URL) error
+	Init(u *url.URL, options ...interface{}) error
 	OpenNamespace(namespace string, enableStorage, dropOnFileFormatError bool, cacheMode uint8) error
 	CloseNamespace(namespace string) error
 	DropNamespace(namespace string) error
@@ -142,17 +142,14 @@ type RawBinding interface {
 	ConfigureIndex(namespace, index, config string) error
 	PutMeta(namespace, key, data string) error
 	GetMeta(namespace, key string) (RawBuffer, error)
-	ModifyItem(data []byte, mode int) (RawBuffer, error)
+	ModifyItem(nsHash int, data []byte, mode int) (RawBuffer, error)
 	Select(query string, withItems bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
 	SelectQuery(rawQuery []byte, withItems bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
-	DeleteQuery(rawQuery []byte) (RawBuffer, error)
+	DeleteQuery(nsHash int, rawQuery []byte) (RawBuffer, error)
 	Commit(namespace string) error
 	EnableLogger(logger Logger)
 	DisableLogger()
 	Ping() error
-
-	GetStats() Stats
-	ResetStats()
 }
 
 var availableBindings = make(map[string]RawBinding)
@@ -168,4 +165,12 @@ func GetBinding(name string) RawBinding {
 		return nil
 	}
 	return b
+}
+
+type OptionCgoLimit struct {
+	CgoLimit int
+}
+
+type OptionConnPoolSize struct {
+	ConnPoolSize int
 }

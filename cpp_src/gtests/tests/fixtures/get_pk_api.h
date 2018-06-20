@@ -43,14 +43,6 @@ public:
 	}
 
 public:
-	Error CreateNamespace(const string& name) {
-		DefsCacheType& cache = GetNamespaceDefs();
-		auto it = cache.find(name);
-		if (it == cache.end()) return Error(errLogic, "Definition of namespace '%s' not found in cache", name.c_str());
-
-		return CreateNamespace(cache[name]);
-	}
-
 	Error CreateNamespace(const NamespaceDef& nsDef) {
 		Error err = db_->OpenNamespace(nsDef.name);
 		if (!err.ok()) return err;
@@ -59,8 +51,6 @@ public:
 			err = db_->AddIndex(nsDef.name, index);
 			if (!err.ok()) break;
 		}
-
-		if (err.ok()) GetNamespaceDefs()[nsDef.name] = nsDef;
 
 		return err;
 	}
@@ -108,13 +98,6 @@ public:
 	}
 
 protected:
-	static DefsCacheType& GetNamespaceDefs() {
-		static DefsCacheType defsCache;
-		return defsCache;
-	}
-
-	static void UpdateNamespaceDefs(const NamespaceDef& nsDef) { GetNamespaceDefs()[nsDef.name] = nsDef; }
-
 	void SetUp() {
 		colors_ = {"red", "green", "blue", "yellow", "purple", "orange"};
 		names_ = {"bubble", "dog", "tomorrow", "car", "dinner", "dish"};
@@ -152,11 +135,6 @@ protected:
 			TestCout() << outBuf << std::endl;
 		}
 		TestCout() << std::endl;
-	}
-
-	void AssertTrue(Error err) {
-		ASSERT_TRUE(err.ok()) << err.what();
-		testing::AssertionFailure();
 	}
 
 protected:

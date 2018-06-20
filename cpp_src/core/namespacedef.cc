@@ -54,7 +54,7 @@ Error NamespaceDef::FromJSON(char *json) {
 	return 0;
 }
 
-void NamespaceDef::GetJSON(WrSerializer &ser) const {
+void NamespaceDef::GetJSON(WrSerializer &ser, bool describeCompat) const {
 	ser.PutChar('{');
 	ser.Printf("\"name\":\"%s\",", name.c_str());
 	ser.Printf("\"cached_mode\":%d,", static_cast<int>(cacheMode));
@@ -66,7 +66,7 @@ void NamespaceDef::GetJSON(WrSerializer &ser) const {
 	ser.PutChars("\"indexes\":[");
 	for (size_t i = 0; i < indexes.size(); i++) {
 		if (i != 0) ser.PutChar(',');
-		indexes[i].GetJSON(ser);
+		indexes[i].GetJSON(ser, describeCompat);
 	}
 
 	ser.PutChars("]}");

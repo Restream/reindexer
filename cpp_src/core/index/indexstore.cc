@@ -87,6 +87,18 @@ Index *IndexStore<T>::Clone() {
 	return new IndexStore<T>(*this);
 }
 
+template <typename T>
+IndexMemStat IndexStore<T>::GetMemStat() {
+	IndexMemStat ret;
+	ret.name = name_;
+	ret.uniqKeysCount = str_map.size();
+	ret.columnSize = idx_data.size() * sizeof(T);
+	for (auto &it : str_map) {
+		ret.dataSize += sizeof(*it.first.get()) + it.first->heap_size();
+	}
+	return ret;
+}
+
 Index *IndexStore_New(IndexType type, const string &name, const IndexOpts &opts, const PayloadType /*payloadType*/,
 					  const FieldsSet & /*fields*/) {
 	switch (type) {

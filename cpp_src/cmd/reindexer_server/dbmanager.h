@@ -55,7 +55,7 @@ public:
 			return Error(errForbidden, "Forbidden: need role %s of db '%s' user '%s' have role=%s", UserRoleName(role), dbName_.c_str(),
 						 login_.c_str(), UserRoleName(role_));
 		*ret = db_;
-		return 0;
+		return errOK;
 	}
 	/// Reset Reindexer DB object pointer in context
 	void ResetDB() {

@@ -4,6 +4,7 @@
 #include <list>
 #include <mutex>
 #include <unordered_map>
+#include "namespacestat.h"
 
 namespace reindexer {
 using std::list;
@@ -27,6 +28,8 @@ public:
 	Iterator Get(const K &k);
 	// Put cached val
 	void Put(const K &k, const V &v);
+
+	LRUCacheMemStat GetMemStat();
 
 	bool Empty() const { return items_.empty(); }
 	void Invalidate();

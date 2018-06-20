@@ -31,7 +31,7 @@ struct NamespaceDef {
 	}
 
 	Error FromJSON(char *json);
-	void GetJSON(WrSerializer &) const;
+	void GetJSON(WrSerializer &, bool describeCompat = false) const;
 
 public:
 	string name;

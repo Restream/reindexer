@@ -179,14 +179,17 @@ void CJsonDecoder::skipTag(ctag &tag, Serializer &rdser) {
 		case TAG_ARRAY: {
 			carraytag atag = rdser.GetUInt32();
 			for (int i = 0; i < atag.Count(); i++) {
-				ctag t = atag.Tag();
+				ctag t = atag.Tag() != TAG_OBJECT ? atag.Tag() : rdser.GetVarUint();
 				skipTag(t, rdser);
 			}
 		} break;
 
 		case TAG_OBJECT: {
 			ctag otag = rdser.GetVarUint();
-			skipTag(otag, rdser);
+			while (otag.Type() != TAG_END) {
+				skipTag(otag, rdser);
+				otag = rdser.GetVarUint();
+			}
 		} break;
 
 		case TAG_BOOL:

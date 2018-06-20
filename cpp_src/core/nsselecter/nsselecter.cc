@@ -15,6 +15,10 @@ using std::shared_ptr;
 using std::string;
 using std::stringstream;
 
+// Number of sorted queries to namespace after last updated, to call very expensive buildSortOrders, to do futher queries fast
+// If number of queries was less, than kBuildSortOrdersHitCount, then slow post process sort (applyGeneralSort) is
+const int kBuildSortOrdersHitCount = 5;
+
 namespace reindexer {
 #define TIMEPOINT(n)                                  \
 	std::chrono::high_resolution_clock::time_point n; \
@@ -24,6 +28,10 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	Index *sortIndex = nullptr;
 	bool unorderedIndexSort = false;
 	bool forcedSort = !ctx.query.forcedSortOrder.empty();
+
+	if (ns_->queriesLogLevel_ > ctx.query.debugLevel) {
+		const_cast<Query *>(&ctx.query)->debugLevel = ns_->queriesLogLevel_;
+	}
 
 	bool enableTiming = ctx.query.debugLevel >= LogInfo;
 
@@ -67,6 +75,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	bool disableOptimizeSortOrder = !ctx.query.sortBy.empty() || ctx.preResult;
 
 	auto sortBy = (containsFullText || disableOptimizeSortOrder) ? ctx.query.sortBy : getOptimalSortOrder(*whereEntries);
+	int sortByIdxNo = sortBy.empty() ? -1 : ns_->getIndexByName(sortBy);
 
 	if (ctx.preResult) {
 		switch (ctx.preResult->mode) {
@@ -83,21 +92,26 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	}
 
 	// Check if commit needed
-	if (!whereEntries->empty() || !sortBy.empty()) {
+	bool needSortOrders =
+		!sortBy.empty() && (ns_->sortedQueriesCount_ > kBuildSortOrdersHitCount || ctx.preResult || ctx.joinedSelectors);
+
+	if (!whereEntries->empty() || needSortOrders) {
 		FieldsSet prepareIndexes;
 		for (auto &entry : *whereEntries) prepareIndexes.push_back(entry.idxNo);
+		if (sortByIdxNo >= 0) prepareIndexes.push_back(sortByIdxNo);
 		for (unsigned i = ns_->payloadType_->NumFields(); i < ns_->indexes_.size(); i++) {
 			if (prepareIndexes.contains(ns_->indexes_[i]->Fields())) prepareIndexes.push_back(i);
 		}
-		ns_->commit(Namespace::NSCommitContext(*ns_, CommitContext::MakeIdsets | (sortBy.length() ? CommitContext::MakeSortOrders : 0),
+		ns_->commit(Namespace::NSCommitContext(*ns_, CommitContext::MakeIdsets | (needSortOrders ? CommitContext::MakeSortOrders : 0),
 											   &prepareIndexes),
 					ctx.lockUpgrader);
 	}
 
-	if (!sortBy.empty()) {
+	if (sortByIdxNo >= 0) {
 		// Query is sorted. Search for sort index
-		sortIndex = ns_->indexes_[ns_->getIndexByName(sortBy)].get();
-		if ((sortIndex && !sortIndex->IsOrdered()) || containsFullText) {
+		sortIndex = ns_->indexes_[sortByIdxNo].get();
+		if (sortIndex && sortIndex->IsOrdered()) ns_->sortedQueriesCount_++;
+		if ((sortIndex && !sortIndex->IsOrdered()) || containsFullText || !ns_->sortOrdersBuilt_) {
 			ctx.isForceAll = true;
 			unorderedIndexSort = true;
 			collateOpts = sortIndex->Opts().collateOpts_;
@@ -249,7 +263,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	}
 
 	if (unorderedIndexSort) {
-		applyGeneralSort(result, ctx, collateOpts);
+		applyGeneralSort(result, ctx, sortBy, collateOpts);
 	}
 
 	if (!ctx.query.forcedSortOrder.empty()) {
@@ -338,12 +352,12 @@ void NsSelecter::applyCustomSort(QueryResults &queryResult, const SelectCtx &ctx
 	}
 }
 
-void NsSelecter::applyGeneralSort(QueryResults &queryResult, const SelectCtx &ctx, const CollateOpts &collateOpts) {
+void NsSelecter::applyGeneralSort(QueryResults &queryResult, const SelectCtx &ctx, const string &fieldName,
+								  const CollateOpts &collateOpts) {
 	if (ctx.query.mergeQueries_.size() > 1) throw Error(errLogic, "Sorting cannot be applied to merged queries.");
 
 	auto &payloadType = ns_->payloadType_;
 	bool sortAsc = !ctx.query.sortDirDesc;
-	const string &fieldName = ctx.query.sortBy;
 
 	int fieldIdx = ns_->getIndexByName(fieldName);
 

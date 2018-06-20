@@ -1,6 +1,88 @@
+import time
 
 
 class HelperMixin(object):
+    def helper_update_testdata_db(self):
+        self.test_db = 'test_db_' + str(self.test_timestamp)
+
+    def helper_update_testdata_ns(self):
+        self.test_ns = 'test_ns_' + str(self.test_timestamp)
+
+    def helper_update_testdata_item(self):
+        self.test_item = 'test_item_' + str(self.test_timestamp)
+
+    def helper_update_testdata_idx(self):
+        self.test_index = 'test_index' + str(self.test_timestamp)
+
+    def helper_update_testdata_entities(self):
+        self.helper_update_testdata_db()
+        self.helper_update_testdata_ns()
+        self.helper_update_testdata_item()
+        self.helper_update_testdata_idx()
+
+    def helper_update_timestamp(self):
+        time.sleep(0.001)
+        self.test_timestamp = round(time.time() * 1000)
+
+    def helper_namespaces_testdata_prepare(self):
+        self.current_db = self.test_db
+        status, body = self.api_create_db(self.current_db)
+
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+    def helper_items_testdata_prepare(self):
+        self.current_db = self.test_db
+        status, body = self.api_create_db(self.current_db)
+
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        self.current_ns = self.test_ns
+        status, body = self.api_create_namespace(
+            self.current_db, self.current_ns)
+
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+    def helper_indexes_testdata_prepare(self):
+        self.current_db = self.test_db
+        status, body = self.api_create_db(self.current_db)
+
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        self.current_ns = self.test_ns
+        status, body = self.api_create_namespace(
+            self.current_db, self.current_ns)
+
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+    def helper_queries_testdata_prepare(self):
+        self.current_db = self.test_db
+        status, body = self.api_create_db(self.current_db)
+
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        self.current_ns = self.test_ns
+        status, body = self.api_create_namespace(
+            self.current_db, self.current_ns)
+
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        index_count = 2
+        self.indexes = self.helper_index_array_construct(index_count)
+
+        for i in range(0, index_count):
+            status, body = self.api_create_index(
+                self.current_db, self.current_ns, self.indexes[i])
+
+            self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        self.items_count = 10
+        self.items = self.helper_item_array_construct(self.items_count)
+
+        for item_body in self.items:
+            status, body = self.api_create_item(
+                self.current_db, self.current_ns, item_body)
+            self.assertEqual(True, status == self.API_STATUS['success'], body)
+
     def helper_index_construct(self, name, field_type='int', index_type='hash', is_pk=False):
         return {
             'name': name,
@@ -15,7 +97,7 @@ class HelperMixin(object):
             'sort_order_letters': ''
         }
 
-    def helper_index_array_construct(self, count=5):
+    def helper_index_array_construct(self, count=2):
         indexes_arr_of_dicts = []
 
         for i in range(0, count):
@@ -120,3 +202,57 @@ class HelperMixin(object):
             'select_functions': select_functions,
             'aggregations': aggregations
         }
+
+    def helper_msg_role_status(self, status):
+        msg = "Role: {role}. Status: {status}".format(
+            role=self.role, status=status)
+
+        return msg
+
+    def helper_auth_create_test_db_as_owner(self):
+        current_role = self.role
+
+        self.role = 'owner'
+        status, body = self.api_create_db(self.test_db)
+
+        self.role = current_role
+
+        return status, body
+
+    def helper_auth_create_test_namespace_as_owner(self, index_array_of_dicts=[]):
+        current_role = self.role
+
+        self.role = 'owner'
+        status, body = self.api_create_namespace(
+            self.test_db, self.test_ns, index_array_of_dicts)
+
+        self.role = current_role
+
+        return status, body
+
+    def helper_auth_create_test_item_as_owner(self):
+        current_role = self.role
+
+        item_body = self.helper_item_construct()
+
+        self.role = 'owner'
+        status, body = self.api_create_item(
+            self.test_db, self.test_ns, item_body)
+
+        self.role = current_role
+
+        return status, body, item_body
+
+    def helper_auth_create_test_index_as_owner(self):
+        current_role = self.role
+
+        index_name = 'MyIndex_' + str(self.test_timestamp)
+        index = self.helper_index_construct(index_name)
+
+        self.role = 'owner'
+        status, body = self.api_create_index(
+            self.test_db, self.test_ns, index)
+
+        self.role = current_role
+
+        return status, body, index_name

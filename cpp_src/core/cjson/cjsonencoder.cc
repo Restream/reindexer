@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-CJsonEncoder::CJsonEncoder(const TagsMatcher &tagsMatcher) : tagsMatcher_(tagsMatcher) {}
+CJsonEncoder::CJsonEncoder(const TagsMatcher &tagsMatcher, const JsonPrintFilter &filter) : tagsMatcher_(tagsMatcher), filter_(filter) {}
 
 void CJsonEncoder::Encode(ConstPayload *pl, WrSerializer &wrser) {
 	KeyRefs kref;
@@ -52,6 +52,26 @@ void copyCJsonValue(int tagType, Serializer &rdser, WrSerializer &wrser) {
 			break;
 		case TAG_STRING:
 			wrser.PutVString(rdser.GetVString());
+			break;
+		case TAG_NULL:
+			break;
+		default:
+			throw Error(errParseJson, "Unexpected cjson typeTag '%s' while parsing value", ctag(tagType).TypeName());
+	}
+}
+void skipCJsonValue(int tagType, Serializer &rdser) {
+	switch (tagType) {
+		case TAG_DOUBLE:
+			rdser.GetDouble();
+			break;
+		case TAG_VARINT:
+			rdser.GetVarint();
+			break;
+		case TAG_BOOL:
+			rdser.GetBool();
+			break;
+		case TAG_STRING:
+			rdser.GetVString();
 			break;
 		case TAG_NULL:
 			break;
@@ -114,16 +134,24 @@ static void encodeKeyRef(WrSerializer &wrser, KeyRef kr, int tagType) {
 	throw Error(errParseJson, "Can't convert cjson typeTag '%s' to '%s'", ctag(tagType).TypeName(), KeyRef::TypeName(kr.Type()));
 }
 
-bool CJsonEncoder::encodeCJson(ConstPayload *pl, Serializer &rdser, WrSerializer &wrser) {
+bool CJsonEncoder::encodeCJson(ConstPayload *pl, Serializer &rdser, WrSerializer &wrser, bool match) {
 	ctag tag = rdser.GetVarUint();
 	int tagType = tag.Type();
 	int tagField = tag.Field();
 
-	wrser.PutVarUint(ctag(tag.Type(), tag.Name()));
+	match = match && filter_.Match(tag.Name());
 
+	if (match || !tag.Name()) {
+		wrser.PutVarUint(ctag(tag.Type(), tag.Name()));
+	}
 	if (tagType == TAG_END) return false;
 
 	if (tagField >= 0) {
+		if (!match) {
+			if (tagType == TAG_ARRAY) rdser.GetVarUint();
+			return true;
+		}
+
 		int *cnt = &fieldsoutcnt_[tagField];
 		KeyRefs kr;
 		if (tagType == TAG_ARRAY) {
@@ -147,26 +175,34 @@ bool CJsonEncoder::encodeCJson(ConstPayload *pl, Serializer &rdser, WrSerializer
 	} else {
 		switch (tagType) {
 			case TAG_OBJECT:
-				while (encodeCJson(pl, rdser, wrser)) {
+				while (encodeCJson(pl, rdser, wrser, match)) {
 				}
 				break;
 			case TAG_ARRAY: {
 				carraytag atag = rdser.GetUInt32();
-				wrser.PutUInt32(atag);
+				if (match) wrser.PutUInt32(atag);
 				for (int count = 0; count < atag.Count(); count++) {
 					switch (atag.Tag()) {
 						case TAG_OBJECT:
-							encodeCJson(pl, rdser, wrser);
+							encodeCJson(pl, rdser, wrser, match);
 							break;
 						default:
-							copyCJsonValue(atag.Tag(), rdser, wrser);
+							if (match) {
+								copyCJsonValue(atag.Tag(), rdser, wrser);
+							} else {
+								skipCJsonValue(atag.Tag(), rdser);
+							}
 							break;
 					}
 				}
 				break;
 			}
 			default:
-				copyCJsonValue(tagType, rdser, wrser);
+				if (match) {
+					copyCJsonValue(tagType, rdser, wrser);
+				} else {
+					skipCJsonValue(tagType, rdser);
+				}
 				break;
 		}
 	}

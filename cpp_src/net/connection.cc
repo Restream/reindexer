@@ -9,12 +9,7 @@ namespace net {
 template <typename Mutex>
 Connection<Mutex>::Connection(int fd, ev::dynamic_loop &loop, size_t readBufSize, size_t writeBufSize)
 	: sock_(fd), curEvents_(0), wrBuf_(writeBufSize), rdBuf_(readBufSize) {
-	io_.set<Connection, &Connection::callback>(this);
-	io_.set(loop);
-	timeout_.set<Connection, &Connection::timeout_cb>(this);
-	timeout_.set(loop);
-	async_.set<Connection, &Connection::async_cb>(this);
-	async_.set(loop);
+	attach(loop);
 }
 
 template <typename Mutex>
@@ -36,14 +31,28 @@ void Connection<Mutex>::restart(int fd) {
 }
 
 template <typename Mutex>
-void Connection<Mutex>::reatach(ev::dynamic_loop &loop) {
-	io_.stop();
+void Connection<Mutex>::attach(ev::dynamic_loop &loop) {
+	assert(!attached_);
 	io_.set<Connection, &Connection::callback>(this);
 	io_.set(loop);
-	io_.start(sock_.fd(), curEvents_);
-	timeout_.stop();
+	if (sock_.valid() && curEvents_) io_.start(sock_.fd(), curEvents_);
 	timeout_.set<Connection, &Connection::timeout_cb>(this);
 	timeout_.set(loop);
+	async_.set<Connection, &Connection::async_cb>(this);
+	async_.set(loop);
+	attached_ = true;
+}
+
+template <typename Mutex>
+void Connection<Mutex>::detach() {
+	assert(attached_);
+	io_.stop();
+	io_.reset();
+	timeout_.stop();
+	timeout_.reset();
+	async_.stop();
+	async_.reset();
+	attached_ = false;
 }
 
 template <typename Mutex>
@@ -68,6 +77,7 @@ void Connection<Mutex>::callback(ev::io & /*watcher*/, int revents) {
 		revents |= ev::WRITE;
 	}
 	if (revents & ev::WRITE) {
+		canWrite_ = true;
 		write_cb();
 	}
 
@@ -103,6 +113,7 @@ void Connection<Mutex>::write_cb() {
 			if (!socket::would_block(err)) {
 				closeConn();
 			}
+			canWrite_ = false;
 			return;
 		}
 

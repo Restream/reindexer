@@ -167,7 +167,7 @@ int QueryWhere::ParseWhere(tokenizer &parser) {
 const char *condNames[] = {"ANY", "=", "<", "<=", ">", "=>", "RANGE", "IN", "ALLSET", "EMPTY"};
 const char *opNames[] = {"-", "OR", "AND", "AND NOT"};
 
-string QueryWhere::toString() const {
+string QueryWhere::toString(bool stripArgs) const {
 	string res;
 	if (entries.size()) res = " WHERE";
 
@@ -180,12 +180,16 @@ string QueryWhere::toString() const {
 			res += string(condNames[e.condition]) + " ";
 		else
 			res += "<unknown cond> ";
-		if (e.values.size() > 1) res += "(";
-		for (auto &v : e.values) {
-			if (&v != &*e.values.begin()) res += ",";
-			res += "'" + v.As<string>() + "'";
+		if (stripArgs) {
+			res += '?';
+		} else {
+			if (e.values.size() > 1) res += "(";
+			for (auto &v : e.values) {
+				if (&v != &*e.values.begin()) res += ",";
+				res += "'" + v.As<string>() + "'";
+			}
+			res += (e.values.size() > 1) ? ")" : "";
 		}
-		res += (e.values.size() > 1) ? ")" : "";
 	}
 
 	return res;

@@ -5,10 +5,7 @@ class NamespacesTest(BaseTest):
     def setUp(self):
         super().setUp()
 
-        self.current_db = self.test_db
-        status, body = self.api_create_db(self.current_db)
-
-        self.assertEqual(True, status == 200, body)
+        self.helper_namespaces_testdata_prepare()
 
     def test_get_namespaces(self):
         """Should be able to get namespaces list"""
@@ -20,7 +17,7 @@ class NamespacesTest(BaseTest):
         """Should be able to get current namespace"""
 
         status, body = self.api_create_namespace(self.current_db, self.test_ns)
-        self.assertEqual(True, status == 200, body)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
 
         status, body = self.api_get_namespaces(self.current_db)
         self.validate_get_list_response(status, body, 'Namespaces', True)
@@ -32,7 +29,7 @@ class NamespacesTest(BaseTest):
         """Should be able to create a new namespace"""
 
         status, body = self.api_create_namespace(self.current_db, self.test_ns)
-        self.assertEqual(True, status == 200, body)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
 
         status, body = self.api_get_namespaces(self.current_db)
         self.validate_get_list_response(status, body, 'Namespaces', True)
@@ -44,7 +41,7 @@ class NamespacesTest(BaseTest):
         """Should be able to delete a namespace"""
 
         status, body = self.api_create_namespace(self.current_db, self.test_ns)
-        self.assertEqual(True, status == 200, body)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
 
         status, body = self.api_get_namespaces(self.current_db)
         self.validate_get_list_response(status, body, 'Namespaces', True)
@@ -53,10 +50,10 @@ class NamespacesTest(BaseTest):
         self.validate_get_namespace_response(status, body)
 
         status, body = self.api_delete_namespace(self.test_db, self.test_ns)
-        self.assertEqual(True, status == 200, body)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
 
         status, body = self.api_get_namespace(self.current_db, self.test_ns)
-        self.assertEqual(True, status == 404, body)
+        self.assertEqual(True, status == self.API_STATUS['not_found'], body)
 
     def test_create_namespace_with_indexes(self):
         """Should be able to create a new namespace with valid indexes"""
@@ -66,7 +63,7 @@ class NamespacesTest(BaseTest):
 
         status, body = self.api_create_namespace(
             self.current_db, self.test_ns, indexes_arr_of_dicts)
-        self.assertEqual(True, status == 200, body)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
 
         status, body = self.api_get_namespaces(self.current_db)
         self.validate_get_list_response(status, body, 'Namespaces', True)
@@ -79,13 +76,13 @@ class NamespacesTest(BaseTest):
         """Should be able to get non-sorted namespace list with empty sort_order param"""
 
         status, body = self.api_create_namespace(self.current_db, self.test_ns)
-        self.assertEqual(True, status == 200, body)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
 
-        self._test_timestamp_update()
-        self.update_ns()
+        self.helper_update_timestamp()
+        self.helper_update_testdata_ns()
 
         status, body = self.api_create_namespace(self.current_db, self.test_ns)
-        self.assertEqual(True, status == 200, body)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
 
         status, body = self.api_get_sorted_namespaces(self.current_db)
         self.validate_get_list_response(status, body, 'Namespaces', True)
@@ -99,13 +96,13 @@ class NamespacesTest(BaseTest):
         """Should be able to get asc-sorted namespace list"""
 
         status, body = self.api_create_namespace(self.current_db, self.test_ns)
-        self.assertEqual(True, status == 200, body)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
 
-        self._test_timestamp_update()
-        self.update_ns()
+        self.helper_update_timestamp()
+        self.helper_update_testdata_ns()
 
         status, body = self.api_create_namespace(self.current_db, self.test_ns)
-        self.assertEqual(True, status == 200, body)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
 
         status, body = self.api_get_sorted_namespaces(self.current_db, 'asc')
         self.validate_get_list_response(status, body, 'Namespaces', True)
@@ -116,13 +113,13 @@ class NamespacesTest(BaseTest):
         """Should be able to get desc-sorted namespace list"""
 
         status, body = self.api_create_namespace(self.current_db, self.test_ns)
-        self.assertEqual(True, status == 200, body)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
 
-        self._test_timestamp_update()
-        self.update_ns()
+        self.helper_update_timestamp()
+        self.helper_update_testdata_ns()
 
         status, body = self.api_create_namespace(self.current_db, self.test_ns)
-        self.assertEqual(True, status == 200, body)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
 
         status, body = self.api_get_sorted_namespaces(self.current_db, 'desc')
         self.validate_get_list_response(status, body, 'Namespaces', True)
@@ -133,13 +130,13 @@ class NamespacesTest(BaseTest):
         """Shouldn't be able to get sorted namespace list with wrong sort_order param"""
 
         status, body = self.api_create_namespace(self.current_db, self.test_ns)
-        self.assertEqual(True, status == 200, body)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
 
-        self._test_timestamp_update()
-        self.update_ns()
+        self.helper_update_timestamp()
+        self.helper_update_testdata_ns()
 
         status, body = self.api_create_namespace(self.current_db, self.test_ns)
-        self.assertEqual(True, status == 200, body)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
 
         status, body = self.api_get_sorted_namespaces(self.current_db, 'wrong')
-        self.assertEqual(True, status == 400, body)
+        self.assertEqual(True, status == self.API_STATUS['bad_request'], body)

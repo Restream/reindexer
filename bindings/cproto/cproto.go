@@ -9,7 +9,7 @@ import (
 	"github.com/restream/reindexer/bindings"
 )
 
-const connPoolSize = 8
+const defConnPoolSize = 8
 
 func init() {
 	bindings.RegisterBinding("cproto", new(NetCProto))
@@ -20,7 +20,18 @@ type NetCProto struct {
 	pool chan *connection
 }
 
-func (binding *NetCProto) Init(u *url.URL) (err error) {
+func (binding *NetCProto) Init(u *url.URL, options ...interface{}) (err error) {
+
+	connPoolSize := defConnPoolSize
+	for _, option := range options {
+		switch v := option.(type) {
+		case bindings.OptionConnPoolSize:
+			connPoolSize = v.ConnPoolSize
+		default:
+			fmt.Printf("Unknown cproto option: %v\n", option)
+		}
+	}
+
 	binding.url = *u
 	binding.pool = make(chan *connection, connPoolSize)
 	for i := 0; i < connPoolSize; i++ {
@@ -38,7 +49,7 @@ func (binding *NetCProto) Ping() error {
 	return conn.rpcCallNoResults(cmdPing)
 }
 
-func (binding *NetCProto) ModifyItem(data []byte, mode int) (bindings.RawBuffer, error) {
+func (binding *NetCProto) ModifyItem(nsHash int, data []byte, mode int) (bindings.RawBuffer, error) {
 	conn := binding.getConn()
 	buf, err := conn.rpcCall(cmdModifyItem, data, mode)
 	if err != nil {
@@ -79,7 +90,7 @@ func (binding *NetCProto) OpenNamespace(namespace string, enableStorage, dropOnF
 	}
 
 	conn := binding.getConn()
-	return conn.rpcCallNoResults(cmdOpenNamespace, bsnsdef, "")
+	return conn.rpcCallNoResults(cmdOpenNamespace, namespace, bsnsdef)
 }
 
 func (binding *NetCProto) CloseNamespace(namespace string) error {
@@ -216,7 +227,7 @@ func (binding *NetCProto) SelectQuery(data []byte, withItems bool, ptVersions []
 	return buf, nil
 }
 
-func (binding *NetCProto) DeleteQuery(data []byte) (bindings.RawBuffer, error) {
+func (binding *NetCProto) DeleteQuery(nsHash int, data []byte) (bindings.RawBuffer, error) {
 	conn := binding.getConn()
 
 	buf, err := conn.rpcCall(cmdDeleteQuery, data)
@@ -238,15 +249,6 @@ func (binding *NetCProto) EnableLogger(log bindings.Logger) {
 }
 func (binding *NetCProto) DisableLogger() {
 	fmt.Println("cproto binding DisableLogger method is dummy")
-}
-
-func (binding *NetCProto) GetStats() bindings.Stats {
-	fmt.Println("cproto binding GetStats method is dummy")
-	return bindings.Stats{}
-}
-
-func (binding *NetCProto) ResetStats() {
-	fmt.Println("cproto binding ResetStats method is dummy")
 }
 
 func (binding *NetCProto) EnableStorage(path string) error {

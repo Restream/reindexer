@@ -9,6 +9,6 @@ namespace reindexer {
 void parseJsonField(const char *name, string &ref, JsonNode *elem);
 void parseJsonField(const char *name, bool &ref, const JsonNode *elem);
 template <typename T>
-void parseJsonField(const char *name, T &ref, const JsonNode *elem, double min = 0, double max = 0);
+void parseJsonField(const char *name, T &ref, const JsonNode *elem, double min, double max);
 
 }  // namespace reindexer

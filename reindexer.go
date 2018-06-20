@@ -63,11 +63,12 @@ var logger Logger = &nullLogger{}
 
 // Reindexer The reindxer state struct
 type Reindexer struct {
-	lock        sync.RWMutex
-	ns          map[string]*reindexerNamespace
-	storagePath string
-	binding     bindings.RawBinding
-	debugLevels map[string]int
+	lock          sync.RWMutex
+	ns            map[string]*reindexerNamespace
+	storagePath   string
+	binding       bindings.RawBinding
+	debugLevels   map[string]int
+	nsHashCounter int
 }
 
 type cacheItem struct {
@@ -85,6 +86,7 @@ type reindexerNamespace struct {
 	name          string
 	opts          NamespaceOptions
 	cjsonState    cjson.State
+	nsHash        int
 }
 
 // Interface for append joined items
@@ -132,7 +134,7 @@ var (
 
 // NewReindex Create new instanse of Reindexer DB
 // Returns pointer to created instance
-func NewReindex(dsn string) *Reindexer {
+func NewReindex(dsn string, options ...interface{}) *Reindexer {
 
 	if dsn == "builtin" {
 		dsn += "://"
@@ -149,16 +151,34 @@ func NewReindex(dsn string) *Reindexer {
 		panic(fmt.Errorf("Reindex binding '%s' is not available, can't create DB", u.Scheme))
 	}
 
-	if err = binding.Init(u); err != nil {
+	if err = binding.Init(u, options...); err != nil {
 		panic(fmt.Errorf("Reindex binding '%s' init error: %s", u.Scheme, err.Error()))
 		return nil
 	}
 
-	return &Reindexer{
-		ns:          make(map[string]*reindexerNamespace, 100),
-		binding:     binding,
-		debugLevels: make(map[string]int, 100),
+	rx := &Reindexer{
+		ns:      make(map[string]*reindexerNamespace, 100),
+		binding: binding,
 	}
+
+	rx.openSystemNamespace(NamespacesNamespaceName, NamespaceDescription{})
+	rx.openSystemNamespace(PerfstatsNamespaceName, NamespacePerfStat{})
+	rx.openSystemNamespace(MemstatsNamespaceName, NamespaceMemStat{})
+	rx.openSystemNamespace(QueriesperfstatsNamespaceName, QueryPerfStat{})
+	rx.openSystemNamespace(ConfigNamespaceName, DBConfigItem{})
+
+	return rx
+}
+
+func (db *Reindexer) openSystemNamespace(name string, itype interface{}) {
+	db.ns[name] = &reindexerNamespace{
+		name:       name,
+		rtype:      reflect.TypeOf(itype),
+		cjsonState: cjson.NewState(),
+		nsHash:     db.nsHashCounter,
+	}
+	db.Query(name).Limit(0).Exec().Close()
+	db.nsHashCounter++
 }
 
 // SetLogger sets logger interface for output reindexer logs
@@ -264,9 +284,11 @@ func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s i
 		opts:          *opts,
 		cjsonState:    cjson.NewState(),
 		deepCopyIface: haveDeepCopy,
+		nsHash:        db.nsHashCounter,
 	}
 
 	enc := ns.cjsonState.NewEncoder()
+	db.nsHashCounter++
 	db.ns[namespace] = ns
 	db.lock.Unlock()
 
@@ -365,30 +387,58 @@ func (db *Reindexer) ConfigureIndex(namespace, index string, config interface{})
 	return db.binding.ConfigureIndex(namespace, index, string(json))
 }
 
+// DropIndex - drop index.
+func (db *Reindexer) DropIndex(namespace, index string) error {
+	return db.binding.DropIndex(namespace, index)
+}
+
+func loglevelToString(logLevel int) string {
+	switch logLevel {
+	case INFO:
+		return "info"
+	case TRACE:
+		return "trace"
+	case ERROR:
+		return "error"
+	case WARNING:
+		return "warning"
+	case 0:
+		return "none"
+	default:
+		return ""
+	}
+}
+
 // SetDefaultQueryDebug sets default debug level for queries to namespaces
 func (db *Reindexer) SetDefaultQueryDebug(namespace string, level int) {
-	db.lock.Lock()
-	db.debugLevels[namespace] = level
-	db.lock.Unlock()
+
+	citem := &DBConfigItem{Type: "profiling"}
+	if item, ok := db.Query(ConfigNamespaceName).WhereString("type", EQ, "profiling").Get(); ok {
+		citem = item.(*DBConfigItem)
+	}
+
+	found := false
+
+	if citem.LogQueries == nil {
+		logQueries := make([]DBLogQueriesConfig, 0, 1)
+		citem.LogQueries = &logQueries
+	}
+
+	for i := range *citem.LogQueries {
+		if (*citem.LogQueries)[i].Namespace == namespace {
+			(*citem.LogQueries)[i].LogLevel = loglevelToString(level)
+			found = true
+		}
+	}
+	if !found {
+		*citem.LogQueries = append(*citem.LogQueries, DBLogQueriesConfig{namespace, loglevelToString(level)})
+	}
+	db.Upsert(ConfigNamespaceName, citem)
 }
 
 // Query Create new Query for building request
 func (db *Reindexer) Query(namespace string) *Query {
-	dbgLvl := 0
-	ok := false
-	db.lock.RLock()
-	if dbgLvl, ok = db.debugLevels[namespace]; !ok {
-		if dbgLvl, ok = db.debugLevels["*"]; !ok {
-			dbgLvl = 0
-		}
-	}
-	db.lock.RUnlock()
-
-	q := newQuery(db, namespace)
-	if dbgLvl != 0 {
-		q.Debug(dbgLvl)
-	}
-	return q
+	return newQuery(db, namespace)
 }
 
 // ExecSQL make query to database. Query is SQL statement
@@ -397,10 +447,6 @@ func (db *Reindexer) ExecSQL(query string) *Iterator {
 	// TODO: do not parse query string twice in go and cpp
 	namespace := ""
 	querySlice := strings.Fields(strings.ToLower(query))
-
-	if len(querySlice) > 0 && querySlice[0] == "describe" {
-		return db.execSQL("", query)
-	}
 
 	for i := range querySlice {
 		if querySlice[i] == "from" && i+1 < len(querySlice) {
@@ -425,36 +471,6 @@ func (db *Reindexer) ExecSQLToJSON(query string) *JSONIterator {
 	}
 
 	return db.execSQLAsJSON(namespace, query)
-}
-
-// DescribeNamespaces makes a 'describe *' query to database.
-// Return NamespaceDescription results, error
-func (db *Reindexer) DescribeNamespaces() ([]*NamespaceDescription, error) {
-	result := []*NamespaceDescription{}
-
-	descs, err := db.execSQL("", "DESCRIBE *").FetchAll()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, desc := range descs {
-		nsdesc, ok := desc.(*NamespaceDescription)
-		if ok {
-			result = append(result, nsdesc)
-		}
-	}
-
-	return result, nil
-}
-
-// DescribeNamespace makes a 'describe NAMESPACE' query to database.
-// Return NamespaceDescription results, error
-func (db *Reindexer) DescribeNamespace(namespace string) (*NamespaceDescription, error) {
-	desc, err := db.execSQL("", "DESCRIBE "+namespace).FetchOne()
-	if err != nil {
-		return nil, err
-	}
-	return desc.(*NamespaceDescription), nil
 }
 
 // BeginTx - start update transaction
@@ -540,14 +556,16 @@ func (db *Reindexer) QueryFrom(d dsl.DSL) (*Query, error) {
 	return q, nil
 }
 
-// Get local thread reindexer usage stats
+// GetStats Get local thread reindexer usage stats
+// [[deprecated]]
 func (db *Reindexer) GetStats() bindings.Stats {
-	return db.binding.GetStats()
+	log.Println("Deprecated function reindexer.GetStats call. Use SELECT * FROM '#perfstats' to get performance statistics")
+	return bindings.Stats{}
 }
 
-// Reset local thread reindexer usage stats
+// ResetStats Reset local thread reindexer usage stats
+// [[deprecated]]
 func (db *Reindexer) ResetStats() {
-	db.binding.ResetStats()
 }
 
 // EnableStorage enables persistent storage of data

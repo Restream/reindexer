@@ -22,7 +22,7 @@ struct IndexDef {
 	void FromType(IndexType type);
 	Error FromJSON(char *json);
 	Error FromJSON(JsonValue &jvalue);
-	void GetJSON(WrSerializer &ser) const;
+	void GetJSON(WrSerializer &ser, bool describeCompat = false) const;
 
 public:
 	string name;

@@ -29,11 +29,11 @@ token tokenizer::next_token(bool to_lower) {
 
 	token res(TokenSymbol);
 
-	if (isalpha(*cur)) {
+	if (isalpha(*cur) || *cur == '_' || *cur == '#') {
 		res.type = TokenName;
 		do {
 			res.text_.push_back(to_lower ? tolower(*cur++) : *cur++);
-		} while (isalpha(*cur) || isdigit(*cur) || *cur == '_');
+		} while (isalpha(*cur) || isdigit(*cur) || *cur == '_' || *cur == '#');
 	} else if (isdigit(*cur) || *cur == '-' || *cur == '+') {
 		res.type = TokenNumber;
 		do {

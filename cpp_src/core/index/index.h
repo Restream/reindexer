@@ -5,6 +5,7 @@
 #include "core/index/keyentry.h"
 #include "core/indexopts.h"
 #include "core/keyvalue/keyvalue.h"
+#include "core/namespacestat.h"
 #include "core/payload/payloadiface.h"
 #include "core/selectfunc/ctx/basefunctionctx.h"
 #include "core/selectkeyresult.h"
@@ -43,6 +44,7 @@ public:
 	virtual Index* Clone() = 0;
 	virtual void Configure(const string&) {}
 	virtual bool IsOrdered() const { return false; }
+	virtual IndexMemStat GetMemStat() = 0;
 	void UpdatePayloadType(const PayloadType payloadType) { payloadType_ = payloadType; }
 
 	static Index* New(IndexType type, const string& name, const IndexOpts& opts, const PayloadType payloadType, const FieldsSet& fields_);

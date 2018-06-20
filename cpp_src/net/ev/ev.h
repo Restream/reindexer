@@ -185,6 +185,7 @@ public:
 		loop.set(fd, this, events);
 	}
 	void stop() { loop.stop(fd); }
+	void reset() { loop.loop_ = nullptr; }
 
 	template <typename K, void (K::*func)(io &, int events)>
 	void set(K *object) {
@@ -216,6 +217,7 @@ public:
 		loop.set(this, t);
 	}
 	void stop() { loop.stop(this); }
+	void reset() { loop.loop_ = nullptr; }
 
 	template <typename K, void (K::*func)(timer &, int t)>
 	void set(K *object) {
@@ -255,6 +257,7 @@ public:
 		loop.set(this);
 	}
 	void stop() { loop.stop(this); }
+	void reset() { loop.loop_ = nullptr; }
 
 	template <typename K, void (K::*func)(sig &)>
 	void set(K *object) {
@@ -290,6 +293,7 @@ public:
 	void set(dynamic_loop &loop_) { loop.loop_ = &loop_; }
 	void start() { loop.set(this); }
 	void stop() { loop.stop(this); }
+	void reset() { loop.loop_ = nullptr; }
 	void send() {
 		sent_ = true;
 		loop.send(this);

@@ -56,5 +56,10 @@ inline static char* strappend(char* dst, const string_view& src) {
 inline static int stoi(const string_view& sl) { return atoi(sl.data()); }
 
 bool validateObjectName(const char* name);
+LogLevel logLevelFromString(const string& strLogLevel);
+
+static bool inline iequals(const string_view& lhs, const string_view& rhs) {
+	return lhs.size() == rhs.size() && collateCompare(lhs, rhs, CollateOpts(CollateASCII)) == 0;
+}
 
 }  // namespace reindexer

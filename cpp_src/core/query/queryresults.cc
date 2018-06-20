@@ -1,6 +1,7 @@
 #include "core/query/queryresults.h"
 #include "core/cjson/cjsonencoder.h"
 #include "core/cjson/jsonencoder.h"
+#include "core/cjson/jsonprintfilter.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -184,7 +185,7 @@ void QueryResults::GetCJSON(int idx, WrSerializer &ser, bool withHdrLen) const {
 	auto &ctx = ctxs[itemRef.nsid];
 
 	ConstPayload pl(ctx.type_, itemRef.value);
-	CJsonEncoder cjsonEncoder(ctx.tagsMatcher_);
+	CJsonEncoder cjsonEncoder(ctx.tagsMatcher_, ctx.jsonFilter_);
 
 	if (withHdrLen) {
 		// reserve place for size

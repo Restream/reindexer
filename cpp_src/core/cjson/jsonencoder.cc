@@ -6,20 +6,6 @@
 
 namespace reindexer {
 
-JsonPrintFilter::JsonPrintFilter(const TagsMatcher& tagsMatcher, const h_vector<string, 4>& filter) {
-	for (auto& str : filter) {
-		int tag = tagsMatcher.name2tag(str.c_str());
-		if (!filter_.size()) filter_.push_back(true);
-		if (tag) {
-			if (tag >= int(filter_.size())) {
-				filter_.insert(filter_.end(), 1 + tag - filter_.size(), false);
-			}
-			filter_[tag] = true;
-		} else {
-		}
-	}
-}
-
 JsonEncoder::JsonEncoder(const TagsMatcher& tagsMatcher, const JsonPrintFilter& filter) : tagsMatcher_(tagsMatcher), filter_(filter) {}
 
 void JsonEncoder::Encode(ConstPayload* pl, WrSerializer& wrSer) {

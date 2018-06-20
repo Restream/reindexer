@@ -54,6 +54,7 @@ public:
 	void Commit(const CommitContext &ctx) override;
 	void UpdateSortedIds(const UpdateSortedContext &) override;
 	Index *Clone() override;
+	IndexMemStat GetMemStat() override;
 	size_t Size() const override final { return idx_map.size(); }
 	IdSetRef Find(const KeyRef &key) override final;
 
@@ -65,6 +66,12 @@ protected:
 	typename T::iterator find(const KeyRef &key);
 	template <typename U = T, typename std::enable_if<!is_string_map_key<U>::value && !is_string_unord_map_key<T>::value>::type * = nullptr>
 	typename T::iterator find(const KeyRef &key);
+
+	template <typename U = T, typename std::enable_if<is_string_map_key<U>::value || is_string_unord_map_key<T>::value>::type * = nullptr>
+	void getMemStat(IndexMemStat &);
+	template <typename U = T, typename std::enable_if<!is_string_map_key<U>::value && !is_string_unord_map_key<T>::value>::type * = nullptr>
+	void getMemStat(IndexMemStat &);
+
 	// Index map
 	T idx_map;
 	// Merged idsets cache

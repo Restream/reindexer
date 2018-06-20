@@ -9,9 +9,14 @@ extern "C" {
 
 typedef struct reindexer_buffer {
 	int len;
-	int results_flag;
 	uint8_t *data;
 } reindexer_buffer;
+
+typedef struct reindexer_resbuffer {
+	int len;
+	int results_flag;
+	uintptr_t data;
+} reindexer_resbuffer;
 
 typedef struct reindexer_error {
 	int code;

@@ -35,7 +35,7 @@ static reindexer_error error2c(const Error &err_) {
 	err.what = err_.what().length() ? strdup(err_.what().c_str()) : nullptr;
 	return err;
 }
-static reindexer_ret ret2c(const Error &err_, const reindexer_buffer &out) {
+static reindexer_ret ret2c(const Error &err_, const reindexer_resbuffer &out) {
 	reindexer_ret ret;
 	ret.err.code = err_.code();
 	ret.err.what = err_.what().length() ? strdup(err_.what().c_str()) : nullptr;
@@ -45,7 +45,7 @@ static reindexer_ret ret2c(const Error &err_, const reindexer_buffer &out) {
 
 static string str2c(reindexer_string gs) { return string(reinterpret_cast<const char *>(gs.p), gs.n); }
 
-static void results2c(const QueryResults *result, struct reindexer_buffer *results, int with_items = 0, int32_t *pt_versions = nullptr,
+static void results2c(const QueryResults *result, struct reindexer_resbuffer *results, int with_items = 0, int32_t *pt_versions = nullptr,
 					  int pt_versions_count = 0) {
 	int flags = with_items ? kResultsWithJson : kResultsWithPtrs;
 
@@ -56,14 +56,14 @@ static void results2c(const QueryResults *result, struct reindexer_buffer *resul
 	ser.PutResults(result);
 
 	results->len = ser.Len();
-	results->data = ser.DetachBuffer();
+	results->data = uintptr_t(ser.DetachBuffer());
 	results->results_flag = 1;
 }
 
 static Error err_not_init(-1, "Reindexer db has not initialized");
 
 reindexer_ret reindexer_modify_item(reindexer_buffer in, int mode) {
-	reindexer_buffer out = {0, 0, nullptr};
+	reindexer_resbuffer out = {0, 0, 0};
 	Error err = err_not_init;
 	if (db) {
 		Serializer ser(in.data, in.len);
@@ -73,7 +73,7 @@ reindexer_ret reindexer_modify_item(reindexer_buffer in, int mode) {
 		if (item.Status().ok()) {
 			switch (format) {
 				case FormatJson:
-					err = item.Unsafe().FromJSON(ser.GetSlice(), nullptr, mode == ModeDelete);
+					err = item.Unsafe().FromJSON(ser.GetSlice(), 0, mode == ModeDelete);
 					break;
 				case FormatCJson: {
 					err = item.Unsafe().FromCJSON(ser.GetSlice(), mode == ModeDelete);
@@ -145,14 +145,12 @@ reindexer_error reindexer_configure_index(reindexer_string _namespace, reindexer
 	return error2c(!db ? err_not_init : db->ConfigureIndex(str2c(_namespace), str2c(index), str2c(config)));
 }
 
-reindexer_error reindexer_enable_storage(reindexer_string path) {
-	// Enable storage
-	// TODO: Do not skip placeholder check
-	return error2c(!db ? err_not_init : db->EnableStorage(str2c(path), true));
-}
+reindexer_error reindexer_enable_storage(reindexer_string path) { return error2c(!db ? err_not_init : db->EnableStorage(str2c(path))); }
+
+reindexer_error reindexer_init_system_namespaces() { return error2c(!db ? err_not_init : db->InitSystemNamespaces()); }
 
 reindexer_ret reindexer_select(reindexer_string query, int with_items, int32_t *pt_versions, int pt_versions_count) {
-	reindexer_buffer out = {0, 0, nullptr};
+	reindexer_resbuffer out = {0, 0, 0};
 	Error res = err_not_init;
 	if (db) {
 		auto result = new QueryResults;
@@ -164,7 +162,7 @@ reindexer_ret reindexer_select(reindexer_string query, int with_items, int32_t *
 
 reindexer_ret reindexer_select_query(struct reindexer_buffer in, int with_items, int32_t *pt_versions, int pt_versions_count) {
 	Error res = err_not_init;
-	reindexer_buffer out = {0, 0, nullptr};
+	reindexer_resbuffer out = {0, 0, 0};
 	if (db) {
 		res = Error(errOK);
 		Serializer ser(in.data, in.len);
@@ -192,7 +190,7 @@ reindexer_ret reindexer_select_query(struct reindexer_buffer in, int with_items,
 }
 
 reindexer_ret reindexer_delete_query(reindexer_buffer in) {
-	reindexer_buffer out{0, 0, nullptr};
+	reindexer_resbuffer out{0, 0, 0};
 	Error res = err_not_init;
 	if (db) {
 		res = Error(errOK);
@@ -217,7 +215,7 @@ reindexer_error reindexer_put_meta(reindexer_string ns, reindexer_string key, re
 }
 
 reindexer_ret reindexer_get_meta(reindexer_string ns, reindexer_string key) {
-	reindexer_buffer out{0, 0, nullptr};
+	reindexer_resbuffer out{0, 0, 0};
 	Error res = err_not_init;
 	if (db) {
 		WrSerializer wrSer(false);
@@ -225,7 +223,7 @@ reindexer_ret reindexer_get_meta(reindexer_string ns, reindexer_string key) {
 		res = db->GetMeta(str2c(ns), str2c(key), data);
 		wrSer.PutVString(data);
 		out.len = wrSer.Len();
-		out.data = wrSer.DetachBuffer();
+		out.data = uintptr_t(wrSer.DetachBuffer());
 	}
 	return ret2c(res, out);
 }
@@ -236,24 +234,17 @@ void reindexer_enable_logger(void (*logWriter)(int, char *)) { logInstallWriter(
 
 void reindexer_disable_logger() { logInstallWriter(nullptr); }
 
-reindexer_error reindexer_reset_stats() { return error2c(!db ? err_not_init : db->ResetStats()); }
-reindexer_stat reindexer_get_stats() {
-	reindexer_stat stat;
-	db->GetStats(stat);
-	return stat;
-}
-
-reindexer_error reindexer_free_buffer(reindexer_buffer in) {
+reindexer_error reindexer_free_buffer(reindexer_resbuffer in) {
 	if (in.results_flag) {
 		auto addr = *reinterpret_cast<uint64_t *>(in.data);
 		auto results = reinterpret_cast<QueryResults *>(addr);
 		delete results;
 	}
-	free(in.data);
+	free(reinterpret_cast<void *>(in.data));
 	return error2c(Error(errOK));
 }
 
-reindexer_error reindexer_free_buffers(reindexer_buffer *in, int count) {
+reindexer_error reindexer_free_buffers(reindexer_resbuffer *in, int count) {
 	for (int i = 0; i < count; i++) {
 		reindexer_free_buffer(in[i]);
 	}

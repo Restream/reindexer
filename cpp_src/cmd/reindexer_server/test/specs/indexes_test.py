@@ -5,16 +5,7 @@ class IndexesTest(BaseTest):
     def setUp(self):
         super().setUp()
 
-        self.current_db = self.test_db
-        status, body = self.api_create_db(self.current_db)
-
-        self.assertEqual(True, status == 200, body)
-
-        self.current_ns = self.test_ns
-        status, body = self.api_create_namespace(
-            self.current_db, self.current_ns)
-
-        self.assertEqual(True, status == 200, body)
+        self.helper_indexes_testdata_prepare()
 
     def test_get_indexes(self):
         """Should be able to get indexes list"""
@@ -31,7 +22,7 @@ class IndexesTest(BaseTest):
         for i in range(0, count):
             status, body = self.api_create_index(
                 self.current_db, self.test_ns, indexes_arr_of_dicts[i])
-            self.assertEqual(True, status == 200, body)
+            self.assertEqual(True, status == self.API_STATUS['success'], body)
 
         status, body = self.api_get_namespace(self.current_db, self.test_ns)
         self.validate_get_namespace_response(
@@ -46,7 +37,7 @@ class IndexesTest(BaseTest):
         for i in range(0, count):
             status, body = self.api_create_index(
                 self.current_db, self.test_ns, indexes_arr_of_dicts[i])
-            self.assertEqual(True, status == 200, body)
+            self.assertEqual(True, status == self.API_STATUS['success'], body)
 
         status, body = self.api_get_namespace(self.current_db, self.test_ns)
         self.validate_get_namespace_response(
@@ -56,7 +47,7 @@ class IndexesTest(BaseTest):
         first_index_name = first_index['name']
         status, body = self.api_delete_index(
             self.current_db, self.test_ns, first_index_name)
-        self.assertEqual(True, status == 200, body)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
 
         status, body = self.api_get_namespace(self.current_db, self.test_ns)
         self.validate_get_namespace_response(

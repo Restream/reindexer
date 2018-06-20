@@ -163,6 +163,11 @@ public:
 	}
 	size_type size() { return sa_.size(); }
 	const K &text() const { return text_; }
+	size_t heap_size() {
+		return (sa_.capacity() + words_.capacity()) * sizeof(int) +			  //
+			   (lcp_.capacity() + words_len_.capacity()) * sizeof(int16_t) +  //
+			   mapped_.capacity() * sizeof(V) + text_.capacity();
+	}
 
 protected:
 	void build_lcp() {
@@ -189,6 +194,6 @@ protected:
 	vector<V> mapped_;
 	K text_;
 	bool built_ = false;
-};
+};  // namespace reindexer
 
 }  // namespace reindexer

@@ -18,8 +18,17 @@ struct JoinCacheKey {
 		buf_.reserve(buf_.size() + ser.Len());
 		buf_.insert(buf_.end(), ser.Buf(), ser.Buf() + ser.Len());
 	}
+	void SetData(const Query &q1, const Query &q2) {
+		WrSerializer ser;
+		q1.Serialize(ser, (SkipJoinQueries | SkipMergeQueries));
+		q2.Serialize(ser, (SkipJoinQueries | SkipMergeQueries));
+		buf_.reserve(buf_.size() + ser.Len());
+		buf_.insert(buf_.end(), ser.Buf(), ser.Buf() + ser.Len());
+	}
 	JoinCacheKey(SortType sortId, const Query &q) { SetData(sortId, q); }
 	JoinCacheKey(const JoinCacheKey &other) { buf_ = other.buf_; }
+	size_t Size() const { return sizeof(JoinCacheKey) + buf_.size(); }
+
 	h_vector<uint8_t, 256> buf_;
 };
 struct equal_join_cache_key {
@@ -35,31 +44,20 @@ struct hash_join_cache_key {
 	}
 };
 
-struct JoinCacheFinalVal {
-	size_t Size() const { return ids_ ? ids_->size() * sizeof(IdSet::value_type) : 0; }
-	IdSet::Ptr ids_;
-	bool matchedAtLeastOnce;
-};
-
-typedef LRUCache<JoinCacheKey, JoinCacheFinalVal, hash_join_cache_key, equal_join_cache_key> MainLruCache;
-
-class JoinCacheFinal : public MainLruCache {
-public:
-	JoinCacheFinal() : MainLruCache(kDefaultCacheSizeLimit / 10, 2) {}
-	void SetHitCount(size_t hit) { this->hitCountToCache_ = hit; }
-	typedef shared_ptr<JoinCacheFinal> Ptr;
-};  // namespace reindexer
-
 struct JoinCacheVal {
-	JoinCacheVal() : cache_final_(std::make_shared<JoinCacheFinal>()) {}
-	size_t Size() const { return preResult ? preResult->ids.size() * sizeof(IdSet::value_type) : 0; }
-	JoinCacheFinal::Ptr cache_final_;
+	JoinCacheVal() {}
+	size_t Size() const { return ids_ ? sizeof(*ids_.get()) + ids_->heap_size() : 0; }
+	IdSet::Ptr ids_;
+	bool matchedAtLeastOnce = false;
 	bool inited = false;
 	SelectCtx::PreResult::Ptr preResult;
 };
+typedef LRUCache<JoinCacheKey, JoinCacheVal, hash_join_cache_key, equal_join_cache_key> MainLruCache;
 
-class JoinCache : public LRUCache<JoinCacheKey, JoinCacheVal, hash_join_cache_key, equal_join_cache_key> {
+class JoinCache : public MainLruCache {
 public:
+	JoinCache() : MainLruCache(kDefaultCacheSizeLimit * 2, 2) {}
+
 	typedef shared_ptr<JoinCache> Ptr;
 };
 

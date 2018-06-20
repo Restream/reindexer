@@ -131,7 +131,8 @@ string_view ItemImpl::GetJSON() {
 
 string_view ItemImpl::GetCJSON() {
 	ConstPayload pl(payloadType_, payloadValue_);
-	CJsonEncoder encoder(tagsMatcher_);
+	JsonPrintFilter filter;
+	CJsonEncoder encoder(tagsMatcher_, filter);
 
 	ser_.Reset();
 	ser_.PutUInt32(0);

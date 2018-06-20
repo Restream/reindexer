@@ -58,7 +58,7 @@ public:
 
 protected:
 	int ParseWhere(tokenizer &tok);
-	string toString() const;
+	string toString(bool stripArgs) const;
 	static CondType getCondType(string_view cond);
 
 public:

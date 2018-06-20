@@ -1,22 +1,13 @@
 #pragma once
 
 #include "core/payload/payloadiface.h"
+#include "jsonprintfilter.h"
 
 namespace reindexer {
 
 class TagsMatcher;
 class WrSerializer;
 class Serializer;
-
-class JsonPrintFilter {
-public:
-	JsonPrintFilter(){};
-	JsonPrintFilter(const TagsMatcher &tagsMatcher, const h_vector<string, 4> &filter);
-	bool Match(int tag) const { return filter_.empty() || (tag < int(filter_.size()) && filter_[tag]); }
-
-protected:
-	h_vector<uint8_t, 32> filter_;
-};
 
 class IJsonEncoderDatasourceWithJoins {
 public:

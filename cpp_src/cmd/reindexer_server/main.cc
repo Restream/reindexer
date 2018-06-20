@@ -10,6 +10,7 @@
 #include "httpserver.h"
 #include "loggerwrapper.h"
 #include "rpcserver.h"
+#include "tools/stringstools.h"
 #include "winservice.h"
 #include "yaml/yaml.h"
 
@@ -287,13 +288,7 @@ static void loggerReopen() {
 #endif
 
 int startServer() {
-	fast_hash_map<string, LogLevel> levels = {
-		{"none", LogNone}, {"warning", LogWarning}, {"error", LogError}, {"info", LogInfo}, {"trace", LogTrace}};
-
-	auto configLevelIt = levels.find(config.LogLevel);
-	if (configLevelIt != levels.end()) {
-		logLevel = configLevelIt->second;
-	}
+	logLevel = logLevelFromString(config.LogLevel);
 
 	loggerConfigure();
 
@@ -313,7 +308,7 @@ int startServer() {
 #else
 		if (!std::getenv("HEAPPROFILE") && !std::getenv("TCMALLOC_SAMPLE_PARAMETER")) {
 			logger.warn(
-				"debug.pprof is enabled, but TCMALLOC_SAMPLE_PARAMETER and HEAPPROFILE environment varables are not set. Heap profiling is "
+				"debug.pprof is enabled, but TCMALLOC_SAMPLE_PARAMETER or HEAPPROFILE environment varables are not set. Heap profiling is "
 				"not possible.");
 		}
 
@@ -398,6 +393,7 @@ int main(int argc, char **argv) {
 	parseCmdLine(argc, argv);
 
 #ifndef _WIN32
+	signal(SIGPIPE, SIG_IGN);
 	if (!config.UserName.empty()) {
 		changeUser(config.UserName.c_str());
 	}

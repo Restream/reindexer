@@ -78,7 +78,16 @@ func init() {
 }
 
 func TestStorageChangeFormat(t *testing.T) {
-	DB.SetLogger(TestLogger{})
+
+	err := DB.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
+		Type:      "profiling",
+		Profiling: &reindexer.DBProfilingConfig{MemStats: true},
+	})
+
+	if err != nil {
+		panic(err)
+	}
+
 	tx := DB.MustBeginTx("test_items_storage")
 
 	tx.Upsert(&TestItemV1{
@@ -122,7 +131,7 @@ func TestStorageChangeFormat(t *testing.T) {
 		panic(fmt.Errorf("%v != %v", setUpdatedAt, *vrfUpdatedAt))
 	}
 
-	stat, err := DB.DescribeNamespace("test_items_storage")
+	stat, err := DB.GetNamespaceMemStat("test_items_storage")
 
 	if err != nil {
 		panic(err)
@@ -211,7 +220,7 @@ func TestStorageChangeFormat(t *testing.T) {
 		panic(err)
 	}
 
-	stat, err = DB.DescribeNamespace("test_items_storage")
+	stat, err = DB.GetNamespaceMemStat("test_items_storage")
 
 	if err != nil {
 		panic(err)

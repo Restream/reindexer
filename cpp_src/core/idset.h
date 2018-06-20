@@ -43,6 +43,8 @@ public:
 	using base_idset::capacity;
 	using base_idset::shrink_to_fit;
 	using base_idset::back;
+	using base_idset::heap_size;
+
 	iterator begin() { return base_idset::begin(); }
 	iterator end() { return base_idset::end(); }
 
@@ -70,6 +72,7 @@ public:
 	void Commit(const CommitContext &ctx);
 	bool IsCommited() { return true; }
 	string Dump();
+	size_t BTreeSize() { return 0; }
 };
 
 using base_idsetset = btree::btree_set<int>;
@@ -142,6 +145,7 @@ public:
 	}
 	void Commit(const CommitContext &ctx);
 	bool IsCommited() { return (!set_ || !set_->size() || size()) && std::is_sorted(begin(), end()); }
+	size_t BTreeSize() { return set_ ? sizeof(*set_.get()) + set_->size() * sizeof(int) : 0; }
 
 protected:
 	std::unique_ptr<base_idsetset> set_;

@@ -31,10 +31,9 @@ Error Reindexer::Commit(const string& _namespace) { return impl_->Commit(_namesp
 Error Reindexer::ConfigureIndex(const string& _namespace, const string& index, const string& config) {
 	return impl_->ConfigureIndex(_namespace, index, config);
 }
-Error Reindexer::ResetStats() { return impl_->ResetStats(); }
-Error Reindexer::GetStats(reindexer_stat& stat) { return impl_->GetStats(stat); }
 Error Reindexer::AddIndex(const string& _namespace, const IndexDef& idx) { return impl_->AddIndex(_namespace, idx); }
 Error Reindexer::DropIndex(const string& _namespace, const string& index) { return impl_->DropIndex(_namespace, index); }
 Error Reindexer::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll) { return impl_->EnumNamespaces(defs, bEnumAll); }
+Error Reindexer::InitSystemNamespaces() { return impl_->InitSystemNamespaces(); }
 
 }  // namespace reindexer

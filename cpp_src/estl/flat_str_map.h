@@ -198,7 +198,8 @@ public:
 		buf_.reserve(str_sz);
 		if (Multi) multi_.reserve(map_sz / 10);
 	}
-	size_t size() { return map_.size(); }
+	size_t size() const { return map_.size(); }
+	size_t heap_size() const { return buf_.capacity() + map_.size() * sizeof(V) + multi_.capacity() * sizeof(multi_node); }
 
 	void shrink_to_fit() {
 		buf_.shrink_to_fit();

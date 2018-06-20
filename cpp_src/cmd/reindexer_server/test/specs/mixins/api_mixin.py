@@ -4,7 +4,16 @@ from urllib.parse import urlencode
 
 
 class ApiMixin(object):
-    def _api_request(self, method, url, body=None, headers={}, as_json=True):
+    API_STATUS = {
+        'success': 200,
+        'moved_permanently': 301,
+        'bad_request': 400,
+        'unauthorized': 401,
+        'forbidden': 403,
+        'not_found': 404
+    }
+
+    def _server_request(self, method, url, body=None, headers={}, as_json=True):
         self.api = http.client.HTTPConnection('127.0.0.1', 9088)
 
         if body is not None and as_json:
@@ -27,6 +36,51 @@ class ApiMixin(object):
         self.api.close()
 
         return res_status, res_body
+
+    def _api_call(self, method, url, body=None, headers={}, as_json=True, with_basic_auth=True):
+        api_base = self.SWAGGER['basePath']
+
+        content_type = 'application/json' if as_json else 'text/plain'
+        def_headers = {
+            'Content-type': content_type,
+        }
+
+        if with_basic_auth:
+            def_headers['Authorization'] = 'Basic ' + \
+                self.role_token(self.role)
+
+        req_headers = {**def_headers, **headers}
+
+        return self._server_request(method, api_base + url, body, req_headers, as_json)
+
+    def _web_call(self, url, with_basic_auth=True):
+        headers = {}
+
+        if with_basic_auth:
+            headers['Authorization'] = 'Basic ' + self.role_token(self.role)
+
+        return self._server_request('GET', url, headers=headers)
+
+    def web_face_redirect(self):
+        return self._web_call('/face')
+
+    def web_face(self):
+        return self._web_call('/face/')
+
+    def web_facestaging_redirect(self):
+        return self._web_call('/facestaging')
+
+    def web_facestaging(self):
+        return self._web_call('/facestaging/')
+
+    def web_swagger_redirect(self):
+        return self._web_call('/swagger')
+
+    def web_swagger(self):
+        return self._web_call('/swagger/')
+
+    def api_check(self):
+        return self._api_call('GET', '/check')
 
     def api_get_dbs(self):
         return self._api_call('GET', '/db')
@@ -77,20 +131,20 @@ class ApiMixin(object):
     def api_create_index(self, dbname, nsname, body):
         return self._api_call('POST', '/db/' + dbname + '/namespaces/' + nsname + '/indexes', body)
 
-    def api_delete_index(self, dbname, nsname, indexName):
-        return self._api_call('DELETE', '/db/' + dbname + '/namespaces/' + nsname + '/indexes/' + indexName)
+    def api_delete_index(self, dbname, nsname, index_name):
+        return self._api_call('DELETE', '/db/' + dbname + '/namespaces/' + nsname + '/indexes/' + index_name)
 
     def api_get_items(self, dbname, nsname):
         return self._api_call('GET', '/db/' + dbname + '/namespaces/' + nsname + '/items')
 
-    def api_create_item(self, dbname, nsname, itemBody):
-        return self._api_call('POST', '/db/' + dbname + '/namespaces/' + nsname + '/items', itemBody)
+    def api_create_item(self, dbname, nsname, item_body):
+        return self._api_call('POST', '/db/' + dbname + '/namespaces/' + nsname + '/items', item_body)
 
-    def api_update_item(self, dbname, nsname, itemBody):
-        return self._api_call('PUT', '/db/' + dbname + '/namespaces/' + nsname + '/items', itemBody)
+    def api_update_item(self, dbname, nsname, item_body):
+        return self._api_call('PUT', '/db/' + dbname + '/namespaces/' + nsname + '/items', item_body)
 
-    def api_delete_item(self, dbname, nsname, itemBody):
-        return self._api_call('DELETE', '/db/' + dbname + '/namespaces/' + nsname + '/items', itemBody)
+    def api_delete_item(self, dbname, nsname, item_body):
+        return self._api_call('DELETE', '/db/' + dbname + '/namespaces/' + nsname + '/items', item_body)
 
     def api_get_paginated_items(self, dbname, nsname, limit=10, offset=0):
         return self._api_call('GET', '/db/' + dbname + '/namespaces/' + nsname + '/items?'

@@ -21,8 +21,9 @@ typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(
 
 	if (it == items_.end()) {
 		it = items_.emplace(key, Entry{}).first;
-		totalCacheSize_ += kElemSizeOverhead;
+		totalCacheSize_ += kElemSizeOverhead + sizeof(Entry) + key.Size();
 		it->second.lruPos = lru_.insert(lru_.end(), &it->first);
+		eraseLRU();
 	} else if (std::next(it->second.lruPos) != lru_.end()) {
 		lru_.splice(lru_.end(), lru_, it->second.lruPos, std::next(it->second.lruPos));
 		it->second.lruPos = std::prev(lru_.end());
@@ -63,7 +64,7 @@ void LRUCache<K, V, hash, equal>::eraseLRU() {
 		assert(it != lru_.end());
 		auto mIt = items_.find(**it);
 		assert(mIt != items_.end());
-		totalCacheSize_ -= kElemSizeOverhead + mIt->second.val.Size();
+		totalCacheSize_ = totalCacheSize_ - (sizeof(Entry) + kElemSizeOverhead + mIt->first.Size() + mIt->second.val.Size());
 		items_.erase(mIt);
 		it = lru_.erase(it);
 		++eraseCount_;
@@ -88,10 +89,24 @@ void LRUCache<K, V, hash, equal>::Invalidate() {
 	totalCacheSize_ = 0;
 }
 
+template <typename K, typename V, typename hash, typename equal>
+LRUCacheMemStat LRUCache<K, V, hash, equal>::GetMemStat() {
+	std::lock_guard<mutex> lk(lock_);
+	LRUCacheMemStat ret;
+	ret.totalSize = totalCacheSize_;
+	ret.itemsCount = items_.size();
+	ret.emptyCount = 0;
+	// for (auto &item : items_) {
+	// 	if (item.second.val.Empty()) ret.emptyCount++;
+	// }
+
+	ret.hitCountLimit = hitCountToCache_;
+
+	return ret;
+};
 template class LRUCache<IdSetCacheKey, IdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
 template class LRUCache<IdSetCacheKey, FtIdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
 template class LRUCache<QueryCacheKey, QueryCacheVal, HashQueryCacheKey, EqQueryCacheKey>;
 template class LRUCache<JoinCacheKey, JoinCacheVal, hash_join_cache_key, equal_join_cache_key>;
-template class LRUCache<JoinCacheKey, JoinCacheFinalVal, hash_join_cache_key, equal_join_cache_key>;
 
 }  // namespace reindexer

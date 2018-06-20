@@ -1,6 +1,7 @@
 #include "listener.h"
 #include <fcntl.h>
 #include <chrono>
+#include <cstdlib>
 #include <thread>
 #include "core/type_consts.h"
 #include "net/http/serverconnection.h"
@@ -20,12 +21,12 @@ namespace net {
 
 static atomic<int> counter_;
 
-Listener::Listener(ev::dynamic_loop &loop, std::shared_ptr<Shared> shared) : loop_(loop), shared_(shared), idleConns_(0), id_(counter_++) {
+Listener::Listener(ev::dynamic_loop &loop, std::shared_ptr<Shared> shared) : loop_(loop), shared_(shared), id_(counter_++) {
 	io_.set<Listener, &Listener::io_accept>(this);
 	io_.set(loop);
 	timer_.set<Listener, &Listener::timeout_cb>(this);
 	timer_.set(loop);
-	timer_.start(15., 15.);
+	timer_.start(5., 5.);
 	async_.set<Listener, &Listener::async_cb>(this);
 	async_.set(loop);
 	async_.start();
@@ -78,38 +79,80 @@ void Listener::io_accept(ev::io & /*watcher*/, int revents) {
 		return;
 	}
 
-	if (idleConns_) {
-		connectons_[--idleConns_]->Restart(client.fd());
+	std::unique_lock<mutex> lck(shared_->lck_);
+	if (shared_->idle_.size()) {
+		auto conn = std::move(shared_->idle_.back());
+		shared_->idle_.pop_back();
+		conn->Attach(loop_);
+		conn->Restart(client.fd());
+		connections_.push_back(std::move(conn));
 	} else {
-		connectons_.push_back(std::unique_ptr<IServerConnection>(shared_->connFactory_(loop_, client.fd())));
+		connections_.push_back(std::unique_ptr<IServerConnection>(shared_->connFactory_(loop_, client.fd())));
 	}
-	connCount_++;
-	shared_->lck_.lock();
 	if (shared_->count_ < shared_->maxListeners_) {
 		shared_->count_++;
 		std::thread th(&Listener::clone, shared_);
 		th.detach();
 	}
-	shared_->lck_.unlock();
 }
 
 void Listener::timeout_cb(ev::periodic &, int) {
-	assert(idleConns_ <= int(connectons_.size()));
-	for (auto it = connectons_.begin() + idleConns_; it != connectons_.end(); it++) {
-		if ((*it)->IsFinished()) {
-			std::swap(*it, connectons_[idleConns_]);
-			++idleConns_;
-			connCount_--;
+	std::unique_lock<mutex> lck(shared_->lck_);
+
+	// Move finished connections to idle connections pool
+	for (unsigned i = 0; i < connections_.size();) {
+		if (connections_[i]->IsFinished()) {
+			connections_[i]->Detach();
+			shared_->idle_.push_back(std::move(connections_[i]));
+			if (i != connections_.size() - 1) std::swap(connections_[i], connections_.back());
+			connections_.pop_back();
+			shared_->ts_ = std::chrono::steady_clock::now();
+		} else {
+			i++;
 		}
 	}
-	if (connectons_.size() - idleConns_ != 0) {
-		logPrintf(LogInfo, "Listener(%s) %d stats: %d connections, %d idle", shared_->addr_.c_str(), id_,
-				  int(connectons_.size() - idleConns_), idleConns_);
+
+	// Clear all idle connections, after 300 sec
+	if (shared_->idle_.size() && std::chrono::steady_clock::now() - shared_->ts_ > std::chrono::seconds(300)) {
+		logPrintf(LogInfo, "Cleanup idle connections. %d cleared", int(shared_->idle_.size()));
+		shared_->idle_.clear();
+	}
+
+	int curConnCount = connections_.size();
+
+	if (!std::getenv("REINDEXER_NOREBALANCE")) {
+		// Try to rebalance
+		int minConnCount = INT_MAX;
+		auto minIt = shared_->listeners_.begin();
+
+		for (auto it = minIt; it != shared_->listeners_.end(); it++) {
+			int connCount = (*it)->connections_.size();
+			if (connCount < minConnCount) {
+				minIt = it;
+				minConnCount = connCount;
+			}
+		}
+
+		if (minConnCount + 1 < curConnCount) {
+			logPrintf(LogInfo, "Rebalance connection from listener %d to %d", id_, (*minIt)->id_);
+			auto conn = std::move(connections_.back());
+			conn->Detach();
+			(*minIt)->connections_.push_back(std::move(conn));
+			(*minIt)->async_.send();
+			connections_.pop_back();
+		}
+	}
+	if (curConnCount != 0) {
+		logPrintf(LogTrace, "Listener(%s) %d stats: %d connections", shared_->addr_.c_str(), id_, curConnCount);
 	}
 }
 
 void Listener::async_cb(ev::async &watcher) {
 	logPrintf(LogInfo, "Listener(%s) %d async received", shared_->addr_.c_str(), id_);
+	std::unique_lock<mutex> lck(shared_->lck_);
+	for (auto &it : connections_) {
+		if (!it->IsFinished()) it->Attach(loop_);
+	}
 	watcher.loop.break_loop();
 }
 

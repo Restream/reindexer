@@ -35,7 +35,8 @@ protected:
 	void timeout_cb(ev::periodic &watcher, int);
 
 	void closeConn();
-	void reatach(ev::dynamic_loop &loop);
+	void attach(ev::dynamic_loop &loop);
+	void detach();
 	void restart(int fd);
 
 	ev::io io_;
@@ -45,6 +46,8 @@ protected:
 	socket sock_;
 	int curEvents_ = 0;
 	bool closeConn_ = false;
+	bool attached_ = false;
+	bool canWrite_ = true;
 	Mutex wrBufLock_;
 
 	cbuf<char> wrBuf_, rdBuf_;

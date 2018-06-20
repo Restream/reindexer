@@ -26,7 +26,8 @@ public:
 
 	bool IsFinished() override final { return !sock_.valid(); }
 	bool Restart(int fd) override final;
-	void Reatach(ev::dynamic_loop &loop) override final;
+	void Detach() override final;
+	void Attach(ev::dynamic_loop &loop) override final;
 
 protected:
 	class BodyReader : public Reader {

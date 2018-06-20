@@ -432,8 +432,8 @@ func Benchmark2CondQueryInnerJoinCachedRandom(b *testing.B) {
 	ctx := &TestJoinCtx{}
 
 	for i := 0; i < b.N; i++ {
-		id_start := 7200 + rand.Int()%200
-		id_end := id_start + rand.Int()%(7400-id_start)
+		id_start := 7000 + rand.Int()%200
+		id_end := id_start + rand.Int()%(7200-id_start)
 		q2 := DB.Query("test_join_items").WhereInt("id", reindexer.RANGE, id_start, id_end)
 		q := DB.Query("test_items_bench").Limit(20).Sort("year", false).
 			WhereInt("genre", reindexer.EQ, 5).
@@ -448,7 +448,7 @@ func Benchmark2CondQueryInnerJoinCached(b *testing.B) {
 	ctx := &TestJoinCtx{}
 	for i := 0; i < b.N; i++ {
 
-		q2 := DB.Query("test_join_items").WhereInt("id", reindexer.RANGE, 7300, 7400)
+		q2 := DB.Query("test_join_items").WhereInt("id", reindexer.RANGE, 7000, 7300)
 		q := DB.Query("test_items_bench").Limit(20).Sort("year", false).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).

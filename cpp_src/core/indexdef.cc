@@ -137,7 +137,7 @@ Error IndexDef::FromJSON(JsonValue &jvalue) {
 	return 0;
 }
 
-void IndexDef::GetJSON(WrSerializer &ser) const {
+void IndexDef::GetJSON(WrSerializer &ser, bool describeCompat) const {
 	ser.PutChar('{');
 	ser.Printf("\"name\":\"%s\",", name.c_str());
 	ser.Printf("\"json_path\":\"%s\",", jsonPath.c_str());
@@ -149,7 +149,21 @@ void IndexDef::GetJSON(WrSerializer &ser) const {
 	ser.Printf("\"is_appendable\":%s,", opts.IsAppendable() ? "true" : "false");
 	ser.Printf("\"collate_mode\":\"%s\",", getCollateMode().c_str());
 	ser.Printf("\"sort_order_letters\":\"%s\"", opts.collateOpts_.sortOrderTable.GetSortOrderCharacters().c_str());
-	ser.PutChars("}");
+
+	if (describeCompat) {
+		// extra data for support describe.
+		// TODO: deprecate and remove it
+		ser.Printf(",\"is_sortable\":%s,", isSortable(Type()) ? "true" : "false");
+		ser.Printf("\"is_fulltext\":%s,", isFullText(Type()) ? "true" : "false");
+		ser.Printf("\"conditions\": [");
+		auto conds = Conditions();
+		for (unsigned j = 0; j < conds.size(); j++) {
+			if (j != 0) ser.PutChar(',');
+			ser.Printf("\"%s\"", conds.at(j).c_str());
+		}
+		ser.PutChar(']');
+	}
+	ser.PutChar('}');
 }
 
 }  // namespace reindexer

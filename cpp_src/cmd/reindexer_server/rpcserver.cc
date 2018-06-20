@@ -104,8 +104,8 @@ void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Arg
 	if (allocDebug_) {
 		Stat statDiff = Stat() - ctx.stat;
 
-		ser.Printf(" | elapsed: %fus, allocs: %d, allocated: %d byte(s)", statDiff.GetTimeElapsed(), statDiff.GetAllocsCnt(),
-				   statDiff.GetAllocsBytes());
+		ser.Printf(" | elapsed: %dus, allocs: %d, allocated: %d byte(s)", int(statDiff.GetTimeElapsed()), int(statDiff.GetAllocsCnt()),
+				   int(statDiff.GetAllocsBytes()));
 	}
 
 	ser.PutChar(0);
@@ -113,15 +113,22 @@ void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Arg
 	logger_.info("{0}", reinterpret_cast<char *>(ser.Buf()));
 }
 
-Error RPCServer::OpenNamespace(cproto::Context &ctx, p_string nsDefJson) {
+Error RPCServer::OpenNamespace(cproto::Context &ctx, p_string ns) {
 	NamespaceDef nsDef;
-	string json = nsDefJson.toString();
+	p_string nsDefJson("");
+
+	if (ctx.call->args.size() > 1) {
+		nsDefJson = p_string(ctx.call->args[1]);
+	}
+
+	string json = (nsDefJson.length() ? nsDefJson : ns).toString();
+
 	if (json[0] == '{') {
 		nsDef.FromJSON(const_cast<char *>(json.c_str()));
 		return getDB(ctx, kRoleDataRead)->OpenNamespace(nsDef.name, nsDef.storage, nsDef.cacheMode);
 	}
 	// tmp fix for compat
-	return getDB(ctx, kRoleDataRead)->OpenNamespace(json);
+	return getDB(ctx, kRoleDataRead)->OpenNamespace(ns.toString());
 }
 
 Error RPCServer::DropNamespace(cproto::Context &ctx, p_string ns) {

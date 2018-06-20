@@ -53,8 +53,8 @@ public:
 protected:
 	int modifyItem(http::Context &ctx, int mode);
 	int queryResults(http::Context &ctx, reindexer::QueryResults &res, const char *name);
-	int jsonStatus(http::Context &ctx, bool isSuccess = true, int respcode = http::StatusOK,
-				   const string_view &description = string_view());
+	int jsonStatus(http::Context &ctx, http::HttpStatus status = http::HttpStatus());
+
 	shared_ptr<Reindexer> getDB(http::Context &ctx, UserRole role);
 	string getNameFromJson(string json);
 

@@ -4,6 +4,7 @@
 #include <cctype>
 #include <locale>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "itoa/itoa.h"
@@ -310,11 +311,22 @@ bool validateObjectName(const char *name) {
 		return false;
 	}
 	for (const char *p = name; *p; p++) {
-		if (!(std::isalpha(*name) || std::isdigit(*name) || *name == '_' || *name == '-')) {
+		if (!(std::isalpha(*name) || std::isdigit(*name) || *name == '_' || *name == '-' || *name == '#')) {
 			return false;
 		}
 	}
 	return true;
+}
+
+LogLevel logLevelFromString(const string &strLogLevel) {
+	static std::unordered_map<string, LogLevel> levels = {
+		{"none", LogNone}, {"warning", LogWarning}, {"error", LogError}, {"info", LogInfo}, {"trace", LogTrace}};
+
+	auto configLevelIt = levels.find(strLogLevel);
+	if (configLevelIt != levels.end()) {
+		return configLevelIt->second;
+	}
+	return LogNone;
 }
 
 }  // namespace reindexer

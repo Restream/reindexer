@@ -24,9 +24,15 @@ bool ServerConnection::Restart(int fd) {
 	return true;
 }
 
-void ServerConnection::Reatach(ev::dynamic_loop &loop) {
-	reatach(loop);
-	timeout_.start(kCProtoTimeoutSec);
+void ServerConnection::Attach(ev::dynamic_loop &loop) {
+	if (!attached_) {
+		attach(loop);
+		timeout_.start(kCProtoTimeoutSec);
+	}
+}
+
+void ServerConnection::Detach() {
+	if (attached_) detach();
 }
 
 void ServerConnection::onClose() {
@@ -134,6 +140,9 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 	wrBuf_.write(reinterpret_cast<char *>(&hdr), sizeof(hdr));
 	wrBuf_.write(reinterpret_cast<char *>(ser.Buf()), ser.Len());
 	respSent_ = true;
+	if (canWrite_) {
+		write_cb();
+	}
 }
 
 }  // namespace cproto

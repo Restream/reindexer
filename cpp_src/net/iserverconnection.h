@@ -18,9 +18,11 @@ public:
 	/// @param fd - file descriptor of accepted connection.
 	/// @return true - if successfuly restarted, false - if connection can't be restarted.
 	virtual bool Restart(int fd) = 0;
-	/// Reatrach connection to another listener loop
+	/// Attach connection to another listener loop. Must be called from thread of loop
 	/// @param loop - another loop to bind
-	virtual void Reatach(ev::dynamic_loop &loop) = 0;
+	virtual void Attach(ev::dynamic_loop &loop) = 0;
+	/// Detach connection from listener loop. Must  be called from thread of current loop
+	virtual void Detach() = 0;
 };
 
 /// Functor factory type for creating new connection. Listener will call this factory after accept of client connection.

@@ -6,19 +6,17 @@ package builtin
 import "C"
 import (
 	"errors"
+	"fmt"
 	"net/url"
 	"reflect"
 	"runtime"
 	"sync"
-	"time"
 	"unsafe"
 
 	"github.com/restream/reindexer/bindings"
 )
 
-const cgoLimit = 2000
-
-var cgoLimiter = make(chan struct{}, cgoLimit)
+const defCgoLimit = 2000
 
 var bufFree = newBufFreeBatcher()
 
@@ -32,10 +30,11 @@ var logger Logger
 var bufPool sync.Pool
 
 type Builtin struct {
+	cgoLimiter chan struct{}
 }
 
 type RawCBuffer struct {
-	cbuf         C.reindexer_buffer
+	cbuf         C.reindexer_resbuffer
 	hasFinalizer bool
 }
 
@@ -80,7 +79,7 @@ func err2go(ret C.reindexer_error) error {
 func ret2go(ret C.reindexer_ret) (*RawCBuffer, error) {
 	if ret.err.what != nil {
 		defer C.free(unsafe.Pointer(ret.err.what))
-		defer C.free(unsafe.Pointer(ret.out.data))
+		defer C.free(unsafe.Pointer(uintptr(ret.out.data)))
 		return nil, errors.New("rq:" + C.GoString(ret.err.what))
 	}
 
@@ -100,12 +99,12 @@ func buf2c(buf []byte) C.reindexer_buffer {
 	}
 }
 
-func buf2go(buf C.reindexer_buffer) []byte {
-	if buf.data == nil || buf.len == 0 {
+func buf2go(buf C.reindexer_resbuffer) []byte {
+	if buf.data == 0 || buf.len == 0 {
 		return nil
 	}
 	length := int(buf.len)
-	return (*[1 << 30]byte)(unsafe.Pointer(buf.data))[:length:length]
+	return (*[1 << 30]byte)(unsafe.Pointer(uintptr(buf.data)))[:length:length]
 }
 
 func bool2cint(v bool) C.int {
@@ -115,20 +114,37 @@ func bool2cint(v bool) C.int {
 	return 0
 }
 
-func (binding *Builtin) Init(u *url.URL) error {
-	if len(u.Path) != 0 && u.Path != "/" {
-		return binding.EnableStorage(u.Path)
+func (binding *Builtin) Init(u *url.URL, options ...interface{}) error {
+
+	cgoLimit := defCgoLimit
+	for _, option := range options {
+		switch v := option.(type) {
+		case bindings.OptionCgoLimit:
+			cgoLimit = v.CgoLimit
+		default:
+			fmt.Printf("Unknown builtin option: %v\n", option)
+		}
 	}
-	return nil
+
+	binding.cgoLimiter = make(chan struct{}, cgoLimit)
+
+	if len(u.Path) != 0 && u.Path != "/" {
+		err := binding.EnableStorage(u.Path)
+		if err != nil {
+			return err
+		}
+	}
+
+	return err2go(C.reindexer_init_system_namespaces())
 }
 
 func (binding *Builtin) Ping() error {
 	return nil
 }
 
-func (binding *Builtin) ModifyItem(data []byte, mode int) (bindings.RawBuffer, error) {
-	cgoLimiter <- struct{}{}
-	defer func() { <-cgoLimiter }()
+func (binding *Builtin) ModifyItem(nsHash int, data []byte, mode int) (bindings.RawBuffer, error) {
+	binding.cgoLimiter <- struct{}{}
+	defer func() { <-binding.cgoLimiter }()
 	return ret2go(C.reindexer_modify_item(buf2c(data), C.int(mode)))
 }
 
@@ -184,20 +200,20 @@ func (binding *Builtin) GetMeta(namespace, key string) (bindings.RawBuffer, erro
 }
 
 func (binding *Builtin) Select(query string, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
-	cgoLimiter <- struct{}{}
-	defer func() { <-cgoLimiter }()
+	binding.cgoLimiter <- struct{}{}
+	defer func() { <-binding.cgoLimiter }()
 	return ret2go(C.reindexer_select(str2c(query), bool2cint(withItems), (*C.int32_t)(unsafe.Pointer(&ptVersions[0])), C.int(len(ptVersions))))
 }
 
 func (binding *Builtin) SelectQuery(data []byte, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
-	cgoLimiter <- struct{}{}
-	defer func() { <-cgoLimiter }()
+	binding.cgoLimiter <- struct{}{}
+	defer func() { <-binding.cgoLimiter }()
 	return ret2go(C.reindexer_select_query(buf2c(data), bool2cint(withItems), (*C.int32_t)(unsafe.Pointer(&ptVersions[0])), C.int(len(ptVersions))))
 }
 
-func (binding *Builtin) DeleteQuery(data []byte) (bindings.RawBuffer, error) {
-	cgoLimiter <- struct{}{}
-	defer func() { <-cgoLimiter }()
+func (binding *Builtin) DeleteQuery(nsHash int, data []byte) (bindings.RawBuffer, error) {
+	binding.cgoLimiter <- struct{}{}
+	defer func() { <-binding.cgoLimiter }()
 	return ret2go(C.reindexer_delete_query(buf2c(data)))
 }
 
@@ -223,32 +239,6 @@ func (binding *Builtin) DisableLogger() {
 	logger = nil
 }
 
-func (binding *Builtin) GetStats() bindings.Stats {
-
-	stats := C.reindexer_get_stats()
-
-	return bindings.Stats{
-		TimeInsert:   time.Microsecond * time.Duration(int(stats.time_insert)),
-		CountInsert:  int(stats.count_insert),
-		TimeUpdate:   time.Microsecond * time.Duration(int(stats.time_update)),
-		CountUpdate:  int(stats.count_update),
-		TimeUpsert:   time.Microsecond * time.Duration(int(stats.time_upsert)),
-		CountUpsert:  int(stats.count_upsert),
-		TimeDelete:   time.Microsecond * time.Duration(int(stats.time_delete)),
-		CountDelete:  int(stats.count_delete),
-		TimeSelect:   time.Microsecond * time.Duration(int(stats.time_select)),
-		CountSelect:  int(stats.count_select),
-		TimeGetItem:  time.Microsecond * time.Duration(int(stats.time_get_item)),
-		CountGetItem: int(stats.count_get_item),
-		TimeJoin:     time.Microsecond * time.Duration(int(stats.time_join)),
-		CountJoin:    int(stats.count_join),
-	}
-}
-
-func (binding *Builtin) ResetStats() {
-	C.reindexer_reset_stats()
-}
-
 func newBufFreeBatcher() (bf *bufFreeBatcher) {
 	bf = &bufFreeBatcher{
 		bufs:   make([]*RawCBuffer, 0, 100),
@@ -262,7 +252,7 @@ func newBufFreeBatcher() (bf *bufFreeBatcher) {
 type bufFreeBatcher struct {
 	bufs   []*RawCBuffer
 	bufs2  []*RawCBuffer
-	cbufs  []C.reindexer_buffer
+	cbufs  []C.reindexer_resbuffer
 	lock   sync.Mutex
 	kickCh chan struct{}
 }
@@ -283,10 +273,10 @@ func (bf *bufFreeBatcher) loop() {
 			bf.cbufs = append(bf.cbufs, buf.cbuf)
 		}
 
-		C.reindexer_free_buffers((*C.reindexer_buffer)(unsafe.Pointer(&bf.cbufs[0])), C.int(len(bf.cbufs)))
+		C.reindexer_free_buffers((*C.reindexer_resbuffer)(unsafe.Pointer(&bf.cbufs[0])), C.int(len(bf.cbufs)))
 
 		for _, buf := range bf.bufs2 {
-			buf.cbuf.data = nil
+			buf.cbuf.data = 0
 			bf.toPool(buf)
 		}
 		bf.cbufs = bf.cbufs[:0]
@@ -295,7 +285,7 @@ func (bf *bufFreeBatcher) loop() {
 }
 
 func (bf *bufFreeBatcher) add(buf *RawCBuffer) {
-	if buf.cbuf.data != nil {
+	if buf.cbuf.data != 0 {
 		bf.toFree(buf)
 	} else {
 		bf.toPool(buf)

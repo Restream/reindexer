@@ -89,7 +89,11 @@ public:
 	void PutChars(const char *s) {
 		while (*s) PutChar(*s++);
 	}
-	void Printf(const char *fmt, ...);
+	void Printf(const char *fmt, ...)
+#ifndef _MSC_VER
+		__attribute__((format(printf, 2, 3)))
+#endif
+		;
 	void Print(int);
 	void Print(int64_t);
 

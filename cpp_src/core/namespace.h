@@ -13,6 +13,7 @@
 #include "joincache.h"
 #include "namespacedef.h"
 #include "payload/payloadiface.h"
+#include "perfstatcounter.h"
 #include "query/querycache.h"
 #include "storage/idatastorage.h"
 
@@ -101,11 +102,13 @@ public:
 
 	void Delete(Item &item);
 	void Select(QueryResults &result, SelectCtx &params);
-	void Describe(QueryResults &result);
 	NamespaceDef GetDefinition();
+	NamespaceMemStat GetMemStat();
+	NamespacePerfStat GetPerfStat();
 	vector<string> EnumMeta();
 	void Delete(const Query &query, QueryResults &result);
 	void FlushStorage();
+	void CloseStorage();
 	void SetCacheMode(CacheMode cacheMode);
 
 	Item NewItem();
@@ -120,6 +123,12 @@ public:
 	static Namespace *Clone(Namespace::Ptr);
 
 	void FillResult(QueryResults &result, IdSet::Ptr ids, const h_vector<std::string, 4> &selectFilter);
+
+	void EnablePerfCounters(bool enable = true) { enablePerfCounters_ = enable; }
+	void SetQueriesLogLevel(LogLevel lvl) {
+		WLock lck(mtx_);
+		queriesLogLevel_ = lvl;
+	}
 
 protected:
 	void saveIndexesToStorage();
@@ -137,6 +146,7 @@ protected:
 	void recreateCompositeIndexes(int startIdx);
 
 	string getMeta(const string &key);
+	void flushStorage();
 	void putMeta(const string &key, const string_view &data);
 	void putCachedMode();
 	void getCachedMode();
@@ -149,7 +159,9 @@ protected:
 
 	int64_t funcGetSerial(SelectFuncStruct sqlFuncStruct);
 
-	void PutJoinPreResultToCache(JoinCacheRes &res, SelectCtx::PreResult::Ptr preResult);
+	void PutToJoinCache(JoinCacheRes &res, SelectCtx::PreResult::Ptr preResult);
+
+	void PutToJoinCache(JoinCacheRes &res, JoinCacheVal &val);
 	void GetFromJoinCache(JoinCacheRes &ctx);
 	void GetIndsideFromJoinCache(JoinCacheRes &ctx);
 
@@ -175,6 +187,7 @@ protected:
 
 	// Commit phases state
 	bool sortOrdersBuilt_;
+	std::atomic<int> sortedQueriesCount_;
 	FieldsSet preparedIndexes_, commitedIndexes_;
 	FieldsSet pkFields_;
 
@@ -201,6 +214,10 @@ private:
 	JoinCache::Ptr joinCache_;
 	CacheMode cacheMode_;
 	bool needPutCacheMode_;
+
+	PerfStatCounterMT updatePerfCounter_, selectPerfCounter_;
+	std::atomic<bool> enablePerfCounters_;
+	LogLevel queriesLogLevel_;
 };
 
 }  // namespace reindexer

@@ -7,10 +7,12 @@
 #include <thread>
 #include "core/namespace.h"
 #include "core/nsselecter/nsselecter.h"
+#include "dbconfig.h"
 #include "estl/fast_hash_map.h"
 #include "estl/h_vector.h"
 #include "estl/shared_mutex.h"
 #include "query/querycache.h"
+#include "querystat.h"
 #include "tools/errors.h"
 
 using std::shared_ptr;
@@ -45,8 +47,7 @@ public:
 	Error GetMeta(const string &_namespace, const string &key, string &data);
 	Error PutMeta(const string &_namespace, const string &key, const string_view &data);
 	Error EnumMeta(const string &_namespace, vector<string> &keys);
-	Error ResetStats();
-	Error GetStats(reindexer_stat &stat);
+	Error InitSystemNamespaces();
 
 protected:
 	class NsLocker : public SelectLockUpgrader, h_vector<pair<Namespace::Ptr, smart_lock<shared_timed_mutex>>, 4> {
@@ -97,17 +98,27 @@ protected:
 	JoinedSelectors prepareJoinedSelectors(const Query &q, QueryResults &result, NsLocker &locks, h_vector<Query, 4> &queries,
 										   SelectFunctionsHolder &func);
 
+	void syncSystemNamespaces(const string &nsName);
+	void createSystemNamespaces();
+	void updateSystemNamespace(const string &nsName, Item &item);
+
 	void flusherThread();
 	Error closeNamespace(const string &_namespace, bool dropStorage);
 	Namespace::Ptr getNamespace(const string &_namespace);
+	std::vector<Namespace::Ptr> getNamespaces();
+	std::vector<string> getNamespacesNames();
 
-	fast_hash_map<string, Namespace::Ptr> namespaces;
+	fast_hash_map<string, Namespace::Ptr> namespaces_;
 
-	shared_timed_mutex ns_mutex;
+	shared_timed_mutex mtx_;
 	string storagePath_;
 
 	std::thread flusher_;
 	std::atomic<bool> stopFlusher_;
+
+	QueriesStatTracer queriesStatTracker_;
+	std::shared_ptr<DBProfilingConfig> profConfig_;
+	std::mutex profCfgMtx_;
 };
 
 }  // namespace reindexer

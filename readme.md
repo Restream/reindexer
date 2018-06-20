@@ -109,9 +109,9 @@ import (
 	"fmt"
 	"math/rand"
 
-	"git.itv.restr.im/itv-backend/reindexer"
+	"github.com/restream/reindexer"
 	// choose how the Reindexer binds to the app (in this case "builtin," which means link Reindexer as a static library)
-	_ "git.itv.restr.im/itv-backend/reindexer/bindings/builtin"
+	_ "github.com/restream/reindexer/bindings/builtin"
 
 )
 
@@ -415,7 +415,7 @@ If source data is available in JSON format, then it is possible to improve perfo
 Upsert or Delete functions can process JSON just by passing []byte argument with json 
 ```go
 	json := []byte (`{"id":1,"name":"test"}`)
-	db.UpsertJSON ("items",json)
+	db.Upsert  ("items",json)
 ```
 
 It is just faster equalent of:

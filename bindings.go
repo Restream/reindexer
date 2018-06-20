@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"unsafe"
 
-	"strings"
-
 	"github.com/restream/reindexer/bindings"
 	"github.com/restream/reindexer/cjson"
 )
@@ -35,7 +33,7 @@ func (db *Reindexer) modifyItem(namespace string, ns *reindexerNamespace, item i
 		return
 	}
 
-	out, err := db.binding.ModifyItem(ser.Bytes(), mode)
+	out, err := db.binding.ModifyItem(ns.nsHash, ser.Bytes(), mode)
 
 	if err != nil {
 		return 0, err
@@ -131,7 +129,7 @@ func (db *Reindexer) getMeta(namespace, key string) ([]byte, error) {
 }
 
 func unpackItem(ns nsArrayEntry, params rawResultItemParams, allowUnsafe bool, nonCacheableData bool) (item interface{}, err error) {
-	useCache := (ns.deepCopyIface || allowUnsafe) && !nonCacheableData
+	useCache := (ns.deepCopyIface || allowUnsafe) && !nonCacheableData && ns.cacheItems != nil
 	needCopy := ns.deepCopyIface && !allowUnsafe
 
 	if useCache {
@@ -318,15 +316,11 @@ func (db *Reindexer) execJSONQuery(q *Query, jsonRoot string) *JSONIterator {
 func (db *Reindexer) prepareSQL(namespace, query string, asJson bool) (result bindings.RawBuffer, nsArray []nsArrayEntry, err error) {
 	nsArray = make([]nsArrayEntry, 0, 3)
 	var ns *reindexerNamespace
-	querySlice := strings.Split(strings.ToLower(query), " ")
-	if len(querySlice) > 0 && querySlice[0] == "describe" {
-		ns = &reindexerNamespace{
-			rtype:      reflect.TypeOf(NamespaceDescription{}),
-			cjsonState: cjson.NewState(),
-		}
-	} else if ns, err = db.getNS(namespace); err != nil {
+
+	if ns, err = db.getNS(namespace); err != nil {
 		return
 	}
+
 	nsArray = append(nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
 
 	ptVersions := make([]int32, 0, 16)
@@ -368,7 +362,7 @@ func (db *Reindexer) deleteQuery(q *Query) (int, error) {
 		return 0, err
 	}
 
-	result, err := db.binding.DeleteQuery(q.ser.Bytes())
+	result, err := db.binding.DeleteQuery(ns.nsHash, q.ser.Bytes())
 	if err != nil {
 		return 0, err
 	}
@@ -397,4 +391,12 @@ func (db *Reindexer) deleteQuery(q *Query) (int, error) {
 	}
 
 	return rawQueryParams.count, err
+}
+
+func WithCgoLimit(cgoLimit int) interface{} {
+	return bindings.OptionCgoLimit{cgoLimit}
+}
+
+func WithConnPoolSize(connPoolSize int) interface{} {
+	return bindings.OptionConnPoolSize{connPoolSize}
 }

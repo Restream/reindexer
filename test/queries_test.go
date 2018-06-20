@@ -48,6 +48,31 @@ type TestItemSimpleCmplxPK struct {
 	SubID string `reindex:"subid,,pk"`
 }
 
+type objectType struct {
+	Name string `reindex:"name"`
+	Age  int    `reindex:"age"`
+	Rate int    `reindex:"rate"`
+	Hash int64  `reindex:"hash"`
+}
+
+type TestItemObjectArray struct {
+	ID        int          `reindex:"id,,pk"`
+	Code      int64        `reindex:"code"`
+	IsEnabled bool         `reindex:"is_enabled"`
+	Desc      string       `reindex:"desc"`
+	Objects   []objectType `reindex:"objects"`
+	MainObj   objectType   `reindex:"main_obj"`
+	Size      int          `reindex:"size"`
+	Hash      int64        `reindex:"hash"`
+	Salt      int          `reindex:"salt"`
+	IsUpdated bool         `reindex:"is_updated"`
+}
+
+type TestItemNestedPK struct {
+	PrimaryID int      `reindex:"primary_id,,pk"`
+	Nested    TestItem `json:"nested"`
+}
+
 func init() {
 	tnamespaces["test_items_simple"] = TestItemSimple{}
 	tnamespaces["test_items_simple_cmplx_pk"] = TestItemSimpleCmplxPK{}
@@ -96,6 +121,44 @@ func newTestItem(id int, pkgsCount int) *TestItem {
 		Actor: Actor{
 			Name: randString(),
 		},
+	}
+}
+
+func newTestItemNestedPK(id int, pkgsCount int) *TestItemNestedPK {
+	return &TestItemNestedPK{
+		PrimaryID: mkID(id),
+		Nested:    *newTestItem(id+10, pkgsCount),
+	}
+}
+
+func newTestItemObjectArray(id int, arrSize int) *TestItemObjectArray {
+	arr := make([]objectType, 0, arrSize)
+
+	for i := 0; i < arrSize; i++ {
+		arr = append(arr, objectType{
+			Name: randString(),
+			Age:  rand.Int() % 50,
+			Rate: rand.Int() % 10,
+			Hash: rand.Int63() % 1000000 >> 1,
+		})
+	}
+
+	return &TestItemObjectArray{
+		ID:        id,
+		Code:      rand.Int63() % 10000 >> 1,
+		IsEnabled: (rand.Int() % 2) == 0,
+		Desc:      randString(),
+		Objects:   arr,
+		MainObj: objectType{
+			Name: randString(),
+			Age:  rand.Int() % 50,
+			Rate: rand.Int() % 10,
+			Hash: rand.Int63() % 1000000 >> 1,
+		},
+		Size:      rand.Int() % 200000,
+		Hash:      rand.Int63() % 1000000 >> 1,
+		Salt:      rand.Int() % 100000,
+		IsUpdated: (rand.Int() % 2) == 0,
 	}
 }
 
@@ -489,4 +552,62 @@ func TestDeleteQuery(t *testing.T) {
 		panic(fmt.Errorf("Item was found after delete query, but will be deleted"))
 	}
 
+}
+
+func TestDeleteByPK(t *testing.T) {
+	nsOpts := reindexer.DefaultNamespaceOptions()
+
+	assertErrorMessage(t, DB.OpenNamespace("test_items_object_array", nsOpts, TestItemObjectArray{}), nil)
+	for i := 1; i <= 30; i++ {
+		assertErrorMessage(t, DB.Upsert("test_items_object_array", newTestItemObjectArray(i, rand.Int()%10)), nil)
+	}
+	assertErrorMessage(t, DB.MustBeginTx("test_items_object_array").Commit(nil), nil)
+	assertErrorMessage(t, DB.CloseNamespace("test_items_object_array"), nil)
+	assertErrorMessage(t, DB.OpenNamespace("test_items_object_array", nsOpts, TestItemObjectArray{}), nil)
+
+	for i := 1; i <= 30; i++ {
+		// specially create a complete item
+		assertErrorMessage(t, DB.Delete("test_items_object_array", newTestItemObjectArray(i, rand.Int()%10)), nil)
+
+		// check deletion result
+		if item, found := DB.Query("test_items_object_array").WhereInt("id", reindexer.EQ, i).Get(); found {
+			t.Fatalf("Item has not been deleted. < %+v > ", item)
+		}
+	}
+
+	assertErrorMessage(t, DB.OpenNamespace("test_item_delete", nsOpts, TestItem{}), nil)
+	for i := 1; i <= 30; i++ {
+		assertErrorMessage(t, DB.Upsert("test_item_delete", newTestItem(i, rand.Int()%20)), nil)
+	}
+	assertErrorMessage(t, DB.MustBeginTx("test_item_delete").Commit(nil), nil)
+	assertErrorMessage(t, DB.CloseNamespace("test_item_delete"), nil)
+	assertErrorMessage(t, DB.OpenNamespace("test_item_delete", nsOpts, TestItem{}), nil)
+
+	for i := 1; i <= 30; i++ {
+		// specially create a complete item
+		assertErrorMessage(t, DB.Delete("test_item_delete", newTestItem(i, rand.Int()%20)), nil)
+
+		// check deletion result
+		if item, found := DB.Query("test_item_delete").WhereInt("id", reindexer.EQ, mkID(i)).Get(); found {
+			t.Fatalf("Item has not been deleted. < %+v > ", item)
+		}
+	}
+
+	assertErrorMessage(t, DB.OpenNamespace("test_item_nested_pk", nsOpts, TestItemNestedPK{}), nil)
+	for i := 1; i <= 30; i++ {
+		assertErrorMessage(t, DB.Upsert("test_item_nested_pk", newTestItemNestedPK(i, rand.Int()%20)), nil)
+	}
+	assertErrorMessage(t, DB.MustBeginTx("test_item_nested_pk").Commit(nil), nil)
+	assertErrorMessage(t, DB.CloseNamespace("test_item_nested_pk"), nil)
+	assertErrorMessage(t, DB.OpenNamespace("test_item_nested_pk", nsOpts, TestItemNestedPK{}), nil)
+
+	for i := 1; i <= 30; i++ {
+		// specially create a complete item
+		assertErrorMessage(t, DB.Delete("test_item_nested_pk", newTestItemNestedPK(i, rand.Int()%20)), nil)
+
+		// check deletion result
+		if item, found := DB.Query("test_item_nested_pk").WhereInt("id", reindexer.EQ, mkID(i)).Get(); found {
+			t.Fatalf("Item has not been deleted. < %+v > ", item)
+		}
+	}
 }

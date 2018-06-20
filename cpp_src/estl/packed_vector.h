@@ -75,7 +75,7 @@ public:
 		size_ += (to - from);
 	}
 	void shrink_to_fit() { data_.shrink_to_fit(); }
-	size_type real_size() { return data_.size(); }
+	size_type heap_size() { return data_.capacity(); }
 	void clear() {
 		data_.clear();
 		size_ = 0;

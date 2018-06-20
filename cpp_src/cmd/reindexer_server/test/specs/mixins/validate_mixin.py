@@ -1,6 +1,11 @@
+from jsonschema import validate
 
 
 class ValidateMixin(object):
+    def validate_response_by_schema(self, body, schemaName):
+        schema = self.SWAGGER['definitions'][schemaName]
+        validate(body, schema)
+
     def validate_get_list_response(self, status, body, schemaName, is_not_empty_check=False):
         self.assertEqual(True, status == 200)
         self.assertEqual(True, 'items' in body, body)
@@ -11,16 +16,16 @@ class ValidateMixin(object):
             self.assertEqual(True, body['total_items'] > 0)
             self.assertEqual(True, len(body['items']) > 0)
 
-        self.schema_validate_response(body, schemaName)
+        self.validate_response_by_schema(body, schemaName)
 
     def validate_get_namespace_response(self, status, body, sampleIndexesArrayOfDict=[]):
         self.assertEqual(True, status == 200)
-        self.schema_validate_response(body, 'Namespace')
+        self.validate_response_by_schema(body, 'Namespace')
 
         if len(sampleIndexesArrayOfDict):
             receivedIndexes = body['indexes']
             for index in receivedIndexes:
-                self.schema_validate_response(index, 'Index')
+                self.validate_response_by_schema(index, 'Index')
             self.assertEqual(True, len(sampleIndexesArrayOfDict)
                              == len(receivedIndexes))
             self.assertEqual(True, sampleIndexesArrayOfDict == receivedIndexes)
@@ -29,7 +34,7 @@ class ValidateMixin(object):
         self.assertEqual(True, status == 200)
         receivedIndexes = body['items']
         for index in receivedIndexes:
-            self.schema_validate_response(index, 'Index')
+            self.validate_response_by_schema(index, 'Index')
         self.assertEqual(True, len(sampleIndexesArrayOfDict)
                          == len(receivedIndexes))
         self.assertEqual(True, sampleIndexesArrayOfDict == receivedIndexes)

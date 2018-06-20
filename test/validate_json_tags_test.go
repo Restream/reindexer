@@ -95,7 +95,7 @@ var (
 
 func assertErrorMessage(t *testing.T, actual error, expected error) {
 	if fmt.Sprintf("%v", actual) != fmt.Sprintf("%v", expected) {
-		t.Errorf("Error actual = %v, and Expected = %v.", actual, expected)
+		t.Fatalf("Error actual = %v, and Expected = %v.", actual, expected)
 	}
 }
 

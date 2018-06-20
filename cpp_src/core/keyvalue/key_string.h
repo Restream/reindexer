@@ -29,6 +29,13 @@ public:
 		static base_key_string sample;
 		return ptrdiff_t(reinterpret_cast<const char *>(&sample.export_hdr_) - reinterpret_cast<const char *>(&sample));
 	}
+	size_t heap_size() {
+		// Check for SSO
+		uintptr_t pstart = uintptr_t(this);
+		uintptr_t pend = pstart + sizeof(string);
+		uintptr_t pdata = uintptr_t(data());
+		return (pdata >= pstart && pdata < pend) ? 0 : capacity();
+	};
 
 	// delete all modification methods - to be sure, that base_key_string is mutable, and export will not invalidate after construction
 	iterator begin() = delete;

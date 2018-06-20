@@ -228,6 +228,33 @@ Index *IndexUnordered<T>::Clone() {
 	return new IndexUnordered<T>(*this);
 }
 
+template <typename T>
+IndexMemStat IndexUnordered<T>::GetMemStat() {
+	IndexMemStat ret = IndexStore<typename T::key_type>::GetMemStat();
+	ret.uniqKeysCount = idx_map.size();
+	ret.sortOrdersSize = this->sortOrders_.capacity();
+	if (cache_) ret.idsetCache = cache_->GetMemStat();
+	getMemStat(ret);
+	for (auto &it : idx_map) {
+		ret.idsetPlainSize += sizeof(it.second) + it.second.ids_.heap_size();
+		ret.idsetBTreeSize += it.second.ids_.BTreeSize();
+	}
+
+	return ret;
+}
+
+template <typename T>
+template <typename U, typename std::enable_if<is_string_map_key<U>::value || is_string_unord_map_key<T>::value>::type *>
+void IndexUnordered<T>::getMemStat(IndexMemStat &ret) {
+	for (auto &it : idx_map) {
+		ret.dataSize += it.first->heap_size() + sizeof(*it.first.get());
+	}
+}
+
+template <typename T>
+template <typename U, typename std::enable_if<!is_string_map_key<U>::value && !is_string_unord_map_key<T>::value>::type *>
+void IndexUnordered<T>::getMemStat(IndexMemStat & /*ret*/) {}
+
 template <typename KeyEntryT>
 static Index *IndexUnordered_New(IndexType type, const string &name, const IndexOpts &opts, const PayloadType payloadType,
 								 const FieldsSet &fields) {

@@ -1,8 +1,34 @@
+# Version 1.9.3 (20.06.2018)
+
+## Core
+
+- [fea] Added system namespaces #memstats #profstats #queriesstats #namespaces with executuin and profiling statistics
+- [fea] Added system namespace #config with runtime profiling configuration
+- [fix] Join cache memory limitation
+- [fix] Fixed bug with cjson parsing in nested objects on delete
+- [fix] 32 bit reference counter for records instead of 16 bit
+- [fix] Crash on load namespaces from storage with custom sort order
+- [fix] Crash on select from composite index, after delete last shared string copy for sub part of composite index
+- [fix] Full text build threads limited to 8
+
+## Reindexer Server
+
+- [fea] Load data in multiple threads on startup
+- [fea] Auto rebalance connection between worker threads
+- [fix] "Authorization" http header case insensitivity lookup
+- [fix] Unexpected exit on SIGPIPE
+- [fix] Namespaces names are now url decoded
+
+## Go connector
+
+- [fea] Ability to pass extra options to bindings
+- [ref] cgo buffers cleanup optimization
+
 # Version 1.9.2 (04.06.2018)
 
 ## Core
-- [fea] SQL parser performance impooved
-- [fea] Caching of intemediate join results
+- [fea] SQL parser performance improved
+- [fea] Caching of intermediate join results
 - [fix] Assert on error cjson parser disabled: server will not crash on application errors
 - [fix] Relaxed check of fields type on index addition and loading from storage
 - [fix] Potential field data corruption on runtime index addition
@@ -38,7 +64,7 @@
 - [fix] Incorrect total count for queries without where clause
 - [fea] custom collate now accepts sequence of letters
 - [fix] Build issues with clang 3.9
-- [fix] Cmake build dependencies, leveldb and snappy optinally added as ExternalProject
+- [fix] Cmake build dependencies, leveldb and snappy optionally added as ExternalProject
 - [port] Windows and BSD build
 - [port] 32 bit build
 
@@ -47,7 +73,7 @@
 
 ## Reindexer server
 - [ref] Flags `create_if_missed` and `drop_on_format_error` are removed from namespaces API
-- [fix] Correct behaviour on logging different loggers to the same file
+- [fix] Correct behavior on logging different loggers to the same file
 - [fix] CPU profiler error in case of 
 - [port] Ability to run as Windows service and cmake Windows NSIS installer
 
@@ -69,7 +95,7 @@
 
 
 ## Go connector
-- [fix] Golang SQL query pseudo preparser accept all whitespace chars, not only ' ' 
+- [fix] Golang SQL query pseudo pre-parser accept all whitespace chars, not only ' ' 
 - [fix] Correct composite PK handling in QueryTest
 - [fix] Support of multiply index options in struct tag
 
@@ -81,8 +107,8 @@
 - [fea] Support of custom letters order set for string collates
 - [fea] Full text indexing memory consumption optimization
 - [fea] Thread russian letter `ё` as `е` in full text index
-- [fix] Fixed incorrect behaviour of full text search with term `*<stop-word>`
-- [fix] Fixed full text behaviour with FtDSL started with `+`
+- [fix] Fixed incorrect behavior of full text search with term `*<stop-word>`
+- [fix] Fixed full text behavior with FtDSL started with `+`
 - [fix] Fix conflict of with leveldb's and reindexer's tcmalloc library
 
 ## Reindexer server
@@ -115,7 +141,7 @@
 - [fix] Added utf8 strings validation
 - [fix] WrSerializer::Printf incorrect buffer maxlen calculation
 - [ref] utf8 collates does not allocate extra memory
-- [ref] sort by unordered indexes optimizstions
+- [ref] sort by unordered indexes optimizations
 - [ref] Join queries optimizations
 
 ## Go connector
@@ -123,7 +149,7 @@
 - [fea] Composite indexes direct queries support
 
 ## Reindexer server beta
-- [fea] Write components logs to seprate files
+- [fea] Write components logs to separate files
 - [ref] Protocol breaking changes
 
 # Version 1.5.0 (02.03.2018)
@@ -141,14 +167,14 @@
 ## C++ Core
 - [ref] Item and Reindexer classes API has been redesigned. C++ tests was refactored to run with new API
 - [fix] Potential race conditions and memory leak was fixed
-- [fix] Fixed Query optimizator bug. Queries with Join and precondition with GT/LT condition can return incorrect results
+- [fix] Fixed Query optimization bug. Queries with Join and precondition with GT/LT condition can return incorrect results
 - [fea] Add/Drop indexes without reloading data
 - [ref] Redundant Makefiles removed
 - [del] Ugly RenameNamespace & CloneNamespace API was removed
 - [fix] Fixed unnecessary copy results of precondition Join Query
 
 ## Go connector
-- [fea] cproto connector to stangalone server
+- [fea] cproto connector to standalone server
 - [fix] Potential races was fixed
 - [del] Tx now alias to Batch. Old update logic was deprecated
 - [fix] Limit cgo execution to 2K goroutines to avoid exceed of OS threads limit 
@@ -156,3 +182,4 @@
 - [fix] Query builder did not reset opOR after InnerJoin
 
 ## Misc
+

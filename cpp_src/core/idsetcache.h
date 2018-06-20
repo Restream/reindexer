@@ -16,6 +16,7 @@ struct IdSetCacheKey {
 		sort = other.sort;
 		return *this;
 	}
+	size_t Size() const { return sizeof(IdSetCacheKey) + hkeys.size() * sizeof(KeyValues::value_type); }
 
 	const KeyValues *keys;
 	CondType cond;
@@ -26,7 +27,7 @@ struct IdSetCacheKey {
 struct IdSetCacheVal {
 	IdSetCacheVal() : ids(nullptr) {}
 	IdSetCacheVal(const IdSet::Ptr &i) : ids(i) {}
-	size_t Size() const { return ids ? ids->size() * sizeof(IdSet::value_type) : 0; }
+	size_t Size() const { return ids ? sizeof(*ids.get()) + ids->heap_size() : 0; }
 
 	IdSet::Ptr ids;
 };

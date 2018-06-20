@@ -24,6 +24,7 @@ public:
 	Index* Clone() override;
 	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) override final;
 	void Commit() override final;
+	IndexMemStat GetMemStat() override;
 
 protected:
 	struct MergeInfo {

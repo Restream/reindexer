@@ -12,7 +12,7 @@ class DatabasesTest(BaseTest):
         """Should be able to create a new database"""
 
         status, _ = self.api_create_db(self.test_db)
-        self.assertEqual(True, status == 200, status)
+        self.assertEqual(True, status == self.API_STATUS['success'], status)
 
         status, body = self.api_get_dbs()
         self.validate_get_list_response(status, body, 'Databases', True)
@@ -21,13 +21,13 @@ class DatabasesTest(BaseTest):
         """Should be able to delete a database"""
 
         status, _ = self.api_create_db(self.test_db)
-        self.assertEqual(True, status == 200)
+        self.assertEqual(True, status == self.API_STATUS['success'], status)
 
         status, body = self.api_get_dbs()
         self.validate_get_list_response(status, body, 'Databases', True)
 
         status, _ = self.api_delete_db(self.test_db)
-        self.assertEqual(True, status == 200)
+        self.assertEqual(True, status == self.API_STATUS['success'], status)
 
         status, body = self.api_get_dbs()
         self.validate_get_list_response(status, body, 'Databases')
@@ -36,13 +36,13 @@ class DatabasesTest(BaseTest):
         """Should be able to get non-sorted database list with empty sort_order param"""
 
         status, _ = self.api_create_db(self.test_db)
-        self.assertEqual(True, status == 200)
+        self.assertEqual(True, status == self.API_STATUS['success'], status)
 
-        self._test_timestamp_update()
-        self.update_db()
+        self.helper_update_timestamp()
+        self.helper_update_testdata_db()
 
         status, _ = self.api_create_db(self.test_db)
-        self.assertEqual(True, status == 200)
+        self.assertEqual(True, status == self.API_STATUS['success'], status)
 
         status, body = self.api_get_sorted_dbs()
         self.validate_get_list_response(status, body, 'Databases', True)
@@ -56,13 +56,13 @@ class DatabasesTest(BaseTest):
         """Should be able to get asc-sorted database list"""
 
         status, _ = self.api_create_db(self.test_db)
-        self.assertEqual(True, status == 200)
+        self.assertEqual(True, status == self.API_STATUS['success'], status)
 
-        self._test_timestamp_update()
-        self.update_db()
+        self.helper_update_timestamp()
+        self.helper_update_testdata_db()
 
         status, _ = self.api_create_db(self.test_db)
-        self.assertEqual(True, status == 200)
+        self.assertEqual(True, status == self.API_STATUS['success'], status)
 
         status, body = self.api_get_sorted_dbs('asc')
         self.validate_get_list_response(status, body, 'Databases', True)
@@ -73,13 +73,13 @@ class DatabasesTest(BaseTest):
         """Should be able to get desc-sorted database list"""
 
         status, _ = self.api_create_db(self.test_db)
-        self.assertEqual(True, status == 200)
+        self.assertEqual(True, status == self.API_STATUS['success'], status)
 
-        self._test_timestamp_update()
-        self.update_db()
+        self.helper_update_timestamp()
+        self.helper_update_testdata_db()
 
         status, body = self.api_create_db(self.test_db)
-        self.assertEqual(True, status == 200, body)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
 
         status, body = self.api_get_sorted_dbs('desc')
         self.validate_get_list_response(status, body, 'Databases', True)
@@ -90,13 +90,13 @@ class DatabasesTest(BaseTest):
         """Shouldn't be able to get sorted database list with wrong sort_order param"""
 
         status, _ = self.api_create_db(self.test_db)
-        self.assertEqual(True, status == 200)
+        self.assertEqual(True, status == self.API_STATUS['success'], status)
 
-        self._test_timestamp_update()
-        self.update_db()
+        self.helper_update_timestamp()
+        self.helper_update_testdata_db()
 
         status, _ = self.api_create_db(self.test_db)
-        self.assertEqual(True, status == 200)
+        self.assertEqual(True, status == self.API_STATUS['success'], status)
 
         status, body = self.api_get_sorted_dbs('wrong')
-        self.assertEqual(True, status == 400)
+        self.assertEqual(True, status == self.API_STATUS['bad_request'], body)

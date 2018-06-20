@@ -7,7 +7,6 @@
 #include <thread>
 #include "core/cjson/jsonencoder.h"
 #include "core/index/index.h"
-#include "core/nsdescriber/nsdescriber.h"
 #include "core/nsselecter/nsselecter.h"
 #include "itemimpl.h"
 #include "storage/storagefactory.h"
@@ -54,6 +53,7 @@ Namespace::Namespace(const Namespace &src)
 	  updates_(src.updates_),
 	  unflushedCount_(0),
 	  sortOrdersBuilt_(false),
+	  sortedQueriesCount_(0),
 	  pkFields_(src.pkFields_),
 	  meta_(src.meta_),
 	  dbpath_(src.dbpath_),
@@ -70,12 +70,14 @@ Namespace::Namespace(const string &name, CacheMode cacheMode)
 	  tagsMatcher_(payloadType_),
 	  unflushedCount_(0),
 	  sortOrdersBuilt_(false),
+	  sortedQueriesCount_(0),
 	  queryCache_(make_shared<QueryCache>()),
 	  joinCache_(make_shared<JoinCache>()),
 	  cacheMode_(cacheMode),
 	  needPutCacheMode_(true) {
 	logPrintf(LogTrace, "Namespace::Namespace (%s)", name_.c_str());
 	items_.reserve(10000);
+	enablePerfCounters_ = false;
 
 	// Add index and payload field for tuple of non indexed fields
 	addIndex("-tuple", "", IndexStrStore, IndexOpts());
@@ -428,7 +430,9 @@ void Namespace::Delete(Item &item) {
 	ItemImpl *ritem = item.impl_;
 	string jsonSliceBuf;
 
+	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
 	WLock lock(mtx_);
+	calc.LockHit();
 
 	updateTagsMatcherFromItem(ritem, jsonSliceBuf);
 
@@ -476,7 +480,10 @@ void Namespace::_delete(IdType id) {
 }
 
 void Namespace::Delete(const Query &q, QueryResults &result) {
+	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
 	WLock lock(mtx_);
+	calc.LockHit();
+
 	NsSelecter selecter(this);
 	SelectCtx ctx(q, nullptr);
 	selecter(result, ctx);
@@ -567,7 +574,9 @@ void Namespace::upsertInternal(Item &item, bool store, uint8_t mode) {
 	ItemImpl *itemImpl = item.impl_;
 	string jsonSlice;
 
+	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
 	WLock lock(mtx_);
+	calc.LockHit();
 
 	updateTagsMatcherFromItem(itemImpl, jsonSlice);
 
@@ -736,6 +745,7 @@ void Namespace::commit(const NSCommitContext &ctx, SelectLockUpgrader *lockUpgra
 
 void Namespace::markUpdated() {
 	sortOrdersBuilt_ = false;
+	sortedQueriesCount_ = 0;
 	preparedIndexes_.clear();
 	commitedIndexes_.clear();
 	invalidateQueryCache();
@@ -745,11 +755,6 @@ void Namespace::markUpdated() {
 void Namespace::Select(QueryResults &result, SelectCtx &params) {
 	NsSelecter selecter(this);
 	selecter(result, params);
-}
-
-void Namespace::Describe(QueryResults &result) {
-	NsDescriber describer(this);
-	describer(result);
 }
 
 NamespaceDef Namespace::GetDefinition() {
@@ -772,6 +777,47 @@ NamespaceDef Namespace::GetDefinition() {
 		nsDef.AddIndex(indexDef);
 	}
 	return nsDef;
+}
+
+NamespaceMemStat Namespace::GetMemStat() {
+	RLock lck(mtx_);
+
+	NamespaceMemStat ret;
+	ret.name = name_;
+	ret.joinCache = joinCache_->GetMemStat();
+	ret.queryCache = queryCache_->GetMemStat();
+
+	ret.itemsCount = items_.size() - free_.size();
+	for (auto &item : items_) {
+		if (!item.IsFree()) ret.dataSize += item.GetCapacity() + sizeof(PayloadValue::dataHeader);
+	}
+
+	ret.emptyItemsCount = free_.size();
+
+	ret.Total.dataSize = ret.dataSize + items_.capacity() * sizeof(PayloadValue);
+	ret.Total.cacheSize = ret.joinCache.totalSize + ret.queryCache.totalSize;
+
+	for (auto &idx : indexes_) {
+		auto istat = idx->GetMemStat();
+		ret.Total.indexesSize += istat.idsetPlainSize + istat.idsetBTreeSize + istat.sortOrdersSize + istat.fulltextSize + istat.columnSize;
+		ret.Total.dataSize += istat.dataSize;
+		ret.Total.cacheSize += istat.idsetCache.totalSize;
+		ret.indexes.push_back(istat);
+	}
+
+	char *endp;
+	ret.updatedUnixNano = strtoull(getMeta("updated").c_str(), &endp, 10);
+	ret.storageOK = storage_ != nullptr;
+	ret.storagePath = dbpath_;
+	return ret;
+}
+
+NamespacePerfStat Namespace::GetPerfStat() {
+	NamespacePerfStat ret;
+	ret.name = name_;
+	ret.selects = selectPerfCounter_.Get<PerfStat>();
+	ret.updates = updatePerfCounter_.Get<PerfStat>();
+	return ret;
 }
 
 bool Namespace::loadIndexesFromStorage() {
@@ -812,6 +858,7 @@ bool Namespace::loadIndexesFromStorage() {
 			opts.Dense(ser.GetVarUint());
 			opts.Appendable(ser.GetVarUint());
 			opts.SetCollateMode(static_cast<CollateMode>(ser.GetVarUint()));
+			if (opts.GetCollateMode() == CollateCustom) opts.collateOpts_ = CollateOpts(ser.GetVString().ToString());
 			for (auto &jsonPath : jsonPaths) {
 				addIndex(name, jsonPath, type, opts);
 			}
@@ -858,6 +905,9 @@ void Namespace::saveIndexesToStorage() {
 		ser.PutVarUint(indexes_[f]->Opts().IsDense());
 		ser.PutVarUint(indexes_[f]->Opts().IsAppendable());
 		ser.PutVarUint(indexes_[f]->Opts().GetCollateMode());
+
+		if (indexes_[f]->Opts().GetCollateMode() == CollateCustom)
+			ser.PutVString(indexes_[f]->Opts().collateOpts_.sortOrderTable.GetSortOrderCharacters());
 	}
 
 	storage_->Write(StorageOpts().FillCache(), string_view(kStorageIndexesPrefix),
@@ -865,14 +915,14 @@ void Namespace::saveIndexesToStorage() {
 }
 
 void Namespace::EnableStorage(const string &path, StorageOpts opts) {
-	if (storage_) {
-		throw Error(errLogic, "Storage already enabled for namespace '%s' on path '%s'", name_.c_str(), path.c_str());
-	}
-
 	string dbpath = fs::JoinPath(path, name_);
 	datastorage::StorageType storageType = datastorage::StorageType::LevelDB;
 
 	WLock lock(mtx_);
+	if (storage_) {
+		throw Error(errLogic, "Storage already enabled for namespace '%s' on path '%s'", name_.c_str(), path.c_str());
+	}
+
 	storage_.reset(datastorage::StorageFactory::create(storageType));
 
 	bool success = false;
@@ -880,12 +930,14 @@ void Namespace::EnableStorage(const string &path, StorageOpts opts) {
 		Error status = storage_->Open(dbpath, opts);
 		if (!status.ok()) {
 			if (!opts.IsDropOnFileFormatError()) {
+				storage_ = nullptr;
 				throw Error(errLogic, "Can't enable storage for namespace '%s' on path '%s' - %s", name_.c_str(), path.c_str(),
 							status.what().c_str());
 			}
 		} else {
 			success = loadIndexesFromStorage();
 			if (!success && !opts.IsDropOnFileFormatError()) {
+				storage_ = nullptr;
 				throw Error(errLogic, "Can't enable storage for namespace '%s' on path '%s': format error", name_.c_str(), dbpath.c_str());
 			}
 			getCachedMode();
@@ -893,6 +945,7 @@ void Namespace::EnableStorage(const string &path, StorageOpts opts) {
 		if (!success && opts.IsDropOnFileFormatError()) {
 			opts.DropOnFileFormatError(false);
 			storage_->Destroy(path);
+			storage_ = nullptr;
 		}
 	}
 
@@ -937,7 +990,10 @@ void Namespace::LoadFromStorage() {
 
 void Namespace::FlushStorage() {
 	WLock wlock(mtx_);
+	flushStorage();
+}
 
+void Namespace::flushStorage() {
 	if (storage_) {
 		putCachedMode();
 
@@ -961,8 +1017,17 @@ void Namespace::FlushStorage() {
 
 void Namespace::DeleteStorage() {
 	WLock lck(mtx_);
-	if (!dbpath_.empty()) {
+	if (storage_) {
 		storage_->Destroy(dbpath_.c_str());
+		dbpath_.clear();
+		storage_.reset();
+	}
+}
+void Namespace::CloseStorage() {
+	WLock lck(mtx_);
+	if (storage_) {
+		flushStorage();
+		dbpath_.clear();
 		storage_.reset();
 	}
 }
@@ -1161,15 +1226,17 @@ void Namespace::GetIndsideFromJoinCache(JoinCacheRes &ctx) {
 	}
 }
 
-void Namespace::PutJoinPreResultToCache(JoinCacheRes &res, SelectCtx::PreResult::Ptr preResult) {
+void Namespace::PutToJoinCache(JoinCacheRes &res, SelectCtx::PreResult::Ptr preResult) {
 	JoinCacheVal joinCacheVal;
 	res.needPut = false;
 	joinCacheVal.inited = true;
 	joinCacheVal.preResult = preResult;
-	joinCacheVal.cache_final_->SetHitCount(1);
 	joinCache_->Put(res.key, joinCacheVal);
 }
-
+void Namespace::PutToJoinCache(JoinCacheRes &res, JoinCacheVal &val) {
+	val.inited = true;
+	joinCache_->Put(res.key, val);
+}
 void Namespace::SetCacheMode(CacheMode cacheMode) {
 	WLock lock(cache_mtx_);
 	needPutCacheMode_ = true;
@@ -1183,12 +1250,12 @@ void Namespace::putCachedMode() {
 	storage_->Write(StorageOpts().FillCache(), string_view(kStorageCachePrefix), string_view(data.data(), data.size()));
 }
 void Namespace::getCachedMode() {
+	WLock lock(cache_mtx_);
 	string data;
 	Error status = storage_->Read(StorageOpts().FillCache(), string_view(kStorageCachePrefix), data);
 	if (!status.ok()) {
 		return;
 	}
-	WLock lock(cache_mtx_);
 
 	cacheMode_ = static_cast<CacheMode>(atoi(data.c_str()));
 }

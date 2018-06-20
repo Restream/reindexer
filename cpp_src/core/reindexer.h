@@ -25,7 +25,7 @@ public:
 	~Reindexer();
 	Reindexer(const Reindexer &) = delete;
 
-	/// Enable storage
+	/// Enable storage. Must be called before InitSystemNamespaces
 	/// @param storagePath - file system path to database storage
 	/// @param skipPlaceholderCheck - If set, then reindexer will not check folder for placeholder
 	Error EnableStorage(const string &storagePath, bool skipPlaceholderCheck = false);
@@ -116,11 +116,9 @@ public:
 	/// @param nsName - Name of namespace
 	/// @param keys - std::vector filled with meta keys
 	Error EnumMeta(const string &nsName, vector<string> &keys);
-	/// Reset current thread reindexer statistics
-	Error ResetStats();
-	/// Get current thread reindexer statistics
-	/// @param stat - reindexer_stat filled with current thread statistics
-	Error GetStats(reindexer_stat &stat);
+
+	/// Init system namepaces, and load config from config namespace
+	Error InitSystemNamespaces();
 
 private:
 	ReindexerImpl *impl_;

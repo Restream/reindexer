@@ -22,7 +22,8 @@ public:
 
 	bool IsFinished() override final { return !sock_.valid(); }
 	bool Restart(int fd) override final;
-	void Reatach(ev::dynamic_loop &loop) override final;
+	void Detach() override final;
+	void Attach(ev::dynamic_loop &loop) override final;
 
 	// Writer iterface implementation
 	void WriteRPCReturn(Context &ctx, const Args &args) override final { responceRPC(ctx, errOK, args); }

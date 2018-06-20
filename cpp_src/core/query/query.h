@@ -42,7 +42,7 @@ public:
 	Error ParseJson(const string &dsl);
 
 	/// Logs query in 'Select field1, ... field N from namespace ...' format.
-	string Dump() const;
+	string Dump(bool stripArgs = false) const;
 
 	/// Adds a condition with a single value. Analog to sql Where clause.
 	/// @param idx - index used in condition clause.
@@ -319,11 +319,6 @@ protected:
 	/// @return always returns zero.
 	int selectParse(tokenizer &tok);
 
-	/// Parses namespace part of sql query.
-	/// @param tok - tokenizer object instance.
-	/// @return always returns zero.
-	int describeParse(tokenizer &tok);
-
 	/// Parses JSON dsl set.
 	/// @param dsl - dsl set.
 	void parseJson(const string &dsl);
@@ -343,15 +338,15 @@ protected:
 
 	/// Builds print version of a query with join in sql format.
 	/// @return query sql string.
-	string dumpJoined() const;
+	string dumpJoined(bool stripArgs) const;
 
 	/// Builds a print version of a query with merge queries in sql format.
 	/// @return query sql string.
-	string dumpMerged() const;
+	string dumpMerged(bool stripArgs) const;
 
 	/// Builds a print version of a query's order by statement
 	/// @return query sql string.
-	string dumpOrderBy() const;
+	string dumpOrderBy(bool stripArgs) const;
 
 public:
 	/// Next operation constant.
@@ -369,8 +364,6 @@ public:
 	/// Calculation mode.
 	CalcTotalMode calcTotal = ModeNoTotal;
 
-	bool describe = false;
-
 	/// First row index from result set.
 	unsigned start = 0;
 
@@ -385,9 +378,6 @@ public:
 
 	/// Keys whiech always go first - before any ordered values.
 	KeyValues forcedSortOrder;
-
-	/// Container or namespaces in a describe part.
-	vector<string> namespacesNames_;
 
 	/// List of queries for join.
 	vector<Query> joinQueries_;

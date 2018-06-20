@@ -1,6 +1,7 @@
 #include <fstream>
 #include <mutex>
 
+#include <thread>
 #include "dbmanager.h"
 #include "gason/gason.h"
 #include "tools/fsops.h"
@@ -51,7 +52,7 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 		if (!canCreate) {
 			return Error(errParams, "Database '%s' not found", dbName.c_str());
 		}
-		if (auth.role_ < kRoleDBAdmin) {
+		if (auth.role_ < kRoleOwner) {
 			return Error(errForbidden, "Forbidden to create database %s", dbName.c_str());
 		}
 
@@ -82,21 +83,34 @@ Error DBManager::loadOrCreateDatabase(const string &dbName) {
 		return Error(errParams, "Can't read database dir %s", storagePath.c_str());
 	}
 
-	for (auto &de : foundNs) {
-		if (de.isDir && validateObjectName(de.name.c_str())) {
-			auto status = db->OpenNamespace(de.name, StorageOpts().Enabled());
-			if (!status.ok()) {
-				logPrintf(LogError, "Failed to open namespace '%s' - %s", de.name.c_str(), status.what().c_str());
-			}
-		}
+	int maxIndexWorkers = std::thread::hardware_concurrency();
+	unique_ptr<std::thread[]> thrs(new std::thread[maxIndexWorkers]);
+
+	for (int i = 0; i < maxIndexWorkers; i++) {
+		thrs[i] = std::thread(
+			[&](int i) {
+				for (int j = i; j < int(foundNs.size()); j += maxIndexWorkers) {
+					auto &de = foundNs[j];
+					if (de.isDir && validateObjectName(de.name.c_str())) {
+						auto status = db->OpenNamespace(de.name, StorageOpts().Enabled());
+						if (!status.ok()) {
+							logPrintf(LogError, "Failed to open namespace '%s' - %s", de.name.c_str(), status.what().c_str());
+						}
+					}
+				}
+			},
+			i);
 	}
+	for (int i = 0; i < maxIndexWorkers; i++) thrs[i].join();
+
+	db->InitSystemNamespaces();
 	dbs_[dbName] = db;
-	return 0;
+	return errOK;
 }
 
 Error DBManager::DropDatabase(AuthContext &auth) {
 	shared_ptr<Reindexer> db;
-	auto status = auth.GetDB(kRoleDBAdmin, &db);
+	auto status = auth.GetDB(kRoleOwner, &db);
 	if (!status.ok()) {
 		return status;
 	}
