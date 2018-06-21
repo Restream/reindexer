@@ -59,27 +59,27 @@ void JsonDecoder::decodeJsonObject(Payload *pl, WrSerializer &wrser, JsonValue &
 				case JSON_NUMBER: {
 					double value = elem->value.toNumber(), intpart;
 					if (std::modf(value, &intpart) == 0.0) {
-						wrser.PutVarUint(ctag(TAG_VARINT, tagName, field));
+						wrser.PutVarUint(static_cast<int>(ctag(TAG_VARINT, tagName, field)));
 					} else {
-						wrser.PutVarUint(ctag(TAG_DOUBLE, tagName, field));
+						wrser.PutVarUint(static_cast<int>(ctag(TAG_DOUBLE, tagName, field)));
 					}
 				} break;
 				case JSON_STRING:
-					wrser.PutVarUint(ctag(TAG_STRING, tagName, field));
+					wrser.PutVarUint(static_cast<int>(ctag(TAG_STRING, tagName, field)));
 					break;
 				case JSON_TRUE:
 				case JSON_FALSE:
-					wrser.PutVarUint(ctag(TAG_BOOL, tagName, field));
+					wrser.PutVarUint(static_cast<int>(ctag(TAG_BOOL, tagName, field)));
 					break;
 				case JSON_ARRAY:
-					wrser.PutVarUint(ctag(TAG_ARRAY, tagName, field));
+					wrser.PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName, field)));
 					wrser.PutVarUint(count);
 					break;
 				case JSON_NULL:
-					wrser.PutVarUint(ctag(TAG_NULL, tagName));
+					wrser.PutVarUint(static_cast<int>(ctag(TAG_NULL, tagName)));
 					break;
 				default:
-					wrser.PutVarUint(ctag(TAG_NULL, tagName));
+					wrser.PutVarUint(static_cast<int>(ctag(TAG_NULL, tagName)));
 					break;
 			}
 		}
@@ -96,30 +96,30 @@ void JsonDecoder::decodeJson(Payload *pl, WrSerializer &wrser, JsonValue &v, int
 		case JSON_NUMBER: {
 			double value = v.toNumber(), intpart;
 			if (std::modf(value, &intpart) == 0.0) {
-				wrser.PutVarUint(ctag(TAG_VARINT, tagName));
+				wrser.PutVarUint(static_cast<int>(ctag(TAG_VARINT, tagName)));
 				wrser.PutVarint(int64_t(value));
 			} else {
-				wrser.PutVarUint(ctag(TAG_DOUBLE, tagName));
+				wrser.PutVarUint(static_cast<int>(ctag(TAG_DOUBLE, tagName)));
 				wrser.PutDouble(value);
 			}
 		} break;
 		case JSON_STRING:
-			wrser.PutVarUint(ctag(TAG_STRING, tagName));
+			wrser.PutVarUint(static_cast<int>(ctag(TAG_STRING, tagName)));
 			wrser.PutVString(v.toString());
 			break;
 		case JSON_TRUE:
-			wrser.PutVarUint(ctag(TAG_BOOL, tagName));
+			wrser.PutVarUint(static_cast<int>(ctag(TAG_BOOL, tagName)));
 			wrser.PutBool(true);
 			break;
 		case JSON_FALSE:
-			wrser.PutVarUint(ctag(TAG_BOOL, tagName));
+			wrser.PutVarUint(static_cast<int>(ctag(TAG_BOOL, tagName)));
 			wrser.PutBool(false);
 			break;
 		case JSON_NULL:
-			wrser.PutVarUint(ctag(TAG_NULL, tagName));
+			wrser.PutVarUint(static_cast<int>(ctag(TAG_NULL, tagName)));
 			break;
 		case JSON_ARRAY: {
-			wrser.PutVarUint(ctag(TAG_ARRAY, tagName));
+			wrser.PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
 			unsigned pos = wrser.Len();
 			int count = 0;
 			// reserve for len
@@ -128,13 +128,13 @@ void JsonDecoder::decodeJson(Payload *pl, WrSerializer &wrser, JsonValue &v, int
 				decodeJson(pl, wrser, elem->value, 0);
 				count++;
 			}
-			*(reinterpret_cast<int *>(wrser.Buf() + pos)) = carraytag(count, TAG_OBJECT);
+			*(reinterpret_cast<int *>(wrser.Buf() + pos)) = static_cast<int>(carraytag(count, TAG_OBJECT));
 			break;
 		}
 		case JSON_OBJECT: {
-			wrser.PutVarUint(ctag(TAG_OBJECT, tagName));
+			wrser.PutVarUint(static_cast<int>(ctag(TAG_OBJECT, tagName)));
 			decodeJsonObject(pl, wrser, v);
-			wrser.PutVarUint(ctag(TAG_END, tagName));
+			wrser.PutVarUint(static_cast<int>(ctag(TAG_END, tagName)));
 			break;
 		}
 	}

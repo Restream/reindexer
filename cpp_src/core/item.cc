@@ -66,4 +66,6 @@ Item &Item::Unsafe(bool enable) {
 	return *this;
 }
 
+KeyRefs Item::GetFieldByJSONPath(const string &jsonPath) { return impl_->GetFieldByJSONPath(jsonPath); }
+
 }  // namespace reindexer

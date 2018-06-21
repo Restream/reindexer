@@ -8,7 +8,7 @@
 namespace reindexer {
 key_string BuildPayloadTuple(ConstPayload &pl, const TagsMatcher &tagsMatcher) {
 	WrSerializer wrser;
-	wrser.PutVarUint(ctag(TAG_OBJECT, 0));
+	wrser.PutVarUint(static_cast<int>(ctag(TAG_OBJECT, 0)));
 
 	for (int idx = 1; idx < pl.NumFields(); ++idx) {
 		const PayloadFieldType &fieldType(pl.Type().Field(idx));
@@ -28,26 +28,26 @@ key_string BuildPayloadTuple(ConstPayload &pl, const TagsMatcher &tagsMatcher) {
 
 		int field = idx;
 		if (fieldType.IsArray()) {
-			wrser.PutVarUint(ctag(TAG_ARRAY, tagName, field));
+			wrser.PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName, field)));
 			wrser.PutVarUint(keyRefs.size());
 		} else {
 			for (const KeyRef &keyRef : keyRefs) {
 				switch (keyRef.Type()) {
 					case KeyValueInt:
-						wrser.PutVarUint(ctag(TAG_VARINT, tagName, field));
+						wrser.PutVarUint(static_cast<int>(ctag(TAG_VARINT, tagName, field)));
 						break;
 					case KeyValueInt64:
-						wrser.PutVarUint(ctag(TAG_VARINT, tagName, static_cast<int64_t>(field)));
+						wrser.PutVarUint(static_cast<int>(ctag(TAG_VARINT, tagName, static_cast<int64_t>(field))));
 						break;
 					case KeyValueDouble:
-						wrser.PutVarUint(ctag(TAG_DOUBLE, tagName, field));
+						wrser.PutVarUint(static_cast<int>(ctag(TAG_DOUBLE, tagName, field)));
 						break;
 					case KeyValueString:
-						wrser.PutVarUint(ctag(TAG_STRING, tagName, field));
+						wrser.PutVarUint(static_cast<int>(ctag(TAG_STRING, tagName, field)));
 						break;
 					case KeyValueUndefined:
 					case KeyValueEmpty:
-						wrser.PutVarUint(ctag(TAG_NULL, tagName));
+						wrser.PutVarUint(static_cast<int>(ctag(TAG_NULL, tagName)));
 						break;
 					default:
 						std::abort();
@@ -56,7 +56,7 @@ key_string BuildPayloadTuple(ConstPayload &pl, const TagsMatcher &tagsMatcher) {
 		}
 	}
 
-	wrser.PutVarUint(ctag(TAG_END, 0));
+	wrser.PutVarUint(static_cast<int>(ctag(TAG_END, 0)));
 	return make_key_string(reinterpret_cast<const char *>(wrser.Buf()), wrser.Len());
 }
 

@@ -12,6 +12,7 @@
 namespace reindexer {
 
 using std::string;
+using TagsPath = h_vector<int16_t, 6>;
 
 class TagsMatcherImpl {
 public:
@@ -19,6 +20,24 @@ public:
 	TagsMatcherImpl(PayloadType payloadType) : payloadType_(payloadType), version_(0), cacheToken_(rand()) {}
 	~TagsMatcherImpl() {
 		//	if (tags2names_.size()) printf("~TagsMatcherImpl::TagsMatcherImpl %d\n", int(tags2names_.size()));
+	}
+
+	TagsPath path2tag(const string &jsonPath) const {
+		string field;
+		TagsPath fieldTags;
+		for (size_t pos = 0, lastPos = 0; pos != jsonPath.length(); lastPos = pos + 1) {
+			pos = jsonPath.find(".", lastPos);
+			if (pos == string::npos) {
+				pos = jsonPath.length();
+			}
+			if (pos != lastPos) {
+				field.assign(jsonPath.data() + lastPos, pos - lastPos);
+				int fieldTag = name2tag(field.c_str());
+				if (fieldTag == -1) throw Error(errLogic, "There is no such tag: " + field);
+				fieldTags.push_back(static_cast<int16_t>(fieldTag));
+			}
+		}
+		return fieldTags;
 	}
 
 	int name2tag(const char *name) const {

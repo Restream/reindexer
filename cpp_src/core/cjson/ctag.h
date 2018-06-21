@@ -11,7 +11,7 @@ class ctag {
 public:
 	ctag(int tag) : tag_(tag) {}
 	ctag(int tagType, int tagName, int tagField = -1) : tag_(tagType | (tagName << typeBits) | ((tagField + 1) << (typeBits + nameBits))) {}
-	operator int() const { return tag_; }
+	explicit operator int() const { return tag_; }
 
 	int Type() const { return tag_ & ((1 << typeBits) - 1); }
 	int Name() const { return (tag_ >> typeBits) & ((1 << nameBits) - 1); }
@@ -57,7 +57,7 @@ public:
 	carraytag(int count, int tag) : atag_(count | (tag << countBits)) {}
 	int Tag() const { return atag_ >> countBits; }
 	int Count() const { return atag_ & ((1 << countBits) - 1); }
-	operator int() const { return atag_; }
+	explicit operator int() const { return atag_; }
 
 	static const int countBits = 24;
 

@@ -1,8 +1,11 @@
 #include "cjsonencoder.h"
+#include "cjsondecoder.h"
 #include "tagsmatcher.h"
 #include "tools/serializer.h"
 
 #include "core/payload/payloadtuple.h"
+
+static const int depthLevelInitial = -1;
 
 namespace reindexer {
 
@@ -134,6 +137,111 @@ static void encodeKeyRef(WrSerializer &wrser, KeyRef kr, int tagType) {
 	throw Error(errParseJson, "Can't convert cjson typeTag '%s' to '%s'", ctag(tagType).TypeName(), KeyRef::TypeName(kr.Type()));
 }
 
+KeyRefs CJsonEncoder::ExtractFieldValue(const Payload *pl, const string &jsonPath) {
+	KeyRefs result;
+	depthLevel = depthLevelInitial;
+
+	KeyRefs tupleData;
+	pl->Get(0, tupleData);
+	string_view tuple(tupleData[0]);
+
+	TagsPath fieldTags = tagsMatcher_.path2tag(jsonPath);
+	Serializer rdser(tuple.data(), tuple.size());
+	getValueFromTuple(rdser, fieldTags, pl, result);
+
+	return result;
+}
+
+KeyRefs CJsonEncoder::ExtractFieldValue(const Payload *pl, const TagsPath &fieldTags) {
+	KeyRefs result;
+	depthLevel = depthLevelInitial;
+
+	KeyRefs tupleData;
+	pl->Get(0, tupleData);
+	string_view tuple(tupleData[0]);
+
+	Serializer rdser(tuple.data(), tuple.size());
+	getValueFromTuple(rdser, fieldTags, pl, result);
+
+	return result;
+}
+
+PayloadFieldType tagTypeToFieldType(int tagType) {
+	KeyValueType type = KeyValueEmpty;
+	switch (tagType) {
+		case TAG_VARINT:
+			type = KeyValueInt64;
+			break;
+		case TAG_DOUBLE:
+			type = KeyValueDouble;
+			break;
+		case TAG_STRING:
+			type = KeyValueString;
+			break;
+		case TAG_BOOL:
+			type = KeyValueInt;
+			break;
+		case TAG_NULL:
+			type = KeyValueEmpty;
+			break;
+	}
+	return PayloadFieldType(type, std::string(), std::string(), false);
+}
+
+bool CJsonEncoder::getValueFromTuple(Serializer &rdser, const TagsPath &fieldTags, const Payload *pl, KeyRefs &res, bool arrayElements) {
+	if (fieldTags.empty()) return false;
+
+	ctag tag = rdser.GetVarUint();
+	int tagType = tag.Type();
+	if (tagType == TAG_END) return false;
+
+	int field = tag.Field();
+	if (field >= 0) {
+		if (tagType == TAG_ARRAY) rdser.GetVarUint();
+	} else {
+		if (depthLevel >= static_cast<int>(fieldTags.size())) return false;
+		arrayElements = arrayElements && (tag.Name() == 0);
+		if (tagType == TAG_OBJECT) {
+			int depLvl = depthLevel++;
+			if ((depLvl == depthLevelInitial) || (fieldTags[depLvl] == tag.Name()) || arrayElements) {
+				while (getValueFromTuple(rdser, fieldTags, pl, res, arrayElements)) {
+				}
+			} else {
+				return false;
+			}
+		} else {
+			if ((fieldTags[depthLevel] == tag.Name()) || arrayElements) {
+				if (tagType == TAG_ARRAY) {
+					carraytag atag = rdser.GetUInt32();
+					for (int count = 0; count < atag.Count(); count++) {
+						switch (atag.Tag()) {
+							case TAG_OBJECT: {
+								int origDepLevel = depthLevel;
+								getValueFromTuple(rdser, fieldTags, pl, res, true);
+								depthLevel = origDepLevel;
+								break;
+							}
+							default: {
+								Error err;
+								res.push_back(cjsonValueToKeyRef(atag.Tag(), rdser, tagTypeToFieldType(atag.Tag()), err));
+								return !err.ok();
+							}
+						}
+					}
+				} else {
+					Error err;
+					res.push_back(cjsonValueToKeyRef(tagType, rdser, tagTypeToFieldType(tagType), err));
+					return !err.ok();
+				}
+			} else {
+				skipCjsonTag(tag, rdser);
+			}
+		}
+	}
+
+	return true;
+}
+
 bool CJsonEncoder::encodeCJson(ConstPayload *pl, Serializer &rdser, WrSerializer &wrser, bool match) {
 	ctag tag = rdser.GetVarUint();
 	int tagType = tag.Type();
@@ -142,7 +250,7 @@ bool CJsonEncoder::encodeCJson(ConstPayload *pl, Serializer &rdser, WrSerializer
 	match = match && filter_.Match(tag.Name());
 
 	if (match || !tag.Name()) {
-		wrser.PutVarUint(ctag(tag.Type(), tag.Name()));
+		wrser.PutVarUint(static_cast<int>(ctag(tag.Type(), tag.Name())));
 	}
 	if (tagType == TAG_END) return false;
 
@@ -157,7 +265,7 @@ bool CJsonEncoder::encodeCJson(ConstPayload *pl, Serializer &rdser, WrSerializer
 		if (tagType == TAG_ARRAY) {
 			int count = rdser.GetVarUint();
 			int subtag = kvType2TagType(pl->Type().Field(tagField).Type());
-			wrser.PutUInt32(carraytag(count, subtag));
+			wrser.PutUInt32(static_cast<int>(carraytag(count, subtag)));
 			pl->Get(tagField, kr);
 			while (count--) {
 				assertf(*cnt < int(kr.size()), "No data in field '%s.%s', got %d items.", pl->Type().Name().c_str(),
@@ -180,7 +288,7 @@ bool CJsonEncoder::encodeCJson(ConstPayload *pl, Serializer &rdser, WrSerializer
 				break;
 			case TAG_ARRAY: {
 				carraytag atag = rdser.GetUInt32();
-				if (match) wrser.PutUInt32(atag);
+				if (match) wrser.PutUInt32(static_cast<int>(atag));
 				for (int count = 0; count < atag.Count(); count++) {
 					switch (atag.Tag()) {
 						case TAG_OBJECT:

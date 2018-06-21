@@ -19,6 +19,7 @@ public:
 	int name2tag(const char* name, bool canAdd) { return impl_.clone()->name2tag(name, canAdd, updated_); }
 	int tags2field(const int* path, size_t pathLen) const { return impl_->tags2field(path, pathLen); }
 	const string& tag2name(int tag) const { return impl_->tag2name(tag); }
+	TagsPath path2tag(const string& jsonPath) const { return impl_->path2tag(jsonPath); }
 	int version() const { return impl_->version(); }
 	size_t size() const { return impl_->size(); }
 	bool isUpdated() const { return updated_; }

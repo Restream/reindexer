@@ -21,6 +21,46 @@ Error CJsonDecoder::Decode(Payload *pl, Serializer &rdser, WrSerializer &wrser) 
 	return lastErr_;
 }
 
+void skipCjsonTag(ctag tag, Serializer &rdser) {
+	assert(tag.Field() < 0);
+	switch (tag.Type()) {
+		case TAG_ARRAY: {
+			carraytag atag = rdser.GetUInt32();
+			for (int i = 0; i < atag.Count(); i++) {
+				ctag t = atag.Tag() != TAG_OBJECT ? atag.Tag() : rdser.GetVarUint();
+				skipCjsonTag(t, rdser);
+			}
+		} break;
+
+		case TAG_OBJECT: {
+			ctag otag = rdser.GetVarUint();
+			while (otag.Type() != TAG_END) {
+				skipCjsonTag(otag, rdser);
+				otag = rdser.GetVarUint();
+			}
+		} break;
+
+		case TAG_BOOL:
+			rdser.GetBool();
+			break;
+
+		case TAG_DOUBLE:
+			rdser.GetDouble();
+			break;
+
+		case TAG_NULL:
+			break;
+
+		case TAG_STRING:
+			rdser.GetVString();
+			break;
+
+		case TAG_VARINT:
+			rdser.GetVarint();
+			break;
+	}
+}
+
 KeyRef cjsonValueToKeyRef(int tag, Serializer &rdser, const PayloadFieldType &pt, Error &err) {
 	auto t = pt.Type();
 	switch (tag) {
@@ -110,6 +150,7 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 	if (field >= 0) {
 		if (filter_.contains(field) || filter_.empty()) {
 			KeyRefs kvs;
+
 			Error err = errOK;
 			size_t savePos = rdser.Pos();
 			if (tagType == TAG_ARRAY) {
@@ -120,13 +161,13 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 					kvs.push_back(cjsonValueToKeyRef(tag.Type(), rdser, pl->Type().Field(field), err));
 				}
 				if (err.ok()) {
-					wrser.PutVarUint(ctag(tagType, tagName, field));
+					wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName, field)));
 					wrser.PutVarUint(atag.Count());
 				}
 			} else if (tagType != TAG_NULL) {
 				kvs.push_back(cjsonValueToKeyRef(tagType, rdser, pl->Type().Field(field), err));
 				if (err.ok()) {
-					wrser.PutVarUint(ctag(tagType, tagName, field));
+					wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName, field)));
 				}
 			}
 			if (err.ok()) {
@@ -140,21 +181,21 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 				rdser.SetPos(savePos);
 			}
 		} else {
-			skipTag(tag, rdser);
+			skipCjsonTag(tag, rdser);
 		}
 	}
 
 	if (field < 0) {
-		wrser.PutVarUint(ctag(tagType, tagName, field));
+		wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName, field)));
 
 		if (tagType == TAG_OBJECT) {
 			while (decodeCJson(pl, rdser, wrser)) {
 			}
 		} else if (!filter_.empty()) {
-			skipTag(tag, rdser);
+			skipCjsonTag(tag, rdser);
 		} else if (tagType == TAG_ARRAY) {
 			carraytag atag = rdser.GetUInt32();
-			wrser.PutUInt32(atag);
+			wrser.PutUInt32(static_cast<int>(atag));
 			for (int count = 0; count < atag.Count(); count++) {
 				switch (atag.Tag()) {
 					case TAG_OBJECT:
@@ -172,46 +213,6 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 
 	if (tagName) tagsPath_.pop_back();
 	return true;
-}
-
-void CJsonDecoder::skipTag(ctag &tag, Serializer &rdser) {
-	switch (tag.Type()) {
-		case TAG_ARRAY: {
-			carraytag atag = rdser.GetUInt32();
-			for (int i = 0; i < atag.Count(); i++) {
-				ctag t = atag.Tag() != TAG_OBJECT ? atag.Tag() : rdser.GetVarUint();
-				skipTag(t, rdser);
-			}
-		} break;
-
-		case TAG_OBJECT: {
-			ctag otag = rdser.GetVarUint();
-			while (otag.Type() != TAG_END) {
-				skipTag(otag, rdser);
-				otag = rdser.GetVarUint();
-			}
-		} break;
-
-		case TAG_BOOL:
-			rdser.GetBool();
-			break;
-
-		case TAG_DOUBLE:
-			rdser.GetDouble();
-			break;
-
-		case TAG_NULL:
-
-			break;
-
-		case TAG_STRING:
-			rdser.GetVString();
-			break;
-
-		case TAG_VARINT:
-			rdser.GetVarint();
-			break;
-	}
 }
 
 }  // namespace reindexer

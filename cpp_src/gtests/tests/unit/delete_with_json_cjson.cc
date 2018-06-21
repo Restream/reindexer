@@ -228,7 +228,8 @@ TEST_F(ExtractPK, CJson2CJson_PrintJSON) {
 	CHECK_SUCCESS(item.Status());
 	CHECK_SUCCESS(UpsertAndCommit(SIMPLE_ITEM_NAMESPACE, item));
 
-	TEST_COUT << "HAVE: " << item.GetJSON().data() << std::endl;
+	reindexer::string_view originalJson(item.GetJSON());
+	TEST_COUT << "HAVE: " << string(originalJson.data(), originalJson.size()) << std::endl;
 
 	Item test = db_->NewItem(SIMPLE_ITEM_NAMESPACE);
 	CHECK_SUCCESS(test.FromCJSON(item.GetCJSON()));

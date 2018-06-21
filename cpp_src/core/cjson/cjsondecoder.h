@@ -19,7 +19,6 @@ public:
 
 protected:
 	bool decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrser);
-	void skipTag(ctag &tag, Serializer &rdser);
 
 	TagsMatcher &tagsMatcher_;
 	FieldsSet filter_;
@@ -27,6 +26,8 @@ protected:
 	Error lastErr_;
 };
 
+void skipCjsonTag(ctag tag, Serializer &rdser);
 void copyCJsonValue(int tagType, Serializer &rdser, WrSerializer &wrser);
+KeyRef cjsonValueToKeyRef(int tag, Serializer &rdser, const PayloadFieldType &pt, Error &err);
 
 }  // namespace reindexer

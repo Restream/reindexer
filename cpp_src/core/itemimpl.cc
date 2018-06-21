@@ -141,4 +141,10 @@ string_view ItemImpl::GetCJSON() {
 	return ser_.Slice();
 }
 
+KeyRefs ItemImpl::GetFieldByJSONPath(const string &jsonPath) {
+	ConstPayload pl(payloadType_, payloadValue_);
+	KeyRefs krefs;
+	return pl.GetByJsonPath(jsonPath, tagsMatcher_, krefs);
+}
+
 }  // namespace reindexer

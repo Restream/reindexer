@@ -1,8 +1,10 @@
 #include <stdlib.h>
 
+#include "core/cjson/cjsonencoder.h"
 #include "core/keyvalue/keyvalue.h"
 #include "itoa/itoa.h"
 #include "payloadiface.h"
+#include "payloadtuple.h"
 #include "payloadvalue.h"
 
 using std::pair;
@@ -58,6 +60,66 @@ KeyRefs &PayloadIface<T>::Get(const string &field, KeyRefs &kvs) const {
 template <typename T>
 KeyValues &PayloadIface<T>::Get(const string &field, KeyValues &kvs) const {
 	return Get(t_.FieldByName(field), kvs);
+}
+
+template <typename T>
+KeyRefs PayloadIface<T>::GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, KeyRefs &kvs) const {
+	KeyRefs krefs;
+	Get(0, krefs);
+	string_view tuple(krefs[0]);
+	if (tuple.length() == 0) {
+		int fieldIdx = t_.FieldByJsonPath(jsonPath);
+		if (fieldIdx == -1) {
+			kvs.clear();
+			return kvs;
+		};
+		return Get(fieldIdx, kvs);
+	}
+	Payload pl(t_, const_cast<PayloadValue &>(*v_));
+	CJsonEncoder encoder(tagsMatcher, JsonPrintFilter());
+
+	return encoder.ExtractFieldValue(&pl, jsonPath);
+}
+
+template <typename T>
+KeyRefs PayloadIface<T>::GetByJsonPath(const TagsPath &jsonPath, TagsMatcher &tagsMatcher, KeyRefs &) const {
+	Payload pl(t_, const_cast<PayloadValue &>(*v_));
+	CJsonEncoder encoder(tagsMatcher, JsonPrintFilter());
+	return encoder.ExtractFieldValue(&pl, jsonPath);
+}
+
+template <typename T>
+KeyValues PayloadIface<T>::GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, KeyValues &kvs) const {
+	KeyRefs tupleData;
+	Get(0, tupleData);
+	string_view tuple(tupleData[0]);
+	if (tuple.length() == 0) {
+		int fieldIdx = t_.FieldByJsonPath(jsonPath);
+		if (fieldIdx == -1) {
+			kvs.clear();
+			return kvs;
+		};
+		return Get(fieldIdx, kvs);
+	}
+
+	Payload pl(t_, const_cast<PayloadValue &>(*v_));
+	CJsonEncoder encoder(tagsMatcher, JsonPrintFilter());
+	KeyRefs krefs = encoder.ExtractFieldValue(&pl, jsonPath);
+
+	KeyValues values;
+	for (KeyRef &kref : krefs) values.push_back(std::move(kref));
+	return values;
+}
+
+template <typename T>
+KeyValues PayloadIface<T>::GetByJsonPath(const TagsPath &jsonPath, TagsMatcher &tagsMatcher, KeyValues &) const {
+	Payload pl(t_, const_cast<PayloadValue &>(*v_));
+	CJsonEncoder encoder(tagsMatcher, JsonPrintFilter());
+	KeyRefs krefs = encoder.ExtractFieldValue(&pl, jsonPath);
+
+	KeyValues values;
+	for (KeyRef &kref : krefs) values.push_back(std::move(kref));
+	return values;
 }
 
 // Set element or array by field index

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <type_traits>
+#include "core/cjson/tagsmatcher.h"
 #include "core/indexopts.h"
 #include "core/keyvalue/keyvalue.h"
 #include "fieldsset.h"
@@ -8,6 +9,8 @@
 #include "payloadtype.h"
 
 namespace reindexer {
+
+class TagsMatcher;
 
 template <typename T>
 class PayloadIface {
@@ -39,6 +42,14 @@ public:
 	KeyRefs &Get(const string &field, KeyRefs &) const;
 	// Get element(s) by field index
 	KeyValues &Get(const string &field, KeyValues &) const;
+
+	// Get element(s) by json path
+	KeyRefs GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, KeyRefs &) const;
+	KeyRefs GetByJsonPath(const TagsPath &jsonPath, TagsMatcher &tagsMatcher, KeyRefs &) const;
+
+	// Get element(s) by json path
+	KeyValues GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, KeyValues &) const;
+	KeyValues GetByJsonPath(const TagsPath &jsonPath, TagsMatcher &tagsMatcher, KeyValues &) const;
 
 	// Get fields count
 	int NumFields() const { return t_.NumFields(); }

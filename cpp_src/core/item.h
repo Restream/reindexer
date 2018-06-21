@@ -168,6 +168,8 @@ public:
 	/// and in unsafe mode caller is responsibe to guarantee, that all resources passed to Item will keep valid
 	Item &Unsafe(bool enable = true);
 
+	KeyRefs GetFieldByJSONPath(const string &jsonPath);
+
 private:
 	explicit Item(ItemImpl *impl) : impl_(impl) {}
 	explicit Item(const Error &err) : impl_(nullptr), status_(err) {}

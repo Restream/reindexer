@@ -1,6 +1,12 @@
 
 #include "querystat.h"
 
+#ifdef _WIN32
+#define PRI_SIZE_T "Iu"
+#else
+#define PRI_SIZE_T "zu"
+#endif
+
 namespace reindexer {
 
 void QueriesStatTracer::Hit(const Query &q, std::chrono::microseconds time) {
@@ -27,12 +33,12 @@ const std::vector<QueryPerfStat> QueriesStatTracer::Data() {
 void QueryPerfStat::GetJSON(WrSerializer &ser) const {
 	ser.PutChar('{');
 	ser.Printf("\"query\":\"%s\",", query.c_str());
-	ser.Printf("\"total_queries_count\":%zu,", perf.totalHitCount);
-	ser.Printf("\"total_avg_lock_time_us\":%zu,", perf.totalLockTimeUs);
-	ser.Printf("\"total_avg_latency_us\":%zu,", perf.totalTimeUs);
-	ser.Printf("\"last_sec_qps\":%zu,", perf.avgHitCount);
-	ser.Printf("\"last_sec_avg_lock_time_us\":%zu,", perf.avgLockTimeUs);
-	ser.Printf("\"last_sec_avg_latency_us\":%zu", perf.avgTimeUs);
+	ser.Printf("\"total_queries_count\":%" PRI_SIZE_T ",", perf.totalHitCount);
+	ser.Printf("\"total_avg_lock_time_us\":%" PRI_SIZE_T ",", perf.totalLockTimeUs);
+	ser.Printf("\"total_avg_latency_us\":%" PRI_SIZE_T ",", perf.totalTimeUs);
+	ser.Printf("\"last_sec_qps\":%" PRI_SIZE_T ",", perf.avgHitCount);
+	ser.Printf("\"last_sec_avg_lock_time_us\":%" PRI_SIZE_T ",", perf.avgLockTimeUs);
+	ser.Printf("\"last_sec_avg_latency_us\":%" PRI_SIZE_T "", perf.avgTimeUs);
 	ser.PutChar('}');
 }
 
