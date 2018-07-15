@@ -426,7 +426,7 @@ QueryEntries NsSelecter::lookupQueryIndexes(const QueryEntries &entries) {
 		auto nextc = c;
 		nextc++;
 		if (cur.op == OpAnd && (nextc == entries.end() || nextc->op == OpAnd)) {
-			if (iidx[cur.idxNo] >= 0) {
+			if (iidx[cur.idxNo] >= 0 && !ns_->indexes_[cur.idxNo]->Opts().IsArray()) {
 				if (mergeQueryEntries(&ret[iidx[cur.idxNo]], &cur)) continue;
 
 			} else {

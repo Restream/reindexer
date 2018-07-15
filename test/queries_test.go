@@ -349,6 +349,12 @@ func CheckTestItemsQueries() {
 					ExecAndVerify()
 
 				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
+					Where("year", reindexer.RANGE, []int{2001, 2020}).
+					Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
+					Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
+					ExecAndVerify()
+
+				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
 					Where("actor.name", reindexer.EQ, randString()).
 					ExecAndVerify()
 
