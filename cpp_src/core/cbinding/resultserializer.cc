@@ -18,7 +18,7 @@ void WrResultSerializer::putQueryParams(const QueryResults* results) {
 	// Total
 	PutVarUint(results->totalCount);
 	// Count of returned items by query
-	PutVarUint(results->size());
+	PutVarUint(results->Count());
 	// Count of serialized items
 	PutVarUint(opts_.fetchLimit);
 
@@ -62,12 +62,13 @@ void WrResultSerializer::putAggregationParams(const QueryResults* results) {
 void WrResultSerializer::putItemParams(const QueryResults* result, int idx, bool useOffset) {
 	int ridx = idx + (useOffset ? opts_.fetchOffset : 0);
 
-	auto& it = result->at(ridx);
+	auto it = result->begin() + ridx;
+	auto itemRef = it.GetItemRef();
 
-	PutVarUint(it.id);
-	PutVarUint(it.version);
-	PutVarUint(it.nsid);
-	PutVarUint(it.proc);
+	PutVarUint(itemRef.id);
+	PutVarUint(itemRef.version);
+	PutVarUint(itemRef.nsid);
+	PutVarUint(itemRef.proc);
 	int format = (opts_.flags & 0x3);
 
 	if (idx < 63 && !(opts_.fetchDataMask & (1ULL << idx))) {
@@ -78,13 +79,13 @@ void WrResultSerializer::putItemParams(const QueryResults* result, int idx, bool
 
 	switch (format) {
 		case kResultsWithJson:
-			result->GetJSON(ridx, *this);
+			it.GetJSON(*this);
 			break;
 		case kResultsWithCJson:
-			result->GetCJSON(ridx, *this);
+			it.GetCJSON(*this);
 			break;
 		case kResultsWithPtrs:
-			PutUInt64(uintptr_t(it.value.Ptr()));
+			PutUInt64(uintptr_t(itemRef.value.Ptr()));
 			break;
 		case kResultsPure:
 			break;
@@ -103,24 +104,16 @@ void WrResultSerializer::putPayloadType(const QueryResults* results, int nsid) {
 	m.serialize(*this);
 
 	// Serialize payload type
-	PutVarUint(base_key_string::export_hdr_offset());
-	PutVarUint(t.NumFields());
-	for (int i = 0; i < t.NumFields(); i++) {
-		PutVarUint(t.Field(i).Type());
-		PutVString(t.Field(i).Name());
-		PutVarUint(t.Field(i).Offset());
-		PutVarUint(t.Field(i).ElemSizeof());
-		PutVarUint(t.Field(i).IsArray());
-	}
+	t->serialize(*this);
 }
 
 bool WrResultSerializer::PutResults(const QueryResults* result) {
-	if (opts_.fetchOffset > result->size()) {
-		opts_.fetchOffset = result->size();
+	if (opts_.fetchOffset > result->Count()) {
+		opts_.fetchOffset = result->Count();
 	}
 
-	if (opts_.fetchOffset + opts_.fetchLimit > result->size()) {
-		opts_.fetchLimit = result->size() - opts_.fetchOffset;
+	if (opts_.fetchOffset + opts_.fetchLimit > result->Count()) {
+		opts_.fetchLimit = result->Count() - opts_.fetchOffset;
 	}
 
 	putQueryParams(result);
@@ -133,7 +126,7 @@ bool WrResultSerializer::PutResults(const QueryResults* result) {
 			PutVarUint(0);
 			continue;
 		}
-		auto& it = result->at(i + opts_.fetchOffset);
+		auto& it = result->Items().at(i + opts_.fetchOffset);
 		auto jres = result->joined_->find(it.id);
 		if (jres == result->joined_->end()) {
 			PutVarUint(0);
@@ -143,13 +136,13 @@ bool WrResultSerializer::PutResults(const QueryResults* result) {
 		PutVarUint(jres->second.size());
 		for (auto& jfres : jres->second) {
 			// Put count of returned items from joined namespace
-			PutVarUint(jfres.size());
-			for (unsigned j = 0; j < jfres.size(); j++) {
+			PutVarUint(jfres.Count());
+			for (unsigned j = 0; j < jfres.Count(); j++) {
 				putItemParams(&jfres, j, false);
 			}
 		}
 	}
-	return opts_.fetchOffset + opts_.fetchLimit >= result->size();
+	return opts_.fetchOffset + opts_.fetchLimit >= result->Count();
 }
 
 }  // namespace reindexer

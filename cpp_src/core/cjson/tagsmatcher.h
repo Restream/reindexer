@@ -30,6 +30,10 @@ public:
 		impl_.clone()->deserialize(ser);
 		impl_.clone()->buildTagsCache(updated_);
 	}
+	void deserialize(Serializer& ser, int version, int cacheToken) {
+		impl_.clone()->deserialize(ser, version, cacheToken);
+		impl_.clone()->buildTagsCache(updated_);
+	}
 	void clearUpdated() { updated_ = false; }
 	void setUpdated() { updated_ = true; }
 
@@ -44,6 +48,28 @@ public:
 		}
 		return true;
 	}
+	TagsPath path2tag(const std::string& jsonPath, bool& updated) {
+		updated = false;
+		string field;
+		TagsPath tagsPath;
+		for (size_t pos = 0, lastPos = 0; pos != jsonPath.length(); lastPos = pos + 1) {
+			pos = jsonPath.find(".", lastPos);
+			if (pos == string::npos) {
+				pos = jsonPath.length();
+			}
+			if (pos != lastPos) {
+				field.assign(jsonPath.data() + lastPos, pos - lastPos);
+				int fieldTag = name2tag(field.c_str());
+				if (fieldTag == 0) {
+					fieldTag = name2tag(field.c_str(), true);
+					updated = true;
+				}
+				tagsPath.push_back(static_cast<int16_t>(fieldTag));
+			}
+		}
+		return tagsPath;
+	}
+
 	void updatePayloadType(PayloadType payloadType) { impl_.clone()->updatePayloadType(payloadType, updated_); }
 
 	string dump() const { return impl_->dumpTags() + "\n" + impl_->dumpPaths(); }

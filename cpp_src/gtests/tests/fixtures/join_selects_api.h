@@ -95,9 +95,9 @@ protected:
 	}
 
 	int ParseItemJsonWithJoins(const QueryResults& queryRes) {
-		if (queryRes.empty()) return JSON_OK;
+		if (!queryRes.Count()) return JSON_OK;
 		reindexer::WrSerializer wrSer;
-		queryRes.GetJSON(0, wrSer, false);
+		queryRes.begin().GetJSON(wrSer, false);
 		string json = reindexer::string_view(reinterpret_cast<const char*>(wrSer.Buf()), wrSer.Len()).ToString();
 
 		char* endptr = nullptr;
@@ -107,15 +107,15 @@ protected:
 	}
 
 	void FillQueryResultRows(reindexer::QueryResults& reindexerRes, QueryResultRows& testRes) {
-		for (size_t i = 0; i < reindexerRes.size(); ++i) {
-			Item item(reindexerRes.GetItem(i));
+		for (auto rowIt : reindexerRes) {
+			Item item(rowIt.GetItem());
 
 			BookId bookId = item[bookid].Get<int>();
 			QueryResultRow& resultRow = testRes[bookId];
 
 			FillQueryResultFromItem(item, resultRow);
 
-			const reindexer::ItemRef& rowid = reindexerRes[i];
+			const reindexer::ItemRef& rowid = rowIt.GetItemRef();
 			auto it = reindexerRes.joined_->find(rowid.id);
 			if (it == reindexerRes.joined_->end()) {
 				continue;
@@ -123,8 +123,8 @@ protected:
 
 			reindexer::QRVector& joinQueryRes(it->second);
 			const QueryResults& joinResult(joinQueryRes[0]);
-			for (size_t i = 0; i < joinResult.size(); ++i) {
-				Item joinItem(joinResult.GetItem(i));
+			for (auto itj : joinResult) {
+				Item joinItem(itj.GetItem());
 				FillQueryResultFromItem(joinItem, resultRow);
 			}
 		}

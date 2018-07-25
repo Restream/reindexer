@@ -27,6 +27,7 @@ public:
 	JsonEncoder(const TagsMatcher &tagsMatcher, const JsonPrintFilter &filter);
 	void Encode(ConstPayload *pl, WrSerializer &wrSer);
 	void Encode(ConstPayload *pl, WrSerializer &wrSer, IJsonEncoderDatasourceWithJoins &ds);
+	void Encode(string_view tuple, WrSerializer &wrSer);
 
 protected:
 	bool encodeJson(ConstPayload *pl, Serializer &rdser, WrSerializer &wrser, bool &first, bool visible);

@@ -144,7 +144,7 @@ void ApiTvComposite::GetByCompositePK(State& state) {
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 
-		if (qres.empty()) state.SkipWithError("Results does not contain any value");
+		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
 	}
 }
 
@@ -191,7 +191,7 @@ void ApiTvComposite::RangeTreeDouble(State& state) {
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 
-		if (qres.empty()) state.SkipWithError("empty qres");
+		if (!qres.Count()) state.SkipWithError("empty qres");
 	}
 }
 

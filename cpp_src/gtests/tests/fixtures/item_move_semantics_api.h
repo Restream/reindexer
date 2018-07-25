@@ -73,11 +73,11 @@ protected:
 		Error err = reindexer->Select("SELECT * FROM " + default_namespace, qres);
 
 		EXPECT_TRUE(err.ok()) << err.what();
-		EXPECT_TRUE(int(qres.size()) == (itemsCount - 1))
-			<< to_string(itemsCount - 1) << " items upserted, but selected only " << qres.size();
+		EXPECT_TRUE(int(qres.Count()) == (itemsCount - 1))
+			<< to_string(itemsCount - 1) << " items upserted, but selected only " << qres.Count();
 
-		for (size_t i = 0; i < qres.size(); ++i) {
-			Item item(qres.GetItem(static_cast<int>(i)));
+		for (auto it : qres) {
+			Item item(it.GetItem());
 			string jsonRead(item.GetJSON().ToString());
 
 			int itemId = item[pkField].Get<int>();

@@ -60,6 +60,14 @@ uint32_t Serializer::GetUInt32() {
 	return ret;
 }
 
+uint64_t Serializer::GetUInt64() {
+	uint64_t ret;
+	checkbound(pos, sizeof(ret), len);
+	memcpy(&ret, buf + pos, sizeof(ret));
+	pos += sizeof(ret);
+	return ret;
+}
+
 double Serializer::GetDouble() {
 	double ret;
 	checkbound(pos, sizeof(ret), len);
@@ -267,6 +275,27 @@ void WrSerializer::PrintJsonString(const string_view &str) {
 	}
 	*d++ = '"';
 	len_ = d - reinterpret_cast<char *>(buf_);
+}
+
+const int kHexDumpBytesInRow = 16;
+
+void WrSerializer::PrintHexDump(const string_view &str) {
+	for (int row = 0; row < int(str.size()); row += kHexDumpBytesInRow) {
+		Printf("%08x  ", row);
+		for (int i = row; i < row + kHexDumpBytesInRow; i++) {
+			if (i < int(str.size())) {
+				Printf("%02x ", unsigned(str[i]) & 0xFF);
+			} else {
+				Printf("   ");
+			}
+		}
+		Printf(" ");
+		for (int i = row; i < row + kHexDumpBytesInRow; i++) {
+			char c = (i < int(str.size()) && unsigned(str[i]) > 0x20) ? str[i] : '.';
+			Printf("%c", c);
+		}
+		Printf("\n");
+	}
 }
 
 void WrSerializer::Print(int k) {

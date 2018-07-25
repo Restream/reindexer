@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include <algorithm>
+#include <iostream>
 #include <string>
 
 /**
@@ -19,6 +20,8 @@ using std::string;
  */
 class string_view {
 public:
+	typedef const char *iterator;
+
 	/**
 	 * Create an empty slice object.
 	 */
@@ -117,6 +120,9 @@ public:
 	 */
 	string ToString() const { return string(ptr_, size_); }
 
+	iterator begin() const { return ptr_; }
+	iterator end() const { return ptr_ + size_; }
+
 	static constexpr size_t npos = -1;
 
 	// protected:
@@ -136,3 +142,10 @@ public:
 constexpr string_view operator"" _sv(const char *str, size_t len) noexcept { return string_view(str, len); }
 
 }  // namespace reindexer
+
+namespace std {
+inline static std::ostream &operator<<(std::ostream &o, const reindexer::string_view &sv) {
+	o.write(sv.data(), sv.length());
+	return o;
+}
+}  // namespace std

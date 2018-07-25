@@ -106,10 +106,56 @@ int PayloadTypeImpl::FieldByName(const string &field) const {
 	return it->second;
 }
 
+bool PayloadTypeImpl::FieldByName(const string &name, int &field) const {
+	auto it = fieldsByName_.find(name);
+	if (it == fieldsByName_.end()) return false;
+	field = it->second;
+	return true;
+}
+
 int PayloadTypeImpl::FieldByJsonPath(const string &jsonPath) const {
 	auto it = fieldsByJsonPath_.find(jsonPath);
 	if (it == fieldsByJsonPath_.end()) return -1;
 	return it->second;
+}
+
+void PayloadTypeImpl::serialize(WrSerializer &ser) const {
+	ser.PutVarUint(base_key_string::export_hdr_offset());
+	ser.PutVarUint(NumFields());
+	for (int i = 0; i < NumFields(); i++) {
+		ser.PutVarUint(Field(i).Type());
+		ser.PutVString(Field(i).Name());
+		ser.PutVarUint(Field(i).Offset());
+		ser.PutVarUint(Field(i).ElemSizeof());
+		ser.PutVarUint(Field(i).IsArray());
+	}
+}
+
+void PayloadTypeImpl::deserialize(Serializer &ser) {
+	fields_.clear();
+	fieldsByName_.clear();
+	fieldsByJsonPath_.clear();
+	strFields_.clear();
+
+	ser.GetVarUint();
+
+	int count = ser.GetVarUint();
+
+	for (int i = 0; i < count; i++) {
+		KeyValueType t = KeyValueType(ser.GetVarUint());
+		string name = ser.GetVString().ToString();
+		int offset = ser.GetVarUint();
+		int elemSizeof = ser.GetVarUint();
+		bool isArray = ser.GetVarUint();
+		(void)elemSizeof;
+
+		PayloadFieldType ft(t, name, name, isArray);
+		if (isArray) ft.SetArray();
+		ft.SetOffset(offset);
+		fieldsByName_.emplace(name, fields_.size());
+		if (t == KeyValueString) strFields_.push_back(fields_.size());
+		fields_.push_back(ft);
+	}
 }
 
 }  // namespace reindexer

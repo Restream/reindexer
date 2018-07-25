@@ -115,8 +115,8 @@ public:
 		KeyRef lastSortemColumnValue;
 
 		size_t itemsCount = 0;
-		for (size_t i = 0; i < qr.size(); ++i) {
-			Item itemr(qr.GetItem(static_cast<int>(i)));
+		for (size_t i = 0; i < qr.Count(); ++i) {
+			Item itemr(qr[i].GetItem());
 
 			auto pk = getPkString(itemr, ns);
 			EXPECT_TRUE(pks.insert(pk).second) << "Duplicated primary key: " + pk;
@@ -156,10 +156,10 @@ public:
 		}
 
 		if (!query.forcedSortOrder.empty()) {
-			EXPECT_TRUE(query.forcedSortOrder.size() <= qr.size()) << "Size of QueryResults is incorrect!";
-			if (query.forcedSortOrder.size() <= qr.size()) {
-				for (size_t i = 0; i < qr.size(); ++i) {
-					Item item(qr.GetItem(static_cast<int>(i)));
+			EXPECT_TRUE(query.forcedSortOrder.size() <= qr.Count()) << "Size of QueryResults is incorrect!";
+			if (query.forcedSortOrder.size() <= qr.Count()) {
+			for (size_t i = 0; i < qr.Count(); ++i) {
+					Item item(qr[i].GetItem());
 					KeyRef sortedValue = item[query.sortBy];
 					EXPECT_EQ(query.forcedSortOrder[i].Compare(sortedValue), 0) << "Forced sort order is incorrect!";
 				}
@@ -737,13 +737,13 @@ protected:
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		double yearSum = 0.0;
-		for (size_t i = 0; i < checkQr.size(); ++i) {
-			Item item(checkQr.GetItem(static_cast<int>(i)));
+		for (auto it: checkQr) {
+			Item item(it.GetItem());
 			yearSum += item[kFieldNameYear].Get<int>();
 		}
 
 		EXPECT_DOUBLE_EQ(testQr.aggregationResults[1], yearSum) << "Aggregation Sum result is incorrect!";
-		EXPECT_DOUBLE_EQ(testQr.aggregationResults[0], yearSum / checkQr.size()) << "Aggregation Sum result is incorrect!";
+		EXPECT_DOUBLE_EQ(testQr.aggregationResults[0], yearSum / checkQr.Count()) << "Aggregation Sum result is incorrect!";
 	}
 
 	void CheckSqlQueries() {
@@ -762,11 +762,11 @@ protected:
 		err = reindexer->Select(checkQuery, checkQr);
 		EXPECT_TRUE(err.ok()) << err.what();
 
-		EXPECT_EQ(sqlQr.size(), checkQr.size());
-		if (sqlQr.size() == checkQr.size()) {
-			for (size_t i = 0; i < checkQr.size(); ++i) {
-				Item ritem1(checkQr.GetItem(static_cast<int>(i)));
-				Item ritem2(sqlQr.GetItem(static_cast<int>(i)));
+		EXPECT_EQ(sqlQr.Count(), checkQr.Count());
+		if (sqlQr.Count() == checkQr.Count()) {
+			for (size_t i = 0; i < checkQr.Count(); ++i) {
+				Item ritem1(checkQr[i].GetItem());
+				Item ritem2(sqlQr[i].GetItem());
 				EXPECT_EQ(ritem1.NumFields(), ritem2.NumFields());
 				if (ritem1.NumFields() == ritem2.NumFields()) {
 					for (int idx = 1; idx < ritem1.NumFields(); ++idx) {
@@ -897,13 +897,13 @@ protected:
 		printf("Sort order or last items: ");
 		if (itemIndex > 0) {
 			for (int i = itemIndex; i >= (itemIndex - range >= 0 ? itemIndex - range : 0); ++i) {
-				Item item(qr.GetItem(static_cast<int>(i)));
+				Item item(qr[i].GetItem());
 				printf("%s, ", item[query.sortBy].As<string>().c_str());
 			}
 		}
-		int numResults = qr.size();
+		int numResults = qr.Count();
 		for (int i = itemIndex + 1; i < (itemIndex + range < numResults ? itemIndex + range : numResults - 1); ++i) {
-			Item item(qr.GetItem(static_cast<int>(i)));
+			Item item(qr[i].GetItem());
 			printf("%s, ", item[query.sortBy].As<string>().c_str());
 		}
 		printf("\n\n");

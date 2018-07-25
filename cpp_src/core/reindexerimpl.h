@@ -25,6 +25,7 @@ public:
 	ReindexerImpl();
 	~ReindexerImpl();
 
+	Error Connect(const string &dsn);
 	Error EnableStorage(const string &storagePath, bool skipPlaceholderCheck = false);
 	Error OpenNamespace(const string &_namespace, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing(),
 						CacheMode cacheMode = CacheMode::CacheModeOn);
@@ -101,6 +102,7 @@ protected:
 	void syncSystemNamespaces(const string &nsName);
 	void createSystemNamespaces();
 	void updateSystemNamespace(const string &nsName, Item &item);
+	Error applyConfig();
 
 	void flusherThread();
 	Error closeNamespace(const string &_namespace, bool dropStorage);

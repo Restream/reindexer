@@ -82,7 +82,7 @@ protected:
 	void buildWordsMap(fast_hash_map<string, WordEntry>& m);
 	void buildVirtualWord(const string& word, fast_hash_map<string, WordEntry>& words_um, VDocIdType docType, int rfield, size_t insertPos,
 						  std::vector<string>& output);
-	h_vector<pair<const string*, int>, 8> getDocFields(const typename T::key_type&, vector<unique_ptr<string>>& bufStrs);
+	h_vector<pair<string_view, int>, 8> getDocFields(const typename T::key_type&, vector<unique_ptr<string>>& bufStrs);
 
 	void buildTyposMap();
 	void initSearchers();

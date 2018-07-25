@@ -73,8 +73,8 @@ private:
 
 	template <bool reverse, bool haveComparators, bool haveDistinct>
 	void selectLoop(LoopCtx &ctx, QueryResults &result);
-	void applyCustomSort(QueryResults &result, const SelectCtx &ctx);
-	void applyGeneralSort(QueryResults &result, const SelectCtx &ctx, const string &fieldName, const CollateOpts &collateOpts);
+	void applyCustomSort(ItemRefVector &result, const SelectCtx &ctx);
+	void applyGeneralSort(ItemRefVector &result, const SelectCtx &ctx, const string &fieldName, const CollateOpts &collateOpts);
 
 	bool containsFullTextIndexes(const QueryEntries &entries);
 	void selectWhere(const QueryEntries &entries, RawQueryResult &result, SortType sortId, bool is_ft);
@@ -84,8 +84,9 @@ private:
 	h_vector<Aggregator, 4> getAggregators(const Query &q);
 	int getCompositeIndex(const FieldsSet &fieldsmask);
 	bool mergeQueryEntries(QueryEntry *lhs, QueryEntry *rhs);
-	void setLimitsAndOffset(QueryResults &result, const SelectCtx &ctx);
+	void setLimitsAndOffset(ItemRefVector &result, const SelectCtx &ctx);
 	void updateCompositeIndexesValues(QueryEntries &qe);
+	KeyValueType getQueryEntryIndexType(const QueryEntry &qentry) const;
 
 	Namespace *ns_;
 	SelectFunction::Ptr fnc_;

@@ -174,6 +174,8 @@ string QueryWhere::toString(bool stripArgs) const {
 	for (auto &e : entries) {
 		if (&e != &*entries.begin() && unsigned(e.op) < sizeof(opNames) / sizeof(opNames[0])) {
 			res += " " + string(opNames[e.op]);
+		} else if (&e == &*entries.begin() && e.op == OpNot) {
+			res += " NOT";
 		}
 		res += " " + e.index + " ";
 		if (e.condition < sizeof(condNames) / sizeof(condNames[0]))

@@ -5,6 +5,7 @@ namespace reindexer {
 
 Reindexer::Reindexer() { impl_ = new ReindexerImpl(); }
 Reindexer::~Reindexer() { delete impl_; }
+Error Reindexer::Connect(const string& dsn) { return impl_->Connect(dsn); }
 Error Reindexer::EnableStorage(const string& storagePath, bool skipPlaceholderCheck) {
 	return impl_->EnableStorage(storagePath, skipPlaceholderCheck);
 }

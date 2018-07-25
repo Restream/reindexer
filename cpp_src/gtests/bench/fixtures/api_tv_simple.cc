@@ -159,7 +159,7 @@ void ApiTvSimple::GetByID(benchmark::State& state) {
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 
-		if (qres.empty()) state.SkipWithError("Results does not contain any value");
+		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
 	}
 }
 
@@ -174,7 +174,7 @@ void ApiTvSimple::GetByRangeIDAndSortByHash(benchmark::State& state) {
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 
-		if (qres.empty()) state.SkipWithError("Results does not contain any value");
+		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
 	}
 }
 
@@ -189,7 +189,7 @@ void ApiTvSimple::GetByRangeIDAndSortByTree(benchmark::State& state) {
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 
-		if (qres.empty()) state.SkipWithError("Results does not contain any value");
+		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
 	}
 }
 

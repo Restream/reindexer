@@ -17,7 +17,12 @@ Error NamespaceDef::FromJSON(char *json) {
 	if (status != JSON_OK) {
 		return Error(errParseJson, "Malformed JSON with namespace indexes");
 	}
+	return FromJSON(jvalue);
+}
+
+Error NamespaceDef::FromJSON(JsonValue &jvalue) {
 	try {
+		if (jvalue.getTag() != JSON_OBJECT) throw Error(errParseJson, "Expected json object");
 		for (auto elem : jvalue) {
 			if (elem->value.getTag() == JSON_NULL) continue;
 			parseJsonField("name", name, elem);

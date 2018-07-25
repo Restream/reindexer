@@ -64,6 +64,7 @@ void Connection<Mutex>::closeConn() {
 		sock_.close();
 	}
 	timeout_.stop();
+	async_.stop();
 	onClose();
 }
 
@@ -102,9 +103,8 @@ void Connection<Mutex>::write_cb() {
 
 		auto it = wrBuf_.tail();
 
-		wrBufLock_.unlock();
-
 		ssize_t written = sock_.send(it.data, it.len);
+		wrBufLock_.unlock();
 		int err = sock_.last_error();
 
 		if (written < 0 && err == EINTR) continue;
@@ -156,7 +156,7 @@ void Connection<Mutex>::timeout_cb(ev::periodic & /*watcher*/, int /*time*/) {
 
 template <typename Mutex>
 void Connection<Mutex>::async_cb(ev::async &) {
-	write_cb();
+	callback(io_, ev::WRITE);
 }
 
 template class Connection<std::mutex>;

@@ -7,6 +7,11 @@
 
 #include <string>
 #include <vector>
+
+namespace reindexer {
+class string_view;
+}
+
 namespace search_engine {
 using std::vector;
 using std::wstring;
@@ -15,7 +20,7 @@ using std::pair;
 class BaseSearcher {
 public:
 	void AddSeacher(ISeacher::Ptr seacher);
-	void AddIndex(BaseHolder::Ptr holder, const std::string *src_data, const IdType id, int field);
+	void AddIndex(BaseHolder::Ptr holder, const reindexer::string_view &src_data, const IdType id, int field);
 	SearchResult Compare(BaseHolder::Ptr holder, const reindexer::FtDSLQuery &dsl);
 
 	void Commit(BaseHolder::Ptr holder);

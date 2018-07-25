@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <type_traits>
 #include <unordered_set>
 #include "core/index/payload_map.h"
 #include "core/indexopts.h"
@@ -24,11 +25,38 @@ public:
 		if (cond == CondSet) {
 			valuesS_.reset(new unordered_set<T>());
 		}
-		for (auto &k : values) {
-			if (cond == CondSet)
-				valuesS_->emplace(static_cast<T>(static_cast<KeyRef>(k)));
-			else
-				values_.push_back(static_cast<T>(static_cast<KeyRef>(k)));
+
+		convertedStrings_.clear();
+		KeyValueType thisType = type();
+
+		for (const KeyValue &key : values) {
+			if (thisType == key.Type()) {
+				addValue(cond, static_cast<T>(static_cast<KeyRef>(key)));
+			} else {
+				if ((key.Type() == KeyValueString) && (!is_number(static_cast<p_string>(key).toString()))) {
+					addValue(cond, T());
+				} else {
+					switch (thisType) {
+						case KeyValueString: {
+							convertedStrings_.push_back(key.As<string>());
+							p_string value(convertedStrings_.back().c_str());
+							addValue(cond, static_cast<T>(KeyRef(value)));
+							break;
+						}
+						case KeyValueInt:
+							addValue(cond, static_cast<T>(static_cast<KeyRef>(key.As<int>())));
+							break;
+						case KeyValueInt64:
+							addValue(cond, static_cast<T>(KeyRef(key.As<int64_t>())));
+							break;
+						case KeyValueDouble:
+							addValue(cond, static_cast<T>(KeyRef(key.As<double>())));
+							break;
+						default:
+							std::abort();
+					}
+				}
+			}
 		}
 	}
 
@@ -83,6 +111,24 @@ public:
 
 	h_vector<T, 2> values_;
 	shared_ptr<unordered_set<T>> valuesS_;
+	h_vector<string> convertedStrings_;
+
+private:
+	KeyValueType type() {
+		if (std::is_same<T, p_string>::value) return KeyValueString;
+		if (std::is_same<T, int>::value) return KeyValueInt;
+		if (std::is_same<T, int64_t>::value) return KeyValueInt64;
+		if (std::is_same<T, double>::value) return KeyValueDouble;
+		std::abort();
+	}
+
+	void addValue(CondType cond, const T &value) {
+		if (cond == CondSet) {
+			valuesS_->emplace(value);
+		} else {
+			values_.push_back(value);
+		}
+	}
 };
 
 template <>
@@ -94,12 +140,12 @@ public:
 		if (cond == CondSet) {
 			valuesSet_.reset(new unordered_payload_set(0, hash_composite(payloadType_, fields_), equal_composite(payloadType_, fields_)));
 		}
-		for (auto &kv : values) {
-			const PayloadValue &pv(kv);
-			if (cond == CondSet) {
-				valuesSet_->emplace(pv);
+		for (const KeyValue &kv : values) {
+			if (kv.Type() == KeyValueComposite) {
+				const PayloadValue &pv(kv);
+				addValue(cond, pv);
 			} else {
-				values_.push_back(pv);
+				addValue(cond, PayloadValue());
 			}
 		}
 	}
@@ -136,6 +182,15 @@ public:
 	FieldsSet fields_;
 	h_vector<PayloadValue, 2> values_;
 	shared_ptr<unordered_payload_set> valuesSet_;
+
+private:
+	void addValue(CondType cond, const PayloadValue &pv) {
+		if (cond == CondSet) {
+			valuesSet_->emplace(pv);
+		} else {
+			values_.push_back(pv);
+		}
+	}
 };
 
 class Comparator {
@@ -145,10 +200,29 @@ public:
 			   void *rawData = nullptr, const CollateOpts &collateOpts = CollateOpts());
 	~Comparator();
 
-	bool Compare(const PayloadValue &lhs, int idx);
+	bool Compare(const PayloadValue &lhs, int rowId);
 	void Bind(PayloadType type, int field);
 
 protected:
+	bool compare(const KeyRef &kr) {
+		switch (kr.Type()) {
+			case KeyValueInt:
+				return cmpInt.Compare(cond_, static_cast<int>(kr));
+			case KeyValueInt64:
+				return cmpInt64.Compare(cond_, static_cast<int64_t>(kr));
+			case KeyValueDouble:
+				return cmpDouble.Compare(cond_, static_cast<double>(kr));
+			case KeyValueString:
+				return cmpString.Compare(cond_, static_cast<p_string>(kr), collateOpts_);
+			case KeyValueComposite: {
+				const PayloadValue &pl = static_cast<const PayloadValue &>(kr);
+				return cmpComposite.Compare(cond_, const_cast<PayloadValue &>(pl), collateOpts_);
+			}
+			default:
+				abort();
+		}
+	}
+
 	bool compare(void *ptr) {
 		switch (type_) {
 			case KeyValueInt:

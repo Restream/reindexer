@@ -78,7 +78,14 @@ void KeyValue::convertToComposite(const PayloadType &payloadType, const FieldsSe
 
 	auto field = fields.begin();
 	for (const KeyValue &compositeValue : h_composite_values) {
-		pv.Set(*field, {compositeValue});
+		if (*field != IndexValueType::SetByJsonPath) {
+			pv.Set(*field, {compositeValue});
+		} else {
+			// TODO: will have to implement SetByJsonPath in PayloadIFace
+			// or this "mixed" composite queries (by ordinary indexes + indexes
+			// from cjson) won't work properly.
+			throw Error(errConflict, "SetByJsonPath is not implemented yet");
+		}
 		field++;
 	}
 	h_composite_values.clear();

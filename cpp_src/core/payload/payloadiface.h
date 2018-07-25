@@ -45,11 +45,11 @@ public:
 
 	// Get element(s) by json path
 	KeyRefs GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, KeyRefs &) const;
-	KeyRefs GetByJsonPath(const TagsPath &jsonPath, TagsMatcher &tagsMatcher, KeyRefs &) const;
+	KeyRefs GetByJsonPath(const TagsPath &jsonPath, KeyRefs &) const;
 
 	// Get element(s) by json path
 	KeyValues GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, KeyValues &) const;
-	KeyValues GetByJsonPath(const TagsPath &jsonPath, TagsMatcher &tagsMatcher, KeyValues &) const;
+	KeyValues GetByJsonPath(const TagsPath &jsonPath, KeyValues &) const;
 
 	// Get fields count
 	int NumFields() const { return t_.NumFields(); }

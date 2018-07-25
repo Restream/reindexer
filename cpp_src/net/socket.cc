@@ -41,7 +41,19 @@ int socket::connect(const char *addr) {
 	return ret;
 }
 
-int socket::listen(int backlog) { return ::listen(fd_, backlog); }
+int socket::listen(int backlog) {
+#ifdef __linux__
+	int enable = 1;
+
+	if (setsockopt(fd_, SOL_TCP, TCP_DEFER_ACCEPT, &enable, sizeof(enable)) < 0) {
+		perror("setsockopt(TCP_DEFER_ACCEPT) failed");
+	}
+	if (setsockopt(fd_, SOL_TCP, TCP_QUICKACK, &enable, sizeof(enable)) < 0) {
+		perror("setsockopt(TCP_QUICKACK) failed");
+	}
+#endif
+	return ::listen(fd_, backlog);
+}
 
 int socket::recv(char *buf, size_t len) {
 	//
@@ -104,15 +116,6 @@ int socket::create(const char *addr, struct addrinfo **presults) {
 
 	set_nodelay();
 
-#ifdef __linux__
-	if (setsockopt(fd_, SOL_TCP, TCP_DEFER_ACCEPT, &enable, sizeof(enable)) < 0) {
-		perror("setsockopt(TCP_DEFER_ACCEPT) failed");
-	}
-	if (setsockopt(fd_, SOL_TCP, TCP_QUICKACK, &enable, sizeof(enable)) < 0) {
-		perror("setsockopt(TCP_QUICKACK) failed");
-	}
-#endif
-
 	return 0;
 }
 
@@ -159,9 +162,9 @@ int socket::last_error() {
 }
 bool socket::would_block(int error) {
 #ifndef _WIN32
-	return error == EAGAIN || error == EWOULDBLOCK;
+	return error == EAGAIN || error == EWOULDBLOCK || error == EINPROGRESS;
 #else
-	return error == EAGAIN || error == EWOULDBLOCK || error == WSAEWOULDBLOCK;
+	return error == EAGAIN || error == EWOULDBLOCK || error == WSAEWOULDBLOCK || error == EINPROGRESS;
 #endif
 }
 

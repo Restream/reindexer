@@ -112,13 +112,13 @@ TEST_F(ExtractPK, DeleteByPKOnlyJSON) {
 
 	QueryResults deleteRes;
 	CHECK_SUCCESS(db_->Delete(Query(SIMPLE_ITEM_NAMESPACE).Where("id", CondEq, data.id), deleteRes));
-	ASSERT_TRUE(deleteRes.empty()) << "Result of deletion must be empty";
+	ASSERT_TRUE(!deleteRes.Count()) << "Result of deletion must be empty";
 
 	QueryResults qres;
-	qres.Erase(qres.begin(), qres.end());
+	qres.Erase(qres.Items().begin(), qres.Items().end());
 	tie(err, qres) = Select(Query(SIMPLE_ITEM_NAMESPACE).Where("id", CondEq, data.id), false);
 	CHECK_SUCCESS(err);
-	ASSERT_TRUE(qres.empty()) << "Result of selection must be empty";
+	ASSERT_TRUE(!qres.Count()) << "Result of selection must be empty";
 }
 
 TEST_F(ExtractPK, ChangedTypeJSON) {
@@ -158,11 +158,11 @@ TEST_F(ExtractPK, ChangedTypeJSON) {
 
 	QueryResults deleteRes;
 	CHECK_SUCCESS(db_->Delete(Query(SIMPLE_ITEM_NAMESPACE).Where("id", CondEq, data.id).Where("fk_id", CondEq, data.fk_id), deleteRes));
-	ASSERT_TRUE(deleteRes.empty()) << "Result of deletion must be empty";
+	ASSERT_TRUE(!deleteRes.Count()) << "Result of deletion must be empty";
 
 	QueryResults selectRes;
 	CHECK_SUCCESS(db_->Select(Query(SIMPLE_ITEM_NAMESPACE).Where("id", CondEq, data.id).Where("fk_id", CondEq, data.fk_id), deleteRes));
-	ASSERT_TRUE(selectRes.empty()) << "Result of selection must be empty";
+	ASSERT_TRUE(!selectRes.Count()) << "Result of selection must be empty";
 }
 
 TEST_F(ExtractPK, NestedJSON) {
@@ -203,11 +203,11 @@ TEST_F(ExtractPK, NestedJSON) {
 
 	QueryResults dRes;
 	CHECK_SUCCESS(db_->Delete(Query(NESTED_ITEM_NAMESPACE).Where("id", CondEq, data.id).Where("fk_id", CondEq, data.fk_id), dRes));
-	ASSERT_TRUE(dRes.empty()) << "Result of deletion must be empty";
+	ASSERT_TRUE(!dRes.Count()) << "Result of deletion must be empty";
 
 	QueryResults qRes;
 	CHECK_SUCCESS(db_->Select(Query(NESTED_ITEM_NAMESPACE).Where("id", CondEq, data.id).Where("fk_id", CondEq, data.fk_id), qRes));
-	ASSERT_TRUE(qRes.empty()) << "Result of selection must be empty";
+	ASSERT_TRUE(!qRes.Count()) << "Result of selection must be empty";
 }
 
 TEST_F(ExtractPK, CJson2CJson_PrintJSON) {
@@ -277,11 +277,11 @@ TEST_F(ExtractPK, SimpleCJSON) {
 
 	QueryResults dRes;
 	CHECK_SUCCESS(db_->Delete(Query(SIMPLE_ITEM_NAMESPACE).Where("id", CondEq, data.id).Where("fk_id", CondEq, data.fk_id), dRes));
-	ASSERT_TRUE(dRes.empty()) << "Result of deletion must be empty";
+	ASSERT_TRUE(!dRes.Count()) << "Result of deletion must be empty";
 
 	QueryResults qRes;
 	CHECK_SUCCESS(db_->Select(Query(SIMPLE_ITEM_NAMESPACE).Where("id", CondEq, data.id).Where("fk_id", CondEq, data.fk_id), qRes));
-	ASSERT_TRUE(qRes.empty()) << "Result of selection must be empty";
+	ASSERT_TRUE(!qRes.Count()) << "Result of selection must be empty";
 }
 
 TEST_F(ExtractPK, NestedCJSON) {
@@ -325,11 +325,11 @@ TEST_F(ExtractPK, NestedCJSON) {
 
 	QueryResults dRes;
 	CHECK_SUCCESS(db_->Delete(Query(NESTED_ITEM_NAMESPACE).Where("id", CondEq, data.id).Where("fk_id", CondEq, data.fk_id), dRes));
-	ASSERT_TRUE(dRes.empty()) << "Result of deletion must be empty";
+	ASSERT_TRUE(!dRes.Count()) << "Result of deletion must be empty";
 
 	QueryResults qRes;
 	CHECK_SUCCESS(db_->Select(Query(NESTED_ITEM_NAMESPACE).Where("id", CondEq, data.id).Where("fk_id", CondEq, data.fk_id), qRes));
-	ASSERT_TRUE(qRes.empty()) << "Result of selection must be empty";
+	ASSERT_TRUE(!qRes.Count()) << "Result of selection must be empty";
 }
 
 TEST_F(ExtractPK, NestedCJSONWithObject) {
@@ -372,9 +372,9 @@ TEST_F(ExtractPK, NestedCJSONWithObject) {
 
 	QueryResults dRes;
 	CHECK_SUCCESS(db_->Delete(Query(NESTED_ITEM_WITH_OBJ_NAMESPACE).Where("id", CondEq, data.id).Where("fk_id", CondEq, data.fk_id), dRes));
-	ASSERT_TRUE(dRes.empty()) << "Result of deletion must be empty";
+	ASSERT_TRUE(!dRes.Count()) << "Result of deletion must be empty";
 
 	QueryResults qRes;
 	CHECK_SUCCESS(db_->Select(Query(NESTED_ITEM_WITH_OBJ_NAMESPACE).Where("id", CondEq, data.id).Where("fk_id", CondEq, data.fk_id), qRes));
-	ASSERT_TRUE(qRes.empty()) << "Result of selection must be empty";
+	ASSERT_TRUE(!qRes.Count()) << "Result of selection must be empty";
 }

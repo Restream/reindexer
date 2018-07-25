@@ -23,11 +23,11 @@ const (
 
 func (db *Reindexer) createIndex(namespace string, st reflect.Type, subArray bool, reindexBasePath, jsonBasePath string, joined *map[string][]int) (err error) {
 
-	if len(jsonBasePath) != 0 {
+	if len(jsonBasePath) != 0 && !strings.HasSuffix(jsonBasePath, ".") {
 		jsonBasePath = jsonBasePath + "."
 	}
 
-	if len(reindexBasePath) != 0 {
+	if len(reindexBasePath) != 0 && !strings.HasSuffix(reindexBasePath, ".") {
 		reindexBasePath = reindexBasePath + "."
 	}
 

@@ -254,8 +254,8 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	deque<int> selectedIntValues;
-	for (size_t i = 0; i < sortByIntQr.size(); ++i) {
-		Item item(sortByIntQr.GetItem(static_cast<int>(i)));
+	for (auto it : sortByIntQr) {
+		Item item(it.GetItem());
 		int value = item["valueInt"].Get<int>();
 		selectedIntValues.push_back(value);
 	}
@@ -282,8 +282,8 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 
 	auto collectQrStringFieldValues = [](const QueryResults& qr, const char* fieldName, vector<string>& selectedStrValues) {
 		selectedStrValues.clear();
-		for (size_t i = 0; i < qr.size(); ++i) {
-			Item item(qr.GetItem(int(i)));
+		for (auto it : qr) {
+			Item item(it.GetItem());
 			selectedStrValues.push_back(item[fieldName].As<string>());
 		}
 	};
@@ -379,8 +379,8 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 	err = reindexer->Select(joinQuery, queryResult);
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	for (size_t i = 0; i < queryResult.size(); ++i) {
-		const reindexer::ItemRef& itemRef = queryResult[i];
+	for (auto it : queryResult) {
+		const reindexer::ItemRef& itemRef = it.GetItemRef();
 		auto itFind(queryResult.joined_->find(itemRef.id));
 		EXPECT_TRUE(itFind != queryResult.joined_->end());
 	}

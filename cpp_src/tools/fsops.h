@@ -26,6 +26,8 @@ int ReadDir(const string &path, vector<DirEntry> &content);
 FileStatus Stat(const string &path);
 string GetCwd();
 string GetTempDir();
+string GetHomeDir();
+
 inline static string JoinPath(string base, string name) { return base + ((!base.empty() && base.back() != '/') ? "/" : "") + name; }
 }  // namespace fs
 }  // namespace reindexer

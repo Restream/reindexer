@@ -39,9 +39,17 @@ void IndexText<T>::initSearchers() {
 		stemmers_.emplace(*lang, *lang);
 	}
 
+	size_t jsonPathIdx = 0;
+
 	if (this->payloadType_) {
 		for (unsigned i = 0; i < this->fields_.size(); i++) {
-			ftFields_.insert({this->payloadType_->Field(this->fields_[i]).Name(), i});
+			auto fieldIdx = this->fields_[i];
+			if (fieldIdx == IndexValueType::SetByJsonPath) {
+				assert(jsonPathIdx < this->fields_.getJsonPathsLength());
+				ftFields_.insert({this->fields_.getJsonPath(jsonPathIdx++), i});
+			} else {
+				ftFields_.insert({this->payloadType_->Field(fieldIdx).Name(), i});
+			}
 		}
 	}
 }
@@ -60,32 +68,41 @@ void IndexText<T>::Commit(const CommitContext &ctx) {
 
 // Generic implemetation for string index
 template <typename T>
-h_vector<pair<const string *, int>, 8> IndexText<T>::getDocFields(const typename T::key_type &doc, vector<unique_ptr<string>> &) {
+h_vector<pair<string_view, int>, 8> IndexText<T>::getDocFields(const typename T::key_type &doc, vector<unique_ptr<string>> &) {
 	if (!utf8::is_valid(doc->cbegin(), doc->cend())) throw Error(errParams, "Invalid UTF8 string in FullText index");
 
-	return {{doc.get(), 0}};
+	return {{string_view(*doc.get()), 0}};
 }
 
 // Specific implemetation for composite index
 template <>
-h_vector<pair<const string *, int>, 8> IndexText<unordered_payload_map<Index::KeyEntryPlain>>::getDocFields(
+h_vector<pair<string_view, int>, 8> IndexText<unordered_payload_map<Index::KeyEntryPlain>>::getDocFields(
 	const typename unordered_payload_map<Index::KeyEntryPlain>::key_type &doc, vector<unique_ptr<string>> &strsBuf) {
 	ConstPayload pl(this->payloadType_, doc);
 
-	h_vector<pair<const string *, int>, 8> ret;
 	int fieldPos = 0;
+	size_t tagsPathIdx = 0;
+	h_vector<pair<string_view, int>, 8> ret;
+
 	for (auto field : fields_) {
 		KeyRefs krefs;
-		pl.Get(field, krefs);
+		bool fieldFromCjson = (field == IndexValueType::SetByJsonPath);
+		if (fieldFromCjson) {
+			assert(tagsPathIdx < fields_.getTagsPathsLength());
+			pl.GetByJsonPath(fields_.getTagsPath(tagsPathIdx++), krefs);
+		} else {
+			pl.Get(field, krefs);
+		}
 		for (auto kref : krefs) {
 			if (kref.Type() != KeyValueString) {
 				strsBuf.emplace_back(unique_ptr<string>(new string(kref.As<string>())));
-				ret.push_back({strsBuf.back().get(), fieldPos});
-
+				ret.push_back({*strsBuf.back().get(), fieldPos});
 			} else {
-				const string *str = p_string(kref).getCxxstr();
-				if (!utf8::is_valid(str->cbegin(), str->cend())) throw Error(errParams, "Invalid UTF8 string in FullText index");
-				ret.push_back({str, fieldPos});
+				p_string pstr(kref);
+				const string_view stringRef(pstr.data(), pstr.length());
+				if (!utf8::is_valid(stringRef.data(), stringRef.data() + stringRef.size()))
+					throw Error(errParams, "Invalid UTF8 string in FullTextindex");
+				ret.push_back({stringRef, fieldPos});
 			}
 		}
 		fieldPos++;

@@ -59,7 +59,9 @@ Namespace::Namespace(const Namespace &src)
 	  dbpath_(src.dbpath_),
 	  queryCache_(src.queryCache_),
 	  joinCache_(src.joinCache_),
-	  cacheMode_(src.cacheMode_) {
+	  cacheMode_(src.cacheMode_),
+	  enablePerfCounters_(src.enablePerfCounters_.load()),
+	  queriesLogLevel_(src.queriesLogLevel_) {
 	for (auto &idxIt : src.indexes_) indexes_.push_back(unique_ptr<Index>(idxIt->Clone()));
 	logPrintf(LogTrace, "Namespace::Namespace (clone %s)", name_.c_str());
 }
@@ -74,10 +76,11 @@ Namespace::Namespace(const string &name, CacheMode cacheMode)
 	  queryCache_(make_shared<QueryCache>()),
 	  joinCache_(make_shared<JoinCache>()),
 	  cacheMode_(cacheMode),
-	  needPutCacheMode_(true) {
+	  needPutCacheMode_(true),
+	  enablePerfCounters_(false),
+	  queriesLogLevel_(LogNone) {
 	logPrintf(LogTrace, "Namespace::Namespace (%s)", name_.c_str());
 	items_.reserve(10000);
-	enablePerfCounters_ = false;
 
 	// Add index and payload field for tuple of non indexed fields
 	addIndex("-tuple", "", IndexStrStore, IndexOpts());
@@ -326,24 +329,30 @@ bool Namespace::AddCompositeIndex(const string &index, IndexType type, IndexOpts
 	}
 
 	FieldsSet fields;
-
+	bool updated = false;
 	bool eachSubIdxPK = true;
+
 	vector<string> subIdxs;
 	for (auto subIdx : split(idxContent, "+", true, subIdxs)) {
 		auto idxNameIt = indexesNames_.find(subIdx);
 		if (idxNameIt == indexesNames_.end()) {
-			throw Error(errParams, "Subindex '%s' not found for composite index '%s'", subIdx.c_str(), index.c_str());
-		}
-
-		if (indexes_[idxNameIt->second]->Opts().IsArray() && (type == IndexCompositeBTree || type == IndexCompositeHash)) {
-			throw Error(errParams, "Can't add array subindex '%s' to composite index '%s'", subIdx.c_str(), index.c_str());
-		}
-
-		fields.push_back(idxNameIt->second);
-		if (!indexes_[idxNameIt->second]->Opts().IsPK()) {
+			TagsPath tagsPath = tagsMatcher_.path2tag(subIdx, updated);
+			if (tagsPath.empty()) {
+				throw Error(errParams, "Subindex '%s' for composite index '%s' does not exist", subIdx.c_str(), index.c_str());
+			}
+			fields.push_back(tagsPath);
+			fields.push_back(subIdx);
 			eachSubIdxPK = false;
+		} else {
+			if (indexes_[idxNameIt->second]->Opts().IsArray() && (type == IndexCompositeBTree || type == IndexCompositeHash)) {
+				throw Error(errParams, "Can't add array subindex '%s' to composite index '%s'", subIdx.c_str(), index.c_str());
+			}
+			fields.push_back(idxNameIt->second);
+			if (!indexes_[idxNameIt->second]->Opts().IsPK()) eachSubIdxPK = false;
 		}
 	}
+
+	assert(fields.getJsonPathsLength() == fields.getTagsPathsLength());
 
 	bool result = false;
 
@@ -418,6 +427,14 @@ int Namespace::getIndexByName(const string &index) const {
 
 	return idxIt->second;
 }
+
+bool Namespace::getIndexByName(const string &name, int &index) const {
+	auto it = indexesNames_.find(name);
+	if (it == indexesNames_.end()) return false;
+	index = it->second;
+	return true;
+}
+
 void Namespace::ConfigureIndex(const string &index, const string &config) { indexes_[getIndexByName(index)]->Configure(config); }
 
 void Namespace::Insert(Item &item, bool store) { upsertInternal(item, store, INSERT_MODE); }
@@ -489,10 +506,10 @@ void Namespace::Delete(const Query &q, QueryResults &result) {
 	selecter(result, ctx);
 
 	auto tmStart = high_resolution_clock::now();
-	for (auto r : result) _delete(r.id);
+	for (auto r : result.Items()) _delete(r.id);
 
 	if (q.debugLevel >= LogInfo) {
-		logPrintf(LogInfo, "Deleted %d items in %d µs", result.size(),
+		logPrintf(LogInfo, "Deleted %d items in %d µs", int(result.Count()),
 				  int(duration_cast<microseconds>(high_resolution_clock::now() - tmStart).count()));
 	}
 }
@@ -633,7 +650,7 @@ pair<IdType, bool> Namespace::findByPK(ItemImpl *ritem) {
 	h_vector<IdSetRef::iterator, 4> idsIt;
 
 	if (!pkFields_.size()) {
-		throw Error(errLogic, "Trying to modify namespace '%s', but it's have no PK indexes", name_.c_str());
+		throw Error(errLogic, "Trying to modify namespace '%s', but it doesn't contain any PK indexes", name_.c_str());
 	}
 
 	Payload pl = ritem->GetPayload();
@@ -735,8 +752,8 @@ void Namespace::commit(const NSCommitContext &ctx, SelectLockUpgrader *lockUpgra
 	if (ctx.indexes()) {
 		NSCommitContext ctx1(*this, CommitContext::PrepareForSelect, ctx.indexes());
 		for (auto idxNo : *ctx.indexes())
-			if (!preparedIndexes_.contains(idxNo)) {
-				assert(idxNo < indexes_.size());
+			if ((idxNo != IndexValueType::SetByJsonPath) && !preparedIndexes_.contains(idxNo)) {
+				assert(static_cast<size_t>(idxNo) < indexes_.size());
 				indexes_[idxNo]->Commit(ctx1);
 				preparedIndexes_.push_back(idxNo);
 			}
@@ -1082,6 +1099,7 @@ vector<string> Namespace::EnumMeta() {
 	for (auto &m : meta_) {
 		ret.push_back(m.first);
 	}
+	if (!storage_) return ret;
 
 	StorageOpts opts;
 	opts.FillCache(false);

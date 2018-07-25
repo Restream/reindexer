@@ -15,9 +15,9 @@ void selectAll(reindexer::Reindexer* reindexer, const string& ns) {
 	Error err = reindexer->Select(Query(ns, 0, 1000, ModeAccurateTotal), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	for (size_t i = 0; i < qr.size(); ++i) {
+	for (auto it : qr) {
 		reindexer::WrSerializer wrser;
-		qr.GetJSON(i, wrser, false);
+		it.GetJSON(wrser, false);
 	}
 }
 
@@ -88,9 +88,9 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	Error err = reindexer->Select(
 		Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondEq, {{KeyValue(priceValue), KeyValue(pagesValue)}}), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
-	EXPECT_TRUE(qr.size() == 1);
+	EXPECT_TRUE(qr.Count() == 1);
 
-	Item pricePageRow = qr.GetItem(0);
+	Item pricePageRow = qr.begin().GetItem();
 	KeyRef selectedPrice = pricePageRow[kFieldNamePrice];
 	KeyRef selectedPages = pricePageRow[kFieldNamePages];
 	EXPECT_EQ(static_cast<int>(selectedPrice), priceValue);
@@ -147,9 +147,9 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 			.WhereComposite(compositeIndexName2.c_str(), CondEq, {{KeyValue(string(titleValue)), KeyValue(string(nameValue))}}),
 		qr7);
 	EXPECT_TRUE(err.ok()) << err.what();
-	EXPECT_TRUE(qr7.size() == 1);
+	EXPECT_TRUE(qr7.Count() == 1);
 
-	Item titleNameRow = qr.GetItem(0);
+	Item titleNameRow = qr.begin().GetItem();
 	KeyRef selectedTitle = titleNameRow[kFieldNameTitle];
 	KeyRef selectedName = titleNameRow[kFieldNameName];
 	EXPECT_TRUE(static_cast<reindexer::key_string>(selectedTitle)->compare(string(titleValue)) == 0);

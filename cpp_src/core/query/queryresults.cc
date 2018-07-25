@@ -19,13 +19,14 @@ struct QueryResults::Context {
 static_assert(sizeof(QueryResults::Context) < QueryResults::kSizeofContext,
 			  "QueryResults::kSizeofContext should >=  sizeof(QueryResults::Context)");
 
-QueryResults::QueryResults(std::initializer_list<ItemRef> l) : ItemRefVector(l) {}
+QueryResults::QueryResults(std::initializer_list<ItemRef> l) : items_(l) {}
 QueryResults::QueryResults() = default;
 QueryResults::QueryResults(QueryResults &&) = default;
 QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	if (this != &obj) {
 		unlockResults();
-		ItemRefVector::operator=(static_cast<ItemRefVector &&>(obj));
+		items_ = std::move(obj.items_);
+		assert(!obj.items_.size());
 		joined_ = std::move(obj.joined_);
 		aggregationResults = std::move(obj.aggregationResults);
 		totalCount = std::move(obj.totalCount);
@@ -33,20 +34,21 @@ QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 		ctxs = std::move(obj.ctxs);
 		nonCacheableData = std::move(obj.nonCacheableData);
 		lockedResults_ = std::move(obj.lockedResults_);
+		obj.lockedResults_ = false;
 	}
 	return *this;
 }
 
 QueryResults::~QueryResults() { unlockResults(); }
 
-void QueryResults::Erase(iterator start, iterator finish) {
+void QueryResults::Erase(ItemRefVector::iterator start, ItemRefVector::iterator finish) {
 	assert(!lockedResults_);
-	ItemRefVector::erase(start, finish);
+	items_.erase(start, finish);
 }
 
 void QueryResults::lockResults() {
 	assert(!lockedResults_);
-	for (auto &itemRef : *this) {
+	for (auto &itemRef : items_) {
 		if (!itemRef.value.IsFree()) {
 			assert(ctxs.size() > itemRef.nsid);
 			Payload(ctxs[itemRef.nsid].type_, itemRef.value).AddRefStrings();
@@ -64,7 +66,7 @@ void QueryResults::lockResults() {
 
 void QueryResults::unlockResults() {
 	if (!lockedResults_) return;
-	for (auto &itemRef : *this) {
+	for (auto &itemRef : items_) {
 		if (!itemRef.value.IsFree()) {
 			assert(ctxs.size() > itemRef.nsid);
 			Payload(ctxs[itemRef.nsid].type_, itemRef.value).ReleaseStrings();
@@ -74,20 +76,20 @@ void QueryResults::unlockResults() {
 }
 
 void QueryResults::Add(const ItemRef &i) {
-	push_back(i);
+	items_.push_back(i);
 
 	if (!lockedResults_) return;
 
 	if (!i.value.IsFree()) {
-		assert(ctxs.size() > back().nsid);
-		Payload(ctxs[back().nsid].type_, back().value).AddRefStrings();
+		assert(ctxs.size() > items_.back().nsid);
+		Payload(ctxs[items_.back().nsid].type_, items_.back().value).AddRefStrings();
 	}
 }
 
 void QueryResults::Dump() const {
 	string buf;
-	for (auto &r : *this) {
-		if (&r != &*(*this).begin()) buf += ",";
+	for (auto &r : items_) {
+		if (&r != &*items_.begin()) buf += ",";
 		buf += std::to_string(r.id);
 		if (joined_) {
 			auto it = joined_->find(r.id);
@@ -95,8 +97,8 @@ void QueryResults::Dump() const {
 				buf += "[";
 				for (auto &ra : it->second) {
 					if (&ra != &*it->second.begin()) buf += ";";
-					for (auto &rr : ra) {
-						if (&rr != &*ra.begin()) buf += ",";
+					for (auto &rr : ra.items_) {
+						if (&rr != &*ra.items_.begin()) buf += ",";
 						buf += std::to_string(rr.id);
 					}
 				}
@@ -115,11 +117,11 @@ public:
 	size_t GetJoinedRowsCount() final { return joined_.size(); }
 	size_t GetJoinedRowItemsCount(size_t rowId) final {
 		const QueryResults &queryRes(joined_[rowId]);
-		return queryRes.size();
+		return queryRes.Count();
 	}
 	ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) final {
 		const QueryResults &queryRes(joined_[rowid]);
-		const ItemRef &itemRef = queryRes[plIndex];
+		const ItemRef &itemRef = queryRes.items_[plIndex];
 		const Context &ctx = ctxs_[rowid + 1];
 		return ConstPayload(ctx.type_, itemRef.value);
 	}
@@ -143,7 +145,7 @@ private:
 };
 
 void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
-	auto &itemRef = at(idx);
+	auto &itemRef = items_[idx];
 	assert(ctxs.size() > itemRef.nsid);
 	auto &ctx = ctxs[itemRef.nsid];
 
@@ -162,27 +164,26 @@ void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 	jsonEncoder.Encode(&pl, ser);
 }
 
-void QueryResults::GetJSON(int idx, WrSerializer &ser, bool withHdrLen) const {
-	assert(static_cast<size_t>(idx) < size());
+void QueryResults::Iterator::GetJSON(WrSerializer &ser, bool withHdrLen) {
 	if (withHdrLen) {
 		// reserve place for size
 		uint32_t saveLen = ser.Len();
 		ser.PutUInt32(0);
 
-		encodeJSON(idx, ser);
+		qr_->encodeJSON(idx_, ser);
 
 		// put real json size
 		int realSize = ser.Len() - saveLen - sizeof(saveLen);
 		memcpy(ser.Buf() + saveLen, &realSize, sizeof(saveLen));
 	} else {
-		encodeJSON(idx, ser);
+		qr_->encodeJSON(idx_, ser);
 	}
 }
 
-void QueryResults::GetCJSON(int idx, WrSerializer &ser, bool withHdrLen) const {
-	auto &itemRef = at(idx);
-	assert(ctxs.size() > itemRef.nsid);
-	auto &ctx = ctxs[itemRef.nsid];
+void QueryResults::Iterator::GetCJSON(WrSerializer &ser, bool withHdrLen) {
+	auto &itemRef = qr_->items_[idx_];
+	assert(qr_->ctxs.size() > itemRef.nsid);
+	auto &ctx = qr_->ctxs[itemRef.nsid];
 
 	ConstPayload pl(ctx.type_, itemRef.value);
 	CJsonEncoder cjsonEncoder(ctx.tagsMatcher_, ctx.jsonFilter_);
@@ -202,11 +203,11 @@ void QueryResults::GetCJSON(int idx, WrSerializer &ser, bool withHdrLen) const {
 	}
 }
 
-Item QueryResults::GetItem(int idx) const {
-	auto &itemRef = at(idx);
+Item QueryResults::Iterator::GetItem() {
+	auto &itemRef = qr_->items_[idx_];
 
-	assert(ctxs.size() > itemRef.nsid);
-	auto &ctx = ctxs[itemRef.nsid];
+	assert(qr_->ctxs.size() > itemRef.nsid);
+	auto &ctx = qr_->ctxs[itemRef.nsid];
 
 	PayloadValue v(itemRef.value);
 
@@ -214,6 +215,18 @@ Item QueryResults::GetItem(int idx) const {
 	item.setID(itemRef.id, itemRef.version);
 	return item;
 }
+
+QueryResults::Iterator &QueryResults::Iterator::operator++() {
+	idx_++;
+	return *this;
+}
+QueryResults::Iterator &QueryResults::Iterator::operator+(int val) {
+	idx_ += val;
+	return *this;
+}
+
+bool QueryResults::Iterator::operator!=(const Iterator &other) const { return idx_ != other.idx_; }
+bool QueryResults::Iterator::operator==(const Iterator &other) const { return idx_ == other.idx_; }
 
 void QueryResults::AddItem(Item &item) {
 	if (item.GetID() != -1) {

@@ -55,6 +55,7 @@ set(REINDEXER_SOURCE_PATH ${PROJECT_SOURCE_DIR} )
 file (
   GLOB_RECURSE 
   SRCS 
+    ${REINDEXER_SOURCE_PATH}/client/*
     ${REINDEXER_SOURCE_PATH}/core/*
     ${REINDEXER_SOURCE_PATH}/estl/*
     ${REINDEXER_SOURCE_PATH}/tools/*
@@ -100,7 +101,7 @@ else ()
     )
   include_directories (${CMAKE_CURRENT_BINARY_DIR}/include)
   link_directories(${CMAKE_CURRENT_BINARY_DIR})
-  list(APPEND REINDEXER_LIBRARIES reindexer snappy)
+  list(APPEND REINDEXER_LIBRARIES snappy)
 endif ()
 
 # leveldb

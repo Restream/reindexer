@@ -33,7 +33,7 @@ public:
 	void SetField(int field, const KeyRefs &krs);
 	KeyRef GetField(int field);
 
-	KeyRefs GetFieldByJSONPath(const string &jsonPath);
+	KeyRefs GetValueByJSONPath(const string &jsonPath);
 
 	string_view GetJSON();
 	Error FromJSON(const string_view &slice, char **endp = nullptr, bool pkOnly = false);

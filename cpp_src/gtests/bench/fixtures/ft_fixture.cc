@@ -192,7 +192,7 @@ void FullText::Fast1WordMatch(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		cnt += qres.size();
+		cnt += qres.Count();
 	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
@@ -209,7 +209,7 @@ void FullText::Fast2WordsMatch(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		cnt += qres.size();
+		cnt += qres.Count();
 	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
@@ -225,7 +225,7 @@ void FullText::Fuzzy1WordMatch(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		cnt += qres.size();
+		cnt += qres.Count();
 	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
@@ -242,7 +242,7 @@ void FullText::Fuzzy2WordsMatch(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		cnt += qres.size();
+		cnt += qres.Count();
 	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
@@ -259,7 +259,7 @@ void FullText::Fast1PrefixMatch(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		cnt += qres.size();
+		cnt += qres.Count();
 	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
@@ -276,7 +276,7 @@ void FullText::Fast2PrefixMatch(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		cnt += qres.size();
+		cnt += qres.Count();
 	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
@@ -293,7 +293,7 @@ void FullText::Fuzzy1PrefixMatch(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		cnt += qres.size();
+		cnt += qres.Count();
 	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
@@ -310,7 +310,7 @@ void FullText::Fuzzy2PrefixMatch(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		cnt += qres.size();
+		cnt += qres.Count();
 	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
@@ -327,7 +327,7 @@ void FullText::Fast1SuffixMatch(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		cnt += qres.size();
+		cnt += qres.Count();
 	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
@@ -344,7 +344,7 @@ void FullText::Fast2SuffixMatch(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		cnt += qres.size();
+		cnt += qres.Count();
 	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
@@ -361,7 +361,7 @@ void FullText::Fuzzy1SuffixMatch(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		cnt += qres.size();
+		cnt += qres.Count();
 	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
@@ -378,7 +378,7 @@ void FullText::Fuzzy2SuffixMatch(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		cnt += qres.size();
+		cnt += qres.Count();
 	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
@@ -395,7 +395,7 @@ void FullText::Fast1TypoWordMatch(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		cnt += qres.size();
+		cnt += qres.Count();
 	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
@@ -412,7 +412,7 @@ void FullText::Fast2TypoWordMatch(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		cnt += qres.size();
+		cnt += qres.Count();
 	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
@@ -429,7 +429,7 @@ void FullText::Fuzzy1TypoWordMatch(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		cnt += qres.size();
+		cnt += qres.Count();
 	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
@@ -446,7 +446,7 @@ void FullText::Fuzzy2TypoWordMatch(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
-		cnt += qres.size();
+		cnt += qres.Count();
 	}
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }

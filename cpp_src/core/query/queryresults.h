@@ -36,18 +36,8 @@ class QRVector;
 /// QueryResults will not be changed externaly, even in case, when origin data in database was changed, or deleted.<br>
 /// *Thread safety*: QueryResults is thread safe.
 
-class QueryResults : private ItemRefVector {
+class QueryResults {
 public:
-	using ItemRefVector::iterator;
-	using ItemRefVector::begin;
-	using ItemRefVector::end;
-	using ItemRefVector::size;
-	using ItemRefVector::empty;
-	using ItemRefVector::at;
-	using ItemRefVector::difference_type;
-	using ItemRefVector::reserve;
-	using ItemRefVector::operator[];
-
 	QueryResults(std::initializer_list<ItemRef> l);
 
 	QueryResults();
@@ -59,11 +49,32 @@ public:
 	void Add(const ItemRef &i);
 	void AddItem(Item &item);
 	void Dump() const;
-	void Erase(iterator begin, iterator end);
-	void GetJSON(int idx, WrSerializer &wrser, bool withHdrLen = true) const;
-	void GetCJSON(int idx, WrSerializer &wrser, bool withHdrLen = true) const;
+	void Erase(ItemRefVector::iterator begin, ItemRefVector::iterator end);
+	size_t Count() const { return items_.size(); }
 
-	Item GetItem(int idx) const;
+	class Iterator {
+	public:
+		void GetJSON(WrSerializer &wrser, bool withHdrLen = true);
+		void GetCJSON(WrSerializer &wrser, bool withHdrLen = true);
+		Item GetItem();
+		const ItemRef &GetItemRef() const { return qr_->items_[idx_]; }
+		Iterator &operator++();
+		Iterator &operator+(int delta);
+		Error Status() { return err_; }
+		bool operator!=(const Iterator &) const;
+		bool operator==(const Iterator &) const;
+		Iterator &operator*() { return *this; }
+
+		const QueryResults *qr_;
+		int idx_;
+		Error err_;
+	};
+
+	Iterator begin() const { return Iterator{this, 0, errOK}; }
+	Iterator end() const { return Iterator{this, int(items_.size()), errOK}; }
+	Iterator operator [] (int idx) const { return Iterator{this, idx, errOK};}
+
+	// Item GetItem(int idx) const;
 
 	// joinded fields 0 - 1st joined ns, 1 - second joined
 	unique_ptr<unordered_map<IdType, QRVector>> joined_;  // joinded items
@@ -85,6 +96,8 @@ public:
 	PayloadType &getPayloadType(int nsid);
 	int getMergedNSCount() const;
 	void lockResults();
+	ItemRefVector &Items() { return items_; }
+	const ItemRefVector &Items() const { return items_; }
 
 protected:
 	class JsonEncoderDatasourceWithJoins;
@@ -93,6 +106,7 @@ private:
 	void unlockResults();
 	void encodeJSON(int idx, WrSerializer &ser) const;
 	bool lockedResults_ = false;
+	ItemRefVector items_;
 };
 
 class QRVector : public h_vector<QueryResults, 2> {

@@ -1,8 +1,12 @@
 
 #include "core/item.h"
+#include "core/fieldrefimpl.h"
 #include "core/itemimpl.h"
 
 namespace reindexer {
+
+Item::FieldRef::FieldRef(int field, ItemImpl *itemImpl) : impl_(std::make_shared<RegularFieldRefImpl>(field, itemImpl)) {}
+Item::FieldRef::FieldRef(const string &jsonPath, ItemImpl *itemImpl) : impl_(std::make_shared<CjsonFieldRefImpl>(jsonPath, itemImpl)) {}
 
 Item::Item(Item &&other) noexcept : impl_(other.impl_), status_(std::move(other.status_)), id_(other.id_), version_(other.version_) {
 	other.impl_ = nullptr;
@@ -20,28 +24,17 @@ Item &Item::operator=(Item &&other) noexcept {
 	return *this;
 }
 
-const string &Item::FieldRef::Name() { return impl_->Type().Field(field_).Name(); }
-
-Item::FieldRef::operator KeyRef() {
-	KeyRefs kr;
-	impl_->GetPayload().Get(field_, kr);
-	if (kr.size() != 1) {
-		throw Error(errParams, "Invalid array access");
-	}
-	return kr[0];
-}
-Item::FieldRef::operator KeyRefs() {
-	KeyRefs kr;
-	return impl_->GetPayload().Get(field_, kr);
-}
+const string &Item::FieldRef::Name() { return impl_->Name(); }
+Item::FieldRef::operator KeyRef() { return impl_->GetValue(); }
+Item::FieldRef::operator KeyRefs() { return impl_->GetValues(); }
 
 Item::FieldRef &Item::FieldRef::operator=(KeyRef kr) {
-	impl_->SetField(field_, KeyRefs{kr});
+	impl_->SetValue(kr);
 	return *this;
 }
 
 Item::FieldRef &Item::FieldRef::operator=(const KeyRefs &krs) {
-	impl_->SetField(field_, krs);
+	impl_->SetValue(krs);
 	return *this;
 }
 
@@ -57,15 +50,30 @@ Item::FieldRef Item::operator[](int field) {
 	assert(field >= 0 && field < impl_->Type().NumFields());
 	return FieldRef(field, impl_);
 }
-Item::FieldRef Item::operator[](const string &name) { return FieldRef(impl_->Type().FieldByName(name), impl_); }
-Item::FieldRef Item::operator[](const char *name) { return FieldRef(impl_->Type().FieldByName(name), impl_); }
+
+Item::FieldRef Item::operator[](const string &name) {
+	int field = 0;
+	if (impl_->Type().FieldByName(name, field)) {
+		return FieldRef(field, impl_);
+	} else {
+		return FieldRef(name, impl_);
+	}
+}
+
+Item::FieldRef Item::operator[](const char *name) {
+	int field = 0;
+	if (impl_->Type().FieldByName(name, field)) {
+		return FieldRef(field, impl_);
+	} else {
+		return FieldRef(name, impl_);
+	}
+}
+
 void Item::SetPrecepts(const vector<string> &precepts) { impl_->SetPrecepts(precepts); }
 bool Item::IsTagsUpdated() { return impl_->tagsMatcher().isUpdated(); }
 Item &Item::Unsafe(bool enable) {
 	impl_->Unsafe(enable);
 	return *this;
 }
-
-KeyRefs Item::GetFieldByJSONPath(const string &jsonPath) { return impl_->GetFieldByJSONPath(jsonPath); }
 
 }  // namespace reindexer

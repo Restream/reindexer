@@ -22,8 +22,8 @@ TEST_F(FTApi, CompositeSelect) {
 									"s, <b>entity</b> id",
 									"| term for entity territorial divisions of some countries"};
 
-	for (size_t i = 0; i < res.size(); ++i) {
-		Item ritem(res.GetItem(i));
+	for (auto it : res) {
+		Item ritem(it.GetItem());
 		for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 			auto field = ritem[idx].Name();
 			if (field == "id") continue;
@@ -44,12 +44,12 @@ TEST_F(FTApi, NumberToWordsSelect) {
 	Add("оценка 5 майкл джордан 23", "");
 
 	auto res = SimpleSelect("пять +двадцать +три");
-	EXPECT_TRUE(res.size() == 1);
+	EXPECT_TRUE(res.Count() == 1);
 
 	const string result = "оценка !5! майкл джордан !23!";
 
-	for (size_t i = 0; i < res.size(); ++i) {
-		Item ritem(res.GetItem(i));
+	for (auto it : res) {
+		Item ritem(it.GetItem());
 		string val = ritem["ft1"].As<string>();
 		std::cout << val << std::endl;
 		EXPECT_TRUE(result == val);

@@ -125,6 +125,9 @@ Error RPCServer::OpenNamespace(cproto::Context &ctx, p_string ns) {
 
 	if (json[0] == '{') {
 		nsDef.FromJSON(const_cast<char *>(json.c_str()));
+		if (!nsDef.indexes.empty()) {
+			return getDB(ctx, kRoleDataRead)->AddNamespace(nsDef);
+		}
 		return getDB(ctx, kRoleDataRead)->OpenNamespace(nsDef.name, nsDef.storage, nsDef.cacheMode);
 	}
 	// tmp fix for compat
@@ -147,7 +150,16 @@ Error RPCServer::EnumNamespaces(cproto::Context &ctx) {
 	if (!err.ok()) {
 		return err;
 	}
-	// TODO
+	WrSerializer ser;
+	ser.PutChars("{\"items\":[");
+	for (unsigned i = 0; i < nsDefs.size(); i++) {
+		if (i != 0) ser.PutChar(',');
+		nsDefs[i].GetJSON(ser);
+	}
+	ser.PutChars("]}");
+	auto resSlice = ser.Slice();
+
+	ctx.Return({cproto::Arg(p_string(&resSlice))});
 	return 0;
 }
 
@@ -268,7 +280,7 @@ Error RPCServer::sendResults(cproto::Context &ctx, QueryResults &qres, int reqId
 		reqId = -1;
 	}
 
-	string_view resSlice(reinterpret_cast<char *>(rser.Buf()), rser.Len());
+	string_view resSlice = rser.Slice();
 	ctx.Return({cproto::Arg(p_string(&resSlice)), cproto::Arg(int(reqId))});
 	return 0;
 }
@@ -378,7 +390,7 @@ Error RPCServer::GetMeta(cproto::Context &ctx, p_string ns, p_string key) {
 
 	WrSerializer wrSer;
 	wrSer.PutVString(data);
-	string_view slData(reinterpret_cast<char *>(wrSer.Buf()), wrSer.Len());
+	string_view slData = wrSer.Slice();
 	ctx.Return({cproto::Arg(p_string(&slData))});
 	return 0;
 }

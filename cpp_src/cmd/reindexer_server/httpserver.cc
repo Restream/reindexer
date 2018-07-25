@@ -29,6 +29,12 @@ int HTTPServer::GetSQLQuery(http::Context &ctx) {
 	reindexer::QueryResults res;
 	string sqlQuery = urldecode2(ctx.request->params.Get("q"));
 
+	string_view limitParam = ctx.request->params.Get("limit");
+	string_view offsetParam = ctx.request->params.Get("offset");
+
+	unsigned limit = prepareLimit(limitParam);
+	unsigned offset = prepareOffset(offsetParam);
+
 	if (sqlQuery.empty()) {
 		http::HttpStatus httpStatus(http::StatusBadRequest, "Missed `q` parameter");
 
@@ -36,13 +42,13 @@ int HTTPServer::GetSQLQuery(http::Context &ctx) {
 	}
 
 	auto ret = db->Select(sqlQuery, res);
-
 	if (!ret.ok()) {
 		http::HttpStatus httpStatus(http::StatusInternalServerError, ret.what());
 
 		return jsonStatus(ctx, httpStatus);
 	}
-	return queryResults(ctx, res, "items");
+
+	return queryResults(ctx, res, true, limit, offset);
 }
 
 int HTTPServer::PostSQLQuery(http::Context &ctx) {
@@ -62,7 +68,7 @@ int HTTPServer::PostSQLQuery(http::Context &ctx) {
 
 		return jsonStatus(ctx, httpStatus);
 	}
-	return queryResults(ctx, res, "items");
+	return queryResults(ctx, res, true);
 }
 
 int HTTPServer::PostQuery(http::Context &ctx) {
@@ -84,7 +90,7 @@ int HTTPServer::PostQuery(http::Context &ctx) {
 
 		return jsonStatus(ctx, httpStatus);
 	}
-	return queryResults(ctx, res, "items");
+	return queryResults(ctx, res, true);
 }
 
 int HTTPServer::GetDatabases(http::Context &ctx) {
@@ -330,57 +336,45 @@ int HTTPServer::GetItems(http::Context &ctx) {
 	string_view sortField = ctx.request->params.Get("sort_field");
 	string_view sortOrder = ctx.request->params.Get("sort_order");
 
+	string filterParam = urldecode2(ctx.request->params.Get("filter"));
+
 	if (nsName.empty()) {
 		http::HttpStatus httpStatus(http::StatusBadRequest, "Namespace is not specified");
 
 		return jsonStatus(ctx, httpStatus);
 	}
 
-	int limit = limit_default;
-	int offset = offset_default;
-	if (limitParam.length()) {
-		limit = stoi(limitParam);
-		if (limit < 0) limit = limit_default;
-		if (limit > limit_max) limit = limit_max;
-	}
-	if (offsetParam.length()) {
-		offset = stoi(offsetParam);
-		if (offset < 0) offset = 0;
-	}
+	unsigned limit = prepareLimit(limitParam, kDefaultItemsLimit);
+	unsigned offset = prepareOffset(offsetParam);
 
-	reindexer::Query query(nsName, offset, limit, ModeAccurateTotal);
-
+	reindexer::WrSerializer querySer(true);
+	querySer.Printf("SELECT * FROM %s", nsName.c_str());
+	if (filterParam.length()) {
+		querySer.Printf(" WHERE %s", filterParam.c_str());
+	}
 	if (sortField.length()) {
-		bool isSortDesc = sortOrder == "desc";
-		query.Sort(sortField.ToString(), isSortDesc);
+		querySer.Printf(" ORDER BY %s", sortField.ToString().c_str());
+
+		if (sortOrder == "desc") {
+			querySer.PutChars(" DESC");
+		}
 	}
+	querySer.Printf(" LIMIT %d OFFSET %d", limit, offset);
+
+	reindexer::Query q;
+
+	q.Parse(querySer.Slice().ToString());
+	q.ReqTotal();
 
 	reindexer::QueryResults res;
-	auto status = db->Select(query, res);
-	if (!status.ok()) {
-		http::HttpStatus httpStatus(status);
+	auto ret = db->Select(q, res);
+	if (!ret.ok()) {
+		http::HttpStatus httpStatus(http::StatusInternalServerError, ret.what());
 
 		return jsonStatus(ctx, httpStatus);
 	}
 
-	ctx.writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
-	ctx.writer->SetRespCode(http::StatusOK);
-
-	ctx.writer->Write("{\"items\":[");
-	reindexer::WrSerializer wrSer(true);
-	for (size_t i = 0; i < res.size(); i++) {
-		wrSer.Reset();
-		res.GetJSON(i, wrSer, false);
-		ctx.writer->Write(wrSer.Buf(), wrSer.Len());
-		if (i != res.size() - 1) ctx.writer->Write(',');
-	}
-	ctx.writer->Write("],");
-	ctx.writer->Write("\"total_items\":");
-	string total = to_string(res.totalCount);
-	ctx.writer->Write(total.c_str(), total.length());
-	ctx.writer->Write("}");
-
-	return 0;
+	return queryResults(ctx, res);
 }
 
 int HTTPServer::DeleteItems(http::Context &ctx) { return modifyItem(ctx, ModeDelete); }
@@ -634,7 +628,7 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 		jsonLeft -= (jsonPtr - prevPtr);
 
 		if (!status.ok()) {
-			http::HttpStatus httpStatus(item.Status());
+			http::HttpStatus httpStatus(status);
 
 			return jsonStatus(ctx, httpStatus);
 		}
@@ -666,17 +660,12 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 	return jsonStatus(ctx);
 }
 
-int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, const char *name) {
+int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset) {
 	ctx.writer->SetHeader(http::Header{"Content-Type"_sv, "application/json; charset=utf-8"_sv});
 	ctx.writer->SetRespCode(http::StatusOK);
 	reindexer::WrSerializer wrSer(true);
 	ctx.writer->Write('{');
-	if (res.totalCount) {
-		ctx.writer->Write("\"total_items\":"_sv);
-		string total = to_string(res.totalCount);
-		ctx.writer->Write(total.c_str(), total.length());
-		ctx.writer->Write(",");
-	}
+
 	if (!res.aggregationResults.empty()) {
 		ctx.writer->Write("\"aggregations\": ["_sv);
 		for (unsigned i = 0; i < res.aggregationResults.size(); i++) {
@@ -687,16 +676,22 @@ int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, c
 		ctx.writer->Write("],"_sv);
 	}
 
-	ctx.writer->Write('\"');
-	ctx.writer->Write(name, strlen(name));
-	ctx.writer->Write("\":["_sv);
-	for (size_t i = 0; i < res.size(); i++) {
+	ctx.writer->Write("\"items\": ["_sv);
+	for (size_t i = offset; i < res.Count() && i < offset + limit; i++) {
 		wrSer.Reset();
-		if (i != 0) ctx.writer->Write(',');
-		res.GetJSON(i, wrSer, false);
+		if (i != offset) ctx.writer->Write(',');
+		res[i].GetJSON(wrSer, false);
 		ctx.writer->Write(wrSer.Buf(), wrSer.Len());
 	}
-	ctx.writer->Write("]}"_sv);
+	ctx.writer->Write("],"_sv);
+
+	unsigned totalItems = isQueryResults ? res.Count() : static_cast<unsigned>(res.totalCount);
+	ctx.writer->Write("\"total_items\":"_sv);
+	string total = to_string(totalItems);
+	ctx.writer->Write(total.c_str(), total.length());
+
+	ctx.writer->Write('}');
+
 	return 0;
 }
 
@@ -720,6 +715,28 @@ int HTTPServer::jsonStatus(http::Context &ctx, http::HttpStatus status) {
 	ctx.writer->Write('}');
 
 	return 0;
+}
+
+unsigned HTTPServer::prepareLimit(const string_view &limitParam, int limitDefault) {
+	int limit = limitDefault;
+
+	if (limitParam.length()) {
+		limit = stoi(limitParam);
+		if (limit < 0) limit = 0;
+	}
+
+	return static_cast<unsigned>(limit);
+}
+
+unsigned HTTPServer::prepareOffset(const string_view &offsetParam, int offsetDefault) {
+	int offset = offsetDefault;
+
+	if (offsetParam.length()) {
+		offset = stoi(offsetParam);
+		if (offset < 0) offset = 0;
+	}
+
+	return static_cast<unsigned>(offset);
 }
 
 shared_ptr<Reindexer> HTTPServer::getDB(http::Context &ctx, UserRole role) {

@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "core/cjson/tagsmatcher.h"
 #include "estl/tokenizer.h"
 
 namespace reindexer {
@@ -22,8 +23,10 @@ struct SelectFuncStruct {
 	string funcName;
 	vector<string> funcArgs;
 	shared_ptr<BaseFunctionCtx> ctx;
+	TagsPath tagsPath;
 	int indexNo = -1;
 	int fieldNo = 0;
+	bool fromCjson = false;
 };
 
 class SelectFuncParser {

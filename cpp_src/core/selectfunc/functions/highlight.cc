@@ -16,7 +16,12 @@ bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 	Payload pl(pl_type, res.value);
 
 	KeyRefs kr;
-	pl.Get(func.field, kr);
+	if (func.tagsPath.empty()) {
+		pl.Get(func.field, kr);
+	} else {
+		pl.GetByJsonPath(func.tagsPath, kr);
+	}
+
 	const string *data = p_string(kr[0]).getCxxstr();
 	auto pva = area->GetAreas(func.fieldNo);
 	if (!pva || pva->empty()) return false;
@@ -42,7 +47,12 @@ bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 	key_string_add_ref(str.get());
 	res.value.AllocOrClone(0);
 
-	pl.Set(func.field, KeyRefs{KeyRef{str}});
+	if (func.tagsPath.empty()) {
+		pl.Set(func.field, KeyRefs{KeyRef{str}});
+	} else {
+		throw Error(errConflict, "SetByJsonPath is not implemented yet!");
+	}
+
 	return true;
 }
 

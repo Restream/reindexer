@@ -22,9 +22,16 @@ private:
 	BaseFunctionCtx::Ptr createCtx(SelectFuncStruct& data, BaseFunctionCtx::Ptr ctx, IndexType index_type);
 	void createFunc(SelectFuncStruct& data);
 	BaseFunctionCtx::Ptr createFuncForProc(int indexNo);
+
 	fast_hash_map<int, SelectFuncStruct> functions_;
 	NsSelectFuncInterface nm_;
+
+	// You won't find these fields in the list of regular indexes
+	// (for example in PayloadType or ns_->indexes), you can only
+	// acces them by Set/GetByJsonPath in PayloadIFace.
+	int currCjsonFieldIdx_;
 };
+
 class SelectFunctionsHolder {
 public:
 	SelectFunction::Ptr AddNamespace(const Query& q, const Namespace& nm, bool force);

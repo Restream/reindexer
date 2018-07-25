@@ -1,3 +1,27 @@
+# Version 1.9.4 (25.07.2018)
+
+## Core
+
+- [fea] Conditions to any fields, even not indexed
+- [fea] cproto network client added 
+- [fix] Query execution plan optimizator fixes. 
+
+## Reindexer tool
+
+- [fea] Command line editor. tool has been mostly rewritten at all
+- [fea] Interopertion with standalone server
+
+## Reindexer server
+
+- [fea] Pagination in the GET sqlquery HTTP method
+- [fea] Filtration in the GET items HTTP method
+
+## Face
+
+- [fea] Table view of items page
+- [fea] Filtration in the items page
+- [fea] SQL queries history
+
 # Version 1.9.3 (20.06.2018)
 
 ## Core

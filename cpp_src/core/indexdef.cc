@@ -93,6 +93,7 @@ Error IndexDef::FromJSON(char *json) {
 
 Error IndexDef::FromJSON(JsonValue &jvalue) {
 	try {
+		if (jvalue.getTag() != JSON_OBJECT) throw Error(errParseJson, "Expected json object in 'indexes' key");
 		CollateMode collateValue = CollateNone;
 		bool isPk = false, isArray = false, isDense = false, isAppendable = false;
 		for (auto elem : jvalue) {

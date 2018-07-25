@@ -190,6 +190,13 @@ void SelectIterator::ExcludeLastSet() {
 	assert(!comparators_.size());
 }
 
+void SelectIterator::Append(SelectKeyResult &other) {
+	for (auto &r : other) push_back(std::move(r));
+	for (auto &c : other.comparators_) {
+		comparators_.push_back(std::move(c));
+	}
+}
+
 void SelectIterator::AppendAndBind(SelectKeyResult &other, PayloadType type, int field) {
 	for (auto &r : other) push_back(std::move(r));
 	for (auto &c : other.comparators_) {

@@ -162,3 +162,7 @@ class ApiMixin(object):
 
     def api_query_dsl(self, dbname, body):
         return self._api_call('POST', '/db/' + dbname + '/query', body)
+
+    def api_get_filtered_items(self, dbname, nsname, filter=''):
+        return self._api_call('GET', '/db/' + dbname + '/namespaces/' + nsname + '/items?'
+                              + urlencode({'filter': filter}))

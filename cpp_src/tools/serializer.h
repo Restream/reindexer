@@ -16,6 +16,7 @@ public:
 	KeyValue GetValue();
 	string_view GetSlice();
 	uint32_t GetUInt32();
+	uint64_t GetUInt64();
 	double GetDouble();
 
 	int64_t GetVarint();
@@ -96,8 +97,8 @@ public:
 		;
 	void Print(int);
 	void Print(int64_t);
-
 	void PrintJsonString(const string_view &str);
+	void PrintHexDump(const string_view &str);
 
 	// Protobuf formt like functions
 	void PutVarint(int64_t v);

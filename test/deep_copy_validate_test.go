@@ -13,7 +13,7 @@ type DeepCopy interface {
 }
 
 type PurchaseOption struct {
-	CurID          int    `json:"id" reindex:"id,,pk`
+	CurID          int    `json:"id" reindex:"id,,pk"`
 	BonusPriceID   int64  `json:"bonus_price_id"`
 	PackageID      int64  `json:"package_id"`
 	Amount         int    `json:"amount"`
@@ -98,10 +98,11 @@ func TestDeepCopyEquality(t *testing.T) {
 	nsOpts := reindexer.DefaultNamespaceOptions()
 
 	assertErrorMessage(t, DB.OpenNamespace(testNsName, nsOpts, PurchaseOption{}), nil)
-	assertErrorMessage(t, DB.CloseNamespace(testNsName), nil)
+	assertErrorMessage(t, DB.DropNamespace(testNsName), nil)
 
 	assertErrorMessage(t, DB.OpenNamespace(testNsName, nsOpts, BrokenDeepCopyType{}), reindexer.ErrDeepCopyType)
 
 	assertErrorMessage(t, DB.OpenNamespace(testNsName, nsOpts, NestedDeepCopyType{}), nil)
-	assertErrorMessage(t, DB.CloseNamespace(testNsName), nil)
+	assertErrorMessage(t, DB.DropNamespace(testNsName), nil)
+
 }

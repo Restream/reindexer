@@ -60,7 +60,7 @@ protected:
 		h_vector<float, 3> mostFreqWordCount;
 	};
 
-	h_vector<pair<const string*, int>, 8> getDocFields(const typename T::key_type&, vector<unique_ptr<string>>& bufStrs);
+	h_vector<pair<string_view, int>, 8> getDocFields(const typename T::key_type&, vector<unique_ptr<string>>& bufStrs);
 
 	void initSearchers();
 

@@ -25,6 +25,10 @@ public:
 	~Reindexer();
 	Reindexer(const Reindexer &) = delete;
 
+	/// Connect - connect to reindexer database in embeded mode
+	/// @param dsn - uri of database, like: `builtin:///var/lib/reindexer/dbname` or just `/var/lib/reindexer/dbname`
+	Error Connect(const string &dsn);
+
 	/// Enable storage. Must be called before InitSystemNamespaces
 	/// @param storagePath - file system path to database storage
 	/// @param skipPlaceholderCheck - If set, then reindexer will not check folder for placeholder
@@ -119,6 +123,9 @@ public:
 
 	/// Init system namepaces, and load config from config namespace
 	Error InitSystemNamespaces();
+
+	typedef QueryResults QueryResultsT;
+	typedef Item ItemT;
 
 private:
 	ReindexerImpl *impl_;

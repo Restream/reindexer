@@ -17,6 +17,7 @@ void FtFuzzyConfig::parse(char *json) {
 	if (status != JSON_OK) {
 		throw Error(errParseJson, "Malformed JSON with ft1 config");
 	}
+	if (jvalue.getTag() != JSON_OBJECT) throw Error(errParseJson, "Expected json object in ft1 config");
 
 	for (auto elem : jvalue) {
 		if (elem->value.getTag() == JSON_NULL) continue;

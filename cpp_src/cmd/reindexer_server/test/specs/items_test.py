@@ -245,3 +245,32 @@ class ItemsTest(BaseTest):
 
         self.assertEqual(True, body['items'][0][sort_field]
                          < body['items'][-1][sort_field], body)
+
+    def test_get_items_filters(self):
+        """Should be able to get filtered results"""
+
+        index_count = 2
+        index_array_of_dicts = self.helper_index_array_construct(index_count)
+
+        for i in range(0, index_count):
+            status, body = self.api_create_index(
+                self.current_db, self.test_ns, index_array_of_dicts[i])
+            self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        items_count = 20
+        items = self.helper_item_array_construct(items_count)
+
+        for item_body in items:
+            status, body = self.api_create_item(
+                self.current_db, self.current_ns, item_body)
+            self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        first_item_key = self.helper_items_first_key_of_item(items)
+        first_item_val = items[0][first_item_key]
+        filter = first_item_key + '=' + str(first_item_val)
+
+        status, body = self.api_get_filtered_items(
+            self.current_db, self.current_ns, filter)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        self.assertEqual(True, body['items'][0] == items[0], body)

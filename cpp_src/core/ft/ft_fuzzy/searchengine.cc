@@ -2,6 +2,7 @@
 #include <tools/stringstools.h>
 #include <locale>
 #include <string>
+#include "estl/string_view.h"
 #include "searchers/isearcher.h"
 #include "searchers/kblayout.h"
 #include "searchers/translit.h"
@@ -20,7 +21,7 @@ SearchEngine::SearchEngine() {
 void SearchEngine::SetConfig(const unique_ptr<FtFuzzyConfig>& cfg) { holder_->SetConfig(cfg); }
 
 void SearchEngine::Rebuild() { holder_.reset(new BaseHolder); }
-void SearchEngine::AddData(const string* src_data, const IdType id, int field) {
+void SearchEngine::AddData(const reindexer::string_view& src_data, const IdType id, int field) {
 	if (commited_) {
 		commited_ = false;
 		holder_->Clear();

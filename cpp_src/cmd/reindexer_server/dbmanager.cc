@@ -73,39 +73,12 @@ Error DBManager::loadOrCreateDatabase(const string &dbName) {
 
 	logPrintf(LogInfo, "Loading database %s", dbName.c_str());
 	auto db = std::make_shared<reindexer::Reindexer>();
-	auto status = db->EnableStorage(storagePath);
-	if (!status.ok()) {
-		return status;
+	auto status = db->Connect(storagePath);
+	if (status.ok()) {
+		dbs_[dbName] = db;
 	}
 
-	vector<fs::DirEntry> foundNs;
-	if (fs::ReadDir(storagePath, foundNs) < 0) {
-		return Error(errParams, "Can't read database dir %s", storagePath.c_str());
-	}
-
-	int maxIndexWorkers = std::thread::hardware_concurrency();
-	unique_ptr<std::thread[]> thrs(new std::thread[maxIndexWorkers]);
-
-	for (int i = 0; i < maxIndexWorkers; i++) {
-		thrs[i] = std::thread(
-			[&](int i) {
-				for (int j = i; j < int(foundNs.size()); j += maxIndexWorkers) {
-					auto &de = foundNs[j];
-					if (de.isDir && validateObjectName(de.name.c_str())) {
-						auto status = db->OpenNamespace(de.name, StorageOpts().Enabled());
-						if (!status.ok()) {
-							logPrintf(LogError, "Failed to open namespace '%s' - %s", de.name.c_str(), status.what().c_str());
-						}
-					}
-				}
-			},
-			i);
-	}
-	for (int i = 0; i < maxIndexWorkers; i++) thrs[i].join();
-
-	db->InitSystemNamespaces();
-	dbs_[dbName] = db;
-	return errOK;
+	return status;
 }
 
 Error DBManager::DropDatabase(AuthContext &auth) {

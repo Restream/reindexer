@@ -47,6 +47,8 @@ int KeyRef::As<int>() const {
 				}
 				return res;
 			}
+			case KeyValueComposite:
+				return 0;
 			default:
 				abort();
 		}
@@ -73,6 +75,8 @@ int64_t KeyRef::As<int64_t>() const {
 				}
 				return res;
 			}
+			case KeyValueComposite:
+				return 0;
 			default:
 				abort();
 		}
@@ -93,6 +97,8 @@ double KeyRef::As<double>() const {
 				return value_double;
 			case KeyValueString:
 				return std::stod(value_string.data());
+			case KeyValueComposite:
+				return 0.0;
 			default:
 				abort();
 		}

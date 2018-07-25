@@ -81,6 +81,7 @@ enum ErrorCode {
 	errForbidden,
 	errWasRelock,
 	errNotValid,
+	errNetwork,
 };
 
 enum OpType { OpOr = 1, OpAnd = 2, OpNot = 3 };

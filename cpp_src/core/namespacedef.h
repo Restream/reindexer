@@ -5,6 +5,8 @@
 #include "core/indexdef.h"
 #include "tools/errors.h"
 
+union JsonValue;
+
 namespace reindexer {
 
 using std::string;
@@ -31,6 +33,7 @@ struct NamespaceDef {
 	}
 
 	Error FromJSON(char *json);
+	Error FromJSON(JsonValue &jvalue);
 	void GetJSON(WrSerializer &, bool describeCompat = false) const;
 
 public:

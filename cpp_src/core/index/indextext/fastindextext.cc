@@ -49,28 +49,35 @@ void FastIndexText<T>::buildTyposMap() {
 
 // Generic implemetation for string index
 template <typename T>
-h_vector<pair<const string *, int>, 8> FastIndexText<T>::getDocFields(const typename T::key_type &doc, vector<unique_ptr<string>> &) {
-	return {{doc.get(), 0}};
+h_vector<pair<string_view, int>, 8> FastIndexText<T>::getDocFields(const typename T::key_type &doc, vector<unique_ptr<string>> &) {
+	return {{string_view(*doc.get()), 0}};
 }
 
 // Specific implemetation for composite index
 template <>
-h_vector<pair<const string *, int>, 8> FastIndexText<unordered_payload_map<Index::KeyEntryPlain>>::getDocFields(
+h_vector<pair<string_view, int>, 8> FastIndexText<unordered_payload_map<Index::KeyEntryPlain>>::getDocFields(
 	const typename unordered_payload_map<Index::KeyEntryPlain>::key_type &doc, vector<unique_ptr<string>> &strsBuf) {
 	ConstPayload pl(this->payloadType_, doc);
 
-	h_vector<pair<const string *, int>, 8> ret;
 	int fieldPos = 0;
+	size_t tagsPathIdx = 0;
+	h_vector<pair<string_view, int>, 8> ret;
+
 	for (auto field : fields_) {
 		KeyRefs krefs;
-		pl.Get(field, krefs);
+		if (field == IndexValueType::SetByJsonPath) {
+			assert(tagsPathIdx < fields_.getTagsPathsLength());
+			pl.GetByJsonPath(fields_.getTagsPath(tagsPathIdx++), krefs);
+		} else {
+			pl.Get(field, krefs);
+		}
 		for (auto kref : krefs) {
 			if (kref.Type() != KeyValueString) {
 				strsBuf.emplace_back(unique_ptr<string>(new string(kref.As<string>())));
-				ret.push_back({strsBuf.back().get(), fieldPos});
-
+				ret.push_back({*strsBuf.back().get(), fieldPos});
 			} else {
-				ret.push_back({(p_string(kref)).getCxxstr(), fieldPos});
+				p_string pstr(kref);
+				ret.push_back({string_view(pstr.data(), pstr.length()), fieldPos});
 			}
 		}
 		fieldPos++;
@@ -93,7 +100,7 @@ void FastIndexText<T>::buildWordsMap(fast_hash_map<string, WordEntry> &words_um)
 	// buffer strings, for printing non text fields
 	vector<unique_ptr<string>> bufStrs;
 	// array with pointers to docs fields text
-	vector<h_vector<pair<const string *, int>, 8>> vdocsTexts;
+	vector<h_vector<pair<string_view, int>, 8>> vdocsTexts;
 	// Prepare vdocs -> addresable array all docs in the index
 	this->vdocs_.reserve(this->idx_map.size());
 	vdocsTexts.reserve(this->idx_map.size());
@@ -103,7 +110,7 @@ void FastIndexText<T>::buildWordsMap(fast_hash_map<string, WordEntry> &words_um)
 #else
 		this->vdocs_.push_back({&doc.second, {}, {}});
 #endif
-		vdocsTexts.push_back(getDocFields(doc.first, bufStrs));
+		vdocsTexts.emplace_back(getDocFields(doc.first, bufStrs));
 	}
 
 	int fieldscount = std::max(1, int(this->fields_.size()));
@@ -121,7 +128,7 @@ void FastIndexText<T>::buildWordsMap(fast_hash_map<string, WordEntry> &words_um)
 					this->vdocs_[j].mostFreqWordCount.insert(this->vdocs_[j].mostFreqWordCount.begin(), fieldscount, 0.0);
 
 					for (size_t field = 0; field < vdocsTexts[j].size(); ++field) {
-						splitWithPos(*vdocsTexts[j][field].first, str, wrds);
+						splitWithPos(vdocsTexts[j][field].first.ToString(), str, wrds);
 						int rfield = vdocsTexts[j][field].second;
 						assert(rfield < fieldscount);
 
@@ -255,16 +262,11 @@ void FastIndexText<T>::prepareVariants(FtSelectContext &ctx, FtDSLEntry &term, s
 	}
 }
 
-void printLine(int line) {
-	printf("line: %d\n", line);
-	fflush(stdout);
-}
-
 template <typename T>
 void FastIndexText<T>::processVariants(FtSelectContext &ctx) {
 	TextSearchResults &res = ctx.rawResults.back();
 
-	for (auto &variant : ctx.variants) {
+	for (const FtVariantEntry &variant : ctx.variants) {
 		if (variant.opts.op == OpAnd) {
 			ctx.foundWords.clear();
 		}
@@ -272,7 +274,7 @@ void FastIndexText<T>::processVariants(FtSelectContext &ctx) {
 		//  Lookup current variant in suffixes array
 		auto keyIt = suffixes_.lower_bound(tmpstr);
 
-		int matched = 0, skiped = 0, vids = 0;
+		int matched = 0, skipped = 0, vids = 0;
 		bool withPrefixes = (variant.opts.pref || variant.opts.suff);
 		bool withSuffixes = variant.opts.suff;
 
@@ -309,12 +311,12 @@ void FastIndexText<T>::processVariants(FtSelectContext &ctx) {
 			} else {
 				if (ctx.rawResults[it->second.first][it->second.second].proc_ < proc)
 					ctx.rawResults[it->second.first][it->second.second].proc_ = proc;
-				skiped++;
+				skipped++;
 			}
 		} while ((keyIt++).lcp() >= int(tmpstr.length()));
 		if (GetConfig()->logLevel >= LogInfo)
 			logPrintf(LogInfo, "Lookup variant '%s' (%d%%), matched %d suffixes, with %d vids, skiped %d", tmpstr.c_str(), variant.proc,
-					  matched, vids, skiped);
+					  matched, vids, skipped);
 	}
 }
 
@@ -621,7 +623,7 @@ void FastIndexText<T>::Commit() {
 	size_t szCnt = 0;
 	vector<unique_ptr<string>> bufStrs;
 	for (auto &doc : this->idx_map) {
-		for (auto f : getDocFields(doc.first, bufStrs)) szCnt += f.first->length();
+		for (auto f : getDocFields(doc.first, bufStrs)) szCnt += f.first.length();
 	}
 
 	auto tm2 = high_resolution_clock::now();

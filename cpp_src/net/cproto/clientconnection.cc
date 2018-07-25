@@ -8,21 +8,35 @@ namespace reindexer {
 namespace net {
 namespace cproto {
 
-ClientConnection::ClientConnection(ev::dynamic_loop &loop) : ConnectionMT(-1, loop) {}
+ClientConnection::ClientConnection(ev::dynamic_loop &loop) : ConnectionMT(-1, loop), state_(ConnInit) {}
 
-bool ClientConnection::Connect(const char *addr) {
+bool ClientConnection::Connect(string_view addr, string_view username, string_view password, string_view dbName) {
 	assert(!sock_.valid());
+	assert(wrBuf_.size() == 0);
 
-	sock_.connect(addr);
+	std::unique_lock<mutex> lck(wrBufLock_);
+	state_ = ConnConnecting;
+	sock_.connect(addr.data());
 	if (!sock_.valid()) {
+		state_ = ConnFailed;
 		return false;
 	}
+
 	io_.start(sock_.fd(), ev::READ | ev::WRITE);
 	async_.start();
+	Args args{Arg(p_string(&username)), Arg(p_string(&password)), Arg(p_string(&dbName))};
+	callRPC(kCmdLogin, seq_, args);
 	return true;
 }
 
-void ClientConnection::onClose() {}
+void ClientConnection::onClose() {
+	{
+		std::unique_lock<mutex> lck(wrBufLock_);
+		state_ = ConnFailed;
+		wrBuf_.clear();
+	}
+	answersCond_.notify_all();
+}
 
 void ClientConnection::onRead() {
 	CProtoHeader hdr;
@@ -52,42 +66,62 @@ void ClientConnection::onRead() {
 		}
 		assert(it.len >= hdr.len);
 
-		answersLock_.lock();
-		answers_.resize(answers_.size() + 1);
-		RPCAnswer &ans = answers_.back();
+		RPCRawAnswer ans;
 		ans.cmd = CmdCode(hdr.cmd);
 		ans.seq = hdr.seq;
-		ans.data.assign(reinterpret_cast<uint8_t *>(it.data), reinterpret_cast<uint8_t *>(it.data) + hdr.len);
-		answersLock_.unlock();
+
+		Serializer ser(it.data, hdr.len);
+		int errCode = ser.GetVarUint();
+		string errMsg = ser.GetVString().ToString();
+		ans.ans.status_ = Error(errCode, errMsg);
+		assert(ser.Pos() <= hdr.len);
+		ans.ans.data_.assign(reinterpret_cast<uint8_t *>(it.data) + ser.Pos(), reinterpret_cast<uint8_t *>(it.data) + hdr.len);
+
+		wrBufLock_.lock();
+		if (ans.cmd == cproto::kCmdLogin) {
+			if (errCode == errOK) {
+				state_ = ConnConnected;
+			}
+		} else {
+			answers_.push_back(std::move(ans));
+		}
+		answersCond_.notify_all();
+		wrBufLock_.unlock();
 
 		rdBuf_.erase(hdr.len);
 	}
 }
-bool ClientConnection::getAnswer(CmdCode cmd, uint32_t seq, Args &args, Error &error) {
-	std::unique_lock<mutex> lck(answersLock_);
-	for (auto it = answers_.begin(); it != answers_.end(); it++) {
-		if (it->seq == seq) {
+RPCAnswer ClientConnection::getAnswer(CmdCode cmd, uint32_t seq) {
+	RPCAnswer ret;
+	std::unique_lock<mutex> lck(wrBufLock_);
+	for (;;) {
+		if (state_ == ConnFailed) {
+			ret.status_ = Error(errNetwork, "Connection to server was dropped");
+			return ret;
+		}
+		auto it = find_if(answers_.begin(), answers_.end(), [seq](const RPCRawAnswer &a) { return a.seq == seq; });
+		if (it != answers_.end()) {
 			if (cmd != it->cmd) {
-				error = Error(errParams, "Invalid cmdCode %d, expected %d for seq = %d", it->cmd, cmd, seq);
+				ret.status_ = Error(errParams, "Invalid cmdCode %d, expected %d for seq = %d", it->cmd, cmd, seq);
 			} else {
-				Serializer ser(it->data.data(), it->data.size());
-				int errCode = ser.GetVarUint();
-				string errMsg = ser.GetVString().ToString();
-				error = Error(errCode, errMsg);
-				args.Unpack(ser);
+				ret = std::move(it->ans);
 			}
 			std::swap(*it, *std::prev(answers_.end(), 1));
 			answers_.pop_back();
-			return true;
+			return ret;
 		}
+		answersCond_.wait(lck);
 	}
-	if (!sock_.valid()) {
-		error = Error(errParams, "Connection to server was dropped");
-		return true;
-	}
-
-	return false;
 }
+
+Args RPCAnswer::GetArgs() {
+	cproto::Args ret;
+	Serializer ser(data_.data(), data_.size());
+	ret.Unpack(ser);
+	return ret;
+}
+
+Error RPCAnswer::Status() { return status_; }
 
 void ClientConnection::callRPC(CmdCode cmd, uint32_t seq, const Args &args) {
 	WrSerializer ser;
@@ -101,20 +135,29 @@ void ClientConnection::callRPC(CmdCode cmd, uint32_t seq, const Args &args) {
 	hdr.cmd = cmd;
 	hdr.seq = seq;
 
-	wrBufLock_.lock();
 	wrBuf_.write(reinterpret_cast<char *>(&hdr), sizeof(hdr));
 	wrBuf_.write(reinterpret_cast<char *>(ser.Buf()), ser.Len());
-	wrBufLock_.unlock();
-	async_.send();
 }
 
-ClientConnection::RPCRet ClientConnection::call(CmdCode cmd, const Args &args) {
-	uint32_t seq = 3;
+RPCAnswer ClientConnection::call(CmdCode cmd, const Args &args) {
+	// WrSerializer ser;
+	// ser.Printf("%s ", cproto::CmdName(cmd));
+	// args.Dump(ser);
+	// ser.PutChar(0);
+
+	// ser.Printf(" -> %s", err.ok() ? "OK" : err.what().c_str());
+	// if (ret.size()) {
+	// 	ser.PutChars(" ");
+	// 	ret.Dump(ser);
+	// }
+	// printf("%s\n", ser.Buf());
+
+	wrBufLock_.lock();
+	uint32_t seq = seq_++;
 	callRPC(cmd, seq, args);
-	Args ret;
-	Error err;
-	getAnswer(cmd, seq, ret, err);
-	return {ret, err};
+	wrBufLock_.unlock();
+	async_.send();
+	return getAnswer(cmd, seq);
 }
 
 }  // namespace cproto

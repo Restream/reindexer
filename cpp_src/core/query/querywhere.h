@@ -8,6 +8,8 @@
 
 namespace reindexer {
 
+enum IndexValueType : int { NotSet = -1, SetByJsonPath = -2 };
+
 using std::string;
 using std::vector;
 
@@ -25,7 +27,7 @@ struct QueryEntry {
 	OpType op = OpAnd;
 	CondType condition = CondType::CondAny;
 	string index;
-	int idxNo = -1;
+	int idxNo = IndexValueType::NotSet;
 	bool distinct = false;
 	KeyValues values;
 

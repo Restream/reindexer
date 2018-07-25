@@ -24,6 +24,8 @@ void CJsonEncoder::Encode(ConstPayload *pl, WrSerializer &wrser) {
 	}
 	Serializer rdser(tuple.data(), tuple.size());
 
+	depthLevel = depthLevelInitial;
+
 	for (int i = 0; i < pl->NumFields(); ++i) fieldsoutcnt_[i] = 0;
 	encodeCJson(pl, rdser, wrser);
 }
@@ -247,22 +249,24 @@ bool CJsonEncoder::encodeCJson(ConstPayload *pl, Serializer &rdser, WrSerializer
 	int tagType = tag.Type();
 	int tagField = tag.Field();
 
-	match = match && filter_.Match(tag.Name());
+	depthLevel++;
 
-	if (match || !tag.Name()) {
+	if (depthLevel == 1) match = match && filter_.Match(tag.Name());
+
+	if (match) {
 		wrser.PutVarUint(static_cast<int>(ctag(tag.Type(), tag.Name())));
 	}
-	if (tagType == TAG_END) return false;
+	if (tagType == TAG_END) {
+		depthLevel--;
+		return false;
+	}
 
 	if (tagField >= 0) {
-		if (!match) {
-			if (tagType == TAG_ARRAY) rdser.GetVarUint();
-			return true;
-		}
-
 		int *cnt = &fieldsoutcnt_[tagField];
 		KeyRefs kr;
-		if (tagType == TAG_ARRAY) {
+		if (!match) {
+			if (tagType == TAG_ARRAY) rdser.GetVarUint();
+		} else if (tagType == TAG_ARRAY) {
 			int count = rdser.GetVarUint();
 			int subtag = kvType2TagType(pl->Type().Field(tagField).Type());
 			wrser.PutUInt32(static_cast<int>(carraytag(count, subtag)));
@@ -314,6 +318,7 @@ bool CJsonEncoder::encodeCJson(ConstPayload *pl, Serializer &rdser, WrSerializer
 				break;
 		}
 	}
+	depthLevel--;
 	return true;
 }
 

@@ -71,6 +71,7 @@ public:
 	}
 	int GetMatchedCount() { return matchedCount_; }
 	void ExcludeLastSet();
+	void Append(SelectKeyResult &other);
 	void AppendAndBind(SelectKeyResult &other, PayloadType type, int field);
 	double Cost(int totalIds) const;
 	int GetMaxIterations() const;

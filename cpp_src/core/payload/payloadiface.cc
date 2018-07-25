@@ -78,25 +78,28 @@ KeyRefs PayloadIface<T>::GetByJsonPath(const string &jsonPath, TagsMatcher &tags
 	Payload pl(t_, const_cast<PayloadValue &>(*v_));
 	CJsonEncoder encoder(tagsMatcher, JsonPrintFilter());
 
-	return encoder.ExtractFieldValue(&pl, jsonPath);
+	kvs = encoder.ExtractFieldValue(&pl, jsonPath);
+	return kvs;
 }
 
 template <typename T>
-KeyRefs PayloadIface<T>::GetByJsonPath(const TagsPath &jsonPath, TagsMatcher &tagsMatcher, KeyRefs &) const {
+KeyRefs PayloadIface<T>::GetByJsonPath(const TagsPath &jsonPath, KeyRefs &krefs) const {
+	TagsMatcher tagsMatcher;
 	Payload pl(t_, const_cast<PayloadValue &>(*v_));
 	CJsonEncoder encoder(tagsMatcher, JsonPrintFilter());
-	return encoder.ExtractFieldValue(&pl, jsonPath);
+	krefs = encoder.ExtractFieldValue(&pl, jsonPath);
+	return krefs;
 }
 
 template <typename T>
 KeyValues PayloadIface<T>::GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, KeyValues &kvs) const {
+	kvs.clear();
 	KeyRefs tupleData;
 	Get(0, tupleData);
 	string_view tuple(tupleData[0]);
 	if (tuple.length() == 0) {
 		int fieldIdx = t_.FieldByJsonPath(jsonPath);
 		if (fieldIdx == -1) {
-			kvs.clear();
 			return kvs;
 		};
 		return Get(fieldIdx, kvs);
@@ -106,13 +109,13 @@ KeyValues PayloadIface<T>::GetByJsonPath(const string &jsonPath, TagsMatcher &ta
 	CJsonEncoder encoder(tagsMatcher, JsonPrintFilter());
 	KeyRefs krefs = encoder.ExtractFieldValue(&pl, jsonPath);
 
-	KeyValues values;
-	for (KeyRef &kref : krefs) values.push_back(std::move(kref));
-	return values;
+	for (KeyRef &kref : krefs) kvs.push_back(std::move(kref));
+	return kvs;
 }
 
 template <typename T>
-KeyValues PayloadIface<T>::GetByJsonPath(const TagsPath &jsonPath, TagsMatcher &tagsMatcher, KeyValues &) const {
+KeyValues PayloadIface<T>::GetByJsonPath(const TagsPath &jsonPath, KeyValues &) const {
+	TagsMatcher tagsMatcher;
 	Payload pl(t_, const_cast<PayloadValue &>(*v_));
 	CJsonEncoder encoder(tagsMatcher, JsonPrintFilter());
 	KeyRefs krefs = encoder.ExtractFieldValue(&pl, jsonPath);
@@ -256,16 +259,35 @@ template <typename T>
 size_t PayloadIface<T>::GetHash(const FieldsSet &fields) const {
 	size_t ret = 0;
 	KeyRefs keys1;
-	for (auto field : fields) ret ^= Get(field, keys1).Hash();
+	size_t tagPathIdx = 0;
+	for (auto field : fields) {
+		if (field != IndexValueType::SetByJsonPath) {
+			keys1 = Get(field, keys1);
+		} else {
+			assert(tagPathIdx < fields.getTagsPathsLength());
+			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
+			keys1 = GetByJsonPath(tagsPath, keys1);
+		}
+		ret ^= keys1.Hash();
+	}
 	return ret;
 }
 
 template <typename T>
 bool PayloadIface<T>::IsEQ(const T &other, const FieldsSet &fields) const {
+	size_t tagPathIdx = 0;
 	PayloadIface<const T> o(t_, other);
 	KeyRefs keys1, keys2;
-	for (auto field : fields)
-		if (Get(field, keys1) != o.Get(field, keys2)) return false;
+	for (auto field : fields) {
+		if (field != IndexValueType::SetByJsonPath) {
+			if (Get(field, keys1) != o.Get(field, keys2)) return false;
+		} else {
+			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
+			GetByJsonPath(tagsPath, keys1);
+			o.GetByJsonPath(tagsPath, keys2);
+			if (GetByJsonPath(tagsPath, keys1) != o.GetByJsonPath(tagsPath, keys2)) return false;
+		}
+	}
 	return true;
 }
 
@@ -280,11 +302,22 @@ bool PayloadIface<T>::IsEQ(const T &other) const {
 
 template <typename T>
 int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, const CollateOpts &collateOpts) const {
+	size_t tagPathIdx = 0;
+	KeyRefs krefs1, krefs2;
 	PayloadIface<const T> o(t_, other);
-	for (auto field : fields) {
-		int res = Field(field).Get().Compare(o.Field(field).Get(), collateOpts);
-		if (res > 0) return 1;
-		if (res < 0) return -1;
+	for (const auto field : fields) {
+		int cmpRes = 0;
+		if (field != IndexValueType::SetByJsonPath) {
+			cmpRes = Field(field).Get().Compare(o.Field(field).Get(), collateOpts);
+		} else {
+			assert(tagPathIdx < fields.getTagsPathsLength());
+			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
+			krefs1 = GetByJsonPath(tagsPath, krefs1);
+			krefs2 = o.GetByJsonPath(tagsPath, krefs2);
+			cmpRes = (krefs1 == krefs2);
+		}
+		if (cmpRes > 0) return 1;
+		if (cmpRes < 0) return -1;
 	}
 	return 0;
 }

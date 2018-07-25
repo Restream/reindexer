@@ -124,8 +124,8 @@ protected:
 			TestCout() << outBuf << std::endl;
 		}
 
-		for (size_t i = 0; i < res.size(); ++i) {
-			Item ritem(res.GetItem(i));
+		for (auto it : res) {
+			Item ritem(it.GetItem());
 			std::string outBuf = "";
 			for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 				auto field = ritem[idx].Name();

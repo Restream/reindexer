@@ -10,11 +10,18 @@ JsonEncoder::JsonEncoder(const TagsMatcher& tagsMatcher, const JsonPrintFilter& 
 
 void JsonEncoder::Encode(ConstPayload* pl, WrSerializer& wrSer) {
 	string_view tuple = getPlTuple(pl);
-	Serializer rdser(tuple.data(), tuple.length());
+	Serializer rdser(tuple);
 
 	for (int i = 0; i < pl->NumFields(); ++i) fieldsoutcnt_[i] = 0;
 	bool first = true;
 	encodeJson(pl, rdser, wrSer, first, true);
+}
+
+void JsonEncoder::Encode(string_view tuple, WrSerializer& wrSer) {
+	Serializer rdser(tuple);
+
+	bool first = true;
+	encodeJson(nullptr, rdser, wrSer, first, true);
 }
 
 void JsonEncoder::Encode(ConstPayload* pl, WrSerializer& wrSer, IJsonEncoderDatasourceWithJoins& ds) {

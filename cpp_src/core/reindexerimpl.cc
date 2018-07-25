@@ -81,6 +81,44 @@ Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlacehold
 	return errOK;
 }
 
+Error ReindexerImpl::Connect(const string& dsn) {
+	string path = dsn;
+	if (dsn.compare(0, 10, "builtin://") == 0) {
+		path = dsn.substr(10);
+	}
+
+	auto err = EnableStorage(path);
+	if (!err.ok()) return err;
+
+	vector<reindexer::fs::DirEntry> foundNs;
+	if (fs::ReadDir(path, foundNs) < 0) {
+		return Error(errParams, "Can't read database dir %s", path.c_str());
+	}
+
+	int maxLoadWorkers = std::min(int(std::thread::hardware_concurrency()), 8);
+	std::unique_ptr<std::thread[]> thrs(new std::thread[maxLoadWorkers]);
+
+	for (int i = 0; i < maxLoadWorkers; i++) {
+		thrs[i] = std::thread(
+			[&](int i) {
+				for (int j = i; j < int(foundNs.size()); j += maxLoadWorkers) {
+					auto& de = foundNs[j];
+					if (de.isDir && validateObjectName(de.name.c_str())) {
+						auto status = OpenNamespace(de.name, StorageOpts().Enabled());
+						if (!status.ok()) {
+							logPrintf(LogError, "Failed to open namespace '%s' - %s", de.name.c_str(), status.what().c_str());
+						}
+					}
+				}
+			},
+			i);
+	}
+	for (int i = 0; i < maxLoadWorkers; i++) thrs[i].join();
+
+	InitSystemNamespaces();
+	return errOK;
+}
+
 Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef) {
 	shared_ptr<Namespace> ns;
 	try {
@@ -119,6 +157,8 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef) {
 	} catch (const Error& err) {
 		return err;
 	}
+
+	applyConfig();
 	return errOK;
 }
 
@@ -146,6 +186,7 @@ Error ReindexerImpl::OpenNamespace(const string& name, const StorageOpts& storag
 	} catch (const Error& err) {
 		return err;
 	}
+	applyConfig();
 	return errOK;
 }
 
@@ -183,7 +224,9 @@ Error ReindexerImpl::Insert(const string& _namespace, Item& item) {
 	try {
 		auto ns = getNamespace(_namespace);
 		ns->Insert(item);
-		updateSystemNamespace(_namespace, item);
+		if (item.GetID() != -1) {
+			updateSystemNamespace(_namespace, item);
+		}
 	} catch (const Error& err) {
 		return err;
 	}
@@ -194,7 +237,9 @@ Error ReindexerImpl::Update(const string& _namespace, Item& item) {
 	try {
 		auto ns = getNamespace(_namespace);
 		ns->Update(item);
-		updateSystemNamespace(_namespace, item);
+		if (item.GetID() != -1) {
+			updateSystemNamespace(_namespace, item);
+		}
 	} catch (const Error& err) {
 		return err;
 	}
@@ -205,7 +250,9 @@ Error ReindexerImpl::Upsert(const string& _namespace, Item& item) {
 	try {
 		auto ns = getNamespace(_namespace);
 		ns->Upsert(item);
-		updateSystemNamespace(_namespace, item);
+		if (item.GetID() != -1) {
+			updateSystemNamespace(_namespace, item);
+		}
 	} catch (const Error& err) {
 		return err;
 	}
@@ -448,14 +495,14 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 				ctx.functions = &func;
 				jns->Select(joinItemR, ctx);
 
-				found = joinItemR.size();
+				found = joinItemR.Count();
 				matchedAtLeastOnce = ctx.matchedAtLeastOnce;
 			}
 			if (joinResLong.needPut) {
 				JoinCacheVal val;
 				val.ids_ = std::make_shared<IdSet>();
 				val.matchedAtLeastOnce = matchedAtLeastOnce;
-				for (auto& r : joinItemR) {
+				for (auto& r : joinItemR.Items()) {
 					val.ids_->Add(r.id, IdSet::Unordered);
 				}
 				jns->PutToJoinCache(joinResLong, val);
@@ -505,30 +552,31 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, JoinedSelecto
 			mns->Select(result, ctx);
 		}
 
-		if (static_cast<size_t>(q.start) >= result.size()) {
-			result.Erase(result.begin(), result.end());
+		ItemRefVector& itemRefVec = result.Items();
+		if (static_cast<size_t>(q.start) >= itemRefVec.size()) {
+			result.Erase(itemRefVec.begin(), itemRefVec.end());
 			return;
 		}
 
-		std::sort(result.begin(), result.end(), ItemRefLess());
+		std::sort(itemRefVec.begin(), itemRefVec.end(), ItemRefLess());
 		if (q.calcTotal) {
-			result.totalCount = result.size();
+			result.totalCount = itemRefVec.size();
 		}
 
 		if (q.start > 0) {
-			auto end = q.start < result.size() ? result.begin() + q.start : result.end();
-			result.Erase(result.begin(), end);
+			auto end = q.start < itemRefVec.size() ? itemRefVec.begin() + q.start : itemRefVec.end();
+			result.Erase(itemRefVec.begin(), end);
 		}
 
-		if (result.size() > q.count) {
-			result.Erase(result.begin() + q.count, result.end());
+		if (itemRefVec.size() > q.count) {
+			result.Erase(itemRefVec.begin() + q.count, itemRefVec.end());
 		}
 
 		if (q.start) {
-			result.Erase(result.begin(), result.begin() + q.start);
+			result.Erase(itemRefVec.begin(), itemRefVec.begin() + q.start);
 		}
-		if (static_cast<size_t>(q.count) < result.size()) {
-			result.Erase(result.begin() + q.count, result.end());
+		if (static_cast<size_t>(q.count) < itemRefVec.size()) {
+			result.Erase(itemRefVec.begin() + q.count, itemRefVec.end());
 		}
 	}
 	// dummy selects for put ctx-es
@@ -717,12 +765,11 @@ std::vector<string> defDBConfig = {
 Error ReindexerImpl::InitSystemNamespaces() {
 	createSystemNamespaces();
 
-	Query q(kConfigNamespace);
 	QueryResults results;
-	auto err = Select(q, results);
+	auto err = Select(Query(kConfigNamespace), results);
 	if (!err.ok()) return err;
 
-	if (results.size() == 0) {
+	if (results.Count() == 0) {
 		for (auto conf : defDBConfig) {
 			Item item = NewItem(kConfigNamespace);
 			if (!item.Status().ok()) return item.Status();
@@ -731,14 +778,21 @@ Error ReindexerImpl::InitSystemNamespaces() {
 			err = Insert(kConfigNamespace, item);
 			if (!err.ok()) return err;
 		}
-		results = QueryResults();
-		err = Select(q, results);
-		if (!err.ok()) return err;
 	}
+	return applyConfig();
+}
 
-	for (int i = 0; i < int(results.size()); i++) {
-		auto item = results.GetItem(i);
-		updateSystemNamespace(kConfigNamespace, item);
+Error ReindexerImpl::applyConfig() {
+	QueryResults results;
+	auto err = Select(Query(kConfigNamespace), results);
+	if (!err.ok()) return err;
+	for (auto it : results) {
+		auto item = it.GetItem();
+		try {
+			updateSystemNamespace(kConfigNamespace, item);
+		} catch (const Error& err) {
+			return err;
+		}
 	}
 	return errOK;
 }
@@ -800,7 +854,7 @@ void ReindexerImpl::updateSystemNamespace(const string& nsName, Item& item) {
 		}
 		for (auto elem : jvalue) {
 			if (!strcmp(elem->key, "profiling")) {
-				// reset profiling namespaces_
+				// reset profiling namespaces
 				QueryResults qr1, qr2, qr3;
 				Delete(Query(kMemStatsNamespace), qr2);
 				Delete(Query(kQueriesPerfStatsNamespace), qr3);

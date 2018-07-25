@@ -13,6 +13,7 @@ class Namespace;
 }  // namespace client
 
 class ItemImpl;
+class FieldRefImpl;
 
 /// Item is the interface for data manipulating. It holds and control one database document (record)<br>
 /// *Lifetime*: Item is uses Copy-On-Write semantics, and have independent lifetime and state - e.g., aquired from Reindexer Item will not
@@ -99,9 +100,9 @@ public:
 		FieldRef &operator=(const KeyRefs &krs);
 
 	private:
-		FieldRef(int field, ItemImpl *impl) : field_(field), impl_(impl) {}
-		int field_;
-		ItemImpl *impl_;
+		FieldRef(int field, ItemImpl *itemImpl);
+		FieldRef(const string &jsonPath, ItemImpl *itemImpl);
+		std::shared_ptr<FieldRefImpl> impl_;
 	};
 
 	/// Build item from JSON<br>
@@ -167,8 +168,6 @@ public:
 	/// The disadvantage of unsafe mode is potentially danger code. Most of C++ stl containters in many cases invalidates references -
 	/// and in unsafe mode caller is responsibe to guarantee, that all resources passed to Item will keep valid
 	Item &Unsafe(bool enable = true);
-
-	KeyRefs GetFieldByJSONPath(const string &jsonPath);
 
 private:
 	explicit Item(ItemImpl *impl) : impl_(impl) {}

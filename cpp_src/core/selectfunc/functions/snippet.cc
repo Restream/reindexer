@@ -15,9 +15,13 @@ bool Snippet::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 	Payload pl(pl_type, res.value);
 
 	KeyRefs kr;
-	pl.Get(func.field, kr);
-	const string *data = p_string(kr[0]).getCxxstr();
+	if (func.tagsPath.empty()) {
+		pl.Get(func.field, kr);
+	} else {
+		pl.GetByJsonPath(func.tagsPath, kr);
+	}
 
+	const string *data = p_string(kr[0]).getCxxstr();
 	auto pva = area->GetAreas(func.fieldNo);
 	if (!pva || pva->empty()) return false;
 	auto &va = *pva;
@@ -97,7 +101,12 @@ bool Snippet::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 	key_string_add_ref(str.get());
 	res.value.AllocOrClone(0);
 
-	pl.Set(func.field, KeyRefs{KeyRef{str}});
+	if (func.tagsPath.empty()) {
+		pl.Set(func.field, KeyRefs{KeyRef{str}});
+	} else {
+		throw Error(errConflict, "SetByJsonPath is not implemented yet!");
+	}
+
 	return true;
 }
 

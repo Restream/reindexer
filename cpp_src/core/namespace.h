@@ -119,6 +119,7 @@ public:
 	void PutMeta(const string &key, const string_view &data);
 
 	int getIndexByName(const string &index) const;
+	bool getIndexByName(const string &name, int &index) const;
 
 	static Namespace *Clone(Namespace::Ptr);
 

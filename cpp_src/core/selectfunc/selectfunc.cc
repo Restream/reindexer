@@ -40,7 +40,7 @@ SelectFunction::Ptr SelectFunctionsHolder::AddNamespace(const Query &q, const Na
 	return querys_->emplace(nm_interface.GetName(), func).first->second;
 }
 
-SelectFunction::SelectFunction(const Query &q, NsSelectFuncInterface &nm) : nm_(nm) {
+SelectFunction::SelectFunction(const Query &q, NsSelectFuncInterface &nm) : nm_(nm), currCjsonFieldIdx_(nm.getIndexesCount()) {
 	functions_.reserve(q.selectFunctions_.size());
 	for (auto &func : q.selectFunctions_) {
 		SelectFuncParser parser;
@@ -51,33 +51,42 @@ SelectFunction::SelectFunction(const Query &q, NsSelectFuncInterface &nm) : nm_(
 };
 
 void SelectFunction::createFunc(SelectFuncStruct &data) {
-	int indexNo = -1;
-	if (data.indexNo == -1) {
-		try {
-			indexNo = nm_.getIndexByName(data.field);
-		} catch (const Error &) {
-			std::size_t found = data.field.find("=");
-			if (found != std::string::npos) data.field.erase(0, found + 1);
+	int indexNo = IndexValueType::NotSet;
+	if (data.indexNo == IndexValueType::NotSet) {
+		if (!nm_.getIndexByName(data.field, indexNo)) {
+			std::size_t pos = data.field.find("=");
+			if (pos != std::string::npos) data.field.erase(0, pos + 1);
 			trim(data.field);
-			try {
-				indexNo = nm_.getIndexByName(data.field);
-			} catch (...) {
-				return;
-			}
+			if (!nm_.getIndexByName(data.field, indexNo)) return;
 		}
 	} else {
 		indexNo = data.indexNo;
 	}
 
-	// if composite crete function only for inside
+	// if index is composite then create function for inner use only
 	if (isComposite(nm_.getIndexType(indexNo))) {
+		std::vector<string> subIndexes;
+
 		int fieldNo = 0;
-		for (auto filed : nm_.getIndexFields(indexNo)) {
-			data.indexNo = filed;
+		const FieldsSet &fields = nm_.getIndexFields(indexNo);
+
+		for (size_t i = 0; i < fields.size(); ++i, ++fieldNo) {
+			const auto field = fields[i];
 			data.fieldNo = fieldNo;
-			data.field = nm_.getIndexName(filed);
-			functions_.emplace(std::make_pair(filed, data));
-			fieldNo++;
+			if (field == IndexValueType::SetByJsonPath) {
+				if (subIndexes.empty()) {
+					split(nm_.getIndexName(indexNo), "+", true, subIndexes);
+					assert(subIndexes.size() == fields.size());
+				}
+				data.field = subIndexes[i];
+				data.tagsPath = nm_.getTagsPathForField(data.field);
+				data.indexNo = currCjsonFieldIdx_++;
+				functions_.emplace(data.indexNo, data);
+			} else {
+				data.field = nm_.getIndexName(field);
+				data.indexNo = field;
+				functions_.emplace(field, data);
+			}
 		}
 	} else {
 		data.indexNo = indexNo;
@@ -92,9 +101,11 @@ BaseFunctionCtx::Ptr SelectFunction::createFuncForProc(int indexNo) {
 	data.isFunction = true;
 	data.type = SelectFuncStruct::kSelectFuncProc;
 	data.indexNo = indexNo;
+	int lastCjsonIdx = currCjsonFieldIdx_;
 	createFunc(data);
 	if (isComposite(nm_.getIndexType(indexNo))) {
 		auto field = nm_.getIndexFields(indexNo)[0];
+		if (field == IndexValueType::SetByJsonPath) field = lastCjsonIdx;
 		auto it = functions_.find(field);
 		assert(it != functions_.end());
 		return createCtx(it->second, nullptr, nm_.getIndexType(indexNo));
@@ -106,23 +117,28 @@ BaseFunctionCtx::Ptr SelectFunction::createFuncForProc(int indexNo) {
 }
 
 BaseFunctionCtx::Ptr SelectFunction::CreateCtx(int indexNo) {
-	// we use this hack becouse ft always need ctx to generate proc in answer
+	// we use this hack because ft always needs ctx to generate proc in response
 	if (functions_.empty() && isFullText(nm_.getIndexType(indexNo))) {
 		return createFuncForProc(indexNo);
-	} else if (functions_.empty())
+	} else if (functions_.empty()) {
 		return nullptr;
-	BaseFunctionCtx::Ptr ctx;
+	}
 
-	if (isComposite(nm_.getIndexType(indexNo))) {
+	BaseFunctionCtx::Ptr ctx;
+	IndexType indexType = nm_.getIndexType(indexNo);
+
+	if (isComposite(indexType)) {
 		int fieldNo = 0;
-		for (auto filed : nm_.getIndexFields(indexNo)) {
-			auto it = functions_.find(filed);
+		int cjsonFieldIdx = nm_.getIndexesCount();
+		for (auto field : nm_.getIndexFields(indexNo)) {
+			if (field == IndexValueType::SetByJsonPath) field = cjsonFieldIdx++;
+			auto it = functions_.find(field);
 			if (it != functions_.end()) {
 				it->second.fieldNo = fieldNo;
-				if (isFullText(nm_.getIndexType(indexNo)) && it->second.type == SelectFuncStruct::kSelectFuncNone) {
+				if (isFullText(indexType) && (it->second.type == SelectFuncStruct::kSelectFuncNone)) {
 					it->second.type = SelectFuncStruct::kSelectFuncProc;
 				}
-				ctx = createCtx(it->second, ctx, nm_.getIndexType(indexNo));
+				ctx = createCtx(it->second, ctx, indexType);
 			}
 			fieldNo++;
 		}
@@ -142,11 +158,11 @@ void SelectFunctionsHolder::Process(QueryResults &res) {
 	if (!querys_ || querys_->empty() || force_only_) return;
 	bool changed = false;
 
-	for (size_t i = 0; i < res.size(); ++i) {
-		auto &pl_type = res.getPayloadType(res[i].nsid);
+	for (size_t i = 0; i < res.Count(); ++i) {
+		auto &pl_type = res.getPayloadType(res.Items()[i].nsid);
 		auto it = querys_->find(pl_type.Name());
 		if (it != querys_->end()) {
-			if (it->second->ProcessItem(res[i], pl_type)) changed = true;
+			if (it->second->ProcessItem(res.Items()[i], pl_type)) changed = true;
 		}
 	}
 	res.nonCacheableData = changed;
@@ -182,7 +198,8 @@ BaseFunctionCtx::Ptr SelectFunction::createCtx(SelectFuncStruct &data, BaseFunct
 				} else {
 					data.ctx = ctx;
 				}
-				data.ctx->AddFunction(nm_.getIndexName(data.indexNo), data.type);
+				const string &indexName = (data.indexNo >= nm_.getIndexesCount()) ? data.field : nm_.getIndexName(data.indexNo);
+				data.ctx->AddFunction(indexName, data.type);
 			}
 	}
 	return data.ctx;

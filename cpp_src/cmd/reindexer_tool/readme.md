@@ -1,69 +1,110 @@
-# Reindexer dump tool
-Reindexer dump tool is an utility to view the dump of the reindex persistent.
+# Reindexer command line tool
+Reindexer command line tool is an client utility to work with database.
 
 ## Table of Content
 
 - [Features](#features)
-- [Installation](#installation)
 - [Usage](#usage)
+- [Commands](#commands)
 - [Examples](#examples)
 
 ## Features
 
-- Dump whole namespaces into JSON format to console/file.
-- Select items by query (like 'SQL-query')
-- Delete items
-- Insert/Update items ('Upsert')
-- Dump meta info by KEY
-- Dump a partial list of elements ('limit', 'offset' options)
+- Backup whole database into text file or console.
+- Make queries to database
+- Modify documents and DB metadata
+- Both standalone and embeded(builtin) modes are supported
 
 ## Usage
 
-```sh
-reindexer_tool [OPTION...]
-
-  -h, --help  show this message
-
- '--dump' additional options:
-      --limit INT   limit count of items
-      --offset INT  offset from the beginning
-
- dest options:
-      --out FILE  path to result output file (console by default)
-
- logging options:
-      --log INT  log level (MAX = 5)
-
- source options:
-      --db [=DIRECTORY(=)]  path to 'reindexer' cache
-
- start options:
-      --dump [=arg(=)]       dump whole namespace (see also '--limit',
-                             '--offset')
-      --query [="QUERY"(=)]  dump by query (in quotes)
-      --delete [="JSON"(=)]  delete item from namespace (JSON object in
-                             quotes)
-      --upsert [="JSON"(=)]  Insert or update item in namespace (JSON object
-                             in quotes)
-      --meta KEY             dump meta information by KEY from namespace
-      --namespace NAMESPACE  needed for --dump, --delete, --upsert, --meta
-                             actions
 ```
+reindexer_tool {OPTIONS}
+
+Options
+  -d[DSN],      --dsn=[DSN]              DSN to 'reindexer', like 'cproto://127.0.0.1:6534/dbname' or 'builtin:///var/lib/reindexer/dbname'
+  -f[FILENAME], --filename=[FILENAME]    execute commands from file, then exit
+  -c[COMMAND],  --command=[COMMAND]      run only single command (SQL or internal) and exit
+  -o[FILENAME], --output=[FILENAME]      send query results to file
+  -l[INT=1..5], --log=[INT=1..5]         reindexer logging level
+
+```
+
+## Commands
+
+### Upsert document to namespace
+
+*Syntax:*
+```
+\upsert <namespace> <document>
+```
+
+*Example:*
+```
+\upsert books {"id":5,"name":"xx"}
+```
+
+### Delete document from namespace
+
+*Syntax:*
+```
+\delete <namespace> <document>
+```
+
+*Example:*
+```
+\delete books {"id":5}
+```
+
+### Backup database into text dump format
+
+*Syntax:*
+```
+\dump [namespace1 [namespace2]...]
+```
+
+### Manipulate namespaces
+
+*Syntax:*
+```
+\namespaces add <name> <definition>
+```
+Add new namespace
+```
+\namespaces list 
+```
+List available namespaces
+```
+\namespaces drop <namespace>
+```
+Drop namespace
+
+### Manipulate metadata
+*Syntax:*
+```
+\meta put <namespace> <key> <value>
+Put metadata key value
+\meta list
+List all metadata in name
+```
+
+### Set output formt
+*Syntax:*
+```
+\set output <format>
+```
+
+Format can be one of the following:
+- `json` Unformatted JSON
+- `pretty` Pretty printed JSON
 
 ## Examples
 
-Dump whole namespace into JSON file:
+Backup whole database into single backup file:
 ```sh
-reindexer_tool --db /var/cache --dump sessions --out /home/user/sessions_dump.json --log 5
+reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --command '\dump' --output mydb.rxdump
 ```
 
-
-Print to console limited content of namespace by query:
+Restore database from backup file:
 ```sh
-reindexer_tool --db /var/cache --query "SELECT * FROM accounts WHERE age > 18" --offset 5 --limit 5
-```
-
-Upsert item into namespace:
-```sh
-reindexer_tool --db /var/cahce --upsert "{"id":3,"name":"horror"}" --namespace genres
+reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --filename mydb.rxdump
 ```

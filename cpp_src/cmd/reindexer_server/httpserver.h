@@ -52,8 +52,11 @@ public:
 
 protected:
 	int modifyItem(http::Context &ctx, int mode);
-	int queryResults(http::Context &ctx, reindexer::QueryResults &res, const char *name);
+	int queryResults(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults = false, unsigned limit = kDefaultLimit,
+					 unsigned offset = kDefaultOffset);
 	int jsonStatus(http::Context &ctx, http::HttpStatus status = http::HttpStatus());
+	unsigned prepareLimit(const string_view &limitParam, int limitDefault = kDefaultLimit);
+	unsigned prepareOffset(const string_view &offsetParam, int offsetDefault = kDefaultOffset);
 
 	shared_ptr<Reindexer> getDB(http::Context &ctx, UserRole role);
 	string getNameFromJson(string json);
@@ -70,9 +73,9 @@ protected:
 	bool allocDebug_;
 	bool enablePprof_;
 
-	static const int limit_default = 10;
-	static const int limit_max = 100;
-	static const int offset_default = 0;
+	static const int kDefaultLimit = INT_MAX;
+	static const int kDefaultOffset = 0;
+	static const int kDefaultItemsLimit = 10;
 };
 
 }  // namespace reindexer_server

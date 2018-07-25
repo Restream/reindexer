@@ -114,6 +114,13 @@ string GetTempDir() {
 #endif
 }
 
+string GetHomeDir() {
+	if (const char *homeDir = getenv("HOME")) {
+		if (homeDir && *homeDir) return homeDir;
+	}
+	return ".";
+}
+
 FileStatus Stat(const string &path) {
 #ifdef _WIN32
 	struct _stat state;

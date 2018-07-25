@@ -30,8 +30,8 @@ TEST_F(NsApi, UpsertWithPrecepts) {
 	auto err = reindexer->Select("SELECT * FROM " + default_namespace + " WHERE id=" + to_string(idNum), res);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	for (size_t i = 0; i < res.size(); ++i) {
-		Item item = res.GetItem(static_cast<int>(i));
+	for (auto it : res) {
+		Item item = it.GetItem();
 		for (auto idx = 1; idx < item.NumFields(); idx++) {
 			auto field = item[idx].Name();
 

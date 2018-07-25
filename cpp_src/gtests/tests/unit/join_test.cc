@@ -22,8 +22,8 @@ TEST_F(JoinSelectsApi, InnerJoinTest) {
 	QueryResultRows pureSelectRows;
 
 	if (err.ok()) {
-		for (size_t i = 0; i < pureSelectRes.size(); ++i) {
-			Item booksItem(pureSelectRes.GetItem(i));
+		for (auto it : pureSelectRes) {
+			Item booksItem(it.GetItem());
 			KeyRef authorIdKeyRef = booksItem[authorid_fk];
 
 			reindexer::QueryResults authorsSelectRes;
@@ -36,8 +36,8 @@ TEST_F(JoinSelectsApi, InnerJoinTest) {
 				QueryResultRow& pureSelectRow = pureSelectRows[bookId];
 
 				FillQueryResultFromItem(booksItem, pureSelectRow);
-				for (size_t i = 0; i < authorsSelectRes.size(); ++i) {
-					Item authorsItem(authorsSelectRes.GetItem(i));
+				for (auto jit :  authorsSelectRes) {
+					Item authorsItem(jit.GetItem());
 					FillQueryResultFromItem(authorsItem, pureSelectRow);
 				}
 			}
@@ -59,8 +59,8 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 	QueryResultRows pureSelectRows;
 
 	if (err.ok()) {
-		for (size_t i = 0; i < booksQueryRes.size(); ++i) {
-			Item item(booksQueryRes.GetItem(i));
+		for (auto it : booksQueryRes) {
+			Item item(it.GetItem());
 			BookId bookId = item[bookid].Get<int>();
 			QueryResultRow& resultRow = pureSelectRows[bookId];
 			FillQueryResultFromItem(item, resultRow);
@@ -77,15 +77,16 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 	if (err.ok()) {
 		std::unordered_set<int> presentedAuthorIds;
 		std::unordered_map<int, int> rowidsIndexes;
-		for (size_t i = 0; i < joinQueryRes.size(); ++i) {
-			Item item(joinQueryRes.GetItem(i));
+		int i = 0;
+		for (auto rowIt : joinQueryRes) {
+			Item item(rowIt.GetItem());
 			KeyRef authorIdKeyRef1 = item[authorid];
-			const reindexer::ItemRef& rowid = joinQueryRes[i];
+			const reindexer::ItemRef& rowid = rowIt.GetItemRef();
 			auto it = joinQueryRes.joined_->find(rowid.id);
 			if (it != joinQueryRes.joined_->end()) {
 				reindexer::QRVector& queryResults = it->second;
 				for (const QueryResults& queryRes : queryResults) {
-					Item item2(queryRes.GetItem(0));
+					Item item2(queryRes.begin().GetItem());
 					KeyRef authorIdKeyRef2 = item2[authorid_fk];
 					EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
 				}
@@ -93,13 +94,14 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 
 			presentedAuthorIds.insert(static_cast<int>(authorIdKeyRef1));
 			rowidsIndexes.insert({rowid.id, i});
+			i++;
 		}
 
 		for (const std::pair<const IdType, reindexer::QRVector>& itempair : *joinQueryRes.joined_) {
 			if (itempair.second.empty()) continue;
 			const QueryResults& joinedQueryRes(itempair.second[0]);
-			for (size_t i = 0; i < joinedQueryRes.size(); ++i) {
-				Item item(joinedQueryRes.GetItem(i));
+			for (auto it : joinedQueryRes) {
+				Item item(it.GetItem());
 
 				KeyRef authorIdKeyRef1 = item[authorid_fk];
 				int authorId = static_cast<int>(authorIdKeyRef1);
@@ -112,7 +114,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 				EXPECT_TRUE(itRowidIndex != rowidsIndexes.end());
 
 				if (itRowidIndex != rowidsIndexes.end()) {
-					Item item2(joinQueryRes.GetItem(rowid));
+					Item item2((joinQueryRes.begin() + rowid).GetItem());
 					KeyRef authorIdKeyRef2 = item2[authorid];
 					EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
 				}
@@ -139,9 +141,9 @@ TEST_F(JoinSelectsApi, OrInnerJoinTest) {
 	EXPECT_EQ(status, JSON_OK) << "Error parsing json - status " << status;
 
 	if (err.ok()) {
-		for (size_t i = 0; i < queryRes.size(); ++i) {
-			Item item(queryRes.GetItem(i));
-			reindexer::ItemRef& itemRef(queryRes[i]);
+		for (auto rowIt : queryRes) {
+			Item item(rowIt.GetItem());
+			const reindexer::ItemRef& itemRef(rowIt.GetItemRef());
 
 			auto it = queryRes.joined_->find(itemRef.id);
 			if (it != queryRes.joined_->end()) {
@@ -150,16 +152,16 @@ TEST_F(JoinSelectsApi, OrInnerJoinTest) {
 				QueryResults& genresNsJoinResults = joinedResult[genresNsJoinIndex];
 
 				KeyRef authorIdKeyRef1 = item[authorid_fk];
-				for (size_t j = 0; j < authorNsJoinResults.size(); ++j) {
-					Item authorsItem(authorNsJoinResults.GetItem(j));
+				for (auto jit : authorNsJoinResults) {
+					Item authorsItem(jit.GetItem());
 					KeyRef authorIdKeyRef2 = authorsItem[authorid];
 					EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
 				}
 
 				KeyRef genresIdKeyRef1 = item[genreId_fk];
-				for (size_t k = 0; k < genresNsJoinResults.size(); ++k) {
+				for (auto jit : genresNsJoinResults) {
 					KeyRefs genreIdKeyRef;
-					Item genresItem(genresNsJoinResults.GetItem(k));
+					Item genresItem(jit.GetItem());
 					KeyRef genresIdKeyRef2 = genresItem[genreid];
 					EXPECT_TRUE(genresIdKeyRef1 == genresIdKeyRef2);
 				}

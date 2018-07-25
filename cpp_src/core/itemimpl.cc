@@ -77,7 +77,8 @@ Error ItemImpl::FromCJSON(const string_view &slice, bool pkOnly) {
 	CJsonDecoder decoder(tagsMatcher_, pkOnly ? pkFields_ : FieldsSet{});
 	auto err = decoder.Decode(&pl, rdser, ser_);
 
-	if (!rdser.Eof() && rdser.Pos() != tmOffset) return Error(errParseJson, "Internal error - left unparsed data %d", int(rdser.Pos()));
+	if (err.ok() && !rdser.Eof() && rdser.Pos() != tmOffset)
+		return Error(errParseJson, "Internal error - left unparsed data %d", int(rdser.Pos()));
 
 	tupleData_ = make_key_string(ser_.Slice());
 	pl.Set(0, {KeyRef(tupleData_)});
@@ -96,7 +97,8 @@ Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool pkOnly) {
 	char *endptr = nullptr;
 	JsonValue value;
 	int status = jsonParse(const_cast<char *>(data.data()), &endptr, &value, jsonAllocator_);
-	if (status != JSON_OK) return Error(errLogic, "Error parsing json - status %d\n", status);
+	if (status != JSON_OK) return Error(errParseJson, "Error parsing json: '%s'", jsonStrError(status));
+	if (value.getTag() != JSON_OBJECT) return Error(errParseJson, "Expected json object");
 	if (endp) {
 		*endp = endptr;
 	}
@@ -141,7 +143,7 @@ string_view ItemImpl::GetCJSON() {
 	return ser_.Slice();
 }
 
-KeyRefs ItemImpl::GetFieldByJSONPath(const string &jsonPath) {
+KeyRefs ItemImpl::GetValueByJSONPath(const string &jsonPath) {
 	ConstPayload pl(payloadType_, payloadValue_);
 	KeyRefs krefs;
 	return pl.GetByJsonPath(jsonPath, tagsMatcher_, krefs);

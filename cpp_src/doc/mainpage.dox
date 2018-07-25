@@ -62,10 +62,10 @@ int main() {
 	}
 
 	//  // Fetch and print results
-	for (unsigned i = 0; i < results.size(); i++) {
-		Item item = results.GetItem(i);
+	for (auto rowIt : results) {
+		Item item = rowIt.GetItem();
 		//  // Get complete JSON
-		std::cout << "JSON: " << item.GetJSON().ToString() << std::endl;
+		std::cout << "JSON: " << item.GetJSON() << std::endl;
 
 		//// OR Iterate indexed fields
 		std::cout << "Fields: ";
