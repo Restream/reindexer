@@ -53,12 +53,12 @@ int KeyValue::convert(KeyValueType _type) {
 		case KeyValueString: {
 			auto s = As<string>();
 			h_value_string = make_key_string(s.data(), s.length());
-			relink();
 		} break;
 		default:
 			assertf(0, "Can't convert KeyValue from type '%s' to to type '%s'", TypeName(type), TypeName(_type));
 	}
 	type = _type;
+	relink();
 	return 0;
 }
 
