@@ -40,8 +40,8 @@ void IndexUnordered<T>::Delete(const KeyRef &key, IdType id) {
 	delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
-	assertf(this->opts_.IsArray() || delcnt, "Delete unexists id from index '%s' id=%d,key=%s", this->name_.c_str(), id,
-			KeyRef(key).As<string>().c_str());
+	assertf(this->opts_.IsArray() || this->Opts().IsSparse() || delcnt, "Delete unexists id from index '%s' id=%d,key=%s",
+			this->name_.c_str(), id, KeyRef(key).As<string>().c_str());
 
 	tracker_.markUpdated(idx_map, &*keyIt);
 

@@ -29,12 +29,6 @@ void PayloadTypeImpl::Add(PayloadFieldType f) {
 		if (oldf.Type() != f.Type())
 			throw Error(errLogic, "Can't add field with name '%s' and type '%s' to namespace '%s'. It already exists with type '%s'",
 						f.Name().c_str(), KeyValue::TypeName(f.Type()), Name().c_str(), KeyValue::TypeName(oldf.Type()));
-		// Upgrade to array
-		oldf.SetArray();
-		// Move offsets of followed fields
-		for (size_t i = it->second + 1; i < fields_.size(); ++i) {
-			fields_[i].SetOffset(fields_[i - 1].Offset() + fields_[i - 1].Sizeof());
-		}
 		// Add json paths
 		for (auto &jp : f.JsonPaths()) {
 			if (!jp.length()) continue;
@@ -45,10 +39,15 @@ void PayloadTypeImpl::Add(PayloadFieldType f) {
 			}
 			oldf.AddJsonPath(jp);
 		}
+		// Upgrade to array
+		oldf.SetArray();
+		// Move offsets of followed fields
+		for (size_t i = it->second + 1; i < fields_.size(); ++i) {
+			fields_[i].SetOffset(fields_[i - 1].Offset() + fields_[i - 1].Sizeof());
+		}
 	} else {
 		// Unique name -> just add field
 		f.SetOffset(TotalSize());
-		fieldsByName_.emplace(f.Name(), int(fields_.size()));
 		for (auto &jp : f.JsonPaths()) {
 			if (!jp.length()) continue;
 			auto res = fieldsByJsonPath_.emplace(jp, int(fields_.size()));
@@ -57,6 +56,7 @@ void PayloadTypeImpl::Add(PayloadFieldType f) {
 							f.Name().c_str(), Name().c_str(), jp.c_str(), Field(res.first->second).Name().c_str());
 			}
 		}
+		fieldsByName_.emplace(f.Name(), int(fields_.size()));
 		if (f.Type() == KeyValueString) {
 			strFields_.push_back(int(fields_.size()));
 		}

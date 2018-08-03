@@ -174,8 +174,10 @@ if (NOT REINDEXER_VERSION_FULL)
 set (REINDEXER_VERSION_FULL "0.0.0-localbuild")
 endif ()
 
+file(WRITE ${PROJECT_BINARY_DIR}/reindexer_version.h "#pragma once\n#define REINDEX_VERSION \"${REINDEXER_VERSION_FULL}\"\n")
+include_directories(${PROJECT_BINARY_DIR})
+
 string ( REGEX REPLACE "(.*)([0-9]+)\\.([0-9]+)\\.([0-9]+)(.*)" "\\2.\\3.\\4" REINDEXER_VERSION ${REINDEXER_VERSION_FULL})
-add_definitions(-DREINDEX_VERSION=${REINDEXER_VERSION_FULL})
 
 # Packaging and install stuff
 if(CMAKE_SYSTEM_NAME MATCHES "Linux" AND EXISTS "/etc/issue")

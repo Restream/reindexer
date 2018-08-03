@@ -56,6 +56,7 @@ public:
 	const vector<IdType>& SortOrders() const { return sortOrders_; }
 	const IndexOpts& Opts() const { return opts_; }
 	void SetOpts(const IndexOpts& opts) { opts_ = opts; }
+	void SetFields(const FieldsSet& fields) { fields_ = fields; }
 	SortType SortId() const { return sortId_; }
 
 protected:

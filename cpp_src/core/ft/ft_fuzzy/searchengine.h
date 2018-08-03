@@ -30,7 +30,7 @@ public:
 
 	SearchResult Search(const FtDSLQuery &dsl);
 	void Rebuild();
-	void AddData(const reindexer::string_view &src_data, const IdType id, int field);
+	void AddData(const reindexer::string_view &src_data, const IdType id, int field, const string &extraWordSymbols);
 	void Commit();
 
 private:

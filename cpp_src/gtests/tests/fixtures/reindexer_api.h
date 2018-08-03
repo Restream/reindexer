@@ -55,7 +55,7 @@ public:
 	}
 	Item NewItem(const std::string &ns) { return reindexer->NewItem(ns); }
 
-	void Commit(const std::string &ns) { reindexer->Commit(ns); }
+	Error Commit(const std::string &ns) { return reindexer->Commit(ns); }
 	void Upsert(const std::string &ns, Item &item) {
 		assert(item);
 		auto err = reindexer->Upsert(ns, item);

@@ -20,7 +20,8 @@ using std::pair;
 class BaseSearcher {
 public:
 	void AddSeacher(ISeacher::Ptr seacher);
-	void AddIndex(BaseHolder::Ptr holder, const reindexer::string_view &src_data, const IdType id, int field);
+	void AddIndex(BaseHolder::Ptr holder, const reindexer::string_view &src_data, const IdType id, int field,
+				  const string &extraWordSymbols);
 	SearchResult Compare(BaseHolder::Ptr holder, const reindexer::FtDSLQuery &dsl);
 
 	void Commit(BaseHolder::Ptr holder);

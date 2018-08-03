@@ -161,6 +161,10 @@ func NewReindex(dsn string, options ...interface{}) *Reindexer {
 		binding: binding,
 	}
 
+	if changing, ok := binding.(bindings.RawBindingChanging); ok {
+		changing.OnChangeCallback(rx.resetCaches)
+	}
+
 	rx.openSystemNamespace(NamespacesNamespaceName, NamespaceDescription{})
 	rx.openSystemNamespace(PerfstatsNamespaceName, NamespacePerfStat{})
 	rx.openSystemNamespace(MemstatsNamespaceName, NamespaceMemStat{})

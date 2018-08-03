@@ -89,9 +89,11 @@ func (buf *NetBuffer) parseArgs() (err error) {
 func (buf *NetBuffer) close() {
 	if buf.needClose && !buf.closed {
 		buf.closed = true
-		if err := buf.conn.rpcCallNoResults(cmdCloseResults, buf.reqID); err != nil {
-			fmt.Printf("query close error: %v", err)
+		closeBuf, err := buf.conn.rpcCall(cmdCloseResults, buf.reqID)
+		if err != nil {
+			fmt.Printf("rx: query close error: %v", err)
 		}
+		closeBuf.Free()
 	}
 }
 

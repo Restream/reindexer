@@ -5,6 +5,8 @@
 #include "core/indexdef.h"
 #include "tools/errors.h"
 
+#include "estl/string_view.h"
+
 union JsonValue;
 
 namespace reindexer {

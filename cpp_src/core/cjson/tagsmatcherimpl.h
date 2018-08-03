@@ -33,7 +33,6 @@ public:
 			if (pos != lastPos) {
 				field.assign(jsonPath.data() + lastPos, pos - lastPos);
 				int fieldTag = name2tag(field.c_str());
-				if (fieldTag == 0) throw Error(errLogic, "There is no such tag: " + field);
 				fieldTags.push_back(static_cast<int16_t>(fieldTag));
 			}
 		}

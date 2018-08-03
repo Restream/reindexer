@@ -4,20 +4,32 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net"
 	"net/url"
+	"sync/atomic"
+	"time"
 
 	"github.com/restream/reindexer/bindings"
 )
 
-const defConnPoolSize = 8
+const (
+	defConnPoolSize  = 8
+	pingerTimeoutSec = 60
+
+	opRd = 0
+	opWr = 1
+)
 
 func init() {
 	bindings.RegisterBinding("cproto", new(NetCProto))
 }
 
 type NetCProto struct {
-	url  url.URL
-	pool chan *connection
+	url              url.URL
+	pool             chan *connection
+	onChangeCallback func()
+	serverStartTime  int64
+	retryAttempts    bindings.OptionRetryAttempts
 }
 
 func (binding *NetCProto) Init(u *url.URL, options ...interface{}) (err error) {
@@ -27,9 +39,18 @@ func (binding *NetCProto) Init(u *url.URL, options ...interface{}) (err error) {
 		switch v := option.(type) {
 		case bindings.OptionConnPoolSize:
 			connPoolSize = v.ConnPoolSize
+		case bindings.OptionRetryAttempts:
+			binding.retryAttempts = v
 		default:
 			fmt.Printf("Unknown cproto option: %v\n", option)
 		}
+	}
+
+	if binding.retryAttempts.Read < 0 {
+		binding.retryAttempts.Read = 0
+	}
+	if binding.retryAttempts.Write < 0 {
+		binding.retryAttempts.Write = 0
 	}
 
 	binding.url = *u
@@ -41,17 +62,16 @@ func (binding *NetCProto) Init(u *url.URL, options ...interface{}) (err error) {
 		}
 		binding.pool <- conn
 	}
+	go binding.pinger()
 	return
 }
 
 func (binding *NetCProto) Ping() error {
-	conn := binding.getConn()
-	return conn.rpcCallNoResults(cmdPing)
+	return binding.rpcCallNoResults(opRd, cmdPing)
 }
 
 func (binding *NetCProto) ModifyItem(nsHash int, data []byte, mode int) (bindings.RawBuffer, error) {
-	conn := binding.getConn()
-	buf, err := conn.rpcCall(cmdModifyItem, data, mode)
+	buf, err := binding.rpcCall(opWr, cmdModifyItem, data, mode)
 	if err != nil {
 		return nil, err
 	}
@@ -89,18 +109,15 @@ func (binding *NetCProto) OpenNamespace(namespace string, enableStorage, dropOnF
 		return err
 	}
 
-	conn := binding.getConn()
-	return conn.rpcCallNoResults(cmdOpenNamespace, namespace, bsnsdef)
+	return binding.rpcCallNoResults(opWr, cmdOpenNamespace, namespace, bsnsdef)
 }
 
 func (binding *NetCProto) CloseNamespace(namespace string) error {
-	conn := binding.getConn()
-	return conn.rpcCallNoResults(cmdCloseNamespace, namespace)
+	return binding.rpcCallNoResults(opWr, cmdCloseNamespace, namespace)
 }
 
 func (binding *NetCProto) DropNamespace(namespace string) error {
-	conn := binding.getConn()
-	return conn.rpcCallNoResults(cmdDropNamespace, namespace)
+	return binding.rpcCallNoResults(opWr, cmdDropNamespace, namespace)
 }
 
 type indexDef struct {
@@ -111,6 +128,7 @@ type indexDef struct {
 	IsPK         bool   `json:"is_pk"`
 	IsArray      bool   `json:"is_array"`
 	IsDense      bool   `json:"is_dense"`
+	IsSparse     bool   `json:"is_sparse"`
 	IsAppendable bool   `json:"is_appendable"`
 	CollateMode  string `json:"collate_mode"`
 	SortOrder    string `json:"sort_order_letters"`
@@ -138,6 +156,7 @@ func (binding *NetCProto) AddIndex(namespace, index, jsonPath, indexType, fieldT
 		IsArray:      opts.IsArray(),
 		IsPK:         opts.IsPK(),
 		IsDense:      opts.IsDense(),
+		IsSparse:     opts.IsSparse(),
 		IsAppendable: opts.IsAppendable(),
 		CollateMode:  cm,
 		SortOrder:    sortOrder,
@@ -148,28 +167,23 @@ func (binding *NetCProto) AddIndex(namespace, index, jsonPath, indexType, fieldT
 		return err
 	}
 
-	conn := binding.getConn()
-	return conn.rpcCallNoResults(cmdAddIndex, namespace, bidef)
+	return binding.rpcCallNoResults(opWr, cmdAddIndex, namespace, bidef)
 }
 
 func (binding *NetCProto) DropIndex(namespace, index string) error {
-	conn := binding.getConn()
-	return conn.rpcCallNoResults(cmdDropIndex, namespace, index)
+	return binding.rpcCallNoResults(opWr, cmdDropIndex, namespace, index)
 }
 
 func (binding *NetCProto) ConfigureIndex(namespace, index, config string) error {
-	conn := binding.getConn()
-	return conn.rpcCallNoResults(cmdConfigureIndex, namespace, index, config)
+	return binding.rpcCallNoResults(opWr, cmdConfigureIndex, namespace, index, config)
 }
 
 func (binding *NetCProto) PutMeta(namespace, key, data string) error {
-	conn := binding.getConn()
-	return conn.rpcCallNoResults(cmdPutMeta, namespace, key, data)
+	return binding.rpcCallNoResults(opWr, cmdPutMeta, namespace, key, data)
 }
 
 func (binding *NetCProto) GetMeta(namespace, key string) (bindings.RawBuffer, error) {
-	conn := binding.getConn()
-	buf, err := conn.rpcCall(cmdGetMeta, namespace, key)
+	buf, err := binding.rpcCall(opRd, cmdGetMeta, namespace, key)
 	if err != nil {
 		buf.Free()
 		return nil, err
@@ -180,7 +194,6 @@ func (binding *NetCProto) GetMeta(namespace, key string) (bindings.RawBuffer, er
 }
 
 func (binding *NetCProto) Select(query string, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
-	conn := binding.getConn()
 	flags := 0
 	if withItems {
 		flags |= bindings.ResultsWithJson
@@ -192,7 +205,7 @@ func (binding *NetCProto) Select(query string, withItems bool, ptVersions []int3
 		fetchCount = math.MaxInt32
 	}
 
-	buf, err := conn.rpcCall(cmdSelectSQL, query, flags, int32(fetchCount), int64(-1), ptVersions)
+	buf, err := binding.rpcCall(opRd, cmdSelectSQL, query, flags, int32(fetchCount), int64(-1), ptVersions)
 	if err != nil {
 		buf.Free()
 		return nil, err
@@ -204,7 +217,6 @@ func (binding *NetCProto) Select(query string, withItems bool, ptVersions []int3
 }
 
 func (binding *NetCProto) SelectQuery(data []byte, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
-	conn := binding.getConn()
 	flags := 0
 	if withItems {
 		flags |= bindings.ResultsWithJson
@@ -216,7 +228,7 @@ func (binding *NetCProto) SelectQuery(data []byte, withItems bool, ptVersions []
 		fetchCount = math.MaxInt32
 	}
 
-	buf, err := conn.rpcCall(cmdSelect, data, flags, int32(fetchCount), int64(-1), ptVersions)
+	buf, err := binding.rpcCall(opRd, cmdSelect, data, flags, int32(fetchCount), int64(-1), ptVersions)
 	if err != nil {
 		buf.Free()
 		return nil, err
@@ -228,9 +240,7 @@ func (binding *NetCProto) SelectQuery(data []byte, withItems bool, ptVersions []
 }
 
 func (binding *NetCProto) DeleteQuery(nsHash int, data []byte) (bindings.RawBuffer, error) {
-	conn := binding.getConn()
-
-	buf, err := conn.rpcCall(cmdDeleteQuery, data)
+	buf, err := binding.rpcCall(opWr, cmdDeleteQuery, data)
 	if err != nil {
 		buf.Free()
 		return nil, err
@@ -240,8 +250,11 @@ func (binding *NetCProto) DeleteQuery(nsHash int, data []byte) (bindings.RawBuff
 }
 
 func (binding *NetCProto) Commit(namespace string) error {
-	conn := binding.getConn()
-	return conn.rpcCallNoResults(cmdCommit, namespace)
+	return binding.rpcCallNoResults(opWr, cmdCommit, namespace)
+}
+
+func (binding *NetCProto) OnChangeCallback(f func()) {
+	binding.onChangeCallback = f
 }
 
 func (binding *NetCProto) EnableLogger(log bindings.Logger) {
@@ -263,4 +276,53 @@ func (binding *NetCProto) getConn() (conn *connection) {
 	}
 	binding.pool <- conn
 	return
+}
+
+func (binding *NetCProto) rpcCall(op int, cmd int, args ...interface{}) (buf *NetBuffer, err error) {
+	var attempts int
+	switch op {
+	case opRd:
+		attempts = binding.retryAttempts.Read + 1
+	default:
+		attempts = binding.retryAttempts.Write + 1
+	}
+	for i := 0; i < attempts; i++ {
+		if buf, err = binding.getConn().rpcCall(cmd, args...); err == nil {
+			return
+		}
+		switch err.(type) {
+		case net.Error, *net.OpError:
+			time.Sleep(time.Second * time.Duration(i))
+		default:
+			return
+		}
+	}
+	return
+}
+
+func (binding *NetCProto) rpcCallNoResults(op int, cmd int, args ...interface{}) error {
+	buf, err := binding.rpcCall(op, cmd, args...)
+	buf.Free()
+	return err
+}
+
+func (binding *NetCProto) pinger() {
+	timeout := time.Second * time.Duration(pingerTimeoutSec)
+	ticker := time.NewTicker(timeout)
+	for now := range ticker.C {
+		for i := 0; i < cap(binding.pool); i++ {
+			conn := binding.getConn()
+			if !conn.hasError() && conn.lastReadTime().Add(timeout).Before(now) {
+				buf, _ := conn.rpcCall(cmdPing)
+				buf.Free()
+			}
+		}
+	}
+}
+
+func (binding *NetCProto) checkServerStartTime(timestamp int64) {
+	old := atomic.SwapInt64(&binding.serverStartTime, timestamp)
+	if old != 0 && old != timestamp && binding.onChangeCallback != nil {
+		binding.onChangeCallback()
+	}
 }

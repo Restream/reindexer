@@ -62,6 +62,7 @@ type testNamespace struct {
 	items     map[string]interface{}
 	pkIdx     [][]int
 	fieldsIdx map[string][][]int
+	jsonPaths map[string]string
 }
 
 // Create new DB query
@@ -574,19 +575,28 @@ func prepareStruct(ns *testNamespace, t reflect.Type, basePath []int, reindexBas
 	}
 
 	indexes := make(map[string][]int)
+	ns.jsonPaths = make(map[string]string)
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		tags := strings.SplitN(field.Tag.Get("reindex"), ",", 3)
+		jsonPath := strings.Split(field.Tag.Get("json"), ",")[0]
+
+		if len(jsonPath) == 0 && !field.Anonymous {
+			jsonPath = field.Name
+		}
 
 		idxName := tags[0]
 		if idxName == "-" {
 			continue
 		}
 
+		nonIndexField := bool(len(idxName) == 0 && len(jsonPath) > 0)
+
 		reindexPath := reindexBasePath + idxName
 		path := append(basePath, i)
 		indexes[idxName] = path
+		ns.jsonPaths[idxName] = jsonPath
 
 		tk := field.Type.Kind()
 		isPk := len(tags) > 2 && strings.Index(tags[2], "pk") >= 0
@@ -614,11 +624,12 @@ func prepareStruct(ns *testNamespace, t reflect.Type, basePath []int, reindexBas
 			ns.pkIdx = append(ns.pkIdx, path)
 		}
 
-		if (len(idxName)) > 0 {
-			if _, ok := ns.fieldsIdx[reindexPath]; !ok {
-				ns.fieldsIdx[reindexPath] = make([][]int, 0, 5)
+		if (len(idxName)) > 0 || nonIndexField {
+			p := map[bool]string{true: jsonPath, false: reindexPath}
+			if _, ok := ns.fieldsIdx[p[nonIndexField]]; !ok {
+				ns.fieldsIdx[p[nonIndexField]] = make([][]int, 0, 5)
 			}
-			ns.fieldsIdx[reindexPath] = append(ns.fieldsIdx[reindexPath], path)
+			ns.fieldsIdx[p[nonIndexField]] = append(ns.fieldsIdx[p[nonIndexField]], path)
 		}
 
 	}

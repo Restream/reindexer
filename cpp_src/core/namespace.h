@@ -73,6 +73,25 @@ protected:
 		vector<SortType> ids2Sorts_;
 	};
 
+	class IndexesStorage : public vector<unique_ptr<Index>> {
+	public:
+		using Base = vector<unique_ptr<Index>>;
+		IndexesStorage(const Namespace &ns);
+
+		int denseIndexesSize() const { return ns_.payloadType_.NumFields(); }
+		int sparseIndexesSize() const { return ns_.sparseIndexesCount_; }
+		int compositeIndexesSize() const { return totalSize() - denseIndexesSize() - sparseIndexesSize(); }
+
+		int firstSparsePos() const { return ns_.payloadType_.NumFields(); }
+		int firstCompositePos() const { return ns_.payloadType_.NumFields() + ns_.sparseIndexesCount_; }
+		int firstCompositePos(const PayloadType &pt, int sparseIndexes) const { return pt.NumFields() + sparseIndexes; }
+
+		int totalSize() const { return size(); }
+
+	private:
+		const Namespace &ns_;
+	};
+
 	class Items : public vector<PayloadValue> {
 	public:
 		bool exists(IdType id) const { return id < IdType(size()) && !at(id).IsFree(); }
@@ -91,7 +110,7 @@ public:
 	void LoadFromStorage();
 	void DeleteStorage();
 
-	void AddIndex(const string &index, const string &jsonPath, IndexType type, IndexOpts opts);
+	void AddIndex(const IndexDef &indexDef);
 	bool DropIndex(const string &index);
 	bool AddCompositeIndex(const string &index, IndexType type, IndexOpts opts);
 	void ConfigureIndex(const string &index, const string &config);
@@ -143,8 +162,10 @@ protected:
 	void commit(const NSCommitContext &ctx, SelectLockUpgrader *lockUpgrader);
 	void insertIndex(Index *newIndex, int idxNo, const string &realName);
 	bool addIndex(const string &index, const string &jsonPath, IndexType type, IndexOpts opts);
+	bool addIndex(const IndexDef &indexDef);
 	bool dropIndex(const string &index);
-	void recreateCompositeIndexes(int startIdx);
+	void recreateCompositeIndexes(int startIdx, int endIdx);
+	NamespaceDef getDefinition();
 
 	string getMeta(const string &key);
 	void flushStorage();
@@ -166,7 +187,7 @@ protected:
 	void GetFromJoinCache(JoinCacheRes &ctx);
 	void GetIndsideFromJoinCache(JoinCacheRes &ctx);
 
-	vector<unique_ptr<Index>> indexes_;
+	IndexesStorage indexes_;
 	fast_hash_map<string, int> indexesNames_;
 	// All items with data
 	Items items_;
@@ -199,6 +220,8 @@ protected:
 	shared_ptr<QueryCache> queryCache_;
 	// shows if each subindex was PK
 	fast_hash_map<string, bool> compositeIndexesPkState_;
+
+	int sparseIndexesCount_ = 0;
 
 private:
 	Namespace(const Namespace &src);

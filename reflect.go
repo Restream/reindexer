@@ -18,6 +18,7 @@ const (
 	IndexOptPK         = bindings.IndexOptPK
 	IndexOptArray      = bindings.IndexOptArray
 	IndexOptDense      = bindings.IndexOptDense
+	IndexOptSparse     = bindings.IndexOptSparse
 	IndexOptAppendable = bindings.IndexOptAppendable
 )
 
@@ -68,6 +69,7 @@ func (db *Reindexer) createIndex(namespace string, st reflect.Type, subArray boo
 		opts.Array(t.Kind() == reflect.Slice || t.Kind() == reflect.Array || subArray)
 		opts.PK(strings.Index(idxOpts, "pk") >= 0)
 		opts.Dense(strings.Index(idxOpts, "dense") >= 0)
+		opts.Sparse(strings.Index(idxOpts, "sparse") >= 0)
 		opts.Appendable(strings.Index(idxOpts, "appendable") >= 0)
 
 		if opts.IsPK() && strings.TrimSpace(idxName) == "" {

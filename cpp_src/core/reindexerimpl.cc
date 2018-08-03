@@ -103,7 +103,7 @@ Error ReindexerImpl::Connect(const string& dsn) {
 			[&](int i) {
 				for (int j = i; j < int(foundNs.size()); j += maxLoadWorkers) {
 					auto& de = foundNs[j];
-					if (de.isDir && validateObjectName(de.name.c_str())) {
+					if (de.isDir && validateObjectName(de.name)) {
 						auto status = OpenNamespace(de.name, StorageOpts().Enabled());
 						if (!status.ok()) {
 							logPrintf(LogError, "Failed to open namespace '%s' - %s", de.name.c_str(), status.what().c_str());
@@ -128,27 +128,14 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef) {
 				return Error(errParams, "Namespace '%s' already exists", nsDef.name.c_str());
 			}
 		}
-		if (!validateObjectName(nsDef.name.c_str())) {
+		if (!validateObjectName(nsDef.name)) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-, are allowed");
 		}
-		for (;;) {
-			ns = std::make_shared<Namespace>(nsDef.name, nsDef.cacheMode);
-			if (nsDef.storage.IsEnabled() && !storagePath_.empty()) {
-				ns->EnableStorage(storagePath_, nsDef.storage);
-			}
-
-			for (auto& idx : nsDef.indexes) {
-				vector<string> jPaths;
-				if (idx.jsonPath.empty()) {
-					ns->AddIndex(idx.name, "", idx.Type(), idx.opts);
-				} else {
-					for (auto& p : split(idx.jsonPath, ",", true, jPaths)) {
-						ns->AddIndex(idx.name, p, idx.Type(), idx.opts);
-					}
-				}
-			}
-			break;
+		ns = std::make_shared<Namespace>(nsDef.name, nsDef.cacheMode);
+		if (nsDef.storage.IsEnabled() && !storagePath_.empty()) {
+			ns->EnableStorage(storagePath_, nsDef.storage);
 		}
+		for (auto& indexDef : nsDef.indexes) ns->AddIndex(indexDef);
 		if (nsDef.storage.IsEnabled() && !storagePath_.empty()) {
 			ns->LoadFromStorage();
 		}
@@ -173,7 +160,7 @@ Error ReindexerImpl::OpenNamespace(const string& name, const StorageOpts& storag
 				return 0;
 			}
 		}
-		if (!validateObjectName(name.c_str())) {
+		if (!validateObjectName(name)) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-, are allowed");
 		}
 		ns = std::make_shared<Namespace>(name, cacheMode);
@@ -625,10 +612,10 @@ shared_ptr<Namespace> ReindexerImpl::getNamespace(const string& _namespace) {
 	return nsIt->second;
 }
 
-Error ReindexerImpl::AddIndex(const string& _namespace, const IndexDef& idx) {
+Error ReindexerImpl::AddIndex(const string& _namespace, const IndexDef& indexDef) {
 	try {
 		auto ns = getNamespace(_namespace);
-		ns->AddIndex(idx.name, idx.jsonPath, idx.Type(), idx.opts);
+		ns->AddIndex(indexDef);
 	} catch (const Error& err) {
 		return err;
 	}

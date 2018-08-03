@@ -21,12 +21,12 @@ SearchEngine::SearchEngine() {
 void SearchEngine::SetConfig(const unique_ptr<FtFuzzyConfig>& cfg) { holder_->SetConfig(cfg); }
 
 void SearchEngine::Rebuild() { holder_.reset(new BaseHolder); }
-void SearchEngine::AddData(const reindexer::string_view& src_data, const IdType id, int field) {
+void SearchEngine::AddData(const reindexer::string_view& src_data, const IdType id, int field, const string& extraWordSymbols) {
 	if (commited_) {
 		commited_ = false;
 		holder_->Clear();
 	}
-	seacher_.AddIndex(holder_, src_data, id, field);
+	seacher_.AddIndex(holder_, src_data, id, field, extraWordSymbols);
 }
 void SearchEngine::Commit() {
 	commited_ = true;

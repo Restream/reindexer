@@ -73,7 +73,7 @@ public:
 	size_t getTagsPathsLength() const { return tagsPaths_.size(); }
 	size_t getJsonPathsLength() const { return jsonPaths_.size(); }
 	const TagsPath &getTagsPath(size_t idx) const { return tagsPaths_[idx]; }
-	const string &getJsonPath(size_t idx) { return jsonPaths_[idx]; }
+	const string &getJsonPath(size_t idx) const { return jsonPaths_[idx]; }
 
 	bool operator==(const FieldsSet &f) const { return (mask_ == f.mask_) && (tagsPaths_ == f.tagsPaths_); }
 	bool operator!=(const FieldsSet &f) const { return mask_ != f.mask_; }

@@ -145,12 +145,14 @@ public:
 				const PayloadValue &pv(kv);
 				addValue(cond, pv);
 			} else {
-				addValue(cond, PayloadValue());
+				partOfCjsonFieldSelect_ = true;
+				break;
 			}
 		}
 	}
 
 	bool Compare(CondType cond, PayloadValue &leftValue, const CollateOpts &collateOpts) {
+		if (partOfCjsonFieldSelect_) return false;
 		assert(!values_.empty() || !valuesSet_->empty());
 		assert(fields_.size() > 0);
 		PayloadValue *rightValue(&values_[0]);
@@ -177,6 +179,8 @@ public:
 				abort();
 		}
 	}
+
+	bool partOfCjsonFieldSelect_ = false;
 
 	PayloadType payloadType_;
 	FieldsSet fields_;

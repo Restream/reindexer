@@ -24,7 +24,6 @@ struct RPCClientData : public cproto::ClientData {
 
 class RPCServer {
 public:
-	RPCServer(DBManager &dbMgr);
 	RPCServer(DBManager &dbMgr, LoggerWrapper logger, bool allocDebug = false);
 	~RPCServer();
 
@@ -78,6 +77,8 @@ protected:
 
 	LoggerWrapper logger_;
 	bool allocDebug_;
+
+	std::chrono::system_clock::time_point startTs_;
 };
 
 }  // namespace reindexer_server

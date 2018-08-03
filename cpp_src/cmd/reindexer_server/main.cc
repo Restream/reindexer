@@ -9,10 +9,16 @@
 #include "debug/backtrace.h"
 #include "httpserver.h"
 #include "loggerwrapper.h"
+#include "reindexer_version.h"
 #include "rpcserver.h"
+#include "tools/fsops.h"
 #include "tools/stringstools.h"
 #include "winservice.h"
 #include "yaml/yaml.h"
+
+#ifdef LINK_RESOURCES
+#include <cmrc/cmrc.hpp>
+#endif
 
 using namespace reindexer_server;
 struct ServerConfig {
@@ -44,8 +50,10 @@ LoggerWrapper logger;
 LoggerWrapper coreLogger;
 LogLevel logLevel = LogNone;
 
-#define STR_EXPAND(tok) #tok
-#define STR(tok) STR_EXPAND(tok)
+string GetDirPath(const string &path) {
+	size_t lastSlashPos = path.find_last_of("/\\");
+	return path.substr(0, lastSlashPos + 1);
+}
 
 #ifndef _WIN32
 
@@ -76,6 +84,7 @@ static void changeUser(const char *userName) {
 		exit(EXIT_FAILURE);
 	}
 }
+
 static int createPidFile() {
 	int fd = open(config.DaemonPidFile.c_str(), O_RDWR | O_CREAT, 0600);
 	if (fd < 0) {
@@ -120,6 +129,15 @@ static void daemonize() {
 	close(STDIN_FILENO);
 	close(STDOUT_FILENO);
 	close(STDERR_FILENO);
+}
+
+void ChownDir(const string &path, gid_t gid, uid_t uid) {
+	if (!path.empty()) {
+		if (chown(path.c_str(), uid, gid) < 0) {
+			fprintf(stderr, "Could not change ownership for directory '%s'. Reason: %s\n", path.c_str(), strerror(errno));
+			exit(EXIT_FAILURE);
+		}
+	}
 }
 #endif
 
@@ -176,9 +194,9 @@ void parseConfigFile(const string &filePath) {
 }
 
 void parseCmdLine(int argc, char **argv) {
-	string execFile = string(argv[0]);
-	size_t lastSlashPos = execFile.find_last_of("/\\");
-	config.WebRoot = execFile.substr(0, lastSlashPos + 1);
+#ifndef LINK_RESOURCES
+	config.WebRoot = GetDirPath(argv[0]);
+#endif
 
 	args::ArgumentParser parser("reindexer server");
 	args::HelpFlag help(parser, "help", "Show this message", {'h', "help"});
@@ -327,8 +345,8 @@ int startServer() {
 			exit(EXIT_FAILURE);
 		}
 
-		logger.info("Starting reindexer_server ({0}) on {1} HTTP, {2} RPC, with db '{3}'", STR(REINDEX_VERSION), config.HTTPAddr,
-					config.RPCAddr, config.StoragePath);
+		logger.info("Starting reindexer_server ({0}) on {1} HTTP, {2} RPC, with db '{3}'", REINDEX_VERSION, config.HTTPAddr, config.RPCAddr,
+					config.StoragePath);
 
 		LoggerWrapper httpLogger("http");
 		HTTPServer httpServer(dbMgr, config.WebRoot, httpLogger, config.DebugAllocs, config.DebugPprof);
@@ -386,22 +404,86 @@ int startServer() {
 	return 0;
 }
 
+void TryCreateDirectory(const string &dir) {
+	using reindexer::fs::MkDirAll;
+	using reindexer::fs::DirectoryExists;
+	using reindexer::fs::GetTempDir;
+	if (!dir.empty()) {
+		if (!DirectoryExists(dir) && dir != GetTempDir()) {
+			if (MkDirAll(dir) < 0) {
+				fprintf(stderr, "Could not create '%s'. Reason: %s\n", config.StoragePath.c_str(), strerror(errno));
+				exit(EXIT_FAILURE);
+			}
+#ifdef _WIN32
+		} else if (_access(dir.c_str(), 6) < 0) {
+#else
+		} else if (access(dir.c_str(), R_OK | W_OK) < 0) {
+#endif
+			fprintf(stderr, "Could not access dir '%s'. Reason: %s\n", dir.c_str(), strerror(errno));
+			exit(EXIT_FAILURE);
+		}
+	}
+}
+
 int main(int argc, char **argv) {
+	errno = 0;
 	backtrace_init();
 	setvbuf(stdout, 0, _IONBF, 0);
 	setvbuf(stderr, 0, _IONBF, 0);
+
+#ifdef LINK_RESOURCES
+	CMRC_INIT(resources);
+#endif
+
 	parseCmdLine(argc, argv);
 
+	string coreLogDir = GetDirPath(config.CoreLog);
+	string httpLogDir = GetDirPath(config.HttpLog);
+	string rpcLogDir = GetDirPath(config.RpcLog);
+	string serverLogDir = GetDirPath(config.ServerLog);
+
+	TryCreateDirectory(config.StoragePath);
+	TryCreateDirectory(coreLogDir);
+	TryCreateDirectory(httpLogDir);
+	TryCreateDirectory(rpcLogDir);
+	TryCreateDirectory(serverLogDir);
+
 #ifndef _WIN32
+	string pidDir = GetDirPath(config.DaemonPidFile);
+	TryCreateDirectory(pidDir);
+
+	uid_t uid = getuid(), targetUID = uid;
+	gid_t gid = getgid(), targetGID = gid;
+
 	signal(SIGPIPE, SIG_IGN);
+
+	shared_ptr<passwd> pwdPtr;
 	if (!config.UserName.empty()) {
+		pwdPtr.reset(getpwnam(config.UserName.c_str()), free);
+		if (!pwdPtr) {
+			fprintf(stderr, "Could not get `uid` and `gid` for user '%s'. Reason: %s\n", config.UserName.c_str(), strerror(errno));
+			exit(EXIT_FAILURE);
+		}
+		targetUID = pwdPtr->pw_uid;
+		targetGID = pwdPtr->pw_gid;
+	}
+
+	if (gid != targetGID || uid != targetUID) {
+		ChownDir(config.StoragePath, targetGID, targetUID);
+		ChownDir(coreLogDir, targetGID, targetUID);
+		ChownDir(httpLogDir, targetGID, targetUID);
+		ChownDir(rpcLogDir, targetGID, targetUID);
+		ChownDir(serverLogDir, targetGID, targetUID);
+		ChownDir(pidDir, targetGID, targetUID);
 		changeUser(config.UserName.c_str());
 	}
+
 	int pidFileFd = -1;
 	if (config.Daemonize) {
 		daemonize();
 		pidFileFd = createPidFile();
 	}
+
 	startServer();
 	if (config.Daemonize) {
 		if (pidFileFd != -1) {

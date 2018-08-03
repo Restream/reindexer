@@ -86,6 +86,7 @@ const (
 	IndexOptArray      = 1 << 6
 	IndexOptDense      = 1 << 5
 	IndexOptAppendable = 1 << 4
+	IndexOptSparse     = 1 << 3
 
 	StorageOptEnabled               = 1
 	StorageOptDropOnFileFormatError = 1 << 1

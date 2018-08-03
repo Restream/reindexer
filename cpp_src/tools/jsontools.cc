@@ -1,11 +1,12 @@
-
 #include <string.h>
 #include <tools/errors.h>
+#include <vector>
 #include "gason/gason.h"
+#include "stringstools.h"
 
 namespace reindexer {
 
-void parseJsonField(const char *name, string &ref, JsonNode *elem) {
+void parseJsonField(const char *name, string &ref, const JsonNode *elem) {
 	if (strcmp(name, elem->key)) return;
 	if (elem->value.getTag() == JSON_STRING) {
 		ref = elem->value.toString();

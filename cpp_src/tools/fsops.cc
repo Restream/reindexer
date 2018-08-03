@@ -133,5 +133,24 @@ FileStatus Stat(const string &path) {
 #endif
 }
 
+bool DirectoryExists(const std::string &directory) {
+	if (!directory.empty()) {
+#ifdef _WIN32
+		if (_access(directory.c_str(), 0) == 0) {
+			struct _stat status;
+			_stat(directory.c_str(), &status);
+			if (status.st_mode & _S_IFDIR) return true;
+		}
+#else
+		if (access(directory.c_str(), F_OK) == 0) {
+			struct stat status;
+			stat(directory.c_str(), &status);
+			if (status.st_mode & S_IFDIR) return true;
+		}
+#endif
+	}
+	return false;
+}
+
 }  // namespace fs
 }  // namespace reindexer

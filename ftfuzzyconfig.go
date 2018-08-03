@@ -43,6 +43,8 @@ type FtFuzzyConfig struct {
 	StopWords []string `json:"stop_words"`
 	// Log level of full text search engine
 	LogLevel int `json:"log_level"`
+	// Extra symbols, which will be threated as parts of word to addition to letters and digits
+	ExtraWordSymbols string `json:"extra_word_symbols"`
 }
 
 func DefaultFtFuzzyConfig() FtFuzzyConfig {
@@ -63,5 +65,6 @@ func DefaultFtFuzzyConfig() FtFuzzyConfig {
 		EnableTranslit:       true,
 		EnableKbLayout:       true,
 		LogLevel:             0,
+		ExtraWordSymbols:     "/-+",
 	}
 }

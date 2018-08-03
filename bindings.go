@@ -393,10 +393,32 @@ func (db *Reindexer) deleteQuery(q *Query) (int, error) {
 	return rawQueryParams.count, err
 }
 
+func (db *Reindexer) resetCaches() {
+	db.lock.RLock()
+	nsArray := make([]*reindexerNamespace, 0, len(db.ns))
+	for _, ns := range db.ns {
+		nsArray = append(nsArray, ns)
+	}
+	db.lock.RUnlock()
+	for _, ns := range nsArray {
+		ns.cacheLock.Lock()
+		if ns.cacheItems != nil {
+			ns.cacheItems = make(map[int]cacheItem)
+		}
+		ns.cacheLock.Unlock()
+		ns.cjsonState.Reset()
+		db.Query(ns.name).Limit(0).Exec().Close()
+	}
+}
+
 func WithCgoLimit(cgoLimit int) interface{} {
 	return bindings.OptionCgoLimit{cgoLimit}
 }
 
 func WithConnPoolSize(connPoolSize int) interface{} {
 	return bindings.OptionConnPoolSize{connPoolSize}
+}
+
+func WithRetryAttempts(read int, write int) interface{} {
+	return bindings.OptionRetryAttempts{read, write}
 }

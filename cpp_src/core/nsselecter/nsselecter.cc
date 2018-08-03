@@ -112,7 +112,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 			}
 		}
 		if (sortByIdxNo >= 0) indexesForCommit.push_back(sortByIdxNo);
-		for (unsigned i = ns_->payloadType_->NumFields(); i < ns_->indexes_.size(); i++) {
+		for (int i = ns_->indexes_.firstCompositePos(); i < ns_->indexes_.totalSize(); i++) {
 			if (indexesForCommit.contains(ns_->indexes_[i]->Fields())) indexesForCommit.push_back(i);
 		}
 		ns_->commit(Namespace::NSCommitContext(*ns_, CommitContext::MakeIdsets | (needSortOrders ? CommitContext::MakeSortOrders : 0),
@@ -461,6 +461,7 @@ void NsSelecter::selectWhere(const QueryEntries &entries, RawQueryResult &result
 	for (const QueryEntry &qe : entries) {
 		TagsPath tagsPath;
 		SelectKeyResults selectResults;
+		bool sparseIndex = false;
 		bool byJsonPath = (qe.idxNo == IndexValueType::SetByJsonPath);
 		if (byJsonPath) {
 			KeyValueType keyType = qe.values.empty() ? KeyValueEmpty : qe.values[0].Type();
@@ -476,6 +477,7 @@ void NsSelecter::selectWhere(const QueryEntries &entries, RawQueryResult &result
 		} else {
 			auto &index = ns_->indexes_[qe.idxNo];
 			fullText = isFullText(index->Type());
+			sparseIndex = index->Opts().IsSparse();
 
 			Index::ResultType type = Index::Optimal;
 			if (is_ft && qe.distinct) throw Error(errQueryExec, "distinct and full text - can't do it");
@@ -496,7 +498,7 @@ void NsSelecter::selectWhere(const QueryEntries &entries, RawQueryResult &result
 			switch (qe.op) {
 				case OpOr:
 					if (!result.size()) throw Error(errQueryExec, "OR operator in first condition");
-					if (byJsonPath) {
+					if (byJsonPath || sparseIndex) {
 						result.back().Append(res);
 					} else {
 						result.back().AppendAndBind(res, ns_->payloadType_, qe.idxNo);
@@ -507,7 +509,7 @@ void NsSelecter::selectWhere(const QueryEntries &entries, RawQueryResult &result
 				case OpNot:
 				case OpAnd:
 					result.push_back(SelectIterator(res, qe.op, qe.distinct, qe.index, fullText));
-					if (!byJsonPath) result.back().Bind(ns_->payloadType_, qe.idxNo);
+					if (!byJsonPath && !sparseIndex) result.back().Bind(ns_->payloadType_, qe.idxNo);
 					break;
 				default:
 					throw Error(errQueryExec, "Unknown operator (code %d) in condition", qe.op);
@@ -536,8 +538,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 	// reserve queryresults, if we have only 1 condition with 1 idset
 	if (ctx.qres->size() == 1 && (*ctx.qres)[0].size() == 1) {
 		unsigned reserve = std::min(unsigned(ctx.qres->at(0).GetMaxIterations()), count);
-
-		result.Items().reserve(reserve);
+        result.Items().reserve(reserve);
 	}
 
 	bool finish = (count == 0) && !sctx.reqMatchedOnceFlag && !calcTotal;
@@ -757,8 +758,8 @@ const string &NsSelecter::getOptimalSortOrder(const QueryEntries &entries) {
 
 int NsSelecter::getCompositeIndex(const FieldsSet &fields) {
 	if (fields.getTagsPathsLength() == 0) {
-		for (size_t fieldIdx = ns_->payloadType_->NumFields(); fieldIdx < ns_->indexes_.size(); fieldIdx++) {
-			if (ns_->indexes_[fieldIdx]->Fields().contains(fields)) return fieldIdx;
+		for (int i = ns_->indexes_.firstCompositePos(); i < ns_->indexes_.totalSize(); i++) {
+			if (ns_->indexes_[i]->Fields().contains(fields)) return i;
 		}
 	}
 	return -1;

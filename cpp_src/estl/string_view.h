@@ -98,6 +98,21 @@ public:
 
 	/**
 	 * @public
+	 * Searches for the first character that matches any of the characters specified in str parameter.
+	 * @param str string of characters to find.
+	 * @param pos position since we start searching.
+	 */
+	size_t find_first_of(const string_view &str, size_t pos) const {
+		for (; pos < size(); ++pos) {
+			for (size_t i = 0; i < str.length(); ++i) {
+				if (ptr_[pos] == str[i]) return pos;
+			}
+		}
+		return npos;
+	}
+
+	/**
+	 * @public
 	 * Compare slices
 	 * @param other string_view to compare
 	 */

@@ -22,11 +22,13 @@ struct IndexOpts {
 	bool IsPK() const;
 	bool IsArray() const;
 	bool IsDense() const;
+	bool IsSparse() const;
 	bool IsAppendable() const;
 
 	IndexOpts& PK(bool value = true);
 	IndexOpts& Array(bool value = true);
 	IndexOpts& Dense(bool value = true);
+	IndexOpts& Sparse(bool value = true);
 	IndexOpts& Appendable(bool value = true);
 	IndexOpts& SetCollateMode(CollateMode mode);
 	CollateMode GetCollateMode() const;

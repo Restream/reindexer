@@ -7,9 +7,14 @@
 #include "loggerwrapper.h"
 #include "net/http/serverconnection.h"
 #include "net/listener.h"
+#include "reindexer_version.h"
+#include "resources_wrapper.h"
 #include "tools/fsops.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
+#if REINDEX_WITH_GPERFTOOLS
+#include <gperftools/malloc_extension_c.h>
+#endif
 
 using std::string;
 using std::stringstream;
@@ -17,9 +22,13 @@ using std::to_string;
 
 namespace reindexer_server {
 
-HTTPServer::HTTPServer(DBManager &dbMgr, const string &webRoot) : dbMgr_(dbMgr), webRoot_(reindexer::fs::JoinPath(webRoot, "")) {}
 HTTPServer::HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper logger, bool allocDebug, bool enablePprof)
-	: dbMgr_(dbMgr), webRoot_(reindexer::fs::JoinPath(webRoot, "")), logger_(logger), allocDebug_(allocDebug), enablePprof_(enablePprof) {}
+	: dbMgr_(dbMgr),
+	  webRoot_(reindexer::fs::JoinPath(webRoot, "")),
+	  logger_(logger),
+	  allocDebug_(allocDebug),
+	  enablePprof_(enablePprof),
+	  startTs_(std::chrono::system_clock::now()) {}
 HTTPServer::~HTTPServer() {}
 
 enum { ModeUpdate, ModeInsert, ModeUpsert, ModeDelete };
@@ -449,7 +458,7 @@ int HTTPServer::PostIndex(http::Context &ctx) {
 	if (nsDefIt != nsDefs.end()) {
 		auto &indexes = nsDefIt->indexes;
 		auto foundIndexIt =
-			std::find_if(indexes.begin(), indexes.end(), [&newIdxName](const IndexDef &idx) { return idx.name == newIdxName; });
+			std::find_if(indexes.begin(), indexes.end(), [&newIdxName](const IndexDef &idx) { return idx.name_ == newIdxName; });
 		if (foundIndexIt != indexes.end()) {
 			http::HttpStatus httpStatus(http::StatusBadRequest, "Index already exists");
 
@@ -495,24 +504,56 @@ int HTTPServer::DeleteIndex(http::Context &ctx) {
 	return jsonStatus(ctx);
 }
 
-int HTTPServer::Check(http::Context &ctx) { return ctx.String(http::StatusOK, "Hello world"); }
+int HTTPServer::Check(http::Context &ctx) {
+	WrSerializer ser;
+	ser.Printf("{");
+
+	long startTs = std::chrono::duration_cast<std::chrono::seconds>(startTs_.time_since_epoch()).count();
+	long uptime = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - startTs_).count();
+
+	ser.Printf("\"version\":\"%s\",", REINDEX_VERSION);
+	ser.Printf("\"start_time\": %ld,", startTs);
+	ser.Printf("\"uptime\": %ld", uptime);
+
+#ifdef REINDEX_WITH_GPERFTOOLS
+	size_t val = 0;
+	MallocExtension_GetNumericProperty("generic.current_allocated_bytes", &val);
+	ser.Printf(",\"current_allocated_bytes\":\"%ld\",", long(val));
+
+	MallocExtension_GetNumericProperty("generic.heap_size", &val);
+	ser.Printf("\"heap_size\":\"%ld\",", long(val));
+
+	MallocExtension_GetNumericProperty("tcmalloc.pageheap_free_bytes", &val);
+	ser.Printf("\"pageheap_free\":\"%ld\",", long(val));
+
+	MallocExtension_GetNumericProperty("tcmalloc.pageheap_unmapped_bytes", &val);
+	ser.Printf("\"pageheap_unmapped\":\"%ld\"", long(val));
+#endif
+
+	ser.Printf("}");
+
+	return ctx.JSON(http::StatusOK, ser.Slice());
+}
 int HTTPServer::DocHandler(http::Context &ctx) {
 	string path = ctx.request->path.substr(1).ToString();
 	string target = webRoot_ + path;
 
-	switch (fs::Stat(target)) {
+	switch (web::stat(target)) {
 		case fs::StatError:
 			target += "/index.html";
 			break;
+
 		case fs::StatDir:
 			if (!path.empty() && path.back() != '/') {
 				return ctx.Redirect((path += '/').c_str());
 			}
 
 			target += "index.html";
-			return ctx.File(http::StatusOK, target.c_str());
+			return web::file(ctx, http::StatusOK, target);
+			break;
+
 		case fs::StatFile:
-			return ctx.File(http::StatusOK, target.c_str());
+			return web::file(ctx, http::StatusOK, target);
 	}
 
 	char *targetPtr = &target[0];
@@ -524,8 +565,8 @@ int HTTPServer::DocHandler(http::Context &ctx) {
 			break;
 		}
 
-		if (fs::Stat(targetPtr) == fs::StatFile) {
-			return ctx.File(http::StatusOK, targetPtr);
+		if (web::stat(targetPtr) == fs::StatFile) {
+			return web::file(ctx, http::StatusOK, targetPtr);
 		}
 
 		ptr1 = strrchr(targetPtr, '/');
@@ -544,7 +585,7 @@ int HTTPServer::DocHandler(http::Context &ctx) {
 		memmove(ptr2 + 1, ptr1 + 1, len);
 	}
 
-	return ctx.File(http::StatusOK, target.c_str());
+	return web::file(ctx, http::StatusOK, target.c_str());
 }
 
 int HTTPServer::NotFoundHandler(http::Context &ctx) {

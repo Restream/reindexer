@@ -34,6 +34,15 @@ func (indexOpts *IndexOptions) Dense(value bool) *IndexOptions {
 	return indexOpts
 }
 
+func (indexOpts *IndexOptions) Sparse(value bool) *IndexOptions {
+	if value {
+		*indexOpts |= IndexOptions(IndexOptSparse)
+	} else {
+		*indexOpts &= ^IndexOptions(IndexOptSparse)
+	}
+	return indexOpts
+}
+
 func (indexOpts *IndexOptions) Appendable(value bool) *IndexOptions {
 	if value {
 		*indexOpts |= IndexOptions(IndexOptAppendable)
@@ -53,6 +62,10 @@ func (indexOpts *IndexOptions) IsArray() bool {
 
 func (indexOpts *IndexOptions) IsDense() bool {
 	return uint8(*indexOpts)&IndexOptDense != 0
+}
+
+func (indexOpts *IndexOptions) IsSparse() bool {
+	return uint8(*indexOpts)&IndexOptSparse != 0
 }
 
 func (indexOpts *IndexOptions) IsAppendable() bool {
@@ -152,6 +165,10 @@ type RawBinding interface {
 	Ping() error
 }
 
+type RawBindingChanging interface {
+	OnChangeCallback(f func())
+}
+
 var availableBindings = make(map[string]RawBinding)
 
 func RegisterBinding(name string, binding RawBinding) {
@@ -173,4 +190,9 @@ type OptionCgoLimit struct {
 
 type OptionConnPoolSize struct {
 	ConnPoolSize int
+}
+
+type OptionRetryAttempts struct {
+	Read  int
+	Write int
 }

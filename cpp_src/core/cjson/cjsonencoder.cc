@@ -204,12 +204,12 @@ bool CJsonEncoder::getValueFromTuple(Serializer &rdser, const TagsPath &fieldTag
 		if (depthLevel >= static_cast<int>(fieldTags.size())) return false;
 		arrayElements = arrayElements && (tag.Name() == 0);
 		if (tagType == TAG_OBJECT) {
-			int depLvl = depthLevel++;
-			if ((depLvl == depthLevelInitial) || (fieldTags[depLvl] == tag.Name()) || arrayElements) {
+			if ((depthLevel == depthLevelInitial) || (fieldTags[depthLevel] == tag.Name()) || arrayElements) {
+				++depthLevel;
 				while (getValueFromTuple(rdser, fieldTags, pl, res, arrayElements)) {
 				}
 			} else {
-				return false;
+				skipCjsonTag(tag, rdser);
 			}
 		} else {
 			if ((fieldTags[depthLevel] == tag.Name()) || arrayElements) {

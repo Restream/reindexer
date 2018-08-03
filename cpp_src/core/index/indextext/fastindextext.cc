@@ -47,44 +47,6 @@ void FastIndexText<T>::buildTyposMap() {
 	typos_.shrink_to_fit();
 }
 
-// Generic implemetation for string index
-template <typename T>
-h_vector<pair<string_view, int>, 8> FastIndexText<T>::getDocFields(const typename T::key_type &doc, vector<unique_ptr<string>> &) {
-	return {{string_view(*doc.get()), 0}};
-}
-
-// Specific implemetation for composite index
-template <>
-h_vector<pair<string_view, int>, 8> FastIndexText<unordered_payload_map<Index::KeyEntryPlain>>::getDocFields(
-	const typename unordered_payload_map<Index::KeyEntryPlain>::key_type &doc, vector<unique_ptr<string>> &strsBuf) {
-	ConstPayload pl(this->payloadType_, doc);
-
-	int fieldPos = 0;
-	size_t tagsPathIdx = 0;
-	h_vector<pair<string_view, int>, 8> ret;
-
-	for (auto field : fields_) {
-		KeyRefs krefs;
-		if (field == IndexValueType::SetByJsonPath) {
-			assert(tagsPathIdx < fields_.getTagsPathsLength());
-			pl.GetByJsonPath(fields_.getTagsPath(tagsPathIdx++), krefs);
-		} else {
-			pl.Get(field, krefs);
-		}
-		for (auto kref : krefs) {
-			if (kref.Type() != KeyValueString) {
-				strsBuf.emplace_back(unique_ptr<string>(new string(kref.As<string>())));
-				ret.push_back({*strsBuf.back().get(), fieldPos});
-			} else {
-				p_string pstr(kref);
-				ret.push_back({string_view(pstr.data(), pstr.length()), fieldPos});
-			}
-		}
-		fieldPos++;
-	}
-	return ret;
-}
-
 template <typename T>
 void FastIndexText<T>::buildWordsMap(fast_hash_map<string, WordEntry> &words_um) {
 	int maxIndexWorkers = !this->opts_.IsDense() ? std::thread::hardware_concurrency() : 0;
@@ -110,7 +72,7 @@ void FastIndexText<T>::buildWordsMap(fast_hash_map<string, WordEntry> &words_um)
 #else
 		this->vdocs_.push_back({&doc.second, {}, {}});
 #endif
-		vdocsTexts.emplace_back(getDocFields(doc.first, bufStrs));
+		vdocsTexts.emplace_back(this->getDocFields(doc.first, bufStrs));
 	}
 
 	int fieldscount = std::max(1, int(this->fields_.size()));
@@ -128,7 +90,7 @@ void FastIndexText<T>::buildWordsMap(fast_hash_map<string, WordEntry> &words_um)
 					this->vdocs_[j].mostFreqWordCount.insert(this->vdocs_[j].mostFreqWordCount.begin(), fieldscount, 0.0);
 
 					for (size_t field = 0; field < vdocsTexts[j].size(); ++field) {
-						splitWithPos(vdocsTexts[j][field].first.ToString(), str, wrds);
+						splitWithPos(vdocsTexts[j][field].first, str, wrds,this->cfg_->extraWordSymbols);
 						int rfield = vdocsTexts[j][field].second;
 						assert(rfield < fieldscount);
 
@@ -299,10 +261,10 @@ void FastIndexText<T>::processVariants(FtSelectContext &ctx) {
 								suffixLen ? kSuffixMinProc : kPrefixMinProc);
 
 			auto it = ctx.foundWords.find(wordId);
-			if (it == ctx.foundWords.end()) {
+			if (it == ctx.foundWords.end() || it->second.first != ctx.rawResults.size() - 1) {
 				res.push_back({&words_[wordId].vids_, keyIt->first, proc, suffixes_.virtual_word_len(wordId)});
 				res.idsCnt_ += words_[wordId].vids_.size();
-				ctx.foundWords.emplace(wordId, std::make_pair(ctx.rawResults.size() - 1, res.size() - 1));
+				ctx.foundWords[wordId] = std::make_pair(ctx.rawResults.size() - 1, res.size() - 1);
 				if (GetConfig()->logLevel >= LogTrace)
 					logPrintf(LogTrace, " matched %s '%s' of word '%s', %d vids, %d%%", suffixLen ? "suffix" : "prefix", keyIt->first, word,
 							  int(words_[wordId].vids_.size()), proc);
@@ -623,7 +585,7 @@ void FastIndexText<T>::Commit() {
 	size_t szCnt = 0;
 	vector<unique_ptr<string>> bufStrs;
 	for (auto &doc : this->idx_map) {
-		for (auto f : getDocFields(doc.first, bufStrs)) szCnt += f.first.length();
+		for (auto f : this->getDocFields(doc.first, bufStrs)) szCnt += f.first.length();
 	}
 
 	auto tm2 = high_resolution_clock::now();

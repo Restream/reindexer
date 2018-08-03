@@ -114,7 +114,13 @@ enum {
 	kResultsWithPayloadTypes = 0x8,
 };
 
-typedef enum IndexOpt { kIndexOptPK = 1 << 7, kIndexOptArray = 1 << 6, kIndexOptDense = 1 << 5, kIndexOptAppendable = 1 << 4 } IndexOpt;
+typedef enum IndexOpt {
+	kIndexOptPK = 1 << 7,
+	kIndexOptArray = 1 << 6,
+	kIndexOptDense = 1 << 5,
+	kIndexOptAppendable = 1 << 4,
+	kIndexOptSparse = 1 << 3
+} IndexOpt;
 
 typedef enum StotageOpt {
 	kStorageOptEnabled = 1 << 0,

@@ -18,9 +18,27 @@ tags:
   description: "Indexes management"
 - name: "queries"
   description: "Queries to reindexer (dsl/sql)"
+- name: "system"
+  description: "Get system information"
 schemes:
 - "http"
 paths:
+  /check:
+    get:
+      tags:
+      - "system"
+      summary: "Get system information"
+      description: ""
+      operationId: "getSysInfo"
+      produces:
+      - "application/json"
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/SysInfo"
+        400:
+          description: "Invalid arguments supplied"
   /db:
     post:
       tags:
@@ -507,6 +525,30 @@ paths:
           description: "Invalid status value"
 
 definitions:
+  SysInfo:
+    type: "object"
+    properties:
+      version:
+        type: "string"
+        description: "Server version"
+      uptime:
+        type: "integer"
+        description: "Server uptime in seconds"
+      start_time:
+        type: "integer"
+        description: "Server start time in unix timestamp"
+      heap_size:
+        type: "integer"
+        description: "Current heap size in bytes"
+      current_allocated_bytes:
+        type: "integer"
+        description: "Current inuse allocated memory size in bytes"
+      pageheap_free:
+        type: "integer"
+        description: "Heap free size in bytes"
+      pageheap_unmapped:
+        type: "integer"
+        description: "Unmapped free heap size in bytes"
   Databases:
     type: "object"
     properties:
@@ -585,6 +627,8 @@ definitions:
         type: "boolean"
         default: false
       is_dense:
+        type: "boolean"
+      is_sparse:
         type: "boolean"
       is_appendable:
         type: "boolean"

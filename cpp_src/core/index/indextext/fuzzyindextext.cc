@@ -52,7 +52,7 @@ void FuzzyIndexText<T>::Commit() {
 		this->vdocs_.push_back({&doc.second, {}, {}});
 #endif
 		for (auto& r : res) {
-			engine_.AddData(r.first, this->vdocs_.size() - 1, r.second);
+			engine_.AddData(r.first, this->vdocs_.size() - 1, r.second, this->cfg_->extraWordSymbols);
 		}
 	}
 	engine_.Commit();

@@ -5,13 +5,11 @@
 #include "core/reindexer.h"
 #include "dbwrapper.h"
 #include "debug/backtrace.h"
+#include "reindexer_version.h"
 #include "tools/logger.h"
 
 using args::Options;
 using namespace reindexer_tool;
-
-#define STR_EXPAND(tok) #tok
-#define STR(tok) STR_EXPAND(tok)
 
 int llevel;
 
@@ -76,7 +74,7 @@ int main(int argc, char* argv[]) {
 	signal(SIGPIPE, SIG_IGN);
 #endif
 	if (!args::get(command).length() && !args::get(fileName).length())
-		std::cout << "Reindexer command line tool version " << STR(REINDEX_VERSION) << std::endl;
+		std::cout << "Reindexer command line tool version " << REINDEX_VERSION << std::endl;
 
 	if (dsn.compare(0, 9, "cproto://") == 0) {
 		DBWrapper<reindexer::client::Reindexer> db(args::get(outFileName), args::get(fileName), args::get(command));

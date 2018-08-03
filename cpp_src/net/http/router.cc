@@ -100,11 +100,16 @@ static const char *lookupContentType(const char *path) {
 	return "application/octet-stream";
 }
 
-int Context::File(int code, const char *path) {
+int Context::File(int code, const char *path, const string_view& data) {
 	std::string content;
 
-	if (fs::ReadFile(path, content) < 0) {
-		return String(http::StatusNotFound, "File not found");
+
+	if (data.length() == 0) {
+		if (fs::ReadFile(path, content) < 0) {
+			return String(http::StatusNotFound, "File not found");
+		}
+	} else {
+		content.assign(data.data(), data.length());
 	}
 
 	writer->SetContentLength(content.size());

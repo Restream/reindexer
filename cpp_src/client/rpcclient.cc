@@ -16,9 +16,6 @@ const int kMaxClientConnections = 4;
 RPCClient::RPCClient() {
 	stop_.set(loop_);
 	curConnIdx_ = -1;
-	for (int i = 0; i < kMaxClientConnections; i++) {
-		connections_.push_back(std::unique_ptr<cproto::ClientConnection>(new cproto::ClientConnection(loop_)));
-	}
 }
 
 RPCClient::~RPCClient() { Stop(); }
@@ -61,12 +58,16 @@ void RPCClient::run() {
 		sig.loop.break_loop();
 	});
 	stop_.start();
+	for (int i = 0; i < kMaxClientConnections; i++) {
+		connections_.push_back(std::unique_ptr<cproto::ClientConnection>(new cproto::ClientConnection(loop_)));
+	}
 
 	while (!terminate) {
 		checkConnections();
 		if (curConnIdx_ == -1) curConnIdx_ = 0;
 		loop_.run();
 	}
+	connections_.clear();
 }
 
 void RPCClient::checkConnections() {
@@ -272,9 +273,9 @@ shared_ptr<Namespace> RPCClient::getNamespace(const string& nsName) {
 		nsMutex_.unlock();
 		QueryResults qr;
 		Select(Query(nsName).Limit(1), qr);
+	} else {
+		nsMutex_.unlock();
 	}
-	nsMutex_.unlock();
-
 	assert(nsIt->second);
 	return nsIt->second;
 }

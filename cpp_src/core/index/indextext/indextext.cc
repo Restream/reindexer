@@ -143,7 +143,7 @@ SelectKeyResults IndexText<T>::SelectKey(const KeyValues &keys, CondType conditi
 	}
 
 	// STEP 1: Parse search query dsl
-	FtDSLQuery dsl(this->ftFields_, this->cfg_->stopWords);
+	FtDSLQuery dsl(this->ftFields_, this->cfg_->stopWords, this->cfg_->extraWordSymbols);
 	dsl.parse(keys[0].As<string>());
 	auto mergedIds = Select(ftctx, dsl);
 

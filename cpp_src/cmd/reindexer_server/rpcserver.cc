@@ -4,11 +4,13 @@
 #include "net/cproto/cproto.h"
 #include "net/cproto/serverconnection.h"
 #include "net/listener.h"
+#include "reindexer_version.h"
 
 namespace reindexer_server {
 
-RPCServer::RPCServer(DBManager &dbMgr) : dbMgr_(dbMgr) {}
-RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper logger, bool allocDebug) : dbMgr_(dbMgr), logger_(logger), allocDebug_(allocDebug) {}
+RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper logger, bool allocDebug)
+	: dbMgr_(dbMgr), logger_(logger), allocDebug_(allocDebug), startTs_(std::chrono::system_clock::now()) {}
+
 RPCServer::~RPCServer() {}
 
 Error RPCServer::Ping(cproto::Context &) {
@@ -35,6 +37,9 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 		return status;
 	}
 	ctx.SetClientData(clientData);
+	int64_t startTs = std::chrono::duration_cast<std::chrono::seconds>(startTs_.time_since_epoch()).count();
+
+	ctx.Return({cproto::Arg(p_string(REINDEX_VERSION)), cproto::Arg(startTs)});
 
 	return db.length() ? OpenDatabase(ctx, db) : 0;
 }
@@ -140,8 +145,10 @@ Error RPCServer::DropNamespace(cproto::Context &ctx, p_string ns) {
 }
 
 Error RPCServer::CloseNamespace(cproto::Context &ctx, p_string ns) {
-	//
-	return getDB(ctx, kRoleDataRead)->CloseNamespace(ns.toString());
+	// Do not close.
+	// TODO: add reference counters
+	// return getDB(ctx, kRoleDataRead)->CloseNamespace(ns.toString());
+	return getDB(ctx, kRoleDataRead)->Commit(ns.toString());
 }
 
 Error RPCServer::EnumNamespaces(cproto::Context &ctx) {

@@ -17,6 +17,7 @@
 #include <ws2tcpip.h>
 
 #include <direct.h>
+#include <io.h>
 
 #define getcwd _getcwd
 #define mkdir(a, b) _mkdir(a)

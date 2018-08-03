@@ -18,6 +18,8 @@ void BaseFTConfig::parseBase(const JsonNode *elem) {
 	parseJsonField("enable_kb_layout", enableKbLayout, elem);
 	parseJsonField("merge_limit", mergeLimit, elem, 0, 65535);
 	parseJsonField("log_level", logLevel, elem, 0, 5);
+	parseJsonField("extra_word_symbols", extraWordSymbols, elem);
+
 	if (!strcmp("stop_words", elem->key)) {
 		if (elem->value.getTag() != JSON_ARRAY) {
 			throw Error(errParseJson, "Expected array value of setting 'stop_words' of ft1 config");

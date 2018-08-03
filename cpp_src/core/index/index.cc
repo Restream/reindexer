@@ -11,7 +11,7 @@ Index::Index(IndexType type, const string& name, const IndexOpts& opts, const Pa
 	: type_(type), name_(name), opts_(opts), payloadType_(payloadType), fields_(fields) {
 	IndexDef def;
 	def.FromType(type);
-	logPrintf(LogTrace, "Index::Index (%s,%s,%s)  %s%s%s", def.indexType.c_str(), def.fieldType.c_str(), name.c_str(),
+	logPrintf(LogTrace, "Index::Index (%s,%s,%s)  %s%s%s", def.indexType_.c_str(), def.fieldType_.c_str(), name.c_str(),
 			  opts.IsPK() ? ",pk" : "", opts.IsDense() ? ",dense" : "", opts.IsArray() ? ",array" : "");
 }
 

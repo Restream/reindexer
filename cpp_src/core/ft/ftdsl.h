@@ -36,7 +36,8 @@ struct FtDSLEntry {
 
 class FtDSLQuery : public h_vector<FtDSLEntry> {
 public:
-	FtDSLQuery(const fast_hash_map<string, int> &fields, const fast_hash_set<string> &stopWords) : fields_(fields), stopWords_(stopWords) {}
+	FtDSLQuery(const fast_hash_map<string, int> &fields, const fast_hash_set<string> &stopWords, const string &extraWordSymbols)
+		: fields_(fields), stopWords_(stopWords), extraWordSymbols_(extraWordSymbols) {}
 	void parse(wstring &utf16str);
 	void parse(const string &q);
 
@@ -48,6 +49,7 @@ protected:
 
 	const fast_hash_map<string, int> &fields_;
 	const fast_hash_set<string> &stopWords_;
+	const string &extraWordSymbols_;
 };
 
 }  // namespace reindexer

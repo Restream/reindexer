@@ -1,13 +1,14 @@
 package cproto
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"net"
 	"sync"
-
-	"bufio"
-	"bytes"
+	"sync/atomic"
+	"time"
 
 	"github.com/restream/reindexer/cjson"
 )
@@ -62,6 +63,8 @@ type connection struct {
 
 	err   error
 	errCh chan struct{}
+
+	lastReadStamp int64
 }
 
 func newConnection(owner *NetCProto) (c *connection, err error) {
@@ -79,19 +82,11 @@ func newConnection(owner *NetCProto) (c *connection, err error) {
 	}
 	if err = c.connect(); err != nil {
 		c.onError(err)
+		return
 	}
-
-	password, username, path := "", "", owner.url.Path
-	if owner.url.User != nil {
-		username = owner.url.User.Username()
-		password, _ = owner.url.User.Password()
-	}
-	if len(path) > 0 && path[0] == '/' {
-		path = path[1:]
-	}
-
-	if _, err = c.rpcCall(cmdLogin, username, password, path); err != nil {
-		c.err = err
+	if err = c.login(owner); err != nil {
+		c.onError(err)
+		return
 	}
 	return
 }
@@ -109,6 +104,29 @@ func (c *connection) connect() (err error) {
 	return
 }
 
+func (c *connection) login(owner *NetCProto) (err error) {
+	password, username, path := "", "", owner.url.Path
+	if owner.url.User != nil {
+		username = owner.url.User.Username()
+		password, _ = owner.url.User.Password()
+	}
+	if len(path) > 0 && path[0] == '/' {
+		path = path[1:]
+	}
+
+	buf, err := c.rpcCall(cmdLogin, username, password, path)
+	if err != nil {
+		c.err = err
+		return
+	}
+	defer buf.Free()
+
+	if len(buf.args) > 1 {
+		owner.checkServerStartTime(buf.args[1].(int64))
+	}
+	return
+}
+
 func (c *connection) readLoop() {
 	var err error
 	var hdr = make([]byte, cprotoHdrLen)
@@ -117,6 +135,7 @@ func (c *connection) readLoop() {
 			c.onError(err)
 			return
 		}
+		atomic.StoreInt64(&c.lastReadStamp, time.Now().Unix())
 	}
 }
 
@@ -166,8 +185,11 @@ func (c *connection) write(buf []byte) {
 
 func (c *connection) writeLoop() {
 	for {
-		<-c.wrKick
-
+		select {
+		case <-c.errCh:
+			return
+		case <-c.wrKick:
+		}
 		c.lock.Lock()
 		if c.wrBuf.Len() == 0 {
 			err := c.err
@@ -229,12 +251,6 @@ func (c *connection) rpcCall(cmd int, args ...interface{}) (buf *NetBuffer, err 
 	return
 }
 
-func (c *connection) rpcCallNoResults(cmd int, args ...interface{}) error {
-	buf, err := c.rpcCall(cmd, args...)
-	buf.Free()
-	return err
-}
-
 func (c *connection) onError(err error) {
 	c.lock.Lock()
 	if c.err == nil {
@@ -242,7 +258,11 @@ func (c *connection) onError(err error) {
 		if c.conn != nil {
 			c.conn.Close()
 		}
-		close(c.errCh)
+		select {
+		case <-c.errCh:
+		default:
+			close(c.errCh)
+		}
 	}
 	c.lock.Unlock()
 }
@@ -252,4 +272,9 @@ func (c *connection) hasError() (has bool) {
 	has = c.err != nil
 	c.lock.RUnlock()
 	return
+}
+
+func (c *connection) lastReadTime() time.Time {
+	stamp := atomic.LoadInt64(&c.lastReadStamp)
+	return time.Unix(stamp, 0)
 }

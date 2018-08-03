@@ -14,7 +14,8 @@ using std::string;
 bool is_dslbegin(int ch) {
 	return IsAlpha(ch) || IsDigit(ch) || ch == '+' || ch == '-' || ch == '*' || ch == '\'' || ch == '\"' || ch == '@' || ch == '=';
 }
-bool is_term(int ch) { return IsAlpha(ch) || IsDigit(ch) || ch == '+' || ch == '-' || ch == '/'; }
+bool is_term(int ch, const string &extraWordSymbols) { return IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != string::npos; }
+
 void FtDSLQuery::parse(const string &q) {
 	wstring utf16str;
 	utf8_to_utf16(q, utf16str);
@@ -79,7 +80,7 @@ void FtDSLQuery::parse(wstring &utf16str) {
 			it++;
 		}
 		auto begIt = it;
-		while (it != utf16str.end() && is_term(*it)) {
+		while (it != utf16str.end() && is_term(*it, extraWordSymbols_)) {
 			*it = ToLower(*it);
 			check_for_replacement(*it);
 			it++;

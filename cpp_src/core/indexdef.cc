@@ -4,6 +4,7 @@
 #include "tools/errors.h"
 #include "tools/jsontools.h"
 #include "tools/serializer.h"
+#include "tools/stringstools.h"
 
 namespace reindexer {
 
@@ -51,32 +52,52 @@ std::unordered_map<CollateMode, const string, std::hash<int>, std::equal_to<int>
 
 // clang-format on
 
+JsonPaths::JsonPaths() {}
+JsonPaths::JsonPaths(const string_view &jsonPath) { split(jsonPath, ",", false, *this); }
+void JsonPaths::Set(const string_view &other) { split(other, ",", false, *this); }
+void JsonPaths::Set(const vector<string> &other) { vector::operator=(other); }
+
+string JsonPaths::AsSerializedString() const {
+	string output;
+	for (size_t i = 0; i < size(); ++i) {
+		const string &jsonPath(at(i));
+		if (jsonPath.empty()) continue;
+		output += jsonPath;
+		if (i != size() - 1) output += ',';
+	}
+	return output;
+}
+
+IndexDef::IndexDef() {}
+IndexDef::IndexDef(const string &name, const string_view &jsonPaths, const string &indexType, const string &fieldType, const IndexOpts opts)
+	: name_(name), jsonPaths_(jsonPaths), indexType_(indexType), fieldType_(fieldType), opts_(opts) {}
+
 IndexType IndexDef::Type() const {
-	string iType = indexType;
+	string iType = indexType_;
 	if (iType == "") {
-		if (fieldType == "double") iType = "tree";
-		if (fieldType != "double") iType = "hash";
-		if (fieldType == "bool") iType = "-";
+		if (fieldType_ == "double") iType = "tree";
+		if (fieldType_ != "double") iType = "hash";
+		if (fieldType_ == "bool") iType = "-";
 	}
 	for (auto &it : availableIndexes) {
-		if (fieldType == it.second.fieldType && iType == it.second.indexType) return it.first;
+		if (fieldType_ == it.second.fieldType && iType == it.second.indexType) return it.first;
 	}
 
-	throw Error(errParams, "Unsupported combination of field '%s' type '%s' and index type '%s'", name.c_str(), fieldType.c_str(),
-				indexType.c_str());
+	throw Error(errParams, "Unsupported combination of field '%s' type '%s' and index type '%s'", name_.c_str(), fieldType_.c_str(),
+				indexType_.c_str());
 }
 
 void IndexDef::FromType(IndexType type) {
 	auto &it = availableIndexes.at(type);
-	fieldType = it.fieldType;
-	indexType = it.indexType;
+	fieldType_ = it.fieldType;
+	indexType_ = it.indexType;
 }
 
 const vector<string> &IndexDef::Conditions() const { return availableIndexes.find(Type())->second.conditions; }
 bool isComposite(IndexType type) { return availableIndexes.at(type).caps & CapComposite; }
 bool isFullText(IndexType type) { return availableIndexes.at(type).caps & CapFullText; }
 bool isSortable(IndexType type) { return availableIndexes.at(type).caps & CapSortable; }
-string IndexDef::getCollateMode() const { return availableCollates.at(opts.GetCollateMode()); }
+string IndexDef::getCollateMode() const { return availableCollates.at(opts_.GetCollateMode()); }
 
 Error IndexDef::FromJSON(char *json) {
 	JsonAllocator jalloc;
@@ -95,26 +116,30 @@ Error IndexDef::FromJSON(JsonValue &jvalue) {
 	try {
 		if (jvalue.getTag() != JSON_OBJECT) throw Error(errParseJson, "Expected json object in 'indexes' key");
 		CollateMode collateValue = CollateNone;
-		bool isPk = false, isArray = false, isDense = false, isAppendable = false;
+		bool isPk = false, isArray = false, isDense = false, isSparse = false, isAppendable = false;
 		for (auto elem : jvalue) {
-			parseJsonField("name", name, elem);
-			parseJsonField("json_path", jsonPath, elem);
-			parseJsonField("field_type", fieldType, elem);
-			parseJsonField("index_type", indexType, elem);
+			parseJsonField("name", name_, elem);
+			parseJsonField("field_type", fieldType_, elem);
+			parseJsonField("index_type", indexType_, elem);
 			parseJsonField("is_pk", isPk, elem);
 			parseJsonField("is_array", isArray, elem);
 			parseJsonField("is_dense", isDense, elem);
+			parseJsonField("is_sparse", isSparse, elem);
 			parseJsonField("is_appendable", isAppendable, elem);
+
+			string jsonPath;
+			parseJsonField("json_path", jsonPath, elem);
+			if (!jsonPath.empty()) jsonPaths_.Set(jsonPath);
 
 			string collateStr;
 			parseJsonField("collate_mode", collateStr, elem);
-			if (collateStr != "") {
+			if (!collateStr.empty()) {
 				bool found = false;
 				for (auto it : availableCollates) {
 					if (it.second == collateStr) {
 						found = true;
 						collateValue = it.first;
-						opts.SetCollateMode(collateValue);
+						opts_.SetCollateMode(collateValue);
 						if (collateValue != CollateCustom) break;
 					}
 				}
@@ -125,12 +150,12 @@ Error IndexDef::FromJSON(JsonValue &jvalue) {
 				string sortOrderLetters;
 				parseJsonField("sort_order_letters", sortOrderLetters, elem);
 				if (!sortOrderLetters.empty()) {
-					opts.collateOpts_ = CollateOpts(sortOrderLetters);
+					opts_.collateOpts_ = CollateOpts(sortOrderLetters);
 					break;
 				}
 			}
 		}
-		opts.PK(isPk).Array(isArray).Dense(isDense).Appendable(isAppendable);
+		opts_.PK(isPk).Array(isArray).Dense(isDense).Sparse(isSparse).Appendable(isAppendable);
 	} catch (const Error &err) {
 		return err;
 	}
@@ -140,16 +165,17 @@ Error IndexDef::FromJSON(JsonValue &jvalue) {
 
 void IndexDef::GetJSON(WrSerializer &ser, bool describeCompat) const {
 	ser.PutChar('{');
-	ser.Printf("\"name\":\"%s\",", name.c_str());
-	ser.Printf("\"json_path\":\"%s\",", jsonPath.c_str());
-	ser.Printf("\"field_type\":\"%s\",", fieldType.c_str());
-	ser.Printf("\"index_type\":\"%s\",", indexType.c_str());
-	ser.Printf("\"is_pk\":%s,", opts.IsPK() ? "true" : "false");
-	ser.Printf("\"is_array\":%s,", opts.IsArray() ? "true" : "false");
-	ser.Printf("\"is_dense\":%s,", opts.IsDense() ? "true" : "false");
-	ser.Printf("\"is_appendable\":%s,", opts.IsAppendable() ? "true" : "false");
+	ser.Printf("\"name\":\"%s\",", name_.c_str());
+	ser.Printf("\"json_path\":\"%s\",", jsonPaths_.AsSerializedString().c_str());
+	ser.Printf("\"field_type\":\"%s\",", fieldType_.c_str());
+	ser.Printf("\"index_type\":\"%s\",", indexType_.c_str());
+	ser.Printf("\"is_pk\":%s,", opts_.IsPK() ? "true" : "false");
+	ser.Printf("\"is_array\":%s,", opts_.IsArray() ? "true" : "false");
+	ser.Printf("\"is_dense\":%s,", opts_.IsDense() ? "true" : "false");
+	ser.Printf("\"is_sparse\":%s,", opts_.IsSparse() ? "true" : "false");
+	ser.Printf("\"is_appendable\":%s,", opts_.IsAppendable() ? "true" : "false");
 	ser.Printf("\"collate_mode\":\"%s\",", getCollateMode().c_str());
-	ser.Printf("\"sort_order_letters\":\"%s\"", opts.collateOpts_.sortOrderTable.GetSortOrderCharacters().c_str());
+	ser.Printf("\"sort_order_letters\":\"%s\"", opts_.collateOpts_.sortOrderTable.GetSortOrderCharacters().c_str());
 
 	if (describeCompat) {
 		// extra data for support describe.

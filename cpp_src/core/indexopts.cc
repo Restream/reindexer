@@ -18,6 +18,7 @@ bool IndexOpts::IsPK() const { return options & kIndexOptPK; }
 bool IndexOpts::IsArray() const { return options & kIndexOptArray; }
 bool IndexOpts::IsDense() const { return options & kIndexOptDense; }
 bool IndexOpts::IsAppendable() const { return options & kIndexOptAppendable; }
+bool IndexOpts::IsSparse() const { return options & kIndexOptSparse; }
 CollateMode IndexOpts::GetCollateMode() const { return static_cast<CollateMode>(collateOpts_.mode); }
 
 IndexOpts& IndexOpts::PK(bool value) {
@@ -32,6 +33,11 @@ IndexOpts& IndexOpts::Array(bool value) {
 
 IndexOpts& IndexOpts::Dense(bool value) {
 	options = value ? options | kIndexOptDense : options & ~(kIndexOptDense);
+	return *this;
+}
+
+IndexOpts& IndexOpts::Sparse(bool value) {
+	options = value ? options | kIndexOptSparse : options & ~(kIndexOptSparse);
 	return *this;
 }
 

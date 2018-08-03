@@ -92,6 +92,7 @@ class HelperMixin(object):
             'is_pk': is_pk,
             'is_array': False,
             'is_dense': True,
+            'is_sparse': False,
             'is_appendable': True,
             'collate_mode': 'none',
             'sort_order_letters': ''

@@ -15,7 +15,20 @@ using std::vector;
 
 class string_view;
 class WrSerializer;
+
+class JsonPaths : public vector<string> {
+public:
+	using vector::vector;
+	JsonPaths();
+	JsonPaths(const string_view &jsonPath);
+	void Set(const string_view &other);
+	void Set(const vector<string> &other);
+	string AsSerializedString() const;
+};
+
 struct IndexDef {
+	IndexDef();
+	IndexDef(const string &name, const string_view &jsonPaths, const string &indexType, const string &fieldType, const IndexOpts opts);
 	IndexType Type() const;
 	string getCollateMode() const;
 	const vector<string> &Conditions() const;
@@ -25,11 +38,11 @@ struct IndexDef {
 	void GetJSON(WrSerializer &ser, bool describeCompat = false) const;
 
 public:
-	string name;
-	string jsonPath;
-	string indexType;
-	string fieldType;
-	IndexOpts opts;
+	string name_;
+	JsonPaths jsonPaths_;
+	string indexType_;
+	string fieldType_;
+	IndexOpts opts_;
 };
 
 bool isComposite(IndexType type);

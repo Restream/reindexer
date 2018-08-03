@@ -39,11 +39,11 @@ public:
 
 	void addIndex(const string& name, CompositeIndexType type, const IndexOpts& opts) {
 		reindexer::IndexDef indexDeclr;
-		indexDeclr.name = name;
-		indexDeclr.jsonPath = name;
-		indexDeclr.indexType = indexTypeToName(type);
-		indexDeclr.fieldType = "composite";
-		indexDeclr.opts = opts;
+		indexDeclr.name_ = name;
+		indexDeclr.indexType_ = indexTypeToName(type);
+		indexDeclr.fieldType_ = "composite";
+		indexDeclr.opts_ = opts;
+		indexDeclr.jsonPaths_.Set(name);
 		Error err = reindexer->AddIndex(default_namespace, indexDeclr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		err = reindexer->Commit(default_namespace);

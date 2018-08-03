@@ -20,7 +20,6 @@ struct HTTPClientData : public http::ClientData {
 
 class HTTPServer {
 public:
-	HTTPServer(DBManager &dbMgr, const string &webRoot);
 	HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper logger, bool allocDebug = false, bool enablePprof = false);
 	~HTTPServer();
 
@@ -72,6 +71,7 @@ protected:
 	LoggerWrapper logger_;
 	bool allocDebug_;
 	bool enablePprof_;
+	std::chrono::system_clock::time_point startTs_;
 
 	static const int kDefaultLimit = INT_MAX;
 	static const int kDefaultOffset = 0;

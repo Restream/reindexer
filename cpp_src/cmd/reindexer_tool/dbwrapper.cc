@@ -105,12 +105,13 @@ Error DBWrapper<_DB>::commandDump(const string& command) {
 
 	vector<reindexer::NamespaceDef> allNsDefs, doNsDefs;
 
-	auto err = db_.EnumNamespaces(allNsDefs, true);
+	auto err = db_.EnumNamespaces(allNsDefs, false);
 	if (err) return err;
 
 	if (!parser.End()) {
 		// build list of namespaces for dumped
-		for (auto ns = parser.NextToken(); !parser.End();) {
+		while (!parser.End()) {
+			auto ns = parser.NextToken();
 			auto nsDef =
 				std::find_if(allNsDefs.begin(), allNsDefs.end(), [&ns](const reindexer::NamespaceDef& nsDef) { return ns == nsDef.name; });
 			if (nsDef != allNsDefs.end()) {
@@ -135,12 +136,6 @@ Error DBWrapper<_DB>::commandDump(const string& command) {
 		if (nsDef.name.length() > 0 && nsDef.name[0] == '#') continue;
 
 		file << "-- Dumping namespace '" << nsDef.name << "' ..." << std::endl;
-
-		err = db_.OpenNamespace(nsDef.name, StorageOpts().Enabled());
-		if (err) {
-			std::cerr << "ERROR: " << err.what() << std::endl;
-			continue;
-		}
 
 		wrser.Reset();
 		nsDef.GetJSON(wrser);
@@ -170,9 +165,6 @@ Error DBWrapper<_DB>::commandDump(const string& command) {
 			it.GetJSON(wrser, false);
 			file << "\\UPSERT " << escapeName(nsDef.name) << " " << wrser.Slice() << "\n";
 		}
-
-		err = db_.CloseNamespace(nsDef.name);
-		if (!err.ok()) return err;
 	}
 
 	return errOK;

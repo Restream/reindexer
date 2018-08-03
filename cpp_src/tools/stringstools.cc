@@ -20,17 +20,9 @@ using std::make_pair;
 
 namespace reindexer {
 
-wstring &utf8_to_utf16(const string &src, wstring &dst) {
+wstring &utf8_to_utf16(const string_view &src, wstring &dst) {
 	dst.resize(src.length());
 	auto end = utf8::unchecked::utf8to32(src.begin(), src.end(), dst.begin());
-	dst.resize(std::distance(dst.begin(), end));
-	return dst;
-}
-
-wstring &utf8_to_utf16(const char *src, wstring &dst) {
-	size_t len = strlen(src);
-	dst.resize(len);
-	auto end = utf8::unchecked::utf8to32(src, src + len, dst.begin());
 	dst.resize(std::distance(dst.begin(), end));
 	return dst;
 }
@@ -51,7 +43,7 @@ string utf16_to_utf8(const wstring &src) {
 	return utf16_to_utf8(src, dst);
 }
 
-vector<string> &split(const string &str, const string &delimiters, bool trimEmpty, vector<string> &tokens) {
+vector<string> &split(const string_view &str, const string &delimiters, bool trimEmpty, vector<string> &tokens) {
 	tokens.resize(0);
 
 	for (size_t pos, lastPos = 0;; lastPos = pos + 1) {
@@ -98,7 +90,7 @@ bool is_number(const string &str) {
 	return (i == str.length());
 }
 
-void splitWithPos(const string &str, string &buf, vector<pair<const char *, int>> &words) {
+void splitWithPos(const string_view &str, string &buf, vector<pair<const char *, int>> &words, const string &extraWordSymbols) {
 	buf.resize(str.length());
 	words.resize(0);
 	auto bufIt = buf.begin();
@@ -113,13 +105,13 @@ void splitWithPos(const string &str, string &buf, vector<pair<const char *, int>
 		}
 
 		auto begIt = bufIt;
-		while (it != str.end() && (IsAlpha(ch) || IsDigit(ch) || ch == '+' || ch == '-' || ch == '/')) {
+		while (it != str.end() && (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != string::npos)) {
 			ch = ToLower(ch);
 			check_for_replacement(ch);
 			bufIt = utf8::unchecked::append(ch, bufIt);
 			ch = utf8::unchecked::next(it);
 		}
-		if ((IsAlpha(ch) || IsDigit(ch) || ch == '+' || ch == '-' || ch == '/')) {
+		if ((IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != string::npos)) {
 			ch = ToLower(ch);
 			check_for_replacement(ch);
 
@@ -133,7 +125,7 @@ void splitWithPos(const string &str, string &buf, vector<pair<const char *, int>
 	}
 }
 
-void split(const string &utf8Str, wstring &utf16str, vector<std::wstring> &words) {
+void split(const string_view &utf8Str, wstring &utf16str, vector<std::wstring> &words, const string &extraWordSymbols) {
 	utf8_to_utf16(utf8Str, utf16str);
 	words.resize(0);
 	size_t outSz = 0;
@@ -141,7 +133,7 @@ void split(const string &utf8Str, wstring &utf16str, vector<std::wstring> &words
 		while (it != utf16str.end() && !IsAlpha(*it) && !IsDigit(*it)) it++;
 
 		auto begIt = it;
-		while (it != utf16str.end() && (IsAlpha(*it) || IsDigit(*it) || *it == '+' || *it == '-' || *it == '/')) {
+		while (it != utf16str.end() && (IsAlpha(*it) || IsDigit(*it) || extraWordSymbols.find(*it) != string::npos)) {
 			*it = ToLower(*it);
 			it++;
 		}
@@ -306,12 +298,12 @@ int fast_strftime(char *buf, const tm *tm) {
 	return d - buf;
 }
 
-bool validateObjectName(const char *name) {
-	if (!*name) {
+bool validateObjectName(const string_view &name) {
+	if (!name.length()) {
 		return false;
 	}
-	for (const char *p = name; *p; p++) {
-		if (!(std::isalpha(*name) || std::isdigit(*name) || *name == '_' || *name == '-' || *name == '#')) {
+	for (auto p = name.begin(); p != name.end(); p++) {
+		if (!(std::isalpha(*p) || std::isdigit(*p) || *p == '_' || *p == '-' || *p == '#')) {
 			return false;
 		}
 	}

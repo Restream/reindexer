@@ -1,3 +1,34 @@
+# Version 1.9.5 (04.08.2018)
+
+## Core
+
+- [fea] Sparse indexes
+- [fix] Fixed errors on conditions to unindexed fields
+- [fix] Fulltext terms relevancy, then query contains 2 terms included to single word
+- [fea] Customizable symbols set of "words" symbols for fulltext
+- [fix] Incorrect behavior on addition index with duplicated json path of another index
+
+## Reindexer tool
+
+- [fix] Fixed deadlock on linux
+- [fix] Fixed \dump command namespace list parsing
+
+## Reindexer server
+
+- [fea] Added method /api/v1/check with system information about memory consumption, uptime and version
+- [fea] Passing to RPC client information about version and uptime
+- [fea] Optional embed web resources to server binary
+
+## Face
+
+- [fix] Incorrect urlencode for document update API url
+- [fix] Namespace view layout updated, jsonPath added to table
+
+## Go connector
+
+- [fix] Fixed error after closing connection by timeout
+- [fix] Caches invalidation on server restart
+
 # Version 1.9.4 (25.07.2018)
 
 ## Core

@@ -24,6 +24,7 @@ public:
 	bool enableNumbersSearch = false;
 	fast_hash_set<string> stopWords;
 	int logLevel = 0;
+	string extraWordSymbols = "-/+";
 
 protected:
 	void parseBase(const JsonNode *val);

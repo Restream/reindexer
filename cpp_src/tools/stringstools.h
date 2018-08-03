@@ -14,9 +14,11 @@ using std::pair;
 
 namespace reindexer {
 
-vector<string>& split(const string& str, const string& delimiters, bool trimEmpty, vector<string>&);
+vector<string>& split(const string_view& str, const string& delimiters, bool trimEmpty, vector<string>&);
 void split(const string& utf8Str, wstring& utf16str, vector<std::wstring>& words);
-void splitWithPos(const string& str, string& buf, vector<pair<const char*, int>>& words);
+void split(const string_view& utf8Str, wstring& utf16str, vector<std::wstring>& words, const string& extraWordSymbols);
+void splitWithPos(const string_view& str, string& buf, vector<pair<const char*, int>>& words, const string& extraWordSymbols);
+
 size_t calcUTf8Size(const char* s, size_t size, size_t limit);
 size_t calcUTf8SizeEnd(const char* end, int pos, size_t limit);
 
@@ -25,11 +27,9 @@ int collateCompare(const string_view& lhs, const string_view& rhs, const Collate
 
 wstring utf8_to_utf16(const string& src);
 string utf16_to_utf8(const wstring& src);
-wstring& utf8_to_utf16(const string& src, wstring& dst);
+wstring& utf8_to_utf16(const string_view& src, wstring& dst);
 string& utf16_to_utf8(const wstring& src, string& dst);
-wstring& utf8_to_utf16(const char* src, wstring& dst);
 
-size_t utf16_to_utf8(const wchar_t* src, size_t len, char* dst, size_t dstLen);
 void check_for_replacement(wchar_t& ch);
 void check_for_replacement(uint32_t& ch);
 bool is_number(const string& str);
@@ -44,18 +44,13 @@ inline static char* strappend(char* dst, const char* src) {
 }
 
 inline static char* strappend(char* dst, const string_view& src) {
-	const char* p = src.data();
-	size_t l = src.length();
-	while (l) {
-		*dst++ = *p++;
-		l--;
-	}
+	for (auto p = src.begin(); p != src.end(); p++) *dst++ = *p;
 	return dst;
 }
 
 inline static int stoi(const string_view& sl) { return atoi(sl.data()); }
 
-bool validateObjectName(const char* name);
+bool validateObjectName(const string_view& name);
 LogLevel logLevelFromString(const string& strLogLevel);
 
 static bool inline iequals(const string_view& lhs, const string_view& rhs) {

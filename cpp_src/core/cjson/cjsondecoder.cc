@@ -22,13 +22,17 @@ Error CJsonDecoder::Decode(Payload *pl, Serializer &rdser, WrSerializer &wrser) 
 }
 
 void skipCjsonTag(ctag tag, Serializer &rdser) {
-	assert(tag.Field() < 0);
+	const bool embeddedField = (tag.Field() < 0);
 	switch (tag.Type()) {
 		case TAG_ARRAY: {
-			carraytag atag = rdser.GetUInt32();
-			for (int i = 0; i < atag.Count(); i++) {
-				ctag t = atag.Tag() != TAG_OBJECT ? atag.Tag() : rdser.GetVarUint();
-				skipCjsonTag(t, rdser);
+			if (embeddedField) {
+				carraytag atag = rdser.GetUInt32();
+				for (int i = 0; i < atag.Count(); i++) {
+					ctag t = atag.Tag() != TAG_OBJECT ? atag.Tag() : rdser.GetVarUint();
+					skipCjsonTag(t, rdser);
+				}
+			} else {
+				rdser.GetVarUint();
 			}
 		} break;
 
@@ -41,22 +45,22 @@ void skipCjsonTag(ctag tag, Serializer &rdser) {
 		} break;
 
 		case TAG_BOOL:
-			rdser.GetBool();
+			if (embeddedField) rdser.GetBool();
 			break;
 
 		case TAG_DOUBLE:
-			rdser.GetDouble();
+			if (embeddedField) rdser.GetDouble();
 			break;
 
 		case TAG_NULL:
 			break;
 
 		case TAG_STRING:
-			rdser.GetVString();
+			if (embeddedField) rdser.GetVString();
 			break;
 
 		case TAG_VARINT:
-			rdser.GetVarint();
+			if (embeddedField) rdser.GetVarint();
 			break;
 	}
 }

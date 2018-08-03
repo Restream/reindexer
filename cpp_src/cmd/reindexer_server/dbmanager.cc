@@ -13,8 +13,6 @@ namespace reindexer_server {
 DBManager::DBManager(const string &dbpath, bool noSecurity) : dbpath_(dbpath), noSecurity_(noSecurity) {}
 
 Error DBManager::Init() {
-	fs::MkDirAll(dbpath_);
-
 	auto status = readUsers();
 	if (!status.ok() && !noSecurity_) {
 		return status;
@@ -26,7 +24,7 @@ Error DBManager::Init() {
 	}
 
 	for (auto &de : foundDb) {
-		if (de.isDir && validateObjectName(de.name.c_str())) {
+		if (de.isDir && validateObjectName(de.name)) {
 			auto status = loadOrCreateDatabase(de.name);
 			if (!status.ok()) {
 				reindexer::logPrintf(LogError, "Failed to open database '%s' - %s", de.name.c_str(), status.what().c_str());
@@ -56,7 +54,7 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 			return Error(errForbidden, "Forbidden to create database %s", dbName.c_str());
 		}
 
-		if (!validateObjectName(dbName.c_str())) {
+		if (!validateObjectName(dbName)) {
 			return Error(errParams, "Database name contains invalid character. Only alphas, digits,'_','-, are allowed");
 		}
 

@@ -45,23 +45,26 @@ type FtFastConfig struct {
 	LogLevel int `json:"log_level"`
 	// Enable search by numbers as words and backwards
 	EnableNumbersSearch bool `json:"enable_numbers_search"`
+	// Extra symbols, which will be threated as parts of word to addition to letters and digits
+	ExtraWordSymbols string `json:"extra_word_symbols"`
 }
 
 func DefaultFtFastConfig() FtFastConfig {
 	return FtFastConfig{
-		Bm25Boost:      1.0,
-		Bm25Weight:     0.5,
-		DistanceBoost:  1.0,
-		DistanceWeight: 0.5,
-		TermLenBoost:   1.0,
-		TermLenWeight:  0.3,
-		MinRelevancy:   0.05,
-		MaxTyposInWord: 1,
-		MaxTypoLen:     15,
-		MergeLimit:     20000,
-		Stemmers:       []string{"en", "ru"},
-		EnableTranslit: true,
-		EnableKbLayout: true,
-		LogLevel:       0,
+		Bm25Boost:        1.0,
+		Bm25Weight:       0.5,
+		DistanceBoost:    1.0,
+		DistanceWeight:   0.5,
+		TermLenBoost:     1.0,
+		TermLenWeight:    0.3,
+		MinRelevancy:     0.05,
+		MaxTyposInWord:   1,
+		MaxTypoLen:       15,
+		MergeLimit:       20000,
+		Stemmers:         []string{"en", "ru"},
+		EnableTranslit:   true,
+		EnableKbLayout:   true,
+		LogLevel:         0,
+		ExtraWordSymbols: "/-+",
 	}
 }

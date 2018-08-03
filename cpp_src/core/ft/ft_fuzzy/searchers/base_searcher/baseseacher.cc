@@ -122,7 +122,8 @@ SearchResult BaseSearcher::Compare(BaseHolder::Ptr holder, const FtDSLQuery &dsl
 	return res;
 }
 
-void BaseSearcher::AddIndex(BaseHolder::Ptr holder, const reindexer::string_view &src_data, const IdType id, int field) {
+void BaseSearcher::AddIndex(BaseHolder::Ptr holder, const reindexer::string_view &src_data, const IdType id, int field,
+							const string &extraWordSymbols) {
 #ifdef FULL_LOG_FT
 	words.push_back(std::make_pair(id, *src_data));
 #endif
@@ -133,7 +134,7 @@ void BaseSearcher::AddIndex(BaseHolder::Ptr holder, const reindexer::string_view
 	string word, str;
 	std::wstring utf16str;
 	vector<std::wstring> wrds;
-	split(src_data.ToString(), utf16str, wrds);
+	split(src_data, utf16str, wrds, extraWordSymbols);
 	wchar_t res_buf[maxFuzzyFTBufferSize];
 	size_t total_size = 0;
 	for (auto &term : wrds) {

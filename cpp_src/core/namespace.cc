@@ -34,16 +34,19 @@ using std::transform;
 #define kStorageCachePrefix "cache"
 
 #define kStorageMagic 0x1234FEDC
-#define kStorageVersion 0x6
+#define kStorageVersion 0x7
 
 namespace reindexer {
 
 const int64_t kStorageSerialInitial = 1;
 
+Namespace::IndexesStorage::IndexesStorage(const Namespace &ns) : Base(), ns_(ns) {}
+
 // private implementation and NOT THREADSAFE of copy CTOR
 // use 'Namespace::Clone(Namespace& ns)'
 Namespace::Namespace(const Namespace &src)
-	: indexesNames_(src.indexesNames_),
+	: indexes_(*this),
+	  indexesNames_(src.indexesNames_),
 	  items_(src.items_),
 	  free_(src.free_),
 	  name_(src.name_),
@@ -67,7 +70,8 @@ Namespace::Namespace(const Namespace &src)
 }
 
 Namespace::Namespace(const string &name, CacheMode cacheMode)
-	: name_(name),
+	: indexes_(*this),
+	  name_(name),
 	  payloadType_(name),
 	  tagsMatcher_(payloadType_),
 	  unflushedCount_(0),
@@ -91,8 +95,8 @@ Namespace::~Namespace() {
 	logPrintf(LogTrace, "Namespace::~Namespace (%s), %d items", name_.c_str(), int(items_.size()));
 }
 
-void Namespace::recreateCompositeIndexes(int startIdx) {
-	for (int i = startIdx; i < static_cast<int>(indexes_.size()); ++i) {
+void Namespace::recreateCompositeIndexes(int startIdx, int endIdx) {
+	for (int i = startIdx; i < endIdx; ++i) {
 		std::unique_ptr<reindexer::Index> &index(indexes_[i]);
 		if (isComposite(index->Type())) {
 			index.reset(Index::New(index->Type(), index->Name(), index->Opts(), payloadType_, index->Fields()));
@@ -110,11 +114,14 @@ void Namespace::updateItems(PayloadType oldPlType, const FieldsSet &changedField
 
 	assert(oldPlType->NumFields() + deltaFields == payloadType_->NumFields());
 
-	int compositeStartIdx = deltaFields >= 0 ? payloadType_.NumFields() : oldPlType.NumFields();
-
-	if (deltaFields < 0) {
-		recreateCompositeIndexes(compositeStartIdx);
+	int compositeStartIdx = 0;
+	if (deltaFields >= 0) {
+		compositeStartIdx = indexes_.firstCompositePos();
+	} else {
+		compositeStartIdx = indexes_.firstCompositePos(oldPlType, sparseIndexesCount_);
 	}
+	int compositeEndIdx = indexes_.totalSize();
+	recreateCompositeIndexes(compositeStartIdx, compositeEndIdx);
 
 	for (auto &idx : indexes_) {
 		idx->UpdatePayloadType(payloadType_);
@@ -143,13 +150,12 @@ void Namespace::updateItems(PayloadType oldPlType, const FieldsSet &changedField
 		PayloadValue plNew = oldValue.CopyTo(payloadType_, deltaFields >= 0);
 		Payload newValue(payloadType_, plNew);
 
-		for (int fieldIdx = compositeStartIdx; fieldIdx < int(indexes_.size()); ++fieldIdx) {
+		for (int fieldIdx = compositeStartIdx; fieldIdx < compositeEndIdx; ++fieldIdx) {
 			indexes_[fieldIdx]->Delete(KeyRef(plCurr), rowId);
 		}
 
 		for (auto fieldIdx : changedFields) {
 			auto &index = *indexes_[fieldIdx];
-
 			if ((fieldIdx == 0) || deltaFields <= 0) {
 				oldValue.Get(fieldIdx, krefs);
 				for (auto key : krefs) index.Delete(key, rowId);
@@ -166,7 +172,7 @@ void Namespace::updateItems(PayloadType oldPlType, const FieldsSet &changedField
 			}
 		}
 
-		for (int fieldIdx = compositeStartIdx; fieldIdx < int(indexes_.size()); ++fieldIdx) {
+		for (int fieldIdx = compositeStartIdx; fieldIdx < compositeEndIdx; ++fieldIdx) {
 			indexes_[fieldIdx]->Upsert(KeyRef(plNew), rowId);
 		}
 
@@ -178,16 +184,23 @@ void Namespace::updateItems(PayloadType oldPlType, const FieldsSet &changedField
 	}
 }
 
-void Namespace::AddIndex(const string &index, const string &jsonPath, IndexType type, IndexOpts opts) {
+void Namespace::AddIndex(const IndexDef &indexDef) {
+	bool result = false;
 	WLock wlock(mtx_);
-	if (addIndex(index, jsonPath, type, opts)) {
-		saveIndexesToStorage();
+	if (indexDef.jsonPaths_.empty()) {
+		result = addIndex(indexDef.name_, "", indexDef.Type(), indexDef.opts_);
+	} else {
+		result = addIndex(indexDef);
 	}
+	if (result) saveIndexesToStorage();
 }
 
 bool Namespace::DropIndex(const string &index) {
 	WLock wlock(mtx_);
-	if (dropIndex(index)) {
+
+	auto pos = index.find_first_of("=");
+
+	if (dropIndex((pos == string::npos) ? index : index.substr(pos + 1))) {
 		saveIndexesToStorage();
 		return true;
 	}
@@ -203,11 +216,13 @@ bool Namespace::dropIndex(const string &index) {
 	}
 
 	int fieldIdx = itIdxName->second;
-	// Check, that index to remove is not part of composite index
-	for (int compositeIdx = payloadType_.NumFields(); compositeIdx < int(indexes_.size()); ++compositeIdx) {
-		if (indexes_[compositeIdx]->Fields().contains(fieldIdx))
+	if (indexes_[fieldIdx]->Opts().IsSparse()) --sparseIndexesCount_;
+
+	// Check, that index to remove is not a part of composite index
+	for (int i = indexes_.firstCompositePos(); i < indexes_.totalSize(); ++i) {
+		if (indexes_[i]->Fields().contains(fieldIdx))
 			throw Error(LogError, "Cannot remove index %s : it's a part of a composite index %s", index.c_str(),
-						indexes_[compositeIdx]->Name().c_str());
+						indexes_[i]->Name().c_str());
 	}
 	for (auto &namePair : indexesNames_) {
 		if (namePair.second >= fieldIdx) {
@@ -253,13 +268,21 @@ bool Namespace::dropIndex(const string &index) {
 	return true;
 }
 
-bool Namespace::addIndex(const string &index, const string &jsonPath, IndexType type, IndexOpts opts) {
+bool Namespace::addIndex(const IndexDef &indexDef) {
+	bool result = false;
+	for (const string &jsonPath : indexDef.jsonPaths_) {
+		if (addIndex(indexDef.name_, jsonPath, indexDef.Type(), indexDef.opts_)) result = true;
+	}
+	return result;
+}
+
+bool Namespace::addIndex(const string &indexName, const string &jsonPath, IndexType type, IndexOpts opts) {
 	if (isComposite(type)) {
 		// special handling of composite indexes;
-		return AddCompositeIndex(index, type, opts);
+		return AddCompositeIndex(indexName, type, opts);
 	}
 
-	auto idxNameIt = indexesNames_.find(index);
+	auto idxNameIt = indexesNames_.find(indexName);
 	int idxNo = payloadType_->NumFields();
 	int fieldByJsonPath = payloadType_->FieldByJsonPath(jsonPath);
 
@@ -268,18 +291,31 @@ bool Namespace::addIndex(const string &index, const string &jsonPath, IndexType 
 		// Check PK conflict
 		if (opts.IsPK() && fieldByJsonPath != -1) {
 			throw Error(errConflict, "Can't add PK Index '%s.%s', already exists another index with same json path", name_.c_str(),
-						index.c_str());
+						indexName.c_str());
 		}
 
-		insertIndex(Index::New(type, index, opts, PayloadType(), FieldsSet()), idxNo, index);
+		auto newIndex = unique_ptr<Index>(Index::New(type, indexName, opts, PayloadType(), FieldsSet()));
+		if (opts.IsSparse()) {
+			bool updated = false;
+			TagsPath tagsPath = tagsMatcher_.path2tag(jsonPath, updated);
+			assert(tagsPath.size() > 0);
 
-		PayloadType oldPlType = payloadType_;
+			FieldsSet fields;
+			fields.push_back(jsonPath);
+			fields.push_back(tagsPath);
+			newIndex->SetFields(fields);
+			newIndex->UpdatePayloadType(payloadType_);
+			++sparseIndexesCount_;
+			insertIndex(newIndex.release(), idxNo, indexName);
+		} else {
+			PayloadType oldPlType = payloadType_;
+			payloadType_.Add(PayloadFieldType(newIndex->KeyType(), indexName, jsonPath, opts.IsArray()));
+			tagsMatcher_.updatePayloadType(payloadType_);
 
-		payloadType_.Add(PayloadFieldType(indexes_[idxNo]->KeyType(), index, jsonPath, opts.IsArray()));
-		tagsMatcher_.updatePayloadType(payloadType_);
-		FieldsSet changedFields{0, idxNo};
-		updateItems(oldPlType, changedFields, 1);
-
+			FieldsSet changedFields{0, idxNo};
+			insertIndex(newIndex.release(), idxNo, indexName);
+			updateItems(oldPlType, changedFields, 1);
+		}
 		// Notify caller what indexes was changed
 		return true;
 	}
@@ -288,31 +324,43 @@ bool Namespace::addIndex(const string &index, const string &jsonPath, IndexType 
 	// Existing index
 
 	// payloadType must be in sync with indexes
-	assert(idxNo < payloadType_->NumFields());
+	assert(idxNo < indexes_.firstCompositePos());
 
 	// Check conflicts.
 	if (indexes_[idxNameIt->second]->Type() != type) {
-		throw Error(errConflict, "Index '%s.%s' already exists with different type", name_.c_str(), index.c_str());
+		throw Error(errConflict, "Index '%s.%s' already exists with different type", name_.c_str(), indexName.c_str());
 	}
 
 	if (!pkFields_.contains(idxNo) && opts.IsPK()) {
-		throw Error(errConflict, "Index '%s.%s' already exists with different PK attribute", name_.c_str(), index.c_str());
+		throw Error(errConflict, "Index '%s.%s' already exists with different PK attribute", name_.c_str(), indexName.c_str());
+	}
+
+	bool jsonsAreEqual = false;
+	if (opts.IsSparse()) {
+		const FieldsSet &fields = indexes_[idxNo]->Fields();
+		if (fields.getJsonPathsLength() > 0) jsonsAreEqual = (jsonPath == fields.getJsonPath(0));
+	} else {
+		jsonsAreEqual = (fieldByJsonPath == idxNo);
 	}
 
 	// append different indexes
-	if (fieldByJsonPath != idxNo && jsonPath.length()) {
+	if (!jsonsAreEqual && jsonPath.length()) {
 		if (!opts.IsAppendable()) {
-			throw Error(errConflict, "Index '%s.%s' already exists with different json path '%s' ", name_.c_str(), index.c_str(),
+			throw Error(errConflict, "Index '%s.%s' already exists with different json path '%s' ", name_.c_str(), indexName.c_str(),
 						jsonPath.c_str());
 		}
 		auto opts1 = indexes_[idxNo]->Opts();
 		indexes_[idxNo]->SetOpts(opts1.Array(true));
 
-		PayloadType oldPlType = payloadType_;
-		payloadType_.Add(PayloadFieldType(indexes_[idxNo]->KeyType(), index, jsonPath, opts.IsArray()));
-		tagsMatcher_.updatePayloadType(payloadType_);
-		FieldsSet changedFields{0, idxNo};
-		updateItems(oldPlType, changedFields, 0);
+		if (!opts.IsSparse()) {
+			PayloadType oldPlType = payloadType_;
+			payloadType_.Add(PayloadFieldType(indexes_[idxNo]->KeyType(), indexName, jsonPath, opts.IsArray()));
+			tagsMatcher_.updatePayloadType(payloadType_);
+
+			FieldsSet changedFields{0, idxNo};
+			updateItems(oldPlType, changedFields, 0);
+		}
+
 		return true;
 	}
 
@@ -478,12 +526,20 @@ void Namespace::_delete(IdType id) {
 	// erase last item
 	KeyRefs skrefs;
 	int field;
-	// erase from composite indexes
-	for (field = pl.NumFields(); field < int(indexes_.size()); ++field) indexes_[field]->Delete(KeyRef(items_[id]), id);
 
-	for (field = 0; field < pl.NumFields(); ++field) {
-		auto &index = *indexes_[field];
-		pl.Get(field, skrefs);
+	// erase from composite indexes
+	for (field = indexes_.firstCompositePos(); field < indexes_.totalSize(); ++field) {
+		indexes_[field]->Delete(KeyRef(items_[id]), id);
+	}
+
+	for (field = 0; field < indexes_.firstCompositePos(); ++field) {
+		Index &index = *indexes_[field];
+		if (index.Opts().IsSparse()) {
+			assert(index.Fields().getTagsPathsLength() > 0);
+			pl.GetByJsonPath(index.Fields().getTagsPath(0), skrefs);
+		} else {
+			pl.Get(field, skrefs);
+		}
 		// Delete value from index
 		for (auto key : skrefs) index.Delete(key, id);
 		// If no krefs delete empty value from index
@@ -530,22 +586,42 @@ void Namespace::upsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 	KeyRefs krefs, skrefs;
 
 	// Delete from composite indexes first
-	int field = 0;
-	for (field = plNew.NumFields(); field < int(indexes_.size()); ++field)
-		if (doUpdate) indexes_[field]->Delete(KeyRef(plData), id);
+	if (doUpdate) {
+		for (int field = indexes_.firstCompositePos(); field < indexes_.totalSize(); ++field) {
+			indexes_[field]->Delete(KeyRef(plData), id);
+		}
+	}
 
-	// Upsert fields to regular indexes
-	for (field = 0; field < plNew.NumFields(); ++field) {
-		auto &index = *indexes_[field];
+	// Upserting fields to dense and sparse indexes:
+	// we start with 1st index (not index 0) because
+	// changing cjson of sparse index changes entire
+	// payload value (and not only 0 item).
+	assert(indexes_.firstCompositePos() != 0);
+	const int borderIdx = indexes_.totalSize() > 1 ? 1 : 0;
+	int field = borderIdx;
+	do {
+		field %= indexes_.firstCompositePos();
+		Index &index = *indexes_[field];
+		bool isIndexSparse = index.Opts().IsSparse();
+		assert(!isIndexSparse || (isIndexSparse && index.Fields().getTagsPathsLength() > 0));
 
-		plNew.Get(field, skrefs);
+		if (isIndexSparse) {
+			assert(index.Fields().getTagsPathsLength() > 0);
+			plNew.GetByJsonPath(index.Fields().getTagsPath(0), skrefs);
+		} else {
+			plNew.Get(field, skrefs);
+		}
 
 		if (index.Opts().GetCollateMode() == CollateUTF8)
 			for (auto &key : skrefs) key.EnsureUTF8();
 
 		// Check for update
 		if (doUpdate) {
-			pl.Get(field, krefs);
+			if (isIndexSparse) {
+				pl.GetByJsonPath(index.Fields().getTagsPath(0), krefs);
+			} else {
+				pl.Get(field, krefs);
+			}
 			for (auto key : krefs) index.Delete(key, id);
 			if (!krefs.size()) index.Delete(KeyRef(), id);
 		}
@@ -554,12 +630,15 @@ void Namespace::upsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 		for (auto key : skrefs) krefs.push_back(index.Upsert(key, id));
 
 		// Put value to payload
-		pl.Set(field, krefs);
+		if (!isIndexSparse) pl.Set(field, krefs);
 		// If no krefs upsert empty value to index
 		if (!skrefs.size()) index.Upsert(KeyRef(), id);
-	}
+	} while (++field != borderIdx);
+
 	// Upsert to composite indexes
-	for (; field < int(indexes_.size()); ++field) indexes_[field]->Upsert(KeyRef(plData), id);
+	for (int field = indexes_.firstCompositePos(); field < indexes_.totalSize(); ++field) {
+		indexes_[field]->Upsert(KeyRef(plData), id);
+	}
 }
 
 void Namespace::updateTagsMatcherFromItem(ItemImpl *ritem, string &jsonSliceBuf) {
@@ -707,10 +786,11 @@ void Namespace::commit(const NSCommitContext &ctx, SelectLockUpgrader *lockUpgra
 
 	// Commit changes
 	if ((ctx.phases() & CommitContext::MakeIdsets) && !commitedIndexes_.containsAll(indexes_.size())) {
-		int field = payloadType_->NumFields();
+		assert(indexes_.firstCompositePos() != 0);
+		int field = indexes_.firstCompositePos();
 		bool was = false;
 		do {
-			field %= indexes_.size();
+			field %= indexes_.totalSize();
 			if (!ctx.indexes() || ctx.indexes()->contains(field) || (ctx.phases() & CommitContext::MakeSortOrders)) {
 				if (!commitedIndexes_.contains(field)) {
 					indexes_[field]->Commit(ctx);
@@ -718,7 +798,7 @@ void Namespace::commit(const NSCommitContext &ctx, SelectLockUpgrader *lockUpgra
 					was = true;
 				}
 			}
-		} while (++field != payloadType_->NumFields());
+		} while (++field != indexes_.firstCompositePos());
 		if (was) logPrintf(LogTrace, "Namespace::Commit ('%s'),%d items", name_.c_str(), int(items_.size()));
 		//	items_.shrink_to_fit();
 	}
@@ -774,26 +854,35 @@ void Namespace::Select(QueryResults &result, SelectCtx &params) {
 	selecter(result, params);
 }
 
-NamespaceDef Namespace::GetDefinition() {
-	RLock rlock(mtx_);
+NamespaceDef Namespace::getDefinition() {
 	auto pt = this->payloadType_;
-
 	NamespaceDef nsDef(name_, StorageOpts().Enabled(!dbpath_.empty()));
 
-	for (size_t idx = 1; idx < indexes_.size(); idx++) {
+	for (int i = 1; i < int(indexes_.size()); i++) {
 		IndexDef indexDef;
-		indexDef.FromType(indexes_[idx]->Type());
-		indexDef.name = indexes_[idx]->Name();
-		indexDef.opts = indexes_[idx]->Opts();
+		const Index &index = *indexes_[i];
+		indexDef.name_ = index.Name();
+		indexDef.opts_ = index.Opts();
+		indexDef.FromType(index.Type());
 
-		if (int(idx) < pt->NumFields()) {
-			for (auto &p : pt->Field(idx).JsonPaths()) indexDef.jsonPath += p + ",";
-			if (!indexDef.jsonPath.empty()) indexDef.jsonPath.pop_back();
+		if (index.Opts().IsSparse()) {
+			assert(index.Fields().getJsonPathsLength() > 0);
+			for (size_t i = 0; i < index.Fields().getJsonPathsLength(); ++i) {
+				indexDef.jsonPaths_.push_back(index.Fields().getJsonPath(i));
+			}
+		} else if (i < payloadType_.NumFields()) {
+			indexDef.jsonPaths_.Set(payloadType_->Field(i).JsonPaths());
 		}
 
 		nsDef.AddIndex(indexDef);
 	}
+
 	return nsDef;
+}
+
+NamespaceDef Namespace::GetDefinition() {
+	RLock rlock(mtx_);
+	return getDefinition();
 }
 
 NamespaceMemStat Namespace::GetMemStat() {
@@ -838,60 +927,70 @@ NamespacePerfStat Namespace::GetPerfStat() {
 }
 
 bool Namespace::loadIndexesFromStorage() {
-	// Check is indexes structure already prepared.
+	// Check if indexes structures are ready.
 	assert(indexes_.size() == 1);
 	assert(items_.size() == 0);
 
 	string def;
-	auto status = storage_->Read(StorageOpts().FillCache(), string_view(kStorageIndexesPrefix), def);
-	if (status.ok() && def.size()) {
-		Serializer ser(def.data(), def.size());
-
-		uint32_t dbMagic = ser.GetUInt32();
-		if (dbMagic != kStorageMagic) {
-			logPrintf(LogError, "Storage magic mismatch. want %08X, got %08X", kStorageMagic, dbMagic);
-			return false;
-		}
-
-		uint32_t dbVer = ser.GetUInt32();
-		if (dbVer != kStorageVersion) {
-			logPrintf(LogError, "Storage version mismatch. want %08X, got %08X", kStorageVersion, dbVer);
-			return false;
-		}
-
-		int cnt = ser.GetVarUint();
-		while (cnt--) {
-			string name = ser.GetVString().ToString();
-			int count = ser.GetVarUint();
-			vector<string> jsonPaths(std::max(count, 1), "");
-			for (int i = 0; i < count; i++) {
-				jsonPaths[i] = ser.GetVString().ToString();
-			}
-
-			IndexType type = IndexType(ser.GetVarUint());
-			IndexOpts opts;
-			opts.Array(ser.GetVarUint());
-			opts.PK(ser.GetVarUint());
-			opts.Dense(ser.GetVarUint());
-			opts.Appendable(ser.GetVarUint());
-			opts.SetCollateMode(static_cast<CollateMode>(ser.GetVarUint()));
-			if (opts.GetCollateMode() == CollateCustom) opts.collateOpts_ = CollateOpts(ser.GetVString().ToString());
-			for (auto &jsonPath : jsonPaths) {
-				addIndex(name, jsonPath, type, opts);
-			}
-		}
-	}
-
-	logPrintf(LogTrace, "Loaded index structure of namespace '%s'\n%s", name_.c_str(), payloadType_->ToString().c_str());
-
-	def.clear();
-	status = storage_->Read(StorageOpts().FillCache(), string_view(kStorageTagsPrefix), def);
+	Error status = storage_->Read(StorageOpts().FillCache(), string_view(kStorageTagsPrefix), def);
 	if (status.ok() && def.size()) {
 		Serializer ser(def.data(), def.size());
 		tagsMatcher_.deserialize(ser);
 		tagsMatcher_.clearUpdated();
 		logPrintf(LogTrace, "Loaded tags of namespace %s:\n%s", name_.c_str(), tagsMatcher_.dump().c_str());
 	}
+
+	def.clear();
+	status = storage_->Read(StorageOpts().FillCache(), string_view(kStorageIndexesPrefix), def);
+	if (status.ok() && def.size()) {
+		Serializer ser(def.data(), def.size());
+		const uint32_t dbMagic = ser.GetUInt32();
+		if (dbMagic != kStorageMagic) {
+			logPrintf(LogError, "Storage magic mismatch. want %08X, got %08X", kStorageMagic, dbMagic);
+			return false;
+		}
+
+		const uint32_t dbVer = ser.GetUInt32();
+		int count = ser.GetVarUint();
+		while (count--) {
+			if (dbVer == 6) {
+				string name = ser.GetVString().ToString();
+				int count = ser.GetVarUint();
+				vector<string> jsonPaths(std::max(count, 1), "");
+				for (int i = 0; i < count; i++) {
+					jsonPaths[i] = ser.GetVString().ToString();
+				}
+
+				IndexType type = IndexType(ser.GetVarUint());
+				IndexOpts opts;
+				opts.Array(ser.GetVarUint());
+				opts.PK(ser.GetVarUint());
+				opts.Dense(ser.GetVarUint());
+				opts.Sparse(false);
+				opts.Appendable(ser.GetVarUint());
+				opts.SetCollateMode(static_cast<CollateMode>(ser.GetVarUint()));
+				if (opts.GetCollateMode() == CollateCustom) opts.collateOpts_ = CollateOpts(ser.GetVString().ToString());
+				for (auto &jsonPath : jsonPaths) {
+					addIndex(name, jsonPath, type, opts);
+				}
+			} else {
+				if (dbVer != kStorageVersion) {
+					logPrintf(LogError, "Storage version mismatch. want %08X, got %08X", kStorageVersion, dbVer);
+					return false;
+				}
+				IndexDef indexDef;
+				string indexData = ser.GetVString().ToString();
+				Error err = indexDef.FromJSON(const_cast<char *>(indexData.c_str()));
+				if (!err.ok()) throw err;
+				if (indexDef.jsonPaths_.empty()) indexDef.jsonPaths_.emplace_back(string());
+				for (const string &jsonPath : indexDef.jsonPaths_) {
+					addIndex(indexDef.name_, jsonPath, indexDef.Type(), indexDef.opts_);
+				}
+			}
+		}
+	}
+
+	logPrintf(LogTrace, "Loaded index structure of namespace '%s'\n%s", name_.c_str(), payloadType_->ToString().c_str());
 
 	return true;
 }
@@ -906,25 +1005,11 @@ void Namespace::saveIndexesToStorage() {
 	ser.PutUInt32(kStorageVersion);
 
 	ser.PutVarUint(indexes_.size() - 1);
-	for (int f = 1; f < int(indexes_.size()); f++) {
-		ser.PutVString(indexes_[f]->Name());
-
-		if (f < payloadType_->NumFields()) {
-			ser.PutVarUint(payloadType_->Field(f).JsonPaths().size());
-			for (auto &jsonPath : payloadType_->Field(f).JsonPaths()) ser.PutVString(jsonPath);
-		} else {
-			ser.PutVarUint(0);
-		}
-
-		ser.PutVarUint(indexes_[f]->Type());
-		ser.PutVarUint(indexes_[f]->Opts().IsArray());
-		ser.PutVarUint(indexes_[f]->Opts().IsPK());
-		ser.PutVarUint(indexes_[f]->Opts().IsDense());
-		ser.PutVarUint(indexes_[f]->Opts().IsAppendable());
-		ser.PutVarUint(indexes_[f]->Opts().GetCollateMode());
-
-		if (indexes_[f]->Opts().GetCollateMode() == CollateCustom)
-			ser.PutVString(indexes_[f]->Opts().collateOpts_.sortOrderTable.GetSortOrderCharacters());
+	NamespaceDef nsDef = getDefinition();
+	for (const IndexDef &indexDef : nsDef.indexes) {
+		WrSerializer wrser;
+		indexDef.GetJSON(wrser);
+		ser.PutVString(wrser.Slice());
 	}
 
 	storage_->Write(StorageOpts().FillCache(), string_view(kStorageIndexesPrefix),
