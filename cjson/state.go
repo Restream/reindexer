@@ -60,3 +60,9 @@ func (state *State) NewDecoder() Decoder {
 		state: state,
 	}
 }
+
+func (state *State) Reset() {
+	state.lock.Lock()
+	state.StateData = &StateData{Version: -1}
+	state.lock.Unlock()
+}

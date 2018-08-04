@@ -9,8 +9,6 @@ import (
 	"sync"
 )
 
-import "C"
-
 var serPool sync.Pool
 
 type Serializer struct {
