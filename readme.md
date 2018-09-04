@@ -1,7 +1,9 @@
 
 # Reindexer
 
-[![Build Status](https://travis-ci.org/Restream/reindexer.svg?branch=master)](https://travis-ci.org/Restream/reindexer) [![Build Status](https://ci.appveyor.com/api/projects/status/yonpih8vx3acaj86?svg=true)](https://ci.appveyor.com/project/olegator77/reindexer)
+[![GoDoc](https://godoc.org/github.com/Restream/reindexer?status.svg)](https://godoc.org/github.com/Restream/reindexer)
+[![Build Status](https://travis-ci.org/Restream/reindexer.svg?branch=master)](https://travis-ci.org/Restream/reindexer)
+[![Build Status](https://ci.appveyor.com/api/projects/status/yonpih8vx3acaj86?svg=true)](https://ci.appveyor.com/project/olegator77/reindexer)
 
 **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
 
@@ -560,6 +562,6 @@ Currently Reindexer is stable and production ready, but it is still a work in pr
 
 You can get help in several ways:
 
-1. Join Reindexer [Telegramm group](https://t.me/reindexer)
+1. Join Reindexer [Telegram group](https://t.me/reindexer)
 2. Write [an issue](https://github.com/restream/reindexer/issues/new)
 
