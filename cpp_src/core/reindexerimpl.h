@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <atomic>
@@ -33,6 +32,7 @@ public:
 	Error CloseNamespace(const string &_namespace);
 	Error DropNamespace(const string &_namespace);
 	Error AddIndex(const string &_namespace, const IndexDef &index);
+	Error UpdateIndex(const string &_namespace, const IndexDef &index);
 	Error DropIndex(const string &_namespace, const string &index);
 	Error EnumNamespaces(vector<NamespaceDef> &defs, bool bEnumAll);
 	Error ConfigureIndex(const string &_namespace, const string &index, const string &config);
@@ -87,7 +87,7 @@ protected:
 
 		Namespace::Ptr Get(const string &name) {
 			for (auto it = begin(); it != end(); it++)
-				if (it->first->name_ == name) return it->first;
+				if (iequals(it->first->name_, name)) return it->first;
 			return nullptr;
 		}
 
@@ -95,7 +95,7 @@ protected:
 		bool locked_ = false;
 		bool upgraded_ = false;
 	};
-	void doSelect(const Query &q, QueryResults &res, JoinedSelectors &joinedSelectors, NsLocker &locker, SelectFunctionsHolder &func);
+	void doSelect(const Query &q, QueryResults &res, NsLocker &locker, SelectFunctionsHolder &func);
 	JoinedSelectors prepareJoinedSelectors(const Query &q, QueryResults &result, NsLocker &locks, h_vector<Query, 4> &queries,
 										   SelectFunctionsHolder &func);
 
@@ -110,7 +110,7 @@ protected:
 	std::vector<Namespace::Ptr> getNamespaces();
 	std::vector<string> getNamespacesNames();
 
-	fast_hash_map<string, Namespace::Ptr> namespaces_;
+	fast_hash_map<string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
 
 	shared_timed_mutex mtx_;
 	string storagePath_;

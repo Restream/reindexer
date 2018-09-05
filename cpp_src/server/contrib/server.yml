@@ -412,6 +412,37 @@ paths:
         400:
           description: "Invalid status value"
 
+    put:
+      tags:
+      - "indexes"
+      summary: "Update index in namespace"
+      operationId: "putIndex"
+      produces:
+      - "application/json"
+      consumes:
+      - "application/json"
+      parameters:
+      - in: "body"
+        name: "body"
+        description: "Index definition"
+        schema:
+          $ref: "#/definitions/Index"
+        required: true
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "name"
+        in: "path"
+        type: "string"
+        description: "Namespace name"
+        required: true
+      responses:
+        200:
+          description: "successful operation"
+        400:
+          description: "Invalid status value"
   /db/{database}/namespaces/{name}/indexes/{indexname}:
     delete:
       tags:
@@ -667,7 +698,9 @@ definitions:
         items: 
           $ref: "#/definitions/FilterDef"
       sort:
-        $ref: "#/definitions/SortDef"
+        type: "array"
+        items:
+          $ref: "#/definitions/SortDef"
       joined:
         type: "array"
         items:

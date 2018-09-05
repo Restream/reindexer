@@ -21,7 +21,7 @@ struct Area {
 	}
 
 	bool inline Concat(const Area &rhs) {
-		if (IsIn(rhs.start_) || IsIn(rhs.end_) || (start_ > rhs.start_ && end_ < rhs.end_)) {
+		if (IsIn(rhs.start_, true) || IsIn(rhs.end_, true) || (start_ > rhs.start_ && end_ < rhs.end_)) {
 			if (start_ > rhs.start_) start_ = rhs.start_;
 			if (end_ < rhs.end_) end_ = rhs.end_;
 			return true;
@@ -48,7 +48,6 @@ public:
 	void Commit();
 	int GetSize() { return total_size_; }
 	bool AddWord(int start_pos, int size, int filed);
-	AreaVec GetSnippet(int field, int front, int back, int total_size);
 	AreaVec *GetAreas(int field);
 
 private:

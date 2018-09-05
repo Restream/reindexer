@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include "core/reindexer.h"
 #include "estl/shared_mutex.h"
+#include "tools/stringstools.h"
 
 /// @namespace reindexer_server
 /// The namespace for reindexer server implementation
@@ -118,7 +119,7 @@ private:
 	Error readUsers();
 	Error loadOrCreateDatabase(const string &name);
 
-	unordered_map<string, shared_ptr<Reindexer>> dbs_;
+	unordered_map<string, shared_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_;
 	unordered_map<string, UserRecord> users_;
 	string dbpath_;
 	shared_timed_mutex mtx_;

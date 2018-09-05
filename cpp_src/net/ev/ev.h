@@ -184,7 +184,10 @@ public:
 		fd = _fd;
 		loop.set(fd, this, events);
 	}
-	void stop() { loop.stop(fd); }
+	void stop() {
+		loop.stop(fd);
+		fd = -1;
+	}
 	void reset() { loop.loop_ = nullptr; }
 
 	template <typename K, void (K::*func)(io &, int events)>

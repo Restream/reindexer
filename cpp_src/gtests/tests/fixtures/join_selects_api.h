@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 #include <map>
+#include <sstream>
 #include "gason/gason.h"
 #include "reindexer_api.h"
 #include "tools/serializer.h"
@@ -14,9 +15,16 @@ protected:
 	using QueryResultRows = std::map<BookId, QueryResultRow>;
 
 	void SetUp() override {
-		CreateNamespace(authors_namespace);
-		CreateNamespace(books_namespace);
-		CreateNamespace(genres_namespace);
+		Error err;
+
+		err = reindexer->OpenNamespace(authors_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		err = reindexer->OpenNamespace(books_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		err = reindexer->OpenNamespace(genres_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
 
 		DefineNamespaceDataset(genres_namespace, {IndexDeclaration{genreid, "hash", "int", IndexOpts().PK()},
 												  IndexDeclaration{genrename, "text", "string", IndexOpts()}});
@@ -28,14 +36,14 @@ protected:
 		DefineNamespaceDataset(
 			books_namespace,
 			{IndexDeclaration{bookid, "hash", "int", IndexOpts().PK()}, IndexDeclaration{title, "text", "string", IndexOpts()},
-			 IndexDeclaration{pages, "hash", "int", IndexOpts()}, IndexDeclaration{price, "hash", "int", IndexOpts()},
+			 IndexDeclaration{pages, "hash", "int", IndexOpts()}, IndexDeclaration{price, "tree", "int", IndexOpts()},
 			 IndexDeclaration{genreId_fk, "hash", "int", IndexOpts()}, IndexDeclaration{authorid_fk, "hash", "int", IndexOpts()},
 			 IndexDeclaration{string(pages + string("+") + bookid).c_str(), "hash", "composite", IndexOpts()}});
 
 		FillGenresNamespace();
 		FillAuthorsNamespace(500);
 		FillBooksNamespace(10000);
-		FillAuthorsNamespace(100);
+		FillAuthorsNamespace(10);
 	}
 
 	void FillAuthorsNamespace(int32_t count) {
@@ -55,20 +63,48 @@ protected:
 
 			authorsIds.push_back(authorIdValue);
 		}
+
+		Item bestItem = NewItem(authors_namespace);
+		bestItem[authorid] = DostoevskyAuthorId;
+		bestItem[name] = "Fedor Dostoevsky";
+		bestItem[age] = 60;
+		Upsert(authors_namespace, bestItem);
+		Commit(authors_namespace);
+
+		authorsIds.push_back(DostoevskyAuthorId);
 	}
 
 	void FillBooksNamespace(int32_t count) {
+		int authorIdIdx = rand() % authorsIds.size();
 		for (int32_t i = 0; i < count; ++i) {
 			Item item = NewItem(books_namespace);
 			item[bookid] = i;
 			item[title] = title + underscore + RandString();
 			item[pages] = rand() % 10000;
 			item[price] = rand() % 1000;
-			item[authorid_fk] = authorsIds[rand() % (authorsIds.size() - 1)];
-			item[genreId_fk] = genresIds[rand() % (genresIds.size() - 1)];
+			item[authorid_fk] = authorsIds[authorIdIdx];
+			item[genreId_fk] = genresIds[rand() % genresIds.size()];
 			Upsert(books_namespace, item);
 			Commit(books_namespace);
+
+			if (i % 4 == 0) authorIdIdx = rand() % authorsIds.size();
 		}
+
+		std::stringstream json;
+		json << "{" << addQuotes(bookid) << ":" << ++count << "," << addQuotes(title) << ":" << addQuotes("Crime and Punishment") << ","
+			 << addQuotes(pages) << ":" << 100500 << "," << addQuotes(price) << ":" << 5000 << "," << addQuotes(authorid_fk) << ":"
+			 << DostoevskyAuthorId << "," << addQuotes(genreId_fk) << ":" << 4 << "," << addQuotes(rating) << ":" << 100 << "}";
+		Item bestItem = NewItem(books_namespace);
+		ASSERT_TRUE(bestItem.Status().ok()) << bestItem.Status().what();
+
+		Error err = bestItem.FromJSON(json.str());
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		err = reindexer->Upsert(books_namespace, bestItem);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		err = reindexer->Commit(books_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	void FillGenresNamespace() {
@@ -76,6 +112,7 @@ protected:
 		AddGenre(2, "poetry");
 		AddGenre(3, "detective story");
 		AddGenre(4, "documentary");
+		AddGenre(5, "non fiction");
 	}
 
 	void AddGenre(int id, const std::string& name) {
@@ -106,6 +143,25 @@ protected:
 		return jsonParse(const_cast<char*>(json.c_str()), &endptr, &value, jsonAllocator);
 	}
 
+	void PrintResultRows(reindexer::QueryResults& reindexerRes) {
+		for (auto rowIt : reindexerRes) {
+			Item item(rowIt.GetItem());
+			std::cout << "ROW: " << item.GetJSON().ToString() << std::endl;
+
+			int idx = 1;
+			const reindexer::QRVector& joinQueryRes = rowIt.GetJoined();
+			for (const QueryResults& joinResult : joinQueryRes) {
+				std::cout << "JOINED: " << idx << std::endl;
+				for (auto itj : joinResult) {
+					Item joinItem(itj.GetItem());
+					std::cout << joinItem.GetJSON().ToString() << std::endl;
+				}
+				++idx;
+			}
+			if (joinQueryRes.size() > 1) std::cout << std::endl;
+		}
+	}
+
 	void FillQueryResultRows(reindexer::QueryResults& reindexerRes, QueryResultRows& testRes) {
 		for (auto rowIt : reindexerRes) {
 			Item item(rowIt.GetItem());
@@ -114,14 +170,7 @@ protected:
 			QueryResultRow& resultRow = testRes[bookId];
 
 			FillQueryResultFromItem(item, resultRow);
-
-			const reindexer::ItemRef& rowid = rowIt.GetItemRef();
-			auto it = reindexerRes.joined_->find(rowid.id);
-			if (it == reindexerRes.joined_->end()) {
-				continue;
-			}
-
-			reindexer::QRVector& joinQueryRes(it->second);
+			const reindexer::QRVector& joinQueryRes = rowIt.GetJoined();
 			const QueryResults& joinResult(joinQueryRes[0]);
 			for (auto itj : joinResult) {
 				Item joinItem(itj.GetItem());
@@ -160,6 +209,15 @@ protected:
 		return true;
 	}
 
+	static string addQuotes(const string& str) {
+		string output;
+		output += "\"";
+		output += str;
+		output += "\"";
+		return output;
+	}
+
+	const char* id = "id";
 	const char* authorid = "authorid";
 	const char* authorid_fk = "authorid_fk";
 	const char* bookid = "bookid";
@@ -171,6 +229,9 @@ protected:
 	const char* genreid = "genreid";
 	const char* genreId_fk = "genreid_fk";
 	const char* genrename = "genre_name";
+	const char* rating = "rating";
+
+	const int DostoevskyAuthorId = 111777;
 
 	const std::string underscore = "_";
 	const std::string books_namespace = "books_namespace";

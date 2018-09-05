@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
+	"time"
 	"unsafe"
 
 	"github.com/restream/reindexer/bindings"
+	"github.com/restream/reindexer/bindings/builtinserver/config"
 	"github.com/restream/reindexer/cjson"
 )
 
@@ -104,7 +107,7 @@ func packItem(ns *reindexerNamespace, item interface{}, json []byte, ser *cjson.
 func (db *Reindexer) getNS(namespace string) (*reindexerNamespace, error) {
 	db.lock.RLock()
 	defer db.lock.RUnlock()
-	ns, ok := db.ns[namespace]
+	ns, ok := db.ns[strings.ToLower(namespace)]
 	if !ok {
 		return nil, errNsNotFound
 	}
@@ -240,9 +243,6 @@ func (db *Reindexer) rawResultToJson(rawResult []byte, jsonName string, totalNam
 }
 
 func (db *Reindexer) prepareQuery(q *Query, asJson bool) (result bindings.RawBuffer, err error) {
-	if len(q.joinQueries) != 0 && len(q.mergedQueries) != 0 {
-		return nil, ErrMergeAndJoinInOneQuery
-	}
 
 	if ns, err := db.getNS(q.Namespace); err == nil {
 		q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
@@ -251,25 +251,47 @@ func (db *Reindexer) prepareQuery(q *Query, asJson bool) (result bindings.RawBuf
 	}
 
 	ser := q.ser
-	ser.PutVarCUInt(queryEnd)
-	for _, sq := range q.joinQueries {
-		ser.PutVarCUInt(sq.joinType)
-		ser.Append(sq.ser)
-		ser.PutVarCUInt(queryEnd)
+	for _, sq := range q.mergedQueries {
 		if ns, err := db.getNS(sq.Namespace); err == nil {
 			q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
 		} else {
 			return nil, err
 		}
 	}
-	for _, sq := range q.mergedQueries {
-		ser.PutVarCUInt(merge)
-		ser.Append(sq.ser)
-		ser.PutVarCUInt(queryEnd)
+
+	for _, sq := range q.joinQueries {
 		if ns, err := db.getNS(sq.Namespace); err == nil {
 			q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
 		} else {
 			return nil, err
+		}
+	}
+
+	for _, mq := range q.mergedQueries {
+		for _, sq := range mq.joinQueries {
+			if ns, err := db.getNS(sq.Namespace); err == nil {
+				q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
+			} else {
+				return nil, err
+			}
+		}
+	}
+
+	ser.PutVarCUInt(queryEnd)
+	for _, sq := range q.joinQueries {
+		ser.PutVarCUInt(sq.joinType)
+		ser.Append(sq.ser)
+		ser.PutVarCUInt(queryEnd)
+	}
+
+	for _, mq := range q.mergedQueries {
+		ser.PutVarCUInt(merge)
+		ser.Append(mq.ser)
+		ser.PutVarCUInt(queryEnd)
+		for _, sq := range mq.joinQueries {
+			ser.PutVarCUInt(sq.joinType)
+			ser.Append(sq.ser)
+			ser.PutVarCUInt(queryEnd)
 		}
 	}
 
@@ -421,4 +443,8 @@ func WithConnPoolSize(connPoolSize int) interface{} {
 
 func WithRetryAttempts(read int, write int) interface{} {
 	return bindings.OptionRetryAttempts{read, write}
+}
+
+func WithServerConfig(startupTimeout time.Duration, serverConfig *config.ServerConfig) interface{} {
+	return bindings.OptionBuiltinWithServer{ServerConfig: serverConfig, StartupTimeout: startupTimeout}
 }

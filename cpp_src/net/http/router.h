@@ -146,7 +146,7 @@ public:
 struct Context {
 	int JSON(int code, const string_view &slice);
 	int String(int code, const string_view &slice);
-	int File(int code, const char *path, const string_view& data = string_view());
+	int File(int code, const char *path, const string_view &data = string_view());
 	int Printf(int code, const char *contentType, const char *fmt, ...);
 	int Redirect(const char *url);
 

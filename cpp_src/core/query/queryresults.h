@@ -57,6 +57,7 @@ public:
 		void GetJSON(WrSerializer &wrser, bool withHdrLen = true);
 		void GetCJSON(WrSerializer &wrser, bool withHdrLen = true);
 		Item GetItem();
+		const QRVector &GetJoined();
 		const ItemRef &GetItemRef() const { return qr_->items_[idx_]; }
 		Iterator &operator++();
 		Iterator &operator+(int delta);
@@ -72,12 +73,22 @@ public:
 
 	Iterator begin() const { return Iterator{this, 0, errOK}; }
 	Iterator end() const { return Iterator{this, int(items_.size()), errOK}; }
-	Iterator operator [] (int idx) const { return Iterator{this, idx, errOK};}
+	Iterator operator[](int idx) const { return Iterator{this, idx, errOK}; }
 
-	// Item GetItem(int idx) const;
+	// Only movable map. MSVC bug workaround
+	template <typename A, typename B>
+	class nc_map : public unordered_map<A, B> {
+	public:
+		nc_map(){};
+		nc_map(nc_map &&other) noexcept {
+			for (auto &it : other) unordered_map<A, B>::emplace(std::move(it.first), std::move(it.second));
+			other.clear();
+		};
+		nc_map(const nc_map &) = delete;
+	};
 
 	// joinded fields 0 - 1st joined ns, 1 - second joined
-	unique_ptr<unordered_map<IdType, QRVector>> joined_;  // joinded items
+	vector<nc_map<IdType, QRVector>> joined_;  // joinded items
 	h_vector<double> aggregationResults;
 	int totalCount = 0;
 	bool haveProcent = false;

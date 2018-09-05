@@ -18,8 +18,7 @@ bool Query::operator==(const Query &obj) const {
 
 	if (nextOp_ != obj.nextOp_) return false;
 	if (_namespace != obj._namespace) return false;
-	if (sortBy != obj.sortBy) return false;
-	if (sortDirDesc != obj.sortDirDesc) return false;
+	if (sortingEntries_ != obj.sortingEntries_) return false;
 	if (calcTotal != obj.calcTotal) return false;
 	if (start != obj.start) return false;
 	if (count != obj.count) return false;
@@ -89,8 +88,10 @@ void Query::deserialize(Serializer &ser) {
 				entries.push_back(std::move(qe));
 				break;
 			case QuerySortIndex: {
-				sortBy = ser.GetVString().ToString();
-				sortDirDesc = bool(ser.GetVarUint());
+				SortingEntry sortingEntry;
+				sortingEntry.column = ser.GetVString().ToString();
+				sortingEntry.desc = bool(ser.GetVarUint());
+				sortingEntries_.push_back(std::move(sortingEntry));
 				int count = ser.GetVarUint();
 				forcedSortOrder.reserve(count);
 				while (count--) forcedSortOrder.push_back(ser.GetValue());
@@ -209,35 +210,43 @@ int Query::selectParse(tokenizer &parser) {
 			parser.next_token();
 			// Just skip token (BY)
 			parser.next_token();
-			auto nameWithCase = parser.peek_token();
-			tok = parser.next_token(false);
-			if (tok.type != TokenName && tok.type != TokenString)
-				throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
-			sortBy = tok.text().ToString();
-			tok = parser.peek_token();
-			if (tok.text() == "("_sv && nameWithCase.text() == "field"_sv) {
-				parser.next_token();
+			for (;;) {
+				auto nameWithCase = parser.peek_token();
 				tok = parser.next_token(false);
 				if (tok.type != TokenName && tok.type != TokenString)
 					throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
-				sortBy = tok.text().ToString();
-				for (;;) {
-					tok = parser.next_token();
-					if (tok.text() == ")"_sv) break;
-					if (tok.text() != ","_sv)
-						throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text().data(),
-									parser.where().c_str());
-					tok = parser.next_token();
-					if (tok.type != TokenNumber && tok.type != TokenString)
-						throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text().data(),
-									parser.where().c_str());
-					forcedSortOrder.push_back(KeyValue(tok.text().ToString()));
-				}
+				SortingEntry sortingEntry;
+				sortingEntry.column = tok.text().ToString();
 				tok = parser.peek_token();
-			}
+				if (tok.text() == "("_sv && nameWithCase.text() == "field"_sv) {
+					parser.next_token();
+					tok = parser.next_token(false);
+					if (tok.type != TokenName && tok.type != TokenString)
+						throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+					sortingEntry.column = tok.text().ToString();
+					for (;;) {
+						tok = parser.next_token();
+						if (tok.text() == ")"_sv) break;
+						if (tok.text() != ","_sv)
+							throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text().data(),
+										parser.where().c_str());
+						tok = parser.next_token();
+						if (tok.type != TokenNumber && tok.type != TokenString)
+							throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text().data(),
+										parser.where().c_str());
+						forcedSortOrder.push_back(KeyValue(tok.text().ToString()));
+					}
+					tok = parser.peek_token();
+				}
 
-			if (tok.text() == "asc"_sv || tok.text() == "desc"_sv) {
-				sortDirDesc = bool(tok.text() == "desc"_sv);
+				if (tok.text() == "asc"_sv || tok.text() == "desc"_sv) {
+					sortingEntry.desc = bool(tok.text() == "desc"_sv);
+					parser.next_token();
+				}
+				sortingEntries_.push_back(std::move(sortingEntry));
+
+				auto nextToken = parser.peek_token();
+				if (nextToken.text() != ","_sv) break;
 				parser.next_token();
 			}
 		} else if (tok.text() == "join"_sv) {
@@ -404,10 +413,10 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 		ser.PutVarUint(agg.type_);
 	}
 
-	if (!sortBy.empty()) {
+	for (const SortingEntry &sortginEntry : sortingEntries_) {
 		ser.PutVarUint(QuerySortIndex);
-		ser.PutVString(sortBy);
-		ser.PutVarUint(sortDirDesc);
+		ser.PutVString(sortginEntry.column);
+		ser.PutVarUint(sortginEntry.desc);
 		int cnt = forcedSortOrder.size();
 		ser.PutVarUint(cnt);
 		for (auto &kv : forcedSortOrder) ser.PutValue(kv);
@@ -457,7 +466,7 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 	if (!(mode & SkipMergeQueries)) {
 		for (auto &mq : mergeQueries_) {
 			ser.PutVarUint(static_cast<int>(mq.joinType));
-			mq.Serialize(ser);
+			mq.Serialize(ser, mode);
 		}
 	}
 }
@@ -466,6 +475,7 @@ void Query::Deserialize(Serializer &ser) {
 	_namespace = ser.GetVString().ToString();
 	deserialize(ser);
 
+	bool nested = false;
 	while (!ser.Eof()) {
 		auto joinType = JoinType(ser.GetVarUint());
 		Query q1(ser.GetVString().ToString());
@@ -474,6 +484,9 @@ void Query::Deserialize(Serializer &ser) {
 		q1.debugLevel = debugLevel;
 		if (joinType == JoinType::Merge) {
 			mergeQueries_.emplace_back(std::move(q1));
+			nested = true;
+		} else if (nested) {
+			mergeQueries_.back().joinQueries_.emplace_back(std::move(q1));
 		} else {
 			joinQueries_.emplace_back(std::move(q1));
 		}
@@ -531,26 +544,28 @@ string Query::dumpMerged(bool stripArgs) const {
 }
 
 string Query::dumpOrderBy(bool stripArgs) const {
+	if (sortingEntries_.empty()) return std::string();
 	string ret;
-	if (sortBy.empty()) {
-		return ret;
-	}
 	ret = " ORDER BY ";
-	if (forcedSortOrder.empty()) {
-		ret += sortBy;
-	} else {
-		ret += "FIELD(" + sortBy;
-		if (stripArgs) {
-			ret += '?';
+	for (size_t i = 0; i < sortingEntries_.size(); ++i) {
+		const SortingEntry &sortingEntry(sortingEntries_[i]);
+		if (forcedSortOrder.empty()) {
+			ret += sortingEntry.column;
 		} else {
-			for (auto &v : forcedSortOrder) {
-				ret += ", '" + v.As<string>() + "'";
+			ret += "FIELD(" + sortingEntry.column;
+			if (stripArgs) {
+				ret += '?';
+			} else {
+				for (auto &v : forcedSortOrder) {
+					ret += ", '" + v.As<string>() + "'";
+				}
 			}
+			ret += ")";
 		}
-		ret += ")";
+		ret += (sortingEntry.desc ? " DESC" : "");
+		if (i != sortingEntries_.size() - 1) ret += ", ";
 	}
-
-	return ret + (sortDirDesc ? " DESC" : "");
+	return ret;
 }  // namespace reindexer
 
 string Query::Dump(bool stripArgs) const {

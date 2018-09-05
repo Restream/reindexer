@@ -32,17 +32,17 @@ func RunInMultiThread(fn func(*sync.WaitGroup), thread_count int) {
 }
 
 func PrepareJoinQueryResult(sort1 string, sort2 string) []interface{} {
-	qj1 := DB.Query("test_join_items").Where("device", reindexer.EQ, "ottstb")
+	qj1 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "ottstb")
 	if sort1 != "" {
 		qj1.Sort(sort1, true)
 	}
 
-	qjoin := DB.Query("test_items_for_join").Where("genre", reindexer.EQ, 10).Limit(10).Debug(reindexer.TRACE)
+	qjoin := DB.Query("TEST_ITEMS_FOR_JOIN").Where("GENRE", reindexer.EQ, 10).Limit(10).Debug(reindexer.TRACE)
 	if sort2 != "" {
 		qjoin.Sort(sort2, true)
 	}
 
-	qjoin.LeftJoin(qj1, "prices").On("price_id", reindexer.SET, "id")
+	qjoin.LeftJoin(qj1, "PRICES").On("PRICE_ID", reindexer.SET, "ID")
 	rjoin, _ := qjoin.MustExec().FetchAll()
 	return rjoin
 }
@@ -66,15 +66,15 @@ func CheckTestCachedItemsJoinInnerQueries(wg *sync.WaitGroup) {
 	defer wg.Done()
 	var result_without_cahce []interface{}
 	for i := 0; i < 20; i++ {
-		qj1 := DB.Query("test_join_items").Where("device", reindexer.EQ, "android").Where("amount", reindexer.GT, 2)
-		qj2 := DB.Query("test_join_items").Where("device", reindexer.EQ, "iphone")
+		qj1 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "android").Where("AMOUNT", reindexer.GT, 2)
+		qj2 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "iphone")
 
-		qjoin := DB.Query("test_items_for_join").Where("genre", reindexer.EQ, 10).Limit(10).Debug(reindexer.TRACE)
-		qjoin.InnerJoin(qj1, "pricesx").On("location", reindexer.EQ, "location").On("price_id", reindexer.SET, "id")
+		qjoin := DB.Query("test_items_for_join").Where("GENRE", reindexer.EQ, 10).Limit(10).Debug(reindexer.TRACE)
+		qjoin.InnerJoin(qj1, "PRICESX").On("LOCATION", reindexer.EQ, "location").On("price_id", reindexer.SET, "id")
 		qjoin.Or()
-		qjoin.InnerJoin(qj2, "pricesx").
-			On("location", reindexer.LT, "location").
-			Or().On("price_id", reindexer.SET, "id")
+		qjoin.InnerJoin(qj2, "PRICESX").
+			On("location", reindexer.LT, "LOCATION").
+			Or().On("PRICE_ID", reindexer.SET, "id")
 
 		rjoin, _ := qjoin.MustExec().FetchAll()
 		if i == 0 {

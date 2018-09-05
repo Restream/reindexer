@@ -63,7 +63,7 @@ KeyValues &PayloadIface<T>::Get(const string &field, KeyValues &kvs) const {
 }
 
 template <typename T>
-KeyRefs PayloadIface<T>::GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, KeyRefs &kvs) const {
+KeyRefs PayloadIface<T>::GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, KeyRefs &kvs, KeyValueType expectedType) const {
 	KeyRefs krefs;
 	Get(0, krefs);
 	string_view tuple(krefs[0]);
@@ -78,21 +78,22 @@ KeyRefs PayloadIface<T>::GetByJsonPath(const string &jsonPath, TagsMatcher &tags
 	Payload pl(t_, const_cast<PayloadValue &>(*v_));
 	CJsonEncoder encoder(tagsMatcher, JsonPrintFilter());
 
-	kvs = encoder.ExtractFieldValue(&pl, jsonPath);
+	kvs = encoder.ExtractFieldValue(&pl, jsonPath, expectedType);
 	return kvs;
 }
 
 template <typename T>
-KeyRefs PayloadIface<T>::GetByJsonPath(const TagsPath &jsonPath, KeyRefs &krefs) const {
+KeyRefs PayloadIface<T>::GetByJsonPath(const TagsPath &jsonPath, KeyRefs &krefs, KeyValueType expectedType) const {
 	TagsMatcher tagsMatcher;
 	Payload pl(t_, const_cast<PayloadValue &>(*v_));
 	CJsonEncoder encoder(tagsMatcher, JsonPrintFilter());
-	krefs = encoder.ExtractFieldValue(&pl, jsonPath);
+	krefs = encoder.ExtractFieldValue(&pl, jsonPath, expectedType);
 	return krefs;
 }
 
 template <typename T>
-KeyValues PayloadIface<T>::GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, KeyValues &kvs) const {
+KeyValues PayloadIface<T>::GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, KeyValues &kvs,
+										 KeyValueType expectedType) const {
 	kvs.clear();
 	KeyRefs tupleData;
 	Get(0, tupleData);
@@ -107,18 +108,18 @@ KeyValues PayloadIface<T>::GetByJsonPath(const string &jsonPath, TagsMatcher &ta
 
 	Payload pl(t_, const_cast<PayloadValue &>(*v_));
 	CJsonEncoder encoder(tagsMatcher, JsonPrintFilter());
-	KeyRefs krefs = encoder.ExtractFieldValue(&pl, jsonPath);
+	KeyRefs krefs = encoder.ExtractFieldValue(&pl, jsonPath, expectedType);
 
 	for (KeyRef &kref : krefs) kvs.push_back(std::move(kref));
 	return kvs;
 }
 
 template <typename T>
-KeyValues PayloadIface<T>::GetByJsonPath(const TagsPath &jsonPath, KeyValues &) const {
+KeyValues PayloadIface<T>::GetByJsonPath(const TagsPath &jsonPath, KeyValues &, KeyValueType expectedType) const {
 	TagsMatcher tagsMatcher;
 	Payload pl(t_, const_cast<PayloadValue &>(*v_));
 	CJsonEncoder encoder(tagsMatcher, JsonPrintFilter());
-	KeyRefs krefs = encoder.ExtractFieldValue(&pl, jsonPath);
+	KeyRefs krefs = encoder.ExtractFieldValue(&pl, jsonPath, expectedType);
 
 	KeyValues values;
 	for (KeyRef &kref : krefs) values.push_back(std::move(kref));
@@ -266,7 +267,7 @@ size_t PayloadIface<T>::GetHash(const FieldsSet &fields) const {
 		} else {
 			assert(tagPathIdx < fields.getTagsPathsLength());
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
-			keys1 = GetByJsonPath(tagsPath, keys1);
+			keys1 = GetByJsonPath(tagsPath, keys1, KeyValueUndefined);
 		}
 		ret ^= keys1.Hash();
 	}
@@ -283,9 +284,9 @@ bool PayloadIface<T>::IsEQ(const T &other, const FieldsSet &fields) const {
 			if (Get(field, keys1) != o.Get(field, keys2)) return false;
 		} else {
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
-			GetByJsonPath(tagsPath, keys1);
-			o.GetByJsonPath(tagsPath, keys2);
-			if (GetByJsonPath(tagsPath, keys1) != o.GetByJsonPath(tagsPath, keys2)) return false;
+			GetByJsonPath(tagsPath, keys1, KeyValueUndefined);
+			o.GetByJsonPath(tagsPath, keys2, KeyValueUndefined);
+			if (GetByJsonPath(tagsPath, keys1, KeyValueUndefined) != o.GetByJsonPath(tagsPath, keys2, KeyValueUndefined)) return false;
 		}
 	}
 	return true;
@@ -301,25 +302,51 @@ bool PayloadIface<T>::IsEQ(const T &other) const {
 }
 
 template <typename T>
-int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, const CollateOpts &collateOpts) const {
+int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, size_t &firstDifferentFieldIdx,
+							 const h_vector<CollateOpts, 1> &collateOpts) const {
 	size_t tagPathIdx = 0;
 	KeyRefs krefs1, krefs2;
 	PayloadIface<const T> o(t_, other);
-	for (const auto field : fields) {
+
+	bool commonOpts = (collateOpts.size() == 1);
+
+	for (size_t i = 0; i < fields.size(); ++i) {
 		int cmpRes = 0;
+		const auto field(fields[i]);
+		const CollateOpts &opts(commonOpts ? collateOpts[0] : collateOpts[i]);
 		if (field != IndexValueType::SetByJsonPath) {
-			cmpRes = Field(field).Get().Compare(o.Field(field).Get(), collateOpts);
+			cmpRes = Field(field).Get().Compare(o.Field(field).Get(), opts);
 		} else {
 			assert(tagPathIdx < fields.getTagsPathsLength());
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
-			krefs1 = GetByJsonPath(tagsPath, krefs1);
-			krefs2 = o.GetByJsonPath(tagsPath, krefs2);
-			cmpRes = (krefs1 == krefs2);
+			krefs1 = GetByJsonPath(tagsPath, krefs1, KeyValueUndefined);
+			krefs2 = o.GetByJsonPath(tagsPath, krefs2, KeyValueUndefined);
+
+			size_t length = std::min(krefs1.size(), krefs2.size());
+			for (size_t i = 0; i < length; ++i) {
+				cmpRes = krefs1[i].Compare(krefs2[i], opts);
+				if (cmpRes) break;
+			}
+			if (krefs1.size() < krefs2.size()) {
+				cmpRes = -1;
+			} else if (krefs1.size() > krefs2.size()) {
+				cmpRes = 1;
+			}
 		}
+
+		firstDifferentFieldIdx = i;
+
 		if (cmpRes > 0) return 1;
 		if (cmpRes < 0) return -1;
 	}
+
 	return 0;
+}
+
+template <typename T>
+int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, const CollateOpts &collateOpts) const {
+	size_t firstDifferentFieldIdx = 0;
+	return Compare(other, fields, firstDifferentFieldIdx, {collateOpts});
 }
 
 template <typename T>

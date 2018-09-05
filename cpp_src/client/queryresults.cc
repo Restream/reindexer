@@ -40,7 +40,7 @@ QueryResults::QueryResults(net::cproto::ClientConnection *conn, const NSArray &n
 		} else {
 			nsArray[nsIdx]->tagsMatcher_.deserialize(ser, version, cacheToken);
 			nsArray[nsIdx]->payloadType_.clone()->deserialize(ser);
-			nsArray[nsIdx]->tagsMatcher_.updatePayloadType(nsArray[nsIdx]->payloadType_);
+			nsArray[nsIdx]->tagsMatcher_.updatePayloadType(nsArray[nsIdx]->payloadType_, false);
 		}
 	});
 
@@ -53,13 +53,14 @@ Error QueryResults::fetchNextResults() {
 	if (!ret.Status().ok()) {
 		return ret.Status();
 	}
-	if (ret.GetArgs().size() < 2) {
-		return Error(errParams, "Server returned %d args, but expected %d", int(ret.GetArgs().size()), 2);
+	auto args = ret.GetArgs();
+	if (args.size() < 2) {
+		return Error(errParams, "Server returned %d args, but expected %d", int(args.size()), 2);
 	}
 
 	fetchOffset_ += queryParams_.count;
 
-	string_view rawResult = p_string(ret.GetArgs()[0]);
+	string_view rawResult = p_string(args[0]);
 	ResultSerializer ser(rawResult);
 
 	queryParams_ = ser.GetRawQueryParams(nullptr);

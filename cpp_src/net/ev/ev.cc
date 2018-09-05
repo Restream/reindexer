@@ -140,7 +140,7 @@ void loop_epoll_backend::init(dynamic_loop *owner) {
 
 void loop_epoll_backend::set(int fd, int events, int oldevents) {
 	epoll_event ev;
-	ev.events = ((events & READ) ? int(EPOLLIN) | int(EPOLLHUP) : 0) | ((events & WRITE) ? int(EPOLLOUT) : 0) | EPOLLET;
+	ev.events = ((events & READ) ? int(EPOLLIN) | int(EPOLLHUP) : 0) | ((events & WRITE) ? int(EPOLLOUT) : 0) /*| EPOLLET*/;
 	ev.data.fd = fd;
 	if (epoll_ctl(private_->ctlfd_, oldevents == 0 ? EPOLL_CTL_ADD : EPOLL_CTL_MOD, fd, &ev) < 0) {
 		perror("epoll_ctl EPOLL_CTL_MOD");

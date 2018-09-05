@@ -78,7 +78,7 @@ type TestItemEncDec struct {
 	Time   time.Time
 	PTime  *time.Time
 
-	_ struct{} `reindex:"id+tmp,,composite;pk"`
+	_ struct{} `reindex:"id+tmp,,composite,pk"`
 	_ struct{} `reindex:"age+genre,,composite"`
 }
 

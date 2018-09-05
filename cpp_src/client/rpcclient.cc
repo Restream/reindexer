@@ -11,9 +11,7 @@ using std::vector;
 namespace reindexer {
 namespace client {
 
-const int kMaxClientConnections = 4;
-
-RPCClient::RPCClient() {
+RPCClient::RPCClient(const ReindexerConfig& config) : config_(config) {
 	stop_.set(loop_);
 	curConnIdx_ = -1;
 }
@@ -58,7 +56,7 @@ void RPCClient::run() {
 		sig.loop.break_loop();
 	});
 	stop_.start();
-	for (int i = 0; i < kMaxClientConnections; i++) {
+	for (int i = 0; i < config_.ConnPoolSize; i++) {
 		connections_.push_back(std::unique_ptr<cproto::ClientConnection>(new cproto::ClientConnection(loop_)));
 	}
 
@@ -122,12 +120,13 @@ Error RPCClient::modifyItem(const string& ns, Item& item, int mode) {
 	auto conn = getConn();
 	auto ret = conn->Call(cproto::kCmdModifyItem, ser.Slice(), mode);
 
+	auto args = ret.GetArgs();
 	if (ret.Status().ok()) {
-		if (ret.GetArgs().size() < 2) {
-			return Error(errParams, "Server returned %d args, but expected %d", int(ret.GetArgs().size()), 1);
+		if (args.size() < 2) {
+			return Error(errParams, "Server returned %d args, but expected %d", int(args.size()), 1);
 		}
 		NSArray nsArray{getNamespace(ns)};
-		QueryResults(conn, nsArray, p_string(ret.GetArgs()[0]), int(ret.GetArgs()[1]));
+		QueryResults(conn, nsArray, p_string(args[0]), int(args[1]));
 	}
 	return ret.Status();
 }
@@ -197,20 +196,23 @@ Error RPCClient::Select(const Query& query, QueryResults& result) {
 
 		WrSerializer qser, pser;
 		query.Serialize(qser);
-		vec2pack({0}, pser);
+
+		NSArray nsArray;
+		query.WalkNested(true, true, [this, &nsArray](const Query q) { nsArray.push_back(getNamespace(q._namespace)); });
+
+		h_vector<int32_t, 4> vers;
+		for (auto& ns : nsArray) vers.push_back(ns->tagsMatcher_.version() ^ ns->tagsMatcher_.cacheToken());
+		vec2pack(vers, pser);
+
 		auto conn = getConn();
 		auto ret = conn->Call(cproto::kCmdSelect, qser.Slice(), flags, 100, int64_t(-1), pser.Slice());
 
-		NSArray nsArray;
-		nsArray.push_back(getNamespace(query._namespace));
-		for (auto& jns : query.joinQueries_) nsArray.push_back(getNamespace(jns._namespace));
-		for (auto& mns : query.mergeQueries_) nsArray.push_back(getNamespace(mns._namespace));
-
 		if (ret.Status().ok()) {
-			if (ret.GetArgs().size() < 2) {
-				return Error(errParams, "Server returned %d args, but expected %d", int(ret.GetArgs().size()), 1);
+			auto args = ret.GetArgs();
+			if (args.size() < 2) {
+				return Error(errParams, "Server returned %d args, but expected %d", int(args.size()), 1);
 			}
-			result = QueryResults(conn, nsArray, p_string(ret.GetArgs()[0]), int(ret.GetArgs()[1]));
+			result = QueryResults(conn, nsArray, p_string(args[0]), int(args[1]));
 		}
 		return ret.Status();
 	} catch (const Error& err) {

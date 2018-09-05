@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/restream/reindexer"
@@ -26,7 +27,7 @@ type TestJoinItem struct {
 }
 
 func (item *TestItem) Join(field string, subitems []interface{}, context interface{}) {
-	switch field {
+	switch strings.ToLower(field) {
 	case "prices":
 		if item.Prices == nil {
 			item.Prices = make([]*TestJoinItem, 0, len(subitems))
@@ -84,24 +85,24 @@ func (s byID) Less(i, j int) bool {
 }
 
 func CheckTestItemsJoinQueries(left, inner, or bool) {
-	qj1 := DB.Query("test_join_items").Where("device", reindexer.EQ, "ottstb").Sort("name", true)
-	qj2 := DB.Query("test_join_items").Where("device", reindexer.EQ, "android").Where("amount", reindexer.GT, 2)
-	qj3 := DB.Query("test_join_items").Where("device", reindexer.EQ, "iphone")
+	qj1 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "ottstb").Sort("NAME", true)
+	qj2 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "android").Where("AMOUNT", reindexer.GT, 2)
+	qj3 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "iphone")
 
-	qjoin := DB.Query("test_items_for_join").Where("genre", reindexer.EQ, 10).Limit(10).Debug(reindexer.TRACE)
+	qjoin := DB.Query("test_items_for_join").Where("GENRE", reindexer.EQ, 10).Limit(10).Debug(reindexer.TRACE)
 
 	if left {
-		qjoin.LeftJoin(qj1, "prices").On("price_id", reindexer.SET, "id")
+		qjoin.LeftJoin(qj1, "PRICES").On("PRICE_ID", reindexer.SET, "ID")
 	}
 	if inner {
-		qjoin.InnerJoin(qj2, "pricesx").On("location", reindexer.EQ, "location").On("price_id", reindexer.SET, "id")
+		qjoin.InnerJoin(qj2, "PRICESX").On("LOCATION", reindexer.EQ, "LOCATION").On("PRICE_ID", reindexer.SET, "ID")
 
 		if or {
 			qjoin.Or()
 		}
-		qjoin.InnerJoin(qj3, "pricesx").
-			On("location", reindexer.LT, "location").
-			Or().On("price_id", reindexer.SET, "id")
+		qjoin.InnerJoin(qj3, "PRICESX").
+			On("LOCATION", reindexer.LT, "LOCATION").
+			Or().On("PRICE_ID", reindexer.SET, "ID")
 	}
 
 	rjoin, _ := qjoin.MustExec().FetchAll()
@@ -120,9 +121,9 @@ func CheckTestItemsJoinQueries(left, inner, or bool) {
 		item := iitem.(*TestItem)
 		if left {
 			rj1, _ := DB.Query("test_join_items").
-				Where("device", reindexer.EQ, "ottstb").
-				Where("id", reindexer.SET, item.PricesIDs).
-				Sort("name", true).
+				Where("DEVICE", reindexer.EQ, "ottstb").
+				Where("ID", reindexer.SET, item.PricesIDs).
+				Sort("NAME", true).
 				MustExec().FetchAll()
 
 			if len(rj1) != 0 {
@@ -135,16 +136,18 @@ func CheckTestItemsJoinQueries(left, inner, or bool) {
 
 		if inner {
 			rj2 := DB.Query("test_join_items").
-				Where("device", reindexer.EQ, "android").
-				Where("amount", reindexer.GT, 2).
-				Where("id", reindexer.SET, item.PricesIDs).
-				Where("location", reindexer.EQ, item.LocationID).
+				Where("DEVICE", reindexer.EQ, "android").
+				Where("AMOUNT", reindexer.GT, 2).
+				Where("ID", reindexer.SET, item.PricesIDs).
+				Where("LOCATION", reindexer.EQ, item.LocationID).
+				Sort("NAME", true).
+				Limit(30).
 				MustExec()
 
 			rj3 := DB.Query("test_join_items").
-				Where("device", reindexer.EQ, "iphone").
-				Where("id", reindexer.SET, item.PricesIDs).Or().
-				Where("location", reindexer.LT, item.LocationID).
+				Where("DEVICE", reindexer.EQ, "iphone").
+				Where("ID", reindexer.SET, item.PricesIDs).Or().
+				Where("LOCATION", reindexer.LT, item.LocationID).
 				MustExec()
 
 			if (or && (rj2.Count() != 0 || rj3.Count() != 0)) || (!or && (rj2.Count() != 0 && rj3.Count() != 0)) {
@@ -191,16 +194,16 @@ func CheckTestItemsJoinQueries(left, inner, or bool) {
 }
 
 func TestJoinQueryResultsOnIterator(t *testing.T) {
-	qjoin := DB.Query("test_items_for_join").Where("genre", reindexer.EQ, 10).Limit(10).Debug(reindexer.TRACE)
-	qj1 := DB.Query("test_join_items").Where("device", reindexer.EQ, "ottstb").Sort("name", false)
-	qj2 := DB.Query("test_join_items").Where("device", reindexer.EQ, "android")
-	qjoin.LeftJoin(qj1, "prices").On("price_id", reindexer.SET, "id").
-		InnerJoin(qj2, "pricesx").On("location", reindexer.EQ, "location").On("price_id", reindexer.SET, "id")
+	qjoin := DB.Query("test_items_for_join").Where("GENRE", reindexer.EQ, 10).Limit(10).Debug(reindexer.TRACE)
+	qj1 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "ottstb").Sort("name", false)
+	qj2 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "android")
+	qjoin.LeftJoin(qj1, "PRICES").On("PRICE_ID", reindexer.SET, "ID").
+		InnerJoin(qj2, "PRICESX").On("LOCATION", reindexer.EQ, "LOCATION").On("PRICE_ID", reindexer.SET, "Id")
 
 	var handlerSubitems []interface{}
 
-	qjoin.JoinHandler("prices", func(field string, item interface{}, subitems []interface{}) (isContinue bool) {
-		if field != "prices" {
+	qjoin.JoinHandler("PRICES", func(field string, item interface{}, subitems []interface{}) (isContinue bool) {
+		if !strings.EqualFold(field, "prices") {
 			t.Errorf("field expected: '%v'; actual: '%v'", "prices", field)
 		}
 		if item == nil {
@@ -215,11 +218,11 @@ func TestJoinQueryResultsOnIterator(t *testing.T) {
 
 	for iter.Next() {
 		item := iter.Object().(*TestItem)
-		joinResultsPrices, err := iter.JoinedObjects("prices")
+		joinResultsPrices, err := iter.JoinedObjects("PRICES")
 		if err != nil {
 			t.Fatalf("Can't get join objects from iterator: %v", err)
 		}
-		joinResultsPricesx, err := iter.JoinedObjects("pricesx")
+		joinResultsPricesx, err := iter.JoinedObjects("PRICESX")
 		if err != nil {
 			t.Fatalf("Can't get join objects from iterator: %v", err)
 		}

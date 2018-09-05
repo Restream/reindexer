@@ -14,7 +14,9 @@ using reindexer::Error;
 template <typename _DB>
 class DBWrapper {
 public:
-	DBWrapper(const string& outFileName, const string& inFileName, const string& command);
+	template <typename... Args>
+	DBWrapper(const string& outFileName, const string& inFileName, const string& command, Args... args)
+		: db_(args...), output_(outFileName), fileName_(inFileName), command_(command) {}
 	Error Connect(const string& dsn);
 	bool Run();
 

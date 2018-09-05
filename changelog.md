@@ -1,3 +1,20 @@
+# Version 1.9.6 (03.09.2018)
+
+## Core
+- [fea] Merge with Join queries support
+- [fea] Sort by multiple columns/indexes
+- [fix] Case insensivity for index/namespaces names
+- [fix] Sparse indexes behavior fixed
+- [fix] Full text index - correct calculatuon of distance between words
+- [fix] Race condition on concurent ConfigureIndex requests
+
+## Reindexer server
+- [fea] Added modify index method
+
+## Go connector
+- [fea] New builtinserver binding: builtin mode for go application + bundled server for external clients
+- [fea] Improoved validation of go struct `reindex` tags
+
 # Version 1.9.5 (04.08.2018)
 
 ## Core

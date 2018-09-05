@@ -10,9 +10,10 @@ RUN mkdir /src && \
     mkdir build && \
     cd build && \
     cmake -DCMAKE_BUILD_TYPE=Release .. && \
-    make -j8 reindexer_server && \
+    make -j8 reindexer_server reindexer_tool && \
     make face swagger && \
     make install -C cpp_src/cmd/reindexer_server && \
+    make install -C cpp_src/cmd/reindexer_tool && \
     cd / && \
     rm -rf /src && \
     apk del g++ cmake make git curl && \

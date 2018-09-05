@@ -1,107 +1,13 @@
 cmake_minimum_required(VERSION 2.8)
 
-option(LINK_RESOURCES "Link web resources as binary data" OFF)
-
 project(reindexer_server)
-
-set (SWAGGER_VERSION "2.x")
-set (FACE_BRANCH "master")
 
 set(TARGET reindexer_server)
 
-file(GLOB_RECURSE SRCS *.cc *.h)
-add_executable(${TARGET} ${SRCS})
+add_executable(${TARGET} "main.cc")
+list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer ${REINDEXER_LIBRARIES})
 include_directories(${PROJECT_SOURCE_DIR})
-
-file(WRITE ${PROJECT_BINARY_DIR}/swagger_replace.cmake
-    "file(READ ${PROJECT_BINARY_DIR}/swagger/index.html indexhtml)
-    string(REPLACE \"http://petstore.swagger.io/v2/swagger.json\" \"swagger.yml\" indexhtml \"\${indexhtml}\")
-    file(WRITE ${PROJECT_BINARY_DIR}/swagger/index.html \"\${indexhtml}\")"
-)
-
-file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
-    "file(
-	DOWNLOAD \"https://codeload.github.com/swagger-api/swagger-ui/tar.gz/${SWAGGER_VERSION}\"
-	\"${PROJECT_BINARY_DIR}/swagger.tar.gz\"
-     )
-     execute_process(
-       COMMAND ${CMAKE_COMMAND} -E tar xzf \"swagger.tar.gz\" WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
-       RESULT_VARIABLE ret
-     )
-     if (NOT \"\${ret}\" STREQUAL \"0\")
-	 message(FATAL_ERROR \"Could not untar 'swagger.tar.gz'\")
-     endif()
-     execute_process(
-       COMMAND ${CMAKE_COMMAND} -E copy_directory \"${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}/dist\" \"${PROJECT_BINARY_DIR}/swagger\"
-       RESULT_VARIABLE ret
-     )
-     if (NOT \"\${ret}\" STREQUAL \"0\")
-	 message(FATAL_ERROR \"Could not copy directory '${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}/dist'\")
-     endif()
-     execute_process(
-       COMMAND ${CMAKE_COMMAND} -E copy \"${PROJECT_SOURCE_DIR}/contrib/server.yml\" \"${PROJECT_BINARY_DIR}/swagger/swagger.yml\"
-       RESULT_VARIABLE ret
-     )
-     if (NOT \"\${ret}\" STREQUAL \"0\")
-	 message(FATAL_ERROR \"Could not copy '${PROJECT_SOURCE_DIR}/contrib/server.yml'\")
-     endif()
-     file(RENAME \"${PROJECT_BINARY_DIR}/swagger/swagger-ui.min.js\" \"${PROJECT_BINARY_DIR}/swagger/swagger-ui.js\")
-     execute_process(COMMAND ${CMAKE_COMMAND} -P \"${PROJECT_BINARY_DIR}/swagger_replace.cmake\")
-     execute_process(
-       COMMAND ${CMAKE_COMMAND} -E remove_directory \"${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}\"
-       RESULT_VARIABLE ret
-     )
-     if (NOT \"\${ret}\" STREQUAL \"0\")
-	 message(FATAL_ERROR \"Could not remove directory '${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}'\")
-     endif()
-     file(REMOVE \"${PROJECT_BINARY_DIR}/swagger.tar.gz\")"
-)
-
-file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
-    "file(
-	DOWNLOAD \"https://codeload.github.com/restream/reindexer-face-dist/tar.gz/${FACE_BRANCH}\"
-	\"${PROJECT_BINARY_DIR}/face.tar.gz\"
-     )
-     execute_process(
-       COMMAND ${CMAKE_COMMAND} -E remove_directory \"${PROJECT_BINARY_DIR}/face\"
-       RESULT_VARIABLE ret
-     )
-     if (NOT \"\${ret}\" STREQUAL \"0\")
-	 message(FATAL_ERROR \"Could not remove directory '${PROJECT_BINARY_DIR}/face'\")
-     endif()
-     execute_process(
-       COMMAND ${CMAKE_COMMAND} -E tar xzf \"face.tar.gz\" WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
-       RESULT_VARIABLE ret
-     )
-     if (NOT \"\${ret}\" STREQUAL \"0\")
-	 message(FATAL_ERROR \"Could not untar 'face.tar.gz'\")
-     endif()
-     file(RENAME \"${PROJECT_BINARY_DIR}/reindexer-face-dist-${FACE_BRANCH}\" \"${PROJECT_BINARY_DIR}/face\")
-     file(REMOVE \"${PROJECT_BINARY_DIR}/face.tar.gz\")"
-)
-
-if (LINK_RESOURCES)
-    if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} LESS 3.1)
-	message(WARNING "For build reindexer server with embedded resources need cmake version 3.1 or greater. This target will be skipped")
-    else()
-	include(CMakeRC)
-	execute_process(
-	    COMMAND ${CMAKE_COMMAND} -P "${PROJECT_BINARY_DIR}/make_face.cmake"
-	    COMMAND ${CMAKE_COMMAND} -P "${PROJECT_BINARY_DIR}/make_swagger.cmake"
-	)
-
-	file(GLOB_RECURSE FACE_FILES ${PROJECT_BINARY_DIR}/face/*)
-	file(GLOB_RECURSE SWAGGER_FILES ${PROJECT_BINARY_DIR}/swagger/*)
-	cmrc_add_resource_library(resources WHENCE ${PROJECT_BINARY_DIR} ${FACE_FILES})
-	cmrc_add_resources(resources WHENCE ${PROJECT_BINARY_DIR} ${SWAGGER_FILES})
-
-	add_definitions(-DLINK_RESOURCES)
-	list(APPEND REINDEXER_LIBRARIES resources)
-    endif()
-endif()
-
-add_custom_target(face COMMAND ${CMAKE_COMMAND} -P "${PROJECT_BINARY_DIR}/make_face.cmake")
-add_custom_target(swagger COMMAND ${CMAKE_COMMAND} -P "${PROJECT_BINARY_DIR}/make_swagger.cmake")
+add_dependencies(${TARGET} reindexer_server_library)
 
 target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES})
 
@@ -111,7 +17,7 @@ install(TARGETS ${TARGET}
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
 )
 
-install(DIRECTORY ${PROJECT_BINARY_DIR}/swagger ${PROJECT_BINARY_DIR}/face
+install(DIRECTORY ${SERVER_LIB_DIR}/swagger ${SERVER_LIB_DIR}/face
     DESTINATION share/reindexer/web OPTIONAL
 )
 
@@ -135,7 +41,7 @@ SET(CPACK_PACKAGE_NAME "reindexer_server")
 SET(CPACK_PACKAGE_DESCRIPTION_SUMMARY "ReindexerDB server package")
 SET(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA ${PROJECT_SOURCE_DIR}/contrib/deb/postinst)
 SET(CPACK_RPM_POST_INSTALL_SCRIPT_FILE ${PROJECT_SOURCE_DIR}/contrib/rpm/postinst)
-
+set(CPACK_RPM_RELOCATION_PATHS "/etc")
 if (WIN32)
   if (MSVC)
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP true)

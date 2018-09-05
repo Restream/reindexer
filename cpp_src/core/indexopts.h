@@ -33,6 +33,8 @@ struct IndexOpts {
 	IndexOpts& SetCollateMode(CollateMode mode);
 	CollateMode GetCollateMode() const;
 
+	bool operator==(const IndexOpts&) const;
+
 	uint8_t options;
 	CollateOpts collateOpts_;
 };

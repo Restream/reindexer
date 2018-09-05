@@ -20,7 +20,7 @@ using std::shared_ptr;
 template <class T>
 class ComparatorImpl {
 public:
-	ComparatorImpl(){};
+	ComparatorImpl() {}
 	void SetValues(CondType cond, const KeyValues &values) {
 		if (cond == CondSet) {
 			valuesS_.reset(new unordered_set<T>());

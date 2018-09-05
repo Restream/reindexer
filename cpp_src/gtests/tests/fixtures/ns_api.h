@@ -6,6 +6,7 @@
 
 class NsApi : public ReindexerApi {
 protected:
+	const string idIdxName = "id";
 	const string updatedTimeSecFieldName = "updated_time_sec";
 	const string updatedTimeMSecFieldName = "updated_time_msec";
 	const string updatedTimeUSecFieldName = "updated_time_usec";

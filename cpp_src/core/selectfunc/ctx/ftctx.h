@@ -17,6 +17,8 @@ public:
 		fast_hash_map<IdType, AreaHolder::Ptr> holders_;
 		bool need_area_ = false;
 		bool is_composite_ = false;
+		bool isWordPositions_ = false;
+		std::string extraWordSymbols_;
 	};
 
 	FtCtx();

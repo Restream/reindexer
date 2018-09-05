@@ -1,0 +1,55 @@
+#pragma once
+
+#include <string>
+#include <vector>
+#include "tools/errors.h"
+
+using std::string;
+using std::vector;
+using reindexer::Error;
+
+namespace Yaml { class Node; }
+
+namespace reindexer_server {
+
+struct ServerConfig {
+	ServerConfig() { Reset(); }
+
+	const vector<string>& Args() const { return args_; }
+	void Reset();
+
+	Error ParseYaml(const string& yaml);
+	Error ParseFile(const string& configPath);
+	Error ParseCmd(int argc, char* argv[]);
+
+	string WebRoot;
+	string StorageEngine;
+	string HTTPAddr;
+	string RPCAddr;
+	string LogLevel;
+	string ServerLog;
+	string CoreLog;
+	string HttpLog;
+	string RpcLog;
+	string StoragePath;
+#ifndef _WIN32
+	string UserName;
+	string DaemonPidFile;
+	bool Daemonize;
+#else
+	bool InstallSvc;
+	bool RemoveSvc;
+	bool SvcMode;
+#endif
+	bool EnableSecurity;
+	bool DebugPprof;
+	bool DebugAllocs;
+
+protected:
+	Error fromYaml(Yaml::Node& root);
+
+private:
+	vector<string> args_;
+};
+
+}  // namespace reindexer_server

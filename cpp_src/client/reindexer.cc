@@ -5,7 +5,7 @@
 namespace reindexer {
 namespace client {
 
-Reindexer::Reindexer() { impl_ = new RPCClient(); }
+Reindexer::Reindexer(const ReindexerConfig& config) { impl_ = new RPCClient(config); }
 Reindexer::~Reindexer() { delete impl_; }
 Error Reindexer::Connect(const string& dsn) { return impl_->Connect(dsn); }
 Error Reindexer::AddNamespace(const NamespaceDef& nsDef) { return impl_->AddNamespace(nsDef); }

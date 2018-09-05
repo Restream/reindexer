@@ -14,13 +14,14 @@ using std::string;
 using std::vector;
 
 struct JoinedSelector {
-	typedef std::function<bool(IdType, ConstPayload, bool)> FuncType;
+	typedef std::function<bool(IdType, int nsId, ConstPayload, bool)> FuncType;
 	JoinType type;
 	bool nodata;
 	FuncType func;
 	int called, matched;
 	string ns;
 };
+
 typedef vector<JoinedSelector> JoinedSelectors;
 
 class SelectLockUpgrader {
@@ -46,11 +47,22 @@ struct SelectCtx {
 		IdSet ids;
 		h_vector<SelectIterator> iterators;
 		Mode mode;
-		string sortBy;
+		SortingEntries sortBy;
+	};
+	struct SortingCtx {
+		struct Entry {
+			const SortingEntry *data = nullptr;
+			Index *index = nullptr;
+			bool isOrdered = true;
+			CollateOpts opts;
+		};
+		h_vector<Entry, 1> entries;
+		int firstColumnSortId = 0;
 	};
 	bool matchedAtLeastOnce = false;
 	bool reqMatchedOnceFlag = false;
 	PreResult::Ptr preResult;
+	SortingCtx sortingCtx;
 };
 
 class NsSelecter {
@@ -65,28 +77,36 @@ private:
 	struct LoopCtx {
 		LoopCtx(SelectCtx &ctx) : sctx(ctx) {}
 		RawQueryResult *qres = nullptr;
-		Index *sortIndex = nullptr;
 		bool ftIndex = false;
 		bool calcTotal = false;
+		int sortingCtxIdx = IndexValueType::NotSet;
 		SelectCtx &sctx;
 	};
 
 	template <bool reverse, bool haveComparators, bool haveDistinct>
 	void selectLoop(LoopCtx &ctx, QueryResults &result);
 	void applyCustomSort(ItemRefVector &result, const SelectCtx &ctx);
-	void applyGeneralSort(ItemRefVector &result, const SelectCtx &ctx, const string &fieldName, const CollateOpts &collateOpts);
+
+	using ItemIterator = ItemRefVector::iterator;
+	using ConstItemIterator = const ItemIterator &;
+	void applyGeneralSort(ConstItemIterator itFirst, ConstItemIterator itLast, ConstItemIterator itEnd, const SelectCtx &ctx);
 
 	bool containsFullTextIndexes(const QueryEntries &entries);
 	void selectWhere(const QueryEntries &entries, RawQueryResult &result, SortType sortId, bool is_ft);
+	void addSelectResult(Index *firstSortIdx, bool hasComparators, uint8_t proc, IdType rowId, IdType &properRowId, const SelectCtx &sctx,
+						 h_vector<Aggregator, 4> &aggregators, QueryResults &result);
 	QueryEntries lookupQueryIndexes(const QueryEntries &entries);
 	void substituteCompositeIndexes(QueryEntries &entries);
-	const string &getOptimalSortOrder(const QueryEntries &entries);
+	SortingEntries getOptimalSortOrder(const QueryEntries &entries);
 	h_vector<Aggregator, 4> getAggregators(const Query &q);
 	int getCompositeIndex(const FieldsSet &fieldsmask);
 	bool mergeQueryEntries(QueryEntry *lhs, QueryEntry *rhs);
-	void setLimitsAndOffset(ItemRefVector &result, const SelectCtx &ctx);
+	void setLimitAndOffset(ItemRefVector &result, size_t offset, size_t limit);
 	void updateCompositeIndexesValues(QueryEntries &qe);
 	KeyValueType getQueryEntryIndexType(const QueryEntry &qentry) const;
+	void prepareSortingContext(const SortingEntries &sortBy, SelectCtx &ctx, bool isFt);
+	void prepareSortingIndexes(SortingEntries &sortBy);
+	void getSortIndexValue(const SelectCtx::SortingCtx::Entry *sortCtx, IdType rowId, KeyRefs &value);
 
 	Namespace *ns_;
 	SelectFunction::Ptr fnc_;

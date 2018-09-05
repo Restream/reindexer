@@ -5,8 +5,9 @@
 
 namespace reindexer {
 
-Item::FieldRef::FieldRef(int field, ItemImpl *itemImpl) : impl_(std::make_shared<RegularFieldRefImpl>(field, itemImpl)) {}
-Item::FieldRef::FieldRef(const string &jsonPath, ItemImpl *itemImpl) : impl_(std::make_shared<CjsonFieldRefImpl>(jsonPath, itemImpl)) {}
+Item::FieldRef::FieldRef(int field, ItemImpl *itemImpl) : impl_(std::make_shared<IndexedFieldRefImpl>(field, itemImpl)) {}
+Item::FieldRef::FieldRef(const string &jsonPath, ItemImpl *itemImpl)
+	: impl_(std::make_shared<NonIndexedFieldRefImpl>(jsonPath, itemImpl)) {}
 
 Item::Item(Item &&other) noexcept : impl_(other.impl_), status_(std::move(other.status_)), id_(other.id_), version_(other.version_) {
 	other.impl_ = nullptr;

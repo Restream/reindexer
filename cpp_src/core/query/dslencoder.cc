@@ -186,13 +186,20 @@ void encodeStringArray(const h_vector<T, holdSize>& array, string& dsl) {
 }
 
 void encodeSorting(const Query& query, string& dsl) {
-	if (query.sortBy.empty()) return;
+	if (query.sortingEntries_.empty()) return;
 	encodeNodeName(get(root_map, Root::Sort), dsl);
-	dsl += leftBracket;
-	encodeStringField(get(sort_map, Sort::Field), query.sortBy, dsl);
-	addComa(dsl);
-	encodeBooleanField(get(sort_map, Sort::Desc), query.sortDirDesc, dsl);
-	dsl += rightBracket;
+	bool multicolumnSort = query.sortingEntries_.size() > 1;
+	if (multicolumnSort) dsl += leftSquareBracket;
+	for (size_t i = 0; i < query.sortingEntries_.size(); i++) {
+		dsl += leftBracket;
+		const SortingEntry& sortingEntry(query.sortingEntries_[i]);
+		encodeStringField(get(sort_map, Sort::Field), sortingEntry.column, dsl);
+		addComa(dsl);
+		encodeBooleanField(get(sort_map, Sort::Desc), sortingEntry.desc, dsl);
+		dsl += rightBracket;
+		if (i != query.sortingEntries_.size() - 1) addComa(dsl);
+	}
+	if (multicolumnSort) dsl += rightSquareBracket;
 }
 
 void encodeFilter(const QueryEntry& qentry, string& dsl) {
@@ -303,7 +310,7 @@ void encodeJoins(const Query& query, string& dsl) {
 		if (!joinQuery.entries.empty()) addComa(dsl);
 		encodeFilters(joinQuery, dsl);
 
-		if (!joinQuery.sortBy.empty()) addComa(dsl);
+		if (!joinQuery.sortingEntries_.empty()) addComa(dsl);
 		encodeSorting(joinQuery, dsl);
 
 		addComa(dsl);
@@ -342,7 +349,7 @@ std::string toDsl(const Query& query) {
 	if (!query.selectFunctions_.empty()) addComa(dsl);
 	encodeSelectFunctions(query, dsl);
 
-	if (!query.sortBy.empty()) addComa(dsl);
+	if (!query.sortingEntries_.empty()) addComa(dsl);
 	encodeSorting(query, dsl);
 
 	if (!query.entries.empty()) addComa(dsl);

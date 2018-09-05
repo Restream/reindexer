@@ -52,3 +52,31 @@ class IndexesTest(BaseTest):
         status, body = self.api_get_namespace(self.current_db, self.test_ns)
         self.validate_get_namespace_response(
             status, body, indexes_arr_of_dicts[1:])
+
+    def test_update_index(self):
+        """Should be able to update an index"""
+
+        index = self.helper_index_construct(
+            name='id', field_type='int', index_type='hash', is_pk=True)
+
+        status, body = self.api_create_index(
+            self.current_db, self.test_ns, index)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        index_dict = []
+        index_dict.append(index)
+        status, body = self.api_get_namespace(self.current_db, self.test_ns)
+        self.validate_get_namespace_response(
+            status, body, index_dict)
+
+        updated_index = self.helper_index_construct(
+            name='id', field_type='string', index_type='hash', is_pk=True)
+        updated_index_dict = []
+        updated_index_dict.append(updated_index)
+
+        status, body = self.api_update_index(
+            self.current_db, self.test_ns, updated_index)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        status, body = self.api_get_namespace(self.current_db, self.test_ns)
+        self.validate_get_namespace_response(status, body, updated_index_dict)

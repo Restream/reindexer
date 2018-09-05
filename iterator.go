@@ -3,6 +3,7 @@ package reindexer
 import (
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/restream/reindexer/bindings"
 )
@@ -106,6 +107,18 @@ func (it *Iterator) Next() (hasNext bool) {
 	return it.ptr <= it.rawQueryParams.qcount
 }
 
+func (it *Iterator) joinedNsIndexOffset(parentNsID int) int {
+	if it.query == nil {
+		return 1
+	}
+
+	offset := 1 + len(it.query.mergedQueries)
+	for m := 0; m < parentNsID; m++ {
+		offset += len(it.query.mergedQueries[m].joinQueries)
+	}
+	return offset
+}
+
 func (it *Iterator) readItem() (item interface{}, rank int) {
 	params := it.ser.readRawtItemParams()
 	if it.rawQueryParams.haveProcent {
@@ -116,23 +129,23 @@ func (it *Iterator) readItem() (item interface{}, rank int) {
 	if it.err != nil {
 		return
 	}
-	if subNSRes > 0 {
-		for nsIndex := 0; nsIndex < subNSRes; nsIndex++ {
-			siRes := int(it.ser.GetVarUInt())
-			if siRes == 0 {
-				continue
-			}
-			subitems := make([]interface{}, siRes)
-			for i := 0; i < siRes; i++ {
-				params = it.ser.readRawtItemParams()
-				subitems[i], it.err = unpackItem(it.nsArray[nsIndex+1], params, it.allowUnsafe, it.rawQueryParams.nonCacheableData)
-				if it.err != nil {
-					return
-				}
-			}
-			it.current.joinObj[nsIndex] = subitems
-			it.join(nsIndex, item)
+	nsIndexOffset := it.joinedNsIndexOffset(params.nsid)
+
+	for nsIndex := 0; nsIndex < subNSRes; nsIndex++ {
+		siRes := int(it.ser.GetVarUInt())
+		if siRes == 0 {
+			continue
 		}
+		subitems := make([]interface{}, siRes)
+		for i := 0; i < siRes; i++ {
+			subparams := it.ser.readRawtItemParams()
+			subitems[i], it.err = unpackItem(it.nsArray[nsIndex+nsIndexOffset], subparams, it.allowUnsafe, it.rawQueryParams.nonCacheableData)
+			if it.err != nil {
+				return
+			}
+		}
+		it.current.joinObj[nsIndex] = subitems
+		it.join(nsIndex, nsIndexOffset, params.nsid, item)
 	}
 	return
 }
@@ -162,7 +175,7 @@ func (it *Iterator) fetchResults() {
 	return
 }
 
-func (it *Iterator) join(nsIndex int, item interface{}) {
+func (it *Iterator) join(nsIndex, nsIndexOffset, parentNsID int, item interface{}) {
 	field := it.joinToFields[nsIndex]
 	subitems := it.current.joinObj[nsIndex]
 	handler := it.joinHandlers[nsIndex]
@@ -177,15 +190,15 @@ func (it *Iterator) join(nsIndex int, item interface{}) {
 		joinable.Join(field, subitems, it.queryContext)
 	} else {
 
-		v := getJoinedField(reflect.ValueOf(item), it.nsArray[0].joined, field)
+		v := getJoinedField(reflect.ValueOf(item), it.nsArray[parentNsID].joined, field)
 		if !v.IsValid() {
 			panic(fmt.Errorf("Can't find field with tag '%s' in struct '%s' for put join results from '%s'",
 				field,
 				it.nsArray[0].rtype,
-				it.nsArray[nsIndex+1].name))
+				it.nsArray[nsIndex+nsIndexOffset].name))
 		}
 		if v.IsNil() {
-			v.Set(reflect.MakeSlice(reflect.SliceOf(reflect.PtrTo(it.nsArray[nsIndex+1].rtype)), 0, len(subitems)))
+			v.Set(reflect.MakeSlice(reflect.SliceOf(reflect.PtrTo(it.nsArray[nsIndex+nsIndexOffset].rtype)), 0, len(subitems)))
 		}
 		for _, subitem := range subitems {
 			v.Set(reflect.Append(v, reflect.ValueOf(subitem)))
@@ -332,7 +345,7 @@ func (it *Iterator) Close() {
 
 func (it *Iterator) findJoinFieldIndex(field string) (index int) {
 	for index = range it.joinToFields {
-		if it.joinToFields[index] == field {
+		if strings.EqualFold(it.joinToFields[index], field) {
 			return
 		}
 	}

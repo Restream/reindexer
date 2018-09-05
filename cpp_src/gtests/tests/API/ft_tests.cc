@@ -28,6 +28,7 @@ TEST_F(FTApi, CompositeSelect) {
 			auto field = ritem[idx].Name();
 			if (field == "id") continue;
 			auto it = data.find(ritem[field].As<string>());
+			printf("%s\n", ritem[field].As<string>().c_str());
 			EXPECT_TRUE(it != data.end());
 			data.erase(it);
 		}
@@ -51,6 +52,7 @@ TEST_F(FTApi, NumberToWordsSelect) {
 	for (auto it : res) {
 		Item ritem(it.GetItem());
 		string val = ritem["ft1"].As<string>();
+		// printf("%s\n", val.c_str());
 		std::cout << val << std::endl;
 		EXPECT_TRUE(result == val);
 	}

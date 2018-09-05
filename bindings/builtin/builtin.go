@@ -68,6 +68,7 @@ func str2c(str string) C.reindexer_string {
 	hdr := (*reflect.StringHeader)(unsafe.Pointer(&str))
 	return C.reindexer_string{p: unsafe.Pointer(hdr.Data), n: C.int(hdr.Len)}
 }
+
 func err2go(ret C.reindexer_error) error {
 	if ret.what != nil {
 		defer C.free(unsafe.Pointer(ret.what))
@@ -114,6 +115,10 @@ func bool2cint(v bool) C.int {
 	return 0
 }
 
+func (binding *Builtin) SetReindexerInstance(p unsafe.Pointer) {
+	C.change_reindexer_instance(p)
+}
+
 func (binding *Builtin) Init(u *url.URL, options ...interface{}) error {
 
 	cgoLimit := defCgoLimit
@@ -121,13 +126,13 @@ func (binding *Builtin) Init(u *url.URL, options ...interface{}) error {
 		switch v := option.(type) {
 		case bindings.OptionCgoLimit:
 			cgoLimit = v.CgoLimit
+		case bindings.OptionBuiltinWithServer:
 		default:
 			fmt.Printf("Unknown builtin option: %v\n", option)
 		}
 	}
 
 	binding.cgoLimiter = make(chan struct{}, cgoLimit)
-
 	if len(u.Path) != 0 && u.Path != "/" {
 		err := binding.EnableStorage(u.Path)
 		if err != nil {
@@ -232,8 +237,8 @@ func CGoLogger(level int, msg string) {
 func (binding *Builtin) EnableLogger(log bindings.Logger) {
 	logger = log
 	C.reindexer_enable_go_logger()
-
 }
+
 func (binding *Builtin) DisableLogger() {
 	C.reindexer_disable_go_logger()
 	logger = nil

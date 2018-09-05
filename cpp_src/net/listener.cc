@@ -104,7 +104,7 @@ void Listener::timeout_cb(ev::periodic &, int) {
 		if (connections_[i]->IsFinished()) {
 			connections_[i]->Detach();
 			shared_->idle_.push_back(std::move(connections_[i]));
-			if (i != connections_.size() - 1) std::swap(connections_[i], connections_.back());
+			if (i != connections_.size() - 1) connections_[i] = std::move(connections_.back());
 			connections_.pop_back();
 			shared_->ts_ = std::chrono::steady_clock::now();
 		} else {

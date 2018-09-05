@@ -107,7 +107,7 @@ func FillTestCollateWhereItems() {
 func CollateEq() {
 	// ASCII
 	keyWord := "apRICot"
-	results, err := DB.Query(testCollateWhereAscii).Where("collate_where_ascii", reindexer.EQ, keyWord).Exec().FetchAll()
+	results, err := DB.Query(testCollateWhereAscii).Where("COLLATE_WHERE_ASCII", reindexer.EQ, keyWord).Exec().FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -119,7 +119,7 @@ func CollateEq() {
 	wordsCountWritten := 0
 	for _, element := range testCollateWhereAsciiData {
 		word := element.InsItem
-		if strings.ToLower(word) == strings.ToLower(keyWord) {
+		if strings.EqualFold(word, keyWord) {
 			wordsCountWritten++
 		}
 	}
@@ -127,7 +127,7 @@ func CollateEq() {
 	wordsCountReceived := 0
 	for i := 0; i < len(results); i++ {
 		word := results[i].(*TestCollateWhereAsciiItem).InsItem
-		if strings.ToLower(word) == strings.ToLower(keyWord) {
+		if strings.EqualFold(word, keyWord) {
 			wordsCountReceived++
 		}
 	}
@@ -138,7 +138,7 @@ func CollateEq() {
 
 	// UTF
 	keyWord = "ВИшнЯ"
-	results, err = DB.Query(testCollateWhereUtf).Where("collate_where_utf", reindexer.EQ, keyWord).Exec().FetchAll()
+	results, err = DB.Query(testCollateWhereUtf).Where("COLLATE_WHERE_UTF", reindexer.EQ, keyWord).Exec().FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -150,7 +150,7 @@ func CollateEq() {
 	wordsCountWritten = 0
 	for _, element := range testCollateWhereUtfData {
 		word := element.InsItem
-		if strings.ToLower(word) == strings.ToLower(keyWord) {
+		if strings.EqualFold(word, keyWord) {
 			wordsCountWritten++
 		}
 	}
@@ -158,7 +158,7 @@ func CollateEq() {
 	wordsCountReceived = 0
 	for i := 0; i < len(results); i++ {
 		word := results[i].(*TestCollateWhereUtfItem).InsItem
-		if strings.ToLower(word) == strings.ToLower(keyWord) {
+		if strings.EqualFold(word, keyWord) {
 			wordsCountReceived++
 		}
 	}
@@ -169,7 +169,7 @@ func CollateEq() {
 
 	// Numeric
 	keyWord = "12cherry"
-	results, err = DB.Query(testCollateWhereNumeric).Where("collate_where_numeric", reindexer.EQ, keyWord).Exec().FetchAll()
+	results, err = DB.Query(testCollateWhereNumeric).Where("COLLATE_WHERE_NUMERIC", reindexer.EQ, keyWord).Exec().FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -181,7 +181,7 @@ func CollateEq() {
 	wordsCountWritten = 0
 	for _, element := range testCollateWhereNumericData {
 		word := element.InsItem
-		if strings.ToLower(word) == strings.ToLower(keyWord) {
+		if strings.EqualFold(word, keyWord) {
 			wordsCountWritten++
 		}
 	}
@@ -189,7 +189,7 @@ func CollateEq() {
 	wordsCountReceived = 0
 	for i := 0; i < len(results); i++ {
 		word := results[i].(*TestCollateWhereNumericItem).InsItem
-		if strings.ToLower(word) == strings.ToLower(keyWord) {
+		if strings.EqualFold(word, keyWord) {
 			wordsCountReceived++
 		}
 	}

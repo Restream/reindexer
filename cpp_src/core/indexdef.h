@@ -29,6 +29,7 @@ public:
 struct IndexDef {
 	IndexDef();
 	IndexDef(const string &name, const string_view &jsonPaths, const string &indexType, const string &fieldType, const IndexOpts opts);
+	bool operator==(const IndexDef &) const;
 	IndexType Type() const;
 	string getCollateMode() const;
 	const vector<string> &Conditions() const;

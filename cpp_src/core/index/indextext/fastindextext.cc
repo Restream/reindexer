@@ -83,24 +83,25 @@ void FastIndexText<T>::buildWordsMap(fast_hash_map<string, WordEntry> &words_um)
 			[this, &ctxs, &vdocsTexts, maxIndexWorkers, fieldscount, &cfg](int i) {
 				auto ctx = &ctxs[i];
 				string word, str;
-				vector<pair<const char *, int>> wrds;
+				vector<const char *> wrds;
 				std::vector<string> virtualWords;
 				for (VDocIdType j = i; j < VDocIdType(vdocsTexts.size()); j += maxIndexWorkers) {
 					this->vdocs_[j].wordsCount.insert(this->vdocs_[j].wordsCount.begin(), fieldscount, 0.0);
 					this->vdocs_[j].mostFreqWordCount.insert(this->vdocs_[j].mostFreqWordCount.begin(), fieldscount, 0.0);
 
 					for (size_t field = 0; field < vdocsTexts[j].size(); ++field) {
-						splitWithPos(vdocsTexts[j][field].first, str, wrds,this->cfg_->extraWordSymbols);
+						split(vdocsTexts[j][field].first, str, wrds, this->cfg_->extraWordSymbols);
 						int rfield = vdocsTexts[j][field].second;
 						assert(rfield < fieldscount);
 
 						this->vdocs_[j].wordsCount[rfield] = wrds.size();
 
+						int insertPos = -1;
 						for (auto w : wrds) {
-							word.assign(w.first);
+							insertPos++;
+							word.assign(w);
 							if (!word.length() || cfg->stopWords.find(word) != cfg->stopWords.end()) continue;
 
-							size_t insertPos = w.second;
 							auto idxIt = ctx->words_um.find(word);
 							if (idxIt == ctx->words_um.end()) {
 								idxIt = ctx->words_um.emplace(word, WordEntry()).first;
@@ -326,8 +327,8 @@ void FastIndexText<T>::debugMergeStep(const char *msg, int vid, float normBm25, 
 	if (GetConfig()->logLevel < LogTrace) return;
 
 	vector<unique_ptr<string>> bufStrs;
-	auto fieldStrVec = getDocFields(*this->vdocs_[vid].keyDoc, bufStrs);
-	string text = *fieldStrVec[0].first;
+	auto fieldStrVec = this->getDocFields(*this->vdocs_[vid].keyDoc, bufStrs);
+	string text = fieldStrVec[0].ToString();
 	if (text.length() > 48) {
 		text = text.substr(0, 48) + "...";
 	}
@@ -652,6 +653,10 @@ void FastIndexText<T>::Commit() {
 template <typename T>
 IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
 	FtSelectContext ctx;
+
+	fctx->GetData()->extraWordSymbols_ = GetConfig()->extraWordSymbols;
+	fctx->GetData()->isWordPositions_ = true;
+
 	// STEP 2: Search dsl terms for each variant
 	for (auto &term : dsl) {
 		ctx.rawResults.push_back(TextSearchResults());

@@ -195,6 +195,13 @@ void Namespace::AddIndex(const IndexDef &indexDef) {
 	if (result) saveIndexesToStorage();
 }
 
+void Namespace::UpdateIndex(const IndexDef &indexDef) {
+	WLock wlock(mtx_);
+
+	bool result = updateIndex(indexDef);
+	if (result) saveIndexesToStorage();
+}
+
 bool Namespace::DropIndex(const string &index) {
 	WLock wlock(mtx_);
 
@@ -367,6 +374,34 @@ bool Namespace::addIndex(const string &indexName, const string &jsonPath, IndexT
 	return false;
 }
 
+bool Namespace::updateIndex(const IndexDef &indexDef) {
+	string idxContent = indexDef.name_;
+	string indexName = indexDef.name_;
+	auto pos = idxContent.find_first_of("=");
+	if (pos != string::npos) {
+		indexName = idxContent.substr(pos + 1);
+	}
+
+	NamespaceDef nsDef = getDefinition();
+
+	auto indexes = nsDef.indexes;
+	auto indexDefIt = std::find_if(indexes.begin(), indexes.end(), [&](const IndexDef &idxDef) { return idxDef.name_ == indexName; });
+	if (indexDefIt == indexes.end()) {
+		throw Error(errParams, "Index '%s' not found in '%s'", indexName.c_str(), name_.c_str());
+	}
+
+	if (indexDef == *indexDefIt) {
+		return true;
+	}
+
+	auto res = dropIndex(indexName);
+	if (!res) {
+		throw Error(errParams, "Unable to delete index '%s' from '%s' for updating", indexName.c_str(), name_.c_str());
+	}
+
+	return indexDef.jsonPaths_.empty() ? addIndex(indexDef.name_, "", indexDef.Type(), indexDef.opts_) : addIndex(indexDef);
+}
+
 bool Namespace::AddCompositeIndex(const string &index, IndexType type, IndexOpts opts) {
 	string idxContent = index;
 	string realName = index;
@@ -483,7 +518,10 @@ bool Namespace::getIndexByName(const string &name, int &index) const {
 	return true;
 }
 
-void Namespace::ConfigureIndex(const string &index, const string &config) { indexes_[getIndexByName(index)]->Configure(config); }
+void Namespace::ConfigureIndex(const string &index, const string &config) {
+	WLock lock(mtx_);
+	indexes_[getIndexByName(index)]->Configure(config);
+}
 
 void Namespace::Insert(Item &item, bool store) { upsertInternal(item, store, INSERT_MODE); }
 
@@ -536,7 +574,7 @@ void Namespace::_delete(IdType id) {
 		Index &index = *indexes_[field];
 		if (index.Opts().IsSparse()) {
 			assert(index.Fields().getTagsPathsLength() > 0);
-			pl.GetByJsonPath(index.Fields().getTagsPath(0), skrefs);
+			pl.GetByJsonPath(index.Fields().getTagsPath(0), skrefs, index.KeyType());
 		} else {
 			pl.Get(field, skrefs);
 		}
@@ -607,7 +645,7 @@ void Namespace::upsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 
 		if (isIndexSparse) {
 			assert(index.Fields().getTagsPathsLength() > 0);
-			plNew.GetByJsonPath(index.Fields().getTagsPath(0), skrefs);
+			plNew.GetByJsonPath(index.Fields().getTagsPath(0), skrefs, index.KeyType());
 		} else {
 			plNew.Get(field, skrefs);
 		}
@@ -618,7 +656,7 @@ void Namespace::upsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 		// Check for update
 		if (doUpdate) {
 			if (isIndexSparse) {
-				pl.GetByJsonPath(index.Fields().getTagsPath(0), krefs);
+				pl.GetByJsonPath(index.Fields().getTagsPath(0), krefs, index.KeyType());
 			} else {
 				pl.Get(field, krefs);
 			}

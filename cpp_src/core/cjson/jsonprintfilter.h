@@ -20,7 +20,6 @@ public:
 					filter_.insert(filter_.end(), 1 + tag - filter_.size(), false);
 				}
 				filter_[tag] = true;
-			} else {
 			}
 		}
 	}

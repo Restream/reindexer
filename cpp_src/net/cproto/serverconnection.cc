@@ -140,9 +140,9 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 	wrBuf_.write(reinterpret_cast<char *>(&hdr), sizeof(hdr));
 	wrBuf_.write(reinterpret_cast<char *>(ser.Buf()), ser.Len());
 	respSent_ = true;
-	if (canWrite_) {
-		write_cb();
-	}
+	// if (canWrite_) {
+	// 	write_cb();
+	// }
 }
 
 }  // namespace cproto

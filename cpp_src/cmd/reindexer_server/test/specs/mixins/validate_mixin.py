@@ -28,7 +28,8 @@ class ValidateMixin(object):
                 self.validate_response_by_schema(index, 'Index')
             self.assertEqual(True, len(sampleIndexesArrayOfDict)
                              == len(receivedIndexes))
-            self.assertEqual(True, sampleIndexesArrayOfDict == receivedIndexes)
+            self.assertEqual(True, sampleIndexesArrayOfDict ==
+                             receivedIndexes, receivedIndexes)
 
     def validate_get_indexes_response(self, status, body, sampleIndexesArrayOfDict=[]):
         self.assertEqual(True, status == 200)

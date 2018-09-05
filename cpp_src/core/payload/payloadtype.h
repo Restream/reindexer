@@ -6,6 +6,7 @@
 #include "estl/fast_hash_map.h"
 #include "payloadfieldtype.h"
 #include "tools/serializer.h"
+#include "tools/stringstools.h"
 
 namespace reindexer {
 
@@ -14,6 +15,9 @@ using std::vector;
 
 // Type of all payload object
 class PayloadTypeImpl {
+	typedef fast_hash_map<string, int, nocase_hash_str, nocase_equal_str> FieldMap;
+	typedef fast_hash_map<string, int> JsonPathMap;
+
 public:
 	PayloadTypeImpl(const string &name) : name_(name) {}
 
@@ -40,8 +44,8 @@ public:
 
 protected:
 	vector<PayloadFieldType> fields_;
-	fast_hash_map<string, int> fieldsByName_;
-	fast_hash_map<string, int> fieldsByJsonPath_;
+	FieldMap fieldsByName_;
+	JsonPathMap fieldsByJsonPath_;
 	string name_;
 	vector<int> strFields_;
 };
@@ -55,7 +59,7 @@ public:
 	const string &Name() const { return get()->Name(); }
 	int NumFields() const { return get()->NumFields(); }
 	void Add(PayloadFieldType f) { clone()->Add(f); }
-	bool Drop(const string &field) { return clone()->Drop(field); };
+	bool Drop(const string &field) { return clone()->Drop(field); }
 	int FieldByName(const string &field) const { return get()->FieldByName(field); }
 	bool FieldByName(const string &name, int &field) const { return get()->FieldByName(name, field); }
 	bool Contains(const string &field) const { return get()->Contains(field); }

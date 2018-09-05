@@ -84,26 +84,39 @@ void parseStringArray(JsonValue& stringArray, h_vector<T, holdSize>& array) {
 	}
 }
 
-void parseSort(JsonValue& sort, Query& q) {
-	for (auto elem : sort) {
-		auto& v = elem->value;
-		auto name = lower(elem->key);
+void parseSortEntry(JsonValue& entry, Query& q) {
+	checkJsonValueType(entry, "Joined", JSON_OBJECT);
+	SortingEntry sortingEntry;
+	for (auto subelement : entry) {
+		auto& v = subelement->value;
+		string name = lower(subelement->key);
 		switch (get(sort_map, name)) {
 			case Sort::Desc:
 				if ((v.getTag() != JSON_TRUE) && (v.getTag() != JSON_FALSE))
 					throw Error(errParseJson, "Wrong type of field '%s'", name.c_str());
-				q.sortDirDesc = (v.getTag() == JSON_TRUE);
+				sortingEntry.desc = (v.getTag() == JSON_TRUE);
 				break;
 
 			case Sort::Field:
 				checkJsonValueType(v, name, JSON_STRING);
-				q.sortBy.assign(v.toString());
+				sortingEntry.column.assign(v.toString());
 				break;
 
 			case Sort::Values:
 				parseValues(v, q.forcedSortOrder);
 				break;
 		}
+	}
+	q.sortingEntries_.push_back(std::move(sortingEntry));
+}
+
+void parseSort(JsonValue& v, Query& q) {
+	if (v.getTag() == JSON_ARRAY) {
+		for (auto entry : v) parseSort(entry->value, q);
+	} else if (v.getTag() == JSON_OBJECT) {
+		parseSortEntry(v, q);
+	} else {
+		throw Error(errConflict, "Wrong type of field 'Sort'");
 	}
 }
 
@@ -245,7 +258,6 @@ void parseJoins(JsonValue& joins, Query& query) {
 					for (auto filter : value) parseFilter(filter->value, qjoin);
 					break;
 				case JoinRoot::Sort:
-					checkJsonValueType(value, name, JSON_OBJECT);
 					parseSort(value, qjoin);
 					break;
 				case JoinRoot::Limit:
@@ -335,7 +347,6 @@ void parse(JsonValue& root, Query& q) {
 				break;
 
 			case Root::Sort:
-				checkJsonValueType(v, name, JSON_OBJECT);
 				parseSort(v, q);
 				break;
 			case Root::Joined:

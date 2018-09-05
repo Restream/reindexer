@@ -18,13 +18,12 @@ bool Snippet::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 	if (func.tagsPath.empty()) {
 		pl.Get(func.field, kr);
 	} else {
-		pl.GetByJsonPath(func.tagsPath, kr);
+		pl.GetByJsonPath(func.tagsPath, kr, KeyValueUndefined);
 	}
 
 	const string *data = p_string(kr[0]).getCxxstr();
 	auto pva = area->GetAreas(func.fieldNo);
 	if (!pva || pva->empty()) return false;
-	auto &va = *pva;
 	int front = 0;
 	int back = data->size();
 	try {
@@ -39,11 +38,23 @@ bool Snippet::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 		throw Error(errParams, "Invalid snippet param front - %s is not a number", func.funcArgs[3].c_str());
 	}
 
-	AreaVec sva(*area->GetAreas(func.fieldNo));
+	AreaVec va = *pva;
+
+	if (ftctx->GetData()->isWordPositions_) {
+		Word2PosHelper word2pos(*data, ftctx->GetData()->extraWordSymbols_);
+		for (auto &a : va) {
+			auto pos = word2pos.convert(a.start_, a.end_);
+			a.start_ = pos.first;
+			a.end_ = pos.second;
+		}
+	}
+
+	AreaVec sva(va);
 
 	for (auto &a : sva) {
 		a.start_ -= calcUTf8SizeEnd(data->data() + a.start_, a.start_, back);
 		if (a.start_ < 0 || back < 0) a.start_ = 0;
+
 		a.end_ += calcUTf8Size(data->data() + a.end_, data->size() - a.end_, front);
 		if (size_t(a.end_) > data->size() || front < 0) a.end_ = int(data->size());
 	}

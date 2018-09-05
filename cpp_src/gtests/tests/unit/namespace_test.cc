@@ -1,9 +1,10 @@
 #include "ns_api.h"
 
 TEST_F(NsApi, UpsertWithPrecepts) {
-	CreateNamespace(default_namespace);
+	Error err = reindexer->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
 
-	DefineNamespaceDataset(default_namespace, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK()},
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK()},
 											   IndexDeclaration{updatedTimeSecFieldName.c_str(), "", "int64", IndexOpts()},
 											   IndexDeclaration{updatedTimeMSecFieldName.c_str(), "", "int64", IndexOpts()},
 											   IndexDeclaration{updatedTimeUSecFieldName.c_str(), "", "int64", IndexOpts()},
@@ -27,7 +28,7 @@ TEST_F(NsApi, UpsertWithPrecepts) {
 
 	// Get item
 	reindexer::QueryResults res;
-	auto err = reindexer->Select("SELECT * FROM " + default_namespace + " WHERE id=" + to_string(idNum), res);
+	err = reindexer->Select("SELECT * FROM " + default_namespace + " WHERE id=" + to_string(idNum), res);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	for (auto it : res) {
@@ -54,4 +55,41 @@ TEST_F(NsApi, UpsertWithPrecepts) {
 			}
 		}
 	}
+}
+
+TEST_F(NsApi, UpdateIndex) {
+	Error err = reindexer->InitSystemNamespaces();
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = reindexer->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK()}});
+
+	auto newIdx = reindexer::IndexDef(idIdxName.c_str(), idIdxName.c_str(), "-", "int64", IndexOpts().PK().Dense().Appendable());
+	err = reindexer->UpdateIndex(default_namespace, newIdx);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	vector<reindexer::NamespaceDef> nsDefs;
+	err = reindexer->EnumNamespaces(nsDefs, false);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	auto nsDefIt =
+		std::find_if(nsDefs.begin(), nsDefs.end(), [&](const reindexer::NamespaceDef &nsDef) { return nsDef.name == default_namespace; });
+
+	ASSERT_TRUE(nsDefIt != nsDefs.end()) << "Namespace " + default_namespace + " is not found";
+
+	auto &indexes = nsDefIt->indexes;
+	auto receivedIdx = std::find_if(indexes.begin(), indexes.end(), [&](const reindexer::IndexDef &idx) { return idx.name_ == idIdxName; });
+	ASSERT_TRUE(receivedIdx != indexes.end()) << "Expect index was created, but it wasn't";
+
+	reindexer::WrSerializer newIdxSer(true);
+	newIdx.GetJSON(newIdxSer);
+
+	reindexer::WrSerializer receivedIdxSer(true);
+	receivedIdx->GetJSON(receivedIdxSer);
+
+	string newIdxJson = newIdxSer.Slice().ToString();
+	string receivedIdxJson = receivedIdxSer.Slice().ToString();
+
+	ASSERT_TRUE(newIdxJson == receivedIdxJson);
 }

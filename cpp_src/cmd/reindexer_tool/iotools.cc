@@ -101,22 +101,4 @@ void prettyPrintJSON(string json, WrSerializer& ser) {
 	prettyPrint(value, 0, ser);
 }
 
-template <typename QR>
-ostream& queryResultsToJson(ostream& o, const QR& r) {
-	WrSerializer ser;
-	size_t i = 0;
-	for (auto it : r) {
-		ser.Reset();
-		it.GetJSON(ser, false);
-		string json = ser.Slice().ToString();
-		ser.Reset();
-		prettyPrintJSON(json, ser);
-		o << ser.Slice() << (++i == r.Count() ? "\n" : ",\n");
-	}
-	return o;
-}
-
-ostream& operator<<(ostream& o, const reindexer::QueryResults& r) { return queryResultsToJson(o, r); }
-ostream& operator<<(ostream& o, const reindexer::client::QueryResults& r) { return queryResultsToJson(o, r); }
-
 }  // namespace reindexer_tool

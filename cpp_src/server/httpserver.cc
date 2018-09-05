@@ -476,6 +476,31 @@ int HTTPServer::PostIndex(http::Context &ctx) {
 	return jsonStatus(ctx);
 }
 
+int HTTPServer::PutIndex(http::Context &ctx) {
+	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
+
+	string nsName = urldecode2(ctx.request->urlParams[1]);
+	if (!nsName.length()) {
+		http::HttpStatus httpStatus(http::StatusBadRequest, "Namespace is not specified");
+
+		return jsonStatus(ctx, httpStatus);
+	}
+
+	string json = ctx.body->Read();
+
+	reindexer::IndexDef idxDef;
+	idxDef.FromJSON(&json[0]);
+
+	auto status = db->UpdateIndex(nsName, idxDef);
+	if (!status.ok()) {
+		http::HttpStatus httpStatus(status);
+
+		return jsonStatus(ctx, httpStatus);
+	}
+
+	return jsonStatus(ctx);
+}
+
 int HTTPServer::DeleteIndex(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
 
@@ -518,16 +543,16 @@ int HTTPServer::Check(http::Context &ctx) {
 #ifdef REINDEX_WITH_GPERFTOOLS
 	size_t val = 0;
 	MallocExtension_GetNumericProperty("generic.current_allocated_bytes", &val);
-	ser.Printf(",\"current_allocated_bytes\":\"%ld\",", long(val));
+	ser.Printf(",\"current_allocated_bytes\":%ld,", long(val));
 
 	MallocExtension_GetNumericProperty("generic.heap_size", &val);
-	ser.Printf("\"heap_size\":\"%ld\",", long(val));
+	ser.Printf("\"heap_size\":%ld,", long(val));
 
 	MallocExtension_GetNumericProperty("tcmalloc.pageheap_free_bytes", &val);
-	ser.Printf("\"pageheap_free\":\"%ld\",", long(val));
+	ser.Printf("\"pageheap_free\":%ld,", long(val));
 
 	MallocExtension_GetNumericProperty("tcmalloc.pageheap_unmapped_bytes", &val);
-	ser.Printf("\"pageheap_unmapped\":\"%ld\"", long(val));
+	ser.Printf("\"pageheap_unmapped\":%ld", long(val));
 #endif
 
 	ser.Printf("}");
@@ -626,6 +651,7 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 
 	router_.GET<HTTPServer, &HTTPServer::GetIndexes>("/api/v1/db/:db/namespaces/:ns/indexes", this);
 	router_.POST<HTTPServer, &HTTPServer::PostIndex>("/api/v1/db/:db/namespaces/:ns/indexes", this);
+	router_.PUT<HTTPServer, &HTTPServer::PutIndex>("/api/v1/db/:db/namespaces/:ns/indexes", this);
 	router_.DELETE<HTTPServer, &HTTPServer::DeleteIndex>("/api/v1/db/:db/namespaces/:ns/indexes/:idx", this);
 
 	router_.Middleware<HTTPServer, &HTTPServer::CheckAuth>(this);

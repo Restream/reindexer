@@ -44,12 +44,12 @@ public:
 	KeyValues &Get(const string &field, KeyValues &) const;
 
 	// Get element(s) by json path
-	KeyRefs GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, KeyRefs &) const;
-	KeyRefs GetByJsonPath(const TagsPath &jsonPath, KeyRefs &) const;
+	KeyRefs GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, KeyRefs &, KeyValueType expectedType) const;
+	KeyRefs GetByJsonPath(const TagsPath &jsonPath, KeyRefs &, KeyValueType expectedType) const;
 
 	// Get element(s) by json path
-	KeyValues GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, KeyValues &) const;
-	KeyValues GetByJsonPath(const TagsPath &jsonPath, KeyValues &) const;
+	KeyValues GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, KeyValues &, KeyValueType expectedType) const;
+	KeyValues GetByJsonPath(const TagsPath &jsonPath, KeyValues &, KeyValueType expectedType) const;
 
 	// Get fields count
 	int NumFields() const { return t_.NumFields(); }
@@ -74,6 +74,7 @@ public:
 
 	// Compare 2 objects by field mask
 	int Compare(const T &other, const FieldsSet &fields, const CollateOpts &collateOpts = CollateOpts()) const;
+	int Compare(const T &other, const FieldsSet &fields, size_t &firstDifferentFieldIdx, const h_vector<CollateOpts, 1> &collateOpts) const;
 
 	// Get PayloadFieldValue by field index
 	PayloadFieldValue Field(int field) const;

@@ -3,12 +3,12 @@
 
 namespace reindexer {
 
-RegularFieldRefImpl::RegularFieldRefImpl(int field, ItemImpl *itemImpl) : field_(field), itemImpl_(itemImpl) {}
-RegularFieldRefImpl::~RegularFieldRefImpl() {}
+IndexedFieldRefImpl::IndexedFieldRefImpl(int field, ItemImpl *itemImpl) : field_(field), itemImpl_(itemImpl) {}
+IndexedFieldRefImpl::~IndexedFieldRefImpl() {}
 
-const string &RegularFieldRefImpl::Name() { return itemImpl_->Type().Field(field_).Name(); }
+const string &IndexedFieldRefImpl::Name() { return itemImpl_->Type().Field(field_).Name(); }
 
-KeyRef RegularFieldRefImpl::GetValue() {
+KeyRef IndexedFieldRefImpl::GetValue() {
 	KeyRefs kr;
 	itemImpl_->GetPayload().Get(field_, kr);
 	if (kr.size() != 1) {
@@ -17,20 +17,21 @@ KeyRef RegularFieldRefImpl::GetValue() {
 	return kr[0];
 }
 
-KeyRefs RegularFieldRefImpl::GetValues() {
+KeyRefs IndexedFieldRefImpl::GetValues() {
 	KeyRefs kr;
 	return itemImpl_->GetPayload().Get(field_, kr);
 }
 
-void RegularFieldRefImpl::SetValue(KeyRef &kr) { itemImpl_->SetField(field_, KeyRefs{kr}); }
-void RegularFieldRefImpl::SetValue(const KeyRefs &krefs) { itemImpl_->SetField(field_, krefs); }
+void IndexedFieldRefImpl::SetValue(KeyRef &kr) { itemImpl_->SetField(field_, KeyRefs{kr}); }
+void IndexedFieldRefImpl::SetValue(const KeyRefs &krefs) { itemImpl_->SetField(field_, krefs); }
 
-CjsonFieldRefImpl::CjsonFieldRefImpl(const std::string &jsonPath, ItemImpl *itemImpl) : jsonPath_(jsonPath), itemImpl_(itemImpl) {}
-CjsonFieldRefImpl::~CjsonFieldRefImpl() {}
+NonIndexedFieldRefImpl::NonIndexedFieldRefImpl(const std::string &jsonPath, ItemImpl *itemImpl)
+	: jsonPath_(jsonPath), itemImpl_(itemImpl) {}
+NonIndexedFieldRefImpl::~NonIndexedFieldRefImpl() {}
 
-const string &CjsonFieldRefImpl::Name() { return jsonPath_; }
+const string &NonIndexedFieldRefImpl::Name() { return jsonPath_; }
 
-KeyRef CjsonFieldRefImpl::GetValue() {
+KeyRef NonIndexedFieldRefImpl::GetValue() {
 	KeyRefs kr = itemImpl_->GetValueByJSONPath(jsonPath_);
 	if (kr.size() != 1) {
 		throw Error(errParams, "Invalid array access");
@@ -38,9 +39,9 @@ KeyRef CjsonFieldRefImpl::GetValue() {
 	return kr[0];
 }
 
-KeyRefs CjsonFieldRefImpl::GetValues() { return itemImpl_->GetValueByJSONPath(jsonPath_); }
+KeyRefs NonIndexedFieldRefImpl::GetValues() { return itemImpl_->GetValueByJSONPath(jsonPath_); }
 
-void CjsonFieldRefImpl::SetValue(KeyRef &) { throw Error(errConflict, "CjsonFieldRefImpl::SetValue not implemented yet"); }
-void CjsonFieldRefImpl::SetValue(const KeyRefs &) { throw Error(errConflict, "CjsonFieldRefImpl::SetValue not implemented yet"); }
+void NonIndexedFieldRefImpl::SetValue(KeyRef &) { throw Error(errConflict, "CjsonFieldRefImpl::SetValue not implemented yet"); }
+void NonIndexedFieldRefImpl::SetValue(const KeyRefs &) { throw Error(errConflict, "CjsonFieldRefImpl::SetValue not implemented yet"); }
 
 }  // namespace reindexer

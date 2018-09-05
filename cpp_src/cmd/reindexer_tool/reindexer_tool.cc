@@ -40,8 +40,8 @@ int main(int argc, char* argv[]) {
 	args::HelpFlag help(parser, "help", "show this message", {'h', "help"});
 
 	args::Group progOptions("options");
-	args::ValueFlag<string> dbDsn(progOptions, "DSN", "DSN to 'reindexer'", {'d', "dsn"}, "builtin:///tmp/reindex",
-								  Options::Single | Options::Global);
+	args::ValueFlag<string> dbDsn(progOptions, "DSN", "DSN to 'reindexer'. Can be 'cproto://<ip>:<port>/<dbname>' or 'builtin://<path>'",
+								  {'d', "dsn"}, "", Options::Single | Options::Global | Options::Required);
 	args::ValueFlag<string> fileName(progOptions, "FILENAME", "execute commands from file, then exit", {'f', "filename"}, "",
 									 Options::Single | Options::Global);
 	args::ValueFlag<string> command(progOptions, "COMMAND", "run only single command (SQL or internal) and exit'", {'c', "command"}, "",
@@ -77,13 +77,17 @@ int main(int argc, char* argv[]) {
 		std::cout << "Reindexer command line tool version " << REINDEX_VERSION << std::endl;
 
 	if (dsn.compare(0, 9, "cproto://") == 0) {
-		DBWrapper<reindexer::client::Reindexer> db(args::get(outFileName), args::get(fileName), args::get(command));
+		reindexer::client::ReindexerConfig config;
+		config.ConnPoolSize = 1;
+		DBWrapper<reindexer::client::Reindexer> db(args::get(outFileName), args::get(fileName), args::get(command), config);
 		err = db.Connect(dsn);
 		if (err.ok()) ok = db.Run();
-	} else {
+	} else if (dsn.compare(0, 10, "builtin://") == 0) {
 		DBWrapper<reindexer::Reindexer> db(args::get(outFileName), args::get(fileName), args::get(command));
 		err = db.Connect(dsn);
 		if (err.ok()) ok = db.Run();
+	} else {
+		std::cerr << "Invalid DSN formt: " << dsn << " Must begin from  cproto:// or builtin://" << std::endl;
 	}
 	if (!err.ok()) {
 		std::cerr << "ERROR: " << err.what() << std::endl;

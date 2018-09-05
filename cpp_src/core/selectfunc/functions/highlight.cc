@@ -19,7 +19,7 @@ bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 	if (func.tagsPath.empty()) {
 		pl.Get(func.field, kr);
 	} else {
-		pl.GetByJsonPath(func.tagsPath, kr);
+		pl.GetByJsonPath(func.tagsPath, kr, KeyValueUndefined);
 	}
 
 	const string *data = p_string(kr[0]).getCxxstr();
@@ -33,11 +33,17 @@ bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 
 	int offset = 0;
 
+	Word2PosHelper word2pos(*data, ftctx->GetData()->extraWordSymbols_);
 	for (auto area : va) {
-		result_string.insert(area.start_ + offset, func.funcArgs[0]);
+		std::pair<int, int> pos =
+			ftctx->GetData()->isWordPositions_ ? word2pos.convert(area.start_, area.end_) : std::make_pair(area.start_, area.end_);
+
+		// printf("%d(%d),%d(%d) %s\n", area.start_, pos.first, area.end_, pos.second, data->c_str());
+
+		result_string.insert(pos.first + offset, func.funcArgs[0]);
 		offset += func.funcArgs[0].size();
 
-		result_string.insert(area.end_ + offset, func.funcArgs[1]);
+		result_string.insert(pos.second + offset, func.funcArgs[1]);
 
 		offset += func.funcArgs[1].size();
 	}

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 
 	"github.com/restream/reindexer/bindings"
@@ -535,7 +536,7 @@ func (q *Query) LeftJoin(q2 *Query, field string) *Query {
 func (q *Query) JoinHandler(field string, handler JoinHandler) *Query {
 	index := -1
 	for i := range q.joinToFields {
-		if q.joinToFields[i] == field {
+		if strings.EqualFold(q.joinToFields[i], field) {
 			index = i
 		}
 	}
@@ -549,6 +550,9 @@ func (q *Query) JoinHandler(field string, handler JoinHandler) *Query {
 func (q *Query) Merge(q2 *Query) *Query {
 	if q.root != nil {
 		q = q.root
+	}
+	if q2.root != nil {
+		q2 = q2.root
 	}
 	q2.root = q
 	q.mergedQueries = append(q.mergedQueries, q2)

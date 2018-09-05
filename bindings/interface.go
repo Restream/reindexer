@@ -3,6 +3,8 @@ package bindings
 import (
 	"net/url"
 	"time"
+
+	"github.com/restream/reindexer/bindings/builtinserver/config"
 )
 
 type IndexOptions uint8
@@ -195,4 +197,9 @@ type OptionConnPoolSize struct {
 type OptionRetryAttempts struct {
 	Read  int
 	Write int
+}
+
+type OptionBuiltinWithServer struct {
+	StartupTimeout time.Duration
+	ServerConfig   *config.ServerConfig
 }

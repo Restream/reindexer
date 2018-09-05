@@ -36,7 +36,7 @@ TEST_F(JoinSelectsApi, InnerJoinTest) {
 				QueryResultRow& pureSelectRow = pureSelectRows[bookId];
 
 				FillQueryResultFromItem(booksItem, pureSelectRow);
-				for (auto jit :  authorsSelectRes) {
+				for (auto jit : authorsSelectRes) {
 					Item authorsItem(jit.GetItem());
 					FillQueryResultFromItem(authorsItem, pureSelectRow);
 				}
@@ -82,14 +82,11 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 			Item item(rowIt.GetItem());
 			KeyRef authorIdKeyRef1 = item[authorid];
 			const reindexer::ItemRef& rowid = rowIt.GetItemRef();
-			auto it = joinQueryRes.joined_->find(rowid.id);
-			if (it != joinQueryRes.joined_->end()) {
-				reindexer::QRVector& queryResults = it->second;
-				for (const QueryResults& queryRes : queryResults) {
-					Item item2(queryRes.begin().GetItem());
-					KeyRef authorIdKeyRef2 = item2[authorid_fk];
-					EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
-				}
+			const reindexer::QRVector& queryResults = rowIt.GetJoined();
+			for (const QueryResults& queryRes : queryResults) {
+				Item item2(queryRes.begin().GetItem());
+				KeyRef authorIdKeyRef2 = item2[authorid_fk];
+				EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
 			}
 
 			presentedAuthorIds.insert(static_cast<int>(authorIdKeyRef1));
@@ -97,7 +94,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 			i++;
 		}
 
-		for (const std::pair<const IdType, reindexer::QRVector>& itempair : *joinQueryRes.joined_) {
+		for (const std::pair<const IdType, reindexer::QRVector>& itempair : joinQueryRes.joined_[0]) {
 			if (itempair.second.empty()) continue;
 			const QueryResults& joinedQueryRes(itempair.second[0]);
 			for (auto it : joinedQueryRes) {
@@ -143,29 +140,108 @@ TEST_F(JoinSelectsApi, OrInnerJoinTest) {
 	if (err.ok()) {
 		for (auto rowIt : queryRes) {
 			Item item(rowIt.GetItem());
-			const reindexer::ItemRef& itemRef(rowIt.GetItemRef());
+			const reindexer::QRVector& joinedResult = rowIt.GetJoined();
 
-			auto it = queryRes.joined_->find(itemRef.id);
-			if (it != queryRes.joined_->end()) {
-				reindexer::QRVector& joinedResult = queryRes.joined_->at(itemRef.id);
-				QueryResults& authorNsJoinResults = joinedResult[authorsNsJoinIndex];
-				QueryResults& genresNsJoinResults = joinedResult[genresNsJoinIndex];
+			const QueryResults& authorNsJoinResults = joinedResult[authorsNsJoinIndex];
+			const QueryResults& genresNsJoinResults = joinedResult[genresNsJoinIndex];
 
-				KeyRef authorIdKeyRef1 = item[authorid_fk];
-				for (auto jit : authorNsJoinResults) {
-					Item authorsItem(jit.GetItem());
-					KeyRef authorIdKeyRef2 = authorsItem[authorid];
-					EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
-				}
+			KeyRef authorIdKeyRef1 = item[authorid_fk];
+			for (auto jit : authorNsJoinResults) {
+				Item authorsItem(jit.GetItem());
+				KeyRef authorIdKeyRef2 = authorsItem[authorid];
+				EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
+			}
 
-				KeyRef genresIdKeyRef1 = item[genreId_fk];
-				for (auto jit : genresNsJoinResults) {
-					KeyRefs genreIdKeyRef;
-					Item genresItem(jit.GetItem());
-					KeyRef genresIdKeyRef2 = genresItem[genreid];
-					EXPECT_TRUE(genresIdKeyRef1 == genresIdKeyRef2);
-				}
+			KeyRef genresIdKeyRef1 = item[genreId_fk];
+			for (auto jit : genresNsJoinResults) {
+				KeyRefs genreIdKeyRef;
+				Item genresItem(jit.GetItem());
+				KeyRef genresIdKeyRef2 = genresItem[genreid];
+				EXPECT_TRUE(genresIdKeyRef1 == genresIdKeyRef2);
 			}
 		}
 	}
+}
+
+TEST_F(JoinSelectsApi, JoinTestSorting) {
+	Query booksQuery = Query(books_namespace, 11, 1111).Sort(price, true);
+	Query joinQuery = Query(authors_namespace).LeftJoin(authorid, authorid_fk, CondEq, booksQuery);
+
+	reindexer::QueryResults joinQueryRes;
+	Error err = reindexer->Select(joinQuery, joinQueryRes);
+	EXPECT_TRUE(err.ok()) << err.what();
+
+	for (auto rowIt : joinQueryRes) {
+		Item item(rowIt.GetItem());
+		const reindexer::QRVector& joinQueryRes = rowIt.GetJoined();
+		const QueryResults& joinResult(joinQueryRes[0]);
+
+		KeyRef prevJoinedValue;
+		for (auto itj : joinResult) {
+			Item joinItem(itj.GetItem());
+			KeyRef recentJoinedValue = joinItem[price];
+			if (prevJoinedValue.Type() != KeyValueEmpty) {
+				EXPECT_TRUE(prevJoinedValue.Compare(recentJoinedValue) >= 0);
+			}
+			prevJoinedValue = recentJoinedValue;
+		}
+	}
+}
+
+TEST_F(JoinSelectsApi, JoinTestSelectNonIndexedField) {
+	reindexer::QueryResults qr;
+	Query authorsQuery = Query(authors_namespace);
+	Error err = reindexer->Select(Query(books_namespace)
+									  .Where(rating, CondEq, KeyValue(static_cast<int64_t>(100)))
+									  .InnerJoin(authorid_fk, authorid, CondEq, authorsQuery),
+								  qr);
+
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qr.Count() == 1) << err.what();
+
+	Item theOnlyItem = qr[0].GetItem();
+	KeyRefs krefs = theOnlyItem[title];
+	ASSERT_TRUE(krefs.size() == 1);
+	ASSERT_TRUE(krefs[0].As<string>() == "Crime and Punishment");
+}
+
+TEST_F(JoinSelectsApi, JoinByNonIndexedField) {
+	Error err = reindexer->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK()}});
+
+	std::stringstream json;
+	json << "{" << addQuotes(id) << ":" << 1 << "," << addQuotes(authorid_fk) << ":" << DostoevskyAuthorId << "}";
+	Item lonelyItem = NewItem(default_namespace);
+	ASSERT_TRUE(lonelyItem.Status().ok()) << lonelyItem.Status().what();
+
+	err = lonelyItem.FromJSON(json.str());
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = reindexer->Upsert(default_namespace, lonelyItem);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = reindexer->Commit(books_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	reindexer::QueryResults qr;
+	Query authorsQuery = Query(authors_namespace);
+	err = reindexer->Select(Query(default_namespace)
+								.Where(authorid_fk, CondEq, KeyValue(DostoevskyAuthorId))
+								.InnerJoin(authorid_fk, authorid, CondEq, authorsQuery),
+							qr);
+
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qr.Count() == 1) << err.what();
+
+	// And backwards even!
+	reindexer::QueryResults qr2;
+	Query testNsQuery = Query(default_namespace);
+	err = reindexer->Select(Query(authors_namespace)
+								.Where(authorid, CondEq, KeyValue(DostoevskyAuthorId))
+								.InnerJoin(authorid, authorid_fk, CondEq, testNsQuery),
+							qr2);
+
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qr2.Count() == 1) << err.what();
 }

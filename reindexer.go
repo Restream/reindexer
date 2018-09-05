@@ -114,22 +114,21 @@ func (nullLogger) Printf(level int, fmt string, msg ...interface{}) {
 }
 
 var (
-	errNsNotFound             = errors.New("rq: Namespace is not found")
-	errNsExists               = errors.New("rq: Namespace is already exists")
-	errInvalidReflection      = errors.New("rq: Invalid reflection type of index")
-	errStorageNotEnabled      = errors.New("rq: Storage is not enabled, can't save")
-	errIteratorNotReady       = errors.New("rq: Iterator not ready. Next() must be called before")
-	errJoinUnexpectedField    = errors.New("rq: Unexpected join field")
-	ErrEmptyNamespace         = errors.New("rq: empty namespace name")
-	ErrEmptyFieldName         = errors.New("rq: empty field name in filter")
-	ErrCondType               = errors.New("rq: cond type not found")
-	ErrOpInvalid              = errors.New("rq: op is invalid")
-	ErrNoPK                   = errors.New("rq: No pk field in struct")
-	ErrWrongType              = errors.New("rq: Wrong type of item")
-	ErrMustBePointer          = errors.New("rq: Argument must be a pointer to element, not element")
-	ErrMergeAndJoinInOneQuery = errors.New("rq: Can't be merge and join in one query")
-	ErrNotFound               = errors.New("rq: Not found")
-	ErrDeepCopyType           = errors.New("rq: DeepCopy() returns wrong type")
+	errNsNotFound          = errors.New("rq: Namespace is not found")
+	errNsExists            = errors.New("rq: Namespace is already exists")
+	errInvalidReflection   = errors.New("rq: Invalid reflection type of index")
+	errStorageNotEnabled   = errors.New("rq: Storage is not enabled, can't save")
+	errIteratorNotReady    = errors.New("rq: Iterator not ready. Next() must be called before")
+	errJoinUnexpectedField = errors.New("rq: Unexpected join field")
+	ErrEmptyNamespace      = errors.New("rq: empty namespace name")
+	ErrEmptyFieldName      = errors.New("rq: empty field name in filter")
+	ErrCondType            = errors.New("rq: cond type not found")
+	ErrOpInvalid           = errors.New("rq: op is invalid")
+	ErrNoPK                = errors.New("rq: No pk field in struct")
+	ErrWrongType           = errors.New("rq: Wrong type of item")
+	ErrMustBePointer       = errors.New("rq: Argument must be a pointer to element, not element")
+	ErrNotFound            = errors.New("rq: Not found")
+	ErrDeepCopyType        = errors.New("rq: DeepCopy() returns wrong type")
 )
 
 // NewReindex Create new instanse of Reindexer DB
@@ -307,7 +306,7 @@ func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s i
 
 		db.Query(namespace).Limit(0).Exec().Close()
 
-		if err = db.createIndex(namespace, t, false, "", "", &ns.joined); err != nil {
+		if err = db.parseIndex(namespace, t, false, "", "", &ns.joined); err != nil {
 			rerr, ok := err.(bindings.Error)
 			if ok && rerr.Code() == bindings.ErrConflict && opts.dropOnIndexesConflict {
 				db.binding.DropNamespace(namespace)

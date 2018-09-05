@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include "estl/tokenizer.h"
 #include "tools/errors.h"
+#include "tools/stringstools.h"
 
 namespace reindexer {
 
@@ -34,6 +35,15 @@ bool AggregateEntry::operator==(const AggregateEntry &obj) const {
 
 bool AggregateEntry::operator!=(const AggregateEntry &obj) const { return !operator==(obj); }
 
+bool SortingEntry::operator==(const SortingEntry &obj) const {
+	if (column != obj.column) return false;
+	if (desc != obj.desc) return false;
+	if (index != obj.index) return false;
+	return true;
+}
+
+bool SortingEntry::operator!=(const SortingEntry &obj) const { return !operator==(obj); }
+
 bool QueryWhere::operator==(const QueryWhere &obj) const {
 	if (entries != obj.entries) return false;
 	if (aggregations_ != obj.aggregations_) return false;
@@ -52,9 +62,9 @@ CondType QueryWhere::getCondType(string_view cond) {
 		return CondLt;
 	} else if (cond == "<="_sv) {
 		return CondLe;
-	} else if (cond == "in"_sv) {
+	} else if (iequals(cond, "in"_sv)) {
 		return CondSet;
-	} else if (cond == "range"_sv) {
+	} else if (iequals(cond, "range"_sv)) {
 		return CondRange;
 	}
 	throw Error(errParseSQL, "Expected condition operator, but found '%s' in query", cond.data());
@@ -83,9 +93,9 @@ int QueryWhere::ParseWhere(tokenizer &parser) {
 	token tok;
 	OpType nextOp = OpAnd;
 
-	tok = parser.peek_token();
+	tok = parser.peek_token(false);
 
-	if (tok.text() == "not"_sv) {
+	if (iequals(tok.text(), "not"_sv)) {
 		nextOp = OpNot;
 		parser.next_token();
 	}
@@ -94,7 +104,7 @@ int QueryWhere::ParseWhere(tokenizer &parser) {
 		QueryEntry entry;
 		entry.op = nextOp;
 		// Just skip token.
-		tok = parser.next_token();
+		tok = parser.next_token(false);
 
 		if (tok.text() == "("_sv) {
 			throw Error(errParseSQL, "Found '(' - nestqed queries are not supported, %s", parser.where().c_str());
@@ -119,8 +129,8 @@ int QueryWhere::ParseWhere(tokenizer &parser) {
 				entry.condition = getCondType(tok.text());
 			}
 			// Value
-			tok = parser.next_token();
-			if (tok.text() == "null"_sv) {
+			tok = parser.next_token(false);
+			if (iequals(tok.text(), "null"_sv)) {
 				entry.condition = CondEmpty;
 			} else if (tok.text() == "("_sv) {
 				for (;;) {
@@ -144,17 +154,17 @@ int QueryWhere::ParseWhere(tokenizer &parser) {
 		// Push back parsed entry
 		entries.push_back(entry);
 
-		tok = parser.peek_token();
+		tok = parser.peek_token(false);
 
-		if (tok.text() == "and"_sv) {
+		if (iequals(tok.text(), "and"_sv)) {
 			nextOp = OpAnd;
 			parser.next_token();
-			tok = parser.peek_token();
-			if (tok.text() == "not"_sv) {
+			tok = parser.peek_token(false);
+			if (iequals(tok.text(), "not"_sv)) {
 				nextOp = OpNot;
 			} else
 				continue;
-		} else if (tok.text() == "or"_sv) {
+		} else if (iequals(tok.text(), "or"_sv)) {
 			nextOp = OpOr;
 		} else
 			break;

@@ -32,35 +32,31 @@ error_msg() {
 
 # declare dependencies arrays for systems
 osx_deps="gperftools leveldb snappy cmake git"
-centos7_debs="gcc-c++ cmake make snappy-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
-centos6_debs="centos-release-scl devtoolset-7-gcc devtoolset-7-gcc-c++ make snappy-devel gperftools-devel findutils curl tar cmake unzip rpm-build git"
-debian_debs="build-essential g++ libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl cmake unzip git"
+centos7_debs="gcc-c++ make snappy-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
+centos6_debs="centos-release-scl devtoolset-7-gcc devtoolset-7-gcc-c++ make snappy-devel gperftools-devel findutils curl tar unzip rpm-build git"
+debian_debs="build-essential g++ libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git"
 alpine_apks="g++ snappy-dev libexecinfo-dev make curl cmake unzip git"
 
-install_leveldb() {
-    info_msg "Installing 'leveldb' package ....."
-    curl -L -s https://github.com/google/leveldb/archive/v1.20.tar.gz | tar xz -C /tmp
+install_cmake_linux () {
+    info_msg "Installing 'cmake' package ....."
+    case `uname -m` in
+        x86_64)
+            curl -L https://cmake.org/files/v3.11/cmake-3.11.3-Linux-x86_64.tar.gz 2>/dev/null | tar xzv --strip-components=1 -C /usr/local/ >/dev/null 2>&1
+            ;;
+        i386)
+            curl -L https://cmake.org/files/v3.6/cmake-3.6.3-Linux-i386.tar.gz 2>/dev/null | tar xzv --strip-components=1 -C /usr/local/ >/dev/null 2>&1
+            ;;
+        *)
+            warning_msg "Fallback to system 'cmake' package. Be sure, cmake version must be at least 3.0....."
+            apt-get -y install cmake >/dev/null 2>&1
+            ;;
+    esac
+    
     if [ $? -ne 0 ]; then
-        error_msg "Could not download 'leveldb'." && return 1
+        error_msg "Error install 'cmake'" && return 1
     fi
-
-    cd /tmp/leveldb-1.20 && make -j4 > /dev/null 2>&1 && mv out-static/libleveldb.* /usr/local/lib
-    if [ $? -ne 0 ]; then
-        error_msg "Could not install 'leveldb' libraries." && return 1
-    fi
-
-    mkdir -p /usr/local/include
-    cd include && cp -R leveldb /usr/local/include  >/dev/null 2>&1
-    if [ $? -ne 0 ]; then
-        error_msg "Could not copy 'leveldb' header files." && return 1
-    fi
-
-    ldconfig
-
-    # delete temporary files
-    rm -rf /tmp/leveldb-1.20
-
-    success_msg "Package 'leveldb' was installed successfully." && return
+    
+    success_msg "Package 'cmake' was installed successfully." && return
 }
 
 install_osx() {
@@ -100,7 +96,7 @@ install_centos7() {
             fi
         fi
     done
-    install_leveldb
+    install_cmake_linux
     return $?
 }
 
@@ -121,7 +117,7 @@ install_centos6() {
         fi
     done
     source scl_source enable devtoolset-7
-    install_leveldb
+    install_cmake_linux
     return $?
 }
 
@@ -143,6 +139,7 @@ install_debian() {
             fi
         fi
     done
+    install_cmake_linux
     return $?
 }
 
@@ -164,7 +161,6 @@ install_alpine() {
             fi
         fi
     done
-    install_leveldb
     return $?
 }
 

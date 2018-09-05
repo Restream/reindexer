@@ -63,13 +63,13 @@ protected:
 		}
 		int getSortedIdxCount() const override { return sorted_indexes_; }
 		SortType getCurSortId() const override { return curSortId_; }
-		const vector<SortType> &ids2Sorts() const override { return ids2Sorts_; };
+		const vector<SortType> &ids2Sorts() const override { return ids2Sorts_; }
 		vector<SortType> &ids2Sorts() override { return ids2Sorts_; };
 
 	protected:
 		const Namespace &ns_;
-		int sorted_indexes_;
-		IdType curSortId_;
+		const int sorted_indexes_;
+		const IdType curSortId_;
 		vector<SortType> ids2Sorts_;
 	};
 
@@ -111,6 +111,7 @@ public:
 	void DeleteStorage();
 
 	void AddIndex(const IndexDef &indexDef);
+	void UpdateIndex(const IndexDef &indexDef);
 	bool DropIndex(const string &index);
 	bool AddCompositeIndex(const string &index, IndexType type, IndexOpts opts);
 	void ConfigureIndex(const string &index, const string &config);
@@ -163,6 +164,7 @@ protected:
 	void insertIndex(Index *newIndex, int idxNo, const string &realName);
 	bool addIndex(const string &index, const string &jsonPath, IndexType type, IndexOpts opts);
 	bool addIndex(const IndexDef &indexDef);
+	bool updateIndex(const IndexDef &indexDef);
 	bool dropIndex(const string &index);
 	void recreateCompositeIndexes(int startIdx, int endIdx);
 	NamespaceDef getDefinition();
@@ -188,7 +190,7 @@ protected:
 	void GetIndsideFromJoinCache(JoinCacheRes &ctx);
 
 	IndexesStorage indexes_;
-	fast_hash_map<string, int> indexesNames_;
+	fast_hash_map<string, int, nocase_hash_str, nocase_equal_str> indexesNames_;
 	// All items with data
 	Items items_;
 	fast_hash_set<IdType> free_;
@@ -219,7 +221,7 @@ protected:
 
 	shared_ptr<QueryCache> queryCache_;
 	// shows if each subindex was PK
-	fast_hash_map<string, bool> compositeIndexesPkState_;
+	fast_hash_map<string, bool, nocase_hash_str, nocase_equal_str> compositeIndexesPkState_;
 
 	int sparseIndexesCount_ = 0;
 

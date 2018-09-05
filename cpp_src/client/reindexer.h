@@ -2,6 +2,7 @@
 
 #include "client/item.h"
 #include "client/queryresults.h"
+#include "client/reindexerconfig.h"
 #include "core/namespacedef.h"
 #include "core/query/query.h"
 
@@ -22,7 +23,7 @@ class RPCClient;
 class Reindexer {
 public:
 	/// Create Reindexer database object
-	Reindexer();
+	Reindexer(const ReindexerConfig & = ReindexerConfig());
 	/// Destrory Reindexer database object
 	~Reindexer();
 	Reindexer(const Reindexer &) = delete;
@@ -122,5 +123,6 @@ public:
 private:
 	RPCClient *impl_;
 };
+
 }  // namespace client
 }  // namespace reindexer

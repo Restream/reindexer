@@ -32,9 +32,7 @@ public:
 	}
 	cbuf &operator=(cbuf &&other) {
 		if (this != &other) {
-			if (buf_) {
-				delete buf_;
-			}
+			delete buf_;
 			head_ = other.head_;
 			tail_ = other.tail_;
 			full_ = other.full_;
@@ -164,5 +162,3 @@ protected:
 };
 
 }  // namespace reindexer
-
-/// |          ht     |   |                        |

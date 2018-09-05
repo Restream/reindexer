@@ -16,7 +16,7 @@ type TestDescribeStruct struct {
 	Search    string `reindex:"search,fuzzytext"`
 	SubStruct TestDescribeSubStruct
 	TestDescribeBuiltinSubStruct
-	Bla string `reindex:",,dict"`
+	Bla string
 }
 
 type TestDescribeSubStruct struct {

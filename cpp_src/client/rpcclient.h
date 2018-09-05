@@ -8,6 +8,7 @@
 #include "client/item.h"
 #include "client/namespace.h"
 #include "client/queryresults.h"
+#include "client/reindexerconfig.h"
 #include "core/namespacedef.h"
 #include "core/query/query.h"
 #include "estl/fast_hash_map.h"
@@ -25,7 +26,7 @@ using namespace net;
 
 class RPCClient {
 public:
-	RPCClient();
+	RPCClient(const ReindexerConfig &config);
 	~RPCClient();
 
 	Error Connect(const string &dsn);
@@ -62,7 +63,7 @@ private:
 
 	std::vector<std::unique_ptr<net::cproto::ClientConnection>> connections_;
 
-	fast_hash_map<string, Namespace::Ptr> namespaces_;
+	fast_hash_map<string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
 
 	shared_timed_mutex nsMutex_;
 	httpparser::UrlParser uri_;
@@ -70,6 +71,7 @@ private:
 	std::thread worker_;
 	ev::async stop_;
 	std::atomic<int> curConnIdx_;
+	ReindexerConfig config_;
 };
 
 }  // namespace client

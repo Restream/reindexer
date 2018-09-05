@@ -33,6 +33,7 @@ Error Reindexer::ConfigureIndex(const string& _namespace, const string& index, c
 	return impl_->ConfigureIndex(_namespace, index, config);
 }
 Error Reindexer::AddIndex(const string& _namespace, const IndexDef& idx) { return impl_->AddIndex(_namespace, idx); }
+Error Reindexer::UpdateIndex(const string& _namespace, const IndexDef& idx) { return impl_->UpdateIndex(_namespace, idx); }
 Error Reindexer::DropIndex(const string& _namespace, const string& index) { return impl_->DropIndex(_namespace, index); }
 Error Reindexer::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll) { return impl_->EnumNamespaces(defs, bEnumAll); }
 Error Reindexer::InitSystemNamespaces() { return impl_->InitSystemNamespaces(); }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <climits>
+#include <functional>
 #include <initializer_list>
 #include "querywhere.h"
 #include "tools/errors.h"
@@ -212,8 +213,7 @@ public:
 	/// @param desc - is sorting direction descending or ascending.
 	/// @return Query object.
 	Query &Sort(const string &sort, bool desc) {
-		sortBy = sort;
-		sortDirDesc = desc;
+		sortingEntries_.push_back({sort, desc});
 		return *this;
 	}
 
@@ -308,6 +308,15 @@ public:
 	/// @return string with join type name
 	static const char *JoinTypeName(JoinType type);
 
+	void WalkNested(bool withSelf, bool withMerged, std::function<void(const Query &q)> visitor) const {
+		if (withSelf) visitor(*this);
+		if (withMerged)
+			for (auto &mq : mergeQueries_) visitor(mq);
+		for (auto &jq : joinQueries_) visitor(jq);
+		for (auto &mq : mergeQueries_)
+			for (auto &jq : mq.joinQueries_) visitor(jq);
+	}
+
 protected:
 	/// Parses query.
 	/// @param tok - tokenizer object instance.
@@ -355,11 +364,8 @@ public:
 	/// Name of the namespace.
 	string _namespace;
 
-	/// name of the column to be sorted by.
-	string sortBy;
-
-	/// Sorting direction type: asc or desc.
-	bool sortDirDesc = false;
+	/// Sorting data.
+	SortingEntries sortingEntries_;
 
 	/// Calculation mode.
 	CalcTotalMode calcTotal = ModeNoTotal;

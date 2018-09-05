@@ -30,7 +30,7 @@ void CJsonEncoder::Encode(ConstPayload *pl, WrSerializer &wrser) {
 	encodeCJson(pl, rdser, wrser);
 }
 
-static inline int kvType2TagType(int kvType) {
+static inline int keyValueType2TagType(int kvType) {
 	switch (kvType) {
 		case KeyValueInt:
 		case KeyValueInt64:
@@ -64,7 +64,7 @@ void copyCJsonValue(int tagType, Serializer &rdser, WrSerializer &wrser) {
 			throw Error(errParseJson, "Unexpected cjson typeTag '%s' while parsing value", ctag(tagType).TypeName());
 	}
 }
-void skipCJsonValue(int tagType, Serializer &rdser) {
+static void skipCJsonValue(int tagType, Serializer &rdser) {
 	switch (tagType) {
 		case TAG_DOUBLE:
 			rdser.GetDouble();
@@ -139,7 +139,7 @@ static void encodeKeyRef(WrSerializer &wrser, KeyRef kr, int tagType) {
 	throw Error(errParseJson, "Can't convert cjson typeTag '%s' to '%s'", ctag(tagType).TypeName(), KeyRef::TypeName(kr.Type()));
 }
 
-KeyRefs CJsonEncoder::ExtractFieldValue(const Payload *pl, const string &jsonPath) {
+KeyRefs CJsonEncoder::ExtractFieldValue(const Payload *pl, const string &jsonPath, KeyValueType expectedType) {
 	KeyRefs result;
 	depthLevel = depthLevelInitial;
 
@@ -149,12 +149,12 @@ KeyRefs CJsonEncoder::ExtractFieldValue(const Payload *pl, const string &jsonPat
 
 	TagsPath fieldTags = tagsMatcher_.path2tag(jsonPath);
 	Serializer rdser(tuple.data(), tuple.size());
-	getValueFromTuple(rdser, fieldTags, pl, result);
+	getValueFromTuple(rdser, fieldTags, pl, expectedType, result);
 
 	return result;
 }
 
-KeyRefs CJsonEncoder::ExtractFieldValue(const Payload *pl, const TagsPath &fieldTags) {
+KeyRefs CJsonEncoder::ExtractFieldValue(const Payload *pl, const TagsPath &fieldTags, KeyValueType expectedType) {
 	KeyRefs result;
 	depthLevel = depthLevelInitial;
 
@@ -163,12 +163,12 @@ KeyRefs CJsonEncoder::ExtractFieldValue(const Payload *pl, const TagsPath &field
 	string_view tuple(tupleData[0]);
 
 	Serializer rdser(tuple.data(), tuple.size());
-	getValueFromTuple(rdser, fieldTags, pl, result);
+	getValueFromTuple(rdser, fieldTags, pl, expectedType, result);
 
 	return result;
 }
 
-PayloadFieldType tagTypeToFieldType(int tagType) {
+static KeyValueType tagTypeToKvType(int tagType) {
 	KeyValueType type = KeyValueEmpty;
 	switch (tagType) {
 		case TAG_VARINT:
@@ -186,11 +186,27 @@ PayloadFieldType tagTypeToFieldType(int tagType) {
 		case TAG_NULL:
 			type = KeyValueEmpty;
 			break;
+		default:
+			std::abort();
 	}
-	return PayloadFieldType(type, std::string(), std::string(), false);
+	return type;
 }
 
-bool CJsonEncoder::getValueFromTuple(Serializer &rdser, const TagsPath &fieldTags, const Payload *pl, KeyRefs &res, bool arrayElements) {
+static PayloadFieldType fieldTypeFromKvType(KeyValueType type) { return PayloadFieldType(type, std::string(), std::string(), false); }
+
+static KeyValueType identifyConversionType(int supposedType, KeyValueType expectedType) {
+	if ((expectedType == KeyValueUndefined) || (expectedType == KeyValueComposite)) {
+		return tagTypeToKvType(supposedType);
+	}
+	KeyValueType supposedTypeKv = tagTypeToKvType(supposedType);
+	if ((expectedType == KeyValueString || supposedTypeKv == KeyValueString) && expectedType != supposedTypeKv) {
+		throw Error(errLogic, "Conversion is only possible between arithmetic types: expected %d, got %d", expectedType, supposedType);
+	}
+	return expectedType;
+}
+
+bool CJsonEncoder::getValueFromTuple(Serializer &rdser, const TagsPath &fieldTags, const Payload *pl, KeyValueType expectedType,
+									 KeyRefs &res, bool arrayElements) {
 	if (fieldTags.empty()) return false;
 
 	ctag tag = rdser.GetVarUint();
@@ -206,33 +222,35 @@ bool CJsonEncoder::getValueFromTuple(Serializer &rdser, const TagsPath &fieldTag
 		if (tagType == TAG_OBJECT) {
 			if ((depthLevel == depthLevelInitial) || (fieldTags[depthLevel] == tag.Name()) || arrayElements) {
 				++depthLevel;
-				while (getValueFromTuple(rdser, fieldTags, pl, res, arrayElements)) {
+				while (getValueFromTuple(rdser, fieldTags, pl, expectedType, res, arrayElements)) {
 				}
 			} else {
 				skipCjsonTag(tag, rdser);
 			}
 		} else {
-			if ((fieldTags[depthLevel] == tag.Name()) || arrayElements) {
+			if (arrayElements || (depthLevel != depthLevelInitial && fieldTags[depthLevel] == tag.Name())) {
 				if (tagType == TAG_ARRAY) {
 					carraytag atag = rdser.GetUInt32();
 					for (int count = 0; count < atag.Count(); count++) {
 						switch (atag.Tag()) {
 							case TAG_OBJECT: {
 								int origDepLevel = depthLevel;
-								getValueFromTuple(rdser, fieldTags, pl, res, true);
+								getValueFromTuple(rdser, fieldTags, pl, expectedType, res, true);
 								depthLevel = origDepLevel;
 								break;
 							}
 							default: {
 								Error err;
-								res.push_back(cjsonValueToKeyRef(atag.Tag(), rdser, tagTypeToFieldType(atag.Tag()), err));
+								KeyValueType type = identifyConversionType(atag.Tag(), expectedType);
+								res.push_back(cjsonValueToKeyRef(atag.Tag(), rdser, fieldTypeFromKvType(type), err));
 								return !err.ok();
 							}
 						}
 					}
 				} else {
 					Error err;
-					res.push_back(cjsonValueToKeyRef(tagType, rdser, tagTypeToFieldType(tagType), err));
+					KeyValueType type = identifyConversionType(tagType, expectedType);
+					res.push_back(cjsonValueToKeyRef(tagType, rdser, fieldTypeFromKvType(type), err));
 					return !err.ok();
 				}
 			} else {
@@ -268,7 +286,7 @@ bool CJsonEncoder::encodeCJson(ConstPayload *pl, Serializer &rdser, WrSerializer
 			if (tagType == TAG_ARRAY) rdser.GetVarUint();
 		} else if (tagType == TAG_ARRAY) {
 			int count = rdser.GetVarUint();
-			int subtag = kvType2TagType(pl->Type().Field(tagField).Type());
+			int subtag = keyValueType2TagType(pl->Type().Field(tagField).Type());
 			wrser.PutUInt32(static_cast<int>(carraytag(count, subtag)));
 			pl->Get(tagField, kr);
 			while (count--) {

@@ -1,11 +1,13 @@
 #pragma once
 
+#include <string.h>
 #include <time.h>
 #include <string>
 #include <vector>
 #include "core/indexopts.h"
 #include "core/type_consts.h"
 #include "estl/string_view.h"
+#include "tools/customhash.h"
 
 using std::string;
 using std::vector;
@@ -17,10 +19,20 @@ namespace reindexer {
 vector<string>& split(const string_view& str, const string& delimiters, bool trimEmpty, vector<string>&);
 void split(const string& utf8Str, wstring& utf16str, vector<std::wstring>& words);
 void split(const string_view& utf8Str, wstring& utf16str, vector<std::wstring>& words, const string& extraWordSymbols);
-void splitWithPos(const string_view& str, string& buf, vector<pair<const char*, int>>& words, const string& extraWordSymbols);
-
+void split(const string_view& str, string& buf, vector<const char*>& words, const string& extraWordSymbols);
 size_t calcUTf8Size(const char* s, size_t size, size_t limit);
 size_t calcUTf8SizeEnd(const char* end, int pos, size_t limit);
+
+class Word2PosHelper {
+public:
+	Word2PosHelper(string_view data, const string& extraWordSymbols);
+	std::pair<int, int> convert(int wordPos, int endPos);
+
+protected:
+	string_view data_;
+	int lastWordPos_, lastOffset_;
+	const string& extraWordSymbols_;
+};
 
 string lower(string s);
 int collateCompare(const string_view& lhs, const string_view& rhs, const CollateOpts& collateOpts);
@@ -56,5 +68,19 @@ LogLevel logLevelFromString(const string& strLogLevel);
 static bool inline iequals(const string_view& lhs, const string_view& rhs) {
 	return lhs.size() == rhs.size() && collateCompare(lhs, rhs, CollateOpts(CollateASCII)) == 0;
 }
+
+struct nocase_equal_str {
+	using is_transparent = void;
+
+	bool operator()(const string_view& lhs, const string& rhs) const { return iequals(lhs, rhs); }
+	bool operator()(const string& lhs, const string_view& rhs) const { return iequals(lhs, rhs); }
+	bool operator()(const string& lhs, const string& rhs) const { return iequals(lhs, rhs); }
+};
+
+struct nocase_hash_str {
+	using is_transparent = void;
+	size_t operator()(const string_view& hs) const { return collateHash(hs, CollateASCII); }
+	size_t operator()(const string& hs) const { return collateHash(hs, CollateASCII); }
+};
 
 }  // namespace reindexer

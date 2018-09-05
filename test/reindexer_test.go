@@ -11,7 +11,7 @@ import (
 	"github.com/restream/reindexer"
 	_ "github.com/restream/reindexer/bindings/builtin"
 	_ "github.com/restream/reindexer/bindings/cproto"
-	//	_ "github.com/restream/reindexer/pprof"
+	// _ "github.com/restream/reindexer/pprof"
 )
 
 var DB *reindexer.Reindexer
@@ -30,6 +30,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
+
 	if udsn.Scheme == "builtin" {
 		os.RemoveAll("/tmp/reindex_test/")
 	}
@@ -79,6 +80,10 @@ func randSearchString() string {
 
 func randDevice() string {
 	return devices[rand.Int()%len(devices)]
+}
+
+func randPostalCode() int {
+	return rand.Int() % 999999
 }
 
 func randLocation() string {

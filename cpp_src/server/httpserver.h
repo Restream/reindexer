@@ -45,6 +45,7 @@ public:
 	int DeleteItems(http::Context &ctx);
 	int GetIndexes(http::Context &ctx);
 	int PostIndex(http::Context &ctx);
+	int PutIndex(http::Context &ctx);
 	int DeleteIndex(http::Context &ctx);
 	int CheckAuth(http::Context &ctx);
 	void Logger(http::Context &ctx);

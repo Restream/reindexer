@@ -8,10 +8,13 @@ class FTApi : public ReindexerApi {
 public:
 	void SetUp() {
 		reindexer.reset(new Reindexer);
-		CreateNamespace("nm1");
-		CreateNamespace("nm2");
+		Error err;
 
-		//		IndexOpts opts{false, true, false};
+		err = reindexer->OpenNamespace("nm1");
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		err = reindexer->OpenNamespace("nm2");
+		ASSERT_TRUE(err.ok()) << err.what();
 
 		DefineNamespaceDataset(
 			"nm1",

@@ -23,13 +23,8 @@ const string kOutputModePrettyCollapsed = "collapsed";
 const string kOutputModeTable = "table";
 
 template <typename _DB>
-DBWrapper<_DB>::DBWrapper(const string& outFileName, const string& inFileName, const string& command)
-	: output_(outFileName), fileName_(inFileName), command_(command) {
-	variables_[kVariableOutput] = kOutputModePrettyCollapsed;
-}
-
-template <typename _DB>
 Error DBWrapper<_DB>::Connect(const string& dsn) {
+	variables_[kVariableOutput] = kOutputModePrettyCollapsed;
 	return db_.Connect(dsn);
 }
 

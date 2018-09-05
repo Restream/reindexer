@@ -40,8 +40,8 @@ void AreaHolder::Commit() {
 		}
 	}
 }
-bool AreaHolder::AddWord(int start_pos, int size, int filed) {
-	Area thr_area{start_pos, start_pos + size};
+bool AreaHolder::AddWord(int start_pos, int /*size*/, int filed) {
+	Area thr_area{start_pos, start_pos + 1};
 	return insertArea(thr_area, filed);
 }
 bool AreaHolder::insertArea(const Area &area, int field) {
@@ -54,25 +54,6 @@ bool AreaHolder::insertArea(const Area &area, int field) {
 	return true;
 }
 
-AreaVec AreaHolder::GetSnippet(int field, int front, int back, int total_size) {
-	if (!commited_) Commit();
-	auto va = areas[field];
-	for (auto &area : va) {
-		area.start_ -= front;
-		if (area.start_ < 0 || front < 0) area.start_ = 0;
-		area.end_ += back;
-		if (area.end_ > total_size || back < 0) area.end_ = total_size;
-	}
-	if (!va.empty()) {
-		for (auto vit = va.begin() + 1; vit != va.end(); ++vit) {
-			auto prev = vit - 1;
-			if (vit->Concat(*prev)) {
-				vit = va.erase(prev);
-			}
-		}
-	}
-	return va;
-}
 void AreaHolder::ReserveField(int size) { areas.resize(size); }
 AreaVec *AreaHolder::GetAreas(int field) {
 	if (!commited_) Commit();

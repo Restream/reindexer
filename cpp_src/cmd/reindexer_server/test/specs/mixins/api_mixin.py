@@ -131,6 +131,9 @@ class ApiMixin(object):
     def api_create_index(self, dbname, nsname, body):
         return self._api_call('POST', '/db/' + dbname + '/namespaces/' + nsname + '/indexes', body)
 
+    def api_update_index(self, dbname, nsname, body):
+        return self._api_call('PUT', '/db/' + dbname + '/namespaces/' + nsname + '/indexes', body)
+
     def api_delete_index(self, dbname, nsname, index_name):
         return self._api_call('DELETE', '/db/' + dbname + '/namespaces/' + nsname + '/indexes/' + index_name)
 

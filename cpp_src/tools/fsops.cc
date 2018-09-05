@@ -4,6 +4,9 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <memory>
+
+#include "errors.h"
 #include "tools/oscompat.h"
 
 namespace reindexer {
@@ -133,7 +136,7 @@ FileStatus Stat(const string &path) {
 #endif
 }
 
-bool DirectoryExists(const std::string &directory) {
+bool DirectoryExists(const string &directory) {
 	if (!directory.empty()) {
 #ifdef _WIN32
 		if (_access(directory.c_str(), 0) == 0) {
@@ -150,6 +153,81 @@ bool DirectoryExists(const std::string &directory) {
 #endif
 	}
 	return false;
+}
+
+Error TryCreateDirectory(const string &dir) {
+	using reindexer::fs::MkDirAll;
+	using reindexer::fs::DirectoryExists;
+	using reindexer::fs::GetTempDir;
+	if (!dir.empty()) {
+		if (!DirectoryExists(dir) && dir != GetTempDir()) {
+			if (MkDirAll(dir) < 0) return Error(errLogic, "Could not create '%s'. Reason: %s\n", dir.c_str(), strerror(errno));
+#ifdef _WIN32
+		} else if (_access(dir.c_str(), 6) < 0) {
+#else
+		} else if (access(dir.c_str(), R_OK | W_OK) < 0) {
+#endif
+			return Error(errLogic, "Could not access dir '%s'. Reason: %s\n", dir.c_str(), strerror(errno));
+		}
+	}
+	return 0;
+}
+
+string GetDirPath(const string &path) {
+	size_t lastSlashPos = path.find_last_of("/\\");
+	return path.substr(0, lastSlashPos + 1);
+}
+
+Error ChownDir(const string &path, const string &user) {
+#ifndef _WIN32
+	if (!user.empty() && !path.empty()) {
+		struct passwd pwd, *usr;
+		char buf[0x4000];
+
+		int res = getpwnam_r(user.c_str(), &pwd, buf, sizeof(buf), &usr);
+		if (usr == nullptr) {
+			if (res == 0) {
+				return Error(errLogic, "Could get uid of user and gid for user `%s`. Reason: user `%s` not found", user.c_str(),
+							 user.c_str());
+			} else {
+				return Error(errLogic, "Could not change user to `%s`. Reason: %s", user.c_str(), strerror(errno));
+			}
+		}
+
+		if (getuid() != usr->pw_uid || getgid() != usr->pw_gid) {
+			if (chown(path.c_str(), usr->pw_uid, usr->pw_gid) < 0) {
+				return Error(errLogic, "Could not change ownership for directory '%s'. Reason: %s\n", path.c_str(), strerror(errno));
+			}
+		}
+	}
+#else
+	(void)path;
+	(void)user;
+#endif
+	return 0;
+}
+
+Error ChangeUser(const char *userName) {
+#ifndef _WIN32
+	struct passwd pwd, *result;
+	char buf[0x4000];
+
+	int res = getpwnam_r(userName, &pwd, buf, sizeof(buf), &result);
+	if (result == nullptr) {
+		if (res == 0) {
+			return Error(errLogic, "Could not change user to `%s`. Reason: user `%s` not found", userName, userName);
+		} else {
+			errno = res;
+			return Error(errLogic, "Could not change user to `%s`. Reason: %s", userName, strerror(errno));
+		}
+	}
+
+	if (setgid(pwd.pw_gid) != 0) return Error(errLogic, "Could not change user to `%s`. Reason: %s", userName, strerror(errno));
+	if (setuid(pwd.pw_uid) != 0) return Error(errLogic, "Could not change user to `%s`. Reason: %s", userName, strerror(errno));
+#else
+	(void)userName;
+#endif
+	return 0;
 }
 
 }  // namespace fs

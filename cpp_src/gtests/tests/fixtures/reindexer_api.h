@@ -38,10 +38,6 @@ protected:
 
 public:
 	ReindexerApi() { reindexer = make_shared<Reindexer>(); }
-	void CreateNamespace(const std::string &ns) {
-		auto err = reindexer->OpenNamespace(ns, StorageOpts().Enabled());
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
 
 	void DefineNamespaceDataset(const string &ns,
 								initializer_list<const tuple<const char *, const char *, const char *, const IndexOpts>> fields) {

@@ -9,6 +9,7 @@ set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 
 option (WITH_ASAN "Enable AddressSanitized build" OFF)
 option (WITH_TSAN "Enable ThreadSanitized build" OFF)
+option (WITH_GPERF "Enable GPerfTools build" ON)
 option (WITH_GCOV "Enable instrumented code coverage build" OFF)
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -74,7 +75,7 @@ add_library(${TARGET} STATIC ${HDRS} ${SRCS} ${VENDORS})
 
 # tcmalloc
 ##########
-if (NOT WITH_ASAN AND NOT WITH_TSAN)
+if (NOT WITH_ASAN AND NOT WITH_TSAN AND WITH_GPERF)
   # tmalloc conflict with sanitizers, so disable it for sanitized builds
   find_package(Gperftools)
   if(GPERFTOOLS_TCMALLOC)
@@ -230,6 +231,7 @@ if (NOT CPACK_RPM_PACKAGE_REQUIRES STREQUAL "")
   string (SUBSTRING "${CPACK_RPM_PACKAGE_REQUIRES}" 1 -1 CPACK_RPM_PACKAGE_REQUIRES)
 endif ()
 
+add_subdirectory(server)
 add_subdirectory(cmd/reindexer_tool)
 add_subdirectory(cmd/reindexer_server)
 add_subdirectory(doc)

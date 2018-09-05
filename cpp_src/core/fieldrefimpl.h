@@ -16,10 +16,10 @@ public:
 	virtual void SetValue(const KeyRefs &) = 0;
 };
 
-class RegularFieldRefImpl : public FieldRefImpl {
+class IndexedFieldRefImpl : public FieldRefImpl {
 public:
-	RegularFieldRefImpl(int field, ItemImpl *itemImpl);
-	~RegularFieldRefImpl();
+	IndexedFieldRefImpl(int field, ItemImpl *itemImpl);
+	~IndexedFieldRefImpl();
 
 	const string &Name() override;
 	KeyRef GetValue() override;
@@ -33,10 +33,10 @@ private:
 	ItemImpl *itemImpl_;
 };
 
-class CjsonFieldRefImpl : public FieldRefImpl {
+class NonIndexedFieldRefImpl : public FieldRefImpl {
 public:
-	CjsonFieldRefImpl(const std::string &jsonPath, ItemImpl *itemImpl);
-	~CjsonFieldRefImpl();
+	NonIndexedFieldRefImpl(const std::string &jsonPath, ItemImpl *itemImpl);
+	~NonIndexedFieldRefImpl();
 
 	const string &Name() override;
 	KeyRef GetValue() override;

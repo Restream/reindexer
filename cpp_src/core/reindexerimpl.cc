@@ -3,12 +3,14 @@
 #include <chrono>
 #include <thread>
 #include "core/cjson/jsondecoder.h"
+#include "core/index/index.h"
 #include "core/namespacedef.h"
 #include "core/selectfunc/selectfunc.h"
 #include "kx/kxsort.h"
 #include "tools/errors.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
+
 using std::lock_guard;
 using std::string;
 using std::vector;
@@ -328,10 +330,6 @@ struct ItemRefLess {
 Error ReindexerImpl::Select(const Query& q, QueryResults& result) {
 	NsLocker locks;
 
-	if (!q.joinQueries_.empty() && !q.mergeQueries_.empty()) {
-		return Error(errParams, "Merge and join can't be in same query");
-	}
-
 	Namespace::Ptr mainNs;
 
 	try {
@@ -359,9 +357,8 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result) {
 		if (q._namespace.size() && q._namespace[0] == '#') syncSystemNamespaces(q._namespace);
 		// Loockup and lock namespaces_
 		locks.Add(mainNs);
+		q.WalkNested(false, true, [this, &locks](const Query q) { locks.Add(getNamespace(q._namespace)); });
 
-		for (auto& jq : q.joinQueries_) locks.Add(getNamespace(jq._namespace));
-		for (auto& mq : q.mergeQueries_) locks.Add(getNamespace(mq._namespace));
 		locks.Lock();
 	} catch (const Error& err) {
 		return err;
@@ -371,9 +368,11 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result) {
 	for (;;) {
 		try {
 			SelectFunctionsHolder func;
-			h_vector<Query, 4> queries;
-			JoinedSelectors joinedSelectors = prepareJoinedSelectors(q, result, locks, queries, func);
-			doSelect(q, result, joinedSelectors, locks, func);
+			if (!q.joinQueries_.empty()) {
+				result.joined_.resize(1 + q.mergeQueries_.size());
+			}
+
+			doSelect(q, result, locks, func);
 			result.lockResults();
 			func.Process(result);
 
@@ -394,11 +393,8 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result) {
 JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResults& result, NsLocker& locks, h_vector<Query, 4>& queries,
 													  SelectFunctionsHolder& func) {
 	JoinedSelectors joinedSelectors;
-	queries.reserve(q.joinQueries_.size());
 	auto ns = locks.Get(q._namespace);
-	if (!q.joinQueries_.empty()) {
-		result.joined_.reset(new unordered_map<IdType, QRVector>());
-	}
+
 	// For each joined queries
 	for (auto& jq : q.joinQueries_) {
 		// Get common results from joined namespaces_
@@ -415,7 +411,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 		Query* pjItemQ = nullptr;
 		if (jjq.entries.size() && !joinRes.haveData) {
 			QueryResults jr;
-			jjq.sortDirDesc = false;
+			for (SortingEntry& se : jjq.sortingEntries_) se.desc = false;
 			jjq.Limit(UINT_MAX);
 			SelectCtx ctx(jjq, &locks);
 			ctx.preResult = preResult = std::make_shared<SelectCtx::PreResult>();
@@ -432,29 +428,45 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 
 		// Do join for each item in main result
 		Query jItemQ(jq._namespace);
-		jItemQ.Debug(jq.debugLevel).Limit(jq.count).Sort(jjq.sortBy.c_str(), jq.sortDirDesc);
+		jItemQ.Debug(jq.debugLevel).Limit(jq.count);
+		for (size_t i = 0; i < jjq.sortingEntries_.size(); ++i) {
+			jItemQ.Sort(jjq.sortingEntries_[i].column, jq.sortingEntries_[i].desc);
+		}
 
 		jItemQ.entries.reserve(jq.joinEntries_.size());
 
 		// Construct join conditions
 		for (auto& je : jq.joinEntries_) {
-			QueryEntry qe(je.op_, je.condition_, je.joinIndex_, jns->getIndexByName(je.joinIndex_));
-			const_cast<QueryJoinEntry&>(je).idxNo = ns->getIndexByName(je.index_);
+			int joinIdx = IndexValueType::NotSet;
+			if (!jns->getIndexByName(je.joinIndex_, joinIdx)) {
+				joinIdx = IndexValueType::SetByJsonPath;
+			}
+			QueryEntry qe(je.op_, je.condition_, je.joinIndex_, joinIdx);
+			if (!ns->getIndexByName(je.index_, const_cast<QueryJoinEntry&>(je).idxNo)) {
+				const_cast<QueryJoinEntry&>(je).idxNo = IndexValueType::SetByJsonPath;
+			}
 			jItemQ.entries.push_back(qe);
 		}
 		queries.push_back(std::move(jItemQ));
 		pjItemQ = &queries.back();
 
-		auto joinedSelector = [&result, &jq, jns, preResult, pos, pjItemQ, &locks, &func, ns](JoinCacheRes& joinRes, IdType id,
+		auto joinedSelector = [&result, &jq, jns, preResult, pos, pjItemQ, &locks, &func, ns](JoinCacheRes& joinRes, IdType id, int nsId,
 																							  ConstPayload payload, bool match) {
 			QueryResults joinItemR;
-
 			JoinCacheRes finalJoinRes;
 
 			// Put values to join conditions
 			int cnt = 0;
 			for (auto& je : jq.joinEntries_) {
-				payload.Get(je.idxNo, pjItemQ->entries[cnt].values);
+				bool nonIndexedField = (je.idxNo == IndexValueType::SetByJsonPath);
+				bool isIndexSparse = !nonIndexedField && ns->indexes_[je.idxNo]->Opts().IsSparse();
+				if (nonIndexedField || isIndexSparse) {
+					KeyValues& values = pjItemQ->entries[cnt].values;
+					KeyValueType type = values.empty() ? KeyValueUndefined : values[0].Type();
+					payload.GetByJsonPath(je.index_, ns->tagsMatcher_, values, type);
+				} else {
+					payload.Get(je.idxNo, pjItemQ->entries[cnt].values);
+				}
 				cnt++;
 			}
 			pjItemQ->Limit(match ? jq.count : 0);
@@ -495,7 +507,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 				jns->PutToJoinCache(joinResLong, val);
 			}
 			if (match && found) {
-				auto& jres = result.joined_->emplace(id, QRVector()).first->second;
+				auto& jres = result.joined_[nsId].emplace(id, QRVector()).first->second;
 
 				if (pos >= jres.size()) jres.resize(pos + 1);
 
@@ -503,22 +515,29 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 			}
 			return matchedAtLeastOnce;
 		};
-		auto cache_func_selector = std::bind(joinedSelector, std::move(joinRes), _1, _2, _3);
+		auto cache_func_selector = std::bind(joinedSelector, std::move(joinRes), _1, _2, _3, _4);
 
 		joinedSelectors.push_back({jq.joinType, jq.count == 0, cache_func_selector, 0, 0, jns->name_});
 	}
 	return joinedSelectors;
 }
 
-void ReindexerImpl::doSelect(const Query& q, QueryResults& result, JoinedSelectors& joinedSelectors, NsLocker& locks,
-							 SelectFunctionsHolder& func) {
+void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker& locks, SelectFunctionsHolder& func) {
 	auto ns = locks.Get(q._namespace);
 	if (!ns) {
 		throw Error(errParams, "Namespace '%s' is not exists", q._namespace.c_str());
 	}
 	SelectCtx ctx(q, &locks);
+	h_vector<Query, 4> queries;
+	int jqCount = q.joinQueries_.size();
+
+	for (auto& mq : q.mergeQueries_) {
+		jqCount += mq.joinQueries_.size();
+	}
+	queries.reserve(jqCount);
 
 	{
+		JoinedSelectors joinedSelectors = prepareJoinedSelectors(q, result, locks, queries, func);
 		ctx.functions = &func;
 		ctx.joinedSelectors = &joinedSelectors;
 		ctx.nsid = 0;
@@ -531,12 +550,14 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, JoinedSelecto
 
 		for (auto& mq : q.mergeQueries_) {
 			auto mns = locks.Get(mq._namespace);
-			SelectCtx ctx(mq, &locks);
-			ctx.nsid = ++counter;
-			ctx.isForceAll = true;
-			ctx.functions = &func;
+			SelectCtx mctx(mq, &locks);
+			mctx.nsid = ++counter;
+			mctx.isForceAll = true;
+			mctx.functions = &func;
+			JoinedSelectors joinedSelectors = prepareJoinedSelectors(mq, result, locks, queries, func);
+			mctx.joinedSelectors = &joinedSelectors;
 
-			mns->Select(result, ctx);
+			mns->Select(result, mctx);
 		}
 
 		ItemRefVector& itemRefVec = result.Items();
@@ -567,15 +588,13 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, JoinedSelecto
 		}
 	}
 	// dummy selects for put ctx-es
-	for (auto& jq : q.joinQueries_) {
-		auto jns = locks.Get(jq._namespace);
-		Query tmpq(jq._namespace);
+	q.WalkNested(false, false, [&locks, &result](const Query& nestesQuery) {
+		auto jns = locks.Get(nestesQuery._namespace);
+		Query tmpq(nestesQuery._namespace);
 		tmpq.Limit(0);
-		tmpq.selectFilter_ = jq.selectFilter_;
 		SelectCtx jctx(tmpq, &locks);
-		jctx.functions = &func;
 		jns->Select(result, jctx);
-	}
+	});
 }
 
 Error ReindexerImpl::Commit(const string& _namespace) {
@@ -616,6 +635,16 @@ Error ReindexerImpl::AddIndex(const string& _namespace, const IndexDef& indexDef
 	try {
 		auto ns = getNamespace(_namespace);
 		ns->AddIndex(indexDef);
+	} catch (const Error& err) {
+		return err;
+	}
+	return Error(errOK);
+}
+
+Error ReindexerImpl::UpdateIndex(const string& _namespace, const IndexDef& indexDef) {
+	try {
+		auto ns = getNamespace(_namespace);
+		ns->UpdateIndex(indexDef);
 	} catch (const Error& err) {
 		return err;
 	}

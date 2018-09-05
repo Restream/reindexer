@@ -1,7 +1,8 @@
 #include "customhash.h"
-#include "customlocal.h"
-#include "utf8cpp/utf8.h"
 #include <string.h>
+#include "customlocal.h"
+#include "estl/string_view.h"
+#include "utf8cpp/utf8.h"
 
 namespace reindexer {
 
@@ -61,7 +62,7 @@ uint32_t _Hash_bytes_collate_ascii(const void* ptr, uint32_t len) {
 	// Mix 4 bytes at a time into the hash.
 	while (len >= 4) {
 		uint32_t k = unaligned_load(buf);
-		k |= 0x40404040;
+		k |= 0x20202020;
 
 		k *= m;
 		k ^= k >> 24;
@@ -74,13 +75,13 @@ uint32_t _Hash_bytes_collate_ascii(const void* ptr, uint32_t len) {
 
 	// Handle the last few bytes of the input array.
 	if (len >= 3) {
-		hash ^= static_cast<unsigned char>(buf[2] | 0x40) << 16;
+		hash ^= static_cast<unsigned char>(buf[2] | 0x20) << 16;
 	}
 	if (len >= 2) {
-		hash ^= static_cast<unsigned char>(buf[1] | 0x40) << 8;
+		hash ^= static_cast<unsigned char>(buf[1] | 0x20) << 8;
 	}
 	if (len >= 1) {
-		hash ^= static_cast<unsigned char>(buf[0] | 0x40);
+		hash ^= static_cast<unsigned char>(buf[0] | 0x20);
 		hash *= m;
 	}
 
@@ -123,7 +124,7 @@ uint32_t _Hash_bytes_collate_utf8(const void* ptr, uint32_t len) {
 }
 
 uint32_t Hash(const wstring& s) noexcept { return _Hash_bytes(s.data(), s.length() * sizeof(wchar_t)); }
-uint32_t collateHash(const string& s, CollateMode collateMode) noexcept {
+uint32_t collateHash(const string_view& s, CollateMode collateMode) noexcept {
 	switch (collateMode) {
 		case CollateASCII:
 			return _Hash_bytes_collate_ascii(s.data(), s.length());
@@ -131,7 +132,7 @@ uint32_t collateHash(const string& s, CollateMode collateMode) noexcept {
 		case CollateCustom:
 			return _Hash_bytes_collate_utf8(s.data(), s.length());
 		default:
-			return std::hash<std::string>()(s);
+			return _Hash_bytes(s.data(), s.length());
 	}
 }
 

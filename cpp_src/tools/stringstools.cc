@@ -90,17 +90,15 @@ bool is_number(const string &str) {
 	return (i == str.length());
 }
 
-void splitWithPos(const string_view &str, string &buf, vector<pair<const char *, int>> &words, const string &extraWordSymbols) {
+void split(const string_view &str, string &buf, vector<const char *> &words, const string &extraWordSymbols) {
 	buf.resize(str.length());
 	words.resize(0);
 	auto bufIt = buf.begin();
 
 	for (auto it = str.begin(); it != str.end();) {
-		auto wordStartIt = it;
 		auto ch = utf8::unchecked::next(it);
 
 		while (it != str.end() && !IsAlpha(ch) && !IsDigit(ch)) {
-			wordStartIt = it;
 			ch = utf8::unchecked::next(it);
 		}
 
@@ -120,9 +118,73 @@ void splitWithPos(const string_view &str, string &buf, vector<pair<const char *,
 
 		if (begIt != bufIt) {
 			*bufIt++ = 0;
-			words.push_back({&*begIt, std::distance(str.begin(), wordStartIt)});
+			words.push_back(&*begIt);
 		}
 	}
+}
+
+std::pair<int, int> word2Pos(const string_view &str, int wordPos, int endPos, const string &extraWordSymbols) {
+	auto wordStartIt = str.begin();
+	auto wordEndIt = str.begin();
+	auto it = str.begin();
+	assert(endPos > wordPos);
+	int numWords = endPos - (wordPos + 1);
+	for (; it != str.end();) {
+		auto ch = utf8::unchecked::next(it);
+
+		while (it != str.end() && !IsAlpha(ch) && !IsDigit(ch)) {
+			wordStartIt = it;
+			ch = utf8::unchecked::next(it);
+		}
+
+		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != string::npos) {
+			wordEndIt = it;
+			if (it == str.end()) break;
+			ch = utf8::unchecked::next(it);
+		}
+
+		if (wordStartIt != it) {
+			if (!wordPos)
+				break;
+			else {
+				wordPos--;
+				wordStartIt = it;
+			}
+		}
+	}
+
+	for (; numWords != 0 && it != str.end(); numWords--) {
+		auto ch = utf8::unchecked::next(it);
+
+		while (it != str.end() && !IsAlpha(ch) && !IsDigit(ch)) {
+			ch = utf8::unchecked::next(it);
+		}
+
+		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != string::npos) {
+			wordEndIt = it;
+			if (it == str.end()) break;
+			ch = utf8::unchecked::next(it);
+		}
+	}
+
+	return {int(std::distance(str.begin(), wordStartIt)), int(std::distance(str.begin(), wordEndIt))};
+}
+
+Word2PosHelper::Word2PosHelper(string_view data, const string &extraWordSymbols)
+	: data_(data), lastWordPos_(0), lastOffset_(0), extraWordSymbols_(extraWordSymbols) {}
+
+std::pair<int, int> Word2PosHelper::convert(int wordPos, int endPos) {
+	if (wordPos < lastWordPos_) {
+		lastWordPos_ = 0;
+		lastOffset_ = 0;
+	}
+
+	auto ret = word2Pos(data_.substr(lastOffset_), wordPos - lastWordPos_, endPos - lastWordPos_, extraWordSymbols_);
+	ret.first += lastOffset_;
+	ret.second += lastOffset_;
+	lastOffset_ = ret.first;
+	lastWordPos_ += wordPos;
+	return ret;
 }
 
 void split(const string_view &utf8Str, wstring &utf16str, vector<std::wstring> &words, const string &extraWordSymbols) {
@@ -281,18 +343,18 @@ int fast_strftime(char *buf, const tm *tm) {
 	char *d = buf;
 
 	if (unsigned(tm->tm_wday) < sizeof(daysOfWeek) / sizeof daysOfWeek[0]) d = strappend(d, daysOfWeek[tm->tm_wday]);
+	d = strappend(d, ", ");
+	d = i32toa(tm->tm_mday, d);
 	*d++ = ' ';
 	if (unsigned(tm->tm_mon) < sizeof(months) / sizeof months[0]) d = strappend(d, months[tm->tm_mon]);
 	*d++ = ' ';
-	d = i32toa(tm->tm_mday, d);
+	d = i32toa(tm->tm_year + 1900, d);
 	*d++ = ' ';
 	d = i32toa(tm->tm_hour, d);
 	*d++ = ':';
 	d = i32toa(tm->tm_min, d);
 	*d++ = ':';
 	d = i32toa(tm->tm_sec, d);
-	*d++ = ' ';
-	d = i32toa(tm->tm_year + 1900, d);
 	d = strappend(d, " GMT");
 	*d = 0;
 	return d - buf;

@@ -8,13 +8,10 @@ extern "C" {
 
 void init_reindexer();
 void destroy_reindexer();
+reindexer_error change_reindexer_instance(void *rx);
+
 reindexer_error reindexer_enable_storage(reindexer_string path);
 reindexer_error reindexer_init_system_namespaces();
-
-typedef struct reindexer_ret {
-	reindexer_error err;
-	reindexer_resbuffer out;
-} reindexer_ret;
 
 reindexer_error reindexer_open_namespace(reindexer_string _namespace, StorageOpts opts, uint8_t cacheMode);
 reindexer_error reindexer_drop_namespace(reindexer_string _namespace);

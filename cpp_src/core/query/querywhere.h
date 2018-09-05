@@ -52,6 +52,18 @@ struct AggregateEntry {
 	AggType type_;
 };
 
+struct SortingEntry {
+	SortingEntry() {}
+	SortingEntry(const string &c, bool d) : column(c), desc(d) {}
+	bool operator==(const SortingEntry &) const;
+	bool operator!=(const SortingEntry &) const;
+	string column;
+	bool desc = false;
+	int index = IndexValueType::NotSet;
+};
+
+struct SortingEntries : public h_vector<SortingEntry, 1> {};
+
 class QueryWhere {
 public:
 	QueryWhere() {}

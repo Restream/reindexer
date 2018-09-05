@@ -89,7 +89,7 @@ h_vector<pair<string_view, int>, 8> IndexText<unordered_payload_map<Index::KeyEn
 		bool fieldFromCjson = (field == IndexValueType::SetByJsonPath);
 		if (fieldFromCjson) {
 			assert(tagsPathIdx < fields_.getTagsPathsLength());
-			pl.GetByJsonPath(fields_.getTagsPath(tagsPathIdx++), krefs);
+			pl.GetByJsonPath(fields_.getTagsPath(tagsPathIdx++), krefs, this->KeyType());
 		} else {
 			pl.Get(field, krefs);
 		}

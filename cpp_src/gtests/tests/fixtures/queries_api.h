@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "reindexer_api.h"
+
 using std::unordered_map;
 using std::unordered_set;
 using std::map;
@@ -38,7 +39,8 @@ public:
 			{string(kFieldNameAge + compositePlus + kFieldNameGenre), IndexOpts()},
 		};
 
-		CreateNamespace(default_namespace);
+		Error err = reindexer->OpenNamespace(default_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(default_namespace,
 							   {
 								   IndexDeclaration{kFieldNameId, "hash", "int", indexesOptions[kFieldNameId]},
@@ -66,7 +68,8 @@ public:
 		defaultNsPks.push_back(kFieldNameId);
 		defaultNsPks.push_back(kFieldNameTemp);
 
-		CreateNamespace(testSimpleNs);
+		err = reindexer->OpenNamespace(testSimpleNs);
+		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(testSimpleNs, {
 												 IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK()},
 												 IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts()},
@@ -75,7 +78,8 @@ public:
 											 });
 		simpleTestNsPks.push_back(kFieldNameId);
 
-		CreateNamespace(compositeIndexesNs);
+		err = reindexer->OpenNamespace(compositeIndexesNs);
+		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(compositeIndexesNs, {IndexDeclaration{kFieldNameBookid, "hash", "int", IndexOpts().PK()},
 													IndexDeclaration{kFieldNameBookid2, "hash", "int", IndexOpts().PK()},
 													IndexDeclaration{kFieldNameTitle, "text", "string", IndexOpts()},
@@ -88,7 +92,8 @@ public:
 		compositeIndexesNsPks.push_back(kFieldNameBookid);
 		compositeIndexesNsPks.push_back(kFieldNameBookid2);
 
-		CreateNamespace(comparatorsNs);
+		err = reindexer->OpenNamespace(comparatorsNs);
+		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(
 			comparatorsNs,
 			{IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts()}, IndexDeclaration{kFieldNameColumnInt, "hash", "int", IndexOpts()},
@@ -112,7 +117,9 @@ public:
 	void Verify(const string& ns, const QueryResults& qr, const Query& query) {
 		unordered_set<string> pks;
 		unordered_map<string, unordered_set<string>> distincts;
-		KeyRef lastSortemColumnValue;
+
+		KeyRefs lastSortedColumnValues;
+		lastSortedColumnValues.resize(query.sortingEntries_.size());
 
 		size_t itemsCount = 0;
 		for (size_t i = 0; i < qr.Count(); ++i) {
@@ -140,27 +147,44 @@ public:
 			}
 			EXPECT_TRUE(checkDistincts(itemr, query, distincts)) << "Distinction check failed";
 
-			if (!query.sortBy.empty() && query.forcedSortOrder.empty()) {
-				KeyRef sortedValue = itemr[query.sortBy];
-				if (lastSortemColumnValue.Type() != KeyValueEmpty) {
-					int cmpRes = lastSortemColumnValue.Compare(sortedValue);
-					bool sortOrderSatisfied = (query.sortDirDesc && cmpRes > 0) || (!query.sortDirDesc && cmpRes < 0) || (cmpRes == 0);
-					EXPECT_TRUE(sortOrderSatisfied) << "Sort order is incorrect!";
-					if (!sortOrderSatisfied) {
-						printf("Query: %s\n", query.Dump().c_str());
-						PrintFailedSortOrdered(query, qr, i);
+			std::vector<int> cmpRes(query.sortingEntries_.size());
+			std::fill(cmpRes.begin(), cmpRes.end(), -1);
+
+			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
+				if (!query.forcedSortOrder.empty()) break;
+				const reindexer::SortingEntry& sortingEntry(query.sortingEntries_[j]);
+				KeyRef sortedValue = itemr[sortingEntry.column];
+				if (lastSortedColumnValues[j].Type() != KeyValueEmpty) {
+					bool needToVerify = true;
+					if (j != 0) {
+						for (int k = j - 1; k >= 0; --k)
+							if (cmpRes[k] != 0) {
+								needToVerify = false;
+								break;
+							}
+					}
+					needToVerify = (j == 0) || needToVerify;
+					if (needToVerify) {
+						cmpRes[j] = lastSortedColumnValues[j].Compare(sortedValue);
+						bool sortOrderSatisfied =
+							(sortingEntry.desc && cmpRes[j] >= 0) || (!sortingEntry.desc && cmpRes[j] <= 0) || (cmpRes[j] == 0);
+						EXPECT_TRUE(sortOrderSatisfied) << "\nSort order is incorrect for column: " << sortingEntry.column;
+						if (!sortOrderSatisfied) {
+							printf("Query: %s\n", query.Dump().c_str());
+							PrintFailedSortOrder(query, qr, i);
+						}
 					}
 				}
-				lastSortemColumnValue = sortedValue;
+				lastSortedColumnValues[j] = sortedValue;
 			}
 		}
 
 		if (!query.forcedSortOrder.empty()) {
 			EXPECT_TRUE(query.forcedSortOrder.size() <= qr.Count()) << "Size of QueryResults is incorrect!";
 			if (query.forcedSortOrder.size() <= qr.Count()) {
-			for (size_t i = 0; i < qr.Count(); ++i) {
+				for (size_t i = 0; i < qr.Count(); ++i) {
 					Item item(qr[i].GetItem());
-					KeyRef sortedValue = item[query.sortBy];
+					KeyRef sortedValue = item[query.sortingEntries_[0].column];
 					EXPECT_EQ(query.forcedSortOrder[i].Compare(sortedValue), 0) << "Forced sort order is incorrect!";
 				}
 			}
@@ -461,7 +485,7 @@ protected:
 		item[kFieldNameYear] = rand() % 50 + 2000;
 		item[kFieldNameGenre] = rand() % 50;
 		item[kFieldNameName] = RandString().c_str();
-		item[kFieldNameAge] = rand() % 5;
+		item[kFieldNameAge] = rand() % 50;
 		item[kFieldNameDescription] = RandString().c_str();
 
 		auto packagesVec(RandIntVector(packagesCount, 10000, 50));
@@ -573,6 +597,21 @@ protected:
 															.Where(kFieldNamePackages, CondEmpty, 0)
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameName, CondRange, {RandString(), RandString()})
+															.Distinct(distinct.c_str())
+															.Sort(kFieldNameYear, true)
+															.Sort(kFieldNameName, false)
+															.Sort(kFieldNameLocation, true));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameName, CondRange, {RandString(), RandString()})
+															.Distinct(distinct.c_str())
+															.Sort(kFieldNameGenre, true)
+															.Sort(kFieldNameActor, false)
+															.Sort(kFieldNameRate, true)
+															.Sort(kFieldNameLocation, false));
 
 					ExecuteAndVerify(
 						default_namespace,
@@ -737,7 +776,7 @@ protected:
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		double yearSum = 0.0;
-		for (auto it: checkQr) {
+		for (auto it : checkQr) {
 			Item item(it.GetItem());
 			yearSum += item[kFieldNameYear].Get<int>();
 		}
@@ -892,20 +931,46 @@ protected:
 		fflush(stdout);
 	}
 
-	void PrintFailedSortOrdered(const Query& query, const QueryResults& qr, int itemIndex) {
-		const int range = 5;
-		printf("Sort order or last items: ");
-		if (itemIndex > 0) {
-			for (int i = itemIndex; i >= (itemIndex - range >= 0 ? itemIndex - range : 0); ++i) {
-				Item item(qr[i].GetItem());
-				printf("%s, ", item[query.sortBy].As<string>().c_str());
-			}
+	static void boldOn() { printf("\e[1m"); }
+	static void boldOff() { printf("\e[0m"); }
+
+	void PrintFailedSortOrder(const Query& query, const QueryResults& qr, int itemIndex, int itemsToShow = 10) {
+		if (qr.Count() == 0) return;
+
+		printf("Sort order or last items: \n");
+		Item rdummy(qr[0].GetItem());
+		boldOn();
+		for (size_t idx = 0; idx < query.sortingEntries_.size(); idx++) {
+			printf("\t%.60s", rdummy[query.sortingEntries_[idx].column].Name().c_str());
 		}
-		int numResults = qr.Count();
-		for (int i = itemIndex + 1; i < (itemIndex + range < numResults ? itemIndex + range : numResults - 1); ++i) {
+		boldOff();
+		printf("\n\n");
+
+		int firstItem = itemIndex - itemsToShow;
+		if (firstItem < 0) firstItem = 0;
+		for (int i = firstItem; i <= itemIndex; ++i) {
 			Item item(qr[i].GetItem());
-			printf("%s, ", item[query.sortBy].As<string>().c_str());
+			if (i == itemIndex) boldOn();
+			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
+				printf("\t%.60s", item[query.sortingEntries_[j].column].As<string>().c_str());
+			}
+			if (i == itemIndex) boldOff();
+			printf("\n");
 		}
+
+		firstItem = itemIndex + 1;
+		int lastItem = firstItem + itemsToShow;
+		const int count = static_cast<int>(qr.Count());
+		if (firstItem >= count) firstItem = count - 1;
+		if (lastItem > count) lastItem = count;
+		for (int i = firstItem; i < lastItem; ++i) {
+			Item item(qr[i].GetItem());
+			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
+				printf("\t%.60s", item[query.sortingEntries_[j].column].As<string>().c_str());
+			}
+			printf("\n");
+		}
+
 		printf("\n\n");
 		fflush(stdout);
 	}

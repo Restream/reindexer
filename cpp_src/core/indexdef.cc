@@ -72,6 +72,11 @@ IndexDef::IndexDef() {}
 IndexDef::IndexDef(const string &name, const string_view &jsonPaths, const string &indexType, const string &fieldType, const IndexOpts opts)
 	: name_(name), jsonPaths_(jsonPaths), indexType_(indexType), fieldType_(fieldType), opts_(opts) {}
 
+bool IndexDef::operator==(const IndexDef &other) const {
+	return name_ == other.name_ && jsonPaths_ == other.jsonPaths_ && indexType_ == other.indexType_ && fieldType_ == other.fieldType_ &&
+		   opts_ == other.opts_;
+}
+
 IndexType IndexDef::Type() const {
 	string iType = indexType_;
 	if (iType == "") {

@@ -100,10 +100,10 @@ public:
 			}
 		}
 	}
-	void updatePayloadType(PayloadType payloadType, bool &updated) {
+	void updatePayloadType(PayloadType payloadType, bool &updated, bool incVersion) {
 		updated = true;
 		payloadType_ = payloadType;
-		version_++;
+		if (incVersion) version_++;
 		buildTagsCache(updated);
 	}
 

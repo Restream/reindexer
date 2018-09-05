@@ -42,7 +42,9 @@ type SortOrderValues struct {
 func newSortOrderValues(query *queryTest) *SortOrderValues {
 	q := newTestQuery(query.db, query.namespace)
 	q.Distinct(query.distinctIndex)
-	q.Sort(query.sortIndex, query.sortDesc, query.sortValues...)
+	for i := 0; i < len(query.sortIndex); i++ {
+		q.Sort(query.sortIndex[i], query.sortDesc, query.sortValues[query.sortIndex[i]]...)
+	}
 	if query.reqTotalCount {
 		q.ReqTotal()
 	}
@@ -90,7 +92,7 @@ func execAndVerifyForceSortOrderQuery(query *queryTest) {
 
 	sortOrderValues := newSortOrderValues(query)
 	checkItems := sortOrderValues.GetVerifyItems()
-	sortIdx := query.ns.fieldsIdx[query.sortIndex]
+	sortIdx, _ := query.ns.getField(query.sortIndex[0])
 
 	if len(items) == len(checkItems) {
 		for i := 0; i < len(items); i++ {

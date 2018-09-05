@@ -1,4 +1,5 @@
 #include "core/comparator.h"
+#include "cjson/cjsonencoder.h"
 #include "core/payload/payloadiface.h"
 #include "query/querywhere.h"
 
@@ -63,7 +64,7 @@ bool Comparator::Compare(const PayloadValue &data, int rowId) {
 		KeyRefs rhs;
 		Payload pl(payloadType_, const_cast<PayloadValue &>(data));
 
-		pl.GetByJsonPath(fields_.getTagsPath(0), rhs);
+		pl.GetByJsonPath(fields_.getTagsPath(0), rhs, type_);
 		if (cond_ == CondEmpty) return rhs.size() == 0;
 		if (cond_ == CondAny) return rhs.size() != 0;
 

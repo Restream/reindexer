@@ -16,16 +16,31 @@ import (
 )
 
 type TestFullTextSimpleItem struct {
+	ID     int                 `reindex:"id,,pk"`
+	Name   string              `reindex:"name,text"`
+	JoinID int                 `reindex:"join_id"`
+	Joined []*MergeJoinedItem1 `reindex:"joined,,joined"`
+}
+type TestFullTextMergedItem struct {
+	ID          int                 `reindex:"id,,pk"`
+	Description string              `reindex:"description,text"`
+	Location    string              `reindex:"location,text"`
+	Rate        int                 `reindex:"rate"`
+	JoinID      int                 `reindex:"join_id"`
+	Joined      []*MergeJoinedItem2 `reindex:"joined,,joined"`
+}
+type TestFullTextItem struct {
+	ID     int                 `reindex:"id,,pk"`
+	Name   string              `reindex:"name,text"`
+	JoinID int                 `reindex:"join_id"`
+	Joined []*MergeJoinedItem2 `reindex:"joined,,joined"`
+}
+
+type MergeJoinedItem1 struct {
 	ID   int    `reindex:"id,,pk"`
 	Name string `reindex:"name,text"`
 }
-type TestFullTextMergedItem struct {
-	ID          int    `reindex:"id,,pk"`
-	Description string `reindex:"description,text"`
-	Location    string `reindex:"location,text"`
-	Rate        int    `reindex:"rate"`
-}
-type TestFullTextItem struct {
+type MergeJoinedItem2 struct {
 	ID   int    `reindex:"id,,pk"`
 	Name string `reindex:"name,text"`
 }
@@ -34,13 +49,17 @@ func init() {
 	tnamespaces["test_full_text_simple_item"] = TestFullTextSimpleItem{}
 	tnamespaces["test_full_text_merged_item"] = TestFullTextMergedItem{}
 	tnamespaces["test_full_text_item"] = TestFullTextItem{}
+	tnamespaces["merge_join_item1"] = MergeJoinedItem1{}
+	tnamespaces["merge_join_item2"] = MergeJoinedItem2{}
+
 }
 
 func FillFullTextSimpleItemsTx(count int, tx *txTest) {
 	for i := 0; i < count; i++ {
 		if err := tx.Upsert(&TestFullTextSimpleItem{
-			ID:   mkID(i),
-			Name: randLangString(),
+			ID:     mkID(i),
+			Name:   randLangString(),
+			JoinID: 7000 + rand.Int()%500,
 		}); err != nil {
 			panic(err)
 		}
@@ -53,21 +72,47 @@ func FillTestFullTextMergedItemsTx(count int, tx *txTest) {
 			Description: randLangString(),
 			Location:    randLangString(),
 			Rate:        rand.Int(),
+			JoinID:      7000 + rand.Int()%500,
 		}); err != nil {
 			panic(err)
 		}
 	}
+
 }
 func FillTestFullTextItemsTx(count int, tx *txTest) {
 	for i := 0; i < count; i++ {
 		if err := tx.Upsert(&TestFullTextItem{
-			ID:   mkID(i),
-			Name: randLangString(),
+			ID:     mkID(i),
+			Name:   randLangString(),
+			JoinID: 7000 + rand.Int()%500,
 		}); err != nil {
 			panic(err)
 		}
 	}
 }
+
+func FillMergeJoinItem1Tx(count int, tx *txTest) {
+	for i := 0; i < count; i++ {
+		if err := tx.Upsert(&MergeJoinedItem1{
+			ID:   7000 + i,
+			Name: randString(),
+		}); err != nil {
+			panic(err)
+		}
+	}
+}
+
+func FillMergeJoinItem2Tx(count int, tx *txTest) {
+	for i := 0; i < count; i++ {
+		if err := tx.Upsert(&MergeJoinedItem2{
+			ID:   7000 + i,
+			Name: randString(),
+		}); err != nil {
+			panic(err)
+		}
+	}
+}
+
 func FillTestFullTextItems(count int) {
 	tx := newTestTx(DB, "test_full_text_simple_item")
 	FillFullTextSimpleItemsTx(count, tx)
@@ -75,9 +120,19 @@ func FillTestFullTextItems(count int) {
 	tx = newTestTx(DB, "test_full_text_merged_item")
 	FillTestFullTextMergedItemsTx(count, tx)
 	tx.MustCommit(nil)
+
 	tx = newTestTx(DB, "test_full_text_item")
 	FillTestFullTextItemsTx(count, tx)
 	tx.MustCommit(nil)
+
+	tx = newTestTx(DB, "merge_join_item1")
+	FillMergeJoinItem1Tx(250, tx)
+	tx.MustCommit(nil)
+
+	tx = newTestTx(DB, "merge_join_item2")
+	FillMergeJoinItem2Tx(250, tx)
+	tx.MustCommit(nil)
+
 }
 
 func TestMerge(t *testing.T) {
@@ -126,11 +181,17 @@ func CheckTestItemsMergeQueries() {
 	second := randLangString()
 	third := randLangString()
 
-	q1 := DB.Query("test_full_text_simple_item").Where("name", reindexer.EQ, first)
+	q1 := DB.Query("test_full_text_simple_item").Where("name", reindexer.EQ, first).
+		Join(DB.Query("merge_join_item1"), "joined").
+		On("join_id", reindexer.EQ, "id")
 	qq1 := DB.Query("test_full_text_simple_item").Where("name", reindexer.EQ, first)
-	q2 := DB.Query("test_full_text_merged_item").Where("description", reindexer.EQ, second)
+	q2 := DB.Query("test_full_text_merged_item").Where("description", reindexer.EQ, second).
+		InnerJoin(DB.Query("merge_join_item2"), "joined").
+		On("join_id", reindexer.EQ, "id")
 	q3 := DB.Query("test_full_text_item").Where("name", reindexer.EQ, third)
-	merge, q1Procs, _ := q1.Merge(q2).Merge(q3).MustExec().FetchAllWithRank()
+	qm := q1.Merge(q2).Merge(q3).Debug(reindexer.TRACE)
+
+	merge, q1Procs, _ := qm.MustExec().FetchAllWithRank()
 
 	lmerge, _ := qq1.Limit(2).MustExec().FetchAll()
 	if len(lmerge) > 2 {
@@ -148,8 +209,12 @@ func CheckTestItemsMergeQueries() {
 			panic(fmt.Errorf("Merge sort in go not equual to c sort simple"))
 		}
 	}
-	qs1 := DB.Query("test_full_text_simple_item").Where("name", reindexer.EQ, strings.ToUpper(first))
-	qs2 := DB.Query("test_full_text_merged_item").Where("description", reindexer.EQ, strings.ToUpper(second))
+	qs1 := DB.Query("test_full_text_simple_item").Where("name", reindexer.EQ, strings.ToUpper(first)).
+		Join(DB.Query("merge_join_item1"), "joined").
+		On("join_id", reindexer.EQ, "id")
+	qs2 := DB.Query("test_full_text_merged_item").Where("description", reindexer.EQ, strings.ToUpper(second)).
+		InnerJoin(DB.Query("merge_join_item2"), "joined").
+		On("join_id", reindexer.EQ, "id")
 	qs3 := DB.Query("test_full_text_item").Where("name", reindexer.EQ, strings.ToUpper(third))
 	r1, rr1, e1 := qs1.MustExec().FetchAllWithRank()
 	r2, rr2, e2 := qs2.MustExec().FetchAllWithRank()
@@ -161,6 +226,7 @@ func CheckTestItemsMergeQueries() {
 	if len(r1)+len(r2)+len(r3) != len(merge) {
 		panic(fmt.Errorf("%d != %d (%d+%d+%d) (%p, %p, %p)", len(r1)+len(r2)+len(r3), len(merge), len(r1), len(r2), len(r3), qs1, qs2, qs3))
 	}
+
 	if len(merge) == 0 {
 		panic(fmt.Errorf("Full text dosen't return any result - somthing bad happend"))
 	}
@@ -235,7 +301,9 @@ func CheckTestItemsMergeQueries() {
 	//In second read result can not directly same
 	for i := 0; i < len(usorted); i++ {
 		if usorted[i].Proc != sortedNew[i].Proc {
-			panic(fmt.Errorf("Merge sort in go not equual to c sort"))
+			fmt.Printf("usorted=%v\nsorted=%v", usorted, sortedNew)
+			panic(fmt.Errorf("Merge sort in go not equal to c sort"))
+
 		}
 	}
 }

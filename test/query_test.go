@@ -47,9 +47,9 @@ type queryTest struct {
 	iter          *reindexer.Iterator
 	entries       []queryTestEntry
 	distinctIndex string
-	sortIndex     string
+	sortIndex     []string
 	sortDesc      bool
-	sortValues    []interface{}
+	sortValues    map[string][]interface{}
 	limitItems    int
 	startOffset   int
 	reqTotalCount bool
@@ -65,9 +65,14 @@ type testNamespace struct {
 	jsonPaths map[string]string
 }
 
+func (tn *testNamespace) getField(field string) ([][]int, bool) {
+	value, ok := tn.fieldsIdx[strings.ToLower(field)]
+	return value, ok
+}
+
 // Create new DB query
 func newTestQuery(db *reindexer.Reindexer, namespace string) *queryTest {
-	return &queryTest{q: db.Query(namespace), namespace: namespace, db: db, nextOp: opAND, ns: testNamespaces[namespace]}
+	return &queryTest{q: db.Query(namespace), namespace: namespace, db: db, sortIndex: make([]string, 0, 5), nextOp: opAND, ns: testNamespaces[strings.ToLower(namespace)]}
 }
 
 type txTest struct {
@@ -82,7 +87,7 @@ func newTestNamespace(namespace string, item interface{}) {
 		items:     make(map[string]interface{}, 1000),
 		fieldsIdx: make(map[string][][]int),
 	}
-	testNamespaces[namespace] = ns
+	testNamespaces[strings.ToLower(namespace)] = ns
 	prepareStruct(ns, reflect.TypeOf(item), []int{}, "")
 }
 
@@ -155,16 +160,23 @@ func (qt *queryTest) toString() (ret string) {
 		}
 	}
 	if len(qt.sortIndex) > 0 {
-		ret += " ORDER BY " + qt.sortIndex
+		ret += " ORDER BY "
+	}
+	for k := 0; k < len(qt.sortIndex); k++ {
+		sortIndex := qt.sortIndex[k]
+		ret += sortIndex
 		if qt.sortDesc {
 			ret += " DESC"
 		}
-		if len(qt.sortValues) > 0 {
+		if qt.sortValues != nil && len(qt.sortValues[sortIndex]) > 0 {
 			ret += "( "
-			for _, val := range qt.sortValues {
+			for _, val := range qt.sortValues[sortIndex] {
 				ret += fmt.Sprintf("%v ", val)
 			}
 			ret += ")"
+		}
+		if k != len(qt.sortIndex) {
+			ret += ", "
 		}
 	}
 	if qt.limitItems != 0 {
@@ -192,7 +204,7 @@ func (qt *queryTest) Where(index string, condition int, keys interface{}) *query
 	} else {
 		qte.keys = append(qte.keys, reflect.ValueOf(keys))
 	}
-	qte.fieldIdx = qt.ns.fieldsIdx[index]
+	qte.fieldIdx, _ = qt.ns.getField(index)
 	qt.entries = append(qt.entries, qte)
 	qt.nextOp = opAND
 
@@ -203,9 +215,12 @@ func (qt *queryTest) Where(index string, condition int, keys interface{}) *query
 func (qt *queryTest) Sort(sortIndex string, desc bool, values ...interface{}) *queryTest {
 	if len(sortIndex) > 0 {
 		qt.q.Sort(sortIndex, desc, values...)
-		qt.sortIndex = sortIndex
+		qt.sortIndex = append(qt.sortIndex, sortIndex)
 		qt.sortDesc = desc
-		qt.sortValues = values
+		if qt.sortValues == nil {
+			qt.sortValues = make(map[string][]interface{})
+		}
+		qt.sortValues[sortIndex] = values
 	}
 	return qt
 }
@@ -296,10 +311,8 @@ func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
 	// map of found ids
 	foundIds := make(map[string]int, len(items))
 	distincts := make(map[interface{}]int, 100)
+	distIdx, _ := qt.ns.getField(qt.distinctIndex)
 	totalItems := 0
-
-	distIdx := qt.ns.fieldsIdx[qt.distinctIndex]
-	sortIdx := qt.ns.fieldsIdx[qt.sortIndex]
 
 	// Check returned items for match query conditions
 	for i, item := range items {
@@ -342,21 +355,46 @@ func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
 	}
 
 	// Check sorting
-	if len(qt.sortIndex) > 0 {
-		var prevVals []reflect.Value
-		for i := 0; i < len(items); i++ {
-			vals := getValues(items[i], sortIdx)
+	sortIdxCount := len(qt.sortIndex)
+	var sortIdxs map[int][][]int
+	var prevVals map[int][]reflect.Value
+	var res []int
+	if sortIdxCount > 0 {
+		sortIdxs = make(map[int][][]int)
+		for k := 0; k < sortIdxCount; k++ {
+			sortIdxs[k], _ = qt.ns.getField(qt.sortIndex[k])
+		}
+		prevVals = make(map[int][]reflect.Value)
+		res = make([]int, sortIdxCount)
+	}
+	for i := 0; i < len(items); i++ {
+		for j := 0; j < len(res); j++ {
+			res[j] = -1
+		}
+		for k := 0; k < sortIdxCount; k++ {
+			vals := getValues(items[i], sortIdxs[k])
 			if len(vals) != 1 {
-				log.Fatalf("Found len(values) != 1 on sort index %s in item %+v", qt.sortIndex, items[i])
+				log.Fatalf("Found len(values) != 1 on sort index %s in item %+v", qt.sortIndex[k], items[i])
 			}
 
-			if len(prevVals) > 0 {
-				res := compareValues(prevVals[0], vals[0])
-				if (res > 0 && !qt.sortDesc) || (res < 0 && qt.sortDesc) {
-					log.Fatalf("Sort error on index %s,desc=%v ... %v ... %v .... ", qt.sortIndex, qt.sortDesc, prevVals[0], vals[0])
+			if i > 0 {
+				needToVerify := true
+				if k != 0 {
+					for l := k - 1; l >= 0; l-- {
+						if res[l] != 0 {
+							needToVerify = false
+							break
+						}
+					}
+					if needToVerify {
+						res[k] = compareValues(prevVals[k][0], vals[0])
+						if (res[k] > 0 && !qt.sortDesc) || (res[k] < 0 && qt.sortDesc) {
+							log.Fatalf("Sort error on index %s,desc=%v ... %v ... %v .... ", qt.sortIndex[k], qt.sortDesc, prevVals[0], vals[0])
+						}
+					}
 				}
 			}
-			prevVals = vals
+			prevVals[k] = vals
 		}
 	}
 
@@ -626,7 +664,7 @@ func prepareStruct(ns *testNamespace, t reflect.Type, basePath []int, reindexBas
 
 		if (len(idxName)) > 0 || nonIndexField {
 			p := map[bool]string{true: jsonPath, false: reindexPath}
-			if _, ok := ns.fieldsIdx[p[nonIndexField]]; !ok {
+			if _, ok := ns.getField(p[nonIndexField]); !ok {
 				ns.fieldsIdx[p[nonIndexField]] = make([][]int, 0, 5)
 			}
 			ns.fieldsIdx[p[nonIndexField]] = append(ns.fieldsIdx[p[nonIndexField]], path)

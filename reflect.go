@@ -1,6 +1,7 @@
 package reindexer
 
 import (
+	"bytes"
 	"fmt"
 	"reflect"
 	"strings"
@@ -22,7 +23,14 @@ const (
 	IndexOptAppendable = bindings.IndexOptAppendable
 )
 
-func (db *Reindexer) createIndex(namespace string, st reflect.Type, subArray bool, reindexBasePath, jsonBasePath string, joined *map[string][]int) (err error) {
+var collateModes = map[string]int{
+	"collate_ascii":   CollateASCII,
+	"collate_utf8":    CollateUTF8,
+	"collate_numeric": CollateNumeric,
+	"collate_custom":  CollateCustom,
+}
+
+func (db *Reindexer) parseIndex(namespace string, st reflect.Type, subArray bool, reindexBasePath, jsonBasePath string, joined *map[string][]int) (err error) {
 
 	if len(jsonBasePath) != 0 && !strings.HasSuffix(jsonBasePath, ".") {
 		jsonBasePath = jsonBasePath + "."
@@ -65,53 +73,40 @@ func (db *Reindexer) createIndex(namespace string, st reflect.Type, subArray boo
 
 		reindexPath := reindexBasePath + idxName
 
-		var opts bindings.IndexOptions
-		opts.Array(t.Kind() == reflect.Slice || t.Kind() == reflect.Array || subArray)
-		opts.PK(strings.Index(idxOpts, "pk") >= 0)
-		opts.Dense(strings.Index(idxOpts, "dense") >= 0)
-		opts.Sparse(strings.Index(idxOpts, "sparse") >= 0)
-		opts.Appendable(strings.Index(idxOpts, "appendable") >= 0)
+		idxSettings := splitOptions(idxOpts)
+
+		opts := parseOpts(&idxSettings)
+		if t.Kind() == reflect.Slice || t.Kind() == reflect.Array || subArray {
+			opts.Array(true)
+		}
 
 		if opts.IsPK() && strings.TrimSpace(idxName) == "" {
 			return fmt.Errorf("No index name is specified for primary key in field %s", st.Field(i).Name)
 		}
 
-		if strings.Index(idxOpts, "composite") >= 0 {
+		if parseByKeyWord(&idxSettings, "composite") {
 			if t.Kind() != reflect.Struct || t.NumField() != 0 {
 				return fmt.Errorf("'composite' tag allowed only on empty on structs: Invalid tags %v on field %s", tagsSlice, st.Field(i).Name)
 			} else if err := db.binding.AddIndex(namespace, reindexPath, "", idxType, "composite", opts, CollateNone, ""); err != nil {
 				return err
 			}
 		} else if t.Kind() == reflect.Struct {
-			if err := db.createIndex(namespace, t, subArray, reindexPath, jsonPath, joined); err != nil {
+			if err := db.parseIndex(namespace, t, subArray, reindexPath, jsonPath, joined); err != nil {
 				return err
 			}
 		} else if (t.Kind() == reflect.Slice || t.Kind() == reflect.Array) &&
 			(t.Elem().Kind() == reflect.Struct || (t.Elem().Kind() == reflect.Ptr && t.Elem().Elem().Kind() == reflect.Struct)) {
 			// Check if field nested slice of struct
-			if (idxOpts == "joined") && len(idxName) > 0 {
+			if parseByKeyWord(&idxSettings, "joined") && len(idxName) > 0 {
 				(*joined)[tagsSlice[0]] = st.Field(i).Index
-			} else if err := db.createIndex(namespace, t.Elem(), true, reindexPath, jsonPath, joined); err != nil {
+			} else if err := db.parseIndex(namespace, t.Elem(), true, reindexPath, jsonPath, joined); err != nil {
 				return err
 			}
 		} else if len(idxName) > 0 {
-			collateMode := CollateNone
-			switch idxOpts {
-			case "collate_ascii":
-				collateMode = CollateASCII
-			case "collate_utf8":
-				collateMode = CollateUTF8
-			case "collate_numeric":
-				collateMode = CollateNumeric
-			}
+			collateMode, sortOrderLetters := parseCollate(&idxSettings)
 
-			var sortOrderLetters string
-			if collateMode == CollateNone {
-				const collateCustomPrefix = "collate_custom="
-				if strings.Contains(idxOpts, collateCustomPrefix) == true {
-					sortOrderLetters = strings.TrimPrefix(idxOpts, collateCustomPrefix)
-					collateMode = CollateCustom
-				}
+			if len(idxSettings) > 0 {
+				return fmt.Errorf("Unknown index settings are found: %v", idxSettings)
 			}
 
 			if fieldType, err := getFieldType(t); err != nil {
@@ -131,6 +126,113 @@ func (db *Reindexer) createIndex(namespace string, st reflect.Type, subArray boo
 		}
 	}
 	return nil
+}
+
+func splitOptions(str string) []string {
+	words := make([]string, 0)
+
+	var word bytes.Buffer
+
+	strLen := len(str)
+
+	for i := 0; i < strLen; i++ {
+		if str[i] == '\\' && i < strLen-1 && str[i+1] == ',' {
+			word.WriteByte(str[i+1])
+			i++
+			continue
+		}
+
+		if str[i] == ',' {
+			words = append(words, word.String())
+			word.Reset()
+			continue
+		}
+
+		word.WriteByte(str[i])
+
+		if i == strLen-1 {
+			words = append(words, word.String())
+			word.Reset()
+			continue
+		}
+	}
+
+	return words
+}
+
+func parseOpts(idxSettingsBuf *[]string) bindings.IndexOptions {
+	newIdxSettingsBuf := make([]string, 0)
+
+	var indexOptions bindings.IndexOptions
+
+	for _, idxSetting := range *idxSettingsBuf {
+		switch idxSetting {
+		case "pk":
+			indexOptions.PK(true)
+		case "dense":
+			indexOptions.Dense(true)
+		case "sparse":
+			indexOptions.Sparse(true)
+		case "appendable":
+			indexOptions.Appendable(true)
+		default:
+			newIdxSettingsBuf = append(newIdxSettingsBuf, idxSetting)
+		}
+	}
+
+	*idxSettingsBuf = newIdxSettingsBuf
+
+	return indexOptions
+}
+
+func parseCollate(idxSettingsBuf *[]string) (int, string) {
+	newIdxSettingsBuf := make([]string, 0)
+
+	collateMode := CollateNone
+	var sortOrderLetters string
+
+	for _, idxSetting := range *idxSettingsBuf {
+		// split by "=" for k-v collate setting
+		kvIdxSettings := strings.SplitN(idxSetting, "=", 2)
+
+		if newCollateMode, ok := collateModes[kvIdxSettings[0]]; ok {
+			if collateMode != CollateNone {
+				panic(fmt.Errorf("Collate mode is already set to %d. Misunderstanding %s", collateMode, idxSetting))
+			}
+
+			collateMode = newCollateMode
+
+			if len(kvIdxSettings) == 2 {
+				sortOrderLetters = kvIdxSettings[1]
+			}
+
+			continue
+		}
+
+		newIdxSettingsBuf = append(newIdxSettingsBuf, idxSetting)
+	}
+
+	*idxSettingsBuf = newIdxSettingsBuf
+
+	return collateMode, sortOrderLetters
+}
+
+func parseByKeyWord(idxSettingsBuf *[]string, keyWord string) bool {
+	newIdxSettingsBuf := make([]string, 0)
+
+	isPresented := false
+	for _, idxSetting := range *idxSettingsBuf {
+		if strings.Compare(idxSetting, keyWord) == 0 {
+			isPresented = true
+			continue
+		}
+
+		newIdxSettingsBuf = append(newIdxSettingsBuf, idxSetting)
+	}
+
+	*idxSettingsBuf = newIdxSettingsBuf
+
+	return isPresented
 }
 
 func getFieldType(t reflect.Type) (string, error) {

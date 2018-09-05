@@ -146,7 +146,7 @@ string_view ItemImpl::GetCJSON() {
 KeyRefs ItemImpl::GetValueByJSONPath(const string &jsonPath) {
 	ConstPayload pl(payloadType_, payloadValue_);
 	KeyRefs krefs;
-	return pl.GetByJsonPath(jsonPath, tagsMatcher_, krefs);
+	return pl.GetByJsonPath(jsonPath, tagsMatcher_, krefs, KeyValueUndefined);
 }
 
 }  // namespace reindexer

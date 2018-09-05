@@ -14,6 +14,11 @@ IndexOpts::IndexOpts(uint8_t flags, CollateMode mode) : options(flags), collateO
 
 IndexOpts::IndexOpts(const std::string& sortOrderUTF8, uint8_t flags) : options(flags), collateOpts_(sortOrderUTF8) {}
 
+bool IndexOpts::operator==(const IndexOpts& other) const {
+	return options == other.options && collateOpts_.mode == other.collateOpts_.mode &&
+		   collateOpts_.sortOrderTable.GetSortOrderCharacters() == other.collateOpts_.sortOrderTable.GetSortOrderCharacters();
+}
+
 bool IndexOpts::IsPK() const { return options & kIndexOptPK; }
 bool IndexOpts::IsArray() const { return options & kIndexOptArray; }
 bool IndexOpts::IsDense() const { return options & kIndexOptDense; }

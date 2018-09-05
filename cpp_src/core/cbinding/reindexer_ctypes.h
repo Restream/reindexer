@@ -28,6 +28,11 @@ typedef struct reindexer_string {
 	int n;
 } reindexer_string;
 
+typedef struct reindexer_ret {
+	reindexer_error err;
+	reindexer_resbuffer out;
+} reindexer_ret;
+
 #ifdef __cplusplus
 }
 #endif

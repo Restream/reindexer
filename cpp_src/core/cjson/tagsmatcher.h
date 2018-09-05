@@ -70,7 +70,9 @@ public:
 		return tagsPath;
 	}
 
-	void updatePayloadType(PayloadType payloadType) { impl_.clone()->updatePayloadType(payloadType, updated_); }
+	void updatePayloadType(PayloadType payloadType, bool incVersion = true) {
+		impl_.clone()->updatePayloadType(payloadType, updated_, incVersion);
+	}
 
 	string dump() const { return impl_->dumpTags() + "\n" + impl_->dumpPaths(); }
 

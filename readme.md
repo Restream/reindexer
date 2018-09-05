@@ -2,8 +2,8 @@
 # Reindexer
 
 [![GoDoc](https://godoc.org/github.com/Restream/reindexer?status.svg)](https://godoc.org/github.com/Restream/reindexer)
-[![Build Status](https://travis-ci.org/Restream/reindexer.svg?branch=master)](https://travis-ci.org/Restream/reindexer)
-[![Build Status](https://ci.appveyor.com/api/projects/status/yonpih8vx3acaj86?svg=true)](https://ci.appveyor.com/project/olegator77/reindexer)
+ [![Build Status](https://travis-ci.org/Restream/reindexer.svg?branch=master)](https://travis-ci.org/Restream/reindexer)
+ [![Build Status](https://ci.appveyor.com/api/projects/status/yonpih8vx3acaj86?svg=true)](https://ci.appveyor.com/project/olegator77/reindexer)
 
 **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
 
@@ -115,6 +115,10 @@ import (
 	// choose how the Reindexer binds to the app (in this case "builtin," which means link Reindexer as a static library)
 	_ "github.com/restream/reindexer/bindings/builtin"
 
+	// OR link Reindexer as static library with bundled server.
+	// _ "github.com/restream/reindexer/bindings/builtinserver"
+	// "github.com/restream/reindexer/bindings/builtinserver/config"
+
 )
 
 // Define struct with reindex tags
@@ -131,7 +135,11 @@ func main() {
 
 	// OR - Init a database instance and choose the binding (connect to server)
 	// db := reindexer.NewReindex("cproto://127.0.0.1:6534/testdb")
-	
+
+	// OR - Init a database instance and choose the binding (builtin, with bundled server)
+	// serverConfig := config.DefaultServerConfig ()
+	// db := reindexer.NewReindex("builtinserver://testdb",reindexer.WithServerConfig(100*time.Second, serverConfig))
+
 	// Create new namespace with name 'items', which will store structs of type 'Item'
 	db.OpenNamespace("items", reindexer.DefaultNamespaceOptions(), Item{})
 
@@ -200,8 +208,10 @@ Please note, that Query builder interface is prefferable way: It have more featu
 
 ## Installation
 
-Reindexer can run in 2 different modes: 
+Reindexer can run in 3 different modes: 
  - `embeded (builtin)` Reindexer is embeded into application as static library, and does not reuqire separate server proccess.
+ - `embeded with server (builtinserver)` Reindexer is embeded into application as static library, and start server. In this mode other
+ clients can connect to application via cproto or http.
  - `standalone` Reindexer run as standalone server,  application connects to Reindexer via network
 
 ### Installation for server mode
@@ -223,6 +233,9 @@ To build Reindexer, g++ 4.8+, clang 3.3+ or [mingw64](https://sourceforge.net/pr
 go get -a github.com/restream/reindexer
 bash $GOPATH/src/github.com/restream/reindexer/dependencies.sh
 go generate github.com/restream/reindexer/bindings/builtin
+# Optional (build builtin server binding)
+go generate github.com/restream/reindexer/bindings/builtinserver
+
 ```
 
 ## Advanced Usage
@@ -247,6 +260,7 @@ Queries are possible only on the indexed fields, marked with `reindex` tag. The 
     - `composite` – create composite index. The field type must be an empty struct: `struct{}`.
     - `joined` – field is a recipient for join. The field type must be `[]*SubitemType`.
 	- `dense` - reduce index size. For `hash` and `tree` it will save 8 bytes per unique key value. For `-` it will save 4-8 bytes per each element. Useful for indexes with high sectivity, but for `tree` and `hash` indexes with low selectivity can seriously decrease update performance. Also `dense` will slow down wide fullscan queries on `-` indexes, due to lack of CPU cache optimization.
+	- `sparse` - Row (document) contains a value of Sparse index only in case if it's set on purpose - there are no empty (or default) records of this type of indexes in the row (document). It allows to save RAM but it will cost you performance - it works a bit slower than regular indexes.
 	- `collate_numeric` - create string index that provides values order in numeric sequence. The field type must be a string.
 	- `collate_ascii` - create case-insensitive string index works with ASCII. The field type must be a string.
 	- `collate_utf8` - create case-insensitive string index works with UTF8. The field type must be a string.
@@ -438,7 +452,7 @@ In case of requiment to serialize results of Query in JSON format, then it is po
 		Limit (1).
 		ExecToJson ("root_object")   // Name of root object of output JSON
 
-	json,err := iterator.JsonAll()
+	json,err := iterator.FetchAll()
 	// Check the error
 	if err != nil {
 		panic(err)

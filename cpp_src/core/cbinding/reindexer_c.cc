@@ -1,6 +1,7 @@
 #include "reindexer_c.h"
 #include <stdlib.h>
 #include <string.h>
+#include <atomic>
 #include <locale>
 #include "core/reindexer.h"
 #include "core/selectfunc/selectfuncparser.h"
@@ -10,24 +11,10 @@
 #include "tools/stringstools.h"
 
 using namespace reindexer;
+using std::atomic_flag;
 
+static atomic_flag instance_changed = ATOMIC_FLAG_INIT;
 static Reindexer *db = nullptr;
-
-void init_reindexer() {
-	if (db) {
-		abort();
-	}
-	db = new Reindexer();
-	setvbuf(stdout, 0, _IONBF, 0);
-	setvbuf(stderr, 0, _IONBF, 0);
-	setlocale(LC_CTYPE, "");
-	setlocale(LC_NUMERIC, "C");
-}
-
-void destroy_reindexer() {
-	delete db;
-	db = nullptr;
-}
 
 static reindexer_error error2c(const Error &err_) {
 	reindexer_error err;
@@ -35,6 +22,7 @@ static reindexer_error error2c(const Error &err_) {
 	err.what = err_.what().length() ? strdup(err_.what().c_str()) : nullptr;
 	return err;
 }
+
 static reindexer_ret ret2c(const Error &err_, const reindexer_resbuffer &out) {
 	reindexer_ret ret;
 	ret.err.code = err_.code();
@@ -61,6 +49,35 @@ static void results2c(const QueryResults *result, struct reindexer_resbuffer *re
 }
 
 static Error err_not_init(-1, "Reindexer db has not initialized");
+
+void init_reindexer() {
+	if (db) {
+		abort();
+	}
+	db = new Reindexer;
+	setvbuf(stdout, 0, _IONBF, 0);
+	setvbuf(stderr, 0, _IONBF, 0);
+	setlocale(LC_CTYPE, "");
+	setlocale(LC_NUMERIC, "C");
+}
+
+reindexer_error change_reindexer_instance(void *rx) {
+	if (instance_changed.test_and_set()) {
+		return error2c(Error(errConflict, "Reindexer instance already changed"));
+	}
+
+	if (!rx) {
+		return error2c(Error(errConflict, "Could not change instance to null pointer."));
+	}
+
+	db = static_cast<Reindexer *>(rx);
+	return error2c(0);
+}
+
+void destroy_reindexer() {
+	delete db;
+	db = nullptr;
+}
 
 reindexer_ret reindexer_modify_item(reindexer_buffer in, int mode) {
 	reindexer_resbuffer out = {0, 0, 0};

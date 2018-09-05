@@ -33,6 +33,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <pwd.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/time.h>

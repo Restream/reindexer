@@ -54,8 +54,8 @@ void QueryResults::lockResults() {
 			Payload(ctxs[itemRef.nsid].type_, itemRef.value).AddRefStrings();
 		}
 	}
-	if (joined_) {
-		for (auto &jr : *joined_) {
+	for (auto &joinded : joined_) {
+		for (auto &jr : joinded) {
 			for (auto &jqr : jr.second) {
 				jqr.lockResults();
 			}
@@ -91,9 +91,9 @@ void QueryResults::Dump() const {
 	for (auto &r : items_) {
 		if (&r != &*items_.begin()) buf += ",";
 		buf += std::to_string(r.id);
-		if (joined_) {
-			auto it = joined_->find(r.id);
-			if (it != joined_->end()) {
+		for (const auto &joined : joined_) {
+			auto it = joined.find(r.id);
+			if (it != joined.end()) {
 				buf += "[";
 				for (auto &ra : it->second) {
 					if (&ra != &*it->second.begin()) buf += ";";
@@ -151,15 +151,12 @@ void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 
 	ConstPayload pl(ctx.type_, itemRef.value);
 	JsonEncoder jsonEncoder(ctx.tagsMatcher_, ctx.jsonFilter_);
+	const QRVector &itJoined = (begin() + idx).GetJoined();
 
-	if (joined_) {
-		auto itJoined(joined_->find(itemRef.id));
-		bool withJoins((itJoined != joined_->end()) && !itJoined->second.empty());
-		if (withJoins) {
-			JsonEncoderDatasourceWithJoins ds(itJoined->second, ctxs);
-			jsonEncoder.Encode(&pl, ser, ds);
-			return;
-		}
+	if (!itJoined.empty()) {
+		JsonEncoderDatasourceWithJoins ds(itJoined, ctxs);
+		jsonEncoder.Encode(&pl, ser, ds);
+		return;
 	}
 	jsonEncoder.Encode(&pl, ser);
 }
@@ -214,6 +211,20 @@ Item QueryResults::Iterator::GetItem() {
 	auto item = Item(new ItemImpl(ctx.type_, v, ctx.tagsMatcher_));
 	item.setID(itemRef.id, itemRef.version);
 	return item;
+}
+
+const QRVector &QueryResults::Iterator::GetJoined() {
+	static QRVector ret;
+	if (qr_->joined_.empty()) {
+		return ret;
+	}
+
+	auto &itemRef = qr_->items_[idx_];
+	auto it = qr_->joined_[itemRef.nsid].find(itemRef.id);
+	if (it == qr_->joined_[itemRef.nsid].end()) {
+		return ret;
+	}
+	return it->second;
 }
 
 QueryResults::Iterator &QueryResults::Iterator::operator++() {
