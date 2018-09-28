@@ -42,6 +42,7 @@ public:
 	Error EnumNamespaces(cproto::Context &ctx);
 
 	Error AddIndex(cproto::Context &ctx, p_string ns, p_string indexDef);
+	Error UpdateIndex(cproto::Context &ctx, p_string ns, p_string indexDef);
 	Error DropIndex(cproto::Context &ctx, p_string ns, p_string index);
 	Error ConfigureIndex(cproto::Context &ctx, p_string ns, p_string index, p_string config);
 

@@ -20,7 +20,7 @@ using std::chrono::high_resolution_clock;
 using std::chrono::milliseconds;
 using std::thread;
 template <typename T>
-IndexText<T>::IndexText(IndexType _type, const string &_name) : IndexUnordered<T>(_type, _name, IndexOpts()) {
+IndexText<T>::IndexText(IndexType _type, const string &_name, const IndexOpts &opts) : IndexUnordered<T>(_type, _name, opts) {
 	initSearchers();
 }
 
@@ -55,15 +55,26 @@ void IndexText<T>::initSearchers() {
 }
 
 template <typename T>
-void IndexText<T>::Commit(const CommitContext &ctx) {
+bool IndexText<T>::Commit(const CommitContext &ctx) {
 	cache_ft_.reset(new FtIdSetCache());
-
 	IndexUnordered<T>::Commit(ctx);
+	if ((ctx.phases() & CommitContext::PrepareForSelect)) {
+		vdocs_.clear();
+		Commit();
+	}
+	return true;
+}
 
-	if (!(ctx.phases() & CommitContext::PrepareForSelect)) return;
+template <typename T>
+void IndexText<T>::SetOpts(const IndexOpts &opts) {
+	string oldCfg = this->opts_.config;
 
-	vdocs_.clear();
-	Commit();
+	this->opts_ = opts;
+
+	if (oldCfg != opts.config) {
+		auto newCfg = this->opts_.config;
+		cfg_->parse(&newCfg[0]);
+	}
 }
 
 // Generic implemetation for string index
@@ -116,6 +127,9 @@ SelectKeyResults IndexText<T>::SelectKey(const KeyValues &keys, CondType conditi
 	if (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
 		throw Error(errParams, "Full text index support only EQ or SET condition with 1 or 2 parameter");
 	}
+
+	++this->rawQueriesCount_;
+
 	FtCtx::Ptr ftctx = reindexer::reinterpret_pointer_cast<FtCtx>(ctx);
 	assert(ftctx);
 	ftctx->PrepareAreas(ftFields_, this->name_);
@@ -153,12 +167,6 @@ SelectKeyResults IndexText<T>::SelectKey(const KeyValues &keys, CondType conditi
 	SelectKeyResults r(res);
 	return r;
 }
-
-template <typename T>
-void IndexText<T>::Configure(const string &config) {
-	string config_nc = config;
-	cfg_->parse(&config_nc[0]);
-};
 
 template class IndexText<unordered_str_map<Index::KeyEntryPlain>>;
 template class IndexText<unordered_payload_map<Index::KeyEntryPlain>>;

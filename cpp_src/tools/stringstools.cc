@@ -87,7 +87,7 @@ void check_for_replacement(uint32_t &ch) {
 bool is_number(const string &str) {
 	uint16_t i = 0;
 	while ((i < str.length() && IsDigit(str[i]))) i++;
-	return (i == str.length());
+	return (i && i == str.length());
 }
 
 void split(const string_view &str, string &buf, vector<const char *> &words, const string &extraWordSymbols) {

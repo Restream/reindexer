@@ -2,6 +2,8 @@ package reindexer
 
 import (
 	"strings"
+
+	"github.com/restream/reindexer/bindings"
 )
 
 const (
@@ -48,20 +50,18 @@ var queryNames = map[int]string{
 	EMPTY: "EMPTY",
 }
 
+type IndexDescription struct {
+	bindings.IndexDef
+
+	IsSortable bool     `json:"is_sortable"`
+	IsFulltext bool     `json:"is_fulltext"`
+	Conditions []string `json:"conditions"`
+}
+
 type NamespaceDescription struct {
 	Name           string             `json:"name"`
 	Indexes        []IndexDescription `json:"indexes"`
 	StorageEnabled bool               `json:"storage_enabled"`
-}
-
-type IndexDescription struct {
-	Name       string   `json:"name"`
-	FieldType  string   `json:"field_type"`
-	IsArray    bool     `json:"is_array"`
-	Sortable   bool     `json:"is_sortable"`
-	PK         bool     `json:"is_pk"`
-	Fulltext   bool     `json:"is_fulltext"`
-	Conditions []string `json:"conditions"`
 }
 
 type NamespaceMemStat struct {
@@ -79,6 +79,7 @@ type NamespaceMemStat struct {
 		CacheSize   int `json:"cache_size"`
 	}
 }
+
 type PerfStat struct {
 	TotalQueriesCount    int64 `json:"total_queries_count"`
 	TotalAvgLatencyUs    int64 `json:"total_avg_latency_us"`

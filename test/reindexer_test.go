@@ -48,6 +48,8 @@ func TestMain(m *testing.M) {
 	}
 
 	retCode := m.Run()
+
+	DB.Close()
 	os.Exit(retCode)
 }
 

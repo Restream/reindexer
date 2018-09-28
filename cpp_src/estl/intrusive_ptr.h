@@ -152,12 +152,12 @@ class intrusive_atomic_rc_wrapper;
 
 template <typename T>
 inline static void intrusive_ptr_add_ref(intrusive_atomic_rc_wrapper<T> *x) {
-	x->refcount++;
+	if (x) x->refcount++;
 }
 
 template <typename T>
 inline static void intrusive_ptr_release(intrusive_atomic_rc_wrapper<T> *x) {
-	if (x->refcount-- == 1) delete x;
+	if (x && x->refcount-- == 1) delete x;
 }
 
 template <typename T>

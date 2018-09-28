@@ -19,7 +19,7 @@ KeyRef IndexOrdered<T>::Upsert(const KeyRef &key, IdType id) {
 	if (keyIt == this->idx_map.end() || !found)
 		keyIt = this->idx_map.insert(keyIt, {static_cast<typename T::key_type>(key), typename T::mapped_type()});
 	keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto);
-	this->tracker_.markUpdated(this->idx_map, &*keyIt);
+	this->markUpdated(&*keyIt);
 
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
 		return IndexStore<typename T::key_type>::Upsert(key, id);
@@ -51,6 +51,8 @@ typename T::iterator IndexOrdered<T>::lower_bound(const KeyRef &key, bool &found
 template <typename T>
 SelectKeyResults IndexOrdered<T>::SelectKey(const KeyValues &keys, CondType condition, SortType sortId, Index::ResultType res_type,
 											BaseFunctionCtx::Ptr ctx) {
+	++this->rawQueriesCount_;
+
 	if (res_type == Index::ForceComparator) return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, res_type, ctx);
 	SelectKeyResult res;
 
@@ -58,9 +60,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const KeyValues &keys, CondType cond
 	if (condition == CondSet || condition == CondEq || condition == CondAny || condition == CondEmpty)
 		return IndexUnordered<T>::SelectKey(keys, condition, sortId, res_type, ctx);
 
-	assert(!this->tracker_.updated_.size() && !this->tracker_.completeUpdated_);
-
-	if (keys.size() < 1) throw Error(errParams, "For condition reuqired at least 1 argument, but provided 0");
+	if (keys.size() < 1) throw Error(errParams, "For condition required at least 1 argument, but provided 0");
 
 	auto startIt = this->idx_map.begin();
 	auto endIt = this->idx_map.end();
@@ -130,8 +130,9 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const KeyValues &keys, CondType cond
 			} ctx = {&this->idx_map, sortId, startIt, endIt};
 
 			auto selector = [&ctx](SelectKeyResult &res) {
-				for (auto it = ctx.startIt; it != ctx.endIt && it != ctx.i_map->end(); it++)
+				for (auto it = ctx.startIt; it != ctx.endIt && it != ctx.i_map->end(); it++) {
 					res.push_back(SingleSelectKeyResult(it->second.Sorted(ctx.sortId)));
+				}
 			};
 
 			if (count > 1 && res_type != Index::ForceIdset)

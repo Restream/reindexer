@@ -52,7 +52,7 @@ Error LevelDbStorage::Read(const StorageOpts& opts, const string_view& key, stri
 	toReadOptions(opts, options);
 	leveldb::Status status = db_->Get(options, leveldb::Slice(key.data(), key.size()), &value);
 	if (status.ok()) return Error();
-	return Error(errLogic, "%s", status.ToString().c_str());
+	return Error(status.IsNotFound() ? errNotFound : errLogic, "%s", status.ToString().c_str());
 }
 
 Error LevelDbStorage::Write(const StorageOpts& opts, const string_view& key, const string_view& value) {
@@ -62,7 +62,7 @@ Error LevelDbStorage::Write(const StorageOpts& opts, const string_view& key, con
 	toWriteOptions(opts, options);
 	leveldb::Status status = db_->Put(options, leveldb::Slice(key.data(), key.size()), leveldb::Slice(value.data(), value.size()));
 	if (status.ok()) return Error();
-	return Error(errLogic, "%s", status.ToString().c_str());
+	return Error(status.IsNotFound() ? errNotFound : errLogic, "%s", status.ToString().c_str());
 }
 
 Error LevelDbStorage::Write(const StorageOpts& opts, UpdatesCollection& buffer) {
@@ -73,7 +73,7 @@ Error LevelDbStorage::Write(const StorageOpts& opts, UpdatesCollection& buffer) 
 	LevelDbBatchBuffer* batchBuffer = static_cast<LevelDbBatchBuffer*>(&buffer);
 	leveldb::Status status = db_->Write(options, &batchBuffer->batchWrite_);
 	if (status.ok()) return Error();
-	return Error(errLogic, "%s", status.ToString().c_str());
+	return Error(status.IsNotFound() ? errNotFound : errLogic, "%s", status.ToString().c_str());
 }
 
 Error LevelDbStorage::Delete(const StorageOpts& opts, const string_view& key) {

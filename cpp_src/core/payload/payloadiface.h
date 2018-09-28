@@ -65,12 +65,10 @@ public:
 	string GetPK(const FieldsSet &pkFields) const;
 	void GetPK(char *buf, size_t size, const FieldsSet &pkFields) const;
 
-	// Get PK hash
+	// Get hash by fields mask
 	size_t GetHash(const FieldsSet &fields) const;
 	// Compare is EQ by field mask
 	bool IsEQ(const T &other, const FieldsSet &fields) const;
-	// Compare is EQ
-	bool IsEQ(const T &other) const;
 
 	// Compare 2 objects by field mask
 	int Compare(const T &other, const FieldsSet &fields, const CollateOpts &collateOpts = CollateOpts()) const;

@@ -5,6 +5,7 @@ package builtin
 // #include <stdlib.h>
 import "C"
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -31,6 +32,7 @@ var bufPool sync.Pool
 
 type Builtin struct {
 	cgoLimiter chan struct{}
+	rx         C.uintptr_t
 }
 
 type RawCBuffer struct {
@@ -60,7 +62,6 @@ func newRawCBuffer() *RawCBuffer {
 }
 
 func init() {
-	C.init_reindexer()
 	bindings.RegisterBinding("builtin", &Builtin{})
 }
 
@@ -115,21 +116,28 @@ func bool2cint(v bool) C.int {
 	return 0
 }
 
-func (binding *Builtin) SetReindexerInstance(p unsafe.Pointer) {
-	C.change_reindexer_instance(p)
-}
-
 func (binding *Builtin) Init(u *url.URL, options ...interface{}) error {
+	if binding.rx != 0 {
+		return bindings.NewError("already initialized", bindings.ErrConflict)
+	}
 
 	cgoLimit := defCgoLimit
+	var rx uintptr = 0
 	for _, option := range options {
 		switch v := option.(type) {
 		case bindings.OptionCgoLimit:
 			cgoLimit = v.CgoLimit
-		case bindings.OptionBuiltinWithServer:
+		case bindings.OptionReindexerInstance:
+			rx = v.Instance
 		default:
 			fmt.Printf("Unknown builtin option: %v\n", option)
 		}
+	}
+
+	if rx == 0 {
+		binding.rx = C.init_reindexer()
+	} else {
+		binding.rx = C.uintptr_t(rx)
 	}
 
 	binding.cgoLimiter = make(chan struct{}, cgoLimit)
@@ -140,17 +148,21 @@ func (binding *Builtin) Init(u *url.URL, options ...interface{}) error {
 		}
 	}
 
-	return err2go(C.reindexer_init_system_namespaces())
+	return err2go(C.reindexer_init_system_namespaces(binding.rx))
+}
+
+func (binding *Builtin) Clone() bindings.RawBinding {
+	return &Builtin{}
 }
 
 func (binding *Builtin) Ping() error {
-	return nil
+	return err2go(C.reindexer_ping(binding.rx))
 }
 
 func (binding *Builtin) ModifyItem(nsHash int, data []byte, mode int) (bindings.RawBuffer, error) {
 	binding.cgoLimiter <- struct{}{}
 	defer func() { <-binding.cgoLimiter }()
-	return ret2go(C.reindexer_modify_item(buf2c(data), C.int(mode)))
+	return ret2go(C.reindexer_modify_item(binding.rx, buf2c(data), C.int(mode)))
 }
 
 func (binding *Builtin) OpenNamespace(namespace string, enableStorage, dropOnFormatError bool, cacheMode uint8) error {
@@ -159,14 +171,14 @@ func (binding *Builtin) OpenNamespace(namespace string, enableStorage, dropOnFor
 	opts := C.StorageOpts{
 		options: C.uint8_t(storageOptions),
 	}
-	return err2go(C.reindexer_open_namespace(str2c(namespace), opts, C.uint8_t(cacheMode)))
+	return err2go(C.reindexer_open_namespace(binding.rx, str2c(namespace), opts, C.uint8_t(cacheMode)))
 }
 func (binding *Builtin) CloseNamespace(namespace string) error {
-	return err2go(C.reindexer_close_namespace(str2c(namespace)))
+	return err2go(C.reindexer_close_namespace(binding.rx, str2c(namespace)))
 }
 
 func (binding *Builtin) DropNamespace(namespace string) error {
-	return err2go(C.reindexer_drop_namespace(str2c(namespace)))
+	return err2go(C.reindexer_drop_namespace(binding.rx, str2c(namespace)))
 }
 
 func (binding *Builtin) EnableStorage(path string) error {
@@ -174,56 +186,69 @@ func (binding *Builtin) EnableStorage(path string) error {
 	if l > 0 && path[l-1] != '/' {
 		path += "/"
 	}
-	return err2go(C.reindexer_enable_storage(str2c(path)))
+	return err2go(C.reindexer_enable_storage(binding.rx, str2c(path)))
 }
 
-func (binding *Builtin) AddIndex(namespace, index, jsonPath, indexType, fieldType string, indexOpts bindings.IndexOptions, collateMode int, sortOrderStr string) error {
-	opts := C.IndexOptsC{
-		options:          C.uint8_t(indexOpts),
-		collate:          C.uint8_t(collateMode),
-		sortOrderLetters: C.CString(sortOrderStr),
+func (binding *Builtin) AddIndex(namespace string, indexDef bindings.IndexDef) error {
+	bIndexDef, err := json.Marshal(indexDef)
+	if err != nil {
+		return err
 	}
-	err := err2go(C.reindexer_add_index(str2c(namespace), str2c(index), str2c(jsonPath), str2c(indexType), str2c(fieldType), opts))
-	C.free(unsafe.Pointer(opts.sortOrderLetters))
+
+	sIndexDef := string(bIndexDef)
+	err = err2go(C.reindexer_add_index(binding.rx, str2c(namespace), str2c(sIndexDef)))
+
+	return err
+}
+
+func (binding *Builtin) UpdateIndex(namespace string, indexDef bindings.IndexDef) error {
+	bIndexDef, err := json.Marshal(indexDef)
+	if err != nil {
+		return err
+	}
+
+	sIndexDef := string(bIndexDef)
+	err = err2go(C.reindexer_update_index(binding.rx, str2c(namespace), str2c(sIndexDef)))
+
 	return err
 }
 
 func (binding *Builtin) DropIndex(namespace, index string) error {
-	return err2go(C.reindexer_drop_index(str2c(namespace), str2c(index)))
+	return err2go(C.reindexer_drop_index(binding.rx, str2c(namespace), str2c(index)))
 }
 
 func (binding *Builtin) ConfigureIndex(namespace, index, config string) error {
-	return err2go(C.reindexer_configure_index(str2c(namespace), str2c(index), str2c(config)))
+	return err2go(C.reindexer_configure_index(binding.rx, str2c(namespace), str2c(index), str2c(config)))
 }
 
 func (binding *Builtin) PutMeta(namespace, key, data string) error {
-	return err2go(C.reindexer_put_meta(str2c(namespace), str2c(key), str2c(data)))
+	return err2go(C.reindexer_put_meta(binding.rx, str2c(namespace), str2c(key), str2c(data)))
 }
 
 func (binding *Builtin) GetMeta(namespace, key string) (bindings.RawBuffer, error) {
-	return ret2go(C.reindexer_get_meta(str2c(namespace), str2c(key)))
+	return ret2go(C.reindexer_get_meta(binding.rx, str2c(namespace), str2c(key)))
 }
 
 func (binding *Builtin) Select(query string, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	binding.cgoLimiter <- struct{}{}
 	defer func() { <-binding.cgoLimiter }()
-	return ret2go(C.reindexer_select(str2c(query), bool2cint(withItems), (*C.int32_t)(unsafe.Pointer(&ptVersions[0])), C.int(len(ptVersions))))
+	return ret2go(C.reindexer_select(binding.rx, str2c(query), bool2cint(withItems), (*C.int32_t)(unsafe.Pointer(&ptVersions[0])), C.int(len(ptVersions))))
 }
 
 func (binding *Builtin) SelectQuery(data []byte, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	binding.cgoLimiter <- struct{}{}
 	defer func() { <-binding.cgoLimiter }()
-	return ret2go(C.reindexer_select_query(buf2c(data), bool2cint(withItems), (*C.int32_t)(unsafe.Pointer(&ptVersions[0])), C.int(len(ptVersions))))
+	return ret2go(C.reindexer_select_query(binding.rx, buf2c(data), bool2cint(withItems), (*C.int32_t)(unsafe.Pointer(&ptVersions[0])), C.int(len(ptVersions))))
 }
 
 func (binding *Builtin) DeleteQuery(nsHash int, data []byte) (bindings.RawBuffer, error) {
 	binding.cgoLimiter <- struct{}{}
 	defer func() { <-binding.cgoLimiter }()
-	return ret2go(C.reindexer_delete_query(buf2c(data)))
+	return ret2go(C.reindexer_delete_query(binding.rx, buf2c(data)))
 }
 
 func (binding *Builtin) Commit(namespace string) error {
-	return err2go(C.reindexer_commit(str2c(namespace)))
+	return err2go(C.reindexer_commit(binding.rx, str2c(namespace)))
 }
 
 // CGoLogger logger function for C
@@ -242,6 +267,12 @@ func (binding *Builtin) EnableLogger(log bindings.Logger) {
 func (binding *Builtin) DisableLogger() {
 	C.reindexer_disable_go_logger()
 	logger = nil
+}
+
+func (binding *Builtin) Finalize() error {
+	C.destroy_reindexer(binding.rx)
+	binding.rx = 0
+	return nil
 }
 
 func newBufFreeBatcher() (bf *bufFreeBatcher) {

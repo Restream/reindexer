@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <list>
 #include <type_traits>
 #include <unordered_set>
 #include "core/index/payload_map.h"
@@ -25,21 +26,25 @@ public:
 		if (cond == CondSet) {
 			valuesS_.reset(new unordered_set<T>());
 		}
+		convertedStrings_.reset();
 
-		convertedStrings_.clear();
 		KeyValueType thisType = type();
 
 		for (const KeyValue &key : values) {
 			if (thisType == key.Type()) {
 				addValue(cond, static_cast<T>(static_cast<KeyRef>(key)));
 			} else {
-				if ((key.Type() == KeyValueString) && (!is_number(static_cast<p_string>(key).toString()))) {
+				if ((key.Type() == KeyValueString) && !is_number(static_cast<p_string>(key).toString())) {
 					addValue(cond, T());
 				} else {
 					switch (thisType) {
 						case KeyValueString: {
-							convertedStrings_.push_back(key.As<string>());
-							p_string value(convertedStrings_.back().c_str());
+							if (!convertedStrings_) {
+								convertedStrings_ = std::make_shared<std::list<std::string>>();
+							}
+
+							convertedStrings_->push_back(key.As<string>());
+							p_string value(&convertedStrings_->back());
 							addValue(cond, static_cast<T>(KeyRef(value)));
 							break;
 						}
@@ -111,7 +116,7 @@ public:
 
 	h_vector<T, 2> values_;
 	shared_ptr<unordered_set<T>> valuesS_;
-	h_vector<string> convertedStrings_;
+	shared_ptr<std::list<string>> convertedStrings_;
 
 private:
 	KeyValueType type() {

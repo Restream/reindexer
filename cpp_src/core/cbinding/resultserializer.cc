@@ -104,7 +104,7 @@ void WrResultSerializer::putPayloadType(const QueryResults* results, int nsid) {
 	m.serialize(*this);
 
 	// Serialize payload type
-	t->serialize(*this);
+	t->serialize(*this, bool(opts_.flags & kResultsPTWithJsonPaths));
 }
 
 bool WrResultSerializer::PutResults(const QueryResults* result) {

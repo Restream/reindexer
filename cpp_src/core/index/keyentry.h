@@ -21,6 +21,7 @@ template <typename IdSetT>
 class KeyEntry {
 public:
 	IdSetT& Unsorted() { return ids_; }
+	const IdSetT& Unsorted() const { return ids_; }
 	IdSetRef Sorted(unsigned sortId) const {
 		assertf(ids_.capacity() >= (sortId + 1) * ids_.size(), "error ids_.capacity()=%d,sortId=%d,ids_.size()=%d", int(ids_.capacity()),
 				int(sortId), int(ids_.size()));

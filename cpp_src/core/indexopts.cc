@@ -15,15 +15,15 @@ IndexOpts::IndexOpts(uint8_t flags, CollateMode mode) : options(flags), collateO
 IndexOpts::IndexOpts(const std::string& sortOrderUTF8, uint8_t flags) : options(flags), collateOpts_(sortOrderUTF8) {}
 
 bool IndexOpts::operator==(const IndexOpts& other) const {
-	return options == other.options && collateOpts_.mode == other.collateOpts_.mode &&
+	return options == other.options && config == other.config && collateOpts_.mode == other.collateOpts_.mode &&
 		   collateOpts_.sortOrderTable.GetSortOrderCharacters() == other.collateOpts_.sortOrderTable.GetSortOrderCharacters();
 }
 
 bool IndexOpts::IsPK() const { return options & kIndexOptPK; }
 bool IndexOpts::IsArray() const { return options & kIndexOptArray; }
 bool IndexOpts::IsDense() const { return options & kIndexOptDense; }
-bool IndexOpts::IsAppendable() const { return options & kIndexOptAppendable; }
 bool IndexOpts::IsSparse() const { return options & kIndexOptSparse; }
+bool IndexOpts::hasConfig() const { return !config.empty(); }
 CollateMode IndexOpts::GetCollateMode() const { return static_cast<CollateMode>(collateOpts_.mode); }
 
 IndexOpts& IndexOpts::PK(bool value) {
@@ -43,11 +43,6 @@ IndexOpts& IndexOpts::Dense(bool value) {
 
 IndexOpts& IndexOpts::Sparse(bool value) {
 	options = value ? options | kIndexOptSparse : options & ~(kIndexOptSparse);
-	return *this;
-}
-
-IndexOpts& IndexOpts::Appendable(bool value) {
-	options = value ? options | kIndexOptAppendable : options & ~(kIndexOptAppendable);
 	return *this;
 }
 

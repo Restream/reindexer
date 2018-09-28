@@ -62,11 +62,23 @@ struct PerfStat {
 	size_t avgLockTimeUs;
 };
 
+struct IndexPerfStat {
+	IndexPerfStat() = default;
+	IndexPerfStat(const std::string &n, const PerfStat &s, const PerfStat &c) : name(n), selects(s), commits(c) {}
+
+	void GetJSON(WrSerializer &ser);
+
+	std::string name;
+	PerfStat selects;
+	PerfStat commits;
+};
+
 struct NamespacePerfStat {
 	void GetJSON(WrSerializer &ser);
 	std::string name;
 	PerfStat updates;
 	PerfStat selects;
+	std::vector<IndexPerfStat> indexes;
 };
 
 }  // namespace reindexer

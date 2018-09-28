@@ -18,6 +18,7 @@ enum CmdCode {
 	kCmdEnumNamespaces = 22,
 	kCmdConfigureIndex = 23,
 	kCmdDropIndex = 24,
+	kCmdUpdateIndex = 25,
 
 	kCmdCommit = 32,
 	kCmdModifyItem = 33,

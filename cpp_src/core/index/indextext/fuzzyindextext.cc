@@ -68,13 +68,15 @@ void FuzzyIndexText<T>::CreateConfig(const FtFuzzyConfig* cfg) {
 		return;
 	}
 	this->cfg_.reset(new FtFuzzyConfig());
+	string config = this->opts_.config;
+	this->cfg_->parse(&config[0]);
 }
 
 Index* FuzzyIndexText_New(IndexType type, const string& name, const IndexOpts& opts, const PayloadType payloadType,
 						  const FieldsSet& fields) {
 	switch (type) {
 		case IndexFuzzyFT:
-			return new FuzzyIndexText<unordered_str_map<Index::KeyEntryPlain>>(type, name);
+			return new FuzzyIndexText<unordered_str_map<Index::KeyEntryPlain>>(type, name, opts);
 		case IndexCompositeFuzzyFT:
 			return new FuzzyIndexText<unordered_payload_map<Index::KeyEntryPlain>>(type, name, opts, payloadType, fields);
 		default:

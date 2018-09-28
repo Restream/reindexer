@@ -44,7 +44,6 @@ type queryTestEntry struct {
 // Test Query to DB object
 type queryTest struct {
 	q             *reindexer.Query
-	iter          *reindexer.Iterator
 	entries       []queryTestEntry
 	distinctIndex string
 	sortIndex     []string
@@ -57,6 +56,7 @@ type queryTest struct {
 	namespace     string
 	nextOp        int
 	ns            *testNamespace
+	totalCount    int
 }
 type testNamespace struct {
 	items     map[string]interface{}
@@ -282,13 +282,13 @@ func (qt *queryTest) Select(filters ...string) *queryTest {
 
 // Exec will execute query, and return slice of items
 func (qt *queryTest) Exec() *reindexer.Iterator {
-	qt.iter = qt.q.Exec()
-	return qt.iter
+	return qt.q.Exec()
 }
 
 // Exec query, and full scan check items returned items
 func (qt *queryTest) ExecAndVerify() *reindexer.Iterator {
 	it := qt.Exec()
+	qt.totalCount = it.TotalCount()
 	items, err := it.AllowUnsafe(true).FetchAll()
 	if err != nil {
 		panic(err)
@@ -425,8 +425,8 @@ func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
 	}
 
 	// Check total count
-	if qt.reqTotalCount && totalItems != qt.iter.TotalCount() && len(qt.distinctIndex) == 0 {
-		log.Fatalf("Total mismatch: %d != %d", totalItems, qt.iter.TotalCount())
+	if qt.reqTotalCount && totalItems != qt.totalCount && len(qt.distinctIndex) == 0 {
+		panic(fmt.Errorf("Total mismatch: %d != %d (%d)", totalItems, qt.totalCount, len(items)))
 	}
 }
 

@@ -97,6 +97,26 @@ void NamespacePerfStat::GetJSON(WrSerializer &ser) {
 	updates.GetJSON(ser);
 	ser.Printf(",\"selects\":");
 	selects.GetJSON(ser);
+
+	ser.Printf(",\"indexes\":");
+	ser.PutChar('[');
+	for (unsigned i = 0; i < indexes.size(); i++) {
+		if (i != 0) ser.PutChar(',');
+		indexes[i].GetJSON(ser);
+	}
+	ser.PutChar(']');
+
+	ser.PutChar('}');
+}
+
+void IndexPerfStat::GetJSON(WrSerializer& ser)
+{
+	ser.PutChar('{');
+	ser.Printf("\"name\":\"%s\",", name.c_str());
+	ser.Printf("\"selects\":");
+	selects.GetJSON(ser);
+	ser.Printf(",\"commits\":");
+	commits.GetJSON(ser);
 	ser.PutChar('}');
 }
 

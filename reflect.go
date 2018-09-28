@@ -15,12 +15,6 @@ const (
 	CollateUTF8    = bindings.CollateUTF8
 	CollateNumeric = bindings.CollateNumeric
 	CollateCustom  = bindings.CollateCustom
-
-	IndexOptPK         = bindings.IndexOptPK
-	IndexOptArray      = bindings.IndexOptArray
-	IndexOptDense      = bindings.IndexOptDense
-	IndexOptSparse     = bindings.IndexOptSparse
-	IndexOptAppendable = bindings.IndexOptAppendable
 )
 
 var collateModes = map[string]int{
@@ -30,8 +24,34 @@ var collateModes = map[string]int{
 	"collate_custom":  CollateCustom,
 }
 
-func (db *Reindexer) parseIndex(namespace string, st reflect.Type, subArray bool, reindexBasePath, jsonBasePath string, joined *map[string][]int) (err error) {
+type indexOptions struct {
+	isArray     bool
+	isAppenable bool
+	isDense     bool
+	isPk        bool
+	isSparse    bool
+}
 
+func (db *Reindexer) parseIndex(namespace string, st reflect.Type, subArray bool, reindexBasePath, jsonBasePath string, joined *map[string][]int) (err error) {
+	var indexDefs []bindings.IndexDef
+
+	err = parse(&indexDefs, st, subArray, reindexBasePath, jsonBasePath, joined)
+	if err != nil {
+		return err
+	}
+
+	for _, indexDef := range indexDefs {
+		err := db.binding.AddIndex(namespace, indexDef)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reindexBasePath, jsonBasePath string, joined *map[string][]int) (err error) {
 	if len(jsonBasePath) != 0 && !strings.HasSuffix(jsonBasePath, ".") {
 		jsonBasePath = jsonBasePath + "."
 	}
@@ -77,21 +97,24 @@ func (db *Reindexer) parseIndex(namespace string, st reflect.Type, subArray bool
 
 		opts := parseOpts(&idxSettings)
 		if t.Kind() == reflect.Slice || t.Kind() == reflect.Array || subArray {
-			opts.Array(true)
+			opts.isArray = true
 		}
 
-		if opts.IsPK() && strings.TrimSpace(idxName) == "" {
+		if opts.isPk && strings.TrimSpace(idxName) == "" {
 			return fmt.Errorf("No index name is specified for primary key in field %s", st.Field(i).Name)
 		}
 
 		if parseByKeyWord(&idxSettings, "composite") {
 			if t.Kind() != reflect.Struct || t.NumField() != 0 {
 				return fmt.Errorf("'composite' tag allowed only on empty on structs: Invalid tags %v on field %s", tagsSlice, st.Field(i).Name)
-			} else if err := db.binding.AddIndex(namespace, reindexPath, "", idxType, "composite", opts, CollateNone, ""); err != nil {
+			}
+
+			indexDef := makeIndexDef(reindexPath, "", idxType, "composite", opts, CollateNone, "")
+			if err := indexDefAppend(indexDefs, indexDef, opts.isAppenable); err != nil {
 				return err
 			}
 		} else if t.Kind() == reflect.Struct {
-			if err := db.parseIndex(namespace, t, subArray, reindexPath, jsonPath, joined); err != nil {
+			if err := parse(indexDefs, t, subArray, reindexPath, jsonPath, joined); err != nil {
 				return err
 			}
 		} else if (t.Kind() == reflect.Slice || t.Kind() == reflect.Array) &&
@@ -99,7 +122,7 @@ func (db *Reindexer) parseIndex(namespace string, st reflect.Type, subArray bool
 			// Check if field nested slice of struct
 			if parseByKeyWord(&idxSettings, "joined") && len(idxName) > 0 {
 				(*joined)[tagsSlice[0]] = st.Field(i).Index
-			} else if err := db.parseIndex(namespace, t.Elem(), true, reindexPath, jsonPath, joined); err != nil {
+			} else if err := parse(indexDefs, t.Elem(), true, reindexPath, jsonPath, joined); err != nil {
 				return err
 			}
 		} else if len(idxName) > 0 {
@@ -111,20 +134,15 @@ func (db *Reindexer) parseIndex(namespace string, st reflect.Type, subArray bool
 
 			if fieldType, err := getFieldType(t); err != nil {
 				return err
-			} else if err = db.binding.AddIndex(
-				namespace,
-				reindexPath,
-				jsonPath,
-				idxType,
-				fieldType,
-				opts,
-				collateMode,
-				sortOrderLetters,
-			); err != nil {
-				return err
+			} else {
+				indexDef := makeIndexDef(reindexPath, jsonPath, idxType, fieldType, opts, collateMode, sortOrderLetters)
+				if err := indexDefAppend(indexDefs, indexDef, opts.isAppenable); err != nil {
+					return err
+				}
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -160,21 +178,21 @@ func splitOptions(str string) []string {
 	return words
 }
 
-func parseOpts(idxSettingsBuf *[]string) bindings.IndexOptions {
+func parseOpts(idxSettingsBuf *[]string) indexOptions {
 	newIdxSettingsBuf := make([]string, 0)
 
-	var indexOptions bindings.IndexOptions
+	var opts indexOptions
 
 	for _, idxSetting := range *idxSettingsBuf {
 		switch idxSetting {
 		case "pk":
-			indexOptions.PK(true)
+			opts.isPk = true
 		case "dense":
-			indexOptions.Dense(true)
+			opts.isDense = true
 		case "sparse":
-			indexOptions.Sparse(true)
+			opts.isSparse = true
 		case "appendable":
-			indexOptions.Appendable(true)
+			opts.isAppenable = true
 		default:
 			newIdxSettingsBuf = append(newIdxSettingsBuf, idxSetting)
 		}
@@ -182,7 +200,7 @@ func parseOpts(idxSettingsBuf *[]string) bindings.IndexOptions {
 
 	*idxSettingsBuf = newIdxSettingsBuf
 
-	return indexOptions
+	return opts
 }
 
 func parseCollate(idxSettingsBuf *[]string) (int, string) {
@@ -263,4 +281,81 @@ func getJoinedField(val reflect.Value, joined map[string][]int, name string) (re
 		ret = reflect.Indirect(reflect.Indirect(val).FieldByIndex(idx))
 	}
 	return ret
+}
+
+func makeIndexDef(index, jsonPath, indexType, fieldType string, opts indexOptions, collateMode int, sortOrder string) bindings.IndexDef {
+	cm := ""
+	switch collateMode {
+	case bindings.CollateASCII:
+		cm = "ascii"
+	case bindings.CollateUTF8:
+		cm = "utf8"
+	case bindings.CollateNumeric:
+		cm = "numeric"
+	case bindings.CollateCustom:
+		cm = "custom"
+	}
+
+	return bindings.IndexDef{
+		Name:        index,
+		JSONPath:    jsonPath,
+		IndexType:   indexType,
+		FieldType:   fieldType,
+		IsArray:     opts.isArray,
+		IsPK:        opts.isPk,
+		IsDense:     opts.isDense,
+		IsSparse:    opts.isSparse,
+		CollateMode: cm,
+		SortOrder:   sortOrder,
+	}
+}
+
+func indexDefAppend(indexDefs *[]bindings.IndexDef, indexDef bindings.IndexDef, isAppendable bool) error {
+	name := indexDef.Name
+
+	var foundIndexPos int
+	var foundIndexDef bindings.IndexDef
+
+	indexDefExists := false
+	for pos, indexDef := range *indexDefs {
+		if (*indexDefs)[pos].Name == name {
+			indexDefExists = true
+			foundIndexDef = indexDef
+			foundIndexPos = pos
+
+			break
+		}
+	}
+
+	if !indexDefExists {
+		*indexDefs = append(*indexDefs, indexDef)
+
+		return nil
+	}
+
+	if indexDef.IndexType != foundIndexDef.IndexType {
+		return fmt.Errorf("Index %s has another type: %+v", name, indexDef)
+	}
+
+	jsonPaths := strings.Split(foundIndexDef.JSONPath, ",")
+	isPresented := false
+	for _, jsonPath := range jsonPaths {
+		if jsonPath == indexDef.JSONPath {
+			isPresented = true
+			break
+		}
+	}
+
+	if !isPresented {
+		if !isAppendable {
+			return fmt.Errorf("Index %s is not appendable", name)
+		}
+
+		foundIndexDef.JSONPath = strings.Join([]string{foundIndexDef.JSONPath, indexDef.JSONPath}, ",")
+	}
+
+	foundIndexDef.IsArray = true
+	(*indexDefs)[foundIndexPos] = foundIndexDef
+
+	return nil
 }

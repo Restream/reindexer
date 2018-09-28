@@ -26,7 +26,7 @@ TEST_F(CompositeIndexesApi, DropTest2) {
 	auto err = reindexer->OpenNamespace(test_ns, StorageOpts().Enabled(false));
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->AddIndex(test_ns, {"id", "", "hash", "int", IndexOpts().PK().Dense().Appendable()});
+	err = reindexer->AddIndex(test_ns, {"id", "", "hash", "int", IndexOpts().PK().Dense()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	for (int i = 0; i < 1000; ++i) {

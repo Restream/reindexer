@@ -703,13 +703,15 @@ void FastIndexText<T>::CreateConfig(const FtFastConfig *cfg) {
 		return;
 	}
 	this->cfg_.reset(new FtFastConfig());
+	string config = this->opts_.config;
+	this->cfg_->parse(&config[0]);
 }
 
 Index *FastIndexText_New(IndexType type, const string &name, const IndexOpts &opts, const PayloadType payloadType,
 						 const FieldsSet &fields) {
 	switch (type) {
 		case IndexFastFT:
-			return new FastIndexText<unordered_str_map<Index::KeyEntryPlain>>(type, name);
+			return new FastIndexText<unordered_str_map<Index::KeyEntryPlain>>(type, name, opts);
 		case IndexCompositeFastFT:
 			return new FastIndexText<unordered_payload_map<Index::KeyEntryPlain>>(type, name, opts, payloadType, fields);
 		default:

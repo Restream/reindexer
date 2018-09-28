@@ -16,6 +16,7 @@ import (
 	"github.com/restream/reindexer/cjson"
 	"github.com/restream/reindexer/dsl"
 
+	// _ "github.com/restream/reindexer/bindings/builtinserver"
 	_ "github.com/restream/reindexer/bindings/cproto"
 )
 
@@ -145,11 +146,11 @@ func NewReindex(dsn string, options ...interface{}) *Reindexer {
 	}
 
 	binding := bindings.GetBinding(u.Scheme)
-
 	if binding == nil {
 		panic(fmt.Errorf("Reindex binding '%s' is not available, can't create DB", u.Scheme))
 	}
 
+	binding = binding.Clone()
 	if err = binding.Init(u, options...); err != nil {
 		panic(fmt.Errorf("Reindex binding '%s' init error: %s", u.Scheme, err.Error()))
 		return nil
@@ -200,6 +201,12 @@ func (db *Reindexer) Ping() error {
 	return db.binding.Ping()
 }
 
+func (db *Reindexer) Close() {
+	if err := db.binding.Finalize(); err != nil {
+		panic(err)
+	}
+}
+
 // NamespaceOptions is options for namespace
 type NamespaceOptions struct {
 	// Only in memory namespace
@@ -248,12 +255,13 @@ func DefaultNamespaceOptions() *NamespaceOptions {
 }
 
 // OpenNamespace Open or create new namespace and indexes based on passed struct.
-// IndexDescription fields of struct are marked by `reindex:` tag
+// IndexDef fields of struct are marked by `reindex:` tag
 func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s interface{}) (err error) {
 	t := reflect.TypeOf(s)
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
+	namespace = strings.ToLower(namespace)
 
 	db.lock.Lock()
 	oldNs, ok := db.ns[namespace]
@@ -331,6 +339,7 @@ func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s i
 
 // DropNamespace - drop whole namespace from DB
 func (db *Reindexer) DropNamespace(namespace string) error {
+	namespace = strings.ToLower(namespace)
 	db.lock.Lock()
 	delete(db.ns, namespace)
 	db.lock.Unlock()
@@ -340,6 +349,7 @@ func (db *Reindexer) DropNamespace(namespace string) error {
 
 // CloseNamespace - close namespace, but keep storage
 func (db *Reindexer) CloseNamespace(namespace string) error {
+	namespace = strings.ToLower(namespace)
 	db.lock.Lock()
 	_, ok := db.ns[namespace]
 	if !ok {
@@ -381,6 +391,7 @@ func (db *Reindexer) Delete(namespace string, item interface{}, precepts ...stri
 }
 
 // ConfigureIndex - congigure index.
+// [[deprecated]]. Use UpdateIndex insted
 // config argument must be struct with index configuration
 func (db *Reindexer) ConfigureIndex(namespace, index string, config interface{}) error {
 	json, err := json.Marshal(config)
@@ -388,6 +399,16 @@ func (db *Reindexer) ConfigureIndex(namespace, index string, config interface{})
 		return err
 	}
 	return db.binding.ConfigureIndex(namespace, index, string(json))
+}
+
+// AddIndex - add index.
+func (db *Reindexer) AddIndex(namespace string, indexDef bindings.IndexDef) error {
+	return db.binding.AddIndex(namespace, indexDef)
+}
+
+// UpdateIndex - update index.
+func (db *Reindexer) UpdateIndex(namespace string, indexDef bindings.IndexDef) error {
+	return db.binding.UpdateIndex(namespace, indexDef)
 }
 
 // DropIndex - drop index.

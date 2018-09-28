@@ -34,8 +34,7 @@ string GetHomeDir();
 
 Error TryCreateDirectory(const string &dir);
 Error ChangeUser(const char *userName);
-Error ChownDir(const string &path, const string& user);
-
+Error ChownDir(const string &path, const string &user);
 
 inline static string JoinPath(string base, string name) { return base + ((!base.empty() && base.back() != '/') ? "/" : "") + name; }
 }  // namespace fs

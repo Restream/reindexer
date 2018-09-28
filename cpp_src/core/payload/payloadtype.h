@@ -1,5 +1,6 @@
 #pragma once
 
+#include <initializer_list>
 #include <string>
 #include <vector>
 #include "estl/cow.h"
@@ -19,10 +20,10 @@ class PayloadTypeImpl {
 	typedef fast_hash_map<string, int> JsonPathMap;
 
 public:
-	PayloadTypeImpl(const string &name) : name_(name) {}
+	PayloadTypeImpl(const string &name, std::initializer_list<PayloadFieldType> fields = {}) : fields_(fields), name_(name) {}
 
 	const PayloadFieldType &Field(int field) const {
-		assert(field < NumFields());
+		assertf(field < NumFields(), "%s: %d, %d", name_.c_str(), field, NumFields());
 		return fields_[field];
 	}
 
@@ -36,7 +37,7 @@ public:
 	int FieldByJsonPath(const string &jsonPath) const;
 	const vector<int> &StrFields() const { return strFields_; }
 
-	void serialize(WrSerializer &ser) const;
+	void serialize(WrSerializer &ser, bool withJsonPaths = true) const;
 	void deserialize(Serializer &ser);
 
 	size_t TotalSize() const;
@@ -53,7 +54,8 @@ protected:
 class PayloadType : public shared_cow_ptr<PayloadTypeImpl> {
 public:
 	PayloadType() {}
-	PayloadType(const string &name) : shared_cow_ptr<PayloadTypeImpl>(std::make_shared<PayloadTypeImpl>(name)) {}
+	PayloadType(const string &name, std::initializer_list<PayloadFieldType> fields = {})
+		: shared_cow_ptr<PayloadTypeImpl>(std::make_shared<PayloadTypeImpl>(name, fields)) {}
 	const PayloadFieldType &Field(int field) const { return get()->Field(field); }
 
 	const string &Name() const { return get()->Name(); }

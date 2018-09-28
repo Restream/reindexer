@@ -72,15 +72,15 @@ func TestDescribe(t *testing.T) {
 		panic(fmt.Sprintf("wait field's name '%s', got '%s'", "id", desc.Indexes[0].Name))
 	}
 
-	if !desc.Indexes[0].PK {
-		panic(fmt.Sprintf("field 'id' must be PK %#v", desc))
+	if !desc.Indexes[0].IsPK {
+		panic(fmt.Sprintf("field 'id' must be PK %#v", desc.Indexes[0]))
 	}
 
-	if !desc.Indexes[0].Sortable {
+	if !desc.Indexes[0].IsSortable {
 		panic(fmt.Sprint("index must  be sortable"))
 	}
 
-	if desc.Indexes[0].Fulltext {
+	if desc.Indexes[0].IsFulltext {
 		panic(fmt.Sprint("index must not be fulltext"))
 	}
 
@@ -98,15 +98,15 @@ func TestDescribe(t *testing.T) {
 		panic(fmt.Sprintf("wait field's name '%s', got '%s'", "foo", desc.Indexes[1].Name))
 	}
 
-	if desc.Indexes[1].PK {
+	if desc.Indexes[1].IsPK {
 		panic(fmt.Sprint("field 'foo' must not be PK"))
 	}
 
-	if !desc.Indexes[1].Sortable {
+	if !desc.Indexes[1].IsSortable {
 		panic(fmt.Sprint("index must be sortable"))
 	}
 
-	if desc.Indexes[1].Fulltext {
+	if desc.Indexes[1].IsFulltext {
 		panic(fmt.Sprint("index must not be fulltext"))
 	}
 
@@ -124,15 +124,15 @@ func TestDescribe(t *testing.T) {
 		panic(fmt.Sprintf("wait field's name '%s', got '%s'", "qwe", desc.Indexes[2].Name))
 	}
 
-	if desc.Indexes[2].PK {
+	if desc.Indexes[2].IsPK {
 		panic(fmt.Sprint("field 'qwe' must not be PK"))
 	}
 
-	if !desc.Indexes[2].Sortable {
+	if !desc.Indexes[2].IsSortable {
 		panic(fmt.Sprint("index must be sortable"))
 	}
 
-	if desc.Indexes[2].Fulltext {
+	if desc.Indexes[2].IsFulltext {
 		panic(fmt.Sprint("index must not be fulltext"))
 	}
 
@@ -150,15 +150,15 @@ func TestDescribe(t *testing.T) {
 		panic(fmt.Sprintf("wait field's name '%s', got '%s'", "bar", desc.Indexes[3].Name))
 	}
 
-	if desc.Indexes[3].PK {
+	if desc.Indexes[3].IsPK {
 		panic(fmt.Sprint("field 'bar' must not be PK"))
 	}
 
-	if !desc.Indexes[3].Sortable {
+	if !desc.Indexes[3].IsSortable {
 		panic(fmt.Sprint("index must  be sortable"))
 	}
 
-	if desc.Indexes[3].Fulltext {
+	if desc.Indexes[3].IsFulltext {
 		panic(fmt.Sprint("index must not be fulltext"))
 	}
 
@@ -180,15 +180,15 @@ func TestDescribe(t *testing.T) {
 		panic(fmt.Sprintf("wait field's name '%s', got '%s'", "search", desc.Indexes[4].Name))
 	}
 
-	if desc.Indexes[4].PK {
+	if desc.Indexes[4].IsPK {
 		panic(fmt.Sprint("field 'search' must not be PK"))
 	}
 
-	if desc.Indexes[4].Sortable {
+	if desc.Indexes[4].IsSortable {
 		panic(fmt.Sprint("index must not be sortable"))
 	}
 
-	if !desc.Indexes[4].Fulltext {
+	if !desc.Indexes[4].IsFulltext {
 		panic(fmt.Sprint("index must be fulltext"))
 	}
 

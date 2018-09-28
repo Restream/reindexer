@@ -8,6 +8,7 @@
 #endif
 
 #include "tools/fsops.h"
+#include "tools/jsontools.h"
 #include "tools/stringstools.h"
 #include "vendor/gason/gason.h"
 

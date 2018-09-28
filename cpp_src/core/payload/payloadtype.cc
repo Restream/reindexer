@@ -119,8 +119,11 @@ int PayloadTypeImpl::FieldByJsonPath(const string &jsonPath) const {
 	return it->second;
 }
 
-void PayloadTypeImpl::serialize(WrSerializer &ser) const {
-	ser.PutVarUint(base_key_string::export_hdr_offset());
+// TODO: deprecate old cproto version, and remove withJsonPaths trick
+const int kTmpPayloadTypeWithJsonPathsFlag = 0x1000;
+
+void PayloadTypeImpl::serialize(WrSerializer &ser, bool withJsonPaths) const {
+	ser.PutVarUint(base_key_string::export_hdr_offset() | (withJsonPaths ? kTmpPayloadTypeWithJsonPathsFlag : 0));
 	ser.PutVarUint(NumFields());
 	for (int i = 0; i < NumFields(); i++) {
 		ser.PutVarUint(Field(i).Type());
@@ -128,6 +131,10 @@ void PayloadTypeImpl::serialize(WrSerializer &ser) const {
 		ser.PutVarUint(Field(i).Offset());
 		ser.PutVarUint(Field(i).ElemSizeof());
 		ser.PutVarUint(Field(i).IsArray());
+		if (withJsonPaths) {
+			ser.PutVarUint(Field(i).JsonPaths().size());
+			for (auto &jp : Field(i).JsonPaths()) ser.PutVString(jp);
+		}
 	}
 }
 
@@ -137,7 +144,7 @@ void PayloadTypeImpl::deserialize(Serializer &ser) {
 	fieldsByJsonPath_.clear();
 	strFields_.clear();
 
-	ser.GetVarUint();
+	bool withJsonPaths = ser.GetVarUint() & kTmpPayloadTypeWithJsonPathsFlag;
 
 	int count = ser.GetVarUint();
 
@@ -147,9 +154,23 @@ void PayloadTypeImpl::deserialize(Serializer &ser) {
 		int offset = ser.GetVarUint();
 		int elemSizeof = ser.GetVarUint();
 		bool isArray = ser.GetVarUint();
+
+		int jsonPathsCount = 1;
+		string jsonPath = name;
+
+		if (withJsonPaths) {
+			jsonPathsCount = ser.GetVarUint();
+			jsonPath = ser.GetVString().ToString();
+		}
 		(void)elemSizeof;
 
-		PayloadFieldType ft(t, name, name, isArray);
+		PayloadFieldType ft(t, name, jsonPath, isArray);
+
+		assert(jsonPathsCount);
+		while (--jsonPathsCount) {
+			ft.AddJsonPath(ser.GetVString().ToString());
+		}
+
 		if (isArray) ft.SetArray();
 		ft.SetOffset(offset);
 		fieldsByName_.emplace(name, fields_.size());

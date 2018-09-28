@@ -87,7 +87,7 @@ int main(int argc, char* argv[]) {
 		err = db.Connect(dsn);
 		if (err.ok()) ok = db.Run();
 	} else {
-		std::cerr << "Invalid DSN formt: " << dsn << " Must begin from  cproto:// or builtin://" << std::endl;
+		std::cerr << "Invalid DSN formt: " << dsn << " Must begin from cproto:// or builtin://" << std::endl;
 	}
 	if (!err.ok()) {
 		std::cerr << "ERROR: " << err.what() << std::endl;

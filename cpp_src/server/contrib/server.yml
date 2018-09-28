@@ -661,8 +661,6 @@ definitions:
         type: "boolean"
       is_sparse:
         type: "boolean"
-      is_appendable:
-        type: "boolean"
       collate_mode:
         type: "string"
         description: "Collate mode"
@@ -674,6 +672,9 @@ definitions:
       sort_order_letters:
         type: "string"
         description: "Sort order letters"
+      config:
+        type: "object"
+        description: "Index configuration (fulltext)"
 
   Query:
     type: "object"

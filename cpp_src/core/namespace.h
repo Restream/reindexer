@@ -64,7 +64,7 @@ protected:
 		int getSortedIdxCount() const override { return sorted_indexes_; }
 		SortType getCurSortId() const override { return curSortId_; }
 		const vector<SortType> &ids2Sorts() const override { return ids2Sorts_; }
-		vector<SortType> &ids2Sorts() override { return ids2Sorts_; };
+		vector<SortType> &ids2Sorts() override { return ids2Sorts_; }
 
 	protected:
 		const Namespace &ns_;
@@ -112,8 +112,8 @@ public:
 
 	void AddIndex(const IndexDef &indexDef);
 	void UpdateIndex(const IndexDef &indexDef);
-	bool DropIndex(const string &index);
-	bool AddCompositeIndex(const string &index, IndexType type, IndexOpts opts);
+	void DropIndex(const string &index);
+	void AddCompositeIndex(const IndexDef &indexDef);
 	void ConfigureIndex(const string &index, const string &config);
 
 	void Insert(Item &item, bool store = true);
@@ -162,12 +162,13 @@ protected:
 	void _delete(IdType id);
 	void commit(const NSCommitContext &ctx, SelectLockUpgrader *lockUpgrader);
 	void insertIndex(Index *newIndex, int idxNo, const string &realName);
-	bool addIndex(const string &index, const string &jsonPath, IndexType type, IndexOpts opts);
-	bool addIndex(const IndexDef &indexDef);
-	bool updateIndex(const IndexDef &indexDef);
-	bool dropIndex(const string &index);
+	void addIndex(const IndexDef &indexDef);
+	void updateIndex(const IndexDef &indexDef);
+	void dropIndex(const string &index);
+	void configureIndex(const string &index, const string &config);
 	void recreateCompositeIndexes(int startIdx, int endIdx);
 	NamespaceDef getDefinition();
+	IndexDef getIndexDefinition(const string &indexName);
 
 	string getMeta(const string &key);
 	void flushStorage();

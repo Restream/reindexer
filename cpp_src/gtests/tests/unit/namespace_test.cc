@@ -65,7 +65,7 @@ TEST_F(NsApi, UpdateIndex) {
 
 	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK()}});
 
-	auto newIdx = reindexer::IndexDef(idIdxName.c_str(), idIdxName.c_str(), "-", "int64", IndexOpts().PK().Dense().Appendable());
+	auto newIdx = reindexer::IndexDef(idIdxName.c_str(), idIdxName.c_str(), "-", "int64", IndexOpts().PK().Dense());
 	err = reindexer->UpdateIndex(default_namespace, newIdx);
 	ASSERT_TRUE(err.ok()) << err.what();
 

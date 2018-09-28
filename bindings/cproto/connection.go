@@ -35,6 +35,7 @@ const (
 	cmdEnumNamespaces = 22
 	cmdConfigureIndex = 23
 	cmdDropIndex      = 24
+	cmdUpdateIndex    = 25
 	cmdCommit         = 32
 	cmdModifyItem     = 33
 	cmdDeleteQuery    = 34

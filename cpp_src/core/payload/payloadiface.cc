@@ -284,20 +284,9 @@ bool PayloadIface<T>::IsEQ(const T &other, const FieldsSet &fields) const {
 			if (Get(field, keys1) != o.Get(field, keys2)) return false;
 		} else {
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
-			GetByJsonPath(tagsPath, keys1, KeyValueUndefined);
-			o.GetByJsonPath(tagsPath, keys2, KeyValueUndefined);
 			if (GetByJsonPath(tagsPath, keys1, KeyValueUndefined) != o.GetByJsonPath(tagsPath, keys2, KeyValueUndefined)) return false;
 		}
 	}
-	return true;
-}
-
-template <typename T>
-bool PayloadIface<T>::IsEQ(const T &other) const {
-	PayloadIface<const T> o(t_, other);
-	KeyRefs keys1, keys2;
-	for (int field = 0; field < NumFields(); ++field)
-		if (Get(field, keys1) != o.Get(field, keys2)) return false;
 	return true;
 }
 

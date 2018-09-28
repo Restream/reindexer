@@ -1,7 +1,7 @@
 -- Reindexer DB backup file
 -- VERSION 1.0
 -- Dumping namespace 'testns' ...
-\NAMESPACES ADD testns {"name":"testns","cached_mode":0,"storage":{"enabled":true},"indexes":[{"name":"id","json_path":"id","field_type":"int64","index_type":"hash","is_pk":true,"is_array":false,"is_dense":false,"is_sparse":false,"is_appendable":false,"collate_mode":"none","sort_order_letters":""},{"name":"title","json_path":"title","field_type":"string","index_type":"hash","is_pk":false,"is_array":false,"is_dense":false,"is_sparse":false,"is_appendable":false,"collate_mode":"none","sort_order_letters":""}]}
+\NAMESPACES ADD testns {"name":"testns","cached_mode":0,"storage":{"enabled":true},"indexes":[{"name":"id","json_path":"id","field_type":"int64","index_type":"hash","is_pk":true,"is_array":false,"is_dense":false,"is_sparse":false,"collate_mode":"none","sort_order_letters":"","config":{}},{"name":"title","json_path":"title","field_type":"string","index_type":"hash","is_pk":false,"is_array":false,"is_dense":false,"is_sparse":false,"collate_mode":"none","sort_order_letters":"","config":{}}]}
 \META PUT testns key value
 \UPSERT testns {"id":1,"title":"test1"}
 \UPSERT testns {"id":2,"title":"test2"}

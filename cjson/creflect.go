@@ -44,8 +44,16 @@ type payloadType struct {
 	PStringHdrOffset uintptr
 }
 
+// TODO: deprecate old cproto version, and remove withJsonPaths trick
+const tmpPayloadTypeWithJSONPathsFlag = uintptr(0x1000)
+
 func (pt *payloadType) Read(ser *Serializer, skip bool) {
 	pt.PStringHdrOffset = uintptr(ser.GetVarUInt())
+	withJSONPaths := false
+	if (pt.PStringHdrOffset & tmpPayloadTypeWithJSONPathsFlag) != 0 {
+		withJSONPaths = true
+		pt.PStringHdrOffset = pt.PStringHdrOffset & ^tmpPayloadTypeWithJSONPathsFlag
+	}
 	fieldsCount := int(ser.GetVarUInt())
 	fields := make([]payloadFieldType, fieldsCount, fieldsCount)
 
@@ -55,6 +63,12 @@ func (pt *payloadType) Read(ser *Serializer, skip bool) {
 		fields[i].Offset = uintptr(ser.GetVarUInt())
 		fields[i].Size = uintptr(ser.GetVarUInt())
 		fields[i].IsArray = ser.GetVarUInt() != 0
+		if withJSONPaths {
+			jsonPathCnt := ser.GetVarUInt()
+			for ; jsonPathCnt != 0; jsonPathCnt-- {
+				ser.GetVString()
+			}
+		}
 	}
 	if !skip {
 		pt.Fields = fields

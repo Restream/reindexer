@@ -8,7 +8,9 @@ using std::string;
 using std::vector;
 using reindexer::Error;
 
-namespace Yaml { class Node; }
+namespace Yaml {
+class Node;
+}
 
 namespace reindexer_server {
 

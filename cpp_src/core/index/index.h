@@ -9,6 +9,7 @@
 #include "core/payload/payloadiface.h"
 #include "core/selectfunc/ctx/basefunctionctx.h"
 #include "core/selectkeyresult.h"
+#include "core/perfstatcounter.h"
 
 namespace reindexer {
 
@@ -27,6 +28,7 @@ public:
 
 	Index(IndexType type, const string& name, const IndexOpts& opts = IndexOpts(), const PayloadType payloadType = PayloadType(),
 		  const FieldsSet& fields = FieldsSet());
+	Index(const Index&);
 	Index& operator=(const Index&) = delete;
 	virtual ~Index();
 	virtual KeyRef Upsert(const KeyRef& key, IdType id) = 0;
@@ -36,13 +38,12 @@ public:
 
 	virtual SelectKeyResults SelectKey(const KeyValues& keys, CondType condition, SortType stype, ResultType res_type,
 									   BaseFunctionCtx::Ptr ctx) = 0;
-	virtual void Commit(const CommitContext& ctx) = 0;
+	virtual bool Commit(const CommitContext& ctx) = 0;
 	virtual void MakeSortOrders(UpdateSortedContext&) {}
 
 	virtual void UpdateSortedIds(const UpdateSortedContext& ctx) = 0;
 	virtual size_t Size() const { return 0; }
 	virtual Index* Clone() = 0;
-	virtual void Configure(const string&) {}
 	virtual bool IsOrdered() const { return false; }
 	virtual IndexMemStat GetMemStat() = 0;
 	void UpdatePayloadType(const PayloadType payloadType) { payloadType_ = payloadType; }
@@ -55,11 +56,24 @@ public:
 	IndexType Type() const { return type_; }
 	const vector<IdType>& SortOrders() const { return sortOrders_; }
 	const IndexOpts& Opts() const { return opts_; }
-	void SetOpts(const IndexOpts& opts) { opts_ = opts; }
+	virtual void SetOpts(const IndexOpts& opts) { opts_ = opts; }
 	void SetFields(const FieldsSet& fields) { fields_ = fields; }
 	SortType SortId() const { return sortId_; }
 
+	PerfStatCounterST& GetSelectPerfCounter() { return selectPerfCounter_; }
+	PerfStatCounterST& GetCommitPerfCounter() { return commitPerfCounter_; }
+
+	IndexPerfStat GetIndexPerfStat() {
+		return IndexPerfStat(name_, selectPerfCounter_.Get<PerfStat>(), commitPerfCounter_.Get<PerfStat>());
+	}
+
 protected:
+	// Resets count of selects before commit
+	void resetQueriesCountTillCommit();
+
+	// Indicates is it possible perform commit
+	bool allowedToCommit(int phases) const;
+
 	// Index type. Can be one of enum IndexType
 	IndexType type_;
 	// Name of index (usualy name of field).
@@ -74,6 +88,11 @@ protected:
 	mutable PayloadType payloadType_;
 	// Fields in index. Valid only for composite indexes
 	FieldsSet fields_;
+	// Amount of raw selects to index without any update
+	std::atomic<int> rawQueriesCount_;
+	// Perfstat counter
+	PerfStatCounterST commitPerfCounter_;
+	PerfStatCounterST selectPerfCounter_;
 };
 
 }  // namespace reindexer

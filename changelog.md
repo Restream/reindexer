@@ -1,3 +1,22 @@
+# Version 1.9.7 (28.09.2018)
+
+## Core
+- [fea] Storing index configuration in storage
+- [fea] Concurent R-W queries performance optimization
+- [fea] Added indexes runtime performance statistics
+- [fix] Incorrect NOT behaviour on queries with only comparators
+- [fix] Race condition on shutdown
+- [fix] Type conversion on queries without indexes
+
+## Go connector
+- [fea] Added public AddIndex/DropIndex/UpdateIndex methods
+- [ref] ConfigureIndex method deprecated
+- [ref] `appendable` logic has been moved from C++ core to golang connector
+- [fix] Multiple database support in `embeded` mode.
+
+## Reindexer tool
+- [fix] Fixed restoring namespaces with index names non equal to json paths
+
 # Version 1.9.6 (03.09.2018)
 
 ## Core

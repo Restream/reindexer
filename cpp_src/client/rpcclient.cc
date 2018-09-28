@@ -232,6 +232,12 @@ Error RPCClient::AddIndex(const string& ns, const IndexDef& iDef) {
 	return getConn()->Call(cproto::kCmdAddIndex, ns, ser.Slice()).Status();
 }
 
+Error RPCClient::UpdateIndex(const string& ns, const IndexDef& iDef) {
+	WrSerializer ser;
+	iDef.GetJSON(ser);
+	return getConn()->Call(cproto::kCmdUpdateIndex, ns, ser.Slice()).Status();
+}
+
 Error RPCClient::DropIndex(const string& ns, const string& idx) { return getConn()->Call(cproto::kCmdDropIndex, ns, idx).Status(); }
 
 Error RPCClient::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll) {

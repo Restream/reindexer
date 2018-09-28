@@ -51,7 +51,7 @@ public:
 	void DumpKeys() override;
 	SelectKeyResults SelectKey(const KeyValues &keys, CondType condition, SortType stype, Index::ResultType res_type,
 							   BaseFunctionCtx::Ptr ctx) override;
-	void Commit(const CommitContext &ctx) override;
+	bool Commit(const CommitContext &ctx) override;
 	void UpdateSortedIds(const UpdateSortedContext &) override;
 	Index *Clone() override;
 	IndexMemStat GetMemStat() override;
@@ -59,6 +59,7 @@ public:
 	IdSetRef Find(const KeyRef &key) override final;
 
 protected:
+	void markUpdated(typename T::value_type *key);
 	void tryIdsetCache(const KeyValues &keys, CondType condition, SortType sortId, std::function<void(SelectKeyResult &)> selector,
 					   SelectKeyResult &res);
 
@@ -68,14 +69,14 @@ protected:
 	typename T::iterator find(const KeyRef &key);
 
 	template <typename U = T, typename std::enable_if<is_string_map_key<U>::value || is_string_unord_map_key<T>::value>::type * = nullptr>
-	void getMemStat(IndexMemStat &);
+	void getMemStat(IndexMemStat &) const;
 	template <typename U = T, typename std::enable_if<!is_string_map_key<U>::value && !is_string_unord_map_key<T>::value>::type * = nullptr>
-	void getMemStat(IndexMemStat &);
+	void getMemStat(IndexMemStat &) const;
 
 	// Index map
 	T idx_map;
 	// Merged idsets cache
-	shared_ptr<IdSetCache> cache_;
+	shared_ptr<IdSetCache> cache_ = std::make_shared<IdSetCache>();
 	// Empty ids
 	Index::KeyEntry empty_ids_;
 	// Tracker of updates

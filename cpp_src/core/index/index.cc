@@ -5,15 +5,30 @@
 #include "indextext/fuzzyindextext.h"
 #include "tools/logger.h"
 
+// Heuristic value of maximum allowed queries
+// to an index (without any updates of the index)
+// before performing commit.
+const int kMaxQueriesBeforeCommit = 5;
+
 namespace reindexer {
 
 Index::Index(IndexType type, const string& name, const IndexOpts& opts, const PayloadType payloadType, const FieldsSet& fields)
-	: type_(type), name_(name), opts_(opts), payloadType_(payloadType), fields_(fields) {
+	: type_(type), name_(name), opts_(opts), payloadType_(payloadType), fields_(fields), rawQueriesCount_(0) {
 	IndexDef def;
 	def.FromType(type);
 	logPrintf(LogTrace, "Index::Index (%s,%s,%s)  %s%s%s", def.indexType_.c_str(), def.fieldType_.c_str(), name.c_str(),
 			  opts.IsPK() ? ",pk" : "", opts.IsDense() ? ",dense" : "", opts.IsArray() ? ",array" : "");
 }
+
+Index::Index(const Index& obj)
+	: type_(obj.type_),
+	  name_(obj.name_),
+	  sortOrders_(obj.sortOrders_),
+	  sortId_(obj.sortId_),
+	  opts_(obj.opts_),
+	  payloadType_(obj.payloadType_),
+	  fields_(obj.fields_),
+	  rawQueriesCount_(obj.rawQueriesCount_.load()) {}
 
 Index::~Index() {}
 
@@ -45,6 +60,11 @@ Index* Index::New(IndexType type, const string& name, const IndexOpts& opts, con
 		default:
 			throw Error(errParams, "Ivalid index type %d for index '%s'", type, name.c_str());
 	}
+}
+
+void Index::resetQueriesCountTillCommit() { rawQueriesCount_ = 0; }
+bool Index::allowedToCommit(int phases) const {
+	return (phases & CommitContext::MakeSortOrders) || (this->rawQueriesCount_ >= kMaxQueriesBeforeCommit);
 }
 
 }  // namespace reindexer

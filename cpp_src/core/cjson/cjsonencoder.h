@@ -20,7 +20,7 @@ public:
 protected:
 	bool encodeCJson(ConstPayload *pl, Serializer &rdser, WrSerializer &wrser, bool match = true);
 	bool getValueFromTuple(Serializer &rdser, const TagsPath &fieldTags, const Payload *pl, KeyValueType expectedType, KeyRefs &res,
-						   bool arrayElements = false);
+						   bool match = true);
 
 	int fieldsoutcnt_[maxIndexes];
 	const TagsMatcher &tagsMatcher_;

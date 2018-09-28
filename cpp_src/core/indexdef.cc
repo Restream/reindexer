@@ -35,7 +35,6 @@ std::unordered_map<IndexType, IndexInfo,std::hash<int>,std::equal_to<int> > avai
 	{IndexInt64Store,	    {"int64",     "-",       condsUsual,CapSortable}},
 	{IndexStrStore,		    {"string",    "-",       condsUsual,CapSortable}},
 	{IndexDoubleStore,	    {"double",    "-",       condsUsual,CapSortable}},
-	{IndexStrStore,		    {"string",    "-",       condsUsual,CapSortable}},
 	{IndexCompositeFastFT,  {"composite", "text",    condsText, CapComposite|CapFullText}},
 	{IndexCompositeFuzzyFT, {"composite", "fuzzytext",condsText, CapComposite|CapFullText}},
 	{IndexFastFT,           {"string",    "text",    condsText, CapFullText}},
@@ -71,9 +70,13 @@ string JsonPaths::AsSerializedString() const {
 IndexDef::IndexDef() {}
 IndexDef::IndexDef(const string &name, const string_view &jsonPaths, const string &indexType, const string &fieldType, const IndexOpts opts)
 	: name_(name), jsonPaths_(jsonPaths), indexType_(indexType), fieldType_(fieldType), opts_(opts) {}
+IndexDef::IndexDef(const string &name, const string_view &jsonPaths, const IndexType type, const IndexOpts opts)
+	: name_(name), jsonPaths_(jsonPaths), opts_(opts) {
+	this->FromType(type);
+}
 
 bool IndexDef::operator==(const IndexDef &other) const {
-	return name_ == other.name_ && jsonPaths_ == other.jsonPaths_ && indexType_ == other.indexType_ && fieldType_ == other.fieldType_ &&
+	return name_ == other.name_ && jsonPaths_ == other.jsonPaths_ && Type() == other.Type() && fieldType_ == other.fieldType_ &&
 		   opts_ == other.opts_;
 }
 
@@ -120,8 +123,14 @@ Error IndexDef::FromJSON(char *json) {
 Error IndexDef::FromJSON(JsonValue &jvalue) {
 	try {
 		if (jvalue.getTag() != JSON_OBJECT) throw Error(errParseJson, "Expected json object in 'indexes' key");
+
 		CollateMode collateValue = CollateNone;
-		bool isPk = false, isArray = false, isDense = false, isSparse = false, isAppendable = false;
+		bool isPk = false, isArray = false, isDense = false, isSparse = false;
+		string jsonPath;
+		string collateStr;
+		string sortOrderLetters;
+		string config;
+
 		for (auto elem : jvalue) {
 			parseJsonField("name", name_, elem);
 			parseJsonField("field_type", fieldType_, elem);
@@ -130,37 +139,33 @@ Error IndexDef::FromJSON(JsonValue &jvalue) {
 			parseJsonField("is_array", isArray, elem);
 			parseJsonField("is_dense", isDense, elem);
 			parseJsonField("is_sparse", isSparse, elem);
-			parseJsonField("is_appendable", isAppendable, elem);
-
-			string jsonPath;
 			parseJsonField("json_path", jsonPath, elem);
-			if (!jsonPath.empty()) jsonPaths_.Set(jsonPath);
-
-			string collateStr;
 			parseJsonField("collate_mode", collateStr, elem);
-			if (!collateStr.empty()) {
-				bool found = false;
-				for (auto it : availableCollates) {
-					if (it.second == collateStr) {
-						found = true;
-						collateValue = it.first;
-						opts_.SetCollateMode(collateValue);
-						if (collateValue != CollateCustom) break;
-					}
-				}
-				if (!found) return Error(errParams, "Unknown collate mode %s", collateStr.c_str());
-			}
+			parseJsonField("sort_order_letters", sortOrderLetters, elem);
 
-			if (collateValue == CollateCustom) {
-				string sortOrderLetters;
-				parseJsonField("sort_order_letters", sortOrderLetters, elem);
-				if (!sortOrderLetters.empty()) {
-					opts_.collateOpts_ = CollateOpts(sortOrderLetters);
-					break;
-				}
+			if (!strcmp(elem->key, "config")) {
+				config = stringifyJson(elem);
 			}
 		}
-		opts_.PK(isPk).Array(isArray).Dense(isDense).Sparse(isSparse).Appendable(isAppendable);
+
+		opts_.PK(isPk).Array(isArray).Dense(isDense).Sparse(isSparse);
+		opts_.config = config;
+
+		if (!jsonPath.empty()) jsonPaths_.Set(jsonPath);
+		if (!collateStr.empty()) {
+			auto collateIt = find_if(begin(availableCollates), end(availableCollates),
+									 [&collateStr](const pair<CollateMode, string> &p) { return p.second == collateStr; });
+
+			if (collateIt != end(availableCollates)) {
+				collateValue = collateIt->first;
+				opts_.SetCollateMode(collateValue);
+				if (collateValue == CollateCustom && !sortOrderLetters.empty()) {
+					opts_.collateOpts_ = CollateOpts(sortOrderLetters);
+				}
+			} else {
+				return Error(errParams, "Unknown collate mode %s", collateStr.c_str());
+			}
+		}
 	} catch (const Error &err) {
 		return err;
 	}
@@ -178,9 +183,9 @@ void IndexDef::GetJSON(WrSerializer &ser, bool describeCompat) const {
 	ser.Printf("\"is_array\":%s,", opts_.IsArray() ? "true" : "false");
 	ser.Printf("\"is_dense\":%s,", opts_.IsDense() ? "true" : "false");
 	ser.Printf("\"is_sparse\":%s,", opts_.IsSparse() ? "true" : "false");
-	ser.Printf("\"is_appendable\":%s,", opts_.IsAppendable() ? "true" : "false");
 	ser.Printf("\"collate_mode\":\"%s\",", getCollateMode().c_str());
-	ser.Printf("\"sort_order_letters\":\"%s\"", opts_.collateOpts_.sortOrderTable.GetSortOrderCharacters().c_str());
+	ser.Printf("\"sort_order_letters\":\"%s\",", opts_.collateOpts_.sortOrderTable.GetSortOrderCharacters().c_str());
+	ser.Printf("\"config\":%s", opts_.hasConfig() ? opts_.config.c_str() : "{}");
 
 	if (describeCompat) {
 		// extra data for support describe.
@@ -196,6 +201,6 @@ void IndexDef::GetJSON(WrSerializer &ser, bool describeCompat) const {
 		ser.PutChar(']');
 	}
 	ser.PutChar('}');
-}
+}  // namespace reindexer
 
 }  // namespace reindexer

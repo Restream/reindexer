@@ -179,7 +179,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	for (auto &r : qres) {
 		if (r.comparators_.size()) {
 			hasComparators = true;
-		} else {
+		} else if (r.op != OpNot) {
 			hasIdsets = true;
 		}
 	}
@@ -256,8 +256,8 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 				  int(duration_cast<microseconds>(tm4 - tm3).count()), firstSortIndex ? firstSortIndex->Name().c_str() : "-");
 		if (ctx.query.debugLevel >= LogTrace) {
 			for (auto &r : qres)
-				logPrintf(LogInfo, "%s: %d idsets, %d comparators, cost %g, matched %d", r.name.c_str(), r.size(), r.comparators_.size(),
-						  r.Cost(iters), r.GetMatchedCount());
+				logPrintf(LogInfo, "%s: %d idsets, %d comparators, cost %g, matched %d, %s", r.name.c_str(), r.size(),
+						  r.comparators_.size(), r.Cost(iters), r.GetMatchedCount(), r.Dump().c_str());
 			if (ctx.joinedSelectors) {
 				for (auto &js : *ctx.joinedSelectors) {
 					if (js.type == JoinType::LeftJoin || js.type == JoinType::Merge) {
@@ -467,7 +467,6 @@ void NsSelecter::selectWhere(const QueryEntries &entries, RawQueryResult &result
 		bool sparseIndex = false;
 		bool byJsonPath = (qe.idxNo == IndexValueType::SetByJsonPath);
 		if (byJsonPath) {
-			KeyValueType keyType = qe.values.empty() ? KeyValueEmpty : qe.values[0].Type();
 			tagsPath = ns_->tagsMatcher_.path2tag(qe.index);
 
 			FieldsSet fields;
@@ -475,7 +474,7 @@ void NsSelecter::selectWhere(const QueryEntries &entries, RawQueryResult &result
 
 			SelectKeyResult comparisonResult;
 			comparisonResult.comparators_.push_back(
-				Comparator(qe.condition, keyType, qe.values, false, ns_->payloadType_, fields, nullptr, CollateOpts()));
+				Comparator(qe.condition, KeyValueUndefined, qe.values, false, ns_->payloadType_, fields, nullptr, CollateOpts()));
 			selectResults.push_back(comparisonResult);
 		} else {
 			auto &index = ns_->indexes_[qe.idxNo];
@@ -495,7 +494,11 @@ void NsSelecter::selectWhere(const QueryEntries &entries, RawQueryResult &result
 			if (index->Opts().GetCollateMode() == CollateUTF8 || fullText)
 				for (auto &key : qe.values) key.EnsureUTF8();
 
-			selectResults = index->SelectKey(qe.values, qe.condition, sortId, type, ctx);
+			{
+				PerfStatCalculatorST calc(index->GetSelectPerfCounter(), ns_->enablePerfCounters_);
+				calc.LockHit();
+				selectResults = index->SelectKey(qe.values, qe.condition, sortId, type, ctx);
+			}
 		}
 		for (auto res : selectResults) {
 			switch (qe.op) {

@@ -32,7 +32,7 @@ public:
 template <typename T>
 class IndexText : public IndexUnordered<T> {
 public:
-	IndexText(IndexType _type, const string& _name);
+	IndexText(IndexType _type, const string& _name, const IndexOpts& opts);
 	IndexText(const IndexText<T>& other);
 
 	template <typename U = T>
@@ -44,11 +44,11 @@ public:
 
 	SelectKeyResults SelectKey(const KeyValues& keys, CondType condition, SortType stype, Index::ResultType res_type,
 							   BaseFunctionCtx::Ptr ctx) override final;
-	void Commit(const CommitContext& ctx) override final;
+	bool Commit(const CommitContext& ctx) override final;
 	void UpdateSortedIds(const UpdateSortedContext&) override {}
-	void Configure(const string& config) override;
 	virtual IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) = 0;
 	virtual void Commit() = 0;
+	void SetOpts(const IndexOpts& opts) override final;
 
 protected:
 	struct VDocEntry {

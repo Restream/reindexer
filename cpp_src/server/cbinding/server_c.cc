@@ -8,27 +8,19 @@
 using namespace reindexer_server;
 using std::string;
 using reindexer::Error;
-using shared_reindexer = shared_ptr<Reindexer>;
 
-static Server* svc = nullptr;
+static shared_ptr<Server> svc;
 static Error err_not_init(-1, "Reindexer server has not initialized");
 
 struct server_access {
-	static Reindexer* get_reindexer_instance(const string& dbname, const string& user, const string& password, Error& err) {
-		err = err_not_init;
-		if (!svc) return nullptr;
-
-		if (svc->dbMgr_) {
-			auto& mgr = svc->dbMgr_;
+	static Error get_reindexer_instance(const string& dbname, const string& user, const string& password, shared_ptr<Reindexer>& rx) {
+		Error err = err_not_init;
+		if (check_server_ready()) {
 			AuthContext ctx(user, password);
-			err = mgr->OpenDatabase(dbname, ctx, true);
-			if (err.ok()) {
-				shared_reindexer db;
-				err = ctx.GetDB(kRoleOwner, &db);
-				if (err.ok()) return db.get();
-			}
+			err = svc->dbMgr_->OpenDatabase(dbname, ctx, true);
+			if (err.ok()) err = ctx.GetDB(kRoleOwner, &rx);
 		}
-		return nullptr;
+		return err;
 	}
 
 	static bool check_server_ready() { return svc && svc->storageLoaded_.load(); }
@@ -44,20 +36,15 @@ static reindexer_error error2c(const Error& err_) {
 static string str2c(reindexer_string gs) { return string(reinterpret_cast<const char*>(gs.p), gs.n); }
 
 void init_reindexer_server() {
-	if (svc) {
-		abort();
-	}
-	svc = new Server;
+	if (svc) return;
+	svc = std::make_shared<Server>();
 	setvbuf(stdout, nullptr, _IONBF, 0);
 	setvbuf(stderr, nullptr, _IONBF, 0);
 	setlocale(LC_CTYPE, "");
 	setlocale(LC_NUMERIC, "C");
 }
 
-void destroy_reindexer_server() {
-	delete svc;
-	svc = nullptr;
-}
+void destroy_reindexer_server() { svc.reset(); }
 
 reindexer_error start_reindexer_server(reindexer_string _config) {
 	Error err = err_not_init;
@@ -71,11 +58,11 @@ reindexer_error start_reindexer_server(reindexer_string _config) {
 
 int check_server_ready() { return server_access::check_server_ready() ? 1 : 0; }
 
-void* get_reindexer_instance(reindexer_string _dbname, reindexer_string _user, reindexer_string _pass) {
-	Error err;
-	Reindexer* ret = server_access::get_reindexer_instance(str2c(_dbname), str2c(_user), str2c(_pass), err);
-	// if (!err.ok()) printf("ERROR: %s\n", err.what().c_str());
-	return err.ok() ? ret : nullptr;
+reindexer_error get_reindexer_instance(reindexer_string _dbname, reindexer_string _user, reindexer_string _pass, uintptr_t* rx) {
+	shared_ptr<Reindexer> target_db;
+	Error err = server_access::get_reindexer_instance(str2c(_dbname), str2c(_user), str2c(_pass), target_db);
+	*rx = err.ok() ? reinterpret_cast<uintptr_t>(target_db.get()) : 0;
+	return error2c(err);
 }
 
 reindexer_error stop_reindexer_server() {

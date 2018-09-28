@@ -82,6 +82,7 @@ enum ErrorCode {
 	errWasRelock,
 	errNotValid,
 	errNetwork,
+	errNotFound
 };
 
 enum OpType { OpOr = 1, OpAnd = 2, OpNot = 3 };
@@ -112,15 +113,10 @@ enum {
 	kResultsWithCJson = 0x2,
 	kResultsWithJson = 0x3,
 	kResultsWithPayloadTypes = 0x8,
+	kResultsPTWithJsonPaths = 0x10
 };
 
-typedef enum IndexOpt {
-	kIndexOptPK = 1 << 7,
-	kIndexOptArray = 1 << 6,
-	kIndexOptDense = 1 << 5,
-	kIndexOptAppendable = 1 << 4,
-	kIndexOptSparse = 1 << 3
-} IndexOpt;
+typedef enum IndexOpt { kIndexOptPK = 1 << 7, kIndexOptArray = 1 << 6, kIndexOptDense = 1 << 5, kIndexOptSparse = 1 << 3 } IndexOpt;
 
 typedef enum StotageOpt {
 	kStorageOptEnabled = 1 << 0,
@@ -139,6 +135,7 @@ typedef struct IndexOptsC {
 	uint8_t options;
 	uint8_t collate;
 	const char* sortOrderLetters;
+	const char* config;
 } IndexOptsC;
 
 typedef struct StorageOpts {

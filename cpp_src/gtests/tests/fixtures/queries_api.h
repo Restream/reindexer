@@ -33,6 +33,7 @@ public:
 			{kFieldNameEndTime, IndexOpts()},
 			{kFieldNameStartTime, IndexOpts()},
 			{kFieldNamePhone, IndexOpts()},
+			{kFieldNameBtreeIdsets, IndexOpts()},
 			{kFieldNameTemp, IndexOpts().PK().SetCollateMode(CollateASCII)},
 			{kFieldNameNumeric, IndexOpts().SetCollateMode(CollateUTF8)},
 			{string(kFieldNameId + compositePlus + kFieldNameTemp), IndexOpts()},
@@ -58,6 +59,7 @@ public:
 								   IndexDeclaration{kFieldNameLocation, "tree", "string", indexesOptions[kFieldNameLocation]},
 								   IndexDeclaration{kFieldNameEndTime, "hash", "int", indexesOptions[kFieldNameEndTime]},
 								   IndexDeclaration{kFieldNameStartTime, "tree", "int", indexesOptions[kFieldNameStartTime]},
+								   IndexDeclaration{kFieldNameBtreeIdsets, "hash", "int", indexesOptions[kFieldNameBtreeIdsets]},
 								   IndexDeclaration{kFieldNameTemp, "tree", "string", indexesOptions[kFieldNameTemp]},
 								   IndexDeclaration{kFieldNameNumeric, "tree", "string", indexesOptions[kFieldNameNumeric]},
 								   IndexDeclaration{string(kFieldNameId + compositePlus + kFieldNameTemp).c_str(), "tree", "composite",
@@ -503,12 +505,15 @@ protected:
 		item[kFieldNameEndTime] = stTime + (rand() % 5) * 1000;
 		item[kFieldNameActor] = RandString().c_str();
 		item[kFieldNameNumeric] = to_string(rand() % 1000);
+		item[kFieldNameBtreeIdsets] = currBtreeIdsetsValue;
+
+		if (idValue % 200) currBtreeIdsetsValue = rand() % 10000;
 
 		return item;
 	}
 
 	void CheckStandartQueries() {
-		const char* sortIdxs[] = {kFieldNameName, kFieldNameYear, kFieldNameRate};
+		const char* sortIdxs[] = {kFieldNameName, kFieldNameYear, kFieldNameRate, kFieldNameBtreeIdsets};
 		const vector<string> distincts = {kFieldNameYear, kFieldNameRate};
 		const vector<bool> sortOrders = {true, false};
 
@@ -567,6 +572,21 @@ protected:
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.Where(kFieldNameRate, CondLt, static_cast<double>(rand() % 100) / 10)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameBtreeIdsets, CondLt, static_cast<int>(rand() % 10000))
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameBtreeIdsets, CondGt, static_cast<int>(rand() % 10000))
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameBtreeIdsets, CondEq, static_cast<int>(rand() % 10000))
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder));
 
@@ -750,9 +770,19 @@ protected:
 					ExecuteAndVerify(testSimpleNs,
 									 Query(testSimpleNs).Where(kFieldNameYear, CondEq, 2002).Not().Where(kFieldNameName, CondEq, "MMM"));
 
-					ExecuteAndVerify(
-						default_namespace,
-						Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondLe, {{KeyValue(27), KeyValue(10000)}}));
+					ExecuteAndVerify(default_namespace,
+									 Query(default_namespace)
+										 .ReqTotal()
+										 .Distinct(distinct)
+										 .Sort(sortIdx, sortOrder)
+										 .WhereComposite(compositeIndexName.c_str(), CondLe, {{KeyValue(27), KeyValue(10000)}}));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.ReqTotal()
+															.Distinct(distinct)
+															.Sort(sortIdx, sortOrder)
+															.WhereComposite(compositeIndexName.c_str(), CondEq,
+																			{{KeyValue(rand() % 10), KeyValue(rand() % 50)}}));
 				}
 			}
 		}
@@ -1003,6 +1033,7 @@ protected:
 	const char* kFieldNameTitle = "title";
 	const char* kFieldNamePages = "pages";
 	const char* kFieldNamePrice = "price";
+	const char* kFieldNameBtreeIdsets = "btree_idsets";
 
 	const char* kFieldNameColumnInt = "columnInt";
 	const char* kFieldNameColumnInt64 = "columnInt64";
@@ -1023,4 +1054,6 @@ protected:
 	vector<string> simpleTestNsPks;
 	vector<string> compositeIndexesNsPks;
 	vector<string> comparatorsNsPks;
+
+	int currBtreeIdsetsValue = rand() % 10000;
 };

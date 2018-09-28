@@ -119,12 +119,6 @@ Error Server::init() {
 #endif
 
 	logLevel_ = logLevelFromString(config_.LogLevel);
-	err = loggerConfigure();
-	if (!err.ok()) {
-		std::cerr << err.what() << std::endl;
-		return EXIT_FAILURE;
-	}
-
 	return 0;
 }
 
@@ -177,10 +171,12 @@ int Server::Start() {
 
 void Server::Stop() {
 	running_ = false;
+	loop_.break_loop();
 	async_.send();
 }
 
 int Server::run() {
+	loggerConfigure();
 	if (running_) {
 		logger_.warn("attempting to start server, but already started.");
 		return -1;
@@ -206,8 +202,6 @@ int Server::run() {
 	}
 
 	initCoreLogger();
-
-	ev::dynamic_loop loop;
 	try {
 		dbMgr_.reset(new DBManager(config_.StoragePath, !config_.EnableSecurity));
 
@@ -229,18 +223,17 @@ int Server::run() {
 #endif
 		LoggerWrapper httpLogger("http");
 		HTTPServer httpServer(*dbMgr_, config_.WebRoot, httpLogger, config_.DebugAllocs, config_.DebugPprof);
-		if (!httpServer.Start(config_.HTTPAddr, loop)) {
+		if (!httpServer.Start(config_.HTTPAddr, loop_)) {
 			logger_.error("Can't listen HTTP on '{0}'", config_.HTTPAddr);
 			return EXIT_FAILURE;
 		}
 
 		LoggerWrapper rpcLogger("rpc");
 		RPCServer rpcServer(*dbMgr_, rpcLogger, config_.DebugAllocs);
-		if (!rpcServer.Start(config_.RPCAddr, loop)) {
+		if (!rpcServer.Start(config_.RPCAddr, loop_)) {
 			logger_.error("Can't listen RPC on '{0}'", config_.RPCAddr);
 			return EXIT_FAILURE;
 		}
-
 		running_ = true;
 		auto sigCallback = [&](ev::sig &sig) {
 			logger_.info("Signal received. Terminating...");
@@ -251,10 +244,10 @@ int Server::run() {
 		ev::sig sterm, sint, shup;
 
 		if (enableHandleSignals_) {
-			sterm.set(loop);
+			sterm.set(loop_);
 			sterm.set(sigCallback);
 			sterm.start(SIGTERM);
-			sint.set(loop);
+			sint.set(loop_);
 			sint.set(sigCallback);
 			sint.start(SIGINT);
 #ifndef _WIN32
@@ -262,18 +255,18 @@ int Server::run() {
 				(void)sig;
 				loggerReopen();
 			};
-			shup.set(loop);
+			shup.set(loop_);
 			shup.set(sigHupCallback);
 			shup.start(SIGHUP);
 #endif
 		}
 
-		async_.set(loop);
+		async_.set(loop_);
 		async_.set([](ev::async &a) { a.loop.break_loop(); });
-		while (running_) {
-			loop.run();
-		}
 
+		while (running_) {
+			loop_.run();
+		}
 		logger_.info("Reindexer server terminating...");
 
 		rpcServer.Stop();
@@ -324,6 +317,7 @@ Error Server::daemonize() {
 Error Server::loggerConfigure() {
 	spdlog::drop_all();
 	spdlog::set_async_mode(4096, spdlog::async_overflow_policy::block_retry, nullptr, std::chrono::seconds(2));
+	spdlog::set_level(spdlog::level::trace);
 
 	vector<pair<string, string>> loggers = {
 		{"server", config_.ServerLog}, {"core", config_.CoreLog}, {"http", config_.HttpLog}, {"rpc", config_.RpcLog}};

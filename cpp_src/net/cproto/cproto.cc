@@ -18,6 +18,7 @@ std::unordered_map<int, const char *> kRPCCodes = {
 	{kCmdEnumNamespaces, "EnumNamespaces"},
 	{kCmdConfigureIndex, "ConfigureIndex"},
 	{kCmdDropIndex, "DropIndex"},
+	{kCmdUpdateIndex, "UpdateIndex"},
 	{kCmdCommit, "Commit"},
 	{kCmdModifyItem, "ModifyItem"},
 	{kCmdDeleteQuery, "DeleteQuery"},

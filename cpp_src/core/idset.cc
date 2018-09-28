@@ -12,7 +12,6 @@ void IdSet::Commit(const CommitContext& ctx) {
 		resize(0);
 		reserve(set_->size() * (ctx.getSortedIdxCount() + 1));
 		for (auto id : *set_) push_back(id);
-		//	set_ = nullptr;
 	} else {
 		auto sz = size();
 		auto expCap = sz * (ctx.getSortedIdxCount() + 1);
@@ -22,6 +21,7 @@ void IdSet::Commit(const CommitContext& ctx) {
 			resize(sz);
 		}
 	}
+	usingBtree_ = false;
 }
 
 string IdSetPlain::Dump() {

@@ -6,7 +6,6 @@
 #include "client/queryresults.h"
 #include "core/query/queryresults.h"
 #include "tools/errors.h"
-#include "tools/serializer.h"
 
 namespace reindexer_tool {
 
@@ -63,6 +62,5 @@ protected:
 
 string escapeName(const string_view& str);
 string unescapeName(const string_view& str);
-void prettyPrintJSON(string json, WrSerializer& ser);
 
 }  // namespace reindexer_tool

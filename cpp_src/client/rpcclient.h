@@ -37,6 +37,7 @@ public:
 	Error CloseNamespace(const string &_namespace);
 	Error DropNamespace(const string &_namespace);
 	Error AddIndex(const string &_namespace, const IndexDef &index);
+	Error UpdateIndex(const string &_namespace, const IndexDef &index);
 	Error DropIndex(const string &_namespace, const string &index);
 	Error EnumNamespaces(vector<NamespaceDef> &defs, bool bEnumAll);
 	Error ConfigureIndex(const string &_namespace, const string &index, const string &config);

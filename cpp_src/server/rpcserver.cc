@@ -179,6 +179,15 @@ Error RPCServer::AddIndex(cproto::Context &ctx, p_string ns, p_string indexDef) 
 	return getDB(ctx, kRoleDBAdmin)->AddIndex(ns.toString(), iDef);
 }
 
+Error RPCServer::UpdateIndex(cproto::Context &ctx, p_string ns, p_string indexDef) {
+	IndexDef iDef;
+	auto err = iDef.FromJSON(const_cast<char *>(indexDef.toString().c_str()));
+	if (!err.ok()) {
+		return err;
+	}
+	return getDB(ctx, kRoleDBAdmin)->UpdateIndex(ns.toString(), iDef);
+}
+
 Error RPCServer::DropIndex(cproto::Context &ctx, p_string ns, p_string index) {
 	return getDB(ctx, kRoleDBAdmin)->DropIndex(ns.toString(), index.toString());
 }
@@ -423,6 +432,7 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	dispatcher.Register(cproto::kCmdEnumNamespaces, this, &RPCServer::EnumNamespaces);
 
 	dispatcher.Register(cproto::kCmdAddIndex, this, &RPCServer::AddIndex);
+	dispatcher.Register(cproto::kCmdUpdateIndex, this, &RPCServer::UpdateIndex);
 	dispatcher.Register(cproto::kCmdDropIndex, this, &RPCServer::DropIndex);
 	dispatcher.Register(cproto::kCmdConfigureIndex, this, &RPCServer::ConfigureIndex);
 	dispatcher.Register(cproto::kCmdCommit, this, &RPCServer::Commit);

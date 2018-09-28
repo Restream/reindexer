@@ -66,6 +66,10 @@ func (binding *NetCProto) Init(u *url.URL, options ...interface{}) (err error) {
 	return
 }
 
+func (binding *NetCProto) Clone() bindings.RawBinding {
+	return &NetCProto{}
+}
+
 func (binding *NetCProto) Ping() error {
 	return binding.rpcCallNoResults(opRd, cmdPing)
 }
@@ -80,36 +84,25 @@ func (binding *NetCProto) ModifyItem(nsHash int, data []byte, mode int) (binding
 	return buf, nil
 }
 
-type storageOpts struct {
-	EnableStorage     bool `json:"enabled"`
-	DropOnFormatError bool `json:"drop_on_file_format_error"`
-	CreateIfMissing   bool `json:"create_if_missing"`
-}
-type nsDef struct {
-	Namespace string      `json:"name"`
-	SOpts     storageOpts `json:"storage"`
-	CacheMode uint8       `json:"cached_mode"`
-}
-
 func (binding *NetCProto) OpenNamespace(namespace string, enableStorage, dropOnFormatError bool, cacheMode uint8) error {
-
-	sops := storageOpts{
+	storageOtps := bindings.StorageOpts{
 		EnableStorage:     enableStorage,
 		DropOnFormatError: dropOnFormatError,
 		CreateIfMissing:   true,
 	}
-	nsdef := nsDef{
-		SOpts:     sops,
-		CacheMode: cacheMode,
-		Namespace: namespace,
+
+	namespaceDef := bindings.NamespaceDef{
+		StorageOpts: storageOtps,
+		CacheMode:   cacheMode,
+		Namespace:   namespace,
 	}
 
-	bsnsdef, err := json.Marshal(nsdef)
+	bNamespaceDef, err := json.Marshal(namespaceDef)
 	if err != nil {
 		return err
 	}
 
-	return binding.rpcCallNoResults(opWr, cmdOpenNamespace, namespace, bsnsdef)
+	return binding.rpcCallNoResults(opWr, cmdOpenNamespace, namespace, bNamespaceDef)
 }
 
 func (binding *NetCProto) CloseNamespace(namespace string) error {
@@ -120,54 +113,22 @@ func (binding *NetCProto) DropNamespace(namespace string) error {
 	return binding.rpcCallNoResults(opWr, cmdDropNamespace, namespace)
 }
 
-type indexDef struct {
-	Name         string `json:"name"`
-	JSONPath     string `json:"json_path"`
-	IndexType    string `json:"index_type"`
-	FieldType    string `json:"field_type"`
-	IsPK         bool   `json:"is_pk"`
-	IsArray      bool   `json:"is_array"`
-	IsDense      bool   `json:"is_dense"`
-	IsSparse     bool   `json:"is_sparse"`
-	IsAppendable bool   `json:"is_appendable"`
-	CollateMode  string `json:"collate_mode"`
-	SortOrder    string `json:"sort_order_letters"`
-}
-
-func (binding *NetCProto) AddIndex(namespace, index, jsonPath, indexType, fieldType string, opts bindings.IndexOptions, collateMode int, sortOrder string) error {
-
-	cm := ""
-	switch collateMode {
-	case bindings.CollateASCII:
-		cm = "ascii"
-	case bindings.CollateUTF8:
-		cm = "utf8"
-	case bindings.CollateNumeric:
-		cm = "numeric"
-	case bindings.CollateCustom:
-		cm = "custom"
-	}
-
-	idef := indexDef{
-		Name:         index,
-		JSONPath:     jsonPath,
-		IndexType:    indexType,
-		FieldType:    fieldType,
-		IsArray:      opts.IsArray(),
-		IsPK:         opts.IsPK(),
-		IsDense:      opts.IsDense(),
-		IsSparse:     opts.IsSparse(),
-		IsAppendable: opts.IsAppendable(),
-		CollateMode:  cm,
-		SortOrder:    sortOrder,
-	}
-
-	bidef, err := json.Marshal(idef)
+func (binding *NetCProto) AddIndex(namespace string, indexDef bindings.IndexDef) error {
+	bIndexDef, err := json.Marshal(indexDef)
 	if err != nil {
 		return err
 	}
 
-	return binding.rpcCallNoResults(opWr, cmdAddIndex, namespace, bidef)
+	return binding.rpcCallNoResults(opWr, cmdAddIndex, namespace, bIndexDef)
+}
+
+func (binding *NetCProto) UpdateIndex(namespace string, indexDef bindings.IndexDef) error {
+	bIndexDef, err := json.Marshal(indexDef)
+	if err != nil {
+		return err
+	}
+
+	return binding.rpcCallNoResults(opWr, cmdUpdateIndex, namespace, bIndexDef)
 }
 
 func (binding *NetCProto) DropIndex(namespace, index string) error {
@@ -266,6 +227,10 @@ func (binding *NetCProto) DisableLogger() {
 
 func (binding *NetCProto) EnableStorage(path string) error {
 	fmt.Println("cproto binding EnableStorage method is dummy")
+	return nil
+}
+
+func (binding *NetCProto) Finalize() error {
 	return nil
 }
 

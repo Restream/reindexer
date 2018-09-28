@@ -28,6 +28,7 @@ Error Reindexer::ConfigureIndex(const string& nsName, const string& index, const
 	return impl_->ConfigureIndex(nsName, index, config);
 }
 Error Reindexer::AddIndex(const string& nsName, const IndexDef& idx) { return impl_->AddIndex(nsName, idx); }
+Error Reindexer::UpdateIndex(const string& nsName, const IndexDef& idx) { return impl_->UpdateIndex(nsName, idx); }
 Error Reindexer::DropIndex(const string& nsName, const string& index) { return impl_->DropIndex(nsName, index); }
 Error Reindexer::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll) { return impl_->EnumNamespaces(defs, bEnumAll); }
 

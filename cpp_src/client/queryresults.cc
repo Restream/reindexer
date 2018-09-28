@@ -36,12 +36,13 @@ QueryResults::QueryResults(net::cproto::ClientConnection *conn, const NSArray &n
 		bool skip = nsArray[nsIdx]->tagsMatcher_.version() >= version && nsArray[nsIdx]->tagsMatcher_.cacheToken() == cacheToken;
 		if (skip) {
 			TagsMatcher().deserialize(ser);
-			PayloadType("tmp").clone()->deserialize(ser);
+			// PayloadType("tmp").clone()->deserialize(ser);
 		} else {
 			nsArray[nsIdx]->tagsMatcher_.deserialize(ser, version, cacheToken);
-			nsArray[nsIdx]->payloadType_.clone()->deserialize(ser);
-			nsArray[nsIdx]->tagsMatcher_.updatePayloadType(nsArray[nsIdx]->payloadType_, false);
+			// nsArray[nsIdx]->payloadType_.clone()->deserialize(ser);
+			// nsArray[nsIdx]->tagsMatcher_.updatePayloadType(nsArray[nsIdx]->payloadType_, false);
 		}
+		PayloadType("tmp").clone()->deserialize(ser);
 	});
 
 	rawResult = rawResult.substr(ser.Pos());

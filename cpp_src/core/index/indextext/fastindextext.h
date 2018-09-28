@@ -12,7 +12,7 @@ using std::unique_ptr;
 template <typename T>
 class FastIndexText : public IndexText<T> {
 public:
-	FastIndexText(IndexType _type, const string& _name) : IndexText<T>(_type, _name) { CreateConfig(); }
+	FastIndexText(IndexType _type, const string& _name, const IndexOpts& opts) : IndexText<T>(_type, _name, opts) { CreateConfig(); }
 	FastIndexText(const FastIndexText<T>& other) : IndexText<T>(other) { CreateConfig(other.GetConfig()); }
 
 	template <typename U = T>

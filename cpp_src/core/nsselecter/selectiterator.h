@@ -4,6 +4,8 @@
 
 namespace reindexer {
 
+/// Allows to iterate over a result of selecting
+/// data for one certain key.
 class SelectIterator : public SelectKeyResult {
 public:
 	enum {
@@ -17,15 +19,20 @@ public:
 		Unsorted,
 	};
 
-	SelectIterator() {}
-	SelectIterator(const SelectKeyResult &res, OpType _op, bool _distinct, const string &_name, bool forcedFirst = false)
-		: SelectKeyResult(res), op(_op), distinct(_distinct), name(_name), forcedFirst_(forcedFirst), type_(Forward) {}
+	SelectIterator();
+	SelectIterator(const SelectKeyResult &res, OpType _op, bool _distinct, const string &_name, bool forcedFirst = false);
 
-	// Iteration
-	void SetUnsorted() { is_unsorted = true; }
+	/// Starts iteration process: prepares
+	/// object for further work.
+	/// @param reverse - direction of iteration.
 	void Start(bool reverse);
-	bool End() { return lastVal_ == (reverse_ ? INT_MIN : INT_MAX) && !comparators_.size(); }
-	bool Next(IdType minHint) {
+	/// Signalizes if iteration is over.
+	/// @return true if iteration is done.
+	inline bool End() { return lastVal_ == (isReverse_ ? INT_MIN : INT_MAX) && !comparators_.size(); }
+	/// Iterates to a next item of result.
+	/// @param minHint - rowId value to start from.
+	/// @return true if operation succeed.
+	inline bool Next(IdType minHint) {
 		bool res = false;
 		switch (type_) {
 			case Forward:
@@ -55,44 +62,85 @@ public:
 		if (res) matchedCount_++;
 		return res;
 	}
-	// Iteration values
-	int Val() { return lastVal_; }
-	int Pos() { return lastIt_->it_ - lastIt_->begin_ - 1; }
 
-	// Comparators stuff
+	/// Sets Unsorted iteration mode
+	inline void SetUnsorted() { isUnsorted = true; }
+
+	/// Current rowId
+	int Val() const { return lastVal_; }
+	/// Current rowId index since the beginning
+	/// of current SingleKeyValue object.
+	int Pos() const {
+		assert(!lastIt_->useBtree_);
+		return lastIt_->it_ - lastIt_->begin_ - 1;
+	}
+
+	/// Binding to comparators
+	/// @param type - PayloadType of selected ns.
+	/// @param field - field index.
 	void Bind(PayloadType type, int field);
-	bool TryCompare(const PayloadValue &pl, int idx) {
+	/// Uses each comparator to compare with pl.
+	/// @param pl - PayloadValue to be compared.
+	/// @param rowId - rowId.
+	inline bool TryCompare(const PayloadValue &pl, int rowId) {
 		for (auto &cmp : comparators_)
-			if (cmp.Compare(pl, idx)) {
+			if (cmp.Compare(pl, rowId)) {
 				matchedCount_++;
 				return true;
 			}
 		return false;
 	}
+	/// @return amonut of matched items
 	int GetMatchedCount() { return matchedCount_; }
+
+	/// Excludes last set of ids from each result
+	/// to remove duplicated keys
 	void ExcludeLastSet();
+
+	/// Appends result to an existing set.
+	/// @param other - results to add.
 	void Append(SelectKeyResult &other);
+	/// Appends result to existing set performing
+	/// binding to comparators at the same time.
+	/// @param other - results to add.
+	/// @param type - PayloadType of selected ns to bind.
+	/// @param field - field idx to bind.
 	void AppendAndBind(SelectKeyResult &other, PayloadType type, int field);
-	double Cost(int totalIds) const;
+	/// Cost value used for sorting: object with a smaller
+	/// cost goes before others.
+	double Cost(int expectedIterations) const;
+
+	/// Returns total amount of rowIds in all
+	/// the SingleSelectKeyResult objects, i.e.
+	/// maximum amonut of possible iterations.
+	/// @return amount of loops.
 	int GetMaxIterations() const;
+	/// Switches SingleSelectKeyResult to btree search
+	/// mode if it's more efficient than just comparing
+	/// each object in sequence.
 	void SetExpectMaxIterations(int expectedIterations_);
+
+	const char *TypeName() const;
+	string Dump() const;
 
 	OpType op;
 	bool distinct;
 	string name;
 
 protected:
-	bool nextUnsorted();
-
+	// Iterates to a next item of result
+	// depending on iterator type starting
+	// from minHint which is the least rowId.
 	bool nextFwd(IdType minHint);
 	bool nextRev(IdType minHint);
 	bool nextFwdSingleRange(IdType minHint);
 	bool nextFwdSingleIdset(IdType minHint);
 	bool nextRevSingleRange(IdType minHint);
 	bool nextRevSingleIdset(IdType minHint);
-	bool is_unsorted = false;
+	bool nextUnsorted();
 
-	bool reverse_ = false;
+	bool isUnsorted = false;
+	bool isReverse_ = false;
 	bool forcedFirst_;
 	int type_;
 	IdType lastVal_ = INT_MIN;

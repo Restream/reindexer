@@ -52,6 +52,10 @@ public:
 	/// @param nsName - Name of namespace
 	/// @param index - IndexDef with index name and parameters
 	Error AddIndex(const string &nsName, const IndexDef &index);
+	/// Update index in namespace
+	/// @param nsName - Name of namespace
+	/// @param index - IndexDef with index name and parameters
+	Error UpdateIndex(const string &nsName, const IndexDef &index);
 	/// Drop index from namespace
 	/// @param nsName - Name of namespace
 	/// @param index - index name

@@ -1,10 +1,86 @@
 #include <string.h>
 #include <tools/errors.h>
+#include <cmath>
 #include <vector>
 #include "gason/gason.h"
 #include "stringstools.h"
+#include "tools/serializer.h"
 
 namespace reindexer {
+
+void jsonValueToString(JsonValue o, WrSerializer &ser, int shift, int indent) {
+	switch (o.getTag()) {
+		case JSON_NUMBER: {
+			double value = o.toNumber();
+			double intpart;
+			if (std::modf(value, &intpart) == 0.0) {
+				if (value < 0.0) {
+					ser.Printf("%d", static_cast<int>(value));
+				} else {
+					ser.Printf("%u", static_cast<unsigned>(value));
+				}
+			} else {
+				ser.Printf("%g", value);
+			}
+			break;
+		}
+		case JSON_STRING:
+			ser.PrintJsonString(o.toString());
+			break;
+		case JSON_ARRAY:
+			if (!o.toNode()) {
+				ser.Printf("[]");
+				break;
+			}
+			ser.Printf("[\n");
+			for (auto i : o) {
+				ser.Printf("%*s", indent + shift, "");
+				jsonValueToString(i->value, ser, shift, indent + shift);
+				ser.Printf(i->next ? ",\n" : "\n");
+			}
+			ser.Printf("%*s]", indent, "");
+			break;
+		case JSON_OBJECT:
+			if (!o.toNode()) {
+				ser.Printf("{}");
+				break;
+			}
+			ser.Printf("{\n");
+			for (auto i : o) {
+				ser.Printf("%*s", indent + shift, "");
+				ser.PrintJsonString(i->key);
+				ser.Printf(": ");
+				jsonValueToString(i->value, ser, shift, indent + shift);
+				ser.Printf(i->next ? ",\n" : "\n");
+			}
+			ser.Printf("%*s}", indent, "");
+			break;
+		case JSON_TRUE:
+			ser.Printf("true");
+			break;
+		case JSON_FALSE:
+			ser.Printf("false");
+			break;
+		case JSON_NULL:
+			ser.Printf("null");
+			break;
+	}
+}
+
+void prettyPrintJSON(string json, WrSerializer &ser, int shift) {
+	char *endptr;
+	JsonValue value;
+	JsonAllocator allocator;
+	jsonParse(const_cast<char *>(json.c_str()), &endptr, &value, allocator);
+	jsonValueToString(value, ser, shift, 0);
+}
+
+string stringifyJson(const JsonNode *elem) {
+	WrSerializer ser(true);
+	jsonValueToString(elem->value, ser, 0, 0);
+
+	return ser.Slice().ToString();
+}
 
 void parseJsonField(const char *name, string &ref, const JsonNode *elem) {
 	if (strcmp(name, elem->key)) return;

@@ -462,6 +462,8 @@ func CheckTestItemsQueries() {
 					Not().Where("name", reindexer.EQ, "sss").
 					ExecAndVerify()
 
+				newTestQuery(DB, "test_items").Where("end_time", reindexer.GT, 10000).Not().Where("genre", reindexer.EQ, 10).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
+
 				compositeValues := []interface{}{[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)}}
 
 				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().

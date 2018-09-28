@@ -13,7 +13,7 @@ using std::unique_ptr;
 template <typename T>
 class FuzzyIndexText : public IndexText<T> {
 public:
-	FuzzyIndexText(IndexType _type, const string& _name) : IndexText<T>(_type, _name) { CreateConfig(); }
+	FuzzyIndexText(IndexType _type, const string& _name, const IndexOpts& opts) : IndexText<T>(_type, _name, opts) { CreateConfig(); }
 	FuzzyIndexText(const FuzzyIndexText<T>& other) : IndexText<T>(other) { CreateConfig(other.GetConfig()); }
 
 	template <typename U = T>

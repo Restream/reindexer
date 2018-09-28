@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -16,6 +17,7 @@ import (
 )
 
 var defaultStartupTimeout time.Duration = time.Minute * 3
+var defaultShutdownTimeout time.Duration = defaultStartupTimeout
 
 func init() {
 	C.init_reindexer_server()
@@ -40,14 +42,38 @@ func checkStorageReady() bool {
 }
 
 type BuiltinServer struct {
-	builtin bindings.RawBinding
-	ready   chan bool
+	builtin         bindings.RawBinding
+	wg              sync.WaitGroup
+	shutdownTimeout time.Duration
+}
+
+func (server *BuiltinServer) stopServer(timeout time.Duration) error {
+	if err := err2go(C.stop_reindexer_server()); err != nil {
+		return err
+	}
+
+	c := make(chan struct{})
+	go func() {
+		defer close(c)
+		server.wg.Wait()
+	}()
+
+	select {
+	case <-c:
+		return nil
+	case <-time.After(timeout):
+		return bindings.NewError("Shutdown server timeout is expired", bindings.ErrLogic)
+	}
 }
 
 func (server *BuiltinServer) Init(u *url.URL, options ...interface{}) error {
-	server.builtin = &builtin.Builtin{}
+	if server.builtin != nil {
+		return bindings.NewError("already initialized", bindings.ErrConflict)
+	}
 
+	server.builtin = &builtin.Builtin{}
 	startupTimeout := defaultStartupTimeout
+	server.shutdownTimeout = defaultShutdownTimeout
 	serverCfg := config.DefaultServerConfig()
 
 	for _, option := range options {
@@ -60,6 +86,9 @@ func (server *BuiltinServer) Init(u *url.URL, options ...interface{}) error {
 			if v.ServerConfig != nil {
 				serverCfg = v.ServerConfig
 			}
+			if v.ShutdownTimeout != 0 {
+				server.shutdownTimeout = v.ShutdownTimeout
+			}
 		default:
 			fmt.Printf("Unknown builtinserver option: %v\n", option)
 		}
@@ -70,7 +99,9 @@ func (server *BuiltinServer) Init(u *url.URL, options ...interface{}) error {
 		return err
 	}
 
+	server.wg.Add(1)
 	go func() {
+		defer server.wg.Done()
 		err := err2go(C.start_reindexer_server(str2c(yamlStr)))
 		if err != nil {
 			panic(err)
@@ -86,18 +117,21 @@ func (server *BuiltinServer) Init(u *url.URL, options ...interface{}) error {
 	}
 
 	pass, _ := u.User.Password()
-	server.builtin.(*builtin.Builtin).SetReindexerInstance(
-		unsafe.Pointer(C.get_reindexer_instance(str2c(u.Host), str2c(u.User.Username()), str2c(pass))),
-	)
+
+	var rx C.uintptr_t = 0
+	if err := err2go(C.get_reindexer_instance(str2c(u.Host), str2c(u.User.Username()), str2c(pass), &rx)); err != nil {
+		return err
+	}
 
 	url := *u
 	url.Path = ""
 
-	if err := server.builtin.Init(&url, options...); err != nil {
-		return err
-	}
+	options = append(options, bindings.OptionReindexerInstance{Instance: uintptr(rx)})
+	return server.builtin.Init(&url, options...)
+}
 
-	return nil
+func (server *BuiltinServer) Clone() bindings.RawBinding {
+	return &BuiltinServer{}
 }
 
 func (server *BuiltinServer) OpenNamespace(namespace string, enableStorage, dropOnFileFormatError bool, cacheMode uint8) error {
@@ -116,8 +150,12 @@ func (server *BuiltinServer) EnableStorage(namespace string) error {
 	return server.builtin.EnableStorage(namespace)
 }
 
-func (server *BuiltinServer) AddIndex(namespace, index, jsonPath, indexType, fieldType string, opts bindings.IndexOptions, collateMode int, sortOrderStr string) error {
-	return server.builtin.AddIndex(namespace, index, jsonPath, indexType, fieldType, opts, collateMode, sortOrderStr)
+func (server *BuiltinServer) AddIndex(namespace string, indexDef bindings.IndexDef) error {
+	return server.builtin.AddIndex(namespace, indexDef)
+}
+
+func (server *BuiltinServer) UpdateIndex(namespace string, indexDef bindings.IndexDef) error {
+	return server.builtin.UpdateIndex(namespace, indexDef)
 }
 
 func (server *BuiltinServer) DropIndex(namespace, index string) error {
@@ -162,6 +200,16 @@ func (server *BuiltinServer) EnableLogger(logger bindings.Logger) {
 
 func (server *BuiltinServer) DisableLogger() {
 	server.builtin.DisableLogger()
+}
+
+func (server *BuiltinServer) Finalize() error {
+	if err := server.stopServer(server.shutdownTimeout); err != nil {
+		return err
+	}
+	C.destroy_reindexer_server()
+	server.builtin = nil
+	server.shutdownTimeout = 0
+	return nil
 }
 
 func (server *BuiltinServer) Ping() error {

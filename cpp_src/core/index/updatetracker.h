@@ -23,8 +23,8 @@ struct is_safe_iterators_map<unordered_str_map<T1>> : std::true_type {};
 template <typename T>
 class UpdateTracker {
 public:
-	UpdateTracker(const UpdateTracker<T> &other) : completeUpdated_(other.updated_.size() || other.completeUpdated_) {}
-	UpdateTracker() {}
+	UpdateTracker() = default;
+	UpdateTracker(const UpdateTracker<T> &other) : completeUpdate_(other.updated_.size() || other.completeUpdate_) {}
 	UpdateTracker &operator=(const UpdateTracker<T> &other) = delete;
 
 	// Partial update of index routines. Thera 2 implementations:
@@ -36,34 +36,39 @@ public:
 
 	template <typename U = T, typename std::enable_if<is_safe_iterators_map<U>::value && !is_payload_map_key<T>::value>::type * = nullptr>
 	void markUpdated(T &idx_map, typename T::value_type *k) {
-		if (completeUpdated_) return;
+		if (completeUpdate_) return;
 		if (updated_.size() > idx_map.size() / 2) {
-			completeUpdated_ = true;
+			completeUpdate_ = true;
 			updated_.clear();
 			return;
 		}
 		updated_.emplace(k);
 	}
 
-	template <typename U = T, typename std::enable_if<is_safe_iterators_map<U>::value && !is_payload_map_key<U>::value>::type * = nullptr>
-	void commitUpdated(T &idx_map, const CommitContext &ctx) {
-		for (auto keyIt : updated_) {
-			keyIt->second.Unsorted().Commit(ctx);
-			if (!keyIt->second.Unsorted().size()) idx_map.erase(keyIt->first);
-		}
-	}
-
 	// Unsafe iterators implementation:
 	// Store copy key values
 	template <typename U = T, typename std::enable_if<!is_safe_iterators_map<U>::value && !is_payload_map_key<U>::value>::type * = nullptr>
 	void markUpdated(T &idx_map, typename T::value_type *k) {
-		if (completeUpdated_) return;
+		if (completeUpdate_) return;
 		if (updated_.size() > static_cast<size_t>(idx_map.size() / 8)) {
-			completeUpdated_ = true;
+			completeUpdate_ = true;
 			updated_.clear();
 			return;
 		}
 		updated_.emplace(k->first);
+	}
+
+	template <typename U = T, typename std::enable_if<is_payload_map_key<U>::value>::type * = nullptr>
+	void markUpdated(T &, typename T::value_type *) {
+		completeUpdate_ = true;
+	}
+
+	template <typename U = T, typename std::enable_if<is_safe_iterators_map<U>::value && !is_payload_map_key<U>::value>::type * = nullptr>
+	void commitUpdated(T &, const CommitContext &ctx) {
+		for (auto keyIt : updated_) {
+			keyIt->second.Unsorted().Commit(ctx);
+			assert(keyIt->second.Unsorted().size());
+		}
 	}
 
 	template <typename U = T, typename std::enable_if<!is_safe_iterators_map<U>::value && !is_payload_map_key<U>::value>::type * = nullptr>
@@ -72,21 +77,33 @@ public:
 			auto keyIt = idx_map.find(valIt);
 			assert(keyIt != idx_map.end());
 			keyIt->second.Unsorted().Commit(ctx);
-			if (!keyIt->second.Unsorted().size()) idx_map.erase(keyIt->first);
+			assert(keyIt->second.Unsorted().size());
 		}
 	}
-	template <typename U = T, typename std::enable_if<is_payload_map_key<U>::value>::type * = nullptr>
-	void markUpdated(T &, typename T::value_type *) {
-		completeUpdated_ = true;
-	}
+
 	template <typename U = T, typename std::enable_if<is_payload_map_key<U>::value>::type * = nullptr>
 	void commitUpdated(T &, const CommitContext &) {}
 
-	// map of updated keys. depends on safe/unsafe index map's iterator implemntation
+	template <typename U = T, typename std::enable_if<is_safe_iterators_map<U>::value && !is_payload_map_key<T>::value>::type * = nullptr>
+	void markDeleted(typename T::value_type *k) {
+		updated_.erase(k);
+	}
+
+	template <typename U = T, typename std::enable_if<!is_safe_iterators_map<U>::value && !is_payload_map_key<U>::value>::type * = nullptr>
+	void markDeleted(typename T::value_type *k) {
+		updated_.erase(k->first);
+	}
+
+	template <typename U = T, typename std::enable_if<is_payload_map_key<U>::value>::type * = nullptr>
+	void markDeleted(typename T::value_type *) {}
+
+	bool isUpdated() const { return updated_.empty() && !completeUpdate_; }
+
+	// Set of updated keys. Depends on safe/unsafe indexes' map iterator implementation.
 	typename std::conditional<is_safe_iterators_map<T>::value || is_payload_map_key<T>::value, fast_hash_set<typename T::value_type *>,
 							  fast_hash_set<typename T::key_type>>::type updated_;
 
-	bool completeUpdated_;
+	bool completeUpdate_;
 };
 
 }  // namespace reindexer

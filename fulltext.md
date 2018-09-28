@@ -177,15 +177,25 @@ But on huge text size lazy indexing can seriously slow down first Query to text 
 
 ## Configuration
 
-Several parameters of full text search engine can be configured from application side. To setup configration use `db.ConfigureIndex` method:
+Several parameters of full text search engine can be configured from application side. To setup configration use `db.AddIndex` or `db.UpdateIndex` methods:
 
 ```go
 ...
-	ftconfig := reindexer.DefaultFtFastConfig()
+    ftconfig := reindexer.DefaultFtFastConfig()
 	// Setup configuration
 	ftconfig.LogLevel = reindexer.TRACE
 	// Setup another parameters
-	return db.ConfigureIndex("items", "description", ftconfig)
+	// ...
+	// Create index definition
+	indexDef := bindings.IndexDef {
+		Name: "description",
+		JSONPath: "description",
+		IndexType: "text",
+		FieldType: "string",
+		Config: ftconfig,
+	}
+	// Add index with configuration
+	return db.AddIndex ("items",indexDef)
 
 ```
 

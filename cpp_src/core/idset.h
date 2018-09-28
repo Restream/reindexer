@@ -69,10 +69,12 @@ public:
 		base_idset::erase(d.first, d.second);
 		return d.second - d.first;
 	}
+
 	void Commit(const CommitContext &ctx);
-	bool IsCommited() { return true; }
+	bool IsCommited() const { return true; }
+	bool IsEmpty() const { return empty(); }
+	size_t BTreeSize() const { return 0; }
 	string Dump();
-	size_t BTreeSize() { return 0; }
 };
 
 using base_idsetset = btree::btree_set<int>;
@@ -81,14 +83,18 @@ using base_idsetset = btree::btree_set<int>;
 const int kMaxPlainIdsetSize = 16;
 
 class IdSet : public IdSetPlain {
+	friend class SingleSelectKeyResult;
+
 public:
 	typedef shared_ptr<IdSet> Ptr;
 	IdSet() {}
-	IdSet(const IdSet &other) : IdSetPlain(other), set_(!other.set_ ? nullptr : new base_idsetset(*other.set_)) {}
+	IdSet(const IdSet &other)
+		: IdSetPlain(other), set_(!other.set_ ? nullptr : new base_idsetset(*other.set_)), usingBtree_(other.usingBtree_) {}
 	IdSet &operator=(IdSet &&other) noexcept {
 		if (&other != this) {
 			IdSetPlain::operator=(other);
 			set_ = std::move(other.set_);
+			usingBtree_ = std::move(other.usingBtree_);
 		}
 		return *this;
 	}
@@ -102,6 +108,7 @@ public:
 		if (int(size()) >= kMaxPlainIdsetSize && !set_ && editMode == Auto) {
 			set_.reset(new base_idsetset);
 			set_->insert(begin(), end());
+			usingBtree_ = true;
 			resize(0);
 		}
 
@@ -111,6 +118,7 @@ public:
 		} else {
 			resize(0);
 			set_->insert(id);
+			usingBtree_ = true;
 		}
 	}
 
@@ -127,6 +135,7 @@ public:
 			}
 			assert(!size());
 			set_->insert(first, last);
+			usingBtree_ = true;
 		} else {
 			assert(0);
 		}
@@ -139,16 +148,19 @@ public:
 			return d.second - d.first;
 		} else {
 			resize(0);
+			usingBtree_ = true;
 			return set_->erase(id);
 		}
 		return 0;
 	}
 	void Commit(const CommitContext &ctx);
-	bool IsCommited() { return (!set_ || !set_->size() || size()) && std::is_sorted(begin(), end()); }
-	size_t BTreeSize() { return set_ ? sizeof(*set_.get()) + set_->size() * sizeof(int) : 0; }
+	bool IsCommited() const { return !usingBtree_; }
+	bool IsEmpty() const { return empty() && (!set_ || set_->empty()); }
+	size_t BTreeSize() const { return set_ ? sizeof(*set_.get()) + set_->size() * sizeof(int) : 0; }
 
 protected:
 	std::unique_ptr<base_idsetset> set_;
+	bool usingBtree_ = false;
 };
 
 class IdSetRef : public h_vector_view<IdType> {
