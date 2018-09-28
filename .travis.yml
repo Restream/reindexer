@@ -30,7 +30,7 @@ git:
     - sudo apt-get -qq update > /dev/null && sudo apt-get -qq install -y -f build-essential binutils cmake curl git google-perftools libgoogle-perftools-dev libsnappy-dev libleveldb-dev flex python3-pip
     - curl https://raw.githubusercontent.com/travis-ci/gimme/master/gimme > ~/gimme && chmod +x ~/gimme && ~/gimme 1.9
   before_script:
-    - git clone https://github.com/google/googletest.git /tmp/dep_googletest && cd /tmp/dep_googletest && cmake -DCMAKE_BUILD_TYPE=Release . && make -j4 && sudo make install
+    - git clone https://github.com/google/googletest.git /tmp/dep_googletest && cd /tmp/dep_googletest && git checkout v1.8.1 && cmake -DCMAKE_BUILD_TYPE=Release . && make -j4 && sudo make install
     - git clone https://github.com/google/benchmark.git /tmp/dep_googlebench && cd /tmp/dep_googlebench && git checkout tags/v1.4.0 -b v.1.4.0 && cmake -DCMAKE_BUILD_TYPE=Release . && make -j4 && sudo make install
     - if [[ ${WITH_DOXYGEN} -eq 1 ]]; then git clone https://github.com/doxygen/doxygen.git /tmp/dep_doxygen && cd /tmp/dep_doxygen && cmake -DCMAKE_BUILD_TYPE=Release . && make -j4 && sudo make install; fi
     - if [[ ${WITH_DOXYGEN} -eq 1 ]]; then git clone https://github.com/mosra/m.css.git /tmp/dep_mcss && sudo ln -s /tmp/dep_mcss/doxygen/dox2html5.py /usr/local/bin; fi
