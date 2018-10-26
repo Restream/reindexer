@@ -44,20 +44,47 @@ Error DBWrapper<_DB>::ProcessCommand(string command) {
 
 template <typename _DB>
 Error DBWrapper<_DB>::commandSelect(const string& command) {
-	reindexer::Query q;
-	try {
-		q.Parse(command);
-	} catch (const reindexer::Error& err) {
-		return err;
-	}
-
 	typename _DB::QueryResultsT results;
-	auto err = db_.Select(q, results);
+	auto err = db_.Select(command, results);
 
 	if (err.ok()) {
-		output_() << "[" << std::endl;
-		queryResultsToJson(output_(), results);
-		output_() << "]" << std::endl;
+		if (results.Count()) {
+			output_() << "[" << std::endl;
+			err = queryResultsToJson(output_(), results);
+			output_() << "]" << std::endl;
+		}
+
+		string explain = results.GetExplainResults();
+		if (!explain.empty()) {
+			output_() << "Explain: " << std::endl;
+			if (variables_[kVariableOutput] == kOutputModePretty) {
+				WrSerializer ser;
+				prettyPrintJSON(explain, ser);
+				output_() << ser.Slice() << std::endl;
+			} else {
+				output_() << explain << std::endl;
+			}
+		}
+		output_() << "Returned " << results.Count() << " rows";
+		if (results.TotalCount()) output_() << ", total count " << results.TotalCount();
+		output_() << std::endl;
+
+		auto& aggResults = results.GetAggregationResults();
+		if (aggResults.size()) {
+			output_() << "Aggregations: " << std::endl;
+			for (auto& agg : aggResults) {
+				int maxW = agg.name.length();
+				for (auto& row : agg.facets) {
+					maxW = std::max(maxW, int(row.value.length()));
+				}
+				maxW += 3;
+				output_() << std::left << std::setw(maxW) << agg.name << "| count" << std::endl;
+				output_() << std::left << std::setw(maxW + 8) << std::setfill('-') << "" << std::endl << std::setfill(' ');
+				for (auto& row : agg.facets) {
+					output_() << std::left << std::setw(maxW) << row.value << "| " << row.count << std::endl;
+				}
+			}
+		}
 	}
 	return err;
 }
@@ -135,7 +162,7 @@ Error DBWrapper<_DB>::commandDump(const string& command) {
 
 		wrser.Reset();
 		nsDef.GetJSON(wrser);
-		file << "\\NAMESPACES ADD " << escapeName(nsDef.name) << " " << wrser.Slice() << "\n";
+		file << "\\NAMESPACES ADD " << escapeName(nsDef.name) << " " << wrser.Slice() << std::endl;
 
 		vector<string> meta;
 		err = db_.EnumMeta(nsDef.name, meta);
@@ -271,12 +298,13 @@ Error DBWrapper<_DB>::commandSet(const string& command) {
 }
 
 template <typename _DB>
-ostream& DBWrapper<_DB>::queryResultsToJson(ostream& o, const typename _DB::QueryResultsT& r) {
+Error DBWrapper<_DB>::queryResultsToJson(ostream& o, const typename _DB::QueryResultsT& r) {
 	WrSerializer ser;
 	size_t i = 0;
 	for (auto it : r) {
 		ser.Reset();
-		it.GetJSON(ser, false);
+		Error err = it.GetJSON(ser, false);
+		if (!err.ok()) return err;
 
 		if (variables_[kVariableOutput] == kOutputModePretty) {
 			string json = ser.Slice().ToString();
@@ -285,7 +313,7 @@ ostream& DBWrapper<_DB>::queryResultsToJson(ostream& o, const typename _DB::Quer
 		}
 		o << ser.Slice() << (++i == r.Count() ? "\n" : ",\n");
 	}
-	return o;
+	return errOK;
 }
 
 template <typename _DB>

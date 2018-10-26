@@ -23,7 +23,5 @@ public:
 	std::mutex lck_;
 };
 
-using NSArray = h_vector<Namespace::Ptr, 1>;
-
 }  // namespace client
 }  // namespace reindexer

@@ -191,4 +191,7 @@ bool WinService::Remove(bool silent) {
 
 }  // namespace reindexer_server
 
+#else
+// suppress clang warngig
+int ___winservice_dummy_suppress_warning;
 #endif

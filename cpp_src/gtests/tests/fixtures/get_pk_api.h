@@ -4,10 +4,12 @@
 #include <memory>
 
 #include "core/reindexer.h"
+#include "estl/fast_hash_map.h"
 #include "gtests/tests/gtest_cout.h"
 
 using std::shared_ptr;
 using std::tuple;
+using std::string;
 using std::unique_ptr;
 
 using reindexer::Error;
@@ -19,7 +21,7 @@ using reindexer::Query;
 using reindexer::QueryResults;
 using reindexer::Reindexer;
 
-using reindexer::KeyRef;
+using reindexer::Variant;
 
 class ExtractPK : public testing::Test {
 public:

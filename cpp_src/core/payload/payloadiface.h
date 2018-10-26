@@ -3,14 +3,16 @@
 #include <type_traits>
 #include "core/cjson/tagsmatcher.h"
 #include "core/indexopts.h"
-#include "core/keyvalue/keyvalue.h"
+#include "core/keyvalue/variant.h"
 #include "fieldsset.h"
 #include "payloadfieldvalue.h"
 #include "payloadtype.h"
+#include "payloadvalue.h"
 
 namespace reindexer {
 
 class TagsMatcher;
+class WrSerializer;
 
 template <typename T>
 class PayloadIface {
@@ -23,15 +25,13 @@ public:
 
 	void Reset() { memset(v_->Ptr(), 0, t_.TotalSize()); }
 	// Get element(s) by field index
-	KeyRefs &Get(int field, KeyRefs &) const;
-	// Get element(s) by field index
-	KeyValues &Get(int field, KeyValues &) const;
+	VariantArray &Get(int field, VariantArray &, bool enableHold = false) const;
 	// Set element or array by field index
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
-	void Set(int field, const KeyRefs &keys, bool append = false);
+	void Set(int field, const VariantArray &keys, bool append = false);
 	// Set element or array by field index
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
-	void Set(const string &field, const KeyRefs &keys, bool append = false);
+	void Set(const string &field, const VariantArray &keys, bool append = false);
 
 	// Copies current payload value to a new one
 	// according to PayloadType format
@@ -39,17 +39,11 @@ public:
 	T CopyTo(PayloadType t, bool newFields = true);
 
 	// Get element(s) by field index
-	KeyRefs &Get(const string &field, KeyRefs &) const;
-	// Get element(s) by field index
-	KeyValues &Get(const string &field, KeyValues &) const;
+	VariantArray &Get(const string &field, VariantArray &, bool enableHold = false) const;
 
 	// Get element(s) by json path
-	KeyRefs GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, KeyRefs &, KeyValueType expectedType) const;
-	KeyRefs GetByJsonPath(const TagsPath &jsonPath, KeyRefs &, KeyValueType expectedType) const;
-
-	// Get element(s) by json path
-	KeyValues GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, KeyValues &, KeyValueType expectedType) const;
-	KeyValues GetByJsonPath(const TagsPath &jsonPath, KeyValues &, KeyValueType expectedType) const;
+	VariantArray GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, VariantArray &, KeyValueType expectedType) const;
+	VariantArray GetByJsonPath(const TagsPath &jsonPath, VariantArray &, KeyValueType expectedType) const;
 
 	// Get fields count
 	int NumFields() const { return t_.NumFields(); }
@@ -61,9 +55,8 @@ public:
 	const PayloadTypeImpl &Type() const { return t_; }
 	const T *Value() const { return v_; }
 
-	// Get primary key for elem
-	string GetPK(const FieldsSet &pkFields) const;
-	void GetPK(char *buf, size_t size, const FieldsSet &pkFields) const;
+	// Serialize field values
+	void SerializeFields(WrSerializer &ser, const FieldsSet &fields) const;
 
 	// Get hash by fields mask
 	size_t GetHash(const FieldsSet &fields) const;
@@ -83,7 +76,7 @@ public:
 	void ReleaseStrings();
 
 	// Item values' string for printing
-	std::string Dump();
+	std::string Dump() const;
 
 private:
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>

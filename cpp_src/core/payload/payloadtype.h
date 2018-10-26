@@ -37,7 +37,7 @@ public:
 	int FieldByJsonPath(const string &jsonPath) const;
 	const vector<int> &StrFields() const { return strFields_; }
 
-	void serialize(WrSerializer &ser, bool withJsonPaths = true) const;
+	void serialize(WrSerializer &ser) const;
 	void deserialize(Serializer &ser);
 
 	size_t TotalSize() const;

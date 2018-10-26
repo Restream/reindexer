@@ -3,8 +3,6 @@
 #include "fuzzyindextext.h"
 #include "tools/customlocal.h"
 #include "tools/errors.h"
-#include "tools/stringstools.h"
-
 using std::make_shared;
 
 namespace reindexer {
@@ -32,7 +30,7 @@ IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) {
 		it->proc_ *= coof;
 		if (it->proc_ < GetConfig()->minOkProc) continue;
 		assert(it->id_ < this->vdocs_.size());
-		const auto& id_set = this->vdocs_[it->id_].keyEntry->Sorted(0);
+		const auto& id_set = reinterpret_cast<const typename T::mapped_type*>(this->vdocs_[it->id_].keyEntry)->Sorted(0);
 		fctx->Add(id_set.begin(), id_set.end(), it->proc_);
 		mergedIds->Append(id_set.begin(), id_set.end(), IdSet::Unordered);
 	}
@@ -43,9 +41,9 @@ IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) {
 template <typename T>
 void FuzzyIndexText<T>::Commit() {
 	vector<unique_ptr<string>> bufStrs;
-
+	auto gt = this->Getter();
 	for (auto& doc : this->idx_map) {
-		auto res = this->getDocFields(doc.first, bufStrs);
+		auto res = gt.getDocFields(doc.first, bufStrs);
 #ifdef REINDEX_FT_EXTRA_DEBUG
 		this->vdocs_.push_back({&doc.first, &doc.second, {}, {}});
 #else
@@ -72,13 +70,12 @@ void FuzzyIndexText<T>::CreateConfig(const FtFuzzyConfig* cfg) {
 	this->cfg_->parse(&config[0]);
 }
 
-Index* FuzzyIndexText_New(IndexType type, const string& name, const IndexOpts& opts, const PayloadType payloadType,
-						  const FieldsSet& fields) {
-	switch (type) {
+Index* FuzzyIndexText_New(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields) {
+	switch (idef.Type()) {
 		case IndexFuzzyFT:
-			return new FuzzyIndexText<unordered_str_map<Index::KeyEntryPlain>>(type, name, opts);
+			return new FuzzyIndexText<unordered_str_map<Index::KeyEntryPlain>>(idef, payloadType, fields);
 		case IndexCompositeFuzzyFT:
-			return new FuzzyIndexText<unordered_payload_map<Index::KeyEntryPlain>>(type, name, opts, payloadType, fields);
+			return new FuzzyIndexText<unordered_payload_map<Index::KeyEntryPlain>>(idef, payloadType, fields);
 		default:
 			abort();
 	}

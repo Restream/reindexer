@@ -6,18 +6,19 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "reindexer_api.h"
+#include "tools/stringstools.h"
 
 using std::unordered_map;
 using std::unordered_set;
 using std::map;
 using std::numeric_limits;
-using reindexer::KeyArray;
+using reindexer::VariantArray;
 
 class QueriesApi : public ReindexerApi {
 public:
 	void SetUp() override {
 		indexesOptions = {
-			{kFieldNameId, IndexOpts().PK()},
+			{kFieldNameId, IndexOpts()},
 			{kFieldNameGenre, IndexOpts()},
 			{kFieldNameYear, IndexOpts()},
 			{kFieldNamePackages, IndexOpts().Array()},
@@ -34,9 +35,9 @@ public:
 			{kFieldNameStartTime, IndexOpts()},
 			{kFieldNamePhone, IndexOpts()},
 			{kFieldNameBtreeIdsets, IndexOpts()},
-			{kFieldNameTemp, IndexOpts().PK().SetCollateMode(CollateASCII)},
+			{kFieldNameTemp, IndexOpts().SetCollateMode(CollateASCII)},
 			{kFieldNameNumeric, IndexOpts().SetCollateMode(CollateUTF8)},
-			{string(kFieldNameId + compositePlus + kFieldNameTemp), IndexOpts()},
+			{string(kFieldNameId + compositePlus + kFieldNameTemp), IndexOpts().PK()},
 			{string(kFieldNameAge + compositePlus + kFieldNameGenre), IndexOpts()},
 		};
 
@@ -82,14 +83,16 @@ public:
 
 		err = reindexer->OpenNamespace(compositeIndexesNs);
 		ASSERT_TRUE(err.ok()) << err.what();
-		DefineNamespaceDataset(compositeIndexesNs, {IndexDeclaration{kFieldNameBookid, "hash", "int", IndexOpts().PK()},
-													IndexDeclaration{kFieldNameBookid2, "hash", "int", IndexOpts().PK()},
-													IndexDeclaration{kFieldNameTitle, "text", "string", IndexOpts()},
-													IndexDeclaration{kFieldNamePages, "hash", "int", IndexOpts()},
-													IndexDeclaration{kFieldNamePrice, "hash", "int", IndexOpts()},
-													IndexDeclaration{kFieldNameName, "text", "string", IndexOpts()},
-													IndexDeclaration{kCompositeFieldPricePages.c_str(), "hash", "composite", IndexOpts()},
-													IndexDeclaration{kCompositeFieldTitleName.c_str(), "tree", "composite", IndexOpts()}});
+		DefineNamespaceDataset(
+			compositeIndexesNs,
+			{IndexDeclaration{kFieldNameBookid, "hash", "int", IndexOpts()},
+			 IndexDeclaration{kFieldNameBookid2, "hash", "int", IndexOpts()},
+			 IndexDeclaration{kFieldNameTitle, "text", "string", IndexOpts()},
+			 IndexDeclaration{kFieldNamePages, "hash", "int", IndexOpts()}, IndexDeclaration{kFieldNamePrice, "hash", "int", IndexOpts()},
+			 IndexDeclaration{kFieldNameName, "text", "string", IndexOpts()},
+			 IndexDeclaration{kCompositeFieldPricePages.c_str(), "hash", "composite", IndexOpts()},
+			 IndexDeclaration{kCompositeFieldTitleName.c_str(), "tree", "composite", IndexOpts()},
+			 IndexDeclaration{(string(kFieldNameBookid) + "+" + kFieldNameBookid).c_str(), "hash", "composite", IndexOpts().PK()}});
 
 		compositeIndexesNsPks.push_back(kFieldNameBookid);
 		compositeIndexesNsPks.push_back(kFieldNameBookid2);
@@ -120,7 +123,7 @@ public:
 		unordered_set<string> pks;
 		unordered_map<string, unordered_set<string>> distincts;
 
-		KeyRefs lastSortedColumnValues;
+		VariantArray lastSortedColumnValues;
 		lastSortedColumnValues.resize(query.sortingEntries_.size());
 
 		size_t itemsCount = 0;
@@ -155,8 +158,8 @@ public:
 			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
 				if (!query.forcedSortOrder.empty()) break;
 				const reindexer::SortingEntry& sortingEntry(query.sortingEntries_[j]);
-				KeyRef sortedValue = itemr[sortingEntry.column];
-				if (lastSortedColumnValues[j].Type() != KeyValueEmpty) {
+				Variant sortedValue = itemr[sortingEntry.column];
+				if (lastSortedColumnValues[j].Type() != KeyValueNull) {
 					bool needToVerify = true;
 					if (j != 0) {
 						for (int k = j - 1; k >= 0; --k)
@@ -186,7 +189,7 @@ public:
 			if (query.forcedSortOrder.size() <= qr.Count()) {
 				for (size_t i = 0; i < qr.Count(); ++i) {
 					Item item(qr[i].GetItem());
-					KeyRef sortedValue = item[query.sortingEntries_[0].column];
+					Variant sortedValue = item[query.sortingEntries_[0].column];
 					EXPECT_EQ(query.forcedSortOrder[i].Compare(sortedValue), 0) << "Forced sort order is incorrect!";
 				}
 			}
@@ -243,10 +246,10 @@ protected:
 
 	bool isIndexComposite(Item& item, const QueryEntry& qentry) {
 		if (qentry.idxNo >= item.NumFields()) return true;
-		return (qentry.values[0].Type() == KeyValueComposite);
+		return (qentry.values[0].Type() == KeyValueComposite || qentry.values[0].Type() == KeyValueTuple);
 	}
 
-	bool compareValues(CondType condition, const KeyRef& key, const KeyValues& values, const CollateOpts& opts) {
+	bool compareValues(CondType condition, const Variant& key, const VariantArray& values, const CollateOpts& opts) {
 		bool result = false;
 		switch (condition) {
 			case CondEq:
@@ -268,7 +271,7 @@ protected:
 				result = (key.Compare(values[0], opts) >= 0) && (key.Compare(values[1], opts) <= 0);
 				break;
 			case CondSet:
-				for (const KeyValue& kv : values) {
+				for (const Variant& kv : values) {
 					result = (key.Compare(kv, opts) == 0);
 					if (result) break;
 				}
@@ -279,16 +282,16 @@ protected:
 		return result;
 	}
 
-	KeyValues getValues(Item& item, const std::vector<string>& indexes) {
-		KeyValues kvalues;
+	VariantArray getValues(Item& item, const std::vector<string>& indexes) {
+		VariantArray kvalues;
 		for (const string& idxName : indexes) {
-			kvalues.push_back(KeyValue(static_cast<KeyRef>(item[idxName])));
+			kvalues.push_back(item[idxName].operator Variant());
 		}
 		return kvalues;
 	}
 
-	int compareCompositeValues(const KeyValues& indexesValues, const KeyValue& keyValue, const CollateOpts& opts) {
-		const std::vector<KeyValue>& compositeValues = keyValue.getCompositeValues();
+	int compareCompositeValues(const VariantArray& indexesValues, const Variant& keyValue, const CollateOpts& opts) {
+		VariantArray compositeValues = keyValue.getCompositeValues();
 		EXPECT_TRUE(indexesValues.size() == compositeValues.size());
 
 		int cmpRes = 0;
@@ -303,8 +306,8 @@ protected:
 		vector<string> subIndexes;
 		reindexer::split(qentry.index, "+", true, subIndexes);
 
-		KeyValues indexesValues = getValues(item, subIndexes);
-		const KeyValues& keyValues = qentry.values;
+		VariantArray indexesValues = getValues(item, subIndexes);
+		const VariantArray& keyValues = qentry.values;
 
 		switch (qentry.condition) {
 			case CondEmpty:
@@ -338,7 +341,7 @@ protected:
 						 (compareCompositeValues(indexesValues, keyValues[1], opts) <= 0);
 				break;
 			case CondSet:
-				for (const KeyValue& kv : keyValues) {
+				for (const Variant& kv : keyValues) {
 					result = (compareCompositeValues(indexesValues, kv, opts) == 0);
 					if (result) break;
 				}
@@ -360,7 +363,7 @@ protected:
 		if (isIndexComposite(item, qentry)) {
 			return checkCompositeValues(item, qentry, opts.collateOpts_);
 		} else {
-			KeyRefs fieldValues = item[qentry.index];
+			VariantArray fieldValues = item[qentry.index];
 			switch (qentry.condition) {
 				case CondEmpty:
 					return fieldValues.size() == 0;
@@ -369,7 +372,7 @@ protected:
 				default:
 					break;
 			}
-			for (const KeyRef& fieldValue : fieldValues) {
+			for (const Variant& fieldValue : fieldValues) {
 				result = compareValues(qentry.condition, fieldValue, qentry.values, opts.collateOpts_);
 				if (result) break;
 			}
@@ -383,12 +386,12 @@ protected:
 		for (const QueryEntry& qentry : qr.entries) {
 			if (!qentry.distinct) continue;
 
-			reindexer::KeyRefs fieldValue = item[qentry.index];
+			reindexer::VariantArray fieldValue = item[qentry.index];
 
 			EXPECT_TRUE(fieldValue.size() == 1) << "Distinct field's size cannot be > 1";
 
 			unordered_set<string>& values = distincts[qentry.index];
-			KeyValue keyValue(fieldValue[0]);
+			Variant keyValue(fieldValue[0]);
 			bool inserted = values.insert(keyValue.As<string>()).second;
 			EXPECT_TRUE(inserted) << "Duplicate distinct item for index: " << keyValue.As<string>() << ", " << std::to_string(qentry.idxNo);
 			result &= inserted;
@@ -775,14 +778,14 @@ protected:
 										 .ReqTotal()
 										 .Distinct(distinct)
 										 .Sort(sortIdx, sortOrder)
-										 .WhereComposite(compositeIndexName.c_str(), CondLe, {{KeyValue(27), KeyValue(10000)}}));
+										 .WhereComposite(compositeIndexName.c_str(), CondLe, {{Variant(27), Variant(10000)}}));
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.ReqTotal()
 															.Distinct(distinct)
 															.Sort(sortIdx, sortOrder)
 															.WhereComposite(compositeIndexName.c_str(), CondEq,
-																			{{KeyValue(rand() % 10), KeyValue(rand() % 50)}}));
+																			{{Variant(rand() % 10), Variant(rand() % 50)}}));
 				}
 			}
 		}
@@ -811,8 +814,8 @@ protected:
 			yearSum += item[kFieldNameYear].Get<int>();
 		}
 
-		EXPECT_DOUBLE_EQ(testQr.aggregationResults[1], yearSum) << "Aggregation Sum result is incorrect!";
-		EXPECT_DOUBLE_EQ(testQr.aggregationResults[0], yearSum / checkQr.Count()) << "Aggregation Sum result is incorrect!";
+		EXPECT_DOUBLE_EQ(testQr.aggregationResults[1].value, yearSum) << "Aggregation Sum result is incorrect!";
+		EXPECT_DOUBLE_EQ(testQr.aggregationResults[0].value, yearSum / checkQr.Count()) << "Aggregation Sum result is incorrect!";
 	}
 
 	void CheckSqlQueries() {
@@ -839,8 +842,8 @@ protected:
 				EXPECT_EQ(ritem1.NumFields(), ritem2.NumFields());
 				if (ritem1.NumFields() == ritem2.NumFields()) {
 					for (int idx = 1; idx < ritem1.NumFields(); ++idx) {
-						KeyRefs lhs = ritem1[idx];
-						KeyRefs rhs = ritem2[idx];
+						VariantArray lhs = ritem1[idx];
+						VariantArray rhs = ritem2[idx];
 
 						EXPECT_EQ(lhs.size(), rhs.size());
 						if (lhs.size() == rhs.size()) {
@@ -864,46 +867,45 @@ protected:
 
 		ExecuteAndVerify(compositeIndexesNs,
 						 Query(compositeIndexesNs)
-							 .WhereComposite(kCompositeFieldPricePages.c_str(), CondEq, {{KeyValue(priceValue), KeyValue(pagesValue)}}));
+							 .WhereComposite(kCompositeFieldPricePages.c_str(), CondEq, {{Variant(priceValue), Variant(pagesValue)}}));
 		ExecuteAndVerify(compositeIndexesNs,
 						 Query(compositeIndexesNs)
-							 .WhereComposite(kCompositeFieldPricePages.c_str(), CondLt, {{KeyValue(priceValue), KeyValue(pagesValue)}}));
+							 .WhereComposite(kCompositeFieldPricePages.c_str(), CondLt, {{Variant(priceValue), Variant(pagesValue)}}));
 		ExecuteAndVerify(compositeIndexesNs,
 						 Query(compositeIndexesNs)
-							 .WhereComposite(kCompositeFieldPricePages.c_str(), CondLe, {{KeyValue(priceValue), KeyValue(pagesValue)}}));
+							 .WhereComposite(kCompositeFieldPricePages.c_str(), CondLe, {{Variant(priceValue), Variant(pagesValue)}}));
 		ExecuteAndVerify(compositeIndexesNs,
 						 Query(compositeIndexesNs)
-							 .WhereComposite(kCompositeFieldPricePages.c_str(), CondGt, {{KeyValue(priceValue), KeyValue(pagesValue)}}));
+							 .WhereComposite(kCompositeFieldPricePages.c_str(), CondGt, {{Variant(priceValue), Variant(pagesValue)}}));
 		ExecuteAndVerify(compositeIndexesNs,
 						 Query(compositeIndexesNs)
-							 .WhereComposite(kCompositeFieldPricePages.c_str(), CondGe, {{KeyValue(priceValue), KeyValue(pagesValue)}}));
-		ExecuteAndVerify(compositeIndexesNs,
-						 Query(compositeIndexesNs)
-							 .WhereComposite(kCompositeFieldPricePages.c_str(), CondRange,
-											 {{KeyValue(1), KeyValue(1)}, {KeyValue(priceValue), KeyValue(pagesValue)}}));
+							 .WhereComposite(kCompositeFieldPricePages.c_str(), CondGe, {{Variant(priceValue), Variant(pagesValue)}}));
+		ExecuteAndVerify(compositeIndexesNs, Query(compositeIndexesNs)
+												 .WhereComposite(kCompositeFieldPricePages.c_str(), CondRange,
+																 {{Variant(1), Variant(1)}, {Variant(priceValue), Variant(pagesValue)}}));
 
-		vector<KeyValues> intKeys;
+		vector<VariantArray> intKeys;
 		for (int i = 0; i < 10; ++i) {
-			intKeys.emplace_back(KeyValues{KeyValue(i), KeyValue(i * 5)});
+			intKeys.emplace_back(VariantArray{Variant(i), Variant(i * 5)});
 		}
 		ExecuteAndVerify(compositeIndexesNs, Query(compositeIndexesNs).WhereComposite(kCompositeFieldPricePages.c_str(), CondSet, intKeys));
 
 		ExecuteAndVerify(compositeIndexesNs, Query(compositeIndexesNs)
 												 .WhereComposite(kCompositeFieldTitleName.c_str(), CondEq,
-																 {{KeyValue(string(titleValue)), KeyValue(string(nameValue))}}));
+																 {{Variant(string(titleValue)), Variant(string(nameValue))}}));
 		ExecuteAndVerify(compositeIndexesNs, Query(compositeIndexesNs)
 												 .WhereComposite(kCompositeFieldTitleName.c_str(), CondGe,
-																 {{KeyValue(string(titleValue)), KeyValue(string(nameValue))}}));
+																 {{Variant(string(titleValue)), Variant(string(nameValue))}}));
 
 		ExecuteAndVerify(compositeIndexesNs, Query(compositeIndexesNs)
 												 .WhereComposite(kCompositeFieldTitleName.c_str(), CondLt,
-																 {{KeyValue(string(titleValue)), KeyValue(string(nameValue))}}));
+																 {{Variant(string(titleValue)), Variant(string(nameValue))}}));
 		ExecuteAndVerify(compositeIndexesNs, Query(compositeIndexesNs)
 												 .WhereComposite(kCompositeFieldTitleName.c_str(), CondLe,
-																 {{KeyValue(string(titleValue)), KeyValue(string(nameValue))}}));
-		vector<KeyValues> stringKeys;
+																 {{Variant(string(titleValue)), Variant(string(nameValue))}}));
+		vector<VariantArray> stringKeys;
 		for (size_t i = 0; i < 1010; ++i) {
-			stringKeys.emplace_back(KeyValues{KeyValue(RandString()), KeyValue(RandString())});
+			stringKeys.emplace_back(VariantArray{Variant(RandString()), Variant(RandString())});
 		}
 		ExecuteAndVerify(compositeIndexesNs,
 						 Query(compositeIndexesNs).WhereComposite(kCompositeFieldTitleName.c_str(), CondSet, stringKeys));
@@ -911,13 +913,13 @@ protected:
 		ExecuteAndVerify(compositeIndexesNs, Query(compositeIndexesNs)
 												 .Where(kFieldNameName, CondEq, nameValue)
 												 .WhereComposite(kCompositeFieldTitleName.c_str(), CondEq,
-																 {{KeyValue(string(titleValue)), KeyValue(string(nameValue))}}));
+																 {{Variant(string(titleValue)), Variant(string(nameValue))}}));
 
 		ExecuteAndVerify(compositeIndexesNs, Query(compositeIndexesNs));
 	}
 
 	void CheckComparatorsQueries() {
-		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnInt64", CondLe, {KeyRef(static_cast<int64_t>(10000))}));
+		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnInt64", CondLe, {Variant(static_cast<int64_t>(10000))}));
 
 		vector<double> doubleSet;
 		for (size_t i = 0; i < 1010; i++) {

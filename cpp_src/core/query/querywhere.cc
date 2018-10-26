@@ -1,9 +1,9 @@
 #include "querywhere.h"
 #include <stdlib.h>
+#include "core/keyvalue/key_string.h"
 #include "estl/tokenizer.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
-
 namespace reindexer {
 
 bool QueryEntry::operator==(const QueryEntry &obj) const {
@@ -70,7 +70,13 @@ CondType QueryWhere::getCondType(string_view cond) {
 	throw Error(errParseSQL, "Expected condition operator, but found '%s' in query", cond.data());
 }
 
-static KeyValue token2kv(const token &tok) {
+static Variant token2kv(const token &tok, tokenizer &parser) {
+	if (tok.text() == "true"_sv) return Variant(true);
+	if (tok.text() == "false"_sv) return Variant(false);
+
+	if (tok.type != TokenNumber && tok.type != TokenString)
+		throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+
 	auto text = tok.text();
 	bool digit = text.length() < 21;
 
@@ -84,9 +90,9 @@ static KeyValue token2kv(const token &tok) {
 	if (digit && text.length()) {
 		char *p = 0;
 		int64_t d = strtoull(text.data(), &p, 10);
-		return KeyValue(d);
+		return Variant(d);
 	}
-	return KeyValue(make_key_string(text.data(), text.length()));
+	return Variant(make_key_string(text.data(), text.length()));
 }
 
 int QueryWhere::ParseWhere(tokenizer &parser) {
@@ -130,15 +136,21 @@ int QueryWhere::ParseWhere(tokenizer &parser) {
 			}
 			// Value
 			tok = parser.next_token(false);
-			if (iequals(tok.text(), "null"_sv)) {
+			if (iequals(tok.text(), "null"_sv) || iequals(tok.text(), "empty"_sv)) {
 				entry.condition = CondEmpty;
-			} else if (tok.text() == "("_sv) {
+			} else if (iequals(tok.text(), "not"_sv)) {
+				tok = parser.next_token(false);
+				if (iequals(tok.text(), "null"_sv) || iequals(tok.text(), "empty"_sv)) {
+					entry.condition = CondAny;
+				} else {
+					throw Error(errParseSQL, "Expected NULL, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+				}
+			}
+
+			else if (tok.text() == "("_sv) {
 				for (;;) {
 					tok = parser.next_token();
-					if (tok.type != TokenNumber && tok.type != TokenString)
-						throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text().data(),
-									parser.where().c_str());
-					entry.values.push_back(token2kv(tok));
+					entry.values.push_back(token2kv(tok, parser));
 					tok = parser.next_token();
 					if (tok.text() == ")"_sv) break;
 					if (tok.text() != ","_sv)
@@ -146,9 +158,7 @@ int QueryWhere::ParseWhere(tokenizer &parser) {
 									parser.where().c_str());
 				}
 			} else {
-				if (tok.type != TokenNumber && tok.type != TokenString)
-					throw Error(errParseSQL, "Expected parameter, but found %s in query, %s", tok.text().data(), parser.where().c_str());
-				entry.values.push_back(token2kv(tok));
+				entry.values.push_back(token2kv(tok, parser));
 			}
 		}
 		// Push back parsed entry
@@ -174,7 +184,7 @@ int QueryWhere::ParseWhere(tokenizer &parser) {
 	return 0;
 }
 
-const char *condNames[] = {"ANY", "=", "<", "<=", ">", "=>", "RANGE", "IN", "ALLSET", "EMPTY"};
+const char *condNames[] = {"IS NOT NULL", "=", "<", "<=", ">", "=>", "RANGE", "IN", "ALLSET", "IS NULL"};
 const char *opNames[] = {"-", "OR", "AND", "AND NOT"};
 
 string QueryWhere::toString(bool stripArgs) const {
@@ -192,13 +202,17 @@ string QueryWhere::toString(bool stripArgs) const {
 			res += string(condNames[e.condition]) + " ";
 		else
 			res += "<unknown cond> ";
-		if (stripArgs) {
+		if (e.condition == CondEmpty || e.condition == CondAny) {
+		} else if (stripArgs) {
 			res += '?';
 		} else {
 			if (e.values.size() > 1) res += "(";
 			for (auto &v : e.values) {
 				if (&v != &*e.values.begin()) res += ",";
-				res += "'" + v.As<string>() + "'";
+				if (v.Type() == KeyValueString)
+					res += "'" + v.As<string>() + "'";
+				else
+					res += v.As<string>();
 			}
 			res += (e.values.size() > 1) ? ")" : "";
 		}

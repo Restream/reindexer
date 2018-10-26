@@ -19,8 +19,8 @@ const bufsCap = 16 * 1024
 const queueSize = 40
 
 const cprotoMagic = 0xEEDD1132
-const cprotoVersion = 0x100
-const cprotoHdrLen = 20
+const cprotoVersion = 0x101
+const cprotoHdrLen = 16
 
 const (
 	cmdPing           = 0
@@ -33,7 +33,6 @@ const (
 	cmdDropNamespace  = 18
 	cmdAddIndex       = 21
 	cmdEnumNamespaces = 22
-	cmdConfigureIndex = 23
 	cmdDropIndex      = 24
 	cmdUpdateIndex    = 25
 	cmdCommit         = 32
@@ -146,16 +145,16 @@ func (c *connection) readReply(hdr []byte) (err error) {
 	}
 	ser := cjson.NewSerializer(hdr)
 	magic := ser.GetUInt32()
-	version := ser.GetUInt32()
+	version := ser.GetUInt16()
+	_ = int(ser.GetUInt16())
 	size := int(ser.GetUInt32())
-	_ = int(ser.GetUInt32())
 	rseq := int32(ser.GetUInt32())
 	if magic != cprotoMagic {
 		return fmt.Errorf("Invalid cproto magic '%08X'", magic)
 	}
 
-	if version != cprotoVersion {
-		return fmt.Errorf("Invalid version '%08X'", version)
+	if version < cprotoVersion {
+		return fmt.Errorf("Unsupported cproto version '%04X'. This client expects reindexer server v1.9.8+", version)
 	}
 
 	repCh := c.repl[rseq]
@@ -217,6 +216,8 @@ func (c *connection) rpcCall(cmd int, args ...interface{}) (buf *NetBuffer, err 
 	in := newRPCEncoder(cmd, seq)
 	for _, a := range args {
 		switch t := a.(type) {
+		case bool:
+			in.boolArg(t)
 		case int:
 			in.intArg(t)
 		case int32:

@@ -24,9 +24,6 @@ Error Reindexer::Delete(const Query& q, QueryResults& result) { return impl_->De
 Error Reindexer::Select(const string& query, QueryResults& result) { return impl_->Select(query, result); }
 Error Reindexer::Select(const Query& q, QueryResults& result) { return impl_->Select(q, result); }
 Error Reindexer::Commit(const string& nsName) { return impl_->Commit(nsName); }
-Error Reindexer::ConfigureIndex(const string& nsName, const string& index, const string& config) {
-	return impl_->ConfigureIndex(nsName, index, config);
-}
 Error Reindexer::AddIndex(const string& nsName, const IndexDef& idx) { return impl_->AddIndex(nsName, idx); }
 Error Reindexer::UpdateIndex(const string& nsName, const IndexDef& idx) { return impl_->UpdateIndex(nsName, idx); }
 Error Reindexer::DropIndex(const string& nsName, const string& index) { return impl_->DropIndex(nsName, index); }

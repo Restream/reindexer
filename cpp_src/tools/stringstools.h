@@ -16,7 +16,22 @@ using std::pair;
 
 namespace reindexer {
 
-vector<string>& split(const string_view& str, const string& delimiters, bool trimEmpty, vector<string>&);
+template <typename Container>
+Container& split(const string_view& str, const string& delimiters, bool trimEmpty, Container& tokens) {
+	tokens.resize(0);
+
+	for (size_t pos, lastPos = 0;; lastPos = pos + 1) {
+		pos = str.find_first_of(delimiters, lastPos);
+		if (pos == string::npos) {
+			pos = str.length();
+			if (pos != lastPos || !trimEmpty) tokens.push_back(string(str.data() + lastPos, (pos - lastPos)));
+			break;
+		} else if (pos != lastPos || !trimEmpty)
+			tokens.push_back(string(str.data() + lastPos, (pos - lastPos)));
+	}
+	return tokens;
+}
+
 void split(const string& utf8Str, wstring& utf16str, vector<std::wstring>& words);
 void split(const string_view& utf8Str, wstring& utf16str, vector<std::wstring>& words, const string& extraWordSymbols);
 void split(const string_view& str, string& buf, vector<const char*>& words, const string& extraWordSymbols);

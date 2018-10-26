@@ -1,13 +1,13 @@
 #pragma once
 
 #include "core/idset.h"
-#include "core/keyvalue/keyvalue.h"
+#include "core/keyvalue/variant.h"
 #include "core/lrucache.h"
 
 namespace reindexer {
 
 struct IdSetCacheKey {
-	IdSetCacheKey(const KeyValues &keys, CondType cond, SortType sort) : keys(&keys), cond(cond), sort(sort) {}
+	IdSetCacheKey(const VariantArray &keys, CondType cond, SortType sort) : keys(&keys), cond(cond), sort(sort) {}
 	IdSetCacheKey(const IdSetCacheKey &other) : keys(&hkeys), cond(other.cond), sort(other.sort), hkeys(*other.keys) {}
 	IdSetCacheKey &operator=(const IdSetCacheKey &other) {
 		hkeys = *other.keys;
@@ -16,12 +16,12 @@ struct IdSetCacheKey {
 		sort = other.sort;
 		return *this;
 	}
-	size_t Size() const { return sizeof(IdSetCacheKey) + hkeys.size() * sizeof(KeyValues::value_type); }
+	size_t Size() const { return sizeof(IdSetCacheKey) + hkeys.size() * sizeof(VariantArray::value_type); }
 
-	const KeyValues *keys;
+	const VariantArray *keys;
 	CondType cond;
 	SortType sort;
-	KeyValues hkeys;
+	VariantArray hkeys;
 };
 
 struct IdSetCacheVal {

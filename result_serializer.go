@@ -16,19 +16,24 @@ type rawResultItemParams struct {
 	data    []byte
 }
 
+type rawResultsExtraParam struct {
+	Tag  int
+	Name string
+	Data []byte
+}
+
 type rawResultQueryParams struct {
-	totalcount       int
-	qcount           int
-	count            int
-	haveProcent      bool
-	nonCacheableData bool
-	nsCount          int
-	aggResults       []float64
+	flags          int
+	totalcount     int
+	qcount         int
+	count          int
+	aggResults     [][]byte
+	explainResults []byte
 }
 
 type resultSerializer struct {
 	cjson.Serializer
-	haveCPtr bool
+	flags int
 }
 
 type updatePayloadTypeFunc func(nsid int)
@@ -36,63 +41,74 @@ type updatePayloadTypeFunc func(nsid int)
 func newSerializer(buf []byte) resultSerializer {
 	return resultSerializer{
 		Serializer: cjson.NewSerializer(buf),
-		haveCPtr:   false,
 	}
 }
 func (s *resultSerializer) readRawtItemParams() (v rawResultItemParams) {
-	v.id = int(s.GetVarUInt())
-	v.version = int(s.GetVarUInt())
-	v.nsid = int(s.GetVarUInt())
-	v.proc = int(s.GetVarUInt())
-	format := int(s.GetVarUInt())
 
-	switch format {
+	if (s.flags & bindings.ResultsWithItemID) != 0 {
+		v.id = int(s.GetVarUInt())
+		v.version = int(s.GetVarUInt())
+	}
+
+	if (s.flags & bindings.ResultsWithNsID) != 0 {
+		v.nsid = int(s.GetVarUInt())
+	}
+
+	if (s.flags & bindings.ResultsWithPercents) != 0 {
+		v.proc = int(s.GetVarUInt())
+	}
+
+	switch s.flags & bindings.ResultsFormatMask {
 	case bindings.ResultsPure:
-	case bindings.ResultsWithPtrs:
+	case bindings.ResultsPtrs:
 		v.cptr = uintptr(s.GetUInt64())
-	case bindings.ResultsWithJson, bindings.ResultsWithCJson:
+	case bindings.ResultsJson, bindings.ResultsCJson:
 		v.data = s.GetBytes()
 	}
 	return v
 }
-func (s *resultSerializer) readSimpleRawItemParams() (v rawResultItemParams) {
-	v.id = int(s.GetVarUInt())
-	v.version = int(s.GetVarUInt())
-	return v
-}
+
 func (s *resultSerializer) readRawQueryParams(updatePayloadType ...updatePayloadTypeFunc) (v rawResultQueryParams) {
-	s.haveCPtr = s.GetUInt64() != 0
+
+	v.flags = int(s.GetVarUInt())
 	v.totalcount = int(s.GetVarUInt())
 	v.qcount = int(s.GetVarUInt())
 	v.count = int(s.GetVarUInt())
-	v.haveProcent = (s.GetVarUInt() != 0)
-	v.nonCacheableData = (s.GetVarUInt() != 0)
-	v.nsCount = int(s.GetVarUInt())
 
-	ptCount := int(s.GetVarUInt())
-	for i := 0; i < ptCount; i++ {
-		nsid := int(s.GetVarUInt())
-		if (len(updatePayloadType)) != 1 {
-			panic(fmt.Errorf("Internal error: Got payload types from raw query params, but there are no updatePayloadType"))
+	if (v.flags & bindings.ResultsWithPayloadTypes) != 0 {
+		ptCount := int(s.GetVarUInt())
+		for i := 0; i < ptCount; i++ {
+			nsid := int(s.GetVarUInt())
+			nsname := s.GetVString()
+			_ = nsname
+			if (len(updatePayloadType)) != 1 {
+				panic(fmt.Errorf("Internal error: Got payload types from raw query params, but there are no updatePayloadType"))
+			}
+			updatePayloadType[0](nsid)
 		}
-		updatePayloadType[0](nsid)
 	}
-
-	v.aggResults = s.readAggregationResults()
+	s.readExtraResults(&v)
+	s.flags = v.flags
 
 	return v
 }
 
-func (s *resultSerializer) readAggregationResults() (aggResults []float64) {
-	aggResCount := int(s.GetVarUInt())
-	if aggResCount == 0 {
-		return nil
-	}
+func (s *resultSerializer) readExtraResults(v *rawResultQueryParams) {
 
-	aggResults = make([]float64, aggResCount)
+	for {
 
-	for i := 0; i < aggResCount; i++ {
-		aggResults[i] = s.GetDouble()
+		tag := s.GetVarUInt()
+		if tag == bindings.QueryResultEnd {
+			break
+		}
+
+		data := s.GetBytes()
+		switch tag {
+		case bindings.QueryResultExplain:
+			v.explainResults = data
+		case bindings.QueryResultAggregation:
+			v.aggResults = append(v.aggResults, data)
+		}
 	}
 	return
 }

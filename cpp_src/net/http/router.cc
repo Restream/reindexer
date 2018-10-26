@@ -65,7 +65,7 @@ int Context::String(int code, const string_view &slice) {
 	return 0;
 }
 
-int Context::Redirect(const char *url) {
+int Context::Redirect(const string_view &url) {
 	writer->SetHeader(http::Header{"Location", url});
 	return String(http::StatusMovedPermanently, "");
 }
@@ -100,9 +100,8 @@ static const char *lookupContentType(const char *path) {
 	return "application/octet-stream";
 }
 
-int Context::File(int code, const char *path, const string_view& data) {
+int Context::File(int code, const char *path, const string_view &data) {
 	std::string content;
-
 
 	if (data.length() == 0) {
 		if (fs::ReadFile(path, content) < 0) {

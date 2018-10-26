@@ -16,8 +16,8 @@ using TagsPath = h_vector<int16_t, 6>;
 
 class TagsMatcherImpl {
 public:
-	TagsMatcherImpl() : version_(0), cacheToken_(rand()) {}
-	TagsMatcherImpl(PayloadType payloadType) : payloadType_(payloadType), version_(0), cacheToken_(rand()) {}
+	TagsMatcherImpl() : version_(0), stateToken_(rand()) {}
+	TagsMatcherImpl(PayloadType payloadType) : payloadType_(payloadType), version_(0), stateToken_(rand()) {}
 	~TagsMatcherImpl() {
 		//	if (tags2names_.size()) printf("~TagsMatcherImpl::TagsMatcherImpl %d\n", int(tags2names_.size()));
 	}
@@ -80,7 +80,7 @@ public:
 		return tags2names_[tag - 1];
 	}
 
-	int tags2field(const int *path, size_t pathLen) const {
+	int tags2field(const int16_t *path, size_t pathLen) const {
 		if (!pathLen) return -1;
 		return pathCache_.lookup(path, pathLen);
 	}
@@ -88,7 +88,7 @@ public:
 		if (!payloadType_) return;
 		pathCache_.clear();
 		vector<string> pathParts;
-		vector<int> pathIdx;
+		vector<int16_t> pathIdx;
 		for (int i = 1; i < payloadType_->NumFields(); i++) {
 			for (auto &jsonPath : payloadType_->Field(i).JsonPaths()) {
 				if (!jsonPath.length()) continue;
@@ -124,10 +124,10 @@ public:
 		version_++;
 		// assert(ser.Eof());
 	}
-	void deserialize(Serializer &ser, int version, int cacheToken) {
+	void deserialize(Serializer &ser, int version, int stateToken) {
 		deserialize(ser);
 		version_ = version;
-		cacheToken_ = cacheToken;
+		stateToken_ = stateToken;
 	}
 
 	bool merge(const TagsMatcherImpl &tm) {
@@ -159,7 +159,7 @@ public:
 
 	size_t size() const { return tags2names_.size(); }
 	int version() const { return version_; }
-	int cacheToken() const { return cacheToken_; }
+	int stateToken() const { return stateToken_; }
 
 	void clear() {
 		names2tags_.clear();
@@ -176,7 +176,7 @@ public:
 	}
 	string dumpPaths() const {
 		string res = "paths: [";
-		int path[256];
+		int16_t path[256];
 		pathCache_.walk(path, 0, [&path, &res, this](int depth, int field) {
 			for (int i = 0; i < depth; i++) {
 				if (i) res += ".";
@@ -206,7 +206,7 @@ protected:
 	vector<string> tags2names_;
 	PayloadType payloadType_;
 	int32_t version_;
-	int32_t cacheToken_;
+	int32_t stateToken_;
 	TagsPathCache pathCache_;
 };
 }  // namespace reindexer

@@ -74,8 +74,8 @@ func (binding *NetCProto) Ping() error {
 	return binding.rpcCallNoResults(opRd, cmdPing)
 }
 
-func (binding *NetCProto) ModifyItem(nsHash int, data []byte, mode int) (bindings.RawBuffer, error) {
-	buf, err := binding.rpcCall(opWr, cmdModifyItem, data, mode)
+func (binding *NetCProto) ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, packedPercepts []byte, stateToken int, txID int) (bindings.RawBuffer, error) {
+	buf, err := binding.rpcCall(opWr, cmdModifyItem, namespace, format, data, mode, packedPercepts, stateToken, txID)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func (binding *NetCProto) OpenNamespace(namespace string, enableStorage, dropOnF
 		return err
 	}
 
-	return binding.rpcCallNoResults(opWr, cmdOpenNamespace, namespace, bNamespaceDef)
+	return binding.rpcCallNoResults(opWr, cmdOpenNamespace, bNamespaceDef)
 }
 
 func (binding *NetCProto) CloseNamespace(namespace string) error {
@@ -135,10 +135,6 @@ func (binding *NetCProto) DropIndex(namespace, index string) error {
 	return binding.rpcCallNoResults(opWr, cmdDropIndex, namespace, index)
 }
 
-func (binding *NetCProto) ConfigureIndex(namespace, index, config string) error {
-	return binding.rpcCallNoResults(opWr, cmdConfigureIndex, namespace, index, config)
-}
-
 func (binding *NetCProto) PutMeta(namespace, key, data string) error {
 	return binding.rpcCallNoResults(opWr, cmdPutMeta, namespace, key, data)
 }
@@ -157,16 +153,16 @@ func (binding *NetCProto) GetMeta(namespace, key string) (bindings.RawBuffer, er
 func (binding *NetCProto) Select(query string, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	flags := 0
 	if withItems {
-		flags |= bindings.ResultsWithJson
+		flags |= bindings.ResultsJson
 	} else {
-		flags |= bindings.ResultsWithCJson | bindings.ResultsWithPayloadTypes
+		flags |= bindings.ResultsCJson | bindings.ResultsWithPayloadTypes | bindings.ResultsWithItemID
 	}
 
 	if fetchCount <= 0 {
 		fetchCount = math.MaxInt32
 	}
 
-	buf, err := binding.rpcCall(opRd, cmdSelectSQL, query, flags, int32(fetchCount), int64(-1), ptVersions)
+	buf, err := binding.rpcCall(opRd, cmdSelectSQL, query, flags, int32(fetchCount), ptVersions)
 	if err != nil {
 		buf.Free()
 		return nil, err
@@ -180,16 +176,16 @@ func (binding *NetCProto) Select(query string, withItems bool, ptVersions []int3
 func (binding *NetCProto) SelectQuery(data []byte, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	flags := 0
 	if withItems {
-		flags |= bindings.ResultsWithJson
+		flags |= bindings.ResultsJson
 	} else {
-		flags |= bindings.ResultsWithCJson | bindings.ResultsWithPayloadTypes
+		flags |= bindings.ResultsCJson | bindings.ResultsWithPayloadTypes | bindings.ResultsWithItemID
 	}
 
 	if fetchCount <= 0 {
 		fetchCount = math.MaxInt32
 	}
 
-	buf, err := binding.rpcCall(opRd, cmdSelect, data, flags, int32(fetchCount), int64(-1), ptVersions)
+	buf, err := binding.rpcCall(opRd, cmdSelect, data, flags, int32(fetchCount), ptVersions)
 	if err != nil {
 		buf.Free()
 		return nil, err

@@ -12,6 +12,7 @@
 #include "estl/shared_mutex.h"
 #include "query/querycache.h"
 #include "querystat.h"
+#include "replicator/updatesobserver.h"
 #include "tools/errors.h"
 
 using std::shared_ptr;
@@ -35,7 +36,6 @@ public:
 	Error UpdateIndex(const string &_namespace, const IndexDef &index);
 	Error DropIndex(const string &_namespace, const string &index);
 	Error EnumNamespaces(vector<NamespaceDef> &defs, bool bEnumAll);
-	Error ConfigureIndex(const string &_namespace, const string &index, const string &config);
 	Error Insert(const string &_namespace, Item &item);
 	Error Update(const string &_namespace, Item &item);
 	Error Upsert(const string &_namespace, Item &item);
@@ -49,6 +49,7 @@ public:
 	Error PutMeta(const string &_namespace, const string &key, const string_view &data);
 	Error EnumMeta(const string &_namespace, vector<string> &keys);
 	Error InitSystemNamespaces();
+	Error SubscribeUpdates(IUpdatesObserver *observer, bool subscribe);
 
 protected:
 	class NsLocker : public SelectLockUpgrader, h_vector<pair<Namespace::Ptr, smart_lock<shared_timed_mutex>>, 4> {
@@ -121,6 +122,8 @@ protected:
 	QueriesStatTracer queriesStatTracker_;
 	std::shared_ptr<DBProfilingConfig> profConfig_;
 	std::mutex profCfgMtx_;
+
+	UpdatesObservers observers_;
 };
 
 }  // namespace reindexer

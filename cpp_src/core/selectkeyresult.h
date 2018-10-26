@@ -31,7 +31,7 @@ public:
 		}
 	}
 	explicit SingleSelectKeyResult(const reindexer::KeyEntry<IdSetPlain> &ids, SortType sortId) { ids_ = ids.Sorted(sortId); }
-	explicit SingleSelectKeyResult(IdSet::Ptr ids) : tempIds_(ids), ids_(ids.get()) {}
+	explicit SingleSelectKeyResult(IdSet::Ptr ids) : tempIds_(ids), ids_(*ids) {}
 	explicit SingleSelectKeyResult(const IdSetRef &ids) : ids_(ids) {}
 	explicit SingleSelectKeyResult(IdType rBegin, IdType rEnd) : rBegin_(rBegin), rEnd_(rEnd), isRange_(true) {}
 	SingleSelectKeyResult(const SingleSelectKeyResult &other)

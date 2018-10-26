@@ -162,10 +162,6 @@ func (server *BuiltinServer) DropIndex(namespace, index string) error {
 	return server.builtin.DropIndex(namespace, index)
 }
 
-func (server *BuiltinServer) ConfigureIndex(namespace, index, config string) error {
-	return server.ConfigureIndex(namespace, index, config)
-}
-
 func (server *BuiltinServer) PutMeta(namespace, key, data string) error {
 	return server.builtin.PutMeta(namespace, key, data)
 }
@@ -174,8 +170,8 @@ func (server *BuiltinServer) GetMeta(namespace, key string) (bindings.RawBuffer,
 	return server.builtin.GetMeta(namespace, key)
 }
 
-func (server *BuiltinServer) ModifyItem(nsHash int, data []byte, mode int) (bindings.RawBuffer, error) {
-	return server.builtin.ModifyItem(nsHash, data, mode)
+func (server *BuiltinServer) ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, packedPercepts []byte, stateToken int, txID int) (bindings.RawBuffer, error) {
+	return server.builtin.ModifyItem(nsHash, namespace, format, data, mode, packedPercepts, stateToken, txID)
 }
 
 func (server *BuiltinServer) Select(query string, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {

@@ -11,9 +11,9 @@ const (
 	TAG_VARINT = 0
 	TAG_DOUBLE = 1
 	TAG_STRING = 2
-	TAG_ARRAY  = 3
-	TAG_BOOL   = 4
-	TAG_NULL   = 5
+	TAG_BOOL   = 3
+	TAG_NULL   = 4
+	TAG_ARRAY  = 5
 	TAG_OBJECT = 6
 	TAG_END    = 7
 )

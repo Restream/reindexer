@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <vector>
 #include "estl/string_view.h"
 #include "tools/errors.h"
@@ -20,7 +21,7 @@ class ItemImpl;
 class Item {
 public:
 	/// Construct empty Item
-	Item() : impl_(nullptr), status_(errNotValid) {}
+	Item();
 	/// Destroy Item
 	~Item();
 	Item(const Item &) = delete;
@@ -58,9 +59,6 @@ public:
 	int GetID() { return id_; }
 	/// Get internal version of item
 	/// @return version of item
-	int GetVersion() { return version_; }
-	/// Get count of indexed field
-	/// @return count of  field
 	int NumFields();
 	/// Set additional percepts for modify operation
 	/// @param precepts - strings in format "fieldName=Func()"
@@ -68,8 +66,11 @@ public:
 	/// Check was names tags updated while modify operation
 	/// @return true: tags was updated.
 	bool IsTagsUpdated();
+	/// Get state token
+	/// @return Current state token
+	int GetStateToken();
 	/// Check is item valid. If is not valid, then any futher operations with item will raise nullptr dereference
-	operator bool() const { return impl_ != nullptr; }
+	operator bool() const;
 	/// Enable Unsafe Mode<br>.
 	/// USE WITH CAUTION. In unsafe mode most of Item methods will not store  strings and slices, passed from/to application.<br>
 	/// The advantage of unsafe mode is speed. It does not call extra memory allocation from heap and copying data.<br>
@@ -78,16 +79,13 @@ public:
 	Item &Unsafe(bool enable = true);
 
 private:
-	explicit Item(ItemImpl *impl) : impl_(impl) {}
-	explicit Item(const Error &err) : impl_(nullptr), status_(err) {}
-	void setID(int id, int version) {
-		id_ = id;
-		version_ = version;
-	}
+	explicit Item(ItemImpl *impl);
+	explicit Item(const Error &err);
+	void setID(int id) { id_ = id; }
 
-	ItemImpl *impl_;
+	std::unique_ptr<ItemImpl> impl_;
 	Error status_;
-	int id_ = -1, version_ = -1;
+	int id_ = -1;
 	friend class Namespace;
 	friend class QueryResults;
 	friend class RPCClient;

@@ -22,13 +22,12 @@ using reindexer::utf16_to_utf8;
 uint8_t printFlags = AllocsTracker::kPrintAllocs | AllocsTracker::kPrintHold;
 
 FullText::FullText(Reindexer* db, const string& name, size_t maxItems) : BaseFixture(db, name, maxItems, 1, false) {
-	AddIndex("id", "id", "hash", "int", IndexOpts().PK());
-	AddIndex("description", "description", "-", "string", IndexOpts());
-	AddIndex("year", "year", "tree", "int", IndexOpts());
-	AddIndex("countries", "countries", "tree", "string", IndexOpts().Array());
-
-	AddIndex("countries+description=searchfast", "", "text", "composite", IndexOpts());
-	AddIndex("countries+description=searchfuzzy", "", "fuzzytext", "composite", IndexOpts());
+	nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
+		.AddIndex("description", "-", "string", IndexOpts())
+		.AddIndex("year", "tree", "int", IndexOpts())
+		.AddIndex("countries", "tree", "string", IndexOpts().Array())
+		.AddIndex("searchfast", {"countries", "description"}, "text", "composite", IndexOpts())
+		.AddIndex("searchfuzzy", {"countries", "description"}, "fuzzytext", "composite", IndexOpts());
 }
 
 reindexer::Error FullText::Initialize() {
@@ -98,6 +97,36 @@ void FullText::RegisterAllCases() {
 	Register("Fuzzy2SuffixMatch", &FullText::Fuzzy2SuffixMatch, this)->Unit(benchmark::kMicrosecond);
 	Register("Fuzzy1TypoWordMatch", &FullText::Fuzzy1TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
 	Register("Fuzzy2TypoWordMatch", &FullText::Fuzzy2TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("BuildInsertSteps", &FullText::BuildInsertSteps, this)->Iterations(id_seq_->Count())->Unit(benchmark::kMicrosecond);
+	Register("Fast1WordMatchSteps", &FullText::Fast1WordMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2WordsMatchSteps", &FullText::Fast2WordsMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast1PrefixMatchSteps", &FullText::Fast1PrefixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2PrefixMatchSteps", &FullText::Fast2PrefixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast1SuffixMatchSteps", &FullText::Fast1SuffixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2SuffixMatchSteps", &FullText::Fast2SuffixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast1TypoWordMatchSteps", &FullText::Fast1TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2TypoWordMatchSteps", &FullText::Fast2TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
+}
+
+std::string FullText::RandString() {
+	string res;
+	uint8_t len = rand() % 20 + 4;
+	res.resize(len);
+	for (int i = 0; i < len; ++i) {
+		int f = rand() % letters.size();
+		res[i] = letters[f];
+	}
+	return res;
+}
+
+reindexer::Item FullText::MakeSpecialItem() {
+	auto item = db_->NewItem(nsdef_.name);
+	item.Unsafe(false);
+
+	item["id"] = id_seq_->Next();
+	item["description"] = RandString();
+
+	return item;
 }
 
 reindexer::Item FullText::MakeItem() {
@@ -115,6 +144,41 @@ reindexer::Item FullText::MakeItem() {
 	item["countries"] = toArray<string>(countries);
 
 	return item;
+}
+
+void FullText::BuildInsertSteps(State& state) {
+	AllocsTracker allocsTracker(state, printFlags);
+
+	db_->DropNamespace(nsdef_.name);
+	auto err = BaseFixture::Initialize();
+	nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK()).AddIndex("description", "-", "string", IndexOpts());
+	size_t i = 0;
+	size_t mem = 0;
+
+	for (auto _ : state) {
+		auto item = MakeSpecialItem();
+		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+
+		auto err = db_->Insert(nsdef_.name, item);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+
+		if (i % 12000 == 0) {
+			Query q(nsdef_.name);
+			q.Where("searchfast", CondEq, words_.at(random<size_t>(0, words_.size() - 1))).Limit(20);
+
+			QueryResults qres;
+			size_t memory = get_alloc_size();
+			auto err = db_->Select(q, qres);
+
+			memory = get_alloc_size() - memory;
+			if (!err.ok()) state.SkipWithError(err.what().c_str());
+
+			mem += memory;
+		}
+		++i;
+	}
+	double ratio = mem / double(raw_data_sz_);
+	state.SetLabel("Commit ratio: " + std::to_string(ratio));
 }
 
 void FullText::Insert(State& state) {

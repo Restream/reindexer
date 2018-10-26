@@ -87,9 +87,9 @@ TEST_F(JoinSelectsApi, ReqTotalDSLTest) {
 
 TEST_F(JoinSelectsApi, SelectFunctionsDSLTest) {
 	Query query = Query(books_namespace, 10, 100).Where(pages, CondGe, 150);
-	query.selectFunctions_.push_back("f1()");
-	query.selectFunctions_.push_back("f2()");
-	query.selectFunctions_.push_back("f3()");
+	query.AddFunction("f1()");
+	query.AddFunction("f2()");
+	query.AddFunction("f3()");
 
 	string dsl = query.GetJSON();
 	Query testLoadDslQuery;
@@ -100,7 +100,7 @@ TEST_F(JoinSelectsApi, SelectFunctionsDSLTest) {
 
 TEST_F(JoinSelectsApi, CompositeValuesDSLTest) {
 	string pagesBookidIndex = string(pages + string("+") + bookid);
-	Query query = Query(books_namespace).WhereComposite(pagesBookidIndex.c_str(), CondGe, {{KeyValue(500), KeyValue(10)}});
+	Query query = Query(books_namespace).WhereComposite(pagesBookidIndex.c_str(), CondGe, {{Variant(500), Variant(10)}});
 	string dsl = query.GetJSON();
 	Query testLoadDslQuery;
 	Error err = testLoadDslQuery.ParseJson(dsl);
@@ -121,8 +121,8 @@ TEST_F(JoinSelectsApi, GeneralDSLTest) {
 	testDslQuery.selectFilter_.push_back(genreid);
 	testDslQuery.selectFilter_.push_back(bookid);
 	testDslQuery.selectFilter_.push_back(authorid_fk);
-	testDslQuery.selectFunctions_.push_back("f1()");
-	testDslQuery.selectFunctions_.push_back("f2()");
+	testDslQuery.AddFunction("f1()");
+	testDslQuery.AddFunction("f2()");
 
 	reindexer::AggregateEntry aggEntry;
 	aggEntry.index_ = bookid;

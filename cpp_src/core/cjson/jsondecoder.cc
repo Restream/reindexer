@@ -1,18 +1,19 @@
 #include "jsondecoder.h"
+#include "cjsonbuilder.h"
 #include "tagsmatcher.h"
 #include "tools/json2kv.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
 
-JsonDecoder::JsonDecoder(TagsMatcher &tagsMatcher) : tagsMatcher_(tagsMatcher) {}
-JsonDecoder::JsonDecoder(TagsMatcher &tagsMatcher, const FieldsSet &filter) : tagsMatcher_(tagsMatcher), filter_(filter) {}
+JsonDecoder::JsonDecoder(TagsMatcher &tagsMatcher) : tagsMatcher_(tagsMatcher), filter_(nullptr) {}
+JsonDecoder::JsonDecoder(TagsMatcher &tagsMatcher, const FieldsSet *filter) : tagsMatcher_(tagsMatcher), filter_(filter) {}
 
 Error JsonDecoder::Decode(Payload *pl, WrSerializer &wrser, JsonValue &v) {
 	try {
 		wrser.Reset();
-		tagsPath_.clear();
-		decodeJson(pl, wrser, v, 0);
+		CJsonBuilder builder(wrser, CJsonBuilder::TypePlain, &tagsMatcher_);
+		decodeJson(pl, builder, v, 0, true);
 	}
 
 	catch (const Error &err) {
@@ -21,69 +22,42 @@ Error JsonDecoder::Decode(Payload *pl, WrSerializer &wrser, JsonValue &v) {
 	return 0;
 }
 
-void JsonDecoder::decodeJsonObject(Payload *pl, WrSerializer &wrser, JsonValue &v) {
+void JsonDecoder::decodeJsonObject(Payload *pl, CJsonBuilder &builder, JsonValue &v, bool match) {
 	for (auto elem : v) {
-		int tagName = tagsMatcher_.name2tag(elem->key);
-		if (!tagName) {
-			tagName = tagsMatcher_.name2tag(elem->key, true);
-		}
+		int tagName = tagsMatcher_.name2tag(elem->key, true);
 		assert(tagName);
 		tagsPath_.push_back(tagName);
 		int field = tagsMatcher_.tags2field(tagsPath_.data(), tagsPath_.size());
+		if (filter_) {
+			if (field >= 0)
+				match = filter_->contains(field);
+			else
+				match = match && filter_->match(tagsPath_);
+		}
 
 		if (field < 0) {
-			decodeJson(pl, wrser, elem->value, tagName);
-		} else if (filter_.empty() || filter_.contains(field)) {
+			decodeJson(pl, builder, elem->value, tagName, match);
+		} else if (match) {
 			// Indexed field. extract it
-			KeyRefs kvs;
-			int count = 0;
+			VariantArray kvs;
 			auto &f = pl->Type().Field(field);
 			if (elem->value.getTag() == JSON_ARRAY) {
 				if (!f.IsArray()) {
 					throw Error(errLogic, "Error parsing json field '%s' - got array, expected scalar %s", f.Name().c_str(),
-								KeyValue::TypeName(f.Type()));
+								Variant::TypeName(f.Type()));
 				}
 				for (auto subelem : elem->value) {
-					kvs.push_back(jsonValue2KeyRef(subelem->value, f.Type(), f.Name().c_str()));
-					++count;
+					kvs.push_back(jsonValue2Variant(subelem->value, f.Type(), f.Name().c_str()));
 				}
+				builder.ArrayRef(tagName, field, kvs.size());
 			} else if (elem->value.getTag() != JSON_NULL) {
-				kvs.push_back(jsonValue2KeyRef(elem->value, f.Type(), f.Name().c_str()));
+				kvs.push_back(jsonValue2Variant(elem->value, f.Type(), f.Name().c_str()));
+				builder.Ref(tagName, kvs[0], field);
+			} else {
+				builder.Null(tagName);
 			}
-			if (!kvs.empty()) {
-				pl->Set(field, kvs, true);
-			}
-
-			// Put special tag :link data to indexed field
-			switch (elem->value.getTag()) {
-				case JSON_NUMBER: {
-					double value = elem->value.toNumber(), intpart;
-					if (std::modf(value, &intpart) == 0.0) {
-						wrser.PutVarUint(static_cast<int>(ctag(TAG_VARINT, tagName, field)));
-					} else {
-						wrser.PutVarUint(static_cast<int>(ctag(TAG_DOUBLE, tagName, field)));
-					}
-				} break;
-				case JSON_STRING:
-					wrser.PutVarUint(static_cast<int>(ctag(TAG_STRING, tagName, field)));
-					break;
-				case JSON_TRUE:
-				case JSON_FALSE:
-					wrser.PutVarUint(static_cast<int>(ctag(TAG_BOOL, tagName, field)));
-					break;
-				case JSON_ARRAY:
-					wrser.PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName, field)));
-					wrser.PutVarUint(count);
-					break;
-				case JSON_NULL:
-					wrser.PutVarUint(static_cast<int>(ctag(TAG_NULL, tagName)));
-					break;
-				default:
-					wrser.PutVarUint(static_cast<int>(ctag(TAG_NULL, tagName)));
-					break;
-			}
+			if (kvs.size()) pl->Set(field, kvs, true);
 		}
-
 		tagsPath_.pop_back();
 	}
 }
@@ -91,50 +65,40 @@ void JsonDecoder::decodeJsonObject(Payload *pl, WrSerializer &wrser, JsonValue &
 // Split original JSON into 2 parts:
 // 1. PayloadFields - fields from json found by 'jsonPath' tags
 // 2. stripped binary packed JSON without fields values found by 'jsonPath' tags
-void JsonDecoder::decodeJson(Payload *pl, WrSerializer &wrser, JsonValue &v, int tagName) {
-	switch (v.getTag()) {
+void JsonDecoder::decodeJson(Payload *pl, CJsonBuilder &builder, JsonValue &v, int tagName, bool match) {
+	auto jsonTag = v.getTag();
+	if (!match && jsonTag != JSON_OBJECT) return;
+	switch (jsonTag) {
 		case JSON_NUMBER: {
 			double value = v.toNumber(), intpart;
 			if (std::modf(value, &intpart) == 0.0) {
-				wrser.PutVarUint(static_cast<int>(ctag(TAG_VARINT, tagName)));
-				wrser.PutVarint(int64_t(value));
+				builder.Put(tagName, int64_t(value));
 			} else {
-				wrser.PutVarUint(static_cast<int>(ctag(TAG_DOUBLE, tagName)));
-				wrser.PutDouble(value);
+				builder.Put(tagName, value);
 			}
 		} break;
 		case JSON_STRING:
-			wrser.PutVarUint(static_cast<int>(ctag(TAG_STRING, tagName)));
-			wrser.PutVString(v.toString());
+			builder.Put(tagName, v.toString());
 			break;
 		case JSON_TRUE:
-			wrser.PutVarUint(static_cast<int>(ctag(TAG_BOOL, tagName)));
-			wrser.PutBool(true);
+			builder.Put(tagName, true);
 			break;
 		case JSON_FALSE:
-			wrser.PutVarUint(static_cast<int>(ctag(TAG_BOOL, tagName)));
-			wrser.PutBool(false);
+			builder.Put(tagName, false);
 			break;
 		case JSON_NULL:
-			wrser.PutVarUint(static_cast<int>(ctag(TAG_NULL, tagName)));
+			builder.Null(tagName);
 			break;
 		case JSON_ARRAY: {
-			wrser.PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
-			unsigned pos = wrser.Len();
-			int count = 0;
-			// reserve for len
-			wrser.PutUInt32(0);
+			auto arrNode = builder.Array(tagName);
 			for (auto elem : v) {
-				decodeJson(pl, wrser, elem->value, 0);
-				count++;
+				decodeJson(pl, arrNode, elem->value, 0, match);
 			}
-			*(reinterpret_cast<int *>(wrser.Buf() + pos)) = static_cast<int>(carraytag(count, TAG_OBJECT));
 			break;
 		}
 		case JSON_OBJECT: {
-			wrser.PutVarUint(static_cast<int>(ctag(TAG_OBJECT, tagName)));
-			decodeJsonObject(pl, wrser, v);
-			wrser.PutVarUint(static_cast<int>(ctag(TAG_END, tagName)));
+			auto node = builder.Object(tagName);
+			decodeJsonObject(pl, node, v, match);
 			break;
 		}
 	}

@@ -11,8 +11,8 @@ public:
 		Error err = reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldNameBookid, "hash", "int", IndexOpts().PK()},
-												   IndexDeclaration{kFieldNameBookid2, "hash", "int", IndexOpts().PK()},
+		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldNameBookid, "hash", "int", IndexOpts()},
+												   IndexDeclaration{kFieldNameBookid2, "hash", "int", IndexOpts()},
 												   IndexDeclaration{kFieldNameTitle, "text", "string", IndexOpts()},
 												   IndexDeclaration{kFieldNamePages, "hash", "int", IndexOpts()},
 												   IndexDeclaration{kFieldNamePrice, "hash", "int", IndexOpts()},
@@ -39,13 +39,13 @@ public:
 		Commit(default_namespace);
 	}
 
-	void addIndex(const string& name, CompositeIndexType type, const IndexOpts& opts) {
+	void addCompositeIndex(initializer_list<string> indexes, CompositeIndexType type, const IndexOpts& opts) {
 		reindexer::IndexDef indexDeclr;
-		indexDeclr.name_ = name;
+		indexDeclr.name_ = getCompositeIndexName(indexes);
 		indexDeclr.indexType_ = indexTypeToName(type);
 		indexDeclr.fieldType_ = "composite";
 		indexDeclr.opts_ = opts;
-		indexDeclr.jsonPaths_.Set(name);
+		indexDeclr.jsonPaths_ = reindexer::JsonPaths(indexes);
 		Error err = reindexer->AddIndex(default_namespace, indexDeclr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		err = reindexer->Commit(default_namespace);
@@ -59,10 +59,10 @@ public:
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
-	string getCompositeIndexName(initializer_list<const char*> indexes) {
+	string getCompositeIndexName(initializer_list<string> indexes) {
 		size_t i = 0;
 		string indexName;
-		for (const char* subIdx : indexes) {
+		for (const string& subIdx : indexes) {
 			indexName += subIdx;
 			if (i++ != indexes.size() - 1) {
 				indexName += compositePlus;

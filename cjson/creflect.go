@@ -10,6 +10,7 @@ import (
 
 const (
 	valueInt    = bindings.ValueInt
+	valueBool   = bindings.ValueBool
 	valueInt64  = bindings.ValueInt64
 	valueDouble = bindings.ValueDouble
 	valueString = bindings.ValueString
@@ -20,6 +21,7 @@ const (
 type Cdouble float64
 type Cint int32
 type Cunsigned uint32
+type Cbool int8
 
 type ArrayHeader struct {
 	offset Cunsigned
@@ -44,16 +46,8 @@ type payloadType struct {
 	PStringHdrOffset uintptr
 }
 
-// TODO: deprecate old cproto version, and remove withJsonPaths trick
-const tmpPayloadTypeWithJSONPathsFlag = uintptr(0x1000)
-
 func (pt *payloadType) Read(ser *Serializer, skip bool) {
 	pt.PStringHdrOffset = uintptr(ser.GetVarUInt())
-	withJSONPaths := false
-	if (pt.PStringHdrOffset & tmpPayloadTypeWithJSONPathsFlag) != 0 {
-		withJSONPaths = true
-		pt.PStringHdrOffset = pt.PStringHdrOffset & ^tmpPayloadTypeWithJSONPathsFlag
-	}
 	fieldsCount := int(ser.GetVarUInt())
 	fields := make([]payloadFieldType, fieldsCount, fieldsCount)
 
@@ -63,11 +57,9 @@ func (pt *payloadType) Read(ser *Serializer, skip bool) {
 		fields[i].Offset = uintptr(ser.GetVarUInt())
 		fields[i].Size = uintptr(ser.GetVarUInt())
 		fields[i].IsArray = ser.GetVarUInt() != 0
-		if withJSONPaths {
-			jsonPathCnt := ser.GetVarUInt()
-			for ; jsonPathCnt != 0; jsonPathCnt-- {
-				ser.GetVString()
-			}
+		jsonPathCnt := ser.GetVarUInt()
+		for ; jsonPathCnt != 0; jsonPathCnt-- {
+			ser.GetVString()
 		}
 	}
 	if !skip {
@@ -126,15 +118,15 @@ func (pl *payloadIface) getFloat64(field, idx int) float64 {
 }
 
 func (pl *payloadIface) getBool(field, idx int) bool {
-	p := pl.ptr(field, idx, valueInt)
-	return *(*Cint)(p) != Cint(0)
+	p := pl.ptr(field, idx, valueBool)
+	return bool(*(*Cbool)(p) != 0)
 }
 
 func (pl *payloadIface) getBytes(field, idx int) []byte {
 	p := pl.ptr(field, idx, valueString)
 	// p is pointer to p_string. see core/keyvalue/p_string.h
 
-	ppstring := uintptr(*(*uint64)(p) & ^uint64((3 << 60)))
+	ppstring := uintptr(*(*uint64)(p) & ^uint64((7 << 59)))
 	strHdr := (*PStringHeader)(unsafe.Pointer(ppstring + pl.t.PStringHdrOffset))
 
 	return (*[1 << 30]byte)(strHdr.cstr)[:strHdr.len:strHdr.len]
@@ -161,10 +153,10 @@ func (pl *payloadIface) getValue(field int, idx int, v reflect.Value) {
 
 	k := v.Type().Kind()
 	switch pl.t.Fields[field].Type {
+	case valueBool:
+		v.SetBool(pl.getBool(field, idx))
 	case valueInt:
 		switch k {
-		case reflect.Bool:
-			v.SetBool(pl.getBool(field, idx))
 		case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Int8:
 			v.SetInt(int64(pl.getInt(field, idx)))
 		case reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uint8:
@@ -262,8 +254,20 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 			pi := (*[1 << 27]uint64)(ptr)[:l:l]
 			*a = make([]uint64, cnt, cnt)
 			copy(*a, pi)
+		case *[]int:
+			pi := (*[1 << 27]int64)(ptr)[:l:l]
+			*a = make([]int, cnt, cnt)
+			for i := 0; i < cnt; i++ {
+				(*a)[i] = int(pi[i])
+			}
+		case *[]uint:
+			pi := (*[1 << 27]uint64)(ptr)[:l:l]
+			*a = make([]uint, cnt, cnt)
+			for i := 0; i < cnt; i++ {
+				(*a)[i] = uint(pi[i])
+			}
 		default:
-			panic(fmt.Errorf("Can't set []uint to []%s", v.Type().Elem().Kind().String()))
+			panic(fmt.Errorf("Can't set []int64 to []%s", v.Type().Elem().Kind().String()))
 		}
 	case valueDouble:
 		pi := (*[1 << 27]Cdouble)(ptr)[:l:l]

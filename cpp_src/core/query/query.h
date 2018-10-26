@@ -45,6 +45,14 @@ public:
 	/// Logs query in 'Select field1, ... field N from namespace ...' format.
 	string Dump(bool stripArgs = false) const;
 
+	/// Enable explain query
+	/// @param on - signaling on/off
+	/// @return Query object ready to be executed
+	Query &Explain(bool on = true) {
+		explain_ = on;
+		return *this;
+	}
+
 	/// Adds a condition with a single value. Analog to sql Where clause.
 	/// @param idx - index used in condition clause.
 	/// @param cond - type of condition.
@@ -67,7 +75,7 @@ public:
 		qe.condition = cond;
 		qe.index = idx;
 		qe.op = nextOp_;
-		for (auto it = l.begin(); it != l.end(); it++) qe.values.push_back(KeyValue(*it));
+		for (auto it = l.begin(); it != l.end(); it++) qe.values.push_back(Variant(*it));
 		nextOp_ = OpAnd;
 		return *this;
 	}
@@ -85,7 +93,7 @@ public:
 		qe.index = idx;
 		qe.op = nextOp_;
 		qe.values.reserve(l.size());
-		for (auto it = l.begin(); it != l.end(); it++) qe.values.push_back(KeyValue(*it));
+		for (auto it = l.begin(); it != l.end(); it++) qe.values.push_back(Variant(*it));
 		nextOp_ = OpAnd;
 		return *this;
 	}
@@ -95,14 +103,14 @@ public:
 	/// @param cond - type of condition.
 	/// @param l - vector of index values to be compared with.
 	/// @return Query object ready to be executed.
-	Query &Where(const string &idx, CondType cond, const KeyRefs &l) {
+	Query &Where(const string &idx, CondType cond, const VariantArray &l) {
 		entries.resize(entries.size() + 1);
 		QueryEntry &qe = entries.back();
 		qe.condition = cond;
 		qe.index = idx;
 		qe.op = nextOp_;
 		qe.values.reserve(l.size());
-		for (auto it = l.begin(); it != l.end(); it++) qe.values.push_back(KeyValue(*it));
+		for (auto it = l.begin(); it != l.end(); it++) qe.values.push_back(Variant(*it));
 		nextOp_ = OpAnd;
 		return *this;
 	}
@@ -112,13 +120,13 @@ public:
 	/// @param cond - type of condition.
 	/// @param l - list of values to be compared according to the order
 	/// of indexes in composite index name.
-	/// There can be maximum 2 KeyValues objects in l: in case of CondRange condition,
+	/// There can be maximum 2 VariantArray objects in l: in case of CondRange condition,
 	/// in all other cases amount of elements in l would be striclty equal to 1.
 	/// For example, composite index name is "bookid+price", so l[0][0] (and l[1][0]
 	/// in case of CondRange) belongs to "bookid" and l[0][1] (and l[1][1] in case of CondRange)
 	/// belongs to "price" indexes.
 	/// @return Query object ready to be executed.
-	Query &WhereComposite(const string &idx, CondType cond, initializer_list<KeyValues> l) {
+	Query &WhereComposite(const string &idx, CondType cond, initializer_list<VariantArray> l) {
 		entries.resize(entries.size() + 1);
 		QueryEntry &qe = entries.back();
 		qe.condition = cond;
@@ -126,12 +134,12 @@ public:
 		qe.op = nextOp_;
 		qe.values.reserve(l.size());
 		for (auto it = l.begin(); it != l.end(); it++) {
-			qe.values.push_back(KeyValue(*it));
+			qe.values.push_back(Variant(*it));
 		}
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	Query &WhereComposite(const string &idx, CondType cond, const vector<KeyValues> &v) {
+	Query &WhereComposite(const string &idx, CondType cond, const vector<VariantArray> &v) {
 		entries.resize(entries.size() + 1);
 		QueryEntry &qe = entries.back();
 		qe.condition = cond;
@@ -139,11 +147,23 @@ public:
 		qe.op = nextOp_;
 		qe.values.reserve(v.size());
 		for (auto it = v.begin(); it != v.end(); it++) {
-			qe.values.push_back(KeyValue(*it));
+			qe.values.push_back(Variant(*it));
 		}
 		nextOp_ = OpAnd;
 		return *this;
 	}
+
+	/// Add sql-function to query.
+	/// @param function - function declaration.
+	void AddFunction(const string &function) { selectFunctions_.push_back(std::move(function)); }
+
+	/// Adds equal position fields to arrays queries.
+	/// @param equalPosition - list of fields with equal array index position.
+	void AddEqualPosition(const h_vector<string> &equalPosition) {
+		equalPositions_.push_back(determineEqualPositionIndexes(equalPosition));
+	}
+	void AddEqualPosition(const vector<string> &equalPosition) { equalPositions_.push_back(determineEqualPositionIndexes(equalPosition)); }
+	void AddEqualPosition(std::initializer_list<string> l) { equalPositions_.push_back(determineEqualPositionIndexes(l)); }
 
 	/// Joins namespace with another namespace. Analog to sql JOIN.
 	/// @param joinType - type of Join (Inner, Left or OrInner).
@@ -301,7 +321,7 @@ public:
 	void Deserialize(Serializer &ser);
 
 	/// returns structure of a query in JSON format
-	string GetJSON();
+	string GetJSON() const;
 
 	/// Get  readaby Join Type
 	/// @param type - join tyoe
@@ -345,6 +365,22 @@ protected:
 	/// Parse merge entries
 	void parseMerge(tokenizer &parser);
 
+	/// Calculates QueryEntries indexes for EqualPosition context.
+	/// @param fields - equal position context.
+	template <typename T>
+	EqualPosition determineEqualPositionIndexes(const T &fields) {
+		EqualPosition ep;
+		for (size_t i = 0; i < entries.size(); ++i) {
+			for (auto it = fields.begin(); it != fields.end(); ++it)
+				if (entries[i].index == *it) {
+					ep.push_back(i);
+					break;
+				}
+		}
+		if (fields.size() < 2) throw Error(errLogic, "Amount of fields with equal index position should be 2 or more!");
+		return ep;
+	}
+
 	/// Builds print version of a query with join in sql format.
 	/// @return query sql string.
 	string dumpJoined(bool stripArgs) const;
@@ -382,8 +418,8 @@ public:
 	/// Default join type.
 	JoinType joinType = JoinType::LeftJoin;
 
-	/// Keys whiech always go first - before any ordered values.
-	KeyValues forcedSortOrder;
+	/// Keys that always go first - before any ordered values.
+	VariantArray forcedSortOrder;
 
 	/// List of queries for join.
 	vector<Query> joinQueries_;
@@ -396,6 +432,12 @@ public:
 
 	/// List of sql functions
 	h_vector<string, 1> selectFunctions_;
+
+	/// List of same position fields for queries with arrays
+	h_vector<EqualPosition, 1> equalPositions_;
+
+	/// Explain query if true
+	bool explain_ = false;
 };
 
 }  // namespace reindexer

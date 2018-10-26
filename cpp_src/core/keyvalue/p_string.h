@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "estl/string_view.h"
+#include "key_string.h"
 #include "tools/customhash.h"
 #include "tools/varint.h"
 
@@ -32,6 +33,8 @@ struct p_string {
 	constexpr static uint64_t tagVstr = 0x3ULL;
 	// ptr points to slice object
 	constexpr static uint64_t tagSlice = 0x4ULL;
+	// pyr points to key_string payload atomic_rc_wrapper<base_key_string>
+	constexpr static uint64_t tagKeyString = 0x5ULL;
 	// offset of tag in pointer
 	constexpr static uint64_t tagShift = 59ULL;
 	constexpr static uint64_t tagMask = 0x7ULL << tagShift;
@@ -40,6 +43,7 @@ struct p_string {
 	explicit p_string(const v_string_hdr *vstr) : v((uintptr_t(vstr) & ~tagMask) | (tagVstr << tagShift)) {}
 	explicit p_string(const char *cstr) : v((uintptr_t(cstr) & ~tagMask) | (tagCstr << tagShift)) {}
 	explicit p_string(const string *str) : v((uintptr_t(str) & ~tagMask) | (tagCxxstr << tagShift)) {}
+	explicit p_string(const key_string &str) : v((uintptr_t(str.get()) & ~tagMask) | (tagKeyString << tagShift)) {}
 	explicit p_string(const string_view *ptr) : v((uintptr_t(ptr) & ~tagMask) | (tagSlice << tagShift)) {}
 	p_string() : v(0) {}
 
@@ -49,6 +53,7 @@ struct p_string {
 			case tagCstr:
 				return reinterpret_cast<const char *>(ptr());
 			case tagCxxstr:
+			case tagKeyString:
 				return (reinterpret_cast<const string *>(ptr()))->data();
 			case tagSlice:
 				return (reinterpret_cast<const string_view *>(ptr()))->data();
@@ -69,6 +74,7 @@ struct p_string {
 			case tagCstr:
 				return strlen(reinterpret_cast<const char *>(ptr()));
 			case tagCxxstr:
+			case tagKeyString:
 				return (reinterpret_cast<const string *>(ptr()))->length();
 			case tagSlice:
 				return (reinterpret_cast<const string_view *>(ptr()))->size();
@@ -95,8 +101,14 @@ struct p_string {
 	bool operator>=(p_string other) const { return compare(other) >= 0; }
 	bool operator<=(p_string other) const { return compare(other) <= 0; }
 	const string *getCxxstr() const {
-		assert(type() == tagCxxstr);
+		assert(type() == tagCxxstr || type() == tagKeyString);
 		return reinterpret_cast<const string *>(ptr());
+	};
+
+	key_string getKeyString() const {
+		assert(type() == tagKeyString);
+		auto *str = reinterpret_cast<intrusive_atomic_rc_wrapper<base_key_string> *>(const_cast<void *>(ptr()));
+		return key_string(str);
 	};
 
 	int type() const { return (v & tagMask) >> tagShift; }

@@ -1,7 +1,6 @@
 package reindexer
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -56,8 +55,11 @@ const (
 )
 
 const (
-	AggAvg = bindings.AggAvg
-	AggSum = bindings.AggSum
+	AggAvg   = bindings.AggAvg
+	AggSum   = bindings.AggSum
+	AggFacet = bindings.AggFacet
+	AggMin   = bindings.AggMin
+	AggMax   = bindings.AggMax
 )
 
 var logger Logger = &nullLogger{}
@@ -70,7 +72,11 @@ type Reindexer struct {
 	binding       bindings.RawBinding
 	debugLevels   map[string]int
 	nsHashCounter int
+	status        error
 }
+
+// Index definition struct
+type IndexDef bindings.IndexDef
 
 type cacheItem struct {
 	item interface{}
@@ -82,12 +88,14 @@ type reindexerNamespace struct {
 	cacheItems    map[int]cacheItem
 	cacheLock     sync.RWMutex
 	joined        map[string][]int
+	indexes       []bindings.IndexDef
 	rtype         reflect.Type
 	deepCopyIface bool
 	name          string
 	opts          NamespaceOptions
 	cjsonState    cjson.State
 	nsHash        int
+	opened        bool
 }
 
 // Interface for append joined items
@@ -132,6 +140,15 @@ var (
 	ErrDeepCopyType        = errors.New("rq: DeepCopy() returns wrong type")
 )
 
+type AggregationResult struct {
+	Name   string  `json:"name"`
+	Value  float64 `json:"value"`
+	Facets []struct {
+		Value string `json:"value"`
+		Count int    `json:"count"`
+	} `json:"facets"`
+}
+
 // NewReindex Create new instanse of Reindexer DB
 // Returns pointer to created instance
 func NewReindex(dsn string, options ...interface{}) *Reindexer {
@@ -151,38 +168,31 @@ func NewReindex(dsn string, options ...interface{}) *Reindexer {
 	}
 
 	binding = binding.Clone()
-	if err = binding.Init(u, options...); err != nil {
-		panic(fmt.Errorf("Reindex binding '%s' init error: %s", u.Scheme, err.Error()))
-		return nil
-	}
-
 	rx := &Reindexer{
 		ns:      make(map[string]*reindexerNamespace, 100),
 		binding: binding,
+	}
+
+	if err = binding.Init(u, options...); err != nil {
+		rx.status = err
 	}
 
 	if changing, ok := binding.(bindings.RawBindingChanging); ok {
 		changing.OnChangeCallback(rx.resetCaches)
 	}
 
-	rx.openSystemNamespace(NamespacesNamespaceName, NamespaceDescription{})
-	rx.openSystemNamespace(PerfstatsNamespaceName, NamespacePerfStat{})
-	rx.openSystemNamespace(MemstatsNamespaceName, NamespaceMemStat{})
-	rx.openSystemNamespace(QueriesperfstatsNamespaceName, QueryPerfStat{})
-	rx.openSystemNamespace(ConfigNamespaceName, DBConfigItem{})
+	rx.registerNamespace(NamespacesNamespaceName, &NamespaceOptions{}, NamespaceDescription{})
+	rx.registerNamespace(PerfstatsNamespaceName, &NamespaceOptions{}, NamespacePerfStat{})
+	rx.registerNamespace(MemstatsNamespaceName, &NamespaceOptions{}, NamespaceMemStat{})
+	rx.registerNamespace(QueriesperfstatsNamespaceName, &NamespaceOptions{}, QueryPerfStat{})
+	rx.registerNamespace(ConfigNamespaceName, &NamespaceOptions{}, DBConfigItem{})
 
 	return rx
 }
 
-func (db *Reindexer) openSystemNamespace(name string, itype interface{}) {
-	db.ns[name] = &reindexerNamespace{
-		name:       name,
-		rtype:      reflect.TypeOf(itype),
-		cjsonState: cjson.NewState(),
-		nsHash:     db.nsHashCounter,
-	}
-	db.Query(name).Limit(0).Exec().Close()
-	db.nsHashCounter++
+// Status will return current db status
+func (db *Reindexer) Status() error {
+	return db.status
 }
 
 // SetLogger sets logger interface for output reindexer logs
@@ -257,6 +267,49 @@ func DefaultNamespaceOptions() *NamespaceOptions {
 // OpenNamespace Open or create new namespace and indexes based on passed struct.
 // IndexDef fields of struct are marked by `reindex:` tag
 func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s interface{}) (err error) {
+
+	namespace = strings.ToLower(namespace)
+	if err = db.registerNamespace(namespace, opts, s); err != nil {
+		panic(err)
+	}
+
+	ns, err := db.getNS(namespace)
+	if err != nil {
+		return err
+	}
+
+	for retry := 0; retry < 2; retry++ {
+		if err = db.binding.OpenNamespace(namespace, opts.enableStorage, opts.dropOnFileFormatError, opts.cachedMode); err != nil {
+			break
+		}
+
+		for _, indexDef := range ns.indexes {
+			if err = db.binding.AddIndex(namespace, indexDef); err != nil {
+				break
+			}
+		}
+
+		if err != nil {
+			rerr, ok := err.(bindings.Error)
+			if ok && rerr.Code() == bindings.ErrConflict && opts.dropOnIndexesConflict {
+				db.binding.DropNamespace(namespace)
+				continue
+			}
+			db.binding.CloseNamespace(namespace)
+			break
+		}
+
+		break
+	}
+	if err == nil {
+		ns.opened = true
+	}
+
+	return err
+}
+
+// registerNamespace Register go type against namespace. There are no data and indexes changes will be performed
+func (db *Reindexer) registerNamespace(namespace string, opts *NamespaceOptions, s interface{}) (err error) {
 	t := reflect.TypeOf(s)
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
@@ -264,25 +317,23 @@ func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s i
 	namespace = strings.ToLower(namespace)
 
 	db.lock.Lock()
+	defer db.lock.Unlock()
+
 	oldNs, ok := db.ns[namespace]
 	if ok {
-		db.lock.Unlock()
 		// Ns exists, and have different type
 		if oldNs.rtype.Name() != t.Name() {
-			panic(errNsExists)
+			return errNsExists
 		}
 		// Ns exists, and have the same type.
 		return nil
 	}
-
-	enableStorage := opts.enableStorage
 
 	copier, haveDeepCopy := reflect.New(t).Interface().(DeepCopy)
 	if haveDeepCopy {
 		cpy := copier.DeepCopy()
 		cpyType := reflect.TypeOf(reflect.Indirect(reflect.ValueOf(cpy)).Interface())
 		if cpyType != reflect.TypeOf(s) {
-			db.lock.Unlock()
 			return ErrDeepCopyType
 		}
 	}
@@ -296,45 +347,21 @@ func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s i
 		cjsonState:    cjson.NewState(),
 		deepCopyIface: haveDeepCopy,
 		nsHash:        db.nsHashCounter,
+		opened:        false,
 	}
 
-	enc := ns.cjsonState.NewEncoder()
+	validator := cjson.Validator{}
+
+	if err = validator.Validate(s); err != nil {
+		return err
+	}
+	if ns.indexes, err = db.parseIndex(namespace, ns.rtype, &ns.joined); err != nil {
+		return err
+	}
+
 	db.nsHashCounter++
 	db.ns[namespace] = ns
-	db.lock.Unlock()
-
-	for retry := 0; retry < 2; retry++ {
-		if err = db.binding.OpenNamespace(namespace, enableStorage, opts.dropOnFileFormatError, opts.cachedMode); err != nil {
-			break
-		}
-
-		if err = enc.Validate(s); err != nil {
-			break
-		}
-
-		db.Query(namespace).Limit(0).Exec().Close()
-
-		if err = db.parseIndex(namespace, t, false, "", "", &ns.joined); err != nil {
-			rerr, ok := err.(bindings.Error)
-			if ok && rerr.Code() == bindings.ErrConflict && opts.dropOnIndexesConflict {
-				db.binding.DropNamespace(namespace)
-				continue
-			}
-			db.binding.CloseNamespace(namespace)
-			break
-		}
-
-		// Initial query to update payloadType
-		db.Query(namespace).Limit(0).Exec().Close()
-		break
-	}
-	if err != nil {
-		db.lock.Lock()
-		delete(db.ns, namespace)
-		db.lock.Unlock()
-	}
-
-	return err
+	return nil
 }
 
 // DropNamespace - drop whole namespace from DB
@@ -351,11 +378,6 @@ func (db *Reindexer) DropNamespace(namespace string) error {
 func (db *Reindexer) CloseNamespace(namespace string) error {
 	namespace = strings.ToLower(namespace)
 	db.lock.Lock()
-	_, ok := db.ns[namespace]
-	if !ok {
-		db.lock.Unlock()
-		return errNsNotFound
-	}
 	delete(db.ns, namespace)
 	db.lock.Unlock()
 
@@ -394,21 +416,35 @@ func (db *Reindexer) Delete(namespace string, item interface{}, precepts ...stri
 // [[deprecated]]. Use UpdateIndex insted
 // config argument must be struct with index configuration
 func (db *Reindexer) ConfigureIndex(namespace, index string, config interface{}) error {
-	json, err := json.Marshal(config)
+
+	nsDef, err := db.DescribeNamespace(namespace)
 	if err != nil {
 		return err
 	}
-	return db.binding.ConfigureIndex(namespace, index, string(json))
+
+	index = strings.ToLower(index)
+	for _, iDef := range nsDef.Indexes {
+		if strings.ToLower(iDef.Name) == index {
+			iDef.Config = config
+			return db.binding.UpdateIndex(namespace, bindings.IndexDef(iDef.IndexDef))
+		}
+	}
+	return fmt.Errorf("rq: Index '%s' not found in namespace %s", index, namespace)
 }
 
 // AddIndex - add index.
-func (db *Reindexer) AddIndex(namespace string, indexDef bindings.IndexDef) error {
-	return db.binding.AddIndex(namespace, indexDef)
+func (db *Reindexer) AddIndex(namespace string, indexDef ...IndexDef) error {
+	for _, index := range indexDef {
+		if err := db.binding.AddIndex(namespace, bindings.IndexDef(index)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // UpdateIndex - update index.
-func (db *Reindexer) UpdateIndex(namespace string, indexDef bindings.IndexDef) error {
-	return db.binding.UpdateIndex(namespace, indexDef)
+func (db *Reindexer) UpdateIndex(namespace string, indexDef IndexDef) error {
+	return db.binding.UpdateIndex(namespace, bindings.IndexDef(indexDef))
 }
 
 // DropIndex - drop index.
@@ -516,14 +552,14 @@ func (db *Reindexer) MustBeginTx(namespace string) *Tx {
 func (db *Reindexer) setUpdatedAt(ns *reindexerNamespace, updatedAt time.Time) error {
 	str := strconv.FormatInt(updatedAt.UnixNano(), 10)
 
-	db.putMeta(ns.name, "updated", []byte(str))
+	db.PutMeta(ns.name, "updated", []byte(str))
 
 	return nil
 }
 
 // GetUpdatedAt - get updated at time of namespace
 func (db *Reindexer) GetUpdatedAt(namespace string) (*time.Time, error) {
-	b, err := db.getMeta(namespace, "updated")
+	b, err := db.GetMeta(namespace, "updated")
 	if err != nil {
 		return nil, err
 	}
@@ -542,6 +578,10 @@ func (db *Reindexer) QueryFrom(d dsl.DSL) (*Query, error) {
 	}
 
 	q := db.Query(d.Namespace).Offset(d.Offset)
+
+	if d.Explain {
+		q.Explain()
+	}
 
 	if d.Limit > 0 {
 		q.Limit(d.Limit)

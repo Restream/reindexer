@@ -23,7 +23,7 @@ void FullTextDumper::LogFinalData(const reindexer::QueryResults& result) {
 	tmp_buffer.push_back("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
 	tmp_buffer.push_back("Returned ids: ");
 	for (auto res : result.Items()) {
-		tmp_buffer.push_back("id: " + std::to_string(res.id) + " | ver: " + std::to_string(res.version));
+		tmp_buffer.push_back("id: " + std::to_string(res.id) + " | lsn: " + std::to_string(res.value.GetLSN()));
 	}
 	tmp_buffer.push_back("_______________________________________");
 

@@ -6,11 +6,11 @@
 namespace reindexer {
 
 template <typename T>
-KeyRef IndexOrdered<T>::Upsert(const KeyRef &key, IdType id) {
-	if (key.Type() == KeyValueEmpty) {
+Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id) {
+	if (key.Type() == KeyValueNull) {
 		this->empty_ids_.Unsorted().Add(id, IdSet::Auto);
 		// Return invalid ref
-		return KeyRef();
+		return Variant();
 	}
 
 	bool found = false;
@@ -25,14 +25,14 @@ KeyRef IndexOrdered<T>::Upsert(const KeyRef &key, IdType id) {
 		return IndexStore<typename T::key_type>::Upsert(key, id);
 	}
 
-	return KeyRef(keyIt->first);
+	return Variant(keyIt->first);
 }
 
 // special implementation for string: avoid allocation string for *_map::lower_bound
 // !!!! Not thread safe. Do not use this in Select
 template <typename T>
 template <typename U, typename std::enable_if<is_string_map_key<U>::value>::type *>
-typename T::iterator IndexOrdered<T>::lower_bound(const KeyRef &key, bool &found) {
+typename T::iterator IndexOrdered<T>::lower_bound(const Variant &key, bool &found) {
 	p_string skey = static_cast<p_string>(key);
 	this->tmpKeyVal_->assign(skey.data(), skey.length());
 	auto it = this->idx_map.lower_bound(this->tmpKeyVal_);
@@ -42,14 +42,14 @@ typename T::iterator IndexOrdered<T>::lower_bound(const KeyRef &key, bool &found
 
 template <typename T>
 template <typename U, typename std::enable_if<!is_string_map_key<U>::value>::type *>
-typename T::iterator IndexOrdered<T>::lower_bound(const KeyRef &key, bool &found) {
+typename T::iterator IndexOrdered<T>::lower_bound(const Variant &key, bool &found) {
 	auto it = this->idx_map.lower_bound(static_cast<typename T::key_type>(key));
 	found = (it != this->idx_map.end() && !this->idx_map.key_comp()(static_cast<typename T::key_type>(key), it->first));
 	return it;
 }
 
 template <typename T>
-SelectKeyResults IndexOrdered<T>::SelectKey(const KeyValues &keys, CondType condition, SortType sortId, Index::ResultType res_type,
+SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType condition, SortType sortId, Index::ResultType res_type,
 											BaseFunctionCtx::Ptr ctx) {
 	++this->rawQueriesCount_;
 
@@ -131,7 +131,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const KeyValues &keys, CondType cond
 
 			auto selector = [&ctx](SelectKeyResult &res) {
 				for (auto it = ctx.startIt; it != ctx.endIt && it != ctx.i_map->end(); it++) {
-					res.push_back(SingleSelectKeyResult(it->second.Sorted(ctx.sortId)));
+					res.push_back(SingleSelectKeyResult(it->second, ctx.sortId));
 				}
 			};
 
@@ -164,7 +164,7 @@ void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext &ctx) {
 				logPrintf(
 					LogError,
 					"Internal error: Index '%s' is broken. Item with key '%s' contains id=%d, which is not present in allIds,totalids=%d\n",
-					this->name_.c_str(), KeyRef(keyIt.first).As<string>().c_str(), id, int(totalIds));
+					this->name_.c_str(), Variant(keyIt.first).As<string>().c_str(), id, int(totalIds));
 				this->DumpKeys();
 				assert(0);
 			}
@@ -201,27 +201,26 @@ bool IndexOrdered<T>::IsOrdered() const {
 }
 
 template <typename KeyEntryT>
-static Index *IndexOrdered_New(IndexType type, const string &name, const IndexOpts &opts, const PayloadType payloadType,
-							   const FieldsSet &fields) {
-	switch (type) {
+static Index *IndexOrdered_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields) {
+	switch (idef.Type()) {
 		case IndexIntBTree:
-			return new IndexOrdered<btree_map<int, KeyEntryT>>(type, name, opts);
+			return new IndexOrdered<btree_map<int, KeyEntryT>>(idef, payloadType, fields);
 		case IndexInt64BTree:
-			return new IndexOrdered<btree_map<int64_t, KeyEntryT>>(type, name, opts);
+			return new IndexOrdered<btree_map<int64_t, KeyEntryT>>(idef, payloadType, fields);
 		case IndexStrBTree:
-			return new IndexOrdered<str_map<KeyEntryT>>(type, name, opts);
+			return new IndexOrdered<str_map<KeyEntryT>>(idef, payloadType, fields);
 		case IndexDoubleBTree:
-			return new IndexOrdered<btree_map<double, KeyEntryT>>(type, name, opts);
+			return new IndexOrdered<btree_map<double, KeyEntryT>>(idef, payloadType, fields);
 		case IndexCompositeBTree:
-			return new IndexOrdered<payload_map<KeyEntryT>>(type, name, opts, payloadType, fields);
+			return new IndexOrdered<payload_map<KeyEntryT>>(idef, payloadType, fields);
 		default:
 			abort();
 	}
 }
 
-Index *IndexOrdered_New(IndexType type, const string &name, const IndexOpts &opts, const PayloadType payloadType, const FieldsSet &fields) {
-	return (opts.IsPK() || opts.IsDense()) ? IndexOrdered_New<Index::KeyEntryPlain>(type, name, opts, payloadType, fields)
-										   : IndexOrdered_New<Index::KeyEntry>(type, name, opts, payloadType, fields);
+Index *IndexOrdered_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields) {
+	return (idef.opts_.IsPK() || idef.opts_.IsDense()) ? IndexOrdered_New<Index::KeyEntryPlain>(idef, payloadType, fields)
+													   : IndexOrdered_New<Index::KeyEntry>(idef, payloadType, fields);
 }
 
 }  // namespace reindexer

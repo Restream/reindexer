@@ -269,11 +269,11 @@ func (enc *Encoder) encodeSlice(v reflect.Value, rdser *Serializer, f fieldInfo,
 		case reflect.Bool:
 			sl := (*[1 << 30]bool)(ptr)[:l:l]
 			for _, v := range sl {
-				var vv int64
+				var vv uint64
 				if v {
 					vv = 1
 				}
-				rdser.PutVarInt(vv)
+				rdser.PutVarUInt(vv)
 			}
 		default:
 			if subTag != TAG_OBJECT {
@@ -329,7 +329,7 @@ func (enc *Encoder) encodeValue(v reflect.Value, rdser *Serializer, f fieldInfo,
 		}
 		if vv != 0 || !f.isOmitEmpty {
 			rdser.PutVarUInt(mkctag(TAG_BOOL, f.ctagName, 0))
-			rdser.PutVarInt(int64(vv))
+			rdser.PutVarUInt(uint64(vv))
 		}
 	case reflect.String:
 		val := v.String()
@@ -366,78 +366,28 @@ func (enc *Encoder) encodeValue(v reflect.Value, rdser *Serializer, f fieldInfo,
 	}
 }
 
-func (enc *Encoder) validateLevel(src reflect.Type, fieldName string) error {
-	tags := map[string]struct{}{}
-
-	for i := 0; i < src.NumField(); i++ {
-		field := src.Field(i)
-		tag, _, _ := splitStr(field.Tag.Get("json"), ',')
-
-		if len(tag) == 0 && field.Name != "_" {
-			tag = field.Name
-		}
-
-		fname := fieldName
-		if len(fieldName) > 0 {
-			fname += "."
-		}
-		fname += field.Name
-
-		if _, found := tags[tag]; !found {
-			if len(tag) > 0 && tag != "-" {
-				tags[tag] = struct{}{}
-			}
-		} else {
-			return fmt.Errorf("Struct is invalid. JSON tag '%s' duplicate at field '%s' (type: %s)", tag, fname, field.Type.String())
-		}
-
-		t := field.Type
-		if (t.Kind() == reflect.Slice || t.Kind() == reflect.Array) &&
-			(t.Elem().Kind() == reflect.Struct || (t.Elem().Kind() == reflect.Ptr && t.Elem().Elem().Kind() == reflect.Struct)) {
-			t = t.Elem()
-		} else if t.Kind() == reflect.Ptr {
-			t = t.Elem()
-		}
-
-		if t.Kind() == reflect.Struct {
-			if err := enc.validateLevel(t, fname); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func (enc *Encoder) Validate(src interface{}) error {
-	t := reflect.TypeOf(src)
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-
-	return enc.validateLevel(t, "")
-}
-
-func (enc *Encoder) Encode(src interface{}, wrser *Serializer) error {
-	pos := len(wrser.Bytes())
+func (enc *Encoder) Encode(src interface{}, wrser *Serializer) (stateToken int, err error) {
 
 	v := reflect.ValueOf(src)
 	enc.state.lock.Lock()
 
-	wrser.Truncate(pos)
+	pos := len(wrser.Bytes())
+	wrser.PutVarUInt(TAG_END)
 	wrser.PutUInt32(0)
 	enc.tagsMatcher = &enc.state.tagsMatcher
 	enc.tmUpdated = false
 	enc.encodeValue(v, wrser, mkFieldInfo(v, 0, false), make([]int, 0, 10))
 
-	*(*uint32)(unsafe.Pointer(&wrser.Bytes()[pos])) = uint32(len(wrser.buf) - pos)
-	wrser.PutVarUInt(uint64(enc.state.CacheToken))
 	if enc.tmUpdated {
+		*(*uint32)(unsafe.Pointer(&wrser.Bytes()[pos+1])) = uint32(len(wrser.buf) - pos)
 		enc.tagsMatcher.WriteUpdated(wrser)
+	} else {
+		wrser.TruncateStart(int(unsafe.Sizeof(uint32(0))) + 1)
 	}
+	stateToken = int(enc.state.StateToken)
 
 	enc.state.lock.Unlock()
-	return nil
+	return
 }
 
 func (enc *Encoder) EncodeRaw(src interface{}, wrser *Serializer) error {

@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"unsafe"
 
 	"github.com/restream/reindexer/bindings"
 	"github.com/restream/reindexer/cjson"
@@ -23,7 +24,9 @@ const (
 	queryDebugLevel     = bindings.QueryDebugLevel
 	queryAggregation    = bindings.QueryAggregation
 	querySelectFilter   = bindings.QuerySelectFilter
+	queryExplain        = bindings.QueryExplain
 	QuerySelectFunction = bindings.QuerySelectFunction
+	QueryEqualPosition	= bindings.QueryEqualPosition
 	queryEnd            = bindings.QueryEnd
 )
 
@@ -52,10 +55,12 @@ const (
 const (
 	cInt32Max      = bindings.CInt32Max
 	valueInt       = bindings.ValueInt
+	valueBool      = bindings.ValueBool
 	valueInt64     = bindings.ValueInt64
 	valueDouble    = bindings.ValueDouble
 	valueString    = bindings.ValueString
 	valueComposite = bindings.ValueComposite
+	valueTuple     = bindings.ValueTuple
 )
 
 const (
@@ -165,16 +170,31 @@ func (q *Query) putValue(v reflect.Value) error {
 
 	switch k {
 	case reflect.Bool:
-		q.ser.PutVarCUInt(valueInt)
+		q.ser.PutVarCUInt(valueBool)
 		if v.Bool() {
-			q.ser.PutVarInt(1)
+			q.ser.PutVarUInt(1)
 		} else {
-			q.ser.PutVarInt(0)
+			q.ser.PutVarUInt(0)
 		}
-	case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int8:
+	case reflect.Uint:
+		if unsafe.Sizeof(int(0)) == unsafe.Sizeof(int64(0)) {
+			q.ser.PutVarCUInt(valueInt64)
+		} else {
+			q.ser.PutVarCUInt(valueInt)
+		}
+
+		q.ser.PutVarInt(int64(v.Uint()))
+	case reflect.Int:
+		if unsafe.Sizeof(int(0)) == unsafe.Sizeof(int64(0)) {
+			q.ser.PutVarCUInt(valueInt64)
+		} else {
+			q.ser.PutVarCUInt(valueInt)
+		}
+		q.ser.PutVarInt(v.Int())
+	case reflect.Int16, reflect.Int32, reflect.Int8:
 		q.ser.PutVarCUInt(valueInt)
 		q.ser.PutVarInt(v.Int())
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32:
+	case reflect.Uint8, reflect.Uint16, reflect.Uint32:
 		q.ser.PutVarCUInt(valueInt)
 		q.ser.PutVarInt(int64(v.Uint()))
 	case reflect.Int64:
@@ -190,7 +210,7 @@ func (q *Query) putValue(v reflect.Value) error {
 		q.ser.PutVarCUInt(valueDouble)
 		q.ser.PutDouble(v.Float())
 	case reflect.Slice, reflect.Array:
-		q.ser.PutVarCUInt(valueComposite)
+		q.ser.PutVarCUInt(valueTuple)
 		q.ser.PutVarCUInt(v.Len())
 		for i := 0; i < v.Len(); i++ {
 			q.putValue(v.Index(i))
@@ -259,11 +279,11 @@ func (q *Query) WhereBool(index string, condition int, keys ...bool) *Query {
 
 	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
-		q.ser.PutVarCUInt(valueInt)
+		q.ser.PutVarCUInt(valueBool)
 		if v {
-			q.ser.PutVarInt(1)
+			q.ser.PutVarUInt(1)
 		} else {
-			q.ser.PutVarInt(0)
+			q.ser.PutVarUInt(0)
 		}
 	}
 	return q
@@ -373,6 +393,12 @@ func (q *Query) Debug(level int) *Query {
 	return q
 }
 
+// Explain - Request explain for query
+func (q *Query) Explain() *Query {
+	q.ser.PutVarCUInt(queryExplain)
+	return q
+}
+
 // SetContext set interface, which will be passed to Joined interface
 func (q *Query) SetContext(ctx interface{}) *Query {
 	q.context = ctx
@@ -425,7 +451,7 @@ func (q *Query) close() {
 		q = q.root
 	}
 	if q.closed {
-		panic(errors.New("Close call on already closed query."))
+		panic(errors.New("Close call on already closed query"))
 	}
 
 	for i, jq := range q.joinQueries {
@@ -596,6 +622,16 @@ func (q *Query) FetchCount(n int) *Query {
 func (q *Query) Functions(fields ...string) *Query {
 	for _, field := range fields {
 		q.ser.PutVarCUInt(QuerySelectFunction).PutVString(field)
+	}
+	return q
+}
+
+// Adds equal position fields to arrays 
+func (q *Query) EqualPosition(fields ...string) *Query {
+	q.ser.PutVarCUInt(QueryEqualPosition)
+	q.ser.PutVarCUInt(len(fields))
+	for _, field := range fields {
+		q.ser.PutVString(field)
 	}
 	return q
 }

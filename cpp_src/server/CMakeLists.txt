@@ -109,3 +109,17 @@ endif()
 
 add_custom_target(face COMMAND ${CMAKE_COMMAND} -P "${PROJECT_BINARY_DIR}/make_face.cmake")
 add_custom_target(swagger COMMAND ${CMAKE_COMMAND} -P "${PROJECT_BINARY_DIR}/make_swagger.cmake")
+
+install(FILES 
+  "${PROJECT_SOURCE_DIR}/server.h"
+DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/reindexer/server COMPONENT dev)
+install(FILES 
+  "${PROJECT_SOURCE_DIR}/cbinding/server_c.h"
+DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/reindexer/server/cbinding COMPONENT dev)
+
+install(TARGETS ${TARGET}
+    COMPONENT dev
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+)

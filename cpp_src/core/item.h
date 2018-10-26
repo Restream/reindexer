@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/keyvalue/keyref.h"
+#include "core/keyvalue/variant.h"
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -43,7 +43,7 @@ public:
 		/// @return value of field
 		template <typename T>
 		const T Get() {
-			return static_cast<T>(operator KeyRef());
+			return static_cast<T>(operator Variant());
 		}
 		/// Get field value as specified type, convert type if neccesary. In case when convertion fails throws reindexer::Error
 		/// If field is array, and not contains exact 1 element, then throws reindexer::Error
@@ -51,23 +51,23 @@ public:
 		/// @return value of field
 		template <typename T>
 		T As() {
-			return (operator KeyRef()).As<T>();
+			return (operator Variant()).As<T>();
 		}
 		/// Set single fundamental type value
 		/// @tparam T - type. Must be one of: int, int64_t, double
 		/// @param val - value, which will be setted to field
 		template <typename T>
 		FieldRef &operator=(const T &val) {
-			return operator=(KeyRef(val));
+			return operator=(Variant(val));
 		}
 		/// Set array of values to field
 		/// @tparam T - type. Must be one of: int, int64_t, double
 		/// @param arr - std::vector of T values, which will be setted to field
 		template <typename T>
 		FieldRef &operator=(const std::vector<T> &arr) {
-			KeyRefs krs;
+			VariantArray krs;
 			krs.reserve(arr.size());
-			for (auto &t : arr) krs.push_back(KeyRef(t));
+			for (auto &t : arr) krs.push_back(Variant(t));
 			return operator=(krs);
 		}
 
@@ -75,34 +75,36 @@ public:
 		/// If Item is in Unsafe Mode, then Item will not store str, but just keep pointer to str,
 		/// application *MUST* hold str until end of life of Item
 		/// @param str - pointer to C null-terminated string, which will be setted to field
-		FieldRef &operator=(const char *str) { return operator=(p_string(str)); }
+		FieldRef &operator=(const char *str);
 		/// Set string value<br>
 		/// If Item is in Unsafe Mode, then Item will not store str, but just keep pointer to str,
 		/// application *MUST* hold str until end of life of Item
 		/// @param str - std::string, which will be setted to field
-		FieldRef &operator=(const string &str) { return operator=(p_string(&str)); }
+		FieldRef &operator=(const string &str);
 
 		/// Get field index name
 		const string &Name();
 
-		/// Get KeyRef with field value
+		/// Get Variant with field value
 		/// If field is array, and contains not exact 1 element, then throws reindexer::Error
-		/// @return KeyRef object with field value
-		operator KeyRef();
-		/// Get KeyRefs with field values. If field is not array, then 1 elemnt will be returned
-		/// @return KeyRefs with field values
-		operator KeyRefs();
+		/// @return Variant object with field value
+		operator Variant();
+		/// Get VariantArray with field values. If field is not array, then 1 elemnt will be returned
+		/// @return VariantArray with field values
+		operator VariantArray();
 		/// Set field value
 		/// @param kr - key reference object, which will be setted to field
-		FieldRef &operator=(KeyRef kr);
+		FieldRef &operator=(Variant kr);
 		/// Set field value
 		/// @param krs - key reference object, which will be setted to field
-		FieldRef &operator=(const KeyRefs &krs);
+		FieldRef &operator=(const VariantArray &krs);
 
 	private:
 		FieldRef(int field, ItemImpl *itemImpl);
 		FieldRef(const string &jsonPath, ItemImpl *itemImpl);
-		std::shared_ptr<FieldRefImpl> impl_;
+		ItemImpl *itemImpl_;
+		std::string jsonPath_;
+		int field_;
 	};
 
 	/// Build item from JSON<br>
@@ -138,7 +140,7 @@ public:
 	int GetID() { return id_; }
 	/// Get internal version of item
 	/// @return version of item
-	int GetVersion() { return version_; }
+	int64_t GetLSN();
 	/// Get count of indexed field
 	/// @return count of  field
 	int NumFields();
@@ -160,6 +162,9 @@ public:
 	/// Check was names tags updated while modify operation
 	/// @return true: tags was updated.
 	bool IsTagsUpdated();
+	/// Get state token
+	/// @return Current state token
+	int GetStateToken();
 	/// Check is item valid. If is not valid, then any futher operations with item will raise nullptr dereference
 	operator bool() const { return impl_ != nullptr; }
 	/// Enable Unsafe Mode<br>.
@@ -172,14 +177,12 @@ public:
 private:
 	explicit Item(ItemImpl *impl) : impl_(impl) {}
 	explicit Item(const Error &err) : impl_(nullptr), status_(err) {}
-	void setID(int id, int version) {
-		id_ = id;
-		version_ = version;
-	}
+	void setID(int id) { id_ = id; }
+	void setLSN(int64_t lsn);
 
 	ItemImpl *impl_;
 	Error status_;
-	int id_ = -1, version_ = -1;
+	int id_ = -1;
 	friend class Namespace;
 	friend class QueryResults;
 	friend class ReindexerImpl;

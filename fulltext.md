@@ -189,7 +189,7 @@ Several parameters of full text search engine can be configured from application
 	// Create index definition
 	indexDef := bindings.IndexDef {
 		Name: "description",
-		JSONPath: "description",
+		JSONPaths: []string{"description"},
 		IndexType: "text",
 		FieldType: "string",
 		Config: ftconfig,

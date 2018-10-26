@@ -1,6 +1,8 @@
 #pragma once
 #include <functional>
+#include "core/query/aggregationresult.h"
 #include "tools/serializer.h"
+
 namespace reindexer {
 namespace client {
 
@@ -8,10 +10,10 @@ class ResultSerializer : public Serializer {
 public:
 	using Serializer::Serializer;
 	struct ItemParams {
-		int id;
-		int version;
-		int nsid;
-		int proc;
+		int id = 0;
+		int16_t nsid = 0;
+		int16_t proc = 0;
+		int64_t lsn = 0;
 		string_view data;
 	};
 
@@ -19,14 +21,13 @@ public:
 		int totalcount;
 		int qcount;
 		int count;
-		bool haveProcent;
-		bool nonCacheableData;
-		bool nsCount;
-		h_vector<double, 4> aggResults;
+		int flags;
+		std::vector<AggregationResult> aggResults;
+		string explainResults;
 	};
 
 	QueryParams GetRawQueryParams(std::function<void(int nsId)> updatePayloadFunc);
-	ItemParams GetItemParams();
+	ItemParams GetItemParams(int flags);
 };
 }  // namespace client
 }  // namespace reindexer

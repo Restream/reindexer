@@ -3,13 +3,14 @@
 #include <vector>
 #include "core/idset.h"
 #include "core/index/keyentry.h"
+#include "core/indexdef.h"
 #include "core/indexopts.h"
-#include "core/keyvalue/keyvalue.h"
+#include "core/keyvalue/variant.h"
 #include "core/namespacestat.h"
 #include "core/payload/payloadiface.h"
+#include "core/perfstatcounter.h"
 #include "core/selectfunc/ctx/basefunctionctx.h"
 #include "core/selectkeyresult.h"
-#include "core/perfstatcounter.h"
 
 namespace reindexer {
 
@@ -26,17 +27,16 @@ public:
 	using KeyEntry = reindexer::KeyEntry<IdSet>;
 	using KeyEntryPlain = reindexer::KeyEntry<IdSetPlain>;
 
-	Index(IndexType type, const string& name, const IndexOpts& opts = IndexOpts(), const PayloadType payloadType = PayloadType(),
-		  const FieldsSet& fields = FieldsSet());
+	Index(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields);
 	Index(const Index&);
 	Index& operator=(const Index&) = delete;
 	virtual ~Index();
-	virtual KeyRef Upsert(const KeyRef& key, IdType id) = 0;
-	virtual void Delete(const KeyRef& key, IdType id) = 0;
+	virtual Variant Upsert(const Variant& key, IdType id) = 0;
+	virtual void Delete(const Variant& key, IdType id) = 0;
 	virtual void DumpKeys() = 0;
-	virtual IdSetRef Find(const KeyRef& key) = 0;
+	virtual IdSetRef Find(const Variant& key) = 0;
 
-	virtual SelectKeyResults SelectKey(const KeyValues& keys, CondType condition, SortType stype, ResultType res_type,
+	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, ResultType res_type,
 									   BaseFunctionCtx::Ptr ctx) = 0;
 	virtual bool Commit(const CommitContext& ctx) = 0;
 	virtual void MakeSortOrders(UpdateSortedContext&) {}
@@ -48,7 +48,7 @@ public:
 	virtual IndexMemStat GetMemStat() = 0;
 	void UpdatePayloadType(const PayloadType payloadType) { payloadType_ = payloadType; }
 
-	static Index* New(IndexType type, const string& name, const IndexOpts& opts, const PayloadType payloadType, const FieldsSet& fields_);
+	static Index* New(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields_);
 
 	virtual KeyValueType KeyType() = 0;
 	const FieldsSet& Fields() const { return fields_; }

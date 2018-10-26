@@ -9,11 +9,11 @@ import (
 )
 
 type TestDescribeStruct struct {
-	ID        int    `reindex:"id,,pk"`
-	Foo       string `reindex:"foo,hash"`
-	Qwe       string `reindex:"qwe,tree"`
-	Bar       []int  `reindex:"bar"`
-	Search    string `reindex:"search,fuzzytext"`
+	ID        int64   `reindex:"id,,pk"`
+	Foo       string  `reindex:"foo,hash"`
+	Qwe       string  `reindex:"qwe,tree"`
+	Bar       []int32 `reindex:"bar"`
+	Search    string  `reindex:"search,fuzzytext"`
 	SubStruct TestDescribeSubStruct
 	TestDescribeBuiltinSubStruct
 	Bla string
@@ -84,8 +84,8 @@ func TestDescribe(t *testing.T) {
 		panic(fmt.Sprint("index must not be fulltext"))
 	}
 
-	if desc.Indexes[0].FieldType != reflect.Int.String() {
-		panic(fmt.Sprintf("wait field type %s, got %s", reflect.Int, desc.Indexes[0].FieldType))
+	if desc.Indexes[0].FieldType != reflect.Int64.String() {
+		panic(fmt.Sprintf("wait field type %s, got %s", reflect.Int64, desc.Indexes[0].FieldType))
 	}
 
 	for i, cond := range desc.Indexes[0].Conditions {

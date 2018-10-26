@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"unsafe"
 
 	"github.com/restream/reindexer/bindings"
 )
@@ -32,23 +33,13 @@ type indexOptions struct {
 	isSparse    bool
 }
 
-func (db *Reindexer) parseIndex(namespace string, st reflect.Type, subArray bool, reindexBasePath, jsonBasePath string, joined *map[string][]int) (err error) {
-	var indexDefs []bindings.IndexDef
+func (db *Reindexer) parseIndex(namespace string, st reflect.Type, joined *map[string][]int) (indexDefs []bindings.IndexDef, err error) {
 
-	err = parse(&indexDefs, st, subArray, reindexBasePath, jsonBasePath, joined)
-	if err != nil {
-		return err
+	if err = parse(&indexDefs, st, false, "", "", joined); err != nil {
+		return nil, err
 	}
 
-	for _, indexDef := range indexDefs {
-		err := db.binding.AddIndex(namespace, indexDef)
-
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return indexDefs, nil
 }
 
 func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reindexBasePath, jsonBasePath string, joined *map[string][]int) (err error) {
@@ -109,7 +100,7 @@ func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reind
 				return fmt.Errorf("'composite' tag allowed only on empty on structs: Invalid tags %v on field %s", tagsSlice, st.Field(i).Name)
 			}
 
-			indexDef := makeIndexDef(reindexPath, "", idxType, "composite", opts, CollateNone, "")
+			indexDef := makeIndexDef(parseCompositeName(reindexPath), parseCompositeJsonPaths(reindexPath), idxType, "composite", opts, CollateNone, "")
 			if err := indexDefAppend(indexDefs, indexDef, opts.isAppenable); err != nil {
 				return err
 			}
@@ -135,7 +126,7 @@ func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reind
 			if fieldType, err := getFieldType(t); err != nil {
 				return err
 			} else {
-				indexDef := makeIndexDef(reindexPath, jsonPath, idxType, fieldType, opts, collateMode, sortOrderLetters)
+				indexDef := makeIndexDef(reindexPath, []string{jsonPath}, idxType, fieldType, opts, collateMode, sortOrderLetters)
 				if err := indexDefAppend(indexDefs, indexDef, opts.isAppenable); err != nil {
 					return err
 				}
@@ -203,6 +194,20 @@ func parseOpts(idxSettingsBuf *[]string) indexOptions {
 	return opts
 }
 
+func parseCompositeName(indexName string) string {
+	indexConents := strings.Split(indexName, "=")
+	if len(indexConents) > 1 {
+		indexName = indexConents[1]
+	}
+	return indexName
+}
+
+func parseCompositeJsonPaths(indexName string) []string {
+
+	indexConents := strings.Split(indexName, "=")
+	return strings.Split(indexConents[0], "+")
+}
+
 func parseCollate(idxSettingsBuf *[]string) (int, string) {
 	newIdxSettingsBuf := make([]string, 0)
 
@@ -258,9 +263,15 @@ func getFieldType(t reflect.Type) (string, error) {
 	switch t.Kind() {
 	case reflect.Bool:
 		return "bool", nil
-	case reflect.Int, reflect.Int8, reflect.Int32, reflect.Int16,
-		reflect.Uint, reflect.Uint8, reflect.Uint32, reflect.Uint16:
+	case reflect.Int8, reflect.Int32, reflect.Int16,
+		reflect.Uint8, reflect.Uint32, reflect.Uint16:
 		return "int", nil
+	case reflect.Int, reflect.Uint:
+		if unsafe.Sizeof(int(0)) == unsafe.Sizeof(int64(0)) {
+			return "int64", nil
+		} else {
+			return "int", nil
+		}
 	case reflect.Int64, reflect.Uint64:
 		return "int64", nil
 	case reflect.String:
@@ -283,7 +294,7 @@ func getJoinedField(val reflect.Value, joined map[string][]int, name string) (re
 	return ret
 }
 
-func makeIndexDef(index, jsonPath, indexType, fieldType string, opts indexOptions, collateMode int, sortOrder string) bindings.IndexDef {
+func makeIndexDef(index string, jsonPaths []string, indexType, fieldType string, opts indexOptions, collateMode int, sortOrder string) bindings.IndexDef {
 	cm := ""
 	switch collateMode {
 	case bindings.CollateASCII:
@@ -298,7 +309,7 @@ func makeIndexDef(index, jsonPath, indexType, fieldType string, opts indexOption
 
 	return bindings.IndexDef{
 		Name:        index,
-		JSONPath:    jsonPath,
+		JSONPaths:   jsonPaths,
 		IndexType:   indexType,
 		FieldType:   fieldType,
 		IsArray:     opts.isArray,
@@ -337,25 +348,26 @@ func indexDefAppend(indexDefs *[]bindings.IndexDef, indexDef bindings.IndexDef, 
 		return fmt.Errorf("Index %s has another type: %+v", name, indexDef)
 	}
 
-	jsonPaths := strings.Split(foundIndexDef.JSONPath, ",")
-	isPresented := false
-	for _, jsonPath := range jsonPaths {
-		if jsonPath == indexDef.JSONPath {
-			isPresented = true
-			break
-		}
-	}
-
-	if !isPresented {
-		if !isAppendable {
-			return fmt.Errorf("Index %s is not appendable", name)
+	if len(indexDef.JSONPaths) > 0 && indexDef.IndexType != "composite" {
+		jsonPaths := foundIndexDef.JSONPaths
+		isPresented := false
+		for _, jsonPath := range jsonPaths {
+			if jsonPath == indexDef.JSONPaths[0] {
+				isPresented = true
+				break
+			}
 		}
 
-		foundIndexDef.JSONPath = strings.Join([]string{foundIndexDef.JSONPath, indexDef.JSONPath}, ",")
+		if !isPresented {
+			if !isAppendable {
+				return fmt.Errorf("Index %s is not appendable", name)
+			}
+
+			foundIndexDef.JSONPaths = append(foundIndexDef.JSONPaths, indexDef.JSONPaths[0])
+		}
+
+		foundIndexDef.IsArray = true
+		(*indexDefs)[foundIndexPos] = foundIndexDef
 	}
-
-	foundIndexDef.IsArray = true
-	(*indexDefs)[foundIndexPos] = foundIndexDef
-
 	return nil
 }

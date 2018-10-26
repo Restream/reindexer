@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 #include <functional>
 #include "core/aggregator.h"
 #include "core/nsselecter/selectiterator.h"
@@ -12,6 +13,8 @@ namespace reindexer {
 
 using std::string;
 using std::vector;
+using std::chrono::duration_cast;
+using std::chrono::microseconds;
 
 struct JoinedSelector {
 	typedef std::function<bool(IdType, int nsId, ConstPayload, bool)> FuncType;
@@ -92,9 +95,10 @@ private:
 	void applyGeneralSort(ConstItemIterator itFirst, ConstItemIterator itLast, ConstItemIterator itEnd, const SelectCtx &ctx);
 
 	bool containsFullTextIndexes(const QueryEntries &entries);
-	void selectWhere(const QueryEntries &entries, RawQueryResult &result, SortType sortId, bool is_ft);
-	void addSelectResult(Index *firstSortIdx, bool hasComparators, uint8_t proc, IdType rowId, IdType &properRowId, const SelectCtx &sctx,
-						 h_vector<Aggregator, 4> &aggregators, QueryResults &result);
+	void prepareIteratorsForSelectLoop(const QueryEntries &entries, RawQueryResult &result, SortType sortId, bool is_ft);
+	void prepareEqualPositionComparator(const Query &query, const QueryEntries &entries, RawQueryResult &result);
+	void addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, const SelectCtx &sctx, h_vector<Aggregator, 4> &aggregators,
+						 QueryResults &result);
 	QueryEntries lookupQueryIndexes(const QueryEntries &entries);
 	void substituteCompositeIndexes(QueryEntries &entries);
 	SortingEntries getOptimalSortOrder(const QueryEntries &entries);
@@ -106,7 +110,8 @@ private:
 	KeyValueType getQueryEntryIndexType(const QueryEntry &qentry) const;
 	void prepareSortingContext(const SortingEntries &sortBy, SelectCtx &ctx, bool isFt);
 	void prepareSortingIndexes(SortingEntries &sortBy);
-	void getSortIndexValue(const SelectCtx::SortingCtx::Entry *sortCtx, IdType rowId, KeyRefs &value);
+	void getSortIndexValue(const SelectCtx::SortingCtx::Entry *sortCtx, IdType rowId, VariantArray &value);
+	bool proccessJoin(SelectCtx &sctx, IdType properRowId, bool found, bool match, bool hasInnerJoin);
 
 	Namespace *ns_;
 	SelectFunction::Ptr fnc_;

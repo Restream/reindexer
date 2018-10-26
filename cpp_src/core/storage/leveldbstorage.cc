@@ -139,7 +139,7 @@ void LevelDbBatchBuffer::Put(const string_view& key, const string_view& value) {
 	batchWrite_.Put(leveldb::Slice(key.data(), key.size()), leveldb::Slice(value.data(), value.size()));
 }
 
-void LevelDbBatchBuffer::Remove(const string_view& key) { batchWrite_.Delete(leveldb::Slice(key.data())); }
+void LevelDbBatchBuffer::Remove(const string_view& key) { batchWrite_.Delete(leveldb::Slice(key.data(), key.size())); }
 
 void LevelDbBatchBuffer::Clear() { batchWrite_.Clear(); }
 

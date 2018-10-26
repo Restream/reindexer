@@ -46,12 +46,12 @@ protected:
 		for (size_t i = 0; i < qr.Count(); ++i) {
 			Item ritem(qr[i].GetItem());
 			std::string expectedName = "name" + std::to_string(i);
-			KeyRef nameVal = ritem[kFieldName];
+			Variant nameVal = ritem[kFieldName];
 			EXPECT_TRUE(nameVal.Type() == KeyValueString);
 			EXPECT_TRUE(nameVal.As<string>() == expectedName);
 
 			int64_t expectedSerialNumber = static_cast<int64_t>(i);
-			KeyRef serialNumberVal = ritem[kFieldSerialNumber];
+			Variant serialNumberVal = ritem[kFieldSerialNumber];
 			EXPECT_TRUE(serialNumberVal.Type() == KeyValueInt64);
 			EXPECT_TRUE(static_cast<int64_t>(serialNumberVal) == expectedSerialNumber);
 		}
@@ -59,22 +59,22 @@ protected:
 
 	void CheckSelectByTreeIndex() {
 		QueryResults qr;
-		Error err = reindexer->Select(Query(default_namespace).Where(kFieldName, CondEq, KeyValue("name5")), qr);
+		Error err = reindexer->Select(Query(default_namespace).Where(kFieldName, CondEq, Variant("name5")), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_TRUE(qr.Count() == 1);
 		Item ritem(qr[0].GetItem());
-		KeyRef nameVal = ritem[kFieldName];
+		Variant nameVal = ritem[kFieldName];
 		EXPECT_TRUE(nameVal.Type() == KeyValueString);
 		EXPECT_TRUE(nameVal.As<string>() == "name5");
 
 		QueryResults qr2;
 		const string toCompare("name2");
-		err = reindexer->Select(Query(default_namespace).Where(kFieldName, CondLt, KeyValue(toCompare)), qr2);
+		err = reindexer->Select(Query(default_namespace).Where(kFieldName, CondLt, Variant(toCompare)), qr2);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		for (auto it : qr2) {
 			Item ritem(it.GetItem());
-			KeyRef nameVal = ritem[kFieldName];
+			Variant nameVal = ritem[kFieldName];
 			EXPECT_TRUE(nameVal.Type() == KeyValueString);
 			EXPECT_TRUE(nameVal.As<string>().compare(toCompare) < 0);
 		}
@@ -82,24 +82,24 @@ protected:
 
 	void CheckSelectByHashIndex() {
 		QueryResults qr;
-		Error err = reindexer->Select(Query(default_namespace).Where(kFieldSerialNumber, CondLt, KeyValue(static_cast<int64_t>(50))), qr);
+		Error err = reindexer->Select(Query(default_namespace).Where(kFieldSerialNumber, CondLt, Variant(static_cast<int64_t>(50))), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_TRUE(qr.Count() == 50);
 		for (int64_t i = 0; i < static_cast<int64_t>(qr.Count()); ++i) {
 			Item ritem(qr[i].GetItem());
-			KeyRef serialNumberVal = ritem[kFieldSerialNumber];
+			Variant serialNumberVal = ritem[kFieldSerialNumber];
 			EXPECT_TRUE(serialNumberVal.Type() == KeyValueInt64);
 			EXPECT_TRUE(static_cast<int64_t>(serialNumberVal) == i);
 		}
 
 		QueryResults qr2;
 		int64_t expectedValue(static_cast<int64_t>(77));
-		err = reindexer->Select(Query(default_namespace).Where(kFieldSerialNumber, CondEq, KeyValue(expectedValue)), qr2);
+		err = reindexer->Select(Query(default_namespace).Where(kFieldSerialNumber, CondEq, Variant(expectedValue)), qr2);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_TRUE(qr2.Count() == 1);
 
 		Item ritem(qr2[0].GetItem());
-		KeyRef serialNumberVal = ritem[kFieldSerialNumber];
+		Variant serialNumberVal = ritem[kFieldSerialNumber];
 		EXPECT_TRUE(serialNumberVal.Type() == KeyValueInt64);
 		EXPECT_TRUE(static_cast<int64_t>(serialNumberVal) == expectedValue);
 	}

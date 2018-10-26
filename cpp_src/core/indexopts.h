@@ -15,7 +15,6 @@ struct CollateOpts {
 /// to link in C-GO version because of templates
 /// in memory.h and unordered_map.h
 struct IndexOpts {
-	IndexOpts(const IndexOptsC& indexOptsC);
 	explicit IndexOpts(uint8_t flags = 0, CollateMode mode = CollateNone);
 	explicit IndexOpts(const std::string& sortOrderUTF8, uint8_t flags = 0);
 
@@ -30,6 +29,7 @@ struct IndexOpts {
 	IndexOpts& Dense(bool value = true);
 	IndexOpts& Sparse(bool value = true);
 	IndexOpts& SetCollateMode(CollateMode mode);
+	IndexOpts& SetConfig(const std::string& config);
 	CollateMode GetCollateMode() const;
 
 	bool operator==(const IndexOpts&) const;

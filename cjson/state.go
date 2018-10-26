@@ -10,7 +10,7 @@ type StateData struct {
 	ctagsCache  ctagsCache
 	ctagsWCache ctagsWCache
 	Version     int32
-	CacheToken  int32
+	StateToken  int32
 }
 
 type State struct {
@@ -37,12 +37,12 @@ func (state *State) Copy() State {
 func (state *State) ReadPayloadType(s *Serializer) State {
 	state.lock.Lock()
 	defer state.lock.Unlock()
-	cacheToken := int32(s.GetVarUInt())
+	stateToken := int32(s.GetVarUInt())
 	version := int32(s.GetVarUInt())
-	skip := state.Version >= version && state.CacheToken == cacheToken
+	skip := state.Version >= version && state.StateToken == stateToken
 
 	if !skip {
-		state.StateData = &StateData{Version: version, CacheToken: cacheToken}
+		state.StateData = &StateData{Version: version, StateToken: stateToken}
 	}
 	state.tagsMatcher.Read(s, skip)
 	state.payloadType.Read(s, skip)

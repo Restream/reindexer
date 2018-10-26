@@ -23,7 +23,7 @@ public:
 protected:
 	bool Interactive();
 	bool FromFile();
-	ostream& queryResultsToJson(ostream& o, const typename _DB::QueryResultsT& r);
+	Error queryResultsToJson(ostream& o, const typename _DB::QueryResultsT& r);
 
 	Error ProcessCommand(string command);
 	Error commandSelect(const string& command);
@@ -45,6 +45,12 @@ protected:
 	// clang-format off
 	std::vector <commandDefinition> cmds_ = {
 		{"select",		"Query to database",&DBWrapper::commandSelect,R"help(
+	Syntax:
+		See SQL Select statement
+	Example:
+		SELECT * FROM media_items where name = 'Thor'
+		)help"},
+		{"explain",		"Query to database",&DBWrapper::commandSelect,R"help(
 	Syntax:
 		See SQL Select statement
 	Example:

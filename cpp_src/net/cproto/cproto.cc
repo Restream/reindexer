@@ -16,7 +16,6 @@ std::unordered_map<int, const char *> kRPCCodes = {
 	{kCmdDropNamespace, "DropNamespace"},
 	{kCmdAddIndex, "AddIndex"},
 	{kCmdEnumNamespaces, "EnumNamespaces"},
-	{kCmdConfigureIndex, "ConfigureIndex"},
 	{kCmdDropIndex, "DropIndex"},
 	{kCmdUpdateIndex, "UpdateIndex"},
 	{kCmdCommit, "Commit"},
@@ -29,6 +28,8 @@ std::unordered_map<int, const char *> kRPCCodes = {
 	{kCmdGetMeta, "GetMeta"},
 	{kCmdPutMeta, "PutMeta"},
 	{kCmdEnumMeta, "EnumMeta"},
+	{kCmdSubscribeUpdates, "SubscribeUpdates"},
+	{kCmdUpdates, "Updates"},
 };
 
 const char *CmdName(CmdCode cmd) {

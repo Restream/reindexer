@@ -1,5 +1,5 @@
 #include "api_tv_composite.h"
-#include "core/keyvalue/keyvalue.h"
+#include "core/keyvalue/variant.h"
 #include "core/query/query.h"
 #include "core/query/queryresults.h"
 #include "helpers.h"
@@ -9,7 +9,7 @@ using std::placeholders::_1;
 
 using reindexer::Query;
 using reindexer::QueryResults;
-using reindexer::KeyValue;
+using reindexer::Variant;
 
 reindexer::Error ApiTvComposite::Initialize() {
 	auto err = BaseFixture::Initialize();
@@ -101,7 +101,8 @@ void ApiTvComposite::Insert(State& state) { BaseFixture::Insert(state); }
 void ApiTvComposite::WarmUpIndexes(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {
-		{
+		// Ensure indexes complete build
+		for (int i = 0; i < 10; i++) {
 			Query q(nsdef_.name);
 			q.Where("sub_id", CondLe, std::to_string(random<int>(id_seq_->Start(), id_seq_->End())));
 
@@ -116,7 +117,7 @@ void ApiTvComposite::WarmUpIndexes(benchmark::State& state) {
 			auto leftStartTime = random<int>(0, 24999);
 			auto rightStartTime = random<int>(0, 50000);
 			q.WhereComposite("id+start_time", CondRange,
-							 {{KeyValue(idRange.first), KeyValue(leftStartTime)}, {KeyValue(idRange.second), KeyValue(rightStartTime)}})
+							 {{Variant(idRange.first), Variant(leftStartTime)}, {Variant(idRange.second), Variant(rightStartTime)}})
 				.Sort("start_time", false)
 				.Limit(20);
 		}
@@ -138,7 +139,7 @@ void ApiTvComposite::GetByCompositePK(State& state) {
 		auto randId = random<int>(id_seq_->Start(), id_seq_->End());
 		auto randSubId = std::to_string(randId);
 		Query q(nsdef_.name);
-		q.WhereComposite("id+sub_id", CondEq, {{KeyValue(randId), KeyValue(randSubId)}});
+		q.WhereComposite("id+sub_id", CondEq, {{Variant(randId), Variant(randSubId)}});
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -204,8 +205,7 @@ void ApiTvComposite::RangeTreeCompositeIntInt(State& state) {
 		auto leftYear = random<int>(2000, 2024);
 		auto rightYear = random<int>(2025, 2049);
 
-		q.WhereComposite("id+year", CondRange,
-						 {{KeyValue(idRange.first), KeyValue(leftYear)}, {KeyValue(idRange.second), KeyValue(rightYear)}})
+		q.WhereComposite("id+year", CondRange, {{Variant(idRange.first), Variant(leftYear)}, {Variant(idRange.second), Variant(rightYear)}})
 			.Limit(20);
 
 		QueryResults qres;
@@ -224,7 +224,7 @@ void ApiTvComposite::RangeTreeCompositeIntStr(State& state) {
 		auto randRightStr = names_.at(random<size_t>(0, names_.size() - 1));
 
 		q.WhereComposite("id+name", CondRange,
-						 {{KeyValue(idRange.first), KeyValue(randLeftStr)}, {KeyValue(idRange.second), KeyValue(randRightStr)}})
+						 {{Variant(idRange.first), Variant(randLeftStr)}, {Variant(idRange.second), Variant(randRightStr)}})
 			.Limit(20);
 
 		QueryResults qres;
@@ -288,7 +288,7 @@ void ApiTvComposite::RangeHashCompositeIntInt(State& state) {
 		auto rightStartTime = random<int64_t>(25000, 50000);
 
 		q.WhereComposite("id+start_time", CondRange,
-						 {{KeyValue(idRange.first), KeyValue(leftStartTime)}, {KeyValue(idRange.second), KeyValue(rightStartTime)}})
+						 {{Variant(idRange.first), Variant(leftStartTime)}, {Variant(idRange.second), Variant(rightStartTime)}})
 			.Limit(20);
 
 		QueryResults qres;
@@ -307,7 +307,7 @@ void ApiTvComposite::RangeHashCompositeIntStr(benchmark::State& state) {
 		auto rightGenre = std::to_string(random<int>(25, 49));
 
 		q.WhereComposite("id+genre", CondRange,
-						 {{KeyValue(idRange.first), KeyValue(leftGenre)}, {KeyValue(idRange.second), KeyValue(rightGenre)}})
+						 {{Variant(idRange.first), Variant(leftGenre)}, {Variant(idRange.second), Variant(rightGenre)}})
 			.Limit(20);
 
 		QueryResults qres;

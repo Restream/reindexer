@@ -100,7 +100,7 @@ func assertErrorMessage(t *testing.T, actual error, expected error) {
 }
 
 func TestReturnEncoderValidateError(t *testing.T) {
-	enc := cjson.Encoder{}
+	enc := cjson.Validator{}
 
 	assertErrorMessage(t, enc.Validate(RootLevelFailType{}), fmt.Errorf(rootLevelErrMessage))
 	assertErrorMessage(t, enc.Validate(InternalLevelFailType{}), fmt.Errorf(internalLevelErrMessage))
@@ -113,19 +113,30 @@ func TestReturnEncoderValidateError(t *testing.T) {
 	assertErrorMessage(t, enc.Validate(EmbeddedFailType{}), fmt.Errorf(embeddedInternalLevelErrMessage))
 }
 
-func TestReturnOpenNamespaceError(t *testing.T) {
+func OpenNamespaceWrapper(ns string, opts *reindexer.NamespaceOptions, s interface{}) (err error) {
+
+	defer func() {
+		if ierr := recover(); ierr != nil {
+			err = ierr.(error)
+			return
+		}
+	}()
+	return DB.OpenNamespace(ns, opts, s)
+}
+
+func TestReturnRegisterNamespaceError(t *testing.T) {
 	NsOptions := reindexer.DefaultNamespaceOptions()
-	assertErrorMessage(t, DB.OpenNamespace(nsName, NsOptions, RootLevelFailType{}), fmt.Errorf(rootLevelErrMessage))
-	assertErrorMessage(t, DB.OpenNamespace(nsName, NsOptions, InternalLevelFailType{}), fmt.Errorf(internalLevelErrMessage))
-	assertErrorMessage(t, DB.OpenNamespace(nsName, NsOptions, DeepInternalLevelFailType{}), fmt.Errorf(deepInternalLevelErrMessage))
-	assertErrorMessage(t, DB.OpenNamespace(nsName, NsOptions, DBItemType{}), nil)
+	assertErrorMessage(t, OpenNamespaceWrapper(nsName, NsOptions, RootLevelFailType{}), fmt.Errorf(rootLevelErrMessage))
+	assertErrorMessage(t, OpenNamespaceWrapper(nsName, NsOptions, InternalLevelFailType{}), fmt.Errorf(internalLevelErrMessage))
+	assertErrorMessage(t, OpenNamespaceWrapper(nsName, NsOptions, DeepInternalLevelFailType{}), fmt.Errorf(deepInternalLevelErrMessage))
+	assertErrorMessage(t, OpenNamespaceWrapper(nsName, NsOptions, DBItemType{}), nil)
 	DB.CloseNamespace(nsName)
-	assertErrorMessage(t, DB.OpenNamespace(nsName, NsOptions, ServiceType{}), nil)
+	assertErrorMessage(t, OpenNamespaceWrapper(nsName, NsOptions, ServiceType{}), nil)
 	DB.CloseNamespace(nsName)
-	assertErrorMessage(t, DB.OpenNamespace(nsName, NsOptions, ElementType{}), nil)
+	assertErrorMessage(t, OpenNamespaceWrapper(nsName, NsOptions, ElementType{}), nil)
 	DB.CloseNamespace(nsName)
-	assertErrorMessage(t, DB.OpenNamespace(nsName, NsOptions, DBItemFailType{}), fmt.Errorf(deepInternalLevelWithOmitSymbolErrMessage))
-	assertErrorMessage(t, DB.OpenNamespace(nsName, NsOptions, EmbeddedFailType{}), fmt.Errorf(embeddedInternalLevelErrMessage))
-	assertErrorMessage(t, DB.OpenNamespace(nsName, NsOptions, EmbeddedSuccessType{}), nil)
+	assertErrorMessage(t, OpenNamespaceWrapper(nsName, NsOptions, DBItemFailType{}), fmt.Errorf(deepInternalLevelWithOmitSymbolErrMessage))
+	assertErrorMessage(t, OpenNamespaceWrapper(nsName, NsOptions, EmbeddedFailType{}), fmt.Errorf(embeddedInternalLevelErrMessage))
+	assertErrorMessage(t, OpenNamespaceWrapper(nsName, NsOptions, EmbeddedSuccessType{}), nil)
 	DB.CloseNamespace(nsName)
 }

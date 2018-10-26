@@ -65,7 +65,7 @@ TEST_F(NsApi, UpdateIndex) {
 
 	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK()}});
 
-	auto newIdx = reindexer::IndexDef(idIdxName.c_str(), idIdxName.c_str(), "-", "int64", IndexOpts().PK().Dense());
+	auto newIdx = reindexer::IndexDef(idIdxName, "-", "int64", IndexOpts().PK().Dense());
 	err = reindexer->UpdateIndex(default_namespace, newIdx);
 	ASSERT_TRUE(err.ok()) << err.what();
 
@@ -82,10 +82,10 @@ TEST_F(NsApi, UpdateIndex) {
 	auto receivedIdx = std::find_if(indexes.begin(), indexes.end(), [&](const reindexer::IndexDef &idx) { return idx.name_ == idIdxName; });
 	ASSERT_TRUE(receivedIdx != indexes.end()) << "Expect index was created, but it wasn't";
 
-	reindexer::WrSerializer newIdxSer(true);
+	reindexer::WrSerializer newIdxSer;
 	newIdx.GetJSON(newIdxSer);
 
-	reindexer::WrSerializer receivedIdxSer(true);
+	reindexer::WrSerializer receivedIdxSer;
 	receivedIdx->GetJSON(receivedIdxSer);
 
 	string newIdxJson = newIdxSer.Slice().ToString();

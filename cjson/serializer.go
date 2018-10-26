@@ -69,6 +69,11 @@ func (s *Serializer) Append(s2 Serializer) {
 	}
 }
 
+func (s *Serializer) PutUInt16(v uint16) *Serializer {
+	s.writeIntBits(int64(v), unsafe.Sizeof(v))
+	return s
+}
+
 func (s *Serializer) PutUInt32(v uint32) *Serializer {
 	s.writeIntBits(int64(v), unsafe.Sizeof(v))
 	return s
@@ -161,6 +166,14 @@ func (s *Serializer) PutVString(v string) *Serializer {
 }
 func (s *Serializer) Truncate(pos int) {
 	s.buf = s.buf[:pos]
+}
+
+func (s *Serializer) TruncateStart(pos int) {
+	s.buf = s.buf[pos:]
+}
+
+func (s *Serializer) GetUInt16() (v uint16) {
+	return uint16(s.readIntBits(unsafe.Sizeof(v)))
 }
 
 func (s *Serializer) GetUInt32() (v uint32) {

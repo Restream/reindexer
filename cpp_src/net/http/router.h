@@ -148,7 +148,7 @@ struct Context {
 	int String(int code, const string_view &slice);
 	int File(int code, const char *path, const string_view &data = string_view());
 	int Printf(int code, const char *contentType, const char *fmt, ...);
-	int Redirect(const char *url);
+	int Redirect(const string_view &url);
 
 	Request *request;
 	Writer *writer;

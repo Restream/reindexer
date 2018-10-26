@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/idset.h"
-#include "core/keyvalue/keyvalue.h"
+#include "core/keyvalue/variant.h"
 #include "core/lrucache.h"
 #include "core/nsselecter/nsselecter.h"
 #include "core/query/query.h"

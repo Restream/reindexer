@@ -20,6 +20,10 @@ public:
 	using base_fields_set::size;
 	using base_fields_set::empty;
 	using base_fields_set::operator[];
+	FieldsSet(const TagsMatcher &tagsMatcher, const h_vector<string, 4> &fields) : mask_(0) {
+		for (auto &str : fields) tagsPaths_.push_back(tagsMatcher.path2tag(str));
+	}
+
 	FieldsSet(std::initializer_list<int> l) : mask_(0) {
 		for (auto f : l) push_back(f);
 	}
@@ -59,9 +63,20 @@ public:
 	}
 
 	bool contains(int f) const { return mask_ & (1ULL << f); }
-	bool contains(const FieldsSet &f) const { return (mask_ & f.mask_) == mask_; }
+	bool contains(const FieldsSet &f) const { return mask_ && ((mask_ & f.mask_) == mask_); }
 	bool contains(const TagsPath &tagsPath) { return std::find(tagsPaths_.begin(), tagsPaths_.end(), tagsPath) != tagsPaths_.end(); }
 	bool contains(const string &jsonPath) { return std::find(jsonPaths_.begin(), jsonPaths_.end(), jsonPath) != jsonPaths_.end(); }
+
+	bool match(const TagsPath &tagsPath) const {
+		if (tagsPaths_.empty()) return true;
+		for (auto &flt : tagsPaths_) {
+			unsigned i = 0, count = std::min(flt.size(), tagsPath.size());
+			for (; i < count && tagsPath[i] == flt[i]; i++) {
+			}
+			if (i == count) return true;
+		}
+		return false;
+	}
 
 	void clear() {
 		base_fields_set::clear();
@@ -76,17 +91,17 @@ public:
 	const string &getJsonPath(size_t idx) const { return jsonPaths_[idx]; }
 
 	bool operator==(const FieldsSet &f) const { return (mask_ == f.mask_) && (tagsPaths_ == f.tagsPaths_); }
-	bool operator!=(const FieldsSet &f) const { return mask_ != f.mask_; }
+	bool operator!=(const FieldsSet &f) const { return mask_ != f.mask_ || tagsPaths_ != f.tagsPaths_; }
 
 protected:
 	uint64_t mask_ = 0;
-	h_vector<TagsPath> tagsPaths_;
+	h_vector<TagsPath, 1> tagsPaths_;
 
 	/// Json paths to non indexed fields.
 	/// Necessary only for composite full text
 	/// indexes. There is a connection with
 	/// tagsPaths_: order and amount of elements.
-	h_vector<string> jsonPaths_;
+	h_vector<string, 1> jsonPaths_;
 };
 
 }  // namespace reindexer

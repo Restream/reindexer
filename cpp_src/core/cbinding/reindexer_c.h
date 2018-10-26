@@ -23,9 +23,8 @@ reindexer_error reindexer_add_index(uintptr_t rx, reindexer_string _namespace, r
 reindexer_error reindexer_update_index(uintptr_t rx, reindexer_string _namespace, reindexer_string indexDefJson);
 reindexer_error reindexer_drop_index(uintptr_t rx, reindexer_string _namespace, reindexer_string index);
 
-reindexer_error reindexer_configure_index(uintptr_t rx, reindexer_string _namespace, reindexer_string index, reindexer_string config);
-
-reindexer_ret reindexer_modify_item(uintptr_t rx, reindexer_buffer in, int mode);
+reindexer_ret reindexer_modify_item(uintptr_t rx, reindexer_string _namespace, int format, reindexer_buffer data, int mode,
+									reindexer_buffer percepts_pack, int state_token, int tx_id);
 reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int with_items, int32_t *pt_versions, int pt_versions_count);
 
 reindexer_ret reindexer_select_query(uintptr_t rx, reindexer_buffer in, int with_items, int32_t *pt_versions, int pt_versions_count);

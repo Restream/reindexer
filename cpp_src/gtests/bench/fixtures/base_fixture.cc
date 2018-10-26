@@ -11,17 +11,6 @@ using reindexer::Error;
 
 using benchmark::RegisterBenchmark;
 
-BaseFixture& BaseFixture::AddIndex(const std::string& name, const std::string& jsonPath, const std::string& indexType,
-								   const std::string& fieldType, IndexOpts opts) {
-	nsdef_.AddIndex(name, jsonPath, indexType, fieldType, opts);
-	return *this;
-}
-
-BaseFixture& BaseFixture::AddIndex(const reindexer::IndexDef& index) {
-	nsdef_.AddIndex(index);
-	return *this;
-}
-
 Error BaseFixture::Initialize() {
 	assert(db_);
 	return db_->AddNamespace(nsdef_);
@@ -43,8 +32,8 @@ void BaseFixture::Insert(State& state) {
 		auto err = db_->Insert(nsdef_.name, item);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 
-//      deprecated. need to use user's counters
-//		state.SetItemsProcessed(state.items_processed() + 1);
+		//      deprecated. need to use user's counters
+		//		state.SetItemsProcessed(state.items_processed() + 1);
 	}
 
 	auto err = db_->Commit(nsdef_.name);
@@ -65,8 +54,8 @@ void BaseFixture::Update(benchmark::State& state) {
 			auto e = Error(errConflict, "Item not exists [id = '%d']", item["id"].As<int>());
 			state.SkipWithError(e.what().c_str());
 		}
-//      deprecated. need to use user's counters
-//		state.SetItemsProcessed(state.items_processed() + 1);
+		//      deprecated. need to use user's counters
+		//		state.SetItemsProcessed(state.items_processed() + 1);
 	}
 	auto err = db_->Commit(nsdef_.name);
 	if (!err.ok()) state.SkipWithError(err.what().c_str());

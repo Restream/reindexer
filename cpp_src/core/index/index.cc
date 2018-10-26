@@ -12,12 +12,10 @@ const int kMaxQueriesBeforeCommit = 5;
 
 namespace reindexer {
 
-Index::Index(IndexType type, const string& name, const IndexOpts& opts, const PayloadType payloadType, const FieldsSet& fields)
-	: type_(type), name_(name), opts_(opts), payloadType_(payloadType), fields_(fields), rawQueriesCount_(0) {
-	IndexDef def;
-	def.FromType(type);
-	logPrintf(LogTrace, "Index::Index (%s,%s,%s)  %s%s%s", def.indexType_.c_str(), def.fieldType_.c_str(), name.c_str(),
-			  opts.IsPK() ? ",pk" : "", opts.IsDense() ? ",dense" : "", opts.IsArray() ? ",array" : "");
+Index::Index(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields)
+	: type_(idef.Type()), name_(idef.name_), opts_(idef.opts_), payloadType_(payloadType), fields_(fields), rawQueriesCount_(0) {
+	logPrintf(LogTrace, "Index::Index ('%s',%s,%s)  %s%s%s", idef.name_.c_str(), idef.indexType_.c_str(), idef.fieldType_.c_str(),
+			  idef.opts_.IsPK() ? ",pk" : "", idef.opts_.IsDense() ? ",dense" : "", idef.opts_.IsArray() ? ",array" : "");
 }
 
 Index::Index(const Index& obj)
@@ -32,33 +30,33 @@ Index::Index(const Index& obj)
 
 Index::~Index() {}
 
-Index* Index::New(IndexType type, const string& name, const IndexOpts& opts, const PayloadType payloadType, const FieldsSet& fields) {
-	switch (type) {
+Index* Index::New(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields) {
+	switch (idef.Type()) {
 		case IndexStrBTree:
 		case IndexIntBTree:
 		case IndexDoubleBTree:
 		case IndexInt64BTree:
 		case IndexCompositeBTree:
-			return IndexOrdered_New(type, name, opts, payloadType, fields);
+			return IndexOrdered_New(idef, payloadType, fields);
 		case IndexStrHash:
 		case IndexIntHash:
 		case IndexInt64Hash:
 		case IndexCompositeHash:
-			return IndexUnordered_New(type, name, opts, payloadType, fields);
+			return IndexUnordered_New(idef, payloadType, fields);
 		case IndexIntStore:
 		case IndexStrStore:
 		case IndexInt64Store:
 		case IndexDoubleStore:
 		case IndexBool:
-			return IndexStore_New(type, name, opts, payloadType, fields);
+			return IndexStore_New(idef, payloadType, fields);
 		case IndexFastFT:
 		case IndexCompositeFastFT:
-			return FastIndexText_New(type, name, opts, payloadType, fields);
+			return FastIndexText_New(idef, payloadType, fields);
 		case IndexFuzzyFT:
 		case IndexCompositeFuzzyFT:
-			return FuzzyIndexText_New(type, name, opts, payloadType, fields);
+			return FuzzyIndexText_New(idef, payloadType, fields);
 		default:
-			throw Error(errParams, "Ivalid index type %d for index '%s'", type, name.c_str());
+			throw Error(errParams, "Ivalid index type %d for index '%s'", idef.Type(), idef.name_.c_str());
 	}
 }
 

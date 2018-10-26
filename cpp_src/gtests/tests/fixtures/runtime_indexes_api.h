@@ -8,12 +8,12 @@ public:
 		Error err = reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		DefineNamespaceDataset(
-			default_namespace,
-			{IndexDeclaration{bookid, "hash", "int", IndexOpts().PK()}, IndexDeclaration{bookid2, "hash", "int", IndexOpts().PK()},
-			 IndexDeclaration{title, "text", "string", IndexOpts()}, IndexDeclaration{pages, "hash", "int", IndexOpts()},
-			 IndexDeclaration{price, "hash", "int", IndexOpts()}, IndexDeclaration{name, "text", "string", IndexOpts()},
-			 IndexDeclaration{string(title + string("+") + price).c_str(), "hash", "composite", IndexOpts()}});
+		DefineNamespaceDataset(default_namespace,
+							   {IndexDeclaration{bookid, "hash", "int", IndexOpts()}, IndexDeclaration{bookid2, "hash", "int", IndexOpts()},
+								IndexDeclaration{title, "text", "string", IndexOpts()}, IndexDeclaration{pages, "hash", "int", IndexOpts()},
+								IndexDeclaration{price, "hash", "int", IndexOpts()}, IndexDeclaration{name, "text", "string", IndexOpts()},
+								IndexDeclaration{string(title + string("+") + price).c_str(), "hash", "composite", IndexOpts()},
+								IndexDeclaration{"bookid+bookid2", "hash", "composite", IndexOpts().PK()}});
 	}
 
 protected:
@@ -33,7 +33,7 @@ protected:
 
 	void AddRuntimeIntArrayIndex(int indexNumber) {
 		string indexName = getRuntimeIntIndexName(indexNumber);
-		Error err = reindexer->AddIndex(default_namespace, {indexName, indexName, "hash", "int", IndexOpts().Array()});
+		Error err = reindexer->AddIndex(default_namespace, {indexName, "hash", "int", IndexOpts().Array()});
 		EXPECT_TRUE(err.ok()) << err.what();
 		err = reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -61,7 +61,7 @@ protected:
 		IndexOpts opts;
 		if (pk) opts.PK();
 		string indexName = getRuntimeStringIndexName(indexNumber);
-		Error err = reindexer->AddIndex(default_namespace, {indexName, indexName, "hash", "string", opts});
+		Error err = reindexer->AddIndex(default_namespace, {indexName, "hash", "string", opts});
 		EXPECT_TRUE(err.ok()) << err.what();
 		err = reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -87,7 +87,8 @@ protected:
 
 	void AddRuntimeCompositeIndex(bool pk = false) {
 		string indexName(getRuntimeCompositeIndexName(pk));
-		Error err = reindexer->AddIndex(default_namespace, {indexName, indexName, "tree", "composite", IndexOpts().PK()});
+		Error err =
+			reindexer->AddIndex(default_namespace, {indexName, getRuntimeCompositeIndexParts(pk), "tree", "composite", IndexOpts().PK(pk)});
 		EXPECT_TRUE(err.ok()) << err.what();
 		err = reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -115,6 +116,14 @@ protected:
 			indexName = bookid + string("+") + title;
 		}
 		return indexName;
+	}
+
+	reindexer::JsonPaths getRuntimeCompositeIndexParts(bool pk) {
+		if (pk) {
+			return {bookid, bookid2};
+		} else {
+			return {bookid, title};
+		}
 	}
 
 	string getRuntimeIntIndexName(int indexNumber) { return runtime_int + to_string(indexNumber); }

@@ -1,8 +1,10 @@
 #include "core/indexdef.h"
 #include <unordered_map>
+#include "cjson/jsonbuilder.h"
 #include "string.h"
 #include "tools/errors.h"
 #include "tools/jsontools.h"
+#include "tools/logger.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 
@@ -51,26 +53,14 @@ std::unordered_map<CollateMode, const string, std::hash<int>, std::equal_to<int>
 
 // clang-format on
 
-JsonPaths::JsonPaths() {}
-JsonPaths::JsonPaths(const string_view &jsonPath) { split(jsonPath, ",", false, *this); }
-void JsonPaths::Set(const string_view &other) { split(other, ",", false, *this); }
-void JsonPaths::Set(const vector<string> &other) { vector::operator=(other); }
-
-string JsonPaths::AsSerializedString() const {
-	string output;
-	for (size_t i = 0; i < size(); ++i) {
-		const string &jsonPath(at(i));
-		if (jsonPath.empty()) continue;
-		output += jsonPath;
-		if (i != size() - 1) output += ',';
-	}
-	return output;
-}
-
 IndexDef::IndexDef() {}
-IndexDef::IndexDef(const string &name, const string_view &jsonPaths, const string &indexType, const string &fieldType, const IndexOpts opts)
+IndexDef::IndexDef(const string &name, const JsonPaths &jsonPaths, const string &indexType, const string &fieldType, const IndexOpts opts)
 	: name_(name), jsonPaths_(jsonPaths), indexType_(indexType), fieldType_(fieldType), opts_(opts) {}
-IndexDef::IndexDef(const string &name, const string_view &jsonPaths, const IndexType type, const IndexOpts opts)
+
+IndexDef::IndexDef(const string &name, const string &indexType, const string &fieldType, const IndexOpts opts)
+	: name_(name), jsonPaths_({name}), indexType_(indexType), fieldType_(fieldType), opts_(opts) {}
+
+IndexDef::IndexDef(const string &name, const JsonPaths &jsonPaths, const IndexType type, const IndexOpts opts)
 	: name_(name), jsonPaths_(jsonPaths), opts_(opts) {
 	this->FromType(type);
 }
@@ -139,19 +129,31 @@ Error IndexDef::FromJSON(JsonValue &jvalue) {
 			parseJsonField("is_array", isArray, elem);
 			parseJsonField("is_dense", isDense, elem);
 			parseJsonField("is_sparse", isSparse, elem);
-			parseJsonField("json_path", jsonPath, elem);
 			parseJsonField("collate_mode", collateStr, elem);
 			parseJsonField("sort_order_letters", sortOrderLetters, elem);
+			parseJsonField("json_path", jsonPath, elem);
 
-			if (!strcmp(elem->key, "config")) {
+			if ("json_paths"_sv == elem->key) {
+				if (elem->value.getTag() != JSON_ARRAY) throw Error(errParseJson, "Expected array in 'json_paths' key");
+				for (auto subElem : elem->value) {
+					if (subElem->value.getTag() != JSON_STRING) throw Error(errParseJson, "Expected string elements in 'json_paths' array");
+					jsonPaths_.push_back(subElem->value.toString());
+				}
+			}
+
+			if ("config"_sv == elem->key) {
 				config = stringifyJson(elem);
 			}
+		}
+		if (!jsonPath.empty()) {
+			jsonPaths_.push_back(jsonPath);
+			logPrintf(LogWarning,
+					  "indexDef.json_path is used. It has been deprecated and will be removed in future releases. Use json_paths instead");
 		}
 
 		opts_.PK(isPk).Array(isArray).Dense(isDense).Sparse(isSparse);
 		opts_.config = config;
 
-		if (!jsonPath.empty()) jsonPaths_.Set(jsonPath);
 		if (!collateStr.empty()) {
 			auto collateIt = find_if(begin(availableCollates), end(availableCollates),
 									 [&collateStr](const pair<CollateMode, string> &p) { return p.second == collateStr; });
@@ -174,33 +176,33 @@ Error IndexDef::FromJSON(JsonValue &jvalue) {
 }
 
 void IndexDef::GetJSON(WrSerializer &ser, bool describeCompat) const {
-	ser.PutChar('{');
-	ser.Printf("\"name\":\"%s\",", name_.c_str());
-	ser.Printf("\"json_path\":\"%s\",", jsonPaths_.AsSerializedString().c_str());
-	ser.Printf("\"field_type\":\"%s\",", fieldType_.c_str());
-	ser.Printf("\"index_type\":\"%s\",", indexType_.c_str());
-	ser.Printf("\"is_pk\":%s,", opts_.IsPK() ? "true" : "false");
-	ser.Printf("\"is_array\":%s,", opts_.IsArray() ? "true" : "false");
-	ser.Printf("\"is_dense\":%s,", opts_.IsDense() ? "true" : "false");
-	ser.Printf("\"is_sparse\":%s,", opts_.IsSparse() ? "true" : "false");
-	ser.Printf("\"collate_mode\":\"%s\",", getCollateMode().c_str());
-	ser.Printf("\"sort_order_letters\":\"%s\",", opts_.collateOpts_.sortOrderTable.GetSortOrderCharacters().c_str());
-	ser.Printf("\"config\":%s", opts_.hasConfig() ? opts_.config.c_str() : "{}");
+	JsonBuilder builder(ser);
+
+	builder.Put("name", name_)
+		.Put("field_type", fieldType_)
+		.Put("index_type", indexType_)
+		.Put("is_pk", opts_.IsPK())
+		.Put("is_array", opts_.IsArray())
+		.Put("is_dense", opts_.IsDense())
+		.Put("is_sparse", opts_.IsSparse())
+		.Put("collate_mode", getCollateMode())
+		.Put("sort_order_letters", opts_.collateOpts_.sortOrderTable.GetSortOrderCharacters())
+		.Raw("config", opts_.hasConfig() ? opts_.config.c_str() : "{}");
 
 	if (describeCompat) {
 		// extra data for support describe.
 		// TODO: deprecate and remove it
-		ser.Printf(",\"is_sortable\":%s,", isSortable(Type()) ? "true" : "false");
-		ser.Printf("\"is_fulltext\":%s,", isFullText(Type()) ? "true" : "false");
-		ser.Printf("\"conditions\": [");
-		auto conds = Conditions();
-		for (unsigned j = 0; j < conds.size(); j++) {
-			if (j != 0) ser.PutChar(',');
-			ser.Printf("\"%s\"", conds.at(j).c_str());
+		builder.Put("is_sortable", isSortable(Type()));
+		builder.Put("is_fulltext", isFullText(Type()));
+		auto arr = builder.Array("conditions");
+		for (auto &cond : Conditions()) {
+			arr.Put(nullptr, cond);
 		}
-		ser.PutChar(']');
 	}
-	ser.PutChar('}');
-}  // namespace reindexer
+	auto arrNode = builder.Array("json_paths");
+	for (auto &jsonPath : jsonPaths_) {
+		arrNode.Put(nullptr, jsonPath);
+	}
+}
 
 }  // namespace reindexer

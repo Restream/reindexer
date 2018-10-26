@@ -118,6 +118,7 @@ Error ReindexerImpl::Connect(const string& dsn) {
 	for (int i = 0; i < maxLoadWorkers; i++) thrs[i].join();
 
 	InitSystemNamespaces();
+
 	return errOK;
 }
 
@@ -209,12 +210,13 @@ Error ReindexerImpl::closeNamespace(const string& _namespace, bool dropStorage) 
 	return errOK;
 }
 
-Error ReindexerImpl::Insert(const string& _namespace, Item& item) {
+Error ReindexerImpl::Insert(const string& nsName, Item& item) {
 	try {
-		auto ns = getNamespace(_namespace);
+		auto ns = getNamespace(nsName);
 		ns->Insert(item);
 		if (item.GetID() != -1) {
-			updateSystemNamespace(_namespace, item);
+			updateSystemNamespace(nsName, item);
+			observers_.OnModifyItem(nsName, item.impl_, ModeInsert);
 		}
 	} catch (const Error& err) {
 		return err;
@@ -222,12 +224,13 @@ Error ReindexerImpl::Insert(const string& _namespace, Item& item) {
 	return errOK;
 }
 
-Error ReindexerImpl::Update(const string& _namespace, Item& item) {
+Error ReindexerImpl::Update(const string& nsName, Item& item) {
 	try {
-		auto ns = getNamespace(_namespace);
+		auto ns = getNamespace(nsName);
 		ns->Update(item);
 		if (item.GetID() != -1) {
-			updateSystemNamespace(_namespace, item);
+			updateSystemNamespace(nsName, item);
+			observers_.OnModifyItem(nsName, item.impl_, ModeUpdate);
 		}
 	} catch (const Error& err) {
 		return err;
@@ -235,12 +238,13 @@ Error ReindexerImpl::Update(const string& _namespace, Item& item) {
 	return errOK;
 }
 
-Error ReindexerImpl::Upsert(const string& _namespace, Item& item) {
+Error ReindexerImpl::Upsert(const string& nsName, Item& item) {
 	try {
-		auto ns = getNamespace(_namespace);
+		auto ns = getNamespace(nsName);
 		ns->Upsert(item);
 		if (item.GetID() != -1) {
-			updateSystemNamespace(_namespace, item);
+			updateSystemNamespace(nsName, item);
+			observers_.OnModifyItem(nsName, item.impl_, ModeUpsert);
 		}
 	} catch (const Error& err) {
 		return err;
@@ -265,9 +269,10 @@ Error ReindexerImpl::GetMeta(const string& _namespace, const string& key, string
 	return errOK;
 }
 
-Error ReindexerImpl::PutMeta(const string& _namespace, const string& key, const string_view& data) {
+Error ReindexerImpl::PutMeta(const string& nsName, const string& key, const string_view& data) {
 	try {
-		getNamespace(_namespace)->PutMeta(key, data);
+		getNamespace(nsName)->PutMeta(key, data);
+		observers_.OnPutMeta(nsName, key, data.ToString());
 	} catch (const Error& err) {
 		return err;
 	}
@@ -283,10 +288,11 @@ Error ReindexerImpl::EnumMeta(const string& _namespace, vector<string>& keys) {
 	return errOK;
 }
 
-Error ReindexerImpl::Delete(const string& _namespace, Item& item) {
+Error ReindexerImpl::Delete(const string& nsName, Item& item) {
 	try {
-		auto ns = getNamespace(_namespace);
+		auto ns = getNamespace(nsName);
 		ns->Delete(item);
+		observers_.OnModifyItem(nsName, item.impl_, ModeDelete);
 	} catch (const Error& err) {
 		return err;
 	}
@@ -296,6 +302,8 @@ Error ReindexerImpl::Delete(const Query& q, QueryResults& result) {
 	try {
 		auto ns = getNamespace(q._namespace);
 		ns->Delete(q, result);
+		// TODO
+		// observers_.OnModifyItem(nsName, item.impl_, ModeDelete);
 	} catch (const Error& err) {
 		return err;
 	}
@@ -461,7 +469,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 				bool nonIndexedField = (je.idxNo == IndexValueType::SetByJsonPath);
 				bool isIndexSparse = !nonIndexedField && ns->indexes_[je.idxNo]->Opts().IsSparse();
 				if (nonIndexedField || isIndexSparse) {
-					KeyValues& values = pjItemQ->entries[cnt].values;
+					VariantArray& values = pjItemQ->entries[cnt].values;
 					KeyValueType type = values.empty() ? KeyValueUndefined : values[0].Type();
 					payload.GetByJsonPath(je.index_, ns->tagsMatcher_, values, type);
 				} else {
@@ -539,7 +547,7 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker& loc
 	{
 		JoinedSelectors joinedSelectors = prepareJoinedSelectors(q, result, locks, queries, func);
 		ctx.functions = &func;
-		ctx.joinedSelectors = &joinedSelectors;
+		ctx.joinedSelectors = joinedSelectors.size() ? &joinedSelectors : nullptr;
 		ctx.nsid = 0;
 		ctx.isForceAll = !q.mergeQueries_.empty() || !q.forcedSortOrder.empty();
 		ns->Select(result, ctx);
@@ -555,7 +563,7 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker& loc
 			mctx.isForceAll = true;
 			mctx.functions = &func;
 			JoinedSelectors joinedSelectors = prepareJoinedSelectors(mq, result, locks, queries, func);
-			mctx.joinedSelectors = &joinedSelectors;
+			mctx.joinedSelectors = joinedSelectors.size() ? &joinedSelectors : nullptr;
 
 			mns->Select(result, mctx);
 		}
@@ -608,17 +616,6 @@ Error ReindexerImpl::Commit(const string& _namespace) {
 	return errOK;
 }
 
-Error ReindexerImpl::ConfigureIndex(const string& _namespace, const string& index, const string& config) {
-	try {
-		getNamespace(_namespace)->ConfigureIndex(index, config);
-
-	} catch (const Error& err) {
-		return err;
-	}
-
-	return errOK;
-}
-
 shared_ptr<Namespace> ReindexerImpl::getNamespace(const string& _namespace) {
 	shared_lock<shared_timed_mutex> lock(mtx_);
 	auto nsIt = namespaces_.find(_namespace);
@@ -631,30 +628,33 @@ shared_ptr<Namespace> ReindexerImpl::getNamespace(const string& _namespace) {
 	return nsIt->second;
 }
 
-Error ReindexerImpl::AddIndex(const string& _namespace, const IndexDef& indexDef) {
+Error ReindexerImpl::AddIndex(const string& nsName, const IndexDef& indexDef) {
 	try {
-		auto ns = getNamespace(_namespace);
+		auto ns = getNamespace(nsName);
 		ns->AddIndex(indexDef);
+		observers_.OnModifyIndex(nsName, indexDef, ModeInsert);
 	} catch (const Error& err) {
 		return err;
 	}
 	return Error(errOK);
 }
 
-Error ReindexerImpl::UpdateIndex(const string& _namespace, const IndexDef& indexDef) {
+Error ReindexerImpl::UpdateIndex(const string& nsName, const IndexDef& indexDef) {
 	try {
-		auto ns = getNamespace(_namespace);
+		auto ns = getNamespace(nsName);
 		ns->UpdateIndex(indexDef);
+		observers_.OnModifyIndex(nsName, indexDef, ModeUpdate);
 	} catch (const Error& err) {
 		return err;
 	}
 	return Error(errOK);
 }
 
-Error ReindexerImpl::DropIndex(const string& _namespace, const string& index) {
+Error ReindexerImpl::DropIndex(const string& nsName, const string& indexName) {
 	try {
-		auto ns = getNamespace(_namespace);
-		ns->DropIndex(index);
+		auto ns = getNamespace(nsName);
+		ns->DropIndex(indexName);
+		observers_.OnDropIndex(nsName, indexName);
 	} catch (const Error& err) {
 		return err;
 	}
@@ -726,39 +726,39 @@ void ReindexerImpl::flusherThread() {
 
 void ReindexerImpl::createSystemNamespaces() {
 	AddNamespace(NamespaceDef(kPerfStatsNamespace, StorageOpts())
-					 .AddIndex("name", "name", "hash", "string", IndexOpts().PK())
-					 .AddIndex("updates.total_queries_count", "updates.total_queries_count", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("updates.total_avg_latency_us", "updates.total_avg_latency_us", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("updates.last_sec_qps", "updates.last_sec_qps", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("updates.last_sec_avg_latency_us", "updates.last_sec_avg_latency_us", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("selects.total_queries_count", "selects.total_queries_count", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("selects.total_avg_latency_us", "selects.total_avg_latency_us", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("selects.last_sec_qps", "selects.last_sec_qps", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("selects.last_sec_avg_latency_us", "selects.last_sec_avg_latency_us", "-", "int64", IndexOpts().Dense()));
+					 .AddIndex("name", "hash", "string", IndexOpts().PK())
+					 .AddIndex("updates.total_queries_count", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("updates.total_avg_latency_us", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("updates.last_sec_qps", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("updates.last_sec_avg_latency_us", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("selects.total_queries_count", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("selects.total_avg_latency_us", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("selects.last_sec_qps", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("selects.last_sec_avg_latency_us", "-", "int64", IndexOpts().Dense()));
 
 	AddNamespace(NamespaceDef(kQueriesPerfStatsNamespace, StorageOpts())
-					 .AddIndex("query", "query", "hash", "string", IndexOpts().PK())
-					 .AddIndex("total_queries_count", "total_queries_count", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("total_avg_latency_us", "total_avg_latency_us", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("total_avg_lock_time_us", "total_avg_lock_time_us", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("last_sec_qps", "last_sec_qps", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("last_sec_avg_latency_us", "last_sec_avg_latency_us", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("last_sec_avg_lock_time_us", "last_sec_avg_lock_time_us", "-", "int64", IndexOpts().Dense()));
+					 .AddIndex("query", "hash", "string", IndexOpts().PK())
+					 .AddIndex("total_queries_count", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("total_avg_latency_us", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("total_avg_lock_time_us", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("last_sec_qps", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("last_sec_avg_latency_us", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("last_sec_avg_lock_time_us", "-", "int64", IndexOpts().Dense()));
 
-	AddNamespace(NamespaceDef(kNamespacesNamespace, StorageOpts()).AddIndex("name", "name", "hash", "string", IndexOpts().PK()));
+	AddNamespace(NamespaceDef(kNamespacesNamespace, StorageOpts()).AddIndex("name", "hash", "string", IndexOpts().PK()));
 
-	AddNamespace(NamespaceDef(kPerfStatsNamespace, StorageOpts()).AddIndex("name", "name", "hash", "string", IndexOpts().PK()));
+	AddNamespace(NamespaceDef(kPerfStatsNamespace, StorageOpts()).AddIndex("name", "hash", "string", IndexOpts().PK()));
 
 	AddNamespace(NamespaceDef(kMemStatsNamespace, StorageOpts())
-					 .AddIndex("name", "name", "hash", "string", IndexOpts().PK())
-					 .AddIndex("items_count", "items_count", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("data_size", "data_size", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("total.data_size", "total.data_size", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("total.indexes_size", "total.indexes_size", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("total.cache_size", "total.cache_size", "-", "int64", IndexOpts().Dense()));
+					 .AddIndex("name", "hash", "string", IndexOpts().PK())
+					 .AddIndex("items_count", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("data_size", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("total.data_size", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("total.indexes_size", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("total.cache_size", "-", "int64", IndexOpts().Dense()));
 
-	AddNamespace(NamespaceDef(kConfigNamespace, StorageOpts().Enabled().CreateIfMissing())
-					 .AddIndex("type", "type", "hash", "string", IndexOpts().PK()));
+	AddNamespace(NamespaceDef(kConfigNamespace, StorageOpts().Enabled().CreateIfMissing().DropOnFileFormatError())
+					 .AddIndex("type", "hash", "string", IndexOpts().PK()));
 }
 
 std::vector<string> defDBConfig = {
@@ -908,6 +908,14 @@ void ReindexerImpl::updateSystemNamespace(const string& nsName, Item& item) {
 			}
 		}
 	};
+}
+
+Error ReindexerImpl::SubscribeUpdates(IUpdatesObserver* observer, bool subscribe) {
+	if (subscribe) {
+		return observers_.Add(observer);
+	} else {
+		return observers_.Delete(observer);
+	}
 }
 
 }  // namespace reindexer

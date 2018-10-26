@@ -69,8 +69,16 @@ void ServerConnection::onRead() {
 		auto len = rdBuf_.peek(reinterpret_cast<char *>(&hdr), sizeof(hdr));
 
 		if (len < sizeof(hdr)) return;
-		if (hdr.magic != kCprotoMagic || hdr.version != kCprotoVersion) {
-			responceRPC(ctx, Error(errParams, "Invalid cproto header: magic=%08x or version=%08x", hdr.magic, hdr.version), Args());
+		if (hdr.magic != kCprotoMagic) {
+			responceRPC(ctx, Error(errParams, "Invalid cproto magic %08x", int(hdr.magic)), Args());
+			closeConn_ = true;
+			return;
+		}
+
+		if (hdr.version < kCprotoVersion) {
+			responceRPC(ctx,
+						Error(errParams, "Unsupported cproto version %04x. This server expects reindexer client v1.9.8+", int(hdr.version)),
+						Args());
 			closeConn_ = true;
 			return;
 		}

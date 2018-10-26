@@ -5,7 +5,7 @@
 namespace reindexer {
 
 Error::Error(int code, const char *fmt, ...) : code_(code) {
-	char buf[1024];
+	char buf[0x1000];
 
 	va_list args;
 	va_start(args, fmt);

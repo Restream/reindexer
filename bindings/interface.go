@@ -9,7 +9,7 @@ import (
 
 type IndexDef struct {
 	Name        string      `json:"name"`
-	JSONPath    string      `json:"json_path"`
+	JSONPaths   []string    `json:"json_paths"`
 	IndexType   string      `json:"index_type"`
 	FieldType   string      `json:"field_type"`
 	IsPK        bool        `json:"is_pk"`
@@ -115,10 +115,9 @@ type RawBinding interface {
 	AddIndex(namespace string, indexDef IndexDef) error
 	UpdateIndex(namespace string, indexDef IndexDef) error
 	DropIndex(namespace, index string) error
-	ConfigureIndex(namespace, index, config string) error
 	PutMeta(namespace, key, data string) error
 	GetMeta(namespace, key string) (RawBuffer, error)
-	ModifyItem(nsHash int, data []byte, mode int) (RawBuffer, error)
+	ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, packedPercepts []byte, stateToken int, txID int) (RawBuffer, error)
 	Select(query string, withItems bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
 	SelectQuery(rawQuery []byte, withItems bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
 	DeleteQuery(nsHash int, rawQuery []byte) (RawBuffer, error)

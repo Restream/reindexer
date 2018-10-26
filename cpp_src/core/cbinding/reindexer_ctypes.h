@@ -13,9 +13,9 @@ typedef struct reindexer_buffer {
 } reindexer_buffer;
 
 typedef struct reindexer_resbuffer {
-	int len;
-	int results_flag;
+	uintptr_t results_ptr;
 	uintptr_t data;
+	int len;
 } reindexer_resbuffer;
 
 typedef struct reindexer_error {

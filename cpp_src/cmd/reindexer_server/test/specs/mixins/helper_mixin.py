@@ -86,7 +86,7 @@ class HelperMixin(object):
     def helper_index_construct(self, name, field_type='int', index_type='hash', is_pk=False):
         return {
             'name': name,
-            'json_path': name,
+            'json_paths': [name],
             'field_type': field_type,
             'index_type': index_type,
             'is_pk': is_pk,

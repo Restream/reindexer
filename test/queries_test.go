@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"strconv"
 	"testing"
 
 	"github.com/restream/reindexer"
@@ -48,10 +49,11 @@ type TestItemSimple struct {
 }
 
 type TestItemSimpleCmplxPK struct {
-	ID    int    `reindex:"id,,pk"`
-	Year  int    `reindex:"year,tree"`
-	Name  string `reindex:"name"`
-	SubID string `reindex:"subid,,pk"`
+	ID    int      `reindex:"id"`
+	Year  int      `reindex:"year,tree"`
+	Name  string   `reindex:"name"`
+	SubID string   `reindex:"subid"`
+	_     struct{} `reindex:"id+subid,,composite,pk"`
 }
 
 type objectType struct {
@@ -75,7 +77,7 @@ type TestItemObjectArray struct {
 }
 
 type TestItemNestedPK struct {
-	PrimaryID int      `reindex:"primary_id,,pk"`
+	PrimaryID int      `reindex:"primary_id"`
 	Nested    TestItem `json:"nested"`
 }
 
@@ -254,7 +256,13 @@ func TestQueries(t *testing.T) {
 func CheckAggregateQueries() {
 
 	limit := 100
-	q := DB.Query("test_items").Where("genre", reindexer.EQ, 10).Limit(limit).Aggregate("year", reindexer.AggAvg).Aggregate("YEAR", reindexer.AggSum)
+	q := DB.Query("test_items").Where("genre", reindexer.EQ, 10).Limit(limit).
+		Aggregate("year", reindexer.AggAvg).
+		Aggregate("YEAR", reindexer.AggSum).
+		Aggregate("age", reindexer.AggFacet).
+		Aggregate("country", reindexer.AggFacet).
+		Aggregate("age", reindexer.AggMin).
+		Aggregate("age", reindexer.AggMax)
 	it := q.Exec()
 
 	qcheck := DB.Query("test_items").Where("GENRE", reindexer.EQ, 10).Limit(limit)
@@ -262,17 +270,62 @@ func CheckAggregateQueries() {
 	if err != nil {
 		panic(err)
 	}
+
+	aggregations := it.AggResults()
+
 	var sum float64
+	ageFacet := make(map[int]int, 0)
+	countryFacet := make(map[string]int, 0)
+	ageMin, ageMax := 100000000, -10000000
 
 	for _, it := range res {
-		sum += float64(it.(*TestItem).Year)
+		testItem := it.(*TestItem)
+		sum += float64(testItem.Year)
+		ageFacet[testItem.Age]++
+		for _, c := range testItem.Countries {
+			countryFacet[c]++
+		}
+		if testItem.Age > ageMax {
+			ageMax = testItem.Age
+		}
+		if testItem.Age < ageMin {
+			ageMin = testItem.Age
+		}
+
 	}
-	if sum != it.GetAggreatedValue(1) {
-		panic(fmt.Errorf("%f != %f", sum, it.GetAggreatedValue(1)))
+
+	if sum != aggregations[1].Value {
+		panic(fmt.Errorf("%f != %f", sum, aggregations[1].Value))
 	}
-	if sum/float64(len(res)) != it.GetAggreatedValue(0) {
-		panic(fmt.Errorf("%f != %f,len=%d", sum/float64(len(res)), it.GetAggreatedValue(0), len(res)))
+	if sum/float64(len(res)) != aggregations[0].Value {
+		panic(fmt.Errorf("%f != %f,len=%d", sum/float64(len(res)), aggregations[0].Value, len(res)))
 	}
+
+	if aggregations[2].Name != "age" {
+		panic(fmt.Errorf("%s != %s", aggregations[2].Name, "age"))
+	}
+	for _, facet := range aggregations[2].Facets {
+		intVal, _ := strconv.Atoi(facet.Value)
+		if count, ok := ageFacet[intVal]; ok != true || count != facet.Count {
+			panic(fmt.Errorf("facet '%s' val '%s': %d != %d", aggregations[2].Name, facet.Value, count, facet.Count))
+		}
+	}
+
+	if aggregations[3].Name != "country" {
+		panic(fmt.Errorf("%s != %s", aggregations[3].Name, "country"))
+	}
+	for _, facet := range aggregations[3].Facets {
+		if count, ok := countryFacet[facet.Value]; ok != true || count != facet.Count {
+			panic(fmt.Errorf("facet '%s' val '%s': %d != %d", aggregations[3].Name, facet.Value, count, facet.Count))
+		}
+	}
+	if ageMin != int(aggregations[4].Value) {
+		panic(fmt.Errorf("%d != %f", ageMin, aggregations[4].Value))
+	}
+	if ageMax != int(aggregations[5].Value) {
+		panic(fmt.Errorf("%d != %f", ageMax, aggregations[5].Value))
+	}
+
 }
 
 func CheckTestItemsJsonQueries() {
@@ -557,6 +610,12 @@ func CheckTestItemsSQLQueries() {
 		panic(err)
 	} else {
 		newTestQuery(DB, "test_items").Where("year", reindexer.GE, 2016).Or().Where("RATE", reindexer.EQ, 1.1).Or().Where("YEAR", reindexer.RANGE, []int{2010, 2014}).Or().Where("age_limit", reindexer.LE, int64(50)).Verify(res, true)
+	}
+
+	if res, err := DB.ExecSQL("SELECT ID,'Actor.Name' FROM test_items WHERE 'actor.name' > 'bde'  LIMIT 10000000").FetchAll(); err != nil {
+		panic(err)
+	} else {
+		newTestQuery(DB, "test_items").Where("actor.name", reindexer.GT, []string{"bde"}).Verify(res, false)
 	}
 }
 

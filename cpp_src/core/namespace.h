@@ -114,7 +114,6 @@ public:
 	void UpdateIndex(const IndexDef &indexDef);
 	void DropIndex(const string &index);
 	void AddCompositeIndex(const IndexDef &indexDef);
-	void ConfigureIndex(const string &index, const string &config);
 
 	void Insert(Item &item, bool store = true);
 	void Update(Item &item, bool store = true);
@@ -155,17 +154,16 @@ protected:
 	void saveIndexesToStorage();
 	bool loadIndexesFromStorage();
 	void markUpdated();
-	void upsert(ItemImpl *ritem, IdType id, bool doUpdate);
-	void upsertInternal(Item &item, bool store = true, uint8_t mode = (INSERT_MODE | UPDATE_MODE));
+	void doUpsert(ItemImpl *ritem, IdType id, bool doUpdate);
+	void modifyItem(Item &item, bool store = true, int mode = ModeUpsert);
 	void updateTagsMatcherFromItem(ItemImpl *ritem, string &jsonSliceBuf);
 	void updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields);
-	void _delete(IdType id);
+	void doDelete(IdType id);
 	void commit(const NSCommitContext &ctx, SelectLockUpgrader *lockUpgrader);
 	void insertIndex(Index *newIndex, int idxNo, const string &realName);
 	void addIndex(const IndexDef &indexDef);
 	void updateIndex(const IndexDef &indexDef);
 	void dropIndex(const string &index);
-	void configureIndex(const string &index, const string &config);
 	void recreateCompositeIndexes(int startIdx, int endIdx);
 	NamespaceDef getDefinition();
 	IndexDef getIndexDefinition(const string &indexName);
@@ -189,6 +187,8 @@ protected:
 	void PutToJoinCache(JoinCacheRes &res, JoinCacheVal &val);
 	void GetFromJoinCache(JoinCacheRes &ctx);
 	void GetIndsideFromJoinCache(JoinCacheRes &ctx);
+
+	const FieldsSet &pkFields();
 
 	IndexesStorage indexes_;
 	fast_hash_map<string, int, nocase_hash_str, nocase_equal_str> indexesNames_;
@@ -214,15 +214,12 @@ protected:
 	bool sortOrdersBuilt_;
 	std::atomic<int> sortedQueriesCount_;
 	FieldsSet preparedIndexes_, commitedIndexes_;
-	FieldsSet pkFields_;
 
 	unordered_map<string, string> meta_;
 
 	string dbpath_;
 
 	shared_ptr<QueryCache> queryCache_;
-	// shows if each subindex was PK
-	fast_hash_map<string, bool, nocase_hash_str, nocase_equal_str> compositeIndexesPkState_;
 
 	int sparseIndexesCount_ = 0;
 
@@ -233,7 +230,6 @@ private:
 	typedef shared_lock<shared_timed_mutex> RLock;
 	typedef unique_lock<shared_timed_mutex> WLock;
 
-	enum { INSERT_MODE = 0x01, UPDATE_MODE = 0x02 };
 	IdType createItem(size_t realSize);
 
 	void invalidateQueryCache();
@@ -245,6 +241,7 @@ private:
 	PerfStatCounterMT updatePerfCounter_, selectPerfCounter_;
 	std::atomic<bool> enablePerfCounters_;
 	LogLevel queriesLogLevel_;
+	int64_t lsnCounter_;
 };
 
 }  // namespace reindexer

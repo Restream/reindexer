@@ -4,12 +4,6 @@ CollateOpts::CollateOpts(uint8_t mode) : mode(mode) {}
 
 CollateOpts::CollateOpts(const std::string& sortOrderUTF8) : mode(CollateCustom), sortOrderTable(sortOrderUTF8) {}
 
-IndexOpts::IndexOpts(const IndexOptsC& indexOptsC) : options(indexOptsC.options), collateOpts_(indexOptsC.collate) {
-	if (indexOptsC.collate == CollateCustom) {
-		collateOpts_ = CollateOpts(indexOptsC.sortOrderLetters);
-	}
-}
-
 IndexOpts::IndexOpts(uint8_t flags, CollateMode mode) : options(flags), collateOpts_(mode) {}
 
 IndexOpts::IndexOpts(const std::string& sortOrderUTF8, uint8_t flags) : options(flags), collateOpts_(sortOrderUTF8) {}
@@ -48,5 +42,10 @@ IndexOpts& IndexOpts::Sparse(bool value) {
 
 IndexOpts& IndexOpts::SetCollateMode(CollateMode mode) {
 	collateOpts_.mode = mode;
+	return *this;
+}
+
+IndexOpts& IndexOpts::SetConfig(const std::string& newConfig) {
+	config = newConfig;
 	return *this;
 }

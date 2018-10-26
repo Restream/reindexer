@@ -1,6 +1,8 @@
 #include "highlight.h"
+#include "core/keyvalue/key_string.h"
+#include "core/keyvalue/p_string.h"
+#include "core/payload/payloadiface.h"
 #include "core/selectfunc/ctx/ftctx.h"
-
 namespace reindexer {
 
 bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct &func) {
@@ -15,7 +17,7 @@ bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 	}
 	Payload pl(pl_type, res.value);
 
-	KeyRefs kr;
+	VariantArray kr;
 	if (func.tagsPath.empty()) {
 		pl.Get(func.field, kr);
 	} else {
@@ -51,10 +53,10 @@ bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 	key_string_release(const_cast<string *>(data));
 	auto str = make_key_string(result_string);
 	key_string_add_ref(str.get());
-	res.value.AllocOrClone(0);
+	res.value.Clone();
 
 	if (func.tagsPath.empty()) {
-		pl.Set(func.field, KeyRefs{KeyRef{str}});
+		pl.Set(func.field, VariantArray{Variant{str}});
 	} else {
 		throw Error(errConflict, "SetByJsonPath is not implemented yet!");
 	}

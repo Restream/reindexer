@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/keyvalue/keyref.h"
+#include "core/keyvalue/variant.h"
 #include "payloadfieldtype.h"
 
 namespace reindexer {
@@ -15,8 +15,8 @@ public:
 	// Construct object
 	PayloadFieldValue(const PayloadFieldType &t, uint8_t *v) : t_(t), p_(v) {}
 	// Single value operations
-	void Set(KeyRef kv);
-	KeyRef Get() const;
+	void Set(Variant kv);
+	Variant Get(bool enableHold = false) const;
 
 	// Type of value, not owning
 	const PayloadFieldType &t_;

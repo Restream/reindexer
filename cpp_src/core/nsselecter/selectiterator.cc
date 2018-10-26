@@ -13,7 +13,7 @@ SelectIterator::SelectIterator(const SelectKeyResult &res, OpType _op, bool _dis
 	: SelectKeyResult(res), op(_op), distinct(_distinct), name(_name), forcedFirst_(forcedFirst), type_(Forward) {}
 
 void SelectIterator::Bind(PayloadType type, int field) {
-	for (auto &cmp : comparators_) cmp.Bind(type, field);
+	for (Comparator &cmp : comparators_) cmp.Bind(type, field);
 }
 
 void SelectIterator::Start(bool reverse) {

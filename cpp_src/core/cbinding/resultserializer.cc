@@ -5,16 +5,11 @@
 
 namespace reindexer {
 
-WrResultSerializer::WrResultSerializer(bool allowInBuf, const ResultFetchOpts& opts) : WrSerializer(allowInBuf), opts_(opts) {}
+WrResultSerializer::WrResultSerializer(const ResultFetchOpts& opts) : WrSerializer(), opts_(opts) {}
 
 void WrResultSerializer::putQueryParams(const QueryResults* results) {
-	// Pointer to query results
-	if (opts_.flags & kResultsWithPtrs) {
-		PutUInt64(uintptr_t(results));
-	} else {
-		PutUInt64(0);
-	}
-
+	// Flags of present objects
+	PutVarUint(opts_.flags);
 	// Total
 	PutVarUint(results->totalCount);
 	// Count of returned items by query
@@ -22,69 +17,72 @@ void WrResultSerializer::putQueryParams(const QueryResults* results) {
 	// Count of serialized items
 	PutVarUint(opts_.fetchLimit);
 
-	PutVarUint(results->haveProcent);
-	PutVarUint(results->nonCacheableData);
-
-	// Count of namespaces
-	PutVarUint(results->ctxs.size());
-
 	if (opts_.flags & kResultsWithPayloadTypes) {
-		assert(opts_.ptVersions);
-		if (opts_.ptVersionsCount != results->getMergedNSCount()) {
-			logPrintf(LogWarning, "ptVersionsCount != results->getMergedNSCount. Client's meta data can become incosistent.");
+		assert(opts_.ptVersions.data());
+		if (int(opts_.ptVersions.size()) != results->getMergedNSCount()) {
+			logPrintf(LogWarning, "ptVersionsCount != results->getMergedNSCount: %d != %d. Client's meta data can become incosistent.",
+					  int(opts_.ptVersions.size()), (results->getMergedNSCount()));
 		}
-		int cnt = 0, totalCnt = std::min(results->getMergedNSCount(), opts_.ptVersionsCount);
+		int cnt = 0, totalCnt = std::min(results->getMergedNSCount(), int(opts_.ptVersions.size()));
 
 		for (int i = 0; i < totalCnt; i++) {
 			const TagsMatcher& tm = results->getTagsMatcher(i);
-			if (int32_t(tm.version() ^ tm.cacheToken()) != opts_.ptVersions[i]) cnt++;
+			if (int32_t(tm.version() ^ tm.stateToken()) != opts_.ptVersions[i]) cnt++;
 		}
 		PutVarUint(cnt);
 		for (int i = 0; i < totalCnt; i++) {
 			const TagsMatcher& tm = results->getTagsMatcher(i);
-			if (int32_t(tm.version() ^ tm.cacheToken()) != opts_.ptVersions[i]) {
+			if (int32_t(tm.version() ^ tm.stateToken()) != opts_.ptVersions[i]) {
 				PutVarUint(i);
+				PutVString(results->getPayloadType(i)->Name());
 				putPayloadType(results, i);
 			}
 		}
-	} else {
-		PutVarUint(0);
 	}
 
-	putAggregationParams(results);
+	putExtraParams(results);
 }
 
-void WrResultSerializer::putAggregationParams(const QueryResults* results) {
-	PutVarUint(results->aggregationResults.size());
-	for (auto ar : results->aggregationResults) PutDouble(ar);
+void WrResultSerializer::putExtraParams(const QueryResults* results) {
+	for (auto& ar : results->aggregationResults) {
+		PutVarUint(QueryResultAggregation);
+		PutSlice([&]() { ar.GetJSON(*this); });
+	}
+
+	if (!results->explainResults.empty()) {
+		PutVarUint(QueryResultExplain);
+		PutSlice(results->explainResults);
+	}
+	PutVarUint(QueryResultEnd);
 }
 
 void WrResultSerializer::putItemParams(const QueryResults* result, int idx, bool useOffset) {
 	int ridx = idx + (useOffset ? opts_.fetchOffset : 0);
 
 	auto it = result->begin() + ridx;
-	auto itemRef = it.GetItemRef();
+	auto& itemRef = it.GetItemRef();
 
-	PutVarUint(itemRef.id);
-	PutVarUint(itemRef.version);
-	PutVarUint(itemRef.nsid);
-	PutVarUint(itemRef.proc);
-	int format = (opts_.flags & 0x3);
-
-	if (idx < 63 && !(opts_.fetchDataMask & (1ULL << idx))) {
-		format = kResultsPure;
+	if (opts_.flags & kResultsWithItemID) {
+		PutVarUint(itemRef.id);
+		PutVarUint(itemRef.value.GetLSN());
 	}
 
-	PutVarUint(format);
+	if (opts_.flags & kResultsWithNsID) {
+		PutVarUint(itemRef.nsid);
+	}
 
-	switch (format) {
-		case kResultsWithJson:
+	if (opts_.flags & kResultsWithPercents) {
+		PutVarUint(itemRef.proc);
+	}
+
+	switch ((opts_.flags & kResultsFormatMask)) {
+		case kResultsJson:
 			it.GetJSON(*this);
 			break;
-		case kResultsWithCJson:
+		case kResultsCJson:
 			it.GetCJSON(*this);
 			break;
-		case kResultsWithPtrs:
+		case kResultsPtrs:
 			PutUInt64(uintptr_t(itemRef.value.Ptr()));
 			break;
 		case kResultsPure:
@@ -99,12 +97,12 @@ void WrResultSerializer::putPayloadType(const QueryResults* results, int nsid) {
 	const TagsMatcher& m = results->getTagsMatcher(nsid);
 
 	// Serialize tags matcher
-	PutVarUint(m.cacheToken());
+	PutVarUint(m.stateToken());
 	PutVarUint(m.version());
 	m.serialize(*this);
 
 	// Serialize payload type
-	t->serialize(*this, bool(opts_.flags & kResultsPTWithJsonPaths));
+	t->serialize(*this);
 }
 
 bool WrResultSerializer::PutResults(const QueryResults* result) {
@@ -116,14 +114,26 @@ bool WrResultSerializer::PutResults(const QueryResults* result) {
 		opts_.fetchLimit = result->Count() - opts_.fetchOffset;
 	}
 
+	// Result has items from multiple namespaces, so pass nsid to each item
+	if (result->getMergedNSCount() > 1) opts_.flags |= kResultsWithNsID;
+
+	// Result has joined items, so pass them to client within items from main NS
+	if (result->joined_.size() > 0) opts_.flags |= kResultsWithJoined;
+
+	if (result->haveProcent) opts_.flags |= kResultsWithPercents;
+	// If data is not cacheable, just do not pass item's ID and LSN. Clients should not cache this data
+	if (result->nonCacheableData) opts_.flags &= ~kResultsWithItemID;
+	// for JSON results joined field are embeded to json's, so no need to transfer separate joined data items
+	// JSON results already has resolved names, so no need to transfer payload types
+	if ((opts_.flags & kResultsFormatMask) == kResultsJson) opts_.flags &= ~(kResultsWithJoined | kResultsWithPayloadTypes);
+
 	putQueryParams(result);
 
 	for (unsigned i = 0; i < opts_.fetchLimit; i++) {
 		// Put Item ID and version
 		putItemParams(result, i, true);
 
-		if ((opts_.flags & 0x3) == kResultsWithJson) {
-			PutVarUint(0);
+		if (!(opts_.flags & kResultsWithJoined)) {
 			continue;
 		}
 
@@ -142,5 +152,4 @@ bool WrResultSerializer::PutResults(const QueryResults* result) {
 	}
 	return opts_.fetchOffset + opts_.fetchLimit >= result->Count();
 }
-
 }  // namespace reindexer

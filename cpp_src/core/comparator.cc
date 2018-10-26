@@ -1,14 +1,14 @@
 #include "core/comparator.h"
-#include "cjson/cjsonencoder.h"
+#include "cjson/baseencoder.h"
 #include "core/payload/payloadiface.h"
 #include "query/querywhere.h"
 
 namespace reindexer {
 
-Comparator::Comparator() : fields_(), cmpComposite(payloadType_, fields_) {}
+Comparator::Comparator() : fields_(), cmpComposite(payloadType_, fields_), cmpEqualPosition(payloadType_, KeyValueNull) {}
 Comparator::~Comparator() {}
 
-Comparator::Comparator(CondType cond, KeyValueType type, const KeyValues &values, bool isArray, PayloadType payloadType,
+Comparator::Comparator(CondType cond, KeyValueType type, const VariantArray &values, bool isArray, PayloadType payloadType,
 					   const FieldsSet &fields, void *rawData, const CollateOpts &collateOpts)
 	: cond_(cond),
 	  type_(type),
@@ -17,20 +17,27 @@ Comparator::Comparator(CondType cond, KeyValueType type, const KeyValues &values
 	  collateOpts_(collateOpts),
 	  payloadType_(payloadType),
 	  fields_(fields),
-	  cmpComposite(payloadType_, fields_) {
+	  cmpComposite(payloadType_, fields_),
+	  cmpEqualPosition(payloadType_, type) {
 	if (type == KeyValueComposite) assert(fields_.size() > 0);
+	if (cond_ == CondEq && values.size() != 1) cond_ = CondSet;
+
 	setValues(values);
 }
 
-void Comparator::setValues(const KeyValues &values) {
+void Comparator::setValues(const VariantArray &values) {
 	if (fields_.getTagsPathsLength() > 0) {
 		cmpInt.SetValues(cond_, values);
+		cmpBool.SetValues(cond_, values);
 		cmpInt64.SetValues(cond_, values);
 		cmpDouble.SetValues(cond_, values);
 		cmpString.SetValues(cond_, values);
 		cmpComposite.SetValues(cond_, values);
 	} else {
 		switch (type_) {
+			case KeyValueBool:
+				cmpBool.SetValues(cond_, values);
+				break;
 			case KeyValueInt:
 				cmpInt.SetValues(cond_, values);
 				break;
@@ -50,6 +57,10 @@ void Comparator::setValues(const KeyValues &values) {
 				assert(0);
 		}
 	}
+	if (isArray_ && fields_.size() > 0 && payloadType_->Field(fields_[0]).IsArray()) {
+		offset_ = payloadType_->Field(fields_[0]).Offset();
+		sizeof_ = payloadType_->Field(fields_[0]).ElemSizeof();
+	}
 }
 
 void Comparator::Bind(PayloadType type, int field) {
@@ -59,17 +70,33 @@ void Comparator::Bind(PayloadType type, int field) {
 	}
 }
 
+void Comparator::BindEqualPosition(int field, const VariantArray &val, CondType cond) {
+	assert(isArray_);
+	cmpEqualPosition.BindField(field, val, cond);
+	equalPositionMode = true;
+}
+
+void Comparator::BindEqualPosition(const TagsPath &tagsPath, const VariantArray &val, CondType cond) {
+	assert(isArray_);
+	cmpEqualPosition.BindField(tagsPath, val, cond);
+	equalPositionMode = true;
+}
+
 bool Comparator::Compare(const PayloadValue &data, int rowId) {
 	if (fields_.getTagsPathsLength() > 0) {
-		KeyRefs rhs;
+		VariantArray rhs;
 		Payload pl(payloadType_, const_cast<PayloadValue &>(data));
 
 		pl.GetByJsonPath(fields_.getTagsPath(0), rhs, type_);
 		if (cond_ == CondEmpty) return rhs.size() == 0;
 		if (cond_ == CondAny) return rhs.size() != 0;
 
-		for (const KeyRef &kr : rhs) {
-			if (compare(kr)) return true;
+		if (equalPositionMode) {
+			return cmpEqualPosition.Compare(data, collateOpts_);
+		} else {
+			for (const Variant &kr : rhs) {
+				if (compare(kr)) return true;
+			}
 		}
 	} else {
 		if (rawData_) return compare(rawData_ + rowId * sizeof_);
@@ -87,9 +114,15 @@ bool Comparator::Compare(const PayloadValue &data, int rowId) {
 		if (cond_ == CondEmpty) return arr->len == 0;
 		if (cond_ == CondAny) return arr->len != 0;
 
-		uint8_t *ptr = data.Ptr() + arr->offset;
-		for (int i = 0; i < arr->len; i++, ptr += sizeof_)
-			if (compare(ptr)) return true;
+		if (equalPositionMode) {
+			return cmpEqualPosition.Compare(data, collateOpts_);
+		} else {
+			uint8_t *ptr = data.Ptr() + arr->offset;
+			for (int i = 0; i < arr->len; i++, ptr += sizeof_) {
+				bool ret = compare(ptr);
+				if (ret) return true;
+			}
+		}
 	}
 
 	return false;

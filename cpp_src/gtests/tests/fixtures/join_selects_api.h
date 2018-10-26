@@ -11,7 +11,7 @@ class JoinSelectsApi : public ReindexerApi {
 protected:
 	using BookId = int;
 	using FieldName = std::string;
-	using QueryResultRow = std::map<FieldName, reindexer::KeyRefs>;
+	using QueryResultRow = std::map<FieldName, reindexer::VariantArray>;
 	using QueryResultRows = std::map<BookId, QueryResultRow>;
 
 	void SetUp() override {
@@ -196,8 +196,8 @@ protected:
 					auto itFieldValue(queryResultRow2.find(fieldName));
 					EXPECT_TRUE(itFieldValue != queryResultRow2.end()) << "No such field!";
 					if (itFieldValue != queryResultRow2.end()) {
-						const reindexer::KeyRefs& fieldVal1(it2->second);
-						const reindexer::KeyRefs& fieldVal2(itFieldValue->second);
+						const reindexer::VariantArray& fieldVal1(it2->second);
+						const reindexer::VariantArray& fieldVal2(itFieldValue->second);
 						EXPECT_TRUE(fieldVal1 == fieldVal2) << "Fields " << fieldName << " have different values!";
 					} else
 						return false;

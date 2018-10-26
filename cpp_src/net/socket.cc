@@ -96,8 +96,9 @@ int socket::create(const char *addr, struct addrinfo **presults) {
 		pport++;
 	}
 
-	if (::getaddrinfo(paddr, pport, &hints, &results) != 0) {
-		perror("getaddrinfo error");
+	int ret = ::getaddrinfo(paddr, pport, &hints, &results);
+	if (ret != 0) {
+		fprintf(stderr, "getaddrinfo failed: %s\n", gai_strerror(ret));
 		return -1;
 	}
 	assert(results != nullptr);

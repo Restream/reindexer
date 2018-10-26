@@ -74,7 +74,7 @@ void Query::deserialize(Serializer &ser) {
 				qe.condition = CondType(ser.GetVarUint());
 				int count = ser.GetVarUint();
 				qe.values.reserve(count);
-				while (count--) qe.values.push_back(ser.GetValue());
+				while (count--) qe.values.push_back(ser.GetVariant().EnsureHold());
 				entries.push_back(std::move(qe));
 				break;
 			}
@@ -94,7 +94,7 @@ void Query::deserialize(Serializer &ser) {
 				sortingEntries_.push_back(std::move(sortingEntry));
 				int count = ser.GetVarUint();
 				forcedSortOrder.reserve(count);
-				while (count--) forcedSortOrder.push_back(ser.GetValue());
+				while (count--) forcedSortOrder.push_back(ser.GetVariant().EnsureHold());
 				break;
 			}
 			case QueryJoinOn:
@@ -119,6 +119,15 @@ void Query::deserialize(Serializer &ser) {
 			case QuerySelectFilter:
 				selectFilter_.push_back(ser.GetVString().ToString());
 				break;
+			case QueryEqualPosition: {
+				vector<string> ep(ser.GetVarUint());
+				for (size_t i = 0; i < ep.size(); ++i) ep[i] = ser.GetVString().ToString();
+				equalPositions_.push_back(determineEqualPositionIndexes(ep));
+				break;
+			}
+			case QueryExplain:
+				explain_ = true;
+				break;
 			case QuerySelectFunction:
 				selectFunctions_.push_back(ser.GetVString().ToString());
 				break;
@@ -130,6 +139,11 @@ void Query::deserialize(Serializer &ser) {
 
 int Query::Parse(tokenizer &parser) {
 	token tok = parser.next_token();
+
+	if (tok.text() == "explain"_sv) {
+		explain_ = true;
+		tok = parser.next_token();
+	}
 
 	if (tok.text() == "select"_sv) {
 		selectParse(parser);
@@ -159,8 +173,14 @@ int Query::selectParse(tokenizer &parser) {
 			tok = parser.next_token();
 			if (name.text() == "avg"_sv) {
 				aggregations_.push_back({tok.text().ToString(), AggAvg});
+			} else if (name.text() == "facet"_sv) {
+				aggregations_.push_back({tok.text().ToString(), AggFacet});
 			} else if (name.text() == "sum"_sv) {
 				aggregations_.push_back({tok.text().ToString(), AggSum});
+			} else if (name.text() == "min"_sv) {
+				aggregations_.push_back({tok.text().ToString(), AggMin});
+			} else if (name.text() == "max"_sv) {
+				aggregations_.push_back({tok.text().ToString(), AggMax});
 			} else if (name.text() == "count"_sv) {
 				calcTotal = ModeAccurateTotal;
 				count = 0;
@@ -234,7 +254,7 @@ int Query::selectParse(tokenizer &parser) {
 						if (tok.type != TokenNumber && tok.type != TokenString)
 							throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text().data(),
 										parser.where().c_str());
-						forcedSortOrder.push_back(KeyValue(tok.text().ToString()));
+						forcedSortOrder.push_back(Variant(tok.text().ToString()));
 					}
 					tok = parser.peek_token();
 				}
@@ -404,7 +424,7 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 		ser.PutVarUint(qe.op);
 		ser.PutVarUint(qe.condition);
 		ser.PutVarUint(qe.values.size());
-		for (auto &kv : qe.values) ser.PutValue(kv);
+		for (auto &kv : qe.values) ser.PutVariant(kv);
 	}
 
 	for (auto &agg : aggregations_) {
@@ -419,7 +439,7 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 		ser.PutVarUint(sortginEntry.desc);
 		int cnt = forcedSortOrder.size();
 		ser.PutVarUint(cnt);
-		for (auto &kv : forcedSortOrder) ser.PutValue(kv);
+		for (auto &kv : forcedSortOrder) ser.PutVariant(kv);
 	}
 
 	for (auto &qje : joinEntries_) {
@@ -430,11 +450,17 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 		ser.PutVString(qje.joinIndex_);
 	}
 
+	for (const EqualPosition &ep : equalPositions_) {
+		ser.PutVarUint(QueryEqualPosition);
+		ser.PutVarUint(ep.size());
+		for (int pos : ep) ser.PutVString(entries[pos].index);
+	}
+
 	ser.PutVarUint(QueryDebugLevel);
 	ser.PutVarUint(debugLevel);
 
 	if (!(mode & SkipLimitOffset)) {
-		if (count) {
+		if (count != UINT_MAX) {
 			ser.PutVarUint(QueryLimit);
 			ser.PutVarUint(count);
 		}
@@ -452,6 +478,10 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 	for (auto &sf : selectFilter_) {
 		ser.PutVarUint(QuerySelectFilter);
 		ser.PutVString(sf);
+	}
+
+	if (explain_) {
+		ser.PutVarUint(QueryExplain);
 	}
 
 	ser.PutVarUint(QueryEnd);  // finita la commedia... of root query
@@ -493,7 +523,7 @@ void Query::Deserialize(Serializer &ser) {
 	}
 }
 
-string Query::GetJSON() { return dsl::toDsl(*this); }
+string Query::GetJSON() const { return dsl::toDsl(*this); }
 
 const char *Query::JoinTypeName(JoinType type) {
 	switch (type) {
@@ -517,7 +547,7 @@ string Query::dumpJoined(bool stripArgs) const {
 	for (auto &je : joinQueries_) {
 		ret += string(" ") + JoinTypeName(je.joinType);
 
-		if (je.entries.empty() && je.count == INT_MAX) {
+		if (je.entries.empty() && je.count == INT_MAX && je.sortingEntries_.empty()) {
 			ret += " " + je._namespace + " ON ";
 		} else {
 			ret += " (" + je.Dump(stripArgs) + ") ON ";
@@ -582,6 +612,15 @@ string Query::Dump(bool stripArgs) const {
 					break;
 				case AggSum:
 					filt += "SUM(";
+					break;
+				case AggFacet:
+					filt += "FACET(";
+					break;
+				case AggMin:
+					filt += "MIN(";
+					break;
+				case AggMax:
+					filt += "MAX(";
 					break;
 				default:
 					filt += "<?> (";

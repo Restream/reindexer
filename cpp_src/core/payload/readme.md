@@ -116,8 +116,8 @@ refcounter of `PayloadValue` is thread safe.
 - *Non Shared*: data struct is exclusively owning by `PayloadValue`
 - *Shared*: data struct is shared with other `PayloadValue`
 
-`PayloadValue` does not allow modifications in shared state. Before any modification, code MUST create copy by calling `PayloadValue::AllocOrClone ()`.  
-`AllocOrClone` will check state and if neccesary allocates new struct or creates exclusive copy.
+`PayloadValue` does not allow modifications in shared state. Before any modification, code MUST create copy by calling `PayloadValue::Clone ()`.  
+`Clone` will check state and if neccesary allocates new struct or creates exclusive copy.
 
 `PayloadValue` does not owning it's strings by default. To control ownership of strings there are 2 methods `PayloadIface::AddRefStrings ()` and `PayloadIface::ReleaseStrings ()`. 
 
@@ -140,14 +140,14 @@ Untyped typle of nonidexed fields is stored in `CJSON` format in 1-st field (nam
 	// Create control object
 	ConstPayload payload(type, value);
 
-	KeyRefs keyRefs;
+	VariantArray keyRefs;
 
     // Dump all fields to stdout
     for (int i = 0; i < payload.NumFields(); i++) {
 		auto &field = payload.Type().Field(i);
 		printf("\n%s=", field.Name().c_str());
 		for (auto &elem : payload.Get (i,keyRefs)) {
-			printf("%s", KeyValue(elem).toString().c_str());
+			printf("%s", Variant(elem).toString().c_str());
 		}
 	}
 

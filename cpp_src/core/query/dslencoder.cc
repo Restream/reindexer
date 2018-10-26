@@ -1,17 +1,12 @@
 #include "core/query/dslencoder.h"
+#include <unordered_map>
+#include "core/cjson/jsonbuilder.h"
+#include "core/keyvalue/key_string.h"
+#include "core/keyvalue/p_string.h"
 #include "core/query/dslparsetools.h"
 #include "core/query/query.h"
 
-#include <unordered_map>
-
 using std::unordered_map;
-
-const char coma = ',';
-const char colon = ':';
-const char leftBracket = '{';
-const char rightBracket = '}';
-const char leftSquareBracket = '[';
-const char rightSquareBracket = ']';
 
 struct EnumClassHash {
 	template <typename T>
@@ -22,29 +17,6 @@ struct EnumClassHash {
 
 namespace reindexer {
 namespace dsl {
-
-const unordered_map<Root, string, EnumClassHash> root_map = {{Root::Namespace, "namespace"},
-															 {Root::Limit, "limit"},
-															 {Root::Offset, "offset"},
-															 {Root::Distinct, "distinct"},
-															 {Root::Filters, "filters"},
-															 {Root::Sort, "sort"},
-															 {Root::Joined, "join_queries"},
-															 {Root::Merged, "merge_queries"},
-															 {Root::SelectFilter, "select_filter"},
-															 {Root::SelectFunctions, "select_functions"},
-															 {Root::ReqTotal, "req_total"},
-															 {Root::Aggregations, "aggregations"},
-															 {Root::NextOp, "next_op"}};
-
-const unordered_map<Sort, string, EnumClassHash> sort_map = {{Sort::Desc, "desc"}, {Sort::Field, "field"}, {Sort::Values, "values"}};
-
-const unordered_map<JoinRoot, string, EnumClassHash> joins_map = {
-	{JoinRoot::Type, "type"},   {JoinRoot::Namespace, "namespace"}, {JoinRoot::Filters, "filters"}, {JoinRoot::Sort, "sort"},
-	{JoinRoot::Limit, "limit"}, {JoinRoot::Offset, "offset"},		{JoinRoot::On, "on"},			{JoinRoot::Op, "op"}};
-
-const unordered_map<JoinEntry, string, EnumClassHash> joined_entry_map = {
-	{JoinEntry::LetfField, "left_field"}, {JoinEntry::RightField, "right_field"}, {JoinEntry::Cond, "cond"}, {JoinEntry::Op, "op"}};
 
 const unordered_map<JoinType, string, EnumClassHash> join_types = {{InnerJoin, "inner"}, {LeftJoin, "left"}, {OrInnerJoin, "orinner"}};
 
@@ -61,7 +33,6 @@ const unordered_map<OpType, string, EnumClassHash> op_map = {{OpOr, "or"}, {OpAn
 const unordered_map<CalcTotalMode, string, EnumClassHash> reqtotal_values = {
 	{ModeNoTotal, "disabled"}, {ModeAccurateTotal, "enabled"}, {ModeCachedTotal, "cached"}};
 
-const unordered_map<Aggregation, string, EnumClassHash> aggregation_map = {{Aggregation::Field, "field"}, {Aggregation::Type, "type"}};
 const unordered_map<AggType, string, EnumClassHash> aggregation_types = {{AggSum, "sum"}, {AggAvg, "avg"}};
 
 template <typename T>
@@ -72,300 +43,125 @@ string get(unordered_map<T, string, EnumClassHash> const& m, const T& key) {
 	return string();
 }
 
-void encodeString(const string& str, string& dsl) {
-	const char* s = str.data();
-	size_t l = str.size();
-	dsl += '"';
+void encodeSorting(const Query& query, JsonBuilder& builder) {
+	auto arrNode = builder.Array("sort");
 
-	while (l--) {
-		int c = *s++;
-		switch (c) {
-			case '\b':
-				dsl += '\\';
-				dsl += 'b';
-				break;
-			case '\f':
-				dsl += '\\';
-				dsl += 'f';
-				break;
-			case '\n':
-				dsl += '\\';
-				dsl += 'n';
-				break;
-			case '\r':
-				dsl += '\\';
-				dsl += 'r';
-				break;
-			case '\t':
-				dsl += '\\';
-				dsl += 't';
-				break;
-			case '\\':
-				dsl += '\\';
-				dsl += '\\';
-				break;
-			case '"':
-				dsl += '\\';
-				dsl += '"';
-				break;
-			case '&':
-				dsl += '\\';
-				dsl += 'u';
-				dsl += '0';
-				dsl += '0';
-				dsl += '2';
-				dsl += '6';
-				break;
-			default:
-				dsl += c;
+	for (const SortingEntry& sortingEntry : query.sortingEntries_) {
+		arrNode.Object().Put("field", sortingEntry.column).Put("desc", sortingEntry.desc);
+	}
+}
+
+void encodeFilter(const QueryEntry& qentry, JsonBuilder& builder) {
+	builder.Put("op", get(op_map, qentry.op));
+	builder.Put("cond", get(cond_map, qentry.condition));
+	builder.Put("field", qentry.index);
+
+	if (qentry.values.size() > 1 || ((qentry.values.size() == 1) && qentry.values[0].Type() == KeyValueTuple)) {
+		auto arrNode = builder.Array("value");
+		for (const Variant& kv : qentry.values) {
+			arrNode.Put(nullptr, kv);
 		}
-	}
-	dsl += '"';
-}
-
-void addComa(string& dsl) { dsl += coma; }
-
-void encodeNodeName(const string& nodeName, string& dsl) {
-	encodeString(nodeName, dsl);
-	dsl += colon;
-}
-
-template <typename T>
-void encodeNumericField(const string& nodeName, const T nodeValue, string& dsl) {
-	encodeNodeName(nodeName, dsl);
-	dsl += std::to_string(nodeValue);
-}
-
-void encodeStringField(const string& nodeName, const string& nodeValue, string& dsl) {
-	encodeNodeName(nodeName, dsl);
-	encodeString(nodeValue, dsl);
-}
-
-void encodeBooleanField(const string& nodeName, bool nodeValue, string& dsl) {
-	encodeNodeName(nodeName, dsl);
-	dsl += nodeValue ? "true" : "false";
-}
-
-void encodeKeyValue(const KeyValue& kv, string& dsl) {
-	switch (kv.Type()) {
-		case KeyValueInt:
-			dsl += std::to_string(static_cast<int>(kv));
-			break;
-		case KeyValueInt64:
-			dsl += std::to_string(static_cast<int64_t>(kv));
-			break;
-		case KeyValueDouble:
-			dsl += std::to_string(static_cast<double>(kv));
-			break;
-		case KeyValueString:
-			encodeString(*static_cast<key_string>(kv), dsl);
-			break;
-		case KeyValueComposite: {
-			dsl += leftSquareBracket;
-			const vector<KeyValue>& values(kv.getCompositeValues());
-			for (size_t i = 0; i < values.size(); ++i) {
-				encodeKeyValue(values[i], dsl);
-				if (i != values.size() - 1) addComa(dsl);
-			}
-			dsl += rightSquareBracket;
-			break;
-		}
-		default:
-			break;
-	}
-}
-
-template <typename T, int holdSize>
-void encodeStringArray(const h_vector<T, holdSize>& array, string& dsl) {
-	dsl += leftSquareBracket;
-	for (size_t i = 0; i < array.size(); ++i) {
-		encodeString(array[i], dsl);
-		if (i != array.size() - 1) addComa(dsl);
-	}
-	dsl += rightSquareBracket;
-}
-
-void encodeSorting(const Query& query, string& dsl) {
-	if (query.sortingEntries_.empty()) return;
-	encodeNodeName(get(root_map, Root::Sort), dsl);
-	bool multicolumnSort = query.sortingEntries_.size() > 1;
-	if (multicolumnSort) dsl += leftSquareBracket;
-	for (size_t i = 0; i < query.sortingEntries_.size(); i++) {
-		dsl += leftBracket;
-		const SortingEntry& sortingEntry(query.sortingEntries_[i]);
-		encodeStringField(get(sort_map, Sort::Field), sortingEntry.column, dsl);
-		addComa(dsl);
-		encodeBooleanField(get(sort_map, Sort::Desc), sortingEntry.desc, dsl);
-		dsl += rightBracket;
-		if (i != query.sortingEntries_.size() - 1) addComa(dsl);
-	}
-	if (multicolumnSort) dsl += rightSquareBracket;
-}
-
-void encodeFilter(const QueryEntry& qentry, string& dsl) {
-	dsl += leftBracket;
-	encodeStringField(get(filter_map, Filter::Op), get(op_map, qentry.op), dsl);
-	addComa(dsl);
-	encodeStringField(get(filter_map, Filter::Cond), get(cond_map, qentry.condition), dsl);
-	addComa(dsl);
-	encodeStringField(get(filter_map, Filter::Field), qentry.index, dsl);
-	addComa(dsl);
-
-	encodeNodeName(get(filter_map, Filter::Value), dsl);
-	if (qentry.values.size() > 1 || ((qentry.values.size() == 1) && qentry.values[0].Type() == KeyValueComposite)) {
-		dsl += leftSquareBracket;
-		for (size_t i = 0; i < qentry.values.size(); i++) {
-			const KeyValue& kv(qentry.values[i]);
-			encodeKeyValue(kv, dsl);
-			if (i != qentry.values.size() - 1) addComa(dsl);
-		}
-		dsl += rightSquareBracket;
 	} else {
-		encodeKeyValue(qentry.values[0], dsl);
+		builder.Put("value", qentry.values[0]);
 	}
-
-	dsl += rightBracket;
 }
 
-void encodeFilters(const Query& query, string& dsl) {
-	if (query.entries.empty()) return;
-	encodeNodeName(get(root_map, Root::Filters), dsl);
-	dsl += leftSquareBracket;
-	for (size_t i = 0; i < query.entries.size(); ++i) {
-		const QueryEntry& qe(query.entries[i]);
-		encodeFilter(qe, dsl);
-		if (i != query.entries.size() - 1) addComa(dsl);
+void encodeFilters(const Query& query, JsonBuilder& builder) {
+	auto arrNode = builder.Array("filters");
+
+	for (const QueryEntry& qe : query.entries) {
+		auto node = arrNode.Object();
+		encodeFilter(qe, node);
 	}
-	dsl += rightSquareBracket;
 }
 
-void encodeMergedQueries(const Query& query, string& dsl) {
-	if (query.mergeQueries_.empty()) return;
-	encodeNodeName(get(root_map, Root::Merged), dsl);
-	dsl += leftSquareBracket;
-	for (size_t i = 0; i < query.mergeQueries_.size(); i++) {
-		dsl += toDsl(query.mergeQueries_[i]);
-		if (i != query.mergeQueries_.size() - 1) addComa(dsl);
+void toDsl(const Query& query, JsonBuilder& builder);
+
+void encodeMergedQueries(const Query& query, JsonBuilder& builder) {
+	auto arrNode = builder.Array("merge_queries");
+
+	for (const Query& mq : query.mergeQueries_) {
+		auto node = arrNode.Object();
+		toDsl(mq, node);
 	}
-	dsl += rightSquareBracket;
 }
 
-void encodeSelectFilter(const Query& query, string& dsl) {
-	if (query.selectFilter_.empty()) return;
-	encodeNodeName(get(root_map, Root::SelectFilter), dsl);
-	encodeStringArray(query.selectFilter_, dsl);
+void encodeSelectFilter(const Query& query, JsonBuilder& builder) {
+	auto arrNode = builder.Array("select_filter");
+	for (auto& str : query.selectFilter_) arrNode.Put(nullptr, str);
 }
 
-void encodeSelectFunctions(const Query& query, string& dsl) {
-	if (query.selectFunctions_.empty()) return;
-	encodeNodeName(get(root_map, Root::SelectFunctions), dsl);
-	encodeStringArray(query.selectFunctions_, dsl);
+void encodeSelectFunctions(const Query& query, JsonBuilder& builder) {
+	auto arrNode = builder.Array("select_functions");
+	for (auto& str : query.selectFunctions_) arrNode.Put(nullptr, str);
 }
 
-void encodeAggregationFunctions(const Query& query, string& dsl) {
-	if (query.aggregations_.empty()) return;
-	encodeNodeName(get(root_map, Root::Aggregations), dsl);
-	dsl += leftSquareBracket;
-	for (size_t i = 0; i < query.aggregations_.size(); i++) {
-		const AggregateEntry& entry(query.aggregations_[i]);
-		dsl += leftBracket;
-		encodeStringField(get(aggregation_map, Aggregation::Field), entry.index_, dsl);
-		addComa(dsl);
-		encodeStringField(get(aggregation_map, Aggregation::Type), get(aggregation_types, entry.type_), dsl);
-		dsl += rightBracket;
-		if (i != query.aggregations_.size() - 1) addComa(dsl);
+void encodeAggregationFunctions(const Query& query, JsonBuilder& builder) {
+	auto arrNode = builder.Array("aggregations");
+
+	for (auto& entry : query.aggregations_) {
+		arrNode.Object().Put("field", entry.index_).Put("type", get(aggregation_types, entry.type_));
 	}
-	dsl += rightSquareBracket;
 }
 
-void encodeJoinEntry(const QueryJoinEntry& joinEntry, string& dsl) {
-	dsl += leftBracket;
-	encodeStringField(get(joined_entry_map, JoinEntry::LetfField), joinEntry.index_, dsl);
-	addComa(dsl);
-	encodeStringField(get(joined_entry_map, JoinEntry::RightField), joinEntry.joinIndex_, dsl);
-	addComa(dsl);
-	encodeStringField(get(joined_entry_map, JoinEntry::Cond), get(cond_map, joinEntry.condition_), dsl);
-	addComa(dsl);
-	encodeStringField(get(joined_entry_map, JoinEntry::Op), get(op_map, joinEntry.op_), dsl);
-	dsl += rightBracket;
+void encodeJoinEntry(const QueryJoinEntry& joinEntry, JsonBuilder& builder) {
+	builder.Put("left_field", joinEntry.index_);
+	builder.Put("right_field", joinEntry.joinIndex_);
+	builder.Put("cond", get(cond_map, joinEntry.condition_));
+	builder.Put("op", get(op_map, joinEntry.op_));
 }
 
-void encodeJoins(const Query& query, string& dsl) {
+void encodeJoins(const Query& query, JsonBuilder& builder) {
 	if (query.joinQueries_.empty()) return;
-	encodeNodeName(get(root_map, Root::Joined), dsl);
-	dsl += leftSquareBracket;
-	for (size_t i = 0; i < query.joinQueries_.size(); ++i) {
-		const Query& joinQuery(query.joinQueries_[i]);
-		dsl += leftBracket;
-		encodeStringField(get(joins_map, JoinRoot::Type), get(join_types, joinQuery.joinType), dsl);
-		addComa(dsl);
-		encodeStringField(get(joins_map, JoinRoot::Op), get(op_map, joinQuery.nextOp_), dsl);
-		addComa(dsl);
-		encodeStringField(get(joins_map, JoinRoot::Namespace), joinQuery._namespace, dsl);
-		addComa(dsl);
-		encodeNumericField(get(joins_map, JoinRoot::Limit), joinQuery.count, dsl);
-		addComa(dsl);
-		encodeNumericField(get(joins_map, JoinRoot::Offset), joinQuery.start, dsl);
 
-		if (!joinQuery.entries.empty()) addComa(dsl);
-		encodeFilters(joinQuery, dsl);
+	auto arrNode = builder.Array("join_queries");
 
-		if (!joinQuery.sortingEntries_.empty()) addComa(dsl);
-		encodeSorting(joinQuery, dsl);
+	for (auto& joinQuery : query.joinQueries_) {
+		auto node = arrNode.Object();
 
-		addComa(dsl);
-		encodeNodeName(get(joins_map, JoinRoot::On), dsl);
-		dsl += leftSquareBracket;
-		for (size_t j = 0; j < joinQuery.joinEntries_.size(); ++j) {
-			encodeJoinEntry(joinQuery.joinEntries_[j], dsl);
-			if (j != joinQuery.joinEntries_.size() - 1) addComa(dsl);
+		node.Put("type", get(join_types, joinQuery.joinType));
+		node.Put("op", get(op_map, joinQuery.nextOp_));
+		node.Put("namespace", joinQuery._namespace);
+		node.Put("limit", joinQuery.count);
+		node.Put("offset", joinQuery.start);
+
+		encodeFilters(joinQuery, node);
+		encodeSorting(joinQuery, node);
+
+		auto arr1 = node.Array("on");
+
+		for (auto& joinEntry : joinQuery.joinEntries_) {
+			auto obj1 = arr1.Object();
+			encodeJoinEntry(joinEntry, obj1);
 		}
-		dsl += rightSquareBracket;
-		dsl += rightBracket;
-		if (i != query.joinQueries_.size() - 1) addComa(dsl);
 	}
-	dsl += rightSquareBracket;
+}
+
+void toDsl(const Query& query, JsonBuilder& builder) {
+	builder.Put("namespace", query._namespace);
+	builder.Put("limit", query.count);
+	builder.Put("offset", query.start);
+	// builder.Put("distinct", "");
+	builder.Put("req_total", get(reqtotal_values, query.calcTotal));
+	builder.Put("next_op", get(op_map, query.nextOp_));
+	builder.Put("explain", query.explain_);
+
+	encodeSelectFilter(query, builder);
+	encodeSelectFunctions(query, builder);
+	encodeSorting(query, builder);
+	encodeFilters(query, builder);
+	encodeMergedQueries(query, builder);
+	encodeAggregationFunctions(query, builder);
+	encodeJoins(query, builder);
 }
 
 std::string toDsl(const Query& query) {
-	string dsl;
-	dsl += leftBracket;
+	WrSerializer ser;
+	JsonBuilder builder(ser);
+	toDsl(query, builder);
 
-	encodeStringField(get(root_map, Root::Namespace), query._namespace, dsl);
-	addComa(dsl);
-	encodeNumericField(get(root_map, Root::Limit), query.count, dsl);
-	addComa(dsl);
-	encodeNumericField(get(root_map, Root::Offset), query.start, dsl);
-	addComa(dsl);
-	encodeStringField(get(root_map, Root::Distinct), "", dsl);
-	addComa(dsl);
-	encodeStringField(get(root_map, Root::ReqTotal), get(reqtotal_values, query.calcTotal), dsl);
-	addComa(dsl);
-	encodeStringField(get(root_map, Root::NextOp), get(op_map, query.nextOp_), dsl);
-
-	if (!query.selectFilter_.empty()) addComa(dsl);
-	encodeSelectFilter(query, dsl);
-
-	if (!query.selectFunctions_.empty()) addComa(dsl);
-	encodeSelectFunctions(query, dsl);
-
-	if (!query.sortingEntries_.empty()) addComa(dsl);
-	encodeSorting(query, dsl);
-
-	if (!query.entries.empty()) addComa(dsl);
-	encodeFilters(query, dsl);
-
-	if (!query.mergeQueries_.empty()) addComa(dsl);
-	encodeMergedQueries(query, dsl);
-
-	if (!query.aggregations_.empty()) addComa(dsl);
-	encodeAggregationFunctions(query, dsl);
-
-	if (!query.joinQueries_.empty()) addComa(dsl);
-	encodeJoins(query, dsl);
-
-	dsl += rightBracket;
-	return dsl;
+	builder.End();
+	return ser.Slice().ToString();
 }
 
 }  // namespace dsl

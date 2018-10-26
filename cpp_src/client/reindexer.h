@@ -64,11 +64,6 @@ public:
 	/// @param defs - std::vector of NamespaceDef of available namespaves
 	/// @param bEnumAll - Also include currenty not opened, but exists on disk namespaces
 	Error EnumNamespaces(vector<NamespaceDef> &defs, bool bEnumAll);
-	/// Set index parameters
-	/// @param nsName - Name of namespace
-	/// @param index - Name of index
-	/// @param config - JSON with extra configuration of index. Structure of JSON depends on index type.
-	Error ConfigureIndex(const string &nsName, const string &index, const string &config);
 	/// Insert new Item to namespace. If item with same PK is already exists, when item.GetID will
 	/// return -1, on success item.GetID() will return internal Item ID
 	/// @param nsName - Name of namespace

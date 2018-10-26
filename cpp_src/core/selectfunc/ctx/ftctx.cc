@@ -55,6 +55,6 @@ void FtCtx::Add(InputIterator begin, InputIterator end, int16_t proc, AreaHolder
 	}
 }
 
-template void FtCtx::Add<h_vector_view<IdType>::iterator>(h_vector_view<IdType>::iterator begin, h_vector_view<IdType>::iterator end,
+template void FtCtx::Add<span<IdType>::iterator>(span<IdType>::iterator begin, span<IdType>::iterator end,
 														  int16_t proc, AreaHolder::UniquePtr &&holder);
 }  // namespace reindexer

@@ -1,19 +1,22 @@
 #pragma once
 
-#include "core/keyvalue/keyref.h"
-#include "core/keyvalue/keyvalue.h"
+#include <functional>
+#include "core/keyvalue/variant.h"
+#include "estl/string_view.h"
 
 namespace reindexer {
 
 using std::move;
 using std::string;
+struct p_string;
 
 class Serializer {
 public:
 	Serializer(const void *_buf, int _len);
 	Serializer(const string_view &buf);
 	bool Eof();
-	KeyValue GetValue();
+	Variant GetVariant();
+	Variant GetRawVariant(KeyValueType type);
 	string_view GetSlice();
 	uint32_t GetUInt32();
 	uint64_t GetUInt64();
@@ -35,10 +38,11 @@ protected:
 
 class WrSerializer {
 public:
-	WrSerializer(bool allowInBuf = true);
+	WrSerializer();
 	WrSerializer(const WrSerializer &) = delete;
 	WrSerializer(WrSerializer &&other) : len_(other.len_), cap_(other.cap_) {
 		if (other.buf_ == other.inBuf_) {
+			buf_ = inBuf_;
 			memcpy(buf_, other.buf_, other.len_ * sizeof(other.inBuf_[0]));
 		} else {
 			buf_ = other.buf_;
@@ -52,7 +56,7 @@ public:
 	WrSerializer &operator=(const WrSerializer &) = delete;
 	WrSerializer &operator=(WrSerializer &&other) noexcept {
 		if (this != &other) {
-			if (buf_ != inBuf_) free(buf_);
+			if (buf_ != inBuf_) delete[] buf_;
 
 			len_ = other.len_;
 			cap_ = other.cap_;
@@ -72,11 +76,13 @@ public:
 		return *this;
 	}
 
-	// Put value
-	void PutValue(const KeyValue &kv);
+	// Put variant
+	void PutVariant(const Variant &kv);
+	void PutRawVariant(const Variant &kv);
 
 	// Put slice with 4 bytes len header
 	void PutSlice(const string_view &slice);
+	void PutSlice(std::function<void()> func);
 
 	// Put raw data
 	void PutUInt32(uint32_t);
@@ -89,6 +95,9 @@ public:
 	}
 	void PutChars(const char *s) {
 		while (*s) PutChar(*s++);
+	}
+	void PutChars(const string_view &sv) {
+		for (auto c : sv) PutChar(c);
 	}
 	void Printf(const char *fmt, ...)
 #ifndef _MSC_VER
@@ -103,17 +112,16 @@ public:
 	// Protobuf formt like functions
 	void PutVarint(int64_t v);
 	void PutVarUint(uint64_t v);
-	void PutVString(const char *);
 	void PutBool(bool v);
 	void PutVString(const string_view &str);
 
 	// Buffer manipulation functions
-	uint8_t *DetachBuffer();
+	void Write(const string_view &buf);
 	uint8_t *Buf() const;
 	void Reset() { len_ = 0; }
 	size_t Len() const { return len_; }
 	void Reserve(size_t cap);
-	string_view Slice() { return string_view(reinterpret_cast<const char *>(buf_), len_); }
+	string_view Slice() const { return string_view(reinterpret_cast<const char *>(buf_), len_); }
 
 protected:
 	void grow(size_t sz);

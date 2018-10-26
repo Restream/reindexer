@@ -115,7 +115,9 @@ func skipTag(rdser *Serializer, tagType int) {
 
 func asInt(rdser *Serializer, tagType int) int64 {
 	switch tagType {
-	case TAG_VARINT, TAG_BOOL:
+	case TAG_BOOL:
+		return int64(rdser.GetVarUInt())
+	case TAG_VARINT:
 		return rdser.GetVarInt()
 	case TAG_DOUBLE:
 		return int64(rdser.GetDouble())
@@ -312,7 +314,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 		case reflect.Bool:
 			sl := (*[1 << 27]bool)(ptr)[:count:count]
 			for i := 0; i < count; i++ {
-				sl[i] = rdser.GetVarInt() != 0
+				sl[i] = rdser.GetVarUInt() != 0
 			}
 		case reflect.String:
 			sl := (*[1 << 27]string)(ptr)[:count:count]

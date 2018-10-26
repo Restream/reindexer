@@ -8,32 +8,68 @@ namespace reindexer {
 namespace net {
 namespace cproto {
 
-ClientConnection::ClientConnection(ev::dynamic_loop &loop) : ConnectionMT(-1, loop), state_(ConnInit) {}
+ClientConnection::ClientConnection(ev::dynamic_loop &loop, const httpparser::UrlParser *uri)
+	: ConnectionMT(-1, loop), state_(ConnInit), uri_(uri) {
+	connect_async_.set<ClientConnection, &ClientConnection::connect_async_cb>(this);
+	connect_async_.set(loop);
+	connect_async_.start();
+}
 
-bool ClientConnection::Connect(string_view addr, string_view username, string_view password, string_view dbName) {
+void ClientConnection::Connect() {
+	std::unique_lock<mutex> lck(wrBufLock_);
+	switch (state_) {
+		case ConnConnected:
+			return;
+		case ConnInit:
+		case ConnFailed:
+			connect_async_.send();
+			break;
+		default:
+			break;
+	}
+	answersCond_.wait(lck);
+}
+
+bool ClientConnection::connectInternal() {
+	std::unique_lock<mutex> lck(wrBufLock_);
 	assert(!sock_.valid());
 	assert(wrBuf_.size() == 0);
 
-	std::unique_lock<mutex> lck(wrBufLock_);
+	string port = uri_->port().length() ? uri_->port() : string("6534");
+	string dbName = uri_->path();
+	if (dbName[0] == '/') dbName = dbName.substr(1);
+
 	state_ = ConnConnecting;
-	sock_.connect(addr.data());
+	lastError_ = errOK;
+	sock_.connect((uri_->hostname() + ":" + port).c_str());
 	if (!sock_.valid()) {
 		state_ = ConnFailed;
+		lastError_ = Error(errNetwork, "Socket connect error %d", sock_.last_error());
+		lck.unlock();
+		answersCond_.notify_all();
 		return false;
 	}
 
 	io_.start(sock_.fd(), ev::READ | ev::WRITE);
 	async_.start();
-	Args args{Arg(p_string(&username)), Arg(p_string(&password)), Arg(p_string(&dbName))};
+	Args args{Arg(uri_->username()), Arg(uri_->password()), Arg(dbName)};
 	callRPC(kCmdLogin, seq_, args);
 	return true;
+}
+
+void ClientConnection::failInternal(const Error &error) {
+	if (lastError_.ok()) lastError_ = error;
+	closeConn_ = true;
+	state_ = ConnFailed;
 }
 
 void ClientConnection::onClose() {
 	{
 		std::unique_lock<mutex> lck(wrBufLock_);
-		state_ = ConnFailed;
 		wrBuf_.clear();
+		if (lastError_.ok()) lastError_ = Error(errNetwork, "Socket connection closed");
+		closeConn_ = false;
+		state_ = ConnFailed;
 	}
 	answersCond_.notify_all();
 }
@@ -45,9 +81,14 @@ void ClientConnection::onRead() {
 		auto len = rdBuf_.peek(reinterpret_cast<char *>(&hdr), sizeof(hdr));
 
 		if (len < sizeof(hdr)) return;
-		if (hdr.magic != kCprotoMagic || hdr.version != kCprotoVersion) {
-			// responceRPC(ctx, Error(errParams, "Invalid cproto header: magic=%08x or version=%08x", hdr.magic, hdr.version), Args());
-			closeConn_ = true;
+		if (hdr.magic != kCprotoMagic) {
+			failInternal(Error(errNetwork, "Invalid cproto magic=%08x", hdr.magic));
+			return;
+		}
+
+		if (hdr.version != kCprotoVersion) {
+			failInternal(
+				Error(errParams, "Unsupported cproto version %04x. This client expects reindexer server v1.9.8+", int(hdr.version)));
 			return;
 		}
 
@@ -70,12 +111,17 @@ void ClientConnection::onRead() {
 		ans.cmd = CmdCode(hdr.cmd);
 		ans.seq = hdr.seq;
 
-		Serializer ser(it.data, hdr.len);
-		int errCode = ser.GetVarUint();
-		string errMsg = ser.GetVString().ToString();
-		ans.ans.status_ = Error(errCode, errMsg);
-		assert(ser.Pos() <= hdr.len);
-		ans.ans.data_.assign(reinterpret_cast<uint8_t *>(it.data) + ser.Pos(), reinterpret_cast<uint8_t *>(it.data) + hdr.len);
+		int errCode = 0;
+		try {
+			Serializer ser(it.data, hdr.len);
+			errCode = ser.GetVarUint();
+			string errMsg = ser.GetVString().ToString();
+			ans.ans.status_ = Error(errCode, errMsg);
+			ans.ans.data_.assign(reinterpret_cast<uint8_t *>(it.data) + ser.Pos(), reinterpret_cast<uint8_t *>(it.data) + hdr.len);
+		} catch (const Error &err) {
+			failInternal(err);
+			return;
+		}
 
 		wrBufLock_.lock();
 		if (ans.cmd == cproto::kCmdLogin) {
@@ -91,14 +137,13 @@ void ClientConnection::onRead() {
 		rdBuf_.erase(hdr.len);
 	}
 }
+
 RPCAnswer ClientConnection::getAnswer(CmdCode cmd, uint32_t seq) {
 	RPCAnswer ret;
 	std::unique_lock<mutex> lck(wrBufLock_);
 	for (;;) {
-		if (state_ == ConnFailed) {
-			ret.status_ = Error(errNetwork, "Connection to server was dropped");
-			return ret;
-		}
+		if (state_ == ConnFailed) return RPCAnswer(lastError_);
+
 		auto it = find_if(answers_.begin(), answers_.end(), [seq](const RPCRawAnswer &a) { return a.seq == seq; });
 		if (it != answers_.end()) {
 			if (cmd != it->cmd) {
@@ -114,10 +159,14 @@ RPCAnswer ClientConnection::getAnswer(CmdCode cmd, uint32_t seq) {
 	}
 }
 
-Args RPCAnswer::GetArgs() {
+Args RPCAnswer::GetArgs(int minArgs) {
 	cproto::Args ret;
 	Serializer ser(data_.data(), data_.size());
 	ret.Unpack(ser);
+	if (int(ret.size()) < minArgs) {
+		throw Error(errParams, "Server returned %d args, but expected %d", int(ret.size()), minArgs);
+	}
+
 	return ret;
 }
 
@@ -140,22 +189,13 @@ void ClientConnection::callRPC(CmdCode cmd, uint32_t seq, const Args &args) {
 }
 
 RPCAnswer ClientConnection::call(CmdCode cmd, const Args &args) {
-	// WrSerializer ser;
-	// ser.Printf("%s ", cproto::CmdName(cmd));
-	// args.Dump(ser);
-	// ser.PutChar(0);
-
-	// ser.Printf(" -> %s", err.ok() ? "OK" : err.what().c_str());
-	// if (ret.size()) {
-	// 	ser.PutChars(" ");
-	// 	ret.Dump(ser);
-	// }
-	// printf("%s\n", ser.Buf());
-
-	wrBufLock_.lock();
-	uint32_t seq = seq_++;
-	callRPC(cmd, seq, args);
-	wrBufLock_.unlock();
+	uint32_t seq;
+	{
+		std::unique_lock<mutex> lck(wrBufLock_);
+		if (state_ == ConnFailed) return RPCAnswer(lastError_);
+		seq = seq_++;
+		callRPC(cmd, seq, args);
+	}
 	async_.send();
 	return getAnswer(cmd, seq);
 }

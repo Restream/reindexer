@@ -22,12 +22,12 @@ type NetBuffer struct {
 func (buf *NetBuffer) Fetch(offset, limit int, withItems bool) (err error) {
 	flags := 0
 	if withItems {
-		flags |= bindings.ResultsWithJson
+		flags |= bindings.ResultsJson
 	} else {
-		flags |= bindings.ResultsWithCJson
+		flags |= bindings.ResultsCJson | bindings.ResultsWithItemID
 	}
 	//fmt.Printf("cmdFetchResults(reqId=%d, offset=%d, limit=%d, json=%v, flags=%v)\n", buf.reqID, offset, limit, withItems, flags)
-	fetchBuf, err := buf.conn.rpcCall(cmdFetchResults, buf.reqID, flags, offset, limit, int64(-1))
+	fetchBuf, err := buf.conn.rpcCall(cmdFetchResults, buf.reqID, flags, offset, limit)
 	defer fetchBuf.Free()
 	if err != nil {
 		buf.close()

@@ -120,6 +120,8 @@ public:
 	/// each object in sequence.
 	void SetExpectMaxIterations(int expectedIterations_);
 
+	int Type() { return type_; }
+
 	const char *TypeName() const;
 	string Dump() const;
 

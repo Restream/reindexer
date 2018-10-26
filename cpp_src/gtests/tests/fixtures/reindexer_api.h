@@ -5,21 +5,22 @@
 #include <string>
 #include <tuple>
 
+#include <iostream>
 #include "core/keyvalue/key_string.h"
-#include "core/keyvalue/keyvalue.h"
+#include "core/keyvalue/variant.h"
 #include "core/query/query.h"
 #include "core/query/querywhere.h"
 #include "core/reindexer.h"
 #include "gtests/tests/gtest_cout.h"
-#include "iostream"
 #include "tools/errors.h"
+#include "tools/serializer.h"
+#include "tools/stringstools.h"
+
 using namespace std;
 using reindexer::Error;
 using reindexer::Item;
-using reindexer::KeyRef;
-using reindexer::KeyRefs;
-using reindexer::KeyValue;
-using reindexer::KeyValues;
+using reindexer::Variant;
+using reindexer::VariantArray;
 using reindexer::Query;
 using reindexer::QueryEntry;
 using reindexer::QueryResults;
@@ -43,7 +44,25 @@ public:
 								initializer_list<const tuple<const char *, const char *, const char *, const IndexOpts>> fields) {
 		auto err = Error();
 		for (auto field : fields) {
-			err = reindexer->AddIndex(ns, {get<0>(field), get<0>(field), get<1>(field), get<2>(field), get<3>(field)});
+			string indexName = get<0>(field);
+			string fieldType = get<1>(field);
+			string indexType = get<2>(field);
+
+			if (indexType != "composite") {
+				err = reindexer->AddIndex(ns, {indexName, {indexName}, fieldType, indexType, get<3>(field)});
+			} else {
+				string realName = indexName;
+				string idxContents = indexName;
+				auto eqPos = indexName.find_first_of('=');
+				if (eqPos != string::npos) {
+					idxContents = indexName.substr(0, eqPos);
+					realName = indexName.substr(eqPos + 1);
+				}
+				reindexer::JsonPaths jsonPaths;
+				jsonPaths = reindexer::split(idxContents, "+", true, jsonPaths);
+
+				err = reindexer->AddIndex(ns, {realName, jsonPaths, fieldType, indexType, get<3>(field)});
+			}
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
 		err = reindexer->Commit(ns);
@@ -55,10 +74,11 @@ public:
 	void Upsert(const std::string &ns, Item &item) {
 		assert(item);
 		auto err = reindexer->Upsert(ns, item);
-		assertf(err.ok(), "%s", err.what().c_str());
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	void PrintQueryResults(const std::string &ns, const QueryResults &res) {
+		if (!verbose) return;
 		{
 			Item rdummy(reindexer->NewItem(ns));
 			std::string outBuf;
@@ -73,9 +93,8 @@ public:
 			Item ritem(it.GetItem());
 			std::string outBuf = "";
 			for (auto idx = 1; idx < ritem.NumFields(); idx++) {
-				auto field = ritem[idx].Name();
 				outBuf += "\t";
-				outBuf += ritem[field].As<string>();
+				outBuf += ritem[idx].As<string>();
 			}
 			TestCout() << outBuf << std::endl;
 		}
@@ -92,7 +111,16 @@ public:
 		}
 		return res;
 	}
-
+	std::string RuRandString() {
+		string res;
+		uint8_t len = rand() % 20 + 4;
+		res.resize(len);
+		for (int i = 0; i < len; ++i) {
+			int f = rand() % ru_letters.size();
+			res[i] = ru_letters[f];
+		}
+		return res;
+	}
 	vector<int> RandIntVector(size_t size, int start, int range) {
 		vector<int> vec;
 		vec.reserve(size);
@@ -105,5 +133,8 @@ public:
 public:
 	const string default_namespace = "test_namespace";
 	const string letters = "abcdefghijklmnopqrstuvwxyz";
+	const string ru_letters = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
+
 	shared_ptr<Reindexer> reindexer;
+	bool verbose = false;
 };

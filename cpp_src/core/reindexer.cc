@@ -29,13 +29,11 @@ Error Reindexer::Delete(const Query& q, QueryResults& result) { return impl_->De
 Error Reindexer::Select(const string& query, QueryResults& result) { return impl_->Select(query, result); }
 Error Reindexer::Select(const Query& q, QueryResults& result) { return impl_->Select(q, result); }
 Error Reindexer::Commit(const string& _namespace) { return impl_->Commit(_namespace); }
-Error Reindexer::ConfigureIndex(const string& _namespace, const string& index, const string& config) {
-	return impl_->ConfigureIndex(_namespace, index, config);
-}
 Error Reindexer::AddIndex(const string& _namespace, const IndexDef& idx) { return impl_->AddIndex(_namespace, idx); }
 Error Reindexer::UpdateIndex(const string& _namespace, const IndexDef& idx) { return impl_->UpdateIndex(_namespace, idx); }
 Error Reindexer::DropIndex(const string& _namespace, const string& index) { return impl_->DropIndex(_namespace, index); }
 Error Reindexer::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll) { return impl_->EnumNamespaces(defs, bEnumAll); }
 Error Reindexer::InitSystemNamespaces() { return impl_->InitSystemNamespaces(); }
+Error Reindexer::SubscribeUpdates(IUpdatesObserver* observer, bool subscribe) { return impl_->SubscribeUpdates(observer, subscribe); }
 
 }  // namespace reindexer

@@ -9,6 +9,7 @@
 namespace reindexer {
 
 void jsonValueToString(JsonValue o, WrSerializer &ser, int shift, int indent) {
+	bool enableEol = shift != 0 || indent != 0;
 	switch (o.getTag()) {
 		case JSON_NUMBER: {
 			double value = o.toNumber();
@@ -32,11 +33,14 @@ void jsonValueToString(JsonValue o, WrSerializer &ser, int shift, int indent) {
 				ser.Printf("[]");
 				break;
 			}
-			ser.Printf("[\n");
+			ser.PutChar('[');
+			if (enableEol) ser.PutChar('\n');
+
 			for (auto i : o) {
 				ser.Printf("%*s", indent + shift, "");
 				jsonValueToString(i->value, ser, shift, indent + shift);
-				ser.Printf(i->next ? ",\n" : "\n");
+				if (i->next) ser.PutChar(',');
+				if (enableEol) ser.PutChar('\n');
 			}
 			ser.Printf("%*s]", indent, "");
 			break;
@@ -45,13 +49,16 @@ void jsonValueToString(JsonValue o, WrSerializer &ser, int shift, int indent) {
 				ser.Printf("{}");
 				break;
 			}
-			ser.Printf("{\n");
+			ser.PutChar('{');
+			if (enableEol) ser.PutChar('\n');
+
 			for (auto i : o) {
 				ser.Printf("%*s", indent + shift, "");
 				ser.PrintJsonString(i->key);
 				ser.Printf(": ");
 				jsonValueToString(i->value, ser, shift, indent + shift);
-				ser.Printf(i->next ? ",\n" : "\n");
+				if (i->next) ser.PutChar(',');
+				if (enableEol) ser.PutChar('\n');
 			}
 			ser.Printf("%*s}", indent, "");
 			break;
@@ -76,7 +83,7 @@ void prettyPrintJSON(string json, WrSerializer &ser, int shift) {
 }
 
 string stringifyJson(const JsonNode *elem) {
-	WrSerializer ser(true);
+	WrSerializer ser;
 	jsonValueToString(elem->value, ser, 0, 0);
 
 	return ser.Slice().ToString();
@@ -113,8 +120,19 @@ void parseJsonField(const char *name, T &ref, const JsonNode *elem, double min, 
 		throw Error(errParseJson, "Expected type number for setting '%s'", name);
 }
 
+template <typename T>
+void parseJsonField(const char *name, T &ref, const JsonNode *elem) {
+	if (strcmp(name, elem->key)) return;
+	if (elem->value.getTag() == JSON_NUMBER) {
+		ref = elem->value.toNumber();
+	} else
+		throw Error(errParseJson, "Expected type number for setting '%s'", name);
+}
+
 template void parseJsonField(const char *, int &, const JsonNode *, double, double);
 template void parseJsonField(const char *, size_t &, const JsonNode *, double, double);
 template void parseJsonField(const char *, double &, const JsonNode *, double, double);
+template void parseJsonField(const char *, double &, const JsonNode *);
+template void parseJsonField(const char *, int &, const JsonNode *);
 
 }  // namespace reindexer

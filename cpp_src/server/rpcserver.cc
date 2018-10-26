@@ -118,25 +118,16 @@ void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Arg
 	logger_.info("{0}", reinterpret_cast<char *>(ser.Buf()));
 }
 
-Error RPCServer::OpenNamespace(cproto::Context &ctx, p_string ns) {
+Error RPCServer::OpenNamespace(cproto::Context &ctx, p_string nsDefJson) {
 	NamespaceDef nsDef;
-	p_string nsDefJson("");
 
-	if (ctx.call->args.size() > 1) {
-		nsDefJson = p_string(ctx.call->args[1]);
+	string json = nsDefJson.toString();
+
+	nsDef.FromJSON(const_cast<char *>(json.c_str()));
+	if (!nsDef.indexes.empty()) {
+		return getDB(ctx, kRoleDataRead)->AddNamespace(nsDef);
 	}
-
-	string json = (nsDefJson.length() ? nsDefJson : ns).toString();
-
-	if (json[0] == '{') {
-		nsDef.FromJSON(const_cast<char *>(json.c_str()));
-		if (!nsDef.indexes.empty()) {
-			return getDB(ctx, kRoleDataRead)->AddNamespace(nsDef);
-		}
-		return getDB(ctx, kRoleDataRead)->OpenNamespace(nsDef.name, nsDef.storage, nsDef.cacheMode);
-	}
-	// tmp fix for compat
-	return getDB(ctx, kRoleDataRead)->OpenNamespace(ns.toString());
+	return getDB(ctx, kRoleDataRead)->OpenNamespace(nsDef.name, nsDef.storage, nsDef.cacheMode);
 }
 
 Error RPCServer::DropNamespace(cproto::Context &ctx, p_string ns) {
@@ -192,27 +183,28 @@ Error RPCServer::DropIndex(cproto::Context &ctx, p_string ns, p_string index) {
 	return getDB(ctx, kRoleDBAdmin)->DropIndex(ns.toString(), index.toString());
 }
 
-Error RPCServer::ConfigureIndex(cproto::Context &ctx, p_string ns, p_string index, p_string config) {
-	return getDB(ctx, kRoleDBAdmin)->ConfigureIndex(ns.toString(), index.toString(), config.toString());
-}
-
-Error RPCServer::ModifyItem(cproto::Context &ctx, p_string itemPack, int mode) {
+Error RPCServer::ModifyItem(cproto::Context &ctx, p_string nsName, int format, p_string itemData, int mode, p_string perceptsPack,
+							int stateToken, int /*txID*/) {
 	auto db = getDB(ctx, kRoleDataWrite);
-	Serializer ser(itemPack.data(), itemPack.size());
-	string ns = ser.GetVString().ToString();
-	int format = ser.GetVarUint();
+	string ns = nsName.toString();
 	auto item = Item(db->NewItem(ns));
 	bool tmUpdated = false;
 	Error err;
 	if (!item.Status().ok()) {
 		return item.Status();
 	}
+
 	switch (format) {
 		case FormatJson:
-			err = item.Unsafe().FromJSON(ser.GetSlice(), nullptr, mode == ModeDelete);
+			err = item.Unsafe().FromJSON(itemData, nullptr, mode == ModeDelete);
 			break;
 		case FormatCJson:
-			err = item.Unsafe().FromCJSON(ser.GetSlice(), mode == ModeDelete);
+			if (item.GetStateToken() != stateToken) {
+				err = Error(errStateInvalidated, "stateToken mismatch:  %08X, need %08X. Can't process item", stateToken,
+							item.GetStateToken());
+			} else {
+				err = item.Unsafe().FromCJSON(itemData, mode == ModeDelete);
+			}
 			break;
 		default:
 			err = Error(-1, "Invalid source item format %d", format);
@@ -221,14 +213,17 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string itemPack, int mode) {
 		return err;
 	}
 	tmUpdated = item.IsTagsUpdated();
-	unsigned preceptsCount = ser.GetVarUint();
-	vector<string> precepts;
-	for (unsigned prIndex = 0; prIndex < preceptsCount; prIndex++) {
-		string precept = ser.GetVString().ToString();
-		precepts.push_back(precept);
-	}
-	item.SetPrecepts(precepts);
 
+	if (perceptsPack.length()) {
+		Serializer ser(perceptsPack);
+		unsigned preceptsCount = ser.GetVarUint();
+		vector<string> precepts;
+		for (unsigned prIndex = 0; prIndex < preceptsCount; prIndex++) {
+			string precept = ser.GetVString().ToString();
+			precepts.push_back(precept);
+		}
+		item.SetPrecepts(precepts);
+	}
 	switch (mode) {
 		case ModeUpsert:
 			err = db->Upsert(ns, item);
@@ -251,9 +246,9 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string itemPack, int mode) {
 	int32_t ptVers = -1;
 	ResultFetchOpts opts;
 	if (tmUpdated) {
-		opts = ResultFetchOpts{kResultsWithPayloadTypes, &ptVers, 1, 0, INT_MAX, 0};
+		opts = ResultFetchOpts{kResultsWithItemID | kResultsWithPayloadTypes, span<int32_t>(&ptVers, 1), 0, INT_MAX};
 	} else {
-		opts = ResultFetchOpts{0, nullptr, 0, 0, INT_MAX, 0};
+		opts = ResultFetchOpts{kResultsWithItemID, {}, 0, INT_MAX};
 	}
 
 	return sendResults(ctx, qres, -1, opts);
@@ -269,7 +264,7 @@ Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin) {
 	if (!err.ok()) {
 		return err;
 	}
-	ResultFetchOpts opts{0, nullptr, 0, 0, INT_MAX, 0};
+	ResultFetchOpts opts{0, {}, 0, INT_MAX};
 	return sendResults(ctx, qres, -1, opts);
 }
 
@@ -287,7 +282,7 @@ shared_ptr<Reindexer> RPCServer::getDB(cproto::Context &ctx, UserRole role) {
 }
 
 Error RPCServer::sendResults(cproto::Context &ctx, QueryResults &qres, int reqId, const ResultFetchOpts &opts) {
-	WrResultSerializer rser(true, opts);
+	WrResultSerializer rser(opts);
 
 	bool doClose = rser.PutResults(&qres);
 
@@ -340,9 +335,9 @@ static h_vector<int32_t, 4> pack2vec(p_string pack) {
 	return vec;
 }
 
-Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int limit, int64_t fetchDataMask, p_string ptVersionsPck) {
+Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int limit, p_string ptVersionsPck) {
 	Query query;
-	Serializer ser(queryBin.data(), queryBin.size());
+	Serializer ser(queryBin);
 	query.Deserialize(ser);
 
 	int id = -1;
@@ -354,12 +349,12 @@ Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int 
 		return ret;
 	}
 	auto ptVersions = pack2vec(ptVersionsPck);
-	ResultFetchOpts opts{flags, ptVersions.data(), int(ptVersions.size()), 0, unsigned(limit), fetchDataMask};
+	ResultFetchOpts opts{flags, ptVersions, 0, unsigned(limit)};
 
 	return fetchResults(ctx, id, opts);
 }
 
-Error RPCServer::SelectSQL(cproto::Context &ctx, p_string querySql, int flags, int limit, int64_t fetchDataMask, p_string ptVersionsPck) {
+Error RPCServer::SelectSQL(cproto::Context &ctx, p_string querySql, int flags, int limit, p_string ptVersionsPck) {
 	int id = -1;
 	QueryResults &qres = getQueryResults(ctx, id);
 	auto ret = getDB(ctx, kRoleDataRead)->Select(querySql.toString(), qres);
@@ -368,15 +363,15 @@ Error RPCServer::SelectSQL(cproto::Context &ctx, p_string querySql, int flags, i
 		return ret;
 	}
 	auto ptVersions = pack2vec(ptVersionsPck);
-	ResultFetchOpts opts{flags, ptVersions.data(), int(ptVersions.size()), 0, unsigned(limit), fetchDataMask};
+	ResultFetchOpts opts{flags, ptVersions, 0, unsigned(limit)};
 
 	return fetchResults(ctx, id, opts);
 }
 
-Error RPCServer::FetchResults(cproto::Context &ctx, int reqId, int flags, int offset, int limit, int64_t fetchDataMask) {
+Error RPCServer::FetchResults(cproto::Context &ctx, int reqId, int flags, int offset, int limit) {
 	flags &= ~kResultsWithPayloadTypes;
 
-	ResultFetchOpts opts = {flags, nullptr, 0, unsigned(offset), unsigned(limit), fetchDataMask};
+	ResultFetchOpts opts = {flags, {}, unsigned(offset), unsigned(limit)};
 	return fetchResults(ctx, reqId, opts);
 }
 
@@ -404,10 +399,7 @@ Error RPCServer::GetMeta(cproto::Context &ctx, p_string ns, p_string key) {
 		return err;
 	}
 
-	WrSerializer wrSer;
-	wrSer.PutVString(data);
-	string_view slData = wrSer.Slice();
-	ctx.Return({cproto::Arg(p_string(&slData))});
+	ctx.Return({cproto::Arg(data)});
 	return 0;
 }
 
@@ -417,7 +409,21 @@ Error RPCServer::PutMeta(cproto::Context &ctx, p_string ns, p_string key, p_stri
 
 Error RPCServer::EnumMeta(cproto::Context &ctx, p_string ns) {
 	vector<string> keys;
-	return getDB(ctx, kRoleDataWrite)->EnumMeta(ns.toString(), keys);
+	auto err = getDB(ctx, kRoleDataWrite)->EnumMeta(ns.toString(), keys);
+	if (!err.ok()) {
+		return err;
+	}
+	cproto::Args ret;
+	for (auto &key : keys) {
+		ret.push_back(cproto::Arg(key));
+	}
+	ctx.Return(ret);
+	return errOK;
+}
+
+Error RPCServer::SubscribeUpdates(cproto::Context &ctx, int flag) {
+	//
+	return getDB(ctx, kRoleDataRead)->SubscribeUpdates(this, flag);
 }
 
 bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
@@ -434,7 +440,6 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	dispatcher.Register(cproto::kCmdAddIndex, this, &RPCServer::AddIndex);
 	dispatcher.Register(cproto::kCmdUpdateIndex, this, &RPCServer::UpdateIndex);
 	dispatcher.Register(cproto::kCmdDropIndex, this, &RPCServer::DropIndex);
-	dispatcher.Register(cproto::kCmdConfigureIndex, this, &RPCServer::ConfigureIndex);
 	dispatcher.Register(cproto::kCmdCommit, this, &RPCServer::Commit);
 
 	dispatcher.Register(cproto::kCmdModifyItem, this, &RPCServer::ModifyItem);
@@ -448,6 +453,7 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	dispatcher.Register(cproto::kCmdGetMeta, this, &RPCServer::GetMeta);
 	dispatcher.Register(cproto::kCmdPutMeta, this, &RPCServer::PutMeta);
 	dispatcher.Register(cproto::kCmdEnumMeta, this, &RPCServer::EnumMeta);
+	dispatcher.Register(cproto::kCmdSubscribeUpdates, this, &RPCServer::SubscribeUpdates);
 	dispatcher.Middleware(this, &RPCServer::CheckAuth);
 	dispatcher.OnClose(this, &RPCServer::OnClose);
 
@@ -457,6 +463,42 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 
 	listener_.reset(new Listener(loop, cproto::ServerConnection::NewFactory(dispatcher)));
 	return listener_->Bind(addr);
+}
+
+Error RPCServer::OnModifyItem(const string &nsName, ItemImpl *item, int modifyMode) {
+	(void)nsName;
+	(void)item;
+	(void)modifyMode;
+
+	return errOK;
+}
+
+Error RPCServer::OnNewNamespace(const string &nsName) {
+	(void)nsName;
+	return errOK;
+}
+Error RPCServer::OnModifyIndex(const string &nsName, const IndexDef &idx, int modifyMode) {
+	(void)nsName;
+	(void)idx;
+	(void)modifyMode;
+	return errOK;
+}
+
+Error RPCServer::OnDropIndex(const string &nsName, const string &indexName) {
+	(void)nsName;
+	(void)indexName;
+	return errOK;
+}
+
+Error RPCServer::OnDropNamespace(const string &nsName) {
+	(void)nsName;
+	return errOK;
+}
+Error RPCServer::OnPutMeta(const string &nsName, const string &key, const string &data) {
+	(void)nsName;
+	(void)key;
+	(void)data;
+	return errOK;
 }
 
 }  // namespace reindexer_server

@@ -4,7 +4,7 @@
 #include "libstemmer/include/libstemmer.h"
 
 namespace reindexer {
-
+using std::mutex;
 class stemmer {
 public:
 	stemmer(const char *lang = "en") { stemmer_ = sb_stemmer_new(lang, "UTF_8"); }

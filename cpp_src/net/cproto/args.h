@@ -1,20 +1,19 @@
 #pragma once
 
-#include "core/keyvalue/keyref.h"
+#include "core/keyvalue/p_string.h"
+#include "core/keyvalue/variant.h"
 #include "tools/serializer.h"
-
 namespace reindexer {
 namespace net {
 namespace cproto {
 
-using Arg = KeyRef;
+using Arg = Variant;
 
-class Args : public KeyRefs {
+class Args : public VariantArray {
 public:
-	using KeyRefs::KeyRefs;
+	using VariantArray::VariantArray;
 	void Unpack(Serializer &ser);
 	void Pack(WrSerializer &ser) const;
-	void Dump(WrSerializer &ser) const;
 };
 }  // namespace cproto
 }  // namespace net

@@ -57,7 +57,7 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesDropTest2) {
 	for (int i = 0; i < 5; ++i) {
 		AddRuntimeIntArrayIndex(i);
 		AddDataForRuntimeIntIndex(i);
-		AddRuntimeStringIndex(i, true);
+		AddRuntimeStringIndex(i);
 		AddDataForRuntimeStringIndex(i);
 	}
 
@@ -75,7 +75,7 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesDropTest2) {
 TEST_F(RuntimeIndexesApi, RuntimePKIndexesTest) {
 	FillNamespace(0, 100);
 
-	AddRuntimeStringIndex(1, true);
+	AddRuntimeStringIndex(1);
 	AddDataForRuntimeStringIndex(1);
 
 	FillNamespace(101, 200);
@@ -84,7 +84,7 @@ TEST_F(RuntimeIndexesApi, RuntimePKIndexesTest) {
 
 	FillNamespace(201, 300);
 
-	AddRuntimeStringIndex(1, true);
+	AddRuntimeStringIndex(1);
 	DropRuntimeStringIndex(1);
 
 	FillNamespace(301, 400);
@@ -100,9 +100,9 @@ TEST_F(RuntimeIndexesApi, RuntimeCompositeIndexesTest) {
 
 TEST_F(RuntimeIndexesApi, RuntimePKCompositeIndexesTest) {
 	FillNamespace(0, 100);
-	AddRuntimeCompositeIndex(true);
+	AddRuntimeCompositeIndex();
 	FillNamespace(301, 400);
-	DropRuntimeCompositeIndex(true);
+	DropRuntimeCompositeIndex();
 	FillNamespace(401, 500);
 }
 
@@ -119,7 +119,7 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesRemoveAndSelect) {
 
 	CheckSelectValidity(
 		Query(default_namespace)
-			.WhereComposite(getRuntimeCompositeIndexName(false).c_str(), CondEq, {{KeyValue(rand()), KeyValue(RandString())}}));
+			.WhereComposite(getRuntimeCompositeIndexName(false).c_str(), CondEq, {{Variant(rand()), Variant(RandString())}}));
 
 	DropRuntimeStringIndex(1);
 
@@ -128,5 +128,5 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesRemoveAndSelect) {
 
 	CheckSelectValidity(
 		Query(default_namespace)
-			.WhereComposite(getRuntimeCompositeIndexName(false).c_str(), CondGt, {{KeyValue(rand()), KeyValue(RandString())}}));
+			.WhereComposite(getRuntimeCompositeIndexName(false).c_str(), CondGt, {{Variant(rand()), Variant(RandString())}}));
 }

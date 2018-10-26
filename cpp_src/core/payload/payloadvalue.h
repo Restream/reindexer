@@ -11,12 +11,12 @@ class PayloadValue {
 public:
 	typedef std::atomic<int32_t> refcounter;
 	struct dataHeader {
-		dataHeader() : refcount(1), version(1), cap(0) {}
+		dataHeader() : refcount(1), cap(0), lsn(-1) {}
 
 		~dataHeader() { assert(refcount.load() == 0); }
 		refcounter refcount;
-		int16_t version;
 		unsigned cap;
+		int64_t lsn;
 	};
 
 	PayloadValue() : p_(nullptr) {}
@@ -43,13 +43,13 @@ public:
 	}
 
 	// Clone if data is shared for copy-on-write.
-	void AllocOrClone(size_t size);
+	void Clone(size_t size = 0);
 	// Resize
 	void Resize(size_t oldSize, size_t newSize);
 	// Get data pointer
 	uint8_t *Ptr() const { return p_ + sizeof(dataHeader); }
-	void SetVersion(int version) { header()->version = static_cast<int16_t>(version); }
-	int GetVersion() const { return header()->version; }
+	void SetLSN(int64_t lsn) { header()->lsn = lsn; }
+	int64_t GetLSN() const { return header()->lsn; }
 	bool IsFree() const { return bool(p_ == nullptr); }
 	void Free() { release(); }
 	size_t GetCapacity() const { return header()->cap; }

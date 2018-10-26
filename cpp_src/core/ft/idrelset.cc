@@ -6,8 +6,6 @@
 
 namespace reindexer {
 
-typedef int VDocIdType;
-
 size_t IdRelType::pack(uint8_t* buf) const {
 	auto p = buf;
 	p += uint32_pack(id, p);

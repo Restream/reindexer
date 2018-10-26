@@ -1,9 +1,11 @@
 #pragma once
 
 #include <unordered_map>
+#include "aggregationresult.h"
 #include "core/item.h"
-#include "core/itemimpl.h"
+#include "core/payload/payloadvalue.h"
 #include "estl/h_vector.h"
+#include "tools/serializer.h"
 
 namespace reindexer {
 
@@ -13,13 +15,12 @@ using std::unique_ptr;
 
 static const int kDefaultQueryResultsSize = 32;
 struct ItemRef {
-	ItemRef(IdType iid = 0, int iversion = 0) : id(iid), version(iversion) {}
-	ItemRef(IdType iid, int iversion, const PayloadValue &ivalue, uint8_t iproc = 0, uint8_t insid = 0)
-		: id(iid), version(iversion), proc(iproc), nsid(insid), value(ivalue) {}
+	ItemRef() : id(0) {}
+	ItemRef(IdType iid, const PayloadValue &ivalue, uint8_t iproc = 0, uint8_t insid = 0)
+		: id(iid), proc(iproc), nsid(insid), value(ivalue) {}
 	IdType id;
-	int16_t version;
-	uint8_t proc;
-	uint8_t nsid;
+	uint16_t proc;
+	uint16_t nsid;
 	PayloadValue value;
 };
 
@@ -27,7 +28,6 @@ using ItemRefVector = h_vector<ItemRef, kDefaultQueryResultsSize>;
 
 class TagsMatcher;
 class PayloadType;
-class JsonPrintFilter;
 class WrSerializer;
 class QRVector;
 
@@ -51,11 +51,14 @@ public:
 	void Dump() const;
 	void Erase(ItemRefVector::iterator begin, ItemRefVector::iterator end);
 	size_t Count() const { return items_.size(); }
+	size_t TotalCount() const { return totalCount; }
+	const string &GetExplainResults() const { return explainResults; }
+	const vector<AggregationResult> &GetAggregationResults() const { return aggregationResults; }
 
 	class Iterator {
 	public:
-		void GetJSON(WrSerializer &wrser, bool withHdrLen = true);
-		void GetCJSON(WrSerializer &wrser, bool withHdrLen = true);
+		Error GetJSON(WrSerializer &wrser, bool withHdrLen = true);
+		Error GetCJSON(WrSerializer &wrser, bool withHdrLen = true);
 		Item GetItem();
 		const QRVector &GetJoined();
 		const ItemRef &GetItemRef() const { return qr_->items_[idx_]; }
@@ -89,18 +92,18 @@ public:
 
 	// joinded fields 0 - 1st joined ns, 1 - second joined
 	vector<nc_map<IdType, QRVector>> joined_;  // joinded items
-	h_vector<double> aggregationResults;
+	vector<AggregationResult> aggregationResults;
 	int totalCount = 0;
 	bool haveProcent = false;
 	bool nonCacheableData = false;
 
 	struct Context;
 	// precalc context size
-	static constexpr int kSizeofContext = 100;  // sizeof(void *) * 2 + sizeof(void *) * 3 + 32 + sizeof(void *);
+	static constexpr int kSizeofContext = 128;  // sizeof(void *) * 2 + sizeof(void *) * 3 + 32 + sizeof(void *);
 	using ContextsVector = h_vector<Context, 1, kSizeofContext>;
 	ContextsVector ctxs;
 
-	void addNSContext(const PayloadType &type, const TagsMatcher &tagsMatcher, const JsonPrintFilter &jsonFilter);
+	void addNSContext(const PayloadType &type, const TagsMatcher &tagsMatcher, const FieldsSet &fieldsFilter);
 	const TagsMatcher &getTagsMatcher(int nsid) const;
 	const PayloadType &getPayloadType(int nsid) const;
 	TagsMatcher &getTagsMatcher(int nsid);
@@ -110,8 +113,10 @@ public:
 	ItemRefVector &Items() { return items_; }
 	const ItemRefVector &Items() const { return items_; }
 
+	string explainResults;
+
 protected:
-	class JsonEncoderDatasourceWithJoins;
+	class EncoderDatasourceWithJoins;
 
 private:
 	void unlockResults();

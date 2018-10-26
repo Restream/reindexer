@@ -6,33 +6,33 @@
 #include <string>
 #include <vector>
 
-#include "core/keyvalue/keyref.h"
 #include "core/keyvalue/p_string.h"
+#include "core/keyvalue/variant.h"
 
 using std::string;
 using std::vector;
 using std::unique_ptr;
 
-using reindexer::KeyRef;
-using reindexer::KeyRefs;
+using reindexer::Variant;
+using reindexer::VariantArray;
 using reindexer::p_string;
 
 namespace internal {
 
 template <typename T>
 struct to_array_helper {
-	static KeyRefs to_array(const vector<T>& vec) {
-		KeyRefs krs;
-		for (auto& value : vec) krs.push_back(KeyRef{value});
+	static VariantArray to_array(const vector<T>& vec) {
+		VariantArray krs;
+		for (auto& value : vec) krs.push_back(Variant{value});
 		return krs;
 	}
 };
 
 template <>
 struct to_array_helper<string> {
-	static KeyRefs to_array(const vector<string>& vec) {
-		KeyRefs krs;
-		for (auto& value : vec) krs.push_back(KeyRef{p_string(value.c_str())});
+	static VariantArray to_array(const vector<string>& vec) {
+		VariantArray krs;
+		for (auto& value : vec) krs.push_back(Variant{p_string(value.c_str())});
 		return krs;
 	}
 };
@@ -40,7 +40,7 @@ struct to_array_helper<string> {
 }  // namespace internal
 
 template <typename T>
-KeyRefs toArray(const vector<T>& vec) {
+VariantArray toArray(const vector<T>& vec) {
 	return internal::to_array_helper<T>::to_array(vec);
 }
 

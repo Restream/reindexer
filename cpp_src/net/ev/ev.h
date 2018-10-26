@@ -13,6 +13,18 @@
 #undef ERROR
 #endif
 
+#ifdef _WIN32
+#define HAVE_WSA_LOOP 1
+#else
+#define HAVE_POSIX_LOOP 1
+#define HAVE_SELECT_LOOP 1
+#ifdef __linux__
+#define HAVE_EPOLL_LOOP 1
+#elif defined(__APPLE__) || (defined __unix__)
+#define HAVE_POLL_LOOP 1
+#endif
+#endif
+
 namespace reindexer {
 namespace net {
 namespace ev {
@@ -23,6 +35,7 @@ const int ERROR = 0x08;
 
 class dynamic_loop;
 
+#ifdef HAVE_POSIX_LOOP
 class loop_posix_base {
 public:
 	void enable_asyncs();
@@ -35,6 +48,21 @@ protected:
 
 	int async_fds_[2] = {-1, -1};
 	dynamic_loop *owner_ = nullptr;
+};
+
+class loop_poll_backend_private;
+class loop_poll_backend : public loop_posix_base {
+public:
+	loop_poll_backend();
+	~loop_poll_backend();
+	void init(dynamic_loop *owner);
+	void set(int fd, int events, int oldevents);
+	void stop(int fd);
+	int runonce(int64_t tv);
+	static int capacity();
+
+protected:
+	std::unique_ptr<loop_poll_backend_private> private_;
 };
 
 class loop_select_backend_private;
@@ -52,7 +80,9 @@ protected:
 	std::unique_ptr<loop_select_backend_private> private_;
 };
 
-#ifdef __linux__
+#endif
+
+#ifdef HAVE_EPOLL_LOOP
 class loop_epoll_backend_private;
 class loop_epoll_backend : public loop_posix_base {
 public:
@@ -67,9 +97,9 @@ public:
 protected:
 	std::unique_ptr<loop_epoll_backend_private> private_;
 };
-using loop_backend = loop_epoll_backend;
-#elif defined(_WIN32)
+#endif
 
+#ifdef HAVE_WSA_LOOP
 class loop_wsa_backend_private;
 class loop_wsa_backend {
 public:
@@ -88,12 +118,6 @@ protected:
 	dynamic_loop *owner_;
 	std::unique_ptr<loop_wsa_backend_private> private_;
 };
-
-using loop_backend = loop_wsa_backend;
-
-#else
-using loop_backend = loop_select_backend;
-
 #endif
 
 class io;
@@ -103,6 +127,7 @@ class sig;
 class dynamic_loop {
 	friend class loop_ref;
 	friend class loop_epoll_backend;
+	friend class loop_poll_backend;
 	friend class loop_select_backend;
 	friend class loop_wsa_backend;
 	friend class loop_posix_base;
@@ -129,6 +154,7 @@ protected:
 
 	struct fd_handler {
 		int emask_ = 0;
+		int idx = -1;
 		io *watcher_ = nullptr;
 	};
 
@@ -137,7 +163,17 @@ protected:
 	std::vector<async *> asyncs_;
 	std::vector<sig *> sigs_;
 	bool break_ = false;
-	loop_backend backend_;
+#ifdef HAVE_EPOLL_LOOP
+	loop_epoll_backend backend_;
+#elif defined(HAVE_POLL_LOOP)
+	loop_poll_backend backend_;
+#elif defined(HAVE_SELECT_LOOP)
+	loop_select_backend backend_;
+#elif defined(HAVE_WSA_LOOP)
+	loop_wsa_backend backend_;
+#else
+#error "There are no compatible loop backend"
+#endif
 };
 
 class loop_ref {
@@ -290,7 +326,7 @@ class async {
 
 public:
 	async() : sent_(false){};
-	async(const sig &) = delete;
+	async(const async &) = delete;
 	~async() { stop(); }
 
 	void set(dynamic_loop &loop_) { loop.loop_ = &loop_; }

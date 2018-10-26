@@ -1,8 +1,8 @@
 #include "core/itemimpl.h"
+#include "core/cjson/baseencoder.h"
 #include "core/cjson/cjsondecoder.h"
-#include "core/cjson/cjsonencoder.h"
 #include "core/cjson/jsondecoder.h"
-#include "core/cjson/jsonencoder.h"
+#include "core/keyvalue/p_string.h"
 #include "tools/logger.h"
 
 using std::move;
@@ -23,14 +23,14 @@ ItemImpl &ItemImpl::operator=(ItemImpl &&other) noexcept {
 	return *this;
 }
 
-void ItemImpl::SetField(int field, const KeyRefs &krs) {
-	payloadValue_.AllocOrClone(0);
+void ItemImpl::SetField(int field, const VariantArray &krs) {
+	payloadValue_.Clone();
 	if (!unsafe_ && !krs.empty() && krs[0].Type() == KeyValueString) {
-		KeyRefs krsCopy;
+		VariantArray krsCopy;
 		krsCopy.reserve(krs.size());
 		for (auto &kr : krs) {
 			holder_.push_back(kr.As<string>());
-			krsCopy.push_back(KeyRef(p_string(&holder_.back())));
+			krsCopy.push_back(Variant(p_string(&holder_.back())));
 		}
 
 		GetPayload().Set(field, krsCopy, false);
@@ -40,8 +40,8 @@ void ItemImpl::SetField(int field, const KeyRefs &krs) {
 	}
 }
 
-KeyRef ItemImpl::GetField(int field) {
-	KeyRefs kr;
+Variant ItemImpl::GetField(int field) {
+	VariantArray kr;
 	GetPayload().Get(field, kr);
 	return kr[0];
 }
@@ -57,31 +57,31 @@ Error ItemImpl::FromCJSON(const string_view &slice, bool pkOnly) {
 
 	Serializer rdser(data);
 	// check tags matcher update
-	uint32_t tmOffset = rdser.GetUInt32();
-	uint32_t cacheToken = 0;
 
-	if (tmOffset) {
-		// read tags matcher update
-		Serializer tser(slice.substr(tmOffset));
-		cacheToken = tser.GetVarUint();
-		if (cacheToken != tagsMatcher_.cacheToken()) {
-			return Error(errParams, "cacheToken mismatch:  %08X, need %08X. Can't process item\n", cacheToken, tagsMatcher_.cacheToken());
-		}
-		if (!tser.Eof()) {
+	uint32_t tmOffset = 0;
+	try {
+		int tag = rdser.GetVarUint();
+		if (tag == TAG_END) {
+			tmOffset = rdser.GetUInt32();
+			// read tags matcher update
+			Serializer tser(slice.substr(tmOffset));
 			tagsMatcher_.deserialize(tser);
 			tagsMatcher_.setUpdated();
-		}
+		} else
+			rdser.SetPos(0);
+	} catch (const Error &err) {
+		return err;
 	}
 
 	Payload pl = GetPayload();
-	CJsonDecoder decoder(tagsMatcher_, pkOnly ? pkFields_ : FieldsSet{});
+	CJsonDecoder decoder(tagsMatcher_, pkOnly ? &pkFields_ : nullptr);
 	auto err = decoder.Decode(&pl, rdser, ser_);
 
 	if (err.ok() && !rdser.Eof() && rdser.Pos() != tmOffset)
 		return Error(errParseJson, "Internal error - left unparsed data %d", int(rdser.Pos()));
 
 	tupleData_ = make_key_string(ser_.Slice());
-	pl.Set(0, {KeyRef(tupleData_)});
+	pl.Set(0, {Variant(tupleData_)});
 	return err;
 }
 
@@ -93,7 +93,7 @@ Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool pkOnly) {
 		data = holder_.back();
 	}
 
-	payloadValue_.AllocOrClone(0);
+	payloadValue_.Clone();
 	char *endptr = nullptr;
 	JsonValue value;
 	int status = jsonParse(const_cast<char *>(data.data()), &endptr, &value, jsonAllocator_);
@@ -104,14 +104,14 @@ Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool pkOnly) {
 	}
 
 	// Split parsed json into indexes and tuple
-	JsonDecoder decoder(tagsMatcher_, pkOnly ? pkFields_ : FieldsSet{});
+	JsonDecoder decoder(tagsMatcher_, pkOnly ? &pkFields_ : nullptr);
 	Payload pl = GetPayload();
 
 	auto err = decoder.Decode(&pl, ser_, value);
 
 	// Put tuple to field[0]
 	tupleData_ = make_key_string(ser_.Slice());
-	pl.Set(0, {KeyRef(tupleData_)});
+	pl.Set(0, {Variant(tupleData_)});
 	return err;
 }
 
@@ -122,30 +122,35 @@ Error ItemImpl::FromCJSON(ItemImpl *other) {
 
 string_view ItemImpl::GetJSON() {
 	ConstPayload pl(payloadType_, payloadValue_);
-	JsonPrintFilter filter;
-	JsonEncoder encoder(tagsMatcher_, filter);
+
+	JsonEncoder encoder(&tagsMatcher_);
+	JsonBuilder builder(ser_, JsonBuilder::TypePlain);
 
 	ser_.Reset();
-	encoder.Encode(&pl, ser_);
+	encoder.Encode(&pl, builder);
 
 	return ser_.Slice();
 }
 
 string_view ItemImpl::GetCJSON() {
-	ConstPayload pl(payloadType_, payloadValue_);
-	JsonPrintFilter filter;
-	CJsonEncoder encoder(tagsMatcher_, filter);
-
 	ser_.Reset();
-	ser_.PutUInt32(0);
-	encoder.Encode(&pl, ser_);
-
-	return ser_.Slice();
+	return GetCJSON(ser_);
 }
 
-KeyRefs ItemImpl::GetValueByJSONPath(const string &jsonPath) {
+string_view ItemImpl::GetCJSON(WrSerializer &ser) {
 	ConstPayload pl(payloadType_, payloadValue_);
-	KeyRefs krefs;
+
+	CJsonBuilder builder(ser, CJsonBuilder::TypePlain);
+	CJsonEncoder encoder(&tagsMatcher_);
+
+	encoder.Encode(&pl, builder);
+
+	return ser.Slice();
+}
+
+VariantArray ItemImpl::GetValueByJSONPath(const string &jsonPath) {
+	ConstPayload pl(payloadType_, payloadValue_);
+	VariantArray krefs;
 	return pl.GetByJsonPath(jsonPath, tagsMatcher_, krefs, KeyValueUndefined);
 }
 

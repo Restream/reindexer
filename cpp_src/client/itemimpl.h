@@ -3,7 +3,8 @@
 #include <deque>
 #include <vector>
 #include "core/cjson/tagsmatcher.h"
-#include "core/keyvalue/keyvalue.h"
+#include "core/keyvalue/key_string.h"
+#include "core/keyvalue/variant.h"
 #include "core/payload/payloadiface.h"
 #include "gason/gason.h"
 #include "tools/serializer.h"
@@ -30,8 +31,8 @@ public:
 	ItemImpl &operator=(const ItemImpl &) = delete;
 	ItemImpl &operator=(ItemImpl &&) noexcept;
 
-	void SetField(int field, const KeyRefs &krs);
-	KeyRef GetField(int field);
+	void SetField(int field, const VariantArray &krs);
+	Variant GetField(int field);
 
 	string_view GetJSON();
 	Error FromJSON(const string_view &slice, char **endp = nullptr, bool pkOnly = false);

@@ -2,6 +2,7 @@
 #include <cctype>
 #include <memory>
 #include "core/namespacedef.h"
+#include "core/payload/fieldsset.h"
 #include "ctx/ftctx.h"
 #include "functions/highlight.h"
 #include "functions/snippet.h"
@@ -54,8 +55,6 @@ void SelectFunction::createFunc(SelectFuncStruct &data) {
 	int indexNo = IndexValueType::NotSet;
 	if (data.indexNo == IndexValueType::NotSet) {
 		if (!nm_.getIndexByName(data.field, indexNo)) {
-			std::size_t pos = data.field.find("=");
-			if (pos != std::string::npos) data.field.erase(0, pos + 1);
 			trim(data.field);
 			if (!nm_.getIndexByName(data.field, indexNo)) return;
 		}
@@ -70,15 +69,11 @@ void SelectFunction::createFunc(SelectFuncStruct &data) {
 		int fieldNo = 0;
 		const FieldsSet &fields = nm_.getIndexFields(indexNo);
 
-		for (size_t i = 0; i < fields.size(); ++i, ++fieldNo) {
-			const auto field = fields[i];
+		int jsPathIdx = 0;
+		for (auto field : fields) {
 			data.fieldNo = fieldNo;
 			if (field == IndexValueType::SetByJsonPath) {
-				if (subIndexes.empty()) {
-					split(nm_.getIndexName(indexNo), "+", true, subIndexes);
-					assert(subIndexes.size() == fields.size());
-				}
-				data.field = subIndexes[i];
+				data.field = fields.getJsonPath(jsPathIdx);
 				data.tagsPath = nm_.getTagsPathForField(data.field);
 				data.indexNo = currCjsonFieldIdx_++;
 				functions_.emplace(data.indexNo, data);
@@ -94,7 +89,7 @@ void SelectFunction::createFunc(SelectFuncStruct &data) {
 		data.fieldNo = 0;
 		functions_.emplace(std::make_pair(indexNo, data));
 	}
-}  // namespace reindexer
+}
 
 BaseFunctionCtx::Ptr SelectFunction::createFuncForProc(int indexNo) {
 	SelectFuncStruct data;

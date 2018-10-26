@@ -11,22 +11,22 @@ class QueriesTest(BaseTest):
     def test_query_sql(self):
         """Should be able to execute an sql query"""
 
-        sql_query = 'SELECT * FROM ' + self.current_ns
+        sql_query = 'SELECT COUNT(*),* FROM ' + self.current_ns
         status, body = self.api_sql_exec(self.current_db, sql_query)
 
         self.assertEqual(True, status == self.API_STATUS['success'], body)
         self.assertEqual(True, 'items' in body, body)
-        self.assertEqual(True, 'total_items' in body, body)
+        self.assertEqual(True, 'query_total_items' in body, body)
 
     def test_query_sql_post(self):
         """Should be able to post an sql query"""
 
-        query_body = 'SELECT * FROM ' + self.current_ns
+        query_body = 'SELECT COUNT(*),* FROM ' + self.current_ns
         status, body = self.api_sql_post(self.current_db, query_body)
 
         self.assertEqual(True, status == self.API_STATUS['success'], body)
         self.assertEqual(True, 'items' in body, body)
-        self.assertEqual(True, 'total_items' in body, body)
+        self.assertEqual(True, 'query_total_items' in body, body)
 
     def test_query_dsl_(self):
         """Should be able to exec a dsl query"""
@@ -37,7 +37,6 @@ class QueriesTest(BaseTest):
 
         self.assertEqual(True, status == self.API_STATUS['success'], body)
         self.assertEqual(True, 'items' in body, body)
-        self.assertEqual(True, 'total_items' in body, body)
 
     def test_query_dsl_sort_asc(self):
         """Should be able to exec a dsl query and get asc-sorted item list"""
@@ -54,7 +53,6 @@ class QueriesTest(BaseTest):
         self.assertEqual(True, 'items' in body, body)
         self.assertEqual(True, body['items'][0][sort_field]
                          < body['items'][-1][sort_field], body)
-        self.assertEqual(True, 'total_items' in body, body)
 
     def test_query_dsl_sort_desc(self):
         """Should be able to exec a dsl query and get desc-sorted item list"""
@@ -71,7 +69,6 @@ class QueriesTest(BaseTest):
         self.assertEqual(True, 'items' in body, body)
         self.assertEqual(True, body['items'][0][sort_field]
                          > body['items'][-1][sort_field], body)
-        self.assertEqual(True, 'total_items' in body, body)
 
     def test_query_dsl_distinct(self):
         """Should be able to exec a dsl query and get distinct item list"""
@@ -99,14 +96,14 @@ class QueriesTest(BaseTest):
         distinct = self.helper_items_second_key_of_item(items)
         limit = total_items + items_count
         query_dsl = self.helper_query_dsl_construct(
-            self.current_ns, distinct=distinct, limit=limit)
+            self.current_ns, distinct=distinct, limit=limit,req_total="enabled")
         status, body = self.api_query_dsl(self.current_db, query_dsl)
 
         self.assertEqual(True, status == self.API_STATUS['success'], body)
         self.assertEqual(True, 'items' in body, body)
-        self.assertEqual(True, 'total_items' in body, body)
+        self.assertEqual(True, 'query_total_items' in body, body)
         self.assertEqual(
-            True, body['total_items'] == total_items + 1, body)
+            True, body['query_total_items'] == total_items + 1, body)
 
     def test_query_dsl_paginate(self):
         """Should be able to exec a dsl query and pagination works correct"""
@@ -129,7 +126,6 @@ class QueriesTest(BaseTest):
         self.assertEqual(True, status == self.API_STATUS['success'], body)
         self.assertEqual(True, 'items' in body, body)
         self.assertEqual(True, self.items[-1] in body['items'], body)
-        self.assertEqual(True, 'total_items' in body, body)
         self.assertEqual(True, len(body['items']) == 1, body)
 
     def test_query_dsl_total(self):
@@ -142,8 +138,8 @@ class QueriesTest(BaseTest):
 
         self.assertEqual(True, status == self.API_STATUS['success'], body)
         self.assertEqual(True, 'items' in body, body)
-        self.assertEqual(True, 'total_items' in body, body)
-        self.assertEqual(True, body['total_items'] == self.items_count, body)
+        self.assertEqual(True, 'query_total_items' in body, body)
+        self.assertEqual(True, body['query_total_items'] == self.items_count, body)
 
     def test_query_dsl_filter_eq(self):
         """Should be able to exec a dsl query with EQ filter"""
@@ -165,5 +161,3 @@ class QueriesTest(BaseTest):
         self.assertEqual(True, status == self.API_STATUS['success'], body)
         self.assertEqual(True, 'items' in body, body)
         self.assertEqual(True, self.items[0] in body['items'], body)
-        self.assertEqual(True, 'total_items' in body, body)
-        self.assertEqual(True, body['total_items'] == 1, body)

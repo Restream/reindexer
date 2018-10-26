@@ -8,7 +8,7 @@
 namespace reindexer {
 namespace dsl {
 
-void parseValues(JsonValue& values, KeyValues& kvs);
+void parseValues(JsonValue& values, VariantArray& kvs);
 
 // additional for parse root DSL fields
 
@@ -24,7 +24,8 @@ static const fast_hash_map<string, Root> root_map = {{"namespace", Root::Namespa
 													 {"select_functions", Root::SelectFunctions},
 													 {"req_total", Root::ReqTotal},
 													 {"aggregations", Root::Aggregations},
-													 {"next_op", Root::NextOp}};
+													 {"next_op", Root::NextOp},
+													 {"explain", Root::Explain}};
 
 // additional for parse field 'sort'
 
@@ -65,8 +66,16 @@ static const fast_hash_map<string, CalcTotalMode> reqtotal_values = {
 static const fast_hash_map<string, Aggregation> aggregation_map = {{"field", Aggregation::Field}, {"type", Aggregation::Type}};
 static const fast_hash_map<string, AggType> aggregation_types = {{"sum", AggSum}, {"avg", AggAvg}};
 
-void checkJsonValueType(JsonValue& val, const string& name, JsonTag expectedType) {
-	if (val.getTag() != expectedType) throw Error(errParseJson, "Wrong type of field '%s'", name.c_str());
+bool checkTag(JsonValue& val, JsonTag tag) { return val.getTag() == tag; }
+
+template <typename... Tags>
+bool checkTag(JsonValue& val, JsonTag tag, Tags... tags) {
+	return std::max(tag == val.getTag(), checkTag(val, tags...));
+}
+
+template <typename... JsonTags>
+void checkJsonValueType(JsonValue& val, const string& name, JsonTags... possibleTags) {
+	if (!checkTag(val, possibleTags...)) throw Error(errParseJson, "Wrong type of field '%s'", name.c_str());
 }
 
 template <typename T>
@@ -120,20 +129,18 @@ void parseSort(JsonValue& v, Query& q) {
 	}
 }
 
-void parseValues(JsonValue& values, KeyValues& kvs) {
+void parseValues(JsonValue& values, VariantArray& kvs) {
 	if (values.getTag() == JSON_ARRAY) {
 		for (auto elem : values) {
-			KeyValue kv;
-			if (elem->value.getTag() == JSON_ARRAY) {
-				kv = std::move(jsonValue2KeyValue(elem->value));
-			} else if (elem->value.getTag() != JSON_NULL) {
-				kv = std::move(jsonValue2KeyRef(elem->value, KeyValueUndefined));
+			Variant kv;
+			if (elem->value.getTag() != JSON_NULL) {
+				kv = jsonValue2Variant(elem->value, KeyValueUndefined);
 			}
 			if (kvs.size() > 1 && kvs.back().Type() != kv.Type()) throw Error(errParseJson, "Array of filter values must be homogeneous.");
 			kvs.push_back(std::move(kv));
 		}
 	} else if (values.getTag() != JSON_NULL) {
-		kvs.push_back(KeyValue(jsonValue2KeyRef(values, KeyValueUndefined)));
+		kvs.push_back(jsonValue2Variant(values, KeyValueUndefined));
 	}
 }
 
@@ -372,6 +379,11 @@ void parse(JsonValue& root, Query& q) {
 			case Root::Aggregations:
 				checkJsonValueType(v, name, JSON_ARRAY);
 				for (auto aggregation : v) parseAggregation(aggregation->value, q);
+				break;
+			case Root::Explain:
+				checkJsonValueType(v, name, JSON_FALSE, JSON_TRUE);
+				q.explain_ = v.getTag() == JSON_TRUE;
+				break;
 		}
 	}
 }

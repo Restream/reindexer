@@ -3,7 +3,7 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include "core/keyvalue/keyvalue.h"
+#include "core/keyvalue/variant.h"
 #include "estl/h_vector.h"
 
 namespace reindexer {
@@ -18,18 +18,18 @@ class tokenizer;
 
 struct QueryEntry {
 	QueryEntry(OpType o, CondType cond, const string &idx, int idxN, bool dist = false)
-		: op(o), condition(cond), index(idx), idxNo(idxN), distinct(dist) {}
+		: index(idx), idxNo(idxN), op(o), condition(cond), distinct(dist) {}
 	QueryEntry() = default;
 
 	bool operator==(const QueryEntry &) const;
 	bool operator!=(const QueryEntry &) const;
 
-	OpType op = OpAnd;
-	CondType condition = CondType::CondAny;
 	string index;
 	int idxNo = IndexValueType::NotSet;
+	OpType op = OpAnd;
+	CondType condition = CondType::CondAny;
 	bool distinct = false;
-	KeyValues values;
+	VariantArray values;
 
 	string Dump() const;
 };
@@ -63,6 +63,8 @@ struct SortingEntry {
 };
 
 struct SortingEntries : public h_vector<SortingEntry, 1> {};
+
+struct EqualPosition : public h_vector<int, 2> {};
 
 class QueryWhere {
 public:

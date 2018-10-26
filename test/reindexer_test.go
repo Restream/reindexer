@@ -35,6 +35,9 @@ func TestMain(m *testing.M) {
 		os.RemoveAll("/tmp/reindex_test/")
 	}
 	DB = reindexer.NewReindex(*dsn)
+	if err = DB.Status(); err != nil {
+		panic(err)
+	}
 
 	if testing.Verbose() {
 		DB.SetLogger(&TestLogger{})

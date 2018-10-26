@@ -2,14 +2,18 @@
 
 #include <stdint.h>
 
+enum { TAG_VARINT, TAG_DOUBLE, TAG_STRING, TAG_BOOL, TAG_NULL, TAG_ARRAY, TAG_OBJECT, TAG_END };
+
 typedef enum KeyValueType {
-	KeyValueInt,
-	KeyValueInt64,
-	KeyValueString,
-	KeyValueDouble,
-	KeyValueEmpty,
+	KeyValueInt64 = TAG_VARINT,
+	KeyValueDouble = TAG_DOUBLE,
+	KeyValueString = TAG_STRING,
+	KeyValueBool = TAG_BOOL,
+	KeyValueNull = TAG_NULL,
+	KeyValueInt = TAG_END + 1,
 	KeyValueUndefined,
 	KeyValueComposite,
+	KeyValueTuple,
 } KeyValueType;
 
 typedef enum IndexType {
@@ -45,7 +49,9 @@ typedef enum QueryItemType {
 	QueryAggregation,
 	QuerySelectFilter,
 	QuerySelectFunction,
-	QueryEnd
+	QueryEnd,
+	QueryExplain,
+	QueryEqualPosition,
 } QueryItemType;
 
 typedef enum QuerySerializeMode {
@@ -70,32 +76,33 @@ typedef enum CondType {
 
 enum ErrorCode {
 	errOK = 0,
-	errParseSQL,
-	errQueryExec,
-	errParams,
-	errLogic,
-	errParseJson,
-	errParseDSL,
-	errConflict,
-	errParseBin,
-	errForbidden,
-	errWasRelock,
-	errNotValid,
-	errNetwork,
-	errNotFound
+	errParseSQL = 1,
+	errQueryExec = 2,
+	errParams = 3,
+	errLogic = 4,
+	errParseJson = 5,
+	errParseDSL = 6,
+	errConflict = 7,
+	errParseBin = 8,
+	errForbidden = 9,
+	errWasRelock = 10,
+	errNotValid = 11,
+	errNetwork = 12,
+	errNotFound = 13,
+	errStateInvalidated = 14
 };
 
 enum OpType { OpOr = 1, OpAnd = 2, OpNot = 3 };
 
-enum AggType { AggSum, AggAvg };
-
-enum { TAG_VARINT, TAG_DOUBLE, TAG_STRING, TAG_ARRAY, TAG_BOOL, TAG_NULL, TAG_OBJECT, TAG_END };
+enum AggType { AggSum, AggAvg, AggFacet, AggMin, AggMax };
 
 enum JoinType { LeftJoin, InnerJoin, OrInnerJoin, Merge };
 
 enum CalcTotalMode { ModeNoTotal, ModeCachedTotal, ModeAccurateTotal };
 
 enum DataFormat { FormatJson, FormatCJson };
+
+enum QueryResultItemType { QueryResultEnd, QueryResultAggregation, QueryResultExplain };
 
 enum CacheMode { CacheModeOn = 0, CacheModeAggressive = 1, CacheModeOff = 2 };
 
@@ -108,12 +115,17 @@ static const SortType SortIdUnexists = -2;
 typedef enum LogLevel { LogNone, LogError, LogWarning, LogInfo, LogTrace } LogLevel;
 
 enum {
+	kResultsFormatMask = 0xF,
 	kResultsPure = 0x0,
-	kResultsWithPtrs = 0x1,
-	kResultsWithCJson = 0x2,
-	kResultsWithJson = 0x3,
-	kResultsWithPayloadTypes = 0x8,
-	kResultsPTWithJsonPaths = 0x10
+	kResultsPtrs = 0x1,
+	kResultsCJson = 0x2,
+	kResultsJson = 0x3,
+
+	kResultsWithPayloadTypes = 0x10,
+	kResultsWithItemID = 0x20,
+	kResultsWithPercents = 0x40,
+	kResultsWithNsID = 0x80,
+	kResultsWithJoined = 0x100
 };
 
 typedef enum IndexOpt { kIndexOptPK = 1 << 7, kIndexOptArray = 1 << 6, kIndexOptDense = 1 << 5, kIndexOptSparse = 1 << 3 } IndexOpt;
@@ -129,14 +141,7 @@ typedef enum StotageOpt {
 
 enum CollateMode { CollateNone = 0, CollateASCII, CollateUTF8, CollateNumeric, CollateCustom };
 
-enum { ModeUpdate = 0, ModeInsert = 1, ModeUpsert = 2, ModeDelete = 3 };
-
-typedef struct IndexOptsC {
-	uint8_t options;
-	uint8_t collate;
-	const char* sortOrderLetters;
-	const char* config;
-} IndexOptsC;
+enum ItemModifyMode { ModeUpdate = 0, ModeInsert = 1, ModeUpsert = 2, ModeDelete = 3 };
 
 typedef struct StorageOpts {
 #ifdef __cplusplus

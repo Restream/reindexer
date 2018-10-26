@@ -6,7 +6,7 @@ TEST_F(SparseIndexesApi, SelectByHashSparseIndex) { CheckSelectByHashIndex(); }
 
 TEST_F(SparseIndexesApi, SparseIndexConsistencyWithRuntimeIndexes) {
 	const char* rtIndexName = "rt1";
-	Error err = reindexer->AddIndex(default_namespace, {rtIndexName, rtIndexName, "hash", "int64", IndexOpts()});
+	Error err = reindexer->AddIndex(default_namespace, {rtIndexName, "hash", "int64", IndexOpts()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	err = reindexer->Commit(default_namespace);
@@ -26,7 +26,7 @@ TEST_F(SparseIndexesApi, SparseIndexConsistencyWithRuntimeIndexes) {
 	//    }
 
 	//    QueryResults qr;
-	//    err = reindexer->Select(Query(default_namespace).Where(rtIndexName, CondLt, KeyValue(static_cast<int64_t>(10))), qr);
+	//    err = reindexer->Select(Query(default_namespace).Where(rtIndexName, CondLt, Variant(static_cast<int64_t>(10))), qr);
 	//    EXPECT_TRUE(err.ok()) << err.what();
 	//    EXPECT_TRUE(qr.size() == 10);
 

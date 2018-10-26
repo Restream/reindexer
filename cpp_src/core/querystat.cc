@@ -1,11 +1,7 @@
 
 #include "querystat.h"
 
-#ifdef _WIN32
-#define PRI_SIZE_T "Iu"
-#else
-#define PRI_SIZE_T "zu"
-#endif
+#include "core/cjson/jsonbuilder.h"
 
 namespace reindexer {
 
@@ -31,15 +27,15 @@ const std::vector<QueryPerfStat> QueriesStatTracer::Data() {
 }
 
 void QueryPerfStat::GetJSON(WrSerializer &ser) const {
-	ser.PutChar('{');
-	ser.Printf("\"query\":\"%s\",", query.c_str());
-	ser.Printf("\"total_queries_count\":%" PRI_SIZE_T ",", perf.totalHitCount);
-	ser.Printf("\"total_avg_lock_time_us\":%" PRI_SIZE_T ",", perf.totalLockTimeUs);
-	ser.Printf("\"total_avg_latency_us\":%" PRI_SIZE_T ",", perf.totalTimeUs);
-	ser.Printf("\"last_sec_qps\":%" PRI_SIZE_T ",", perf.avgHitCount);
-	ser.Printf("\"last_sec_avg_lock_time_us\":%" PRI_SIZE_T ",", perf.avgLockTimeUs);
-	ser.Printf("\"last_sec_avg_latency_us\":%" PRI_SIZE_T "", perf.avgTimeUs);
-	ser.PutChar('}');
+	JsonBuilder builder(ser);
+
+	builder.Put("query", query);
+	builder.Put("total_queries_count", perf.totalHitCount);
+	builder.Put("total_avg_lock_time_us", perf.totalLockTimeUs);
+	builder.Put("total_avg_latency_us", perf.totalTimeUs);
+	builder.Put("last_sec_qps", perf.avgHitCount);
+	builder.Put("last_sec_avg_lock_time_us", perf.avgLockTimeUs);
+	builder.Put("last_sec_avg_latency_us", perf.avgTimeUs);
 }
 
 }  // namespace reindexer

@@ -7,20 +7,21 @@ namespace reindexer {
 
 class TagsMatcher;
 class WrSerializer;
+class CJsonBuilder;
 
 class JsonDecoder {
 public:
 	JsonDecoder(TagsMatcher &tagsMatcher);
-	JsonDecoder(TagsMatcher &tagsMatcher, const FieldsSet &filter);
+	JsonDecoder(TagsMatcher &tagsMatcher, const FieldsSet *filter);
 	Error Decode(Payload *pl, WrSerializer &wrSer, JsonValue &v);
 
 protected:
-	void decodeJson(Payload *pl, WrSerializer &wrser, JsonValue &v, int tag);
-	void decodeJsonObject(Payload *pl, WrSerializer &wrser, JsonValue &v);
+	void decodeJson(Payload *pl, CJsonBuilder &builder, JsonValue &v, int tag, bool match);
+	void decodeJsonObject(Payload *pl, CJsonBuilder &builder, JsonValue &v, bool match);
 
 	TagsMatcher &tagsMatcher_;
-	h_vector<int, 8> tagsPath_;
-	FieldsSet filter_;
+	TagsPath tagsPath_;
+	const FieldsSet *filter_;
 };
 
 }  // namespace reindexer

@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include "args.h"
+#include "core/keyvalue/p_string.h"
 #include "cproto.h"
 #include "estl/string_view.h"
 #include "net/stat.h"
@@ -125,6 +126,16 @@ protected:
 	static Error func_wrapper(void *obj, Error (K::*func)(Context &ctx, T1, T2, T3, T4, T5), Context &ctx) {
 		return (static_cast<K *>(obj)->*func)(ctx, T1(ctx.call->args[0]), T2(ctx.call->args[1]), T3(ctx.call->args[2]),
 											  T4(ctx.call->args[3]), T5(ctx.call->args[4]));
+	}
+	template <class K, typename T1, typename T2, typename T3, typename T4, typename T5, typename T6>
+	static Error func_wrapper(void *obj, Error (K::*func)(Context &ctx, T1, T2, T3, T4, T5, T6), Context &ctx) {
+		return (static_cast<K *>(obj)->*func)(ctx, T1(ctx.call->args[0]), T2(ctx.call->args[1]), T3(ctx.call->args[2]),
+											  T4(ctx.call->args[3]), T5(ctx.call->args[4]), T6(ctx.call->args[5]));
+	}
+	template <class K, typename T1, typename T2, typename T3, typename T4, typename T5, typename T6, typename T7>
+	static Error func_wrapper(void *obj, Error (K::*func)(Context &ctx, T1, T2, T3, T4, T5, T6, T7), Context &ctx) {
+		return (static_cast<K *>(obj)->*func)(ctx, T1(ctx.call->args[0]), T2(ctx.call->args[1]), T3(ctx.call->args[2]),
+											  T4(ctx.call->args[3]), T5(ctx.call->args[4]), T6(ctx.call->args[5]), T7(ctx.call->args[6]));
 	}
 
 	struct Handler {

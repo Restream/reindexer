@@ -12,16 +12,16 @@ class ApiTvSimple : protected BaseFixture {
 public:
 	virtual ~ApiTvSimple() {}
 	ApiTvSimple(Reindexer* db, const string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
-		AddIndex("id", "id", "hash", "int", IndexOpts().PK())
-			.AddIndex("genre", "genre", "tree", "int64", IndexOpts())
-			.AddIndex("year", "year", "tree", "int", IndexOpts())
-			.AddIndex("packages", "packages", "hash", "int", IndexOpts().Array())
-			.AddIndex("countries", "countries", "tree", "string", IndexOpts().Array())
-			.AddIndex("age", "age", "hash", "int", IndexOpts())
-			.AddIndex("price_id", "price_id", "hash", "int", IndexOpts().Array())
-			.AddIndex("location", "location", "hash", "string", IndexOpts())
-			.AddIndex("end_time", "end_time", "hash", "int", IndexOpts())
-			.AddIndex("start_time", "start_time", "tree", "int", IndexOpts());
+		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
+			.AddIndex("genre", "tree", "int64", IndexOpts())
+			.AddIndex("year", "tree", "int", IndexOpts())
+			.AddIndex("packages", "hash", "int", IndexOpts().Array())
+			.AddIndex("countries", "tree", "string", IndexOpts().Array())
+			.AddIndex("age", "hash", "int", IndexOpts())
+			.AddIndex("price_id", "hash", "int", IndexOpts().Array())
+			.AddIndex("location", "hash", "string", IndexOpts())
+			.AddIndex("end_time", "hash", "int", IndexOpts())
+			.AddIndex("start_time", "tree", "int", IndexOpts());
 	}
 
 	virtual void RegisterAllCases();

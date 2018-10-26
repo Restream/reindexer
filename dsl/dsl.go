@@ -16,6 +16,7 @@ type DSL struct {
 	Distinct  string   `json:"distinct"`
 	Sort      Sort     `json:"sort"`
 	Filters   []Filter `json:"filters"`
+	Explain   bool     `json:"explain,omitempty"`
 }
 
 type sort Sort

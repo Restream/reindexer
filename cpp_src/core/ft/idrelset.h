@@ -6,7 +6,7 @@
 #include "estl/packed_vector.h"
 namespace reindexer {
 
-typedef int VDocIdType;
+typedef uint32_t VDocIdType;
 
 struct IdRelType {
 	// Disable copy - enable only move

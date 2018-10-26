@@ -2,6 +2,7 @@
 #include <tuple>
 
 #include "get_pk_api.h"
+#include "tools/logger.h"
 
 #define SIMPLE_ITEM_NAMESPACE "test_extrack_pk_simple"
 #define NESTED_ITEM_NAMESPACE "test_extract_pk_nested"
@@ -65,12 +66,13 @@ using std::tie;
 
 TEST_F(ExtractPK, DeleteByPKOnlyJSON) {
 	CHECK_SUCCESS(CreateNamespace(NamespaceDef(SIMPLE_ITEM_NAMESPACE)
-									  .AddIndex("id", "id", "hash", "int", IndexOpts().PK())
-									  .AddIndex("name", "name", "text", "string", IndexOpts())
-									  .AddIndex("color", "color", "text", "string", IndexOpts())
-									  .AddIndex("weight", "weight", "tree", "int", IndexOpts())
-									  .AddIndex("height", "height", "tree", "int", IndexOpts())
-									  .AddIndex("fk_id", "fk_id", "tree", "int", IndexOpts().PK())));
+									  .AddIndex("id", "hash", "int", IndexOpts())
+									  .AddIndex("name", "text", "string", IndexOpts())
+									  .AddIndex("color", "text", "string", IndexOpts())
+									  .AddIndex("weight", "tree", "int", IndexOpts())
+									  .AddIndex("height", "tree", "int", IndexOpts())
+									  .AddIndex("fk_id", "tree", "int", IndexOpts())
+									  .AddIndex("id+fk_id", {"id", "fk_id"}, "tree", "composite", IndexOpts().PK())));
 
 	Error err;
 	Item item;
@@ -123,12 +125,13 @@ TEST_F(ExtractPK, DeleteByPKOnlyJSON) {
 
 TEST_F(ExtractPK, ChangedTypeJSON) {
 	CHECK_SUCCESS(CreateNamespace(NamespaceDef(SIMPLE_ITEM_NAMESPACE)
-									  .AddIndex("id", "id", "hash", "int", IndexOpts().PK())
-									  .AddIndex("name", "name", "text", "string", IndexOpts())
-									  .AddIndex("color", "color", "text", "string", IndexOpts())
-									  .AddIndex("weight", "weight", "tree", "int", IndexOpts())
-									  .AddIndex("height", "height", "tree", "int", IndexOpts())
-									  .AddIndex("fk_id", "fk_id", "tree", "int", IndexOpts().PK())));
+									  .AddIndex("id", "hash", "int", IndexOpts())
+									  .AddIndex("name", "text", "string", IndexOpts())
+									  .AddIndex("color", "text", "string", IndexOpts())
+									  .AddIndex("weight", "tree", "int", IndexOpts())
+									  .AddIndex("height", "tree", "int", IndexOpts())
+									  .AddIndex("fk_id", "tree", "int", IndexOpts())
+									  .AddIndex("id+fk_id", {"id", "fk_id"}, "tree", "composite", IndexOpts().PK())));
 
 	Error err;
 	Item item;
@@ -167,12 +170,13 @@ TEST_F(ExtractPK, ChangedTypeJSON) {
 
 TEST_F(ExtractPK, NestedJSON) {
 	CHECK_SUCCESS(CreateNamespace(NamespaceDef(NESTED_ITEM_NAMESPACE)
-									  .AddIndex("id", "id", "hash", "int", IndexOpts().PK())
-									  .AddIndex("name", "name", "text", "string", IndexOpts())
-									  .AddIndex("color", "desc.color", "text", "string", IndexOpts())
-									  .AddIndex("weight", "desc.weight", "tree", "int", IndexOpts())
-									  .AddIndex("height", "desc.height", "tree", "int", IndexOpts())
-									  .AddIndex("fk_id", "desc.fk_id", "tree", "int", IndexOpts().PK())));
+									  .AddIndex("id", "hash", "int", IndexOpts())
+									  .AddIndex("name", "text", "string", IndexOpts())
+									  .AddIndex("color", {"desc.color"}, "text", "string", IndexOpts())
+									  .AddIndex("weight", {"desc.weight"}, "tree", "int", IndexOpts())
+									  .AddIndex("height", {"desc.height"}, "tree", "int", IndexOpts())
+									  .AddIndex("fk_id", {"desc.fk_id"}, "tree", "int", IndexOpts())
+									  .AddIndex("id+fk_id", {"id", "fk_id"}, "tree", "composite", IndexOpts().PK())));
 
 	Error err;
 	Item item;
@@ -212,12 +216,13 @@ TEST_F(ExtractPK, NestedJSON) {
 
 TEST_F(ExtractPK, CJson2CJson_PrintJSON) {
 	CHECK_SUCCESS(CreateNamespace(NamespaceDef(SIMPLE_ITEM_NAMESPACE)
-									  .AddIndex("id", "id", "hash", "int", IndexOpts().PK())
-									  .AddIndex("name", "name", "text", "string", IndexOpts())
-									  .AddIndex("color", "color", "text", "string", IndexOpts())
-									  .AddIndex("weight", "weight", "tree", "int", IndexOpts())
-									  .AddIndex("height", "height", "tree", "int", IndexOpts())
-									  .AddIndex("fk_id", "fk_id", "tree", "int", IndexOpts().PK())));
+									  .AddIndex("id", "hash", "int", IndexOpts())
+									  .AddIndex("name", "text", "string", IndexOpts())
+									  .AddIndex("color", "text", "string", IndexOpts())
+									  .AddIndex("weight", "tree", "int", IndexOpts())
+									  .AddIndex("height", "tree", "int", IndexOpts())
+									  .AddIndex("fk_id", "tree", "int", IndexOpts())
+									  .AddIndex("id+fk_id", {"id", "fk_id"}, "tree", "composite", IndexOpts().PK())));
 
 	Error err;
 	Item item;
@@ -228,23 +233,24 @@ TEST_F(ExtractPK, CJson2CJson_PrintJSON) {
 	CHECK_SUCCESS(item.Status());
 	CHECK_SUCCESS(UpsertAndCommit(SIMPLE_ITEM_NAMESPACE, item));
 
-	reindexer::string_view originalJson(item.GetJSON());
-	TEST_COUT << "HAVE: " << string(originalJson.data(), originalJson.size()) << std::endl;
+	string originalJson = item.GetJSON().ToString();
 
 	Item test = db_->NewItem(SIMPLE_ITEM_NAMESPACE);
 	CHECK_SUCCESS(test.FromCJSON(item.GetCJSON()));
 
-	TEST_COUT << "GOT: " << test.GetJSON().ToString() << std::endl;
+	string testJson = test.GetJSON().ToString();
+	EXPECT_EQ(testJson, originalJson);
 }
 
 TEST_F(ExtractPK, SimpleCJSON) {
 	CHECK_SUCCESS(CreateNamespace(NamespaceDef(SIMPLE_ITEM_NAMESPACE)
-									  .AddIndex("id", "id", "hash", "int", IndexOpts().PK())
-									  .AddIndex("name", "name", "text", "string", IndexOpts())
-									  .AddIndex("color", "color", "text", "string", IndexOpts())
-									  .AddIndex("weight", "weight", "tree", "int", IndexOpts())
-									  .AddIndex("height", "height", "tree", "int", IndexOpts())
-									  .AddIndex("fk_id", "fk_id", "tree", "int", IndexOpts().PK())));
+									  .AddIndex("id", "hash", "int", IndexOpts())
+									  .AddIndex("name", "text", "string", IndexOpts())
+									  .AddIndex("color", "text", "string", IndexOpts())
+									  .AddIndex("weight", "tree", "int", IndexOpts())
+									  .AddIndex("height", "tree", "int", IndexOpts())
+									  .AddIndex("fk_id", "tree", "int", IndexOpts())
+									  .AddIndex("id+fk_id", {"id", "fk_id"}, "tree", "composite", IndexOpts().PK())));
 
 	Error err;
 	Item item;
@@ -286,12 +292,13 @@ TEST_F(ExtractPK, SimpleCJSON) {
 
 TEST_F(ExtractPK, NestedCJSON) {
 	CHECK_SUCCESS(CreateNamespace(NamespaceDef(NESTED_ITEM_NAMESPACE)
-									  .AddIndex("id", "id", "hash", "int", IndexOpts().PK())
-									  .AddIndex("name", "name", "text", "string", IndexOpts())
-									  .AddIndex("color", "desc.color", "text", "string", IndexOpts())
-									  .AddIndex("weight", "desc.weight", "tree", "int", IndexOpts())
-									  .AddIndex("height", "desc.height", "tree", "int", IndexOpts())
-									  .AddIndex("fk_id", "desc.fk_id", "tree", "int", IndexOpts().PK())));
+									  .AddIndex("id", "hash", "int", IndexOpts())
+									  .AddIndex("name", "text", "string", IndexOpts())
+									  .AddIndex("color", {"desc.color"}, "text", "string", IndexOpts())
+									  .AddIndex("weight", {"desc.weight"}, "tree", "int", IndexOpts())
+									  .AddIndex("height", {"desc.height"}, "tree", "int", IndexOpts())
+									  .AddIndex("fk_id", {"desc.fk_id"}, "tree", "int", IndexOpts())
+									  .AddIndex("id+fk_id", {"id", "fk_id"}, "tree", "composite", IndexOpts().PK())));
 
 	Error err;
 	Item item;
@@ -320,7 +327,6 @@ TEST_F(ExtractPK, NestedCJSON) {
 
 	Item fromCJSON = db_->NewItem(NESTED_ITEM_NAMESPACE);
 	CHECK_SUCCESS(fromCJSON.FromCJSON(item4cjson.GetCJSON(), true));
-	TEST_COUT << "Only PK: " << fromCJSON.GetJSON().ToString() << std::endl;
 	CHECK_SUCCESS(db_->Delete(NESTED_ITEM_NAMESPACE, fromCJSON));
 
 	QueryResults dRes;
@@ -334,12 +340,13 @@ TEST_F(ExtractPK, NestedCJSON) {
 
 TEST_F(ExtractPK, NestedCJSONWithObject) {
 	CHECK_SUCCESS(CreateNamespace(NamespaceDef(NESTED_ITEM_WITH_OBJ_NAMESPACE)
-									  .AddIndex("id", "id", "hash", "int", IndexOpts().PK())
-									  .AddIndex("name", "name", "text", "string", IndexOpts())
-									  .AddIndex("color", "desc.color", "text", "string", IndexOpts())
-									  .AddIndex("weight", "other.weight", "tree", "int", IndexOpts())
-									  .AddIndex("height", "other.height", "tree", "int", IndexOpts())
-									  .AddIndex("fk_id", "other.fk_id", "tree", "int", IndexOpts().PK())));
+									  .AddIndex("id", "hash", "int", IndexOpts())
+									  .AddIndex("name", "text", "string", IndexOpts())
+									  .AddIndex("color", {"desc.color"}, "text", "string", IndexOpts())
+									  .AddIndex("weight", {"other.weight"}, "tree", "int", IndexOpts())
+									  .AddIndex("height", {"other.height"}, "tree", "int", IndexOpts())
+									  .AddIndex("fk_id", {"other.fk_id"}, "tree", "int", IndexOpts())
+									  .AddIndex("id+fk_id", {"id", "fk_id"}, "tree", "composite", IndexOpts().PK())));
 
 	Error err;
 	Item item;

@@ -2,6 +2,7 @@
 #include <sys/stat.h>
 #include <sstream>
 #include "base64/base64.h"
+#include "core/cjson/jsonbuilder.h"
 #include "core/type_consts.h"
 #include "gason/gason.h"
 #include "loggerwrapper.h"
@@ -102,6 +103,33 @@ int HTTPServer::PostQuery(http::Context &ctx) {
 	return queryResults(ctx, res, true);
 }
 
+int HTTPServer::DeleteQuery(http::Context &ctx) {
+	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataWrite);
+	reindexer::QueryResults res;
+	string dsl = ctx.body->Read();
+
+	reindexer::Query q;
+	auto status = q.ParseJson(dsl);
+	if (!status.ok()) {
+		http::HttpStatus httpStatus(status);
+		return jsonStatus(ctx, httpStatus);
+	}
+
+	status = db->Delete(q, res);
+	if (!status.ok()) {
+		http::HttpStatus httpStatus(status);
+
+		return jsonStatus(ctx, httpStatus);
+	}
+	WrSerializer ser;
+	{
+		reindexer::JsonBuilder builder(ser);
+		builder.Put("deleted", res.Count());
+	}
+
+	return ctx.JSON(http::StatusOK, ser.Slice());
+}
+
 int HTTPServer::GetDatabases(http::Context &ctx) {
 	string_view sortOrder = ctx.request->params.Get("sort_order");
 
@@ -127,25 +155,15 @@ int HTTPServer::GetDatabases(http::Context &ctx) {
 		});
 	}
 
-	ctx.writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
-	ctx.writer->SetRespCode(http::StatusOK);
-	ctx.writer->Write("{"_sv);
-	ctx.writer->Write("\"items\":["_sv);
-	for (auto &db : dbs) {
-		ctx.writer->Write("\""_sv);
-		ctx.writer->Write(db);
-		ctx.writer->Write("\""_sv);
-		if (db != dbs.back()) ctx.writer->Write(","_sv);
+	WrSerializer ser;
+	{
+		JsonBuilder builder(ser);
+		builder.Put("total_items", dbs.size());
+		auto arrNode = builder.Array("items");
+		for (auto &db : dbs) arrNode.Put(nullptr, db);
 	}
 
-	ctx.writer->Write("],"_sv);
-	ctx.writer->Write("\"total_items\":"_sv);
-
-	auto total = to_string(dbs.size());
-	ctx.writer->Write(total);
-	ctx.writer->Write("}"_sv);
-
-	return 0;
+	return ctx.JSON(http::StatusOK, ser.Slice());
 }
 
 int HTTPServer::PostDatabase(http::Context &ctx) {
@@ -235,30 +253,18 @@ int HTTPServer::GetNamespaces(http::Context &ctx) {
 		});
 	}
 
-	ctx.writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
-	ctx.writer->SetRespCode(http::StatusOK);
-
-	ctx.writer->Write("{"_sv);
-	ctx.writer->Write("\"items\":["_sv);
-	for (auto &nsDef : nsDefs) {
-		ctx.writer->Write("{\"name\":\""_sv);
-		ctx.writer->Write(nsDef.name.c_str(), nsDef.name.length());
-		ctx.writer->Write("\",");
-		string_view isStorageEnabled = nsDef.storage.IsEnabled() ? "true"_sv : "false"_sv;
-		ctx.writer->Write("\"storage_enabled\":"_sv);
-		ctx.writer->Write(isStorageEnabled);
-		ctx.writer->Write("}"_sv);
-		if (&nsDef != &nsDefs.back()) ctx.writer->Write(","_sv);
+	WrSerializer ser;
+	{
+		JsonBuilder builder(ser);
+		builder.Put("total_items", nsDefs.size());
+		auto arrNode = builder.Array("items");
+		for (auto &nsDef : nsDefs) {
+			auto objNode = arrNode.Object(nullptr);
+			objNode.Put("name", nsDef.name);
+			objNode.Put("storage_enabled", nsDef.storage.IsEnabled());
+		}
 	}
-
-	ctx.writer->Write("],"_sv);
-	ctx.writer->Write("\"total_items\":"_sv);
-
-	auto total = to_string(nsDefs.size());
-	ctx.writer->Write(total);
-	ctx.writer->Write("}"_sv);
-
-	return 0;
+	return ctx.JSON(http::StatusOK, ser.Slice());
 }
 
 int HTTPServer::GetNamespace(http::Context &ctx) {
@@ -282,15 +288,9 @@ int HTTPServer::GetNamespace(http::Context &ctx) {
 		return jsonStatus(ctx, httpStatus);
 	}
 
-	ctx.writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
-	ctx.writer->SetRespCode(http::StatusOK);
-
-	reindexer::WrSerializer wrSer(true);
-
+	WrSerializer wrSer;
 	nsDefIt->GetJSON(wrSer);
-	ctx.writer->Write(wrSer.Buf(), wrSer.Len());
-
-	return 0;
+	return ctx.JSON(http::StatusOK, wrSer.Slice());
 }
 
 int HTTPServer::PostNamespace(http::Context &ctx) {
@@ -346,18 +346,22 @@ int HTTPServer::GetItems(http::Context &ctx) {
 	string_view sortOrder = ctx.request->params.Get("sort_order");
 
 	string filterParam = urldecode2(ctx.request->params.Get("filter"));
+	string fields = urldecode2(ctx.request->params.Get("fields"));
 
 	if (nsName.empty()) {
 		http::HttpStatus httpStatus(http::StatusBadRequest, "Namespace is not specified");
 
 		return jsonStatus(ctx, httpStatus);
 	}
+	if (fields.empty()) {
+		fields = "*";
+	}
 
 	unsigned limit = prepareLimit(limitParam, kDefaultItemsLimit);
 	unsigned offset = prepareOffset(offsetParam);
 
-	reindexer::WrSerializer querySer(true);
-	querySer.Printf("SELECT * FROM %s", nsName.c_str());
+	reindexer::WrSerializer querySer;
+	querySer.Printf("SELECT %s FROM %s", fields.c_str(), nsName.c_str());
 	if (filterParam.length()) {
 		querySer.Printf(" WHERE %s", filterParam.c_str());
 	}
@@ -387,6 +391,7 @@ int HTTPServer::GetItems(http::Context &ctx) {
 }
 
 int HTTPServer::DeleteItems(http::Context &ctx) { return modifyItem(ctx, ModeDelete); }
+
 int HTTPServer::PutItems(http::Context &ctx) { return modifyItem(ctx, ModeUpdate); }
 int HTTPServer::PostItems(http::Context &ctx) { return modifyItem(ctx, ModeInsert); }
 
@@ -416,7 +421,7 @@ int HTTPServer::GetIndexes(http::Context &ctx) {
 
 	ctx.writer->Write('{');
 
-	reindexer::WrSerializer wrSer(true);
+	reindexer::WrSerializer wrSer;
 
 	wrSer.PutChars("\"items\":[");
 	for (size_t i = 0; i < nsDefIt->indexes.size(); i++) {
@@ -531,86 +536,68 @@ int HTTPServer::DeleteIndex(http::Context &ctx) {
 
 int HTTPServer::Check(http::Context &ctx) {
 	WrSerializer ser;
-	ser.Printf("{");
+	{
+		JsonBuilder builder(ser);
+		builder.Put("version", REINDEX_VERSION);
 
-	long startTs = std::chrono::duration_cast<std::chrono::seconds>(startTs_.time_since_epoch()).count();
-	long uptime = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - startTs_).count();
-
-	ser.Printf("\"version\":\"%s\",", REINDEX_VERSION);
-	ser.Printf("\"start_time\": %ld,", startTs);
-	ser.Printf("\"uptime\": %ld", uptime);
+		size_t startTs = std::chrono::duration_cast<std::chrono::seconds>(startTs_.time_since_epoch()).count();
+		size_t uptime = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - startTs_).count();
+		builder.Put("start_time", startTs);
+		builder.Put("uptime", uptime);
 
 #ifdef REINDEX_WITH_GPERFTOOLS
-	size_t val = 0;
-	MallocExtension_GetNumericProperty("generic.current_allocated_bytes", &val);
-	ser.Printf(",\"current_allocated_bytes\":%ld,", long(val));
+		size_t val = 0;
+		MallocExtension_GetNumericProperty("generic.current_allocated_bytes", &val);
+		builder.Put("current_allocated_bytes", val);
 
-	MallocExtension_GetNumericProperty("generic.heap_size", &val);
-	ser.Printf("\"heap_size\":%ld,", long(val));
+		MallocExtension_GetNumericProperty("generic.heap_size", &val);
+		builder.Put("heap_size", val);
 
-	MallocExtension_GetNumericProperty("tcmalloc.pageheap_free_bytes", &val);
-	ser.Printf("\"pageheap_free\":%ld,", long(val));
+		MallocExtension_GetNumericProperty("tcmalloc.pageheap_free_bytes", &val);
+		builder.Put("pageheap_free", val);
 
-	MallocExtension_GetNumericProperty("tcmalloc.pageheap_unmapped_bytes", &val);
-	ser.Printf("\"pageheap_unmapped\":%ld", long(val));
+		MallocExtension_GetNumericProperty("tcmalloc.pageheap_unmapped_bytes", &val);
+		builder.Put("pageheap_unmapped", val);
 #endif
-
-	ser.Printf("}");
+	}
 
 	return ctx.JSON(http::StatusOK, ser.Slice());
 }
 int HTTPServer::DocHandler(http::Context &ctx) {
 	string path = ctx.request->path.substr(1).ToString();
-	string target = webRoot_ + path;
 
-	switch (web::stat(target)) {
-		case fs::StatError:
-			target += "/index.html";
-			break;
-
-		case fs::StatDir:
-			if (!path.empty() && path.back() != '/') {
-				return ctx.Redirect((path += '/').c_str());
-			}
-
-			target += "index.html";
-			return web::file(ctx, http::StatusOK, target);
-			break;
-
-		case fs::StatFile:
-			return web::file(ctx, http::StatusOK, target);
+	bool endsWithSlash = (path.length() > 0 && path.back() == '/');
+	if (endsWithSlash) {
+		path.pop_back();
 	}
 
-	char *targetPtr = &target[0];
-	char *ptr1;
-	char *ptr2;
-
-	for (;;) {
-		if (strncmp(targetPtr, webRoot_.c_str(), webRoot_.length())) {
-			break;
-		}
-
-		if (web::stat(targetPtr) == fs::StatFile) {
-			return web::file(ctx, http::StatusOK, targetPtr);
-		}
-
-		ptr1 = strrchr(targetPtr, '/');
-		if (!ptr1 || ptr1 == targetPtr) {
-			break;
-		}
-
-		*ptr1 = '\0';
-		ptr2 = strrchr(targetPtr, '/');
-
-		if (!ptr2) {
-			ptr2 = targetPtr;
-		}
-
-		size_t len = strlen(ptr1 + 1) + 1;
-		memmove(ptr2 + 1, ptr1 + 1, len);
+	if (path == "" || path == "/") {
+		return ctx.Redirect("face/");
 	}
 
-	return web::file(ctx, http::StatusOK, target.c_str());
+	string fsPath = webRoot_ + path;
+
+	if (web::stat(fsPath) == fs::StatFile) {
+		return web::file(ctx, http::StatusOK, fsPath);
+	}
+
+	if (web::stat(fsPath) == fs::StatDir && !endsWithSlash) {
+		return ctx.Redirect(path + "/");
+	}
+
+	for (; fsPath.length() > webRoot_.length();) {
+		string file = fs::JoinPath(fsPath, "index.html");
+		if (web::stat(file) == fs::StatFile) {
+			return web::file(ctx, http::StatusOK, file);
+		}
+
+		auto pos = fsPath.find_last_of('/');
+		if (pos == string::npos) break;
+
+		fsPath = fsPath.erase(pos);
+	}
+
+	return NotFoundHandler(ctx);
 }
 
 int HTTPServer::NotFoundHandler(http::Context &ctx) {
@@ -622,6 +609,7 @@ int HTTPServer::NotFoundHandler(http::Context &ctx) {
 bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	router_.NotFound<HTTPServer, &HTTPServer::NotFoundHandler>(this);
 
+	router_.GET<HTTPServer, &HTTPServer::DocHandler>("/", this);
 	router_.GET<HTTPServer, &HTTPServer::DocHandler>("/swagger", this);
 	router_.GET<HTTPServer, &HTTPServer::DocHandler>("/swagger/*", this);
 	router_.GET<HTTPServer, &HTTPServer::DocHandler>("/face", this);
@@ -634,6 +622,7 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	router_.GET<HTTPServer, &HTTPServer::GetSQLQuery>("/api/v1/db/:db/query", this);
 	router_.POST<HTTPServer, &HTTPServer::PostQuery>("/api/v1/db/:db/query", this);
 	router_.POST<HTTPServer, &HTTPServer::PostSQLQuery>("/api/v1/db/:db/sqlquery", this);
+	router_.DELETE<HTTPServer, &HTTPServer::PostQuery>("/api/v1/db/:db/query", this);
 
 	router_.GET<HTTPServer, &HTTPServer::GetDatabases>("/api/v1/db", this);
 	router_.POST<HTTPServer, &HTTPServer::PostDatabase>("/api/v1/db", this);
@@ -730,18 +719,8 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset) {
 	ctx.writer->SetHeader(http::Header{"Content-Type"_sv, "application/json; charset=utf-8"_sv});
 	ctx.writer->SetRespCode(http::StatusOK);
-	reindexer::WrSerializer wrSer(true);
+	reindexer::WrSerializer wrSer;
 	ctx.writer->Write('{');
-
-	if (!res.aggregationResults.empty()) {
-		ctx.writer->Write("\"aggregations\": ["_sv);
-		for (unsigned i = 0; i < res.aggregationResults.size(); i++) {
-			if (i) ctx.writer->Write(',');
-			string agg = to_string(res.aggregationResults[i]);
-			ctx.writer->Write(agg.c_str(), agg.length());
-		}
-		ctx.writer->Write("],"_sv);
-	}
 
 	ctx.writer->Write("\"items\": ["_sv);
 	for (size_t i = offset; i < res.Count() && i < offset + limit; i++) {
@@ -750,12 +729,37 @@ int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, b
 		res[i].GetJSON(wrSer, false);
 		ctx.writer->Write(wrSer.Buf(), wrSer.Len());
 	}
-	ctx.writer->Write("],"_sv);
+	ctx.writer->Write("]"_sv);
+
+	if (!res.aggregationResults.empty()) {
+		ctx.writer->Write(",\"aggregations\": ["_sv);
+		for (unsigned i = 0; i < res.aggregationResults.size(); i++) {
+			if (i) ctx.writer->Write(',');
+			WrSerializer ser;
+			res.aggregationResults[i].GetJSON(ser);
+			ctx.writer->Write(ser.Slice());
+		}
+		ctx.writer->Write("]"_sv);
+	}
+
+	if (!res.GetExplainResults().empty()) {
+		ctx.writer->Write(",\"explain\":"_sv);
+		ctx.writer->Write(res.GetExplainResults());
+	}
 
 	unsigned totalItems = isQueryResults ? res.Count() : static_cast<unsigned>(res.totalCount);
-	ctx.writer->Write("\"total_items\":"_sv);
-	string total = to_string(totalItems);
-	ctx.writer->Write(total.c_str(), total.length());
+
+	if (!isQueryResults || limit != kDefaultLimit) {
+		ctx.writer->Write(",\"total_items\":"_sv);
+		string total = to_string(totalItems);
+		ctx.writer->Write(total.c_str(), total.length());
+	}
+
+	if (isQueryResults && res.totalCount) {
+		ctx.writer->Write(",\"query_total_items\":"_sv);
+		string queryTotal = to_string(static_cast<unsigned>(res.totalCount));
+		ctx.writer->Write(queryTotal.c_str(), queryTotal.length());
+	}
 
 	ctx.writer->Write('}');
 

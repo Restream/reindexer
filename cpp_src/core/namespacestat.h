@@ -9,9 +9,10 @@
 namespace reindexer {
 
 class WrSerializer;
+class JsonBuilder;
 
 struct LRUCacheMemStat {
-	void GetJSON(WrSerializer &ser);
+	void GetJSON(JsonBuilder &builder);
 
 	size_t totalSize = 0;
 	size_t itemsCount = 0;
@@ -20,7 +21,7 @@ struct LRUCacheMemStat {
 };
 
 struct IndexMemStat {
-	void GetJSON(WrSerializer &ser);
+	void GetJSON(JsonBuilder &builder);
 	std::string name;
 	size_t uniqKeysCount = 0;
 	size_t dataSize = 0;
@@ -53,7 +54,7 @@ struct NamespaceMemStat {
 };
 
 struct PerfStat {
-	void GetJSON(WrSerializer &ser);
+	void GetJSON(JsonBuilder &builder);
 	size_t totalHitCount;
 	size_t totalTimeUs;
 	size_t totalLockTimeUs;
@@ -66,7 +67,7 @@ struct IndexPerfStat {
 	IndexPerfStat() = default;
 	IndexPerfStat(const std::string &n, const PerfStat &s, const PerfStat &c) : name(n), selects(s), commits(c) {}
 
-	void GetJSON(WrSerializer &ser);
+	void GetJSON(JsonBuilder &builder);
 
 	std::string name;
 	PerfStat selects;

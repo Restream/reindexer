@@ -43,20 +43,20 @@ string utf16_to_utf8(const wstring &src) {
 	return utf16_to_utf8(src, dst);
 }
 
-vector<string> &split(const string_view &str, const string &delimiters, bool trimEmpty, vector<string> &tokens) {
-	tokens.resize(0);
+// vector<string> &split(const string_view &str, const string &delimiters, bool trimEmpty, vector<string> &tokens) {
+// 	tokens.resize(0);
 
-	for (size_t pos, lastPos = 0;; lastPos = pos + 1) {
-		pos = str.find_first_of(delimiters, lastPos);
-		if (pos == string::npos) {
-			pos = str.length();
-			if (pos != lastPos || !trimEmpty) tokens.push_back(string(str.data() + lastPos, (pos - lastPos)));
-			break;
-		} else if (pos != lastPos || !trimEmpty)
-			tokens.push_back(string(str.data() + lastPos, (pos - lastPos)));
-	}
-	return tokens;
-}
+// 	for (size_t pos, lastPos = 0;; lastPos = pos + 1) {
+// 		pos = str.find_first_of(delimiters, lastPos);
+// 		if (pos == string::npos) {
+// 			pos = str.length();
+// 			if (pos != lastPos || !trimEmpty) tokens.push_back(string(str.data() + lastPos, (pos - lastPos)));
+// 			break;
+// 		} else if (pos != lastPos || !trimEmpty)
+// 			tokens.push_back(string(str.data() + lastPos, (pos - lastPos)));
+// 	}
+// 	return tokens;
+// }
 
 // This functions calc how many bytes takes limit symbols in UTF8 forward
 size_t calcUTf8Size(const char *str, size_t size, size_t limit) {

@@ -9,6 +9,7 @@
 #include "client/namespace.h"
 #include "client/queryresults.h"
 #include "client/reindexerconfig.h"
+#include "core/keyvalue/p_string.h"
 #include "core/namespacedef.h"
 #include "core/query/query.h"
 #include "estl/fast_hash_map.h"
@@ -40,7 +41,6 @@ public:
 	Error UpdateIndex(const string &_namespace, const IndexDef &index);
 	Error DropIndex(const string &_namespace, const string &index);
 	Error EnumNamespaces(vector<NamespaceDef> &defs, bool bEnumAll);
-	Error ConfigureIndex(const string &_namespace, const string &index, const string &config);
 	Error Insert(const string &_namespace, client::Item &item);
 	Error Update(const string &_namespace, client::Item &item);
 	Error Upsert(const string &_namespace, client::Item &item);
@@ -59,7 +59,6 @@ private:
 	Namespace::Ptr getNamespace(const string &nsName);
 	void run();
 
-	void checkConnections();
 	net::cproto::ClientConnection *getConn();
 
 	std::vector<std::unique_ptr<net::cproto::ClientConnection>> connections_;

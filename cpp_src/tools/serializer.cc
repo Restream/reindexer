@@ -3,9 +3,10 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <cstring>
+#include "core/keyvalue/key_string.h"
+#include "core/keyvalue/p_string.h"
 #include "itoa/itoa.h"
 #include "tools/errors.h"
-
 #include "tools/varint.h"
 namespace reindexer {
 
@@ -14,25 +15,37 @@ Serializer::Serializer(const string_view &buf) : buf(reinterpret_cast<const uint
 
 bool Serializer::Eof() { return pos >= len; }
 
-KeyValue Serializer::GetValue() {
-	int type = GetVarUint();
+Variant Serializer::GetVariant() {
+	KeyValueType type = KeyValueType(GetVarUint());
+	switch (type) {
+		case KeyValueTuple: {
+			VariantArray compositeValues;
+			uint64_t count = GetVarUint();
+			compositeValues.reserve(count);
+			for (size_t i = 0; i < count; ++i) {
+				compositeValues.push_back(GetVariant());
+			}
+			return Variant(compositeValues);
+		}
+		default:
+			return GetRawVariant(type);
+	}
+}
+
+Variant Serializer::GetRawVariant(KeyValueType type) {
 	switch (type) {
 		case KeyValueInt:
-			return KeyValue(int(GetVarint()));
+			return Variant(int(GetVarint()));
+		case KeyValueBool:
+			return Variant(bool(GetVarUint()));
 		case KeyValueInt64:
-			return KeyValue(int64_t(GetVarint()));
+			return Variant(int64_t(GetVarint()));
 		case KeyValueDouble:
-			return KeyValue(GetDouble());
+			return Variant(GetDouble());
 		case KeyValueString:
-			return KeyValue(GetVString().ToString());
-		case KeyValueComposite: {
-			KeyValues compositeValues;
-			uint64_t count = GetVarUint();
-			for (size_t i = 0; i < count; ++i) {
-				compositeValues.push_back(GetValue());
-			}
-			return KeyValue(std::move(compositeValues));
-		}
+			return Variant(GetPVString());
+		case KeyValueNull:
+			return Variant();
 		default:
 			throw Error(errParseBin, "Unknown type %d while parsing binary buffer", type);
 	}
@@ -78,12 +91,20 @@ double Serializer::GetDouble() {
 
 int64_t Serializer::GetVarint() {
 	int l = scan_varint(len - pos, buf + pos);
+	if (l == 0) {
+		throw Error(errParseBin, "Binary buffer broken - scan_varint failed: pos=%d,len=%d", int(pos), int(len));
+	}
+
 	checkbound(pos, l, len);
 	pos += l;
 	return unzigzag64(parse_uint64(l, buf + pos - l));
 }
+
 uint64_t Serializer::GetVarUint() {
 	int l = scan_varint(len - pos, buf + pos);
+	if (l == 0) {
+		throw Error(errParseBin, "Binary buffer broken - scan_varint failed: pos=%d,len=%d", int(pos), int(len));
+	}
 	checkbound(pos, l, len);
 	pos += l;
 	return parse_uint64(l, buf + pos - l);
@@ -106,29 +127,49 @@ p_string Serializer::GetPVString() {
 
 bool Serializer::GetBool() { return bool(GetVarUint()); }
 
-WrSerializer::WrSerializer(bool allowInBuf)
-	: buf_(allowInBuf ? this->inBuf_ : nullptr), len_(0), cap_(allowInBuf ? sizeof(this->inBuf_) : 0) {}
+WrSerializer::WrSerializer() : buf_(inBuf_), len_(0), cap_(sizeof(inBuf_)) {}
 
 WrSerializer::~WrSerializer() {
-	if (buf_ != inBuf_) free(buf_);
+	if (buf_ != inBuf_) delete[] buf_;
 }
 
-void WrSerializer::PutValue(const KeyValue &kv) {
+void WrSerializer::PutVariant(const Variant &kv) {
 	PutVarUint(kv.Type());
 	switch (kv.Type()) {
-		case KeyValueInt:
-			PutVarint(kv.As<int>());
+		case KeyValueTuple: {
+			auto compositeValues = kv.getCompositeValues();
+			PutVarUint(compositeValues.size());
+			for (auto &v : compositeValues) {
+				PutVariant(v);
+			}
+			break;
+		}
+		default:
+			PutRawVariant(kv);
+	}
+}
+
+void WrSerializer::PutRawVariant(const Variant &kv) {
+	switch (kv.Type()) {
+		case KeyValueBool:
+			PutBool(bool(kv));
 			break;
 		case KeyValueInt64:
-			PutVarint(kv.As<int64_t>());
+			PutVarint(int64_t(kv));
+			break;
+		case KeyValueInt:
+			PutVarint(int(kv));
 			break;
 		case KeyValueDouble:
-			PutDouble(kv.As<double>());
+			PutDouble(double(kv));
 			break;
 		case KeyValueString:
-			PutVString(kv.As<string>());
+			PutVString(string_view(kv));
+			break;
+		case KeyValueNull:
 			break;
 		default:
+			fprintf(stderr, "Unknown keyType %d\n", int(kv.Type()));
 			abort();
 	}
 }
@@ -138,6 +179,14 @@ void WrSerializer::PutSlice(const string_view &slice) {
 	grow(slice.size());
 	memcpy(&buf_[len_], slice.data(), slice.size());
 	len_ += slice.size();
+}
+
+void WrSerializer::PutSlice(std::function<void()> func) {
+	int savePos = len_;
+	PutUInt32(0);
+	func();
+	uint32_t sliceSize = len_ - savePos - sizeof(uint32_t);
+	memcpy(&buf_[savePos], &sliceSize, sizeof(sliceSize));
 }
 
 void WrSerializer::PutUInt32(uint32_t v) {
@@ -167,11 +216,10 @@ void WrSerializer::grow(size_t sz) {
 void WrSerializer::Reserve(size_t cap) {
 	if (cap > cap_ || !buf_) {
 		cap_ = std::max(cap, cap_);
-		uint8_t *b = reinterpret_cast<uint8_t *>(malloc(cap_));
-		if (!b) throw std::bad_alloc();
+		uint8_t *b = new uint8_t[cap_];
 		if (buf_) {
 			memcpy(b, buf_, len_);
-			if (buf_ != inBuf_) free(buf_);
+			if (buf_ != inBuf_) delete[] buf_;
 		}
 		buf_ = b;
 	}
@@ -211,11 +259,6 @@ void WrSerializer::PutVarUint(uint64_t v) {
 void WrSerializer::PutBool(bool v) {
 	grow(1);
 	len_ += boolean_pack(v, buf_ + len_);
-}
-
-void WrSerializer::PutVString(const char *str) {
-	grow(strlen(str) + 10);
-	len_ += string_pack(str, buf_ + len_);
 }
 
 void WrSerializer::PutVString(const string_view &str) {
@@ -310,13 +353,12 @@ void WrSerializer::Print(int64_t k) {
 	len_ = b - reinterpret_cast<char *>(buf_);
 }
 
-uint8_t *WrSerializer::DetachBuffer() {
-	uint8_t *b = buf_;
-	buf_ = nullptr;
-	cap_ = 0;
-	return b;
-}
-
 uint8_t *WrSerializer::Buf() const { return buf_; }
+
+void WrSerializer::Write(const string_view &slice) {
+	grow(slice.size());
+	memcpy(&buf_[len_], slice.data(), slice.size());
+	len_ += slice.size();
+}
 
 }  // namespace reindexer

@@ -1,0 +1,55 @@
+#pragma once
+
+#include "reindexer_api.h"
+
+class EqualPositionApi : public ReindexerApi {
+public:
+	void SetUp() override {
+		Error err = reindexer->OpenNamespace(default_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
+		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK()},
+												   IndexDeclaration{kFieldA1, "hash", "int", IndexOpts().Array()},
+												   IndexDeclaration{kFieldA2, "tree", "int", IndexOpts().Array()},
+												   IndexDeclaration{kFieldA3, "hash", "int", IndexOpts().Array()}});
+		fillNs();
+	}
+
+protected:
+	void fillNs() {
+		int initValue = 100;
+		auto a1Val = randIntVec(10, initValue * 1, 5);
+		auto a2Val = randIntVec(10, initValue * 2, 5);
+		auto a3Val = randIntVec(10, initValue * 3, 5);
+		for (size_t i = 0; i < 100; ++i) {
+			Item item = NewItem(default_namespace);
+			item[kFieldId] = static_cast<int>(i);
+			item[kFieldA1] = a1Val;
+			item[kFieldA2] = a2Val;
+			item[kFieldA3] = a3Val;
+			if (i % 20 == 0) {
+				initValue += 10;
+				a1Val = randIntVec(10, initValue * 1, 5);
+				a2Val = randIntVec(10, initValue * 2, 5);
+				a3Val = randIntVec(10, initValue * 3, 5);
+			}
+			Upsert(default_namespace, item);
+		}
+		Commit(default_namespace);
+	}
+
+	vector<int> randIntVec(int length, int initVal, int multipleCond) {
+		int val = initVal;
+		vector<int> vec;
+		vec.reserve(length);
+		for (size_t i = 0; i < static_cast<size_t>(length); ++i) {
+			vec.emplace_back(val);
+			if (i % multipleCond) val += initVal;
+		}
+		return vec;
+	}
+
+	const char* kFieldId = "id";
+	const char* kFieldA1 = "a1";
+	const char* kFieldA2 = "a2";
+	const char* kFieldA3 = "a3";
+};

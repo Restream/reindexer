@@ -1,16 +1,13 @@
 #include <sstream>
 
-#include "core/cjson/cjsonencoder.h"
-#include "core/cjson/jsonencoder.h"
 #include "core/index/index.h"
 #include "core/namespace.h"
+#include "explaincalc.h"
 #include "nsselecter.h"
 #include "tools/logger.h"
 #include "tools/stringstools.h"
 
-using std::chrono::duration_cast;
 using std::chrono::high_resolution_clock;
-using std::chrono::microseconds;
 using std::next;
 using std::shared_ptr;
 using std::string;
@@ -22,18 +19,13 @@ const int kBuildSortOrdersHitCount = 5;
 
 namespace reindexer {
 
-#define TIMEPOINT(n)                                  \
-	std::chrono::high_resolution_clock::time_point n; \
-	if (enableTiming) n = high_resolution_clock::now()
-
 void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	if (ns_->queriesLogLevel_ > ctx.query.debugLevel) {
 		const_cast<Query *>(&ctx.query)->debugLevel = ns_->queriesLogLevel_;
 	}
 
-	bool enableTiming = ctx.query.debugLevel >= LogInfo;
-
-	TIMEPOINT(tmStart);
+	ExplainCalc explain(ctx.query.explain_ || ctx.query.debugLevel >= LogInfo);
+	explain.StartTiming();
 
 	bool needPutCachedTotal = false;
 	bool forcedSort = !ctx.query.forcedSortOrder.empty();
@@ -64,15 +56,15 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	} else {
 		for (const QueryEntry &entry : *whereEntries) {
 			if (entry.idxNo < ns_->indexes_.firstCompositePos()) {
-				KeyValueType keyType = KeyValueEmpty;
+				KeyValueType keyType = KeyValueNull;
 				if (entry.idxNo == IndexValueType::SetByJsonPath) {
 					keyType = getQueryEntryIndexType(entry);
 				} else {
 					keyType = ns_->indexes_[entry.idxNo]->KeyType();
 				}
-				if (keyType != KeyValueEmpty) {
+				if (keyType != KeyValueNull) {
 					// TODO refactor const cast!
-					for (auto &key : entry.values) const_cast<KeyValue &>(key).convert(keyType);
+					for (auto &key : entry.values) const_cast<Variant &>(key).convert(keyType);
 				}
 			}
 		}
@@ -105,6 +97,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 
 	// Check if commit needed
 	bool needSortOrders = !sortBy.empty() && (ns_->sortedQueriesCount_ > kBuildSortOrdersHitCount || ctx.preResult || ctx.joinedSelectors);
+
 	if (!whereEntries->empty() || needSortOrders) {
 		FieldsSet indexesForCommit;
 		for (const QueryEntry &entry : *whereEntries) {
@@ -129,7 +122,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	RawQueryResult qres;
 	if (ctx.preResult && ctx.preResult->mode == SelectCtx::PreResult::ModeIdSet) {
 		SelectKeyResult res;
-		res.push_back(SingleSelectKeyResult(&ctx.preResult->ids));
+		res.push_back(SingleSelectKeyResult(ctx.preResult->ids));
 		static string pr = "-preresult";
 		qres.push_back(SelectIterator(res, OpAnd, false, pr));
 	} else if (ctx.preResult && ctx.preResult->mode == SelectCtx::PreResult::ModeIterators) {
@@ -138,15 +131,16 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 		}
 	}
 
-	// Prepare data for select function
+	// Prepare data for select functions
 	if (ctx.functions) {
 		fnc_ = ctx.functions->AddNamespace(ctx.query, *ns_, isFt);
 	}
-	TIMEPOINT(tm1);
+	explain.SetPrepareTime();
 
-	selectWhere(*whereEntries, qres, ctx.sortingCtx.firstColumnSortId, isFt);
+	prepareIteratorsForSelectLoop(*whereEntries, qres, ctx.sortingCtx.firstColumnSortId, isFt);
+	prepareEqualPositionComparator(ctx.query, *whereEntries, qres);
 
-	TIMEPOINT(tm2);
+	explain.SetSelectTime();
 
 	if (ctx.preResult && ctx.preResult->mode == SelectCtx::PreResult::ModeBuild) {
 		// Building pre result for next joins
@@ -224,9 +218,10 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	assert(qres.size());
 	for (auto r = qres.begin() + 1; r != qres.end(); r++) r->SetExpectMaxIterations(iters);
 
-	result.addNSContext(ns_->payloadType_, ns_->tagsMatcher_, JsonPrintFilter(ns_->tagsMatcher_, ctx.query.selectFilter_));
+	result.addNSContext(ns_->payloadType_, ns_->tagsMatcher_, FieldsSet(ns_->tagsMatcher_, ctx.query.selectFilter_));
 
-	TIMEPOINT(tm3);
+	explain.SetPostprocessTime();
+
 	LoopCtx lctx(ctx);
 	lctx.qres = &qres;
 	lctx.ftIndex = isFt;
@@ -242,36 +237,23 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	if (reverse && !hasComparators && !hasScan) selectLoop<true, false, false>(lctx, result);
 	if (!reverse && !hasComparators && !hasScan) selectLoop<false, false, false>(lctx, result);
 
-	TIMEPOINT(tm4);
+	explain.SetLoopTime();
+	explain.StopTiming();
+	explain.PutSortIndex(!sortingData.empty() && sortingData[0].index ? sortingData[0].index->Name() : "-"_sv);
+	explain.PutCount((ctx.preResult && ctx.preResult->mode == SelectCtx::PreResult::ModeBuild) ? ctx.preResult->ids.size()
+																							   : result.Count());
+	explain.PutSelectors(&qres);
+	explain.PutJoinedSelectors(ctx.joinedSelectors);
+	explain.SetIterations(iters);
 
 	if (ctx.query.debugLevel >= LogInfo) {
-		Index *firstSortIndex = !sortingData.empty() ? sortingData[0].index : nullptr;
-		int count = (ctx.preResult && ctx.preResult->mode == SelectCtx::PreResult::ModeBuild) ? ctx.preResult->ids.size() : result.Count();
 		logPrintf(LogInfo, "%s", ctx.query.Dump().c_str());
-		logPrintf(LogInfo,
-				  "Got %d items in %d µs [prepare %d µs, select %d µs, postprocess "
-				  "%d µs loop %d µs], sortindex %s",
-				  count, int(duration_cast<microseconds>(tm4 - tmStart).count()), int(duration_cast<microseconds>(tm1 - tmStart).count()),
-				  int(duration_cast<microseconds>(tm2 - tm1).count()), int(duration_cast<microseconds>(tm3 - tm2).count()),
-				  int(duration_cast<microseconds>(tm4 - tm3).count()), firstSortIndex ? firstSortIndex->Name().c_str() : "-");
-		if (ctx.query.debugLevel >= LogTrace) {
-			for (auto &r : qres)
-				logPrintf(LogInfo, "%s: %d idsets, %d comparators, cost %g, matched %d, %s", r.name.c_str(), r.size(),
-						  r.comparators_.size(), r.Cost(iters), r.GetMatchedCount(), r.Dump().c_str());
-			if (ctx.joinedSelectors) {
-				for (auto &js : *ctx.joinedSelectors) {
-					if (js.type == JoinType::LeftJoin || js.type == JoinType::Merge) {
-						logPrintf(LogInfo, "%s %s: called %d\n", Query::JoinTypeName(js.type), js.ns.c_str(), js.called);
-					} else {
-						logPrintf(LogInfo, "%s %s: called %d, matched %d\n", Query::JoinTypeName(js.type), js.ns.c_str(), js.called,
-								  js.matched);
-					}
-				}
-			}
-
-			result.Dump();
-		}
+		explain.LogDump(ctx.query.debugLevel);
 	}
+	if (ctx.query.explain_) {
+		result.explainResults = explain.GetJSON();
+	}
+	if (ctx.query.debugLevel >= LogTrace) result.Dump();
 
 	if (needPutCachedTotal) {
 		logPrintf(LogTrace, "[*] put totalCount value into query cache: %d\t namespace: %s\n", result.totalCount, ns_->name_.c_str());
@@ -297,28 +279,28 @@ void NsSelecter::applyCustomSort(ItemRefVector &queryResult, const SelectCtx &ct
 
 	if (ns_->indexes_[idx]->Opts().IsArray()) throw Error(errQueryExec, "This type of sorting cannot be applied to a field of array type.");
 
-	KeyValues keyValues = ctx.query.forcedSortOrder;  // make a copy of forcedSortOrder', may be mark it as 'mutable'?
+	VariantArray keyValues = ctx.query.forcedSortOrder;  // make a copy of forcedSortOrder', may be mark it as 'mutable'?
 	ItemRefVector::difference_type cost = 0;
 	KeyValueType fieldType = ns_->indexes_[idx]->KeyType();
 
 	if (idx < ns_->indexes_.firstCompositePos()) {
 		// implementation for regular indexes
-		fast_hash_map<KeyValue, ItemRefVector::difference_type> sortMap;
+		fast_hash_map<Variant, ItemRefVector::difference_type> sortMap;
 		for (auto &value : keyValues) {
 			value.convert(fieldType);
 			sortMap.insert({value, cost});
 			cost++;
 		}
 
-		KeyRefs keyRefs;
+		VariantArray keyRefs;
 		auto sortEnd =
 			std::stable_partition(queryResult.begin(), queryResult.end(), [&sortMap, &payloadType, idx, &keyRefs](ItemRef &itemRef) {
 				ConstPayload(payloadType, itemRef.value).Get(idx, keyRefs);
 				return !keyRefs.empty() && (sortMap.find(keyRefs[0]) != sortMap.end());
 			});
 
-		KeyRefs firstItemValue;
-		KeyRefs secondItemValue;
+		VariantArray firstItemValue;
+		VariantArray secondItemValue;
 		std::sort(queryResult.begin(), sortEnd,
 				  [&sortMap, &payloadType, idx, &firstItemValue, &secondItemValue](const ItemRef &lhs, const ItemRef &rhs) {
 					  ConstPayload(payloadType, lhs.value).Get(idx, firstItemValue);
@@ -441,7 +423,7 @@ QueryEntries NsSelecter::lookupQueryIndexes(const QueryEntries &entries) {
 		}
 		bool byJsonPath = (currentEntry.idxNo == IndexValueType::SetByJsonPath);
 		if (!byJsonPath && (currentEntry.idxNo < ns_->indexes_.firstCompositePos())) {
-			for (KeyValue &key : currentEntry.values) key.convert(ns_->indexes_[currentEntry.idxNo]->KeyType());
+			for (Variant &key : currentEntry.values) key.convert(ns_->indexes_[currentEntry.idxNo]->KeyType());
 		}
 
 		// try merge entries with AND opetator
@@ -459,17 +441,17 @@ QueryEntries NsSelecter::lookupQueryIndexes(const QueryEntries &entries) {
 	return ret;
 }
 
-void NsSelecter::selectWhere(const QueryEntries &entries, RawQueryResult &result, unsigned sortId, bool is_ft) {
+void NsSelecter::prepareIteratorsForSelectLoop(const QueryEntries &entries, RawQueryResult &result, unsigned sortId, bool is_ft) {
 	bool fullText = false;
-	for (const QueryEntry &qe : entries) {
+	for (size_t i = 0; i < entries.size(); ++i) {
+		const QueryEntry &qe(entries[i]);
 		TagsPath tagsPath;
 		SelectKeyResults selectResults;
 		bool sparseIndex = false;
 		bool byJsonPath = (qe.idxNo == IndexValueType::SetByJsonPath);
 		if (byJsonPath) {
-			tagsPath = ns_->tagsMatcher_.path2tag(qe.index);
-
 			FieldsSet fields;
+			tagsPath = ns_->tagsMatcher_.path2tag(qe.index);
 			fields.push_back(tagsPath);
 
 			SelectKeyResult comparisonResult;
@@ -491,16 +473,16 @@ void NsSelecter::selectWhere(const QueryEntries &entries, RawQueryResult &result
 			auto ctx = fnc_ ? fnc_->CreateCtx(qe.idxNo) : BaseFunctionCtx::Ptr{};
 			if (ctx && ctx->type == BaseFunctionCtx::kFtCtx) ft_ctx_ = reindexer::reinterpret_pointer_cast<FtCtx>(ctx);
 
-			if (index->Opts().GetCollateMode() == CollateUTF8 || fullText)
+			if (index->Opts().GetCollateMode() == CollateUTF8 || fullText) {
 				for (auto &key : qe.values) key.EnsureUTF8();
-
+			}
 			{
 				PerfStatCalculatorST calc(index->GetSelectPerfCounter(), ns_->enablePerfCounters_);
 				calc.LockHit();
 				selectResults = index->SelectKey(qe.values, qe.condition, sortId, type, ctx);
 			}
 		}
-		for (auto res : selectResults) {
+		for (SelectKeyResult &res : selectResults) {
 			switch (qe.op) {
 				case OpOr:
 					if (!result.size()) throw Error(errQueryExec, "OR operator in first condition");
@@ -515,7 +497,9 @@ void NsSelecter::selectWhere(const QueryEntries &entries, RawQueryResult &result
 				case OpNot:
 				case OpAnd:
 					result.push_back(SelectIterator(res, qe.op, qe.distinct, qe.index, fullText));
-					if (!byJsonPath && !sparseIndex) result.back().Bind(ns_->payloadType_, qe.idxNo);
+					if (!byJsonPath && !sparseIndex) {
+						result.back().Bind(ns_->payloadType_, qe.idxNo);
+					}
 					break;
 				default:
 					throw Error(errQueryExec, "Unknown operator (code %d) in condition", qe.op);
@@ -525,6 +509,63 @@ void NsSelecter::selectWhere(const QueryEntries &entries, RawQueryResult &result
 			}
 		}
 	}
+}
+
+void NsSelecter::prepareEqualPositionComparator(const Query &query, const QueryEntries &entries, RawQueryResult &result) {
+	if (query.equalPositions_.empty()) return;
+	for (const EqualPosition &ep : query.equalPositions_) {
+		const QueryEntry &firstQe(entries[ep[0]]);
+		KeyValueType type = firstQe.values.size() ? firstQe.values[0].Type() : KeyValueNull;
+		Comparator cmp(firstQe.condition, type, firstQe.values, true, ns_->payloadType_, FieldsSet({firstQe.idxNo}));
+		for (const QueryEntry &qe : entries) {
+			if (qe.idxNo == IndexValueType::SetByJsonPath) {
+				cmp.BindEqualPosition(ns_->tagsMatcher_.path2tag(qe.index), qe.values, qe.condition);
+			} else {
+				cmp.BindEqualPosition(qe.idxNo, qe.values, qe.condition);
+			}
+		}
+		result.push_back(SelectIterator());
+		result.back().comparators_.push_back(std::move(cmp));
+		result.back().distinct = false;
+	}
+}
+
+bool NsSelecter::proccessJoin(SelectCtx &sctx, IdType properRowId, bool found, bool match, bool hasInnerJoin) {
+	// inner join process
+	ConstPayload pl(ns_->payloadType_, ns_->items_[properRowId]);
+
+	if (hasInnerJoin) {
+		for (size_t i = 0; i < sctx.joinedSelectors->size(); i++) {
+			auto &joinedSelector = sctx.joinedSelectors->at(i);
+			bool res = false;
+			joinedSelector.called++;
+
+			if (joinedSelector.type == JoinType::InnerJoin) {
+				if (found) {
+					res = joinedSelector.func(properRowId, sctx.nsid, pl, match);
+					found &= res;
+				}
+			}
+			if (joinedSelector.type == JoinType::OrInnerJoin) {
+				if (!found || !joinedSelector.nodata) {
+					res = joinedSelector.func(properRowId, sctx.nsid, pl, match);
+					found |= res;
+				}
+			}
+			if (res) {
+				joinedSelector.matched++;
+			}
+			// If not found, and next op is not OR, then ballout
+			if (!found && !(i + 1 < sctx.joinedSelectors->size() && sctx.joinedSelectors->at(i + 1).type == JoinType::OrInnerJoin)) {
+				break;
+			}
+		}
+	}
+	// left join process
+	if (match && found)
+		for (auto &joinedSelector : *sctx.joinedSelectors)
+			if (joinedSelector.type == JoinType::LeftJoin) joinedSelector.func(properRowId, sctx.nsid, pl, match);
+	return found;
 }
 
 template <bool reverse, bool hasComparators, bool hasScan>
@@ -551,10 +592,8 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 
 	bool hasInnerJoin = false;
 	if (sctx.joinedSelectors) {
-		for (size_t i = 0; i < sctx.joinedSelectors->size(); i++) {
-			auto &joinedSelector = sctx.joinedSelectors->at(i);
+		for (auto &joinedSelector : *sctx.joinedSelectors)
 			hasInnerJoin |= (joinedSelector.type == JoinType::InnerJoin || joinedSelector.type == JoinType::OrInnerJoin);
-		}
 	}
 
 	bool isUnordered = false;
@@ -573,7 +612,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 		}
 	}
 
-	KeyRefs prevValues;
+	VariantArray prevValues;
 	size_t multisortLimitLeft = 0, multisortLimitRight = 0;
 
 	// TODO: nested conditions support. Like (A  OR B OR C) AND (X OR Z)
@@ -585,7 +624,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 		IdType properRowId = rowId;
 
 		if (hasScan && ns_->items_[properRowId].IsFree()) continue;
-		if (hasComparators && firstSortIndex) {
+		if (firstSortIndex) {
 			assert(firstSortIndex->SortOrders().size() > static_cast<size_t>(rowId));
 			properRowId = firstSortIndex->SortOrders()[rowId];
 		}
@@ -620,48 +659,8 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 			}
 		}
 
-		if (found && sctx.joinedSelectors && sctx.joinedSelectors->size()) {
-			bool match = !start && count;
-			if (!hasComparators && firstSortIndex) {
-				assert(firstSortIndex->SortOrders().size() > static_cast<size_t>(rowId));
-				properRowId = firstSortIndex->SortOrders()[rowId];
-			}
-
-			// inner join process
-			PayloadValue pv = ns_->items_[properRowId];
-			ConstPayload pl(ns_->payloadType_, pv);
-			if (hasInnerJoin && sctx.joinedSelectors) {
-				for (size_t i = 0; i < sctx.joinedSelectors->size(); i++) {
-					auto &joinedSelector = sctx.joinedSelectors->at(i);
-					bool res = false;
-					joinedSelector.called++;
-
-					if (joinedSelector.type == JoinType::InnerJoin) {
-						if (found) {
-							res = joinedSelector.func(properRowId, sctx.nsid, pl, match);
-							found &= res;
-						}
-					}
-					if (joinedSelector.type == JoinType::OrInnerJoin) {
-						if (!found || !joinedSelector.nodata) {
-							res = joinedSelector.func(properRowId, sctx.nsid, pl, match);
-							found |= res;
-						}
-					}
-					if (res) {
-						joinedSelector.matched++;
-					}
-					// If not found, and next op is not OR, then ballout
-					if (!found &&
-						!(i + 1 < sctx.joinedSelectors->size() && sctx.joinedSelectors->at(i + 1).type == JoinType::OrInnerJoin)) {
-						break;
-					}
-				}
-			}
-			// left join process
-			if (match && found && sctx.joinedSelectors)
-				for (auto &joinedSelector : *sctx.joinedSelectors)
-					if (joinedSelector.type == JoinType::LeftJoin) joinedSelector.func(properRowId, sctx.nsid, pl, match);
+		if (found && sctx.joinedSelectors) {
+			found = proccessJoin(sctx, properRowId, found, !start && count, hasInnerJoin);
 		}
 
 		if (found) {
@@ -670,11 +669,11 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 			// Check distinct condition:
 			// Exclude last sets of id from each query result, so duplicated keys will
 			// be removed
-			for (auto &r : *ctx.qres) {
+			for (SelectIterator &r : *ctx.qres) {
 				if (r.distinct) r.ExcludeLastSet();
 			}
 			if ((start || (count == 0)) && multiSortByOrdered) {
-				KeyRefs recentValues;
+				VariantArray recentValues;
 				size_t lastResSize = result.Count();
 				getSortIndexValue(sortCtx, properRowId, recentValues);
 				if (prevValues.empty() && result.Items().empty()) {
@@ -684,6 +683,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 						if (start) {
 							result.Items().clear();
 							multisortLimitLeft = 0;
+							lastResSize = 0;
 							prevValues = recentValues;
 						} else if (!count) {
 							multisortFinished = true;
@@ -691,7 +691,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 					}
 				}
 				if (!multisortFinished) {
-					addSelectResult(firstSortIndex, hasComparators, proc, rowId, properRowId, sctx, aggregators, result);
+					addSelectResult(proc, rowId, properRowId, sctx, aggregators, result);
 				}
 				if (lastResSize < result.Count()) {
 					if (start) {
@@ -704,7 +704,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 			if (start) {
 				--start;
 			} else if (count) {
-				addSelectResult(firstSortIndex, hasComparators, proc, rowId, properRowId, sctx, aggregators, result);
+				addSelectResult(proc, rowId, properRowId, sctx, aggregators, result);
 				--count;
 				if (!count && multiSort && !multisortFinished) getSortIndexValue(sortCtx, properRowId, prevValues);
 			}
@@ -745,7 +745,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 	}
 }
 
-void NsSelecter::getSortIndexValue(const SelectCtx::SortingCtx::Entry *sortCtx, IdType rowId, KeyRefs &value) {
+void NsSelecter::getSortIndexValue(const SelectCtx::SortingCtx::Entry *sortCtx, IdType rowId, VariantArray &value) {
 	ConstPayload pv(ns_->payloadType_, ns_->items_[rowId]);
 	if ((sortCtx->data->index == IndexValueType::SetByJsonPath) || ns_->indexes_[sortCtx->data->index]->Opts().IsSparse()) {
 		pv.GetByJsonPath(sortCtx->data->column, ns_->tagsMatcher_, value, KeyValueUndefined);
@@ -754,18 +754,14 @@ void NsSelecter::getSortIndexValue(const SelectCtx::SortingCtx::Entry *sortCtx, 
 	}
 }
 
-void NsSelecter::addSelectResult(Index *firstSortIndex, bool hasComparators, uint8_t proc, IdType rowId, IdType &properRowId,
-								 const SelectCtx &sctx, h_vector<Aggregator, 4> &aggregators, QueryResults &result) {
-	if (!hasComparators && firstSortIndex) {
-		assert(firstSortIndex->SortOrders().size() > static_cast<size_t>(rowId));
-		properRowId = firstSortIndex->SortOrders()[rowId];
-	}
+void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, const SelectCtx &sctx,
+								 h_vector<Aggregator, 4> &aggregators, QueryResults &result) {
 	if (aggregators.size()) {
-		for (auto &aggregator : aggregators) aggregator.Aggregate(ns_->items_[properRowId], properRowId);
+		for (auto &aggregator : aggregators) aggregator.Aggregate(ns_->items_[properRowId]);
 	} else if (sctx.preResult && sctx.preResult->mode == SelectCtx::PreResult::ModeBuild) {
 		sctx.preResult->ids.Add(rowId, IdSet::Unordered);
 	} else {
-		result.Add({properRowId, ns_->items_[properRowId].GetVersion(), ns_->items_[properRowId], proc, sctx.nsid});
+		result.Add({properRowId, ns_->items_[properRowId], proc, sctx.nsid});
 	}
 }
 
@@ -773,9 +769,18 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) {
 	h_vector<Aggregator, 4> ret;
 
 	for (auto &ag : q.aggregations_) {
-		int idx = ns_->getIndexByName(ag.index_);
-		ret.push_back(Aggregator(ns_->indexes_[idx]->KeyType(), ns_->indexes_[idx]->Opts().IsArray(), nullptr, ag.type_));
-		ret.back().Bind(ns_->payloadType_, idx);
+		ret.push_back(Aggregator(ag.type_, ag.index_));
+		int idx = -1;
+
+		if (ns_->getIndexByName(ag.index_, idx)) {
+			if (ns_->indexes_[idx]->Opts().IsSparse()) {
+				ret.back().Bind(ns_->payloadType_, -1, ns_->indexes_[idx]->Fields().getTagsPath(0));
+			} else {
+				ret.back().Bind(ns_->payloadType_, idx, TagsPath());
+			}
+		} else {
+			ret.back().Bind(ns_->payloadType_, -1, ns_->tagsMatcher_.path2tag(ag.index_));
+		}
 	}
 
 	return ret;
@@ -784,7 +789,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) {
 void NsSelecter::substituteCompositeIndexes(QueryEntries &entries) {
 	FieldsSet fields;
 	for (auto cur = entries.begin(), first = entries.begin(); cur != entries.end(); cur++) {
-		if ((cur->op != OpAnd) || (cur->condition != CondEq)) {
+		if ((cur->op != OpAnd) || (cur->condition != CondEq) || cur->idxNo >= ns_->payloadType_.NumFields() || cur->idxNo < 0) {
 			// If query already rewritten, then copy current unmatched part
 			first = cur + 1;
 			fields.clear();
@@ -798,14 +803,12 @@ void NsSelecter::substituteCompositeIndexes(QueryEntries &entries) {
 			Payload pl(ns_->payloadType_, d);
 			for (auto e = first; e != cur + 1; e++) {
 				if (ns_->indexes_[found]->Fields().contains(e->idxNo)) {
-					KeyRefs kr;
-					kr.push_back(KeyRef(e->values[0]));
-					pl.Set(e->idxNo, kr);
+					pl.Set(e->idxNo, {e->values[0]});
 				} else
 					*first++ = *e;
 			}
 			QueryEntry ce(OpAnd, CondEq, ns_->indexes_[found]->Name(), found);
-			ce.values.push_back(KeyValue(d));
+			ce.values.push_back(Variant(d));
 			*first++ = ce;
 			cur = entries.erase(first, cur + 1);
 			first = cur--;
@@ -817,8 +820,8 @@ void NsSelecter::substituteCompositeIndexes(QueryEntries &entries) {
 void NsSelecter::updateCompositeIndexesValues(QueryEntries &qentries) {
 	for (QueryEntry &qe : qentries) {
 		if (qe.idxNo >= ns_->indexes_.firstCompositePos()) {
-			for (KeyValue &kv : qe.values) {
-				if (kv.Type() == KeyValueComposite) {
+			for (Variant &kv : qe.values) {
+				if (kv.Type() == KeyValueTuple) {
 					kv.convertToComposite(ns_->payloadType_, ns_->indexes_[qe.idxNo]->Fields());
 				}
 			}
@@ -831,7 +834,7 @@ SortingEntries NsSelecter::getOptimalSortOrder(const QueryEntries &entries) {
 	for (auto c = entries.begin(); c != entries.end(); c++) {
 		if (((c->idxNo != IndexValueType::SetByJsonPath) && (c->condition == CondGe || c->condition == CondGt || c->condition == CondLe ||
 															 c->condition == CondLt || c->condition == CondRange)) &&
-			!c->distinct && ns_->indexes_[c->idxNo]->IsOrdered()) {
+			!c->distinct && ns_->indexes_[c->idxNo]->IsOrdered() && !ns_->indexes_[c->idxNo]->Opts().IsArray()) {
 			if (!maxIdx || ns_->indexes_[c->idxNo]->Size() > maxIdx->Size()) {
 				maxIdx = ns_->indexes_[c->idxNo].get();
 			}
@@ -882,12 +885,12 @@ bool NsSelecter::mergeQueryEntries(QueryEntry *lhs, QueryEntry *rhs) {
 }
 
 KeyValueType NsSelecter::getQueryEntryIndexType(const QueryEntry &qentry) const {
-	KeyValueType keyType = KeyValueEmpty;
+	KeyValueType keyType = KeyValueNull;
 	if (!ns_->items_.empty()) {
 		Payload pl(ns_->payloadType_, ns_->items_[0]);
-		CJsonEncoder cjsonEncoder(ns_->tagsMatcher_, JsonPrintFilter());
-		KeyRefs krefs = cjsonEncoder.ExtractFieldValue(&pl, qentry.index, KeyValueUndefined);
-		if (krefs.size() > 0) keyType = krefs[0].Type();
+		VariantArray values;
+		pl.GetByJsonPath(qentry.index, ns_->tagsMatcher_, values, KeyValueUndefined);
+		if (values.size() > 0) keyType = values[0].Type();
 	}
 	return keyType;
 }
@@ -897,14 +900,17 @@ void NsSelecter::prepareSortingContext(const SortingEntries &sortBy, SelectCtx &
 		const SortingEntry &sortingEntry(sortBy[i]);
 		if (sortingEntry.index >= 0) {
 			Index *sortIndex = ns_->indexes_[sortingEntry.index].get();
-			if (!sortIndex) continue;
+			if (!sortIndex) {
+				if (i == 0) ctx.isForceAll = true;
+				continue;
+			}
 
 			SelectCtx::SortingCtx::Entry sortingCtx;
 			sortingCtx.data = &sortingEntry;
 			sortingCtx.index = sortIndex;
 
-			if (sortIndex->IsOrdered()) {
-				if (ctx.sortingCtx.entries.empty()) {
+			if (sortIndex->IsOrdered() && i == 0) {
+				if (ctx.sortingCtx.entries.empty() && ns_->sortOrdersBuilt_) {
 					ctx.sortingCtx.firstColumnSortId = sortIndex->SortId();
 				}
 				ns_->sortedQueriesCount_++;

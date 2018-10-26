@@ -3,8 +3,16 @@
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
+#include "estl/fast_hash_map.h"
 #include "tools/oscompat.h"
-#ifdef __linux__
+
+#ifdef HAVE_SELECT_LOOP
+#include <sys/select.h>
+#endif
+#ifdef HAVE_POLL_LOOP
+#include <sys/poll.h>
+#endif
+#ifdef HAVE_EPOLL_LOOP
 #include <sys/epoll.h>
 #endif
 
@@ -12,7 +20,7 @@ namespace reindexer {
 namespace net {
 namespace ev {
 
-#ifndef _WIN32
+#ifdef HAVE_POSIX_LOOP
 loop_posix_base::loop_posix_base() {}
 loop_posix_base::~loop_posix_base() {
 	if (async_fds_[0] >= 0) {
@@ -47,7 +55,9 @@ bool loop_posix_base::check_async(int fd) {
 	}
 	return false;
 }
+#endif
 
+#ifdef HAVE_SELECT_LOOP
 class loop_select_backend_private {
 public:
 	fd_set rfds_, wfds_;
@@ -111,9 +121,71 @@ int loop_select_backend::runonce(int64_t t) {
 }
 
 int loop_select_backend::capacity() { return FD_SETSIZE; }
+
 #endif
 
-#ifdef __linux__
+#ifdef HAVE_POLL_LOOP
+class loop_poll_backend_private {
+public:
+	std::vector<pollfd> fds_;
+};
+
+loop_poll_backend::loop_poll_backend() : private_(new loop_poll_backend_private) {}
+loop_poll_backend::~loop_poll_backend() {}
+
+void loop_poll_backend::init(dynamic_loop *owner) {
+	owner_ = owner;
+	private_->fds_.reserve(2048);
+	private_->fds_.resize(0);
+}
+
+void loop_poll_backend::set(int fd, int events, int /*oldevents*/) {
+	short ev = ((events & READ) ? POLLRDNORM : 0) | ((events & WRITE) ? POLLWRNORM : 0);
+	int &idx = owner_->fds_[fd].idx;
+
+	if (idx < 0) {
+		private_->fds_.push_back({fd, ev, 0});
+		idx = private_->fds_.size() - 1;
+	} else {
+		assert(private_->fds_.at(idx).fd == fd);
+		private_->fds_.at(idx).events = ev;
+		private_->fds_.at(idx).revents = 0;
+	}
+}
+
+void loop_poll_backend::stop(int fd) {
+	int &idx = owner_->fds_[fd].idx;
+	assert(idx >= 0 && !private_->fds_.empty());
+
+	if (static_cast<size_t>(idx) < private_->fds_.size() - 1) {
+		int tmpfd = private_->fds_.back().fd;
+		std::swap(private_->fds_.at(idx), private_->fds_.back());
+		owner_->fds_[tmpfd].idx = idx;
+	}
+
+	private_->fds_.pop_back();
+	owner_->fds_.at(fd).idx = -1;
+}
+
+int loop_poll_backend::runonce(int64_t t) {
+	int ret = poll(&private_->fds_[0], private_->fds_.size(), t);
+	if (ret < 1) return ret;
+
+	for (pollfd &pfd : private_->fds_) {
+		if (pfd.revents == 0) continue;
+		int events = ((pfd.revents & (POLLRDNORM | POLLHUP)) ? READ : 0) | ((pfd.revents & POLLWRNORM) ? WRITE : 0);
+		if (events) {
+			if (!check_async(pfd.fd)) owner_->io_callback(pfd.fd, events);
+			pfd.revents = 0;
+		}
+	}
+	return ret;
+}
+
+int loop_poll_backend::capacity() { return 500000; }
+#endif
+
+#ifdef HAVE_EPOLL_LOOP
 
 class loop_epoll_backend_private {
 public:
@@ -173,11 +245,9 @@ int loop_epoll_backend::runonce(int64_t t) {
 	return ret;
 }
 
-int loop_epoll_backend::capacity() { return 500000; }
-
 #endif
 
-#ifdef _WIN32
+#ifdef HAVE_WSA_LOOP
 struct win_fd {
 	HANDLE hEvent = INVALID_HANDLE_VALUE;
 	int fd = -1;
@@ -343,10 +413,7 @@ void dynamic_loop::run() {
 	}
 }
 
-void dynamic_loop::break_loop() {
-	//
-	break_ = true;
-}
+void dynamic_loop::break_loop() { break_ = true; }
 
 void dynamic_loop::set(int fd, io *watcher, int events) {
 	if (fd < 0) {
@@ -457,7 +524,7 @@ void dynamic_loop::send(async *watcher) {
 }
 
 void dynamic_loop::io_callback(int fd, int events) {
-	if (fd < 0 || fd > int(fds_.size())) {
+	if ((fd < 0) || (fd > int(fds_.size()))) {
 		return;
 	}
 

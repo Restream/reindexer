@@ -135,7 +135,7 @@ public:
 	const typename K::value_type *word_at(int idx) const { return &text_[words_[idx]]; }
 
 	int16_t word_len_at(int idx) const { return words_len_[idx].first; }
-	int16_t virtual_word_len(int idx) { return words_len_[idx].second; }
+	int16_t virtual_word_len(int idx) const { return words_len_[idx].second; }
 
 	void build() {
 		if (built_) return;
@@ -161,7 +161,9 @@ public:
 		text_.clear();
 		built_ = false;
 	}
-	size_type size() { return sa_.size(); }
+	size_type size() const { return sa_.size(); }
+	size_type word_size() const { return words_.size(); }
+
 	const K &text() const { return text_; }
 	size_t heap_size() {
 		return (sa_.capacity() + words_.capacity()) * sizeof(int) +			  //

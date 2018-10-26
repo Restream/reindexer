@@ -4,6 +4,7 @@
 #include <vector>
 #include "core/indexopts.h"
 #include "core/type_consts.h"
+#include "estl/h_vector.h"
 #include "tools/errors.h"
 
 union JsonValue;
@@ -16,20 +17,13 @@ using std::vector;
 class string_view;
 class WrSerializer;
 
-class JsonPaths : public vector<string> {
-public:
-	using vector::vector;
-	JsonPaths();
-	JsonPaths(const string_view &jsonPath);
-	void Set(const string_view &other);
-	void Set(const vector<string> &other);
-	string AsSerializedString() const;
-};
+using JsonPaths = h_vector<string, 0>;
 
 struct IndexDef {
 	IndexDef();
-	IndexDef(const string &name, const string_view &jsonPaths, const string &indexType, const string &fieldType, const IndexOpts opts);
-	IndexDef(const string &name, const string_view &jsonPaths, const IndexType type, const IndexOpts opts);
+	IndexDef(const string &name, const JsonPaths &jsonPaths, const string &indexType, const string &fieldType, const IndexOpts opts);
+	IndexDef(const string &name, const string &indexType, const string &fieldType, const IndexOpts opts);
+	IndexDef(const string &name, const JsonPaths &jsonPaths, const IndexType type, const IndexOpts opts);
 	bool operator==(const IndexDef &) const;
 	IndexType Type() const;
 	string getCollateMode() const;

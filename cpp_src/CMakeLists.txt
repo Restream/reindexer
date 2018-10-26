@@ -51,7 +51,7 @@ endif ()
 # Build project
 set(TARGET reindexer)
 
-set(REINDEXER_SOURCE_PATH ${PROJECT_SOURCE_DIR} )
+set(REINDEXER_SOURCE_PATH ${PROJECT_SOURCE_DIR})
 
 file (
   GLOB_RECURSE 
@@ -63,6 +63,7 @@ file (
     ${REINDEXER_SOURCE_PATH}/vendor/*
     ${REINDEXER_SOURCE_PATH}/debug/*
     ${REINDEXER_SOURCE_PATH}/net/*
+    ${REINDEXER_SOURCE_PATH}/replicator/*
 )
 
 include_directories(${REINDEXER_SOURCE_PATH})
@@ -166,6 +167,8 @@ if (WIN32)
   list(APPEND REINDEXER_LIBRARIES shlwapi dbghelp ws2_32)
 endif ()
 
+set (REINDEXER_LIBRARIES_GLOBAL ${REINDEXER_LIBRARIES} PARENT_SCOPE)
+
 # Get version string
 if(EXISTS ${PROJECT_SOURCE_DIR}/.git OR EXISTS ${PROJECT_SOURCE_DIR}/../.git )
   execute_process(WORKING_DIRECTORY ${REINDEXER_SOURCE_PATH} COMMAND git describe --tags OUTPUT_VARIABLE REINDEXER_VERSION_FULL OUTPUT_STRIP_TRAILING_WHITESPACE)
@@ -175,7 +178,16 @@ if (NOT REINDEXER_VERSION_FULL)
 set (REINDEXER_VERSION_FULL "0.0.0-localbuild")
 endif ()
 
-file(WRITE ${PROJECT_BINARY_DIR}/reindexer_version.h "#pragma once\n#define REINDEX_VERSION \"${REINDEXER_VERSION_FULL}\"\n")
+set (REINDEXER_VERSION_H "#pragma once\n#define REINDEX_VERSION \"${REINDEXER_VERSION_FULL}\"\n")
+
+if(EXISTS ${PROJECT_BINARY_DIR}/reindexer_version.h)
+   file(READ ${PROJECT_BINARY_DIR}/reindexer_version.h REINDEXER_VERSION_CUR_H)
+endif ()
+
+if (NOT REINDEXER_VERSION_CUR_H STREQUAL REINDEXER_VERSION_H)
+  file(WRITE ${PROJECT_BINARY_DIR}/reindexer_version.h ${REINDEXER_VERSION_H})
+endif ()
+
 include_directories(${PROJECT_BINARY_DIR})
 
 string ( REGEX REPLACE "(.*)([0-9]+)\\.([0-9]+)\\.([0-9]+)(.*)" "\\2.\\3.\\4" REINDEXER_VERSION ${REINDEXER_VERSION_FULL})
@@ -198,9 +210,16 @@ elseif (LINUX_ISSUE MATCHES "Ubuntu" OR LINUX_ISSUE MATCHES "Debian" OR LINUX_IS
   set(CPACK_GENERATOR "DEB")
 endif()
 
+SET(CPACK_PACKAGE_NAME "reindexer")
+SET(CPACK_PACKAGE_DESCRIPTION_SUMMARY "ReindexerDB server package")
 SET(CPACK_PACKAGE_VENDOR "Reindexer")
 SET(CPACK_PACKAGE_CONTACT "Oleg Gerasimov <ogerasimov@gmail.com>")
 SET(CPACK_PACKAGE_VERSION ${REINDEXER_VERSION})
+
+set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
+set(CPACK_RPM_COMPONENT_INSTALL ON)
+set(CPACK_DEB_COMPONENT_INSTALL ON)
+
 set(CPACK_RESOURCE_FILE_LICENSE ${REINDEXER_SOURCE_PATH}/../LICENSE)
 
 # Dependencies
@@ -256,3 +275,28 @@ add_custom_target(collect_coverage
   COMMAND genhtml coverage_filtered.info -o coverage_output
   COMMENT "Coollecting Reindexer coverage"
 )
+
+SET(DIST_INCLUDE_FILES
+  "tools/errors.h" "tools/serializer.h"
+  "core/reindexer.h" "core/type_consts.h" "core/item.h" "core/payload/payloadvalue.h" "core/indexopts.h"
+  "core/namespacedef.h" "core/keyvalue/variant.h" "core/sortingprioritiestable.h"
+  "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" 
+  "core/query/query.h" "core/query/querywhere.h" "core/query/queryresults.h" "core/indexdef.h" "core/query/aggregationresult.h"
+  "estl/h_vector.h" "estl/string_view.h"
+  "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h" 
+  "debug/backtrace.h" "debug/allocdebug.h"
+)
+
+foreach ( file ${DIST_INCLUDE_FILES} )
+    get_filename_component( dir ${file} DIRECTORY )
+    install( FILES ${PROJECT_SOURCE_DIR}/${file} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/reindexer/${dir} COMPONENT dev )
+endforeach()
+
+install(TARGETS ${TARGET}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    COMPONENT dev
+)
+
+include(CPack)

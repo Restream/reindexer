@@ -19,5 +19,7 @@ void parseJsonField(const char *name, string &ref, const JsonNode *elem);
 void parseJsonField(const char *name, bool &ref, const JsonNode *elem);
 template <typename T>
 void parseJsonField(const char *name, T &ref, const JsonNode *elem, double min, double max);
+template <typename T>
+void parseJsonField(const char *name, T &ref, const JsonNode *elem);
 
 }  // namespace reindexer

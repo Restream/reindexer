@@ -2,8 +2,6 @@ package reindexer
 
 import (
 	"strings"
-
-	"github.com/restream/reindexer/bindings"
 )
 
 const (
@@ -11,7 +9,7 @@ const (
 	MemstatsNamespaceName         = "#memstats"
 	NamespacesNamespaceName       = "#namespaces"
 	PerfstatsNamespaceName        = "#perfstats"
-	QueriesperfstatsNamespaceName = "#quriesperfstats"
+	QueriesperfstatsNamespaceName = "#queriesperfstats"
 )
 
 // Map from cond name to index type
@@ -51,7 +49,7 @@ var queryNames = map[int]string{
 }
 
 type IndexDescription struct {
-	bindings.IndexDef
+	IndexDef
 
 	IsSortable bool     `json:"is_sortable"`
 	IsFulltext bool     `json:"is_fulltext"`

@@ -21,7 +21,8 @@ enum class Root {
 	SelectFunctions,
 	ReqTotal,
 	NextOp,
-	Aggregations
+	Aggregations,
+	Explain
 };
 
 enum class Sort { Desc, Field, Values };

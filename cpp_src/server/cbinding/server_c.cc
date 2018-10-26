@@ -3,6 +3,7 @@
 #include <string.h>
 #include <locale>
 #include <string>
+#include "server/dbmanager.h"
 #include "server/server.h"
 
 using namespace reindexer_server;
@@ -12,19 +13,7 @@ using reindexer::Error;
 static shared_ptr<Server> svc;
 static Error err_not_init(-1, "Reindexer server has not initialized");
 
-struct server_access {
-	static Error get_reindexer_instance(const string& dbname, const string& user, const string& password, shared_ptr<Reindexer>& rx) {
-		Error err = err_not_init;
-		if (check_server_ready()) {
-			AuthContext ctx(user, password);
-			err = svc->dbMgr_->OpenDatabase(dbname, ctx, true);
-			if (err.ok()) err = ctx.GetDB(kRoleOwner, &rx);
-		}
-		return err;
-	}
-
-	static bool check_server_ready() { return svc && svc->storageLoaded_.load(); }
-};
+int check_server_ready() { return svc && svc->IsReady(); }
 
 static reindexer_error error2c(const Error& err_) {
 	reindexer_error err;
@@ -56,11 +45,16 @@ reindexer_error start_reindexer_server(reindexer_string _config) {
 	return error2c(err);
 }
 
-int check_server_ready() { return server_access::check_server_ready() ? 1 : 0; }
-
-reindexer_error get_reindexer_instance(reindexer_string _dbname, reindexer_string _user, reindexer_string _pass, uintptr_t* rx) {
+reindexer_error get_reindexer_instance(reindexer_string dbname, reindexer_string user, reindexer_string pass, uintptr_t* rx) {
 	shared_ptr<Reindexer> target_db;
-	Error err = server_access::get_reindexer_instance(str2c(_dbname), str2c(_user), str2c(_pass), target_db);
+
+	Error err = err_not_init;
+	if (check_server_ready()) {
+		AuthContext ctx(str2c(user), str2c(pass));
+		err = svc->GetDBManager().OpenDatabase(str2c(dbname), ctx, true);
+		if (err.ok()) err = ctx.GetDB(kRoleOwner, &target_db);
+	}
+
 	*rx = err.ok() ? reinterpret_cast<uintptr_t>(target_db.get()) : 0;
 	return error2c(err);
 }

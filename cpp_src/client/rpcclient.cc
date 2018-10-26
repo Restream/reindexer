@@ -57,27 +57,14 @@ void RPCClient::run() {
 	});
 	stop_.start();
 	for (int i = 0; i < config_.ConnPoolSize; i++) {
-		connections_.push_back(std::unique_ptr<cproto::ClientConnection>(new cproto::ClientConnection(loop_)));
+		connections_.push_back(std::unique_ptr<cproto::ClientConnection>(new cproto::ClientConnection(loop_, &uri_)));
 	}
 
+	if (curConnIdx_ == -1) curConnIdx_ = 0;
 	while (!terminate) {
-		checkConnections();
-		if (curConnIdx_ == -1) curConnIdx_ = 0;
 		loop_.run();
 	}
 	connections_.clear();
-}
-
-void RPCClient::checkConnections() {
-	for (auto& c : connections_) {
-		if (!c->IsValid()) {
-			string port = uri_.port().length() ? uri_.port() : string("6534");
-			string dbName = uri_.path();
-			if (dbName[0] == '/') dbName = dbName.substr(1);
-
-			c->Connect(uri_.hostname() + ":" + port, uri_.username(), uri_.password(), dbName);
-		}
-	}
 }
 
 Error RPCClient::AddNamespace(const NamespaceDef& nsDef) {
@@ -87,13 +74,10 @@ Error RPCClient::AddNamespace(const NamespaceDef& nsDef) {
 
 	if (!status.ok()) return status;
 
-	{
-		std::unique_lock<shared_timed_mutex> lock(nsMutex_);
-		namespaces_.emplace(nsDef.name, Namespace::Ptr(new Namespace(nsDef.name)));
-	}
+	std::unique_lock<shared_timed_mutex> lock(nsMutex_);
+	namespaces_.emplace(nsDef.name, Namespace::Ptr(new Namespace(nsDef.name)));
 
-	QueryResults qr;
-	return Select(Query(nsDef.name).Limit(1), qr);
+	return errOK;
 }
 
 Error RPCClient::OpenNamespace(const string& name, const StorageOpts& sopts) {
@@ -110,25 +94,36 @@ Error RPCClient::Delete(const string& ns, Item& item) { return modifyItem(ns, it
 
 Error RPCClient::modifyItem(const string& ns, Item& item, int mode) {
 	WrSerializer ser;
-	ser.PutVString(ns);
-	ser.PutVarUint(FormatCJson);
-	ser.PutSlice(item.GetCJSON());
-	ser.PutVarUint(item.impl_->GetPrecepts().size());
-	for (auto& p : item.impl_->GetPrecepts()) {
-		ser.PutVString(p);
-	}
-	auto conn = getConn();
-	auto ret = conn->Call(cproto::kCmdModifyItem, ser.Slice(), mode);
-
-	auto args = ret.GetArgs();
-	if (ret.Status().ok()) {
-		if (args.size() < 2) {
-			return Error(errParams, "Server returned %d args, but expected %d", int(args.size()), 1);
+	if (item.impl_->GetPrecepts().size()) {
+		ser.PutVarUint(item.impl_->GetPrecepts().size());
+		for (auto& p : item.impl_->GetPrecepts()) {
+			ser.PutVString(p);
 		}
-		NSArray nsArray{getNamespace(ns)};
-		QueryResults(conn, nsArray, p_string(args[0]), int(args[1]));
 	}
-	return ret.Status();
+
+	for (int tryCount = 0;; tryCount++) {
+		auto conn = getConn();
+		auto ret = conn->Call(cproto::kCmdModifyItem, ns, int(FormatCJson), item.GetCJSON(), mode, ser.Slice(), item.GetStateToken(), 0);
+		if (!ret.Status().ok()) {
+			if (ret.Status().code() != errStateInvalidated || tryCount > 2) return ret.Status();
+			QueryResults qr;
+			Select(Query(ns).Limit(0), qr);
+			auto newImpl = new ItemImpl(getNamespace(ns)->payloadType_, getNamespace(ns)->tagsMatcher_);
+			char* endp = nullptr;
+			Error err = newImpl->FromJSON(item.impl_->GetJSON(), &endp);
+			if (!err.ok()) return err;
+
+			item.impl_.reset(newImpl);
+			continue;
+		}
+		try {
+			auto args = ret.GetArgs(2);
+			NSArray nsArray{getNamespace(ns)};
+			return QueryResults(conn, nsArray, p_string(args[0]), int(args[1])).Status();
+		} catch (const Error& err) {
+			return err;
+		}
+	}
 }
 
 Item RPCClient::NewItem(const string& nsName) {
@@ -141,11 +136,15 @@ Item RPCClient::NewItem(const string& nsName) {
 }
 
 Error RPCClient::GetMeta(const string& ns, const string& key, string& data) {
-	auto ret = getConn()->Call(cproto::kCmdGetMeta, ns, key);
-	if (ret.Status().ok()) {
-		data = ret.GetArgs()[0].As<string>();
+	try {
+		auto ret = getConn()->Call(cproto::kCmdGetMeta, ns, key);
+		if (ret.Status().ok()) {
+			data = ret.GetArgs(1)[0].As<string>();
+		}
+		return ret.Status();
+	} catch (const Error& err) {
+		return err;
 	}
-	return ret.Status();
 }
 
 Error RPCClient::PutMeta(const string& ns, const string& key, const string_view& data) {
@@ -153,16 +152,20 @@ Error RPCClient::PutMeta(const string& ns, const string& key, const string_view&
 }
 
 Error RPCClient::EnumMeta(const string& ns, vector<string>& keys) {
-	auto ret = getConn()->Call(cproto::kCmdEnumMeta, ns);
-	if (ret.Status().ok()) {
-		auto args = ret.GetArgs();
-		keys.clear();
-		keys.reserve(args.size());
-		for (auto& k : args) {
-			keys.push_back(k.As<string>());
+	try {
+		auto ret = getConn()->Call(cproto::kCmdEnumMeta, ns);
+		if (ret.Status().ok()) {
+			auto args = ret.GetArgs();
+			keys.clear();
+			keys.reserve(args.size());
+			for (auto& k : args) {
+				keys.push_back(k.As<string>());
+			}
 		}
+		return ret.Status();
+	} catch (const Error& err) {
+		return err;
 	}
-	return ret.Status();
 }
 
 Error RPCClient::Delete(const Query& query, QueryResults& result) {
@@ -173,15 +176,6 @@ Error RPCClient::Delete(const Query& query, QueryResults& result) {
 	(void)result;
 	return ret.Status();
 }
-
-Error RPCClient::Select(const string& query, QueryResults& result) {
-	int flags = kResultsWithPayloadTypes | kResultsWithCJson;
-	auto ret = getConn()->Call(cproto::kCmdSelectSQL, query, flags, INT_MAX, int64_t(-1));
-
-	(void)result;
-	return ret.Status();
-}
-
 void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
 	// Get array of payload Type Versions
 
@@ -190,9 +184,26 @@ void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
 	return;
 }
 
+Error RPCClient::Select(const string& query, QueryResults& result) {
+	int flags = kResultsJson;
+	WrSerializer pser;
+	h_vector<int32_t, 4> vers;
+	vec2pack(vers, pser);
+
+	auto conn = getConn();
+	auto ret = conn->Call(cproto::kCmdSelectSQL, query, flags, INT_MAX, pser.Slice());
+
+	if (ret.Status().ok()) {
+		auto args = ret.GetArgs(2);
+		result = QueryResults(conn, {}, p_string(args[0]), int(args[1]));
+	}
+
+	return ret.Status();
+}
+
 Error RPCClient::Select(const Query& query, QueryResults& result) {
 	try {
-		int flags = kResultsWithPayloadTypes | kResultsWithCJson;
+		int flags = kResultsWithPayloadTypes | kResultsCJson;
 
 		WrSerializer qser, pser;
 		query.Serialize(qser);
@@ -201,17 +212,14 @@ Error RPCClient::Select(const Query& query, QueryResults& result) {
 		query.WalkNested(true, true, [this, &nsArray](const Query q) { nsArray.push_back(getNamespace(q._namespace)); });
 
 		h_vector<int32_t, 4> vers;
-		for (auto& ns : nsArray) vers.push_back(ns->tagsMatcher_.version() ^ ns->tagsMatcher_.cacheToken());
+		for (auto& ns : nsArray) vers.push_back(ns->tagsMatcher_.version() ^ ns->tagsMatcher_.stateToken());
 		vec2pack(vers, pser);
 
 		auto conn = getConn();
-		auto ret = conn->Call(cproto::kCmdSelect, qser.Slice(), flags, 100, int64_t(-1), pser.Slice());
+		auto ret = conn->Call(cproto::kCmdSelect, qser.Slice(), flags, 100, pser.Slice());
 
 		if (ret.Status().ok()) {
-			auto args = ret.GetArgs();
-			if (args.size() < 2) {
-				return Error(errParams, "Server returned %d args, but expected %d", int(args.size()), 1);
-			}
+			auto args = ret.GetArgs(2);
 			result = QueryResults(conn, nsArray, p_string(args[0]), int(args[1]));
 		}
 		return ret.Status();
@@ -221,10 +229,6 @@ Error RPCClient::Select(const Query& query, QueryResults& result) {
 }
 
 Error RPCClient::Commit(const string& ns) { return getConn()->Call(cproto::kCmdCommit, ns).Status(); }
-
-Error RPCClient::ConfigureIndex(const string& ns, const string& index, const string& config) {
-	return getConn()->Call(cproto::kCmdConfigureIndex, ns, index, config).Status();
-}
 
 Error RPCClient::AddIndex(const string& ns, const IndexDef& iDef) {
 	WrSerializer ser;
@@ -241,35 +245,34 @@ Error RPCClient::UpdateIndex(const string& ns, const IndexDef& iDef) {
 Error RPCClient::DropIndex(const string& ns, const string& idx) { return getConn()->Call(cproto::kCmdDropIndex, ns, idx).Status(); }
 
 Error RPCClient::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll) {
-	auto ret = getConn()->Call(cproto::kCmdEnumNamespaces, bEnumAll ? 1 : 0);
-	if (ret.Status().ok()) {
-		if (ret.GetArgs().size() < 1) {
-			return Error(errParams, "Server returned %d args, but expected %d", int(ret.GetArgs().size()), 1);
-		}
+	try {
+		auto ret = getConn()->Call(cproto::kCmdEnumNamespaces, bEnumAll ? 1 : 0);
+		if (ret.Status().ok()) {
+			auto json = ret.GetArgs(1)[0].As<string>();
+			JsonAllocator jalloc;
+			JsonValue jvalue;
+			char* endp;
 
-		auto json = ret.GetArgs()[0].As<string>();
-		JsonAllocator jalloc;
-		JsonValue jvalue;
-		char* endp;
+			int status = jsonParse(const_cast<char*>(json.c_str()), &endp, &jvalue, jalloc);
 
-		int status = jsonParse(const_cast<char*>(json.c_str()), &endp, &jvalue, jalloc);
-
-		if (status != JSON_OK) {
-			return Error(errParseJson, "Malformed JSON with namespace indexes");
-		}
-		for (auto elem : jvalue) {
-			if (!strcmp("items", elem->key) && elem->value.getTag() == JSON_ARRAY) {
-				for (auto nselem : elem->value) {
-					NamespaceDef def;
-					if (def.FromJSON(nselem->value).ok()) {
-						defs.push_back(def);
+			if (status != JSON_OK) {
+				return Error(errParseJson, "Malformed JSON with namespace indexes");
+			}
+			for (auto elem : jvalue) {
+				if (!strcmp("items", elem->key) && elem->value.getTag() == JSON_ARRAY) {
+					for (auto nselem : elem->value) {
+						NamespaceDef def;
+						if (def.FromJSON(nselem->value).ok()) {
+							defs.push_back(def);
+						}
 					}
 				}
 			}
 		}
+		return ret.Status();
+	} catch (const Error& err) {
+		return err;
 	}
-
-	return ret.Status();
 }
 
 shared_ptr<Namespace> RPCClient::getNamespace(const string& nsName) {
@@ -278,23 +281,17 @@ shared_ptr<Namespace> RPCClient::getNamespace(const string& nsName) {
 
 	if (nsIt == namespaces_.end()) {
 		nsIt = namespaces_.emplace(nsName, Namespace::Ptr(new Namespace(nsName))).first;
-		nsMutex_.unlock();
-		QueryResults qr;
-		Select(Query(nsName).Limit(1), qr);
-	} else {
-		nsMutex_.unlock();
 	}
+	nsMutex_.unlock();
 	assert(nsIt->second);
 	return nsIt->second;
 }
 
 net::cproto::ClientConnection* RPCClient::getConn() {
 	assert(connections_.size());
-	int count = connections_.size();
-	net::cproto::ClientConnection* conn = nullptr;
-	do {
-		conn = connections_.at(curConnIdx_++ % connections_.size()).get();
-	} while (!conn->IsValid() && count--);
+
+	auto conn = connections_.at(curConnIdx_++ % connections_.size()).get();
+	conn->Connect();
 	return conn;
 }
 

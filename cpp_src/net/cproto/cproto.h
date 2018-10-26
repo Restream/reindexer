@@ -16,7 +16,6 @@ enum CmdCode {
 	kCmdDropNamespace = 18,
 	kCmdAddIndex = 21,
 	kCmdEnumNamespaces = 22,
-	kCmdConfigureIndex = 23,
 	kCmdDropIndex = 24,
 	kCmdUpdateIndex = 25,
 
@@ -33,6 +32,9 @@ enum CmdCode {
 	kCmdPutMeta = 65,
 	kCmdEnumMeta = 66,
 
+	kCmdSubscribeUpdates = 90,
+	kCmdUpdates = 91,
+
 	kCmdCodeMax = 128
 };
 
@@ -42,14 +44,14 @@ const char *CmdName(CmdCode code);
 const uint32_t kMaxConcurentQueries = 256;
 
 const uint32_t kCprotoMagic = 0xEEDD1132;
-const uint32_t kCprotoVersion = 0x100;
+const uint32_t kCprotoVersion = 0x101;
 
 #pragma pack(push, 1)
 struct CProtoHeader {
 	uint32_t magic;
-	uint32_t version;
+	uint16_t version;
+	uint16_t cmd;
 	uint32_t len;
-	uint32_t cmd;
 	uint32_t seq;
 };
 #pragma pack(pop)

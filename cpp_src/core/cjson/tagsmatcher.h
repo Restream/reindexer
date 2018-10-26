@@ -16,22 +16,26 @@ public:
 
 	int name2tag(const char* name) const { return impl_->name2tag(name); }
 	int name2tag(const string& name, const string& path) { return impl_.clone()->name2tag(name, path, updated_); }
-	int name2tag(const char* name, bool canAdd) { return impl_.clone()->name2tag(name, canAdd, updated_); }
-	int tags2field(const int* path, size_t pathLen) const { return impl_->tags2field(path, pathLen); }
+	int name2tag(const char* name, bool canAdd) {
+		if (!name || !*name) return 0;
+		int res = impl_->name2tag(name);
+		return res ? res : impl_.clone()->name2tag(name, canAdd, updated_);
+	}
+	int tags2field(const int16_t* path, size_t pathLen) const { return impl_->tags2field(path, pathLen); }
 	const string& tag2name(int tag) const { return impl_->tag2name(tag); }
 	TagsPath path2tag(const string& jsonPath) const { return impl_->path2tag(jsonPath); }
 	int version() const { return impl_->version(); }
 	size_t size() const { return impl_->size(); }
 	bool isUpdated() const { return updated_; }
-	uint32_t cacheToken() const { return impl_->cacheToken(); }
+	uint32_t stateToken() const { return impl_->stateToken(); }
 	void clear() { impl_.clone()->clear(); }
 	void serialize(WrSerializer& ser) const { impl_->serialize(ser); }
 	void deserialize(Serializer& ser) {
 		impl_.clone()->deserialize(ser);
 		impl_.clone()->buildTagsCache(updated_);
 	}
-	void deserialize(Serializer& ser, int version, int cacheToken) {
-		impl_.clone()->deserialize(ser, version, cacheToken);
+	void deserialize(Serializer& ser, int version, int stateToken) {
+		impl_.clone()->deserialize(ser, version, stateToken);
 		impl_.clone()->buildTagsCache(updated_);
 	}
 	void clearUpdated() { updated_ = false; }

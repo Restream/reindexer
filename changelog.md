@@ -1,3 +1,44 @@
+# Version 1.10.0 (26.10.2018)
+
+## Core
+
+- [fea] Added explain query feauture
+- [fea] Added min, max, factes aggregation feature
+- [fea] Added EqualPosition query function
+- [fea] Incremental fulltext index build
+- [fea] SQL query parser/printer is NULL condition
+- [fea] Native bool data type
+- [fea] Filter nested fields in SelectFilter statememnt
+- [fix] Fix crash on comparator with Join queries
+- [fix] Incorrect sort order using with Join queries in join cache optimiztion step 
+- [ref] Composite indexes now using json_paths for list of fields
+- [ref] Storage format has been changed
+
+## Go connector
+
+- [fea] reindexer.Status method added, to check connector status after initialization
+- [fea] OpenNamespace now register namespace <-> struct mapping without server connection requiriment
+- [fix] int type is now converted to int32/int64 depends on architectire
+
+## Python connector
+
+- [fea] [Python connector](connectors/py_reindexer) v.0.0.1 is released.
+
+## Reindexer server
+
+- [fea] Added fields filter to method GET /api/v1/:db/:namespace:/items mathed
+- [fea] Added method DELETE /api/v1/:db/query
+- [fea] Added poll loop backend (osx,bsd)
+- [ref] `json_path` renamed to `json_paths`, and now array
+- [ref] Binary cproto protocol has been optimized and changed
+- [fix] EnumMeta method has been fixed
+- [fix] ModifyItem will retry attempt if tags <-> names state is invalidated
+
+## Face
+
+- [fea] Added EXPLAIN query stats view
+- [fea] Added tags selector component for json_paths to index create/modify form
+
 # Version 1.9.7 (28.09.2018)
 
 ## Core

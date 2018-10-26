@@ -2,7 +2,7 @@
 #include "core/ft/ftsetcashe.h"
 #include "core/idset.h"
 #include "core/idsetcache.h"
-#include "core/keyvalue/keyvalue.h"
+#include "core/keyvalue/variant.h"
 #include "core/query/querycache.h"
 #include "joincache.h"
 #include "tools/logger.h"

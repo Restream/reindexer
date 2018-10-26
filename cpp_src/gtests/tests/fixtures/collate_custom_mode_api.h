@@ -8,10 +8,10 @@ protected:
 		auto err = reindexer->OpenNamespace(nsName, StorageOpts().Enabled(false));
 		EXPECT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->AddIndex(nsName, {kFieldID, "", "hash", "int", IndexOpts().PK()});
+		err = reindexer->AddIndex(nsName, {kFieldID, "hash", "int", IndexOpts().PK()});
 		EXPECT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->AddIndex(nsName, {kFieldName, "", "hash", "string", IndexOpts(sortOrder).SetCollateMode(CollateCustom)});
+		err = reindexer->AddIndex(nsName, {kFieldName, "hash", "string", IndexOpts(sortOrder).SetCollateMode(CollateCustom)});
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		err = reindexer->Commit(nsName);

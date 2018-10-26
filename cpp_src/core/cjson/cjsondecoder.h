@@ -13,21 +13,17 @@ class WrSerializer;
 class CJsonDecoder {
 public:
 	CJsonDecoder(TagsMatcher &tagsMatcher);
-	CJsonDecoder(TagsMatcher &tagsMatcher, const FieldsSet &filter);
+	CJsonDecoder(TagsMatcher &tagsMatcher, const FieldsSet *filter);
 
 	Error Decode(Payload *pl, Serializer &rdSer, WrSerializer &wrSer);
 
 protected:
-	bool decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrser);
+	bool decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrser, bool match);
 
 	TagsMatcher &tagsMatcher_;
-	FieldsSet filter_;
-	h_vector<int, 8> tagsPath_;
+	const FieldsSet *filter_;
+	TagsPath tagsPath_;
 	Error lastErr_;
 };
-
-void skipCjsonTag(ctag tag, Serializer &rdser);
-void copyCJsonValue(int tagType, Serializer &rdser, WrSerializer &wrser);
-KeyRef cjsonValueToKeyRef(int tag, Serializer &rdser, const PayloadFieldType &pt, Error &err);
 
 }  // namespace reindexer

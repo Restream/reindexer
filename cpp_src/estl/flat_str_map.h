@@ -3,7 +3,7 @@
 #include "tools/customhash.h"
 
 namespace reindexer {
-const unsigned kMultiValueLinkFlag = 0x40000000;
+const unsigned kMultiValueLinkFlag = 0x80000000;
 
 template <typename K, typename V, bool Multi = false>
 class flat_str_map {
@@ -198,6 +198,12 @@ public:
 		buf_.reserve(str_sz);
 		if (Multi) multi_.reserve(map_sz / 10);
 	}
+	void grow(size_t map_sz, size_t str_sz) {
+		map_.reserve(map_.size() + map_sz);
+		buf_.reserve(buf_.size() + str_sz);
+		if (Multi) multi_.reserve(multi_.size() + map_sz / 10);
+	}
+
 	size_t size() const { return map_.size(); }
 	size_t heap_size() const { return buf_.capacity() + map_.size() * sizeof(V) + multi_.capacity() * sizeof(multi_node); }
 

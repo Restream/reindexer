@@ -9,7 +9,7 @@
 #include <string>
 
 #include "allocs_tracker.h"
-#include "core/keyvalue/keyarray.h"
+#include "core/keyvalue/variant.h"
 #include "core/namespacedef.h"
 #include "core/reindexer.h"
 #include "sequence.h"
@@ -25,8 +25,8 @@ using benchmark::internal::Benchmark;
 using reindexer::Error;
 using reindexer::IndexDef;
 using reindexer::Item;
-using reindexer::KeyRef;
-using reindexer::KeyRefs;
+using reindexer::Variant;
+using reindexer::VariantArray;
 using reindexer::NamespaceDef;
 using reindexer::Reindexer;
 
@@ -48,11 +48,6 @@ public:
 
 	BaseFixture(Reindexer* db, NamespaceDef& nsdef, size_t maxItems, size_t idStart = 1, bool useBenchamrkPrefixName = true)
 		: db_(db), nsdef_(nsdef), id_seq_(make_shared<Sequence>(idStart, maxItems, 1)), useBenchamrkPrefixName_(useBenchamrkPrefixName) {}
-
-	virtual BaseFixture& AddIndex(const string& name, const string& jsonPath, const string& indexType, const string& fieldType,
-								  IndexOpts opts = IndexOpts());
-
-	virtual BaseFixture& AddIndex(const IndexDef& index);
 
 	virtual Error Initialize();
 

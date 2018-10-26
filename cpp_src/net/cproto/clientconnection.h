@@ -7,7 +7,7 @@
 #include "cproto.h"
 #include "estl/h_vector.h"
 #include "net/connection.h"
-
+#include "urlparser/urlparser.h"
 namespace reindexer {
 namespace net {
 namespace cproto {
@@ -19,9 +19,11 @@ class ClientConnection;
 class RPCAnswer {
 public:
 	Error Status();
-	Args GetArgs();
+	Args GetArgs(int minArgs = 0);
 
 protected:
+	RPCAnswer() {}
+	RPCAnswer(const Error &error) : status_(error) {}
 	Error status_;
 	h_vector<uint8_t, 32> data_;
 	friend class ClientConnection;
@@ -29,7 +31,7 @@ protected:
 
 class ClientConnection : public ConnectionMT {
 public:
-	ClientConnection(ev::dynamic_loop &loop);
+	ClientConnection(ev::dynamic_loop &loop, const httpparser::UrlParser *uri);
 
 	template <typename... Argss>
 	RPCAnswer Call(CmdCode cmd, Argss... argss) {
@@ -38,28 +40,27 @@ public:
 		return call(cmd, args, argss...);
 	}
 
-	bool Connect(string_view addr, string_view username, string_view password, string_view dbName);
-	// bool IsValid() { return sock_.valid(); }
-
-	bool IsValid() {
-		std::unique_lock<mutex> lck(wrBufLock_);
-		return state_ == ConnConnected || state_ == ConnConnecting;
-	}
+	void Connect();
 
 protected:
+	void connect_async_cb(ev::async &) { connectInternal(); }
+
+	bool connectInternal();
+	void failInternal(const Error &error);
+
 	template <typename... Argss>
 	inline RPCAnswer call(CmdCode cmd, Args &args, const string_view &val, Argss... argss) {
-		args.push_back(KeyRef(p_string(&val)));
+		args.push_back(Variant(p_string(&val)));
 		return call(cmd, args, argss...);
 	}
 	template <typename... Argss>
 	inline RPCAnswer call(CmdCode cmd, Args &args, const string &val, Argss... argss) {
-		args.push_back(KeyRef(p_string(&val)));
+		args.push_back(Variant(p_string(&val)));
 		return call(cmd, args, argss...);
 	}
 	template <typename T, typename... Argss>
 	inline RPCAnswer call(CmdCode cmd, Args &args, const T &val, Argss... argss) {
-		args.push_back(KeyRef(val));
+		args.push_back(Variant(val));
 		return call(cmd, args, argss...);
 	}
 
@@ -82,6 +83,9 @@ protected:
 
 	std::atomic<uint32_t> seq_;
 	std::condition_variable answersCond_;
+	Error lastError_;
+	const httpparser::UrlParser *uri_;
+	ev::async connect_async_;
 };
 }  // namespace cproto
 }  // namespace net

@@ -102,7 +102,8 @@ void ApiTvSimple::WarmUpIndexes(State& state) {
 	for (auto _ : state) {
 		Error err;
 
-		{
+		// Ensure indexes complete build
+		for (int i = 0; i < 10; i++) {
 			QueryResults qres;
 			Query q(nsdef_.name);
 			q.Where("year", CondEq, 1).Sort("year", false).Limit(1);

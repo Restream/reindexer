@@ -163,12 +163,6 @@ protected:
 	bool usingBtree_ = false;
 };
 
-class IdSetRef : public h_vector_view<IdType> {
-public:
-	template <typename IdSetT>
-	IdSetRef(const IdSetT *ids) : h_vector_view<IdType>(ids->data(), ids->size()) {}
-	IdSetRef(const IdType *data, size_t len) : h_vector_view<IdType>(data, len) {}
-	IdSetRef() {}
-};
+using IdSetRef = span<IdType>;
 
 }  // namespace reindexer

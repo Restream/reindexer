@@ -14,24 +14,22 @@ using benchmark::AllocsTracker;
 class ApiTvComposite : protected BaseFixture {
 public:
 	ApiTvComposite(Reindexer* db, const string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
-		AddIndex("id", "id", "hash", "int", IndexOpts().PK());
-		AddIndex("sub_id", "sub_id", "tree", "string", IndexOpts().SetCollateMode(CollateNumeric).PK());
-		AddIndex("name", "name", "hash", "string", IndexOpts().SetCollateMode(CollateUTF8));
-		AddIndex("year", "year", "tree", "int", IndexOpts());
-		AddIndex("genre", "genre", "hash", "string", IndexOpts().SetCollateMode(CollateNumeric));
-		AddIndex("age", "age", "hash", "int", IndexOpts());
-		AddIndex("rate", "rate", "tree", "double", IndexOpts());
-		AddIndex("location", "location", "hash", "string", IndexOpts().SetCollateMode(CollateASCII));
-		AddIndex("start_time", "start_time", "tree", "int64", IndexOpts());
-		AddIndex("end_time", "end_time", "tree", "int64", IndexOpts());
-		AddIndex("tmp", "tmp", "-", "string", IndexOpts());
-
-		AddIndex("id+sub_id", "", "hash", "composite", IndexOpts());  // IntInt Tree
-		AddIndex("id+year", "", "tree", "composite", IndexOpts());	// IntInt Tree
-		AddIndex("id+name", "", "tree", "composite", IndexOpts());	// IntStr Tree
-
-		AddIndex("id+start_time", "", "hash", "composite", IndexOpts());  // IntInt Hash
-		AddIndex("id+genre", "", "hash", "composite", IndexOpts());		  // IntStr Hash
+		nsdef_.AddIndex("id", "hash", "int", IndexOpts())
+			.AddIndex("sub_id", "tree", "string", IndexOpts().SetCollateMode(CollateNumeric))
+			.AddIndex("name", "hash", "string", IndexOpts().SetCollateMode(CollateUTF8))
+			.AddIndex("year", "tree", "int", IndexOpts())
+			.AddIndex("genre", "hash", "string", IndexOpts().SetCollateMode(CollateNumeric))
+			.AddIndex("age", "hash", "int", IndexOpts())
+			.AddIndex("rate", "tree", "double", IndexOpts())
+			.AddIndex("location", "hash", "string", IndexOpts().SetCollateMode(CollateASCII))
+			.AddIndex("start_time", "tree", "int64", IndexOpts())
+			.AddIndex("end_time", "tree", "int64", IndexOpts())
+			.AddIndex("tmp", "-", "string", IndexOpts())
+			.AddIndex("id+sub_id", {"id", "sub_id"}, "hash", "composite", IndexOpts().PK())
+			.AddIndex("id+year", {"id", "year"}, "tree", "composite", IndexOpts())
+			.AddIndex("id+name", {"id", "name"}, "tree", "composite", IndexOpts())
+			.AddIndex("id+start_time", {"id", "start_time"}, "hash", "composite", IndexOpts())
+			.AddIndex("id+genre", {"id", "genre"}, "hash", "composite", IndexOpts());
 
 		//		AddIndex("sub_id+name", "", "tree", "composite", IndexOpts());
 		//		AddIndex("genre+rate", "", "tree", "composite", IndexOpts());  // collate numeric and double

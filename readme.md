@@ -44,6 +44,8 @@ The core is written in C++ and the application level API is in Go.
 	- [Turn on logger](#turn-on-logger)
 	- [Debug queries](#debug-queries)
 	- [Profiling](#profiling)
+- [Integration with other program languages](#integration-with-other-program-languages)
+	- [Pyreindexer](#pyreindexer)
 - [Limitations and known issues](#limitations-and-known-issues)
 - [Getting help](#getting-help)
 
@@ -339,32 +341,34 @@ func (item *ItemWithJoin) Join(field string, subitems []interface{}, context int
 ```
 ### Complex Primary Keys and Composite Indexes
 
-A Document can have multiple fields as a primary key. Reindexer checks unique composition of all pk fields during upserts:
+A Document can have multiple fields as a primary key. To enable this feature add composite index to struct.
+Composite index is an index that involves multiple fields, it can be used instead of several separate indexes.
+
 
 ```go
 type Item struct {
-	ID    int64 `reindex:"id,,pk"`     // 'id' is a part of a primary key
-	SubID int   `reindex:"sub_id,,pk"` // 'sub_id' is a part of a primary key
+	ID    int64 `reindex:"id"`     // 'id' is a part of a primary key
+	SubID int   `reindex:"sub_id"` // 'sub_id' is a part of a primary key
 	// Fields
 	//	....
+	// Composite index
+	_ struct{} `reindex:"id+sub_id,,composite,pk"`
 }
 ```
 
-Too complex primary key (>2 fields) can slow down upsert and select operations, because Reindexer has to perform separate selects to each index, and intersect results.
-
-Composite index is an index that involves multiple fields, it can be used instead of several separate indexes.
+OR
 
 ```go
 type Item struct {
-	ID       int64 `reindex:"id,-,pk"`         // 'id' is a part of primary key, WITHOUT personal searchable index
-	SubID    int   `reindex:"sub_id,-,pk"`     // 'sub_id' is a part of a primary key, WITHOUT a personal searchable index
-	SubSubID int   `reindex:"sub_sub_id,-,pk"` // 'sub_sub_id' is a part of a primary key WITHOUT a personal searchable index
+	ID       int64 `reindex:"id,-"`         // 'id' is a part of primary key, WITHOUT personal searchable index
+	SubID    int   `reindex:"sub_id,-"`     // 'sub_id' is a part of a primary key, WITHOUT a personal searchable index
+	SubSubID int   `reindex:"sub_sub_id,-"` // 'sub_sub_id' is a part of a primary key WITHOUT a personal searchable index
 
 	// Fields
 	// ....
 
 	// Composite index
-	_ struct{} `reindex:"id+sub_id+sub_sub_id,,composite"`
+	_ struct{} `reindex:"id+sub_id+sub_sub_id,,composite,pk"`
 }
 
 ```
@@ -398,8 +402,30 @@ For make query to the composite index, pass []interface{} to `.WhereComposite` f
 
 ### Aggregations
 
-Reindexer allows to do aggregation queries. Currently Average and Sum aggregations are supported. To support aggregation `Query` has 2 methods: `Aggregate` and `GetAggreatedValue`.
-`Aggregate` should be called before Query execution - to ask reindexer calculate aggregation and `GetAggreatedValue` after Query execution to obtain aggregated value
+Reindexer allows to do aggregation queries. Currently Average and Sum aggregations are supported. To support aggregation `Query` has method: 
+`Aggregate` should be called before Query execution - to ask reindexer calculate aggregation. 
+
+To get aggregation results `Iterator` had method `AggResults`, it is available after query execution, and returns slice of reults.
+
+There are 3 aggregations availavle
+
+- `AggMax` - get maximum field value
+- `AggMin` - get manimum field value
+- `AggSum` - get sum field value
+- `AggAvg` - get averatge field value
+- `AggFacet` - get field facet value
+
+```go
+
+	iterator := db.Query ("items").Aggregate ("name",reindexer.AggFacet).Exec ()
+
+	aggRes := iterator.AggResults()[0]
+
+	for facet := range aggRes.Facets {
+		fmt.Printf ("%s -> %d",facet.Value, facet.Count)
+	}
+
+```
 
 ### Atomic on update functions
 
@@ -537,10 +563,12 @@ func (Logger) Printf(level int, format string, msg ...interface{}) {
 Another useful feature is debug print of processed Queries. To debug print queries details there are 2 methods:
 - `db.SetDefaultQueryDebug(namespace string,level int)` - it globally enables print details of all queries by namespace
 - `query.Debug(level int)` - print details of query execution
-
 `level` is level of verbosity:
 - `reindexer.INFO` - will print only query conditions
 - `reindexer.TRACE` - will print query conditions and execution details with timings
+
+- `query.Explain ()` - calculate and store query execution details.
+- `iterator.GetExplainResults ()` - return query execution details
 
 ### Profiling
 
@@ -564,6 +592,17 @@ go func() {
 4. Then use the pprof tool to look at the heap profile:
 ```bash
 pprof -symbolize remote http://localhost:6060/debug/cgo/pprof/heap
+```
+
+## Integration with other program languages
+
+A list of connectors for work with Reindexer via other program languages (TBC later):
+
+1. [Pyreindexer](https://github.com/Restream/reindexer/tree/master/connectors/py_reindexer) for Python (version >=3.6 is required). For setup run:
+
+```bash
+pip3 install git+https://github.com/Restream/reindexer.git
+
 ```
 
 ## Limitations and known issues

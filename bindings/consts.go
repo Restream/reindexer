@@ -20,8 +20,11 @@ const (
 	INFO    = 3
 	TRACE   = 4
 
-	AggSum = 0
-	AggAvg = 1
+	AggSum   = 0
+	AggAvg   = 1
+	AggFacet = 2
+	AggMin   = 3
+	AggMax   = 4
 
 	CollateNone    = 0
 	CollateASCII   = 1
@@ -36,11 +39,15 @@ const (
 	OpAnd = 2
 	OpNot = 3
 
-	ValueInt       = 0
-	ValueInt64     = 1
+	ValueInt64     = 0
+	ValueDouble    = 1
 	ValueString    = 2
-	ValueDouble    = 3
-	ValueComposite = 6
+	ValueBool      = 3
+	ValueNull      = 4
+	ValueInt       = 8
+	ValueUndefined = 9
+	ValueComposite = 10
+	ValueTuple     = 11
 
 	QueryCondition      = 0
 	QueryDistinct       = 1
@@ -54,6 +61,8 @@ const (
 	QuerySelectFilter   = 9
 	QuerySelectFunction = 10
 	QueryEnd            = 11
+	QueryExplain        = 12
+	QueryEqualPosition  = 13
 
 	LeftJoin    = 0
 	InnerJoin   = 1
@@ -76,11 +85,21 @@ const (
 	ModeCachedTotal   = 1
 	ModeAccurateTotal = 2
 
-	ResultsPure             = 0
-	ResultsWithPtrs         = 1
-	ResultsWithCJson        = 2
-	ResultsWithJson         = 3
-	ResultsWithPayloadTypes = 8
+	QueryResultEnd         = 0
+	QueryResultAggregation = 1
+	QueryResultExplain     = 2
+
+	ResultsFormatMask = 0xF
+	ResultsPure       = 0x0
+	ResultsPtrs       = 0x1
+	ResultsCJson      = 0x2
+	ResultsJson       = 0x3
+
+	ResultsWithPayloadTypes = 0x10
+	ResultsWithItemID       = 0x20
+	ResultsWithPercents     = 0x40
+	ResultsWithNsID         = 0x80
+	ResultsWithJoined       = 0x100
 
 	IndexOptPK         = 1 << 7
 	IndexOptArray      = 1 << 6
@@ -92,12 +111,19 @@ const (
 	StorageOptDropOnFileFormatError = 1 << 1
 	StorageOptCreateIfMissing       = 1 << 2
 
-	ErrOK        = 0
-	ErrParseSQL  = 1
-	ErrQueryExec = 2
-	ErrParams    = 3
-	ErrLogic     = 4
-	ErrParseJson = 5
-	ErrParseDSL  = 6
-	ErrConflict  = 7
+	ErrOK               = 0
+	ErrParseSQL         = 1
+	ErrQueryExec        = 2
+	ErrParams           = 3
+	ErrLogic            = 4
+	ErrParseJson        = 5
+	ErrParseDSL         = 6
+	ErrConflict         = 7
+	ErrParseBin         = 8
+	ErrForbidden        = 9
+	ErrWasRelock        = 10
+	ErrNotValid         = 11
+	ErrNetwork          = 12
+	ErrNotFound         = 13
+	ErrStateInvalidated = 14
 )

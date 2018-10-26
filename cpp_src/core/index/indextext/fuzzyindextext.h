@@ -5,6 +5,7 @@
 #include "core/ft/ftsetcashe.h"
 #include "core/ft/idrelset.h"
 #include "indextext.h"
+
 namespace reindexer {
 using search_engine::SearchEngine;
 using std::pair;
@@ -13,13 +14,9 @@ using std::unique_ptr;
 template <typename T>
 class FuzzyIndexText : public IndexText<T> {
 public:
-	FuzzyIndexText(IndexType _type, const string& _name, const IndexOpts& opts) : IndexText<T>(_type, _name, opts) { CreateConfig(); }
 	FuzzyIndexText(const FuzzyIndexText<T>& other) : IndexText<T>(other) { CreateConfig(other.GetConfig()); }
 
-	template <typename U = T>
-	FuzzyIndexText(IndexType _type, const string& _name, const IndexOpts& opts, const PayloadType payloadType, const FieldsSet& fields,
-				   typename std::enable_if<is_payload_unord_map_key<U>::value>::type* = 0)
-		: IndexText<T>(_type, _name, opts, payloadType, fields) {
+	FuzzyIndexText(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields) : IndexText<T>(idef, payloadType, fields) {
 		CreateConfig();
 	}
 
@@ -30,10 +27,12 @@ public:
 protected:
 	FtFuzzyConfig* GetConfig() const;
 	void CreateConfig(const FtFuzzyConfig* cfg = nullptr);
+
 	SearchEngine engine_;
+	vector<VDocEntry> vdocs_;
+
 };  // namespace reindexer
 
-Index* FuzzyIndexText_New(IndexType type, const string& _name, const IndexOpts& opts, const PayloadType payloadType,
-						  const FieldsSet& fields_);
+Index* FuzzyIndexText_New(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields);
 
 }  // namespace reindexer

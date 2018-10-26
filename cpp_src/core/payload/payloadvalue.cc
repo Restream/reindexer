@@ -1,7 +1,7 @@
 #include "payloadvalue.h"
+#include <chrono>
 #include "string.h"
 #include "tools/errors.h"
-
 namespace reindexer {
 
 PayloadValue::PayloadValue(size_t size, const uint8_t *ptr, size_t cap) : p_(nullptr) {
@@ -27,7 +27,7 @@ uint8_t *PayloadValue::alloc(size_t cap) {
 	new (nheader) dataHeader();
 	nheader->cap = cap;
 	if (p_) {
-		nheader->version = header()->version;
+		nheader->lsn = header()->lsn;
 	}
 
 	return pn;
@@ -41,12 +41,12 @@ void PayloadValue::release() {
 	p_ = nullptr;
 }
 
-void PayloadValue::AllocOrClone(size_t size) {
-	// If we have exclusive data - just up version
+void PayloadValue::Clone(size_t size) {
+	// If we have exclusive data - just up lsn
 	if (p_ && header()->refcount.load() == 1) {
-		header()->version++;
 		return;
 	}
+	assert(size || p_);
 
 	auto pn = alloc(p_ ? header()->cap : size);
 	if (p_) {
@@ -59,7 +59,6 @@ void PayloadValue::AllocOrClone(size_t size) {
 	}
 
 	p_ = pn;
-	header()->version++;
 }
 
 void PayloadValue::Resize(size_t oldSize, size_t newSize) {

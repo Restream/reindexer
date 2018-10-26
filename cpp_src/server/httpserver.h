@@ -30,6 +30,7 @@ public:
 	int DocHandler(http::Context &ctx);
 	int Check(http::Context &ctx);
 	int PostQuery(http::Context &ctx);
+	int DeleteQuery(http::Context &ctx);
 	int GetSQLQuery(http::Context &ctx);
 	int PostSQLQuery(http::Context &ctx);
 	int GetDatabases(http::Context &ctx);

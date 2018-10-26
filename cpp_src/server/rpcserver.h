@@ -2,12 +2,13 @@
 
 #include <memory>
 #include "core/cbinding/resultserializer.h"
-#include "core/keyvalue/keyref.h"
+#include "core/keyvalue/variant.h"
 #include "core/reindexer.h"
 #include "dbmanager.h"
 #include "loggerwrapper.h"
 #include "net/cproto/dispatcher.h"
 #include "net/listener.h"
+#include "replicator/updatesobserver.h"
 
 namespace reindexer_server {
 
@@ -22,7 +23,7 @@ struct RPCClientData : public cproto::ClientData {
 	int connID;
 };
 
-class RPCServer {
+class RPCServer : reindexer::IUpdatesObserver {
 public:
 	RPCServer(DBManager &dbMgr, LoggerWrapper logger, bool allocDebug = false);
 	~RPCServer();
@@ -44,25 +45,33 @@ public:
 	Error AddIndex(cproto::Context &ctx, p_string ns, p_string indexDef);
 	Error UpdateIndex(cproto::Context &ctx, p_string ns, p_string indexDef);
 	Error DropIndex(cproto::Context &ctx, p_string ns, p_string index);
-	Error ConfigureIndex(cproto::Context &ctx, p_string ns, p_string index, p_string config);
 
 	Error Commit(cproto::Context &ctx, p_string ns);
 
-	Error ModifyItem(cproto::Context &ctx, p_string itemPack, int mode);
+	Error ModifyItem(cproto::Context &ctx, p_string nsName, int format, p_string itemData, int mode, p_string percepsPack, int stateToken,
+					 int txID);
 	Error DeleteQuery(cproto::Context &ctx, p_string query);
 
-	Error Select(cproto::Context &ctx, p_string query, int flags, int limit, int64_t fetchDataMask, p_string ptVersions);
-	Error SelectSQL(cproto::Context &ctx, p_string query, int flags, int limit, int64_t fetchDataMask, p_string ptVersions);
-	Error FetchResults(cproto::Context &ctx, int reqId, int flags, int offset, int limit, int64_t fetchDataMask);
+	Error Select(cproto::Context &ctx, p_string query, int flags, int limit, p_string ptVersions);
+	Error SelectSQL(cproto::Context &ctx, p_string query, int flags, int limit, p_string ptVersions);
+	Error FetchResults(cproto::Context &ctx, int reqId, int flags, int offset, int limit);
 	Error CloseResults(cproto::Context &ctx, int reqId);
 
 	Error GetMeta(cproto::Context &ctx, p_string ns, p_string key);
 	Error PutMeta(cproto::Context &ctx, p_string ns, p_string key, p_string data);
 	Error EnumMeta(cproto::Context &ctx, p_string ns);
+	Error SubscribeUpdates(cproto::Context &ctx, int subscribe);
 
 	Error CheckAuth(cproto::Context &ctx);
 	void Logger(cproto::Context &ctx, const Error &err, const cproto::Args &ret);
 	void OnClose(cproto::Context &ctx, const Error &err);
+
+	Error OnModifyItem(const string &nsName, ItemImpl *item, int modifyMode) override;
+	Error OnNewNamespace(const string &nsName) override;
+	Error OnModifyIndex(const string &nsName, const IndexDef &idx, int modifyMode) override;
+	Error OnDropIndex(const string &nsName, const string &indexName) override;
+	Error OnDropNamespace(const string &nsName) override;
+	Error OnPutMeta(const string &nsName, const string &key, const string &data) override;
 
 protected:
 	Error sendResults(cproto::Context &ctx, QueryResults &qr, int reqId, const ResultFetchOpts &opts);

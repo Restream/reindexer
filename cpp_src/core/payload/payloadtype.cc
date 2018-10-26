@@ -1,6 +1,6 @@
 #include "payloadtype.h"
-#include "core/keyvalue/keyvalue.h"
-
+#include "core/keyvalue/key_string.h"
+#include "core/keyvalue/variant.h"
 namespace reindexer {
 
 size_t PayloadTypeImpl::TotalSize() const {
@@ -14,7 +14,7 @@ string PayloadTypeImpl::ToString() const {
 	string ret;
 
 	for (auto &f : fields_) {
-		ret += string(KeyValue::TypeName(f.Type())) + (f.IsArray() ? "[]" : "") + " '" + f.Name() + "'" + " json:\"";
+		ret += string(Variant::TypeName(f.Type())) + (f.IsArray() ? "[]" : "") + " '" + f.Name() + "'" + " json:\"";
 		for (auto &jp : f.JsonPaths()) ret += jp + ";";
 		ret += "\"\n";
 	}
@@ -26,25 +26,8 @@ void PayloadTypeImpl::Add(PayloadFieldType f) {
 	if (it != fieldsByName_.end()) {
 		// Non unique name -> check type, and upgrade to array if types are the same
 		auto &oldf = fields_[it->second];
-		if (oldf.Type() != f.Type())
-			throw Error(errLogic, "Can't add field with name '%s' and type '%s' to namespace '%s'. It already exists with type '%s'",
-						f.Name().c_str(), KeyValue::TypeName(f.Type()), Name().c_str(), KeyValue::TypeName(oldf.Type()));
-		// Add json paths
-		for (auto &jp : f.JsonPaths()) {
-			if (!jp.length()) continue;
-			auto res = fieldsByJsonPath_.emplace(jp, it->second);
-			if (!res.second && res.first->second != it->second) {
-				throw Error(errLogic, "Can't add field with name '%s' to namespace '%s'. Json path '%s' already used in field '%s'",
-							f.Name().c_str(), Name().c_str(), jp.c_str(), Field(res.first->second).Name().c_str());
-			}
-			oldf.AddJsonPath(jp);
-		}
-		// Upgrade to array
-		oldf.SetArray();
-		// Move offsets of followed fields
-		for (size_t i = it->second + 1; i < fields_.size(); ++i) {
-			fields_[i].SetOffset(fields_[i - 1].Offset() + fields_[i - 1].Sizeof());
-		}
+		throw Error(errLogic, "Can't add field with name '%s' and type '%s' to namespace '%s'. It already exists with type '%s'",
+					f.Name().c_str(), Variant::TypeName(f.Type()), Name().c_str(), Variant::TypeName(oldf.Type()));
 	} else {
 		// Unique name -> just add field
 		f.SetOffset(TotalSize());
@@ -119,11 +102,8 @@ int PayloadTypeImpl::FieldByJsonPath(const string &jsonPath) const {
 	return it->second;
 }
 
-// TODO: deprecate old cproto version, and remove withJsonPaths trick
-const int kTmpPayloadTypeWithJsonPathsFlag = 0x1000;
-
-void PayloadTypeImpl::serialize(WrSerializer &ser, bool withJsonPaths) const {
-	ser.PutVarUint(base_key_string::export_hdr_offset() | (withJsonPaths ? kTmpPayloadTypeWithJsonPathsFlag : 0));
+void PayloadTypeImpl::serialize(WrSerializer &ser) const {
+	ser.PutVarUint(base_key_string::export_hdr_offset());
 	ser.PutVarUint(NumFields());
 	for (int i = 0; i < NumFields(); i++) {
 		ser.PutVarUint(Field(i).Type());
@@ -131,10 +111,8 @@ void PayloadTypeImpl::serialize(WrSerializer &ser, bool withJsonPaths) const {
 		ser.PutVarUint(Field(i).Offset());
 		ser.PutVarUint(Field(i).ElemSizeof());
 		ser.PutVarUint(Field(i).IsArray());
-		if (withJsonPaths) {
-			ser.PutVarUint(Field(i).JsonPaths().size());
-			for (auto &jp : Field(i).JsonPaths()) ser.PutVString(jp);
-		}
+		ser.PutVarUint(Field(i).JsonPaths().size());
+		for (auto &jp : Field(i).JsonPaths()) ser.PutVString(jp);
 	}
 }
 
@@ -144,32 +122,24 @@ void PayloadTypeImpl::deserialize(Serializer &ser) {
 	fieldsByJsonPath_.clear();
 	strFields_.clear();
 
-	bool withJsonPaths = ser.GetVarUint() & kTmpPayloadTypeWithJsonPathsFlag;
+	ser.GetVarUint();
 
 	int count = ser.GetVarUint();
 
 	for (int i = 0; i < count; i++) {
 		KeyValueType t = KeyValueType(ser.GetVarUint());
 		string name = ser.GetVString().ToString();
+		h_vector<string, 0> jsonPaths;
 		int offset = ser.GetVarUint();
 		int elemSizeof = ser.GetVarUint();
 		bool isArray = ser.GetVarUint();
+		int jsonPathsCount = ser.GetVarUint();
 
-		int jsonPathsCount = 1;
-		string jsonPath = name;
+		while (jsonPathsCount--) jsonPaths.push_back(ser.GetVString().ToString());
 
-		if (withJsonPaths) {
-			jsonPathsCount = ser.GetVarUint();
-			jsonPath = ser.GetVString().ToString();
-		}
 		(void)elemSizeof;
 
-		PayloadFieldType ft(t, name, jsonPath, isArray);
-
-		assert(jsonPathsCount);
-		while (--jsonPathsCount) {
-			ft.AddJsonPath(ser.GetVString().ToString());
-		}
+		PayloadFieldType ft(t, name, jsonPaths, isArray);
 
 		if (isArray) ft.SetArray();
 		ft.SetOffset(offset);

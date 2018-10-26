@@ -25,9 +25,9 @@ func newRPCEncoder(cmd int, seq int) rpcEncoder {
 
 func (r *rpcEncoder) start(cmd int, seq int) {
 	r.ser.PutUInt32(cprotoMagic)
-	r.ser.PutUInt32(cprotoVersion)
+	r.ser.PutUInt16(cprotoVersion)
+	r.ser.PutUInt16(uint16(cmd))
 	r.ser.PutUInt32(1) // len
-	r.ser.PutUInt32(uint32(cmd))
 	r.ser.PutUInt32(uint32(seq))
 	// num args
 	r.ser.PutVarUInt(0)
@@ -48,6 +48,16 @@ func (r *rpcEncoder) stringArg(v string) {
 func (r *rpcEncoder) intArg(v int) {
 	r.ser.PutVarUInt(uint64(bindings.ValueInt))
 	r.ser.PutVarInt(int64(v))
+	r.update()
+}
+
+func (r *rpcEncoder) boolArg(v bool) {
+	r.ser.PutVarUInt(uint64(bindings.ValueBool))
+	if v {
+		r.ser.PutVarUInt(1)
+	} else {
+		r.ser.PutVarUInt(0)
+	}
 	r.update()
 }
 
@@ -120,6 +130,8 @@ func (r *rpcDecoder) intfArg() interface{} {
 	switch int(t) {
 	case bindings.ValueInt:
 		return int(r.ser.GetVarInt())
+	case bindings.ValueBool:
+		return r.ser.GetVarInt() != 0
 	case bindings.ValueString:
 		return r.ser.GetVBytes()
 	case bindings.ValueInt64:
@@ -127,5 +139,5 @@ func (r *rpcDecoder) intfArg() interface{} {
 	case bindings.ValueDouble:
 		return r.ser.GetDouble()
 	}
-	panic(fmt.Errorf("cproto: Unexptected arg type %d", t))
+	panic(fmt.Errorf("cproto: Unexpected arg type %d", t))
 }

@@ -4,52 +4,65 @@ namespace reindexer {
 namespace client {
 
 ResultSerializer::QueryParams ResultSerializer::GetRawQueryParams(std::function<void(int nsId)> updatePayloadFunc) {
-	(void)updatePayloadFunc;
 	QueryParams ret;
 
-	// cptr flag - skip
-	GetUInt64();
-
+	ret.flags = GetVarUint();
 	ret.totalcount = GetVarUint();
 	ret.qcount = GetVarUint();
 	ret.count = GetVarUint();
-	ret.haveProcent = (GetVarUint() != 0);
-	ret.nonCacheableData = (GetVarUint() != 0);
-	ret.nsCount = GetVarUint();
 
-	int ptCount = GetVarUint();
+	if (ret.flags & kResultsWithPayloadTypes) {
+		int ptCount = GetVarUint();
 
-	for (int i = 0; i < ptCount; i++) {
-		int nsid = GetVarUint();
+		for (int i = 0; i < ptCount; i++) {
+			int nsid = GetVarUint();
+			GetVString();
 
-		assert(updatePayloadFunc != nullptr);
-		updatePayloadFunc(nsid);
+			assert(updatePayloadFunc != nullptr);
+			updatePayloadFunc(nsid);
+		}
 	}
 
-	int aggResCount = GetVarUint();
-
-	for (int i = 0; i < aggResCount; i++) {
-		ret.aggResults.push_back(GetDouble());
+	for (;;) {
+		int tag = GetVarUint();
+		if (tag == QueryResultEnd) break;
+		string_view data = GetSlice();
+		switch (tag) {
+			case QueryResultAggregation:
+				ret.aggResults.push_back({});
+				ret.aggResults.back().FromJSON(const_cast<char *>(data.ToString().c_str()));
+				break;
+			case QueryResultExplain:
+				ret.explainResults = data.ToString();
+				break;
+		}
 	}
 
 	return ret;
 }
 
-ResultSerializer::ItemParams ResultSerializer::GetItemParams() {
+ResultSerializer::ItemParams ResultSerializer::GetItemParams(int flags) {
 	ItemParams ret;
-	ret.id = int(GetVarUint());
-	ret.version = int(GetVarUint());
-	ret.nsid = int(GetVarUint());
-	ret.proc = int(GetVarUint());
-	int format = int(GetVarUint());
 
-	switch (format) {
-		case kResultsWithJson:
-		case kResultsWithCJson:
+	if (flags & kResultsWithItemID) {
+		ret.id = int(GetVarUint());
+		ret.lsn = int(GetVarUint());
+	}
+
+	if (flags & kResultsWithNsID) {
+		ret.nsid = int(GetVarUint());
+	}
+	if (flags & kResultsWithPercents) {
+		ret.proc = int(GetVarUint());
+	}
+
+	switch (flags & kResultsFormatMask) {
+		case kResultsJson:
+		case kResultsCJson:
 			ret.data = GetSlice();
 			break;
 		default:
-			break;
+			throw Error(errParseBin, "Server returned data in unknown format %d", int(flags & kResultsFormatMask));
 	}
 
 	return ret;

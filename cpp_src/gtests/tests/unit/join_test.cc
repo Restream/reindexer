@@ -24,7 +24,7 @@ TEST_F(JoinSelectsApi, InnerJoinTest) {
 	if (err.ok()) {
 		for (auto it : pureSelectRes) {
 			Item booksItem(it.GetItem());
-			KeyRef authorIdKeyRef = booksItem[authorid_fk];
+			Variant authorIdKeyRef = booksItem[authorid_fk];
 
 			reindexer::QueryResults authorsSelectRes;
 			Query authorsQuery = Query(authors_namespace).Where(authorid, CondEq, authorIdKeyRef);
@@ -80,12 +80,12 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 		int i = 0;
 		for (auto rowIt : joinQueryRes) {
 			Item item(rowIt.GetItem());
-			KeyRef authorIdKeyRef1 = item[authorid];
+			Variant authorIdKeyRef1 = item[authorid];
 			const reindexer::ItemRef& rowid = rowIt.GetItemRef();
 			const reindexer::QRVector& queryResults = rowIt.GetJoined();
 			for (const QueryResults& queryRes : queryResults) {
 				Item item2(queryRes.begin().GetItem());
-				KeyRef authorIdKeyRef2 = item2[authorid_fk];
+				Variant authorIdKeyRef2 = item2[authorid_fk];
 				EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
 			}
 
@@ -100,7 +100,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 			for (auto it : joinedQueryRes) {
 				Item item(it.GetItem());
 
-				KeyRef authorIdKeyRef1 = item[authorid_fk];
+				Variant authorIdKeyRef1 = item[authorid_fk];
 				int authorId = static_cast<int>(authorIdKeyRef1);
 
 				auto itAutorid(presentedAuthorIds.find(authorId));
@@ -112,7 +112,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 
 				if (itRowidIndex != rowidsIndexes.end()) {
 					Item item2((joinQueryRes.begin() + rowid).GetItem());
-					KeyRef authorIdKeyRef2 = item2[authorid];
+					Variant authorIdKeyRef2 = item2[authorid];
 					EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
 				}
 			}
@@ -145,18 +145,18 @@ TEST_F(JoinSelectsApi, OrInnerJoinTest) {
 			const QueryResults& authorNsJoinResults = joinedResult[authorsNsJoinIndex];
 			const QueryResults& genresNsJoinResults = joinedResult[genresNsJoinIndex];
 
-			KeyRef authorIdKeyRef1 = item[authorid_fk];
+			Variant authorIdKeyRef1 = item[authorid_fk];
 			for (auto jit : authorNsJoinResults) {
 				Item authorsItem(jit.GetItem());
-				KeyRef authorIdKeyRef2 = authorsItem[authorid];
+				Variant authorIdKeyRef2 = authorsItem[authorid];
 				EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
 			}
 
-			KeyRef genresIdKeyRef1 = item[genreId_fk];
+			Variant genresIdKeyRef1 = item[genreId_fk];
 			for (auto jit : genresNsJoinResults) {
-				KeyRefs genreIdKeyRef;
+				VariantArray genreIdKeyRef;
 				Item genresItem(jit.GetItem());
-				KeyRef genresIdKeyRef2 = genresItem[genreid];
+				Variant genresIdKeyRef2 = genresItem[genreid];
 				EXPECT_TRUE(genresIdKeyRef1 == genresIdKeyRef2);
 			}
 		}
@@ -176,11 +176,11 @@ TEST_F(JoinSelectsApi, JoinTestSorting) {
 		const reindexer::QRVector& joinQueryRes = rowIt.GetJoined();
 		const QueryResults& joinResult(joinQueryRes[0]);
 
-		KeyRef prevJoinedValue;
+		Variant prevJoinedValue;
 		for (auto itj : joinResult) {
 			Item joinItem(itj.GetItem());
-			KeyRef recentJoinedValue = joinItem[price];
-			if (prevJoinedValue.Type() != KeyValueEmpty) {
+			Variant recentJoinedValue = joinItem[price];
+			if (prevJoinedValue.Type() != KeyValueNull) {
 				EXPECT_TRUE(prevJoinedValue.Compare(recentJoinedValue) >= 0);
 			}
 			prevJoinedValue = recentJoinedValue;
@@ -192,7 +192,7 @@ TEST_F(JoinSelectsApi, JoinTestSelectNonIndexedField) {
 	reindexer::QueryResults qr;
 	Query authorsQuery = Query(authors_namespace);
 	Error err = reindexer->Select(Query(books_namespace)
-									  .Where(rating, CondEq, KeyValue(static_cast<int64_t>(100)))
+									  .Where(rating, CondEq, Variant(static_cast<int64_t>(100)))
 									  .InnerJoin(authorid_fk, authorid, CondEq, authorsQuery),
 								  qr);
 
@@ -200,7 +200,7 @@ TEST_F(JoinSelectsApi, JoinTestSelectNonIndexedField) {
 	ASSERT_TRUE(qr.Count() == 1) << err.what();
 
 	Item theOnlyItem = qr[0].GetItem();
-	KeyRefs krefs = theOnlyItem[title];
+	VariantArray krefs = theOnlyItem[title];
 	ASSERT_TRUE(krefs.size() == 1);
 	ASSERT_TRUE(krefs[0].As<string>() == "Crime and Punishment");
 }
@@ -227,7 +227,7 @@ TEST_F(JoinSelectsApi, JoinByNonIndexedField) {
 	reindexer::QueryResults qr;
 	Query authorsQuery = Query(authors_namespace);
 	err = reindexer->Select(Query(default_namespace)
-								.Where(authorid_fk, CondEq, KeyValue(DostoevskyAuthorId))
+								.Where(authorid_fk, CondEq, Variant(DostoevskyAuthorId))
 								.InnerJoin(authorid_fk, authorid, CondEq, authorsQuery),
 							qr);
 
@@ -237,10 +237,9 @@ TEST_F(JoinSelectsApi, JoinByNonIndexedField) {
 	// And backwards even!
 	reindexer::QueryResults qr2;
 	Query testNsQuery = Query(default_namespace);
-	err = reindexer->Select(Query(authors_namespace)
-								.Where(authorid, CondEq, KeyValue(DostoevskyAuthorId))
-								.InnerJoin(authorid, authorid_fk, CondEq, testNsQuery),
-							qr2);
+	err = reindexer->Select(
+		Query(authors_namespace).Where(authorid, CondEq, Variant(DostoevskyAuthorId)).InnerJoin(authorid, authorid_fk, CondEq, testNsQuery),
+		qr2);
 
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr2.Count() == 1) << err.what();

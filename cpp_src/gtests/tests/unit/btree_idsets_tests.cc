@@ -7,7 +7,7 @@ TEST_F(BtreeIdsetsApi, SelectByStringField) {
 	EXPECT_TRUE(err.ok()) << err.what();
 	for (size_t i = 0; i < qr.Count(); ++i) {
 		Item item = qr[i].GetItem();
-		KeyRef kr = item[kFieldOne];
+		Variant kr = item[kFieldOne];
 		EXPECT_TRUE(kr.Type() == KeyValueString);
 		EXPECT_TRUE(kr.As<string>() != strValueToCheck);
 	}
@@ -17,11 +17,11 @@ TEST_F(BtreeIdsetsApi, SelectByIntField) {
 	const int boundaryValue = 5000;
 
 	QueryResults qr;
-	Error err = reindexer->Select(Query(default_namespace).Where(kFieldTwo, CondGe, KeyValue(static_cast<int>(boundaryValue))), qr);
+	Error err = reindexer->Select(Query(default_namespace).Where(kFieldTwo, CondGe, Variant(static_cast<int>(boundaryValue))), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	for (size_t i = 0; i < qr.Count(); i++) {
 		Item item = qr[i].GetItem();
-		KeyRef kr = item[kFieldTwo];
+		Variant kr = item[kFieldTwo];
 		EXPECT_TRUE(kr.Type() == KeyValueInt);
 		EXPECT_TRUE(static_cast<int>(kr) >= boundaryValue);
 	}
@@ -36,16 +36,16 @@ TEST_F(BtreeIdsetsApi, SelectByBothFields) {
 									  .Where(kFieldOne, CondLe, strValueToCheck2)
 									  .Not()
 									  .Where(kFieldOne, CondEq, strValueToCheck)
-									  .Where(kFieldTwo, CondGe, KeyValue(static_cast<int>(boundaryValue))),
+									  .Where(kFieldTwo, CondGe, Variant(static_cast<int>(boundaryValue))),
 								  qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	for (size_t i = 0; i < qr.Count(); ++i) {
 		Item item = qr[i].GetItem();
-		KeyRef krOne = item[kFieldOne];
+		Variant krOne = item[kFieldOne];
 		EXPECT_TRUE(krOne.Type() == KeyValueString);
 		EXPECT_TRUE(strValueToCheck2.compare(krOne.As<string>()) > 0);
 		EXPECT_TRUE(krOne.As<string>() != strValueToCheck);
-		KeyRef krTwo = item[kFieldTwo];
+		Variant krTwo = item[kFieldTwo];
 		EXPECT_TRUE(krTwo.Type() == KeyValueInt);
 		EXPECT_TRUE(static_cast<int>(krTwo) >= boundaryValue);
 	}
@@ -56,10 +56,10 @@ TEST_F(BtreeIdsetsApi, SortByStringField) {
 	Error err = reindexer->Select(Query(default_namespace).Sort(kFieldOne, true), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	KeyRef prev;
+	Variant prev;
 	for (size_t i = 0; i < qr.Count(); ++i) {
 		Item item = qr[i].GetItem();
-		KeyRef curr = item[kFieldOne];
+		Variant curr = item[kFieldOne];
 		if (i != 0) {
 			EXPECT_TRUE(prev >= curr);
 		}
@@ -72,10 +72,10 @@ TEST_F(BtreeIdsetsApi, SortByIntField) {
 	Error err = reindexer->Select(Query(default_namespace).Sort(kFieldTwo, false), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	KeyRef prev;
+	Variant prev;
 	for (size_t i = 0; i < qr.Count(); ++i) {
 		Item item = qr[i].GetItem();
-		KeyRef curr = item[kFieldTwo];
+		Variant curr = item[kFieldTwo];
 		if (i != 0) {
 			EXPECT_TRUE(prev.As<int>() <= curr.As<int>());
 		}
@@ -85,27 +85,27 @@ TEST_F(BtreeIdsetsApi, SortByIntField) {
 
 TEST_F(BtreeIdsetsApi, JoinSimpleNs) {
 	QueryResults qr;
-	Query joinedNs = Query(joinedNsName).Where(kFieldThree, CondGt, KeyValue(static_cast<int>(9000))).Sort(kFieldThree, false);
+	Query joinedNs = Query(joinedNsName).Where(kFieldThree, CondGt, Variant(static_cast<int>(9000))).Sort(kFieldThree, false);
 	Error err =
 		reindexer->Select(Query(default_namespace, 0, 3000).InnerJoin(kFieldId, kFieldIdFk, CondEq, joinedNs).Sort(kFieldTwo, false), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	KeyRef prevFieldTwo;
+	Variant prevFieldTwo;
 	for (size_t i = 0; i < qr.Count(); ++i) {
 		Item item = qr[i].GetItem();
-		KeyRef currFieldTwo = item[kFieldTwo];
+		Variant currFieldTwo = item[kFieldTwo];
 		if (i != 0) {
 			EXPECT_TRUE(currFieldTwo.As<int>() >= prevFieldTwo.As<int>());
 		}
 		prevFieldTwo = currFieldTwo;
 
-		KeyRef prevJoinedFk;
+		Variant prevJoinedFk;
 		const auto& joined = qr[i].GetJoined();
 		const QueryResults& joinResult = joined[0];
 		EXPECT_TRUE(joinResult.Count() > 0);
 		for (size_t j = 0; j < joinResult.Count(); ++j) {
 			Item joinedItem = joinResult[j].GetItem();
-			KeyRef joinedFkCurr = joinedItem[kFieldIdFk];
+			Variant joinedFkCurr = joinedItem[kFieldIdFk];
 			EXPECT_TRUE(joinedFkCurr == item[kFieldId]);
 			if (j != 0) {
 				EXPECT_TRUE(joinedFkCurr >= prevJoinedFk);

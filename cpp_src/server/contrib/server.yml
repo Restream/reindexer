@@ -331,11 +331,11 @@ paths:
       - name: "limit"
         in: "query"
         type: "integer"
-        description: "Limit"
+        description: "Maximum count of returned items"
       - name: "offset"
         in: "query"
         type: "integer"
-        description: "Offset"
+        description: "Offset of first returned item"
       - name: "sort_field"
         in: "query"
         type: "string"
@@ -347,9 +347,19 @@ paths:
         enum:
         - "asc"
         - "desc"
+      - name: "filter"
+        in: "query"
+        type: "string"
+        description: "Filter with SQL syntax, e.g: field1 = 'v1' AND field2 > 'v2'"
+      - name: "fields"
+        in: "query"
+        type: "string"
+        description: "Comma-separated list of returned fields"
       responses:
         200:
           description: "successful operation"
+          schema:
+            $ref: '#/definitions/Items'
         400:
           description: "Invalid arguments supplied"
 
@@ -494,11 +504,19 @@ paths:
         type: "string"
         description: "SQL query"
         required: true
+      - name: "limit"
+        in: "query"
+        type: "integer"
+        description: "Maximum count of returned items"
+      - name: "offset"
+        in: "query"
+        type: "integer"
+        description: "Offset of first returned item"
       responses:
         200:
           description: "successful operation"
           schema:
-            $ref: '#/definitions/Items'
+            $ref: '#/definitions/QueryItems'
         400:
           description: "Invalid status value"
     post:
@@ -525,6 +543,36 @@ paths:
       responses:
         200:
           description: "successful operation"
+          schema:
+            $ref: '#/definitions/QueryItems'
+        400:
+          description: "Invalid status value"
+    delete:
+      tags:
+      - "queries"
+      summary: "Delete documents from namespace"
+      operationId: "deleteQuery"
+      produces:
+      - "application/json"
+      consumes:
+      - "application/json"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - in: "body"
+        name: "body"
+        description: "DSL query"
+        required: true
+        schema:
+          $ref: "#/definitions/Query"
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: '#/definitions/QueryItems'
         400:
           description: "Invalid status value"
   /db/{database}/sqlquery:
@@ -551,7 +599,7 @@ paths:
         200:
           description: "successful operation"
           schema:
-            $ref: '#/definitions/Items'
+            $ref: '#/definitions/QueryItems'
         400:
           description: "Invalid status value"
 
@@ -632,8 +680,10 @@ definitions:
     properties:
       name: 
         type: "string"
-      json_path: 
-        type: "string"
+      json_paths:
+        type: "array"
+        items:
+          type: "string"
       field_type:
         type: "string"
         description: "Field type"
@@ -702,11 +752,11 @@ definitions:
         type: "array"
         items:
           $ref: "#/definitions/SortDef"
-      joined:
+      join_queries:
         type: "array"
         items:
           $ref: "#/definitions/JoinedDef"
-      merged:
+      merge_queries:
         type: "array"
         items:
           $ref: "#/definitions/Query"
@@ -722,6 +772,9 @@ definitions:
         type: "array"
         items:
           $ref: "#/definitions/AggregationsDef"
+      explain:
+        type: "boolean"
+        default: false
 
   FilterDef:
     type: "object"
@@ -797,7 +850,7 @@ definitions:
         type: "string"
       right_field:
         type: "string"
-      condition:
+      cond:
         type: "string"
         enum:
         - "EQ"
@@ -831,6 +884,17 @@ definitions:
     properties:
       total_items:
          type: "integer"
+      items:
+         type: "array"
+         items:
+           type: "object"
+  QueryItems:
+    type: "object"
+    properties:
+      query_total_items:
+         type: "integer"
+      explain:
+         type: "object"
       items:
          type: "array"
          items:

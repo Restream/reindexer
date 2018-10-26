@@ -1,12 +1,31 @@
 package reindexer
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
 
 	"github.com/restream/reindexer/bindings"
 )
+
+// ExplainResults presents query plan
+type ExplainResults struct {
+	TotalUs       int    `json:"total_us"`
+	PrepareUs     int    `json:"prepare_us"`
+	IndexesUs     int    `json:"indexes_us"`
+	PostprocessUS int    `json:"postprocess_us"`
+	LoopUs        int    `json:"loop_us"`
+	SortIndex     string `json:"sort_index"`
+	Selectors     []struct {
+		Field       string  `json:"field"`
+		Method      string  `json:"method"`
+		Keys        int     `json:"keys"`
+		Comparators int     `json:"comparators"`
+		Cost        float32 `json:"cost"`
+		Matched     int     `json:"matched"`
+	} `json:"selectors"`
+}
 
 func errIterator(err error) *Iterator {
 	return &Iterator{err: err}
@@ -45,7 +64,7 @@ func newIterator(
 	return
 }
 
-func newJSONIterator(q *Query, json []byte, jsonOffsets []int) *JSONIterator {
+func newJSONIterator(q *Query, json []byte, jsonOffsets []int, explain []byte) *JSONIterator {
 	var ji *JSONIterator
 	if q != nil {
 		ji = &q.jsonIterator
@@ -56,7 +75,9 @@ func newJSONIterator(q *Query, json []byte, jsonOffsets []int) *JSONIterator {
 	ji.jsonOffsets = jsonOffsets
 	ji.ptr = -1
 	ji.query = q
+	ji.explain = explain
 	ji.err = nil
+
 	return ji
 }
 
@@ -121,14 +142,20 @@ func (it *Iterator) joinedNsIndexOffset(parentNsID int) int {
 
 func (it *Iterator) readItem() (item interface{}, rank int) {
 	params := it.ser.readRawtItemParams()
-	if it.rawQueryParams.haveProcent {
+	if (it.rawQueryParams.flags & bindings.ResultsWithPercents) != 0 {
 		rank = params.proc
 	}
-	subNSRes := int(it.ser.GetVarUInt())
-	item, it.err = unpackItem(it.nsArray[params.nsid], params, it.allowUnsafe && (subNSRes == 0), it.rawQueryParams.nonCacheableData)
+
+	subNSRes := 0
+
+	if (it.rawQueryParams.flags & bindings.ResultsWithJoined) != 0 {
+		subNSRes = int(it.ser.GetVarUInt())
+	}
+	item, it.err = unpackItem(it.nsArray[params.nsid], params, it.allowUnsafe && (subNSRes == 0), (it.rawQueryParams.flags&bindings.ResultsWithItemID) == 0)
 	if it.err != nil {
 		return
 	}
+
 	nsIndexOffset := it.joinedNsIndexOffset(params.nsid)
 
 	for nsIndex := 0; nsIndex < subNSRes; nsIndex++ {
@@ -139,7 +166,7 @@ func (it *Iterator) readItem() (item interface{}, rank int) {
 		subitems := make([]interface{}, siRes)
 		for i := 0; i < siRes; i++ {
 			subparams := it.ser.readRawtItemParams()
-			subitems[i], it.err = unpackItem(it.nsArray[nsIndex+nsIndexOffset], subparams, it.allowUnsafe, it.rawQueryParams.nonCacheableData)
+			subitems[i], it.err = unpackItem(it.nsArray[nsIndex+nsIndexOffset], subparams, it.allowUnsafe, (it.rawQueryParams.flags&bindings.ResultsWithItemID) == 0)
 			if it.err != nil {
 				return
 			}
@@ -310,12 +337,19 @@ func (it *Iterator) FetchAllWithRank() (items []interface{}, ranks []int, err er
 
 // HasRank indicates if this iterator has info about search ranks.
 func (it *Iterator) HasRank() bool {
-	return it.rawQueryParams.haveProcent
+	return (it.rawQueryParams.flags & bindings.ResultsWithPercents) != 0
 }
 
 // AggResults returns aggregation results (if present)
-func (it *Iterator) AggResults() []float64 {
-	return it.rawQueryParams.aggResults
+func (it *Iterator) AggResults() (v []AggregationResult) {
+	l := len(it.rawQueryParams.aggResults)
+	v = make([]AggregationResult, l)
+
+	for i := 0; i < l; i++ {
+		json.Unmarshal(it.rawQueryParams.aggResults[i], &v[i])
+	}
+
+	return
 }
 
 // GetAggreatedValue - Return aggregation sum of field
@@ -323,7 +357,22 @@ func (it *Iterator) GetAggreatedValue(idx int) float64 {
 	if idx < 0 || idx >= len(it.rawQueryParams.aggResults) {
 		return 0
 	}
-	return it.rawQueryParams.aggResults[idx]
+	res := AggregationResult{}
+	json.Unmarshal(it.rawQueryParams.aggResults[idx], &res)
+
+	return res.Value
+}
+
+// GetExplainResults returns JSON bytes with explain results
+func (it *Iterator) GetExplainResults() (*ExplainResults, error) {
+	if len(it.rawQueryParams.explainResults) > 0 {
+		explain := &ExplainResults{}
+		if err := json.Unmarshal(it.rawQueryParams.explainResults, explain); err != nil {
+			return nil, fmt.Errorf("Explain query results is broken")
+		}
+		return explain, nil
+	}
+	return nil, nil
 }
 
 // Error returns query error if it's present.
@@ -357,9 +406,9 @@ type JSONIterator struct {
 	json        []byte
 	jsonOffsets []int
 	query       *Query
-
-	err error
-	ptr int
+	err         error
+	ptr         int
+	explain     []byte
 }
 
 // Next moves iterator pointer to the next element.
@@ -388,6 +437,18 @@ func (it *JSONIterator) JSON() (json []byte) {
 		l = len(it.json) - 2
 	}
 	return it.json[o:l]
+}
+
+// GetExplainResults returns JSON bytes with explain results
+func (it *JSONIterator) GetExplainResults() (*ExplainResults, error) {
+	if len(it.explain) > 0 {
+		explain := &ExplainResults{}
+		if err := json.Unmarshal(it.explain, explain); err != nil {
+			return nil, fmt.Errorf("Explain query results is broken")
+		}
+		return explain, nil
+	}
+	return nil, nil
 }
 
 // Count returns count if query results

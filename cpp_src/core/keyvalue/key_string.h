@@ -72,11 +72,14 @@ protected:
 	} export_hdr_;
 };
 
-typedef intrusive_ptr<intrusive_atomic_rc_wrapper<base_key_string>> key_string;
+class key_string : public intrusive_ptr<intrusive_atomic_rc_wrapper<base_key_string>> {
+public:
+	using intrusive_ptr<intrusive_atomic_rc_wrapper<base_key_string>>::intrusive_ptr;
+};
 
 template <typename... Args>
 key_string make_key_string(Args &&... args) {
-	return make_intrusive<intrusive_atomic_rc_wrapper<base_key_string>>(args...);
+	return key_string(new intrusive_atomic_rc_wrapper<base_key_string>(args...));
 }
 
 // Unckecked cast to derived class!
@@ -95,4 +98,11 @@ struct hash<reindexer::base_key_string> {
 public:
 	size_t operator()(const reindexer::base_key_string &obj) const { return hash<std::string>()(obj); }
 };
+
+template <>
+struct hash<reindexer::key_string> {
+public:
+	size_t operator()(const reindexer::key_string &obj) const { return hash<reindexer::base_key_string>()(*obj); }
+};
+
 }  // namespace std

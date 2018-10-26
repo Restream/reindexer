@@ -11,7 +11,7 @@ namespace reindexer {
 
 class TagsPathCache {
 public:
-	void set(const int *tagsPath, size_t len, int field) {
+	void set(const int16_t *tagsPath, size_t len, int field) {
 		assert(len);
 		auto cache = this;
 		for (;;) {
@@ -31,7 +31,7 @@ public:
 			len--;
 		}
 	}
-	int lookup(const int *tagsPath, size_t len) const {
+	int lookup(const int16_t *tagsPath, size_t len) const {
 		assert(len);
 		auto cache = this;
 		for (;;) {
@@ -51,8 +51,8 @@ public:
 		}
 	}
 
-	void walk(int *path, int depth, std::function<void(int, int)> visitor) const {
-		int &i = path[depth];
+	void walk(int16_t *path, int depth, std::function<void(int, int)> visitor) const {
+		int16_t &i = path[depth];
 		for (i = 0; i < int(entries_.size()); i++) {
 			if (entries_[i].field_ > 0) visitor(depth + 1, entries_[i].field_);
 			if (entries_[i].subCache_) entries_[i].subCache_->walk(path, depth + 1, visitor);

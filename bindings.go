@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unsafe"
 
 	"github.com/restream/reindexer/bindings"
 	"github.com/restream/reindexer/bindings/builtinserver/config"
@@ -28,42 +27,66 @@ func (db *Reindexer) modifyItem(namespace string, ns *reindexerNamespace, item i
 			return 0, err
 		}
 	}
+	var ser1 *cjson.Serializer
 
-	ser := cjson.NewPoolSerializer()
-	defer ser.Close()
+	var packedPercepts []byte
+	if len(precepts) != 0 {
+		ser1 = cjson.NewPoolSerializer()
+		defer ser1.Close()
 
-	if err = packItem(ns, item, json, ser, precepts...); err != nil {
-		return
+		ser1.PutVarCUInt(len(precepts))
+		for _, precept := range precepts {
+			ser1.PutVString(precept)
+		}
+		packedPercepts = ser1.Bytes()
+
 	}
 
-	out, err := db.binding.ModifyItem(ns.nsHash, ser.Bytes(), mode)
+	for tryCount := 0; tryCount < 2; tryCount++ {
+		ser := cjson.NewPoolSerializer()
+		defer ser.Close()
 
-	if err != nil {
-		return 0, err
+		format := 0
+		stateToken := 0
+
+		if format, stateToken, err = packItem(ns, item, json, ser); err != nil {
+			return
+		}
+
+		out, err := db.binding.ModifyItem(ns.nsHash, ns.name, format, ser.Bytes(), mode, packedPercepts, stateToken, 0)
+
+		if err != nil {
+			rerr, ok := err.(bindings.Error)
+			if ok && rerr.Code() == bindings.ErrStateInvalidated {
+				db.Query(ns.name).Limit(0).Exec()
+				err = rerr
+				continue
+			}
+			return 0, err
+		}
+
+		defer out.Free()
+
+		rdSer := newSerializer(out.GetBuf())
+		rawQueryParams := rdSer.readRawQueryParams(func(nsid int) {
+			ns.cjsonState.ReadPayloadType(&rdSer.Serializer)
+		})
+
+		if rawQueryParams.count == 0 {
+			return 0, err
+		}
+
+		resultp := rdSer.readRawtItemParams()
+
+		ns.cacheLock.Lock()
+		delete(ns.cacheItems, resultp.id)
+		ns.cacheLock.Unlock()
+		return rawQueryParams.count, err
 	}
-	defer out.Free()
-
-	rdSer := newSerializer(out.GetBuf())
-	rawQueryParams := rdSer.readRawQueryParams(func(nsid int) {
-		ns.cjsonState.ReadPayloadType(&rdSer.Serializer)
-	})
-
-	if rawQueryParams.count == 0 {
-		return 0, err
-	}
-
-	resultp := rdSer.readRawtItemParams()
-
-	ns.cacheLock.Lock()
-	delete(ns.cacheItems, resultp.id)
-	ns.cacheLock.Unlock()
-
-	return rawQueryParams.count, err
+	return 0, err
 }
 
-func packItem(ns *reindexerNamespace, item interface{}, json []byte, ser *cjson.Serializer, precepts ...string) error {
-
-	ser.PutVString(ns.name)
+func packItem(ns *reindexerNamespace, item interface{}, json []byte, ser *cjson.Serializer) (format int, stateToken int, err error) {
 
 	if item != nil {
 		json, _ = item.([]byte)
@@ -78,30 +101,19 @@ func packItem(ns *reindexerNamespace, item interface{}, json []byte, ser *cjson.
 			panic(ErrWrongType)
 		}
 
-		ser.PutVarCUInt(bindings.FormatCJson)
-
-		// reserve int for save len
-		pos := len(ser.Bytes())
-		ser.PutUInt32(0)
-		pos1 := len(ser.Bytes())
+		format = bindings.FormatCJson
 
 		enc := ns.cjsonState.NewEncoder()
-		if err := enc.Encode(item, ser); err != nil {
-			return err
+		if stateToken, err = enc.Encode(item, ser); err != nil {
+			return
 		}
 
-		*(*uint32)(unsafe.Pointer(&ser.Bytes()[pos])) = uint32(len(ser.Bytes()) - pos1)
 	} else {
-		ser.PutVarCUInt(bindings.FormatJson)
-		ser.PutBytes(json)
+		format = bindings.FormatJson
+		ser.Write(json)
 	}
 
-	ser.PutVarCUInt(len(precepts))
-	for _, precept := range precepts {
-		ser.PutVString(precept)
-	}
-
-	return nil
+	return
 }
 
 func (db *Reindexer) getNS(namespace string) (*reindexerNamespace, error) {
@@ -114,21 +126,20 @@ func (db *Reindexer) getNS(namespace string) (*reindexerNamespace, error) {
 	return ns, nil
 }
 
-func (db *Reindexer) putMeta(namespace, key string, data []byte) error {
+func (db *Reindexer) PutMeta(namespace, key string, data []byte) error {
 	return db.binding.PutMeta(namespace, key, string(data))
 }
 
-func (db *Reindexer) getMeta(namespace, key string) ([]byte, error) {
+func (db *Reindexer) GetMeta(namespace, key string) ([]byte, error) {
 
 	out, err := db.binding.GetMeta(namespace, key)
 	if err != nil {
 		return nil, err
 	}
 	defer out.Free()
-
-	rdSer := newSerializer(out.GetBuf())
-	s := rdSer.GetVString()
-	return []byte(s), nil
+	ret := make([]byte, len(out.GetBuf()))
+	copy(ret, out.GetBuf())
+	return ret, nil
 }
 
 func unpackItem(ns nsArrayEntry, params rawResultItemParams, allowUnsafe bool, nonCacheableData bool) (item interface{}, err error) {
@@ -194,10 +205,11 @@ func unpackItem(ns nsArrayEntry, params rawResultItemParams, allowUnsafe bool, n
 	return
 }
 
-func (db *Reindexer) rawResultToJson(rawResult []byte, jsonName string, totalName string, initJson []byte, initOffsets []int) (json []byte, offsets []int, err error) {
+func (db *Reindexer) rawResultToJson(rawResult []byte, jsonName string, totalName string, initJson []byte, initOffsets []int) (json []byte, offsets []int, explain []byte, err error) {
 
 	ser := newSerializer(rawResult)
 	rawQueryParams := ser.readRawQueryParams()
+	explain = rawQueryParams.explainResults
 
 	jsonReserveLen := len(rawResult) + len(totalName) + len(jsonName) + 20
 	if cap(initJson) < jsonReserveLen {
@@ -233,13 +245,13 @@ func (db *Reindexer) rawResultToJson(rawResult []byte, jsonName string, totalNam
 		offsets = append(offsets, len(jsonBuf.Bytes()))
 		jsonBuf.Write(item.data)
 
-		if ser.GetVarUInt() != 0 {
+		if (rawQueryParams.flags&bindings.ResultsWithJoined) != 0 && ser.GetVarUInt() != 0 {
 			panic("Sorry, not implemented: Can't return join query results as json")
 		}
 	}
 	jsonBuf.WriteString("]}")
 
-	return jsonBuf.Bytes(), offsets, nil
+	return jsonBuf.Bytes(), offsets, explain, nil
 }
 
 func (db *Reindexer) prepareQuery(q *Query, asJson bool) (result bindings.RawBuffer, err error) {
@@ -297,7 +309,7 @@ func (db *Reindexer) prepareQuery(q *Query, asJson bool) (result bindings.RawBuf
 
 	ptVersions := make([]int32, 0, 16)
 	for _, ns := range q.nsArray {
-		ptVersions = append(ptVersions, ns.localCjsonState.Version^ns.localCjsonState.CacheToken)
+		ptVersions = append(ptVersions, ns.localCjsonState.Version^ns.localCjsonState.StateToken)
 	}
 	fetchCount := q.fetchCount
 	if asJson {
@@ -328,11 +340,12 @@ func (db *Reindexer) execJSONQuery(q *Query, jsonRoot string) *JSONIterator {
 		return errJSONIterator(err)
 	}
 	defer result.Free()
-	q.json, q.jsonOffsets, err = db.rawResultToJson(result.GetBuf(), jsonRoot, q.totalName, q.json, q.jsonOffsets)
+	var explain []byte
+	q.json, q.jsonOffsets, explain, err = db.rawResultToJson(result.GetBuf(), jsonRoot, q.totalName, q.json, q.jsonOffsets)
 	if err != nil {
 		return errJSONIterator(err)
 	}
-	return newJSONIterator(q, q.json, q.jsonOffsets)
+	return newJSONIterator(q, q.json, q.jsonOffsets, explain)
 }
 
 func (db *Reindexer) prepareSQL(namespace, query string, asJson bool) (result bindings.RawBuffer, nsArray []nsArrayEntry, err error) {
@@ -347,7 +360,7 @@ func (db *Reindexer) prepareSQL(namespace, query string, asJson bool) (result bi
 
 	ptVersions := make([]int32, 0, 16)
 	for _, ns := range nsArray {
-		ptVersions = append(ptVersions, ns.localCjsonState.Version^ns.localCjsonState.CacheToken)
+		ptVersions = append(ptVersions, ns.localCjsonState.Version^ns.localCjsonState.StateToken)
 	}
 
 	result, err = db.binding.Select(query, asJson, ptVersions, defaultFetchCount)
@@ -369,11 +382,11 @@ func (db *Reindexer) execSQLAsJSON(namespace string, query string) *JSONIterator
 		return errJSONIterator(err)
 	}
 	defer result.Free()
-	json, jsonOffsets, err := db.rawResultToJson(result.GetBuf(), namespace, "total", nil, nil)
+	json, jsonOffsets, explain, err := db.rawResultToJson(result.GetBuf(), namespace, "total", nil, nil)
 	if err != nil {
 		return errJSONIterator(err)
 	}
-	return newJSONIterator(nil, json, jsonOffsets)
+	return newJSONIterator(nil, json, jsonOffsets, explain)
 }
 
 // Execute query
@@ -397,8 +410,7 @@ func (db *Reindexer) deleteQuery(q *Query) (int, error) {
 	ns.cacheLock.Lock()
 	for i := 0; i < rawQueryParams.count; i++ {
 		params := ser.readRawtItemParams()
-		jres := ser.GetVarUInt()
-		if jres != 0 {
+		if (rawQueryParams.flags&bindings.ResultsWithJoined) != 0 && ser.GetVarUInt() != 0 {
 			panic("Internal error: joined items in delete query result")
 		}
 		// Update cache

@@ -8,6 +8,7 @@
 
 using std::vector;
 using std::string;
+using std::wstring;
 
 class FullText : protected BaseFixture {
 public:
@@ -22,6 +23,8 @@ protected:
 
 protected:
 	void Insert(State& state);
+	void BuildInsertSteps(State& state);
+
 	void BuildCommonIndexes(State& state);
 	void BuildFastTextIndex(State& state);
 	void BuildFuzzyTextIndex(State& state);
@@ -46,6 +49,8 @@ protected:
 	void Fuzzy1TypoWordMatch(State& state);
 	void Fuzzy2TypoWordMatch(State& state);
 
+	void BuildStepFastIndex(State& state);
+
 protected:
 	string CreatePhrase();
 
@@ -56,11 +61,15 @@ protected:
 	wstring GetRandomUTF16WordByLength(size_t minLen = 4);
 
 	vector<string> GetRandomCountries(size_t cnt = 5);
+	string RandString();
+	Item MakeSpecialItem();
 
 protected:
 	vector<string> words_;
 	vector<string> countries_;
 
 private:
+	const string letters = "abcdefghijklmnopqrstuvwxyz";
+
 	size_t raw_data_sz_ = 0;
 };

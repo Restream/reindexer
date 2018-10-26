@@ -22,12 +22,12 @@ protected:
 	void SetUp() override {
 		ReindexerApi::SetUp();
 		reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-		reindexer->AddIndex(default_namespace, {"bookid", "bookid", "hash", "int", IndexOpts().PK()});
-		reindexer->AddIndex(default_namespace, {"title", "title", "text", "string", IndexOpts()});
-		reindexer->AddIndex(default_namespace, {"pages", "pages", "hash", "int", IndexOpts().PK()});
-		reindexer->AddIndex(default_namespace, {"price", "price", "hash", "int", IndexOpts().PK()});
-		reindexer->AddIndex(default_namespace, {"genreid_fk", "genreid_fk", "hash", "int", IndexOpts().PK()});
-		reindexer->AddIndex(default_namespace, {"authorid_fk", "authorid_fk", "hash", "int", IndexOpts().PK()});
+		reindexer->AddIndex(default_namespace, {"bookid", "hash", "int", IndexOpts().PK()});
+		reindexer->AddIndex(default_namespace, {"title", "text", "string", IndexOpts()});
+		reindexer->AddIndex(default_namespace, {"pages", "hash", "int", IndexOpts().PK()});
+		reindexer->AddIndex(default_namespace, {"price", "hash", "int", IndexOpts().PK()});
+		reindexer->AddIndex(default_namespace, {"genreid_fk", "hash", "int", IndexOpts().PK()});
+		reindexer->AddIndex(default_namespace, {"authorid_fk", "hash", "int", IndexOpts().PK()});
 		reindexer->Commit(default_namespace);
 	}
 

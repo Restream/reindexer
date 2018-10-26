@@ -5,9 +5,11 @@
 #include <stdint.h>
 #include <cstring>
 #include <initializer_list>
+#include <iostream>
 #include <iterator>
 #include <type_traits>
 #include <vector>
+
 namespace reindexer {
 #if 0
 template <typename T, int holdSize>
@@ -260,6 +262,8 @@ public:
 	const_reference back() const { return ptr()[size() - 1]; }
 	const_reference front() const { return ptr()[0]; }
 	const_pointer data() const noexcept { return ptr(); }
+	pointer data() noexcept { return ptr(); }
+
 	void resize(size_type sz) {
 		grow(sz);
 		if (!reindexer::is_trivially_default_constructible<T>::value)
@@ -391,7 +395,7 @@ protected:
 #endif
 
 template <typename T>
-class h_vector_view {
+class span {
 public:
 	typedef T value_type;
 	typedef T* pointer;
@@ -402,23 +406,26 @@ public:
 	typedef trivial_reverse_iterator<iterator> reverse_iterator;
 	typedef size_t size_type;
 
-	constexpr h_vector_view() noexcept : data_(nullptr), size_(0) {}
-	constexpr h_vector_view(const h_vector_view& other) noexcept : data_(other.data_), size_(other.size_) {}
+	constexpr span() noexcept : data_(nullptr), size_(0) {}
+	constexpr span(const span& other) noexcept : data_(other.data_), size_(other.size_) {}
 
-	h_vector_view& operator=(const h_vector_view& other) noexcept {
+	span& operator=(const span& other) noexcept {
 		data_ = other.data_;
 		size_ = other.size_;
 		return *this;
 	}
 
-	h_vector_view& operator=(h_vector_view&& other) noexcept {
+	span& operator=(span&& other) noexcept {
 		data_ = other.data_;
 		size_ = other.size_;
 		return *this;
 	}
 
 	// FIXME: const override
-	constexpr h_vector_view(const T* str, size_type len) : data_(const_cast<T*>(str)), size_(len) {}  // static??
+	template <typename Container>
+	constexpr span(const Container& other) noexcept : data_(const_cast<T*>(other.data())), size_(other.size()) {}
+
+	constexpr span(const T* str, size_type len) : data_(const_cast<T*>(str)), size_(len) {}  // static??
 	constexpr iterator begin() const noexcept { return data_; }
 	constexpr iterator end() const noexcept { return data_ + size_; }
 	/*constexpr*/ reverse_iterator rbegin() const noexcept {
@@ -446,3 +453,17 @@ protected:
 };
 
 }  // namespace reindexer
+
+namespace std {
+template <typename C, int H>
+inline static std::ostream& operator<<(std::ostream& o, const reindexer::h_vector<C, H>& vec) {
+	o << "[";
+	for (unsigned i = 0; i < vec.size(); i++) {
+		if (i != 0) o << ",";
+		o << vec[i] << " ";
+	}
+	o << "]";
+	return o;
+}
+
+}

@@ -43,8 +43,8 @@ int main() {
 	Reindexer db;
 	//// Create namespace and add index
 	db.OpenNamespace("mytable");
-	db.AddIndex("mytable", {"id", "id", "hash", "int", IndexOpts().PK()});
-	db.AddIndex("mytable", {"genre", "genre", "hash", "string", IndexOpts()});
+	db.AddIndex("mytable", {"id", "hash", "int", IndexOpts().PK()});
+	db.AddIndex("mytable", {"genre", "hash", "string", IndexOpts()});
 
 	//// Insert some data in JSON format
 	Item item = db.NewItem("mytable");

@@ -1,9 +1,9 @@
 #include "namespacedef.h"
 #include <unordered_map>
+#include "cjson/jsonbuilder.h"
 #include "string.h"
 #include "tools/errors.h"
 #include "tools/jsontools.h"
-#include "tools/serializer.h"
 
 namespace reindexer {
 
@@ -60,21 +60,16 @@ Error NamespaceDef::FromJSON(JsonValue &jvalue) {
 }
 
 void NamespaceDef::GetJSON(WrSerializer &ser, bool describeCompat) const {
-	ser.PutChar('{');
-	ser.Printf("\"name\":\"%s\",", name.c_str());
-	ser.Printf("\"cached_mode\":%d,", static_cast<int>(cacheMode));
+	JsonBuilder json(ser);
+	json.Put("name", name);
+	json.Put("cached_mode", int(cacheMode));
+	json.Object("storage").Put("enabled", storage.IsEnabled());
+	auto arr = json.Array("indexes");
 
-	ser.PutChars("\"storage\":{");
-	ser.Printf("\"enabled\":%s", storage.IsEnabled() ? "true" : "false");
-	ser.PutChars("},");
-
-	ser.PutChars("\"indexes\":[");
-	for (size_t i = 0; i < indexes.size(); i++) {
-		if (i != 0) ser.PutChar(',');
-		indexes[i].GetJSON(ser, describeCompat);
+	for (auto &idx : indexes) {
+		arr.Raw(nullptr, "");
+		idx.GetJSON(ser, describeCompat);
 	}
-
-	ser.PutChars("]}");
 }
 
 }  // namespace reindexer

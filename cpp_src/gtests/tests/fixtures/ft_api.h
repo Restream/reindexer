@@ -19,7 +19,11 @@ public:
 		DefineNamespaceDataset(
 			"nm1",
 			{IndexDeclaration{"id", "hash", "int", IndexOpts().PK()}, IndexDeclaration{"ft1", "text", "string", IndexOpts()},
-			 IndexDeclaration{"ft2", "text", "string", IndexOpts()}, IndexDeclaration{"ft1+ft2=ft3", "text", "composite", IndexOpts()}});
+			 IndexDeclaration{"ft2", "text", "string", IndexOpts()},
+			 IndexDeclaration{
+				 "ft1+ft2=ft3", "text", "composite",
+				 IndexOpts().SetConfig(
+					 R"xxx({"enable_translit": true,"enable_numbers_search": true,"enable_kb_layout": true,"merge_limit": 20000,"log_level": 1})xxx")}});
 		DefineNamespaceDataset(
 			"nm2",
 			{IndexDeclaration{"id", "hash", "int", IndexOpts().PK()}, IndexDeclaration{"ft1", "text", "string", IndexOpts()},
@@ -44,10 +48,21 @@ public:
 		Add("nm1", ft1, ft2);
 		Add("nm2", ft1, ft2);
 	}
+
+	std::pair<string, int> Add(const std::string& ft1) {
+		Item item = NewItem("nm1");
+		item["id"] = counter_;
+		counter_++;
+		item["ft1"] = ft1;
+
+		Upsert("nm1", item);
+		Commit("nm1");
+		return make_pair(ft1, item.GetID());
+	}
 	void Add(const std::string& ns, const std::string& ft1, const std::string& ft2) {
 		Item item = NewItem(ns);
 		item["id"] = counter_;
-		counter_++;
+		++counter_;
 		item["ft1"] = ft1;
 		item["ft2"] = ft2;
 
@@ -57,19 +72,26 @@ public:
 	QueryResults SimpleSelect(string word) {
 		Query qr = Query("nm1").Where("ft3", CondEq, word);
 		QueryResults res;
-		qr.selectFunctions_.push_back("ft3 = highlight(!,!)");
+		qr.AddFunction("ft3 = highlight(!,!)");
 		reindexer->Select(qr, res);
 
 		return res;
+	}
+
+	void Delete(int id) {
+		Item item = NewItem("nm1");
+		item["id"] = id;
+
+		this->reindexer->Delete("nm1", item);
 	}
 	QueryResults SimpleCompositeSelect(string word) {
 		Query qr = Query("nm1").Where("ft3", CondEq, word);
 		QueryResults res;
 		Query mqr = Query("nm2").Where("ft3", CondEq, word);
-		mqr.selectFunctions_.push_back("ft1 = snippet(<b>,\"\"</b>,3,2,,d)");
+		mqr.AddFunction("ft1 = snippet(<b>,\"\"</b>,3,2,,d)");
 
 		qr.mergeQueries_.push_back(mqr);
-		qr.selectFunctions_.push_back("ft3 = highlight(<b>,</b>)");
+		qr.AddFunction("ft3 = highlight(<b>,</b>)");
 		reindexer->Select(qr, res);
 
 		return res;
