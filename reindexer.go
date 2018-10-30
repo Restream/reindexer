@@ -11,12 +11,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/restream/reindexer/bindings"
-	"github.com/restream/reindexer/cjson"
-	"github.com/restream/reindexer/dsl"
+	"git.itv.restr.im/itv-backend/reindexer/bindings"
+	"git.itv.restr.im/itv-backend/reindexer/cjson"
+	"git.itv.restr.im/itv-backend/reindexer/dsl"
 
-	// _ "github.com/restream/reindexer/bindings/builtinserver"
-	_ "github.com/restream/reindexer/bindings/cproto"
+	// _ "git.itv.restr.im/itv-backend/reindexer/bindings/builtinserver"
+	_ "git.itv.restr.im/itv-backend/reindexer/bindings/cproto"
 )
 
 // Condition types
@@ -300,9 +300,6 @@ func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s i
 		}
 
 		break
-	}
-	if err == nil {
-		ns.opened = true
 	}
 
 	return err

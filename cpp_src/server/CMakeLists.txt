@@ -47,9 +47,6 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
        COMMAND ${CMAKE_COMMAND} -E remove_directory \"${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}\"
        RESULT_VARIABLE ret
      )
-     if (NOT \"\${ret}\" STREQUAL \"0\")
-	 message(FATAL_ERROR \"Could not remove directory '${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}'\")
-     endif()
      file(REMOVE \"${PROJECT_BINARY_DIR}/swagger.tar.gz\")"
 )
 
@@ -62,9 +59,6 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
 	 COMMAND ${CMAKE_COMMAND} -E remove_directory \"${PROJECT_BINARY_DIR}/face\"
 	 RESULT_VARIABLE ret
      )
-     if (NOT \"\${ret}\" STREQUAL \"0\")
-	 message(FATAL_ERROR \"Could not remove directory '${PROJECT_BINARY_DIR}/face'\")
-     endif()
      execute_process(
 	 COMMAND ${CMAKE_COMMAND} -E tar xzf \"face.tar.gz\" WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
 	 RESULT_VARIABLE ret
