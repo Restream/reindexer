@@ -11,12 +11,12 @@ import (
 	"sync"
 	"time"
 
-	"git.itv.restr.im/itv-backend/reindexer/bindings"
-	"git.itv.restr.im/itv-backend/reindexer/cjson"
-	"git.itv.restr.im/itv-backend/reindexer/dsl"
+	"github.com/restream/reindexer/bindings"
+	"github.com/restream/reindexer/cjson"
+	"github.com/restream/reindexer/dsl"
 
-	// _ "git.itv.restr.im/itv-backend/reindexer/bindings/builtinserver"
-	_ "git.itv.restr.im/itv-backend/reindexer/bindings/cproto"
+	// _ "github.com/restream/reindexer/bindings/builtinserver"
+	_ "github.com/restream/reindexer/bindings/cproto"
 )
 
 // Condition types
