@@ -21,28 +21,28 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
 	\"${PROJECT_BINARY_DIR}/swagger.tar.gz\"
      )
      execute_process(
-       COMMAND ${CMAKE_COMMAND} -E tar xzf \"swagger.tar.gz\" WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+       COMMAND \"${CMAKE_COMMAND}\" -E tar xzf \"swagger.tar.gz\" WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
        RESULT_VARIABLE ret
      )
      if (NOT \"\${ret}\" STREQUAL \"0\")
 	 message(FATAL_ERROR \"Could not untar 'swagger.tar.gz'\")
      endif()
      execute_process(
-       COMMAND ${CMAKE_COMMAND} -E copy_directory \"${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}/dist\" \"${PROJECT_BINARY_DIR}/swagger\"
+       COMMAND \"${CMAKE_COMMAND}\" -E copy_directory \"${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}/dist\" \"${PROJECT_BINARY_DIR}/swagger\"
        RESULT_VARIABLE ret
      )
      if (NOT \"\${ret}\" STREQUAL \"0\")
 	 message(FATAL_ERROR \"Could not copy directory '${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}/dist'\")
      endif()
      execute_process(
-       COMMAND ${CMAKE_COMMAND} -E copy \"${PROJECT_SOURCE_DIR}/contrib/server.yml\" \"${PROJECT_BINARY_DIR}/swagger/swagger.yml\"
+       COMMAND \"${CMAKE_COMMAND}\" -E copy \"${PROJECT_SOURCE_DIR}/contrib/server.yml\" \"${PROJECT_BINARY_DIR}/swagger/swagger.yml\"
        RESULT_VARIABLE ret
      )
      if (NOT \"\${ret}\" STREQUAL \"0\")
 	 message(FATAL_ERROR \"Could not copy '${PROJECT_SOURCE_DIR}/contrib/server.yml'\")
      endif()
      file(RENAME \"${PROJECT_BINARY_DIR}/swagger/swagger-ui.min.js\" \"${PROJECT_BINARY_DIR}/swagger/swagger-ui.js\")
-     execute_process(COMMAND ${CMAKE_COMMAND} -P \"${PROJECT_BINARY_DIR}/swagger_replace.cmake\")
+     execute_process(COMMAND \"${CMAKE_COMMAND}\" -P \"${PROJECT_BINARY_DIR}/swagger_replace.cmake\")
      execute_process(
        COMMAND ${CMAKE_COMMAND} -E remove_directory \"${PROJECT_BINARY_DIR}/swagger-ui-${SWAGGER_VERSION}\"
        RESULT_VARIABLE ret
@@ -56,11 +56,11 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
 	\"${PROJECT_BINARY_DIR}/face.tar.gz\"
      )
      execute_process(
-	 COMMAND ${CMAKE_COMMAND} -E remove_directory \"${PROJECT_BINARY_DIR}/face\"
+	 COMMAND \"${CMAKE_COMMAND}\" -E remove_directory \"${PROJECT_BINARY_DIR}/face\"
 	 RESULT_VARIABLE ret
      )
      execute_process(
-	 COMMAND ${CMAKE_COMMAND} -E tar xzf \"face.tar.gz\" WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+	 COMMAND \"${CMAKE_COMMAND}\" -E tar xzf \"face.tar.gz\" WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
 	 RESULT_VARIABLE ret
      )
      if (NOT \"\${ret}\" STREQUAL \"0\")
@@ -73,8 +73,8 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
 if (LINK_RESOURCES)
 	include(CMakeRC)
 	execute_process(
-	    COMMAND ${CMAKE_COMMAND} -P "${PROJECT_BINARY_DIR}/make_face.cmake"
-	    COMMAND ${CMAKE_COMMAND} -P "${PROJECT_BINARY_DIR}/make_swagger.cmake"
+	    COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_BINARY_DIR}/make_face.cmake"
+	    COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_BINARY_DIR}/make_swagger.cmake"
 	    RESULT_VARIABLE ret
 	    ERROR_VARIABLE err
 	)
@@ -101,8 +101,8 @@ if (LINK_RESOURCES)
     target_link_libraries(${TARGET} reindexer)
 endif()
 
-add_custom_target(face COMMAND ${CMAKE_COMMAND} -P "${PROJECT_BINARY_DIR}/make_face.cmake")
-add_custom_target(swagger COMMAND ${CMAKE_COMMAND} -P "${PROJECT_BINARY_DIR}/make_swagger.cmake")
+add_custom_target(face COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_BINARY_DIR}/make_face.cmake")
+add_custom_target(swagger COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_BINARY_DIR}/make_swagger.cmake")
 
 if (NOT WIN32)
     install(FILES 
