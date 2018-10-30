@@ -88,34 +88,32 @@ void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Arg
 	WrSerializer ser;
 
 	if (clientData) {
-		ser.Printf("c='%d' db='%s@%s' ", clientData->connID, clientData->auth.Login().c_str(), clientData->auth.DBName().c_str());
+		ser << "c='" << clientData->connID << "' db='" << clientData->auth.Login() << "@" << clientData->auth.DBName() << "' ";
 	} else {
-		ser.PutChars("- - ");
+		ser << "- - ";
 	}
 
 	if (ctx.call) {
-		ser.Printf("%s ", cproto::CmdName(ctx.call->cmd));
+		ser << cproto::CmdName(ctx.call->cmd) << " ";
 		ctx.call->args.Dump(ser);
 	} else {
-		ser.PutChars("-");
+		ser << '-';
 	}
 
-	ser.Printf(" -> %s", err.ok() ? "OK" : err.what().c_str());
+	ser << " -> " << (err.ok() ? "OK" : err.what());
 	if (ret.size()) {
-		ser.PutChars(" ");
+		ser << ' ';
 		ret.Dump(ser);
 	}
 
 	if (allocDebug_) {
 		Stat statDiff = Stat() - ctx.stat;
 
-		ser.Printf(" | elapsed: %dus, allocs: %d, allocated: %d byte(s)", int(statDiff.GetTimeElapsed()), int(statDiff.GetAllocsCnt()),
-				   int(statDiff.GetAllocsBytes()));
+		ser << " | elapsed: " << statDiff.GetTimeElapsed() << "us, allocs: " << statDiff.GetAllocsCnt()
+			<< ", allocated: " << statDiff.GetAllocsBytes() << " byte(s)";
 	}
 
-	ser.PutChar(0);
-
-	logger_.info("{0}", reinterpret_cast<char *>(ser.Buf()));
+	logger_.info("{0}", ser.Slice());
 }
 
 Error RPCServer::OpenNamespace(cproto::Context &ctx, p_string nsDefJson) {
@@ -149,12 +147,12 @@ Error RPCServer::EnumNamespaces(cproto::Context &ctx) {
 		return err;
 	}
 	WrSerializer ser;
-	ser.PutChars("{\"items\":[");
+	ser << "{\"items\":[";
 	for (unsigned i = 0; i < nsDefs.size(); i++) {
-		if (i != 0) ser.PutChar(',');
+		if (i != 0) ser << ',';
 		nsDefs[i].GetJSON(ser);
 	}
-	ser.PutChars("]}");
+	ser << "]}";
 	auto resSlice = ser.Slice();
 
 	ctx.Return({cproto::Arg(p_string(&resSlice))});
@@ -357,7 +355,7 @@ Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int 
 Error RPCServer::SelectSQL(cproto::Context &ctx, p_string querySql, int flags, int limit, p_string ptVersionsPck) {
 	int id = -1;
 	QueryResults &qres = getQueryResults(ctx, id);
-	auto ret = getDB(ctx, kRoleDataRead)->Select(querySql.toString(), qres);
+	auto ret = getDB(ctx, kRoleDataRead)->Select(querySql, qres);
 	if (!ret.ok()) {
 		freeQueryResults(ctx, id);
 		return ret;

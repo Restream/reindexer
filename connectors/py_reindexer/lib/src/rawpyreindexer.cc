@@ -13,11 +13,10 @@ static PyObject *queryResultsWrapperIterate(uintptr_t qresWrapperAddr) {
 
 	WrSerializer wrSer;
 	qresWrapperPtr->itPtr.GetJSON(wrSer, false);
-	wrSer.PutChar('\0');
 
 	qresWrapperPtr->next();
 
-	char *json = reinterpret_cast<char *>(wrSer.Buf());
+	char *json = const_cast<char *>(wrSer.c_str());
 
 	PyObject *dictFromJson;
 	try {
@@ -130,8 +129,7 @@ static PyObject *IndexAdd(PyObject *self, PyObject *args) {
 
 	Py_DECREF(indexDefDict);
 
-	wrSer.PutChar('\0');
-	char *json = reinterpret_cast<char *>(wrSer.Buf());
+	char *json = const_cast<char *>(wrSer.c_str());
 
 	IndexDef indexDef;
 	Error err = indexDef.FromJSON(json);
@@ -167,8 +165,7 @@ static PyObject *IndexUpdate(PyObject *self, PyObject *args) {
 
 	Py_DECREF(indexDefDict);
 
-	wrSer.PutChar('\0');
-	char *json = reinterpret_cast<char *>(wrSer.Buf());
+	char *json = const_cast<char *>(wrSer.c_str());
 
 	IndexDef indexDef;
 	Error err = indexDef.FromJSON(json);
@@ -227,8 +224,7 @@ static PyObject *itemModify(PyObject *self, PyObject *args, ItemModifyMode mode)
 
 	Py_DECREF(itemDefDict);
 
-	wrSer.PutChar('\0');
-	char *json = reinterpret_cast<char *>(wrSer.Buf());
+	char *json = const_cast<char *>(wrSer.c_str());
 
 	err = item.Unsafe().FromJSON(json, 0, mode == ModeDelete);
 	if (!err.ok()) {
@@ -395,9 +391,7 @@ static PyObject *EnumNamespaces(PyObject *self, PyObject *args) {
 
 		wrSer.Reset();
 		it->GetJSON(wrSer, false);
-		wrSer.PutChar('\0');
-
-		char *json = reinterpret_cast<char *>(wrSer.Buf());
+		char *json = const_cast<char *>(wrSer.c_str());
 
 		PyObject *dictFromJson;
 		try {

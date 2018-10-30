@@ -24,7 +24,7 @@ public:
 	/// @param _start - number of the first row to get from selected set. Analog to sql LIMIT Offset.
 	/// @param _count - number of rows to get from result set. Analog to sql LIMIT RowsCount.
 	/// @param _calcTotal - calculation mode.
-	Query(const string &__namespace, unsigned _start = 0, unsigned _count = UINT_MAX, CalcTotalMode _calcTotal = ModeNoTotal);
+	explicit Query(const string &__namespace, unsigned _start = 0, unsigned _count = UINT_MAX, CalcTotalMode _calcTotal = ModeNoTotal);
 
 	/// Creates an empty object.
 	Query() {}
@@ -35,7 +35,7 @@ public:
 	/// Parses pure sql select query and initializes Query object data members as a result.
 	/// @param q - sql query.
 	/// @return always returns 0.
-	int Parse(const string &q);
+	int FromSQL(const string_view &q);
 
 	/// Parses JSON dsl set.
 	/// @param dsl - dsl set.
@@ -43,7 +43,9 @@ public:
 	Error ParseJson(const string &dsl);
 
 	/// Logs query in 'Select field1, ... field N from namespace ...' format.
-	string Dump(bool stripArgs = false) const;
+	/// @param ser - serializer to store SQL string
+
+	WrSerializer &GetSQL(WrSerializer &wr, bool stripArgs = false) const;
 
 	/// Enable explain query
 	/// @param on - signaling on/off
@@ -382,16 +384,16 @@ protected:
 	}
 
 	/// Builds print version of a query with join in sql format.
-	/// @return query sql string.
-	string dumpJoined(bool stripArgs) const;
+	/// @param ser - serializer to store SQL string
+	void dumpJoined(WrSerializer &ser, bool stripArgs) const;
 
 	/// Builds a print version of a query with merge queries in sql format.
-	/// @return query sql string.
-	string dumpMerged(bool stripArgs) const;
+	/// @param ser - serializer to store SQL string
+	void dumpMerged(WrSerializer &ser, bool stripArgs) const;
 
 	/// Builds a print version of a query's order by statement
-	/// @return query sql string.
-	string dumpOrderBy(bool stripArgs) const;
+	/// @param ser - serializer to store SQL string
+	void dumpOrderBy(WrSerializer &ser, bool stripArgs) const;
 
 public:
 	/// Next operation constant.

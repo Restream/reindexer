@@ -89,7 +89,7 @@ public:
 	/// Execute SQL Query and return results
 	/// @param query - SQL query. Only "SELECT" semantic is supported
 	/// @param result - QueryResults with found items
-	Error Select(const string &query, QueryResults &result);
+	Error Select(const string_view &query, QueryResults &result);
 	/// Execute Query and return results
 	/// @param query - Query object with query attributes
 	/// @param result - QueryResults with found items

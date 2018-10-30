@@ -49,7 +49,7 @@ public:
 	// Get data pointer
 	uint8_t *Ptr() const { return p_ + sizeof(dataHeader); }
 	void SetLSN(int64_t lsn) { header()->lsn = lsn; }
-	int64_t GetLSN() const { return header()->lsn; }
+	int64_t GetLSN() const { return p_ ? header()->lsn : 0; }
 	bool IsFree() const { return bool(p_ == nullptr); }
 	void Free() { release(); }
 	size_t GetCapacity() const { return header()->cap; }

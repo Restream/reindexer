@@ -14,6 +14,7 @@ import (
 	"unsafe"
 
 	"github.com/restream/reindexer/bindings"
+	"github.com/restream/reindexer/cjson"
 )
 
 const defCgoLimit = 2000
@@ -78,10 +79,9 @@ func err2go(ret C.reindexer_error) error {
 }
 
 func ret2go(ret C.reindexer_ret) (*RawCBuffer, error) {
-	if ret.err.what != nil {
-		defer C.free(unsafe.Pointer(ret.err.what))
-		defer C.reindexer_free_buffers(&ret.out, 1)
-		return nil, bindings.NewError("rq:"+C.GoString(ret.err.what), int(ret.err.code))
+	if ret.err_code != 0 {
+		defer C.free(unsafe.Pointer(uintptr(ret.out.data)))
+		return nil, bindings.NewError("rq:"+C.GoString((*C.char)(unsafe.Pointer(uintptr(ret.out.data)))), int(ret.err_code))
 	}
 
 	rbuf := newRawCBuffer()
@@ -163,12 +163,27 @@ func (binding *Builtin) Ping() error {
 	return err2go(C.reindexer_ping(binding.rx))
 }
 
-func (binding *Builtin) ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, packedPercepts []byte, stateToken int, txID int) (bindings.RawBuffer, error) {
+func (binding *Builtin) ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, precepts []string, stateToken int, txID int) (bindings.RawBuffer, error) {
 	if binding.cgoLimiter != nil {
 		binding.cgoLimiter <- struct{}{}
 		defer func() { <-binding.cgoLimiter }()
 	}
-	return ret2go(C.reindexer_modify_item(binding.rx, str2c(namespace), C.int(format), buf2c(data), C.int(mode), buf2c(packedPercepts), C.int(stateToken), C.int(txID)))
+
+	ser1 := cjson.NewPoolSerializer()
+	defer ser1.Close()
+	ser1.PutVString(namespace)
+	ser1.PutVarCUInt(format)
+	ser1.PutVarCUInt(mode)
+	ser1.PutVarCUInt(stateToken)
+	ser1.PutVarCUInt(txID)
+
+	ser1.PutVarCUInt(len(precepts))
+	for _, precept := range precepts {
+		ser1.PutVString(precept)
+	}
+	packedArgs := ser1.Bytes()
+
+	return ret2go(C.reindexer_modify_item_packed(binding.rx, buf2c(packedArgs), buf2c(data)))
 }
 
 func (binding *Builtin) OpenNamespace(namespace string, enableStorage, dropOnFormatError bool, cacheMode uint8) error {
@@ -330,7 +345,10 @@ func (bf *bufFreeBatcher) loop() {
 
 func (bf *bufFreeBatcher) add(buf *RawCBuffer) {
 	if buf.cbuf.results_ptr != 0 {
-		bf.toFree(buf)
+		C.reindexer_free_buffers((*C.reindexer_resbuffer)(unsafe.Pointer(&buf.cbuf)), 1)
+		buf.cbuf.results_ptr = 0
+		bf.toPool(buf)
+		// bf.toFree(buf)
 	} else {
 		bf.toPool(buf)
 	}

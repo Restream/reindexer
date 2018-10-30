@@ -2,8 +2,7 @@
 
 namespace reindexer {
 
-CJsonBuilder::CJsonBuilder(WrSerializer &ser, ObjType type, TagsMatcher *tm, int tagName, bool denseArray)
-	: tm_(tm), ser_(&ser), type_(type), denseArray_(denseArray) {
+CJsonBuilder::CJsonBuilder(WrSerializer &ser, ObjType type, TagsMatcher *tm, int tagName) : tm_(tm), ser_(&ser), type_(type) {
 	switch (type_) {
 		case TypeArray:
 			ser_->PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
@@ -22,7 +21,7 @@ CJsonBuilder::~CJsonBuilder() { End(); }
 CJsonBuilder &CJsonBuilder::End() {
 	switch (type_) {
 		case TypeArray:
-			*(reinterpret_cast<int *>(ser_->Buf() + savePos_)) = static_cast<int>(carraytag(count_, denseArray_ ? lastTag_ : TAG_OBJECT));
+			*(reinterpret_cast<int *>(ser_->Buf() + savePos_)) = static_cast<int>(carraytag(count_, TAG_OBJECT));
 			break;
 		case TypeObject:
 			ser_->PutVarUint(static_cast<int>(ctag(TAG_END)));
@@ -37,24 +36,18 @@ CJsonBuilder &CJsonBuilder::End() {
 void CJsonBuilder::SetTagsMatcher(const TagsMatcher *tm) { tm_ = const_cast<TagsMatcher *>(tm); }
 
 CJsonBuilder CJsonBuilder::Object(int tagName) {
-	assert(type_ != TypeArray || !denseArray_);
 	count_++;
 	return CJsonBuilder(*ser_, TypeObject, tm_, tagName);
 }
 
-CJsonBuilder CJsonBuilder::Array(int tagName, bool denseArray) {
-	assert(type_ != TypeArray || !denseArray_);
+CJsonBuilder CJsonBuilder::Array(int tagName) {
+	assert(type_ != TypeArray);
 	count_++;
-	return CJsonBuilder(*ser_, TypeArray, tm_, tagName, denseArray);
+	return CJsonBuilder(*ser_, TypeArray, tm_, tagName);
 }
 
 inline void CJsonBuilder::putTag(int tagName, int tagType) {
-	if (denseArray_) {
-		assert(!count_ || lastTag_ == tagType);
-		lastTag_ = tagType;
-	} else {
-		ser_->PutVarUint(static_cast<int>(ctag(tagType, tagName)));
-	}
+	ser_->PutVarUint(static_cast<int>(ctag(tagType, tagName)));
 	count_++;
 }
 

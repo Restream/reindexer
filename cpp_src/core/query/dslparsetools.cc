@@ -64,7 +64,8 @@ static const fast_hash_map<string, CalcTotalMode> reqtotal_values = {
 // additional for 'Root::Aggregations' field
 
 static const fast_hash_map<string, Aggregation> aggregation_map = {{"field", Aggregation::Field}, {"type", Aggregation::Type}};
-static const fast_hash_map<string, AggType> aggregation_types = {{"sum", AggSum}, {"avg", AggAvg}};
+static const fast_hash_map<string, AggType> aggregation_types = {
+	{"sum", AggSum}, {"avg", AggAvg}, {"max", AggMax}, {"min", AggMin}, {"facet", AggFacet}};
 
 bool checkTag(JsonValue& val, JsonTag tag) { return val.getTag() == tag; }
 

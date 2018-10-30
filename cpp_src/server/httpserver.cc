@@ -361,22 +361,22 @@ int HTTPServer::GetItems(http::Context &ctx) {
 	unsigned offset = prepareOffset(offsetParam);
 
 	reindexer::WrSerializer querySer;
-	querySer.Printf("SELECT %s FROM %s", fields.c_str(), nsName.c_str());
+	querySer << "SELECT " << fields << " FROM " << nsName;
 	if (filterParam.length()) {
-		querySer.Printf(" WHERE %s", filterParam.c_str());
+		querySer << " WHERE " << filterParam;
 	}
 	if (sortField.length()) {
-		querySer.Printf(" ORDER BY %s", sortField.ToString().c_str());
+		querySer << " ORDER BY " << sortField;
 
 		if (sortOrder == "desc") {
-			querySer.PutChars(" DESC");
+			querySer << " DESC";
 		}
 	}
-	querySer.Printf(" LIMIT %d OFFSET %d", limit, offset);
+	querySer << " LIMIT " << limit << " OFFSET " << offset;
 
 	reindexer::Query q;
 
-	q.Parse(querySer.Slice().ToString());
+	q.FromSQL(querySer.Slice());
 	q.ReqTotal();
 
 	reindexer::QueryResults res;
@@ -423,12 +423,12 @@ int HTTPServer::GetIndexes(http::Context &ctx) {
 
 	reindexer::WrSerializer wrSer;
 
-	wrSer.PutChars("\"items\":[");
+	wrSer << "\"items\":[";
 	for (size_t i = 0; i < nsDefIt->indexes.size(); i++) {
-		if (i != 0) wrSer.PutChar(',');
+		if (i != 0) wrSer << ',';
 		nsDefIt->indexes[i].GetJSON(wrSer);
 	}
-	wrSer.PutChars("]");
+	wrSer << ']';
 
 	ctx.writer->Write(wrSer.Buf(), wrSer.Len());
 

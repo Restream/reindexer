@@ -3,7 +3,9 @@
 #include "core/keyvalue/key_string.h"
 #include "estl/tokenizer.h"
 #include "tools/errors.h"
+#include "tools/serializer.h"
 #include "tools/stringstools.h"
+
 namespace reindexer {
 
 bool QueryEntry::operator==(const QueryEntry &obj) const {
@@ -187,38 +189,35 @@ int QueryWhere::ParseWhere(tokenizer &parser) {
 const char *condNames[] = {"IS NOT NULL", "=", "<", "<=", ">", "=>", "RANGE", "IN", "ALLSET", "IS NULL"};
 const char *opNames[] = {"-", "OR", "AND", "AND NOT"};
 
-string QueryWhere::toString(bool stripArgs) const {
-	string res;
-	if (entries.size()) res = " WHERE";
+void QueryWhere::dumpWhere(WrSerializer &ser, bool stripArgs) const {
+	if (entries.size()) ser << " WHERE";
 
 	for (auto &e : entries) {
 		if (&e != &*entries.begin() && unsigned(e.op) < sizeof(opNames) / sizeof(opNames[0])) {
-			res += " " + string(opNames[e.op]);
+			ser << " " << opNames[e.op];
 		} else if (&e == &*entries.begin() && e.op == OpNot) {
-			res += " NOT";
+			ser << " NOT";
 		}
-		res += " " + e.index + " ";
+		ser << " " << e.index << " ";
 		if (e.condition < sizeof(condNames) / sizeof(condNames[0]))
-			res += string(condNames[e.condition]) + " ";
+			ser << condNames[e.condition] << " ";
 		else
-			res += "<unknown cond> ";
+			ser << "<unknown cond> ";
 		if (e.condition == CondEmpty || e.condition == CondAny) {
 		} else if (stripArgs) {
-			res += '?';
+			ser << '?';
 		} else {
-			if (e.values.size() > 1) res += "(";
+			if (e.values.size() > 1) ser << '(';
 			for (auto &v : e.values) {
-				if (&v != &*e.values.begin()) res += ",";
+				if (&v != &*e.values.begin()) ser << ',';
 				if (v.Type() == KeyValueString)
-					res += "'" + v.As<string>() + "'";
+					ser << '\'' << v.As<string>() << '\'';
 				else
-					res += v.As<string>();
+					ser << v.As<string>();
 			}
-			res += (e.values.size() > 1) ? ")" : "";
+			ser << ((e.values.size() > 1) ? ")" : "");
 		}
 	}
-
-	return res;
 }
 
 string QueryEntry::Dump() const {

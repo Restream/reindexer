@@ -19,11 +19,14 @@ ItemImpl &ItemImpl::operator=(ItemImpl &&other) noexcept {
 		precepts_ = std::move(other.precepts_);
 		unsafe_ = other.unsafe_;
 		holder_ = std::move(other.holder_);
+		cjson_ = std::move(other.cjson_);
+		ns_ = std::move(other.ns_);
 	}
 	return *this;
 }
 
 void ItemImpl::SetField(int field, const VariantArray &krs) {
+	cjson_ = string_view();
 	payloadValue_.Clone();
 	if (!unsafe_ && !krs.empty() && krs[0].Type() == KeyValueString) {
 		VariantArray krsCopy;
@@ -40,11 +43,7 @@ void ItemImpl::SetField(int field, const VariantArray &krs) {
 	}
 }
 
-Variant ItemImpl::GetField(int field) {
-	VariantArray kr;
-	GetPayload().Get(field, kr);
-	return kr[0];
-}
+Variant ItemImpl::GetField(int field) { return GetPayload().Get(field, 0); }
 
 // Construct item from compressed json
 Error ItemImpl::FromCJSON(const string_view &slice, bool pkOnly) {
@@ -55,11 +54,11 @@ Error ItemImpl::FromCJSON(const string_view &slice, bool pkOnly) {
 		data = holder_.back();
 	}
 
-	Serializer rdser(data);
 	// check tags matcher update
 
 	uint32_t tmOffset = 0;
 	try {
+		Serializer rdser(data);
 		int tag = rdser.GetVarUint();
 		if (tag == TAG_END) {
 			tmOffset = rdser.GetUInt32();
@@ -67,26 +66,28 @@ Error ItemImpl::FromCJSON(const string_view &slice, bool pkOnly) {
 			Serializer tser(slice.substr(tmOffset));
 			tagsMatcher_.deserialize(tser);
 			tagsMatcher_.setUpdated();
-		} else
-			rdser.SetPos(0);
+			data = data.substr(1 + sizeof(uint32_t), tmOffset - 5);
+		}
 	} catch (const Error &err) {
 		return err;
 	}
+	cjson_ = data;
+	Serializer rdser(data);
 
 	Payload pl = GetPayload();
 	CJsonDecoder decoder(tagsMatcher_, pkOnly ? &pkFields_ : nullptr);
 	auto err = decoder.Decode(&pl, rdser, ser_);
 
-	if (err.ok() && !rdser.Eof() && rdser.Pos() != tmOffset)
-		return Error(errParseJson, "Internal error - left unparsed data %d", int(rdser.Pos()));
+	if (err.ok() && !rdser.Eof()) return Error(errParseJson, "Internal error - left unparsed data %d", int(rdser.Pos()));
 
-	tupleData_ = make_key_string(ser_.Slice());
-	pl.Set(0, {Variant(tupleData_)});
+	tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
+	pl.Set(0, {Variant(p_string(&tupleData_))});
 	return err;
 }
 
 Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool pkOnly) {
 	string_view data = slice;
+	cjson_ = string_view();
 
 	if (!unsafe_ && endp == nullptr) {
 		holder_.push_back(slice.ToString());
@@ -110,14 +111,15 @@ Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool pkOnly) {
 	auto err = decoder.Decode(&pl, ser_, value);
 
 	// Put tuple to field[0]
-	tupleData_ = make_key_string(ser_.Slice());
-	pl.Set(0, {Variant(tupleData_)});
+	tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
+	pl.Set(0, {Variant(p_string(&tupleData_))});
 	return err;
 }
 
 Error ItemImpl::FromCJSON(ItemImpl *other) {
-	auto cjson = other->GetCJSON();
-	return FromCJSON(cjson);
+	auto ret = FromCJSON(other->GetCJSON());
+	cjson_ = string_view();
+	return ret;
 }
 
 string_view ItemImpl::GetJSON() {
@@ -133,11 +135,17 @@ string_view ItemImpl::GetJSON() {
 }
 
 string_view ItemImpl::GetCJSON() {
+	if (cjson_.size()) return cjson_;
 	ser_.Reset();
 	return GetCJSON(ser_);
 }
 
 string_view ItemImpl::GetCJSON(WrSerializer &ser) {
+	if (cjson_.size()) {
+		ser.Write(cjson_);
+		return ser.Slice();
+	}
+
 	ConstPayload pl(payloadType_, payloadValue_);
 
 	CJsonBuilder builder(ser, CJsonBuilder::TypePlain);

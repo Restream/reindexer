@@ -13,6 +13,7 @@ using std::vector;
 
 namespace reindexer {
 
+class Namespace;
 class ItemImpl {
 public:
 	// Construct empty item
@@ -50,9 +51,25 @@ public:
 
 	TagsMatcher &tagsMatcher() { return tagsMatcher_; }
 
-	void SetPrecepts(const vector<string> &precepts) { precepts_ = precepts; }
+	void SetPrecepts(const vector<string> &precepts) {
+		precepts_ = precepts;
+		cjson_ = string_view();
+	}
 	const vector<string> &GetPrecepts() { return precepts_; }
 	void Unsafe(bool enable) { unsafe_ = enable; }
+	void Clear(const TagsMatcher &tagsMatcher) {
+		tagsMatcher_ = tagsMatcher;
+		precepts_.clear();
+		cjson_ = string_view();
+		holder_.clear();
+		ser_.Reset();
+		tagsMatcher_.clearUpdated();
+		GetPayload().Reset();
+		unsafe_ = false;
+		ns_.reset();
+	}
+	void SetNamespace(std::shared_ptr<Namespace> ns) { ns_ = ns; }
+	std::shared_ptr<Namespace> GetNamespace() { return ns_; }
 
 protected:
 	// Index fields payload data
@@ -63,11 +80,13 @@ protected:
 
 	JsonAllocator jsonAllocator_;
 	WrSerializer ser_;
-	key_string tupleData_;
+	string tupleData_;
 
 	vector<string> precepts_;
 	bool unsafe_ = false;
 	std::deque<std::string> holder_;
+	string_view cjson_;
+	std::shared_ptr<Namespace> ns_;
 };
 
 }  // namespace reindexer

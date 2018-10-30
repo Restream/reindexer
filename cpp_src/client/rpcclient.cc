@@ -184,7 +184,7 @@ void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
 	return;
 }
 
-Error RPCClient::Select(const string& query, QueryResults& result) {
+Error RPCClient::Select(const string_view& query, QueryResults& result) {
 	int flags = kResultsJson;
 	WrSerializer pser;
 	h_vector<int32_t, 4> vers;

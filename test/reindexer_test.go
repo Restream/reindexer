@@ -105,6 +105,16 @@ func randIntArr(cnt int, start int, rng int) (arr []int) {
 	}
 	return arr
 }
+func randInt32Arr(cnt int, start int, rng int) (arr []int32) {
+	if cnt == 0 {
+		return nil
+	}
+	arr = make([]int32, 0, cnt)
+	for j := 0; j < cnt; j++ {
+		arr = append(arr, int32(start+rand.Int()%rng))
+	}
+	return arr
+}
 
 var (
 	adjectives = [...]string{"able", "above", "absolute", "balanced", "becoming", "beloved", "calm", "capable", "capital", "destined", "devoted", "direct", "enabled", "enabling", "endless", "factual", "fair", "faithful", "grand", "grateful", "great", "humane", "humble", "humorous", "ideal", "immense", "immortal", "joint", "just", "keen", "key", "kind", "logical", "loved", "loving", "mint", "model", "modern", "nice", "noble", "normal", "one", "open", "optimal", "polite", "popular", "positive", "quality", "quick", "quiet", "rapid", "rare", "rational", "sacred", "safe", "saved", "tight", "together", "tolerant", "unbiased", "uncommon", "unified", "valid", "valued", "vast", "wealthy", "welcome"}

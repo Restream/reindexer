@@ -1,8 +1,12 @@
 #pragma once
 
+#include "core/keyvalue/p_string.h"
 #include "tagsmatcher.h"
 
 namespace reindexer {
+
+void copyCJsonValue(int tagType, Serializer &rdser, WrSerializer &wrser);
+
 class CJsonBuilder {
 public:
 	enum ObjType {
@@ -11,18 +15,12 @@ public:
 		TypePlain,
 	};
 
-	CJsonBuilder(WrSerializer &ser, ObjType = TypeObject, TagsMatcher *tm = nullptr, int tagName = 0, bool denseArray = false);
+	CJsonBuilder(WrSerializer &ser, ObjType = TypeObject, TagsMatcher *tm = nullptr, int tagName = 0);
 	CJsonBuilder() : tm_(nullptr), ser_(nullptr), type_(TypePlain) {}
 	~CJsonBuilder();
 	CJsonBuilder(const CJsonBuilder &) = delete;
 	CJsonBuilder(CJsonBuilder &&other)
-		: tm_(other.tm_),
-		  ser_(other.ser_),
-		  type_(other.type_),
-		  savePos_(other.savePos_),
-		  count_(other.count_),
-		  lastTag_(other.lastTag_),
-		  denseArray_(other.denseArray_) {
+		: tm_(other.tm_), ser_(other.ser_), type_(other.type_), savePos_(other.savePos_), count_(other.count_) {
 		other.type_ = TypePlain;
 	}
 
@@ -33,19 +31,47 @@ public:
 
 	/// Start new object
 	CJsonBuilder Object(int tagName);
-	CJsonBuilder Array(int tagName, bool dense = false);
+	CJsonBuilder Array(int tagName);
 
 	CJsonBuilder Array(const char *name) { return Array(tm_->name2tag(name, true)); }
 	CJsonBuilder Object(const char *name) { return Object(tm_->name2tag(name, true)); }
 
-	CJsonBuilder &Put(const char *name, const Variant &kv) { return Put(tm_->name2tag(name, true), kv); }
+	void Array(int tagName, span<p_string> data) {
+		ser_->PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
+		ser_->PutUInt32(int(carraytag(data.size(), TAG_STRING)));
+		for (auto d : data) ser_->PutVString(d);
+	}
+	void Array(int tagName, span<int> data) {
+		ser_->PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
+		ser_->PutUInt32(int(carraytag(data.size(), TAG_VARINT)));
+		for (auto d : data) ser_->PutVarint(d);
+	}
+	void Array(int tagName, span<int64_t> data) {
+		ser_->PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
+		ser_->PutUInt32(int(carraytag(data.size(), TAG_VARINT)));
+		for (auto d : data) ser_->PutVarint(d);
+	}
+	void Array(int tagName, span<bool> data) {
+		ser_->PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
+		ser_->PutUInt32(int(carraytag(data.size(), TAG_BOOL)));
+		for (auto d : data) ser_->PutBool(d);
+	}
+	void Array(int tagName, span<double> data) {
+		ser_->PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
+		ser_->PutUInt32(int(carraytag(data.size(), TAG_DOUBLE)));
+		for (auto d : data) ser_->PutDouble(d);
+	}
+	void Array(int tagName, Serializer &ser, int tagType, int count) {
+		ser_->PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
+		ser_->PutUInt32(int(carraytag(count, tagType)));
+		while (count--) copyCJsonValue(tagType, ser, *ser_);
+	}
 
-	CJsonBuilder &Put(const char *name, bool arg) { return Put(tm_->name2tag(name, true), arg); }
-	CJsonBuilder &Put(const char *name, int arg) { return Put(tm_->name2tag(name, true), arg); }
-	CJsonBuilder &Put(const char *name, int64_t arg) { return Put(tm_->name2tag(name, true), arg); }
-	CJsonBuilder &Put(const char *name, double arg) { return Put(tm_->name2tag(name, true), arg); }
-	CJsonBuilder &Put(const char *name, const string_view &arg) { return Put(tm_->name2tag(name, true), arg); }
-	CJsonBuilder &Put(const char *name, const char *arg) { return Put(tm_->name2tag(name, true), arg); }
+	template <typename T>
+	CJsonBuilder &Put(const char *name, T arg) {
+		return Put(tm_->name2tag(name, true), arg);
+	}
+
 	CJsonBuilder &Null(const char *name) { return Null(tm_->name2tag(name, true)); }
 	CJsonBuilder &Ref(const char *name, int type, int field) { return Ref(tm_->name2tag(name, true), type, field); }
 
@@ -70,8 +96,6 @@ protected:
 	ObjType type_;
 	int savePos_ = 0;
 	int count_ = 0;
-	int lastTag_ = 0;
-	bool denseArray_ = false;
 };
 
 }  // namespace reindexer

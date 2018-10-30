@@ -253,7 +253,7 @@ static inline uint64_t parse_fixed_uint64(const uint8_t *data) {
 	return t;
 }
 
-static unsigned scan_varint(unsigned len, const uint8_t *data) {
+static inline unsigned scan_varint(unsigned len, const uint8_t *data) {
 	unsigned i;
 	if (len > 10) len = 10;
 	for (i = 0; i < len; i++)

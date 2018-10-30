@@ -133,22 +133,21 @@ bool WrResultSerializer::PutResults(const QueryResults* result) {
 		// Put Item ID and version
 		putItemParams(result, i, true);
 
-		if (!(opts_.flags & kResultsWithJoined)) {
-			continue;
-		}
+		if (opts_.flags & kResultsWithJoined) {
+			auto rowIt = result->begin() + (i + opts_.fetchOffset);
 
-		auto rowIt = result->begin() + (i + opts_.fetchOffset);
-
-		const QRVector& jres = rowIt.GetJoined();
-		// Put count of joined subqueires for item ID
-		PutVarUint(jres.size());
-		for (auto& jfres : jres) {
-			// Put count of returned items from joined namespace
-			PutVarUint(jfres.Count());
-			for (unsigned j = 0; j < jfres.Count(); j++) {
-				putItemParams(&jfres, j, false);
+			const QRVector& jres = rowIt.GetJoined();
+			// Put count of joined subqueires for item ID
+			PutVarUint(jres.size());
+			for (auto& jfres : jres) {
+				// Put count of returned items from joined namespace
+				PutVarUint(jfres.Count());
+				for (unsigned j = 0; j < jfres.Count(); j++) {
+					putItemParams(&jfres, j, false);
+				}
 			}
 		}
+		if (i == 0) grow((opts_.fetchLimit - 1) * len_);
 	}
 	return opts_.fetchOffset + opts_.fetchLimit >= result->Count();
 }

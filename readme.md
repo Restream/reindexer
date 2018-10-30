@@ -22,6 +22,7 @@ The core is written in C++ and the application level API is in Go.
 	- [SQL compatible interface](#sql-compatible-interface)
 - [Installation](#installation)
     - [Installation for server mode](#installation-for-server-mode)
+       - [Official docker image](#official-docker-image)
     - [Installation for embeded mode](#installation-for-embeded-mode)
 		- [Prerequirements](#prerequirements)
 		- [Get Reindexer](#get-reindexer)
@@ -44,6 +45,10 @@ The core is written in C++ and the application level API is in Go.
 	- [Turn on logger](#turn-on-logger)
 	- [Debug queries](#debug-queries)
 	- [Profiling](#profiling)
+- [Maintenance](#maintenance)
+    - [Web interface](#web-interface)
+    - [Command line tool](#command-line-tool)
+    - [Dump and restore database](#dump-and-restore-database)
 - [Integration with other program languages](#integration-with-other-program-languages)
 	- [Pyreindexer](#pyreindexer)
 - [Limitations and known issues](#limitations-and-known-issues)
@@ -220,6 +225,16 @@ Reindexer can run in 3 different modes:
 
  1. [Install Reindexer Server](cpp_src/readme.md#installation)
  2. go get -a github.com/restream/reindexer
+
+#### Official docker image
+
+The simplest way to get reindexer server, is pulling & run docker image from [dockerhub](https://hub.docker.com/r/reindexer/reindexer/). 
+
+````bash
+docker run -p9088:9088 -p6534:6534 -it reindexer/reindexer
+````
+
+[Dockerfile](cpp_src/cmd/reindexer_server/contrib/Dockerfile)
 
 ### Installation for embeded mode
 
@@ -594,11 +609,50 @@ go func() {
 pprof -symbolize remote http://localhost:6060/debug/cgo/pprof/heap
 ```
 
+## Maintenance
+
+For maintenance and work with data, stored in reindexer database there are 2 methods available:
+
+- Web interface
+- Command line tool
+
+### Web interface
+
+Reindexer server and `builtinserver` binding mode are coming with Web UI out-of-the box. To open web UI just start reindexer server
+or application with `builrinserver` mode, and open http://server-ip:9088/face in browser
+
+### Command line tool
+
+To work with database from command line you can use reindexer [command line tool](cpp_src/cmd/reindexer_tool/readme.md) 
+Command line tool have the following functions
+
+- Backup whole database into text file or console.
+- Make queries to database
+- Modify documents and DB metadata
+
+Command line tool can run in 2 modes. With server via network, and in server-less mode, directly with storage. 
+
+### Dump and restore database
+
+To dump and restore database in normal way there reindexer command line tool is used
+
+Backup whole database into single backup file:
+```sh
+reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --command '\dump' --output mydb.rxdump
+```
+
+Restore database from backup file:
+```sh
+reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --filename mydb.rxdump
+```
+
 ## Integration with other program languages
 
 A list of connectors for work with Reindexer via other program languages (TBC later):
 
-1. [Pyreindexer](https://github.com/Restream/reindexer/tree/master/connectors/py_reindexer) for Python (version >=3.6 is required). For setup run:
+### Pyreindexer
+
+1. [Pyreindexer](connectors/py_reindexer) for Python (version >=3.6 is required). For setup run:
 
 ```bash
 pip3 install git+https://github.com/Restream/reindexer.git

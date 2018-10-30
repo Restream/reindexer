@@ -21,7 +21,7 @@ Error Reindexer::GetMeta(const string& nsName, const string& key, string& data) 
 Error Reindexer::PutMeta(const string& nsName, const string& key, const string_view& data) { return impl_->PutMeta(nsName, key, data); }
 Error Reindexer::EnumMeta(const string& nsName, vector<string>& keys) { return impl_->EnumMeta(nsName, keys); }
 Error Reindexer::Delete(const Query& q, QueryResults& result) { return impl_->Delete(q, result); }
-Error Reindexer::Select(const string& query, QueryResults& result) { return impl_->Select(query, result); }
+Error Reindexer::Select(const string_view& query, QueryResults& result) { return impl_->Select(query, result); }
 Error Reindexer::Select(const Query& q, QueryResults& result) { return impl_->Select(q, result); }
 Error Reindexer::Commit(const string& nsName) { return impl_->Commit(nsName); }
 Error Reindexer::AddIndex(const string& nsName, const IndexDef& idx) { return impl_->AddIndex(nsName, idx); }

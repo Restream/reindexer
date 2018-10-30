@@ -27,20 +27,6 @@ func (db *Reindexer) modifyItem(namespace string, ns *reindexerNamespace, item i
 			return 0, err
 		}
 	}
-	var ser1 *cjson.Serializer
-
-	var packedPercepts []byte
-	if len(precepts) != 0 {
-		ser1 = cjson.NewPoolSerializer()
-		defer ser1.Close()
-
-		ser1.PutVarCUInt(len(precepts))
-		for _, precept := range precepts {
-			ser1.PutVString(precept)
-		}
-		packedPercepts = ser1.Bytes()
-
-	}
 
 	for tryCount := 0; tryCount < 2; tryCount++ {
 		ser := cjson.NewPoolSerializer()
@@ -53,7 +39,7 @@ func (db *Reindexer) modifyItem(namespace string, ns *reindexerNamespace, item i
 			return
 		}
 
-		out, err := db.binding.ModifyItem(ns.nsHash, ns.name, format, ser.Bytes(), mode, packedPercepts, stateToken, 0)
+		out, err := db.binding.ModifyItem(ns.nsHash, ns.name, format, ser.Bytes(), mode, precepts, stateToken, 0)
 
 		if err != nil {
 			rerr, ok := err.(bindings.Error)
@@ -142,7 +128,7 @@ func (db *Reindexer) GetMeta(namespace, key string) ([]byte, error) {
 	return ret, nil
 }
 
-func unpackItem(ns nsArrayEntry, params rawResultItemParams, allowUnsafe bool, nonCacheableData bool) (item interface{}, err error) {
+func unpackItem(ns *nsArrayEntry, params *rawResultItemParams, allowUnsafe bool, nonCacheableData bool) (item interface{}, err error) {
 	useCache := (ns.deepCopyIface || allowUnsafe) && !nonCacheableData && ns.cacheItems != nil
 	needCopy := ns.deepCopyIface && !allowUnsafe
 
@@ -307,16 +293,15 @@ func (db *Reindexer) prepareQuery(q *Query, asJson bool) (result bindings.RawBuf
 		}
 	}
 
-	ptVersions := make([]int32, 0, 16)
 	for _, ns := range q.nsArray {
-		ptVersions = append(ptVersions, ns.localCjsonState.Version^ns.localCjsonState.StateToken)
+		q.ptVersions = append(q.ptVersions, ns.localCjsonState.Version^ns.localCjsonState.StateToken)
 	}
 	fetchCount := q.fetchCount
 	if asJson {
 		// json iterator not support fetch queries
 		fetchCount = -1
 	}
-	result, err = db.binding.SelectQuery(ser.Bytes(), asJson, ptVersions, fetchCount)
+	result, err = db.binding.SelectQuery(ser.Bytes(), asJson, q.ptVersions, fetchCount)
 
 	if err == nil && result.GetBuf() == nil {
 		panic(fmt.Errorf("result.Buffer is nil"))

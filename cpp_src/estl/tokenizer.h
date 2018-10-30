@@ -40,7 +40,7 @@ public:
 
 class tokenizer {
 public:
-	tokenizer(const string &query);
+	tokenizer(const string_view &query);
 	token next_token(bool to_lower = true);
 	token peek_token(bool to_lower = true);
 	void skip_space();
@@ -48,8 +48,8 @@ public:
 	string where() const;
 
 protected:
+	string_view q;
 	const char *cur;
-	const char *beg;
 };
 
 }  // namespace reindexer

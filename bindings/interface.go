@@ -117,7 +117,7 @@ type RawBinding interface {
 	DropIndex(namespace, index string) error
 	PutMeta(namespace, key, data string) error
 	GetMeta(namespace, key string) (RawBuffer, error)
-	ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, packedPercepts []byte, stateToken int, txID int) (RawBuffer, error)
+	ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, percepts []string, stateToken int, txID int) (RawBuffer, error)
 	Select(query string, withItems bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
 	SelectQuery(rawQuery []byte, withItems bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
 	DeleteQuery(nsHash int, rawQuery []byte) (RawBuffer, error)

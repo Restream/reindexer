@@ -157,7 +157,8 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 				ctx.preResult->iterators.push_back(it);
 			}
 			if (ctx.query.debugLevel >= LogInfo) {
-				logPrintf(LogInfo, "%s", ctx.query.Dump().c_str());
+				WrSerializer ser;
+				logPrintf(LogInfo, "%s", ctx.query.GetSQL(ser).c_str());
 				logPrintf(LogInfo, "Built prePresult (expected %d iterations) with %d iterators", maxIters, qres.size());
 			}
 
@@ -247,7 +248,8 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	explain.SetIterations(iters);
 
 	if (ctx.query.debugLevel >= LogInfo) {
-		logPrintf(LogInfo, "%s", ctx.query.Dump().c_str());
+		WrSerializer ser;
+		logPrintf(LogInfo, "%s", ctx.query.GetSQL(ser).c_str());
 		explain.LogDump(ctx.query.debugLevel);
 	}
 	if (ctx.query.explain_) {

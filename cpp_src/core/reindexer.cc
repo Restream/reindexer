@@ -26,7 +26,7 @@ Error Reindexer::PutMeta(const string& _namespace, const string& key, const stri
 }
 Error Reindexer::EnumMeta(const string& _namespace, vector<string>& keys) { return impl_->EnumMeta(_namespace, keys); }
 Error Reindexer::Delete(const Query& q, QueryResults& result) { return impl_->Delete(q, result); }
-Error Reindexer::Select(const string& query, QueryResults& result) { return impl_->Select(query, result); }
+Error Reindexer::Select(const string_view& query, QueryResults& result) { return impl_->Select(query, result); }
 Error Reindexer::Select(const Query& q, QueryResults& result) { return impl_->Select(q, result); }
 Error Reindexer::Commit(const string& _namespace) { return impl_->Commit(_namespace); }
 Error Reindexer::AddIndex(const string& _namespace, const IndexDef& idx) { return impl_->AddIndex(_namespace, idx); }

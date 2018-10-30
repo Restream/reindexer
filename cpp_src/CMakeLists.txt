@@ -250,6 +250,32 @@ if (NOT CPACK_RPM_PACKAGE_REQUIRES STREQUAL "")
   string (SUBSTRING "${CPACK_RPM_PACKAGE_REQUIRES}" 1 -1 CPACK_RPM_PACKAGE_REQUIRES)
 endif ()
 
+if (NOT WIN32)
+  SET(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "server")
+  SET(DIST_INCLUDE_FILES
+    "tools/errors.h" "tools/serializer.h" "tools/varint.h"
+    "core/reindexer.h" "core/type_consts.h" "core/item.h" "core/payload/payloadvalue.h" "core/indexopts.h"
+    "core/namespacedef.h" "core/keyvalue/variant.h" "core/sortingprioritiestable.h"
+    "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" 
+    "core/query/query.h" "core/query/querywhere.h" "core/query/queryresults.h" "core/indexdef.h" "core/query/aggregationresult.h"
+    "estl/h_vector.h" "estl/string_view.h"
+    "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h" 
+    "debug/backtrace.h" "debug/allocdebug.h"
+  )
+
+  foreach ( file ${DIST_INCLUDE_FILES} )
+      get_filename_component( dir ${file} DIRECTORY )
+      install( FILES ${PROJECT_SOURCE_DIR}/${file} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/reindexer/${dir} COMPONENT dev )
+  endforeach()
+
+  install(TARGETS ${TARGET}
+      RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      COMPONENT dev
+  )
+endif ()
+
 add_subdirectory(server)
 add_subdirectory(cmd/reindexer_tool)
 add_subdirectory(cmd/reindexer_server)
@@ -275,28 +301,3 @@ add_custom_target(collect_coverage
   COMMAND genhtml coverage_filtered.info -o coverage_output
   COMMENT "Coollecting Reindexer coverage"
 )
-
-SET(DIST_INCLUDE_FILES
-  "tools/errors.h" "tools/serializer.h"
-  "core/reindexer.h" "core/type_consts.h" "core/item.h" "core/payload/payloadvalue.h" "core/indexopts.h"
-  "core/namespacedef.h" "core/keyvalue/variant.h" "core/sortingprioritiestable.h"
-  "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" 
-  "core/query/query.h" "core/query/querywhere.h" "core/query/queryresults.h" "core/indexdef.h" "core/query/aggregationresult.h"
-  "estl/h_vector.h" "estl/string_view.h"
-  "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h" 
-  "debug/backtrace.h" "debug/allocdebug.h"
-)
-
-foreach ( file ${DIST_INCLUDE_FILES} )
-    get_filename_component( dir ${file} DIRECTORY )
-    install( FILES ${PROJECT_SOURCE_DIR}/${file} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/reindexer/${dir} COMPONENT dev )
-endforeach()
-
-install(TARGETS ${TARGET}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    COMPONENT dev
-)
-
-include(CPack)

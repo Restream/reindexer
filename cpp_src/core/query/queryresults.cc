@@ -33,12 +33,26 @@ QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 		ctxs = std::move(obj.ctxs);
 		nonCacheableData = std::move(obj.nonCacheableData);
 		lockedResults_ = std::move(obj.lockedResults_);
+		explainResults = std::move(obj.explainResults);
+		aggregationResults = std::move(obj.aggregationResults);
 		obj.lockedResults_ = false;
 	}
 	return *this;
 }
 
 QueryResults::~QueryResults() { unlockResults(); }
+
+void QueryResults::Clear() {
+	unlockResults();
+	items_.resize(0);
+	joined_.resize(0);
+	ctxs.resize(0);
+	totalCount = 0;
+	haveProcent = false;
+	nonCacheableData = false;
+	aggregationResults.resize(0);
+	explainResults.resize(0);
+}
 
 void QueryResults::Erase(ItemRefVector::iterator start, ItemRefVector::iterator finish) {
 	assert(!lockedResults_);
@@ -242,7 +256,7 @@ void QueryResults::AddItem(Item &item) {
 	auto ritem = item.impl_;
 	if (item.GetID() != -1) {
 		ctxs.push_back(Context(ritem->Type(), ritem->tagsMatcher(), FieldsSet()));
-		Add(ItemRef(item.GetID(), ritem->Value()));
+		Add(ItemRef(item.GetID(), PayloadValue()));
 	}
 }
 

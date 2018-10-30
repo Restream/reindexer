@@ -13,16 +13,16 @@ import (
 type TestItemBench struct {
 	Prices     []*TestJoinItem `reindex:"prices,,joined"`
 	Pricesx    []*TestJoinItem `reindex:"pricesx,,joined"`
-	ID         int             `reindex:"id,,pk"`
+	ID         int32           `reindex:"id,,pk"`
 	Genre      int64           `reindex:"genre,tree"`
-	Year       int             `reindex:"year,tree"`
-	Packages   []int           `reindex:"packages,hash"`
+	Year       int32           `reindex:"year,tree"`
+	Packages   []int32         `reindex:"packages,hash"`
 	Countries  []string        `reindex:"countries,tree"`
-	Age        int             `reindex:"age,hash"`
-	PricesIDs  []int           `reindex:"price_id"`
+	Age        int32           `reindex:"age,hash"`
+	PricesIDs  []int32         `reindex:"price_id"`
 	LocationID string          `reindex:"location"`
-	EndTime    int             `reindex:"end_time,-"`
-	StartTime  int             `reindex:"start_time,tree"`
+	EndTime    int32           `reindex:"end_time,-"`
+	StartTime  int32           `reindex:"start_time,tree"`
 }
 type TestJoinCtx struct {
 	allPrices []*TestJoinItem
@@ -44,8 +44,8 @@ func (item *TestItemBench) Join(field string, subitems []interface{}, context in
 	}
 }
 
-var pkgs = make([][]int, 0)
-var priceIds = make([][]int, 0)
+var pkgs = make([][]int32, 0)
+var priceIds = make([][]int32, 0)
 
 var testItemsSeed = make([]*TestItem, 0)
 var testItemsJsonSeed = make([][]byte, 0)
@@ -55,10 +55,10 @@ var cjsonState = cjson.NewState()
 
 func init() {
 	for i := 0; i < 10; i++ {
-		pkgs = append(pkgs, randIntArr(20, 10000, 10))
+		pkgs = append(pkgs, randInt32Arr(20, 10000, 10))
 	}
 	for i := 0; i < 20; i++ {
-		priceIds = append(priceIds, randIntArr(10, 7000, 50))
+		priceIds = append(priceIds, randInt32Arr(10, 7000, 50))
 	}
 
 	cjenc := cjsonState.NewEncoder()
@@ -101,8 +101,9 @@ func BenchmarkPrepare(b *testing.B) {
 	FillTestItemsBench(0, *benchmarkSeedCount, 10)
 	FillTestJoinItems(7000, 500)
 	// force commit and make sort orders
-	DB.Query("test_items_bench").Where("year", reindexer.EQ, 1).Sort("year", false).Limit(1).MustExec().Close()
-
+	for i := 0; i < 10; i++ {
+		DB.Query("test_items_bench").Where("year", reindexer.EQ, 1).Sort("year", false).Limit(1).MustExec().Close()
+	}
 	for i := 0; i < len(pkgs)*3; i++ {
 		DB.Query("test_items_bench").Limit(20).Sort("start_time", false).
 			Where("packages", reindexer.SET, pkgs[i%len(pkgs)]).
@@ -145,7 +146,7 @@ func BenchmarkSimpleCmplxPKUpsert(b *testing.B) {
 	tx := DB.MustBeginTx("test_items_simple_cmplx_pk")
 
 	for i := 0; i < b.N; i++ {
-		if err := tx.Upsert(TestItemSimpleCmplxPK{ID: i, Year: rand.Int()%1000 + 10, Name: randString(), SubID: randString()}); err != nil {
+		if err := tx.Upsert(TestItemSimpleCmplxPK{ID: int32(i), Year: int32(rand.Int()%1000 + 10), Name: randString(), SubID: randString()}); err != nil {
 			panic(err)
 		}
 	}
@@ -266,7 +267,7 @@ func Benchmark4CondQuery(b *testing.B) {
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereString("age", reindexer.EQ, "2").
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
-			WhereInt("packages", reindexer.SET, pkgs[rand.Int()%len(pkgs)]...)
+			WhereInt32("packages", reindexer.SET, pkgs[rand.Int()%len(pkgs)]...)
 		q.MustExec().FetchAll()
 	}
 }
@@ -278,7 +279,7 @@ func Benchmark4CondQueryTotal(b *testing.B) {
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereString("age", reindexer.EQ, "2").
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
-			WhereInt("packages", reindexer.SET, pkgs[rand.Int()%len(pkgs)]...)
+			WhereInt32("packages", reindexer.SET, pkgs[rand.Int()%len(pkgs)]...)
 
 		q.MustExec().FetchAll()
 	}
@@ -317,7 +318,7 @@ func Benchmark3CondQuery(b *testing.B) {
 		q := DB.Query("test_items_bench").Limit(20).Sort("year", false).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
-			WhereInt("packages", reindexer.SET, pkgs[rand.Int()%len(pkgs)]...)
+			WhereInt32("packages", reindexer.SET, pkgs[rand.Int()%len(pkgs)]...)
 		q.MustExec().FetchAll()
 	}
 }
@@ -327,7 +328,7 @@ func Benchmark3CondQueryTotal(b *testing.B) {
 		q := DB.Query("test_items_bench").Limit(20).Sort("year", false).ReqTotal().
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
-			WhereInt("packages", reindexer.SET, pkgs[rand.Int()%len(pkgs)]...)
+			WhereInt32("packages", reindexer.SET, pkgs[rand.Int()%len(pkgs)]...)
 		q.MustExec().FetchAll()
 	}
 }
@@ -348,7 +349,7 @@ func Benchmark3CondQueryRestoreIdsCache(b *testing.B) {
 		q := DB.Query("test_items_bench").Limit(20).Sort("year", false).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
-			WhereInt("packages", reindexer.SET, pkgs[rand.Int()%len(pkgs)]...) // Using subset of arrays for each request. Cache will restore
+			WhereInt32("packages", reindexer.SET, pkgs[rand.Int()%len(pkgs)]...) // Using subset of arrays for each request. Cache will restore
 		q.MustExec().FetchAll()
 	}
 }
@@ -607,15 +608,15 @@ func newTestBenchItem(id int, pkgCount int) *TestItemBench {
 	startTime := rand.Int() % 50000
 
 	return &TestItemBench{
-		ID:         id,
-		Year:       rand.Int()%50 + 2000,
+		ID:         int32(id),
+		Year:       int32(rand.Int()%50 + 2000),
 		Genre:      int64(rand.Int() % 50),
-		Age:        rand.Int() % 5,
-		Packages:   randIntArr(pkgCount, 10000, 50),
+		Age:        int32(rand.Int() % 5),
+		Packages:   randInt32Arr(pkgCount, 10000, 50),
 		PricesIDs:  priceIds[rand.Int()%len(priceIds)],
 		LocationID: randLocation(),
-		StartTime:  startTime,
-		EndTime:    startTime + (rand.Int()%5)*1000,
+		StartTime:  int32(startTime),
+		EndTime:    int32(startTime + (rand.Int()%5)*1000),
 	}
 }
 

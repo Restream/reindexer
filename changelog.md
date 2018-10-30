@@ -1,24 +1,23 @@
-# Version 1.10.0 (26.10.2018)
+# Version 1.10.0 (29.10.2018)
 
 ## Core
 
-- [fea] Added explain query feauture
-- [fea] Added min, max, factes aggregation feature
+- [fea] Added explain query feature
+- [fea] Added min, max and facets aggregation functions
 - [fea] Added EqualPosition query function
-- [fea] Incremental fulltext index build
-- [fea] SQL query parser/printer is NULL condition
-- [fea] Native bool data type
-- [fea] Filter nested fields in SelectFilter statememnt
+- [fea] In SQL query parser/printer added is NULL condition
+- [fea] Native bool data type support
+- [fea] Filter nested fields in SelectFilter statement
 - [fix] Fix crash on comparator with Join queries
-- [fix] Incorrect sort order using with Join queries in join cache optimiztion step 
+- [fix] Incorrect sort order using with Join queries in join cache optimization step 
 - [ref] Composite indexes now using json_paths for list of fields
-- [ref] Storage format has been changed
+- [ref] Storage format has been changed, and incompatible with this version. To migrate date from previous version use [reindexer_tool](cpp_src/cmd/reindexer_tool/readme.md)
 
 ## Go connector
 
 - [fea] reindexer.Status method added, to check connector status after initialization
 - [fea] OpenNamespace now register namespace <-> struct mapping without server connection requiriment
-- [fix] int type is now converted to int32/int64 depends on architectire
+- [fix] int type is now converted to int32/int64 depends on architecture
 
 ## Python connector
 
@@ -30,7 +29,7 @@
 - [fea] Added method DELETE /api/v1/:db/query
 - [fea] Added poll loop backend (osx,bsd)
 - [ref] `json_path` renamed to `json_paths`, and now array
-- [ref] Binary cproto protocol has been optimized and changed
+- [ref] Binary cproto protocol has been optimized and changed. Please consider to update clients
 - [fix] EnumMeta method has been fixed
 - [fix] ModifyItem will retry attempt if tags <-> names state is invalidated
 

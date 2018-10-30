@@ -26,12 +26,34 @@ public:
 	void Reset() { memset(v_->Ptr(), 0, t_.TotalSize()); }
 	// Get element(s) by field index
 	VariantArray &Get(int field, VariantArray &, bool enableHold = false) const;
+	// Get element by field and array index
+	Variant Get(int field, int idx, bool enableHold = false) const;
+
+	// Get array as span of typed elements
+	template <typename Elem>
+	span<Elem> GetArray(int field) {
+		assert(field < Type().NumFields());
+		assert(Type().Field(field).IsArray());
+		auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
+		return span<Elem>(reinterpret_cast<Elem *>(v_->Ptr() + arr->offset), arr->len);
+	}
+
+	// Resize array (grow)
+	// return index of 1-st position
+	// template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
+	int ResizeArray(int field, int grow, bool append);
+
 	// Set element or array by field index
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
 	void Set(int field, const VariantArray &keys, bool append = false);
+
 	// Set element or array by field index
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
 	void Set(const string &field, const VariantArray &keys, bool append = false);
+
+	// Set element or array by field index and element index
+	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
+	void Set(int field, int idx, const Variant &v);
 
 	// Copies current payload value to a new one
 	// according to PayloadType format

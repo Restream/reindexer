@@ -4,24 +4,24 @@ namespace pyreindexer {
 
 void pyValueSerialize(PyObject **value, WrSerializer &wrSer) {
 	if (*value == Py_None) {
-		wrSer.PutChars("null");
+		wrSer << "null";
 	} else if (PyBool_Check(*value)) {
 		bool v = PyLong_AsLong(*value) != 0;
-		wrSer.PutChars(v ? "true" : "false");
+		wrSer << v;
 	} else if (PyFloat_Check(*value)) {
 		double v = PyFloat_AsDouble(*value);
 		double intpart;
 		if (std::modf(v, &intpart) == 0.0) {
-			wrSer.Printf(v < 0.0 ? "%d" : "%u", v < 0.0 ? static_cast<int>(v) : static_cast<unsigned>(v));
+			wrSer << int64_t(v);
 		} else {
-			wrSer.Printf("%g", v);
+			wrSer << v;
 		}
 	} else if (PyLong_Check(*value)) {
 		long v = PyLong_AsLong(*value);
-		wrSer.Printf(v > 0 ? "%lu" : "%ld", v);
+		wrSer << v;
 	} else if (PyUnicode_Check(*value)) {
 		const char *v = PyUnicode_AsUTF8(*value);
-		wrSer.Printf("\"%s\"", v);
+		wrSer.PrintJsonString(v);
 	} else if (PyList_Check(*value)) {
 		pyListSerialize(value, wrSer);
 	} else if (PyDict_Check(*value)) {
@@ -36,7 +36,7 @@ void pyListSerialize(PyObject **list, WrSerializer &wrSer) {
 		throw Error(errParseJson, "List expected, got %s", Py_TYPE(*list)->tp_name);
 	}
 
-	wrSer.PutChar('[');
+	wrSer << '[';
 
 	unsigned sz = PyList_Size(*list);
 	for (unsigned i = 0; i < sz; i++) {
@@ -45,11 +45,11 @@ void pyListSerialize(PyObject **list, WrSerializer &wrSer) {
 		pyValueSerialize(&value, wrSer);
 
 		if (i < sz - 1) {
-			wrSer.PutChar(',');
+			wrSer << ',';
 		}
 	}
 
-	wrSer.PutChar(']');
+	wrSer << ']';
 }
 
 void pyDictSerialize(PyObject **dict, WrSerializer &wrSer) {
@@ -57,11 +57,11 @@ void pyDictSerialize(PyObject **dict, WrSerializer &wrSer) {
 		throw Error(errParseJson, "Dictionary expected, got %s", Py_TYPE(*dict)->tp_name);
 	}
 
-	wrSer.PutChar('{');
+	wrSer << '{';
 
 	Py_ssize_t sz = PyDict_Size(*dict);
 	if (!sz) {
-		wrSer.PutChar('}');
+		wrSer << '}';
 
 		return;
 	}
@@ -71,16 +71,17 @@ void pyDictSerialize(PyObject **dict, WrSerializer &wrSer) {
 
 	while (PyDict_Next(*dict, &pos, &key, &value)) {
 		const char *k = PyUnicode_AsUTF8(key);
-		wrSer.Printf("\"%s\":", k);
+		wrSer.PrintJsonString(k);
+		wrSer << ':';
 
 		pyValueSerialize(&value, wrSer);
 
 		if (pos != sz) {
-			wrSer.PutChar(',');
+			wrSer << ',';
 		}
 	}
 
-	wrSer.PutChar('}');
+	wrSer << '}';
 }
 
 void PyObjectToJson(PyObject **obj, WrSerializer &wrSer) {

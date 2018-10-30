@@ -70,12 +70,10 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 
 	if (tagType == TAG_END) return false;
 
-	if (tag.Name()) {
+	if (tag.Name() && filter_) {
 		curTagsPath_.push_back(tag.Name());
-		if (filter_) visible = visible && filter_->match(curTagsPath_);
+		visible = visible && filter_->match(curTagsPath_);
 	}
-
-	// const char* name = tag.Name() && tagsMatcher_ ? tagsMatcher_->tag2name(tag.Name()).c_str() : nullptr;
 
 	int tagField = tag.Field();
 
@@ -83,56 +81,54 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 	if (tagField >= 0) {
 		assert(tagField < pl->NumFields());
 
-		VariantArray kr;
 		int* cnt = &fieldsoutcnt_[tagField];
 
 		switch (tagType) {
 			case TAG_ARRAY: {
 				int count = rdser.GetVarUint();
 				if (visible) {
-					auto arrNode = builder.Array(tag.Name());
-
-					if (count) pl->Get(tagField, kr);
-					while (count--) {
-						assertf(*cnt < int(kr.size()), "No data in field '%s.%s', got %d items.", pl->Type().Name().c_str(),
-								pl->Type().Field(tagField).Name().c_str(), *cnt);
-						arrNode.Put(0, kr[(*cnt)++]);
+					switch (pl->Type().Field(tagField).Type()) {
+						case KeyValueBool:
+							builder.Array(tag.Name(), pl->GetArray<bool>(tagField).subspan((*cnt), count));
+							break;
+						case KeyValueInt:
+							builder.Array(tag.Name(), pl->GetArray<int>(tagField).subspan((*cnt), count));
+							break;
+						case KeyValueInt64:
+							builder.Array(tag.Name(), pl->GetArray<int64_t>(tagField).subspan((*cnt), count));
+							break;
+						case KeyValueDouble:
+							builder.Array(tag.Name(), pl->GetArray<double>(tagField).subspan((*cnt), count));
+							break;
+						case KeyValueString:
+							builder.Array(tag.Name(), pl->GetArray<p_string>(tagField).subspan((*cnt), count));
+							break;
+						default:
+							std::abort();
 					}
-				} else
-					(*cnt) += count;
+				}
+				(*cnt) += count;
 				break;
 			}
 			case TAG_NULL:
 				if (visible) builder.Null(tag.Name());
 				break;
 			default:
-				if (visible) {
-					pl->Get(tagField, kr);
-					assertf(*cnt < int(kr.size()), "No data in field '%s.%s', got %d items.", pl->Type().Name().c_str(),
-							pl->Type().Field(tagField).Name().c_str(), *cnt);
-
-					builder.Put(tag.Name(), kr[(*cnt)++]);
-
-				} else
-					(*cnt)++;
+				if (visible) builder.Put(tag.Name(), pl->Get(tagField, (*cnt)));
+				(*cnt)++;
 				break;
 		}
 	} else {
 		switch (tagType) {
 			case TAG_ARRAY: {
 				carraytag atag = rdser.GetUInt32();
-				auto arrNode = visible ? builder.Array(tag.Name(), atag.Tag() != TAG_OBJECT) : Builder();
-				for (int i = 0; i < atag.Count(); i++) {
-					switch (atag.Tag()) {
-						case TAG_OBJECT:
-							encode(pl, rdser, arrNode, visible);
-							break;
-						default: {
-							Variant value = rdser.GetRawVariant(KeyValueType(atag.Tag()));
-							if (visible) arrNode.Put(0, value);
-							break;
-						}
-					}
+				if (atag.Tag() == TAG_OBJECT) {
+					auto arrNode = visible ? builder.Array(tag.Name()) : Builder();
+					for (int i = 0; i < atag.Count(); i++) encode(pl, rdser, arrNode, visible);
+				} else if (visible) {
+					builder.Array(tag.Name(), rdser, atag.Tag(), atag.Count());
+				} else {
+					for (int i = 0; i < atag.Count(); i++) rdser.GetRawVariant(KeyValueType(atag.Tag()));
 				}
 				break;
 			}
@@ -148,7 +144,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 			}
 		}
 	}
-	if (tag.Name()) curTagsPath_.pop_back();
+	if (tag.Name() && filter_) curTagsPath_.pop_back();
 
 	return true;
 }

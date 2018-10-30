@@ -174,7 +174,13 @@ int ServerImpl::run() {
 	}
 
 	if (config_.DebugAllocs) {
+#ifdef __APPLE__
+		// tcmalloc + osx is crashing with thread_local storage access from malloc hooks
+		allocdebug_init_mt();
+#else
 		allocdebug_init();
+#endif
+
 #ifndef REINDEX_WITH_GPERFTOOLS
 		logger_.warn("debug.allocs is enabled in config, but reindexer complied without gperftools - Can't enable feature.");
 #endif

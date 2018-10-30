@@ -5,10 +5,10 @@ namespace reindexer {
 JsonBuilder::JsonBuilder(WrSerializer &ser, ObjType type, const TagsMatcher *tm) : ser_(&ser), tm_(tm), type_(type) {
 	switch (type_) {
 		case TypeArray:
-			ser_->PutChar('[');
+			(*ser_) << '[';
 			break;
 		case TypeObject:
-			ser_->PutChar('{');
+			(*ser_) << '{';
 			break;
 		default:
 			break;
@@ -20,10 +20,10 @@ JsonBuilder::~JsonBuilder() { End(); }
 JsonBuilder &JsonBuilder::End() {
 	switch (type_) {
 		case TypeArray:
-			ser_->PutChar(']');
+			(*ser_) << ']';
 			break;
 		case TypeObject:
-			ser_->PutChar('}');
+			(*ser_) << '}';
 			break;
 		default:
 			break;
@@ -40,34 +40,17 @@ JsonBuilder JsonBuilder::Object(const char *name) {
 	return JsonBuilder(*ser_, TypeObject, tm_);
 }
 
-JsonBuilder JsonBuilder::Array(const char *name, bool) {
+JsonBuilder JsonBuilder::Array(const char *name) {
 	putName(name);
 	return JsonBuilder(*ser_, TypeArray, tm_);
 }
 
 void JsonBuilder::putName(const char *name) {
-	if (count_++) ser_->PutChar(',');
+	if (count_++) (*ser_) << ',';
 	if (name && *name) {
 		ser_->PrintJsonString(name);
-		ser_->PutChar(':');
+		(*ser_) << ':';
 	}
-}
-
-JsonBuilder &JsonBuilder::Put(const char *name, bool arg) {
-	putName(name);
-	ser_->PutChars(arg ? "true" : "false");
-	return *this;
-}
-JsonBuilder &JsonBuilder::Put(const char *name, int64_t arg) {
-	putName(name);
-	ser_->Print(arg);
-	return *this;
-}
-
-JsonBuilder &JsonBuilder::Put(const char *name, double arg) {
-	putName(name);
-	ser_->Printf("%.20g", arg);
-	return *this;
 }
 
 JsonBuilder &JsonBuilder::Put(const char *name, const string_view &arg) {
@@ -78,12 +61,12 @@ JsonBuilder &JsonBuilder::Put(const char *name, const string_view &arg) {
 
 JsonBuilder &JsonBuilder::Raw(const char *name, const string_view &arg) {
 	putName(name);
-	ser_->PutChars(arg);
+	(*ser_) << arg;
 	return *this;
 }
 JsonBuilder &JsonBuilder::Null(const char *name) {
 	putName(name);
-	ser_->PutChars("null");
+	(*ser_) << "null";
 	return *this;
 }
 

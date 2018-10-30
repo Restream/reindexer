@@ -60,11 +60,9 @@ void ServerConnection::onRead() {
 	CProtoHeader hdr;
 
 	while (!closeConn_) {
-		Stat stat;
 		Context ctx;
 		ctx.call = nullptr;
 		ctx.writer = this;
-		ctx.stat = stat;
 
 		auto len = rdBuf_.peek(reinterpret_cast<char *>(&hdr), sizeof(hdr));
 
@@ -98,13 +96,12 @@ void ServerConnection::onRead() {
 		}
 		assert(it.len >= hdr.len);
 
-		RPCCall call;
-		ctx.call = &call;
+		ctx.call = &call_;
 		try {
-			call.cmd = CmdCode(hdr.cmd);
-			call.seq = hdr.seq;
+			ctx.call->cmd = CmdCode(hdr.cmd);
+			ctx.call->seq = hdr.seq;
 			Serializer ser(it.data, hdr.len);
-			call.args.Unpack(ser);
+			ctx.call->args.Unpack(ser);
 			handleRPC(ctx);
 		} catch (const Error &err) {
 			// Execption occurs on unrecoverble error. Send responce, and drop connection
@@ -123,9 +120,6 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 	if (respSent_) {
 		fprintf(stderr, "Warning - RPC responce already sent\n");
 		return;
-	}
-	if (dispatcher_.logger_ != nullptr) {
-		dispatcher_.logger_(ctx, status, args);
 	}
 
 	WrSerializer ser;
@@ -151,6 +145,9 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 	// if (canWrite_) {
 	// 	write_cb();
 	// }
+	if (dispatcher_.logger_ != nullptr) {
+		dispatcher_.logger_(ctx, status, args);
+	}
 }
 
 }  // namespace cproto

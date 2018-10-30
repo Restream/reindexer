@@ -397,42 +397,37 @@ static bool isPrintable(p_string str) {
 }
 
 void VariantArray::Dump(WrSerializer &wrser) const {
-	wrser.Printf("(");
+	wrser << '(';
 
 	for (auto &arg : *this) {
 		if (&arg != &at(0)) {
-			wrser.PutChars(", ");
+			wrser << ", ";
 		}
 		switch (arg.Type()) {
 			case KeyValueString: {
 				p_string str(arg);
 				if (isPrintable(str)) {
-					wrser.PutChar('"');
-					const char *data = str.data();
-					for (unsigned i = 0; i < str.length(); i++) {
-						wrser.PutChar(*data++);
-					}
-					wrser.PutChar('"');
+					wrser << '"' << string_view(str) << '"';
 				} else {
-					wrser.Printf("slice{len:%d}", int(str.length()));
+					wrser << "slice{len:" << str.length() << "}";
 				}
 				break;
 			}
 			case KeyValueInt:
-				wrser.Printf("%d", int(arg));
+				wrser << int(arg);
 				break;
 			case KeyValueBool:
-				wrser.PutChars(bool(arg) ? "true" : "false");
+				wrser << bool(arg);
 				break;
 			case KeyValueInt64:
-				wrser.Printf("%d", int(int64_t(arg)));
+				wrser << int64_t(arg);
 				break;
 			default:
-				wrser.Printf("??");
+				wrser << "??";
 				break;
 		}
 	}
-	wrser.PutChar(')');
+	wrser << ')';
 }
 
 }  // namespace reindexer

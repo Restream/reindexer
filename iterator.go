@@ -151,7 +151,7 @@ func (it *Iterator) readItem() (item interface{}, rank int) {
 	if (it.rawQueryParams.flags & bindings.ResultsWithJoined) != 0 {
 		subNSRes = int(it.ser.GetVarUInt())
 	}
-	item, it.err = unpackItem(it.nsArray[params.nsid], params, it.allowUnsafe && (subNSRes == 0), (it.rawQueryParams.flags&bindings.ResultsWithItemID) == 0)
+	item, it.err = unpackItem(&it.nsArray[params.nsid], &params, it.allowUnsafe && (subNSRes == 0), (it.rawQueryParams.flags&bindings.ResultsWithItemID) == 0)
 	if it.err != nil {
 		return
 	}
@@ -166,7 +166,7 @@ func (it *Iterator) readItem() (item interface{}, rank int) {
 		subitems := make([]interface{}, siRes)
 		for i := 0; i < siRes; i++ {
 			subparams := it.ser.readRawtItemParams()
-			subitems[i], it.err = unpackItem(it.nsArray[nsIndex+nsIndexOffset], subparams, it.allowUnsafe, (it.rawQueryParams.flags&bindings.ResultsWithItemID) == 0)
+			subitems[i], it.err = unpackItem(&it.nsArray[nsIndex+nsIndexOffset], &subparams, it.allowUnsafe, (it.rawQueryParams.flags&bindings.ResultsWithItemID) == 0)
 			if it.err != nil {
 				return
 			}

@@ -1,7 +1,7 @@
 swagger: "2.0"
 info:
   description: "This is a Reindexer."
-  version: "1.0.0"
+  version: "1.10.0"
   title: "Reindexer server"
   license:
     name: "Apache 2.0"
@@ -679,14 +679,18 @@ definitions:
     type: "object"
     properties:
       name: 
+        description: "Name of index, can contains letters, digits and underscores"
         type: "string"
+        default: "id"
       json_paths:
+        description: "Fields path in json object, e.g 'id' or 'subobject.field'. If index is 'composite' or 'is_array', than multiple json_paths can be specified, and index will get values from all specified fields."
         type: "array"
         items:
           type: "string"
+          default: "id"
       field_type:
         type: "string"
-        description: "Field type"
+        description: "Field data type"
         enum:
         - "int"
         - "int64"
@@ -696,24 +700,29 @@ definitions:
         - "composite"
       index_type:
         type: "string"
-        description: "Index type"
+        description: "Index structure type"
+        default: "hash"
         enum:
         - "hash"
         - "tree"
         - "text"
         - "-"
       is_pk:
+        description: "Specifies, that index is primary key. The update opertations will checks, that PK field is unique. The namespace MUST have only 1 PK index"
         type: "boolean"
       is_array:
+        description: "Specifies, that index is array. Array indexes can work with array fields, or work with multiple fields"
         type: "boolean"
         default: false
       is_dense:
+        description: "Reduces the index size. For hash and tree it will save ~8 bytes per unique key value. Useful for indexes with high selectivity, but for tree and hash indexes with low selectivity can seriously decrease update performance;"
         type: "boolean"
       is_sparse:
+        description: "Value of index may not present in the document, and threfore, reduce data size but decreases speed operations on index"
         type: "boolean"
       collate_mode:
         type: "string"
-        description: "Collate mode"
+        description: "String collate mode"
         enum:
         - "none"
         - "ascii"
@@ -725,20 +734,26 @@ definitions:
       config:
         type: "object"
         description: "Index configuration (fulltext)"
+        $ref: "#/definitions/FulltextConfig"
 
   Query:
     type: "object"
     properties:
       namespace:
+        description: "Namespace name"
         type: "string"
+        required: true
       limit:
+        description: "Maximum count of returned items"
         type: "integer"
       offset:
+        description: "Offset of first returned item"
         type: "integer"
       distinct:
+        description: "Distinct field/index name. Results will contain's document with distinct field value"
         type: "string"
-  
       req_total:
+        description: "Ask query to calculate total documents, match condition"
         type: "string"
         enum:
         - "disabled"
@@ -746,43 +761,55 @@ definitions:
         - "cached"
       filters:
         type: "array"
+        description: "Filter for results documents"
         items: 
           $ref: "#/definitions/FilterDef"
       sort:
+        description: "Specifies results sorting order"
         type: "array"
         items:
           $ref: "#/definitions/SortDef"
       join_queries:
+        description: "Nested queries to be joined on right side of main query"
         type: "array"
         items:
           $ref: "#/definitions/JoinedDef"
       merge_queries:
+        description: "Merged queries to be merged with main query"
         type: "array"
         items:
           $ref: "#/definitions/Query"
       select_filter:
+        description: "Filter fields of returned document. Can be dot separated, e.g 'subobject.field'"
         type: "array"
         items:
           type: "string"
+          default: "id"
       select_functions:
+        description: "Add extra select functions to query"
         type: "array"
         items:
           type: "string"
       aggregations:
+        description: "Ask query calculate aggregation"
         type: "array"
         items:
           $ref: "#/definitions/AggregationsDef"
       explain:
+        description: "Add query execution explain information"
         type: "boolean"
         default: false
-
   FilterDef:
     type: "object"
     properties:
       field:
+        required: true
+        description: "Field or index name for filter"
         type: "string"
       cond:
+        required: true
         type: "string"
+        description: "Condition operator"
         enum:
         - "EQ"
         - "GT"
@@ -794,64 +821,89 @@ definitions:
         - "EMPTY"
       op:
         type: "string"
+        description: "Logic operator"
         enum:
         - "AND"
         - "OR"
         - "NOT"
       value:
+        description: "Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, or variable len array for SET condition"
         type: "object"
 
   SortDef:
     type: "object"
     properties:
       field:
+        required: true
         type: "string"
+        description: "Field or index name for sorting"
       values:
         type: "array"
+        description: "Optional: Documents with this values of field will be returned first"
         items:
           type: "object"
       desc:
+        description: "Descent or ascent sorting direction"
         type: "boolean"
 
   JoinedDef:
     type: "object"
     properties:
       namespace:
+        required: true
         type: "string"
+        description: "Namespace name"
       type:
+        required: true
         type: "string"
+        description: "Join type"
+        enum:
+        - "LEFT"
+        - "INNER"
       op:
         type: "string"
+        description: "Logic operator"
         enum:
         - "AND"
         - "OR"
         - "NOT"
       filters:
         type: "array"
+        description: "Filter for results documents"
         items: 
           $ref: "#/definitions/FilterDef"
       sort:
         type: "object"
+        description: "Specifies results sorting order"
         $ref: "#/definitions/SortDef"
       limit:
         type: "integer"
+        description: "Maximum count of returned items"
       offset:
         type: "integer"
+        description: "Offset of first returned item"
       on:
+        required: true
         type: "array"
+        description: "Join ON statement"
         items: 
           $ref: "#/definitions/OnDef"
-
 
   OnDef:
     type: "object"
     properties:
       left_field:
+        description: "Field from left namespace (main query namespace)"
         type: "string"
+        required: true
       right_field:
+        description: "Field from right namespace (joined query namespace)"
         type: "string"
+        required: true
       cond:
         type: "string"
+        description: "Condition operator"
+        required: true
         enum:
         - "EQ"
         - "GT"
@@ -863,6 +915,7 @@ definitions:
         - "EMPTY"
       op:
         type: "string"
+        description: "Logic operator"
         enum:
         - "AND"
         - "OR"
@@ -873,17 +926,98 @@ definitions:
     properties:
       field:
         type: "string"
+        description: "Field or index name for aggregation function"
       type:
         type: "string"
+        description: "Aggregation function"
         enum:
-        - "sum"
-        - "avg"
+        - "SUM"
+        - "AVG"
+        - "MIN"
+        - "MAX"
+        - "FACET"
+
+  FulltextConfig:
+    type: "object"
+    properties:
+      enable_translit:
+        type: "boolean"
+        default: true
+        description: "Enable russian translit variants processing. e.g. term 'luntik' will match word 'лунтик'"
+      enable_numbers_search:
+        type: "boolean"
+        default: false
+        description: "Enable number variants processing. e.g. term '100' will match words one hundred"
+      enable_kb_layout:
+        type: "boolean"
+        default: true
+        description: "Enable wrong keyboard layout variants processing. e.g. term 'keynbr' will match word 'лунтик'"
+      log_level:
+        type: "integer"
+        default: 0
+        description: "Log level of full text search engine"
+      merge_limit:
+        type: "integer"
+        default: 20000
+        description: "Maximum documents count which will be processed in merge query results.  Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed"
+      extra_word_symbols:
+        type: "string"
+        default: "-/+"
+        description: "List of symbols, which will be threated as word part, all other symbols will be thrated as wors separators"
+      stop_words:
+        type: "array"
+        description: "List of stop words. Words from this list will be ignored in documents and queries"
+        items:
+          type: "string"
+      stemmers:
+        type: "array"
+        default: ["en","ru"]
+        description: "List of stemmers to use"
+        items:
+          type: "string"
+      bm25_boost:
+        type: "number"
+        default: 1.0
+        description: "Boost of bm25 ranking"
+      bm25_weight:
+        type: "number"
+        default: 0.5
+        description: "Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to finl rank in 0 - 100% range"
+      distance_boost:
+        type: "number"
+        default: 1.0
+        description: "Boost of search query term distance in found document"
+      distance_weght:
+        type: "number"
+        default: 0.5
+        description: "Weight of search query terms distance in found document in final rank 0: distance will not change final rank. 1: distance will affect to final rank in 0 - 100% range"
+      term_len_boost:
+        type: "number"
+        default: 1.0
+        description: "Boost of search query term length"
+      term_len_weght:
+        type: "number"
+        default: 0.3
+        description: "Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range"
+      min_relevancy:
+        type: "number"
+        default: 0.05
+        description: "Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned "
+      max_typos_in_word:
+        type: "number"
+        default: 1.0
+        description: "Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 1 possible typo -It will seriously increase RAM usage, and decrease search speed"
+      max_typo_len:
+        type: "number"
+        description: "Maximum word length for building and matching variants with typos."
+        default: 15
 
   Items:
     type: "object"
     properties:
       total_items:
-         type: "integer"
+        description: "Total count of documents, returned by filters"
+        type: "integer"
       items:
          type: "array"
          items:
@@ -891,14 +1025,22 @@ definitions:
   QueryItems:
     type: "object"
     properties:
-      query_total_items:
-         type: "integer"
-      explain:
-         type: "object"
       items:
-         type: "array"
-         items:
-           type: "object"
+        type: "array"
+        description: "Documents, returned by query"
+        items:
+          type: "object"
+      query_total_items:
+        description: "Total count of documents, returned by query"
+        type: "integer"
+      aggregations:
+        type: "array"
+        description: "Aggregation functions results"
+        items:
+          $ref: "#/definitions/AggregationResDef"
+      explain:
+        description: "Query execution explainings"
+        $ref: "#/definitions/ExplainDef"
 
   Indexes:
     type: "object"
@@ -909,4 +1051,78 @@ definitions:
           $ref: "#/definitions/Index"
       total_items:
         type: "integer"
-        description: "Total count of namespaces"
+        description: "Total count of indexes"
+        
+  ExplainDef:
+    type: "object"
+    description: "Query execution explainings"
+    properties:
+      total_us:
+        type: "integer"
+        description: "Total query execution time"
+      loop_us:
+        type: "integer"
+        description: "Intersection loop time"
+      indexes_us:
+        type: "integer"
+        description: "Indexes keys selection time"
+      postprocess_us:
+        type: "integer"
+        description: "Query post process time"
+      prepare_us:
+        type: "integer"
+        description: "Query prepare and optimize time"
+      sort_index: 
+        type: "string"
+        description: "Index, which used for sort results"
+      selectotors:
+        type: "array"
+        description: "Filter selectos, used to proccess query conditions"
+        items:
+          type: "object"
+          properties:
+            method:
+              type: "string"
+              description: "Method, used to process condition"
+              enum:
+              - "scan"
+              - "index"
+              - "inner_join"
+              - "left_join"
+            field:
+              type: "string"
+              description: "Field or index name"
+            items:
+              type: "integer"
+              description: "Count of scanned documents by this selector"
+            matched:
+              type: "integer"
+              description: "Count of processed documents, matched this selector"
+            comparators:
+              type: "integer"
+              description: "Count of comparators used, for this selector"
+            cost:
+              type: "integer"
+              description: "Cost expectation of this selector"
+            keys:
+              type: "integer"
+              description: "Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching"
+
+  AggregationResDef:
+    type: "object"
+    properties:
+      value:
+        type: "number"
+        description: "Value, calculated by aggregator"
+      facets:
+        type: "array"
+        description: "Facets, calculated by aggregator"
+        items:
+          type: "object"
+          properties:
+            value: 
+              type: "string"
+              description: "Facet field value"
+            count: 
+              type: "integer"
+              description: "Count of elemens this field value"

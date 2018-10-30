@@ -5,7 +5,7 @@
 
 namespace reindexer {
 
-static void copyCJsonValue(int tagType, Serializer &rdser, WrSerializer &wrser) {
+void copyCJsonValue(int tagType, Serializer &rdser, WrSerializer &wrser) {
 	switch (tagType) {
 		case TAG_DOUBLE:
 			wrser.PutDouble(rdser.GetDouble());
@@ -51,9 +51,11 @@ static void skipCjsonTag(ctag tag, Serializer &rdser) {
 	}
 }
 
-static Variant cjsonValueToVariant(int tag, Serializer &rdser, KeyValueType t, Error &err) {
+static inline Variant cjsonValueToVariant(int tag, Serializer &rdser, KeyValueType dstType, Error &err) {
 	try {
-		return rdser.GetRawVariant(KeyValueType(tag)).convert(t);
+		KeyValueType srcType = KeyValueType(tag);
+		if (dstType == KeyValueInt && srcType == KeyValueInt64) srcType = KeyValueInt;
+		return rdser.GetRawVariant(KeyValueType(srcType)).convert(dstType);
 	} catch (const Error &e) {
 		err = e;
 	}
@@ -104,31 +106,27 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 	}
 	if (field >= 0) {
 		if (match) {
-			VariantArray kvs;
-
 			Error err = errOK;
 			size_t savePos = rdser.Pos();
+			KeyValueType fieldType = pl->Type().Field(field).Type();
 			if (tagType == TAG_ARRAY) {
 				carraytag atag = rdser.GetUInt32();
-				kvs.reserve(atag.Count());
+				int ofs = pl->ResizeArray(field, atag.Count(), true);
 				for (int count = 0; count < atag.Count() && err.ok(); count++) {
 					ctag tag = atag.Tag() != TAG_OBJECT ? atag.Tag() : rdser.GetVarUint();
-					kvs.push_back(cjsonValueToVariant(tag.Type(), rdser, pl->Type().Field(field).Type(), err));
+					pl->Set(field, ofs + count, cjsonValueToVariant(tag.Type(), rdser, fieldType, err));
 				}
 				if (err.ok()) {
 					wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName, field)));
 					wrser.PutVarUint(atag.Count());
 				}
 			} else if (tagType != TAG_NULL) {
-				kvs.push_back(cjsonValueToVariant(tagType, rdser, pl->Type().Field(field).Type(), err));
+				pl->Set(field, {cjsonValueToVariant(tagType, rdser, fieldType, err)}, true);
 				if (err.ok()) {
 					wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName, field)));
 				}
 			}
-			if (err.ok()) {
-				// Field was succefully setted to index
-				if (kvs.size()) pl->Set(field, kvs, true);
-			} else {
+			if (!err.ok()) {
 				// Type error occuried. Just store field, and do not put it to index
 				// rewind serializer, and set lastErr_ code
 				field = -1;

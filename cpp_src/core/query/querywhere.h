@@ -74,7 +74,7 @@ public:
 
 protected:
 	int ParseWhere(tokenizer &tok);
-	string toString(bool stripArgs) const;
+	void dumpWhere(WrSerializer &, bool stripArgs) const;
 	static CondType getCondType(string_view cond);
 
 public:

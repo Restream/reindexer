@@ -54,6 +54,7 @@ public:
 	size_t TotalCount() const { return totalCount; }
 	const string &GetExplainResults() const { return explainResults; }
 	const vector<AggregationResult> &GetAggregationResults() const { return aggregationResults; }
+	void Clear();
 
 	class Iterator {
 	public:

@@ -39,24 +39,29 @@ void JsonDecoder::decodeJsonObject(Payload *pl, CJsonBuilder &builder, JsonValue
 			decodeJson(pl, builder, elem->value, tagName, match);
 		} else if (match) {
 			// Indexed field. extract it
-			VariantArray kvs;
 			auto &f = pl->Type().Field(field);
 			if (elem->value.getTag() == JSON_ARRAY) {
 				if (!f.IsArray()) {
 					throw Error(errLogic, "Error parsing json field '%s' - got array, expected scalar %s", f.Name().c_str(),
 								Variant::TypeName(f.Type()));
 				}
+				int count = 0;
 				for (auto subelem : elem->value) {
-					kvs.push_back(jsonValue2Variant(subelem->value, f.Type(), f.Name().c_str()));
+					(void)subelem;
+					count++;
 				}
-				builder.ArrayRef(tagName, field, kvs.size());
+				int pos = pl->ResizeArray(field, count, true);
+				for (auto subelem : elem->value) {
+					pl->Set(field, pos++, jsonValue2Variant(subelem->value, f.Type(), f.Name().c_str()));
+				}
+				builder.ArrayRef(tagName, field, count);
 			} else if (elem->value.getTag() != JSON_NULL) {
-				kvs.push_back(jsonValue2Variant(elem->value, f.Type(), f.Name().c_str()));
-				builder.Ref(tagName, kvs[0], field);
+				Variant v = jsonValue2Variant(elem->value, f.Type(), f.Name().c_str());
+				pl->Set(field, {v}, true);
+				builder.Ref(tagName, v, field);
 			} else {
 				builder.Null(tagName);
 			}
-			if (kvs.size()) pl->Set(field, kvs, true);
 		}
 		tagsPath_.pop_back();
 	}

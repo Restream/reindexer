@@ -18,43 +18,48 @@ public:
 	JsonBuilder(JsonBuilder &&other) : ser_(other.ser_), tm_(other.tm_), type_(other.type_), count_(other.count_) {
 		other.type_ = TypePlain;
 	}
-	void SetTagsMatcher(const TagsMatcher *tm);
-
 	JsonBuilder &operator=(const JsonBuilder &) = delete;
 	JsonBuilder &operator=(JsonBuilder &&) = delete;
 
+	void SetTagsMatcher(const TagsMatcher *tm);
+
 	/// Start new object
 	JsonBuilder Object(const char *name = nullptr);
-	JsonBuilder Array(const char *name, bool denseArray = false);
+	JsonBuilder Object(int tagName) { return Object(tm_->tag2name(tagName).c_str()); }
+
+	JsonBuilder Array(const char *name);
+	JsonBuilder Array(int tagName) { return Array(tm_->tag2name(tagName).c_str()); }
+
+	template <typename T>
+	void Array(int tagName, span<T> data) {
+		JsonBuilder node = Array(tagName);
+		for (auto d : data) node.Put(nullptr, d);
+	}
+
+	void Array(int tagName, Serializer &ser, int tagType, int count) {
+		JsonBuilder node = Array(tagName);
+		while (count--) node.Put(nullptr, ser.GetRawVariant(KeyValueType(tagType)));
+	}
 
 	JsonBuilder &Put(const char *name, const Variant &arg);
-	JsonBuilder &Put(const char *name, bool arg);
-	JsonBuilder &Put(const char *name, int64_t arg);
-	JsonBuilder &Put(const char *name, double arg);
 	JsonBuilder &Put(const char *name, const string_view &arg);
-	JsonBuilder &Raw(const char *name, const string_view &arg);
-	JsonBuilder &Null(const char *name);
-
 	JsonBuilder &Put(const char *name, const char *arg) { return Put(name, string_view(arg)); }
-	JsonBuilder &Put(const char *name, int arg) { return Put(name, int64_t(arg)); }
-	JsonBuilder &Put(const char *name, size_t arg) { return Put(name, int64_t(arg)); };
-	JsonBuilder &Put(const char *name, unsigned arg) { return Put(name, int64_t(arg)); };
+	template <typename T, typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value>::type * = nullptr>
+	JsonBuilder &Put(const char *name, T arg) {
+		putName(name);
+		(*ser_) << arg;
+		return *this;
+	}
+	template <typename T>
+	JsonBuilder &Put(int tagName, const T &arg) {
+		return Put(tm_->tag2name(tagName).c_str(), arg);
+	}
 
-	JsonBuilder Object(int tagName) { return Object(tm_->tag2name(tagName).c_str()); }
-	JsonBuilder Array(int tagName, bool denseArray = false) { return Array(tm_->tag2name(tagName).c_str(), denseArray); }
-
-	JsonBuilder &Put(int tagName, const Variant &arg) { return Put(tm_->tag2name(tagName).c_str(), arg); }
-	JsonBuilder &Put(int tagName, bool arg) { return Put(tm_->tag2name(tagName).c_str(), arg); }
-	JsonBuilder &Put(int tagName, int64_t arg) { return Put(tm_->tag2name(tagName).c_str(), arg); }
-	JsonBuilder &Put(int tagName, double arg) { return Put(tm_->tag2name(tagName).c_str(), arg); }
-	JsonBuilder &Put(int tagName, const string_view &arg) { return Put(tm_->tag2name(tagName).c_str(), arg); }
 	JsonBuilder &Raw(int tagName, const string_view &arg) { return Raw(tm_->tag2name(tagName).c_str(), arg); }
-	JsonBuilder &Null(int tagName) { return Null(tm_->tag2name(tagName).c_str()); }
+	JsonBuilder &Raw(const char *name, const string_view &arg);
 
-	JsonBuilder &Put(int tagName, const char *arg) { return Put(tagName, string_view(arg)); }
-	JsonBuilder &Put(int tagName, int arg) { return Put(tagName, int64_t(arg)); }
-	JsonBuilder &Put(int tagName, size_t arg) { return Put(tagName, int64_t(arg)); };
-	JsonBuilder &Put(int tagName, unsigned arg) { return Put(tagName, int64_t(arg)); };
+	JsonBuilder &Null(int tagName) { return Null(tm_->tag2name(tagName).c_str()); }
+	JsonBuilder &Null(const char *name);
 
 	JsonBuilder &End();
 

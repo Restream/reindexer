@@ -2,6 +2,7 @@
 #include "core/item.h"
 #include "core/itemimpl.h"
 #include "core/keyvalue/p_string.h"
+#include "core/namespace.h"
 
 namespace reindexer {
 
@@ -66,7 +67,16 @@ Item::FieldRef &Item::FieldRef::operator=(const VariantArray &krs) {
 	return *this;
 }
 
-Item::~Item() { delete impl_; }
+Item::~Item() {
+	if (impl_) {
+		auto ns = impl_->GetNamespace();
+		if (ns) {
+			ns->ToPool(impl_);
+			impl_ = nullptr;
+		}
+	}
+	delete impl_;
+}
 
 Error Item::FromJSON(const string_view &slice, char **endp, bool pkOnly) { return impl_->FromJSON(slice, endp, pkOnly); }
 Error Item::FromCJSON(const string_view &slice, bool pkOnly) { return impl_->FromCJSON(slice, pkOnly); }

@@ -33,7 +33,8 @@ const unordered_map<OpType, string, EnumClassHash> op_map = {{OpOr, "or"}, {OpAn
 const unordered_map<CalcTotalMode, string, EnumClassHash> reqtotal_values = {
 	{ModeNoTotal, "disabled"}, {ModeAccurateTotal, "enabled"}, {ModeCachedTotal, "cached"}};
 
-const unordered_map<AggType, string, EnumClassHash> aggregation_types = {{AggSum, "sum"}, {AggAvg, "avg"}};
+const unordered_map<AggType, string, EnumClassHash> aggregation_types = {
+	{AggSum, "sum"}, {AggAvg, "avg"}, {AggMax, "max"}, {AggMin, "min"}, {AggFacet, "facet"}};
 
 template <typename T>
 string get(unordered_map<T, string, EnumClassHash> const& m, const T& key) {

@@ -15,9 +15,17 @@ public:
 
 	/// Start new object
 	FieldsExtractor Object(int) { return FieldsExtractor(values_, expectedType_); };
-	FieldsExtractor Array(int, bool = false) { return FieldsExtractor(values_, expectedType_); };
+	FieldsExtractor Array(int) { return FieldsExtractor(values_, expectedType_); };
 	FieldsExtractor Object(const char *) { return FieldsExtractor(values_, expectedType_); };
-	FieldsExtractor Array(const char *, bool = false) { return FieldsExtractor(values_, expectedType_); };
+	FieldsExtractor Array(const char *) { return FieldsExtractor(values_, expectedType_); };
+
+	template <typename T>
+	void Array(int /*tagName*/, span<T> data) {
+		for (auto d : data) Put(0, Variant(d));
+	}
+	void Array(int /*tagName*/, Serializer &ser, int tagType, int count) {
+		while (count--) Put(0, ser.GetRawVariant(KeyValueType(tagType)));
+	}
 
 	FieldsExtractor &Put(int, Variant arg) {
 		if (expectedType_ != KeyValueUndefined && expectedType_ != KeyValueComposite) arg.convert(expectedType_);

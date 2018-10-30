@@ -49,10 +49,10 @@ type TestItemSimple struct {
 }
 
 type TestItemSimpleCmplxPK struct {
-	ID    int      `reindex:"id"`
-	Year  int      `reindex:"year,tree"`
+	ID    int32    `reindex:"id,-"`
+	Year  int32    `reindex:"year,tree"`
 	Name  string   `reindex:"name"`
-	SubID string   `reindex:"subid"`
+	SubID string   `reindex:"subid,-"`
 	_     struct{} `reindex:"id+subid,,composite,pk"`
 }
 

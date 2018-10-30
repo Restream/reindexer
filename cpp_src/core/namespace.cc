@@ -470,7 +470,7 @@ void Namespace::doDelete(IdType id) {
 
 	if (storage_) {
 		WrSerializer pk;
-		pk.PutChars(kStorageItemPrefix);
+		pk << kStorageItemPrefix;
 		pl.SerializeFields(pk, pkFields());
 		updates_->Remove(pk.Slice());
 		++unflushedCount_;
@@ -539,7 +539,8 @@ void Namespace::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 	}
 	markUpdated();
 
-	VariantArray krefs, skrefs;
+	// keep them in nsamespace, to prevent allocs
+	// VariantArray krefs, skrefs;
 
 	// Delete from composite indexes first
 	if (doUpdate) {
@@ -583,6 +584,7 @@ void Namespace::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 		}
 		// Put value to index
 		krefs.resize(0);
+		krefs.reserve(skrefs.size());
 		for (auto key : skrefs) krefs.push_back(index.Upsert(key, id));
 
 		// Put value to payload
@@ -609,11 +611,10 @@ void Namespace::updateTagsMatcherFromItem(ItemImpl *ritem, string &jsonSliceBuf)
 
 		ItemImpl tmpItem(payloadType_, tagsMatcher_);
 		tmpItem.Unsafe(true);
-
-		auto err = tmpItem.FromJSON(jsonSliceBuf, nullptr);
-		if (!err.ok()) throw err;
-
 		*ritem = std::move(tmpItem);
+
+		auto err = ritem->FromJSON(jsonSliceBuf, nullptr);
+		if (!err.ok()) throw err;
 
 		if (!tagsMatcher_.try_merge(ritem->tagsMatcher())) throw Error(errLogic, "Could not insert item. TagsMatcher was not merged.");
 		ritem->tagsMatcher() = tagsMatcher_;
@@ -653,7 +654,7 @@ void Namespace::modifyItem(Item &item, bool store, int mode) {
 
 	if (storage_ && store) {
 		WrSerializer pk, data;
-		pk.PutChars(kStorageItemPrefix);
+		pk << kStorageItemPrefix;
 		newValue.SerializeFields(pk, pkFields());
 		data.PutUInt64(lsn);
 		itemImpl->GetCJSON(data);
@@ -910,6 +911,9 @@ bool Namespace::loadIndexesFromStorage() {
 }
 
 void Namespace::saveIndexesToStorage() {
+	// clear ItemImpl pool on payload change
+	pool_.clear();
+
 	if (!storage_) return;
 
 	logPrintf(LogTrace, "Namespace::saveIndexesToStorage (%s)", name_.c_str());
@@ -1066,8 +1070,19 @@ void Namespace::CloseStorage() {
 }
 
 Item Namespace::NewItem() {
-	RLock lock(mtx_);
+	WLock lock(mtx_);
+	if (pool_.size()) {
+		ItemImpl *impl = pool_.back().release();
+		pool_.pop_back();
+		impl->Clear(tagsMatcher_);
+		return Item(impl);
+	}
 	return Item(new ItemImpl(payloadType_, tagsMatcher_, pkFields()));
+}
+void Namespace::ToPool(ItemImpl *item) {
+	WLock lck(mtx_);
+	item->Clear(tagsMatcher_);
+	pool_.push_back(std::unique_ptr<ItemImpl>(item));
 }
 
 // Get meta data from storage by key

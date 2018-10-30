@@ -70,19 +70,6 @@ int Context::Redirect(const string_view &url) {
 	return String(http::StatusMovedPermanently, "");
 }
 
-int Context::Printf(int code, const char *contentType, const char *fmt, ...) {
-	char buf[0x5000];
-	va_list args;
-	va_start(args, fmt);
-	int size = vsnprintf(buf, sizeof(buf), fmt, args);
-	va_end(args);
-	writer->SetContentLength(size);
-	writer->SetRespCode(code);
-	writer->SetHeader(http::Header{"Content-Type", contentType});
-	writer->Write(buf, size);
-	return 0;
-}
-
 static const char *lookupContentType(const char *path) {
 	const char *p = strrchr(path, '.');
 	if (!p) {

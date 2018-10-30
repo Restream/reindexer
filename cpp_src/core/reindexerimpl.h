@@ -41,7 +41,7 @@ public:
 	Error Upsert(const string &_namespace, Item &item);
 	Error Delete(const string &_namespace, Item &item);
 	Error Delete(const Query &query, QueryResults &result);
-	Error Select(const string &query, QueryResults &result);
+	Error Select(const string_view &query, QueryResults &result);
 	Error Select(const Query &query, QueryResults &result);
 	Error Commit(const string &namespace_);
 	Item NewItem(const string &_namespace);

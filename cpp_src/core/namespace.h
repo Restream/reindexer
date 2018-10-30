@@ -131,7 +131,7 @@ public:
 	void SetCacheMode(CacheMode cacheMode);
 
 	Item NewItem();
-
+	void ToPool(ItemImpl *item);
 	// Get meta data from storage by key
 	string GetMeta(const string &key);
 	// Put meta data to storage by key
@@ -222,6 +222,7 @@ protected:
 	shared_ptr<QueryCache> queryCache_;
 
 	int sparseIndexesCount_ = 0;
+	VariantArray krefs, skrefs;
 
 private:
 	Namespace(const Namespace &src);
@@ -242,6 +243,7 @@ private:
 	std::atomic<bool> enablePerfCounters_;
 	LogLevel queriesLogLevel_;
 	int64_t lsnCounter_;
+	vector<std::unique_ptr<ItemImpl>> pool_;
 };
 
 }  // namespace reindexer

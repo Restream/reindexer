@@ -12,7 +12,6 @@ add_dependencies(${TARGET} reindexer_server_library)
 target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES})
 
 install(TARGETS ${TARGET}
-    COMPONENT server
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
@@ -20,24 +19,22 @@ install(TARGETS ${TARGET}
 
 install(DIRECTORY ${SERVER_LIB_DIR}/swagger ${SERVER_LIB_DIR}/face
     DESTINATION share/reindexer/web OPTIONAL
-    COMPONENT server
 )
 
 set (DESTINATION_ETC_DIR etc)
 if (NOT APPLE AND NOT WIN32)
   set (DESTINATION_ETC_DIR ${DESTDIR}/etc)
-  install (CODE "configure_file(${PROJECT_SOURCE_DIR}/contrib/sysvinit.in ${PROJECT_BINARY_DIR}/contrib/sysvinit)" COMPONENT server)
-  install (FILES ${PROJECT_BINARY_DIR}/contrib/sysvinit DESTINATION ${DESTINATION_ETC_DIR}/init.d RENAME reindexer PERMISSIONS OWNER_WRITE OWNER_EXECUTE OWNER_READ GROUP_READ WORLD_READ COMPONENT server)
+  install (CODE "configure_file(${PROJECT_SOURCE_DIR}/contrib/sysvinit.in ${PROJECT_BINARY_DIR}/contrib/sysvinit)")
+  install (FILES ${PROJECT_BINARY_DIR}/contrib/sysvinit DESTINATION ${DESTINATION_ETC_DIR}/init.d RENAME reindexer PERMISSIONS OWNER_WRITE OWNER_EXECUTE OWNER_READ GROUP_READ WORLD_READ)
 endif()
-
 
 install (CODE "
 if (NOT WIN32)
   set (REINDEXER_INSTALL_PREFIX \"${CMAKE_INSTALL_PREFIX}\")
 endif()
 configure_file(${PROJECT_SOURCE_DIR}/contrib/config.yml.in ${PROJECT_BINARY_DIR}/contrib/config.yml)
-" COMPONENT server)
-install (FILES ${PROJECT_BINARY_DIR}/contrib/config.yml DESTINATION ${DESTINATION_ETC_DIR} RENAME reindexer.conf.pkg PERMISSIONS OWNER_WRITE OWNER_READ GROUP_READ WORLD_READ COMPONENT server)
+")
+install (FILES ${PROJECT_BINARY_DIR}/contrib/config.yml DESTINATION ${DESTINATION_ETC_DIR} RENAME reindexer.conf.pkg PERMISSIONS OWNER_WRITE OWNER_READ GROUP_READ WORLD_READ)
 
 SET(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA ${PROJECT_SOURCE_DIR}/contrib/deb/postinst)
 SET(CPACK_RPM_POST_INSTALL_SCRIPT_FILE ${PROJECT_SOURCE_DIR}/contrib/rpm/postinst)
@@ -46,19 +43,18 @@ if (WIN32)
   if (MSVC)
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP true)
     include(InstallRequiredSystemLibraries)
-    install(FILES ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT server)
+    install(FILES ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} DESTINATION ${CMAKE_INSTALL_BINDIR})
   else()
     get_filename_component(MINGW_DLL_DIR ${CMAKE_CXX_COMPILER} PATH)
     install(FILES
       ${MINGW_DLL_DIR}/libstdc++-6.dll
       ${MINGW_DLL_DIR}/libwinpthread-1.dll
       DESTINATION ${CMAKE_INSTALL_BINDIR}
-      COMPONENT server
     )
     if(EXISTS ${MINGW_DLL_DIR}/libgcc_s_seh-1.dll)
-      install(FILES ${MINGW_DLL_DIR}/libgcc_s_seh-1.dll DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT server)
+      install(FILES ${MINGW_DLL_DIR}/libgcc_s_seh-1.dll DESTINATION ${CMAKE_INSTALL_BINDIR})
     elseif(EXISTS ${MINGW_DLL_DIR}/libgcc_s_dw2-1.dll)
-      install(FILES ${MINGW_DLL_DIR}/libgcc_s_dw2-1.dll DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT server)
+      install(FILES ${MINGW_DLL_DIR}/libgcc_s_dw2-1.dll DESTINATION ${CMAKE_INSTALL_BINDIR})
     else ()
       message (WARNING "Can't find MinGW runtime")
     endif()
@@ -94,3 +90,4 @@ if (WIN32)
   SET(CPACK_PACKAGE_INSTALL_DIRECTORY "reindexer")
 endif (WIN32)
 
+include(CPack)

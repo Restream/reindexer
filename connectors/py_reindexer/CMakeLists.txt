@@ -9,7 +9,7 @@ set(PY_MIN_VERSION 3.6)
 find_package(PythonInterp ${PY_MIN_VERSION})
 find_package(PythonLibs ${PY_MIN_VERSION})
 
-if (PYTHONINTERP_FOUND AND PYTHONLIBS_FOUND AND NOT WIN32)
+if (PYTHONINTERP_FOUND AND PYTHONLIBS_FOUND AND NOT WIN32 AND NOT WITH_ASAN AND NOT WITH_TSAN)
     set(PY_PACKAGE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/pyreindexer)
 
     set(LIB_BUILTIN_NAME "rawpyreindexerb")
@@ -44,5 +44,9 @@ if (PYTHONINTERP_FOUND AND PYTHONLIBS_FOUND AND NOT WIN32)
     # python does not allow 'lib' prefix
     set_target_properties(${LIB_BUILTIN_NAME} PROPERTIES PREFIX "")
     set_target_properties(${LIB_CPROTO_NAME} PROPERTIES PREFIX "")
+
+    add_test (NAME pyreindexer_test COMMAND "python3" "-m" "unittest" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests)
+    set_tests_properties(pyreindexer_test PROPERTIES ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}:${CMAKE_CURRENT_BINARY_DIR}")
+
 
 endif()

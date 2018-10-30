@@ -40,6 +40,8 @@ protected:
 
 	Dispatcher &dispatcher_;
 	ClientData::Ptr clientData_;
+	// keep here to prevent allocs
+	RPCCall call_;
 };
 }  // namespace cproto
 }  // namespace net

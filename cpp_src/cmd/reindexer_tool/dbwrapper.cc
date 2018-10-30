@@ -45,7 +45,13 @@ Error DBWrapper<_DB>::ProcessCommand(string command) {
 template <typename _DB>
 Error DBWrapper<_DB>::commandSelect(const string& command) {
 	typename _DB::QueryResultsT results;
-	auto err = db_.Select(command, results);
+	reindexer::Query q;
+	try {
+		q.FromSQL(command);
+	} catch (const Error& err) {
+		return err;
+	}
+	auto err = db_.Select(q, results);
 
 	if (err.ok()) {
 		if (results.Count()) {

@@ -147,7 +147,8 @@ public:
 			if (conditionsSatisfied) ++itemsCount;
 			EXPECT_TRUE(conditionsSatisfied) << "Item doesn't match conditions: " + itemr.GetJSON().ToString();
 			if (!conditionsSatisfied) {
-				printf("Query: %s\n", query.Dump().c_str());
+				reindexer::WrSerializer ser;
+				TEST_COUT << query.GetSQL(ser).Slice() << std::endl;
 				PrintFailedQueryEntries(failedEntries);
 			}
 			EXPECT_TRUE(checkDistincts(itemr, query, distincts)) << "Distinction check failed";
@@ -175,7 +176,8 @@ public:
 							(sortingEntry.desc && cmpRes[j] >= 0) || (!sortingEntry.desc && cmpRes[j] <= 0) || (cmpRes[j] == 0);
 						EXPECT_TRUE(sortOrderSatisfied) << "\nSort order is incorrect for column: " << sortingEntry.column;
 						if (!sortOrderSatisfied) {
-							printf("Query: %s\n", query.Dump().c_str());
+							reindexer::WrSerializer ser;
+							TEST_COUT << query.GetSQL(ser).Slice() << std::endl;
 							PrintFailedSortOrder(query, qr, i);
 						}
 					}

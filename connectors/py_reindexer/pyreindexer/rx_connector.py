@@ -49,7 +49,7 @@ class RxConnector(RaiserMixin):
         self._api_close()
 
     def namespace_open(self, namespace):
-        """Opens a namespace specified or creates a namespace if it is not exist
+        """Opens a namespace specified or creates a namespace if it does not exist
 
         # Arguments:
             namespace (string): A name of a namespace

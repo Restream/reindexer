@@ -208,19 +208,17 @@ void WrSerializer::PutDouble(double v) {
 }
 
 void WrSerializer::grow(size_t sz) {
-	if (len_ + sz > cap_ || !buf_) {
+	if (len_ + sz > cap_) {
 		Reserve((cap_ * 2) + sz + 0x1000);
 	}
 }
 
 void WrSerializer::Reserve(size_t cap) {
-	if (cap > cap_ || !buf_) {
+	if (cap > cap_) {
 		cap_ = std::max(cap, cap_);
 		uint8_t *b = new uint8_t[cap_];
-		if (buf_) {
-			memcpy(b, buf_, len_);
-			if (buf_ != inBuf_) delete[] buf_;
-		}
+		memcpy(b, buf_, len_);
+		if (buf_ != inBuf_) delete[] buf_;
 		buf_ = b;
 	}
 }
@@ -244,16 +242,6 @@ void WrSerializer::Printf(const char *fmt, ...) {
 	}
 	va_end(args);
 	len_ += ret;
-}
-
-void WrSerializer::PutVarint(int64_t v) {
-	grow(10);
-	len_ += sint64_pack(v, buf_ + len_);
-}
-
-void WrSerializer::PutVarUint(uint64_t v) {
-	grow(10);
-	len_ += uint64_pack(v, buf_ + len_);
 }
 
 void WrSerializer::PutBool(bool v) {
@@ -329,28 +317,16 @@ void WrSerializer::PrintHexDump(const string_view &str) {
 			if (i < int(str.size())) {
 				Printf("%02x ", unsigned(str[i]) & 0xFF);
 			} else {
-				Printf("   ");
+				Write("   ");
 			}
 		}
-		Printf(" ");
+		Write(" ");
 		for (int i = row; i < row + kHexDumpBytesInRow; i++) {
 			char c = (i < int(str.size()) && unsigned(str[i]) > 0x20) ? str[i] : '.';
-			Printf("%c", c);
+			(*this) << c;
 		}
-		Printf("\n");
+		Write("\n");
 	}
-}
-
-void WrSerializer::Print(int k) {
-	grow(32);
-	char *b = i32toa(k, reinterpret_cast<char *>(buf_ + len_));
-	len_ = b - reinterpret_cast<char *>(buf_);
-}
-
-void WrSerializer::Print(int64_t k) {
-	grow(32);
-	char *b = i64toa(k, reinterpret_cast<char *>(buf_ + len_));
-	len_ = b - reinterpret_cast<char *>(buf_);
 }
 
 uint8_t *WrSerializer::Buf() const { return buf_; }

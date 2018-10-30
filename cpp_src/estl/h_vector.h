@@ -446,6 +446,10 @@ public:
 	constexpr const T& front() const { return data_[0]; }
 	constexpr const T& back() const { return data_[size() - 1]; }
 	constexpr const T* data() const noexcept { return data_; }
+	span subspan(size_type offset, size_type count) const noexcept {
+		assert(offset + count <= size_);
+		return span(data_ + offset, count);
+	}
 
 protected:
 	pointer data_;
@@ -466,4 +470,4 @@ inline static std::ostream& operator<<(std::ostream& o, const reindexer::h_vecto
 	return o;
 }
 
-}
+}  // namespace std

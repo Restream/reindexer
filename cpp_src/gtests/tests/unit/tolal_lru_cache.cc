@@ -26,7 +26,7 @@ TEST(LruCache, SimpleTest) {
 	PRINTF("preparing queries for caching ...\n");
 	for (auto i = 0; i < nsCount; i++) {
 		auto idx = std::to_string(i);
-		qs.emplace_back("namespace" + idx, false);
+		qs.emplace_back(Query("namespace" + idx), false);
 	}
 
 	QueryCache cache;

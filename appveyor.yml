@@ -40,6 +40,8 @@ build_script:
   - if [%COMPILER%]==[MinGW-w64] cmake -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH=C:\mingw-w64\%TOOLCHAIN% -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ..
 
   - cmake --build . --config %BUILD_TYPE%
+  - cmake --build . --config %BUILD_TYPE% --target face
+  - cmake --build . --config %BUILD_TYPE% --target swagger
   - cpack
 
 artifacts:

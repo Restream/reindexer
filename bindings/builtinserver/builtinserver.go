@@ -170,8 +170,8 @@ func (server *BuiltinServer) GetMeta(namespace, key string) (bindings.RawBuffer,
 	return server.builtin.GetMeta(namespace, key)
 }
 
-func (server *BuiltinServer) ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, packedPercepts []byte, stateToken int, txID int) (bindings.RawBuffer, error) {
-	return server.builtin.ModifyItem(nsHash, namespace, format, data, mode, packedPercepts, stateToken, txID)
+func (server *BuiltinServer) ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, percepts []string, stateToken int, txID int) (bindings.RawBuffer, error) {
+	return server.builtin.ModifyItem(nsHash, namespace, format, data, mode, percepts, stateToken, txID)
 }
 
 func (server *BuiltinServer) Select(query string, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {

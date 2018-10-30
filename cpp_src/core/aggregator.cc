@@ -15,8 +15,11 @@ Aggregator::Aggregator(AggType aggType, const string &name) : aggType_(aggType),
 		case AggMax:
 			result_ = std::numeric_limits<double>::min();
 			break;
-		default:
+		case AggAvg:
+		case AggSum:
 			break;
+		default:
+			throw Error(errParams, "Unknown aggregation type %d", int(aggType_));
 	}
 }
 

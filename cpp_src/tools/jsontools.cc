@@ -15,13 +15,9 @@ void jsonValueToString(JsonValue o, WrSerializer &ser, int shift, int indent) {
 			double value = o.toNumber();
 			double intpart;
 			if (std::modf(value, &intpart) == 0.0) {
-				if (value < 0.0) {
-					ser.Printf("%d", static_cast<int>(value));
-				} else {
-					ser.Printf("%u", static_cast<unsigned>(value));
-				}
+				ser << int64_t(value);
 			} else {
-				ser.Printf("%g", value);
+				ser << value;
 			}
 			break;
 		}
@@ -30,46 +26,46 @@ void jsonValueToString(JsonValue o, WrSerializer &ser, int shift, int indent) {
 			break;
 		case JSON_ARRAY:
 			if (!o.toNode()) {
-				ser.Printf("[]");
+				ser << "[]";
 				break;
 			}
-			ser.PutChar('[');
-			if (enableEol) ser.PutChar('\n');
+			ser << '[';
+			if (enableEol) ser << '\n';
 
 			for (auto i : o) {
 				ser.Printf("%*s", indent + shift, "");
 				jsonValueToString(i->value, ser, shift, indent + shift);
-				if (i->next) ser.PutChar(',');
-				if (enableEol) ser.PutChar('\n');
+				if (i->next) ser << ',';
+				if (enableEol) ser << '\n';
 			}
 			ser.Printf("%*s]", indent, "");
 			break;
 		case JSON_OBJECT:
 			if (!o.toNode()) {
-				ser.Printf("{}");
+				ser << "{}";
 				break;
 			}
-			ser.PutChar('{');
-			if (enableEol) ser.PutChar('\n');
+			ser << '{';
+			if (enableEol) ser << '\n';
 
 			for (auto i : o) {
 				ser.Printf("%*s", indent + shift, "");
 				ser.PrintJsonString(i->key);
-				ser.Printf(": ");
+				ser << ": ";
 				jsonValueToString(i->value, ser, shift, indent + shift);
-				if (i->next) ser.PutChar(',');
-				if (enableEol) ser.PutChar('\n');
+				if (i->next) ser << ',';
+				if (enableEol) ser << '\n';
 			}
 			ser.Printf("%*s}", indent, "");
 			break;
 		case JSON_TRUE:
-			ser.Printf("true");
+			ser << "true";
 			break;
 		case JSON_FALSE:
-			ser.Printf("false");
+			ser << "false";
 			break;
 		case JSON_NULL:
-			ser.Printf("null");
+			ser << "null";
 			break;
 	}
 }

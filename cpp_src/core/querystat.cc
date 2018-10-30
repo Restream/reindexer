@@ -6,13 +6,15 @@
 namespace reindexer {
 
 void QueriesStatTracer::Hit(const Query &q, std::chrono::microseconds time) {
-	auto sqlq = q.Dump(true);
+	WrSerializer ser;
+	auto sqlq = q.GetSQL(ser, true).Slice().ToString();
 	std::unique_lock<std::mutex> lck(mtx_);
 	stat_.emplace(sqlq, PerfStatCounterST()).first->second.Hit(time);
 };
 
 void QueriesStatTracer::LockHit(const Query &q, std::chrono::microseconds time) {
-	auto sqlq = q.Dump(true);
+	WrSerializer ser;
+	auto sqlq = q.GetSQL(ser, true).Slice().ToString();
 	std::unique_lock<std::mutex> lck(mtx_);
 	stat_.emplace(sqlq, PerfStatCounterST()).first->second.LockHit(time);
 };

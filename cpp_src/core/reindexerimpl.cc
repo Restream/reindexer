@@ -4,6 +4,7 @@
 #include <thread>
 #include "core/cjson/jsondecoder.h"
 #include "core/index/index.h"
+#include "core/itemimpl.h"
 #include "core/namespacedef.h"
 #include "core/selectfunc/selectfunc.h"
 #include "kx/kxsort.h"
@@ -254,7 +255,10 @@ Error ReindexerImpl::Upsert(const string& nsName, Item& item) {
 
 Item ReindexerImpl::NewItem(const string& _namespace) {
 	try {
-		return getNamespace(_namespace)->NewItem();
+		auto ns = getNamespace(_namespace);
+		auto item = ns->NewItem();
+		item.impl_->SetNamespace(ns);
+		return item;
 	} catch (const Error& err) {
 		return Item(err);
 	}
@@ -310,10 +314,10 @@ Error ReindexerImpl::Delete(const Query& q, QueryResults& result) {
 	return errOK;
 }
 
-Error ReindexerImpl::Select(const string& query, QueryResults& result) {
+Error ReindexerImpl::Select(const string_view& query, QueryResults& result) {
 	try {
 		Query q;
-		q.Parse(query);
+		q.FromSQL(query);
 		return Select(q, result);
 
 	} catch (const Error& err) {

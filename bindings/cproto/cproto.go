@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/restream/reindexer/bindings"
+	"github.com/restream/reindexer/cjson"
 )
 
 const (
@@ -74,7 +75,20 @@ func (binding *NetCProto) Ping() error {
 	return binding.rpcCallNoResults(opRd, cmdPing)
 }
 
-func (binding *NetCProto) ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, packedPercepts []byte, stateToken int, txID int) (bindings.RawBuffer, error) {
+func (binding *NetCProto) ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, precepts []string, stateToken int, txID int) (bindings.RawBuffer, error) {
+
+	var packedPercepts []byte
+	if len(precepts) != 0 {
+		ser1 := cjson.NewPoolSerializer()
+		defer ser1.Close()
+
+		ser1.PutVarCUInt(len(precepts))
+		for _, precept := range precepts {
+			ser1.PutVString(precept)
+		}
+		packedPercepts = ser1.Bytes()
+	}
+
 	buf, err := binding.rpcCall(opWr, cmdModifyItem, namespace, format, data, mode, packedPercepts, stateToken, txID)
 	if err != nil {
 		return nil, err

@@ -95,7 +95,7 @@ class HelperMixin(object):
             'is_sparse': False,
             'collate_mode': 'none',
             'sort_order_letters': '',
-            'config': {},
+            'config': {}
         }
 
     def helper_index_array_construct(self, count=2):

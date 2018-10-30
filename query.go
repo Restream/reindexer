@@ -26,7 +26,7 @@ const (
 	querySelectFilter   = bindings.QuerySelectFilter
 	queryExplain        = bindings.QueryExplain
 	QuerySelectFunction = bindings.QuerySelectFunction
-	QueryEqualPosition	= bindings.QueryEqualPosition
+	QueryEqualPosition  = bindings.QueryEqualPosition
 	queryEnd            = bindings.QueryEnd
 )
 
@@ -88,6 +88,7 @@ type Query struct {
 	closed        bool
 	initBuf       [256]byte
 	nsArray       []nsArrayEntry
+	ptVersions    []int32
 	iterator      Iterator
 	jsonIterator  JSONIterator
 	items         []interface{}
@@ -119,6 +120,7 @@ func newQuery(db *Reindexer, namespace string) *Query {
 		q.joinQueries = q.joinQueries[:0]
 		q.joinHandlers = q.joinHandlers[:0]
 		q.mergedQueries = q.mergedQueries[:0]
+		q.ptVersions = q.ptVersions[:0]
 		q.ser = cjson.NewSerializer(q.ser.Bytes()[:0])
 		q.closed = false
 		q.totalName = ""
@@ -223,6 +225,19 @@ func (q *Query) putValue(v reflect.Value) error {
 
 // WhereInt - Add where condition to DB query with int args
 func (q *Query) WhereInt(index string, condition int, keys ...int) *Query {
+
+	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
+	q.nextOp = opAND
+
+	q.ser.PutVarCUInt(len(keys))
+	for _, v := range keys {
+		q.ser.PutVarCUInt(valueInt).PutVarInt(int64(v))
+	}
+	return q
+}
+
+// WhereInt - Add where condition to DB query with int args
+func (q *Query) WhereInt32(index string, condition int, keys ...int32) *Query {
 
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
@@ -626,7 +641,7 @@ func (q *Query) Functions(fields ...string) *Query {
 	return q
 }
 
-// Adds equal position fields to arrays 
+// Adds equal position fields to arrays
 func (q *Query) EqualPosition(fields ...string) *Query {
 	q.ser.PutVarCUInt(QueryEqualPosition)
 	q.ser.PutVarCUInt(len(fields))

@@ -34,7 +34,7 @@ bool Query::operator==(const Query &obj) const {
 	return true;
 }
 
-int Query::Parse(const string &q) {
+int Query::FromSQL(const string_view &q) {
 	tokenizer parser(q);
 	return Parse(parser);
 }
@@ -542,104 +542,105 @@ const char *Query::JoinTypeName(JoinType type) {
 
 extern const char *condNames[];
 
-string Query::dumpJoined(bool stripArgs) const {
-	string ret;
+void Query::dumpJoined(WrSerializer &ser, bool stripArgs) const {
 	for (auto &je : joinQueries_) {
-		ret += string(" ") + JoinTypeName(je.joinType);
+		ser << ' ' << JoinTypeName(je.joinType);
 
 		if (je.entries.empty() && je.count == INT_MAX && je.sortingEntries_.empty()) {
-			ret += " " + je._namespace + " ON ";
+			ser << ' ' << je._namespace << " ON ";
 		} else {
-			ret += " (" + je.Dump(stripArgs) + ") ON ";
+			ser << " (";
+			je.GetSQL(ser, stripArgs);
+			ser << ") ON ";
 		}
-		if (je.joinEntries_.size() != 1) ret += "(";
+		if (je.joinEntries_.size() != 1) ser << "(";
 		for (auto &e : je.joinEntries_) {
 			if (&e != &*je.joinEntries_.begin()) {
-				ret += (e.op_ == OpOr) ? " OR " : " AND ";
+				ser << ((e.op_ == OpOr) ? " OR " : " AND ");
 			}
-			ret += je._namespace + "." + e.joinIndex_ + " " + condNames[e.condition_] + " " + _namespace + "." + e.index_;
+			ser << je._namespace << '.' << e.joinIndex_ << ' ' << condNames[e.condition_] << ' ' << _namespace << '.' << e.index_;
 		}
-		if (je.joinEntries_.size() != 1) ret += ")";
+		if (je.joinEntries_.size() != 1) ser << ')';
 	}
-
-	return ret;
 }
 
-string Query::dumpMerged(bool stripArgs) const {
-	string ret;
+void Query::dumpMerged(WrSerializer &ser, bool stripArgs) const {
 	for (auto &me : mergeQueries_) {
-		ret += " " + string(JoinTypeName(me.joinType)) + "( " + me.Dump(stripArgs) + ")";
+		ser << ' ' << JoinTypeName(me.joinType) << "( ";
+		me.GetSQL(ser, stripArgs);
+		ser << ')';
 	}
-	return ret;
 }
 
-string Query::dumpOrderBy(bool stripArgs) const {
-	if (sortingEntries_.empty()) return std::string();
-	string ret;
-	ret = " ORDER BY ";
+void Query::dumpOrderBy(WrSerializer &ser, bool stripArgs) const {
+	if (sortingEntries_.empty()) return;
+
+	ser << " ORDER BY ";
 	for (size_t i = 0; i < sortingEntries_.size(); ++i) {
 		const SortingEntry &sortingEntry(sortingEntries_[i]);
 		if (forcedSortOrder.empty()) {
-			ret += sortingEntry.column;
+			ser << sortingEntry.column;
 		} else {
-			ret += "FIELD(" + sortingEntry.column;
+			ser << "FIELD(" << sortingEntry.column;
 			if (stripArgs) {
-				ret += '?';
+				ser << '?';
 			} else {
 				for (auto &v : forcedSortOrder) {
-					ret += ", '" + v.As<string>() + "'";
+					ser << ", '" << v.As<string>() << "'";
 				}
 			}
-			ret += ")";
+			ser << ")";
 		}
-		ret += (sortingEntry.desc ? " DESC" : "");
-		if (i != sortingEntries_.size() - 1) ret += ", ";
+		ser << (sortingEntry.desc ? " DESC" : "");
+		if (i != sortingEntries_.size() - 1) ser << ", ";
 	}
-	return ret;
-}  // namespace reindexer
+}
 
-string Query::Dump(bool stripArgs) const {
-	string lim, filt;
-	if (start != 0) lim += " OFFSET " + std::to_string(start);
-	if (count != UINT_MAX) lim += " LIMIT " + std::to_string(count);
-
+WrSerializer &Query::GetSQL(WrSerializer &ser, bool stripArgs) const {
+	ser << "SELECT ";
 	if (aggregations_.size()) {
 		for (auto &a : aggregations_) {
-			if (&a != &*aggregations_.begin()) filt += ",";
+			if (&a != &*aggregations_.begin()) ser << ',';
 			switch (a.type_) {
 				case AggAvg:
-					filt += "AVG(";
+					ser << "AVG(";
 					break;
 				case AggSum:
-					filt += "SUM(";
+					ser << "SUM(";
 					break;
 				case AggFacet:
-					filt += "FACET(";
+					ser << "FACET(";
 					break;
 				case AggMin:
-					filt += "MIN(";
+					ser << "MIN(";
 					break;
 				case AggMax:
-					filt += "MAX(";
+					ser << "MAX(";
 					break;
 				default:
-					filt += "<?> (";
+					ser << "<?> (";
 					break;
 			}
-			filt += a.index_ + ")";
+			ser << a.index_ << ')';
 		}
 	} else if (selectFilter_.size()) {
 		for (auto &f : selectFilter_) {
-			if (&f != &*selectFilter_.begin()) filt += ",";
-			filt += f;
+			if (&f != &*selectFilter_.begin()) ser << ',';
+			ser << f;
 		}
 	} else
-		filt = "*";
-	if (calcTotal) filt += ", COUNT(*)";
+		ser << '*';
+	if (calcTotal) ser << ", COUNT(*)";
 
-	string buf = "SELECT " + filt + " FROM " + _namespace + QueryWhere::toString(stripArgs) + dumpJoined(stripArgs) +
-				 dumpMerged(stripArgs) + dumpOrderBy(stripArgs) + lim;
-	return buf;
+	ser << " FROM " << _namespace;
+	dumpWhere(ser, stripArgs);
+	dumpJoined(ser, stripArgs);
+	dumpMerged(ser, stripArgs);
+	dumpOrderBy(ser, stripArgs);
+
+	if (start != 0) ser << " OFFSET " << start;
+	if (count != UINT_MAX) ser << " LIMIT " << count;
+	return ser;
 }
 
 }  // namespace reindexer

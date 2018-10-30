@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <locale>
+#include <mutex>
 
 #include "core/reindexer.h"
 #include "core/selectfunc/selectfuncparser.h"
@@ -22,18 +23,44 @@ static reindexer_error error2c(const Error& err_) {
 
 static reindexer_ret ret2c(const Error& err_, const reindexer_resbuffer& out) {
 	reindexer_ret ret;
-	ret.err.code = err_.code();
-	ret.err.what = err_.what().length() ? strdup(err_.what().c_str()) : nullptr;
-	ret.out = out;
+	ret.err_code = err_.code();
+	if (ret.err_code) {
+		ret.out.results_ptr = 0;
+		ret.out.data = uintptr_t(err_.what().length() ? strdup(err_.what().c_str()) : nullptr);
+	} else {
+		ret.out = out;
+	}
 	return ret;
 }
 
 static string str2c(reindexer_string gs) { return string(reinterpret_cast<const char*>(gs.p), gs.n); }
+static string_view str2cv(reindexer_string gs) { return string_view(reinterpret_cast<const char*>(gs.p), gs.n); }
 
 struct QueryResultsWrapper : public QueryResults {
 public:
 	WrResultSerializer ser;
 };
+
+static std::mutex res_pool_lck;
+static h_vector<std::unique_ptr<QueryResultsWrapper>, 2> res_pool;
+
+void put_results_to_pool(QueryResultsWrapper* res) {
+	res->Clear();
+	res->ser.Reset();
+	std::unique_lock<std::mutex> lck(res_pool_lck);
+	res_pool.push_back(std::unique_ptr<QueryResultsWrapper>(res));
+}
+
+QueryResultsWrapper* new_results() {
+	std::unique_lock<std::mutex> lck(res_pool_lck);
+	if (res_pool.empty()) {
+		return new QueryResultsWrapper;
+	} else {
+		auto res = res_pool.back().release();
+		res_pool.pop_back();
+		return res;
+	}
+}
 
 static void results2c(QueryResultsWrapper* result, struct reindexer_resbuffer* out, int with_items = 0, int32_t* pt_versions = nullptr,
 					  int pt_versions_count = 0) {
@@ -72,13 +99,24 @@ reindexer_error reindexer_ping(uintptr_t rx) {
 	return error2c(db ? Error(errOK) : err_not_init);
 }
 
-reindexer_ret reindexer_modify_item(uintptr_t rx, reindexer_string _namespace, int format, reindexer_buffer data, int mode,
-									reindexer_buffer percepts_pack, int state_token, int /*tx_id*/) {
+reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, reindexer_buffer data) {
+	Serializer ser(args.data, args.len);
+	string ns = ser.GetVString().ToString();
+	int format = ser.GetVarUint();
+	int mode = ser.GetVarUint();
+	int state_token = ser.GetVarUint();
+	int tx_id = ser.GetVarUint();
+	(void)tx_id;
+	unsigned preceptsCount = ser.GetVarUint();
+	vector<string> precepts;
+	while (preceptsCount--) {
+		precepts.push_back(ser.GetVString().ToString());
+	}
+
 	reindexer_resbuffer out = {0, 0, 0};
 	Error err = err_not_init;
 	Reindexer* db = reinterpret_cast<Reindexer*>(rx);
 	if (db) {
-		string ns = str2c(_namespace);
 		Item item = db->NewItem(ns);
 
 		if (item.Status().ok()) {
@@ -97,16 +135,7 @@ reindexer_ret reindexer_modify_item(uintptr_t rx, reindexer_string _namespace, i
 					err = Error(-1, "Invalid source item format %d", format);
 			}
 			if (err.ok()) {
-				if (percepts_pack.len) {
-					Serializer ser(percepts_pack.data, percepts_pack.len);
-					unsigned preceptsCount = ser.GetVarUint();
-					vector<string> precepts;
-					for (unsigned prIndex = 0; prIndex < preceptsCount; prIndex++) {
-						string precept = ser.GetVString().ToString();
-						precepts.push_back(precept);
-					}
-					item.SetPrecepts(precepts);
-				}
+				item.SetPrecepts(precepts);
 				switch (mode) {
 					case ModeUpsert:
 						err = db->Upsert(ns, item);
@@ -121,11 +150,13 @@ reindexer_ret reindexer_modify_item(uintptr_t rx, reindexer_string _namespace, i
 						err = db->Delete(ns, item);
 						break;
 				}
-				QueryResultsWrapper* res = new QueryResultsWrapper();
-				res->AddItem(item);
-				int32_t ptVers = -1;
-				bool tmUpdated = item.IsTagsUpdated();
-				results2c(res, &out, 0, tmUpdated ? &ptVers : nullptr, tmUpdated ? 1 : 0);
+				if (err.ok()) {
+					QueryResultsWrapper* res = new_results();
+					res->AddItem(item);
+					int32_t ptVers = -1;
+					bool tmUpdated = item.IsTagsUpdated();
+					results2c(res, &out, 0, tmUpdated ? &ptVers : nullptr, tmUpdated ? 1 : 0);
+				}
 			}
 		} else {
 			err = item.Status();
@@ -197,9 +228,9 @@ reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int with_it
 	Error res = err_not_init;
 	Reindexer* db = reinterpret_cast<Reindexer*>(rx);
 	if (db) {
-		QueryResultsWrapper* result = new QueryResultsWrapper();
-		res = db->Select(str2c(query), *result);
-		if (res.code() == errOK) results2c(result, &out, with_items, pt_versions, pt_versions_count);
+		QueryResultsWrapper* result = new_results();
+		res = db->Select(str2cv(query), *result);
+		if (res.ok()) results2c(result, &out, with_items, pt_versions, pt_versions_count);
 	}
 	return ret2c(res, out);
 }
@@ -227,10 +258,10 @@ reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, i
 			}
 		}
 
-		QueryResultsWrapper* result = new QueryResultsWrapper();
+		QueryResultsWrapper* result = new_results();
 		res = db->Select(q, *result);
 		if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what().c_str());
-		if (res.code() == errOK) results2c(result, &out, with_items, pt_versions, pt_versions_count);
+		if (res.ok()) results2c(result, &out, with_items, pt_versions, pt_versions_count);
 	}
 	return ret2c(res, out);
 }
@@ -245,10 +276,10 @@ reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in) {
 
 		Query q;
 		q.Deserialize(ser);
-		QueryResultsWrapper* result = new QueryResultsWrapper();
+		QueryResultsWrapper* result = new_results();
 		res = db->Delete(q, *result);
 		if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what().c_str());
-		if (res.code() == errOK) results2c(result, &out);
+		if (res.ok()) results2c(result, &out);
 	}
 	return ret2c(res, out);
 }
@@ -267,7 +298,7 @@ reindexer_ret reindexer_get_meta(uintptr_t rx, reindexer_string ns, reindexer_st
 	Error res = err_not_init;
 	Reindexer* db = reinterpret_cast<Reindexer*>(rx);
 	if (db) {
-		QueryResultsWrapper* results = new QueryResultsWrapper;
+		QueryResultsWrapper* results = new_results();
 		string data;
 		res = db->GetMeta(str2c(ns), str2c(key), data);
 		results->ser.Write(data);
@@ -288,7 +319,7 @@ void reindexer_enable_logger(void (*logWriter)(int, char*)) { logInstallWriter(l
 void reindexer_disable_logger() { logInstallWriter(nullptr); }
 
 reindexer_error reindexer_free_buffer(reindexer_resbuffer in) {
-	delete reinterpret_cast<QueryResultsWrapper*>(in.results_ptr);
+	put_results_to_pool(reinterpret_cast<QueryResultsWrapper*>(in.results_ptr));
 	return error2c(Error(errOK));
 }
 
