@@ -1,3 +1,23 @@
+# Version 1.10.1 (06.11.2018)
+
+## Core
+
+- [fea] Incremental fulltext search index rebuild 
+- [fea] Async C++ RPC client  
+- [fix] Fixed incorrect behaviour with non indexed field conditions
+- [fix] Extra non indexed fields tests added
+- [fix] Json parser memleak fixed
+
+## Reindexer server
+
+- [fea] REST API documentation improoved
+- [fea] Optimized performance
+
+## Reindexer tool
+
+- [fea] Operation speed is improoved
+
+
 # Version 1.10.0 (29.10.2018)
 
 ## Core

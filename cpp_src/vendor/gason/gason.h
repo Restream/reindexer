@@ -99,6 +99,7 @@ public:
 	JsonAllocator(JsonAllocator &&x) : head(x.head) { x.head = nullptr; }
 	JsonAllocator &operator=(JsonAllocator &&x) noexcept {
 		if (this != &x) {
+			deallocate();
 			head = x.head;
 			x.head = nullptr;
 		}

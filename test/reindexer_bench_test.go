@@ -67,7 +67,7 @@ func init() {
 	//gobenc := gob.NewEncoder(buf)
 
 	for i := 0; i < 100000; i++ {
-		testItemsSeed = append(testItemsSeed, newTestItem(i, 20))
+		testItemsSeed = append(testItemsSeed, newTestItem(i, 20).(*TestItem))
 
 		json, _ := json.Marshal(newTestItem(i+200000, 20))
 		testItemsJsonSeed = append(testItemsJsonSeed, json)

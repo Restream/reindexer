@@ -24,7 +24,7 @@ class suffix_map {
 
 	public:
 		iterator(size_type idx, const suffix_map *m) : idx_(idx), m_(m) {}
-		iterator(const iterator &other) : idx_(other.idx_), m_(other.m_){};
+		iterator(const iterator &other) : idx_(other.idx_), m_(other.m_) {}
 		iterator &operator=(const iterator &other) {
 			idx_ = other.idx;
 			m_ = other.m_;
@@ -68,6 +68,11 @@ class suffix_map {
 	};
 
 public:
+	suffix_map() {}
+	suffix_map(const suffix_map & /*other*/) = delete;
+	suffix_map &operator=(const suffix_map & /*other*/) = default;
+	suffix_map(suffix_map && /*rhs*/) noexcept = default;
+
 	iterator begin() const { return iterator(0, this); }
 	iterator end() const { return iterator(sa_.size(), this); }
 
@@ -80,7 +85,9 @@ public:
 	}
 
 	iterator lower_bound(const K &str) const {
-		if (!built_) throw std::logic_error("Should call suffix_map::build before search");
+		if (!built_) {
+			throw std::logic_error("Should call suffix_map::build before search");
+		}
 
 		size_type lo = 0, hi = sa_.size(), mid;
 		int lcp_lo = 0, lcp_hi = 0;

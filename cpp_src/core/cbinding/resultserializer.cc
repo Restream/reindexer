@@ -46,7 +46,8 @@ void WrResultSerializer::putQueryParams(const QueryResults* results) {
 void WrResultSerializer::putExtraParams(const QueryResults* results) {
 	for (auto& ar : results->aggregationResults) {
 		PutVarUint(QueryResultAggregation);
-		PutSlice([&]() { ar.GetJSON(*this); });
+		auto slicePosSaver = StartSlice();
+		ar.GetJSON(*this);
 	}
 
 	if (!results->explainResults.empty()) {

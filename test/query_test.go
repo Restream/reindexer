@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -19,6 +20,8 @@ const (
 	opNOT
 	opOR
 )
+
+type EqualPositions [][]string
 
 var queryNames = map[int]string{
 	reindexer.EQ:    "==",
@@ -43,20 +46,21 @@ type queryTestEntry struct {
 
 // Test Query to DB object
 type queryTest struct {
-	q             *reindexer.Query
-	entries       []queryTestEntry
-	distinctIndex string
-	sortIndex     []string
-	sortDesc      bool
-	sortValues    map[string][]interface{}
-	limitItems    int
-	startOffset   int
-	reqTotalCount bool
-	db            *reindexer.Reindexer
-	namespace     string
-	nextOp        int
-	ns            *testNamespace
-	totalCount    int
+	q              *reindexer.Query
+	entries        []queryTestEntry
+	distinctIndex  string
+	sortIndex      []string
+	sortDesc       bool
+	sortValues     map[string][]interface{}
+	limitItems     int
+	startOffset    int
+	reqTotalCount  bool
+	db             *reindexer.Reindexer
+	namespace      string
+	nextOp         int
+	ns             *testNamespace
+	totalCount     int
+	equalPositions EqualPositions
 }
 type testNamespace struct {
 	items     map[string]interface{}
@@ -211,6 +215,14 @@ func (qt *queryTest) Where(index string, condition int, keys interface{}) *query
 	return qt
 }
 
+func (qt *queryTest) EqualPosition(fields ...string) *queryTest {
+	if len(fields) > 0 {
+		qt.q.EqualPosition(fields...)
+		qt.equalPositions = append(qt.equalPositions, fields)
+	}
+	return qt
+}
+
 // Sort - Apply sort order to returned from query items
 func (qt *queryTest) Sort(sortIndex string, desc bool, values ...interface{}) *queryTest {
 	if len(sortIndex) > 0 {
@@ -338,6 +350,12 @@ func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
 			log.Fatalf("Found item id=%s, not match condition '%s'\n%+v\n", pk, qt.toString(), string(json1))
 		} else {
 			totalItems++
+		}
+
+		if len(qt.equalPositions) > 0 {
+			if !checkEqualPosition(item, qt) {
+				log.Fatalf("Equal position check failed")
+			}
 		}
 
 		// Check distinct
@@ -497,6 +515,84 @@ func compareValues(v1 reflect.Value, v2 reflect.Value) int {
 		return 0
 	}
 	return -1
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func checkResult(cmpRes int, cond int) bool {
+	result := false
+	switch cond {
+	case reindexer.EQ:
+		result = cmpRes == 0
+	case reindexer.GT:
+		result = cmpRes > 0
+	case reindexer.GE:
+		result = cmpRes >= 0
+	case reindexer.LT:
+		result = cmpRes < 0
+	case reindexer.LE:
+		result = cmpRes <= 0
+	}
+	return result
+}
+
+func getEntryByIndexName(qt *queryTest, index string) int {
+	for i := 0; i < len(qt.entries); i++ {
+		if qt.entries[i].index == index {
+			return i
+		}
+	}
+	return -1
+}
+
+func getValuesForIndex(qt *queryTest, item interface{}, index string) []reflect.Value {
+	fields, _ := qt.ns.getField(index)
+	return getValues(item, fields)
+}
+
+func getEqualPositionMinArrSize(qt *queryTest, ep []string, item interface{}) int {
+	arrLen := math.MaxUint32
+	for _, index := range ep {
+		vals := getValuesForIndex(qt, item, index)
+		arrLen = min(len(vals), arrLen)
+	}
+	return arrLen
+}
+
+func checkEqualPosition(item interface{}, qt *queryTest) bool {
+	for _, epIndexes := range qt.equalPositions {
+		arrIdx := 0
+		entryIdx := getEntryByIndexName(qt, epIndexes[0])
+		vals := getValuesForIndex(qt, item, epIndexes[0])
+		keys := qt.entries[entryIdx].keys
+		arrLen := getEqualPositionMinArrSize(qt, epIndexes, item)
+		for arrIdx < arrLen && checkResult(compareValues(vals[arrIdx], keys[arrIdx]), qt.entries[entryIdx].condition) == false {
+			arrIdx++
+		}
+		if arrIdx >= arrLen {
+			continue
+		}
+		equal := true
+		for fieldIdx := 1; fieldIdx < len(epIndexes); fieldIdx++ {
+			entryIdx = getEntryByIndexName(qt, epIndexes[fieldIdx])
+			vals = getValuesForIndex(qt, item, epIndexes[fieldIdx])
+			keys = qt.entries[entryIdx].keys
+			cmpRes := checkResult(compareValues(vals[arrIdx], keys[arrIdx]), qt.entries[entryIdx].condition)
+			if cmpRes == false {
+				equal = false
+				break
+			}
+		}
+		if equal == true {
+			return true
+		}
+	}
+	return false
 }
 
 func compareComposite(vals []reflect.Value, keyValue interface{}, item interface{}) int {

@@ -67,6 +67,7 @@ public:
 		GetPayload().Reset();
 		unsafe_ = false;
 		ns_.reset();
+		jsonAllocator_ = JsonAllocator();
 	}
 	void SetNamespace(std::shared_ptr<Namespace> ns) { ns_ = ns; }
 	std::shared_ptr<Namespace> GetNamespace() { return ns_; }

@@ -1,3 +1,5 @@
+#include <condition_variable>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -17,6 +19,7 @@ public:
 	template <typename... Args>
 	DBWrapper(const string& outFileName, const string& inFileName, const string& command, Args... args)
 		: db_(args...), output_(outFileName), fileName_(inFileName), command_(command) {}
+	~DBWrapper ();
 	Error Connect(const string& dsn);
 	bool Run();
 
@@ -109,6 +112,9 @@ protected:
 	string command_;
 	bool terminate_ = false;
 	unordered_map<string, string> variables_;
+	std::condition_variable condUpsertCompleted_;
+	std::mutex mtx_;
+	int waitingUpsertsCount_ = 0;
 };
 
 }  // namespace reindexer_tool

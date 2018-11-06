@@ -5,9 +5,11 @@
 #include <cstring>
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/p_string.h"
+#include "estl/chunk_buf.h"
 #include "itoa/itoa.h"
 #include "tools/errors.h"
 #include "tools/varint.h"
+
 namespace reindexer {
 
 Serializer::Serializer(const void *_buf, int _len) : buf(static_cast<const uint8_t *>(_buf)), len(_len), pos(0) {}
@@ -129,6 +131,18 @@ bool Serializer::GetBool() { return bool(GetVarUint()); }
 
 WrSerializer::WrSerializer() : buf_(inBuf_), len_(0), cap_(sizeof(inBuf_)) {}
 
+WrSerializer::WrSerializer(chunk &&ch) : buf_(ch.data_), len_(ch.len_), cap_(ch.cap_) {
+	if (!buf_) {
+		buf_ = inBuf_;
+		cap_ = sizeof(inBuf_);
+		len_ = 0;
+	}
+	ch.data_ = nullptr;
+	ch.len_ = 0;
+	ch.cap_ = 0;
+	ch.offset_ = 0;
+}
+
 WrSerializer::~WrSerializer() {
 	if (buf_ != inBuf_) delete[] buf_;
 }
@@ -181,12 +195,17 @@ void WrSerializer::PutSlice(const string_view &slice) {
 	len_ += slice.size();
 }
 
-void WrSerializer::PutSlice(std::function<void()> func) {
-	int savePos = len_;
+WrSerializer::SliceHelper WrSerializer::StartSlice() {
+	size_t savePos = len_;
 	PutUInt32(0);
-	func();
-	uint32_t sliceSize = len_ - savePos - sizeof(uint32_t);
-	memcpy(&buf_[savePos], &sliceSize, sizeof(sliceSize));
+	return SliceHelper(this, savePos);
+}
+
+WrSerializer::SliceHelper::~SliceHelper() {
+	if (ser_) {
+		uint32_t sliceSize = ser_->len_ - pos_ - sizeof(uint32_t);
+		memcpy(&ser_->buf_[pos_], &sliceSize, sizeof(sliceSize));
+	}
 }
 
 void WrSerializer::PutUInt32(uint32_t v) {
@@ -330,6 +349,21 @@ void WrSerializer::PrintHexDump(const string_view &str) {
 }
 
 uint8_t *WrSerializer::Buf() const { return buf_; }
+
+chunk WrSerializer::DetachChunk() {
+	chunk ch;
+	if (buf_ == inBuf_) {
+		ch.append(Slice());
+	} else {
+		ch.data_ = buf_;
+		ch.cap_ = cap_;
+		ch.len_ = len_;
+	}
+	buf_ = inBuf_;
+	cap_ = sizeof(inBuf_);
+	len_ = 0;
+	return ch;
+}
 
 void WrSerializer::Write(const string_view &slice) {
 	grow(slice.size());

@@ -1,7 +1,6 @@
-
-
 #include "ftfastconfig.h"
 #include <string.h>
+#include <limits>
 #include "core/ft/stopwords/stop.h"
 #include "tools/errors.h"
 #include "tools/jsontools.h"
@@ -36,6 +35,10 @@ void FtFastConfig::parse(char *json) {
 		parseJsonField("min_relevancy", minRelevancy, elem, 0, 1);
 		parseJsonField("max_typos_in_word", maxTyposInWord, elem, 0, 2);
 		parseJsonField("max_typo_len", maxTypoLen, elem, 0, 100);
+
+		parseJsonField("max_rebuild_steps", maxRebuildSteps, elem, 1, 500);
+		parseJsonField("max_step_size", maxStepSize, elem, 5, std::numeric_limits<double>::max());
+
 		parseBase(elem);
 	}
 }

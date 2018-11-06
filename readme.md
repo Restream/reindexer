@@ -51,6 +51,7 @@ The core is written in C++ and the application level API is in Go.
     - [Dump and restore database](#dump-and-restore-database)
 - [Integration with other program languages](#integration-with-other-program-languages)
 	- [Pyreindexer](#pyreindexer)
+	- [HTTP REST API](#http-rest-api)
 - [Limitations and known issues](#limitations-and-known-issues)
 - [Getting help](#getting-help)
 
@@ -619,7 +620,7 @@ For maintenance and work with data, stored in reindexer database there are 2 met
 ### Web interface
 
 Reindexer server and `builtinserver` binding mode are coming with Web UI out-of-the box. To open web UI just start reindexer server
-or application with `builrinserver` mode, and open http://server-ip:9088/face in browser
+or application with `builtinserver` mode, and open http://server-ip:9088/face in browser
 
 ### Command line tool
 
@@ -654,10 +655,18 @@ A list of connectors for work with Reindexer via other program languages (TBC la
 
 1. [Pyreindexer](connectors/py_reindexer) for Python (version >=3.6 is required). For setup run:
 
+
 ```bash
 pip3 install git+https://github.com/Restream/reindexer.git
 
 ```
+
+### HTTP REST API
+
+The simplest way to use reindexer with any program language - is using REST API. The
+[complete REST API documentation is here](cpp_src/server/contrib/server.md).  
+[Or explore interactive version of Reindexer's swagger documentation](https://editor.swagger.io/?url=https://raw.githubusercontent.com/Restream/reindexer/master/cpp_src/server/contrib/server.yml)
+
 
 ## Limitations and known issues
 

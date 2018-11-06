@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <string>
 #include <thread>
@@ -27,6 +28,7 @@ using namespace net;
 
 class RPCClient {
 public:
+	typedef std::function<void(const Error &err)> Completion;
 	RPCClient(const ReindexerConfig &config);
 	~RPCClient();
 
@@ -41,13 +43,13 @@ public:
 	Error UpdateIndex(const string &_namespace, const IndexDef &index);
 	Error DropIndex(const string &_namespace, const string &index);
 	Error EnumNamespaces(vector<NamespaceDef> &defs, bool bEnumAll);
-	Error Insert(const string &_namespace, client::Item &item);
-	Error Update(const string &_namespace, client::Item &item);
-	Error Upsert(const string &_namespace, client::Item &item);
-	Error Delete(const string &_namespace, client::Item &item);
+	Error Insert(const string &_namespace, client::Item &item, Completion completion = nullptr);
+	Error Update(const string &_namespace, client::Item &item, Completion completion = nullptr);
+	Error Upsert(const string &_namespace, client::Item &item, Completion completion = nullptr);
+	Error Delete(const string &_namespace, client::Item &item, Completion completion = nullptr);
 	Error Delete(const Query &query, QueryResults &result);
-	Error Select(const string_view &query, QueryResults &result);
-	Error Select(const Query &query, QueryResults &result);
+	Error Select(const string_view &query, QueryResults &result, Completion clientCompl = nullptr);
+	Error Select(const Query &query, QueryResults &result, Completion clientCompl = nullptr);
 	Error Commit(const string &namespace_);
 	Item NewItem(const string &_namespace);
 	Error GetMeta(const string &_namespace, const string &key, string &data);
@@ -55,7 +57,8 @@ public:
 	Error EnumMeta(const string &_namespace, vector<string> &keys);
 
 private:
-	Error modifyItem(const string &_namespace, Item &item, int mode);
+	Error modifyItem(const string &_namespace, Item &item, int mode, Completion);
+	Error modifyItemAsync(const string &_namespace, Item *item, int mode, Completion);
 	Namespace::Ptr getNamespace(const string &nsName);
 	void run();
 

@@ -8,7 +8,11 @@ namespace reindexer {
 template <typename T>
 class IndexStore : public Index {
 public:
-	using Index::Index;
+	IndexStore(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields) : Index(idef, payloadType, fields) {
+		static T a;
+		keyType_ = Variant(a).Type();
+		selectKeyType_ = Variant(a).Type();
+	}
 
 	Variant Upsert(const Variant &key, IdType id) override;
 	void Delete(const Variant &key, IdType id) override;
@@ -21,11 +25,7 @@ public:
 	IndexMemStat GetMemStat() override;
 
 	IdSetRef Find(const Variant & /*key*/) override {
-		throw Error(errLogic, "IndexStore::Find of '%s' is not implemented. Do not use '-' index as pk?", this->name_.c_str());
-	}
-	KeyValueType KeyType() override final {
-		static T a;
-		return Variant(a).Type();
+		throw Error(errLogic, "IndexStore::Find of '%s' is not implemented. Do not use '-' index as pk!", this->name_.c_str());
 	}
 
 protected:

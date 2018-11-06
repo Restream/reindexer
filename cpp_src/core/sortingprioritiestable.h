@@ -8,7 +8,6 @@
 
 namespace reindexer {
 class string_view;
-}
 
 /// Sorting priorities table for CollateCustom
 /// sorting mode. Input string looks like: "А-ЯA-Z0-9..."
@@ -32,13 +31,14 @@ public:
 private:
 	/// Checks whether ch is in existing ranges ir not.
 	/// @param ch - character to check.
+	/// @param ranges - map with character's ranges
 	/// @returns true, if character is in one of existing ranges already.
-	bool checkForRangeIntersection(wchar_t ch);
+	bool checkForRangeIntersection(std::map<uint16_t, uint16_t>& ranges, wchar_t ch);
 
 	static const uint32_t tableSize = 0x10000;
 	using SortOrderTable = std::array<uint16_t, tableSize>;
 	using SortOrderTablePtr = std::shared_ptr<SortOrderTable>;
 	SortOrderTablePtr sortOrder_;
 	std::string sortOrderCharacters_;
-	std::map<uint16_t, uint16_t> ranges_;
 };
+}  // namespace reindexer

@@ -11,8 +11,7 @@ namespace reindexer {
 
 class Selecter {
 public:
-	Selecter(DataHolder& holder, FtFastConfig& cfg, size_t fieldSize, bool needArea)
-		: holder_(holder), cfg_(cfg), fieldSize_(fieldSize), needArea_(needArea) {}
+	Selecter(DataHolder& holder, size_t fieldSize, bool needArea) : holder_(holder), fieldSize_(fieldSize), needArea_(needArea) {}
 
 	struct TextSearchResult {
 		const PackedIdRelSet* vids_;
@@ -68,7 +67,6 @@ public:
 	void processTypos(FtSelectContext&, FtDSLEntry&);
 
 	DataHolder& holder_;
-	FtFastConfig& cfg_;
 	size_t fieldSize_;
 	bool needArea_;
 };

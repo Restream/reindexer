@@ -7,7 +7,7 @@ struct CollateOpts {
 	explicit CollateOpts(const std::string& sortOrderUTF8);
 
 	uint8_t mode = CollateNone;
-	SortingPrioritiesTable sortOrderTable;
+	reindexer::SortingPrioritiesTable sortOrderTable;
 };
 
 /// Cpp version of IndexOpts: includes

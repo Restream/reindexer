@@ -11,6 +11,20 @@ import (
 	"github.com/restream/reindexer/dsl"
 )
 
+type sortDistinctOptions struct {
+	SortIndexes     []string
+	DistinctIndexes []string
+	TestComposite   bool
+}
+
+type IndexesTestCase struct {
+	Name      string
+	Namespace string
+	Options   sortDistinctOptions
+	Item      interface{}
+}
+
+// TestItem common test case
 type TestItem struct {
 	Prices        []*TestJoinItem `reindex:"prices,,joined"`
 	Pricesx       []*TestJoinItem `reindex:"pricesx,,joined"`
@@ -27,6 +41,68 @@ type TestItem struct {
 	PostalCode    int             `json:"postal_code"`
 	Description   string          `reindex:"description,fuzzytext"`
 	Rate          float64         `reindex:"rate,tree"`
+	ExchangeRate  float64         `json:"exchange_rate"`
+	PollutionRate float32         `json:"pollution_rate"`
+	IsDeleted     bool            `reindex:"isdeleted,-"`
+	Actor         Actor           `reindex:"actor"`
+	PricesIDs     []int           `reindex:"price_id"`
+	LocationID    string          `reindex:"location"`
+	EndTime       int             `reindex:"end_time,-"`
+	StartTime     int             `reindex:"start_time,tree"`
+	Tmp           string          `reindex:"tmp,-"`
+	_             struct{}        `reindex:"id+tmp,,composite,pk"`
+	_             struct{}        `reindex:"age+genre,,composite"`
+	_             struct{}        `reindex:"location+rate,,composite"`
+}
+
+// TestItemIDOnly test case for non-indexed fields
+type TestItemIDOnly struct {
+	Prices        []*TestJoinItem `reindex:"prices,,joined"`
+	Pricesx       []*TestJoinItem `reindex:"pricesx,,joined"`
+	ID            int             `reindex:"id,-"`
+	Genre         int64           `json:"genre"`
+	Year          int             `json:"year"`
+	Packages      []int           `json:"packages"`
+	Name          string          `json:"name"`
+	Countries     []string        `json:"countries"`
+	Age           int             `json:"age"`
+	AgeLimit      int64           `json:"age_limit"`    // reindex:"age_limit,hash,sparse"`
+	CompanyName   string          `json:"company_name"` // reindex:"company_name,hash,sparse"`
+	Address       string          `json:"address"`
+	PostalCode    int             `json:"postal_code"`
+	Description   string          `json:"description"`
+	Rate          float64         `json:"rate"`
+	ExchangeRate  float64         `json:"exchange_rate"`
+	PollutionRate float32         `json:"pollution_rate"`
+	IsDeleted     bool            `json:"isdeleted"`
+	Actor         Actor           `reindex:"actor"`
+	PricesIDs     int             `json:"price_id"`
+	LocationID    string          `json:"location"`
+	EndTime       int             `json:"end_time"`
+	StartTime     int             `json:"start_time"`
+	Tmp           string          `reindex:"tmp,-"`
+	_             struct{}        `reindex:"id+tmp,,composite,pk"`
+	_             struct{}        `reindex:"age+genre,,composite"`
+	_             struct{}        `reindex:"location+rate,,composite"`
+}
+
+// TestItemWithSparse test case for sparse indexes
+type TestItemWithSparse struct {
+	Prices        []*TestJoinItem `reindex:"prices,,joined"`
+	Pricesx       []*TestJoinItem `reindex:"pricesx,,joined"`
+	ID            int             `reindex:"id,-"`
+	Genre         int64           `reindex:"genre,tree,sparse"`
+	Year          int             `reindex:"year,tree,sparse"`
+	Packages      []int           `reindex:"packages,hash,sparse"`
+	Name          string          `reindex:"name,tree,sparse"`
+	Countries     []string        `reindex:"countries,tree,sparse"`
+	Age           int             `reindex:"age,hash,sparse"`
+	AgeLimit      int64           `json:"age_limit" reindex:"age_limit,hash,sparse"`
+	CompanyName   string          `json:"company_name" reindex:"company_name,hash,sparse"`
+	Address       string          `json:"address"`
+	PostalCode    int             `json:"postal_code"`
+	Description   string          `reindex:"description,fuzzytext"`
+	Rate          float64         `reindex:"rate,tree,sparse"`
 	ExchangeRate  float64         `json:"exchange_rate"`
 	PollutionRate float32         `json:"pollution_rate"`
 	IsDeleted     bool            `reindex:"isdeleted,-"`
@@ -82,9 +158,12 @@ type TestItemNestedPK struct {
 }
 
 func init() {
+	tnamespaces["test_items"] = TestItem{}
+	tnamespaces["test_items_id_only"] = TestItemIDOnly{}
+	tnamespaces["test_items_with_sparse"] = TestItemWithSparse{}
+
 	tnamespaces["test_items_simple"] = TestItemSimple{}
 	tnamespaces["test_items_simple_cmplx_pk"] = TestItemSimpleCmplxPK{}
-	tnamespaces["test_items"] = TestItem{}
 	tnamespaces["test_items_not"] = TestItemSimple{}
 	tnamespaces["test_items_delete_query"] = TestItem{}
 }
@@ -110,9 +189,65 @@ func FillTestItemsForNot() {
 
 }
 
-func newTestItem(id int, pkgsCount int) *TestItem {
+func newTestItem(id int, pkgsCount int) interface{} {
 	startTime := rand.Int() % 50000
 	return &TestItem{
+		ID:            mkID(id),
+		Year:          rand.Int()%50 + 2000,
+		Genre:         int64(rand.Int() % 50),
+		Name:          randString(),
+		Age:           rand.Int() % 5,
+		AgeLimit:      int64(rand.Int()%10 + 40),
+		CompanyName:   randString(),
+		Address:       randString(),
+		PostalCode:    randPostalCode(),
+		Description:   randString(),
+		Packages:      randIntArr(10, 10000, 50),
+		Rate:          float64(rand.Int()%100) / 10,
+		ExchangeRate:  rand.Float64(),
+		PollutionRate: rand.Float32(),
+		IsDeleted:     rand.Int()%2 != 0,
+		PricesIDs:     randIntArr(10, 7000, 50),
+		LocationID:    randLocation(),
+		StartTime:     startTime,
+		EndTime:       startTime + (rand.Int()%5)*1000,
+		Actor: Actor{
+			Name: randString(),
+		},
+	}
+}
+
+func newTestItemIDOnly(id int, pkgsCount int) interface{} {
+	startTime := rand.Int() % 50000
+	return &TestItemIDOnly{
+		ID:            mkID(id),
+		Year:          rand.Int()%50 + 2000,
+		Genre:         int64(rand.Int() % 50),
+		Name:          randString(),
+		Age:           rand.Int() % 5,
+		AgeLimit:      int64(rand.Int()%10 + 40),
+		CompanyName:   randString(),
+		Address:       randString(),
+		PostalCode:    randPostalCode(),
+		Description:   randString(),
+		Packages:      randIntArr(pkgsCount, 10000, 50),
+		Rate:          float64(rand.Int()%100) / 10,
+		ExchangeRate:  rand.Float64(),
+		PollutionRate: rand.Float32(),
+		IsDeleted:     rand.Int()%2 != 0,
+		PricesIDs:     rand.Int() % 100, //randIntArr(10, 7000, 50),
+		LocationID:    randLocation(),
+		StartTime:     startTime,
+		EndTime:       startTime + (rand.Int()%5)*1000,
+		Actor: Actor{
+			Name: randString(),
+		},
+	}
+}
+
+func newTestItemWithSparse(id int, pkgsCount int) interface{} {
+	startTime := rand.Int() % 50000
+	return &TestItemWithSparse{
 		ID:            mkID(id),
 		Year:          rand.Int()%50 + 2000,
 		Genre:         int64(rand.Int() % 50),
@@ -141,7 +276,7 @@ func newTestItem(id int, pkgsCount int) *TestItem {
 func newTestItemNestedPK(id int, pkgsCount int) *TestItemNestedPK {
 	return &TestItemNestedPK{
 		PrimaryID: mkID(id),
-		Nested:    *newTestItem(id+10, pkgsCount),
+		Nested:    *newTestItem(id+10, pkgsCount).(*TestItem),
 	}
 }
 
@@ -191,11 +326,42 @@ func FillTestItems(ns string, start int, count int, pkgsCount int) {
 	tx.MustCommit(nil)
 }
 
+type testItemsCreator func(int, int) interface{}
+
+func FillTestItemsTxWithFunc(start, count, pkgsCount int, tx *txTest, fn testItemsCreator) {
+	for i := 0; i < count; i++ {
+		testItem := fn(start+i, pkgsCount)
+		if err := tx.Upsert(testItem); err != nil {
+			panic(err)
+		}
+	}
+}
+
+func FillTestItemsWithFunc(ns string, start int, count int, pkgsCount int, fn testItemsCreator) {
+	tx := newTestTx(DB, ns)
+	FillTestItemsTxWithFunc(start, count, pkgsCount, tx, fn)
+	tx.MustCommit(nil)
+}
+
 func TestQueries(t *testing.T) {
 
-	log.Printf("Seeding test items")
-	FillTestItems("test_items", 0, 2500, 20)
-	FillTestItems("test_items", 2500, 2500, 0)
+	log.Printf("Seeding indexed test items")
+
+	FillTestItemsWithFunc("test_items", 0, 2500, 20, newTestItem)
+	FillTestItemsWithFunc("test_items", 2500, 2500, 0, newTestItem)
+
+	log.Println("Seeding non-indexed test items ...")
+
+	FillTestItemsWithFunc("test_items_id_only", 0, 2500, 20, newTestItemIDOnly)
+	FillTestItemsWithFunc("test_items_id_only", 2500, 2500, 0, newTestItemIDOnly)
+
+	log.Println("Seeding sparse indexed test items ...")
+
+	FillTestItemsWithFunc("test_items_with_sparse", 0, 2500, 20, newTestItemWithSparse)
+	FillTestItemsWithFunc("test_items_with_sparse", 2500, 2500, 0, newTestItemWithSparse)
+
+	//// FillTestItems("test_items", 0, 2500, 20)
+	//// FillTestItems("test_items", 2500, 2500, 0)
 	FillTestItemsForNot()
 
 	if err := DB.CloseNamespace("test_items"); err != nil {
@@ -206,12 +372,29 @@ func TestQueries(t *testing.T) {
 		panic(err)
 	}
 
+	if err := DB.CloseNamespace("test_items_id_only"); err != nil {
+		panic(err)
+	}
+
+	if err := DB.OpenNamespace("test_items_id_only", reindexer.DefaultNamespaceOptions(), TestItemIDOnly{}); err != nil {
+		panic(err)
+	}
+
+	if err := DB.CloseNamespace("test_items_with_sparse"); err != nil {
+		panic(err)
+	}
+
+	if err := DB.OpenNamespace("test_items_with_sparse", reindexer.DefaultNamespaceOptions(), TestItemWithSparse{}); err != nil {
+		panic(err)
+	}
+
 	CheckTestItemsJsonQueries()
 
 	CheckAggregateQueries()
 
-	CheckTestItemsQueries()
+	log.Println("Start queries tests ...")
 
+	CheckTestItemsQueries()
 	CheckTestItemsSQLQueries()
 	CheckTestItemsDSLQueries()
 
@@ -340,241 +523,281 @@ func CheckTestItemsJsonQueries() {
 
 }
 
+func callQueriesSequence(namespace, distinct, sort string, desc, testComposite bool) {
+	// Take items with single condition
+	newTestQuery(DB, namespace).Where("genre", reindexer.EQ, rand.Int()%50).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("name", reindexer.EQ, randString()).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("rate", reindexer.EQ, float32(rand.Int()%100)/10).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+
+	newTestQuery(DB, namespace).Where("age_limit", reindexer.EQ, int64((rand.Int()%10)+40)).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("postal_code", reindexer.EQ, randPostalCode()).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("company_name", reindexer.EQ, randString()).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("address", reindexer.EQ, randString()).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("exchange_rate", reindexer.EQ, rand.Float64()).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("pollution_rate", reindexer.EQ, rand.Float32()).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+
+	newTestQuery(DB, namespace).Where("genre", reindexer.GT, rand.Int()%50).Distinct(distinct).Sort(sort, desc).Debug(reindexer.TRACE).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("name", reindexer.GT, randString()).Distinct(distinct).Offset(21).Limit(50).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("rate", reindexer.GT, float32(rand.Int()%100)/10).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("age_limit", reindexer.GT, int64(40)).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("postal_code", reindexer.GT, randPostalCode()).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("company_name", reindexer.GT, randString()).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("address", reindexer.GT, randString()).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("exchange_rate", reindexer.GT, rand.Float64()).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("pollution_rate", reindexer.GT, rand.Float32()).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+
+	newTestQuery(DB, namespace).Where("genre", reindexer.LT, rand.Int()%50).Distinct(distinct).Sort(sort, desc).Limit(100).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("name", reindexer.LT, randString()).Offset(10).Limit(200).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("rate", reindexer.LT, float32(rand.Int()%100)/10).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("age_limit", reindexer.LT, int64(50)).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("postal_code", reindexer.LT, randPostalCode()).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("company_name", reindexer.LT, randString()).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("address", reindexer.LT, randString()).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("exchange_rate", reindexer.LT, rand.Float64()).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("pollution_rate", reindexer.LT, rand.Float32()).Distinct(distinct).Sort(sort, desc).Limit(500).ExecAndVerify()
+
+	newTestQuery(DB, namespace).Where("genre", reindexer.RANGE, []int{rand.Int() % 100, rand.Int() % 100}).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("name", reindexer.RANGE, []string{randString(), randString()}).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("rate", reindexer.RANGE, []float32{float32(rand.Int()%100) / 10, float32(rand.Int()%100) / 10}).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("age_limit", reindexer.RANGE, []int64{40, 50}).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("company_name", reindexer.RANGE, []string{randString(), randString()}).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+
+	newTestQuery(DB, namespace).Where("packages", reindexer.SET, randIntArr(10, 10000, 50)).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("packages", reindexer.EMPTY, 0).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("packages", reindexer.ANY, 0).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+
+	newTestQuery(DB, namespace).Where("isdeleted", reindexer.EQ, true).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+
+	newTestQuery(DB, namespace).Where("name", reindexer.EQ, randString()).Distinct(distinct).Sort("address", false).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("name", reindexer.EQ, randString()).Distinct(distinct).Sort("postal_code", true).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("name", reindexer.EQ, randString()).Distinct(distinct).Sort("age_limit", false).Sort(sort, desc).ExecAndVerify()
+	newTestQuery(DB, namespace).Where("packages", reindexer.GE, 5).Where("price_id", reindexer.GE, 100).EqualPosition("packages", "price_id").ExecAndVerify()
+
+	newTestQuery(DB, namespace).Where("name", reindexer.EQ, randString()).Distinct(distinct).
+		Sort("year", true).
+		Sort("name", false).
+		Sort("genre", true).
+		Sort("age", false).
+		Sort("age_limit", true).
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Where("name", reindexer.EQ, randString()).Distinct(distinct).
+		Sort("year", true).
+		Sort("name", false).
+		Sort("genre", true).
+		Sort("age", false).
+		Sort("age_limit", true).
+		Offset(4).
+		Limit(44).
+		ExecAndVerify()
+
+	// Complex queires
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).Debug(reindexer.TRACE).
+		Where("genre", reindexer.EQ, 5). // composite index age+genre
+		Where("age", reindexer.EQ, 3).
+		Where("year", reindexer.GT, 2010).
+		Where("age_limit", reindexer.LE, int64(50)).
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("year", reindexer.GT, 2002).
+		Where("genre", reindexer.EQ, 4). // composite index age+genre, and extra and + or conditions
+		Where("age", reindexer.EQ, 3).
+		Where("age_limit", reindexer.GE, int64(40)).
+		Where("isdeleted", reindexer.EQ, true).Or().Where("year", reindexer.GT, 2001).
+		Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).Debug(reindexer.TRACE).
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("age", reindexer.SET, []int{1, 2, 3, 4}).
+		Where("id", reindexer.EQ, mkID(rand.Int()%5000)).
+		Where("tmp", reindexer.EQ, ""). // composite pk with store index
+		Where("isdeleted", reindexer.EQ, true).Or().Where("year", reindexer.GT, 2001).Debug(reindexer.TRACE).
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("genre", reindexer.SET, []int{5, 1, 7}).
+		Where("year", reindexer.LT, 2010).Or().Where("genre", reindexer.EQ, 3).
+		Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).Or().Where("packages", reindexer.EMPTY, 0).Debug(reindexer.TRACE).
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("genre", reindexer.SET, []int{5, 1, 7}).
+		Where("year", reindexer.LT, 2010).Or().Where("packages", reindexer.ANY, 0).
+		Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).Debug(reindexer.TRACE).
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("genre", reindexer.EQ, 5).Or().Where("genre", reindexer.EQ, 6).
+		Where("year", reindexer.RANGE, []int{2001, 2020}).
+		Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("year", reindexer.RANGE, []int{2001, 2020}).
+		Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
+		Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("actor.name", reindexer.EQ, randString()).
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		Not().Where("genre", reindexer.EQ, 5).
+		Where("year", reindexer.RANGE, []int{2001, 2020}).
+		Where("age_limit", reindexer.RANGE, []int64{40, 50}).
+		Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		Where("genre", reindexer.EQ, 5).
+		Not().Where("year", reindexer.RANGE, []int{2001, 2020}).
+		Where("age_limit", reindexer.RANGE, []int64{40, 50}).
+		Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		Not().Where("genre", reindexer.EQ, 10).
+		ExecAndVerify()
+
+	newTestQuery(DB, "TEST_ITEMS_NOT").ReqTotal().
+		Where("NAME", reindexer.EQ, "blabla").
+		ExecAndVerify()
+
+	newTestQuery(DB, "test_items_not").ReqTotal().
+		Where("year", reindexer.EQ, 2002).
+		ExecAndVerify()
+
+	newTestQuery(DB, "test_items_not").ReqTotal().
+		Where("YEAR", reindexer.EQ, 2002).
+		Not().Where("name", reindexer.EQ, "blabla").
+		ExecAndVerify()
+
+	newTestQuery(DB, "TEST_ITEMS_NOT").ReqTotal().
+		Where("name", reindexer.EQ, "blabla").
+		Not().Where("year", reindexer.EQ, 2002).
+		ExecAndVerify()
+
+	newTestQuery(DB, "test_items_not").ReqTotal().
+		Where("name", reindexer.EQ, "blabla").
+		Not().Where("year", reindexer.EQ, 2001).
+		ExecAndVerify()
+
+	newTestQuery(DB, "test_items_not").ReqTotal().
+		Where("year", reindexer.EQ, 2002).
+		Not().Where("name", reindexer.EQ, "sss").
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Where("end_time", reindexer.GT, 10000).Not().Where("genre", reindexer.EQ, 10).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+
+	if !testComposite {
+		return
+	}
+	compositeValues := []interface{}{[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)}}
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("age+genre", reindexer.EQ, compositeValues).
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("age+genre", reindexer.LE, compositeValues).
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("age+genre", reindexer.LT, compositeValues).
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("age+genre", reindexer.GT, compositeValues).
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("age+genre", reindexer.GE, compositeValues).
+		ExecAndVerify()
+
+	compositeValues = []interface{}{[]interface{}{randLocation(), float64(rand.Int()%100) / 10}}
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("location+rate", reindexer.EQ, compositeValues).
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("location+rate", reindexer.GT, compositeValues).
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("location+rate", reindexer.LT, compositeValues).
+		ExecAndVerify()
+
+	compositeValues = []interface{}{
+		[]interface{}{randLocation(), float64(rand.Int()%100) / 10},
+		[]interface{}{randLocation(), float64(rand.Int()%100) / 10},
+	}
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("location+rate", reindexer.RANGE, compositeValues).
+		ExecAndVerify()
+
+	compositeValues = []interface{}{
+		[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
+		[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
+		[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
+		[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
+		[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
+		[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
+		[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
+		[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
+	}
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("age+genre", reindexer.SET, compositeValues).
+		ExecAndVerify()
+}
+
 func CheckTestItemsQueries() {
-	sortIdxs := []string{"", "NAME", "YEAR", "RATE"}
-	distinctIdxs := []string{"", "YEAR", "RATE"}
+	testCases := []IndexesTestCase{
+		{
+			Name:      "TEST WITH COMMON INDEXES",
+			Namespace: "test_items",
+			Options: sortDistinctOptions{
+				SortIndexes:     []string{"", "NAME", "YEAR", "RATE"},
+				DistinctIndexes: []string{"", "YEAR", "RATE"},
+				TestComposite:   true,
+			},
+			Item: TestItem{},
+		},
+		{
+			Name:      "TEST WITH ID ONLY INDEX",
+			Namespace: "test_items_id_only",
+			Options: sortDistinctOptions{
+				SortIndexes:     []string{"", "name", "year", "rate"},
+				DistinctIndexes: []string{"", "year", "rate"},
+				TestComposite:   false,
+			},
+			Item: TestItemIDOnly{},
+		},
+		{
+			Name:      "TEST WITH SPARSE INDEXES",
+			Namespace: "test_items_with_sparse",
+			Options: sortDistinctOptions{
+				SortIndexes:     []string{"", "NAME", "YEAR", "RATE"},
+				DistinctIndexes: []string{"", "YEAR", "RATE"},
+				TestComposite:   false,
+			},
+			Item: TestItemWithSparse{},
+		},
+	}
 
-	for _, sortOrder := range []bool{true, false} {
-		for _, sort := range sortIdxs {
-			for _, distinct := range distinctIdxs {
-				log.Printf("DISTINCT '%s' SORT '%s' DESC %v\n", distinct, sort, sortOrder)
-				// Just take all items from namespace
-				newTestQuery(DB, "TEST_ITEMS").Distinct(distinct).Sort(sort, sortOrder).Limit(1).ExecAndVerify()
-
-				// Take items with single condition
-				newTestQuery(DB, "TEST_ITEMS").Where("GENre", reindexer.EQ, rand.Int()%50).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("NAME", reindexer.EQ, randString()).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "TEST_ITEMS").Where("rate", reindexer.EQ, float32(rand.Int()%100)/10).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("age_limit", reindexer.EQ, int64((rand.Int()%10)+40)).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "TEST_ITEMS").Where("postal_code", reindexer.EQ, randPostalCode()).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("company_name", reindexer.EQ, randString()).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "TEST_ITEMS").Where("address", reindexer.EQ, randString()).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("exchange_rate", reindexer.EQ, rand.Float64()).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "TEST_ITEMS").Where("pollution_rate", reindexer.EQ, rand.Float32()).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Where("genre", reindexer.GT, rand.Int()%50).Distinct(distinct).Sort(sort, sortOrder).Debug(reindexer.TRACE).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("name", reindexer.GT, randString()).Distinct(distinct).Offset(21).Limit(50).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("rate", reindexer.GT, float32(rand.Int()%100)/10).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("age_limit", reindexer.GT, int64(40)).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("postal_code", reindexer.GT, randPostalCode()).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("company_name", reindexer.GT, randString()).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("address", reindexer.GT, randString()).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("exchange_rate", reindexer.GT, rand.Float64()).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("pollution_rate", reindexer.GT, rand.Float32()).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Where("genre", reindexer.LT, rand.Int()%50).Distinct(distinct).Sort(sort, sortOrder).Limit(100).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("name", reindexer.LT, randString()).Offset(10).Limit(200).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("rate", reindexer.LT, float32(rand.Int()%100)/10).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("age_limit", reindexer.LT, int64(50)).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("postal_code", reindexer.LT, randPostalCode()).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("company_name", reindexer.LT, randString()).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("address", reindexer.LT, randString()).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("exchange_rate", reindexer.LT, rand.Float64()).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("pollution_rate", reindexer.LT, rand.Float32()).Distinct(distinct).Sort(sort, sortOrder).Limit(500).ExecAndVerify()
-
-				newTestQuery(DB, "TEST_ITEMS").Where("GENRE", reindexer.RANGE, []int{rand.Int() % 100, rand.Int() % 100}).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("name", reindexer.RANGE, []string{randString(), randString()}).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("rate", reindexer.RANGE, []float32{float32(rand.Int()%100) / 10, float32(rand.Int()%100) / 10}).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("age_limit", reindexer.RANGE, []int64{40, 50}).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("company_name", reindexer.RANGE, []string{randString(), randString()}).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Where("PACKAGES", reindexer.SET, randIntArr(10, 10000, 50)).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("packages", reindexer.EMPTY, 0).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-				newTestQuery(DB, "test_items").Where("PACKAGES", reindexer.ANY, 0).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Where("isdeleted", reindexer.EQ, true).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Where("name", reindexer.EQ, randString()).Distinct(distinct).Sort("address", false).Sort(sort, sortOrder)
-				newTestQuery(DB, "test_items").Where("name", reindexer.EQ, randString()).Distinct(distinct).Sort("postal_code", true).Sort(sort, sortOrder)
-				newTestQuery(DB, "test_items").Where("name", reindexer.EQ, randString()).Distinct(distinct).Sort("age_limit", false).Sort(sort, sortOrder)
-
-				newTestQuery(DB, "test_items").Where("name", reindexer.EQ, randString()).Distinct(distinct).
-					Sort("year", true).
-					Sort("name", false).
-					Sort("genre", true).
-					Sort("age", false).
-					Sort("age_limit", true).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Where("name", reindexer.EQ, randString()).Distinct(distinct).
-					Sort("year", true).
-					Sort("name", false).
-					Sort("genre", true).
-					Sort("age", false).
-					Sort("age_limit", true).
-					Offset(4).
-					Limit(44).
-					ExecAndVerify()
-
-				// Complex queires
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
-					Where("genre", reindexer.EQ, 5). // composite index age+genre
-					Where("AGE", reindexer.EQ, 3).
-					Where("year", reindexer.GT, 2010).
-					Where("AGE_LIMIT", reindexer.LE, int64(50)).
-					Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).Debug(reindexer.TRACE).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
-					Where("year", reindexer.GT, 2002).
-					Where("GENRE", reindexer.EQ, 4). // composite index age+genre, and extra and + or conditions
-					Where("age", reindexer.EQ, 3).
-					Where("age_limit", reindexer.GE, int64(40)).
-					Where("isdeleted", reindexer.EQ, true).Or().Where("year", reindexer.GT, 2001).
-					Where("PACKAGES", reindexer.SET, randIntArr(5, 10000, 50)).Debug(reindexer.TRACE).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
-					Where("age", reindexer.SET, []int{1, 2, 3, 4}).
-					Where("ID", reindexer.EQ, mkID(rand.Int()%5000)).
-					Where("TMP", reindexer.EQ, ""). // composite pk with store index
-					Where("isdeleted", reindexer.EQ, true).Or().Where("year", reindexer.GT, 2001).Debug(reindexer.TRACE).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
-					Where("genre", reindexer.SET, []int{5, 1, 7}).
-					Where("year", reindexer.LT, 2010).Or().Where("genre", reindexer.EQ, 3).
-					Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).Or().Where("packages", reindexer.EMPTY, 0).Debug(reindexer.TRACE).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
-					Where("genre", reindexer.SET, []int{5, 1, 7}).
-					Where("year", reindexer.LT, 2010).Or().Where("packages", reindexer.ANY, 0).
-					Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).Debug(reindexer.TRACE).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
-					Where("genre", reindexer.EQ, 5).Or().Where("genre", reindexer.EQ, 6).
-					Where("year", reindexer.RANGE, []int{2001, 2020}).
-					Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
-					Where("year", reindexer.RANGE, []int{2001, 2020}).
-					Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
-					Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
-					Where("actor.name", reindexer.EQ, randString()).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().Debug(reindexer.TRACE).
-					Not().Where("GENRE", reindexer.EQ, 5).
-					Where("year", reindexer.RANGE, []int{2001, 2020}).
-					Where("age_limit", reindexer.RANGE, []int64{40, 50}).
-					Where("PACKAGES", reindexer.SET, randIntArr(5, 10000, 50)).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().Debug(reindexer.TRACE).
-					Where("genre", reindexer.EQ, 5).
-					Not().Where("year", reindexer.RANGE, []int{2001, 2020}).
-					Where("age_limit", reindexer.RANGE, []int64{40, 50}).
-					Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().Debug(reindexer.TRACE).
-					Not().Where("genre", reindexer.EQ, 10).
-					ExecAndVerify()
-
-				newTestQuery(DB, "TEST_ITEMS_NOT").ReqTotal().
-					Where("NAME", reindexer.EQ, "blabla").
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items_not").ReqTotal().
-					Where("year", reindexer.EQ, 2002).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items_not").ReqTotal().
-					Where("YEAR", reindexer.EQ, 2002).
-					Not().Where("name", reindexer.EQ, "blabla").
-					ExecAndVerify()
-
-				newTestQuery(DB, "TEST_ITEMS_NOT").ReqTotal().
-					Where("name", reindexer.EQ, "blabla").
-					Not().Where("year", reindexer.EQ, 2002).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items_not").ReqTotal().
-					Where("name", reindexer.EQ, "blabla").
-					Not().Where("year", reindexer.EQ, 2001).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items_not").ReqTotal().
-					Where("year", reindexer.EQ, 2002).
-					Not().Where("name", reindexer.EQ, "sss").
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Where("end_time", reindexer.GT, 10000).Not().Where("genre", reindexer.EQ, 10).Distinct(distinct).Sort(sort, sortOrder).ExecAndVerify()
-
-				compositeValues := []interface{}{[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)}}
-
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
-					Where("AGE+genre", reindexer.EQ, compositeValues).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
-					Where("age+genre", reindexer.LE, compositeValues).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
-					Where("age+GENRE", reindexer.LT, compositeValues).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
-					Where("age+genre", reindexer.GT, compositeValues).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
-					Where("AGE+genre", reindexer.GE, compositeValues).
-					ExecAndVerify()
-
-				compositeValues = []interface{}{[]interface{}{randLocation(), float64(rand.Int()%100) / 10}}
-
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
-					Where("location+rate", reindexer.EQ, compositeValues).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
-					Where("location+RATE", reindexer.GT, compositeValues).
-					ExecAndVerify()
-
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
-					Where("LOCATION+rate", reindexer.LT, compositeValues).
-					ExecAndVerify()
-
-				compositeValues = []interface{}{
-					[]interface{}{randLocation(), float64(rand.Int()%100) / 10},
-					[]interface{}{randLocation(), float64(rand.Int()%100) / 10},
+	for _, testCase := range testCases {
+		log.Println(testCase.Name)
+		for _, desc := range []bool{true, false} {
+			for _, sort := range testCase.Options.SortIndexes {
+				for _, distinct := range testCase.Options.DistinctIndexes {
+					log.Printf("\tDISTINCT '%s' SORT '%s' DESC %v\n", distinct, sort, desc)
+					// Just take all items from namespace
+					newTestQuery(DB, testCase.Namespace).Distinct(distinct).Sort(sort, desc).Limit(1).ExecAndVerify()
+					callQueriesSequence(testCase.Namespace, distinct, sort, desc, testCase.Options.TestComposite)
 				}
-				newTestQuery(DB, "test_items").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
-					Where("LOCATION+RATE", reindexer.RANGE, compositeValues).
-					ExecAndVerify()
-
-				compositeValues = []interface{}{
-					[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
-					[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
-					[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
-					[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
-					[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
-					[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
-					[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
-					[]interface{}{rand.Int() % 10, int64(rand.Int() % 50)},
-				}
-				newTestQuery(DB, "TEST_ITEMS").Distinct(distinct).Sort(sort, sortOrder).ReqTotal().
-					Where("AGE+GENRE", reindexer.SET, compositeValues).
-					ExecAndVerify()
-
 			}
 		}
 	}

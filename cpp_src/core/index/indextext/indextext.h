@@ -24,6 +24,7 @@ class IndexText : public IndexUnordered<T> {
 public:
 	IndexText(const IndexText<T>& other);
 	IndexText(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields) : IndexUnordered<T>(idef, payloadType, fields) {
+		this->selectKeyType_ = KeyValueString;
 		initSearchers();
 	}
 

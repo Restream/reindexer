@@ -40,11 +40,12 @@ bool CompositeArrayComparator::Compare(const PayloadValue &pv, const CollateOpts
 	size_t tagsPathIdx = 0;
 	for (size_t j = 0; j < fields_.size(); ++j) {
 		vals.push_back({});
-		if (fields_[j] == IndexValueType::SetByJsonPath) {
+		bool isRegularIndex = fields_[j] != IndexValueType::SetByJsonPath && fields_[j] < pt_.NumFields();
+		if (isRegularIndex) {
+			pl.Get(fields_[j], vals.back());
+		} else  {
 			assert(tagsPathIdx < fields_.getTagsPathsLength());
 			pl.GetByJsonPath(fields_.getTagsPath(tagsPathIdx++), vals.back(), KeyValueUndefined);
-		} else {
-			pl.Get(fields_[j], vals.back());
 		}
 		if (vals.back().size() < len) len = vals.back().size();
 	}
@@ -53,7 +54,7 @@ bool CompositeArrayComparator::Compare(const PayloadValue &pv, const CollateOpts
 		bool cmpRes = true;
 		for (size_t j = 0; j < fields_.size(); ++j) {
 			assert(i < vals[j].size());
-			cmpRes &= compareField(j, vals[j][i], collateOpts);
+			cmpRes &= vals[j][i].Type() != KeyValueNull && compareField(j, vals[j][i], collateOpts);
 			if (!cmpRes) break;
 		}
 

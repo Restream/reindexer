@@ -263,5 +263,6 @@ char *u32toax(uint32_t value, char *buffer) {
 		*--p = hex_lut[value & 0xF];
 		value >>= 4;
 	} while (p != buffer);
+	buffer[n] = 0;
 	return buffer + n;
 }

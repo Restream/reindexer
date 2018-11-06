@@ -26,7 +26,9 @@ Index::Index(const Index& obj)
 	  opts_(obj.opts_),
 	  payloadType_(obj.payloadType_),
 	  fields_(obj.fields_),
-	  rawQueriesCount_(obj.rawQueriesCount_.load()) {}
+	  rawQueriesCount_(obj.rawQueriesCount_.load()),
+	  keyType_(obj.keyType_),
+	  selectKeyType_(obj.selectKeyType_) {}
 
 Index::~Index() {}
 

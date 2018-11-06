@@ -180,7 +180,8 @@ void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 Error QueryResults::Iterator::GetJSON(WrSerializer &ser, bool withHdrLen) {
 	try {
 		if (withHdrLen) {
-			ser.PutSlice([&]() { qr_->encodeJSON(idx_, ser); });
+			auto slicePosSaver = ser.StartSlice();
+			qr_->encodeJSON(idx_, ser);
 		} else {
 			qr_->encodeJSON(idx_, ser);
 		}
@@ -202,7 +203,8 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer &ser, bool withHdrLen) {
 		CJsonEncoder cjsonEncoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
 
 		if (withHdrLen) {
-			ser.PutSlice([&]() { cjsonEncoder.Encode(&pl, builder); });
+			auto slicePosSaver = ser.StartSlice();
+			cjsonEncoder.Encode(&pl, builder);
 		} else {
 			cjsonEncoder.Encode(&pl, builder);
 		}

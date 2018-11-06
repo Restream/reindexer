@@ -83,9 +83,11 @@ void Query::deserialize(Serializer &ser) {
 				break;
 			case QueryDistinct:
 				qe.index = ser.GetVString().ToString();
-				qe.distinct = true;
-				qe.condition = CondAny;
-				entries.push_back(std::move(qe));
+				if (!qe.index.empty()) {
+					qe.distinct = true;
+					qe.condition = CondAny;
+					entries.push_back(std::move(qe));
+				}
 				break;
 			case QuerySortIndex: {
 				SortingEntry sortingEntry;

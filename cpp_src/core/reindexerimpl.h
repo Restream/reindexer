@@ -22,6 +22,8 @@ namespace reindexer {
 
 class ReindexerImpl {
 public:
+	typedef std::function<void(const Error &err)> Completion;
+
 	ReindexerImpl();
 	~ReindexerImpl();
 
@@ -36,13 +38,13 @@ public:
 	Error UpdateIndex(const string &_namespace, const IndexDef &index);
 	Error DropIndex(const string &_namespace, const string &index);
 	Error EnumNamespaces(vector<NamespaceDef> &defs, bool bEnumAll);
-	Error Insert(const string &_namespace, Item &item);
-	Error Update(const string &_namespace, Item &item);
-	Error Upsert(const string &_namespace, Item &item);
-	Error Delete(const string &_namespace, Item &item);
+	Error Insert(const string &_namespace, Item &item, Completion cmpl = nullptr);
+	Error Update(const string &_namespace, Item &item, Completion cmpl = nullptr);
+	Error Upsert(const string &_namespace, Item &item, Completion cmpl = nullptr);
+	Error Delete(const string &_namespace, Item &item, Completion cmpl = nullptr);
 	Error Delete(const Query &query, QueryResults &result);
-	Error Select(const string_view &query, QueryResults &result);
-	Error Select(const Query &query, QueryResults &result);
+	Error Select(const string_view &query, QueryResults &result, Completion cmpl = nullptr);
+	Error Select(const Query &query, QueryResults &result, Completion cmpl = nullptr);
 	Error Commit(const string &namespace_);
 	Item NewItem(const string &_namespace);
 	Error GetMeta(const string &_namespace, const string &key, string &data);

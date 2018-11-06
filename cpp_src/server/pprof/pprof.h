@@ -2,11 +2,13 @@
 
 #include <string>
 #include "net/http/router.h"
+#include "tools/serializer.h"
 
 namespace reindexer_server {
 
 using std::string;
 using namespace reindexer::net;
+using reindexer::WrSerializer;
 
 class Pprof {
 public:
@@ -19,7 +21,7 @@ public:
 	int Symbol(http::Context &ctx);
 
 protected:
-	void resolveSymbol(uintptr_t ptr, http::Writer *out);
+	void resolveSymbol(uintptr_t ptr, WrSerializer &out);
 };
 
 }  // namespace reindexer_server

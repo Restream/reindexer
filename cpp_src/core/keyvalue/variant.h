@@ -108,11 +108,11 @@ public:
 	KeyValueType Type() const { return type_; }
 	static const char *TypeName(KeyValueType t);
 
-	Variant &convert(KeyValueType type);
-	void convertToComposite(const PayloadType &, const FieldsSet &);
+	Variant &convert(KeyValueType type, const PayloadType * = nullptr, const FieldsSet * = nullptr);
 	VariantArray getCompositeValues() const;
 
 protected:
+	void convertToComposite(const PayloadType *, const FieldsSet *);
 	void free();
 	void copy(const Variant &other);
 	template <typename T>

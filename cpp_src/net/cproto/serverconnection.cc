@@ -85,22 +85,25 @@ void ServerConnection::onRead() {
 			rdBuf_.reserve(hdr.len + sizeof(hdr) + 0x1000);
 		}
 
-		if ((rdBuf_.size() - sizeof(hdr)) < hdr.len) return;
+		if (hdr.len + sizeof(hdr) > rdBuf_.size()) {
+			if (!rdBuf_.size()) rdBuf_.clear();
+			return;
+		}
 
 		rdBuf_.erase(sizeof(hdr));
 
 		auto it = rdBuf_.tail();
-		if (it.len < hdr.len) {
+		if (it.size() < hdr.len) {
 			rdBuf_.unroll();
 			it = rdBuf_.tail();
 		}
-		assert(it.len >= hdr.len);
+		assert(it.size() >= hdr.len);
 
 		ctx.call = &call_;
 		try {
 			ctx.call->cmd = CmdCode(hdr.cmd);
 			ctx.call->seq = hdr.seq;
-			Serializer ser(it.data, hdr.len);
+			Serializer ser(it.data(), hdr.len);
 			ctx.call->args.Unpack(ser);
 			handleRPC(ctx);
 		} catch (const Error &err) {
@@ -122,14 +125,10 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 		return;
 	}
 
-	WrSerializer ser;
-	ser.PutVarUint(status.code());
-	ser.PutVString(status.what());
-
-	args.Pack(ser);
+	WrSerializer ser(wrBuf_.get_chunk());
 
 	CProtoHeader hdr;
-	hdr.len = ser.Len();
+	hdr.len = 0;
 	hdr.magic = kCprotoMagic;
 	hdr.version = kCprotoVersion;
 	if (ctx.call != nullptr) {
@@ -139,12 +138,19 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 		hdr.cmd = 0;
 		hdr.seq = 0;
 	}
-	wrBuf_.write(reinterpret_cast<char *>(&hdr), sizeof(hdr));
-	wrBuf_.write(reinterpret_cast<char *>(ser.Buf()), ser.Len());
+
+	ser.Write(string_view(reinterpret_cast<char *>(&hdr), sizeof(hdr)));
+	ser.PutVarUint(status.code());
+	ser.PutVString(status.what());
+	args.Pack(ser);
+	reinterpret_cast<CProtoHeader *>(ser.Buf())->len = ser.Len() - sizeof(hdr);
+	wrBuf_.write(ser.DetachChunk());
+
 	respSent_ = true;
 	// if (canWrite_) {
 	// 	write_cb();
 	// }
+
 	if (dispatcher_.logger_ != nullptr) {
 		dispatcher_.logger_(ctx, status, args);
 	}

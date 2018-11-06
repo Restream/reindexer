@@ -2,6 +2,7 @@
 #include <cstdarg>
 #include <unordered_map>
 #include "debug/allocdebug.h"
+#include "estl/chunk_buf.h"
 #include "tools/fsops.h"
 #include "tools/stringstools.h"
 
@@ -57,11 +58,27 @@ int Context::JSON(int code, const string_view &slice) {
 	return 0;
 }
 
+int Context::JSON(int code, chunk &&chunk) {
+	writer->SetContentLength(chunk.len_);
+	writer->SetRespCode(code);
+	writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
+	writer->Write(std::move(chunk));
+	return 0;
+}
+
 int Context::String(int code, const string_view &slice) {
 	writer->SetContentLength(slice.size());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type", "text/plain; charset=utf-8"});
 	writer->Write(slice);
+	return 0;
+}
+
+int Context::String(int code, chunk &&chunk) {
+	writer->SetContentLength(chunk.len_);
+	writer->SetRespCode(code);
+	writer->SetHeader(http::Header{"Content-Type", "text/plain; charset=utf-8"});
+	writer->Write(std::move(chunk));
 	return 0;
 }
 
@@ -101,7 +118,7 @@ int Context::File(int code, const char *path, const string_view &data) {
 	writer->SetContentLength(content.size());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type", lookupContentType(path)});
-	writer->Write(content.data(), content.size());
+	writer->Write(content);
 	return 0;
 }
 

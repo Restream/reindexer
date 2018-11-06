@@ -94,7 +94,8 @@ Error QueryResults::Iterator::GetJSON(WrSerializer &wrser, bool withHdrLen) {
 				JsonBuilder builder(wrser, JsonBuilder::TypePlain);
 
 				if (withHdrLen) {
-					wrser.PutSlice([&]() { enc.Encode(itemParams.data, builder); });
+					auto slicePosSaver = wrser.StartSlice();
+					enc.Encode(itemParams.data, builder);
 				} else {
 					enc.Encode(itemParams.data, builder);
 				}

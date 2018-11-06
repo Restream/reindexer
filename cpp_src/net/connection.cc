@@ -82,12 +82,7 @@ void Connection<Mutex>::callback(ev::io & /*watcher*/, int revents) {
 		write_cb();
 	}
 
-	wrBufLock_.lock();
-
-	if (!wrBuf_.size()) wrBuf_.clear();
 	int nevents = ev::READ | (wrBuf_.size() ? ev::WRITE : 0);
-
-	wrBufLock_.unlock();
 
 	if (curEvents_ != nevents && sock_.valid()) {
 		(curEvents_) ? io_.set(nevents) : io_.start(sock_.fd(), nevents);
@@ -99,12 +94,8 @@ void Connection<Mutex>::callback(ev::io & /*watcher*/, int revents) {
 template <typename Mutex>
 void Connection<Mutex>::write_cb() {
 	while (wrBuf_.size()) {
-		wrBufLock_.lock();
-
-		auto it = wrBuf_.tail();
-
-		ssize_t written = sock_.send(it.data, it.len);
-		wrBufLock_.unlock();
+		auto chunks = wrBuf_.tail();
+		ssize_t written = sock_.send(chunks);
 		int err = sock_.last_error();
 
 		if (written < 0 && err == EINTR) continue;
@@ -117,11 +108,11 @@ void Connection<Mutex>::write_cb() {
 			return;
 		}
 
-		wrBufLock_.lock();
+		ssize_t toWrite = 0;
+		for (auto &chunk : chunks) toWrite += chunk.size();
 		wrBuf_.erase(written);
-		wrBufLock_.unlock();
 
-		if (written < ssize_t(it.len)) return;
+		if (written < toWrite) return;
 	}
 	if (closeConn_) {
 		closeConn();
@@ -133,7 +124,7 @@ template <typename Mutex>
 void Connection<Mutex>::read_cb() {
 	while (!closeConn_) {
 		auto it = rdBuf_.head();
-		ssize_t nread = sock_.recv(it.data, it.len);
+		ssize_t nread = sock_.recv(it.data(), it.size());
 		int err = sock_.last_error();
 
 		if (nread < 0 && err == EINTR) continue;
@@ -145,15 +136,13 @@ void Connection<Mutex>::read_cb() {
 			rdBuf_.advance_head(nread);
 			if (!closeConn_) onRead();
 		}
-		if (nread < ssize_t(it.len) || !rdBuf_.available()) return;
+		if (nread < ssize_t(it.size()) || !rdBuf_.available()) return;
 	}
 }
-
 template <typename Mutex>
 void Connection<Mutex>::timeout_cb(ev::periodic & /*watcher*/, int /*time*/) {
 	closeConn();
 }
-
 template <typename Mutex>
 void Connection<Mutex>::async_cb(ev::async &) {
 	callback(io_, ev::WRITE);
@@ -161,6 +150,5 @@ void Connection<Mutex>::async_cb(ev::async &) {
 
 template class Connection<std::mutex>;
 template class Connection<reindexer::dummy_mutex>;
-
 }  // namespace net
 }  // namespace reindexer

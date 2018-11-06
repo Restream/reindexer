@@ -30,7 +30,11 @@ endif()
 
 install (CODE "
 if (NOT WIN32)
-  set (REINDEXER_INSTALL_PREFIX \"${CMAKE_INSTALL_PREFIX}\")
+   if (APPLE)
+      set (REINDEXER_INSTALL_PREFIX \"${CMAKE_INSTALL_PREFIX}\")
+   else()
+      set (REINDEXER_INSTALL_PREFIX \"\${CMAKE_INSTALL_PREFIX}\")
+   endif ()
 endif()
 configure_file(${PROJECT_SOURCE_DIR}/contrib/config.yml.in ${PROJECT_BINARY_DIR}/contrib/config.yml)
 ")

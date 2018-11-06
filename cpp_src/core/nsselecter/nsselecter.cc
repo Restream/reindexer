@@ -50,31 +50,14 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	}
 
 	bool isFt = containsFullTextIndexes(*whereEntries);
-	if (!ctx.skipIndexesLookup) {
-		if (!isFt) substituteCompositeIndexes(tmpWhereEntries);
-		updateCompositeIndexesValues(tmpWhereEntries);
-	} else {
-		for (const QueryEntry &entry : *whereEntries) {
-			if (entry.idxNo < ns_->indexes_.firstCompositePos()) {
-				KeyValueType keyType = KeyValueNull;
-				if (entry.idxNo == IndexValueType::SetByJsonPath) {
-					keyType = getQueryEntryIndexType(entry);
-				} else {
-					keyType = ns_->indexes_[entry.idxNo]->KeyType();
-				}
-				if (keyType != KeyValueNull) {
-					// TODO refactor const cast!
-					for (auto &key : entry.values) const_cast<Variant &>(key).convert(keyType);
-				}
-			}
-		}
-	}
+	if (!ctx.skipIndexesLookup && !isFt) substituteCompositeIndexes(tmpWhereEntries);
+	convertWhereValues(*const_cast<QueryEntries *>(whereEntries));
 
 	// DO NOT use deducted sort order in the following cases:
 	// - query contains explicity specified sort order
 	// - query contains FullText query.
 	bool disableOptimizeSortOrder = !ctx.query.sortingEntries_.empty() || ctx.preResult;
-	SortingEntries sortBy = (isFt || disableOptimizeSortOrder) ? ctx.query.sortingEntries_ : getOptimalSortOrder(*whereEntries);
+	SortingEntries sortBy = (isFt || disableOptimizeSortOrder) ? ctx.query.sortingEntries_ : detectOptimalSortOrder(*whereEntries);
 	prepareSortingIndexes(sortBy);
 
 	if (ctx.preResult) {
@@ -196,8 +179,11 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	}
 
 	// Sort by cost
-	std::sort(qres.begin(), qres.end(),
-			  [iters](const SelectIterator &i1, const SelectIterator &i2) { return i1.Cost(iters) < i2.Cost(iters); });
+	std::sort(qres.begin(), qres.end(), [iters](const SelectIterator &i1, const SelectIterator &i2) {
+		if (i1.distinct < i2.distinct) return true;
+		if (i1.distinct > i2.distinct) return false;
+		return (i1.Cost(iters) < i2.Cost(iters));
+	});
 
 	// Check NOT or comparator must not be 1st
 	for (auto r = qres.begin(); r != qres.end(); ++r) {
@@ -323,7 +309,7 @@ void NsSelecter::applyCustomSort(ItemRefVector &queryResult, const SelectCtx &ct
 																	  equal_composite(payloadType, fields));
 
 		for (auto &value : keyValues) {
-			value.convertToComposite(payloadType, fields);
+			value.convert(fieldType, &payloadType, &fields);
 			sortMap.insert({static_cast<const PayloadValue &>(value), cost});
 			cost++;
 		}
@@ -352,8 +338,15 @@ void NsSelecter::applyGeneralSort(ConstItemIterator itFirst, ConstItemIterator i
 	for (size_t i = 0; i < ctx.sortingCtx.entries.size(); ++i) {
 		const auto &sortingCtx = ctx.sortingCtx.entries[i];
 		int fieldIdx = sortingCtx.data->index;
-		if ((fieldIdx == IndexValueType::SetByJsonPath) || ns_->indexes_[fieldIdx]->Opts().IsSparse()) {
-			TagsPath tagsPath = ns_->tagsMatcher_.path2tag(sortingCtx.data->column);
+		if (fieldIdx == IndexValueType::SetByJsonPath || ns_->indexes_[fieldIdx]->Opts().IsSparse()) {
+			TagsPath tagsPath;
+			if (fieldIdx != IndexValueType::SetByJsonPath) {
+				const FieldsSet &fs = ns_->indexes_[fieldIdx]->Fields();
+				assert(fs.getTagsPathsLength() > 0);
+				tagsPath = fs.getTagsPath(0);
+			} else {
+				tagsPath = ns_->tagsMatcher_.path2tag(sortingCtx.data->column);
+			}
 			if (fields.contains(tagsPath)) {
 				throw Error(errQueryExec, "Can't sort by 2 equal indexes: %s", sortingCtx.data->column.c_str());
 			}
@@ -381,6 +374,11 @@ void NsSelecter::applyGeneralSort(ConstItemIterator itFirst, ConstItemIterator i
 	std::partial_sort(itFirst, itLast, itEnd, [&payloadType, &fields, &collateOpts, &ctx](const ItemRef &lhs, const ItemRef &rhs) {
 		size_t firstDifferentFieldIdx = 0;
 		int cmpRes = ConstPayload(payloadType, lhs.value).Compare(rhs.value, fields, firstDifferentFieldIdx, collateOpts);
+		assert(ctx.sortingCtx.entries.size());
+		if (ctx.sortingCtx.entries.size() == 1) firstDifferentFieldIdx = 0;
+		assertf(firstDifferentFieldIdx < ctx.sortingCtx.entries.size(), "firstDifferentFieldIdx fail %d,%d -> %d",
+				int(firstDifferentFieldIdx), int(ctx.sortingCtx.entries.size()), int(fields.size()));
+
 		if (ctx.sortingCtx.entries[firstDifferentFieldIdx].data->desc) {
 			return (cmpRes > 0);
 		} else {
@@ -416,31 +414,45 @@ QueryEntries NsSelecter::lookupQueryIndexes(const QueryEntries &entries) {
 	for (auto &i : iidx) i = -1;
 
 	QueryEntries ret;
+	ret.reserve(entries.size());
+
 	for (auto entry = entries.begin(); entry != entries.end(); entry++) {
-		QueryEntry currentEntry = *entry;
-		if (currentEntry.idxNo == IndexValueType::NotSet) {
-			if (!ns_->getIndexByName(currentEntry.index, currentEntry.idxNo)) {
-				currentEntry.idxNo = IndexValueType::SetByJsonPath;
+		QueryEntry ce = *entry;
+		if (ce.idxNo == IndexValueType::NotSet) {
+			if (!ns_->getIndexByName(ce.index, ce.idxNo)) {
+				ce.idxNo = IndexValueType::SetByJsonPath;
 			}
 		}
-		bool byJsonPath = (currentEntry.idxNo == IndexValueType::SetByJsonPath);
-		if (!byJsonPath && (currentEntry.idxNo < ns_->indexes_.firstCompositePos())) {
-			for (Variant &key : currentEntry.values) key.convert(ns_->indexes_[currentEntry.idxNo]->KeyType());
-		}
+
+		bool isIndexField = (ce.idxNo != IndexValueType::SetByJsonPath);
 
 		// try merge entries with AND opetator
 		auto nextEntry = entry;
 		nextEntry++;
-		if (!byJsonPath && (currentEntry.op == OpAnd) && (nextEntry == entries.end() || nextEntry->op == OpAnd)) {
-			if (iidx[currentEntry.idxNo] >= 0 && !ns_->indexes_[currentEntry.idxNo]->Opts().IsArray()) {
-				if (mergeQueryEntries(&ret[iidx[currentEntry.idxNo]], &currentEntry)) continue;
+		if (isIndexField && (ce.op == OpAnd) && (nextEntry == entries.end() || nextEntry->op == OpAnd)) {
+			if (iidx[ce.idxNo] >= 0 && !ns_->indexes_[ce.idxNo]->Opts().IsArray()) {
+				if (mergeQueryEntries(&ret[iidx[ce.idxNo]], &ce)) continue;
 			} else {
-				iidx[currentEntry.idxNo] = ret.size();
+				iidx[ce.idxNo] = ret.size();
 			}
 		}
-		ret.push_back(std::move(currentEntry));
+		ret.push_back(std::move(ce));
 	};
 	return ret;
+}
+
+void NsSelecter::convertWhereValues(QueryEntries &entries) {
+	for (auto &ce : entries) {
+		bool isIndexField = (ce.idxNo != IndexValueType::SetByJsonPath);
+		KeyValueType keyType = isIndexField ? ns_->indexes_[ce.idxNo]->SelectKeyType() : detectQueryEntryIndexType(ce);
+		const FieldsSet *fields = isIndexField ? &ns_->indexes_[ce.idxNo]->Fields() : nullptr;
+
+		if (keyType != KeyValueUndefined) {
+			for (auto &key : ce.values) {
+				key.convert(keyType, &ns_->payloadType_, fields);
+			}
+		}
+	}
 }
 
 void NsSelecter::prepareIteratorsForSelectLoop(const QueryEntries &entries, RawQueryResult &result, unsigned sortId, bool is_ft) {
@@ -457,8 +469,8 @@ void NsSelecter::prepareIteratorsForSelectLoop(const QueryEntries &entries, RawQ
 			fields.push_back(tagsPath);
 
 			SelectKeyResult comparisonResult;
-			comparisonResult.comparators_.push_back(
-				Comparator(qe.condition, KeyValueUndefined, qe.values, false, ns_->payloadType_, fields, nullptr, CollateOpts()));
+			comparisonResult.comparators_.push_back(Comparator(qe.condition, KeyValueUndefined, qe.values, false, qe.distinct,
+															   ns_->payloadType_, fields, nullptr, CollateOpts()));
 			selectResults.push_back(comparisonResult);
 		} else {
 			auto &index = ns_->indexes_[qe.idxNo];
@@ -518,10 +530,13 @@ void NsSelecter::prepareEqualPositionComparator(const Query &query, const QueryE
 	for (const EqualPosition &ep : query.equalPositions_) {
 		const QueryEntry &firstQe(entries[ep[0]]);
 		KeyValueType type = firstQe.values.size() ? firstQe.values[0].Type() : KeyValueNull;
-		Comparator cmp(firstQe.condition, type, firstQe.values, true, ns_->payloadType_, FieldsSet({firstQe.idxNo}));
+		Comparator cmp(firstQe.condition, type, firstQe.values, true, firstQe.distinct, ns_->payloadType_, FieldsSet({firstQe.idxNo}));
 		for (const QueryEntry &qe : entries) {
 			if (qe.idxNo == IndexValueType::SetByJsonPath) {
 				cmp.BindEqualPosition(ns_->tagsMatcher_.path2tag(qe.index), qe.values, qe.condition);
+			} else if (ns_->indexes_[qe.idxNo]->Opts().IsSparse()) {
+				const TagsPath &tp = ns_->indexes_[qe.idxNo]->Fields().getTagsPath(0);
+				cmp.BindEqualPosition(tp, qe.values, qe.condition);
 			} else {
 				cmp.BindEqualPosition(qe.idxNo, qe.values, qe.condition);
 			}
@@ -819,19 +834,7 @@ void NsSelecter::substituteCompositeIndexes(QueryEntries &entries) {
 	}
 }
 
-void NsSelecter::updateCompositeIndexesValues(QueryEntries &qentries) {
-	for (QueryEntry &qe : qentries) {
-		if (qe.idxNo >= ns_->indexes_.firstCompositePos()) {
-			for (Variant &kv : qe.values) {
-				if (kv.Type() == KeyValueTuple) {
-					kv.convertToComposite(ns_->payloadType_, ns_->indexes_[qe.idxNo]->Fields());
-				}
-			}
-		}
-	}
-}
-
-SortingEntries NsSelecter::getOptimalSortOrder(const QueryEntries &entries) {
+SortingEntries NsSelecter::detectOptimalSortOrder(const QueryEntries &entries) {
 	Index *maxIdx = nullptr;
 	for (auto c = entries.begin(); c != entries.end(); c++) {
 		if (((c->idxNo != IndexValueType::SetByJsonPath) && (c->condition == CondGe || c->condition == CondGt || c->condition == CondLe ||
@@ -886,13 +889,16 @@ bool NsSelecter::mergeQueryEntries(QueryEntry *lhs, QueryEntry *rhs) {
 	return false;
 }
 
-KeyValueType NsSelecter::getQueryEntryIndexType(const QueryEntry &qentry) const {
-	KeyValueType keyType = KeyValueNull;
-	if (!ns_->items_.empty()) {
-		Payload pl(ns_->payloadType_, ns_->items_[0]);
-		VariantArray values;
-		pl.GetByJsonPath(qentry.index, ns_->tagsMatcher_, values, KeyValueUndefined);
-		if (values.size() > 0) keyType = values[0].Type();
+KeyValueType NsSelecter::detectQueryEntryIndexType(const QueryEntry &qentry) const {
+	KeyValueType keyType = KeyValueUndefined;
+	for (auto &item : ns_->items_) {
+		if (!item.IsFree()) {
+			Payload pl(ns_->payloadType_, ns_->items_[0]);
+			VariantArray values;
+			pl.GetByJsonPath(qentry.index, ns_->tagsMatcher_, values, KeyValueUndefined);
+			if (values.size() > 0) keyType = values[0].Type();
+			break;
+		}
 	}
 	return keyType;
 }

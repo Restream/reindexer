@@ -1,6 +1,8 @@
 #pragma once
 
 #include <stdlib.h>
+#include "estl/chunk_buf.h"
+#include "tools/ssize_t.h"
 
 struct addrinfo;
 namespace reindexer {
@@ -15,8 +17,9 @@ public:
 	int connect(const char *addr);
 	socket accept();
 	int listen(int backlog);
-	int recv(char *buf, size_t len);
-	int send(const char *buf, size_t len);
+	ssize_t recv(char *buf, size_t len);
+	ssize_t send(const char *buf, size_t len);
+	ssize_t send(span<chunk> chunks);
 	int close();
 
 	int set_nonblock();

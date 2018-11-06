@@ -469,8 +469,8 @@ func loglevelToString(logLevel int) string {
 // SetDefaultQueryDebug sets default debug level for queries to namespaces
 func (db *Reindexer) SetDefaultQueryDebug(namespace string, level int) {
 
-	citem := &DBConfigItem{Type: "profiling"}
-	if item, ok := db.Query(ConfigNamespaceName).WhereString("type", EQ, "profiling").Get(); ok {
+	citem := &DBConfigItem{Type: "log_queries"}
+	if item, ok := db.Query(ConfigNamespaceName).WhereString("type", EQ, "log_queries").Get(); ok {
 		citem = item.(*DBConfigItem)
 	}
 

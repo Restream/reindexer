@@ -3,7 +3,9 @@
 #include <cstdlib>
 #include <thread>
 #include "debug/backtrace.h"
+#include "estl/chunk_buf.h"
 #include "tools/fsops.h"
+#include "tools/serializer.h"
 #include "tools/stringstools.h"
 
 #if REINDEX_WITH_GPERFTOOLS
@@ -93,6 +95,8 @@ int Pprof::Growth(http::Context &ctx) {
 int Pprof::CmdLine(http::Context &ctx) { return ctx.String(http::StatusOK, "reindexer_server"); }
 
 int Pprof::Symbol(http::Context &ctx) {
+	WrSerializer ser;
+
 #ifdef REINDEX_WITH_GPERFTOOLS
 	string req;
 	if (ctx.request->method == "POST") {
@@ -103,8 +107,8 @@ int Pprof::Symbol(http::Context &ctx) {
 	} else if (ctx.request->params.size()) {
 		req = urldecode2(ctx.request->params[0].name);
 	} else {
-		ctx.writer->Write("num_symbols: 1\n"_sv);
-		return 0;
+		ser << "num_symbols: 1\n"_sv;
+		return ctx.String(http::StatusOK, ser.DetachChunk());
 	}
 	size_t pos = req.find_first_of(" +", 0);
 	char *endp;
@@ -113,26 +117,25 @@ int Pprof::Symbol(http::Context &ctx) {
 		if (pos == string::npos) break;
 		uintptr_t addr = strtoull(&req[pos], &endp, 16);
 		char tmpBuf[128];
-		int n = snprintf(tmpBuf, sizeof(tmpBuf), "%p\t", reinterpret_cast<void *>(addr));
-		ctx.writer->Write(tmpBuf, n);
-		resolveSymbol(addr, ctx.writer);
-		ctx.writer->Write("\n"_sv);
+		snprintf(tmpBuf, sizeof(tmpBuf), "%p\t", reinterpret_cast<void *>(addr));
+		ser << tmpBuf;
+		resolveSymbol(addr, ser);
+		ser << '\n';
 	}
 #else
-	ctx.writer->Write("num_symbols: 0\n");
+	ser << "num_symbols: 0\n";
 #endif
 
-	return 0;
+	return ctx.String(http::StatusOK, ser.DetachChunk());
 }
 
-void Pprof::resolveSymbol(uintptr_t ptr, http::Writer *out) {
+void Pprof::resolveSymbol(uintptr_t ptr, WrSerializer &out) {
 	char *csym = resolve_symbol(reinterpret_cast<void *>(ptr), true);
 	//	string symbol = csym, out;
 	string_view symbol = csym;
 
 	if (symbol.length() > 20 && symbol.substr(0, 3) == "_ZN") {
-		out->Write(symbol.substr(0, 20));
-		out->Write("...");
+		out << symbol.substr(0, 20) << "...";
 		free(csym);
 		return;
 	}
@@ -154,7 +157,7 @@ void Pprof::resolveSymbol(uintptr_t ptr, http::Writer *out) {
 					tmpl--;
 					break;
 				default:
-					if (tmpl == 0) out->Write(symbol.substr(p, 1));
+					if (tmpl == 0) out << symbol.substr(p, 1);
 			}
 		}
 	}

@@ -23,7 +23,7 @@ public:
 			 IndexDeclaration{
 				 "ft1+ft2=ft3", "text", "composite",
 				 IndexOpts().SetConfig(
-					 R"xxx({"enable_translit": true,"enable_numbers_search": true,"enable_kb_layout": true,"merge_limit": 20000,"log_level": 1})xxx")}});
+					 R"xxx({"enable_translit": true,"enable_numbers_search": true,"enable_kb_layout": true,"merge_limit": 20000,"log_level": 1,"max_step_size": 5000})xxx")}});
 		DefineNamespaceDataset(
 			"nm2",
 			{IndexDeclaration{"id", "hash", "int", IndexOpts().PK()}, IndexDeclaration{"ft1", "text", "string", IndexOpts()},

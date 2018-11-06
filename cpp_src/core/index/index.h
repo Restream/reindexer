@@ -50,7 +50,8 @@ public:
 
 	static Index* New(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields_);
 
-	virtual KeyValueType KeyType() = 0;
+	KeyValueType KeyType() const { return keyType_; }
+	KeyValueType SelectKeyType() const { return selectKeyType_; }
 	const FieldsSet& Fields() const { return fields_; }
 	const string& Name() const { return name_; }
 	IndexType Type() const { return type_; }
@@ -93,6 +94,7 @@ protected:
 	// Perfstat counter
 	PerfStatCounterST commitPerfCounter_;
 	PerfStatCounterST selectPerfCounter_;
+	KeyValueType keyType_, selectKeyType_;
 };
 
 }  // namespace reindexer

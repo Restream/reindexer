@@ -13,10 +13,11 @@ ClientConnection::ClientConnection(ev::dynamic_loop &loop, const httpparser::Url
 	connect_async_.set<ClientConnection, &ClientConnection::connect_async_cb>(this);
 	connect_async_.set(loop);
 	connect_async_.start();
+	waiters_.resize(1024);
 }
 
 void ClientConnection::Connect() {
-	std::unique_lock<mutex> lck(wrBufLock_);
+	std::unique_lock<std::mutex> lck(mtx_);
 	switch (state_) {
 		case ConnConnected:
 			return;
@@ -27,11 +28,11 @@ void ClientConnection::Connect() {
 		default:
 			break;
 	}
-	answersCond_.wait(lck);
+	connectCond_.wait(lck);
+	assert(state_ == ConnConnected || state_ == ConnFailed);
 }
 
-bool ClientConnection::connectInternal() {
-	std::unique_lock<mutex> lck(wrBufLock_);
+void ClientConnection::connectInternal() {
 	assert(!sock_.valid());
 	assert(wrBuf_.size() == 0);
 
@@ -39,22 +40,28 @@ bool ClientConnection::connectInternal() {
 	string dbName = uri_->path();
 	if (dbName[0] == '/') dbName = dbName.substr(1);
 
+	mtx_.lock();
 	state_ = ConnConnecting;
 	lastError_ = errOK;
+	mtx_.unlock();
+
+	auto completion = [this](const RPCAnswer &ans) {
+		std::unique_lock<std::mutex> lck(mtx_);
+		lastError_ = ans.Status();
+		state_ = ans.Status().ok() ? ConnConnected : ConnFailed;
+		wrBuf_.clear();
+		connectCond_.notify_all();
+	};
+
 	sock_.connect((uri_->hostname() + ":" + port).c_str());
 	if (!sock_.valid()) {
-		state_ = ConnFailed;
-		lastError_ = Error(errNetwork, "Socket connect error %d", sock_.last_error());
-		lck.unlock();
-		answersCond_.notify_all();
-		return false;
+		completion(RPCAnswer(Error(errNetwork, "Socket connect error: %d", sock_.last_error())));
+	} else {
+		io_.start(sock_.fd(), ev::READ | ev::WRITE);
+		async_.start();
+		Args args{Arg(uri_->username()), Arg(uri_->password()), Arg(dbName)};
+		call(completion, kCmdLogin, args);
 	}
-
-	io_.start(sock_.fd(), ev::READ | ev::WRITE);
-	async_.start();
-	Args args{Arg(uri_->username()), Arg(uri_->password()), Arg(dbName)};
-	callRPC(kCmdLogin, seq_, args);
-	return true;
 }
 
 void ClientConnection::failInternal(const Error &error) {
@@ -64,14 +71,17 @@ void ClientConnection::failInternal(const Error &error) {
 }
 
 void ClientConnection::onClose() {
-	{
-		std::unique_lock<mutex> lck(wrBufLock_);
-		wrBuf_.clear();
-		if (lastError_.ok()) lastError_ = Error(errNetwork, "Socket connection closed");
-		closeConn_ = false;
-		state_ = ConnFailed;
-	}
-	answersCond_.notify_all();
+	mtx_.lock();
+	wrBuf_.clear();
+	if (lastError_.ok()) lastError_ = Error(errNetwork, "Socket connection closed");
+	closeConn_ = false;
+	state_ = ConnFailed;
+	auto waiters = std::move(waiters_);
+	waiters_.resize(1024);
+	mtx_.unlock();
+
+	for (auto w : waiters)
+		if (w.cmpl) w.cmpl(RPCAnswer(lastError_));
 }
 
 void ClientConnection::onRead() {
@@ -101,65 +111,52 @@ void ClientConnection::onRead() {
 		rdBuf_.erase(sizeof(hdr));
 
 		auto it = rdBuf_.tail();
-		if (it.len < hdr.len) {
+		if (it.size() < hdr.len) {
 			rdBuf_.unroll();
 			it = rdBuf_.tail();
 		}
-		assert(it.len >= hdr.len);
+		assert(it.size() >= hdr.len);
 
-		RPCRawAnswer ans;
-		ans.cmd = CmdCode(hdr.cmd);
-		ans.seq = hdr.seq;
+		RPCAnswer ans;
 
 		int errCode = 0;
 		try {
-			Serializer ser(it.data, hdr.len);
+			Serializer ser(it.data(), hdr.len);
 			errCode = ser.GetVarUint();
 			string errMsg = ser.GetVString().ToString();
-			ans.ans.status_ = Error(errCode, errMsg);
-			ans.ans.data_.assign(reinterpret_cast<uint8_t *>(it.data) + ser.Pos(), reinterpret_cast<uint8_t *>(it.data) + hdr.len);
+			ans.status_ = Error(errCode, errMsg);
+			ans.data_ = {reinterpret_cast<uint8_t *>(it.data()) + ser.Pos(), hdr.len - ser.Pos()};
 		} catch (const Error &err) {
 			failInternal(err);
 			return;
 		}
 
-		wrBufLock_.lock();
-		if (ans.cmd == cproto::kCmdLogin) {
-			if (errCode == errOK) {
-				state_ = ConnConnected;
-			}
-		} else {
-			answers_.push_back(std::move(ans));
-		}
-		answersCond_.notify_all();
-		wrBufLock_.unlock();
+		mtx_.lock();
+		RPCWaiter *waiter = &waiters_[hdr.seq % waiters_.size()];
 
+		Completion cmpl;
+		if (waiter->seq == hdr.seq) {
+			if (CmdCode(hdr.cmd) != waiter->cmd) {
+				ans.status_ =
+					Error(errParams, "Invalid cmdCode %d, expected %d for seq = %d", int(waiter->cmd), int(hdr.cmd), int(hdr.seq));
+			}
+			cmpl = waiter->cmpl;
+			waiter->cmpl = nullptr;
+		} else {
+			fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%d", int(hdr.cmd), int(hdr.seq));
+		}
+		mtx_.unlock();
+		if (cmpl)
+			cmpl(ans);
+		else {
+			fprintf(stderr, "RPC answer w/o completion routine seq=%d cmd=%d", int(hdr.cmd), int(hdr.seq));
+			std::abort();
+		}
 		rdBuf_.erase(hdr.len);
 	}
 }
 
-RPCAnswer ClientConnection::getAnswer(CmdCode cmd, uint32_t seq) {
-	RPCAnswer ret;
-	std::unique_lock<mutex> lck(wrBufLock_);
-	for (;;) {
-		if (state_ == ConnFailed) return RPCAnswer(lastError_);
-
-		auto it = find_if(answers_.begin(), answers_.end(), [seq](const RPCRawAnswer &a) { return a.seq == seq; });
-		if (it != answers_.end()) {
-			if (cmd != it->cmd) {
-				ret.status_ = Error(errParams, "Invalid cmdCode %d, expected %d for seq = %d", it->cmd, cmd, seq);
-			} else {
-				ret = std::move(it->ans);
-			}
-			std::swap(*it, *std::prev(answers_.end(), 1));
-			answers_.pop_back();
-			return ret;
-		}
-		answersCond_.wait(lck);
-	}
-}
-
-Args RPCAnswer::GetArgs(int minArgs) {
+Args RPCAnswer::GetArgs(int minArgs) const {
 	cproto::Args ret;
 	Serializer ser(data_.data(), data_.size());
 	ret.Unpack(ser);
@@ -170,34 +167,46 @@ Args RPCAnswer::GetArgs(int minArgs) {
 	return ret;
 }
 
-Error RPCAnswer::Status() { return status_; }
+Error RPCAnswer::Status() const { return status_; }
 
 void ClientConnection::callRPC(CmdCode cmd, uint32_t seq, const Args &args) {
-	WrSerializer ser;
-
-	args.Pack(ser);
-
 	CProtoHeader hdr;
-	hdr.len = ser.Len();
+	hdr.len = 0;
 	hdr.magic = kCprotoMagic;
 	hdr.version = kCprotoVersion;
 	hdr.cmd = cmd;
 	hdr.seq = seq;
 
-	wrBuf_.write(reinterpret_cast<char *>(&hdr), sizeof(hdr));
-	wrBuf_.write(reinterpret_cast<char *>(ser.Buf()), ser.Len());
+	WrSerializer ser(wrBuf_.get_chunk());
+	ser.Write(string_view(reinterpret_cast<char *>(&hdr), sizeof(hdr)));
+	args.Pack(ser);
+	reinterpret_cast<CProtoHeader *>(ser.Buf())->len = ser.Len() - sizeof(hdr);
+
+	wrBuf_.write(ser.DetachChunk());
 }
 
-RPCAnswer ClientConnection::call(CmdCode cmd, const Args &args) {
-	uint32_t seq;
-	{
-		std::unique_lock<mutex> lck(wrBufLock_);
-		if (state_ == ConnFailed) return RPCAnswer(lastError_);
-		seq = seq_++;
-		callRPC(cmd, seq, args);
+void ClientConnection::call(Completion cmpl, CmdCode cmd, const Args &args) {
+	std::unique_lock<std::mutex> lck(mtx_);
+	if (state_ == ConnFailed) {
+		lck.unlock();
+		cmpl(RPCAnswer(lastError_));
+		return;
 	}
-	async_.send();
-	return getAnswer(cmd, seq);
+
+	uint32_t seq = seq_++;
+	uint32_t iseq = seq % waiters_.size();
+	while (waiters_[seq % waiters_.size()].cmpl) {
+		seq = seq_++;
+		if (seq % waiters_.size() == iseq % waiters_.size()) {
+			lck.unlock();
+			cmpl(RPCAnswer(Error(errParams, "RPC commands buffer overflow")));
+			return;
+		}
+	}
+
+	callRPC(cmd, seq, args);
+	waiters_[seq % waiters_.size()] = RPCWaiter(cmd, seq, cmpl);
+	if (state_ == ConnConnected) async_.send();
 }
 
 }  // namespace cproto

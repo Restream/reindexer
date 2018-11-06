@@ -49,6 +49,7 @@ void JsonAllocator::deallocate() {
 		free(head);
 		head = next;
 	}
+	head = nullptr;
 }
 
 static inline bool isspace(char c) { return c == ' ' || (c >= '\t' && c <= '\r'); }

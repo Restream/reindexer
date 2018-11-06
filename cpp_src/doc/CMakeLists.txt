@@ -12,7 +12,7 @@ if(DOXYGEN_FOUND)
     add_custom_target(doc
       ALL
       WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-      COMMAND python3 ${Dox2html} ${PROJECT_SOURCE_DIR}/Doxyfile-mcss
+      COMMAND ${python3} ${Dox2html} ${PROJECT_SOURCE_DIR}/Doxyfile-mcss
       COMMENT "Generating Reindexer documentation with Doxygen and Dox2html"
     )
   else ()

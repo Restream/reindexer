@@ -76,8 +76,8 @@ public:
 		DefineNamespaceDataset(testSimpleNs, {
 												 IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK()},
 												 IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts()},
-												 IndexDeclaration{kFieldNameName, "text", "string", IndexOpts()},
-												 IndexDeclaration{kFieldNamePhone, "text", "string", IndexOpts()},
+												 IndexDeclaration{kFieldNameName, "hash", "string", IndexOpts()},
+												 IndexDeclaration{kFieldNamePhone, "hash", "string", IndexOpts()},
 											 });
 		simpleTestNsPks.push_back(kFieldNameId);
 
@@ -92,7 +92,7 @@ public:
 			 IndexDeclaration{kFieldNameName, "text", "string", IndexOpts()},
 			 IndexDeclaration{kCompositeFieldPricePages.c_str(), "hash", "composite", IndexOpts()},
 			 IndexDeclaration{kCompositeFieldTitleName.c_str(), "tree", "composite", IndexOpts()},
-			 IndexDeclaration{(string(kFieldNameBookid) + "+" + kFieldNameBookid).c_str(), "hash", "composite", IndexOpts().PK()}});
+			 IndexDeclaration{(string(kFieldNameBookid) + "+" + kFieldNameBookid2).c_str(), "hash", "composite", IndexOpts().PK()}});
 
 		compositeIndexesNsPks.push_back(kFieldNameBookid);
 		compositeIndexesNsPks.push_back(kFieldNameBookid2);
@@ -105,7 +105,7 @@ public:
 			 IndexDeclaration{kFieldNameColumnInt64, "hash", "int64", IndexOpts().PK()},
 			 IndexDeclaration{kFieldNameColumnDouble, "tree", "double", IndexOpts()},
 			 IndexDeclaration{kFieldNameColumnString, "-", "string", IndexOpts()},
-			 IndexDeclaration{kFieldNameColumnFullText, "text", "string", IndexOpts()},
+			 IndexDeclaration{kFieldNameColumnFullText, "text", "string", IndexOpts().SetConfig(R"xxx({"stemmers":[]})xxx")},
 			 IndexDeclaration{kFieldNameColumnStringNumeric, "-", "string", IndexOpts().SetCollateMode(CollateNumeric)}});
 		comparatorsNsPks.push_back(kFieldNameColumnInt64);
 	}
@@ -139,7 +139,12 @@ public:
 			if (itInsertedItem != insertedItemsByPk.end()) {
 				Item& insertedItem = itInsertedItem->second;
 				bool eq = (insertedItem.GetJSON().ToString() == itemr.GetJSON().ToString());
-				EXPECT_TRUE(eq) << "Items' jsons are different!";
+				EXPECT_TRUE(eq) << "Items' jsons are different! pk: " << pk << std::endl
+								<< "expect json: " << insertedItem.GetJSON().ToString() << std::endl
+								<< "got json: " << itemr.GetJSON().ToString() << std::endl
+								<< "expect fields: " << PrintItem(insertedItem) << std::endl
+								<< "got fields: " << PrintItem(itemr) << std::endl
+								<< "explain: " << qr.GetExplainResults();
 			}
 
 			reindexer::QueryEntries failedEntries;
@@ -196,6 +201,27 @@ public:
 				}
 			}
 		}
+
+		// Check non found items, to not match conditions
+
+		// If query has limit and offset, skip verification
+		if (query.start != 0 || query.count != UINT_MAX) return;
+
+		// If query has distinct, skip verification
+		for (auto& qe : query.entries)
+			if (qe.distinct) return;
+
+		for (auto& insertedItem : insertedItems[ns]) {
+			if (pks.find(insertedItem.first) != pks.end()) continue;
+			reindexer::QueryEntries failedEntries;
+			bool conditionsSatisfied = checkConditions(insertedItem.second, query, failedEntries);
+
+			reindexer::WrSerializer ser;
+			EXPECT_FALSE(conditionsSatisfied) << "Item match conditions (found " << qr.Count()
+											  << " items), but not found: " + insertedItem.second.GetJSON().ToString() << std::endl
+											  << "query:" << query.GetSQL(ser).Slice() << std::endl
+											  << "explain: " << qr.GetExplainResults() << std::endl;
+		}
 	}
 
 protected:
@@ -251,8 +277,13 @@ protected:
 		return (qentry.values[0].Type() == KeyValueComposite || qentry.values[0].Type() == KeyValueTuple);
 	}
 
-	bool compareValues(CondType condition, const Variant& key, const VariantArray& values, const CollateOpts& opts) {
+	bool compareValues(CondType condition, Variant key, const VariantArray& values, const CollateOpts& opts) {
 		bool result = false;
+		try {
+			if (values.size()) key.convert(values[0].Type());
+		} catch (const Error& err) {
+			return false;
+		}
 		switch (condition) {
 			case CondEq:
 				result = (key.Compare(values[0], opts) == 0);
@@ -298,6 +329,7 @@ protected:
 
 		int cmpRes = 0;
 		for (size_t i = 0; i < indexesValues.size() && (cmpRes == 0); ++i) {
+			compositeValues[i].convert(indexesValues[i].Type());
 			cmpRes = indexesValues[i].Compare(compositeValues[i], opts);
 		}
 
@@ -416,7 +448,7 @@ protected:
 			Commit(compositeIndexesNs);
 
 			string pkString = getPkString(item, compositeIndexesNs);
-			insertedItems[compositeIndexesNs].emplace(pkString, std::move(item));
+			insertedItems[compositeIndexesNs][pkString] = std::move(item);
 		}
 
 		Item lastItem = NewItem(compositeIndexesNs);
@@ -430,7 +462,7 @@ protected:
 		Commit(compositeIndexesNs);
 
 		string pkString = getPkString(lastItem, compositeIndexesNs);
-		insertedItems[compositeIndexesNs].emplace(pkString, std::move(lastItem));
+		insertedItems[compositeIndexesNs][pkString] = std::move(lastItem);
 	}
 
 	void FillTestSimpleNamespace() {
@@ -469,7 +501,7 @@ protected:
 			Upsert(comparatorsNs, item);
 
 			string pkString = getPkString(item, comparatorsNs);
-			insertedItems[comparatorsNs].emplace(pkString, std::move(item));
+			insertedItems[comparatorsNs][pkString] = std::move(item);
 		}
 
 		Commit(comparatorsNs);
@@ -518,8 +550,8 @@ protected:
 	}
 
 	void CheckStandartQueries() {
-		const char* sortIdxs[] = {kFieldNameName, kFieldNameYear, kFieldNameRate, kFieldNameBtreeIdsets};
-		const vector<string> distincts = {kFieldNameYear, kFieldNameRate};
+		const char* sortIdxs[] = {"", kFieldNameName, kFieldNameYear, kFieldNameRate, kFieldNameBtreeIdsets};
+		const vector<string> distincts = {"", kFieldNameYear, kFieldNameRate};
 		const vector<bool> sortOrders = {true, false};
 
 		const string compositeIndexName(kFieldNameAge + compositePlus + kFieldNameGenre);

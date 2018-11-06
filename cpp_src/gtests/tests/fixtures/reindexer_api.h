@@ -100,10 +100,18 @@ public:
 		}
 		TestCout() << std::endl;
 	}
+	string PrintItem(Item &item) {
+		std::string outBuf = "";
+		for (auto idx = 1; idx < item.NumFields(); idx++) {
+			outBuf += item[idx].Name() + "=";
+			outBuf += item[idx].As<string>() + " ";
+		}
+		return outBuf;
+	}
 
 	std::string RandString() {
 		string res;
-		uint8_t len = rand() % 20 + 4;
+		uint8_t len = rand() % 4 + 4;
 		res.resize(len);
 		for (int i = 0; i < len; ++i) {
 			int f = rand() % letters.size();

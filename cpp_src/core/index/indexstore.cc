@@ -76,11 +76,8 @@ bool IndexStore<T>::Commit(const CommitContext &ctx) {
 template <typename T>
 SelectKeyResults IndexStore<T>::SelectKey(const VariantArray &keys, CondType condition, SortType /*sortId*/, ResultType res_type,
 										  BaseFunctionCtx::Ptr /*ctx*/) {
-	if (res_type == Index::ForceIdset) {
-		throw Error(errLogic, "Can't return idset from '%s'. DISTINCT is allowed only on indexed fields", name_.c_str());
-	}
 	SelectKeyResult res;
-	res.comparators_.push_back(Comparator(condition, KeyType(), keys, opts_.IsArray(), payloadType_, fields_,
+	res.comparators_.push_back(Comparator(condition, KeyType(), keys, opts_.IsArray(), res_type == Index::ForceIdset, payloadType_, fields_,
 										  idx_data.size() ? idx_data.data() : nullptr, opts_.collateOpts_));
 	return SelectKeyResults(res);
 }

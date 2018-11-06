@@ -17,7 +17,7 @@ using std::pair;
 namespace reindexer {
 
 template <typename Container>
-Container& split(const string_view& str, const string& delimiters, bool trimEmpty, Container& tokens) {
+Container& split(const string& str, const string& delimiters, bool trimEmpty, Container& tokens) {
 	tokens.resize(0);
 
 	for (size_t pos, lastPos = 0;; lastPos = pos + 1) {

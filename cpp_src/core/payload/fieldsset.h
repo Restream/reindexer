@@ -64,8 +64,8 @@ public:
 
 	bool contains(int f) const { return mask_ & (1ULL << f); }
 	bool contains(const FieldsSet &f) const { return mask_ && ((mask_ & f.mask_) == mask_); }
-	bool contains(const TagsPath &tagsPath) { return std::find(tagsPaths_.begin(), tagsPaths_.end(), tagsPath) != tagsPaths_.end(); }
-	bool contains(const string &jsonPath) { return std::find(jsonPaths_.begin(), jsonPaths_.end(), jsonPath) != jsonPaths_.end(); }
+	bool contains(const TagsPath &tagsPath) const { return std::find(tagsPaths_.begin(), tagsPaths_.end(), tagsPath) != tagsPaths_.end(); }
+	bool contains(const string &jsonPath) const { return std::find(jsonPaths_.begin(), jsonPaths_.end(), jsonPath) != jsonPaths_.end(); }
 
 	bool match(const TagsPath &tagsPath) const {
 		if (tagsPaths_.empty()) return true;

@@ -1,4 +1,4 @@
-﻿#include "fastindextext.h"
+#include "fastindextext.h"
 #include <chrono>
 #include <memory>
 #include <thread>
@@ -92,12 +92,15 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
 	fctx->GetData()->extraWordSymbols_ = this->GetConfig()->extraWordSymbols;
 	fctx->GetData()->isWordPositions_ = true;
 
-	auto merdeInfo = Selecter(this->holder_, *this->GetConfig(), this->fields_.size(), fctx->NeedArea()).Process(dsl);
+	auto merdeInfo = Selecter(this->holder_, this->fields_.size(), fctx->NeedArea()).Process(dsl);
 	// convert vids(uniq documents id) to ids (real ids)
 	IdSet::Ptr mergedIds = std::make_shared<IdSet>();
 	auto &holder = this->holder_;
 	auto &vdocs = holder.vdocs_;
-	if (merdeInfo.empty()) return mergedIds;
+
+	if (merdeInfo.empty()) {
+		return mergedIds;
+	}
 	int cnt = 0;
 	int minRelevancy = GetConfig()->minRelevancy * 100;
 	for (auto &vid : merdeInfo) {
@@ -145,6 +148,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
 		logPrintf(LogInfo, "Relevancy(%d): %s", int(fctx->GetSize()), str.c_str());
 	}
 	assert(mergedIds->size() == fctx->GetSize());
+
 	return mergedIds;
 }
 template <typename T>
@@ -155,7 +159,8 @@ void FastIndexText<T>::Commit() {
 	} else {
 		BuildVdocs(this->tracker_.updated_);
 	}
-	DataProcessor dp(this->holder_, *this->GetConfig(), this->fields_.size());
+
+	DataProcessor dp(this->holder_, this->fields_.size());
 	dp.Process(!this->opts_.IsDense());
 	if (this->holder_.NeedClear(this->tracker_.completeUpdate_)) {
 		this->tracker_.completeUpdate_ = false;
@@ -216,11 +221,13 @@ template <typename T>
 void FastIndexText<T>::CreateConfig(const FtFastConfig *cfg) {
 	if (cfg) {
 		this->cfg_.reset(new FtFastConfig(*cfg));
+		this->holder_.SetConfig(static_cast<FtFastConfig *>(this->cfg_.get()));
 		return;
 	}
 	this->cfg_.reset(new FtFastConfig());
 	string config = this->opts_.config;
 	this->cfg_->parse(&config[0]);
+	this->holder_.SetConfig(static_cast<FtFastConfig *>(this->cfg_.get()));
 }
 
 Index *FastIndexText_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields) {

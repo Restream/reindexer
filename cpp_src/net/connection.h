@@ -3,6 +3,7 @@
 #include <string.h>
 #include <mutex>
 #include "estl/cbuf.h"
+#include "estl/chunk_buf.h"
 #include "estl/shared_mutex.h"
 #include "net/ev/ev.h"
 #include "net/socket.h"
@@ -12,10 +13,9 @@ namespace reindexer {
 namespace net {
 
 using reindexer::cbuf;
-using std::mutex;
 
 const ssize_t kConnReadbufSize = 0x8000;
-const ssize_t kConnWriteBufSize = 0x8000;
+const ssize_t kConnWriteBufSize = 0x400;
 
 template <typename Mutex>
 class Connection {
@@ -48,13 +48,12 @@ protected:
 	bool closeConn_ = false;
 	bool attached_ = false;
 	bool canWrite_ = true;
-	Mutex wrBufLock_;
 
-	cbuf<char> wrBuf_, rdBuf_;
+	chain_buf<Mutex> wrBuf_;
+	cbuf<char> rdBuf_;
 };
 
 using ConnectionST = Connection<reindexer::dummy_mutex>;
 using ConnectionMT = Connection<std::mutex>;
-
 }  // namespace net
 }  // namespace reindexer

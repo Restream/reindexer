@@ -100,14 +100,14 @@ private:
 	void addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, const SelectCtx &sctx, h_vector<Aggregator, 4> &aggregators,
 						 QueryResults &result);
 	QueryEntries lookupQueryIndexes(const QueryEntries &entries);
+	void convertWhereValues(QueryEntries &entries);
 	void substituteCompositeIndexes(QueryEntries &entries);
-	SortingEntries getOptimalSortOrder(const QueryEntries &entries);
+	SortingEntries detectOptimalSortOrder(const QueryEntries &entries);
 	h_vector<Aggregator, 4> getAggregators(const Query &q);
 	int getCompositeIndex(const FieldsSet &fieldsmask);
 	bool mergeQueryEntries(QueryEntry *lhs, QueryEntry *rhs);
 	void setLimitAndOffset(ItemRefVector &result, size_t offset, size_t limit);
-	void updateCompositeIndexesValues(QueryEntries &qe);
-	KeyValueType getQueryEntryIndexType(const QueryEntry &qentry) const;
+	KeyValueType detectQueryEntryIndexType(const QueryEntry &qentry) const;
 	void prepareSortingContext(const SortingEntries &sortBy, SelectCtx &ctx, bool isFt);
 	void prepareSortingIndexes(SortingEntries &sortBy);
 	void getSortIndexValue(const SelectCtx::SortingCtx::Entry *sortCtx, IdType rowId, VariantArray &value);

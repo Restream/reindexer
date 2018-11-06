@@ -18,7 +18,7 @@ Variant::Variant(const PayloadValue &v) : type_(KeyValueComposite), hold_(true) 
 Variant::Variant(const string &v) : type_(KeyValueString), hold_(true) { new (cast<void>()) key_string(make_key_string(v)); }
 
 Variant::Variant(const key_string &v) : type_(KeyValueString), hold_(true) { new (cast<void>()) key_string(v); }
-Variant::Variant(const char *v) : Variant(p_string(v)){};
+Variant::Variant(const char *v) : Variant(p_string(v)) {}
 Variant::Variant(const p_string &v, bool enableHold) : type_(KeyValueString) {
 	if (v.type() == p_string::tagKeyString && enableHold) {
 		hold_ = true;
@@ -104,9 +104,16 @@ string Variant::As<string>() const {
 				return *operator p_string().getCxxstr();
 			}
 			return operator p_string().toString();
+		case KeyValueNull:
+			return "null";
 		case KeyValueComposite:
-		case KeyValueTuple:
 			return string();
+		case KeyValueTuple: {
+			auto va = getCompositeValues();
+			WrSerializer wrser;
+			va.Dump(wrser);
+			return wrser.Slice().ToString();
+		}
 		default:
 			abort();
 	}
@@ -190,6 +197,7 @@ int64_t Variant::As<int64_t>() const {
 			}
 			case KeyValueComposite:
 			case KeyValueTuple:
+			case KeyValueNull:
 				return 0;
 			default:
 				abort();
@@ -225,6 +233,7 @@ double Variant::As<double>() const {
 }
 
 int Variant::Compare(const Variant &other, const CollateOpts &collateOpts) const {
+	assert(other.Type() == type_);
 	switch (Type()) {
 		case KeyValueInt:
 			return (value_int == other.value_int) ? 0 : (value_int > other.value_int) ? 1 : -1;
@@ -268,8 +277,8 @@ void Variant::EnsureUTF8() const {
 	}
 }
 
-Variant &Variant::convert(KeyValueType type) {
-	if (type == type_) return *this;
+Variant &Variant::convert(KeyValueType type, const PayloadType *payloadType, const FieldsSet *fields) {
+	if (type == type_ || type == KeyValueNull || type_ == KeyValueNull) return *this;
 	switch (type) {
 		case KeyValueInt:
 			*this = Variant(As<int>());
@@ -286,6 +295,13 @@ Variant &Variant::convert(KeyValueType type) {
 		case KeyValueString:
 			*this = Variant(As<string>());
 			break;
+		case KeyValueComposite:
+			if (type_ == KeyValueTuple) {
+				assert(payloadType && fields);
+				convertToComposite(payloadType, fields);
+				break;
+			}
+			// fall through
 		default:
 			throw Error(errParams, "Can't convert Variant from type '%s' to to type '%s'", TypeName(type_), TypeName(type));
 	}
@@ -293,28 +309,31 @@ Variant &Variant::convert(KeyValueType type) {
 	return *this;
 }
 
-void Variant::convertToComposite(const PayloadType &payloadType, const FieldsSet &fields) {
+void Variant::convertToComposite(const PayloadType *payloadType, const FieldsSet *fields) {
 	assert(type_ == KeyValueTuple && hold_);
 	key_string val = *cast<key_string>();
 
 	if (hold_) free();
-	auto &pv = *new (cast<void>()) PayloadValue(payloadType.TotalSize() + val->size());
+	// Alloc usual payloadvalue + extra memory for hold string
+
+	auto &pv = *new (cast<void>()) PayloadValue(payloadType->TotalSize() + val->size());
 	hold_ = true;
 	type_ = KeyValueComposite;
 
-	char *data = reinterpret_cast<char *>(pv.Ptr() + payloadType.TotalSize());
+	// Copy serializer buffer with strings to extra payloadvalue memory
+	char *data = reinterpret_cast<char *>(pv.Ptr() + payloadType->TotalSize());
 	memcpy(data, val->data(), val->size());
 
 	Serializer ser(string_view(data, val->size()));
 
 	size_t count = ser.GetVarUint();
-	if (count != fields.size()) {
-		throw Error(errLogic, "Invalid count of arguments for composite index, expected %d, got %d", int(fields.size()), int(count));
+	if (count != fields->size()) {
+		throw Error(errLogic, "Invalid count of arguments for composite index, expected %d, got %d", int(fields->size()), int(count));
 	}
 
-	Payload pl(payloadType, pv);
+	Payload pl(*payloadType, pv);
 
-	for (auto &field : fields) {
+	for (auto &field : *fields) {
 		if (field != IndexValueType::SetByJsonPath) {
 			pl.Set(field, {ser.GetVariant()});
 		} else {
@@ -357,7 +376,7 @@ const char *Variant::TypeName(KeyValueType t) {
 		case KeyValueTuple:
 			return "<tuple>";
 		case KeyValueNull:
-			return "<empty>";
+			return "<null>";
 		case KeyValueUndefined:
 			return "<unknown>";
 	}
@@ -397,7 +416,7 @@ static bool isPrintable(p_string str) {
 }
 
 void VariantArray::Dump(WrSerializer &wrser) const {
-	wrser << '(';
+	wrser << '{';
 
 	for (auto &arg : *this) {
 		if (&arg != &at(0)) {
@@ -407,7 +426,7 @@ void VariantArray::Dump(WrSerializer &wrser) const {
 			case KeyValueString: {
 				p_string str(arg);
 				if (isPrintable(str)) {
-					wrser << '"' << string_view(str) << '"';
+					wrser << '\'' << string_view(str) << '\'';
 				} else {
 					wrser << "slice{len:" << str.length() << "}";
 				}
@@ -427,7 +446,7 @@ void VariantArray::Dump(WrSerializer &wrser) const {
 				break;
 		}
 	}
-	wrser << ')';
+	wrser << '}';
 }
 
 }  // namespace reindexer

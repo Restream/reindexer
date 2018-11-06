@@ -20,6 +20,9 @@ class IUpdatesObserver;
 /// Therefore it is strongly recommended, *do not* call fork after Reindexer creation.
 class Reindexer {
 public:
+	/// Completion routine
+	typedef std::function<void(const Error &err)> Completion;
+
 	/// Create Reindexer database object
 	Reindexer();
 	/// Destrory Reindexer database object
@@ -73,20 +76,24 @@ public:
 	/// return -1, on success item.GetID() will return internal Item ID
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
-	Error Insert(const string &nsName, Item &item);
+	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
+	Error Insert(const string &nsName, Item &item, Completion cmpl = nullptr);
 	/// Update Item in namespace. If item with same PK is not exists, when item.GetID will
 	/// return -1, on success item.GetID() will return internal Item ID
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
-	Error Update(const string &nsName, Item &item);
+	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
+	Error Update(const string &nsName, Item &item, Completion cmpl = nullptr);
 	/// Update or Insert Item in namespace. On success item.GetID() will return internal Item ID
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
-	Error Upsert(const string &nsName, Item &item);
+	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
+	Error Upsert(const string &nsName, Item &item, Completion cmpl = nullptr);
 	/// Delete Item from namespace. On success item.GetID() will return internal Item ID
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
-	Error Delete(const string &nsName, Item &item);
+	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
+	Error Delete(const string &nsName, Item &item, Completion cmpl = nullptr);
 	/// Delete all items froms namespace, which matches provided Query
 	/// @param query - Query with conditions
 	/// @param result - QueryResults with IDs of deleted items
@@ -94,11 +101,13 @@ public:
 	/// Execute SQL Query and return results
 	/// @param query - SQL query. Only "SELECT" semantic is supported
 	/// @param result - QueryResults with found items
-	Error Select(const string_view &query, QueryResults &result);
+	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
+	Error Select(const string_view &query, QueryResults &result, Completion cmpl = nullptr);
 	/// Execute Query and return results
 	/// @param query - Query object with query attributes
 	/// @param result - QueryResults with found items
-	Error Select(const Query &query, QueryResults &result);
+	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
+	Error Select(const Query &query, QueryResults &result, Completion cmpl = nullptr);
 	/// Flush changes to storage
 	/// @param nsName - Name of namespace
 	Error Commit(const string &nsName);

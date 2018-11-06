@@ -55,14 +55,41 @@ int socket::listen(int backlog) {
 	return ::listen(fd_, backlog);
 }
 
-int socket::recv(char *buf, size_t len) {
+ssize_t socket::recv(char *buf, size_t len) {
 	//
 	return ::recv(fd_, buf, len, 0);
 }
-int socket::send(const char *buf, size_t len) {
+ssize_t socket::send(const char *buf, size_t len) {
 	//
 	return ::send(fd_, buf, len, 0);
 }
+
+#ifdef _WIN32
+ssize_t socket::send(span<chunk> chunks) {
+	h_vector<WSABUF, 64> iov;
+	iov.resize(chunks.size());
+
+	for (unsigned i = 0; i < chunks.size(); i++) {
+		iov[i].buf = reinterpret_cast<CHAR *>(chunks[i].data());
+		iov[i].len = chunks[i].size();
+	}
+	DWORD numberOfBytesSent;
+	int res = ::WSASend(SOCKET(fd_), iov.data(), iov.size(), &numberOfBytesSent, 0, NULL, NULL);
+
+	return res == 0 ? numberOfBytesSent : -1;
+}
+#else
+ssize_t socket::send(span<chunk> chunks) {
+	h_vector<iovec, 64> iov;
+	iov.resize(chunks.size());
+
+	for (unsigned i = 0; i < chunks.size(); i++) {
+		iov[i].iov_base = chunks[i].data();
+		iov[i].iov_len = chunks[i].size();
+	}
+	return ::writev(fd_, iov.data(), iov.size());
+}
+#endif
 
 int socket::close() {
 	int fd = fd_;

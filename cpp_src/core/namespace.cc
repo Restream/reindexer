@@ -382,6 +382,9 @@ void Namespace::AddCompositeIndex(const IndexDef &indexDef) {
 			}
 			fields.push_back(tagsPath);
 			fields.push_back(jsonPathOrSubIdx);
+		} else if (indexes_[idxNameIt->second]->Opts().IsSparse() && !indexes_[idxNameIt->second]->Opts().IsArray()) {
+			fields.push_back(jsonPathOrSubIdx);
+			fields.push_back(indexes_[idxNameIt->second]->Fields().getTagsPath(0));
 		} else {
 			if (indexes_[idxNameIt->second]->Opts().IsArray() && (type == IndexCompositeBTree || type == IndexCompositeHash)) {
 				throw Error(errParams, "Can't add array subindex '%s' to composite index '%s'", jsonPathOrSubIdx.c_str(),

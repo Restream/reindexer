@@ -29,6 +29,10 @@ type FtFastConfig struct {
 	MaxTyposInWord int `json:"max_typos_in_word"`
 	// Maximum word length for building and matching variants with typos. Default value is 15
 	MaxTypoLen int `json:"max_typo_len"`
+	// Maximum commit steps - set it 1 for always full rebuild - it can be from 1 to 500
+	MaxRebuildSteps int `json:"max_rebuild_steps"`
+	// Maximum words in one commit - it can be from 5 to DOUBLE_MAX
+	MaxStepSize int `json:"max_step_size"`
 	// Maximum documents which will be processed in merge query results
 	// Default value is 20000. Increasing this value may refine ranking
 	// of queries with high frequency words
@@ -60,6 +64,8 @@ func DefaultFtFastConfig() FtFastConfig {
 		MinRelevancy:     0.05,
 		MaxTyposInWord:   1,
 		MaxTypoLen:       15,
+		MaxRebuildSteps:  50,
+		MaxStepSize:      4000,
 		MergeLimit:       20000,
 		Stemmers:         []string{"en", "ru"},
 		EnableTranslit:   true,

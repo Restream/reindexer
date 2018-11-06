@@ -12,6 +12,7 @@ struct WordIdTypeBit {
 };
 
 union WordIdType {
+	WordIdType() { b.multi_flag = 0; }
 	WordIdTypeBit b;
 	uint32_t data;
 

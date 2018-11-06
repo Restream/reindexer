@@ -20,11 +20,11 @@ using std::initializer_list;
 class Query : public QueryWhere {
 public:
 	/// Creates an object for certain namespace with appropriate settings.
-	/// @param __namespace - name of the namespace the data to be selected from.
-	/// @param _start - number of the first row to get from selected set. Analog to sql LIMIT Offset.
-	/// @param _count - number of rows to get from result set. Analog to sql LIMIT RowsCount.
-	/// @param _calcTotal - calculation mode.
-	explicit Query(const string &__namespace, unsigned _start = 0, unsigned _count = UINT_MAX, CalcTotalMode _calcTotal = ModeNoTotal);
+	/// @param nsName - name of the namespace the data to be selected from.
+	/// @param start - number of the first row to get from selected set. Analog to sql LIMIT Offset.
+	/// @param count - number of rows to get from result set. Analog to sql LIMIT RowsCount.
+	/// @param calcTotal - calculation mode.
+	explicit Query(const string &nsName, unsigned start = 0, unsigned count = UINT_MAX, CalcTotalMode calcTotal = ModeNoTotal);
 
 	/// Creates an empty object.
 	Query() {}
@@ -44,8 +44,8 @@ public:
 
 	/// Logs query in 'Select field1, ... field N from namespace ...' format.
 	/// @param ser - serializer to store SQL string
-
-	WrSerializer &GetSQL(WrSerializer &wr, bool stripArgs = false) const;
+	/// @param stripArgs - replace condition values with '?'
+	WrSerializer &GetSQL(WrSerializer &ser, bool stripArgs = false) const;
 
 	/// Enable explain query
 	/// @param on - signaling on/off
@@ -235,17 +235,19 @@ public:
 	/// @param desc - is sorting direction descending or ascending.
 	/// @return Query object.
 	Query &Sort(const string &sort, bool desc) {
-		sortingEntries_.push_back({sort, desc});
+		if (sort.length()) sortingEntries_.push_back({sort, desc});
 		return *this;
 	}
 
 	/// Performs distinct for a certain index.
 	/// @param indexName - name of index for distict operation.
 	Query &Distinct(const string &indexName) {
-		QueryEntry qentry;
-		qentry.index = indexName;
-		qentry.distinct = true;
-		entries.push_back(qentry);
+		if (indexName.length()) {
+			QueryEntry qentry;
+			qentry.index = indexName;
+			qentry.distinct = true;
+			entries.push_back(qentry);
+		}
 		return *this;
 	}
 
@@ -385,14 +387,17 @@ protected:
 
 	/// Builds print version of a query with join in sql format.
 	/// @param ser - serializer to store SQL string
+	/// @param stripArgs - replace condition values with '?'
 	void dumpJoined(WrSerializer &ser, bool stripArgs) const;
 
 	/// Builds a print version of a query with merge queries in sql format.
 	/// @param ser - serializer to store SQL string
+	/// @param stripArgs - replace condition values with '?'
 	void dumpMerged(WrSerializer &ser, bool stripArgs) const;
 
 	/// Builds a print version of a query's order by statement
 	/// @param ser - serializer to store SQL string
+	/// @param stripArgs - replace condition values with '?'
 	void dumpOrderBy(WrSerializer &ser, bool stripArgs) const;
 
 public:

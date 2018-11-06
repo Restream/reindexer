@@ -13,6 +13,7 @@ SortingPrioritiesTable::SortingPrioritiesTable(const std::string& sortOrderUTF8)
 	wchar_t prevCh = 0;
 	uint16_t priority = 0;
 	uint16_t maxPriority = 0;
+	std::map<uint16_t, uint16_t> ranges;
 
 	wstring orderUtf16 = reindexer::utf8_to_utf16(sortOrderUTF8);
 	const int lastCharIdx = static_cast<int>(orderUtf16.size() - 1);
@@ -26,27 +27,28 @@ SortingPrioritiesTable::SortingPrioritiesTable(const std::string& sortOrderUTF8)
 			if ((i != 0) && (orderUtf16[i - 1] == '-')) {
 				if (ch <= prevCh) throw Error(errLogic, "Incorrect format of sort order string: range should be ascending");
 				for (auto it = prevCh; it <= ch; ++it) {
-					if (checkForRangeIntersection(it))
+					if (checkForRangeIntersection(ranges, it))
 						throw Error(errLogic, "There can't be 2 same formating characters in format string!");
 					sortOrder_->operator[](it) = priority++;
 				}
-				ranges_.insert({prevCh, ch - prevCh + 1});
+				ranges.insert({prevCh, ch - prevCh + 1});
 				maxPriority = priority;
 			} else if (((i + 1 <= lastCharIdx) && (orderUtf16[i + 1] != '-')) || (i == lastCharIdx)) {
-				if (checkForRangeIntersection(ch)) throw Error(errLogic, "There can't be 2 same formating characters in format string!");
+				if (checkForRangeIntersection(ranges, ch))
+					throw Error(errLogic, "There can't be 2 same formating characters in format string!");
 				sortOrder_->operator[](ch) = priority++;
-				ranges_.insert({ch, 1});
+				ranges.insert({ch, 1});
 				maxPriority = priority;
 			}
 			prevCh = ch;
 		}
 	}
 
-	if (!ranges_.empty()) {
-		auto rangeIt = ranges_.begin();
+	if (!ranges.empty()) {
+		auto rangeIt = ranges.begin();
 		uint16_t outOfRangePriority = maxPriority;
 		for (size_t i = 0; i < tableSize;) {
-			if ((rangeIt != ranges_.end()) && (rangeIt->first == i)) {
+			if ((rangeIt != ranges.end()) && (rangeIt->first == i)) {
 				i += rangeIt->second;
 				++rangeIt;
 			} else {
@@ -56,11 +58,11 @@ SortingPrioritiesTable::SortingPrioritiesTable(const std::string& sortOrderUTF8)
 	}
 }
 
-bool SortingPrioritiesTable::checkForRangeIntersection(wchar_t ch) {
-	if (ranges_.empty()) return false;
-	auto itLow = ranges_.lower_bound(ch);
-	if (itLow == ranges_.end()) itLow = ranges_.begin();
-	auto itUp = ranges_.upper_bound(ch);
+bool SortingPrioritiesTable::checkForRangeIntersection(std::map<uint16_t, uint16_t>& ranges, wchar_t ch) {
+	if (ranges.empty()) return false;
+	auto itLow = ranges.lower_bound(ch);
+	if (itLow == ranges.end()) itLow = ranges.begin();
+	auto itUp = ranges.upper_bound(ch);
 	for (auto it = itLow; it != itUp; ++it) {
 		if ((ch >= it->first) && (ch < it->first + it->second)) return true;
 	}

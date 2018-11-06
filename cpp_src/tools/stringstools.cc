@@ -68,7 +68,7 @@ size_t calcUTf8Size(const char *str, size_t size, size_t limit) {
 // This functions calc how many bytes takes limit symbols in UTF8 backward
 size_t calcUTf8SizeEnd(const char *end, int pos, size_t limit) {
 	const char *ptr;
-	for (ptr = end; limit && ptr >= end - pos; limit--) utf8::unchecked::prior(ptr);
+	for (ptr = end; limit && ptr > end - pos; limit--) utf8::unchecked::prior(ptr);
 	return end - ptr;
 }
 

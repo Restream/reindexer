@@ -1,18 +1,15 @@
 #pragma once
 
 #include <string.h>
-#include "estl/h_vector.h"
 #include "net/connection.h"
 #include "net/iserverconnection.h"
 #include "picohttpparser/picohttpparser.h"
 #include "router.h"
+#include "tools/serializer.h"
 
 namespace reindexer {
 namespace net {
 namespace http {
-
-using reindexer::cbuf;
-using reindexer::h_vector;
 
 const ssize_t kHttpMaxHeaders = 128;
 const ssize_t kHttpMaxBodySize = 2 * 1024 * 1024LL;
@@ -42,25 +39,25 @@ protected:
 	};
 	class ResponseWriter : public Writer {
 	public:
-		ResponseWriter(ServerConnection *conn) : conn_(conn) {}
+		ResponseWriter(ServerConnection *conn) : headers_(conn->wrBuf_.get_chunk()), conn_(conn) {}
 		virtual bool SetHeader(const Header &hdr) override final;
 		virtual bool SetRespCode(int code) override final;
 		virtual bool SetContentLength(size_t len) override final;
 		virtual bool SetConnectionClose() override final;
-		ssize_t Write(const void *buf, size_t size) override final;
-		template <int N>
-		ssize_t Write(const char (&str)[N]) {
-			return Write(str, N - 1);
-		}
+		ssize_t Write(chunk &&chunk) override final;
+		ssize_t Write(string_view data) override final;
+		virtual chunk GetChunk() override final;
+
 		bool IsRespSent() { return respSend_; }
 		virtual int RespCode() override final { return code_; };
-		virtual int Written() override final { return written_; };
+		virtual ssize_t Written() override final { return written_; };
 
 	protected:
 		bool isChunkedResponse() { return contentLength_ == -1; }
 
 		int code_ = StatusOK;
-		h_vector<char, 0x200> headers_;
+
+		WrSerializer headers_;
 		bool respSend_ = false;
 		ssize_t contentLength_ = -1, written_ = 0;
 		ServerConnection *conn_;

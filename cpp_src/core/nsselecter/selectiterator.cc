@@ -238,7 +238,6 @@ void SelectIterator::ExcludeLastSet() {
 			lastIt_->rit_ = lastIt_->rend_;
 		}
 	}
-	assert(!comparators_.size());
 }
 
 void SelectIterator::Append(SelectKeyResult &other) {

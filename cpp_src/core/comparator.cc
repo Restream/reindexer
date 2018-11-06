@@ -8,7 +8,7 @@ namespace reindexer {
 Comparator::Comparator() : fields_(), cmpComposite(payloadType_, fields_), cmpEqualPosition(payloadType_, KeyValueNull) {}
 Comparator::~Comparator() {}
 
-Comparator::Comparator(CondType cond, KeyValueType type, const VariantArray &values, bool isArray, PayloadType payloadType,
+Comparator::Comparator(CondType cond, KeyValueType type, const VariantArray &values, bool isArray, bool distinct, PayloadType payloadType,
 					   const FieldsSet &fields, void *rawData, const CollateOpts &collateOpts)
 	: cond_(cond),
 	  type_(type),
@@ -18,10 +18,11 @@ Comparator::Comparator(CondType cond, KeyValueType type, const VariantArray &val
 	  payloadType_(payloadType),
 	  fields_(fields),
 	  cmpComposite(payloadType_, fields_),
-	  cmpEqualPosition(payloadType_, type) {
+	  cmpEqualPosition(payloadType_, type),
+	  dist_(distinct ? new fast_hash_set<Variant> : nullptr)
+{
 	if (type == KeyValueComposite) assert(fields_.size() > 0);
 	if (cond_ == CondEq && values.size() != 1) cond_ = CondSet;
-
 	setValues(values);
 }
 
@@ -57,7 +58,8 @@ void Comparator::setValues(const VariantArray &values) {
 				assert(0);
 		}
 	}
-	if (isArray_ && fields_.size() > 0 && payloadType_->Field(fields_[0]).IsArray()) {
+	bool isRegularIndex = fields_.size() > 0 && fields_.getTagsPathsLength() == 0 && fields_[0] < payloadType_.NumFields();
+	if (isArray_ && isRegularIndex && payloadType_->Field(fields_[0]).IsArray()) {
 		offset_ = payloadType_->Field(fields_[0]).Offset();
 		sizeof_ = payloadType_->Field(fields_[0]).ElemSizeof();
 	}
@@ -88,14 +90,25 @@ bool Comparator::Compare(const PayloadValue &data, int rowId) {
 		Payload pl(payloadType_, const_cast<PayloadValue &>(data));
 
 		pl.GetByJsonPath(fields_.getTagsPath(0), rhs, type_);
-		if (cond_ == CondEmpty) return rhs.size() == 0;
-		if (cond_ == CondAny) return rhs.size() != 0;
+		if (cond_ == CondEmpty) {
+			bool empty = true;
+			for (const Variant &v : rhs) empty &= (v.Type() == KeyValueNull);
+			return (rhs.size() == 0) || empty;
+		}
+
+		if (cond_ == CondAny && !dist_) {
+			if (rhs.empty()) return false;
+
+			int nullCnt = 0;
+			for (const Variant &v : rhs) nullCnt += v.Type() != KeyValueNull;
+			return nullCnt > 0;
+		}
 
 		if (equalPositionMode) {
 			return cmpEqualPosition.Compare(data, collateOpts_);
 		} else {
 			for (const Variant &kr : rhs) {
-				if (compare(kr)) return true;
+				if (compare(kr) && is_unique(kr)) return true;
 			}
 		}
 	} else {

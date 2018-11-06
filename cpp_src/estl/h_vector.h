@@ -142,6 +142,7 @@ public:
 	typedef unsigned size_type;
 	typedef std::ptrdiff_t difference_type;
 	h_vector() noexcept : e_{0, 0}, size_(0), is_hdata_(1) {}
+	h_vector(size_type size) : h_vector() { resize(size); }
 	h_vector(std::initializer_list<T> l) : e_{0, 0}, size_(0), is_hdata_(1) { insert(begin(), l.begin(), l.end()); }
 	template <typename InputIt>
 	h_vector(InputIt first, InputIt last) : e_{0, 0}, size_(0), is_hdata_(1) {
@@ -445,7 +446,7 @@ public:
 	constexpr const T& at(size_type pos) const { return data_[pos]; }
 	constexpr const T& front() const { return data_[0]; }
 	constexpr const T& back() const { return data_[size() - 1]; }
-	constexpr const T* data() const noexcept { return data_; }
+	constexpr pointer data() const noexcept { return data_; }
 	span subspan(size_type offset, size_type count) const noexcept {
 		assert(offset + count <= size_);
 		return span(data_ + offset, count);

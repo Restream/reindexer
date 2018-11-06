@@ -79,7 +79,7 @@ void Listener::io_accept(ev::io & /*watcher*/, int revents) {
 		return;
 	}
 
-	std::unique_lock<mutex> lck(shared_->lck_);
+	std::unique_lock<std::mutex> lck(shared_->lck_);
 	if (shared_->idle_.size()) {
 		auto conn = std::move(shared_->idle_.back());
 		shared_->idle_.pop_back();
@@ -97,7 +97,7 @@ void Listener::io_accept(ev::io & /*watcher*/, int revents) {
 }
 
 void Listener::timeout_cb(ev::periodic &, int) {
-	std::unique_lock<mutex> lck(shared_->lck_);
+	std::unique_lock<std::mutex> lck(shared_->lck_);
 
 	// Move finished connections to idle connections pool
 	for (unsigned i = 0; i < connections_.size();) {
@@ -149,7 +149,7 @@ void Listener::timeout_cb(ev::periodic &, int) {
 
 void Listener::async_cb(ev::async &watcher) {
 	logPrintf(LogInfo, "Listener(%s) %d async received", shared_->addr_.c_str(), id_);
-	std::unique_lock<mutex> lck(shared_->lck_);
+	std::unique_lock<std::mutex> lck(shared_->lck_);
 	for (auto &it : connections_) {
 		if (!it->IsFinished()) it->Attach(loop_);
 	}

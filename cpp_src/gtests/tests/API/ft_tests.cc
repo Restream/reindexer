@@ -1,8 +1,10 @@
 #include <iostream>
 #include <unordered_map>
 #include <unordered_set>
+#include "debug/allocdebug.h"
 #include "ft_api.h"
 #include "tools/stringstools.h"
+
 using std::unordered_set;
 using std::unordered_map;
 
@@ -85,5 +87,27 @@ TEST_F(FTApi, DeleteTest) {
 		string val = ritem["ft1"].As<string>();
 		// printf("%s\n", val.c_str());
 		std::cout << val << std::endl;
+	}
+}
+
+TEST_F(FTApi, Stress) {
+	vector<string> data;
+	vector<string> phrase;
+
+	for (size_t i = 0; i < 12500; ++i) {
+		data.push_back(RandString());
+	}
+
+	for (size_t i = 0; i < 50000; ++i) {
+		phrase.push_back(data[rand() % data.size()] + "  " + data[rand() % data.size()] + " " + data[rand() % data.size()]);
+	}
+
+	for (size_t i = 0; i < phrase.size(); i++) {
+		Add(phrase[i], phrase[rand() % phrase.size()]);
+		if (i % 2500 == 0) {
+			SimpleCompositeSelect(data[rand() % data.size()]);
+			auto res = SimpleCompositeSelect(data[rand() % data.size()] + "~");
+			SimpleCompositeSelect(data[rand() % data.size()] + "*");
+		}
 	}
 }

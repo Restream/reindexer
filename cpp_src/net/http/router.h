@@ -14,6 +14,7 @@
 #include "tools/stringstools.h"
 
 namespace reindexer {
+class chunk;
 namespace net {
 namespace http {
 
@@ -114,10 +115,9 @@ struct Request {
 
 class Writer {
 public:
-	virtual ssize_t Write(const void *buf, size_t size) = 0;
-
-	size_t Write(char ch) { return Write(&ch, 1); }
-	ssize_t Write(const string_view &buf) { return Write(buf.data(), buf.size()); }
+	virtual ssize_t Write(chunk &&ch) = 0;
+	virtual ssize_t Write(string_view data) = 0;
+	virtual chunk GetChunk() = 0;
 
 	virtual bool SetHeader(const Header &hdr) = 0;
 	virtual bool SetRespCode(int code) = 0;
@@ -125,7 +125,7 @@ public:
 	virtual bool SetConnectionClose() = 0;
 
 	virtual int RespCode() = 0;
-	virtual int Written() = 0;
+	virtual ssize_t Written() = 0;
 	virtual ~Writer() = default;
 };
 
@@ -145,9 +145,10 @@ public:
 
 struct Context {
 	int JSON(int code, const string_view &slice);
+	int JSON(int code, chunk &&chunk);
 	int String(int code, const string_view &slice);
+	int String(int code, chunk &&chunk);
 	int File(int code, const char *path, const string_view &data = string_view());
-	int Printf(int code, const char *contentType, const char *fmt, ...);
 	int Redirect(const string_view &url);
 
 	Request *request;

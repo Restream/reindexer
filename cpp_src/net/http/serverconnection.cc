@@ -5,6 +5,7 @@
 #include "itoa/itoa.h"
 #include "time/fast_time.h"
 #include "tools/errors.h"
+#include "tools/serializer.h"
 #include "tools/stringstools.h"
 namespace reindexer {
 namespace net {
@@ -39,12 +40,10 @@ void ServerConnection::onClose() {}
 void ServerConnection::handleRequest(Request &req) {
 	ResponseWriter writer(this);
 	BodyReader reader(this);
-	Stat stat;
 	Context ctx;
 	ctx.request = &req;
 	ctx.writer = &writer;
 	ctx.body = &reader;
-	ctx.stat = stat;
 
 	try {
 		router_.handle(ctx);
@@ -59,7 +58,7 @@ void ServerConnection::handleRequest(Request &req) {
 	}
 	router_.log(ctx);
 
-	ctx.writer->Write(0, 0);
+	ctx.writer->Write(string_view());
 }
 
 void ServerConnection::badRequest(int code, const char *msg) {
@@ -107,17 +106,14 @@ void ServerConnection::parseParams(const string_view &str) {
 }
 
 void ServerConnection::writeHttpResponse(int code) {
-	char tmpBuf[512];
-	char *d = tmpBuf;
-	d = strappend(d, "HTTP/1.1 ");
-	d = i32toa(code, d);
+	WrSerializer ser(wrBuf_.get_chunk());
 
-	*d++ = ' ';
+	ser << "HTTP/1.1 "_sv << code << ' ';
+
 	auto it = kHTTPCodes.find(code);
-	if (it != kHTTPCodes.end()) d = strappend(d, it->second);
-	d = strappend(d, kStrEOL);
-
-	wrBuf_.write(tmpBuf, d - tmpBuf);
+	if (it != kHTTPCodes.end()) ser << it->second;
+	ser << kStrEOL;
+	wrBuf_.write(ser.DetachChunk());
 }
 
 void ServerConnection::onRead() {
@@ -128,15 +124,16 @@ void ServerConnection::onRead() {
 
 	while (rdBuf_.size()) {
 		if (!bodyLeft_) {
-			auto it = rdBuf_.tail();
+			auto chunk = rdBuf_.tail();
 
 			num_headers = kHttpMaxHeaders;
 			minor_version = 0;
-			int res = phr_parse_request(it.data, it.len, &method, &method_len, &uri, &path_len, &minor_version, headers, &num_headers, 0);
-			assert(res <= int(it.len));
+			int res = phr_parse_request(chunk.data(), chunk.size(), &method, &method_len, &uri, &path_len, &minor_version, headers,
+										&num_headers, 0);
+			assert(res <= int(chunk.size()));
 
 			if (res == -2) {
-				if (rdBuf_.size() > it.len) {
+				if (rdBuf_.size() > chunk.size()) {
 					rdBuf_.unroll();
 					continue;
 				}
@@ -190,7 +187,7 @@ void ServerConnection::onRead() {
 			if (expectContinue_) {
 				if (bodyLeft_ < int(rdBuf_.capacity() - res)) {
 					writeHttpResponse(StatusContinue);
-					wrBuf_.write(kStrEOL, sizeof(kStrEOL) - 1);
+					wrBuf_.write(string_view(kStrEOL));
 				} else {
 					badRequest(StatusRequestEntityTooLarge, "");
 					return;
@@ -203,13 +200,13 @@ void ServerConnection::onRead() {
 			// TODO: support chunked request body
 
 			if (formData_) {
-				auto it = rdBuf_.tail();
-				if (it.len < size_t(bodyLeft_)) {
+				auto chunk = rdBuf_.tail();
+				if (chunk.size() < size_t(bodyLeft_)) {
 					rdBuf_.unroll();
-					it = rdBuf_.tail();
+					chunk = rdBuf_.tail();
 				}
-				assert(it.len >= size_t(bodyLeft_));
-				parseParams(string_view(it.data, bodyLeft_));
+				assert(chunk.size() >= size_t(bodyLeft_));
+				parseParams(string_view(chunk.data(), bodyLeft_));
 			}
 
 			handleRequest(request_);
@@ -218,22 +215,12 @@ void ServerConnection::onRead() {
 		} else
 			break;
 	}
+	if (!rdBuf_.size() && !bodyLeft_) rdBuf_.clear();
 }
 
 bool ServerConnection::ResponseWriter::SetHeader(const Header &hdr) {
 	if (respSend_) return false;
-	size_t pos = headers_.size();
-
-	headers_.reserve(headers_.size() + hdr.name.size() + hdr.val.size() + 5);
-
-	char *d = &headers_[pos];
-	d = strappend(d, hdr.name);
-	d = strappend(d, ": ");
-	d = strappend(d, hdr.val);
-	d = strappend(d, kStrEOL);
-	*d = 0;
-	headers_.resize(d - headers_.begin());
-
+	headers_ << hdr.name << ": "_sv << hdr.val << kStrEOL;
 	return true;
 }
 bool ServerConnection::ResponseWriter::SetRespCode(int code) {
@@ -248,7 +235,7 @@ bool ServerConnection::ResponseWriter::SetContentLength(size_t length) {
 	return true;
 }
 
-ssize_t ServerConnection::ResponseWriter::Write(const void *buf, size_t size) {
+ssize_t ServerConnection::ResponseWriter::Write(chunk &&chunk) {
 	char tmpBuf[256];
 	if (!respSend_) {
 		conn_->writeHttpResponse(code_);
@@ -257,7 +244,7 @@ ssize_t ServerConnection::ResponseWriter::Write(const void *buf, size_t size) {
 			SetHeader(Header{"ServerConnection", "keep-alive"});
 		}
 		if (!isChunkedResponse()) {
-			*u32toa(contentLength_, tmpBuf) = 0;
+			*u64toa(contentLength_, tmpBuf) = 0;
 			SetHeader(Header{"Content-Length", tmpBuf});
 		} else {
 			SetHeader(Header{"Transfer-Encoding", "chunked"});
@@ -270,27 +257,36 @@ ssize_t ServerConnection::ResponseWriter::Write(const void *buf, size_t size) {
 		SetHeader(Header{"Date", tmpBuf});
 		SetHeader(Header{"Server", "reindex"});
 
-		conn_->wrBuf_.write(headers_.data(), headers_.size());
-		conn_->wrBuf_.write(kStrEOL, sizeof(kStrEOL) - 1);
+		headers_ << kStrEOL;
+		conn_->wrBuf_.write(headers_.DetachChunk());
 		respSend_ = true;
 	}
 
+	size_t len = chunk.len_;
 	if (isChunkedResponse()) {
-		int n = u32toax(size, tmpBuf) - tmpBuf;
-		conn_->wrBuf_.write(tmpBuf, n);
-		conn_->wrBuf_.write(kStrEOL, sizeof(kStrEOL) - 1);
+		u32toax(len, tmpBuf);
+		conn_->wrBuf_.write(tmpBuf);
+		conn_->wrBuf_.write(kStrEOL);
 	}
 
-	conn_->wrBuf_.write(reinterpret_cast<const char *>(buf), size);
-	written_ += size;
+	conn_->wrBuf_.write(std::move(chunk));
+
+	written_ += len;
 	if (isChunkedResponse()) {
-		conn_->wrBuf_.write(kStrEOL, sizeof(kStrEOL) - 1);
+		conn_->wrBuf_.write(kStrEOL);
 	}
-	if (!size && !conn_->enableHttp11_) {
+	if (!len && !conn_->enableHttp11_) {
 		conn_->closeConn_ = true;
 	}
-	return size;
+	return len;
 }
+ssize_t ServerConnection::ResponseWriter::Write(string_view data) {
+	WrSerializer ser(conn_->wrBuf_.get_chunk());
+	ser << data;
+	return Write(ser.DetachChunk());
+}
+chunk ServerConnection::ResponseWriter::GetChunk() { return conn_->wrBuf_.get_chunk(); }
+
 bool ServerConnection::ResponseWriter::SetConnectionClose() {
 	conn_->closeConn_ = true;
 	return true;

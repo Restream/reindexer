@@ -2,6 +2,7 @@
 
 #include "comparatorimpl.h"
 #include "compositearraycomparator.h"
+#include "estl/fast_hash_set.h"
 
 namespace reindexer {
 
@@ -9,8 +10,8 @@ using reindexer::lower;
 class Comparator {
 public:
 	Comparator();
-	Comparator(CondType cond, KeyValueType type, const VariantArray &values, bool isArray, PayloadType payloadType, const FieldsSet &fields,
-			   void *rawData = nullptr, const CollateOpts &collateOpts = CollateOpts());
+	Comparator(CondType cond, KeyValueType type, const VariantArray &values, bool isArray, bool distinct, PayloadType payloadType,
+			   const FieldsSet &fields, void *rawData = nullptr, const CollateOpts &collateOpts = CollateOpts());
 	~Comparator();
 
 	bool Compare(const PayloadValue &lhs, int rowId);
@@ -21,6 +22,8 @@ public:
 protected:
 	bool compare(const Variant &kr) {
 		switch (kr.Type()) {
+			case KeyValueNull:
+				return cond_ == CondEmpty;
 			case KeyValueInt:
 				return cmpInt.Compare(cond_, static_cast<int>(kr));
 			case KeyValueBool:
@@ -42,6 +45,8 @@ protected:
 
 	bool compare(void *ptr) {
 		switch (type_) {
+			case KeyValueNull:
+				return cond_ == CondEmpty;
 			case KeyValueBool:
 				return cmpBool.Compare(cond_, *static_cast<bool *>(ptr));
 			case KeyValueInt:
@@ -58,6 +63,9 @@ protected:
 				abort();
 		}
 	}
+
+	inline
+	bool is_unique(const Variant& v) { return dist_ ? dist_->emplace(v).second : true; }
 
 	void setValues(const VariantArray &values);
 
@@ -79,7 +87,7 @@ protected:
 	FieldsSet fields_;
 	ComparatorImpl<PayloadValue> cmpComposite;
 	CompositeArrayComparator cmpEqualPosition;
-
+	shared_ptr<fast_hash_set<Variant>> dist_;
 	bool equalPositionMode = false;
 };
 

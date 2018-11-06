@@ -24,12 +24,12 @@ void Selecter::prepareVariants(FtSelectContext &ctx, FtDSLEntry &term, std::vect
 
 	vector<pair<std::wstring, search_engine::ProcType>> variantsUtf16{{term.pattern, kFullMatchProc}};
 
-	if (!cfg_.enableNumbersSearch || !term.opts.number) {
+	if (!holder_.cfg_->enableNumbersSearch || !term.opts.number) {
 		// Make translit and kblayout variants
-		if (cfg_.enableTranslit && holder_.searchers_.size() > 0 && !term.opts.exact) {
+		if (holder_.cfg_->enableTranslit && holder_.searchers_.size() > 0 && !term.opts.exact) {
 			holder_.searchers_[0]->Build(term.pattern.data(), term.pattern.length(), variantsUtf16);
 		}
-		if (cfg_.enableKbLayout && holder_.searchers_.size() > 1 && !term.opts.exact) {
+		if (holder_.cfg_->enableKbLayout && holder_.searchers_.size() > 1 && !term.opts.exact) {
 			holder_.searchers_[1]->Build(term.pattern.data(), term.pattern.length(), variantsUtf16);
 		}
 	}
@@ -69,9 +69,9 @@ Selecter::MergeData Selecter::Process(FtDSLQuery &dsl) {
 		res.term = term;
 
 		// Prepare term variants (original + translit + stemmed + kblayout)
-		this->prepareVariants(ctx, term, cfg_.stemmers);
+		this->prepareVariants(ctx, term, holder_.cfg_->stemmers);
 
-		if (cfg_.logLevel >= LogInfo) {
+		if (holder_.cfg_->logLevel >= LogInfo) {
 			string vars;
 			for (auto &variant : ctx.variants) {
 				if (&variant != &*ctx.variants.begin()) vars += ", ";
@@ -80,7 +80,7 @@ Selecter::MergeData Selecter::Process(FtDSLQuery &dsl) {
 			vars += "], typos: [";
 			typos_context tctx[kMaxTyposInWord];
 			if (term.opts.typos)
-				mktypos(tctx, term.pattern, cfg_.maxTyposInWord, cfg_.maxTypoLen, [&vars](const string &typo, int) {
+				mktypos(tctx, term.pattern, holder_.cfg_->maxTyposInWord, holder_.cfg_->maxTypoLen, [&vars](const string &typo, int) {
 					vars += typo;
 					vars += ", ";
 				});
@@ -134,21 +134,21 @@ void Selecter::processStepVariants(FtSelectContext &ctx, DataHolder::CommitStep 
 
 		auto it = ctx.foundWords.find(glbwordId);
 		if (it == ctx.foundWords.end() || it->second.first != ctx.rawResults.size() - 1) {
-			res.push_back({&holder_.getWordById(glbwordId, step).vids_, keyIt->first, proc, suffixes.virtual_word_len(suffixWordId)});
-			res.idsCnt_ += holder_.getWordById(glbwordId, step).vids_.size();
+			res.push_back({&holder_.getWordById(glbwordId).vids_, keyIt->first, proc, suffixes.virtual_word_len(suffixWordId)});
+			res.idsCnt_ += holder_.getWordById(glbwordId).vids_.size();
 			ctx.foundWords[glbwordId] = std::make_pair(ctx.rawResults.size() - 1, res.size() - 1);
-			if (cfg_.logLevel >= LogTrace)
+			if (holder_.cfg_->logLevel >= LogTrace)
 				logPrintf(LogTrace, " matched %s '%s' of word '%s', %d vids, %d%%", suffixLen ? "suffix" : "prefix", keyIt->first, word,
-						  int(holder_.getWordById(glbwordId, step).vids_.size()), proc);
+						  int(holder_.getWordById(glbwordId).vids_.size()), proc);
 			matched++;
-			vids += holder_.getWordById(glbwordId, step).vids_.size();
+			vids += holder_.getWordById(glbwordId).vids_.size();
 		} else {
 			if (ctx.rawResults[it->second.first][it->second.second].proc_ < proc)
 				ctx.rawResults[it->second.first][it->second.second].proc_ = proc;
 			skipped++;
 		}
 	} while ((keyIt++).lcp() >= int(tmpstr.length()));
-	if (cfg_.logLevel >= LogInfo)
+	if (holder_.cfg_->logLevel >= LogInfo)
 		logPrintf(LogInfo, "Lookup variant '%s' (%d%%), matched %d suffixes, with %d vids, skiped %d", tmpstr.c_str(), variant.proc,
 				  matched, vids, skipped);
 }
@@ -169,45 +169,47 @@ void Selecter::processVariants(FtSelectContext &ctx) {
 void Selecter::processTypos(FtSelectContext &ctx, FtDSLEntry &term) {
 	TextSearchResults &res = ctx.rawResults.back();
 
-	typos_context tctx[kMaxTyposInWord];
-	auto &typos = holder_.typos_;
-	int matched = 0, skiped = 0, vids = 0;
-	mktypos(tctx, term.pattern, cfg_.maxTyposInWord, cfg_.maxTypoLen, [&](const string &typo, int tcount) {
-		auto typoRng = typos.equal_range(typo);
-		tcount = cfg_.maxTyposInWord - tcount;
-		for (auto typoIt = typoRng.first; typoIt != typoRng.second; typoIt++) {
-			WordIdType wordIdglb = typoIt->second;
-			auto &step = holder_.GetStep(wordIdglb);
+	for (auto &step : holder_.steps) {
+		typos_context tctx[kMaxTyposInWord];
+		auto &typos = step.typos_;
+		int matched = 0, skiped = 0, vids = 0;
+		mktypos(tctx, term.pattern, holder_.cfg_->maxTyposInWord, holder_.cfg_->maxTypoLen, [&](const string &typo, int tcount) {
+			auto typoRng = typos.equal_range(typo);
+			tcount = holder_.cfg_->maxTyposInWord - tcount;
+			for (auto typoIt = typoRng.first; typoIt != typoRng.second; typoIt++) {
+				WordIdType wordIdglb = typoIt->second;
+				auto &step = holder_.GetStep(wordIdglb);
 
-			auto wordIdSfx = holder_.GetSuffixWordId(wordIdglb, step);
+				auto wordIdSfx = holder_.GetSuffixWordId(wordIdglb, step);
 
-			// bool virtualWord = suffixes_.is_word_virtual(wordId);
-			uint8_t wordLength = step.suffixes_.word_len_at(wordIdSfx);
-			int proc = kTypoProc - tcount * kTypoStepProc / std::max((wordLength - tcount) / 3, 1);
-			auto it = ctx.foundWords.find(wordIdglb);
-			if (it == ctx.foundWords.end()) {
-				res.push_back(
-					{&holder_.getWordById(wordIdglb, step).vids_, typoIt->first, proc, step.suffixes_.virtual_word_len(wordIdSfx)});
-				res.idsCnt_ += holder_.getWordById(wordIdglb, step).vids_.size();
-				ctx.foundWords.emplace(wordIdglb, std::make_pair(ctx.rawResults.size() - 1, res.size() - 1));
+				// bool virtualWord = suffixes_.is_word_virtual(wordId);
+				uint8_t wordLength = step.suffixes_.word_len_at(wordIdSfx);
+				int proc = kTypoProc - tcount * kTypoStepProc / std::max((wordLength - tcount) / 3, 1);
+				auto it = ctx.foundWords.find(wordIdglb);
+				if (it == ctx.foundWords.end()) {
+					res.push_back({&holder_.getWordById(wordIdglb).vids_, typoIt->first, proc, step.suffixes_.virtual_word_len(wordIdSfx)});
+					res.idsCnt_ += holder_.getWordById(wordIdglb).vids_.size();
+					ctx.foundWords.emplace(wordIdglb, std::make_pair(ctx.rawResults.size() - 1, res.size() - 1));
 
-				if (cfg_.logLevel >= LogTrace)
-					logPrintf(LogTrace, " matched typo '%s' of word '%s', %d ids, %d%%", typoIt->first, step.suffixes_.word_at(wordIdSfx),
-							  int(holder_.getWordById(wordIdglb, step).vids_.size()), proc);
-				++matched;
-				vids += holder_.getWordById(wordIdglb, step).vids_.size();
-			} else
-				++skiped;
-		}
-	});
-	if (cfg_.logLevel >= LogInfo) logPrintf(LogInfo, "Lookup typos, matched %d typos, with %d vids, skiped %d", matched, vids, skiped);
+					if (holder_.cfg_->logLevel >= LogTrace)
+						logPrintf(LogTrace, " matched typo '%s' of word '%s', %d ids, %d%%", typoIt->first,
+								  step.suffixes_.word_at(wordIdSfx), int(holder_.getWordById(wordIdglb).vids_.size()), proc);
+					++matched;
+					vids += holder_.getWordById(wordIdglb).vids_.size();
+				} else
+					++skiped;
+			}
+		});
+		if (holder_.cfg_->logLevel >= LogInfo)
+			logPrintf(LogInfo, "Lookup typos, matched %d typos, with %d vids, skiped %d", matched, vids, skiped);
+	}
 }
 
 double bound(double k, double weight, double boost) { return (1.0 - weight) + k * boost * weight; }
 
 void Selecter::debugMergeStep(const char *msg, int vid, float normBm25, float normDist, int finalRank, int prevRank) {
 #ifdef REINDEX_FT_EXTRA_DEBUG
-	if (cfg_.logLevel < LogTrace) return;
+	if (holder_.cfg_->logLevel < LogTrace) return;
 
 	vector<unique_ptr<string>> bufStrs;
 	auto fieldStrVec = this->getDocFields(*vdocs[vid].keyDoc, bufStrs);
@@ -244,8 +246,8 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 
 	for (auto &r : rawRes) {
 		auto idf = IDF(totalDocsCount, r.vids_->size());
-		auto termLenBoost = bound(rawRes.term.opts.boost, cfg_.termLenWeight, cfg_.termLenBoost);
-		if (cfg_.logLevel >= LogTrace) {
+		auto termLenBoost = bound(rawRes.term.opts.boost, holder_.cfg_->termLenWeight, holder_.cfg_->termLenBoost);
+		if (holder_.cfg_->logLevel >= LogTrace) {
 			logPrintf(LogTrace, "Pattern %s, idf %f, termLenBoost %f", r.pattern, idf, termLenBoost);
 		}
 
@@ -274,7 +276,7 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 										holder_.avgWordsCount_[field]);
 
 			// normalized bm25
-			auto normBm25 = bound(bm25, cfg_.bm25Weight, cfg_.bm25Boost);
+			auto normBm25 = bound(bm25, holder_.cfg_->bm25Weight, holder_.cfg_->bm25Boost);
 
 			// final term rank calculation
 			double termRank = fboost * r.proc_ * normBm25 * rawRes.term.opts.boost * termLenBoost;
@@ -298,7 +300,8 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 							distance = merged_rd[moffset].cur.distance(relid, INT_MAX);
 
 							// Normaized distance
-							normDist = bound(1.0 / double(std::max(distance, 1)), cfg_.distanceWeight, cfg_.distanceBoost);
+							normDist =
+								bound(1.0 / double(std::max(distance, 1)), holder_.cfg_->distanceWeight, holder_.cfg_->distanceBoost);
 						}
 						int finalRank = normDist * termRank;
 
@@ -327,7 +330,7 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 					}
 				}
 			}
-			if (int(merged.size()) < cfg_.mergeLimit && op == OpOr && !exists[vid]) {
+			if (int(merged.size()) < holder_.cfg_->mergeLimit && op == OpOr && !exists[vid]) {
 				// match of 1-st term
 				MergeInfo info;
 				info.id = vid;
@@ -377,11 +380,11 @@ Selecter::MergeData Selecter::mergeResults(vector<TextSearchResults> &rawResults
 		if (rawRes.term.opts.op == OpOr || !idsMaxCnt) idsMaxCnt += rawRes.idsCnt_;
 	}
 
-	merged.reserve(std::min(cfg_.mergeLimit, idsMaxCnt));
+	merged.reserve(std::min(holder_.cfg_->mergeLimit, idsMaxCnt));
 
 	if (rawResults.size() > 1) {
 		idoffsets.resize(vdocs.size());
-		merged_rd.reserve(std::min(cfg_.mergeLimit, idsMaxCnt));
+		merged_rd.reserve(std::min(holder_.cfg_->mergeLimit, idsMaxCnt));
 	}
 	rawResults[0].term.opts.op = OpOr;
 	for (auto &rawRes : rawResults) {
@@ -389,7 +392,7 @@ Selecter::MergeData Selecter::mergeResults(vector<TextSearchResults> &rawResults
 
 		if (rawRes.term.opts.op != OpNot) merged.mergeCnt++;
 	}
-	if (cfg_.logLevel >= LogInfo)
+	if (holder_.cfg_->logLevel >= LogInfo)
 		logPrintf(LogInfo, "Complex merge (%d patterns): out %d vids", int(rawResults.size()), int(merged.size()));
 
 	std::sort(merged.begin(), merged.end(), [](const MergeInfo &lhs, const MergeInfo &rhs) { return lhs.proc > rhs.proc; });

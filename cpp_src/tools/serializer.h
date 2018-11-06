@@ -13,6 +13,7 @@ namespace reindexer {
 using std::move;
 using std::string;
 struct p_string;
+class chunk;
 
 class Serializer {
 public:
@@ -43,6 +44,7 @@ protected:
 class WrSerializer {
 public:
 	WrSerializer();
+	WrSerializer(chunk &&);
 	WrSerializer(const WrSerializer &) = delete;
 	WrSerializer(WrSerializer &&other) : len_(other.len_), cap_(other.cap_) {
 		if (other.buf_ == other.inBuf_) {
@@ -86,7 +88,19 @@ public:
 
 	// Put slice with 4 bytes len header
 	void PutSlice(const string_view &slice);
-	void PutSlice(std::function<void()> func);
+
+	struct SliceHelper {
+		SliceHelper(WrSerializer *ser, size_t pos) : ser_(ser), pos_(pos) {}
+		SliceHelper(const WrSerializer &) = delete;
+		SliceHelper operator=(const WrSerializer &) = delete;
+		SliceHelper(SliceHelper &&other) noexcept : ser_(other.ser_), pos_(other.pos_) { other.ser_ = nullptr; };
+		~SliceHelper();
+
+		WrSerializer *ser_;
+		size_t pos_;
+	};
+
+	SliceHelper StartSlice();
 
 	// Put raw data
 	void PutUInt32(uint32_t);
@@ -177,6 +191,7 @@ public:
 	// Buffer manipulation functions
 	void Write(const string_view &buf);
 	uint8_t *Buf() const;
+	chunk DetachChunk();
 	void Reset() { len_ = 0; }
 	size_t Len() const { return len_; }
 	void Reserve(size_t cap);

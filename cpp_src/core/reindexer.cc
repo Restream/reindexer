@@ -15,10 +15,10 @@ Error Reindexer::OpenNamespace(const string& name, const StorageOpts& storage, C
 }
 Error Reindexer::DropNamespace(const string& _namespace) { return impl_->DropNamespace(_namespace); }
 Error Reindexer::CloseNamespace(const string& _namespace) { return impl_->CloseNamespace(_namespace); }
-Error Reindexer::Insert(const string& _namespace, Item& item) { return impl_->Insert(_namespace, item); }
-Error Reindexer::Update(const string& _namespace, Item& item) { return impl_->Update(_namespace, item); }
-Error Reindexer::Upsert(const string& _namespace, Item& item) { return impl_->Upsert(_namespace, item); }
-Error Reindexer::Delete(const string& _namespace, Item& item) { return impl_->Delete(_namespace, item); }
+Error Reindexer::Insert(const string& _namespace, Item& item, Completion cmpl) { return impl_->Insert(_namespace, item, cmpl); }
+Error Reindexer::Update(const string& _namespace, Item& item, Completion cmpl) { return impl_->Update(_namespace, item, cmpl); }
+Error Reindexer::Upsert(const string& _namespace, Item& item, Completion cmpl) { return impl_->Upsert(_namespace, item, cmpl); }
+Error Reindexer::Delete(const string& _namespace, Item& item, Completion cmpl) { return impl_->Delete(_namespace, item, cmpl); }
 Item Reindexer::NewItem(const string& _namespace) { return impl_->NewItem(_namespace); }
 Error Reindexer::GetMeta(const string& _namespace, const string& key, string& data) { return impl_->GetMeta(_namespace, key, data); }
 Error Reindexer::PutMeta(const string& _namespace, const string& key, const string_view& data) {
@@ -26,8 +26,8 @@ Error Reindexer::PutMeta(const string& _namespace, const string& key, const stri
 }
 Error Reindexer::EnumMeta(const string& _namespace, vector<string>& keys) { return impl_->EnumMeta(_namespace, keys); }
 Error Reindexer::Delete(const Query& q, QueryResults& result) { return impl_->Delete(q, result); }
-Error Reindexer::Select(const string_view& query, QueryResults& result) { return impl_->Select(query, result); }
-Error Reindexer::Select(const Query& q, QueryResults& result) { return impl_->Select(q, result); }
+Error Reindexer::Select(const string_view& query, QueryResults& result, Completion cmpl) { return impl_->Select(query, result, cmpl); }
+Error Reindexer::Select(const Query& q, QueryResults& result, Completion cmpl) { return impl_->Select(q, result, cmpl); }
 Error Reindexer::Commit(const string& _namespace) { return impl_->Commit(_namespace); }
 Error Reindexer::AddIndex(const string& _namespace, const IndexDef& idx) { return impl_->AddIndex(_namespace, idx); }
 Error Reindexer::UpdateIndex(const string& _namespace, const IndexDef& idx) { return impl_->UpdateIndex(_namespace, idx); }

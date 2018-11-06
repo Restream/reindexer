@@ -211,7 +211,8 @@ Error ReindexerImpl::closeNamespace(const string& _namespace, bool dropStorage) 
 	return errOK;
 }
 
-Error ReindexerImpl::Insert(const string& nsName, Item& item) {
+Error ReindexerImpl::Insert(const string& nsName, Item& item, Completion cmpl) {
+	Error err;
 	try {
 		auto ns = getNamespace(nsName);
 		ns->Insert(item);
@@ -219,13 +220,15 @@ Error ReindexerImpl::Insert(const string& nsName, Item& item) {
 			updateSystemNamespace(nsName, item);
 			observers_.OnModifyItem(nsName, item.impl_, ModeInsert);
 		}
-	} catch (const Error& err) {
-		return err;
+	} catch (const Error& e) {
+		err = e;
 	}
-	return errOK;
+	if (cmpl) cmpl(err);
+	return err;
 }
 
-Error ReindexerImpl::Update(const string& nsName, Item& item) {
+Error ReindexerImpl::Update(const string& nsName, Item& item, Completion cmpl) {
+	Error err;
 	try {
 		auto ns = getNamespace(nsName);
 		ns->Update(item);
@@ -233,13 +236,15 @@ Error ReindexerImpl::Update(const string& nsName, Item& item) {
 			updateSystemNamespace(nsName, item);
 			observers_.OnModifyItem(nsName, item.impl_, ModeUpdate);
 		}
-	} catch (const Error& err) {
-		return err;
+	} catch (const Error& e) {
+		err = e;
 	}
-	return errOK;
+	if (cmpl) cmpl(err);
+	return err;
 }
 
-Error ReindexerImpl::Upsert(const string& nsName, Item& item) {
+Error ReindexerImpl::Upsert(const string& nsName, Item& item, Completion cmpl) {
+	Error err;
 	try {
 		auto ns = getNamespace(nsName);
 		ns->Upsert(item);
@@ -247,10 +252,11 @@ Error ReindexerImpl::Upsert(const string& nsName, Item& item) {
 			updateSystemNamespace(nsName, item);
 			observers_.OnModifyItem(nsName, item.impl_, ModeUpsert);
 		}
-	} catch (const Error& err) {
-		return err;
+	} catch (const Error& e) {
+		err = e;
 	}
-	return errOK;
+	if (cmpl) cmpl(err);
+	return err;
 }
 
 Item ReindexerImpl::NewItem(const string& _namespace) {
@@ -292,15 +298,17 @@ Error ReindexerImpl::EnumMeta(const string& _namespace, vector<string>& keys) {
 	return errOK;
 }
 
-Error ReindexerImpl::Delete(const string& nsName, Item& item) {
+Error ReindexerImpl::Delete(const string& nsName, Item& item, Completion cmpl) {
+	Error err;
 	try {
 		auto ns = getNamespace(nsName);
 		ns->Delete(item);
 		observers_.OnModifyItem(nsName, item.impl_, ModeDelete);
-	} catch (const Error& err) {
-		return err;
+	} catch (const Error& e) {
+		err = e;
 	}
-	return errOK;
+	if (cmpl) cmpl(err);
+	return err;
 }
 Error ReindexerImpl::Delete(const Query& q, QueryResults& result) {
 	try {
@@ -314,16 +322,18 @@ Error ReindexerImpl::Delete(const Query& q, QueryResults& result) {
 	return errOK;
 }
 
-Error ReindexerImpl::Select(const string_view& query, QueryResults& result) {
+Error ReindexerImpl::Select(const string_view& query, QueryResults& result, Completion cmpl) {
+	Error err = errOK;
 	try {
 		Query q;
 		q.FromSQL(query);
-		return Select(q, result);
+		err = Select(q, result);
 
-	} catch (const Error& err) {
-		return err;
+	} catch (const Error& e) {
+		err = e;
 	}
 
+	if (cmpl) cmpl(err);
 	return errOK;
 }
 
@@ -339,7 +349,7 @@ struct ItemRefLess {
 	}
 };
 
-Error ReindexerImpl::Select(const Query& q, QueryResults& result) {
+Error ReindexerImpl::Select(const Query& q, QueryResults& result, Completion cmpl) {
 	NsLocker locks;
 
 	Namespace::Ptr mainNs;
@@ -347,6 +357,7 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result) {
 	try {
 		mainNs = getNamespace(q._namespace);
 	} catch (const Error& err) {
+		if (cmpl) cmpl(err);
 		return err;
 	}
 
@@ -373,6 +384,7 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result) {
 
 		locks.Lock();
 	} catch (const Error& err) {
+		if (cmpl) cmpl(err);
 		return err;
 	}
 	calc.LockHit();
@@ -395,10 +407,12 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result) {
 				logPrintf(LogInfo, "Was lock upgrade in multi namespaces_ query. Retrying");
 				continue;
 			} else {
+				if (cmpl) cmpl(err);
 				return err;
 			}
 		}
 	}
+	if (cmpl) cmpl(errOK);
 	return errOK;
 }
 

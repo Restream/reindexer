@@ -1,8 +1,12 @@
 swagger: "2.0"
 info:
-  description: "This is a Reindexer."
+  description: |
+    **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
+    Reindexer's goal is to provide fast search with complex queries.
+    The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
+    Reindexer is fast.
   version: "1.10.0"
-  title: "Reindexer server"
+  title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
     url: "http://www.apache.org/licenses/LICENSE-2.0.html"
@@ -19,37 +23,21 @@ tags:
 - name: "queries"
   description: "Queries to reindexer (dsl/sql)"
 - name: "system"
-  description: "Get system information"
+  description: "System methods"
 schemes:
 - "http"
+produces:
+- "application/json"
+
 paths:
-  /check:
-    get:
-      tags:
-      - "system"
-      summary: "Get system information"
-      description: ""
-      operationId: "getSysInfo"
-      produces:
-      - "application/json"
-      responses:
-        200:
-          description: "successful operation"
-          schema:
-            $ref: "#/definitions/SysInfo"
-        400:
-          description: "Invalid arguments supplied"
   /db:
     post:
       tags:
       - "databases"
-      summary: "Create a database"
-      description: ""
+      summary: "Create new database"
+      description: |
+        This operation will create new database. If database is already exists, then error will be returned.
       operationId: "createDatabase"
-      consumes:
-      - "application/json"
-      produces:
-      - "application/json"
       parameters:
       - in: "body"
         name: "body"
@@ -60,16 +48,20 @@ paths:
       responses:
         200:
           description: "successful operation"
+          schema:
+            $ref: "#/definitions/StatusResponse"
         400:
           description: "Invalid parameters"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+
     get:
       tags:
       - "databases"
-      summary: "Databases list description"
-      description: ""
+      summary: "List available databases"
+      description: |
+        This operation will output list of all available databases
       operationId: "describeDatabases"
-      produces:
-      - "application/json"
       parameters:
       - name: "sort_order"
         in: "query"
@@ -85,39 +77,44 @@ paths:
             $ref: "#/definitions/Databases"
         400:
           description: "Invalid arguments supplied"
+          schema:
+            $ref: "#/definitions/StatusResponse"
 
   /db/{database}:
-      delete:
-        tags:
-        - "databases"
-        summary: "Drop database"
-        description: ""
-        operationId: "dropDatabase"
-        produces:
-        - "application/json"
-        parameters:
-        - name: "database"
-          in: "path"
-          type: "string"
-          description: "Database name"
-          required: true
-        responses:
-          200:
-            description: "successful operation"
-          400:
-            description: "Invalid arguments supplied"
+    delete:
+      tags:
+      - "databases"
+      summary: "Drop database"
+      description: |
+        This operation will remove complete database from memory and disk. 
+        All data, including namespaces, their documents and indexes will be erased. 
+        Can not be undone. USE WITH CAUTION.
+      operationId: "dropDatabase"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+        400:
+          description: "Invalid arguments supplied"
+          schema:
+            $ref: "#/definitions/StatusResponse"
 
   /db/{database}/namespaces:
     post:
       tags:
       - "namespaces"
-      summary: "Open or create namespace"
-      description: ""
+      summary: "Create namespace"
+      description: |
+        This operation will create new namespace in specified database.
+        If namespace is already exists, then operation do not nothing.
       operationId: "openNamespace"
-      consumes:
-      - "application/json"
-      produces:
-      - "application/json"
       parameters:
       - in: "body"
         name: "body"
@@ -133,16 +130,20 @@ paths:
       responses:
         200:
           description: "successful operation"
+          schema:
+            $ref: "#/definitions/StatusResponse"
         400:
           description: "Invalid parameters"
+          schema:
+            $ref: "#/definitions/StatusResponse"
     get:
       tags:
       - "namespaces"
-      summary: "Namespaces list description"
-      description: ""
+      summary: "List available namespaces"
+      description: |
+        This operation will list all availavle namespaces in specified database.
+        If database is not exists, then error will be returned.
       operationId: "describeNamespaces"
-      produces:
-      - "application/json"
       parameters:
       - name: "database"
         in: "path"
@@ -163,58 +164,66 @@ paths:
             $ref: "#/definitions/Namespaces"
         400:
           description: "Invalid arguments supplied"
+          schema:
+            $ref: "#/definitions/StatusResponse"
 
   /db/{database}/namespaces/{name}:
-      get:
-        tags:
-        - "namespaces"
-        summary: "Current namespace description"
-        description: ""
-        operationId: "describeCurrNamespace"
-        produces:
-        - "application/json"
-        parameters:
-        - name: "database"
-          in: "path"
-          type: "string"
-          description: "Database name"
-          required: true
-        - name: "name"
-          in: "path"
-          type: "string"
-          description: "Namespace name"
-          required: true
-        responses:
-          200:
-            description: "successful operation"
-            schema:
-              $ref: "#/definitions/Namespace"
-          400:
-            description: "Invalid arguments supplied"
-      delete:
-        tags:
-        - "namespaces"
-        summary: "Drop namespace"
-        description: ""
-        operationId: "dropNamespace"
-        produces:
-        - "application/json"
-        parameters:
-        - name: "database"
-          in: "path"
-          type: "string"
-          description: "Database name"
-          required: true
-        - name: "name"
-          in: "path"
-          type: "string"
-          description: "Namespace name"
-          required: true
-        responses:
-          200:
-            description: "successful operation"
-          400:
-            description: "Invalid arguments supplied"
+    get:
+      tags:
+      - "namespaces"
+      summary: "Get namespace description"
+      description: |
+        This operation will return specified namespace description, including options of namespace, and available indexes
+      operationId: "describeCurrNamespace"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "name"
+        in: "path"
+        type: "string"
+        description: "Namespace name"
+        required: true
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/Namespace"
+        400:
+          description: "Invalid arguments supplied"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+    delete:
+      tags:
+      - "namespaces"
+      summary: "Drop namespace"
+      description: |
+        This operation will delete completely namespace from memory and disk.
+        All documents, indexes and metadata from namespace will be removed.
+        Can not be undone. USE WITH CAUTION.
+      operationId: "dropNamespace"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "name"
+        in: "path"
+        type: "string"
+        description: "Namespace name"
+        required: true
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+        400:
+          description: "Invalid arguments supplied"
+          schema:
+            $ref: "#/definitions/StatusResponse"
 
   /db/{database}/namespaces/{name}/items:
     delete:
@@ -222,70 +231,14 @@ paths:
       - "items"
       summary: "Delete documents from namespace"
       operationId: "deleteItems"
-      produces:
-      - "application/json"
-      consumes:
-      - "application/json"
-      parameters:
-      - in: "body"
-        name: "body"
-        schema:
-          type: "object"
-        required: true
-      - name: "database"
-        in: "path"
-        type: "string"
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: "path"
-        type: "string"
-        description: "Namespace name"
-        required: true
-      responses:
-        200:
-          description: "successful operation"
-        400:
-          description: "Invalid status value"
-    post:
-      tags:
-      - "items"
-      summary: "Insert documents to namespace"
-      operationId: "postItems"
-      produces:
-      - "application/json"
-      consumes:
-      - "application/json"
-      parameters:
-      - in: "body"
-        name: "body"
-        schema:
-          type: "object"
-        required: true
-      - name: "database"
-        in: "path"
-        type: "string"
-        description: "Database name"
-        required: true
-      - name: "name"
-        in: "path"
-        type: "string"
-        description: "Namespace name"
-        required: true
-      responses:
-        200:
-          description: "successful operation"
-        400:
-          description: "Invalid status value"
-    put:
-      tags:
-      - "items"
-      summary: "Update documents in namespace"
-      operationId: "putItems"
-      produces:
-      - "application/json"
-      consumes:
-      - "application/json"
+      description: |
+        This operation will DELETE documents from namespace, by their primary keys.
+        Each document should be in request body as separate JSON object, e.g.
+        ```
+        {"id":100}
+        {"id":101}
+        ...
+        ```
       parameters:
       - in: "body"
         name: "body"
@@ -306,17 +259,94 @@ paths:
         200:
           description: "successful operation"
           schema:
-            $ref: '#/definitions/Items'
+            $ref: "#/definitions/UpdateResponse"
         400:
           description: "Invalid status value"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+    post:
+      tags:
+      - "items"
+      summary: "Insert documents to namespace"
+      operationId: "postItems"
+      description: |
+        This operation will INSERT documents to namespace, by their primary keys.
+        Each document should be in request body as separate JSON object, e.g.
+        ```
+        {"id":100, "name": "Pet"}
+        {"id":101, "name": "Dog"}
+        ...
+        ```
+      parameters:
+      - in: "body"
+        name: "body"
+        schema:
+          type: "object"
+        required: true
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "name"
+        in: "path"
+        type: "string"
+        description: "Namespace name"
+        required: true
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/UpdateResponse"
+        400:
+          description: "Invalid status value"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+    put:
+      tags:
+      - "items"
+      summary: "Update documents in namespace"
+      operationId: "putItems"
+      description: |
+        This operation will UPDATE documents in namespace, by their primary keys.
+        Each document should be in request body as separate JSON object, e.g.
+        ```
+        {"id":100, "name": "Pet"}
+        {"id":101, "name": "Dog"}
+        ...
+        ```
+      parameters:
+      - in: "body"
+        name: "body"
+        schema:
+          type: "object"
+        required: true
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "name"
+        in: "path"
+        type: "string"
+        description: "Namespace name"
+        required: true
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/UpdateResponse"
+        400:
+          description: "Invalid status value"
+          schema:
+            $ref: "#/definitions/StatusResponse"
     get:
       tags:
       - "items"
-      summary: "Items list description"
-      description: ""
+      summary: "Get documents from namespace"
       operationId: "getItems"
-      produces:
-      - "application/json"
+      description: |
+        This operation will select documents from namespace with specified filters, and sort them by specified sort order. Paging with limit and offset are supported.
       parameters:
       - name: "database"
         in: "path"
@@ -362,16 +392,17 @@ paths:
             $ref: '#/definitions/Items'
         400:
           description: "Invalid arguments supplied"
+          schema:
+            $ref: "#/definitions/StatusResponse"
 
   /db/{database}/namespaces/{name}/indexes:
     get:
       tags:
       - "indexes"
-      summary: "Indexes list description"
-      description: ""
+      summary: "List available indexes"
+      description: |
+        This operation will return list of available indexes, from specified database and namespace.
       operationId: "describeIndexes"
-      produces:
-      - "application/json"
       parameters:
       - name: "database"
         in: "path"
@@ -390,15 +421,16 @@ paths:
             $ref: "#/definitions/Indexes"
         400:
           description: "Invalid arguments supplied"
+          schema:
+            $ref: "#/definitions/StatusResponse"
     post:
       tags:
       - "indexes"
-      summary: "Insert index to namespace"
+      summary: "Add new index to namespace"
       operationId: "postIndex"
-      produces:
-      - "application/json"
-      consumes:
-      - "application/json"
+      description: |
+        This operation will create new index. If index is already exists with the different parameters, then error will be returned.
+        Operation is synchronious, so it can take long time, if namespace contains bunch of documents.
       parameters:
       - in: "body"
         name: "body"
@@ -419,18 +451,21 @@ paths:
       responses:
         200:
           description: "successful operation"
+          schema:
+            $ref: "#/definitions/StatusResponse"
         400:
           description: "Invalid status value"
+          schema:
+            $ref: "#/definitions/StatusResponse"
 
     put:
       tags:
       - "indexes"
       summary: "Update index in namespace"
       operationId: "putIndex"
-      produces:
-      - "application/json"
-      consumes:
-      - "application/json"
+      description: |
+        This operation will update index parameters. E.g. type of field or type of index.
+        Operation  is synchronious, so it can take long time, if namespace contains bunch of documents
       parameters:
       - in: "body"
         name: "body"
@@ -451,18 +486,22 @@ paths:
       responses:
         200:
           description: "successful operation"
+          schema:
+            $ref: "#/definitions/StatusResponse"
         400:
           description: "Invalid status value"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+
   /db/{database}/namespaces/{name}/indexes/{indexname}:
     delete:
       tags:
       - "indexes"
-      summary: "Delete index from namespace"
+      summary: "Drop index from namespace"
       operationId: "deleteIndex"
-      produces:
-      - "application/json"
-      consumes:
-      - "application/json"
+      description: |
+        This operation will remove index from namespace. No data will be erased.
+        Operation  is synchronious, so it can take long time, if namespace contains bunch of documents.
       parameters:
       - name: "database"
         in: "path"
@@ -482,8 +521,12 @@ paths:
       responses:
         200:
           description: "successful operation"
+          schema:
+            $ref: "#/definitions/StatusResponse"
         400:
           description: "Invalid status value"
+          schema:
+            $ref: "#/definitions/StatusResponse"
 
   /db/{database}/query:
     get:
@@ -491,8 +534,10 @@ paths:
       - "queries"
       summary: "Query documents from namespace"
       operationId: "getQuery"
-      produces:
-      - "application/json"
+      description: |
+        This opertaion queries documents from namespace by SQL query. Query can be preced by `EXPLAIN` statement, then query execution plan will be returned with query results. 
+        Two level paging is supported. At first, applied normal SQL `LIMIT` and `OFFSET`,
+        then `limit` and `offset` from http request.
       parameters:
       - name: "database"
         in: "path"
@@ -519,15 +564,15 @@ paths:
             $ref: '#/definitions/QueryItems'
         400:
           description: "Invalid status value"
+          schema:
+            $ref: "#/definitions/StatusResponse"
     post:
       tags:
       - "queries"
       summary: "Query documents from namespace"
       operationId: "postQuery"
-      produces:
-      - "application/json"
-      consumes:
-      - "application/json"
+      description: |
+        This opertaion queries documents from namespace by DSL query.
       parameters:
       - name: "database"
         in: "path"
@@ -547,15 +592,15 @@ paths:
             $ref: '#/definitions/QueryItems'
         400:
           description: "Invalid status value"
+          schema:
+            $ref: "#/definitions/StatusResponse"
     delete:
       tags:
       - "queries"
       summary: "Delete documents from namespace"
       operationId: "deleteQuery"
-      produces:
-      - "application/json"
-      consumes:
-      - "application/json"
+      description: |
+        This opertaion removes documents from namespace by DSL query.
       parameters:
       - name: "database"
         in: "path"
@@ -571,18 +616,18 @@ paths:
       responses:
         200:
           description: "successful operation"
-          schema:
-            $ref: '#/definitions/QueryItems'
         400:
           description: "Invalid status value"
+          schema:
+            $ref: "#/definitions/StatusResponse"
   /db/{database}/sqlquery:
     post:
       tags:
       - "queries"
       summary: "Query documents from namespace"
       operationId: "postSQLQuery"
-      produces:
-      - "application/json"
+      description: |
+        This opertaion queries documents from namespace by SQL query. Query can be preced by `EXPLAIN` statement, then query execution plan will be returned with query results. 
       parameters:
       - name: "database"
         in: "path"
@@ -602,6 +647,124 @@ paths:
             $ref: '#/definitions/QueryItems'
         400:
           description: "Invalid status value"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+  /check:
+    get:
+      tags:
+      - "system"
+      summary: "Get system information"
+      description: "This operation will return system informatiom about server version, uptime, and resources consumtion "
+      operationId: "getSysInfo"
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/SysInfo"
+        400:
+          description: "Invalid arguments supplied"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+
+  /db/{database}/namespaces/%23memstats/items:
+    get:
+      tags:
+      - "system"
+      summary: "Get memory stats information"
+      description: "This operation will return detailed informatiom about database memory consumption"
+      operationId: "getMemStats"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/DatabaseMemStats"
+        400:
+          description: "Invalid arguments supplied"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+
+  /db/{database}/namespaces/%23perfstats/items:
+    get:
+      tags:
+      - "system"
+      summary: "Get performance stats information"
+      description: "This operation will return detailed informatiom about database performance timings. By default performance stats is turned off."
+      operationId: "getPerfStats"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/DatabasePerfStats"
+        400:
+          description: "Invalid arguments supplied"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+
+  /db/{database}/namespaces/%23queriesperfstats/items:
+    get:
+      tags:
+      - "system"
+      summary: "Get SELECT queries performance stats information"
+      description: "This operation will return detailed informatiom about database memory consumption. By default qureis performance stat is turned off."
+      operationId: "getQueriesPerfStats"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/QueriesPerfStats"
+        400:
+          description: "Invalid arguments supplied"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+
+  /db/{database}/namespaces/%23config/items:
+    put:
+      tags:
+      - "system"
+      summary: "Update system config"
+      operationId: "putSystemConfig"
+      description: |
+        This operation will update system configuration:
+        - profiling configuration. It is used to enable recording of queries and overal performance;
+        - log queries configurating.
+      parameters:
+      - in: "body"
+        name: "body"
+        schema:
+          $ref: "#/definitions/SystemConfigItem"
+        required: true
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/UpdateResponse"
+        400:
+          description: "Invalid status value"
+          schema:
+            $ref: "#/definitions/StatusResponse"
 
 definitions:
   SysInfo:
@@ -633,9 +796,11 @@ definitions:
     properties:
       total_items:
          type: "integer"
+         description: "Total count of databases"
       items:
          type: "array"
          items:
+           description: "Name of database"
            type: "string"
 
   Database:
@@ -643,6 +808,8 @@ definitions:
     properties:
       name:
         type: "string"
+        pattern: "^[A-Za-z0-9_\\-]*$"
+        description: "Name of database"
 
   Namespaces:
     type: "object"
@@ -654,8 +821,10 @@ definitions:
           properties:
             name:
               type: "string"
+              description: "Name of namespace"
             storage_enabled:
               type: "boolean"
+              description: "If true, then documents will be stored to disc storage, else all data will be lost on server shutdown"
       total_items:
         type: "integer"
         description: "Total count of namespaces"
@@ -665,11 +834,14 @@ definitions:
     properties:
       name:
         type: "string"
+        description: "Name of namespace"
+        pattern: "^[A-Za-z0-9_\\-]*$"
       storage:
         type: "object"
         properties:
           enabled:
             type: "boolean"
+            description: "If true, then documents will be stored to disc storage, else all data will be lost on server shutdown"
       indexes:
         type: "array"
         items: 
@@ -677,10 +849,16 @@ definitions:
 
   Index:
     type: "object"
+    required:
+      - name
+      - json_paths
+      - field_type
+      - index_type
     properties:
       name: 
         description: "Name of index, can contains letters, digits and underscores"
         type: "string"
+        pattern: "^[A-Za-z0-9_\\-]*$"
         default: "id"
       json_paths:
         description: "Fields path in json object, e.g 'id' or 'subobject.field'. If index is 'composite' or 'is_array', than multiple json_paths can be specified, and index will get values from all specified fields."
@@ -688,6 +866,7 @@ definitions:
         items:
           type: "string"
           default: "id"
+        minItems: 1
       field_type:
         type: "string"
         description: "Field data type"
@@ -717,12 +896,15 @@ definitions:
       is_dense:
         description: "Reduces the index size. For hash and tree it will save ~8 bytes per unique key value. Useful for indexes with high selectivity, but for tree and hash indexes with low selectivity can seriously decrease update performance;"
         type: "boolean"
+        default: false
       is_sparse:
         description: "Value of index may not present in the document, and threfore, reduce data size but decreases speed operations on index"
         type: "boolean"
+        default: false
       collate_mode:
         type: "string"
         description: "String collate mode"
+        default: "none"
         enum:
         - "none"
         - "ascii"
@@ -731,18 +913,18 @@ definitions:
       sort_order_letters:
         type: "string"
         description: "Sort order letters"
+        default: ""
       config:
-        type: "object"
-        description: "Index configuration (fulltext)"
         $ref: "#/definitions/FulltextConfig"
 
   Query:
     type: "object"
+    required:
+      - namespace
     properties:
       namespace:
-        description: "Namespace name"
         type: "string"
-        required: true
+        description: "Namespace name"
       limit:
         description: "Maximum count of returned items"
         type: "integer"
@@ -756,9 +938,10 @@ definitions:
         description: "Ask query to calculate total documents, match condition"
         type: "string"
         enum:
-        - "disabled"
-        - "enabled"
-        - "cached"
+          - "disabled"
+          - "enabled"
+          - "cached"
+        default: "disabled"
       filters:
         type: "array"
         description: "Filter for results documents"
@@ -799,15 +982,17 @@ definitions:
         description: "Add query execution explain information"
         type: "boolean"
         default: false
+
   FilterDef:
     type: "object"
+    required:
+      - field
+      - cond
     properties:
       field:
-        required: true
-        description: "Field or index name for filter"
+        description: "Field json path or index name for filter"
         type: "string"
       cond:
-        required: true
         type: "string"
         description: "Condition operator"
         enum:
@@ -831,10 +1016,12 @@ definitions:
         type: "object"
 
   SortDef:
+    description: "Specifies results sorting order"
     type: "object"
+    required:
+      - field
     properties:
       field:
-        required: true
         type: "string"
         description: "Field or index name for sorting"
       values:
@@ -848,13 +1035,15 @@ definitions:
 
   JoinedDef:
     type: "object"
+    required:
+      - namespace
+      - on
+      - type
     properties:
       namespace:
-        required: true
         type: "string"
         description: "Namespace name"
       type:
-        required: true
         type: "string"
         description: "Join type"
         enum:
@@ -873,8 +1062,6 @@ definitions:
         items: 
           $ref: "#/definitions/FilterDef"
       sort:
-        type: "object"
-        description: "Specifies results sorting order"
         $ref: "#/definitions/SortDef"
       limit:
         type: "integer"
@@ -883,7 +1070,6 @@ definitions:
         type: "integer"
         description: "Offset of first returned item"
       on:
-        required: true
         type: "array"
         description: "Join ON statement"
         items: 
@@ -891,19 +1077,20 @@ definitions:
 
   OnDef:
     type: "object"
+    required:
+      - left_field
+      - right_field
+      - cond
     properties:
       left_field:
         description: "Field from left namespace (main query namespace)"
         type: "string"
-        required: true
       right_field:
         description: "Field from right namespace (joined query namespace)"
         type: "string"
-        required: true
       cond:
         type: "string"
         description: "Condition operator"
-        required: true
         enum:
         - "EQ"
         - "GT"
@@ -939,6 +1126,7 @@ definitions:
 
   FulltextConfig:
     type: "object"
+    description: "Fulltext Index configuration"
     properties:
       enable_translit:
         type: "boolean"
@@ -955,10 +1143,14 @@ definitions:
       log_level:
         type: "integer"
         default: 0
+        minimum: 0
+        maximum: 4
         description: "Log level of full text search engine"
       merge_limit:
         type: "integer"
         default: 20000
+        minimum: 0
+        maximum: 65535
         description: "Maximum documents count which will be processed in merge query results.  Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed"
       extra_word_symbols:
         type: "string"
@@ -977,61 +1169,99 @@ definitions:
           type: "string"
       bm25_boost:
         type: "number"
+        format: "float"
         default: 1.0
+        minimum: 0.0
+        maximum: 10.0
         description: "Boost of bm25 ranking"
       bm25_weight:
         type: "number"
+        format: "float"
         default: 0.5
+        minimum: 0.0
+        maximum: 1.0
         description: "Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to finl rank in 0 - 100% range"
       distance_boost:
         type: "number"
+        format: "float"
         default: 1.0
+        minimum: 0.0
+        maximum: 10.0
         description: "Boost of search query term distance in found document"
       distance_weght:
         type: "number"
+        format: "float"
         default: 0.5
+        minimum: 0.0
+        maximum: 1.0
         description: "Weight of search query terms distance in found document in final rank 0: distance will not change final rank. 1: distance will affect to final rank in 0 - 100% range"
       term_len_boost:
         type: "number"
+        format: "float"
         default: 1.0
+        minimum: 0.0
+        maximum: 10.0
         description: "Boost of search query term length"
       term_len_weght:
         type: "number"
+        format: "float"
         default: 0.3
+        minimum: 0.0
+        maximum: 1.0
         description: "Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range"
       min_relevancy:
         type: "number"
+        format: "float"
         default: 0.05
+        minimum: 0.0
+        maximum: 1.0
         description: "Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned "
       max_typos_in_word:
-        type: "number"
-        default: 1.0
+        type: "integer"
+        default: 1
+        minimum: 0
+        maximum: 2
         description: "Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 1 possible typo -It will seriously increase RAM usage, and decrease search speed"
       max_typo_len:
-        type: "number"
+        type: "integer"
         description: "Maximum word length for building and matching variants with typos."
         default: 15
+        minimum: 0
+        maximum: 100
+      max_rebuild_steps:
+        type: "integer"
+        description: "Maximum steps withou full rebuild of ft - more steps faster commit slower select - optimal about 15."
+        default: 50
+        minimum: 0
+        maximum: 500
+      max_step_size:
+        type: "integer"
+        description: "Maximum unique words to step"
+        default: 4000
+        minimum: 5
+        maximum: 1000000000
 
   Items:
     type: "object"
     properties:
       total_items:
-        description: "Total count of documents, returned by filters"
+        description: "Total count of documents, matched specified filters"
         type: "integer"
       items:
-         type: "array"
-         items:
-           type: "object"
+        type: "array"
+        description: "Documents, matched specified filters"
+        items:
+          type: "object"
   QueryItems:
     type: "object"
     properties:
       items:
         type: "array"
-        description: "Documents, returned by query"
+        description: "Documents, matched query"
         items:
           type: "object"
       query_total_items:
-        description: "Total count of documents, returned by query"
+        description: "Total count of documents, matched query"
         type: "integer"
       aggregations:
         type: "array"
@@ -1039,7 +1269,6 @@ definitions:
         items:
           $ref: "#/definitions/AggregationResDef"
       explain:
-        description: "Query execution explainings"
         $ref: "#/definitions/ExplainDef"
 
   Indexes:
@@ -1075,7 +1304,7 @@ definitions:
       sort_index: 
         type: "string"
         description: "Index, which used for sort results"
-      selectotors:
+      selectors:
         type: "array"
         description: "Filter selectos, used to proccess query conditions"
         items:
@@ -1126,3 +1355,296 @@ definitions:
             count: 
               type: "integer"
               description: "Count of elemens this field value"
+
+  StatusResponse:
+    type: "object"
+    properties:
+      success:
+        type: "boolean"
+        description: "Status of operation"
+      response_code:
+        type: "integer"
+        enum: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+        description: >
+          Error code:
+           * 0 - errOK
+           * 1 - errParseSQL
+           * 2 - errQueryExec
+           * 3 - errParams
+           * 4 - errLogic
+           * 5 - errParseJson
+           * 6 - errParseDSL
+           * 7 - errConflict
+           * 8 - errParseBin
+           * 9 - errForbidden
+           * 10 - errWasRelock
+           * 11 - errNotValid
+           * 12 - errNetwork
+           * 13 - errNotFound
+           * 14 - errStateInvalidated
+      description:
+        type: "string"
+        description: "Text description of error details"
+
+  UpdateResponse:
+    type: "object"
+    properties:
+      updated:
+        description: "Count of updated items"
+        type: "integer"
+
+  DatabaseMemStats:
+    type: "object"
+    properties:
+      total_items:
+        description: "Total count of documents, matched specified filters"
+        type: "integer"
+      items:
+        type: "array"
+        description: "Documents, matched specified filters"
+        items:
+          $ref: "#/definitions/NamespaceMemStats"
+
+  NamespaceMemStats:
+    type: "object"
+    properties:
+      name:
+        type: "string"
+        description: "Name of namespace" 
+      items_count:
+        type: "integer"
+        description: "Total count of documents in namespace"
+      data_size:
+        type: "integer"
+        description: "Raw size of documents, stored in the namespace, except string fields"
+      updated_unix_nano:
+        type: "integer"
+        description: "[[deperecated]]. do not use"
+      storage_ok:
+        type: "boolean"
+        description: "Status of disk storage"
+      storage_path:
+        type: "boolean"
+        description: "Filesystem path to namespace storage"
+      total:
+        type: "object"
+        description: "Summary of total namespace memory consumption"
+        properties:
+          data_size:
+            type: "integer"
+            description: "Total memory size of stored documents, including system structures"
+          indexes_size:
+            type: "integer"
+            description: "Total memory consumption of namespace's indexes"
+          cache_size:
+            type: "integer"
+            description: "Total memory consumption of namespace's caches. e.g. idset and join caches"
+      join_cache:
+        $ref: "#/definitions/JoinCacheMemStats"
+      query_cache:
+        $ref: "#/definitions/QueryCacheMemStats"
+      indexes:
+        type: "array"
+        description: "Memory consumption of each namespace index"
+        items:
+          $ref: "#/definitions/IndexMemStat"
+
+  IndexMemStat:
+    type: "object"
+    properties:
+      name:
+        type: "string"
+        description: "Name of index. There are special index with name `-tuple`. It's stores original document's json structure with non indexe fields"
+      unique_keys_count:
+        type: "integer"
+        description: "Count of unique keys values stored in index"
+      idset_btree_size:
+        type: "integer"
+        description: "Total memory consumption of reverse index b-tree structures. For `dense` and `store` indexes always 0"
+      idset_plain_size:
+        type: "integer"
+        description: "Total memory consumption of reverse index vectors. For `store` ndexes always 0"
+      sort_orders_size:
+        type: "integer"
+        description: "Total memory consumption of SORT statement and `GT`, `LT` conditions optimized structures. Applicabe only to `tree` indexes"
+      idset_cache:
+        $ref: "#/definitions/IndexCacheMemStats"
+      fulltext_size:
+        type: "integer"
+        description: "Total memory consumption of fulltext search structures"
+
+  JoinCacheMemStats:
+    description: "Number of elements in join cache. Stores results of selects to right table by ON condition"
+    allOf: 
+      - $ref: "#/definitions/CacheMemStats"
+
+  QueryCacheMemStats:
+    description: "Number of elements in query cache. Stores results of SELECT COUNT(*) by Where conditions"
+    allOf: 
+      - $ref: "#/definitions/CacheMemStats"
+
+  IndexCacheMemStats:
+    description: "Number of elements in idset cache. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys"
+    allOf: 
+      - $ref: "#/definitions/CacheMemStats"
+
+  CacheMemStats:
+    type: "object"
+    properties:
+      total_size:
+        type: "integer"
+        description: "Total memory consumption by this cache"
+      items_count:
+        type: "integer"
+        description: "Count of used elements stored in this cache"
+      empty_count:
+        type: "integer"
+        description: "Count of empty elements slots in this cache"
+      hit_count_limit:
+        type: "integer"
+        description: "Number of hits of queries, to store results in cache"
+
+  DatabasePerfStats:
+    type: "object"
+    properties:
+      total_items:
+        description: "Total count of documents, matched specified filters"
+        type: "integer"
+      items:
+        type: "array"
+        description: "Documents, matched specified filters"
+        items:
+          $ref: "#/definitions/NamespacePerfStats"
+
+  NamespacePerfStats:
+    type: "object"
+    properties:
+      name:
+        type: "string"
+        description: "Name of namespace" 
+      updates:
+        $ref: "#/definitions/UpdatePerfStats"
+      selects:
+        $ref: "#/definitions/SelectPerfStats"
+      indexes:
+        type: "array"
+        description: "Memory consumption of each namespace index"
+        items:
+          type: "object"
+          properties:
+            name:
+              type: "string"
+              description: "Name of index"
+            updates:
+              $ref: "#/definitions/UpdatePerfStats"
+            selects:
+              $ref: "#/definitions/SelectPerfStats"
+  
+  CommonPerfStats:
+    type: "object"
+    properties:
+      total_queries_count:
+        type: "integer"
+        description: "Total count of queries to this object"
+      total_avg_latency_us:
+        type: "integer"
+        description: "Average latency (execution time) for queries to this object"
+      total_avg_lock_latency_us:
+        type: "integer"
+        description: "Average waiting time for acquiring lock to this object"
+      last_sec_qps:
+        type: "integer"
+        description: "Count of queries to this object, requested at last second"
+      total_sec_avg_latency_us:
+        type: "integer"
+        description: "Average latency (execution time) for queries to this object at last second"
+      last_sec_avg_lock_time_us:
+        type: "integer"
+        description: "Average waiting time for acquiring lock to this object at last second"
+
+  UpdatePerfStats:
+    description: "Performance statistics for update operations"
+    allOf: 
+      - $ref: "#/definitions/CommonPerfStats"
+
+  SelectPerfStats:
+    description: "Performance statistics for select operations"
+    allOf: 
+      - $ref: "#/definitions/CommonPerfStats"
+
+  QueriesPerfStats:
+    type: "object"
+    properties:
+      total_items:
+        description: "Total count of documents, matched specified filters"
+        type: "integer"
+      items:
+        type: "array"
+        description: "Documents, matched specified filters"
+        items:
+          $ref: "#/definitions/QueryPerfStats"
+
+  QueryPerfStats:
+    description: "Performance statistics per each query"
+    allOf: 
+      - $ref: "#/definitions/CommonPerfStats"
+      - type: "object"
+        properties:
+          query:
+            type: "string"
+            description: "SQL representation of query"
+
+  SystemConfigItem:
+    type: "object"
+    required:
+      - type
+    properties:
+      type: 
+        type: "string"
+        enum:
+        - profiling
+        - log_queries
+        default: "profiling"
+      profiling:
+        $ref: "#/definitions/ProfilingConfig"
+      log_queries:
+        type: "array"
+        items:
+          $ref: "#/definitions/LogQueriesConfig"
+    discriminator: "type"
+
+  ProfilingConfig:
+    type: "object"
+    properties:
+      memstats:
+        type: "boolean"
+        description: "Enables tracking memory statistics"
+        default: true
+      perfstats:
+        type: "boolean"
+        description: "Enables tracking overal perofrmance statistics"
+        default: false
+      queriesperfstats:
+        type: "boolean"
+        description: "Enables record queries perofrmance statistics"
+        default: false
+      queries_threshold_us:
+        type: "integer"
+        description: "Minimum query execution time to be recoreded in #queriesperfstats namespace"
+        default: 10
+
+  LogQueriesConfig:
+    type: "object"
+    properties:  
+      namespace:
+        type: "string"
+        description: "Name of namespace, or `*` for setting to all namespaces"
+      log_level:
+        type: "string"
+        description: "Log level of queries core logger"
+        enum:
+          - none
+          - error
+          - warning
+          - info
+          - trace

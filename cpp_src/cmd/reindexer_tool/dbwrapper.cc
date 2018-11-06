@@ -30,6 +30,18 @@ Error DBWrapper<_DB>::Connect(const string& dsn) {
 }
 
 template <typename _DB>
+DBWrapper<_DB>::~DBWrapper () {
+	for (;;) {
+		std::unique_lock<std::mutex> lck(mtx_);
+		if (waitingUpsertsCount_) {
+			condUpsertCompleted_.wait(lck);
+		} else {
+			break;
+		}
+	}
+}
+
+template <typename _DB>
 Error DBWrapper<_DB>::ProcessCommand(string command) {
 	LineParser parser(command);
 	auto token = parser.NextToken();
@@ -100,15 +112,35 @@ Error DBWrapper<_DB>::commandUpsert(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
 
-	auto nsName = unescapeName(parser.NextToken());
+	string nsName = unescapeName(parser.NextToken());
 
-	auto item = db_.NewItem(nsName);
-	if (!item.Status().ok()) return item.Status();
+	auto item = new typename _DB::ItemT(db_.NewItem(nsName));
 
-	auto err = item.Unsafe().FromJSON(const_cast<char*>(parser.CurPtr()));
-	if (!err.ok()) return err;
+	Error status = item->Status();
+	if (!status.ok()) {
+		delete item;
+		return status;
+	}
 
-	return db_.Upsert(nsName, item);
+	status = item->Unsafe().FromJSON(const_cast<char*>(parser.CurPtr()));
+	if (!status.ok()) {
+		delete item;
+		return status;
+	}
+
+	std::unique_lock<std::mutex> lck(mtx_);
+	if (++waitingUpsertsCount_ > 50) {
+		condUpsertCompleted_.wait(lck);
+	} else {
+		lck.unlock();
+	}
+
+	return db_.Upsert(nsName, *item, [this, item](const Error& /*err*/) {
+		delete item;
+		std::unique_lock<std::mutex> lck(mtx_);
+		waitingUpsertsCount_--;
+		condUpsertCompleted_.notify_one();
+	});
 }
 
 template <typename _DB>
@@ -154,21 +186,20 @@ Error DBWrapper<_DB>::commandDump(const string& command) {
 		doNsDefs = std::move(allNsDefs);
 	}
 
-	auto& file = output_();
-
-	file << "-- Reindexer DB backup file" << std::endl;
-	file << "-- VERSION 1.0" << std::endl;
-
 	reindexer::WrSerializer wrser;
+
+	wrser << "-- Reindexer DB backup file" << '\n';
+	wrser << "-- VERSION 1.0" << '\n';
+
 	for (auto& nsDef : doNsDefs) {
 		// skip system namespaces
 		if (nsDef.name.length() > 0 && nsDef.name[0] == '#') continue;
 
-		file << "-- Dumping namespace '" << nsDef.name << "' ..." << std::endl;
+		wrser << "-- Dumping namespace '" << nsDef.name << "' ..." << '\n';
 
-		wrser.Reset();
+		wrser << "\\NAMESPACES ADD " << escapeName(nsDef.name) << " ";
 		nsDef.GetJSON(wrser);
-		file << "\\NAMESPACES ADD " << escapeName(nsDef.name) << " " << wrser.Slice() << std::endl;
+		wrser << '\n';
 
 		vector<string> meta;
 		err = db_.EnumMeta(nsDef.name, meta);
@@ -179,7 +210,7 @@ Error DBWrapper<_DB>::commandDump(const string& command) {
 			err = db_.GetMeta(nsDef.name, mkey, mdata);
 			if (err) return err;
 
-			file << "\\META PUT " << escapeName(nsDef.name) << " " << escapeName(mkey) << " " << escapeName(mdata) << std::endl;
+			wrser << "\\META PUT " << escapeName(nsDef.name) << " " << escapeName(mkey) << " " << escapeName(mdata) << '\n';
 		}
 
 		typename _DB::QueryResultsT itemResults;
@@ -188,13 +219,17 @@ Error DBWrapper<_DB>::commandDump(const string& command) {
 		if (!err.ok()) return err;
 
 		for (auto it : itemResults) {
-			wrser.Reset();
 			if (!it.Status().ok()) return it.Status();
-
+			wrser << "\\UPSERT " << escapeName(nsDef.name) << ' ';
 			it.GetJSON(wrser, false);
-			file << "\\UPSERT " << escapeName(nsDef.name) << " " << wrser.Slice() << "\n";
+			wrser << '\n';
+			if (wrser.Len() > 0x100000) {
+				output_() << wrser.Slice();
+				wrser.Reset();
+			}
 		}
 	}
+	output_() << wrser.Slice();
 
 	return errOK;
 }
@@ -308,7 +343,6 @@ Error DBWrapper<_DB>::queryResultsToJson(ostream& o, const typename _DB::QueryRe
 	WrSerializer ser;
 	size_t i = 0;
 	for (auto it : r) {
-		ser.Reset();
 		Error err = it.GetJSON(ser, false);
 		if (!err.ok()) return err;
 
@@ -317,8 +351,13 @@ Error DBWrapper<_DB>::queryResultsToJson(ostream& o, const typename _DB::QueryRe
 			ser.Reset();
 			prettyPrintJSON(json, ser);
 		}
-		o << ser.Slice() << (++i == r.Count() ? "\n" : ",\n");
+		ser << (++i == r.Count() ? "\n" : ",\n");
+		if (ser.Len() > 0x100000) {
+			o << ser.Slice();
+			ser.Reset();
+		}
 	}
+	o << ser.Slice();
 	return errOK;
 }
 

@@ -1,4 +1,3 @@
-﻿
 #include "dataprocessor.h"
 #include <chrono>
 #include <functional>
@@ -31,9 +30,10 @@ void DataProcessor::Process(bool multithread) {
 	auto &words = holder_.GetWords();
 
 	holder_.SetWordsOffset(words.size());
+	size_t wrdOffset = words.size();
 
 	auto found = BuildSuffix(words_um, holder_);
-	auto getWordByIdFunc = bind(&DataHolder::getWordById, &holder_, _1, holder_.steps.back());
+	auto getWordByIdFunc = bind(&DataHolder::getWordById, &holder_, _1);
 
 	// Step 4: Commit suffixes array. It runs in parallel with next step
 	auto &suffixes = holder_.GetSuffix();
@@ -46,7 +46,7 @@ void DataProcessor::Process(bool multithread) {
 	// Step 5: Normalize and sort idrelsets. It runs in parallel with next step
 	size_t idsetcnt = 0;
 
-	auto wIt = words.begin() + holder_.GetWordsOffset();
+	auto wIt = words.begin() + wrdOffset;
 
 	thread idrelsetCommitThread([&wIt, &found, getWordByIdFunc, &tm4, &idsetcnt, &words_um]() {
 		uint32_t i = 0;
@@ -76,7 +76,7 @@ void DataProcessor::Process(bool multithread) {
 	idrelsetCommitThread.join();
 
 	// Step 6: Build typos hash map
-	buildTyposMap(holder_.GetWordsOffset(), found);
+	buildTyposMap(wrdOffset, found);
 	// print(words_um);
 
 	auto tm5 = high_resolution_clock::now();
@@ -84,11 +84,12 @@ void DataProcessor::Process(bool multithread) {
 	auto tm6 = high_resolution_clock::now();
 
 	logPrintf(LogInfo, "FastIndexText built with [%d uniq words, %d typos, %dKB text size, %dKB suffixarray size, %dKB idrelsets size]",
-			  int(words_um.size()), int(holder_.typos_.size()), int(szCnt / 1024), int(suffixes.heap_size() / 1024), int(idsetcnt / 1024));
+			  int(words_um.size()), int(holder_.GetTypos().size()), int(szCnt / 1024), int(suffixes.heap_size() / 1024),
+			  int(idsetcnt / 1024));
 
 	logPrintf(LogInfo,
 			  "FastIndexText::Commit elapsed %d ms total [ build words %d ms, build typos %d ms | build suffixarry %d ms | sort "
-			  "idrelsets %d ms]",
+			  "idrelsets %d ms]\n",
 			  int(duration_cast<milliseconds>(tm6 - tm0).count()), int(duration_cast<milliseconds>(tm2 - tm0).count()),
 			  int(duration_cast<milliseconds>(tm5 - tm3).count()), int(duration_cast<milliseconds>(tm3 - tm2).count()),
 			  int(duration_cast<milliseconds>(tm4 - tm2).count()));
@@ -103,9 +104,7 @@ vector<WordIdType> DataProcessor::BuildSuffix(fast_hash_map<std::string, WordEnt
 
 	vector<WordIdType> found;
 
-	bool tryFindWords = holder_.NeedFind();
-
-	if (tryFindWords) found.reserve(words_um.size());
+	found.reserve(words_um.size());
 
 	for (auto keyIt = words_um.begin(); keyIt != words_um.end(); keyIt++) {
 		// if we still haven't whis word we add it to new suffix tree else we will only add info to current word
@@ -113,17 +112,16 @@ vector<WordIdType> DataProcessor::BuildSuffix(fast_hash_map<std::string, WordEnt
 		auto id = words.size();
 		// keyIt->second.vids_.Commit();
 		WordIdType pos;
-		if (tryFindWords) {
-			pos = holder_.findWord(keyIt->first);
-			found.push_back(pos);
-		}
-		if (tryFindWords && !pos.isEmpty()) {
+		pos = holder_.findWord(keyIt->first);
+		found.push_back(pos);
+
+		if (!pos.isEmpty()) {
 			continue;
 		}
 
 		words.emplace_back(PackedWordEntry());
 		pos = holder_.BuildWordId(id);
-		if (cfg_.enableNumbersSearch && keyIt->second.virtualWord) {
+		if (holder_.cfg_->enableNumbersSearch && keyIt->second.virtualWord) {
 			suffix.insert(keyIt->first, pos, kDigitUtfSizeof);
 		} else {
 			suffix.insert(keyIt->first, pos);
@@ -144,7 +142,7 @@ size_t DataProcessor::buildWordsMap(fast_hash_map<string, WordEntry> &words_um) 
 	};
 	unique_ptr<context[]> ctxs(new context[maxIndexWorkers]);
 
-	auto &cfg = cfg_;
+	auto &cfg = holder_.cfg_;
 	auto &vdocsTexts = holder_.vdocsTexts;
 	auto &vdocs = holder_.vdocs_;
 	// int fieldscount = std::max(1, int(this->fields_.size()));
@@ -164,7 +162,7 @@ size_t DataProcessor::buildWordsMap(fast_hash_map<string, WordEntry> &words_um) 
 					vdocs[vdocId].mostFreqWordCount.insert(vdocs[vdocId].mostFreqWordCount.begin(), fieldscount, 0.0);
 
 					for (size_t field = 0; field < vdocsTexts[j].size(); ++field) {
-						split(vdocsTexts[j][field].first, str, wrds, cfg.extraWordSymbols);
+						split(vdocsTexts[j][field].first, str, wrds, cfg->extraWordSymbols);
 						int rfield = vdocsTexts[j][field].second;
 						assert(rfield < fieldscount);
 
@@ -174,7 +172,7 @@ size_t DataProcessor::buildWordsMap(fast_hash_map<string, WordEntry> &words_um) 
 						for (auto w : wrds) {
 							insertPos++;
 							word.assign(w);
-							if (!word.length() || cfg.stopWords.find(word) != cfg.stopWords.end()) continue;
+							if (!word.length() || cfg->stopWords.find(word) != cfg->stopWords.end()) continue;
 
 							auto idxIt = ctx->words_um.find(word);
 							if (idxIt == ctx->words_um.end()) {
@@ -186,7 +184,7 @@ size_t DataProcessor::buildWordsMap(fast_hash_map<string, WordEntry> &words_um) 
 								vdocs[vdocId].mostFreqWordCount[rfield] = mfcnt;
 							}
 
-							if (cfg.enableNumbersSearch && is_number(word)) {
+							if (cfg->enableNumbersSearch && is_number(word)) {
 								buildVirtualWord(word, ctx->words_um, vdocId, field, insertPos, virtualWords);
 							}
 						}
@@ -230,7 +228,7 @@ size_t DataProcessor::buildWordsMap(fast_hash_map<string, WordEntry> &words_um) 
 	}
 
 	// Check and print potential stop words
-	if (cfg_.logLevel >= LogInfo) {
+	if (holder_.cfg_->logLevel >= LogInfo) {
 		string str;
 		for (auto &w : words_um) {
 			if (w.second.vids_.size() > vdocs.size() / 5) str += w.first + " ";
@@ -263,25 +261,28 @@ void DataProcessor::buildVirtualWord(const string &word, fast_hash_map<string, W
 }
 
 void DataProcessor::buildTyposMap(uint32_t startPos, const vector<WordIdType> &found) {
-	if (!cfg_.maxTyposInWord) {
+	if (!holder_.cfg_->maxTyposInWord) {
 		return;
 	}
 
 	typos_context tctx[kMaxTyposInWord];
-	auto &typos = holder_.typos_;
+	auto &typos = holder_.GetTypos();
 	auto &words_ = holder_.GetWords();
 	size_t wordsSize = !found.empty() ? found.size() : words_.size() - startPos;
-	typos.grow(wordsSize * (10 >> (cfg_.maxTyposInWord - 1)) / 2, wordsSize * 5 * (10 >> (cfg_.maxTyposInWord - 1)));
+
+    typos.reserve(wordsSize * (10 >> (holder_.cfg_->maxTyposInWord - 1)) / 2, wordsSize * 5 * (10 >> (holder_.cfg_->maxTyposInWord - 1)));
+
 	for (size_t i = 0; i < wordsSize; ++i) {
 		if (!found.empty() && !found[i].isEmpty()) {
 			continue;
 		}
 
 		auto wordId = holder_.BuildWordId(startPos);
-		mktypos(tctx, holder_.GetSuffix().word_at(holder_.GetSuffixWordId(wordId)), cfg_.maxTyposInWord, cfg_.maxTypoLen,
+		mktypos(tctx, holder_.GetSuffix().word_at(holder_.GetSuffixWordId(wordId)), holder_.cfg_->maxTyposInWord, holder_.cfg_->maxTypoLen,
 				[&typos, wordId](const string &typo, int) { typos.emplace(typo, wordId); });
 		startPos++;
 	}
+
 	typos.shrink_to_fit();
 }
 

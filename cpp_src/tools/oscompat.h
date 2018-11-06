@@ -37,9 +37,9 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <sys/uio.h>
 #include <unistd.h>
 #include "net/stat.h"
-
 #endif
 
 #include <sys/stat.h>

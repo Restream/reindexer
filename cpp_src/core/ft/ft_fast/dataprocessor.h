@@ -16,7 +16,7 @@ namespace reindexer {
 
 class DataProcessor {
 public:
-	DataProcessor(DataHolder& holder, FtFastConfig& cfg, size_t fieldSize) : holder_(holder), cfg_(cfg), fieldSize_(fieldSize) {}
+	DataProcessor(DataHolder& holder, size_t fieldSize) : holder_(holder), fieldSize_(fieldSize) {}
 
 	void Process(bool multithread);
 
@@ -40,7 +40,6 @@ private:
 	const CompositePair& GetPair(CompositePair* pair) { return *pair; }
 
 	DataHolder& holder_;
-	FtFastConfig& cfg_;
 	bool multithread_;
 	size_t fieldSize_;
 };

@@ -11,6 +11,8 @@ using std::vector;
 namespace reindexer {
 namespace client {
 
+using reindexer::net::cproto::RPCAnswer;
+
 RPCClient::RPCClient(const ReindexerConfig& config) : config_(config) {
 	stop_.set(loop_);
 	curConnIdx_ = -1;
@@ -87,12 +89,16 @@ Error RPCClient::OpenNamespace(const string& name, const StorageOpts& sopts) {
 
 Error RPCClient::DropNamespace(const string& name) { return getConn()->Call(cproto::kCmdDropNamespace, name).Status(); }
 Error RPCClient::CloseNamespace(const string& name) { return getConn()->Call(cproto::kCmdCloseNamespace, name).Status(); }
-Error RPCClient::Insert(const string& ns, Item& item) { return modifyItem(ns, item, ModeInsert); }
-Error RPCClient::Update(const string& ns, Item& item) { return modifyItem(ns, item, ModeUpdate); }
-Error RPCClient::Upsert(const string& ns, Item& item) { return modifyItem(ns, item, ModeUpsert); }
-Error RPCClient::Delete(const string& ns, Item& item) { return modifyItem(ns, item, ModeDelete); }
+Error RPCClient::Insert(const string& ns, Item& item, Completion cmpl) { return modifyItem(ns, item, ModeInsert, cmpl); }
+Error RPCClient::Update(const string& ns, Item& item, Completion cmpl) { return modifyItem(ns, item, ModeUpdate, cmpl); }
+Error RPCClient::Upsert(const string& ns, Item& item, Completion cmpl) { return modifyItem(ns, item, ModeUpsert, cmpl); }
+Error RPCClient::Delete(const string& ns, Item& item, Completion cmpl) { return modifyItem(ns, item, ModeDelete, cmpl); }
 
-Error RPCClient::modifyItem(const string& ns, Item& item, int mode) {
+Error RPCClient::modifyItem(const string& ns, Item& item, int mode, Completion cmpl) {
+	if (cmpl) {
+		return modifyItemAsync(ns, &item, mode, cmpl);
+	}
+
 	WrSerializer ser;
 	if (item.impl_->GetPrecepts().size()) {
 		ser.PutVarUint(item.impl_->GetPrecepts().size());
@@ -124,6 +130,46 @@ Error RPCClient::modifyItem(const string& ns, Item& item, int mode) {
 			return err;
 		}
 	}
+}
+
+Error RPCClient::modifyItemAsync(const string& ns, Item* item, int mode, Completion clientCompl) {
+	WrSerializer ser;
+	if (item->impl_->GetPrecepts().size()) {
+		ser.PutVarUint(item->impl_->GetPrecepts().size());
+		for (auto& p : item->impl_->GetPrecepts()) {
+			ser.PutVString(p);
+		}
+	}
+
+	getConn()->Call(
+		[this, ns, mode, item, clientCompl](const net::cproto::RPCAnswer& ret) -> void {
+			if (!ret.Status().ok()) {
+				if (ret.Status().code() != errStateInvalidated) return clientCompl(ret.Status());
+				// State invalidated - make select to update state
+				QueryResults* qr = new QueryResults;
+				Select(Query(ns).Limit(0), *qr, [=](const Error& ret) {
+					delete qr;
+					if (!ret.ok()) return clientCompl(ret);
+
+					// Rebuild item with new state
+					auto pNs = getNamespace(ns);
+					auto newImpl = new ItemImpl(pNs->payloadType_, pNs->tagsMatcher_);
+					Error err = newImpl->FromJSON(item->impl_->GetJSON());
+					newImpl->SetPrecepts(item->impl_->GetPrecepts());
+					item->impl_.reset(newImpl);
+					modifyItemAsync(ns, item, mode, clientCompl);
+				});
+			} else
+				try {
+					auto args = ret.GetArgs(2);
+					NSArray nsArray{getNamespace(ns)};
+					clientCompl(QueryResults(getConn(), nsArray, p_string(args[0]), int(args[1])).Status());
+				} catch (const Error& err) {
+					clientCompl(err);
+				}
+		},
+		cproto::kCmdModifyItem, ns, int(FormatCJson), item->GetCJSON(), mode, ser.Slice(), item->GetStateToken(), 0);
+	return errOK;
 }
 
 Item RPCClient::NewItem(const string& nsName) {
@@ -184,47 +230,72 @@ void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
 	return;
 }
 
-Error RPCClient::Select(const string_view& query, QueryResults& result) {
+Error RPCClient::Select(const string_view& query, QueryResults& result, Completion clientCompl) {
 	int flags = kResultsJson;
 	WrSerializer pser;
 	h_vector<int32_t, 4> vers;
 	vec2pack(vers, pser);
 
 	auto conn = getConn();
-	auto ret = conn->Call(cproto::kCmdSelectSQL, query, flags, INT_MAX, pser.Slice());
 
-	if (ret.Status().ok()) {
-		auto args = ret.GetArgs(2);
-		result = QueryResults(conn, {}, p_string(args[0]), int(args[1]));
+	QueryResults* pres = &result;
+	auto icompl = [&pres, conn, clientCompl](const RPCAnswer& ret) {
+		try {
+			if (ret.Status().ok()) {
+				auto args = ret.GetArgs(2);
+				*pres = QueryResults(conn, {}, p_string(args[0]), int(args[1]));
+			}
+
+			if (clientCompl) clientCompl(ret.Status());
+			return ret.Status();
+		} catch (const Error& err) {
+			if (clientCompl) clientCompl(err);
+			return err;
+		}
+	};
+
+	if (!clientCompl) {
+		auto ret = conn->Call(cproto::kCmdSelectSQL, query, flags, INT_MAX, pser.Slice());
+		return icompl(ret);
+	} else {
+		conn->Call(icompl, cproto::kCmdSelectSQL, query, flags, INT_MAX, pser.Slice());
+		return errOK;
 	}
-
-	return ret.Status();
 }
 
-Error RPCClient::Select(const Query& query, QueryResults& result) {
-	try {
-		int flags = kResultsWithPayloadTypes | kResultsCJson;
+Error RPCClient::Select(const Query& query, QueryResults& result, Completion clientCompl) {
+	WrSerializer qser, pser;
+	int flags = kResultsWithPayloadTypes | kResultsCJson;
+	NSArray nsArray;
+	query.Serialize(qser);
+	query.WalkNested(true, true, [this, &nsArray](const Query q) { nsArray.push_back(getNamespace(q._namespace)); });
+	h_vector<int32_t, 4> vers;
+	for (auto& ns : nsArray) vers.push_back(ns->tagsMatcher_.version() ^ ns->tagsMatcher_.stateToken());
+	vec2pack(vers, pser);
 
-		WrSerializer qser, pser;
-		query.Serialize(qser);
+	auto conn = getConn();
+	QueryResults* pres = &result;
 
-		NSArray nsArray;
-		query.WalkNested(true, true, [this, &nsArray](const Query q) { nsArray.push_back(getNamespace(q._namespace)); });
-
-		h_vector<int32_t, 4> vers;
-		for (auto& ns : nsArray) vers.push_back(ns->tagsMatcher_.version() ^ ns->tagsMatcher_.stateToken());
-		vec2pack(vers, pser);
-
-		auto conn = getConn();
-		auto ret = conn->Call(cproto::kCmdSelect, qser.Slice(), flags, 100, pser.Slice());
-
-		if (ret.Status().ok()) {
-			auto args = ret.GetArgs(2);
-			result = QueryResults(conn, nsArray, p_string(args[0]), int(args[1]));
+	auto icompl = [pres, conn, nsArray, clientCompl](const RPCAnswer& ret) {
+		try {
+			if (ret.Status().ok()) {
+				auto args = ret.GetArgs(2);
+				*pres = QueryResults(conn, nsArray, p_string(args[0]), int(args[1]));
+			}
+			if (clientCompl) clientCompl(ret.Status());
+			return ret.Status();
+		} catch (const Error& err) {
+			if (clientCompl) clientCompl(ret.Status());
+			return err;
 		}
-		return ret.Status();
-	} catch (const Error& err) {
-		return err;
+	};
+
+	if (!clientCompl) {
+		auto ret = conn->Call(cproto::kCmdSelect, qser.Slice(), flags, 100, pser.Slice());
+		return icompl(ret);
+	} else {
+		conn->Call(icompl, cproto::kCmdSelect, qser.Slice(), flags, 100, pser.Slice());
+		return errOK;
 	}
 }
 

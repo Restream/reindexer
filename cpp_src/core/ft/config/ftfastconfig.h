@@ -20,6 +20,9 @@ struct FtFastConfig : public BaseFTConfig {
 
 	int maxTyposInWord = 1;
 	int maxTypoLen = 15;
+
+	int maxRebuildSteps = 50;
+	int maxStepSize = 4000;
 };
 
 }  // namespace reindexer
