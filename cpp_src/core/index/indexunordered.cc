@@ -7,8 +7,9 @@ namespace reindexer {
 
 template <typename T>
 Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id) {
+	// reset cache
 	if (key.Type() == KeyValueNull) {
-		this->empty_ids_.Unsorted().Add(id, IdSet::Auto);
+		this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_);
 		// Return invalid ref
 		return Variant();
 	}
@@ -17,7 +18,7 @@ Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id) {
 	if (keyIt == this->idx_map.end()) {
 		keyIt = this->idx_map.insert({static_cast<typename T::key_type>(key), typename T::mapped_type()}).first;
 	}
-	keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto);
+	keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_);
 	markUpdated(&*keyIt);
 
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
@@ -102,8 +103,6 @@ void IndexUnordered<T>::tryIdsetCache(const VariantArray &keys, CondType conditi
 template <typename T>
 SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType condition, SortType sortId, Index::ResultType res_type,
 											  BaseFunctionCtx::Ptr ctx) {
-	++this->rawQueriesCount_;
-
 	if (res_type == Index::ForceComparator) return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, res_type, ctx);
 
 	SelectKeyResult res;
@@ -145,7 +144,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 				};
 
 				// Get from cache
-				if (res_type != Index::ForceIdset && keys.size() > 1) {
+				if (res_type != Index::ForceIdset && res_type != Index::DisableIdSetCache && keys.size() > 1) {
 					tryIdsetCache(keys, condition, sortId, selector, res);
 				} else
 					selector(res);
@@ -198,29 +197,22 @@ void IndexUnordered<T>::DumpKeys() {
 }
 
 template <typename T>
-bool IndexUnordered<T>::Commit(const CommitContext &ctx) {
-	if ((ctx.phases() & CommitContext::MakeIdsets) && this->allowedToCommit(ctx.phases())) {
-		// reset cache
-		if (!cache_ || !cache_->Empty()) cache_.reset(new IdSetCache());
+void IndexUnordered<T>::Commit() {
+	this->empty_ids_.Unsorted().Commit();
+	if (!tracker_.isUpdated()) return;
 
-		logPrintf(LogTrace, "IndexUnordered::Commit (%s) %d uniq keys, %d empty, %s", this->name_.c_str(), int(this->idx_map.size()),
-				  this->empty_ids_.Unsorted().size(), tracker_.completeUpdate_ ? "complete" : "partial");
+	logPrintf(LogTrace, "IndexUnordered::Commit (%s) %d uniq keys, %d empty, %s", this->name_.c_str(), int(this->idx_map.size()),
+			  this->empty_ids_.Unsorted().size(), tracker_.isCompleteUpdated() ? "complete" : "partial");
 
-		this->empty_ids_.Unsorted().Commit(ctx);
-		if (tracker_.completeUpdate_) {
-			for (auto &keyIt : this->idx_map) {
-				keyIt.second.Unsorted().Commit(ctx);
-				assert(keyIt.second.Unsorted().size());
-			}
-		} else {
-			tracker_.commitUpdated(idx_map, ctx);
+	if (tracker_.isCompleteUpdated()) {
+		for (auto &keyIt : this->idx_map) {
+			keyIt.second.Unsorted().Commit();
+			assert(keyIt.second.Unsorted().size());
 		}
-		tracker_.completeUpdate_ = false;
-		tracker_.updated_.clear();
-		this->resetQueriesCountTillCommit();
-		return true;
+	} else {
+		tracker_.commitUpdated(idx_map);
 	}
-	return false;
+	tracker_.clear();
 }
 
 template <typename T>
@@ -238,8 +230,7 @@ void IndexUnordered<T>::UpdateSortedIds(const UpdateSortedContext &ctx) {
 template <typename T>
 void IndexUnordered<T>::markUpdated(typename T::value_type *key) {
 	this->tracker_.markUpdated(this->idx_map, key);
-	this->resetQueriesCountTillCommit();
-	if (!cache_ || !cache_->Empty()) cache_.reset(new IdSetCache());
+	cache_->Clear();
 }
 
 template <typename T>

@@ -313,7 +313,7 @@ Error ServerImpl::daemonize() {
 
 Error ServerImpl::loggerConfigure() {
 	spdlog::drop_all();
-	spdlog::set_async_mode(4096, spdlog::async_overflow_policy::block_retry, nullptr, std::chrono::seconds(2));
+	spdlog::set_async_mode(16384, spdlog::async_overflow_policy::discard_log_msg, nullptr, std::chrono::seconds(2));
 	spdlog::set_level(spdlog::level::trace);
 
 	vector<pair<string, string>> loggers = {

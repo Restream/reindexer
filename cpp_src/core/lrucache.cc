@@ -80,13 +80,16 @@ void LRUCache<K, V, hash, equal>::eraseLRU() {
 	}
 }
 template <typename K, typename V, typename hash, typename equal>
-void LRUCache<K, V, hash, equal>::Invalidate() {
+bool LRUCache<K, V, hash, equal>::Clear() {
 	std::lock_guard<mutex> lk(lock_);
-
-	eraseCount_ += items_.size();
+	bool res = !items_.empty();
+	totalCacheSize_ = 0;
 	items_.clear();
 	lru_.clear();
-	totalCacheSize_ = 0;
+	getCount_ = 0;
+	putCount_ = 0;
+	eraseCount_ = 0;
+	return res;
 }
 
 template <typename K, typename V, typename hash, typename equal>

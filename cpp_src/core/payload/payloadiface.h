@@ -87,7 +87,8 @@ public:
 
 	// Compare 2 objects by field mask
 	int Compare(const T &other, const FieldsSet &fields, const CollateOpts &collateOpts = CollateOpts()) const;
-	int Compare(const T &other, const FieldsSet &fields, size_t &firstDifferentFieldIdx, const h_vector<CollateOpts, 1> &collateOpts) const;
+	int Compare(const T &other, const FieldsSet &fields, size_t &firstDifferentFieldIdx,
+				const h_vector<const CollateOpts *, 1> &collateOpts) const;
 
 	// Get PayloadFieldValue by field index
 	PayloadFieldValue Field(int field) const;

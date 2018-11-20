@@ -2,6 +2,7 @@
 #include <chrono>
 #include <functional>
 #include "core/aggregator.h"
+#include "core/index/index.h"
 #include "core/nsselecter/selectiterator.h"
 #include "core/query/query.h"
 #include "core/query/queryresults.h"
@@ -27,50 +28,43 @@ struct JoinedSelector {
 
 typedef vector<JoinedSelector> JoinedSelectors;
 
-class SelectLockUpgrader {
-public:
-	virtual ~SelectLockUpgrader() = default;
-	virtual void Upgrade() = 0;
-};
-
 struct SelectCtx {
-	explicit SelectCtx(const Query &query_, SelectLockUpgrader *lockUpgrader) : query(query_), lockUpgrader(lockUpgrader) {}
+	explicit SelectCtx(const Query &query_) : query(query_) {}
 	const Query &query;
 	JoinedSelectors *joinedSelectors = nullptr;
 
-	uint8_t nsid = 0;
-	bool isForceAll = false;
-	bool skipIndexesLookup = false;
-	SelectLockUpgrader *lockUpgrader;
 	SelectFunctionsHolder *functions = nullptr;
 	struct PreResult {
-		enum Mode { ModeBuild, ModeIterators, ModeIdSet };
+		enum Mode { ModeBuild, ModeIterators, ModeIdSet, ModeEmpty };
 
 		typedef shared_ptr<PreResult> Ptr;
 		IdSet ids;
-		h_vector<SelectIterator> iterators;
-		Mode mode;
-		SortingEntries sortBy;
+		h_vector<SelectIterator, 0> iterators;
+		Mode mode = ModeEmpty;
+		bool enableSortOrders = false;
 	};
 	struct SortingCtx {
 		struct Entry {
 			const SortingEntry *data = nullptr;
 			Index *index = nullptr;
-			bool isOrdered = true;
-			CollateOpts opts;
+			const CollateOpts *opts = nullptr;
 		};
 		h_vector<Entry, 1> entries;
-		int firstColumnSortId = 0;
+		Index *sortIndex() { return entries.empty() ? nullptr : entries[0].index; }
+		int sortId() { return sortIndex() ? sortIndex()->SortId() : 0; }
 	};
-	bool matchedAtLeastOnce = false;
-	bool reqMatchedOnceFlag = false;
 	PreResult::Ptr preResult;
 	SortingCtx sortingCtx;
+	uint8_t nsid = 0;
+	bool isForceAll = false;
+	bool skipIndexesLookup = false;
+	bool matchedAtLeastOnce = false;
+	bool reqMatchedOnceFlag = false;
+	bool enableSortOrders = false;
 };
 
 class NsSelecter {
 public:
-	typedef vector<JoinedSelector> JoinedSelectors;
 	NsSelecter(Namespace *parent) : ns_(parent) {}
 	struct RawQueryResult : public h_vector<SelectIterator> {};
 
@@ -80,9 +74,7 @@ private:
 	struct LoopCtx {
 		LoopCtx(SelectCtx &ctx) : sctx(ctx) {}
 		RawQueryResult *qres = nullptr;
-		bool ftIndex = false;
 		bool calcTotal = false;
-		int sortingCtxIdx = IndexValueType::NotSet;
 		SelectCtx &sctx;
 	};
 

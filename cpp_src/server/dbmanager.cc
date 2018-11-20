@@ -40,29 +40,37 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 		return status;
 	}
 
-	{
-		std::unique_lock<shared_timed_mutex> lck(mtx_);
-		auto it = dbs_.find(dbName);
-		if (it != dbs_.end()) {
-			auth.db_ = it->second;
-			return 0;
-		}
-		if (!canCreate) {
-			return Error(errParams, "Database '%s' not found", dbName.c_str());
-		}
-		if (auth.role_ < kRoleOwner) {
-			return Error(errForbidden, "Forbidden to create database %s", dbName.c_str());
-		}
-
-		if (!validateObjectName(dbName)) {
-			return Error(errParams, "Database name contains invalid character. Only alphas, digits,'_','-, are allowed");
-		}
-
-		status = loadOrCreateDatabase(dbName);
-		if (!status.ok()) {
-			return status;
-		}
+	smart_lock<shared_timed_mutex> lck(mtx_);
+	auto it = dbs_.find(dbName);
+	if (it != dbs_.end()) {
+		auth.db_ = it->second;
+		return 0;
 	}
+	lck.unlock();
+	lck = smart_lock<shared_timed_mutex>(mtx_, true);
+	it = dbs_.find(dbName);
+	if (it != dbs_.end()) {
+		auth.db_ = it->second;
+		return 0;
+	}
+
+	if (!canCreate) {
+		return Error(errParams, "Database '%s' not found", dbName.c_str());
+	}
+	if (auth.role_ < kRoleOwner) {
+		return Error(errForbidden, "Forbidden to create database %s", dbName.c_str());
+	}
+
+	if (!validateObjectName(dbName)) {
+		return Error(errParams, "Database name contains invalid character. Only alphas, digits,'_','-, are allowed");
+	}
+
+	status = loadOrCreateDatabase(dbName);
+	if (!status.ok()) {
+		return status;
+	}
+
+	lck.unlock();
 	return OpenDatabase(dbName, auth, false);
 }
 

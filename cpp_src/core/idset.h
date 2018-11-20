@@ -2,6 +2,7 @@
 
 #include <core/type_consts.h>
 #include <algorithm>
+#include <atomic>
 #include <string>
 #include "cpp-btree/btree_set.h"
 #include "estl/h_vector.h"
@@ -9,24 +10,6 @@
 namespace reindexer {
 using std::string;
 using std::shared_ptr;
-
-class CommitContext {
-public:
-	virtual int getSortedIdxCount() const = 0;
-	virtual int phases() const = 0;
-	virtual ~CommitContext(){};
-
-	// Commit phases
-	enum Phase {
-		// Indexes shoud normalize their idsets (sort and remove deleted id and duplicates )
-		// Namespace will reset updated and deleted flags
-		MakeIdsets = 1,
-		// Make sort orders
-		MakeSortOrders = 4,
-		// Indexes should be ready for processing selects
-		PrepareForSelect = 8,
-	};
-};
 
 using base_idset = h_vector<IdType, 3>;
 
@@ -54,7 +37,8 @@ public:
 		Unordered  // Just add id, commit and erase is impossible
 	};
 
-	void Add(IdType id, EditMode editMode) {
+	void Add(IdType id, EditMode editMode, int sortedIdxCount) {
+		grow((size() + 1) * (sortedIdxCount + 1));
 		if (editMode == Unordered) {
 			push_back(id);
 			return;
@@ -70,10 +54,11 @@ public:
 		return d.second - d.first;
 	}
 
-	void Commit(const CommitContext &ctx);
+	void Commit();
 	bool IsCommited() const { return true; }
 	bool IsEmpty() const { return empty(); }
 	size_t BTreeSize() const { return 0; }
+	void ReserveForSorted(int sortedIdxCount) { reserve(size() * (sortedIdxCount + 1)); }
 	string Dump();
 };
 
@@ -87,18 +72,30 @@ class IdSet : public IdSetPlain {
 
 public:
 	typedef shared_ptr<IdSet> Ptr;
-	IdSet() {}
+	IdSet() : usingBtree_(false) {}
 	IdSet(const IdSet &other)
-		: IdSetPlain(other), set_(!other.set_ ? nullptr : new base_idsetset(*other.set_)), usingBtree_(other.usingBtree_) {}
+		: IdSetPlain(other), set_(!other.set_ ? nullptr : new base_idsetset(*other.set_)), usingBtree_(other.usingBtree_.load()) {}
+	IdSet(IdSet &&other) noexcept : IdSetPlain(std::move(other)), set_(std::move(other.set_)), usingBtree_(other.usingBtree_.load()) {}
 	IdSet &operator=(IdSet &&other) noexcept {
 		if (&other != this) {
-			IdSetPlain::operator=(other);
+			IdSetPlain::operator=(std::move(other));
 			set_ = std::move(other.set_);
-			usingBtree_ = std::move(other.usingBtree_);
+			usingBtree_ = other.usingBtree_.load();
 		}
 		return *this;
 	}
-	void Add(IdType id, EditMode editMode) {
+	IdSet &operator=(const IdSet &other) {
+		if (&other != this) {
+			IdSetPlain::operator=(other);
+			set_.reset(!other.set_ ? nullptr : new base_idsetset(*other.set_));
+			usingBtree_ = other.usingBtree_.load();
+		}
+		return *this;
+	}
+	void Add(IdType id, EditMode editMode, int sortedIdxCount) {
+		// Reserve extra space for sort orders data
+		grow(((set_ ? set_->size() : size()) + 1) * (sortedIdxCount + 1));
+
 		if (editMode == Unordered) {
 			assert(!set_);
 			push_back(id);
@@ -153,14 +150,15 @@ public:
 		}
 		return 0;
 	}
-	void Commit(const CommitContext &ctx);
+	void Commit();
 	bool IsCommited() const { return !usingBtree_; }
 	bool IsEmpty() const { return empty() && (!set_ || set_->empty()); }
 	size_t BTreeSize() const { return set_ ? sizeof(*set_.get()) + set_->size() * sizeof(int) : 0; }
+	void ReserveForSorted(int sortedIdxCount) { reserve(((set_ ? set_->size() : size())) * (sortedIdxCount + 1)); }
 
 protected:
 	std::unique_ptr<base_idsetset> set_;
-	bool usingBtree_ = false;
+	std::atomic<bool> usingBtree_;
 };
 
 using IdSetRef = span<IdType>;

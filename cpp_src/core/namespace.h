@@ -38,21 +38,6 @@ protected:
 	friend class NsSelectFuncInterface;
 	friend class ReindexerImpl;
 
-	class NSCommitContext : public CommitContext {
-	public:
-		NSCommitContext(const Namespace &ns, int phases, const FieldsSet *indexes = nullptr)
-			: ns_(ns), sorted_indexes_(ns_.getSortedIdxCount()), phases_(phases), indexes_(indexes) {}
-		int getSortedIdxCount() const override { return sorted_indexes_; }
-		int phases() const override { return phases_; }
-		const FieldsSet *indexes() const { return indexes_; }
-
-	protected:
-		const Namespace &ns_;
-		int sorted_indexes_;
-		int phases_;
-		const FieldsSet *indexes_;
-	};
-
 	class NSUpdateSortedContext : public UpdateSortedContext {
 	public:
 		NSUpdateSortedContext(const Namespace &ns, SortType curSortId)
@@ -126,7 +111,7 @@ public:
 	NamespacePerfStat GetPerfStat();
 	vector<string> EnumMeta();
 	void Delete(const Query &query, QueryResults &result);
-	void FlushStorage();
+	void BackgroundRoutine();
 	void CloseStorage();
 	void SetCacheMode(CacheMode cacheMode);
 
@@ -159,7 +144,7 @@ protected:
 	void updateTagsMatcherFromItem(ItemImpl *ritem, string &jsonSliceBuf);
 	void updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields);
 	void doDelete(IdType id);
-	void commit(const NSCommitContext &ctx, SelectLockUpgrader *lockUpgrader);
+	void commitIndexes();
 	void insertIndex(Index *newIndex, int idxNo, const string &realName);
 	void addIndex(const IndexDef &indexDef);
 	void updateIndex(const IndexDef &indexDef);
@@ -189,12 +174,16 @@ protected:
 	void GetIndsideFromJoinCache(JoinCacheRes &ctx);
 
 	const FieldsSet &pkFields();
+	void writeToStorage(const string_view &key, const string_view &data) {
+		std::unique_lock<std::mutex> lck(storage_mtx_);
+		updates_->Put(key, data);
+	}
 
 	IndexesStorage indexes_;
 	fast_hash_map<string, int, nocase_hash_str, nocase_equal_str> indexesNames_;
 	// All items with data
 	Items items_;
-	fast_hash_set<IdType> free_;
+	vector<IdType> free_;
 	// Namespace name
 	string name_;
 	// Payload types
@@ -209,11 +198,10 @@ protected:
 
 	shared_timed_mutex mtx_;
 	shared_timed_mutex cache_mtx_;
+	std::mutex storage_mtx_;
 
 	// Commit phases state
-	bool sortOrdersBuilt_;
-	std::atomic<int> sortedQueriesCount_;
-	FieldsSet preparedIndexes_, commitedIndexes_;
+	std::atomic<bool> sortOrdersBuilt_;
 
 	unordered_map<string, string> meta_;
 
@@ -233,8 +221,6 @@ private:
 
 	IdType createItem(size_t realSize);
 
-	void invalidateQueryCache();
-	void invalidateJoinCache();
 	JoinCache::Ptr joinCache_;
 	CacheMode cacheMode_;
 	bool needPutCacheMode_;
@@ -244,6 +230,8 @@ private:
 	LogLevel queriesLogLevel_;
 	int64_t lsnCounter_;
 	vector<std::unique_ptr<ItemImpl>> pool_;
+	std::atomic<bool> cancelCommit_;
+	std::atomic<int64_t> lastUpdateTime_;
 };
 
 }  // namespace reindexer

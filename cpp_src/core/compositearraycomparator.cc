@@ -43,7 +43,7 @@ bool CompositeArrayComparator::Compare(const PayloadValue &pv, const CollateOpts
 		bool isRegularIndex = fields_[j] != IndexValueType::SetByJsonPath && fields_[j] < pt_.NumFields();
 		if (isRegularIndex) {
 			pl.Get(fields_[j], vals.back());
-		} else  {
+		} else {
 			assert(tagsPathIdx < fields_.getTagsPathsLength());
 			pl.GetByJsonPath(fields_.getTagsPath(tagsPathIdx++), vals.back(), KeyValueUndefined);
 		}
@@ -92,7 +92,5 @@ bool CompositeArrayComparator::compareField(size_t field, const Variant &v, cons
 
 	return result;
 }
-
-bool CompositeArrayComparator::Empty() const { return ctx_.empty(); }
 
 }  // namespace reindexer

@@ -15,6 +15,7 @@
 #include "tools/errors.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
+#include "vendor/utf8cpp/utf8.h"
 
 using namespace std;
 using reindexer::Error;
@@ -122,11 +123,13 @@ public:
 	std::string RuRandString() {
 		string res;
 		uint8_t len = rand() % 20 + 4;
-		res.resize(len);
+		res.resize(len * 3);
+		auto it = res.begin();
 		for (int i = 0; i < len; ++i) {
 			int f = rand() % ru_letters.size();
-			res[i] = ru_letters[f];
+			it = utf8::append(ru_letters[f], it);
 		}
+		res.erase(it, res.end());
 		return res;
 	}
 	vector<int> RandIntVector(size_t size, int start, int range) {
@@ -141,7 +144,7 @@ public:
 public:
 	const string default_namespace = "test_namespace";
 	const string letters = "abcdefghijklmnopqrstuvwxyz";
-	const string ru_letters = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
+	const wstring ru_letters = L"абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
 
 	shared_ptr<Reindexer> reindexer;
 	bool verbose = false;

@@ -1,26 +1,16 @@
 #include "core/idset.h"
 #include <algorithm>
+#include "tools/errors.h"
 
 namespace reindexer {
-void IdSetPlain::Commit(const CommitContext& ctx) {
-	// reserve for sorted ids, to avoid allocation and race on UpdateSortOrders
-	reserve(size() * (ctx.getSortedIdxCount() + 1));
-}
+void IdSetPlain::Commit() {}
 
-void IdSet::Commit(const CommitContext& ctx) {
+void IdSet::Commit() {
 	if (!size() && set_) {
 		resize(0);
-		reserve(set_->size() * (ctx.getSortedIdxCount() + 1));
 		for (auto id : *set_) push_back(id);
-	} else {
-		auto sz = size();
-		auto expCap = sz * (ctx.getSortedIdxCount() + 1);
-		if (capacity() != expCap) {
-			resize(expCap);
-			shrink_to_fit();
-			resize(sz);
-		}
 	}
+
 	usingBtree_ = false;
 }
 

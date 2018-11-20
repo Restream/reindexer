@@ -16,6 +16,10 @@ using std::pair;
 
 namespace reindexer {
 
+static inline bool isalpha(char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
+static inline bool isdigit(char c) { return (c >= '0' && c <= '9'); }
+static inline char tolower(char c) { return (c >= 'A' && c <= 'Z') ? c + 'a' - 'A' : c; }
+
 template <typename Container>
 Container& split(const string& str, const string& delimiters, bool trimEmpty, Container& tokens) {
 	tokens.resize(0);
@@ -80,9 +84,7 @@ inline static int stoi(const string_view& sl) { return atoi(sl.data()); }
 bool validateObjectName(const string_view& name);
 LogLevel logLevelFromString(const string& strLogLevel);
 
-static bool inline iequals(const string_view& lhs, const string_view& rhs) {
-	return lhs.size() == rhs.size() && collateCompare(lhs, rhs, CollateOpts(CollateASCII)) == 0;
-}
+bool iequals(const string_view& lhs, const string_view& rhs);
 
 struct nocase_equal_str {
 	using is_transparent = void;

@@ -76,6 +76,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::ValueFlag<string> httpAddrF(netGroup, "PORT", "http listen host:port", {'p', "httpaddr"}, HTTPAddr, args::Options::Single);
 	args::ValueFlag<string> rpcAddrF(netGroup, "RPORT", "RPC listen host:port", {'r', "rpcaddr"}, RPCAddr, args::Options::Single);
 	args::ValueFlag<string> webRootF(netGroup, "PATH", "web root", {'w', "webroot"}, WebRoot, args::Options::Single);
+	args::Flag pprofF(netGroup, "", "Enable pprof http handler", {'f', "pprof"});
 
 	args::Group logGroup(parser, "Logging options");
 	args::ValueFlag<string> logLevelF(logGroup, "", "log level (none, warning, error, info, trace)", {'l', "loglevel"}, LogLevel,
@@ -84,6 +85,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::ValueFlag<string> coreLogF(logGroup, "", "Core log file", {"corelog"}, CoreLog, args::Options::Single);
 	args::ValueFlag<string> httpLogF(logGroup, "", "Http log file", {"httplog"}, HttpLog, args::Options::Single);
 	args::ValueFlag<string> rpcLogF(logGroup, "", "Rpc log file", {"rpclog"}, RpcLog, args::Options::Single);
+	args::Flag logAllocsF(netGroup, "", "Log operations allocs statistics", {'a', "allocs"});
 
 #ifndef _WIN32
 	args::Group unixDaemonGroup(parser, "Unix daemon options");
@@ -130,6 +132,8 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (coreLogF) CoreLog = args::get(coreLogF);
 	if (httpLogF) HttpLog = args::get(httpLogF);
 	if (rpcLogF) RpcLog = args::get(rpcLogF);
+	if (pprofF) DebugPprof = args::get(pprofF);
+	if (logAllocsF) DebugAllocs = args::get(logAllocsF);
 	return 0;
 }
 

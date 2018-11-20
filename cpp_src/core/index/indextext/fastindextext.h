@@ -21,7 +21,7 @@ public:
 	}
 	Index* Clone() override;
 	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) override final;
-	void Commit() override final;
+	void commitFulltext() override final;
 	IndexMemStat GetMemStat() override;
 	Variant Upsert(const Variant& key, IdType id) override final;
 	void Delete(const Variant& key, IdType id) override final;

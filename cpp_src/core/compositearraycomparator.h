@@ -13,7 +13,6 @@ public:
 	void BindField(int field, const VariantArray &values, CondType condType);
 	void BindField(const TagsPath &tagsPath, const VariantArray &values, CondType condType);
 	bool Compare(const PayloadValue &pv, const CollateOpts &collateOpts);
-	bool Empty() const;
 
 private:
 	bool compareField(size_t field, const Variant &v, const CollateOpts &collateOpts);

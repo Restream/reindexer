@@ -178,7 +178,7 @@ int HTTPServer::PostDatabase(http::Context &ctx) {
 }
 
 int HTTPServer::DeleteDatabase(http::Context &ctx) {
-	string dbName = ctx.request->urlParams[0].ToString();
+	string dbName = urldecode2(ctx.request->urlParams[0].ToString());
 
 	AuthContext dummyCtx;
 	AuthContext *actx = &dummyCtx;
@@ -332,6 +332,9 @@ int HTTPServer::GetItems(http::Context &ctx) {
 
 		if (sortOrder == "desc") {
 			querySer << " DESC";
+		} else if ((sortOrder.size() > 0) && (sortOrder != "asc")) {
+			http::HttpStatus httpStatus(http::StatusBadRequest, "Invalid `sort_order` parameter");
+			return jsonStatus(ctx, httpStatus);
 		}
 	}
 	querySer << " LIMIT " << limit << " OFFSET " << offset;
@@ -555,7 +558,7 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	router_.GET<HTTPServer, &HTTPServer::GetSQLQuery>("/api/v1/db/:db/query", this);
 	router_.POST<HTTPServer, &HTTPServer::PostQuery>("/api/v1/db/:db/query", this);
 	router_.POST<HTTPServer, &HTTPServer::PostSQLQuery>("/api/v1/db/:db/sqlquery", this);
-	router_.DELETE<HTTPServer, &HTTPServer::PostQuery>("/api/v1/db/:db/query", this);
+	router_.DELETE<HTTPServer, &HTTPServer::DeleteQuery>("/api/v1/db/:db/query", this);
 
 	router_.GET<HTTPServer, &HTTPServer::GetDatabases>("/api/v1/db", this);
 	router_.POST<HTTPServer, &HTTPServer::PostDatabase>("/api/v1/db", this);
@@ -729,7 +732,7 @@ shared_ptr<Reindexer> HTTPServer::getDB(http::Context &ctx, UserRole role) {
 	(void)ctx;
 	shared_ptr<Reindexer> db;
 
-	string dbName = ctx.request->urlParams[0].ToString();
+	string dbName = urldecode2(ctx.request->urlParams[0].ToString());
 
 	AuthContext dummyCtx;
 

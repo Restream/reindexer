@@ -95,7 +95,7 @@ void parseStringArray(JsonValue& stringArray, h_vector<T, holdSize>& array) {
 }
 
 void parseSortEntry(JsonValue& entry, Query& q) {
-	checkJsonValueType(entry, "Joined", JSON_OBJECT);
+	checkJsonValueType(entry, "Sort", JSON_OBJECT);
 	SortingEntry sortingEntry;
 	for (auto subelement : entry) {
 		auto& v = subelement->value;
@@ -117,7 +117,9 @@ void parseSortEntry(JsonValue& entry, Query& q) {
 				break;
 		}
 	}
-	q.sortingEntries_.push_back(std::move(sortingEntry));
+	if (!sortingEntry.column.empty()) {
+		q.sortingEntries_.push_back(std::move(sortingEntry));
+	}
 }
 
 void parseSort(JsonValue& v, Query& q) {

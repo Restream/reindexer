@@ -28,6 +28,7 @@ public:
 		reference operator*() { return unpack(); }
 		bool operator!=(const iterator& rhs) const { return it_ != rhs.it_; }
 		bool operator==(const iterator& rhs) const { return it_ == rhs.it_; }
+		size_t pos() { return it_ - pv_->data_.begin(); }
 
 	protected:
 		reference unpack() {
@@ -53,6 +54,12 @@ public:
 		data_.resize(p + data_.size());
 		size_++;
 	}
+
+	void erase_back(size_t pos) {
+		for (auto it = iterator(this, data_.begin() + pos); it != end(); ++it) size_--;
+		data_.resize(pos);
+	}
+
 	size_type size() const { return size_; }
 
 	template <typename InputIterator>

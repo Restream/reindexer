@@ -44,7 +44,7 @@ func (db *Reindexer) modifyItem(namespace string, ns *reindexerNamespace, item i
 		if err != nil {
 			rerr, ok := err.(bindings.Error)
 			if ok && rerr.Code() == bindings.ErrStateInvalidated {
-				db.Query(ns.name).Limit(0).Exec()
+				db.Query(ns.name).Limit(0).Exec().Close()
 				err = rerr
 				continue
 			}

@@ -260,7 +260,7 @@ bool PayloadIface<T>::IsEQ(const T &other, const FieldsSet &fields) const {
 
 template <typename T>
 int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, size_t &firstDifferentFieldIdx,
-							 const h_vector<CollateOpts, 1> &collateOpts) const {
+							 const h_vector<const CollateOpts *, 1> &collateOpts) const {
 	size_t tagPathIdx = 0;
 	VariantArray krefs1, krefs2;
 	PayloadIface<const T> o(t_, other);
@@ -270,9 +270,9 @@ int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, size_t &fi
 	for (size_t i = 0; i < fields.size(); ++i) {
 		int cmpRes = 0;
 		const auto field(fields[i]);
-		const CollateOpts &opts(commonOpts ? collateOpts[0] : collateOpts[i]);
+		const CollateOpts *opts(commonOpts ? collateOpts[0] : collateOpts[i]);
 		if (field != IndexValueType::SetByJsonPath) {
-			cmpRes = Field(field).Get().Compare(o.Field(field).Get(), opts);
+			cmpRes = Field(field).Get().Compare(o.Field(field).Get(), opts ? *opts : CollateOpts());
 		} else {
 			assert(tagPathIdx < fields.getTagsPathsLength());
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
@@ -281,7 +281,7 @@ int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, size_t &fi
 
 			size_t length = std::min(krefs1.size(), krefs2.size());
 			for (size_t i = 0; i < length; ++i) {
-				cmpRes = krefs1[i].Compare(krefs2[i], opts);
+				cmpRes = krefs1[i].Compare(krefs2[i], opts ? *opts : CollateOpts());
 				if (cmpRes) break;
 			}
 			if (krefs1.size() < krefs2.size()) {
@@ -302,7 +302,7 @@ int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, size_t &fi
 template <typename T>
 int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, const CollateOpts &collateOpts) const {
 	size_t firstDifferentFieldIdx = 0;
-	return Compare(other, fields, firstDifferentFieldIdx, {collateOpts});
+	return Compare(other, fields, firstDifferentFieldIdx, {&collateOpts});
 }
 
 template <typename T>

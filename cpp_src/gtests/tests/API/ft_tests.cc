@@ -84,9 +84,7 @@ TEST_F(FTApi, DeleteTest) {
 
 	for (auto it : res) {
 		Item ritem(it.GetItem());
-		string val = ritem["ft1"].As<string>();
-		// printf("%s\n", val.c_str());
-		std::cout << val << std::endl;
+		std::cout << ritem["ft1"].As<string>() << std::endl;
 	}
 }
 

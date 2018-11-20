@@ -42,17 +42,7 @@ QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 
 QueryResults::~QueryResults() { unlockResults(); }
 
-void QueryResults::Clear() {
-	unlockResults();
-	items_.resize(0);
-	joined_.resize(0);
-	ctxs.resize(0);
-	totalCount = 0;
-	haveProcent = false;
-	nonCacheableData = false;
-	aggregationResults.resize(0);
-	explainResults.resize(0);
-}
+void QueryResults::Clear() { *this = QueryResults(); }
 
 void QueryResults::Erase(ItemRefVector::iterator start, ItemRefVector::iterator finish) {
 	assert(!lockedResults_);

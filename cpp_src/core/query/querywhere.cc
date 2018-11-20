@@ -81,18 +81,24 @@ static Variant token2kv(const token &tok, tokenizer &parser) {
 
 	auto text = tok.text();
 	bool digit = text.length() < 21;
+	bool flt = false;
 
 	unsigned i = 0;
 	if (text[i] == '+' || text[i] == '-') {
 		i++;
 	}
 	for (; i < text.length() && digit; i++) {
-		if (!isdigit(text[i])) digit = false;
+		if (text[i] == '.')
+			flt = true;
+		else if (!isdigit(text[i]))
+			digit = false;
 	}
 	if (digit && text.length()) {
 		char *p = 0;
-		int64_t d = strtoull(text.data(), &p, 10);
-		return Variant(d);
+		if (!flt)
+			return Variant(int64_t(strtoull(text.data(), &p, 10)));
+		else
+			return Variant(double(strtod(text.data(), &p)));
 	}
 	return Variant(make_key_string(text.data(), text.length()));
 }

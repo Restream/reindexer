@@ -26,8 +26,6 @@ public:
 	/// @param indexNo - number of index.
 	/// @return pointer to a function context or null if some error happened.
 	BaseFunctionCtx::Ptr CreateCtx(int indexNo);
-	/// Shows if the list of functions is empty.
-	bool Empty() const { return functions_.empty(); }
 
 private:
 	BaseFunctionCtx::Ptr createCtx(SelectFuncStruct& data, BaseFunctionCtx::Ptr ctx, IndexType index_type);

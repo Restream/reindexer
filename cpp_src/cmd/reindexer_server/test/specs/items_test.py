@@ -232,10 +232,7 @@ class ItemsTest(BaseTest):
 
         status, body = self.api_get_sorted_items(
             self.current_db, self.current_ns, sort_field, sort_dir)
-        self.assertEqual(True, status == self.API_STATUS['success'], body)
-
-        self.assertEqual(True, body['items'][0][sort_field]
-                         < body['items'][-1][sort_field], body)
+        self.assertEqual(False, status == self.API_STATUS['success'], body)
 
         sort_dir = ''
 

@@ -1,4 +1,4 @@
-#include "dataholder.h"
+﻿#include "dataholder.h"
 
 namespace reindexer {
 
@@ -105,6 +105,10 @@ void DataHolder::StartCommit(bool complte_updated) {
 	} else if (steps.back().suffixes_.word_size() < size_t(cfg_->maxStepSize)) {
 		status_ = RecommitLast;
 		words_.erase(words_.begin() + steps.back().wordOffset_, words_.end());
+
+		for (auto& word : words_) {
+			word.vids_.erase_back(word.cur_step_pos_);
+		}
 
 		steps.back().clear();
 	} else {

@@ -38,12 +38,16 @@ public:
 		if (enable_) tmStart = std::chrono::high_resolution_clock::now();
 	}
 	~QueryStatCalculator() {
-		auto time = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - tmStart);
-		if (enable_ && time >= threshold_) hitter_(false, time);
+		if (enable_) {
+			auto time = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - tmStart);
+			if (time >= threshold_) hitter_(false, time);
+		}
 	}
 	void LockHit() {
-		auto time = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - tmStart);
-		if (enable_ && time >= threshold_) hitter_(true, time);
+		if (enable_) {
+			auto time = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - tmStart);
+			if (time >= threshold_) hitter_(true, time);
+		}
 	}
 
 	std::chrono::time_point<std::chrono::high_resolution_clock> tmStart;

@@ -19,7 +19,7 @@ public:
 	void DumpKeys() override {}
 	SelectKeyResults SelectKey(const VariantArray &keys, CondType condition, SortType stype, ResultType res_type,
 							   BaseFunctionCtx::Ptr ctx) override;
-	bool Commit(const CommitContext &) override;
+	void Commit() override;
 	void UpdateSortedIds(const UpdateSortedContext & /*ctx*/) override {}
 	Index *Clone() override;
 	IndexMemStat GetMemStat() override;

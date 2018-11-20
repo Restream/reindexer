@@ -167,9 +167,9 @@ namespace reindexer {
 template <typename Mutex>
 class smart_lock {
 public:
-	smart_lock() : mtx_(nullptr), unique_(false) {}
+	smart_lock() : mtx_(nullptr), unique_(false), locked_(false) {}
 
-	smart_lock(Mutex& mtx, bool unique = false) : mtx_(&mtx), unique_(unique) {
+	smart_lock(Mutex& mtx, bool unique = false) : mtx_(&mtx), unique_(unique), locked_(true) {
 		if (unique_)
 			mtx_->lock();
 		else
@@ -181,6 +181,7 @@ public:
 	smart_lock(smart_lock&& other) {
 		mtx_ = other.mtx_;
 		unique_ = other.unique_;
+		locked_ = other.locked_;
 		other.mtx_ = nullptr;
 	};
 	smart_lock& operator=(smart_lock&& other) {
@@ -188,6 +189,7 @@ public:
 			unlock();
 			mtx_ = other.mtx_;
 			unique_ = other.unique_;
+			locked_ = other.locked_;
 			other.mtx_ = nullptr;
 		}
 		return *this;
@@ -195,17 +197,19 @@ public:
 	~smart_lock() { unlock(); }
 
 	void unlock() {
-		if (mtx_) {
+		if (mtx_ && locked_) {
 			if (unique_)
 				mtx_->unlock();
 			else
 				mtx_->unlock_shared();
 		}
+		locked_ = false;
 	}
 
 private:
 	Mutex* mtx_;
 	bool unique_;
+	bool locked_;
 };
 
 class dummy_mutex {

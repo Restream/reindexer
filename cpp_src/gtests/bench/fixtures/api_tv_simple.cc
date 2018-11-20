@@ -1,4 +1,5 @@
 #include "api_tv_simple.h"
+#include <thread>
 #include "allocs_tracker.h"
 #include "core/reindexer.h"
 
@@ -103,13 +104,9 @@ void ApiTvSimple::WarmUpIndexes(State& state) {
 		Error err;
 
 		// Ensure indexes complete build
-		for (int i = 0; i < 10; i++) {
-			QueryResults qres;
-			Query q(nsdef_.name);
-			q.Where("year", CondEq, 1).Sort("year", false).Limit(1);
-			err = db_->Select(q, qres);
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
-		}
+		// In current implementation - just wait
+		// Index build process is in background routine
+		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
 		for (size_t i = 0; i < packages_.size() * 3; i++) {
 			{

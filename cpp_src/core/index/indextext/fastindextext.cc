@@ -1,4 +1,4 @@
-#include "fastindextext.h"
+﻿#include "fastindextext.h"
 #include <chrono>
 #include <memory>
 #include <thread>
@@ -24,18 +24,21 @@ Index *FastIndexText<T>::Clone() {
 
 template <typename T>
 Variant FastIndexText<T>::Upsert(const Variant &key, IdType id) {
+	this->isBuilt_ = false;
 	if (key.Type() == KeyValueNull) {
-		this->empty_ids_.Unsorted().Add(id, IdSet::Auto);
+		this->empty_ids_.Unsorted().Add(id, IdSet::Auto, 0);
 		// Return invalid ref
 		return Variant();
 	}
+
+	this->cache_ft_->Clear();
 
 	auto keyIt = this->find(key);
 	if (keyIt == this->idx_map.end()) {
 		keyIt = this->idx_map.insert({static_cast<typename T::key_type>(key), typename T::mapped_type()}).first;
 		this->markUpdated(&*keyIt);
 	}
-	keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto);
+	keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, 0);
 
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
 		return IndexStore<typename T::key_type>::Upsert(key, id);
@@ -46,6 +49,7 @@ Variant FastIndexText<T>::Upsert(const Variant &key, IdType id) {
 
 template <typename T>
 void FastIndexText<T>::Delete(const Variant &key, IdType id) {
+	this->isBuilt_ = false;
 	int delcnt = 0;
 	if (key.Type() == KeyValueNull) {
 		delcnt = this->empty_ids_.Unsorted().Erase(id);
@@ -73,6 +77,7 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id) {
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
 		IndexStore<typename T::key_type>::Delete(key, id);
 	}
+	this->cache_ft_->Clear();
 }
 
 template <typename T>
@@ -152,20 +157,28 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
 	return mergedIds;
 }
 template <typename T>
-void FastIndexText<T>::Commit() {
-	this->holder_.StartCommit(this->tracker_.completeUpdate_);
+void FastIndexText<T>::commitFulltext() {
+	this->holder_.StartCommit(this->tracker_.isCompleteUpdated());
+
+	auto tm0 = high_resolution_clock::now();
+
 	if (this->holder_.status_ == FullRebuild) {
 		BuildVdocs(this->idx_map);
 	} else {
-		BuildVdocs(this->tracker_.updated_);
+		BuildVdocs(this->tracker_.updated());
 	}
+	auto tm1 = high_resolution_clock::now();
 
 	DataProcessor dp(this->holder_, this->fields_.size());
 	dp.Process(!this->opts_.IsDense());
-	if (this->holder_.NeedClear(this->tracker_.completeUpdate_)) {
-		this->tracker_.completeUpdate_ = false;
-		this->tracker_.updated_.clear();
+	if (this->holder_.NeedClear(this->tracker_.isCompleteUpdated())) {
+		this->tracker_.clear();
 	}
+	auto tm2 = high_resolution_clock::now();
+
+	logPrintf(LogInfo, "FastIndexText::Commit elapsed %d ms total [ build vdocs %d ms,  process data %d ms ]\n",
+			  int(duration_cast<milliseconds>(tm2 - tm0).count()), int(duration_cast<milliseconds>(tm1 - tm0).count()),
+			  int(duration_cast<milliseconds>(tm2 - tm1).count()));
 }
 
 // hack wothout c++14
@@ -182,7 +195,6 @@ void FastIndexText<T>::BuildVdocs(Data &data) {
 	// array with pointers to docs fields text
 	// Prepare vdocs -> addresable array all docs in the index
 
-	this->holder_.vodcsOffset_ = this->holder_.vdocs_.size();
 	this->holder_.szCnt = 0;
 	auto &vdocs = this->holder_.vdocs_;
 	auto &vdocsTexts = this->holder_.vdocsTexts;
@@ -191,6 +203,15 @@ void FastIndexText<T>::BuildVdocs(Data &data) {
 	vdocsTexts.reserve(data.size());
 
 	auto gt = this->Getter();
+
+	auto status = this->holder_.status_;
+
+	if (status == CreateNew) {
+		this->holder_.cur_vdoc_pos_ = vdocs.size();
+	} else if (status == RecommitLast) {
+		vdocs.erase(vdocs.begin() + this->holder_.cur_vdoc_pos_, vdocs.end());
+	}
+	this->holder_.vodcsOffset_ = vdocs.size();
 
 	for (auto &doc : data) {
 		// if constexpr(std::is_pointer<data>::value_type) - when we go to c++17
@@ -210,6 +231,9 @@ void FastIndexText<T>::BuildVdocs(Data &data) {
 		if (GetConfig()->logLevel <= LogInfo) {
 			for (auto &f : vdocsTexts.back()) this->holder_.szCnt += f.first.length();
 		}
+	}
+	if (status == FullRebuild) {
+		this->holder_.cur_vdoc_pos_ = vdocs.size();
 	}
 }
 

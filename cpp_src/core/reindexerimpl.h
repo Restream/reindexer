@@ -54,21 +54,11 @@ public:
 	Error SubscribeUpdates(IUpdatesObserver *observer, bool subscribe);
 
 protected:
-	class NsLocker : public SelectLockUpgrader, h_vector<pair<Namespace::Ptr, smart_lock<shared_timed_mutex>>, 4> {
+	class NsLocker : public h_vector<pair<Namespace::Ptr, smart_lock<shared_timed_mutex>>, 4> {
 	public:
 		~NsLocker() {
 			while (size()) {
 				pop_back();
-			}
-		}
-		virtual void Upgrade() override {
-			assert(locked_);
-			if (upgraded_) return;
-			for (auto it = rbegin(); it != rend(); it++) it->second = smart_lock<shared_timed_mutex>();
-			for (auto it = begin(); it != end(); it++) it->second = smart_lock<shared_timed_mutex>(it->first->mtx_, true);
-			upgraded_ = true;
-			if (size() > 1) {
-				throw Error(errWasRelock, "Internal - was lock upgrade, need retry");
 			}
 		}
 
@@ -96,7 +86,6 @@ protected:
 
 	protected:
 		bool locked_ = false;
-		bool upgraded_ = false;
 	};
 	void doSelect(const Query &q, QueryResults &res, NsLocker &locker, SelectFunctionsHolder &func);
 	JoinedSelectors prepareJoinedSelectors(const Query &q, QueryResults &result, NsLocker &locks, h_vector<Query, 4> &queries,
@@ -107,7 +96,7 @@ protected:
 	void updateSystemNamespace(const string &nsName, Item &item);
 	Error applyConfig();
 
-	void flusherThread();
+	void backgroundRoutine();
 	Error closeNamespace(const string &_namespace, bool dropStorage);
 	Namespace::Ptr getNamespace(const string &_namespace);
 	std::vector<Namespace::Ptr> getNamespaces();
@@ -118,8 +107,8 @@ protected:
 	shared_timed_mutex mtx_;
 	string storagePath_;
 
-	std::thread flusher_;
-	std::atomic<bool> stopFlusher_;
+	std::thread backgroundThread_;
+	std::atomic<bool> stopBackgroundThread_;
 
 	QueriesStatTracer queriesStatTracker_;
 	std::shared_ptr<DBProfilingConfig> profConfig_;

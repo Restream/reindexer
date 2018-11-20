@@ -34,6 +34,7 @@ struct VDocEntry {
 class PackedWordEntry {
 public:
 	PackedIdRelSet vids_;
+	size_t cur_step_pos_ = 0;
 };
 class WordEntry {
 public:
@@ -104,6 +105,7 @@ public:
 
 	vector<VDocEntry> vdocs_;
 	vector<unique_ptr<string>> bufStrs_;
+	size_t cur_vdoc_pos_ = 0;
 
 	FtFastConfig* cfg_;
 };

@@ -31,8 +31,7 @@ public:
 
 	LRUCacheMemStat GetMemStat();
 
-	bool Empty() const { return items_.empty(); }
-	void Invalidate();
+	bool Clear();
 
 protected:
 	void eraseLRU();

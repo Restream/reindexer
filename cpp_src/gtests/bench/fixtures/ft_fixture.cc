@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <iterator>
+#include <thread>
 
 #include "tools/stringstools.h"
 
@@ -26,7 +27,7 @@ FullText::FullText(Reindexer* db, const string& name, size_t maxItems) : BaseFix
 		.AddIndex("description", "-", "string", IndexOpts())
 		.AddIndex("year", "tree", "int", IndexOpts())
 		.AddIndex("countries", "tree", "string", IndexOpts().Array())
-		.AddIndex("searchfast", {"countries", "description"}, "text", "composite", IndexOpts())
+		.AddIndex("searchfast", {"countries", "description"}, "text", "composite", IndexOpts().Dense())
 		.AddIndex("searchfuzzy", {"countries", "description"}, "fuzzytext", "composite", IndexOpts());
 }
 
@@ -200,6 +201,7 @@ void FullText::BuildCommonIndexes(benchmark::State& state) {
 	for (auto _ : state) {
 		Query q(nsdef_.name);
 		q.Where("year", CondRange, {2010, 2016}).Limit(20).Sort("year", false);
+		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);

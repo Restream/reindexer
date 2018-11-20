@@ -39,7 +39,8 @@ IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) {
 }
 
 template <typename T>
-void FuzzyIndexText<T>::Commit() {
+void FuzzyIndexText<T>::commitFulltext() {
+	this->cache_ft_->Clear();
 	vector<unique_ptr<string>> bufStrs;
 	auto gt = this->Getter();
 	for (auto& doc : this->idx_map) {

@@ -52,12 +52,18 @@ public:
 	void DumpKeys() override;
 	SelectKeyResults SelectKey(const VariantArray &keys, CondType condition, SortType stype, Index::ResultType res_type,
 							   BaseFunctionCtx::Ptr ctx) override;
-	bool Commit(const CommitContext &ctx) override;
+	void Commit() override;
 	void UpdateSortedIds(const UpdateSortedContext &) override;
 	Index *Clone() override;
 	IndexMemStat GetMemStat() override;
 	size_t Size() const override final { return idx_map.size(); }
 	IdSetRef Find(const Variant &key) override final;
+	void SetSortedIdxCount(int sortedIdxCount) override {
+		if (this->sortedIdxCount_ != sortedIdxCount) {
+			this->sortedIdxCount_ = sortedIdxCount;
+			for (auto &keyIt : idx_map) keyIt.second.Unsorted().ReserveForSorted(this->sortedIdxCount_);
+		}
+	}
 
 protected:
 	void markUpdated(typename T::value_type *key);

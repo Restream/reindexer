@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <type_traits>
 #include "core/index/payload_map.h"
 #include "core/index/string_map.h"
@@ -23,6 +24,9 @@ struct is_safe_iterators_map<unordered_str_map<T1>> : std::true_type {};
 template <typename T>
 class UpdateTracker {
 public:
+	using hash_map = typename std::conditional<is_safe_iterators_map<T>::value || is_payload_map_key<T>::value,
+											   fast_hash_set<typename T::value_type *>, fast_hash_set<typename T::key_type>>::type;
+
 	UpdateTracker() = default;
 	UpdateTracker(const UpdateTracker<T> &other) : completeUpdate_(other.updated_.size() || other.completeUpdate_) {}
 	UpdateTracker &operator=(const UpdateTracker<T> &other) = delete;
@@ -64,25 +68,25 @@ public:
 	}
 
 	template <typename U = T, typename std::enable_if<is_safe_iterators_map<U>::value && !is_payload_map_key<U>::value>::type * = nullptr>
-	void commitUpdated(T &, const CommitContext &ctx) {
+	void commitUpdated(T &) {
 		for (auto keyIt : updated_) {
-			keyIt->second.Unsorted().Commit(ctx);
+			keyIt->second.Unsorted().Commit();
 			assert(keyIt->second.Unsorted().size());
 		}
 	}
 
 	template <typename U = T, typename std::enable_if<!is_safe_iterators_map<U>::value && !is_payload_map_key<U>::value>::type * = nullptr>
-	void commitUpdated(T &idx_map, const CommitContext &ctx) {
+	void commitUpdated(T &idx_map) {
 		for (auto valIt : updated_) {
 			auto keyIt = idx_map.find(valIt);
 			assert(keyIt != idx_map.end());
-			keyIt->second.Unsorted().Commit(ctx);
+			keyIt->second.Unsorted().Commit();
 			assert(keyIt->second.Unsorted().size());
 		}
 	}
 
 	template <typename U = T, typename std::enable_if<is_payload_map_key<U>::value>::type * = nullptr>
-	void commitUpdated(T &, const CommitContext &) {}
+	void commitUpdated(T &) {}
 
 	template <typename U = T, typename std::enable_if<is_safe_iterators_map<U>::value && !is_payload_map_key<T>::value>::type * = nullptr>
 	void markDeleted(typename T::value_type *k) {
@@ -97,11 +101,18 @@ public:
 	template <typename U = T, typename std::enable_if<is_payload_map_key<U>::value>::type * = nullptr>
 	void markDeleted(typename T::value_type *) {}
 
-	bool isUpdated() const { return updated_.empty() && !completeUpdate_; }
+	bool isUpdated() const { return !updated_.empty() || completeUpdate_; }
+	bool isCompleteUpdated() const { return completeUpdate_; }
+	void clear() {
+		updated_.clear();
+		completeUpdate_ = false;
+	}
+	hash_map &updated() { return updated_; }
+	const hash_map &updated() const { return updated_; }
 
+protected:
 	// Set of updated keys. Depends on safe/unsafe indexes' map iterator implementation.
-	typename std::conditional<is_safe_iterators_map<T>::value || is_payload_map_key<T>::value, fast_hash_set<typename T::value_type *>,
-							  fast_hash_set<typename T::key_type>>::type updated_;
+	hash_map updated_;
 
 	bool completeUpdate_;
 };

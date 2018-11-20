@@ -2,6 +2,7 @@
 #include "serverconnection.h"
 #include <ctime>
 #include <unordered_map>
+#include "core/cjson/jsonbuilder.h"
 #include "itoa/itoa.h"
 #include "time/fast_time.h"
 #include "tools/errors.h"
@@ -37,6 +38,16 @@ void ServerConnection::Detach() {
 
 void ServerConnection::onClose() {}
 
+void ServerConnection::setJsonStatus(Context &ctx, bool success, int responseCode, const string &status) {
+	WrSerializer ser;
+	JsonBuilder builder(ser);
+	builder.Put("success", success);
+	builder.Put("response_code", responseCode);
+	builder.Put("description", status);
+	builder.End();
+	ctx.JSON(responseCode, ser.Slice());
+}
+
 void ServerConnection::handleRequest(Request &req) {
 	ResponseWriter writer(this);
 	BodyReader reader(this);
@@ -49,11 +60,11 @@ void ServerConnection::handleRequest(Request &req) {
 		router_.handle(ctx);
 	} catch (const HttpStatus &status) {
 		if (!writer.IsRespSent()) {
-			ctx.String(status.code, status.what);
+			setJsonStatus(ctx, false, status.code, status.what);
 		}
 	} catch (const Error &status) {
 		if (!writer.IsRespSent()) {
-			ctx.String(StatusInternalServerError, status.what());
+			setJsonStatus(ctx, false, StatusInternalServerError, status.what());
 		}
 	}
 	router_.log(ctx);

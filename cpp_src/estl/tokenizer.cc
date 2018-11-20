@@ -1,11 +1,8 @@
 #include "tokenizer.h"
 #include <stdlib.h>
+#include "tools/stringstools.h"
 
 namespace reindexer {
-
-static inline bool isalpha(char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
-static inline bool isdigit(char c) { return (c >= '0' && c <= '9'); }
-static inline char tolower(char c) { return (c >= 'A' && c <= 'Z') ? c + 'a' - 'A' : c; }
 
 tokenizer::tokenizer(const string_view &query) : q(query), cur(query.begin()) {}
 
@@ -38,7 +35,7 @@ token tokenizer::next_token(bool to_lower) {
 		res.type = TokenNumber;
 		do {
 			res.text_.push_back(*cur++);
-		} while (cur != q.end() && isdigit(*cur));
+		} while (cur != q.end() && (isdigit(*cur) || *cur == '.'));
 	} else if (cur != q.end() && (*cur == '>' || *cur == '<' || *cur == '=')) {
 		res.type = TokenOp;
 		do {

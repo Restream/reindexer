@@ -27,6 +27,7 @@ type Logger interface {
 }
 
 var logger Logger
+var logMtx sync.Mutex
 
 var bufPool sync.Pool
 
@@ -42,6 +43,9 @@ type RawCBuffer struct {
 
 func (buf *RawCBuffer) FreeFinalized() {
 	buf.hasFinalizer = false
+	if buf.cbuf.results_ptr != 0 {
+		CGoLogger(bindings.WARNING, "FreeFinalized called. Iterator.Close() was not called")
+	}
 	buf.Free()
 }
 
@@ -277,17 +281,23 @@ func (binding *Builtin) Commit(namespace string) error {
 // CGoLogger logger function for C
 //export CGoLogger
 func CGoLogger(level int, msg string) {
+	logMtx.Lock()
+	defer logMtx.Unlock()
 	if logger != nil {
 		logger.Printf(level, "%s", msg)
 	}
 }
 
 func (binding *Builtin) EnableLogger(log bindings.Logger) {
+	logMtx.Lock()
+	defer logMtx.Unlock()
 	logger = log
 	C.reindexer_enable_go_logger()
 }
 
 func (binding *Builtin) DisableLogger() {
+	logMtx.Lock()
+	defer logMtx.Unlock()
 	C.reindexer_disable_go_logger()
 	logger = nil
 }
@@ -345,10 +355,7 @@ func (bf *bufFreeBatcher) loop() {
 
 func (bf *bufFreeBatcher) add(buf *RawCBuffer) {
 	if buf.cbuf.results_ptr != 0 {
-		C.reindexer_free_buffers((*C.reindexer_resbuffer)(unsafe.Pointer(&buf.cbuf)), 1)
-		buf.cbuf.results_ptr = 0
-		bf.toPool(buf)
-		// bf.toFree(buf)
+		bf.toFree(buf)
 	} else {
 		bf.toPool(buf)
 	}

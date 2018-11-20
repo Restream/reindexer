@@ -8,7 +8,7 @@ namespace reindexer {
 template <typename T>
 Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id) {
 	if (key.Type() == KeyValueNull) {
-		this->empty_ids_.Unsorted().Add(id, IdSet::Auto);
+		this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_);
 		// Return invalid ref
 		return Variant();
 	}
@@ -18,7 +18,7 @@ Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id) {
 
 	if (keyIt == this->idx_map.end() || !found)
 		keyIt = this->idx_map.insert(keyIt, {static_cast<typename T::key_type>(key), typename T::mapped_type()});
-	keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto);
+	keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_);
 	this->markUpdated(&*keyIt);
 
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
@@ -51,8 +51,6 @@ typename T::iterator IndexOrdered<T>::lower_bound(const Variant &key, bool &foun
 template <typename T>
 SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType condition, SortType sortId, Index::ResultType res_type,
 											BaseFunctionCtx::Ptr ctx) {
-	++this->rawQueriesCount_;
-
 	if (res_type == Index::ForceComparator) return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, res_type, ctx);
 	SelectKeyResult res;
 
@@ -104,7 +102,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 		// Empty result
 		return SelectKeyResults(res);
 
-	if (this->sortId_ == sortId && sortId && res_type != Index::ForceIdset) {
+	if (sortId && this->sortId_ == sortId && res_type != Index::ForceIdset) {
 		assert(startIt->second.Sorted(this->sortId_).size());
 		IdType idFirst = startIt->second.Sorted(this->sortId_).front();
 
@@ -135,7 +133,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 				}
 			};
 
-			if (count > 1 && res_type != Index::ForceIdset)
+			if (count > 1 && res_type != Index::ForceIdset && res_type != Index::DisableIdSetCache)
 				this->tryIdsetCache(keys, condition, sortId, selector, res);
 			else
 				selector(res);

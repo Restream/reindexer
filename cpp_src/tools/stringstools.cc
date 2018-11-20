@@ -212,14 +212,22 @@ string lower(string s) {
 	return s;
 }
 
+bool iequals(const string_view &lhs, const string_view &rhs) {
+	if (lhs.size() != rhs.size()) return false;
+	for (auto itl = lhs.begin(), itr = rhs.begin(); itl != lhs.end() && itr != rhs.end();) {
+		if (tolower(*itl++) != tolower(*itr++)) return false;
+	}
+	return true;
+}
+
 int collateCompare(const string_view &lhs, const string_view &rhs, const CollateOpts &collateOpts) {
 	if (collateOpts.mode == CollateASCII) {
-		auto itl = lhs.data();
-		auto itr = rhs.data();
+		auto itl = lhs.begin();
+		auto itr = rhs.begin();
 
-		for (; itl != lhs.data() + lhs.size() && itr != rhs.size() + rhs.data();) {
-			auto chl = ToLower(*itl++);
-			auto chr = ToLower(*itr++);
+		for (; itl != lhs.end() && itr != rhs.end();) {
+			auto chl = tolower(*itl++);
+			auto chr = tolower(*itr++);
 
 			if (chl > chr) return 1;
 			if (chl < chr) return -1;

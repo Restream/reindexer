@@ -173,7 +173,7 @@ public:
 				}
 			}
 			if (curMin == INT_MAX) break;
-			mergedIds->Add(curMin, IdSet::Unordered);
+			mergedIds->Add(curMin, IdSet::Unordered, 0);
 		};
 		mergedIds->shrink_to_fit();
 		clear();

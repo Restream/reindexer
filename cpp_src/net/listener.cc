@@ -89,6 +89,8 @@ void Listener::io_accept(ev::io & /*watcher*/, int revents) {
 	} else {
 		connections_.push_back(std::unique_ptr<IServerConnection>(shared_->connFactory_(loop_, client.fd())));
 	}
+	rebalance();
+
 	if (shared_->count_ < shared_->maxListeners_) {
 		shared_->count_++;
 		std::thread th(&Listener::clone, shared_);
@@ -118,32 +120,40 @@ void Listener::timeout_cb(ev::periodic &, int) {
 		shared_->idle_.clear();
 	}
 
+	rebalance();
 	int curConnCount = connections_.size();
-
-	if (!std::getenv("REINDEXER_NOREBALANCE")) {
-		// Try to rebalance
-		int minConnCount = INT_MAX;
-		auto minIt = shared_->listeners_.begin();
-
-		for (auto it = minIt; it != shared_->listeners_.end(); it++) {
-			int connCount = (*it)->connections_.size();
-			if (connCount < minConnCount) {
-				minIt = it;
-				minConnCount = connCount;
-			}
-		}
-
-		if (minConnCount + 1 < curConnCount) {
-			logPrintf(LogInfo, "Rebalance connection from listener %d to %d", id_, (*minIt)->id_);
-			auto conn = std::move(connections_.back());
-			conn->Detach();
-			(*minIt)->connections_.push_back(std::move(conn));
-			(*minIt)->async_.send();
-			connections_.pop_back();
-		}
-	}
 	if (curConnCount != 0) {
 		logPrintf(LogTrace, "Listener(%s) %d stats: %d connections", shared_->addr_.c_str(), id_, curConnCount);
+	}
+}
+
+void Listener::rebalance() {
+	if (!std::getenv("REINDEXER_NOREBALANCE")) {
+		// Try to rebalance
+		for (;;) {
+			int curConnCount = connections_.size();
+			int minConnCount = INT_MAX;
+			auto minIt = shared_->listeners_.begin();
+
+			for (auto it = minIt; it != shared_->listeners_.end(); it++) {
+				int connCount = (*it)->connections_.size();
+				if (connCount < minConnCount) {
+					minIt = it;
+					minConnCount = connCount;
+				}
+			}
+
+			if (minConnCount + 1 < curConnCount) {
+				logPrintf(LogInfo, "Rebalance connection from listener %d to %d", id_, (*minIt)->id_);
+				auto conn = std::move(connections_.back());
+				conn->Detach();
+				(*minIt)->connections_.push_back(std::move(conn));
+				(*minIt)->async_.send();
+				connections_.pop_back();
+			} else {
+				break;
+			}
+		}
 	}
 }
 

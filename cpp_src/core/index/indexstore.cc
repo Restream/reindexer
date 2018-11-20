@@ -56,21 +56,16 @@ Variant IndexStore<T>::Upsert(const Variant &key, IdType id) {
 }
 
 template <typename T>
-bool IndexStore<T>::Commit(const CommitContext &ctx) {
-	if ((ctx.phases() & CommitContext::MakeIdsets) && allowedToCommit(ctx.phases())) {
-		logPrintf(LogTrace, "IndexStore::Commit (%s) %d uniq strings", name_.c_str(), int(str_map.size()));
-		for (auto keyIt = str_map.begin(); keyIt != str_map.end();) {
-			if (!keyIt->second) {
-				keyIt = str_map.erase(keyIt);
-			} else {
-				keyIt++;
-			}
+void IndexStore<T>::Commit() {
+	logPrintf(LogTrace, "IndexStore::Commit (%s) %d uniq strings", name_.c_str(), int(str_map.size()));
+	for (auto keyIt = str_map.begin(); keyIt != str_map.end();) {
+		if (!keyIt->second) {
+			keyIt = str_map.erase(keyIt);
+		} else {
+			keyIt++;
 		}
-		if (!str_map.size()) str_map.clear();
-		resetQueriesCountTillCommit();
-		return true;
 	}
-	return false;
+	if (!str_map.size()) str_map.clear();
 }
 
 template <typename T>

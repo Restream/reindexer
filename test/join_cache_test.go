@@ -47,18 +47,30 @@ func PrepareJoinQueryResult(sort1 string, sort2 string) []interface{} {
 	return rjoin
 }
 
+func expectSlicesEqual(expect []interface{}, got []interface{}) {
+	if len(expect) != len(got) {
+		panic(fmt.Errorf("Result len is not equal"))
+	}
+	wasErr := false
+	for j := 0; j < len(expect); j++ {
+		if !reflect.DeepEqual(expect[j], got[j]) {
+			i1s, _ := json.Marshal(expect[j])
+			i2s, _ := json.Marshal(got[j])
+			fmt.Printf("%d:-----expect:\n%s\n-----got:\n%s\n", j, string(i1s), string(i2s))
+			wasErr = true
+		}
+	}
+	if wasErr {
+		panic(fmt.Errorf("Error occuried"))
+	}
+}
+
 func CheckTestCachedItemsJoinLeftQueries(wg *sync.WaitGroup) {
 	defer wg.Done()
 	resultSort1 := PrepareJoinQueryResult("device", "name")
 
 	for i := 0; i < 20; i++ {
-		result := PrepareJoinQueryResult("device", "name")
-		if !reflect.DeepEqual(result, resultSort1) {
-			i1s, _ := json.Marshal(resultSort1)
-			i2s, _ := json.Marshal(result)
-			panic(fmt.Errorf("%d:-----expect:\n%s\n-----got:\n%s", i, string(i1s), string(i2s)))
-
-		}
+		expectSlicesEqual(resultSort1, PrepareJoinQueryResult("device", "name"))
 	}
 }
 
@@ -79,68 +91,34 @@ func CheckTestCachedItemsJoinInnerQueries(wg *sync.WaitGroup) {
 		rjoin, _ := qjoin.MustExec().FetchAll()
 		if i == 0 {
 			result_without_cahce = append([]interface{}(nil), rjoin...)
-		} else if !reflect.DeepEqual(rjoin, result_without_cahce) {
-			i1s, _ := json.Marshal(result_without_cahce)
-			i2s, _ := json.Marshal(rjoin)
-			panic(fmt.Errorf("%d:-----expect:\n%s\n-----got:\n%s", i, string(i1s), string(i2s)))
-
+		} else {
+			expectSlicesEqual(rjoin, result_without_cahce)
 		}
 	}
 }
 
 func CheckTestCachedItemsJoinSortQueries(wg *sync.WaitGroup) {
 	defer wg.Done()
-	resultSort1 := PrepareJoinQueryResult("device", "genre")
-	resultSort2 := PrepareJoinQueryResult("location", "name")
-	resultSort3 := PrepareJoinQueryResult("name", "name")
-	resultSort4 := PrepareJoinQueryResult("amount", "rate")
-	resultSort5 := PrepareJoinQueryResult("", "")
+	resultSort := [][]interface{}{PrepareJoinQueryResult("device", "genre"),
+		PrepareJoinQueryResult("location", "name"),
+		PrepareJoinQueryResult("name", "name"),
+		PrepareJoinQueryResult("amount", "rate"),
+		PrepareJoinQueryResult("", ""),
+	}
 
 	for i := 0; i < 100; i++ {
 		op := rand.Intn(5)
-
-		if op == 0 {
-			res := PrepareJoinQueryResult("device", "genre")
-			if !reflect.DeepEqual(res, resultSort1) {
-				i1s, _ := json.Marshal(resultSort1)
-				i2s, _ := json.Marshal(res)
-				panic(fmt.Errorf("%d:-----expect:\n%s\n-----got:\n%s", i, string(i1s), string(i2s)))
-
-			}
-		} else if op == 1 {
-			res := PrepareJoinQueryResult("location", "name")
-			if !reflect.DeepEqual(res, resultSort2) {
-				i1s, _ := json.Marshal(resultSort2)
-				i2s, _ := json.Marshal(res)
-				panic(fmt.Errorf("%d:-----expect:\n%s\n-----got:\n%s", i, string(i1s), string(i2s)))
-
-			}
-		} else if op == 2 {
-			res := PrepareJoinQueryResult("name", "name")
-			if !reflect.DeepEqual(res, resultSort3) {
-				i1s, _ := json.Marshal(resultSort3)
-				i2s, _ := json.Marshal(res)
-				panic(fmt.Errorf("%d:-----expect:\n%s\n-----got:\n%s", i, string(i1s), string(i2s)))
-
-			}
-		} else if op == 3 {
-			res := PrepareJoinQueryResult("amount", "rate")
-			if !reflect.DeepEqual(res, resultSort4) {
-				i1s, _ := json.Marshal(resultSort4)
-				i2s, _ := json.Marshal(res)
-				panic(fmt.Errorf("%d:-----expect:\n%s\n-----got:\n%s", i, string(i1s), string(i2s)))
-
-			}
-		} else if op == 4 {
-			res := PrepareJoinQueryResult("", "")
-			if !reflect.DeepEqual(res, resultSort5) {
-				i1s, _ := json.Marshal(resultSort5)
-				i2s, _ := json.Marshal(res)
-				panic(fmt.Errorf("%d:-----expect:\n%s\n-----got:\n%s", i, string(i1s), string(i2s)))
-
-			}
+		switch op {
+		case 0:
+			expectSlicesEqual(resultSort[op], PrepareJoinQueryResult("device", "genre"))
+		case 1:
+			expectSlicesEqual(resultSort[op], PrepareJoinQueryResult("location", "name"))
+		case 2:
+			expectSlicesEqual(resultSort[op], PrepareJoinQueryResult("name", "name"))
+		case 3:
+			expectSlicesEqual(resultSort[op], PrepareJoinQueryResult("amount", "rate"))
+		case 4:
+			expectSlicesEqual(resultSort[op], PrepareJoinQueryResult("", ""))
 		}
-
 	}
-
 }

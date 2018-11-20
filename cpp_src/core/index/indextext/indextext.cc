@@ -21,7 +21,7 @@ using std::chrono::milliseconds;
 using std::thread;
 
 template <typename T>
-IndexText<T>::IndexText(const IndexText<T> &other) : IndexUnordered<T>(other), cache_ft_(other.cache_ft_) {
+IndexText<T>::IndexText(const IndexText<T> &other) : IndexUnordered<T>(other), cache_ft_(new FtIdSetCache), isBuilt_(false) {
 	initSearchers();
 }
 // Generic implemetation for string index
@@ -52,15 +52,9 @@ void IndexText<T>::initSearchers() {
 }
 
 template <typename T>
-bool IndexText<T>::Commit(const CommitContext &ctx) {
-	cache_ft_.reset(new FtIdSetCache());
-
-	// IndexUnordered<T>::Commit(ctx);
-
-	if ((ctx.phases() & CommitContext::PrepareForSelect)) {
-		Commit();
-	}
-	return true;
+void IndexText<T>::Commit() {
+	// Do nothing
+	// Rebuild will be done on first select
 }
 
 template <typename T>
@@ -82,8 +76,6 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 	if (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
 		throw Error(errParams, "Full text index support only EQ or SET condition with 1 or 2 parameter");
 	}
-
-	++this->rawQueriesCount_;
 
 	FtCtx::Ptr ftctx = reindexer::reinterpret_pointer_cast<FtCtx>(ctx);
 	assert(ftctx);
@@ -114,6 +106,19 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 	// STEP 1: Parse search query dsl
 	FtDSLQuery dsl(this->ftFields_, this->cfg_->stopWords, this->cfg_->extraWordSymbols);
 	dsl.parse(keys[0].As<string>());
+
+	smart_lock<shared_timed_mutex> lck(mtx_);
+	if (!isBuilt_) {
+		// non atomic upgrade mutex to unique
+		lck.unlock();
+		lck = smart_lock<shared_timed_mutex>(mtx_, true);
+		if (!isBuilt_) {
+			commitFulltext();
+			need_put = false;
+			isBuilt_ = true;
+		}
+	}
+
 	auto mergedIds = Select(ftctx, dsl);
 	if (mergedIds) {
 		if (need_put && mergedIds->size()) cache_ft_->Put(*cache_ft.key, FtIdSetCacheVal{mergedIds, ftctx->GetData()});

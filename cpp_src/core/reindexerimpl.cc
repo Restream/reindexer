@@ -26,13 +26,14 @@ const char* kStoragePlaceholderFilename = ".reindexer.storage";
 
 namespace reindexer {
 
-ReindexerImpl::ReindexerImpl() : profConfig_(std::make_shared<DBProfilingConfig>()) { stopFlusher_ = false; }
+ReindexerImpl::ReindexerImpl() : profConfig_(std::make_shared<DBProfilingConfig>()) {
+	stopBackgroundThread_ = false;
+	backgroundThread_ = std::thread([this]() { this->backgroundRoutine(); });
+}
 
 ReindexerImpl::~ReindexerImpl() {
-	if (storagePath_.length()) {
-		stopFlusher_ = true;
-		flusher_.join();
-	}
+	stopBackgroundThread_ = true;
+	backgroundThread_.join();
 }
 
 Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlaceholderCheck) {
@@ -78,8 +79,6 @@ Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlacehold
 	}
 
 	storagePath_ = storagePath;
-
-	flusher_ = std::thread([this]() { this->flusherThread(); });
 
 	return errOK;
 }
@@ -334,7 +333,7 @@ Error ReindexerImpl::Select(const string_view& query, QueryResults& result, Comp
 	}
 
 	if (cmpl) cmpl(err);
-	return errOK;
+	return err;
 }
 
 struct ItemRefLess {
@@ -389,28 +388,18 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, Completion cmp
 	}
 	calc.LockHit();
 	statCalculator.LockHit();
-	for (;;) {
-		try {
-			SelectFunctionsHolder func;
-			if (!q.joinQueries_.empty()) {
-				result.joined_.resize(1 + q.mergeQueries_.size());
-			}
-
-			doSelect(q, result, locks, func);
-			result.lockResults();
-			func.Process(result);
-
-			break;
-		} catch (const Error& err) {
-			if (err.code() == errWasRelock) {
-				result = QueryResults();
-				logPrintf(LogInfo, "Was lock upgrade in multi namespaces_ query. Retrying");
-				continue;
-			} else {
-				if (cmpl) cmpl(err);
-				return err;
-			}
+	try {
+		SelectFunctionsHolder func;
+		if (!q.joinQueries_.empty()) {
+			result.joined_.resize(1 + q.mergeQueries_.size());
 		}
+
+		doSelect(q, result, locks, func);
+		result.lockResults();
+		func.Process(result);
+	} catch (const Error& err) {
+		if (cmpl) cmpl(err);
+		return err;
 	}
 	if (cmpl) cmpl(errOK);
 	return errOK;
@@ -419,6 +408,7 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, Completion cmp
 JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResults& result, NsLocker& locks, h_vector<Query, 4>& queries,
 													  SelectFunctionsHolder& func) {
 	JoinedSelectors joinedSelectors;
+	if (q.joinQueries_.empty()) return joinedSelectors;
 	auto ns = locks.Get(q._namespace);
 
 	// For each joined queries
@@ -428,19 +418,18 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 
 		Query jjq(jq);
 
-		SelectCtx::PreResult::Ptr preResult;
+		SelectCtx::PreResult::Ptr preResult = std::make_shared<SelectCtx::PreResult>();
 		size_t pos = joinedSelectors.size();
 
 		JoinCacheRes joinRes;
-		joinRes.key.SetData(0, jq);
+		joinRes.key.SetData(jq);
 		jns->GetFromJoinCache(joinRes);
 		Query* pjItemQ = nullptr;
 		if (jjq.entries.size() && !joinRes.haveData) {
 			QueryResults jr;
-			for (SortingEntry& se : jjq.sortingEntries_) se.desc = false;
 			jjq.Limit(UINT_MAX);
-			SelectCtx ctx(jjq, &locks);
-			ctx.preResult = preResult = std::make_shared<SelectCtx::PreResult>();
+			SelectCtx ctx(jjq);
+			ctx.preResult = preResult;
 			ctx.preResult->mode = SelectCtx::PreResult::ModeBuild;
 			ctx.functions = &func;
 			jns->Select(jr, ctx);
@@ -476,8 +465,8 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 		queries.push_back(std::move(jItemQ));
 		pjItemQ = &queries.back();
 
-		auto joinedSelector = [&result, &jq, jns, preResult, pos, pjItemQ, &locks, &func, ns](JoinCacheRes& joinRes, IdType id, int nsId,
-																							  ConstPayload payload, bool match) {
+		auto joinedSelector = [&result, &jq, jns, preResult, pos, pjItemQ, &func, ns](JoinCacheRes& joinRes, IdType id, int nsId,
+																					  ConstPayload payload, bool match) {
 			QueryResults joinItemR;
 			JoinCacheRes finalJoinRes;
 
@@ -512,8 +501,8 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 				matchedAtLeastOnce = joinResLong.it.val.matchedAtLeastOnce;
 				jns->FillResult(joinItemR, joinResLong.it.val.ids_, pjItemQ->selectFilter_);
 			} else {
-				SelectCtx ctx(*pjItemQ, &locks);
-				if (jq.entries.size()) ctx.preResult = preResult;
+				SelectCtx ctx(*pjItemQ);
+				ctx.preResult = preResult;
 				ctx.matchedAtLeastOnce = false;
 				ctx.reqMatchedOnceFlag = true;
 				ctx.skipIndexesLookup = true;
@@ -528,7 +517,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 				val.ids_ = std::make_shared<IdSet>();
 				val.matchedAtLeastOnce = matchedAtLeastOnce;
 				for (auto& r : joinItemR.Items()) {
-					val.ids_->Add(r.id, IdSet::Unordered);
+					val.ids_->Add(r.id, IdSet::Unordered, 0);
 				}
 				jns->PutToJoinCache(joinResLong, val);
 			}
@@ -553,7 +542,7 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker& loc
 	if (!ns) {
 		throw Error(errParams, "Namespace '%s' is not exists", q._namespace.c_str());
 	}
-	SelectCtx ctx(q, &locks);
+	SelectCtx ctx(q);
 	h_vector<Query, 4> queries;
 	int jqCount = q.joinQueries_.size();
 
@@ -576,7 +565,7 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker& loc
 
 		for (auto& mq : q.mergeQueries_) {
 			auto mns = locks.Get(mq._namespace);
-			SelectCtx mctx(mq, &locks);
+			SelectCtx mctx(mq);
 			mctx.nsid = ++counter;
 			mctx.isForceAll = true;
 			mctx.functions = &func;
@@ -618,14 +607,14 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker& loc
 		auto jns = locks.Get(nestesQuery._namespace);
 		Query tmpq(nestesQuery._namespace);
 		tmpq.Limit(0);
-		SelectCtx jctx(tmpq, &locks);
+		SelectCtx jctx(tmpq);
 		jns->Select(result, jctx);
 	});
 }
 
-Error ReindexerImpl::Commit(const string& _namespace) {
+Error ReindexerImpl::Commit(const string& /*_namespace*/) {
 	try {
-		getNamespace(_namespace)->FlushStorage();
+		// getNamespace(_namespace)->FlushStorage();
 
 	} catch (const Error& err) {
 		return err;
@@ -722,19 +711,19 @@ Error ReindexerImpl::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll) {
 	return errOK;
 }
 
-void ReindexerImpl::flusherThread() {
+void ReindexerImpl::backgroundRoutine() {
 	auto nsFlush = [&]() {
 		auto nsarray = getNamespacesNames();
 		for (auto name : nsarray) {
 			try {
 				auto ns = getNamespace(name);
-				ns->FlushStorage();
+				ns->BackgroundRoutine();
 			} catch (...) {
 			}
 		}
 	};
 
-	while (!stopFlusher_) {
+	while (!stopBackgroundThread_) {
 		nsFlush();
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}

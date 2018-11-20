@@ -70,6 +70,7 @@ protected:
 
 	void parseParams(const string_view &str);
 	void writeHttpResponse(int code);
+	void setJsonStatus(Context &ctx, bool success, int responseCode, const string &status);
 
 	Router &router_;
 	Request request_;

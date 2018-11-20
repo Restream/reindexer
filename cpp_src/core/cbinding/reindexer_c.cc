@@ -14,6 +14,12 @@
 
 using namespace reindexer;
 
+const int kQueryResultsPoolSize = 1024;
+const int kMaxConcurentQueries = 16384;
+
+static Error err_not_init(-1, "Reindexer db has not initialized");
+static Error err_too_many_queries(errLogic, "Too many paralell queries");
+
 static reindexer_error error2c(const Error& err_) {
 	reindexer_error err;
 	err.code = err_.code();
@@ -43,16 +49,25 @@ public:
 
 static std::mutex res_pool_lck;
 static h_vector<std::unique_ptr<QueryResultsWrapper>, 2> res_pool;
+static int alloced_res_count;
 
 void put_results_to_pool(QueryResultsWrapper* res) {
 	res->Clear();
 	res->ser.Reset();
 	std::unique_lock<std::mutex> lck(res_pool_lck);
-	res_pool.push_back(std::unique_ptr<QueryResultsWrapper>(res));
+	alloced_res_count--;
+	if (res_pool.size() < kQueryResultsPoolSize)
+		res_pool.push_back(std::unique_ptr<QueryResultsWrapper>(res));
+	else
+		delete res;
 }
 
 QueryResultsWrapper* new_results() {
 	std::unique_lock<std::mutex> lck(res_pool_lck);
+	if (alloced_res_count > kMaxConcurentQueries) {
+		return nullptr;
+	}
+	alloced_res_count++;
 	if (res_pool.empty()) {
 		return new QueryResultsWrapper;
 	} else {
@@ -76,8 +91,6 @@ static void results2c(QueryResultsWrapper* result, struct reindexer_resbuffer* o
 	out->data = uintptr_t(result->ser.Buf());
 	out->results_ptr = uintptr_t(result);
 }
-
-static Error err_not_init(-1, "Reindexer db has not initialized");
 
 uintptr_t init_reindexer() {
 	Reindexer* db = new Reindexer();
@@ -152,6 +165,7 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 				}
 				if (err.ok()) {
 					QueryResultsWrapper* res = new_results();
+					if (!res) return ret2c(err_too_many_queries, out);
 					res->AddItem(item);
 					int32_t ptVers = -1;
 					bool tmUpdated = item.IsTagsUpdated();
@@ -229,8 +243,12 @@ reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int with_it
 	Reindexer* db = reinterpret_cast<Reindexer*>(rx);
 	if (db) {
 		QueryResultsWrapper* result = new_results();
+		if (!result) return ret2c(err_too_many_queries, out);
 		res = db->Select(str2cv(query), *result);
-		if (res.ok()) results2c(result, &out, with_items, pt_versions, pt_versions_count);
+		if (res.ok())
+			results2c(result, &out, with_items, pt_versions, pt_versions_count);
+		else
+			put_results_to_pool(result);
 	}
 	return ret2c(res, out);
 }
@@ -259,9 +277,13 @@ reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, i
 		}
 
 		QueryResultsWrapper* result = new_results();
+		if (!result) return ret2c(err_too_many_queries, out);
 		res = db->Select(q, *result);
 		if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what().c_str());
-		if (res.ok()) results2c(result, &out, with_items, pt_versions, pt_versions_count);
+		if (res.ok())
+			results2c(result, &out, with_items, pt_versions, pt_versions_count);
+		else
+			put_results_to_pool(result);
 	}
 	return ret2c(res, out);
 }
@@ -277,9 +299,13 @@ reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in) {
 		Query q;
 		q.Deserialize(ser);
 		QueryResultsWrapper* result = new_results();
+		if (!result) return ret2c(err_too_many_queries, out);
 		res = db->Delete(q, *result);
 		if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what().c_str());
-		if (res.ok()) results2c(result, &out);
+		if (res.ok())
+			results2c(result, &out);
+		else
+			put_results_to_pool(result);
 	}
 	return ret2c(res, out);
 }
@@ -299,6 +325,8 @@ reindexer_ret reindexer_get_meta(uintptr_t rx, reindexer_string ns, reindexer_st
 	Reindexer* db = reinterpret_cast<Reindexer*>(rx);
 	if (db) {
 		QueryResultsWrapper* results = new_results();
+		if (!results) return ret2c(err_too_many_queries, out);
+
 		string data;
 		res = db->GetMeta(str2c(ns), str2c(key), data);
 		results->ser.Write(data);

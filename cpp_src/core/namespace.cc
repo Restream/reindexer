@@ -56,7 +56,6 @@ Namespace::Namespace(const Namespace &src)
 	  updates_(src.updates_),
 	  unflushedCount_(0),
 	  sortOrdersBuilt_(false),
-	  sortedQueriesCount_(0),
 	  meta_(src.meta_),
 	  dbpath_(src.dbpath_),
 	  queryCache_(src.queryCache_),
@@ -64,7 +63,8 @@ Namespace::Namespace(const Namespace &src)
 	  cacheMode_(src.cacheMode_),
 	  enablePerfCounters_(src.enablePerfCounters_.load()),
 	  queriesLogLevel_(src.queriesLogLevel_),
-	  lsnCounter_(src.lsnCounter_) {
+	  lsnCounter_(src.lsnCounter_),
+	  lastUpdateTime_(src.lastUpdateTime_.load()) {
 	for (auto &idxIt : src.indexes_) indexes_.push_back(unique_ptr<Index>(idxIt->Clone()));
 	logPrintf(LogTrace, "Namespace::Namespace (clone %s)", name_.c_str());
 }
@@ -76,14 +76,15 @@ Namespace::Namespace(const string &name, CacheMode cacheMode)
 	  tagsMatcher_(payloadType_),
 	  unflushedCount_(0),
 	  sortOrdersBuilt_(false),
-	  sortedQueriesCount_(0),
 	  queryCache_(make_shared<QueryCache>()),
 	  joinCache_(make_shared<JoinCache>()),
 	  cacheMode_(cacheMode),
 	  needPutCacheMode_(true),
 	  enablePerfCounters_(false),
 	  queriesLogLevel_(LogNone),
-	  lsnCounter_(0) {
+	  lsnCounter_(0),
+	  cancelCommit_(false),
+	  lastUpdateTime_(0) {
 	logPrintf(LogTrace, "Namespace::Namespace (%s)", name_.c_str());
 	items_.reserve(10000);
 
@@ -266,6 +267,8 @@ void Namespace::dropIndex(const string &index) {
 
 	indexes_.erase(indexes_.begin() + fieldIdx);
 	indexesNames_.erase(itIdxName);
+	int sortedIdxCount = getSortedIdxCount();
+	for (auto &idx : indexes_) idx->SetSortedIdxCount(sortedIdxCount);
 }
 
 void Namespace::addIndex(const IndexDef &indexDef) {
@@ -330,6 +333,8 @@ void Namespace::addIndex(const IndexDef &indexDef) {
 		insertIndex(newIndex.release(), idxNo, indexName);
 		updateItems(oldPlType, changedFields, 1);
 	}
+	int sortedIdxCount = getSortedIdxCount();
+	for (auto &idx : indexes_) idx->SetSortedIdxCount(sortedIdxCount);
 }
 
 void Namespace::updateIndex(const IndexDef &indexDef) {
@@ -405,6 +410,8 @@ void Namespace::AddCompositeIndex(const IndexDef &indexDef) {
 			indexes_[idxPos]->Upsert(Variant(items_[rowId]), rowId);
 		}
 	}
+	int sortedIdxCount = getSortedIdxCount();
+	for (auto &idx : indexes_) idx->SetSortedIdxCount(sortedIdxCount);
 }
 
 void Namespace::insertIndex(Index *newIndex, int idxNo, const string &realName) {
@@ -449,7 +456,9 @@ void Namespace::Delete(Item &item) {
 	string jsonSliceBuf;
 
 	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
+	cancelCommit_ = true;
 	WLock lock(mtx_);
+	cancelCommit_ = false;
 	calc.LockHit();
 
 	updateTagsMatcherFromItem(ritem, jsonSliceBuf);
@@ -475,6 +484,7 @@ void Namespace::doDelete(IdType id) {
 		WrSerializer pk;
 		pk << kStorageItemPrefix;
 		pl.SerializeFields(pk, pkFields());
+		std::unique_lock<std::mutex> lock(storage_mtx_);
 		updates_->Remove(pk.Slice());
 		++unflushedCount_;
 	}
@@ -508,7 +518,11 @@ void Namespace::doDelete(IdType id) {
 	// free PayloadValue
 	items_[id].Free();
 	markUpdated();
-	free_.emplace(id);
+	free_.push_back(id);
+	if (free_.size() == items_.size()) {
+		free_.resize(0);
+		items_.resize(0);
+	}
 }
 
 void Namespace::Delete(const Query &q, QueryResults &result) {
@@ -517,7 +531,7 @@ void Namespace::Delete(const Query &q, QueryResults &result) {
 	calc.LockHit();
 
 	NsSelecter selecter(this);
-	SelectCtx ctx(q, nullptr);
+	SelectCtx ctx(q);
 	selecter(result, ctx);
 
 	auto tmStart = high_resolution_clock::now();
@@ -540,7 +554,6 @@ void Namespace::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 	if (doUpdate) {
 		plData.Clone(pl.RealSize());
 	}
-	markUpdated();
 
 	// keep them in nsamespace, to prevent allocs
 	// VariantArray krefs, skrefs;
@@ -631,7 +644,9 @@ void Namespace::modifyItem(Item &item, bool store, int mode) {
 	string jsonSlice;
 
 	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
+	cancelCommit_ = true;
 	WLock lock(mtx_);
+	cancelCommit_ = false;
 	calc.LockHit();
 
 	updateTagsMatcherFromItem(itemImpl, jsonSlice);
@@ -654,14 +669,23 @@ void Namespace::modifyItem(Item &item, bool store, int mode) {
 	item.setID(id);
 
 	doUpsert(itemImpl, id, exists);
+	markUpdated();
 
 	if (storage_ && store) {
+		if (tagsMatcher_.isUpdated()) {
+			WrSerializer ser;
+			tagsMatcher_.serialize(ser);
+			tagsMatcher_.clearUpdated();
+			writeToStorage(string_view(kStorageTagsPrefix), ser.Slice());
+			logPrintf(LogTrace, "Saving tags of namespace %s:\n%s", name_.c_str(), tagsMatcher_.dump().c_str());
+		}
+
 		WrSerializer pk, data;
 		pk << kStorageItemPrefix;
 		newValue.SerializeFields(pk, pkFields());
 		data.PutUInt64(lsn);
 		itemImpl->GetCJSON(data);
-		updates_->Put(pk.Slice(), data.Slice());
+		writeToStorage(pk.Slice(), data.Slice());
 		++unflushedCount_;
 	}
 }
@@ -695,84 +719,67 @@ pair<IdType, bool> Namespace::findByPK(ItemImpl *ritem) {
 	return {-1, false};
 }
 
-void Namespace::commit(const NSCommitContext &ctx, SelectLockUpgrader *lockUpgrader) {
-	bool needCommit = (!sortOrdersBuilt_ && (ctx.phases() & CommitContext::MakeSortOrders));
-
-	if (ctx.indexes())
-		for (auto idxNo : *ctx.indexes()) needCommit = needCommit || !preparedIndexes_.contains(idxNo) || !commitedIndexes_.contains(idxNo);
-
-	if (!needCommit) {
+void Namespace::commitIndexes() {
+	// This is read lock only atomics based implementation of rebuild indexes
+	// If sortOrdersBuilt_ is true, then indexes are completely built
+	// In this case reset sortOrdersBuilt_ to false and/or any idset's and sort orders builds are allowed only protected by write lock
+	if (sortOrdersBuilt_) return;
+	int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	if (!lastUpdateTime_ || now - lastUpdateTime_ < 300) {
+		return;
+	}
+	if (!indexes_.size()) {
 		return;
 	}
 
-	if (lockUpgrader) lockUpgrader->Upgrade();
+	RLock lck(mtx_);
+	if (sortOrdersBuilt_ || cancelCommit_) return;
 
-	// Commit changes
-	if ((ctx.phases() & CommitContext::MakeIdsets) && !commitedIndexes_.containsAll(indexes_.size())) {
-		assert(indexes_.firstCompositePos() != 0);
-		int field = indexes_.firstCompositePos();
-		bool was = false;
-		do {
-			field %= indexes_.totalSize();
-			if (!ctx.indexes() || ctx.indexes()->contains(field) || (ctx.phases() & CommitContext::MakeSortOrders)) {
-				if (!commitedIndexes_.contains(field)) {
-					{
-						PerfStatCalculatorST calc(indexes_[field]->GetCommitPerfCounter(), enablePerfCounters_);
-						calc.LockHit();
-						was = indexes_[field]->Commit(ctx);
-					}
-					if (was) commitedIndexes_.push_back(field);
-				}
+	logPrintf(LogTrace, "Namespace::commitIndexes(%s) enter", name_.c_str());
+	assert(indexes_.firstCompositePos() != 0);
+	int field = indexes_.firstCompositePos();
+	do {
+		field %= indexes_.totalSize();
+		PerfStatCalculatorST calc(indexes_[field]->GetCommitPerfCounter(), enablePerfCounters_);
+		calc.LockHit();
+		indexes_[field]->Commit();
+	} while (++field != indexes_.firstCompositePos() && !cancelCommit_);
+
+	// Update sort orders and sort_id for each index
+
+	int i = 1;
+	for (auto &idxIt : indexes_) {
+		if (idxIt->IsOrdered()) {
+			NSUpdateSortedContext sortCtx(*this, i++);
+			idxIt->MakeSortOrders(sortCtx);
+			// Build in multiple threads
+			int maxIndexWorkers = std::thread::hardware_concurrency();
+			// if (maxIndexWorkers > 4) maxIndexWorkers = 4;
+			unique_ptr<thread[]> thrs(new thread[maxIndexWorkers]);
+			auto indexes = &this->indexes_;
+
+			for (int i = 0; i < maxIndexWorkers; i++) {
+				thrs[i] = std::thread(
+					[&](int i) {
+						for (int j = i; j < int(indexes->size()) && !cancelCommit_; j += maxIndexWorkers)
+							indexes->at(j)->UpdateSortedIds(sortCtx);
+					},
+					i);
 			}
-		} while (++field != indexes_.firstCompositePos());
-		if (was) logPrintf(LogTrace, "Namespace::Commit ('%s'),%d items", name_.c_str(), int(items_.size()));
-		//	items_.shrink_to_fit();
-	}
-
-	if (!sortOrdersBuilt_ && (ctx.phases() & CommitContext::MakeSortOrders)) {
-		// Update sort orders and sort_id for each index
-
-		int i = 1;
-		for (auto &idxIt : indexes_) {
-			if (idxIt->IsOrdered()) {
-				NSUpdateSortedContext sortCtx(*this, i++);
-				idxIt->MakeSortOrders(sortCtx);
-				// Build in multiple threads
-				int maxIndexWorkers = std::thread::hardware_concurrency();
-				unique_ptr<thread[]> thrs(new thread[maxIndexWorkers]);
-				auto indexes = &this->indexes_;
-
-				for (int i = 0; i < maxIndexWorkers; i++) {
-					thrs[i] = std::thread(
-						[&](int i) {
-							for (int j = i; j < int(indexes->size()); j += maxIndexWorkers) indexes->at(j)->UpdateSortedIds(sortCtx);
-						},
-						i);
-				}
-				for (int i = 0; i < maxIndexWorkers; i++) thrs[i].join();
-			}
+			for (int i = 0; i < maxIndexWorkers; i++) thrs[i].join();
 		}
-		sortOrdersBuilt_ = true;
+		if (cancelCommit_) break;
 	}
-
-	if (ctx.indexes()) {
-		NSCommitContext ctx1(*this, CommitContext::PrepareForSelect, ctx.indexes());
-		for (auto idxNo : *ctx.indexes())
-			if ((idxNo != IndexValueType::SetByJsonPath) && !preparedIndexes_.contains(idxNo)) {
-				assert(static_cast<size_t>(idxNo) < indexes_.size());
-				indexes_[idxNo]->Commit(ctx1);
-				preparedIndexes_.push_back(idxNo);
-			}
-	}
+	sortOrdersBuilt_ = !cancelCommit_;
+	if (!cancelCommit_) lastUpdateTime_ = 0;
+	logPrintf(LogTrace, "Namespace::commitIndexes(%s) leave %s", name_.c_str(), cancelCommit_ ? "(cancelled by concurent update)" : "");
 }
 
 void Namespace::markUpdated() {
 	sortOrdersBuilt_ = false;
-	sortedQueriesCount_ = 0;
-	preparedIndexes_.clear();
-	commitedIndexes_.clear();
-	invalidateQueryCache();
-	invalidateJoinCache();
+	queryCache_->Clear();
+	joinCache_->Clear();
+	lastUpdateTime_ = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
 void Namespace::Select(QueryResults &result, SelectCtx &params) {
@@ -1025,31 +1032,25 @@ void Namespace::LoadFromStorage() {
 	}
 	logPrintf(LogInfo, "[%s] Done loading storage. %d items loaded (%d errors %s), lsn=%d, total size=%dM", name_.c_str(),
 			  int(items_.size()), errCount, lastErr.what().c_str(), int(lsnCounter_), int(ldcount / (1024 * 1024)));
+	markUpdated();
 }
 
-void Namespace::FlushStorage() {
-	WLock wlock(mtx_);
+void Namespace::BackgroundRoutine() {
 	flushStorage();
+	commitIndexes();
 }
 
 void Namespace::flushStorage() {
+	RLock rlock(mtx_);
 	if (storage_) {
 		putCachedMode();
 
-		if (tagsMatcher_.isUpdated()) {
-			WrSerializer ser;
-			tagsMatcher_.serialize(ser);
-			updates_->Put(string_view(kStorageTagsPrefix), string_view(reinterpret_cast<const char *>(ser.Buf()), ser.Len()));
-			unflushedCount_++;
-			tagsMatcher_.clearUpdated();
-			logPrintf(LogTrace, "Saving tags of namespace %s:\n%s", name_.c_str(), tagsMatcher_.dump().c_str());
-		}
-
 		if (unflushedCount_) {
+			unflushedCount_ = 0;
+			std::unique_lock<std::mutex> lck(storage_mtx_);
 			Error status = storage_->Write(StorageOpts().FillCache(), *(updates_.get()));
 			if (!status.ok()) throw Error(errLogic, "Error write ns '%s' to storage: %s", name_.c_str(), status.what().c_str());
 			updates_->Clear();
-			unflushedCount_ = 0;
 		}
 	}
 }
@@ -1064,12 +1065,10 @@ void Namespace::DeleteStorage() {
 }
 
 void Namespace::CloseStorage() {
+	flushStorage();
 	WLock lck(mtx_);
-	if (storage_) {
-		flushStorage();
-		dbpath_.clear();
-		storage_.reset();
-	}
+	dbpath_.clear();
+	storage_.reset();
 }
 
 Item Namespace::NewItem() {
@@ -1085,7 +1084,10 @@ Item Namespace::NewItem() {
 void Namespace::ToPool(ItemImpl *item) {
 	WLock lck(mtx_);
 	item->Clear(tagsMatcher_);
-	pool_.push_back(std::unique_ptr<ItemImpl>(item));
+	if (pool_.size() < 1024)
+		pool_.push_back(std::unique_ptr<ItemImpl>(item));
+	else
+		delete item;
 }
 
 // Get meta data from storage by key
@@ -1168,8 +1170,8 @@ int Namespace::getSortedIdxCount() const {
 IdType Namespace::createItem(size_t realSize) {
 	IdType id = 0;
 	if (free_.size()) {
-		id = *free_.begin();
-		free_.erase(free_.begin());
+		id = free_.back();
+		free_.pop_back();
 		assert(id < IdType(items_.size()));
 		assert(items_[id].IsFree());
 		items_[id] = PayloadValue(realSize);
@@ -1180,18 +1182,6 @@ IdType Namespace::createItem(size_t realSize) {
 	return id;
 }
 
-void Namespace::invalidateQueryCache() {
-	if (!queryCache_->Empty()) {
-		logPrintf(LogTrace, "[*] invalidate query cache. namespace: %s\n", name_.c_str());
-		queryCache_.reset(new QueryCache);
-	}
-}
-void Namespace::invalidateJoinCache() {
-	if (!joinCache_->Empty()) {
-		logPrintf(LogTrace, "[*] invalidate join cache. namespace: %s\n", name_.c_str());
-		joinCache_.reset(new JoinCache);
-	}
-}
 void Namespace::setFieldsBasedOnPrecepts(ItemImpl *ritem) {
 	for (auto &precept : ritem->GetPrecepts()) {
 		SelectFuncParser sqlFunc;
@@ -1247,7 +1237,7 @@ void Namespace::FillResult(QueryResults &result, IdSet::Ptr ids, const h_vector<
 void Namespace::GetFromJoinCache(JoinCacheRes &ctx) {
 	RLock lock(cache_mtx_);
 
-	if (cacheMode_ == CacheModeOff) return;
+	if (cacheMode_ == CacheModeOff || !sortOrdersBuilt_) return;
 	auto it = joinCache_->Get(ctx.key);
 	ctx.needPut = false;
 	ctx.haveData = false;
@@ -1264,7 +1254,7 @@ void Namespace::GetFromJoinCache(JoinCacheRes &ctx) {
 void Namespace::GetIndsideFromJoinCache(JoinCacheRes &ctx) {
 	RLock lock(cache_mtx_);
 
-	if (cacheMode_ != CacheModeAggressive) return;
+	if (cacheMode_ != CacheModeAggressive || !sortOrdersBuilt_) return;
 	auto it = joinCache_->Get(ctx.key);
 	ctx.needPut = false;
 	ctx.haveData = false;

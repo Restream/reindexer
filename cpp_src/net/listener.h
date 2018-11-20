@@ -39,6 +39,7 @@ protected:
 	void io_accept(ev::io &watcher, int revents);
 	void timeout_cb(ev::periodic &watcher, int);
 	void async_cb(ev::async &watcher);
+	void rebalance();
 
 	struct Shared {
 		Shared(ConnectionFactory connFactory, int maxListeners);

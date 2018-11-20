@@ -93,7 +93,9 @@ void Query::deserialize(Serializer &ser) {
 				SortingEntry sortingEntry;
 				sortingEntry.column = ser.GetVString().ToString();
 				sortingEntry.desc = bool(ser.GetVarUint());
-				sortingEntries_.push_back(std::move(sortingEntry));
+				if (sortingEntry.column.length()) {
+					sortingEntries_.push_back(std::move(sortingEntry));
+				}
 				int count = ser.GetVarUint();
 				forcedSortOrder.reserve(count);
 				while (count--) forcedSortOrder.push_back(ser.GetVariant().EnsureHold());

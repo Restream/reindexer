@@ -22,7 +22,15 @@ public:
 
 	Index* Clone() override;
 	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) override final;
-	void Commit() override final;
+	void commitFulltext() override final;
+	Variant Upsert(const Variant& key, IdType id) override final {
+		this->isBuilt_ = false;
+		return IndexText<T>::Upsert(key, id);
+	}
+	void Delete(const Variant& key, IdType id) override final {
+		this->isBuilt_ = false;
+		IndexText<T>::Delete(key, id);
+	}
 
 protected:
 	FtFuzzyConfig* GetConfig() const;

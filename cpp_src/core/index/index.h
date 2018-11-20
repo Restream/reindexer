@@ -23,6 +23,7 @@ public:
 		Optimal = 0,
 		ForceIdset = 1,
 		ForceComparator = 2,
+		DisableIdSetCache = 4,
 	};
 	using KeyEntry = reindexer::KeyEntry<IdSet>;
 	using KeyEntryPlain = reindexer::KeyEntry<IdSetPlain>;
@@ -38,7 +39,7 @@ public:
 
 	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, ResultType res_type,
 									   BaseFunctionCtx::Ptr ctx) = 0;
-	virtual bool Commit(const CommitContext& ctx) = 0;
+	virtual void Commit() = 0;
 	virtual void MakeSortOrders(UpdateSortedContext&) {}
 
 	virtual void UpdateSortedIds(const UpdateSortedContext& ctx) = 0;
@@ -60,6 +61,7 @@ public:
 	virtual void SetOpts(const IndexOpts& opts) { opts_ = opts; }
 	void SetFields(const FieldsSet& fields) { fields_ = fields; }
 	SortType SortId() const { return sortId_; }
+	virtual void SetSortedIdxCount(int sortedIdxCount) { sortedIdxCount_ = sortedIdxCount; }
 
 	PerfStatCounterST& GetSelectPerfCounter() { return selectPerfCounter_; }
 	PerfStatCounterST& GetCommitPerfCounter() { return commitPerfCounter_; }
@@ -69,12 +71,6 @@ public:
 	}
 
 protected:
-	// Resets count of selects before commit
-	void resetQueriesCountTillCommit();
-
-	// Indicates is it possible perform commit
-	bool allowedToCommit(int phases) const;
-
 	// Index type. Can be one of enum IndexType
 	IndexType type_;
 	// Name of index (usualy name of field).
@@ -89,12 +85,12 @@ protected:
 	mutable PayloadType payloadType_;
 	// Fields in index. Valid only for composite indexes
 	FieldsSet fields_;
-	// Amount of raw selects to index without any update
-	std::atomic<int> rawQueriesCount_;
 	// Perfstat counter
 	PerfStatCounterST commitPerfCounter_;
 	PerfStatCounterST selectPerfCounter_;
 	KeyValueType keyType_, selectKeyType_;
+	// Count of sorted indexes in namespace to resereve additional space in idsets
+	int sortedIdxCount_ = 0;
 };
 
 }  // namespace reindexer

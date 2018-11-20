@@ -1,3 +1,20 @@
+# Version 1.10.2 (20.11.2018)
+
+## Core
+
+- [fea] Indexes rebuilding now is non blocking background task, concurrent R-W queries performance increased
+- [fix] Fulltext index incremental rebuild memory grow fixed
+
+## Reindexer server
+
+- [fix] Logger buffer increased, and will not block on errors
+- [fix] DELETE Query method fixed
+- [fix] urldecode of database names fixed
+
+## Reindexer tool
+
+- [fix] Pretty print fixed
+
 # Version 1.10.1 (06.11.2018)
 
 ## Core

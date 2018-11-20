@@ -11,10 +11,9 @@ namespace reindexer {
 
 struct JoinCacheKey {
 	JoinCacheKey() {}
-	void SetData(SortType sortId, const Query &q) {
+	void SetData(const Query &q) {
 		WrSerializer ser;
 		q.Serialize(ser, (SkipJoinQueries | SkipMergeQueries));
-		ser.PutVarint(sortId);
 		buf_.reserve(buf_.size() + ser.Len());
 		buf_.insert(buf_.end(), ser.Buf(), ser.Buf() + ser.Len());
 	}
@@ -25,7 +24,6 @@ struct JoinCacheKey {
 		buf_.reserve(buf_.size() + ser.Len());
 		buf_.insert(buf_.end(), ser.Buf(), ser.Buf() + ser.Len());
 	}
-	JoinCacheKey(SortType sortId, const Query &q) { SetData(sortId, q); }
 	JoinCacheKey(const JoinCacheKey &other) { buf_ = other.buf_; }
 	size_t Size() const { return sizeof(JoinCacheKey) + buf_.size(); }
 

@@ -1,3 +1,4 @@
+﻿
 #include "dataprocessor.h"
 #include <chrono>
 #include <functional>
@@ -47,24 +48,36 @@ void DataProcessor::Process(bool multithread) {
 	size_t idsetcnt = 0;
 
 	auto wIt = words.begin() + wrdOffset;
+	auto status = holder_.status_;
 
-	thread idrelsetCommitThread([&wIt, &found, getWordByIdFunc, &tm4, &idsetcnt, &words_um]() {
+	thread idrelsetCommitThread([&wIt, &found, getWordByIdFunc, &tm4, &idsetcnt, &words_um, status]() {
 		uint32_t i = 0;
 		for (auto keyIt = words_um.begin(); keyIt != words_um.end(); keyIt++, i++) {
 			// Pack idrelset
-			PackedIdRelSet *vids;
+
+			PackedWordEntry *word;
 
 			if (found.size() && !found[i].isEmpty()) {
-				vids = &getWordByIdFunc(found[i]).vids_;
+				word = &getWordByIdFunc(found[i]);
 			} else {
-				vids = &wIt->vids_;
+				word = &(*wIt);
 				++wIt;
 				idsetcnt += sizeof(*wIt);
 			}
-			vids->insert(vids->end(), keyIt->second.vids_.begin(), keyIt->second.vids_.end());
-			vids->shrink_to_fit();
+
+			if (status == CreateNew) {
+				word->cur_step_pos_ = word->vids_.end().pos();
+			}
+			word->vids_.insert(word->vids_.end(), keyIt->second.vids_.begin(), keyIt->second.vids_.end());
+
+			if (status == FullRebuild) {
+				word->cur_step_pos_ = word->vids_.end().pos();
+			}
+
+			word->vids_.shrink_to_fit();
+
 			keyIt->second.vids_.clear();
-			idsetcnt += vids->heap_size();
+			idsetcnt += word->vids_.heap_size();
 		}
 		tm4 = high_resolution_clock::now();
 	});
@@ -81,17 +94,15 @@ void DataProcessor::Process(bool multithread) {
 
 	auto tm5 = high_resolution_clock::now();
 
-	auto tm6 = high_resolution_clock::now();
-
-	logPrintf(LogInfo, "FastIndexText built with [%d uniq words, %d typos, %dKB text size, %dKB suffixarray size, %dKB idrelsets size]",
-			  int(words_um.size()), int(holder_.GetTypos().size()), int(szCnt / 1024), int(suffixes.heap_size() / 1024),
-			  int(idsetcnt / 1024));
+	logPrintf(LogInfo, "FastIndexText[%d] built with [%d uniq words, %d typos, %dKB text size, %dKB suffixarray size, %dKB idrelsets size]",
+			  int(holder_.steps.size()), int(words_um.size()), int(holder_.GetTypos().size()), int(szCnt / 1024),
+			  int(suffixes.heap_size() / 1024), int(idsetcnt / 1024));
 
 	logPrintf(LogInfo,
-			  "FastIndexText::Commit elapsed %d ms total [ build words %d ms, build typos %d ms | build suffixarry %d ms | sort "
+			  "DataProcessor::Process elapsed %d ms total [ build words %d ms, build typos %d ms | build suffixarry %d ms | sort "
 			  "idrelsets %d ms]\n",
-			  int(duration_cast<milliseconds>(tm6 - tm0).count()), int(duration_cast<milliseconds>(tm2 - tm0).count()),
-			  int(duration_cast<milliseconds>(tm5 - tm3).count()), int(duration_cast<milliseconds>(tm3 - tm2).count()),
+			  int(duration_cast<milliseconds>(tm5 - tm0).count()), int(duration_cast<milliseconds>(tm2 - tm0).count()),
+			  int(duration_cast<milliseconds>(tm5 - tm4).count()), int(duration_cast<milliseconds>(tm3 - tm2).count()),
 			  int(duration_cast<milliseconds>(tm4 - tm2).count()));
 }
 
@@ -149,55 +160,53 @@ size_t DataProcessor::buildWordsMap(fast_hash_map<string, WordEntry> &words_um) 
 	int fieldscount = fieldSize_;
 	size_t offset = holder_.vodcsOffset_;
 	// build words map parallel in maxIndexWorkers threads
-	for (uint32_t t = 0; t < maxIndexWorkers; t++)
-		ctxs[t].thread = thread(
-			[this, &ctxs, &vdocsTexts, offset, maxIndexWorkers, fieldscount, &cfg, &vdocs](int i) {
-				auto ctx = &ctxs[i];
-				string word, str;
-				vector<const char *> wrds;
-				std::vector<string> virtualWords;
-				for (VDocIdType j = i; j < VDocIdType(vdocsTexts.size()); j += maxIndexWorkers) {
-					size_t vdocId = offset + j;
-					vdocs[vdocId].wordsCount.insert(vdocs[vdocId].wordsCount.begin(), fieldscount, 0.0);
-					vdocs[vdocId].mostFreqWordCount.insert(vdocs[vdocId].mostFreqWordCount.begin(), fieldscount, 0.0);
+	auto worker = [this, &ctxs, &vdocsTexts, offset, maxIndexWorkers, fieldscount, &cfg, &vdocs](int i) {
+		auto ctx = &ctxs[i];
+		string word, str;
+		vector<const char *> wrds;
+		std::vector<string> virtualWords;
+		for (VDocIdType j = i; j < VDocIdType(vdocsTexts.size()); j += maxIndexWorkers) {
+			size_t vdocId = offset + j;
+			vdocs[vdocId].wordsCount.insert(vdocs[vdocId].wordsCount.begin(), fieldscount, 0.0);
+			vdocs[vdocId].mostFreqWordCount.insert(vdocs[vdocId].mostFreqWordCount.begin(), fieldscount, 0.0);
 
-					for (size_t field = 0; field < vdocsTexts[j].size(); ++field) {
-						split(vdocsTexts[j][field].first, str, wrds, cfg->extraWordSymbols);
-						int rfield = vdocsTexts[j][field].second;
-						assert(rfield < fieldscount);
+			for (size_t field = 0; field < vdocsTexts[j].size(); ++field) {
+				split(vdocsTexts[j][field].first, str, wrds, cfg->extraWordSymbols);
+				int rfield = vdocsTexts[j][field].second;
+				assert(rfield < fieldscount);
 
-						vdocs[vdocId].wordsCount[rfield] = wrds.size();
+				vdocs[vdocId].wordsCount[rfield] = wrds.size();
 
-						int insertPos = -1;
-						for (auto w : wrds) {
-							insertPos++;
-							word.assign(w);
-							if (!word.length() || cfg->stopWords.find(word) != cfg->stopWords.end()) continue;
+				int insertPos = -1;
+				for (auto w : wrds) {
+					insertPos++;
+					word.assign(w);
+					if (!word.length() || cfg->stopWords.find(word) != cfg->stopWords.end()) continue;
 
-							auto idxIt = ctx->words_um.find(word);
-							if (idxIt == ctx->words_um.end()) {
-								idxIt = ctx->words_um.emplace(word, WordEntry()).first;
-								// idxIt->second.vids_.reserve(16);
-							}
-							int mfcnt = idxIt->second.vids_.Add(vdocId, insertPos, rfield);
-							if (mfcnt > vdocs[vdocId].mostFreqWordCount[rfield]) {
-								vdocs[vdocId].mostFreqWordCount[rfield] = mfcnt;
-							}
+					auto idxIt = ctx->words_um.find(word);
+					if (idxIt == ctx->words_um.end()) {
+						idxIt = ctx->words_um.emplace(word, WordEntry()).first;
+						// idxIt->second.vids_.reserve(16);
+					}
+					int mfcnt = idxIt->second.vids_.Add(vdocId, insertPos, rfield);
+					if (mfcnt > vdocs[vdocId].mostFreqWordCount[rfield]) {
+						vdocs[vdocId].mostFreqWordCount[rfield] = mfcnt;
+					}
 
-							if (cfg->enableNumbersSearch && is_number(word)) {
-								buildVirtualWord(word, ctx->words_um, vdocId, field, insertPos, virtualWords);
-							}
-						}
+					if (cfg->enableNumbersSearch && is_number(word)) {
+						buildVirtualWord(word, ctx->words_um, vdocId, field, insertPos, virtualWords);
 					}
 				}
-			},
-			t);
+			}
+		}
+	};
 
 	// If there was only 1 build thread. Just return it's build results
 	if (maxIndexWorkers == 1) {
-		ctxs[0].thread.join();
+		worker(0);
 		words_um.swap(ctxs[0].words_um);
 	} else {
+		for (uint32_t t = 0; t < maxIndexWorkers; t++) ctxs[t].thread = thread(worker, t);
 		// Merge results into single map
 		for (uint32_t i = 0; i < maxIndexWorkers; i++) {
 			ctxs[i].thread.join();
@@ -270,7 +279,7 @@ void DataProcessor::buildTyposMap(uint32_t startPos, const vector<WordIdType> &f
 	auto &words_ = holder_.GetWords();
 	size_t wordsSize = !found.empty() ? found.size() : words_.size() - startPos;
 
-    typos.reserve(wordsSize * (10 >> (holder_.cfg_->maxTyposInWord - 1)) / 2, wordsSize * 5 * (10 >> (holder_.cfg_->maxTyposInWord - 1)));
+	typos.reserve(wordsSize * (10 >> (holder_.cfg_->maxTyposInWord - 1)) / 2, wordsSize * 5 * (10 >> (holder_.cfg_->maxTyposInWord - 1)));
 
 	for (size_t i = 0; i < wordsSize; ++i) {
 		if (!found.empty() && !found[i].isEmpty()) {

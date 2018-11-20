@@ -67,7 +67,7 @@ IndexDef::IndexDef(const string &name, const JsonPaths &jsonPaths, const IndexTy
 
 bool IndexDef::operator==(const IndexDef &other) const {
 	return name_ == other.name_ && jsonPaths_ == other.jsonPaths_ && Type() == other.Type() && fieldType_ == other.fieldType_ &&
-			opts_ == other.opts_;
+		   opts_ == other.opts_;
 }
 
 IndexType IndexDef::Type() const {
@@ -92,8 +92,12 @@ void IndexDef::FromType(IndexType type) {
 }
 
 const vector<string> &IndexDef::Conditions() const { return availableIndexes.find(Type())->second.conditions; }
-bool isComposite(IndexType type) { return availableIndexes.at(type).caps & CapComposite; }
-bool isFullText(IndexType type) { return availableIndexes.at(type).caps & CapFullText; }
+bool isComposite(IndexType type) {
+	return type == IndexCompositeBTree || type == IndexCompositeFastFT || type == IndexCompositeFuzzyFT || type == IndexCompositeHash;
+}
+bool isFullText(IndexType type) {
+	return type == IndexFastFT || type == IndexFuzzyFT || type == IndexCompositeFastFT || type == IndexCompositeFuzzyFT;
+}
 bool isSortable(IndexType type) { return availableIndexes.at(type).caps & CapSortable; }
 string IndexDef::getCollateMode() const { return availableCollates.at(opts_.GetCollateMode()); }
 

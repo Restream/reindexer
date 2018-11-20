@@ -29,7 +29,7 @@ string unescapeName(const string_view& str) {
 		if (*it == '\\' && ++it != str.end() && it + 1 != str.end()) {
 			char tmpbuf[16], *endp;
 			tmpbuf[0] = *it++;
-			tmpbuf[1] = *it++;
+			tmpbuf[1] = *it;
 			tmpbuf[2] = 0;
 			dst += char(strtol(tmpbuf, &endp, 16));
 		} else

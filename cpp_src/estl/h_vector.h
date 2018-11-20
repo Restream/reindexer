@@ -149,7 +149,7 @@ public:
 		insert(begin(), first, last);
 	}
 	h_vector(const h_vector& other) : e_{0, 0}, size_(0), is_hdata_(1) {
-		reserve(other.size());
+		reserve(other.capacity());
 		for (size_type i = 0; i < other.size(); i++) new (ptr() + i) T(other.ptr()[i]);
 		size_ = other.size_;
 	}
@@ -269,8 +269,8 @@ public:
 		grow(sz);
 		if (!reindexer::is_trivially_default_constructible<T>::value)
 			for (size_type i = size_; i < sz; i++) new (ptr() + i) T();
-		//		if (!std::is_trivially_destructible<T>::value)
-		for (size_type i = sz; i < size_; i++) ptr()[i].~T();
+		if (!std::is_trivially_destructible<T>::value)
+			for (size_type i = sz; i < size_; i++) ptr()[i].~T();
 		size_ = sz;
 	}
 	void reserve(size_type sz) {
@@ -281,7 +281,7 @@ public:
 			pointer old_data = ptr();
 			for (size_type i = 0; i < size_; i++) {
 				new (new_data + i) T(std::move(*old_data));
-				/*if (!std::is_trivially_destructible<T>::value)*/ old_data->~T();
+				if (!std::is_trivially_destructible<T>::value) old_data->~T();
 				old_data++;
 			}
 			if (!is_hdata()) operator delete(static_cast<void*>(oold_data));
@@ -363,7 +363,9 @@ public:
 	void shrink_to_fit() {
 		if (is_hdata() || size_ == capacity()) return;
 
-		h_vector tmp(static_cast<const h_vector&>(*this));  // ?? dynamic
+		h_vector tmp;
+		tmp.reserve(size());
+		tmp.insert(tmp.begin(), begin(), end());
 		clear();
 		*this = std::move(tmp);
 	}

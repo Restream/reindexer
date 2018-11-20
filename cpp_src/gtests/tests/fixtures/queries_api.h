@@ -112,6 +112,7 @@ public:
 
 	void ExecuteAndVerify(const string& ns, const Query& query) {
 		reindexer::QueryResults qr;
+		const_cast<Query&>(query).Explain();
 		Error err = reindexer->Select(query, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		if (err.ok()) {

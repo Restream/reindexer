@@ -73,7 +73,8 @@ public:
 		Query qr = Query("nm1").Where("ft3", CondEq, word);
 		QueryResults res;
 		qr.AddFunction("ft3 = highlight(!,!)");
-		reindexer->Select(qr, res);
+		auto err = reindexer->Select(qr, res);
+		EXPECT_TRUE(err.ok()) << err.what();
 
 		return res;
 	}
@@ -92,7 +93,8 @@ public:
 
 		qr.mergeQueries_.push_back(mqr);
 		qr.AddFunction("ft3 = highlight(<b>,</b>)");
-		reindexer->Select(qr, res);
+		auto err = reindexer->Select(qr, res);
+		EXPECT_TRUE(err.ok()) << err.what();
 
 		return res;
 	}
