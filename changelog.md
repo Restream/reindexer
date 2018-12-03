@@ -1,3 +1,20 @@
+# Version 1.10.3 (02.12.2018)
+
+## Core 
+
+- [fix] Potential crash on delete from store string index
+- [fix] Slow cache cleanup
+- [fix] Print precision of double values decreased to actual double range
+
+## Reindexer tool
+- [fix] Invalid http redirects, if compiled with -DLINK_RESOURCES
+
+## Reindexer tool
+- [fix] Unhandled exception in case trying of create output file in unexisting directory
+- [fix] RPC client optimizations and races fixes
+- [fea] \bench command added
+
+
 # Version 1.10.2 (20.11.2018)
 
 ## Core

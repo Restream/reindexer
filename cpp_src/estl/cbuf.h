@@ -87,13 +87,10 @@ public:
 		return s_ins;
 	}
 
-	size_t erase(size_t s_erase, bool from_back = false) {
-		if (s_erase > size()) s_erase = size();
+	size_t erase(size_t s_erase) {
+		assert(s_erase <= size());
 
-		if (from_back)
-			head_ = (head_ + buf_size_ - s_erase) % buf_size_;
-		else
-			tail_ = (tail_ + s_erase) % buf_size_;
+		tail_ = (tail_ + s_erase) % buf_size_;
 		full_ = full_ && (s_erase == 0);
 		return s_erase;
 	}

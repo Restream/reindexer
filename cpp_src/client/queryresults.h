@@ -13,10 +13,11 @@ class ClientConnection;
 namespace client {
 
 class Namespace;
-using NSArray = h_vector<std::shared_ptr<Namespace>, 1>;
+using NSArray = h_vector<Namespace *, 1>;
 
 class QueryResults {
 public:
+	typedef std::function<void(const Error &err)> Completion;
 	QueryResults();
 	QueryResults(const QueryResults &) = delete;
 	QueryResults(QueryResults &&);
@@ -51,18 +52,28 @@ public:
 
 private:
 	friend class RPCClient;
-	QueryResults(net::cproto::ClientConnection *conn, const NSArray &nsArray, string_view rawResult, int queryID);
+	QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray,Completion cmpl);
+	QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray,Completion cmpl,string_view rawResult, int queryID);
+	void Bind (string_view rawResult, int queryID);
 	void fetchNextResults();
+	void completion (const Error &err) {
+		if (cmpl_) {
+			auto cmpl = std::move (cmpl_);
+			cmpl (err);
+		}
+	}
 
 	net::cproto::ClientConnection *conn_;
 
 	NSArray nsArray_;
-	string rawResult_;
+	h_vector<char,0x100> rawResult_;
 	int queryID_; 
 	int fetchOffset_;
 
 	ResultSerializer::QueryParams queryParams_;
 	Error status_;
+	Completion cmpl_;
+
 };
 }  // namespace client
 }  // namespace reindexer

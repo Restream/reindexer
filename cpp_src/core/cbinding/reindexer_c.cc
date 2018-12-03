@@ -15,7 +15,7 @@
 using namespace reindexer;
 
 const int kQueryResultsPoolSize = 1024;
-const int kMaxConcurentQueries = 16384;
+const int kMaxConcurentQueries = 65534;
 
 static Error err_not_init(-1, "Reindexer db has not initialized");
 static Error err_too_many_queries(errLogic, "Too many paralell queries");

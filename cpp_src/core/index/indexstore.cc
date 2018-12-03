@@ -23,8 +23,11 @@ template <>
 void IndexStore<key_string>::Delete(const Variant &key, IdType id) {
 	if (key.Type() == KeyValueNull) return;
 	auto keyIt = find(key);
-	assertf(keyIt != str_map.end(), "Delete unexists key from index '%s' id=%d", name_.c_str(), id);
+	// assertf(keyIt != str_map.end(), "Delete unexists key from index '%s' id=%d", name_.c_str(), id);
+	if (keyIt == str_map.end()) return;
 	if (keyIt->second) keyIt->second--;
+	if (!keyIt->second) str_map.erase(keyIt);
+
 	(void)id;
 }
 template <typename T>
@@ -58,14 +61,6 @@ Variant IndexStore<T>::Upsert(const Variant &key, IdType id) {
 template <typename T>
 void IndexStore<T>::Commit() {
 	logPrintf(LogTrace, "IndexStore::Commit (%s) %d uniq strings", name_.c_str(), int(str_map.size()));
-	for (auto keyIt = str_map.begin(); keyIt != str_map.end();) {
-		if (!keyIt->second) {
-			keyIt = str_map.erase(keyIt);
-		} else {
-			keyIt++;
-		}
-	}
-	if (!str_map.size()) str_map.clear();
 }
 
 template <typename T>

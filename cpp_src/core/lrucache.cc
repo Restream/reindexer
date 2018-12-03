@@ -84,8 +84,8 @@ bool LRUCache<K, V, hash, equal>::Clear() {
 	std::lock_guard<mutex> lk(lock_);
 	bool res = !items_.empty();
 	totalCacheSize_ = 0;
-	items_.clear();
-	lru_.clear();
+	unordered_map<K, Entry, hash, equal>().swap(items_);
+	LRUList().swap(lru_);
 	getCount_ = 0;
 	putCount_ = 0;
 	eraseCount_ = 0;

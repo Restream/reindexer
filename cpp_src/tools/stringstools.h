@@ -85,7 +85,7 @@ bool validateObjectName(const string_view& name);
 LogLevel logLevelFromString(const string& strLogLevel);
 
 bool iequals(const string_view& lhs, const string_view& rhs);
-
+bool isPrintable(string_view str);
 struct nocase_equal_str {
 	using is_transparent = void;
 

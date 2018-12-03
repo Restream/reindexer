@@ -51,8 +51,8 @@ Error ItemImpl::FromCJSON(const string_view &slice) {
 
 	if (err.ok() && !rdser.Eof() && rdser.Pos() != tmOffset)
 		return Error(errParseJson, "Internal error - left unparsed data %d", int(rdser.Pos()));
-	tupleData_ = make_key_string(ser_.Slice());
-	pl.Set(0, {Variant(tupleData_)});
+	tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
+	pl.Set(0, {Variant(p_string(&tupleData_))});
 
 	return err;
 }
@@ -81,8 +81,8 @@ Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool /*pkOnly*/)
 
 	if (err.ok()) {
 		// Put tuple to field[0]
-		tupleData_ = make_key_string(ser_.Slice());
-		pl.Set(0, {Variant(tupleData_)});
+		tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
+		pl.Set(0, {Variant(p_string(&tupleData_))});
 	}
 	return err;
 }

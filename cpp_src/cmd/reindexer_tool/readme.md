@@ -26,6 +26,8 @@ Options
   -c[COMMAND],  --command=[COMMAND]      run only single command (SQL or internal) and exit
   -o[FILENAME], --output=[FILENAME]      send query results to file
   -l[INT=1..5], --log=[INT=1..5]         reindexer logging level
+  -C[INT],      --connections=[INT]      Number of simulateonous connections to db
+  -t[INT],      --connections=[INT]      Number of threads used by db connector
 
 ```
 
@@ -87,7 +89,7 @@ Put metadata key value
 List all metadata in name
 ```
 
-### Set output formt
+### Set output format
 *Syntax:*
 ```
 \set output <format>
@@ -96,6 +98,13 @@ List all metadata in name
 Format can be one of the following:
 - `json` Unformatted JSON
 - `pretty` Pretty printed JSON
+
+### Run simple benchmark
+*Syntax:*
+```
+\bench <time>
+Run benchmark for `<time>` seconds
+```
 
 ## Examples
 

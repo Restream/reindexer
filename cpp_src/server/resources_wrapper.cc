@@ -8,21 +8,15 @@ namespace reindexer {
 
 #ifdef LINK_RESOURCES
 
-string common_path(const string& path1, const string& path2) {
-	const string& shorter = path1.size() < path2.size() ? path1 : path2;
-	const string& longer = path1.size() < path2.size() ? path2 : path1;
-	auto result = std::mismatch(shorter.begin(), shorter.end(), longer.begin());
-	return string(shorter.begin(), result.first);
-}
-
 fs::FileStatus web::stat(const std::string& target) {
 	auto& table = cmrc::detail::table_instance();
 
 	if (table.find(target) != table.end()) return fs::StatFile;
 
 	for (auto it = table.begin(); it != table.end(); ++it) {
-		string p = common_path((*it).first, target);
-		if (!p.empty()) return fs::StatDir;
+		if (target.length() < it->first.length() && it->first.find(target) == 0 && it->first[target.length()] == '/') {
+			return fs::StatDir;
+		}
 	}
 
 	return fs::StatError;

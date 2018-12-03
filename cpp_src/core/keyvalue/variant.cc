@@ -402,19 +402,6 @@ Variant::operator const PayloadValue &() const {
 	return *cast<PayloadValue>();
 }
 
-static bool isPrintable(p_string str) {
-	if (str.length() > 256) {
-		return false;
-	}
-
-	for (int i = 0; i < int(str.length()); i++) {
-		if (unsigned(str.data()[i]) < 0x20) {
-			return false;
-		}
-	}
-	return true;
-}
-
 void VariantArray::Dump(WrSerializer &wrser) const {
 	wrser << '{';
 

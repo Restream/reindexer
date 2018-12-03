@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <thread>
 #include <vector>
 #include "args.h"
 #include "cproto.h"
@@ -33,7 +34,7 @@ protected:
 class ClientConnection : public ConnectionMT {
 public:
 	ClientConnection(ev::dynamic_loop &loop, const httpparser::UrlParser *uri);
-
+	~ClientConnection();
 	typedef std::function<void(const RPCAnswer &ans)> Completion;
 
 	template <typename... Argss>
@@ -47,22 +48,19 @@ public:
 	RPCAnswer Call(CmdCode cmd, Argss... argss) {
 		Args args;
 		args.reserve(sizeof...(argss));
-		std::condition_variable cond;
 
 		RPCAnswer ret;
-		call(
-			[&cond, &ret, this](const RPCAnswer &ans) {
-				std::unique_lock<std::mutex> lck(mtx_);
-				ret = ans;
-				cond.notify_one();
-			},
-			cmd, args, argss...);
+		call([&ret](const RPCAnswer &ans) { ret = ans; }, cmd, args, argss...);
 		std::unique_lock<std::mutex> lck(mtx_);
-		if (!ret.IsSet()) cond.wait(lck);
+		bufWait_++;
+		while (!ret.IsSet()) {
+			bufCond_.wait(lck);
+		}
+		bufWait_--;
+
 		return ret;
 	}
-
-	void Connect();
+	int PendingCompletions();
 
 protected:
 	void connect_async_cb(ev::async &) { connectInternal(); }
@@ -88,24 +86,32 @@ protected:
 
 	void call(Completion cmpl, CmdCode cmd, const Args &args);
 
-	void callRPC(CmdCode cmd, uint32_t seq, const Args &args);
+	chunk packRPC(CmdCode cmd, uint32_t seq, const Args &args);
 
 	void onRead() override;
 	void onClose() override;
 
-	struct RPCWaiter {
-		RPCWaiter(CmdCode _cmd = kCmdPing, uint32_t _seq = 0, Completion _cmpl = nullptr) : cmd(_cmd), seq(_seq), cmpl(_cmpl) {}
+	struct RPCCompletion {
+		RPCCompletion() : next_(0), used(false) {}
+		~RPCCompletion() { delete next(); }
+		RPCCompletion *next() { return reinterpret_cast<RPCCompletion *>(next_.load()); }
 		CmdCode cmd;
 		uint32_t seq;
 		Completion cmpl;
+		std::atomic<uintptr_t> next_;
+		std::atomic<bool> used;
 	};
+
 	enum State { ConnInit, ConnConnecting, ConnConnected, ConnFailed };
 
 	State state_;
-	vector<RPCWaiter> waiters_;
-	std::condition_variable connectCond_;
-	uint32_t seq_;
+	// Lock free map seq -> completion
+	vector<RPCCompletion> completions_;
+	std::condition_variable connectCond_, bufCond_;
+	std::atomic<uint32_t> seq_;
+	std::atomic<int32_t> bufWait_;
 	std::mutex mtx_;
+	std::thread::id loopThreadID_;
 	Error lastError_;
 	const httpparser::UrlParser *uri_;
 	ev::async connect_async_;

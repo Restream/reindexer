@@ -501,7 +501,16 @@ void Namespace::doDelete(IdType id) {
 	// Holder for tuple. It is required for sparse indexes will be valid
 	VariantArray tupleHolder(pl.Get(0, skrefs));
 
-	for (field = 0; field < indexes_.firstCompositePos(); ++field) {
+	// Deleteing fields from dense and sparse indexes:
+	// we start with 1st index (not index 0) because
+	// changing cjson of sparse index changes entire
+	// payload value (and not only 0 item).
+	assert(indexes_.firstCompositePos() != 0);
+	const int borderIdx = indexes_.totalSize() > 1 ? 1 : 0;
+	field = borderIdx;
+	do {
+		field %= indexes_.firstCompositePos();
+
 		Index &index = *indexes_[field];
 		if (index.Opts().IsSparse()) {
 			assert(index.Fields().getTagsPathsLength() > 0);
@@ -513,7 +522,7 @@ void Namespace::doDelete(IdType id) {
 		for (auto key : skrefs) index.Delete(key, id);
 		// If no krefs delete empty value from index
 		if (!skrefs.size()) index.Delete(Variant(), id);
-	}
+	} while (++field != borderIdx);
 
 	// free PayloadValue
 	items_[id].Free();

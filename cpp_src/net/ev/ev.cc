@@ -367,7 +367,7 @@ extern "C" void net_ev_sighandler(int signum) {
 #endif
 }
 
-dynamic_loop::dynamic_loop() {
+dynamic_loop::dynamic_loop() : async_sent_(false) {
 	fds_.reserve(2048);
 	backend_.init(this);
 }
@@ -520,7 +520,10 @@ void dynamic_loop::stop(async *watcher) {
 
 void dynamic_loop::send(async *watcher) {
 	watcher->sent_ = true;
-	backend_.send_async();
+	bool was = async_sent_.exchange(true);
+	if (!was) {
+		backend_.send_async();
+	}
 }
 
 void dynamic_loop::io_callback(int fd, int events) {
@@ -534,11 +537,14 @@ void dynamic_loop::io_callback(int fd, int events) {
 }
 
 void dynamic_loop::async_callback() {
-	for (auto async : asyncs_) {
-		if (async->sent_) {
-			async->callback();
-			async->sent_ = false;
-		}
+	async_sent_ = false;
+	for (auto async = asyncs_.begin(); async != asyncs_.end();) {
+		if ((*async)->sent_) {
+			(*async)->sent_ = false;
+			(*async)->callback();
+			async = asyncs_.begin();
+		} else
+			async++;
 	}
 }
 

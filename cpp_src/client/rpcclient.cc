@@ -13,15 +13,12 @@ namespace client {
 
 using reindexer::net::cproto::RPCAnswer;
 
-RPCClient::RPCClient(const ReindexerConfig& config) : config_(config) {
-	stop_.set(loop_);
-	curConnIdx_ = -1;
-}
+RPCClient::RPCClient(const ReindexerConfig& config) : workers_(config.WorkerThreads), config_(config) { curConnIdx_ = 0; }
 
 RPCClient::~RPCClient() { Stop(); }
 
 Error RPCClient::Connect(const string& dsn) {
-	if (worker_.joinable()) {
+	if (connections_.size()) {
 		return Error(errLogic, "Client is already started");
 	}
 
@@ -32,41 +29,45 @@ Error RPCClient::Connect(const string& dsn) {
 		return Error(errParams, "Scheme must be cproto");
 	}
 
-	curConnIdx_ = -1;
-	worker_ = std::thread([&]() { this->run(); });
-
-	while (curConnIdx_ == -1) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+	connections_.resize(config_.ConnPoolSize);
+	for (unsigned i = 0; i < workers_.size(); i++) {
+		workers_[i].thread_ = std::thread([this](int i) { this->run(i); }, i);
+		while (!workers_[i].running) std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
-
 	return errOK;
 }
 
 Error RPCClient::Stop() {
-	stop_.send();
-	if (worker_.joinable()) {
-		worker_.join();
+	connections_.clear();
+	for (auto& worker : workers_) {
+		worker.stop_.send();
+
+		if (worker.thread_.joinable()) {
+			worker.thread_.join();
+		}
 	}
 	return errOK;
 }
 
-void RPCClient::run() {
+void RPCClient::run(int thIdx) {
 	bool terminate = false;
 
-	stop_.set([&](ev::async& sig) {
+	workers_[thIdx].stop_.set(workers_[thIdx].loop_);
+	workers_[thIdx].stop_.set([&](ev::async& sig) {
 		terminate = true;
 		sig.loop.break_loop();
 	});
-	stop_.start();
-	for (int i = 0; i < config_.ConnPoolSize; i++) {
-		connections_.push_back(std::unique_ptr<cproto::ClientConnection>(new cproto::ClientConnection(loop_, &uri_)));
+
+	workers_[thIdx].stop_.start();
+
+	for (int i = thIdx; i < config_.ConnPoolSize; i += config_.WorkerThreads) {
+		connections_[i].reset(new cproto::ClientConnection(workers_[thIdx].loop_, &uri_));
 	}
 
-	if (curConnIdx_ == -1) curConnIdx_ = 0;
+	workers_[thIdx].running = true;
 	while (!terminate) {
-		loop_.run();
+		workers_[thIdx].loop_.run();
 	}
-	connections_.clear();
 }
 
 Error RPCClient::AddNamespace(const NamespaceDef& nsDef) {
@@ -125,7 +126,7 @@ Error RPCClient::modifyItem(const string& ns, Item& item, int mode, Completion c
 		try {
 			auto args = ret.GetArgs(2);
 			NSArray nsArray{getNamespace(ns)};
-			return QueryResults(conn, nsArray, p_string(args[0]), int(args[1])).Status();
+			return QueryResults(conn, std::move(nsArray), nullptr, p_string(args[0]), int(args[1])).Status();
 		} catch (const Error& err) {
 			return err;
 		}
@@ -162,8 +163,7 @@ Error RPCClient::modifyItemAsync(const string& ns, Item* item, int mode, Complet
 			} else
 				try {
 					auto args = ret.GetArgs(2);
-					NSArray nsArray{getNamespace(ns)};
-					clientCompl(QueryResults(getConn(), nsArray, p_string(args[0]), int(args[1])).Status());
+					clientCompl(QueryResults(getConn(), {getNamespace(ns)}, nullptr, p_string(args[0]), int(args[1])).Status());
 				} catch (const Error& err) {
 					clientCompl(err);
 				}
@@ -238,18 +238,19 @@ Error RPCClient::Select(const string_view& query, QueryResults& result, Completi
 
 	auto conn = getConn();
 
-	QueryResults* pres = &result;
-	auto icompl = [&pres, conn, clientCompl](const RPCAnswer& ret) {
+	result = QueryResults(conn, {}, clientCompl);
+
+	auto icompl = [&result](const RPCAnswer& ret) {
 		try {
 			if (ret.Status().ok()) {
 				auto args = ret.GetArgs(2);
-				*pres = QueryResults(conn, {}, p_string(args[0]), int(args[1]));
+				result.Bind(p_string(args[0]), int(args[1]));
 			}
 
-			if (clientCompl) clientCompl(ret.Status());
+			result.completion(ret.Status());
 			return ret.Status();
 		} catch (const Error& err) {
-			if (clientCompl) clientCompl(err);
+			result.completion(err);
 			return err;
 		}
 	};
@@ -270,22 +271,25 @@ Error RPCClient::Select(const Query& query, QueryResults& result, Completion cli
 	query.Serialize(qser);
 	query.WalkNested(true, true, [this, &nsArray](const Query q) { nsArray.push_back(getNamespace(q._namespace)); });
 	h_vector<int32_t, 4> vers;
-	for (auto& ns : nsArray) vers.push_back(ns->tagsMatcher_.version() ^ ns->tagsMatcher_.stateToken());
+	for (auto& ns : nsArray) {
+		shared_lock<shared_timed_mutex> lck(ns->lck_);
+		vers.push_back(ns->tagsMatcher_.version() ^ ns->tagsMatcher_.stateToken());
+	}
 	vec2pack(vers, pser);
 
 	auto conn = getConn();
-	QueryResults* pres = &result;
+	result = QueryResults(conn, std::move(nsArray), clientCompl);
 
-	auto icompl = [pres, conn, nsArray, clientCompl](const RPCAnswer& ret) {
+	auto icompl = [&result](const RPCAnswer& ret) {
 		try {
 			if (ret.Status().ok()) {
 				auto args = ret.GetArgs(2);
-				*pres = QueryResults(conn, nsArray, p_string(args[0]), int(args[1]));
+				result.Bind(p_string(args[0]), int(args[1]));
 			}
-			if (clientCompl) clientCompl(ret.Status());
+			result.completion(ret.Status());
 			return ret.Status();
 		} catch (const Error& err) {
-			if (clientCompl) clientCompl(ret.Status());
+			result.completion(err);
 			return err;
 		}
 	};
@@ -346,24 +350,28 @@ Error RPCClient::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll) {
 	}
 }
 
-shared_ptr<Namespace> RPCClient::getNamespace(const string& nsName) {
-	nsMutex_.lock();
+Namespace* RPCClient::getNamespace(const string& nsName) {
+	nsMutex_.lock_shared();
 	auto nsIt = namespaces_.find(nsName);
+	if (nsIt != namespaces_.end()) {
+		nsMutex_.unlock_shared();
+		return nsIt->second.get();
+	}
+	nsMutex_.unlock_shared();
 
+	nsMutex_.lock();
+	nsIt = namespaces_.find(nsName);
 	if (nsIt == namespaces_.end()) {
 		nsIt = namespaces_.emplace(nsName, Namespace::Ptr(new Namespace(nsName))).first;
 	}
 	nsMutex_.unlock();
-	assert(nsIt->second);
-	return nsIt->second;
+	return nsIt->second.get();
 }
 
 net::cproto::ClientConnection* RPCClient::getConn() {
 	assert(connections_.size());
 
-	auto conn = connections_.at(curConnIdx_++ % connections_.size()).get();
-	conn->Connect();
-	return conn;
+	return connections_.at(curConnIdx_++ % connections_.size()).get();
 }
 
 }  // namespace client

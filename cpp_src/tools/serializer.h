@@ -147,7 +147,7 @@ public:
 	}
 	WrSerializer &operator<<(double v) {
 		grow(32);
-		len_ += snprintf(reinterpret_cast<char *>(buf_ + len_), 32, "%.20g", v);
+		len_ += snprintf(reinterpret_cast<char *>(buf_ + len_), 32, "%.17g", v);
 		return *this;
 	}
 

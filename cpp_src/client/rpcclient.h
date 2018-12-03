@@ -59,8 +59,8 @@ public:
 private:
 	Error modifyItem(const string &_namespace, Item &item, int mode, Completion);
 	Error modifyItemAsync(const string &_namespace, Item *item, int mode, Completion);
-	Namespace::Ptr getNamespace(const string &nsName);
-	void run();
+	Namespace *getNamespace(const string &nsName);
+	void run(int thIdx);
 
 	net::cproto::ClientConnection *getConn();
 
@@ -70,10 +70,14 @@ private:
 
 	shared_timed_mutex nsMutex_;
 	httpparser::UrlParser uri_;
-	ev::dynamic_loop loop_;
-	std::thread worker_;
-	ev::async stop_;
-	std::atomic<int> curConnIdx_;
+	struct worker {
+		ev::dynamic_loop loop_;
+		std::thread thread_;
+		ev::async stop_;
+		bool running = false;
+	};
+	std::vector<worker> workers_;
+	std::atomic<unsigned> curConnIdx_;
 	ReindexerConfig config_;
 };
 

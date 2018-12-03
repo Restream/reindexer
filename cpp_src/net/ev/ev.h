@@ -163,6 +163,8 @@ protected:
 	std::vector<async *> asyncs_;
 	std::vector<sig *> sigs_;
 	bool break_ = false;
+	std::atomic<int> async_sent_;
+
 #ifdef HAVE_EPOLL_LOOP
 	loop_epoll_backend backend_;
 #elif defined(HAVE_POLL_LOOP)
@@ -333,10 +335,7 @@ public:
 	void start() { loop.set(this); }
 	void stop() { loop.stop(this); }
 	void reset() { loop.loop_ = nullptr; }
-	void send() {
-		sent_ = true;
-		loop.send(this);
-	}
+	void send() { loop.send(this); }
 
 	template <typename K, void (K::*func)(async &)>
 	void set(K *object) {

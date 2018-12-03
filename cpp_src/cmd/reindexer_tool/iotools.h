@@ -22,7 +22,7 @@ class Output {
 public:
 	Output() : isCout_(true), errState_(0) {}
 	Output(const string& filePath) : f_(filePath, std::ios::out | std::ios::trunc), isCout_(false || filePath.empty()) {
-		errState_ = errno;
+		errState_ = (isCout_ || f_.is_open()) ? 0 : errno;
 	}
 
 	Output(const Output&) = default;

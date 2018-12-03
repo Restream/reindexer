@@ -59,7 +59,7 @@ protected:
 
 	JsonAllocator jsonAllocator_;
 	WrSerializer ser_;
-	key_string tupleData_;
+	string tupleData_;
 
 	vector<string> precepts_;
 	bool unsafe_ = false;

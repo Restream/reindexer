@@ -391,4 +391,17 @@ LogLevel logLevelFromString(const string &strLogLevel) {
 	return LogNone;
 }
 
+bool isPrintable(string_view str) {
+	if (str.length() > 256) {
+		return false;
+	}
+
+	for (int i = 0; i < int(str.length()); i++) {
+		if (unsigned(str.data()[i]) < 0x20) {
+			return false;
+		}
+	}
+	return true;
+}
+
 }  // namespace reindexer

@@ -17,9 +17,14 @@ template <typename _DB>
 class DBWrapper {
 public:
 	template <typename... Args>
-	DBWrapper(const string& outFileName, const string& inFileName, const string& command, Args... args)
-		: db_(args...), output_(outFileName), fileName_(inFileName), command_(command) {}
-	~DBWrapper ();
+	DBWrapper(const string& outFileName, const string& inFileName, const string& command, int connPoolSize, int numThreads, Args... args)
+		: db_(args...),
+		  output_(outFileName),
+		  fileName_(inFileName),
+		  command_(command),
+		  connPoolSize_(connPoolSize),
+		  numThreads_(numThreads) {}
+	~DBWrapper();
 	Error Connect(const string& dsn);
 	bool Run();
 
@@ -38,6 +43,7 @@ protected:
 	Error commandHelp(const string& command);
 	Error commandQuit(const string& command);
 	Error commandSet(const string& command);
+	Error commandBench(const string& command);
 
 	struct commandDefinition {
 		string command;
@@ -101,6 +107,10 @@ protected:
 		- 'json' Unformatted JSON
 		- 'pretty' Pretty printed JSON
 		)help"},
+		{"\\bench",		"Run benchmark",&DBWrapper::commandBench,R"help(
+	Syntax:
+		\bench <time>
+		)help"},
 		{"\\quit",		"Exit from tool",&DBWrapper::commandQuit,""},
 		{"\\help",		"Show help",&DBWrapper::commandHelp,""}
 	};
@@ -110,11 +120,10 @@ protected:
 	Output output_;
 	string fileName_;
 	string command_;
+	int connPoolSize_;
+	int numThreads_;
 	bool terminate_ = false;
 	unordered_map<string, string> variables_;
-	std::condition_variable condUpsertCompleted_;
-	std::mutex mtx_;
-	int waitingUpsertsCount_ = 0;
 };
 
 }  // namespace reindexer_tool

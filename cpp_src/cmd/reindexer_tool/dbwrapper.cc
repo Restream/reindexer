@@ -7,6 +7,7 @@
 #include "replxx.hxx"
 #endif
 
+#include "core/cjson/jsonbuilder.h"
 #include "tools/fsops.h"
 #include "tools/jsontools.h"
 #include "tools/stringstools.h"
@@ -16,12 +17,20 @@ namespace reindexer_tool {
 
 using reindexer::iequals;
 using reindexer::WrSerializer;
+using reindexer::NamespaceDef;
+using reindexer::JsonBuilder;
+using reindexer::Query;
 
 const string kVariableOutput = "output";
 const string kOutputModeJson = "json";
 const string kOutputModePretty = "pretty";
 const string kOutputModePrettyCollapsed = "collapsed";
 const string kOutputModeTable = "table";
+const string kBenchNamespace = "rxtool_bench";
+const string kBenchIndex = "id";
+
+const int kBenchItemsCount = 10000;
+const int kBenchDefaultTime = 5;
 
 template <typename _DB>
 Error DBWrapper<_DB>::Connect(const string& dsn) {
@@ -30,16 +39,7 @@ Error DBWrapper<_DB>::Connect(const string& dsn) {
 }
 
 template <typename _DB>
-DBWrapper<_DB>::~DBWrapper () {
-	for (;;) {
-		std::unique_lock<std::mutex> lck(mtx_);
-		if (waitingUpsertsCount_) {
-			condUpsertCompleted_.wait(lck);
-		} else {
-			break;
-		}
-	}
-}
+DBWrapper<_DB>::~DBWrapper() {}
 
 template <typename _DB>
 Error DBWrapper<_DB>::ProcessCommand(string command) {
@@ -49,7 +49,7 @@ Error DBWrapper<_DB>::ProcessCommand(string command) {
 	if (!token.length() || token.substr(0, 2) == "--") return errOK;
 
 	for (auto& c : cmds_) {
-		if (reindexer::iequals(token, c.command)) return (this->*(c.handler))(command);
+		if (iequals(token, c.command)) return (this->*(c.handler))(command);
 	}
 	return Error(errParams, "Unknown command '%s'. Type '\\help' to list of available commands", token.ToString().c_str());
 }
@@ -57,7 +57,7 @@ Error DBWrapper<_DB>::ProcessCommand(string command) {
 template <typename _DB>
 Error DBWrapper<_DB>::commandSelect(const string& command) {
 	typename _DB::QueryResultsT results;
-	reindexer::Query q;
+	Query q;
 	try {
 		q.FromSQL(command);
 	} catch (const Error& err) {
@@ -128,19 +128,7 @@ Error DBWrapper<_DB>::commandUpsert(const string& command) {
 		return status;
 	}
 
-	std::unique_lock<std::mutex> lck(mtx_);
-	if (++waitingUpsertsCount_ > 50) {
-		condUpsertCompleted_.wait(lck);
-	} else {
-		lck.unlock();
-	}
-
-	return db_.Upsert(nsName, *item, [this, item](const Error& /*err*/) {
-		delete item;
-		std::unique_lock<std::mutex> lck(mtx_);
-		waitingUpsertsCount_--;
-		condUpsertCompleted_.notify_one();
-	});
+	return db_.Upsert(nsName, *item, [item](const Error& /*err*/) { delete item; });
 }
 
 template <typename _DB>
@@ -164,7 +152,7 @@ Error DBWrapper<_DB>::commandDump(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
 
-	vector<reindexer::NamespaceDef> allNsDefs, doNsDefs;
+	vector<NamespaceDef> allNsDefs, doNsDefs;
 
 	auto err = db_.EnumNamespaces(allNsDefs, false);
 	if (err) return err;
@@ -173,8 +161,7 @@ Error DBWrapper<_DB>::commandDump(const string& command) {
 		// build list of namespaces for dumped
 		while (!parser.End()) {
 			auto ns = parser.NextToken();
-			auto nsDef =
-				std::find_if(allNsDefs.begin(), allNsDefs.end(), [&ns](const reindexer::NamespaceDef& nsDef) { return ns == nsDef.name; });
+			auto nsDef = std::find_if(allNsDefs.begin(), allNsDefs.end(), [&ns](const NamespaceDef& nsDef) { return ns == nsDef.name; });
 			if (nsDef != allNsDefs.end()) {
 				doNsDefs.push_back(std::move(*nsDef));
 				allNsDefs.erase(nsDef);
@@ -214,7 +201,7 @@ Error DBWrapper<_DB>::commandDump(const string& command) {
 		}
 
 		typename _DB::QueryResultsT itemResults;
-		err = db_.Select(reindexer::Query(nsDef.name), itemResults);
+		err = db_.Select(Query(nsDef.name), itemResults);
 
 		if (!err.ok()) return err;
 
@@ -244,7 +231,7 @@ Error DBWrapper<_DB>::commandNamespaces(const string& command) {
 	if (iequals(subCommand, "add")) {
 		auto nsName = unescapeName(parser.NextToken());
 
-		reindexer::NamespaceDef def("");
+		NamespaceDef def("");
 		reindexer::Error err = def.FromJSON(const_cast<char*>(parser.CurPtr()));
 		if (!err.ok()) {
 			return Error(errParseJson, "Namespace structure is not valid - %s", err.what().c_str());
@@ -255,7 +242,7 @@ Error DBWrapper<_DB>::commandNamespaces(const string& command) {
 
 		return db_.AddNamespace(def);
 	} else if (iequals(subCommand, "list")) {
-		vector<reindexer::NamespaceDef> allNsDefs;
+		vector<NamespaceDef> allNsDefs;
 
 		auto err = db_.EnumNamespaces(allNsDefs, true);
 		for (auto& ns : allNsDefs) {
@@ -339,20 +326,80 @@ Error DBWrapper<_DB>::commandSet(const string& command) {
 }
 
 template <typename _DB>
+Error DBWrapper<_DB>::commandBench(const string& command) {
+	LineParser parser(command);
+	parser.NextToken();
+
+	int benchTime = stoi(parser.NextToken());
+	if (benchTime == 0) benchTime = kBenchDefaultTime;
+
+	db_.DropNamespace(kBenchNamespace);
+
+	NamespaceDef nsDef(kBenchNamespace);
+	nsDef.AddIndex("id", "hash", "int", IndexOpts().PK());
+
+	auto err = db_.AddNamespace(nsDef);
+	if (!err.ok()) return err;
+
+	std::cout << "Seeding " << kBenchItemsCount << " documents to bench namespace..." << std::endl;
+	for (int i = 0; i < kBenchItemsCount; i++) {
+		auto item = db_.NewItem(kBenchNamespace);
+		WrSerializer ser;
+		JsonBuilder(ser).Put("id", i).Put("data", i);
+
+		err = item.FromJSON(ser.c_str());
+		if (!err.ok()) return err;
+
+		err = db_.Upsert(kBenchNamespace, item);
+		if (!err.ok()) return err;
+	}
+	std::cout << "done." << std::endl;
+
+	std::cout << "Running " << benchTime << "s benchmark..." << std::endl;
+
+	std::this_thread::sleep_for(std::chrono::seconds(1));
+
+	auto deadline = std::chrono::system_clock::now() + std::chrono::seconds(benchTime);
+	std::atomic<int> count(0), errCount(0);
+
+	auto worker = [this, deadline, &count, &errCount]() {
+		for (; (count % 1000) || std::chrono::system_clock::now() < deadline; count++) {
+			Query q(kBenchNamespace);
+			q.Where(kBenchIndex, CondEq, count % kBenchItemsCount);
+			auto results = new typename _DB::QueryResultsT;
+
+			db_.Select(q, *results, [results, &errCount](const Error& err) {
+				delete results;
+				if (!err.ok()) errCount++;
+			});
+		}
+	};
+	auto threads = std::unique_ptr<std::thread[]>(new std::thread[numThreads_ - 1]);
+	for (int i = 0; i < numThreads_ - 1; i++) threads[i] = std::thread(worker);
+	worker();
+	for (int i = 0; i < numThreads_ - 1; i++) threads[i].join();
+
+	std::cout << "Done. Got " << count / benchTime << " QPS, " << errCount << " errors" << std::endl;
+
+	return errOK;
+}
+
+template <typename _DB>
 Error DBWrapper<_DB>::queryResultsToJson(ostream& o, const typename _DB::QueryResultsT& r) {
 	WrSerializer ser;
 	size_t i = 0;
+	bool prettyPrint = variables_[kVariableOutput] == kOutputModePretty;
 	for (auto it : r) {
 		Error err = it.GetJSON(ser, false);
 		if (!err.ok()) return err;
 
-		if (variables_[kVariableOutput] == kOutputModePretty) {
+		if (prettyPrint) {
 			string json = ser.Slice().ToString();
 			ser.Reset();
 			prettyPrintJSON(json, ser);
 		}
 		ser << (++i == r.Count() ? "\n" : ",\n");
-		if (ser.Len() > 0x100000) {
+		if (ser.Len() > 0x100000 || prettyPrint) {
 			o << ser.Slice();
 			ser.Reset();
 		}
@@ -433,8 +480,16 @@ bool DBWrapper<_DB>::FromFile() {
 
 template <typename _DB>
 bool DBWrapper<_DB>::Run() {
+	auto err = output_.Status();
+	if (!err.ok()) {
+		if (!err.ok()) {
+			std::cerr << "Output error: " << err.what() << std::endl;
+			return false;
+		}
+	}
+
 	if (!command_.empty()) {
-		Error err = ProcessCommand(command_);
+		err = ProcessCommand(command_);
 		if (!err.ok()) {
 			std::cerr << "ERROR: " << err.what() << std::endl;
 			return false;

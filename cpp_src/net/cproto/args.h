@@ -9,11 +9,12 @@ namespace cproto {
 
 using Arg = Variant;
 
-class Args : public VariantArray {
+class Args : public h_vector<Variant, 8> {
 public:
-	using VariantArray::VariantArray;
+	using h_vector<Variant, 8>::h_vector;
 	void Unpack(Serializer &ser);
 	void Pack(WrSerializer &ser) const;
+	void Dump(WrSerializer &wrser) const;
 };
 }  // namespace cproto
 }  // namespace net

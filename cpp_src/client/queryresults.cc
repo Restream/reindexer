@@ -21,27 +21,36 @@ QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 		fetchOffset_ = std::move(obj.fetchOffset_);
 		queryID_ = std::move(obj.queryID_);
 		status_ = std::move(obj.status_);
+		cmpl_ = std::move(obj.cmpl_);
 	}
 	return *this;
 }
 
-QueryResults::QueryResults(net::cproto::ClientConnection *conn, const NSArray &nsArray, string_view rawResult, int queryID)
-	: conn_(conn), nsArray_(nsArray), queryID_(queryID), fetchOffset_(0), status_(errOK) {
+QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl)
+	: conn_(conn), nsArray_(std::move(nsArray)), fetchOffset_(0), cmpl_(std::move(cmpl)) {}
+
+QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, string_view rawResult, int queryID)
+	: QueryResults(conn, std::move(nsArray), cmpl) {
+	Bind(rawResult, queryID);
+}
+
+void QueryResults::Bind(string_view rawResult, int queryID) {
+	queryID_ = queryID;
 	ResultSerializer ser(rawResult);
 
 	try {
-		queryParams_ = ser.GetRawQueryParams([&](int nsIdx) {
+		ser.GetRawQueryParams(queryParams_, [&ser, this](int nsIdx) {
 			uint32_t stateToken = ser.GetVarUint();
 			int version = ser.GetVarUint();
 
-			std::unique_lock<std::mutex> lck(nsArray[nsIdx]->lck_);
+			std::unique_lock<shared_timed_mutex> lck(nsArray_[nsIdx]->lck_);
 
-			bool skip = nsArray[nsIdx]->tagsMatcher_.version() >= version && nsArray[nsIdx]->tagsMatcher_.stateToken() == stateToken;
+			bool skip = nsArray_[nsIdx]->tagsMatcher_.version() >= version && nsArray_[nsIdx]->tagsMatcher_.stateToken() == stateToken;
 			if (skip) {
 				TagsMatcher().deserialize(ser);
 				// PayloadType("tmp").clone()->deserialize(ser);
 			} else {
-				nsArray[nsIdx]->tagsMatcher_.deserialize(ser, version, stateToken);
+				nsArray_[nsIdx]->tagsMatcher_.deserialize(ser, version, stateToken);
 				// nsArray[nsIdx]->payloadType_.clone()->deserialize(ser);
 				// nsArray[nsIdx]->tagsMatcher_.updatePayloadType(nsArray[nsIdx]->payloadType_, false);
 			}
@@ -51,7 +60,7 @@ QueryResults::QueryResults(net::cproto::ClientConnection *conn, const NSArray &n
 		status_ = err;
 	}
 
-	rawResult_ = rawResult.substr(ser.Pos()).ToString();
+	rawResult_.assign(rawResult.begin() + ser.Pos(), rawResult.end());
 }
 
 void QueryResults::fetchNextResults() {
@@ -70,16 +79,16 @@ void QueryResults::fetchNextResults() {
 	string_view rawResult = p_string(args[0]);
 	ResultSerializer ser(rawResult);
 
-	queryParams_ = ser.GetRawQueryParams(nullptr);
+	ser.GetRawQueryParams(queryParams_, nullptr);
 
-	rawResult_ = rawResult.substr(ser.Pos()).ToString();
+	rawResult_.assign(rawResult.begin() + ser.Pos(), rawResult.end());
 }
 
 QueryResults::~QueryResults() {}
 
 Error QueryResults::Iterator::GetJSON(WrSerializer &wrser, bool withHdrLen) {
 	try {
-		string_view rawResult = qr_->rawResult_;
+		string_view rawResult(qr_->rawResult_.data(), qr_->rawResult_.size());
 
 		ResultSerializer ser(rawResult.substr(pos_));
 
@@ -132,7 +141,8 @@ Item QueryResults::Iterator::GetItem() {
 }
 
 QueryResults::Iterator &QueryResults::Iterator::operator++() {
-	string_view rawResult = qr_->rawResult_;
+	string_view rawResult(qr_->rawResult_.data(), qr_->rawResult_.size());
+
 	ResultSerializer ser(rawResult.substr(pos_));
 
 	try {

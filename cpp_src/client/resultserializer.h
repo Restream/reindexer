@@ -26,7 +26,7 @@ public:
 		string explainResults;
 	};
 
-	QueryParams GetRawQueryParams(std::function<void(int nsId)> updatePayloadFunc);
+	void GetRawQueryParams(QueryParams &ret, std::function<void(int nsId)> updatePayloadFunc);
 	ItemParams GetItemParams(int flags);
 };
 }  // namespace client

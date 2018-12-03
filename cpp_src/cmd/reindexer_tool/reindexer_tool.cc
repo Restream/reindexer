@@ -48,6 +48,11 @@ int main(int argc, char* argv[]) {
 									Options::Single | Options::Global);
 	args::ValueFlag<string> outFileName(progOptions, "FILENAME", "send query results to file", {'o', "output"}, "",
 										Options::Single | Options::Global);
+	args::ValueFlag<int> connPoolSize(progOptions, "INT", "Number of simulateonous connections to db", {'C', "connections"}, 1,
+									  Options::Single | Options::Global);
+
+	args::ValueFlag<int> connThreads(progOptions, "INT", "Number of threads used by db connector", {'t', "threads"}, 1,
+									 Options::Single | Options::Global);
 
 	args::ActionFlag logLevel(progOptions, "INT=1..5", "reindexer logging level", {'l', "log"}, 1, &InstallLogLevel,
 							  Options::Single | Options::Global);
@@ -76,14 +81,17 @@ int main(int argc, char* argv[]) {
 	if (!args::get(command).length() && !args::get(fileName).length())
 		std::cout << "Reindexer command line tool version " << REINDEX_VERSION << std::endl;
 
+	reindexer::client::ReindexerConfig config;
+	config.ConnPoolSize = args::get(connPoolSize);
+	config.WorkerThreads = 1;  // args::get(connThreads);
 	if (dsn.compare(0, 9, "cproto://") == 0) {
-		reindexer::client::ReindexerConfig config;
-		config.ConnPoolSize = 1;
-		DBWrapper<reindexer::client::Reindexer> db(args::get(outFileName), args::get(fileName), args::get(command), config);
+		DBWrapper<reindexer::client::Reindexer> db(args::get(outFileName), args::get(fileName), args::get(command), config.ConnPoolSize,
+												   args::get(connThreads), config);
 		err = db.Connect(dsn);
 		if (err.ok()) ok = db.Run();
 	} else if (dsn.compare(0, 10, "builtin://") == 0) {
-		DBWrapper<reindexer::Reindexer> db(args::get(outFileName), args::get(fileName), args::get(command));
+		DBWrapper<reindexer::Reindexer> db(args::get(outFileName), args::get(fileName), args::get(command), config.ConnPoolSize,
+										   args::get(connThreads));
 		err = db.Connect(dsn);
 		if (err.ok()) ok = db.Run();
 	} else {

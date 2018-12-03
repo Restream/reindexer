@@ -4,6 +4,7 @@
 #include "client/item.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/payload/payloadtype.h"
+#include "estl/shared_mutex.h"
 
 namespace reindexer {
 namespace client {
@@ -20,7 +21,7 @@ public:
 	PayloadType payloadType_;
 	TagsMatcher tagsMatcher_;
 
-	std::mutex lck_;
+	shared_timed_mutex lck_;
 };
 
 }  // namespace client

@@ -3,13 +3,13 @@
 namespace reindexer {
 namespace client {
 
-ResultSerializer::QueryParams ResultSerializer::GetRawQueryParams(std::function<void(int nsId)> updatePayloadFunc) {
-	QueryParams ret;
-
+void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams &ret, std::function<void(int nsId)> updatePayloadFunc) {
 	ret.flags = GetVarUint();
 	ret.totalcount = GetVarUint();
 	ret.qcount = GetVarUint();
 	ret.count = GetVarUint();
+	ret.aggResults.clear();
+	ret.explainResults.clear();
 
 	if (ret.flags & kResultsWithPayloadTypes) {
 		int ptCount = GetVarUint();
@@ -37,8 +37,6 @@ ResultSerializer::QueryParams ResultSerializer::GetRawQueryParams(std::function<
 				break;
 		}
 	}
-
-	return ret;
 }
 
 ResultSerializer::ItemParams ResultSerializer::GetItemParams(int flags) {
