@@ -51,7 +51,7 @@ git:
   script:
     - cd ${BUILD_DIR} && cmake ${CMAKE_OPTS} ${TRAVIS_BUILD_DIR} && make -j4
     - ctest --verbose
-    - cd ${TRAVIS_BUILD_DIR} && CGO_LDFLAGS=-fsanitize=address go test ./test  -bench . -cpu 1 -benchmem -benchtime 100ms -seedcount 50000 && CGO_LDFLAGS=-fsanitize=address go test ./test/ft/text_index/...
+    - cd ${TRAVIS_BUILD_DIR} && CGO_LDFLAGS=-fsanitize=address go test ./test  -bench . -cpu 1 -benchmem -benchtime 100ms -seedcount 50000
 
 .stage_build_linux_tsan_template: &stage_build_linux_tsan_template
   <<: *stage_build_linux_template
