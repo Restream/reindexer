@@ -162,7 +162,7 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 			Description:        randString(),
 			Packages:           randIntArr(pkgsCount, 10000, 50),
 			UPackages:          []uint{uint(rand.Uint32() >> 1), uint(rand.Uint32() >> 1)},
-			UPackages64:        []uint64{uint64(rand.Int63()) >> 1, uint64(rand.Int63()) >> 1) /*, math.MaxUint64*/},
+			UPackages64:        []uint64{uint64(rand.Int63()) >> 1, uint64(rand.Int63()) >> 1 /*, math.MaxUint64*/},
 			SliceUInt:          []uint{uint(rand.Uint32() >> 1), uint(rand.Uint32() >> 1)},
 			SliceUInt64:        []uint64{uint64(rand.Int63()) >> 1, uint64(rand.Int63()) >> 1},
 			NegativeSliceInt64: []int64{0 - rand.Int63(), 0 - rand.Int63()},
