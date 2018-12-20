@@ -1,3 +1,32 @@
+# Version 1.10.4 (20.12.2018)
+
+## Core
+
+- [fix] int64 and double conversion in JSON parser loose precision
+- [fea] `DELETE FROM` SQL statement added
+- [fix] `SELECT *,COUNT(*)` will not return items
+- [fix] Crash on condition with arguments of different type to same index
+- [fea] Aggregation function name added to aggregations results
+- [fix] Incorrect limit/offset calculation on queries with `SORT` by non indexed fields
+
+## Go connector
+
+- [fix] Struct verificator incorrect validation of composite `reindex` tags
+- [fea] Pool usage statistics added to `DB.Status()` method
+
+## Reindexer server
+
+- [fea] Added fields `namespaces` and `enable_cache` to GET|POST /db/:db/query method
+
+## Face
+
+- [fea] Query builder added
+- [fea] `Delete all` button added to items page
+- [fea] Aggregations results view
+- [fea] Edit/Delete function of query results added
+- [fea] JSON index configuration editor
+- [fea] Memory usage statistics round precision
+
 # Version 1.10.3 (02.12.2018)
 
 ## Core 
@@ -6,7 +35,7 @@
 - [fix] Slow cache cleanup
 - [fix] Print precision of double values decreased to actual double range
 
-## Reindexer tool
+## Reindexer server
 - [fix] Invalid http redirects, if compiled with -DLINK_RESOURCES
 
 ## Reindexer tool

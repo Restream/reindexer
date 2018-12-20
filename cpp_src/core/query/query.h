@@ -352,6 +352,11 @@ protected:
 	/// @return always returns zero.
 	int selectParse(tokenizer &tok);
 
+	/// Parses filter part of sql delete query.
+	/// @param tok - tokenizer object instance.
+	/// @return always returns zero.
+	int deleteParse(tokenizer &tok);
+
 	/// Parses JSON dsl set.
 	/// @param dsl - dsl set.
 	void parseJson(const string &dsl);
@@ -445,6 +450,7 @@ public:
 
 	/// Explain query if true
 	bool explain_ = false;
+	QueryType type_ = QuerySelect;
 };
 
 }  // namespace reindexer

@@ -126,6 +126,7 @@ type RawBinding interface {
 	DisableLogger()
 	Ping() error
 	Finalize() error
+	Status() Status
 }
 
 type RawBindingChanging interface {
@@ -167,4 +168,22 @@ type OptionBuiltinWithServer struct {
 	StartupTimeout  time.Duration
 	ShutdownTimeout time.Duration
 	ServerConfig    *config.ServerConfig
+}
+
+type Status struct {
+	Err     error
+	CProto  StatusCProto
+	Builtin StatusBuiltin
+}
+
+type StatusCProto struct {
+	ConnPoolSize   int
+	ConnPoolUsage  int
+	ConnQueueSize  int
+	ConnQueueUsage int
+}
+
+type StatusBuiltin struct {
+	CGOLimit int
+	CGOUsage int
 }

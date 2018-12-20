@@ -92,9 +92,11 @@ enum ErrorCode {
 	errStateInvalidated = 14
 };
 
+enum QueryType { QuerySelect, QueryDelete, QueryUpdate };
+
 enum OpType { OpOr = 1, OpAnd = 2, OpNot = 3 };
 
-enum AggType { AggSum, AggAvg, AggFacet, AggMin, AggMax };
+enum AggType { AggSum, AggAvg, AggFacet, AggMin, AggMax, AggUnknown = -1 };
 
 enum JoinType { LeftJoin, InnerJoin, OrInnerJoin, Merge };
 

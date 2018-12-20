@@ -55,6 +55,8 @@ public:
 	const string &GetExplainResults() const { return explainResults; }
 	const vector<AggregationResult> &GetAggregationResults() const { return aggregationResults; }
 	void Clear();
+	h_vector<string_view, 1> GetNamespaces() const;
+	bool IsCacheEnabled() const { return !nonCacheableData; }
 
 	class Iterator {
 	public:

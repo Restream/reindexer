@@ -41,10 +41,10 @@ install_cmake_linux () {
     info_msg "Installing 'cmake' package ....."
     case `uname -m` in
         x86_64)
-            curl -L https://cmake.org/files/v3.11/cmake-3.11.3-Linux-x86_64.tar.gz 2>/dev/null | tar xzv --strip-components=1 -C /usr/local/ >/dev/null 2>&1
+            curl -L https://github.com/Kitware/CMake/releases/download/v3.11.3/cmake-3.11.3-Linux-x86_64.tar.gz 2>/dev/null | tar xzv --strip-components=1 -C /usr/local/ >/dev/null 2>&1
             ;;
         i386)
-            curl -L https://cmake.org/files/v3.6/cmake-3.6.3-Linux-i386.tar.gz 2>/dev/null | tar xzv --strip-components=1 -C /usr/local/ >/dev/null 2>&1
+            curl -L https://github.com/Kitware/CMake/releases/download/v3.6.3/cmake-3.6.3-Linux-i386.tar.gz 2>/dev/null | tar xzv --strip-components=1 -C /usr/local/ >/dev/null 2>&1
             ;;
         *)
             warning_msg "Fallback to system 'cmake' package. Be sure, cmake version must be at least 3.0....."

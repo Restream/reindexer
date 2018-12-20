@@ -64,8 +64,7 @@ protected:
 		}
 	}
 
-	inline
-	bool is_unique(const Variant& v) { return dist_ ? dist_->emplace(v).second : true; }
+	inline bool is_unique(const Variant &v) { return dist_ ? dist_->emplace(v).second : true; }
 
 	void setValues(const VariantArray &values);
 

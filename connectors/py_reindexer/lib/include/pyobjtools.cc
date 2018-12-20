@@ -118,10 +118,10 @@ PyObject *pyValueFromJsonValue(const JsonValue &value) {
 
 	switch (value.getTag()) {
 		case JSON_NUMBER:
-			double v;
-			double intpart;
-			v = value.toNumber();
-			pyValue = std::modf(v, &intpart) == 0.0 ? PyLong_FromDouble(v) : PyFloat_FromDouble(v);
+			pyValue = PyLong_FromSize_t(value.toNumber());
+			break;
+		case JSON_DOUBLE:
+			pyValue = PyFloat_FromDouble(value.toDouble());
 			break;
 		case JSON_STRING:
 			pyValue = PyUnicode_FromString(value.toString());

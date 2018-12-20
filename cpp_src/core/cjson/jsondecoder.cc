@@ -75,12 +75,12 @@ void JsonDecoder::decodeJson(Payload *pl, CJsonBuilder &builder, JsonValue &v, i
 	if (!match && jsonTag != JSON_OBJECT) return;
 	switch (jsonTag) {
 		case JSON_NUMBER: {
-			double value = v.toNumber(), intpart;
-			if (std::modf(value, &intpart) == 0.0) {
-				builder.Put(tagName, int64_t(value));
-			} else {
-				builder.Put(tagName, value);
-			}
+			int64_t value = v.toNumber();
+			builder.Put(tagName, int64_t(value));
+		} break;
+		case JSON_DOUBLE: {
+			double value = v.toDouble();
+			builder.Put(tagName, value);
 		} break;
 		case JSON_STRING:
 			builder.Put(tagName, v.toString());

@@ -3,6 +3,7 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/p_string.h"
+#include "core/query/aggregationresult.h"
 #include "core/query/dslparsetools.h"
 #include "core/query/query.h"
 
@@ -32,9 +33,6 @@ const unordered_map<OpType, string, EnumClassHash> op_map = {{OpOr, "or"}, {OpAn
 
 const unordered_map<CalcTotalMode, string, EnumClassHash> reqtotal_values = {
 	{ModeNoTotal, "disabled"}, {ModeAccurateTotal, "enabled"}, {ModeCachedTotal, "cached"}};
-
-const unordered_map<AggType, string, EnumClassHash> aggregation_types = {
-	{AggSum, "sum"}, {AggAvg, "avg"}, {AggMax, "max"}, {AggMin, "min"}, {AggFacet, "facet"}};
 
 template <typename T>
 string get(unordered_map<T, string, EnumClassHash> const& m, const T& key) {
@@ -101,7 +99,7 @@ void encodeAggregationFunctions(const Query& query, JsonBuilder& builder) {
 	auto arrNode = builder.Array("aggregations");
 
 	for (auto& entry : query.aggregations_) {
-		arrNode.Object().Put("field", entry.index_).Put("type", get(aggregation_types, entry.type_));
+		arrNode.Object().Put("field", entry.index_).Put("type", AggregationResult::aggTypeToStr(entry.type_));
 	}
 }
 

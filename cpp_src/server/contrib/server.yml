@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "1.10.0"
+  version: "1.10.4"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -1260,6 +1260,14 @@ definitions:
         description: "Documents, matched query"
         items:
           type: "object"
+      namespaces:
+        type: "array"
+        description: "Namespaces, used in query"
+        items:
+          type: "string"
+      cache_enabled:
+        description: "Enables to client cache returned items. If false, then returned items has been modified  by reindexer, e.g. by select filter, or by functions, and can't be cached"
+        type: "boolean"
       query_total_items:
         description: "Total count of documents, matched query"
         type: "integer"
@@ -1340,6 +1348,18 @@ definitions:
   AggregationResDef:
     type: "object"
     properties:
+      field:
+        type: "string"
+        description: "Field or index name for aggregation function"
+      type:
+        type: "string"
+        description: "Aggregation function"
+        enum:
+        - "SUM"
+        - "AVG"
+        - "MIN"
+        - "MAX"
+        - "FACET"
       value:
         type: "number"
         description: "Value, calculated by aggregator"

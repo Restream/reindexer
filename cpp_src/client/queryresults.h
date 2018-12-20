@@ -49,6 +49,8 @@ public:
 	const string &GetExplainResults() const { return queryParams_.explainResults; }
 	const vector<AggregationResult> &GetAggregationResults() const { return queryParams_.aggResults; }
 	Error Status () {return status_;}
+	h_vector<string_view,1> GetNamespaces () const ; 
+	bool IsCacheEnabled () const {return queryParams_.flags & kResultsWithItemID;} 
 
 private:
 	friend class RPCClient;

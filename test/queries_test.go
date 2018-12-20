@@ -484,22 +484,22 @@ func CheckAggregateQueries() {
 		panic(fmt.Errorf("%f != %f,len=%d", sum/float64(len(res)), aggregations[0].Value, len(res)))
 	}
 
-	if aggregations[2].Name != "age" {
-		panic(fmt.Errorf("%s != %s", aggregations[2].Name, "age"))
+	if aggregations[2].Field != "age" {
+		panic(fmt.Errorf("%s != %s", aggregations[2].Field, "age"))
 	}
 	for _, facet := range aggregations[2].Facets {
 		intVal, _ := strconv.Atoi(facet.Value)
 		if count, ok := ageFacet[intVal]; ok != true || count != facet.Count {
-			panic(fmt.Errorf("facet '%s' val '%s': %d != %d", aggregations[2].Name, facet.Value, count, facet.Count))
+			panic(fmt.Errorf("facet '%s' val '%s': %d != %d", aggregations[2].Field, facet.Value, count, facet.Count))
 		}
 	}
 
-	if aggregations[3].Name != "country" {
-		panic(fmt.Errorf("%s != %s", aggregations[3].Name, "country"))
+	if aggregations[3].Field != "country" {
+		panic(fmt.Errorf("%s != %s", aggregations[3].Field, "country"))
 	}
 	for _, facet := range aggregations[3].Facets {
 		if count, ok := countryFacet[facet.Value]; ok != true || count != facet.Count {
-			panic(fmt.Errorf("facet '%s' val '%s': %d != %d", aggregations[3].Name, facet.Value, count, facet.Count))
+			panic(fmt.Errorf("facet '%s' val '%s': %d != %d", aggregations[3].Field, facet.Value, count, facet.Count))
 		}
 	}
 	if ageMin != int(aggregations[4].Value) {

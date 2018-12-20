@@ -4,9 +4,15 @@
 
 #include "gason.h"
 #include <stdlib.h>
+#include <string>
+#include "vendor/double-conversion/double-conversion.h"
 
 #define JSON_ZONE_SIZE 4096
 #define JSON_STACK_SIZE 32
+
+using double_conversion::StringToDoubleConverter;
+using std::atoll;
+using std::stoull;
 
 const char *jsonStrError(int err) {
 	switch (err) {
@@ -65,46 +71,50 @@ static inline int char2int(char c) {
 	return (c & ~' ') - 'A' + 10;
 }
 
-static double string2double(char *s, char **endptr) {
-	char ch = *s;
-	if (ch == '-') ++s;
+bool isDouble(char *s, size_t &size) {
+	size = 0;
 
-	double result = 0;
-	while (isdigit(*s)) result = (result * 10) + (*s++ - '0');
+	if (*s == '-') {
+		++s;
+		++size;
+	}
+
+	while (isdigit(*s)) {
+		++s;
+		++size;
+	}
 
 	if (*s == '.') {
 		++s;
-
-		double fraction = 1;
+		++size;
 		while (isdigit(*s)) {
-			fraction *= 10;
-			result += (*s++ - '0') / fraction;
+			++s;
+			++size;
 		}
+		return true;
 	}
-
 	if (*s == 'e' || *s == 'E') {
 		++s;
-
-		double base = 10;
-		if (*s == '+')
+		++size;
+		if (*s == '+' || *s == '-') {
 			++s;
-		else if (*s == '-') {
-			++s;
-			base = 0.1;
+			++size;
 		}
-
-		unsigned int exponent = 0;
-		while (isdigit(*s)) exponent = (exponent * 10) + (*s++ - '0');
-
-		double power = 1;
-		for (; exponent; exponent >>= 1, base *= base)
-			if (exponent & 1) power *= base;
-
-		result *= power;
+		while (isdigit(*s)) {
+			++s;
+			++size;
+		}
+		return true;
 	}
+	return false;
+}
 
-	*endptr = s;
-	return ch == '-' ? -result : result;
+static double string2double(char *s, char **endptr, size_t size) {
+	StringToDoubleConverter sd(StringToDoubleConverter::NO_FLAGS, 0, 0, "inf", "nan");
+	int len;
+	double vv = sd.StringToDouble(s, size, &len);
+	*endptr = s + len;
+	return vv;
 }
 
 static inline JsonNode *insertAfter(JsonNode *tail, JsonNode *node) {
@@ -131,7 +141,10 @@ int jsonParse(char *s, char **endptr, JsonValue *value, JsonAllocator &allocator
 	int pos = -1;
 	bool separator = true;
 	JsonNode *node;
+	char *tmp = s;
+	(void)tmp;
 	*endptr = s;
+	size_t size = 0;
 
 	while (*s) {
 		while (isspace(*s)) {
@@ -139,12 +152,14 @@ int jsonParse(char *s, char **endptr, JsonValue *value, JsonAllocator &allocator
 			if (!*s) break;
 		}
 		*endptr = s++;
+		bool negative = false;
 		switch (**endptr) {
 			case '-':
 				if (!isdigit(*s) && *s != '.') {
 					*endptr = s;
 					return JSON_BAD_NUMBER;
 				}
+				negative = true;
 			// fall through
 			case '0':
 			case '1':
@@ -156,7 +171,16 @@ int jsonParse(char *s, char **endptr, JsonValue *value, JsonAllocator &allocator
 			case '7':
 			case '8':
 			case '9':
-				o = JsonValue(string2double(*endptr, &s));
+				if (isDouble(*endptr, size)) {
+					o = JsonValue(string2double(*endptr, &s, size));
+				} else if (negative) {
+					o = JsonValue(uint64_t(atoll(*endptr)));
+					s = s + size - 1;
+				} else {
+					o = JsonValue(uint64_t(stoull(*endptr)));
+					s = s + size - 1;
+				}
+
 				if (!isdelim(*s)) {
 					*endptr = s;
 					return JSON_BAD_NUMBER;

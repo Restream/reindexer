@@ -12,13 +12,15 @@ void jsonValueToString(JsonValue o, WrSerializer &ser, int shift, int indent) {
 	bool enableEol = shift != 0 || indent != 0;
 	switch (o.getTag()) {
 		case JSON_NUMBER: {
-			double value = o.toNumber();
-			double intpart;
-			if (std::modf(value, &intpart) == 0.0) {
-				ser << int64_t(value);
-			} else {
-				ser << value;
-			}
+			uint64_t value = o.toNumber();
+			ser << int64_t(value);
+			break;
+		}
+		case JSON_DOUBLE: {
+			double value = o.toDouble();
+
+			ser << value;
+
 			break;
 		}
 		case JSON_STRING:
@@ -106,14 +108,18 @@ void parseJsonField(const char *name, bool &ref, const JsonNode *elem) {
 template <typename T>
 void parseJsonField(const char *name, T &ref, const JsonNode *elem, double min, double max) {
 	if (strcmp(name, elem->key)) return;
+	T v;
 	if (elem->value.getTag() == JSON_NUMBER) {
-		T v = elem->value.toNumber();
-		if (v < min || v > max) {
-			throw Error(errParseJson, "Value of setting '%s' is out of range [%g,%g]", name, min, max);
-		}
-		ref = v;
+		v = elem->value.toNumber();
+	} else if (elem->value.getTag() == JSON_DOUBLE) {
+		v = elem->value.toDouble();
 	} else
 		throw Error(errParseJson, "Expected type number for setting '%s'", name);
+
+	if (v < min || v > max) {
+		throw Error(errParseJson, "Value of setting '%s' is out of range [%g,%g]", name, min, max);
+	}
+	ref = v;
 }
 
 template <typename T>
@@ -121,6 +127,8 @@ void parseJsonField(const char *name, T &ref, const JsonNode *elem) {
 	if (strcmp(name, elem->key)) return;
 	if (elem->value.getTag() == JSON_NUMBER) {
 		ref = elem->value.toNumber();
+	} else if (elem->value.getTag() == JSON_DOUBLE) {
+		ref = elem->value.toDouble();
 	} else
 		throw Error(errParseJson, "Expected type number for setting '%s'", name);
 }

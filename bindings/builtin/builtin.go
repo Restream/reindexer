@@ -308,6 +308,15 @@ func (binding *Builtin) Finalize() error {
 	return nil
 }
 
+func (binding *Builtin) Status() (status bindings.Status) {
+	return bindings.Status{
+		Builtin: bindings.StatusBuiltin{
+			CGOLimit: cap(binding.cgoLimiter),
+			CGOUsage: len(binding.cgoLimiter),
+		},
+	}
+}
+
 func newBufFreeBatcher() (bf *bufFreeBatcher) {
 	bf = &bufFreeBatcher{
 		bufs:   make([]*RawCBuffer, 0, 100),

@@ -34,7 +34,8 @@ void Aggregator::Bind(PayloadType type, int fieldIdx, const TagsPath &fieldPath)
 
 AggregationResult Aggregator::GetResult() const {
 	AggregationResult ret;
-	ret.name = name_;
+	ret.field = name_;
+	ret.type = aggType_;
 
 	switch (aggType_) {
 		case AggAvg:
@@ -93,6 +94,8 @@ void Aggregator::aggregate(const Variant &v) {
 			break;
 		case AggFacet:
 			(*facets_)[v]++;
+			break;
+		case AggUnknown:
 			break;
 	};
 }

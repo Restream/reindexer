@@ -544,7 +544,10 @@ void Namespace::Delete(const Query &q, QueryResults &result) {
 	selecter(result, ctx);
 
 	auto tmStart = high_resolution_clock::now();
-	for (auto r : result.Items()) doDelete(r.id);
+	for (auto &r : result.Items()) {
+		doDelete(r.id);
+		r.value = PayloadValue();
+	}
 
 	if (q.debugLevel >= LogInfo) {
 		logPrintf(LogInfo, "Deleted %d items in %d µs", int(result.Count()),

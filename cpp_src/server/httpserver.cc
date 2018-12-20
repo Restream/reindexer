@@ -660,6 +660,11 @@ int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, b
 	WrSerializer wrSer(ctx.writer->GetChunk());
 	JsonBuilder builder(wrSer);
 
+	auto nsarray = builder.Array("namespaces");
+	for (auto &ns : res.GetNamespaces()) nsarray.Put(nullptr, ns);
+	nsarray.End();
+	builder.Put("cache_enabled", res.IsCacheEnabled());
+
 	auto iarray = builder.Array("items");
 
 	for (size_t i = offset; i < res.Count() && i < offset + limit; i++) {
@@ -689,6 +694,7 @@ int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, b
 
 	if (isQueryResults && res.totalCount) {
 		builder.Put("query_total_items", res.totalCount);
+		if (limit == kDefaultLimit) builder.Put("total_items", res.totalCount);
 	}
 	builder.End();
 

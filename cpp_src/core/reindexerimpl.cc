@@ -326,8 +326,16 @@ Error ReindexerImpl::Select(const string_view& query, QueryResults& result, Comp
 	try {
 		Query q;
 		q.FromSQL(query);
-		err = Select(q, result);
-
+		switch (q.type_) {
+			case QuerySelect:
+				err = Select(q, result);
+				break;
+			case QueryDelete:
+				err = Delete(q, result);
+				break;
+			default:
+				throw Error(errParams, "Error unsupported query type %d", int(q.type_));
+		}
 	} catch (const Error& e) {
 		err = e;
 	}

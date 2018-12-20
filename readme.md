@@ -329,7 +329,7 @@ type ItemWithJoin struct {
 		db.Query("actors").
 			WhereBool("is_visible", reindexer.EQ, true),
 		"actors",
-	).On("id", reindexer.SET, "actors_ids")
+	).On("actors_ids", reindexer.SET, "id")
 
 	query.Exec ()
 ```

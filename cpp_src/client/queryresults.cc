@@ -86,6 +86,13 @@ void QueryResults::fetchNextResults() {
 
 QueryResults::~QueryResults() {}
 
+h_vector<string_view, 1> QueryResults::GetNamespaces() const {
+	h_vector<string_view, 1> ret;
+	ret.reserve(nsArray_.size());
+	for (auto &ns : nsArray_) ret.push_back(ns->name_);
+	return ret;
+}
+
 Error QueryResults::Iterator::GetJSON(WrSerializer &wrser, bool withHdrLen) {
 	try {
 		string_view rawResult(qr_->rawResult_.data(), qr_->rawResult_.size());

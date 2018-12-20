@@ -73,7 +73,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 1.10.0
+*Version* : 1.10.4
 
 
 ### License information
@@ -894,6 +894,8 @@ This operation will update system configuration:
 |Name|Description|Schema|
 |---|---|---|
 |**facets**  <br>*optional*|Facets, calculated by aggregator|< [facets](#aggregationresdef-facets) > array|
+|**field**  <br>*optional*|Field or index name for aggregation function|string|
+|**type**  <br>*optional*|Aggregation function|enum (SUM, AVG, MIN, MAX, FACET)|
 |**value**  <br>*optional*|Value, calculated by aggregator|number|
 
 
@@ -1029,6 +1031,8 @@ Fulltext Index configuration
 |**enable_translit**  <br>*optional*|Enable russian translit variants processing. e.g. term 'luntik' will match word 'лунтик'  <br>**Default** : `true`|boolean|
 |**extra_word_symbols**  <br>*optional*|List of symbols, which will be threated as word part, all other symbols will be thrated as wors separators  <br>**Default** : `"-/+"`|string|
 |**log_level**  <br>*optional*|Log level of full text search engine  <br>**Minimum value** : `0`  <br>**Maximum value** : `4`|integer|
+|**max_rebuild_steps**  <br>*optional*|Maximum steps withou full rebuild of ft - more steps faster commit slower select - optimal about 15.  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**max_step_size**  <br>*optional*|Maximum unique words to step  <br>**Minimum value** : `5`  <br>**Maximum value** : `1000000000`|integer|
 |**max_typo_len**  <br>*optional*|Maximum word length for building and matching variants with typos.  <br>**Minimum value** : `0`  <br>**Maximum value** : `100`|integer|
 |**max_typos_in_word**  <br>*optional*|Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 1 possible typo -It will seriously increase RAM usage, and decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `2`|integer|
 |**merge_limit**  <br>*optional*|Maximum documents count which will be processed in merge query results.  Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `65535`|integer|
@@ -1295,8 +1299,10 @@ Number of elements in query cache. Stores results of SELECT COUNT(*) by Where co
 |Name|Description|Schema|
 |---|---|---|
 |**aggregations**  <br>*optional*|Aggregation functions results|< [AggregationResDef](#aggregationresdef) > array|
+|**cache_enabled**  <br>*optional*|Enables to client cache returned items. If false, then returned items has been modified  by reindexer, e.g. by select filter, or by functions, and can't be cached|boolean|
 |**explain**  <br>*optional*||[ExplainDef](#explaindef)|
 |**items**  <br>*optional*|Documents, matched query|< object > array|
+|**namespaces**  <br>*optional*|Namespaces, used in query|< string > array|
 |**query_total_items**  <br>*optional*|Total count of documents, matched query|integer|
 
 

@@ -208,6 +208,10 @@ func (server *BuiltinServer) Finalize() error {
 	return nil
 }
 
+func (server *BuiltinServer) Status() (status bindings.Status) {
+	return server.builtin.Status()
+}
+
 func (server *BuiltinServer) Ping() error {
 	return server.builtin.Ping()
 }

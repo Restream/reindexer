@@ -11,6 +11,7 @@ option (WITH_ASAN "Enable AddressSanitized build" OFF)
 option (WITH_TSAN "Enable ThreadSanitized build" OFF)
 option (WITH_GPERF "Enable GPerfTools build" ON)
 option (WITH_GCOV "Enable instrumented code coverage build" OFF)
+set (REINDEXER_VERSION_DEFAULT "1.10.4")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -175,7 +176,7 @@ if(EXISTS ${PROJECT_SOURCE_DIR}/.git OR EXISTS ${PROJECT_SOURCE_DIR}/../.git )
 endif ()
 
 if (NOT REINDEXER_VERSION_FULL)
-set (REINDEXER_VERSION_FULL "0.0.0-localbuild")
+set (REINDEXER_VERSION_FULL ${REINDEXER_VERSION_DEFAULT})
 endif ()
 
 set (REINDEXER_VERSION_H "#pragma once\n#define REINDEX_VERSION \"${REINDEXER_VERSION_FULL}\"\n")
@@ -191,6 +192,10 @@ endif ()
 include_directories(${PROJECT_BINARY_DIR})
 
 string ( REGEX REPLACE "(.*)([0-9]+)\\.([0-9]+)\\.([0-9]+)(.*)" "\\2.\\3.\\4" REINDEXER_VERSION ${REINDEXER_VERSION_FULL})
+string ( REGEX REPLACE ".*-([0-9]+)-(.*)" "\\1.\\2" REINDEXER_RELEASE ${REINDEXER_VERSION_FULL})
+if (CMAKE_MATCH_1)
+  set (REINDEXER_VERSION ${REINDEXER_VERSION}.${REINDEXER_RELEASE})
+endif()
 
 # Packaging and install stuff
 if(CMAKE_SYSTEM_NAME MATCHES "Linux" AND EXISTS "/etc/issue")
@@ -249,6 +254,11 @@ endif ()
 if (NOT CPACK_RPM_PACKAGE_REQUIRES STREQUAL "")
   string (SUBSTRING "${CPACK_RPM_PACKAGE_REQUIRES}" 1 -1 CPACK_RPM_PACKAGE_REQUIRES)
 endif ()
+
+set (CPACK_DEBIAN_SERVER_FILE_NAME "DEB-DEFAULT")
+set (CPACK_DEBIAN_DEV_FILE_NAME "DEB-DEFAULT")
+set (CPACK_RPM_SERVER_FILE_NAME "RPM-DEFAULT")
+set (CPACK_RPM_DEV_FILE_NAME "RPM-DEFAULT")
 
 if (NOT WIN32)
   SET(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "server")

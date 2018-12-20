@@ -552,7 +552,13 @@ func (q *Query) join(q2 *Query, field string, joinType int) *Query {
 	return q2
 }
 
-// InnerJoin joins 2 queries - items from 1-st query are expanded with data from joined query
+// InnerJoin joins 2 queries
+// Items from the 1-st query are filtered by and expanded with the data from the 2-nd query
+//
+// `field` parameter serves as unique identifier for the join between `q` and `q2`
+// One of the conditions below must hold for `field` parameter in order for InnerJoin to work:
+// - namespace of `q2` contains `field` as one of its fields marked as `joined`
+// - `q` has a join handler (registered via `q.JoinHandler(...)` call) with the same `field` value
 func (q *Query) InnerJoin(q2 *Query, field string) *Query {
 
 	if q.nextOp == opOR {
@@ -563,17 +569,23 @@ func (q *Query) InnerJoin(q2 *Query, field string) *Query {
 	return q.join(q2, field, innerJoin)
 }
 
-// Join joins 2 queries, alias to LeftJoin
+// Join is an alias for LeftJoin
 func (q *Query) Join(q2 *Query, field string) *Query {
 	return q.join(q2, field, leftJoin)
 }
 
-// LeftJoin joins 2 queries = - items from 1-st query are filtered and expanded with data from 2-nd query
+// LeftJoin joins 2 queries
+// Items from the 1-st query are expanded with the data from the 2-nd query
+//
+// `field` parameter serves as unique identifier for the join between `q` and `q2`
+// One of the conditions below must hold for `field` parameter in order for LeftJoin to work:
+// - namespace of `q2` contains `field` as one of its fields marked as `joined`
+// - `q` has a join handler (registered via `q.JoinHandler(...)` call) with the same `field` value
 func (q *Query) LeftJoin(q2 *Query, field string) *Query {
 	return q.join(q2, field, leftJoin)
 }
 
-// JoinHandler sets handler for join results
+// JoinHandler registers join handler that will be called when join, registered on `field` value, finds a match
 func (q *Query) JoinHandler(field string, handler JoinHandler) *Query {
 	index := -1
 	for i := range q.joinToFields {
@@ -600,7 +612,11 @@ func (q *Query) Merge(q2 *Query) *Query {
 	return q
 }
 
-// On Add Join condition
+// On specifies join condition
+//
+// `index` parameter specifies which field from `q` namespace should be used during join
+// `condition` parameter specifies how `q` will be joined with the latest join query issued on `q` (e.g. `EQ`/`GT`/`SET`/...)
+// `joinIndex` parameter specifies which field from namespace for the latest join query issued on `q` should be used during join
 func (q *Query) On(index string, condition int, joinIndex string) *Query {
 	if q.closed {
 		panic(errors.New("query.On call on already closed query. You shoud create new Query"))

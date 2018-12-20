@@ -271,11 +271,11 @@ void parseJoins(JsonValue& joins, Query& query) {
 					parseSort(value, qjoin);
 					break;
 				case JoinRoot::Limit:
-					checkJsonValueType(value, name, JSON_NUMBER);
+					checkJsonValueType(value, name, JSON_NUMBER, JSON_DOUBLE);
 					qjoin.count = static_cast<unsigned>(value.toNumber());
 					break;
 				case JoinRoot::Offset:
-					checkJsonValueType(value, name, JSON_NUMBER);
+					checkJsonValueType(value, name, JSON_NUMBER, JSON_DOUBLE);
 					qjoin.start = static_cast<unsigned>(value.toNumber());
 					break;
 				case JoinRoot::On:
@@ -332,12 +332,12 @@ void parse(JsonValue& root, Query& q) {
 				break;
 
 			case Root::Limit:
-				checkJsonValueType(v, name, JSON_NUMBER);
+				checkJsonValueType(v, name, JSON_NUMBER, JSON_DOUBLE);
 				q.count = static_cast<unsigned>(v.toNumber());
 				break;
 
 			case Root::Offset:
-				checkJsonValueType(v, name, JSON_NUMBER);
+				checkJsonValueType(v, name, JSON_NUMBER, JSON_DOUBLE);
 				q.start = static_cast<unsigned>(v.toNumber());
 				break;
 

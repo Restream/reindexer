@@ -27,52 +27,53 @@ type TestCustom []byte
 type TestItemEncDec struct {
 	ID int `reindex:"id,-"`
 	*TestEmbedItem
-	Prices        []*TestJoinItem `reindex:"prices,,joined"`
-	Pricesx       []*TestJoinItem `reindex:"pricesx,,joined"`
-	Packages      []int           `reindex:"packages,hash"`
-	UPackages     []uint          `reindex:"upackages,hash"`
-	UPackages64   []uint64        `reindex:"upackages64,hash"`
-	FPackages     []float32       `reindex:"fpackages,tree"`
-	FPackages64   []float64       `reindex:"fpackages64,tree"`
-	Name          string          `reindex:"name,tree"`
-	Countries     []string        `reindex:"countries,tree"`
-	Description   string          `reindex:"description,fuzzytext"`
-	Rate          float64         `reindex:"rate,tree"`
-	IsDeleted     bool            `reindex:"isdeleted,-"`
-	PNested       *TestNest       `reindex:"-"`
-	Nested        TestNest
-	NestedA       [1]TestNest `reindex:"-"`
-	NonIndexArr   []int
-	NonIndexA     [20]float64
-	NonIndexPA    []*int
-	Actors        []Actor `reindex:"-"`
-	PricesIDs     []int   `reindex:"price_id"`
-	LocationID    string  `reindex:"location"`
-	EndTime       uint32  `reindex:"end_time,-"`
-	StartTime     uint64  `reindex:"start_time,tree"`
-	PStrNull      *string
-	PStr          *string
-	Tmp           string `reindex:"tmp,-"`
-	Map1          map[string]int
-	Map2          map[int64]Actor
-	Map3          map[int]*Actor
-	Map4          map[int]*int
-	Map5          map[int][]int
-	Map6          map[uint][]uint
-	Interface     interface{}
-	Interface2    interface{}
-	InterfaceNull interface{}
-	MapNull       map[string]int
-	SliceStrNull  []string
-	SliceNull     []int
-	SliceStr      []string
-	SliceUInt     []uint
-	SliceUInt64   []uint64
-	SliceF64      []float64
-	SliceF32      []float32
-	UInt64        uint64
-	UInt32        uint32
-	UInt          uint
+	Prices             []*TestJoinItem `reindex:"prices,,joined"`
+	Pricesx            []*TestJoinItem `reindex:"pricesx,,joined"`
+	Packages           []int           `reindex:"packages,hash"`
+	UPackages          []uint          `reindex:"upackages,hash"`
+	UPackages64        []uint64        `reindex:"upackages64,hash"`
+	FPackages          []float32       `reindex:"fpackages,tree"`
+	FPackages64        []float64       `reindex:"fpackages64,tree"`
+	Name               string          `reindex:"name,tree"`
+	Countries          []string        `reindex:"countries,tree"`
+	Description        string          `reindex:"description,fuzzytext"`
+	Rate               float64         `reindex:"rate,tree"`
+	IsDeleted          bool            `reindex:"isdeleted,-"`
+	PNested            *TestNest       `reindex:"-"`
+	Nested             TestNest
+	NestedA            [1]TestNest `reindex:"-"`
+	NonIndexArr        []int
+	NonIndexA          [20]float64
+	NonIndexPA         []*int
+	Actors             []Actor `reindex:"-"`
+	PricesIDs          []int   `reindex:"price_id"`
+	LocationID         string  `reindex:"location"`
+	EndTime            uint32  `reindex:"end_time,-"`
+	StartTime          uint64  `reindex:"start_time,tree"`
+	PStrNull           *string
+	PStr               *string
+	Tmp                string `reindex:"tmp,-"`
+	Map1               map[string]int
+	Map2               map[int64]Actor
+	Map3               map[int]*Actor
+	Map4               map[int]*int
+	Map5               map[int][]int
+	Map6               map[uint][]uint
+	Interface          interface{}
+	Interface2         interface{}
+	InterfaceNull      interface{}
+	MapNull            map[string]int
+	SliceStrNull       []string
+	SliceNull          []int
+	SliceStr           []string
+	SliceUInt          []uint
+	SliceUInt64        []uint64
+	NegativeSliceInt64 []int64
+	SliceF64           []float64
+	SliceF32           []float32
+	UInt64             uint64
+	UInt32             uint32
+	UInt               uint
 
 	Custom TestCustom
 	Time   time.Time
@@ -154,35 +155,40 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 					"time":        time.Unix(1234567890, 987654321),
 				},
 			},
-			Interface2:  time.Unix(3736372363, 987654321),
-			Custom:      []byte(randString()),
-			Countries:   []string{randString(), randString()},
-			SliceStr:    []string{randString(), randString()},
-			Description: randString(),
-			Packages:    randIntArr(pkgsCount, 10000, 50),
-			// TODO: fix uint overflow
-			UPackages:   []uint{uint(rand.Uint32() >> 1), uint(rand.Uint32() >> 1)},
-			UPackages64: []uint64{uint64(rand.Int63()) >> 1, uint64(rand.Int63()) >> 1},
-			SliceUInt:   []uint{uint(rand.Uint32() >> 1), uint(rand.Uint32() >> 1)},
-			SliceUInt64: []uint64{uint64(rand.Int63()) >> 1, uint64(rand.Int63()) >> 1},
-			FPackages:   []float32{rand.Float32(), rand.Float32()},
-			FPackages64: []float64{rand.Float64(), rand.Float64()},
-			SliceF32:    []float32{rand.Float32(), rand.Float32()},
-			SliceF64:    []float64{rand.Float64(), rand.Float64()},
-			Rate:        float64(rand.Int()%100) / 10.0,
-			IsDeleted:   rand.Int()%2 != 0,
-			PricesIDs:   randIntArr(10, 7000, 50),
-			LocationID:  randLocation(),
-			StartTime:   startTime,
-			EndTime:     uint32(startTime + uint64((rand.Int()%5)*1000)),
-			PStr:        &pstr,
-			NonIndexArr: randIntArr(10, 100, 10),
-			Time:        tm,
-			PTime:       &tm,
+			Interface2:         time.Unix(3736372363, 987654321),
+			Custom:             []byte(randString()),
+			Countries:          []string{randString(), randString()},
+			SliceStr:           []string{randString(), randString()},
+			Description:        randString(),
+			Packages:           randIntArr(pkgsCount, 10000, 50),
+			UPackages:          []uint{uint(rand.Uint32() >> 1), uint(rand.Uint32() >> 1)},
+			UPackages64:        []uint64{uint64(rand.Uint64() >> 1), uint64(rand.Uint64() >> 1) /*, math.MaxUint64*/},
+			SliceUInt:          []uint{uint(rand.Uint32() >> 1), uint(rand.Uint32() >> 1)},
+			SliceUInt64:        []uint64{uint64(rand.Uint64() >> 1), uint64(rand.Uint64() >> 1)},
+			NegativeSliceInt64: []int64{0 - rand.Int63(), 0 - rand.Int63()},
+			FPackages:          []float32{rand.Float32(), rand.Float32()},
+			FPackages64:        []float64{rand.Float64(), rand.Float64()},
+			SliceF32:           []float32{rand.Float32(), rand.Float32()},
+			SliceF64:           []float64{rand.Float64(), rand.Float64()},
+			Rate:               float64(rand.Int()%100) / 10.0,
+			IsDeleted:          rand.Int()%2 != 0,
+			PricesIDs:          randIntArr(10, 7000, 50),
+			LocationID:         randLocation(),
+			StartTime:          startTime,
+			EndTime:            uint32(startTime + uint64((rand.Int()%5)*1000)),
+			PStr:               &pstr,
+			NonIndexArr:        randIntArr(10, 100, 10),
+			Time:               tm,
+			PTime:              &tm,
 		}
-
-		if err := tx.Upsert(item); err != nil {
-			panic(err)
+		if asJson {
+			if err := tx.UpsertJSON(item); err != nil {
+				panic(err)
+			}
+		} else {
+			if err := tx.Upsert(item); err != nil {
+				panic(err)
+			}
 		}
 	}
 	tx.MustCommit(nil)
@@ -194,7 +200,7 @@ func TestEncDec(t *testing.T) {
 	FillTestItemsEncDec(0, 5000, 20, false)
 
 	// fill items in json format
-	FillTestItemsEncDec(5000, 5000, 20, true)
+	FillTestItemsEncDec(5000, 10000, 20, true)
 
 	// get and decode all items by cjson decoder
 	newTestQuery(DB, "test_items_encdec").ExecAndVerify()

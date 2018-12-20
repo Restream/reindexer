@@ -91,18 +91,38 @@ Error DBWrapper<_DB>::commandSelect(const string& command) {
 		if (aggResults.size()) {
 			output_() << "Aggregations: " << std::endl;
 			for (auto& agg : aggResults) {
-				int maxW = agg.name.length();
-				for (auto& row : agg.facets) {
-					maxW = std::max(maxW, int(row.value.length()));
-				}
-				maxW += 3;
-				output_() << std::left << std::setw(maxW) << agg.name << "| count" << std::endl;
-				output_() << std::left << std::setw(maxW + 8) << std::setfill('-') << "" << std::endl << std::setfill(' ');
-				for (auto& row : agg.facets) {
-					output_() << std::left << std::setw(maxW) << row.value << "| " << row.count << std::endl;
+				if (!agg.facets.empty()) {
+					int maxW = agg.field.length();
+					for (auto& row : agg.facets) {
+						maxW = std::max(maxW, int(row.value.length()));
+					}
+					maxW += 3;
+					output_() << std::left << std::setw(maxW) << agg.field << "| count" << std::endl;
+					output_() << std::left << std::setw(maxW + 8) << std::setfill('-') << "" << std::endl << std::setfill(' ');
+					for (auto& row : agg.facets) {
+						output_() << std::left << std::setw(maxW) << row.value << "| " << row.count << std::endl;
+					}
+				} else {
+					output_() << agg.aggTypeToStr(agg.type) << "(" << agg.field << ") = " << agg.value << std::endl;
 				}
 			}
 		}
+	}
+	return err;
+}
+template <typename _DB>
+Error DBWrapper<_DB>::commandDeleteSQL(const string& command) {
+	typename _DB::QueryResultsT results;
+	Query q;
+	try {
+		q.FromSQL(command);
+	} catch (const Error& err) {
+		return err;
+	}
+	auto err = db_.Delete(q, results);
+
+	if (err.ok()) {
+		output_() << "Deleted " << results.Count() << " documents" << std::endl;
 	}
 	return err;
 }

@@ -104,8 +104,13 @@ type Joinable interface {
 }
 
 // JoinHandler it's function for handle join results.
-// Returns bool, that indicates is values will be applied to structs.
-type JoinHandler func(field string, item interface{}, subitems []interface{}) (isContinue bool)
+// Returns bool, that indicates whether automatic join strategy still needs to be applied.
+// If `useAutomaticJoinStrategy` is false - it means that JoinHandler takes full responsibility of performing join.
+// If `useAutomaticJoinStrategy` is true - it means JoinHandler will perform only part of the work, required during join, the rest will be done using automatic join strategy.
+// Automatic join strategy is defined as:
+// - use Join method to perform join (in case item implements Joinable interface)
+// - use reflection to perform join otherwise
+type JoinHandler func(field string, item interface{}, subitems []interface{}) (useAutomaticJoinStrategy bool)
 
 type DeepCopy interface {
 	DeepCopy() interface{}
@@ -141,7 +146,8 @@ var (
 )
 
 type AggregationResult struct {
-	Name   string  `json:"name"`
+	Field  string  `json:"field"`
+	Type   string  `json:"type"`
 	Value  float64 `json:"value"`
 	Facets []struct {
 		Value string `json:"value"`
@@ -191,8 +197,10 @@ func NewReindex(dsn string, options ...interface{}) *Reindexer {
 }
 
 // Status will return current db status
-func (db *Reindexer) Status() error {
-	return db.status
+func (db *Reindexer) Status() bindings.Status {
+	status := db.binding.Status()
+	status.Err = db.status
+	return status
 }
 
 // SetLogger sets logger interface for output reindexer logs

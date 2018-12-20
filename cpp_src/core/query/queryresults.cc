@@ -112,6 +112,13 @@ void QueryResults::Dump() const {
 	logPrintf(LogInfo, "Query returned: [%s]; total=%d", buf.c_str(), this->totalCount);
 }
 
+h_vector<string_view, 1> QueryResults::GetNamespaces() const {
+	h_vector<string_view, 1> ret;
+	ret.reserve(ctxs.size());
+	for (auto &ctx : ctxs) ret.push_back(ctx.type_.Name());
+	return ret;
+}
+
 class QueryResults::EncoderDatasourceWithJoins : public IEncoderDatasourceWithJoins {
 public:
 	EncoderDatasourceWithJoins(const QRVector &joined, const ContextsVector &ctxs) : joined_(joined), ctxs_(ctxs) {}
@@ -152,6 +159,10 @@ void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 	assert(ctxs.size() > itemRef.nsid);
 	auto &ctx = ctxs[itemRef.nsid];
 
+	if (itemRef.value.IsFree()) {
+		ser << "{}";
+		return;
+	}
 	ConstPayload pl(ctx.type_, itemRef.value);
 	JsonEncoder encoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
 
@@ -188,6 +199,10 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer &ser, bool withHdrLen) {
 		assert(qr_->ctxs.size() > itemRef.nsid);
 		auto &ctx = qr_->ctxs[itemRef.nsid];
 
+		if (itemRef.value.IsFree()) {
+			return Error(errNotFound, "Item not found");
+		}
+
 		ConstPayload pl(ctx.type_, itemRef.value);
 		CJsonBuilder builder(ser, CJsonBuilder::TypePlain);
 		CJsonEncoder cjsonEncoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
@@ -210,6 +225,10 @@ Item QueryResults::Iterator::GetItem() {
 
 	assert(qr_->ctxs.size() > itemRef.nsid);
 	auto &ctx = qr_->ctxs[itemRef.nsid];
+
+	if (itemRef.value.IsFree()) {
+		return Item(Error(errNotFound, "Item not found"));
+	}
 
 	PayloadValue v(itemRef.value);
 
@@ -273,6 +292,8 @@ PayloadType &QueryResults::getPayloadType(int nsid) {
 int QueryResults::getMergedNSCount() const { return ctxs.size(); }
 
 void QueryResults::addNSContext(const PayloadType &type, const TagsMatcher &tagsMatcher, const FieldsSet &filter) {
+	if (filter.getTagsPathsLength()) nonCacheableData = true;
+
 	ctxs.push_back(Context(type, tagsMatcher, filter));
 }
 

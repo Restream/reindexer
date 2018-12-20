@@ -119,10 +119,6 @@ func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reind
 		} else if len(idxName) > 0 {
 			collateMode, sortOrderLetters := parseCollate(&idxSettings)
 
-			if len(idxSettings) > 0 {
-				return fmt.Errorf("Unknown index settings are found: %v", idxSettings)
-			}
-
 			if fieldType, err := getFieldType(t); err != nil {
 				return err
 			} else {
@@ -132,12 +128,17 @@ func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reind
 				}
 			}
 		}
+		if len(idxSettings) > 0 {
+			return fmt.Errorf("Unknown index settings are found: %v", idxSettings)
+		}
+
 	}
 
 	return nil
 }
 
 func splitOptions(str string) []string {
+
 	words := make([]string, 0)
 
 	var word bytes.Buffer

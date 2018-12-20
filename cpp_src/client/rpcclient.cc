@@ -217,11 +217,28 @@ Error RPCClient::EnumMeta(const string& ns, vector<string>& keys) {
 Error RPCClient::Delete(const Query& query, QueryResults& result) {
 	WrSerializer ser;
 	query.Serialize(ser);
-	auto ret = getConn()->Call(cproto::kCmdSelect, ser.Slice());
+	auto conn = getConn();
 
-	(void)result;
-	return ret.Status();
+	result = QueryResults(conn, {}, nullptr);
+
+	auto icompl = [&result](const RPCAnswer& ret) {
+		try {
+			if (ret.Status().ok()) {
+				auto args = ret.GetArgs(2);
+				result.Bind(p_string(args[0]), int(args[1]));
+			}
+			result.completion(ret.Status());
+			return ret.Status();
+		} catch (const Error& err) {
+			result.completion(err);
+			return err;
+		}
+	};
+
+	auto ret = conn->Call(cproto::kCmdDeleteQuery, ser.Slice());
+	return icompl(ret);
 }
+
 void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
 	// Get array of payload Type Versions
 

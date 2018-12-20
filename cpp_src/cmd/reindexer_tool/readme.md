@@ -27,7 +27,7 @@ Options
   -o[FILENAME], --output=[FILENAME]      send query results to file
   -l[INT=1..5], --log=[INT=1..5]         reindexer logging level
   -C[INT],      --connections=[INT]      Number of simulateonous connections to db
-  -t[INT],      --connections=[INT]      Number of threads used by db connector
+  -t[INT],      --threads=[INT]          Number of threads used by db connector (used only for bench)
 
 ```
 

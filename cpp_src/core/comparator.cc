@@ -19,8 +19,7 @@ Comparator::Comparator(CondType cond, KeyValueType type, const VariantArray &val
 	  fields_(fields),
 	  cmpComposite(payloadType_, fields_),
 	  cmpEqualPosition(payloadType_, type),
-	  dist_(distinct ? new fast_hash_set<Variant> : nullptr)
-{
+	  dist_(distinct ? new fast_hash_set<Variant> : nullptr) {
 	if (type == KeyValueComposite) assert(fields_.size() > 0);
 	if (cond_ == CondEq && values.size() != 1) cond_ = CondSet;
 	setValues(values);

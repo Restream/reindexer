@@ -48,7 +48,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 
 	bool isFt = containsFullTextIndexes(*whereEntries);
 	if (!ctx.skipIndexesLookup && !isFt) substituteCompositeIndexes(tmpWhereEntries);
-	convertWhereValues(*const_cast<QueryEntries *>(whereEntries));
+	for (auto &ce : *const_cast<QueryEntries *>(whereEntries)) convertWhereValues(ce);
 
 	// DO NOT use deducted sort order in the following cases:
 	// - query contains explicity specified sort order
@@ -419,16 +419,14 @@ QueryEntries NsSelecter::lookupQueryIndexes(const QueryEntries &entries) {
 	return ret;
 }
 
-void NsSelecter::convertWhereValues(QueryEntries &entries) {
-	for (auto &ce : entries) {
-		bool isIndexField = (ce.idxNo != IndexValueType::SetByJsonPath);
-		KeyValueType keyType = isIndexField ? ns_->indexes_[ce.idxNo]->SelectKeyType() : detectQueryEntryIndexType(ce);
-		const FieldsSet *fields = isIndexField ? &ns_->indexes_[ce.idxNo]->Fields() : nullptr;
+void NsSelecter::convertWhereValues(QueryEntry &ce) {
+	bool isIndexField = (ce.idxNo != IndexValueType::SetByJsonPath);
+	KeyValueType keyType = isIndexField ? ns_->indexes_[ce.idxNo]->SelectKeyType() : detectQueryEntryIndexType(ce);
+	const FieldsSet *fields = isIndexField ? &ns_->indexes_[ce.idxNo]->Fields() : nullptr;
 
-		if (keyType != KeyValueUndefined) {
-			for (auto &key : ce.values) {
-				key.convert(keyType, &ns_->payloadType_, fields);
-			}
+	if (keyType != KeyValueUndefined) {
+		for (auto &key : ce.values) {
+			key.convert(keyType, &ns_->payloadType_, fields);
 		}
 	}
 }
@@ -840,9 +838,12 @@ int NsSelecter::getCompositeIndex(const FieldsSet &fields) {
 bool NsSelecter::mergeQueryEntries(QueryEntry *lhs, QueryEntry *rhs) {
 	if ((lhs->condition == CondEq || lhs->condition == CondSet) && (rhs->condition == CondEq || rhs->condition == CondSet)) {
 		// intersect 2 queryenries on same index
+
+		convertWhereValues(*lhs);
 		std::sort(lhs->values.begin(), lhs->values.end());
 		lhs->values.erase(std::unique(lhs->values.begin(), lhs->values.end()), lhs->values.end());
 
+		convertWhereValues(*rhs);
 		std::sort(rhs->values.begin(), rhs->values.end());
 		rhs->values.erase(std::unique(rhs->values.begin(), rhs->values.end()), rhs->values.end());
 
@@ -898,6 +899,8 @@ void NsSelecter::prepareSortingContext(const SortingEntries &sortBy, SelectCtx &
 			sortingCtx.opts = &sortIndex->Opts().collateOpts_;
 		} else if (sortingEntry.index != IndexValueType::SetByJsonPath) {
 			std::abort();
+		} else {
+			ctx.isForceAll = true;
 		}
 		ctx.sortingCtx.entries.push_back(std::move(sortingCtx));
 	}

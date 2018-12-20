@@ -92,7 +92,8 @@ private:
 	void addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, const SelectCtx &sctx, h_vector<Aggregator, 4> &aggregators,
 						 QueryResults &result);
 	QueryEntries lookupQueryIndexes(const QueryEntries &entries);
-	void convertWhereValues(QueryEntries &entries);
+	void convertWhereValues(QueryEntry &ce);
+
 	void substituteCompositeIndexes(QueryEntries &entries);
 	SortingEntries detectOptimalSortOrder(const QueryEntries &entries);
 	h_vector<Aggregator, 4> getAggregators(const Query &q);

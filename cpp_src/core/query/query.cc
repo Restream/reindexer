@@ -1,5 +1,6 @@
 
 #include "core/query/query.h"
+#include "core/query/aggregationresult.h"
 #include "core/query/dslencoder.h"
 #include "core/query/dslparsetools.h"
 #include "core/type_consts.h"
@@ -150,7 +151,11 @@ int Query::Parse(tokenizer &parser) {
 	}
 
 	if (tok.text() == "select"_sv) {
+		type_ = QuerySelect;
 		selectParse(parser);
+	} else if (tok.text() == "delete"_sv) {
+		type_ = QueryDelete;
+		deleteParse(parser);
 	} else {
 		throw Error(errParams, "Syntax error at or near '%s', %s", tok.text().data(), parser.where().c_str());
 	}
@@ -168,6 +173,7 @@ int Query::Parse(tokenizer &parser) {
 int Query::selectParse(tokenizer &parser) {
 	// Get filter
 	token tok;
+	bool wasSelectFilter = false;
 	while (!parser.end()) {
 		auto nameWithCase = parser.peek_token(false);
 		auto name = parser.next_token();
@@ -175,19 +181,12 @@ int Query::selectParse(tokenizer &parser) {
 		if (tok.text() == "("_sv) {
 			parser.next_token();
 			tok = parser.next_token();
-			if (name.text() == "avg"_sv) {
-				aggregations_.push_back({tok.text().ToString(), AggAvg});
-			} else if (name.text() == "facet"_sv) {
-				aggregations_.push_back({tok.text().ToString(), AggFacet});
-			} else if (name.text() == "sum"_sv) {
-				aggregations_.push_back({tok.text().ToString(), AggSum});
-			} else if (name.text() == "min"_sv) {
-				aggregations_.push_back({tok.text().ToString(), AggMin});
-			} else if (name.text() == "max"_sv) {
-				aggregations_.push_back({tok.text().ToString(), AggMax});
+			AggType agg = AggregationResult::strToAggType(name.text());
+			if (agg != AggUnknown) {
+				aggregations_.push_back({tok.text().ToString(), agg});
 			} else if (name.text() == "count"_sv) {
 				calcTotal = ModeAccurateTotal;
-				count = 0;
+				if (!wasSelectFilter) count = 0;
 			} else {
 				throw Error(errParams, "Unknown function name SQL - %s, %s", name.text().data(), parser.where().c_str());
 			}
@@ -200,8 +199,10 @@ int Query::selectParse(tokenizer &parser) {
 		} else if (name.text() != "*"_sv) {
 			selectFilter_.push_back(nameWithCase.text().ToString());
 			count = INT_MAX;
+			wasSelectFilter = true;
 		} else if (name.text() == "*"_sv) {
 			count = INT_MAX;
+			wasSelectFilter = true;
 		}
 		if (tok.text() != ","_sv) break;
 		tok = parser.next_token();
@@ -299,6 +300,82 @@ int Query::selectParse(tokenizer &parser) {
 		} else {
 			break;
 		}
+	}
+	return 0;
+}
+
+int Query::deleteParse(tokenizer &parser) {
+	// Get filter
+	token tok;
+
+	if (parser.next_token().text() != "from"_sv)
+		throw Error(errParams, "Expected 'FROM', but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+
+	_namespace = parser.next_token().text().ToString();
+	parser.skip_space();
+
+	while (!parser.end()) {
+		tok = parser.peek_token();
+		if (tok.text() == "where"_sv) {
+			parser.next_token();
+			ParseWhere(parser);
+		} else if (tok.text() == "limit"_sv) {
+			parser.next_token();
+			tok = parser.next_token();
+			if (tok.type != TokenNumber)
+				throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+			count = atoi(tok.text().data());
+		} else if (tok.text() == "offset"_sv) {
+			parser.next_token();
+			tok = parser.next_token();
+			if (tok.type != TokenNumber)
+				throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+			start = atoi(tok.text().data());
+		} else if (tok.text() == "order"_sv) {
+			parser.next_token();
+			// Just skip token (BY)
+			parser.next_token();
+			for (;;) {
+				auto nameWithCase = parser.peek_token();
+				tok = parser.next_token(false);
+				if (tok.type != TokenName && tok.type != TokenString)
+					throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+				SortingEntry sortingEntry;
+				sortingEntry.column = tok.text().ToString();
+				tok = parser.peek_token();
+				if (tok.text() == "("_sv && nameWithCase.text() == "field"_sv) {
+					parser.next_token();
+					tok = parser.next_token(false);
+					if (tok.type != TokenName && tok.type != TokenString)
+						throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+					sortingEntry.column = tok.text().ToString();
+					for (;;) {
+						tok = parser.next_token();
+						if (tok.text() == ")"_sv) break;
+						if (tok.text() != ","_sv)
+							throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text().data(),
+										parser.where().c_str());
+						tok = parser.next_token();
+						if (tok.type != TokenNumber && tok.type != TokenString)
+							throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text().data(),
+										parser.where().c_str());
+						forcedSortOrder.push_back(Variant(tok.text().ToString()));
+					}
+					tok = parser.peek_token();
+				}
+
+				if (tok.text() == "asc"_sv || tok.text() == "desc"_sv) {
+					sortingEntry.desc = bool(tok.text() == "desc"_sv);
+					parser.next_token();
+				}
+				sortingEntries_.push_back(std::move(sortingEntry));
+
+				auto nextToken = parser.peek_token();
+				if (nextToken.text() != ","_sv) break;
+				parser.next_token();
+			}
+		} else
+			break;
 	}
 	return 0;
 }
@@ -605,27 +682,7 @@ WrSerializer &Query::GetSQL(WrSerializer &ser, bool stripArgs) const {
 	if (aggregations_.size()) {
 		for (auto &a : aggregations_) {
 			if (&a != &*aggregations_.begin()) ser << ',';
-			switch (a.type_) {
-				case AggAvg:
-					ser << "AVG(";
-					break;
-				case AggSum:
-					ser << "SUM(";
-					break;
-				case AggFacet:
-					ser << "FACET(";
-					break;
-				case AggMin:
-					ser << "MIN(";
-					break;
-				case AggMax:
-					ser << "MAX(";
-					break;
-				default:
-					ser << "<?> (";
-					break;
-			}
-			ser << a.index_ << ')';
+			ser << AggregationResult::aggTypeToStr(a.type_) << "(" << a.index_ << ')';
 		}
 	} else if (selectFilter_.size()) {
 		for (auto &f : selectFilter_) {

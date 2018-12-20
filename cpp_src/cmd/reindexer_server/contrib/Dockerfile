@@ -6,7 +6,6 @@ RUN mkdir /src && \
     apk add git curl && \ 
     git clone https://github.com/restream/reindexer && \
     cd reindexer && \
-    git checkout master && \
     ./dependencies.sh && \
     mkdir build && \
     cd build && \

@@ -9,7 +9,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-enum JsonTag { JSON_NUMBER = 0, JSON_STRING, JSON_ARRAY, JSON_OBJECT, JSON_TRUE, JSON_FALSE, JSON_NULL = 0xF };
+enum JsonTag { JSON_NUMBER = 0, JSON_DOUBLE, JSON_STRING, JSON_ARRAY, JSON_OBJECT, JSON_TRUE, JSON_FALSE, JSON_NULL = 0xF };
 
 struct JsonNode;
 
@@ -19,22 +19,42 @@ struct JsonNode;
 #define JSON_VALUE_TAG_SHIFT 47
 
 union JsonValue {
+	uint8_t system[9];
 	uint64_t ival;
 	double fval;
 
-	JsonValue(double x) : fval(x) {}
+	JsonValue(double x) : fval(x) { system[8] = 0; }
+	JsonValue(uint64_t x) : ival(x) { system[8] = 1; }
+
 	JsonValue(JsonTag tag = JSON_NULL, void *payload = nullptr) {
 		// assert((uintptr_t)payload <= JSON_VALUE_PAYLOAD_MASK);
+		system[8] = 3;
 		ival = JSON_VALUE_NAN_MASK | ((uint64_t)tag << JSON_VALUE_TAG_SHIFT) | (uintptr_t)payload;
 	}
-	bool isDouble() const { return (int64_t)ival <= (int64_t)JSON_VALUE_NAN_MASK; }
-	JsonTag getTag() const { return isDouble() ? JSON_NUMBER : JsonTag((ival >> JSON_VALUE_TAG_SHIFT) & JSON_VALUE_TAG_MASK); }
+	bool isDouble() const { return system[8] == 0; }
+	JsonTag getTag() const {
+		if (system[8] == 0) {
+			return JSON_DOUBLE;
+		} else if (system[8] == 1) {
+			return JSON_NUMBER;
+
+		} else {
+			return JsonTag((ival >> JSON_VALUE_TAG_SHIFT) & JSON_VALUE_TAG_MASK);
+		}
+	}
 	uint64_t getPayload() const {
 		assert(!isDouble());
 		return ival & JSON_VALUE_PAYLOAD_MASK;
 	}
-	double toNumber() const {
-		assert(getTag() == JSON_NUMBER);
+	uint64_t toNumber() const {
+		assert(getTag() == JSON_NUMBER || getTag() == JSON_DOUBLE);
+		if (getTag() == JSON_NUMBER)
+			return ival;
+		else
+			return fval;
+	}
+	double toDouble() const {
+		assert(getTag() == JSON_DOUBLE);
 		return fval;
 	}
 	char *toString() const {

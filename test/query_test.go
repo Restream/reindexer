@@ -120,6 +120,16 @@ func (tx *txTest) Upsert(s interface{}) error {
 	return tx.tx.Upsert(s)
 }
 
+func (tx *txTest) UpsertJSON(s interface{}) error {
+	val := reflect.Indirect(reflect.ValueOf(s))
+	tx.ns.items[getPK(tx.ns, val)] = s
+	b, err := json.Marshal(s)
+	if err != nil {
+		panic(err)
+	}
+	return tx.tx.UpsertJSON(b)
+}
+
 func (tx *txTest) Delete(s interface{}) error {
 	val := reflect.Indirect(reflect.ValueOf(s))
 	delete(tx.ns.items, getPK(tx.ns, val))
@@ -341,6 +351,7 @@ func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
 		if checkEq && !reflect.DeepEqual(item, qt.ns.items[pk]) {
 			json1, _ := json.Marshal(item)
 			json2, _ := json.Marshal(qt.ns.items[pk])
+
 			if string(json1) != string(json2) {
 				panic(fmt.Errorf("found item not equal to original \n%#v\n%#v", item, qt.ns.items[pk]))
 			}

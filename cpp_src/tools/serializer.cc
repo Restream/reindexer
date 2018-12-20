@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <vendor/double-conversion/double-conversion.h>
 #include <cstring>
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/p_string.h"
@@ -224,6 +225,19 @@ void WrSerializer::PutDouble(double v) {
 	grow(sizeof v);
 	memcpy(&buf_[len_], &v, sizeof v);
 	len_ += sizeof v;
+}
+
+WrSerializer &WrSerializer::operator<<(double v) {
+	grow(32);
+	double_conversion::StringBuilder builder(reinterpret_cast<char *>(buf_ + len_), 32);
+	int flags =
+		double_conversion::DoubleToStringConverter::UNIQUE_ZERO | double_conversion::DoubleToStringConverter::EMIT_POSITIVE_EXPONENT_SIGN;
+	double_conversion::DoubleToStringConverter dc(flags, NULL, NULL, 'e', -6, 21, 0, 0);
+
+	dc.ToShortest(v, &builder);
+	len_ += builder.position();
+
+	return *this;
 }
 
 void WrSerializer::grow(size_t sz) {

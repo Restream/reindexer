@@ -12,6 +12,7 @@ namespace reindexer {
 
 using std::move;
 using std::string;
+
 struct p_string;
 class chunk;
 
@@ -145,11 +146,7 @@ public:
 		Write(v ? "true" : "false");
 		return *this;
 	}
-	WrSerializer &operator<<(double v) {
-		grow(32);
-		len_ += snprintf(reinterpret_cast<char *>(buf_ + len_), 32, "%.17g", v);
-		return *this;
-	}
+	WrSerializer &operator<<(double v);
 
 	void PrintJsonString(const string_view &str);
 	void PrintHexDump(const string_view &str);

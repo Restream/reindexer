@@ -37,6 +37,7 @@ protected:
 	Error commandSelect(const string& command);
 	Error commandUpsert(const string& command);
 	Error commandDelete(const string& command);
+	Error commandDeleteSQL(const string& command);
 	Error commandDump(const string& command);
 	Error commandNamespaces(const string& command);
 	Error commandMeta(const string& command);
@@ -59,11 +60,17 @@ protected:
 	Example:
 		SELECT * FROM media_items where name = 'Thor'
 		)help"},
-		{"explain",		"Query to database",&DBWrapper::commandSelect,R"help(
+		{"delete",		"Delete documents from database",&DBWrapper::commandDeleteSQL,R"help(
+	Syntax:
+		See SQL Delete statement
+	Example:
+		DELETE FROM media_items where name = 'Thor'
+		)help"},
+		{"explain",		"Excplain query execution plan",&DBWrapper::commandSelect,R"help(
 	Syntax:
 		See SQL Select statement
 	Example:
-		SELECT * FROM media_items where name = 'Thor'
+		EXPLAIN SELECT * FROM media_items where name = 'Thor'
 		)help"},
 		{"\\upsert",	"Upsert new item to namespace",&DBWrapper::commandUpsert,R"help( 
 	Syntax:

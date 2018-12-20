@@ -240,6 +240,27 @@ func (binding *NetCProto) EnableStorage(path string) error {
 	return nil
 }
 
+func (binding *NetCProto) Status() bindings.Status {
+	var totalQueueSize, totalQueueUsage, connUsage int
+	for i := 0; i < cap(binding.pool); i++ {
+		conn := binding.getConn()
+		totalQueueSize += cap(conn.seqs)
+		queueUsage := cap(conn.seqs) - len(conn.seqs)
+		totalQueueUsage += queueUsage
+		if queueUsage > 0 {
+			connUsage++
+		}
+	}
+	return bindings.Status{
+		CProto: bindings.StatusCProto{
+			ConnPoolSize:   cap(binding.pool),
+			ConnPoolUsage:  connUsage,
+			ConnQueueSize:  totalQueueSize,
+			ConnQueueUsage: totalQueueUsage,
+		},
+	}
+}
+
 func (binding *NetCProto) Finalize() error {
 	return nil
 }

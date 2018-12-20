@@ -1,3 +1,5 @@
 cmake_minimum_required(VERSION 3.0)
 
-add_subdirectory(py_reindexer)
+if (WITH_PYTHON)
+   add_subdirectory(py_reindexer)
+endif()
