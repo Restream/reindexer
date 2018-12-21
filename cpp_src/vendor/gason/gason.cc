@@ -83,6 +83,7 @@ bool isDouble(char *s, size_t &size) {
 		++s;
 		++size;
 	}
+	bool res = false;
 
 	if (*s == '.') {
 		++s;
@@ -91,7 +92,7 @@ bool isDouble(char *s, size_t &size) {
 			++s;
 			++size;
 		}
-		return true;
+		res = true;
 	}
 	if (*s == 'e' || *s == 'E') {
 		++s;
@@ -104,9 +105,9 @@ bool isDouble(char *s, size_t &size) {
 			++s;
 			++size;
 		}
-		return true;
+		res = true;
 	}
-	return false;
+	return res;
 }
 
 static double string2double(char *s, char **endptr, size_t size) {
@@ -182,6 +183,7 @@ int jsonParse(char *s, char **endptr, JsonValue *value, JsonAllocator &allocator
 				}
 
 				if (!isdelim(*s)) {
+					printf("%s\n", *endptr);
 					*endptr = s;
 					return JSON_BAD_NUMBER;
 				}
