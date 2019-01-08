@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "1.10.4"
+  version: "2.0.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -620,6 +620,40 @@ paths:
           description: "Invalid status value"
           schema:
             $ref: "#/definitions/StatusResponse"
+  /db/{database}/suggest:
+    get:
+      tags:
+      - "queries"
+      summary: "Suggest for autocompletion of SQL query"
+      operationId: "getSuggest"
+      description: |
+        This operation pareses SQL query, and suggests autocompletion variants
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "q"
+        in: "query"
+        type: "string"
+        description: "SQL query"
+        required: true
+      - name: "pos"
+        in: "query"
+        type: "integer"
+        description: "Cursor position for suggest"
+        required: true
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: '#/definitions/SuggestItems'
+        400:
+          description: "Invalid status value"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+
   /db/{database}/sqlquery:
     post:
       tags:
@@ -1252,6 +1286,14 @@ definitions:
         description: "Documents, matched specified filters"
         items:
           type: "object"
+  SuggestItems:
+    type: "object"
+    properties:
+      suggests:
+        type: "array"
+        description: "Suggested query autocompletion variants"
+        items:
+          type: "string"
   QueryItems:
     type: "object"
     properties:
@@ -1581,6 +1623,15 @@ definitions:
       last_sec_avg_lock_time_us:
         type: "integer"
         description: "Average waiting time for acquiring lock to this object at last second"
+      latency_stddev:
+        type: "double"
+        description: "Standard deviation of latency values"
+      min_latency_us:
+        type: "integer"
+        description: "Minimal latency value"
+      max_latency_us:
+        type: "integer"
+        description: "Maximum latency value"
 
   UpdatePerfStats:
     description: "Performance statistics for update operations"

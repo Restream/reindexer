@@ -30,7 +30,8 @@ TEST_F(SparseIndexesApi, SparseIndexConsistencyWithRuntimeIndexes) {
 	//    EXPECT_TRUE(err.ok()) << err.what();
 	//    EXPECT_TRUE(qr.size() == 10);
 
-	err = reindexer->DropIndex(default_namespace, rtIndexName);
+	reindexer::IndexDef idef(rtIndexName);
+	err = reindexer->DropIndex(default_namespace, idef);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	CheckSelectAll();

@@ -44,7 +44,8 @@ TEST_F(CompositeIndexesApi, DropTest2) {
 
 	selectAll(reindexer.get(), test_ns);
 
-	err = reindexer->DropIndex(test_ns, "id");
+	reindexer::IndexDef idef("id");
+	err = reindexer->DropIndex(test_ns, idef);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	err = reindexer->Commit(test_ns);

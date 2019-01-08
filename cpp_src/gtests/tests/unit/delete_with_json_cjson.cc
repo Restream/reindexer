@@ -164,7 +164,7 @@ TEST_F(ExtractPK, ChangedTypeJSON) {
 	ASSERT_TRUE(!deleteRes.Count()) << "Result of deletion must be empty";
 
 	QueryResults selectRes;
-	CHECK_SUCCESS(db_->Select(Query(SIMPLE_ITEM_NAMESPACE).Where("id", CondEq, data.id).Where("fk_id", CondEq, data.fk_id), deleteRes));
+	CHECK_SUCCESS(db_->Select(Query(SIMPLE_ITEM_NAMESPACE).Where("id", CondEq, data.id).Where("fk_id", CondEq, data.fk_id), selectRes));
 	ASSERT_TRUE(!selectRes.Count()) << "Result of selection must be empty";
 }
 

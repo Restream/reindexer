@@ -10,7 +10,7 @@ namespace client {
 
 using namespace reindexer::net;
 
-QueryResults::QueryResults() = default;
+QueryResults::QueryResults(int fetchFlags) : fetchFlags_(fetchFlags){};
 QueryResults::QueryResults(QueryResults &&) = default;
 QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	if (this != &obj) {
@@ -19,6 +19,7 @@ QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 		nsArray_ = std::move(obj.nsArray_);
 		queryParams_ = std::move(obj.queryParams_);
 		fetchOffset_ = std::move(obj.fetchOffset_);
+		fetchFlags_ = std::move(obj.fetchFlags_);
 		queryID_ = std::move(obj.queryID_);
 		status_ = std::move(obj.status_);
 		cmpl_ = std::move(obj.cmpl_);
@@ -26,11 +27,12 @@ QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	return *this;
 }
 
-QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl)
-	: conn_(conn), nsArray_(std::move(nsArray)), fetchOffset_(0), cmpl_(std::move(cmpl)) {}
+QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, int fetchFlags)
+	: conn_(conn), nsArray_(std::move(nsArray)), fetchOffset_(0), fetchFlags_(fetchFlags), cmpl_(std::move(cmpl)) {}
 
-QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, string_view rawResult, int queryID)
-	: QueryResults(conn, std::move(nsArray), cmpl) {
+QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, string_view rawResult, int queryID,
+						   int fetchFlags)
+	: QueryResults(conn, std::move(nsArray), cmpl, fetchFlags) {
 	Bind(rawResult, queryID);
 }
 
@@ -64,15 +66,13 @@ void QueryResults::Bind(string_view rawResult, int queryID) {
 }
 
 void QueryResults::fetchNextResults() {
-	auto ret = conn_->Call(cproto::kCmdFetchResults, queryID_, kResultsCJson, queryParams_.count + fetchOffset_, 100);
+	int flags = fetchFlags_ ? (fetchFlags_ & ~kResultsWithPayloadTypes) : kResultsCJson;
+	auto ret = conn_->Call(cproto::kCmdFetchResults, queryID_, flags, queryParams_.count + fetchOffset_, 100);
 	if (!ret.Status().ok()) {
 		throw ret.Status();
 	}
 
-	auto args = ret.GetArgs();
-	if (args.size() < 2) {
-		throw Error(errParams, "Server returned %d args, but expected %d", int(args.size()), 2);
-	}
+	auto args = ret.GetArgs(2);
 
 	fetchOffset_ += queryParams_.count;
 
@@ -93,41 +93,34 @@ h_vector<string_view, 1> QueryResults::GetNamespaces() const {
 	return ret;
 }
 
+const TagsMatcher &QueryResults::getTagsMatcher(int nsid) const { return nsArray_[nsid]->tagsMatcher_; };
+
 Error QueryResults::Iterator::GetJSON(WrSerializer &wrser, bool withHdrLen) {
+	readNext();
 	try {
-		string_view rawResult(qr_->rawResult_.data(), qr_->rawResult_.size());
-
-		ResultSerializer ser(rawResult.substr(pos_));
-
-		auto itemParams = ser.GetItemParams(qr_->queryParams_.flags);
-		if (qr_->queryParams_.flags & kResultsWithJoined) {
-			int joinedCnt = ser.GetVarUint();
-			(void)joinedCnt;
-		}
 		switch (qr_->queryParams_.flags & kResultsFormatMask) {
 			case kResultsCJson: {
-				JsonEncoder enc(&qr_->nsArray_[itemParams.nsid]->tagsMatcher_);
+				JsonEncoder enc(&qr_->getTagsMatcher(itemParams_.nsid));
 				JsonBuilder builder(wrser, JsonBuilder::TypePlain);
 
 				if (withHdrLen) {
 					auto slicePosSaver = wrser.StartSlice();
-					enc.Encode(itemParams.data, builder);
+					enc.Encode(itemParams_.data, builder);
 				} else {
-					enc.Encode(itemParams.data, builder);
+					enc.Encode(itemParams_.data, builder);
 				}
 				break;
 			}
 			case kResultsJson:
 				if (withHdrLen) {
-					wrser.PutSlice(itemParams.data);
+					wrser.PutSlice(itemParams_.data);
 				} else {
-					wrser.Write(itemParams.data);
+					wrser.Write(itemParams_.data);
 				}
 				break;
 			default:
-				return Error(errParseBin, "Server returned data in unknown format %d", int(qr_->queryParams_.flags & kResultsFormatMask));
+				return Error(errParseBin, "Server returned data in unknown format %d", qr_->queryParams_.flags & kResultsFormatMask);
 		}
-		nextPos_ = pos_ + ser.Pos();
 	} catch (const Error &err) {
 		return err;
 	}
@@ -135,10 +128,25 @@ Error QueryResults::Iterator::GetJSON(WrSerializer &wrser, bool withHdrLen) {
 }
 
 Error QueryResults::Iterator::GetCJSON(WrSerializer &wrser, bool withHdrLen) {
-	(void)wrser;
-	(void)withHdrLen;
-	// TODO: implement
-	abort();
+	readNext();
+	try {
+		switch (qr_->queryParams_.flags & kResultsFormatMask) {
+			case kResultsCJson:
+				if (withHdrLen) {
+					wrser.PutSlice(itemParams_.data);
+				} else {
+					wrser.Write(itemParams_.data);
+				}
+				break;
+			case kResultsJson:
+				return Error(errParseBin, "Server returned data in json format, can't process");
+			default:
+				return Error(errParseBin, "Server returned data in unknown format %d", qr_->queryParams_.flags & kResultsFormatMask);
+		}
+	} catch (const Error &err) {
+		return err;
+	}
+	return errOK;
 }
 
 Item QueryResults::Iterator::GetItem() {
@@ -147,23 +155,46 @@ Item QueryResults::Iterator::GetItem() {
 	// return Item();
 }
 
-QueryResults::Iterator &QueryResults::Iterator::operator++() {
+int64_t QueryResults::Iterator::GetLSN() {
+	readNext();
+	return itemParams_.lsn;
+}
+
+bool QueryResults::Iterator::IsRaw() {
+	readNext();
+	return itemParams_.raw;
+}
+
+string_view QueryResults::Iterator::GetRaw() {
+	readNext();
+	assert(itemParams_.raw);
+	return itemParams_.data;
+}
+
+void QueryResults::Iterator::readNext() {
+	if (nextPos_ != 0) return;
+
 	string_view rawResult(qr_->rawResult_.data(), qr_->rawResult_.size());
 
 	ResultSerializer ser(rawResult.substr(pos_));
 
 	try {
-		if (nextPos_ == 0) {
-			ser.GetItemParams(qr_->queryParams_.flags);
-			if (qr_->queryParams_.flags & kResultsWithJoined) {
-				int joinedCnt = ser.GetVarUint();
-				(void)joinedCnt;
-			}
-			pos_ += ser.Pos();
-			idx_++;
-		} else {
-			pos_ = nextPos_;
+		itemParams_ = ser.GetItemParams(qr_->queryParams_.flags);
+		if (qr_->queryParams_.flags & kResultsWithJoined) {
+			int joinedCnt = ser.GetVarUint();
+			(void)joinedCnt;
 		}
+		nextPos_ = pos_ + ser.Pos();
+	} catch (const Error &err) {
+		const_cast<QueryResults *>(qr_)->status_ = err;
+	}
+}
+
+QueryResults::Iterator &QueryResults::Iterator::operator++() {
+	try {
+		readNext();
+		idx_++;
+		pos_ = nextPos_;
 		nextPos_ = 0;
 
 		if (idx_ != qr_->queryParams_.qcount && idx_ == qr_->queryParams_.count + qr_->fetchOffset_) {
@@ -176,6 +207,7 @@ QueryResults::Iterator &QueryResults::Iterator::operator++() {
 
 	return *this;
 }
+
 bool QueryResults::Iterator::operator!=(const Iterator &other) const { return idx_ != other.idx_; }
 bool QueryResults::Iterator::operator==(const Iterator &other) const { return idx_ == other.idx_; }
 

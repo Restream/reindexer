@@ -6,7 +6,7 @@
 namespace reindexer {
 
 bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct &func) {
-	if (func.funcArgs.size() < 2) throw Error(errParams, "Invalid highlight params need minimum 2 - have %d", int(func.funcArgs.size()));
+	if (func.funcArgs.size() < 2) throw Error(errParams, "Invalid highlight params need minimum 2 - have %d", func.funcArgs.size());
 
 	if (!func.ctx || func.ctx->type != BaseFunctionCtx::kFtCtx) return false;
 

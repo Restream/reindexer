@@ -1,10 +1,9 @@
 package reindexer
 
 import (
+	"fmt"
 	"log"
 	"testing"
-
-	"fmt"
 )
 
 func init() {
@@ -42,14 +41,15 @@ func FillTestItemsForInsertUpdate() {
 	tx := newTestTx(DB, "test_items_insert_update")
 
 	for _, item := range checkInsertUpdateExistsData {
-		if cnt, err := tx.Insert(item); err != nil {
+		if err := tx.Insert(item); err != nil {
 			panic(err)
-		} else if cnt == 0 {
-			panic(fmt.Errorf("Could not insert item: %+v", *item))
 		}
 	}
 
-	tx.MustCommit(nil)
+	cnt := tx.MustCommit(nil)
+	if cnt != len(checkInsertUpdateExistsData) {
+		panic(fmt.Errorf("Could not commit testSortModeDataCustomSource"))
+	}
 }
 
 func CheckTestItemsInsertUpdate() {

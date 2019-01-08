@@ -40,8 +40,8 @@ protected:
 	}
 
 	void DropRuntimeIntArrayIndex(int indexNumber) {
-		string indexName = getRuntimeIntIndexName(indexNumber);
-		Error err = reindexer->DropIndex(default_namespace, indexName);
+		reindexer::IndexDef idef(getRuntimeIntIndexName(indexNumber));
+		Error err = reindexer->DropIndex(default_namespace, idef);
 		EXPECT_TRUE(err.ok()) << err.what();
 		err = reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -68,8 +68,8 @@ protected:
 	}
 
 	void DropRuntimeStringIndex(int indexNumber) {
-		string indexName = getRuntimeStringIndexName(indexNumber);
-		Error err = reindexer->DropIndex(default_namespace, indexName);
+		reindexer::IndexDef idef(getRuntimeStringIndexName(indexNumber));
+		Error err = reindexer->DropIndex(default_namespace, idef);
 		EXPECT_TRUE(err.ok()) << err.what();
 		err = reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -95,8 +95,8 @@ protected:
 	}
 
 	void DropRuntimeCompositeIndex(bool pk = false) {
-		string indexName(getRuntimeCompositeIndexName(pk));
-		Error err = reindexer->DropIndex(default_namespace, indexName);
+		reindexer::IndexDef idef(getRuntimeCompositeIndexName(pk));
+		Error err = reindexer->DropIndex(default_namespace, idef);
 		EXPECT_TRUE(err.ok()) << err.what();
 		err = reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();

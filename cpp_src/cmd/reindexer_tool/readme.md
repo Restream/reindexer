@@ -106,6 +106,14 @@ Format can be one of the following:
 Run benchmark for `<time>` seconds
 ```
 
+### Subscribe to upstream WAL updates
+*Syntax:*
+```
+\subscribe <on|off>
+On or off subscrbibtion to WAL updates
+```
+
+
 ## Examples
 
 Backup whole database into single backup file:

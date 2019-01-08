@@ -30,11 +30,9 @@ type StorageOpts struct {
 type NamespaceDef struct {
 	Namespace   string      `json:"name"`
 	StorageOpts StorageOpts `json:"storage"`
-	CacheMode   uint8       `json:"cached_mode"`
 }
 
-type StorageOptions uint8
-type CacheMode uint8
+type StorageOptions uint16
 
 func (so *StorageOptions) Enabled(value bool) *StorageOptions {
 	if value {
@@ -58,6 +56,12 @@ func (so *StorageOptions) DropOnFileFormatError(value bool) *StorageOptions {
 type RawBuffer interface {
 	GetBuf() []byte
 	Free()
+}
+
+// go transanction context
+type TxCtx struct {
+	Result RawBuffer
+	Id     uint64
 }
 
 // FetchMore interface for partial loading results (used in cproto)
@@ -108,16 +112,21 @@ type Stats struct {
 type RawBinding interface {
 	Init(u *url.URL, options ...interface{}) error
 	Clone() RawBinding
-	OpenNamespace(namespace string, enableStorage, dropOnFileFormatError bool, cacheMode uint8) error
+	OpenNamespace(namespace string, enableStorage, dropOnFileFormatError bool) error
 	CloseNamespace(namespace string) error
 	DropNamespace(namespace string) error
 	EnableStorage(namespace string) error
 	AddIndex(namespace string, indexDef IndexDef) error
 	UpdateIndex(namespace string, indexDef IndexDef) error
 	DropIndex(namespace, index string) error
+	BeginTx(namespace string) (TxCtx, error)
+	CommitTx(*TxCtx) (RawBuffer, error)
+	RollbackTx(*TxCtx) error
+	ModifyItemTx(txCtx *TxCtx, format int, data []byte, mode int, percepts []string, stateToken int) error
+
 	PutMeta(namespace, key, data string) error
 	GetMeta(namespace, key string) (RawBuffer, error)
-	ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, percepts []string, stateToken int, txID int) (RawBuffer, error)
+	ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, percepts []string, stateToken int) (RawBuffer, error)
 	Select(query string, withItems bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
 	SelectQuery(rawQuery []byte, withItems bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
 	DeleteQuery(nsHash int, rawQuery []byte) (RawBuffer, error)

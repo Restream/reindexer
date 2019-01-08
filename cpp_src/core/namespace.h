@@ -4,6 +4,7 @@
 #include <mutex>
 #include <vector>
 #include "core/cjson/tagsmatcher.h"
+#include "core/dbconfig.h"
 #include "core/item.h"
 #include "core/selectfunc/selectfunc.h"
 #include "estl/fast_hash_map.h"
@@ -15,7 +16,9 @@
 #include "payload/payloadiface.h"
 #include "perfstatcounter.h"
 #include "query/querycache.h"
+#include "replicator/waltracker.h"
 #include "storage/idatastorage.h"
+#include "transactionimpl.h"
 
 namespace reindexer {
 
@@ -26,15 +29,17 @@ using std::unique_lock;
 using std::unique_ptr;
 using std::vector;
 
-class QueryResults;
-struct SelectCtx;
-class SelectLockUpgrader;
 class Index;
+struct SelectCtx;
+class QueryResults;
+class DBConfigProvider;
+class SelectLockUpgrader;
+class UpdatesObservers;
 
 class Namespace {
 protected:
 	friend class NsSelecter;
-	friend class NsDescriber;
+	friend class WALSelecter;
 	friend class NsSelectFuncInterface;
 	friend class ReindexerImpl;
 
@@ -85,11 +90,12 @@ protected:
 public:
 	typedef shared_ptr<Namespace> Ptr;
 
-	Namespace(const string &_name, CacheMode cacheMode);
+	Namespace(const string &_name, UpdatesObservers &observers);
 	Namespace &operator=(const Namespace &) = delete;
 	~Namespace();
 
 	const string &GetName() { return name_; }
+	bool isSystem() const { return !name_.empty() && name_[0] == '#'; }
 
 	void EnableStorage(const string &path, StorageOpts opts);
 	void LoadFromStorage();
@@ -97,14 +103,13 @@ public:
 
 	void AddIndex(const IndexDef &indexDef);
 	void UpdateIndex(const IndexDef &indexDef);
-	void DropIndex(const string &index);
-	void AddCompositeIndex(const IndexDef &indexDef);
+	void DropIndex(const IndexDef &indexDef);
 
 	void Insert(Item &item, bool store = true);
 	void Update(Item &item, bool store = true);
 	void Upsert(Item &item, bool store = true);
 
-	void Delete(Item &item);
+	void Delete(Item &item, bool noLock = false);
 	void Select(QueryResults &result, SelectCtx &params);
 	NamespaceDef GetDefinition();
 	NamespaceMemStat GetMemStat();
@@ -113,7 +118,11 @@ public:
 	void Delete(const Query &query, QueryResults &result);
 	void BackgroundRoutine();
 	void CloseStorage();
-	void SetCacheMode(CacheMode cacheMode);
+
+	void ApplyTransactionStep(TransactionStep &step);
+
+	void StartTransaction();
+	void EndTransaction();
 
 	Item NewItem();
 	void ToPool(ItemImpl *item);
@@ -130,45 +139,49 @@ public:
 	void FillResult(QueryResults &result, IdSet::Ptr ids, const h_vector<std::string, 4> &selectFilter);
 
 	void EnablePerfCounters(bool enable = true) { enablePerfCounters_ = enable; }
-	void SetQueriesLogLevel(LogLevel lvl) {
-		WLock lck(mtx_);
-		queriesLogLevel_ = lvl;
-	}
+
+	// Replication slave mode functions
+	ReplicationState GetReplState();
+	void SetSlaveLSN(int64_t slaveLSN);
 
 protected:
+	bool tryToReload();
 	void saveIndexesToStorage();
 	bool loadIndexesFromStorage();
+	void saveReplStateToStorage();
+	void loadReplStateFromStorage();
+
+	void initWAL(int64_t maxLSN);
+
 	void markUpdated();
 	void doUpsert(ItemImpl *ritem, IdType id, bool doUpdate);
-	void modifyItem(Item &item, bool store = true, int mode = ModeUpsert);
+	void modifyItem(Item &item, bool store = true, int mode = ModeUpsert, bool noLock = false);
 	void updateTagsMatcherFromItem(ItemImpl *ritem, string &jsonSliceBuf);
 	void updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields);
 	void doDelete(IdType id);
 	void commitIndexes();
 	void insertIndex(Index *newIndex, int idxNo, const string &realName);
 	void addIndex(const IndexDef &indexDef);
+	void addCompositeIndex(const IndexDef &indexDef);
 	void updateIndex(const IndexDef &indexDef);
-	void dropIndex(const string &index);
+	void dropIndex(const IndexDef &index);
+	void addToWAL(const IndexDef &indexDef, WALRecType type);
+
 	void recreateCompositeIndexes(int startIdx, int endIdx);
+	void onConfigUpdated(DBConfigProvider &configProvider);
 	NamespaceDef getDefinition();
 	IndexDef getIndexDefinition(const string &indexName);
 
 	string getMeta(const string &key);
 	void flushStorage();
 	void putMeta(const string &key, const string_view &data);
-	void putCachedMode();
-	void getCachedMode();
 
 	pair<IdType, bool> findByPK(ItemImpl *ritem);
-
 	int getSortedIdxCount() const;
-
 	void setFieldsBasedOnPrecepts(ItemImpl *ritem);
-
 	int64_t funcGetSerial(SelectFuncStruct sqlFuncStruct);
 
 	void PutToJoinCache(JoinCacheRes &res, SelectCtx::PreResult::Ptr preResult);
-
 	void PutToJoinCache(JoinCacheRes &res, JoinCacheVal &val);
 	void GetFromJoinCache(JoinCacheRes &ctx);
 	void GetIndsideFromJoinCache(JoinCacheRes &ctx);
@@ -178,6 +191,13 @@ protected:
 		std::unique_lock<std::mutex> lck(storage_mtx_);
 		updates_->Put(key, data);
 	}
+
+	bool needToLoadData() const;
+	StorageOpts getStorageOpts();
+	void SetStorageOpts(StorageOpts opts);
+
+	void updateSelectTime();
+	int64_t getLastSelectTime() const;
 
 	IndexesStorage indexes_;
 	fast_hash_map<string, int, nocase_hash_str, nocase_equal_str> indexesNames_;
@@ -197,7 +217,6 @@ protected:
 	int unflushedCount_;
 
 	shared_timed_mutex mtx_;
-	shared_timed_mutex cache_mtx_;
 	std::mutex storage_mtx_;
 
 	// Commit phases state
@@ -222,13 +241,20 @@ private:
 	IdType createItem(size_t realSize);
 
 	JoinCache::Ptr joinCache_;
-	CacheMode cacheMode_;
-	bool needPutCacheMode_;
 
 	PerfStatCounterMT updatePerfCounter_, selectPerfCounter_;
 	std::atomic<bool> enablePerfCounters_;
-	LogLevel queriesLogLevel_;
-	int64_t lsnCounter_;
+
+	NamespaceConfigData config_;
+	// Replication variables
+	WALTracker wal_;
+	ReplicationState repl_;
+	UpdatesObservers &observers_;
+
+	StorageOpts storageOpts_;
+	std::atomic<bool> storageLoaded_;
+	std::atomic<int64_t> lastSelectTime_;
+
 	vector<std::unique_ptr<ItemImpl>> pool_;
 	std::atomic<bool> cancelCommit_;
 	std::atomic<int64_t> lastUpdateTime_;

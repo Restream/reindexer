@@ -1,4 +1,5 @@
 #include "ns_api.h"
+#include "tools/serializer.h"
 
 TEST_F(NsApi, UpsertWithPrecepts) {
 	Error err = reindexer->OpenNamespace(default_namespace);
@@ -92,4 +93,99 @@ TEST_F(NsApi, UpdateIndex) {
 	string receivedIdxJson = receivedIdxSer.Slice().ToString();
 
 	ASSERT_TRUE(newIdxJson == receivedIdxJson);
+}
+
+TEST_F(NsApi, QueryperfstatsNsDummyTest) {
+	Error err = reindexer->InitSystemNamespaces();
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = reindexer->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK()}});
+
+	const char *const configNs = "#config";
+	Item item = NewItem(configNs);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+	string newConfig = R"json({
+                       "type":"profiling",
+                       "profiling":{
+                           "queriesperfstats":true,
+                           "queries_threshold_us":10,
+                           "perfstats":true,
+                           "memstats":true
+                       }
+                   })json";
+
+	err = item.FromJSON(newConfig);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	Upsert(configNs, item);
+	err = Commit(configNs);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	struct QueryPerformance {
+		double latencyStddev = 0;
+		int64_t minLatencyUs = 0;
+		int64_t maxLatencyUs = 0;
+		void Dump() const {
+			std::cout << "stddev: " << latencyStddev << std::endl;
+			std::cout << "min: " << minLatencyUs << std::endl;
+			std::cout << "max: " << maxLatencyUs << std::endl;
+		}
+	};
+
+	Query testQuery(default_namespace);
+	reindexer::WrSerializer querySerializer;
+	testQuery.GetSQL(querySerializer, true);
+	const string querySql = querySerializer.Slice().ToString();
+
+	auto performSimpleQuery = [&]() {
+		QueryResults qr;
+		Error err = reindexer->Select(testQuery, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+	};
+
+	auto getPerformanceParams = [&](QueryPerformance &performanceRes) {
+		QueryResults qres;
+		Error err = reindexer->Select(Query("#queriesperfstats").Where("query", CondEq, Variant(querySql)), qres);
+		ASSERT_TRUE(err.ok()) << err.what();
+		if (qres.Count() == 0) {
+			QueryResults qr;
+			err = reindexer->Select(Query("#queriesperfstats"), qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_TRUE(qr.Count() > 0) << "#queriesperfstats table is empty!";
+			for (size_t i = 0; i < qr.Count(); ++i) {
+				std::cout << qr[0].GetItem().GetJSON() << std::endl;
+			}
+		}
+		ASSERT_TRUE(qres.Count() == 1) << "Expected 1 row for this query, got " << qres.Count();
+		Item item = qres[0].GetItem();
+		Variant val;
+		val = item["latency_stddev"];
+		performanceRes.latencyStddev = static_cast<double>(val);
+		val = item["min_latency_us"];
+		performanceRes.minLatencyUs = val.As<int64_t>();
+		val = item["max_latency_us"];
+		performanceRes.maxLatencyUs = val.As<int64_t>();
+	};
+
+	sleep(1);
+
+	QueryPerformance prevQperf;
+	for (size_t i = 0; i < 1000; ++i) {
+		performSimpleQuery();
+		QueryPerformance qperf;
+		getPerformanceParams(qperf);
+		if ((qperf.minLatencyUs > qperf.maxLatencyUs) || (qperf.latencyStddev < 0) || (qperf.latencyStddev > qperf.maxLatencyUs)) {
+			qperf.Dump();
+		}
+		ASSERT_TRUE(qperf.minLatencyUs <= qperf.maxLatencyUs);
+		ASSERT_TRUE((qperf.latencyStddev >= 0) && (qperf.latencyStddev <= qperf.maxLatencyUs));
+		if (i > 0) {
+			ASSERT_TRUE(qperf.minLatencyUs <= prevQperf.minLatencyUs);
+			ASSERT_TRUE(qperf.maxLatencyUs >= prevQperf.maxLatencyUs);
+		}
+		prevQperf = qperf;
+	}
 }

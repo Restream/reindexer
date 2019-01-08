@@ -9,8 +9,8 @@ namespace reindexer {
 
 Index::Index(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields)
 	: type_(idef.Type()), name_(idef.name_), opts_(idef.opts_), payloadType_(payloadType), fields_(fields) {
-	logPrintf(LogTrace, "Index::Index ('%s',%s,%s)  %s%s%s", idef.name_.c_str(), idef.indexType_.c_str(), idef.fieldType_.c_str(),
-			  idef.opts_.IsPK() ? ",pk" : "", idef.opts_.IsDense() ? ",dense" : "", idef.opts_.IsArray() ? ",array" : "");
+	logPrintf(LogTrace, "Index::Index ('%s',%s,%s)  %s%s%s", idef.name_, idef.indexType_, idef.fieldType_, idef.opts_.IsPK() ? ",pk" : "",
+			  idef.opts_.IsDense() ? ",dense" : "", idef.opts_.IsArray() ? ",array" : "");
 }
 
 Index::Index(const Index& obj)
@@ -52,7 +52,7 @@ Index* Index::New(const IndexDef& idef, const PayloadType payloadType, const Fie
 		case IndexCompositeFuzzyFT:
 			return FuzzyIndexText_New(idef, payloadType, fields);
 		default:
-			throw Error(errParams, "Ivalid index type %d for index '%s'", idef.Type(), idef.name_.c_str());
+			throw Error(errParams, "Ivalid index type %d for index '%s'", idef.Type(), idef.name_);
 	}
 }
 

@@ -12,24 +12,23 @@ namespace reindexer {
 void ExplainCalc::LogDump(int logLevel) {
 	if (logLevel >= LogInfo) {
 		logPrintf(LogInfo, "Got %d items in %d µs [prepare %d µs, select %d µs, postprocess %d µs loop %d µs], sortindex %s", count_,
-				  to_us(total_), to_us(prepare_), to_us(select_), to_us(postprocess_), to_us(loop_), sortIndex_.data());
+				  to_us(total_), to_us(prepare_), to_us(select_), to_us(postprocess_), to_us(loop_), sortIndex_);
 	}
 
 	if (logLevel >= LogTrace) {
 		if (selectors_) {
 			for (SelectIterator &s : *selectors_) {
-				logPrintf(LogInfo, "%s: %d idsets, %d comparators, cost %g, matched %d, %s", s.name.c_str(), s.size(),
-						  s.comparators_.size(), s.Cost(iters_), s.GetMatchedCount(), s.Dump().c_str());
+				logPrintf(LogInfo, "%s: %d idsets, %d comparators, cost %g, matched %d, %s", s.name, s.size(), s.comparators_.size(),
+						  s.Cost(iters_), s.GetMatchedCount(), s.Dump());
 			}
 		}
 
 		if (jselectors_) {
 			for (auto &js : *jselectors_) {
 				if (js.type == JoinType::LeftJoin || js.type == JoinType::Merge) {
-					logPrintf(LogInfo, "%s %s: called %d\n", Query::JoinTypeName(js.type), js.ns.c_str(), js.called);
+					logPrintf(LogInfo, "%s %s: called %d\n", Query::JoinTypeName(js.type), js.ns, js.called);
 				} else {
-					logPrintf(LogInfo, "%s %s: called %d, matched %d\n", Query::JoinTypeName(js.type), js.ns.c_str(), js.called,
-							  js.matched);
+					logPrintf(LogInfo, "%s %s: called %d, matched %d\n", Query::JoinTypeName(js.type), js.ns, js.called, js.matched);
 				}
 			}
 		}

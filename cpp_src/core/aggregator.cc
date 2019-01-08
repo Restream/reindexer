@@ -19,7 +19,7 @@ Aggregator::Aggregator(AggType aggType, const string &name) : aggType_(aggType),
 		case AggSum:
 			break;
 		default:
-			throw Error(errParams, "Unknown aggregation type %d", int(aggType_));
+			throw Error(errParams, "Unknown aggregation type %d", aggType_);
 	}
 }
 

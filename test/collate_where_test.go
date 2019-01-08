@@ -75,33 +75,35 @@ func init() {
 func FillTestCollateWhereItems() {
 	tx := newTestTx(DB, testCollateWhereNumeric)
 	for _, item := range testCollateWhereNumericData {
-		if cnt, err := tx.Insert(item); err != nil {
+		if err := tx.Insert(item); err != nil {
 			panic(err)
-		} else if cnt == 0 {
-			panic(fmt.Errorf("Could not insert item: %+v", *item))
 		}
 	}
-	tx.MustCommit(nil)
+	cnt := tx.MustCommit(nil)
+	if cnt != len(testCollateWhereNumericData) {
+		panic(fmt.Errorf("Could not commit testCollateWhereNumericData"))
+	}
 
 	tx = newTestTx(DB, testCollateWhereAscii)
 	for _, item := range testCollateWhereAsciiData {
-		if cnt, err := tx.Insert(item); err != nil {
+		if err := tx.Insert(item); err != nil {
 			panic(err)
-		} else if cnt == 0 {
-			panic(fmt.Errorf("Could not insert item: %+v", *item))
 		}
 	}
-	tx.MustCommit(nil)
-
+	cnt = tx.MustCommit(nil)
+	if cnt != len(testCollateWhereAsciiData) {
+		panic(fmt.Errorf("Could not commit testCollateWhereAscii"))
+	}
 	tx = newTestTx(DB, testCollateWhereUtf)
 	for _, item := range testCollateWhereUtfData {
-		if cnt, err := tx.Insert(item); err != nil {
+		if err := tx.Insert(item); err != nil {
 			panic(err)
-		} else if cnt == 0 {
-			panic(fmt.Errorf("Could not insert item: %+v", *item))
 		}
 	}
-	tx.MustCommit(nil)
+	cnt = tx.MustCommit(nil)
+	if cnt != len(testCollateWhereUtfData) {
+		panic(fmt.Errorf("Could not commit testCollateWhereUtf"))
+	}
 }
 
 func CollateEq() {
@@ -206,7 +208,6 @@ func CollateLt() {
 	if err != nil {
 		panic(err)
 	}
-
 	// two words apple
 	if len(results) != 2 {
 		panic(fmt.Errorf("ASCII LT gives wrong result %d, expected 2", len(results)))

@@ -134,7 +134,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
 		mergedIds->Append(GetEntry(vdocs[id].keyEntry)->Sorted(0).begin(), GetEntry(vdocs[id].keyEntry)->Sorted(0).end(), IdSet::Unordered);
 	}
 	if (GetConfig()->logLevel >= LogInfo) {
-		logPrintf(LogInfo, "Total merge out: %d ids", int(mergedIds->size()));
+		logPrintf(LogInfo, "Total merge out: %d ids", mergedIds->size());
 
 		string str;
 		for (size_t i = 0; i < fctx->GetSize();) {
@@ -150,7 +150,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
 			str += " ";
 			i = j;
 		}
-		logPrintf(LogInfo, "Relevancy(%d): %s", int(fctx->GetSize()), str.c_str());
+		logPrintf(LogInfo, "Relevancy(%d): %s", fctx->GetSize(), str);
 	}
 	assert(mergedIds->size() == fctx->GetSize());
 
@@ -177,8 +177,8 @@ void FastIndexText<T>::commitFulltext() {
 	auto tm2 = high_resolution_clock::now();
 
 	logPrintf(LogInfo, "FastIndexText::Commit elapsed %d ms total [ build vdocs %d ms,  process data %d ms ]\n",
-			  int(duration_cast<milliseconds>(tm2 - tm0).count()), int(duration_cast<milliseconds>(tm1 - tm0).count()),
-			  int(duration_cast<milliseconds>(tm2 - tm1).count()));
+			  duration_cast<milliseconds>(tm2 - tm0).count(), duration_cast<milliseconds>(tm1 - tm0).count(),
+			  duration_cast<milliseconds>(tm2 - tm1).count());
 }
 
 // hack wothout c++14

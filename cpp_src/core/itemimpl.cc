@@ -78,7 +78,7 @@ Error ItemImpl::FromCJSON(const string_view &slice, bool pkOnly) {
 	CJsonDecoder decoder(tagsMatcher_, pkOnly ? &pkFields_ : nullptr);
 	auto err = decoder.Decode(&pl, rdser, ser_);
 
-	if (err.ok() && !rdser.Eof()) return Error(errParseJson, "Internal error - left unparsed data %d", int(rdser.Pos()));
+	if (err.ok() && !rdser.Eof()) return Error(errParseJson, "Internal error - left unparsed data %d", rdser.Pos());
 
 	tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
 	pl.Set(0, {Variant(p_string(&tupleData_))});
@@ -134,14 +134,18 @@ string_view ItemImpl::GetJSON() {
 	return ser_.Slice();
 }
 
-string_view ItemImpl::GetCJSON() {
-	if (cjson_.size()) return cjson_;
+string_view ItemImpl::GetCJSON(bool withTagsMatcher) {
+	withTagsMatcher = withTagsMatcher && tagsMatcher_.isUpdated();
+
+	if (cjson_.size() && !withTagsMatcher) return cjson_;
 	ser_.Reset();
-	return GetCJSON(ser_);
+	return GetCJSON(ser_, withTagsMatcher);
 }
 
-string_view ItemImpl::GetCJSON(WrSerializer &ser) {
-	if (cjson_.size()) {
+string_view ItemImpl::GetCJSON(WrSerializer &ser, bool withTagsMatcher) {
+	withTagsMatcher = withTagsMatcher && tagsMatcher_.isUpdated();
+
+	if (cjson_.size() && !withTagsMatcher) {
 		ser.Write(cjson_);
 		return ser.Slice();
 	}
@@ -151,7 +155,17 @@ string_view ItemImpl::GetCJSON(WrSerializer &ser) {
 	CJsonBuilder builder(ser, CJsonBuilder::TypePlain);
 	CJsonEncoder encoder(&tagsMatcher_);
 
-	encoder.Encode(&pl, builder);
+	if (withTagsMatcher) {
+		ser.PutVarUint(TAG_END);
+		int pos = ser.Len();
+		ser.PutUInt32(0);
+		encoder.Encode(&pl, builder);
+		uint32_t tmOffset = ser.Len();
+		memcpy(ser.Buf() + pos, &tmOffset, sizeof(tmOffset));
+		tagsMatcher_.serialize(ser);
+	} else {
+		encoder.Encode(&pl, builder);
+	}
 
 	return ser.Slice();
 }

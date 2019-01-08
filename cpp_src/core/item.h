@@ -14,6 +14,7 @@ class Namespace;
 
 class ItemImpl;
 class FieldRefImpl;
+class Replicator;
 
 /// Item is the interface for data manipulating. It holds and control one database document (record)<br>
 /// *Lifetime*: Item is uses Copy-On-Write semantics, and have independent lifetime and state - e.g., aquired from Reindexer Item will not
@@ -186,6 +187,7 @@ private:
 	friend class Namespace;
 	friend class QueryResults;
 	friend class ReindexerImpl;
+	friend class Replicator;
 	friend class client::ReindexerImpl;
 	friend class client::Namespace;
 };

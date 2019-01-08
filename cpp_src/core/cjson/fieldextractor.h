@@ -5,7 +5,7 @@
 namespace reindexer {
 class FieldsExtractor {
 public:
-	FieldsExtractor(VariantArray *va = nullptr, KeyValueType expectedType = KeyValueUndefined) : values_(va), expectedType_(expectedType){}
+	FieldsExtractor(VariantArray *va = nullptr, KeyValueType expectedType = KeyValueUndefined) : values_(va), expectedType_(expectedType) {}
 	FieldsExtractor(const FieldsExtractor &) = delete;
 	FieldsExtractor(FieldsExtractor &&other) : values_(other.values_), expectedType_(other.expectedType_) {}
 	FieldsExtractor &operator=(const FieldsExtractor &) = delete;

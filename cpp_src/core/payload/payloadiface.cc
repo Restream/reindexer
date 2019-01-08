@@ -242,6 +242,27 @@ size_t PayloadIface<T>::GetHash(const FieldsSet &fields) const {
 	return ret;
 }
 
+// Get complete hash
+template <typename T>
+uint64_t PayloadIface<T>::GetHash() const {
+	uint64_t ret = 0;
+	VariantArray keys1;
+
+	for (int field = 0; field < t_.NumFields(); field++) {
+		ret <<= 1;
+		if (t_.Field(field).IsArray()) {
+			auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
+
+			for (int i = 0; i < arr->len; i++) {
+				PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
+				ret ^= (pv.Get().Hash() + i);
+			}
+		} else
+			ret ^= Field(field).Get().Hash();
+	}
+	return ret;
+}
+
 template <typename T>
 bool PayloadIface<T>::IsEQ(const T &other, const FieldsSet &fields) const {
 	size_t tagPathIdx = 0;

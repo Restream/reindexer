@@ -233,8 +233,6 @@ type NamespaceOptions struct {
 	dropOnIndexesConflict bool
 	// Drop on file errors
 	dropOnFileFormatError bool
-	// Cached mode options
-	cachedMode uint8
 }
 
 func (opts *NamespaceOptions) NoStorage() *NamespaceOptions {
@@ -252,24 +250,9 @@ func (opts *NamespaceOptions) DropOnFileFormatError() *NamespaceOptions {
 	return opts
 }
 
-func (opts *NamespaceOptions) CacheOff() *NamespaceOptions {
-	opts.cachedMode = bindings.CacheModeOff
-	return opts
-}
-
-func (opts *NamespaceOptions) CacheOn() *NamespaceOptions {
-	opts.cachedMode = bindings.CacheModeOn
-	return opts
-}
-
-func (opts *NamespaceOptions) CacheAggressive() *NamespaceOptions {
-	opts.cachedMode = bindings.CacheModeAggressive
-	return opts
-}
-
 // DefaultNamespaceOptions return defailt namespace options
 func DefaultNamespaceOptions() *NamespaceOptions {
-	return &NamespaceOptions{enableStorage: true, cachedMode: bindings.CacheModeOn}
+	return &NamespaceOptions{enableStorage: true}
 }
 
 // OpenNamespace Open or create new namespace and indexes based on passed struct.
@@ -287,7 +270,7 @@ func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s i
 	}
 
 	for retry := 0; retry < 2; retry++ {
-		if err = db.binding.OpenNamespace(namespace, opts.enableStorage, opts.dropOnFileFormatError, opts.cachedMode); err != nil {
+		if err = db.binding.OpenNamespace(namespace, opts.enableStorage, opts.dropOnFileFormatError); err != nil {
 			break
 		}
 
@@ -475,30 +458,33 @@ func loglevelToString(logLevel int) string {
 }
 
 // SetDefaultQueryDebug sets default debug level for queries to namespaces
-func (db *Reindexer) SetDefaultQueryDebug(namespace string, level int) {
+func (db *Reindexer) SetDefaultQueryDebug(namespace string, level int) error {
 
-	citem := &DBConfigItem{Type: "log_queries"}
-	if item, ok := db.Query(ConfigNamespaceName).WhereString("type", EQ, "log_queries").Get(); ok {
-		citem = item.(*DBConfigItem)
+	citem := &DBConfigItem{Type: "namespaces"}
+	item, err := db.Query(ConfigNamespaceName).WhereString("type", EQ, "namespaces").Exec().FetchOne()
+	if err != nil {
+		return err
 	}
+
+	citem = item.(*DBConfigItem)
 
 	found := false
 
-	if citem.LogQueries == nil {
-		logQueries := make([]DBLogQueriesConfig, 0, 1)
-		citem.LogQueries = &logQueries
+	if citem.Namespaces == nil {
+		namespaces := make([]DBNamespacesConfig, 0, 1)
+		citem.Namespaces = &namespaces
 	}
 
-	for i := range *citem.LogQueries {
-		if (*citem.LogQueries)[i].Namespace == namespace {
-			(*citem.LogQueries)[i].LogLevel = loglevelToString(level)
+	for i := range *citem.Namespaces {
+		if (*citem.Namespaces)[i].Namespace == namespace {
+			(*citem.Namespaces)[i].LogLevel = loglevelToString(level)
 			found = true
 		}
 	}
 	if !found {
-		*citem.LogQueries = append(*citem.LogQueries, DBLogQueriesConfig{namespace, loglevelToString(level)})
+		*citem.Namespaces = append(*citem.Namespaces, DBNamespacesConfig{Namespace: namespace, LogLevel: loglevelToString(level)})
 	}
-	db.Upsert(ConfigNamespaceName, citem)
+	return db.Upsert(ConfigNamespaceName, citem)
 }
 
 // Query Create new Query for building request

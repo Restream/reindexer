@@ -25,7 +25,7 @@ public:
 	IndexMemStat GetMemStat() override;
 
 	IdSetRef Find(const Variant & /*key*/) override {
-		throw Error(errLogic, "IndexStore::Find of '%s' is not implemented. Do not use '-' index as pk!", this->name_.c_str());
+		throw Error(errLogic, "IndexStore::Find of '%s' is not implemented. Do not use '-' index as pk!", this->name_);
 	}
 
 protected:

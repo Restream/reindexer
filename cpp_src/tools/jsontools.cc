@@ -138,5 +138,7 @@ template void parseJsonField(const char *, size_t &, const JsonNode *, double, d
 template void parseJsonField(const char *, double &, const JsonNode *, double, double);
 template void parseJsonField(const char *, double &, const JsonNode *);
 template void parseJsonField(const char *, int &, const JsonNode *);
+template void parseJsonField(const char *, int64_t &, const JsonNode *);
+template void parseJsonField(const char *, uint64_t &, const JsonNode *);
 
 }  // namespace reindexer

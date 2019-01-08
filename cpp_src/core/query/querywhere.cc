@@ -69,7 +69,7 @@ CondType QueryWhere::getCondType(string_view cond) {
 	} else if (iequals(cond, "range"_sv)) {
 		return CondRange;
 	}
-	throw Error(errParseSQL, "Expected condition operator, but found '%s' in query", cond.data());
+	throw Error(errParseSQL, "Expected condition operator, but found '%s' in query", cond);
 }
 
 static Variant token2kv(const token &tok, tokenizer &parser) {
@@ -77,7 +77,7 @@ static Variant token2kv(const token &tok, tokenizer &parser) {
 	if (tok.text() == "false"_sv) return Variant(false);
 
 	if (tok.type != TokenNumber && tok.type != TokenString)
-		throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+		throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text(), parser.where());
 
 	auto text = tok.text();
 	bool digit = text.length() < 21;
@@ -121,7 +121,7 @@ int QueryWhere::ParseWhere(tokenizer &parser) {
 		tok = parser.next_token(false);
 
 		if (tok.text() == "("_sv) {
-			throw Error(errParseSQL, "Found '(' - nestqed queries are not supported, %s", parser.where().c_str());
+			throw Error(errParseSQL, "Found '(' - nestqed queries are not supported, %s", parser.where());
 
 		} else if (tok.type == TokenName || tok.type == TokenString) {
 			// Index name
@@ -137,7 +137,7 @@ int QueryWhere::ParseWhere(tokenizer &parser) {
 				else if (entry.op == OpNot)
 					entry.op = OpAnd;
 				else {
-					throw Error(errParseSQL, "<> condition with OR is not supported, %s", parser.where().c_str());
+					throw Error(errParseSQL, "<> condition with OR is not supported, %s", parser.where());
 				}
 			} else {
 				entry.condition = getCondType(tok.text());
@@ -151,7 +151,7 @@ int QueryWhere::ParseWhere(tokenizer &parser) {
 				if (iequals(tok.text(), "null"_sv) || iequals(tok.text(), "empty"_sv)) {
 					entry.condition = CondAny;
 				} else {
-					throw Error(errParseSQL, "Expected NULL, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+					throw Error(errParseSQL, "Expected NULL, but found '%s' in query, %s", tok.text(), parser.where());
 				}
 			}
 
@@ -162,8 +162,7 @@ int QueryWhere::ParseWhere(tokenizer &parser) {
 					tok = parser.next_token();
 					if (tok.text() == ")"_sv) break;
 					if (tok.text() != ","_sv)
-						throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text().data(),
-									parser.where().c_str());
+						throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text(), parser.where());
 				}
 			} else {
 				entry.values.push_back(token2kv(tok, parser));

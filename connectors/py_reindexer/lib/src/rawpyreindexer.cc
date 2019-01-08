@@ -187,7 +187,7 @@ static PyObject *IndexDrop(PyObject *self, PyObject *args) {
 		return NULL;
 	}
 
-	Error err = getDB(rx)->DropIndex(ns, indexName);
+	Error err = getDB(rx)->DropIndex(ns, IndexDef(indexName));
 
 	return pyErr(err);
 }

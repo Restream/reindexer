@@ -53,7 +53,8 @@ public:
 	}
 
 	void dropIndex(const string& name) {
-		Error err = reindexer->DropIndex(default_namespace, name);
+		reindexer::IndexDef idef(name);
+		Error err = reindexer->DropIndex(default_namespace, idef);
 		EXPECT_TRUE(err.ok()) << err.what();
 		err = reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();

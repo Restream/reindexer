@@ -4,6 +4,7 @@
 #include "dispatcher.h"
 #include "net/connection.h"
 #include "net/iserverconnection.h"
+#include "replicator/updatesobserver.h"
 
 namespace reindexer {
 namespace net {
@@ -27,6 +28,7 @@ public:
 
 	// Writer iterface implementation
 	void WriteRPCReturn(Context &ctx, const Args &args) override final { responceRPC(ctx, errOK, args); }
+	void CallRPC(CmdCode cmd, const Args &args) override final;
 	void SetClientData(ClientData::Ptr data) override final { clientData_ = data; }
 	ClientData::Ptr GetClientData() override final { return clientData_; }
 
@@ -35,13 +37,18 @@ protected:
 	void onClose() override;
 	void handleRPC(Context &ctx);
 	void responceRPC(Context &ctx, const Error &error, const Args &args);
-
-	bool respSent_ = false;
+	void async_cb(ev::async &) { sendUpdates(); }
+	void timeout_cb(ev::periodic &, int) { sendUpdates(); }
+	void sendUpdates();
 
 	Dispatcher &dispatcher_;
 	ClientData::Ptr clientData_;
 	// keep here to prevent allocs
 	RPCCall call_;
+	std::vector<chunk> updates_;
+	std::mutex updates_mtx_;
+	ev::periodic updates_timeout_;
+	ev::async updates_async_;
 };
 }  // namespace cproto
 }  // namespace net

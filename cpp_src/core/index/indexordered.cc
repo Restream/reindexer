@@ -81,7 +81,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 			if (startIt == this->idx_map.end()) startIt = this->idx_map.upper_bound(static_cast<typename T::key_type>(key1));
 			break;
 		case CondRange: {
-			if (keys.size() != 2) throw Error(errParams, "For ranged query reuqired 2 arguments, but provided %d", int(keys.size()));
+			if (keys.size() != 2) throw Error(errParams, "For ranged query reuqired 2 arguments, but provided %d", keys.size());
 			auto key2 = keys[1];
 
 			if (this->idx_map.key_comp()(static_cast<typename T::key_type>(key2), static_cast<typename T::key_type>(key1))) {
@@ -146,7 +146,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 
 template <typename T>
 void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext &ctx) {
-	logPrintf(LogTrace, "IndexOrdered::MakeSortOrders (%s)", this->name_.c_str());
+	logPrintf(LogTrace, "IndexOrdered::MakeSortOrders (%s)", this->name_);
 	auto &ids2Sorts = ctx.ids2Sorts();
 	size_t totalIds = 0;
 	for (auto it : ids2Sorts)
@@ -162,7 +162,7 @@ void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext &ctx) {
 				logPrintf(
 					LogError,
 					"Internal error: Index '%s' is broken. Item with key '%s' contains id=%d, which is not present in allIds,totalids=%d\n",
-					this->name_.c_str(), Variant(keyIt.first).As<string>().c_str(), id, int(totalIds));
+					this->name_, Variant(keyIt.first).As<string>(), id, totalIds);
 				this->DumpKeys();
 				assert(0);
 			}

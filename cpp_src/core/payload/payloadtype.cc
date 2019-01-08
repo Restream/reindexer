@@ -26,8 +26,8 @@ void PayloadTypeImpl::Add(PayloadFieldType f) {
 	if (it != fieldsByName_.end()) {
 		// Non unique name -> check type, and upgrade to array if types are the same
 		auto &oldf = fields_[it->second];
-		throw Error(errLogic, "Can't add field with name '%s' and type '%s' to namespace '%s'. It already exists with type '%s'",
-					f.Name().c_str(), Variant::TypeName(f.Type()), Name().c_str(), Variant::TypeName(oldf.Type()));
+		throw Error(errLogic, "Can't add field with name '%s' and type '%s' to namespace '%s'. It already exists with type '%s'", f.Name(),
+					Variant::TypeName(f.Type()), Name(), Variant::TypeName(oldf.Type()));
 	} else {
 		// Unique name -> just add field
 		f.SetOffset(TotalSize());
@@ -36,7 +36,7 @@ void PayloadTypeImpl::Add(PayloadFieldType f) {
 			auto res = fieldsByJsonPath_.emplace(jp, int(fields_.size()));
 			if (!res.second && res.first->second != int(fields_.size())) {
 				throw Error(errLogic, "Can't add field with name '%s' to namespace '%s'. Json path '%s' already used in field '%s'",
-							f.Name().c_str(), Name().c_str(), jp.c_str(), Field(res.first->second).Name().c_str());
+							f.Name(), Name(), jp, Field(res.first->second).Name());
 			}
 		}
 		fieldsByName_.emplace(f.Name(), int(fields_.size()));
@@ -85,7 +85,7 @@ bool PayloadTypeImpl::Contains(const string &field) const { return fieldsByName_
 
 int PayloadTypeImpl::FieldByName(const string &field) const {
 	auto it = fieldsByName_.find(field);
-	if (it == fieldsByName_.end()) throw Error(errLogic, "Field '%s' not found in namespace '%s'", field.c_str(), Name().c_str());
+	if (it == fieldsByName_.end()) throw Error(errLogic, "Field '%s' not found in namespace '%s'", field, Name());
 	return it->second;
 }
 

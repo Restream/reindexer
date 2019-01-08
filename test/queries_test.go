@@ -960,6 +960,7 @@ func TestDeleteByPK(t *testing.T) {
 	for i := 1; i <= 30; i++ {
 		assertErrorMessage(t, DB.Upsert("test_item_nested_pk", newTestItemNestedPK(i, rand.Int()%20)), nil)
 	}
+
 	assertErrorMessage(t, DB.MustBeginTx("test_item_nested_pk").Commit(nil), nil)
 	assertErrorMessage(t, DB.CloseNamespace("test_item_nested_pk"), nil)
 	assertErrorMessage(t, DB.OpenNamespace("test_item_nested_pk", nsOpts, TestItemNestedPK{}), nil)

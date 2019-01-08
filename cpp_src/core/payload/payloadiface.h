@@ -84,6 +84,8 @@ public:
 	size_t GetHash(const FieldsSet &fields) const;
 	// Compare is EQ by field mask
 	bool IsEQ(const T &other, const FieldsSet &fields) const;
+	// Get hash of all document
+	uint64_t GetHash() const;
 
 	// Compare 2 objects by field mask
 	int Compare(const T &other, const FieldsSet &fields, const CollateOpts &collateOpts = CollateOpts()) const;

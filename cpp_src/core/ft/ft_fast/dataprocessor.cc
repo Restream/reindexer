@@ -95,15 +95,14 @@ void DataProcessor::Process(bool multithread) {
 	auto tm5 = high_resolution_clock::now();
 
 	logPrintf(LogInfo, "FastIndexText[%d] built with [%d uniq words, %d typos, %dKB text size, %dKB suffixarray size, %dKB idrelsets size]",
-			  int(holder_.steps.size()), int(words_um.size()), int(holder_.GetTypos().size()), int(szCnt / 1024),
-			  int(suffixes.heap_size() / 1024), int(idsetcnt / 1024));
+			  holder_.steps.size(), words_um.size(), holder_.GetTypos().size(), szCnt / 1024, suffixes.heap_size() / 1024, idsetcnt / 1024);
 
 	logPrintf(LogInfo,
 			  "DataProcessor::Process elapsed %d ms total [ build words %d ms, build typos %d ms | build suffixarry %d ms | sort "
 			  "idrelsets %d ms]\n",
-			  int(duration_cast<milliseconds>(tm5 - tm0).count()), int(duration_cast<milliseconds>(tm2 - tm0).count()),
-			  int(duration_cast<milliseconds>(tm5 - tm4).count()), int(duration_cast<milliseconds>(tm3 - tm2).count()),
-			  int(duration_cast<milliseconds>(tm4 - tm2).count()));
+			  duration_cast<milliseconds>(tm5 - tm0).count(), duration_cast<milliseconds>(tm2 - tm0).count(),
+			  duration_cast<milliseconds>(tm5 - tm4).count(), duration_cast<milliseconds>(tm3 - tm2).count(),
+			  duration_cast<milliseconds>(tm4 - tm2).count());
 }
 
 vector<WordIdType> DataProcessor::BuildSuffix(fast_hash_map<std::string, WordEntry> &words_um, DataHolder &holder) {
@@ -242,7 +241,7 @@ size_t DataProcessor::buildWordsMap(fast_hash_map<string, WordEntry> &words_um) 
 		for (auto &w : words_um) {
 			if (w.second.vids_.size() > vdocs.size() / 5) str += w.first + " ";
 		}
-		logPrintf(LogInfo, "Potential stop words: %s", str.c_str());
+		logPrintf(LogInfo, "Potential stop words: %s", str);
 	}
 	vector<h_vector<pair<string_view, uint32_t>, 8>>().swap(holder_.vdocsTexts);
 

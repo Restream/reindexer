@@ -20,9 +20,7 @@ class WrSerializer;
 struct NamespaceDef {
 	NamespaceDef() {}
 
-	NamespaceDef(const string &iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing(),
-				 CacheMode icacheMode = CacheMode::CacheModeOn)
-		: name(iname), storage(istorage), cacheMode(icacheMode) {}
+	NamespaceDef(const string &iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing()) : name(iname), storage(istorage) {}
 
 	NamespaceDef &AddIndex(const string &name, const string &indexType, const string &fieldType, IndexOpts opts = IndexOpts()) {
 		indexes.push_back({name, {name}, indexType, fieldType, opts});
@@ -42,12 +40,11 @@ struct NamespaceDef {
 
 	Error FromJSON(char *json);
 	Error FromJSON(JsonValue &jvalue);
-	void GetJSON(WrSerializer &, bool describeCompat = false) const;
+	void GetJSON(WrSerializer &, int formatFlags = 0) const;
 
 public:
 	string name;
 	StorageOpts storage;
 	vector<IndexDef> indexes;
-	CacheMode cacheMode;
 };
 }  // namespace reindexer

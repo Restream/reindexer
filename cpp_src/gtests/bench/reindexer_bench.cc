@@ -10,12 +10,11 @@
 
 #include "core/reindexer.h"
 
-#define STORAGE_PATH "/tmp/reindex/test"
+#define kStoragePath "/tmp/reindex/test"
+#define kConectStr "builtin:///tmp/reindex/test"
 
 using std::shared_ptr;
 using reindexer::Reindexer;
-
-shared_ptr<Reindexer> DB = std::make_shared<Reindexer>();
 
 #if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN)
 const int kItemsInBenchDataset = 5000;
@@ -24,14 +23,15 @@ const int kItemsInBenchDataset = 500000;
 #endif
 
 int main(int argc, char** argv) {
-	if (reindexer::fs::RmDirAll(STORAGE_PATH) < 0 && errno != ENOENT) {
-		std::cerr << "Could not clean working dir '" << STORAGE_PATH << "'.";
+	if (reindexer::fs::RmDirAll(kStoragePath) < 0 && errno != ENOENT) {
+		std::cerr << "Could not clean working dir '" << kStoragePath << "'.";
 		std::cerr << "Reason: " << strerror(errno) << std::endl;
 
 		return 1;
 	}
 
-	DB->EnableStorage(STORAGE_PATH);
+	shared_ptr<Reindexer> DB = std::make_shared<Reindexer>();
+	DB->Connect(kConectStr);
 
 	JoinItems joinItems(DB.get(), 500);
 	ApiTvSimple apiTvSimple(DB.get(), "ApiTvSimple", kItemsInBenchDataset);

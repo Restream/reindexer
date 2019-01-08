@@ -89,7 +89,12 @@ enum ErrorCode {
 	errNotValid = 11,
 	errNetwork = 12,
 	errNotFound = 13,
-	errStateInvalidated = 14
+	errStateInvalidated = 14,
+	errBadTransaction = 15,
+	errOutdatedWAL = 16,
+	errNoWAL = 17,
+	errDataHashMismatch = 18
+
 };
 
 enum QueryType { QuerySelect, QueryDelete, QueryUpdate };
@@ -127,7 +132,8 @@ enum {
 	kResultsWithItemID = 0x20,
 	kResultsWithPercents = 0x40,
 	kResultsWithNsID = 0x80,
-	kResultsWithJoined = 0x100
+	kResultsWithJoined = 0x100,
+	kResultsWithRaw = 0x200
 };
 
 typedef enum IndexOpt { kIndexOptPK = 1 << 7, kIndexOptArray = 1 << 6, kIndexOptDense = 1 << 5, kIndexOptSparse = 1 << 3 } IndexOpt;
@@ -138,7 +144,9 @@ typedef enum StotageOpt {
 	kStorageOptCreateIfMissing = 1 << 2,
 	kStorageOptVerifyChecksums = 1 << 3,
 	kStorageOptFillCache = 1 << 4,
-	kStorageOptSync = 1 << 5
+	kStorageOptSync = 1 << 5,
+	kStorageOptLazyLoad = 1 << 6,
+	kStorageOptSlaveMode = 1 << 7
 } StorageOpt;
 
 enum CollateMode { CollateNone = 0, CollateASCII, CollateUTF8, CollateNumeric, CollateCustom };
@@ -155,6 +163,8 @@ typedef struct StorageOpts {
 	bool IsVerifyChecksums() const { return options & kStorageOptVerifyChecksums; }
 	bool IsFillCache() const { return options & kStorageOptFillCache; }
 	bool IsSync() const { return options & kStorageOptSync; }
+	bool IsLazyLoad() const { return options & kStorageOptLazyLoad; }
+	bool IsSlaveMode() const { return options & kStorageOptSlaveMode; }
 
 	StorageOpts& Enabled(bool value = true) {
 		options = value ? options | kStorageOptEnabled : options & ~(kStorageOptEnabled);
@@ -185,6 +195,16 @@ typedef struct StorageOpts {
 		options = value ? options | kStorageOptSync : options & ~(kStorageOptSync);
 		return *this;
 	}
+
+	StorageOpts& LazyLoad(bool value = true) {
+		options = value ? options | kStorageOptLazyLoad : options & ~(kStorageOptLazyLoad);
+		return *this;
+	}
+	StorageOpts& SlaveMode(bool value = true) {
+		options = value ? options | kStorageOptSlaveMode : options & ~(kStorageOptSlaveMode);
+		return *this;
+	}
 #endif
-	uint8_t options;
+	uint16_t options;
+	uint16_t noQueryIdleThresholdSec;
 } StorageOpts;

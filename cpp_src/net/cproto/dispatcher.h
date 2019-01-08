@@ -35,6 +35,7 @@ class Writer {
 public:
 	virtual ~Writer() = default;
 	virtual void WriteRPCReturn(Context &ctx, const Args &args) = 0;
+	virtual void CallRPC(CmdCode cmd, const Args &args) = 0;
 	virtual void SetClientData(ClientData::Ptr data) = 0;
 	virtual ClientData::Ptr GetClientData() = 0;
 };
@@ -47,6 +48,7 @@ struct Context {
 	RPCCall *call;
 	Writer *writer;
 	Stat stat;
+	bool respSent_;
 };
 
 class ServerConnection;

@@ -8,7 +8,7 @@
 #include "loggerwrapper.h"
 #include "net/cproto/dispatcher.h"
 #include "net/listener.h"
-#include "replicator/updatesobserver.h"
+#include "rpcupdatespusher.h"
 
 namespace reindexer_server {
 
@@ -18,12 +18,17 @@ using namespace reindexer::net;
 using namespace reindexer;
 
 struct RPCClientData : public cproto::ClientData {
+	~RPCClientData();
 	h_vector<pair<QueryResults, bool>, 1> results;
+	vector<Transaction> txs;
+
 	AuthContext auth;
+	cproto::RPCUpdatesPusher pusher;
 	int connID;
+	bool subscribed;
 };
 
-class RPCServer : reindexer::IUpdatesObserver {
+class RPCServer {
 public:
 	RPCServer(DBManager &dbMgr, LoggerWrapper logger, bool allocDebug = false);
 	~RPCServer();
@@ -50,6 +55,14 @@ public:
 
 	Error ModifyItem(cproto::Context &ctx, p_string nsName, int format, p_string itemData, int mode, p_string percepsPack, int stateToken,
 					 int txID);
+
+	Error StartTransaction(cproto::Context &ctx, p_string nsName);
+
+	Error AddTxItem(cproto::Context &ctx, int format, p_string itemData, int mode, p_string percepsPack, int stateToken, int64_t txID);
+	Error CommitTx(cproto::Context &ctx, int64_t txId);
+
+	Error RollbackTx(cproto::Context &ctx, int64_t txId);
+
 	Error DeleteQuery(cproto::Context &ctx, p_string query);
 
 	Error Select(cproto::Context &ctx, p_string query, int flags, int limit, p_string ptVersions);
@@ -66,18 +79,15 @@ public:
 	void Logger(cproto::Context &ctx, const Error &err, const cproto::Args &ret);
 	void OnClose(cproto::Context &ctx, const Error &err);
 
-	Error OnModifyItem(const string &nsName, ItemImpl *item, int modifyMode) override;
-	Error OnNewNamespace(const string &nsName) override;
-	Error OnModifyIndex(const string &nsName, const IndexDef &idx, int modifyMode) override;
-	Error OnDropIndex(const string &nsName, const string &indexName) override;
-	Error OnDropNamespace(const string &nsName) override;
-	Error OnPutMeta(const string &nsName, const string &key, const string &data) override;
-
 protected:
 	Error sendResults(cproto::Context &ctx, QueryResults &qr, int reqId, const ResultFetchOpts &opts);
+
 	Error fetchResults(cproto::Context &ctx, int reqId, const ResultFetchOpts &opts);
 	void freeQueryResults(cproto::Context &ctx, int id);
 	QueryResults &getQueryResults(cproto::Context &ctx, int &id);
+	Transaction &getTx(cproto::Context &ctx, int64_t id);
+	int64_t addTx(cproto::Context &ctx, Transaction &&tr);
+	void clearTx(cproto::Context &ctx, uint64_t txId);
 
 	shared_ptr<Reindexer> getDB(cproto::Context &ctx, UserRole role);
 

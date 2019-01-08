@@ -157,15 +157,14 @@ int Query::Parse(tokenizer &parser) {
 		type_ = QueryDelete;
 		deleteParse(parser);
 	} else {
-		throw Error(errParams, "Syntax error at or near '%s', %s", tok.text().data(), parser.where().c_str());
+		throw Error(errParams, "Syntax error at or near '%s', %s", tok.text(), parser.where());
 	}
 	tok = parser.next_token();
 	if (tok.text() == ";") {
 		tok = parser.next_token();
 	}
 	parser.skip_space();
-	if (tok.text() != "" || !parser.end())
-		throw Error(errParseSQL, "Unexpected '%s' in query, %s", tok.text().data(), parser.where().c_str());
+	if (tok.text() != "" || !parser.end()) throw Error(errParseSQL, "Unexpected '%s' in query, %s", tok.text(), parser.where());
 
 	return 0;
 }
@@ -188,11 +187,11 @@ int Query::selectParse(tokenizer &parser) {
 				calcTotal = ModeAccurateTotal;
 				if (!wasSelectFilter) count = 0;
 			} else {
-				throw Error(errParams, "Unknown function name SQL - %s, %s", name.text().data(), parser.where().c_str());
+				throw Error(errParams, "Unknown function name SQL - %s, %s", name.text(), parser.where());
 			}
 			tok = parser.next_token();
 			if (tok.text() != ")"_sv) {
-				throw Error(errParams, "Expected ')', but found %s, %s", tok.text().data(), parser.where().c_str());
+				throw Error(errParams, "Expected ')', but found %s, %s", tok.text(), parser.where());
 			}
 			tok = parser.peek_token();
 
@@ -209,7 +208,7 @@ int Query::selectParse(tokenizer &parser) {
 	}
 
 	if (parser.next_token().text() != "from"_sv)
-		throw Error(errParams, "Expected 'FROM', but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+		throw Error(errParams, "Expected 'FROM', but found '%s' in query, %s", tok.text(), parser.where());
 
 	_namespace = parser.next_token().text().ToString();
 	parser.skip_space();
@@ -223,13 +222,13 @@ int Query::selectParse(tokenizer &parser) {
 			parser.next_token();
 			tok = parser.next_token();
 			if (tok.type != TokenNumber)
-				throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+				throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text(), parser.where());
 			count = atoi(tok.text().data());
 		} else if (tok.text() == "offset"_sv) {
 			parser.next_token();
 			tok = parser.next_token();
 			if (tok.type != TokenNumber)
-				throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+				throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text(), parser.where());
 			start = atoi(tok.text().data());
 		} else if (tok.text() == "order"_sv) {
 			parser.next_token();
@@ -239,7 +238,7 @@ int Query::selectParse(tokenizer &parser) {
 				auto nameWithCase = parser.peek_token();
 				tok = parser.next_token(false);
 				if (tok.type != TokenName && tok.type != TokenString)
-					throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+					throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
 				SortingEntry sortingEntry;
 				sortingEntry.column = tok.text().ToString();
 				tok = parser.peek_token();
@@ -247,18 +246,16 @@ int Query::selectParse(tokenizer &parser) {
 					parser.next_token();
 					tok = parser.next_token(false);
 					if (tok.type != TokenName && tok.type != TokenString)
-						throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+						throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
 					sortingEntry.column = tok.text().ToString();
 					for (;;) {
 						tok = parser.next_token();
 						if (tok.text() == ")"_sv) break;
 						if (tok.text() != ","_sv)
-							throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text().data(),
-										parser.where().c_str());
+							throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text(), parser.where());
 						tok = parser.next_token();
 						if (tok.type != TokenNumber && tok.type != TokenString)
-							throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text().data(),
-										parser.where().c_str());
+							throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text(), parser.where());
 						forcedSortOrder.push_back(Variant(tok.text().ToString()));
 					}
 					tok = parser.peek_token();
@@ -280,13 +277,13 @@ int Query::selectParse(tokenizer &parser) {
 		} else if (tok.text() == "left"_sv) {
 			parser.next_token();
 			if (parser.next_token().text() != "join"_sv) {
-				throw Error(errParseSQL, "Expected JOIN, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+				throw Error(errParseSQL, "Expected JOIN, but found '%s' in query, %s", tok.text(), parser.where());
 			}
 			parseJoin(JoinType::LeftJoin, parser);
 		} else if (tok.text() == "inner"_sv) {
 			parser.next_token();
 			if (parser.next_token().text() != "join") {
-				throw Error(errParseSQL, "Expected JOIN, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+				throw Error(errParseSQL, "Expected JOIN, but found '%s' in query, %s", tok.text(), parser.where());
 			}
 			auto jtype = nextOp_ == OpOr ? JoinType::OrInnerJoin : JoinType::InnerJoin;
 			nextOp_ = OpAnd;
@@ -309,7 +306,7 @@ int Query::deleteParse(tokenizer &parser) {
 	token tok;
 
 	if (parser.next_token().text() != "from"_sv)
-		throw Error(errParams, "Expected 'FROM', but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+		throw Error(errParams, "Expected 'FROM', but found '%s' in query, %s", tok.text(), parser.where());
 
 	_namespace = parser.next_token().text().ToString();
 	parser.skip_space();
@@ -323,13 +320,13 @@ int Query::deleteParse(tokenizer &parser) {
 			parser.next_token();
 			tok = parser.next_token();
 			if (tok.type != TokenNumber)
-				throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+				throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text(), parser.where());
 			count = atoi(tok.text().data());
 		} else if (tok.text() == "offset"_sv) {
 			parser.next_token();
 			tok = parser.next_token();
 			if (tok.type != TokenNumber)
-				throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+				throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text(), parser.where());
 			start = atoi(tok.text().data());
 		} else if (tok.text() == "order"_sv) {
 			parser.next_token();
@@ -339,7 +336,7 @@ int Query::deleteParse(tokenizer &parser) {
 				auto nameWithCase = parser.peek_token();
 				tok = parser.next_token(false);
 				if (tok.type != TokenName && tok.type != TokenString)
-					throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+					throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
 				SortingEntry sortingEntry;
 				sortingEntry.column = tok.text().ToString();
 				tok = parser.peek_token();
@@ -347,18 +344,16 @@ int Query::deleteParse(tokenizer &parser) {
 					parser.next_token();
 					tok = parser.next_token(false);
 					if (tok.type != TokenName && tok.type != TokenString)
-						throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text().data(), parser.where().c_str());
+						throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
 					sortingEntry.column = tok.text().ToString();
 					for (;;) {
 						tok = parser.next_token();
 						if (tok.text() == ")"_sv) break;
 						if (tok.text() != ","_sv)
-							throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text().data(),
-										parser.where().c_str());
+							throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text(), parser.where());
 						tok = parser.next_token();
 						if (tok.type != TokenNumber && tok.type != TokenString)
-							throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text().data(),
-										parser.where().c_str());
+							throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text(), parser.where());
 						forcedSortOrder.push_back(Variant(tok.text().ToString()));
 					}
 					tok = parser.peek_token();
@@ -386,12 +381,12 @@ void Query::parseJoin(JoinType type, tokenizer &parser) {
 	if (tok.text() == "("_sv) {
 		tok = parser.next_token();
 		if (tok.text() != "select"_sv) {
-			throw Error(errParseSQL, "Expected 'SELECT', but found %s, %s", tok.text().data(), parser.where().c_str());
+			throw Error(errParseSQL, "Expected 'SELECT', but found %s, %s", tok.text(), parser.where());
 		}
 		jquery.selectParse(parser);
 		tok = parser.next_token();
 		if (tok.text() != ")"_sv) {
-			throw Error(errParseSQL, "Expected ')', but found %s, %s", tok.text().data(), parser.where().c_str());
+			throw Error(errParseSQL, "Expected ')', but found %s, %s", tok.text(), parser.where());
 		}
 	} else {
 		jquery._namespace = tok.text().ToString();
@@ -408,12 +403,12 @@ void Query::parseMerge(tokenizer &parser) {
 	if (tok.text() == "("_sv) {
 		tok = parser.next_token();
 		if (tok.text() != "select"_sv) {
-			throw Error(errParseSQL, "Expected 'SELECT', but found %s, %s", tok.text().data(), parser.where().c_str());
+			throw Error(errParseSQL, "Expected 'SELECT', but found %s, %s", tok.text(), parser.where());
 		}
 		mquery.selectParse(parser);
 		tok = parser.next_token();
 		if (tok.text() != ")"_sv) {
-			throw Error(errParseSQL, "Expected ')', but found %s, %s", tok.text().data(), parser.where().c_str());
+			throw Error(errParseSQL, "Expected ')', but found %s, %s", tok.text(), parser.where());
 		}
 	}
 	mquery.joinType = JoinType::Merge;
@@ -426,7 +421,7 @@ void Query::parseMerge(tokenizer &parser) {
 string parseDotStr(tokenizer &parser, string &str1) {
 	auto tok = parser.next_token();
 	if (tok.type != TokenName && tok.type != TokenString) {
-		throw Error(errParseSQL, "Expected name, but found %s, %s", tok.text().data(), parser.where().c_str());
+		throw Error(errParseSQL, "Expected name, but found %s, %s", tok.text(), parser.where());
 	}
 	if (parser.peek_token().text() != "."_sv) {
 		return tok.text().ToString();
@@ -436,7 +431,7 @@ string parseDotStr(tokenizer &parser, string &str1) {
 
 	tok = parser.next_token();
 	if (tok.type != TokenName && tok.type != TokenString) {
-		throw Error(errParseSQL, "Expected name, but found %s, %s", tok.text().data(), parser.where().c_str());
+		throw Error(errParseSQL, "Expected name, but found %s, %s", tok.text(), parser.where());
 	}
 	return tok.text().ToString();
 }
@@ -446,7 +441,7 @@ void Query::parseJoinEntries(tokenizer &parser, const string &mainNs) {
 	QueryJoinEntry je;
 	auto tok = parser.next_token();
 	if (tok.text() != "on"_sv) {
-		throw Error(errParseSQL, "Expected 'ON', but found %s, %s", tok.text().data(), parser.where().c_str());
+		throw Error(errParseSQL, "Expected 'ON', but found %s, %s", tok.text(), parser.where());
 	}
 
 	tok = parser.peek_token();
@@ -483,8 +478,8 @@ void Query::parseJoinEntries(tokenizer &parser, const string &mainNs) {
 			je.index_ = idx2;
 			je.joinIndex_ = idx1;
 		} else {
-			throw Error(errParseSQL, "Unexpected tables with ON statement: ('%s' and '%s') but expected ('%s' and '%s'), %s", ns1.c_str(),
-						ns2.c_str(), mainNs.c_str(), _namespace.c_str(), parser.where().c_str());
+			throw Error(errParseSQL, "Unexpected tables with ON statement: ('%s' and '%s') but expected ('%s' and '%s'), %s", ns1, ns2,
+						mainNs, _namespace, parser.where());
 		}
 
 		je.op_ = nextOp_;
@@ -678,20 +673,29 @@ void Query::dumpOrderBy(WrSerializer &ser, bool stripArgs) const {
 }
 
 WrSerializer &Query::GetSQL(WrSerializer &ser, bool stripArgs) const {
-	ser << "SELECT ";
-	if (aggregations_.size()) {
-		for (auto &a : aggregations_) {
-			if (&a != &*aggregations_.begin()) ser << ',';
-			ser << AggregationResult::aggTypeToStr(a.type_) << "(" << a.index_ << ')';
-		}
-	} else if (selectFilter_.size()) {
-		for (auto &f : selectFilter_) {
-			if (&f != &*selectFilter_.begin()) ser << ',';
-			ser << f;
-		}
-	} else
-		ser << '*';
-	if (calcTotal) ser << ", COUNT(*)";
+	switch (type_) {
+		case QuerySelect:
+			ser << "SELECT ";
+			if (aggregations_.size()) {
+				for (auto &a : aggregations_) {
+					if (&a != &*aggregations_.begin()) ser << ',';
+					ser << AggregationResult::aggTypeToStr(a.type_) << "(" << a.index_ << ')';
+				}
+			} else if (selectFilter_.size()) {
+				for (auto &f : selectFilter_) {
+					if (&f != &*selectFilter_.begin()) ser << ',';
+					ser << f;
+				}
+			} else
+				ser << '*';
+			if (calcTotal) ser << ", COUNT(*)";
+			break;
+		case QueryDelete:
+			ser << "DELETE";
+			break;
+		default:
+			throw Error(errParams, "Not immplemented");
+	}
 
 	ser << " FROM " << _namespace;
 	dumpWhere(ser, stripArgs);

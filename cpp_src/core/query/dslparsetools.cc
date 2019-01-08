@@ -76,7 +76,7 @@ bool checkTag(JsonValue& val, JsonTag tag, Tags... tags) {
 
 template <typename... JsonTags>
 void checkJsonValueType(JsonValue& val, const string& name, JsonTags... possibleTags) {
-	if (!checkTag(val, possibleTags...)) throw Error(errParseJson, "Wrong type of field '%s'", name.c_str());
+	if (!checkTag(val, possibleTags...)) throw Error(errParseJson, "Wrong type of field '%s'", name);
 }
 
 template <typename T>
@@ -102,8 +102,7 @@ void parseSortEntry(JsonValue& entry, Query& q) {
 		string name = lower(subelement->key);
 		switch (get(sort_map, name)) {
 			case Sort::Desc:
-				if ((v.getTag() != JSON_TRUE) && (v.getTag() != JSON_FALSE))
-					throw Error(errParseJson, "Wrong type of field '%s'", name.c_str());
+				if ((v.getTag() != JSON_TRUE) && (v.getTag() != JSON_FALSE)) throw Error(errParseJson, "Wrong type of field '%s'", name);
 				sortingEntry.desc = (v.getTag() == JSON_TRUE);
 				break;
 
@@ -181,24 +180,23 @@ void parseFilter(JsonValue& filter, Query& q) {
 		case CondLt:
 		case CondLe:
 			if (qe.values.size() != 1) {
-				throw Error(errLogic, "Condition %d must have exact 1 value, but %d values was provided", qe.condition,
-							int(qe.values.size()));
+				throw Error(errLogic, "Condition %d must have exact 1 value, but %d values was provided", qe.condition, qe.values.size());
 			}
 			break;
 		case CondRange:
 			if (qe.values.size() != 2) {
-				throw Error(errLogic, "Condition RANGE must have exact 2 values, but %d values was provided", int(qe.values.size()));
+				throw Error(errLogic, "Condition RANGE must have exact 2 values, but %d values was provided", qe.values.size());
 			}
 			break;
 		case CondSet:
 			if (qe.values.size() < 1) {
-				throw Error(errLogic, "Condition SET must have at least 1 value, but %d values was provided", int(qe.values.size()));
+				throw Error(errLogic, "Condition SET must have at least 1 value, but %d values was provided", qe.values.size());
 			}
 			break;
 		case CondAny:
 		case CondAllSet:
 			if (qe.values.size() != 0) {
-				throw Error(errLogic, "Condition ANY must have 0 values, but %d values was provided", int(qe.values.size()));
+				throw Error(errLogic, "Condition ANY must have 0 values, but %d values was provided", qe.values.size());
 			}
 			break;
 		default:

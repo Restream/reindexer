@@ -1,5 +1,7 @@
 
 #include "updatesobserver.h"
+#include "core/indexdef.h"
+#include "core/itemimpl.h"
 #include "core/keyvalue/p_string.h"
 namespace reindexer {
 
@@ -25,69 +27,34 @@ Error UpdatesObservers::Delete(IUpdatesObserver *observer) {
 	return errOK;
 }
 
-Error UpdatesObservers::OnModifyItem(const string &nsName, ItemImpl *item, int modifyMode) {
-	shared_lock<shared_timed_mutex> lck(mtx_);
-	for (unsigned i = 0; i < observers_.size(); i++) {
-		auto observer = observers_[i];
-		mtx_.unlock_shared();
-		observer->OnModifyItem(nsName, item, modifyMode);
-		mtx_.lock_shared();
-	}
-	return errOK;
+void UpdatesObservers::OnModifyItem(int64_t lsn, string_view nsName, ItemImpl *impl, int modifyMode) {
+	WrSerializer ser;
+	WALRecord walRec(WalItemModify);
+	walRec.itemModify.tmVersion = impl->tagsMatcher().version();
+	walRec.itemModify.itemCJson = impl->tagsMatcher().isUpdated() ? impl->GetCJSON(ser, true) : impl->GetCJSON();
+	walRec.itemModify.modifyMode = modifyMode;
+
+	OnWALUpdate(lsn, nsName, walRec);
 }
 
-Error UpdatesObservers::OnNewNamespace(const string &nsName) {
+void UpdatesObservers::OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &walRec) {
 	shared_lock<shared_timed_mutex> lck(mtx_);
 	for (unsigned i = 0; i < observers_.size(); i++) {
 		auto observer = observers_[i];
 		mtx_.unlock_shared();
-		observer->OnNewNamespace(nsName);
+		observer->OnWALUpdate(lsn, nsName, walRec);
 		mtx_.lock_shared();
 	}
-	return errOK;
 }
 
-Error UpdatesObservers::OnModifyIndex(const string &nsName, const IndexDef &idx, int modifyMode) {
+void UpdatesObservers::OnConnectionState(const Error &err) {
 	shared_lock<shared_timed_mutex> lck(mtx_);
 	for (unsigned i = 0; i < observers_.size(); i++) {
 		auto observer = observers_[i];
 		mtx_.unlock_shared();
-		observer->OnModifyIndex(nsName, idx, modifyMode);
+		observer->OnConnectionState(err);
 		mtx_.lock_shared();
 	}
-	return errOK;
-}
-
-Error UpdatesObservers::OnDropIndex(const string &nsName, const string &indexName) {
-	shared_lock<shared_timed_mutex> lck(mtx_);
-	for (unsigned i = 0; i < observers_.size(); i++) {
-		auto observer = observers_[i];
-		mtx_.unlock_shared();
-		observer->OnDropIndex(nsName, indexName);
-		mtx_.lock_shared();
-	}
-	return errOK;
-}
-
-Error UpdatesObservers::OnDropNamespace(const string &nsName) {
-	shared_lock<shared_timed_mutex> lck(mtx_);
-	for (unsigned i = 0; i < observers_.size(); i++) {
-		auto observer = observers_[i];
-		mtx_.unlock_shared();
-		observer->OnDropNamespace(nsName);
-		mtx_.lock_shared();
-	}
-	return errOK;
-}
-Error UpdatesObservers::OnPutMeta(const string &nsName, const string &key, const string &data) {
-	shared_lock<shared_timed_mutex> lck(mtx_);
-	for (unsigned i = 0; i < observers_.size(); i++) {
-		auto observer = observers_[i];
-		mtx_.unlock_shared();
-		observer->OnPutMeta(nsName, key, data);
-		mtx_.lock_shared();
-	}
-	return errOK;
 }
 
 }  // namespace reindexer

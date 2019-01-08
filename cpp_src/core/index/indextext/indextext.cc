@@ -88,8 +88,8 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 		if (!cache_ft.val.ids->size() || (ftctx->NeedArea() && !cache_ft.val.ctx->need_area_)) {
 			need_put = true;
 		} else {
-			logPrintf(LogInfo, "Get search results for '%s' in '%s' from cache", keys[0].As<string>().c_str(),
-					  this->payloadType_ ? this->payloadType_->Name().c_str() : "");
+			logPrintf(LogInfo, "Get search results for '%s' in '%s' from cache", keys[0].As<string>(),
+					  this->payloadType_ ? this->payloadType_->Name() : "");
 			res.push_back(SingleSelectKeyResult(cache_ft.val.ids));
 			SelectKeyResults r(res);
 			assert(cache_ft.val.ctx);
@@ -99,8 +99,8 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 	}
 
 	if (cfg_->logLevel >= LogInfo) {
-		logPrintf(LogInfo, "Searching for '%s' in '%s' %s", keys[0].As<string>().c_str(),
-				  this->payloadType_ ? this->payloadType_->Name().c_str() : "", need_put ? "(will cache)" : "");
+		logPrintf(LogInfo, "Searching for '%s' in '%s' %s", keys[0].As<string>(), this->payloadType_ ? this->payloadType_->Name() : "",
+				  need_put ? "(will cache)" : "");
 	}
 
 	// STEP 1: Parse search query dsl

@@ -1,6 +1,8 @@
 
 #include "namespacestat.h"
 #include "core/cjson/jsonbuilder.h"
+#include "gason/gason.h"
+#include "tools/jsontools.h"
 
 namespace reindexer {
 
@@ -17,7 +19,14 @@ void NamespaceMemStat::GetJSON(WrSerializer &ser) {
 	builder.Put("storage_ok", storageOK);
 	builder.Put("storage_path", storagePath);
 
+	builder.Put("storage_loaded", storageLoaded);
+
 	builder.Object("total").Put("data_size", Total.dataSize).Put("indexes_size", Total.indexesSize).Put("cache_size", Total.cacheSize);
+
+	{
+		auto obj = builder.Object("replication");
+		replication.GetJSON(obj);
+	}
 
 	{
 		auto obj = builder.Object("join_cache");
@@ -66,6 +75,9 @@ void PerfStat::GetJSON(JsonBuilder &builder) {
 	builder.Put("last_sec_qps", avgHitCount);
 	builder.Put("last_sec_avg_lock_time_us", avgLockTimeUs);
 	builder.Put("last_sec_avg_latency_us", avgTimeUs);
+	builder.Put("latency_stddev", stddev);
+	builder.Put("min_latency_us", minTimeUs);
+	builder.Put("max_latency_us", maxTimeUs);
 }
 
 void NamespacePerfStat::GetJSON(WrSerializer &ser) {
@@ -98,6 +110,45 @@ void IndexPerfStat::GetJSON(JsonBuilder &builder) {
 	{
 		auto obj = builder.Object("commits");
 		commits.GetJSON(obj);
+	}
+}
+
+void ReplicationState::GetJSON(JsonBuilder &builder) {
+	builder.Put("last_lsn", lastLsn);
+	builder.Put("cluster_id", clusterID);
+	builder.Put("slave_mode", slaveMode);
+	builder.Put("incarnation_counter", incarnationCounter);
+	builder.Put("data_hash", dataHash);
+}
+
+void ReplicationState::FromJSON(char *json) {
+	JsonAllocator jalloc;
+	JsonValue jvalue;
+	char *endp;
+
+	int status = jsonParse(json, &endp, &jvalue, jalloc);
+	if (status != JSON_OK) {
+		throw Error(errParseJson, "Malformed JSON with replication state");
+	}
+
+	if (jvalue.getTag() != JSON_OBJECT) {
+		throw Error(errParseJson, "Expected json object in replication state");
+	}
+
+	for (auto elem : jvalue) {
+		parseJsonField("last_lsn", lastLsn, elem);
+		parseJsonField("cluster_id", clusterID, elem);
+		parseJsonField("slave_mode", slaveMode, elem);
+		parseJsonField("incarnation_counter", incarnationCounter, elem);
+		parseJsonField("data_hash", dataHash, elem);
+	}
+}
+
+void ReplicationStat::GetJSON(JsonBuilder &builder) {
+	ReplicationState::GetJSON(builder);
+	if (!slaveMode) {
+		builder.Put("wal_count", walCount);
+		builder.Put("wal_size", walSize);
 	}
 }
 

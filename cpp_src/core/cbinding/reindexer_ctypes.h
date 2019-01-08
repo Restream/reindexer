@@ -34,6 +34,11 @@ typedef struct reindexer_ret {
 	int err_code;
 } reindexer_ret;
 
+typedef struct reindexer_tx_ret {
+	uintptr_t tx_id;
+	reindexer_error err;
+} reindexer_tx_ret;
+
 #ifdef __cplusplus
 }
 #endif

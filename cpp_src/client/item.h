@@ -6,6 +6,7 @@
 #include "tools/errors.h"
 
 namespace reindexer {
+class Replicator;
 namespace client {
 
 using std::vector;
@@ -89,6 +90,7 @@ private:
 	friend class Namespace;
 	friend class QueryResults;
 	friend class RPCClient;
+	friend class reindexer::Replicator;
 };
 }  // namespace client
 }  // namespace reindexer

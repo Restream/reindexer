@@ -28,8 +28,8 @@ uint8_t *PayloadValue::alloc(size_t cap) {
 	nheader->cap = cap;
 	if (p_) {
 		nheader->lsn = header()->lsn;
-	}
-
+	} else
+		nheader->lsn = -1;
 	return pn;
 }
 

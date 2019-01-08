@@ -11,7 +11,7 @@ option (WITH_ASAN "Enable AddressSanitized build" OFF)
 option (WITH_TSAN "Enable ThreadSanitized build" OFF)
 option (WITH_GPERF "Enable GPerfTools build" ON)
 option (WITH_GCOV "Enable instrumented code coverage build" OFF)
-set (REINDEXER_VERSION_DEFAULT "1.10.4")
+set (REINDEXER_VERSION_DEFAULT "2.0.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")

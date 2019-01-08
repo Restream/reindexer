@@ -53,8 +53,8 @@ public:
 	/// @return Error - error object
 	Error GetDB(UserRole role, shared_ptr<Reindexer> *ret) {
 		if (role > role_)
-			return Error(errForbidden, "Forbidden: need role %s of db '%s' user '%s' have role=%s", UserRoleName(role), dbName_.c_str(),
-						 login_.c_str(), UserRoleName(role_));
+			return Error(errForbidden, "Forbidden: need role %s of db '%s' user '%s' have role=%s", UserRoleName(role), dbName_, login_,
+						 UserRoleName(role_));
 		*ret = db_;
 		return errOK;
 	}

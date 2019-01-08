@@ -7,6 +7,8 @@
 #include "core/query/query.h"
 
 namespace reindexer {
+class IUpdatesObserver;
+
 namespace client {
 using std::vector;
 using std::string;
@@ -41,28 +43,28 @@ public:
 	/// StorageOpts::Enabled() - Enable storage. If storage is disabled, then namespace will be completely in-memory<br>
 	/// StorageOpts::CreateIfMissing () - Storage will be created, if missing
 	/// @return errOK - On success
-	Error OpenNamespace(const string &nsName, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing());
+	Error OpenNamespace(string_view nsName, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing());
 	/// Create new namespace. Will fail, if namespace already exists
 	/// @param nsDef - NamespaceDef with namespace initial parameters
 	Error AddNamespace(const NamespaceDef &nsDef);
 	/// Close namespace. Will free all memory resorces, associated with namespace. Forces sync changes to disk
 	/// @param nsName - Name of namespace
-	Error CloseNamespace(const string &nsName);
+	Error CloseNamespace(string_view nsName);
 	/// Drop namespace. Will free all memory resorces, associated with namespace and erase all files from disk
 	/// @param nsName - Name of namespace
-	Error DropNamespace(const string &nsName);
+	Error DropNamespace(string_view nsName);
 	/// Add index to namespace
 	/// @param nsName - Name of namespace
 	/// @param index - IndexDef with index name and parameters
-	Error AddIndex(const string &nsName, const IndexDef &index);
+	Error AddIndex(string_view nsName, const IndexDef &index);
 	/// Update index in namespace
 	/// @param nsName - Name of namespace
 	/// @param index - IndexDef with index name and parameters
-	Error UpdateIndex(const string &nsName, const IndexDef &index);
+	Error UpdateIndex(string_view nsName, const IndexDef &index);
 	/// Drop index from namespace
 	/// @param nsName - Name of namespace
 	/// @param index - index name
-	Error DropIndex(const string &nsName, const string &index);
+	Error DropIndex(string_view nsName, const IndexDef &index);
 	/// Get list of all available namespaces
 	/// @param defs - std::vector of NamespaceDef of available namespaves
 	/// @param bEnumAll - Also include currenty not opened, but exists on disk namespaces
@@ -72,23 +74,23 @@ public:
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
 	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
-	Error Insert(const string &nsName, Item &item, Completion cmpl = nullptr);
+	Error Insert(string_view nsName, Item &item, Completion cmpl = nullptr);
 	/// Update Item in namespace. If item with same PK is not exists, when item.GetID will
 	/// return -1, on success item.GetID() will return internal Item ID
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
 	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
-	Error Update(const string &nsName, Item &item, Completion cmpl = nullptr);
+	Error Update(string_view nsName, Item &item, Completion cmpl = nullptr);
 	/// Update or Insert Item in namespace. On success item.GetID() will return internal Item ID
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
 	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
-	Error Upsert(const string &nsName, Item &item, Completion cmpl = nullptr);
+	Error Upsert(string_view nsName, Item &item, Completion cmpl = nullptr);
 	/// Delete Item from namespace. On success item.GetID() will return internal Item ID
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
 	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
-	Error Delete(const string &nsName, Item &item, Completion cmpl = nullptr);
+	Error Delete(string_view nsName, Item &item, Completion cmpl = nullptr);
 	/// Delete all items froms namespace, which matches provided Query
 	/// @param query - Query with conditions
 	/// @param result - QueryResults with IDs of deleted items
@@ -97,7 +99,7 @@ public:
 	/// @param query - SQL query. Only "SELECT" semantic is supported
 	/// @param result - QueryResults with found items
 	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
-	Error Select(const string_view &query, QueryResults &result, Completion cmpl = nullptr);
+	Error Select(string_view query, QueryResults &result, Completion cmpl = nullptr);
 	/// Execute Query and return results
 	/// @param query - Query object with query attributes
 	/// @param result - QueryResults with found items
@@ -105,25 +107,29 @@ public:
 	Error Select(const Query &query, QueryResults &result, Completion cmpl = nullptr);
 	/// Flush changes to storage
 	/// @param nsName - Name of namespace
-	Error Commit(const string &nsName);
+	Error Commit(string_view nsName);
 	/// Allocate new item for namespace
 	/// @param nsName - Name of namespace
 	/// @return Item ready for filling and futher Upsert/Insert/Delete/Update call
-	Item NewItem(const string &nsName);
+	Item NewItem(string_view nsName);
 	/// Get meta data from storage by key
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
 	/// @param data - output string with meta data
-	Error GetMeta(const string &nsName, const string &key, string &data);
+	Error GetMeta(string_view nsName, const string &key, string &data);
 	/// Put meta data to storage by key
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
 	/// @param data - string with meta data
-	Error PutMeta(const string &nsName, const string &key, const string_view &data);
+	Error PutMeta(string_view nsName, const string &key, const string_view &data);
 	/// Get list of all meta data keys
 	/// @param nsName - Name of namespace
 	/// @param keys - std::vector filled with meta keys
-	Error EnumMeta(const string &nsName, vector<string> &keys);
+	Error EnumMeta(string_view nsName, vector<string> &keys);
+	// Subsribe to updates of database
+	// @param observer - Observer interface, which will receive updates
+	// @param subsctibe - true: subsribe, false: unsubsrcibe
+	Error SubscribeUpdates(IUpdatesObserver *observer, bool subscribe);
 
 	typedef QueryResults QueryResultsT;
 	typedef Item ItemT;

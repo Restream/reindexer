@@ -20,14 +20,14 @@ Error DBManager::Init() {
 
 	vector<fs::DirEntry> foundDb;
 	if (fs::ReadDir(dbpath_, foundDb) < 0) {
-		return Error(errParams, "Can't read reindexer dir %s", dbpath_.c_str());
+		return Error(errParams, "Can't read reindexer dir %s", dbpath_);
 	}
 
 	for (auto &de : foundDb) {
 		if (de.isDir && validateObjectName(de.name)) {
 			auto status = loadOrCreateDatabase(de.name);
 			if (!status.ok()) {
-				reindexer::logPrintf(LogError, "Failed to open database '%s' - %s", de.name.c_str(), status.what().c_str());
+				reindexer::logPrintf(LogError, "Failed to open database '%s' - %s", de.name, status.what());
 			}
 		}
 	}
@@ -55,10 +55,10 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 	}
 
 	if (!canCreate) {
-		return Error(errParams, "Database '%s' not found", dbName.c_str());
+		return Error(errParams, "Database '%s' not found", dbName);
 	}
 	if (auth.role_ < kRoleOwner) {
-		return Error(errForbidden, "Forbidden to create database %s", dbName.c_str());
+		return Error(errForbidden, "Forbidden to create database %s", dbName);
 	}
 
 	if (!validateObjectName(dbName)) {
@@ -77,7 +77,7 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 Error DBManager::loadOrCreateDatabase(const string &dbName) {
 	string storagePath = fs::JoinPath(dbpath_, dbName);
 
-	logPrintf(LogInfo, "Loading database %s", dbName.c_str());
+	logPrintf(LogInfo, "Loading database %s", dbName);
 	auto db = std::make_shared<reindexer::Reindexer>();
 	auto status = db->Connect(storagePath);
 	if (status.ok()) {
@@ -98,7 +98,7 @@ Error DBManager::DropDatabase(AuthContext &auth) {
 	std::unique_lock<shared_timed_mutex> lck(mtx_);
 	auto it = dbs_.find(auth.dbName_);
 	if (it == dbs_.end()) {
-		return Error(errParams, "Database %s not found", dbName.c_str());
+		return Error(errParams, "Database %s not found", dbName);
 	}
 	dbs_.erase(it);
 	auth.ResetDB();
@@ -151,7 +151,7 @@ Error DBManager::Login(const string &dbName, AuthContext &auth) {
 		}
 	}
 	auth.dbName_ = dbName;
-	logPrintf(LogInfo, "Authorized user '%s', to db '%s', role=%s\n", auth.login_.c_str(), dbName.c_str(), UserRoleName(auth.role_));
+	logPrintf(LogInfo, "Authorized user '%s', to db '%s', role=%s\n", auth.login_, dbName, UserRoleName(auth.role_));
 
 	return 0;
 }
@@ -191,8 +191,7 @@ Error DBManager::readUsers() {
 					} else if (strRole == "owner") {
 						role = kRoleOwner;
 					} else {
-						logPrintf(LogWarning, "Skipping invalid role '%s' of user '%s' for db '%s'", strRole.c_str(), urec.login.c_str(),
-								  db.c_str());
+						logPrintf(LogWarning, "Skipping invalid role '%s' of user '%s' for db '%s'", strRole, urec.login, db);
 					}
 					urec.roles.emplace(db, role);
 				}

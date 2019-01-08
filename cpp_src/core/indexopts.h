@@ -32,7 +32,8 @@ struct IndexOpts {
 	IndexOpts& SetConfig(const std::string& config);
 	CollateMode GetCollateMode() const;
 
-	bool operator==(const IndexOpts&) const;
+	bool operator==(const IndexOpts& other) const { return IsEqual(other, false); }
+	bool IsEqual(const IndexOpts& other, bool skipConfig) const;
 
 	uint8_t options;
 	CollateOpts collateOpts_;

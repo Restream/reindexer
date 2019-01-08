@@ -39,7 +39,7 @@ func (db *Reindexer) modifyItem(namespace string, ns *reindexerNamespace, item i
 			return
 		}
 
-		out, err := db.binding.ModifyItem(ns.nsHash, ns.name, format, ser.Bytes(), mode, precepts, stateToken, 0)
+		out, err := db.binding.ModifyItem(ns.nsHash, ns.name, format, ser.Bytes(), mode, precepts, stateToken)
 
 		if err != nil {
 			rerr, ok := err.(bindings.Error)

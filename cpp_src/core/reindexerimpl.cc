@@ -2,12 +2,14 @@
 #include <stdio.h>
 #include <chrono>
 #include <thread>
+#include "cjson/jsonbuilder.h"
 #include "core/cjson/jsondecoder.h"
 #include "core/index/index.h"
 #include "core/itemimpl.h"
 #include "core/namespacedef.h"
 #include "core/selectfunc/selectfunc.h"
 #include "kx/kxsort.h"
+#include "replicator/replicator.h"
 #include "tools/errors.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
@@ -23,11 +25,13 @@ const char* kMemStatsNamespace = "#memstats";
 const char* kNamespacesNamespace = "#namespaces";
 const char* kConfigNamespace = "#config";
 const char* kStoragePlaceholderFilename = ".reindexer.storage";
+const char* kReplicationConfFilename = "replication.conf";
 
 namespace reindexer {
 
-ReindexerImpl::ReindexerImpl() : profConfig_(std::make_shared<DBProfilingConfig>()) {
+ReindexerImpl::ReindexerImpl() : replicator_(new Replicator(this)) {
 	stopBackgroundThread_ = false;
+	configProvider_.setHandler(ProfilingConf, std::bind(&ReindexerImpl::onProfiligConfigLoad, this));
 	backgroundThread_ = std::thread([this]() { this->backgroundRoutine(); });
 }
 
@@ -38,25 +42,26 @@ ReindexerImpl::~ReindexerImpl() {
 
 Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlaceholderCheck) {
 	if (!storagePath_.empty()) {
-		return Error(errParams, "Storage already enabled\n");
+		return Error(errParams, "Storage already enabled");
 	}
 
 	storagePath_.clear();
 	if (storagePath.empty()) return errOK;
 	if (fs::MkDirAll(storagePath) < 0) {
-		return Error(errParams, "Can't create directory '%s' for reindexer storage - reason %s", storagePath.c_str(), strerror(errno));
+		return Error(errParams, "Can't create directory '%s' for reindexer storage - reason %s", storagePath, strerror(errno));
 	}
 
 	vector<fs::DirEntry> dirEntries;
 	bool isEmpty = true;
+	bool isHaveConfig = false;
 	if (fs::ReadDir(storagePath, dirEntries) < 0) {
-		return Error(errParams, "Can't read contents of directory '%s' for reindexer storage - reason %s", storagePath.c_str(),
-					 strerror(errno));
+		return Error(errParams, "Can't read contents of directory '%s' for reindexer storage - reason %s", storagePath, strerror(errno));
 	}
 	for (auto& entry : dirEntries) {
 		if (entry.name != "." && entry.name != ".." && entry.name != kStoragePlaceholderFilename) {
 			isEmpty = false;
 		}
+		if (entry.name == kConfigNamespace) isHaveConfig = true;
 	}
 
 	if (!isEmpty && !skipPlaceholderCheck) {
@@ -65,7 +70,7 @@ Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlacehold
 			fclose(f);
 		} else {
 			return Error(errParams, "Cowadly refusing to use directory '%s' - it's not empty, and doesn't contains reindexer placeholder",
-						 storagePath.c_str());
+						 storagePath);
 		}
 	} else {
 		FILE* f = fopen(fs::JoinPath(storagePath, kStoragePlaceholderFilename).c_str(), "w");
@@ -73,12 +78,13 @@ Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlacehold
 			fwrite("leveldb", 7, 1, f);
 			fclose(f);
 		} else {
-			return Error(errParams, "Can't create placeholder in directory '%s' for reindexer storage - reason %s", storagePath.c_str(),
+			return Error(errParams, "Can't create placeholder in directory '%s' for reindexer storage - reason %s", storagePath,
 						 strerror(errno));
 		}
 	}
 
 	storagePath_ = storagePath;
+	if (isHaveConfig) return OpenNamespace(kConfigNamespace);
 
 	return errOK;
 }
@@ -94,8 +100,10 @@ Error ReindexerImpl::Connect(const string& dsn) {
 
 	vector<reindexer::fs::DirEntry> foundNs;
 	if (fs::ReadDir(path, foundNs) < 0) {
-		return Error(errParams, "Can't read database dir %s", path.c_str());
+		return Error(errParams, "Can't read database dir %s", path);
 	}
+
+	InitSystemNamespaces();
 
 	int maxLoadWorkers = std::min(int(std::thread::hardware_concurrency()), 8);
 	std::unique_ptr<std::thread[]> thrs(new std::thread[maxLoadWorkers]);
@@ -108,7 +116,7 @@ Error ReindexerImpl::Connect(const string& dsn) {
 					if (de.isDir && validateObjectName(de.name)) {
 						auto status = OpenNamespace(de.name, StorageOpts().Enabled());
 						if (!status.ok()) {
-							logPrintf(LogError, "Failed to open namespace '%s' - %s", de.name.c_str(), status.what().c_str());
+							logPrintf(LogError, "Failed to open namespace '%s' - %s", de.name, status.what());
 						}
 					}
 				}
@@ -116,10 +124,8 @@ Error ReindexerImpl::Connect(const string& dsn) {
 			i);
 	}
 	for (int i = 0; i < maxLoadWorkers; i++) thrs[i].join();
-
-	InitSystemNamespaces();
-
-	return errOK;
+	bool needStart = replicator_->Configure(configProvider_.GetReplicationConfig());
+	return needStart ? replicator_->Start() : errOK;
 }
 
 Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef) {
@@ -128,79 +134,94 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef) {
 		{
 			lock_guard<shared_timed_mutex> lock(mtx_);
 			if (namespaces_.find(nsDef.name) != namespaces_.end()) {
-				return Error(errParams, "Namespace '%s' already exists", nsDef.name.c_str());
+				return Error(errParams, "Namespace '%s' already exists", nsDef.name);
 			}
 		}
 		if (!validateObjectName(nsDef.name)) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-, are allowed");
 		}
-		ns = std::make_shared<Namespace>(nsDef.name, nsDef.cacheMode);
-		if (nsDef.storage.IsEnabled() && !storagePath_.empty()) {
+		bool readyToLoadStorage = (nsDef.storage.IsEnabled() && !storagePath_.empty());
+		ns = std::make_shared<Namespace>(nsDef.name, observers_);
+		if (readyToLoadStorage) {
 			ns->EnableStorage(storagePath_, nsDef.storage);
 		}
-		for (auto& indexDef : nsDef.indexes) ns->AddIndex(indexDef);
-		if (nsDef.storage.IsEnabled() && !storagePath_.empty()) {
-			ns->LoadFromStorage();
+		ns->onConfigUpdated(configProvider_);
+		if (readyToLoadStorage) {
+			if (!ns->getStorageOpts().IsLazyLoad()) ns->LoadFromStorage();
 		}
-		lock_guard<shared_timed_mutex> lock(mtx_);
-		namespaces_.insert({nsDef.name, ns});
+		{
+			lock_guard<shared_timed_mutex> lock(mtx_);
+			namespaces_.insert({nsDef.name, ns});
+		}
+		observers_.OnWALUpdate(0, nsDef.name, WALRecord(WalNamespaceAdd));
+		for (auto& indexDef : nsDef.indexes) ns->AddIndex(indexDef);
+
 	} catch (const Error& err) {
 		return err;
 	}
 
-	applyConfig();
 	return errOK;
 }
 
-Error ReindexerImpl::OpenNamespace(const string& name, const StorageOpts& storage, CacheMode cacheMode) {
+Error ReindexerImpl::OpenNamespace(string_view name, const StorageOpts& storageOpts) {
 	shared_ptr<Namespace> ns;
 	try {
 		{
 			lock_guard<shared_timed_mutex> lock(mtx_);
 			auto it = namespaces_.find(name);
 			if (it != namespaces_.end()) {
-				it->second->SetCacheMode(cacheMode);
+				it->second->SetStorageOpts(storageOpts);
 				return 0;
 			}
 		}
 		if (!validateObjectName(name)) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-, are allowed");
 		}
-		ns = std::make_shared<Namespace>(name, cacheMode);
-		if (storage.IsEnabled() && !storagePath_.empty()) {
-			ns->EnableStorage(storagePath_, storage);
-			ns->LoadFromStorage();
+		auto nameStr = name.ToString();
+		ns = std::make_shared<Namespace>(nameStr, observers_);
+		if (storageOpts.IsEnabled() && !storagePath_.empty()) {
+			ns->EnableStorage(storagePath_, storageOpts);
+			ns->onConfigUpdated(configProvider_);
+			if (!ns->getStorageOpts().IsLazyLoad()) ns->LoadFromStorage();
 		}
-		lock_guard<shared_timed_mutex> lock(mtx_);
-		namespaces_.insert({name, ns});
+		{
+			lock_guard<shared_timed_mutex> lock(mtx_);
+			namespaces_.insert({nameStr, ns});
+		}
+		observers_.OnWALUpdate(0, name, WALRecord(WalNamespaceAdd));
 	} catch (const Error& err) {
 		return err;
 	}
-	applyConfig();
+
 	return errOK;
 }
 
-Error ReindexerImpl::DropNamespace(const string& _namespace) { return closeNamespace(_namespace, true); }
-Error ReindexerImpl::CloseNamespace(const string& _namespace) { return closeNamespace(_namespace, false); }
+Error ReindexerImpl::DropNamespace(string_view nsName) { return closeNamespace(nsName, true); }
+Error ReindexerImpl::CloseNamespace(string_view nsName) { return closeNamespace(nsName, false); }
 
-Error ReindexerImpl::closeNamespace(const string& _namespace, bool dropStorage) {
+Error ReindexerImpl::closeNamespace(string_view nsName, bool dropStorage, bool enableDropSlave) {
 	shared_ptr<Namespace> ns;
 	try {
 		lock_guard<shared_timed_mutex> lock(mtx_);
-		auto nsIt = namespaces_.find(_namespace);
+		auto nsIt = namespaces_.find(nsName);
 
 		if (nsIt == namespaces_.end()) {
-			return Error(errParams, "Namespace '%s' does not exist", _namespace.c_str());
+			return Error(errNotFound, "Namespace '%s' does not exist", nsName);
 		}
-
 		// Temporary save namespace. This will call destructor without lock
 		ns = nsIt->second;
+		if (ns->GetReplState().slaveMode && !enableDropSlave) {
+			return Error(errLogic, "Can't modify slave ns '%s'", nsName);
+		}
+
 		namespaces_.erase(nsIt);
 		if (dropStorage) {
 			ns->DeleteStorage();
 		} else {
 			ns->CloseStorage();
 		}
+		if (dropStorage) observers_.OnWALUpdate(0, nsName, WALRecord(WalNamespaceDrop));
+
 	} catch (const Error& err) {
 		ns = nullptr;
 		return err;
@@ -210,14 +231,13 @@ Error ReindexerImpl::closeNamespace(const string& _namespace, bool dropStorage) 
 	return errOK;
 }
 
-Error ReindexerImpl::Insert(const string& nsName, Item& item, Completion cmpl) {
+Error ReindexerImpl::Insert(string_view nsName, Item& item, Completion cmpl) {
 	Error err;
 	try {
 		auto ns = getNamespace(nsName);
 		ns->Insert(item);
 		if (item.GetID() != -1) {
-			updateSystemNamespace(nsName, item);
-			observers_.OnModifyItem(nsName, item.impl_, ModeInsert);
+			updateDbFromConfig(nsName, item);
 		}
 	} catch (const Error& e) {
 		err = e;
@@ -226,14 +246,13 @@ Error ReindexerImpl::Insert(const string& nsName, Item& item, Completion cmpl) {
 	return err;
 }
 
-Error ReindexerImpl::Update(const string& nsName, Item& item, Completion cmpl) {
+Error ReindexerImpl::Update(string_view nsName, Item& item, Completion cmpl) {
 	Error err;
 	try {
 		auto ns = getNamespace(nsName);
 		ns->Update(item);
 		if (item.GetID() != -1) {
-			updateSystemNamespace(nsName, item);
-			observers_.OnModifyItem(nsName, item.impl_, ModeUpdate);
+			updateDbFromConfig(nsName, item);
 		}
 	} catch (const Error& e) {
 		err = e;
@@ -242,14 +261,13 @@ Error ReindexerImpl::Update(const string& nsName, Item& item, Completion cmpl) {
 	return err;
 }
 
-Error ReindexerImpl::Upsert(const string& nsName, Item& item, Completion cmpl) {
+Error ReindexerImpl::Upsert(string_view nsName, Item& item, Completion cmpl) {
 	Error err;
 	try {
 		auto ns = getNamespace(nsName);
 		ns->Upsert(item);
 		if (item.GetID() != -1) {
-			updateSystemNamespace(nsName, item);
-			observers_.OnModifyItem(nsName, item.impl_, ModeUpsert);
+			updateDbFromConfig(nsName, item);
 		}
 	} catch (const Error& e) {
 		err = e;
@@ -258,9 +276,9 @@ Error ReindexerImpl::Upsert(const string& nsName, Item& item, Completion cmpl) {
 	return err;
 }
 
-Item ReindexerImpl::NewItem(const string& _namespace) {
+Item ReindexerImpl::NewItem(string_view nsName) {
 	try {
-		auto ns = getNamespace(_namespace);
+		auto ns = getNamespace(nsName);
 		auto item = ns->NewItem();
 		item.impl_->SetNamespace(ns);
 		return item;
@@ -268,41 +286,77 @@ Item ReindexerImpl::NewItem(const string& _namespace) {
 		return Item(err);
 	}
 }
+Transaction ReindexerImpl::NewTransaction(const std::string& _namespace) {
+	TransactionAccessor tr(_namespace);
 
-Error ReindexerImpl::GetMeta(const string& _namespace, const string& key, string& data) {
+	return std::move(tr);
+}
+
+Error ReindexerImpl::CommitTransaction(Transaction& tr) {
+	Error err = errOK;
+	auto trAccessor = static_cast<TransactionAccessor*>(&tr);
+
+	Namespace::Ptr ns;
 	try {
-		data = getNamespace(_namespace)->GetMeta(key);
+		ns = getNamespace(trAccessor->GetName());
+
+		ns->StartTransaction();
+		for (auto& step : tr.impl_->steps_) {
+			ns->ApplyTransactionStep(step);
+			if (step.item_.GetID() != -1) {
+				updateDbFromConfig(trAccessor->GetName(), step.item_);
+			}
+		}
+
+	} catch (const Error& e) {
+		err = e;
+	}
+	if (ns) ns->EndTransaction();
+
+	if (trAccessor->GetCmpl()) trAccessor->GetCmpl()(err);
+	return err;
+}
+Error ReindexerImpl::RollBackTransaction(Transaction& tr) {
+	Error err = errOK;
+	auto trAccessor = static_cast<TransactionAccessor*>(&tr);
+
+	trAccessor->GetSteps().clear();
+
+	return err;
+}
+
+Error ReindexerImpl::GetMeta(string_view nsName, const string& key, string& data) {
+	try {
+		data = getNamespace(nsName)->GetMeta(key);
 	} catch (const Error& err) {
 		return err;
 	}
 	return errOK;
 }
 
-Error ReindexerImpl::PutMeta(const string& nsName, const string& key, const string_view& data) {
+Error ReindexerImpl::PutMeta(string_view nsName, const string& key, string_view data) {
 	try {
 		getNamespace(nsName)->PutMeta(key, data);
-		observers_.OnPutMeta(nsName, key, data.ToString());
 	} catch (const Error& err) {
 		return err;
 	}
 	return errOK;
 }
 
-Error ReindexerImpl::EnumMeta(const string& _namespace, vector<string>& keys) {
+Error ReindexerImpl::EnumMeta(string_view nsName, vector<string>& keys) {
 	try {
-		keys = getNamespace(_namespace)->EnumMeta();
+		keys = getNamespace(nsName)->EnumMeta();
 	} catch (const Error& err) {
 		return err;
 	}
 	return errOK;
 }
 
-Error ReindexerImpl::Delete(const string& nsName, Item& item, Completion cmpl) {
+Error ReindexerImpl::Delete(string_view nsName, Item& item, Completion cmpl) {
 	Error err;
 	try {
 		auto ns = getNamespace(nsName);
 		ns->Delete(item);
-		observers_.OnModifyItem(nsName, item.impl_, ModeDelete);
 	} catch (const Error& e) {
 		err = e;
 	}
@@ -312,16 +366,15 @@ Error ReindexerImpl::Delete(const string& nsName, Item& item, Completion cmpl) {
 Error ReindexerImpl::Delete(const Query& q, QueryResults& result) {
 	try {
 		auto ns = getNamespace(q._namespace);
+		ensureDataLoaded(ns);
 		ns->Delete(q, result);
-		// TODO
-		// observers_.OnModifyItem(nsName, item.impl_, ModeDelete);
 	} catch (const Error& err) {
 		return err;
 	}
 	return errOK;
 }
 
-Error ReindexerImpl::Select(const string_view& query, QueryResults& result, Completion cmpl) {
+Error ReindexerImpl::Select(string_view query, QueryResults& result, Completion cmpl) {
 	Error err = errOK;
 	try {
 		Query q;
@@ -334,7 +387,7 @@ Error ReindexerImpl::Select(const string_view& query, QueryResults& result, Comp
 				err = Delete(q, result);
 				break;
 			default:
-				throw Error(errParams, "Error unsupported query type %d", int(q.type_));
+				throw Error(errParams, "Error unsupported query type %d", q.type_);
 		}
 	} catch (const Error& e) {
 		err = e;
@@ -368,10 +421,7 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, Completion cmp
 		return err;
 	}
 
-	mtx_.lock_shared();
-	auto profCfg = profConfig_;
-	mtx_.unlock_shared();
-
+	ProfilingConfigData profilingCfg = configProvider_.GetProfilingConfig();
 	PerfStatCalculatorMT calc(mainNs->selectPerfCounter_, mainNs->enablePerfCounters_);  // todo more accurate detect joined queries
 	auto& tracker = queriesStatTracker_;
 	QueryStatCalculator statCalculator(
@@ -381,13 +431,20 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, Completion cmp
 			else
 				tracker.Hit(q, time);
 		},
-		std::chrono::microseconds(profCfg->queriedThresholdUS), profCfg->queriesPerfStats);
+		std::chrono::microseconds(profilingCfg.queriedThresholdUS), profilingCfg.queriesPerfStats);
 
 	try {
 		if (q._namespace.size() && q._namespace[0] == '#') syncSystemNamespaces(q._namespace);
-		// Loockup and lock namespaces_
+		// Lookup and lock namespaces_
+		ensureDataLoaded(mainNs);
+		mainNs->updateSelectTime();
 		locks.Add(mainNs);
-		q.WalkNested(false, true, [this, &locks](const Query q) { locks.Add(getNamespace(q._namespace)); });
+		q.WalkNested(false, true, [this, &locks](const Query q) {
+			auto ns = getNamespace(q._namespace);
+			ensureDataLoaded(ns);
+			ns->updateSelectTime();
+			locks.Add(ns);
+		});
 
 		locks.Lock();
 	} catch (const Error& err) {
@@ -403,7 +460,6 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, Completion cmp
 		}
 
 		doSelect(q, result, locks, func);
-		result.lockResults();
 		func.Process(result);
 	} catch (const Error& err) {
 		if (cmpl) cmpl(err);
@@ -548,7 +604,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker& locks, SelectFunctionsHolder& func) {
 	auto ns = locks.Get(q._namespace);
 	if (!ns) {
-		throw Error(errParams, "Namespace '%s' is not exists", q._namespace.c_str());
+		throw Error(errParams, "Namespace '%s' is not exists", q._namespace);
 	}
 	SelectCtx ctx(q);
 	h_vector<Query, 4> queries;
@@ -618,9 +674,10 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker& loc
 		SelectCtx jctx(tmpq);
 		jns->Select(result, jctx);
 	});
+	result.lockResults();
 }
 
-Error ReindexerImpl::Commit(const string& /*_namespace*/) {
+Error ReindexerImpl::Commit(string_view /*_namespace*/) {
 	try {
 		// getNamespace(_namespace)->FlushStorage();
 
@@ -631,50 +688,57 @@ Error ReindexerImpl::Commit(const string& /*_namespace*/) {
 	return errOK;
 }
 
-shared_ptr<Namespace> ReindexerImpl::getNamespace(const string& _namespace) {
+shared_ptr<Namespace> ReindexerImpl::getNamespace(string_view nsName) {
 	shared_lock<shared_timed_mutex> lock(mtx_);
-	auto nsIt = namespaces_.find(_namespace);
+	auto nsIt = namespaces_.find(nsName);
 
 	if (nsIt == namespaces_.end()) {
-		throw Error(errParams, "Namespace '%s' does not exist", _namespace.c_str());
+		throw Error(errParams, "Namespace '%s' does not exist", nsName);
 	}
 
 	assert(nsIt->second);
 	return nsIt->second;
 }
 
-Error ReindexerImpl::AddIndex(const string& nsName, const IndexDef& indexDef) {
+Error ReindexerImpl::AddIndex(string_view nsName, const IndexDef& indexDef) {
 	try {
 		auto ns = getNamespace(nsName);
 		ns->AddIndex(indexDef);
-		observers_.OnModifyIndex(nsName, indexDef, ModeInsert);
 	} catch (const Error& err) {
 		return err;
 	}
 	return Error(errOK);
 }
 
-Error ReindexerImpl::UpdateIndex(const string& nsName, const IndexDef& indexDef) {
+Error ReindexerImpl::UpdateIndex(string_view nsName, const IndexDef& indexDef) {
 	try {
 		auto ns = getNamespace(nsName);
 		ns->UpdateIndex(indexDef);
-		observers_.OnModifyIndex(nsName, indexDef, ModeUpdate);
 	} catch (const Error& err) {
 		return err;
 	}
 	return Error(errOK);
 }
 
-Error ReindexerImpl::DropIndex(const string& nsName, const string& indexName) {
+Error ReindexerImpl::DropIndex(string_view nsName, const IndexDef& indexDef) {
 	try {
 		auto ns = getNamespace(nsName);
-		ns->DropIndex(indexName);
-		observers_.OnDropIndex(nsName, indexName);
+		ns->DropIndex(indexDef);
 	} catch (const Error& err) {
 		return err;
 	}
 	return Error(errOK);
 }
+
+void ReindexerImpl::ensureDataLoaded(Namespace::Ptr& ns) {
+	shared_lock<shared_timed_mutex> readlock(storageMtx_);
+	if (ns->needToLoadData()) {
+		readlock.unlock();
+		lock_guard<shared_timed_mutex> writelock(storageMtx_);
+		if (ns->needToLoadData()) ns->LoadFromStorage();
+	}
+}
+
 std::vector<Namespace::Ptr> ReindexerImpl::getNamespaces() {
 	shared_lock<shared_timed_mutex> lock(mtx_);
 	std::vector<Namespace::Ptr> ret;
@@ -690,7 +754,6 @@ std::vector<string> ReindexerImpl::getNamespacesNames() {
 	std::vector<string> ret;
 	ret.reserve(namespaces_.size());
 	for (auto& ns : namespaces_) ret.push_back(ns.first);
-
 	return ret;
 }
 
@@ -705,9 +768,12 @@ Error ReindexerImpl::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll) {
 		if (fs::ReadDir(storagePath_, dirs) != 0) return Error(errLogic, "Could not read database dir");
 
 		for (auto& d : dirs) {
-			if (d.isDir && d.name != "." && d.name != ".." && namespaces_.find(d.name) == namespaces_.end()) {
-				string dbpath = fs::JoinPath(storagePath_, d.name);
-				unique_ptr<Namespace> tmpNs(new Namespace(d.name, CacheMode::CacheModeOn));
+			if (d.isDir && d.name != "." && d.name != "..") {
+				{
+					shared_lock<shared_timed_mutex> lk(mtx_);
+					if (namespaces_.find(d.name) != namespaces_.end()) continue;
+				}
+				unique_ptr<Namespace> tmpNs(new Namespace(d.name, observers_));
 				try {
 					tmpNs->EnableStorage(storagePath_, StorageOpts());
 					defs.push_back(tmpNs->GetDefinition());
@@ -725,8 +791,12 @@ void ReindexerImpl::backgroundRoutine() {
 		for (auto name : nsarray) {
 			try {
 				auto ns = getNamespace(name);
+				ns->tryToReload();
 				ns->BackgroundRoutine();
+			} catch (Error err) {
+				logPrintf(LogWarning, "flusherThread() failed: %s", err.what());
 			} catch (...) {
+				logPrintf(LogWarning, "flusherThread() failed with ns: %s", name);
 			}
 		}
 	};
@@ -740,6 +810,9 @@ void ReindexerImpl::backgroundRoutine() {
 }
 
 void ReindexerImpl::createSystemNamespaces() {
+	AddNamespace(NamespaceDef(kConfigNamespace, StorageOpts().Enabled().CreateIfMissing().DropOnFileFormatError())
+					 .AddIndex("type", "hash", "string", IndexOpts().PK()));
+
 	AddNamespace(NamespaceDef(kPerfStatsNamespace, StorageOpts())
 					 .AddIndex("name", "hash", "string", IndexOpts().PK())
 					 .AddIndex("updates.total_queries_count", "-", "int64", IndexOpts().Dense())
@@ -758,7 +831,8 @@ void ReindexerImpl::createSystemNamespaces() {
 					 .AddIndex("total_avg_lock_time_us", "-", "int64", IndexOpts().Dense())
 					 .AddIndex("last_sec_qps", "-", "int64", IndexOpts().Dense())
 					 .AddIndex("last_sec_avg_latency_us", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("last_sec_avg_lock_time_us", "-", "int64", IndexOpts().Dense()));
+					 .AddIndex("last_sec_avg_lock_time_us", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("latency_stddev", "-", "double", IndexOpts().Dense()));
 
 	AddNamespace(NamespaceDef(kNamespacesNamespace, StorageOpts()).AddIndex("name", "hash", "string", IndexOpts().PK()));
 
@@ -771,27 +845,41 @@ void ReindexerImpl::createSystemNamespaces() {
 					 .AddIndex("total.data_size", "-", "int64", IndexOpts().Dense())
 					 .AddIndex("total.indexes_size", "-", "int64", IndexOpts().Dense())
 					 .AddIndex("total.cache_size", "-", "int64", IndexOpts().Dense()));
-
-	AddNamespace(NamespaceDef(kConfigNamespace, StorageOpts().Enabled().CreateIfMissing().DropOnFileFormatError())
-					 .AddIndex("type", "hash", "string", IndexOpts().PK()));
 }
 
 std::vector<string> defDBConfig = {
 	R"json({
 		"type":"profiling", 
 		"profiling":{
-			"queriesperfstats":false,
+            "queriesperfstats":false,
 			"queries_threshold_us":10,
-			"perfstats":false,
+            "perfstats":false,
 			"memstats":true
 		}
 	})json",
 	R"json({
-		"type":"log_queries", 
-		"log_queries":[
-			{"namespace":"*","log_level":"none"}
-	]})json",
-};
+        "type":"namespaces",
+        "namespaces":[
+            {
+				"namespace":"*",
+				"log_level":"none",
+				"lazyload":false,
+				"unload_idle_threshold":0,
+				"join_cache_mode":"on"
+			}
+    	]
+	})json",
+	R"json({
+        "type":"replication",
+        "replication":{
+			"role":"none",
+			"master_dsn":"cproto://127.0.0.1:6534/db",
+			"cluster_id":2,
+			"force_sync_on_logic_error": false,
+			"force_sync_on_wrong_data_hash": false,
+			"namespaces":[]
+		}
+    })json"};
 
 Error ReindexerImpl::InitSystemNamespaces() {
 	createSystemNamespaces();
@@ -801,6 +889,7 @@ Error ReindexerImpl::InitSystemNamespaces() {
 	if (!err.ok()) return err;
 
 	if (results.Count() == 0) {
+		// Set default config
 		for (auto conf : defDBConfig) {
 			Item item = NewItem(kConfigNamespace);
 			if (!item.Status().ok()) return item.Status();
@@ -809,18 +898,58 @@ Error ReindexerImpl::InitSystemNamespaces() {
 			err = Insert(kConfigNamespace, item);
 			if (!err.ok()) return err;
 		}
+	} else {
+		// Load config from namespace #config
+		QueryResults results;
+		auto err = Select(Query(kConfigNamespace), results);
+		if (!err.ok()) return err;
+		for (auto it : results) {
+			auto item = it.GetItem();
+			try {
+				updateConfigProvider(item);
+			} catch (const Error& err) {
+				return err;
+			}
+		}
 	}
-	return applyConfig();
+
+	tryLoadReplicatorConfFromFile();
+	return errOK;
 }
 
-Error ReindexerImpl::applyConfig() {
-	QueryResults results;
-	auto err = Select(Query(kConfigNamespace), results);
-	if (!err.ok()) return err;
-	for (auto it : results) {
-		auto item = it.GetItem();
+void ReindexerImpl::tryLoadReplicatorConfFromFile() {
+	std::string yamlReplConf;
+	int res = fs::ReadFile(fs::JoinPath(storagePath_, kReplicationConfFilename), yamlReplConf);
+	ReplicationConfigData replConf;
+	if (res > 0) {
+		Error err = replConf.FromYML(yamlReplConf);
+		if (!err.ok()) {
+			logPrintf(LogError, "Error parsing replication config YML: %s", err.what());
+		} else {
+			WrSerializer ser;
+			JsonBuilder jb(ser);
+			jb.Put("type", "replication");
+			auto replNode = jb.Object("replication");
+			replConf.GetJSON(replNode);
+			replNode.End();
+			jb.End();
+
+			Item item = NewItem(kConfigNamespace);
+			if (item.Status().ok()) err = item.FromJSON(ser.Slice());
+			if (err.ok()) err = Upsert(kConfigNamespace, item);
+		}
+	}
+}
+
+Error ReindexerImpl::updateDbFromConfig(string_view configNsName, Item& configItem) {
+	if (configNsName == kConfigNamespace) {
 		try {
-			updateSystemNamespace(kConfigNamespace, item);
+			updateConfigProvider(configItem);
+			bool needStart = replicator_->Configure(configProvider_.GetReplicationConfig());
+			for (auto& ns : getNamespaces()) {
+				ns->onConfigUpdated(configProvider_);
+			}
+			if (needStart) return replicator_->Start();
 		} catch (const Error& err) {
 			return err;
 		}
@@ -828,7 +957,22 @@ Error ReindexerImpl::applyConfig() {
 	return errOK;
 }
 
-void ReindexerImpl::syncSystemNamespaces(const string& name) {
+void ReindexerImpl::updateConfigProvider(Item& configItem) {
+	JsonAllocator jalloc;
+	JsonValue jvalue;
+	char* endp;
+
+	string_view json = configItem.GetJSON();
+	int status = jsonParse(const_cast<char*>(json.data()), &endp, &jvalue, jalloc);
+	if (status != JSON_OK) {
+		throw Error(errParseJson, "Malformed JSON with config");
+	}
+
+	Error err = configProvider_.FromJSON(jvalue);
+	if (!err.ok()) throw err;
+}
+
+void ReindexerImpl::syncSystemNamespaces(string_view name) {
 	auto nsarray = getNamespaces();
 	WrSerializer ser;
 
@@ -842,23 +986,22 @@ void ReindexerImpl::syncSystemNamespaces(const string& name) {
 			sysNs->Upsert(item);
 		}
 	};
-	mtx_.lock_shared();
-	auto profCfg = profConfig_;
-	mtx_.unlock_shared();
 
-	if (profCfg->perfStats && (name.empty() || name == kPerfStatsNamespace)) {
+	ProfilingConfigData profilingCfg = configProvider_.GetProfilingConfig();
+
+	if (profilingCfg.perfStats && (name.empty() || name == kPerfStatsNamespace)) {
 		forEachNS(getNamespace(kPerfStatsNamespace), [&](Namespace::Ptr ns) { ns->GetPerfStat().GetJSON(ser); });
 	}
 
-	if (profCfg->memStats && (name.empty() || name == kMemStatsNamespace)) {
+	if (profilingCfg.memStats && (name.empty() || name == kMemStatsNamespace)) {
 		forEachNS(getNamespace(kMemStatsNamespace), [&](Namespace::Ptr ns) { ns->GetMemStat().GetJSON(ser); });
 	}
 
 	if (name.empty() || name == kNamespacesNamespace) {
-		forEachNS(getNamespace(kNamespacesNamespace), [&](Namespace::Ptr ns) { ns->GetDefinition().GetJSON(ser, true); });
+		forEachNS(getNamespace(kNamespacesNamespace), [&](Namespace::Ptr ns) { ns->GetDefinition().GetJSON(ser, kIndexJSONWithDescribe); });
 	}
 
-	if (profCfg->queriesPerfStats && (name.empty() || name == kQueriesPerfStatsNamespace)) {
+	if (profilingCfg.queriesPerfStats && (name.empty() || name == kQueriesPerfStatsNamespace)) {
 		auto queriesperfstatsNs = getNamespace(kQueriesPerfStatsNamespace);
 		auto data = queriesStatTracker_.Data();
 		for (auto& stat : data) {
@@ -872,57 +1015,11 @@ void ReindexerImpl::syncSystemNamespaces(const string& name) {
 	}
 }
 
-void ReindexerImpl::updateSystemNamespace(const string& nsName, Item& item) {
-	if (nsName == kConfigNamespace) {
-		auto json = item.GetJSON();
-		JsonAllocator jalloc;
-		JsonValue jvalue;
-		char* endp;
-
-		int status = jsonParse(const_cast<char*>(json.data()), &endp, &jvalue, jalloc);
-		if (status != JSON_OK) {
-			throw Error(errParseJson, "Malformed JSON with config");
-		}
-		for (auto elem : jvalue) {
-			if (!strcmp(elem->key, "profiling")) {
-				// reset profiling namespaces
-				QueryResults qr1, qr2, qr3;
-				Delete(Query(kMemStatsNamespace), qr2);
-				Delete(Query(kQueriesPerfStatsNamespace), qr3);
-				Delete(Query(kPerfStatsNamespace), qr1);
-
-				auto cfg = std::make_shared<DBProfilingConfig>();
-				auto err = cfg->FromJSON(elem->value);
-				if (!err.ok()) throw err;
-				mtx_.lock();
-				profConfig_ = cfg;
-				mtx_.unlock();
-
-				auto nsarray = getNamespaces();
-				for (auto& ns : nsarray) {
-					ns->EnablePerfCounters(cfg->perfStats);
-				}
-
-			} else if (!strcmp(elem->key, "log_queries")) {
-				DBLoggingConfig cfg;
-				auto err = cfg.FromJSON(elem->value);
-				if (!err.ok()) throw err;
-				LogLevel defLogLevel = LogNone;
-				if (cfg.logQueries.find("*") != cfg.logQueries.end()) {
-					defLogLevel = LogLevel(cfg.logQueries.find("*")->second);
-				}
-
-				auto nsarray = getNamespaces();
-				for (auto& ns : nsarray) {
-					LogLevel logLevel = defLogLevel;
-					if (cfg.logQueries.find(ns->GetName()) != cfg.logQueries.end()) {
-						logLevel = LogLevel(cfg.logQueries.find(ns->GetName())->second);
-					}
-					ns->SetQueriesLogLevel(logLevel);
-				}
-			}
-		}
-	};
+void ReindexerImpl::onProfiligConfigLoad() {
+	QueryResults qr1, qr2, qr3;
+	Delete(Query(kMemStatsNamespace), qr2);
+	Delete(Query(kQueriesPerfStatsNamespace), qr3);
+	Delete(Query(kPerfStatsNamespace), qr1);
 }
 
 Error ReindexerImpl::SubscribeUpdates(IUpdatesObserver* observer, bool subscribe) {

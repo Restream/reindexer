@@ -3,6 +3,7 @@
 #include <thread>
 #include "client/reindexer.h"
 #include "core/reindexer.h"
+#include "replicator/walrecord.h"
 #if REINDEX_WITH_REPLXX
 #include "replxx.hxx"
 #endif
@@ -51,24 +52,26 @@ Error DBWrapper<_DB>::ProcessCommand(string command) {
 	for (auto& c : cmds_) {
 		if (iequals(token, c.command)) return (this->*(c.handler))(command);
 	}
-	return Error(errParams, "Unknown command '%s'. Type '\\help' to list of available commands", token.ToString().c_str());
+	return Error(errParams, "Unknown command '%s'. Type '\\help' to list of available commands", token);
 }
 
 template <typename _DB>
 Error DBWrapper<_DB>::commandSelect(const string& command) {
-	typename _DB::QueryResultsT results;
+	typename _DB::QueryResultsT results(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 	Query q;
 	try {
 		q.FromSQL(command);
 	} catch (const Error& err) {
 		return err;
 	}
+	bool isWALQuery = q.entries.size() == 1 && q.entries[0].index == "#lsn";
+
 	auto err = db_.Select(q, results);
 
 	if (err.ok()) {
 		if (results.Count()) {
 			output_() << "[" << std::endl;
-			err = queryResultsToJson(output_(), results);
+			err = queryResultsToJson(output_(), results, isWALQuery);
 			output_() << "]" << std::endl;
 		}
 
@@ -254,7 +257,7 @@ Error DBWrapper<_DB>::commandNamespaces(const string& command) {
 		NamespaceDef def("");
 		reindexer::Error err = def.FromJSON(const_cast<char*>(parser.CurPtr()));
 		if (!err.ok()) {
-			return Error(errParseJson, "Namespace structure is not valid - %s", err.what().c_str());
+			return Error(errParseJson, "Namespace structure is not valid - %s", err.what());
 		}
 
 		def.storage.DropOnFileFormatError(true);
@@ -274,7 +277,7 @@ Error DBWrapper<_DB>::commandNamespaces(const string& command) {
 		auto nsName = unescapeName(parser.NextToken());
 		return db_.DropNamespace(nsName);
 	}
-	return Error(errParams, "Unknown sub command '%s' of namespaces command", subCommand.ToString().c_str());
+	return Error(errParams, "Unknown sub command '%s' of namespaces command", subCommand);
 }
 
 template <typename _DB>
@@ -299,7 +302,7 @@ Error DBWrapper<_DB>::commandMeta(const string& command) {
 		}
 		return err;
 	}
-	return Error(errParams, "Unknown sub command '%s' of meta command", subCommand.ToString().c_str());
+	return Error(errParams, "Unknown sub command '%s' of meta command", subCommand);
 }
 
 template <typename _DB>
@@ -318,8 +321,7 @@ Error DBWrapper<_DB>::commandHelp(const string& command) {
 							   [&subCommand](const commandDefinition& def) { return iequals(def.command, subCommand); });
 
 		if (it == cmds_.end()) {
-			return Error(errParams, "Unknown command '%s' to help. To list of available command type '\\help'",
-						 subCommand.ToString().c_str());
+			return Error(errParams, "Unknown command '%s' to help. To list of available command type '\\help'", subCommand);
 		}
 		std::cout << it->command << " - " << it->description << ":" << std::endl << it->help << std::endl;
 	}
@@ -403,22 +405,64 @@ Error DBWrapper<_DB>::commandBench(const string& command) {
 
 	return errOK;
 }
+template <typename _DB>
+Error DBWrapper<_DB>::commandSubscribe(const string& command) {
+	LineParser parser(command);
+	parser.NextToken();
+
+	bool on = !iequals(parser.NextToken(), "off");
+
+	return db_.SubscribeUpdates(this, on);
+}
 
 template <typename _DB>
-Error DBWrapper<_DB>::queryResultsToJson(ostream& o, const typename _DB::QueryResultsT& r) {
+void DBWrapper<_DB>::OnWALUpdate(int64_t lsn, string_view nsName, const reindexer::WALRecord& wrec) {
+	WrSerializer ser;
+	ser << "#" << lsn << " " << nsName << " ";
+	wrec.Dump(ser, [this, nsName](string_view cjson) {
+		auto item = db_.NewItem(nsName.ToString());
+		item.FromCJSON(cjson);
+		return item.GetJSON().ToString();
+	});
+	output_() << ser.Slice() << std::endl;
+}
+
+template <typename _DB>
+void DBWrapper<_DB>::OnConnectionState(const Error& err) {
+	if (err.ok())
+		output_() << "[OnConnectionState] connected" << std::endl;
+	else
+		output_() << "[OnConnectionState] closed, reason: " << err.what() << std::endl;
+}
+
+template <typename _DB>
+Error DBWrapper<_DB>::queryResultsToJson(ostream& o, const typename _DB::QueryResultsT& r, bool isWALQuery) {
 	WrSerializer ser;
 	size_t i = 0;
 	bool prettyPrint = variables_[kVariableOutput] == kOutputModePretty;
 	for (auto it : r) {
-		Error err = it.GetJSON(ser, false);
-		if (!err.ok()) return err;
+		if (isWALQuery) ser << "#" << it.GetLSN() << " ";
 
-		if (prettyPrint) {
-			string json = ser.Slice().ToString();
-			ser.Reset();
-			prettyPrintJSON(json, ser);
+		if (it.IsRaw()) {
+			reindexer::WALRecord rec(it.GetRaw());
+			rec.Dump(ser, [this, &r](string_view cjson) {
+				auto item = db_.NewItem(r.GetNamespaces()[0].ToString());
+				item.FromCJSON(cjson);
+				return item.GetJSON().ToString();
+			});
+		} else {
+			if (isWALQuery) ser << "WalItemUpdate ";
+			Error err = it.GetJSON(ser, false);
+			if (!err.ok()) return err;
+
+			if (prettyPrint) {
+				string json = ser.Slice().ToString();
+				ser.Reset();
+				prettyPrintJSON(json, ser);
+			}
 		}
-		ser << (++i == r.Count() ? "\n" : ",\n");
+		if ((++i != r.Count()) && !isWALQuery) ser << ',';
+		ser << '\n';
 		if (ser.Len() > 0x100000 || prettyPrint) {
 			o << ser.Slice();
 			ser.Reset();

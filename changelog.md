@@ -1,3 +1,17 @@
+# Version 2.0.0 (07.01.2019) 
+
+## Core
+- [fea] Master-slave replication added (beta)
+- [fea] Transactions support
+- [fea] min/max/stddev values added to perfstat
+- [fea] storage lazy load option added
+
+
+## Reindexer tool
+
+- [fea] \subscribe command added
+
+
 # Version 1.10.4 (20.12.2018)
 
 ## Core

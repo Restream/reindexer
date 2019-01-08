@@ -2,6 +2,8 @@
 
 #include <string>
 #include "core/type_consts.h"
+#include "spdlog/fmt/bundled/printf.h"
+#include "spdlog/fmt/fmt.h"
 
 namespace reindexer {
 
@@ -11,11 +13,8 @@ class Error {
 public:
 	Error(int code = errOK);
 	Error(int code, const string &what);
-	Error(int code, const char *fmt, ...)
-#ifndef _MSC_VER
-		__attribute__((format(printf, 3, 4)))
-#endif
-		;
+	template <typename... Args>
+	Error(int code, const char *fmt, const Args &... args) : Error(code, fmt::sprintf(fmt, args...)) {}
 
 	const string &what() const;
 	int code() const;

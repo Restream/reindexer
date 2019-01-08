@@ -60,7 +60,7 @@ Variant IndexStore<T>::Upsert(const Variant &key, IdType id) {
 
 template <typename T>
 void IndexStore<T>::Commit() {
-	logPrintf(LogTrace, "IndexStore::Commit (%s) %d uniq strings", name_.c_str(), int(str_map.size()));
+	logPrintf(LogTrace, "IndexStore::Commit (%s) %d uniq strings", name_, str_map.size());
 }
 
 template <typename T>

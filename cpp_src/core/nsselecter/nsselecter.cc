@@ -17,8 +17,8 @@ namespace reindexer {
 
 void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	ctx.enableSortOrders = ns_->sortOrdersBuilt_;
-	if (ns_->queriesLogLevel_ > ctx.query.debugLevel) {
-		const_cast<Query *>(&ctx.query)->debugLevel = ns_->queriesLogLevel_;
+	if (ns_->config_.logLevel > ctx.query.debugLevel) {
+		const_cast<Query *>(&ctx.query)->debugLevel = ns_->config_.logLevel;
 	}
 
 	ExplainCalc explain(ctx.query.explain_ || ctx.query.debugLevel >= LogInfo);
@@ -32,10 +32,10 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 		auto cached = ns_->queryCache_->Get({ctx.query});
 		if (cached.key && cached.val.total_count >= 0) {
 			result.totalCount = cached.val.total_count;
-			logPrintf(LogTrace, "[*] using value from cache: %d\t namespace: %s", result.totalCount, ns_->name_.c_str());
+			logPrintf(LogTrace, "[*] using value from cache: %d\t namespace: %s", result.totalCount, ns_->name_);
 		} else {
 			needPutCachedTotal = (cached.key != nullptr);
-			logPrintf(LogTrace, "[*] value for cache will be calculated by query. namespace: %s", ns_->name_.c_str());
+			logPrintf(LogTrace, "[*] value for cache will be calculated by query. namespace: %s", ns_->name_);
 			needCalcTotal = true;
 		}
 	}
@@ -118,7 +118,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 			}
 			if (ctx.query.debugLevel >= LogInfo) {
 				WrSerializer ser;
-				logPrintf(LogInfo, "%s", ctx.query.GetSQL(ser).c_str());
+				logPrintf(LogInfo, "%s", ctx.query.GetSQL(ser).Slice());
 				logPrintf(LogInfo, "Built prePresult (expected %d iterations) with %d iterators", maxIters, qres.size());
 			}
 
@@ -210,7 +210,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 
 	if (ctx.query.debugLevel >= LogInfo) {
 		WrSerializer ser;
-		logPrintf(LogInfo, "%s", ctx.query.GetSQL(ser).c_str());
+		logPrintf(LogInfo, "%s", ctx.query.GetSQL(ser).Slice());
 		explain.LogDump(ctx.query.debugLevel);
 	}
 	if (ctx.query.explain_) {
@@ -219,7 +219,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	if (ctx.query.debugLevel >= LogTrace) result.Dump();
 
 	if (needPutCachedTotal) {
-		logPrintf(LogTrace, "[*] put totalCount value into query cache: %d\t namespace: %s\n", result.totalCount, ns_->name_.c_str());
+		logPrintf(LogTrace, "[*] put totalCount value into query cache: %d\t namespace: %s\n", result.totalCount, ns_->name_);
 		ns_->queryCache_->Put({ctx.query}, {static_cast<size_t>(result.totalCount)});
 	}
 	if (ctx.preResult && ctx.preResult->mode == SelectCtx::PreResult::ModeBuild) {
@@ -323,7 +323,7 @@ void NsSelecter::applyGeneralSort(ConstItemIterator itFirst, ConstItemIterator i
 				tagsPath = ns_->tagsMatcher_.path2tag(sortingCtx.data->column);
 			}
 			if (fields.contains(tagsPath)) {
-				throw Error(errQueryExec, "Can't sort by 2 equal indexes: %s", sortingCtx.data->column.c_str());
+				throw Error(errQueryExec, "Can't sort by 2 equal indexes: %s", sortingCtx.data->column);
 			}
 			fields.push_back(tagsPath);
 		} else {
@@ -332,13 +332,12 @@ void NsSelecter::applyGeneralSort(ConstItemIterator itFirst, ConstItemIterator i
 			}
 			if (fieldIdx >= ns_->indexes_.firstCompositePos()) {
 				if (multiSort) {
-					throw Error(errQueryExec, "Multicolumn sorting cannot be applied to composite fields: %s",
-								sortingCtx.data->column.c_str());
+					throw Error(errQueryExec, "Multicolumn sorting cannot be applied to composite fields: %s", sortingCtx.data->column);
 				}
 				fields = ns_->indexes_[fieldIdx]->Fields();
 			} else {
 				if (fields.contains(fieldIdx)) {
-					throw Error(errQueryExec, "You cannot sort by 2 same indexes: %s", sortingCtx.data->column.c_str());
+					throw Error(errQueryExec, "You cannot sort by 2 same indexes: %s", sortingCtx.data->column);
 				}
 				fields.push_back(fieldIdx);
 			}

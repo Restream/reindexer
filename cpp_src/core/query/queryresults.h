@@ -16,10 +16,12 @@ using std::unique_ptr;
 static const int kDefaultQueryResultsSize = 32;
 struct ItemRef {
 	ItemRef() : id(0) {}
-	ItemRef(IdType iid, const PayloadValue &ivalue, uint8_t iproc = 0, uint8_t insid = 0)
-		: id(iid), proc(iproc), nsid(insid), value(ivalue) {}
+	ItemRef(IdType iid, const PayloadValue &ivalue, uint16_t iproc = 0, uint16_t insid = 0, bool iraw = false)
+		: id(iid), proc(iproc), raw(iraw), nsid(insid), value(ivalue) {}
+
 	IdType id;
-	uint16_t proc;
+	uint16_t proc : 15;
+	uint16_t raw : 1;
 	uint16_t nsid;
 	PayloadValue value;
 };
@@ -40,7 +42,7 @@ class QueryResults {
 public:
 	QueryResults(std::initializer_list<ItemRef> l);
 
-	QueryResults();
+	QueryResults(int flags = 0);
 	QueryResults(const QueryResults &) = delete;
 	QueryResults(QueryResults &&);
 	~QueryResults();
@@ -65,6 +67,9 @@ public:
 		Item GetItem();
 		const QRVector &GetJoined();
 		const ItemRef &GetItemRef() const { return qr_->items_[idx_]; }
+		int64_t GetLSN() const { return qr_->items_[idx_].value.GetLSN(); }
+		bool IsRaw() const;
+		string_view GetRaw() const;
 		Iterator &operator++();
 		Iterator &operator+(int delta);
 		Error Status() { return err_; }

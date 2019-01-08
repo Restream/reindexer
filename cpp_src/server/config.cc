@@ -52,7 +52,7 @@ Error ServerConfig::ParseFile(const std::string &filePath) {
 		Yaml::Parse(root, filePath.c_str());
 		err = fromYaml(root);
 	} catch (const Yaml::Exception &ex) {
-		err = Error(errParams, "Error with config file '%s'. Reason: %s", filePath.c_str(), ex.Message());
+		err = Error(errParams, "Error with config file '%s'. Reason: %s", filePath, ex.Message());
 	}
 	return err;
 }
@@ -103,9 +103,9 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	try {
 		parser.ParseCLI(argc, argv);
 	} catch (const args::Help &) {
-		return Error(errLogic, "%s", parser.Help().c_str());
+		return Error(errLogic, parser.Help());
 	} catch (const args::Error &e) {
-		return Error(errParams, "%s\n%s", e.what(), parser.Help().c_str());
+		return Error(errParams, "%s\n%s", e.what(), parser.Help());
 	}
 
 	if (configF) {

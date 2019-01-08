@@ -42,7 +42,7 @@ void JsonDecoder::decodeJsonObject(Payload *pl, CJsonBuilder &builder, JsonValue
 			auto &f = pl->Type().Field(field);
 			if (elem->value.getTag() == JSON_ARRAY) {
 				if (!f.IsArray()) {
-					throw Error(errLogic, "Error parsing json field '%s' - got array, expected scalar %s", f.Name().c_str(),
+					throw Error(errLogic, "Error parsing json field '%s' - got array, expected scalar %s", f.Name(),
 								Variant::TypeName(f.Type()));
 				}
 				int count = 0;

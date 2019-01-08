@@ -1,22 +1,20 @@
 #pragma once
 
 #include <mutex>
-#include "core/indexdef.h"
-#include "core/item.h"
+#include <vector>
 #include "estl/shared_mutex.h"
+#include "estl/string_view.h"
+#include "replicator/walrecord.h"
+#include "tools/errors.h"
 
 namespace reindexer {
-
+class ItemImpl;
+struct IndexDef;
 class IUpdatesObserver {
 public:
-	~IUpdatesObserver();
-
-	virtual Error OnModifyItem(const string &nsName, ItemImpl *item, int modifyMode) = 0;
-	virtual Error OnNewNamespace(const string &nsName) = 0;
-	virtual Error OnModifyIndex(const string &nsName, const IndexDef &idx, int modifyMode) = 0;
-	virtual Error OnDropIndex(const string &nsName, const string &indexName) = 0;
-	virtual Error OnDropNamespace(const string &nsName) = 0;
-	virtual Error OnPutMeta(const string &nsName, const string &key, const string &data) = 0;
+	virtual ~IUpdatesObserver();
+	virtual void OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &rec) = 0;
+	virtual void OnConnectionState(const Error &err) = 0;
 };
 
 class UpdatesObservers {
@@ -24,26 +22,19 @@ public:
 	Error Add(IUpdatesObserver *observer);
 	Error Delete(IUpdatesObserver *observer);
 
-	Error OnModifyItem(const string &nsName, ItemImpl *item, int modifyMode);
-	Error OnNewNamespace(const string &nsName);
-	Error OnModifyIndex(const string &nsName, const IndexDef &idx, int modifyMode);
-	Error OnDropIndex(const string &nsName, const string &indexName);
-	Error OnDropNamespace(const string &nsName);
-	Error OnPutMeta(const string &nsName, const string &key, const string &data);
+	void OnModifyItem(int64_t lsn, string_view nsName, ItemImpl *item, int modifyMode);
+
+	void OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &rec);
+
+	void OnConnectionState(const Error &err);
+	bool empty() {
+		shared_lock<shared_timed_mutex> lck(mtx_);
+		return observers_.empty();
+	}
 
 protected:
 	std::vector<IUpdatesObserver *> observers_;
 	shared_timed_mutex mtx_;
-};
-
-enum {
-	//
-	kWALOpModifyItem = 1,
-	kWALOpNewNamespace = 2,
-	kWALOpModifyIndex = 3,
-	kWALOpDropIndex = 4,
-	kWALOpDropNamespace = 5,
-	kWALPutMeta = 6
 };
 
 }  // namespace reindexer

@@ -113,13 +113,14 @@ func execAndVerifyForceSortOrderQuery(query *queryTest) {
 func FillTestItemsForceSortOrder() {
 	tx := newTestTx(DB, testNs)
 	for _, item := range forceSortOrderData {
-		if cnt, err := tx.Insert(item); err != nil {
+		if err := tx.Insert(item); err != nil {
 			panic(err)
-		} else if cnt == 0 {
-			panic(fmt.Errorf("Could not insert item: %+v", *item))
 		}
 	}
-	tx.MustCommit(nil)
+	cnt := tx.MustCommit(nil)
+	if cnt != len(forceSortOrderData) {
+		panic(fmt.Errorf("Could not commit forceSortOrderData"))
+	}
 }
 
 func CheckTestItemsForceSorted() {

@@ -41,8 +41,8 @@ public:
 	Error FromJSON(const string_view &slice, char **endp = nullptr, bool pkOnly = false);
 	Error FromCJSON(ItemImpl *other);
 
-	string_view GetCJSON();
-	string_view GetCJSON(WrSerializer &ser);
+	string_view GetCJSON(bool withTagsMatcher = false);
+	string_view GetCJSON(WrSerializer &ser, bool withTagsMatcher = false);
 	Error FromCJSON(const string_view &slice, bool pkOnly = false);
 
 	PayloadType Type() { return payloadType_; }
@@ -65,6 +65,7 @@ public:
 		ser_.Reset();
 		tagsMatcher_.clearUpdated();
 		GetPayload().Reset();
+		payloadValue_.SetLSN(-1);
 		unsafe_ = false;
 		ns_.reset();
 		jsonAllocator_ = JsonAllocator();

@@ -175,7 +175,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 		case CondLt:
 			return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, res_type, ctx);
 		default:
-			throw Error(errQueryExec, "Unknown query on index '%s'", this->name_.c_str());
+			throw Error(errQueryExec, "Unknown query on index '%s'", this->name_);
 	}
 
 	return SelectKeyResults(res);
@@ -201,7 +201,7 @@ void IndexUnordered<T>::Commit() {
 	this->empty_ids_.Unsorted().Commit();
 	if (!tracker_.isUpdated()) return;
 
-	logPrintf(LogTrace, "IndexUnordered::Commit (%s) %d uniq keys, %d empty, %s", this->name_.c_str(), int(this->idx_map.size()),
+	logPrintf(LogTrace, "IndexUnordered::Commit (%s) %d uniq keys, %d empty, %s", this->name_, this->idx_map.size(),
 			  this->empty_ids_.Unsorted().size(), tracker_.isCompleteUpdated() ? "complete" : "partial");
 
 	if (tracker_.isCompleteUpdated()) {
@@ -217,7 +217,7 @@ void IndexUnordered<T>::Commit() {
 
 template <typename T>
 void IndexUnordered<T>::UpdateSortedIds(const UpdateSortedContext &ctx) {
-	logPrintf(LogTrace, "IndexUnordered::UpdateSortedIds (%s) %d uniq keys, %d empty", this->name_.c_str(), int(this->idx_map.size()),
+	logPrintf(LogTrace, "IndexUnordered::UpdateSortedIds (%s) %d uniq keys, %d empty", this->name_, this->idx_map.size(),
 			  this->empty_ids_.Unsorted().size());
 	// For all keys in index
 	for (auto &keyIt : this->idx_map) {

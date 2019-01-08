@@ -9,12 +9,15 @@ namespace net {
 namespace cproto {
 
 const int kMaxCompletions = 512;
+const int kKeepAliveInterval = 30;
 
 ClientConnection::ClientConnection(ev::dynamic_loop &loop, const httpparser::UrlParser *uri)
 	: ConnectionMT(-1, loop), state_(ConnInit), completions_(kMaxCompletions), seq_(0), bufWait_(0), uri_(uri) {
 	connect_async_.set<ClientConnection, &ClientConnection::connect_async_cb>(this);
 	connect_async_.set(loop);
 	connect_async_.start();
+	keep_alive_.set<ClientConnection, &ClientConnection::keep_alive_cb>(this);
+	keep_alive_.set(loop);
 	loopThreadID_ = std::this_thread::get_id();
 }
 
@@ -45,7 +48,7 @@ void ClientConnection::connectInternal() {
 	string password = uri_->password();
 	if (dbName[0] == '/') dbName = dbName.substr(1);
 
-	auto completion = [this](const RPCAnswer &ans) {
+	auto completion = [this](const RPCAnswer &ans, ClientConnection *) {
 		std::unique_lock<std::mutex> lck(mtx_);
 		lastError_ = ans.Status();
 		state_ = ans.Status().ok() ? ConnConnected : ConnFailed;
@@ -55,11 +58,12 @@ void ClientConnection::connectInternal() {
 
 	sock_.connect((uri_->hostname() + ":" + port).c_str());
 	if (!sock_.valid()) {
-		completion(RPCAnswer(Error(errNetwork, "Socket connect error: %d", sock_.last_error())));
+		completion(RPCAnswer(Error(errNetwork, "Socket connect error: %d", sock_.last_error())), this);
 	} else {
 		io_.start(sock_.fd(), ev::WRITE);
 		curEvents_ = ev::WRITE;
 		async_.start();
+		keep_alive_.start(kKeepAliveInterval, kKeepAliveInterval);
 		call(completion, kCmdLogin, {Arg{p_string(&userName)}, Arg{p_string(&password)}, Arg{p_string(&dbName)}});
 	}
 }
@@ -87,11 +91,17 @@ void ClientConnection::onClose() {
 	state_ = ConnFailed;
 	completions_.swap(tmpCompletions);
 	mtx_.unlock();
+	keep_alive_.stop();
 
 	for (auto &c : tmpCompletions) {
 		for (RPCCompletion *cc = &c; cc; cc = cc->next())
-			if (cc->used) cc->cmpl(RPCAnswer(lastError_));
+			if (cc->used) cc->cmpl(RPCAnswer(lastError_), this);
 	}
+	auto tmpUpdatesHandler = updatesHandler_;
+	updatesHandler_ = nullptr;
+
+	if (tmpUpdatesHandler) tmpUpdatesHandler(RPCAnswer(lastError_), this);
+	bufCond_.notify_all();
 }
 
 void ClientConnection::onRead() {
@@ -143,28 +153,32 @@ void ClientConnection::onRead() {
 			return;
 		}
 
-		RPCCompletion *completion = &completions_[hdr.seq % completions_.size()];
+		if (hdr.cmd == kCmdUpdates && updatesHandler_) {
+			updatesHandler_(ans, this);
+		} else {
+			RPCCompletion *completion = &completions_[hdr.seq % completions_.size()];
 
-		for (; completion; completion = completion->next()) {
-			if (!completion->used || completion->seq != hdr.seq) {
-				continue;
+			for (; completion; completion = completion->next()) {
+				if (!completion->used || completion->seq != hdr.seq) {
+					continue;
+				}
+				if (CmdCode(hdr.cmd) != completion->cmd) {
+					ans.status_ =
+						Error(errParams, "Invalid cmdCode %d, expected %d for seq = %d", int(completion->cmd), int(hdr.cmd), int(hdr.seq));
+				}
+				completion->cmpl(ans, this);
+				if (bufWait_) {
+					std::unique_lock<std::mutex> lck(mtx_);
+					completion->used = false;
+					bufCond_.notify_all();
+				} else {
+					completion->used = false;
+				}
+				break;
 			}
-			if (CmdCode(hdr.cmd) != completion->cmd) {
-				ans.status_ =
-					Error(errParams, "Invalid cmdCode %d, expected %d for seq = %d", int(completion->cmd), int(hdr.cmd), int(hdr.seq));
+			if (!completion) {
+				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%d", int(hdr.cmd), int(hdr.seq));
 			}
-			completion->cmpl(ans);
-			if (bufWait_) {
-				std::unique_lock<std::mutex> lck(mtx_);
-				completion->used = false;
-				bufCond_.notify_all();
-			} else {
-				completion->used = false;
-			}
-			break;
-		}
-		if (!completion) {
-			fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%d", int(hdr.cmd), int(hdr.seq));
 		}
 		rdBuf_.erase(hdr.len);
 	}
@@ -219,7 +233,7 @@ void ClientConnection::call(Completion cmpl, CmdCode cmd, const Args &args) {
 					connectCond_.wait(lck);
 					if (state_ == ConnFailed) {
 						lck.unlock();
-						cmpl(RPCAnswer(lastError_));
+						cmpl(RPCAnswer(lastError_), this);
 						return;
 					}
 					break;
@@ -241,7 +255,7 @@ void ClientConnection::call(Completion cmpl, CmdCode cmd, const Args &args) {
 			lck.lock();
 			if (state_ == ConnFailed) {
 				lck.unlock();
-				cmpl(RPCAnswer(lastError_));
+				cmpl(RPCAnswer(lastError_), this);
 				return;
 			}
 		}

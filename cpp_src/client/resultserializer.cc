@@ -54,13 +54,17 @@ ResultSerializer::ItemParams ResultSerializer::GetItemParams(int flags) {
 		ret.proc = int(GetVarUint());
 	}
 
+	if (flags & kResultsWithRaw) {
+		ret.raw = int(GetBool());
+	}
+
 	switch (flags & kResultsFormatMask) {
 		case kResultsJson:
 		case kResultsCJson:
 			ret.data = GetSlice();
 			break;
 		default:
-			throw Error(errParseBin, "Server returned data in unknown format %d", int(flags & kResultsFormatMask));
+			throw Error(errParseBin, "Server returned data in unknown format %d", flags & kResultsFormatMask);
 	}
 
 	return ret;

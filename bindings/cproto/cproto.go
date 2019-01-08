@@ -75,7 +75,79 @@ func (binding *NetCProto) Ping() error {
 	return binding.rpcCallNoResults(opRd, cmdPing)
 }
 
-func (binding *NetCProto) ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, precepts []string, stateToken int, txID int) (bindings.RawBuffer, error) {
+func (binding *NetCProto) BeginTx(namespace string) (ctx bindings.TxCtx, err error) {
+	buf, err := binding.rpcCall(opWr, сmdStartTransaction, namespace)
+
+	if len(buf.args) == 0 {
+		return
+	}
+	ctx.Result = buf
+	ctx.Id = uint64(buf.args[0].(int64))
+	return
+}
+
+func (binding *NetCProto) CommitTx(ctx *bindings.TxCtx) (bindings.RawBuffer, error) {
+	netBuffer := ctx.Result.(*NetBuffer)
+
+	txBuf, err := netBuffer.conn.rpcCall(сmdCommitTx, int64(ctx.Id))
+
+	defer txBuf.Free()
+	defer netBuffer.close()
+	netBuffer.needClose = false
+	txBuf.needClose = false
+
+	if err != nil {
+		return nil, err
+	}
+
+	txBuf.buf, netBuffer.buf = netBuffer.buf, txBuf.buf
+	netBuffer.result = txBuf.args[0].([]byte)
+	return netBuffer, nil
+}
+
+func (binding *NetCProto) RollbackTx(ctx *bindings.TxCtx) error {
+	netBuffer := ctx.Result.(*NetBuffer)
+
+	txBuf, err := netBuffer.conn.rpcCall(сmdRollbackTx, int64(ctx.Id))
+
+	defer txBuf.Free()
+	defer netBuffer.Free()
+	netBuffer.needClose = false
+	txBuf.needClose = false
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (binding *NetCProto) ModifyItemTx(txCtx *bindings.TxCtx, format int, data []byte, mode int, precepts []string, stateToken int) error {
+	var packedPercepts []byte
+	if len(precepts) != 0 {
+		ser1 := cjson.NewPoolSerializer()
+		defer ser1.Close()
+
+		ser1.PutVarCUInt(len(precepts))
+		for _, precept := range precepts {
+			ser1.PutVString(precept)
+		}
+		packedPercepts = ser1.Bytes()
+	}
+
+	netBuffer := txCtx.Result.(*NetBuffer)
+
+	txBuf, err := netBuffer.conn.rpcCall(сmdAddTxItem, format, data, mode, packedPercepts, stateToken, int64(txCtx.Id))
+
+	defer txBuf.Free()
+	if err != nil {
+		netBuffer.close()
+		return err
+	}
+
+	return nil
+}
+func (binding *NetCProto) ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, precepts []string, stateToken int) (bindings.RawBuffer, error) {
 
 	var packedPercepts []byte
 	if len(precepts) != 0 {
@@ -89,7 +161,7 @@ func (binding *NetCProto) ModifyItem(nsHash int, namespace string, format int, d
 		packedPercepts = ser1.Bytes()
 	}
 
-	buf, err := binding.rpcCall(opWr, cmdModifyItem, namespace, format, data, mode, packedPercepts, stateToken, txID)
+	buf, err := binding.rpcCall(opWr, cmdModifyItem, namespace, format, data, mode, packedPercepts, stateToken, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +170,7 @@ func (binding *NetCProto) ModifyItem(nsHash int, namespace string, format int, d
 	return buf, nil
 }
 
-func (binding *NetCProto) OpenNamespace(namespace string, enableStorage, dropOnFormatError bool, cacheMode uint8) error {
+func (binding *NetCProto) OpenNamespace(namespace string, enableStorage, dropOnFormatError bool) error {
 	storageOtps := bindings.StorageOpts{
 		EnableStorage:     enableStorage,
 		DropOnFormatError: dropOnFormatError,
@@ -107,7 +179,6 @@ func (binding *NetCProto) OpenNamespace(namespace string, enableStorage, dropOnF
 
 	namespaceDef := bindings.NamespaceDef{
 		StorageOpts: storageOtps,
-		CacheMode:   cacheMode,
 		Namespace:   namespace,
 	}
 

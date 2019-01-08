@@ -23,29 +23,33 @@ const cprotoVersion = 0x101
 const cprotoHdrLen = 16
 
 const (
-	cmdPing           = 0
-	cmdLogin          = 1
-	cmdOpenDatabase   = 2
-	cmdCloseDatabase  = 3
-	cmdDropDatabase   = 4
-	cmdOpenNamespace  = 16
-	cmdCloseNamespace = 17
-	cmdDropNamespace  = 18
-	cmdAddIndex       = 21
-	cmdEnumNamespaces = 22
-	cmdDropIndex      = 24
-	cmdUpdateIndex    = 25
-	cmdCommit         = 32
-	cmdModifyItem     = 33
-	cmdDeleteQuery    = 34
-	cmdSelect         = 48
-	cmdSelectSQL      = 49
-	cmdFetchResults   = 50
-	cmdCloseResults   = 51
-	cmdGetMeta        = 64
-	cmdPutMeta        = 65
-	cmdEnumMeta       = 66
-	cmdCodeMax        = 128
+	cmdPing             = 0
+	cmdLogin            = 1
+	cmdOpenDatabase     = 2
+	cmdCloseDatabase    = 3
+	cmdDropDatabase     = 4
+	cmdOpenNamespace    = 16
+	cmdCloseNamespace   = 17
+	cmdDropNamespace    = 18
+	cmdAddIndex         = 21
+	cmdEnumNamespaces   = 22
+	cmdDropIndex        = 24
+	cmdUpdateIndex      = 25
+	сmdStartTransaction = 25
+	сmdAddTxItem        = 26
+	сmdCommitTx         = 27
+	сmdRollbackTx       = 28
+	cmdCommit           = 32
+	cmdModifyItem       = 33
+	cmdDeleteQuery      = 34
+	cmdSelect           = 48
+	cmdSelectSQL        = 49
+	cmdFetchResults     = 50
+	cmdCloseResults     = 51
+	cmdGetMeta          = 64
+	cmdPutMeta          = 65
+	cmdEnumMeta         = 66
+	cmdCodeMax          = 128
 )
 
 type connection struct {

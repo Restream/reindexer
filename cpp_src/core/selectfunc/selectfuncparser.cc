@@ -21,7 +21,7 @@ SelectFuncStruct &SelectFuncParser::Parse(string query) {
 
 	tok = parser.next_token(false);
 	if (tok.text() != "=" && tok.text() != ".") {
-		throw Error(errParams, "`=` or '.' is expected, but found `%s`", tok.text().data());
+		throw Error(errParams, "`=` or '.' is expected, but found `%s`", tok.text());
 	}
 
 	parseFunction(parser);
@@ -51,7 +51,7 @@ void SelectFuncParser::parseFunction(tokenizer &parser) {
 			if (tok.text() == ")") {
 				token nextTok = parser.next_token(false);
 				if (nextTok.text().length()) {
-					throw Error(errParseDSL, "Unexpected character `%s` after close parenthesis", nextTok.text().data());
+					throw Error(errParseDSL, "Unexpected character `%s` after close parenthesis", nextTok.text());
 				}
 				selectFuncStruct_.funcArgs.push_back(agr);
 
@@ -68,7 +68,7 @@ void SelectFuncParser::parseFunction(tokenizer &parser) {
 			}
 		}
 	} else {
-		throw Error(errParseDSL, "An open parenthesis is required, but found `%s`", tok.text().data());
+		throw Error(errParseDSL, "An open parenthesis is required, but found `%s`", tok.text());
 	}
 }
 

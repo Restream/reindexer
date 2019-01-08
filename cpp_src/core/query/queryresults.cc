@@ -19,7 +19,7 @@ static_assert(sizeof(QueryResults::Context) < QueryResults::kSizeofContext,
 			  "QueryResults::kSizeofContext should >=  sizeof(QueryResults::Context)");
 
 QueryResults::QueryResults(std::initializer_list<ItemRef> l) : items_(l) {}
-QueryResults::QueryResults() = default;
+QueryResults::QueryResults(int /*flags*/){};
 QueryResults::QueryResults(QueryResults &&) = default;
 QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	if (this != &obj) {
@@ -52,7 +52,7 @@ void QueryResults::Erase(ItemRefVector::iterator start, ItemRefVector::iterator 
 void QueryResults::lockResults() {
 	assert(!lockedResults_);
 	for (auto &itemRef : items_) {
-		if (!itemRef.value.IsFree()) {
+		if (!itemRef.value.IsFree() && !itemRef.raw) {
 			assert(ctxs.size() > itemRef.nsid);
 			Payload(ctxs[itemRef.nsid].type_, itemRef.value).AddRefStrings();
 		}
@@ -70,7 +70,7 @@ void QueryResults::lockResults() {
 void QueryResults::unlockResults() {
 	if (!lockedResults_) return;
 	for (auto &itemRef : items_) {
-		if (!itemRef.value.IsFree()) {
+		if (!itemRef.value.IsFree() && !itemRef.raw) {
 			assert(ctxs.size() > itemRef.nsid);
 			Payload(ctxs[itemRef.nsid].type_, itemRef.value).ReleaseStrings();
 		}
@@ -83,7 +83,7 @@ void QueryResults::Add(const ItemRef &i) {
 
 	if (!lockedResults_) return;
 
-	if (!i.value.IsFree()) {
+	if (!i.value.IsFree() && !i.raw) {
 		assert(ctxs.size() > items_.back().nsid);
 		Payload(ctxs[items_.back().nsid].type_, items_.back().value).AddRefStrings();
 	}
@@ -109,7 +109,7 @@ void QueryResults::Dump() const {
 			}
 		}
 	}
-	logPrintf(LogInfo, "Query returned: [%s]; total=%d", buf.c_str(), this->totalCount);
+	logPrintf(LogInfo, "Query returned: [%s]; total=%d", buf, this->totalCount);
 }
 
 h_vector<string_view, 1> QueryResults::GetNamespaces() const {
@@ -218,6 +218,16 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer &ser, bool withHdrLen) {
 		return err;
 	}
 	return errOK;
+}
+
+bool QueryResults::Iterator::IsRaw() const {
+	auto &itemRef = qr_->items_[idx_];
+	return itemRef.raw;
+}
+string_view QueryResults::Iterator::GetRaw() const {
+	auto &itemRef = qr_->items_[idx_];
+	assert(itemRef.raw);
+	return string_view(reinterpret_cast<char *>(itemRef.value.Ptr()), itemRef.value.GetCapacity());
 }
 
 Item QueryResults::Iterator::GetItem() {

@@ -43,7 +43,7 @@ void Selecter::prepareVariants(FtSelectContext &ctx, FtDSLEntry &term, std::vect
 			for (auto &lang : langs) {
 				auto stemIt = holder_.stemmers_.find(lang);
 				if (stemIt == holder_.stemmers_.end()) {
-					throw Error(errParams, "Stemmer for language %s is not available", lang.c_str());
+					throw Error(errParams, "Stemmer for language %s is not available", lang);
 				}
 				char *stembuf = reinterpret_cast<char *>(alloca(1 + tmpstr.size() * 4));
 				stemIt->second.stem(stembuf, 1 + tmpstr.size() * 4, tmpstr.data(), tmpstr.length());
@@ -84,7 +84,7 @@ Selecter::MergeData Selecter::Process(FtDSLQuery &dsl) {
 					vars += typo;
 					vars += ", ";
 				});
-			logPrintf(LogInfo, "Variants: [%s]", vars.c_str());
+			logPrintf(LogInfo, "Variants: [%s]", vars);
 		}
 
 		processVariants(ctx);
@@ -139,7 +139,7 @@ void Selecter::processStepVariants(FtSelectContext &ctx, DataHolder::CommitStep 
 			ctx.foundWords[glbwordId] = std::make_pair(ctx.rawResults.size() - 1, res.size() - 1);
 			if (holder_.cfg_->logLevel >= LogTrace)
 				logPrintf(LogTrace, " matched %s '%s' of word '%s', %d vids, %d%%", suffixLen ? "suffix" : "prefix", keyIt->first, word,
-						  int(holder_.getWordById(glbwordId).vids_.size()), proc);
+						  holder_.getWordById(glbwordId).vids_.size(), proc);
 			matched++;
 			vids += holder_.getWordById(glbwordId).vids_.size();
 		} else {
@@ -149,8 +149,8 @@ void Selecter::processStepVariants(FtSelectContext &ctx, DataHolder::CommitStep 
 		}
 	} while ((keyIt++).lcp() >= int(tmpstr.length()));
 	if (holder_.cfg_->logLevel >= LogInfo)
-		logPrintf(LogInfo, "Lookup variant '%s' (%d%%), matched %d suffixes, with %d vids, skiped %d", tmpstr.c_str(), variant.proc,
-				  matched, vids, skipped);
+		logPrintf(LogInfo, "Lookup variant '%s' (%d%%), matched %d suffixes, with %d vids, skiped %d", tmpstr, variant.proc, matched, vids,
+				  skipped);
 }
 
 void Selecter::processVariants(FtSelectContext &ctx) {
@@ -193,7 +193,7 @@ void Selecter::processTypos(FtSelectContext &ctx, FtDSLEntry &term) {
 
 					if (holder_.cfg_->logLevel >= LogTrace)
 						logPrintf(LogTrace, " matched typo '%s' of word '%s', %d ids, %d%%", typoIt->first,
-								  step.suffixes_.word_at(wordIdSfx), int(holder_.getWordById(wordIdglb).vids_.size()), proc);
+								  step.suffixes_.word_at(wordIdSfx), holder_.getWordById(wordIdglb).vids_.size(), proc);
 					++matched;
 					vids += holder_.getWordById(wordIdglb).vids_.size();
 				} else
@@ -218,8 +218,8 @@ void Selecter::debugMergeStep(const char *msg, int vid, float normBm25, float no
 		text = text.substr(0, 48) + "...";
 	}
 
-	logPrintf(LogTrace, "%s - '%s' (vid %d), bm25 %f, dist %f, rank %d (prev rank %d)", msg, text.c_str(), vid, normBm25, normDist,
-			  finalRank, prevRank);
+	logPrintf(LogTrace, "%s - '%s' (vid %d), bm25 %f, dist %f, rank %d (prev rank %d)", msg, text, vid, normBm25, normDist, finalRank,
+			  prevRank);
 #else
 	(void)msg;
 	(void)vid;
@@ -392,8 +392,7 @@ Selecter::MergeData Selecter::mergeResults(vector<TextSearchResults> &rawResults
 
 		if (rawRes.term.opts.op != OpNot) merged.mergeCnt++;
 	}
-	if (holder_.cfg_->logLevel >= LogInfo)
-		logPrintf(LogInfo, "Complex merge (%d patterns): out %d vids", int(rawResults.size()), int(merged.size()));
+	if (holder_.cfg_->logLevel >= LogInfo) logPrintf(LogInfo, "Complex merge (%d patterns): out %d vids", rawResults.size(), merged.size());
 
 	std::sort(merged.begin(), merged.end(), [](const MergeInfo &lhs, const MergeInfo &rhs) { return lhs.proc > rhs.proc; });
 

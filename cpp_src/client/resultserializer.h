@@ -15,6 +15,7 @@ public:
 		int16_t proc = 0;
 		int64_t lsn = 0;
 		string_view data;
+		bool raw = false;
 	};
 
 	struct QueryParams {

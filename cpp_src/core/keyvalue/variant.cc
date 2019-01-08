@@ -146,7 +146,7 @@ int Variant::As<int>() const {
 				abort();
 		}
 	} catch (...) {
-		throw Error(errParams, "Can't convert %s to number\n", operator p_string().data());
+		throw Error(errParams, "Can't convert %s to number", operator p_string().data());
 	}
 }
 
@@ -171,7 +171,7 @@ bool Variant::As<bool>() const {
 				abort();
 		}
 	} catch (...) {
-		throw Error(errParams, "Can't convert %s to bool\n", operator p_string().data());
+		throw Error(errParams, "Can't convert %s to bool", operator p_string().data());
 	}
 }
 
@@ -203,7 +203,7 @@ int64_t Variant::As<int64_t>() const {
 				abort();
 		}
 	} catch (...) {
-		throw Error(errParams, "Can't convert %s to number\n", operator p_string().data());
+		throw Error(errParams, "Can't convert %s to number", operator p_string().data());
 	}
 }
 
@@ -228,7 +228,7 @@ double Variant::As<double>() const {
 				abort();
 		}
 	} catch (...) {
-		throw Error(errParams, "Can't convert %s to number\n", operator p_string().data());
+		throw Error(errParams, "Can't convert %s to number", operator p_string().data());
 	}
 }
 
@@ -328,12 +328,12 @@ void Variant::convertToComposite(const PayloadType *payloadType, const FieldsSet
 
 	size_t count = ser.GetVarUint();
 	if (count != fields->size()) {
-		throw Error(errLogic, "Invalid count of arguments for composite index, expected %d, got %d", int(fields->size()), int(count));
+		throw Error(errLogic, "Invalid count of arguments for composite index, expected %d, got %d", fields->size(), count);
 	}
 
 	Payload pl(*payloadType, pv);
 
-	for (auto &field : *fields) {
+	for (auto field : *fields) {
 		if (field != IndexValueType::SetByJsonPath) {
 			pl.Set(field, {ser.GetVariant()});
 		} else {

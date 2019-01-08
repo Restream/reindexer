@@ -102,13 +102,13 @@ func newTestTx(db *reindexer.Reindexer, namespace string) *txTest {
 	return tx
 }
 
-func (tx *txTest) Insert(s interface{}) (int, error) {
+func (tx *txTest) Insert(s interface{}) error {
 	val := reflect.Indirect(reflect.ValueOf(s))
 	tx.ns.items[getPK(tx.ns, val)] = s
 	return tx.tx.Insert(s)
 }
 
-func (tx *txTest) Update(s interface{}) (int, error) {
+func (tx *txTest) Update(s interface{}) error {
 	val := reflect.Indirect(reflect.ValueOf(s))
 	tx.ns.items[getPK(tx.ns, val)] = s
 	return tx.tx.Update(s)
@@ -136,12 +136,12 @@ func (tx *txTest) Delete(s interface{}) error {
 	return tx.tx.Delete(s)
 }
 
-func (tx *txTest) Commit(updatedAt *time.Time) error {
-	return tx.tx.Commit(updatedAt)
+func (tx *txTest) Commit(updatedAt *time.Time) (int, error) {
+	return tx.tx.CommitWithCount(updatedAt)
 }
 
-func (tx *txTest) MustCommit(updatedAt *time.Time) {
-	tx.tx.MustCommit(updatedAt)
+func (tx *txTest) MustCommit(updatedAt *time.Time) int {
+	return tx.tx.MustCommit(updatedAt)
 }
 
 func (qt *queryTest) toString() (ret string) {

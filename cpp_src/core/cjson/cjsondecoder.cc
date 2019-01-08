@@ -123,8 +123,13 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 			} else if (tagType != TAG_NULL) {
 				pl->Set(field, {cjsonValueToVariant(tagType, rdser, fieldType, err)}, true);
 				if (err.ok()) {
-					wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName, field)));
+					// TODO: remove hardcoded conversion from KeyType to TAG
+
+					wrser.PutVarUint(
+						static_cast<int>(ctag(fieldType == KeyValueInt ? KeyValueType(TAG_VARINT) : fieldType, tagName, field)));
 				}
+			} else {
+				wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName)));
 			}
 			if (!err.ok()) {
 				// Type error occuried. Just store field, and do not put it to index

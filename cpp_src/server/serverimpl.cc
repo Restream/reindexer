@@ -271,6 +271,7 @@ int ServerImpl::run() {
 	} catch (const Error &err) {
 		logger_.error("Unhandled exception occuried: {0}", err.what());
 	}
+	dbMgr_.reset();
 	logger_.info("Reindexer server shutdown completed.");
 
 	spdlog::drop_all();

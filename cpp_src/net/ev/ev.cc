@@ -168,7 +168,7 @@ void loop_poll_backend::stop(int fd) {
 }
 
 int loop_poll_backend::runonce(int64_t t) {
-	int ret = poll(&private_->fds_[0], private_->fds_.size(), t);
+	int ret = poll(&private_->fds_[0], private_->fds_.size(), t != -1 ? t / 1000 : -1);
 	if (ret < 1) return ret;
 
 	for (pollfd &pfd : private_->fds_) {

@@ -101,7 +101,7 @@ type QueryPerfStat struct {
 type DBConfigItem struct {
 	Type       string                `json:"type"`
 	Profiling  *DBProfilingConfig    `json:"profiling,omitempty"`
-	LogQueries *[]DBLogQueriesConfig `json:"log_queries,omitempty"`
+	Namespaces *[]DBNamespacesConfig `json:"namespaces,omitempty"`
 }
 
 type DBProfilingConfig struct {
@@ -111,9 +111,12 @@ type DBProfilingConfig struct {
 	QueriesPerfStats   bool `json:"queriesperfstats"`
 }
 
-type DBLogQueriesConfig struct {
-	Namespace string `json:"namespace"`
-	LogLevel  string `json:"log_level"`
+type DBNamespacesConfig struct {
+	Namespace           string `json:"namespace"`
+	LogLevel            string `json:"log_level"`
+	JoinCacheMode       string `json:"join_cache_mode"`
+	Lazyload            bool   `json:"lazyload"`
+	UnloadIdleThreshold int    `json:"unload_idle_threshold"`
 }
 
 // DescribeNamespaces makes a 'SELECT * FROM #namespaces' query to database.

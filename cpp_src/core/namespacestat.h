@@ -5,6 +5,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include "tools/errors.h"
 
 namespace reindexer {
 
@@ -33,12 +34,35 @@ struct IndexMemStat {
 	LRUCacheMemStat idsetCache;
 };
 
+struct ReplicationState {
+	void GetJSON(JsonBuilder &builder);
+	void FromJSON(char *);
+
+	// LSN of last change
+	int64_t lastLsn = -1;
+	// Slave mode flag
+	bool slaveMode = false;
+	// Cluster ID
+	int clusterID = -1;
+	// Incarnation counter
+	int incarnationCounter = 0;
+	// Data hash
+	uint64_t dataHash = 0;
+};
+
+struct ReplicationStat : public ReplicationState {
+	void GetJSON(JsonBuilder &builder);
+	size_t walCount = 0;
+	size_t walSize = 0;
+};
+
 struct NamespaceMemStat {
 	void GetJSON(WrSerializer &ser);
 
 	std::string name;
 	std::string storagePath;
 	bool storageOK = false;
+	bool storageLoaded = true;
 	unsigned long long updatedUnixNano = 0;
 	size_t itemsCount = 0;
 	size_t emptyItemsCount = 0;
@@ -48,6 +72,7 @@ struct NamespaceMemStat {
 		size_t indexesSize = 0;
 		size_t cacheSize = 0;
 	} Total;
+	ReplicationStat replication;
 	LRUCacheMemStat joinCache;
 	LRUCacheMemStat queryCache;
 	std::vector<IndexMemStat> indexes;
@@ -61,6 +86,9 @@ struct PerfStat {
 	size_t avgHitCount;
 	size_t avgTimeUs;
 	size_t avgLockTimeUs;
+	double stddev;
+	size_t minTimeUs;
+	size_t maxTimeUs;
 };
 
 struct IndexPerfStat {

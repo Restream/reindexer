@@ -8,8 +8,8 @@ IndexOpts::IndexOpts(uint8_t flags, CollateMode mode) : options(flags), collateO
 
 IndexOpts::IndexOpts(const std::string& sortOrderUTF8, uint8_t flags) : options(flags), collateOpts_(sortOrderUTF8) {}
 
-bool IndexOpts::operator==(const IndexOpts& other) const {
-	return options == other.options && config == other.config && collateOpts_.mode == other.collateOpts_.mode &&
+bool IndexOpts::IsEqual(const IndexOpts& other, bool skipConfig) const {
+	return options == other.options && (skipConfig || config == other.config) && collateOpts_.mode == other.collateOpts_.mode &&
 		   collateOpts_.sortOrderTable.GetSortOrderCharacters() == other.collateOpts_.sortOrderTable.GetSortOrderCharacters();
 }
 

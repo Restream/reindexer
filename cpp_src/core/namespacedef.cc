@@ -26,9 +26,6 @@ Error NamespaceDef::FromJSON(JsonValue &jvalue) {
 		for (auto elem : jvalue) {
 			if (elem->value.getTag() == JSON_NULL) continue;
 			parseJsonField("name", name, elem);
-			int cacheModeInt = -1;
-			parseJsonField("cached_mode", cacheModeInt, elem, 0, 2);
-			if (cacheModeInt != -1) cacheMode = static_cast<CacheMode>(cacheModeInt);
 
 			if (!strcmp("storage", elem->key)) {
 				if (elem->value.getTag() != JSON_OBJECT) {
@@ -59,16 +56,15 @@ Error NamespaceDef::FromJSON(JsonValue &jvalue) {
 	return 0;
 }
 
-void NamespaceDef::GetJSON(WrSerializer &ser, bool describeCompat) const {
+void NamespaceDef::GetJSON(WrSerializer &ser, int formatFlags) const {
 	JsonBuilder json(ser);
 	json.Put("name", name);
-	json.Put("cached_mode", int(cacheMode));
 	json.Object("storage").Put("enabled", storage.IsEnabled());
 	auto arr = json.Array("indexes");
 
 	for (auto &idx : indexes) {
 		arr.Raw(nullptr, "");
-		idx.GetJSON(ser, describeCompat);
+		idx.GetJSON(ser, formatFlags);
 	}
 }
 

@@ -35,7 +35,7 @@ class ClientConnection : public ConnectionMT {
 public:
 	ClientConnection(ev::dynamic_loop &loop, const httpparser::UrlParser *uri);
 	~ClientConnection();
-	typedef std::function<void(const RPCAnswer &ans)> Completion;
+	typedef std::function<void(const RPCAnswer &ans, ClientConnection *conn)> Completion;
 
 	template <typename... Argss>
 	void Call(const Completion &cmpl, CmdCode cmd, Argss... argss) {
@@ -50,7 +50,7 @@ public:
 		args.reserve(sizeof...(argss));
 
 		RPCAnswer ret;
-		call([&ret](const RPCAnswer &ans) { ret = ans; }, cmd, args, argss...);
+		call([&ret](const RPCAnswer &ans, ClientConnection * /*conn*/) { ret = ans; }, cmd, args, argss...);
 		std::unique_lock<std::mutex> lck(mtx_);
 		bufWait_++;
 		while (!ret.IsSet()) {
@@ -61,9 +61,14 @@ public:
 		return ret;
 	}
 	int PendingCompletions();
+	void SetUpdatesHandler(Completion handler) { updatesHandler_ = handler; }
 
 protected:
 	void connect_async_cb(ev::async &) { connectInternal(); }
+	void keep_alive_cb(ev::periodic &, int) {
+		call([](const RPCAnswer &, ClientConnection *) {}, kCmdPing, {});
+		callback(io_, ev::WRITE);
+	}
 
 	void connectInternal();
 	void failInternal(const Error &error);
@@ -115,6 +120,8 @@ protected:
 	Error lastError_;
 	const httpparser::UrlParser *uri_;
 	ev::async connect_async_;
+	Completion updatesHandler_;
+	ev::periodic keep_alive_;
 };
 }  // namespace cproto
 }  // namespace net

@@ -116,14 +116,14 @@ void Listener::timeout_cb(ev::periodic &, int) {
 
 	// Clear all idle connections, after 300 sec
 	if (shared_->idle_.size() && std::chrono::steady_clock::now() - shared_->ts_ > std::chrono::seconds(300)) {
-		logPrintf(LogInfo, "Cleanup idle connections. %d cleared", int(shared_->idle_.size()));
+		logPrintf(LogInfo, "Cleanup idle connections. %d cleared", shared_->idle_.size());
 		shared_->idle_.clear();
 	}
 
 	rebalance();
 	int curConnCount = connections_.size();
 	if (curConnCount != 0) {
-		logPrintf(LogTrace, "Listener(%s) %d stats: %d connections", shared_->addr_.c_str(), id_, curConnCount);
+		logPrintf(LogTrace, "Listener(%s) %d stats: %d connections", shared_->addr_, id_, curConnCount);
 	}
 }
 

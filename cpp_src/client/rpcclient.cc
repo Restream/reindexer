@@ -13,7 +13,9 @@ namespace client {
 
 using reindexer::net::cproto::RPCAnswer;
 
-RPCClient::RPCClient(const ReindexerConfig& config) : workers_(config.WorkerThreads), config_(config) { curConnIdx_ = 0; }
+RPCClient::RPCClient(const ReindexerConfig& config) : workers_(config.WorkerThreads), config_(config), updatesConn_(nullptr) {
+	curConnIdx_ = 0;
+}
 
 RPCClient::~RPCClient() { Stop(); }
 
@@ -23,7 +25,7 @@ Error RPCClient::Connect(const string& dsn) {
 	}
 
 	if (!uri_.parse(dsn)) {
-		return Error(errParams, "%s is not valid uri", dsn.c_str());
+		return Error(errParams, "%s is not valid uri", dsn);
 	}
 	if (uri_.scheme() != "cproto") {
 		return Error(errParams, "Scheme must be cproto");
@@ -64,6 +66,13 @@ void RPCClient::run(int thIdx) {
 		connections_[i].reset(new cproto::ClientConnection(workers_[thIdx].loop_, &uri_));
 	}
 
+	ev::periodic checker;
+	if (thIdx == 0) {
+		checker.set(workers_[thIdx].loop_);
+		checker.set([this](ev::periodic&, int) { checkSubscribes(); });
+		checker.start(5, 5);
+	}
+
 	workers_[thIdx].running = true;
 	while (!terminate) {
 		workers_[thIdx].loop_.run();
@@ -83,21 +92,21 @@ Error RPCClient::AddNamespace(const NamespaceDef& nsDef) {
 	return errOK;
 }
 
-Error RPCClient::OpenNamespace(const string& name, const StorageOpts& sopts) {
-	NamespaceDef nsDef(name, sopts);
+Error RPCClient::OpenNamespace(string_view nsName, const StorageOpts& sopts) {
+	NamespaceDef nsDef(nsName.ToString(), sopts);
 	return AddNamespace(nsDef);
 }
 
-Error RPCClient::DropNamespace(const string& name) { return getConn()->Call(cproto::kCmdDropNamespace, name).Status(); }
-Error RPCClient::CloseNamespace(const string& name) { return getConn()->Call(cproto::kCmdCloseNamespace, name).Status(); }
-Error RPCClient::Insert(const string& ns, Item& item, Completion cmpl) { return modifyItem(ns, item, ModeInsert, cmpl); }
-Error RPCClient::Update(const string& ns, Item& item, Completion cmpl) { return modifyItem(ns, item, ModeUpdate, cmpl); }
-Error RPCClient::Upsert(const string& ns, Item& item, Completion cmpl) { return modifyItem(ns, item, ModeUpsert, cmpl); }
-Error RPCClient::Delete(const string& ns, Item& item, Completion cmpl) { return modifyItem(ns, item, ModeDelete, cmpl); }
+Error RPCClient::DropNamespace(string_view nsName) { return getConn()->Call(cproto::kCmdDropNamespace, nsName).Status(); }
+Error RPCClient::CloseNamespace(string_view nsName) { return getConn()->Call(cproto::kCmdCloseNamespace, nsName).Status(); }
+Error RPCClient::Insert(string_view nsName, Item& item, Completion cmpl) { return modifyItem(nsName, item, ModeInsert, cmpl); }
+Error RPCClient::Update(string_view nsName, Item& item, Completion cmpl) { return modifyItem(nsName, item, ModeUpdate, cmpl); }
+Error RPCClient::Upsert(string_view nsName, Item& item, Completion cmpl) { return modifyItem(nsName, item, ModeUpsert, cmpl); }
+Error RPCClient::Delete(string_view nsName, Item& item, Completion cmpl) { return modifyItem(nsName, item, ModeDelete, cmpl); }
 
-Error RPCClient::modifyItem(const string& ns, Item& item, int mode, Completion cmpl) {
+Error RPCClient::modifyItem(string_view nsName, Item& item, int mode, Completion cmpl) {
 	if (cmpl) {
-		return modifyItemAsync(ns, &item, mode, cmpl);
+		return modifyItemAsync(nsName, &item, mode, cmpl);
 	}
 
 	WrSerializer ser;
@@ -110,12 +119,13 @@ Error RPCClient::modifyItem(const string& ns, Item& item, int mode, Completion c
 
 	for (int tryCount = 0;; tryCount++) {
 		auto conn = getConn();
-		auto ret = conn->Call(cproto::kCmdModifyItem, ns, int(FormatCJson), item.GetCJSON(), mode, ser.Slice(), item.GetStateToken(), 0);
+		auto ret =
+			conn->Call(cproto::kCmdModifyItem, nsName, int(FormatCJson), item.GetCJSON(), mode, ser.Slice(), item.GetStateToken(), 0);
 		if (!ret.Status().ok()) {
 			if (ret.Status().code() != errStateInvalidated || tryCount > 2) return ret.Status();
 			QueryResults qr;
-			Select(Query(ns).Limit(0), qr);
-			auto newImpl = new ItemImpl(getNamespace(ns)->payloadType_, getNamespace(ns)->tagsMatcher_);
+			Select(Query(nsName.ToString()).Limit(0), qr);
+			auto newImpl = new ItemImpl(getNamespace(nsName)->payloadType_, getNamespace(nsName)->tagsMatcher_);
 			char* endp = nullptr;
 			Error err = newImpl->FromJSON(item.impl_->GetJSON(), &endp);
 			if (!err.ok()) return err;
@@ -125,7 +135,7 @@ Error RPCClient::modifyItem(const string& ns, Item& item, int mode, Completion c
 		}
 		try {
 			auto args = ret.GetArgs(2);
-			NSArray nsArray{getNamespace(ns)};
+			NSArray nsArray{getNamespace(nsName)};
 			return QueryResults(conn, std::move(nsArray), nullptr, p_string(args[0]), int(args[1])).Status();
 		} catch (const Error& err) {
 			return err;
@@ -133,7 +143,7 @@ Error RPCClient::modifyItem(const string& ns, Item& item, int mode, Completion c
 	}
 }
 
-Error RPCClient::modifyItemAsync(const string& ns, Item* item, int mode, Completion clientCompl) {
+Error RPCClient::modifyItemAsync(string_view nsName, Item* item, int mode, Completion clientCompl, cproto::ClientConnection* conn) {
 	WrSerializer ser;
 	if (item->impl_->GetPrecepts().size()) {
 		ser.PutVarUint(item->impl_->GetPrecepts().size());
@@ -141,29 +151,33 @@ Error RPCClient::modifyItemAsync(const string& ns, Item* item, int mode, Complet
 			ser.PutVString(p);
 		}
 	}
+	if (!conn) conn = getConn();
 
-	getConn()->Call(
-		[this, ns, mode, item, clientCompl](const net::cproto::RPCAnswer& ret) -> void {
+	string ns = nsName.ToString();
+	conn->Call(
+		[this, ns, mode, item, clientCompl](const net::cproto::RPCAnswer& ret, cproto::ClientConnection* conn) -> void {
 			if (!ret.Status().ok()) {
 				if (ret.Status().code() != errStateInvalidated) return clientCompl(ret.Status());
 				// State invalidated - make select to update state
 				QueryResults* qr = new QueryResults;
-				Select(Query(ns).Limit(0), *qr, [=](const Error& ret) {
-					delete qr;
-					if (!ret.ok()) return clientCompl(ret);
+				Select(Query(ns).Limit(0), *qr,
+					   [=](const Error& ret) {
+						   delete qr;
+						   if (!ret.ok()) return clientCompl(ret);
 
-					// Rebuild item with new state
-					auto pNs = getNamespace(ns);
-					auto newImpl = new ItemImpl(pNs->payloadType_, pNs->tagsMatcher_);
-					Error err = newImpl->FromJSON(item->impl_->GetJSON());
-					newImpl->SetPrecepts(item->impl_->GetPrecepts());
-					item->impl_.reset(newImpl);
-					modifyItemAsync(ns, item, mode, clientCompl);
-				});
+						   // Rebuild item with new state
+						   auto pNs = getNamespace(ns);
+						   auto newImpl = new ItemImpl(pNs->payloadType_, pNs->tagsMatcher_);
+						   Error err = newImpl->FromJSON(item->impl_->GetJSON());
+						   newImpl->SetPrecepts(item->impl_->GetPrecepts());
+						   item->impl_.reset(newImpl);
+						   modifyItemAsync(ns, item, mode, clientCompl, conn);
+					   },
+					   conn);
 			} else
 				try {
 					auto args = ret.GetArgs(2);
-					clientCompl(QueryResults(getConn(), {getNamespace(ns)}, nullptr, p_string(args[0]), int(args[1])).Status());
+					clientCompl(QueryResults(conn, {getNamespace(ns)}, nullptr, p_string(args[0]), int(args[1])).Status());
 				} catch (const Error& err) {
 					clientCompl(err);
 				}
@@ -172,7 +186,7 @@ Error RPCClient::modifyItemAsync(const string& ns, Item* item, int mode, Complet
 	return errOK;
 }
 
-Item RPCClient::NewItem(const string& nsName) {
+Item RPCClient::NewItem(string_view nsName) {
 	try {
 		auto ns = getNamespace(nsName);
 		return ns->NewItem();
@@ -181,9 +195,9 @@ Item RPCClient::NewItem(const string& nsName) {
 	}
 }
 
-Error RPCClient::GetMeta(const string& ns, const string& key, string& data) {
+Error RPCClient::GetMeta(string_view nsName, const string& key, string& data) {
 	try {
-		auto ret = getConn()->Call(cproto::kCmdGetMeta, ns, key);
+		auto ret = getConn()->Call(cproto::kCmdGetMeta, nsName, key);
 		if (ret.Status().ok()) {
 			data = ret.GetArgs(1)[0].As<string>();
 		}
@@ -193,13 +207,13 @@ Error RPCClient::GetMeta(const string& ns, const string& key, string& data) {
 	}
 }
 
-Error RPCClient::PutMeta(const string& ns, const string& key, const string_view& data) {
-	return getConn()->Call(cproto::kCmdPutMeta, ns, key, data).Status();
+Error RPCClient::PutMeta(string_view nsName, const string& key, const string_view& data) {
+	return getConn()->Call(cproto::kCmdPutMeta, nsName, key, data).Status();
 }
 
-Error RPCClient::EnumMeta(const string& ns, vector<string>& keys) {
+Error RPCClient::EnumMeta(string_view nsName, vector<string>& keys) {
 	try {
-		auto ret = getConn()->Call(cproto::kCmdEnumMeta, ns);
+		auto ret = getConn()->Call(cproto::kCmdEnumMeta, nsName);
 		if (ret.Status().ok()) {
 			auto args = ret.GetArgs();
 			keys.clear();
@@ -221,7 +235,7 @@ Error RPCClient::Delete(const Query& query, QueryResults& result) {
 
 	result = QueryResults(conn, {}, nullptr);
 
-	auto icompl = [&result](const RPCAnswer& ret) {
+	auto icompl = [&result](const RPCAnswer& ret, cproto::ClientConnection*) {
 		try {
 			if (ret.Status().ok()) {
 				auto args = ret.GetArgs(2);
@@ -236,7 +250,7 @@ Error RPCClient::Delete(const Query& query, QueryResults& result) {
 	};
 
 	auto ret = conn->Call(cproto::kCmdDeleteQuery, ser.Slice());
-	return icompl(ret);
+	return icompl(ret, conn);
 }
 
 void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
@@ -247,17 +261,17 @@ void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
 	return;
 }
 
-Error RPCClient::Select(const string_view& query, QueryResults& result, Completion clientCompl) {
-	int flags = kResultsJson;
+Error RPCClient::Select(string_view query, QueryResults& result, Completion clientCompl, cproto::ClientConnection* conn) {
+	int flags = result.fetchFlags_ ? result.fetchFlags_ : kResultsJson;
 	WrSerializer pser;
 	h_vector<int32_t, 4> vers;
 	vec2pack(vers, pser);
 
-	auto conn = getConn();
+	if (!conn) conn = getConn();
 
-	result = QueryResults(conn, {}, clientCompl);
+	result = QueryResults(conn, {}, clientCompl, result.fetchFlags_);
 
-	auto icompl = [&result](const RPCAnswer& ret) {
+	auto icompl = [&result](const RPCAnswer& ret, cproto::ClientConnection* /*conn*/) {
 		try {
 			if (ret.Status().ok()) {
 				auto args = ret.GetArgs(2);
@@ -274,16 +288,16 @@ Error RPCClient::Select(const string_view& query, QueryResults& result, Completi
 
 	if (!clientCompl) {
 		auto ret = conn->Call(cproto::kCmdSelectSQL, query, flags, INT_MAX, pser.Slice());
-		return icompl(ret);
+		return icompl(ret, conn);
 	} else {
 		conn->Call(icompl, cproto::kCmdSelectSQL, query, flags, INT_MAX, pser.Slice());
 		return errOK;
 	}
 }
 
-Error RPCClient::Select(const Query& query, QueryResults& result, Completion clientCompl) {
+Error RPCClient::Select(const Query& query, QueryResults& result, Completion clientCompl, cproto::ClientConnection* conn) {
 	WrSerializer qser, pser;
-	int flags = kResultsWithPayloadTypes | kResultsCJson;
+	int flags = result.fetchFlags_ ? result.fetchFlags_ : (kResultsWithPayloadTypes | kResultsCJson);
 	NSArray nsArray;
 	query.Serialize(qser);
 	query.WalkNested(true, true, [this, &nsArray](const Query q) { nsArray.push_back(getNamespace(q._namespace)); });
@@ -294,10 +308,11 @@ Error RPCClient::Select(const Query& query, QueryResults& result, Completion cli
 	}
 	vec2pack(vers, pser);
 
-	auto conn = getConn();
-	result = QueryResults(conn, std::move(nsArray), clientCompl);
+	if (!conn) conn = getConn();
 
-	auto icompl = [&result](const RPCAnswer& ret) {
+	result = QueryResults(conn, std::move(nsArray), clientCompl, result.fetchFlags_);
+
+	auto icompl = [&result](const RPCAnswer& ret, cproto::ClientConnection* /*conn*/) {
 		try {
 			if (ret.Status().ok()) {
 				auto args = ret.GetArgs(2);
@@ -313,28 +328,30 @@ Error RPCClient::Select(const Query& query, QueryResults& result, Completion cli
 
 	if (!clientCompl) {
 		auto ret = conn->Call(cproto::kCmdSelect, qser.Slice(), flags, 100, pser.Slice());
-		return icompl(ret);
+		return icompl(ret, conn);
 	} else {
 		conn->Call(icompl, cproto::kCmdSelect, qser.Slice(), flags, 100, pser.Slice());
 		return errOK;
 	}
 }
 
-Error RPCClient::Commit(const string& ns) { return getConn()->Call(cproto::kCmdCommit, ns).Status(); }
+Error RPCClient::Commit(string_view nsName) { return getConn()->Call(cproto::kCmdCommit, nsName).Status(); }
 
-Error RPCClient::AddIndex(const string& ns, const IndexDef& iDef) {
+Error RPCClient::AddIndex(string_view nsName, const IndexDef& iDef) {
 	WrSerializer ser;
 	iDef.GetJSON(ser);
-	return getConn()->Call(cproto::kCmdAddIndex, ns, ser.Slice()).Status();
+	return getConn()->Call(cproto::kCmdAddIndex, nsName, ser.Slice()).Status();
 }
 
-Error RPCClient::UpdateIndex(const string& ns, const IndexDef& iDef) {
+Error RPCClient::UpdateIndex(string_view nsName, const IndexDef& iDef) {
 	WrSerializer ser;
 	iDef.GetJSON(ser);
-	return getConn()->Call(cproto::kCmdUpdateIndex, ns, ser.Slice()).Status();
+	return getConn()->Call(cproto::kCmdUpdateIndex, nsName, ser.Slice()).Status();
 }
 
-Error RPCClient::DropIndex(const string& ns, const string& idx) { return getConn()->Call(cproto::kCmdDropIndex, ns, idx).Status(); }
+Error RPCClient::DropIndex(string_view nsName, const IndexDef& idx) {
+	return getConn()->Call(cproto::kCmdDropIndex, nsName, idx.name_).Status();
+}
 
 Error RPCClient::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll) {
 	try {
@@ -366,8 +383,51 @@ Error RPCClient::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll) {
 		return err;
 	}
 }
+Error RPCClient::SubscribeUpdates(IUpdatesObserver* observer, bool subscribe) {
+	if (subscribe) {
+		observers_.Add(observer);
+	} else {
+		observers_.Delete(observer);
+	}
+	subscribe = !observers_.empty();
+	Error err;
+	auto updatesConn = updatesConn_.load();
+	if (subscribe && !updatesConn) {
+		auto conn = getConn();
+		err = conn->Call(cproto::kCmdSubscribeUpdates, 1).Status();
+		if (err.ok()) {
+			updatesConn_ = conn;
+		}
+		conn->SetUpdatesHandler([this](const RPCAnswer& ans, cproto::ClientConnection* conn) { onUpdates(ans, conn); });
+	} else if (!subscribe && updatesConn) {
+		err = updatesConn->Call(cproto::kCmdSubscribeUpdates, 0).Status();
+		updatesConn_ = nullptr;
+	}
+	return err;
+}
 
-Namespace* RPCClient::getNamespace(const string& nsName) {
+void RPCClient::checkSubscribes() {
+	bool subscribe = !observers_.empty();
+
+	auto updatesConn = updatesConn_.load();
+	if (subscribe && !updatesConn_) {
+		getConn()->Call(
+
+			[this](const RPCAnswer& ans, cproto::ClientConnection* conn) {
+				if (ans.Status().ok()) {
+					updatesConn_ = conn;
+					observers_.OnConnectionState(errOK);
+					conn->SetUpdatesHandler([this](const RPCAnswer& ans, cproto::ClientConnection* conn) { onUpdates(ans, conn); });
+				}
+			},
+			cproto::kCmdSubscribeUpdates, 1);
+	} else if (!subscribe && updatesConn) {
+		updatesConn->Call([](const RPCAnswer&, cproto::ClientConnection*) {}, cproto::kCmdSubscribeUpdates, 0);
+		updatesConn_ = nullptr;
+	}
+}
+
+Namespace* RPCClient::getNamespace(string_view nsName) {
 	nsMutex_.lock_shared();
 	auto nsIt = namespaces_.find(nsName);
 	if (nsIt != namespaces_.end()) {
@@ -379,7 +439,8 @@ Namespace* RPCClient::getNamespace(const string& nsName) {
 	nsMutex_.lock();
 	nsIt = namespaces_.find(nsName);
 	if (nsIt == namespaces_.end()) {
-		nsIt = namespaces_.emplace(nsName, Namespace::Ptr(new Namespace(nsName))).first;
+		string nsNames = nsName.ToString();
+		nsIt = namespaces_.emplace(nsNames, Namespace::Ptr(new Namespace(nsNames))).first;
 	}
 	nsMutex_.unlock();
 	return nsIt->second.get();
@@ -387,8 +448,65 @@ Namespace* RPCClient::getNamespace(const string& nsName) {
 
 net::cproto::ClientConnection* RPCClient::getConn() {
 	assert(connections_.size());
+	auto conn = connections_.at(curConnIdx_++ % connections_.size()).get();
+	assert(conn);
+	return conn;
+}
 
-	return connections_.at(curConnIdx_++ % connections_.size()).get();
+void RPCClient::onUpdates(const net::cproto::RPCAnswer& ans, cproto::ClientConnection* conn) {
+	if (!ans.Status().ok()) {
+		updatesConn_ = nullptr;
+		observers_.OnConnectionState(ans.Status());
+		return;
+	}
+
+	auto args = ans.GetArgs(3);
+	int64_t lsn(args[0]);
+	string_view nsName(args[1]);
+	string_view pwalRec(args[2]);
+	WALRecord wrec(pwalRec);
+
+	if (wrec.type == WalItemModify) {
+		// Special process for Item Modify
+		auto ns = getNamespace(nsName);
+
+		// Check if cjson with bundled tagsMatcher
+		bool bundledTagsMatcher = wrec.itemModify.itemCJson.length() > 0 && wrec.itemModify.itemCJson[0] == TAG_END;
+
+		if (ns->tagsMatcher_.version() < wrec.itemModify.tmVersion && !bundledTagsMatcher) {
+			// If tags matcher has been updated, but there are no bundled tags matcher in cjson
+			// Then we need ask server to update
+			// printf("%s need update from %d to %d %02x\n", ns->name_.c_str(), ns->tagsMatcher_.version(), wrec.itemModify.tmVersion,
+			// 	   wrec.itemModify.itemCJson[0]);
+			QueryResults* qr = new QueryResults;
+			// keep strings, string_view's are pointing to rx ring buffer, and can be invalidated
+			string nsNameStr = nsName.ToString(), itemCJsonStr = wrec.itemModify.itemCJson.ToString();
+
+			Select(Query(nsNameStr).Limit(0), *qr,
+				   [=](const Error& /*err*/) {
+					   delete qr;
+					   WALRecord wrec1 = wrec;
+					   wrec1.itemModify.itemCJson = itemCJsonStr;
+					   observers_.OnWALUpdate(lsn, nsNameStr, wrec1);
+				   },
+				   conn);
+			return;
+		} else {
+			// We have bundled tagsMatcher
+			if (bundledTagsMatcher) {
+				// printf("%s bundled tm %d to %d\n", ns->name_.c_str(), ns->tagsMatcher_.version(), wrec.itemModify.tmVersion);
+				Serializer rdser(wrec.itemModify.itemCJson);
+				rdser.GetVarUint();
+				uint32_t tmOffset = rdser.GetUInt32();
+				// read tags matcher update
+				rdser.SetPos(tmOffset);
+				std::unique_lock<shared_timed_mutex> lck(ns->lck_);
+				ns->tagsMatcher_.deserialize(rdser, wrec.itemModify.tmVersion, ns->tagsMatcher_.stateToken());
+			}
+		}
+	}
+
+	observers_.OnWALUpdate(lsn, nsName, wrec);
 }
 
 }  // namespace client

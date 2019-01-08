@@ -9,30 +9,51 @@ namespace net {
 namespace cproto {
 
 const auto kCProtoTimeoutSec = 300.;
+const auto kUpdatesResendTimeout = 0.1;
 
 ServerConnection::ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher)
 	: net::ConnectionST(fd, loop), dispatcher_(dispatcher) {
 	timeout_.start(kCProtoTimeoutSec);
+	updates_async_.set<ServerConnection, &ServerConnection::async_cb>(this);
+	updates_timeout_.set<ServerConnection, &ServerConnection::timeout_cb>(this);
+	updates_async_.set(loop);
+	updates_timeout_.set(loop);
+
+	updates_timeout_.start(kUpdatesResendTimeout, kUpdatesResendTimeout);
+	updates_async_.start();
+
 	callback(io_, ev::READ);
 }
 
 bool ServerConnection::Restart(int fd) {
 	restart(fd);
-	respSent_ = false;
-	callback(io_, ev::READ);
 	timeout_.start(kCProtoTimeoutSec);
+	updates_async_.start();
+	callback(io_, ev::READ);
 	return true;
 }
 
 void ServerConnection::Attach(ev::dynamic_loop &loop) {
+	async_.set<ServerConnection, &ServerConnection::async_cb>(this);
 	if (!attached_) {
 		attach(loop);
+
 		timeout_.start(kCProtoTimeoutSec);
+		updates_async_.set(loop);
+		updates_async_.start();
+		updates_timeout_.set(loop);
+		updates_timeout_.start(kUpdatesResendTimeout, kUpdatesResendTimeout);
 	}
 }
 
 void ServerConnection::Detach() {
-	if (attached_) detach();
+	if (attached_) {
+		detach();
+		updates_async_.stop();
+		updates_async_.reset();
+		updates_timeout_.stop();
+		updates_timeout_.reset();
+	}
 }
 
 void ServerConnection::onClose() {
@@ -46,12 +67,15 @@ void ServerConnection::onClose() {
 		dispatcher_.onClose_(ctx, errOK);
 	}
 	clientData_.reset();
+	updates_mtx_.lock();
+	updates_.clear();
+	updates_mtx_.unlock();
 }
 
 void ServerConnection::handleRPC(Context &ctx) {
 	Error err = dispatcher_.handle(ctx);
 
-	if (!respSent_) {
+	if (!ctx.respSent_) {
 		responceRPC(ctx, err, Args());
 	}
 }
@@ -63,6 +87,7 @@ void ServerConnection::onRead() {
 		Context ctx;
 		ctx.call = nullptr;
 		ctx.writer = this;
+		ctx.respSent_ = false;
 
 		auto len = rdBuf_.peek(reinterpret_cast<char *>(&hdr), sizeof(hdr));
 
@@ -113,19 +138,13 @@ void ServerConnection::onRead() {
 			closeConn_ = true;
 		}
 
-		respSent_ = false;
 		rdBuf_.erase(hdr.len);
 		timeout_.start(kCProtoTimeoutSec);
 	}
 }
 
-void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args &args) {
-	if (respSent_) {
-		fprintf(stderr, "Warning - RPC responce already sent\n");
-		return;
-	}
-
-	WrSerializer ser(wrBuf_.get_chunk());
+static chunk packRPC(chunk chunk, Context &ctx, const Error &status, const Args &args) {
+	WrSerializer ser(std::move(chunk));
 
 	CProtoHeader hdr;
 	hdr.len = 0;
@@ -144,9 +163,18 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 	ser.PutVString(status.what());
 	args.Pack(ser);
 	reinterpret_cast<CProtoHeader *>(ser.Buf())->len = ser.Len() - sizeof(hdr);
-	wrBuf_.write(ser.DetachChunk());
+	return ser.DetachChunk();
+}
 
-	respSent_ = true;
+void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args &args) {
+	if (ctx.respSent_) {
+		fprintf(stderr, "Warning - RPC responce already sent\n");
+		return;
+	}
+
+	wrBuf_.write(packRPC(wrBuf_.get_chunk(), ctx, status, args));
+
+	ctx.respSent_ = true;
 	// if (canWrite_) {
 	// 	write_cb();
 	// }
@@ -154,6 +182,40 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 	if (dispatcher_.logger_ != nullptr) {
 		dispatcher_.logger_(ctx, status, args);
 	}
+}
+
+void ServerConnection::CallRPC(CmdCode cmd, const Args &args) {
+	RPCCall call{cmd, 0, {}};
+	cproto::Context ctx{&call, this, {}, false};
+	auto packed = packRPC(chunk(), ctx, errOK, args);
+	updates_mtx_.lock();
+	updates_.emplace_back(std::move(packed));
+	updates_mtx_.unlock();
+	// async_.send();
+}
+
+void ServerConnection::sendUpdates() {
+	if (wrBuf_.size() + 10 > wrBuf_.capacity()) {
+		return;
+	}
+
+	std::vector<chunk> updates;
+	updates_mtx_.lock();
+	updates.swap(updates_);
+	updates_mtx_.unlock();
+	if (updates.size() > 2) {
+		WrSerializer ser(wrBuf_.get_chunk());
+		for (auto &ch : updates) {
+			ser.Write(string_view(reinterpret_cast<char *>(ch.data()), ch.size()));
+		}
+		wrBuf_.write(ser.DetachChunk());
+	} else {
+		for (auto &ch : updates) {
+			wrBuf_.write(std::move(ch));
+		}
+	}
+
+	callback(io_, ev::WRITE);
 }
 
 }  // namespace cproto

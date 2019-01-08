@@ -50,7 +50,7 @@ Error ItemImpl::FromCJSON(const string_view &slice) {
 	auto err = decoder.Decode(&pl, rdser, ser_);
 
 	if (err.ok() && !rdser.Eof() && rdser.Pos() != tmOffset)
-		return Error(errParseJson, "Internal error - left unparsed data %d", int(rdser.Pos()));
+		return Error(errParseJson, "Internal error - left unparsed data %d", rdser.Pos());
 	tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
 	pl.Set(0, {Variant(p_string(&tupleData_))});
 

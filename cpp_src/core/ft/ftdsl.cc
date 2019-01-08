@@ -154,7 +154,7 @@ void FtDSLQuery::parseFields(wstring &utf16str, wstring::iterator &it, h_vector<
 			string fname = utf16_to_utf8(wstring(&*begIt, endIt - begIt));
 			auto f = fields_.find(fname);
 			if (f == fields_.end()) {
-				throw Error(errLogic, "Field '%s',is not included to full text index", fname.c_str());
+				throw Error(errLogic, "Field '%s',is not included to full text index", fname);
 			}
 			assertf(f->second < int(fieldsBoost.size()), "f=%d,fieldsBoost.size()=%d", f->second, int(fieldsBoost.size()));
 			fieldsBoost[f->second] = boost;

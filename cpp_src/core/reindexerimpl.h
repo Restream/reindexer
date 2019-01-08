@@ -14,42 +14,48 @@
 #include "querystat.h"
 #include "replicator/updatesobserver.h"
 #include "tools/errors.h"
+#include "transaction.h"
 
 using std::shared_ptr;
 using std::string;
 
 namespace reindexer {
 
+class Replicator;
 class ReindexerImpl {
 public:
-	typedef std::function<void(const Error &err)> Completion;
+	using Completion = Transaction::Completion;
 
 	ReindexerImpl();
 	~ReindexerImpl();
 
 	Error Connect(const string &dsn);
 	Error EnableStorage(const string &storagePath, bool skipPlaceholderCheck = false);
-	Error OpenNamespace(const string &_namespace, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing(),
-						CacheMode cacheMode = CacheMode::CacheModeOn);
+	Error OpenNamespace(string_view nsName, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing());
 	Error AddNamespace(const NamespaceDef &nsDef);
-	Error CloseNamespace(const string &_namespace);
-	Error DropNamespace(const string &_namespace);
-	Error AddIndex(const string &_namespace, const IndexDef &index);
-	Error UpdateIndex(const string &_namespace, const IndexDef &index);
-	Error DropIndex(const string &_namespace, const string &index);
+	Error CloseNamespace(string_view nsName);
+	Error DropNamespace(string_view nsName);
+	Error AddIndex(string_view nsName, const IndexDef &index);
+	Error UpdateIndex(string_view nsName, const IndexDef &index);
+	Error DropIndex(string_view nsName, const IndexDef &index);
 	Error EnumNamespaces(vector<NamespaceDef> &defs, bool bEnumAll);
-	Error Insert(const string &_namespace, Item &item, Completion cmpl = nullptr);
-	Error Update(const string &_namespace, Item &item, Completion cmpl = nullptr);
-	Error Upsert(const string &_namespace, Item &item, Completion cmpl = nullptr);
-	Error Delete(const string &_namespace, Item &item, Completion cmpl = nullptr);
+	Error Insert(string_view nsName, Item &item, Completion cmpl = nullptr);
+	Error Update(string_view nsName, Item &item, Completion cmpl = nullptr);
+	Error Upsert(string_view nsName, Item &item, Completion cmpl = nullptr);
+	Error Delete(string_view nsName, Item &item, Completion cmpl = nullptr);
 	Error Delete(const Query &query, QueryResults &result);
-	Error Select(const string_view &query, QueryResults &result, Completion cmpl = nullptr);
+	Error Select(string_view query, QueryResults &result, Completion cmpl = nullptr);
 	Error Select(const Query &query, QueryResults &result, Completion cmpl = nullptr);
-	Error Commit(const string &namespace_);
-	Item NewItem(const string &_namespace);
-	Error GetMeta(const string &_namespace, const string &key, string &data);
-	Error PutMeta(const string &_namespace, const string &key, const string_view &data);
-	Error EnumMeta(const string &_namespace, vector<string> &keys);
+	Error Commit(string_view nsName);
+	Item NewItem(string_view nsName);
+
+	Transaction NewTransaction(const string &nsName);
+	Error CommitTransaction(Transaction &tr);
+	Error RollBackTransaction(Transaction &tr);
+
+	Error GetMeta(string_view nsName, const string &key, string &data);
+	Error PutMeta(string_view nsName, const string &key, string_view data);
+	Error EnumMeta(string_view nsName, vector<string> &keys);
 	Error InitSystemNamespaces();
 	Error SubscribeUpdates(IUpdatesObserver *observer, bool subscribe);
 
@@ -91,14 +97,17 @@ protected:
 	JoinedSelectors prepareJoinedSelectors(const Query &q, QueryResults &result, NsLocker &locks, h_vector<Query, 4> &queries,
 										   SelectFunctionsHolder &func);
 
-	void syncSystemNamespaces(const string &nsName);
+	void ensureDataLoaded(Namespace::Ptr &ns);
+	void syncSystemNamespaces(string_view nsName);
 	void createSystemNamespaces();
-	void updateSystemNamespace(const string &nsName, Item &item);
-	Error applyConfig();
+	Error updateDbFromConfig(string_view configNsName, Item &configItem);
+	void updateConfigProvider(Item &configItem);
+	void onProfiligConfigLoad();
+	void tryLoadReplicatorConfFromFile();
 
 	void backgroundRoutine();
-	Error closeNamespace(const string &_namespace, bool dropStorage);
-	Namespace::Ptr getNamespace(const string &_namespace);
+	Error closeNamespace(string_view nsName, bool dropStorage, bool enableDropSlave = false);
+	Namespace::Ptr getNamespace(string_view nsName);
 	std::vector<Namespace::Ptr> getNamespaces();
 	std::vector<string> getNamespacesNames();
 
@@ -111,10 +120,12 @@ protected:
 	std::atomic<bool> stopBackgroundThread_;
 
 	QueriesStatTracer queriesStatTracker_;
-	std::shared_ptr<DBProfilingConfig> profConfig_;
-	std::mutex profCfgMtx_;
-
 	UpdatesObservers observers_;
+	std::unique_ptr<Replicator> replicator_;
+	DBConfigProvider configProvider_;
+
+	shared_timed_mutex storageMtx_;
+	friend class Replicator;
 };
 
 }  // namespace reindexer

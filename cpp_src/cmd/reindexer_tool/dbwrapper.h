@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <vector>
 #include "iotools.h"
+#include "replicator/updatesobserver.h"
 #include "tools/errors.h"
 
 namespace reindexer_tool {
@@ -14,7 +15,7 @@ using std::unordered_map;
 using reindexer::Error;
 
 template <typename _DB>
-class DBWrapper {
+class DBWrapper : public reindexer::IUpdatesObserver {
 public:
 	template <typename... Args>
 	DBWrapper(const string& outFileName, const string& inFileName, const string& command, int connPoolSize, int numThreads, Args... args)
@@ -31,7 +32,7 @@ public:
 protected:
 	bool Interactive();
 	bool FromFile();
-	Error queryResultsToJson(ostream& o, const typename _DB::QueryResultsT& r);
+	Error queryResultsToJson(ostream& o, const typename _DB::QueryResultsT& r, bool isWALQuery);
 
 	Error ProcessCommand(string command);
 	Error commandSelect(const string& command);
@@ -45,6 +46,10 @@ protected:
 	Error commandQuit(const string& command);
 	Error commandSet(const string& command);
 	Error commandBench(const string& command);
+	Error commandSubscribe(const string& command);
+
+	void OnWALUpdate(int64_t lsn, string_view nsName, const reindexer::WALRecord& wrec) override final;
+	void OnConnectionState(const Error& err) override;
 
 	struct commandDefinition {
 		string command;
@@ -117,6 +122,10 @@ protected:
 		{"\\bench",		"Run benchmark",&DBWrapper::commandBench,R"help(
 	Syntax:
 		\bench <time>
+		)help"},
+		{"\\subscribe",	"Subscribe to upstream updates",&DBWrapper::commandSubscribe,R"help(
+	Syntax:
+		\subscribe <on|off>
 		)help"},
 		{"\\quit",		"Exit from tool",&DBWrapper::commandQuit,""},
 		{"\\help",		"Show help",&DBWrapper::commandHelp,""}

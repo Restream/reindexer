@@ -67,6 +67,12 @@ public:
 
 	/**
 	 * @public
+	 * Check if orignal buffer is empty
+	 */
+	constexpr bool empty() const { return size_ == 0; }
+
+	/**
+	 * @public
 	 * Get symbol at position
 	 * @param idx index of position
 	 */

@@ -54,6 +54,8 @@ std::unordered_map<CollateMode, const string, std::hash<int>, std::equal_to<int>
 // clang-format on
 
 IndexDef::IndexDef() {}
+IndexDef::IndexDef(const string &name) : name_(name) {}
+
 IndexDef::IndexDef(const string &name, const JsonPaths &jsonPaths, const string &indexType, const string &fieldType, const IndexOpts opts)
 	: name_(name), jsonPaths_(jsonPaths), indexType_(indexType), fieldType_(fieldType), opts_(opts) {}
 
@@ -65,9 +67,9 @@ IndexDef::IndexDef(const string &name, const JsonPaths &jsonPaths, const IndexTy
 	this->FromType(type);
 }
 
-bool IndexDef::operator==(const IndexDef &other) const {
+bool IndexDef::IsEqual(const IndexDef &other, bool skipConfig) const {
 	return name_ == other.name_ && jsonPaths_ == other.jsonPaths_ && Type() == other.Type() && fieldType_ == other.fieldType_ &&
-		   opts_ == other.opts_;
+		   opts_.IsEqual(other.opts_, skipConfig);
 }
 
 IndexType IndexDef::Type() const {
@@ -81,8 +83,7 @@ IndexType IndexDef::Type() const {
 		if (fieldType_ == it.second.fieldType && iType == it.second.indexType) return it.first;
 	}
 
-	throw Error(errParams, "Unsupported combination of field '%s' type '%s' and index type '%s'", name_.c_str(), fieldType_.c_str(),
-				indexType_.c_str());
+	throw Error(errParams, "Unsupported combination of field '%s' type '%s' and index type '%s'", name_, fieldType_, indexType_);
 }
 
 void IndexDef::FromType(IndexType type) {
@@ -169,7 +170,7 @@ Error IndexDef::FromJSON(JsonValue &jvalue) {
 					opts_.collateOpts_ = CollateOpts(sortOrderLetters);
 				}
 			} else {
-				return Error(errParams, "Unknown collate mode %s", collateStr.c_str());
+				return Error(errParams, "Unknown collate mode %s", collateStr);
 			}
 		}
 	} catch (const Error &err) {
@@ -179,7 +180,7 @@ Error IndexDef::FromJSON(JsonValue &jvalue) {
 	return 0;
 }
 
-void IndexDef::GetJSON(WrSerializer &ser, bool describeCompat) const {
+void IndexDef::GetJSON(WrSerializer &ser, int formatFlags) const {
 	JsonBuilder builder(ser);
 
 	builder.Put("name", name_)
@@ -193,7 +194,7 @@ void IndexDef::GetJSON(WrSerializer &ser, bool describeCompat) const {
 		.Put("sort_order_letters", opts_.collateOpts_.sortOrderTable.GetSortOrderCharacters())
 		.Raw("config", opts_.hasConfig() ? opts_.config.c_str() : "{}");
 
-	if (describeCompat) {
+	if (formatFlags & kIndexJSONWithDescribe) {
 		// extra data for support describe.
 		// TODO: deprecate and remove it
 		builder.Put("is_sortable", isSortable(Type()));
@@ -203,6 +204,7 @@ void IndexDef::GetJSON(WrSerializer &ser, bool describeCompat) const {
 			arr.Put(nullptr, cond);
 		}
 	}
+
 	auto arrNode = builder.Array("json_paths");
 	for (auto &jsonPath : jsonPaths_) {
 		arrNode.Put(nullptr, jsonPath);

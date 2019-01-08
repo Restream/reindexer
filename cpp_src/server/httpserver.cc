@@ -59,6 +59,28 @@ int HTTPServer::GetSQLQuery(http::Context &ctx) {
 	return queryResults(ctx, res, true, limit, offset);
 }
 
+int HTTPServer::GetSQLSuggest(http::Context &ctx) {
+	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
+	reindexer::QueryResults res;
+	string sqlQuery = urldecode2(ctx.request->params.Get("q"));
+	string_view posParam = ctx.request->params.Get("pos");
+	int pos = stoi(posParam);
+	(void)pos;
+	if (sqlQuery.empty()) {
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Missed `q` parameter"));
+	}
+	vector<string> suggests = {"SELECT", "FROM", "WHERE", "tag1", "media_items", "id", "name", "title"};
+
+	WrSerializer ser(ctx.writer->GetChunk());
+	reindexer::JsonBuilder builder(ser);
+	auto node = builder.Array("suggests");
+	for (auto &suggest : suggests) node.Put(nullptr, suggest);
+	node.End();
+	builder.End();
+
+	return ctx.JSON(http::StatusOK, ser.DetachChunk());
+}
+
 int HTTPServer::PostSQLQuery(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
 	reindexer::QueryResults res;
@@ -452,17 +474,17 @@ int HTTPServer::DeleteIndex(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
 
 	string nsName = urldecode2(ctx.request->urlParams[1]);
-	string idxName = urldecode2(ctx.request->urlParams[2]);
+	IndexDef idef(urldecode2(ctx.request->urlParams[2]));
 
 	if (nsName.empty()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
 
-	if (idxName.empty()) {
+	if (idef.name_.empty()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Index is not specified"));
 	}
 
-	auto status = db->DropIndex(nsName, idxName);
+	auto status = db->DropIndex(nsName, idef);
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
@@ -559,6 +581,7 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	router_.POST<HTTPServer, &HTTPServer::PostQuery>("/api/v1/db/:db/query", this);
 	router_.POST<HTTPServer, &HTTPServer::PostSQLQuery>("/api/v1/db/:db/sqlquery", this);
 	router_.DELETE<HTTPServer, &HTTPServer::DeleteQuery>("/api/v1/db/:db/query", this);
+	router_.GET<HTTPServer, &HTTPServer::GetSQLSuggest>("/api/v1/db/:db/suggest", this);
 
 	router_.GET<HTTPServer, &HTTPServer::GetDatabases>("/api/v1/db", this);
 	router_.POST<HTTPServer, &HTTPServer::PostDatabase>("/api/v1/db", this);

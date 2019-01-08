@@ -167,7 +167,7 @@ func (binding *Builtin) Ping() error {
 	return err2go(C.reindexer_ping(binding.rx))
 }
 
-func (binding *Builtin) ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, precepts []string, stateToken int, txID int) (bindings.RawBuffer, error) {
+func (binding *Builtin) ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, precepts []string, stateToken int) (bindings.RawBuffer, error) {
 	if binding.cgoLimiter != nil {
 		binding.cgoLimiter <- struct{}{}
 		defer func() { <-binding.cgoLimiter }()
@@ -179,7 +179,6 @@ func (binding *Builtin) ModifyItem(nsHash int, namespace string, format int, dat
 	ser1.PutVarCUInt(format)
 	ser1.PutVarCUInt(mode)
 	ser1.PutVarCUInt(stateToken)
-	ser1.PutVarCUInt(txID)
 
 	ser1.PutVarCUInt(len(precepts))
 	for _, precept := range precepts {
@@ -189,14 +188,34 @@ func (binding *Builtin) ModifyItem(nsHash int, namespace string, format int, dat
 
 	return ret2go(C.reindexer_modify_item_packed(binding.rx, buf2c(packedArgs), buf2c(data)))
 }
+func (binding *Builtin) ModifyItemTx(txCtx *bindings.TxCtx, format int, data []byte, mode int, precepts []string, stateToken int) error {
+	if binding.cgoLimiter != nil {
+		binding.cgoLimiter <- struct{}{}
+		defer func() { <-binding.cgoLimiter }()
+	}
 
-func (binding *Builtin) OpenNamespace(namespace string, enableStorage, dropOnFormatError bool, cacheMode uint8) error {
+	ser1 := cjson.NewPoolSerializer()
+	defer ser1.Close()
+	ser1.PutVarCUInt(format)
+	ser1.PutVarCUInt(mode)
+	ser1.PutVarCUInt(stateToken)
+
+	ser1.PutVarCUInt(len(precepts))
+	for _, precept := range precepts {
+		ser1.PutVString(precept)
+	}
+	packedArgs := ser1.Bytes()
+
+	return err2go(C.reindexer_modify_item_packed_tx(binding.rx, C.uintptr_t(txCtx.Id), buf2c(packedArgs), buf2c(data)))
+
+}
+func (binding *Builtin) OpenNamespace(namespace string, enableStorage, dropOnFormatError bool) error {
 	var storageOptions bindings.StorageOptions
 	storageOptions.Enabled(enableStorage).DropOnFileFormatError(dropOnFormatError)
 	opts := C.StorageOpts{
-		options: C.uint8_t(storageOptions),
+		options: C.uint16_t(storageOptions),
 	}
-	return err2go(C.reindexer_open_namespace(binding.rx, str2c(namespace), opts, C.uint8_t(cacheMode)))
+	return err2go(C.reindexer_open_namespace(binding.rx, str2c(namespace), opts))
 }
 func (binding *Builtin) CloseNamespace(namespace string) error {
 	return err2go(C.reindexer_close_namespace(binding.rx, str2c(namespace)))
@@ -256,6 +275,23 @@ func (binding *Builtin) Select(query string, withItems bool, ptVersions []int32,
 		defer func() { <-binding.cgoLimiter }()
 	}
 	return ret2go(C.reindexer_select(binding.rx, str2c(query), bool2cint(withItems), (*C.int32_t)(unsafe.Pointer(&ptVersions[0])), C.int(len(ptVersions))))
+}
+func (binding *Builtin) BeginTx(namespace string) (ctx bindings.TxCtx, err error) {
+	ret := C.reindexer_start_transaction(binding.rx, str2c(namespace))
+	err = err2go(ret.err)
+	if err != nil {
+		return
+	}
+	ctx.Id = uint64(ret.tx_id)
+	return
+}
+
+func (binding *Builtin) CommitTx(ctx *bindings.TxCtx) (bindings.RawBuffer, error) {
+	return ret2go(C.reindexer_commit_transaction(binding.rx, C.uintptr_t(ctx.Id)))
+}
+
+func (binding *Builtin) RollbackTx(ctx *bindings.TxCtx) error {
+	return err2go(C.reindexer_rollback_transaction(binding.rx, C.uintptr_t(ctx.Id)))
 }
 
 func (binding *Builtin) SelectQuery(data []byte, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {

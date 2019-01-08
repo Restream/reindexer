@@ -42,16 +42,15 @@ public:
 	void setUpdated() { updated_ = true; }
 
 	bool try_merge(const TagsMatcher& tm) {
-		if (tm.isUpdated()) {
-			auto tmp = impl_;
-			if (!tmp.clone()->merge(*tm.impl_.get())) {
-				return false;
-			}
-			impl_ = tmp;
-			updated_ = true;
+		auto tmp = impl_;
+		if (!tmp.clone()->merge(*tm.impl_.get())) {
+			return false;
 		}
+		impl_ = tmp;
+		updated_ = true;
 		return true;
 	}
+
 	TagsPath path2tag(const std::string& jsonPath, bool& updated) {
 		updated = false;
 		string field;

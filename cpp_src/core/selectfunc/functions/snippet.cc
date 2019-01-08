@@ -9,7 +9,7 @@ namespace reindexer {
 
 bool Snippet::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct &func) {
 	if (!func.ctx) return false;
-	if (func.funcArgs.size() < 4) throw Error(errParams, "Invalid snippet params need minimum 4 - have %d", int(func.funcArgs.size()));
+	if (func.funcArgs.size() < 4) throw Error(errParams, "Invalid snippet params need minimum 4 - have %d", func.funcArgs.size());
 
 	FtCtx::Ptr ftctx = reindexer::reinterpret_pointer_cast<FtCtx>(func.ctx);
 	AreaHolder::Ptr area = ftctx->Area(res.id);
@@ -31,13 +31,13 @@ bool Snippet::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 	try {
 		back = stoi(func.funcArgs[2]);
 	} catch (std::exception &) {
-		throw Error(errParams, "Invalid snippet param back - %s is not a number", func.funcArgs[2].c_str());
+		throw Error(errParams, "Invalid snippet param back - %s is not a number", func.funcArgs[2]);
 	}
 
 	try {
 		front = stoi(func.funcArgs[3]);
 	} catch (std::exception &) {
-		throw Error(errParams, "Invalid snippet param front - %s is not a number", func.funcArgs[3].c_str());
+		throw Error(errParams, "Invalid snippet param front - %s is not a number", func.funcArgs[3]);
 	}
 
 	AreaVec va = *pva;

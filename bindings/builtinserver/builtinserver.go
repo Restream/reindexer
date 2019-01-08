@@ -134,8 +134,8 @@ func (server *BuiltinServer) Clone() bindings.RawBinding {
 	return &BuiltinServer{}
 }
 
-func (server *BuiltinServer) OpenNamespace(namespace string, enableStorage, dropOnFileFormatError bool, cacheMode uint8) error {
-	return server.builtin.OpenNamespace(namespace, enableStorage, dropOnFileFormatError, cacheMode)
+func (server *BuiltinServer) OpenNamespace(namespace string, enableStorage, dropOnFileFormatError bool) error {
+	return server.builtin.OpenNamespace(namespace, enableStorage, dropOnFileFormatError)
 }
 
 func (server *BuiltinServer) CloseNamespace(namespace string) error {
@@ -170,8 +170,23 @@ func (server *BuiltinServer) GetMeta(namespace, key string) (bindings.RawBuffer,
 	return server.builtin.GetMeta(namespace, key)
 }
 
-func (server *BuiltinServer) ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, percepts []string, stateToken int, txID int) (bindings.RawBuffer, error) {
-	return server.builtin.ModifyItem(nsHash, namespace, format, data, mode, percepts, stateToken, txID)
+func (server *BuiltinServer) ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, percepts []string, stateToken int) (bindings.RawBuffer, error) {
+	return server.builtin.ModifyItem(nsHash, namespace, format, data, mode, percepts, stateToken)
+}
+
+func (server *BuiltinServer) BeginTx(namespace string) (bindings.TxCtx, error) {
+	return server.builtin.BeginTx(namespace)
+}
+
+func (server *BuiltinServer) CommitTx(txCtx *bindings.TxCtx) (bindings.RawBuffer, error) {
+	return server.builtin.CommitTx(txCtx)
+}
+
+func (server *BuiltinServer) RollbackTx(txCtx *bindings.TxCtx) error {
+	return server.builtin.RollbackTx(txCtx)
+}
+func (server *BuiltinServer) ModifyItemTx(txCtx *bindings.TxCtx, format int, data []byte, mode int, precepts []string, stateToken int) error {
+	return server.builtin.ModifyItemTx(txCtx, format, data, mode, precepts, stateToken)
 }
 
 func (server *BuiltinServer) Select(query string, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {

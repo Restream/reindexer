@@ -141,53 +141,56 @@ func init() {
 func FillTestItemsWithInsensitiveIndex() {
 	tx := newTestTx(DB, testSortDataNumeric)
 	for _, item := range testSortModeDataNumeric {
-		if cnt, err := tx.Insert(item); err != nil {
+		if err := tx.Insert(item); err != nil {
 			panic(err)
-		} else if cnt == 0 {
-			panic(fmt.Errorf("Could not insert item: %+v", *item))
 		}
 	}
-	tx.MustCommit(nil)
+	cnt := tx.MustCommit(nil)
+	if cnt != len(testSortModeDataNumeric) {
+		panic(fmt.Errorf("Could not commit testSortModeDataNumeric"))
+	}
 
 	tx = newTestTx(DB, testSortDataAscii)
 	for _, item := range testSortModeDataAscii {
-		if cnt, err := tx.Insert(item); err != nil {
+		if err := tx.Insert(item); err != nil {
 			panic(err)
-		} else if cnt == 0 {
-			panic(fmt.Errorf("Could not insert item: %+v", *item))
 		}
 	}
-	tx.MustCommit(nil)
-
+	cnt = tx.MustCommit(nil)
+	if cnt != len(testSortModeDataAscii) {
+		panic(fmt.Errorf("Could not commit testSortModeDataAscii"))
+	}
 	tx = newTestTx(DB, testSortDataUtf)
 	for _, item := range testSortModeDataUtf {
-		if cnt, err := tx.Insert(item); err != nil {
+		if err := tx.Insert(item); err != nil {
 			panic(err)
-		} else if cnt == 0 {
-			panic(fmt.Errorf("Could not insert item: %+v", *item))
 		}
 	}
-	tx.MustCommit(nil)
-
+	cnt = tx.MustCommit(nil)
+	if cnt != len(testSortModeDataUtf) {
+		panic(fmt.Errorf("Could not commit testSortModeDataUtf"))
+	}
 	tx = newTestTx(DB, testSortDataAsciiHash)
 	for _, item := range testSortModeDataAsciiHash {
-		if cnt, err := tx.Insert(item); err != nil {
+		if err := tx.Insert(item); err != nil {
 			panic(err)
-		} else if cnt == 0 {
-			panic(fmt.Errorf("Could not insert item: %+v", *item))
 		}
 	}
-	tx.MustCommit(nil)
-
+	cnt = tx.MustCommit(nil)
+	if cnt != len(testSortModeDataAsciiHash) {
+		panic(fmt.Errorf("Could not commit testSortModeDataAsciiHash"))
+	}
 	tx = newTestTx(DB, testSortDataCustom)
+
 	for _, item := range testSortModeDataCustomSource {
-		if cnt, err := tx.Insert(item); err != nil {
+		if err := tx.Insert(item); err != nil {
 			panic(err)
-		} else if cnt == 0 {
-			panic(fmt.Errorf("Could not insert item: %+v", *item))
 		}
 	}
-	tx.MustCommit(nil)
+	cnt = tx.MustCommit(nil)
+	if cnt != len(testSortModeDataCustomSource) {
+		panic(fmt.Errorf("Could not commit testSortModeDataCustomSource"))
+	}
 }
 
 func StrToInt(s string) (v int, hasValue bool) {

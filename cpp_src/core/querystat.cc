@@ -38,6 +38,9 @@ void QueryPerfStat::GetJSON(WrSerializer &ser) const {
 	builder.Put("last_sec_qps", perf.avgHitCount);
 	builder.Put("last_sec_avg_lock_time_us", perf.avgLockTimeUs);
 	builder.Put("last_sec_avg_latency_us", perf.avgTimeUs);
+	builder.Put("latency_stddev", perf.stddev);
+	builder.Put("min_latency_us", perf.minTimeUs);
+	builder.Put("max_latency_us", perf.maxTimeUs);
 }
 
 }  // namespace reindexer
