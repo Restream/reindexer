@@ -49,6 +49,7 @@ The core is written in C++ and the application level API is in Go.
     - [Web interface](#web-interface)
     - [Command line tool](#command-line-tool)
     - [Dump and restore database](#dump-and-restore-database)
+    - [Replication](#replication)
 - [Integration with other program languages](#integration-with-other-program-languages)
 	- [Pyreindexer](#pyreindexer)
 	- [HTTP REST API](#http-rest-api)
@@ -119,13 +120,13 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/restream/reindexer"
+	"git.itv.restr.im/itv-backend/reindexer"
 	// choose how the Reindexer binds to the app (in this case "builtin," which means link Reindexer as a static library)
-	_ "github.com/restream/reindexer/bindings/builtin"
+	_ "git.itv.restr.im/itv-backend/reindexer/bindings/builtin"
 
 	// OR link Reindexer as static library with bundled server.
-	// _ "github.com/restream/reindexer/bindings/builtinserver"
-	// "github.com/restream/reindexer/bindings/builtinserver/config"
+	// _ "git.itv.restr.im/itv-backend/reindexer/bindings/builtinserver"
+	// "git.itv.restr.im/itv-backend/reindexer/bindings/builtinserver/config"
 
 )
 
@@ -646,6 +647,16 @@ Restore database from backup file:
 ```sh
 reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --filename mydb.rxdump
 ```
+### Replication
+
+Reindexer is support master slave replication. To create slave DB the following command can be used: 
+
+```sh
+reindexer_tool --dsn cproto://127.0.0.1:6534/slavedb --command '\upsert #config {"type":"replication","replication":{"role":"slave","master_dsn":"cproto://127.0.0.1:6534/masterdb","cluster_id":2}}'
+```
+
+More details about replication is [here](replication.md)
+
 
 ## Integration with other program languages
 

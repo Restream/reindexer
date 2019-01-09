@@ -50,7 +50,7 @@ Reindexer is fast.
     - [Items](#items)
     - [JoinCacheMemStats](#joincachememstats)
     - [JoinedDef](#joineddef)
-    - [LogQueriesConfig](#logqueriesconfig)
+    - [NamespacesConfig](#namespacesconfig)
     - [Namespace](#namespace)
     - [NamespaceMemStats](#namespacememstats)
     - [NamespacePerfStats](#namespaceperfstats)
@@ -62,6 +62,7 @@ Reindexer is fast.
     - [QueryCacheMemStats](#querycachememstats)
     - [QueryItems](#queryitems)
     - [QueryPerfStats](#queryperfstats)
+    - [ReplicationConfig](#replicationconfig)
     - [SelectPerfStats](#selectperfstats)
     - [SortDef](#sortdef)
     - [StatusResponse](#statusresponse)
@@ -104,7 +105,9 @@ Reindexer is fast.
 
 
 
+
 ## Paths
+
 
 ### List available databases
 ```
@@ -136,6 +139,7 @@ This operation will output list of all available databases
 * databases
 
 
+
 ### Create new database
 ```
 POST /db
@@ -164,6 +168,7 @@ This operation will create new database. If database is already exists, then err
 #### Tags
 
 * databases
+
 
 
 ### Drop database
@@ -198,6 +203,7 @@ Can not be undone. USE WITH CAUTION.
 * databases
 
 
+
 ### List available namespaces
 ```
 GET /db/{database}/namespaces
@@ -228,6 +234,8 @@ If database is not exists, then error will be returned.
 #### Tags
 
 * namespaces
+
+
 
 ### Create namespace
 ```
@@ -261,6 +269,7 @@ If namespace is already exists, then operation do not nothing.
 * namespaces
 
 
+
 ### Get namespace description
 ```
 GET /db/{database}/namespaces/{name}
@@ -290,6 +299,8 @@ This operation will return specified namespace description, including options of
 #### Tags
 
 * namespaces
+
+
 
 ### Drop namespace
 ```
@@ -322,6 +333,7 @@ Can not be undone. USE WITH CAUTION.
 #### Tags
 
 * namespaces
+
 
 
 ### Get documents from namespace
@@ -359,6 +371,7 @@ This operation will select documents from namespace with specified filters, and 
 #### Tags
 
 * items
+
 
 
 ### Update documents in namespace
@@ -399,6 +412,7 @@ Each document should be in request body as separate JSON object, e.g.
 * items
 
 
+
 ### Insert documents to namespace
 ```
 POST /db/{database}/namespaces/{name}/items
@@ -435,6 +449,7 @@ Each document should be in request body as separate JSON object, e.g.
 #### Tags
 
 * items
+
 
 
 ### Delete documents from namespace
@@ -475,6 +490,7 @@ Each document should be in request body as separate JSON object, e.g.
 * items
 
 
+
 ### List available indexes
 ```
 GET /db/{database}/namespaces/{name}/indexes
@@ -504,6 +520,7 @@ This operation will return list of available indexes, from specified database an
 #### Tags
 
 * indexes
+
 
 
 ### Update index in namespace
@@ -539,6 +556,7 @@ Operation  is synchronious, so it can take long time, if namespace contains bunc
 * indexes
 
 
+
 ### Add new index to namespace
 ```
 POST /db/{database}/namespaces/{name}/indexes
@@ -572,6 +590,7 @@ Operation is synchronious, so it can take long time, if namespace contains bunch
 * indexes
 
 
+
 ### Drop index from namespace
 ```
 DELETE /db/{database}/namespaces/{name}/indexes/{indexname}
@@ -603,6 +622,7 @@ Operation  is synchronious, so it can take long time, if namespace contains bunc
 #### Tags
 
 * indexes
+
 
 
 ### Query documents from namespace
@@ -639,6 +659,8 @@ then `limit` and `offset` from http request.
 
 * queries
 
+
+
 ### Query documents from namespace
 ```
 POST /db/{database}/query
@@ -670,6 +692,7 @@ This opertaion queries documents from namespace by DSL query.
 * queries
 
 
+
 ### Delete documents from namespace
 ```
 DELETE /db/{database}/query
@@ -699,6 +722,40 @@ This opertaion removes documents from namespace by DSL query.
 #### Tags
 
 * queries
+
+
+
+### Suggest for autocompletion of SQL query
+```
+GET /db/{database}/suggest
+```
+
+
+#### Description
+This operation pareses SQL query, and suggests autocompletion variants
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Query**|**pos**  <br>*required*|Cursor position for suggest|integer|
+|**Query**|**q**  <br>*required*|SQL query|string|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|successful operation|[SuggestItems](#suggestitems)|
+|**400**|Invalid status value|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* queries
+
 
 
 ### Query documents from namespace
@@ -934,6 +991,9 @@ This operation will update system configuration:
 |---|---|---|
 |**last_sec_avg_lock_time_us**  <br>*optional*|Average waiting time for acquiring lock to this object at last second|integer|
 |**last_sec_qps**  <br>*optional*|Count of queries to this object, requested at last second|integer|
+|**latency_stddev**  <br>*optional*|Standard deviation of latency values|number|
+|**max_latency_us**  <br>*optional*|Maximum latency value|integer|
+|**min_latency_us**  <br>*optional*|Minimal latency value|integer|
 |**total_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object|integer|
 |**total_avg_lock_latency_us**  <br>*optional*|Average waiting time for acquiring lock to this object|integer|
 |**total_queries_count**  <br>*optional*|Total count of queries to this object|integer|
@@ -1139,15 +1199,6 @@ Number of elements in join cache. Stores results of selects to right table by ON
 
 
 
-### LogQueriesConfig
-
-|Name|Description|Schema|
-|---|---|---|
-|**log_level**  <br>*optional*|Log level of queries core logger|enum (none, error, warning, info, trace)|
-|**namespace**  <br>*optional*|Name of namespace, or `*` for setting to all namespaces|string|
-
-
-
 ### Namespace
 
 |Name|Description|Schema|
@@ -1225,6 +1276,15 @@ Number of elements in join cache. Stores results of selects to right table by ON
 |---|---|---|
 |**name**  <br>*optional*|Name of namespace|string|
 |**storage_enabled**  <br>*optional*|If true, then documents will be stored to disc storage, else all data will be lost on server shutdown|boolean|
+
+
+
+### NamespacesConfig
+
+|Name|Description|Schema|
+|---|---|---|
+|**log_level**  <br>*optional*|Log level of queries core logger|enum (none, error, warning, info, trace)|
+|**namespace**  <br>*optional*|Name of namespace, or `*` for setting to all namespaces|string|
 
 
 
@@ -1317,11 +1377,27 @@ Performance statistics per each query
 |---|---|---|
 |**last_sec_avg_lock_time_us**  <br>*optional*|Average waiting time for acquiring lock to this object at last second|integer|
 |**last_sec_qps**  <br>*optional*|Count of queries to this object, requested at last second|integer|
+|**latency_stddev**  <br>*optional*|Standard deviation of latency values|number|
+|**max_latency_us**  <br>*optional*|Maximum latency value|integer|
+|**min_latency_us**  <br>*optional*|Minimal latency value|integer|
 |**query**  <br>*optional*|SQL representation of query|string|
 |**total_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object|integer|
 |**total_avg_lock_latency_us**  <br>*optional*|Average waiting time for acquiring lock to this object|integer|
 |**total_queries_count**  <br>*optional*|Total count of queries to this object|integer|
 |**total_sec_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object at last second|integer|
+
+
+
+### ReplicationConfig
+
+|Name|Description|Schema|
+|---|---|---|
+|**cluster_id**  <br>*optional*|Cluser ID - must be same for client and for master|integer|
+|**force_sync_on_logic_error**  <br>*optional*|force resync on logic error conditions|boolean|
+|**force_sync_on_wrong_data_hash**  <br>*optional*|force resync on wrong data hash conditions|boolean|
+|**master_dsn**  <br>*optional*|DSN to master. Only cproto schema is supported|string|
+|**namespaces**  <br>*optional*|List of namespaces for replication. If emply, all namespaces. All replicated namespaces will become read only for slave|< string > array|
+|**role**  <br>*optional*|Replication role|enum (none, slave, master)|
 
 
 
@@ -1335,10 +1411,14 @@ Performance statistics for select operations
 |---|---|---|
 |**last_sec_avg_lock_time_us**  <br>*optional*|Average waiting time for acquiring lock to this object at last second|integer|
 |**last_sec_qps**  <br>*optional*|Count of queries to this object, requested at last second|integer|
+|**latency_stddev**  <br>*optional*|Standard deviation of latency values|number|
+|**max_latency_us**  <br>*optional*|Maximum latency value|integer|
+|**min_latency_us**  <br>*optional*|Minimal latency value|integer|
 |**total_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object|integer|
 |**total_avg_lock_latency_us**  <br>*optional*|Average waiting time for acquiring lock to this object|integer|
 |**total_queries_count**  <br>*optional*|Total count of queries to this object|integer|
 |**total_sec_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object at last second|integer|
+
 
 
 ### SortDef
@@ -1352,13 +1432,23 @@ Specifies results sorting order
 |**values**  <br>*optional*|Optional: Documents with this values of field will be returned first|< object > array|
 
 
+
 ### StatusResponse
 
 |Name|Description|Schema|
 |---|---|---|
 |**description**  <br>*optional*|Text description of error details|string|
-|**response_code**  <br>*optional*|Error code:<br> * 0 - errOK<br> * 1 - errParseSQL<br> * 2 - errQueryExec<br> * 3 - errParams<br> * 4 - errLogic<br> * 5 - errParseJson<br> * 6 - errParseDSL<br> * 7 - errConflict<br> * 8 - errParseBin<br> * 9 - errForbidden<br> * 10 - errWasRelock<br> * 11 - errNotValid<br> * 12 - errNetwork<br> * 13 - errNotFound<br> * 14 - errStateInvalidated|integer|
+|**response_code**  <br>*optional*|Error code:<br> * 0 - errOK<br> * 1 - errParseSQL<br> * 2 - errQueryExec<br> * 3 - errParams<br> * 4 - errLogic<br> * 5 - errParseJson<br> * 6 - errParseDSL<br> * 7 - errConflict<br> * 8 - errParseBin<br> * 9 - errForbidden<br> * 10 - errWasRelock<br> * 11 - errNotValid<br> * 12 - errNetwork<br> * 13 - errNotFound<br> * 14 - errStateInvalidated<br> * 15 - errBadTransaction<br> * 16 - errOutdatedWAL<br> * 17	- errNoWAL<br> * 18 - errDataHashMismatch|integer|
 |**success**  <br>*optional*|Status of operation|boolean|
+
+
+
+### SuggestItems
+
+|Name|Description|Schema|
+|---|---|---|
+|**suggests**  <br>*optional*|Suggested query autocompletion variants|< string > array|
+
 
 
 ### SysInfo
@@ -1374,13 +1464,16 @@ Specifies results sorting order
 |**version**  <br>*optional*|Server version|string|
 
 
+
 ### SystemConfigItem
 
 |Name|Description|Schema|
 |---|---|---|
-|**log_queries**  <br>*optional*||< [LogQueriesConfig](#logqueriesconfig) > array|
+|**namespaces**  <br>*optional*||< [NamespacesConfig](#namespacesconfig) > array|
 |**profiling**  <br>*optional*||[ProfilingConfig](#profilingconfig)|
-|**type**  <br>*required*|**Default** : `"profiling"`|enum (profiling, log_queries)|
+|**replication**  <br>*optional*||[ReplicationConfig](#replicationconfig)|
+|**type**  <br>*required*|**Default** : `"profiling"`|enum (profiling, namespaces, replication)|
+
 
 
 ### UpdatePerfStats
@@ -1393,10 +1486,14 @@ Performance statistics for update operations
 |---|---|---|
 |**last_sec_avg_lock_time_us**  <br>*optional*|Average waiting time for acquiring lock to this object at last second|integer|
 |**last_sec_qps**  <br>*optional*|Count of queries to this object, requested at last second|integer|
+|**latency_stddev**  <br>*optional*|Standard deviation of latency values|number|
+|**max_latency_us**  <br>*optional*|Maximum latency value|integer|
+|**min_latency_us**  <br>*optional*|Minimal latency value|integer|
 |**total_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object|integer|
 |**total_avg_lock_latency_us**  <br>*optional*|Average waiting time for acquiring lock to this object|integer|
 |**total_queries_count**  <br>*optional*|Total count of queries to this object|integer|
 |**total_sec_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object at last second|integer|
+
 
 
 ### UpdateResponse

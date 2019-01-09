@@ -1426,7 +1426,7 @@ definitions:
         description: "Status of operation"
       response_code:
         type: "integer"
-        enum: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+        enum: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
         description: >
           Error code:
            * 0 - errOK
@@ -1444,6 +1444,11 @@ definitions:
            * 12 - errNetwork
            * 13 - errNotFound
            * 14 - errStateInvalidated
+           * 15 - errBadTransaction
+           * 16 - errOutdatedWAL
+           * 17	- errNoWAL
+           * 18 - errDataHashMismatch
+
       description:
         type: "string"
         description: "Text description of error details"
@@ -1624,7 +1629,7 @@ definitions:
         type: "integer"
         description: "Average waiting time for acquiring lock to this object at last second"
       latency_stddev:
-        type: "double"
+        type: "number"
         description: "Standard deviation of latency values"
       min_latency_us:
         type: "integer"
@@ -1674,14 +1679,17 @@ definitions:
         type: "string"
         enum:
         - profiling
-        - log_queries
+        - namespaces
+        - replication
         default: "profiling"
       profiling:
         $ref: "#/definitions/ProfilingConfig"
-      log_queries:
+      namespaces:
         type: "array"
         items:
-          $ref: "#/definitions/LogQueriesConfig"
+          $ref: "#/definitions/NamespacesConfig"
+      replication:
+        $ref: "#/definitions/ReplicationConfig"
     discriminator: "type"
 
   ProfilingConfig:
@@ -1704,7 +1712,7 @@ definitions:
         description: "Minimum query execution time to be recoreded in #queriesperfstats namespace"
         default: 10
 
-  LogQueriesConfig:
+  NamespacesConfig:
     type: "object"
     properties:  
       namespace:
@@ -1719,3 +1727,32 @@ definitions:
           - warning
           - info
           - trace
+
+  ReplicationConfig:
+    type: "object"
+    properties:  
+      role:
+        type: "string"
+        description: "Replication role"
+        enum:
+          - none
+          - slave
+          - master
+      master_dsn:
+        type: "string"
+        description: "DSN to master. Only cproto schema is supported"
+      cluster_id:
+        type: "integer"
+        description: "Cluser ID - must be same for client and for master"
+      force_sync_on_logic_error:
+        type: "boolean"
+        description: "force resync on logic error conditions"
+      force_sync_on_wrong_data_hash:
+        type: "boolean"
+        description: "force resync on wrong data hash conditions"
+      namespaces:
+        type: "array"
+        description: "List of namespaces for replication. If emply, all namespaces. All replicated namespaces will become read only for slave"
+        items:
+          type: string
+

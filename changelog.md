@@ -1,11 +1,10 @@
 # Version 2.0.0 (07.01.2019) 
 
 ## Core
-- [fea] Master-slave replication added (beta)
+- [fea] Master-slave replication added (beta). [Documentation](replication.md)
 - [fea] Transactions support
 - [fea] min/max/stddev values added to perfstat
 - [fea] storage lazy load option added
-
 
 ## Reindexer tool
 
