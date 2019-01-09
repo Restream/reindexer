@@ -492,24 +492,21 @@ func (db *Reindexer) Query(namespace string) *Query {
 	return newQuery(db, namespace)
 }
 
-// ExecSQL make query to database. Query is SQL statement
-// Return Iterator
+// ExecSQL make query to database. Query is a SQL statement.
+// Return Iterator.
 func (db *Reindexer) ExecSQL(query string) *Iterator {
-	// TODO: do not parse query string twice in go and cpp
-	namespace := ""
-	querySlice := strings.Fields(strings.ToLower(query))
-
-	for i := range querySlice {
-		if querySlice[i] == "from" && i+1 < len(querySlice) {
-			namespace = querySlice[i+1]
-			break
-		}
-	}
-
+	namespace := getQueryNamespace(query)
 	return db.execSQL(namespace, query)
 }
 
+// ExecSQLToJSON make query to database. Query is a SQL statement.
+// Return JSONIterator.
 func (db *Reindexer) ExecSQLToJSON(query string) *JSONIterator {
+	namespace := getQueryNamespace(query)
+	return db.execSQLAsJSON(namespace, query)
+}
+
+func getQueryNamespace(query string) string {
 	// TODO: do not parse query string twice in go and cpp
 	namespace := ""
 	querySlice := strings.Fields(strings.ToLower(query))
@@ -520,8 +517,7 @@ func (db *Reindexer) ExecSQLToJSON(query string) *JSONIterator {
 			break
 		}
 	}
-
-	return db.execSQLAsJSON(namespace, query)
+	return namespace
 }
 
 // BeginTx - start update transaction
