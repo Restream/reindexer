@@ -401,8 +401,8 @@ func (db *Reindexer) Delete(namespace string, item interface{}, precepts ...stri
 }
 
 // ConfigureIndex - congigure index.
-// [[deprecated]]. Use UpdateIndex insted
 // config argument must be struct with index configuration
+// Deprecated: Use UpdateIndex instead.
 func (db *Reindexer) ConfigureIndex(namespace, index string, config interface{}) error {
 
 	nsDef, err := db.DescribeNamespace(namespace)
@@ -612,19 +612,19 @@ func (db *Reindexer) QueryFrom(d dsl.DSL) (*Query, error) {
 }
 
 // GetStats Get local thread reindexer usage stats
-// [[deprecated]]
+// Deprecated: Use SELECT * FROM '#perfstats' to get performance statistics.
 func (db *Reindexer) GetStats() bindings.Stats {
 	log.Println("Deprecated function reindexer.GetStats call. Use SELECT * FROM '#perfstats' to get performance statistics")
 	return bindings.Stats{}
 }
 
 // ResetStats Reset local thread reindexer usage stats
-// [[deprecated]]
+// Deprecated: no longer used.
 func (db *Reindexer) ResetStats() {
 }
 
 // EnableStorage enables persistent storage of data
-// [[deprecated]] storage path should be passed as DSN part to reindexer.NewReindex (""), e.g. reindexer.NewReindexer ("builtin:///tmp/reindex")
+// Deprecated: storage path should be passed as DSN part to reindexer.NewReindex (""), e.g. reindexer.NewReindexer ("builtin:///tmp/reindex").
 func (db *Reindexer) EnableStorage(storagePath string) error {
 	log.Println("Deprecated function reindexer.EnableStorage call")
 	return db.binding.EnableStorage(storagePath)
