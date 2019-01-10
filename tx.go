@@ -20,7 +20,6 @@ type Tx struct {
 	started          bool
 	forceCommitCount uint32
 	db               *Reindexer
-	ser              cjson.Serializer
 	ns               *reindexerNamespace
 	counter          uint32
 	ctx              bindings.TxCtx
