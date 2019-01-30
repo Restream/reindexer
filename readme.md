@@ -419,12 +419,12 @@ For make query to the composite index, pass []interface{} to `.WhereComposite` f
 
 ### Aggregations
 
-Reindexer allows to do aggregation queries. Currently Average and Sum aggregations are supported. To support aggregation `Query` has method: 
-`Aggregate` should be called before Query execution - to ask reindexer calculate aggregation. 
+Reindexer allows to retrive aggregated results. Currently Average and Sum aggregations are supported.
+In order to support aggregation, `Query` has method `Aggregate` that should be called before the `Query` execution: this will ask reindexer to calculate data aggregations. 
 
-To get aggregation results `Iterator` had method `AggResults`, it is available after query execution, and returns slice of reults.
+To get aggregation results, `Iterator` has method `AggResults`: it is available after query execution and returns slice of results.
 
-There are 3 aggregations availavle
+There are 3 aggregations available
 
 - `AggMax` - get maximum field value
 - `AggMin` - get manimum field value
@@ -432,14 +432,16 @@ There are 3 aggregations availavle
 - `AggAvg` - get averatge field value
 - `AggFacet` - get field facet value
 
+Example code for aggregate `items` by `name`
+
 ```go
 
-	iterator := db.Query ("items").Aggregate ("name",reindexer.AggFacet).Exec ()
+	iterator := db.Query ("items").Aggregate ("name", reindexer.AggFacet).Exec ()
 
 	aggRes := iterator.AggResults()[0]
 
 	for facet := range aggRes.Facets {
-		fmt.Printf ("%s -> %d",facet.Value, facet.Count)
+		fmt.Printf ("%s -> %d", facet.Value, facet.Count)
 	}
 
 ```
