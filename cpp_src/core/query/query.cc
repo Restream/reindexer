@@ -174,7 +174,7 @@ vector<string> Query::GetSuggestions(const string_view &q, size_t pos, const Nam
 	try {
 		tokenizer parser(q);
 		Parse(parser, ctx);
-	} catch (Error &ex) {
+	} catch (const Error &) {
 	}
 
 	for (SqlParsingCtx::SuggestionData &item : ctx.suggestions) {
