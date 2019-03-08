@@ -25,6 +25,7 @@ public:
 	IndexMemStat GetMemStat() override;
 	Variant Upsert(const Variant& key, IdType id) override final;
 	void Delete(const Variant& key, IdType id) override final;
+	void SetOpts(const IndexOpts& opts) override final;
 
 protected:
 	FtFastConfig* GetConfig() const;

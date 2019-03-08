@@ -148,7 +148,7 @@ public:
 		if (built_) return;
 		text_.shrink_to_fit();
 		sa_.resize(text_.length());
-		::divsufsort(reinterpret_cast<const char_type *>(text_.c_str()), &sa_[0], text_.length());
+		if (!sa_.empty()) ::divsufsort(reinterpret_cast<const char_type *>(text_.c_str()), &sa_[0], text_.length());
 		build_lcp();
 		built_ = true;
 	}

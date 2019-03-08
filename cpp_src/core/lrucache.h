@@ -1,6 +1,7 @@
 #pragma once
 
 #include <estl/fast_hash_set.h>
+#include <atomic>
 #include <list>
 #include <mutex>
 #include <unordered_map>
@@ -14,6 +15,10 @@ using std::unordered_map;
 const size_t kDefaultCacheSizeLimit = 1024 * 1024 * 128;
 const int kDefaultHitCountToCache = 2;
 
+struct CacheKeyBase {
+	mutable std::atomic<bool> locked{false};
+};
+
 template <typename K, typename V, typename hash, typename equal>
 class LRUCache {
 public:
@@ -21,6 +26,9 @@ public:
 		: totalCacheSize_(0), cacheSizeLimit_(sizeLimit), hitCountToCache_(hitCount) {}
 	struct Iterator {
 		Iterator(const K *k = nullptr, const V &v = V()) : key(k), val(v) {}
+		~Iterator() {
+			if (key && key->locked) key->locked = false;
+		}
 		const K *key;
 		V val;
 	};

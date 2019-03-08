@@ -8,17 +8,15 @@ namespace reindexer {
 
 class CompositeArrayComparator {
 public:
-	CompositeArrayComparator(PayloadType pt, KeyValueType kvtype);
+	CompositeArrayComparator();
 
 	void BindField(int field, const VariantArray &values, CondType condType);
 	void BindField(const TagsPath &tagsPath, const VariantArray &values, CondType condType);
-	bool Compare(const PayloadValue &pv, const CollateOpts &collateOpts);
+	bool Compare(const PayloadValue &pv, const ComparatorVars &vars);
+	bool IsBinded() { return !ctx_.empty(); }
 
 private:
-	bool compareField(size_t field, const Variant &v, const CollateOpts &collateOpts);
-
-	PayloadType pt_;
-	KeyValueType type_ = KeyValueNull;
+	bool compareField(size_t field, const Variant &v, const ComparatorVars &vars);
 
 	struct Context {
 		CondType cond;

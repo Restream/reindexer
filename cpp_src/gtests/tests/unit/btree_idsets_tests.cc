@@ -3,7 +3,7 @@
 TEST_F(BtreeIdsetsApi, SelectByStringField) {
 	QueryResults qr;
 	string strValueToCheck = lastStrValue;
-	Error err = reindexer->Select(Query(default_namespace).Not().Where(kFieldOne, CondEq, strValueToCheck), qr);
+	Error err = rt.reindexer->Select(Query(default_namespace).Not().Where(kFieldOne, CondEq, strValueToCheck), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	for (size_t i = 0; i < qr.Count(); ++i) {
 		Item item = qr[i].GetItem();
@@ -17,7 +17,7 @@ TEST_F(BtreeIdsetsApi, SelectByIntField) {
 	const int boundaryValue = 5000;
 
 	QueryResults qr;
-	Error err = reindexer->Select(Query(default_namespace).Where(kFieldTwo, CondGe, Variant(static_cast<int>(boundaryValue))), qr);
+	Error err = rt.reindexer->Select(Query(default_namespace).Where(kFieldTwo, CondGe, Variant(static_cast<int>(boundaryValue))), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	for (size_t i = 0; i < qr.Count(); i++) {
 		Item item = qr[i].GetItem();
@@ -32,12 +32,12 @@ TEST_F(BtreeIdsetsApi, SelectByBothFields) {
 	const int boundaryValue = 50000;
 	const string strValueToCheck = lastStrValue;
 	const string strValueToCheck2 = "reindexer is fast";
-	Error err = reindexer->Select(Query(default_namespace)
-									  .Where(kFieldOne, CondLe, strValueToCheck2)
-									  .Not()
-									  .Where(kFieldOne, CondEq, strValueToCheck)
-									  .Where(kFieldTwo, CondGe, Variant(static_cast<int>(boundaryValue))),
-								  qr);
+	Error err = rt.reindexer->Select(Query(default_namespace)
+										 .Where(kFieldOne, CondLe, strValueToCheck2)
+										 .Not()
+										 .Where(kFieldOne, CondEq, strValueToCheck)
+										 .Where(kFieldTwo, CondGe, Variant(static_cast<int>(boundaryValue))),
+									 qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	for (size_t i = 0; i < qr.Count(); ++i) {
 		Item item = qr[i].GetItem();
@@ -53,7 +53,7 @@ TEST_F(BtreeIdsetsApi, SelectByBothFields) {
 
 TEST_F(BtreeIdsetsApi, SortByStringField) {
 	QueryResults qr;
-	Error err = reindexer->Select(Query(default_namespace).Sort(kFieldOne, true), qr);
+	Error err = rt.reindexer->Select(Query(default_namespace).Sort(kFieldOne, true), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	Variant prev;
@@ -69,7 +69,7 @@ TEST_F(BtreeIdsetsApi, SortByStringField) {
 
 TEST_F(BtreeIdsetsApi, SortByIntField) {
 	QueryResults qr;
-	Error err = reindexer->Select(Query(default_namespace).Sort(kFieldTwo, false), qr);
+	Error err = rt.reindexer->Select(Query(default_namespace).Sort(kFieldTwo, false), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	Variant prev;
@@ -86,8 +86,8 @@ TEST_F(BtreeIdsetsApi, SortByIntField) {
 TEST_F(BtreeIdsetsApi, JoinSimpleNs) {
 	QueryResults qr;
 	Query joinedNs = Query(joinedNsName).Where(kFieldThree, CondGt, Variant(static_cast<int>(9000))).Sort(kFieldThree, false);
-	Error err =
-		reindexer->Select(Query(default_namespace, 0, 3000).InnerJoin(kFieldId, kFieldIdFk, CondEq, joinedNs).Sort(kFieldTwo, false), qr);
+	Error err = rt.reindexer->Select(
+		Query(default_namespace, 0, 3000).InnerJoin(kFieldId, kFieldIdFk, CondEq, joinedNs).Sort(kFieldTwo, false), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	Variant prevFieldTwo;

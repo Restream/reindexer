@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-struct IdSetCacheKey {
+struct IdSetCacheKey : public CacheKeyBase {
 	IdSetCacheKey(const VariantArray &keys, CondType cond, SortType sort) : keys(&keys), cond(cond), sort(sort) {}
 	IdSetCacheKey(const IdSetCacheKey &other) : keys(&hkeys), cond(other.cond), sort(other.sort), hkeys(*other.keys) {}
 	IdSetCacheKey &operator=(const IdSetCacheKey &other) {
@@ -14,6 +14,7 @@ struct IdSetCacheKey {
 		keys = &hkeys;
 		cond = other.cond;
 		sort = other.sort;
+		locked = other.locked.load();
 		return *this;
 	}
 	size_t Size() const { return sizeof(IdSetCacheKey) + hkeys.size() * sizeof(VariantArray::value_type); }

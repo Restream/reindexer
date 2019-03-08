@@ -63,6 +63,7 @@ const (
 	QueryEnd            = 11
 	QueryExplain        = 12
 	QueryEqualPosition  = 13
+	QueryUpdateField    = 14
 
 	LeftJoin    = 0
 	InnerJoin   = 1

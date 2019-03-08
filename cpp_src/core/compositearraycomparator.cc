@@ -2,7 +2,7 @@
 #include <limits.h>
 namespace reindexer {
 
-CompositeArrayComparator::CompositeArrayComparator(PayloadType pt, KeyValueType kvtype) : pt_(pt), type_(kvtype) {}
+CompositeArrayComparator::CompositeArrayComparator() {}
 
 void CompositeArrayComparator::BindField(int field, const VariantArray &values, CondType condType) {
 	fields_.push_back(field);
@@ -32,15 +32,15 @@ void CompositeArrayComparator::BindField(const TagsPath &tagsPath, const Variant
 	ctx.cmpDouble.SetValues(condType, values);
 }
 
-bool CompositeArrayComparator::Compare(const PayloadValue &pv, const CollateOpts &collateOpts) {
-	ConstPayload pl(pt_, pv);
+bool CompositeArrayComparator::Compare(const PayloadValue &pv, const ComparatorVars &vars) {
+	ConstPayload pl(vars.payloadType_, pv);
 	size_t len = INT_MAX;
 
 	h_vector<VariantArray, 2> vals;
 	size_t tagsPathIdx = 0;
 	for (size_t j = 0; j < fields_.size(); ++j) {
 		vals.push_back({});
-		bool isRegularIndex = fields_[j] != IndexValueType::SetByJsonPath && fields_[j] < pt_.NumFields();
+		bool isRegularIndex = fields_[j] != IndexValueType::SetByJsonPath && fields_[j] < vars.payloadType_.NumFields();
 		if (isRegularIndex) {
 			pl.Get(fields_[j], vals.back());
 		} else {
@@ -54,7 +54,7 @@ bool CompositeArrayComparator::Compare(const PayloadValue &pv, const CollateOpts
 		bool cmpRes = true;
 		for (size_t j = 0; j < fields_.size(); ++j) {
 			assert(i < vals[j].size());
-			cmpRes &= vals[j][i].Type() != KeyValueNull && compareField(j, vals[j][i], collateOpts);
+			cmpRes &= vals[j][i].Type() != KeyValueNull && compareField(j, vals[j][i], vars);
 			if (!cmpRes) break;
 		}
 
@@ -63,9 +63,9 @@ bool CompositeArrayComparator::Compare(const PayloadValue &pv, const CollateOpts
 	return false;
 }
 
-bool CompositeArrayComparator::compareField(size_t field, const Variant &v, const CollateOpts &collateOpts) {
+bool CompositeArrayComparator::compareField(size_t field, const Variant &v, const ComparatorVars &vars) {
 	bool result = true;
-	switch (type_) {
+	switch (vars.type_) {
 		case KeyValueBool:
 			result = ctx_[field].cmpBool.Compare(ctx_[field].cond, static_cast<bool>(v));
 			break;
@@ -79,7 +79,7 @@ bool CompositeArrayComparator::compareField(size_t field, const Variant &v, cons
 			result = ctx_[field].cmpDouble.Compare(ctx_[field].cond, static_cast<double>(v));
 			break;
 		case KeyValueString: {
-			result = ctx_[field].cmpString.Compare(ctx_[field].cond, static_cast<p_string>(v), collateOpts);
+			result = ctx_[field].cmpString.Compare(ctx_[field].cond, static_cast<p_string>(v), vars.collateOpts_);
 			break;
 		}
 		case KeyValueNull:

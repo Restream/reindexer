@@ -83,7 +83,6 @@ func (so *SortOrderValues) GetVerifyItems() []interface{} {
 }
 
 func execAndVerifyForceSortOrderQuery(query *queryTest) {
-	log.Println("\t", query.toString())
 
 	items, err := query.Exec().FetchAll()
 	if err != nil {
@@ -94,10 +93,13 @@ func execAndVerifyForceSortOrderQuery(query *queryTest) {
 	checkItems := sortOrderValues.GetVerifyItems()
 	sortIdx, _ := query.ns.getField(query.sortIndex[0])
 
+	ret := ""
 	if len(items) == len(checkItems) {
 		for i := 0; i < len(items); i++ {
 			// log.Println(" --- ", items[i].(*TestForceSortOrderItem), " == ", checkItems[i].(*TestForceSortOrderItem))
 			v1 := getValues(items[i], sortIdx)
+			ret += fmt.Sprintf("%v ", v1[0].Interface())
+
 			v2 := getValues(checkItems[i], sortIdx)
 			if len(v1) != len(v2) {
 				log.Fatalf("Found len(values) != len(sort) on sort index %s in item %+v", query.sortIndex, items[i])
@@ -108,6 +110,7 @@ func execAndVerifyForceSortOrderQuery(query *queryTest) {
 			}
 		}
 	}
+	log.Printf("\t %s -> %s", query.toString(), ret)
 }
 
 func FillTestItemsForceSortOrder() {

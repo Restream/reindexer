@@ -33,6 +33,7 @@ public:
 	ItemImpl &operator=(ItemImpl &&) noexcept;
 
 	void SetField(int field, const VariantArray &krs);
+	void SetField(const string &jsonPath, const VariantArray &keys);
 	Variant GetField(int field);
 
 	VariantArray GetValueByJSONPath(const string &jsonPath);

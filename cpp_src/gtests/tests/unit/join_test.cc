@@ -8,14 +8,14 @@ TEST_F(JoinSelectsApi, InnerJoinTest) {
 	Query joinQuery = Query(queryBooks).InnerJoin(authorid_fk, authorid, CondEq, queryAuthors);
 
 	reindexer::QueryResults joinQueryRes;
-	Error err = reindexer->Select(joinQuery, joinQueryRes);
+	Error err = rt.reindexer->Select(joinQuery, joinQueryRes);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	int status = ParseItemJsonWithJoins(joinQueryRes);
 	EXPECT_EQ(status, JSON_OK) << "Error parsing json - status " << status;
 
 	reindexer::QueryResults pureSelectRes;
-	err = reindexer->Select(queryBooks, pureSelectRes);
+	err = rt.reindexer->Select(queryBooks, pureSelectRes);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	QueryResultRows joinSelectRows;
@@ -28,7 +28,7 @@ TEST_F(JoinSelectsApi, InnerJoinTest) {
 
 			reindexer::QueryResults authorsSelectRes;
 			Query authorsQuery = Query(authors_namespace).Where(authorid, CondEq, authorIdKeyRef);
-			err = reindexer->Select(authorsQuery, authorsSelectRes);
+			err = rt.reindexer->Select(authorsQuery, authorsSelectRes);
 			EXPECT_TRUE(err.ok()) << err.what();
 
 			if (err.ok()) {
@@ -53,7 +53,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 	Query joinQuery = Query(authors_namespace).LeftJoin(authorid, authorid_fk, CondEq, booksQuery);
 
 	reindexer::QueryResults booksQueryRes;
-	Error err = reindexer->Select(booksQuery, booksQueryRes);
+	Error err = rt.reindexer->Select(booksQuery, booksQueryRes);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	QueryResultRows pureSelectRows;
@@ -68,7 +68,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 	}
 
 	reindexer::QueryResults joinQueryRes;
-	err = reindexer->Select(joinQuery, joinQueryRes);
+	err = rt.reindexer->Select(joinQuery, joinQueryRes);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	int status = ParseItemJsonWithJoins(joinQueryRes);
@@ -131,7 +131,7 @@ TEST_F(JoinSelectsApi, OrInnerJoinTest) {
 	const int genresNsJoinIndex = 1;
 
 	reindexer::QueryResults queryRes;
-	Error err = reindexer->Select(orInnerJoinQuery, queryRes);
+	Error err = rt.reindexer->Select(orInnerJoinQuery, queryRes);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	int status = ParseItemJsonWithJoins(queryRes);
@@ -168,7 +168,7 @@ TEST_F(JoinSelectsApi, JoinTestSorting) {
 	Query joinQuery = Query(authors_namespace).LeftJoin(authorid, authorid_fk, CondEq, booksQuery);
 
 	reindexer::QueryResults joinQueryRes;
-	Error err = reindexer->Select(joinQuery, joinQueryRes);
+	Error err = rt.reindexer->Select(joinQuery, joinQueryRes);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	for (auto rowIt : joinQueryRes) {
@@ -191,10 +191,10 @@ TEST_F(JoinSelectsApi, JoinTestSorting) {
 TEST_F(JoinSelectsApi, JoinTestSelectNonIndexedField) {
 	reindexer::QueryResults qr;
 	Query authorsQuery = Query(authors_namespace);
-	Error err = reindexer->Select(Query(books_namespace)
-									  .Where(rating, CondEq, Variant(static_cast<int64_t>(100)))
-									  .InnerJoin(authorid_fk, authorid, CondEq, authorsQuery),
-								  qr);
+	Error err = rt.reindexer->Select(Query(books_namespace)
+										 .Where(rating, CondEq, Variant(static_cast<int64_t>(100)))
+										 .InnerJoin(authorid_fk, authorid, CondEq, authorsQuery),
+									 qr);
 
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1) << err.what();
@@ -206,7 +206,7 @@ TEST_F(JoinSelectsApi, JoinTestSelectNonIndexedField) {
 }
 
 TEST_F(JoinSelectsApi, JoinByNonIndexedField) {
-	Error err = reindexer->OpenNamespace(default_namespace);
+	Error err = rt.reindexer->OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 	DefineNamespaceDataset(default_namespace, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK()}});
 
@@ -218,18 +218,18 @@ TEST_F(JoinSelectsApi, JoinByNonIndexedField) {
 	err = lonelyItem.FromJSON(json.str());
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->Upsert(default_namespace, lonelyItem);
+	err = rt.reindexer->Upsert(default_namespace, lonelyItem);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->Commit(books_namespace);
+	err = rt.reindexer->Commit(books_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	reindexer::QueryResults qr;
 	Query authorsQuery = Query(authors_namespace);
-	err = reindexer->Select(Query(default_namespace)
-								.Where(authorid_fk, CondEq, Variant(DostoevskyAuthorId))
-								.InnerJoin(authorid_fk, authorid, CondEq, authorsQuery),
-							qr);
+	err = rt.reindexer->Select(Query(default_namespace)
+								   .Where(authorid_fk, CondEq, Variant(DostoevskyAuthorId))
+								   .InnerJoin(authorid_fk, authorid, CondEq, authorsQuery),
+							   qr);
 
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1) << err.what();
@@ -237,7 +237,7 @@ TEST_F(JoinSelectsApi, JoinByNonIndexedField) {
 	// And backwards even!
 	reindexer::QueryResults qr2;
 	Query testNsQuery = Query(default_namespace);
-	err = reindexer->Select(
+	err = rt.reindexer->Select(
 		Query(authors_namespace).Where(authorid, CondEq, Variant(DostoevskyAuthorId)).InnerJoin(authorid, authorid_fk, CondEq, testNsQuery),
 		qr2);
 

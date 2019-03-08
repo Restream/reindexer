@@ -56,6 +56,7 @@ public:
 	PayloadType() {}
 	PayloadType(const string &name, std::initializer_list<PayloadFieldType> fields = {})
 		: shared_cow_ptr<PayloadTypeImpl>(std::make_shared<PayloadTypeImpl>(name, fields)) {}
+	PayloadType(const PayloadTypeImpl &impl) : shared_cow_ptr<PayloadTypeImpl>(std::make_shared<PayloadTypeImpl>(impl)) {}
 	const PayloadFieldType &Field(int field) const { return get()->Field(field); }
 
 	const string &Name() const { return get()->Name(); }

@@ -7,13 +7,13 @@
 #include <unordered_map>
 #include <vector>
 
+#include "atoi/atoi.h"
 #include "itoa/itoa.h"
 #include "tools/customlocal.h"
 #include "tools/stringstools.h"
 #include "utf8cpp/utf8.h"
 
 using std::min;
-using std::stoi;
 using std::transform;
 using std::distance;
 using std::make_pair;
@@ -84,7 +84,7 @@ void check_for_replacement(uint32_t &ch) {
 	}
 }
 
-bool is_number(const string &str) {
+bool is_number(const string_view &str) {
 	uint16_t i = 0;
 	while ((i < str.length() && IsDigit(str[i]))) i++;
 	return (i && i == str.length());
@@ -117,7 +117,7 @@ void split(const string_view &str, string &buf, vector<const char *> &words, con
 		}
 
 		if (begIt != bufIt) {
-			*bufIt++ = 0;
+			if (bufIt != buf.end()) *bufIt++ = 0;
 			words.push_back(&*begIt);
 		}
 	}
@@ -216,6 +216,15 @@ bool iequals(const string_view &lhs, const string_view &rhs) {
 	if (lhs.size() != rhs.size()) return false;
 	for (auto itl = lhs.begin(), itr = rhs.begin(); itl != lhs.end() && itr != rhs.end();) {
 		if (tolower(*itl++) != tolower(*itr++)) return false;
+	}
+	return true;
+}
+
+bool checkIfStartsWith(const string_view &src, const string_view &pattern) {
+	if (src.empty() || pattern.empty()) return false;
+	if (src.length() > pattern.length()) return false;
+	for (size_t i = 0; i < src.length(); ++i) {
+		if (tolower(src[i]) != tolower(pattern[i])) return false;
 	}
 	return true;
 }
@@ -402,6 +411,22 @@ bool isPrintable(string_view str) {
 		}
 	}
 	return true;
+}
+
+bool isBlank(const string_view &str) {
+	if (str.empty()) return true;
+	for (size_t i = 0; i < str.length(); ++i)
+		if (!isspace(str[i])) return false;
+	return true;
+}
+
+int stoi(string_view sl) {
+	bool valid;
+	return jsteemann::atoi<int>(sl.begin(), sl.end(), valid);
+}
+int64_t stoll(string_view sl) {
+	bool valid;
+	return jsteemann::atoi<int64_t>(sl.begin(), sl.end(), valid);
 }
 
 }  // namespace reindexer

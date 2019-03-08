@@ -109,7 +109,8 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	}
 
 	if (configF) {
-		ParseFile(args::get(configF));
+		auto err = ParseFile(args::get(configF));
+		if (!err.ok()) return err;
 	}
 
 	if (storageF) StoragePath = args::get(storageF);

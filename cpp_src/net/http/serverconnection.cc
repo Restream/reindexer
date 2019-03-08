@@ -171,7 +171,7 @@ void ServerConnection::onRead() {
 				Header hdr{string_view(headers[i].name, headers[i].name_len), string_view(headers[i].value, headers[i].value_len)};
 
 				if (iequals(hdr.name, "content-length"_sv)) {
-					bodyLeft_ = atoi(hdr.val.data());
+					bodyLeft_ = stoi(hdr.val);
 				} else if (iequals(hdr.name, "transfer-encoding"_sv) && iequals(hdr.val, "chunked"_sv)) {
 					bodyLeft_ = -1;
 					memset(&chunked_decoder_, 0, sizeof(chunked_decoder_));

@@ -37,7 +37,6 @@ protected:
 	bool encode(ConstPayload *pl, Serializer &rdser, Builder &builder, bool visible);
 	void encodeJoinedItems(Builder &builder, IEncoderDatasourceWithJoins *ds, size_t joinedIdx);
 
-	key_string buildPayloadTuple(ConstPayload *pl);
 	string_view getPlTuple(ConstPayload *pl);
 
 	const TagsMatcher *tagsMatcher_;

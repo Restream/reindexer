@@ -11,19 +11,34 @@ import (
 
 // ExplainResults presents query plan
 type ExplainResults struct {
-	TotalUs       int    `json:"total_us"`
-	PrepareUs     int    `json:"prepare_us"`
-	IndexesUs     int    `json:"indexes_us"`
-	PostprocessUS int    `json:"postprocess_us"`
-	LoopUs        int    `json:"loop_us"`
-	SortIndex     string `json:"sort_index"`
-	Selectors     []struct {
-		Field       string  `json:"field"`
-		Method      string  `json:"method"`
-		Keys        int     `json:"keys"`
-		Comparators int     `json:"comparators"`
-		Cost        float32 `json:"cost"`
-		Matched     int     `json:"matched"`
+	// Total query execution time
+	TotalUs int `json:"total_us"`
+	// Query prepare and optimize time
+	PrepareUs int `json:"prepare_us"`
+	// Indexes keys selection time
+	IndexesUs int `json:"indexes_us"`
+	// Query post process time
+	PostprocessUS int `json:"postprocess_us"`
+	// Intersection loop time
+	LoopUs int `json:"loop_us"`
+	// Index, which used for sort results
+	SortIndex string `json:"sort_index"`
+	// Filter selectos, used to proccess query conditions
+	Selectors []struct {
+		// Field or index name
+		Field string `json:"field"`
+		// Method, used to process condition
+		Method string `json:"method"`
+		// Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching
+		Keys int `json:"keys"`
+		// Count of comparators used, for this selector
+		Comparators int `json:"comparators"`
+		// Cost expectation of this selector
+		Cost float32 `json:"cost"`
+		// Count of processed documents, matched this selector
+		Matched int `json:"matched"`
+		// Count of scanned documents by this selector
+		Items int `json:"items"`
 	} `json:"selectors"`
 }
 

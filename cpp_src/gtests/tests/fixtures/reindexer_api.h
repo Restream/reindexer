@@ -30,16 +30,10 @@ using reindexer::make_key_string;
 using reindexer::p_string;
 using reindexer::QueryJoinEntry;
 
-class ReindexerApi : public ::testing::Test {
-protected:
-	void SetUp() { reindexer.reset(new Reindexer); }
-
-	void TearDown() {}
-
-	typedef tuple<const char *, const char *, const char *, IndexOpts> IndexDeclaration;
-
+template <class ReindexerPtr, class ItemType>
+class ReindexerTestApi {
 public:
-	ReindexerApi() { reindexer = make_shared<Reindexer>(); }
+	ReindexerTestApi(ReindexerPtr rx) : reindexer(rx) {}
 
 	void DefineNamespaceDataset(const string &ns,
 								initializer_list<const tuple<const char *, const char *, const char *, const IndexOpts>> fields) {
@@ -69,15 +63,15 @@ public:
 		err = reindexer->Commit(ns);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
-	Item NewItem(const std::string &ns) { return reindexer->NewItem(ns); }
 
+	ItemType NewItem(const std::string &ns) { return reindexer->NewItem(ns); }
 	Error Commit(const std::string &ns) { return reindexer->Commit(ns); }
-	void Upsert(const std::string &ns, Item &item) {
+	void Upsert(const std::string &ns, ItemType &item) {
 		assert(item);
 		auto err = reindexer->Upsert(ns, item);
+
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
-
 	void PrintQueryResults(const std::string &ns, const QueryResults &res) {
 		if (!verbose) return;
 		{
@@ -101,6 +95,7 @@ public:
 		}
 		TestCout() << std::endl;
 	}
+
 	string PrintItem(Item &item) {
 		std::string outBuf = "";
 		for (auto idx = 1; idx < item.NumFields(); idx++) {
@@ -109,7 +104,6 @@ public:
 		}
 		return outBuf;
 	}
-
 	std::string RandString() {
 		string res;
 		uint8_t len = rand() % 4 + 4;
@@ -140,12 +134,42 @@ public:
 		}
 		return vec;
 	}
+	ReindexerPtr reindexer;
+
+private:
+	const string letters = "abcdefghijklmnopqrstuvwxyz";
+	const wstring ru_letters = L"абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
+	bool verbose = false;
+};
+
+class ReindexerApi : public ::testing::Test {
+protected:
+	void SetUp() { rt.reindexer.reset(new Reindexer); }
+
+	void TearDown() {}
+
+	typedef tuple<const char *, const char *, const char *, IndexOpts> IndexDeclaration;
+
+public:
+	ReindexerApi() : rt(make_shared<Reindexer>()) {}
+
+	void DefineNamespaceDataset(const string &ns,
+								initializer_list<const tuple<const char *, const char *, const char *, const IndexOpts>> fields) {
+		rt.DefineNamespaceDataset(ns, fields);
+	}
+	Item NewItem(const std::string &ns) { return rt.NewItem(ns); }
+
+	Error Commit(const std::string &ns) { return rt.Commit(ns); }
+	void Upsert(const std::string &ns, Item &item) { rt.Upsert(ns, item); }
+
+	void PrintQueryResults(const std::string &ns, const QueryResults &res) { rt.PrintQueryResults(ns, res); }
+	string PrintItem(Item &item) { return rt.PrintItem(item); }
+
+	std::string RandString() { return rt.RandString(); }
+	std::string RuRandString() { return rt.RuRandString(); }
+	vector<int> RandIntVector(size_t size, int start, int range) { return rt.RandIntVector(size, start, range); }
 
 public:
 	const string default_namespace = "test_namespace";
-	const string letters = "abcdefghijklmnopqrstuvwxyz";
-	const wstring ru_letters = L"абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
-
-	shared_ptr<Reindexer> reindexer;
-	bool verbose = false;
+	ReindexerTestApi<shared_ptr<Reindexer>, Item> rt;
 };

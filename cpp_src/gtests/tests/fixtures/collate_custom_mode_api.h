@@ -25,7 +25,7 @@ protected:
 			item[kFieldID] = static_cast<int>(i);
 			item[kFieldName] = sourceTable[i];
 
-			err = reindexer->Upsert(nsName, item);
+			err = rt.reindexer->Upsert(nsName, item);
 			EXPECT_TRUE(err.ok()) << err.what();
 		}
 
@@ -35,7 +35,7 @@ protected:
 
 	void SortByName(QueryResults& qr) {
 		Query query = Query(default_namespace).Sort(kFieldName, false);
-		Error err = reindexer->Select(query, qr);
+		Error err = rt.reindexer->Select(query, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 

@@ -1,6 +1,7 @@
 #include "baseencoder.h"
 #include <cstdlib>
 #include "cjsonbuilder.h"
+#include "cjsontools.h"
 #include "core/keyvalue/p_string.h"
 #include "jsonbuilder.h"
 #include "tagsmatcher.h"
@@ -157,37 +158,11 @@ string_view BaseEncoder<Builder>::getPlTuple(ConstPayload* pl) {
 	p_string tuple(kref[0]);
 
 	if (tagsMatcher_ && tuple.size() == 0) {
-		tmpPlTuple_ = buildPayloadTuple(pl);
+		tmpPlTuple_ = buildPayloadTuple(pl, tagsMatcher_);
 		return string_view(*tmpPlTuple_);
 	}
 
 	return string_view(tuple);
-}
-
-template <typename Builder>
-key_string BaseEncoder<Builder>::buildPayloadTuple(ConstPayload* pl) {
-	WrSerializer wrser;
-	CJsonBuilder builder(wrser, CJsonBuilder::TypeObject);
-
-	for (int field = 1; field < pl->NumFields(); ++field) {
-		const PayloadFieldType& fieldType = pl->Type().Field(field);
-		if (fieldType.JsonPaths().size() < 1 || fieldType.JsonPaths()[0].empty()) continue;
-
-		VariantArray keyRefs;
-		pl->Get(field, keyRefs);
-
-		int tagName = tagsMatcher_->name2tag(fieldType.JsonPaths()[0].c_str());
-		assert(tagName != 0);
-
-		if (fieldType.IsArray()) {
-			builder.ArrayRef(tagName, field, keyRefs.size());
-		} else {
-			assert(keyRefs.size() == 1);
-			builder.Ref(tagName, keyRefs[0], field);
-		}
-	}
-	builder.End();
-	return make_key_string(reinterpret_cast<const char*>(wrser.Buf()), wrser.Len());
 }
 
 template class BaseEncoder<JsonBuilder>;

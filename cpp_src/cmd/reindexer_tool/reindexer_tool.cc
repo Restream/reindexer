@@ -15,7 +15,7 @@ int llevel;
 
 void InstallLogLevel(const vector<string>& args) {
 	try {
-		llevel = std::stoi(args.back());
+		llevel = stoi(args.back());
 		if ((llevel < 1) || (llevel > 5)) {
 			throw std::out_of_range("value must be in range 1..5");
 		}

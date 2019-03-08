@@ -310,6 +310,14 @@ func (binding *Builtin) DeleteQuery(nsHash int, data []byte) (bindings.RawBuffer
 	return ret2go(C.reindexer_delete_query(binding.rx, buf2c(data)))
 }
 
+func (binding *Builtin) UpdateQuery(nsHash int, data []byte) (bindings.RawBuffer, error) {
+	if binding.cgoLimiter != nil {
+		binding.cgoLimiter <- struct{}{}
+		defer func() { <-binding.cgoLimiter }()
+	}
+	return ret2go(C.reindexer_update_query(binding.rx, buf2c(data)))
+}
+
 func (binding *Builtin) Commit(namespace string) error {
 	return err2go(C.reindexer_commit(binding.rx, str2c(namespace)))
 }

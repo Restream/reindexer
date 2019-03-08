@@ -191,6 +191,9 @@ public:
 	void run() {
 		if (loop_) loop_->run();
 	}
+	void enable_asyncs() {
+		if (loop_) loop_->backend_.enable_asyncs();
+	}
 
 protected:
 	template <typename... Args>
@@ -331,7 +334,10 @@ public:
 	async(const async &) = delete;
 	~async() { stop(); }
 
-	void set(dynamic_loop &loop_) { loop.loop_ = &loop_; }
+	void set(dynamic_loop &loop_) {
+		loop.loop_ = &loop_;
+		loop.enable_asyncs();
+	}
 	void start() { loop.set(this); }
 	void stop() { loop.stop(this); }
 	void reset() { loop.loop_ = nullptr; }

@@ -17,13 +17,13 @@ protected:
 	void SetUp() override {
 		Error err;
 
-		err = reindexer->OpenNamespace(authors_namespace);
+		err = rt.reindexer->OpenNamespace(authors_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->OpenNamespace(books_namespace);
+		err = rt.reindexer->OpenNamespace(books_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->OpenNamespace(genres_namespace);
+		err = rt.reindexer->OpenNamespace(genres_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		DefineNamespaceDataset(genres_namespace, {IndexDeclaration{genreid, "hash", "int", IndexOpts().PK()},
@@ -100,10 +100,10 @@ protected:
 		Error err = bestItem.FromJSON(json.str());
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->Upsert(books_namespace, bestItem);
+		err = rt.reindexer->Upsert(books_namespace, bestItem);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->Commit(books_namespace);
+		err = rt.reindexer->Commit(books_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 

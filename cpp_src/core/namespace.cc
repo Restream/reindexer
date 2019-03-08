@@ -8,6 +8,7 @@
 #include "cjson/jsonbuilder.h"
 #include "core/index/index.h"
 #include "core/nsselecter/nsselecter.h"
+#include "core/payload/payloadiface.h"
 #include "itemimpl.h"
 #include "replicator/updatesobserver.h"
 #include "replicator/walselecter.h"
@@ -24,10 +25,10 @@ using std::chrono::microseconds;
 using std::make_shared;
 using std::move;
 using std::shared_ptr;
-using std::stoi;
 using std::thread;
 using std::to_string;
 using std::defer_lock;
+using std::map;
 
 #define kStorageItemPrefix "I"
 #define kStorageIndexesPrefix "indexes"
@@ -214,6 +215,7 @@ void Namespace::updateItems(PayloadType oldPlType, const FieldsSet &changedField
 		}
 
 		PayloadValue plNew = oldValue.CopyTo(payloadType_, deltaFields >= 0);
+		plNew.SetLSN(plCurr.GetLSN());
 		Payload newValue(payloadType_, plNew);
 
 		for (int fieldIdx = compositeStartIdx; fieldIdx < compositeEndIdx; ++fieldIdx) {
@@ -511,6 +513,36 @@ void Namespace::Insert(Item &item, bool store) { modifyItem(item, store, ModeIns
 
 void Namespace::Update(Item &item, bool store) { modifyItem(item, store, ModeUpdate); }
 
+void Namespace::Update(const Query &query, QueryResults &result, int64_t lsn) {
+	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
+	WLock lock(mtx_);
+	calc.LockHit();
+
+	if (repl_.slaveMode && lsn == -1) throw Error(errLogic, "Can't modify slave ns '%s'", name_);
+
+	NsSelecter selecter(this);
+	SelectCtx ctx(query);
+	selecter(result, ctx);
+
+	auto tmStart = high_resolution_clock::now();
+	for (ItemRef &item : result.Items()) {
+		updateFieldsFromQuery(item.id, query, true);
+		item.value = items_[item.id];
+	}
+	result.getTagsMatcher(0) = tagsMatcher_;
+	result.lockResults();
+
+	WrSerializer ser;
+	WALRecord wrec(WalUpdateQuery, query.GetSQL(ser).Slice());
+	if (!repl_.slaveMode) lsn = wal_.Add(wrec);
+	observers_.OnWALUpdate(lsn, name_, wrec);
+
+	if (query.debugLevel >= LogInfo) {
+		logPrintf(LogInfo, "Updated %d items in %d µs", result.Count(),
+				  duration_cast<microseconds>(high_resolution_clock::now() - tmStart).count());
+	}
+}
+
 void Namespace::Upsert(Item &item, bool store) { modifyItem(item, store, ModeUpsert); }
 
 void Namespace::Delete(Item &item, bool noLock) {
@@ -625,10 +657,12 @@ void Namespace::doDelete(IdType id) {
 	}
 }
 
-void Namespace::Delete(const Query &q, QueryResults &result) {
+void Namespace::Delete(const Query &q, QueryResults &result, int64_t lsn) {
 	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
 	WLock lock(mtx_);
 	calc.LockHit();
+
+	if (repl_.slaveMode && lsn == -1) throw Error(errLogic, "Can't modify slave ns '%s'", name_);
 
 	NsSelecter selecter(this);
 	SelectCtx ctx(q);
@@ -644,7 +678,7 @@ void Namespace::Delete(const Query &q, QueryResults &result) {
 
 	WALRecord wrec(WalUpdateQuery, q.GetSQL(ser).Slice());
 
-	int64_t lsn = repl_.slaveMode ? -1 : wal_.Add(wrec);
+	if (!repl_.slaveMode) lsn = wal_.Add(wrec);
 
 	observers_.OnWALUpdate(lsn, name_, wrec);
 
@@ -660,8 +694,8 @@ ReplicationState Namespace::GetReplState() {
 }
 
 void Namespace::SetSlaveLSN(int64_t slaveLsn) {
-	assert(repl_.slaveMode);
 	WLock lck(mtx_);
+	assert(repl_.slaveMode);
 	repl_.lastLsn = slaveLsn;
 	unflushedCount_++;
 }
@@ -788,6 +822,105 @@ void Namespace::updateTagsMatcherFromItem(ItemImpl *ritem, string &jsonSliceBuf)
 	}
 }
 
+bool Namespace::isEmptyAfterStorageReload() const { return items_.empty() && !storageLoaded_; }
+
+void Namespace::updateFieldsFromQuery(IdType itemId, const Query &q, bool store) {
+	if (isEmptyAfterStorageReload()) {
+		reloadStorage();
+	}
+
+	assert(items_.exists(itemId));
+
+	for (const pair<string, VariantArray> &field : q.updateFields_) {
+		int fieldIdx = 0;
+		if (!getIndexByName(field.first, fieldIdx)) {
+			bool updated = false;
+			tagsMatcher_.path2tag(field.first, updated);
+		}
+	}
+
+	PayloadValue &pv = items_[itemId];
+	Payload pl(payloadType_, pv);
+	pv.Clone(pl.RealSize());
+	repl_.dataHash ^= pl.GetHash();
+
+	for (int field = indexes_.firstCompositePos(); field < indexes_.totalSize(); ++field) {
+		indexes_[field]->Delete(Variant(pv), itemId);
+	}
+
+	for (const pair<string, VariantArray> &field : q.updateFields_) {
+		const string &fieldPath = field.first;
+		const VariantArray &newValue = field.second;
+
+		int fieldIdx = 0;
+		bool isIndexedField = getIndexByName(fieldPath, fieldIdx);
+
+		Index &index = *indexes_[fieldIdx];
+		bool isIndexSparse = index.Opts().IsSparse();
+		assert(!isIndexSparse || (isIndexSparse && index.Fields().getTagsPathsLength() > 0));
+
+		if (isIndexSparse) {
+			pl.GetByJsonPath(index.Fields().getTagsPath(0), skrefs, index.KeyType());
+		} else {
+			pl.Get(fieldIdx, skrefs, index.Opts().IsArray());
+		}
+
+		if (index.Opts().GetCollateMode() == CollateUTF8)
+			for (const Variant &key : newValue) key.EnsureUTF8();
+
+		if (isIndexedField) {
+			if (skrefs.empty()) index.Delete(Variant(), itemId);
+			for (const Variant &key : skrefs) index.Delete(key, itemId);
+
+			krefs.resize(0);
+			krefs.reserve(newValue.size());
+			for (Variant key : newValue) {
+				key.convert(index.KeyType());
+				krefs.push_back(index.Upsert(key, itemId));
+			}
+			if (newValue.empty()) index.Upsert(Variant(), itemId);
+			if (!isIndexSparse) {
+				pl.Set(fieldIdx, krefs);
+			}
+		}
+
+		bool isIndexedArray = (isIndexedField && index.Opts().IsArray());
+		if (isIndexSparse || !isIndexedField || isIndexedArray) {
+			ItemImpl item(payloadType_, pv, tagsMatcher_);
+			item.SetField(fieldPath, newValue);
+			Variant tupleValue = indexes_[0]->Upsert(item.GetField(0), itemId);
+			pl.Set(0, {tupleValue});
+		}
+	}
+
+	for (int field = indexes_.firstCompositePos(); field < indexes_.totalSize(); ++field) {
+		indexes_[field]->Upsert(Variant(pv), itemId);
+	}
+
+	if (storage_ && store) {
+		if (tagsMatcher_.isUpdated()) {
+			WrSerializer ser;
+			tagsMatcher_.serialize(ser);
+			tagsMatcher_.clearUpdated();
+			writeToStorage(string_view(kStorageTagsPrefix), ser.Slice());
+			logPrintf(LogTrace, "Saving tags of namespace %s:\n%s", name_, tagsMatcher_.dump());
+		}
+
+		WrSerializer pk;
+		WrSerializer data;
+		pk << kStorageItemPrefix;
+		pl.SerializeFields(pk, pkFields());
+		data.PutUInt64(pv.GetLSN());
+		ItemImpl item(payloadType_, pv, tagsMatcher_);
+		item.GetCJSON(data);
+		writeToStorage(pk.Slice(), data.Slice());
+		++unflushedCount_;
+	}
+
+	repl_.dataHash ^= pl.GetHash();
+	markUpdated();
+}
+
 void Namespace::modifyItem(Item &item, bool store, int mode, bool noLock) {
 	if (item.GetLSN() == -1) {
 		if (repl_.slaveMode) throw Error(errLogic, "Can't modify slave ns '%s'", name_);
@@ -831,8 +964,7 @@ void Namespace::modifyItem(Item &item, bool store, int mode, bool noLock) {
 		lsn = wal_.Add(WALRecord(WalItemUpdate, id), exists ? items_[id].GetLSN() : -1);
 	}
 
-	bool emptyAfterReload = (items_.empty() && !storageLoaded_);
-	if (!emptyAfterReload) {
+	if (!isEmptyAfterStorageReload()) {
 		item.setLSN(lsn);
 		item.setID(id);
 		doUpsert(itemImpl, id, exists);
@@ -1204,12 +1336,12 @@ void Namespace::EnableStorage(const string &path, StorageOpts opts) {
 }
 
 StorageOpts Namespace::getStorageOpts() {
-	shared_lock<shared_timed_mutex> lk(mtx_);
+	RLock lk(mtx_);
 	return storageOpts_;
 }
 
 void Namespace::SetStorageOpts(StorageOpts opts) {
-	shared_lock<shared_timed_mutex> lk(mtx_);
+	WLock lk(mtx_);
 	if (opts.IsSlaveMode()) {
 		storageOpts_.SlaveMode();
 		repl_.slaveMode = true;
@@ -1329,27 +1461,31 @@ void Namespace::CloseStorage() {
 	storage_.reset();
 }
 
+void Namespace::reloadStorage() {
+	unique_lock<shared_timed_mutex> lk(mtx_);
+	items_.clear();
+	for (auto it = indexesNames_.begin(); it != indexesNames_.end();) {
+		payloadType_.Drop(it->first);
+		it = indexesNames_.erase(it);
+	}
+	indexes_.clear();
+	free_.clear();
+	IndexDef tupleIndexDef(kTupleName, {}, IndexStrStore, IndexOpts());
+	addIndex(tupleIndexDef);
+	loadIndexesFromStorage();
+	updateSelectTime();
+	lk.unlock();
+
+	logPrintf(LogInfo, "NS reloaded: %s", GetName());
+	storageLoaded_ = false;
+}
+
 bool Namespace::tryToReload() {
 	uint16_t noQueryIdleThresholdSec = getStorageOpts().noQueryIdleThresholdSec;
 	if (noQueryIdleThresholdSec > 0) {
 		int64_t now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 		if ((now - getLastSelectTime()) > noQueryIdleThresholdSec) {
-			unique_lock<shared_timed_mutex> lk(mtx_);
-			items_.clear();
-			for (auto it = indexesNames_.begin(); it != indexesNames_.end();) {
-				payloadType_.Drop(it->first);
-				it = indexesNames_.erase(it);
-			}
-			indexes_.clear();
-			free_.clear();
-			IndexDef tupleIndexDef(kTupleName, {}, IndexStrStore, IndexOpts());
-			addIndex(tupleIndexDef);
-			loadIndexesFromStorage();
-			updateSelectTime();
-			lk.unlock();
-
-			logPrintf(LogInfo, "NS reloaded: %s", GetName());
-			storageLoaded_ = false;
+			reloadStorage();
 			return true;
 		}
 	}
@@ -1399,8 +1535,9 @@ string Namespace::getMeta(const string &key) {
 }
 
 // Put meta data to storage by key
-void Namespace::PutMeta(const string &key, const string_view &data) {
+void Namespace::PutMeta(const string &key, const string_view &data, int64_t lsn) {
 	WLock lock(mtx_);
+	if (repl_.slaveMode && lsn == -1) throw Error(errLogic, "Can't modify slave ns '%s'", name_);
 	putMeta(key, data);
 }
 
@@ -1517,7 +1654,7 @@ int64_t Namespace::funcGetSerial(SelectFuncStruct sqlFuncStruct) {
 	return counter;
 }
 
-void Namespace::FillResult(QueryResults &result, IdSet::Ptr ids, const h_vector<string, 4> &selectFilter) {
+void Namespace::FillResult(QueryResults &result, IdSet::Ptr ids, const h_vector<string, 1> &selectFilter) {
 	result.addNSContext(payloadType_, tagsMatcher_, FieldsSet(tagsMatcher_, selectFilter));
 	for (auto &id : *ids) {
 		result.Add({id, items_[id], 0, 0});

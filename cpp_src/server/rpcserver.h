@@ -64,11 +64,13 @@ public:
 	Error RollbackTx(cproto::Context &ctx, int64_t txId);
 
 	Error DeleteQuery(cproto::Context &ctx, p_string query);
+	Error UpdateQuery(cproto::Context &ctx, p_string query);
 
 	Error Select(cproto::Context &ctx, p_string query, int flags, int limit, p_string ptVersions);
 	Error SelectSQL(cproto::Context &ctx, p_string query, int flags, int limit, p_string ptVersions);
 	Error FetchResults(cproto::Context &ctx, int reqId, int flags, int offset, int limit);
 	Error CloseResults(cproto::Context &ctx, int reqId);
+	Error GetSQLSuggestions(cproto::Context &ctx, p_string query, int pos);
 
 	Error GetMeta(cproto::Context &ctx, p_string ns, p_string key);
 	Error PutMeta(cproto::Context &ctx, p_string ns, p_string key, p_string data);

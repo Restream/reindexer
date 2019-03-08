@@ -7,13 +7,13 @@ using std::unordered_map;
 class FTApi : public ReindexerApi {
 public:
 	void SetUp() {
-		reindexer.reset(new Reindexer);
+		rt.reindexer.reset(new Reindexer);
 		Error err;
 
-		err = reindexer->OpenNamespace("nm1");
+		err = rt.reindexer->OpenNamespace("nm1");
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->OpenNamespace("nm2");
+		err = rt.reindexer->OpenNamespace("nm2");
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		DefineNamespaceDataset(
@@ -23,7 +23,7 @@ public:
 			 IndexDeclaration{
 				 "ft1+ft2=ft3", "text", "composite",
 				 IndexOpts().SetConfig(
-					 R"xxx({"enable_translit": true,"enable_numbers_search": true,"enable_kb_layout": true,"merge_limit": 20000,"log_level": 1,"max_step_size": 5000})xxx")}});
+					 R"xxx({"enable_translit": true,"enable_numbers_search": true,"enable_kb_layout": true,"merge_limit": 20000,"log_level": 5,"max_step_size": 100})xxx")}});
 		DefineNamespaceDataset(
 			"nm2",
 			{IndexDeclaration{"id", "hash", "int", IndexOpts().PK()}, IndexDeclaration{"ft1", "text", "string", IndexOpts()},
@@ -73,7 +73,7 @@ public:
 		Query qr = Query("nm1").Where("ft3", CondEq, word);
 		QueryResults res;
 		qr.AddFunction("ft3 = highlight(!,!)");
-		auto err = reindexer->Select(qr, res);
+		auto err = rt.reindexer->Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		return res;
@@ -83,7 +83,7 @@ public:
 		Item item = NewItem("nm1");
 		item["id"] = id;
 
-		this->reindexer->Delete("nm1", item);
+		this->rt.reindexer->Delete("nm1", item);
 	}
 	QueryResults SimpleCompositeSelect(string word) {
 		Query qr = Query("nm1").Where("ft3", CondEq, word);
@@ -93,12 +93,19 @@ public:
 
 		qr.mergeQueries_.push_back(mqr);
 		qr.AddFunction("ft3 = highlight(<b>,</b>)");
-		auto err = reindexer->Select(qr, res);
+		auto err = rt.reindexer->Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		return res;
 	}
+	QueryResults StressSelect(string word) {
+		Query qr = Query("nm1").Where("ft3", CondEq, word);
+		QueryResults res;
+		auto err = rt.reindexer->Select(qr, res);
+		EXPECT_TRUE(err.ok()) << err.what();
 
+		return res;
+	}
 	FTApi() {}
 
 private:

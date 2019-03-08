@@ -13,12 +13,12 @@ public:
 	socket(const socket &other) : fd_(other.fd_) {}
 	socket(int fd = -1) : fd_(fd) {}
 
-	int bind(const char *addr);
-	int connect(const char *addr);
+	int bind(string_view addr);
+	int connect(string_view addr);
 	socket accept();
 	int listen(int backlog);
-	ssize_t recv(char *buf, size_t len);
-	ssize_t send(const char *buf, size_t len);
+	ssize_t recv(span<char> buf);
+	ssize_t send(const span<char> buf);
 	ssize_t send(span<chunk> chunks);
 	int close();
 
@@ -31,7 +31,7 @@ public:
 	static bool would_block(int error);
 
 protected:
-	int create(const char *addr, struct addrinfo **pres);
+	int create(string_view addr, struct addrinfo **pres);
 
 	int fd_;
 };

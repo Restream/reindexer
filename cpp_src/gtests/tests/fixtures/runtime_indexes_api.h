@@ -5,7 +5,7 @@
 class RuntimeIndexesApi : public ReindexerApi {
 public:
 	void SetUp() override {
-		Error err = reindexer->OpenNamespace(default_namespace);
+		Error err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		DefineNamespaceDataset(default_namespace,
@@ -33,17 +33,17 @@ protected:
 
 	void AddRuntimeIntArrayIndex(int indexNumber) {
 		string indexName = getRuntimeIntIndexName(indexNumber);
-		Error err = reindexer->AddIndex(default_namespace, {indexName, "hash", "int", IndexOpts().Array()});
+		Error err = rt.reindexer->AddIndex(default_namespace, {indexName, "hash", "int", IndexOpts().Array()});
 		EXPECT_TRUE(err.ok()) << err.what();
-		err = reindexer->Commit(default_namespace);
+		err = rt.reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
 	void DropRuntimeIntArrayIndex(int indexNumber) {
 		reindexer::IndexDef idef(getRuntimeIntIndexName(indexNumber));
-		Error err = reindexer->DropIndex(default_namespace, idef);
+		Error err = rt.reindexer->DropIndex(default_namespace, idef);
 		EXPECT_TRUE(err.ok()) << err.what();
-		err = reindexer->Commit(default_namespace);
+		err = rt.reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
@@ -61,17 +61,17 @@ protected:
 		IndexOpts opts;
 		if (pk) opts.PK();
 		string indexName = getRuntimeStringIndexName(indexNumber);
-		Error err = reindexer->AddIndex(default_namespace, {indexName, "hash", "string", opts});
+		Error err = rt.reindexer->AddIndex(default_namespace, {indexName, "hash", "string", opts});
 		EXPECT_TRUE(err.ok()) << err.what();
-		err = reindexer->Commit(default_namespace);
+		err = rt.reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
 	void DropRuntimeStringIndex(int indexNumber) {
 		reindexer::IndexDef idef(getRuntimeStringIndexName(indexNumber));
-		Error err = reindexer->DropIndex(default_namespace, idef);
+		Error err = rt.reindexer->DropIndex(default_namespace, idef);
 		EXPECT_TRUE(err.ok()) << err.what();
-		err = reindexer->Commit(default_namespace);
+		err = rt.reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
@@ -87,24 +87,24 @@ protected:
 
 	void AddRuntimeCompositeIndex(bool pk = false) {
 		string indexName(getRuntimeCompositeIndexName(pk));
-		Error err =
-			reindexer->AddIndex(default_namespace, {indexName, getRuntimeCompositeIndexParts(pk), "tree", "composite", IndexOpts().PK(pk)});
+		Error err = rt.reindexer->AddIndex(default_namespace,
+										   {indexName, getRuntimeCompositeIndexParts(pk), "tree", "composite", IndexOpts().PK(pk)});
 		EXPECT_TRUE(err.ok()) << err.what();
-		err = reindexer->Commit(default_namespace);
+		err = rt.reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
 	void DropRuntimeCompositeIndex(bool pk = false) {
 		reindexer::IndexDef idef(getRuntimeCompositeIndexName(pk));
-		Error err = reindexer->DropIndex(default_namespace, idef);
+		Error err = rt.reindexer->DropIndex(default_namespace, idef);
 		EXPECT_TRUE(err.ok()) << err.what();
-		err = reindexer->Commit(default_namespace);
+		err = rt.reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
 	void CheckSelectValidity(const Query& query) {
 		QueryResults qr;
-		Error err = reindexer->Select(query, qr);
+		Error err = rt.reindexer->Select(query, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 

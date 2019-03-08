@@ -74,6 +74,7 @@ public:
 	WordIdType findWord(const string& word);
 	WordIdType BuildWordId(uint32_t id);
 	PackedWordEntry& getWordById(WordIdType id);
+	string Dump();
 
 	size_t GetMemStat();
 	void SetWordsOffset(uint32_t word_offset);
@@ -86,6 +87,8 @@ public:
 	uint32_t GetSuffixWordId(WordIdType id, const CommitStep& step);
 	void StartCommit(bool complte_updated);
 	bool NeedRebuild(bool complte_updated);
+	bool NeedRecomitLast();
+
 	bool NeedClear(bool complte_updated);
 	void Clear();
 

@@ -5,7 +5,7 @@
 class SparseIndexesApi : public ReindexerApi {
 protected:
 	void SetUp() override {
-		Error err = reindexer->OpenNamespace(default_namespace);
+		Error err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldId, "hash", "string", IndexOpts().PK()},
@@ -39,7 +39,7 @@ protected:
 
 	void CheckSelectAll() {
 		QueryResults qr;
-		Error err = reindexer->Select(Query(default_namespace), qr);
+		Error err = rt.reindexer->Select(Query(default_namespace), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_TRUE(qr.Count() == 100);
 
@@ -59,7 +59,7 @@ protected:
 
 	void CheckSelectByTreeIndex() {
 		QueryResults qr;
-		Error err = reindexer->Select(Query(default_namespace).Where(kFieldName, CondEq, Variant("name5")), qr);
+		Error err = rt.reindexer->Select(Query(default_namespace).Where(kFieldName, CondEq, Variant("name5")), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_TRUE(qr.Count() == 1);
 		Item ritem(qr[0].GetItem());
@@ -69,7 +69,7 @@ protected:
 
 		QueryResults qr2;
 		const string toCompare("name2");
-		err = reindexer->Select(Query(default_namespace).Where(kFieldName, CondLt, Variant(toCompare)), qr2);
+		err = rt.reindexer->Select(Query(default_namespace).Where(kFieldName, CondLt, Variant(toCompare)), qr2);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		for (auto it : qr2) {
@@ -82,7 +82,7 @@ protected:
 
 	void CheckSelectByHashIndex() {
 		QueryResults qr;
-		Error err = reindexer->Select(Query(default_namespace).Where(kFieldSerialNumber, CondLt, Variant(static_cast<int64_t>(50))), qr);
+		Error err = rt.reindexer->Select(Query(default_namespace).Where(kFieldSerialNumber, CondLt, Variant(static_cast<int64_t>(50))), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_TRUE(qr.Count() == 50);
 		for (int64_t i = 0; i < static_cast<int64_t>(qr.Count()); ++i) {
@@ -94,7 +94,7 @@ protected:
 
 		QueryResults qr2;
 		int64_t expectedValue(static_cast<int64_t>(77));
-		err = reindexer->Select(Query(default_namespace).Where(kFieldSerialNumber, CondEq, Variant(expectedValue)), qr2);
+		err = rt.reindexer->Select(Query(default_namespace).Where(kFieldSerialNumber, CondEq, Variant(expectedValue)), qr2);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_TRUE(qr2.Count() == 1);
 

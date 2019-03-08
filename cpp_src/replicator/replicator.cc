@@ -13,7 +13,10 @@ namespace reindexer {
 
 using namespace net;
 
-Replicator::Replicator(ReindexerImpl *slave) : slave_(slave), syncing_(false), terminate_(false) {}
+Replicator::Replicator(ReindexerImpl *slave) : slave_(slave), syncing_(false), terminate_(false) {
+	stop_.set(loop_);
+	resync_.set(loop_);
+}
 
 Replicator::~Replicator() { Stop(); }
 
@@ -47,18 +50,20 @@ void Replicator::Stop() {
 	if (thread_.joinable()) {
 		thread_.join();
 	}
-	master_.reset();
+	if (master_) {
+		master_->Stop();
+		master_.reset();
+	}
+	terminate_ = false;
 }
 
 void Replicator::run() {
-	stop_.set(loop_);
 	stop_.set([&](ev::async &sig) { sig.loop.break_loop(); });
 	stop_.start();
 	logPrintf(LogInfo, "[repl] Replicator with %s started", config_.masterDSN);
 
 	master_->SubscribeUpdates(this, true);
 
-	resync_.set(loop_);
 	resync_.set([this](ev::async &) { syncDatabase(); });
 	resync_.start();
 
@@ -70,8 +75,6 @@ void Replicator::run() {
 
 	resync_.stop();
 	stop_.stop();
-	resync_.reset();
-	stop_.reset();
 	logPrintf(LogInfo, "[repl] Replicator with %s stopped", config_.masterDSN);
 }
 
@@ -245,6 +248,10 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 	Error err;
 	IndexDef iDef;
 
+	if (!slaveNs && rec.type != WalNamespaceAdd) {
+		return Error(errParams, "Namespace %s not found", nsName);
+	}
+
 	switch (rec.type) {
 		// Modify item
 		case WalItemModify:
@@ -271,7 +278,7 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 			break;
 		// Metadata updated
 		case WalPutMeta:
-			slaveNs->PutMeta(rec.putMeta.key.ToString(), rec.putMeta.value);
+			slaveNs->PutMeta(rec.putMeta.key.ToString(), rec.putMeta.value, lsn);
 			stat.updatedMeta++;
 			break;
 		// Update query
@@ -281,7 +288,10 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 			q.FromSQL(rec.data);
 			switch (q.type_) {
 				case QueryDelete:
-					slaveNs->Delete(q, result);
+					slaveNs->Delete(q, result, lsn);
+					break;
+				case QueryUpdate:
+					slaveNs->Update(q, result, lsn);
 					break;
 				default:
 					break;
@@ -406,12 +416,12 @@ void Replicator::OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &w
 
 	std::shared_ptr<Namespace> slaveNs;
 
+	Error err;
 	try {
 		slaveNs = slave_->getNamespace(nsName);
 	} catch (const Error &) {
 	}
 
-	Error err;
 	SyncStat stat;
 
 	try {

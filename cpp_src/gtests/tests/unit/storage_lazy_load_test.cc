@@ -78,7 +78,7 @@ TEST_F(StorageLazyLoadApi, ReadWriteTest) {
 	}
 }
 
-TEST_F(StorageLazyLoadApi, AttemptToReadWriteInParallelTest) {
+TEST_F(StorageLazyLoadApi, DISABLED_AttemptToReadWriteInParallelTest) {
 	bool storageLoaded = false;
 	std::atomic<int> totalItemsCount(getItemsCount(storageLoaded));
 	totalItemsCount += 100;  // 100 is not loaded from storage yet
@@ -147,24 +147,24 @@ TEST_F(StorageLazyLoadApi, TestForTSAN) {
 	waitFor(4000);
 
 	std::vector<thread> selectThreads;
-    for (size_t i = 0; i < 30; ++i) {
+	for (size_t i = 0; i < 30; ++i) {
 		selectThreads.push_back(std::thread(readFn));
 	}
 
 	std::vector<thread> insertThreads;
-    for (size_t i = 0; i < 150; ++i) {
+	for (size_t i = 0; i < 150; ++i) {
 		insertThreads.push_back(std::thread(writeFn));
 	}
 
-    for (size_t i = 0; i < 15; ++i) {
+	for (size_t i = 0; i < 15; ++i) {
 		selectThreads.push_back(std::thread(readFn));
 	}
 
-    for (size_t i = 0; i < 50; ++i) {
+	for (size_t i = 0; i < 50; ++i) {
 		insertThreads.push_back(std::thread(writeFn));
 	}
 
-    for (size_t i = 0; i < 50; ++i) {
+	for (size_t i = 0; i < 50; ++i) {
 		selectThreads.push_back(std::thread(readFn));
 	}
 

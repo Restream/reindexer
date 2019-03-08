@@ -4,16 +4,23 @@
 
 namespace reindexer {
 
-tokenizer::tokenizer(const string_view &query) : q(query), cur(query.begin()) {}
+tokenizer::tokenizer(const string_view &query) : q_(query), cur_(query.begin()) {}
 
-bool tokenizer::end() const { return cur == q.end(); }
+bool tokenizer::end() const { return cur_ == q_.end(); }
 
 void tokenizer::skip_space() {
 	for (;;) {
-		while (cur != q.end() && (*cur == ' ' || *cur == '\t' || *cur == '\n')) cur++;
-		if (cur != q.end() && *cur == '-' && cur + 1 != q.end() && *(cur + 1) == '-') {
-			cur += 2;
-			while (cur != q.end() && *cur != '\n') cur++;
+		while (cur_ != q_.end() && (*cur_ == ' ' || *cur_ == '\t' || *cur_ == '\n')) {
+			cur_++;
+			pos_++;
+		}
+		if (cur_ != q_.end() && *cur_ == '-' && cur_ + 1 != q_.end() && *(cur_ + 1) == '-') {
+			cur_ += 2;
+			pos_ += 2;
+			while (cur_ != q_.end() && *cur_ != '\n') {
+				cur_++;
+				pos_++;
+			}
 		} else
 			return;
 	}
@@ -22,38 +29,49 @@ void tokenizer::skip_space() {
 token tokenizer::next_token(bool to_lower) {
 	skip_space();
 
-	if (cur == q.end()) return token(TokenEnd);
+	if (cur_ == q_.end()) return token(TokenEnd);
 
 	token res(TokenSymbol);
 
-	if (isalpha(*cur) || *cur == '_' || *cur == '#') {
+	if (isalpha(*cur_) || *cur_ == '_' || *cur_ == '#') {
 		res.type = TokenName;
 		do {
-			res.text_.push_back(to_lower ? tolower(*cur++) : *cur++);
-		} while (cur != q.end() && (isalpha(*cur) || isdigit(*cur) || *cur == '_' || *cur == '#'));
-	} else if (isdigit(*cur) || *cur == '-' || *cur == '+') {
+			res.text_.push_back(to_lower ? tolower(*cur_++) : *cur_++);
+			++pos_;
+		} while (cur_ != q_.end() && (isalpha(*cur_) || isdigit(*cur_) || *cur_ == '_' || *cur_ == '#'));
+	} else if (isdigit(*cur_) || *cur_ == '-' || *cur_ == '+') {
 		res.type = TokenNumber;
 		do {
-			res.text_.push_back(*cur++);
-		} while (cur != q.end() && (isdigit(*cur) || *cur == '.'));
-	} else if (cur != q.end() && (*cur == '>' || *cur == '<' || *cur == '=')) {
+			res.text_.push_back(*cur_++);
+			++pos_;
+		} while (cur_ != q_.end() && (isdigit(*cur_) || *cur_ == '.'));
+	} else if (cur_ != q_.end() && (*cur_ == '>' || *cur_ == '<' || *cur_ == '=')) {
 		res.type = TokenOp;
 		do {
-			res.text_.push_back(*cur++);
-		} while (cur != q.end() && (*cur == '=' || *cur == '>' || *cur == '<') && res.text_.size() < 2);
-	} else if (*cur == '"' || *cur == '\'' || *cur == '`') {
+			res.text_.push_back(*cur_++);
+			++pos_;
+		} while (cur_ != q_.end() && (*cur_ == '=' || *cur_ == '>' || *cur_ == '<') && res.text_.size() < 2);
+	} else if (*cur_ == '"' || *cur_ == '\'' || *cur_ == '`') {
 		res.type = TokenString;
-		char quote_chr = *cur++;
-		while (cur != q.end()) {
-			if (*cur == quote_chr) {
-				++cur;
+		char quote_chr = *cur_++;
+		++pos_;
+		while (cur_ != q_.end()) {
+			if (*cur_ == quote_chr) {
+				++cur_;
+				++pos_;
 				break;
 			}
-			if (*cur == '\\' && ++cur == q.end()) break;
-			res.text_.push_back(*cur++);
+			if (*cur_ == '\\') {
+				++pos_;
+				if (++cur_ == q_.end()) break;
+			}
+			res.text_.push_back(*cur_++);
+			++pos_;
 		};
-	} else
-		res.text_.push_back(*cur++);
+	} else {
+		res.text_.push_back(*cur_++);
+		++pos_;
+	}
 
 	// null terminate it
 	res.text_.reserve(res.text_.size() + 1);
@@ -64,21 +82,26 @@ token tokenizer::next_token(bool to_lower) {
 string tokenizer::where() const {
 	int line = 1;
 	int col = 0;
-	for (auto pos = q.begin(); pos != cur; pos++) {
+	for (auto pos = q_.begin(); pos != cur_; pos++) {
 		if (*pos == '\n') {
 			line++;
 			col = 0;
 		} else
 			col++;
 	}
-	return "line: " + std::to_string(line) + " column: " + std::to_string(col) + " " + std::to_string(q.size());
+	return "line: " + std::to_string(line) + " column: " + std::to_string(col) + " " + std::to_string(q_.size());
 }
 
 token tokenizer::peek_token(bool to_lower) {
-	auto save_cur = cur;
+	auto save_cur = cur_;
+	auto save_pos = pos_;
 	auto res = next_token(to_lower);
-	cur = save_cur;
+	cur_ = save_cur;
+	pos_ = save_pos;
 	return res;
 }
+
+size_t tokenizer::pos() const { return pos_; }
+size_t tokenizer::length() const { return q_.length(); }
 
 }  // namespace reindexer

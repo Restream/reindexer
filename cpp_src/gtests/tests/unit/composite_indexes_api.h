@@ -8,7 +8,7 @@ public:
 
 public:
 	void SetUp() override {
-		Error err = reindexer->OpenNamespace(default_namespace);
+		Error err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldNameBookid, "hash", "int", IndexOpts()},
@@ -46,17 +46,17 @@ public:
 		indexDeclr.fieldType_ = "composite";
 		indexDeclr.opts_ = opts;
 		indexDeclr.jsonPaths_ = reindexer::JsonPaths(indexes);
-		Error err = reindexer->AddIndex(default_namespace, indexDeclr);
+		Error err = rt.reindexer->AddIndex(default_namespace, indexDeclr);
 		EXPECT_TRUE(err.ok()) << err.what();
-		err = reindexer->Commit(default_namespace);
+		err = rt.reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
 	void dropIndex(const string& name) {
 		reindexer::IndexDef idef(name);
-		Error err = reindexer->DropIndex(default_namespace, idef);
+		Error err = rt.reindexer->DropIndex(default_namespace, idef);
 		EXPECT_TRUE(err.ok()) << err.what();
-		err = reindexer->Commit(default_namespace);
+		err = rt.reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 

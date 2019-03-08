@@ -27,7 +27,7 @@ Error DBManager::Init() {
 		if (de.isDir && validateObjectName(de.name)) {
 			auto status = loadOrCreateDatabase(de.name);
 			if (!status.ok()) {
-				reindexer::logPrintf(LogError, "Failed to open database '%s' - %s", de.name, status.what());
+				logPrintf(LogError, "Failed to open database '%s' - %s", de.name, status.what());
 			}
 		}
 	}

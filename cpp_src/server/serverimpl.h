@@ -27,6 +27,7 @@ class ServerImpl {
 
 public:
 	ServerImpl();
+	~ServerImpl();
 
 	Error InitFromCLI(int argc, char* argv[]);
 	Error InitFromYAML(const string& yaml);
@@ -59,7 +60,7 @@ private:
 	ServerConfig config_;
 	LoggerWrapper logger_;
 	LoggerWrapper coreLogger_;
-	LogLevel logLevel_;
+	int coreLogLevel_ = LogNone;
 
 #ifndef _WIN32
 	PidFile pid_;

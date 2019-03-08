@@ -37,6 +37,16 @@ centos6_debs="centos-release-scl devtoolset-7-gcc devtoolset-7-gcc-c++ make snap
 debian_debs="build-essential g++ libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git"
 alpine_apks="g++ snappy-dev libexecinfo-dev make curl cmake unzip git"
 
+cmake_installed () {
+    info_msg "Check for installed cmake ..... "
+    cmake_version=$(cmake --version | grep -oE '3\.[0-9]+\.[0-9]+')
+    if [ -n "$cmake_version" ]; then
+        info_msg "Cmake with comaptable version $cmake_version found"
+        return
+    fi
+    return 1
+}
+
 install_cmake_linux () {
     info_msg "Installing 'cmake' package ....."
     case `uname -m` in
@@ -96,7 +106,7 @@ install_centos7() {
             fi
         fi
     done
-    install_cmake_linux
+    cmake_installed || install_cmake_linux
     return $?
 }
 
@@ -117,7 +127,7 @@ install_centos6() {
         fi
     done
     source scl_source enable devtoolset-7
-    install_cmake_linux
+    cmake_installed || install_cmake_linux
     return $?
 }
 
@@ -139,7 +149,7 @@ install_debian() {
             fi
         fi
     done
-    install_cmake_linux
+    cmake_installed || install_cmake_linux
     return $?
 }
 

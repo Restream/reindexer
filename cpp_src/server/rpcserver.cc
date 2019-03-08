@@ -361,6 +361,21 @@ Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin) {
 	return sendResults(ctx, qres, -1, opts);
 }
 
+Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin) {
+	Query query;
+	Serializer ser(queryBin.data(), queryBin.size());
+	query.Deserialize(ser);
+	query.type_ = QueryUpdate;
+
+	QueryResults qres;
+	auto err = getDB(ctx, kRoleDataWrite)->Update(query, qres);
+	if (!err.ok()) {
+		return err;
+	}
+	ResultFetchOpts opts{0, {}, 0, INT_MAX};
+	return sendResults(ctx, qres, -1, opts);
+}
+
 shared_ptr<Reindexer> RPCServer::getDB(cproto::Context &ctx, UserRole role) {
 	auto clientData = ctx.GetClientData().get();
 	if (clientData) {
@@ -508,6 +523,19 @@ Error RPCServer::fetchResults(cproto::Context &ctx, int reqId, const ResultFetch
 	return sendResults(ctx, qres, reqId, opts);
 }
 
+Error RPCServer::GetSQLSuggestions(cproto::Context &ctx, p_string query, int pos) {
+	vector<string> suggests;
+	Error err = getDB(ctx, kRoleDataRead)->GetSqlSuggestions(query, pos, suggests);
+
+	if (err.ok()) {
+		cproto::Args ret;
+		ret.reserve(suggests.size());
+		for (auto &suggest : suggests) ret.push_back(cproto::Arg(suggest));
+		ctx.Return(ret);
+	}
+	return err;
+}
+
 Error RPCServer::Commit(cproto::Context &ctx, p_string ns) {
 	//
 	return getDB(ctx, kRoleDataWrite)->Commit(ns);
@@ -572,11 +600,14 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 
 	dispatcher.Register(cproto::kCmdModifyItem, this, &RPCServer::ModifyItem);
 	dispatcher.Register(cproto::kCmdDeleteQuery, this, &RPCServer::DeleteQuery);
+	dispatcher.Register(cproto::kCmdUpdateQuery, this, &RPCServer::UpdateQuery);
 
 	dispatcher.Register(cproto::kCmdSelect, this, &RPCServer::Select);
 	dispatcher.Register(cproto::kCmdSelectSQL, this, &RPCServer::SelectSQL);
 	dispatcher.Register(cproto::kCmdFetchResults, this, &RPCServer::FetchResults);
 	dispatcher.Register(cproto::kCmdCloseResults, this, &RPCServer::CloseResults);
+
+	dispatcher.Register(cproto::kCmdGetSQLSuggestions, this, &RPCServer::GetSQLSuggestions);
 
 	dispatcher.Register(cproto::kCmdGetMeta, this, &RPCServer::GetMeta);
 	dispatcher.Register(cproto::kCmdPutMeta, this, &RPCServer::PutMeta);

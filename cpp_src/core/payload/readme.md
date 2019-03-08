@@ -29,9 +29,9 @@ See [payloadiface.h](payloadiface.h) for details.
 
 ## PayloadValue structure 
 
-| Field         | Refcount | Version | Cap | Field1 | ... | FieldN | Embedded Arrays |
-|---------------|----------|---------|-----|--------|-----|--------|-----------------|
-| Size in bytes | 2        | 2       | 4   | Vary   |     | Vary   | Vary            |
+| Field         | RefCount | Cap   | LSN | Field1 | ... | FieldN | Embedded Arrays |
+|---------------|----------|-------|-----|--------|-----|--------|-----------------|
+| Size in bytes | 4        | 4     | 8   | Vary   |     | Vary   | Vary            |
 
 
 ### Data format of fields

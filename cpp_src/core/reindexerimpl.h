@@ -41,6 +41,7 @@ public:
 	Error EnumNamespaces(vector<NamespaceDef> &defs, bool bEnumAll);
 	Error Insert(string_view nsName, Item &item, Completion cmpl = nullptr);
 	Error Update(string_view nsName, Item &item, Completion cmpl = nullptr);
+	Error Update(const Query &query, QueryResults &result);
 	Error Upsert(string_view nsName, Item &item, Completion cmpl = nullptr);
 	Error Delete(string_view nsName, Item &item, Completion cmpl = nullptr);
 	Error Delete(const Query &query, QueryResults &result);
@@ -58,6 +59,7 @@ public:
 	Error EnumMeta(string_view nsName, vector<string> &keys);
 	Error InitSystemNamespaces();
 	Error SubscribeUpdates(IUpdatesObserver *observer, bool subscribe);
+	Error GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string> &suggestions);
 
 protected:
 	class NsLocker : public h_vector<pair<Namespace::Ptr, smart_lock<shared_timed_mutex>>, 4> {

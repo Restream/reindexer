@@ -46,10 +46,13 @@ public:
 	void skip_space();
 	bool end() const;
 	string where() const;
+	size_t pos() const;
+	size_t length() const;
 
 protected:
-	string_view q;
-	const char *cur;
+	string_view q_;
+	const char *cur_;
+	size_t pos_ = 0;
 };
 
 }  // namespace reindexer

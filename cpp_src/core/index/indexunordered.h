@@ -50,7 +50,7 @@ public:
 	Variant Upsert(const Variant &key, IdType id) override;
 	void Delete(const Variant &key, IdType id) override;
 	void DumpKeys() override;
-	SelectKeyResults SelectKey(const VariantArray &keys, CondType condition, SortType stype, Index::ResultType res_type,
+	SelectKeyResults SelectKey(const VariantArray &keys, CondType cond, SortType stype, Index::SelectOpts opts,
 							   BaseFunctionCtx::Ptr ctx) override;
 	void Commit() override;
 	void UpdateSortedIds(const UpdateSortedContext &) override;

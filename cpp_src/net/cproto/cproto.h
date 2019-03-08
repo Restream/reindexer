@@ -19,14 +19,15 @@ enum CmdCode {
 	kCmdDropIndex = 24,
 	kCmdUpdateIndex = 25,
 
-	kCmdStartTransaction = 25,
 	kCmdAddTxItem = 26,
 	kCmdCommitTx = 27,
 	kCmdRollbackTx = 28,
+	kCmdStartTransaction = 29,
 
 	kCmdCommit = 32,
 	kCmdModifyItem = 33,
 	kCmdDeleteQuery = 34,
+	kCmdUpdateQuery = 35,
 
 	kCmdSelect = 48,
 	kCmdSelectSQL = 49,
@@ -39,6 +40,8 @@ enum CmdCode {
 
 	kCmdSubscribeUpdates = 90,
 	kCmdUpdates = 91,
+
+	kCmdGetSQLSuggestions = 92,
 
 	kCmdCodeMax = 128
 };

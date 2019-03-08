@@ -11,7 +11,6 @@
 #include "core/cjson/jsonbuilder.h"
 #include "tools/fsops.h"
 #include "tools/jsontools.h"
-#include "tools/stringstools.h"
 #include "vendor/gason/gason.h"
 
 namespace reindexer_tool {
@@ -126,6 +125,23 @@ Error DBWrapper<_DB>::commandDeleteSQL(const string& command) {
 
 	if (err.ok()) {
 		output_() << "Deleted " << results.Count() << " documents" << std::endl;
+	}
+	return err;
+}
+
+template <typename _DB>
+Error DBWrapper<_DB>::commandUpdateSQL(const string& command) {
+	typename _DB::QueryResultsT results;
+	Query q;
+	try {
+		q.FromSQL(command);
+	} catch (const Error& err) {
+		return err;
+	}
+	auto err = db_.Update(q, results);
+
+	if (err.ok()) {
+		output_() << "Updated " << results.Count() << " documents" << std::endl;
 	}
 	return err;
 }
@@ -483,6 +499,14 @@ bool DBWrapper<_DB>::Interactive() {
 	rx.set_max_history_size(1000);
 	rx.set_max_line_size(16384);
 	rx.set_max_hint_rows(8);
+	rx.set_completion_callback(
+		[this](std::string const& input, int /*pos*/, void*) -> replxx::Replxx::completions_t {
+			replxx::Replxx::completions_t completions;
+			db_.GetSqlSuggestions(input, input.empty() ? 0 : input.length() - 1, completions);
+			return completions;
+		},
+		nullptr);
+
 	std::string prompt = "\x1b[1;32mReindexer\x1b[0m> ";
 
 	// main repl loop

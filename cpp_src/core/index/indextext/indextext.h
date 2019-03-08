@@ -31,11 +31,11 @@ public:
 		initSearchers();
 	}
 
-	SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, Index::ResultType res_type,
+	SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, Index::SelectOpts opts,
 							   BaseFunctionCtx::Ptr ctx) override final;
 	void UpdateSortedIds(const UpdateSortedContext&) override {}
 	virtual IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) = 0;
-	void SetOpts(const IndexOpts& opts) override final;
+	void SetOpts(const IndexOpts& opts) override;
 	void Commit() override final;
 	virtual void commitFulltext() = 0;
 	void SetSortedIdxCount(int) override final{};

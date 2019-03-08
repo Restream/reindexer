@@ -36,7 +36,7 @@ const vector<string> ansiNames = {
 // clang-format on
 
 TEST_F(CollateCustomModeAPI, CollateCustomTest1) {
-	PrepareNs(reindexer, default_namespace, u8"А-Я0-9A-Z", sourceTable);
+	PrepareNs(rt.reindexer, default_namespace, u8"А-Я0-9A-Z", sourceTable);
 
 	QueryResults qr;
 	SortByName(qr);
@@ -51,7 +51,7 @@ TEST_F(CollateCustomModeAPI, CollateCustomTest1) {
 }
 
 TEST_F(CollateCustomModeAPI, CollateCustomTest2) {
-	PrepareNs(reindexer, default_namespace, u8"A-ZА-Я0-9", sourceTable);
+	PrepareNs(rt.reindexer, default_namespace, u8"A-ZА-Я0-9", sourceTable);
 
 	QueryResults qr;
 	SortByName(qr);
@@ -66,7 +66,7 @@ TEST_F(CollateCustomModeAPI, CollateCustomTest2) {
 }
 
 TEST_F(CollateCustomModeAPI, CollateCustomTest3) {
-	PrepareNs(reindexer, default_namespace, u8"0-9A-ZА-Я", sourceTable);
+	PrepareNs(rt.reindexer, default_namespace, u8"0-9A-ZА-Я", sourceTable);
 
 	QueryResults qr;
 	SortByName(qr);
@@ -141,7 +141,7 @@ TEST_F(CollateCustomModeAPI, CollateCustomTest4) {
 												 u8"электричка",
 												 u8"яблоко"};
 
-	PrepareNs(reindexer, default_namespace,
+	PrepareNs(rt.reindexer, default_namespace,
 			  u8"АаБбВвГгДдЕеЖжЗзИиКкЛлМмНнОоПпРрСсТтУуФфХхЦцЧчШшЩщЪъЫыЬьЭ-ЯAaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0-9ЁёЙйэ-я",
 			  sourceData);
 

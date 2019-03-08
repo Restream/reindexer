@@ -5,21 +5,17 @@
 
 namespace reindexer {
 
-Comparator::Comparator() : fields_(), cmpComposite(payloadType_, fields_), cmpEqualPosition(payloadType_, KeyValueNull) {}
+Comparator::Comparator() {}
 Comparator::~Comparator() {}
 
 Comparator::Comparator(CondType cond, KeyValueType type, const VariantArray &values, bool isArray, bool distinct, PayloadType payloadType,
 					   const FieldsSet &fields, void *rawData, const CollateOpts &collateOpts)
-	: cond_(cond),
-	  type_(type),
-	  isArray_(isArray),
-	  rawData_(reinterpret_cast<uint8_t *>(rawData)),
-	  collateOpts_(collateOpts),
-	  payloadType_(payloadType),
-	  fields_(fields),
-	  cmpComposite(payloadType_, fields_),
-	  cmpEqualPosition(payloadType_, type),
-	  dist_(distinct ? new fast_hash_set<Variant> : nullptr) {
+	: ComparatorVars(cond, type, isArray, payloadType, fields, rawData, collateOpts),
+	  cmpBool(distinct),
+	  cmpInt(distinct),
+	  cmpInt64(distinct),
+	  cmpDouble(distinct),
+	  cmpString(distinct) {
 	if (type == KeyValueComposite) assert(fields_.size() > 0);
 	if (cond_ == CondEq && values.size() != 1) cond_ = CondSet;
 	setValues(values);
@@ -32,7 +28,6 @@ void Comparator::setValues(const VariantArray &values) {
 		cmpInt64.SetValues(cond_, values);
 		cmpDouble.SetValues(cond_, values);
 		cmpString.SetValues(cond_, values);
-		cmpComposite.SetValues(cond_, values);
 	} else {
 		switch (type_) {
 			case KeyValueBool:
@@ -51,7 +46,7 @@ void Comparator::setValues(const VariantArray &values) {
 				cmpString.SetValues(cond_, values);
 				break;
 			case KeyValueComposite:
-				cmpComposite.SetValues(cond_, values);
+				cmpComposite.SetValues(cond_, values, *this);
 				break;
 			default:
 				assert(0);
@@ -71,69 +66,48 @@ void Comparator::Bind(PayloadType type, int field) {
 	}
 }
 
-void Comparator::BindEqualPosition(int field, const VariantArray &val, CondType cond) {
-	assert(isArray_);
-	cmpEqualPosition.BindField(field, val, cond);
-	equalPositionMode = true;
-}
+void Comparator::BindEqualPosition(int field, const VariantArray &val, CondType cond) { cmpEqualPosition.BindField(field, val, cond); }
 
 void Comparator::BindEqualPosition(const TagsPath &tagsPath, const VariantArray &val, CondType cond) {
-	assert(isArray_);
 	cmpEqualPosition.BindField(tagsPath, val, cond);
-	equalPositionMode = true;
 }
 
 bool Comparator::Compare(const PayloadValue &data, int rowId) {
+	if (cmpEqualPosition.IsBinded()) {
+		return cmpEqualPosition.Compare(data, *this);
+	}
 	if (fields_.getTagsPathsLength() > 0) {
+		// Comparing field by CJSON path (slow path)
 		VariantArray rhs;
-		Payload pl(payloadType_, const_cast<PayloadValue &>(data));
+		ConstPayload(payloadType_, data).GetByJsonPath(fields_.getTagsPath(0), rhs, type_);
 
-		pl.GetByJsonPath(fields_.getTagsPath(0), rhs, type_);
-		if (cond_ == CondEmpty) {
-			bool empty = true;
-			for (const Variant &v : rhs) empty &= (v.Type() == KeyValueNull);
-			return (rhs.size() == 0) || empty;
-		}
+		if (cond_ == CondEmpty) return rhs.empty() || rhs[0].Type() == KeyValueNull;
 
-		if (cond_ == CondAny && !dist_) {
-			if (rhs.empty()) return false;
+		if ((cond_ == CondAny) && (rhs.empty() || rhs[0].Type() == KeyValueNull)) return false;
 
-			int nullCnt = 0;
-			for (const Variant &v : rhs) nullCnt += v.Type() != KeyValueNull;
-			return nullCnt > 0;
-		}
-
-		if (equalPositionMode) {
-			return cmpEqualPosition.Compare(data, collateOpts_);
-		} else {
-			for (const Variant &kr : rhs) {
-				if (compare(kr) && is_unique(kr)) return true;
-			}
+		for (const Variant &kr : rhs) {
+			if (compare(kr)) return true;
 		}
 	} else {
+		// Comparing field from payload by offset (fast path)
+
+		// Special case: compare by composite condition. Pass pointer to PayloadValue
+		if (type_ == KeyValueComposite) return compare(&data);
+
+		// Check if we have column (rawData_), then go to fastest path with column
 		if (rawData_) return compare(rawData_ + rowId * sizeof_);
 
-		if (type_ == KeyValueComposite) {
-			return compare(&const_cast<PayloadValue &>(data));
-		}
-
-		if (!isArray_) {
-			return compare(data.Ptr() + offset_);
-		}
+		// Not array: Just compare field by offset in PayloadValue
+		if (!isArray_) return compare(data.Ptr() + offset_);
 
 		PayloadFieldValue::Array *arr = reinterpret_cast<PayloadFieldValue::Array *>(data.Ptr() + offset_);
 
 		if (cond_ == CondEmpty) return arr->len == 0;
-		if (cond_ == CondAny) return arr->len != 0;
+		if (cond_ == CondAny && arr->len == 0) return false;
 
-		if (equalPositionMode) {
-			return cmpEqualPosition.Compare(data, collateOpts_);
-		} else {
-			uint8_t *ptr = data.Ptr() + arr->offset;
-			for (int i = 0; i < arr->len; i++, ptr += sizeof_) {
-				bool ret = compare(ptr);
-				if (ret) return true;
-			}
+		uint8_t *ptr = data.Ptr() + arr->offset;
+		for (int i = 0; i < arr->len; i++, ptr += sizeof_) {
+			if (compare(ptr)) return true;
 		}
 	}
 

@@ -9,8 +9,14 @@
 #include "vendor/murmurhash/MurmurHash3.h"
 namespace reindexer {
 
-struct JoinCacheKey {
+struct JoinCacheKey : public CacheKeyBase {
 	JoinCacheKey() {}
+	JoinCacheKey(const JoinCacheKey &other) {
+		if (this != &other) {
+			buf_ = other.buf_;
+			locked = other.locked.load();
+		}
+	}
 	void SetData(const Query &q) {
 		WrSerializer ser;
 		q.Serialize(ser, (SkipJoinQueries | SkipMergeQueries));
@@ -24,7 +30,6 @@ struct JoinCacheKey {
 		buf_.reserve(buf_.size() + ser.Len());
 		buf_.insert(buf_.end(), ser.Buf(), ser.Buf() + ser.Len());
 	}
-	JoinCacheKey(const JoinCacheKey &other) { buf_ = other.buf_; }
 	size_t Size() const { return sizeof(JoinCacheKey) + buf_.size(); }
 
 	h_vector<uint8_t, 256> buf_;

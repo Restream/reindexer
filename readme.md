@@ -120,13 +120,13 @@ import (
 	"fmt"
 	"math/rand"
 
-	"git.itv.restr.im/itv-backend/reindexer"
+	"github.com/restream/reindexer"
 	// choose how the Reindexer binds to the app (in this case "builtin," which means link Reindexer as a static library)
-	_ "git.itv.restr.im/itv-backend/reindexer/bindings/builtin"
+	_ "github.com/restream/reindexer/bindings/builtin"
 
 	// OR link Reindexer as static library with bundled server.
-	// _ "git.itv.restr.im/itv-backend/reindexer/bindings/builtinserver"
-	// "git.itv.restr.im/itv-backend/reindexer/bindings/builtinserver/config"
+	// _ "github.com/restream/reindexer/bindings/builtinserver"
+	// "github.com/restream/reindexer/bindings/builtinserver/config"
 
 )
 
@@ -284,6 +284,8 @@ Queries are possible only on the indexed fields, marked with `reindex` tag. The 
 	- `collate_ascii` - create case-insensitive string index works with ASCII. The field type must be a string.
 	- `collate_utf8` - create case-insensitive string index works with UTF8. The field type must be a string.
 	- `collate_custom=<ORDER>` - create custom order string index. The field type must be a string. `<ORDER>` is sequence of letters, which defines sort order.
+
+Fields with regular indexes are not nullable. Condition `is NULL` is supported only by `sparse` and `array` indexes. 
 
 ### Nested Structs
 

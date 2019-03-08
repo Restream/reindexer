@@ -4,7 +4,7 @@
 
 class StorageLazyLoadApi : public ReindexerApi {
 public:
-	StorageLazyLoadApi() : pk_(0), inserted_(0) { reindexer.reset(new Reindexer); }
+	StorageLazyLoadApi() : pk_(0), inserted_(0) { rt.reindexer.reset(new Reindexer); }
 	~StorageLazyLoadApi() { dropNs(); }
 
 	void SetUp() override {
@@ -39,28 +39,28 @@ public:
 
 	void SelectAll() {
 		QueryResults qr;
-		Error err = reindexer->Select(Query(default_namespace), qr);
+		Error err = rt.reindexer->Select(Query(default_namespace), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 protected:
 	void connectToDb() {
-		Error err = reindexer->Connect(kConnectParams);
+		Error err = rt.reindexer->Connect(kConnectParams);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	void openNs() {
-		Error err = reindexer->OpenNamespace(default_namespace);
+		Error err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	void openMemstatNs() {
-		Error err = reindexer->OpenNamespace(kMemstatsNamespace);
+		Error err = rt.reindexer->OpenNamespace(kMemstatsNamespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	void enableStorage() {
-		Error err = reindexer->EnableStorage(kConnectParams);
+		Error err = rt.reindexer->EnableStorage(kConnectParams);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
@@ -85,15 +85,15 @@ protected:
 	}
 
 	void closeNs() {
-		Error err = reindexer->CloseNamespace(default_namespace);
+		Error err = rt.reindexer->CloseNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	void dropNs() { reindexer->DropNamespace(default_namespace); }
+	void dropNs() { rt.reindexer->DropNamespace(default_namespace); }
 
 	int64_t getItemsCount(bool& storageLoaded) {
 		QueryResults qr;
-		Error err = reindexer->Select(Query(kMemstatsNamespace).Where(kMemstatsFieldName, CondEq, Variant(default_namespace)), qr);
+		Error err = rt.reindexer->Select(Query(kMemstatsNamespace).Where(kMemstatsFieldName, CondEq, Variant(default_namespace)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_TRUE(qr.Count() > 0);
 		Item firstItem = qr[0].GetItem();

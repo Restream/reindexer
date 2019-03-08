@@ -37,6 +37,7 @@ protected:
 	Error ProcessCommand(string command);
 	Error commandSelect(const string& command);
 	Error commandUpsert(const string& command);
+	Error commandUpdateSQL(const string& command);
 	Error commandDelete(const string& command);
 	Error commandDeleteSQL(const string& command);
 	Error commandDump(const string& command);
@@ -70,6 +71,12 @@ protected:
 		See SQL Delete statement
 	Example:
 		DELETE FROM media_items where name = 'Thor'
+		)help"},
+		{"update",		"Update documents in database",&DBWrapper::commandUpdateSQL,R"help(
+	Syntax:
+		See SQL Update statement
+	Example:
+		UPDATE media_items SET year='2011' where name = 'Thor'
 		)help"},
 		{"explain",		"Excplain query execution plan",&DBWrapper::commandSelect,R"help(
 	Syntax:

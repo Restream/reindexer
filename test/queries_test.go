@@ -39,6 +39,7 @@ type TestItem struct {
 	CompanyName   string          `json:"company_name" reindex:"company_name,hash,sparse"`
 	Address       string          `json:"address"`
 	PostalCode    int             `json:"postal_code"`
+	EmptyInt      int             `json:"empty_int,omitempty"`
 	Description   string          `reindex:"description,fuzzytext"`
 	Rate          float64         `reindex:"rate,tree"`
 	ExchangeRate  float64         `json:"exchange_rate"`
@@ -166,6 +167,7 @@ func init() {
 	tnamespaces["test_items_simple_cmplx_pk"] = TestItemSimpleCmplxPK{}
 	tnamespaces["test_items_not"] = TestItemSimple{}
 	tnamespaces["test_items_delete_query"] = TestItem{}
+	tnamespaces["test_items_update_query"] = TestItem{}
 }
 
 func FillTestItemsForNot() {
@@ -913,6 +915,40 @@ func TestDeleteQuery(t *testing.T) {
 	_, ok := DB.Query("test_items_delete_query").Where("id", reindexer.EQ, mkID(1000)).Get()
 	if ok {
 		panic(fmt.Errorf("Item was found after delete query, but will be deleted"))
+	}
+
+}
+func TestUpdateQuery(t *testing.T) {
+	err := DB.Upsert("test_items_update_query", newTestItem(1000, 5))
+
+	if err != nil {
+		panic(err)
+	}
+
+	count, err := DB.Query("test_items_update_query").Where("id", reindexer.EQ, mkID(1000)).
+		Set("name", "hello").
+		Set("empty_int", 1).
+		Set("postal_code", 10).Update()
+	if err != nil {
+		panic(err)
+	}
+
+	if count != 1 {
+		panic(fmt.Errorf("Expected update query return 1 item"))
+	}
+
+	f, ok := DB.Query("test_items_update_query").Where("id", reindexer.EQ, mkID(1000)).Get()
+	if !ok {
+		panic(fmt.Errorf("Item was not found after update query"))
+	}
+	if f.(*TestItem).EmptyInt != 1 {
+		panic(fmt.Errorf("Item have wrong value %d, shoud %d", f.(*TestItem).EmptyInt, 1))
+	}
+	if f.(*TestItem).PostalCode != 10 {
+		panic(fmt.Errorf("Item have wrong value %d, shoud %d", f.(*TestItem).PostalCode, 10))
+	}
+	if f.(*TestItem).Name != "hello" {
+		panic(fmt.Errorf("Item have wrong value %s, shoud %s", f.(*TestItem).Name, "hello"))
 	}
 
 }

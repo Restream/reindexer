@@ -1,6 +1,7 @@
 #include <stdlib.h>
 
 #include "core/cjson/baseencoder.h"
+#include "core/cjson/cjsondecoder.h"
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/variant.h"
 #include "itoa/itoa.h"
@@ -71,7 +72,8 @@ VariantArray PayloadIface<T>::GetByJsonPath(const string &jsonPath, TagsMatcher 
 		};
 		return Get(fieldIdx, kvs);
 	}
-	return GetByJsonPath(tagsMatcher.path2tag(jsonPath), kvs, expectedType);
+	VariantArray values = GetByJsonPath(tagsMatcher.path2tag(jsonPath), kvs, expectedType);
+	return values;
 }
 
 template <typename T>

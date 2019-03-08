@@ -22,12 +22,38 @@ public:
 	Error Status() const;
 	Args GetArgs(int minArgs = 0) const;
 	RPCAnswer(const Error &error) : status_(error) {}
-	bool IsSet() const { return status_.code() != 0 || data_.data() != nullptr; }
+	~RPCAnswer() {
+		if (hold_) delete[] data_.data();
+	}
+	RPCAnswer(const RPCAnswer &other) = delete;
+	RPCAnswer(RPCAnswer &&other) : status_(std::move(other.status_)), data_(std::move(other.data_)), hold_(std::move(other.hold_)) {
+		other.hold_ = false;
+	};
+	RPCAnswer &operator=(RPCAnswer &&other) {
+		if (this != &other) {
+			if (hold_) delete[] data_.data();
+			status_ = std::move(other.status_);
+			data_ = std::move(other.data_);
+			hold_ = std::move(other.hold_);
+			other.hold_ = false;
+		}
+		return *this;
+	}
+	RPCAnswer &operator=(const RPCAnswer &other) = delete;
+	void EnsureHold() {
+		if (!hold_) {
+			uint8_t *data = new uint8_t[data_.size()];
+			memcpy(data, data_.data(), data_.size());
+			data_ = {data, data_.size()};
+			hold_ = true;
+		}
+	}
 
 protected:
 	RPCAnswer() {}
 	Error status_;
 	span<uint8_t> data_;
+	bool hold_ = false;
 	friend class ClientConnection;
 };
 
@@ -35,7 +61,7 @@ class ClientConnection : public ConnectionMT {
 public:
 	ClientConnection(ev::dynamic_loop &loop, const httpparser::UrlParser *uri);
 	~ClientConnection();
-	typedef std::function<void(const RPCAnswer &ans, ClientConnection *conn)> Completion;
+	typedef std::function<void(RPCAnswer &&ans, ClientConnection *conn)> Completion;
 
 	template <typename... Argss>
 	void Call(const Completion &cmpl, CmdCode cmd, Argss... argss) {
@@ -50,10 +76,17 @@ public:
 		args.reserve(sizeof...(argss));
 
 		RPCAnswer ret;
-		call([&ret](const RPCAnswer &ans, ClientConnection * /*conn*/) { ret = ans; }, cmd, args, argss...);
+		std::atomic_bool set(false);
+		call(
+			[&ret, &set](RPCAnswer &&ans, ClientConnection * /*conn*/) {
+				ret = std::move(ans);
+				ret.EnsureHold();
+				set = true;
+			},
+			cmd, args, argss...);
 		std::unique_lock<std::mutex> lck(mtx_);
 		bufWait_++;
-		while (!ret.IsSet()) {
+		while (!set) {
 			bufCond_.wait(lck);
 		}
 		bufWait_--;
@@ -66,7 +99,7 @@ public:
 protected:
 	void connect_async_cb(ev::async &) { connectInternal(); }
 	void keep_alive_cb(ev::periodic &, int) {
-		call([](const RPCAnswer &, ClientConnection *) {}, kCmdPing, {});
+		call([](RPCAnswer &&, ClientConnection *) {}, kCmdPing, {});
 		callback(io_, ev::WRITE);
 	}
 

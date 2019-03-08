@@ -2,7 +2,7 @@
 #include "tools/serializer.h"
 
 TEST_F(NsApi, UpsertWithPrecepts) {
-	Error err = reindexer->OpenNamespace(default_namespace);
+	Error err = rt.reindexer->OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK()},
@@ -23,13 +23,13 @@ TEST_F(NsApi, UpsertWithPrecepts) {
 
 	// Upsert item a few times
 	for (int i = 0; i < upsertTimes; i++) {
-		auto err = reindexer->Upsert(default_namespace, item);
+		auto err = rt.reindexer->Upsert(default_namespace, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	// Get item
 	reindexer::QueryResults res;
-	err = reindexer->Select("SELECT * FROM " + default_namespace + " WHERE id=" + to_string(idNum), res);
+	err = rt.reindexer->Select("SELECT * FROM " + default_namespace + " WHERE id=" + to_string(idNum), res);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	for (auto it : res) {
@@ -59,19 +59,19 @@ TEST_F(NsApi, UpsertWithPrecepts) {
 }
 
 TEST_F(NsApi, UpdateIndex) {
-	Error err = reindexer->InitSystemNamespaces();
+	Error err = rt.reindexer->InitSystemNamespaces();
 	ASSERT_TRUE(err.ok()) << err.what();
-	err = reindexer->OpenNamespace(default_namespace);
+	err = rt.reindexer->OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK()}});
 
 	auto newIdx = reindexer::IndexDef(idIdxName, "-", "int64", IndexOpts().PK().Dense());
-	err = reindexer->UpdateIndex(default_namespace, newIdx);
+	err = rt.reindexer->UpdateIndex(default_namespace, newIdx);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	vector<reindexer::NamespaceDef> nsDefs;
-	err = reindexer->EnumNamespaces(nsDefs, false);
+	err = rt.reindexer->EnumNamespaces(nsDefs, false);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	auto nsDefIt =
@@ -96,9 +96,9 @@ TEST_F(NsApi, UpdateIndex) {
 }
 
 TEST_F(NsApi, QueryperfstatsNsDummyTest) {
-	Error err = reindexer->InitSystemNamespaces();
+	Error err = rt.reindexer->InitSystemNamespaces();
 	ASSERT_TRUE(err.ok()) << err.what();
-	err = reindexer->OpenNamespace(default_namespace);
+	err = rt.reindexer->OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK()}});
@@ -142,17 +142,17 @@ TEST_F(NsApi, QueryperfstatsNsDummyTest) {
 
 	auto performSimpleQuery = [&]() {
 		QueryResults qr;
-		Error err = reindexer->Select(testQuery, qr);
+		Error err = rt.reindexer->Select(testQuery, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 	};
 
 	auto getPerformanceParams = [&](QueryPerformance &performanceRes) {
 		QueryResults qres;
-		Error err = reindexer->Select(Query("#queriesperfstats").Where("query", CondEq, Variant(querySql)), qres);
+		Error err = rt.reindexer->Select(Query("#queriesperfstats").Where("query", CondEq, Variant(querySql)), qres);
 		ASSERT_TRUE(err.ok()) << err.what();
 		if (qres.Count() == 0) {
 			QueryResults qr;
-			err = reindexer->Select(Query("#queriesperfstats"), qr);
+			err = rt.reindexer->Select(Query("#queriesperfstats"), qr);
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_TRUE(qr.Count() > 0) << "#queriesperfstats table is empty!";
 			for (size_t i = 0; i < qr.Count(); ++i) {
@@ -188,4 +188,314 @@ TEST_F(NsApi, QueryperfstatsNsDummyTest) {
 		}
 		prevQperf = qperf;
 	}
+}
+
+void checkIfItemJSONValid(QueryResults::Iterator &it, bool print = false) {
+	reindexer::WrSerializer wrser;
+	Error err = it.GetJSON(wrser);
+	ASSERT_TRUE(err.ok()) << err.what();
+	if (err.ok() && print) std::cout << wrser.Slice().ToString() << std::endl;
+}
+
+TEST_F(NsApi, TestUpdateIndexedField) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	QueryResults qrUpdate;
+	Query updateQuery = Query(default_namespace).Where(intField, CondGe, Variant(static_cast<int>(500)));
+	updateQuery.updateFields_.push_back({stringField, {Variant("bingo!")}});
+	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	QueryResults qrAll;
+	err = rt.reindexer->Select(Query(default_namespace).Where(intField, CondGe, Variant(static_cast<int>(500))), qrAll);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	for (auto it : qrAll) {
+		Item item = it.GetItem();
+		Variant val = item[stringField];
+		ASSERT_TRUE(val.Type() == KeyValueString);
+		ASSERT_TRUE(val.As<string>() == "bingo!");
+		checkIfItemJSONValid(it);
+	}
+}
+
+TEST_F(NsApi, TestUpdateNonindexedField) {
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	QueryResults qrUpdate;
+	Query updateQuery = Query(default_namespace).Where("id", CondGe, Variant("1500"));
+	updateQuery.updateFields_.push_back({"nested.bonus", {Variant(static_cast<int>(100500))}});
+	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qrUpdate.Count() == 500) << qrUpdate.Count();
+
+	QueryResults qrAll;
+	err = rt.reindexer->Select(Query(default_namespace).Where("id", CondGe, Variant("1500")), qrAll);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qrAll.Count() == 500) << qrAll.Count();
+
+	for (auto it : qrAll) {
+		Item item = it.GetItem();
+		Variant val = item["nested.bonus"];
+		ASSERT_TRUE(val.Type() == KeyValueInt64);
+		ASSERT_TRUE(val.As<int64_t>() == 100500);
+		checkIfItemJSONValid(it);
+	}
+}
+
+TEST_F(NsApi, TestUpdateSparseField) {
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	QueryResults qrUpdate;
+	Query updateQuery = Query(default_namespace).Where("id", CondGe, Variant("1500"));
+	updateQuery.updateFields_.push_back({"sparse_field", {Variant(static_cast<int>(100500))}});
+	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qrUpdate.Count() == 500) << qrUpdate.Count();
+
+	QueryResults qrAll;
+	err = rt.reindexer->Select(Query(default_namespace).Where("id", CondGe, Variant("1500")), qrAll);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qrAll.Count() == 500) << qrAll.Count();
+
+	for (auto it : qrAll) {
+		Item item = it.GetItem();
+		Variant val = item["sparse_field"];
+		ASSERT_TRUE(val.Type() == KeyValueInt64);
+		ASSERT_TRUE(val.As<int>() == 100500);
+		checkIfItemJSONValid(it);
+	}
+}
+
+void updateArrayField(std::shared_ptr<reindexer::Reindexer> reindexer, const string &ns, const string &updateFieldPath,
+					  const VariantArray &values) {
+	QueryResults qrUpdate;
+	Query updateQuery = Query(ns).Where("id", CondGe, Variant("500"));
+	updateQuery.updateFields_.push_back({updateFieldPath, values});
+	Error err = reindexer->Update(updateQuery, qrUpdate);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qrUpdate.Count() > 0) << qrUpdate.Count();
+
+	QueryResults qrAll;
+	err = reindexer->Select(Query(ns).Where("id", CondGe, Variant("500")), qrAll);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qrAll.Count() == qrUpdate.Count()) << qrAll.Count();
+
+	for (auto it : qrAll) {
+		Item item = it.GetItem();
+		VariantArray val = item[updateFieldPath.c_str()];
+		ASSERT_TRUE(val.size() == values.size());
+		ASSERT_TRUE(val == values);
+		checkIfItemJSONValid(it);
+	}
+}
+
+TEST_F(NsApi, TestUpdateNonindexedArrayField) {
+	DefineDefaultNamespace();
+	AddUnindexedData();
+	updateArrayField(rt.reindexer, default_namespace, "array_field",
+					 {Variant(static_cast<int64_t>(3)), Variant(static_cast<int64_t>(4)), Variant(static_cast<int64_t>(5)),
+					  Variant(static_cast<int64_t>(6))});
+}
+
+TEST_F(NsApi, TestUpdateIndexedArrayField) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+	updateArrayField(rt.reindexer, default_namespace, indexedArrayField,
+					 {Variant(7), Variant(8), Variant(9), Variant(10), Variant(11), Variant(12), Variant(13)});
+}
+
+void addAndSetNonindexedField(std::shared_ptr<reindexer::Reindexer> reindexer, const string &ns, const string &updateFieldPath) {
+	QueryResults qrUpdate;
+	Query updateQuery = Query(ns).Where("nested.bonus", CondGe, Variant(500));
+	updateQuery.updateFields_.push_back({updateFieldPath, {Variant(static_cast<int64_t>(777))}});
+	Error err = reindexer->Update(updateQuery, qrUpdate);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	QueryResults qrAll;
+	err = reindexer->Select(Query(ns).Where("nested.bonus", CondGe, Variant(500)), qrAll);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	for (auto it : qrAll) {
+		Item item = it.GetItem();
+		Variant val = item[updateFieldPath.c_str()];
+		ASSERT_TRUE(val.Type() == KeyValueInt64);
+		ASSERT_TRUE(val.As<int64_t>() == 777);
+		checkIfItemJSONValid(it);
+	}
+}
+
+TEST_F(NsApi, TestAddAndSetNonindexedField) {
+	DefineDefaultNamespace();
+	AddUnindexedData();
+	addAndSetNonindexedField(rt.reindexer, default_namespace, "nested3.extrabonus");
+}
+
+TEST_F(NsApi, TestAddAndSetNonindexedField2) {
+	DefineDefaultNamespace();
+	AddUnindexedData();
+	addAndSetNonindexedField(rt.reindexer, default_namespace, "nested2.nested3.extrabonus");
+}
+
+TEST_F(NsApi, TestAddAndSetNonindexedField3) {
+	DefineDefaultNamespace();
+	AddUnindexedData();
+	addAndSetNonindexedField(rt.reindexer, default_namespace, "nested3.nested4.extrabonus");
+}
+
+void checkFieldConversion(std::shared_ptr<reindexer::Reindexer> reindexer, const string &ns, const string &updateFieldPath,
+						  const VariantArray &newValue, const VariantArray &updatedValue, KeyValueType sourceType, bool expectFail) {
+	const Query selectQuery = Query(ns).Where("id", CondGe, Variant("500"));
+	QueryResults qrUpdate;
+	Query updateQuery = selectQuery;
+	updateQuery.updateFields_.push_back({updateFieldPath, newValue});
+	Error err = reindexer->Update(updateQuery, qrUpdate);
+	if (expectFail) {
+		if (err.ok()) {
+			for (auto it : qrUpdate) checkIfItemJSONValid(it, true);
+		}
+		ASSERT_TRUE(!err.ok());
+	} else {
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(qrUpdate.Count() > 0) << qrUpdate.Count();
+
+		QueryResults qrAll;
+		err = reindexer->Select(selectQuery, qrAll);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(qrAll.Count() == qrUpdate.Count()) << qrAll.Count();
+
+		for (auto it : qrAll) {
+			Item item = it.GetItem();
+			VariantArray val = item[updateFieldPath.c_str()];
+			ASSERT_TRUE(val.size() == updatedValue.size());
+			for (const Variant &v : val) {
+				ASSERT_TRUE(v.Type() == sourceType);
+			}
+			ASSERT_TRUE(val == updatedValue);
+			checkIfItemJSONValid(it);
+		}
+	}
+}
+
+TEST_F(NsApi, TestIntIndexedFieldConversion) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	checkFieldConversion(rt.reindexer, default_namespace, intField, {Variant(static_cast<double>(13.33f))},
+						 {Variant(static_cast<int>(13.33f))}, KeyValueInt, false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, intField, {Variant(static_cast<int64_t>(13))}, {Variant(static_cast<int>(13))},
+						 KeyValueInt, false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, intField, {Variant(static_cast<bool>(false))}, {Variant(static_cast<int>(0))},
+						 KeyValueInt, false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, intField, {Variant(static_cast<bool>(true))}, {Variant(static_cast<int>(1))},
+						 KeyValueInt, false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, intField, {Variant(string("100500"))}, {Variant(static_cast<int>(100500))},
+						 KeyValueInt, false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, intField, {Variant(string("Jesus Christ"))}, {Variant(static_cast<int>(0))},
+						 KeyValueInt, false);
+}
+
+TEST_F(NsApi, TestDoubleIndexedFieldConversion) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	checkFieldConversion(rt.reindexer, default_namespace, doubleField, {Variant(static_cast<int>(13333))},
+						 {Variant(static_cast<double>(13333.0f))}, KeyValueDouble, false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, doubleField, {Variant(static_cast<int64_t>(13333))},
+						 {Variant(static_cast<double>(13333.0f))}, KeyValueDouble, false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, doubleField, {Variant(static_cast<bool>(false))},
+						 {Variant(static_cast<double>(0.0f))}, KeyValueDouble, false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, doubleField, {Variant(static_cast<bool>(true))},
+						 {Variant(static_cast<double>(1.0f))}, KeyValueDouble, false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, doubleField, {Variant(string("100500.1"))},
+						 {Variant(static_cast<double>(100500.100000))}, KeyValueDouble, false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, doubleField, {Variant(string("Jesus Christ"))}, {Variant()}, KeyValueDouble,
+						 true);
+}
+
+TEST_F(NsApi, TestBoolIndexedFieldConversion) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(static_cast<int>(100500))}, {Variant(true)}, KeyValueBool,
+						 false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(static_cast<int64_t>(100500))}, {Variant(true)}, KeyValueBool,
+						 false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(static_cast<double>(100500.1))}, {Variant(true)},
+						 KeyValueBool, false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(string("1"))}, {Variant(false)}, KeyValueBool, false);
+	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(string("0"))}, {Variant(false)}, KeyValueBool, false);
+	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(string("true"))}, {Variant(true)}, KeyValueBool, false);
+	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(string("false"))}, {Variant(false)}, KeyValueBool, false);
+}
+
+TEST_F(NsApi, TestStringIndexedFieldConversion) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	checkFieldConversion(rt.reindexer, default_namespace, stringField, {Variant(static_cast<int>(100500))}, {Variant("100500")},
+						 KeyValueString, false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, stringField, {Variant(true)}, {Variant(string("true"))}, KeyValueString, false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, stringField, {Variant(false)}, {Variant(string("false"))}, KeyValueString, false);
+}
+
+TEST_F(NsApi, TestIntNonindexedFieldConversion) {
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(static_cast<double>(13.33f))},
+						 {Variant(static_cast<int64_t>(13))}, KeyValueInt64, false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(static_cast<int>(13))},
+						 {Variant(static_cast<int64_t>(13))}, KeyValueInt64, false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(static_cast<bool>(false))},
+						 {Variant(static_cast<int64_t>(0))}, KeyValueInt64, false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(static_cast<bool>(true))},
+						 {Variant(static_cast<int64_t>(1))}, KeyValueInt64, false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(string("100500"))},
+						 {Variant(static_cast<int64_t>(100500))}, KeyValueInt64, false);
+
+	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(string("Jesus Christ"))},
+						 {Variant(static_cast<int64_t>(0))}, KeyValueInt64, true);
+}
+
+TEST_F(NsApi, TestIndexedArrayFieldConversion) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	checkFieldConversion(
+		rt.reindexer, default_namespace, indexedArrayField,
+		{Variant(static_cast<double>(1.33f)), Variant(static_cast<double>(2.33f)), Variant(static_cast<double>(3.33f)),
+		 Variant(static_cast<double>(4.33f))},
+		{Variant(static_cast<int>(1)), Variant(static_cast<int>(2)), Variant(static_cast<int>(3)), Variant(static_cast<int>(4))},
+		KeyValueInt, false);
+}
+
+TEST_F(NsApi, TestNonIndexedArrayFieldConversion) {
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	VariantArray newValue = {Variant(3.33f), Variant(4.33), Variant(5.33), Variant(6.33)};
+	checkFieldConversion(rt.reindexer, default_namespace, "array_field", newValue, newValue, KeyValueDouble, false);
 }

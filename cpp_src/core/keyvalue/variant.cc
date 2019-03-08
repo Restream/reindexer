@@ -132,12 +132,7 @@ int Variant::As<int>() const {
 			case KeyValueDouble:
 				return int(value_double);
 			case KeyValueString: {
-				size_t idx = 0;
-				auto res = std::stoi(operator p_string().data(), &idx);
-				if (idx != operator p_string().length()) {
-					throw std::exception();
-				}
-				return res;
+				return stoi(operator p_string());
 			}
 			case KeyValueComposite:
 			case KeyValueTuple:
@@ -277,6 +272,14 @@ void Variant::EnsureUTF8() const {
 	}
 }
 
+Variant Variant::convert(KeyValueType type, const PayloadType *payloadType, const FieldsSet *fields) const {
+	if (type_ != type) {
+		Variant dst(*this);
+		return dst.convert(type, payloadType, fields);
+	}
+	return *this;
+}
+
 Variant &Variant::convert(KeyValueType type, const PayloadType *payloadType, const FieldsSet *fields) {
 	if (type == type_ || type == KeyValueNull || type_ == KeyValueNull) return *this;
 	switch (type) {
@@ -305,6 +308,7 @@ Variant &Variant::convert(KeyValueType type, const PayloadType *payloadType, con
 		default:
 			throw Error(errParams, "Can't convert Variant from type '%s' to to type '%s'", TypeName(type_), TypeName(type));
 	}
+
 	type_ = type;
 	return *this;
 }

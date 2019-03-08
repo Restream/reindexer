@@ -63,7 +63,7 @@ string& utf16_to_utf8(const wstring& src, string& dst);
 
 void check_for_replacement(wchar_t& ch);
 void check_for_replacement(uint32_t& ch);
-bool is_number(const string& str);
+bool is_number(const string_view& str);
 
 int fast_strftime(char* buf, const tm* tm);
 string_view urldecode2(char* buf, const string_view& str);
@@ -79,13 +79,17 @@ inline static char* strappend(char* dst, const string_view& src) {
 	return dst;
 }
 
-inline static int stoi(const string_view& sl) { return atoi(sl.data()); }
+int stoi(string_view sl);
+int64_t stoll(string_view sl);
 
 bool validateObjectName(const string_view& name);
 LogLevel logLevelFromString(const string& strLogLevel);
 
 bool iequals(const string_view& lhs, const string_view& rhs);
+bool checkIfStartsWith(const string_view& src, const string_view& pattern);
 bool isPrintable(string_view str);
+bool isBlank(const string_view& token);
+
 struct nocase_equal_str {
 	using is_transparent = void;
 

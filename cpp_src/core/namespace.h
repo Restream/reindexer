@@ -107,6 +107,7 @@ public:
 
 	void Insert(Item &item, bool store = true);
 	void Update(Item &item, bool store = true);
+	void Update(const Query &query, QueryResults &result, int64_t lsn = -1);
 	void Upsert(Item &item, bool store = true);
 
 	void Delete(Item &item, bool noLock = false);
@@ -115,7 +116,7 @@ public:
 	NamespaceMemStat GetMemStat();
 	NamespacePerfStat GetPerfStat();
 	vector<string> EnumMeta();
-	void Delete(const Query &query, QueryResults &result);
+	void Delete(const Query &query, QueryResults &result, int64_t lsn = -1);
 	void BackgroundRoutine();
 	void CloseStorage();
 
@@ -129,14 +130,14 @@ public:
 	// Get meta data from storage by key
 	string GetMeta(const string &key);
 	// Put meta data to storage by key
-	void PutMeta(const string &key, const string_view &data);
+	void PutMeta(const string &key, const string_view &data, int64_t lsn = -1);
 
 	int getIndexByName(const string &index) const;
 	bool getIndexByName(const string &name, int &index) const;
 
 	static Namespace *Clone(Namespace::Ptr);
 
-	void FillResult(QueryResults &result, IdSet::Ptr ids, const h_vector<std::string, 4> &selectFilter);
+	void FillResult(QueryResults &result, IdSet::Ptr ids, const h_vector<std::string, 1> &selectFilter);
 
 	void EnablePerfCounters(bool enable = true) { enablePerfCounters_ = enable; }
 
@@ -146,16 +147,19 @@ public:
 
 protected:
 	bool tryToReload();
+	void reloadStorage();
 	void saveIndexesToStorage();
 	bool loadIndexesFromStorage();
 	void saveReplStateToStorage();
 	void loadReplStateFromStorage();
+	bool isEmptyAfterStorageReload() const;
 
 	void initWAL(int64_t maxLSN);
 
 	void markUpdated();
 	void doUpsert(ItemImpl *ritem, IdType id, bool doUpdate);
 	void modifyItem(Item &item, bool store = true, int mode = ModeUpsert, bool noLock = false);
+	void updateFieldsFromQuery(IdType itemId, const Query &q, bool store = true);
 	void updateTagsMatcherFromItem(ItemImpl *ritem, string &jsonSliceBuf);
 	void updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields);
 	void doDelete(IdType id);
@@ -258,6 +262,8 @@ private:
 	vector<std::unique_ptr<ItemImpl>> pool_;
 	std::atomic<bool> cancelCommit_;
 	std::atomic<int64_t> lastUpdateTime_;
+
+	friend class Query;
 };
 
 }  // namespace reindexer

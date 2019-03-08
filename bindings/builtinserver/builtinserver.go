@@ -201,6 +201,10 @@ func (server *BuiltinServer) DeleteQuery(nsHash int, rawQuery []byte) (bindings.
 	return server.builtin.DeleteQuery(nsHash, rawQuery)
 }
 
+func (server *BuiltinServer) UpdateQuery(nsHash int, rawQuery []byte) (bindings.RawBuffer, error) {
+	return server.builtin.UpdateQuery(nsHash, rawQuery)
+}
+
 func (server *BuiltinServer) Commit(namespace string) error {
 	return server.builtin.Commit(namespace)
 }

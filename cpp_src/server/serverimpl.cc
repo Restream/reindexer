@@ -33,7 +33,7 @@ using std::vector;
 using reindexer::fs::GetDirPath;
 using reindexer::logLevelFromString;
 
-ServerImpl::ServerImpl() : logLevel_(LogNone), storageLoaded_(false), running_(false) {}
+ServerImpl::ServerImpl() : storageLoaded_(false), running_(false) { async_.set(loop_); }
 
 Error ServerImpl::InitFromCLI(int argc, char *argv[]) {
 	Error err = config_.ParseCmd(argc, argv);
@@ -109,7 +109,7 @@ Error ServerImpl::init() {
 	signal(SIGPIPE, SIG_IGN);
 #endif
 
-	logLevel_ = logLevelFromString(config_.LogLevel);
+	coreLogLevel_ = logLevelFromString(config_.LogLevel);
 	return 0;
 }
 
@@ -162,7 +162,6 @@ int ServerImpl::Start() {
 
 void ServerImpl::Stop() {
 	running_ = false;
-	loop_.break_loop();
 	async_.send();
 }
 
@@ -231,7 +230,6 @@ int ServerImpl::run() {
 			logger_.error("Can't listen RPC on '{0}'", config_.RPCAddr);
 			return EXIT_FAILURE;
 		}
-		running_ = true;
 		auto sigCallback = [&](ev::sig &sig) {
 			logger_.info("Signal received. Terminating...");
 			running_ = false;
@@ -258,9 +256,10 @@ int ServerImpl::run() {
 #endif
 		}
 
-		async_.set(loop_);
 		async_.set([](ev::async &a) { a.loop.break_loop(); });
+		async_.start();
 
+		running_ = true;
 		while (running_) {
 			loop_.run();
 		}
@@ -343,8 +342,8 @@ Error ServerImpl::loggerConfigure() {
 }
 
 void ServerImpl::initCoreLogger() {
-	static auto callback = [&](int level, char *buf) {
-		if (level <= logLevel_) {
+	auto callback = [&](int level, char *buf) {
+		if (level <= coreLogLevel_) {
 			switch (level) {
 				case LogNone:
 					break;
@@ -366,7 +365,11 @@ void ServerImpl::initCoreLogger() {
 			}
 		}
 	};
-	reindexer::logInstallWriter([](int level, char *buf) { callback(level, buf); });
+	if (coreLogLevel_) reindexer::logInstallWriter(callback);
+	(void)callback;
+}
+ServerImpl::~ServerImpl() {
+	if (coreLogLevel_) reindexer::logInstallWriter(nullptr);
 }
 
 }  // namespace reindexer_server

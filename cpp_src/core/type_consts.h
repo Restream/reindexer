@@ -52,6 +52,7 @@ typedef enum QueryItemType {
 	QueryEnd,
 	QueryExplain,
 	QueryEqualPosition,
+	QueryUpdateField,
 } QueryItemType;
 
 typedef enum QuerySerializeMode {
@@ -155,7 +156,7 @@ enum ItemModifyMode { ModeUpdate = 0, ModeInsert = 1, ModeUpsert = 2, ModeDelete
 
 typedef struct StorageOpts {
 #ifdef __cplusplus
-	StorageOpts() : options(0) {}
+	StorageOpts() : options(0), noQueryIdleThresholdSec(0) {}
 
 	bool IsEnabled() const { return options & kStorageOptEnabled; }
 	bool IsDropOnFileFormatError() const { return options & kStorageOptDropOnFileFormatError; }

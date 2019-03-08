@@ -52,6 +52,7 @@ void QueryResults::Bind(string_view rawResult, int queryID) {
 				TagsMatcher().deserialize(ser);
 				// PayloadType("tmp").clone()->deserialize(ser);
 			} else {
+				nsArray_[nsIdx]->tagsMatcher_ = TagsMatcher();
 				nsArray_[nsIdx]->tagsMatcher_.deserialize(ser, version, stateToken);
 				// nsArray[nsIdx]->payloadType_.clone()->deserialize(ser);
 				// nsArray[nsIdx]->tagsMatcher_.updatePayloadType(nsArray[nsIdx]->payloadType_, false);

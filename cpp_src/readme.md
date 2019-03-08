@@ -39,16 +39,16 @@ Reindexer's core is written in C++11 and uses LevelDB as the storage backend, so
 Dependencies can be installed automatically by this script:
 
 ```bash
-curl https://github.com/restream/reindexer/raw/master/dependencies.sh | bash -s
+curl -L https://github.com/Restream/reindexer/raw/master/dependencies.sh | bash -s
 ```
 
-### Build 
+### Build & install
 
 The typical steps for building and configuring the reindexer looks like this
 
 ````bash
-git clone github.com/restream/reindexer
-cd reindexer/cpp_src
+git clone https://github.com/Restream/reindexer
+cd reindexer
 mkdir -p build && cd build
 cmake ..
 make -j4

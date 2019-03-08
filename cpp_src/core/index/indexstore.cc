@@ -64,10 +64,16 @@ void IndexStore<T>::Commit() {
 }
 
 template <typename T>
-SelectKeyResults IndexStore<T>::SelectKey(const VariantArray &keys, CondType condition, SortType /*sortId*/, ResultType res_type,
+SelectKeyResults IndexStore<T>::SelectKey(const VariantArray &keys, CondType condition, SortType /*sortId*/, Index::SelectOpts sopts,
 										  BaseFunctionCtx::Ptr /*ctx*/) {
 	SelectKeyResult res;
-	res.comparators_.push_back(Comparator(condition, KeyType(), keys, opts_.IsArray(), res_type == Index::ForceIdset, payloadType_, fields_,
+	if (condition == CondEmpty && !this->opts_.IsArray() && !this->opts_.IsSparse())
+		throw Error(errParams, "The 'is NULL' condition is suported only by 'sparse' or 'array' indexes");
+
+	if (condition == CondAny && !this->opts_.IsArray() && !this->opts_.IsSparse() && !sopts.distinct)
+		throw Error(errParams, "The 'NOT NULL' condition is suported only by 'sparse' or 'array' indexes");
+
+	res.comparators_.push_back(Comparator(condition, KeyType(), keys, opts_.IsArray(), sopts.distinct, payloadType_, fields_,
 										  idx_data.size() ? idx_data.data() : nullptr, opts_.collateOpts_));
 	return SelectKeyResults(res);
 }

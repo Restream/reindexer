@@ -35,6 +35,7 @@ reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int with_it
 
 reindexer_ret reindexer_select_query(uintptr_t rx, reindexer_buffer in, int with_items, int32_t *pt_versions, int pt_versions_count);
 reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in);
+reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in);
 
 reindexer_error reindexer_free_buffer(reindexer_resbuffer in);
 reindexer_error reindexer_free_buffers(reindexer_resbuffer *in, int count);

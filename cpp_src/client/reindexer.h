@@ -36,7 +36,8 @@ public:
 	/// Connect - connect to reindexer server
 	/// @param dsn - uri of server and database, like: `cproto://user@password:127.0.0.1:6534/dbname`
 	Error Connect(const string &dsn);
-
+	/// Stop - shutdown connector
+	Error Stop();
 	/// Open or create namespace
 	/// @param nsName - Name of namespace
 	/// @param opts - Storage options. Can be one of <br>
@@ -86,6 +87,10 @@ public:
 	/// @param item - Item, obtained by call to NewItem of the same namespace
 	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
 	Error Upsert(string_view nsName, Item &item, Completion cmpl = nullptr);
+	/// Updates all items in namespace, that satisfy provided query.
+	/// @param query - Query to define items set for update.
+	/// @param result - QueryResults with IDs of deleted items.
+	Error Update(const Query &query, QueryResults &result);
 	/// Delete Item from namespace. On success item.GetID() will return internal Item ID
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
@@ -130,6 +135,11 @@ public:
 	// @param observer - Observer interface, which will receive updates
 	// @param subsctibe - true: subsribe, false: unsubsrcibe
 	Error SubscribeUpdates(IUpdatesObserver *observer, bool subscribe);
+	/// Get possible suggestions for token (set by 'pos') in Sql query.
+	/// @param sqlQuery - sql query.
+	/// @param pos - position in sql query for suggestions.
+	/// @param suggestions - all the suggestions for 'pos' position in query.
+	Error GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string> &suggestions);
 
 	typedef QueryResults QueryResultsT;
 	typedef Item ItemT;

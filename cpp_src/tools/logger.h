@@ -1,8 +1,10 @@
 #pragma once
 
+#include <functional>
 #include "spdlog/fmt/bundled/printf.h"
 #include "spdlog/fmt/fmt.h"
-typedef void (*LogWriter)(int level, char *msg);
+
+typedef std::function<void(int level, char *msg)> LogWriter;
 
 namespace reindexer {
 

@@ -4,12 +4,13 @@
 #include <errno.h>
 #include <memory.h>
 #include <stdio.h>
+#include <memory>
 #include "tools/oscompat.h"
 
 namespace reindexer {
 namespace net {
 
-int socket::bind(const char *addr) {
+int socket::bind(string_view addr) {
 	struct addrinfo *results = nullptr;
 	int ret = create(addr, &results);
 	if (!ret) {
@@ -24,7 +25,7 @@ int socket::bind(const char *addr) {
 	return ret;
 }
 
-int socket::connect(const char *addr) {
+int socket::connect(string_view addr) {
 	struct addrinfo *results = nullptr;
 	int ret = create(addr, &results);
 	if (!ret) {
@@ -55,13 +56,13 @@ int socket::listen(int backlog) {
 	return ::listen(fd_, backlog);
 }
 
-ssize_t socket::recv(char *buf, size_t len) {
+ssize_t socket::recv(span<char> buf) {
 	//
-	return ::recv(fd_, buf, len, 0);
+	return ::recv(fd_, buf.data(), buf.size(), 0);
 }
-ssize_t socket::send(const char *buf, size_t len) {
+ssize_t socket::send(span<char> buf) {
 	//
-	return ::send(fd_, buf, len, 0);
+	return ::send(fd_, buf.data(), buf.size(), 0);
 }
 
 #ifdef _WIN32
@@ -101,7 +102,7 @@ int socket::close() {
 #endif
 }
 
-int socket::create(const char *addr, struct addrinfo **presults) {
+int socket::create(string_view addr, struct addrinfo **presults) {
 	assert(!valid());
 
 	struct addrinfo hints, *results = nullptr;
@@ -112,7 +113,9 @@ int socket::create(const char *addr, struct addrinfo **presults) {
 	hints.ai_protocol = IPPROTO_TCP;
 	*presults = nullptr;
 
-	char *paddr = const_cast<char *>(&addr[0]);
+	string saddr = addr.ToString();
+	char *paddr = &saddr[0];
+
 	char *pport = strchr(paddr, ':');
 	if (pport == nullptr) {
 		pport = paddr;

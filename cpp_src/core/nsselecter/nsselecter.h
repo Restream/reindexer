@@ -80,7 +80,8 @@ private:
 
 	template <bool reverse, bool haveComparators, bool haveDistinct>
 	void selectLoop(LoopCtx &ctx, QueryResults &result);
-	void applyCustomSort(ItemRefVector &result, const SelectCtx &ctx);
+	void applyForcedSort(ItemRefVector &result, const SelectCtx &ctx);
+	void applyForcedSortDesc(ItemRefVector &result, const SelectCtx &ctx);
 
 	using ItemIterator = ItemRefVector::iterator;
 	using ConstItemIterator = const ItemIterator &;

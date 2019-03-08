@@ -22,24 +22,44 @@ type TestNest struct {
 	Age  int `reindex:"age,hash"`
 }
 
-type TestCustom []byte
+type (
+	TestCustomBytes []byte
+
+	TestCustomString string
+	TestCustomStrings []TestCustomString
+	TestCustomStringsPtrs []*TestCustomString
+
+	TestCustomInt64 int64
+	TestCustomInts64 []TestCustomInt64
+
+	TestCustomInt16 int16
+	TestCustomInts16 []TestCustomInt16
+
+	TestCustomFloat float64
+	TestCustomFloats []TestCustomFloat
+)
 
 type TestItemEncDec struct {
 	ID int `reindex:"id,-"`
 	*TestEmbedItem
-	Prices             []*TestJoinItem `reindex:"prices,,joined"`
-	Pricesx            []*TestJoinItem `reindex:"pricesx,,joined"`
-	Packages           []int           `reindex:"packages,hash"`
-	UPackages          []uint          `reindex:"upackages,hash"`
-	UPackages64        []uint64        `reindex:"upackages64,hash"`
-	FPackages          []float32       `reindex:"fpackages,tree"`
-	FPackages64        []float64       `reindex:"fpackages64,tree"`
-	Name               string          `reindex:"name,tree"`
-	Countries          []string        `reindex:"countries,tree"`
-	Description        string          `reindex:"description,fuzzytext"`
-	Rate               float64         `reindex:"rate,tree"`
-	IsDeleted          bool            `reindex:"isdeleted,-"`
-	PNested            *TestNest       `reindex:"-"`
+	Prices             []*TestJoinItem       `reindex:"prices,,joined"`
+	Pricesx            []*TestJoinItem       `reindex:"pricesx,,joined"`
+	Packages           []int                 `reindex:"packages,hash"`
+	UPackages          []uint                `reindex:"upackages,hash"`
+	UPackages64        []uint64              `reindex:"upackages64,hash"`
+	FPackages          []float32             `reindex:"fpackages,tree"`
+	FPackages64        []float64             `reindex:"fpackages64,tree"`
+	Name               string                `reindex:"name,tree"`
+	Countries          []string              `reindex:"countries,tree"`
+	Description        string                `reindex:"description,fuzzytext"`
+	Rate               float64               `reindex:"rate,tree"`
+	CustomStringsPtr   TestCustomStringsPtrs `reindex:"custom_strings_ptrs"`
+	CustomStrings      TestCustomStrings     `reindex:"custom_strings"`
+	CustomInts64       TestCustomInts64      `reindex:"custom_ints64"`
+	CustomInts16       TestCustomInts16      `reindex:"custom_ints16"`
+	CustomFloats       TestCustomFloats      `reindex:"custom_floats"`
+	IsDeleted          bool                  `reindex:"isdeleted,-"`
+	PNested            *TestNest             `reindex:"-"`
 	Nested             TestNest
 	NestedA            [1]TestNest `reindex:"-"`
 	NonIndexArr        []int
@@ -75,7 +95,7 @@ type TestItemEncDec struct {
 	UInt32             uint32
 	UInt               uint
 
-	Custom TestCustom
+	Custom TestCustomBytes
 	Time   time.Time
 	PTime  *time.Time
 
@@ -96,6 +116,8 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 		vint1, vint2 := new(int), new(int)
 		*vint1, *vint2 = int(rand.Int31()), int(rand.Int31())
 		tm := time.Unix(1234567890, 1234567890)
+		cs := TestCustomString(randString())
+		cs2 := TestCustomString(randString())
 		item := &TestItemEncDec{
 			ID: mkID(start + i),
 			TestEmbedItem: &TestEmbedItem{
@@ -162,7 +184,7 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 			Description:        randString(),
 			Packages:           randIntArr(pkgsCount, 10000, 50),
 			UPackages:          []uint{uint(rand.Uint32() >> 1), uint(rand.Uint32() >> 1)},
-			UPackages64:        []uint64{uint64(rand.Int63()) >> 1, uint64(rand.Int63()) >> 1 /*, math.MaxUint64*/},
+			UPackages64:        []uint64{uint64(rand.Int63()) >> 1, uint64(rand.Int63()) >> 1 /*, math.MaxUint64*/ },
 			SliceUInt:          []uint{uint(rand.Uint32() >> 1), uint(rand.Uint32() >> 1)},
 			SliceUInt64:        []uint64{uint64(rand.Int63()) >> 1, uint64(rand.Int63()) >> 1},
 			NegativeSliceInt64: []int64{0 - rand.Int63(), 0 - rand.Int63()},
@@ -180,6 +202,11 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 			NonIndexArr:        randIntArr(10, 100, 10),
 			Time:               tm,
 			PTime:              &tm,
+			CustomStringsPtr:   TestCustomStringsPtrs{&cs, &cs2},
+			CustomStrings:      TestCustomStrings{TestCustomString(randString()), TestCustomString(randString())},
+			CustomInts64:       TestCustomInts64{TestCustomInt64(rand.Int63())},
+			CustomInts16:       TestCustomInts16{TestCustomInt16(rand.Intn(128))},
+			CustomFloats:       TestCustomFloats{TestCustomFloat(rand.Float64())},
 		}
 		if asJson {
 			if err := tx.UpsertJSON(item); err != nil {

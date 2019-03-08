@@ -36,6 +36,7 @@ ReindexerImpl::ReindexerImpl() : replicator_(new Replicator(this)) {
 }
 
 ReindexerImpl::~ReindexerImpl() {
+	replicator_->Stop();
 	stopBackgroundThread_ = true;
 	backgroundThread_.join();
 }
@@ -261,6 +262,17 @@ Error ReindexerImpl::Update(string_view nsName, Item& item, Completion cmpl) {
 	return err;
 }
 
+Error ReindexerImpl::Update(const Query& q, QueryResults& result) {
+	try {
+		auto ns = getNamespace(q._namespace);
+		ensureDataLoaded(ns);
+		ns->Update(q, result);
+	} catch (const Error& err) {
+		return err;
+	}
+	return errOK;
+}
+
 Error ReindexerImpl::Upsert(string_view nsName, Item& item, Completion cmpl) {
 	Error err;
 	try {
@@ -385,6 +397,9 @@ Error ReindexerImpl::Select(string_view query, QueryResults& result, Completion 
 				break;
 			case QueryDelete:
 				err = Delete(q, result);
+				break;
+			case QueryUpdate:
+				err = Update(q, result);
 				break;
 			default:
 				throw Error(errParams, "Error unsupported query type %d", q.type_);
@@ -862,7 +877,7 @@ std::vector<string> defDBConfig = {
         "namespaces":[
             {
 				"namespace":"*",
-				"log_level":"none",
+                "log_level":"none",
 				"lazyload":false,
 				"unload_idle_threshold":0,
 				"join_cache_mode":"on"
@@ -1028,6 +1043,12 @@ Error ReindexerImpl::SubscribeUpdates(IUpdatesObserver* observer, bool subscribe
 	} else {
 		return observers_.Delete(observer);
 	}
+}
+
+Error ReindexerImpl::GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string>& suggestions) {
+	Query query;
+	suggestions = query.GetSuggestions(sqlQuery, pos, namespaces_);
+	return errOK;
 }
 
 }  // namespace reindexer

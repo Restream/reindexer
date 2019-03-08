@@ -230,7 +230,12 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	}
 }
 
-void NsSelecter::applyCustomSort(ItemRefVector &queryResult, const SelectCtx &ctx) {
+void NsSelecter::applyForcedSort(ItemRefVector &queryResult, const SelectCtx &ctx) {
+	if (ctx.query.sortingEntries_[0].desc) {
+		applyForcedSortDesc(queryResult, ctx);
+		return;
+	}
+
 	if (ctx.query.mergeQueries_.size() > 1) throw Error(errLogic, "Force sort could not be applied to 'merged' queries.");
 
 	assert(!ctx.query.sortingEntries_.empty());
@@ -294,6 +299,74 @@ void NsSelecter::applyCustomSort(ItemRefVector &queryResult, const SelectCtx &ct
 
 		std::sort(queryResult.begin(), sortEnd, [&sortMap](const ItemRef &lhs, const ItemRef &rhs) {
 			return sortMap.find(lhs.value)->second < sortMap.find(rhs.value)->second;
+		});
+	}
+}
+
+void NsSelecter::applyForcedSortDesc(ItemRefVector &queryResult, const SelectCtx &ctx) {
+	if (ctx.query.mergeQueries_.size() > 1) throw Error(errLogic, "Force sort could not be applied to 'merged' queries.");
+
+	assert(!ctx.query.sortingEntries_.empty());
+
+	auto payloadType = ns_->payloadType_;
+	const string &fieldName = ctx.query.sortingEntries_[0].column;
+
+	int idx = ns_->getIndexByName(fieldName);
+
+	if (ns_->indexes_[idx]->Opts().IsArray()) throw Error(errQueryExec, "This type of sorting cannot be applied to a field of array type.");
+
+	VariantArray keyValues = ctx.query.forcedSortOrder;  // make a copy of forcedSortOrder', may be mark it as 'mutable'?
+	ItemRefVector::difference_type cost = 0;
+	KeyValueType fieldType = ns_->indexes_[idx]->KeyType();
+
+	if (idx < ns_->indexes_.firstCompositePos()) {
+		// implementation for regular indexes
+		fast_hash_map<Variant, ItemRefVector::difference_type> sortMap;
+		for (auto &value : keyValues) {
+			value.convert(fieldType);
+			sortMap.insert({value, cost});
+			cost++;
+		}
+
+		VariantArray keyRefs;
+		auto sortBeg =
+			std::stable_partition(queryResult.begin(), queryResult.end(), [&sortMap, &payloadType, idx, &keyRefs](ItemRef &itemRef) {
+				ConstPayload(payloadType, itemRef.value).Get(idx, keyRefs);
+				return keyRefs.empty() || (sortMap.find(keyRefs[0]) == sortMap.end());
+			});
+
+		VariantArray firstItemValue;
+		VariantArray secondItemValue;
+		std::sort(sortBeg, queryResult.end(),
+				  [&sortMap, &payloadType, idx, &firstItemValue, &secondItemValue](const ItemRef &lhs, const ItemRef &rhs) {
+					  ConstPayload(payloadType, lhs.value).Get(idx, firstItemValue);
+					  assertf(!firstItemValue.empty(), "Item lost in query results%s", "");
+					  assertf(sortMap.find(firstItemValue[0]) != sortMap.end(), "Item not found in 'sortMap'%s", "");
+
+					  ConstPayload(payloadType, rhs.value).Get(idx, secondItemValue);
+					  assertf(sortMap.find(secondItemValue[0]) != sortMap.end(), "Item not found in 'sortMap'%s", "");
+					  assertf(!secondItemValue.empty(), "Item lost in query results%s", "");
+
+					  return sortMap.find(firstItemValue[0])->second > sortMap.find(secondItemValue[0])->second;
+				  });
+	} else {
+		// implementation for composite indexes
+		FieldsSet fields = ns_->indexes_[idx]->Fields();
+
+		unordered_payload_map<ItemRefVector::difference_type> sortMap(0, hash_composite(payloadType, fields),
+																	  equal_composite(payloadType, fields));
+
+		for (auto &value : keyValues) {
+			value.convert(fieldType, &payloadType, &fields);
+			sortMap.insert({static_cast<const PayloadValue &>(value), cost});
+			cost++;
+		}
+
+		auto sortBeg = std::stable_partition(queryResult.begin(), queryResult.end(),
+											 [&sortMap](ItemRef &itemRef) { return (sortMap.find(itemRef.value) == sortMap.end()); });
+
+		std::sort(sortBeg, queryResult.begin(), [&sortMap](const ItemRef &lhs, const ItemRef &rhs) {
+			return sortMap.find(lhs.value)->second > sortMap.find(rhs.value)->second;
 		});
 	}
 }
@@ -452,12 +525,10 @@ void NsSelecter::prepareIteratorsForSelectLoop(const QueryEntries &entries, RawQ
 			fullText = isFullText(index->Type());
 			sparseIndex = index->Opts().IsSparse();
 
-			Index::ResultType type = ns_->sortOrdersBuilt_ ? Index::Optimal : Index::DisableIdSetCache;
-			if (is_ft && qe.distinct) throw Error(errQueryExec, "distinct and full text - can't do it");
-			if (is_ft)
-				type = Index::ForceComparator;
-			else if (qe.distinct)
-				type = Index::ForceIdset;
+			Index::SelectOpts opts;
+			if (!ns_->sortOrdersBuilt_) opts.disableIdSetCache = 1;
+			if (is_ft) opts.forceComparator = 1;
+			if (qe.distinct) opts.distinct = 1;
 
 			auto ctx = fnc_ ? fnc_->CreateCtx(qe.idxNo) : BaseFunctionCtx::Ptr{};
 			if (ctx && ctx->type == BaseFunctionCtx::kFtCtx) ft_ctx_ = reindexer::reinterpret_pointer_cast<FtCtx>(ctx);
@@ -466,7 +537,7 @@ void NsSelecter::prepareIteratorsForSelectLoop(const QueryEntries &entries, RawQ
 				for (auto &key : qe.values) key.EnsureUTF8();
 			}
 			PerfStatCalculatorST calc(index->GetSelectPerfCounter(), ns_->enablePerfCounters_);
-			selectResults = index->SelectKey(qe.values, qe.condition, sortId, type, ctx);
+			selectResults = index->SelectKey(qe.values, qe.condition, sortId, opts, ctx);
 		}
 		for (SelectKeyResult &res : selectResults) {
 			switch (qe.op) {
@@ -585,15 +656,16 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 			hasInnerJoin |= (joinedSelector.type == JoinType::InnerJoin || joinedSelector.type == JoinType::OrInnerJoin);
 	}
 
-	bool isUnordered = false;
+	bool generalSort = false;
 	bool multisortFinished = true;
 	bool multiSortByOrdered = false;
+	bool forcedSort = !ctx.sctx.query.forcedSortOrder.empty();
 	Index *firstSortIndex = nullptr;
 	SelectCtx::SortingCtx::Entry *sortCtx = nullptr;
 	bool multiSort = sctx.sortingCtx.entries.size() > 1;
 	if (!sctx.sortingCtx.entries.empty()) {
 		sortCtx = &sctx.sortingCtx.entries[0];
-		isUnordered = !sortCtx->index;
+		generalSort = !sortCtx->index;
 		if (sortCtx->index) {
 			firstSortIndex = sortCtx->index;
 			multiSortByOrdered = multiSort && firstSortIndex;
@@ -702,21 +774,22 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 		}
 	}
 
-	if (multiSort || isUnordered) {
+	if (multiSort || generalSort || forcedSort) {
 		int endPos = result.Items().size();
-		if (isUnordered) {
+		if (generalSort) {
 			endPos = std::min(sctx.query.count + sctx.query.start, result.Items().size());
 		}
 		ItemIterator first = result.Items().begin();
 		ItemIterator last = result.Items().begin() + endPos;
 		ItemIterator end = result.Items().end();
-		applyGeneralSort(first, last, end, sctx);
-
-		if (!ctx.sctx.query.forcedSortOrder.empty()) {
-			applyCustomSort(result.Items(), sctx);
+		if (multiSort || generalSort) {
+			applyGeneralSort(first, last, end, sctx);
+		}
+		if (forcedSort) {
+			applyForcedSort(result.Items(), sctx);
 		}
 
-		const size_t offset = isUnordered ? sctx.query.start : multisortLimitLeft;
+		const size_t offset = generalSort ? sctx.query.start : multisortLimitLeft;
 		setLimitAndOffset(result.Items(), offset, sctx.query.count);
 	}
 

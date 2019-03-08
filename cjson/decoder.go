@@ -250,76 +250,194 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 	}
 
 	if subtag != TAG_OBJECT {
-		switch v.Type().Elem().Kind() {
+		k := v.Type().Elem().Kind()
+		isPtr := false
+		if k == reflect.Ptr {
+			k = v.Type().Elem().Elem().Kind()
+			isPtr = true
+		}
+		switch k {
 		case reflect.Int:
-			sl := (*[1 << 28]int)(ptr)[:count:count]
-			for i := 0; i < count; i++ {
-				sl[i] = int(asInt(rdser, subtag))
+			if ! isPtr {
+				sl := (*[1 << 28]int)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					sl[i] = int(asInt(rdser, subtag))
+				}
+			} else {
+				sl := (*[1 << 28]*int)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					u := int(asInt(rdser, subtag))
+					sl[i] = &u
+				}
 			}
 		case reflect.Uint:
-			sl := (*[1 << 28]uint)(ptr)[:count:count]
-			for i := 0; i < count; i++ {
-				sl[i] = uint(asInt(rdser, subtag))
+			if ! isPtr {
+				sl := (*[1 << 28]uint)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					sl[i] = uint(asInt(rdser, subtag))
+				}
+			} else {
+				sl := (*[1 << 28]*uint)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					u := uint(asInt(rdser, subtag))
+					sl[i] = &u
+				}
 			}
 		case reflect.Int64:
-			sl := (*[1 << 27]int64)(ptr)[:count:count]
-			for i := 0; i < count; i++ {
-				sl[i] = int64(asInt(rdser, subtag))
+			if ! isPtr {
+				sl := (*[1 << 27]int64)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					sl[i] = int64(asInt(rdser, subtag))
+				}
+			} else {
+				sl := (*[1 << 28]*int64)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					u := int64(asInt(rdser, subtag))
+					sl[i] = &u
+				}
 			}
 		case reflect.Uint64:
-			sl := (*[1 << 27]uint64)(ptr)[:count:count]
-			for i := 0; i < count; i++ {
-				sl[i] = uint64(asInt(rdser, subtag))
+			if ! isPtr {
+				sl := (*[1 << 27]uint64)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					sl[i] = uint64(asInt(rdser, subtag))
+				}
+			} else {
+				sl := (*[1 << 28]*uint64)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					u := uint64(asInt(rdser, subtag))
+					sl[i] = &u
+				}
 			}
 		case reflect.Int32:
-			sl := (*[1 << 28]int32)(ptr)[:count:count]
-			for i := 0; i < count; i++ {
-				sl[i] = int32(asInt(rdser, subtag))
+			if ! isPtr {
+				sl := (*[1 << 28]int32)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					sl[i] = int32(asInt(rdser, subtag))
+				}
+			} else {
+				sl := (*[1 << 28]*int32)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					u := int32(asInt(rdser, subtag))
+					sl[i] = &u
+				}
 			}
 		case reflect.Uint32:
-			sl := (*[1 << 28]uint32)(ptr)[:count:count]
-			for i := 0; i < count; i++ {
-				sl[i] = uint32(asInt(rdser, subtag))
+			if ! isPtr {
+				sl := (*[1 << 28]uint32)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					sl[i] = uint32(asInt(rdser, subtag))
+				}
+			} else {
+				sl := (*[1 << 28]*uint32)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					u := uint32(asInt(rdser, subtag))
+					sl[i] = &u
+				}
 			}
 		case reflect.Int16:
-			sl := (*[1 << 29]int16)(ptr)[:count:count]
-			for i := 0; i < count; i++ {
-				sl[i] = int16(asInt(rdser, subtag))
+			if !isPtr {
+				sl := (*[1 << 29]int16)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					sl[i] = int16(asInt(rdser, subtag))
+				}
+			} else {
+				sl := (*[1 << 28]*int16)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					u := int16(asInt(rdser, subtag))
+					sl[i] = &u
+				}
 			}
 		case reflect.Uint16:
-			sl := (*[1 << 29]uint16)(ptr)[:count:count]
-			for i := 0; i < count; i++ {
-				sl[i] = uint16(asInt(rdser, subtag))
+			if ! isPtr {
+				sl := (*[1 << 29]uint16)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					sl[i] = uint16(asInt(rdser, subtag))
+				}
+			} else {
+				sl := (*[1 << 28]*uint16)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					u := uint16(asInt(rdser, subtag))
+					sl[i] = &u
+				}
 			}
 		case reflect.Int8:
-			sl := (*[1 << 30]int8)(ptr)[:count:count]
-			for i := 0; i < count; i++ {
-				sl[i] = int8(asInt(rdser, subtag))
+			if ! isPtr {
+				sl := (*[1 << 30]int8)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					sl[i] = int8(asInt(rdser, subtag))
+				}
+			} else {
+				sl := (*[1 << 28]*int8)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					u := int8(asInt(rdser, subtag))
+					sl[i] = &u
+				}
 			}
 		case reflect.Uint8:
-			sl := (*[1 << 30]uint8)(ptr)[:count:count]
-			for i := 0; i < count; i++ {
-				sl[i] = uint8(asInt(rdser, subtag))
+			if ! isPtr {
+				sl := (*[1 << 30]uint8)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					sl[i] = uint8(asInt(rdser, subtag))
+				}
+			} else {
+				sl := (*[1 << 28]*uint8)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					u := uint8(asInt(rdser, subtag))
+					sl[i] = &u
+				}
 			}
 		case reflect.Float32:
-			sl := (*[1 << 28]float32)(ptr)[:count:count]
-			for i := 0; i < count; i++ {
-				sl[i] = float32(asFloat(rdser, subtag))
+			if ! isPtr {
+				sl := (*[1 << 28]float32)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					sl[i] = float32(asFloat(rdser, subtag))
+				}
+			} else {
+				sl := (*[1 << 28]*float32)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					f := float32(asFloat(rdser, subtag))
+					sl[i] = &f
+				}
 			}
 		case reflect.Float64:
-			sl := (*[1 << 27]float64)(ptr)[:count:count]
-			for i := 0; i < count; i++ {
-				sl[i] = asFloat(rdser, subtag)
+			if ! isPtr {
+				sl := (*[1 << 27]float64)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					sl[i] = asFloat(rdser, subtag)
+				}
+			} else {
+				sl := (*[1 << 28]*float64)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					f := asFloat(rdser, subtag)
+					sl[i] = &f
+				}
 			}
 		case reflect.Bool:
-			sl := (*[1 << 27]bool)(ptr)[:count:count]
-			for i := 0; i < count; i++ {
-				sl[i] = rdser.GetVarUInt() != 0
+			if ! isPtr {
+				sl := (*[1 << 27]bool)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					sl[i] = rdser.GetVarUInt() != 0
+				}
+			} else {
+				sl := (*[1 << 28]*bool)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					b := rdser.GetVarUInt() != 0
+					sl[i] = &b
+				}
 			}
 		case reflect.String:
-			sl := (*[1 << 27]string)(ptr)[:count:count]
-			for i := 0; i < count; i++ {
-				sl[i] = asString(rdser, subtag)
+			if ! isPtr {
+				sl := (*[1 << 27]string)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					sl[i] = asString(rdser, subtag)
+				}
+			} else {
+				sl := (*[1 << 28]*string)(ptr)[:count:count]
+				for i := 0; i < count; i++ {
+					s := asString(rdser, subtag)
+					sl[i] = &s
+				}
 			}
 		case reflect.Interface:
 			sl := (*[1 << 27]interface{})(ptr)[:count:count]

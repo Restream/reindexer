@@ -21,13 +21,7 @@ ClientConnection::ClientConnection(ev::dynamic_loop &loop, const httpparser::Url
 	loopThreadID_ = std::this_thread::get_id();
 }
 
-ClientConnection::~ClientConnection() {
-	std::unique_lock<std::mutex> lck(mtx_);
-	bufWait_++;
-	while (PendingCompletions()) {
-		bufCond_.wait(lck);
-	}
-}
+ClientConnection::~ClientConnection() { assert(!PendingCompletions()); }
 
 void ClientConnection::connectInternal() {
 	mtx_.lock();
@@ -154,7 +148,7 @@ void ClientConnection::onRead() {
 		}
 
 		if (hdr.cmd == kCmdUpdates && updatesHandler_) {
-			updatesHandler_(ans, this);
+			updatesHandler_(std::move(ans), this);
 		} else {
 			RPCCompletion *completion = &completions_[hdr.seq % completions_.size()];
 
@@ -166,13 +160,14 @@ void ClientConnection::onRead() {
 					ans.status_ =
 						Error(errParams, "Invalid cmdCode %d, expected %d for seq = %d", int(completion->cmd), int(hdr.cmd), int(hdr.seq));
 				}
-				completion->cmpl(ans, this);
+				completion->cmpl(std::move(ans), this);
 				if (bufWait_) {
 					std::unique_lock<std::mutex> lck(mtx_);
 					completion->used = false;
 					bufCond_.notify_all();
 				} else {
 					completion->used = false;
+					io_.loop.break_loop();
 				}
 				break;
 			}

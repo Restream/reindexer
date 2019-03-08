@@ -49,14 +49,14 @@ typename T::iterator IndexOrdered<T>::lower_bound(const Variant &key, bool &foun
 }
 
 template <typename T>
-SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType condition, SortType sortId, Index::ResultType res_type,
+SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType condition, SortType sortId, Index::SelectOpts opts,
 											BaseFunctionCtx::Ptr ctx) {
-	if (res_type == Index::ForceComparator) return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, res_type, ctx);
+	if (opts.forceComparator) return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, opts, ctx);
 	SelectKeyResult res;
 
 	// Get set of keys or single key
 	if (condition == CondSet || condition == CondEq || condition == CondAny || condition == CondEmpty)
-		return IndexUnordered<T>::SelectKey(keys, condition, sortId, res_type, ctx);
+		return IndexUnordered<T>::SelectKey(keys, condition, sortId, opts, ctx);
 
 	if (keys.size() < 1) throw Error(errParams, "For condition required at least 1 argument, but provided 0");
 
@@ -102,7 +102,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 		// Empty result
 		return SelectKeyResults(res);
 
-	if (sortId && this->sortId_ == sortId && res_type != Index::ForceIdset) {
+	if (sortId && this->sortId_ == sortId && !opts.distinct) {
 		assert(startIt->second.Sorted(this->sortId_).size());
 		IdType idFirst = startIt->second.Sorted(this->sortId_).front();
 
@@ -120,7 +120,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 			it++;
 			count++;
 		}
-		if (count < 50 || res_type == Index::ForceIdset) {
+		if (count < 50) {
 			struct {
 				T *i_map;
 				SortType sortId;
@@ -133,12 +133,12 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 				}
 			};
 
-			if (count > 1 && res_type != Index::ForceIdset && res_type != Index::DisableIdSetCache)
+			if (count > 1 && !opts.distinct && opts.disableIdSetCache)
 				this->tryIdsetCache(keys, condition, sortId, selector, res);
 			else
 				selector(res);
 		} else {
-			return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, res_type, ctx);
+			return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, opts, ctx);
 		}
 	}
 	return SelectKeyResults(res);

@@ -20,8 +20,14 @@ struct QueryCacheVal {
 	int total_count = -1;
 };
 
-struct QueryCacheKey {
+struct QueryCacheKey : public CacheKeyBase {
 	QueryCacheKey() {}
+	QueryCacheKey(const QueryCacheKey& other) {
+		if (this != &other) {
+			buf = other.buf;
+			locked = other.locked.load();
+		}
+	}
 	QueryCacheKey(const Query& q) {
 		WrSerializer ser;
 		q.Serialize(ser, (SkipJoinQueries | SkipMergeQueries | SkipLimitOffset));
@@ -48,6 +54,8 @@ struct HashQueryCacheKey {
 	}
 };
 
-struct QueryCache : LRUCache<QueryCacheKey, QueryCacheVal, HashQueryCacheKey, EqQueryCacheKey> {};
+struct QueryCache : LRUCache<QueryCacheKey, QueryCacheVal, HashQueryCacheKey, EqQueryCacheKey> {
+	QueryCache(size_t sizeLimit = kDefaultCacheSizeLimit, int hitCount = kDefaultHitCountToCache) : LRUCache(sizeLimit, hitCount) {}
+};
 
 }  // namespace reindexer

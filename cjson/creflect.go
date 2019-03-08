@@ -242,7 +242,34 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 				(*a)[i] = bool(pi[i] != 0)
 			}
 		default:
-			panic(fmt.Errorf("Can't set []int to []%s", v.Type().Elem().Kind().String()))
+			slice := reflect.MakeSlice(v.Type(), cnt, cnt)
+			switch v.Type().Elem().Kind() {
+			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+				for i := 0; i < cnt; i++ {
+					sv := slice.Index(i)
+					if sv.Type().Kind() == reflect.Ptr {
+						el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
+						el.Elem().SetUint(uint64(pu[i]))
+						sv.Set(el)
+					} else {
+						sv.SetUint(uint64(pu[i]))
+					}
+				}
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				for i := 0; i < cnt; i++ {
+					sv := slice.Index(i)
+					if sv.Type().Kind() == reflect.Ptr {
+						el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
+						el.Elem().SetInt(int64(pi[i]))
+						sv.Set(el)
+					} else {
+						sv.SetInt(int64(pi[i]))
+					}
+				}
+			default:
+				panic(fmt.Errorf("Can't set []int to []%s", v.Type().Elem().Kind().String()))
+			}
+			v.Set(slice)
 		}
 	case valueInt64:
 		switch a := v.Addr().Interface().(type) {
@@ -267,7 +294,36 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 				(*a)[i] = uint(pi[i])
 			}
 		default:
-			panic(fmt.Errorf("Can't set []int64 to []%s", v.Type().Elem().Kind().String()))
+			slice := reflect.MakeSlice(v.Type(), cnt, cnt)
+			switch v.Type().Elem().Kind() {
+			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+				pi := (*[1 << 27]uint64)(ptr)[:l:l]
+				for i := 0; i < cnt; i++ {
+					sv := slice.Index(i)
+					if sv.Type().Kind() == reflect.Ptr {
+						el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
+						el.Elem().SetUint(uint64(pi[i]))
+						sv.Set(el)
+					} else {
+						sv.SetUint(uint64(pi[i]))
+					}
+				}
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				pi := (*[1 << 27]int64)(ptr)[:l:l]
+				for i := 0; i < cnt; i++ {
+					sv := slice.Index(i)
+					if sv.Type().Kind() == reflect.Ptr {
+						el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
+						el.Elem().SetInt(int64(pi[i]))
+						sv.Set(el)
+					} else {
+						sv.SetInt(int64(pi[i]))
+					}
+				}
+			default:
+				panic(fmt.Errorf("Can't set []int64 to []%s", v.Type().Elem().Kind().String()))
+			}
+			v.Set(slice)
 		}
 	case valueDouble:
 		pi := (*[1 << 27]Cdouble)(ptr)[:l:l]
@@ -283,13 +339,39 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 				(*a)[i] = float32(pi[i])
 			}
 		default:
-			panic(fmt.Errorf("Can't set []double to []%s", v.Type().Elem().Kind().String()))
+			slice := reflect.MakeSlice(v.Type(), cnt, cnt)
+			for i := 0; i < cnt; i++ {
+				sv := slice.Index(i)
+				if sv.Type().Kind() == reflect.Ptr {
+					el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
+					el.Elem().SetFloat(float64(pi[i]))
+					sv.Set(el)
+				} else {
+					sv.SetFloat(float64(pi[i]))
+				}
+			}
+			v.Set(slice)
 		}
 	case valueString:
-		a := v.Addr().Interface().(*[]string)
-		*a = make([]string, cnt, cnt)
-		for i := 0; i < cnt; i++ {
-			(*a)[i] = pl.getString(field, i+startIdx)
+		if a, ok := v.Addr().Interface().(*[]string); ok {
+			*a = make([]string, cnt, cnt)
+			for i := 0; i < cnt; i++ {
+				(*a)[i] = pl.getString(field, i+startIdx)
+			}
+		} else {
+			slice := reflect.MakeSlice(v.Type(), cnt, cnt)
+			for i := 0; i < cnt; i++ {
+				s := pl.getString(field, i+startIdx)
+				sv := slice.Index(i)
+				if sv.Type().Kind() == reflect.Ptr {
+					el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
+					el.Elem().SetString(s)
+					sv.Set(el)
+				} else {
+					sv.SetString(s)
+				}
+			}
+			v.Set(slice)
 		}
 	}
 }

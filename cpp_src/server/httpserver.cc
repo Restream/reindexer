@@ -60,21 +60,30 @@ int HTTPServer::GetSQLQuery(http::Context &ctx) {
 }
 
 int HTTPServer::GetSQLSuggest(http::Context &ctx) {
-	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
-	reindexer::QueryResults res;
 	string sqlQuery = urldecode2(ctx.request->params.Get("q"));
-	string_view posParam = ctx.request->params.Get("pos");
-	int pos = stoi(posParam);
-	(void)pos;
 	if (sqlQuery.empty()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Missed `q` parameter"));
 	}
-	vector<string> suggests = {"SELECT", "FROM", "WHERE", "tag1", "media_items", "id", "name", "title"};
+
+	string_view posParam = ctx.request->params.Get("pos");
+	int pos = stoi(posParam);
+	if (pos < 0) {
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "`pos` parameter should be greater or equal than 0"));
+	}
+
+	// Here we receive position in JS style: starts from 1 (not from 0).
+	if (pos > 0) --pos;
+
+	logPrintf(LogTrace, "GetSQLSuggest() incoming data: %s, %d", sqlQuery, pos);
+
+	vector<string> suggestions;
+	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
+	db->GetSqlSuggestions(sqlQuery, pos, suggestions);
 
 	WrSerializer ser(ctx.writer->GetChunk());
 	reindexer::JsonBuilder builder(ser);
 	auto node = builder.Array("suggests");
-	for (auto &suggest : suggests) node.Put(nullptr, suggest);
+	for (auto &suggest : suggestions) node.Put(nullptr, suggest);
 	node.End();
 	builder.End();
 
@@ -127,6 +136,29 @@ int HTTPServer::DeleteQuery(http::Context &ctx) {
 	}
 
 	status = db->Delete(q, res);
+	if (!status.ok()) {
+		return jsonStatus(ctx, http::HttpStatus(status));
+	}
+	WrSerializer ser(ctx.writer->GetChunk());
+	reindexer::JsonBuilder builder(ser);
+	builder.Put("updated", res.Count());
+	builder.End();
+
+	return ctx.JSON(http::StatusOK, ser.DetachChunk());
+}
+
+int HTTPServer::UpdateQuery(http::Context &ctx) {
+	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataWrite);
+	reindexer::QueryResults res;
+	string dsl = ctx.body->Read();
+
+	reindexer::Query q;
+	auto status = q.ParseJson(dsl);
+	if (!status.ok()) {
+		return jsonStatus(ctx, http::HttpStatus(status));
+	}
+
+	status = db->Update(q, res);
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}

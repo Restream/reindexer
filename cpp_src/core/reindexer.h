@@ -83,6 +83,10 @@ public:
 	/// @param item - Item, obtained by call to NewItem of the same namespace
 	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
 	Error Update(string_view nsName, Item &item, Completion cmpl = nullptr);
+	/// Updates all items in namespace, that satisfy provided query.
+	/// @param query - Query to define items set for update.
+	/// @param result - QueryResults with IDs of deleted items.
+	Error Update(const Query &query, QueryResults &result);
 	/// Update or Insert Item in namespace. On success item.GetID() will return internal Item ID
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
@@ -137,6 +141,11 @@ public:
 	/// @param nsName - Name of namespace
 	/// @param keys - std::vector filled with meta keys
 	Error EnumMeta(string_view nsName, vector<string> &keys);
+	/// Get possible suggestions for token (set by 'pos') in Sql query.
+	/// @param sqlQuery - sql query.
+	/// @param pos - position in sql query for suggestions.
+	/// @param suggestions - all the suggestions for 'pos' position in query.
+	Error GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string> &suggestions);
 
 	/// Init system namepaces, and load config from config namespace
 	Error InitSystemNamespaces();

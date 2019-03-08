@@ -101,33 +101,28 @@ void IndexUnordered<T>::tryIdsetCache(const VariantArray &keys, CondType conditi
 }
 
 template <typename T>
-SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType condition, SortType sortId, Index::ResultType res_type,
+SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType condition, SortType sortId, Index::SelectOpts opts,
 											  BaseFunctionCtx::Ptr ctx) {
-	if (res_type == Index::ForceComparator) return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, res_type, ctx);
+	if (opts.forceComparator) return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, opts, ctx);
 
 	SelectKeyResult res;
 
 	switch (condition) {
 		case CondEmpty:
+			if (!this->opts_.IsArray() && !this->opts_.IsSparse())
+				throw Error(errParams, "The 'is NULL' condition is suported only by 'sparse' or 'array' indexes");
 			res.push_back(SingleSelectKeyResult(this->empty_ids_, sortId));
 			break;
 		case CondAny:
 			// Get set of any keys
-			if (res_type == Index::ForceIdset) {
-				res.reserve(this->idx_map.size());
-				for (auto &keyIt : this->idx_map) res.push_back(SingleSelectKeyResult(keyIt.second, sortId));
-			} else {
-				return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, res_type, ctx);
-			}
+			return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, opts, ctx);
 			break;
 		// Get set of keys or single key
 		case CondEq:
 		case CondSet:
 			if (condition == CondEq && keys.size() < 1)
 				throw Error(errParams, "For condition required at least 1 argument, but provided 0");
-			if (keys.size() > 1000 && res_type != Index::ForceIdset) {
-				return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, res_type, ctx);
-			} else {
+			{
 				struct {
 					T *i_map;
 					const VariantArray &keys;
@@ -144,7 +139,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 				};
 
 				// Get from cache
-				if (res_type != Index::ForceIdset && res_type != Index::DisableIdSetCache && keys.size() > 1) {
+				if (!opts.distinct && !opts.disableIdSetCache && keys.size() > 1) {
 					tryIdsetCache(keys, condition, sortId, selector, res);
 				} else
 					selector(res);
@@ -173,7 +168,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 		case CondRange:
 		case CondGt:
 		case CondLt:
-			return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, res_type, ctx);
+			return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, opts, ctx);
 		default:
 			throw Error(errQueryExec, "Unknown query on index '%s'", this->name_);
 	}

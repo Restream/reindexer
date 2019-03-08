@@ -124,7 +124,7 @@ template <typename Mutex>
 void Connection<Mutex>::read_cb() {
 	while (!closeConn_) {
 		auto it = rdBuf_.head();
-		ssize_t nread = sock_.recv(it.data(), it.size());
+		ssize_t nread = sock_.recv(it);
 		int err = sock_.last_error();
 
 		if (nread < 0 && err == EINTR) continue;

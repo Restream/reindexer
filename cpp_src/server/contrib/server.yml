@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.0.0"
+  version: "2.0.2"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -1491,7 +1491,7 @@ definitions:
         type: "boolean"
         description: "Status of disk storage"
       storage_path:
-        type: "boolean"
+        type: "string"
         description: "Filesystem path to namespace storage"
       total:
         type: "object"
@@ -1510,6 +1510,8 @@ definitions:
         $ref: "#/definitions/JoinCacheMemStats"
       query_cache:
         $ref: "#/definitions/QueryCacheMemStats"
+      replication:
+        $ref: "#/definitions/ReplicationStats"
       indexes:
         type: "array"
         description: "Memory consumption of each namespace index"
@@ -1539,19 +1541,22 @@ definitions:
       fulltext_size:
         type: "integer"
         description: "Total memory consumption of fulltext search structures"
+      data_size:
+        type: "integer"
+        description: "Total memory consumption of documents's data, holded by index"
 
   JoinCacheMemStats:
-    description: "Number of elements in join cache. Stores results of selects to right table by ON condition"
+    description: "Join cache stats. Stores results of selects to right table by ON condition"
     allOf: 
       - $ref: "#/definitions/CacheMemStats"
 
   QueryCacheMemStats:
-    description: "Number of elements in query cache. Stores results of SELECT COUNT(*) by Where conditions"
+    description: "Query cache stats. Stores results of SELECT COUNT(*) by Where conditions"
     allOf: 
       - $ref: "#/definitions/CacheMemStats"
 
   IndexCacheMemStats:
-    description: "Number of elements in idset cache. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys"
+    description: "Idset cache stats. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys"
     allOf: 
       - $ref: "#/definitions/CacheMemStats"
 
@@ -1570,6 +1575,32 @@ definitions:
       hit_count_limit:
         type: "integer"
         description: "Number of hits of queries, to store results in cache"
+
+  ReplicationStats:
+    description: "State of namespace replication"
+    type: "object"
+    properties:
+      last_lsn:
+        type: "integer"
+        description: "Last Log Sequence Number (LSN) of applied namespace modification"
+      cluster_id:
+        type: "integer"
+        description: "Cluster ID - must be same for client and for master"
+      slave_mode:
+        type: "boolean"
+        description: "If true, then namespace is in slave mode"
+      incarnation_counter:
+        type: "integer"
+        description: "Number of storage's master <-> slave switches"
+      data_hash:
+        type: "integer"
+        description: "Hashsum of all records in namespace"
+      wal_count:
+        type: "integer"
+        description: "Write Ahead Log (WAL) records count"
+      wal_size:
+        type: "integer"
+        description: "Total memory consumption of Write Ahead Log (WAL)"
 
   DatabasePerfStats:
     type: "object"
@@ -1616,13 +1647,13 @@ definitions:
       total_avg_latency_us:
         type: "integer"
         description: "Average latency (execution time) for queries to this object"
-      total_avg_lock_latency_us:
+      total_avg_lock_time_us:
         type: "integer"
         description: "Average waiting time for acquiring lock to this object"
       last_sec_qps:
         type: "integer"
         description: "Count of queries to this object, requested at last second"
-      total_sec_avg_latency_us:
+      last_sec_avg_latency_us:
         type: "integer"
         description: "Average latency (execution time) for queries to this object at last second"
       last_sec_avg_lock_time_us:
@@ -1727,7 +1758,19 @@ definitions:
           - warning
           - info
           - trace
-
+      join_cache_mode:
+        type: "string"
+        description: "Join cache mode"
+        enum:
+          - on
+          - off
+          - aggressive
+      lazyload:
+        type: "boolean"
+        description: "Enable namespace lazy load (namespace shoud be loaded from disk on first call, not at reindexer startup)" 
+      unload_idle_threshold:
+        type: "integer"
+        description: "Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded"
   ReplicationConfig:
     type: "object"
     properties:  
@@ -1755,4 +1798,3 @@ definitions:
         description: "List of namespaces for replication. If emply, all namespaces. All replicated namespaces will become read only for slave"
         items:
           type: string
-

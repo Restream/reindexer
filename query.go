@@ -25,8 +25,9 @@ const (
 	queryAggregation    = bindings.QueryAggregation
 	querySelectFilter   = bindings.QuerySelectFilter
 	queryExplain        = bindings.QueryExplain
-	QuerySelectFunction = bindings.QuerySelectFunction
-	QueryEqualPosition  = bindings.QueryEqualPosition
+	querySelectFunction = bindings.QuerySelectFunction
+	queryEqualPosition  = bindings.QueryEqualPosition
+	queryUpdateField    = bindings.QueryUpdateField
 	queryEnd            = bindings.QueryEnd
 )
 
@@ -503,6 +504,47 @@ func (q *Query) Delete() (int, error) {
 	return q.db.deleteQuery(q)
 }
 
+// Set will add update field request for update query
+func (q *Query) Set(field string, values interface{}) *Query {
+	t := reflect.TypeOf(values)
+	v := reflect.ValueOf(values)
+
+	q.ser.PutVarCUInt(queryUpdateField)
+	q.ser.PutVString(field)
+
+	if values == nil {
+		q.ser.PutVarUInt(0)
+	} else if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+		q.ser.PutVarCUInt(v.Len())
+		for i := 0; i < v.Len(); i++ {
+			// function/value flag
+			q.ser.PutVarUInt(0)
+			q.putValue(v.Index(i))
+		}
+	} else {
+		q.ser.PutVarCUInt(1)
+		// function/value flag
+		q.ser.PutVarUInt(0)
+		q.putValue(v)
+	}
+
+	return q
+}
+
+// Update will execute query, and update fields in items, which matches query
+// On sucess return number of update elements
+func (q *Query) Update() (int, error) {
+	if q.root != nil || len(q.joinQueries) != 0 {
+		return 0, errors.New("Update does not support joined queries")
+	}
+	if q.closed {
+		panic(errors.New("Update call on already closed query. You shoud create new Query"))
+	}
+
+	defer q.close()
+	return q.db.updateQuery(q)
+}
+
 // MustExec will execute query, and return iterator, panic on error
 func (q *Query) MustExec() *Iterator {
 	it := q.Exec()
@@ -652,14 +694,14 @@ func (q *Query) FetchCount(n int) *Query {
 // Select add filter to  fields of result's objects
 func (q *Query) Functions(fields ...string) *Query {
 	for _, field := range fields {
-		q.ser.PutVarCUInt(QuerySelectFunction).PutVString(field)
+		q.ser.PutVarCUInt(querySelectFunction).PutVString(field)
 	}
 	return q
 }
 
 // Adds equal position fields to arrays
 func (q *Query) EqualPosition(fields ...string) *Query {
-	q.ser.PutVarCUInt(QueryEqualPosition)
+	q.ser.PutVarCUInt(queryEqualPosition)
 	q.ser.PutVarCUInt(len(fields))
 	for _, field := range fields {
 		q.ser.PutVString(field)

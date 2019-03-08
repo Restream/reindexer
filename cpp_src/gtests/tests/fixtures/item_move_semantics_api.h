@@ -21,14 +21,14 @@ protected:
 
 	void SetUp() override {
 		ReindexerApi::SetUp();
-		reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-		reindexer->AddIndex(default_namespace, {"bookid", "hash", "int", IndexOpts().PK()});
-		reindexer->AddIndex(default_namespace, {"title", "text", "string", IndexOpts()});
-		reindexer->AddIndex(default_namespace, {"pages", "hash", "int", IndexOpts().PK()});
-		reindexer->AddIndex(default_namespace, {"price", "hash", "int", IndexOpts().PK()});
-		reindexer->AddIndex(default_namespace, {"genreid_fk", "hash", "int", IndexOpts().PK()});
-		reindexer->AddIndex(default_namespace, {"authorid_fk", "hash", "int", IndexOpts().PK()});
-		reindexer->Commit(default_namespace);
+		rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+		rt.reindexer->AddIndex(default_namespace, {"bookid", "hash", "int", IndexOpts().PK()});
+		rt.reindexer->AddIndex(default_namespace, {"title", "text", "string", IndexOpts()});
+		rt.reindexer->AddIndex(default_namespace, {"pages", "hash", "int", IndexOpts().PK()});
+		rt.reindexer->AddIndex(default_namespace, {"price", "hash", "int", IndexOpts().PK()});
+		rt.reindexer->AddIndex(default_namespace, {"genreid_fk", "hash", "int", IndexOpts().PK()});
+		rt.reindexer->AddIndex(default_namespace, {"authorid_fk", "hash", "int", IndexOpts().PK()});
+		rt.reindexer->Commit(default_namespace);
 	}
 
 	void prepareItems() {
@@ -37,7 +37,7 @@ protected:
 		for (int i = 1; i < itemsCount; ++i) {
 			int id = i;
 			snprintf(&buf[0], bufSize, jsonPattern, id);
-			Item item(reindexer->NewItem(default_namespace));
+			Item item(rt.reindexer->NewItem(default_namespace));
 			Error err = item.FromJSON(buf);
 			ASSERT_TRUE(err.ok()) << err.what();
 			items_[id] = std::move(item);
@@ -50,13 +50,13 @@ protected:
 		JsonAllocator jsonAllocator;
 		for (auto &pair : items_) {
 			auto &&item = pair.second;
-			Error err = reindexer->Upsert(default_namespace, item);
+			Error err = rt.reindexer->Upsert(default_namespace, item);
 			ASSERT_TRUE(err.ok()) << err.what();
 			reindexer::string_view jsonSlice = item.GetJSON();
 			int status = jsonParse(const_cast<char *>(jsonSlice.data()), &endptr, &jsonValue, jsonAllocator);
 			ASSERT_TRUE(status == JSON_OK);
 		}
-		reindexer->Commit(default_namespace);
+		rt.reindexer->Commit(default_namespace);
 	}
 
 	Item getItemById(int id) {
@@ -70,7 +70,7 @@ protected:
 
 	void verifyJsonsOfUpsertedItems() {
 		reindexer::QueryResults qres;
-		Error err = reindexer->Select("SELECT * FROM " + default_namespace, qres);
+		Error err = rt.reindexer->Select("SELECT * FROM " + default_namespace, qres);
 
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_TRUE(int(qres.Count()) == (itemsCount - 1))

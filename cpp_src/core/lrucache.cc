@@ -18,7 +18,6 @@ typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(
 	std::lock_guard<mutex> lk(lock_);
 
 	auto it = items_.find(key);
-
 	if (it == items_.end()) {
 		it = items_.emplace(key, Entry{}).first;
 		totalCacheSize_ += kElemSizeOverhead + sizeof(Entry) + key.Size();
@@ -28,9 +27,12 @@ typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(
 		lru_.splice(lru_.end(), lru_, it->second.lruPos, std::next(it->second.lruPos));
 		it->second.lruPos = std::prev(lru_.end());
 	}
+
+	it->first.locked = true;
 	if (++it->second.hitCount < hitCountToCache_) {
 		return Iterator();
 	}
+
 	++getCount_;
 
 	// logPrintf(LogInfo, "Cache::Get (cond=%d,sortId=%d,keys=%d), total in cache items=%d,size=%d", key.cond, key.sort,
@@ -48,6 +50,7 @@ void LRUCache<K, V, hash, equal>::Put(const K &key, const V &v) {
 
 	totalCacheSize_ += v.Size() - it->second.val.Size();
 	it->second.val = v;
+	it->first.locked = false;
 
 	// logPrintf(LogInfo, "IdSetCache::Put () add %d,left %d,fwdCnt=%d,sz=%d", endIt - begIt, left, it->second.fwdCount,
 	// 		  it->second.ids->size());
@@ -64,6 +67,15 @@ void LRUCache<K, V, hash, equal>::eraseLRU() {
 		assert(it != lru_.end());
 		auto mIt = items_.find(**it);
 		assert(mIt != items_.end());
+		if (mIt->first.locked) {
+			++it;
+			if (it == lru_.end()) {
+				logPrintf(LogWarning, "IdSetCache::eraseLRU () To many locked data eraseCount=%d,putCount=%d,getCount=%d", eraseCount_,
+						  putCount_, eraseCount_);
+				break;
+			}
+			continue;
+		}
 		totalCacheSize_ = totalCacheSize_ - (sizeof(Entry) + kElemSizeOverhead + mIt->first.Size() + mIt->second.val.Size());
 		items_.erase(mIt);
 		it = lru_.erase(it);

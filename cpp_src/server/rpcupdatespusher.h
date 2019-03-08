@@ -17,7 +17,6 @@ public:
 	void OnConnectionState(const Error &err) override final;
 
 protected:
-
 	Writer *writer_;
 	std::atomic<uint32_t> seq_;
 };

@@ -3,10 +3,10 @@
 #include <climits>
 #include <functional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 #include "core/type_consts.h"
 #include "estl/fast_hash_map.h"
-#include "estl/fast_hash_set.h"
 #include "estl/h_vector.h"
 
 namespace reindexer {
@@ -36,7 +36,7 @@ struct FtDSLEntry {
 
 class FtDSLQuery : public h_vector<FtDSLEntry> {
 public:
-	FtDSLQuery(const fast_hash_map<string, int> &fields, const fast_hash_set<string> &stopWords, const string &extraWordSymbols)
+	FtDSLQuery(const fast_hash_map<string, int> &fields, const std::unordered_set<string> &stopWords, const string &extraWordSymbols)
 		: fields_(fields), stopWords_(stopWords), extraWordSymbols_(extraWordSymbols) {}
 	void parse(wstring &utf16str);
 	void parse(const string &q);
@@ -48,7 +48,7 @@ protected:
 	std::function<int(const string &)> resolver_;
 
 	const fast_hash_map<string, int> &fields_;
-	const fast_hash_set<string> &stopWords_;
+	const std::unordered_set<string> &stopWords_;
 	const string &extraWordSymbols_;
 };
 

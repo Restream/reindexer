@@ -3,8 +3,12 @@
 #include <climits>
 #include <functional>
 #include <initializer_list>
+#include "estl/fast_hash_map.h"
 #include "querywhere.h"
 #include "tools/errors.h"
+#include "tools/stringstools.h"
+
+#include "estl/tokenizer.h"
 
 /// @namespace reindexer
 /// The base namespace
@@ -12,7 +16,12 @@ namespace reindexer {
 
 class WrSerializer;
 class Serializer;
+
 using std::initializer_list;
+using std::pair;
+
+class Namespace;
+typedef fast_hash_map<string, std::shared_ptr<Namespace>, nocase_hash_str, nocase_equal_str> Namespaces;
 
 /// @class Query
 /// Allows to select data from DB.
@@ -327,6 +336,12 @@ public:
 	/// returns structure of a query in JSON format
 	string GetJSON() const;
 
+	/// Gets suggestions for autocomplte
+	/// @param q - query to parse.
+	/// @param pos - pos of cursor in query.
+	/// @param namespaces - list of namespaces to be checked for existing fields.
+	vector<string> GetSuggestions(const string_view &q, size_t pos, const Namespaces &namespaces);
+
 	/// Get  readaby Join Type
 	/// @param type - join tyoe
 	/// @return string with join type name
@@ -342,20 +357,72 @@ public:
 	}
 
 protected:
+	/// Sql parser context
+	struct SqlParsingCtx {
+		struct SuggestionData {
+			SuggestionData(string tok, int tokType) : token(tok), tokenType(tokType) {}
+			string token;
+			int tokenType = 0;
+			vector<string> variants;
+		};
+		void updateLinkedNs(const string &ns) {
+			if (autocompleteMode && (!foundPossibleSuggestions || possibleSuggestionDetectedInThisClause)) {
+				suggestionLinkedNs = ns;
+			}
+			possibleSuggestionDetectedInThisClause = false;
+		}
+		bool autocompleteMode = false;
+		bool foundPossibleSuggestions = false;
+		bool possibleSuggestionDetectedInThisClause = false;
+		size_t suggestionsPos = 0;
+		vector<int> tokens;
+		vector<SuggestionData> suggestions;
+		string suggestionLinkedNs;
+	};
+
 	/// Parses query.
 	/// @param tok - tokenizer object instance.
+	/// @param ctx - parsing context.
 	/// @return always returns zero.
-	int Parse(tokenizer &tok);
+	int Parse(tokenizer &tok, SqlParsingCtx &ctx);
+
+	/// Peeks next sql token.
+	/// @param parser - tokenizer object instance.
+	/// @param ctx - parsing context.
+	/// @param tokenType - token type.
+	/// @param toLower - transform to lower representation.
+	/// @return sql token object.
+	token peekSqlToken(tokenizer &parser, SqlParsingCtx &ctx, int tokenType, bool toLower = true);
+
+	/// Finds suggestions for token
+	/// @param ctx - suggestion context.
+	/// @param nsName - name of active Namespace.
+	/// @param namespaces - list of namespaces in db.
+	void getSuggestionsForToken(SqlParsingCtx::SuggestionData &ctx, const string &nsName, const Namespaces &namespaces);
+
+	/// Is current token last in autocomplete mode?
+	bool reachedAutocompleteToken(tokenizer &parser, const token &tok, SqlParsingCtx &ctx) const;
+
+	/// Checks whether suggestion is neede for a token
+	void checkForTokenSuggestions(SqlParsingCtx::SuggestionData &data, const SqlParsingCtx &ctx, const Namespaces &namespaces);
 
 	/// Parses filter part of sql query.
-	/// @param tok - tokenizer object instance.
+	/// @param parser - tokenizer object instance.
+	/// @param ctx - parsing context.
 	/// @return always returns zero.
-	int selectParse(tokenizer &tok);
+	int selectParse(tokenizer &parser, SqlParsingCtx &ctx);
 
 	/// Parses filter part of sql delete query.
-	/// @param tok - tokenizer object instance.
+	/// @param parser - tokenizer object instance.
+	/// @param ctx - parsing context.
 	/// @return always returns zero.
-	int deleteParse(tokenizer &tok);
+	int deleteParse(tokenizer &parser, SqlParsingCtx &ctx);
+
+	/// Parses filter part of sql update query.
+	/// @param parser - tokenizer object instance.
+	/// @param ctx - parsing context.
+	/// @return always returns zero.
+	int updateParse(tokenizer &parser, SqlParsingCtx &ctx);
 
 	/// Parses JSON dsl set.
 	/// @param dsl - dsl set.
@@ -365,14 +432,32 @@ protected:
 	/// @param ser - serializer object.
 	void deserialize(Serializer &ser);
 
-	/// Parse join entries
-	void parseJoin(JoinType type, tokenizer &tok);
+	/// Parse where entries
+	int parseWhere(tokenizer &parser, SqlParsingCtx &ctx);
+
+	/// Parse order by
+	int parseOrderBy(tokenizer &parser, SqlParsingCtx &ctx);
 
 	/// Parse join entries
-	void parseJoinEntries(tokenizer &tok, const string &mainNs);
+	void parseJoin(JoinType type, tokenizer &tok, SqlParsingCtx &ctx);
+
+	/// Parse join entries
+	void parseJoinEntries(tokenizer &parser, const string &mainNs, SqlParsingCtx &ctx);
+
+	/// Parse joined Ns name: [Namespace.field]
+	string parseJoinedFieldName(tokenizer &parser, string &name, SqlParsingCtx &ctx);
 
 	/// Parse merge entries
-	void parseMerge(tokenizer &parser);
+	void parseMerge(tokenizer &parser, SqlParsingCtx &ctx);
+
+	/// Tries to find token value among accepted tokens.
+	bool findInPossibleTokens(int type, const string &v);
+	/// Tries to find token value among indexes.
+	bool findInPossibleIndexes(const string &tok, const string &nsName, const Namespaces &namespaces);
+	/// Tries to find among possible namespaces.
+	bool findInPossibleNamespaces(const string &tok, const Namespaces &namespaces);
+	/// Gets names of indexes that start with 'token'.
+	void getMatchingIndexesNames(const Namespaces &namespaces, const string &nsName, const string &token, vector<string> &variants);
 
 	/// Calculates QueryEntries indexes for EqualPosition context.
 	/// @param fields - equal position context.
@@ -440,17 +525,20 @@ public:
 	vector<Query> mergeQueries_;
 
 	/// List of columns in a final result set.
-	h_vector<string, 4> selectFilter_;
+	h_vector<string, 1> selectFilter_;
 
 	/// List of sql functions
-	h_vector<string, 1> selectFunctions_;
+	h_vector<string, 0> selectFunctions_;
 
 	/// List of same position fields for queries with arrays
-	h_vector<EqualPosition, 1> equalPositions_;
+	h_vector<EqualPosition, 0> equalPositions_;
 
 	/// Explain query if true
 	bool explain_ = false;
 	QueryType type_ = QuerySelect;
+
+	/// List of fields (and values) for update.
+	h_vector<pair<string, VariantArray>, 0> updateFields_;
 };
 
 }  // namespace reindexer

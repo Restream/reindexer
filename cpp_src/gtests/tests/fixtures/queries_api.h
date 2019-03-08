@@ -41,7 +41,7 @@ public:
 			{string(kFieldNameAge + compositePlus + kFieldNameGenre), IndexOpts()},
 		};
 
-		Error err = reindexer->OpenNamespace(default_namespace);
+		Error err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(default_namespace,
 							   {
@@ -71,7 +71,7 @@ public:
 		defaultNsPks.push_back(kFieldNameId);
 		defaultNsPks.push_back(kFieldNameTemp);
 
-		err = reindexer->OpenNamespace(testSimpleNs);
+		err = rt.reindexer->OpenNamespace(testSimpleNs);
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(testSimpleNs, {
 												 IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK()},
@@ -81,7 +81,7 @@ public:
 											 });
 		simpleTestNsPks.push_back(kFieldNameId);
 
-		err = reindexer->OpenNamespace(compositeIndexesNs);
+		err = rt.reindexer->OpenNamespace(compositeIndexesNs);
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(
 			compositeIndexesNs,
@@ -97,7 +97,7 @@ public:
 		compositeIndexesNsPks.push_back(kFieldNameBookid);
 		compositeIndexesNsPks.push_back(kFieldNameBookid2);
 
-		err = reindexer->OpenNamespace(comparatorsNs);
+		err = rt.reindexer->OpenNamespace(comparatorsNs);
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(
 			comparatorsNs,
@@ -113,7 +113,7 @@ public:
 	void ExecuteAndVerify(const string& ns, const Query& query) {
 		reindexer::QueryResults qr;
 		const_cast<Query&>(query).Explain();
-		Error err = reindexer->Select(query, qr);
+		Error err = rt.reindexer->Select(query, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		if (err.ok()) {
 			Verify(ns, qr, query);
@@ -490,7 +490,7 @@ protected:
 
 	void FillComparatorsNamespace() {
 		for (size_t i = 0; i < 1000; ++i) {
-			Item item(reindexer->NewItem(comparatorsNs));
+			Item item(rt.reindexer->NewItem(comparatorsNs));
 			item[kFieldNameId] = static_cast<int>(i);
 			item[kFieldNameColumnInt] = rand();
 			item[kFieldNameColumnInt64] = static_cast<int64_t>(rand());
@@ -836,11 +836,11 @@ protected:
 		Query checkQuery = Query(default_namespace).Where(kFieldNameGenre, CondEq, 10).Limit(limit);
 
 		reindexer::QueryResults testQr;
-		Error err = reindexer->Select(testQuery, testQr);
+		Error err = rt.reindexer->Select(testQuery, testQr);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		reindexer::QueryResults checkQr;
-		err = reindexer->Select(checkQuery, checkQr);
+		err = rt.reindexer->Select(checkQuery, checkQr);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		double yearSum = 0.0;
@@ -862,11 +862,11 @@ protected:
 									 .Sort(kFieldNameYear, true);
 
 		QueryResults sqlQr;
-		Error err = reindexer->Select(sqlQuery, sqlQr);
+		Error err = rt.reindexer->Select(sqlQuery, sqlQr);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		QueryResults checkQr;
-		err = reindexer->Select(checkQuery, checkQr);
+		err = rt.reindexer->Select(checkQuery, checkQr);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		EXPECT_EQ(sqlQr.Count(), checkQr.Count());

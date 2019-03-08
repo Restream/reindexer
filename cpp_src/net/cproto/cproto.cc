@@ -21,6 +21,7 @@ std::unordered_map<int, const char *> kRPCCodes = {
 	{kCmdCommit, "Commit"},
 	{kCmdModifyItem, "ModifyItem"},
 	{kCmdDeleteQuery, "DeleteQuery"},
+	{kCmdUpdateQuery, "UpdateQuery"},
 	{kCmdSelect, "Select"},
 	{kCmdSelectSQL, "SelectSQL"},
 	{kCmdFetchResults, "FetchResults"},
@@ -30,6 +31,7 @@ std::unordered_map<int, const char *> kRPCCodes = {
 	{kCmdEnumMeta, "EnumMeta"},
 	{kCmdSubscribeUpdates, "SubscribeUpdates"},
 	{kCmdUpdates, "Updates"},
+	{kCmdGetSQLSuggestions, "GetSQLSuggestions"},
 };
 
 const char *CmdName(CmdCode cmd) {

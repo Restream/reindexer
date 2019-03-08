@@ -253,6 +253,21 @@ void FastIndexText<T>::CreateConfig(const FtFastConfig *cfg) {
 	this->cfg_->parse(&config[0]);
 	this->holder_.SetConfig(static_cast<FtFastConfig *>(this->cfg_.get()));
 }
+template <typename T>
+void FastIndexText<T>::SetOpts(const IndexOpts &opts) {
+	auto oldCfg = *GetConfig();
+	IndexText<T>::SetOpts(opts);
+	auto newCfg = *GetConfig();
+
+	if (oldCfg.stopWords != newCfg.stopWords || oldCfg.stemmers != newCfg.stemmers || oldCfg.maxTypoLen != newCfg.maxTypoLen ||
+		oldCfg.enableNumbersSearch != newCfg.enableNumbersSearch || oldCfg.extraWordSymbols != newCfg.extraWordSymbols) {
+		logPrintf(LogInfo, "FulltextIndex config changed, it will be febuilt on next search");
+		this->isBuilt_ = false;
+		this->holder_.status_ = FullRebuild;
+		this->holder_.Clear();
+		this->cache_ft_->Clear();
+	}
+}
 
 Index *FastIndexText_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields) {
 	switch (idef.Type()) {

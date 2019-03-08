@@ -379,21 +379,21 @@ func (db *Reindexer) Upsert(namespace string, item interface{}, precepts ...stri
 	return err
 }
 
-// Insert item to namespace.
+// Insert item to namespace by PK
 // Item must be the same type as item passed to OpenNamespace, or []byte with json data
 // Return 0, if no item was inserted, 1 if item was inserted
 func (db *Reindexer) Insert(namespace string, item interface{}, precepts ...string) (int, error) {
 	return db.modifyItem(namespace, nil, item, nil, modeInsert, precepts...)
 }
 
-// Update item to namespace.
+// Update item to namespace by PK
 // Item must be the same type as item passed to OpenNamespace, or []byte with json data
 // Return 0, if no item was updated, 1 if item was updated
 func (db *Reindexer) Update(namespace string, item interface{}, precepts ...string) (int, error) {
 	return db.modifyItem(namespace, nil, item, nil, modeUpdate, precepts...)
 }
 
-// Delete - remove item  from namespace
+// Delete - remove single item from namespace by PK
 // Item must be the same type as item passed to OpenNamespace, or []byte with json data
 func (db *Reindexer) Delete(namespace string, item interface{}, precepts ...string) error {
 	_, err := db.modifyItem(namespace, nil, item, nil, modeDelete, precepts...)

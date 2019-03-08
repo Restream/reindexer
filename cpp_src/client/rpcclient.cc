@@ -40,7 +40,7 @@ Error RPCClient::Connect(const string& dsn) {
 }
 
 Error RPCClient::Stop() {
-	connections_.clear();
+	if (!connections_.size()) return errOK;
 	for (auto& worker : workers_) {
 		worker.stop_.send();
 
@@ -48,6 +48,7 @@ Error RPCClient::Stop() {
 			worker.thread_.join();
 		}
 	}
+	connections_.clear();
 	return errOK;
 }
 
@@ -74,8 +75,20 @@ void RPCClient::run(int thIdx) {
 	}
 
 	workers_[thIdx].running = true;
-	while (!terminate) {
+	for (;;) {
 		workers_[thIdx].loop_.run();
+		bool doTerminate = terminate;
+		if (doTerminate) {
+			for (int i = thIdx; i < config_.ConnPoolSize; i += config_.WorkerThreads) {
+				if (connections_[i]->PendingCompletions()) {
+					doTerminate = false;
+				}
+			}
+		}
+		if (doTerminate) break;
+	}
+	for (int i = thIdx; i < config_.ConnPoolSize; i += config_.WorkerThreads) {
+		connections_[i].reset();
 	}
 }
 
@@ -125,12 +138,12 @@ Error RPCClient::modifyItem(string_view nsName, Item& item, int mode, Completion
 			if (ret.Status().code() != errStateInvalidated || tryCount > 2) return ret.Status();
 			QueryResults qr;
 			Select(Query(nsName.ToString()).Limit(0), qr);
-			auto newImpl = new ItemImpl(getNamespace(nsName)->payloadType_, getNamespace(nsName)->tagsMatcher_);
+			auto newItem = NewItem(nsName);
 			char* endp = nullptr;
-			Error err = newImpl->FromJSON(item.impl_->GetJSON(), &endp);
+			Error err = newItem.FromJSON(item.impl_->GetJSON(), &endp);
 			if (!err.ok()) return err;
 
-			item.impl_.reset(newImpl);
+			item = std::move(newItem);
 			continue;
 		}
 		try {
@@ -166,11 +179,11 @@ Error RPCClient::modifyItemAsync(string_view nsName, Item* item, int mode, Compl
 						   if (!ret.ok()) return clientCompl(ret);
 
 						   // Rebuild item with new state
-						   auto pNs = getNamespace(ns);
-						   auto newImpl = new ItemImpl(pNs->payloadType_, pNs->tagsMatcher_);
-						   Error err = newImpl->FromJSON(item->impl_->GetJSON());
-						   newImpl->SetPrecepts(item->impl_->GetPrecepts());
-						   item->impl_.reset(newImpl);
+						   auto newItem = NewItem(ns);
+
+						   Error err = newItem.FromJSON(item->impl_->GetJSON());
+						   newItem.SetPrecepts(item->impl_->GetPrecepts());
+						   *item = std::move(newItem);
 						   modifyItemAsync(ns, item, mode, clientCompl, conn);
 					   },
 					   conn);
@@ -242,15 +255,38 @@ Error RPCClient::Delete(const Query& query, QueryResults& result) {
 				result.Bind(p_string(args[0]), int(args[1]));
 			}
 			result.completion(ret.Status());
-			return ret.Status();
 		} catch (const Error& err) {
 			result.completion(err);
-			return err;
 		}
 	};
 
 	auto ret = conn->Call(cproto::kCmdDeleteQuery, ser.Slice());
-	return icompl(ret, conn);
+	icompl(ret, conn);
+	return ret.Status();
+}
+
+Error RPCClient::Update(const Query& query, QueryResults& result) {
+	WrSerializer ser;
+	query.Serialize(ser);
+	auto conn = getConn();
+
+	result = QueryResults(conn, {}, nullptr);
+
+	auto icompl = [&result](const RPCAnswer& ret, cproto::ClientConnection*) {
+		try {
+			if (ret.Status().ok()) {
+				auto args = ret.GetArgs(2);
+				result.Bind(p_string(args[0]), int(args[1]));
+			}
+			result.completion(ret.Status());
+		} catch (const Error& err) {
+			result.completion(err);
+		}
+	};
+
+	auto ret = conn->Call(cproto::kCmdUpdateQuery, ser.Slice());
+	icompl(ret, conn);
+	return ret.Status();
 }
 
 void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
@@ -279,16 +315,15 @@ Error RPCClient::Select(string_view query, QueryResults& result, Completion clie
 			}
 
 			result.completion(ret.Status());
-			return ret.Status();
 		} catch (const Error& err) {
 			result.completion(err);
-			return err;
 		}
 	};
 
 	if (!clientCompl) {
 		auto ret = conn->Call(cproto::kCmdSelectSQL, query, flags, INT_MAX, pser.Slice());
-		return icompl(ret, conn);
+		icompl(ret, conn);
+		return ret.Status();
 	} else {
 		conn->Call(icompl, cproto::kCmdSelectSQL, query, flags, INT_MAX, pser.Slice());
 		return errOK;
@@ -319,16 +354,15 @@ Error RPCClient::Select(const Query& query, QueryResults& result, Completion cli
 				result.Bind(p_string(args[0]), int(args[1]));
 			}
 			result.completion(ret.Status());
-			return ret.Status();
 		} catch (const Error& err) {
 			result.completion(err);
-			return err;
 		}
 	};
 
 	if (!clientCompl) {
 		auto ret = conn->Call(cproto::kCmdSelect, qser.Slice(), flags, 100, pser.Slice());
-		return icompl(ret, conn);
+		icompl(ret, conn);
+		return ret.Status();
 	} else {
 		conn->Call(icompl, cproto::kCmdSelect, qser.Slice(), flags, 100, pser.Slice());
 		return errOK;
@@ -405,6 +439,21 @@ Error RPCClient::SubscribeUpdates(IUpdatesObserver* observer, bool subscribe) {
 	}
 	return err;
 }
+Error RPCClient::GetSqlSuggestions(string_view query, int pos, std::vector<std::string>& suggests) {
+	try {
+		auto ret = getConn()->Call(cproto::kCmdGetSQLSuggestions, query, pos);
+		if (ret.Status().ok()) {
+			auto rargs = ret.GetArgs();
+			suggests.clear();
+			suggests.reserve(rargs.size());
+
+			for (auto& rarg : rargs) suggests.push_back(rarg.As<string>());
+		}
+		return ret.Status();
+	} catch (const Error& err) {
+		return err;
+	}
+}
 
 void RPCClient::checkSubscribes() {
 	bool subscribe = !observers_.empty();
@@ -473,7 +522,11 @@ void RPCClient::onUpdates(const net::cproto::RPCAnswer& ans, cproto::ClientConne
 		// Check if cjson with bundled tagsMatcher
 		bool bundledTagsMatcher = wrec.itemModify.itemCJson.length() > 0 && wrec.itemModify.itemCJson[0] == TAG_END;
 
-		if (ns->tagsMatcher_.version() < wrec.itemModify.tmVersion && !bundledTagsMatcher) {
+		ns->lck_.lock_shared();
+		auto tmVersion = ns->tagsMatcher_.version();
+		ns->lck_.unlock_shared();
+
+		if (tmVersion < wrec.itemModify.tmVersion && !bundledTagsMatcher) {
 			// If tags matcher has been updated, but there are no bundled tags matcher in cjson
 			// Then we need ask server to update
 			// printf("%s need update from %d to %d %02x\n", ns->name_.c_str(), ns->tagsMatcher_.version(), wrec.itemModify.tmVersion,
@@ -501,6 +554,7 @@ void RPCClient::onUpdates(const net::cproto::RPCAnswer& ans, cproto::ClientConne
 				// read tags matcher update
 				rdser.SetPos(tmOffset);
 				std::unique_lock<shared_timed_mutex> lck(ns->lck_);
+				ns->tagsMatcher_ = TagsMatcher();
 				ns->tagsMatcher_.deserialize(rdser, wrec.itemModify.tmVersion, ns->tagsMatcher_.stateToken());
 			}
 		}

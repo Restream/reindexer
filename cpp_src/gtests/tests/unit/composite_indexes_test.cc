@@ -22,10 +22,10 @@ void selectAll(reindexer::Reindexer* reindexer, const string& ns) {
 
 TEST_F(CompositeIndexesApi, DropTest2) {
 	const string test_ns = "weird_namespace";
-	auto err = reindexer->OpenNamespace(test_ns, StorageOpts().Enabled(false));
+	auto err = rt.reindexer->OpenNamespace(test_ns, StorageOpts().Enabled(false));
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->AddIndex(test_ns, {"id", "hash", "int", IndexOpts().PK().Dense()});
+	err = rt.reindexer->AddIndex(test_ns, {"id", "hash", "int", IndexOpts().PK().Dense()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	for (int i = 0; i < 1000; ++i) {
@@ -35,23 +35,23 @@ TEST_F(CompositeIndexesApi, DropTest2) {
 
 		item["id"] = i + 1;
 
-		err = reindexer->Upsert(test_ns, item);
+		err = rt.reindexer->Upsert(test_ns, item);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
-	err = reindexer->Commit(test_ns);
+	err = rt.reindexer->Commit(test_ns);
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	selectAll(reindexer.get(), test_ns);
+	selectAll(rt.reindexer.get(), test_ns);
 
 	reindexer::IndexDef idef("id");
-	err = reindexer->DropIndex(test_ns, idef);
+	err = rt.reindexer->DropIndex(test_ns, idef);
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->Commit(test_ns);
+	err = rt.reindexer->Commit(test_ns);
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	selectAll(reindexer.get(), test_ns);
+	selectAll(rt.reindexer.get(), test_ns);
 }
 
 TEST_F(CompositeIndexesApi, CompositeIndexesDropTest) {
@@ -83,7 +83,7 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	fillNamespace(101, 200);
 
 	QueryResults qr;
-	Error err = reindexer->Select(
+	Error err = rt.reindexer->Select(
 		Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondEq, {{Variant(priceValue), Variant(pagesValue)}}), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_TRUE(qr.Count() == 1);
@@ -95,29 +95,29 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	EXPECT_EQ(static_cast<int>(selectedPages), pagesValue);
 
 	QueryResults qr1;
-	err = reindexer->Select(
+	err = rt.reindexer->Select(
 		Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondLt, {{Variant(priceValue), Variant(pagesValue)}}), qr1);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	QueryResults qr2;
-	err = reindexer->Select(
+	err = rt.reindexer->Select(
 		Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondLe, {{Variant(priceValue), Variant(pagesValue)}}), qr2);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	QueryResults qr3;
-	err = reindexer->Select(
+	err = rt.reindexer->Select(
 		Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondGt, {{Variant(priceValue), Variant(pagesValue)}}), qr3);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	QueryResults qr4;
-	err = reindexer->Select(
+	err = rt.reindexer->Select(
 		Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondGe, {{Variant(priceValue), Variant(pagesValue)}}), qr4);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	fillNamespace(301, 400);
 
 	QueryResults qr5;
-	err = reindexer->Select(
+	err = rt.reindexer->Select(
 		Query(default_namespace)
 			.WhereComposite(compositeIndexName.c_str(), CondRange, {{Variant(1), Variant(1)}, {Variant(priceValue), Variant(pagesValue)}}),
 		qr5);
@@ -128,7 +128,7 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	for (int i = 0; i < 10; ++i) {
 		intKeys.emplace_back(VariantArray{Variant(i), Variant(i * 5)});
 	}
-	err = reindexer->Select(Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondSet, intKeys), qr6);
+	err = rt.reindexer->Select(Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondSet, intKeys), qr6);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	dropIndex(compositeIndexName);
@@ -140,7 +140,7 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	fillNamespace(700, 200);
 
 	QueryResults qr7;
-	err = reindexer->Select(
+	err = rt.reindexer->Select(
 		Query(default_namespace)
 			.WhereComposite(compositeIndexName2.c_str(), CondEq, {{Variant(string(titleValue)), Variant(string(nameValue))}}),
 		qr7);
@@ -154,21 +154,21 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	EXPECT_TRUE(static_cast<reindexer::key_string>(selectedName)->compare(string(nameValue)) == 0);
 
 	QueryResults qr8;
-	err = reindexer->Select(
+	err = rt.reindexer->Select(
 		Query(default_namespace)
 			.WhereComposite(compositeIndexName2.c_str(), CondGe, {{Variant(string(titleValue)), Variant(string(nameValue))}}),
 		qr8);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	QueryResults qr9;
-	err = reindexer->Select(
+	err = rt.reindexer->Select(
 		Query(default_namespace)
 			.WhereComposite(compositeIndexName2.c_str(), CondLt, {{Variant(string(titleValue)), Variant(string(nameValue))}}),
 		qr9);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	QueryResults qr10;
-	err = reindexer->Select(
+	err = rt.reindexer->Select(
 		Query(default_namespace)
 			.WhereComposite(compositeIndexName2.c_str(), CondLe, {{Variant(string(titleValue)), Variant(string(nameValue))}}),
 		qr10);
@@ -181,10 +181,10 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	for (size_t i = 0; i < 1010; ++i) {
 		stringKeys.emplace_back(VariantArray{Variant(RandString()), Variant(RandString())});
 	}
-	err = reindexer->Select(Query(default_namespace).WhereComposite(compositeIndexName2.c_str(), CondSet, stringKeys), qr11);
+	err = rt.reindexer->Select(Query(default_namespace).WhereComposite(compositeIndexName2.c_str(), CondSet, stringKeys), qr11);
 
 	QueryResults qr12;
-	err = reindexer->Select(
+	err = rt.reindexer->Select(
 		Query(default_namespace)
 			.Where(kFieldNameName, CondEq, nameValue)
 			.WhereComposite(compositeIndexName2.c_str(), CondEq, {{Variant(string(titleValue)), Variant(string(nameValue))}}),
@@ -195,6 +195,6 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	fillNamespace(201, 300);
 
 	QueryResults qr13;
-	err = reindexer->Select(Query(default_namespace), qr13);
+	err = rt.reindexer->Select(Query(default_namespace), qr13);
 	EXPECT_TRUE(err.ok()) << err.what();
 }

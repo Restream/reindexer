@@ -10,7 +10,7 @@ public:
 	IndexOrdered(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields)
 		: IndexUnordered<T>(idef, payloadType, fields) {}
 
-	SelectKeyResults SelectKey(const VariantArray &keys, CondType condition, SortType stype, Index::ResultType res_type,
+	SelectKeyResults SelectKey(const VariantArray &keys, CondType condition, SortType stype, Index::SelectOpts opts,
 							   BaseFunctionCtx::Ptr ctx) override;
 	Variant Upsert(const Variant &key, IdType id) override;
 	void MakeSortOrders(UpdateSortedContext &ctx) override;

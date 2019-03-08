@@ -206,6 +206,7 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 
 		if (err.ok()) {
 			QueryResultsWrapper* res = new_results();
+			if (!res) return ret2c(err_too_many_queries, out);
 			res->AddItem(item);
 			int32_t ptVers = -1;
 			bool tmUpdated = item.IsTagsUpdated();
@@ -240,7 +241,7 @@ reindexer_error reindexer_rollback_transaction(uintptr_t rx, uintptr_t tr) {
 
 reindexer_ret reindexer_commit_transaction(uintptr_t rx, uintptr_t tr) {
 	Reindexer* db = reinterpret_cast<Reindexer*>(rx);
-	TransactionWrapper* trw = reinterpret_cast<TransactionWrapper*>(tr);
+	auto trw = std::unique_ptr<TransactionWrapper>(reinterpret_cast<TransactionWrapper*>(tr));
 	auto err = db->CommitTransaction(trw->tr_);
 
 	reindexer_resbuffer out = {0, 0, 0};
@@ -250,6 +251,7 @@ reindexer_ret reindexer_commit_transaction(uintptr_t rx, uintptr_t tr) {
 
 	if (err.ok()) {
 		QueryResultsWrapper* res = new_results();
+		if (!res) return ret2c(err_too_many_queries, out);
 		for (auto& step : trAccessor->GetSteps()) {
 			res->AddItem(step.item_);
 			if (!tmUpdated) tmUpdated = step.item_.IsTagsUpdated();
@@ -258,7 +260,6 @@ reindexer_ret reindexer_commit_transaction(uintptr_t rx, uintptr_t tr) {
 		results2c(res, &out, 0, tmUpdated ? &ptVers : nullptr, tmUpdated ? 1 : 0);
 	}
 
-	delete trw;
 	return ret2c(err, out);
 }
 
@@ -380,10 +381,34 @@ reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in) {
 		Serializer ser(in.data, in.len);
 
 		Query q;
+		q.type_ = QueryDelete;
 		q.Deserialize(ser);
 		QueryResultsWrapper* result = new_results();
 		if (!result) return ret2c(err_too_many_queries, out);
 		res = db->Delete(q, *result);
+		if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
+		if (res.ok())
+			results2c(result, &out);
+		else
+			put_results_to_pool(result);
+	}
+	return ret2c(res, out);
+}
+
+reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in) {
+	reindexer_resbuffer out{0, 0, 0};
+	Error res = err_not_init;
+	Reindexer* db = reinterpret_cast<Reindexer*>(rx);
+	if (db) {
+		res = Error(errOK);
+		Serializer ser(in.data, in.len);
+
+		Query q;
+		q.Deserialize(ser);
+		q.type_ = QueryUpdate;
+		QueryResultsWrapper* result = new_results();
+		if (!result) return ret2c(err_too_many_queries, out);
+		res = db->Update(q, *result);
 		if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
 		if (res.ok())
 			results2c(result, &out);

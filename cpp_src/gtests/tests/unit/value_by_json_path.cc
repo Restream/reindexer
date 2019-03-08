@@ -2,13 +2,13 @@
 #include "tools/logger.h"
 
 TEST_F(ReindexerApi, GetValueByJsonPath) {
-	Error err = reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->AddIndex(default_namespace, {"id", "hash", "string", IndexOpts().PK()});
+	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "string", IndexOpts().PK()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->Commit(default_namespace);
+	err = rt.reindexer->Commit(default_namespace);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	struct Data {
@@ -24,7 +24,7 @@ TEST_F(ReindexerApi, GetValueByJsonPath) {
 		R"xxx({"id": "%s", "monument" : [1,2,3], "inner": {"intField": %ld, "stringField": "%s", "inner2": {"intArray": [%d, %d, %d], "inner3": [{"first":%ld},{"second":%ld},{"third":%ld}]}}})xxx";
 
 	for (int i = 0; i < 100; ++i) {
-		Item item = reindexer->NewItem(default_namespace);
+		Item item = rt.reindexer->NewItem(default_namespace);
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 		Data data = {"pk" + std::to_string(i), i + 1, "str" + std::to_string(i + 2), {{i + 3, i + 4, i + 5}}, i + 6, i + 7, i + 8};
@@ -35,10 +35,10 @@ TEST_F(ReindexerApi, GetValueByJsonPath) {
 		err = item.FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->Upsert(default_namespace, item);
+		err = rt.reindexer->Upsert(default_namespace, item);
 		EXPECT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->Commit(default_namespace);
+		err = rt.reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		VariantArray intField = item["inner.intField"];
@@ -70,20 +70,20 @@ TEST_F(ReindexerApi, GetValueByJsonPath) {
 }
 
 TEST_F(ReindexerApi, SelectByJsonPath) {
-	Error err = reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->AddIndex(default_namespace, {"id", "hash", "string", IndexOpts().PK()});
+	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "string", IndexOpts().PK()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->Commit(default_namespace);
+	err = rt.reindexer->Commit(default_namespace);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	const char jsonPattern[] = R"xxx({"id": "%s", "nested": {"string": "%s", "int": %d, "intarray" : [1,2,3]}})xxx";
 
 	std::vector<int64_t> properIntValues;
 	for (int i = 0; i < 15; ++i) {
-		Item item = reindexer->NewItem(default_namespace);
+		Item item = rt.reindexer->NewItem(default_namespace);
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 		char json[512];
@@ -96,17 +96,17 @@ TEST_F(ReindexerApi, SelectByJsonPath) {
 		err = item.FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->Upsert(default_namespace, item);
+		err = rt.reindexer->Upsert(default_namespace, item);
 		EXPECT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->Commit(default_namespace);
+		err = rt.reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
 	QueryResults qr1;
 	Variant strValueToFind("str_pk1");
 	Query query1 = Query(default_namespace).Where("nested.string", CondEq, strValueToFind);
-	err = reindexer->Select(query1, qr1);
+	err = rt.reindexer->Select(query1, qr1);
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_TRUE(qr1.Count() == 1);
 	Item theOnlyItem = qr1[0].GetItem();
@@ -117,7 +117,7 @@ TEST_F(ReindexerApi, SelectByJsonPath) {
 	QueryResults qr2;
 	Variant intValueToFind(static_cast<int64_t>(5));
 	Query query2 = Query(default_namespace).Where("nested.int", CondGe, intValueToFind);
-	err = reindexer->Select(query2, qr2);
+	err = rt.reindexer->Select(query2, qr2);
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_TRUE(qr2.Count() == 10);
 
@@ -132,28 +132,28 @@ TEST_F(ReindexerApi, SelectByJsonPath) {
 	QueryResults qr3;
 	Variant arrayItemToFind(static_cast<int64_t>(2));
 	Query query3 = Query(default_namespace).Where("nested.intarray", CondGe, arrayItemToFind);
-	err = reindexer->Select(query3, qr3);
+	err = rt.reindexer->Select(query3, qr3);
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_TRUE(qr3.Count() == 15);
 }
 
 TEST_F(ReindexerApi, CompositeFTSelectByJsonPath) {
-	Error err = reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->AddIndex(default_namespace, {"id", "hash", "string", IndexOpts().PK()});
+	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "string", IndexOpts().PK()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->AddIndex(default_namespace, {"locale", "hash", "string", IndexOpts()});
+	err = rt.reindexer->AddIndex(default_namespace, {"locale", "hash", "string", IndexOpts()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->Commit(default_namespace);
+	err = rt.reindexer->Commit(default_namespace);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	const char jsonPattern[] = R"xxx({"id": "%s", "locale" : "%s", "nested": {"name": "%s", "count": %ld}})xxx";
 
 	for (int i = 0; i < 100000; ++i) {
-		Item item = reindexer->NewItem(default_namespace);
+		Item item = rt.reindexer->NewItem(default_namespace);
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 		char json[1024];
@@ -167,21 +167,21 @@ TEST_F(ReindexerApi, CompositeFTSelectByJsonPath) {
 		err = item.FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->Upsert(default_namespace, item);
+		err = rt.reindexer->Upsert(default_namespace, item);
 		EXPECT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->Commit(default_namespace);
+		err = rt.reindexer->Commit(default_namespace);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
-	err = reindexer->AddIndex(default_namespace, {"composite_ft", {"nested.name", "id", "locale"}, "text", "composite", IndexOpts()});
+	err = rt.reindexer->AddIndex(default_namespace, {"composite_ft", {"nested.name", "id", "locale"}, "text", "composite", IndexOpts()});
 	EXPECT_TRUE(err.ok()) << err.what();
-	err = reindexer->Commit(default_namespace);
+	err = rt.reindexer->Commit(default_namespace);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	QueryResults qr;
 	Query query = Query(default_namespace).Where("composite_ft", CondEq, "name2");
-	err = reindexer->Select(query, qr);
+	err = rt.reindexer->Select(query, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_TRUE(qr.Count() == 1);
 

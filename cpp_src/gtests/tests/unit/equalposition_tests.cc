@@ -65,7 +65,7 @@ TEST_F(EqualPositionApi, SelectGt) {
 	const Variant key2(static_cast<int>(2100));
 	Query q = Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGt, key1).Where(kFieldA2, CondGt, key2);
 	q.AddEqualPosition({kFieldA1, kFieldA2});
-	Error err = reindexer->Select(q, qr);
+	Error err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	VerifyQueryResult(qr, {kFieldA1, kFieldA2}, {key1, key2}, {CondGt, CondGt});
 }
@@ -76,7 +76,7 @@ TEST_F(EqualPositionApi, SelectGt2) {
 	const Variant key2(static_cast<int>(2240));
 	Query q = Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGt, key1).Where(kFieldA2, CondGt, key2);
 	q.AddEqualPosition({kFieldA1, kFieldA2});
-	Error err = reindexer->Select(q, qr);
+	Error err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	VerifyQueryResult(qr, {kFieldA1, kFieldA2}, {key1, key2}, {CondGt, CondGt});
 }
@@ -87,7 +87,7 @@ TEST_F(EqualPositionApi, SelectGe) {
 	const Variant key2(static_cast<int>(2240));
 	Query q = Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGe, key1).Where(kFieldA2, CondGe, key2);
 	q.AddEqualPosition({kFieldA1, kFieldA2});
-	Error err = reindexer->Select(q, qr);
+	Error err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	VerifyQueryResult(qr, {kFieldA1, kFieldA2}, {key1, key2}, {CondGe, CondGe});
 }
@@ -98,7 +98,7 @@ TEST_F(EqualPositionApi, SelectGe2) {
 	const Variant key2(static_cast<int>(0));
 	Query q = Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGe, key1).Where(kFieldA2, CondGe, key2);
 	q.AddEqualPosition({kFieldA1, kFieldA2});
-	Error err = reindexer->Select(q, qr);
+	Error err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	VerifyQueryResult(qr, {kFieldA1, kFieldA2}, {key1, key2}, {CondGe, CondGe});
 }
@@ -109,7 +109,7 @@ TEST_F(EqualPositionApi, SelectLt) {
 	const Variant key2(static_cast<int>(800));
 	Query q = Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondLt, key1).Where(kFieldA2, CondLt, key2);
 	q.AddEqualPosition({kFieldA1, kFieldA2});
-	Error err = reindexer->Select(q, qr);
+	Error err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	VerifyQueryResult(qr, {kFieldA1, kFieldA2}, {key1, key2}, {CondLt, CondLt});
 }
@@ -122,26 +122,26 @@ TEST_F(EqualPositionApi, SelectEq) {
 	Query q =
 		Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondEq, key1).Where(kFieldA2, CondEq, key2).Where(kFieldA3, CondEq, key3);
 	q.AddEqualPosition({kFieldA1, kFieldA2, kFieldA3});
-	Error err = reindexer->Select(q, qr);
+	Error err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	VerifyQueryResult(qr, {kFieldA1, kFieldA2, kFieldA3}, {key1, key2, key3}, {CondEq, CondEq, CondEq});
 }
 
 TEST_F(EqualPositionApi, SelectNonIndexedArrays) {
 	const char* ns = "ns2";
-	Error err = reindexer->OpenNamespace(ns, StorageOpts().Enabled(false));
+	Error err = rt.reindexer->OpenNamespace(ns, StorageOpts().Enabled(false));
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->AddIndex(ns, {"id", "hash", "string", IndexOpts().PK()});
+	err = rt.reindexer->AddIndex(ns, {"id", "hash", "string", IndexOpts().PK()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->Commit(ns);
+	err = rt.reindexer->Commit(ns);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	const char jsonPattern[] = R"xxx({"id": "%s", "nested": {"a1": [%d, %d, %d], "a2": [%d, %d, %d], "a3": [%d, %d, %d]}})xxx";
 
 	for (int i = 0; i < 100; ++i) {
-		Item item = reindexer->NewItem(ns);
+		Item item = rt.reindexer->NewItem(ns);
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 		char json[1024];
@@ -152,10 +152,10 @@ TEST_F(EqualPositionApi, SelectNonIndexedArrays) {
 		err = item.FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->Upsert(ns, item);
+		err = rt.reindexer->Upsert(ns, item);
 		EXPECT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->Commit(ns);
+		err = rt.reindexer->Commit(ns);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
@@ -164,29 +164,29 @@ TEST_F(EqualPositionApi, SelectNonIndexedArrays) {
 	const Variant key2(static_cast<int64_t>(4));
 	Query q = Query(ns).Debug(LogTrace).Where("nested.a2", CondGe, key1).Where("nested.a3", CondGe, key2);
 	q.AddEqualPosition({"nested.a2", "nested.a3"});
-	err = reindexer->Select(q, qr);
+	err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	VerifyQueryResult(qr, {"nested.a2", "nested.a3"}, {key1, key2}, {CondGe, CondGe});
 }
 
 TEST_F(EqualPositionApi, SelectMixedArrays) {
 	const char* ns = "ns2";
-	Error err = reindexer->OpenNamespace(ns, StorageOpts().Enabled(false));
+	Error err = rt.reindexer->OpenNamespace(ns, StorageOpts().Enabled(false));
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->AddIndex(ns, {"id", "hash", "string", IndexOpts().PK()});
+	err = rt.reindexer->AddIndex(ns, {"id", "hash", "string", IndexOpts().PK()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->AddIndex(ns, {"a1", "hash", "int64", IndexOpts().Array()});
+	err = rt.reindexer->AddIndex(ns, {"a1", "hash", "int64", IndexOpts().Array()});
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	err = reindexer->Commit(ns);
+	err = rt.reindexer->Commit(ns);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	const char jsonPattern[] = R"xxx({"id": "%s", "a1": [%d, %d, %d], "nested": {"a2": [%d, %d, %d], "a3": [%d, %d, %d]}})xxx";
 
 	for (int i = 0; i < 100; ++i) {
-		Item item = reindexer->NewItem(ns);
+		Item item = rt.reindexer->NewItem(ns);
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 		char json[1024];
@@ -197,10 +197,10 @@ TEST_F(EqualPositionApi, SelectMixedArrays) {
 		err = item.FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->Upsert(ns, item);
+		err = rt.reindexer->Upsert(ns, item);
 		EXPECT_TRUE(err.ok()) << err.what();
 
-		err = reindexer->Commit(ns);
+		err = rt.reindexer->Commit(ns);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
@@ -209,7 +209,7 @@ TEST_F(EqualPositionApi, SelectMixedArrays) {
 	const Variant key2(static_cast<int64_t>(5));
 	Query q = Query(ns).Debug(LogTrace).Where("a1", CondGe, key1).Where("nested.a2", CondGe, key2);
 	q.AddEqualPosition({"a1", "nested.a2"});
-	err = reindexer->Select(q, qr);
+	err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	VerifyQueryResult(qr, {"a1", "nested.a2"}, {key1, key2}, {CondGe, CondGe});
 }

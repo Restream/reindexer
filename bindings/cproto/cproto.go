@@ -76,7 +76,7 @@ func (binding *NetCProto) Ping() error {
 }
 
 func (binding *NetCProto) BeginTx(namespace string) (ctx bindings.TxCtx, err error) {
-	buf, err := binding.rpcCall(opWr, сmdStartTransaction, namespace)
+	buf, err := binding.rpcCall(opWr, cmdStartTransaction, namespace)
 
 	if len(buf.args) == 0 {
 		return
@@ -89,7 +89,7 @@ func (binding *NetCProto) BeginTx(namespace string) (ctx bindings.TxCtx, err err
 func (binding *NetCProto) CommitTx(ctx *bindings.TxCtx) (bindings.RawBuffer, error) {
 	netBuffer := ctx.Result.(*NetBuffer)
 
-	txBuf, err := netBuffer.conn.rpcCall(сmdCommitTx, int64(ctx.Id))
+	txBuf, err := netBuffer.conn.rpcCall(cmdCommitTx, int64(ctx.Id))
 
 	defer txBuf.Free()
 	defer netBuffer.close()
@@ -108,7 +108,7 @@ func (binding *NetCProto) CommitTx(ctx *bindings.TxCtx) (bindings.RawBuffer, err
 func (binding *NetCProto) RollbackTx(ctx *bindings.TxCtx) error {
 	netBuffer := ctx.Result.(*NetBuffer)
 
-	txBuf, err := netBuffer.conn.rpcCall(сmdRollbackTx, int64(ctx.Id))
+	txBuf, err := netBuffer.conn.rpcCall(cmdRollbackTx, int64(ctx.Id))
 
 	defer txBuf.Free()
 	defer netBuffer.Free()
@@ -137,7 +137,7 @@ func (binding *NetCProto) ModifyItemTx(txCtx *bindings.TxCtx, format int, data [
 
 	netBuffer := txCtx.Result.(*NetBuffer)
 
-	txBuf, err := netBuffer.conn.rpcCall(сmdAddTxItem, format, data, mode, packedPercepts, stateToken, int64(txCtx.Id))
+	txBuf, err := netBuffer.conn.rpcCall(cmdAddTxItem, format, data, mode, packedPercepts, stateToken, int64(txCtx.Id))
 
 	defer txBuf.Free()
 	if err != nil {
@@ -283,6 +283,16 @@ func (binding *NetCProto) SelectQuery(data []byte, withItems bool, ptVersions []
 
 func (binding *NetCProto) DeleteQuery(nsHash int, data []byte) (bindings.RawBuffer, error) {
 	buf, err := binding.rpcCall(opWr, cmdDeleteQuery, data)
+	if err != nil {
+		buf.Free()
+		return nil, err
+	}
+	buf.result = buf.args[0].([]byte)
+	return buf, nil
+}
+
+func (binding *NetCProto) UpdateQuery(nsHash int, data []byte) (bindings.RawBuffer, error) {
+	buf, err := binding.rpcCall(opWr, cmdUpdateQuery, data)
 	if err != nil {
 		buf.Free()
 		return nil, err

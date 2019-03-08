@@ -73,7 +73,6 @@ public:
 	bool operator==(const QueryWhere &) const;
 
 protected:
-	int ParseWhere(tokenizer &tok);
 	void dumpWhere(WrSerializer &, bool stripArgs) const;
 	static CondType getCondType(string_view cond);
 

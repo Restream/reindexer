@@ -31,6 +31,7 @@ public:
 	int Check(http::Context &ctx);
 	int PostQuery(http::Context &ctx);
 	int DeleteQuery(http::Context &ctx);
+	int UpdateQuery(http::Context &ctx);
 	int GetSQLQuery(http::Context &ctx);
 	int PostSQLQuery(http::Context &ctx);
 	int GetSQLSuggest(http::Context &ctx);

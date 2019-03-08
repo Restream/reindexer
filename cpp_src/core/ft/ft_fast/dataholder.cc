@@ -1,4 +1,5 @@
 ﻿#include "dataholder.h"
+#include <sstream>
 
 namespace reindexer {
 
@@ -61,7 +62,7 @@ WordIdType DataHolder::BuildWordId(uint32_t id) {
 	return wId;
 }
 bool DataHolder::NeedClear(bool complte_updated) {
-	if (NeedRebuild(complte_updated) || steps.back().suffixes_.word_size() > size_t(cfg_->maxStepSize)) return true;
+	if (NeedRebuild(complte_updated) || !NeedRecomitLast()) return true;
 	return false;
 }
 
@@ -102,7 +103,7 @@ void DataHolder::StartCommit(bool complte_updated) {
 		status_ = FullRebuild;
 
 		Clear();
-	} else if (steps.back().suffixes_.word_size() < size_t(cfg_->maxStepSize)) {
+	} else if (NeedRecomitLast()) {
 		status_ = RecommitLast;
 		words_.erase(words_.begin() + steps.back().wordOffset_, words_.end());
 
@@ -112,15 +113,50 @@ void DataHolder::StartCommit(bool complte_updated) {
 
 		steps.back().clear();
 	} else {
+		for (auto& word : words_) {
+			word.cur_step_pos_ = word.vids_.end().pos();
+		}
 		status_ = CreateNew;
 		steps.emplace_back(CommitStep{});
 	}
 	return;
-}  // namespace reindexer
+}
+
+string DataHolder::Dump() {
+	std::stringstream ss;
+	ss << "Holder dump: step count: " << steps.size() << std::endl;
+	ss << "Status: ";
+	switch (status_) {
+		case CreateNew:
+			ss << "\"create new\"";
+			break;
+		case RecommitLast:
+			ss << "\"recomit last\"";
+			break;
+		case FullRebuild:
+			ss << "\"full rebuild\"";
+	}
+	ss << " step count: " << steps.size() << std::endl;
+
+	size_t counter = 0;
+	for (auto& step : steps) {
+		ss << "Step : " << std::to_string(counter);
+		if (!step.suffixes_.word_size()) ss << " - empty step";
+		ss << std::endl;
+		for (size_t i = 0; i < step.suffixes_.word_size(); i++) {
+			ss << step.suffixes_.word_at(i) << std::endl;
+		}
+		counter++;
+	}
+	return ss.str();
+}
+
 bool DataHolder::NeedRebuild(bool complte_updated) {
 	return ((steps.size() == 1 && steps.front().suffixes_.word_size() < size_t(cfg_->maxStepSize)) || steps.empty() ||
 			steps.size() >= size_t(cfg_->maxRebuildSteps) || complte_updated);
 }
+
+bool DataHolder::NeedRecomitLast() { return steps.back().suffixes_.word_size() < size_t(cfg_->maxStepSize); }
 void DataHolder::SetConfig(FtFastConfig* cfg) {
 	cfg_ = cfg;
 	steps.reserve(cfg_->maxRebuildSteps + 1);

@@ -32,22 +32,22 @@ public:
 		Error GetCJSON(WrSerializer &wrser, bool withHdrLen = true);
 		Item GetItem();
 		int64_t GetLSN();
-		bool IsRaw () ;
-		string_view GetRaw () ;
+		bool IsRaw();
+		string_view GetRaw();
 		Iterator &operator++();
 		Error Status() { return qr_->status_; }
 		bool operator!=(const Iterator &) const;
 		bool operator==(const Iterator &) const;
 		Iterator &operator*() { return *this; }
-		void readNext ();
+		void readNext();
 
 		const QueryResults *qr_;
 		int idx_, pos_, nextPos_;
 		ResultSerializer::ItemParams itemParams_;
 	};
 
-	Iterator begin() const { return Iterator{this, 0, 0, 0,{}}; }
-	Iterator end() const { return Iterator{this, queryParams_.qcount, 0, 0,{}}; }
+	Iterator begin() const { return Iterator{this, 0, 0, 0, {}}; }
+	Iterator end() const { return Iterator{this, queryParams_.qcount, 0, 0, {}}; }
 
 	size_t Count() const { return queryParams_.qcount; }
 	int TotalCount() const { return queryParams_.totalcount; }
@@ -62,8 +62,9 @@ public:
 
 private:
 	friend class RPCClient;
-	QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl,int fetchFlags=0);
-	QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, string_view rawResult, int queryID,int fetchFlags=0);
+	QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, int fetchFlags = 0);
+	QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, string_view rawResult, int queryID,
+				 int fetchFlags = 0);
 	void Bind(string_view rawResult, int queryID);
 	void fetchNextResults();
 	void completion(const Error &err) {

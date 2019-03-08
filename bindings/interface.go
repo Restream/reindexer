@@ -130,6 +130,7 @@ type RawBinding interface {
 	Select(query string, withItems bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
 	SelectQuery(rawQuery []byte, withItems bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
 	DeleteQuery(nsHash int, rawQuery []byte) (RawBuffer, error)
+	UpdateQuery(nsHash int, rawQuery []byte) (RawBuffer, error)
 	Commit(namespace string) error
 	EnableLogger(logger Logger)
 	DisableLogger()

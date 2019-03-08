@@ -19,12 +19,12 @@
 #include "replicator/updatesobserver.h"
 #include "tools/errors.h"
 #include "urlparser/urlparser.h"
-
 namespace reindexer {
 
 namespace client {
 
 using std::string;
+using std::atomic_bool;
 using std::shared_ptr;
 using namespace net;
 class RPCClient {
@@ -49,6 +49,7 @@ public:
 	Error Upsert(string_view nsName, client::Item &item, Completion completion = nullptr);
 	Error Delete(string_view nsName, client::Item &item, Completion completion = nullptr);
 	Error Delete(const Query &query, QueryResults &result);
+	Error Update(const Query &query, QueryResults &result);
 	Error Select(string_view query, QueryResults &result, Completion clientCompl = nullptr, cproto::ClientConnection * = nullptr);
 	Error Select(const Query &query, QueryResults &result, Completion clientCompl = nullptr, cproto::ClientConnection * = nullptr);
 	Error Commit(string_view nsName);
@@ -57,6 +58,7 @@ public:
 	Error PutMeta(string_view nsName, const string &key, const string_view &data);
 	Error EnumMeta(string_view nsName, vector<string> &keys);
 	Error SubscribeUpdates(IUpdatesObserver *observer, bool subscribe);
+	Error GetSqlSuggestions(string_view query, int pos, std::vector<std::string> &suggests);
 
 private:
 	Error modifyItem(string_view nsName, Item &item, int mode, Completion);
@@ -75,10 +77,11 @@ private:
 	shared_timed_mutex nsMutex_;
 	httpparser::UrlParser uri_;
 	struct worker {
+		worker() { running = false; }
 		ev::dynamic_loop loop_;
 		std::thread thread_;
 		ev::async stop_;
-		bool running = false;
+		atomic_bool running;
 	};
 	std::vector<worker> workers_;
 	std::atomic<unsigned> curConnIdx_;

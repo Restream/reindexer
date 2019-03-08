@@ -71,7 +71,7 @@ void IndexText<T>::SetOpts(const IndexOpts &opts) {
 
 // Generic implemetation for string index
 template <typename T>
-SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType condition, SortType /*stype*/, Index::ResultType /*res_type*/,
+SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType condition, SortType /*stype*/, Index::SelectOpts /*opts*/,
 										 BaseFunctionCtx::Ptr ctx) {
 	if (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
 		throw Error(errParams, "Full text index support only EQ or SET condition with 1 or 2 parameter");

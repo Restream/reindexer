@@ -1,3 +1,36 @@
+# Version 2.0.2 (08.03.2019)
+
+## Core 
+- [fea] Update fields of documents, with SQL `UPDATE` statement support
+- [fea] Add SQL query suggestions
+- [fea] Add `DISTINCT` support to SQL query
+- [fea] Queries to non nullable indexes with NULL condition will return error
+- [fix] Fixes of full text search, raised on incremental index build
+- [fix] Queries with forced sort order can return wrong sequences
+- [fix] RPC client&replicator multithread races
+- [fix] DISTINCT condition to store indexes
+- [fix] Caches crash on too fast data invalidation
+- [fix] Disable execiton of delete query from namespace in slave mode
+- [fix] Rebuild fulltext index if configuration changed
+- [fix] Fixed handling SQL numeric conditions values with extra leading 0
+
+# Golang connector
+- [fea] `Query.Update` method added
+- [doc] Updated documentation and mapping for system Namespaces struct
+- [fix] Support of POD types derived custom types
+- [fix] Added `MATCH` condition support (alias `EQ`) to DSL
+
+# Reindexer server
+- [fix] Report error if config file is not found
+
+# Reindexer tool
+- [fea] Add `UPDATE` statement support
+
+# Face
+- [fea] Add SQL query suggest
+- [fea] GUI for database configuration
+- [fea] GUI and charts for performance and memory statistics
+
 # Version 2.0.0 (07.01.2019) 
 
 ## Core

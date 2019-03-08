@@ -48,9 +48,8 @@ void DataProcessor::Process(bool multithread) {
 	size_t idsetcnt = 0;
 
 	auto wIt = words.begin() + wrdOffset;
-	auto status = holder_.status_;
 
-	thread idrelsetCommitThread([&wIt, &found, getWordByIdFunc, &tm4, &idsetcnt, &words_um, status]() {
+	thread idrelsetCommitThread([&wIt, &found, getWordByIdFunc, &tm4, &idsetcnt, &words_um]() {
 		uint32_t i = 0;
 		for (auto keyIt = words_um.begin(); keyIt != words_um.end(); keyIt++, i++) {
 			// Pack idrelset
@@ -65,15 +64,7 @@ void DataProcessor::Process(bool multithread) {
 				idsetcnt += sizeof(*wIt);
 			}
 
-			if (status == CreateNew) {
-				word->cur_step_pos_ = word->vids_.end().pos();
-			}
 			word->vids_.insert(word->vids_.end(), keyIt->second.vids_.begin(), keyIt->second.vids_.end());
-
-			if (status == FullRebuild) {
-				word->cur_step_pos_ = word->vids_.end().pos();
-			}
-
 			word->vids_.shrink_to_fit();
 
 			keyIt->second.vids_.clear();

@@ -1,14 +1,15 @@
 #pragma once
 
 #include <string>
+#include <unordered_set>
 #include <vector>
-#include "estl/fast_hash_set.h"
 #include "gason/gason.h"
 
 namespace reindexer {
 
 using std::vector;
 using std::string;
+using std::unordered_set;
 
 class BaseFTConfig {
 public:
@@ -22,7 +23,7 @@ public:
 	bool enableTranslit = true;
 	bool enableKbLayout = true;
 	bool enableNumbersSearch = false;
-	fast_hash_set<string> stopWords;
+	unordered_set<string> stopWords;
 	int logLevel = 0;
 	string extraWordSymbols = "-/+";
 

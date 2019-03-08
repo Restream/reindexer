@@ -1,70 +1,57 @@
 #pragma once
 
 #include <memory.h>
-#include <list>
 #include "core/index/payload_map.h"
 #include "core/keyvalue/p_string.h"
 #include "core/payload/fieldsset.h"
+#include "estl/fast_hash_set.h"
+#include "estl/intrusive_ptr.h"
 
 namespace reindexer {
 
-using std::unordered_set;
-using std::reference_wrapper;
-using std::shared_ptr;
+struct ComparatorVars {
+	ComparatorVars(CondType cond, KeyValueType type, bool isArray, PayloadType payloadType, const FieldsSet &fields, void *rawData,
+				   const CollateOpts &collateOpts)
+		: cond_(cond),
+		  type_(type),
+		  isArray_(isArray),
+		  rawData_(reinterpret_cast<uint8_t *>(rawData)),
+		  collateOpts_(collateOpts),
+		  payloadType_(payloadType),
+		  fields_(fields) {}
+	ComparatorVars(){};
+
+	CondType cond_ = CondEq;
+	KeyValueType type_ = KeyValueUndefined;
+	bool isArray_ = false;
+	unsigned offset_ = 0;
+	unsigned sizeof_ = 0;
+	uint8_t *rawData_ = nullptr;
+	CollateOpts collateOpts_;
+	PayloadType payloadType_;
+	FieldsSet fields_;
+};
 
 template <class T>
 class ComparatorImpl {
 public:
-	ComparatorImpl() {}
+	ComparatorImpl(bool distinct = false) : distS_(distinct ? new intrusive_atomic_rc_wrapper<fast_hash_set<T>> : nullptr) {}
+
 	void SetValues(CondType cond, const VariantArray &values) {
-		if (cond == CondSet) {
-			valuesS_.reset(new unordered_set<T>());
-		}
-		convertedStrings_.reset();
-		values_.clear();
+		if (cond == CondSet) valuesS_.reset(new intrusive_atomic_rc_wrapper<fast_hash_set<T>>());
 
-		KeyValueType thisType = type();
-
-		for (const Variant &key : values) {
-			if (thisType == key.Type()) {
-				addValue(cond, static_cast<T>(key));
+		for (Variant key : values) {
+			if (key.Type() == KeyValueString && !is_number(static_cast<p_string>(key))) {
+				addValue(cond, T());
 			} else {
-				if ((key.Type() == KeyValueString) && !is_number(static_cast<p_string>(key).toString())) {
-					addValue(cond, T());
-				} else {
-					switch (thisType) {
-						case KeyValueString: {
-							if (!convertedStrings_) {
-								convertedStrings_ = std::make_shared<std::list<std::string>>();
-							}
-
-							convertedStrings_->push_back(key.As<string>());
-							p_string value(&convertedStrings_->back());
-							addValue(cond, static_cast<T>(Variant(value)));
-							break;
-						}
-						case KeyValueInt:
-							addValue(cond, static_cast<T>(static_cast<Variant>(key.As<int>())));
-							break;
-						case KeyValueBool:
-							addValue(cond, static_cast<T>(static_cast<Variant>(key.As<bool>())));
-							break;
-						case KeyValueInt64:
-							addValue(cond, static_cast<T>(Variant(key.As<int64_t>())));
-							break;
-						case KeyValueDouble:
-							addValue(cond, static_cast<T>(Variant(key.As<double>())));
-							break;
-						default:
-							std::abort();
-					}
-				}
+				key.convert(type());
+				addValue(cond, static_cast<T>(key));
 			}
 		}
 	}
 
-	bool Compare(CondType cond, const T &lhs) {
-		const T &rhs = values_[0];
+	inline bool Compare2(CondType cond, T lhs) {
+		T rhs = values_[0];
 		switch (cond) {
 			case CondEq:
 				return lhs == rhs;
@@ -88,8 +75,48 @@ public:
 				abort();
 		}
 	}
+	bool Compare(CondType cond, T lhs) {
+		bool ret = Compare2(cond, lhs);
+		if (!ret || !distS_) return ret;
+		return distS_->emplace(lhs).second;
+	}
 
-	bool Compare(CondType cond, const p_string &lhs, const CollateOpts &collateOpts) {
+	h_vector<T, 1> values_;
+	intrusive_ptr<intrusive_atomic_rc_wrapper<fast_hash_set<T>>> valuesS_, distS_;
+
+private:
+	KeyValueType type() {
+		if (std::is_same<T, int>::value) return KeyValueInt;
+		if (std::is_same<T, bool>::value) return KeyValueBool;
+		if (std::is_same<T, int64_t>::value) return KeyValueInt64;
+		if (std::is_same<T, double>::value) return KeyValueDouble;
+		std::abort();
+	}
+
+	void addValue(CondType cond, T value) {
+		if (cond == CondSet) {
+			valuesS_->emplace(value);
+		} else {
+			values_.push_back(value);
+		}
+	}
+};
+
+template <>
+class ComparatorImpl<key_string> {
+public:
+	ComparatorImpl(bool distinct = false) : distS_(distinct ? new intrusive_atomic_rc_wrapper<fast_hash_set<key_string>> : nullptr) {}
+
+	void SetValues(CondType cond, const VariantArray &values) {
+		if (cond == CondSet) valuesS_.reset(new intrusive_atomic_rc_wrapper<fast_hash_set<key_string>>());
+
+		for (Variant key : values) {
+			key.convert(KeyValueString);
+			addValue(cond, static_cast<key_string>(key));
+		}
+	}
+
+	bool inline Compare2(CondType cond, const p_string &lhs, const CollateOpts &collateOpts) {
 		const key_string &rhs = values_[0];
 		switch (cond) {
 			case CondEq:
@@ -119,22 +146,17 @@ public:
 				abort();
 		}
 	}
-
-	h_vector<T, 2> values_;
-	shared_ptr<unordered_set<T>> valuesS_;
-	shared_ptr<std::list<string>> convertedStrings_;
-
-private:
-	KeyValueType type() {
-		if (std::is_same<T, key_string>::value) return KeyValueString;
-		if (std::is_same<T, int>::value) return KeyValueInt;
-		if (std::is_same<T, bool>::value) return KeyValueBool;
-		if (std::is_same<T, int64_t>::value) return KeyValueInt64;
-		if (std::is_same<T, double>::value) return KeyValueDouble;
-		std::abort();
+	bool Compare(CondType cond, const p_string &lhs, const CollateOpts &collateOpts) {
+		bool ret = Compare2(cond, lhs, collateOpts);
+		if (!ret || !distS_) return ret;
+		return distS_->emplace(lhs.getKeyString()).second;
 	}
 
-	void addValue(CondType cond, const T &value) {
+	h_vector<key_string, 1> values_;
+	intrusive_ptr<intrusive_atomic_rc_wrapper<fast_hash_set<key_string>>> valuesS_, distS_;
+
+private:
+	void addValue(CondType cond, const key_string &value) {
 		if (cond == CondSet) {
 			valuesS_->emplace(value);
 		} else {
@@ -146,45 +168,37 @@ private:
 template <>
 class ComparatorImpl<PayloadValue> {
 public:
-	ComparatorImpl(const PayloadType &payloadType, const FieldsSet &fields) : payloadType_(payloadType), fields_(fields) {}
+	ComparatorImpl() {}
 
-	void SetValues(CondType cond, const VariantArray &values) {
-		if (cond == CondSet) {
-			valuesSet_.reset(new unordered_payload_set(0, hash_composite(payloadType_, fields_), equal_composite(payloadType_, fields_)));
-		}
+	void SetValues(CondType cond, const VariantArray &values, const ComparatorVars &vars) {
+		if (cond == CondSet)
+			valuesSet_.reset(new intrusive_atomic_rc_wrapper<unordered_payload_set>(0, hash_composite(vars.payloadType_, vars.fields_),
+																					equal_composite(vars.payloadType_, vars.fields_)));
+
 		for (const Variant &kv : values) {
-			if (kv.Type() == KeyValueComposite) {
-				const PayloadValue &pv(kv);
-				addValue(cond, pv);
-			} else {
-				partOfCjsonFieldSelect_ = true;
-				break;
-			}
+			addValue(cond, static_cast<const PayloadValue &>(kv));
 		}
 	}
 
-	bool Compare(CondType cond, PayloadValue &leftValue, const CollateOpts &collateOpts) {
-		if (partOfCjsonFieldSelect_) return false;
+	bool Compare(CondType cond, const PayloadValue &leftValue, const ComparatorVars &vars) {
 		assert(!values_.empty() || !valuesSet_->empty());
-		assert(fields_.size() > 0);
+		assert(vars.fields_.size() > 0);
 		PayloadValue *rightValue(&values_[0]);
-		Payload lhs(payloadType_, leftValue);
+		ConstPayload lhs(vars.payloadType_, leftValue);
 		switch (cond) {
 			case CondEq:
-				return (lhs.Compare(*rightValue, fields_, collateOpts) == 0);
+				return (lhs.Compare(*rightValue, vars.fields_, vars.collateOpts_) == 0);
 			case CondGe:
-				return (lhs.Compare(*rightValue, fields_, collateOpts) >= 0);
+				return (lhs.Compare(*rightValue, vars.fields_, vars.collateOpts_) >= 0);
 			case CondGt:
-				return (lhs.Compare(*rightValue, fields_, collateOpts) > 0);
+				return (lhs.Compare(*rightValue, vars.fields_, vars.collateOpts_) > 0);
 			case CondLe:
-				return (lhs.Compare(*rightValue, fields_, collateOpts) <= 0);
-			case CondLt: {
-				return (lhs.Compare(*rightValue, fields_, collateOpts) < 0);
-			}
-			case CondRange: {
-				PayloadValue *upperValue(&values_[1]);
-				return (lhs.Compare(*rightValue, fields_, collateOpts) >= 0) && (lhs.Compare(*upperValue, fields_, collateOpts) <= 0);
-			}
+				return (lhs.Compare(*rightValue, vars.fields_, vars.collateOpts_) <= 0);
+			case CondLt:
+				return (lhs.Compare(*rightValue, vars.fields_, vars.collateOpts_) < 0);
+			case CondRange:
+				return (lhs.Compare(*rightValue, vars.fields_, vars.collateOpts_) >= 0) &&
+					   (lhs.Compare(values_[1], vars.fields_, vars.collateOpts_) <= 0);
 			case CondSet:
 				return valuesSet_->find(leftValue) != valuesSet_->end();
 			case CondAny:
@@ -196,12 +210,8 @@ public:
 		}
 	}
 
-	bool partOfCjsonFieldSelect_ = false;
-
-	PayloadType payloadType_;
-	FieldsSet fields_;
-	h_vector<PayloadValue, 2> values_;
-	shared_ptr<unordered_payload_set> valuesSet_;
+	h_vector<PayloadValue, 1> values_;
+	intrusive_ptr<intrusive_atomic_rc_wrapper<unordered_payload_set>> valuesSet_;
 
 private:
 	void addValue(CondType cond, const PayloadValue &pv) {

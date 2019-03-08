@@ -19,11 +19,11 @@ using std::vector;
 
 class Index {
 public:
-	enum ResultType {
-		Optimal = 0,
-		ForceIdset = 1,
-		ForceComparator = 2,
-		DisableIdSetCache = 4,
+	struct SelectOpts {
+		SelectOpts() : distinct(0), disableIdSetCache(0), forceComparator(0) {}
+		int distinct : 1;
+		int disableIdSetCache : 1;
+		int forceComparator : 1;
 	};
 	using KeyEntry = reindexer::KeyEntry<IdSet>;
 	using KeyEntryPlain = reindexer::KeyEntry<IdSetPlain>;
@@ -37,7 +37,7 @@ public:
 	virtual void DumpKeys() = 0;
 	virtual IdSetRef Find(const Variant& key) = 0;
 
-	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, ResultType res_type,
+	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, SelectOpts opts,
 									   BaseFunctionCtx::Ptr ctx) = 0;
 	virtual void Commit() = 0;
 	virtual void MakeSortOrders(UpdateSortedContext&) {}

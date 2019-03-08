@@ -412,6 +412,44 @@ func (db *Reindexer) deleteQuery(q *Query) (int, error) {
 	return rawQueryParams.count, err
 }
 
+// Execute query
+func (db *Reindexer) updateQuery(q *Query) (int, error) {
+
+	ns, err := db.getNS(q.Namespace)
+	if err != nil {
+		return 0, err
+	}
+
+	result, err := db.binding.UpdateQuery(ns.nsHash, q.ser.Bytes())
+	if err != nil {
+		return 0, err
+	}
+	defer result.Free()
+
+	ser := newSerializer(result.GetBuf())
+	// skip total count
+	rawQueryParams := ser.readRawQueryParams()
+
+	ns.cacheLock.Lock()
+	for i := 0; i < rawQueryParams.count; i++ {
+		params := ser.readRawtItemParams()
+		if (rawQueryParams.flags&bindings.ResultsWithJoined) != 0 && ser.GetVarUInt() != 0 {
+			panic("Internal error: joined items in update query result")
+		}
+		// Update cache
+		if _, ok := ns.cacheItems[params.id]; ok {
+			delete(ns.cacheItems, params.id)
+		}
+
+	}
+	ns.cacheLock.Unlock()
+	if !ser.Eof() {
+		panic("Internal error: data after end of update query result")
+	}
+
+	return rawQueryParams.count, err
+}
+
 func (db *Reindexer) resetCaches() {
 	db.lock.RLock()
 	nsArray := make([]*reindexerNamespace, 0, len(db.ns))

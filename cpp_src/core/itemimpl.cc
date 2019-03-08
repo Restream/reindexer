@@ -1,6 +1,8 @@
 #include "core/itemimpl.h"
 #include "core/cjson/baseencoder.h"
 #include "core/cjson/cjsondecoder.h"
+#include "core/cjson/cjsonmodifier.h"
+#include "core/cjson/cjsontools.h"
 #include "core/cjson/jsondecoder.h"
 #include "core/keyvalue/p_string.h"
 #include "tools/logger.h"
@@ -41,6 +43,27 @@ void ItemImpl::SetField(int field, const VariantArray &krs) {
 	} else {
 		GetPayload().Set(field, krs, false);
 	}
+}
+
+void ItemImpl::SetField(const string &jsonPath, const VariantArray &keys) {
+	VariantArray tupleKv;
+	Payload pl = GetPayload();
+	pl.Get(0, tupleKv, false);
+	assert(tupleKv.size() == 1);
+
+	ser_.Reset();
+	key_string generatedTuple;
+	string_view oldTuple(tupleKv[0]);
+	if (oldTuple.length() == 0) {
+		generatedTuple = buildPayloadTuple(&pl, &tagsMatcher_);
+		oldTuple = string_view(*generatedTuple);
+	}
+	CJsonModifier cjsonModifier(tagsMatcher_, payloadType_);
+	Error err = cjsonModifier.SetFieldValue(oldTuple, tagsMatcher_.path2tag(jsonPath), keys, ser_);
+	if (!err.ok()) throw Error(errLogic, "Error setting field value: '%s'", err.what().c_str());
+
+	tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
+	pl.Set(0, {Variant(p_string(&tupleData_))});
 }
 
 Variant ItemImpl::GetField(int field) { return GetPayload().Get(field, 0); }

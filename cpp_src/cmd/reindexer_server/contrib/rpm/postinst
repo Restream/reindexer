@@ -23,4 +23,4 @@ if [ ! -f /etc/reindexer.conf ]; then
     cp /etc/reindexer.conf.pkg /etc/reindexer.conf
 fi
 
-chkconfig --add reindexer
+# chkconfig --add reindexer
