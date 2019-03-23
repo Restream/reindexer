@@ -67,6 +67,7 @@ Queries to full text index can be combined with conditions on another fields. e.
 
 Each result of query contains rank of match. Rank is integer from 0 to 100. 0 - lowest relevancy, 100 - best relevancy. The query Iterator has method `Rank()`, which returns rank of current result
 
+> **Note**: `<stemmers>` see more [Stemming](https://en.wikipedia.org/wiki/Stemming).
 
 ## Text query format
 
