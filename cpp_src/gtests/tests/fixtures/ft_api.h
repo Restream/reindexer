@@ -18,16 +18,17 @@ public:
 
 		DefineNamespaceDataset(
 			"nm1",
-			{IndexDeclaration{"id", "hash", "int", IndexOpts().PK()}, IndexDeclaration{"ft1", "text", "string", IndexOpts()},
-			 IndexDeclaration{"ft2", "text", "string", IndexOpts()},
+			{IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
+			 IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
 			 IndexDeclaration{
 				 "ft1+ft2=ft3", "text", "composite",
 				 IndexOpts().SetConfig(
-					 R"xxx({"enable_translit": true,"enable_numbers_search": true,"enable_kb_layout": true,"merge_limit": 20000,"log_level": 5,"max_step_size": 100})xxx")}});
+					 R"xxx({"enable_translit": true,"enable_numbers_search": true,"enable_kb_layout": true,"merge_limit": 20000,"log_level": 5,"max_step_size": 100})xxx"),
+				 0}});
 		DefineNamespaceDataset(
-			"nm2",
-			{IndexDeclaration{"id", "hash", "int", IndexOpts().PK()}, IndexDeclaration{"ft1", "text", "string", IndexOpts()},
-			 IndexDeclaration{"ft2", "text", "string", IndexOpts()}, IndexDeclaration{"ft1+ft2=ft3", "text", "composite", IndexOpts()}});
+			"nm2", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
+					IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
+					IndexDeclaration{"ft1+ft2=ft3", "text", "composite", IndexOpts(), 0}});
 	}
 
 	void FillData(int64_t count) {

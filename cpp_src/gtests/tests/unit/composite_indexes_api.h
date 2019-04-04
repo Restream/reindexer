@@ -11,12 +11,12 @@ public:
 		Error err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldNameBookid, "hash", "int", IndexOpts()},
-												   IndexDeclaration{kFieldNameBookid2, "hash", "int", IndexOpts()},
-												   IndexDeclaration{kFieldNameTitle, "text", "string", IndexOpts()},
-												   IndexDeclaration{kFieldNamePages, "hash", "int", IndexOpts()},
-												   IndexDeclaration{kFieldNamePrice, "hash", "int", IndexOpts()},
-												   IndexDeclaration{kFieldNameName, "text", "string", IndexOpts()}});
+		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldNameBookid, "hash", "int", IndexOpts(), 0},
+												   IndexDeclaration{kFieldNameBookid2, "hash", "int", IndexOpts(), 0},
+												   IndexDeclaration{kFieldNameTitle, "text", "string", IndexOpts(), 0},
+												   IndexDeclaration{kFieldNamePages, "hash", "int", IndexOpts(), 0},
+												   IndexDeclaration{kFieldNamePrice, "hash", "int", IndexOpts(), 0},
+												   IndexDeclaration{kFieldNameName, "text", "string", IndexOpts(), 0}});
 	}
 
 	void fillNamespace(size_t since, size_t till) {

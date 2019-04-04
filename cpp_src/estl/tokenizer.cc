@@ -26,7 +26,7 @@ void tokenizer::skip_space() {
 	}
 }
 
-token tokenizer::next_token(bool to_lower) {
+token tokenizer::next_token(bool to_lower, bool treatSignAsToken) {
 	skip_space();
 
 	if (cur_ == q_.end()) return token(TokenEnd);
@@ -39,12 +39,16 @@ token tokenizer::next_token(bool to_lower) {
 			res.text_.push_back(to_lower ? tolower(*cur_++) : *cur_++);
 			++pos_;
 		} while (cur_ != q_.end() && (isalpha(*cur_) || isdigit(*cur_) || *cur_ == '_' || *cur_ == '#'));
-	} else if (isdigit(*cur_) || *cur_ == '-' || *cur_ == '+') {
+	} else if (isdigit(*cur_) || (!treatSignAsToken && (*cur_ == '-' || *cur_ == '+'))) {
 		res.type = TokenNumber;
 		do {
 			res.text_.push_back(*cur_++);
 			++pos_;
 		} while (cur_ != q_.end() && (isdigit(*cur_) || *cur_ == '.'));
+	} else if (treatSignAsToken && (*cur_ == '-' || *cur_ == '+')) {
+		res.type = TokenSign;
+		res.text_.push_back(*cur_++);
+		++pos_;
 	} else if (cur_ != q_.end() && (*cur_ == '>' || *cur_ == '<' || *cur_ == '=')) {
 		res.type = TokenOp;
 		do {
@@ -92,10 +96,10 @@ string tokenizer::where() const {
 	return "line: " + std::to_string(line) + " column: " + std::to_string(col) + " " + std::to_string(q_.size());
 }
 
-token tokenizer::peek_token(bool to_lower) {
+token tokenizer::peek_token(bool to_lower, bool treatSignAsToken) {
 	auto save_cur = cur_;
 	auto save_pos = pos_;
-	auto res = next_token(to_lower);
+	auto res = next_token(to_lower, treatSignAsToken);
 	cur_ = save_cur;
 	pos_ = save_pos;
 	return res;

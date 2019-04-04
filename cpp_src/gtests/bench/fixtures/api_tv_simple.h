@@ -34,6 +34,10 @@ protected:
 	void WarmUpIndexes(State& state);
 
 	void GetByID(State& state);
+	void GetEqInt(State& state);
+	void GetEqArrayInt(State& state);
+	void GetEqString(State& state);
+	void GetLikeString(State& state);
 	void GetByRangeIDAndSortByHash(State& state);
 	void GetByRangeIDAndSortByTree(State& state);
 
@@ -66,7 +70,9 @@ protected:
 
 private:
 	vector<string> countries_;
+	vector<string> countryLikePatterns_;
 	vector<string> locations_;
+	vector<int> start_times_;
 	vector<vector<int>> packages_;
 	vector<vector<int>> priceIDs_;
 };

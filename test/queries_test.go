@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"sort"
 	"strconv"
 	"testing"
 
@@ -438,46 +439,81 @@ func TestQueries(t *testing.T) {
 
 }
 
+type CompositeFacetResultItem struct {
+	CompanyName string
+	Rate float64
+	Count int
+}
+type CompositeFacetResult []CompositeFacetResultItem
+func (f CompositeFacetResult) Len() int {return len(f)}
+func (f CompositeFacetResult) Swap(i, j int) {f[i], f[j] = f[j], f[i]}
+func (f CompositeFacetResult) Less(i, j int) bool {
+	if f[i].Count == f[j].Count {
+		if f[i].CompanyName == f[j].CompanyName {
+			return f[i].Rate < f[j].Rate
+		} else {
+			return f[i].CompanyName > f[j].CompanyName
+		}
+	}
+	return f[i].Count < f[j].Count
+}
+
 func CheckAggregateQueries() {
 
-	limit := 100
-	q := DB.Query("test_items").Where("genre", reindexer.EQ, 10).Limit(limit).
-		Aggregate("year", reindexer.AggAvg).
-		Aggregate("YEAR", reindexer.AggSum).
-		Aggregate("age", reindexer.AggFacet).
-		Aggregate("country", reindexer.AggFacet).
-		Aggregate("age", reindexer.AggMin).
-		Aggregate("age", reindexer.AggMax)
+	facetLimit := 100
+	facetOffset := 10
+	q := DB.Query("test_items")
+	q.AggregateAvg("year")
+	q.AggregateSum("YEAR")
+	q.AggregateFacet("age")
+	q.AggregateFacet("name")
+	q.AggregateMin("age")
+	q.AggregateMax("age")
+	q.AggregateFacet("company_name", "rate").Limit(facetLimit).Offset(facetOffset).Sort("count", false).Sort("company_name", true).Sort("rate", false)
 	it := q.Exec()
+	if it.Error() != nil {
+		panic(it.Error())
+	}
 
-	qcheck := DB.Query("test_items").Where("GENRE", reindexer.EQ, 10).Limit(limit)
+	qcheck := DB.Query("test_items")
 	res, err := qcheck.Exec().FetchAll()
 	if err != nil {
 		panic(err)
 	}
 
 	aggregations := it.AggResults()
+	if len(aggregations) != 7 {panic(fmt.Errorf("%d != 7", len(aggregations)))}
 
 	var sum float64
 	ageFacet := make(map[int]int, 0)
-	countryFacet := make(map[string]int, 0)
+	nameFacet := make(map[string]int, 0)
+	type CompositeFacetItem struct {
+		CompanyName string
+		Rate float64
+	}
+	compositeFacet := make(map[CompositeFacetItem]int, 0)
 	ageMin, ageMax := 100000000, -10000000
 
 	for _, it := range res {
 		testItem := it.(*TestItem)
 		sum += float64(testItem.Year)
 		ageFacet[testItem.Age]++
-		for _, c := range testItem.Countries {
-			countryFacet[c]++
-		}
+		nameFacet[testItem.Name]++
+		compositeFacet[CompositeFacetItem{testItem.CompanyName, testItem.Rate}]++
 		if testItem.Age > ageMax {
 			ageMax = testItem.Age
 		}
 		if testItem.Age < ageMin {
 			ageMin = testItem.Age
 		}
-
 	}
+
+	var compositeFacetResult CompositeFacetResult
+	for k, v := range compositeFacet {
+		compositeFacetResult = append(compositeFacetResult, CompositeFacetResultItem{k.CompanyName, k.Rate, v})
+	}
+	sort.Sort(compositeFacetResult)
+	compositeFacetResult = compositeFacetResult[min(facetOffset, len(compositeFacetResult)): min(facetOffset + facetLimit, len(compositeFacetResult))]
 
 	if sum != aggregations[1].Value {
 		panic(fmt.Errorf("%f != %f", sum, aggregations[1].Value))
@@ -486,22 +522,23 @@ func CheckAggregateQueries() {
 		panic(fmt.Errorf("%f != %f,len=%d", sum/float64(len(res)), aggregations[0].Value, len(res)))
 	}
 
-	if aggregations[2].Field != "age" {
-		panic(fmt.Errorf("%s != %s", aggregations[2].Field, "age"))
-	}
+	if len(aggregations[2].Fields) != 1 {panic(fmt.Errorf("%d != 1", len(aggregations[2].Fields)))}
+	if aggregations[2].Fields[0] != "age" {panic(fmt.Errorf("%s != %s", aggregations[2].Fields[0], "age"))}
+	if len(aggregations[2].Facets) != len(ageFacet) {panic(fmt.Errorf("%d != %d", len(aggregations[2].Facets), len(ageFacet)))}
 	for _, facet := range aggregations[2].Facets {
-		intVal, _ := strconv.Atoi(facet.Value)
+		if len(facet.Values) != 1 {panic(fmt.Errorf("%d != 1", len(facet.Values)))}
+		intVal, _ := strconv.Atoi(facet.Values[0])
 		if count, ok := ageFacet[intVal]; ok != true || count != facet.Count {
-			panic(fmt.Errorf("facet '%s' val '%s': %d != %d", aggregations[2].Field, facet.Value, count, facet.Count))
+			panic(fmt.Errorf("facet '%s' val '%s': %d != %d", aggregations[2].Fields[0], facet.Values[0], count, facet.Count))
 		}
 	}
 
-	if aggregations[3].Field != "country" {
-		panic(fmt.Errorf("%s != %s", aggregations[3].Field, "country"))
-	}
+	if len(aggregations[3].Fields) != 1 {panic(fmt.Errorf("%d != 1", len(aggregations[3].Fields)))}
+	if aggregations[3].Fields[0] != "name" {panic(fmt.Errorf("%s != %s", aggregations[3].Fields[0], "name"))}
 	for _, facet := range aggregations[3].Facets {
-		if count, ok := countryFacet[facet.Value]; ok != true || count != facet.Count {
-			panic(fmt.Errorf("facet '%s' val '%s': %d != %d", aggregations[3].Field, facet.Value, count, facet.Count))
+		if len(facet.Values) != 1 {panic(fmt.Errorf("%d != 1", len(facet.Values)))}
+		if count, ok := nameFacet[facet.Values[0]]; ok != true || count != facet.Count {
+			panic(fmt.Errorf("facet '%s' val '%s': %d != %d", aggregations[3].Fields[0], facet.Values[0], count, facet.Count))
 		}
 	}
 	if ageMin != int(aggregations[4].Value) {
@@ -510,7 +547,23 @@ func CheckAggregateQueries() {
 	if ageMax != int(aggregations[5].Value) {
 		panic(fmt.Errorf("%d != %f", ageMax, aggregations[5].Value))
 	}
-
+	if len(aggregations[6].Fields) != 2 {panic(fmt.Errorf("%d != 1", len(aggregations[6].Fields)))}
+	if aggregations[6].Fields[0] != "company_name" {panic(fmt.Errorf("%s != %s", aggregations[6].Fields[0], "company_name"))}
+	if aggregations[6].Fields[1] != "rate" {panic(fmt.Errorf("%s != %s", aggregations[6].Fields[1], "rate"))}
+	if len(compositeFacetResult) != len(aggregations[6].Facets) {
+		panic(fmt.Errorf("Composite facet sizes differ: %d != %d", len(compositeFacetResult), len(aggregations[6].Facets)))
+	}
+	for i := 0; i < len(compositeFacetResult); i++ {
+		if len(aggregations[6].Facets[i].Values) != 2 {panic(fmt.Errorf("%d != 2", len(aggregations[6].Facets[i].Values)))}
+		rate, err := strconv.ParseFloat(aggregations[6].Facets[i].Values[1], 64);
+		if err != nil {panic(err)}
+		if compositeFacetResult[i].CompanyName != aggregations[6].Facets[i].Values[0] || compositeFacetResult[i].Rate != rate ||
+					compositeFacetResult[i].Count != aggregations[6].Facets[i].Count {
+			panic(fmt.Errorf("Facet 'company_name', 'rate' #%d {'%s', '%s': %d} != {'%s', '%f': %d}", i,
+						aggregations[6].Facets[i].Values[0], aggregations[6].Facets[i].Values[1], aggregations[6].Facets[i].Count,
+						compositeFacetResult[i].CompanyName, compositeFacetResult[i].Rate, compositeFacetResult[i].Count))
+		}
+	}
 }
 
 func CheckTestItemsJsonQueries() {
@@ -523,6 +576,41 @@ func CheckTestItemsJsonQueries() {
 	_ = json2
 	// TODO
 
+}
+
+func makeLikePattern(s string) string {
+	runes := make([]rune, len(s))
+	i := 0
+	for _, rune := range s {
+		if rand.Int() % 4 == 0 {
+			runes[i] = '_'
+		} else {
+			runes[i] = rune
+		}
+		i++
+	}
+	var result string
+	if rand.Int() % 4 == 0 {
+		result += "%"
+	}
+	current := 0
+	next := rand.Int() % (len(s) + 1);
+	last := next
+	for current < len(s) {
+		if current < next {
+			result += string(runes[current : next])
+			last = next
+			current = rand.Int() % (len(s) - last + 1) + last
+		}
+		next = rand.Int() % (len(s) - current + 1) + current
+		if current > last || rand.Int() % 4 == 0 {
+			result += "%"
+		}
+	}
+	if rand.Int() % 4 == 0 {
+		result += "%"
+	}
+	return result
 }
 
 func callQueriesSequence(namespace, distinct, sort string, desc, testComposite bool) {
@@ -563,6 +651,8 @@ func callQueriesSequence(namespace, distinct, sort string, desc, testComposite b
 	newTestQuery(DB, namespace).Where("rate", reindexer.RANGE, []float32{float32(rand.Int()%100) / 10, float32(rand.Int()%100) / 10}).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
 	newTestQuery(DB, namespace).Where("age_limit", reindexer.RANGE, []int64{40, 50}).ExecAndVerify()
 	newTestQuery(DB, namespace).Where("company_name", reindexer.RANGE, []string{randString(), randString()}).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
+
+	newTestQuery(DB, namespace).Where("name", reindexer.LIKE, makeLikePattern(randString())).ExecAndVerify()
 
 	newTestQuery(DB, namespace).Where("packages", reindexer.SET, randIntArr(10, 10000, 50)).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
 	newTestQuery(DB, namespace).Where("packages", reindexer.EMPTY, 0).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
@@ -837,6 +927,13 @@ func CheckTestItemsSQLQueries() {
 		newTestQuery(DB, "test_items").Where("year", reindexer.GE, 2016).Or().Where("RATE", reindexer.EQ, 1.1).Or().Where("YEAR", reindexer.RANGE, []int{2010, 2014}).Or().Where("age_limit", reindexer.LE, int64(50)).Verify(res, true)
 	}
 
+	likePattern := makeLikePattern(randString())
+	if res, err := DB.ExecSQL("SELECT count(*), * FROM test_items WHERE year >= '2016' OR rate = '1.1' OR company_name LIKE '" + likePattern + "' or AGE_LIMIT <= 50").FetchAll(); err != nil {
+		panic(err)
+	} else {
+		newTestQuery(DB, "test_items").Where("year", reindexer.GE, 2016).Or().Where("RATE", reindexer.EQ, 1.1).Or().Where("company_name", reindexer.LIKE, likePattern).Or().Where("age_limit", reindexer.LE, int64(50)).Verify(res, true)
+	}
+
 	if res, err := DB.ExecSQL("SELECT ID,'Actor.Name' FROM test_items WHERE 'actor.name' > 'bde'  LIMIT 10000000").FetchAll(); err != nil {
 		panic(err)
 	} else {
@@ -845,6 +942,7 @@ func CheckTestItemsSQLQueries() {
 }
 
 func CheckTestItemsDSLQueries() {
+	likePattern := makeLikePattern(randString())
 	d := dsl.DSL{
 		Namespace: "TEST_ITEMS",
 		Filters: []dsl.Filter{
@@ -873,6 +971,11 @@ func CheckTestItemsDSLQueries() {
 				Cond:  "EQ",
 				Value: true,
 			},
+			{
+				Field: "company_name",
+				Cond:  "LIKE",
+				Value: likePattern,
+			},
 		},
 		Sort: dsl.Sort{
 			Field: "YEAR",
@@ -891,6 +994,7 @@ func CheckTestItemsDSLQueries() {
 			Where("packages", reindexer.ANY, 0).
 			Where("countries", reindexer.EMPTY, 0).
 			Where("isdeleted", reindexer.EQ, true).
+			Where("company_name", reindexer.LIKE, likePattern).
 			Sort("year", true).
 			Verify(res, true)
 	}

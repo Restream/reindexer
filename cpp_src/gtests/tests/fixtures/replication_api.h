@@ -70,8 +70,6 @@ private:
 
 class ReplicationApi : public ::testing::Test {
 public:
-	typedef tuple<const char*, const char*, const char*, IndexOpts> IndexDeclaration;
-
 	void SetUp();
 	void TearDown();
 

@@ -1,3 +1,4 @@
+#include <chrono>
 #include "ns_api.h"
 #include "tools/serializer.h"
 
@@ -5,12 +6,12 @@ TEST_F(NsApi, UpsertWithPrecepts) {
 	Error err = rt.reindexer->OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK()},
-											   IndexDeclaration{updatedTimeSecFieldName.c_str(), "", "int64", IndexOpts()},
-											   IndexDeclaration{updatedTimeMSecFieldName.c_str(), "", "int64", IndexOpts()},
-											   IndexDeclaration{updatedTimeUSecFieldName.c_str(), "", "int64", IndexOpts()},
-											   IndexDeclaration{updatedTimeNSecFieldName.c_str(), "", "int64", IndexOpts()},
-											   IndexDeclaration{serialFieldName.c_str(), "", "int64", IndexOpts()}});
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK(), 0},
+											   IndexDeclaration{updatedTimeSecFieldName.c_str(), "", "int64", IndexOpts(), 0},
+											   IndexDeclaration{updatedTimeMSecFieldName.c_str(), "", "int64", IndexOpts(), 0},
+											   IndexDeclaration{updatedTimeUSecFieldName.c_str(), "", "int64", IndexOpts(), 0},
+											   IndexDeclaration{updatedTimeNSecFieldName.c_str(), "", "int64", IndexOpts(), 0},
+											   IndexDeclaration{serialFieldName.c_str(), "", "int64", IndexOpts(), 0}});
 
 	Item item = NewItem(default_namespace);
 	item["id"] = idNum;
@@ -64,7 +65,12 @@ TEST_F(NsApi, UpdateIndex) {
 	err = rt.reindexer->OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK()}});
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK(), 0}});
+
+	auto const wrongIdx = reindexer::IndexDef(idIdxName, reindexer::JsonPaths{"wrongPath"}, "hash", "double", IndexOpts().PK());
+	err = rt.reindexer->UpdateIndex(default_namespace, wrongIdx);
+	ASSERT_FALSE(err.ok());
+	EXPECT_EQ(err.what(), "Unsupported combination of field 'id' type 'double' and index type 'hash'");
 
 	auto newIdx = reindexer::IndexDef(idIdxName, "-", "int64", IndexOpts().PK().Dense());
 	err = rt.reindexer->UpdateIndex(default_namespace, newIdx);
@@ -101,7 +107,7 @@ TEST_F(NsApi, QueryperfstatsNsDummyTest) {
 	err = rt.reindexer->OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK()}});
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK(), 0}});
 
 	const char *const configNs = "#config";
 	Item item = NewItem(configNs);
@@ -498,4 +504,53 @@ TEST_F(NsApi, TestNonIndexedArrayFieldConversion) {
 
 	VariantArray newValue = {Variant(3.33f), Variant(4.33), Variant(5.33), Variant(6.33)};
 	checkFieldConversion(rt.reindexer, default_namespace, "array_field", newValue, newValue, KeyValueDouble, false);
+}
+
+TEST_F(NsApi, TestUpdateFieldWithFunction) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	int64_t updateTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+	QueryResults qr;
+	Error err = rt.reindexer->Select(
+		"update test_namespace set int_field = SERIAL(), extra = SERIAL(), 'nested.timeField' = NOW(msec) where id >= 0;", qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qr.Count() > 0);
+
+	int i = 1;
+	for (auto &it : qr) {
+		Item item = it.GetItem();
+		Variant intFieldVal = item[intField];
+		Variant extraFieldVal = item["extra"];
+		Variant timeFieldVal = item["nested.timeField"];
+		ASSERT_TRUE(intFieldVal.As<int>() == i++) << intFieldVal.As<int>();
+		ASSERT_TRUE(intFieldVal.As<int>() == extraFieldVal.As<int>()) << extraFieldVal.As<int>();
+		ASSERT_TRUE(timeFieldVal.As<int64_t>() >= updateTime);
+	}
+}
+
+TEST_F(NsApi, TestUpdateFieldWithExpressions) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	QueryResults qr;
+	Error err = rt.reindexer->Select(
+		"update test_namespace set int_field = ((7+8)*(4-3))/3, extra = (SERIAL() + 1)*3, 'nested.timeField' = int_field - 1 where id >= "
+		"0;",
+		qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qr.Count() > 0);
+
+	int i = 1;
+	for (auto &it : qr) {
+		Item item = it.GetItem();
+		Variant intFieldVal = item[intField];
+		Variant extraFieldVal = item["extra"];
+		Variant timeFieldVal = item["nested.timeField"];
+		ASSERT_TRUE(intFieldVal.As<int>() == 5) << intFieldVal.As<int>();
+		ASSERT_TRUE(extraFieldVal.As<int>() == (i + 1) * 3) << extraFieldVal.As<int>();
+		ASSERT_TRUE(timeFieldVal.As<int>() == 4) << timeFieldVal.As<int>();
+		++i;
+	}
 }

@@ -10,7 +10,7 @@ Transaction::~Transaction() {
 		delete impl_;
 	}
 }
-Transaction::Transaction(const string &nsName, Completion cmpl) : impl_(new TransactionImpl(nsName, cmpl)) {}
+Transaction::Transaction(const string &nsName, ReindexerImpl *rx, Completion cmpl) : impl_(new TransactionImpl(nsName, rx, cmpl)) {}
 
 Transaction::Transaction(Transaction &&rhs) noexcept {
 	impl_ = rhs.impl_;

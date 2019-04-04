@@ -8,9 +8,9 @@ protected:
 		Error err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldId, "hash", "string", IndexOpts().PK()},
-												   IndexDeclaration{kFieldName, "tree", "string", IndexOpts().Sparse()},
-												   IndexDeclaration{kFieldSerialNumber, "hash", "int64", IndexOpts().Sparse()}});
+		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldId, "hash", "string", IndexOpts().PK(), 0},
+												   IndexDeclaration{kFieldName, "tree", "string", IndexOpts().Sparse(), 0},
+												   IndexDeclaration{kFieldSerialNumber, "hash", "int64", IndexOpts().Sparse(), 0}});
 
 		FillNsFromJson();
 	}

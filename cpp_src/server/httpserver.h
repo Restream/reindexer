@@ -49,6 +49,9 @@ public:
 	int GetIndexes(http::Context &ctx);
 	int PostIndex(http::Context &ctx);
 	int PutIndex(http::Context &ctx);
+	int GetMetaList(http::Context &ctx);
+	int GetMetaByKey(http::Context &ctx);
+	int PutMetaByKey(http::Context &ctx);
 	int DeleteIndex(http::Context &ctx);
 	int CheckAuth(http::Context &ctx);
 	void Logger(http::Context &ctx);

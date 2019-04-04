@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"unsafe"
 
@@ -70,7 +71,7 @@ func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reind
 		}
 		jsonPath = jsonBasePath + jsonPath
 
-		idxName, idxType, idxOpts := tagsSlice[0], "", ""
+		idxName, idxType, expireAfter, idxOpts := tagsSlice[0], "", "", ""
 		if idxName == "-" {
 			continue
 		}
@@ -79,7 +80,11 @@ func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reind
 			idxType = tagsSlice[1]
 		}
 		if len(tagsSlice) > 2 {
-			idxOpts = tagsSlice[2]
+			if idxType == "ttl" {
+				expireAfter = strings.SplitN(tagsSlice[2], "=", 2)[1]
+			} else {
+				idxOpts = tagsSlice[2]
+			}
 		}
 
 		reindexPath := reindexBasePath + idxName
@@ -100,7 +105,7 @@ func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reind
 				return fmt.Errorf("'composite' tag allowed only on empty on structs: Invalid tags %v on field %s", tagsSlice, st.Field(i).Name)
 			}
 
-			indexDef := makeIndexDef(parseCompositeName(reindexPath), parseCompositeJsonPaths(reindexPath), idxType, "composite", opts, CollateNone, "")
+			indexDef := makeIndexDef(parseCompositeName(reindexPath), parseCompositeJsonPaths(reindexPath), idxType, "composite", opts, CollateNone, "", parseExpireAfter(expireAfter))
 			if err := indexDefAppend(indexDefs, indexDef, opts.isAppenable); err != nil {
 				return err
 			}
@@ -122,7 +127,7 @@ func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reind
 			if fieldType, err := getFieldType(t); err != nil {
 				return err
 			} else {
-				indexDef := makeIndexDef(reindexPath, []string{jsonPath}, idxType, fieldType, opts, collateMode, sortOrderLetters)
+				indexDef := makeIndexDef(reindexPath, []string{jsonPath}, idxType, fieldType, opts, collateMode, sortOrderLetters, parseExpireAfter(expireAfter))
 				if err := indexDefAppend(indexDefs, indexDef, opts.isAppenable); err != nil {
 					return err
 				}
@@ -241,6 +246,18 @@ func parseCollate(idxSettingsBuf *[]string) (int, string) {
 	return collateMode, sortOrderLetters
 }
 
+func parseExpireAfter(str string) int {
+	expireAfter := 0
+	if len(str) > 0 {
+		var err error
+		expireAfter, err = strconv.Atoi(str)
+		if err != nil {
+			panic(fmt.Errorf("'ExpireAfter' should be an integer value"))
+		}
+	}
+	return expireAfter
+}
+
 func parseByKeyWord(idxSettingsBuf *[]string, keyWord string) bool {
 	newIdxSettingsBuf := make([]string, 0)
 
@@ -295,7 +312,7 @@ func getJoinedField(val reflect.Value, joined map[string][]int, name string) (re
 	return ret
 }
 
-func makeIndexDef(index string, jsonPaths []string, indexType, fieldType string, opts indexOptions, collateMode int, sortOrder string) bindings.IndexDef {
+func makeIndexDef(index string, jsonPaths []string, indexType, fieldType string, opts indexOptions, collateMode int, sortOrder string, expireAfter int) bindings.IndexDef {
 	cm := ""
 	switch collateMode {
 	case bindings.CollateASCII:
@@ -319,6 +336,7 @@ func makeIndexDef(index string, jsonPaths []string, indexType, fieldType string,
 		IsSparse:    opts.isSparse,
 		CollateMode: cm,
 		SortOrder:   sortOrder,
+		ExpireAfter: expireAfter,
 	}
 }
 

@@ -94,18 +94,39 @@ Error DBWrapper<_DB>::commandSelect(const string& command) {
 			output_() << "Aggregations: " << std::endl;
 			for (auto& agg : aggResults) {
 				if (!agg.facets.empty()) {
-					int maxW = agg.field.length();
-					for (auto& row : agg.facets) {
-						maxW = std::max(maxW, int(row.value.length()));
+					assert(!agg.fields.empty());
+					reindexer::h_vector<int, 1> maxW;
+					maxW.reserve(agg.fields.size());
+					for (const auto& field : agg.fields) {
+						maxW.push_back(field.length());
 					}
-					maxW += 3;
-					output_() << std::left << std::setw(maxW) << agg.field << "| count" << std::endl;
-					output_() << std::left << std::setw(maxW + 8) << std::setfill('-') << "" << std::endl << std::setfill(' ');
 					for (auto& row : agg.facets) {
-						output_() << std::left << std::setw(maxW) << row.value << "| " << row.count << std::endl;
+						assert(row.values.size() == agg.fields.size());
+						for (size_t i = 0; i < row.values.size(); ++i) {
+							maxW.at(i) = std::max(maxW.at(i), int(row.values[i].length()));
+						}
+					}
+					int rowWidth = 8 + (maxW.size() - 1) * 2;
+					for (auto& mW : maxW) {
+						mW += 3;
+						rowWidth += mW;
+					}
+					for (size_t i = 0; i < agg.fields.size(); ++i) {
+						if (i != 0) output_() << "| ";
+						output_() << std::left << std::setw(maxW.at(i)) << agg.fields[i];
+					}
+					output_() << "| count" << std::endl;
+					output_() << std::left << std::setw(rowWidth) << std::setfill('-') << "" << std::endl << std::setfill(' ');
+					for (auto& row : agg.facets) {
+						for (size_t i = 0; i < row.values.size(); ++i) {
+							if (i != 0) output_() << "| ";
+							output_() << std::left << std::setw(maxW.at(i)) << row.values[i];
+						}
+						output_() << "| " << row.count << std::endl;
 					}
 				} else {
-					output_() << agg.aggTypeToStr(agg.type) << "(" << agg.field << ") = " << agg.value << std::endl;
+					assert(agg.fields.size() == 1);
+					output_() << agg.aggTypeToStr(agg.type) << "(" << agg.fields.front() << ") = " << agg.value << std::endl;
 				}
 			}
 		}
@@ -497,15 +518,13 @@ bool DBWrapper<_DB>::Interactive() {
 
 	rx.history_load(history_file);
 	rx.set_max_history_size(1000);
-	rx.set_max_line_size(16384);
+	// rx.set_max_line_size(16384);
 	rx.set_max_hint_rows(8);
-	rx.set_completion_callback(
-		[this](std::string const& input, int /*pos*/, void*) -> replxx::Replxx::completions_t {
-			replxx::Replxx::completions_t completions;
-			db_.GetSqlSuggestions(input, input.empty() ? 0 : input.length() - 1, completions);
-			return completions;
-		},
-		nullptr);
+	rx.set_completion_callback([this](std::string const& input, int /*pos*/) -> replxx::Replxx::completions_t {
+		replxx::Replxx::completions_t completions;
+		db_.GetSqlSuggestions(input, input.empty() ? 0 : input.length() - 1, completions);
+		return completions;
+	});
 
 	std::string prompt = "\x1b[1;32mReindexer\x1b[0m> ";
 

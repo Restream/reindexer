@@ -13,6 +13,7 @@ def create_index_example(db, namespace):
         'is_sparse': False,
         'collate_mode': 'none',
         'sort_order_letters': '',
+        'expire_after':0,
         'config': {},
     }
 
@@ -35,6 +36,7 @@ def update_index_example(db, namespace):
         'is_sparse': False,
         'collate_mode': 'none',
         'sort_order_letters': '',
+        'expire_after':0,
         'config': {},
     }
     db.index_update(namespace, index_definition_modified)

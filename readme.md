@@ -35,6 +35,7 @@ The core is written in C++ and the application level API is in Go.
 	- [Complex Primary Keys and Composite Indices](#complex-primary-keys-and-composite-indices)
 	- [Atomic on update functions](#atomic-on-update-functions)
 	- [Aggregations](#aggregations)
+	- [Expire Data from Namespace by Setting TTL](#ttl-indexes)
 	- [Direct JSON operations](#direct-json-operations)
 		- [Upsert data in JSON format](#upsert-data-in-json-format)
 		- [Get Query results in JSON format](#get-query-results-in-json-format)
@@ -274,6 +275,7 @@ Queries are possible only on the indexed fields, marked with `reindex` tag. The 
     - `tree` – fast select by RANGE, GT, and LT matches. A bit slower for EQ and SET matches than `hash` index. Allows fast sorting results by field.
     - `text` – full text search index. Usage details of full text search is described [here](fulltext.md)
     - `-` – column index. Can't perform fast select because it's implemented with full-scan technic. Has the smallest memory overhead.
+    - `ttl` - TTL index that works only with int64 fields. These indexes are quite convenient for representation of date fields (stored as UNIX timestamps) that expire after specified amount of seconds. 
 - `opts` – additional index options:
     - `pk` – field is part of a primary key. Struct must have at least 1 field tagged with `pk`
     - `composite` – create composite index. The field type must be an empty struct: `struct{}`.
@@ -421,29 +423,37 @@ For make query to the composite index, pass []interface{} to `.WhereComposite` f
 
 ### Aggregations
 
-Reindexer allows to retrive aggregated results. Currently Average and Sum aggregations are supported.
-In order to support aggregation, `Query` has method `Aggregate` that should be called before the `Query` execution: this will ask reindexer to calculate data aggregations. 
+Reindexer allows to retrive aggregated results. Currently Average, Sum, Minimum, Maximum and Facet aggregations are supported.
+- `AggregateMax` - get maximum field value
+- `AggregateMin` - get manimum field value
+- `AggregateSum` - get sum field value
+- `AggregateAvg` - get averatge field value
+- `AggregateFacet` - get fields facet value
+
+In order to support aggregation, `Query` has methods `AggregateAvg`, `AggregateSum`, `AggregateMin`, `AggregateMax` and `AggregateFacet` those should be called before the `Query` execution: this will ask reindexer to calculate data aggregations.
+Aggregation Facet is applicable to multiple data columns and the result of that could be sorted by any data column or 'count' and cutted off by offset and limit.
+In order to support this functionality method `AggregateFacet` returns `AggregationFacetRequest` which has methods `Sort`, `Limit` and `Offset`.
 
 To get aggregation results, `Iterator` has method `AggResults`: it is available after query execution and returns slice of results.
 
-There are 3 aggregations available
-
-- `AggMax` - get maximum field value
-- `AggMin` - get manimum field value
-- `AggSum` - get sum field value
-- `AggAvg` - get averatge field value
-- `AggFacet` - get field facet value
-
-Example code for aggregate `items` by `name`
+Example code for aggregate `items` by `price` and `name`
 
 ```go
 
-	iterator := db.Query ("items").Aggregate ("name", reindexer.AggFacet).Exec ()
+	query := db.Query("items")
+	query.AggregateMax("price")
+	query.AggregateFacet("name", "price").Sort("name", true).Sort("count", false).Offset(10).Limit(100)
+	iterator := query.Exec()
 
-	aggRes := iterator.AggResults()[0]
+	aggMaxRes := iterator.AggResults()[0]
 
-	for facet := range aggRes.Facets {
-		fmt.Printf ("%s -> %d", facet.Value, facet.Count)
+	fmt.Printf ("max price = %d", aggMaxRes.Value)
+
+	aggFacetRes := iterator.AggResults()[1]
+
+	fmt.Printf ("'name' 'price' -> count")
+	for _, facet := range aggFacetRes.Facets {
+		fmt.Printf ("'%s' '%s' -> %d", facet.Values[0], facet.Values[1], facet.Count)
 	}
 
 ```
@@ -468,6 +478,25 @@ These functions can be passed to Upsert/Insert/Update in 3-rd and next arguments
    db.Upsert ("items",&item,"updated_at=now(NSEC)","id=serial()")
 
 ```
+
+### Expire Data from Namespace by Setting TTL
+Data expiration is useful for some classes of information, including machine generated event data, logs, and session information that only need to persist for a limited period of time.
+
+Reindexer makes it possible to set TTL (time to live) for Namespace items. Adding TtlIndex to Namespace automatically removes items after a specified number of seconds. 
+
+Ttl indexes work only with int64 fields and store UNIX timestamp data. Items containig ttl index expire after `expire_after` seconds. Example of decalring TtlIndex in Golang:
+
+```go
+            type NamespaceExample struct {
+                ID   int    `reindex:"id,,pk" json:"id"`
+                Date int64  `reindex:"date,ttl,,expire_after=3600" json:"date"`
+            }
+            ...
+            ns.Date = time.Now().Unix()
+```
+In this case items of namespace NamespaceExample expire in 3600 seconds after NamespaceExample.Date field value (which is UNIX timestamp).
+
+A TTL index supports queries in the same way non-TTL indexes do.
 
 ### Direct JSON operations
 

@@ -94,10 +94,11 @@ public:
 	 * @public
 	 * Find char
 	 * @param sym symbol to find
+	 * @param pos position since we start searching.
 	 */
-	size_t find(char sym) const {
-		for (size_t i = 0; i < size_; i++) {
-			if (ptr_[i] == sym) return i;
+	size_t find(char sym, size_t pos = 0) const {
+		for (; pos < size_; ++pos) {
+			if (ptr_[pos] == sym) return pos;
 		}
 		return npos;
 	}

@@ -31,6 +31,7 @@ using std::vector;
 
 class Index;
 struct SelectCtx;
+struct JoinPreResult;
 class QueryResults;
 class DBConfigProvider;
 class SelectLockUpgrader;
@@ -111,12 +112,14 @@ public:
 	void Upsert(Item &item, bool store = true);
 
 	void Delete(Item &item, bool noLock = false);
+	void Delete(const Query &query, QueryResults &result, int64_t lsn = -1, bool noLock = false);
+
 	void Select(QueryResults &result, SelectCtx &params);
 	NamespaceDef GetDefinition();
 	NamespaceMemStat GetMemStat();
 	NamespacePerfStat GetPerfStat();
 	vector<string> EnumMeta();
-	void Delete(const Query &query, QueryResults &result, int64_t lsn = -1);
+
 	void BackgroundRoutine();
 	void CloseStorage();
 
@@ -131,6 +134,7 @@ public:
 	string GetMeta(const string &key);
 	// Put meta data to storage by key
 	void PutMeta(const string &key, const string_view &data, int64_t lsn = -1);
+	int64_t GetSerial(const string &field);
 
 	int getIndexByName(const string &index) const;
 	bool getIndexByName(const string &name, int &index) const;
@@ -144,6 +148,8 @@ public:
 	// Replication slave mode functions
 	ReplicationState GetReplState();
 	void SetSlaveLSN(int64_t slaveLSN);
+
+	void UpdateTagsMatcherFromItem(Item *item);
 
 protected:
 	bool tryToReload();
@@ -160,21 +166,25 @@ protected:
 	void doUpsert(ItemImpl *ritem, IdType id, bool doUpdate);
 	void modifyItem(Item &item, bool store = true, int mode = ModeUpsert, bool noLock = false);
 	void updateFieldsFromQuery(IdType itemId, const Query &q, bool store = true);
-	void updateTagsMatcherFromItem(ItemImpl *ritem, string &jsonSliceBuf);
+	void updateTagsMatcherFromItem(ItemImpl *ritem);
 	void updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields);
 	void doDelete(IdType id);
 	void commitIndexes();
 	void insertIndex(Index *newIndex, int idxNo, const string &realName);
 	void addIndex(const IndexDef &indexDef);
 	void addCompositeIndex(const IndexDef &indexDef);
+	void verifyUpdateIndex(const IndexDef &indexDef) const;
+	void verifyUpdateCompositeIndex(const IndexDef &indexDef) const;
 	void updateIndex(const IndexDef &indexDef);
 	void dropIndex(const IndexDef &index);
 	void addToWAL(const IndexDef &indexDef, WALRecType type);
+	VariantArray preprocessUpdateFieldValues(const UpdateEntry &updateEntry, IdType itemId);
+	void removeExpiredItems();
 
 	void recreateCompositeIndexes(int startIdx, int endIdx);
 	void onConfigUpdated(DBConfigProvider &configProvider);
-	NamespaceDef getDefinition();
-	IndexDef getIndexDefinition(const string &indexName);
+	NamespaceDef getDefinition() const;
+	IndexDef getIndexDefinition(const string &indexName) const;
 
 	string getMeta(const string &key);
 	void flushStorage();
@@ -183,9 +193,8 @@ protected:
 	pair<IdType, bool> findByPK(ItemImpl *ritem);
 	int getSortedIdxCount() const;
 	void setFieldsBasedOnPrecepts(ItemImpl *ritem);
-	int64_t funcGetSerial(SelectFuncStruct sqlFuncStruct);
 
-	void PutToJoinCache(JoinCacheRes &res, SelectCtx::PreResult::Ptr preResult);
+	void PutToJoinCache(JoinCacheRes &res, std::shared_ptr<JoinPreResult> preResult);
 	void PutToJoinCache(JoinCacheRes &res, JoinCacheVal &val);
 	void GetFromJoinCache(JoinCacheRes &ctx);
 	void GetIndsideFromJoinCache(JoinCacheRes &ctx);

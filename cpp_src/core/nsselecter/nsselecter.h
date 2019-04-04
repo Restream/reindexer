@@ -3,6 +3,7 @@
 #include <functional>
 #include "core/aggregator.h"
 #include "core/index/index.h"
+#include "core/joincache.h"
 #include "core/nsselecter/selectiterator.h"
 #include "core/query/query.h"
 #include "core/query/queryresults.h"
@@ -18,15 +19,27 @@ using std::chrono::duration_cast;
 using std::chrono::microseconds;
 
 struct JoinedSelector {
-	typedef std::function<bool(IdType, int nsId, ConstPayload, bool)> FuncType;
+	typedef std::function<bool(JoinedSelector *, IdType, int nsId, ConstPayload, bool)> FuncType;
 	JoinType type;
 	bool nodata;
 	FuncType func;
 	int called, matched;
 	string ns;
+	JoinCacheRes joinRes;
+	Query query;
 };
 
 typedef vector<JoinedSelector> JoinedSelectors;
+
+struct JoinPreResult {
+	enum Mode { ModeBuild, ModeIterators, ModeIdSet, ModeEmpty };
+
+	typedef shared_ptr<JoinPreResult> Ptr;
+	IdSet ids;
+	h_vector<SelectIterator, 0> iterators;
+	Mode mode = ModeEmpty;
+	bool enableSortOrders = false;
+};
 
 struct SelectCtx {
 	explicit SelectCtx(const Query &query_) : query(query_) {}
@@ -34,15 +47,6 @@ struct SelectCtx {
 	JoinedSelectors *joinedSelectors = nullptr;
 
 	SelectFunctionsHolder *functions = nullptr;
-	struct PreResult {
-		enum Mode { ModeBuild, ModeIterators, ModeIdSet, ModeEmpty };
-
-		typedef shared_ptr<PreResult> Ptr;
-		IdSet ids;
-		h_vector<SelectIterator, 0> iterators;
-		Mode mode = ModeEmpty;
-		bool enableSortOrders = false;
-	};
 	struct SortingCtx {
 		struct Entry {
 			const SortingEntry *data = nullptr;
@@ -53,7 +57,7 @@ struct SelectCtx {
 		Index *sortIndex() { return entries.empty() ? nullptr : entries[0].index; }
 		int sortId() { return sortIndex() ? sortIndex()->SortId() : 0; }
 	};
-	PreResult::Ptr preResult;
+	JoinPreResult::Ptr preResult;
 	SortingCtx sortingCtx;
 	uint8_t nsid = 0;
 	bool isForceAll = false;

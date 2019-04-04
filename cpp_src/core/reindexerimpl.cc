@@ -299,7 +299,7 @@ Item ReindexerImpl::NewItem(string_view nsName) {
 	}
 }
 Transaction ReindexerImpl::NewTransaction(const std::string& _namespace) {
-	TransactionAccessor tr(_namespace);
+	TransactionAccessor tr(_namespace, this);
 
 	return std::move(tr);
 }
@@ -484,8 +484,7 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, Completion cmp
 	return errOK;
 }
 
-JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResults& result, NsLocker& locks, h_vector<Query, 4>& queries,
-													  SelectFunctionsHolder& func) {
+JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResults& result, NsLocker& locks, SelectFunctionsHolder& func) {
 	JoinedSelectors joinedSelectors;
 	if (q.joinQueries_.empty()) return joinedSelectors;
 	auto ns = locks.Get(q._namespace);
@@ -497,22 +496,21 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 
 		Query jjq(jq);
 
-		SelectCtx::PreResult::Ptr preResult = std::make_shared<SelectCtx::PreResult>();
+		JoinPreResult::Ptr preResult = std::make_shared<JoinPreResult>();
 		size_t pos = joinedSelectors.size();
 
 		JoinCacheRes joinRes;
 		joinRes.key.SetData(jq);
 		jns->GetFromJoinCache(joinRes);
-		Query* pjItemQ = nullptr;
 		if (jjq.entries.size() && !joinRes.haveData) {
 			QueryResults jr;
 			jjq.Limit(UINT_MAX);
 			SelectCtx ctx(jjq);
 			ctx.preResult = preResult;
-			ctx.preResult->mode = SelectCtx::PreResult::ModeBuild;
+			ctx.preResult->mode = JoinPreResult::ModeBuild;
 			ctx.functions = &func;
 			jns->Select(jr, ctx);
-			assert(ctx.preResult->mode != SelectCtx::PreResult::ModeBuild);
+			assert(ctx.preResult->mode != JoinPreResult::ModeBuild);
 		}
 		if (joinRes.haveData) {
 			preResult = joinRes.it.val.preResult;
@@ -541,11 +539,9 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 			}
 			jItemQ.entries.push_back(qe);
 		}
-		queries.push_back(std::move(jItemQ));
-		pjItemQ = &queries.back();
 
-		auto joinedSelector = [&result, &jq, jns, preResult, pos, pjItemQ, &func, ns](JoinCacheRes& joinRes, IdType id, int nsId,
-																					  ConstPayload payload, bool match) {
+		auto joinedSelector = [&result, &jq, jns, preResult, pos, &func, ns](JoinedSelector* js, IdType id, int nsId, ConstPayload payload,
+																			 bool match) {
 			QueryResults joinItemR;
 			JoinCacheRes finalJoinRes;
 
@@ -555,32 +551,32 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 				bool nonIndexedField = (je.idxNo == IndexValueType::SetByJsonPath);
 				bool isIndexSparse = !nonIndexedField && ns->indexes_[je.idxNo]->Opts().IsSparse();
 				if (nonIndexedField || isIndexSparse) {
-					VariantArray& values = pjItemQ->entries[cnt].values;
+					VariantArray& values = js->query.entries[cnt].values;
 					KeyValueType type = values.empty() ? KeyValueUndefined : values[0].Type();
 					payload.GetByJsonPath(je.index_, ns->tagsMatcher_, values, type);
 				} else {
-					payload.Get(je.idxNo, pjItemQ->entries[cnt].values);
+					payload.Get(je.idxNo, js->query.entries[cnt].values);
 				}
 				cnt++;
 			}
-			pjItemQ->Limit(match ? jq.count : 0);
+			js->query.Limit(match ? jq.count : 0);
 
 			bool found = false;
 			bool matchedAtLeastOnce = false;
 			JoinCacheRes joinResLong;
-			joinResLong.key.SetData(jq, *pjItemQ);
+			joinResLong.key.SetData(jq, js->query);
 			jns->GetFromJoinCache(joinResLong);
 
-			jns->GetIndsideFromJoinCache(joinRes);
-			if (joinRes.needPut) {
-				jns->PutToJoinCache(joinRes, preResult);
+			jns->GetIndsideFromJoinCache(js->joinRes);
+			if (js->joinRes.needPut) {
+				jns->PutToJoinCache(js->joinRes, preResult);
 			}
 			if (joinResLong.haveData) {
 				found = joinResLong.it.val.ids_->size();
 				matchedAtLeastOnce = joinResLong.it.val.matchedAtLeastOnce;
-				jns->FillResult(joinItemR, joinResLong.it.val.ids_, pjItemQ->selectFilter_);
+				jns->FillResult(joinItemR, joinResLong.it.val.ids_, js->query.selectFilter_);
 			} else {
-				SelectCtx ctx(*pjItemQ);
+				SelectCtx ctx(js->query);
 				ctx.preResult = preResult;
 				ctx.matchedAtLeastOnce = false;
 				ctx.reqMatchedOnceFlag = true;
@@ -609,9 +605,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 			}
 			return matchedAtLeastOnce;
 		};
-		auto cache_func_selector = std::bind(joinedSelector, std::move(joinRes), _1, _2, _3, _4);
-
-		joinedSelectors.push_back({jq.joinType, jq.count == 0, cache_func_selector, 0, 0, jns->name_});
+		joinedSelectors.push_back({jq.joinType, jq.count == 0, joinedSelector, 0, 0, jns->name_, std::move(joinRes), jItemQ});
 	}
 	return joinedSelectors;
 }
@@ -622,16 +616,14 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker& loc
 		throw Error(errParams, "Namespace '%s' is not exists", q._namespace);
 	}
 	SelectCtx ctx(q);
-	h_vector<Query, 4> queries;
 	int jqCount = q.joinQueries_.size();
 
 	for (auto& mq : q.mergeQueries_) {
 		jqCount += mq.joinQueries_.size();
 	}
-	queries.reserve(jqCount);
 
 	{
-		JoinedSelectors joinedSelectors = prepareJoinedSelectors(q, result, locks, queries, func);
+		JoinedSelectors joinedSelectors = prepareJoinedSelectors(q, result, locks, func);
 		ctx.functions = &func;
 		ctx.joinedSelectors = joinedSelectors.size() ? &joinedSelectors : nullptr;
 		ctx.nsid = 0;
@@ -648,7 +640,7 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker& loc
 			mctx.nsid = ++counter;
 			mctx.isForceAll = true;
 			mctx.functions = &func;
-			JoinedSelectors joinedSelectors = prepareJoinedSelectors(mq, result, locks, queries, func);
+			JoinedSelectors joinedSelectors = prepareJoinedSelectors(mq, result, locks, func);
 			mctx.joinedSelectors = joinedSelectors.size() ? &joinedSelectors : nullptr;
 
 			mns->Select(result, mctx);
@@ -880,7 +872,7 @@ std::vector<string> defDBConfig = {
                 "log_level":"none",
 				"lazyload":false,
 				"unload_idle_threshold":0,
-				"join_cache_mode":"on"
+				"join_cache_mode":"off"
 			}
     	]
 	})json",

@@ -24,7 +24,7 @@ SelectFuncStruct &SelectFuncParser::Parse(string query) {
 		throw Error(errParams, "`=` or '.' is expected, but found `%s`", tok.text());
 	}
 
-	parseFunction(parser);
+	ParseFunction(parser, false);
 
 	if (!selectFuncStruct_.isFunction) {
 		size_t equalPos = query.find('=');
@@ -34,7 +34,7 @@ SelectFuncStruct &SelectFuncParser::Parse(string query) {
 	return selectFuncStruct_;
 }
 
-void SelectFuncParser::parseFunction(tokenizer &parser) {
+SelectFuncStruct &SelectFuncParser::ParseFunction(tokenizer &parser, bool partOfExpression) {
 	token tok = parser.next_token(true);
 	if (tok.text() == "snippet") {
 		selectFuncStruct_.type = SelectFuncStruct::kSelectFuncSnippet;
@@ -49,20 +49,19 @@ void SelectFuncParser::parseFunction(tokenizer &parser) {
 		while (!parser.end()) {
 			tok = parser.next_token(false);
 			if (tok.text() == ")") {
-				token nextTok = parser.next_token(false);
-				if (nextTok.text().length()) {
-					throw Error(errParseDSL, "Unexpected character `%s` after close parenthesis", nextTok.text());
+				if (!partOfExpression) {
+					token nextTok = parser.next_token(false);
+					if (nextTok.text().length() > 0) {
+						throw Error(errParseDSL, "Unexpected character `%s` after close parenthesis", nextTok.text());
+					}
 				}
 				selectFuncStruct_.funcArgs.push_back(agr);
-
 				selectFuncStruct_.isFunction = true;
 				break;
 			}
-
 			if (tok.text() == ",") {
 				selectFuncStruct_.funcArgs.push_back(agr);
 				agr.clear();
-
 			} else {
 				agr += tok.text().ToString();
 			}
@@ -70,6 +69,48 @@ void SelectFuncParser::parseFunction(tokenizer &parser) {
 	} else {
 		throw Error(errParseDSL, "An open parenthesis is required, but found `%s`", tok.text());
 	}
+
+	return selectFuncStruct_;
+}
+
+bool SelectFuncParser::IsFunction(const string_view &val) {
+	if (val.length() < 3) return false;
+
+	size_t i = 0;
+	if (!isalpha(val[i++])) return false;
+
+	int openParenthesis = 0, closeParenthesis = 0;
+	for (; i < val.length(); ++i) {
+		char ch = val[i];
+		switch (ch) {
+			case '(':
+				if (openParenthesis++ > 0) return false;
+				if (closeParenthesis > 0) return false;
+				break;
+			case ')':
+				if (openParenthesis != 1) return false;
+				if (closeParenthesis++ > 0) return false;
+				if (i == val.length() - 1) return true;
+				break;
+			case ',':
+				if (openParenthesis != 1) return false;
+				if (closeParenthesis != 0) return false;
+				if (i == val.length() - 1) return false;
+				break;
+			default:
+				if (openParenthesis > 1) return false;
+				if (closeParenthesis > 0) return false;
+				break;
+		}
+	}
+
+	return false;
+}
+
+bool SelectFuncParser::IsFunction(const VariantArray &val) {
+	if (val.size() != 1) return false;
+	if (val.front().Type() != KeyValueString) return false;
+	return IsFunction(static_cast<string_view>(val.front()));
 }
 
 }  // namespace reindexer

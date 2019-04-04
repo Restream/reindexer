@@ -96,8 +96,7 @@ protected:
 		bool locked_ = false;
 	};
 	void doSelect(const Query &q, QueryResults &res, NsLocker &locker, SelectFunctionsHolder &func);
-	JoinedSelectors prepareJoinedSelectors(const Query &q, QueryResults &result, NsLocker &locks, h_vector<Query, 4> &queries,
-										   SelectFunctionsHolder &func);
+	JoinedSelectors prepareJoinedSelectors(const Query &q, QueryResults &result, NsLocker &locks,SelectFunctionsHolder &func);
 
 	void ensureDataLoaded(Namespace::Ptr &ns);
 	void syncSystemNamespaces(string_view nsName);
@@ -128,6 +127,7 @@ protected:
 
 	shared_timed_mutex storageMtx_;
 	friend class Replicator;
+	friend class TransactionImpl;
 };
 
 }  // namespace reindexer

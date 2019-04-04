@@ -8,6 +8,7 @@ namespace reindexer {
 class TransactionImpl;
 
 using std::string;
+class ReindexerImpl;
 
 class Transaction {
 public:
@@ -15,7 +16,7 @@ public:
 	typedef std::function<void(const Error &err)> Completion;
 	Transaction() : impl_(nullptr) {}
 
-	Transaction(const string &nsName, Completion cmpl = nullptr);
+	Transaction(const string &nsName, ReindexerImpl *rx, Completion cmpl = nullptr);
 	~Transaction();
 	Transaction(const Transaction &) = delete;
 	Transaction &operator=(const Transaction &) = delete;

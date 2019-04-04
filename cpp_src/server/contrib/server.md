@@ -74,7 +74,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 2.0.0
+*Version* : 2.0.3
 
 
 ### License information
@@ -327,6 +327,108 @@ Can not be undone. USE WITH CAUTION.
 |HTTP Code|Description|Schema|
 |---|---|---|
 |**200**|successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* namespaces
+
+
+
+### Get list of namespace's meta info
+```
+GET /db/{database}/namespaces/{name}/metalist
+```
+
+
+#### Description
+This operation will return list of keys of all meta of specified namespace
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|Default|
+|---|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string||
+|**Path**|**name**  <br>*required*|Namespace name|string||
+|**Query**|**limit**  <br>*optional*|If 0 - no limit|integer|`0`|
+|**Query**|**offset**  <br>*optional*||integer|`0`|
+|**Query**|**sort_order**  <br>*optional*|Sort Order|enum (asc, desc)||
+|**Query**|**with_values**  <br>*optional*|Includ values in response|boolean|`"false"`|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|successful operation|[MetaListResponse](#metalistresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* namespaces
+
+
+
+### Get namespace's meta info by key
+```
+GET /db/{database}/namespaces/{name}/metabykey/{key}
+```
+
+
+#### Description
+This operation will return value of namespace's meta with specified key
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Path**|**key**  <br>*required*|Meta key|string|
+|**Path**|**name**  <br>*required*|Namespace name|string|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|successful operation|No Content|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* namespaces
+
+
+
+### Put namespace's meta info with specified key and value
+```
+PUT /db/{database}/namespaces/{name}/metabykey
+```
+
+
+#### Description
+This operation will set namespace's meta with specified key and value
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Path**|**name**  <br>*required*|Namespace name|string|
+|**Body**|**meta_info**  <br>*required*|Meta info|[MetaInfo](#metainfo)|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|successful operation|[UpdateResponse](#updateresponse)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 
 
@@ -951,7 +1053,7 @@ This operation will update system configuration:
 |Name|Description|Schema|
 |---|---|---|
 |**facets**  <br>*optional*|Facets, calculated by aggregator|< [facets](#aggregationresdef-facets) > array|
-|**field**  <br>*optional*|Field or index name for aggregation function|string|
+|**fields**  <br>*optional*|Fields or indexes names for aggregation function|< string > array|
 |**type**  <br>*optional*|Aggregation function|enum (SUM, AVG, MIN, MAX, FACET)|
 |**value**  <br>*optional*|Value, calculated by aggregator|number|
 
@@ -960,8 +1062,8 @@ This operation will update system configuration:
 
 |Name|Description|Schema|
 |---|---|---|
-|**count**  <br>*optional*|Count of elemens this field value|integer|
-|**value**  <br>*optional*|Facet field value|string|
+|**count**  <br>*optional*|Count of elemens these fields values|integer|
+|**values**  <br>*optional*|Facet fields values|< string > array|
 
 
 
@@ -969,8 +1071,22 @@ This operation will update system configuration:
 
 |Name|Description|Schema|
 |---|---|---|
-|**field**  <br>*optional*|Field or index name for aggregation function|string|
+|**fields**  <br>*optional*|Fields or indexes names for aggregation function|< string > array|
+|**limit**  <br>*optional*|Number of rows to get from result set  <br>**Minimum value** : `0`|integer|
+|**offset**  <br>*optional*|Index of the first row to get from result set  <br>**Minimum value** : `0`|integer|
+|**sort**  <br>*optional*|Specifies results sorting order|< [AggregationsSortDef](#aggregationssortdef) > array|
 |**type**  <br>*optional*|Aggregation function|enum (SUM, AVG, MIN, MAX, FACET)|
+
+
+
+### AggregationsSortDef
+Specifies facet aggregations results sorting order
+
+
+|Name|Description|Schema|
+|---|---|---|
+|**desc**  <br>*optional*|Descent or ascent sorting direction|boolean|
+|**field**  <br>*required*|Field or index name for sorting|string|
 
 
 
@@ -989,15 +1105,15 @@ This operation will update system configuration:
 
 |Name|Description|Schema|
 |---|---|---|
+|**last_sec_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object at last second|integer|
 |**last_sec_avg_lock_time_us**  <br>*optional*|Average waiting time for acquiring lock to this object at last second|integer|
 |**last_sec_qps**  <br>*optional*|Count of queries to this object, requested at last second|integer|
 |**latency_stddev**  <br>*optional*|Standard deviation of latency values|number|
 |**max_latency_us**  <br>*optional*|Maximum latency value|integer|
 |**min_latency_us**  <br>*optional*|Minimal latency value|integer|
 |**total_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object|integer|
-|**total_avg_lock_latency_us**  <br>*optional*|Average waiting time for acquiring lock to this object|integer|
+|**total_avg_lock_time_us**  <br>*optional*|Average waiting time for acquiring lock to this object|integer|
 |**total_queries_count**  <br>*optional*|Total count of queries to this object|integer|
-|**total_sec_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object at last second|integer|
 
 
 
@@ -1123,7 +1239,7 @@ Fulltext Index configuration
 
 
 ### IndexCacheMemStats
-Number of elements in idset cache. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys
+Idset cache stats. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys
 
 *Polymorphism* : Composition
 
@@ -1141,6 +1257,7 @@ Number of elements in idset cache. Stores merged reverse index results of SELECT
 
 |Name|Description|Schema|
 |---|---|---|
+|**data_size**  <br>*optional*|Total memory consumption of documents's data, holded by index|integer|
 |**fulltext_size**  <br>*optional*|Total memory consumption of fulltext search structures|integer|
 |**idset_btree_size**  <br>*optional*|Total memory consumption of reverse index b-tree structures. For `dense` and `store` indexes always 0|integer|
 |**idset_cache**  <br>*optional*||[IndexCacheMemStats](#indexcachememstats)|
@@ -1170,7 +1287,7 @@ Number of elements in idset cache. Stores merged reverse index results of SELECT
 
 
 ### JoinCacheMemStats
-Number of elements in join cache. Stores results of selects to right table by ON condition
+Join cache stats. Stores results of selects to right table by ON condition
 
 *Polymorphism* : Composition
 
@@ -1196,6 +1313,36 @@ Number of elements in join cache. Stores results of selects to right table by ON
 |**sort**  <br>*optional*||[SortDef](#sortdef)|
 |**true**  <br>*optional*|Join ON statement|< [OnDef](#ondef) > array|
 |**type**  <br>*required*|Join type|enum (LEFT, INNER)|
+
+
+
+### MetaInfo
+Meta info to be set
+
+
+|Name|Schema|
+|---|---|
+|**key**  <br>*required*|string|
+|**value**  <br>*required*|string|
+
+
+
+### MetaListResponse
+List of meta info of the specified namespace
+
+
+|Name|Description|Schema|
+|---|---|---|
+|**meta**  <br>*required*||< [meta](#metalistresponse-meta) > array|
+|**total_items**  <br>*required*|Total count of meta info in the namespace|integer|
+
+
+**meta**
+
+|Name|Description|Schema|
+|---|---|---|
+|**key**  <br>*required*||string|
+|**value**  <br>*optional*|Optional: Provided if 'with_values' = true|string|
 
 
 
@@ -1226,8 +1373,9 @@ Number of elements in join cache. Stores results of selects to right table by ON
 |**join_cache**  <br>*optional*||[JoinCacheMemStats](#joincachememstats)|
 |**name**  <br>*optional*|Name of namespace|string|
 |**query_cache**  <br>*optional*||[QueryCacheMemStats](#querycachememstats)|
+|**replication**  <br>*optional*||[ReplicationStats](#replicationstats)|
 |**storage_ok**  <br>*optional*|Status of disk storage|boolean|
-|**storage_path**  <br>*optional*|Filesystem path to namespace storage|boolean|
+|**storage_path**  <br>*optional*|Filesystem path to namespace storage|string|
 |**total**  <br>*optional*|Summary of total namespace memory consumption|[total](#namespacememstats-total)|
 |**updated_unix_nano**  <br>*optional*|[[deperecated]]. do not use|integer|
 
@@ -1283,8 +1431,11 @@ Number of elements in join cache. Stores results of selects to right table by ON
 
 |Name|Description|Schema|
 |---|---|---|
+|**join_cache_mode**  <br>*optional*|Join cache mode|enum (aggressive)|
+|**lazyload**  <br>*optional*|Enable namespace lazy load (namespace shoud be loaded from disk on first call, not at reindexer startup)|boolean|
 |**log_level**  <br>*optional*|Log level of queries core logger|enum (none, error, warning, info, trace)|
 |**namespace**  <br>*optional*|Name of namespace, or `*` for setting to all namespaces|string|
+|**unload_idle_threshold**  <br>*optional*|Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded|integer|
 
 
 
@@ -1340,7 +1491,7 @@ Number of elements in join cache. Stores results of selects to right table by ON
 
 
 ### QueryCacheMemStats
-Number of elements in query cache. Stores results of SELECT COUNT(*) by Where conditions
+Query cache stats. Stores results of SELECT COUNT(*) by Where conditions
 
 *Polymorphism* : Composition
 
@@ -1375,6 +1526,7 @@ Performance statistics per each query
 
 |Name|Description|Schema|
 |---|---|---|
+|**last_sec_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object at last second|integer|
 |**last_sec_avg_lock_time_us**  <br>*optional*|Average waiting time for acquiring lock to this object at last second|integer|
 |**last_sec_qps**  <br>*optional*|Count of queries to this object, requested at last second|integer|
 |**latency_stddev**  <br>*optional*|Standard deviation of latency values|number|
@@ -1382,9 +1534,8 @@ Performance statistics per each query
 |**min_latency_us**  <br>*optional*|Minimal latency value|integer|
 |**query**  <br>*optional*|SQL representation of query|string|
 |**total_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object|integer|
-|**total_avg_lock_latency_us**  <br>*optional*|Average waiting time for acquiring lock to this object|integer|
+|**total_avg_lock_time_us**  <br>*optional*|Average waiting time for acquiring lock to this object|integer|
 |**total_queries_count**  <br>*optional*|Total count of queries to this object|integer|
-|**total_sec_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object at last second|integer|
 
 
 
@@ -1401,6 +1552,22 @@ Performance statistics per each query
 
 
 
+### ReplicationStats
+State of namespace replication
+
+
+|Name|Description|Schema|
+|---|---|---|
+|**cluster_id**  <br>*optional*|Cluster ID - must be same for client and for master|integer|
+|**data_hash**  <br>*optional*|Hashsum of all records in namespace|integer|
+|**incarnation_counter**  <br>*optional*|Number of storage's master <-> slave switches|integer|
+|**last_lsn**  <br>*optional*|Last Log Sequence Number (LSN) of applied namespace modification|integer|
+|**slave_mode**  <br>*optional*|If true, then namespace is in slave mode|boolean|
+|**wal_count**  <br>*optional*|Write Ahead Log (WAL) records count|integer|
+|**wal_size**  <br>*optional*|Total memory consumption of Write Ahead Log (WAL)|integer|
+
+
+
 ### SelectPerfStats
 Performance statistics for select operations
 
@@ -1409,15 +1576,15 @@ Performance statistics for select operations
 
 |Name|Description|Schema|
 |---|---|---|
+|**last_sec_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object at last second|integer|
 |**last_sec_avg_lock_time_us**  <br>*optional*|Average waiting time for acquiring lock to this object at last second|integer|
 |**last_sec_qps**  <br>*optional*|Count of queries to this object, requested at last second|integer|
 |**latency_stddev**  <br>*optional*|Standard deviation of latency values|number|
 |**max_latency_us**  <br>*optional*|Maximum latency value|integer|
 |**min_latency_us**  <br>*optional*|Minimal latency value|integer|
 |**total_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object|integer|
-|**total_avg_lock_latency_us**  <br>*optional*|Average waiting time for acquiring lock to this object|integer|
+|**total_avg_lock_time_us**  <br>*optional*|Average waiting time for acquiring lock to this object|integer|
 |**total_queries_count**  <br>*optional*|Total count of queries to this object|integer|
-|**total_sec_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object at last second|integer|
 
 
 
@@ -1484,15 +1651,15 @@ Performance statistics for update operations
 
 |Name|Description|Schema|
 |---|---|---|
+|**last_sec_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object at last second|integer|
 |**last_sec_avg_lock_time_us**  <br>*optional*|Average waiting time for acquiring lock to this object at last second|integer|
 |**last_sec_qps**  <br>*optional*|Count of queries to this object, requested at last second|integer|
 |**latency_stddev**  <br>*optional*|Standard deviation of latency values|number|
 |**max_latency_us**  <br>*optional*|Maximum latency value|integer|
 |**min_latency_us**  <br>*optional*|Minimal latency value|integer|
 |**total_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object|integer|
-|**total_avg_lock_latency_us**  <br>*optional*|Average waiting time for acquiring lock to this object|integer|
+|**total_avg_lock_time_us**  <br>*optional*|Average waiting time for acquiring lock to this object|integer|
 |**total_queries_count**  <br>*optional*|Total count of queries to this object|integer|
-|**total_sec_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object at last second|integer|
 
 
 

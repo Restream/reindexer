@@ -26,19 +26,19 @@ protected:
 		err = rt.reindexer->OpenNamespace(genres_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		DefineNamespaceDataset(genres_namespace, {IndexDeclaration{genreid, "hash", "int", IndexOpts().PK()},
-												  IndexDeclaration{genrename, "text", "string", IndexOpts()}});
+		DefineNamespaceDataset(genres_namespace, {IndexDeclaration{genreid, "hash", "int", IndexOpts().PK(), 0},
+												  IndexDeclaration{genrename, "text", "string", IndexOpts(), 0}});
 
-		DefineNamespaceDataset(authors_namespace,
-							   {IndexDeclaration{authorid, "hash", "int", IndexOpts().PK()},
-								IndexDeclaration{name, "text", "string", IndexOpts()}, IndexDeclaration{age, "hash", "int", IndexOpts()}});
+		DefineNamespaceDataset(authors_namespace, {IndexDeclaration{authorid, "hash", "int", IndexOpts().PK(), 0},
+												   IndexDeclaration{name, "text", "string", IndexOpts(), 0},
+												   IndexDeclaration{age, "hash", "int", IndexOpts(), 0}});
 
 		DefineNamespaceDataset(
 			books_namespace,
-			{IndexDeclaration{bookid, "hash", "int", IndexOpts().PK()}, IndexDeclaration{title, "text", "string", IndexOpts()},
-			 IndexDeclaration{pages, "hash", "int", IndexOpts()}, IndexDeclaration{price, "tree", "int", IndexOpts()},
-			 IndexDeclaration{genreId_fk, "hash", "int", IndexOpts()}, IndexDeclaration{authorid_fk, "hash", "int", IndexOpts()},
-			 IndexDeclaration{string(pages + string("+") + bookid).c_str(), "hash", "composite", IndexOpts()}});
+			{IndexDeclaration{bookid, "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{title, "text", "string", IndexOpts(), 0},
+			 IndexDeclaration{pages, "hash", "int", IndexOpts(), 0}, IndexDeclaration{price, "tree", "int", IndexOpts(), 0},
+			 IndexDeclaration{genreId_fk, "hash", "int", IndexOpts(), 0}, IndexDeclaration{authorid_fk, "hash", "int", IndexOpts(), 0},
+			 IndexDeclaration{string(pages + string("+") + bookid).c_str(), "hash", "composite", IndexOpts(), 0}});
 
 		FillGenresNamespace();
 		FillAuthorsNamespace(500);

@@ -65,8 +65,8 @@ protected:
 	}
 
 	void defineNs() {
-		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK()},
-												   IndexDeclaration{kFieldRandomName, "tree", "string", IndexOpts()}});
+		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0},
+												   IndexDeclaration{kFieldRandomName, "tree", "string", IndexOpts(), 0}});
 	}
 
 	void fillNs(int count) {

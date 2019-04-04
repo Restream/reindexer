@@ -12,7 +12,7 @@ if (NOT ReplXX_LIBRARY OR NOT ReplXX_INCLUDE_DIR)
   message (STATUS "ReplXX not found. Will download it")
   ExternalProject_Add(
     replxx_lib
-    GIT_REPOSITORY "https://github.com/Restream/replxx"
+    GIT_REPOSITORY "https://github.com/AmokHuginnsson/replxx"
     GIT_TAG "master"
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
   )

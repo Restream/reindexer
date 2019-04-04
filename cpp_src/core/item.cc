@@ -23,6 +23,7 @@ Item &Item::operator=(Item &&other) noexcept {
 }
 
 const string &Item::FieldRef::Name() { return field_ >= 0 ? itemImpl_->Type().Field(field_).Name() : jsonPath_; }
+
 Item::FieldRef::operator Variant() {
 	VariantArray kr;
 	if (field_ >= 0)
@@ -49,7 +50,7 @@ Item::FieldRef &Item::FieldRef::operator=(Variant kr) {
 	if (field_ >= 0) {
 		itemImpl_->SetField(field_, VariantArray{kr});
 	} else {
-		throw Error(errConflict, "Item::FieldRef::SetValue by json path not implemented yet");
+		itemImpl_->SetField(jsonPath_, VariantArray{kr});
 	}
 
 	return *this;

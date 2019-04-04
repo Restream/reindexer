@@ -29,7 +29,7 @@ enum class Sort { Desc, Field, Values };
 enum class JoinRoot { Type, On, Op, Namespace, Filters, Sort, Limit, Offset };
 enum class JoinEntry { LetfField, RightField, Cond, Op };
 enum class Filter { Cond, Op, Field, Value };
-enum class Aggregation { Field, Type };
+enum class Aggregation { Fields, Type, Sort, Limit, Offset };
 
 void parse(JsonValue& value, Query& q);
 }  // namespace dsl

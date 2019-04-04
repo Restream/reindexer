@@ -43,16 +43,23 @@ void AggregationResult::GetJSON(WrSerializer &ser) const {
 	JsonBuilder builder(ser);
 
 	if (value != 0) builder.Put("value", value);
-	if (!field.empty()) builder.Put("field", field);
 	builder.Put("type", aggTypeToStr(type));
 
 	if (facets.size()) {
 		auto arrNode = builder.Array("facets");
 		for (auto &facet : facets) {
 			auto objNode = arrNode.Object();
-			objNode.Put("value", facet.value);
 			objNode.Put("count", facet.count);
+			auto arrNode = objNode.Array("values");
+			for (const auto &v : facet.values) {
+				arrNode.Put(nullptr, v);
+			}
 		}
+	}
+
+	auto fldNode = builder.Array("fields");
+	for (auto &field : fields) {
+		fldNode.Put(nullptr, field);
 	}
 }
 
@@ -68,7 +75,13 @@ Error AggregationResult::FromJSON(char *json) {
 	try {
 		for (auto elem : jvalue) {
 			parseJsonField("value", value, elem);
-			parseJsonField("field", field, elem);
+			if ("fields"_sv == elem->key) {
+				if (elem->value.getTag() != JSON_ARRAY) return Error(errParseJson, "Expected json array in 'fields' key");
+				for (auto subElem : elem->value) {
+					if (subElem->value.getTag() != JSON_STRING) return Error(errParseJson, "Expected string in array of 'fields'");
+					fields.push_back(subElem->value.toString());
+				}
+			}
 			if ("type"_sv == elem->key && elem->value.getTag() == JSON_STRING) {
 				type = strToAggType(elem->value.toString());
 			}
@@ -78,7 +91,14 @@ Error AggregationResult::FromJSON(char *json) {
 					if (subElem->value.getTag() != JSON_OBJECT) return Error(errParseJson, "Expected json object in array of 'facets'");
 					FacetResult facet;
 					for (auto objElem : subElem->value) {
-						parseJsonField("value", facet.value, objElem);
+						if ("values"_sv == objElem->key) {
+							if (objElem->value.getTag() != JSON_ARRAY) return Error(errParseJson, "Expected json array in 'facets' key");
+							for (auto subElem : objElem->value) {
+								if (subElem->value.getTag() != JSON_STRING)
+									return Error(errParseJson, "Expected string in array of 'facets'");
+								facet.values.push_back(subElem->value.toString());
+							}
+						}
 						parseJsonField("count", facet.count, objElem);
 					}
 					facets.push_back(facet);

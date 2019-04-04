@@ -6,6 +6,7 @@
 #include "core/payload/fieldsset.h"
 #include "estl/fast_hash_set.h"
 #include "estl/intrusive_ptr.h"
+#include "tools/string_regexp_functions.h"
 
 namespace reindexer {
 
@@ -70,6 +71,7 @@ public:
 			case CondAny:
 				return true;
 			case CondEmpty:
+			case CondLike:
 				return false;
 			default:
 				abort();
@@ -142,6 +144,9 @@ public:
 				return true;
 			case CondEmpty:
 				return false;
+			case CondLike: {
+				return matchLikePattern(string_view(lhs), string_view(*rhs));
+			}
 			default:
 				abort();
 		}
@@ -204,6 +209,7 @@ public:
 			case CondAny:
 				return true;
 			case CondEmpty:
+			case CondLike:
 				return false;
 			default:
 				abort();

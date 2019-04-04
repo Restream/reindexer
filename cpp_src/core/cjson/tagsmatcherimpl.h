@@ -39,26 +39,16 @@ public:
 		return fieldTags;
 	}
 
-	int name2tag(const char *name) const {
+	int name2tag(string_view name) const {
 		auto res = names2tags_.find(name);
 		return (res == names2tags_.end()) ? 0 : res->second + 1;
 	}
 
-	int name2tag(const string &name, const string &path, bool &updated) {
-		auto res = names2tags_.emplace(name, tags2names_.size());
-		if (res.second) {
-			tags2names_.push_back(name);
-			version_++;
-		}
-		updated |= res.second;
-		int tag = res.first->second | ((payloadType_->FieldByJsonPath(path) + 1) << ctag::nameBits);
-		return tag + 1;
-	}
-
-	int name2tag(const char *name, bool canAdd, bool &updated) {
-		int tag = name2tag(name);
+	int name2tag(string_view n, bool canAdd, bool &updated) {
+		int tag = name2tag(n);
 		if (tag || !canAdd) return tag;
 
+		string name = n.ToString();
 		auto res = names2tags_.emplace(name, tags2names_.size());
 		if (res.second) {
 			tags2names_.push_back(name);
@@ -191,14 +181,14 @@ public:
 protected:
 	struct equal_str {
 		using is_transparent = void;
-		bool operator()(const char *lhs, const string &rhs) const { return !strcmp(lhs, rhs.c_str()); }
-		bool operator()(const string &lhs, const char *rhs) const { return !strcmp(lhs.c_str(), rhs); }
+		bool operator()(const string &lhs, string_view rhs) const { return !strcmp(lhs.c_str(), rhs.data()); }
+		bool operator()(string_view lhs, const string &rhs) const { return !strcmp(lhs.data(), rhs.c_str()); }
 		bool operator()(const string &lhs, const string &rhs) const { return rhs == lhs; }
 	};
 
 	struct hash_str {
 		using is_transparent = void;
-		size_t operator()(const char *hs) const { return _Hash_bytes(hs, strlen(hs)); }
+		size_t operator()(string_view hs) const { return _Hash_bytes(hs.data(), strlen(hs.data())); }
 		size_t operator()(const string &hs) const { return _Hash_bytes(hs.data(), hs.length()); }
 	};
 

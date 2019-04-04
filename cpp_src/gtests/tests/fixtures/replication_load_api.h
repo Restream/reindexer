@@ -19,14 +19,14 @@ public:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		api.DefineNamespaceDataset("some", {
-											   IndexDeclaration{"id", "hash", "int", IndexOpts().PK()},
-											   IndexDeclaration{"int", "tree", "int", IndexOpts()},
-											   IndexDeclaration{"string", "hash", "string", IndexOpts()},
+											   IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
+											   IndexDeclaration{"int", "tree", "int", IndexOpts(), 0},
+											   IndexDeclaration{"string", "hash", "string", IndexOpts(), 0},
 										   });
 		api.DefineNamespaceDataset("some1", {
-												IndexDeclaration{"id", "hash", "int", IndexOpts().PK()},
-												IndexDeclaration{"int", "tree", "int", IndexOpts()},
-												IndexDeclaration{"string", "hash", "string", IndexOpts()},
+												IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
+												IndexDeclaration{"int", "tree", "int", IndexOpts(), 0},
+												IndexDeclaration{"string", "hash", "string", IndexOpts(), 0},
 											});
 	}
 

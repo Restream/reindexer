@@ -168,13 +168,14 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 		case CondRange:
 		case CondGt:
 		case CondLt:
+		case CondLike:
 			return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, opts, ctx);
 		default:
 			throw Error(errQueryExec, "Unknown query on index '%s'", this->name_);
 	}
 
 	return SelectKeyResults(res);
-}  // namespace reindexer
+}
 
 template <typename T>
 void IndexUnordered<T>::DumpKeys() {

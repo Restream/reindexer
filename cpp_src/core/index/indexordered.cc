@@ -55,7 +55,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 	SelectKeyResult res;
 
 	// Get set of keys or single key
-	if (condition == CondSet || condition == CondEq || condition == CondAny || condition == CondEmpty)
+	if (condition == CondSet || condition == CondEq || condition == CondAny || condition == CondEmpty || condition == CondLike)
 		return IndexUnordered<T>::SelectKey(keys, condition, sortId, opts, ctx);
 
 	if (keys.size() < 1) throw Error(errParams, "For condition required at least 1 argument, but provided 0");
@@ -133,7 +133,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 				}
 			};
 
-			if (count > 1 && !opts.distinct && opts.disableIdSetCache)
+			if (count > 1 && !opts.distinct && !opts.disableIdSetCache)
 				this->tryIdsetCache(keys, condition, sortId, selector, res);
 			else
 				selector(res);

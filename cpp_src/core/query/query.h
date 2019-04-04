@@ -269,11 +269,21 @@ public:
 
 	/// Adds an aggregate function for certain column.
 	/// Analog to sql aggregate functions (min, max, avg, etc).
-	/// @param idx - name of the field to be aggregated.
 	/// @param type - aggregation function type (Sum, Avg).
+	/// @param fields - names of the fields to be aggregated.
+	/// @param sort - vector of sorting column names and descending (if true) or ascending (otherwise) flags.
+	/// Use column name 'count' to sort by facet's count value.
+	/// @param limit - number of rows to get from result set.
+	/// @param offset - index of the first row to get from result set.
 	/// @return Query object ready to be executed.
-	Query &Aggregate(const string &idx, AggType type) {
-		aggregations_.push_back({idx, type});
+	Query &Aggregate(AggType type, const h_vector<string, 1> &fields, const vector<pair<string, bool>> &sort = {}, size_t limit = UINT_MAX,
+					 size_t offset = 0) {
+		AggregateEntry aggEntry{type, fields, limit, offset};
+		aggEntry.sortingEntries_.reserve(sort.size());
+		for (const auto &s : sort) {
+			aggEntry.sortingEntries_.push_back({s.first, s.second});
+		}
+		aggregations_.push_back(aggEntry);
 		return *this;
 	}
 
@@ -392,7 +402,7 @@ protected:
 	/// @param tokenType - token type.
 	/// @param toLower - transform to lower representation.
 	/// @return sql token object.
-	token peekSqlToken(tokenizer &parser, SqlParsingCtx &ctx, int tokenType, bool toLower = true);
+	static token peekSqlToken(tokenizer &parser, SqlParsingCtx &ctx, int tokenType, bool toLower = true);
 
 	/// Finds suggestions for token
 	/// @param ctx - suggestion context.
@@ -401,7 +411,7 @@ protected:
 	void getSuggestionsForToken(SqlParsingCtx::SuggestionData &ctx, const string &nsName, const Namespaces &namespaces);
 
 	/// Is current token last in autocomplete mode?
-	bool reachedAutocompleteToken(tokenizer &parser, const token &tok, SqlParsingCtx &ctx) const;
+	static bool reachedAutocompleteToken(tokenizer &parser, const token &tok, SqlParsingCtx &ctx);
 
 	/// Checks whether suggestion is neede for a token
 	void checkForTokenSuggestions(SqlParsingCtx::SuggestionData &data, const SqlParsingCtx &ctx, const Namespaces &namespaces);
@@ -436,13 +446,16 @@ protected:
 	int parseWhere(tokenizer &parser, SqlParsingCtx &ctx);
 
 	/// Parse order by
-	int parseOrderBy(tokenizer &parser, SqlParsingCtx &ctx);
+	static int parseOrderBy(tokenizer &parser, SortingEntries &, VariantArray &forcedSortOrder, SqlParsingCtx &ctx);
 
 	/// Parse join entries
 	void parseJoin(JoinType type, tokenizer &tok, SqlParsingCtx &ctx);
 
 	/// Parse join entries
 	void parseJoinEntries(tokenizer &parser, const string &mainNs, SqlParsingCtx &ctx);
+
+	/// Parse update field entries
+	UpdateEntry parseUpdateField(tokenizer &parser, SqlParsingCtx &ctx);
 
 	/// Parse joined Ns name: [Namespace.field]
 	string parseJoinedFieldName(tokenizer &parser, string &name, SqlParsingCtx &ctx);
@@ -538,7 +551,7 @@ public:
 	QueryType type_ = QuerySelect;
 
 	/// List of fields (and values) for update.
-	h_vector<pair<string, VariantArray>, 0> updateFields_;
+	h_vector<UpdateEntry, 0> updateFields_;
 };
 
 }  // namespace reindexer

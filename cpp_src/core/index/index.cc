@@ -4,6 +4,7 @@
 #include "indextext/fastindextext.h"
 #include "indextext/fuzzyindextext.h"
 #include "tools/logger.h"
+#include "ttlindex.h"
 
 namespace reindexer {
 
@@ -51,6 +52,8 @@ Index* Index::New(const IndexDef& idef, const PayloadType payloadType, const Fie
 		case IndexFuzzyFT:
 		case IndexCompositeFuzzyFT:
 			return FuzzyIndexText_New(idef, payloadType, fields);
+		case IndexTtl:
+			return TtlIndex_New(idef, payloadType, fields);
 		default:
 			throw Error(errParams, "Ivalid index type %d for index '%s'", idef.Type(), idef.name_);
 	}

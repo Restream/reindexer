@@ -149,7 +149,7 @@ Error RPCClient::modifyItem(string_view nsName, Item& item, int mode, Completion
 		try {
 			auto args = ret.GetArgs(2);
 			NSArray nsArray{getNamespace(nsName)};
-			return QueryResults(conn, std::move(nsArray), nullptr, p_string(args[0]), int(args[1])).Status();
+			return QueryResults(conn, std::move(nsArray), nullptr, p_string(args[0]), int(args[1]), 0, config_.FetchAmount).Status();
 		} catch (const Error& err) {
 			return err;
 		}
@@ -190,7 +190,8 @@ Error RPCClient::modifyItemAsync(string_view nsName, Item* item, int mode, Compl
 			} else
 				try {
 					auto args = ret.GetArgs(2);
-					clientCompl(QueryResults(conn, {getNamespace(ns)}, nullptr, p_string(args[0]), int(args[1])).Status());
+					clientCompl(
+						QueryResults(conn, {getNamespace(ns)}, nullptr, p_string(args[0]), int(args[1]), 0, config_.FetchAmount).Status());
 				} catch (const Error& err) {
 					clientCompl(err);
 				}
@@ -246,7 +247,7 @@ Error RPCClient::Delete(const Query& query, QueryResults& result) {
 	query.Serialize(ser);
 	auto conn = getConn();
 
-	result = QueryResults(conn, {}, nullptr);
+	result = QueryResults(conn, {}, nullptr, 0, config_.FetchAmount);
 
 	auto icompl = [&result](const RPCAnswer& ret, cproto::ClientConnection*) {
 		try {
@@ -270,7 +271,7 @@ Error RPCClient::Update(const Query& query, QueryResults& result) {
 	query.Serialize(ser);
 	auto conn = getConn();
 
-	result = QueryResults(conn, {}, nullptr);
+	result = QueryResults(conn, {}, nullptr, 0, config_.FetchAmount);
 
 	auto icompl = [&result](const RPCAnswer& ret, cproto::ClientConnection*) {
 		try {
@@ -305,7 +306,7 @@ Error RPCClient::Select(string_view query, QueryResults& result, Completion clie
 
 	if (!conn) conn = getConn();
 
-	result = QueryResults(conn, {}, clientCompl, result.fetchFlags_);
+	result = QueryResults(conn, {}, clientCompl, result.fetchFlags_, config_.FetchAmount);
 
 	auto icompl = [&result](const RPCAnswer& ret, cproto::ClientConnection* /*conn*/) {
 		try {
@@ -345,7 +346,7 @@ Error RPCClient::Select(const Query& query, QueryResults& result, Completion cli
 
 	if (!conn) conn = getConn();
 
-	result = QueryResults(conn, std::move(nsArray), clientCompl, result.fetchFlags_);
+	result = QueryResults(conn, std::move(nsArray), clientCompl, result.fetchFlags_, config_.FetchAmount);
 
 	auto icompl = [&result](const RPCAnswer& ret, cproto::ClientConnection* /*conn*/) {
 		try {
@@ -360,11 +361,11 @@ Error RPCClient::Select(const Query& query, QueryResults& result, Completion cli
 	};
 
 	if (!clientCompl) {
-		auto ret = conn->Call(cproto::kCmdSelect, qser.Slice(), flags, 100, pser.Slice());
+		auto ret = conn->Call(cproto::kCmdSelect, qser.Slice(), flags, config_.FetchAmount, pser.Slice());
 		icompl(ret, conn);
 		return ret.Status();
 	} else {
-		conn->Call(icompl, cproto::kCmdSelect, qser.Slice(), flags, 100, pser.Slice());
+		conn->Call(icompl, cproto::kCmdSelect, qser.Slice(), flags, config_.FetchAmount, pser.Slice());
 		return errOK;
 	}
 }

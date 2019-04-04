@@ -7,15 +7,7 @@ import (
 	"github.com/restream/reindexer/cjson"
 )
 
-type txStep struct {
-	mode     int
-	item     interface{}
-	json     []byte
-	percepts []string
-}
-
 type Tx struct {
-	steps            []txStep
 	namespace        string
 	started          bool
 	forceCommitCount uint32

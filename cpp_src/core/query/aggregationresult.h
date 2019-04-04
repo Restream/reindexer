@@ -11,9 +11,9 @@ using std::string;
 class WrSerializer;
 
 struct FacetResult {
-	FacetResult(const std::string &v, int c) : value(v), count(c) {}
+	FacetResult(const h_vector<std::string, 1> &v, int c) : values(v), count(c) {}
 	FacetResult() : count(0) {}
-	string value;
+	h_vector<string, 1> values;
 	int count;
 };
 
@@ -21,7 +21,7 @@ struct AggregationResult {
 	void GetJSON(WrSerializer &ser) const;
 	Error FromJSON(char *json);
 	AggType type = AggSum;
-	string field;
+	h_vector<string, 1> fields;
 	double value = 0;
 	h_vector<FacetResult, 1> facets;
 

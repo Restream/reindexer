@@ -1,3 +1,23 @@
+# Version 2.0.3 (04.04.2019)
+
+## Core
+- [fea] Facets API improoved. Multiply fields and SORT features
+- [fea] TTL added
+- [fea] `LIKE` condition added 
+- [fea] Add expressions support in SQL `UPDATE` statement
+- [fix] Invalid JSON generation with empty object name
+- [fix] Unneccessary updating of tagsmatcher on transactions
+- [fix] LRUCache invalidation crash fix
+
+# Reindexer server
+
+- [fea] Added metadata maniplulation methods
+
+## Face
+
+- [fea] Added metadata maniplulation GUI
+- [fix] Performance statistics GUI improovements
+
 # Version 2.0.2 (08.03.2019)
 
 ## Core 

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"regexp"
 
 	"github.com/restream/reindexer"
 )
@@ -33,6 +34,7 @@ var queryNames = map[int]string{
 	reindexer.RANGE: "in",
 	reindexer.ANY:   "ANY",
 	reindexer.EMPTY: "EMPTY",
+	reindexer.LIKE:  "LIKE",
 }
 
 type queryTestEntry struct {
@@ -528,6 +530,17 @@ func compareValues(v1 reflect.Value, v2 reflect.Value) int {
 	return -1
 }
 
+func likeValues(v1 reflect.Value, v2 reflect.Value) bool {
+	if v1.Type().Kind() != reflect.String || v2.Type().Kind() != reflect.String {
+		panic(fmt.Errorf("Arguments of like must be string"))
+	}
+	match, err := regexp.MatchString("^" + strings.Replace(strings.Replace(v2.String(), "_", ".", -1), "%", ".*", -1) + "$", v1.String())
+	if err != nil {
+		panic(err)
+	}
+	return match
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a
@@ -684,6 +697,8 @@ func checkCondition(ns *testNamespace, cond queryTestEntry, item interface{}) bo
 					break
 				}
 			}
+		case reindexer.LIKE:
+			found = likeValues(v, cond.keys[0])
 		}
 		if found {
 			break

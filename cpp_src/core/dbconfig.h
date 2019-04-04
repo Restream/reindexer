@@ -27,7 +27,7 @@ struct NamespaceConfigData {
 	bool lazyLoad = false;
 	int noQueryIdleThreshold = 0;
 	LogLevel logLevel = LogNone;
-	CacheMode cacheMode = CacheModeOn;
+	CacheMode cacheMode = CacheModeOff;
 };
 
 enum ReplicationRole { ReplicationNone, ReplicationMaster, ReplicationSlave };

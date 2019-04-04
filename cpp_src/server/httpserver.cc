@@ -11,15 +11,15 @@
 #include "reindexer_version.h"
 #include "resources_wrapper.h"
 #include "tools/fsops.h"
+#include "tools/jsontools.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 #if REINDEX_WITH_GPERFTOOLS
-#include <gperftools/malloc_extension_c.h>
+#include <gperftools/malloc_extension.h>
 #endif
 
 using std::string;
 using std::stringstream;
-using std::to_string;
 
 namespace reindexer_server {
 
@@ -414,6 +414,130 @@ int HTTPServer::DeleteItems(http::Context &ctx) { return modifyItem(ctx, ModeDel
 int HTTPServer::PutItems(http::Context &ctx) { return modifyItem(ctx, ModeUpdate); }
 int HTTPServer::PostItems(http::Context &ctx) { return modifyItem(ctx, ModeInsert); }
 
+int HTTPServer::GetMetaList(http::Context &ctx) {
+	const shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
+	const string nsName = urldecode2(ctx.request->urlParams[1]);
+	if (!nsName.length()) {
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
+	}
+
+	enum SortOrder { Desc = -1, NoSort = 0, Asc = 1 } sortDirection = NoSort;
+	bool withValues = false;
+
+	string_view sortOrder = ctx.request->params.Get("sort_order");
+	if (sortOrder == "asc") {
+		sortDirection = Asc;
+	} else if (sortOrder == "desc") {
+		sortDirection = Desc;
+	} else if (sortOrder.length()) {
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Invalid `sort_order` parameter"));
+	}
+
+	string_view withValParam = ctx.request->params.Get("with_values");
+	if (withValParam == "true") {
+		withValues = true;
+	} else if (withValParam == "false") {
+		withValues = false;
+	} else if (withValParam.length()) {
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Invalid `with_values` parameter"));
+	}
+	string_view limitParam = ctx.request->params.Get("limit");
+	string_view offsetParam = ctx.request->params.Get("offset");
+	unsigned limit = prepareLimit(limitParam, 0);
+	unsigned offset = prepareOffset(offsetParam, 0);
+
+	std::vector<std::string> keys;
+	const Error err = db->EnumMeta(nsName, keys);
+	if (!err.ok()) {
+		return jsonStatus(ctx, http::HttpStatus(err));
+	}
+	if (sortDirection == Asc) {
+		std::sort(keys.begin(), keys.end());
+	} else if (sortDirection == Desc) {
+		std::sort(keys.begin(), keys.end(), std::greater<std::string>());
+	}
+	auto keysIt = keys.begin();
+	auto keysEnd = keys.end();
+	if (offset >= keys.size()) {
+		keysEnd = keysIt;
+	} else {
+		std::advance(keysIt, offset);
+	}
+	if (limit > 0 && limit + offset < keys.size()) {
+		keysEnd = keysIt;
+		std::advance(keysEnd, limit);
+	}
+
+	WrSerializer ser(ctx.writer->GetChunk());
+	JsonBuilder builder(ser);
+	builder.Put("total_items", keys.size());
+	JsonBuilder arrNode = builder.Array("meta");
+	for (; keysIt != keysEnd; ++keysIt) {
+		auto objNode = arrNode.Object();
+		objNode.Put("key", *keysIt);
+		if (withValues) {
+			std::string value;
+			const Error err = db->GetMeta(nsName, *keysIt, value);
+			if (!err.ok()) return jsonStatus(ctx, http::HttpStatus(err));
+			objNode.Put("value", value);
+		}
+		objNode.End();
+	}
+	arrNode.End();
+	builder.End();
+
+	return ctx.JSON(http::StatusOK, ser.DetachChunk());
+}
+
+int HTTPServer::GetMetaByKey(http::Context &ctx) {
+	const shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
+	const string nsName = urldecode2(ctx.request->urlParams[1]);
+	const string key = urldecode2(ctx.request->urlParams[2]);
+	if (!nsName.length()) {
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
+	}
+	std::string value;
+	const Error err = db->GetMeta(nsName, key, value);
+	if (!err.ok()) {
+		return jsonStatus(ctx, http::HttpStatus(err));
+	}
+	return ctx.String(http::StatusOK, value);
+}
+
+int HTTPServer::PutMetaByKey(http::Context &ctx) {
+	const shared_ptr<Reindexer> db = getDB(ctx, kRoleDataWrite);
+	const string nsName = urldecode2(ctx.request->urlParams[1]);
+	if (!nsName.length()) {
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
+	}
+	string json = ctx.body->Read();
+	JsonAllocator jalloc;
+	JsonValue jvalue;
+	char *endp;
+	int status = jsonParse(&json[0], &endp, &jvalue, jalloc);
+	if (status != JSON_OK) {
+		return jsonStatus(ctx, http::HttpStatus(Error(errParseJson, "Malformed JSON with meta data")));
+	}
+	if (jvalue.getTag() != JSON_OBJECT) {
+		return jsonStatus(ctx, http::HttpStatus(Error(errParseJson, "Expected json object in meta data")));
+	}
+	std::string key;
+	std::string value;
+	try {
+		for (auto elem : jvalue) {
+			parseJsonField("key", key, elem);
+			parseJsonField("value", value, elem);
+		}
+	} catch (const Error &err) {
+		return jsonStatus(ctx, http::HttpStatus(err));
+	}
+	const Error err = db->PutMeta(nsName, key, value);
+	if (!err.ok()) {
+		return jsonStatus(ctx, http::HttpStatus(err));
+	}
+	return jsonStatus(ctx);
+}
+
 int HTTPServer::GetIndexes(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
 
@@ -535,18 +659,18 @@ int HTTPServer::Check(http::Context &ctx) {
 		builder.Put("start_time", startTs);
 		builder.Put("uptime", uptime);
 
-#ifdef REINDEX_WITH_GPERFTOOLS
+#if REINDEX_WITH_GPERFTOOLS
 		size_t val = 0;
-		MallocExtension_GetNumericProperty("generic.current_allocated_bytes", &val);
+		MallocExtension::instance()->GetNumericProperty("generic.current_allocated_bytes", &val);
 		builder.Put("current_allocated_bytes", val);
 
-		MallocExtension_GetNumericProperty("generic.heap_size", &val);
+		MallocExtension::instance()->GetNumericProperty("generic.heap_size", &val);
 		builder.Put("heap_size", val);
 
-		MallocExtension_GetNumericProperty("tcmalloc.pageheap_free_bytes", &val);
+		MallocExtension::instance()->GetNumericProperty("tcmalloc.pageheap_free_bytes", &val);
 		builder.Put("pageheap_free", val);
 
-		MallocExtension_GetNumericProperty("tcmalloc.pageheap_unmapped_bytes", &val);
+		MallocExtension::instance()->GetNumericProperty("tcmalloc.pageheap_unmapped_bytes", &val);
 		builder.Put("pageheap_unmapped", val);
 #endif
 	}
@@ -633,6 +757,10 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	router_.POST<HTTPServer, &HTTPServer::PostIndex>("/api/v1/db/:db/namespaces/:ns/indexes", this);
 	router_.PUT<HTTPServer, &HTTPServer::PutIndex>("/api/v1/db/:db/namespaces/:ns/indexes", this);
 	router_.DELETE<HTTPServer, &HTTPServer::DeleteIndex>("/api/v1/db/:db/namespaces/:ns/indexes/:idx", this);
+
+	router_.GET<HTTPServer, &HTTPServer::GetMetaList>("/api/v1/db/:db/namespaces/:ns/metalist", this);
+	router_.GET<HTTPServer, &HTTPServer::GetMetaByKey>("/api/v1/db/:db/namespaces/:ns/metabykey/:key", this);
+	router_.PUT<HTTPServer, &HTTPServer::PutMetaByKey>("/api/v1/db/:db/namespaces/:ns/metabykey", this);
 
 	router_.Middleware<HTTPServer, &HTTPServer::CheckAuth>(this);
 

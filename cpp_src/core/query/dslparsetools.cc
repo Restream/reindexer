@@ -51,7 +51,7 @@ static const fast_hash_map<string, Filter> filter_map = {
 
 static const fast_hash_map<string, CondType> cond_map = {
 	{"any", CondAny},	 {"eq", CondEq},   {"lt", CondLt},			{"le", CondLe},		  {"gt", CondGt},	{"ge", CondGe},
-	{"range", CondRange}, {"set", CondSet}, {"allset", CondAllSet}, {"empty", CondEmpty}, {"match", CondEq},
+	{"range", CondRange}, {"set", CondSet}, {"allset", CondAllSet}, {"empty", CondEmpty}, {"match", CondEq}, {"like", CondLike},
 };
 
 static const fast_hash_map<string, OpType> op_map = {{"or", OpOr}, {"and", OpAnd}, {"not", OpNot}};
@@ -63,7 +63,11 @@ static const fast_hash_map<string, CalcTotalMode> reqtotal_values = {
 
 // additional for 'Root::Aggregations' field
 
-static const fast_hash_map<string, Aggregation> aggregation_map = {{"field", Aggregation::Field}, {"type", Aggregation::Type}};
+static const fast_hash_map<string, Aggregation> aggregation_map = {{"fields", Aggregation::Fields},
+																   {"type", Aggregation::Type},
+																   {"sort", Aggregation::Sort},
+																   {"limit", Aggregation::Limit},
+																   {"offset", Aggregation::Offset}};
 static const fast_hash_map<string, AggType> aggregation_types = {
 	{"sum", AggSum}, {"avg", AggAvg}, {"max", AggMax}, {"min", AggMin}, {"facet", AggFacet}};
 
@@ -121,7 +125,34 @@ void parseSortEntry(JsonValue& entry, Query& q) {
 	}
 }
 
-void parseSort(JsonValue& v, Query& q) {
+void parseSortEntry(JsonValue& entry, AggregateEntry& agg) {
+	checkJsonValueType(entry, "Sort", JSON_OBJECT);
+	SortingEntry sortingEntry;
+	for (auto subelement : entry) {
+		auto& v = subelement->value;
+		string name = lower(subelement->key);
+		switch (get(sort_map, name)) {
+			case Sort::Desc:
+				if ((v.getTag() != JSON_TRUE) && (v.getTag() != JSON_FALSE)) throw Error(errParseJson, "Wrong type of field '%s'", name);
+				sortingEntry.desc = (v.getTag() == JSON_TRUE);
+				break;
+
+			case Sort::Field:
+				checkJsonValueType(v, name, JSON_STRING);
+				sortingEntry.column.assign(v.toString());
+				break;
+
+			case Sort::Values:
+				throw Error(errConflict, "Fixed values not available in aggregation sort");
+		}
+	}
+	if (!sortingEntry.column.empty()) {
+		agg.sortingEntries_.push_back(std::move(sortingEntry));
+	}
+}
+
+template <typename T>
+void parseSort(JsonValue& v, T& q) {
 	if (v.getTag() == JSON_ARRAY) {
 		for (auto entry : v) parseSort(entry->value, q);
 	} else if (v.getTag() == JSON_OBJECT) {
@@ -179,6 +210,7 @@ void parseFilter(JsonValue& filter, Query& q) {
 		case CondEq:
 		case CondLt:
 		case CondLe:
+		case CondLike:
 			if (qe.values.size() != 1) {
 				throw Error(errLogic, "Condition %d must have exact 1 value, but %d values was provided", qe.condition, qe.values.size());
 			}
@@ -302,13 +334,27 @@ void parseAggregation(JsonValue& aggregation, Query& query) {
 		auto& value = element->value;
 		string name = lower(element->key);
 		switch (get(aggregation_map, name)) {
-			case Aggregation::Field:
-				checkJsonValueType(value, name, JSON_STRING);
-				aggEntry.index_ = value.toString();
+			case Aggregation::Fields:
+				checkJsonValueType(value, name, JSON_ARRAY);
+				for (auto subElem : value) {
+					if (subElem->value.getTag() != JSON_STRING) throw Error(errParseJson, "Expected string in array 'fields'");
+					aggEntry.fields_.push_back(subElem->value.toString());
+				}
 				break;
 			case Aggregation::Type:
 				checkJsonValueType(value, name, JSON_STRING);
 				aggEntry.type_ = get(aggregation_types, lower(value.toString()));
+				break;
+			case Aggregation::Sort:
+				parseSort(value, aggEntry);
+				break;
+			case Aggregation::Limit:
+				checkJsonValueType(value, name, JSON_NUMBER, JSON_DOUBLE);
+				aggEntry.limit_ = value.toNumber();
+				break;
+			case Aggregation::Offset:
+				checkJsonValueType(value, name, JSON_NUMBER, JSON_DOUBLE);
+				aggEntry.offset_ = value.toNumber();
 				break;
 		}
 	}

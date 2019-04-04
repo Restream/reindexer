@@ -1,10 +1,12 @@
 
 #include "core/query/query.h"
+#include "core/keyvalue/key_string.h"
 #include "core/namespace.h"
 #include "core/query/aggregationresult.h"
 #include "core/query/dslencoder.h"
 #include "core/query/dslparsetools.h"
 #include "core/type_consts.h"
+#include "expressionevaluator.h"
 #include "gason/gason.h"
 #include "sqltokentype.h"
 #include "tools/errors.h"
@@ -89,9 +91,37 @@ void Query::deserialize(Serializer &ser) {
 				entries.push_back(std::move(qe));
 				break;
 			}
-			case QueryAggregation:
-				aggregations_.push_back({ser.GetVString().ToString(), AggType(ser.GetVarUint())});
+			case QueryAggregation: {
+				AggregateEntry ae;
+				ae.type_ = static_cast<AggType>(ser.GetVarUint());
+				size_t fieldsCount = ser.GetVarUint();
+				ae.fields_.reserve(fieldsCount);
+				while (fieldsCount--) ae.fields_.push_back(ser.GetVString().ToString());
+				auto pos = ser.Pos();
+				bool aggEnd = false;
+				while (!ser.Eof() && !aggEnd) {
+					int atype = ser.GetVarUint();
+					switch (atype) {
+						case QueryAggregationSort: {
+							auto fieldName = ser.GetVString();
+							ae.sortingEntries_.push_back({fieldName.ToString(), ser.GetVarUint() != 0});
+							break;
+						}
+						case QueryAggregationLimit:
+							ae.limit_ = ser.GetVarUint();
+							break;
+						case QueryAggregationOffset:
+							ae.offset_ = ser.GetVarUint();
+							break;
+						default:
+							ser.SetPos(pos);
+							aggEnd = true;
+					}
+					pos = ser.Pos();
+				}
+				aggregations_.push_back(std::move(ae));
 				break;
+			}
 			case QueryDistinct:
 				qe.index = ser.GetVString().ToString();
 				if (!qe.index.empty()) {
@@ -151,13 +181,15 @@ void Query::deserialize(Serializer &ser) {
 				auto &field = updateFields_.back();
 				int numValues = ser.GetVarUint();
 				while (numValues--) {
-					ser.GetVarUint();  // type: function/value
-					field.second.push_back(ser.GetVariant());
+					field.isExpression = ser.GetVarUint();
+					field.values.push_back(ser.GetVariant());
 				}
 				break;
 			}
 			case QueryEnd:
 				return;
+			default:
+				throw Error(errParseBin, "Unknown type %d while parsing binary buffer", qtype);
 		}
 	}
 }
@@ -302,7 +334,7 @@ bool Query::findInPossibleIndexes(const string &tok, const string &nsName, const
 
 bool Query::findInPossibleNamespaces(const string &tok, const Namespaces &namespaces) { return namespaces.find(tok) != namespaces.end(); }
 
-bool Query::reachedAutocompleteToken(tokenizer &parser, const token &tok, SqlParsingCtx &ctx) const {
+bool Query::reachedAutocompleteToken(tokenizer &parser, const token &tok, SqlParsingCtx &ctx) {
 	if (!ctx.foundPossibleSuggestions) {
 		size_t pos = parser.pos() + tok.text().length();
 		if ((parser.pos() == 0) && (tok.text().length() > 0)) --pos;
@@ -561,17 +593,51 @@ int Query::selectParse(tokenizer &parser, SqlParsingCtx &ctx) {
 			tok = peekSqlToken(parser, ctx, SingleSelectFieldSqlToken);
 			AggType agg = AggregationResult::strToAggType(name.text());
 			if (agg != AggUnknown) {
-				aggregations_.push_back({tok.text().ToString(), agg});
-			} else if (name.text() == "count"_sv) {
-				calcTotal = ModeAccurateTotal;
-				if (!wasSelectFilter) count = 0;
-			} else if (name.text() == "distinct"_sv) {
-				Distinct(tok.text().ToString());
-				if (!wasSelectFilter) selectFilter_.push_back(tok.text().ToString());
+				AggregateEntry entry{agg, {tok.text().ToString()}, UINT_MAX, 0};
+				tok = parser.next_token();
+				for (tok = parser.peek_token(); tok.text() == ","_sv; tok = parser.peek_token()) {
+					tok = parser.next_token();
+					tok = peekSqlToken(parser, ctx, SingleSelectFieldSqlToken);
+					entry.fields_.push_back(tok.text().ToString());
+					tok = parser.next_token();
+				}
+				for (tok = parser.peek_token(); tok.text() != ")"_sv; tok = parser.peek_token()) {
+					if (tok.text() == "order"_sv) {
+						parser.next_token();
+						VariantArray forcedSortOrder;
+						parseOrderBy(parser, entry.sortingEntries_, forcedSortOrder, ctx);
+						if (!forcedSortOrder.empty()) {
+							throw Error(errParseSQL, "Forced sort order is not available in aggregation sort");
+						}
+					} else if (tok.text() == "limit"_sv) {
+						parser.next_token();
+						tok = parser.next_token();
+						if (tok.type != TokenNumber)
+							throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text(), parser.where());
+						entry.limit_ = stoi(tok.text());
+					} else if (tok.text() == "offset"_sv) {
+						parser.next_token();
+						tok = parser.next_token();
+						if (tok.type != TokenNumber)
+							throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text(), parser.where());
+						entry.offset_ = stoi(tok.text());
+					} else {
+						break;
+					}
+				}
+				aggregations_.push_back(std::move(entry));
 			} else {
-				throw Error(errParams, "Unknown function name SQL - %s, %s", name.text(), parser.where());
+				if (name.text() == "count"_sv) {
+					calcTotal = ModeAccurateTotal;
+					if (!wasSelectFilter) count = 0;
+				} else if (name.text() == "distinct"_sv) {
+					Distinct(tok.text().ToString());
+					if (!wasSelectFilter) selectFilter_.push_back(tok.text().ToString());
+				} else {
+					throw Error(errParams, "Unknown function name SQL - %s, %s", name.text(), parser.where());
+				}
+				tok = parser.next_token();
 			}
-			tok = parser.next_token();
 			tok = parser.peek_token();
 			if (tok.text() != ")"_sv) {
 				throw Error(errParams, "Expected ')', but found %s, %s", tok.text(), parser.where());
@@ -619,7 +685,7 @@ int Query::selectParse(tokenizer &parser, SqlParsingCtx &ctx) {
 			start = stoi(tok.text());
 		} else if (tok.text() == "order"_sv) {
 			parser.next_token();
-			parseOrderBy(parser, ctx);
+			parseOrderBy(parser, sortingEntries_, forcedSortOrder, ctx);
 			ctx.updateLinkedNs(_namespace);
 		} else if (tok.text() == "join"_sv) {
 			parser.next_token();
@@ -653,7 +719,7 @@ int Query::selectParse(tokenizer &parser, SqlParsingCtx &ctx) {
 	return 0;
 }
 
-int Query::parseOrderBy(tokenizer &parser, SqlParsingCtx &ctx) {
+int Query::parseOrderBy(tokenizer &parser, SortingEntries &sortingEntries, VariantArray &forcedSortOrder, SqlParsingCtx &ctx) {
 	// Just skip token (BY)
 	peekSqlToken(parser, ctx, BySqlToken);
 	parser.next_token();
@@ -690,7 +756,7 @@ int Query::parseOrderBy(tokenizer &parser, SqlParsingCtx &ctx) {
 			sortingEntry.desc = bool(tok.text() == "desc"_sv);
 			parser.next_token();
 		}
-		sortingEntries_.push_back(std::move(sortingEntry));
+		sortingEntries.push_back(std::move(sortingEntry));
 
 		auto nextToken = parser.peek_token();
 		if (nextToken.text() != ","_sv) break;
@@ -730,7 +796,7 @@ int Query::deleteParse(tokenizer &parser, SqlParsingCtx &ctx) {
 			start = stoi(tok.text());
 		} else if (tok.text() == "order"_sv) {
 			parser.next_token();
-			parseOrderBy(parser, ctx);
+			parseOrderBy(parser, sortingEntries_, forcedSortOrder, ctx);
 			ctx.updateLinkedNs(_namespace);
 		} else
 			break;
@@ -738,39 +804,92 @@ int Query::deleteParse(tokenizer &parser, SqlParsingCtx &ctx) {
 	return 0;
 }
 
-static Variant token2kv(const token &tok, tokenizer &parser) {
-	if (tok.text() == "true"_sv) return Variant(true);
-	if (tok.text() == "false"_sv) return Variant(false);
-
-	if (tok.type != TokenNumber && tok.type != TokenString)
-		throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text(), parser.where());
-
-	auto text = tok.text();
-	if (tok.type == TokenNumber) {
-		bool digit = text.length() < 21 && text.length() > 0;
-		bool flt = false;
-
+static KeyValueType detectValueType(const token &currTok) {
+	const string_view &val = currTok.text();
+	if (currTok.type == TokenNumber) {
 		unsigned i = 0;
-		if (digit && (text[i] == '+' || text[i] == '-')) {
-			i++;
-		}
-		if (digit && i < text.length() && text[i] == '0') digit = false;
-
-		for (; i < text.length() && digit; i++) {
-			if (text[i] == '.')
+		bool flt = false;
+		bool digit = val.length() < 21 && val.length() > 0;
+		if (val[i] == '+' || val[i] == '-') i++;
+		for (; i < val.length() && digit; i++) {
+			if (val[i] == '.') {
 				flt = true;
-			else if (!isdigit(text[i]))
+			} else if (!isdigit(val[i])) {
 				digit = false;
+			}
 		}
-		if (digit && text.length()) {
-			char *p = 0;
-			if (!flt)
-				return Variant(int64_t(stoll(text)));
-			else
-				return Variant(double(strtod(text.data(), &p)));
+		if (digit && val.length() > 0) {
+			return flt ? KeyValueDouble : KeyValueInt64;
 		}
 	}
-	return Variant(make_key_string(text.data(), text.length()));
+	return KeyValueString;
+}
+
+static Variant token2kv(const token &currTok, tokenizer &parser) {
+	if (currTok.text() == "true"_sv) return Variant(true);
+	if (currTok.text() == "false"_sv) return Variant(false);
+
+	if (currTok.type != TokenNumber && currTok.type != TokenString)
+		throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", currTok.text(), parser.where());
+
+	string_view value = currTok.text();
+	switch (detectValueType(currTok)) {
+		case KeyValueInt64:
+			return Variant(int64_t(stoll(value)));
+		case KeyValueDouble: {
+			char *p = 0;
+			return Variant(double(strtod(value.data(), &p)));
+		}
+		case KeyValueString:
+			return Variant(make_key_string(value.data(), value.length()));
+		default:
+			std::abort();
+	}
+}
+
+static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry &updateField) {
+	if (currTok.type == TokenString) {
+		updateField.values.push_back(token2kv(currTok, parser));
+	} else {
+		string expression(currTok.text().ToString());
+		auto eof = [](tokenizer &parser) -> bool {
+			if (parser.end()) return true;
+			string nextTok = parser.peek_token().text().ToString();
+			return ((nextTok == "where") || (nextTok == "]") || (nextTok == ","));
+		};
+		while (!eof(parser)) {
+			expression += parser.next_token().text().ToString();
+		}
+		updateField.values.push_back(Variant(expression));
+		updateField.isExpression = true;
+	}
+}
+
+UpdateEntry Query::parseUpdateField(tokenizer &parser, SqlParsingCtx &ctx) {
+	UpdateEntry updateField;
+	token tok = peekSqlToken(parser, ctx, FieldNameSqlToken);
+	if (tok.type != TokenName && tok.type != TokenString)
+		throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
+	updateField.column = tok.text().ToString();
+	parser.next_token();
+
+	tok = parser.next_token();
+	if (tok.text() != "="_sv) throw Error(errParams, "Expected '=' but found '%s' in query, '%s'", tok.text(), parser.where());
+
+	tok = parser.next_token();
+	if (tok.text() == "["_sv) {
+		for (;;) {
+			tok = parser.next_token();
+			addUpdateValue(tok, parser, updateField);
+			tok = parser.next_token();
+			if (tok.text() == "]"_sv) break;
+			if (tok.text() != ","_sv)
+				throw Error(errParseSQL, "Expected ']' or ',', but found '%s' in query, %s", tok.text(), parser.where());
+		}
+	} else {
+		addUpdateValue(tok, parser, updateField);
+	}
+	return updateField;
 }
 
 int Query::updateParse(tokenizer &parser, SqlParsingCtx &ctx) {
@@ -786,32 +905,8 @@ int Query::updateParse(tokenizer &parser, SqlParsingCtx &ctx) {
 	parser.next_token();
 
 	while (!parser.end()) {
-		pair<string, VariantArray> field;
-
-		tok = peekSqlToken(parser, ctx, FieldNameSqlToken);
-		if (tok.type != TokenName && tok.type != TokenString)
-			throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
-		field.first = tok.text().ToString();
-		parser.next_token();
-
-		tok = parser.next_token();
-		if (tok.text() != "="_sv) throw Error(errParams, "Expected '=' but found '%s' in query, '%s'", tok.text(), parser.where());
-
-		tok = parser.next_token();
-
-		if (tok.text() == "("_sv) {
-			for (;;) {
-				tok = parser.next_token();
-				field.second.push_back(token2kv(tok, parser));
-				tok = parser.next_token();
-				if (tok.text() == ")"_sv) break;
-				if (tok.text() != ","_sv)
-					throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text(), parser.where());
-			}
-		} else {
-			field.second.push_back(token2kv(tok, parser));
-		}
-		updateFields_.push_back(std::move(field));
+		UpdateEntry updateField = parseUpdateField(parser, ctx);
+		updateFields_.push_back(std::move(updateField));
 
 		tok = parser.peek_token();
 		if (tok.text() != ","_sv) break;
@@ -840,9 +935,8 @@ int Query::parseWhere(tokenizer &parser, SqlParsingCtx &ctx) {
 	while (!parser.end()) {
 		QueryEntry entry;
 		entry.op = nextOp;
-		// Just skip token.
-		tok = parser.next_token(false);
 
+		tok = parser.next_token(false);
 		if (tok.text() == "("_sv) {
 			throw Error(errParseSQL, "Found '(' - nested queries are not supported, %s", parser.where());
 
@@ -1054,8 +1148,24 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 
 	for (auto &agg : aggregations_) {
 		ser.PutVarUint(QueryAggregation);
-		ser.PutVString(agg.index_);
 		ser.PutVarUint(agg.type_);
+		ser.PutVarUint(agg.fields_.size());
+		for (const auto &field : agg.fields_) {
+			ser.PutVString(field);
+		}
+		for (const auto &se : agg.sortingEntries_) {
+			ser.PutVarUint(QueryAggregationSort);
+			ser.PutVString(se.column);
+			ser.PutVarUint(se.desc);
+		}
+		if (agg.limit_ != UINT_MAX) {
+			ser.PutVarUint(QueryAggregationLimit);
+			ser.PutVarUint(agg.limit_);
+		}
+		if (agg.offset_ != 0) {
+			ser.PutVarUint(QueryAggregationOffset);
+			ser.PutVarUint(agg.offset_);
+		}
 	}
 
 	for (const SortingEntry &sortginEntry : sortingEntries_) {
@@ -1109,13 +1219,12 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 		ser.PutVarUint(QueryExplain);
 	}
 
-	for (auto &field : updateFields_) {
+	for (const UpdateEntry &field : updateFields_) {
 		ser.PutVarUint(QueryUpdateField);
-		ser.PutVString(field.first);
-		ser.PutVarUint(field.second.size());
-		for (auto &val : field.second) {
-			// function/value flag
-			ser.PutVarUint(0);
+		ser.PutVString(field.column);
+		ser.PutVarUint(field.values.size());
+		for (const Variant &val : field.values) {
+			ser.PutVarUint(field.isExpression);
 			ser.PutVariant(val);
 		}
 	}
@@ -1237,9 +1346,19 @@ WrSerializer &Query::GetSQL(WrSerializer &ser, bool stripArgs) const {
 		case QuerySelect:
 			ser << "SELECT ";
 			if (aggregations_.size()) {
-				for (auto &a : aggregations_) {
+				for (const auto &a : aggregations_) {
 					if (&a != &*aggregations_.begin()) ser << ',';
-					ser << AggregationResult::aggTypeToStr(a.type_) << "(" << a.index_ << ')';
+					ser << AggregationResult::aggTypeToStr(a.type_) << "(";
+					for (const auto &f : a.fields_) {
+						if (&f != &*a.fields_.begin()) ser << ',';
+						ser << f;
+					}
+					for (const auto &se : a.sortingEntries_) {
+						ser << " ORDER BY " << se.column << (se.desc ? " DESC" : " ASC");
+					}
+					if (a.offset_ != 0) ser << " OFFSET " << a.offset_;
+					if (a.limit_ != UINT_MAX) ser << " LIMIT " << a.limit_;
+					ser << ')';
 				}
 			} else if (selectFilter_.size()) {
 				for (auto &f : selectFilter_) {
@@ -1256,18 +1375,19 @@ WrSerializer &Query::GetSQL(WrSerializer &ser, bool stripArgs) const {
 			break;
 		case QueryUpdate:
 			ser << "UPDATE " << _namespace << " SET ";
-			for (auto &field : updateFields_) {
+			for (const UpdateEntry &field : updateFields_) {
 				if (&field != &*updateFields_.begin()) ser << ',';
-				ser << "'" << field.first << "' = ";
-				if (field.second.size() > 1) ser << '(';
-				for (auto &v : field.second) {
-					if (&v != &*field.second.begin()) ser << ',';
-					if (v.Type() == KeyValueString)
+				ser << "'" << field.column << "' = ";
+				if (field.values.size() > 1) ser << '[';
+				for (const Variant &v : field.values) {
+					if (&v != &*field.values.begin()) ser << ',';
+					if (v.Type() == KeyValueString) {
 						ser << '\'' << v.As<string>() << '\'';
-					else
+					} else {
 						ser << v.As<string>();
+					}
 				}
-				ser << ((field.second.size() > 1) ? ")" : "");
+				ser << ((field.values.size() > 1) ? "]" : "");
 			}
 			break;
 		default:

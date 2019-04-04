@@ -25,6 +25,8 @@ struct IndexDef {
 	IndexDef();
 	IndexDef(const string &name);
 	IndexDef(const string &name, const JsonPaths &jsonPaths, const string &indexType, const string &fieldType, const IndexOpts opts);
+	IndexDef(const string &name, const JsonPaths &jsonPaths, const string &indexType, const string &fieldType, const IndexOpts opts,
+			 int64_t expireAfter);
 	IndexDef(const string &name, const string &indexType, const string &fieldType, const IndexOpts opts);
 	IndexDef(const string &name, const JsonPaths &jsonPaths, const IndexType type, const IndexOpts opts);
 	bool operator==(const IndexDef &other) const { return IsEqual(other, false); }
@@ -44,6 +46,7 @@ public:
 	string indexType_;
 	string fieldType_;
 	IndexOpts opts_;
+	int64_t expireAfter_ = 0;
 };
 
 bool isComposite(IndexType type);

@@ -148,6 +148,8 @@ func TestUpdateFields(t *testing.T) {
 	CheckAddSimpleFields()
 	CheckAddComplexField("nested2.nested3.nested4.val", []string{"nested2", "nested3", "nested4", "val"})
 	CheckAddComplexField("main_obj.main.nested.val", []string{"main_obj", "main", "nested", "val"})
+	CheckUpdateWithExpressions1()
+	CheckUpdateWithExpressions2()
 }
 
 func UpdateField(fieldName string, values interface{}) (items []interface{}) {
@@ -169,6 +171,52 @@ func UpdateField(fieldName string, values interface{}) (items []interface{}) {
 	}
 
 	return results
+}
+
+func CheckUpdateWithExpressions1() {
+	count, err := DB.Query(fieldsUpdateNs).SetExpression("size", "((7+8)*(10-5)*2)/25").Update()
+	if err != nil {
+		panic(err)
+	}
+	if count == 0 {
+		panic(fmt.Errorf("No items updated"))
+	}
+	results, err := DB.Query(fieldsUpdateNs).Exec().FetchAll()
+	if err != nil {
+		panic(err)
+	}
+	if len(results) == 0 {
+		panic(fmt.Errorf("No results found"))
+	}
+	for i := 0; i < len(results); i++ {
+		size := results[i].(*TestItemComplexObject).Size
+		if size != 6 {
+			panic(fmt.Errorf("Update of field 'Size' has shown wrong results %d", size))
+		}
+	}
+}
+
+func CheckUpdateWithExpressions2() {
+	count, err := DB.Query(fieldsUpdateNs).SetExpression("size", "((SERIAL() + 1)*4)/4").Update()
+	if err != nil {
+		panic(err)
+	}
+	if count == 0 {
+		panic(fmt.Errorf("No items updated"))
+	}
+	results, err := DB.Query(fieldsUpdateNs).Exec().FetchAll()
+	if err != nil {
+		panic(err)
+	}
+	if len(results) == 0 {
+		panic(fmt.Errorf("No results found"))
+	}
+	for i := 0; i < len(results); i++ {
+		size := results[i].(*TestItemComplexObject).Size
+		if size != (((i + 2) * 4) / 4) {
+			panic(fmt.Errorf("Update of field 'Size' has shown wrong results %d", size))
+		}
+	}
 }
 
 func CheckIndexedFieldUpdate() {

@@ -47,6 +47,8 @@ public:
 	virtual Index* Clone() = 0;
 	virtual bool IsOrdered() const { return false; }
 	virtual IndexMemStat GetMemStat() = 0;
+	virtual int64_t GetTTLValue() const { return 0; }
+
 	void UpdatePayloadType(const PayloadType payloadType) { payloadType_ = payloadType; }
 
 	static Index* New(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields_);
@@ -63,7 +65,7 @@ public:
 	SortType SortId() const { return sortId_; }
 	virtual void SetSortedIdxCount(int sortedIdxCount) { sortedIdxCount_ = sortedIdxCount; }
 
-	PerfStatCounterST& GetSelectPerfCounter() { return selectPerfCounter_; }
+	PerfStatCounterMT& GetSelectPerfCounter() { return selectPerfCounter_; }
 	PerfStatCounterST& GetCommitPerfCounter() { return commitPerfCounter_; }
 
 	IndexPerfStat GetIndexPerfStat() {
@@ -87,7 +89,7 @@ protected:
 	FieldsSet fields_;
 	// Perfstat counter
 	PerfStatCounterST commitPerfCounter_;
-	PerfStatCounterST selectPerfCounter_;
+	PerfStatCounterMT selectPerfCounter_;
 	KeyValueType keyType_, selectKeyType_;
 	// Count of sorted indexes in namespace to resereve additional space in idsets
 	int sortedIdxCount_ = 0;

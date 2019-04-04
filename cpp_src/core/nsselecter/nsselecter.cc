@@ -59,7 +59,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 
 	if (ctx.preResult) {
 		// For building join preresult always use ASC sort orders
-		if (ctx.preResult->mode == SelectCtx::PreResult::ModeBuild) {
+		if (ctx.preResult->mode == JoinPreResult::ModeBuild) {
 			for (SortingEntry &se : sortBy) se.desc = false;
 			// all futher queries for this join SHOULD have the same enableSortOrders flag
 			ctx.preResult->enableSortOrders = ctx.enableSortOrders;
@@ -78,12 +78,12 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 
 	// Add preresults with common conditions of join Queres
 	RawQueryResult qres;
-	if (ctx.preResult && ctx.preResult->mode == SelectCtx::PreResult::ModeIdSet) {
+	if (ctx.preResult && ctx.preResult->mode == JoinPreResult::ModeIdSet) {
 		SelectKeyResult res;
 		res.push_back(SingleSelectKeyResult(ctx.preResult->ids));
 		static string pr = "-preresult";
 		qres.push_back(SelectIterator(res, OpAnd, false, pr));
-	} else if (ctx.preResult && ctx.preResult->mode == SelectCtx::PreResult::ModeIterators) {
+	} else if (ctx.preResult && ctx.preResult->mode == JoinPreResult::ModeIterators) {
 		for (auto &it : ctx.preResult->iterators) {
 			qres.push_back(it);
 		}
@@ -100,7 +100,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 
 	explain.SetSelectTime();
 
-	if (ctx.preResult && ctx.preResult->mode == SelectCtx::PreResult::ModeBuild) {
+	if (ctx.preResult && ctx.preResult->mode == JoinPreResult::ModeBuild) {
 		// Building pre result for next joins
 		int maxIters = 0;
 		for (auto &it : qres) {
@@ -122,7 +122,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 				logPrintf(LogInfo, "Built prePresult (expected %d iterations) with %d iterators", maxIters, qres.size());
 			}
 
-			ctx.preResult->mode = SelectCtx::PreResult::ModeIterators;
+			ctx.preResult->mode = JoinPreResult::ModeIterators;
 			return;
 		}
 		// Build preResult as single IdSet
@@ -202,8 +202,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	explain.SetLoopTime();
 	explain.StopTiming();
 	explain.PutSortIndex(ctx.sortingCtx.sortIndex() ? ctx.sortingCtx.sortIndex()->Name() : "-"_sv);
-	explain.PutCount((ctx.preResult && ctx.preResult->mode == SelectCtx::PreResult::ModeBuild) ? ctx.preResult->ids.size()
-																							   : result.Count());
+	explain.PutCount((ctx.preResult && ctx.preResult->mode == JoinPreResult::ModeBuild) ? ctx.preResult->ids.size() : result.Count());
 	explain.PutSelectors(&qres);
 	explain.PutJoinedSelectors(ctx.joinedSelectors);
 	explain.SetIterations(iters);
@@ -222,8 +221,8 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 		logPrintf(LogTrace, "[*] put totalCount value into query cache: %d\t namespace: %s\n", result.totalCount, ns_->name_);
 		ns_->queryCache_->Put({ctx.query}, {static_cast<size_t>(result.totalCount)});
 	}
-	if (ctx.preResult && ctx.preResult->mode == SelectCtx::PreResult::ModeBuild) {
-		ctx.preResult->mode = SelectCtx::PreResult::ModeIdSet;
+	if (ctx.preResult && ctx.preResult->mode == JoinPreResult::ModeBuild) {
+		ctx.preResult->mode = JoinPreResult::ModeIdSet;
 		if (ctx.query.debugLevel >= LogInfo) {
 			logPrintf(LogInfo, "Built idset prePresult with %d ids", ctx.preResult->ids.size());
 		}
@@ -536,7 +535,7 @@ void NsSelecter::prepareIteratorsForSelectLoop(const QueryEntries &entries, RawQ
 			if (index->Opts().GetCollateMode() == CollateUTF8 || fullText) {
 				for (auto &key : qe.values) key.EnsureUTF8();
 			}
-			PerfStatCalculatorST calc(index->GetSelectPerfCounter(), ns_->enablePerfCounters_);
+			PerfStatCalculatorMT calc(index->GetSelectPerfCounter(), ns_->enablePerfCounters_);
 			selectResults = index->SelectKey(qe.values, qe.condition, sortId, opts, ctx);
 		}
 		for (SelectKeyResult &res : selectResults) {
@@ -602,13 +601,13 @@ bool NsSelecter::proccessJoin(SelectCtx &sctx, IdType properRowId, bool found, b
 
 			if (joinedSelector.type == JoinType::InnerJoin) {
 				if (found) {
-					res = joinedSelector.func(properRowId, sctx.nsid, pl, match);
+					res = joinedSelector.func(&joinedSelector, properRowId, sctx.nsid, pl, match);
 					found &= res;
 				}
 			}
 			if (joinedSelector.type == JoinType::OrInnerJoin) {
 				if (!found || !joinedSelector.nodata) {
-					res = joinedSelector.func(properRowId, sctx.nsid, pl, match);
+					res = joinedSelector.func(&joinedSelector, properRowId, sctx.nsid, pl, match);
 					found |= res;
 				}
 			}
@@ -624,7 +623,7 @@ bool NsSelecter::proccessJoin(SelectCtx &sctx, IdType properRowId, bool found, b
 	// left join process
 	if (match && found)
 		for (auto &joinedSelector : *sctx.joinedSelectors)
-			if (joinedSelector.type == JoinType::LeftJoin) joinedSelector.func(properRowId, sctx.nsid, pl, match);
+			if (joinedSelector.type == JoinType::LeftJoin) joinedSelector.func(&joinedSelector, properRowId, sctx.nsid, pl, match);
 	return found;
 }
 
@@ -820,7 +819,7 @@ void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId,
 								 h_vector<Aggregator, 4> &aggregators, QueryResults &result) {
 	if (aggregators.size()) {
 		for (auto &aggregator : aggregators) aggregator.Aggregate(ns_->items_[properRowId]);
-	} else if (sctx.preResult && sctx.preResult->mode == SelectCtx::PreResult::ModeBuild) {
+	} else if (sctx.preResult && sctx.preResult->mode == JoinPreResult::ModeBuild) {
 		sctx.preResult->ids.Add(rowId, IdSet::Unordered, 0);
 	} else {
 		result.Add({properRowId, ns_->items_[properRowId], proc, sctx.nsid});
@@ -828,21 +827,57 @@ void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId,
 }
 
 h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) {
+	static constexpr int NotFilled = -2;
 	h_vector<Aggregator, 4> ret;
 
 	for (auto &ag : q.aggregations_) {
-		ret.push_back(Aggregator(ag.type_, ag.index_));
-		int idx = -1;
-
-		if (ns_->getIndexByName(ag.index_, idx)) {
-			if (ns_->indexes_[idx]->Opts().IsSparse()) {
-				ret.back().Bind(ns_->payloadType_, -1, ns_->indexes_[idx]->Fields().getTagsPath(0));
-			} else {
-				ret.back().Bind(ns_->payloadType_, idx, TagsPath());
-			}
-		} else {
-			ret.back().Bind(ns_->payloadType_, -1, ns_->tagsMatcher_.path2tag(ag.index_));
+		if (ag.fields_.empty()) {
+			throw Error(errQueryExec, "Empty set of fields for aggregation %s", AggregationResult::aggTypeToStr(ag.type_));
 		}
+		if (ag.type_ != AggFacet) {
+			if (ag.fields_.size() != 1) {
+				throw Error(errQueryExec, "For aggregation %s available exactly one field", AggregationResult::aggTypeToStr(ag.type_));
+			}
+			if (!ag.sortingEntries_.empty()) {
+				throw Error(errQueryExec, "Sort is not available for aggregation %s", AggregationResult::aggTypeToStr(ag.type_));
+			}
+			if (ag.limit_ != UINT_MAX || ag.offset_ != 0) {
+				throw Error(errQueryExec, "Limit or offset are not available for aggregation %s",
+							AggregationResult::aggTypeToStr(ag.type_));
+			}
+		}
+		FieldsSet fields;
+		h_vector<Aggregator::SortingEntry, 1> sortingEntries(ag.sortingEntries_.size());
+		for (size_t i = 0; i < sortingEntries.size(); ++i) {
+			sortingEntries[i] = {(iequals("count"_sv, ag.sortingEntries_[i].column) ? Aggregator::SortingEntry::Count : NotFilled),
+								 ag.sortingEntries_[i].desc};
+		}
+		int idx = -1;
+		for (size_t i = 0; i < ag.fields_.size(); ++i) {
+			for (size_t j = 0; j < sortingEntries.size(); ++j) {
+				if (iequals(ag.fields_[i], ag.sortingEntries_[j].column)) {
+					sortingEntries[j].field = i;
+				}
+			}
+			if (ns_->getIndexByName(ag.fields_[i], idx)) {
+				if (ns_->indexes_[idx]->Opts().IsSparse()) {
+					fields.push_back(ns_->indexes_[idx]->Fields().getTagsPath(0));
+				} else if (ag.type_ == AggFacet && ns_->indexes_[idx]->Opts().IsArray()) {
+					throw Error(errQueryExec, "Can't do facet by array field");
+				} else {
+					fields.push_back(idx);
+				}
+			} else {
+				fields.push_back(ns_->tagsMatcher_.path2tag(ag.fields_[i]));
+			}
+		}
+		for (size_t i = 0; i < sortingEntries.size(); ++i) {
+			if (sortingEntries[i].field == NotFilled) {
+				throw Error(errQueryExec, "The aggregation %s cannot provide sort by '%s'", AggregationResult::aggTypeToStr(ag.type_),
+							ag.sortingEntries_[i].column);
+			}
+		}
+		ret.push_back(Aggregator(ns_->payloadType_, fields, ag.type_, ag.fields_, sortingEntries, ag.limit_, ag.offset_));
 	}
 
 	return ret;

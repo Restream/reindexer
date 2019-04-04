@@ -208,7 +208,7 @@ TEST_F(JoinSelectsApi, JoinTestSelectNonIndexedField) {
 TEST_F(JoinSelectsApi, JoinByNonIndexedField) {
 	Error err = rt.reindexer->OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
-	DefineNamespaceDataset(default_namespace, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK()}});
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}});
 
 	std::stringstream json;
 	json << "{" << addQuotes(id) << ":" << 1 << "," << addQuotes(authorid_fk) << ":" << DostoevskyAuthorId << "}";

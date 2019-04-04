@@ -2,6 +2,7 @@
 #include <thread>
 #include "allocs_tracker.h"
 #include "core/reindexer.h"
+#include "tools/string_regexp_functions.h"
 
 #include "helpers.h"
 
@@ -19,6 +20,10 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("WarmUpIndexes", &ApiTvSimple::WarmUpIndexes, this)->Iterations(1);  // Just 1 time!!!
 
 	Register("GetByID", &ApiTvSimple::GetByID, this);
+	Register("GetEqInt", &ApiTvSimple::GetEqInt, this);
+	Register("GetEqArrayInt", &ApiTvSimple::GetEqArrayInt, this);
+	Register("GetEqString", &ApiTvSimple::GetEqString, this);
+	Register("GetLikeString", &ApiTvSimple::GetLikeString, this);
 	Register("GetByRangeIDAndSortByHash", &ApiTvSimple::GetByRangeIDAndSortByHash, this);
 	Register("GetByRangeIDAndSortByTree", &ApiTvSimple::GetByRangeIDAndSortByTree, this);
 
@@ -66,11 +71,19 @@ Error ApiTvSimple::Initialize() {
 				  "United States of America",
 				  "Croatia"};
 
+	countryLikePatterns_.reserve(countries_.size());
+	for (const auto& country : countries_) {
+		countryLikePatterns_.push_back(reindexer::makeLikePattern(country));
+	}
+
 	locations_ = {"mos", "ct", "dv", "sth", "vlg", "sib", "ural"};
 
 	for (int i = 0; i < 10; i++) packages_.emplace_back(randomNumArray<int>(20, 10000, 10));
 
 	for (int i = 0; i < 20; i++) priceIDs_.emplace_back(randomNumArray<int>(10, 7000, 50));
+
+	start_times_.resize(20);
+	for (int i = 0; i < 20; i++) start_times_[i] = random<int>(0, 50000);
 
 	return 0;
 }
@@ -90,7 +103,7 @@ reindexer::Item ApiTvSimple::MakeItem() {
 	item["age"] = random<int>(0, 4);
 	item["price_id"] = priceIDs_.at(random<size_t>(0, priceIDs_.size() - 1));
 	item["location"] = locations_.at(random<size_t>(0, locations_.size() - 1));
-	item["start_time"] = random<int>(0, 50000);
+	item["start_time"] = start_times_.at(random<size_t>(0, start_times_.size() - 1));
 	item["end_time"] = startTime + random<int>(1, 5) * 1000;
 
 	return item;
@@ -144,6 +157,38 @@ void ApiTvSimple::WarmUpIndexes(State& state) {
 			err = db_->Select(q, qres);
 			if (!err.ok()) state.SkipWithError(err.what().c_str());
 		}
+
+		for (size_t i = 0; i < 1000; ++i) {
+			Query q(nsdef_.name);
+			q.Where("start_time", CondEq, start_times_.at(random<size_t>(0, start_times_.size() - 1)));
+			QueryResults qres;
+			auto err = db_->Select(q, qres);
+			if (!err.ok()) state.SkipWithError(err.what().c_str());
+		}
+
+		for (size_t i = 0; i < priceIDs_.size() * 3; ++i) {
+			Query q(nsdef_.name);
+			q.Where("price_id", CondEq, priceIDs_[random<size_t>(0, priceIDs_.size() - 1)]);
+			QueryResults qres;
+			auto err = db_->Select(q, qres);
+			if (!err.ok()) state.SkipWithError(err.what().c_str());
+		}
+
+		for (size_t i = 0; i < countries_.size() * 3; ++i) {
+			Query q(nsdef_.name);
+			q.Where("countries", CondEq, countries_[random<size_t>(0, countries_.size() - 1)]);
+			QueryResults qres;
+			auto err = db_->Select(q, qres);
+			if (!err.ok()) state.SkipWithError(err.what().c_str());
+		}
+
+		for (size_t i = 0; i < countryLikePatterns_.size() * 3; ++i) {
+			Query q(nsdef_.name);
+			q.Where("countries", CondLike, countryLikePatterns_[random<size_t>(0, countryLikePatterns_.size() - 1)]);
+			QueryResults qres;
+			auto err = db_->Select(q, qres);
+			if (!err.ok()) state.SkipWithError(err.what().c_str());
+		}
 	}
 }
 
@@ -157,6 +202,54 @@ void ApiTvSimple::GetByID(benchmark::State& state) {
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 
+		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+	}
+}
+
+void ApiTvSimple::GetEqInt(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {
+		Query q(nsdef_.name);
+		q.Where("start_time", CondEq, start_times_.at(random<size_t>(0, start_times_.size() - 1)));
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+	}
+}
+
+void ApiTvSimple::GetEqArrayInt(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {
+		Query q(nsdef_.name);
+		q.Where("price_id", CondEq, priceIDs_[random<size_t>(0, priceIDs_.size() - 1)]);
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+	}
+}
+
+void ApiTvSimple::GetEqString(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {
+		Query q(nsdef_.name);
+		q.Where("countries", CondEq, countries_[random<size_t>(0, countries_.size() - 1)]);
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+	}
+}
+
+void ApiTvSimple::GetLikeString(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {
+		Query q(nsdef_.name);
+		q.Where("countries", CondLike, countryLikePatterns_[random<size_t>(0, countryLikePatterns_.size() - 1)]);
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
 		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
 	}
 }

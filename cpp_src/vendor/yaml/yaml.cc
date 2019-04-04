@@ -461,9 +461,10 @@ Iterator &Iterator::operator=(const Iterator &it) {
 }
 
 std::pair<const std::string &, Node &> Iterator::operator*() {
+	static const std::string emptyStr;
 	switch (m_Type) {
 		case SequenceType:
-			return {"", *(static_cast<SequenceIteratorImp *>(m_pImp)->m_Iterator->second)};
+			return {emptyStr, *(static_cast<SequenceIteratorImp *>(m_pImp)->m_Iterator->second)};
 			break;
 		case MapType:
 			return {static_cast<MapIteratorImp *>(m_pImp)->m_Iterator->first, *(static_cast<MapIteratorImp *>(m_pImp)->m_Iterator->second)};
@@ -473,7 +474,7 @@ std::pair<const std::string &, Node &> Iterator::operator*() {
 	}
 
 	g_NoneNode.Clear();
-	return {"", g_NoneNode};
+	return {emptyStr, g_NoneNode};
 }
 
 Iterator &Iterator::operator++(int dummy) {
@@ -583,9 +584,10 @@ ConstIterator &ConstIterator::operator=(const ConstIterator &it) {
 }
 
 std::pair<const std::string &, const Node &> ConstIterator::operator*() {
+	static const std::string emptyStr;
 	switch (m_Type) {
 		case SequenceType:
-			return {"", *(static_cast<SequenceConstIteratorImp *>(m_pImp)->m_Iterator->second)};
+			return {emptyStr, *(static_cast<SequenceConstIteratorImp *>(m_pImp)->m_Iterator->second)};
 			break;
 		case MapType:
 			return {static_cast<MapConstIteratorImp *>(m_pImp)->m_Iterator->first,
@@ -596,7 +598,7 @@ std::pair<const std::string &, const Node &> ConstIterator::operator*() {
 	}
 
 	g_NoneNode.Clear();
-	return {"", g_NoneNode};
+	return {emptyStr, g_NoneNode};
 }
 
 ConstIterator &ConstIterator::operator++(int dummy) {

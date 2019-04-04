@@ -162,6 +162,7 @@ function(cmrc_add_resource_library name)
 	    static std::once_flag flag;
 	    std::call_once(flag, [] {
 		cmrc::detail::with_table([](resource_table& table) {
+			(void)table;
 		    $<JOIN:$<TARGET_PROPERTY:%{libname},CMRC_TABLE_POPULATE>,
 		    >
 		});

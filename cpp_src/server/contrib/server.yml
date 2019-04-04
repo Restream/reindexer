@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.0.2"
+  version: "2.0.3"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -220,6 +220,128 @@ paths:
           description: "successful operation"
           schema:
             $ref: "#/definitions/StatusResponse"
+        400:
+          description: "Invalid arguments supplied"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+
+  /db/{database}/namespaces/{name}/metalist:
+    get:
+      tags:
+      - "namespaces"
+      summary: "Get list of namespace's meta info"
+      description: |
+        This operation will return list of keys of all meta of specified namespace
+      operationId: "getNamespaceMetalist"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "name"
+        in: "path"
+        type: "string"
+        description: "Namespace name"
+        required: true
+      - name: "sort_order"
+        in: "query"
+        required: false
+        description: "Sort Order"
+        type: "string"
+        enum:
+        - "asc"
+        - "desc"
+      - name: "with_values"
+        in: "query"
+        required: false
+        description: "Includ values in response"
+        type: "boolean"
+        default: false
+      - name: "offset"
+        in: "query"
+        required: false
+        type: "integer"
+        default: 0
+      - name: "limit"
+        in: "query"
+        required: false
+        type: "integer"
+        description: "If 0 - no limit"
+        default: 0
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/MetaListResponse"
+        400:
+          description: "Invalid arguments supplied"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+
+  /db/{database}/namespaces/{name}/metabykey/{key}:
+    get:
+      tags:
+      - "namespaces"
+      summary: "Get namespace's meta info by key"
+      description: |
+        This operation will return value of namespace's meta with specified key
+      operationId: "getNamespaceMetaByKey"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "name"
+        in: "path"
+        type: "string"
+        description: "Namespace name"
+        required: true
+      - name: "key"
+        in: "path"
+        required: true
+        description: "Meta key"
+        type: "string"
+      responses:
+        200:
+          description: "successful operation"
+          type: "string"
+        400:
+          description: "Invalid arguments supplied"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+
+  /db/{database}/namespaces/{name}/metabykey:
+    put:
+      tags:
+      - "namespaces"
+      summary: "Put namespace's meta info with specified key and value"
+      description: |
+        This operation will set namespace's meta with specified key and value
+      operationId: "putNamespaceMetaByKey"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "name"
+        in: "path"
+        type: "string"
+        description: "Namespace name"
+        required: true
+      - name: "meta_info"
+        in: "body"
+        required: true
+        description: "Meta info"
+        schema:
+          $ref: "#/definitions/MetaInfo"
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/UpdateResponse"
         400:
           description: "Invalid arguments supplied"
           schema:
@@ -1145,9 +1267,11 @@ definitions:
   AggregationsDef:
     type: "object"
     properties:
-      field:
-        type: "string"
-        description: "Field or index name for aggregation function"
+      fields:
+        type: "array"
+        description: "Fields or indexes names for aggregation function"
+        items:
+          type: "string"
       type:
         type: "string"
         description: "Aggregation function"
@@ -1157,6 +1281,34 @@ definitions:
         - "MIN"
         - "MAX"
         - "FACET"
+      sort:
+        description: "Specifies results sorting order"
+        type: "array"
+        items:
+          $ref: "#/definitions/AggregationsSortDef"
+      limit:
+        type: "integer"
+        default: UINT_MAX
+        minimum: 0
+        description: "Number of rows to get from result set"
+      offset:
+        type: "integer"
+        default: 0
+        minimum: 0
+        description: "Index of the first row to get from result set"
+
+  AggregationsSortDef:
+    description: "Specifies facet aggregations results sorting order"
+    type: "object"
+    required:
+      - field
+    properties:
+      field:
+        type: "string"
+        description: "Field or index name for sorting"
+      desc:
+        description: "Descent or ascent sorting direction"
+        type: "boolean"
 
   FulltextConfig:
     type: "object"
@@ -1275,6 +1427,41 @@ definitions:
         minimum: 5
         maximum: 1000000000
 
+  MetaInfo:
+    type: "object"
+    required:
+      - key
+      - value
+    description: "Meta info to be set"
+    properties:
+      key:
+        type: "string"
+      value:
+        type: "string"
+
+  MetaListResponse:
+    type: "object"
+    required:
+      - meta
+      - total_items
+    description: "List of meta info of the specified namespace"
+    properties:
+      total_items:
+        type: "integer"
+        description: "Total count of meta info in the namespace"
+      meta:
+        type: "array"
+        items:
+          type: "object"
+          required:
+            - key
+          properties:
+            key:
+              type: "string"
+            value:
+              description: "Optional: Provided if 'with_values' = true"
+              type: "string"
+
   Items:
     type: "object"
     properties:
@@ -1390,9 +1577,11 @@ definitions:
   AggregationResDef:
     type: "object"
     properties:
-      field:
-        type: "string"
-        description: "Field or index name for aggregation function"
+      fields:
+        type: "array"
+        description: "Fields or indexes names for aggregation function"
+        items:
+          type: "string"
       type:
         type: "string"
         description: "Aggregation function"
@@ -1411,12 +1600,14 @@ definitions:
         items:
           type: "object"
           properties:
-            value: 
-              type: "string"
-              description: "Facet field value"
+            values:
+              type: "array"
+              description: "Facet fields values"
+              items:
+                type: "string"
             count: 
               type: "integer"
-              description: "Count of elemens this field value"
+              description: "Count of elemens these fields values"
 
   StatusResponse:
     type: "object"

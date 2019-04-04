@@ -35,10 +35,12 @@ public:
 	~SelectFuncParser() {}
 
 	SelectFuncStruct &Parse(string query);
+	SelectFuncStruct &ParseFunction(tokenizer &parser, bool partOfExpression = false);
+
+	static bool IsFunction(const string_view &val);
+	static bool IsFunction(const VariantArray &val);
 
 protected:
-	void parseFunction(tokenizer &parser);
-
 	SelectFuncStruct selectFuncStruct_;
 };
 

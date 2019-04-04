@@ -10,7 +10,7 @@ namespace reindexer {
 
 using std::string;
 
-enum token_type { TokenEnd, TokenName, TokenNumber, TokenString, TokenOp, TokenSymbol };
+enum token_type { TokenEnd, TokenName, TokenNumber, TokenString, TokenOp, TokenSymbol, TokenSign };
 
 class token {
 public:
@@ -41,8 +41,8 @@ public:
 class tokenizer {
 public:
 	tokenizer(const string_view &query);
-	token next_token(bool to_lower = true);
-	token peek_token(bool to_lower = true);
+	token next_token(bool to_lower = true, bool treatSignAsToken = false);
+	token peek_token(bool to_lower = true, bool treatSignAsToken = false);
 	void skip_space();
 	bool end() const;
 	string where() const;

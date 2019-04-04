@@ -17,6 +17,8 @@ JsonBuilder::JsonBuilder(WrSerializer &ser, ObjType type, const TagsMatcher *tm)
 
 JsonBuilder::~JsonBuilder() { End(); }
 
+const char *JsonBuilder::getNameByTag(int tagName) { return tagName ? tm_->tag2name(tagName).c_str() : nullptr; }
+
 JsonBuilder &JsonBuilder::End() {
 	switch (type_) {
 		case TypeArray:
@@ -47,7 +49,7 @@ JsonBuilder JsonBuilder::Array(const char *name) {
 
 void JsonBuilder::putName(const char *name) {
 	if (count_++) (*ser_) << ',';
-	if (name && *name) {
+	if (name) {
 		ser_->PrintJsonString(name);
 		(*ser_) << ':';
 	}

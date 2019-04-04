@@ -25,10 +25,10 @@ public:
 
 	/// Start new object
 	JsonBuilder Object(const char *name = nullptr);
-	JsonBuilder Object(int tagName) { return Object(tm_->tag2name(tagName).c_str()); }
+	JsonBuilder Object(int tagName) { return Object(getNameByTag(tagName)); }
 
 	JsonBuilder Array(const char *name);
-	JsonBuilder Array(int tagName) { return Array(tm_->tag2name(tagName).c_str()); }
+	JsonBuilder Array(int tagName) { return Array(getNameByTag(tagName)); }
 
 	template <typename T>
 	void Array(int tagName, span<T> data) {
@@ -52,19 +52,21 @@ public:
 	}
 	template <typename T>
 	JsonBuilder &Put(int tagName, const T &arg) {
-		return Put(tm_->tag2name(tagName).c_str(), arg);
+		return Put(getNameByTag(tagName), arg);
 	}
 
-	JsonBuilder &Raw(int tagName, const string_view &arg) { return Raw(tm_->tag2name(tagName).c_str(), arg); }
+	JsonBuilder &Raw(int tagName, const string_view &arg) { return Raw(getNameByTag(tagName), arg); }
 	JsonBuilder &Raw(const char *name, const string_view &arg);
 
-	JsonBuilder &Null(int tagName) { return Null(tm_->tag2name(tagName).c_str()); }
+	JsonBuilder &Null(int tagName) { return Null(getNameByTag(tagName)); }
 	JsonBuilder &Null(const char *name);
 
 	JsonBuilder &End();
 
 protected:
 	void putName(const char *name);
+	const char *getNameByTag(int tagName);
+
 	WrSerializer *ser_;
 	const TagsMatcher *tm_;
 	ObjType type_ = TypePlain;

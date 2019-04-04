@@ -25,17 +25,17 @@ type TestNest struct {
 type (
 	TestCustomBytes []byte
 
-	TestCustomString string
-	TestCustomStrings []TestCustomString
+	TestCustomString      string
+	TestCustomStrings     []TestCustomString
 	TestCustomStringsPtrs []*TestCustomString
 
-	TestCustomInt64 int64
+	TestCustomInt64  int64
 	TestCustomInts64 []TestCustomInt64
 
-	TestCustomInt16 int16
+	TestCustomInt16  int16
 	TestCustomInts16 []TestCustomInt16
 
-	TestCustomFloat float64
+	TestCustomFloat  float64
 	TestCustomFloats []TestCustomFloat
 )
 
@@ -176,6 +176,7 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 					"intfarr":     []interface{}{"xxx", 2, 1.2},
 					"time":        time.Unix(1234567890, 987654321),
 				},
+				"": "Empty field string value",
 			},
 			Interface2:         time.Unix(3736372363, 987654321),
 			Custom:             []byte(randString()),
@@ -184,7 +185,7 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 			Description:        randString(),
 			Packages:           randIntArr(pkgsCount, 10000, 50),
 			UPackages:          []uint{uint(rand.Uint32() >> 1), uint(rand.Uint32() >> 1)},
-			UPackages64:        []uint64{uint64(rand.Int63()) >> 1, uint64(rand.Int63()) >> 1 /*, math.MaxUint64*/ },
+			UPackages64:        []uint64{uint64(rand.Int63()) >> 1, uint64(rand.Int63()) >> 1 /*, math.MaxUint64*/},
 			SliceUInt:          []uint{uint(rand.Uint32() >> 1), uint(rand.Uint32() >> 1)},
 			SliceUInt64:        []uint64{uint64(rand.Int63()) >> 1, uint64(rand.Int63()) >> 1},
 			NegativeSliceInt64: []int64{0 - rand.Int63(), 0 - rand.Int63()},

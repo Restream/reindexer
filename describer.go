@@ -25,6 +25,7 @@ var queryTypes = map[string]int{
 	"EMPTY":  EMPTY,
 	"ALLSET": ALLSET,
 	"MATCH":  EQ,
+	"LIKE":   LIKE,
 }
 
 func GetCondType(name string) (int, error) {
@@ -47,6 +48,7 @@ var queryNames = map[int]string{
 	RANGE: "RANGE",
 	ANY:   "ANY",
 	EMPTY: "EMPTY",
+	LIKE:  "LIKE",
 }
 
 type IndexDescription struct {

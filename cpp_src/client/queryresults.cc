@@ -10,7 +10,7 @@ namespace client {
 
 using namespace reindexer::net;
 
-QueryResults::QueryResults(int fetchFlags) : fetchFlags_(fetchFlags){};
+QueryResults::QueryResults(int fetchFlags) : fetchFlags_(fetchFlags), fetchAmount_(0){};
 QueryResults::QueryResults(QueryResults &&) = default;
 QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	if (this != &obj) {
@@ -20,6 +20,7 @@ QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 		queryParams_ = std::move(obj.queryParams_);
 		fetchOffset_ = std::move(obj.fetchOffset_);
 		fetchFlags_ = std::move(obj.fetchFlags_);
+		fetchAmount_ = std::move(obj.fetchAmount_);
 		queryID_ = std::move(obj.queryID_);
 		status_ = std::move(obj.status_);
 		cmpl_ = std::move(obj.cmpl_);
@@ -27,12 +28,17 @@ QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	return *this;
 }
 
-QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, int fetchFlags)
-	: conn_(conn), nsArray_(std::move(nsArray)), fetchOffset_(0), fetchFlags_(fetchFlags), cmpl_(std::move(cmpl)) {}
+QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, int fetchFlags, int fetchAmount)
+	: conn_(conn),
+	  nsArray_(std::move(nsArray)),
+	  fetchOffset_(0),
+	  fetchFlags_(fetchFlags),
+	  fetchAmount_(fetchAmount),
+	  cmpl_(std::move(cmpl)) {}
 
 QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, string_view rawResult, int queryID,
-						   int fetchFlags)
-	: QueryResults(conn, std::move(nsArray), cmpl, fetchFlags) {
+						   int fetchFlags, int fetchAmount)
+	: QueryResults(conn, std::move(nsArray), cmpl, fetchFlags, fetchAmount) {
 	Bind(rawResult, queryID);
 }
 
@@ -68,7 +74,7 @@ void QueryResults::Bind(string_view rawResult, int queryID) {
 
 void QueryResults::fetchNextResults() {
 	int flags = fetchFlags_ ? (fetchFlags_ & ~kResultsWithPayloadTypes) : kResultsCJson;
-	auto ret = conn_->Call(cproto::kCmdFetchResults, queryID_, flags, queryParams_.count + fetchOffset_, 100);
+	auto ret = conn_->Call(cproto::kCmdFetchResults, queryID_, flags, queryParams_.count + fetchOffset_, fetchAmount_);
 	if (!ret.Status().ok()) {
 		throw ret.Status();
 	}

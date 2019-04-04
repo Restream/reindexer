@@ -131,9 +131,9 @@ public:
 	/// @param nsName - Name of namespace
 	/// @param keys - std::vector filled with meta keys
 	Error EnumMeta(string_view nsName, vector<string> &keys);
-	// Subsribe to updates of database
-	// @param observer - Observer interface, which will receive updates
-	// @param subsctibe - true: subsribe, false: unsubsrcibe
+	/// Subscribe to updates of database
+	/// @param observer - Observer interface, which will receive updates
+	/// @param subscribe - true: subscribe, false: unsubscribe
 	Error SubscribeUpdates(IUpdatesObserver *observer, bool subscribe);
 	/// Get possible suggestions for token (set by 'pos') in Sql query.
 	/// @param sqlQuery - sql query.

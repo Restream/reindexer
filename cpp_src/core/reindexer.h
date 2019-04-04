@@ -150,9 +150,9 @@ public:
 	/// Init system namepaces, and load config from config namespace
 	Error InitSystemNamespaces();
 
-	// Subsribe to updates of database
-	// @param observer - Observer interface, which will receive updates
-	// @param subsctibe - true: subsribe, false: unsubsrcibe
+	/// Subscribe to updates of database
+	/// @param observer - Observer interface, which will receive updates
+	/// @param subscribe - true: subscribe, false: unsubscribe
 	Error SubscribeUpdates(IUpdatesObserver *observer, bool subscribe);
 
 	typedef QueryResults QueryResultsT;

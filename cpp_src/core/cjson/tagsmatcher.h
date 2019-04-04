@@ -14,10 +14,9 @@ public:
 	TagsMatcher() : impl_(std::make_shared<TagsMatcherImpl>()), updated_(false) {}
 	TagsMatcher(PayloadType payloadType) : impl_(std::make_shared<TagsMatcherImpl>(payloadType)), updated_(false) {}
 
-	int name2tag(const char* name) const { return impl_->name2tag(name); }
-	int name2tag(const string& name, const string& path) { return impl_.clone()->name2tag(name, path, updated_); }
-	int name2tag(const char* name, bool canAdd) {
-		if (!name || !*name) return 0;
+	int name2tag(string_view name) const { return impl_->name2tag(name); }
+	int name2tag(string_view name, bool canAdd) {
+		if (!name.data()) return 0;
 		int res = impl_->name2tag(name);
 		return res ? res : impl_.clone()->name2tag(name, canAdd, updated_);
 	}

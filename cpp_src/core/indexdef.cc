@@ -22,33 +22,30 @@ const vector<string> condsText = {"MATCH"};
 const vector<string> condsBool = {"SET", "EQ", "ANY", "EMPTY"};
 
 // clang-format off
-std::unordered_map<IndexType, IndexInfo,std::hash<int>,std::equal_to<int> > availableIndexes = {
-	{IndexIntHash,		    {"int",       "hash",    condsUsual,CapSortable}},
-	{IndexInt64Hash,	    {"int64",     "hash",    condsUsual,CapSortable}},
-	{IndexStrHash,		    {"string",    "hash",    condsUsual,CapSortable}},
-	{IndexCompositeHash,    {"composite", "hash",    condsUsual,CapSortable|CapComposite}},
-	{IndexIntBTree,		    {"int",       "tree",    condsUsual,CapSortable}},
-	{IndexInt64BTree,	    {"int64",     "tree",    condsUsual,CapSortable}},
-	{IndexDoubleBTree,	    {"double",    "tree",    condsUsual,CapSortable}},
-	{IndexCompositeBTree,   {"composite", "tree",    condsUsual,CapComposite|CapSortable}},
-	{IndexStrBTree,		    {"string",    "tree",    condsUsual,CapSortable}},
-	{IndexIntStore,		    {"int",       "-",       condsUsual,CapSortable}},
-	{IndexBool,			    {"bool",      "-",       condsBool, 0}},
-	{IndexInt64Store,	    {"int64",     "-",       condsUsual,CapSortable}},
-	{IndexStrStore,		    {"string",    "-",       condsUsual,CapSortable}},
-	{IndexDoubleStore,	    {"double",    "-",       condsUsual,CapSortable}},
-	{IndexCompositeFastFT,  {"composite", "text",    condsText, CapComposite|CapFullText}},
-	{IndexCompositeFuzzyFT, {"composite", "fuzzytext",condsText, CapComposite|CapFullText}},
-	{IndexFastFT,           {"string",    "text",    condsText, CapFullText}},
-	{IndexFuzzyFT,          {"string",    "fuzzytext", condsText, CapFullText}},
+std::unordered_map<IndexType, IndexInfo, std::hash<int>, std::equal_to<int> > availableIndexes = {
+	{IndexIntHash,			{"int", "hash",				condsUsual,	CapSortable}},
+	{IndexInt64Hash,		{"int64", "hash",			condsUsual,	CapSortable}},
+	{IndexStrHash,			{"string", "hash",			condsUsual,	CapSortable}},
+	{IndexCompositeHash,	{"composite", "hash",		condsUsual,	CapSortable | CapComposite}},
+	{IndexIntBTree,			{"int", "tree",				condsUsual,	CapSortable}},
+	{IndexInt64BTree,		{"int64", "tree",			condsUsual,	CapSortable}},
+	{IndexDoubleBTree,		{"double", "tree",			condsUsual,	CapSortable}},
+	{IndexCompositeBTree,	{"composite", "tree",		condsUsual,	CapComposite | CapSortable}},
+	{IndexStrBTree,			{"string", "tree",			condsUsual,	CapSortable}},
+	{IndexIntStore,			{"int", "-",				condsUsual,	CapSortable}},
+	{IndexBool,				{"bool", "-",				condsBool,	0}},
+	{IndexInt64Store,		{"int64", "-",				condsUsual,	CapSortable}},
+	{IndexStrStore,			{"string", "-",				condsUsual,	CapSortable}},
+	{IndexDoubleStore,		{"double", "-",				condsUsual,	CapSortable}},
+	{IndexTtl,				{"int64", "ttl",			condsUsual,	CapSortable}},
+	{IndexCompositeFastFT,	{"composite", "text",		condsText,	CapComposite | CapFullText}},
+	{IndexCompositeFuzzyFT,	{"composite", "fuzzytext",	condsText,	CapComposite | CapFullText}},
+	{IndexFastFT,			{"string", "text",			condsText,	CapFullText}},
+	{IndexFuzzyFT,			{"string", "fuzzytext",		condsText,	CapFullText}},
 };
 
 std::unordered_map<CollateMode, const string, std::hash<int>, std::equal_to<int> > availableCollates = {
-	{CollateASCII,   "ascii"},
-	{CollateUTF8,    "utf8"},
-	{CollateNumeric, "numeric"},
-	{CollateCustom,  "custom"},
-	{CollateNone,    "none"},
+	{CollateASCII, "ascii"}, {CollateUTF8, "utf8"}, {CollateNumeric, "numeric"}, {CollateCustom, "custom"}, {CollateNone, "none"},
 };
 
 // clang-format on
@@ -58,6 +55,12 @@ IndexDef::IndexDef(const string &name) : name_(name) {}
 
 IndexDef::IndexDef(const string &name, const JsonPaths &jsonPaths, const string &indexType, const string &fieldType, const IndexOpts opts)
 	: name_(name), jsonPaths_(jsonPaths), indexType_(indexType), fieldType_(fieldType), opts_(opts) {}
+
+IndexDef::IndexDef(const string &name, const JsonPaths &jsonPaths, const string &indexType, const string &fieldType, const IndexOpts opts,
+				   int64_t expireAfter)
+	: IndexDef(name, jsonPaths, indexType, fieldType, opts) {
+	expireAfter_ = expireAfter;
+}
 
 IndexDef::IndexDef(const string &name, const string &indexType, const string &fieldType, const IndexOpts opts)
 	: name_(name), jsonPaths_({name}), indexType_(indexType), fieldType_(fieldType), opts_(opts) {}
@@ -69,7 +72,7 @@ IndexDef::IndexDef(const string &name, const JsonPaths &jsonPaths, const IndexTy
 
 bool IndexDef::IsEqual(const IndexDef &other, bool skipConfig) const {
 	return name_ == other.name_ && jsonPaths_ == other.jsonPaths_ && Type() == other.Type() && fieldType_ == other.fieldType_ &&
-		   opts_.IsEqual(other.opts_, skipConfig);
+		   opts_.IsEqual(other.opts_, skipConfig) && expireAfter_ == other.expireAfter_;
 }
 
 IndexType IndexDef::Type() const {
@@ -137,6 +140,7 @@ Error IndexDef::FromJSON(JsonValue &jvalue) {
 			parseJsonField("collate_mode", collateStr, elem);
 			parseJsonField("sort_order_letters", sortOrderLetters, elem);
 			parseJsonField("json_path", jsonPath, elem);
+			parseJsonField("expire_after", expireAfter_, elem);
 
 			if ("json_paths"_sv == elem->key) {
 				if (elem->value.getTag() != JSON_ARRAY) throw Error(errParseJson, "Expected array in 'json_paths' key");
@@ -192,6 +196,7 @@ void IndexDef::GetJSON(WrSerializer &ser, int formatFlags) const {
 		.Put("is_sparse", opts_.IsSparse())
 		.Put("collate_mode", getCollateMode())
 		.Put("sort_order_letters", opts_.collateOpts_.sortOrderTable.GetSortOrderCharacters())
+		.Put("expire_after", expireAfter_)
 		.Raw("config", opts_.hasConfig() ? opts_.config.c_str() : "{}");
 
 	if (formatFlags & kIndexJSONWithDescribe) {

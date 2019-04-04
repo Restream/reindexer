@@ -26,6 +26,17 @@ public:
 		: totalCacheSize_(0), cacheSizeLimit_(sizeLimit), hitCountToCache_(hitCount) {}
 	struct Iterator {
 		Iterator(const K *k = nullptr, const V &v = V()) : key(k), val(v) {}
+		Iterator(const Iterator &other) = delete;
+		Iterator &operator=(const Iterator &other) = delete;
+		Iterator(Iterator &&other) : key(other.key), val(std::move(other.val)) { other.key = nullptr; }
+		Iterator &operator=(Iterator &&other) {
+			if (this != &other) {
+				key = other.key;
+				val = std::move(other.val);
+				other.key = nullptr;
+			}
+			return *this;
+		}
 		~Iterator() {
 			if (key && key->locked) key->locked = false;
 		}

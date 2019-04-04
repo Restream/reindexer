@@ -493,7 +493,7 @@ public:
 
 	// Getters for the key/value at position i in the node.
 	const key_type &key(int i) const { return params_type::key(fields_.values[i]); }
-	reference value(int i) { return reinterpret_cast<reference>(fields_.values[i]); }
+	reference value(int i) { return reinterpret_cast<reference>(mutable_reference(i)); }
 	const_reference value(int i) const { return reinterpret_cast<const_reference>(fields_.values[i]); }
 	mutable_value_type *mutable_value(int i) { return &fields_.values[i]; }
 
@@ -646,6 +646,7 @@ private:
 	void value_init(int i) { new (&fields_.values[i]) mutable_value_type; }
 	void value_init(int i, const value_type &x) { new (&fields_.values[i]) mutable_value_type(x); }
 	void value_destroy(int i) { fields_.values[i].~mutable_value_type(); }
+	mutable_value_type &mutable_reference(int i) { return fields_.values[i]; }
 
 private:
 	root_fields fields_;

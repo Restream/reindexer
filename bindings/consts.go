@@ -14,6 +14,7 @@ const (
 	SET    = 7
 	ALLSET = 8
 	EMPTY  = 9
+	LIKE   = 10
 
 	ERROR   = 1
 	WARNING = 2
@@ -49,21 +50,24 @@ const (
 	ValueComposite = 10
 	ValueTuple     = 11
 
-	QueryCondition      = 0
-	QueryDistinct       = 1
-	QuerySortIndex      = 2
-	QueryJoinOn         = 3
-	QueryLimit          = 4
-	QueryOffset         = 5
-	QueryReqTotal       = 6
-	QueryDebugLevel     = 7
-	QueryAggregation    = 8
-	QuerySelectFilter   = 9
-	QuerySelectFunction = 10
-	QueryEnd            = 11
-	QueryExplain        = 12
-	QueryEqualPosition  = 13
-	QueryUpdateField    = 14
+	QueryCondition         = 0
+	QueryDistinct          = 1
+	QuerySortIndex         = 2
+	QueryJoinOn            = 3
+	QueryLimit             = 4
+	QueryOffset            = 5
+	QueryReqTotal          = 6
+	QueryDebugLevel        = 7
+	QueryAggregation       = 8
+	QuerySelectFilter      = 9
+	QuerySelectFunction    = 10
+	QueryEnd               = 11
+	QueryExplain           = 12
+	QueryEqualPosition     = 13
+	QueryUpdateField       = 14
+	QueryAggregationLimit  = 15
+	QueryAggregationOffset = 16
+	QueryAggregationSort   = 17
 
 	LeftJoin    = 0
 	InnerJoin   = 1

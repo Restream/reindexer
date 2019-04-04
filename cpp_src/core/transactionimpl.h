@@ -23,7 +23,7 @@ public:
 
 class TransactionAccessor : public Transaction {
 public:
-	TransactionAccessor(const string &nsName, Completion cmpl = nullptr) : Transaction(nsName, cmpl) {}
+	TransactionAccessor(const string &nsName, ReindexerImpl *rx, Completion cmpl = nullptr) : Transaction(nsName, rx, cmpl) {}
 	TransactionAccessor(const Transaction &) = delete;
 	TransactionAccessor &operator=(const Transaction &) = delete;
 
@@ -37,7 +37,7 @@ public:
 
 class TransactionImpl {
 public:
-	TransactionImpl(const string &nsName, Completion cmpl = nullptr) : nsName_(nsName), cmpl_(cmpl) {}
+	TransactionImpl(const string &nsName, ReindexerImpl *rx, Completion cmpl = nullptr) : nsName_(nsName), cmpl_(cmpl), rx_(rx) {}
 
 	void Insert(Item &&item);
 	void Update(Item &&item);
@@ -46,9 +46,12 @@ public:
 	void Modify(Item &&item, ItemModifyMode mode);
 	const string &GetName() { return nsName_; }
 
+	void checkTagsMatcher(Item &item);
+
 	vector<TransactionStep> steps_;
 	string nsName_;
 	Completion cmpl_;
+	ReindexerImpl *rx_;
 };
 
 }  // namespace reindexer

@@ -140,3 +140,55 @@ class NamespacesTest(BaseTest):
 
         status, body = self.api_get_sorted_namespaces(self.current_db, 'wrong')
         self.assertEqual(True, status == self.API_STATUS['bad_request'], body)
+
+    def test_get_and_put_namespaces_meta_info(self):
+        """Should be able to get and put namespace meta info"""
+
+        status, body = self.api_create_namespace(self.current_db, self.test_ns)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        meta = self.helper_meta_construct('key1', 'value1');
+        status, body = self.api_put_namespace_meta(self.current_db, self.test_ns, meta)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        meta = self.helper_meta_construct('key2', 'value2');
+        status, body = self.api_put_namespace_meta(self.current_db, self.test_ns, meta)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        status, body = self.api_get_namespace_meta(self.current_db, self.test_ns, 'key1')
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+        self.assertEqual(True, body == self.helper_meta_response_construct('value1'), body)
+
+        status, body = self.api_get_namespace_meta(self.current_db, self.test_ns, 'key2')
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+        self.assertEqual(True, body == self.helper_meta_response_construct('value2'), body)
+
+    def test_get_namespaces_meta_info_list(self):
+        """Should be able to get namespace meta info list"""
+
+        status, body = self.api_create_namespace(self.current_db, self.test_ns)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        for x in range(100):
+            meta = self.helper_meta_construct('key' + str(x), 'value' + str(x));
+            status, body = self.api_put_namespace_meta(self.current_db, self.test_ns, meta)
+            self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        status, body = self.api_get_namespace_meta_list(self.current_db, self.test_ns)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+        self.assertEqual(True, body['total_items'] == 100, body)
+        self.assertEqual(True, len(body['meta']) == 100, body)
+
+        status, body = self.api_get_namespace_meta_list(self.current_db, self.test_ns, sort = self.SORT_ORDER['asc'], with_values = True, offset = 10, limit = 30);
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+        self.assertEqual(True, body['total_items'] == 100, body)
+        self.assertEqual(True, len(body['meta']) == 30, body)
+        indexes = []
+        for i in range(50):
+            indexes.append(str(i))
+        indexes.sort()
+        i = 10
+        for x in body['meta']:
+            self.assertEqual(True, x['key'] == 'key' + indexes[i], x)
+            self.assertEqual(True, x['value'] == 'value' + indexes[i], x)
+            i += 1

@@ -8,12 +8,13 @@ public:
 		Error err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		DefineNamespaceDataset(default_namespace,
-							   {IndexDeclaration{bookid, "hash", "int", IndexOpts()}, IndexDeclaration{bookid2, "hash", "int", IndexOpts()},
-								IndexDeclaration{title, "text", "string", IndexOpts()}, IndexDeclaration{pages, "hash", "int", IndexOpts()},
-								IndexDeclaration{price, "hash", "int", IndexOpts()}, IndexDeclaration{name, "text", "string", IndexOpts()},
-								IndexDeclaration{string(title + string("+") + price).c_str(), "hash", "composite", IndexOpts()},
-								IndexDeclaration{"bookid+bookid2", "hash", "composite", IndexOpts().PK()}});
+		DefineNamespaceDataset(
+			default_namespace,
+			{IndexDeclaration{bookid, "hash", "int", IndexOpts(), 0}, IndexDeclaration{bookid2, "hash", "int", IndexOpts(), 0},
+			 IndexDeclaration{title, "text", "string", IndexOpts(), 0}, IndexDeclaration{pages, "hash", "int", IndexOpts(), 0},
+			 IndexDeclaration{price, "hash", "int", IndexOpts(), 0}, IndexDeclaration{name, "text", "string", IndexOpts(), 0},
+			 IndexDeclaration{string(title + string("+") + price).c_str(), "hash", "composite", IndexOpts(), 0},
+			 IndexDeclaration{"bookid+bookid2", "hash", "composite", IndexOpts().PK(), 0}});
 	}
 
 protected:

@@ -13,6 +13,12 @@ class ApiMixin(object):
         'not_found': 404
     }
 
+    SORT_ORDER = {
+        'desc': -1,
+        'no_sort': 0,
+        'asc': 1
+    }
+
     def _server_request(self, method, url, body=None, headers={}, as_json=True):
         self.api = http.client.HTTPConnection('127.0.0.1', 9088)
 
@@ -124,6 +130,40 @@ class ApiMixin(object):
         order = '?sort_order=' + dir
 
         return self._api_call('GET', '/db/' + dbname + '/namespaces' + order)
+
+    def api_put_namespace_meta(self, dbname, nsname, body):
+        return self._api_call('PUT', '/db/' + dbname + '/namespaces/' + nsname + '/metabykey', body)
+
+    def api_get_namespace_meta(self, dbname, nsname, key):
+        return self._api_call('GET', '/db/' + dbname + '/namespaces/' + nsname + '/metabykey/' + key)
+
+    def api_get_namespace_meta_list(self, dbname, nsname, sort = SORT_ORDER['no_sort'], with_values = False, offset = 0, limit = 0):
+        query = ''
+        separator = '?'
+        if sort == self.SORT_ORDER['asc']:
+            query += '?sort_order=asc'
+            separator = '&'
+        elif sort == self.SORT_ORDER['desc']:
+            query += '?sort_order=desc'
+            separator = '&'
+
+        if with_values:
+            query += separator
+            query += 'with_values=true'
+            separator = '&'
+
+        if offset > 0:
+            query += separator
+            query += 'offset='
+            query += str(offset)
+            separator = '&'
+
+        if limit > 0:
+            query += separator
+            query += 'limit='
+            query += str(limit)
+
+        return self._api_call('GET', '/db/' + dbname + '/namespaces/' + nsname + '/metalist' + query)
 
     def api_get_indexes(self, dbname, nsname):
         return self._api_call('GET', '/db/' + dbname + '/namespaces/' + nsname + '/indexes')

@@ -18,6 +18,7 @@ type IndexDef struct {
 	IsSparse    bool        `json:"is_sparse"`
 	CollateMode string      `json:"collate_mode"`
 	SortOrder   string      `json:"sort_order_letters"`
+	ExpireAfter int         `json:"expire_after"`
 	Config      interface{} `json:"config"`
 }
 

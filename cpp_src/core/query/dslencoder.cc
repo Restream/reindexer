@@ -26,7 +26,7 @@ const unordered_map<Filter, string, EnumClassHash> filter_map = {
 
 const unordered_map<CondType, string, EnumClassHash> cond_map = {
 	{CondAny, "any"},	 {CondEq, "eq"},   {CondLt, "lt"},			{CondLe, "le"},		  {CondGt, "gt"},	{CondGe, "ge"},
-	{CondRange, "range"}, {CondSet, "set"}, {CondAllSet, "allset"}, {CondEmpty, "empty"}, {CondEq, "match"},
+	{CondRange, "range"}, {CondSet, "set"}, {CondAllSet, "allset"}, {CondEmpty, "empty"}, {CondEq, "match"}, {CondLike, "like"},
 };
 
 const unordered_map<OpType, string, EnumClassHash> op_map = {{OpOr, "or"}, {OpAnd, "and"}, {OpNot, "not"}};
@@ -42,10 +42,10 @@ string get(unordered_map<T, string, EnumClassHash> const& m, const T& key) {
 	return string();
 }
 
-void encodeSorting(const Query& query, JsonBuilder& builder) {
+void encodeSorting(const SortingEntries& sortingEntries, JsonBuilder& builder) {
 	auto arrNode = builder.Array("sort");
 
-	for (const SortingEntry& sortingEntry : query.sortingEntries_) {
+	for (const SortingEntry& sortingEntry : sortingEntries) {
 		arrNode.Object().Put("field", sortingEntry.column).Put("desc", sortingEntry.desc);
 	}
 }
@@ -99,7 +99,15 @@ void encodeAggregationFunctions(const Query& query, JsonBuilder& builder) {
 	auto arrNode = builder.Array("aggregations");
 
 	for (auto& entry : query.aggregations_) {
-		arrNode.Object().Put("field", entry.index_).Put("type", AggregationResult::aggTypeToStr(entry.type_));
+		auto aggNode = arrNode.Object();
+		aggNode.Put("type", AggregationResult::aggTypeToStr(entry.type_));
+		encodeSorting(entry.sortingEntries_, aggNode);
+		if (entry.limit_ != UINT_MAX) aggNode.Put("limit", entry.limit_);
+		if (entry.offset_ != 0) aggNode.Put("offset", entry.offset_);
+		auto fldNode = aggNode.Array("fields");
+		for (const auto& field : entry.fields_) {
+			fldNode.Put(nullptr, field);
+		}
 	}
 }
 
@@ -125,7 +133,7 @@ void encodeJoins(const Query& query, JsonBuilder& builder) {
 		node.Put("offset", joinQuery.start);
 
 		encodeFilters(joinQuery, node);
-		encodeSorting(joinQuery, node);
+		encodeSorting(joinQuery.sortingEntries_, node);
 
 		auto arr1 = node.Array("on");
 
@@ -147,7 +155,7 @@ void toDsl(const Query& query, JsonBuilder& builder) {
 
 	encodeSelectFilter(query, builder);
 	encodeSelectFunctions(query, builder);
-	encodeSorting(query, builder);
+	encodeSorting(query.sortingEntries_, builder);
 	encodeFilters(query, builder);
 	encodeMergedQueries(query, builder);
 	encodeAggregationFunctions(query, builder);

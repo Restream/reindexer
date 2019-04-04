@@ -10,13 +10,13 @@ protected:
 		Error err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK()},
-												   IndexDeclaration{stringField.c_str(), "hash", "string", IndexOpts()},
-												   IndexDeclaration{intField.c_str(), "hash", "int", IndexOpts()},
-												   IndexDeclaration{sparseField.c_str(), "hash", "int", IndexOpts().Sparse()},
-												   IndexDeclaration{indexedArrayField.c_str(), "hash", "int", IndexOpts().Array()},
-												   IndexDeclaration{doubleField.c_str(), "tree", "double", IndexOpts()},
-												   IndexDeclaration{boolField.c_str(), "-", "bool", IndexOpts()}});
+		DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK(), 0},
+												   IndexDeclaration{stringField.c_str(), "hash", "string", IndexOpts(), 0},
+												   IndexDeclaration{intField.c_str(), "hash", "int", IndexOpts(), 0},
+												   IndexDeclaration{sparseField.c_str(), "hash", "int", IndexOpts().Sparse(), 0},
+												   IndexDeclaration{indexedArrayField.c_str(), "hash", "int", IndexOpts().Array(), 0},
+												   IndexDeclaration{doubleField.c_str(), "tree", "double", IndexOpts(), 0},
+												   IndexDeclaration{boolField.c_str(), "-", "bool", IndexOpts(), 0}});
 	}
 
 	void FillDefaultNamespace() {
@@ -41,7 +41,7 @@ protected:
 	void AddUnindexedData() {
 		char sourceJson[1024];
 		const char jsonPattern[] =
-			R"json({"id": %s, "indexed_array_field": [0,0], "array_field": [1,2,3], "extra" : "%s", "sparse_field": %ld, "nested":{"bonus":%ld}, "nested2":{"bonus2":%ld}})json";
+			R"json({"id": %s, "indexed_array_field": [0,0], "":{"empty_obj_field":"not empty"}, "array_field": [1,2,3], "extra" : "%s", "sparse_field": %ld, "nested":{"bonus":%ld}, "nested2":{"bonus2":%ld}})json";
 		for (size_t i = 1000; i < 2000; ++i) {
 			Item item = NewItem(default_namespace);
 			EXPECT_TRUE(item.Status().ok()) << item.Status().what();

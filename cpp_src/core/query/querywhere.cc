@@ -20,6 +20,15 @@ bool QueryEntry::operator==(const QueryEntry &obj) const {
 
 bool QueryEntry::operator!=(const QueryEntry &obj) const { return !operator==(obj); }
 
+bool UpdateEntry::operator==(const UpdateEntry &obj) const {
+	if (column != obj.column) return false;
+	if (values != obj.values) return false;
+	if (isExpression != obj.isExpression) return false;
+	return true;
+}
+
+bool UpdateEntry::operator!=(const UpdateEntry &obj) const { return !operator==(obj); }
+
 bool QueryJoinEntry::operator==(const QueryJoinEntry &obj) const {
 	if (op_ != obj.op_) return false;
 	if (condition_ != obj.condition_) return false;
@@ -30,9 +39,8 @@ bool QueryJoinEntry::operator==(const QueryJoinEntry &obj) const {
 }
 
 bool AggregateEntry::operator==(const AggregateEntry &obj) const {
-	if (index_ != obj.index_) return false;
-	if (type_ != obj.type_) return false;
-	return true;
+	return fields_ == obj.fields_ && type_ == obj.type_ && sortingEntries_ == obj.sortingEntries_ && limit_ == obj.limit_ &&
+		   offset_ == obj.offset_;
 }
 
 bool AggregateEntry::operator!=(const AggregateEntry &obj) const { return !operator==(obj); }
@@ -68,11 +76,13 @@ CondType QueryWhere::getCondType(string_view cond) {
 		return CondSet;
 	} else if (iequals(cond, "range"_sv)) {
 		return CondRange;
+	} else if (iequals(cond, "like"_sv)) {
+		return CondLike;
 	}
 	throw Error(errParseSQL, "Expected condition operator, but found '%s' in query", cond);
 }
 
-const char *condNames[] = {"IS NOT NULL", "=", "<", "<=", ">", "=>", "RANGE", "IN", "ALLSET", "IS NULL"};
+const char *condNames[] = {"IS NOT NULL", "=", "<", "<=", ">", "=>", "RANGE", "IN", "ALLSET", "IS NULL", "LIKE"};
 const char *opNames[] = {"-", "OR", "AND", "AND NOT"};
 
 void QueryWhere::dumpWhere(WrSerializer &ser, bool stripArgs) const {

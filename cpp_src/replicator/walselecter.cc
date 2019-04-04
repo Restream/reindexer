@@ -2,6 +2,7 @@
 #include "walselecter.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/namespace.h"
+#include "core/nsselecter/nsselecter.h"
 
 namespace reindexer {
 

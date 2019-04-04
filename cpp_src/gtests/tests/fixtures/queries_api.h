@@ -3,9 +3,11 @@
 #include <cmath>
 #include <limits>
 #include <map>
+#include <regex>
 #include <unordered_map>
 #include <unordered_set>
 #include "reindexer_api.h"
+#include "tools/string_regexp_functions.h"
 #include "tools/stringstools.h"
 
 using std::unordered_map;
@@ -45,28 +47,28 @@ public:
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(default_namespace,
 							   {
-								   IndexDeclaration{kFieldNameId, "hash", "int", indexesOptions[kFieldNameId]},
-								   IndexDeclaration{kFieldNameGenre, "tree", "int", indexesOptions[kFieldNameGenre]},
-								   IndexDeclaration{kFieldNameYear, "tree", "int", indexesOptions[kFieldNameYear]},
-								   IndexDeclaration{kFieldNamePackages, "hash", "int", indexesOptions[kFieldNamePackages]},
-								   IndexDeclaration{kFieldNameName, "tree", "string", indexesOptions[kFieldNameName]},
-								   IndexDeclaration{kFieldNameCountries, "tree", "string", indexesOptions[kFieldNameCountries]},
-								   IndexDeclaration{kFieldNameAge, "hash", "int", indexesOptions[kFieldNameAge]},
-								   IndexDeclaration{kFieldNameDescription, "fuzzytext", "string", indexesOptions[kFieldNameDescription]},
-								   IndexDeclaration{kFieldNameRate, "tree", "double", indexesOptions[kFieldNameRate]},
-								   IndexDeclaration{kFieldNameIsDeleted, "-", "bool", indexesOptions[kFieldNameIsDeleted]},
-								   IndexDeclaration{kFieldNameActor, "tree", "string", indexesOptions[kFieldNameActor]},
-								   IndexDeclaration{kFieldNamePriceId, "hash", "int", indexesOptions[kFieldNamePriceId]},
-								   IndexDeclaration{kFieldNameLocation, "tree", "string", indexesOptions[kFieldNameLocation]},
-								   IndexDeclaration{kFieldNameEndTime, "hash", "int", indexesOptions[kFieldNameEndTime]},
-								   IndexDeclaration{kFieldNameStartTime, "tree", "int", indexesOptions[kFieldNameStartTime]},
-								   IndexDeclaration{kFieldNameBtreeIdsets, "hash", "int", indexesOptions[kFieldNameBtreeIdsets]},
-								   IndexDeclaration{kFieldNameTemp, "tree", "string", indexesOptions[kFieldNameTemp]},
-								   IndexDeclaration{kFieldNameNumeric, "tree", "string", indexesOptions[kFieldNameNumeric]},
+								   IndexDeclaration{kFieldNameId, "hash", "int", indexesOptions[kFieldNameId], 0},
+								   IndexDeclaration{kFieldNameGenre, "tree", "int", indexesOptions[kFieldNameGenre], 0},
+								   IndexDeclaration{kFieldNameYear, "tree", "int", indexesOptions[kFieldNameYear], 0},
+								   IndexDeclaration{kFieldNamePackages, "hash", "int", indexesOptions[kFieldNamePackages], 0},
+								   IndexDeclaration{kFieldNameName, "tree", "string", indexesOptions[kFieldNameName], 0},
+								   IndexDeclaration{kFieldNameCountries, "tree", "string", indexesOptions[kFieldNameCountries], 0},
+								   IndexDeclaration{kFieldNameAge, "hash", "int", indexesOptions[kFieldNameAge], 0},
+								   IndexDeclaration{kFieldNameDescription, "fuzzytext", "string", indexesOptions[kFieldNameDescription], 0},
+								   IndexDeclaration{kFieldNameRate, "tree", "double", indexesOptions[kFieldNameRate], 0},
+								   IndexDeclaration{kFieldNameIsDeleted, "-", "bool", indexesOptions[kFieldNameIsDeleted], 0},
+								   IndexDeclaration{kFieldNameActor, "tree", "string", indexesOptions[kFieldNameActor], 0},
+								   IndexDeclaration{kFieldNamePriceId, "hash", "int", indexesOptions[kFieldNamePriceId], 0},
+								   IndexDeclaration{kFieldNameLocation, "tree", "string", indexesOptions[kFieldNameLocation], 0},
+								   IndexDeclaration{kFieldNameEndTime, "hash", "int", indexesOptions[kFieldNameEndTime], 0},
+								   IndexDeclaration{kFieldNameStartTime, "tree", "int", indexesOptions[kFieldNameStartTime], 0},
+								   IndexDeclaration{kFieldNameBtreeIdsets, "hash", "int", indexesOptions[kFieldNameBtreeIdsets], 0},
+								   IndexDeclaration{kFieldNameTemp, "tree", "string", indexesOptions[kFieldNameTemp], 0},
+								   IndexDeclaration{kFieldNameNumeric, "tree", "string", indexesOptions[kFieldNameNumeric], 0},
 								   IndexDeclaration{string(kFieldNameId + compositePlus + kFieldNameTemp).c_str(), "tree", "composite",
-													indexesOptions[kFieldNameId + compositePlus + kFieldNameTemp]},
+													indexesOptions[kFieldNameId + compositePlus + kFieldNameTemp], 0},
 								   IndexDeclaration{string(kFieldNameAge + compositePlus + kFieldNameGenre).c_str(), "hash", "composite",
-													indexesOptions[kFieldNameAge + compositePlus + kFieldNameGenre]},
+													indexesOptions[kFieldNameAge + compositePlus + kFieldNameGenre], 0},
 							   });
 		defaultNsPks.push_back(kFieldNameId);
 		defaultNsPks.push_back(kFieldNameTemp);
@@ -74,10 +76,10 @@ public:
 		err = rt.reindexer->OpenNamespace(testSimpleNs);
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(testSimpleNs, {
-												 IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK()},
-												 IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts()},
-												 IndexDeclaration{kFieldNameName, "hash", "string", IndexOpts()},
-												 IndexDeclaration{kFieldNamePhone, "hash", "string", IndexOpts()},
+												 IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
+												 IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts(), 0},
+												 IndexDeclaration{kFieldNameName, "hash", "string", IndexOpts(), 0},
+												 IndexDeclaration{kFieldNamePhone, "hash", "string", IndexOpts(), 0},
 											 });
 		simpleTestNsPks.push_back(kFieldNameId);
 
@@ -85,14 +87,15 @@ public:
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(
 			compositeIndexesNs,
-			{IndexDeclaration{kFieldNameBookid, "hash", "int", IndexOpts()},
-			 IndexDeclaration{kFieldNameBookid2, "hash", "int", IndexOpts()},
-			 IndexDeclaration{kFieldNameTitle, "text", "string", IndexOpts()},
-			 IndexDeclaration{kFieldNamePages, "hash", "int", IndexOpts()}, IndexDeclaration{kFieldNamePrice, "hash", "int", IndexOpts()},
-			 IndexDeclaration{kFieldNameName, "text", "string", IndexOpts()},
-			 IndexDeclaration{kCompositeFieldPricePages.c_str(), "hash", "composite", IndexOpts()},
-			 IndexDeclaration{kCompositeFieldTitleName.c_str(), "tree", "composite", IndexOpts()},
-			 IndexDeclaration{(string(kFieldNameBookid) + "+" + kFieldNameBookid2).c_str(), "hash", "composite", IndexOpts().PK()}});
+			{IndexDeclaration{kFieldNameBookid, "hash", "int", IndexOpts(), 0},
+			 IndexDeclaration{kFieldNameBookid2, "hash", "int", IndexOpts(), 0},
+			 IndexDeclaration{kFieldNameTitle, "text", "string", IndexOpts(), 0},
+			 IndexDeclaration{kFieldNamePages, "hash", "int", IndexOpts(), 0},
+			 IndexDeclaration{kFieldNamePrice, "hash", "int", IndexOpts(), 0},
+			 IndexDeclaration{kFieldNameName, "text", "string", IndexOpts(), 0},
+			 IndexDeclaration{kCompositeFieldPricePages.c_str(), "hash", "composite", IndexOpts(), 0},
+			 IndexDeclaration{kCompositeFieldTitleName.c_str(), "tree", "composite", IndexOpts(), 0},
+			 IndexDeclaration{(string(kFieldNameBookid) + "+" + kFieldNameBookid2).c_str(), "hash", "composite", IndexOpts().PK(), 0}});
 
 		compositeIndexesNsPks.push_back(kFieldNameBookid);
 		compositeIndexesNsPks.push_back(kFieldNameBookid2);
@@ -101,12 +104,13 @@ public:
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(
 			comparatorsNs,
-			{IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts()}, IndexDeclaration{kFieldNameColumnInt, "hash", "int", IndexOpts()},
-			 IndexDeclaration{kFieldNameColumnInt64, "hash", "int64", IndexOpts().PK()},
-			 IndexDeclaration{kFieldNameColumnDouble, "tree", "double", IndexOpts()},
-			 IndexDeclaration{kFieldNameColumnString, "-", "string", IndexOpts()},
-			 IndexDeclaration{kFieldNameColumnFullText, "text", "string", IndexOpts().SetConfig(R"xxx({"stemmers":[]})xxx")},
-			 IndexDeclaration{kFieldNameColumnStringNumeric, "-", "string", IndexOpts().SetCollateMode(CollateNumeric)}});
+			{IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts(), 0},
+			 IndexDeclaration{kFieldNameColumnInt, "hash", "int", IndexOpts(), 0},
+			 IndexDeclaration{kFieldNameColumnInt64, "hash", "int64", IndexOpts().PK(), 0},
+			 IndexDeclaration{kFieldNameColumnDouble, "tree", "double", IndexOpts(), 0},
+			 IndexDeclaration{kFieldNameColumnString, "-", "string", IndexOpts(), 0},
+			 IndexDeclaration{kFieldNameColumnFullText, "text", "string", IndexOpts().SetConfig(R"xxx({"stemmers":[]})xxx"), 0},
+			 IndexDeclaration{kFieldNameColumnStringNumeric, "-", "string", IndexOpts().SetCollateMode(CollateNumeric), 0}});
 		comparatorsNsPks.push_back(kFieldNameColumnInt64);
 	}
 
@@ -223,6 +227,17 @@ public:
 											  << "query:" << query.GetSQL(ser).Slice() << std::endl
 											  << "explain: " << qr.GetExplainResults() << std::endl;
 		}
+
+		const auto& aggResults = qr.GetAggregationResults();
+		ASSERT_EQ(aggResults.size(), query.aggregations_.size());
+		for (size_t i = 0; i < aggResults.size(); ++i) {
+			EXPECT_EQ(aggResults[i].type, query.aggregations_[i].type_) << "i = " << i;
+			ASSERT_EQ(aggResults[i].fields.size(), query.aggregations_[i].fields_.size()) << "i = " << i;
+			for (size_t j = 0; j < aggResults[i].fields.size(); ++j) {
+				EXPECT_EQ(aggResults[i].fields[j], query.aggregations_[i].fields_[j]) << "i = " << i << ", j = " << j;
+			}
+			EXPECT_LE(aggResults[i].facets.size(), query.aggregations_[i].limit_) << "i = " << i;
+		}
 	}
 
 protected:
@@ -278,6 +293,10 @@ protected:
 		return (qentry.values[0].Type() == KeyValueComposite || qentry.values[0].Type() == KeyValueTuple);
 	}
 
+	bool isLikeSqlPattern(reindexer::string_view str, reindexer::string_view pattern) {
+		return std::regex_match(str.ToString(), std::regex{reindexer::sqlLikePattern2ECMAScript(pattern.ToString())});
+	}
+
 	bool compareValues(CondType condition, Variant key, const VariantArray& values, const CollateOpts& opts) {
 		bool result = false;
 		try {
@@ -310,6 +329,12 @@ protected:
 					if (result) break;
 				}
 				break;
+			case CondLike:
+				if (key.Type() != KeyValueString) {
+					return false;
+				}
+				return isLikeSqlPattern(*static_cast<reindexer::key_string>(key.convert(KeyValueString)),
+										*static_cast<reindexer::key_string>(values[0].convert(KeyValueString)));
 			default:
 				std::abort();
 		}
@@ -639,6 +664,11 @@ protected:
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder));
 
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameName, CondLike, RandLikePattern())
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
+
 					ExecuteAndVerify(default_namespace,
 									 Query(default_namespace)
 										 .Where(kFieldNameRate, CondRange,
@@ -665,6 +695,14 @@ protected:
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.Where(kFieldNameName, CondRange, {RandString(), RandString()})
+															.Distinct(distinct.c_str())
+															.Sort(kFieldNameGenre, true)
+															.Sort(kFieldNameActor, false)
+															.Sort(kFieldNameRate, true)
+															.Sort(kFieldNameLocation, false));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameName, CondLike, RandLikePattern())
 															.Distinct(distinct.c_str())
 															.Sort(kFieldNameGenre, true)
 															.Sort(kFieldNameActor, false)
@@ -751,6 +789,17 @@ protected:
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder)
 															.Debug(LogTrace)
+															.Where(kFieldNameGenre, CondEq, 5)
+															.Or()
+															.Where(kFieldNameGenre, CondEq, 6)
+															.Not()
+															.Where(kFieldNameName, CondLike, RandLikePattern())
+															.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50)));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder)
+															.Debug(LogTrace)
 															.Where(kFieldNameActor, CondEq, RandString()));
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
@@ -827,16 +876,54 @@ protected:
 	}
 
 	void CheckAggregationQueries() {
-		const int limit = 100;
+		constexpr size_t facetLimit = 10;
+		constexpr size_t facetOffset = 10;
+
+		Query wrongQuery = Query(default_namespace).Aggregate(AggAvg, {});
+		reindexer::QueryResults wrongQr1;
+		Error err = rt.reindexer->Select(wrongQuery, wrongQr1);
+		ASSERT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "Empty set of fields for aggregation avg");
+
+		wrongQuery = Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear, kFieldNameName});
+		reindexer::QueryResults wrongQr2;
+		err = rt.reindexer->Select(wrongQuery, wrongQr2);
+		ASSERT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "For aggregation avg available exactly one field");
+
+		wrongQuery = Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear}, {{kFieldNameYear, true}});
+		reindexer::QueryResults wrongQr3;
+		err = rt.reindexer->Select(wrongQuery, wrongQr3);
+		ASSERT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "Sort is not available for aggregation avg");
+
+		wrongQuery = Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear}, {}, 10);
+		reindexer::QueryResults wrongQr4;
+		err = rt.reindexer->Select(wrongQuery, wrongQr4);
+		ASSERT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "Limit or offset are not available for aggregation avg");
+
+		wrongQuery = Query(default_namespace).Aggregate(AggFacet, {kFieldNameYear}, {{kFieldNameName, true}});
+		reindexer::QueryResults wrongQr5;
+		err = rt.reindexer->Select(wrongQuery, wrongQr5);
+		ASSERT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "The aggregation facet cannot provide sort by 'name'");
+
+		wrongQuery = Query(default_namespace).Aggregate(AggFacet, {kFieldNameCountries});
+		reindexer::QueryResults wrongQr6;
+		err = rt.reindexer->Select(wrongQuery, wrongQr6);
+		ASSERT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "Can't do facet by array field");
+
 		Query testQuery = Query(default_namespace)
-							  .Where(kFieldNameGenre, CondEq, 10)
-							  .Limit(limit)
-							  .Aggregate(kFieldNameYear, AggAvg)
-							  .Aggregate(kFieldNameYear, AggSum);
-		Query checkQuery = Query(default_namespace).Where(kFieldNameGenre, CondEq, 10).Limit(limit);
+							  .Aggregate(AggAvg, {kFieldNameYear})
+							  .Aggregate(AggSum, {kFieldNameYear})
+							  .Aggregate(AggFacet, {kFieldNameName, kFieldNameYear}, {{kFieldNameYear, true}, {kFieldNameName, false}},
+										 facetLimit, facetOffset);
+		Query checkQuery = Query(default_namespace);
 
 		reindexer::QueryResults testQr;
-		Error err = rt.reindexer->Select(testQuery, testQr);
+		err = rt.reindexer->Select(testQuery, testQr);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		reindexer::QueryResults checkQr;
@@ -844,54 +931,146 @@ protected:
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		double yearSum = 0.0;
+		struct CompositeFacetItem {
+			std::string name;
+			int year;
+			bool operator<(const CompositeFacetItem& other) const {
+				if (year == other.year) return name < other.name;
+				return year > other.year;
+			}
+		};
+		std::map<CompositeFacetItem, int> compositeFacet;
 		for (auto it : checkQr) {
 			Item item(it.GetItem());
 			yearSum += item[kFieldNameYear].Get<int>();
+			++compositeFacet[CompositeFacetItem{item[kFieldNameName].Get<reindexer::string_view>().ToString(),
+												item[kFieldNameYear].Get<int>()}];
+		}
+		if (facetOffset >= compositeFacet.size()) {
+			compositeFacet.clear();
+		} else {
+			auto end = compositeFacet.begin();
+			std::advance(end, facetOffset);
+			compositeFacet.erase(compositeFacet.begin(), end);
+		}
+		if (facetLimit < compositeFacet.size()) {
+			auto begin = compositeFacet.begin();
+			std::advance(begin, facetLimit);
+			compositeFacet.erase(begin, compositeFacet.end());
 		}
 
 		EXPECT_DOUBLE_EQ(testQr.aggregationResults[1].value, yearSum) << "Aggregation Sum result is incorrect!";
 		EXPECT_DOUBLE_EQ(testQr.aggregationResults[0].value, yearSum / checkQr.Count()) << "Aggregation Sum result is incorrect!";
+		const auto& resultFacets = testQr.aggregationResults[2].facets;
+		ASSERT_EQ(resultFacets.size(), compositeFacet.size()) << "Composite aggregation Facet result is incorrect!";
+		auto result = resultFacets.begin();
+		auto expected = compositeFacet.cbegin();
+		for (; result != resultFacets.end() && expected != compositeFacet.cend(); ++result, ++expected) {
+			ASSERT_EQ(result->values.size(), 2) << "Composite aggregation Facet result is incorrect!";
+			EXPECT_EQ(result->values[0], expected->first.name) << "Composite aggregation Facet result is incorrect!";
+			EXPECT_EQ(std::stoi(result->values[1]), expected->first.year) << "Composite aggregation Facet result is incorrect!";
+			EXPECT_EQ(result->count, expected->second) << "Composite aggregation Facet result is incorrect!";
+		}
 	}
 
-	void CheckSqlQueries() {
-		const string sqlQuery =
-			"SELECT ID, Year, Genre FROM test_namespace WHERE year > '2016' AND genre IN ('1',2,'3') ORDER BY year DESC LIMIT 10000000";
-		const Query checkQuery = Query(default_namespace, 0, 10000000)
-									 .Where(kFieldNameYear, CondGt, 2016)
-									 .Where(kFieldNameGenre, CondSet, {1, 2, 3})
-									 .Sort(kFieldNameYear, true);
+	void CompareQueryResults(const QueryResults& lhs, const QueryResults& rhs) {
+		ASSERT_EQ(lhs.Count(), rhs.Count());
+		for (size_t i = 0; i < rhs.Count(); ++i) {
+			Item ritem1(rhs[i].GetItem());
+			Item ritem2(lhs[i].GetItem());
+			EXPECT_EQ(ritem1.NumFields(), ritem2.NumFields());
+			if (ritem1.NumFields() == ritem2.NumFields()) {
+				for (int idx = 1; idx < ritem1.NumFields(); ++idx) {
+					const VariantArray& v1 = ritem1[idx];
+					const VariantArray& v2 = ritem2[idx];
 
-		QueryResults sqlQr;
-		Error err = rt.reindexer->Select(sqlQuery, sqlQr);
-		EXPECT_TRUE(err.ok()) << err.what();
-
-		QueryResults checkQr;
-		err = rt.reindexer->Select(checkQuery, checkQr);
-		EXPECT_TRUE(err.ok()) << err.what();
-
-		EXPECT_EQ(sqlQr.Count(), checkQr.Count());
-		if (sqlQr.Count() == checkQr.Count()) {
-			for (size_t i = 0; i < checkQr.Count(); ++i) {
-				Item ritem1(checkQr[i].GetItem());
-				Item ritem2(sqlQr[i].GetItem());
-				EXPECT_EQ(ritem1.NumFields(), ritem2.NumFields());
-				if (ritem1.NumFields() == ritem2.NumFields()) {
-					for (int idx = 1; idx < ritem1.NumFields(); ++idx) {
-						VariantArray lhs = ritem1[idx];
-						VariantArray rhs = ritem2[idx];
-
-						EXPECT_EQ(lhs.size(), rhs.size());
-						if (lhs.size() == rhs.size()) {
-							for (size_t j = 0; j < lhs.size(); ++j) {
-								EXPECT_EQ(lhs[j].Compare(rhs[j]), 0);
-							}
-						}
+					ASSERT_EQ(v1.size(), v2.size());
+					for (size_t j = 0; j < v1.size(); ++j) {
+						EXPECT_EQ(v1[j].Compare(v2[j]), 0);
 					}
 				}
 			}
 		}
 
+		ASSERT_EQ(lhs.aggregationResults.size(), rhs.aggregationResults.size());
+		for (size_t i = 0; i < rhs.aggregationResults.size(); ++i) {
+			const auto& aggRes1 = rhs.aggregationResults[i];
+			const auto& aggRes2 = lhs.aggregationResults[i];
+			EXPECT_EQ(aggRes1.type, aggRes2.type);
+			EXPECT_DOUBLE_EQ(aggRes1.value, aggRes2.value);
+			ASSERT_EQ(aggRes1.fields.size(), aggRes2.fields.size());
+			for (size_t j = 0; j < aggRes1.fields.size(); ++j) {
+				EXPECT_EQ(aggRes1.fields[j], aggRes2.fields[j]);
+			}
+			ASSERT_EQ(aggRes1.facets.size(), aggRes2.facets.size());
+			for (size_t j = 0; j < aggRes1.facets.size(); ++j) {
+				EXPECT_EQ(aggRes1.facets[j].count, aggRes2.facets[j].count);
+				ASSERT_EQ(aggRes1.facets[j].values.size(), aggRes2.facets[j].values.size());
+				for (size_t k = 0; k < aggRes1.facets[j].values.size(); ++k) {
+					EXPECT_EQ(aggRes1.facets[j].values[k], aggRes2.facets[j].values[k]) << aggRes1.facets[j].values[0];
+				}
+			}
+		}
+	}
+
+	void CheckSqlQueries() {
+		string sqlQuery = "SELECT ID, Year, Genre FROM test_namespace WHERE year > '2016' ORDER BY year DESC LIMIT 10000000";
+		Query checkQuery = Query(default_namespace, 0, 10000000).Where(kFieldNameYear, CondGt, 2016).Sort(kFieldNameYear, true);
+
+		QueryResults sqlQr;
+		Error err = rt.reindexer->Select(sqlQuery, sqlQr);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		QueryResults checkQr;
+		err = rt.reindexer->Select(checkQuery, checkQr);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		CompareQueryResults(sqlQr, checkQr);
 		Verify(default_namespace, checkQr, checkQuery);
+
+		sqlQuery = "SELECT ID, Year, Genre FROM test_namespace WHERE genre IN ('1',2,'3') ORDER BY year DESC LIMIT 10000000";
+		checkQuery = Query(default_namespace, 0, 10000000).Where(kFieldNameGenre, CondSet, {1, 2, 3}).Sort(kFieldNameYear, true);
+
+		QueryResults sqlQr2;
+		err = rt.reindexer->Select(sqlQuery, sqlQr2);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		QueryResults checkQr2;
+		err = rt.reindexer->Select(checkQuery, checkQr2);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		CompareQueryResults(sqlQr2, checkQr2);
+		Verify(default_namespace, checkQr2, checkQuery);
+
+		const string likePattern = RandLikePattern();
+		sqlQuery = "SELECT ID, Year, Genre FROM test_namespace WHERE name LIKE '" + likePattern + "' ORDER BY year DESC LIMIT 10000000";
+		checkQuery = Query(default_namespace, 0, 10000000).Where(kFieldNameName, CondLike, likePattern).Sort(kFieldNameYear, true);
+
+		QueryResults sqlQr3;
+		err = rt.reindexer->Select(sqlQuery, sqlQr3);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		QueryResults checkQr3;
+		err = rt.reindexer->Select(checkQuery, checkQr3);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		CompareQueryResults(sqlQr3, checkQr3);
+		Verify(default_namespace, checkQr3, checkQuery);
+
+		sqlQuery = "SELECT ID, FACET(ID, Year ORDER BY ID DESC ORDER BY Year ASC LIMIT 20 OFFSET 1) FROM test_namespace LIMIT 10000000";
+		checkQuery = Query(default_namespace, 0, 10000000)
+						 .Aggregate(AggFacet, {kFieldNameId, kFieldNameYear}, {{kFieldNameId, true}, {kFieldNameYear, false}}, 20, 1);
+
+		QueryResults sqlQr4;
+		err = rt.reindexer->Select(sqlQuery, sqlQr4);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		QueryResults checkQr4;
+		err = rt.reindexer->Select(checkQuery, checkQr4);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		CompareQueryResults(sqlQr4, checkQr4);
+		Verify(default_namespace, checkQr4, checkQuery);
 	}
 
 	void CheckCompositeIndexesQueries() {

@@ -65,7 +65,7 @@ bool CompositeArrayComparator::Compare(const PayloadValue &pv, const ComparatorV
 
 bool CompositeArrayComparator::compareField(size_t field, const Variant &v, const ComparatorVars &vars) {
 	bool result = true;
-	switch (vars.type_) {
+	switch (v.Type()) {
 		case KeyValueBool:
 			result = ctx_[field].cmpBool.Compare(ctx_[field].cond, static_cast<bool>(v));
 			break;

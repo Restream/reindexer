@@ -62,9 +62,9 @@ public:
 
 private:
 	friend class RPCClient;
-	QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, int fetchFlags = 0);
+	QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, int fetchFlags,int fetchAmount);
 	QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, string_view rawResult, int queryID,
-				 int fetchFlags = 0);
+				 int fetchFlags,int fetchAmount);
 	void Bind(string_view rawResult, int queryID);
 	void fetchNextResults();
 	void completion(const Error &err) {
@@ -81,6 +81,7 @@ private:
 	int queryID_;
 	int fetchOffset_;
 	int fetchFlags_;
+	int fetchAmount_;
 
 	ResultSerializer::QueryParams queryParams_;
 	Error status_;

@@ -14,21 +14,24 @@ import (
 
 // Constants for query serialization
 const (
-	queryCondition      = bindings.QueryCondition
-	queryDistinct       = bindings.QueryDistinct
-	querySortIndex      = bindings.QuerySortIndex
-	queryJoinOn         = bindings.QueryJoinOn
-	queryLimit          = bindings.QueryLimit
-	queryOffset         = bindings.QueryOffset
-	queryReqTotal       = bindings.QueryReqTotal
-	queryDebugLevel     = bindings.QueryDebugLevel
-	queryAggregation    = bindings.QueryAggregation
-	querySelectFilter   = bindings.QuerySelectFilter
-	queryExplain        = bindings.QueryExplain
-	querySelectFunction = bindings.QuerySelectFunction
-	queryEqualPosition  = bindings.QueryEqualPosition
-	queryUpdateField    = bindings.QueryUpdateField
-	queryEnd            = bindings.QueryEnd
+	queryCondition         = bindings.QueryCondition
+	queryDistinct          = bindings.QueryDistinct
+	querySortIndex         = bindings.QuerySortIndex
+	queryJoinOn            = bindings.QueryJoinOn
+	queryLimit             = bindings.QueryLimit
+	queryOffset            = bindings.QueryOffset
+	queryReqTotal          = bindings.QueryReqTotal
+	queryDebugLevel        = bindings.QueryDebugLevel
+	queryAggregation       = bindings.QueryAggregation
+	querySelectFilter      = bindings.QuerySelectFilter
+	queryExplain           = bindings.QueryExplain
+	querySelectFunction    = bindings.QuerySelectFunction
+	queryEqualPosition     = bindings.QueryEqualPosition
+	queryUpdateField       = bindings.QueryUpdateField
+	queryEnd               = bindings.QueryEnd
+	queryAggregationLimit  = bindings.QueryAggregationLimit
+	queryAggregationOffset = bindings.QueryAggregationOffset
+	queryAggregationSort   = bindings.QueryAggregationSort
 )
 
 // Constants for calc total
@@ -318,11 +321,55 @@ func (q *Query) WhereDouble(index string, condition int, keys ...float64) *Query
 	return q
 }
 
-// Aggregate - Return aggregation of field
-func (q *Query) Aggregate(index string, aggType int) *Query {
+func (q *Query) AggregateSum(field string) {
+	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggSum).PutVarCUInt(1).PutVString(field)
+}
 
-	q.ser.PutVarCUInt(queryAggregation).PutVString(index).PutVarCUInt(aggType)
-	return q
+func (q *Query) AggregateAvg(field string) {
+	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggAvg).PutVarCUInt(1).PutVString(field)
+}
+
+func (q *Query) AggregateMin(field string) {
+	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggMin).PutVarCUInt(1).PutVString(field)
+}
+
+func (q *Query) AggregateMax(field string) {
+	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggMax).PutVarCUInt(1).PutVString(field)
+}
+
+type AggregateFacetRequest struct {
+	query *Query
+}
+
+// fields should not be empty.
+func (q *Query) AggregateFacet(fields ...string) *AggregateFacetRequest {
+	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggFacet).PutVarCUInt(len(fields))
+	for _, f := range fields {
+		q.ser.PutVString(f)
+	}
+	r := AggregateFacetRequest{q}
+	return &r
+}
+
+func (r *AggregateFacetRequest) Limit(limit int) *AggregateFacetRequest {
+	r.query.ser.PutVarCUInt(queryAggregationLimit).PutVarCUInt(limit)
+	return r
+}
+
+func (r *AggregateFacetRequest) Offset(offset int) *AggregateFacetRequest {
+	r.query.ser.PutVarCUInt(queryAggregationOffset).PutVarCUInt(offset)
+	return r
+}
+
+// Use field 'count' to sort by facet's count value.
+func (r *AggregateFacetRequest) Sort(field string, desc bool) *AggregateFacetRequest {
+	r.query.ser.PutVarCUInt(queryAggregationSort).PutVString(field)
+	if desc {
+		r.query.ser.PutVarCUInt(1)
+	} else {
+		r.query.ser.PutVarCUInt(0)
+	}
+	return r
 }
 
 // Sort - Apply sort order to returned from query items
@@ -527,6 +574,18 @@ func (q *Query) Set(field string, values interface{}) *Query {
 		q.ser.PutVarUInt(0)
 		q.putValue(v)
 	}
+
+	return q
+}
+
+// SetExpression updates indexed field by arithmetical expression
+func (q *Query) SetExpression(field string, value string) *Query {
+	q.ser.PutVarCUInt(queryUpdateField)
+	q.ser.PutVString(field)
+
+	q.ser.PutVarCUInt(1)
+	q.ser.PutVarUInt(1)
+	q.putValue(reflect.ValueOf(value))
 
 	return q
 }

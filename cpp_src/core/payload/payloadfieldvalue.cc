@@ -8,7 +8,7 @@ void PayloadFieldValue::Set(Variant kv) {
 	if (kv.Type() == KeyValueInt64 && t_.Type() == KeyValueInt) kv.convert(KeyValueInt);
 
 	if (kv.Type() != t_.Type())
-		throw Error(errLogic, "PayloadFieldValue::Set field '%s' type mimatch. passed '%s', expected '%s'\n", t_.Name(),
+		throw Error(errLogic, "PayloadFieldValue::Set field '%s' type mismatch. passed '%s', expected '%s'\n", t_.Name(),
 					Variant::TypeName(kv.Type()), Variant::TypeName(t_.Type()));
 
 	switch (t_.Type()) {

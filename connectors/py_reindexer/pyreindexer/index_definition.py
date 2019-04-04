@@ -39,7 +39,7 @@ class IndexDefinition(dict):
 
     def _get_known_attrs(self):
         return ['name', 'json_paths', 'field_type', 'index_type', 'is_pk',
-                'is_array', 'is_dense', 'is_sparse', 'collate_mode', 'sort_order_letters', 'config']
+                'is_array', 'is_dense', 'is_sparse', 'collate_mode', 'sort_order_letters', 'expire_after', 'config']
 
     def _raise_if_key_error(self, attr):
         known_attrs = self._get_known_attrs()

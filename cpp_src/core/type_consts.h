@@ -35,6 +35,7 @@ typedef enum IndexType {
 	IndexStrStore = 15,
 	IndexDoubleStore = 16,
 	IndexCompositeFuzzyFT = 17,
+	IndexTtl = 18,
 } IndexType;
 
 typedef enum QueryItemType {
@@ -53,6 +54,9 @@ typedef enum QueryItemType {
 	QueryExplain,
 	QueryEqualPosition,
 	QueryUpdateField,
+	QueryAggregationLimit,
+	QueryAggregationOffset,
+	QueryAggregationSort,
 } QueryItemType;
 
 typedef enum QuerySerializeMode {
@@ -73,6 +77,7 @@ typedef enum CondType {
 	CondSet = 7,
 	CondAllSet = 8,
 	CondEmpty = 9,
+	CondLike = 10,
 } CondType;
 
 enum ErrorCode {

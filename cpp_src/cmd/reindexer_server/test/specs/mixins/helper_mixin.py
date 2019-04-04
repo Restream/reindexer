@@ -95,7 +95,27 @@ class HelperMixin(object):
             'is_sparse': False,
             'collate_mode': 'none',
             'sort_order_letters': '',
+            'expire_after':0,
             'config': {}
+        }
+
+    def helper_meta_construct(self, key, value):
+        return {
+            'key': key,
+            'value': value
+        }
+
+    def helper_meta_response_construct(self, value):
+        return {
+            'message': value
+        }
+
+    def helper_meta_list_request_construct(self, sort = False, with_values = False, offset = 0, limit = 0):
+        return {
+            'sort': sort,
+            'with_values': with_values,
+            'offset': offset,
+            'limit': limit
         }
 
     def helper_index_array_construct(self, count=2):

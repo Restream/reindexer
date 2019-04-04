@@ -33,12 +33,19 @@ TEST_F(JoinSelectsApi, AggregateFunctonsDSLTest) {
 	Query query = Query(books_namespace, 10, 100).Where(pages, CondGe, 150);
 
 	reindexer::AggregateEntry aggEntry;
-	aggEntry.index_ = price;
+	aggEntry.fields_ = {price};
 	aggEntry.type_ = AggAvg;
 	query.aggregations_.push_back(aggEntry);
 
-	aggEntry.index_ = pages;
+	aggEntry.fields_ = {pages};
 	aggEntry.type_ = AggSum;
+	query.aggregations_.push_back(aggEntry);
+
+	aggEntry.fields_ = {title, pages};
+	aggEntry.type_ = AggFacet;
+	aggEntry.sortingEntries_.push_back({title, true});
+	aggEntry.limit_ = 100;
+	aggEntry.offset_ = 10;
 	query.aggregations_.push_back(aggEntry);
 
 	string dsl = query.GetJSON();
@@ -125,11 +132,14 @@ TEST_F(JoinSelectsApi, GeneralDSLTest) {
 	testDslQuery.AddFunction("f2()");
 
 	reindexer::AggregateEntry aggEntry;
-	aggEntry.index_ = bookid;
+	aggEntry.fields_ = {bookid};
 	aggEntry.type_ = AggAvg;
 	testDslQuery.aggregations_.push_back(aggEntry);
-	aggEntry.index_ = genreid;
-	aggEntry.type_ = AggSum;
+	aggEntry.fields_ = {genreid, title};
+	aggEntry.type_ = AggFacet;
+	aggEntry.sortingEntries_.push_back({genreid, false});
+	aggEntry.limit_ = 100;
+	aggEntry.offset_ = 10;
 	testDslQuery.aggregations_.push_back(aggEntry);
 	const string dsl1 = testDslQuery.GetJSON();
 

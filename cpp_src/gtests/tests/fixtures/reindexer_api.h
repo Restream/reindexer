@@ -30,18 +30,20 @@ using reindexer::make_key_string;
 using reindexer::p_string;
 using reindexer::QueryJoinEntry;
 
+typedef tuple<const char *, const char *, const char *, IndexOpts, int64_t> IndexDeclaration;
+
 template <class ReindexerPtr, class ItemType>
 class ReindexerTestApi {
 public:
 	ReindexerTestApi(ReindexerPtr rx) : reindexer(rx) {}
 
-	void DefineNamespaceDataset(const string &ns,
-								initializer_list<const tuple<const char *, const char *, const char *, const IndexOpts>> fields) {
+	void DefineNamespaceDataset(const string &ns, initializer_list<const IndexDeclaration> fields) {
 		auto err = Error();
 		for (auto field : fields) {
 			string indexName = get<0>(field);
 			string fieldType = get<1>(field);
 			string indexType = get<2>(field);
+			int64_t expireAfter = get<4>(field);
 
 			if (indexType != "composite") {
 				err = reindexer->AddIndex(ns, {indexName, {indexName}, fieldType, indexType, get<3>(field)});
@@ -56,7 +58,7 @@ public:
 				reindexer::JsonPaths jsonPaths;
 				jsonPaths = reindexer::split(idxContents, "+", true, jsonPaths);
 
-				err = reindexer->AddIndex(ns, {realName, jsonPaths, fieldType, indexType, get<3>(field)});
+				err = reindexer->AddIndex(ns, {realName, jsonPaths, fieldType, indexType, get<3>(field), expireAfter});
 			}
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
@@ -114,6 +116,26 @@ public:
 		}
 		return res;
 	}
+	std::string RandLikePattern() {
+		string res;
+		const uint8_t len = rand() % 4 + 4;
+		for (uint8_t i = 0; i < len;) {
+			if (rand() % 3 == 0) {
+				res += '%';
+				const uint8_t skipLen = rand() % (len - i + 1);
+				i += skipLen;
+			} else {
+				if (rand() % 3 == 0) {
+					res += '_';
+				} else {
+					int f = rand() % letters.size();
+					res += letters[f];
+				}
+				++i;
+			}
+		}
+		return res;
+	}
 	std::string RuRandString() {
 		string res;
 		uint8_t len = rand() % 20 + 4;
@@ -148,13 +170,10 @@ protected:
 
 	void TearDown() {}
 
-	typedef tuple<const char *, const char *, const char *, IndexOpts> IndexDeclaration;
-
 public:
 	ReindexerApi() : rt(make_shared<Reindexer>()) {}
 
-	void DefineNamespaceDataset(const string &ns,
-								initializer_list<const tuple<const char *, const char *, const char *, const IndexOpts>> fields) {
+	void DefineNamespaceDataset(const string &ns, initializer_list<const IndexDeclaration> fields) {
 		rt.DefineNamespaceDataset(ns, fields);
 	}
 	Item NewItem(const std::string &ns) { return rt.NewItem(ns); }
@@ -166,6 +185,7 @@ public:
 	string PrintItem(Item &item) { return rt.PrintItem(item); }
 
 	std::string RandString() { return rt.RandString(); }
+	std::string RandLikePattern() { return rt.RandLikePattern(); }
 	std::string RuRandString() { return rt.RuRandString(); }
 	vector<int> RandIntVector(size_t size, int start, int range) { return rt.RandIntVector(size, start, range); }
 

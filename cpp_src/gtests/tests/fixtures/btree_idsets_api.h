@@ -12,12 +12,12 @@ public:
 		err = rt.reindexer->OpenNamespace(joinedNsName);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK()},
-												   IndexDeclaration{kFieldOne, "hash", "string", IndexOpts()},
-												   IndexDeclaration{kFieldTwo, "hash", "int", IndexOpts()}});
+		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0},
+												   IndexDeclaration{kFieldOne, "hash", "string", IndexOpts(), 0},
+												   IndexDeclaration{kFieldTwo, "hash", "int", IndexOpts(), 0}});
 
-		DefineNamespaceDataset(joinedNsName, {IndexDeclaration{kFieldIdFk, "hash", "int", IndexOpts().PK()},
-											  IndexDeclaration{kFieldThree, "hash", "int", IndexOpts()}});
+		DefineNamespaceDataset(joinedNsName, {IndexDeclaration{kFieldIdFk, "hash", "int", IndexOpts().PK(), 0},
+											  IndexDeclaration{kFieldThree, "hash", "int", IndexOpts(), 0}});
 
 		FillDefaultNs();
 		FillJoinedNs();

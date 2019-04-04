@@ -41,6 +41,8 @@ const (
 	ANY = bindings.ANY
 	// Empty value (usualy zero len array)
 	EMPTY = bindings.EMPTY
+	// String like pattern
+	LIKE = bindings.LIKE
 )
 
 const (
@@ -146,12 +148,12 @@ var (
 )
 
 type AggregationResult struct {
-	Field  string  `json:"field"`
-	Type   string  `json:"type"`
-	Value  float64 `json:"value"`
+	Fields  []string  `json:"fields"`
+	Type    string    `json:"type"`
+	Value   float64   `json:"value"`
 	Facets []struct {
-		Value string `json:"value"`
-		Count int    `json:"count"`
+		Values  []string `json:"values"`
+		Count   int      `json:"count"`
 	} `json:"facets"`
 }
 
