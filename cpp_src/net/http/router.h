@@ -88,7 +88,7 @@ struct Param {
 class Headers : public h_vector<Header, 16> {
 public:
 	using h_vector::h_vector;
-	string_view Get(const string_view &name) {
+	string_view Get(string_view name) {
 		auto it = std::find_if(begin(), end(), [=](const Header &hdr) { return iequals(name, hdr.name); });
 		return it != end() ? it->val : string_view();
 	}
@@ -97,7 +97,7 @@ public:
 class Params : public h_vector<Param, 8> {
 public:
 	using h_vector::h_vector;
-	string_view Get(const string_view &name) {
+	string_view Get(const string_view name) {
 		auto it = std::find_if(begin(), end(), [=](const Param &param) { return name == param.name; });
 		return it != end() ? it->val : string_view();
 	}
@@ -144,12 +144,12 @@ public:
 };
 
 struct Context {
-	int JSON(int code, const string_view &slice);
+	int JSON(int code, string_view slice);
 	int JSON(int code, chunk &&chunk);
-	int String(int code, const string_view &slice);
+	int String(int code, string_view slice);
 	int String(int code, chunk &&chunk);
-	int File(int code, const char *path, const string_view &data = string_view());
-	int Redirect(const string_view &url);
+	int File(int code, string_view path, string_view data = string_view());
+	int Redirect(string_view url);
 
 	Request *request;
 	Writer *writer;

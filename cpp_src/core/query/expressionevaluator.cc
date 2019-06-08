@@ -22,16 +22,14 @@ double ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValu
 		return strtod(tok.text().data(), &p);
 	} else if (tok.type == TokenName) {
 		int field = 0;
-		if (type_.FieldByName(tok.text().ToString(), field)) {
+		if (type_.FieldByName(tok.text(), field)) {
 			KeyValueType type = type_.Field(field).Type();
 			if (type_.Field(field).IsArray() || ((type != KeyValueInt) && (type != KeyValueInt64) && (type != KeyValueDouble)))
-				throw Error(errLogic, "Only integral type non-array fields are supported in arithmetical expressions: %s",
-							tok.text().ToString().c_str());
+				throw Error(errLogic, "Only integral type non-array fields are supported in arithmetical expressions: %s", tok.text());
 			VariantArray fieldValue;
 			ConstPayload pv(type_, v);
 			pv.Get(field, fieldValue);
-			if (fieldValue.size() == 0)
-				throw Error(errLogic, "Calculating value of an empty field is impossible: %s", tok.text().ToString().c_str());
+			if (fieldValue.size() == 0) throw Error(errLogic, "Calculating value of an empty field is impossible: %s", tok.text());
 			parser.next_token();
 			return fieldValue.front().As<double>();
 		} else {

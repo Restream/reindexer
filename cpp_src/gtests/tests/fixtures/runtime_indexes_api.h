@@ -127,8 +127,8 @@ protected:
 		}
 	}
 
-	string getRuntimeIntIndexName(int indexNumber) { return runtime_int + to_string(indexNumber); }
-	string getRuntimeStringIndexName(int indexNumber) { return runtime_string + to_string(indexNumber); }
+	string getRuntimeIntIndexName(int indexNumber) { return runtime_int + std::to_string(indexNumber); }
+	string getRuntimeStringIndexName(int indexNumber) { return runtime_string + std::to_string(indexNumber); }
 
 private:
 	const char* bookid = "bookid";

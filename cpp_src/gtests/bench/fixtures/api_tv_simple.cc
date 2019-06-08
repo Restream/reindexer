@@ -1,6 +1,7 @@
 #include "api_tv_simple.h"
 #include <thread>
 #include "allocs_tracker.h"
+#include "core/cjson/jsonbuilder.h"
 #include "core/reindexer.h"
 #include "tools/string_regexp_functions.h"
 
@@ -105,6 +106,21 @@ reindexer::Item ApiTvSimple::MakeItem() {
 	item["location"] = locations_.at(random<size_t>(0, locations_.size() - 1));
 	item["start_time"] = start_times_.at(random<size_t>(0, start_times_.size() - 1));
 	item["end_time"] = startTime + random<int>(1, 5) * 1000;
+
+	// wrSer_.Reset();
+	// reindexer::JsonBuilder bld(wrSer_);
+	// bld.Put("id", id_seq_->Next());
+	// bld.Put("genre", random<int64_t>(0, 49));
+	// bld.Put("year", random<int>(2000, 2049));
+	// bld.Array("packages", reindexer::span<int>(packages_.at(random<size_t>(0, packages_.size() - 1))));
+	// bld.Put("countries", countries_.at(random<size_t>(0, countries_.size() - 1)));
+	// bld.Put("age", random<int>(0, 4));
+	// bld.Array("price_id", reindexer::span<int>(priceIDs_.at(random<size_t>(0, priceIDs_.size() - 1))));
+	// bld.Put("location", locations_.at(random<size_t>(0, locations_.size() - 1)));
+	// bld.Put("start_time", start_times_.at(random<size_t>(0, start_times_.size() - 1)));
+	// bld.Put("end_time", startTime + random<int>(1, 5) * 1000);
+	// bld.End();
+	// item.FromJSON(wrSer_.Slice());
 
 	return item;
 }

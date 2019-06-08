@@ -18,7 +18,7 @@ Error Reindexer::Update(string_view nsName, Item& item, Completion cmpl) { retur
 Error Reindexer::Upsert(string_view nsName, Item& item, Completion cmpl) { return impl_->Upsert(nsName, item, cmpl); }
 Error Reindexer::Delete(string_view nsName, Item& item, Completion cmpl) { return impl_->Delete(nsName, item, cmpl); }
 Item Reindexer::NewItem(string_view nsName) { return impl_->NewItem(nsName); }
-Transaction Reindexer::NewTransaction(string_view nsName) { return impl_->NewTransaction(nsName.ToString()); }
+Transaction Reindexer::NewTransaction(string_view nsName) { return impl_->NewTransaction(string(nsName)); }
 Error Reindexer::CommitTransaction(Transaction& tr) { return impl_->CommitTransaction(tr); }
 Error Reindexer::RollBackTransaction(Transaction& tr) { return impl_->RollBackTransaction(tr); }
 Error Reindexer::GetMeta(string_view nsName, const string& key, string& data) { return impl_->GetMeta(nsName, key, data); }

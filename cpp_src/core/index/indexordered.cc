@@ -13,39 +13,23 @@ Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id) {
 		return Variant();
 	}
 
-	bool found = false;
-	auto keyIt = lower_bound(key, found);
+	auto keyIt = this->idx_map.lower_bound(static_cast<ref_type>(key));
 
-	if (keyIt == this->idx_map.end() || !found)
+	if (keyIt == this->idx_map.end() || this->idx_map.key_comp()(static_cast<ref_type>(key), keyIt->first))
 		keyIt = this->idx_map.insert(keyIt, {static_cast<typename T::key_type>(key), typename T::mapped_type()});
+	else
+		this->delMemStat(keyIt);
+
 	keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_);
-	this->markUpdated(&*keyIt);
+	this->tracker_.markUpdated(this->idx_map, keyIt);
+	if (this->cache_) this->cache_.reset();
+	this->addMemStat(keyIt);
 
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
 		return IndexStore<typename T::key_type>::Upsert(key, id);
 	}
 
 	return Variant(keyIt->first);
-}
-
-// special implementation for string: avoid allocation string for *_map::lower_bound
-// !!!! Not thread safe. Do not use this in Select
-template <typename T>
-template <typename U, typename std::enable_if<is_string_map_key<U>::value>::type *>
-typename T::iterator IndexOrdered<T>::lower_bound(const Variant &key, bool &found) {
-	p_string skey = static_cast<p_string>(key);
-	this->tmpKeyVal_->assign(skey.data(), skey.length());
-	auto it = this->idx_map.lower_bound(this->tmpKeyVal_);
-	found = (it != this->idx_map.end() && this->tmpKeyVal_ == it->first);
-	return it;
-}
-
-template <typename T>
-template <typename U, typename std::enable_if<!is_string_map_key<U>::value>::type *>
-typename T::iterator IndexOrdered<T>::lower_bound(const Variant &key, bool &found) {
-	auto it = this->idx_map.lower_bound(static_cast<typename T::key_type>(key));
-	found = (it != this->idx_map.end() && !this->idx_map.key_comp()(static_cast<typename T::key_type>(key), it->first));
-	return it;
 }
 
 template <typename T>
@@ -67,32 +51,33 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 
 	switch (condition) {
 		case CondLt:
-			endIt = this->idx_map.lower_bound(static_cast<typename T::key_type>(key1));
+			endIt = this->idx_map.lower_bound(static_cast<ref_type>(key1));
 			break;
 		case CondLe:
-			endIt = this->idx_map.lower_bound(static_cast<typename T::key_type>(key1));
-			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(static_cast<typename T::key_type>(key1), endIt->first)) endIt++;
+			endIt = this->idx_map.lower_bound(static_cast<ref_type>(key1));
+			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(static_cast<ref_type>(key1), endIt->first)) endIt++;
 			break;
 		case CondGt:
-			startIt = this->idx_map.upper_bound(static_cast<typename T::key_type>(key1));
+			startIt = this->idx_map.upper_bound(static_cast<ref_type>(key1));
 			break;
 		case CondGe:
-			startIt = this->idx_map.find(static_cast<typename T::key_type>(key1));
-			if (startIt == this->idx_map.end()) startIt = this->idx_map.upper_bound(static_cast<typename T::key_type>(key1));
+			startIt = this->idx_map.find(static_cast<ref_type>(key1));
+			if (startIt == this->idx_map.end()) startIt = this->idx_map.upper_bound(static_cast<ref_type>(key1));
 			break;
 		case CondRange: {
 			if (keys.size() != 2) throw Error(errParams, "For ranged query reuqired 2 arguments, but provided %d", keys.size());
 			auto key2 = keys[1];
 
-			if (this->idx_map.key_comp()(static_cast<typename T::key_type>(key2), static_cast<typename T::key_type>(key1))) {
+			startIt = this->idx_map.find(static_cast<ref_type>(key1));
+			if (startIt == this->idx_map.end()) startIt = this->idx_map.upper_bound(static_cast<ref_type>(key1));
+
+			endIt = this->idx_map.lower_bound(static_cast<ref_type>(key2));
+			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(static_cast<ref_type>(key2), endIt->first)) endIt++;
+
+			if (endIt != this->idx_map.end() && this->idx_map.key_comp()(endIt->first, static_cast<ref_type>(key1))) {
 				return SelectKeyResults({res});
 			}
 
-			startIt = this->idx_map.find(static_cast<typename T::key_type>(key1));
-			if (startIt == this->idx_map.end()) startIt = this->idx_map.upper_bound(static_cast<typename T::key_type>(key1));
-
-			endIt = this->idx_map.lower_bound(static_cast<typename T::key_type>(key2));
-			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(static_cast<typename T::key_type>(key2), endIt->first)) endIt++;
 		} break;
 		default:
 			throw Error(errParams, "Unknown query type %d", condition);
@@ -163,7 +148,6 @@ void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext &ctx) {
 					LogError,
 					"Internal error: Index '%s' is broken. Item with key '%s' contains id=%d, which is not present in allIds,totalids=%d\n",
 					this->name_, Variant(keyIt.first).As<string>(), id, totalIds);
-				this->DumpKeys();
 				assert(0);
 			}
 			if (ids2Sorts[id] == SortIdUnfilled) {
@@ -183,7 +167,6 @@ void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext &ctx) {
 
 	if (idx != totalIds) {
 		fprintf(stderr, "Internal error: Index %s is broken. totalids=%d, but indexed=%d\n", this->name_.c_str(), int(totalIds), int(idx));
-		this->DumpKeys();
 		assert(0);
 	}
 }
@@ -202,13 +185,13 @@ template <typename KeyEntryT>
 static Index *IndexOrdered_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields) {
 	switch (idef.Type()) {
 		case IndexIntBTree:
-			return new IndexOrdered<btree_map<int, KeyEntryT>>(idef, payloadType, fields);
+			return new IndexOrdered<number_map<int, KeyEntryT>>(idef, payloadType, fields);
 		case IndexInt64BTree:
-			return new IndexOrdered<btree_map<int64_t, KeyEntryT>>(idef, payloadType, fields);
+			return new IndexOrdered<number_map<int64_t, KeyEntryT>>(idef, payloadType, fields);
 		case IndexStrBTree:
 			return new IndexOrdered<str_map<KeyEntryT>>(idef, payloadType, fields);
 		case IndexDoubleBTree:
-			return new IndexOrdered<btree_map<double, KeyEntryT>>(idef, payloadType, fields);
+			return new IndexOrdered<number_map<double, KeyEntryT>>(idef, payloadType, fields);
 		case IndexCompositeBTree:
 			return new IndexOrdered<payload_map<KeyEntryT>>(idef, payloadType, fields);
 		default:

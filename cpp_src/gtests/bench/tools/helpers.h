@@ -23,6 +23,7 @@ template <typename T>
 struct to_array_helper {
 	static VariantArray to_array(const vector<T>& vec) {
 		VariantArray krs;
+		krs.reserve(vec.size());
 		for (auto& value : vec) krs.push_back(Variant{value});
 		return krs;
 	}
@@ -32,6 +33,7 @@ template <>
 struct to_array_helper<string> {
 	static VariantArray to_array(const vector<string>& vec) {
 		VariantArray krs;
+		krs.reserve(vec.size());
 		for (auto& value : vec) krs.push_back(Variant{p_string(value.c_str())});
 		return krs;
 	}

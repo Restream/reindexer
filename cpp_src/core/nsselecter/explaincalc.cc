@@ -17,18 +17,18 @@ void ExplainCalc::LogDump(int logLevel) {
 
 	if (logLevel >= LogTrace) {
 		if (selectors_) {
-			for (SelectIterator &s : *selectors_) {
+			selectors_->ForeachIterator([this](const SelectIterator &s, OpType) {
 				logPrintf(LogInfo, "%s: %d idsets, %d comparators, cost %g, matched %d, %s", s.name, s.size(), s.comparators_.size(),
 						  s.Cost(iters_), s.GetMatchedCount(), s.Dump());
-			}
+			});
 		}
 
 		if (jselectors_) {
 			for (auto &js : *jselectors_) {
 				if (js.type == JoinType::LeftJoin || js.type == JoinType::Merge) {
-					logPrintf(LogInfo, "%s %s: called %d\n", Query::JoinTypeName(js.type), js.ns, js.called);
+					logPrintf(LogInfo, "%s %s: called %d", Query::JoinTypeName(js.type), js.ns, js.called);
 				} else {
-					logPrintf(LogInfo, "%s %s: called %d, matched %d\n", Query::JoinTypeName(js.type), js.ns, js.called, js.matched);
+					logPrintf(LogInfo, "%s %s: called %d, matched %d", Query::JoinTypeName(js.type), js.ns, js.called, js.matched);
 				}
 			}
 		}
@@ -48,19 +48,7 @@ string ExplainCalc::GetJSON() {
 		auto jsonSelArr = json.Array("selectors");
 
 		if (selectors_) {
-			for (SelectIterator &s : *selectors_) {
-				bool isScanIterator = bool(s.name == "-scan");
-				auto jsonSel = jsonSelArr.Object();
-				if (!isScanIterator) {
-					jsonSel.Put("field", s.name);
-					jsonSel.Put("keys", s.size());
-					jsonSel.Put("comparators", s.comparators_.size());
-					jsonSel.Put("cost", s.Cost(iters_));
-				} else
-					jsonSel.Put("items", s.GetMaxIterations());
-				jsonSel.Put("matched", s.GetMatchedCount());
-				jsonSel.Put("method", isScanIterator || s.comparators_.size() ? "scan" : "index");
-			}
+			selectors_->ExplainJSON(iters_, jsonSelArr);
 		}
 
 		if (jselectors_) {
@@ -73,7 +61,30 @@ string ExplainCalc::GetJSON() {
 		}
 	}
 
-	return ser.Slice().ToString();
+	return string(ser.Slice());
+}
+
+void SelectIteratorContainer::explainJSON(const_iterator it, const_iterator end, int iters, JsonBuilder &builder) {
+	for (; it != end; ++it) {
+		auto jsonSel = builder.Object();
+		if (it->IsLeaf()) {
+			const SelectIterator &siter = it->Value();
+			bool isScanIterator = bool(siter.name == "-scan");
+			if (!isScanIterator) {
+				jsonSel.Put("field", siter.name);
+				jsonSel.Put("keys", siter.size());
+				jsonSel.Put("comparators", siter.comparators_.size());
+				jsonSel.Put("cost", siter.Cost(iters));
+			} else {
+				jsonSel.Put("items", siter.GetMaxIterations());
+			}
+			jsonSel.Put("matched", siter.GetMatchedCount());
+			jsonSel.Put("method", isScanIterator || siter.comparators_.size() ? "scan" : "index");
+		} else {
+			auto jsonSelArr = jsonSel.Array("selectors");
+			explainJSON(it->cbegin(it), it->cend(it), iters, jsonSelArr);
+		}
+	}
 }
 
 ExplainCalc::duration ExplainCalc::lap() {
@@ -126,7 +137,7 @@ void reindexer::ExplainCalc::SetLoopTime() {
 
 void reindexer::ExplainCalc::SetIterations(int iters) { iters_ = iters; }
 void reindexer::ExplainCalc::PutSortIndex(string_view index) { sortIndex_ = index; }
-void ExplainCalc::PutSelectors(h_vector<SelectIterator> *qres) { selectors_ = qres; }
+void ExplainCalc::PutSelectors(SelectIteratorContainer *qres) { selectors_ = qres; }
 void ExplainCalc::PutJoinedSelectors(JoinedSelectors *jselectors) { jselectors_ = jselectors; }
 
 }  // namespace reindexer

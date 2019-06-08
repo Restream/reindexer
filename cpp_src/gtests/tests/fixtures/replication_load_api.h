@@ -91,7 +91,7 @@ public:
 		EXPECT_TRUE(err.ok()) << err.what();
 		return res;
 	}
-	atomic_bool stop;
+	std::atomic_bool stop;
 
 protected:
 	size_t counter_;

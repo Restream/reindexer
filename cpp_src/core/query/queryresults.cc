@@ -273,11 +273,14 @@ QueryResults::Iterator &QueryResults::Iterator::operator+(int val) {
 bool QueryResults::Iterator::operator!=(const Iterator &other) const { return idx_ != other.idx_; }
 bool QueryResults::Iterator::operator==(const Iterator &other) const { return idx_ == other.idx_; }
 
-void QueryResults::AddItem(Item &item) {
+void QueryResults::AddItem(Item &item, bool withData) {
 	auto ritem = item.impl_;
 	if (item.GetID() != -1) {
-		ctxs.push_back(Context(ritem->Type(), ritem->tagsMatcher(), FieldsSet()));
-		Add(ItemRef(item.GetID(), PayloadValue()));
+		if (ctxs.empty()) ctxs.push_back(Context(ritem->Type(), ritem->tagsMatcher(), FieldsSet()));
+		Add(ItemRef(item.GetID(), withData ? ritem->RealValue() : PayloadValue()));
+		if (withData) {
+			lockResults();
+		}
 	}
 }
 

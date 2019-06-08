@@ -6,18 +6,30 @@
 
 namespace reindexer {
 
-struct IdSetCacheKey : public CacheKeyBase {
+struct IdSetCacheKey {
 	IdSetCacheKey(const VariantArray &keys, CondType cond, SortType sort) : keys(&keys), cond(cond), sort(sort) {}
 	IdSetCacheKey(const IdSetCacheKey &other) : keys(&hkeys), cond(other.cond), sort(other.sort), hkeys(*other.keys) {}
+	IdSetCacheKey(IdSetCacheKey &&other) noexcept : keys(&hkeys), cond(other.cond), sort(other.sort), hkeys(std::move(*other.keys)) {}
 	IdSetCacheKey &operator=(const IdSetCacheKey &other) {
-		hkeys = *other.keys;
-		keys = &hkeys;
-		cond = other.cond;
-		sort = other.sort;
-		locked = other.locked.load();
+		if (&other != this) {
+			hkeys = *other.keys;
+			keys = &hkeys;
+			cond = other.cond;
+			sort = other.sort;
+		}
 		return *this;
 	}
-	size_t Size() const { return sizeof(IdSetCacheKey) + hkeys.size() * sizeof(VariantArray::value_type); }
+	IdSetCacheKey &operator=(IdSetCacheKey &&other) noexcept {
+		if (&other != this) {
+			hkeys = std::move(*other.keys);
+			keys = &hkeys;
+			cond = other.cond;
+			sort = other.sort;
+		}
+		return *this;
+	}
+
+	size_t Size() const { return sizeof(IdSetCacheKey) + keys->size() * sizeof(VariantArray::value_type); }
 
 	const VariantArray *keys;
 	CondType cond;

@@ -70,6 +70,31 @@ public:
 	std::pair<iterator, iterator> equal_range(const key_type &key) { return tree_.equal_range(key); }
 	std::pair<const_iterator, const_iterator> equal_range(const key_type &key) const { return tree_.equal_range(key); }
 
+	template <typename K>
+	iterator lower_bound(const K &key) {
+		return tree_.lower_bound(key);
+	}
+	template <typename K>
+	const_iterator lower_bound(const K &key) const {
+		return tree_.lower_bound(key);
+	}
+	template <typename K>
+	iterator upper_bound(const K &key) {
+		return tree_.upper_bound(key);
+	}
+	template <typename K>
+	const_iterator upper_bound(const K &key) const {
+		return tree_.upper_bound(key);
+	}
+	template <typename K>
+	std::pair<iterator, iterator> equal_range(const K &key) {
+		return tree_.equal_range(key);
+	}
+	template <typename K>
+	std::pair<const_iterator, const_iterator> equal_range(const K &key) const {
+		return tree_.equal_range(key);
+	}
+
 	// Utility routines.
 	void clear() { tree_.clear(); }
 	void swap(self_type &x) { tree_.swap(x.tree_); }
@@ -149,6 +174,19 @@ public:
 	iterator find(const key_type &key) { return this->tree_.find_unique(key); }
 	const_iterator find(const key_type &key) const { return this->tree_.find_unique(key); }
 	size_type count(const key_type &key) const { return this->tree_.count_unique(key); }
+
+	template <typename K>
+	iterator find(const K &key) {
+		return this->tree_.find_unique(key);
+	}
+	template <typename K>
+	const_iterator find(const K &key) const {
+		return this->tree_.find_unique(key);
+	}
+	template <typename K>
+	size_type count(const K &key) const {
+		return this->tree_.count_unique(key);
+	}
 
 	// Insertion routines.
 	std::pair<iterator, bool> insert(const value_type &x) { return this->tree_.insert_unique(x); }
@@ -244,6 +282,19 @@ public:
 	iterator find(const key_type &key) { return this->tree_.find_multi(key); }
 	const_iterator find(const key_type &key) const { return this->tree_.find_multi(key); }
 	size_type count(const key_type &key) const { return this->tree_.count_multi(key); }
+
+	template <typename K>
+	iterator find(const K &key) {
+		return this->tree_.find_multi(key);
+	}
+	template <typename K>
+	const_iterator find(const K &key) const {
+		return this->tree_.find_multi(key);
+	}
+	template <typename K>
+	size_type count(const K &key) const {
+		return this->tree_.count_multi(key);
+	}
 
 	// Insertion routines.
 	iterator insert(const value_type &x) { return this->tree_.insert_multi(x); }

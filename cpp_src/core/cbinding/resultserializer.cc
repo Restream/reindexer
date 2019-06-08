@@ -83,13 +83,14 @@ void WrResultSerializer::putItemParams(const QueryResults* result, int idx, bool
 			return;
 		}
 	}
+	Error err;
 
 	switch ((opts_.flags & kResultsFormatMask)) {
 		case kResultsJson:
-			it.GetJSON(*this);
+			err = it.GetJSON(*this);
 			break;
 		case kResultsCJson:
-			it.GetCJSON(*this);
+			err = it.GetCJSON(*this);
 			break;
 		case kResultsPtrs:
 			PutUInt64(uintptr_t(itemRef.value.Ptr()));
@@ -97,8 +98,9 @@ void WrResultSerializer::putItemParams(const QueryResults* result, int idx, bool
 		case kResultsPure:
 			break;
 		default:
-			abort();
+			throw Error(errParams, "Can't serialize query results: unknown formar %d", int((opts_.flags & kResultsFormatMask)));
 	}
+	if (!err.ok()) throw Error(errParseBin, "Internal error serializing query results: %s", err.what());
 }
 
 void WrResultSerializer::putPayloadType(const QueryResults* results, int nsid) {

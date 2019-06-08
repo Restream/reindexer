@@ -3,7 +3,6 @@
 #include <memory>
 #include <thread>
 #include "core/ft/bm25.h"
-#include "core/ft/ft_fast/ftfastkeyentry.h"
 #include "core/ft/ft_fast/selecter.h"
 #include "core/ft/numtotext.h"
 #include "tools/logger.h"
@@ -33,12 +32,15 @@ Variant FastIndexText<T>::Upsert(const Variant &key, IdType id) {
 
 	this->cache_ft_->Clear();
 
-	auto keyIt = this->find(key);
+	auto keyIt = this->idx_map.find(static_cast<typename IndexUnordered<T>::ref_type>(key));
 	if (keyIt == this->idx_map.end()) {
 		keyIt = this->idx_map.insert({static_cast<typename T::key_type>(key), typename T::mapped_type()}).first;
-		this->markUpdated(&*keyIt);
+		this->tracker_.markUpdated(this->idx_map, keyIt, false);
+	} else {
+		this->delMemStat(keyIt);
 	}
 	keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, 0);
+	this->addMemStat(keyIt);
 
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
 		return IndexStore<typename T::key_type>::Upsert(key, id);
@@ -57,9 +59,10 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id) {
 		return;
 	}
 
-	auto keyIt = this->find(key);
+	auto keyIt = this->idx_map.find(static_cast<typename IndexUnordered<T>::ref_type>(key));
 	if (keyIt == this->idx_map.end()) return;
 
+	this->delMemStat(keyIt);
 	delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
@@ -67,12 +70,14 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id) {
 			this->name_.c_str(), id, Variant(key).As<string>().c_str());
 
 	if (keyIt->second.Unsorted().IsEmpty()) {
-		this->tracker_.markDeleted(&*keyIt);
-		if (this->holder_.vdocs_.size()) {
-			assert(keyIt->second.vdoc_id_ < this->holder_.vdocs_.size());
-			this->holder_.vdocs_[keyIt->second.vdoc_id_].keyEntry = nullptr;
+		this->tracker_.markDeleted(keyIt);
+		if (keyIt->second.VDocID() != FtKeyEntryData::ndoc) {
+			assert(keyIt->second.VDocID() < int(this->holder_.vdocs_.size()));
+			this->holder_.vdocs_[keyIt->second.VDocID()].keyEntry = nullptr;
 		}
 		this->idx_map.erase(keyIt);
+	} else {
+		this->addMemStat(keyIt);
 	}
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
 		IndexStore<typename T::key_type>::Delete(key, id);
@@ -86,10 +91,6 @@ IndexMemStat FastIndexText<T>::GetMemStat() {
 	ret.fulltextSize = this->holder_.GetMemStat();
 	if (this->cache_ft_) ret.idsetCache = this->cache_ft_->GetMemStat();
 	return ret;
-}
-template <typename T>
-const typename T::mapped_type *FastIndexText<T>::GetEntry(const void *entry) {
-	return reinterpret_cast<const typename T::mapped_type *>(entry);
 }
 
 template <typename T>
@@ -114,7 +115,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
 			continue;
 		};
 		if (vid.proc <= minRelevancy) break;
-		cnt += GetEntry(vdocs[vid.id].keyEntry)->Sorted(0).size();
+		cnt += vdocs[vid.id].keyEntry->Sorted(0).size();
 	}
 
 	mergedIds->reserve(cnt);
@@ -126,12 +127,11 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
 		if (!vdocs[id].keyEntry) {
 			continue;
 		};
-		assert(!GetEntry(vdocs[id].keyEntry)->Unsorted().empty());
+		assert(!vdocs[id].keyEntry->Unsorted().empty());
 		if (vid.proc <= minRelevancy) break;
 		int proc = std::min(255, vid.proc / merdeInfo.mergeCnt);
-		fctx->Add(GetEntry(vdocs[id].keyEntry)->Sorted(0).begin(), GetEntry(vdocs[id].keyEntry)->Sorted(0).end(), proc,
-				  std::move(vid.holder));
-		mergedIds->Append(GetEntry(vdocs[id].keyEntry)->Sorted(0).begin(), GetEntry(vdocs[id].keyEntry)->Sorted(0).end(), IdSet::Unordered);
+		fctx->Add(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), proc, std::move(vid.holder));
+		mergedIds->Append(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), IdSet::Unordered);
 	}
 	if (GetConfig()->logLevel >= LogInfo) {
 		logPrintf(LogInfo, "Total merge out: %d ids", mergedIds->size());
@@ -182,14 +182,20 @@ void FastIndexText<T>::commitFulltext() {
 }
 
 // hack wothout c++14
-pair<const key_string, FtFastKeyEntry> &GetPair(pair<const key_string, FtFastKeyEntry> &pair) { return pair; }
-pair<const key_string, FtFastKeyEntry> &GetPair(pair<const key_string, FtFastKeyEntry> *pair) { return *pair; }
-pair<const PayloadValue, FtFastKeyEntry> &GetPair(pair<const PayloadValue, FtFastKeyEntry> &pair) { return pair; }
-pair<const PayloadValue, FtFastKeyEntry> &GetPair(pair<const PayloadValue, FtFastKeyEntry> *pair) { return *pair; }
+template <typename Map>
+typename Map::iterator get(Map & /*data*/, typename Map::iterator it) {
+	return it;
+}
+template <typename Map>
+typename Map::iterator get(Map &data, typename UpdateTracker<Map>::hash_map::iterator kt) {
+	auto it = data.find(*kt);
+	assert(it != data.end());
+	return it;
+}
 
 template <typename T>
-template <class Data>
-void FastIndexText<T>::BuildVdocs(Data &data) {
+template <class Container>
+void FastIndexText<T>::BuildVdocs(Container &data) {
 	// buffer strings, for printing non text fields
 	auto &bufStrs = this->holder_.bufStrs_;
 	// array with pointers to docs fields text
@@ -213,20 +219,17 @@ void FastIndexText<T>::BuildVdocs(Data &data) {
 	}
 	this->holder_.vodcsOffset_ = vdocs.size();
 
-	for (auto &doc : data) {
-		// if constexpr(std::is_pointer<data>::value_type) - when we go to c++17
+	for (auto it = data.begin(); it != data.end(); it++) {
+		auto doc = get(this->idx_map, it);
+		doc->second.VDocID() = vdocs.size();
+		vdocsTexts.emplace_back(gt.getDocFields(doc->first, bufStrs));
+
 #ifdef REINDEX_FT_EXTRA_DEBUG
-
-		vdocs.push_back({&GetPair(doc).first, &GetPair(doc).second, {}, {}});
+		string text(vdocsTexts.back()[0].first);
+		vdocs.push_back({(text.length() > 48) ? text.substr(0, 48) + "..." : text, doc->second.get(), {}, {}});
 #else
-
-		GetPair(doc).second.vdoc_id_ = vdocs.size();
-
-		vdocs.push_back({&GetPair(doc).second, {}, {}});
-
+		vdocs.push_back({doc->second.get(), {}, {}});
 #endif
-
-		vdocsTexts.emplace_back(gt.getDocFields(GetPair(doc).first, bufStrs));
 
 		if (GetConfig()->logLevel <= LogInfo) {
 			for (auto &f : vdocsTexts.back()) this->holder_.szCnt += f.first.length();
@@ -249,17 +252,22 @@ void FastIndexText<T>::CreateConfig(const FtFastConfig *cfg) {
 		return;
 	}
 	this->cfg_.reset(new FtFastConfig());
-	string config = this->opts_.config;
-	this->cfg_->parse(&config[0]);
+	this->cfg_->parse(this->opts_.config);
 	this->holder_.SetConfig(static_cast<FtFastConfig *>(this->cfg_.get()));
 }
+
+template <typename Container>
+bool eq_c(Container &c1, Container &c2) {
+	return c1.size() == c2.size() && std::equal(c1.begin(), c1.end(), c2.begin());
+}
+
 template <typename T>
 void FastIndexText<T>::SetOpts(const IndexOpts &opts) {
 	auto oldCfg = *GetConfig();
 	IndexText<T>::SetOpts(opts);
 	auto newCfg = *GetConfig();
 
-	if (oldCfg.stopWords != newCfg.stopWords || oldCfg.stemmers != newCfg.stemmers || oldCfg.maxTypoLen != newCfg.maxTypoLen ||
+	if (!eq_c(oldCfg.stopWords, newCfg.stopWords) || oldCfg.stemmers != newCfg.stemmers || oldCfg.maxTypoLen != newCfg.maxTypoLen ||
 		oldCfg.enableNumbersSearch != newCfg.enableNumbersSearch || oldCfg.extraWordSymbols != newCfg.extraWordSymbols) {
 		logPrintf(LogInfo, "FulltextIndex config changed, it will be febuilt on next search");
 		this->isBuilt_ = false;
@@ -272,9 +280,9 @@ void FastIndexText<T>::SetOpts(const IndexOpts &opts) {
 Index *FastIndexText_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields) {
 	switch (idef.Type()) {
 		case IndexFastFT:
-			return new FastIndexText<unordered_str_map<FtFastKeyEntry>>(idef, payloadType, fields);
+			return new FastIndexText<unordered_str_map<FtKeyEntry>>(idef, payloadType, fields);
 		case IndexCompositeFastFT:
-			return new FastIndexText<unordered_payload_map<FtFastKeyEntry>>(idef, payloadType, fields);
+			return new FastIndexText<unordered_payload_map<FtKeyEntryData>>(idef, payloadType, fields);
 		default:
 			abort();
 	}

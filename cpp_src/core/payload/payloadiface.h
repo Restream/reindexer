@@ -4,6 +4,7 @@
 #include "core/cjson/tagsmatcher.h"
 #include "core/indexopts.h"
 #include "core/keyvalue/variant.h"
+#include "estl/span.h"
 #include "fieldsset.h"
 #include "payloadfieldvalue.h"
 #include "payloadtype.h"
@@ -37,6 +38,13 @@ public:
 		auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
 		return span<Elem>(reinterpret_cast<Elem *>(v_->Ptr() + arr->offset), arr->len);
 	}
+	// Get array len
+	int GetArrayLen(int field) const {
+		assert(field < Type().NumFields());
+		assert(Type().Field(field).IsArray());
+		auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
+		return arr->len;
+	}
 
 	// Resize array (grow)
 	// return index of 1-st position
@@ -49,7 +57,7 @@ public:
 
 	// Set element or array by field index
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
-	void Set(const string &field, const VariantArray &keys, bool append = false);
+	void Set(string_view field, const VariantArray &keys, bool append = false);
 
 	// Set element or array by field index and element index
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
@@ -61,10 +69,10 @@ public:
 	T CopyTo(PayloadType t, bool newFields = true);
 
 	// Get element(s) by field index
-	VariantArray &Get(const string &field, VariantArray &, bool enableHold = false) const;
+	VariantArray &Get(string_view field, VariantArray &, bool enableHold = false) const;
 
 	// Get element(s) by json path
-	VariantArray GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, VariantArray &, KeyValueType expectedType) const;
+	VariantArray GetByJsonPath(string_view jsonPath, TagsMatcher &tagsMatcher, VariantArray &, KeyValueType expectedType) const;
 	VariantArray GetByJsonPath(const TagsPath &jsonPath, VariantArray &, KeyValueType expectedType) const;
 
 	// Get fields count

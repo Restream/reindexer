@@ -503,7 +503,6 @@ void dynamic_loop::stop(sig *watcher) {
 void dynamic_loop::set(async *watcher) {
 	auto it = std::find(asyncs_.begin(), asyncs_.end(), watcher);
 	if (it != asyncs_.end()) {
-		printf("async is already set\n");
 		return;
 	}
 	backend_.enable_asyncs();

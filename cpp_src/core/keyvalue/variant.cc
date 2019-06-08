@@ -7,7 +7,6 @@
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 #include "utf8cpp/utf8.h"
-#include "variant.h"
 
 namespace reindexer {
 
@@ -112,7 +111,7 @@ string Variant::As<string>() const {
 			auto va = getCompositeValues();
 			WrSerializer wrser;
 			va.Dump(wrser);
-			return wrser.Slice().ToString();
+			return string(wrser.Slice());
 		}
 		default:
 			abort();

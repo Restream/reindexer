@@ -30,10 +30,10 @@ void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams &ret, std
 		switch (tag) {
 			case QueryResultAggregation:
 				ret.aggResults.push_back({});
-				ret.aggResults.back().FromJSON(const_cast<char *>(data.ToString().c_str()));
+				ret.aggResults.back().FromJSON(giftStr(data));
 				break;
 			case QueryResultExplain:
-				ret.explainResults = data.ToString();
+				ret.explainResults = string(data);
 				break;
 		}
 	}

@@ -5,6 +5,7 @@
 #include <thread>
 #include "core/type_consts.h"
 #include "net/http/serverconnection.h"
+#include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/logger.h"
 
 #if REINDEX_WITH_GPERFTOOLS
@@ -192,7 +193,9 @@ void Listener::Fork(int clones) {
 void Listener::clone(std::shared_ptr<Shared> shared) {
 	ev::dynamic_loop loop;
 	Listener listener(loop, shared);
-	ProfilerRegisterThread();
+	if (tc_malloc_available()) {
+		ProfilerRegisterThread();
+	}
 	listener.io_.start(listener.shared_->sock_.fd(), ev::READ);
 	while (!listener.shared_->terminating_) {
 		loop.run();

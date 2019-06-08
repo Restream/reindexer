@@ -14,7 +14,7 @@ TEST_F(NsApi, UpsertWithPrecepts) {
 											   IndexDeclaration{serialFieldName.c_str(), "", "int64", IndexOpts(), 0}});
 
 	Item item = NewItem(default_namespace);
-	item["id"] = idNum;
+	item[idIdxName] = idNum;
 
 	// Set precepts
 	vector<string> precepts = {updatedTimeSecFieldName + "=NOW()", updatedTimeMSecFieldName + "=NOW(msec)",
@@ -30,7 +30,7 @@ TEST_F(NsApi, UpsertWithPrecepts) {
 
 	// Get item
 	reindexer::QueryResults res;
-	err = rt.reindexer->Select("SELECT * FROM " + default_namespace + " WHERE id=" + to_string(idNum), res);
+	err = rt.reindexer->Select("SELECT * FROM " + default_namespace + " WHERE id=" + std::to_string(idNum), res);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	for (auto it : res) {
@@ -57,6 +57,58 @@ TEST_F(NsApi, UpsertWithPrecepts) {
 			}
 		}
 	}
+}
+
+TEST_F(NsApi, ReturnOfItemChange) {
+	Error err = rt.reindexer->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK(), 0},
+											   IndexDeclaration{updatedTimeNSecFieldName.c_str(), "", "int64", IndexOpts(), 0},
+											   IndexDeclaration{serialFieldName.c_str(), "", "int64", IndexOpts(), 0}});
+
+	Item item = NewItem(default_namespace);
+	item[idIdxName] = idNum;
+
+	// Set precepts
+	vector<string> precepts = {updatedTimeNSecFieldName + "=NOW(nsec)", serialFieldName + "=SERIAL()"};
+	item.SetPrecepts(precepts);
+
+	// Check Insert
+	err = rt.reindexer->Insert(default_namespace, item);
+	ASSERT_TRUE(err.ok()) << err.what();
+	reindexer::QueryResults res1;
+	err = rt.reindexer->Select("SELECT * FROM " + default_namespace + " WHERE " + idIdxName + "=" + std::to_string(idNum), res1);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(res1.Count(), 1);
+	Item selectedItem = res1.begin().GetItem();
+	CheckItemsEqual(item, selectedItem);
+
+	// Check Update
+	err = rt.reindexer->Update(default_namespace, item);
+	ASSERT_TRUE(err.ok()) << err.what();
+	reindexer::QueryResults res2;
+	err = rt.reindexer->Select("SELECT * FROM " + default_namespace + " WHERE " + idIdxName + "=" + std::to_string(idNum), res2);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(res2.Count(), 1);
+	selectedItem = res2.begin().GetItem();
+	CheckItemsEqual(item, selectedItem);
+
+	// Check Delete
+	err = rt.reindexer->Delete(default_namespace, item);
+	ASSERT_TRUE(err.ok()) << err.what();
+	CheckItemsEqual(item, selectedItem);
+
+	// Check Upsert
+	item[idIdxName] = idNum;
+	err = rt.reindexer->Upsert(default_namespace, item);
+	ASSERT_TRUE(err.ok()) << err.what();
+	reindexer::QueryResults res3;
+	err = rt.reindexer->Select("SELECT * FROM " + default_namespace + " WHERE " + idIdxName + "=" + std::to_string(idNum), res3);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(res3.Count(), 1);
+	selectedItem = res3.begin().GetItem();
+	CheckItemsEqual(item, selectedItem);
 }
 
 TEST_F(NsApi, UpdateIndex) {
@@ -95,8 +147,8 @@ TEST_F(NsApi, UpdateIndex) {
 	reindexer::WrSerializer receivedIdxSer;
 	receivedIdx->GetJSON(receivedIdxSer);
 
-	string newIdxJson = newIdxSer.Slice().ToString();
-	string receivedIdxJson = receivedIdxSer.Slice().ToString();
+	auto newIdxJson = newIdxSer.Slice();
+	auto receivedIdxJson = receivedIdxSer.Slice();
 
 	ASSERT_TRUE(newIdxJson == receivedIdxJson);
 }
@@ -144,7 +196,7 @@ TEST_F(NsApi, QueryperfstatsNsDummyTest) {
 	Query testQuery(default_namespace);
 	reindexer::WrSerializer querySerializer;
 	testQuery.GetSQL(querySerializer, true);
-	const string querySql = querySerializer.Slice().ToString();
+	const string querySql(querySerializer.Slice());
 
 	auto performSimpleQuery = [&]() {
 		QueryResults qr;
@@ -200,7 +252,7 @@ void checkIfItemJSONValid(QueryResults::Iterator &it, bool print = false) {
 	reindexer::WrSerializer wrser;
 	Error err = it.GetJSON(wrser);
 	ASSERT_TRUE(err.ok()) << err.what();
-	if (err.ok() && print) std::cout << wrser.Slice().ToString() << std::endl;
+	if (err.ok() && print) std::cout << wrser.Slice() << std::endl;
 }
 
 TEST_F(NsApi, TestUpdateIndexedField) {

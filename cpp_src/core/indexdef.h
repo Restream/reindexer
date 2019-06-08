@@ -5,16 +5,18 @@
 #include "core/indexopts.h"
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
+#include "estl/span.h"
 #include "tools/errors.h"
 
-union JsonValue;
+namespace gason {
+struct JsonNode;
+}
 
 namespace reindexer {
 
 using std::string;
 using std::vector;
 
-class string_view;
 class WrSerializer;
 
 using JsonPaths = h_vector<string, 0>;
@@ -36,8 +38,8 @@ struct IndexDef {
 	string getCollateMode() const;
 	const vector<string> &Conditions() const;
 	void FromType(IndexType type);
-	Error FromJSON(char *json);
-	Error FromJSON(JsonValue &jvalue);
+	Error FromJSON(span<char> json);
+	void FromJSON(const gason::JsonNode &jvalue);
 	void GetJSON(WrSerializer &ser, int formatFlags = 0) const;
 
 public:

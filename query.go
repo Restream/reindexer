@@ -1,6 +1,7 @@
 package reindexer
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -32,6 +33,8 @@ const (
 	queryAggregationLimit  = bindings.QueryAggregationLimit
 	queryAggregationOffset = bindings.QueryAggregationOffset
 	queryAggregationSort   = bindings.QueryAggregationSort
+	queryOpenBracket       = bindings.QueryOpenBracket
+	queryCloseBracket      = bindings.QueryCloseBracket
 )
 
 // Constants for calc total
@@ -78,35 +81,37 @@ type nsArrayEntry struct {
 
 // Query to DB object
 type Query struct {
-	Namespace     string
-	db            *Reindexer
-	nextOp        int
-	ser           cjson.Serializer
-	root          *Query
-	joinQueries   []*Query
-	mergedQueries []*Query
-	joinToFields  []string
-	joinHandlers  []JoinHandler
-	context       interface{}
-	joinType      int
-	closed        bool
-	initBuf       [256]byte
-	nsArray       []nsArrayEntry
-	ptVersions    []int32
-	iterator      Iterator
-	jsonIterator  JSONIterator
-	items         []interface{}
-	json          []byte
-	jsonOffsets   []int
-	totalName     string
-	executed      bool
-	fetchCount    int
+	Namespace       string
+	db              *reindexerImpl
+	nextOp          int
+	ser             cjson.Serializer
+	root            *Query
+	joinQueries     []*Query
+	mergedQueries   []*Query
+	joinToFields    []string
+	joinHandlers    []JoinHandler
+	context         interface{}
+	joinType        int
+	closed          bool
+	initBuf         [256]byte
+	nsArray         []nsArrayEntry
+	ptVersions      []int32
+	iterator        Iterator
+	jsonIterator    JSONIterator
+	items           []interface{}
+	json            []byte
+	jsonOffsets     []int
+	totalName       string
+	executed        bool
+	fetchCount      int
+	queriesCount    int
+	opennedBrackets []int
 }
 
 var queryPool sync.Pool
 
 // Create new DB query
-func newQuery(db *Reindexer, namespace string) *Query {
+func newQuery(db *reindexerImpl, namespace string) *Query {
 	var q *Query
 	obj := queryPool.Get()
 	if obj != nil {
@@ -130,6 +135,8 @@ func newQuery(db *Reindexer, namespace string) *Query {
 		q.totalName = ""
 		q.executed = false
 		q.nsArray = q.nsArray[:0]
+		q.queriesCount = 0
+		q.opennedBrackets = q.opennedBrackets[:0]
 	}
 
 	q.Namespace = namespace
@@ -139,6 +146,64 @@ func newQuery(db *Reindexer, namespace string) *Query {
 
 	q.ser.PutVString(namespace)
 	return q
+}
+
+// MakeCopy -  copy of query with same or other db, resets query context
+func (q *Query) MakeCopy(db *Reindexer) *Query {
+	return q.makeCopy(db.impl, nil)
+}
+
+func (q *Query) makeCopy(db *reindexerImpl, root *Query) *Query {
+	var qC *Query
+	obj := queryPool.Get()
+	if obj != nil {
+		qC = obj.(*Query)
+	}
+
+	if qC == nil {
+		qC = &Query{}
+	}
+
+	qC.ser = cjson.NewSerializer(qC.initBuf[:0])
+
+	qC.db = db
+	qC.Namespace = q.Namespace
+	qC.nextOp = q.nextOp
+
+	qC.ser.Append(q.ser)
+
+	qC.joinToFields = append(q.joinToFields[:0:0], q.joinToFields...)
+	qC.joinHandlers = append(q.joinHandlers[:0:0], q.joinHandlers...)
+	//TODO not realycopy
+	qC.context = q.context
+	qC.joinType = q.joinType
+	qC.nsArray = append(q.nsArray[:0:0], q.nsArray...)
+	qC.ptVersions = append(q.ptVersions[:0:0], q.ptVersions...)
+	qC.items = append(q.items[:0:0], q.items...)
+	qC.json = append(q.json[:0:0], q.json...)
+	qC.jsonOffsets = append(q.jsonOffsets[:0:0], q.jsonOffsets...)
+	qC.totalName = q.totalName
+	qC.executed = q.executed
+	qC.fetchCount = q.fetchCount
+
+	qC.closed = q.closed
+	if q.root != nil && root == nil {
+		qC.root = q.root.makeCopy(db, nil)
+	} else if root != nil {
+		qC.root = root
+	} else {
+		qC.root = nil
+	}
+	qC.joinQueries = qC.joinQueries[:0]
+	for _, qj := range q.joinQueries {
+		qC.joinQueries = append(qC.joinQueries, qj.makeCopy(db, qC))
+	}
+	qC.mergedQueries = qC.mergedQueries[:0]
+	for _, qm := range q.mergedQueries {
+		qC.mergedQueries = append(qC.mergedQueries, qm.makeCopy(db, qC))
+	}
+	return qC
+
 }
 
 // Where - Add where condition to DB query
@@ -152,6 +217,7 @@ func (q *Query) Where(index string, condition int, keys interface{}) *Query {
 	q.ser.PutVarCUInt(q.nextOp)
 	q.ser.PutVarCUInt(condition)
 	q.nextOp = opAND
+	q.queriesCount++
 
 	if keys == nil {
 		q.ser.PutVarUInt(0)
@@ -164,6 +230,29 @@ func (q *Query) Where(index string, condition int, keys interface{}) *Query {
 		q.ser.PutVarCUInt(1)
 		q.putValue(v)
 	}
+	return q
+}
+
+// OpenBracket - Open bracket for where condition to DB query
+func (q *Query) OpenBracket() *Query {
+	q.ser.PutVarCUInt(queryOpenBracket)
+	q.ser.PutVarCUInt(q.nextOp)
+	q.nextOp = opAND
+	q.opennedBrackets = append(q.opennedBrackets, q.queriesCount)
+	q.queriesCount++
+	return q
+}
+
+// CloseBracket - Close bracket for where condition to DB query
+func (q *Query) CloseBracket() *Query {
+	if q.nextOp != opAND {
+		panic(fmt.Errorf("Operation before close bracket"))
+	}
+	if len(q.opennedBrackets) < 1 {
+		panic(fmt.Errorf("Close bracket before open it"))
+	}
+	q.ser.PutVarCUInt(queryCloseBracket)
+	q.opennedBrackets = q.opennedBrackets[:len(q.opennedBrackets)-1]
 	return q
 }
 
@@ -232,6 +321,7 @@ func (q *Query) WhereInt(index string, condition int, keys ...int) *Query {
 
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
+	q.queriesCount++
 
 	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
@@ -245,6 +335,7 @@ func (q *Query) WhereInt32(index string, condition int, keys ...int32) *Query {
 
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
+	q.queriesCount++
 
 	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
@@ -258,6 +349,7 @@ func (q *Query) WhereInt64(index string, condition int, keys ...int64) *Query {
 
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
+	q.queriesCount++
 
 	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
@@ -271,6 +363,7 @@ func (q *Query) WhereString(index string, condition int, keys ...string) *Query 
 
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
+	q.queriesCount++
 
 	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
@@ -295,6 +388,7 @@ func (q *Query) WhereBool(index string, condition int, keys ...bool) *Query {
 
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
+	q.queriesCount++
 
 	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
@@ -313,6 +407,7 @@ func (q *Query) WhereDouble(index string, condition int, keys ...float64) *Query
 
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
 	q.nextOp = opAND
+	q.queriesCount++
 
 	q.ser.PutVarCUInt(len(keys))
 	for _, v := range keys {
@@ -474,6 +569,11 @@ func (q *Query) SetContext(ctx interface{}) *Query {
 
 // Exec will execute query, and return slice of items
 func (q *Query) Exec() *Iterator {
+	return q.ExecCtx(context.Background())
+}
+
+// ExecCtx will execute query, and return slice of items
+func (q *Query) ExecCtx(ctx context.Context) *Iterator {
 	if q.root != nil {
 		q = q.root
 	}
@@ -485,11 +585,16 @@ func (q *Query) Exec() *Iterator {
 	}
 	q.executed = true
 
-	return q.db.execQuery(q)
+	return q.db.execQuery(ctx, q)
 }
 
-// ExecAsJson will execute query, and return iterator
+// ExecToJson will execute query, and return iterator
 func (q *Query) ExecToJson(jsonRoots ...string) *JSONIterator {
+	return q.ExecToJsonCtx(context.Background())
+}
+
+// ExecToJsonCtx will execute query, and return iterator
+func (q *Query) ExecToJsonCtx(ctx context.Context, jsonRoots ...string) *JSONIterator {
 	if q.root != nil {
 		q = q.root
 	}
@@ -506,7 +611,7 @@ func (q *Query) ExecToJson(jsonRoots ...string) *JSONIterator {
 		jsonRoot = jsonRoots[0]
 	}
 
-	return q.db.execJSONQuery(q, jsonRoot)
+	return q.db.execJSONQuery(ctx, q, jsonRoot)
 }
 
 func (q *Query) close() {
@@ -540,6 +645,12 @@ func (q *Query) close() {
 // Delete will execute query, and delete items, matches query
 // On sucess return number of deleted elements
 func (q *Query) Delete() (int, error) {
+	return q.DeleteCtx(context.Background())
+}
+
+// DeleteCtx will execute query, and delete items, matches query
+// On sucess return number of deleted elements
+func (q *Query) DeleteCtx(ctx context.Context) (int, error) {
 	if q.root != nil || len(q.joinQueries) != 0 {
 		return 0, errors.New("Delete does not support joined queries")
 	}
@@ -548,7 +659,7 @@ func (q *Query) Delete() (int, error) {
 	}
 
 	defer q.close()
-	return q.db.deleteQuery(q)
+	return q.db.deleteQuery(ctx, q)
 }
 
 // Set will add update field request for update query
@@ -592,21 +703,32 @@ func (q *Query) SetExpression(field string, value string) *Query {
 
 // Update will execute query, and update fields in items, which matches query
 // On sucess return number of update elements
-func (q *Query) Update() (int, error) {
+func (q *Query) Update() *Iterator {
+	return q.UpdateCtx(context.Background())
+}
+
+// UpdateCtx will execute query, and update fields in items, which matches query
+// On sucess return number of update elements
+func (q *Query) UpdateCtx(ctx context.Context) *Iterator {
 	if q.root != nil || len(q.joinQueries) != 0 {
-		return 0, errors.New("Update does not support joined queries")
+		return errIterator(errors.New("Update does not support joined queries"))
 	}
 	if q.closed {
 		panic(errors.New("Update call on already closed query. You shoud create new Query"))
 	}
+	q.executed = true
 
-	defer q.close()
-	return q.db.updateQuery(q)
+	return q.db.updateQuery(ctx, q)
 }
 
 // MustExec will execute query, and return iterator, panic on error
 func (q *Query) MustExec() *Iterator {
-	it := q.Exec()
+	return q.MustExecCtx(context.Background())
+}
+
+// MustExecCtx will execute query, and return iterator, panic on error
+func (q *Query) MustExecCtx(ctx context.Context) *Iterator {
+	it := q.ExecCtx(ctx)
 	if it.err != nil {
 		panic(it.err)
 	}
@@ -615,7 +737,12 @@ func (q *Query) MustExec() *Iterator {
 
 // Get will execute query, and return 1 st item, panic on error
 func (q *Query) Get() (item interface{}, found bool) {
-	iter := q.Limit(1).MustExec()
+	return q.GetCtx(context.Background())
+}
+
+// GetCtx will execute query, and return 1 st item, panic on error
+func (q *Query) GetCtx(ctx context.Context) (item interface{}, found bool) {
+	iter := q.Limit(1).MustExecCtx(ctx)
 	defer iter.Close()
 	if iter.Next() {
 		return iter.Object(), true
@@ -623,9 +750,14 @@ func (q *Query) Get() (item interface{}, found bool) {
 	return nil, false
 }
 
-// Get will execute query, and return 1 st item, panic on error
+// GetJson will execute query, and return 1 st item, panic on error
 func (q *Query) GetJson() (json []byte, found bool) {
-	it := q.Limit(1).ExecToJson()
+	return q.GetJsonCtx(context.Background())
+}
+
+// GetJsonCtx will execute query, and return 1 st item, panic on error
+func (q *Query) GetJsonCtx(ctx context.Context) (json []byte, found bool) {
+	it := q.Limit(1).ExecToJsonCtx(ctx)
 	defer it.Close()
 	if it.Error() != nil {
 		panic(it.Error())
@@ -761,6 +893,11 @@ func (q *Query) Functions(fields ...string) *Query {
 // Adds equal position fields to arrays
 func (q *Query) EqualPosition(fields ...string) *Query {
 	q.ser.PutVarCUInt(queryEqualPosition)
+	if len(q.opennedBrackets) == 0 {
+		q.ser.PutVarCUInt(0)
+	} else {
+		q.ser.PutVarCUInt(q.opennedBrackets[len(q.opennedBrackets)-1])
+	}
 	q.ser.PutVarCUInt(len(fields))
 	for _, field := range fields {
 		q.ser.PutVString(field)

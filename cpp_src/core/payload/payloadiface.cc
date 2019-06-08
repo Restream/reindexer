@@ -54,12 +54,12 @@ Variant PayloadIface<T>::Get(int field, int idx, bool enableHold) const {
 
 // Get element(s) by field index
 template <typename T>
-VariantArray &PayloadIface<T>::Get(const string &field, VariantArray &kvs, bool enableHold) const {
+VariantArray &PayloadIface<T>::Get(string_view field, VariantArray &kvs, bool enableHold) const {
 	return Get(t_.FieldByName(field), kvs, enableHold);
 }
 
 template <typename T>
-VariantArray PayloadIface<T>::GetByJsonPath(const string &jsonPath, TagsMatcher &tagsMatcher, VariantArray &kvs,
+VariantArray PayloadIface<T>::GetByJsonPath(string_view jsonPath, TagsMatcher &tagsMatcher, VariantArray &kvs,
 											KeyValueType expectedType) const {
 	VariantArray krefs;
 	Get(0, krefs);
@@ -91,7 +91,7 @@ VariantArray PayloadIface<T>::GetByJsonPath(const TagsPath &jsonPath, VariantArr
 // Set element or array by field index
 template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
-void PayloadIface<T>::Set(const string &field, const VariantArray &keys, bool append) {
+void PayloadIface<T>::Set(string_view field, const VariantArray &keys, bool append) {
 	return Set(t_.FieldByName(field), keys, append);
 }
 
@@ -232,14 +232,23 @@ size_t PayloadIface<T>::GetHash(const FieldsSet &fields) const {
 	VariantArray keys1;
 	size_t tagPathIdx = 0;
 	for (auto field : fields) {
+		ret <<= 1;
 		if (field != IndexValueType::SetByJsonPath) {
-			keys1 = Get(field, keys1);
+			auto &f = t_.Field(field);
+			if (f.IsArray()) {
+				auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
+				ret ^= arr->len;
+				uint8_t *p = v_->Ptr() + arr->offset;
+				for (int i = 0; i < arr->len; i++, p += f.ElemSizeof()) {
+					ret ^= PayloadFieldValue(f, p).Get().Hash();
+				}
+			} else
+				ret ^= Field(field).Get().Hash();
 		} else {
 			assert(tagPathIdx < fields.getTagsPathsLength());
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
-			keys1 = GetByJsonPath(tagsPath, keys1, KeyValueUndefined);
+			ret ^= GetByJsonPath(tagsPath, keys1, KeyValueUndefined).Hash();
 		}
-		ret ^= keys1.Hash();
 	}
 	return ret;
 }
@@ -252,12 +261,13 @@ uint64_t PayloadIface<T>::GetHash() const {
 
 	for (int field = 0; field < t_.NumFields(); field++) {
 		ret <<= 1;
-		if (t_.Field(field).IsArray()) {
+		auto &f = t_.Field(field);
+		if (f.IsArray()) {
 			auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
-
-			for (int i = 0; i < arr->len; i++) {
-				PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
-				ret ^= (pv.Get().Hash() + i);
+			ret ^= arr->len;
+			uint8_t *p = v_->Ptr() + arr->offset;
+			for (int i = 0; i < arr->len; i++, p += f.ElemSizeof()) {
+				ret ^= PayloadFieldValue(f, p).Get().Hash();
 			}
 		} else
 			ret ^= Field(field).Get().Hash();
@@ -272,7 +282,21 @@ bool PayloadIface<T>::IsEQ(const T &other, const FieldsSet &fields) const {
 	VariantArray keys1, keys2;
 	for (auto field : fields) {
 		if (field != IndexValueType::SetByJsonPath) {
-			if (Get(field, keys1) != o.Get(field, keys2)) return false;
+			auto &f = t_.Field(field);
+			if (f.IsArray()) {
+				auto *arr1 = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
+				auto *arr2 = reinterpret_cast<PayloadFieldValue::Array *>(o.Field(field).p_);
+				if (arr1->len != arr2->len) return false;
+
+				uint8_t *p1 = v_->Ptr() + arr1->offset;
+				uint8_t *p2 = o.v_->Ptr() + arr2->offset;
+
+				for (int i = 0; i < arr1->len; i++, p1 += f.ElemSizeof(), p2 += f.ElemSizeof()) {
+					if (PayloadFieldValue(f, p1).Get() != PayloadFieldValue(f, p2).Get()) return false;
+				}
+			} else {
+				if (Field(field).Get() != o.Field(field).Get()) return false;
+			}
 		} else {
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
 			if (GetByJsonPath(tagsPath, keys1, KeyValueUndefined) != o.GetByJsonPath(tagsPath, keys2, KeyValueUndefined)) return false;
@@ -438,7 +462,7 @@ template class PayloadIface<const PayloadValue>;
 #pragma warning(disable : 5037)
 #endif
 
-template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(string const &, VariantArray const &, bool);
+template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(string_view, VariantArray const &, bool);
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(int, VariantArray const &, bool);
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(int, int, const Variant &);
 

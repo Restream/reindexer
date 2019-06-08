@@ -37,42 +37,42 @@ JsonBuilder &JsonBuilder::End() {
 
 void JsonBuilder::SetTagsMatcher(const TagsMatcher *tm) { tm_ = tm; }
 
-JsonBuilder JsonBuilder::Object(const char *name) {
+JsonBuilder JsonBuilder::Object(string_view name) {
 	putName(name);
 	return JsonBuilder(*ser_, TypeObject, tm_);
 }
 
-JsonBuilder JsonBuilder::Array(const char *name) {
+JsonBuilder JsonBuilder::Array(string_view name) {
 	putName(name);
 	return JsonBuilder(*ser_, TypeArray, tm_);
 }
 
-void JsonBuilder::putName(const char *name) {
+void JsonBuilder::putName(string_view name) {
 	if (count_++) (*ser_) << ',';
-	if (name) {
+	if (name.data()) {
 		ser_->PrintJsonString(name);
 		(*ser_) << ':';
 	}
 }
 
-JsonBuilder &JsonBuilder::Put(const char *name, const string_view &arg) {
+JsonBuilder &JsonBuilder::Put(string_view name, string_view arg) {
 	putName(name);
 	ser_->PrintJsonString(arg);
 	return *this;
 }
 
-JsonBuilder &JsonBuilder::Raw(const char *name, const string_view &arg) {
+JsonBuilder &JsonBuilder::Raw(string_view name, string_view arg) {
 	putName(name);
 	(*ser_) << arg;
 	return *this;
 }
-JsonBuilder &JsonBuilder::Null(const char *name) {
+JsonBuilder &JsonBuilder::Null(string_view name) {
 	putName(name);
 	(*ser_) << "null";
 	return *this;
 }
 
-JsonBuilder &JsonBuilder::Put(const char *name, const Variant &kv) {
+JsonBuilder &JsonBuilder::Put(string_view name, const Variant &kv) {
 	switch (kv.Type()) {
 		case KeyValueInt:
 			return Put(name, int(kv));

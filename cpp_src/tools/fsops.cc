@@ -8,6 +8,7 @@
 
 #include "errors.h"
 #include "tools/oscompat.h"
+#include "tools/stringstools.h"
 
 namespace reindexer {
 namespace fs {
@@ -33,8 +34,8 @@ int MkDirAll(const string &path) {
 
 int RmDirAll(const string &path) {
 #ifndef _WIN32
-	return nftw(path.c_str(), [](const char *fpath, const struct stat *, int, struct FTW *) { return ::remove(fpath); }, 64,
-				FTW_DEPTH | FTW_PHYS);
+	return nftw(
+		path.c_str(), [](const char *fpath, const struct stat *, int, struct FTW *) { return ::remove(fpath); }, 64, FTW_DEPTH | FTW_PHYS);
 #else
 	(void)path;
 	return 0;
@@ -228,6 +229,26 @@ Error ChangeUser(const char *userName) {
 	(void)userName;
 #endif
 	return 0;
+}
+
+string GetRelativePath(const string &path, unsigned maxUp) {
+	string cwd = GetCwd();
+
+	unsigned same = 0, slashes = 0;
+	for (; same < std::min(cwd.size(), path.size()) && cwd[same] == path[same]; ++same) {
+	}
+	for (unsigned i = same; i < cwd.size(); ++i) {
+		if (cwd[i] == '/' || i == same) slashes++;
+	}
+	if (!slashes && same < path.size()) same++;
+
+	if (same < 2 || (slashes > maxUp)) return path;
+
+	string rpath;
+	rpath.reserve(slashes * 3 + path.size() - same + 1);
+	while (slashes--) rpath += "../";
+	rpath.append(path.begin() + same, path.end());
+	return rpath;
 }
 
 }  // namespace fs

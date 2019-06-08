@@ -1,15 +1,10 @@
 #include "querywhere.h"
-#include <stdlib.h>
-#include "core/keyvalue/key_string.h"
-#include "estl/tokenizer.h"
-#include "tools/errors.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
 
 bool QueryEntry::operator==(const QueryEntry &obj) const {
-	if (op != obj.op) return false;
 	if (condition != obj.condition) return false;
 	if (index != obj.index) return false;
 	if (idxNo != obj.idxNo) return false;
@@ -19,6 +14,56 @@ bool QueryEntry::operator==(const QueryEntry &obj) const {
 }
 
 bool QueryEntry::operator!=(const QueryEntry &obj) const { return !operator==(obj); }
+
+template <typename T>
+EqualPosition QueryEntries::DetermineEqualPositionIndexes(unsigned start, const T &fields) const {
+	if (fields.size() < 2) throw Error(errLogic, "Amount of fields with equal index position should be 2 or more!");
+	EqualPosition result;
+	for (size_t i = start; i < Size(); i = Next(i)) {
+		if (!container_[i]->IsLeaf()) continue;
+		for (const auto &f : fields) {
+			if (container_[i]->Value().index == f) {
+				result.push_back(i);
+				break;
+			}
+		}
+	}
+	return result;
+}
+
+template <typename T>
+std::pair<unsigned, EqualPosition> QueryEntries::DetermineEqualPositionIndexes(const T &fields) const {
+	const unsigned start = activeBrackets_.empty() ? 0u : activeBrackets_.back() + 1u;
+	return {start, DetermineEqualPositionIndexes(start, fields)};
+}
+
+// Explicit instantiations
+template EqualPosition QueryEntries::DetermineEqualPositionIndexes<vector<string>>(unsigned, const vector<string> &) const;
+template std::pair<unsigned, EqualPosition> QueryEntries::DetermineEqualPositionIndexes<vector<string>>(const vector<string> &) const;
+template std::pair<unsigned, EqualPosition> QueryEntries::DetermineEqualPositionIndexes<h_vector<string, 4>>(
+	const h_vector<string, 4> &) const;
+template std::pair<unsigned, EqualPosition> QueryEntries::DetermineEqualPositionIndexes<std::initializer_list<string>>(
+	const std::initializer_list<string> &) const;
+
+void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer &ser) {
+	for (; it != to; ++it) {
+		if (it->IsLeaf()) {
+			const QueryEntry &entry = it->Value();
+			entry.distinct ? ser.PutVarUint(QueryDistinct) : ser.PutVarUint(QueryCondition);
+			ser.PutVString(entry.index);
+			if (entry.distinct) continue;
+			ser.PutVarUint(it->Op);
+			ser.PutVarUint(entry.condition);
+			ser.PutVarUint(entry.values.size());
+			for (auto &kv : entry.values) ser.PutVariant(kv);
+		} else {
+			ser.PutVarUint(QueryOpenBracket);
+			ser.PutVarUint(it->Op);
+			serialize(it->cbegin(it), it->cend(it), ser);
+			ser.PutVarUint(QueryCloseBracket);
+		}
+	}
+}
 
 bool UpdateEntry::operator==(const UpdateEntry &obj) const {
 	if (column != obj.column) return false;
@@ -82,38 +127,57 @@ CondType QueryWhere::getCondType(string_view cond) {
 	throw Error(errParseSQL, "Expected condition operator, but found '%s' in query", cond);
 }
 
-const char *condNames[] = {"IS NOT NULL", "=", "<", "<=", ">", "=>", "RANGE", "IN", "ALLSET", "IS NULL", "LIKE"};
+const char *condNames[] = {"IS NOT NULL", "=", "<", "<=", ">", ">=", "RANGE", "IN", "ALLSET", "IS NULL", "LIKE"};
 const char *opNames[] = {"-", "OR", "AND", "AND NOT"};
 
-void QueryWhere::dumpWhere(WrSerializer &ser, bool stripArgs) const {
-	if (entries.size()) ser << " WHERE";
+void QueryEntries::WriteSQLWhere(WrSerializer &ser, bool stripArgs) const {
+	if (Empty()) return;
+	ser << " WHERE";
+	writeSQL(cbegin(), cend(), ser, stripArgs);
+}
 
-	for (auto &e : entries) {
-		if (&e != &*entries.begin() && unsigned(e.op) < sizeof(opNames) / sizeof(opNames[0])) {
-			ser << " " << opNames[e.op];
-		} else if (&e == &*entries.begin() && e.op == OpNot) {
-			ser << " NOT";
+void QueryEntries::writeSQL(const_iterator from, const_iterator to, WrSerializer &ser, bool stripArgs) {
+	ser << ' ';
+	const bool needBrackets = from + 1 != to;
+	if (needBrackets) ser << '(';
+	for (const_iterator it = from; it != to; ++it) {
+		if (it != from) {
+			ser << ' ';
+			if (unsigned(it->Op) < sizeof(opNames) / sizeof(opNames[0])) ser << opNames[it->Op] << ' ';
+		} else if (it->Op == OpNot) {
+			ser << "NOT ";
 		}
-		ser << " " << e.index << " ";
-		if (e.condition < sizeof(condNames) / sizeof(condNames[0]))
-			ser << condNames[e.condition] << " ";
-		else
-			ser << "<unknown cond> ";
-		if (e.condition == CondEmpty || e.condition == CondAny) {
-		} else if (stripArgs) {
-			ser << '?';
+		if (!it->IsLeaf()) {
+			writeSQL(it->cbegin(it), it->cend(it), ser, stripArgs);
 		} else {
-			if (e.values.size() > 1) ser << '(';
-			for (auto &v : e.values) {
-				if (&v != &*e.values.begin()) ser << ',';
-				if (v.Type() == KeyValueString)
-					ser << '\'' << v.As<string>() << '\'';
-				else
-					ser << v.As<string>();
+			const QueryEntry &entry = it->Value();
+			if (entry.index.find('.') == string::npos)
+				ser << entry.index << ' ';
+			else
+				ser << '\'' << entry.index << "\' ";
+
+			if (entry.condition < sizeof(condNames) / sizeof(condNames[0]))
+				ser << condNames[entry.condition] << ' ';
+			else
+				ser << "<unknown cond> ";
+			if (entry.condition == CondEmpty || entry.condition == CondAny) {
+			} else if (stripArgs) {
+				ser << '?';
+			} else {
+				if (entry.values.size() != 1) ser << '(';
+				for (auto &v : entry.values) {
+					if (&v != &entry.values[0]) ser << ',';
+					if (v.Type() == KeyValueString) {
+						ser << '\'' << v.As<string>() << '\'';
+					} else {
+						ser << v.As<string>();
+					}
+				}
+				ser << ((entry.values.size() != 1) ? ")" : "");
 			}
-			ser << ((e.values.size() > 1) ? ")" : "");
 		}
 	}
+	if (needBrackets) ser << ')';
 }
 
 string QueryEntry::Dump() const {
@@ -121,22 +185,7 @@ string QueryEntry::Dump() const {
 	if (distinct) {
 		result = "Distinct index: " + index;
 	} else {
-		switch (op) {
-			case OpOr:
-				result = "Or";
-				break;
-			case OpAnd:
-				result = "And";
-				break;
-			case OpNot:
-				result = "Not";
-				break;
-			default:
-				break;
-		}
-		result += " ";
-		result += index;
-		result += " ";
+		result = index + ' ';
 
 		if (condition < sizeof(condNames) / sizeof(condNames[0])) result += string(condNames[condition]) + " ";
 

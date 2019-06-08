@@ -30,7 +30,7 @@ TEST_F(CompositeIndexesApi, DropTest2) {
 
 	for (int i = 0; i < 1000; ++i) {
 		Item item = NewItem(test_ns);
-		EXPECT_TRUE(item);
+		EXPECT_TRUE(!!item);
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 		item["id"] = i + 1;

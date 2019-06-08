@@ -1,6 +1,7 @@
 package cproto
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
@@ -18,7 +19,7 @@ func TestCprotoPool(t *testing.T) {
 			return
 		}
 
-		pingErr := c.Ping()
+		pingErr := c.Ping(context.Background())
 		if pingErr == nil || pingErr.Error() != err.Error() {
 			t.Errorf("Must be connection error, but got: %v; want: %v", pingErr, err)
 		}

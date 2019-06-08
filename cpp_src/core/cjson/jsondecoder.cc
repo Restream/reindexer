@@ -9,7 +9,7 @@ namespace reindexer {
 JsonDecoder::JsonDecoder(TagsMatcher &tagsMatcher) : tagsMatcher_(tagsMatcher), filter_(nullptr) {}
 JsonDecoder::JsonDecoder(TagsMatcher &tagsMatcher, const FieldsSet *filter) : tagsMatcher_(tagsMatcher), filter_(filter) {}
 
-Error JsonDecoder::Decode(Payload *pl, WrSerializer &wrser, JsonValue &v) {
+Error JsonDecoder::Decode(Payload *pl, WrSerializer &wrser, const gason::JsonValue &v) {
 	try {
 		wrser.Reset();
 		CJsonBuilder builder(wrser, CJsonBuilder::TypePlain, &tagsMatcher_);
@@ -22,7 +22,7 @@ Error JsonDecoder::Decode(Payload *pl, WrSerializer &wrser, JsonValue &v) {
 	return 0;
 }
 
-void JsonDecoder::decodeJsonObject(Payload *pl, CJsonBuilder &builder, JsonValue &v, bool match) {
+void JsonDecoder::decodeJsonObject(Payload *pl, CJsonBuilder &builder, const gason::JsonValue &v, bool match) {
 	for (auto elem : v) {
 		int tagName = tagsMatcher_.name2tag(elem->key, true);
 		assert(tagName);
@@ -40,7 +40,7 @@ void JsonDecoder::decodeJsonObject(Payload *pl, CJsonBuilder &builder, JsonValue
 		} else if (match) {
 			// Indexed field. extract it
 			auto &f = pl->Type().Field(field);
-			if (elem->value.getTag() == JSON_ARRAY) {
+			if (elem->value.getTag() == gason::JSON_ARRAY) {
 				if (!f.IsArray()) {
 					throw Error(errLogic, "Error parsing json field '%s' - got array, expected scalar %s", f.Name(),
 								Variant::TypeName(f.Type()));
@@ -55,7 +55,7 @@ void JsonDecoder::decodeJsonObject(Payload *pl, CJsonBuilder &builder, JsonValue
 					pl->Set(field, pos++, jsonValue2Variant(subelem->value, f.Type(), f.Name().c_str()));
 				}
 				builder.ArrayRef(tagName, field, count);
-			} else if (elem->value.getTag() != JSON_NULL) {
+			} else if (elem->value.getTag() != gason::JSON_NULL) {
 				Variant v = jsonValue2Variant(elem->value, f.Type(), f.Name().c_str());
 				pl->Set(field, {v}, true);
 				builder.Ref(tagName, v, field);
@@ -70,38 +70,38 @@ void JsonDecoder::decodeJsonObject(Payload *pl, CJsonBuilder &builder, JsonValue
 // Split original JSON into 2 parts:
 // 1. PayloadFields - fields from json found by 'jsonPath' tags
 // 2. stripped binary packed JSON without fields values found by 'jsonPath' tags
-void JsonDecoder::decodeJson(Payload *pl, CJsonBuilder &builder, JsonValue &v, int tagName, bool match) {
+void JsonDecoder::decodeJson(Payload *pl, CJsonBuilder &builder, const gason::JsonValue &v, int tagName, bool match) {
 	auto jsonTag = v.getTag();
-	if (!match && jsonTag != JSON_OBJECT) return;
+	if (!match && jsonTag != gason::JSON_OBJECT) return;
 	switch (jsonTag) {
-		case JSON_NUMBER: {
+		case gason::JSON_NUMBER: {
 			int64_t value = v.toNumber();
 			builder.Put(tagName, int64_t(value));
 		} break;
-		case JSON_DOUBLE: {
+		case gason::JSON_DOUBLE: {
 			double value = v.toDouble();
 			builder.Put(tagName, value);
 		} break;
-		case JSON_STRING:
+		case gason::JSON_STRING:
 			builder.Put(tagName, v.toString());
 			break;
-		case JSON_TRUE:
+		case gason::JSON_TRUE:
 			builder.Put(tagName, true);
 			break;
-		case JSON_FALSE:
+		case gason::JSON_FALSE:
 			builder.Put(tagName, false);
 			break;
-		case JSON_NULL:
+		case gason::JSON_NULL:
 			builder.Null(tagName);
 			break;
-		case JSON_ARRAY: {
+		case gason::JSON_ARRAY: {
 			auto arrNode = builder.Array(tagName);
 			for (auto elem : v) {
 				decodeJson(pl, arrNode, elem->value, 0, match);
 			}
 			break;
 		}
-		case JSON_OBJECT: {
+		case gason::JSON_OBJECT: {
 			auto node = builder.Object(tagName);
 			decodeJsonObject(pl, node, v, match);
 			break;

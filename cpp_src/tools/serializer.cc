@@ -1,9 +1,5 @@
 #include "tools/serializer.h"
-#include <errno.h>
-#include <stdarg.h>
-#include <stdio.h>
 #include <vendor/double-conversion/double-conversion.h>
-#include <cstring>
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/p_string.h"
 #include "estl/chunk_buf.h"
@@ -95,7 +91,7 @@ double Serializer::GetDouble() {
 int64_t Serializer::GetVarint() {
 	int l = scan_varint(len - pos, buf + pos);
 	if (l == 0) {
-		throw Error(errParseBin, "Binary buffer broken - scan_varint failed: pos=%d,len=%d", int(pos), int(len));
+		throw Error(errParseBin, "Binary buffer broken - scan_varint failed: pos=%d,len=%d", pos, len);
 	}
 
 	checkbound(pos, l, len);
@@ -106,7 +102,7 @@ int64_t Serializer::GetVarint() {
 uint64_t Serializer::GetVarUint() {
 	int l = scan_varint(len - pos, buf + pos);
 	if (l == 0) {
-		throw Error(errParseBin, "Binary buffer broken - scan_varint failed: pos=%d,len=%d", int(pos), int(len));
+		throw Error(errParseBin, "Binary buffer broken - scan_varint failed: pos=%d,len=%d", pos, len);
 	}
 	checkbound(pos, l, len);
 	pos += l;
@@ -256,25 +252,10 @@ void WrSerializer::Reserve(size_t cap) {
 	}
 }
 
-void WrSerializer::Printf(const char *fmt, ...) {
-	int ret = 0, sz = 100;
-	va_list args;
-	va_start(args, fmt);
-	for (;;) {
-		grow(sz);
-
-		va_list cargs;
-		va_copy(cargs, args);
-		ret = vsnprintf(reinterpret_cast<char *>(buf_ + len_), cap_ - len_, fmt, cargs);
-		va_end(cargs);
-		if (ret < 0) {
-			abort();
-		}
-		if (size_t(ret) < cap_ - len_) break;
-		sz = ret + 1;
-	}
-	va_end(args);
-	len_ += ret;
+void WrSerializer::Fill(char c, size_t count) {
+	grow(count);
+	memset(&buf_[len_], c, count);
+	len_ += count;
 }
 
 void WrSerializer::PutBool(bool v) {
@@ -282,12 +263,12 @@ void WrSerializer::PutBool(bool v) {
 	len_ += boolean_pack(v, buf_ + len_);
 }
 
-void WrSerializer::PutVString(const string_view &str) {
+void WrSerializer::PutVString(string_view str) {
 	grow(str.size() + 10);
 	len_ += string_pack(str.data(), str.size(), buf_ + len_);
 }
 
-void WrSerializer::PrintJsonString(const string_view &str) {
+void WrSerializer::PrintJsonString(string_view str) {
 	const char *s = str.data();
 	size_t l = str.size();
 	grow(l * 6 + 3);
@@ -295,7 +276,7 @@ void WrSerializer::PrintJsonString(const string_view &str) {
 	*d++ = '"';
 
 	while (l--) {
-		int c = *s++;
+		unsigned c = *s++;
 		switch (c) {
 			case '\b':
 				*d++ = '\\';
@@ -325,16 +306,14 @@ void WrSerializer::PrintJsonString(const string_view &str) {
 				*d++ = '\\';
 				*d++ = '"';
 				break;
-			case '&':
-				*d++ = '\\';
-				*d++ = 'u';
-				*d++ = '0';
-				*d++ = '0';
-				*d++ = '2';
-				*d++ = '6';
-				break;
 			default:
-				*d++ = c;
+				if (c < 0x20) {
+					*d++ = '\\';
+					*d++ = 'u';
+					d = u32toax(c, d, 4);
+				} else {
+					*d++ = c;
+				}
 		}
 	}
 	*d++ = '"';
@@ -343,23 +322,32 @@ void WrSerializer::PrintJsonString(const string_view &str) {
 
 const int kHexDumpBytesInRow = 16;
 
-void WrSerializer::PrintHexDump(const string_view &str) {
+void WrSerializer::PrintHexDump(string_view str) {
+	grow((kHexDumpBytesInRow * 4 + 12) * (1 + (str.size() / kHexDumpBytesInRow)));
+
+	char *d = reinterpret_cast<char *>(buf_ + len_);
+
 	for (int row = 0; row < int(str.size()); row += kHexDumpBytesInRow) {
-		Printf("%08x  ", row);
+		d = u32toax(row, d, 8);
+		*d++ = ' ';
+		*d++ = ' ';
 		for (int i = row; i < row + kHexDumpBytesInRow; i++) {
 			if (i < int(str.size())) {
-				Printf("%02x ", unsigned(str[i]) & 0xFF);
+				d = u32toax(unsigned(str[i]) & 0xFF, d, 2);
 			} else {
-				Write("   ");
+				*d++ = ' ';
+				*d++ = ' ';
 			}
+			*d++ = ' ';
 		}
-		Write(" ");
+		*d++ = ' ';
 		for (int i = row; i < row + kHexDumpBytesInRow; i++) {
 			char c = (i < int(str.size()) && unsigned(str[i]) > 0x20) ? str[i] : '.';
-			(*this) << c;
+			*d++ = c;
 		}
-		Write("\n");
+		*d++ = '\n';
 	}
+	len_ = d - reinterpret_cast<char *>(buf_);
 }
 
 uint8_t *WrSerializer::Buf() const { return buf_; }
@@ -379,7 +367,7 @@ chunk WrSerializer::DetachChunk() {
 	return ch;
 }
 
-void WrSerializer::Write(const string_view &slice) {
+void WrSerializer::Write(string_view slice) {
 	grow(slice.size());
 	memcpy(&buf_[len_], slice.data(), slice.size());
 	len_ += slice.size();

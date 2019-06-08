@@ -3,17 +3,15 @@
 #include <chrono>
 #include <vector>
 
+#include "core/type_consts.h"
 #include "estl/h_vector.h"
 #include "estl/string_view.h"
-#include "selectiterator.h"
-
-using std::vector;
 
 namespace reindexer {
 
-class SelectIterator;
+class SelectIteratorContainer;
 struct JoinedSelector;
-typedef vector<JoinedSelector> JoinedSelectors;
+typedef std::vector<JoinedSelector> JoinedSelectors;
 
 class ExplainCalc {
 	typedef std::chrono::high_resolution_clock clock;
@@ -34,11 +32,11 @@ public:
 
 	void PutCount(int cnt) { count_ = cnt; }
 	void PutSortIndex(string_view index);
-	void PutSelectors(h_vector<SelectIterator> *qres);
+	void PutSelectors(SelectIteratorContainer *qres);
 	void PutJoinedSelectors(JoinedSelectors *jselectors);
 
 	void LogDump(int logLevel);
-	string GetJSON();
+	std::string GetJSON();
 
 protected:
 	duration lap();
@@ -50,7 +48,7 @@ protected:
 	duration total_, prepare_, select_, postprocess_, loop_;
 
 	string_view sortIndex_;
-	h_vector<SelectIterator> *selectors_ = nullptr;
+	SelectIteratorContainer *selectors_ = nullptr;
 	JoinedSelectors *jselectors_ = nullptr;
 	int iters_ = 0;
 	int count_;

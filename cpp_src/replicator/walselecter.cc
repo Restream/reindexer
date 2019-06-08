@@ -14,8 +14,9 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 	int start = q.start;
 	result.totalCount = 0;
 
-	if (q.entries.size() != 1 || q.entries[0].values.size() != 1 || q.entries[0].condition != CondGt)
+	if (q.entries.Size() != 1 || !q.entries.IsEntry(0) || q.entries[0].values.size() != 1 || q.entries[0].condition != CondGt) {
 		throw Error(errLogic, "Query to WAL should contain only 1 condition '#lsn > number'");
+	}
 
 	int64_t fromLSN = q.entries[0].values[0].As<int64_t>();
 
@@ -71,7 +72,7 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 
 void WALSelecter::putReplState(QueryResults &result) {
 	// prepare json with replication state
-	ReplicationState replState = ns_->repl_;
+	ReplicationState replState = ns_->getReplState();
 	WrSerializer ser;
 	JsonBuilder jb(ser);
 	replState.GetJSON(jb);

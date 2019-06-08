@@ -1,7 +1,5 @@
 #include "core/comparator.h"
-#include "cjson/baseencoder.h"
 #include "core/payload/payloadiface.h"
-#include "query/querywhere.h"
 
 namespace reindexer {
 

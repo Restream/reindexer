@@ -39,7 +39,7 @@ public:
 		Commit(default_namespace);
 	}
 
-	void addCompositeIndex(initializer_list<string> indexes, CompositeIndexType type, const IndexOpts& opts) {
+	void addCompositeIndex(std::initializer_list<string> indexes, CompositeIndexType type, const IndexOpts& opts) {
 		reindexer::IndexDef indexDeclr;
 		indexDeclr.name_ = getCompositeIndexName(indexes);
 		indexDeclr.indexType_ = indexTypeToName(type);
@@ -60,7 +60,7 @@ public:
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
-	string getCompositeIndexName(initializer_list<string> indexes) {
+	string getCompositeIndexName(std::initializer_list<string> indexes) {
 		size_t i = 0;
 		string indexName;
 		for (const string& subIdx : indexes) {
@@ -79,7 +79,7 @@ public:
 			case CompositeIndexBTree:
 				return "tree";
 			default:
-				throw runtime_error("No such type of composite indexes!");
+				throw std::runtime_error("No such type of composite indexes!");
 				break;
 		}
 	}

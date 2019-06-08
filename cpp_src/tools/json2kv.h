@@ -6,6 +6,6 @@
 
 namespace reindexer {
 
-Variant jsonValue2Variant(JsonValue &v, KeyValueType t, const char *fieldName = "");
+Variant jsonValue2Variant(gason::JsonValue &v, KeyValueType t, const char *fieldName = "");
 
 }  // namespace reindexer

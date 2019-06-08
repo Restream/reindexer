@@ -21,6 +21,10 @@ struct v_string_hdr {
 	uint8_t data[1];
 };
 
+struct json_string_ftr {
+	const char *data;
+};
+
 // Dark
 struct p_string {
 	// ptr points to c null-terminated string
@@ -35,6 +39,8 @@ struct p_string {
 	constexpr static uint64_t tagSlice = 0x4ULL;
 	// pyr points to key_string payload atomic_rc_wrapper<base_key_string>
 	constexpr static uint64_t tagKeyString = 0x5ULL;
+	// pyr points to json_string
+	constexpr static uint64_t tagJsonStr = 0x6ULL;
 	// offset of tag in pointer
 	constexpr static uint64_t tagShift = 59ULL;
 	constexpr static uint64_t tagMask = 0x7ULL << tagShift;
@@ -42,6 +48,7 @@ struct p_string {
 	explicit p_string(const l_string_hdr *lstr) : v((uintptr_t(lstr) & ~tagMask) | (tagLstr << tagShift)) {}
 	explicit p_string(const v_string_hdr *vstr) : v((uintptr_t(vstr) & ~tagMask) | (tagVstr << tagShift)) {}
 	explicit p_string(const char *cstr) : v((uintptr_t(cstr) & ~tagMask) | (tagCstr << tagShift)) {}
+	explicit p_string(const json_string_ftr jstr) : v((uintptr_t(jstr.data) & ~tagMask) | (tagJsonStr << tagShift)) {}
 	explicit p_string(const string *str) : v((uintptr_t(str) & ~tagMask) | (tagCxxstr << tagShift)) {}
 	explicit p_string(const key_string &str) : v((uintptr_t(str.get()) & ~tagMask) | (tagKeyString << tagShift)) {}
 	explicit p_string(const string_view *ptr) : v((uintptr_t(ptr) & ~tagMask) | (tagSlice << tagShift)) {}
@@ -64,6 +71,10 @@ struct p_string {
 				auto l = scan_varint(10, p);
 				return reinterpret_cast<const char *>(p) + l;
 			}
+			case tagJsonStr: {
+				auto p = reinterpret_cast<const uint8_t *>(ptr());
+				return reinterpret_cast<const char *>(p) - (p[0] | (p[1] << 8) | (p[2] << 16));
+			}
 			default:
 				abort();
 		}
@@ -84,6 +95,10 @@ struct p_string {
 				auto p = reinterpret_cast<const uint8_t *>(ptr());
 				auto l = scan_varint(10, p);
 				return parse_uint32(l, p);
+			}
+			case tagJsonStr: {
+				auto p = reinterpret_cast<const uint8_t *>(ptr());
+				return p[0] | (p[1] << 8) | (p[2] << 16);
 			}
 			default:
 				abort();

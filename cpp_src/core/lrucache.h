@@ -8,16 +8,9 @@
 #include "namespacestat.h"
 
 namespace reindexer {
-using std::list;
-using std::mutex;
-using std::unordered_map;
 
 const size_t kDefaultCacheSizeLimit = 1024 * 1024 * 128;
 const int kDefaultHitCountToCache = 2;
-
-struct CacheKeyBase {
-	mutable std::atomic<bool> locked{false};
-};
 
 template <typename K, typename V, typename hash, typename equal>
 class LRUCache {
@@ -25,22 +18,19 @@ public:
 	LRUCache(size_t sizeLimit = kDefaultCacheSizeLimit, int hitCount = kDefaultHitCountToCache)
 		: totalCacheSize_(0), cacheSizeLimit_(sizeLimit), hitCountToCache_(hitCount) {}
 	struct Iterator {
-		Iterator(const K *k = nullptr, const V &v = V()) : key(k), val(v) {}
+		Iterator(bool k = false, const V &v = V()) : valid(k), val(v) {}
 		Iterator(const Iterator &other) = delete;
 		Iterator &operator=(const Iterator &other) = delete;
-		Iterator(Iterator &&other) : key(other.key), val(std::move(other.val)) { other.key = nullptr; }
+		Iterator(Iterator &&other) : valid(other.valid), val(std::move(other.val)) { other.valid = false; }
 		Iterator &operator=(Iterator &&other) {
 			if (this != &other) {
-				key = other.key;
+				valid = other.valid;
 				val = std::move(other.val);
-				other.key = nullptr;
+				other.valid = false;
 			}
 			return *this;
 		}
-		~Iterator() {
-			if (key && key->locked) key->locked = false;
-		}
-		const K *key;
+		bool valid;
 		V val;
 	};
 	// Get cached val. Create new entry in cache if unexists
@@ -53,9 +43,11 @@ public:
 	bool Clear();
 
 protected:
-	void eraseLRU();
+	bool eraseLRU();
 
-	typedef list<const K *> LRUList;
+	bool clearAll();
+
+	typedef std::list<const K *> LRUList;
 
 	struct Entry {
 		V val;
@@ -63,9 +55,9 @@ protected:
 		int hitCount = 0;
 	};
 
-	unordered_map<K, Entry, hash, equal> items_;
+	std::unordered_map<K, Entry, hash, equal> items_;
 	LRUList lru_;
-	mutex lock_;
+	std::mutex lock_;
 	size_t totalCacheSize_;
 	size_t cacheSizeLimit_;
 	int hitCountToCache_;

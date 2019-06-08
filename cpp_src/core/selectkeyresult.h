@@ -20,17 +20,17 @@ class SingleSelectKeyResult {
 
 public:
 	SingleSelectKeyResult() {}
-	explicit SingleSelectKeyResult(const reindexer::KeyEntry<IdSet> &ids, SortType sortId) {
+	template <typename KeyEntryT>
+	explicit SingleSelectKeyResult(const KeyEntryT &ids, SortType sortId) {
 		if (ids.Unsorted().IsCommited()) {
 			ids_ = ids.Sorted(sortId);
 		} else {
-			assert(ids.Unsorted().set_);
+			assert(ids.Unsorted().BTree());
 			assert(!sortId);
-			set_ = ids.Unsorted().set_.get();
+			set_ = ids.Unsorted().BTree();
 			useBtree_ = true;
 		}
 	}
-	explicit SingleSelectKeyResult(const reindexer::KeyEntry<IdSetPlain> &ids, SortType sortId) { ids_ = ids.Sorted(sortId); }
 	explicit SingleSelectKeyResult(IdSet::Ptr ids) : tempIds_(ids), ids_(*ids) {}
 	explicit SingleSelectKeyResult(const IdSetRef &ids) : ids_(ids) {}
 	explicit SingleSelectKeyResult(IdType rBegin, IdType rEnd) : rBegin_(rBegin), rEnd_(rEnd), isRange_(true) {}
@@ -90,10 +90,11 @@ public:
 		return *this;
 	}
 
-protected:
 	IdSet::Ptr tempIds_;
 	IdSetRef ids_;
-	base_idsetset *set_ = nullptr;
+
+protected:
+	const base_idsetset *set_ = nullptr;
 
 	union {
 		IdSetRef::const_iterator begin_;

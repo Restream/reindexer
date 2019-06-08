@@ -15,7 +15,6 @@ ItemImpl &ItemImpl::operator=(ItemImpl &&other) noexcept {
 		payloadType_ = std::move(other.payloadType_);
 		payloadValue_ = std::move(other.payloadValue_);
 		tagsMatcher_ = std::move(other.tagsMatcher_);
-		jsonAllocator_ = std::move(other.jsonAllocator_);
 		ser_ = std::move(other.ser_);
 		tupleData_ = std::move(other.tupleData_);
 		precepts_ = std::move(other.precepts_);
@@ -45,22 +44,21 @@ void ItemImpl::SetField(int field, const VariantArray &krs) {
 	}
 }
 
-void ItemImpl::SetField(const string &jsonPath, const VariantArray &keys) {
-	VariantArray tupleKv;
+void ItemImpl::SetField(string_view jsonPath, const VariantArray &keys) {
 	Payload pl = GetPayload();
-	pl.Get(0, tupleKv, false);
-	assert(tupleKv.size() == 1);
 
 	ser_.Reset();
-	key_string generatedTuple;
-	string_view oldTuple(tupleKv[0]);
-	if (oldTuple.length() == 0) {
-		generatedTuple = buildPayloadTuple(&pl, &tagsMatcher_);
-		oldTuple = string_view(*generatedTuple);
+	WrSerializer generatedCjson;
+	string_view cjson(pl.Get(0, 0));
+
+	if (cjson.empty()) {
+		buildPayloadTuple(&pl, &tagsMatcher_, generatedCjson);
+		cjson = generatedCjson.Slice();
 	}
+
 	CJsonModifier cjsonModifier(tagsMatcher_, payloadType_);
-	Error err = cjsonModifier.SetFieldValue(oldTuple, tagsMatcher_.path2tag(jsonPath), keys, ser_);
-	if (!err.ok()) throw Error(errLogic, "Error setting field value: '%s'", err.what().c_str());
+	Error err = cjsonModifier.SetFieldValue(cjson, tagsMatcher_.path2tag(jsonPath), keys, ser_);
+	if (!err.ok()) throw Error(errLogic, "Error setting field value: '%s'", err.what());
 
 	tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
 	pl.Set(0, {Variant(p_string(&tupleData_))});
@@ -73,7 +71,7 @@ Error ItemImpl::FromCJSON(const string_view &slice, bool pkOnly) {
 	GetPayload().Reset();
 	string_view data = slice;
 	if (!unsafe_) {
-		holder_.push_back(slice.ToString());
+		holder_.push_back(string(slice));
 		data = holder_.back();
 	}
 
@@ -113,16 +111,17 @@ Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool pkOnly) {
 	cjson_ = string_view();
 
 	if (!unsafe_ && endp == nullptr) {
-		holder_.push_back(slice.ToString());
+		holder_.push_back(string(slice));
 		data = holder_.back();
 	}
 
 	payloadValue_.Clone();
 	char *endptr = nullptr;
-	JsonValue value;
-	int status = jsonParse(const_cast<char *>(data.data()), &endptr, &value, jsonAllocator_);
-	if (status != JSON_OK) return Error(errParseJson, "Error parsing json: '%s'", jsonStrError(status));
-	if (value.getTag() != JSON_OBJECT) return Error(errParseJson, "Expected json object");
+	gason::JsonValue value;
+	gason::JsonAllocator allocator;
+	int status = jsonParse(giftStr(data), &endptr, &value, allocator);
+	if (status != gason::JSON_OK) return Error(errParseJson, "Error parsing json: '%s'", gason::jsonStrError(status));
+	if (value.getTag() != gason::JSON_OBJECT) return Error(errParseJson, "Expected json object");
 	if (endp) {
 		*endp = endptr;
 	}
@@ -136,6 +135,7 @@ Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool pkOnly) {
 	// Put tuple to field[0]
 	tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
 	pl.Set(0, {Variant(p_string(&tupleData_))});
+	ser_ = WrSerializer();
 	return err;
 }
 
@@ -193,7 +193,7 @@ string_view ItemImpl::GetCJSON(WrSerializer &ser, bool withTagsMatcher) {
 	return ser.Slice();
 }
 
-VariantArray ItemImpl::GetValueByJSONPath(const string &jsonPath) {
+VariantArray ItemImpl::GetValueByJSONPath(string_view jsonPath) {
 	ConstPayload pl(payloadType_, payloadValue_);
 	VariantArray krefs;
 	return pl.GetByJsonPath(jsonPath, tagsMatcher_, krefs, KeyValueUndefined);

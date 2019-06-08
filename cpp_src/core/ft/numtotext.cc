@@ -7,7 +7,11 @@
 #include <iostream>
 #include <vector>
 
-using namespace std;
+namespace reindexer {
+
+using std::string;
+using std::vector;
+using std::pair;
 
 const string units[] = {"", "один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять"};
 const string unitsNominat[] = {"", "одна", "две"};
@@ -36,7 +40,7 @@ const string& getNumorder(int numorder, int i) {
 
 int ansiCharacterToDigit(char ch) { return static_cast<int>(ch - 48); }
 
-vector<string> getOrders(const string& str) {
+vector<string> getOrders(string_view str) {
 	string numStr(str);
 	std::reverse(numStr.begin(), numStr.end());
 	int numChars = numStr.length();
@@ -122,7 +126,7 @@ vector<string> formTextString(const string& str, int i) {
 	return words;
 }
 
-vector<string>& NumToText::convert(const string& str, std::vector<std::string>& output) {
+vector<string>& NumToText::convert(string_view str, std::vector<std::string>& output) {
 	output.clear();
 	if ((str.length() == 1) && (str[0] == '0')) {
 		output = {"ноль"};
@@ -136,3 +140,4 @@ vector<string>& NumToText::convert(const string& str, std::vector<std::string>& 
 	}
 	return output;
 }
+}  // namespace reindexer

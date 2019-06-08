@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <string>
+#include "estl/string_view.h"
 
 namespace reindexer {
 
@@ -14,7 +15,7 @@ struct typos_context {
 };
 const int kMaxTyposInWord = 4;
 
-void mktypos(typos_context *ctx, const wstring &word, int level, int maxTyposLen, std::function<void(const string &, int)> callback);
-void mktypos(typos_context *ctx, const char *word, int level, int maxTyposLen, std::function<void(const string &, int)> callback);
+void mktypos(typos_context *ctx, const wstring &word, int level, int maxTyposLen, std::function<void(string_view, int)> callback);
+void mktypos(typos_context *ctx, string_view word, int level, int maxTyposLen, std::function<void(string_view, int)> callback);
 
 }  // namespace reindexer

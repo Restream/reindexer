@@ -4,6 +4,7 @@
 #include <functional>
 #include <string>
 #include "estl/h_vector.h"
+#include "estl/span.h"
 #include "estl/string_view.h"
 
 namespace reindexer {
@@ -23,6 +24,7 @@ enum WALRecType {
 };
 
 class WrSerializer;
+class JsonBuilder;
 
 struct WALRecord {
 	explicit WALRecord(span<uint8_t>);
@@ -33,8 +35,8 @@ struct WALRecord {
 	explicit WALRecord(WALRecType _type, string_view cjson, int tmVersion, int modifyMode) : type(_type) {
 		itemModify = {cjson, tmVersion, modifyMode};
 	}
-	WrSerializer &Dump(WrSerializer &ser, std::function<string(string_view)> cjsonViewer) const;
-
+	WrSerializer &Dump(WrSerializer &ser, std::function<std::string(string_view)> cjsonViewer) const;
+	void GetJSON(JsonBuilder &jb, std::function<string(string_view)> cjsonViewer) const;
 	WALRecType type;
 	union {
 		IdType id;

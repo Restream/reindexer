@@ -127,4 +127,28 @@ Variant cjsonValueToVariant(int tag, Serializer &rdser, KeyValueType dstType, Er
 	return Variant();
 }
 
+template <typename T>
+void buildPayloadTuple(const PayloadIface<T> *pl, const TagsMatcher *tagsMatcher, WrSerializer &wrser) {
+	CJsonBuilder builder(wrser, CJsonBuilder::TypeObject);
+
+	for (int field = 1; field < pl->NumFields(); ++field) {
+		const PayloadFieldType &fieldType = pl->Type().Field(field);
+		if (fieldType.JsonPaths().size() < 1 || fieldType.JsonPaths()[0].empty()) continue;
+
+		int tagName = tagsMatcher->name2tag(fieldType.JsonPaths()[0]);
+		assert(tagName != 0);
+
+		if (fieldType.IsArray()) {
+			builder.ArrayRef(tagName, field, pl->GetArrayLen(field));
+		} else {
+			builder.Ref(tagName, pl->Get(field, 0), field);
+		}
+	}
+	builder.End();
+}
+
+template void buildPayloadTuple<const PayloadValue>(const PayloadIface<const PayloadValue> *pl, const TagsMatcher *tagsMatcher,
+													WrSerializer &wrser);
+template void buildPayloadTuple<PayloadValue>(const PayloadIface<PayloadValue> *pl, const TagsMatcher *tagsMatcher, WrSerializer &wrser);
+
 }  // namespace reindexer

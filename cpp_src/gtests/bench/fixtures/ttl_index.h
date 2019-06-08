@@ -25,6 +25,6 @@ protected:
 	void removeItemsSlowly();
 	void insertItemsSlowly();
 	void selectData();
-    int waitForVanishing();
+	int waitForVanishing();
 	size_t getItemsCount();
 };

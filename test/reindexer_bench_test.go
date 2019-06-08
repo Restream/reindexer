@@ -97,33 +97,33 @@ func BenchmarkPrepare(b *testing.B) {
 		return
 	}
 	prepared = true
-	DB.SetLogger(nil)
+	DBD.SetLogger(nil)
 	FillTestItemsBench(0, *benchmarkSeedCount, 10)
 	FillTestJoinItems(7000, 500)
 	// force commit and make sort orders
 	for i := 0; i < 10; i++ {
-		DB.Query("test_items_bench").Where("year", reindexer.EQ, 1).Sort("year", false).Limit(1).MustExec().Close()
+		DBD.Query("test_items_bench").Where("year", reindexer.EQ, 1).Sort("year", false).Limit(1).MustExec().Close()
 	}
 	for i := 0; i < len(pkgs)*3; i++ {
-		DB.Query("test_items_bench").Limit(20).Sort("start_time", false).
+		DBD.Query("test_items_bench").Limit(20).Sort("start_time", false).
 			Where("packages", reindexer.SET, pkgs[i%len(pkgs)]).
 			MustExec().Close()
-		DB.Query("test_items_bench").Limit(20).Sort("year", false).
+		DBD.Query("test_items_bench").Limit(20).Sort("year", false).
 			Where("packages", reindexer.SET, pkgs[i%len(pkgs)]).
 			MustExec().Close()
-		DB.Query("test_items_bench").Limit(20).
+		DBD.Query("test_items_bench").Limit(20).
 			Where("year", reindexer.RANGE, []int{2010, 2016}).
 			MustExec().Close()
 	}
 	for i := 0; i < len(priceIds)*3; i++ {
-		DB.Query("test_join_items").Limit(20).
+		DBD.Query("test_join_items").Limit(20).
 			Where("id", reindexer.SET, priceIds[i%len(priceIds)]).
 			MustExec().Close()
 	}
 }
 
 func BenchmarkSimpleInsert(b *testing.B) {
-	tx := DB.MustBeginTx("test_items_simple")
+	tx := DBD.MustBeginTx("test_items_simple")
 	for i := 0; i < b.N; i++ {
 		if err := tx.Upsert(TestItemSimple{ID: mkID(i), Year: rand.Int()%1000 + 10, Name: randString(), Phone: randString()}); err != nil {
 			panic(err)
@@ -133,7 +133,7 @@ func BenchmarkSimpleInsert(b *testing.B) {
 }
 
 func BenchmarkSimpleUpdate(b *testing.B) {
-	tx := DB.MustBeginTx("test_items_simple")
+	tx := DBD.MustBeginTx("test_items_simple")
 	for i := 0; i < b.N; i++ {
 		if err := tx.Upsert(TestItemSimple{ID: mkID(i), Year: rand.Int()%1000 + 10, Name: randString()}); err != nil {
 			panic(err)
@@ -143,7 +143,7 @@ func BenchmarkSimpleUpdate(b *testing.B) {
 }
 
 func BenchmarkSimpleCmplxPKUpsert(b *testing.B) {
-	tx := DB.MustBeginTx("test_items_simple_cmplx_pk")
+	tx := DBD.MustBeginTx("test_items_simple_cmplx_pk")
 
 	for i := 0; i < b.N; i++ {
 		if err := tx.Upsert(TestItemSimpleCmplxPK{ID: int32(i), Year: int32(rand.Int()%1000 + 10), Name: randString(), SubID: randString()}); err != nil {
@@ -154,7 +154,7 @@ func BenchmarkSimpleCmplxPKUpsert(b *testing.B) {
 }
 
 func BenchmarkInsert(b *testing.B) {
-	tx := DB.MustBeginTx("test_items_insert")
+	tx := DBD.MustBeginTx("test_items_insert")
 
 	for i := 0; i < b.N; i++ {
 		if err := tx.Upsert(testItemsSeed[i%len(testItemsSeed)]); err != nil {
@@ -228,7 +228,7 @@ func BenchmarkCJsonDecode(b *testing.B) {
 // }
 
 func BenchmarkInsertJson(b *testing.B) {
-	tx := DB.MustBeginTx("test_items_insert_json")
+	tx := DBD.MustBeginTx("test_items_insert_json")
 
 	for i := 0; i < b.N; i++ {
 		if err := tx.UpsertJSON(testItemsJsonSeed[i%len(testItemsJsonSeed)]); err != nil {
@@ -239,7 +239,7 @@ func BenchmarkInsertJson(b *testing.B) {
 }
 
 func BenchmarkUpdate(b *testing.B) {
-	tx := DB.MustBeginTx("test_items_insert")
+	tx := DBD.MustBeginTx("test_items_insert")
 
 	for i := 0; i < b.N; i++ {
 		if err := tx.Upsert(testItemsSeed[i%len(testItemsSeed)]); err != nil {
@@ -250,7 +250,7 @@ func BenchmarkUpdate(b *testing.B) {
 }
 
 func BenchmarkDeleteAndUpdate(b *testing.B) {
-	tx := DB.MustBeginTx("test_items_insert")
+	tx := DBD.MustBeginTx("test_items_insert")
 	for i := 0; i < b.N; i++ {
 		tx.Delete(TestItem{ID: mkID(rand.Int() % b.N)})
 		if err := tx.Upsert(testItemsSeed[i%len(testItemsSeed)]); err != nil {
@@ -263,7 +263,7 @@ func BenchmarkDeleteAndUpdate(b *testing.B) {
 func Benchmark4CondQuery(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_bench").Limit(20).
+		q := DBD.Query("test_items_bench").Limit(20).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereString("age", reindexer.EQ, "2").
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
@@ -275,7 +275,7 @@ func Benchmark4CondQuery(b *testing.B) {
 func Benchmark4CondQueryTotal(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_bench").Limit(20).ReqTotal().
+		q := DBD.Query("test_items_bench").Limit(20).ReqTotal().
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereString("age", reindexer.EQ, "2").
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
@@ -289,7 +289,7 @@ func Benchmark4CondRangeQuery(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		startTime := rand.Int() % 50000
 		endTime := startTime + 10000
-		q := DB.Query("test_items_bench").Limit(20).
+		q := DBD.Query("test_items_bench").Limit(20).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
 			WhereInt("start_time", reindexer.GT, startTime).
@@ -302,7 +302,7 @@ func Benchmark4CondRangeQueryTotal(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		startTime := rand.Int() % 50000
 		endTime := startTime + 10000
-		q := DB.Query("test_items_bench").Limit(20).
+		q := DBD.Query("test_items_bench").Limit(20).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
 			WhereInt("start_time", reindexer.GT, startTime).
@@ -315,7 +315,7 @@ func Benchmark4CondRangeQueryTotal(b *testing.B) {
 func Benchmark3CondQuery(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_bench").Limit(20).Sort("year", false).
+		q := DBD.Query("test_items_bench").Limit(20).Sort("year", false).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
 			WhereInt32("packages", reindexer.SET, pkgs[rand.Int()%len(pkgs)]...)
@@ -325,7 +325,7 @@ func Benchmark3CondQuery(b *testing.B) {
 
 func Benchmark3CondQueryTotal(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_bench").Limit(20).Sort("year", false).ReqTotal().
+		q := DBD.Query("test_items_bench").Limit(20).Sort("year", false).ReqTotal().
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
 			WhereInt32("packages", reindexer.SET, pkgs[rand.Int()%len(pkgs)]...)
@@ -335,7 +335,7 @@ func Benchmark3CondQueryTotal(b *testing.B) {
 
 func Benchmark3CondQueryKillIdsCache(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_bench").Limit(20).Sort("year", false).
+		q := DBD.Query("test_items_bench").Limit(20).Sort("year", false).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
 			WhereInt("packages", reindexer.SET, randIntArr(20, 10000, 10)...) // Using random array for each request. Test for cache performance
@@ -346,7 +346,7 @@ func Benchmark3CondQueryKillIdsCache(b *testing.B) {
 
 func Benchmark3CondQueryRestoreIdsCache(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_bench").Limit(20).Sort("year", false).
+		q := DBD.Query("test_items_bench").Limit(20).Sort("year", false).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
 			WhereInt32("packages", reindexer.SET, pkgs[rand.Int()%len(pkgs)]...) // Using subset of arrays for each request. Cache will restore
@@ -356,7 +356,7 @@ func Benchmark3CondQueryRestoreIdsCache(b *testing.B) {
 
 func Benchmark2CondQuery(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_bench").Limit(20).
+		q := DBD.Query("test_items_bench").Limit(20).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016)
 		q.MustExec().FetchAll()
@@ -365,7 +365,7 @@ func Benchmark2CondQuery(b *testing.B) {
 
 func Benchmark2CondQueryTotal(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_bench").Limit(20).Sort("year", false).ReqTotal().
+		q := DBD.Query("test_items_bench").Limit(20).Sort("year", false).ReqTotal().
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016)
 		q.MustExec().FetchAll()
@@ -375,8 +375,8 @@ func Benchmark2CondQueryTotal(b *testing.B) {
 func Benchmark2CondQueryLeftJoin(b *testing.B) {
 	ctx := &TestJoinCtx{}
 	for i := 0; i < b.N; i++ {
-		q2 := DB.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
-		q := DB.Query("test_items_bench").Limit(20).Sort("year", false).
+		q2 := DBD.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
+		q := DBD.Query("test_items_bench").Limit(20).Sort("year", false).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
 			InnerJoin(q2, "prices").On("price_id", reindexer.SET, "id")
@@ -389,8 +389,8 @@ func Benchmark2CondQueryLeftJoin(b *testing.B) {
 func Benchmark2CondQueryLeftJoinTotal(b *testing.B) {
 	ctx := &TestJoinCtx{}
 	for i := 0; i < b.N; i++ {
-		q2 := DB.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
-		q := DB.Query("test_items_bench").Limit(20).Sort("year", false).ReqTotal().
+		q2 := DBD.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
+		q := DBD.Query("test_items_bench").Limit(20).Sort("year", false).ReqTotal().
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
 			Join(q2, "prices").On("price_id", reindexer.SET, "id")
@@ -403,8 +403,8 @@ func Benchmark2CondQueryLeftJoinTotal(b *testing.B) {
 func Benchmark2CondQueryLeftJoinCachedTotal(b *testing.B) {
 	ctx := &TestJoinCtx{}
 	for i := 0; i < b.N; i++ {
-		q2 := DB.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
-		q := DB.Query("test_items_bench").Limit(20).Sort("year", false).CachedTotal().
+		q2 := DBD.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
+		q := DBD.Query("test_items_bench").Limit(20).Sort("year", false).CachedTotal().
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
 			Join(q2, "prices").On("price_id", reindexer.SET, "id")
@@ -418,8 +418,8 @@ func Benchmark2CondQueryInnerJoin(b *testing.B) {
 	ctx := &TestJoinCtx{}
 	for i := 0; i < b.N; i++ {
 
-		q2 := DB.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
-		q := DB.Query("test_items_bench").Limit(20).Sort("year", false).
+		q2 := DBD.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
+		q := DBD.Query("test_items_bench").Limit(20).Sort("year", false).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
 			InnerJoin(q2, "prices").On("price_id", reindexer.SET, "id")
@@ -435,8 +435,8 @@ func Benchmark2CondQueryInnerJoinCachedRandom(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		id_start := 7000 + rand.Int()%200
 		id_end := id_start + rand.Int()%(7200-id_start)
-		q2 := DB.Query("test_join_items").WhereInt("id", reindexer.RANGE, id_start, id_end)
-		q := DB.Query("test_items_bench").Limit(20).Sort("year", false).
+		q2 := DBD.Query("test_join_items").WhereInt("id", reindexer.RANGE, id_start, id_end)
+		q := DBD.Query("test_items_bench").Limit(20).Sort("year", false).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
 			InnerJoin(q2, "prices").On("price_id", reindexer.SET, "id")
@@ -449,8 +449,8 @@ func Benchmark2CondQueryInnerJoinCached(b *testing.B) {
 	ctx := &TestJoinCtx{}
 	for i := 0; i < b.N; i++ {
 
-		q2 := DB.Query("test_join_items").WhereInt("id", reindexer.RANGE, 7000, 7300)
-		q := DB.Query("test_items_bench").Limit(20).Sort("year", false).
+		q2 := DBD.Query("test_join_items").WhereInt("id", reindexer.RANGE, 7000, 7300)
+		q := DBD.Query("test_items_bench").Limit(20).Sort("year", false).
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
 			InnerJoin(q2, "prices").On("price_id", reindexer.SET, "id")
@@ -463,8 +463,8 @@ func Benchmark2CondQueryInnerJoinTotal(b *testing.B) {
 	ctx := &TestJoinCtx{}
 	for i := 0; i < b.N; i++ {
 
-		q2 := DB.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
-		q := DB.Query("test_items_bench").Limit(20).Sort("year", false).ReqTotal().
+		q2 := DBD.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
+		q := DBD.Query("test_items_bench").Limit(20).Sort("year", false).ReqTotal().
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
 			InnerJoin(q2, "prices").On("price_id", reindexer.SET, "id")
@@ -477,8 +477,8 @@ func Benchmark2CondQueryInnerJoinTotal(b *testing.B) {
 func Benchmark2CondQueryInnerJoinCachedTotal(b *testing.B) {
 	ctx := &TestJoinCtx{}
 	for i := 0; i < b.N; i++ {
-		q2 := DB.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
-		q := DB.Query("test_items_bench").Limit(20).Sort("year", false).CachedTotal().
+		q2 := DBD.Query("test_join_items").WhereString("device", reindexer.EQ, "ottstb").WhereString("location", reindexer.SET, "mos", "dv", "sib")
+		q := DBD.Query("test_items_bench").Limit(20).Sort("year", false).CachedTotal().
 			WhereInt("genre", reindexer.EQ, 5).
 			WhereInt("year", reindexer.RANGE, 2010, 2016).
 			InnerJoin(q2, "prices").On("price_id", reindexer.SET, "id")
@@ -491,13 +491,13 @@ func Benchmark2CondQueryInnerJoinCachedTotal(b *testing.B) {
 // func Benchmark2CondQueryPseudoJoin(b *testing.B) {
 // 	for i := 0; i < b.N; i++ {
 
-// 		res, _ := DB.Query("test_items_bench").Limit(20).Sort("year", false).
+// 		res, _ := DBD.Query("test_items_bench").Limit(20).Sort("year", false).
 // 			WhereInt("genre", EQ, 5).
 // 			WhereInt("year", RANGE, 2010, 2016).
 // 			MustExec().FetchAll()
 // 		for _, item := range res {
 // 			testItem := *item.(*TestItemBench)
-// 			r2, _ := DB.Query("test_join_items").WhereString("device", EQ, "ottstb").
+// 			r2, _ := DBD.Query("test_join_items").WhereString("device", EQ, "ottstb").
 // 				WhereString("location", SET, "mos", "dv", "sib").WhereInt("id", SET, testItem.PricesIDs...).MustExec().FetchAll()
 // 			testItem.Prices = make([]*TestJoinItem, 0, len(r2))
 // 			for _, subItem := range r2 {
@@ -509,14 +509,14 @@ func Benchmark2CondQueryInnerJoinCachedTotal(b *testing.B) {
 
 func Benchmark1CondQuery(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_bench").Limit(20).WhereInt("year", reindexer.GT, 2020)
+		q := DBD.Query("test_items_bench").Limit(20).WhereInt("year", reindexer.GT, 2020)
 		q.MustExec().FetchAll()
 	}
 }
 
 func Benchmark1CondQueryUnsafe(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_bench").Limit(20).WhereInt("year", reindexer.GT, 2020)
+		q := DBD.Query("test_items_bench").Limit(20).WhereInt("year", reindexer.GT, 2020)
 		it := q.MustExec().AllowUnsafe(true)
 		for it.Next() {
 			_ = it.Object()
@@ -527,21 +527,21 @@ func Benchmark1CondQueryUnsafe(b *testing.B) {
 
 func Benchmark1CondQueryTotal(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_bench").Limit(20).WhereInt("year", reindexer.GT, 2020).ReqTotal()
+		q := DBD.Query("test_items_bench").Limit(20).WhereInt("year", reindexer.GT, 2020).ReqTotal()
 		q.MustExec().FetchAll()
 	}
 }
 
 func BenchmarkSimpleByIdQuery(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_simple").WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
+		q := DBD.Query("test_items_simple").WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
 		q.Exec().FetchOne()
 	}
 }
 
 func BenchmarkSimpleByIdUnsafeQuery(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_simple").WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
+		q := DBD.Query("test_items_simple").WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
 		it := q.Exec().AllowUnsafe(true)
 		it.FetchOne()
 	}
@@ -549,42 +549,42 @@ func BenchmarkSimpleByIdUnsafeQuery(b *testing.B) {
 
 func BenchmarkSimpleByIdJsonQuery(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_simple").WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
+		q := DBD.Query("test_items_simple").WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
 		q.GetJson()
 	}
 }
 
 func BenchmarkByIdQuery(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_bench").WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
+		q := DBD.Query("test_items_bench").WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
 		q.Exec().FetchOne()
 	}
 }
 
 func BenchmarkByIdComplexQuery(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_encdec").WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
+		q := DBD.Query("test_items_encdec").WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
 		q.Exec().FetchOne()
 	}
 }
 
 func BenchmarkByIdUnsafeQuery(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_bench").WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
+		q := DBD.Query("test_items_bench").WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
 		q.Exec().AllowUnsafe(true).FetchOne()
 	}
 }
 
 func BenchmarkByIdJsonQuery(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_bench").WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
+		q := DBD.Query("test_items_bench").WhereInt("id", reindexer.EQ, mkID(rand.Int()%50))
 		q.GetJson()
 	}
 }
 
 func BenchmarkFullScan(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		q := DB.Query("test_items_bench").Limit(20).ReqTotal().
+		q := DBD.Query("test_items_bench").Limit(20).ReqTotal().
 			WhereInt("end_time", reindexer.GT, rand.Int()%10000)
 		q.MustExec().FetchAll()
 	}
@@ -593,17 +593,19 @@ func BenchmarkFullScan(b *testing.B) {
 func BenchmarkSelectByPKAndUpdate(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		FillTestItemsBench(i, 1, 10)
-		DB.Query("test_items_bench").WhereInt("id", reindexer.EQ, mkID(rand.Int()%100000)).Limit(1).GetJson()
+		DBD.Query("test_items_bench").WhereInt("id", reindexer.EQ, mkID(rand.Int()%100000)).Limit(1).GetJson()
 	}
 }
 
 func BenchmarkSelectByIdxAndUpdate(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		FillTestItemsBench(i, 1, 10)
-		DB.Query("test_items_bench").WhereInt("year", reindexer.EQ, 2010).Limit(1).GetJson()
+		DBD.Query("test_items_bench").WhereInt("year", reindexer.EQ, 2010).Limit(1).GetJson()
 	}
 }
 
+//DBD.Query("test_items_bench")
+//DBD.Query("test_items_bench").WhereInt("year", reindexer.EQ, 2010).Limit(1).GetJson()
 func newTestBenchItem(id int, pkgCount int) *TestItemBench {
 	startTime := rand.Int() % 50000
 
@@ -626,7 +628,7 @@ func FillTestItemsBench(start int, count int, pkgsCount int) {
 	seeder := func(start int, count int) {
 		for i := 0; i < count; i++ {
 			item := newTestBenchItem(mkID(start+i), pkgsCount)
-			if err := DB.Upsert("test_items_bench", item); err != nil {
+			if err := DBD.Upsert("test_items_bench", item); err != nil {
 				panic(err)
 			}
 		}

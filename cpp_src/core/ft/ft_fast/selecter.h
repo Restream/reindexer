@@ -2,12 +2,11 @@
 #include "core/ft/config/ftfastconfig.h"
 #include "core/ft/ftdsl.h"
 #include "core/ft/idrelset.h"
-#include "core/idset.h"
 #include "core/selectfunc/ctx/ftctx.h"
 #include "dataholder.h"
 
-using std::vector;
 namespace reindexer {
+using std::vector;
 
 class Selecter {
 public:
@@ -15,7 +14,7 @@ public:
 
 	struct TextSearchResult {
 		const PackedIdRelSet* vids_;
-		const char* pattern;
+		string_view pattern;
 		int proc_;
 		int16_t wordLen_;
 	};
@@ -24,7 +23,6 @@ public:
 		IdType id;
 		int proc;
 		AreaHolder::UniquePtr holder;
-		uint16_t step_id;
 	};
 
 	struct MergeData : public vector<MergeInfo> {

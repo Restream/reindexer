@@ -5,8 +5,6 @@
 #include "ft_api.h"
 #include "tools/logger.h"
 #include "tools/stringstools.h"
-using std::unordered_set;
-using std::unordered_map;
 
 TEST_F(FTApi, CompositeSelect) {
 	Add("An entity is something|", "| that in exists entity as itself");
@@ -57,7 +55,7 @@ TEST_F(FTApi, NumberToWordsSelect) {
 }
 
 TEST_F(FTApi, DeleteTest) {
-	unordered_map<string, int> data;
+	std::unordered_map<string, int> data;
 
 	for (int i = 0; i < 10000; ++i) {
 		data.insert(Add(RuRandString()));
@@ -82,10 +80,11 @@ TEST_F(FTApi, DeleteTest) {
 	Delete(data.find("In law, a legal entity is an entity that is capable of bearing legal rights")->second);
 	res = SimpleSelect("entity");
 
-	for (auto it : res) {
-		Item ritem(it.GetItem());
-		std::cout << ritem["ft1"].As<string>() << std::endl;
-	}
+	// for (auto it : res) {
+	// 	Item ritem(it.GetItem());
+	// 	std::cout << ritem["ft1"].As<string>() << std::endl;
+	// }
+	// TODO: add validation
 }
 
 TEST_F(FTApi, Stress) {
@@ -124,9 +123,9 @@ TEST_F(FTApi, Stress) {
 	}
 }
 TEST_F(FTApi, Unique) {
-	vector<string> data;
-	set<size_t> check;
-	set<string> checks;
+	std::vector<string> data;
+	std::set<size_t> check;
+	std::set<string> checks;
 	reindexer::logInstallWriter([](int, char*) { /*std::cout << buf << std::endl;*/ });
 
 	for (int i = 0; i < 1000; ++i) {

@@ -12,10 +12,10 @@ TEST_F(ReindexerApi, GetValueByJsonPath) {
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	struct Data {
-		string id;
+		std::string id;
 		long intField;
-		string stringField;
-		array<int, 3> intArray;
+		std::string stringField;
+		std::array<int, 3> intArray;
 		long firstInner;
 		long secondInner;
 		long thirdInner;
@@ -187,7 +187,7 @@ TEST_F(ReindexerApi, CompositeFTSelectByJsonPath) {
 
 	for (auto it : qr) {
 		Item ritem(it.GetItem());
-		string json = ritem.GetJSON().ToString();
+		auto json = ritem.GetJSON();
 		EXPECT_TRUE(json == R"xxx({"id":"key2","locale":"ru","nested":{"name":"name2","count":2}})xxx");
 	}
 }

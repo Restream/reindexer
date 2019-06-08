@@ -6,9 +6,9 @@
 #include <cstring>
 #include <initializer_list>
 #include <iostream>
-#include <iterator>
 #include <type_traits>
 #include <vector>
+#include "trivial_reverse_iterator.h"
 
 namespace reindexer {
 #if 0
@@ -23,109 +23,6 @@ using is_trivially_default_constructible = std::has_trivial_default_constructor<
 template <typename T>
 using is_trivially_default_constructible = std::is_trivially_default_constructible<T>;
 #endif
-
-using std::iterator;
-using std::iterator_traits;
-
-template <class Iterator>
-class trivial_reverse_iterator
-	: public iterator<typename iterator_traits<Iterator>::iterator_category, typename iterator_traits<Iterator>::value_type,
-					  typename iterator_traits<Iterator>::difference_type, typename iterator_traits<Iterator>::pointer,
-					  typename iterator_traits<Iterator>::reference> {
-public:
-	typedef trivial_reverse_iterator this_type;
-	typedef Iterator iterator_type;
-	typedef typename iterator_traits<Iterator>::difference_type difference_type;
-	typedef typename iterator_traits<Iterator>::reference reference;
-	typedef typename iterator_traits<Iterator>::pointer pointer;
-
-public:
-	//	if CTOR is enabled std::is_trivial<trvial_reverse_iterator<...>> return false;
-	//	trivial_reverse_iterator() : current_(nullptr) {}
-
-	template <class Up>
-	trivial_reverse_iterator& operator=(const trivial_reverse_iterator<Up>& u) {
-		current_ = u.base();
-		return *this;
-	}
-
-	Iterator base() const { return current_; }
-	reference operator*() const {
-		Iterator tmp = current_;
-		return *--tmp;
-	}
-	pointer operator->() const { return std::addressof(operator*()); }
-	trivial_reverse_iterator& operator++() {
-		--current_;
-		return *this;
-	}
-	trivial_reverse_iterator operator++(int) {
-		trivial_reverse_iterator tmp(*this);
-		--current_;
-		return tmp;
-	}
-	trivial_reverse_iterator& operator--() {
-		++current_;
-		return *this;
-	}
-	trivial_reverse_iterator operator--(int) {
-		trivial_reverse_iterator tmp(*this);
-		++current_;
-		return tmp;
-	}
-	trivial_reverse_iterator operator+(difference_type n) const {
-		Iterator ptr = current_ - n;
-		trivial_reverse_iterator tmp;
-		tmp = ptr;
-		return tmp;
-	}
-	trivial_reverse_iterator& operator+=(difference_type n) {
-		current_ -= n;
-		return *this;
-	}
-	trivial_reverse_iterator operator-(difference_type n) const {
-		Iterator ptr = current_ + n;
-		trivial_reverse_iterator tmp;
-		tmp = ptr;
-		return tmp;
-	}
-	trivial_reverse_iterator& operator-=(difference_type n) {
-		current_ += n;
-		return *this;
-	}
-	reference operator[](difference_type n) const { return *(*this + n); }
-
-	// Assign operator overloading from const std::reverse_iterator<U>
-	template <typename U>
-	trivial_reverse_iterator& operator=(const std::reverse_iterator<U>& u) {
-		if (current_ != u.base()) current_ = u.base();
-		return *this;
-	}
-
-	// Assign operator overloading from non-const std::reverse_iterator<U>
-	template <typename U>
-	trivial_reverse_iterator& operator=(std::reverse_iterator<U>& u) {
-		if (current_ != u.base()) current_ = u.base();
-		return *this;
-	}
-
-	// Assign native pointer
-	template <class Upn>
-	trivial_reverse_iterator& operator=(Upn ptr) {
-		static_assert(std::is_pointer<Upn>::value, "attempting assign a non-trivial pointer");
-		/*if (current_ != ptr)*/ current_ = ptr;
-		return *this;
-	}
-
-	inline bool operator!=(const this_type& rhs) const { return !EQ(current_, rhs.current_); }
-	inline bool operator==(const this_type& rhs) const { return EQ(current_, rhs.current_); }
-
-protected:
-	Iterator current_;
-
-private:
-	inline bool EQ(Iterator lhs, Iterator rhs) const { return lhs == rhs; }
-};
 
 template <typename T, int holdSize = 4, int objSize = sizeof(T)>
 class h_vector {
@@ -231,6 +128,8 @@ public:
 	iterator end() noexcept { return ptr() + size_; }
 	const_iterator begin() const noexcept { return ptr(); }
 	const_iterator end() const noexcept { return ptr() + size_; }
+	const_iterator cbegin() const noexcept { return ptr(); }
+	const_iterator cend() const noexcept { return ptr() + size_; }
 	reverse_iterator rbegin() const noexcept {
 		reverse_iterator it;
 		it = end();
@@ -303,6 +202,12 @@ public:
 		new (ptr() + size_) T(std::move(v));
 		size_++;
 	}
+	template <typename... Args>
+	void emplace_back(Args&&... args) {
+		grow(size_ + 1);
+		new (ptr() + size_) T(std::forward<Args>(args)...);
+		size_++;
+	}
 	void pop_back() {
 		assert(size_);
 		resize(size_ - 1);
@@ -332,6 +237,16 @@ public:
 		resize(size_ + count);
 		std::move_backward(begin() + i, end() - count, end());
 		for (size_type j = i; j < i + count; ++j) ptr()[j] = v;
+		return begin() + i;
+	}
+	template <typename... Args>
+	iterator emplace(const_iterator pos, Args&&... args) {
+		size_type i = pos - begin();
+		assert(i <= size());
+		grow(size_ + 1);
+		resize(size_ + 1);
+		std::move_backward(begin() + i, end() - 1, end());
+		ptr()[i] = {std::forward<Args>(args)...};
 		return begin() + i;
 	}
 	iterator erase(const_iterator it) { return erase(it, it + 1); }
@@ -396,68 +311,6 @@ protected:
 	size_type is_hdata_ : 1;
 };
 #endif
-
-template <typename T>
-class span {
-public:
-	typedef T value_type;
-	typedef T* pointer;
-	typedef const T* const_pointer;
-	typedef const_pointer const_iterator;
-	typedef pointer iterator;
-	typedef trivial_reverse_iterator<const_iterator> const_reverse_iterator;
-	typedef trivial_reverse_iterator<iterator> reverse_iterator;
-	typedef size_t size_type;
-
-	constexpr span() noexcept : data_(nullptr), size_(0) {}
-	constexpr span(const span& other) noexcept : data_(other.data_), size_(other.size_) {}
-
-	span& operator=(const span& other) noexcept {
-		data_ = other.data_;
-		size_ = other.size_;
-		return *this;
-	}
-
-	span& operator=(span&& other) noexcept {
-		data_ = other.data_;
-		size_ = other.size_;
-		return *this;
-	}
-
-	// FIXME: const override
-	template <typename Container>
-	constexpr span(const Container& other) noexcept : data_(const_cast<T*>(other.data())), size_(other.size()) {}
-
-	constexpr span(const T* str, size_type len) : data_(const_cast<T*>(str)), size_(len) {}  // static??
-	constexpr iterator begin() const noexcept { return data_; }
-	constexpr iterator end() const noexcept { return data_ + size_; }
-	/*constexpr*/ reverse_iterator rbegin() const noexcept {
-		reverse_iterator it;
-		it = end();
-		return it;
-	}
-	/*constexpr*/ reverse_iterator rend() const noexcept {
-		reverse_iterator it;
-		it = begin();
-		return it;
-	}
-	constexpr size_type size() const noexcept { return size_; }
-	constexpr bool empty() const noexcept { return size_ == 0; }
-	constexpr const T& operator[](size_type pos) const { return data_[pos]; }
-	T& operator[](size_type pos) { return data_[pos]; }
-	constexpr const T& at(size_type pos) const { return data_[pos]; }
-	constexpr const T& front() const { return data_[0]; }
-	constexpr const T& back() const { return data_[size() - 1]; }
-	constexpr pointer data() const noexcept { return data_; }
-	span subspan(size_type offset, size_type count) const noexcept {
-		assert(offset + count <= size_);
-		return span(data_ + offset, count);
-	}
-
-protected:
-	pointer data_;
-	size_type size_;
-};
 
 }  // namespace reindexer
 

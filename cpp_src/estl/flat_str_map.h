@@ -1,63 +1,80 @@
 #pragma once
 #include <memory>
+#include <vector>
+#include "estl/string_view.h"
 #include "hopscotch/hopscotch_map.h"
 #include "tools/customhash.h"
+#include "tools/varint.h"
 
 namespace reindexer {
 
-using std::move;
-using std::unique_ptr;
-
 const unsigned kMultiValueLinkFlag = 0x80000000;
 
-template <typename K, typename V, bool Multi = false>
+template <typename CharT, typename V, bool Multi = false>
 class flat_str_map {
 protected:
+	using base_holder_t = std::vector<CharT>;
+	using string_view_t = string_view;
+
+	class holder_t : public base_holder_t {
+	public:
+		string_view_t get(int pos) const {
+			auto ptr = reinterpret_cast<const uint8_t *>(base_holder_t::data() + pos);
+			auto l = scan_varint(10, ptr);
+			size_t len = parse_uint32(l, ptr);
+			return string_view(reinterpret_cast<const char *>(ptr + l), len);
+		}
+		int put(string_view_t str) {
+			int pos = base_holder_t::size();
+			base_holder_t::resize(str.size() + 8 + pos);
+			int l = string_pack(str.data(), str.size(), reinterpret_cast<uint8_t *>(base_holder_t::data()) + pos);
+			base_holder_t::resize(pos + l);
+			return pos;
+		}
+	};
+
 	struct equal_flat_str_map {
 		using is_transparent = void;
-		equal_flat_str_map(const K *buf) : buf_(buf) {}
-		bool operator()(int lhs, int rhs) const { return !strcmp(buf_->data() + lhs, buf_->data() + rhs); }
-		bool operator()(const typename K::value_type *lhs, int rhs) const { return !strcmp(lhs, buf_->data() + rhs); }
-		bool operator()(int lhs, const typename K::value_type *rhs) const { return !strcmp(buf_->data() + lhs, rhs); }
-		bool operator()(const K &lhs, int rhs) const { return lhs == buf_->data() + rhs; }
-		bool operator()(int lhs, const K &rhs) const { return rhs == buf_->data() + lhs; }
+		equal_flat_str_map(const holder_t *buf) : buf_(buf) {}
+		bool operator()(int lhs, int rhs) const { return buf_->get(lhs) == buf_->get(rhs); }
+		bool operator()(string_view_t lhs, int rhs) const { return lhs == buf_->get(rhs); }
+		bool operator()(int lhs, string_view_t rhs) const { return rhs == buf_->get(lhs); }
 
 	protected:
-		const K *buf_ = nullptr;
+		const holder_t *buf_ = nullptr;
 	};
 
 	struct hash_flat_str_map {
 		using is_transparent = void;
-		hash_flat_str_map(const K *buf) : buf_(buf) {}
-		size_t operator()(const typename K::value_type *hs) const { return _Hash_bytes(hs, strlen(hs)); }
-		size_t operator()(const K &hs) const { return _Hash_bytes(hs.data(), hs.length()); }
-		size_t operator()(int hs) const { return operator()(buf_->data() + hs); }
+		hash_flat_str_map(const holder_t *buf) : buf_(buf) {}
+		size_t operator()(string_view_t hs) const { return _Hash_bytes(hs.data(), hs.length()); }
+		size_t operator()(int hs) const { return operator()(buf_->get(hs)); }
 
 	protected:
-		const K *buf_ = nullptr;
+		const holder_t *buf_ = nullptr;
 	};
 	using hash_map = tsl::hopscotch_map<int, V, hash_flat_str_map, equal_flat_str_map, std::allocator<std::pair<int, V>>, 30, false,
 										tsl::mod_growth_policy<std::ratio<3, 2>>>;
 
 public:
-	flat_str_map() : buf_(new K), map_(new hash_map(16, hash_flat_str_map(buf_.get()), equal_flat_str_map(buf_.get()))) {}
+	flat_str_map() : holder_(new holder_t), map_(new hash_map(16, hash_flat_str_map(holder_.get()), equal_flat_str_map(holder_.get()))) {}
 	flat_str_map(const flat_str_map &other) = delete;
 	flat_str_map &operator=(const flat_str_map &other) = delete;
 
-	flat_str_map(flat_str_map &&rhs) noexcept : buf_(move(rhs.buf_)), map_(move(rhs.map_)), multi_(move(rhs.multi_)) {}
+	flat_str_map(flat_str_map &&rhs) noexcept : holder_(move(rhs.holder_)), map_(move(rhs.map_)), multi_(move(rhs.multi_)) {}
 	flat_str_map &operator=(flat_str_map &&rhs) noexcept {
 		if (&rhs != this) {
-			buf_ = move(rhs.buf_);
-			map_ = move(rhs.map_);
-			multi_ = move(rhs.multi_);
+			holder_ = std::move(rhs.buf_);
+			map_ = std::move(rhs.map_);
+			multi_ = std::move(rhs.multi_);
 		}
 		return *this;
 	}
 
 	template <typename VV>
-	class value_type : public std::pair<const typename K::value_type *, VV> {
+	class value_type : public std::pair<string_view_t, VV> {
 	public:
-		value_type(const typename K::value_type *k, VV v) : std::pair<const typename K::value_type *, VV>(k, v) {}
+		value_type(string_view_t k, VV v) : std::pair<string_view_t, VV>(k, v) {}
 		const value_type *operator->() const { return this; }
 		value_type *operator->() { return this; }
 	};
@@ -84,17 +101,17 @@ public:
 		value_type operator->() {
 			if (Multi && it_->second & kMultiValueLinkFlag) {
 				assert(multi_idx_ != -1);
-				return value_type(&m_->buf()[it_->first], m_->multi_[multi_idx_].val);
+				return value_type(m_->holder_->get(it_->first), m_->multi_[multi_idx_].val);
 			} else
-				return value_type(&m_->buf()[it_->first], it_->second);
+				return value_type(m_->holder_->get(it_->first), it_->second);
 		}
 
 		const value_type operator->() const {
 			if (Multi && it_->second & kMultiValueLinkFlag) {
 				assert(multi_idx_ != -1);
-				return value_type(&m_->buf()[it_->first], m_->multi_[multi_idx_].val);
+				return value_type(m_->holder_->get(it_->first), m_->multi_[multi_idx_].val);
 			} else
-				return value_type(&m_->buf()[it_->first], it_->second);
+				return value_type(m_->holder_->get(it_->first), it_->second);
 		}
 
 		base_iterator &operator++() {
@@ -146,36 +163,25 @@ public:
 	const_iterator begin() const { return const_iterator(map_->begin(), this); }
 	const_iterator end() const { return const_iterator(map_->end(), this); }
 
-	template <typename KK>
-	const_iterator find(const KK &str) const {
-		return const_iterator(map_->find(str), this);
-	}
-	template <typename KK>
-	iterator find(const KK &str) {
-		return iterator(map_->find(str), this);
-	}
+	const_iterator find(string_view_t str) const { return const_iterator(map_->find(str), this); }
+	iterator find(string_view_t str) { return iterator(map_->find(str), this); }
 
-	template <typename KK>
-	std::pair<iterator, iterator> equal_range(const KK &str) {
+	std::pair<iterator, iterator> equal_range(string_view_t str) {
 		auto it = map_->find(str);
 		return {iterator(it, this), iterator(it == map_->end() ? it : ++it, this)};
 	}
 
-	template <typename KK>
-	std::pair<const_iterator, const_iterator> equal_range(const KK &str) const {
+	std::pair<const_iterator, const_iterator> equal_range(string_view_t str) const {
 		auto it = map_->find(str);
 		return {iterator(it, this), iterator(it == map_->end() ? it : ++it, this)};
 	}
 
-	template <typename KK>
-	std::pair<iterator, bool> insert(const KK &str, const V &v) {
-		int pos = buf().size();
-		buf() += str;
-		buf() += '\0';
+	std::pair<iterator, bool> insert(string_view_t str, const V &v) {
+		int pos = holder_->put(str);
 		auto res = map_->emplace(pos, v);
 		int multi_pos = -1;
 		if (!res.second) {
-			buf().resize(pos);
+			holder_->resize(pos);
 			if (Multi) {
 				multi_pos = multi_.size();
 				if (!(res.first->second & kMultiValueLinkFlag)) {
@@ -191,38 +197,32 @@ public:
 		return {iterator(res.first, this, multi_pos), res.second};
 	}
 	void clear() {
-		buf().clear();
+		holder_->clear();
 		map_->clear();
 		multi_.clear();
 	}
 
-	template <typename KK>
-	std::pair<iterator, bool> emplace(const KK &str, const V &v) {
-		return insert(str.c_str(), v);
-	}
+	std::pair<iterator, bool> emplace(string_view_t str, const V &v) { return insert(str, v); }
 
 	void reserve(size_t map_sz, size_t str_sz) {
 		map_->reserve(map_sz);
-		buf().reserve(str_sz);
+		holder_->reserve(str_sz);
 		if (Multi) multi_.reserve(map_sz / 10);
 	}
 
 	size_t size() const { return map_->size(); }
-	size_t heap_size() const { return buf().capacity() + map_->size() * sizeof(V) + multi_.capacity() * sizeof(multi_node); }
+	size_t heap_size() const { return holder_->capacity() + map_->size() * sizeof(V) + multi_.capacity() * sizeof(multi_node); }
 
 	void shrink_to_fit() {
-		buf().shrink_to_fit();
+		holder_->shrink_to_fit();
 		multi_.shrink_to_fit();
 	}
 
-	string &buf() { return *buf_; }
-	const string &buf() const { return *buf_; }
-
 protected:
 	// Single buffer for storing all strings in null terminated format
-	unique_ptr<K> buf_;
+	std::unique_ptr<holder_t> holder_;
 	// Underlying map container
-	unique_ptr<hash_map> map_;
+	std::unique_ptr<hash_map> map_;
 	struct multi_node {
 		V val;
 		int next;
@@ -231,7 +231,7 @@ protected:
 	std::vector<multi_node> multi_;
 };
 
-template <typename K, typename V>
-using flat_str_multimap = flat_str_map<K, V, true>;
+template <typename CharT, typename V>
+using flat_str_multimap = flat_str_map<CharT, V, true>;
 
 }  // namespace reindexer

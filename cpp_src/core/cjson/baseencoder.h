@@ -5,12 +5,11 @@
 #include "core/payload/payloadiface.h"
 #include "fieldextractor.h"
 #include "jsonbuilder.h"
+#include "tools/serializer.h"
 
 namespace reindexer {
 
 class TagsMatcher;
-class WrSerializer;
-class Serializer;
 class JsonBuilder;
 
 class IEncoderDatasourceWithJoins {
@@ -42,7 +41,7 @@ protected:
 	const TagsMatcher *tagsMatcher_;
 	int fieldsoutcnt_[maxIndexes];
 	const FieldsSet *filter_;
-	key_string tmpPlTuple_;
+	WrSerializer tmpPlTuple_;
 	TagsPath curTagsPath_;
 };
 

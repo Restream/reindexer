@@ -16,10 +16,6 @@
 #include "tools/errors.h"
 
 namespace reindexer_server {
-using std::string;
-using std::unique_ptr;
-using std::atomic_bool;
-using std::atomic_flag;
 using namespace reindexer::net;
 
 class ServerImpl {
@@ -30,7 +26,7 @@ public:
 	~ServerImpl();
 
 	Error InitFromCLI(int argc, char* argv[]);
-	Error InitFromYAML(const string& yaml);
+	Error InitFromYAML(const std::string& yaml);
 	Error InitFromFile(const char* filepath);
 	int Start();
 	void Stop();
@@ -60,7 +56,7 @@ private:
 	ServerConfig config_;
 	LoggerWrapper logger_;
 	LoggerWrapper coreLogger_;
-	int coreLogLevel_ = LogNone;
+	int coreLogLevel_;
 
 #ifndef _WIN32
 	PidFile pid_;
@@ -69,8 +65,8 @@ private:
 	SinkMap sinks_;
 
 private:
-	atomic_bool storageLoaded_;
-	atomic_bool running_;
+	std::atomic_bool storageLoaded_;
+	std::atomic_bool running_;
 	bool enableHandleSignals_ = false;
 	ev::async async_;
 	ev::dynamic_loop loop_;

@@ -57,6 +57,8 @@ typedef enum QueryItemType {
 	QueryAggregationLimit,
 	QueryAggregationOffset,
 	QueryAggregationSort,
+	QueryOpenBracket,
+	QueryCloseBracket,
 } QueryItemType;
 
 typedef enum QuerySerializeMode {
@@ -99,7 +101,8 @@ enum ErrorCode {
 	errBadTransaction = 15,
 	errOutdatedWAL = 16,
 	errNoWAL = 17,
-	errDataHashMismatch = 18
+	errDataHashMismatch = 18,
+	errTimeout = 19
 
 };
 

@@ -65,22 +65,22 @@ void printTimestamp(const time_t rawtime) {
 }
 
 int TtlIndexFixture::waitForVanishing() {
-    size_t count = getItemsCount();
-    if (count > 0) {
-        for (size_t i = 0; i < 10; ++i) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            count = getItemsCount();
-            if (count == 0) break;
-        }
-    }
-    return count;
+	size_t count = getItemsCount();
+	if (count > 0) {
+		for (size_t i = 0; i < 10; ++i) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			count = getItemsCount();
+			if (count == 0) break;
+		}
+	}
+	return count;
 }
 
 void TtlIndexFixture::ItemsSimpleVanishing(State& state) {
 	std::this_thread::sleep_for(std::chrono::milliseconds(3000));
-    size_t count = waitForVanishing();
+	size_t count = waitForVanishing();
 	if (count != 0) {
-        auto e = Error(errConflict, "Ns should be empty after timeout: %d", count);
+		auto e = Error(errConflict, "Ns should be empty after timeout: %d", count);
 		state.SkipWithError(e.what().c_str());
 	}
 
@@ -88,9 +88,9 @@ void TtlIndexFixture::ItemsSimpleVanishing(State& state) {
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(3000));
 
-    count = waitForVanishing();
+	count = waitForVanishing();
 	if (count != 0) {
-        auto e = Error(errConflict, "Ttl of items doesn't work properly: %d", count);
+		auto e = Error(errConflict, "Ttl of items doesn't work properly: %d", count);
 		state.SkipWithError(e.what().c_str());
 	}
 }
@@ -127,7 +127,7 @@ void TtlIndexFixture::insertItemsSlowly() {
 
 void TtlIndexFixture::ItemsVanishingAfterInsertRemove(State& state) {
 	std::this_thread::sleep_for(std::chrono::milliseconds(3000));
-    size_t count = waitForVanishing();
+	size_t count = waitForVanishing();
 	if (count != 0) {
 		auto e = Error(errConflict, "Ns should be empty after timeout: ", count);
 		state.SkipWithError(e.what().c_str());
@@ -144,10 +144,10 @@ void TtlIndexFixture::ItemsVanishingAfterInsertRemove(State& state) {
 
 	for (size_t i = 0; i < threads.size(); ++i) threads[i].join();
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
-    count = waitForVanishing();
+	std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+	count = waitForVanishing();
 	if (count != 0) {
-        auto e = Error(errConflict, "There should be 0 items after ttl expired: %d", count);
+		auto e = Error(errConflict, "There should be 0 items after ttl expired: %d", count);
 		state.SkipWithError(e.what().c_str());
 	}
 }

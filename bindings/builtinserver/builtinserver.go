@@ -4,6 +4,7 @@ package builtinserver
 // #include <stdlib.h>
 import "C"
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"reflect"
@@ -134,48 +135,48 @@ func (server *BuiltinServer) Clone() bindings.RawBinding {
 	return &BuiltinServer{}
 }
 
-func (server *BuiltinServer) OpenNamespace(namespace string, enableStorage, dropOnFileFormatError bool) error {
-	return server.builtin.OpenNamespace(namespace, enableStorage, dropOnFileFormatError)
+func (server *BuiltinServer) OpenNamespace(ctx context.Context, namespace string, enableStorage, dropOnFileFormatError bool) error {
+	return server.builtin.OpenNamespace(ctx, namespace, enableStorage, dropOnFileFormatError)
 }
 
-func (server *BuiltinServer) CloseNamespace(namespace string) error {
-	return server.builtin.CloseNamespace(namespace)
+func (server *BuiltinServer) CloseNamespace(ctx context.Context, namespace string) error {
+	return server.builtin.CloseNamespace(ctx, namespace)
 }
 
-func (server *BuiltinServer) DropNamespace(namespace string) error {
-	return server.builtin.DropNamespace(namespace)
+func (server *BuiltinServer) DropNamespace(ctx context.Context, namespace string) error {
+	return server.builtin.DropNamespace(ctx, namespace)
 }
 
-func (server *BuiltinServer) EnableStorage(namespace string) error {
-	return server.builtin.EnableStorage(namespace)
+func (server *BuiltinServer) EnableStorage(ctx context.Context, namespace string) error {
+	return server.builtin.EnableStorage(ctx, namespace)
 }
 
-func (server *BuiltinServer) AddIndex(namespace string, indexDef bindings.IndexDef) error {
-	return server.builtin.AddIndex(namespace, indexDef)
+func (server *BuiltinServer) AddIndex(ctx context.Context, namespace string, indexDef bindings.IndexDef) error {
+	return server.builtin.AddIndex(ctx, namespace, indexDef)
 }
 
-func (server *BuiltinServer) UpdateIndex(namespace string, indexDef bindings.IndexDef) error {
-	return server.builtin.UpdateIndex(namespace, indexDef)
+func (server *BuiltinServer) UpdateIndex(ctx context.Context, namespace string, indexDef bindings.IndexDef) error {
+	return server.builtin.UpdateIndex(ctx, namespace, indexDef)
 }
 
-func (server *BuiltinServer) DropIndex(namespace, index string) error {
-	return server.builtin.DropIndex(namespace, index)
+func (server *BuiltinServer) DropIndex(ctx context.Context, namespace, index string) error {
+	return server.builtin.DropIndex(ctx, namespace, index)
 }
 
-func (server *BuiltinServer) PutMeta(namespace, key, data string) error {
-	return server.builtin.PutMeta(namespace, key, data)
+func (server *BuiltinServer) PutMeta(ctx context.Context, namespace, key, data string) error {
+	return server.builtin.PutMeta(ctx, namespace, key, data)
 }
 
-func (server *BuiltinServer) GetMeta(namespace, key string) (bindings.RawBuffer, error) {
-	return server.builtin.GetMeta(namespace, key)
+func (server *BuiltinServer) GetMeta(ctx context.Context, namespace, key string) (bindings.RawBuffer, error) {
+	return server.builtin.GetMeta(ctx, namespace, key)
 }
 
-func (server *BuiltinServer) ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, percepts []string, stateToken int) (bindings.RawBuffer, error) {
-	return server.builtin.ModifyItem(nsHash, namespace, format, data, mode, percepts, stateToken)
+func (server *BuiltinServer) ModifyItem(ctx context.Context, nsHash int, namespace string, format int, data []byte, mode int, percepts []string, stateToken int) (bindings.RawBuffer, error) {
+	return server.builtin.ModifyItem(ctx, nsHash, namespace, format, data, mode, percepts, stateToken)
 }
 
-func (server *BuiltinServer) BeginTx(namespace string) (bindings.TxCtx, error) {
-	return server.builtin.BeginTx(namespace)
+func (server *BuiltinServer) BeginTx(ctx context.Context, namespace string) (bindings.TxCtx, error) {
+	return server.builtin.BeginTx(ctx, namespace)
 }
 
 func (server *BuiltinServer) CommitTx(txCtx *bindings.TxCtx) (bindings.RawBuffer, error) {
@@ -189,24 +190,24 @@ func (server *BuiltinServer) ModifyItemTx(txCtx *bindings.TxCtx, format int, dat
 	return server.builtin.ModifyItemTx(txCtx, format, data, mode, precepts, stateToken)
 }
 
-func (server *BuiltinServer) Select(query string, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
-	return server.builtin.Select(query, withItems, ptVersions, fetchCount)
+func (server *BuiltinServer) Select(ctx context.Context, query string, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
+	return server.builtin.Select(ctx, query, asJson, ptVersions, fetchCount)
 }
 
-func (server *BuiltinServer) SelectQuery(rawQuery []byte, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
-	return server.builtin.SelectQuery(rawQuery, withItems, ptVersions, fetchCount)
+func (server *BuiltinServer) SelectQuery(ctx context.Context, rawQuery []byte, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
+	return server.builtin.SelectQuery(ctx, rawQuery, asJson, ptVersions, fetchCount)
 }
 
-func (server *BuiltinServer) DeleteQuery(nsHash int, rawQuery []byte) (bindings.RawBuffer, error) {
-	return server.builtin.DeleteQuery(nsHash, rawQuery)
+func (server *BuiltinServer) DeleteQuery(ctx context.Context, nsHash int, rawQuery []byte) (bindings.RawBuffer, error) {
+	return server.builtin.DeleteQuery(ctx, nsHash, rawQuery)
 }
 
-func (server *BuiltinServer) UpdateQuery(nsHash int, rawQuery []byte) (bindings.RawBuffer, error) {
-	return server.builtin.UpdateQuery(nsHash, rawQuery)
+func (server *BuiltinServer) UpdateQuery(ctx context.Context, nsHash int, rawQuery []byte) (bindings.RawBuffer, error) {
+	return server.builtin.UpdateQuery(ctx, nsHash, rawQuery)
 }
 
-func (server *BuiltinServer) Commit(namespace string) error {
-	return server.builtin.Commit(namespace)
+func (server *BuiltinServer) Commit(ctx context.Context, namespace string) error {
+	return server.builtin.Commit(ctx, namespace)
 }
 
 func (server *BuiltinServer) EnableLogger(logger bindings.Logger) {
@@ -231,6 +232,6 @@ func (server *BuiltinServer) Status() (status bindings.Status) {
 	return server.builtin.Status()
 }
 
-func (server *BuiltinServer) Ping() error {
-	return server.builtin.Ping()
+func (server *BuiltinServer) Ping(ctx context.Context) error {
+	return server.builtin.Ping(ctx)
 }

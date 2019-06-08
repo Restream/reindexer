@@ -9,8 +9,8 @@ using std::min;
 using std::max;
 
 SelectIterator::SelectIterator() {}
-SelectIterator::SelectIterator(const SelectKeyResult &res, OpType _op, bool _distinct, const string &_name, bool forcedFirst)
-	: SelectKeyResult(res), op(_op), distinct(_distinct), name(_name), forcedFirst_(forcedFirst), type_(Forward) {}
+SelectIterator::SelectIterator(const SelectKeyResult &res, bool dist, const string &n, bool forcedFirst)
+	: SelectKeyResult(res), distinct(dist), name(n), forcedFirst_(forcedFirst), type_(Forward) {}
 
 void SelectIterator::Bind(PayloadType type, int field) {
 	for (Comparator &cmp : comparators_) cmp.Bind(type, field);

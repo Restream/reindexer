@@ -1,6 +1,7 @@
 package bindings
 
 import (
+	"context"
 	"net/url"
 	"time"
 
@@ -61,13 +62,14 @@ type RawBuffer interface {
 
 // go transanction context
 type TxCtx struct {
-	Result RawBuffer
-	Id     uint64
+	Result  RawBuffer
+	Id      uint64
+	UserCtx context.Context
 }
 
 // FetchMore interface for partial loading results (used in cproto)
 type FetchMore interface {
-	Fetch(offset, limit int, withItems bool) (err error)
+	Fetch(ctx context.Context, offset, limit int, asJson bool) (err error)
 }
 
 // Logger interface for reindexer
@@ -113,29 +115,29 @@ type Stats struct {
 type RawBinding interface {
 	Init(u *url.URL, options ...interface{}) error
 	Clone() RawBinding
-	OpenNamespace(namespace string, enableStorage, dropOnFileFormatError bool) error
-	CloseNamespace(namespace string) error
-	DropNamespace(namespace string) error
-	EnableStorage(namespace string) error
-	AddIndex(namespace string, indexDef IndexDef) error
-	UpdateIndex(namespace string, indexDef IndexDef) error
-	DropIndex(namespace, index string) error
-	BeginTx(namespace string) (TxCtx, error)
-	CommitTx(*TxCtx) (RawBuffer, error)
-	RollbackTx(*TxCtx) error
+	OpenNamespace(ctx context.Context, namespace string, enableStorage, dropOnFileFormatError bool) error
+	CloseNamespace(ctx context.Context, namespace string) error
+	DropNamespace(ctx context.Context, namespace string) error
+	EnableStorage(ctx context.Context, namespace string) error
+	AddIndex(ctx context.Context, namespace string, indexDef IndexDef) error
+	UpdateIndex(ctx context.Context, namespace string, indexDef IndexDef) error
+	DropIndex(ctx context.Context, namespace, index string) error
+	BeginTx(ctx context.Context, namespace string) (TxCtx, error)
+	CommitTx(txCtx *TxCtx) (RawBuffer, error)
+	RollbackTx(tx *TxCtx) error
 	ModifyItemTx(txCtx *TxCtx, format int, data []byte, mode int, percepts []string, stateToken int) error
 
-	PutMeta(namespace, key, data string) error
-	GetMeta(namespace, key string) (RawBuffer, error)
-	ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, percepts []string, stateToken int) (RawBuffer, error)
-	Select(query string, withItems bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
-	SelectQuery(rawQuery []byte, withItems bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
-	DeleteQuery(nsHash int, rawQuery []byte) (RawBuffer, error)
-	UpdateQuery(nsHash int, rawQuery []byte) (RawBuffer, error)
-	Commit(namespace string) error
+	PutMeta(ctx context.Context, namespace, key, data string) error
+	GetMeta(ctx context.Context, namespace, key string) (RawBuffer, error)
+	ModifyItem(ctx context.Context, nsHash int, namespace string, format int, data []byte, mode int, percepts []string, stateToken int) (RawBuffer, error)
+	Select(ctx context.Context, query string, asJson bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
+	SelectQuery(ctx context.Context, rawQuery []byte, asJson bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
+	DeleteQuery(ctx context.Context, nsHash int, rawQuery []byte) (RawBuffer, error)
+	UpdateQuery(ctx context.Context, nsHash int, rawQuery []byte) (RawBuffer, error)
+	Commit(ctx context.Context, namespace string) error
 	EnableLogger(logger Logger)
 	DisableLogger()
-	Ping() error
+	Ping(ctx context.Context) error
 	Finalize() error
 	Status() Status
 }
@@ -168,6 +170,12 @@ type OptionCgoLimit struct {
 
 type OptionConnPoolSize struct {
 	ConnPoolSize int
+}
+
+//Timeouts resolution equals 1 second
+type OptionTimeouts struct {
+	LoginTimeout   time.Duration
+	RequestTimeout time.Duration
 }
 
 type OptionRetryAttempts struct {

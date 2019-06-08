@@ -3,6 +3,7 @@
 #include <cmath>
 #include <limits>
 #include <map>
+#include <mutex>
 #include <regex>
 #include <unordered_map>
 #include <unordered_set>
@@ -12,8 +13,8 @@
 
 using std::unordered_map;
 using std::unordered_set;
-using std::map;
 using std::numeric_limits;
+using std::to_string;
 using reindexer::VariantArray;
 
 class QueriesApi : public ReindexerApi {
@@ -143,23 +144,22 @@ public:
 			EXPECT_TRUE(itInsertedItem != insertedItemsByPk.end()) << "Item with such PK has not been inserted yet: " + pk;
 			if (itInsertedItem != insertedItemsByPk.end()) {
 				Item& insertedItem = itInsertedItem->second;
-				bool eq = (insertedItem.GetJSON().ToString() == itemr.GetJSON().ToString());
+				bool eq = (insertedItem.GetJSON() == itemr.GetJSON());
 				EXPECT_TRUE(eq) << "Items' jsons are different! pk: " << pk << std::endl
-								<< "expect json: " << insertedItem.GetJSON().ToString() << std::endl
-								<< "got json: " << itemr.GetJSON().ToString() << std::endl
+								<< "expect json: " << insertedItem.GetJSON() << std::endl
+								<< "got json: " << itemr.GetJSON() << std::endl
 								<< "expect fields: " << PrintItem(insertedItem) << std::endl
 								<< "got fields: " << PrintItem(itemr) << std::endl
 								<< "explain: " << qr.GetExplainResults();
 			}
 
-			reindexer::QueryEntries failedEntries;
-			bool conditionsSatisfied = checkConditions(itemr, query, failedEntries);
+			bool conditionsSatisfied = checkConditions(itemr, query.entries.cbegin(), query.entries.cend());
 			if (conditionsSatisfied) ++itemsCount;
-			EXPECT_TRUE(conditionsSatisfied) << "Item doesn't match conditions: " + itemr.GetJSON().ToString();
+			EXPECT_TRUE(conditionsSatisfied) << "Item doesn't match conditions: " << itemr.GetJSON();
 			if (!conditionsSatisfied) {
 				reindexer::WrSerializer ser;
 				TEST_COUT << query.GetSQL(ser).Slice() << std::endl;
-				PrintFailedQueryEntries(failedEntries);
+				PrintFailedQueryEntries(query.entries);
 			}
 			EXPECT_TRUE(checkDistincts(itemr, query, distincts)) << "Distinction check failed";
 
@@ -213,17 +213,19 @@ public:
 		if (query.start != 0 || query.count != UINT_MAX) return;
 
 		// If query has distinct, skip verification
-		for (auto& qe : query.entries)
-			if (qe.distinct) return;
+		bool haveDistinct = false;
+		query.entries.ForeachEntry([&haveDistinct](const reindexer::QueryEntry& qe, OpType) {
+			if (qe.distinct) haveDistinct = true;
+		});
+		if (haveDistinct) return;
 
 		for (auto& insertedItem : insertedItems[ns]) {
 			if (pks.find(insertedItem.first) != pks.end()) continue;
-			reindexer::QueryEntries failedEntries;
-			bool conditionsSatisfied = checkConditions(insertedItem.second, query, failedEntries);
+			bool conditionsSatisfied = checkConditions(insertedItem.second, query.entries.cbegin(), query.entries.cend());
 
 			reindexer::WrSerializer ser;
 			EXPECT_FALSE(conditionsSatisfied) << "Item match conditions (found " << qr.Count()
-											  << " items), but not found: " + insertedItem.second.GetJSON().ToString() << std::endl
+											  << " items), but not found: " << insertedItem.second.GetJSON() << std::endl
 											  << "query:" << query.GetSQL(ser).Slice() << std::endl
 											  << "explain: " << qr.GetExplainResults() << std::endl;
 		}
@@ -258,32 +260,29 @@ protected:
 		return ret;
 	}
 
-	bool checkConditions(reindexer::Item& item, const Query& qr, reindexer::QueryEntries& failedEntries) {
+	bool checkConditions(reindexer::Item& item, reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator to) {
 		bool result = true;
-		for (const QueryEntry& qentry : qr.entries) {
-			if (qentry.distinct) continue;
-			bool iterationResult = checkCondition(item, qentry);
-			switch (qentry.op) {
+		for (; it != to; ++it) {
+			bool iterationResult = true;
+			if (it->IsLeaf()) {
+				if (it->Value().distinct) continue;
+				iterationResult = checkCondition(item, it->Value());
+			} else {
+				iterationResult = checkConditions(item, it->cbegin(it), it->cend(it));
+			}
+			switch (it->Op) {
 				case OpNot:
-					if (iterationResult) {
-						failedEntries.push_back(qentry);
-						return false;
-					}
+					if (!result) return false;
+					result = !iterationResult;
 					break;
 				case OpAnd:
-					if (!result) {
-						failedEntries.push_back(qentry);
-						return false;
-					}
+					if (!result) return false;
 					result = iterationResult;
 					break;
 				case OpOr:
 					result = iterationResult || result;
 					break;
 			}
-		}
-		if (!result) {
-			failedEntries.push_back(qr.entries.back());
 		}
 		return result;
 	}
@@ -294,7 +293,7 @@ protected:
 	}
 
 	bool isLikeSqlPattern(reindexer::string_view str, reindexer::string_view pattern) {
-		return std::regex_match(str.ToString(), std::regex{reindexer::sqlLikePattern2ECMAScript(pattern.ToString())});
+		return std::regex_match(string(str), std::regex{reindexer::sqlLikePattern2ECMAScript(string(pattern))});
 	}
 
 	bool compareValues(CondType condition, Variant key, const VariantArray& values, const CollateOpts& opts) {
@@ -443,7 +442,10 @@ protected:
 
 	bool checkDistincts(reindexer::Item& item, const Query& qr, unordered_map<string, unordered_set<string>>& distincts) {
 		bool result = true;
-		for (const QueryEntry& qentry : qr.entries) {
+		// check only on root level
+		for (auto it = qr.entries.cbegin(); it != qr.entries.cend(); ++it) {
+			if (!it->IsLeaf()) continue;
+			const QueryEntry& qentry = it->Value();
 			if (!qentry.distinct) continue;
 
 			reindexer::VariantArray fieldValue = item[qentry.index];
@@ -544,6 +546,37 @@ protected:
 		Commit(default_namespace);
 	}
 
+	void AddToDefaultNamespace(int start, int count, int packagesCount) {
+		for (int i = start; i < count; ++i) {
+			Item item(GenerateDefaultNsItem(start + i, static_cast<size_t>(packagesCount)));
+			Upsert(default_namespace, item);
+
+			string pkString = getPkString(item, default_namespace);
+		}
+		Commit(default_namespace);
+	}
+
+	void FillDefaultNamespaceTransaction(int start, int count, int packagesCount) {
+		auto tr = rt.reindexer->NewTransaction(default_namespace);
+
+		for (int i = 0; i < count; ++i) {
+			Item item(GenerateDefaultNsItem(start + i, static_cast<size_t>(packagesCount)));
+
+			string pkString = getPkString(item, default_namespace);
+
+			tr.Insert(move(item));
+		}
+
+		rt.reindexer->CommitTransaction(tr);
+		Commit(default_namespace);
+	}
+
+	int GetcurrBtreeIdsetsValue(int id) {
+		std::lock_guard<std::mutex> l(m_);
+		if (id % 200) currBtreeIdsetsValue = rand() % 10000;
+		return currBtreeIdsetsValue;
+	}
+
 	Item GenerateDefaultNsItem(int idValue, size_t packagesCount) {
 		Item item = NewItem(default_namespace);
 		item[kFieldNameId] = idValue;
@@ -568,9 +601,7 @@ protected:
 		item[kFieldNameEndTime] = stTime + (rand() % 5) * 1000;
 		item[kFieldNameActor] = RandString().c_str();
 		item[kFieldNameNumeric] = to_string(rand() % 1000);
-		item[kFieldNameBtreeIdsets] = currBtreeIdsetsValue;
-
-		if (idValue % 200) currBtreeIdsetsValue = rand() % 10000;
+		item[kFieldNameBtreeIdsets] = GetcurrBtreeIdsetsValue(idValue);
 
 		return item;
 	}
@@ -831,20 +862,67 @@ protected:
 															.Distinct(distinct.c_str())
 															.Sort(kFieldNameNumeric, sortOrder)
 															.Debug(LogTrace)
-															.Where(kFieldNameNumeric, CondGt, to_string(5)));
+															.Where(kFieldNameNumeric, CondGt, std::to_string(5)));
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.Distinct(distinct.c_str())
 															.Sort(kFieldNameNumeric, sortOrder)
 															.Debug(LogTrace)
-															.Where(kFieldNameNumeric, CondLt, to_string(600)));
+															.Where(kFieldNameNumeric, CondLt, std::to_string(600)));
 
-					ExecuteAndVerify(default_namespace,
-									 Query(default_namespace)
-										 .Distinct(distinct.c_str())
-										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
-										 .Where(kFieldNameNumeric, CondRange, {to_string(rand() % 100), to_string(rand() % 100 + 500)}));
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder)
+															.Debug(LogTrace)
+															.Where(kFieldNameGenre, CondEq, 5)
+															.Or()
+															.OpenBracket()
+															.Where(kFieldNameGenre, CondLt, 6)
+															.Where(kFieldNameYear, CondRange, {2001, 2020})
+															.CloseBracket()
+															.Not()
+															.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+															.OpenBracket()
+															.Where(kFieldNameNumeric, CondLt, std::to_string(600))
+															.Or()
+															.OpenBracket()
+															.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+															.Where(kFieldNameName, CondLike, RandLikePattern())
+															.CloseBracket()
+															.Or()
+															.Where(kFieldNameYear, CondEq, 10)
+															.CloseBracket());
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder)
+															.Debug(LogTrace)
+															.Where(kFieldNameGenre, CondEq, 5)
+															.Not()
+															.OpenBracket()
+															.Where(kFieldNameYear, CondRange, {2001, 2020})
+															.Or()
+															.Where(kFieldNameName, CondLike, RandLikePattern())
+															.CloseBracket()
+															.Or()
+															.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+															.OpenBracket()
+															.Where(kFieldNameNumeric, CondLt, std::to_string(600))
+															.Not()
+															.OpenBracket()
+															.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+															.Where(kFieldNameGenre, CondLt, 6)
+															.CloseBracket()
+															.Or()
+															.Where(kFieldNameYear, CondEq, 10)
+															.CloseBracket());
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder)
+															.Debug(LogTrace)
+															.Where(kFieldNameNumeric, CondRange,
+																   {std::to_string(rand() % 100), std::to_string(rand() % 100 + 500)}));
 
 					ExecuteAndVerify(testSimpleNs, Query(testSimpleNs).Where(kFieldNameName, CondEq, "SSS"));
 					ExecuteAndVerify(testSimpleNs, Query(testSimpleNs).Where(kFieldNameYear, CondEq, 2002));
@@ -879,39 +957,39 @@ protected:
 		constexpr size_t facetLimit = 10;
 		constexpr size_t facetOffset = 10;
 
-		Query wrongQuery = Query(default_namespace).Aggregate(AggAvg, {});
+		const Query wrongQuery1 = Query(default_namespace).Aggregate(AggAvg, {});
 		reindexer::QueryResults wrongQr1;
-		Error err = rt.reindexer->Select(wrongQuery, wrongQr1);
+		Error err = rt.reindexer->Select(wrongQuery1, wrongQr1);
 		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "Empty set of fields for aggregation avg");
 
-		wrongQuery = Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear, kFieldNameName});
+		const Query wrongQuery2 = Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear, kFieldNameName});
 		reindexer::QueryResults wrongQr2;
-		err = rt.reindexer->Select(wrongQuery, wrongQr2);
+		err = rt.reindexer->Select(wrongQuery2, wrongQr2);
 		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "For aggregation avg available exactly one field");
 
-		wrongQuery = Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear}, {{kFieldNameYear, true}});
+		const Query wrongQuery3 = Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear}, {{kFieldNameYear, true}});
 		reindexer::QueryResults wrongQr3;
-		err = rt.reindexer->Select(wrongQuery, wrongQr3);
+		err = rt.reindexer->Select(wrongQuery3, wrongQr3);
 		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "Sort is not available for aggregation avg");
 
-		wrongQuery = Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear}, {}, 10);
+		const Query wrongQuery4 = Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear}, {}, 10);
 		reindexer::QueryResults wrongQr4;
-		err = rt.reindexer->Select(wrongQuery, wrongQr4);
+		err = rt.reindexer->Select(wrongQuery4, wrongQr4);
 		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "Limit or offset are not available for aggregation avg");
 
-		wrongQuery = Query(default_namespace).Aggregate(AggFacet, {kFieldNameYear}, {{kFieldNameName, true}});
+		const Query wrongQuery5 = Query(default_namespace).Aggregate(AggFacet, {kFieldNameYear}, {{kFieldNameName, true}});
 		reindexer::QueryResults wrongQr5;
-		err = rt.reindexer->Select(wrongQuery, wrongQr5);
+		err = rt.reindexer->Select(wrongQuery5, wrongQr5);
 		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "The aggregation facet cannot provide sort by 'name'");
 
-		wrongQuery = Query(default_namespace).Aggregate(AggFacet, {kFieldNameCountries});
+		const Query wrongQuery6 = Query(default_namespace).Aggregate(AggFacet, {kFieldNameCountries});
 		reindexer::QueryResults wrongQr6;
-		err = rt.reindexer->Select(wrongQuery, wrongQr6);
+		err = rt.reindexer->Select(wrongQuery6, wrongQr6);
 		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "Can't do facet by array field");
 
@@ -943,7 +1021,7 @@ protected:
 		for (auto it : checkQr) {
 			Item item(it.GetItem());
 			yearSum += item[kFieldNameYear].Get<int>();
-			++compositeFacet[CompositeFacetItem{item[kFieldNameName].Get<reindexer::string_view>().ToString(),
+			++compositeFacet[CompositeFacetItem{string(item[kFieldNameName].Get<reindexer::string_view>()),
 												item[kFieldNameYear].Get<int>()}];
 		}
 		if (facetOffset >= compositeFacet.size()) {
@@ -1015,62 +1093,87 @@ protected:
 
 	void CheckSqlQueries() {
 		string sqlQuery = "SELECT ID, Year, Genre FROM test_namespace WHERE year > '2016' ORDER BY year DESC LIMIT 10000000";
-		Query checkQuery = Query(default_namespace, 0, 10000000).Where(kFieldNameYear, CondGt, 2016).Sort(kFieldNameYear, true);
+		const Query checkQuery1 = Query(default_namespace, 0, 10000000).Where(kFieldNameYear, CondGt, 2016).Sort(kFieldNameYear, true);
 
 		QueryResults sqlQr;
 		Error err = rt.reindexer->Select(sqlQuery, sqlQr);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		QueryResults checkQr;
-		err = rt.reindexer->Select(checkQuery, checkQr);
+		err = rt.reindexer->Select(checkQuery1, checkQr);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		CompareQueryResults(sqlQr, checkQr);
-		Verify(default_namespace, checkQr, checkQuery);
+		Verify(default_namespace, checkQr, checkQuery1);
 
 		sqlQuery = "SELECT ID, Year, Genre FROM test_namespace WHERE genre IN ('1',2,'3') ORDER BY year DESC LIMIT 10000000";
-		checkQuery = Query(default_namespace, 0, 10000000).Where(kFieldNameGenre, CondSet, {1, 2, 3}).Sort(kFieldNameYear, true);
+		const Query checkQuery2 =
+			Query(default_namespace, 0, 10000000).Where(kFieldNameGenre, CondSet, {1, 2, 3}).Sort(kFieldNameYear, true);
 
 		QueryResults sqlQr2;
 		err = rt.reindexer->Select(sqlQuery, sqlQr2);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		QueryResults checkQr2;
-		err = rt.reindexer->Select(checkQuery, checkQr2);
+		err = rt.reindexer->Select(checkQuery2, checkQr2);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		CompareQueryResults(sqlQr2, checkQr2);
-		Verify(default_namespace, checkQr2, checkQuery);
+		Verify(default_namespace, checkQr2, checkQuery2);
 
 		const string likePattern = RandLikePattern();
 		sqlQuery = "SELECT ID, Year, Genre FROM test_namespace WHERE name LIKE '" + likePattern + "' ORDER BY year DESC LIMIT 10000000";
-		checkQuery = Query(default_namespace, 0, 10000000).Where(kFieldNameName, CondLike, likePattern).Sort(kFieldNameYear, true);
+		const Query checkQuery3 =
+			Query(default_namespace, 0, 10000000).Where(kFieldNameName, CondLike, likePattern).Sort(kFieldNameYear, true);
 
 		QueryResults sqlQr3;
 		err = rt.reindexer->Select(sqlQuery, sqlQr3);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		QueryResults checkQr3;
-		err = rt.reindexer->Select(checkQuery, checkQr3);
+		err = rt.reindexer->Select(checkQuery3, checkQr3);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		CompareQueryResults(sqlQr3, checkQr3);
-		Verify(default_namespace, checkQr3, checkQuery);
+		Verify(default_namespace, checkQr3, checkQuery3);
 
 		sqlQuery = "SELECT ID, FACET(ID, Year ORDER BY ID DESC ORDER BY Year ASC LIMIT 20 OFFSET 1) FROM test_namespace LIMIT 10000000";
-		checkQuery = Query(default_namespace, 0, 10000000)
-						 .Aggregate(AggFacet, {kFieldNameId, kFieldNameYear}, {{kFieldNameId, true}, {kFieldNameYear, false}}, 20, 1);
+		const Query checkQuery4 =
+			Query(default_namespace, 0, 10000000)
+				.Aggregate(AggFacet, {kFieldNameId, kFieldNameYear}, {{kFieldNameId, true}, {kFieldNameYear, false}}, 20, 1);
 
 		QueryResults sqlQr4;
 		err = rt.reindexer->Select(sqlQuery, sqlQr4);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		QueryResults checkQr4;
-		err = rt.reindexer->Select(checkQuery, checkQr4);
+		err = rt.reindexer->Select(checkQuery4, checkQr4);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		CompareQueryResults(sqlQr4, checkQr4);
-		Verify(default_namespace, checkQr4, checkQuery);
+		Verify(default_namespace, checkQr4, checkQuery4);
+
+		sqlQuery = "SELECT ID FROM test_namespace WHERE name LIKE '" + likePattern +
+				   "' AND (genre IN ('1', '2', '3') AND year > '2016' ) OR age IN ('1', '2', '3', '4') LIMIT 10000000";
+		const Query checkQuery5 = Query(default_namespace, 0, 10000000)
+									  .Where(kFieldNameName, CondLike, likePattern)
+									  .OpenBracket()
+									  .Where(kFieldNameGenre, CondSet, {1, 2, 3})
+									  .Where(kFieldNameYear, CondGt, 2016)
+									  .CloseBracket()
+									  .Or()
+									  .Where(kFieldNameAge, CondSet, {1, 2, 3, 4});
+
+		QueryResults sqlQr5;
+		err = rt.reindexer->Select(sqlQuery, sqlQr5);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		QueryResults checkQr5;
+		err = rt.reindexer->Select(checkQuery5, checkQr5);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		CompareQueryResults(sqlQr5, checkQr5);
+		Verify(default_namespace, checkQr5, checkQuery5);
 	}
 
 	void CheckCompositeIndexesQueries() {
@@ -1152,45 +1255,52 @@ protected:
 
 		stringSet.clear();
 		for (size_t i = 0; i < 100; i++) {
-			stringSet.emplace_back(to_string(i + 20000));
+			stringSet.emplace_back(std::to_string(i + 20000));
 		}
 		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnStringNumeric", CondSet, stringSet));
 
 		stringSet.clear();
 		for (size_t i = 0; i < 100; i++) {
-			stringSet.emplace_back(to_string(i + 1));
+			stringSet.emplace_back(std::to_string(i + 1));
 		}
 		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnStringNumeric", CondSet, stringSet));
 		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnStringNumeric", CondEq, string("777")));
 		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnFullText", CondEq, RandString()));
 	}
 
-	void PrintFailedQueryEntries(const reindexer::QueryEntries& failedEntries) {
-		printf("Failed entries: ");
-		for (size_t i = 0; i < failedEntries.size(); ++i) {
-			printf("%s", failedEntries[i].Dump().c_str());
-			if (i != failedEntries.size() - 1) {
-				printf(": ");
-			}
-		}
-		printf("\n\n");
-		fflush(stdout);
+	static void PrintFailedQueryEntries(const reindexer::QueryEntries& failedEntries) {
+		TestCout() << "Failed entries: ";
+		PrintQueryEntries(failedEntries.cbegin(), failedEntries.cend());
+		TestCout() << std::endl << std::endl;
 	}
 
-	static void boldOn() { printf("\e[1m"); }
-	static void boldOff() { printf("\e[0m"); }
+	static void PrintQueryEntries(reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator to) {
+		TestCout() << "(";
+		for (; it != to; ++it) {
+			TestCout() << (it->Op == OpAnd ? "AND" : (it->Op == OpOr ? "OR" : "NOT"));
+			if (it->IsLeaf()) {
+				TestCout() << it->Value().Dump();
+			} else {
+				PrintQueryEntries(it->cbegin(it), it->cend(it));
+			}
+		}
+		TestCout() << ")";
+	}
+
+	static void boldOn() { TestCout() << "\e[1m"; }
+	static void boldOff() { TestCout() << "\e[0m"; }
 
 	void PrintFailedSortOrder(const Query& query, const QueryResults& qr, int itemIndex, int itemsToShow = 10) {
 		if (qr.Count() == 0) return;
 
-		printf("Sort order or last items: \n");
+		TestCout() << "Sort order or last items:" << std::endl;
 		Item rdummy(qr[0].GetItem());
 		boldOn();
 		for (size_t idx = 0; idx < query.sortingEntries_.size(); idx++) {
-			printf("\t%.60s", rdummy[query.sortingEntries_[idx].column].Name().c_str());
+			TestCout() << rdummy[query.sortingEntries_[idx].column].Name() << " ";
 		}
 		boldOff();
-		printf("\n\n");
+		TestCout() << std::endl << std::endl;
 
 		int firstItem = itemIndex - itemsToShow;
 		if (firstItem < 0) firstItem = 0;
@@ -1198,10 +1308,10 @@ protected:
 			Item item(qr[i].GetItem());
 			if (i == itemIndex) boldOn();
 			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
-				printf("\t%.60s", item[query.sortingEntries_[j].column].As<string>().c_str());
+				TestCout() << item[query.sortingEntries_[j].column].As<string>() << " ";
 			}
 			if (i == itemIndex) boldOff();
-			printf("\n");
+			TestCout() << std::endl;
 		}
 
 		firstItem = itemIndex + 1;
@@ -1212,13 +1322,12 @@ protected:
 		for (int i = firstItem; i < lastItem; ++i) {
 			Item item(qr[i].GetItem());
 			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
-				printf("\t%.60s", item[query.sortingEntries_[j].column].As<string>().c_str());
+				TestCout() << item[query.sortingEntries_[j].column].As<string>() << " ";
 			}
-			printf("\n");
+			TestCout() << std::endl;
 		}
 
-		printf("\n\n");
-		fflush(stdout);
+		TestCout() << std::endl << std::endl;
 	}
 
 	using NamespaceName = string;
@@ -1270,6 +1379,7 @@ protected:
 	vector<string> simpleTestNsPks;
 	vector<string> compositeIndexesNsPks;
 	vector<string> comparatorsNsPks;
+	std::mutex m_;
 
 	int currBtreeIdsetsValue = rand() % 10000;
 };

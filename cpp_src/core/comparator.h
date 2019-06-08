@@ -2,11 +2,9 @@
 
 #include "comparatorimpl.h"
 #include "compositearraycomparator.h"
-#include "estl/fast_hash_set.h"
 
 namespace reindexer {
 
-using reindexer::lower;
 class Comparator : public ComparatorVars {
 public:
 	Comparator();

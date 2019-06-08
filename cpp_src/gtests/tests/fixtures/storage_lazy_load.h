@@ -1,6 +1,7 @@
 #pragma once
 
 #include "reindexer_api.h"
+#include "tools/fsops.h"
 
 class StorageLazyLoadApi : public ReindexerApi {
 public:
@@ -45,7 +46,8 @@ public:
 
 protected:
 	void connectToDb() {
-		Error err = rt.reindexer->Connect(kConnectParams);
+		reindexer::fs::RmDirAll(kStoragePath);
+		Error err = rt.reindexer->Connect("builtin://" + kStoragePath);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
@@ -56,11 +58,6 @@ protected:
 
 	void openMemstatNs() {
 		Error err = rt.reindexer->OpenNamespace(kMemstatsNamespace);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
-
-	void enableStorage() {
-		Error err = rt.reindexer->EnableStorage(kConnectParams);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
@@ -106,7 +103,7 @@ protected:
 	const char* kFieldId = "id";
 	const char* kFieldRandomName = "random_name";
 	const char* kConfigNamespace = "#config";
-	const char* kConnectParams = "builtin:///tmp/reindex/lazy_load_test";
+	const std::string kStoragePath = "/tmp/reindex/lazy_load_test";
 	const char* jsonConfigTemplate = R"json({
                                             "type":"namespaces",
                                             "namespaces":[

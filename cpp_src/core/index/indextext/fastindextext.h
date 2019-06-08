@@ -35,8 +35,6 @@ protected:
 	void BuildVdocs(Data& data);
 
 	void initSearchers();
-
-	const typename T::mapped_type* GetEntry(const void* entry);
 };
 
 Index* FastIndexText_New(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields);

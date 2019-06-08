@@ -46,8 +46,8 @@ TEST_F(StorageLazyLoadApi, ReadWriteTest) {
 
 	waitFor(5000);
 
-	std::vector<thread> selectThreads;
-	std::vector<thread> insertThreads;
+	std::vector<std::thread> selectThreads;
+	std::vector<std::thread> insertThreads;
 	for (size_t i = 0; i < 5; ++i) {
 		selectThreads.emplace_back([&]() {
 			std::lock_guard<std::mutex> lk(m);
@@ -108,12 +108,12 @@ TEST_F(StorageLazyLoadApi, DISABLED_AttemptToReadWriteInParallelTest) {
 	// items from storage
 	waitFor(4000);
 
-	std::vector<thread> selectThreads;
+	std::vector<std::thread> selectThreads;
 	for (size_t i = 0; i < 5; ++i) {
 		selectThreads.push_back(std::thread(readFn));
 	}
 
-	std::vector<thread> insertThreads;
+	std::vector<std::thread> insertThreads;
 	for (size_t i = 0; i < 5; ++i) {
 		insertThreads.push_back(std::thread(writeFn));
 	}
@@ -146,12 +146,12 @@ TEST_F(StorageLazyLoadApi, TestForTSAN) {
 	// items from storage
 	waitFor(4000);
 
-	std::vector<thread> selectThreads;
+	std::vector<std::thread> selectThreads;
 	for (size_t i = 0; i < 30; ++i) {
 		selectThreads.push_back(std::thread(readFn));
 	}
 
-	std::vector<thread> insertThreads;
+	std::vector<std::thread> insertThreads;
 	for (size_t i = 0; i < 150; ++i) {
 		insertThreads.push_back(std::thread(writeFn));
 	}

@@ -1,6 +1,7 @@
 package reindexer
 
 import (
+	"context"
 	"strings"
 )
 
@@ -219,6 +220,10 @@ type DBNamespacesConfig struct {
 	Lazyload bool `json:"lazyload"`
 	// Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded
 	UnloadIdleThreshold int `json:"unload_idle_threshold"`
+	// Copy namespce policts will start only after item's count become greater in this param
+	StartCopyPoliticsCount int `json:"start_copy_politics_count"`
+	// Merge write namespace after get thi count of operations
+	MergeLimitCount int `json:"merge_limit_count"`
 }
 
 // DBReplicationConfig is part of reindexer configuration contains replication options
@@ -242,7 +247,7 @@ type DBReplicationConfig struct {
 func (db *Reindexer) DescribeNamespaces() ([]*NamespaceDescription, error) {
 	result := []*NamespaceDescription{}
 
-	descs, err := db.Query(NamespacesNamespaceName).Exec().FetchAll()
+	descs, err := db.Query(NamespacesNamespaceName).ExecCtx(db.ctx).FetchAll()
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +265,11 @@ func (db *Reindexer) DescribeNamespaces() ([]*NamespaceDescription, error) {
 // DescribeNamespace makes a 'SELECT * FROM #namespaces' query to database.
 // Return NamespaceDescription results, error
 func (db *Reindexer) DescribeNamespace(namespace string) (*NamespaceDescription, error) {
-	desc, err := db.Query(NamespacesNamespaceName).Where("name", EQ, namespace).Exec().FetchOne()
+	return db.impl.describeNamespace(db.ctx, namespace)
+}
+
+func (db *reindexerImpl) describeNamespace(ctx context.Context, namespace string) (*NamespaceDescription, error) {
+	desc, err := db.query(NamespacesNamespaceName).Where("name", EQ, namespace).ExecCtx(ctx).FetchOne()
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +281,7 @@ func (db *Reindexer) DescribeNamespace(namespace string) (*NamespaceDescription,
 func (db *Reindexer) GetNamespacesMemStat() ([]*NamespaceMemStat, error) {
 	result := []*NamespaceMemStat{}
 
-	descs, err := db.Query(MemstatsNamespaceName).Exec().FetchAll()
+	descs, err := db.Query(MemstatsNamespaceName).ExecCtx(db.ctx).FetchAll()
 	if err != nil {
 		return nil, err
 	}
@@ -290,7 +299,7 @@ func (db *Reindexer) GetNamespacesMemStat() ([]*NamespaceMemStat, error) {
 // GetNamespaceMemStat makes a 'SELECT * FROM #memstat' query to database.
 // Return NamespaceMemStat results, error
 func (db *Reindexer) GetNamespaceMemStat(namespace string) (*NamespaceMemStat, error) {
-	desc, err := db.Query(MemstatsNamespaceName).Where("name", EQ, namespace).Exec().FetchOne()
+	desc, err := db.Query(MemstatsNamespaceName).Where("name", EQ, namespace).ExecCtx(db.ctx).FetchOne()
 	if err != nil {
 		return nil, err
 	}

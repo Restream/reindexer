@@ -158,8 +158,9 @@ string_view BaseEncoder<Builder>::getPlTuple(ConstPayload* pl) {
 	p_string tuple(kref[0]);
 
 	if (tagsMatcher_ && tuple.size() == 0) {
-		tmpPlTuple_ = buildPayloadTuple(pl, tagsMatcher_);
-		return string_view(*tmpPlTuple_);
+		tmpPlTuple_.Reset();
+		buildPayloadTuple(pl, tagsMatcher_, tmpPlTuple_);
+		return tmpPlTuple_.Slice();
 	}
 
 	return string_view(tuple);

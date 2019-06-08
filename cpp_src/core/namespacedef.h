@@ -7,8 +7,6 @@
 
 #include "estl/string_view.h"
 
-union JsonValue;
-
 namespace reindexer {
 
 using std::string;
@@ -38,8 +36,8 @@ struct NamespaceDef {
 		return *this;
 	}
 
-	Error FromJSON(char *json);
-	Error FromJSON(JsonValue &jvalue);
+	Error FromJSON(span<char> json);
+	void FromJSON(const gason::JsonNode &root);
 	void GetJSON(WrSerializer &, int formatFlags = 0) const;
 
 public:

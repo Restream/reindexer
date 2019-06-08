@@ -3,11 +3,22 @@
 
 namespace reindexer {
 
-Error::Error(int code, const string &what) : code_(code), what_(what) {}
+Error::Error(int code, string_view what) {
+	if (code != errOK) {
+		ptr_ = make_intrusive<intrusive_atomic_rc_wrapper<payload>>(code, std::string(what));
+	}
+}
+Error::Error(int code) {
+	if (code != errOK) {
+		ptr_ = make_intrusive<intrusive_atomic_rc_wrapper<payload>>(code, std::string());
+	}
+}
 
-Error::Error(int code) : code_(code) {}
+const std::string& Error::what() const {
+	static std::string noerr = "";
+	return ptr_ ? ptr_->what_ : noerr;
+}
 
-const string &Error::what() const { return what_; }
-int Error::code() const { return code_; }
+int Error::code() const { return ptr_ ? ptr_->code_ : errOK; }
 
 }  // namespace reindexer

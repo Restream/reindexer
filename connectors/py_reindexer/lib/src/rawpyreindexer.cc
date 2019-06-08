@@ -16,11 +16,9 @@ static PyObject *queryResultsWrapperIterate(uintptr_t qresWrapperAddr) {
 
 	qresWrapperPtr->next();
 
-	char *json = const_cast<char *>(wrSer.c_str());
-
-	PyObject *dictFromJson;
+	PyObject *dictFromJson = nullptr;
 	try {
-		dictFromJson = PyObjectFromJson(json);  // stolen ref
+		dictFromJson = PyObjectFromJson(giftStr(wrSer.Slice()));  // stolen ref
 	} catch (const Error &err) {
 		Py_XDECREF(dictFromJson);
 
@@ -129,10 +127,8 @@ static PyObject *IndexAdd(PyObject *self, PyObject *args) {
 
 	Py_DECREF(indexDefDict);
 
-	char *json = const_cast<char *>(wrSer.c_str());
-
 	IndexDef indexDef;
-	Error err = indexDef.FromJSON(json);
+	Error err = indexDef.FromJSON(giftStr(wrSer.Slice()));
 	if (!err.ok()) {
 		return pyErr(err);
 	}
@@ -165,10 +161,8 @@ static PyObject *IndexUpdate(PyObject *self, PyObject *args) {
 
 	Py_DECREF(indexDefDict);
 
-	char *json = const_cast<char *>(wrSer.c_str());
-
 	IndexDef indexDef;
-	Error err = indexDef.FromJSON(json);
+	Error err = indexDef.FromJSON(giftStr(wrSer.Slice()));
 	if (!err.ok()) {
 		return pyErr(err);
 	}
@@ -391,11 +385,10 @@ static PyObject *EnumNamespaces(PyObject *self, PyObject *args) {
 
 		wrSer.Reset();
 		it->GetJSON(wrSer, false);
-		char *json = const_cast<char *>(wrSer.c_str());
 
-		PyObject *dictFromJson;
+		PyObject *dictFromJson = nullptr;
 		try {
-			dictFromJson = PyObjectFromJson(json);  // stolen ref
+			dictFromJson = PyObjectFromJson(giftStr(wrSer.Slice()));  // stolen ref
 		} catch (const Error &err) {
 			Py_XDECREF(dictFromJson);
 			Py_XDECREF(list);

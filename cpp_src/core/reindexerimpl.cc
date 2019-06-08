@@ -152,7 +152,8 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef) {
 		}
 		{
 			lock_guard<shared_timed_mutex> lock(mtx_);
-			namespaces_.insert({nsDef.name, ns});
+			NamespaceCloner::Ptr wr = std::make_shared<NamespaceCloner>(ns);
+			namespaces_.insert({nsDef.name, wr});
 		}
 		observers_.OnWALUpdate(0, nsDef.name, WALRecord(WalNamespaceAdd));
 		for (auto& indexDef : nsDef.indexes) ns->AddIndex(indexDef);
@@ -168,17 +169,17 @@ Error ReindexerImpl::OpenNamespace(string_view name, const StorageOpts& storageO
 	shared_ptr<Namespace> ns;
 	try {
 		{
-			lock_guard<shared_timed_mutex> lock(mtx_);
-			auto it = namespaces_.find(name);
-			if (it != namespaces_.end()) {
-				it->second->SetStorageOpts(storageOpts);
+			shared_lock<shared_timed_mutex> lock(mtx_);
+			auto nsIt = namespaces_.find(name);
+			if (nsIt != namespaces_.end() && nsIt->second) {
+				nsIt->second->GetOriginNs()->SetStorageOpts(storageOpts);
 				return 0;
 			}
 		}
 		if (!validateObjectName(name)) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-, are allowed");
 		}
-		auto nameStr = name.ToString();
+		string nameStr(name);
 		ns = std::make_shared<Namespace>(nameStr, observers_);
 		if (storageOpts.IsEnabled() && !storagePath_.empty()) {
 			ns->EnableStorage(storagePath_, storageOpts);
@@ -187,7 +188,8 @@ Error ReindexerImpl::OpenNamespace(string_view name, const StorageOpts& storageO
 		}
 		{
 			lock_guard<shared_timed_mutex> lock(mtx_);
-			namespaces_.insert({nameStr, ns});
+			NamespaceCloner::Ptr nmWrapper = std::make_shared<NamespaceCloner>(ns);
+			namespaces_.insert({nameStr, nmWrapper});
 		}
 		observers_.OnWALUpdate(0, name, WALRecord(WalNamespaceAdd));
 	} catch (const Error& err) {
@@ -201,7 +203,7 @@ Error ReindexerImpl::DropNamespace(string_view nsName) { return closeNamespace(n
 Error ReindexerImpl::CloseNamespace(string_view nsName) { return closeNamespace(nsName, false); }
 
 Error ReindexerImpl::closeNamespace(string_view nsName, bool dropStorage, bool enableDropSlave) {
-	shared_ptr<Namespace> ns;
+	NamespaceCloner::Ptr nsw;
 	try {
 		lock_guard<shared_timed_mutex> lock(mtx_);
 		auto nsIt = namespaces_.find(nsName);
@@ -210,7 +212,8 @@ Error ReindexerImpl::closeNamespace(string_view nsName, bool dropStorage, bool e
 			return Error(errNotFound, "Namespace '%s' does not exist", nsName);
 		}
 		// Temporary save namespace. This will call destructor without lock
-		ns = nsIt->second;
+		nsw = nsIt->second;
+		auto ns = ClonableNamespace(1, nsw);
 		if (ns->GetReplState().slaveMode && !enableDropSlave) {
 			return Error(errLogic, "Can't modify slave ns '%s'", nsName);
 		}
@@ -224,18 +227,18 @@ Error ReindexerImpl::closeNamespace(string_view nsName, bool dropStorage, bool e
 		if (dropStorage) observers_.OnWALUpdate(0, nsName, WALRecord(WalNamespaceDrop));
 
 	} catch (const Error& err) {
-		ns = nullptr;
+		nsw = nullptr;
 		return err;
 	}
 	// Here will called destructor
-	ns = nullptr;
+	nsw = nullptr;
 	return errOK;
 }
 
 Error ReindexerImpl::Insert(string_view nsName, Item& item, Completion cmpl) {
 	Error err;
 	try {
-		auto ns = getNamespace(nsName);
+		auto ns = getClonableNamespace(nsName);
 		ns->Insert(item);
 		if (item.GetID() != -1) {
 			updateDbFromConfig(nsName, item);
@@ -250,7 +253,8 @@ Error ReindexerImpl::Insert(string_view nsName, Item& item, Completion cmpl) {
 Error ReindexerImpl::Update(string_view nsName, Item& item, Completion cmpl) {
 	Error err;
 	try {
-		auto ns = getNamespace(nsName);
+		auto ns = getClonableNamespace(nsName);
+
 		ns->Update(item);
 		if (item.GetID() != -1) {
 			updateDbFromConfig(nsName, item);
@@ -264,7 +268,7 @@ Error ReindexerImpl::Update(string_view nsName, Item& item, Completion cmpl) {
 
 Error ReindexerImpl::Update(const Query& q, QueryResults& result) {
 	try {
-		auto ns = getNamespace(q._namespace);
+		auto ns = getClonableNamespace(q._namespace);
 		ensureDataLoaded(ns);
 		ns->Update(q, result);
 	} catch (const Error& err) {
@@ -276,7 +280,7 @@ Error ReindexerImpl::Update(const Query& q, QueryResults& result) {
 Error ReindexerImpl::Upsert(string_view nsName, Item& item, Completion cmpl) {
 	Error err;
 	try {
-		auto ns = getNamespace(nsName);
+		auto ns = getClonableNamespace(nsName);
 		ns->Upsert(item);
 		if (item.GetID() != -1) {
 			updateDbFromConfig(nsName, item);
@@ -308,10 +312,13 @@ Error ReindexerImpl::CommitTransaction(Transaction& tr) {
 	Error err = errOK;
 	auto trAccessor = static_cast<TransactionAccessor*>(&tr);
 
+#if ATOMIC_NS_CLONE
+	ClonableNamespace ns;
+#else
 	Namespace::Ptr ns;
+#endif
 	try {
-		ns = getNamespace(trAccessor->GetName());
-
+		ns = getClonableNamespace(trAccessor->GetName(), trAccessor->impl_->steps_.size());
 		ns->StartTransaction();
 		for (auto& step : tr.impl_->steps_) {
 			ns->ApplyTransactionStep(step);
@@ -348,7 +355,7 @@ Error ReindexerImpl::GetMeta(string_view nsName, const string& key, string& data
 
 Error ReindexerImpl::PutMeta(string_view nsName, const string& key, string_view data) {
 	try {
-		getNamespace(nsName)->PutMeta(key, data);
+		getClonableNamespace(nsName)->PutMeta(key, data);
 	} catch (const Error& err) {
 		return err;
 	}
@@ -367,7 +374,7 @@ Error ReindexerImpl::EnumMeta(string_view nsName, vector<string>& keys) {
 Error ReindexerImpl::Delete(string_view nsName, Item& item, Completion cmpl) {
 	Error err;
 	try {
-		auto ns = getNamespace(nsName);
+		auto ns = getClonableNamespace(nsName);
 		ns->Delete(item);
 	} catch (const Error& e) {
 		err = e;
@@ -377,7 +384,7 @@ Error ReindexerImpl::Delete(string_view nsName, Item& item, Completion cmpl) {
 }
 Error ReindexerImpl::Delete(const Query& q, QueryResults& result) {
 	try {
-		auto ns = getNamespace(q._namespace);
+		auto ns = getClonableNamespace(q._namespace);
 		ensureDataLoaded(ns);
 		ns->Delete(q, result);
 	} catch (const Error& err) {
@@ -502,7 +509,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 		JoinCacheRes joinRes;
 		joinRes.key.SetData(jq);
 		jns->GetFromJoinCache(joinRes);
-		if (jjq.entries.size() && !joinRes.haveData) {
+		if (!jjq.entries.Empty() && !joinRes.haveData) {
 			QueryResults jr;
 			jjq.Limit(UINT_MAX);
 			SelectCtx ctx(jjq);
@@ -525,7 +532,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 			jItemQ.Sort(jjq.sortingEntries_[i].column, jq.sortingEntries_[i].desc);
 		}
 
-		jItemQ.entries.reserve(jq.joinEntries_.size());
+		jItemQ.entries.Reserve(jq.joinEntries_.size());
 
 		// Construct join conditions
 		for (auto& je : jq.joinEntries_) {
@@ -533,11 +540,11 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 			if (!jns->getIndexByName(je.joinIndex_, joinIdx)) {
 				joinIdx = IndexValueType::SetByJsonPath;
 			}
-			QueryEntry qe(je.op_, je.condition_, je.joinIndex_, joinIdx);
+			QueryEntry qe(je.condition_, je.joinIndex_, joinIdx);
 			if (!ns->getIndexByName(je.index_, const_cast<QueryJoinEntry&>(je).idxNo)) {
 				const_cast<QueryJoinEntry&>(je).idxNo = IndexValueType::SetByJsonPath;
 			}
-			jItemQ.entries.push_back(qe);
+			jItemQ.entries.Append(je.op_, std::move(qe));
 		}
 
 		auto joinedSelector = [&result, &jq, jns, preResult, pos, &func, ns](JoinedSelector* js, IdType id, int nsId, ConstPayload payload,
@@ -546,18 +553,18 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 			JoinCacheRes finalJoinRes;
 
 			// Put values to join conditions
-			int cnt = 0;
+			size_t index = 0;
 			for (auto& je : jq.joinEntries_) {
 				bool nonIndexedField = (je.idxNo == IndexValueType::SetByJsonPath);
 				bool isIndexSparse = !nonIndexedField && ns->indexes_[je.idxNo]->Opts().IsSparse();
 				if (nonIndexedField || isIndexSparse) {
-					VariantArray& values = js->query.entries[cnt].values;
+					VariantArray& values = js->query.entries[index].values;
 					KeyValueType type = values.empty() ? KeyValueUndefined : values[0].Type();
 					payload.GetByJsonPath(je.index_, ns->tagsMatcher_, values, type);
 				} else {
-					payload.Get(je.idxNo, js->query.entries[cnt].values);
+					payload.Get(je.idxNo, js->query.entries[index].values);
 				}
-				cnt++;
+				++index;
 			}
 			js->query.Limit(match ? jq.count : 0);
 
@@ -704,12 +711,28 @@ shared_ptr<Namespace> ReindexerImpl::getNamespace(string_view nsName) {
 	}
 
 	assert(nsIt->second);
-	return nsIt->second;
+	return nsIt->second->GetOriginNs();
 }
+
+#if ATOMIC_NS_CLONE
+ClonableNamespace ReindexerImpl::getClonableNamespace(string_view nsName, size_t actionsSize) {
+	shared_lock<shared_timed_mutex> lock(mtx_);
+	auto nsIt = namespaces_.find(nsName);
+
+	if (nsIt == namespaces_.end()) {
+		throw Error(errParams, "Namespace '%s' does not exist", nsName);
+	}
+
+	assert(nsIt->second);
+
+	ClonableNamespace some(actionsSize, nsIt->second);
+	return some;
+}
+#endif
 
 Error ReindexerImpl::AddIndex(string_view nsName, const IndexDef& indexDef) {
 	try {
-		auto ns = getNamespace(nsName);
+		auto ns = getClonableNamespace(nsName);
 		ns->AddIndex(indexDef);
 	} catch (const Error& err) {
 		return err;
@@ -719,7 +742,7 @@ Error ReindexerImpl::AddIndex(string_view nsName, const IndexDef& indexDef) {
 
 Error ReindexerImpl::UpdateIndex(string_view nsName, const IndexDef& indexDef) {
 	try {
-		auto ns = getNamespace(nsName);
+		auto ns = getClonableNamespace(nsName);
 		ns->UpdateIndex(indexDef);
 	} catch (const Error& err) {
 		return err;
@@ -729,14 +752,13 @@ Error ReindexerImpl::UpdateIndex(string_view nsName, const IndexDef& indexDef) {
 
 Error ReindexerImpl::DropIndex(string_view nsName, const IndexDef& indexDef) {
 	try {
-		auto ns = getNamespace(nsName);
+		auto ns = getClonableNamespace(nsName);
 		ns->DropIndex(indexDef);
 	} catch (const Error& err) {
 		return err;
 	}
 	return Error(errOK);
 }
-
 void ReindexerImpl::ensureDataLoaded(Namespace::Ptr& ns) {
 	shared_lock<shared_timed_mutex> readlock(storageMtx_);
 	if (ns->needToLoadData()) {
@@ -746,12 +768,23 @@ void ReindexerImpl::ensureDataLoaded(Namespace::Ptr& ns) {
 	}
 }
 
+#if ATOMIC_NS_CLONE
+void ReindexerImpl::ensureDataLoaded(ClonableNamespace& ns) {
+	shared_lock<shared_timed_mutex> readlock(storageMtx_);
+	if (ns->needToLoadData()) {
+		readlock.unlock();
+		lock_guard<shared_timed_mutex> writelock(storageMtx_);
+		if (ns->needToLoadData()) ns->LoadFromStorage();
+	}
+}
+#endif
+
 std::vector<Namespace::Ptr> ReindexerImpl::getNamespaces() {
 	shared_lock<shared_timed_mutex> lock(mtx_);
 	std::vector<Namespace::Ptr> ret;
 	ret.reserve(namespaces_.size());
 	for (auto& ns : namespaces_) {
-		ret.push_back(ns.second);
+		ret.push_back(ns.second->GetOriginNs());
 	}
 	return ret;
 }
@@ -797,7 +830,7 @@ void ReindexerImpl::backgroundRoutine() {
 		auto nsarray = getNamespacesNames();
 		for (auto name : nsarray) {
 			try {
-				auto ns = getNamespace(name);
+				auto ns = getClonableNamespace(name);
 				ns->tryToReload();
 				ns->BackgroundRoutine();
 			} catch (Error err) {
@@ -872,7 +905,9 @@ std::vector<string> defDBConfig = {
                 "log_level":"none",
 				"lazyload":false,
 				"unload_idle_threshold":0,
-				"join_cache_mode":"off"
+				"join_cache_mode":"off",
+				"start_copy_politics_count":10000,
+				"merge_limit_count":20000
 			}
     	]
 	})json",
@@ -965,17 +1000,12 @@ Error ReindexerImpl::updateDbFromConfig(string_view configNsName, Item& configIt
 }
 
 void ReindexerImpl::updateConfigProvider(Item& configItem) {
-	JsonAllocator jalloc;
-	JsonValue jvalue;
-	char* endp;
-
-	string_view json = configItem.GetJSON();
-	int status = jsonParse(const_cast<char*>(json.data()), &endp, &jvalue, jalloc);
-	if (status != JSON_OK) {
-		throw Error(errParseJson, "Malformed JSON with config");
+	Error err;
+	try {
+		err = configProvider_.FromJSON(gason::JsonParser().Parse(configItem.GetJSON()));
+	} catch (const gason::Exception& ex) {
+		err = Error(errParseJson, "updateConfigProvider: %s", ex.what());
 	}
-
-	Error err = configProvider_.FromJSON(jvalue);
 	if (!err.ok()) throw err;
 }
 
@@ -1039,6 +1069,8 @@ Error ReindexerImpl::SubscribeUpdates(IUpdatesObserver* observer, bool subscribe
 
 Error ReindexerImpl::GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string>& suggestions) {
 	Query query;
+	shared_lock<shared_timed_mutex> lock(mtx_);
+
 	suggestions = query.GetSuggestions(sqlQuery, pos, namespaces_);
 	return errOK;
 }

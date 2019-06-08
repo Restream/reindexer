@@ -7,53 +7,28 @@
 
 namespace reindexer {
 
-Error NamespaceDef::FromJSON(char *json) {
-	JsonAllocator jalloc;
-	JsonValue jvalue;
-	char *endp;
-
-	int status = jsonParse(json, &endp, &jvalue, jalloc);
-
-	if (status != JSON_OK) {
-		return Error(errParseJson, "Malformed JSON with namespace indexes");
-	}
-	return FromJSON(jvalue);
-}
-
-Error NamespaceDef::FromJSON(JsonValue &jvalue) {
+Error NamespaceDef::FromJSON(span<char> json) {
 	try {
-		if (jvalue.getTag() != JSON_OBJECT) throw Error(errParseJson, "Expected json object");
-		for (auto elem : jvalue) {
-			if (elem->value.getTag() == JSON_NULL) continue;
-			parseJsonField("name", name, elem);
-
-			if (!strcmp("storage", elem->key)) {
-				if (elem->value.getTag() != JSON_OBJECT) {
-					return Error(errParseJson, "Expected object in 'storage' field, but found %d", elem->value.getTag());
-				}
-				bool isEnabled = true, isDropOnFileFormatError = false, isCreateIfMissing = true;
-				for (auto selem : elem->value) {
-					parseJsonField("enabled", isEnabled, selem);
-					parseJsonField("drop_on_file_format_error", isDropOnFileFormatError, selem);
-					parseJsonField("create_if_missing", isCreateIfMissing, selem);
-				}
-				storage.Enabled(isEnabled).DropOnFileFormatError(isDropOnFileFormatError).CreateIfMissing(isCreateIfMissing);
-
-			} else if (!strcmp("indexes", elem->key)) {
-				if (elem->value.getTag() != JSON_ARRAY) {
-					return Error(errParseJson, "Expected array in 'indexes' field, but found %d", elem->value.getTag());
-				}
-				for (auto arrelem : elem->value) {
-					IndexDef idx;
-					idx.FromJSON(arrelem->value);
-					indexes.push_back(idx);
-				}
-			}
-		}
+		FromJSON(gason::JsonParser().Parse(json));
+	} catch (const gason::Exception &ex) {
+		return Error(errParseJson, "NamespaceDef: %s", ex.what());
 	} catch (const Error &err) {
 		return err;
 	}
-	return 0;
+	return errOK;
+}
+
+void NamespaceDef::FromJSON(const gason::JsonNode &root) {
+	name = root["name"].As<string>();
+	storage.Enabled(root["storage"]["enabled"].As<bool>(true));
+	storage.DropOnFileFormatError(root["storage"]["drop_on_file_format_error"].As<bool>());
+	storage.CreateIfMissing(root["storage"]["create_if_missing"].As<bool>(true));
+
+	for (auto &arrelem : root["indexes"]) {
+		IndexDef idx;
+		idx.FromJSON(arrelem);
+		indexes.push_back(idx);
+	}
 }
 
 void NamespaceDef::GetJSON(WrSerializer &ser, int formatFlags) const {

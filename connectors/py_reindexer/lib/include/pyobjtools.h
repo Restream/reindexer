@@ -10,17 +10,18 @@ namespace pyreindexer {
 
 using reindexer::Error;
 using reindexer::WrSerializer;
+using reindexer::span;
 using std::vector;
 using std::string;
 
 void pyValueSerialize(PyObject **item, WrSerializer &wrSer);
 void pyListSerialize(PyObject **list, WrSerializer &wrSer);
 void pyDictSerialize(PyObject **dict, WrSerializer &wrSer);
-PyObject *pyValueFromJsonValue(const JsonValue &value);
+PyObject *pyValueFromJsonValue(const gason::JsonValue &value);
 
 vector<string> ParseListToStrVec(PyObject **dict);
 
 void PyObjectToJson(PyObject **dict, WrSerializer &wrSer);
-PyObject *PyObjectFromJson(char *json);
+PyObject *PyObjectFromJson(span<char> json);
 
 }  // namespace pyreindexer

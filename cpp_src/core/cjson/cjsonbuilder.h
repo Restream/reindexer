@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/keyvalue/p_string.h"
+#include "estl/span.h"
 #include "tagsmatcher.h"
 
 namespace reindexer {
@@ -33,8 +34,8 @@ public:
 	CJsonBuilder Object(int tagName);
 	CJsonBuilder Array(int tagName);
 
-	CJsonBuilder Array(const char *name) { return Array(tm_->name2tag(name, true)); }
-	CJsonBuilder Object(const char *name) { return Object(tm_->name2tag(name, true)); }
+	CJsonBuilder Array(string_view name) { return Array(tm_->name2tag(name, true)); }
+	CJsonBuilder Object(string_view name) { return Object(tm_->name2tag(name, true)); }
 
 	void Array(int tagName, span<p_string> data) {
 		ser_->PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
@@ -68,12 +69,12 @@ public:
 	}
 
 	template <typename T>
-	CJsonBuilder &Put(const char *name, T arg) {
+	CJsonBuilder &Put(string_view name, T arg) {
 		return Put(tm_->name2tag(name, true), arg);
 	}
 
-	CJsonBuilder &Null(const char *name) { return Null(tm_->name2tag(name, true)); }
-	CJsonBuilder &Ref(const char *name, int type, int field) { return Ref(tm_->name2tag(name, true), type, field); }
+	CJsonBuilder &Null(string_view name) { return Null(tm_->name2tag(name, true)); }
+	CJsonBuilder &Ref(string_view name, int type, int field) { return Ref(tm_->name2tag(name, true), type, field); }
 
 	CJsonBuilder &Put(int tagName, bool arg);
 	CJsonBuilder &Put(int tagName, int arg);

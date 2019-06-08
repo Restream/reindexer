@@ -2,53 +2,71 @@
 
 #include <unordered_map>
 #include "core/keyvalue/key_string.h"
+#include "core/payload/payloadtype.h"
 #include "cpp-btree/btree_map.h"
-#include "estl/intrusive_ptr.h"
-#include "tools/customhash.h"
-#include "tools/customlocal.h"
-#include "tools/errors.h"
+#include "estl/fast_hash_map.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
 
-using btree::btree_map;
-using std::min;
-using std::to_string;
-using std::unordered_map;
+class FieldsSet;
 
-struct comparator_sptr {
-	comparator_sptr(const CollateOpts& collateOpts = CollateOpts()) : collateOpts_(collateOpts) {}
-	bool operator()(const key_string& lhs, const key_string& rhs) const {
-		return collateCompare(string_view(*lhs), string_view(*rhs), collateOpts_) < 0;
-	}
-	CollateOpts collateOpts_;
-};  // namespace reindexer
+struct less_key_string {
+	using is_transparent = void;
 
-struct equal_sptr {
-	equal_sptr(const CollateOpts& collateOpts = CollateOpts()) : collateOpts_(collateOpts) {}
-	bool operator()(const key_string& lhs, const key_string& rhs) const {
-		return collateCompare(string_view(*lhs), string_view(*rhs), collateOpts_) == 0;
-	}
+	less_key_string(const CollateOpts& collateOpts = CollateOpts()) : collateOpts_(collateOpts) {}
+	bool operator()(const key_string& lhs, const key_string& rhs) const { return collateCompare(*lhs, *rhs, collateOpts_) < 0; }
+	bool operator()(string_view lhs, const key_string& rhs) const { return collateCompare(lhs, *rhs, collateOpts_) < 0; }
+	bool operator()(const key_string& lhs, string_view rhs) const { return collateCompare(*lhs, rhs, collateOpts_) < 0; }
 	CollateOpts collateOpts_;
 };
-struct hash_sptr {
-	hash_sptr(CollateMode collateMode = CollateNone) : collateMode_(collateMode) {}
+
+struct equal_key_string {
+	using is_transparent = void;
+
+	equal_key_string(const CollateOpts& collateOpts = CollateOpts()) : collateOpts_(collateOpts) {}
+	bool operator()(const key_string& lhs, const key_string& rhs) const { return collateCompare(*lhs, *rhs, collateOpts_) == 0; }
+	bool operator()(string_view lhs, const key_string& rhs) const { return collateCompare(lhs, *rhs, collateOpts_) == 0; }
+	bool operator()(const key_string& lhs, string_view rhs) const { return collateCompare(*lhs, rhs, collateOpts_) == 0; }
+	CollateOpts collateOpts_;
+};
+struct hash_key_string {
+	using is_transparent = void;
+
+	hash_key_string(CollateMode collateMode = CollateNone) : collateMode_(collateMode) {}
 	size_t operator()(const key_string& s) const { return collateHash(*s, collateMode_); }
+	size_t operator()(string_view s) const { return collateHash(s, collateMode_); }
 	CollateMode collateMode_;
 };
 
 template <typename T1>
-using unordered_str_map = unordered_map<key_string, T1, hash_sptr, equal_sptr>;
-template <typename T1>
-using str_map = btree_map<key_string, T1, comparator_sptr>;
+class unordered_str_map : public tsl::hopscotch_map<key_string, T1, hash_key_string, equal_key_string,
+													std::allocator<std::pair<key_string, T1>>, 30, false, tsl::prime_growth_policy> {
+public:
+	using base_hash_map = tsl::hopscotch_map<key_string, T1, hash_key_string, equal_key_string, std::allocator<std::pair<key_string, T1>>,
+											 30, false, tsl::prime_growth_policy>;
+	unordered_str_map() : base_hash_map() {}
+	unordered_str_map(const PayloadType, const FieldsSet&, const CollateOpts& opts)
+		: base_hash_map(1000, hash_key_string(CollateMode(opts.mode)), equal_key_string(opts)) {}
+};
 
-template <typename T>
-struct is_string_unord_map_key : std::false_type {};
 template <typename T1>
-struct is_string_unord_map_key<unordered_str_map<T1>> : std::true_type {};
-template <typename T>
-struct is_string_map_key : std::false_type {};
-template <typename T1>
-struct is_string_map_key<str_map<T1>> : std::true_type {};
+class str_map : public btree::btree_map<key_string, T1, less_key_string> {
+public:
+	using base_tree_map = btree::btree_map<key_string, T1, less_key_string>;
+	str_map(const PayloadType, const FieldsSet&, const CollateOpts& opts) : base_tree_map(less_key_string(opts)) {}
+};
+
+template <typename K, typename T1>
+class unordered_number_map : public std::unordered_map<K, T1> {
+public:
+	unordered_number_map(const PayloadType, const FieldsSet&, const CollateOpts&) {}
+};
+
+template <typename K, typename T1>
+class number_map : public btree::btree_map<K, T1> {
+public:
+	number_map(const PayloadType, const FieldsSet&, const CollateOpts&) {}
+};
 
 }  // namespace reindexer

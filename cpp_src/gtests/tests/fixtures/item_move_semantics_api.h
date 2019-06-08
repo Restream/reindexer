@@ -9,15 +9,13 @@
 using reindexer::Item;
 using reindexer::ItemImpl;
 using reindexer::string_view;
-using std::to_string;
-using std::vector;
 
 class ItemMoveSemanticsApi : public ReindexerApi {
 protected:
 	const string pkField = "bookid";
 	const int32_t itemsCount = 100000;
 	const char *jsonPattern = "{\"bookid\":%d,\"title\":\"title\",\"pages\":200,\"price\":299,\"genreid_fk\":3,\"authorid_fk\":10}";
-	map<int, Item> items_;
+	std::map<int, Item> items_;
 
 	void SetUp() override {
 		ReindexerApi::SetUp();
@@ -45,16 +43,11 @@ protected:
 	}
 
 	void verifyAndUpsertItems() {
-		char *endptr = nullptr;
-		JsonValue jsonValue;
-		JsonAllocator jsonAllocator;
 		for (auto &pair : items_) {
 			auto &&item = pair.second;
 			Error err = rt.reindexer->Upsert(default_namespace, item);
 			ASSERT_TRUE(err.ok()) << err.what();
-			reindexer::string_view jsonSlice = item.GetJSON();
-			int status = jsonParse(const_cast<char *>(jsonSlice.data()), &endptr, &jsonValue, jsonAllocator);
-			ASSERT_TRUE(status == JSON_OK);
+			ASSERT_NO_THROW(gason::JsonParser().Parse(item.GetJSON()));
 		}
 		rt.reindexer->Commit(default_namespace);
 	}
@@ -73,18 +66,17 @@ protected:
 		Error err = rt.reindexer->Select("SELECT * FROM " + default_namespace, qres);
 
 		EXPECT_TRUE(err.ok()) << err.what();
-		EXPECT_TRUE(int(qres.Count()) == (itemsCount - 1))
-			<< to_string(itemsCount - 1) << " items upserted, but selected only " << qres.Count();
+		EXPECT_TRUE(int(qres.Count()) == (itemsCount - 1)) << (itemsCount - 1) << " items upserted, but selected only " << qres.Count();
 
 		for (auto it : qres) {
 			Item item(it.GetItem());
-			string jsonRead(item.GetJSON().ToString());
+			string_view jsonRead(item.GetJSON());
 
 			int itemId = item[pkField].Get<int>();
 			auto originalItem = getItemById(itemId);
-			ASSERT_TRUE(originalItem) << "No item for this id: " << to_string(itemId);
+			ASSERT_TRUE(!!originalItem) << "No item for this id: " << itemId;
 
-			string originalJson = originalItem.GetJSON().ToString();
+			string_view originalJson = originalItem.GetJSON();
 			ASSERT_TRUE(originalJson == jsonRead) << "Inserted and selected items' jsons are different."
 												  << "\nExpected: " << jsonRead << "\nGot:" << originalJson;
 		}

@@ -41,8 +41,9 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 	}
 	ctx.SetClientData(clientData);
 	int64_t startTs = std::chrono::duration_cast<std::chrono::seconds>(startTs_.time_since_epoch()).count();
+	static string_view version = REINDEX_VERSION;
 
-	ctx.Return({cproto::Arg(p_string(REINDEX_VERSION)), cproto::Arg(startTs)});
+	ctx.Return({cproto::Arg(p_string(&version)), cproto::Arg(startTs)});
 
 	return db.length() ? OpenDatabase(ctx, db) : 0;
 }
@@ -122,9 +123,7 @@ void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Arg
 Error RPCServer::OpenNamespace(cproto::Context &ctx, p_string nsDefJson) {
 	NamespaceDef nsDef;
 
-	string json = nsDefJson.toString();
-
-	nsDef.FromJSON(const_cast<char *>(json.c_str()));
+	nsDef.FromJSON(giftStr(nsDefJson));
 	if (!nsDef.indexes.empty()) {
 		return getDB(ctx, kRoleDataRead)->AddNamespace(nsDef);
 	}
@@ -164,7 +163,7 @@ Error RPCServer::EnumNamespaces(cproto::Context &ctx) {
 
 Error RPCServer::AddIndex(cproto::Context &ctx, p_string ns, p_string indexDef) {
 	IndexDef iDef;
-	auto err = iDef.FromJSON(const_cast<char *>(indexDef.toString().c_str()));
+	auto err = iDef.FromJSON(giftStr(indexDef));
 	if (!err.ok()) {
 		return err;
 	}
@@ -173,7 +172,7 @@ Error RPCServer::AddIndex(cproto::Context &ctx, p_string ns, p_string indexDef) 
 
 Error RPCServer::UpdateIndex(cproto::Context &ctx, p_string ns, p_string indexDef) {
 	IndexDef iDef;
-	auto err = iDef.FromJSON(const_cast<char *>(indexDef.toString().c_str()));
+	auto err = iDef.FromJSON(giftStr(indexDef));
 	if (!err.ok()) {
 		return err;
 	}
@@ -231,7 +230,7 @@ Error RPCServer::AddTxItem(cproto::Context &ctx, int format, p_string itemData, 
 		unsigned preceptsCount = ser.GetVarUint();
 		vector<string> precepts;
 		for (unsigned prIndex = 0; prIndex < preceptsCount; prIndex++) {
-			string precept = ser.GetVString().ToString();
+			string precept(ser.GetVString());
 			precepts.push_back(precept);
 		}
 		item.SetPrecepts(precepts);
@@ -280,7 +279,7 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 							int stateToken, int /*txID*/) {
 	auto db = getDB(ctx, kRoleDataWrite);
 	auto item = Item(db->NewItem(ns));
-	bool tmUpdated = false;
+	bool tmUpdated = false, sendItemBack = false;
 	Error err;
 	if (!item.Status().ok()) {
 		return item.Status();
@@ -311,10 +310,11 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 		unsigned preceptsCount = ser.GetVarUint();
 		vector<string> precepts;
 		for (unsigned prIndex = 0; prIndex < preceptsCount; prIndex++) {
-			string precept = ser.GetVString().ToString();
+			string precept(ser.GetVString());
 			precepts.push_back(precept);
 		}
 		item.SetPrecepts(precepts);
+		if (preceptsCount) sendItemBack = true;
 	}
 	switch (mode) {
 		case ModeUpsert:
@@ -334,7 +334,7 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 		return err;
 	}
 	QueryResults qres;
-	qres.AddItem(item);
+	qres.AddItem(item, sendItemBack);
 	int32_t ptVers = -1;
 	ResultFetchOpts opts;
 	if (tmUpdated) {
@@ -342,6 +342,7 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 	} else {
 		opts = ResultFetchOpts{kResultsWithItemID, {}, 0, INT_MAX};
 	}
+	if (sendItemBack) opts.flags |= kResultsCJson;
 
 	return sendResults(ctx, qres, -1, opts);
 }

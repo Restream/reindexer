@@ -25,9 +25,6 @@ public:
 		errState_ = (isCout_ || f_.is_open()) ? 0 : errno;
 	}
 
-	Output(const Output&) = default;
-	Output& operator=(const Output&) = default;
-
 	ostream& operator()() {
 		if (!isCout_ && !f_.is_open()) throw Error(errLogic, "%s", strerror(errState_));
 		return isCout_ ? std::cout : f_;
@@ -43,7 +40,7 @@ private:
 
 class LineParser {
 public:
-	LineParser(const string& line) : line_(line), cur_(line.c_str()){};
+	LineParser(const string& line) : line_(line), cur_(line.data()){};
 	string_view NextToken() {
 		while (*cur_ == ' ' || *cur_ == '\t') cur_++;
 
@@ -55,14 +52,11 @@ public:
 		return ret;
 	}
 	bool End() { return *cur_ == 0; }
-	const char* CurPtr() { return cur_; }
+	string_view CurPtr() { return string_view(cur_, line_.size() - (cur_ - line_.data())); }
 
 protected:
 	const string& line_;
 	const char* cur_;
 };
-
-string escapeName(const string_view& str);
-string unescapeName(const string_view& str);
 
 }  // namespace reindexer_tool

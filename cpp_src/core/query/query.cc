@@ -2,6 +2,7 @@
 #include "core/query/query.h"
 #include "core/keyvalue/key_string.h"
 #include "core/namespace.h"
+#include "core/namespacecloner.h"
 #include "core/query/aggregationresult.h"
 #include "core/query/dslencoder.h"
 #include "core/query/dslparsetools.h"
@@ -62,16 +63,14 @@ Error Query::ParseJson(const string &dsl) {
 }
 
 void Query::parseJson(const string &dsl) {
-	JsonAllocator allocator;
-	JsonValue root;
-	char *endptr = nullptr;
-	char *src = const_cast<char *>(dsl.data());
+	try {
+		gason::JsonParser parser;
 
-	auto error = jsonParse(src, &endptr, &root, allocator);
-	if (error != JSON_OK) {
-		throw Error(errParseJson, "Could not parse JSON-query: %s at %d", jsonStrError(error), int(endptr - src));
+		auto root = parser.Parse(giftStr(dsl));
+		dsl::parse(root.value, *this);
+	} catch (const gason::Exception &ex) {
+		throw Error(errParseJson, "Query: %s", ex.what());
 	}
-	dsl::parse(root, *this);
 }
 
 void Query::deserialize(Serializer &ser) {
@@ -82,13 +81,13 @@ void Query::deserialize(Serializer &ser) {
 		int qtype = ser.GetVarUint();
 		switch (qtype) {
 			case QueryCondition: {
-				qe.index = ser.GetVString().ToString();
-				qe.op = OpType(ser.GetVarUint());
+				qe.index = string(ser.GetVString());
+				OpType op = OpType(ser.GetVarUint());
 				qe.condition = CondType(ser.GetVarUint());
 				int count = ser.GetVarUint();
 				qe.values.reserve(count);
 				while (count--) qe.values.push_back(ser.GetVariant().EnsureHold());
-				entries.push_back(std::move(qe));
+				entries.Append(op, std::move(qe));
 				break;
 			}
 			case QueryAggregation: {
@@ -96,7 +95,7 @@ void Query::deserialize(Serializer &ser) {
 				ae.type_ = static_cast<AggType>(ser.GetVarUint());
 				size_t fieldsCount = ser.GetVarUint();
 				ae.fields_.reserve(fieldsCount);
-				while (fieldsCount--) ae.fields_.push_back(ser.GetVString().ToString());
+				while (fieldsCount--) ae.fields_.push_back(string(ser.GetVString()));
 				auto pos = ser.Pos();
 				bool aggEnd = false;
 				while (!ser.Eof() && !aggEnd) {
@@ -104,7 +103,7 @@ void Query::deserialize(Serializer &ser) {
 					switch (atype) {
 						case QueryAggregationSort: {
 							auto fieldName = ser.GetVString();
-							ae.sortingEntries_.push_back({fieldName.ToString(), ser.GetVarUint() != 0});
+							ae.sortingEntries_.push_back({string(fieldName), ser.GetVarUint() != 0});
 							break;
 						}
 						case QueryAggregationLimit:
@@ -123,16 +122,16 @@ void Query::deserialize(Serializer &ser) {
 				break;
 			}
 			case QueryDistinct:
-				qe.index = ser.GetVString().ToString();
+				qe.index = string(ser.GetVString());
 				if (!qe.index.empty()) {
 					qe.distinct = true;
 					qe.condition = CondAny;
-					entries.push_back(std::move(qe));
+					entries.Append(OpAnd, std::move(qe));
 				}
 				break;
 			case QuerySortIndex: {
 				SortingEntry sortingEntry;
-				sortingEntry.column = ser.GetVString().ToString();
+				sortingEntry.column = string(ser.GetVString());
 				sortingEntry.desc = bool(ser.GetVarUint());
 				if (sortingEntry.column.length()) {
 					sortingEntries_.push_back(std::move(sortingEntry));
@@ -145,8 +144,8 @@ void Query::deserialize(Serializer &ser) {
 			case QueryJoinOn:
 				qje.op_ = OpType(ser.GetVarUint());
 				qje.condition_ = CondType(ser.GetVarUint());
-				qje.index_ = ser.GetVString().ToString();
-				qje.joinIndex_ = ser.GetVString().ToString();
+				qje.index_ = string(ser.GetVString());
+				qje.joinIndex_ = string(ser.GetVString());
 				joinEntries_.push_back(std::move(qje));
 				break;
 			case QueryDebugLevel:
@@ -162,22 +161,23 @@ void Query::deserialize(Serializer &ser) {
 				calcTotal = CalcTotalMode(ser.GetVarUint());
 				break;
 			case QuerySelectFilter:
-				selectFilter_.push_back(ser.GetVString().ToString());
+				selectFilter_.push_back(string(ser.GetVString()));
 				break;
 			case QueryEqualPosition: {
+				const unsigned start = ser.GetVarUint();
 				vector<string> ep(ser.GetVarUint());
-				for (size_t i = 0; i < ep.size(); ++i) ep[i] = ser.GetVString().ToString();
-				equalPositions_.push_back(determineEqualPositionIndexes(ep));
+				for (size_t i = 0; i < ep.size(); ++i) ep[i] = string(ser.GetVString());
+				equalPositions_.insert({start, entries.DetermineEqualPositionIndexes(start, ep)});
 				break;
 			}
 			case QueryExplain:
 				explain_ = true;
 				break;
 			case QuerySelectFunction:
-				selectFunctions_.push_back(ser.GetVString().ToString());
+				selectFunctions_.push_back(string(ser.GetVString()));
 				break;
 			case QueryUpdateField: {
-				updateFields_.push_back({ser.GetVString().ToString(), {}});
+				updateFields_.push_back({string(ser.GetVString()), {}});
 				auto &field = updateFields_.back();
 				int numValues = ser.GetVarUint();
 				while (numValues--) {
@@ -186,6 +186,14 @@ void Query::deserialize(Serializer &ser) {
 				}
 				break;
 			}
+			case QueryOpenBracket: {
+				OpType op = OpType(ser.GetVarUint());
+				entries.OpenBracket(op);
+				break;
+			}
+			case QueryCloseBracket:
+				entries.CloseBracket();
+				break;
 			case QueryEnd:
 				return;
 			default:
@@ -258,7 +266,7 @@ void getMatchingNamespacesNames(const Namespaces &namespaces, const string &toke
 void Query::getMatchingIndexesNames(const Namespaces &namespaces, const string &nsName, const string &token, vector<string> &variants) {
 	auto itNs = namespaces.find(nsName);
 	if (itNs == namespaces.end()) return;
-	Namespace::Ptr ns = itNs->second;
+	Namespace::Ptr ns = itNs->second->GetOriginNs();
 	for (auto it = ns->indexesNames_.begin(); it != ns->indexesNames_.end(); ++it) {
 		if (it->first == "#pk" || it->first == "-tuple") continue;
 		if (isBlank(token) || checkIfStartsWith(token, it->first)) variants.push_back(it->first);
@@ -328,7 +336,7 @@ bool Query::findInPossibleTokens(int type, const string &v) {
 bool Query::findInPossibleIndexes(const string &tok, const string &nsName, const Namespaces &namespaces) {
 	auto itNs = namespaces.find(nsName);
 	if (itNs == namespaces.end()) return false;
-	Namespace::Ptr ns = itNs->second;
+	Namespace::Ptr ns = itNs->second->GetOriginNs();
 	return ns->indexesNames_.find(tok) != ns->indexesNames_.end();
 }
 
@@ -593,12 +601,12 @@ int Query::selectParse(tokenizer &parser, SqlParsingCtx &ctx) {
 			tok = peekSqlToken(parser, ctx, SingleSelectFieldSqlToken);
 			AggType agg = AggregationResult::strToAggType(name.text());
 			if (agg != AggUnknown) {
-				AggregateEntry entry{agg, {tok.text().ToString()}, UINT_MAX, 0};
+				AggregateEntry entry{agg, {string(tok.text())}, UINT_MAX, 0};
 				tok = parser.next_token();
 				for (tok = parser.peek_token(); tok.text() == ","_sv; tok = parser.peek_token()) {
 					tok = parser.next_token();
 					tok = peekSqlToken(parser, ctx, SingleSelectFieldSqlToken);
-					entry.fields_.push_back(tok.text().ToString());
+					entry.fields_.push_back(string(tok.text()));
 					tok = parser.next_token();
 				}
 				for (tok = parser.peek_token(); tok.text() != ")"_sv; tok = parser.peek_token()) {
@@ -631,8 +639,8 @@ int Query::selectParse(tokenizer &parser, SqlParsingCtx &ctx) {
 					calcTotal = ModeAccurateTotal;
 					if (!wasSelectFilter) count = 0;
 				} else if (name.text() == "distinct"_sv) {
-					Distinct(tok.text().ToString());
-					if (!wasSelectFilter) selectFilter_.push_back(tok.text().ToString());
+					Distinct(string(tok.text()));
+					if (!wasSelectFilter) selectFilter_.push_back(string(tok.text()));
 				} else {
 					throw Error(errParams, "Unknown function name SQL - %s, %s", name.text(), parser.where());
 				}
@@ -646,7 +654,7 @@ int Query::selectParse(tokenizer &parser, SqlParsingCtx &ctx) {
 			tok = peekSqlToken(parser, ctx, SelectFieldsListSqlToken);
 
 		} else if (name.text() != "*"_sv) {
-			selectFilter_.push_back(nameWithCase.text().ToString());
+			selectFilter_.push_back(string(nameWithCase.text()));
 			count = INT_MAX;
 			wasSelectFilter = true;
 		} else if (name.text() == "*"_sv) {
@@ -663,7 +671,7 @@ int Query::selectParse(tokenizer &parser, SqlParsingCtx &ctx) {
 		throw Error(errParams, "Expected 'FROM', but found '%s' in query, %s", tok.text(), parser.where());
 
 	peekSqlToken(parser, ctx, NamespaceSqlToken);
-	_namespace = parser.next_token().text().ToString();
+	_namespace = string(parser.next_token().text());
 	ctx.updateLinkedNs(_namespace);
 
 	while (!parser.end()) {
@@ -729,14 +737,14 @@ int Query::parseOrderBy(tokenizer &parser, SortingEntries &sortingEntries, Varia
 		if (tok.type != TokenName && tok.type != TokenString)
 			throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
 		SortingEntry sortingEntry;
-		sortingEntry.column = tok.text().ToString();
+		sortingEntry.column = string(tok.text());
 		tok = peekSqlToken(parser, ctx, SortDirectionSqlToken);
 		if (tok.text() == "("_sv && nameWithCase.text() == "field"_sv) {
 			parser.next_token();
 			tok = peekSqlToken(parser, ctx, FieldNameSqlToken, false);
 			if (tok.type != TokenName && tok.type != TokenString)
 				throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
-			sortingEntry.column = tok.text().ToString();
+			sortingEntry.column = string(tok.text());
 			tok = parser.next_token(false);
 			for (;;) {
 				tok = parser.next_token();
@@ -746,7 +754,7 @@ int Query::parseOrderBy(tokenizer &parser, SortingEntries &sortingEntries, Varia
 				tok = peekSqlToken(parser, ctx, FieldNameSqlToken);
 				if (tok.type != TokenNumber && tok.type != TokenString)
 					throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text(), parser.where());
-				forcedSortOrder.push_back(Variant(tok.text().ToString()));
+				forcedSortOrder.push_back(Variant(string(tok.text())));
 				parser.next_token();
 			}
 			tok = parser.peek_token();
@@ -774,7 +782,7 @@ int Query::deleteParse(tokenizer &parser, SqlParsingCtx &ctx) {
 		throw Error(errParams, "Expected 'FROM', but found '%s' in query, %s", tok.text(), parser.where());
 
 	peekSqlToken(parser, ctx, NamespaceSqlToken);
-	_namespace = parser.next_token().text().ToString();
+	_namespace = string(parser.next_token().text());
 	ctx.updateLinkedNs(_namespace);
 
 	while (!parser.end()) {
@@ -851,17 +859,19 @@ static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry 
 	if (currTok.type == TokenString) {
 		updateField.values.push_back(token2kv(currTok, parser));
 	} else {
-		string expression(currTok.text().ToString());
+		int count = 0;
+		string expression(currTok.text());
 		auto eof = [](tokenizer &parser) -> bool {
 			if (parser.end()) return true;
-			string nextTok = parser.peek_token().text().ToString();
-			return ((nextTok == "where") || (nextTok == "]") || (nextTok == ","));
+			token nextTok = parser.peek_token();
+			return ((nextTok.text() == "where"_sv) || (nextTok.text() == "]"_sv) || (nextTok.text() == ","_sv));
 		};
 		while (!eof(parser)) {
-			expression += parser.next_token().text().ToString();
+			++count;
+			expression += string(parser.next_token().text());
 		}
-		updateField.values.push_back(Variant(expression));
-		updateField.isExpression = true;
+		updateField.values.push_back(count ? Variant(expression) : token2kv(currTok, parser));
+		updateField.isExpression = count != 0;
 	}
 }
 
@@ -870,7 +880,7 @@ UpdateEntry Query::parseUpdateField(tokenizer &parser, SqlParsingCtx &ctx) {
 	token tok = peekSqlToken(parser, ctx, FieldNameSqlToken);
 	if (tok.type != TokenName && tok.type != TokenString)
 		throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
-	updateField.column = tok.text().ToString();
+	updateField.column = string(tok.text());
 	parser.next_token();
 
 	tok = parser.next_token();
@@ -896,7 +906,7 @@ int Query::updateParse(tokenizer &parser, SqlParsingCtx &ctx) {
 	parser.next_token();
 
 	token tok = peekSqlToken(parser, ctx, NamespaceSqlToken);
-	_namespace = tok.text().ToString();
+	_namespace = string(tok.text());
 	ctx.updateLinkedNs(_namespace);
 	parser.next_token();
 
@@ -912,6 +922,7 @@ int Query::updateParse(tokenizer &parser, SqlParsingCtx &ctx) {
 		if (tok.text() != ","_sv) break;
 		parser.next_token();
 	}
+	if (parser.end()) return 0;
 
 	tok = peekSqlToken(parser, ctx, WhereSqlToken);
 	if (tok.text() != "where"_sv) throw Error(errParams, "Expected 'WHERE', but found '%s' in query, %s", tok.text(), parser.where());
@@ -932,26 +943,34 @@ int Query::parseWhere(tokenizer &parser, SqlParsingCtx &ctx) {
 		parser.next_token();
 	}
 
+	int openBracketCount = 0;
 	while (!parser.end()) {
-		QueryEntry entry;
-		entry.op = nextOp;
-
 		tok = parser.next_token(false);
 		if (tok.text() == "("_sv) {
-			throw Error(errParseSQL, "Found '(' - nested queries are not supported, %s", parser.where());
-
-		} else if (tok.type == TokenName || tok.type == TokenString) {
+			entries.OpenBracket(nextOp);
+			++openBracketCount;
+			tok = peekSqlToken(parser, ctx, WhereFieldSqlToken, false);
+			if (iequals(tok.text(), "not"_sv)) {
+				nextOp = OpNot;
+				parser.next_token();
+			} else {
+				nextOp = OpAnd;
+			}
+			continue;
+		}
+		if (tok.type == TokenName || tok.type == TokenString) {
+			QueryEntry entry;
 			// Index name
-			entry.index = tok.text().ToString();
+			entry.index = string(tok.text());
 
 			// Operator
 			tok = peekSqlToken(parser, ctx, ConditionSqlToken);
 			if (tok.text() == "<>"_sv) {
 				entry.condition = CondEq;
-				if (entry.op == OpAnd)
-					entry.op = OpNot;
-				else if (entry.op == OpNot)
-					entry.op = OpAnd;
+				if (nextOp == OpAnd)
+					nextOp = OpNot;
+				else if (nextOp == OpNot)
+					nextOp = OpAnd;
 				else {
 					throw Error(errParseSQL, "<> condition with OR is not supported, %s", parser.where());
 				}
@@ -973,11 +992,10 @@ int Query::parseWhere(tokenizer &parser, SqlParsingCtx &ctx) {
 					throw Error(errParseSQL, "Expected NULL, but found '%s' in query, %s", tok.text(), parser.where());
 				}
 				tok = parser.next_token(false);
-			}
-
-			else if (tok.text() == "("_sv) {
+			} else if (tok.text() == "("_sv) {
 				for (;;) {
 					tok = parser.next_token();
+					if (tok.text() == ")"_sv && tok.type == TokenSymbol) break;
 					entry.values.push_back(token2kv(tok, parser));
 					tok = parser.next_token();
 					if (tok.text() == ")"_sv) break;
@@ -987,9 +1005,17 @@ int Query::parseWhere(tokenizer &parser, SqlParsingCtx &ctx) {
 			} else {
 				entry.values.push_back(token2kv(tok, parser));
 			}
+			entries.Append(nextOp, std::move(entry));
+			nextOp = OpAnd;
 		}
-		// Push back parsed entry
-		entries.push_back(entry);
+
+		tok = parser.peek_token();
+		while (openBracketCount > 0 && tok.text() == ")"_sv) {
+			entries.CloseBracket();
+			--openBracketCount;
+			parser.next_token();
+			tok = parser.peek_token();
+		}
 
 		tok = peekSqlToken(parser, ctx, WhereOpSqlToken, false);
 
@@ -1027,7 +1053,7 @@ void Query::parseJoin(JoinType type, tokenizer &parser, SqlParsingCtx &ctx) {
 			throw Error(errParseSQL, "Expected ')', but found %s, %s", tok.text(), parser.where());
 		}
 	} else {
-		jquery._namespace = tok.text().ToString();
+		jquery._namespace = string(tok.text());
 		ctx.updateLinkedNs(jquery._namespace);
 	}
 	jquery.joinType = type;
@@ -1065,10 +1091,10 @@ string Query::parseJoinedFieldName(tokenizer &parser, string &name, SqlParsingCt
 	parser.next_token();
 
 	if (parser.peek_token().text() != "."_sv) {
-		return tok.text().ToString();
+		return string(tok.text());
 	}
 	parser.next_token();
-	name = tok.text().ToString();
+	name = string(tok.text());
 
 	tok = peekSqlToken(parser, ctx, FieldNameSqlToken);
 	if (tok.type != TokenName && tok.type != TokenString) {
@@ -1076,7 +1102,7 @@ string Query::parseJoinedFieldName(tokenizer &parser, string &name, SqlParsingCt
 	}
 	parser.next_token();
 	ctx.updateLinkedNs(name);
-	return tok.text().ToString();
+	return string(tok.text());
 }
 
 void Query::parseJoinEntries(tokenizer &parser, const string &mainNs, SqlParsingCtx &ctx) {
@@ -1136,15 +1162,7 @@ void Query::parseJoinEntries(tokenizer &parser, const string &mainNs, SqlParsing
 
 void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 	ser.PutVString(_namespace);
-	for (auto &qe : entries) {
-		qe.distinct ? ser.PutVarUint(QueryDistinct) : ser.PutVarUint(QueryCondition);
-		ser.PutVString(qe.index);
-		if (qe.distinct) continue;
-		ser.PutVarUint(qe.op);
-		ser.PutVarUint(qe.condition);
-		ser.PutVarUint(qe.values.size());
-		for (auto &kv : qe.values) ser.PutVariant(kv);
-	}
+	entries.Serialize(ser);
 
 	for (auto &agg : aggregations_) {
 		ser.PutVarUint(QueryAggregation);
@@ -1185,10 +1203,11 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 		ser.PutVString(qje.joinIndex_);
 	}
 
-	for (const EqualPosition &ep : equalPositions_) {
+	for (const std::pair<unsigned, EqualPosition> &equalPoses : equalPositions_) {
 		ser.PutVarUint(QueryEqualPosition);
-		ser.PutVarUint(ep.size());
-		for (int pos : ep) ser.PutVString(entries[pos].index);
+		ser.PutVarUint(equalPoses.first);
+		ser.PutVarUint(equalPoses.second.size());
+		for (unsigned ep : equalPoses.second) ser.PutVString(entries[ep].index);
 	}
 
 	ser.PutVarUint(QueryDebugLevel);
@@ -1247,13 +1266,13 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 }
 
 void Query::Deserialize(Serializer &ser) {
-	_namespace = ser.GetVString().ToString();
+	_namespace = string(ser.GetVString());
 	deserialize(ser);
 
 	bool nested = false;
 	while (!ser.Eof()) {
 		auto joinType = JoinType(ser.GetVarUint());
-		Query q1(ser.GetVString().ToString());
+		Query q1(string(ser.GetVString()));
 		q1.joinType = joinType;
 		q1.deserialize(ser);
 		q1.debugLevel = debugLevel;
@@ -1291,7 +1310,7 @@ void Query::dumpJoined(WrSerializer &ser, bool stripArgs) const {
 	for (auto &je : joinQueries_) {
 		ser << ' ' << JoinTypeName(je.joinType);
 
-		if (je.entries.empty() && je.count == INT_MAX && je.sortingEntries_.empty()) {
+		if (je.entries.Empty() && je.count == INT_MAX && je.sortingEntries_.empty()) {
 			ser << ' ' << je._namespace << " ON ";
 		} else {
 			ser << " (";
@@ -1377,24 +1396,28 @@ WrSerializer &Query::GetSQL(WrSerializer &ser, bool stripArgs) const {
 			ser << "UPDATE " << _namespace << " SET ";
 			for (const UpdateEntry &field : updateFields_) {
 				if (&field != &*updateFields_.begin()) ser << ',';
-				ser << "'" << field.column << "' = ";
-				if (field.values.size() > 1) ser << '[';
+				if (field.column.find('.') == string::npos)
+					ser << field.column << " = ";
+				else
+					ser << "'" << field.column << "' = ";
+
+				if (field.values.size() != 1) ser << '[';
 				for (const Variant &v : field.values) {
 					if (&v != &*field.values.begin()) ser << ',';
-					if (v.Type() == KeyValueString) {
+					if (v.Type() == KeyValueString && !field.isExpression) {
 						ser << '\'' << v.As<string>() << '\'';
 					} else {
 						ser << v.As<string>();
 					}
 				}
-				ser << ((field.values.size() > 1) ? "]" : "");
+				ser << ((field.values.size() != 1) ? "]" : "");
 			}
 			break;
 		default:
 			throw Error(errParams, "Not implemented");
 	}
 
-	dumpWhere(ser, stripArgs);
+	entries.WriteSQLWhere(ser, stripArgs);
 	dumpJoined(ser, stripArgs);
 	dumpMerged(ser, stripArgs);
 	dumpOrderBy(ser, stripArgs);

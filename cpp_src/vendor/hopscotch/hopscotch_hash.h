@@ -582,6 +582,15 @@ public:
 			  m_buckets_end_iterator(other.m_buckets_end_iterator),
 			  m_overflow_iterator(other.m_overflow_iterator) {}
 
+		hopscotch_iterator& operator=(const hopscotch_iterator<false>& other) noexcept {
+			if (&other != this) {
+				m_buckets_iterator = other.m_buckets_iterator;
+				m_buckets_end_iterator = other.m_buckets_end_iterator;
+				m_overflow_iterator = other.m_overflow_iterator;
+			}
+			return *this;
+		}
+
 		const typename hopscotch_hash::key_type& key() const {
 			if (m_buckets_iterator != m_buckets_end_iterator) {
 				return KeySelect()(m_buckets_iterator->get_value());

@@ -58,6 +58,13 @@ protected:
 		}
 	}
 
+	static void CheckItemsEqual(Item& lhs, Item& rhs) {
+		for (auto idx = 1; idx < lhs.NumFields(); idx++) {
+			auto field = lhs[idx].Name();
+			ASSERT_TRUE(lhs[field].operator Variant() == rhs[field].operator Variant());
+		}
+	}
+
 	const string idIdxName = "id";
 	const string updatedTimeSecFieldName = "updated_time_sec";
 	const string updatedTimeMSecFieldName = "updated_time_msec";

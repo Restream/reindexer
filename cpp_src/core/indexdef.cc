@@ -105,83 +105,43 @@ bool isFullText(IndexType type) {
 bool isSortable(IndexType type) { return availableIndexes.at(type).caps & CapSortable; }
 string IndexDef::getCollateMode() const { return availableCollates.at(opts_.GetCollateMode()); }
 
-Error IndexDef::FromJSON(char *json) {
-	JsonAllocator jalloc;
-	JsonValue jvalue;
-	char *endp;
-
-	int status = jsonParse(json, &endp, &jvalue, jalloc);
-	if (status != JSON_OK) {
-		return Error(errParseJson, "Malformed JSON with namespace indexes");
-	}
-
-	return IndexDef::FromJSON(jvalue);
-}
-
-Error IndexDef::FromJSON(JsonValue &jvalue) {
+Error IndexDef::FromJSON(span<char> json) {
 	try {
-		if (jvalue.getTag() != JSON_OBJECT) throw Error(errParseJson, "Expected json object in 'indexes' key");
-
-		CollateMode collateValue = CollateNone;
-		bool isPk = false, isArray = false, isDense = false, isSparse = false;
-		string jsonPath;
-		string collateStr;
-		string sortOrderLetters;
-		string config;
-
-		for (auto elem : jvalue) {
-			parseJsonField("name", name_, elem);
-			parseJsonField("field_type", fieldType_, elem);
-			parseJsonField("index_type", indexType_, elem);
-			parseJsonField("is_pk", isPk, elem);
-			parseJsonField("is_array", isArray, elem);
-			parseJsonField("is_dense", isDense, elem);
-			parseJsonField("is_sparse", isSparse, elem);
-			parseJsonField("collate_mode", collateStr, elem);
-			parseJsonField("sort_order_letters", sortOrderLetters, elem);
-			parseJsonField("json_path", jsonPath, elem);
-			parseJsonField("expire_after", expireAfter_, elem);
-
-			if ("json_paths"_sv == elem->key) {
-				if (elem->value.getTag() != JSON_ARRAY) throw Error(errParseJson, "Expected array in 'json_paths' key");
-				for (auto subElem : elem->value) {
-					if (subElem->value.getTag() != JSON_STRING) throw Error(errParseJson, "Expected string elements in 'json_paths' array");
-					jsonPaths_.push_back(subElem->value.toString());
-				}
-			}
-
-			if ("config"_sv == elem->key) {
-				config = stringifyJson(elem);
-			}
-		}
-		if (!jsonPath.empty()) {
-			jsonPaths_.push_back(jsonPath);
-			logPrintf(LogWarning,
-					  "indexDef.json_path is used. It has been deprecated and will be removed in future releases. Use json_paths instead");
-		}
-
-		opts_.PK(isPk).Array(isArray).Dense(isDense).Sparse(isSparse);
-		opts_.config = config;
-
-		if (!collateStr.empty()) {
-			auto collateIt = find_if(begin(availableCollates), end(availableCollates),
-									 [&collateStr](const pair<CollateMode, string> &p) { return p.second == collateStr; });
-
-			if (collateIt != end(availableCollates)) {
-				collateValue = collateIt->first;
-				opts_.SetCollateMode(collateValue);
-				if (collateValue == CollateCustom && !sortOrderLetters.empty()) {
-					opts_.collateOpts_ = CollateOpts(sortOrderLetters);
-				}
-			} else {
-				return Error(errParams, "Unknown collate mode %s", collateStr);
-			}
-		}
+		IndexDef::FromJSON(gason::JsonParser().Parse(json));
+	} catch (const gason::Exception &ex) {
+		return Error(errParseJson, "IndexDef: %s", ex.what());
 	} catch (const Error &err) {
 		return err;
 	}
+	return errOK;
+}
 
-	return 0;
+void IndexDef::FromJSON(const gason::JsonNode &root) {
+	name_ = root["name"].As<string>();
+	fieldType_ = root["field_type"].As<string>();
+	indexType_ = root["index_type"].As<string>();
+	expireAfter_ = root["expire_after"].As<int64_t>();
+	opts_.PK(root["is_pk"].As<bool>());
+	opts_.Array(root["is_array"].As<bool>());
+	opts_.Dense(root["is_dense"].As<bool>());
+	opts_.Sparse(root["is_sparse"].As<bool>());
+	opts_.SetConfig(stringifyJson(root["config"]));
+	jsonPaths_.clear();
+	for (auto &subElem : root["json_paths"]) {
+		jsonPaths_.push_back(subElem.As<string>());
+	}
+
+	auto collateStr = root["collate_mode"].As<string_view>();
+	if (!collateStr.empty()) {
+		auto collateIt = find_if(begin(availableCollates), end(availableCollates),
+								 [&collateStr](const pair<CollateMode, string> &p) { return collateStr == p.second; });
+		if (collateIt == end(availableCollates)) throw Error(errParams, "Unknown collate mode %s", collateStr);
+		CollateMode collateValue = collateIt->first;
+		opts_.SetCollateMode(collateValue);
+		if (collateValue == CollateCustom) {
+			opts_.collateOpts_ = CollateOpts(root["sort_order_letters"].As<string>());
+		}
+	}
 }
 
 void IndexDef::GetJSON(WrSerializer &ser, int formatFlags) const {

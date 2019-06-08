@@ -121,7 +121,7 @@ TEST_F(ReindexerApi, NewItem) {
 	err = rt.reindexer->AddIndex(default_namespace, {"value", "text", "string", IndexOpts()});
 	ASSERT_TRUE(err.ok()) << err.what();
 	Item item(rt.reindexer->NewItem(default_namespace));
-	ASSERT_TRUE(item);
+	ASSERT_TRUE(!!item);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 }
 
@@ -216,7 +216,7 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 	int stringValuedIdx = 0;
 	for (int i = 0; i < 100; ++i) {
 		Item item(rt.reindexer->NewItem(default_namespace));
-		EXPECT_TRUE(item);
+		EXPECT_TRUE(!!item);
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 		item["id"] = i;
@@ -304,7 +304,7 @@ TEST_F(ReindexerApi, SortByMultipleColumnsWithLimits) {
 
 	for (size_t i = 0; i < srcIntValues.size(); ++i) {
 		Item item(rt.reindexer->NewItem(default_namespace));
-		EXPECT_TRUE(item);
+		EXPECT_TRUE(!!item);
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 		item["id"] = static_cast<int>(i);
@@ -357,7 +357,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 	err = rt.reindexer->AddIndex(default_namespace, {"valueStringUTF8", "hash", "string", IndexOpts().SetCollateMode(CollateUTF8)});
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	deque<int> allIntValues;
+	std::deque<int> allIntValues;
 	std::set<string> allStrValues;
 	std::set<string, CollateComparer<CollateASCII>> allStrValuesASCII;
 	std::set<string, CollateComparer<CollateNumeric>> allStrValuesNumeric;
@@ -365,7 +365,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 
 	for (int i = 0; i < 100; ++i) {
 		Item item(rt.reindexer->NewItem(default_namespace));
-		EXPECT_TRUE(item);
+		EXPECT_TRUE(!!item);
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 		item["id"] = i;
@@ -403,7 +403,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 	err = rt.reindexer->Select(sortByIntQuery, sortByIntQr);
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	deque<int> selectedIntValues;
+	std::deque<int> selectedIntValues;
 	for (auto it : sortByIntQr) {
 		Item item(it.GetItem());
 		int value = item["valueInt"].Get<int>();
@@ -486,7 +486,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 
 		for (int i = 0; i < 50; ++i) {
 			Item item(rt.reindexer->NewItem(secondNamespace));
-			EXPECT_TRUE(item);
+			EXPECT_TRUE(!!item);
 			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 			secondNamespacePKs.push_back(i);
@@ -502,7 +502,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 
 	for (int i = 0; i < 100; ++i) {
 		Item item(rt.reindexer->NewItem(default_namespace));
-		EXPECT_TRUE(item);
+		EXPECT_TRUE(!!item);
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 		item["id"] = i;
@@ -577,10 +577,45 @@ TEST_F(ReindexerApi, DslFieldsTest) {
                                     "op": "OR",
                                     "namespace": "test2",
                                     "filters": [{
-                                        "Op": "",
-                                        "Field": "id2",
-                                        "Cond": "SET",
-                                        "Value": [81204872, 101326571, 101326882]
+                                        "filters": [{
+                                                "Op": "And",
+                                                "Filters": [{
+                                                        "Op": "Not",
+                                                        "Field": "id2",
+                                                        "Cond": "SET",
+                                                        "Value": [81204872, 101326571, 101326882]
+                                                    },
+                                                    {
+                                                        "Op": "Or",
+                                                        "Field": "id2",
+                                                        "Cond": "SET",
+                                                        "Value": [81204872, 101326571, 101326882]
+                                                    },
+                                                    {
+                                                        "Op": "And",
+                                                        "filters": [{
+                                                                "Op": "Not",
+                                                                "Field": "id2",
+                                                                "Cond": "SET",
+                                                                "Value": [81204872, 101326571, 101326882]
+                                                            },
+                                                            {
+                                                                "Op": "Or",
+                                                                "Field": "id2",
+                                                                "Cond": "SET",
+                                                                "Value": [81204872, 101326571, 101326882]
+                                                            }
+                                                        ]
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                "Op": "Not",
+                                                "Field": "id2",
+                                                "Cond": "SET",
+                                                "Value": [81204872, 101326571, 101326882]
+                                            }
+                                        ]
                                     }],
                                     "sort": {
                                         "field": "test2",

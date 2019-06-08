@@ -6,69 +6,96 @@
 #include "tools/stringstools.h"
 
 namespace reindexer {
+using namespace gason;
 namespace dsl {
+using gason::JsonValue;
+
+enum class Root {
+	Namespace,
+	Limit,
+	Offset,
+	Distinct,
+	Filters,
+	Sort,
+	Joined,
+	Merged,
+	SelectFilter,
+	SelectFunctions,
+	ReqTotal,
+	NextOp,
+	Aggregations,
+	Explain
+};
+
+enum class Sort { Desc, Field, Values };
+enum class JoinRoot { Type, On, Op, Namespace, Filters, Sort, Limit, Offset };
+enum class JoinEntry { LetfField, RightField, Cond, Op };
+enum class Filter { Cond, Op, Field, Value, Filters };
+enum class Aggregation { Fields, Type, Sort, Limit, Offset };
 
 void parseValues(JsonValue& values, VariantArray& kvs);
 
 // additional for parse root DSL fields
+template <typename T>
+using fast_str_map = fast_hash_map<string, T, nocase_hash_str, nocase_equal_str>;
 
-static const fast_hash_map<string, Root> root_map = {{"namespace", Root::Namespace},
-													 {"limit", Root::Limit},
-													 {"offset", Root::Offset},
-													 {"distinct", Root::Distinct},
-													 {"filters", Root::Filters},
-													 {"sort", Root::Sort},
-													 {"join_queries", Root::Joined},
-													 {"merge_queries", Root::Merged},
-													 {"select_filter", Root::SelectFilter},
-													 {"select_functions", Root::SelectFunctions},
-													 {"req_total", Root::ReqTotal},
-													 {"aggregations", Root::Aggregations},
-													 {"next_op", Root::NextOp},
-													 {"explain", Root::Explain}};
+static const fast_str_map<Root> root_map = {{"namespace", Root::Namespace},
+											{"limit", Root::Limit},
+											{"offset", Root::Offset},
+											{"distinct", Root::Distinct},
+											{"filters", Root::Filters},
+											{"sort", Root::Sort},
+											{"join_queries", Root::Joined},
+											{"merge_queries", Root::Merged},
+											{"select_filter", Root::SelectFilter},
+											{"select_functions", Root::SelectFunctions},
+											{"req_total", Root::ReqTotal},
+											{"aggregations", Root::Aggregations},
+											{"next_op", Root::NextOp},
+											{"explain", Root::Explain}};
 
 // additional for parse field 'sort'
 
-static const fast_hash_map<string, Sort> sort_map = {{"desc", Sort::Desc}, {"field", Sort::Field}, {"values", Sort::Values}};
+static const fast_str_map<Sort> sort_map = {{"desc", Sort::Desc}, {"field", Sort::Field}, {"values", Sort::Values}};
 
 // additional for parse field 'joined'
 
-static const fast_hash_map<string, JoinRoot> joins_map = {
+static const fast_str_map<JoinRoot> joins_map = {
 	{"type", JoinRoot::Type},   {"namespace", JoinRoot::Namespace}, {"filters", JoinRoot::Filters}, {"sort", JoinRoot::Sort},
 	{"limit", JoinRoot::Limit}, {"offset", JoinRoot::Offset},		{"on", JoinRoot::On},			{"op", JoinRoot::Op}};
 
-static const fast_hash_map<string, JoinEntry> joined_entry_map = {
+static const fast_str_map<JoinEntry> joined_entry_map = {
 	{"left_field", JoinEntry::LetfField}, {"right_field", JoinEntry::RightField}, {"cond", JoinEntry::Cond}, {"op", JoinEntry::Op}};
 
-static const fast_hash_map<string, JoinType> join_types = {{"inner", InnerJoin}, {"left", LeftJoin}, {"orinner", OrInnerJoin}};
+static const fast_str_map<JoinType> join_types = {{"inner", InnerJoin}, {"left", LeftJoin}, {"orinner", OrInnerJoin}};
 
 // additionalfor parse field 'filters'
 
-static const fast_hash_map<string, Filter> filter_map = {
-	{"cond", Filter::Cond}, {"op", Filter::Op}, {"field", Filter::Field}, {"value", Filter::Value}};
+static const fast_str_map<Filter> filter_map = {
+	{"cond", Filter::Cond}, {"op", Filter::Op}, {"field", Filter::Field}, {"value", Filter::Value}, {"filters", Filter::Filters}};
 
 // additional for 'filter::cond' field
 
-static const fast_hash_map<string, CondType> cond_map = {
+static const fast_str_map<CondType> cond_map = {
 	{"any", CondAny},	 {"eq", CondEq},   {"lt", CondLt},			{"le", CondLe},		  {"gt", CondGt},	{"ge", CondGe},
 	{"range", CondRange}, {"set", CondSet}, {"allset", CondAllSet}, {"empty", CondEmpty}, {"match", CondEq}, {"like", CondLike},
 };
 
-static const fast_hash_map<string, OpType> op_map = {{"or", OpOr}, {"and", OpAnd}, {"not", OpNot}};
+static const fast_str_map<OpType> op_map = {{"or", OpOr}, {"and", OpAnd}, {"not", OpNot}};
 
 // additional for 'Root::ReqTotal' field
 
-static const fast_hash_map<string, CalcTotalMode> reqtotal_values = {
+static const fast_str_map<CalcTotalMode> reqtotal_values = {
 	{"disabled", ModeNoTotal}, {"enabled", ModeAccurateTotal}, {"cached", ModeCachedTotal}};
 
 // additional for 'Root::Aggregations' field
 
-static const fast_hash_map<string, Aggregation> aggregation_map = {{"fields", Aggregation::Fields},
-																   {"type", Aggregation::Type},
-																   {"sort", Aggregation::Sort},
-																   {"limit", Aggregation::Limit},
-																   {"offset", Aggregation::Offset}};
-static const fast_hash_map<string, AggType> aggregation_types = {
+static const fast_str_map<Aggregation> aggregation_map = {{"fields", Aggregation::Fields},
+														  {"type", Aggregation::Type},
+														  {"sort", Aggregation::Sort},
+														  {"limit", Aggregation::Limit},
+														  {"offset", Aggregation::Offset}};
+static const fast_str_map<AggType> aggregation_types = {
 	{"sum", AggSum}, {"avg", AggAvg}, {"max", AggMax}, {"min", AggMin}, {"facet", AggFacet}};
 
 bool checkTag(JsonValue& val, JsonTag tag) { return val.getTag() == tag; }
@@ -79,12 +106,12 @@ bool checkTag(JsonValue& val, JsonTag tag, Tags... tags) {
 }
 
 template <typename... JsonTags>
-void checkJsonValueType(JsonValue& val, const string& name, JsonTags... possibleTags) {
+void checkJsonValueType(JsonValue& val, string_view name, JsonTags... possibleTags) {
 	if (!checkTag(val, possibleTags...)) throw Error(errParseJson, "Wrong type of field '%s'", name);
 }
 
 template <typename T>
-T get(fast_hash_map<string, T> const& m, string const& name) {
+T get(fast_str_map<T> const& m, string_view name) {
 	auto it = m.find(name);
 	return it != m.end() ? it->second : T(-1);
 }
@@ -94,7 +121,7 @@ void parseStringArray(JsonValue& stringArray, h_vector<T, holdSize>& array) {
 	for (auto element : stringArray) {
 		auto& value = element->value;
 		checkJsonValueType(value, "string array item", JSON_STRING);
-		array.push_back(value.toString());
+		array.push_back(string(value.toString()));
 	}
 }
 
@@ -103,7 +130,7 @@ void parseSortEntry(JsonValue& entry, Query& q) {
 	SortingEntry sortingEntry;
 	for (auto subelement : entry) {
 		auto& v = subelement->value;
-		string name = lower(subelement->key);
+		string_view name = subelement->key;
 		switch (get(sort_map, name)) {
 			case Sort::Desc:
 				if ((v.getTag() != JSON_TRUE) && (v.getTag() != JSON_FALSE)) throw Error(errParseJson, "Wrong type of field '%s'", name);
@@ -112,7 +139,7 @@ void parseSortEntry(JsonValue& entry, Query& q) {
 
 			case Sort::Field:
 				checkJsonValueType(v, name, JSON_STRING);
-				sortingEntry.column.assign(v.toString());
+				sortingEntry.column.assign(string(v.toString()));
 				break;
 
 			case Sort::Values:
@@ -130,7 +157,7 @@ void parseSortEntry(JsonValue& entry, AggregateEntry& agg) {
 	SortingEntry sortingEntry;
 	for (auto subelement : entry) {
 		auto& v = subelement->value;
-		string name = lower(subelement->key);
+		string_view name = subelement->key;
 		switch (get(sort_map, name)) {
 			case Sort::Desc:
 				if ((v.getTag() != JSON_TRUE) && (v.getTag() != JSON_FALSE)) throw Error(errParseJson, "Wrong type of field '%s'", name);
@@ -139,7 +166,7 @@ void parseSortEntry(JsonValue& entry, AggregateEntry& agg) {
 
 			case Sort::Field:
 				checkJsonValueType(v, name, JSON_STRING);
-				sortingEntry.column.assign(v.toString());
+				sortingEntry.column.assign(string(v.toString()));
 				break;
 
 			case Sort::Values:
@@ -179,19 +206,21 @@ void parseValues(JsonValue& values, VariantArray& kvs) {
 
 void parseFilter(JsonValue& filter, Query& q) {
 	QueryEntry qe;
+	OpType op = OpAnd;
 	checkJsonValueType(filter, "filter", JSON_OBJECT);
+	enum { ENTRY, BRACKET } entryOrBracket = ENTRY;
 	for (auto elem : filter) {
 		auto& v = elem->value;
-		auto name = lower(elem->key);
+		auto name = elem->key;
 		switch (get(filter_map, name)) {
 			case Filter::Cond:
 				checkJsonValueType(v, name, JSON_STRING);
-				qe.condition = get(cond_map, lower(v.toString()));
+				qe.condition = get(cond_map, v.toString());
 				break;
 
 			case Filter::Op:
 				checkJsonValueType(v, name, JSON_STRING);
-				qe.op = get(op_map, lower(v.toString()));
+				op = get(op_map, v.toString());
 				break;
 
 			case Filter::Value:
@@ -200,9 +229,21 @@ void parseFilter(JsonValue& filter, Query& q) {
 
 			case Filter::Field:
 				checkJsonValueType(v, name, JSON_STRING);
-				qe.index.assign(v.toString());
+				qe.index = string(v.toString());
+				break;
+
+			case Filter::Filters:
+				checkJsonValueType(v, name, JSON_ARRAY);
+				q.entries.OpenBracket(op);
+				for (auto f : v) parseFilter(f->value, q);
+				q.entries.CloseBracket();
+				entryOrBracket = BRACKET;
 				break;
 		}
+	}
+	if (entryOrBracket == BRACKET) {
+		q.entries.SetLastOperation(op);
+		return;
 	}
 	switch (qe.condition) {
 		case CondGe:
@@ -235,7 +276,7 @@ void parseFilter(JsonValue& filter, Query& q) {
 			break;
 	}
 
-	q.entries.push_back(qe);
+	q.entries.Append(op, std::move(qe));
 }
 
 void parseJoinedEntries(JsonValue& joinEntries, Query& qjoin) {
@@ -247,23 +288,23 @@ void parseJoinedEntries(JsonValue& joinEntries, Query& qjoin) {
 		QueryJoinEntry qjoinEntry;
 		for (auto subelement : joinEntry) {
 			auto& value = subelement->value;
-			string name = lower(subelement->key);
+			string_view name = subelement->key;
 			switch (get(joined_entry_map, name)) {
 				case JoinEntry::LetfField:
 					checkJsonValueType(value, name, JSON_STRING);
-					qjoinEntry.index_ = value.toString();
+					qjoinEntry.index_ = string(value.toString());
 					break;
 				case JoinEntry::RightField:
 					checkJsonValueType(value, name, JSON_STRING);
-					qjoinEntry.joinIndex_ = value.toString();
+					qjoinEntry.joinIndex_ = string(value.toString());
 					break;
 				case JoinEntry::Cond:
 					checkJsonValueType(value, name, JSON_STRING);
-					qjoinEntry.condition_ = get(cond_map, lower(value.toString()));
+					qjoinEntry.condition_ = get(cond_map, value.toString());
 					break;
 				case JoinEntry::Op:
 					checkJsonValueType(value, name, JSON_STRING);
-					qjoinEntry.op_ = get(op_map, lower(value.toString()));
+					qjoinEntry.op_ = get(op_map, value.toString());
 					break;
 			}
 		}
@@ -279,19 +320,19 @@ void parseJoins(JsonValue& joins, Query& query) {
 		Query qjoin;
 		for (auto subelement : join) {
 			auto& value = subelement->value;
-			string name = lower(subelement->key);
+			string_view name = subelement->key;
 			switch (get(joins_map, name)) {
 				case JoinRoot::Type:
 					checkJsonValueType(value, name, JSON_STRING);
-					qjoin.joinType = get(join_types, lower(value.toString()));
+					qjoin.joinType = get(join_types, value.toString());
 					break;
 				case JoinRoot::Namespace:
 					checkJsonValueType(value, name, JSON_STRING);
-					qjoin._namespace = value.toString();
+					qjoin._namespace = string(value.toString());
 					break;
 				case JoinRoot::Op:
 					checkJsonValueType(value, name, JSON_STRING);
-					qjoin.nextOp_ = get(op_map, lower(value.toString()));
+					qjoin.nextOp_ = get(op_map, value.toString());
 					break;
 				case JoinRoot::Filters:
 					checkJsonValueType(value, name, JSON_ARRAY);
@@ -332,18 +373,18 @@ void parseAggregation(JsonValue& aggregation, Query& query) {
 	AggregateEntry aggEntry;
 	for (auto element : aggregation) {
 		auto& value = element->value;
-		string name = lower(element->key);
+		string_view name = element->key;
 		switch (get(aggregation_map, name)) {
 			case Aggregation::Fields:
 				checkJsonValueType(value, name, JSON_ARRAY);
 				for (auto subElem : value) {
 					if (subElem->value.getTag() != JSON_STRING) throw Error(errParseJson, "Expected string in array 'fields'");
-					aggEntry.fields_.push_back(subElem->value.toString());
+					aggEntry.fields_.push_back(string(subElem->value.toString()));
 				}
 				break;
 			case Aggregation::Type:
 				checkJsonValueType(value, name, JSON_STRING);
-				aggEntry.type_ = get(aggregation_types, lower(value.toString()));
+				aggEntry.type_ = get(aggregation_types, value.toString());
 				break;
 			case Aggregation::Sort:
 				parseSort(value, aggEntry);
@@ -368,11 +409,11 @@ void parse(JsonValue& root, Query& q) {
 
 	for (auto elem : root) {
 		auto& v = elem->value;
-		auto name = lower(elem->key);
+		auto name = elem->key;
 		switch (get(root_map, name)) {
 			case Root::Namespace:
 				checkJsonValueType(v, name, JSON_STRING);
-				q._namespace.assign(v.toString());
+				q._namespace = string(v.toString());
 				break;
 
 			case Root::Limit:
@@ -387,7 +428,7 @@ void parse(JsonValue& root, Query& q) {
 
 			case Root::Distinct:
 				checkJsonValueType(v, name, JSON_STRING);
-				if (*v.toString()) q.Distinct(v.toString());
+				if (v.toString().size()) q.Distinct(string(v.toString()));
 				break;
 
 			case Root::Filters:

@@ -8,7 +8,7 @@ using std::vector;
 using std::string;
 
 struct FtFuzzyConfig : public BaseFTConfig {
-	virtual void parse(char *json) final;
+	virtual void parse(string_view json) final;
 
 	double maxSrcProc = 78;
 	double maxDstProc = 22;

@@ -1,24 +1,14 @@
 
 #include "indextext.h"
-#include <chrono>
 #include <memory>
-#include <thread>
-#include "core/ft/bm25.h"
 #include "core/ft/ft_fuzzy/searchers/kblayout.h"
 #include "core/ft/ft_fuzzy/searchers/translit.h"
 #include "tools/errors.h"
 #include "tools/logger.h"
-#include "tools/stringstools.h"
-#include "utf8cpp/utf8.h"
 namespace reindexer {
 
 // Available stemmers for languages
 const char *stemLangs[] = {"en", "ru", "nl", "fin", "de", "da", "fr", "it", "hu", "no", "pt", "ro", "es", "sv", "tr", nullptr};
-
-using std::chrono::duration_cast;
-using std::chrono::high_resolution_clock;
-using std::chrono::milliseconds;
-using std::thread;
 
 template <typename T>
 IndexText<T>::IndexText(const IndexText<T> &other) : IndexUnordered<T>(other), cache_ft_(new FtIdSetCache), isBuilt_(false) {
@@ -64,8 +54,13 @@ void IndexText<T>::SetOpts(const IndexOpts &opts) {
 	this->opts_ = opts;
 
 	if (oldCfg != opts.config) {
-		auto newCfg = this->opts_.config;
-		cfg_->parse(&newCfg[0]);
+		try {
+			cfg_->parse(this->opts_.config);
+		} catch (...) {
+			this->opts_.config = oldCfg;
+			cfg_->parse(this->opts_.config);
+			throw;
+		}
 	}
 }
 
@@ -82,9 +77,10 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 	ftctx->PrepareAreas(ftFields_, this->name_);
 
 	bool need_put = false;
-	auto cache_ft = cache_ft_->Get(IdSetCacheKey{keys, condition, 0});
+	IdSetCacheKey ckey{keys, condition, 0};
+	auto cache_ft = cache_ft_->Get(ckey);
 	SelectKeyResult res;
-	if (cache_ft.key) {
+	if (cache_ft.valid) {
 		if (!cache_ft.val.ids->size() || (ftctx->NeedArea() && !cache_ft.val.ctx->need_area_)) {
 			need_put = true;
 		} else {
@@ -121,7 +117,7 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 
 	auto mergedIds = Select(ftctx, dsl);
 	if (mergedIds) {
-		if (need_put && mergedIds->size()) cache_ft_->Put(*cache_ft.key, FtIdSetCacheVal{mergedIds, ftctx->GetData()});
+		if (need_put && mergedIds->size()) cache_ft_->Put(ckey, FtIdSetCacheVal{mergedIds, ftctx->GetData()});
 
 		res.push_back(SingleSelectKeyResult(mergedIds));
 	}
@@ -130,13 +126,11 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 }
 
 template <typename T>
-FieldsGetter<T> IndexText<T>::Getter() {
-	return FieldsGetter<T>(this->fields_, this->payloadType_, this->KeyType());
+FieldsGetter IndexText<T>::Getter() {
+	return FieldsGetter(this->fields_, this->payloadType_, this->KeyType());
 }
 
-template class IndexText<unordered_str_map<Index::KeyEntryPlain>>;
-template class IndexText<unordered_payload_map<Index::KeyEntryPlain>>;
-template class IndexText<unordered_str_map<FtFastKeyEntry>>;
-template class IndexText<unordered_payload_map<FtFastKeyEntry>>;
+template class IndexText<unordered_str_map<FtKeyEntry>>;
+template class IndexText<unordered_payload_map<FtKeyEntryData>>;
 
 }  // namespace reindexer

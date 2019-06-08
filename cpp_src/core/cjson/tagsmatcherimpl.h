@@ -22,17 +22,16 @@ public:
 		//	if (tags2names_.size()) printf("~TagsMatcherImpl::TagsMatcherImpl %d\n", int(tags2names_.size()));
 	}
 
-	TagsPath path2tag(const string &jsonPath) const {
-		string field;
+	TagsPath path2tag(string_view jsonPath) const {
 		TagsPath fieldTags;
 		for (size_t pos = 0, lastPos = 0; pos != jsonPath.length(); lastPos = pos + 1) {
 			pos = jsonPath.find(".", lastPos);
-			if (pos == string::npos) {
+			if (pos == string_view::npos) {
 				pos = jsonPath.length();
 			}
 			if (pos != lastPos) {
-				field.assign(jsonPath.data() + lastPos, pos - lastPos);
-				int fieldTag = name2tag(field.c_str());
+				string_view field = jsonPath.substr(lastPos, pos - lastPos);
+				int fieldTag = name2tag(field);
 				fieldTags.push_back(static_cast<int16_t>(fieldTag));
 			}
 		}
@@ -48,7 +47,7 @@ public:
 		int tag = name2tag(n);
 		if (tag || !canAdd) return tag;
 
-		string name = n.ToString();
+		string name(n);
 		auto res = names2tags_.emplace(name, tags2names_.size());
 		if (res.second) {
 			tags2names_.push_back(name);
@@ -107,7 +106,7 @@ public:
 		size_t cnt = ser.GetVarUint();
 		tags2names_.resize(cnt);
 		for (size_t tag = 0; tag < tags2names_.size(); ++tag) {
-			string name = ser.GetVString().ToString();
+			string name(ser.GetVString());
 			names2tags_.emplace(name, tag);
 			tags2names_[tag] = name;
 		}
@@ -179,19 +178,6 @@ public:
 	}
 
 protected:
-	struct equal_str {
-		using is_transparent = void;
-		bool operator()(const string &lhs, string_view rhs) const { return !strcmp(lhs.c_str(), rhs.data()); }
-		bool operator()(string_view lhs, const string &rhs) const { return !strcmp(lhs.data(), rhs.c_str()); }
-		bool operator()(const string &lhs, const string &rhs) const { return rhs == lhs; }
-	};
-
-	struct hash_str {
-		using is_transparent = void;
-		size_t operator()(string_view hs) const { return _Hash_bytes(hs.data(), strlen(hs.data())); }
-		size_t operator()(const string &hs) const { return _Hash_bytes(hs.data(), hs.length()); }
-	};
-
 	fast_hash_map<string, int, hash_str, equal_str> names2tags_;
 	vector<string> tags2names_;
 	PayloadType payloadType_;

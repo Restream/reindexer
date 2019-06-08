@@ -119,28 +119,22 @@ void ReplicationState::GetJSON(JsonBuilder &builder) {
 	builder.Put("slave_mode", slaveMode);
 	builder.Put("incarnation_counter", incarnationCounter);
 	builder.Put("data_hash", dataHash);
+	builder.Put("data_count", dataCount);
 }
 
-void ReplicationState::FromJSON(char *json) {
-	JsonAllocator jalloc;
-	JsonValue jvalue;
-	char *endp;
+void ReplicationState::FromJSON(span<char> json) {
+	try {
+		gason::JsonParser parser;
+		auto root = parser.Parse(json);
 
-	int status = jsonParse(json, &endp, &jvalue, jalloc);
-	if (status != JSON_OK) {
-		throw Error(errParseJson, "Malformed JSON with replication state");
-	}
-
-	if (jvalue.getTag() != JSON_OBJECT) {
-		throw Error(errParseJson, "Expected json object in replication state");
-	}
-
-	for (auto elem : jvalue) {
-		parseJsonField("last_lsn", lastLsn, elem);
-		parseJsonField("cluster_id", clusterID, elem);
-		parseJsonField("slave_mode", slaveMode, elem);
-		parseJsonField("incarnation_counter", incarnationCounter, elem);
-		parseJsonField("data_hash", dataHash, elem);
+		lastLsn = root["last_lsn"].As<int64_t>();
+		clusterID = root["cluster_id"].As<int>();
+		slaveMode = root["slave_mode"].As<bool>();
+		incarnationCounter = root["incarnation_counter"].As<int>();
+		dataHash = root["data_hash"].As<uint64_t>();
+		dataCount = root["data_count"].As<int>();
+	} catch (const gason::Exception &ex) {
+		throw Error(errParseJson, "ReplicationState: %s", ex.what());
 	}
 }
 

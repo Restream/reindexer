@@ -2,11 +2,11 @@
 #include <stdint.h>
 #include <string>
 #include "core/type_consts.h"
-#include "estl/string_view.h"
 
 namespace reindexer {
 using std::string;
 using std::wstring;
+class string_view;
 
 uint32_t Hash(const wstring &s) noexcept;
 uint32_t collateHash(const string_view &s, CollateMode collateMode) noexcept;

@@ -1,6 +1,7 @@
 
 # Reindexer
 
+
 [![GoDoc](https://godoc.org/github.com/Restream/reindexer?status.svg)](https://godoc.org/github.com/Restream/reindexer)
  [![Build Status](https://travis-ci.org/Restream/reindexer.svg?branch=master)](https://travis-ci.org/Restream/reindexer)
  [![Build Status](https://ci.appveyor.com/api/projects/status/yonpih8vx3acaj86?svg=true)](https://ci.appveyor.com/project/olegator77/reindexer)
@@ -465,7 +466,9 @@ There are atomic functions, which executes under namespace lock, and therefore g
 - serial - sequence of integer, useful for uniq ID generation
 - timestamp - current time stamp of operation, useful for data syncronisation
 
-These functions can be passed to Upsert/Insert/Update in 3-rd and next arguments. 
+These functions can be passed to Upsert/Insert/Update in 3-rd and next arguments.
+
+If these functions are provided, the passed by reference item will be changed to updated value
 
 ```go
    // set ID field from serial generator   

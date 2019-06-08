@@ -13,7 +13,6 @@ ItemImpl &ItemImpl::operator=(ItemImpl &&other) noexcept {
 		payloadType_ = std::move(other.payloadType_);
 		payloadValue_ = std::move(other.payloadValue_);
 		tagsMatcher_ = std::move(other.tagsMatcher_);
-		jsonAllocator_ = std::move(other.jsonAllocator_);
 		ser_ = std::move(other.ser_);
 		tupleData_ = std::move(other.tupleData_);
 		precepts_ = std::move(other.precepts_);
@@ -28,7 +27,7 @@ Error ItemImpl::FromCJSON(const string_view &slice) {
 	GetPayload().Reset();
 	string_view data = slice;
 	if (!unsafe_) {
-		holder_.push_back(slice.ToString());
+		holder_.push_back(string(slice));
 		data = holder_.back();
 	}
 
@@ -60,16 +59,18 @@ Error ItemImpl::FromCJSON(const string_view &slice) {
 Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool /*pkOnly*/) {
 	string_view data = slice;
 	if (!unsafe_ && endp == nullptr) {
-		holder_.push_back(slice.ToString());
+		holder_.push_back(string(slice));
 		data = holder_.back();
 	}
 
-	const char *json = data.data();
 	payloadValue_.Clone();
 	char *endptr = nullptr;
-	JsonValue value;
-	int status = jsonParse(const_cast<char *>(json), &endptr, &value, jsonAllocator_);
-	if (status != JSON_OK) return Error(errLogic, "Error parsing json - status %d\n", status);
+	gason::JsonValue value;
+	gason::JsonAllocator alloc;
+	int status = jsonParse(giftStr(data), &endptr, &value, alloc);
+	if (status != gason::JSON_OK) {
+		return Error(errLogic, "Error parsing json: %s, pos %d", gason::jsonStrError(status), unsigned(endptr - data.data()));
+	}
 	if (endp) {
 		*endp = endptr;
 	}
@@ -83,6 +84,7 @@ Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool /*pkOnly*/)
 		// Put tuple to field[0]
 		tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
 		pl.Set(0, {Variant(p_string(&tupleData_))});
+		ser_ = WrSerializer();
 	}
 	return err;
 }

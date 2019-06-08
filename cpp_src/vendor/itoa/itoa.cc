@@ -238,25 +238,25 @@ char *i64toa(int64_t value, char *buffer) {
 
 char hex_lut[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
 
-char *u32toax(uint32_t value, char *buffer) {
-	int n;
-
-	if (value >= 0x10000000)
-		n = 8;
-	else if (value >= 0x1000000)
-		n = 7;
-	else if (value >= 0x100000)
-		n = 6;
-	else if (value >= 0x10000)
-		n = 5;
-	else if (value >= 0x1000)
-		n = 4;
-	else if (value >= 0x100)
-		n = 3;
-	else if (value >= 0x10)
-		n = 2;
-	else
-		n = 1;
+char *u32toax(uint32_t value, char *buffer, int n) {
+	if (!n) {
+		if (value >= 0x10000000)
+			n = 8;
+		else if (value >= 0x1000000)
+			n = 7;
+		else if (value >= 0x100000)
+			n = 6;
+		else if (value >= 0x10000)
+			n = 5;
+		else if (value >= 0x1000)
+			n = 4;
+		else if (value >= 0x100)
+			n = 3;
+		else if (value >= 0x10)
+			n = 2;
+		else
+			n = 1;
+	}
 
 	char *p = buffer + n;
 	do {

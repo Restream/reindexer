@@ -20,13 +20,14 @@ struct QueryCacheVal {
 	int total_count = -1;
 };
 
-struct QueryCacheKey : public CacheKeyBase {
+struct QueryCacheKey {
 	QueryCacheKey() {}
-	QueryCacheKey(const QueryCacheKey& other) {
+	QueryCacheKey(const QueryCacheKey& other) : buf(other.buf) {}
+	QueryCacheKey& operator=(const QueryCacheKey& other) {
 		if (this != &other) {
 			buf = other.buf;
-			locked = other.locked.load();
 		}
+		return *this;
 	}
 	QueryCacheKey(const Query& q) {
 		WrSerializer ser;

@@ -8,10 +8,11 @@ import (
 	"log"
 	"math"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
-	"regexp"
 
 	"github.com/restream/reindexer"
 )
@@ -37,19 +38,34 @@ var queryNames = map[int]string{
 	reindexer.LIKE:  "LIKE",
 }
 
+const (
+	leaf = iota
+	tree
+)
+
+type queryTestEntryContainer struct {
+	op       int
+	data     interface{}
+	dataType int
+}
+
+type queryTestEntryTree struct {
+	data        []queryTestEntryContainer
+	activeChild int // index in data + 1, if 0 - no active child
+}
+
 type queryTestEntry struct {
 	index     string
 	condition int
 	keys      []reflect.Value
 	ikeys     interface{}
-	op        int
 	fieldIdx  [][]int
 }
 
 // Test Query to DB object
 type queryTest struct {
 	q              *reindexer.Query
-	entries        []queryTestEntry
+	entries        queryTestEntryTree
 	distinctIndex  string
 	sortIndex      []string
 	sortDesc       bool
@@ -57,12 +73,16 @@ type queryTest struct {
 	limitItems     int
 	startOffset    int
 	reqTotalCount  bool
-	db             *reindexer.Reindexer
+	db             *ReindexerWrapper
 	namespace      string
 	nextOp         int
 	ns             *testNamespace
 	totalCount     int
 	equalPositions EqualPositions
+	readOnly       bool
+	deepReplEqual  bool
+	needVerify     bool
+	handClose      bool
 }
 type testNamespace struct {
 	items     map[string]interface{}
@@ -76,19 +96,57 @@ func (tn *testNamespace) getField(field string) ([][]int, bool) {
 	return value, ok
 }
 
+var queryTestPool sync.Pool
+
 // Create new DB query
-func newTestQuery(db *reindexer.Reindexer, namespace string) *queryTest {
-	return &queryTest{q: db.Query(namespace), namespace: namespace, db: db, sortIndex: make([]string, 0, 5), nextOp: opAND, ns: testNamespaces[strings.ToLower(namespace)]}
+func newTestQuery(db *ReindexerWrapper, namespace string, needVerify ...bool) *queryTest {
+	var qt *queryTest
+	obj := queryTestPool.Get()
+	if obj != nil {
+		qt = obj.(*queryTest)
+	}
+	if qt == nil {
+		qt = &queryTest{}
+	} else {
+		qt.distinctIndex = ""
+		qt.sortIndex = qt.sortIndex[:0]
+		qt.entries.data = qt.entries.data[:0]
+		qt.entries.activeChild = 0
+		qt.equalPositions = qt.equalPositions[:0]
+		qt.sortDesc = false
+		qt.sortValues = nil
+		qt.limitItems = 0
+		qt.startOffset = 0
+		qt.reqTotalCount = false
+	}
+	qt.q = db.GetBaseQuery(namespace)
+	qt.deepReplEqual = false
+	qt.readOnly = true
+	qt.namespace = namespace
+	qt.db = db
+	qt.nextOp = opAND
+	qt.handClose = false
+	qt.ns = testNamespaces[strings.ToLower(namespace)]
+	return qt
 }
 
 type txTest struct {
 	tx        *reindexer.Tx
 	namespace string
-	db        *reindexer.Reindexer
+	db        *ReindexerWrapper
 	ns        *testNamespace
 }
 
+func removeTestNamespce(namespace string) {
+	delete(testNamespaces, namespace)
+}
+
 func newTestNamespace(namespace string, item interface{}) {
+
+	if _, ok := testNamespaces[strings.ToLower(namespace)]; ok {
+		return
+	}
+
 	ns := &testNamespace{
 		items:     make(map[string]interface{}, 1000),
 		fieldsIdx: make(map[string][][]int),
@@ -97,8 +155,7 @@ func newTestNamespace(namespace string, item interface{}) {
 	prepareStruct(ns, reflect.TypeOf(item), []int{}, "")
 }
 
-func newTestTx(db *reindexer.Reindexer, namespace string) *txTest {
-
+func newTestTx(db *ReindexerWrapper, namespace string) *txTest {
 	tx := &txTest{namespace: namespace, db: db, ns: testNamespaces[namespace]}
 	tx.tx = db.MustBeginTx(namespace)
 	return tx
@@ -139,20 +196,29 @@ func (tx *txTest) Delete(s interface{}) error {
 }
 
 func (tx *txTest) Commit(updatedAt *time.Time) (int, error) {
+	tx.db.SetSynced(false)
+
 	return tx.tx.CommitWithCount(updatedAt)
 }
 
 func (tx *txTest) MustCommit(updatedAt *time.Time) int {
-	return tx.tx.MustCommit(updatedAt)
+	tx.db.SetSynced(false)
+
+	res := tx.tx.MustCommit(updatedAt)
+	return res
 }
 
-func (qt *queryTest) toString() (ret string) {
-	if len(qt.entries) > 0 {
-		ret += " WHERE "
+func (qt *queryTestEntryTree) toString() (ret string) {
+	if len(qt.data) < 1 {
+		return ret
 	}
-	for i, qc := range qt.entries {
-		if i != 0 {
-			switch qc.op {
+	for i, d := range qt.data {
+		if i == 0 {
+			if d.op == opNOT {
+				ret += "NOT "
+			}
+		} else {
+			switch d.op {
 			case opNOT:
 				ret += " AND NOT "
 			case opAND:
@@ -161,19 +227,31 @@ func (qt *queryTest) toString() (ret string) {
 				ret += " OR "
 			}
 		}
-		ret += qc.index + " " + queryNames[qc.condition] + " "
-		if len(qc.keys) > 1 {
-			ret += "("
-		}
-		for i, c := range qc.keys {
-			if i != 0 {
-				ret += ","
+		if d.dataType == tree {
+			ret += "(" + d.data.(*queryTestEntryTree).toString() + ")"
+		} else {
+			entry := d.data.(*queryTestEntry)
+			ret += entry.index + " " + queryNames[entry.condition] + " "
+			if len(entry.keys) > 1 {
+				ret += "("
 			}
-			ret += fmt.Sprintf("%v", c.Interface())
+			for i, c := range entry.keys {
+				if i != 0 {
+					ret += ","
+				}
+				ret += fmt.Sprintf("%v", c.Interface())
+			}
+			if len(entry.keys) > 1 {
+				ret += ")"
+			}
 		}
-		if len(qc.keys) > 1 {
-			ret += ")"
-		}
+	}
+	return ret
+}
+
+func (qt *queryTest) toString() (ret string) {
+	if len(qt.entries.data) > 0 {
+		ret += " WHERE " + qt.entries.toString()
 	}
 	if len(qt.sortIndex) > 0 {
 		ret += " ORDER BY "
@@ -208,9 +286,37 @@ func (qt *queryTest) toString() (ret string) {
 	return ret
 }
 
+func (qt *queryTestEntryTree) addEntry(entry queryTestEntry, op int) {
+	if qt.activeChild > 0 {
+		qt.data[qt.activeChild-1].data.(*queryTestEntryTree).addEntry(entry, op)
+	} else {
+		qt.data = append(qt.data, queryTestEntryContainer{op, &entry, leaf})
+	}
+}
+
+func (qt *queryTest) Functions(fields ...string) *queryTest {
+	qt.q.Functions(fields...)
+	return qt
+}
+
+func (qt *queryTest) SetExpression(field string, value string) *queryTest {
+	qt.q.SetExpression(field, value)
+	return qt
+}
+
+func (qt *queryTest) DeepReplEqual() *queryTest {
+	qt.deepReplEqual = true
+	return qt
+}
+
+func (qt *queryTest) NoRepl() *queryTest {
+	qt.readOnly = false
+	return qt
+}
+
 // Where - Add where condition to DB query
 func (qt *queryTest) Where(index string, condition int, keys interface{}) *queryTest {
-	qte := queryTestEntry{index: index, condition: condition, ikeys: keys, op: qt.nextOp}
+	qte := queryTestEntry{index: index, condition: condition, ikeys: keys}
 	qt.q.Where(index, condition, keys)
 
 	if reflect.TypeOf(keys).Kind() == reflect.Slice || reflect.TypeOf(keys).Kind() == reflect.Array {
@@ -221,9 +327,46 @@ func (qt *queryTest) Where(index string, condition int, keys interface{}) *query
 		qte.keys = append(qte.keys, reflect.ValueOf(keys))
 	}
 	qte.fieldIdx, _ = qt.ns.getField(index)
-	qt.entries = append(qt.entries, qte)
+	qt.entries.addEntry(qte, qt.nextOp)
 	qt.nextOp = opAND
 
+	return qt
+}
+
+func (qt *queryTestEntryTree) addTree(op int) {
+	if qt.activeChild > 0 {
+		qt.data[qt.activeChild-1].data.(*queryTestEntryTree).addTree(op)
+	} else {
+		qt.data = append(qt.data, queryTestEntryContainer{op, new(queryTestEntryTree), tree})
+		qt.activeChild = len(qt.data)
+	}
+}
+
+// OpenBracket - Open bracket for where condition to DB query
+func (qt *queryTest) OpenBracket() *queryTest {
+	qt.q.OpenBracket()
+	qt.entries.addTree(qt.nextOp)
+	qt.nextOp = opAND
+	return qt
+}
+
+func (qt *queryTestEntryTree) exitTree() {
+	if qt.activeChild <= 0 {
+		panic(fmt.Errorf("No open bracket"))
+	} else {
+		t := qt.data[qt.activeChild-1].data.(*queryTestEntryTree)
+		if t.activeChild > 0 {
+			t.exitTree()
+		} else {
+			qt.activeChild = 0
+		}
+	}
+}
+
+// CloseBracket - Close bracket for where condition to DB query
+func (qt *queryTest) CloseBracket() *queryTest {
+	qt.q.CloseBracket()
+	qt.entries.exitTree()
 	return qt
 }
 
@@ -271,11 +414,40 @@ func (qt *queryTest) Distinct(distinctIndex string) *queryTest {
 	return qt
 }
 
-// ReqTotal Request total items calculation
-func (qt *queryTest) ReqTotal() *queryTest {
-	qt.q.ReqTotal()
+func (qt *queryTest) GetJson() (json []byte, found bool) {
+
+	return qt.q.GetJson()
+}
+
+func (qt *queryTest) Delete() (int, error) {
+	qt.readOnly = false
+	qt.db.SetSynced(false)
+
+	return qt.q.Delete()
+}
+
+func (qt *queryTest) Set(field string, values interface{}) *queryTest {
+	qt.q.Set(field, values)
+	qt.db.SetSynced(false)
+
+	qt.readOnly = false
+	return qt
+}
+
+func (qt *queryTest) Get() (item interface{}, found bool) {
+	return qt.q.Get()
+}
+
+func (qt *queryTest) ReqTotal(totalNames ...string) *queryTest {
+	qt.q.ReqTotal(totalNames...)
 	qt.reqTotalCount = true
 	return qt
+}
+
+func (qt *queryTest) Update() *reindexer.Iterator {
+	qt.readOnly = false
+	qt.db.SetSynced(false)
+	return qt.q.Update()
 }
 
 // Limit - Set limit (count) of returned items
@@ -306,12 +478,13 @@ func (qt *queryTest) Select(filters ...string) *queryTest {
 
 // Exec will execute query, and return slice of items
 func (qt *queryTest) Exec() *reindexer.Iterator {
-	return qt.q.Exec()
+	return qt.MustExec()
 }
 
 // Exec query, and full scan check items returned items
 func (qt *queryTest) ExecAndVerify() *reindexer.Iterator {
-	it := qt.Exec()
+	defer qt.close()
+	it := qt.ManualClose().Exec()
 	qt.totalCount = it.TotalCount()
 	items, err := it.AllowUnsafe(true).FetchAll()
 	if err != nil {
@@ -324,9 +497,79 @@ func (qt *queryTest) ExecAndVerify() *reindexer.Iterator {
 	return it
 }
 
+func (qt *queryTest) MustExec(handClose ...bool) *reindexer.Iterator {
+	if !qt.handClose {
+		defer qt.close()
+	}
+	it := qt.db.execQuery(qt)
+	return it
+}
+
+func (qt *queryTest) ManualClose() *queryTest {
+	qt.handClose = true
+	return qt
+}
+
+func (qt *queryTest) close() {
+	queryTestPool.Put(qt)
+}
+
+func (qt *queryTest) InnerJoin(qt2 *queryTest, field string) *queryTest {
+	qt2.q = qt.q.InnerJoin(qt2.q, field)
+	return qt2
+}
+
+func (qt *queryTest) Join(qt2 *queryTest, field string) *queryTest {
+	qt2.q = qt.q.Join(qt2.q, field)
+	return qt2
+}
+
+func (qt *queryTest) LeftJoin(qt2 *queryTest, field string) *queryTest {
+	qt2.q = qt.q.LeftJoin(qt2.q, field)
+	return qt2
+}
+
+func (qt *queryTest) On(index string, condition int, joinIndex string) *queryTest {
+	qt.q.On(index, condition, joinIndex)
+	return qt
+
+}
+
+func (qt *queryTest) JoinHandler(field string, handler reindexer.JoinHandler) *queryTest {
+	qt.q.JoinHandler(field, handler)
+	return qt
+}
+
+func (qt *queryTest) AggregateSum(field string) {
+	qt.q.AggregateSum(field)
+}
+
+func (qt *queryTest) AggregateAvg(field string) {
+	qt.q.AggregateAvg(field)
+}
+
+func (qt *queryTest) AggregateMin(field string) {
+	qt.q.AggregateMin(field)
+}
+
+func (qt *queryTest) AggregateMax(field string) {
+	qt.q.AggregateMax(field)
+}
+
+func (qt *queryTest) AggregateFacet(fields ...string) *reindexer.AggregateFacetRequest {
+	return qt.q.AggregateFacet(fields...)
+
+}
+
+// Merge 2 queries
+func (qt *queryTest) Merge(qt2 *queryTest) *queryTest {
+	qt.q.Merge(qt2.q)
+	return qt
+}
+
 // Exec query, and full scan check items returned items
-func (qt *queryTest) ExecToJson() *reindexer.JSONIterator {
-	return qt.q.ExecToJson()
+func (qt *queryTest) ExecToJson(jsonRoots ...string) *reindexer.JSONIterator {
+	return qt.q.ExecToJson(jsonRoots...)
 }
 
 var testNamespaces = make(map[string]*testNamespace, 100)
@@ -358,7 +601,7 @@ func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
 				panic(fmt.Errorf("found item not equal to original \n%#v\n%#v", item, qt.ns.items[pk]))
 			}
 		}
-		if !verifyConditions(qt.ns, qt.entries, item) {
+		if !qt.entries.verifyConditions(qt.ns, item) {
 			json1, _ := json.Marshal(item)
 			log.Fatalf("Found item id=%s, not match condition '%s'\n%+v\n", pk, qt.toString(), string(json1))
 		} else {
@@ -432,7 +675,7 @@ func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
 	// Check all non found items for non match query conditions
 	for pk, item := range qt.ns.items {
 		if _, ok := foundIds[pk]; !ok {
-			if verifyConditions(qt.ns, qt.entries, item) {
+			if qt.entries.verifyConditions(qt.ns, item) {
 				// If request with limit or offset - do not check not found items
 				if qt.startOffset == 0 && (qt.limitItems == 0 || len(items) < qt.limitItems) {
 					if len(qt.distinctIndex) > 0 {
@@ -459,6 +702,46 @@ func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
 	if qt.reqTotalCount && totalItems != qt.totalCount && len(qt.distinctIndex) == 0 {
 		panic(fmt.Errorf("Total mismatch: %d != %d (%d)", totalItems, qt.totalCount, len(items)))
 	}
+}
+
+func (qt *queryTest) WhereInt(index string, condition int, keys ...int) *queryTest {
+	return qt.Where(index, condition, keys)
+}
+
+func (qt *queryTest) WhereInt32(index string, condition int, keys ...int32) *queryTest {
+	return qt.Where(index, condition, keys)
+}
+
+func (qt *queryTest) WhereInt64(index string, condition int, keys ...int64) *queryTest {
+	return qt.Where(index, condition, keys)
+}
+
+func (qt *queryTest) WhereString(index string, condition int, keys ...string) *queryTest {
+	return qt.Where(index, condition, keys)
+}
+
+func (q *queryTest) WhereComposite(index string, condition int, keys ...interface{}) *queryTest {
+	return q.Where(index, condition, keys)
+}
+
+// WhereString - Add where condition to DB query with string args
+func (qt *queryTest) Match(index string, keys ...string) *queryTest {
+	qt.q.Match(index, keys...)
+	return qt
+}
+
+// WhereString - Add where condition to DB query with bool args
+func (q *queryTest) WhereBool(index string, condition int, keys ...bool) *queryTest {
+
+	return q.Where(index, condition, keys)
+
+}
+
+// WhereDouble - Add where condition to DB query with float args
+func (q *queryTest) WhereDouble(index string, condition int, keys ...float64) *queryTest {
+
+	return q.Where(index, condition, keys)
+
 }
 
 // Get value of items's reindex field by name
@@ -534,7 +817,7 @@ func likeValues(v1 reflect.Value, v2 reflect.Value) bool {
 	if v1.Type().Kind() != reflect.String || v2.Type().Kind() != reflect.String {
 		panic(fmt.Errorf("Arguments of like must be string"))
 	}
-	match, err := regexp.MatchString("^" + strings.Replace(strings.Replace(v2.String(), "_", ".", -1), "%", ".*", -1) + "$", v1.String())
+	match, err := regexp.MatchString("^"+strings.Replace(strings.Replace(v2.String(), "_", ".", -1), "%", ".*", -1)+"$", v1.String())
 	if err != nil {
 		panic(err)
 	}
@@ -565,13 +848,30 @@ func checkResult(cmpRes int, cond int) bool {
 	return result
 }
 
-func getEntryByIndexName(qt *queryTest, index string) int {
-	for i := 0; i < len(qt.entries); i++ {
-		if qt.entries[i].index == index {
-			return i
+func (qt *queryTestEntryTree) getEntryByIndexName(index string) *queryTestEntry {
+	for _, d := range qt.data {
+		if d.dataType == leaf {
+			if entry := d.data.(*queryTestEntry); entry.index == index {
+				return entry
+			}
+		} else {
+			t := d.data.(*queryTestEntryTree)
+			if found := t.getEntryByIndexName(index); found != nil {
+				return found
+			}
 		}
 	}
-	return -1
+	return nil
+}
+
+func (qt *queryTest) CachedTotal(totalNames ...string) *queryTest {
+	qt.q.CachedTotal(totalNames...)
+	return qt
+}
+
+func (qt *queryTest) SetContext(ctx interface{}) *queryTest {
+	qt.q.SetContext(ctx)
+	return qt
 }
 
 func getValuesForIndex(qt *queryTest, item interface{}, index string) []reflect.Value {
@@ -591,11 +891,11 @@ func getEqualPositionMinArrSize(qt *queryTest, ep []string, item interface{}) in
 func checkEqualPosition(item interface{}, qt *queryTest) bool {
 	for _, epIndexes := range qt.equalPositions {
 		arrIdx := 0
-		entryIdx := getEntryByIndexName(qt, epIndexes[0])
+		entry := qt.entries.getEntryByIndexName(epIndexes[0])
 		vals := getValuesForIndex(qt, item, epIndexes[0])
-		keys := qt.entries[entryIdx].keys
+		keys := entry.keys
 		arrLen := getEqualPositionMinArrSize(qt, epIndexes, item)
-		for arrIdx < arrLen && checkResult(compareValues(vals[arrIdx], keys[arrIdx]), qt.entries[entryIdx].condition) == false {
+		for arrIdx < arrLen && checkResult(compareValues(vals[arrIdx], keys[arrIdx]), entry.condition) == false {
 			arrIdx++
 		}
 		if arrIdx >= arrLen {
@@ -603,10 +903,10 @@ func checkEqualPosition(item interface{}, qt *queryTest) bool {
 		}
 		equal := true
 		for fieldIdx := 1; fieldIdx < len(epIndexes); fieldIdx++ {
-			entryIdx = getEntryByIndexName(qt, epIndexes[fieldIdx])
+			entry = qt.entries.getEntryByIndexName(epIndexes[fieldIdx])
 			vals = getValuesForIndex(qt, item, epIndexes[fieldIdx])
-			keys = qt.entries[entryIdx].keys
-			cmpRes := checkResult(compareValues(vals[arrIdx], keys[arrIdx]), qt.entries[entryIdx].condition)
+			keys = entry.keys
+			cmpRes := checkResult(compareValues(vals[arrIdx], keys[arrIdx]), entry.condition)
 			if cmpRes == false {
 				equal = false
 				break
@@ -632,7 +932,7 @@ func compareComposite(vals []reflect.Value, keyValue interface{}, item interface
 	return cmpRes
 }
 
-func checkCompositeCondition(vals []reflect.Value, cond queryTestEntry, item interface{}) bool {
+func checkCompositeCondition(vals []reflect.Value, cond *queryTestEntry, item interface{}) bool {
 	keys := cond.ikeys.([]interface{})
 	result := false
 
@@ -661,7 +961,7 @@ func checkCompositeCondition(vals []reflect.Value, cond queryTestEntry, item int
 	return result
 }
 
-func checkCondition(ns *testNamespace, cond queryTestEntry, item interface{}) bool {
+func checkCondition(ns *testNamespace, cond *queryTestEntry, item interface{}) bool {
 	vals := getValues(item, cond.fieldIdx)
 
 	switch cond.condition {
@@ -707,10 +1007,16 @@ func checkCondition(ns *testNamespace, cond queryTestEntry, item interface{}) bo
 	return found
 }
 
-func verifyConditions(ns *testNamespace, conditions []queryTestEntry, item interface{}) bool {
+func (qt *queryTestEntryTree) verifyConditions(ns *testNamespace, item interface{}) bool {
 	found := true
-	for _, cond := range conditions {
-		curFound := checkCondition(ns, cond, item)
+	for _, cond := range qt.data {
+		var curFound bool
+		if cond.dataType == leaf {
+			curFound = checkCondition(ns, cond.data.(*queryTestEntry), item)
+		} else {
+			t := cond.data.(*queryTestEntryTree)
+			curFound = t.verifyConditions(ns, item)
+		}
 		switch cond.op {
 		case opNOT:
 			if curFound {
@@ -777,7 +1083,8 @@ func prepareStruct(ns *testNamespace, t reflect.Type, basePath []int, reindexBas
 			continue
 		}
 		if (tk == reflect.Array || tk == reflect.Slice) && field.Type.Elem().Kind() == reflect.Struct {
-			panic(fmt.Errorf("TestQuery does not supported indexed struct arrays (struct=%s, field=%s)\n", t.Name(), field.Name))
+			//todo no panic just make support!
+			//panic(fmt.Errorf("TestQuery does not supported indexed struct arrays (struct=%s, field=%s)\n", t.Name(), field.Name))
 		}
 
 		if isPk {

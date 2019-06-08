@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include "client/item.h"
 #include "client/resultserializer.h"
 
@@ -12,6 +13,8 @@ class ClientConnection;
 };  // namespace net
 
 namespace client {
+
+using std::chrono::seconds;
 
 class Namespace;
 using NSArray = h_vector<Namespace *, 1>;
@@ -62,9 +65,9 @@ public:
 
 private:
 	friend class RPCClient;
-	QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, int fetchFlags,int fetchAmount);
+	QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, int fetchFlags, int fetchAmount, seconds timeout);
 	QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, string_view rawResult, int queryID,
-				 int fetchFlags,int fetchAmount);
+				 int fetchFlags, int fetchAmount, seconds timeout);
 	void Bind(string_view rawResult, int queryID);
 	void fetchNextResults();
 	void completion(const Error &err) {
@@ -82,6 +85,7 @@ private:
 	int fetchOffset_;
 	int fetchFlags_;
 	int fetchAmount_;
+	seconds requestTimeout_;
 
 	ResultSerializer::QueryParams queryParams_;
 	Error status_;

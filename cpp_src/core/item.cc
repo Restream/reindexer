@@ -7,7 +7,7 @@
 namespace reindexer {
 
 Item::FieldRef::FieldRef(int field, ItemImpl *itemImpl) : itemImpl_(itemImpl), field_(field) {}
-Item::FieldRef::FieldRef(const string &jsonPath, ItemImpl *itemImpl) : itemImpl_(itemImpl), jsonPath_(jsonPath), field_(-1) {}
+Item::FieldRef::FieldRef(string_view jsonPath, ItemImpl *itemImpl) : itemImpl_(itemImpl), jsonPath_(jsonPath), field_(-1) {}
 
 Item::Item(Item &&other) noexcept : impl_(other.impl_), status_(std::move(other.status_)), id_(other.id_) { other.impl_ = nullptr; }
 
@@ -22,7 +22,7 @@ Item &Item::operator=(Item &&other) noexcept {
 	return *this;
 }
 
-const string &Item::FieldRef::Name() { return field_ >= 0 ? itemImpl_->Type().Field(field_).Name() : jsonPath_; }
+string_view Item::FieldRef::Name() { return field_ >= 0 ? itemImpl_->Type().Field(field_).Name() : jsonPath_; }
 
 Item::FieldRef::operator Variant() {
 	VariantArray kr;
@@ -68,6 +68,21 @@ Item::FieldRef &Item::FieldRef::operator=(const VariantArray &krs) {
 	return *this;
 }
 
+template <typename T>
+Item::FieldRef &Item::FieldRef::operator=(span<T> arr) {
+	if (field_ < 0) {
+		throw Error(errConflict, "Item::FieldRef::SetValue by json path not implemented yet");
+	}
+
+	auto pl(itemImpl_->GetPayload());
+	int pos = pl.ResizeArray(field_, arr.size(), false);
+
+	for (auto &elem : arr) {
+		pl.Set(field_, pos++, Variant(elem));
+	}
+	return *this;
+}
+
 Item::~Item() {
 	if (impl_) {
 		auto ns = impl_->GetNamespace();
@@ -90,16 +105,7 @@ Item::FieldRef Item::operator[](int field) {
 	return FieldRef(field, impl_);
 }
 
-Item::FieldRef Item::operator[](const string &name) {
-	int field = 0;
-	if (impl_->Type().FieldByName(name, field)) {
-		return FieldRef(field, impl_);
-	} else {
-		return FieldRef(name, impl_);
-	}
-}
-
-Item::FieldRef Item::operator[](const char *name) {
+Item::FieldRef Item::operator[](string_view name) {
 	int field = 0;
 	if (impl_->Type().FieldByName(name, field)) {
 		return FieldRef(field, impl_);
@@ -120,4 +126,9 @@ Item &Item::Unsafe(bool enable) {
 int64_t Item::GetLSN() { return impl_->Value().GetLSN(); }
 void Item::setLSN(int64_t lsn) { impl_->Value().SetLSN(lsn); }
 
+template Item::FieldRef &Item::FieldRef::operator=(span<int> arr);
+template Item::FieldRef &Item::FieldRef::operator=(span<int64_t> arr);
+template Item::FieldRef &Item::FieldRef::operator=(span<std::string> arr);
+
 }  // namespace reindexer
+   // namespace reindexer

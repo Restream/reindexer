@@ -4,11 +4,11 @@
 namespace reindexer {
 
 vector<PackedWordEntry>& DataHolder::GetWords() { return words_; }
-suffix_map<string, WordIdType>& DataHolder::GetSuffix() { return steps.back().suffixes_; }
+suffix_map<char, WordIdType>& DataHolder::GetSuffix() { return steps.back().suffixes_; }
 
-flat_str_multimap<string, WordIdType>& DataHolder::GetTypos() { return steps.back().typos_; }
+flat_str_multimap<char, WordIdType>& DataHolder::GetTypos() { return steps.back().typos_; }
 
-WordIdType DataHolder::findWord(const string& word) {
+WordIdType DataHolder::findWord(string_view word) {
 	WordIdType id;
 	id.setEmpty();
 	if (steps.size() <= 1) return id;
@@ -21,13 +21,6 @@ WordIdType DataHolder::findWord(const string& word) {
 	}
 
 	return id;
-}
-size_t DataHolder::GetWordsSize() {
-	size_t res = 0;
-	for (auto step = steps.begin(); step != steps.end() - 1; ++step) {
-		res += step->suffixes_.word_size();
-	}
-	return res;
 }
 
 size_t DataHolder::GetMemStat() {

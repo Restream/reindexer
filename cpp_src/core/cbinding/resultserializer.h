@@ -1,5 +1,6 @@
 #pragma once
 #include "estl/h_vector.h"
+#include "estl/span.h"
 #include "tools/serializer.h"
 namespace reindexer {
 

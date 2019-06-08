@@ -65,7 +65,7 @@ protected:
 	unsigned prepareOffset(const string_view &offsetParam, int offsetDefault = kDefaultOffset);
 
 	shared_ptr<Reindexer> getDB(http::Context &ctx, UserRole role);
-	string getNameFromJson(string json);
+	string getNameFromJson(string_view json);
 
 	DBManager &dbMgr_;
 	Pprof pprof_;

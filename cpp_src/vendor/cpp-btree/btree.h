@@ -194,6 +194,10 @@ struct btree_key_compare_to_adapter : Compare {
 	btree_key_compare_to_adapter() {}
 	btree_key_compare_to_adapter(const Compare &c) : Compare(c) {}
 	btree_key_compare_to_adapter(const btree_key_compare_to_adapter<Compare> &c) : Compare(c) {}
+	btree_key_compare_to_adapter<Compare> &operator=(const btree_key_compare_to_adapter<Compare> &c) {
+		Compare::operator=(c);
+		return *this;
+	}
 };
 
 template <>
@@ -219,8 +223,14 @@ template <typename Key, typename Compare, bool HaveCompareTo>
 struct btree_key_comparer {
 	btree_key_comparer() {}
 	btree_key_comparer(Compare c) : comp(c) {}
-	static bool bool_compare(const Compare &comp, const Key &x, const Key &y) { return comp(x, y); }
-	bool operator()(const Key &x, const Key &y) const { return bool_compare(comp, x, y); }
+	template <typename K>
+	static bool bool_compare(const Compare &comp, const Key &x, const K &y) {
+		return comp(x, y);
+	}
+	template <typename K>
+	bool operator()(const Key &x, const K &y) const {
+		return bool_compare(comp, x, y);
+	}
 	Compare comp;
 };
 
@@ -240,8 +250,8 @@ struct btree_key_comparer<Key, Compare, true> {
 // functor. This dispatches to the appropriate btree_key_comparer comparison,
 // depending on whether we have a compare-to functor or not (which depends on
 // whether Compare is derived from btree_key_compare_to_tag).
-template <typename Key, typename Compare>
-static bool btree_compare_keys(const Compare &comp, const Key &x, const Key &y) {
+template <typename Key, typename K2, typename Compare>
+static bool btree_compare_keys(const Compare &comp, const Key &x, const K2 &y) {
 	typedef btree_key_comparer<Key, Compare, btree_is_key_compare_to<Compare>::value> key_comparer;
 	return key_comparer::bool_compare(comp, x, y);
 }
@@ -320,54 +330,76 @@ struct btree_set_params : public btree_common_params<Key, Compare, Alloc, Target
 
 // An adapter class that converts a lower-bound compare into an upper-bound
 // compare.
-template <typename Key, typename Compare>
+template <typename Compare>
 struct btree_upper_bound_adapter : public Compare {
 	btree_upper_bound_adapter(Compare c) : Compare(c) {}
-	bool operator()(const Key &a, const Key &b) const { return !static_cast<const Compare &>(*this)(b, a); }
+	template <typename K1, typename K2>
+	bool operator()(const K1 &a, const K2 &b) const {
+		return !static_cast<const Compare &>(*this)(b, a);
+	}
 };
 
-template <typename Key, typename CompareTo>
+template <typename CompareTo>
 struct btree_upper_bound_compare_to_adapter : public CompareTo {
 	btree_upper_bound_compare_to_adapter(CompareTo c) : CompareTo(c) {}
-	int operator()(const Key &a, const Key &b) const { return static_cast<const CompareTo &>(*this)(b, a); }
+	template <typename K1, typename K2>
+	int operator()(const K1 &a, const K2 &b) const {
+		return static_cast<const CompareTo &>(*this)(b, a);
+	}
 };
 
 // Dispatch helper class for using linear search with plain compare.
-template <typename K, typename N, typename Compare>
+template <typename N, typename Compare>
 struct btree_linear_search_plain_compare {
-	static int lower_bound(const K &k, const N &n, Compare comp) { return n.linear_search_plain_compare(k, 0, n.count(), comp); }
+	template <typename K>
+	static int lower_bound(const K &k, const N &n, Compare comp) {
+		return n.linear_search_plain_compare(k, 0, n.count(), comp);
+	}
+	template <typename K>
 	static int upper_bound(const K &k, const N &n, Compare comp) {
-		typedef btree_upper_bound_adapter<K, Compare> upper_compare;
+		typedef btree_upper_bound_adapter<Compare> upper_compare;
 		return n.linear_search_plain_compare(k, 0, n.count(), upper_compare(comp));
 	}
 };
 
 // Dispatch helper class for using linear search with compare-to
-template <typename K, typename N, typename CompareTo>
+template <typename N, typename CompareTo>
 struct btree_linear_search_compare_to {
-	static int lower_bound(const K &k, const N &n, CompareTo comp) { return n.linear_search_compare_to(k, 0, n.count(), comp); }
+	template <typename K>
+	static int lower_bound(const K &k, const N &n, CompareTo comp) {
+		return n.linear_search_compare_to(k, 0, n.count(), comp);
+	}
+	template <typename K>
 	static int upper_bound(const K &k, const N &n, CompareTo comp) {
-		typedef btree_upper_bound_adapter<K, btree_key_comparer<K, CompareTo, true> > upper_compare;
+		typedef btree_upper_bound_adapter<btree_key_comparer<K, CompareTo, true> > upper_compare;
 		return n.linear_search_plain_compare(k, 0, n.count(), upper_compare(comp));
 	}
 };
 
 // Dispatch helper class for using binary search with plain compare.
-template <typename K, typename N, typename Compare>
+template <typename N, typename Compare>
 struct btree_binary_search_plain_compare {
-	static int lower_bound(const K &k, const N &n, Compare comp) { return n.binary_search_plain_compare(k, 0, n.count(), comp); }
+	template <typename K>
+	static int lower_bound(const K &k, const N &n, Compare comp) {
+		return n.binary_search_plain_compare(k, 0, n.count(), comp);
+	}
+	template <typename K>
 	static int upper_bound(const K &k, const N &n, Compare comp) {
-		typedef btree_upper_bound_adapter<K, Compare> upper_compare;
+		typedef btree_upper_bound_adapter<Compare> upper_compare;
 		return n.binary_search_plain_compare(k, 0, n.count(), upper_compare(comp));
 	}
 };
 
 // Dispatch helper class for using binary search with compare-to.
-template <typename K, typename N, typename CompareTo>
+template <typename N, typename CompareTo>
 struct btree_binary_search_compare_to {
-	static int lower_bound(const K &k, const N &n, CompareTo comp) { return n.binary_search_compare_to(k, 0, n.count(), comp); }
+	template <typename K>
+	static int lower_bound(const K &k, const N &n, CompareTo comp) {
+		return n.binary_search_compare_to(k, 0, n.count(), comp);
+	}
+	template <typename K>
 	static int upper_bound(const K &k, const N &n, CompareTo comp) {
-		typedef btree_upper_bound_adapter<K, btree_key_comparer<K, CompareTo, true> > upper_compare;
+		typedef btree_upper_bound_adapter<btree_key_comparer<K, CompareTo, true> > upper_compare;
 		return n.linear_search_plain_compare(k, 0, n.count(), upper_compare(comp));
 	}
 };
@@ -392,10 +424,10 @@ public:
 	typedef typename Params::size_type size_type;
 	typedef typename Params::difference_type difference_type;
 	// Typedefs for the various types of node searches.
-	typedef btree_linear_search_plain_compare<key_type, self_type, key_compare> linear_search_plain_compare_type;
-	typedef btree_linear_search_compare_to<key_type, self_type, key_compare> linear_search_compare_to_type;
-	typedef btree_binary_search_plain_compare<key_type, self_type, key_compare> binary_search_plain_compare_type;
-	typedef btree_binary_search_compare_to<key_type, self_type, key_compare> binary_search_compare_to_type;
+	typedef btree_linear_search_plain_compare<self_type, key_compare> linear_search_plain_compare_type;
+	typedef btree_linear_search_compare_to<self_type, key_compare> linear_search_compare_to_type;
+	typedef btree_binary_search_plain_compare<self_type, key_compare> binary_search_plain_compare_type;
+	typedef btree_binary_search_compare_to<self_type, key_compare> binary_search_compare_to_type;
 	// If we have a valid key-compare-to type, use linear_search_compare_to,
 	// otherwise use linear_search_plain_compare.
 	typedef typename if_<Params::is_key_compare_to::value, linear_search_compare_to_type, linear_search_plain_compare_type>::type
@@ -407,7 +439,7 @@ public:
 	// If the key is an integral or floating point type, use linear search which
 	// is faster than binary search for such types. Might be wise to also
 	// configure linear search based on node-size.
-	typedef typename if_<std::is_integral<key_type>::value || std::is_floating_point<key_type>::value, linear_search_type,
+	typedef typename if_</*std::is_integral<key_type>::value ||*/ std::is_floating_point<key_type>::value, linear_search_type,
 						 binary_search_type>::type search_type;
 
 	struct base_fields {
@@ -510,20 +542,20 @@ public:
 	}
 
 	// Returns the position of the first value whose key is not less than k.
-	template <typename Compare>
-	int lower_bound(const key_type &k, const Compare &comp) const {
+	template <typename Compare, typename K>
+	int lower_bound(const K &k, const Compare &comp) const {
 		return search_type::lower_bound(k, *this, comp);
 	}
 	// Returns the position of the first value whose key is greater than k.
-	template <typename Compare>
-	int upper_bound(const key_type &k, const Compare &comp) const {
+	template <typename Compare, typename K>
+	int upper_bound(const K &k, const Compare &comp) const {
 		return search_type::upper_bound(k, *this, comp);
 	}
 
 	// Returns the position of the first value whose key is not less than k using
 	// linear search performed using plain compare.
-	template <typename Compare>
-	int linear_search_plain_compare(const key_type &k, int s, int e, const Compare &comp) const {
+	template <typename Compare, typename K>
+	int linear_search_plain_compare(const K &k, int s, int e, const Compare &comp) const {
 		while (s < e) {
 			if (!btree_compare_keys(comp, key(s), k)) {
 				break;
@@ -535,8 +567,8 @@ public:
 
 	// Returns the position of the first value whose key is not less than k using
 	// linear search performed using compare-to.
-	template <typename Compare>
-	int linear_search_compare_to(const key_type &k, int s, int e, const Compare &comp) const {
+	template <typename Compare, typename K>
+	int linear_search_compare_to(const K &k, int s, int e, const Compare &comp) const {
 		while (s < e) {
 			int c = comp(key(s), k);
 			if (c == 0) {
@@ -551,8 +583,8 @@ public:
 
 	// Returns the position of the first value whose key is not less than k using
 	// binary search performed using plain compare.
-	template <typename Compare>
-	int binary_search_plain_compare(const key_type &k, int s, int e, const Compare &comp) const {
+	template <typename Compare, typename K>
+	int binary_search_plain_compare(const K &k, int s, int e, const Compare &comp) const {
 		while (s != e) {
 			int mid = (s + e) / 2;
 			if (btree_compare_keys(comp, key(mid), k)) {
@@ -566,8 +598,8 @@ public:
 
 	// Returns the position of the first value whose key is not less than k using
 	// binary search performed using compare-to.
-	template <typename CompareTo>
-	int binary_search_compare_to(const key_type &k, int s, int e, const CompareTo &comp) const {
+	template <typename CompareTo, typename K>
+	int binary_search_compare_to(const K &k, int s, int e, const CompareTo &comp) const {
 		while (s != e) {
 			int mid = (s + e) / 2;
 			int c = comp(key(mid), k);
@@ -683,6 +715,13 @@ struct btree_iterator {
 	btree_iterator() : node(NULL), position(-1) {}
 	btree_iterator(Node *n, int p) : node(n), position(p) {}
 	btree_iterator(const iterator &x) : node(x.node), position(x.position) {}
+	btree_iterator &operator=(const iterator &x) {
+		if (reinterpret_cast<iterator *>(this) != &x) {
+			node = x.node;
+			position = x.position;
+		}
+		return *this;
+	}
 
 	// Increment/decrement the iterator.
 	void increment() {
@@ -841,18 +880,35 @@ public:
 	const_reverse_iterator rend() const { return const_reverse_iterator(begin()); }
 
 	// Finds the first element whose key is not less than key.
-	iterator lower_bound(const key_type &key) { return internal_end(internal_lower_bound(key, iterator(root(), 0))); }
-	const_iterator lower_bound(const key_type &key) const { return internal_end(internal_lower_bound(key, const_iterator(root(), 0))); }
+	template <typename K>
+	iterator lower_bound(const K &key) {
+		return internal_end(internal_lower_bound(key, iterator(root(), 0)));
+	}
+	template <typename K>
+	const_iterator lower_bound(const K &key) const {
+		return internal_end(internal_lower_bound(key, const_iterator(root(), 0)));
+	}
 
 	// Finds the first element whose key is greater than key.
-	iterator upper_bound(const key_type &key) { return internal_end(internal_upper_bound(key, iterator(root(), 0))); }
-	const_iterator upper_bound(const key_type &key) const { return internal_end(internal_upper_bound(key, const_iterator(root(), 0))); }
+	template <typename K>
+	iterator upper_bound(const K &key) {
+		return internal_end(internal_upper_bound(key, iterator(root(), 0)));
+	}
+	template <typename K>
+	const_iterator upper_bound(const K &key) const {
+		return internal_end(internal_upper_bound(key, const_iterator(root(), 0)));
+	}
 
 	// Finds the range of values which compare equal to key. The first member of
 	// the returned pair is equal to lower_bound(key). The second member pair of
 	// the pair is equal to upper_bound(key).
-	std::pair<iterator, iterator> equal_range(const key_type &key) { return std::make_pair(lower_bound(key), upper_bound(key)); }
-	std::pair<const_iterator, const_iterator> equal_range(const key_type &key) const {
+
+	template <typename K>
+	std::pair<iterator, iterator> equal_range(const K &key) {
+		return std::make_pair(lower_bound(key), upper_bound(key));
+	}
+	template <typename K>
+	std::pair<const_iterator, const_iterator> equal_range(const K &key) const {
 		return std::make_pair(lower_bound(key), upper_bound(key));
 	}
 
@@ -918,13 +974,26 @@ public:
 
 	// Finds the iterator corresponding to a key or returns end() if the key is
 	// not present.
-	iterator find_unique(const key_type &key) { return internal_end(internal_find_unique(key, iterator(root(), 0))); }
-	const_iterator find_unique(const key_type &key) const { return internal_end(internal_find_unique(key, const_iterator(root(), 0))); }
-	iterator find_multi(const key_type &key) { return internal_end(internal_find_multi(key, iterator(root(), 0))); }
-	const_iterator find_multi(const key_type &key) const { return internal_end(internal_find_multi(key, const_iterator(root(), 0))); }
+	template <typename K>
+	iterator find_unique(const K &key) {
+		return internal_end(internal_find_unique(key, iterator(root(), 0)));
+	}
+	template <typename K>
+	const_iterator find_unique(const K &key) const {
+		return internal_end(internal_find_unique(key, const_iterator(root(), 0)));
+	}
+	template <typename K>
+	iterator find_multi(const K &key) {
+		return internal_end(internal_find_multi(key, iterator(root(), 0)));
+	}
+	template <typename K>
+	const_iterator find_multi(const K &key) const {
+		return internal_end(internal_find_multi(key, const_iterator(root(), 0)));
+	}
 
 	// Returns a count of the number of times the key appears in the btree.
-	size_type count_unique(const key_type &key) const {
+	template <typename K>
+	size_type count_unique(const K &key) const {
 		const_iterator begin = internal_find_unique(key, const_iterator(root(), 0));
 		if (!begin.node) {
 			// The key doesn't exist in the tree.
@@ -933,7 +1002,10 @@ public:
 		return 1;
 	}
 	// Returns a count of the number of times the key appears in the btree.
-	size_type count_multi(const key_type &key) const { return distance(lower_bound(key), upper_bound(key)); }
+	template <typename K>
+	size_type count_multi(const K &key) const {
+		return distance(lower_bound(key), upper_bound(key));
+	}
 
 	// Clear the btree, deleting all of the values it contains.
 	void clear();
@@ -953,7 +1025,10 @@ public:
 
 	key_compare *mutable_key_comp() { return this; }
 	const key_compare &key_comp() const { return *this; }
-	bool compare_keys(const key_type &x, const key_type &y) const { return btree_compare_keys(key_comp(), x, y); }
+	template <typename Key, typename K2>
+	bool compare_keys(const Key &x, const K2 &y) const {
+		return btree_compare_keys(key_comp(), x, y);
+	}
 
 	// Dump the btree to the specified ostream. Requires that operator<< is
 	// defined for Key and Value.
@@ -1128,28 +1203,28 @@ private:
 	// field of the pair. The compare_to specialization allows the caller to
 	// avoid a subsequent comparison to determine if an exact match was made,
 	// speeding up string keys.
-	template <typename IterType>
-	std::pair<IterType, int> internal_locate(const key_type &key, IterType iter) const;
-	template <typename IterType>
-	std::pair<IterType, int> internal_locate_plain_compare(const key_type &key, IterType iter) const;
-	template <typename IterType>
-	std::pair<IterType, int> internal_locate_compare_to(const key_type &key, IterType iter) const;
+	template <typename IterType, typename K>
+	std::pair<IterType, int> internal_locate(const K &key, IterType iter) const;
+	template <typename IterType, typename K>
+	std::pair<IterType, int> internal_locate_plain_compare(const K &key, IterType iter) const;
+	template <typename IterType, typename K>
+	std::pair<IterType, int> internal_locate_compare_to(const K &key, IterType iter) const;
 
 	// Internal routine which implements lower_bound().
-	template <typename IterType>
-	IterType internal_lower_bound(const key_type &key, IterType iter) const;
+	template <typename IterType, typename K>
+	IterType internal_lower_bound(const K &key, IterType iter) const;
 
 	// Internal routine which implements upper_bound().
-	template <typename IterType>
-	IterType internal_upper_bound(const key_type &key, IterType iter) const;
+	template <typename IterType, typename K>
+	IterType internal_upper_bound(const K &key, IterType iter) const;
 
 	// Internal routine which implements find_unique().
-	template <typename IterType>
-	IterType internal_find_unique(const key_type &key, IterType iter) const;
+	template <typename IterType, typename K>
+	IterType internal_find_unique(const K &key, IterType iter) const;
 
 	// Internal routine which implements find_multi().
-	template <typename IterType>
-	IterType internal_find_multi(const key_type &key, IterType iter) const;
+	template <typename IterType, typename K>
+	IterType internal_find_multi(const K &key, IterType iter) const;
 
 	// Deletes a node and all of its children.
 	void internal_clear(node_type *node);
@@ -2002,14 +2077,14 @@ inline typename btree<P>::iterator btree<P>::internal_insert(iterator iter, cons
 }
 
 template <typename P>
-template <typename IterType>
-inline std::pair<IterType, int> btree<P>::internal_locate(const key_type &key, IterType iter) const {
+template <typename IterType, typename K>
+inline std::pair<IterType, int> btree<P>::internal_locate(const K &key, IterType iter) const {
 	return internal_locate_type::dispatch(key, *this, iter);
 }
 
 template <typename P>
-template <typename IterType>
-inline std::pair<IterType, int> btree<P>::internal_locate_plain_compare(const key_type &key, IterType iter) const {
+template <typename IterType, typename K>
+inline std::pair<IterType, int> btree<P>::internal_locate_plain_compare(const K &key, IterType iter) const {
 	for (;;) {
 		iter.position = iter.node->lower_bound(key, key_comp());
 		if (iter.node->leaf()) {
@@ -2021,8 +2096,8 @@ inline std::pair<IterType, int> btree<P>::internal_locate_plain_compare(const ke
 }
 
 template <typename P>
-template <typename IterType>
-inline std::pair<IterType, int> btree<P>::internal_locate_compare_to(const key_type &key, IterType iter) const {
+template <typename IterType, typename K>
+inline std::pair<IterType, int> btree<P>::internal_locate_compare_to(const K &key, IterType iter) const {
 	for (;;) {
 		int res = iter.node->lower_bound(key, key_comp());
 		iter.position = res & kMatchMask;
@@ -2038,8 +2113,8 @@ inline std::pair<IterType, int> btree<P>::internal_locate_compare_to(const key_t
 }
 
 template <typename P>
-template <typename IterType>
-IterType btree<P>::internal_lower_bound(const key_type &key, IterType iter) const {
+template <typename IterType, typename K>
+IterType btree<P>::internal_lower_bound(const K &key, IterType iter) const {
 	if (iter.node) {
 		for (;;) {
 			iter.position = iter.node->lower_bound(key, key_comp()) & kMatchMask;
@@ -2054,8 +2129,8 @@ IterType btree<P>::internal_lower_bound(const key_type &key, IterType iter) cons
 }
 
 template <typename P>
-template <typename IterType>
-IterType btree<P>::internal_upper_bound(const key_type &key, IterType iter) const {
+template <typename IterType, typename K>
+IterType btree<P>::internal_upper_bound(const K &key, IterType iter) const {
 	if (iter.node) {
 		for (;;) {
 			iter.position = iter.node->upper_bound(key, key_comp());
@@ -2070,8 +2145,8 @@ IterType btree<P>::internal_upper_bound(const key_type &key, IterType iter) cons
 }
 
 template <typename P>
-template <typename IterType>
-IterType btree<P>::internal_find_unique(const key_type &key, IterType iter) const {
+template <typename IterType, typename K>
+IterType btree<P>::internal_find_unique(const K &key, IterType iter) const {
 	if (iter.node) {
 		std::pair<IterType, int> res = internal_locate(key, iter);
 		if (res.second == kExactMatch) {
@@ -2088,8 +2163,8 @@ IterType btree<P>::internal_find_unique(const key_type &key, IterType iter) cons
 }
 
 template <typename P>
-template <typename IterType>
-IterType btree<P>::internal_find_multi(const key_type &key, IterType iter) const {
+template <typename IterType, typename K>
+IterType btree<P>::internal_find_multi(const K &key, IterType iter) const {
 	if (iter.node) {
 		iter = internal_lower_bound(key, iter);
 		if (iter.node) {

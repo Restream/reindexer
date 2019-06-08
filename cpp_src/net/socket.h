@@ -10,7 +10,8 @@ namespace net {
 
 class socket {
 public:
-	socket(const socket &other) : fd_(other.fd_) {}
+	socket(const socket &other) = default;
+	socket &operator=(const socket &other) = default;
 	socket(int fd = -1) : fd_(fd) {}
 
 	int bind(string_view addr);

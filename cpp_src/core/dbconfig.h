@@ -9,7 +9,9 @@
 #include "tools/errors.h"
 #include "tools/stringstools.h"
 
-union JsonValue;
+namespace gason {
+struct JsonNode;
+}
 
 namespace reindexer {
 class JsonBuilder;
@@ -28,13 +30,15 @@ struct NamespaceConfigData {
 	int noQueryIdleThreshold = 0;
 	LogLevel logLevel = LogNone;
 	CacheMode cacheMode = CacheModeOff;
+	int startCopyPoliticsCount = 20000;
+	int mergeLimitCount = 30000;
 };
 
 enum ReplicationRole { ReplicationNone, ReplicationMaster, ReplicationSlave };
 
 struct ReplicationConfigData {
 	Error FromYML(const string &yml);
-	Error FromJSON(JsonValue &v);
+	Error FromJSON(const gason::JsonNode &v);
 	void GetJSON(JsonBuilder &jb);
 
 	ReplicationRole role = ReplicationNone;
@@ -58,7 +62,7 @@ public:
 	DBConfigProvider(DBConfigProvider &obj) = delete;
 	DBConfigProvider &operator=(DBConfigProvider &obj) = delete;
 
-	Error FromJSON(JsonValue &v);
+	Error FromJSON(const gason::JsonNode &root);
 	void SetReplicationConfig(const ReplicationConfigData &conf);
 	void setHandler(ConfigType cfgType, std::function<void()> handler);
 

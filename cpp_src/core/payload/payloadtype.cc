@@ -47,7 +47,7 @@ void PayloadTypeImpl::Add(PayloadFieldType f) {
 	}
 }
 
-bool PayloadTypeImpl::Drop(const string &field) {
+bool PayloadTypeImpl::Drop(string_view field) {
 	auto it = fieldsByName_.find(field);
 	if (it == fieldsByName_.end()) return false;
 
@@ -81,22 +81,22 @@ bool PayloadTypeImpl::Drop(const string &field) {
 	return true;
 }
 
-bool PayloadTypeImpl::Contains(const string &field) const { return fieldsByName_.find(field) != fieldsByName_.end(); }
+bool PayloadTypeImpl::Contains(string_view field) const { return fieldsByName_.find(field) != fieldsByName_.end(); }
 
-int PayloadTypeImpl::FieldByName(const string &field) const {
+int PayloadTypeImpl::FieldByName(string_view field) const {
 	auto it = fieldsByName_.find(field);
 	if (it == fieldsByName_.end()) throw Error(errLogic, "Field '%s' not found in namespace '%s'", field, Name());
 	return it->second;
 }
 
-bool PayloadTypeImpl::FieldByName(const string &name, int &field) const {
+bool PayloadTypeImpl::FieldByName(string_view name, int &field) const {
 	auto it = fieldsByName_.find(name);
 	if (it == fieldsByName_.end()) return false;
 	field = it->second;
 	return true;
 }
 
-int PayloadTypeImpl::FieldByJsonPath(const string &jsonPath) const {
+int PayloadTypeImpl::FieldByJsonPath(string_view jsonPath) const {
 	auto it = fieldsByJsonPath_.find(jsonPath);
 	if (it == fieldsByJsonPath_.end()) return -1;
 	return it->second;
@@ -128,14 +128,14 @@ void PayloadTypeImpl::deserialize(Serializer &ser) {
 
 	for (int i = 0; i < count; i++) {
 		KeyValueType t = KeyValueType(ser.GetVarUint());
-		string name = ser.GetVString().ToString();
+		string name(ser.GetVString());
 		h_vector<string, 0> jsonPaths;
 		int offset = ser.GetVarUint();
 		int elemSizeof = ser.GetVarUint();
 		bool isArray = ser.GetVarUint();
 		int jsonPathsCount = ser.GetVarUint();
 
-		while (jsonPathsCount--) jsonPaths.push_back(ser.GetVString().ToString());
+		while (jsonPathsCount--) jsonPaths.push_back(string(ser.GetVString()));
 
 		(void)elemSizeof;
 

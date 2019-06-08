@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <mutex>
 #include <vector>
-#include "h_vector.h"
+#include "span.h"
 #include "string_view.h"
 
 namespace reindexer {
@@ -98,7 +98,7 @@ public:
 			if (free_.size() < ring_.size() && cur.cap_ < 0x10000)
 				free_.push_back(std::move(cur));
 			else
-				std::move(cur);
+				cur = chunk();
 			tail_ = (tail_ + 1) % ring_.size();
 		}
 	}

@@ -10,31 +10,31 @@ namespace reindexer {
 namespace net {
 namespace http {
 
-std::unordered_map<int, const char *> kHTTPCodes = {
+std::unordered_map<int, string_view> kHTTPCodes = {
 
-	{StatusContinue, "Continue"},
-	{StatusOK, "OK"},
-	{StatusCreated, "Created"},
-	{StatusAccepted, "Accepted"},
-	{StatusNoContent, "No Content"},
-	{StatusMovedPermanently, "MovedPermanently"},
-	{StatusMovedTemporarily, "Moved Temporarily"},
-	{StatusNotModified, "Not Modified"},
-	{StatusBadRequest, "Bad Request"},
-	{StatusUnauthorized, "Unauthorized"},
-	{StatusForbidden, "Forbidden"},
-	{StatusNotFound, "Not found"},
-	{StatusMethodNotAllowed, "Method Not Allowed"},
-	{StatusNotAcceptable, "Not Acceptable"},
-	{StatusRequestTimeout, "Request Timeout"},
-	{StatusLengthRequired, "Length Required"},
-	{StatusRequestEntityTooLarge, "Request Entity Too Large"},
-	{StatusTooManyRequests, "Too Many Requests"},
-	{StatusInternalServerError, "Internal Server Error"},
-	{StatusNotImplemented, "Not Implemented"},
-	{StatusBadGateway, "Bad Gateway"},
-	{StatusServiceUnavailable, "Service Unavailable"},
-	{StatusGatewayTimeout, "Gateway Timeout"},
+	{StatusContinue, "Continue"_sv},
+	{StatusOK, "OK"_sv},
+	{StatusCreated, "Created"_sv},
+	{StatusAccepted, "Accepted"_sv},
+	{StatusNoContent, "No Content"_sv},
+	{StatusMovedPermanently, "MovedPermanently"_sv},
+	{StatusMovedTemporarily, "Moved Temporarily"_sv},
+	{StatusNotModified, "Not Modified"_sv},
+	{StatusBadRequest, "Bad Request"_sv},
+	{StatusUnauthorized, "Unauthorized"_sv},
+	{StatusForbidden, "Forbidden"_sv},
+	{StatusNotFound, "Not found"_sv},
+	{StatusMethodNotAllowed, "Method Not Allowed"_sv},
+	{StatusNotAcceptable, "Not Acceptable"_sv},
+	{StatusRequestTimeout, "Request Timeout"_sv},
+	{StatusLengthRequired, "Length Required"_sv},
+	{StatusRequestEntityTooLarge, "Request Entity Too Large"_sv},
+	{StatusTooManyRequests, "Too Many Requests"_sv},
+	{StatusInternalServerError, "Internal Server Error"_sv},
+	{StatusNotImplemented, "Not Implemented"_sv},
+	{StatusBadGateway, "Bad Gateway"_sv},
+	{StatusServiceUnavailable, "Service Unavailable"_sv},
+	{StatusGatewayTimeout, "Gateway Timeout"_sv},
 };
 
 HttpStatusCode HttpStatus::errCodeToHttpStatus(int errCode) {
@@ -50,10 +50,10 @@ HttpStatusCode HttpStatus::errCodeToHttpStatus(int errCode) {
 	}
 }
 
-int Context::JSON(int code, const string_view &slice) {
+int Context::JSON(int code, string_view slice) {
 	writer->SetContentLength(slice.size());
 	writer->SetRespCode(code);
-	writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
+	writer->SetHeader(http::Header{"Content-Type"_sv, "application/json; charset=utf-8"_sv});
 	writer->Write(slice);
 	return 0;
 }
@@ -61,15 +61,15 @@ int Context::JSON(int code, const string_view &slice) {
 int Context::JSON(int code, chunk &&chunk) {
 	writer->SetContentLength(chunk.len_);
 	writer->SetRespCode(code);
-	writer->SetHeader(http::Header{"Content-Type", "application/json; charset=utf-8"});
+	writer->SetHeader(http::Header{"Content-Type"_sv, "application/json; charset=utf-8"_sv});
 	writer->Write(std::move(chunk));
 	return 0;
 }
 
-int Context::String(int code, const string_view &slice) {
+int Context::String(int code, string_view slice) {
 	writer->SetContentLength(slice.size());
 	writer->SetRespCode(code);
-	writer->SetHeader(http::Header{"Content-Type", "text/plain; charset=utf-8"});
+	writer->SetHeader(http::Header{"Content-Type"_sv, "text/plain; charset=utf-8"_sv});
 	writer->Write(slice);
 	return 0;
 }
@@ -77,38 +77,38 @@ int Context::String(int code, const string_view &slice) {
 int Context::String(int code, chunk &&chunk) {
 	writer->SetContentLength(chunk.len_);
 	writer->SetRespCode(code);
-	writer->SetHeader(http::Header{"Content-Type", "text/plain; charset=utf-8"});
+	writer->SetHeader(http::Header{"Content-Type"_sv, "text/plain; charset=utf-8"_sv});
 	writer->Write(std::move(chunk));
 	return 0;
 }
 
-int Context::Redirect(const string_view &url) {
-	writer->SetHeader(http::Header{"Location", url});
+int Context::Redirect(string_view url) {
+	writer->SetHeader(http::Header{"Location"_sv, url});
 	return String(http::StatusMovedPermanently, "");
 }
 
-static const char *lookupContentType(const char *path) {
-	const char *p = strrchr(path, '.');
-	if (!p) {
-		return "application/octet-stream";
+static string_view lookupContentType(string_view path) {
+	auto p = path.find_last_of(".");
+	if (p == string_view::npos) {
+		return "application/octet-stream"_sv;
 	}
 	p++;
-	if (!strncmp(p, "html", 4)) return "text/html; charset=utf-8";
-	if (!strncmp(p, "json", 4)) return "application/json; charset=utf-8";
-	if (!strncmp(p, "yml", 3)) return "application/yml; charset=utf-8";
-	if (!strncmp(p, "css", 3)) return "text/css; charset=utf-8";
-	if (!strncmp(p, "js", 2)) return "application/javascript; charset=utf-8";
-	if (!strncmp(p, "woff", 2)) return "font/woff";
-	if (!strncmp(p, "woff2", 2)) return "font/woff2";
+	if (path.substr(p, 4) == "html"_sv) return "text/html; charset=utf-8"_sv;
+	if (path.substr(p, 4) == "json"_sv) return "application/json; charset=utf-8"_sv;
+	if (path.substr(p, 3) == "yml"_sv) return "application/yml; charset=utf-8"_sv;
+	if (path.substr(p, 3) == "css"_sv) return "text/css; charset=utf-8"_sv;
+	if (path.substr(p, 2) == "js"_sv) return "application/javascript; charset=utf-8"_sv;
+	if (path.substr(p, 4) == "woff"_sv) return "font/woff"_sv;
+	if (path.substr(p, 5) == "woff2"_sv) return "font/woff2"_sv;
 
-	return "application/octet-stream";
+	return "application/octet-stream"_sv;
 }
 
-int Context::File(int code, const char *path, const string_view &data) {
+int Context::File(int code, string_view path, string_view data) {
 	std::string content;
 
 	if (data.length() == 0) {
-		if (fs::ReadFile(path, content) < 0) {
+		if (fs::ReadFile(string(path), content) < 0) {
 			return String(http::StatusNotFound, "File not found");
 		}
 	} else {
@@ -117,23 +117,23 @@ int Context::File(int code, const char *path, const string_view &data) {
 
 	writer->SetContentLength(content.size());
 	writer->SetRespCode(code);
-	writer->SetHeader(http::Header{"Content-Type", lookupContentType(path)});
+	writer->SetHeader(http::Header{"Content-Type"_sv, lookupContentType(path)});
 	writer->Write(content);
 	return 0;
 }
 
-const char *mathodNames[] = {"GET", "POST", "OPTIONS", "HEAD", "PUT", "DELETE", nullptr};
+std::vector<string_view> methodNames = {"GET"_sv, "POST"_sv, "OPTIONS"_sv, "HEAD"_sv, "PUT"_sv, "DELETE"_sv};
 
-HttpMethod lookupMethod(const string_view &method) {
-	for (const char **p = mathodNames; *p; p++)
-		if (method == *p) return HttpMethod(p - mathodNames);
+HttpMethod lookupMethod(string_view method) {
+	for (auto &cm : methodNames)
+		if (method == cm) return HttpMethod(&cm - &methodNames[0]);
 	return HttpMethod(-1);
 }
 
 int Router::handle(Context &ctx) {
 	auto method = lookupMethod(ctx.request->method);
 	if (method < 0) {
-		return ctx.String(StatusBadRequest, "Invalid method");
+		return ctx.String(StatusBadRequest, "Invalid method"_sv);
 	}
 	int res = 0;
 
@@ -173,7 +173,7 @@ int Router::handle(Context &ctx) {
 		}
 	}
 	res = notFoundHandler_.object_ != nullptr ? notFoundHandler_.func_(notFoundHandler_.object_, ctx)
-											  : ctx.String(StatusNotFound, "Not found");
+											  : ctx.String(StatusNotFound, "Not found"_sv);
 	return res;
 }
 }  // namespace http

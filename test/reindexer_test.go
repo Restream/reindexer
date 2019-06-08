@@ -14,11 +14,15 @@ import (
 	// _ "github.com/restream/reindexer/pprof"
 )
 
-var DB *reindexer.Reindexer
+var DB *ReindexerWrapper
+var DBD *reindexer.Reindexer
 
 var tnamespaces map[string]interface{} = make(map[string]interface{}, 100)
 
 var dsn = flag.String("dsn", "builtin:///tmp/reindex_test/", "reindex db dsn")
+var dsnSlave = flag.String("dsnslave", "", "reindex slave db dsn")
+var slaveCount = flag.Int("slavecount", 1, "reindex slave db count")
+
 var benchmarkSeedCount = flag.Int("seedcount", 500000, "count of items for benchmark seed")
 var benchmarkSeedCPU = flag.Int("seedcpu", 1, "number threads of for seeding")
 
@@ -34,9 +38,14 @@ func TestMain(m *testing.M) {
 	if udsn.Scheme == "builtin" {
 		os.RemoveAll("/tmp/reindex_test/")
 	}
-	DB = reindexer.NewReindex(*dsn)
+	DB = NewReindexWrapper(*dsn)
+	DBD = &DB.Reindexer
 	if err = DB.Status().Err; err != nil {
 		panic(err)
+	}
+
+	if *dsnSlave != "" {
+		DB.AddSlave(*dsnSlave, *slaveCount)
 	}
 
 	if testing.Verbose() {
@@ -44,10 +53,10 @@ func TestMain(m *testing.M) {
 	}
 	for k, v := range tnamespaces {
 		DB.DropNamespace(k)
+
 		if err := DB.OpenNamespace(k, reindexer.DefaultNamespaceOptions(), v); err != nil {
 			panic(err)
 		}
-		newTestNamespace(k, v)
 	}
 
 	retCode := m.Run()

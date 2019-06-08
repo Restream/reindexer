@@ -16,62 +16,51 @@ static CacheMode str2cacheMode(const string &mode) {
 	throw Error(errParams, "Unknown cache mode %s", mode);
 }
 
-Error DBConfigProvider::FromJSON(JsonValue &v) {
+Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 	try {
 		smart_lock<shared_timed_mutex> lk(mtx_, true);
-		for (auto elem : v) {
-			JsonValue &jvalue = elem->value;
-			if (jvalue.getTag() == JSON_NULL) continue;
-			if (!strcmp(elem->key, "profiling")) {
-				if (jvalue.getTag() != JSON_OBJECT) return Error(errParseJson, "Expected object in 'profiling' key");
 
-				profilingData_ = {};
-				for (auto elem : jvalue) {
-					parseJsonField("queriesperfstats", profilingData_.queriesPerfStats, elem);
-					parseJsonField("queries_threshold_us", profilingData_.queriedThresholdUS, elem, 0, INT_MAX);
-					parseJsonField("perfstats", profilingData_.perfStats, elem);
-					parseJsonField("memstats", profilingData_.memStats, elem);
-				}
+		auto &profilingNode = root["profiling"];
+		if (!profilingNode.empty()) {
+			profilingData_ = {};
+			profilingData_.queriesPerfStats = profilingNode["queriesperfstats"].As<bool>();
+			profilingData_.queriedThresholdUS = profilingNode["queries_threshold_us"].As<size_t>();
+			profilingData_.perfStats = profilingNode["perfstats"].As<bool>();
+			profilingData_.memStats = profilingNode["memstats"].As<bool>();
+			auto it = handlers_.find(ProfilingConf);
+			if (it != handlers_.end()) (it->second)();
+		}
 
-				auto it = handlers_.find(ProfilingConf);
-				if (it != handlers_.end()) (it->second)();
-			} else if (!strcmp(elem->key, "namespaces")) {
-				if (jvalue.getTag() != JSON_ARRAY) return Error(errParseJson, "Expected array in 'namespaces' key");
-
-				namespacesData_.clear();
-				for (auto elem : jvalue) {
-					auto &subv = elem->value;
-					if (subv.getTag() != JSON_OBJECT) {
-						return Error(errParseJson, "Expected object in 'namespaces' array element");
-					}
-
-					string name, logLevel, cmode;
-					NamespaceConfigData data;
-					for (auto subelem : subv) {
-						parseJsonField("namespace", name, subelem);
-						parseJsonField("lazyload", data.lazyLoad, subelem);
-						parseJsonField("unload_idle_threshold", data.noQueryIdleThreshold, subelem);
-						parseJsonField("log_level", logLevel, subelem);
-						parseJsonField("join_cache_mode", cmode, subelem);
-					}
-					data.logLevel = logLevelFromString(logLevel);
-					namespacesData_.emplace(name, std::move(data));
-					data.cacheMode = str2cacheMode(cmode);
-				}
-				auto it = handlers_.find(NamespaceDataConf);
-				if (it != handlers_.end()) (it->second)();
-			} else if (!strcmp(elem->key, "replication")) {
-				if (jvalue.getTag() != JSON_OBJECT) return Error(errParseJson, "Expected object in 'replication' key");
-				auto err = replicationData_.FromJSON(jvalue);
-				if (!err.ok()) return err;
-
-				auto it = handlers_.find(ReplicationConf);
-				if (it != handlers_.end()) (it->second)();
+		auto &namespacesNode = root["namespaces"];
+		if (!namespacesNode.empty()) {
+			namespacesData_.clear();
+			for (auto &nsNode : namespacesNode) {
+				NamespaceConfigData data;
+				data.lazyLoad = nsNode["lazyload"].As<bool>();
+				data.noQueryIdleThreshold = nsNode["unload_idle_threshold"].As<int>();
+				data.logLevel = logLevelFromString(nsNode["log_level"].As<string>("none"));
+				data.cacheMode = str2cacheMode(nsNode["join_cache_mode"].As<string>("off"));
+				data.startCopyPoliticsCount = nsNode["start_copy_politics_count"].As<int>(data.startCopyPoliticsCount);
+				data.mergeLimitCount = nsNode["merge_limit_count"].As<int>(data.mergeLimitCount);
+				namespacesData_.emplace(nsNode["namespace"].As<string>(), std::move(data));
 			}
+			auto it = handlers_.find(NamespaceDataConf);
+			if (it != handlers_.end()) (it->second)();
+		}
+
+		auto &replicationNode = root["replication"];
+		if (!replicationNode.empty()) {
+			auto err = replicationData_.FromJSON(replicationNode);
+			if (!err.ok()) return err;
+
+			auto it = handlers_.find(ReplicationConf);
+			if (it != handlers_.end()) (it->second)();
 		}
 		return errOK;
 	} catch (const Error &err) {
 		return err;
+	} catch (const gason::Exception &ex) {
+		return Error(errParseJson, "DBConfigProvider: %s", ex.what());
 	}
 }
 
@@ -130,33 +119,24 @@ Error ReplicationConfigData::FromYML(const string &yaml) {
 	}
 }
 
-Error ReplicationConfigData::FromJSON(JsonValue &jvalue) {
+Error ReplicationConfigData::FromJSON(const gason::JsonNode &root) {
 	try {
-		string replRole = "none";
-		for (auto elem : jvalue) {
-			parseJsonField("master_dsn", masterDSN, elem);
-			parseJsonField("conn_pool_size", connPoolSize, elem);
-			parseJsonField("worker_threads", workerThreads, elem);
-			parseJsonField("cluster_id", clusterID, elem);
-			parseJsonField("role", replRole, elem);
-			parseJsonField("force_sync_on_logic_error", forceSyncOnLogicError, elem);
-			parseJsonField("force_sync_on_wrong_data_hash", forceSyncOnWrongDataHash, elem);
+		masterDSN = root["master_dsn"].As<string>();
+		connPoolSize = root["conn_pool_size"].As<int>(1);
+		workerThreads = root["worker_threads"].As<int>(1);
+		clusterID = root["cluster_id"].As<int>(1);
+		role = str2role(root["role"].As<string>("none"));
+		forceSyncOnLogicError = root["force_sync_on_logic_error"].As<bool>();
+		forceSyncOnWrongDataHash = root["force_sync_on_wrong_data_hash"].As<bool>();
 
-			if (!strcmp(elem->key, "namespaces")) {
-				namespaces.clear();
-				if (elem->value.getTag() != JSON_ARRAY) return Error(errParseJson, "Expected array in 'namespaces' key");
-				for (auto selem : elem->value) {
-					auto &subv = selem->value;
-					if (subv.getTag() != JSON_STRING) {
-						return Error(errParseJson, "Expected string in 'namespaces' array element");
-					}
-					namespaces.insert(subv.toString());
-				}
-			}
+		namespaces.clear();
+		for (auto &objNode : root["namespaces"]) {
+			namespaces.insert(objNode.As<string>());
 		}
-		role = str2role(replRole);
 	} catch (const Error &err) {
 		return err;
+	} catch (const gason::Exception &ex) {
+		return Error(errParseJson, "ReplicationConfigData: %s", ex.what());
 	}
 	return errOK;
 }

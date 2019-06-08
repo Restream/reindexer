@@ -1,3 +1,31 @@
+# Version 2.1.0 (08.06.2019)
+
+## Core
+
+- [fea] Bracets in DSL & SQL queries
+- [fix] Crash on LRUCache fast invalidation
+- [fix] Relaxed JSON validation. Symbols with codes < 0x20 now are valid
+- [fix] '\0' symbol in JSON will not broke parser
+- [fea] Backtrace with line numbers for debug builds
+- [fix] Replication fixes
+- [fea] Support for jemalloc pprof features
+- [fea] Detect tcmalloc pprof features in runtime
+- [opt] Optimized memory statistics calculation
+
+# Reindexer server
+- [fea] Return back item after update with atomic on update functions
+
+# Golang connector
+- [fea] Add timeout/deadline support
+- [fea] Add *Ctx methods with context.Context
+- [fea] Return back item after update with atomic on update functions
+
+## Face
+
+- [fea] Added table view of memory statistics
+- [fea] Added red mark of error in SQL editor
+
+
 # Version 2.0.3 (04.04.2019)
 
 ## Core

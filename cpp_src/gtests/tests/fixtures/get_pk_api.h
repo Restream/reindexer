@@ -7,10 +7,7 @@
 #include "estl/fast_hash_map.h"
 #include "gtests/tests/gtest_cout.h"
 
-using std::shared_ptr;
-using std::tuple;
 using std::string;
-using std::unique_ptr;
 
 using reindexer::Error;
 using reindexer::fast_hash_map;
@@ -20,8 +17,6 @@ using reindexer::NamespaceDef;
 using reindexer::Query;
 using reindexer::QueryResults;
 using reindexer::Reindexer;
-
-using reindexer::Variant;
 
 class ExtractPK : public testing::Test {
 public:
@@ -39,7 +34,7 @@ public:
 	template <typename... Args>
 	static string StringFormat(const string& format, Args... args) {
 		size_t size = snprintf(nullptr, 0, format.c_str(), args...) + 1;  // extra symbol for '\n'
-		unique_ptr<char[]> buf(new char[size]);
+		std::unique_ptr<char[]> buf(new char[size]);
 		snprintf(buf.get(), size, format.c_str(), args...);
 		return string(buf.get(), buf.get() + size - 1);
 	}
@@ -65,7 +60,7 @@ public:
 	}
 
 	std::tuple<Error, Item, Data> NewItem(const string& ns, const string& jsonPattern, Data* d = nullptr) {
-		typedef tuple<Error, Item, Data> ResultType;
+		typedef std::tuple<Error, Item, Data> ResultType;
 
 		Item item = db_->NewItem(ns);
 		if (!item.Status().ok()) return ResultType(item.Status(), std::move(item), Data{0, 0, nullptr, nullptr, 0, 0});
@@ -88,8 +83,8 @@ public:
 		return item;
 	}
 
-	tuple<Error, QueryResults> Select(const Query& query, bool print = false) {
-		typedef tuple<Error, QueryResults> ResultType;
+	std::tuple<Error, QueryResults> Select(const Query& query, bool print = false) {
+		typedef std::tuple<Error, QueryResults> ResultType;
 
 		QueryResults qres;
 		Error err = db_->Select(query, qres);
@@ -121,7 +116,7 @@ protected:
 			std::string outBuf;
 			for (auto idx = 1; idx < rdummy.NumFields(); idx++) {
 				outBuf += "\t";
-				outBuf += rdummy[idx].Name();
+				outBuf += string(rdummy[idx].Name());
 			}
 			TestCout() << outBuf << std::endl;
 		}
@@ -140,7 +135,7 @@ protected:
 	}
 
 protected:
-	shared_ptr<Reindexer> db_;
+	std::shared_ptr<Reindexer> db_;
 
 	reindexer::h_vector<const char*> colors_;
 	reindexer::h_vector<const char*> names_;

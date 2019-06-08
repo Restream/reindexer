@@ -1,45 +1,35 @@
 #pragma once
 
-#include <type_traits>
 #include <unordered_map>
-#include <unordered_set>
 #include "core/payload/fieldsset.h"
 #include "core/payload/payloadiface.h"
 #include "cpp-btree/btree_map.h"
+#include "estl/fast_hash_map.h"
+#include "estl/fast_hash_set.h"
 
 namespace reindexer {
 
-using btree::btree_map;
-using std::unordered_map;
-using std::unordered_set;
-
 struct equal_composite {
-	equal_composite(const PayloadType type_, const FieldsSet &fields) : type_(type_), fields_(fields) {}
+	equal_composite(const PayloadType type, const FieldsSet &fields) : type_(type), fields_(fields) {}
 	bool operator()(const PayloadValue &lhs, const PayloadValue &rhs) const {
 		assert(type_);
 		return ConstPayload(type_, lhs).IsEQ(rhs, fields_);
 	}
 	PayloadType type_;
 	FieldsSet fields_;
-
-	// Required only for Index<unordered_payload_map> template instantion. Should not be called
-	equal_composite() { abort(); }
 };
 struct hash_composite {
-	hash_composite(const PayloadType type_, const FieldsSet &fields) : type_(type_), fields_(fields) {}
+	hash_composite(const PayloadType type, const FieldsSet &fields) : type_(type), fields_(fields) {}
 	size_t operator()(const PayloadValue &s) const {
 		assert(type_);
 		return ConstPayload(type_, s).GetHash(fields_);
 	}
 	PayloadType type_;
 	FieldsSet fields_;
-
-	// Required only for Index<unordered_payload_map> template instantion. Should not be called
-	hash_composite() { abort(); };
 };
 
 struct less_composite {
-	less_composite(const PayloadType type_, const FieldsSet &fields) : type_(type_), fields_(fields) {}
+	less_composite(const PayloadType type, const FieldsSet &fields) : type_(type), fields_(fields) {}
 	bool operator()(const PayloadValue &lhs, const PayloadValue &rhs) const {
 		assert(type_);
 		assert(!lhs.IsFree());
@@ -48,23 +38,26 @@ struct less_composite {
 	}
 	PayloadType type_;
 	FieldsSet fields_;
-	// Required only for Index<payload_map> template instantion. Should not be called
-	less_composite() { abort(); };
 };
 
 template <typename T1>
-using unordered_payload_map = unordered_map<PayloadValue, T1, hash_composite, equal_composite>;
-template <typename T1>
-using payload_map = btree_map<PayloadValue, T1, less_composite>;
-using unordered_payload_set = unordered_set<PayloadValue, hash_composite, equal_composite>;
+class unordered_payload_map : public std::unordered_map<PayloadValue, T1, hash_composite, equal_composite> {
+public:
+	using base_hash_map = std::unordered_map<PayloadValue, T1, hash_composite, equal_composite>;
+	using base_hash_map::base_hash_map;
+	unordered_payload_map(const PayloadType payloadType, const FieldsSet &fields, const CollateOpts)
+		: base_hash_map(1000, hash_composite(payloadType, fields), equal_composite(payloadType, fields)) {}
+};
 
-template <typename T>
-struct is_payload_unord_map_key : std::false_type {};
 template <typename T1>
-struct is_payload_unord_map_key<unordered_payload_map<T1>> : std::true_type {};
-template <typename T>
-struct is_payload_map_key : std::false_type {};
-template <typename T1>
-struct is_payload_map_key<payload_map<T1>> : std::true_type {};
+class payload_map : public btree::btree_map<PayloadValue, T1, less_composite> {
+public:
+	using base_tree_map = btree::btree_map<PayloadValue, T1, less_composite>;
+	using base_tree_map::base_tree_map;
+	payload_map(const PayloadType payloadType, const FieldsSet &fields, const CollateOpts)
+		: base_tree_map(less_composite(payloadType, fields)) {}
+};
+
+using unordered_payload_set = fast_hash_set<PayloadValue, hash_composite, equal_composite>;
 
 }  // namespace reindexer

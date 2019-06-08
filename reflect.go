@@ -34,7 +34,7 @@ type indexOptions struct {
 	isSparse    bool
 }
 
-func (db *Reindexer) parseIndex(namespace string, st reflect.Type, joined *map[string][]int) (indexDefs []bindings.IndexDef, err error) {
+func parseIndex(namespace string, st reflect.Type, joined *map[string][]int) (indexDefs []bindings.IndexDef, err error) {
 
 	if err = parse(&indexDefs, st, false, "", "", joined); err != nil {
 		return nil, err

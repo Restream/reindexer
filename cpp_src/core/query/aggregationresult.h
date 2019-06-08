@@ -3,6 +3,7 @@
 #include <string>
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
+#include "estl/span.h"
 #include "estl/string_view.h"
 #include "tools/errors.h"
 
@@ -19,7 +20,7 @@ struct FacetResult {
 
 struct AggregationResult {
 	void GetJSON(WrSerializer &ser) const;
-	Error FromJSON(char *json);
+	Error FromJSON(span<char> json);
 	AggType type = AggSum;
 	h_vector<string, 1> fields;
 	double value = 0;

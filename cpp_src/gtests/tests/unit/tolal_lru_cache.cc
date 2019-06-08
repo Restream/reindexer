@@ -8,7 +8,10 @@
 #include "gtests/tests/gtest_cout.h"
 #include "tools/serializer.h"
 
-using std::vector;
+#if REINDEX_WITH_GPERFTOOLS
+#include "tools/alloc_ext/tc_malloc_extension.h"
+#endif
+
 using reindexer::Query;
 using reindexer::WrSerializer;
 using reindexer::Serializer;
@@ -23,7 +26,7 @@ TEST(LruCache, SimpleTest) {
 
 	typedef std::pair<Query, bool> QueryCachePair;
 
-	vector<QueryCachePair> qs;
+	std::vector<QueryCachePair> qs;
 
 	PRINTF("preparing queries for caching ...\n");
 	for (auto i = 0; i < nsCount; i++) {
@@ -38,16 +41,17 @@ TEST(LruCache, SimpleTest) {
 	for (auto i = 0; i < iterCount; i++) {
 		auto idx = rand() % qs.size();
 		auto const& qce = qs.at(idx);
-		auto cached = cache.Get({qce.first});
+		QueryCacheKey ckey{qce.first};
+		auto cached = cache.Get(ckey);
 		bool exist = qce.second;
 
-		if (cached.key) {
+		if (cached.valid) {
 			ASSERT_TRUE(exist) << "query missing in query cache!\n";
 			QueryCacheKey k(qs[idx].first);
-			ASSERT_TRUE(keyComparator(k, *cached.key)) << "queries are not EQUAL!\n";
+			ASSERT_TRUE(keyComparator(k, ckey)) << "queries are not EQUAL!\n";
 		} else {
 			size_t total = static_cast<size_t>(rand() % 1000);
-			cache.Put({qce.first}, QueryCacheVal{total});
+			cache.Put(ckey, QueryCacheVal{total});
 			qs[idx].second = true;
 		}
 	}
@@ -58,13 +62,11 @@ TEST(LruCache, StressTest) {
 	const int iterCount = 10000;
 	const int cacheSize = 1024 * 1024;
 
-	vector<Query> qs;
+	std::vector<Query> qs;
 
 	bool gperfEnabled = false;
-#ifdef REINDEX_WITH_GPERFTOOLS
-	gperfEnabled = true;
-#else
-	gperfEnabled = false;
+#if REINDEX_WITH_GPERFTOOLS
+	gperfEnabled = tc_malloc_available();
 #endif
 
 	allocdebug_init_mt();
@@ -88,14 +90,15 @@ TEST(LruCache, StressTest) {
 			for (auto i = 0; i < iterCount; i++) {
 				auto idx = rand() % qs.size();
 				auto const& qce = qs.at(idx);
-				auto cached = cache.Get({qce});
+				QueryCacheKey ckey{qce};
+				auto cached = cache.Get(ckey);
 
-				if (cached.key) {
+				if (cached.valid) {
 					Query k(qs[idx]);
-					ASSERT_TRUE(EqQueryCacheKey()(k, *cached.key)) << "queries are not EQUAL!\n";
+					ASSERT_TRUE(EqQueryCacheKey()(k, ckey)) << "queries are not EQUAL!\n";
 				} else {
 					size_t total = static_cast<size_t>(rand() % 1000);
-					cache.Put({qce}, QueryCacheVal{total});
+					cache.Put(ckey, QueryCacheVal{total});
 				}
 			}
 		});

@@ -4,14 +4,12 @@
 #include <algorithm>
 #include <iostream>
 #include <string>
-
+#include "tools/customhash.h"
 /**
  * @namespace reindexer
  * The base namespace
  */
 namespace reindexer {
-
-using std::string;
 
 /**
  * @class string_view
@@ -44,7 +42,7 @@ public:
 	 * Create a slice object based on string
 	 * @param str a constant string reference
 	 */
-	string_view(const string &str) noexcept : ptr_(str.data()), size_(str.size()) {}
+	string_view(const std::string &str) noexcept : ptr_(str.data()), size_(str.size()) {}
 
 	/**
 	 * @public
@@ -105,16 +103,47 @@ public:
 
 	/**
 	 * @public
+	 * Find substring
+	 * @param v string_view to find
+	 * @param pos position since we start searching.
+	 */
+	size_t find(string_view v, size_t pos = 0) const {
+		for (; pos + v.size() < size_; ++pos) {
+			if (!memcmp(v.data(), data() + pos, v.size())) return pos;
+		}
+		return npos;
+	}
+
+	/**
+	 * @public
 	 * Searches for the first character that matches any of the characters specified in str parameter.
 	 * @param str string of characters to find.
 	 * @param pos position since we start searching.
 	 */
-	size_t find_first_of(const string_view &str, size_t pos) const {
+	size_t find_first_of(const string_view &str, size_t pos = 0) const {
 		for (; pos < size(); ++pos) {
 			for (size_t i = 0; i < str.length(); ++i) {
 				if (ptr_[pos] == str[i]) return pos;
 			}
 		}
+		return npos;
+	}
+
+	/**
+	 * @public
+	 * Searches for the last character that matches any of the characters specified in str parameter.
+	 * @param str string of characters to find.
+	 * @param pos position since we start searching.
+	 */
+	size_t find_last_of(const string_view &str, size_t pos = npos) const {
+		if (!size()) return npos;
+		if (pos > size()) pos = size() - 1;
+
+		do {
+			for (size_t i = 0; i < str.length(); ++i) {
+				if (ptr_[pos] == str[i]) return pos;
+			}
+		} while (pos--);
 		return npos;
 	}
 
@@ -140,7 +169,7 @@ public:
 	 * Get an independent string based on an original character buffer with its size
 	 * @return a string based on an original character buffer with its size
 	 */
-	string ToString() const { return string(ptr_, size_); }
+	explicit operator std::string() const { return std::string(ptr_, size_); }
 
 	iterator begin() const { return ptr_; }
 	iterator end() const { return ptr_ + size_; }
@@ -165,9 +194,18 @@ constexpr string_view operator"" _sv(const char *str, size_t len) noexcept { ret
 
 }  // namespace reindexer
 
+#include <functional>
+
 namespace std {
 inline static std::ostream &operator<<(std::ostream &o, const reindexer::string_view &sv) {
 	o.write(sv.data(), sv.length());
 	return o;
 }
+
+template <>
+struct hash<reindexer::string_view> {
+public:
+	size_t operator()(reindexer::string_view s) const { return reindexer::_Hash_bytes(s.data(), s.length()); }
+};
+
 }  // namespace std

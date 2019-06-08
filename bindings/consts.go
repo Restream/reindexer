@@ -68,6 +68,8 @@ const (
 	QueryAggregationLimit  = 15
 	QueryAggregationOffset = 16
 	QueryAggregationSort   = 17
+	QueryOpenBracket       = 18
+	QueryCloseBracket      = 19
 
 	LeftJoin    = 0
 	InnerJoin   = 1
@@ -131,4 +133,6 @@ const (
 	ErrNetwork          = 12
 	ErrNotFound         = 13
 	ErrStateInvalidated = 14
+	ErrTimeout          = 19
+	ErrCanceled         = 20
 )

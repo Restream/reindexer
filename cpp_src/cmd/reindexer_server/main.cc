@@ -3,7 +3,7 @@
 #include "server/server.h"
 
 int main(int argc, char* argv[]) {
-	backtrace_init();
+	reindexer::debug::backtrace_init();
 	reindexer_server::Server svc;
 	auto err = svc.InitFromCLI(argc, argv);
 	if (!err.ok()) {

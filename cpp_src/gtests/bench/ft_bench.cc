@@ -7,8 +7,7 @@
 
 #include "ft_fixture.h"
 
-#define kStoragePath "/tmp/reindex/test"
-#define kConectStr "builtin:///tmp/reindex/test"
+const std::string kStoragePath = "/tmp/reindex/ft_bench_test";
 
 using std::shared_ptr;
 using reindexer::Reindexer;
@@ -28,7 +27,7 @@ int main(int argc, char** argv) {
 	}
 
 	shared_ptr<Reindexer> DB = std::make_shared<Reindexer>();
-	DB->Connect(kConectStr);
+	DB->Connect("builtin://" + kStoragePath);
 
 	FullText ft(DB.get(), "fulltext", kItemsInBenchDataset);
 

@@ -7,30 +7,6 @@
 namespace reindexer {
 class Query;
 namespace dsl {
-
-enum class Root {
-	Namespace,
-	Limit,
-	Offset,
-	Distinct,
-	Filters,
-	Sort,
-	Joined,
-	Merged,
-	SelectFilter,
-	SelectFunctions,
-	ReqTotal,
-	NextOp,
-	Aggregations,
-	Explain
-};
-
-enum class Sort { Desc, Field, Values };
-enum class JoinRoot { Type, On, Op, Namespace, Filters, Sort, Limit, Offset };
-enum class JoinEntry { LetfField, RightField, Cond, Op };
-enum class Filter { Cond, Op, Field, Value };
-enum class Aggregation { Fields, Type, Sort, Limit, Offset };
-
-void parse(JsonValue& value, Query& q);
+void parse(gason::JsonValue& value, Query& q);
 }  // namespace dsl
 }  // namespace reindexer

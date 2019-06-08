@@ -10,14 +10,26 @@ namespace cproto {
 
 const int kMaxCompletions = 512;
 const int kKeepAliveInterval = 30;
+const int kDeadlineCheckInterval = 1;
 
-ClientConnection::ClientConnection(ev::dynamic_loop &loop, const httpparser::UrlParser *uri)
-	: ConnectionMT(-1, loop), state_(ConnInit), completions_(kMaxCompletions), seq_(0), bufWait_(0), uri_(uri) {
+ClientConnection::ClientConnection(ev::dynamic_loop &loop, const httpparser::UrlParser *uri, seconds loginTimeout, seconds requestTimeout)
+	: ConnectionMT(-1, loop),
+	  state_(ConnInit),
+	  completions_(kMaxCompletions),
+	  seq_(0),
+	  bufWait_(0),
+	  uri_(uri),
+	  now_(0),
+	  loginTimeout_(loginTimeout),
+	  keepAliveTimeout_(requestTimeout),
+	  terminate_(false) {
 	connect_async_.set<ClientConnection, &ClientConnection::connect_async_cb>(this);
 	connect_async_.set(loop);
 	connect_async_.start();
 	keep_alive_.set<ClientConnection, &ClientConnection::keep_alive_cb>(this);
 	keep_alive_.set(loop);
+	deadlineTimer_.set<ClientConnection, &ClientConnection::deadline_check_cb>(this);
+	deadlineTimer_.set(loop);
 	loopThreadID_ = std::this_thread::get_id();
 }
 
@@ -48,6 +60,10 @@ void ClientConnection::connectInternal() {
 		state_ = ans.Status().ok() ? ConnConnected : ConnFailed;
 		wrBuf_.clear();
 		connectCond_.notify_all();
+		if (lastError_.code() == errTimeout) {
+			lck.unlock();
+			closeConn();
+		}
 	};
 
 	sock_.connect((uri_->hostname() + ":" + port).c_str());
@@ -58,11 +74,14 @@ void ClientConnection::connectInternal() {
 		curEvents_ = ev::WRITE;
 		async_.start();
 		keep_alive_.start(kKeepAliveInterval, kKeepAliveInterval);
-		call(completion, kCmdLogin, {Arg{p_string(&userName)}, Arg{p_string(&password)}, Arg{p_string(&dbName)}});
+		deadlineTimer_.start(kDeadlineCheckInterval, kDeadlineCheckInterval);
+
+		call(completion, kCmdLogin, loginTimeout_, {Arg{p_string(&userName)}, Arg{p_string(&password)}, Arg{p_string(&dbName)}});
 	}
 }
 
 void ClientConnection::failInternal(const Error &error) {
+	std::unique_lock<std::mutex> lck(mtx_);
 	if (lastError_.ok()) lastError_ = error;
 	closeConn_ = true;
 }
@@ -70,10 +89,34 @@ void ClientConnection::failInternal(const Error &error) {
 int ClientConnection::PendingCompletions() {
 	int ret = 0;
 	for (auto &c : completions_) {
-		for (RPCCompletion *cc = &c; cc; cc = cc->next())
+		for (RPCCompletion *cc = &c; cc; cc = cc->next.get()) {
 			if (cc->used) ret++;
+		}
 	}
 	return ret;
+}
+
+void ClientConnection::deadline_check_cb(ev::timer &, int) {
+	now_ += kDeadlineCheckInterval;
+
+	for (auto &c : completions_) {
+		for (RPCCompletion *cc = &c; cc; cc = cc->next.get()) {
+			if (cc->used && cc->deadline.count() && cc->deadline.count() <= now_) {
+				cc->cmpl(RPCAnswer(errTimeout), this);
+				if (state_ == ConnFailed) {
+					return;
+				}
+				if (bufWait_) {
+					std::unique_lock<std::mutex> lck(mtx_);
+					cc->used = false;
+					bufCond_.notify_all();
+				} else {
+					cc->used = false;
+					io_.loop.break_loop();
+				}
+			}
+		}
+	}
 }
 
 void ClientConnection::onClose() {
@@ -86,9 +129,10 @@ void ClientConnection::onClose() {
 	completions_.swap(tmpCompletions);
 	mtx_.unlock();
 	keep_alive_.stop();
+	deadlineTimer_.stop();
 
 	for (auto &c : tmpCompletions) {
-		for (RPCCompletion *cc = &c; cc; cc = cc->next())
+		for (RPCCompletion *cc = &c; cc; cc = cc->next.get())
 			if (cc->used) cc->cmpl(RPCAnswer(lastError_), this);
 	}
 	auto tmpUpdatesHandler = updatesHandler_;
@@ -139,7 +183,7 @@ void ClientConnection::onRead() {
 			errCode = ser.GetVarUint();
 			string_view errMsg = ser.GetVString();
 			if (errCode != errOK) {
-				ans.status_ = Error(errCode, errMsg.ToString());
+				ans.status_ = Error(errCode, errMsg);
 			}
 			ans.data_ = {reinterpret_cast<uint8_t *>(it.data()) + ser.Pos(), hdr.len - ser.Pos()};
 		} catch (const Error &err) {
@@ -152,7 +196,7 @@ void ClientConnection::onRead() {
 		} else {
 			RPCCompletion *completion = &completions_[hdr.seq % completions_.size()];
 
-			for (; completion; completion = completion->next()) {
+			for (; completion; completion = completion->next.get()) {
 				if (!completion->used || completion->seq != hdr.seq) {
 					continue;
 				}
@@ -172,7 +216,7 @@ void ClientConnection::onRead() {
 				break;
 			}
 			if (!completion) {
-				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%d", int(hdr.cmd), int(hdr.seq));
+				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%d\n", int(hdr.cmd), int(hdr.seq));
 			}
 		}
 		rdBuf_.erase(hdr.len);
@@ -208,13 +252,14 @@ chunk ClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args) {
 	return ser.DetachChunk();
 }
 
-void ClientConnection::call(Completion cmpl, CmdCode cmd, const Args &args) {
+void ClientConnection::call(Completion cmpl, CmdCode cmd, seconds timeout, const Args &args) {
 	uint32_t seq = seq_++;
 	chunk data = packRPC(cmd, seq, args);
 	auto *completion = &completions_[seq % completions_.size()];
 	bool inLoopThread = loopThreadID_ == std::this_thread::get_id();
 
 	std::unique_lock<std::mutex> lck(mtx_);
+	auto deadline = timeout.count() ? Now() + timeout : seconds(0);
 	if (!inLoopThread) {
 		while (state_ != ConnConnected || completion->used) {
 			switch (state_) {
@@ -223,13 +268,21 @@ void ClientConnection::call(Completion cmpl, CmdCode cmd, const Args &args) {
 				case ConnInit:
 				case ConnFailed:
 					connect_async_.send();
-				// fall through
+					state_ = ConnInit;
+					// fall through
 				case ConnConnecting:
-					connectCond_.wait(lck);
-					if (state_ == ConnFailed) {
-						lck.unlock();
-						cmpl(RPCAnswer(lastError_), this);
-						return;
+					while (state_ != ConnConnected && state_ != ConnFailed) {
+						connectCond_.wait(lck);
+						if (deadline.count() && deadline <= Now()) {
+							lck.unlock();
+							cmpl(RPCAnswer(errTimeout), this);
+							return;
+						}
+						if (state_ == ConnFailed) {
+							lck.unlock();
+							cmpl(RPCAnswer(lastError_), this);
+							return;
+						}
 					}
 					break;
 				default:
@@ -255,15 +308,16 @@ void ClientConnection::call(Completion cmpl, CmdCode cmd, const Args &args) {
 			}
 		}
 		while (completion->used) {
-			if (!completion->next_) completion->next_ = reinterpret_cast<uintptr_t>(new RPCCompletion);
-			completion = completion->next();
+			if (!completion->next) completion->next.reset(new RPCCompletion);
+			completion = completion->next.get();
 		}
 	}
 
-	completion->used = true;
 	completion->cmpl = cmpl;
 	completion->seq = seq;
 	completion->cmd = cmd;
+	completion->deadline = deadline;
+	completion->used = true;
 
 	wrBuf_.write(std::move(data));
 	lck.unlock();

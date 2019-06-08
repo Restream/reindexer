@@ -151,7 +151,7 @@ Error DBManager::Login(const string &dbName, AuthContext &auth) {
 		}
 	}
 	auth.dbName_ = dbName;
-	logPrintf(LogInfo, "Authorized user '%s', to db '%s', role=%s\n", auth.login_, dbName, UserRoleName(auth.role_));
+	logPrintf(LogInfo, "Authorized user '%s', to db '%s', role=%s", auth.login_, dbName, UserRoleName(auth.role_));
 
 	return 0;
 }
@@ -160,46 +160,39 @@ Error DBManager::readUsers() {
 	users_.clear();
 	string content;
 	int res = fs::ReadFile(fs::JoinPath(dbpath_, "users.json"), content);
-	if (res < 0) {
-		return Error(errParams, "Can't read users.json file");
-	}
+	if (res < 0) return Error(errParams, "Can't read users.json file");
 
-	JsonAllocator jallocator;
-	JsonValue jvalue;
-	char *endp;
-	res = jsonParse(&content[0], &endp, &jvalue, jallocator);
-	if (res != JSON_OK) {
-		return Error(errParams, "Error parsing users.json file");
-	}
+	try {
+		gason::JsonParser parser;
+		auto root = parser.Parse(giftStr(content));
 
-	for (auto ukey : jvalue) {
-		UserRecord urec;
-		urec.login = ukey->key;
-		for (auto elem : ukey->value) {
-			parseJsonField("hash", urec.hash, elem);
-			if (!strcmp(elem->key, "roles")) {
+		for (auto &userNode : root) {
+			UserRecord urec;
+			urec.login = string(userNode.key);
+			urec.hash = userNode["hash"].As<string>();
+			for (auto &roleNode : userNode["roles"]) {
+				string db(roleNode.key);
 				UserRole role = kRoleDataRead;
-				for (auto pkey : elem->value) {
-					string db = pkey->key;
-					string strRole = pkey->value.toString();
-					if (strRole == "data_read") {
-						role = kRoleDataRead;
-					} else if (strRole == "data_write") {
-						role = kRoleDataWrite;
-					} else if (strRole == "db_admin") {
-						role = kRoleDBAdmin;
-					} else if (strRole == "owner") {
-						role = kRoleOwner;
-					} else {
-						logPrintf(LogWarning, "Skipping invalid role '%s' of user '%s' for db '%s'", strRole, urec.login, db);
-					}
-					urec.roles.emplace(db, role);
+				string_view strRole = roleNode.As<string_view>();
+				if (strRole == "data_read"_sv) {
+					role = kRoleDataRead;
+				} else if (strRole == "data_write"_sv) {
+					role = kRoleDataWrite;
+				} else if (strRole == "db_admin"_sv) {
+					role = kRoleDBAdmin;
+				} else if (strRole == "owner"_sv) {
+					role = kRoleOwner;
+				} else {
+					logPrintf(LogWarning, "Skipping invalid role '%s' of user '%s' for db '%s'", strRole, urec.login, db);
 				}
+				urec.roles.emplace(db, role);
 			}
+			users_.emplace(urec.login, urec);
 		}
-		users_.emplace(urec.login, urec);
+	} catch (const gason::Exception &ex) {
+		return Error(errParseJson, "Users: %s", ex.what());
 	}
-	return 0;
+	return errOK;
 }
 
 const char *UserRoleName(UserRole role) {

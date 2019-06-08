@@ -1,11 +1,11 @@
 #pragma once
 
 #include <climits>
-#include <memory>
 #include <string>
 #include <vector>
 #include "core/keyvalue/variant.h"
 #include "estl/h_vector.h"
+#include "querytree.h"
 
 namespace reindexer {
 
@@ -14,12 +14,8 @@ enum IndexValueType : int { NotSet = -1, SetByJsonPath = -2 };
 using std::string;
 using std::vector;
 
-class QueryWhere;
-class tokenizer;
-
 struct QueryEntry {
-	QueryEntry(OpType o, CondType cond, const string &idx, int idxN, bool dist = false)
-		: index(idx), idxNo(idxN), op(o), condition(cond), distinct(dist) {}
+	QueryEntry(CondType cond, const string &idx, int idxN, bool dist = false) : index(idx), idxNo(idxN), condition(cond), distinct(dist) {}
 	QueryEntry() = default;
 
 	bool operator==(const QueryEntry &) const;
@@ -27,13 +23,45 @@ struct QueryEntry {
 
 	string index;
 	int idxNo = IndexValueType::NotSet;
-	OpType op = OpAnd;
 	CondType condition = CondType::CondAny;
 	bool distinct = false;
 	VariantArray values;
 
 	string Dump() const;
 };
+
+struct EqualPosition : public h_vector<unsigned, 2> {};
+
+class JsonBuilder;
+extern template bool QueryTree<QueryEntry, 4>::Leaf::IsEqual(const Node &) const;
+
+class QueryEntries : public QueryTree<QueryEntry, 4> {
+public:
+	bool IsEntry(size_t i) const { return IsValue(i); }
+	void ForeachEntry(const std::function<void(const QueryEntry &, OpType)> &func) const { ForeachValue(func); }
+
+	template <typename T>
+	std::pair<unsigned, EqualPosition> DetermineEqualPositionIndexes(const T &fields) const;
+	template <typename T>
+	EqualPosition DetermineEqualPositionIndexes(unsigned start, const T &fields) const;
+	void ToDsl(JsonBuilder &builder) const { toDsl(cbegin(), cend(), builder); }
+	void WriteSQLWhere(WrSerializer &, bool stripArgs) const;
+	void Serialize(WrSerializer &ser) const { serialize(cbegin(), cend(), ser); }
+
+private:
+	static void toDsl(const_iterator it, const_iterator to, JsonBuilder &);
+	static void writeSQL(const_iterator from, const_iterator to, WrSerializer &, bool stripArgs);
+	static void serialize(const_iterator it, const_iterator to, WrSerializer &);
+};
+
+extern template EqualPosition QueryEntries::DetermineEqualPositionIndexes<vector<string>>(unsigned start,
+																						  const vector<string> &fields) const;
+extern template std::pair<unsigned, EqualPosition> QueryEntries::DetermineEqualPositionIndexes<vector<string>>(
+	const vector<string> &fields) const;
+extern template std::pair<unsigned, EqualPosition> QueryEntries::DetermineEqualPositionIndexes<h_vector<string, 4>>(
+	const h_vector<string, 4> &fields) const;
+extern template std::pair<unsigned, EqualPosition> QueryEntries::DetermineEqualPositionIndexes<std::initializer_list<string>>(
+	const std::initializer_list<string> &fields) const;
 
 struct UpdateEntry {
 	UpdateEntry() {}
@@ -54,8 +82,6 @@ struct QueryJoinEntry {
 	int idxNo = -1;
 };
 
-struct QueryEntries : public h_vector<QueryEntry, 4> {};
-
 struct SortingEntry {
 	SortingEntry() {}
 	SortingEntry(const string &c, bool d) : column(c), desc(d) {}
@@ -67,8 +93,6 @@ struct SortingEntry {
 };
 
 struct SortingEntries : public h_vector<SortingEntry, 1> {};
-
-struct EqualPosition : public h_vector<int, 2> {};
 
 struct AggregateEntry {
 	AggregateEntry() = default;
@@ -90,7 +114,6 @@ public:
 	bool operator==(const QueryWhere &) const;
 
 protected:
-	void dumpWhere(WrSerializer &, bool stripArgs) const;
 	static CondType getCondType(string_view cond);
 
 public:

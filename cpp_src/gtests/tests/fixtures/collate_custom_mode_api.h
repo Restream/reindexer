@@ -4,7 +4,7 @@
 
 class CollateCustomModeAPI : public ReindexerApi {
 protected:
-	void PrepareNs(shared_ptr<Reindexer> reindexer, const string& nsName, const string& sortOrder, const vector<string>& sourceTable) {
+	void PrepareNs(std::shared_ptr<Reindexer> reindexer, const string& nsName, const string& sortOrder, const vector<string>& sourceTable) {
 		auto err = reindexer->OpenNamespace(nsName, StorageOpts().Enabled(false));
 		EXPECT_TRUE(err.ok()) << err.what();
 
@@ -19,7 +19,7 @@ protected:
 
 		for (size_t i = 0; i < sourceTable.size(); ++i) {
 			Item item(reindexer->NewItem(nsName));
-			EXPECT_TRUE(item);
+			EXPECT_TRUE(!!item);
 			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 			item[kFieldID] = static_cast<int>(i);

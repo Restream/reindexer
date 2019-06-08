@@ -1,3 +1,4 @@
+#include "allocdebug.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <atomic>
@@ -29,35 +30,48 @@ static bool ismt;
 
 #ifdef REINDEX_WITH_GPERFTOOLS
 
-#include "gperftools/malloc_hook_c.h"
-#include "gperftools/tcmalloc.h"
+#include <gperftools/malloc_extension.h>
+#include <gperftools/malloc_hook_c.h>
+#include "tools/alloc_ext/tc_malloc_extension.h"
 
 static void traced_new_mt(const void *ptr, size_t size) {
-	if (ptr && size) tracer_mt.traced_new(tc_malloc_size(const_cast<void *>(ptr)));
+	if (ptr && size) tracer_mt.traced_new(MallocExtension::instance()->GetAllocatedSize(const_cast<void *>(ptr)));
 }
 
 static void traced_delete_mt(const void *ptr) {
-	if (ptr) tracer_mt.traced_delete(tc_malloc_size(const_cast<void *>(ptr)));
+	if (ptr) tracer_mt.traced_delete(MallocExtension::instance()->GetAllocatedSize(const_cast<void *>(ptr)));
 }
 
 static void traced_new(const void *ptr, size_t size) {
-	if (ptr && size) tracer.traced_new(tc_malloc_size(const_cast<void *>(ptr)));
+	if (ptr && size) tracer.traced_new(MallocExtension::instance()->GetAllocatedSize(const_cast<void *>(ptr)));
 }
 
 static void traced_delete(const void *ptr) {
-	if (ptr) tracer.traced_delete(tc_malloc_size(const_cast<void *>(ptr)));
+	if (ptr) tracer.traced_delete(MallocExtension::instance()->GetAllocatedSize(const_cast<void *>(ptr)));
 }
 
 void allocdebug_init() {
-	MallocHook_AddNewHook(traced_new);
-	MallocHook_AddDeleteHook(traced_delete);
-	ismt = false;
+	if (tc_malloc_available() && tc_malloc_hooks_available()) {
+		MallocHook_AddNewHook(traced_new);
+		MallocHook_AddDeleteHook(traced_delete);
+		ismt = false;
+	} else {
+		reindexer::logPrintf(
+			LogWarning,
+			"Reindexer was compiled with GPerf tools, but tcmalloc was not successfully linked. Malloc new hook is unavailable");
+	}
 }
 
 void allocdebug_init_mt() {
-	MallocHook_AddNewHook(traced_new_mt);
-	MallocHook_AddDeleteHook(traced_delete_mt);
-	ismt = true;
+	if (tc_malloc_available() && tc_malloc_hooks_available()) {
+		MallocHook_AddNewHook(traced_new_mt);
+		MallocHook_AddDeleteHook(traced_delete_mt);
+		ismt = true;
+	} else {
+		reindexer::logPrintf(
+			LogWarning,
+			"Reindexer was compiled with GPerf tools, but tcmalloc was not successfully linked. Malloc delete hook is unavailable");
+	}
 }
 
 #else

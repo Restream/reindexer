@@ -9,6 +9,7 @@
 #include "net/http/serverconnection.h"
 #include "net/listener.h"
 #include "reindexer_version.h"
+#include "replicator/walrecord.h"
 #include "resources_wrapper.h"
 #include "tools/fsops.h"
 #include "tools/jsontools.h"
@@ -16,6 +17,11 @@
 #include "tools/stringstools.h"
 #if REINDEX_WITH_GPERFTOOLS
 #include <gperftools/malloc_extension.h>
+#include "tools/alloc_ext/tc_malloc_extension.h"
+#endif
+#if REINDEX_WITH_JEMALLOC
+#include <jemalloc/jemalloc.h>
+#include "tools/alloc_ext/je_malloc_extension.h"
 #endif
 
 using std::string;
@@ -205,8 +211,7 @@ int HTTPServer::GetDatabases(http::Context &ctx) {
 }
 
 int HTTPServer::PostDatabase(http::Context &ctx) {
-	string json = ctx.body->Read();
-	string newDbName = getNameFromJson(json);
+	string newDbName = getNameFromJson(ctx.body->Read());
 
 	auto dbs = dbMgr_.EnumDatabases();
 	for (auto &db : dbs) {
@@ -232,7 +237,7 @@ int HTTPServer::PostDatabase(http::Context &ctx) {
 }
 
 int HTTPServer::DeleteDatabase(http::Context &ctx) {
-	string dbName = urldecode2(ctx.request->urlParams[0].ToString());
+	string dbName(urldecode2(ctx.request->urlParams[0]));
 
 	AuthContext dummyCtx;
 	AuthContext *actx = &dummyCtx;
@@ -319,10 +324,9 @@ int HTTPServer::GetNamespace(http::Context &ctx) {
 
 int HTTPServer::PostNamespace(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
-	string nsdefJson = ctx.body->Read();
 	reindexer::NamespaceDef nsdef("");
 
-	auto status = nsdef.FromJSON(const_cast<char *>(nsdefJson.c_str()));
+	auto status = nsdef.FromJSON(giftStr(ctx.body->Read()));
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
@@ -479,7 +483,7 @@ int HTTPServer::GetMetaList(http::Context &ctx) {
 			std::string value;
 			const Error err = db->GetMeta(nsName, *keysIt, value);
 			if (!err.ok()) return jsonStatus(ctx, http::HttpStatus(err));
-			objNode.Put("value", value);
+			objNode.Put("value", escapeString(value));
 		}
 		objNode.End();
 	}
@@ -501,7 +505,7 @@ int HTTPServer::GetMetaByKey(http::Context &ctx) {
 	if (!err.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(err));
 	}
-	return ctx.String(http::StatusOK, value);
+	return ctx.String(http::StatusOK, escapeString(value));
 }
 
 int HTTPServer::PutMetaByKey(http::Context &ctx) {
@@ -510,30 +514,17 @@ int HTTPServer::PutMetaByKey(http::Context &ctx) {
 	if (!nsName.length()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
-	string json = ctx.body->Read();
-	JsonAllocator jalloc;
-	JsonValue jvalue;
-	char *endp;
-	int status = jsonParse(&json[0], &endp, &jvalue, jalloc);
-	if (status != JSON_OK) {
-		return jsonStatus(ctx, http::HttpStatus(Error(errParseJson, "Malformed JSON with meta data")));
-	}
-	if (jvalue.getTag() != JSON_OBJECT) {
-		return jsonStatus(ctx, http::HttpStatus(Error(errParseJson, "Expected json object in meta data")));
-	}
-	std::string key;
-	std::string value;
 	try {
-		for (auto elem : jvalue) {
-			parseJsonField("key", key, elem);
-			parseJsonField("value", value, elem);
+		gason::JsonParser parser;
+		auto root = parser.Parse(giftStr(ctx.body->Read()));
+		std::string key = root["key"].As<string>();
+		std::string value = root["value"].As<string>();
+		const Error err = db->PutMeta(nsName, key, unescapeString(value));
+		if (!err.ok()) {
+			return jsonStatus(ctx, http::HttpStatus(err));
 		}
-	} catch (const Error &err) {
-		return jsonStatus(ctx, http::HttpStatus(err));
-	}
-	const Error err = db->PutMeta(nsName, key, value);
-	if (!err.ok()) {
-		return jsonStatus(ctx, http::HttpStatus(err));
+	} catch (const gason::Exception &ex) {
+		return jsonStatus(ctx, http::HttpStatus(Error(errParseJson, "Meta: %s", ex.what())));
 	}
 	return jsonStatus(ctx);
 }
@@ -584,7 +575,7 @@ int HTTPServer::PostIndex(http::Context &ctx) {
 	auto nsDefIt = std::find_if(nsDefs.begin(), nsDefs.end(), [&](const NamespaceDef &nsDef) { return nsDef.name == nsName; });
 
 	reindexer::IndexDef idxDef;
-	idxDef.FromJSON(&json[0]);
+	idxDef.FromJSON(giftStr(json));
 
 	if (nsDefIt != nsDefs.end()) {
 		auto &indexes = nsDefIt->indexes;
@@ -613,10 +604,8 @@ int HTTPServer::PutIndex(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
 
-	string json = ctx.body->Read();
-
 	reindexer::IndexDef idxDef;
-	idxDef.FromJSON(&json[0]);
+	idxDef.FromJSON(giftStr(ctx.body->Read()));
 
 	auto status = db->UpdateIndex(nsName, idxDef);
 	if (!status.ok()) {
@@ -659,26 +648,48 @@ int HTTPServer::Check(http::Context &ctx) {
 		builder.Put("start_time", startTs);
 		builder.Put("uptime", uptime);
 
-#if REINDEX_WITH_GPERFTOOLS
-		size_t val = 0;
-		MallocExtension::instance()->GetNumericProperty("generic.current_allocated_bytes", &val);
-		builder.Put("current_allocated_bytes", val);
+#if REINDEX_WITH_JEMALLOC
+		if (je_malloc_available()) {
+			size_t val = 0, val1 = 1, sz = sizeof(size_t);
 
-		MallocExtension::instance()->GetNumericProperty("generic.heap_size", &val);
-		builder.Put("heap_size", val);
+			uint64_t epoch = 1;
+			sz = sizeof(epoch);
+			mallctl("epoch", &epoch, &sz, &epoch, sz);
 
-		MallocExtension::instance()->GetNumericProperty("tcmalloc.pageheap_free_bytes", &val);
-		builder.Put("pageheap_free", val);
+			mallctl("stats.resident", &val, &sz, NULL, 0);
+			builder.Put("heap_size", val);
 
-		MallocExtension::instance()->GetNumericProperty("tcmalloc.pageheap_unmapped_bytes", &val);
-		builder.Put("pageheap_unmapped", val);
+			mallctl("stats.allocated", &val, &sz, NULL, 0);
+			builder.Put("current_allocated_bytes", val);
+
+			mallctl("stats.active", &val1, &sz, NULL, 0);
+			builder.Put("pageheap_free", val1 - val);
+
+			mallctl("stats.retained", &val, &sz, NULL, 0);
+			builder.Put("pageheap_unmapped", val);
+		}
+#elif REINDEX_WITH_GPERFTOOLS
+		if (tc_malloc_available()) {
+			size_t val = 0;
+			MallocExtension::instance()->GetNumericProperty("generic.current_allocated_bytes", &val);
+			builder.Put("current_allocated_bytes", val);
+
+			MallocExtension::instance()->GetNumericProperty("generic.heap_size", &val);
+			builder.Put("heap_size", val);
+
+			MallocExtension::instance()->GetNumericProperty("tcmalloc.pageheap_free_bytes", &val);
+			builder.Put("pageheap_free", val);
+
+			MallocExtension::instance()->GetNumericProperty("tcmalloc.pageheap_unmapped_bytes", &val);
+			builder.Put("pageheap_unmapped", val);
+		}
 #endif
 	}
 
 	return ctx.JSON(http::StatusOK, ser.DetachChunk());
 }
 int HTTPServer::DocHandler(http::Context &ctx) {
-	string path = ctx.request->path.substr(1).ToString();
+	string path(ctx.request->path.substr(1));
 
 	bool endsWithSlash = (path.length() > 0 && path.back() == '/');
 	if (endsWithSlash) {
@@ -779,6 +790,10 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataWrite);
 	string nsName = urldecode2(ctx.request->urlParams[1]);
+	vector<string> precepts;
+	for (auto& p: ctx.request->params) {
+		if (p.name == "precepts" || p.name == "precepts[]") precepts.push_back(urldecode2(p.val));
+	}
 	string itemJson = ctx.body->Read();
 
 	if (nsName.empty()) {
@@ -788,6 +803,7 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 	char *jsonPtr = &itemJson[0];
 	size_t jsonLeft = itemJson.size();
 	int cnt = 0;
+	vector<string> updatedItems;
 	while (jsonPtr && *jsonPtr) {
 		Item item = db->NewItem(nsName);
 		if (!item.Status().ok()) {
@@ -797,7 +813,7 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 		}
 		char *prevPtr = 0;
 
-		auto status = item.Unsafe().FromJSON(reindexer::string_view(jsonPtr, jsonLeft), &jsonPtr, mode == ModeDelete);
+		auto status = item.Unsafe().FromJSON(string_view(jsonPtr, jsonLeft), &jsonPtr, mode == ModeDelete);
 		jsonLeft -= (jsonPtr - prevPtr);
 
 		if (!status.ok()) {
@@ -805,6 +821,8 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 
 			return jsonStatus(ctx, httpStatus);
 		}
+
+		item.SetPrecepts(precepts);
 
 		switch (mode) {
 			case ModeUpsert:
@@ -826,7 +844,10 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 
 			return jsonStatus(ctx, httpStatus);
 		}
-		cnt += item.GetID() == -1 ? 0 : 1;
+		if (item.GetID() != -1) {
+			++cnt;
+			if (!precepts.empty()) updatedItems.push_back(string(item.GetJSON()));
+		}
 	}
 	db->Commit(nsName);
 
@@ -834,6 +855,11 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 	JsonBuilder builder(ser);
 	builder.Put("updated", cnt);
 	builder.Put("success", true);
+	if (!precepts.empty()) {
+		auto itemsArray = builder.Array("items");
+		for (const string& item: updatedItems) itemsArray.Raw(nullptr, item);
+		itemsArray.End();
+	}
 	builder.End();
 
 	return ctx.JSON(http::StatusOK, ser.DetachChunk());
@@ -846,17 +872,36 @@ int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, b
 	auto nsarray = builder.Array("namespaces");
 	for (auto &ns : res.GetNamespaces()) nsarray.Put(nullptr, ns);
 	nsarray.End();
-	builder.Put("cache_enabled", res.IsCacheEnabled());
 
 	auto iarray = builder.Array("items");
+	// TODO: normal check for query type
+	bool isWALQuery = res.Count() && res[0].IsRaw();
 
 	for (size_t i = offset; i < res.Count() && i < offset + limit; i++) {
-		iarray.Raw(nullptr, "");
-		res[i].GetJSON(wrSer, false);
+		if (!isWALQuery) {
+			iarray.Raw(nullptr, "");
+			res[i].GetJSON(wrSer, false);
+		} else {
+			auto obj = iarray.Object(nullptr);
+			obj.Put("lsn", res[i].GetLSN());
+			if (!res[i].IsRaw()) {
+				iarray.Raw("item", "");
+				res[i].GetJSON(wrSer, false);
+			} else {
+				reindexer::WALRecord rec(res[i].GetRaw());
+				rec.GetJSON(obj, [this, &res, &ctx](string_view cjson) {
+					auto item = getDB(ctx, kRoleDataRead)->NewItem(res.GetNamespaces()[0]);
+					item.FromCJSON(cjson);
+					return string(item.GetJSON());
+				});
+			}
+		}
+
 		if (i == offset) wrSer.Reserve(wrSer.Len() * (std::min(limit, unsigned(res.Count() - offset)) + 1));
 	}
 	iarray.End();
 
+	builder.Put("cache_enabled", res.IsCacheEnabled() && !isWALQuery);
 	if (!res.aggregationResults.empty()) {
 		auto arrNode = builder.Array("aggregations");
 		for (unsigned i = 0; i < res.aggregationResults.size(); i++) {
@@ -921,7 +966,7 @@ shared_ptr<Reindexer> HTTPServer::getDB(http::Context &ctx, UserRole role) {
 	(void)ctx;
 	shared_ptr<Reindexer> db;
 
-	string dbName = urldecode2(ctx.request->urlParams[0].ToString());
+	string dbName(urldecode2(ctx.request->urlParams[0]));
 
 	AuthContext dummyCtx;
 
@@ -945,29 +990,14 @@ shared_ptr<Reindexer> HTTPServer::getDB(http::Context &ctx, UserRole role) {
 	return db;
 }
 
-string HTTPServer::getNameFromJson(string json) {
-	JsonAllocator jalloc;
-	JsonValue jvalue;
-	char *endp;
-
-	int status = jsonParse(&json[0], &endp, &jvalue, jalloc);
-	if (status != JSON_OK) {
-		throw Error(http::StatusBadRequest, "%s", jsonStrError(status));
+string HTTPServer::getNameFromJson(string_view json) {
+	try {
+		gason::JsonParser parser;
+		auto root = parser.Parse(json);
+		return root["name"].As<string>();
+	} catch (const gason::Exception &ex) {
+		throw Error(errParseJson, "getNameFromJson: %s", ex.what());
 	}
-
-	if (jvalue.getTag() != JSON_OBJECT) {
-		throw Error(http::StatusBadRequest, "Json is malformed: %d", jvalue.getTag());
-	}
-
-	string dbName;
-	for (auto elem : jvalue) {
-		if (elem->value.getTag() == JSON_STRING && !strcmp(elem->key, "name")) {
-			dbName = elem->value.toString();
-			break;
-		}
-	}
-
-	return dbName;
 }
 
 int HTTPServer::CheckAuth(http::Context &ctx) {
@@ -980,7 +1010,7 @@ int HTTPServer::CheckAuth(http::Context &ctx) {
 
 	if (authHeader.length() < 6) {
 		ctx.writer->SetHeader({"WWW-Authenticate"_sv, "Basic realm=\"reindexer\""_sv});
-		ctx.String(http::StatusUnauthorized, "Forbidden");
+		ctx.String(http::StatusUnauthorized, "Forbidden"_sv);
 		return -1;
 	}
 

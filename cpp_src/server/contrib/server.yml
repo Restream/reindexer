@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.0.3"
+  version: "2.1.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -377,11 +377,19 @@ paths:
         type: "string"
         description: "Namespace name"
         required: true
+      - name: "precepts"
+        in: "query"
+        type: "array"
+        collectionFormat: "multi"
+        description: "Precepts to be done"
+        required: true
+        items:
+          type: "string"
       responses:
         200:
           description: "successful operation"
           schema:
-            $ref: "#/definitions/UpdateResponse"
+            $ref: "#/definitions/ItemsUpdateResponse"
         400:
           description: "Invalid status value"
           schema:
@@ -415,11 +423,19 @@ paths:
         type: "string"
         description: "Namespace name"
         required: true
+      - name: "precepts"
+        in: "query"
+        type: "array"
+        collectionFormat: "multi"
+        description: "Precepts to be done"
+        required: false
+        items:
+          type: "string"
       responses:
         200:
           description: "successful operation"
           schema:
-            $ref: "#/definitions/UpdateResponse"
+            $ref: "#/definitions/ItemsUpdateResponse"
         400:
           description: "Invalid status value"
           schema:
@@ -453,11 +469,19 @@ paths:
         type: "string"
         description: "Namespace name"
         required: true
+      - name: "precepts"
+        in: "query"
+        type: "array"
+        collectionFormat: "multi"
+        description: "Precepts to be done"
+        required: true
+        items:
+          type: "string"
       responses:
         200:
           description: "successful operation"
           schema:
-            $ref: "#/definitions/UpdateResponse"
+            $ref: "#/definitions/ItemsUpdateResponse"
         400:
           description: "Invalid status value"
           schema:
@@ -1140,10 +1164,8 @@ definitions:
         default: false
 
   FilterDef:
+    description: "If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not contains 'filters' then 'field' and 'cond' are required."
     type: "object"
-    required:
-      - field
-      - cond
     properties:
       field:
         description: "Field json path or index name for filter"
@@ -1170,6 +1192,11 @@ definitions:
       value:
         description: "Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, or variable len array for SET condition"
         type: "object"
+      filters:
+        type: "array"
+        description: "Filter for results documents"
+        items: 
+          $ref: "#/definitions/FilterDef"
 
   SortDef:
     description: "Specifies results sorting order"
@@ -1644,6 +1671,18 @@ definitions:
         type: "string"
         description: "Text description of error details"
 
+  ItemsUpdateResponse:
+    type: "object"
+    properties:
+      updated:
+        description: "Count of updated items"
+        type: "integer"
+      items:
+        description: "Updated documents. Contains only if precepts were provided"
+        type: "array"
+        items:
+          type: "object"
+
   UpdateResponse:
     type: "object"
     properties:
@@ -1962,6 +2001,12 @@ definitions:
       unload_idle_threshold:
         type: "integer"
         description: "Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded"
+      start_copy_politics_count:
+        type: "integer"
+        description: "Copy namespce policts will start only after item's count become greater in this param"
+      merge_limit_count:
+        type: "integer"
+        description: "Merge write namespace after get thi count of operations"
   ReplicationConfig:
     type: "object"
     properties:  

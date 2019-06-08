@@ -32,6 +32,7 @@ public:
 		}
 		return *this;
 	}
+	PayloadValue(PayloadValue &&other) noexcept : p_(other.p_) { other.p_ = nullptr; }
 	PayloadValue &operator=(PayloadValue &&other) noexcept {
 		if (&other != this) {
 			release();
@@ -53,6 +54,7 @@ public:
 	bool IsFree() const { return bool(p_ == nullptr); }
 	void Free() { release(); }
 	size_t GetCapacity() const { return header()->cap; }
+	const uint8_t *get() const { return p_; }
 
 protected:
 	uint8_t *alloc(size_t cap);

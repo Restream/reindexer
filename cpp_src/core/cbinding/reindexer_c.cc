@@ -82,11 +82,11 @@ QueryResultsWrapper* new_results() {
 	}
 }
 
-static void results2c(QueryResultsWrapper* result, struct reindexer_resbuffer* out, int with_items = 0, int32_t* pt_versions = nullptr,
+static void results2c(QueryResultsWrapper* result, struct reindexer_resbuffer* out, int as_json = 0, int32_t* pt_versions = nullptr,
 					  int pt_versions_count = 0) {
-	int flags = with_items ? kResultsJson : (kResultsPtrs | kResultsWithItemID);
+	int flags = as_json ? kResultsJson : (kResultsPtrs | kResultsWithItemID);
 
-	flags |= (pt_versions && with_items == 0) ? kResultsWithPayloadTypes : 0;
+	flags |= (pt_versions && as_json == 0) ? kResultsWithPayloadTypes : 0;
 
 	result->ser.SetOpts({flags, span<int32_t>(pt_versions, pt_versions_count), 0, INT_MAX});
 
@@ -157,7 +157,7 @@ reindexer_error reindexer_modify_item_packed_tx(uintptr_t rx, uintptr_t tr, rein
 	unsigned preceptsCount = ser.GetVarUint();
 	vector<string> precepts;
 	while (preceptsCount--) {
-		precepts.push_back(ser.GetVString().ToString());
+		precepts.push_back(string(ser.GetVString()));
 	}
 	Error err = err_not_init;
 	auto item = procces_packed_item(db, trw->tr_.GetName(), mode, state_token, data, precepts, format, err);
@@ -178,7 +178,7 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 	unsigned preceptsCount = ser.GetVarUint();
 	vector<string> precepts;
 	while (preceptsCount--) {
-		precepts.push_back(ser.GetVString().ToString());
+		precepts.push_back(string(ser.GetVString()));
 	}
 
 	reindexer_resbuffer out = {0, 0, 0};
@@ -207,7 +207,7 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 		if (err.ok()) {
 			QueryResultsWrapper* res = new_results();
 			if (!res) return ret2c(err_too_many_queries, out);
-			res->AddItem(item);
+			res->AddItem(item, !precepts.empty());
 			int32_t ptVers = -1;
 			bool tmUpdated = item.IsTagsUpdated();
 			results2c(res, &out, 0, tmUpdated ? &ptVers : nullptr, tmUpdated ? 1 : 0);
@@ -280,28 +280,22 @@ reindexer_error reindexer_close_namespace(uintptr_t rx, reindexer_string nsName)
 
 reindexer_error reindexer_add_index(uintptr_t rx, reindexer_string nsName, reindexer_string indexDefJson) {
 	Reindexer* db = reinterpret_cast<Reindexer*>(rx);
-	string json = str2c(indexDefJson);
+	string json(str2cv(indexDefJson));
 	IndexDef indexDef;
 
-	try {
-		indexDef.FromJSON(&json[0]);
-	} catch (const Error& err) {
-		return error2c(err);
-	}
+	auto err = indexDef.FromJSON(giftStr(json));
+	if (!err.ok()) return error2c(err);
 
 	return error2c(!db ? err_not_init : db->AddIndex(str2cv(nsName), indexDef));
 }
 
 reindexer_error reindexer_update_index(uintptr_t rx, reindexer_string nsName, reindexer_string indexDefJson) {
 	Reindexer* db = reinterpret_cast<Reindexer*>(rx);
-	string json = str2c(indexDefJson);
+	string json(str2cv(indexDefJson));
 	IndexDef indexDef;
 
-	try {
-		indexDef.FromJSON(&json[0]);
-	} catch (const Error& err) {
-		return error2c(err);
-	}
+	auto err = indexDef.FromJSON(giftStr(json));
+	if (!err.ok()) return error2c(err);
 
 	return error2c(!db ? err_not_init : db->UpdateIndex(str2cv(nsName), indexDef));
 }
@@ -321,7 +315,7 @@ reindexer_error reindexer_init_system_namespaces(uintptr_t rx) {
 	return error2c(!db ? err_not_init : db->InitSystemNamespaces());
 }
 
-reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int with_items, int32_t* pt_versions, int pt_versions_count) {
+reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int as_json, int32_t* pt_versions, int pt_versions_count) {
 	reindexer_resbuffer out = {0, 0, 0};
 	Error res = err_not_init;
 	Reindexer* db = reinterpret_cast<Reindexer*>(rx);
@@ -330,15 +324,14 @@ reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int with_it
 		if (!result) return ret2c(err_too_many_queries, out);
 		res = db->Select(str2cv(query), *result);
 		if (res.ok())
-			results2c(result, &out, with_items, pt_versions, pt_versions_count);
+			results2c(result, &out, as_json, pt_versions, pt_versions_count);
 		else
 			put_results_to_pool(result);
 	}
 	return ret2c(res, out);
 }
 
-reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, int with_items, int32_t* pt_versions,
-									 int pt_versions_count) {
+reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, int as_json, int32_t* pt_versions, int pt_versions_count) {
 	Error res = err_not_init;
 	reindexer_resbuffer out = {0, 0, 0};
 	Reindexer* db = reinterpret_cast<Reindexer*>(rx);
@@ -365,7 +358,7 @@ reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, i
 		res = db->Select(q, *result);
 		if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
 		if (res.ok())
-			results2c(result, &out, with_items, pt_versions, pt_versions_count);
+			results2c(result, &out, as_json, pt_versions, pt_versions_count);
 		else
 			put_results_to_pool(result);
 	}

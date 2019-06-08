@@ -57,7 +57,6 @@ protected:
 	PayloadValue payloadValue_;
 	TagsMatcher tagsMatcher_;
 
-	JsonAllocator jsonAllocator_;
 	WrSerializer ser_;
 	string tupleData_;
 

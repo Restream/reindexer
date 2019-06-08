@@ -31,6 +31,7 @@ string GetCwd();
 string GetDirPath(const string &path);
 string GetTempDir();
 string GetHomeDir();
+string GetRelativePath(const string &path, unsigned maxUp = 1024);
 
 Error TryCreateDirectory(const string &dir);
 Error ChangeUser(const char *userName);

@@ -10,27 +10,34 @@ import (
 )
 
 type rpcEncoder struct {
-	ser *cjson.Serializer
+	lastArgsChunckStart int
+	ser                 *cjson.Serializer
 }
 
 type rpcDecoder struct {
 	ser cjson.Serializer
 }
 
-func newRPCEncoder(cmd int, seq int) rpcEncoder {
+func newRPCEncoder(cmd int, seq uint32) rpcEncoder {
 	enc := rpcEncoder{ser: cjson.NewPoolSerializer()}
 	enc.start(cmd, seq)
 	return enc
 }
 
-func (r *rpcEncoder) start(cmd int, seq int) {
+func (r *rpcEncoder) start(cmd int, seq uint32) {
 	r.ser.PutUInt32(cprotoMagic)
 	r.ser.PutUInt16(cprotoVersion)
 	r.ser.PutUInt16(uint16(cmd))
-	r.ser.PutUInt32(1) // len
-	r.ser.PutUInt32(uint32(seq))
+	r.ser.PutUInt32(0) // len
+	r.ser.PutUInt32(seq)
+	r.startArgsChunck()
+}
+
+func (r *rpcEncoder) startArgsChunck() {
+	r.lastArgsChunckStart = len(r.ser.Bytes())
 	// num args
 	r.ser.PutVarUInt(0)
+	(*(*uint32)(unsafe.Pointer(&r.ser.Bytes()[8])))++
 }
 
 func (r *rpcEncoder) bytesArg(v []byte) {
@@ -80,7 +87,7 @@ func (r *rpcEncoder) int64Arg(v int64) {
 }
 
 func (r *rpcEncoder) update() {
-	r.ser.Bytes()[cprotoHdrLen]++
+	r.ser.Bytes()[r.lastArgsChunckStart]++
 	*(*uint32)(unsafe.Pointer(&r.ser.Bytes()[8])) = uint32(len(r.ser.Bytes()) - cprotoHdrLen)
 }
 

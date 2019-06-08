@@ -14,6 +14,14 @@
 #include "tools/stringstools.h"
 #include "yaml/yaml.h"
 
+#if REINDEX_WITH_GPERFTOOLS
+#include "tools/alloc_ext/tc_malloc_extension.h"
+#endif
+#if REINDEX_WITH_JEMALLOC
+#include <jemalloc/jemalloc.h>
+#include "tools/alloc_ext/je_malloc_extension.h"
+#endif
+
 #ifdef _WIN32
 #include "winservice.h"
 #endif
@@ -33,7 +41,7 @@ using std::vector;
 using reindexer::fs::GetDirPath;
 using reindexer::logLevelFromString;
 
-ServerImpl::ServerImpl() : storageLoaded_(false), running_(false) { async_.set(loop_); }
+ServerImpl::ServerImpl() : coreLogLevel_(LogNone), storageLoaded_(false), running_(false) { async_.set(loop_); }
 
 Error ServerImpl::InitFromCLI(int argc, char *argv[]) {
 	Error err = config_.ParseCmd(argc, argv);
@@ -125,18 +133,19 @@ int ServerImpl::Start() {
 #else
 	using reindexer::iequals;
 	bool running = false;
-	reindexer_server::WinService svc("reindexer", "Reindexer server",
-									 [&]() {
-										 running = true;
-										 run();
-										 running = false;
-									 },
-									 []() {  //
-										 raise(SIGTERM);
-									 },
-									 [&]() {  //
-										 return running;
-									 });
+	reindexer_server::WinService svc(
+		"reindexer", "Reindexer server",
+		[&]() {
+			running = true;
+			run();
+			running = false;
+		},
+		[]() {  //
+			raise(SIGTERM);
+		},
+		[&]() {  //
+			return running;
+		});
 
 	if (config_.InstallSvc) {
 		auto &args = config_.Args();
@@ -167,6 +176,15 @@ void ServerImpl::Stop() {
 
 int ServerImpl::run() {
 	loggerConfigure();
+	reindexer::debug::backtrace_set_writer([](string_view out) {
+		auto logger = spdlog::get("server");
+		if (logger) {
+			logger->info("{}", out);
+			logger->flush();
+		} else {
+			std::cerr << std::endl << out;
+		}
+	});
 	if (running_) {
 		logger_.warn("attempting to start server, but already started.");
 		return -1;
@@ -180,20 +198,38 @@ int ServerImpl::run() {
 		allocdebug_init();
 #endif
 
-#ifndef REINDEX_WITH_GPERFTOOLS
+#if !REINDEX_WITH_GPERFTOOLS
 		logger_.warn("debug.allocs is enabled in config, but reindexer complied without gperftools - Can't enable feature.");
 #endif
 	}
 
 	if (config_.DebugPprof) {
-#ifndef REINDEX_WITH_GPERFTOOLS
-		logger_.warn("debug.pprof is enabled in config, but reindexer complied without gperftools - Can't enable feature.");
-#else
+#if REINDEX_WITH_GPERFTOOLS
 		if (!std::getenv("HEAPPROFILE") && !std::getenv("TCMALLOC_SAMPLE_PARAMETER")) {
 			logger_.warn(
 				"debug.pprof is enabled, but TCMALLOC_SAMPLE_PARAMETER or HEAPPROFILE environment varables are not set. Heap profiling is "
 				"not possible.");
 		}
+#elif REINDEX_WITH_JEMALLOC
+		if (je_malloc_available()) {
+			size_t val = 0, sz = sizeof(size_t);
+			mallctl("config.prof", &val, &sz, NULL, 0);
+			if (!val) {
+				logger_.warn("debug.pprof is enabled, but jemalloc compiled without profiling support. Heap profiling is not possible.");
+			} else {
+				mallctl("opt.prof", &val, &sz, NULL, 0);
+				if (!val) {
+					logger_.warn(
+						"debug.pprof is enabled, but jemmalloc profiler is off. Heap profiling is not possible. export "
+						"MALLOC_CONF=\"prof:true\" "
+						"to enable it");
+				}
+			}
+		} else {
+			logger_.warn("debug.pprof is enabled in config, but reindexer can't link jemalloc library");
+		}
+#else
+		logger_.warn("debug.pprof is enabled in config, but reindexer complied without gperftools or jemalloc - Can't enable feature.");
 #endif
 	}
 
@@ -277,7 +313,7 @@ int ServerImpl::run() {
 	sinks_.clear();
 	async_.reset();
 	return 0;
-}
+}  // namespace reindexer_server
 
 #ifndef _WIN32
 Error ServerImpl::daemonize() {
@@ -315,6 +351,7 @@ Error ServerImpl::loggerConfigure() {
 	spdlog::drop_all();
 	spdlog::set_async_mode(16384, spdlog::async_overflow_policy::discard_log_msg, nullptr, std::chrono::seconds(2));
 	spdlog::set_level(spdlog::level::trace);
+	spdlog::set_pattern("[%L%d/%m %T.%e %t] %v");
 
 	vector<pair<string, string>> loggers = {
 		{"server", config_.ServerLog}, {"core", config_.CoreLog}, {"http", config_.HttpLog}, {"rpc", config_.RpcLog}};
@@ -324,7 +361,7 @@ Error ServerImpl::loggerConfigure() {
 		try {
 			if (fileName == "stdout" || fileName == "-") {
 				spdlog::stdout_color_mt(logger.first);
-			} else if (!fileName.empty()) {
+			} else if (!fileName.empty() && fileName != "none") {
 				auto sink = sinks_.find(fileName);
 				if (sink == sinks_.end()) {
 					sink = sinks_.emplace(fileName, std::make_shared<spdlog::sinks::simple_file_sink_mt>(fileName)).first;
@@ -332,8 +369,7 @@ Error ServerImpl::loggerConfigure() {
 				spdlog::create(logger.first, sink->second);
 			}
 		} catch (const spdlog::spdlog_ex &e) {
-			return Error(errLogic, "Can't create logger for '%s' to file '%s': %s\n", logger.first.c_str(), logger.second.c_str(),
-						 e.what());
+			return Error(errLogic, "Can't create logger for '%s' to file '%s': %s\n", logger.first, logger.second, e.what());
 		}
 	}
 	coreLogger_ = "core";

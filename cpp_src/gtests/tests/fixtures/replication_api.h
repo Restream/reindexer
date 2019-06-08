@@ -29,8 +29,8 @@ public:
 	~ServerControl();
 
 	struct Interface {
-		typedef shared_ptr<Interface> Ptr;
-		Interface(size_t id, atomic_bool& stopped, bool dropDb = false);
+		typedef std::shared_ptr<Interface> Ptr;
+		Interface(size_t id, std::atomic_bool& stopped, bool dropDb = false);
 		~Interface();
 
 		// Make this server master
@@ -50,8 +50,8 @@ public:
 		void setServerConfig(const string& role, size_t masterId);
 		size_t id_;
 		bool dropDb_;
-		unique_ptr<thread> tr;
-		atomic_bool& stopped_;
+		std::unique_ptr<std::thread> tr;
+		std::atomic_bool& stopped_;
 	};
 	// Get server - wait means wait until server starts if no server
 	Interface::Ptr Get(bool wait = true);
@@ -61,11 +61,11 @@ public:
 
 private:
 	typedef shared_lock<shared_timed_mutex> RLock;
-	typedef unique_lock<shared_timed_mutex> WLock;
+	typedef std::unique_lock<shared_timed_mutex> WLock;
 
 	shared_timed_mutex mtx_;
-	shared_ptr<Interface> interface;
-	atomic_bool* stopped_;
+	std::shared_ptr<Interface> interface;
+	std::atomic_bool* stopped_;
 };
 
 class ReplicationApi : public ::testing::Test {
@@ -84,5 +84,5 @@ public:
 
 private:
 	vector<ServerControl> svc;
-	mutex m_;
+	std::mutex m_;
 };

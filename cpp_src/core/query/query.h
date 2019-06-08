@@ -21,7 +21,8 @@ using std::initializer_list;
 using std::pair;
 
 class Namespace;
-typedef fast_hash_map<string, std::shared_ptr<Namespace>, nocase_hash_str, nocase_equal_str> Namespaces;
+class NamespaceCloner;
+typedef fast_hash_map<string, std::shared_ptr<NamespaceCloner>, nocase_hash_str, nocase_equal_str> Namespaces;
 
 /// @class Query
 /// Allows to select data from DB.
@@ -81,12 +82,11 @@ public:
 	/// @return Query object ready to be executed.
 	template <typename T>
 	Query &Where(const string &idx, CondType cond, std::initializer_list<T> l) {
-		entries.resize(entries.size() + 1);
-		QueryEntry &qe = entries.back();
+		QueryEntry qe;
 		qe.condition = cond;
 		qe.index = idx;
-		qe.op = nextOp_;
 		for (auto it = l.begin(); it != l.end(); it++) qe.values.push_back(Variant(*it));
+		entries.Append(nextOp_, std::move(qe));
 		nextOp_ = OpAnd;
 		return *this;
 	}
@@ -98,13 +98,12 @@ public:
 	/// @return Query object ready to be executed.
 	template <typename T>
 	Query &Where(const string &idx, CondType cond, const std::vector<T> &l) {
-		entries.resize(entries.size() + 1);
-		QueryEntry &qe = entries.back();
+		QueryEntry qe;
 		qe.condition = cond;
 		qe.index = idx;
-		qe.op = nextOp_;
 		qe.values.reserve(l.size());
 		for (auto it = l.begin(); it != l.end(); it++) qe.values.push_back(Variant(*it));
+		entries.Append(nextOp_, std::move(qe));
 		nextOp_ = OpAnd;
 		return *this;
 	}
@@ -115,13 +114,12 @@ public:
 	/// @param l - vector of index values to be compared with.
 	/// @return Query object ready to be executed.
 	Query &Where(const string &idx, CondType cond, const VariantArray &l) {
-		entries.resize(entries.size() + 1);
-		QueryEntry &qe = entries.back();
+		QueryEntry qe;
 		qe.condition = cond;
 		qe.index = idx;
-		qe.op = nextOp_;
 		qe.values.reserve(l.size());
 		for (auto it = l.begin(); it != l.end(); it++) qe.values.push_back(Variant(*it));
+		entries.Append(nextOp_, std::move(qe));
 		nextOp_ = OpAnd;
 		return *this;
 	}
@@ -138,28 +136,26 @@ public:
 	/// belongs to "price" indexes.
 	/// @return Query object ready to be executed.
 	Query &WhereComposite(const string &idx, CondType cond, initializer_list<VariantArray> l) {
-		entries.resize(entries.size() + 1);
-		QueryEntry &qe = entries.back();
+		QueryEntry qe;
 		qe.condition = cond;
 		qe.index = idx;
-		qe.op = nextOp_;
 		qe.values.reserve(l.size());
 		for (auto it = l.begin(); it != l.end(); it++) {
 			qe.values.push_back(Variant(*it));
 		}
+		entries.Append(nextOp_, std::move(qe));
 		nextOp_ = OpAnd;
 		return *this;
 	}
 	Query &WhereComposite(const string &idx, CondType cond, const vector<VariantArray> &v) {
-		entries.resize(entries.size() + 1);
-		QueryEntry &qe = entries.back();
+		QueryEntry qe;
 		qe.condition = cond;
 		qe.index = idx;
-		qe.op = nextOp_;
 		qe.values.reserve(v.size());
 		for (auto it = v.begin(); it != v.end(); it++) {
 			qe.values.push_back(Variant(*it));
 		}
+		entries.Append(nextOp_, std::move(qe));
 		nextOp_ = OpAnd;
 		return *this;
 	}
@@ -171,10 +167,12 @@ public:
 	/// Adds equal position fields to arrays queries.
 	/// @param equalPosition - list of fields with equal array index position.
 	void AddEqualPosition(const h_vector<string> &equalPosition) {
-		equalPositions_.push_back(determineEqualPositionIndexes(equalPosition));
+		equalPositions_.emplace(entries.DetermineEqualPositionIndexes(equalPosition));
 	}
-	void AddEqualPosition(const vector<string> &equalPosition) { equalPositions_.push_back(determineEqualPositionIndexes(equalPosition)); }
-	void AddEqualPosition(std::initializer_list<string> l) { equalPositions_.push_back(determineEqualPositionIndexes(l)); }
+	void AddEqualPosition(const vector<string> &equalPosition) {
+		equalPositions_.emplace(entries.DetermineEqualPositionIndexes(equalPosition));
+	}
+	void AddEqualPosition(std::initializer_list<string> l) { equalPositions_.emplace(entries.DetermineEqualPositionIndexes(l)); }
 
 	/// Joins namespace with another namespace. Analog to sql JOIN.
 	/// @param joinType - type of Join (Inner, Left or OrInner).
@@ -255,7 +253,7 @@ public:
 			QueryEntry qentry;
 			qentry.index = indexName;
 			qentry.distinct = true;
-			entries.push_back(qentry);
+			entries.Append(OpAnd, std::move(qentry));
 		}
 		return *this;
 	}
@@ -298,6 +296,21 @@ public:
 	/// @return Query object.
 	Query &Not() {
 		nextOp_ = OpNot;
+		return *this;
+	}
+
+	/// Insert open bracket to order logic operations.
+	/// @return Query object.
+	Query &OpenBracket() {
+		entries.OpenBracket(nextOp_);
+		nextOp_ = OpAnd;
+		return *this;
+	}
+
+	/// Insert close bracket to order logic operations.
+	/// @return Query object.
+	Query &CloseBracket() {
+		entries.CloseBracket();
 		return *this;
 	}
 
@@ -472,22 +485,6 @@ protected:
 	/// Gets names of indexes that start with 'token'.
 	void getMatchingIndexesNames(const Namespaces &namespaces, const string &nsName, const string &token, vector<string> &variants);
 
-	/// Calculates QueryEntries indexes for EqualPosition context.
-	/// @param fields - equal position context.
-	template <typename T>
-	EqualPosition determineEqualPositionIndexes(const T &fields) {
-		EqualPosition ep;
-		for (size_t i = 0; i < entries.size(); ++i) {
-			for (auto it = fields.begin(); it != fields.end(); ++it)
-				if (entries[i].index == *it) {
-					ep.push_back(i);
-					break;
-				}
-		}
-		if (fields.size() < 2) throw Error(errLogic, "Amount of fields with equal index position should be 2 or more!");
-		return ep;
-	}
-
 	/// Builds print version of a query with join in sql format.
 	/// @param ser - serializer to store SQL string
 	/// @param stripArgs - replace condition values with '?'
@@ -544,7 +541,7 @@ public:
 	h_vector<string, 0> selectFunctions_;
 
 	/// List of same position fields for queries with arrays
-	h_vector<EqualPosition, 0> equalPositions_;
+	std::multimap<unsigned, EqualPosition> equalPositions_;
 
 	/// Explain query if true
 	bool explain_ = false;

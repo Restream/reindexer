@@ -5,28 +5,25 @@
 #include "core/ft/ft_fuzzy/searchers/isearcher.h"
 #include "core/ft/idrelset.h"
 #include "core/ft/stemmer.h"
-#include "deque"
+#include "core/index/indextext/ftkeyentry.h"
 #include "estl/fast_hash_map.h"
 #include "estl/flat_str_map.h"
 #include "estl/suffix_map.h"
-#include "ftfastkeyentry.h"
 #include "indextexttypes.h"
+
+namespace reindexer {
 
 using std::unique_ptr;
 using std::vector;
 using std::pair;
 using std::unordered_map;
 using std::vector;
-using std::deque;
-using std::move;
-
-namespace reindexer {
 
 struct VDocEntry {
 #ifdef REINDEX_FT_EXTRA_DEBUG
-	const void* keyDoc;
+	std::string keyDoc;
 #endif
-	const void* keyEntry;
+	const FtKeyEntryData* keyEntry;
 	h_vector<float, 3> wordsCount;
 	h_vector<float, 3> mostFreqWordCount;
 };
@@ -55,9 +52,9 @@ public:
 		CommitStep& operator=(CommitStep&& /*rhs*/) = default;
 
 		// Suffix map. suffix <-> original word id
-		suffix_map<string, WordIdType> suffixes_;
+		suffix_map<char, WordIdType> suffixes_;
 		// Typos map. typo string <-> original word id
-		flat_str_multimap<string, WordIdType> typos_;
+		flat_str_multimap<char, WordIdType> typos_;
 		uint32_t wordOffset_;
 
 		void clear() {
@@ -66,12 +63,12 @@ public:
 		}
 	};
 	vector<PackedWordEntry>& GetWords();
-	suffix_map<std::string, WordIdType>& GetSuffix();
+	suffix_map<char, WordIdType>& GetSuffix();
 	void SetConfig(FtFastConfig* cfg);
 
-	flat_str_multimap<string, WordIdType>& GetTypos();
+	flat_str_multimap<char, WordIdType>& GetTypos();
 	// returns id and found or not found
-	WordIdType findWord(const string& word);
+	WordIdType findWord(string_view word);
 	WordIdType BuildWordId(uint32_t id);
 	PackedWordEntry& getWordById(WordIdType id);
 	string Dump();
@@ -81,7 +78,6 @@ public:
 	uint32_t GetWordsOffset();
 
 	CommitStep& GetStep(WordIdType id);
-	size_t GetWordsSize();
 
 	uint32_t GetSuffixWordId(WordIdType id);
 	uint32_t GetSuffixWordId(WordIdType id, const CommitStep& step);

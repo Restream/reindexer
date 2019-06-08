@@ -1,6 +1,7 @@
 import http.client
 import json
 from urllib.parse import urlencode
+from urllib.parse import quote
 
 
 class ApiMixin(object):
@@ -183,8 +184,15 @@ class ApiMixin(object):
     def api_create_item(self, dbname, nsname, item_body):
         return self._api_call('POST', '/db/' + dbname + '/namespaces/' + nsname + '/items', item_body)
 
-    def api_update_item(self, dbname, nsname, item_body):
-        return self._api_call('PUT', '/db/' + dbname + '/namespaces/' + nsname + '/items', item_body)
+    def api_update_item(self, dbname, nsname, item_body, precepts=[]):
+        query = ''
+        separator = '?'
+        for precept in precepts:
+            query += separator
+            query += 'precepts='
+            query += quote(precept)
+            separator = '&'
+        return self._api_call('PUT', '/db/' + dbname + '/namespaces/' + nsname + '/items' + query, item_body)
 
     def api_delete_item(self, dbname, nsname, item_body):
         return self._api_call('DELETE', '/db/' + dbname + '/namespaces/' + nsname + '/items', item_body)

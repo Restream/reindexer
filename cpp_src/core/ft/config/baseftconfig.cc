@@ -12,37 +12,24 @@ BaseFTConfig::BaseFTConfig() {
 	for (const char **p = stop_words_ru; *p != nullptr; p++) stopWords.insert(*p);
 }
 
-void BaseFTConfig::parseBase(const JsonNode *elem) {
-	parseJsonField("enable_translit", enableTranslit, elem);
-	parseJsonField("enable_numbers_search", enableNumbersSearch, elem);
-	parseJsonField("enable_kb_layout", enableKbLayout, elem);
-	parseJsonField("merge_limit", mergeLimit, elem, 0, 65535);
-	parseJsonField("log_level", logLevel, elem, 0, 5);
-	parseJsonField("extra_word_symbols", extraWordSymbols, elem);
+void BaseFTConfig::parseBase(const gason::JsonNode &root) {
+	enableTranslit = root["enable_translit"].As<>(enableTranslit);
+	enableNumbersSearch = root["enable_numbers_search"].As<>(enableNumbersSearch);
+	enableKbLayout = root["enable_kb_layout"].As<>(enableKbLayout);
+	mergeLimit = root["merge_limit"].As<>(mergeLimit, 0, 65000);
+	logLevel = root["log_level"].As<>(logLevel, 0, 5);
+	extraWordSymbols = root["extra_word_symbols"].As<>(extraWordSymbols);
 
-	if (!strcmp("stop_words", elem->key)) {
-		if (elem->value.getTag() != JSON_ARRAY) {
-			throw Error(errParseJson, "Expected array value of setting 'stop_words' of ft1 config");
-		}
+	auto &stopWordsNode = root["stop_words"];
+	if (!stopWordsNode.empty()) {
 		stopWords.clear();
-		for (auto ee : elem->value) {
-			if (ee->value.getTag() != JSON_STRING) {
-				throw Error(errParseJson, "Expected string value in array setting 'stop_words' of ft1 config");
-			}
-			stopWords.insert(ee->value.toString());
-		}
+		for (auto &sw : stopWordsNode) stopWords.insert(sw.As<string>());
 	}
-	if (!strcmp("stemmers", elem->key)) {
-		if (elem->value.getTag() != JSON_ARRAY) {
-			throw Error(errParseJson, "Expected array value of setting 'stemmers' of ft1 config");
-		}
+
+	auto &stemmersNode = root["stemmers"];
+	if (!stemmersNode.empty()) {
 		stemmers.clear();
-		for (auto ee : elem->value) {
-			if (ee->value.getTag() != JSON_STRING) {
-				throw Error(errParseJson, "Expected string value in array setting 'stemmers' of ft1 config");
-			}
-			stemmers.push_back(ee->value.toString());
-		}
+		for (auto &st : stemmersNode) stemmers.push_back(st.As<string>());
 	}
 }
 

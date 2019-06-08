@@ -5,6 +5,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include "estl/span.h"
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -36,7 +37,7 @@ struct IndexMemStat {
 
 struct ReplicationState {
 	void GetJSON(JsonBuilder &builder);
-	void FromJSON(char *);
+	void FromJSON(span<char>);
 
 	// LSN of last change
 	int64_t lastLsn = -1;
@@ -48,6 +49,8 @@ struct ReplicationState {
 	int incarnationCounter = 0;
 	// Data hash
 	uint64_t dataHash = 0;
+	// Data count
+	int dataCount = 0;
 };
 
 struct ReplicationStat : public ReplicationState {

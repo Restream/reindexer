@@ -5,6 +5,7 @@
 #include <memory.h>
 #include <stdio.h>
 #include <memory>
+#include "estl/h_vector.h"
 #include "tools/oscompat.h"
 
 namespace reindexer {
@@ -113,7 +114,7 @@ int socket::create(string_view addr, struct addrinfo **presults) {
 	hints.ai_protocol = IPPROTO_TCP;
 	*presults = nullptr;
 
-	string saddr = addr.ToString();
+	std::string saddr(addr);
 	char *paddr = &saddr[0];
 
 	char *pport = strchr(paddr, ':');

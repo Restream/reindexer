@@ -6,7 +6,6 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
-#include "estl/shared_mutex.h"
 #include "namespacestat.h"
 #include "perfstatcounter.h"
 #include "query/query.h"

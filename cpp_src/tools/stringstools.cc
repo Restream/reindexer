@@ -20,7 +20,37 @@ using std::make_pair;
 
 namespace reindexer {
 
-wstring &utf8_to_utf16(const string_view &src, wstring &dst) {
+string escapeString(string_view str) {
+	string dst = "";
+	dst.reserve(str.length());
+	for (auto it = str.begin(); it != str.end(); it++) {
+		if (*it < 0x20 || unsigned(*it) >= 0x80 || *it == '\\') {
+			char tmpbuf[16];
+			snprintf(tmpbuf, sizeof(tmpbuf), "\\%02X", unsigned(*it) & 0xFF);
+			dst += tmpbuf;
+		} else
+			dst.push_back(*it);
+	}
+	return dst;
+}
+
+string unescapeString(string_view str) {
+	string dst = "";
+	dst.reserve(str.length());
+	for (auto it = str.begin(); it != str.end(); it++) {
+		if (*it == '\\' && ++it != str.end() && it + 1 != str.end()) {
+			char tmpbuf[16], *endp;
+			tmpbuf[0] = *it++;
+			tmpbuf[1] = *it;
+			tmpbuf[2] = 0;
+			dst += char(strtol(tmpbuf, &endp, 16));
+		} else
+			dst.push_back(*it);
+	}
+	return dst;
+}
+
+wstring &utf8_to_utf16(string_view src, wstring &dst) {
 	dst.resize(src.length());
 	auto end = utf8::unchecked::utf8to32(src.begin(), src.end(), dst.begin());
 	dst.resize(std::distance(dst.begin(), end));
@@ -34,7 +64,7 @@ string &utf16_to_utf8(const wstring &src, string &dst) {
 	return dst;
 }
 
-wstring utf8_to_utf16(const string &src) {
+wstring utf8_to_utf16(string_view src) {
 	wstring dst;
 	return utf8_to_utf16(src, dst);
 }
@@ -42,21 +72,6 @@ string utf16_to_utf8(const wstring &src) {
 	string dst;
 	return utf16_to_utf8(src, dst);
 }
-
-// vector<string> &split(const string_view &str, const string &delimiters, bool trimEmpty, vector<string> &tokens) {
-// 	tokens.resize(0);
-
-// 	for (size_t pos, lastPos = 0;; lastPos = pos + 1) {
-// 		pos = str.find_first_of(delimiters, lastPos);
-// 		if (pos == string::npos) {
-// 			pos = str.length();
-// 			if (pos != lastPos || !trimEmpty) tokens.push_back(string(str.data() + lastPos, (pos - lastPos)));
-// 			break;
-// 		} else if (pos != lastPos || !trimEmpty)
-// 			tokens.push_back(string(str.data() + lastPos, (pos - lastPos)));
-// 	}
-// 	return tokens;
-// }
 
 // This functions calc how many bytes takes limit symbols in UTF8 forward
 size_t calcUTf8Size(const char *str, size_t size, size_t limit) {
@@ -84,13 +99,13 @@ void check_for_replacement(uint32_t &ch) {
 	}
 }
 
-bool is_number(const string_view &str) {
+bool is_number(string_view str) {
 	uint16_t i = 0;
 	while ((i < str.length() && IsDigit(str[i]))) i++;
 	return (i && i == str.length());
 }
 
-void split(const string_view &str, string &buf, vector<const char *> &words, const string &extraWordSymbols) {
+void split(string_view str, string &buf, vector<const char *> &words, const string &extraWordSymbols) {
 	buf.resize(str.length());
 	words.resize(0);
 	auto bufIt = buf.begin();
@@ -123,7 +138,7 @@ void split(const string_view &str, string &buf, vector<const char *> &words, con
 	}
 }
 
-std::pair<int, int> word2Pos(const string_view &str, int wordPos, int endPos, const string &extraWordSymbols) {
+std::pair<int, int> word2Pos(string_view str, int wordPos, int endPos, const string &extraWordSymbols) {
 	auto wordStartIt = str.begin();
 	auto wordEndIt = str.begin();
 	auto it = str.begin();
@@ -187,7 +202,7 @@ std::pair<int, int> Word2PosHelper::convert(int wordPos, int endPos) {
 	return ret;
 }
 
-void split(const string_view &utf8Str, wstring &utf16str, vector<std::wstring> &words, const string &extraWordSymbols) {
+void split(string_view utf8Str, wstring &utf16str, vector<std::wstring> &words, const string &extraWordSymbols) {
 	utf8_to_utf16(utf8Str, utf16str);
 	words.resize(0);
 	size_t outSz = 0;
@@ -212,7 +227,7 @@ string lower(string s) {
 	return s;
 }
 
-bool iequals(const string_view &lhs, const string_view &rhs) {
+bool iequals(string_view lhs, string_view rhs) {
 	if (lhs.size() != rhs.size()) return false;
 	for (auto itl = lhs.begin(), itr = rhs.begin(); itl != lhs.end() && itr != rhs.end();) {
 		if (tolower(*itl++) != tolower(*itr++)) return false;
@@ -220,7 +235,7 @@ bool iequals(const string_view &lhs, const string_view &rhs) {
 	return true;
 }
 
-bool checkIfStartsWith(const string_view &src, const string_view &pattern) {
+bool checkIfStartsWith(string_view src, string_view pattern) {
 	if (src.empty() || pattern.empty()) return false;
 	if (src.length() > pattern.length()) return false;
 	for (size_t i = 0; i < src.length(); ++i) {
@@ -229,7 +244,7 @@ bool checkIfStartsWith(const string_view &src, const string_view &pattern) {
 	return true;
 }
 
-int collateCompare(const string_view &lhs, const string_view &rhs, const CollateOpts &collateOpts) {
+int collateCompare(string_view lhs, string_view rhs, const CollateOpts &collateOpts) {
 	if (collateOpts.mode == CollateASCII) {
 		auto itl = lhs.begin();
 		auto itr = rhs.begin();
@@ -313,7 +328,7 @@ int collateCompare(const string_view &lhs, const string_view &rhs, const Collate
 	return res ? res : ((l1 < l2) ? -1 : (l1 > l2) ? 1 : 0);
 }
 
-string_view urldecode2(char *buf, const string_view &str) {
+static string_view urldecode2(char *buf, string_view str) {
 	char a, b;
 	const char *src = str.data();
 	char *dst = buf;
@@ -344,7 +359,7 @@ string_view urldecode2(char *buf, const string_view &str) {
 	return string_view(buf, dst - buf);
 }
 
-string urldecode2(const string_view &str) {
+string urldecode2(const string_view str) {
 	string ret(str.length(), ' ');
 	string_view sret = urldecode2(&ret[0], str);
 	ret.resize(sret.size());
@@ -355,6 +370,11 @@ string urldecode2(const string_view &str) {
 
 static const char *daysOfWeek[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 static const char *months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+
+inline static char *strappend(char *dst, const char *src) {
+	while (*src) *dst++ = *src++;
+	return dst;
+}
 
 int fast_strftime(char *buf, const tm *tm) {
 	char *d = buf;
@@ -377,12 +397,12 @@ int fast_strftime(char *buf, const tm *tm) {
 	return d - buf;
 }
 
-bool validateObjectName(const string_view &name) {
+bool validateObjectName(string_view name) {
 	if (!name.length()) {
 		return false;
 	}
-	for (auto p = name.begin(); p != name.end(); p++) {
-		if (!(std::isalpha(*p) || std::isdigit(*p) || *p == '_' || *p == '-' || *p == '#')) {
+	for (auto c : name) {
+		if (!(std::isalpha(c) || std::isdigit(c) || c == '_' || c == '-' || c == '#')) {
 			return false;
 		}
 	}
@@ -413,7 +433,7 @@ bool isPrintable(string_view str) {
 	return true;
 }
 
-bool isBlank(const string_view &str) {
+bool isBlank(string_view str) {
 	if (str.empty()) return true;
 	for (size_t i = 0; i < str.length(); ++i)
 		if (!isspace(str[i])) return false;

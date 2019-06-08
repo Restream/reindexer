@@ -1,6 +1,5 @@
 #include "selecter.h"
 #include "core/ft/bm25.h"
-#include "core/ft/ft_fuzzy/dataholder/smardeque.h"
 #include "core/ft/typos.h"
 #include "tools/logger.h"
 namespace reindexer {
@@ -72,19 +71,19 @@ Selecter::MergeData Selecter::Process(FtDSLQuery &dsl) {
 		this->prepareVariants(ctx, term, holder_.cfg_->stemmers);
 
 		if (holder_.cfg_->logLevel >= LogInfo) {
-			string vars;
+			WrSerializer wrSer;
 			for (auto &variant : ctx.variants) {
-				if (&variant != &*ctx.variants.begin()) vars += ", ";
-				vars += variant.pattern;
+				if (&variant != &*ctx.variants.begin()) wrSer << ", ";
+				wrSer << variant.pattern;
 			}
-			vars += "], typos: [";
+			wrSer << "], typos: [";
 			typos_context tctx[kMaxTyposInWord];
 			if (term.opts.typos)
-				mktypos(tctx, term.pattern, holder_.cfg_->maxTyposInWord, holder_.cfg_->maxTypoLen, [&vars](const string &typo, int) {
-					vars += typo;
-					vars += ", ";
+				mktypos(tctx, term.pattern, holder_.cfg_->maxTyposInWord, holder_.cfg_->maxTypoLen, [&wrSer](string_view typo, int) {
+					wrSer << typo;
+					wrSer << ", ";
 				});
-			logPrintf(LogInfo, "Variants: [%s]", vars);
+			logPrintf(LogInfo, "Variants: [%s]", wrSer.Slice());
 		}
 
 		processVariants(ctx);
@@ -173,7 +172,7 @@ void Selecter::processTypos(FtSelectContext &ctx, FtDSLEntry &term) {
 		typos_context tctx[kMaxTyposInWord];
 		auto &typos = step.typos_;
 		int matched = 0, skiped = 0, vids = 0;
-		mktypos(tctx, term.pattern, holder_.cfg_->maxTyposInWord, holder_.cfg_->maxTypoLen, [&](const string &typo, int tcount) {
+		mktypos(tctx, term.pattern, holder_.cfg_->maxTyposInWord, holder_.cfg_->maxTypoLen, [&](string_view typo, int tcount) {
 			auto typoRng = typos.equal_range(typo);
 			tcount = holder_.cfg_->maxTyposInWord - tcount;
 			for (auto typoIt = typoRng.first; typoIt != typoRng.second; typoIt++) {
@@ -211,15 +210,8 @@ void Selecter::debugMergeStep(const char *msg, int vid, float normBm25, float no
 #ifdef REINDEX_FT_EXTRA_DEBUG
 	if (holder_.cfg_->logLevel < LogTrace) return;
 
-	vector<unique_ptr<string>> bufStrs;
-	auto fieldStrVec = this->getDocFields(*vdocs[vid].keyDoc, bufStrs);
-	string text = fieldStrVec[0].ToString();
-	if (text.length() > 48) {
-		text = text.substr(0, 48) + "...";
-	}
-
-	logPrintf(LogTrace, "%s - '%s' (vid %d), bm25 %f, dist %f, rank %d (prev rank %d)", msg, text, vid, normBm25, normDist, finalRank,
-			  prevRank);
+	logPrintf(LogTrace, "%s - '%s' (vid %d), bm25 %f, dist %f, rank %d (prev rank %d)", msg, holder_.vdocs_[vid].keyDoc, vid, normBm25,
+			  normDist, finalRank, prevRank);
 #else
 	(void)msg;
 	(void)vid;

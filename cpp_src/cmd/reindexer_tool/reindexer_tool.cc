@@ -34,7 +34,7 @@ void InstallLogLevel(const vector<string>& args) {
 }
 
 int main(int argc, char* argv[]) {
-	backtrace_init();
+	reindexer::debug::backtrace_init();
 
 	args::ArgumentParser parser("Reindexer client tool");
 	args::HelpFlag help(parser, "help", "show this message", {'h', "help"});

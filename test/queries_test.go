@@ -441,12 +441,13 @@ func TestQueries(t *testing.T) {
 
 type CompositeFacetResultItem struct {
 	CompanyName string
-	Rate float64
-	Count int
+	Rate        float64
+	Count       int
 }
 type CompositeFacetResult []CompositeFacetResultItem
-func (f CompositeFacetResult) Len() int {return len(f)}
-func (f CompositeFacetResult) Swap(i, j int) {f[i], f[j] = f[j], f[i]}
+
+func (f CompositeFacetResult) Len() int      { return len(f) }
+func (f CompositeFacetResult) Swap(i, j int) { f[i], f[j] = f[j], f[i] }
 func (f CompositeFacetResult) Less(i, j int) bool {
 	if f[i].Count == f[j].Count {
 		if f[i].CompanyName == f[j].CompanyName {
@@ -482,14 +483,16 @@ func CheckAggregateQueries() {
 	}
 
 	aggregations := it.AggResults()
-	if len(aggregations) != 7 {panic(fmt.Errorf("%d != 7", len(aggregations)))}
+	if len(aggregations) != 7 {
+		panic(fmt.Errorf("%d != 7", len(aggregations)))
+	}
 
 	var sum float64
 	ageFacet := make(map[int]int, 0)
 	nameFacet := make(map[string]int, 0)
 	type CompositeFacetItem struct {
 		CompanyName string
-		Rate float64
+		Rate        float64
 	}
 	compositeFacet := make(map[CompositeFacetItem]int, 0)
 	ageMin, ageMax := 100000000, -10000000
@@ -513,7 +516,7 @@ func CheckAggregateQueries() {
 		compositeFacetResult = append(compositeFacetResult, CompositeFacetResultItem{k.CompanyName, k.Rate, v})
 	}
 	sort.Sort(compositeFacetResult)
-	compositeFacetResult = compositeFacetResult[min(facetOffset, len(compositeFacetResult)): min(facetOffset + facetLimit, len(compositeFacetResult))]
+	compositeFacetResult = compositeFacetResult[min(facetOffset, len(compositeFacetResult)):min(facetOffset+facetLimit, len(compositeFacetResult))]
 
 	if sum != aggregations[1].Value {
 		panic(fmt.Errorf("%f != %f", sum, aggregations[1].Value))
@@ -522,21 +525,35 @@ func CheckAggregateQueries() {
 		panic(fmt.Errorf("%f != %f,len=%d", sum/float64(len(res)), aggregations[0].Value, len(res)))
 	}
 
-	if len(aggregations[2].Fields) != 1 {panic(fmt.Errorf("%d != 1", len(aggregations[2].Fields)))}
-	if aggregations[2].Fields[0] != "age" {panic(fmt.Errorf("%s != %s", aggregations[2].Fields[0], "age"))}
-	if len(aggregations[2].Facets) != len(ageFacet) {panic(fmt.Errorf("%d != %d", len(aggregations[2].Facets), len(ageFacet)))}
+	if len(aggregations[2].Fields) != 1 {
+		panic(fmt.Errorf("%d != 1", len(aggregations[2].Fields)))
+	}
+	if aggregations[2].Fields[0] != "age" {
+		panic(fmt.Errorf("%s != %s", aggregations[2].Fields[0], "age"))
+	}
+	if len(aggregations[2].Facets) != len(ageFacet) {
+		panic(fmt.Errorf("%d != %d", len(aggregations[2].Facets), len(ageFacet)))
+	}
 	for _, facet := range aggregations[2].Facets {
-		if len(facet.Values) != 1 {panic(fmt.Errorf("%d != 1", len(facet.Values)))}
+		if len(facet.Values) != 1 {
+			panic(fmt.Errorf("%d != 1", len(facet.Values)))
+		}
 		intVal, _ := strconv.Atoi(facet.Values[0])
 		if count, ok := ageFacet[intVal]; ok != true || count != facet.Count {
 			panic(fmt.Errorf("facet '%s' val '%s': %d != %d", aggregations[2].Fields[0], facet.Values[0], count, facet.Count))
 		}
 	}
 
-	if len(aggregations[3].Fields) != 1 {panic(fmt.Errorf("%d != 1", len(aggregations[3].Fields)))}
-	if aggregations[3].Fields[0] != "name" {panic(fmt.Errorf("%s != %s", aggregations[3].Fields[0], "name"))}
+	if len(aggregations[3].Fields) != 1 {
+		panic(fmt.Errorf("%d != 1", len(aggregations[3].Fields)))
+	}
+	if aggregations[3].Fields[0] != "name" {
+		panic(fmt.Errorf("%s != %s", aggregations[3].Fields[0], "name"))
+	}
 	for _, facet := range aggregations[3].Facets {
-		if len(facet.Values) != 1 {panic(fmt.Errorf("%d != 1", len(facet.Values)))}
+		if len(facet.Values) != 1 {
+			panic(fmt.Errorf("%d != 1", len(facet.Values)))
+		}
 		if count, ok := nameFacet[facet.Values[0]]; ok != true || count != facet.Count {
 			panic(fmt.Errorf("facet '%s' val '%s': %d != %d", aggregations[3].Fields[0], facet.Values[0], count, facet.Count))
 		}
@@ -547,21 +564,31 @@ func CheckAggregateQueries() {
 	if ageMax != int(aggregations[5].Value) {
 		panic(fmt.Errorf("%d != %f", ageMax, aggregations[5].Value))
 	}
-	if len(aggregations[6].Fields) != 2 {panic(fmt.Errorf("%d != 1", len(aggregations[6].Fields)))}
-	if aggregations[6].Fields[0] != "company_name" {panic(fmt.Errorf("%s != %s", aggregations[6].Fields[0], "company_name"))}
-	if aggregations[6].Fields[1] != "rate" {panic(fmt.Errorf("%s != %s", aggregations[6].Fields[1], "rate"))}
+	if len(aggregations[6].Fields) != 2 {
+		panic(fmt.Errorf("%d != 1", len(aggregations[6].Fields)))
+	}
+	if aggregations[6].Fields[0] != "company_name" {
+		panic(fmt.Errorf("%s != %s", aggregations[6].Fields[0], "company_name"))
+	}
+	if aggregations[6].Fields[1] != "rate" {
+		panic(fmt.Errorf("%s != %s", aggregations[6].Fields[1], "rate"))
+	}
 	if len(compositeFacetResult) != len(aggregations[6].Facets) {
 		panic(fmt.Errorf("Composite facet sizes differ: %d != %d", len(compositeFacetResult), len(aggregations[6].Facets)))
 	}
 	for i := 0; i < len(compositeFacetResult); i++ {
-		if len(aggregations[6].Facets[i].Values) != 2 {panic(fmt.Errorf("%d != 2", len(aggregations[6].Facets[i].Values)))}
-		rate, err := strconv.ParseFloat(aggregations[6].Facets[i].Values[1], 64);
-		if err != nil {panic(err)}
+		if len(aggregations[6].Facets[i].Values) != 2 {
+			panic(fmt.Errorf("%d != 2", len(aggregations[6].Facets[i].Values)))
+		}
+		rate, err := strconv.ParseFloat(aggregations[6].Facets[i].Values[1], 64)
+		if err != nil {
+			panic(err)
+		}
 		if compositeFacetResult[i].CompanyName != aggregations[6].Facets[i].Values[0] || compositeFacetResult[i].Rate != rate ||
-					compositeFacetResult[i].Count != aggregations[6].Facets[i].Count {
+			compositeFacetResult[i].Count != aggregations[6].Facets[i].Count {
 			panic(fmt.Errorf("Facet 'company_name', 'rate' #%d {'%s', '%s': %d} != {'%s', '%f': %d}", i,
-						aggregations[6].Facets[i].Values[0], aggregations[6].Facets[i].Values[1], aggregations[6].Facets[i].Count,
-						compositeFacetResult[i].CompanyName, compositeFacetResult[i].Rate, compositeFacetResult[i].Count))
+				aggregations[6].Facets[i].Values[0], aggregations[6].Facets[i].Values[1], aggregations[6].Facets[i].Count,
+				compositeFacetResult[i].CompanyName, compositeFacetResult[i].Rate, compositeFacetResult[i].Count))
 		}
 	}
 }
@@ -582,7 +609,7 @@ func makeLikePattern(s string) string {
 	runes := make([]rune, len(s))
 	i := 0
 	for _, rune := range s {
-		if rand.Int() % 4 == 0 {
+		if rand.Int()%4 == 0 {
 			runes[i] = '_'
 		} else {
 			runes[i] = rune
@@ -590,24 +617,24 @@ func makeLikePattern(s string) string {
 		i++
 	}
 	var result string
-	if rand.Int() % 4 == 0 {
+	if rand.Int()%4 == 0 {
 		result += "%"
 	}
 	current := 0
-	next := rand.Int() % (len(s) + 1);
+	next := rand.Int() % (len(s) + 1)
 	last := next
 	for current < len(s) {
 		if current < next {
-			result += string(runes[current : next])
+			result += string(runes[current:next])
 			last = next
-			current = rand.Int() % (len(s) - last + 1) + last
+			current = rand.Int()%(len(s)-last+1) + last
 		}
-		next = rand.Int() % (len(s) - current + 1) + current
-		if current > last || rand.Int() % 4 == 0 {
+		next = rand.Int()%(len(s)-current+1) + current
+		if current > last || rand.Int()%4 == 0 {
 			result += "%"
 		}
 	}
-	if rand.Int() % 4 == 0 {
+	if rand.Int()%4 == 0 {
 		result += "%"
 	}
 	return result
@@ -748,6 +775,99 @@ func callQueriesSequence(namespace, distinct, sort string, desc, testComposite b
 		Not().Where("year", reindexer.RANGE, []int{2001, 2020}).
 		Where("age_limit", reindexer.RANGE, []int64{40, 50}).
 		Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		OpenBracket().
+		Where("age_limit", reindexer.RANGE, []int64{40, 45}).
+		CloseBracket().
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		OpenBracket().
+		Where("age_limit", reindexer.RANGE, []int64{40, 45}).
+		Where("genre", reindexer.EQ, 5).
+		CloseBracket().
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		OpenBracket().
+		Where("age_limit", reindexer.RANGE, []int64{40, 45}).
+		Or().Where("genre", reindexer.EQ, 5).
+		CloseBracket().
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		Not().OpenBracket().
+		Where("age_limit", reindexer.RANGE, []int64{40, 45}).
+		CloseBracket().
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		Where("genre", reindexer.EQ, 5).
+		OpenBracket().
+		Where("age_limit", reindexer.RANGE, []int64{40, 45}).
+		Or().Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
+		CloseBracket().
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		Where("genre", reindexer.EQ, 5).
+		OpenBracket().
+		Where("age_limit", reindexer.RANGE, []int64{40, 45}).
+		Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
+		CloseBracket().
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		Where("genre", reindexer.EQ, 5).
+		Or().OpenBracket().
+		Where("age_limit", reindexer.RANGE, []int64{40, 45}).
+		Or().Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
+		CloseBracket().
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		Where("genre", reindexer.EQ, 5).
+		Or().OpenBracket().
+		Where("age_limit", reindexer.RANGE, []int64{40, 45}).
+		Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
+		CloseBracket().
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		Where("genre", reindexer.EQ, 5).
+		Not().Where("year", reindexer.RANGE, []int{2001, 2010}).
+		OpenBracket().
+		Where("age_limit", reindexer.RANGE, []int64{40, 45}).
+		Or().Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
+		CloseBracket().
+		ExecAndVerify()
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		Where("genre", reindexer.EQ, 5).
+		Or().OpenBracket().
+		Where("genre", reindexer.EQ, 4).
+		Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
+		CloseBracket().
+		Not().Where("year", reindexer.RANGE, []int{2001, 2010}).
+		OpenBracket().
+		Where("age_limit", reindexer.RANGE, []int64{40, 45}).
+		Or().Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
+		Not().OpenBracket().
+		Or().OpenBracket().
+		OpenBracket().
+		Where("age", reindexer.SET, []int{1, 2, 3, 4}).
+		Or().Where("id", reindexer.EQ, mkID(rand.Int()%5000)).
+		Not().Where("tmp", reindexer.EQ, ""). // composite pk with store index
+		CloseBracket().
+		Or().OpenBracket().
+		Where("tmp", reindexer.EQ, ""). // composite pk with store index
+		Not().Where("isdeleted", reindexer.EQ, true).Or().Where("year", reindexer.GT, 2001).Debug(reindexer.TRACE).
+		CloseBracket().
+		CloseBracket().
+		CloseBracket().
+		CloseBracket().
 		ExecAndVerify()
 
 	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
@@ -939,6 +1059,12 @@ func CheckTestItemsSQLQueries() {
 	} else {
 		newTestQuery(DB, "test_items").Where("actor.name", reindexer.GT, []string{"bde"}).Verify(res, false)
 	}
+
+	if res, err := DB.ExecSQL("SELECT count(*), * FROM test_items WHERE year >= '2016' OR (rate = '1.1' OR company_name LIKE '" + likePattern + "') and AGE_LIMIT <= 50").FetchAll(); err != nil {
+		panic(err)
+	} else {
+		newTestQuery(DB, "test_items").Where("year", reindexer.GE, 2016).Or().OpenBracket().Where("RATE", reindexer.EQ, 1.1).Or().Where("company_name", reindexer.LIKE, likePattern).CloseBracket().Where("age_limit", reindexer.LE, int64(50)).Verify(res, true)
+	}
 }
 
 func CheckTestItemsDSLQueries() {
@@ -1029,15 +1155,16 @@ func TestUpdateQuery(t *testing.T) {
 		panic(err)
 	}
 
-	count, err := DB.Query("test_items_update_query").Where("id", reindexer.EQ, mkID(1000)).
+	it := DB.Query("test_items_update_query").Where("id", reindexer.EQ, mkID(1000)).
 		Set("name", "hello").
 		Set("empty_int", 1).
 		Set("postal_code", 10).Update()
-	if err != nil {
-		panic(err)
+	defer it.Close()
+	if it.Error() != nil {
+		panic(it.Error())
 	}
 
-	if count != 1 {
+	if it.Count() != 1 {
 		panic(fmt.Errorf("Expected update query return 1 item"))
 	}
 
@@ -1064,6 +1191,7 @@ func TestDeleteByPK(t *testing.T) {
 	for i := 1; i <= 30; i++ {
 		assertErrorMessage(t, DB.Upsert("test_items_object_array", newTestItemObjectArray(i, rand.Int()%10)), nil)
 	}
+
 	assertErrorMessage(t, DB.MustBeginTx("test_items_object_array").Commit(nil), nil)
 	assertErrorMessage(t, DB.CloseNamespace("test_items_object_array"), nil)
 	assertErrorMessage(t, DB.OpenNamespace("test_items_object_array", nsOpts, TestItemObjectArray{}), nil)
@@ -1082,6 +1210,7 @@ func TestDeleteByPK(t *testing.T) {
 	for i := 1; i <= 30; i++ {
 		assertErrorMessage(t, DB.Upsert("test_item_delete", newTestItem(i, rand.Int()%20)), nil)
 	}
+
 	assertErrorMessage(t, DB.MustBeginTx("test_item_delete").Commit(nil), nil)
 	assertErrorMessage(t, DB.CloseNamespace("test_item_delete"), nil)
 	assertErrorMessage(t, DB.OpenNamespace("test_item_delete", nsOpts, TestItem{}), nil)

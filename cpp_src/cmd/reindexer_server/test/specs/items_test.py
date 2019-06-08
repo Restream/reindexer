@@ -92,6 +92,19 @@ class ItemsTest(BaseTest):
         self.assertEqual(True, status == self.API_STATUS['success'], body)
         self.assertEqual(True, new_item_body in body['items'], new_item_body)
 
+        precepts = [item_body_last_key + '=serial()']
+        status, body = self.api_update_item(
+            self.current_db, self.current_ns, new_item_body, precepts)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+        returned_items = body['items']
+
+        status, body = self.api_get_sorted_items(
+            self.current_db, self.current_ns, item_body_last_key, 'desc')
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+        self.assertEqual(True, len(returned_items) == len(body['items']), body)
+        for ret_item in returned_items:
+            self.assertEqual(True, ret_item in body['items'], ret_item)
+
     def test_delete_item(self):
         """Should be able to delete an item"""
 

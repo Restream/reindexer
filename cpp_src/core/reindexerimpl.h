@@ -4,13 +4,14 @@
 #include <memory>
 #include <string>
 #include <thread>
+
 #include "core/namespace.h"
 #include "core/nsselecter/nsselecter.h"
 #include "dbconfig.h"
 #include "estl/fast_hash_map.h"
 #include "estl/h_vector.h"
 #include "estl/shared_mutex.h"
-#include "query/querycache.h"
+#include "namespacecloner.h"
 #include "querystat.h"
 #include "replicator/updatesobserver.h"
 #include "tools/errors.h"
@@ -96,9 +97,11 @@ protected:
 		bool locked_ = false;
 	};
 	void doSelect(const Query &q, QueryResults &res, NsLocker &locker, SelectFunctionsHolder &func);
-	JoinedSelectors prepareJoinedSelectors(const Query &q, QueryResults &result, NsLocker &locks,SelectFunctionsHolder &func);
+	JoinedSelectors prepareJoinedSelectors(const Query &q, QueryResults &result, NsLocker &locks, SelectFunctionsHolder &func);
 
+	void ensureDataLoaded(ClonableNamespace &ns);
 	void ensureDataLoaded(Namespace::Ptr &ns);
+
 	void syncSystemNamespaces(string_view nsName);
 	void createSystemNamespaces();
 	Error updateDbFromConfig(string_view configNsName, Item &configItem);
@@ -108,11 +111,21 @@ protected:
 
 	void backgroundRoutine();
 	Error closeNamespace(string_view nsName, bool dropStorage, bool enableDropSlave = false);
+
 	Namespace::Ptr getNamespace(string_view nsName);
+#if ATOMIC_NS_CLONE
+	ClonableNamespace getClonableNamespace(string_view nsName, size_t actionsSize = 1);
+#else
+	Namespace::Ptr getClonableNamespace(string_view nsName, size_t actionsSize = 1) {
+		(void)actionsSize;
+		return getNamespace(nsName);
+	}
+#endif
+
 	std::vector<Namespace::Ptr> getNamespaces();
 	std::vector<string> getNamespacesNames();
 
-	fast_hash_map<string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
+	fast_hash_map<string, NamespaceCloner::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
 
 	shared_timed_mutex mtx_;
 	string storagePath_;

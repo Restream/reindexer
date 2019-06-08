@@ -253,6 +253,11 @@ private:
 			}
 		}
 
+		if (state == PortOrPassword || state == Port) {
+			std::swap(url.port, portOrPassword);
+			url.integerPort = atoi(url.port.c_str());
+		}
+
 		assert(portOrPassword.empty());
 
 		if (!usernameOrHostname.empty()) url.hostname = usernameOrHostname;

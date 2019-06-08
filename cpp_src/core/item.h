@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/keyvalue/variant.h"
+#include "estl/span.h"
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -65,13 +66,14 @@ public:
 		/// @tparam T - type. Must be one of: int, int64_t, double
 		/// @param arr - std::vector of T values, which will be setted to field
 		template <typename T>
+		FieldRef &operator=(span<T> arr);
+		/// Set array of values to field
+		/// @tparam T - type. Must be one of: int, int64_t, double
+		/// @param arr - std::vector of T values, which will be setted to field
+		template <typename T>
 		FieldRef &operator=(const std::vector<T> &arr) {
-			VariantArray krs;
-			krs.reserve(arr.size());
-			for (auto &t : arr) krs.push_back(Variant(t));
-			return operator=(krs);
+			return operator=(span<T>(arr));
 		}
-
 		/// Set string value to field
 		/// If Item is in Unsafe Mode, then Item will not store str, but just keep pointer to str,
 		/// application *MUST* hold str until end of life of Item
@@ -84,7 +86,7 @@ public:
 		FieldRef &operator=(const string &str);
 
 		/// Get field index name
-		const string &Name();
+		string_view Name();
 
 		/// Get Variant with field value
 		/// If field is array, and contains not exact 1 element, then throws reindexer::Error
@@ -102,9 +104,9 @@ public:
 
 	private:
 		FieldRef(int field, ItemImpl *itemImpl);
-		FieldRef(const string &jsonPath, ItemImpl *itemImpl);
+		FieldRef(string_view jsonPath, ItemImpl *itemImpl);
 		ItemImpl *itemImpl_;
-		std::string jsonPath_;
+		string_view jsonPath_;
 		int field_;
 	};
 
@@ -152,11 +154,7 @@ public:
 	/// Get field by name
 	/// @param name - name of field
 	/// @return FieldRef which contains reference to indexed field
-	FieldRef operator[](const string &name);
-	/// Get field by name
-	/// @param name - name of field
-	/// @return FieldRef which contains reference to indexed field
-	FieldRef operator[](const char *name);
+	FieldRef operator[](string_view name);
 	/// Set additional percepts for modify operation
 	/// @param precepts - strings in format "fieldName=Func()"
 	void SetPrecepts(const vector<string> &precepts);
@@ -167,7 +165,7 @@ public:
 	/// @return Current state token
 	int GetStateToken();
 	/// Check is item valid. If is not valid, then any futher operations with item will raise nullptr dereference
-	operator bool() const { return impl_ != nullptr; }
+	bool operator!() const { return impl_ == nullptr; }
 	/// Enable Unsafe Mode<br>.
 	/// USE WITH CAUTION. In unsafe mode most of Item methods will not store  strings and slices, passed from/to application.<br>
 	/// The advantage of unsafe mode is speed. It does not call extra memory allocation from heap and copying data.<br>

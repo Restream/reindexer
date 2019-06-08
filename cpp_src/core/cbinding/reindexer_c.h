@@ -31,9 +31,9 @@ reindexer_ret reindexer_commit_transaction(uintptr_t rx, uintptr_t tr);
 reindexer_error reindexer_rollback_transaction(uintptr_t rx, uintptr_t tr);
 
 reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, reindexer_buffer data);
-reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int with_items, int32_t *pt_versions, int pt_versions_count);
+reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int as_json, int32_t *pt_versions, int pt_versions_count);
 
-reindexer_ret reindexer_select_query(uintptr_t rx, reindexer_buffer in, int with_items, int32_t *pt_versions, int pt_versions_count);
+reindexer_ret reindexer_select_query(uintptr_t rx, reindexer_buffer in, int as_json, int32_t *pt_versions, int pt_versions_count);
 reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in);
 reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in);
 

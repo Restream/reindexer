@@ -4,6 +4,7 @@
 #include <thread>
 #include "core/dbconfig.h"
 #include "core/namespacestat.h"
+#include "estl/fast_hash_map.h"
 #include "net/ev/ev.h"
 #include "tools/errors.h"
 #include "updatesobserver.h"
@@ -69,9 +70,11 @@ protected:
 	net::ev::async resync_;
 	ReplicationConfigData config_;
 
-	std::atomic<bool> syncing_, terminate_;
-	int64_t maxLsn_;
-	std::string syncingNsName_;
+	std::atomic<bool> terminate_;
+	enum State { StateInit, StateSyncing, StateIdle };
+	std::atomic<State> state_;
+	fast_hash_map<string, int64_t, nocase_hash_str, nocase_equal_str> maxLsns_;
+
 	std::mutex syncMtx_;
 };
 

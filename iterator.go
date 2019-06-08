@@ -1,6 +1,7 @@
 package reindexer
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -51,6 +52,7 @@ func errJSONIterator(err error) *JSONIterator {
 }
 
 func newIterator(
+	userCtx context.Context,
 	q *Query,
 	result bindings.RawBuffer,
 	nsArray []nsArrayEntry,
@@ -71,6 +73,7 @@ func newIterator(
 	it.resPtr = 0
 	it.ptr = 0
 	it.err = nil
+	it.userCtx = userCtx
 	if len(it.joinToFields) > 0 {
 		it.current.joinObj = make([][]interface{}, len(it.joinToFields))
 	}
@@ -79,7 +82,7 @@ func newIterator(
 	return
 }
 
-func newJSONIterator(q *Query, json []byte, jsonOffsets []int, explain []byte) *JSONIterator {
+func newJSONIterator(ctx context.Context, q *Query, json []byte, jsonOffsets []int, explain []byte) *JSONIterator {
 	var ji *JSONIterator
 	if q != nil {
 		ji = &q.jsonIterator
@@ -92,6 +95,7 @@ func newJSONIterator(q *Query, json []byte, jsonOffsets []int, explain []byte) *
 	ji.query = q
 	ji.explain = explain
 	ji.err = nil
+	ji.userCtx = ctx
 
 	return ji
 }
@@ -114,7 +118,8 @@ type Iterator struct {
 		joinObj [][]interface{}
 		rank    int
 	}
-	err error
+	err     error
+	userCtx context.Context
 }
 
 func (it *Iterator) setBuffer(result bindings.RawBuffer) {
@@ -166,7 +171,7 @@ func (it *Iterator) readItem() (item interface{}, rank int) {
 	if (it.rawQueryParams.flags & bindings.ResultsWithJoined) != 0 {
 		subNSRes = int(it.ser.GetVarUInt())
 	}
-	item, it.err = unpackItem(&it.nsArray[params.nsid], &params, it.allowUnsafe && (subNSRes == 0), (it.rawQueryParams.flags&bindings.ResultsWithItemID) == 0)
+	item, it.err = unpackItem(&it.nsArray[params.nsid], &params, it.allowUnsafe && (subNSRes == 0), (it.rawQueryParams.flags&bindings.ResultsWithItemID) == 0, nil)
 	if it.err != nil {
 		return
 	}
@@ -181,7 +186,7 @@ func (it *Iterator) readItem() (item interface{}, rank int) {
 		subitems := make([]interface{}, siRes)
 		for i := 0; i < siRes; i++ {
 			subparams := it.ser.readRawtItemParams()
-			subitems[i], it.err = unpackItem(&it.nsArray[nsIndex+nsIndexOffset], &subparams, it.allowUnsafe, (it.rawQueryParams.flags&bindings.ResultsWithItemID) == 0)
+			subitems[i], it.err = unpackItem(&it.nsArray[nsIndex+nsIndexOffset], &subparams, it.allowUnsafe, (it.rawQueryParams.flags&bindings.ResultsWithItemID) == 0, nil)
 			if it.err != nil {
 				return
 			}
@@ -206,7 +211,7 @@ func (it *Iterator) fetchResults() {
 			fetchCount = it.query.fetchCount
 		}
 
-		if it.err = fetchMore.Fetch(it.ptr, fetchCount, false); it.err != nil {
+		if it.err = fetchMore.Fetch(it.userCtx, it.ptr, fetchCount, false); it.err != nil {
 			return
 		}
 		it.resPtr = 0
@@ -424,6 +429,7 @@ type JSONIterator struct {
 	err         error
 	ptr         int
 	explain     []byte
+	userCtx     context.Context
 }
 
 // Next moves iterator pointer to the next element.

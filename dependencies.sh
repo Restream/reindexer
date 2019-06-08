@@ -39,7 +39,7 @@ alpine_apks="g++ snappy-dev libexecinfo-dev make curl cmake unzip git"
 
 cmake_installed () {
     info_msg "Check for installed cmake ..... "
-    cmake_version=$(cmake --version | grep -oE '3\.[0-9]+\.[0-9]+')
+    cmake_version=$(cmake --version  2>/dev/null | grep -oE '3\.[0-9]+\.[0-9]+')
     if [ -n "$cmake_version" ]; then
         info_msg "Cmake with comaptable version $cmake_version found"
         return

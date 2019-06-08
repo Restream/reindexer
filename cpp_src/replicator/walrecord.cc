@@ -1,5 +1,6 @@
 
 #include "walrecord.h"
+#include "core/cjson/baseencoder.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -75,35 +76,96 @@ WALRecord::WALRecord(span<uint8_t> packed) {
 	}
 }
 
+string_view wrecType2Str(WALRecType t) {
+	switch (t) {
+		case WalEmpty:
+			return "<WalEmpty>"_sv;
+		case WalItemUpdate:
+			return "WalItemUpdate"_sv;
+		case WalUpdateQuery:
+			return "WalUpdateQuery"_sv;
+		case WalIndexAdd:
+			return "WalIndexAdd"_sv;
+		case WalIndexDrop:
+			return "WalIndexDrop"_sv;
+		case WalIndexUpdate:
+			return "WalIndexUpdate"_sv;
+		case WalReplState:
+			return "WalReplState"_sv;
+		case WalPutMeta:
+			return "WalPutMeta"_sv;
+		case WalNamespaceAdd:
+			return "WalNamespaceAdd"_sv;
+		case WalNamespaceDrop:
+			return "WalNamespaceDrop"_sv;
+		case WalItemModify:
+			return "WalItemMofify"_sv;
+		default:
+			return "<Unknown"_sv;
+	}
+}
+
 WrSerializer &WALRecord::Dump(WrSerializer &ser, std::function<string(string_view)> cjsonViewer) const {
+	ser << wrecType2Str(type);
 	switch (type) {
 		case WalEmpty:
-			return ser << "<WalEmpty>";
-		case WalItemUpdate:
-			return ser << "WalItemUpdate rowId=" << id;
-		case WalUpdateQuery:
-			return ser << "WalUpdateQuery " << data;
-		case WalIndexAdd:
-			return ser << "WalIndexAdd " << data;
-		case WalIndexDrop:
-			return ser << "WalIndexDrop " << data;
-		case WalIndexUpdate:
-			return ser << "WalIndexUpdate " << data;
-		case WalReplState:
-			return ser << "WalReplState " << data;
-		case WalPutMeta:
-			return ser << "WalPutMeta " << putMeta.key << "=" << putMeta.value;
 		case WalNamespaceAdd:
-			return ser << "WalNamespaceAdd ";
 		case WalNamespaceDrop:
-			return ser << "WalNamespaceDrop ";
+			return ser;
+		case WalItemUpdate:
+			return ser << " rowId=" << id;
+		case WalUpdateQuery:
+		case WalIndexAdd:
+		case WalIndexDrop:
+		case WalIndexUpdate:
+		case WalReplState:
+			return ser << ' ' << data;
+		case WalPutMeta:
+			return ser << ' ' << putMeta.key << "=" << putMeta.value;
 		case WalItemModify:
-			return ser << (itemModify.modifyMode == ModeDelete ? "WalItemDelete " : "WalItemUpdate ") << cjsonViewer(itemModify.itemCJson);
+			return ser << (itemModify.modifyMode == ModeDelete ? " Delete " : " Update ") << cjsonViewer(itemModify.itemCJson);
 		default:
 			fprintf(stderr, "Unexpected WAL rec type %d\n", int(type));
 			std::abort();
 	}
 	return ser;
+}
+
+void WALRecord::GetJSON(JsonBuilder &jb, std::function<string(string_view)> cjsonViewer) const {
+	jb.Put("type", wrecType2Str(type));
+
+	switch (type) {
+		case WalEmpty:
+		case WalNamespaceAdd:
+		case WalNamespaceDrop:
+			return;
+		case WalItemUpdate:
+			jb.Put("row_id", id);
+			return;
+		case WalUpdateQuery:
+			jb.Put("query", data);
+			return;
+		case WalIndexAdd:
+		case WalIndexDrop:
+		case WalIndexUpdate:
+			jb.Raw("index", data);
+			return;
+		case WalReplState:
+			jb.Raw("state", data);
+			return;
+		case WalPutMeta:
+			jb.Put("key", putMeta.key);
+			jb.Put("value", putMeta.value);
+			break;
+		case WalItemModify:
+			jb.Put("mode", itemModify.modifyMode);
+			jb.Raw("item", cjsonViewer(itemModify.itemCJson));
+			return;
+		default:
+			fprintf(stderr, "Unexpected WAL rec type %d\n", int(type));
+			std::abort();
+	}
+	return;
 }
 
 WALRecord::WALRecord(string_view data) : WALRecord(span<uint8_t>(reinterpret_cast<const uint8_t *>(data.data()), data.size())) {}

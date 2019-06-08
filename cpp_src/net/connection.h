@@ -15,7 +15,7 @@ namespace net {
 using reindexer::cbuf;
 
 const ssize_t kConnReadbufSize = 0x8000;
-const ssize_t kConnWriteBufSize = 0x400;
+const ssize_t kConnWriteBufSize = 0x800;
 
 template <typename Mutex>
 class Connection {

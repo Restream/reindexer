@@ -17,7 +17,7 @@ vector<TransactionStep> &TransactionAccessor::GetSteps() { return impl_->steps_;
 
 void TransactionImpl::checkTagsMatcher(Item &item) {
 	if (item.IsTagsUpdated()) {
-		auto nsPtr_ = rx_->getNamespace(nsName_);
+		auto nsPtr_ = rx_->getClonableNamespace(nsName_);
 		nsPtr_->UpdateTagsMatcherFromItem(&item);
 	}
 }

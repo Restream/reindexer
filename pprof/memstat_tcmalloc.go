@@ -1,7 +1,10 @@
+// +build !pprof_jemalloc
+
 package pprof
 
 // #include <gperftools/malloc_extension_c.h>
 // #include <stdlib.h>
+// #cgo LDFLAGS: -ltcmalloc_and_profiler
 import "C"
 import "unsafe"
 

@@ -195,7 +195,7 @@ func TestStorageChangeFormat(t *testing.T) {
 		panic(err)
 	}
 
-	iterator := DB.Query("test_items_storage").WhereInt("id", reindexer.EQ, 1).Exec()
+	iterator := DB.Query("test_items_storage").WhereInt("id", reindexer.EQ, 1).DeepReplEqual().Exec()
 
 	if err = iterator.Error(); err != nil {
 		panic(err)

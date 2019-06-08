@@ -9,9 +9,10 @@ set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 
 option (WITH_ASAN "Enable AddressSanitized build" OFF)
 option (WITH_TSAN "Enable ThreadSanitized build" OFF)
-option (WITH_GPERF "Enable GPerfTools build" ON)
 option (WITH_GCOV "Enable instrumented code coverage build" OFF)
-set (REINDEXER_VERSION_DEFAULT "2.0.3")
+option (ENABLE_TCMALLOC "Enable tcmalloc extensions" ON)
+option (ENABLE_JEMALLOC "Enable jemalloc extensions" ON)
+set (REINDEXER_VERSION_DEFAULT "2.1.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -25,6 +26,7 @@ set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake/modules 
 
 # Configure compile options
 string( REPLACE "-DNDEBUG" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
+string( REPLACE "-g" "-g1" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
 
 if (MSVC)
   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -MP")
@@ -73,18 +75,32 @@ include_directories(${REINDEXER_SOURCE_PATH}/vendor)
 list(APPEND REINDEXER_LIBRARIES reindexer)
 add_library(${TARGET} STATIC ${HDRS} ${SRCS} ${VENDORS})
 
+
+# add_definitions(-DREINDEX_FT_EXTRA_DEBUG=1)
+
 ## Dependencies
 
 # tcmalloc
 ##########
-if (NOT WITH_ASAN AND NOT WITH_TSAN AND WITH_GPERF)
+if (NOT WITH_ASAN AND NOT WITH_TSAN)
   # tmalloc conflict with sanitizers, so disable it for sanitized builds
-  find_package(Gperftools)
-  if(GPERFTOOLS_TCMALLOC)
-    include_directories(SYSTEM ${GPERFTOOLS_INCLUDE_DIR})
-    add_definitions(-DREINDEX_WITH_GPERFTOOLS=1)
-    list (APPEND REINDEXER_LIBRARIES ${GPERFTOOLS_LIBRARIES})
+  if (ENABLE_TCMALLOC)
+    find_package(Gperftools)
+    if(GPERFTOOLS_TCMALLOC)
+      include_directories(SYSTEM ${GPERFTOOLS_INCLUDE_DIR})
+      add_definitions(-DREINDEX_WITH_GPERFTOOLS=1)
+      list (APPEND REINDEXER_LIBRARIES ${GPERFTOOLS_LIBRARIES})
+    endif()
   endif()
+
+  if (NOT GPERFTOOLS_TCMALLOC AND ENABLE_JEMALLOC)
+  find_package(Jemalloc)
+  if(JEMALLOC_FOUND)
+    include_directories(SYSTEM ${JEMALLOC_INCLUDE_DIR})
+    add_definitions(-DREINDEX_WITH_JEMALLOC=1)
+    list (APPEND REINDEXER_LIBRARIES ${JEMALLOC_LIBRARY})
+     endif()
+  endif ()
 endif ()
 
 # snappy
@@ -159,9 +175,44 @@ if(LIBEXECINFO)
   list (APPEND REINDEXER_LIBRARIES ${LIBEXECINFO})
 endif()
 
+if (NOT WIN32)
+  # libdl
+  find_library(LIBDL dl)
+  if(LIBDL)
+    list (APPEND REINDEXER_LIBRARIES ${LIBDL})
+    add_definitions(-DREINDEX_WITH_LIBDL=1)
+  endif()
+endif()
+
 find_path(EXECINFO_INCLUDE_PATH execinfo.h)
 if (EXECINFO_INCLUDE_PATH)
   add_definitions(-DREINDEX_WITH_EXECINFO=1)
+endif()
+
+# Unwind from libgcc or clang
+include (CheckSymbolExists)
+check_symbol_exists (_Unwind_Backtrace unwind.h HAVE_BACKTRACE)
+check_symbol_exists (_Unwind_GetIPInfo unwind.h HAVE_GETIPINFO)
+if (HAVE_BACKTRACE AND HAVE_GETIPINFO)
+  message ("-- Found system unwind") 
+  add_definitions(-DREINDEX_WITH_UNWIND=1)
+endif()
+
+# libunwind
+find_library(LIBUNWIND unwind)
+if(LIBUNWIND)
+list (APPEND REINDEXER_LIBRARIES ${LIBUNWIND} )
+  find_path(LIBUNWIND_INCLUDE_PATH libunwind.h)
+  if (LIBUNWIND_INCLUDE_PATH)
+    add_definitions(-DREINDEX_WITH_LIBUNWIND=1)
+    message ("-- Found Libunwind: ${LIBUNWIND} ${LIBUNWIND_INCLUDE_PATH}") 
+  endif()
+else ()
+endif()
+
+
+if (APPLE)
+  add_definitions (-DREINDEX_WITH_APPLE_SYMBOLICATION=1)
 endif()
 
 if (WIN32)
@@ -263,7 +314,7 @@ set (CPACK_RPM_DEV_FILE_NAME "RPM-DEFAULT")
 if (NOT WIN32)
   SET(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "server")
   SET(DIST_INCLUDE_FILES
-    "tools/errors.h" "tools/serializer.h" "tools/varint.h"
+    "tools/errors.h" "tools/serializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h"
     "core/reindexer.h" "core/type_consts.h" "core/item.h" "core/payload/payloadvalue.h" "core/indexopts.h"
     "core/namespacedef.h" "core/keyvalue/variant.h" "core/sortingprioritiestable.h"
     "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" 

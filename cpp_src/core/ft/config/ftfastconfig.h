@@ -8,7 +8,7 @@ using std::vector;
 using std::string;
 
 struct FtFastConfig : public BaseFTConfig {
-	virtual void parse(char *json) final;
+	virtual void parse(string_view json) final;
 
 	double bm25Boost = 1.0;
 	double bm25Weight = 0.5;

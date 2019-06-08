@@ -96,10 +96,10 @@ func (n *NestedDeepCopyType) DeepCopy() interface{} {
 
 func TestDeepCopyEquality(t *testing.T) {
 	nsOpts := reindexer.DefaultNamespaceOptions()
+	DB.DropNamespace(testNsName)
 
 	assertErrorMessage(t, OpenNamespaceWrapper(testNsName, nsOpts, PurchaseOption{}), nil)
 	assertErrorMessage(t, DB.DropNamespace(testNsName), nil)
-
 	assertErrorMessage(t, OpenNamespaceWrapper(testNsName, nsOpts, BrokenDeepCopyType{}), reindexer.ErrDeepCopyType)
 
 	assertErrorMessage(t, OpenNamespaceWrapper(testNsName, nsOpts, NestedDeepCopyType{}), nil)

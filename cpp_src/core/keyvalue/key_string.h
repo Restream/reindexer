@@ -82,6 +82,8 @@ key_string make_key_string(Args &&... args) {
 	return key_string(new intrusive_atomic_rc_wrapper<base_key_string>(args...));
 }
 
+inline static bool operator==(const key_string &rhs, const key_string &lhs) { return *rhs == *lhs; }
+
 // Unckecked cast to derived class!
 // It assumes, that all strings in payload are intrusive_ptr and stored with intrusive_atomic_rc_wrapper
 inline void key_string_add_ref(string *str) {

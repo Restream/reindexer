@@ -1,6 +1,7 @@
 package reindexer
 
 import (
+	"context"
 	"time"
 
 	"github.com/restream/reindexer/bindings"
@@ -11,21 +12,21 @@ type Tx struct {
 	namespace        string
 	started          bool
 	forceCommitCount uint32
-	db               *Reindexer
+	db               *reindexerImpl
 	ns               *reindexerNamespace
 	counter          uint32
 	ctx              bindings.TxCtx
 }
 
-func newTx(db *Reindexer, namespace string) (*Tx, error) {
+func newTx(db *reindexerImpl, namespace string, ctx context.Context) (*Tx, error) {
 	tx := &Tx{db: db, namespace: namespace, forceCommitCount: 0}
-	tx.startTx()
+	tx.startTxCtx(ctx)
 	tx.ns, _ = tx.db.getNS(tx.namespace)
 
 	return tx, nil
 }
 
-func newTxAutocommit(db *Reindexer, namespace string, forceCommitCount uint32) (*Tx, error) {
+func newTxAutocommit(db *reindexerImpl, namespace string, forceCommitCount uint32) (*Tx, error) {
 	tx := &Tx{db: db, namespace: namespace, forceCommitCount: forceCommitCount}
 	tx.startTx()
 	tx.ns, _ = tx.db.getNS(tx.namespace)
@@ -34,15 +35,20 @@ func newTxAutocommit(db *Reindexer, namespace string, forceCommitCount uint32) (
 }
 
 func (tx *Tx) startTx() (err error) {
+	return tx.startTxCtx(context.Background())
+}
+
+func (tx *Tx) startTxCtx(ctx context.Context) (err error) {
 	if tx.started {
 		return nil
 	}
 	tx.counter = 0
 	tx.started = true
-	tx.ctx, err = tx.db.binding.BeginTx(tx.namespace)
+	tx.ctx, err = tx.db.binding.BeginTx(ctx, tx.namespace)
 	if err != nil {
 		return err
 	}
+	tx.ctx.UserCtx = ctx
 	return nil
 }
 
@@ -93,7 +99,7 @@ func (tx *Tx) CommitWithCount(updatedAt *time.Time) (count int, err error) {
 		now := time.Now().UTC()
 		updatedAt = &now
 	}
-	tx.db.setUpdatedAt(tx.ns, *updatedAt)
+	tx.db.setUpdatedAt(tx.ctx.UserCtx, tx.ns, *updatedAt)
 
 	return
 }
@@ -129,7 +135,7 @@ func (tx *Tx) modifyInternal(item interface{}, json []byte, mode int, precepts .
 		if err != nil {
 			rerr, ok := err.(bindings.Error)
 			if ok && rerr.Code() == bindings.ErrStateInvalidated {
-				tx.db.Query(tx.ns.name).Limit(0).Exec()
+				tx.db.query(tx.ns.name).Limit(0).ExecCtx(tx.ctx.UserCtx)
 				err = rerr
 				continue
 			}

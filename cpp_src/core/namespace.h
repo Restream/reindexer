@@ -1,14 +1,13 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <vector>
 #include "core/cjson/tagsmatcher.h"
 #include "core/dbconfig.h"
 #include "core/item.h"
-#include "core/selectfunc/selectfunc.h"
 #include "estl/fast_hash_map.h"
-#include "estl/fast_hash_set.h"
 #include "estl/shared_mutex.h"
 #include "index/keyentry.h"
 #include "joincache.h"
@@ -36,6 +35,8 @@ class QueryResults;
 class DBConfigProvider;
 class SelectLockUpgrader;
 class UpdatesObservers;
+class QueryPreprocessor;
+class SelectIteratorContainer;
 
 class Namespace {
 protected:
@@ -43,6 +44,8 @@ protected:
 	friend class WALSelecter;
 	friend class NsSelectFuncInterface;
 	friend class ReindexerImpl;
+	friend QueryPreprocessor;
+	friend SelectIteratorContainer;
 
 	class NSUpdateSortedContext : public UpdateSortedContext {
 	public:
@@ -67,12 +70,19 @@ protected:
 	class IndexesStorage : public vector<unique_ptr<Index>> {
 	public:
 		using Base = vector<unique_ptr<Index>>;
+
 		IndexesStorage(const Namespace &ns);
+
+		IndexesStorage(const IndexesStorage &src) = delete;
+		IndexesStorage &operator=(const IndexesStorage &src) = delete;
+
+		IndexesStorage(IndexesStorage &&src) = delete;
+		IndexesStorage &operator=(IndexesStorage &&src) noexcept = delete;
 
 		int denseIndexesSize() const { return ns_.payloadType_.NumFields(); }
 		int sparseIndexesSize() const { return ns_.sparseIndexesCount_; }
 		int compositeIndexesSize() const { return totalSize() - denseIndexesSize() - sparseIndexesSize(); }
-
+		void MoveBase(IndexesStorage &&src);
 		int firstSparsePos() const { return ns_.payloadType_.NumFields(); }
 		int firstCompositePos() const { return ns_.payloadType_.NumFields() + ns_.sparseIndexesCount_; }
 		int firstCompositePos(const PayloadType &pt, int sparseIndexes) const { return pt.NumFields() + sparseIndexes; }
@@ -93,6 +103,7 @@ public:
 
 	Namespace(const string &_name, UpdatesObservers &observers);
 	Namespace &operator=(const Namespace &) = delete;
+	void CopyContentsFrom(const Namespace &);
 	~Namespace();
 
 	const string &GetName() { return name_; }
@@ -102,6 +113,7 @@ public:
 	void LoadFromStorage();
 	void DeleteStorage();
 
+	uint32_t GetItemsCount();
 	void AddIndex(const IndexDef &indexDef);
 	void UpdateIndex(const IndexDef &indexDef);
 	void DropIndex(const IndexDef &indexDef);
@@ -139,15 +151,16 @@ public:
 	int getIndexByName(const string &index) const;
 	bool getIndexByName(const string &name, int &index) const;
 
-	static Namespace *Clone(Namespace::Ptr);
-
 	void FillResult(QueryResults &result, IdSet::Ptr ids, const h_vector<std::string, 1> &selectFilter);
 
 	void EnablePerfCounters(bool enable = true) { enablePerfCounters_ = enable; }
 
 	// Replication slave mode functions
 	ReplicationState GetReplState();
+	ReplicationState getReplState();
 	void SetSlaveLSN(int64_t slaveLSN);
+
+	void ReplaceTagsMatcher(const TagsMatcher &tm);
 
 	void UpdateTagsMatcherFromItem(Item *item);
 
@@ -202,6 +215,7 @@ protected:
 	const FieldsSet &pkFields();
 	void writeToStorage(const string_view &key, const string_view &data) {
 		std::unique_lock<std::mutex> lck(storage_mtx_);
+		++unflushedCount_;
 		updates_->Put(key, data);
 	}
 
@@ -229,7 +243,7 @@ protected:
 	datastorage::UpdatesCollection::Ptr updates_;
 	int unflushedCount_;
 
-	shared_timed_mutex mtx_;
+	mutable shared_timed_mutex mtx_;
 	std::mutex storage_mtx_;
 
 	// Commit phases state
@@ -252,6 +266,7 @@ private:
 	typedef unique_lock<shared_timed_mutex> WLock;
 
 	IdType createItem(size_t realSize);
+	void MoveContentsFrom(Namespace &&src) noexcept;
 
 	JoinCache::Ptr joinCache_;
 
@@ -272,7 +287,10 @@ private:
 	std::atomic<bool> cancelCommit_;
 	std::atomic<int64_t> lastUpdateTime_;
 
+	std::atomic<uint32_t> itemsCount_;
+
 	friend class Query;
-};
+	friend class NamespaceCloner;
+};  // namespace reindexer
 
 }  // namespace reindexer

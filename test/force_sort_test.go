@@ -39,6 +39,20 @@ type SortOrderValues struct {
 	offset int
 }
 
+func copyWholeTree(query *queryTest, tree *queryTestEntryTree) {
+	for _, d := range tree.data {
+		query.nextOp = d.op
+		if d.dataType == leaf {
+			entry := d.data.(*queryTestEntry)
+			query.Where(entry.index, entry.condition, entry.ikeys)
+		} else {
+			query.OpenBracket()
+			copyWholeTree(query, tree)
+			query.CloseBracket()
+		}
+	}
+}
+
 func newSortOrderValues(query *queryTest) *SortOrderValues {
 	q := newTestQuery(query.db, query.namespace)
 	q.Distinct(query.distinctIndex)
@@ -49,10 +63,7 @@ func newSortOrderValues(query *queryTest) *SortOrderValues {
 		q.ReqTotal()
 	}
 	q.nextOp = query.nextOp
-
-	for _, entry := range query.entries {
-		q.Where(entry.index, entry.condition, entry.ikeys)
-	}
+	copyWholeTree(q, &query.entries)
 
 	return &SortOrderValues{
 		q:      q,
@@ -84,7 +95,9 @@ func (so *SortOrderValues) GetVerifyItems() []interface{} {
 
 func execAndVerifyForceSortOrderQuery(query *queryTest) {
 
-	items, err := query.Exec().FetchAll()
+	defer query.close()
+
+	items, err := query.ManualClose().Exec().FetchAll()
 	if err != nil {
 		panic(err)
 	}

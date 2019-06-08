@@ -10,7 +10,7 @@ namespace client {
 
 using namespace reindexer::net;
 
-QueryResults::QueryResults(int fetchFlags) : fetchFlags_(fetchFlags), fetchAmount_(0){};
+QueryResults::QueryResults(int fetchFlags) : fetchFlags_(fetchFlags), fetchAmount_(0), requestTimeout_(0){};
 QueryResults::QueryResults(QueryResults &&) = default;
 QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	if (this != &obj) {
@@ -28,17 +28,19 @@ QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	return *this;
 }
 
-QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, int fetchFlags, int fetchAmount)
+QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, int fetchFlags, int fetchAmount,
+						   seconds timeout)
 	: conn_(conn),
 	  nsArray_(std::move(nsArray)),
 	  fetchOffset_(0),
 	  fetchFlags_(fetchFlags),
 	  fetchAmount_(fetchAmount),
+	  requestTimeout_(timeout),
 	  cmpl_(std::move(cmpl)) {}
 
 QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, string_view rawResult, int queryID,
-						   int fetchFlags, int fetchAmount)
-	: QueryResults(conn, std::move(nsArray), cmpl, fetchFlags, fetchAmount) {
+						   int fetchFlags, int fetchAmount, seconds timeout)
+	: QueryResults(conn, std::move(nsArray), cmpl, fetchFlags, fetchAmount, timeout) {
 	Bind(rawResult, queryID);
 }
 
@@ -73,8 +75,9 @@ void QueryResults::Bind(string_view rawResult, int queryID) {
 }
 
 void QueryResults::fetchNextResults() {
+	using std::chrono::seconds;
 	int flags = fetchFlags_ ? (fetchFlags_ & ~kResultsWithPayloadTypes) : kResultsCJson;
-	auto ret = conn_->Call(cproto::kCmdFetchResults, queryID_, flags, queryParams_.count + fetchOffset_, fetchAmount_);
+	auto ret = conn_->Call(cproto::kCmdFetchResults, requestTimeout_, queryID_, flags, queryParams_.count + fetchOffset_, fetchAmount_);
 	if (!ret.Status().ok()) {
 		throw ret.Status();
 	}

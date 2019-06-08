@@ -18,6 +18,7 @@ target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES} ${benchmark_LIBRARY})
 
 add_executable(${FT_TARGET} ${FT_FIXT_SRCS} ${TOOLS_SRCS} ft_bench.cc)
 target_link_libraries(${FT_TARGET} ${REINDEXER_LIBRARIES} ${benchmark_LIBRARY})
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/dict.txt ${CMAKE_CURRENT_BINARY_DIR}/dict.txt COPYONLY)
 
 add_test (NAME bench COMMAND ${TARGET} --benchmark_color=true --benchmark_counters_tabular=true)
-add_test (NAME ft_bench COMMAND ${FT_TARGET} --benchmark_color=true --benchmark_counters_tabular=true WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+add_test (NAME ft_bench COMMAND ${FT_TARGET} --benchmark_color=true --benchmark_counters_tabular=true)

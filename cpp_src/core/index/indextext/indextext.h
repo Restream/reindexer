@@ -6,19 +6,13 @@
 #include "core/ft/ft_fuzzy/searchers/isearcher.h"
 #include "core/ft/ftdsl.h"
 #include "core/ft/ftsetcashe.h"
-#include "core/ft/idrelset.h"
-#include "core/ft/stemmer.h"
 #include "core/index/indexunordered.h"
 #include "core/selectfunc/ctx/ftctx.h"
 #include "estl/fast_hash_map.h"
-#include "estl/flat_str_map.h"
 #include "estl/shared_mutex.h"
 #include "fieldsgetter.h"
 
-//#define REINDEX_FT_EXTRA_DEBUG 1
-
 namespace reindexer {
-using std::pair;
 using std::unique_ptr;
 
 template <typename T>
@@ -42,7 +36,7 @@ public:
 
 protected:
 	void initSearchers();
-	FieldsGetter<T> Getter();
+	FieldsGetter Getter();
 
 	shared_ptr<FtIdSetCache> cache_ft_;
 	fast_hash_map<string, int> ftFields_;

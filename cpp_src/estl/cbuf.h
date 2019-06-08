@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <climits>
 #include <vector>
-#include "h_vector.h"
+#include "span.h"
 
 namespace reindexer {
 

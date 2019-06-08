@@ -49,7 +49,7 @@ public:
 	QueryResults &operator=(const QueryResults &) = delete;
 	QueryResults &operator=(QueryResults &&obj) noexcept;
 	void Add(const ItemRef &i);
-	void AddItem(Item &item);
+	void AddItem(Item &item, bool withData = false);
 	void Dump() const;
 	void Erase(ItemRefVector::iterator begin, ItemRefVector::iterator end);
 	size_t Count() const { return items_.size(); }

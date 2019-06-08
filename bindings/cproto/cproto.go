@@ -1,11 +1,13 @@
 package cproto
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
 	"net"
 	"net/url"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -31,20 +33,29 @@ type NetCProto struct {
 	onChangeCallback func()
 	serverStartTime  int64
 	retryAttempts    bindings.OptionRetryAttempts
+	timeouts         bindings.OptionTimeouts
+	termCh           chan struct{}
 }
 
 func (binding *NetCProto) Init(u *url.URL, options ...interface{}) (err error) {
 
 	connPoolSize := defConnPoolSize
+
 	for _, option := range options {
 		switch v := option.(type) {
 		case bindings.OptionConnPoolSize:
 			connPoolSize = v.ConnPoolSize
 		case bindings.OptionRetryAttempts:
 			binding.retryAttempts = v
+		case bindings.OptionTimeouts:
+			binding.timeouts = v
 		default:
 			fmt.Printf("Unknown cproto option: %v\n", option)
 		}
+	}
+
+	if binding.timeouts.RequestTimeout/time.Second != 0 && binding.timeouts.LoginTimeout > binding.timeouts.RequestTimeout {
+		binding.timeouts.RequestTimeout = binding.timeouts.LoginTimeout
 	}
 
 	if binding.retryAttempts.Read < 0 {
@@ -56,13 +67,24 @@ func (binding *NetCProto) Init(u *url.URL, options ...interface{}) (err error) {
 
 	binding.url = *u
 	binding.pool = make(chan *connection, connPoolSize)
+	var wg sync.WaitGroup
+	wg.Add(connPoolSize)
 	for i := 0; i < connPoolSize; i++ {
-		conn, cerr := newConnection(binding)
-		if cerr != nil {
-			err = cerr
+		go func(binding *NetCProto, wg *sync.WaitGroup) {
+			defer wg.Done()
+			conn, _ := newConnection(binding)
+			binding.pool <- conn
+		}(binding, &wg)
+	}
+	wg.Wait()
+	for i := 0; i < connPoolSize; i++ {
+		conn := <-binding.pool
+		if conn.err != nil {
+			err = conn.err
 		}
 		binding.pool <- conn
 	}
+	binding.termCh = make(chan struct{})
 	go binding.pinger()
 	return
 }
@@ -71,44 +93,43 @@ func (binding *NetCProto) Clone() bindings.RawBinding {
 	return &NetCProto{}
 }
 
-func (binding *NetCProto) Ping() error {
-	return binding.rpcCallNoResults(opRd, cmdPing)
+func (binding *NetCProto) Ping(ctx context.Context) error {
+	return binding.rpcCallNoResults(ctx, opRd, cmdPing)
 }
 
-func (binding *NetCProto) BeginTx(namespace string) (ctx bindings.TxCtx, err error) {
-	buf, err := binding.rpcCall(opWr, cmdStartTransaction, namespace)
+func (binding *NetCProto) BeginTx(ctx context.Context, namespace string) (txCtx bindings.TxCtx, err error) {
+	buf, err := binding.rpcCall(ctx, opWr, cmdStartTransaction, namespace)
 
 	if len(buf.args) == 0 {
 		return
 	}
-	ctx.Result = buf
-	ctx.Id = uint64(buf.args[0].(int64))
+	txCtx.Result = buf
+	txCtx.Id = uint64(buf.args[0].(int64))
 	return
 }
 
-func (binding *NetCProto) CommitTx(ctx *bindings.TxCtx) (bindings.RawBuffer, error) {
-	netBuffer := ctx.Result.(*NetBuffer)
+func (binding *NetCProto) CommitTx(txCtx *bindings.TxCtx) (bindings.RawBuffer, error) {
+	netBuffer := txCtx.Result.(*NetBuffer)
 
-	txBuf, err := netBuffer.conn.rpcCall(cmdCommitTx, int64(ctx.Id))
+	txBuf, err := netBuffer.conn.rpcCall(txCtx.UserCtx, cmdCommitTx, uint32(binding.timeouts.RequestTimeout/time.Second), int64(txCtx.Id))
+	if err != nil {
+		return nil, err
+	}
 
 	defer txBuf.Free()
 	defer netBuffer.close()
 	netBuffer.needClose = false
 	txBuf.needClose = false
 
-	if err != nil {
-		return nil, err
-	}
-
 	txBuf.buf, netBuffer.buf = netBuffer.buf, txBuf.buf
 	netBuffer.result = txBuf.args[0].([]byte)
 	return netBuffer, nil
 }
 
-func (binding *NetCProto) RollbackTx(ctx *bindings.TxCtx) error {
-	netBuffer := ctx.Result.(*NetBuffer)
+func (binding *NetCProto) RollbackTx(txCtx *bindings.TxCtx) error {
+	netBuffer := txCtx.Result.(*NetBuffer)
 
-	txBuf, err := netBuffer.conn.rpcCall(cmdRollbackTx, int64(ctx.Id))
+	txBuf, err := netBuffer.conn.rpcCall(txCtx.UserCtx, cmdRollbackTx, uint32(binding.timeouts.RequestTimeout/time.Second), int64(txCtx.Id))
 
 	defer txBuf.Free()
 	defer netBuffer.Free()
@@ -137,7 +158,7 @@ func (binding *NetCProto) ModifyItemTx(txCtx *bindings.TxCtx, format int, data [
 
 	netBuffer := txCtx.Result.(*NetBuffer)
 
-	txBuf, err := netBuffer.conn.rpcCall(cmdAddTxItem, format, data, mode, packedPercepts, stateToken, int64(txCtx.Id))
+	txBuf, err := netBuffer.conn.rpcCall(txCtx.UserCtx, cmdAddTxItem, uint32(binding.timeouts.RequestTimeout/time.Second), format, data, mode, packedPercepts, stateToken, int64(txCtx.Id))
 
 	defer txBuf.Free()
 	if err != nil {
@@ -147,7 +168,8 @@ func (binding *NetCProto) ModifyItemTx(txCtx *bindings.TxCtx, format int, data [
 
 	return nil
 }
-func (binding *NetCProto) ModifyItem(nsHash int, namespace string, format int, data []byte, mode int, precepts []string, stateToken int) (bindings.RawBuffer, error) {
+
+func (binding *NetCProto) ModifyItem(ctx context.Context, nsHash int, namespace string, format int, data []byte, mode int, precepts []string, stateToken int) (bindings.RawBuffer, error) {
 
 	var packedPercepts []byte
 	if len(precepts) != 0 {
@@ -161,7 +183,7 @@ func (binding *NetCProto) ModifyItem(nsHash int, namespace string, format int, d
 		packedPercepts = ser1.Bytes()
 	}
 
-	buf, err := binding.rpcCall(opWr, cmdModifyItem, namespace, format, data, mode, packedPercepts, stateToken, 0)
+	buf, err := binding.rpcCall(ctx, opWr, cmdModifyItem, namespace, format, data, mode, packedPercepts, stateToken, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +192,7 @@ func (binding *NetCProto) ModifyItem(nsHash int, namespace string, format int, d
 	return buf, nil
 }
 
-func (binding *NetCProto) OpenNamespace(namespace string, enableStorage, dropOnFormatError bool) error {
+func (binding *NetCProto) OpenNamespace(ctx context.Context, namespace string, enableStorage, dropOnFormatError bool) error {
 	storageOtps := bindings.StorageOpts{
 		EnableStorage:     enableStorage,
 		DropOnFormatError: dropOnFormatError,
@@ -187,45 +209,45 @@ func (binding *NetCProto) OpenNamespace(namespace string, enableStorage, dropOnF
 		return err
 	}
 
-	return binding.rpcCallNoResults(opWr, cmdOpenNamespace, bNamespaceDef)
+	return binding.rpcCallNoResults(ctx, opWr, cmdOpenNamespace, bNamespaceDef)
 }
 
-func (binding *NetCProto) CloseNamespace(namespace string) error {
-	return binding.rpcCallNoResults(opWr, cmdCloseNamespace, namespace)
+func (binding *NetCProto) CloseNamespace(ctx context.Context, namespace string) error {
+	return binding.rpcCallNoResults(ctx, opWr, cmdCloseNamespace, namespace)
 }
 
-func (binding *NetCProto) DropNamespace(namespace string) error {
-	return binding.rpcCallNoResults(opWr, cmdDropNamespace, namespace)
+func (binding *NetCProto) DropNamespace(ctx context.Context, namespace string) error {
+	return binding.rpcCallNoResults(ctx, opWr, cmdDropNamespace, namespace)
 }
 
-func (binding *NetCProto) AddIndex(namespace string, indexDef bindings.IndexDef) error {
+func (binding *NetCProto) AddIndex(ctx context.Context, namespace string, indexDef bindings.IndexDef) error {
 	bIndexDef, err := json.Marshal(indexDef)
 	if err != nil {
 		return err
 	}
 
-	return binding.rpcCallNoResults(opWr, cmdAddIndex, namespace, bIndexDef)
+	return binding.rpcCallNoResults(ctx, opWr, cmdAddIndex, namespace, bIndexDef)
 }
 
-func (binding *NetCProto) UpdateIndex(namespace string, indexDef bindings.IndexDef) error {
+func (binding *NetCProto) UpdateIndex(ctx context.Context, namespace string, indexDef bindings.IndexDef) error {
 	bIndexDef, err := json.Marshal(indexDef)
 	if err != nil {
 		return err
 	}
 
-	return binding.rpcCallNoResults(opWr, cmdUpdateIndex, namespace, bIndexDef)
+	return binding.rpcCallNoResults(ctx, opWr, cmdUpdateIndex, namespace, bIndexDef)
 }
 
-func (binding *NetCProto) DropIndex(namespace, index string) error {
-	return binding.rpcCallNoResults(opWr, cmdDropIndex, namespace, index)
+func (binding *NetCProto) DropIndex(ctx context.Context, namespace, index string) error {
+	return binding.rpcCallNoResults(ctx, opWr, cmdDropIndex, namespace, index)
 }
 
-func (binding *NetCProto) PutMeta(namespace, key, data string) error {
-	return binding.rpcCallNoResults(opWr, cmdPutMeta, namespace, key, data)
+func (binding *NetCProto) PutMeta(ctx context.Context, namespace, key, data string) error {
+	return binding.rpcCallNoResults(ctx, opWr, cmdPutMeta, namespace, key, data)
 }
 
-func (binding *NetCProto) GetMeta(namespace, key string) (bindings.RawBuffer, error) {
-	buf, err := binding.rpcCall(opRd, cmdGetMeta, namespace, key)
+func (binding *NetCProto) GetMeta(ctx context.Context, namespace, key string) (bindings.RawBuffer, error) {
+	buf, err := binding.rpcCall(ctx, opRd, cmdGetMeta, namespace, key)
 	if err != nil {
 		buf.Free()
 		return nil, err
@@ -235,9 +257,9 @@ func (binding *NetCProto) GetMeta(namespace, key string) (bindings.RawBuffer, er
 	return buf, nil
 }
 
-func (binding *NetCProto) Select(query string, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
+func (binding *NetCProto) Select(ctx context.Context, query string, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	flags := 0
-	if withItems {
+	if asJson {
 		flags |= bindings.ResultsJson
 	} else {
 		flags |= bindings.ResultsCJson | bindings.ResultsWithPayloadTypes | bindings.ResultsWithItemID
@@ -247,7 +269,7 @@ func (binding *NetCProto) Select(query string, withItems bool, ptVersions []int3
 		fetchCount = math.MaxInt32
 	}
 
-	buf, err := binding.rpcCall(opRd, cmdSelectSQL, query, flags, int32(fetchCount), ptVersions)
+	buf, err := binding.rpcCall(ctx, opRd, cmdSelectSQL, query, flags, int32(fetchCount), ptVersions)
 	if err != nil {
 		buf.Free()
 		return nil, err
@@ -258,9 +280,9 @@ func (binding *NetCProto) Select(query string, withItems bool, ptVersions []int3
 	return buf, nil
 }
 
-func (binding *NetCProto) SelectQuery(data []byte, withItems bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
+func (binding *NetCProto) SelectQuery(ctx context.Context, data []byte, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	flags := 0
-	if withItems {
+	if asJson {
 		flags |= bindings.ResultsJson
 	} else {
 		flags |= bindings.ResultsCJson | bindings.ResultsWithPayloadTypes | bindings.ResultsWithItemID
@@ -270,7 +292,7 @@ func (binding *NetCProto) SelectQuery(data []byte, withItems bool, ptVersions []
 		fetchCount = math.MaxInt32
 	}
 
-	buf, err := binding.rpcCall(opRd, cmdSelect, data, flags, int32(fetchCount), ptVersions)
+	buf, err := binding.rpcCall(ctx, opRd, cmdSelect, data, flags, int32(fetchCount), ptVersions)
 	if err != nil {
 		buf.Free()
 		return nil, err
@@ -281,8 +303,8 @@ func (binding *NetCProto) SelectQuery(data []byte, withItems bool, ptVersions []
 	return buf, nil
 }
 
-func (binding *NetCProto) DeleteQuery(nsHash int, data []byte) (bindings.RawBuffer, error) {
-	buf, err := binding.rpcCall(opWr, cmdDeleteQuery, data)
+func (binding *NetCProto) DeleteQuery(ctx context.Context, nsHash int, data []byte) (bindings.RawBuffer, error) {
+	buf, err := binding.rpcCall(ctx, opWr, cmdDeleteQuery, data)
 	if err != nil {
 		buf.Free()
 		return nil, err
@@ -291,8 +313,8 @@ func (binding *NetCProto) DeleteQuery(nsHash int, data []byte) (bindings.RawBuff
 	return buf, nil
 }
 
-func (binding *NetCProto) UpdateQuery(nsHash int, data []byte) (bindings.RawBuffer, error) {
-	buf, err := binding.rpcCall(opWr, cmdUpdateQuery, data)
+func (binding *NetCProto) UpdateQuery(ctx context.Context, nsHash int, data []byte) (bindings.RawBuffer, error) {
+	buf, err := binding.rpcCall(ctx, opWr, cmdUpdateQuery, data)
 	if err != nil {
 		buf.Free()
 		return nil, err
@@ -301,8 +323,8 @@ func (binding *NetCProto) UpdateQuery(nsHash int, data []byte) (bindings.RawBuff
 	return buf, nil
 }
 
-func (binding *NetCProto) Commit(namespace string) error {
-	return binding.rpcCallNoResults(opWr, cmdCommit, namespace)
+func (binding *NetCProto) Commit(ctx context.Context, namespace string) error {
+	return binding.rpcCallNoResults(ctx, opWr, cmdCommit, namespace)
 }
 
 func (binding *NetCProto) OnChangeCallback(f func()) {
@@ -316,7 +338,7 @@ func (binding *NetCProto) DisableLogger() {
 	fmt.Println("cproto binding DisableLogger method is dummy")
 }
 
-func (binding *NetCProto) EnableStorage(path string) error {
+func (binding *NetCProto) EnableStorage(ctx context.Context, path string) error {
 	fmt.Println("cproto binding EnableStorage method is dummy")
 	return nil
 }
@@ -324,7 +346,7 @@ func (binding *NetCProto) EnableStorage(path string) error {
 func (binding *NetCProto) Status() bindings.Status {
 	var totalQueueSize, totalQueueUsage, connUsage int
 	for i := 0; i < cap(binding.pool); i++ {
-		conn := binding.getConn()
+		conn, _ := binding.getConn()
 		totalQueueSize += cap(conn.seqs)
 		queueUsage := cap(conn.seqs) - len(conn.seqs)
 		totalQueueUsage += queueUsage
@@ -343,19 +365,27 @@ func (binding *NetCProto) Status() bindings.Status {
 }
 
 func (binding *NetCProto) Finalize() error {
+	if binding.termCh != nil {
+		close(binding.termCh)
+	}
+	for i := 0; i < cap(binding.pool); i++ {
+		conn := <-binding.pool
+		conn.Finalize()
+	}
+
 	return nil
 }
 
-func (binding *NetCProto) getConn() (conn *connection) {
+func (binding *NetCProto) getConn() (conn *connection, err error) {
 	conn = <-binding.pool
 	if conn.hasError() {
-		conn, _ = newConnection(binding)
+		conn, err = newConnection(binding)
 	}
 	binding.pool <- conn
 	return
 }
 
-func (binding *NetCProto) rpcCall(op int, cmd int, args ...interface{}) (buf *NetBuffer, err error) {
+func (binding *NetCProto) rpcCall(ctx context.Context, op int, cmd int, args ...interface{}) (buf *NetBuffer, err error) {
 	var attempts int
 	switch op {
 	case opRd:
@@ -364,8 +394,11 @@ func (binding *NetCProto) rpcCall(op int, cmd int, args ...interface{}) (buf *Ne
 		attempts = binding.retryAttempts.Write + 1
 	}
 	for i := 0; i < attempts; i++ {
-		if buf, err = binding.getConn().rpcCall(cmd, args...); err == nil {
-			return
+		var conn *connection
+		if conn, err = binding.getConn(); err == nil {
+			if buf, err = conn.rpcCall(ctx, cmd, uint32(binding.timeouts.RequestTimeout/time.Second), args...); err == nil {
+				return
+			}
 		}
 		switch err.(type) {
 		case net.Error, *net.OpError:
@@ -377,21 +410,31 @@ func (binding *NetCProto) rpcCall(op int, cmd int, args ...interface{}) (buf *Ne
 	return
 }
 
-func (binding *NetCProto) rpcCallNoResults(op int, cmd int, args ...interface{}) error {
-	buf, err := binding.rpcCall(op, cmd, args...)
+func (binding *NetCProto) rpcCallNoResults(ctx context.Context, op int, cmd int, args ...interface{}) error {
+	buf, err := binding.rpcCall(ctx, op, cmd, args...)
 	buf.Free()
 	return err
 }
 
 func (binding *NetCProto) pinger() {
-	timeout := time.Second * time.Duration(pingerTimeoutSec)
+	timeout := time.Second
 	ticker := time.NewTicker(timeout)
+	var ticksCount uint16
 	for now := range ticker.C {
-		for i := 0; i < cap(binding.pool); i++ {
-			conn := binding.getConn()
-			if !conn.hasError() && conn.lastReadTime().Add(timeout).Before(now) {
-				buf, _ := conn.rpcCall(cmdPing)
-				buf.Free()
+		ticksCount++
+		select {
+		case <-binding.termCh:
+			return
+		default:
+		}
+		if ticksCount == pingerTimeoutSec {
+			ticksCount = 0
+			for i := 0; i < cap(binding.pool); i++ {
+				conn, _ := binding.getConn()
+				if !conn.hasError() && conn.lastReadTime().Add(timeout).Before(now) {
+					buf, _ := conn.rpcCall(context.TODO(), cmdPing, uint32(binding.timeouts.RequestTimeout*time.Second))
+					buf.Free()
+				}
 			}
 		}
 	}

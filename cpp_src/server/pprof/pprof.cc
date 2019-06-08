@@ -2,22 +2,24 @@
 #include <stdlib.h>
 #include <cstdlib>
 #include <thread>
-#include "debug/backtrace.h"
+#include "debug/resolver.h"
 #include "estl/chunk_buf.h"
+#include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/fsops.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
+
+const string kProfileNamePrefix = "reindexer_server";
 
 #if REINDEX_WITH_GPERFTOOLS
 #include <gperftools/heap-profiler.h>
 #include <gperftools/malloc_extension.h>
 #include <gperftools/profiler.h>
-#else
-static int ProfilerStart(const char *) { return 1; }
-static void ProfilerStop(void) { return; }
+#include "gperf_profiler.h"
 #endif
-
-#define NAME_PREFIX "reindexer_server"
+#if REINDEX_WITH_JEMALLOC
+#include <jemalloc/jemalloc.h>
+#endif
 
 namespace reindexer_server {
 using namespace reindexer;
@@ -43,9 +45,10 @@ void Pprof::Attach(http::Router &router) {
 }
 
 int Pprof::Profile(http::Context &ctx) {
+#if REINDEX_WITH_GPERFTOOLS
 	long long seconds = 30;
 	string_view secondsParam;
-	string filePath = fs::GetTempDir();
+	string filePath = fs::JoinPath(fs::GetTempDir(), kProfileNamePrefix + ".profile");
 
 	for (auto p : ctx.request->params) {
 		if (p.name == "seconds") secondsParam = p.val;
@@ -54,39 +57,63 @@ int Pprof::Profile(http::Context &ctx) {
 	if (secondsParam.length()) seconds = stoi(secondsParam);
 	if (seconds < 1) seconds = 30;
 
-	filePath = fs::JoinPath(filePath, string(NAME_PREFIX) + ".profile");
-
-	ProfilerStart(filePath.c_str());
+	if (tc_malloc_available()) {
+		ProfilerStart(filePath.c_str());
+	}
 	std::this_thread::sleep_for(std::chrono::seconds(seconds));
-	ProfilerStop();
+	if (tc_malloc_available()) {
+		ProfilerStop();
+	}
 	string content;
 	if (fs::ReadFile(filePath, content) < 0) {
-		return ctx.String(http::StatusNotFound, "File not found");
+		return ctx.String(http::StatusNotFound, "Profile file not found");
 	}
 	return ctx.String(http::StatusOK, content);
+#else
+	return ctx.String(http::StatusInternalServerError, "Reindexer was compiled without gperftools. CPU profiling is not available");
+#endif
 }
 
 int Pprof::ProfileHeap(http::Context &ctx) {
-#ifdef REINDEX_WITH_GPERFTOOLS
-	if (std::getenv("HEAPPROFILE")) {
-		char *profile = GetHeapProfile();
-		int res = ctx.String(http::StatusOK, profile);
-		free(profile);
-		return res;
+#if REINDEX_WITH_GPERFTOOLS
+	if (gperf_profiler_is_available()) {
+		if (std::getenv("HEAPPROFILE")) {
+			char *profile = GetHeapProfile();
+			int res = ctx.String(http::StatusOK, profile);
+			free(profile);
+			return res;
+		}
+		string profile;
+		MallocExtension::instance()->GetHeapSample(&profile);
+		return ctx.String(http::StatusOK, profile);
+	} else {
+		return ctx.String(http::StatusInternalServerError, "Reindexer was compiled with gperftools, but was not able to link it properly");
 	}
-	string profile;
-	MallocExtension::instance()->GetHeapSample(&profile);
-	return ctx.String(http::StatusOK, profile);
+#elif REINDEX_WITH_JEMALLOC
+	string content;
+	string filePath = fs::JoinPath(fs::GetTempDir(), kProfileNamePrefix + ".heapprofile");
+	const char *pfp = &filePath[0];
 
+	mallctl("prof.dump", NULL, NULL, &pfp, sizeof(pfp));
+	if (fs::ReadFile(filePath, content) < 0) {
+		return ctx.String(http::StatusNotFound, "Profile file not found");
+	}
+	return ctx.String(http::StatusOK, content);
+
+#else
+	return ctx.String(http::StatusInternalServerError, "Reindexer was compiled without gperftools or jemalloc. Profiling is not available");
 #endif
-	return ctx.String(http::StatusInternalServerError, "Reindexer was compiled without gperftools. Profiling is not available");
 }
 
 int Pprof::Growth(http::Context &ctx) {
-#ifdef REINDEX_WITH_GPERFTOOLS
-	string output;
-	MallocExtension::instance()->GetHeapGrowthStacks(&output);
-	return ctx.String(http::StatusOK, output);
+#if REINDEX_WITH_GPERFTOOLS
+	if (tc_malloc_available()) {
+		string output;
+		MallocExtension::instance()->GetHeapGrowthStacks(&output);
+		return ctx.String(http::StatusOK, output);
+	} else {
+		return ctx.String(http::StatusInternalServerError, "Reindexer was compiled with gperftools, but was not able to link it properly");
+	}
 #else
 	return ctx.String(http::StatusInternalServerError, "Reindexer was compiled without gperftools. Profiling is not available");
 #endif
@@ -97,7 +124,6 @@ int Pprof::CmdLine(http::Context &ctx) { return ctx.String(http::StatusOK, "rein
 int Pprof::Symbol(http::Context &ctx) {
 	WrSerializer ser;
 
-#ifdef REINDEX_WITH_GPERFTOOLS
 	string req;
 	if (ctx.request->method == "POST") {
 		req = ctx.body->Read(ctx.body->Pending());
@@ -110,43 +136,36 @@ int Pprof::Symbol(http::Context &ctx) {
 		ser << "num_symbols: 1\n"_sv;
 		return ctx.String(http::StatusOK, ser.DetachChunk());
 	}
-	size_t pos = req.find_first_of(" +", 0);
+
 	char *endp;
-	for (; pos != string::npos; pos = req.find_first_of(" +", pos)) {
+	for (size_t pos = 0; pos != string::npos; pos = req.find_first_of(" +", pos)) {
 		pos = req.find_first_not_of(" +", pos);
 		if (pos == string::npos) break;
 		uintptr_t addr = strtoull(&req[pos], &endp, 16);
-		char tmpBuf[128];
-		snprintf(tmpBuf, sizeof(tmpBuf), "%p\t", reinterpret_cast<void *>(addr));
-		ser << tmpBuf;
+		ser << string_view(&req[pos], endp - &req[pos]) << '\t';
 		resolveSymbol(addr, ser);
 		ser << '\n';
 	}
-#else
-	ser << "num_symbols: 0\n";
-#endif
 
 	return ctx.String(http::StatusOK, ser.DetachChunk());
 }
 
 void Pprof::resolveSymbol(uintptr_t ptr, WrSerializer &out) {
-	char *csym = resolve_symbol(reinterpret_cast<void *>(ptr), true);
-	//	string symbol = csym, out;
-	string_view symbol = csym;
+	auto te = debug::TraceEntry(ptr);
+	string_view symbol = te.FuncName();
 
 	if (symbol.length() > 20 && symbol.substr(0, 3) == "_ZN") {
 		out << symbol.substr(0, 20) << "...";
-		free(csym);
 		return;
 	}
 
 	int tmpl = 0;
-	for (unsigned p = 0; p < symbol.length(); p++) {
+	for (unsigned p = 0; p < symbol.length();) {
 		// strip out std:: and std::__1
 		if (symbol.substr(p, 10) == "std::__1::") {
 			p += 10;
-		} else if (symbol.substr(p, 4) == "std::") {
-			p += 4;
+		} else if (symbol.substr(p, 5) == "std::") {
+			p += 5;
 		} else {
 			// strip out c++ templates args
 			switch (symbol[p]) {
@@ -157,11 +176,10 @@ void Pprof::resolveSymbol(uintptr_t ptr, WrSerializer &out) {
 					tmpl--;
 					break;
 				default:
-					if (tmpl == 0) out << symbol.substr(p, 1);
+					if (tmpl == 0) out << symbol[p];
 			}
+			p++;
 		}
 	}
-
-	free(csym);
 }
 }  // namespace reindexer_server

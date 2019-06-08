@@ -1,6 +1,5 @@
 package pprof
 
-// #cgo LDFLAGS: -ltcmalloc -lprofiler
 // #include <stdlib.h>
 // #include "pprof.h"
 import "C"

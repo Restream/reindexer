@@ -20,7 +20,7 @@ public:
 	};
 
 	SelectIterator();
-	SelectIterator(const SelectKeyResult &res, OpType _op, bool _distinct, const string &_name, bool forcedFirst = false);
+	SelectIterator(const SelectKeyResult &res, bool distinct, const string &name, bool forcedFirst = false);
 
 	/// Starts iteration process: prepares
 	/// object for further work.
@@ -28,7 +28,7 @@ public:
 	void Start(bool reverse);
 	/// Signalizes if iteration is over.
 	/// @return true if iteration is done.
-	inline bool End() { return lastVal_ == (isReverse_ ? INT_MIN : INT_MAX) && !comparators_.size(); }
+	inline bool End() const { return lastVal_ == (isReverse_ ? INT_MIN : INT_MAX) && !comparators_.size(); }
 	/// Iterates to a next item of result.
 	/// @param minHint - rowId value to start from.
 	/// @return true if operation succeed.
@@ -91,7 +91,7 @@ public:
 		return false;
 	}
 	/// @return amonut of matched items
-	int GetMatchedCount() { return matchedCount_; }
+	int GetMatchedCount() const { return matchedCount_; }
 
 	/// Excludes last set of ids from each result
 	/// to remove duplicated keys
@@ -125,7 +125,6 @@ public:
 	const char *TypeName() const;
 	string Dump() const;
 
-	OpType op;
 	bool distinct;
 	string name;
 

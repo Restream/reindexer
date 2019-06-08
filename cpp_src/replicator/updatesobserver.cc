@@ -39,21 +39,15 @@ void UpdatesObservers::OnModifyItem(int64_t lsn, string_view nsName, ItemImpl *i
 
 void UpdatesObservers::OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &walRec) {
 	shared_lock<shared_timed_mutex> lck(mtx_);
-	for (unsigned i = 0; i < observers_.size(); i++) {
-		auto observer = observers_[i];
-		mtx_.unlock_shared();
+	for (auto observer : observers_) {
 		observer->OnWALUpdate(lsn, nsName, walRec);
-		mtx_.lock_shared();
 	}
 }
 
 void UpdatesObservers::OnConnectionState(const Error &err) {
 	shared_lock<shared_timed_mutex> lck(mtx_);
-	for (unsigned i = 0; i < observers_.size(); i++) {
-		auto observer = observers_[i];
-		mtx_.unlock_shared();
+	for (auto observer : observers_) {
 		observer->OnConnectionState(err);
-		mtx_.lock_shared();
 	}
 }
 

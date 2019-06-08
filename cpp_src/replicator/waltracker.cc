@@ -32,6 +32,7 @@ bool WALTracker::Set(const WALRecord &rec, int64_t lsn) {
 void WALTracker::Init(int64_t maxLSN, shared_ptr<datastorage::IDataStorage> storage) {
 	storage_ = storage;
 	auto data = readFromStorage(maxLSN);
+	maxLSN++;
 
 	records_.clear();
 	records_.resize(maxLSN % walSize_);
@@ -81,7 +82,7 @@ std::vector<std::pair<int64_t, std::string>> WALTracker::readFromStorage(int64_t
 			assert(lsn >= 0);
 			maxLSN = std::max(maxLSN, lsn);
 			dataSlice = dataSlice.substr(sizeof(lsn));
-			data.push_back({lsn, dataSlice.ToString()});
+			data.push_back({lsn, string(dataSlice)});
 		}
 	}
 

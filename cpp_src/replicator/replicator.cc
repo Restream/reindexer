@@ -13,7 +13,7 @@ namespace reindexer {
 
 using namespace net;
 
-Replicator::Replicator(ReindexerImpl *slave) : slave_(slave), syncing_(false), terminate_(false) {
+Replicator::Replicator(ReindexerImpl *slave) : slave_(slave), terminate_(false), state_(StateInit) {
 	stop_.set(loop_);
 	resync_.set(loop_);
 }
@@ -62,6 +62,10 @@ void Replicator::run() {
 	stop_.start();
 	logPrintf(LogInfo, "[repl] Replicator with %s started", config_.masterDSN);
 
+	syncMtx_.lock();
+	state_ = StateInit;
+	syncMtx_.unlock();
+
 	master_->SubscribeUpdates(this, true);
 
 	resync_.set([this](ev::async &) { syncDatabase(); });
@@ -89,6 +93,11 @@ Error Replicator::syncDatabase() {
 		return err;
 	}
 
+	syncMtx_.lock();
+	for (auto &ns : nses) maxLsns_[ns.name] = -1;
+	state_ = StateSyncing;
+	syncMtx_.unlock();
+
 	// Loop for all master namespaces
 	for (auto &ns : nses) {
 		// skip system & non enabled namespaces
@@ -100,16 +109,9 @@ Error Replicator::syncDatabase() {
 		if (!err.ok()) logPrintf(LogError, "[repl:%s] Error: %s", ns.name, err.what());
 
 		// Protect for concurent updates stream of same namespace
-		// if syncing_ flag is set, then concurent updates will not modify data, but just set maxLsn_
-		// syncing_
-		syncMtx_.lock();
-		syncing_ = false;
-		syncingNsName_ = ns.name;
-		maxLsn_ = -1;
-		syncing_ = true;
-		syncMtx_.unlock();
+		// if state is StateSync is set, then concurent updates will not modify data, but just set maxLsn_
 
-		for (bool done = false; err.ok() && !done;) {
+		for (bool done = false; err.ok() && !done && !terminate_;) {
 			err = syncNamespaceByWAL(ns);
 			if (!err.ok()) {
 				logPrintf(LogError, "[repl:%s] syncNamespace error: %s", ns.name, err.what());
@@ -131,13 +133,14 @@ Error Replicator::syncDatabase() {
 			syncMtx_.lock();
 			// Check, if concurrent update attempt happened with LSN bigger, than current LSN
 			// In this case retry sync
-			if (maxLsn_ <= curLSN) {
+			if (maxLsns_[ns.name] <= curLSN) {
 				done = true;
+				maxLsns_.erase(ns.name);
 			}
 			syncMtx_.unlock();
 		}
 	};
-	syncing_ = false;
+	state_ = StateIdle;
 
 	return err;
 }
@@ -184,6 +187,7 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, string_view reason
 	//  Make query to complete master's namespace data
 	client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 	if (err.ok()) err = master_->Select(Query(ns.name), qr);
+	if (err.ok()) slave_->getNamespace(ns.name)->ReplaceTagsMatcher(qr.getTagsMatcher(0));
 	if (err.ok()) err = applyWAL(ns.name, qr);
 
 	return err;
@@ -221,17 +225,22 @@ Error Replicator::applyWAL(string_view nsName, client::QueryResults &qr) {
 		}
 		stat.processed++;
 	}
+	if (!qr.Status().ok()) {
+		stat.lastError = qr.Status();
+		logPrintf(LogTrace, "[repl:%s] Error executing WAL query: %s", nsName, stat.lastError.what());
+	}
 
-	if (err.ok() && !terminate_) {
+	if (stat.lastError.ok() && !terminate_) {
 		// Set slave LSN if operation successfull
 		slaveNs->SetSlaveLSN(slaveLSN);
 	}
 	ReplicationState slaveState = slaveNs->GetReplState();
 
 	// Check data hash, if operation successfull
-	if (stat.masterState.lastLsn >= 0 && err.ok() && !terminate_ && slaveState.dataHash != stat.masterState.dataHash) {
-		err = stat.lastError = Error(errDataHashMismatch, "[repl:%s] dataHash mismatch with master %lu != %lu", nsName,
-									 stat.masterState.dataHash, slaveState.dataHash);
+	if (stat.masterState.lastLsn >= 0 && stat.lastError.ok() && !terminate_ && slaveState.dataHash != stat.masterState.dataHash) {
+		err = stat.lastError = Error(errDataHashMismatch, "[repl:%s] dataHash mismatch with master %u != %u; itemsCount %d %d; lsn %d %d",
+									 nsName, stat.masterState.dataHash, slaveState.dataHash, stat.masterState.dataCount,
+									 slaveState.dataCount, stat.masterState.lastLsn, slaveLSN);
 	}
 
 	ser.Reset();
@@ -260,25 +269,25 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 			break;
 		// Index added
 		case WalIndexAdd:
-			err = iDef.FromJSON(const_cast<char *>(rec.data.ToString().c_str()));
+			err = iDef.FromJSON(giftStr(rec.data));
 			if (err.ok()) slaveNs->AddIndex(iDef);
 			stat.updatedIndexes++;
 			break;
 		// Index dropped
 		case WalIndexDrop:
-			err = iDef.FromJSON(const_cast<char *>(rec.data.ToString().c_str()));
+			err = iDef.FromJSON(giftStr(rec.data));
 			if (err.ok()) slaveNs->DropIndex(iDef);
 			stat.deletedIndexes++;
 			break;
 		// Index updated
 		case WalIndexUpdate:
-			err = iDef.FromJSON(const_cast<char *>(rec.data.ToString().c_str()));
+			err = iDef.FromJSON(giftStr(rec.data));
 			if (err.ok()) slaveNs->UpdateIndex(iDef);
 			stat.updatedIndexes++;
 			break;
 		// Metadata updated
 		case WalPutMeta:
-			slaveNs->PutMeta(rec.putMeta.key.ToString(), rec.putMeta.value, lsn);
+			slaveNs->PutMeta(string(rec.putMeta.key), rec.putMeta.value, lsn);
 			stat.updatedMeta++;
 			break;
 		// Update query
@@ -309,7 +318,7 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 		// Replication state
 		case WalReplState:
 			stat.processed--;
-			stat.masterState.FromJSON(const_cast<char *>(rec.data.ToString().c_str()));
+			stat.masterState.FromJSON(giftStr(rec.data));
 			if (stat.masterState.clusterID != config_.clusterID) {
 				terminate_ = true;
 				throw Error(errLogic, "Wrong cluster ID expect %d, got %d from master. Terminating replicator.", config_.clusterID,
@@ -329,8 +338,9 @@ Error Replicator::applyItemCJson(int64_t lsn, std::shared_ptr<Namespace> slaveNs
 
 	if (item.impl_->tagsMatcher().size() < tm.size()) {
 		bool res = item.impl_->tagsMatcher().try_merge(tm);
-		(void)res;
-		assert(res);
+		if (!res) {
+			return Error(errNotValid, "Can't merge tagsmatcher of item with lsn %ul", lsn);
+		}
 	}
 
 	item.setLSN(lsn);
@@ -354,7 +364,7 @@ Error Replicator::applyItemCJson(int64_t lsn, std::shared_ptr<Namespace> slaveNs
 				stat.updated++;
 				break;
 			default:
-				std::abort();
+				return Error(errNotValid, "Unknown modify mode %d of item with lsn %ul", modifyMode, lsn);
 		}
 	}
 	return err;
@@ -393,6 +403,7 @@ Error Replicator::syncIndexesForced(const NamespaceDef &masterNsDef) {
 Error Replicator::syncMetaForced(string_view nsName) {
 	vector<string> keys;
 	auto err = master_->EnumMeta(nsName, keys);
+	auto ns = slave_->getNamespace(nsName);
 	if (!err.ok()) return err;
 
 	for (auto &key : keys) {
@@ -402,9 +413,10 @@ Error Replicator::syncMetaForced(string_view nsName) {
 			logPrintf(LogError, "[repl:%s] Error get meta '%s': %s", nsName, key, err.what());
 			continue;
 		}
-		err = slave_->PutMeta(nsName, key, data);
-		if (!err.ok()) {
-			logPrintf(LogError, "[repl:%s] Error set meta '%s': %s", nsName, key, err.what());
+		try {
+			ns->PutMeta(key, data, 0);
+		} catch (const Error &e) {
+			logPrintf(LogError, "[repl:%s] Error set meta '%s': %s", nsName, key, e.what());
 		}
 	}
 	return errOK;
@@ -439,6 +451,8 @@ void Replicator::OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &w
 void Replicator::OnConnectionState(const Error &err) {
 	if (err.ok()) {
 		logPrintf(LogTrace, "[repl:] OnConnectionState connected");
+		std::unique_lock<std::mutex> lck(syncMtx_);
+		state_ = StateInit;
 		resync_.send();
 	} else {
 		logPrintf(LogTrace, "[repl:] OnConnectionState closed, reason: %s", err.what());
@@ -448,11 +462,23 @@ void Replicator::OnConnectionState(const Error &err) {
 bool Replicator::canApplyUpdate(int64_t lsn, string_view nsName) {
 	if (!isSyncEnabled(nsName)) return false;
 
-	if (!syncing_) return true;
+	if (state_ == StateIdle) return true;
 	std::unique_lock<std::mutex> lck(syncMtx_);
-	if (!iequals(nsName, syncingNsName_)) return true;
-	logPrintf(LogTrace, "[repl:%s] Skipping update due to concurrent sync lsn %ld, maxLsn %ld", nsName, lsn, maxLsn_);
-	if (lsn > maxLsn_) maxLsn_ = lsn;
+	if (state_ == StateIdle) return true;
+	if (state_ == StateInit || terminate_) {
+		logPrintf(LogTrace, "[repl:%s] Skipping update due to replicator %s is in progress lsn %ld", nsName,
+				  terminate_ ? "shutdown" : "startup", lsn);
+		return false;
+	}
+
+	// sync is in progress, and ns is not processed
+	auto mIt = maxLsns_.find(nsName);
+
+	// ns is already synced
+	if (maxLsns_.find(nsName) == maxLsns_.end()) return true;
+
+	logPrintf(LogTrace, "[repl:%s] Skipping update due to concurrent sync lsn %ld, maxLsn %ld", nsName, lsn, mIt->second);
+	if (lsn > mIt->second) mIt->second = lsn;
 
 	return false;
 }

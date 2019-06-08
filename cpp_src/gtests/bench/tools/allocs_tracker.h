@@ -58,7 +58,7 @@ private:
 		static bool inited = false;
 		if (!inited) {
 			allocdebug_init_mt();
-			backtrace_init();
+			reindexer::debug::backtrace_init();
 			inited = true;
 		}
 	}

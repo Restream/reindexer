@@ -11,8 +11,8 @@ TEST_F(JoinSelectsApi, InnerJoinTest) {
 	Error err = rt.reindexer->Select(joinQuery, joinQueryRes);
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	int status = ParseItemJsonWithJoins(joinQueryRes);
-	EXPECT_EQ(status, JSON_OK) << "Error parsing json - status " << status;
+	err = VerifyResJSON(joinQueryRes);
+	EXPECT_TRUE(err.ok()) << err.what();
 
 	reindexer::QueryResults pureSelectRes;
 	err = rt.reindexer->Select(queryBooks, pureSelectRes);
@@ -71,8 +71,8 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 	err = rt.reindexer->Select(joinQuery, joinQueryRes);
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	int status = ParseItemJsonWithJoins(joinQueryRes);
-	EXPECT_EQ(status, JSON_OK) << "Error parsing json - status " << status;
+	err = VerifyResJSON(joinQueryRes);
+	EXPECT_TRUE(err.ok()) << err.what();
 
 	if (err.ok()) {
 		std::unordered_set<int> presentedAuthorIds;
@@ -134,8 +134,8 @@ TEST_F(JoinSelectsApi, OrInnerJoinTest) {
 	Error err = rt.reindexer->Select(orInnerJoinQuery, queryRes);
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	int status = ParseItemJsonWithJoins(queryRes);
-	EXPECT_EQ(status, JSON_OK) << "Error parsing json - status " << status;
+	err = VerifyResJSON(queryRes);
+	EXPECT_TRUE(err.ok()) << err.what();
 
 	if (err.ok()) {
 		for (auto rowIt : queryRes) {

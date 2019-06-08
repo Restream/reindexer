@@ -1,8 +1,6 @@
 #pragma once
 #include <limits>
 #include "reindexer_api.h"
-#include "unordered_map"
-using std::unordered_map;
 
 class FTApi : public ReindexerApi {
 public:
@@ -58,7 +56,7 @@ public:
 
 		Upsert("nm1", item);
 		Commit("nm1");
-		return make_pair(ft1, item.GetID());
+		return make_pair(ft1, counter_ - 1);
 	}
 	void Add(const std::string& ns, const std::string& ft1, const std::string& ft2) {
 		Item item = NewItem(ns);

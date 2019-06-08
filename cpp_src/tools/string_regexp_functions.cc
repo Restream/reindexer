@@ -7,7 +7,7 @@
 namespace reindexer {
 
 std::string makeLikePattern(string_view utf8Str) {
-	std::wstring utf16Str = reindexer::utf8_to_utf16(utf8Str.ToString());
+	std::wstring utf16Str = reindexer::utf8_to_utf16(utf8Str);
 	for (wchar_t &ch : utf16Str) {
 		if (rand() % 4 == 0) ch = L'_';
 	}

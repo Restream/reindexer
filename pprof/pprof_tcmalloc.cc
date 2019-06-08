@@ -1,13 +1,13 @@
-#include "pprof.h"
+// +build !pprof_jemalloc
+
 #include <gperftools/heap-profiler.h>
 #include <gperftools/malloc_extension.h>
 #include <gperftools/profiler.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <cstdlib>
 #include <cstring>
 #include <string>
 #include "backtrace.h"
+#include "pprof.h"
 
 void cgo_pprof_init() {
 	char* flag = getenv("CGOBACKTRACE");

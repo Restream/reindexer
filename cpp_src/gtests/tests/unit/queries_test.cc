@@ -1,4 +1,7 @@
+#include <thread>
 #include "queries_api.h"
+
+using std::thread;
 
 TEST_F(QueriesApi, QueriesStandardTestSet) {
 	FillDefaultNamespace(0, 2500, 20);
@@ -70,4 +73,35 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 	CheckSqlQueries();
 	CheckCompositeIndexesQueries();
 	CheckComparatorsQueries();
+}
+
+TEST_F(QueriesApi, TransactionStress) {
+	vector<thread> pool;
+	FillDefaultNamespace(0, 350, 20);
+	FillDefaultNamespace(3500, 350, 0);
+	std::atomic_uint current_size;
+	current_size = 350;
+	uint32_t stepSize = 1000;
+
+	for (size_t i = 0; i < 4; i++) {
+		pool.push_back(thread([this, i, &current_size, stepSize]() {
+			size_t start_pos = i * stepSize;
+			if (i % 2 == 0) {
+				uint32_t steps = 10;
+				for (uint32_t j = 0; j < steps; ++j) {
+					current_size += stepSize / steps;
+					AddToDefaultNamespace(start_pos, start_pos + stepSize / steps, 20);
+					start_pos = start_pos + stepSize / steps;
+				}
+			} else if (i % 2 == 1) {
+				uint32_t oldsize = current_size.load();
+				current_size += oldsize;
+				FillDefaultNamespaceTransaction(current_size, start_pos + oldsize, 10);
+			};
+		}));
+	}
+
+	for (auto& tr : pool) {
+		tr.join();
+	}
 }

@@ -1,8 +1,10 @@
 package cproto
 
 import (
+	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/restream/reindexer/bindings"
 )
@@ -19,15 +21,16 @@ type NetBuffer struct {
 	needClose bool
 }
 
-func (buf *NetBuffer) Fetch(offset, limit int, withItems bool) (err error) {
+func (buf *NetBuffer) Fetch(ctx context.Context, offset, limit int, asJson bool) (err error) {
 	flags := 0
-	if withItems {
+	if asJson {
 		flags |= bindings.ResultsJson
 	} else {
 		flags |= bindings.ResultsCJson | bindings.ResultsWithItemID
 	}
-	//fmt.Printf("cmdFetchResults(reqId=%d, offset=%d, limit=%d, json=%v, flags=%v)\n", buf.reqID, offset, limit, withItems, flags)
-	fetchBuf, err := buf.conn.rpcCall(cmdFetchResults, buf.reqID, flags, offset, limit)
+	//fmt.Printf("cmdFetchResults(reqId=%d, offset=%d, limit=%d, json=%v, flags=%v)\n", buf.reqID, offset, limit, asJson, flags)
+	netTimeout := uint32(buf.conn.owner.timeouts.RequestTimeout / time.Second)
+	fetchBuf, err := buf.conn.rpcCall(ctx, cmdFetchResults, netTimeout, buf.reqID, flags, offset, limit)
 	defer fetchBuf.Free()
 	if err != nil {
 		buf.close()
@@ -89,7 +92,8 @@ func (buf *NetBuffer) parseArgs() (err error) {
 func (buf *NetBuffer) close() {
 	if buf.needClose && !buf.closed {
 		buf.closed = true
-		closeBuf, err := buf.conn.rpcCall(cmdCloseResults, buf.reqID)
+		netTimeout := uint32(buf.conn.owner.timeouts.RequestTimeout / time.Second)
+		closeBuf, err := buf.conn.rpcCall(context.TODO(), cmdCloseResults, netTimeout, buf.reqID)
 		if err != nil {
 			fmt.Printf("rx: query close error: %v", err)
 		}

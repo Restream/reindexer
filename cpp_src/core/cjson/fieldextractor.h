@@ -16,8 +16,8 @@ public:
 	/// Start new object
 	FieldsExtractor Object(int) { return FieldsExtractor(values_, expectedType_); }
 	FieldsExtractor Array(int) { return FieldsExtractor(values_, expectedType_); }
-	FieldsExtractor Object(const char *) { return FieldsExtractor(values_, expectedType_); }
-	FieldsExtractor Array(const char *) { return FieldsExtractor(values_, expectedType_); }
+	FieldsExtractor Object(string_view) { return FieldsExtractor(values_, expectedType_); }
+	FieldsExtractor Array(string_view) { return FieldsExtractor(values_, expectedType_); }
 
 	template <typename T>
 	void Array(int /*tagName*/, span<T> data) {

@@ -8,12 +8,11 @@
 #include "vendor/murmurhash/MurmurHash3.h"
 namespace reindexer {
 
-struct JoinCacheKey : public CacheKeyBase {
+struct JoinCacheKey {
 	JoinCacheKey() {}
 	JoinCacheKey(const JoinCacheKey &other) {
 		if (this != &other) {
 			buf_ = other.buf_;
-			locked = other.locked.load();
 		}
 	}
 	void SetData(const Query &q) {

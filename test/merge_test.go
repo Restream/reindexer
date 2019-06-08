@@ -1,18 +1,16 @@
 package reindexer
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/restream/reindexer"
-
-	"reflect"
-
-	"fmt"
 )
 
 type TestFullTextSimpleItem struct {

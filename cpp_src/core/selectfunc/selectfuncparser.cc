@@ -17,7 +17,7 @@ SelectFuncStruct &SelectFuncParser::Parse(string query) {
 
 	token tok = parser.next_token(false);
 
-	selectFuncStruct_.field = tok.text().ToString();
+	selectFuncStruct_.field = string(tok.text());
 
 	tok = parser.next_token(false);
 	if (tok.text() != "=" && tok.text() != ".") {
@@ -41,7 +41,7 @@ SelectFuncStruct &SelectFuncParser::ParseFunction(tokenizer &parser, bool partOf
 	} else if (tok.text() == "highlight") {
 		selectFuncStruct_.type = SelectFuncStruct::kSelectFuncHighlight;
 	}
-	selectFuncStruct_.funcName = tok.text().ToString();
+	selectFuncStruct_.funcName = string(tok.text());
 
 	tok = parser.next_token(false);
 	if (tok.text() == "(") {
@@ -63,7 +63,7 @@ SelectFuncStruct &SelectFuncParser::ParseFunction(tokenizer &parser, bool partOf
 				selectFuncStruct_.funcArgs.push_back(agr);
 				agr.clear();
 			} else {
-				agr += tok.text().ToString();
+				agr += string(tok.text());
 			}
 		}
 	} else {

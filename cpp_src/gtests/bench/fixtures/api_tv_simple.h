@@ -75,4 +75,5 @@ private:
 	vector<int> start_times_;
 	vector<vector<int>> packages_;
 	vector<vector<int>> priceIDs_;
+	reindexer::WrSerializer wrSer_;
 };

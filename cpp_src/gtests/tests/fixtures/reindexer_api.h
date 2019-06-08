@@ -17,7 +17,6 @@
 #include "tools/stringstools.h"
 #include "vendor/utf8cpp/utf8.h"
 
-using namespace std;
 using reindexer::Error;
 using reindexer::Item;
 using reindexer::Variant;
@@ -26,27 +25,24 @@ using reindexer::Query;
 using reindexer::QueryEntry;
 using reindexer::QueryResults;
 using reindexer::Reindexer;
-using reindexer::make_key_string;
-using reindexer::p_string;
-using reindexer::QueryJoinEntry;
 
-typedef tuple<const char *, const char *, const char *, IndexOpts, int64_t> IndexDeclaration;
+typedef std::tuple<const char *, const char *, const char *, IndexOpts, int64_t> IndexDeclaration;
 
 template <class ReindexerPtr, class ItemType>
 class ReindexerTestApi {
 public:
 	ReindexerTestApi(ReindexerPtr rx) : reindexer(rx) {}
 
-	void DefineNamespaceDataset(const string &ns, initializer_list<const IndexDeclaration> fields) {
+	void DefineNamespaceDataset(const string &ns, std::initializer_list<const IndexDeclaration> fields) {
 		auto err = Error();
 		for (auto field : fields) {
-			string indexName = get<0>(field);
-			string fieldType = get<1>(field);
-			string indexType = get<2>(field);
-			int64_t expireAfter = get<4>(field);
+			string indexName = std::get<0>(field);
+			string fieldType = std::get<1>(field);
+			string indexType = std::get<2>(field);
+			int64_t expireAfter = std::get<4>(field);
 
 			if (indexType != "composite") {
-				err = reindexer->AddIndex(ns, {indexName, {indexName}, fieldType, indexType, get<3>(field)});
+				err = reindexer->AddIndex(ns, {indexName, {indexName}, fieldType, indexType, std::get<3>(field)});
 			} else {
 				string realName = indexName;
 				string idxContents = indexName;
@@ -58,7 +54,7 @@ public:
 				reindexer::JsonPaths jsonPaths;
 				jsonPaths = reindexer::split(idxContents, "+", true, jsonPaths);
 
-				err = reindexer->AddIndex(ns, {realName, jsonPaths, fieldType, indexType, get<3>(field), expireAfter});
+				err = reindexer->AddIndex(ns, {realName, jsonPaths, fieldType, indexType, std::get<3>(field), expireAfter});
 			}
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
@@ -69,7 +65,7 @@ public:
 	ItemType NewItem(const std::string &ns) { return reindexer->NewItem(ns); }
 	Error Commit(const std::string &ns) { return reindexer->Commit(ns); }
 	void Upsert(const std::string &ns, ItemType &item) {
-		assert(item);
+		assert(!!item);
 		auto err = reindexer->Upsert(ns, item);
 
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -81,7 +77,8 @@ public:
 			std::string outBuf;
 			for (auto idx = 1; idx < rdummy.NumFields(); idx++) {
 				outBuf += "\t";
-				outBuf += rdummy[idx].Name();
+				auto sv = rdummy[idx].Name();
+				outBuf.append(sv.begin(), sv.end());
 			}
 			TestCout() << outBuf << std::endl;
 		}
@@ -101,7 +98,7 @@ public:
 	string PrintItem(Item &item) {
 		std::string outBuf = "";
 		for (auto idx = 1; idx < item.NumFields(); idx++) {
-			outBuf += item[idx].Name() + "=";
+			outBuf += string(item[idx].Name()) + "=";
 			outBuf += item[idx].As<string>() + " ";
 		}
 		return outBuf;
@@ -171,9 +168,9 @@ protected:
 	void TearDown() {}
 
 public:
-	ReindexerApi() : rt(make_shared<Reindexer>()) {}
+	ReindexerApi() : rt(std::make_shared<Reindexer>()) {}
 
-	void DefineNamespaceDataset(const string &ns, initializer_list<const IndexDeclaration> fields) {
+	void DefineNamespaceDataset(const string &ns, std::initializer_list<const IndexDeclaration> fields) {
 		rt.DefineNamespaceDataset(ns, fields);
 	}
 	Item NewItem(const std::string &ns) { return rt.NewItem(ns); }
@@ -191,5 +188,5 @@ public:
 
 public:
 	const string default_namespace = "test_namespace";
-	ReindexerTestApi<shared_ptr<Reindexer>, Item> rt;
+	ReindexerTestApi<std::shared_ptr<Reindexer>, Item> rt;
 };

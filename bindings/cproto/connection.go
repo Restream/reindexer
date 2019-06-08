@@ -3,24 +3,35 @@ package cproto
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/restream/reindexer/bindings"
 	"github.com/restream/reindexer/cjson"
 )
 
-type sig chan *NetBuffer
+type bufPtr struct {
+	rseq uint32
+	buf  *NetBuffer
+}
+
+type sig chan bufPtr
 
 const bufsCap = 16 * 1024
 const queueSize = 40
+const maxSeqNum = queueSize * 10000000
 
 const cprotoMagic = 0xEEDD1132
-const cprotoVersion = 0x101
+const cprotoVersion = 0x102
+const cprotoMinCompatVersion = 0x101
 const cprotoHdrLen = 16
+const deadlineCheckPeriodSec = 1
 
 const (
 	cmdPing             = 0
@@ -53,6 +64,13 @@ const (
 	cmdCodeMax          = 128
 )
 
+type requestInfo struct {
+	seqNum    uint32
+	repl      sig
+	deadline  uint32
+	timeoutCh chan uint32
+}
+
 type connection struct {
 	owner *NetCProto
 	conn  net.Conn
@@ -61,15 +79,19 @@ type connection struct {
 	wrKick        chan struct{}
 
 	rdBuf *bufio.Reader
-	repl  [queueSize]sig
 
-	seqs chan int
+	seqs chan uint32
 	lock sync.RWMutex
 
 	err   error
 	errCh chan struct{}
 
 	lastReadStamp int64
+
+	now    uint32
+	termCh chan struct{}
+
+	requests [queueSize]requestInfo
 }
 
 func newConnection(owner *NetCProto) (c *connection, err error) {
@@ -78,27 +100,85 @@ func newConnection(owner *NetCProto) (c *connection, err error) {
 		wrBuf:  bytes.NewBuffer(make([]byte, 0, bufsCap)),
 		wrBuf2: bytes.NewBuffer(make([]byte, 0, bufsCap)),
 		wrKick: make(chan struct{}, 1),
-		seqs:   make(chan int, queueSize),
+		seqs:   make(chan uint32, queueSize),
 		errCh:  make(chan struct{}),
+		termCh: make(chan struct{}),
 	}
 	for i := 0; i < queueSize; i++ {
-		c.seqs <- i
-		c.repl[i] = make(sig)
+		c.seqs <- uint32(i)
+		c.requests[i].repl = make(sig)
+		c.requests[i].timeoutCh = make(chan uint32)
 	}
-	if err = c.connect(); err != nil {
+
+	go c.deadlineTicker()
+
+	loginTimeout := uint32(owner.timeouts.LoginTimeout / time.Second)
+	if err = c.connect(loginTimeout); err != nil {
 		c.onError(err)
 		return
 	}
-	if err = c.login(owner); err != nil {
+
+	if loginTimeout != 0 {
+		if loginTimeout > atomic.LoadUint32(&c.now) {
+			loginTimeout = loginTimeout - atomic.LoadUint32(&c.now)
+		} else {
+			c.onError(bindings.NewError("Connect timeout", bindings.ErrTimeout))
+			return
+		}
+	}
+
+	if err = c.login(owner, loginTimeout); err != nil {
 		c.onError(err)
 		return
 	}
 	return
 }
 
-func (c *connection) connect() (err error) {
-	c.conn, err = net.Dial("tcp", c.owner.url.Host)
+func seqNumIsValid(seqNum uint32) bool {
+	if seqNum < maxSeqNum {
+		return true
+	}
+	return false
+}
+
+func (c *connection) deadlineTicker() {
+	timeout := time.Second * time.Duration(deadlineCheckPeriodSec)
+	ticker := time.NewTicker(timeout)
+	atomic.StoreUint32(&c.now, 0)
+	for range ticker.C {
+		select {
+		case <-c.errCh:
+			return
+		case <-c.termCh:
+			return
+		default:
+		}
+		now := atomic.AddUint32(&c.now, deadlineCheckPeriodSec)
+		for i := range c.requests {
+			seqNum := atomic.LoadUint32(&c.requests[i].seqNum)
+			if !seqNumIsValid(seqNum) {
+				continue
+			}
+			deadline := atomic.LoadUint32(&c.requests[i].deadline)
+			if deadline != 0 && now >= deadline {
+				atomic.StoreUint32(&c.requests[i].deadline, 0)
+				timeoutCh := c.requests[i].timeoutCh
+				timeoutCh <- seqNum
+			}
+		}
+	}
+}
+
+func (c *connection) connect(timeout uint32) (err error) {
+	if timeout == 0 {
+		c.conn, err = net.Dial("tcp", c.owner.url.Host)
+	} else {
+		c.conn, err = net.DialTimeout("tcp", c.owner.url.Host, time.Duration(timeout)*time.Second)
+	}
 	if err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return bindings.NewError("Connect timeout", bindings.ErrTimeout)
+		}
 		return err
 	}
 	c.conn.(*net.TCPConn).SetNoDelay(true)
@@ -109,7 +189,7 @@ func (c *connection) connect() (err error) {
 	return
 }
 
-func (c *connection) login(owner *NetCProto) (err error) {
+func (c *connection) login(owner *NetCProto, timeout uint32) (err error) {
 	password, username, path := "", "", owner.url.Path
 	if owner.url.User != nil {
 		username = owner.url.User.Username()
@@ -119,9 +199,13 @@ func (c *connection) login(owner *NetCProto) (err error) {
 		path = path[1:]
 	}
 
-	buf, err := c.rpcCall(cmdLogin, username, password, path)
+	buf, err := c.rpcCall(context.TODO(), cmdLogin, timeout, username, password, path)
 	if err != nil {
-		c.err = err
+		if rdxError, ok := err.(bindings.Error); ok && rdxError.Code() == bindings.ErrTimeout {
+			c.err = bindings.NewError("Login timeout", bindings.ErrTimeout)
+		} else {
+			c.err = err
+		}
 		return
 	}
 	defer buf.Free()
@@ -150,19 +234,29 @@ func (c *connection) readReply(hdr []byte) (err error) {
 	}
 	ser := cjson.NewSerializer(hdr)
 	magic := ser.GetUInt32()
-	version := ser.GetUInt16()
-	_ = int(ser.GetUInt16())
-	size := int(ser.GetUInt32())
-	rseq := int32(ser.GetUInt32())
+
 	if magic != cprotoMagic {
 		return fmt.Errorf("Invalid cproto magic '%08X'", magic)
 	}
 
-	if version < cprotoVersion {
+	version := ser.GetUInt16()
+	_ = int(ser.GetUInt16())
+	size := int(ser.GetUInt32())
+	rseq := uint32(ser.GetUInt32())
+
+	if version < cprotoMinCompatVersion {
 		return fmt.Errorf("Unsupported cproto version '%04X'. This client expects reindexer server v1.9.8+", version)
 	}
 
-	repCh := c.repl[rseq]
+	if !seqNumIsValid(rseq) {
+		return fmt.Errorf("invalid seq num: %d", rseq)
+	}
+	reqID := rseq % queueSize
+	if atomic.LoadUint32(&c.requests[reqID].seqNum) != rseq {
+		io.CopyN(ioutil.Discard, c.rdBuf, int64(size))
+		return
+	}
+	repCh := c.requests[reqID].repl
 	answ := newNetBuffer()
 	answ.reset(size, c)
 
@@ -171,7 +265,7 @@ func (c *connection) readReply(hdr []byte) (err error) {
 	}
 
 	if repCh != nil {
-		repCh <- answ
+		repCh <- bufPtr{rseq, answ}
 	} else {
 		return fmt.Errorf("unexpected answer: %v", answ)
 	}
@@ -215,9 +309,32 @@ func (c *connection) writeLoop() {
 	}
 }
 
-func (c *connection) rpcCall(cmd int, args ...interface{}) (buf *NetBuffer, err error) {
+func nextSeqNum(seqNum uint32) uint32 {
+	seqNum += queueSize
+	if seqNum < maxSeqNum {
+		return seqNum
+	}
+	return seqNum - maxSeqNum
+}
+
+func (c *connection) rpcCall(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) (buf *NetBuffer, err error) {
 	seq := <-c.seqs
-	reply := c.repl[seq]
+	reqID := seq % queueSize
+	reply := c.requests[reqID].repl
+	timeoutCh := c.requests[reqID].timeoutCh
+
+	var execTimeout int
+	if execDeadline, ok := ctx.Deadline(); ok {
+		execTimeout = int(execDeadline.Sub(time.Now()) / time.Millisecond)
+		if execTimeout <= 0 {
+			return nil, bindings.NewError("Request was canceled", bindings.ErrCanceled)
+		}
+	}
+
+	if netTimeout != 0 {
+		atomic.StoreUint32(&c.requests[reqID].deadline, atomic.LoadUint32(&c.now)+netTimeout)
+	}
+	atomic.StoreUint32(&c.requests[reqID].seqNum, seq)
 	in := newRPCEncoder(cmd, seq)
 	for _, a := range args {
 		switch t := a.(type) {
@@ -238,17 +355,35 @@ func (c *connection) rpcCall(cmd int, args ...interface{}) (buf *NetBuffer, err 
 		}
 	}
 
+	in.startArgsChunck()
+	in.int64Arg(int64(execTimeout))
+
 	c.write(in.ser.Bytes())
 	in.ser.Close()
 
-	select {
-	case buf = <-reply:
-	case <-c.errCh:
-		c.lock.RLock()
-		err = c.err
-		c.lock.RUnlock()
+for_loop:
+	for {
+		select {
+		case bufPtr := <-reply:
+			if bufPtr.rseq == seq {
+				buf = bufPtr.buf
+				break for_loop
+			}
+		case <-c.errCh:
+			c.lock.RLock()
+			err = c.err
+			c.lock.RUnlock()
+			break for_loop
+		case timeoutSeq := <-timeoutCh:
+			if timeoutSeq == seq {
+				err = bindings.NewError("Request timeout", bindings.ErrTimeout)
+				break for_loop
+			}
+		}
 	}
-	c.seqs <- seq
+	atomic.StoreUint32(&c.requests[reqID].seqNum, maxSeqNum)
+
+	c.seqs <- nextSeqNum(seq)
 	if err != nil {
 		return
 	}
@@ -284,4 +419,9 @@ func (c *connection) hasError() (has bool) {
 func (c *connection) lastReadTime() time.Time {
 	stamp := atomic.LoadInt64(&c.lastReadStamp)
 	return time.Unix(stamp, 0)
+}
+
+func (c *connection) Finalize() error {
+	close(c.termCh)
+	return nil
 }

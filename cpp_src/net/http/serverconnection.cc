@@ -12,8 +12,8 @@ namespace reindexer {
 namespace net {
 namespace http {
 
-static const char kStrEOL[] = "\r\n";
-extern std::unordered_map<int, const char *> kHTTPCodes;
+static const string_view kStrEOL = "\r\n"_sv;
+extern std::unordered_map<int, string_view> kHTTPCodes;
 
 ServerConnection::ServerConnection(int fd, ev::dynamic_loop &loop, Router &router) : ConnectionST(fd, loop), router_(router) {
 	callback(io_, ev::READ);
@@ -198,7 +198,7 @@ void ServerConnection::onRead() {
 			if (expectContinue_) {
 				if (bodyLeft_ < int(rdBuf_.capacity() - res)) {
 					writeHttpResponse(StatusContinue);
-					wrBuf_.write(string_view(kStrEOL));
+					wrBuf_.write(kStrEOL);
 				} else {
 					badRequest(StatusRequestEntityTooLarge, "");
 					return;
@@ -247,26 +247,26 @@ bool ServerConnection::ResponseWriter::SetContentLength(size_t length) {
 }
 
 ssize_t ServerConnection::ResponseWriter::Write(chunk &&chunk) {
-	char tmpBuf[256];
+	char szBuf[64], dtBuf[128];
 	if (!respSend_) {
 		conn_->writeHttpResponse(code_);
 
 		if (conn_->enableHttp11_ && !conn_->closeConn_) {
-			SetHeader(Header{"ServerConnection", "keep-alive"});
+			SetHeader(Header{"ServerConnection"_sv, "keep-alive"_sv});
 		}
 		if (!isChunkedResponse()) {
-			*u64toa(contentLength_, tmpBuf) = 0;
-			SetHeader(Header{"Content-Length", tmpBuf});
+			size_t l = u64toa(contentLength_, szBuf) - szBuf;
+			SetHeader(Header{"Content-Length"_sv, {szBuf, l}});
 		} else {
-			SetHeader(Header{"Transfer-Encoding", "chunked"});
+			SetHeader(Header{"Transfer-Encoding"_sv, "chunked"_sv});
 		}
 
 		std::tm tm;
 		std::time_t t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-		fast_gmtime_r(&t, &tm);		 // gmtime_r(&t, &tm);
-		fast_strftime(tmpBuf, &tm);  // strftime(tmpBuf, sizeof(tmpBuf), "%a %c", &tm);
-		SetHeader(Header{"Date", tmpBuf});
-		SetHeader(Header{"Server", "reindex"});
+		fast_gmtime_r(&t, &tm);				   // gmtime_r(&t, &tm);
+		size_t l = fast_strftime(dtBuf, &tm);  // strftime(tmpBuf, sizeof(tmpBuf), "%a %c", &tm);
+		SetHeader(Header{"Date"_sv, {dtBuf, l}});
+		SetHeader(Header{"Server"_sv, "reindex"_sv});
 
 		headers_ << kStrEOL;
 		conn_->wrBuf_.write(headers_.DetachChunk());
@@ -275,8 +275,8 @@ ssize_t ServerConnection::ResponseWriter::Write(chunk &&chunk) {
 
 	size_t len = chunk.len_;
 	if (isChunkedResponse()) {
-		u32toax(len, tmpBuf);
-		conn_->wrBuf_.write(tmpBuf);
+		size_t l = u32toax(len, szBuf) - szBuf;
+		conn_->wrBuf_.write({szBuf, l});
 		conn_->wrBuf_.write(kStrEOL);
 	}
 

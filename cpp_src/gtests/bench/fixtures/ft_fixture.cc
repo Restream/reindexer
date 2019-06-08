@@ -519,15 +519,15 @@ void FullText::Fuzzy2TypoWordMatch(benchmark::State& state) {
 
 string FullText::CreatePhrase() {
 	size_t wordCnt = 100;
-	string result;
-	result.reserve(wordCnt * 3);
+	reindexer::WrSerializer r;
+	r.Reserve(wordCnt * 30);
 
 	for (size_t i = 0; i < wordCnt; i++) {
-		result += words_.at(random<size_t>(0, words_.size() - 1));
-		if (i < wordCnt - 1) result += " ";
+		r << words_.at(random<size_t>(0, words_.size() - 1));
+		if (i < wordCnt - 1) r << " ";
 	}
 
-	return result;
+	return string(r.Slice());
 }
 
 string FullText::MakePrefixWord() {
@@ -568,6 +568,7 @@ wstring FullText::GetRandomUTF16WordByLength(size_t minLen) {
 
 vector<std::string> FullText::GetRandomCountries(size_t cnt) {
 	vector<string> result;
+	result.reserve(cnt);
 	for (auto i = cnt; i > 0; i--) {
 		result.emplace_back(countries_.at(random<size_t>(0, countries_.size() - 1)));
 	}

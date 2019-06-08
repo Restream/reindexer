@@ -35,7 +35,7 @@ protected:
 		string currStrValue = RandString();
 		for (int i = 0; i < 10000; ++i) {
 			Item item(rt.reindexer->NewItem(default_namespace));
-			EXPECT_TRUE(item);
+			EXPECT_TRUE(!!item);
 			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 			item[kFieldId] = i;
@@ -59,7 +59,7 @@ protected:
 		int currValue = rand() % 10000;
 		for (int i = 0; i < 5000; ++i) {
 			Item item(rt.reindexer->NewItem(joinedNsName));
-			EXPECT_TRUE(item);
+			EXPECT_TRUE(!!item);
 			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 			item[kFieldIdFk] = rand() % 10000;

@@ -5,7 +5,7 @@
 namespace reindexer {
 
 static void mktyposInternal(typos_context *ctx, const wstring &word, int level, int maxTyposLen,
-							std::function<void(const string &, int)> callback) {
+							std::function<void(string_view, int)> callback) {
 	if (!level || word.length() < 3 || int(word.length()) > maxTyposLen) {
 		return;
 	}
@@ -24,14 +24,14 @@ static void mktyposInternal(typos_context *ctx, const wstring &word, int level, 
 	}
 }
 
-void mktypos(typos_context *ctx, const wstring &word, int level, int maxTyposLen, std::function<void(const string &, int)> callback) {
+void mktypos(typos_context *ctx, const wstring &word, int level, int maxTyposLen, std::function<void(string_view, int)> callback) {
 	utf16_to_utf8(word, ctx->typo);
 	callback(ctx->typo, level);
 	mktyposInternal(ctx, word, level, maxTyposLen, callback);
 }
 
-void mktypos(typos_context *ctx, const char *word, int level, int maxTyposLen, std::function<void(const string &, int)> callback) {
-	ctx->typo = word;
+void mktypos(typos_context *ctx, string_view word, int level, int maxTyposLen, std::function<void(string_view, int)> callback) {
+	ctx->typo.assign(word.begin(), word.end());
 	utf8_to_utf16(ctx->typo, ctx->utf16Word);
 	callback(ctx->typo, level);
 	mktyposInternal(ctx, ctx->utf16Word, level, maxTyposLen, callback);

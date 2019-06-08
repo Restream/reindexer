@@ -77,7 +77,6 @@ public:
 	/// use the snapshot after this call.
 	/// @param snapshot - pointer to a snapshot
 	/// that was acquired previously.
-	/// @return true if operation went ok.
 	virtual void ReleaseSnapshot(Snapshot::Ptr snapshot) = 0;
 
 	/// Flushes all updates to Storage.

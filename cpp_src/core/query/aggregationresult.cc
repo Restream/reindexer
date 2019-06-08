@@ -63,50 +63,29 @@ void AggregationResult::GetJSON(WrSerializer &ser) const {
 	}
 }
 
-Error AggregationResult::FromJSON(char *json) {
-	JsonAllocator jalloc;
-	JsonValue jvalue;
-	char *endp;
-
-	int status = jsonParse(json, &endp, &jvalue, jalloc);
-	if (status != JSON_OK) return Error(errParseJson, "Malformed JSON with aggregation results");
-	if (jvalue.getTag() != JSON_OBJECT) return Error(errParseJson, "Expected json object in 'aggregation' key");
-
+Error AggregationResult::FromJSON(span<char> json) {
 	try {
-		for (auto elem : jvalue) {
-			parseJsonField("value", value, elem);
-			if ("fields"_sv == elem->key) {
-				if (elem->value.getTag() != JSON_ARRAY) return Error(errParseJson, "Expected json array in 'fields' key");
-				for (auto subElem : elem->value) {
-					if (subElem->value.getTag() != JSON_STRING) return Error(errParseJson, "Expected string in array of 'fields'");
-					fields.push_back(subElem->value.toString());
-				}
-			}
-			if ("type"_sv == elem->key && elem->value.getTag() == JSON_STRING) {
-				type = strToAggType(elem->value.toString());
-			}
-			if ("facets"_sv == elem->key) {
-				if (elem->value.getTag() != JSON_ARRAY) return Error(errParseJson, "Expected json array in 'facets' key");
-				for (auto subElem : elem->value) {
-					if (subElem->value.getTag() != JSON_OBJECT) return Error(errParseJson, "Expected json object in array of 'facets'");
-					FacetResult facet;
-					for (auto objElem : subElem->value) {
-						if ("values"_sv == objElem->key) {
-							if (objElem->value.getTag() != JSON_ARRAY) return Error(errParseJson, "Expected json array in 'facets' key");
-							for (auto subElem : objElem->value) {
-								if (subElem->value.getTag() != JSON_STRING)
-									return Error(errParseJson, "Expected string in array of 'facets'");
-								facet.values.push_back(subElem->value.toString());
-							}
-						}
-						parseJsonField("count", facet.count, objElem);
-					}
-					facets.push_back(facet);
-				}
-			}
+		gason::JsonParser parser;
+		auto root = parser.Parse(json);
+
+		value = root["value"].As<double>();
+		type = strToAggType(root["type"].As<string>());
+
+		for (auto &subElem : root["fields"]) {
+			fields.push_back(subElem.As<string>());
 		}
-	} catch (const Error &error) {
-		return error;
+
+		for (auto &facetNode : root["facets"]) {
+			FacetResult facet;
+			facet.count = facetNode["count"].As<int>();
+			for (auto &subElem : facetNode["values"]) {
+				facet.values.push_back(subElem.As<string>());
+			}
+			facets.push_back(facet);
+		}
+
+	} catch (const gason::Exception &ex) {
+		return Error(errParseJson, "AggregationResult: %s", ex.what());
 	}
 	return errOK;
 }

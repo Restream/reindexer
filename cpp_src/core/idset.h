@@ -6,12 +6,14 @@
 #include <string>
 #include "cpp-btree/btree_set.h"
 #include "estl/h_vector.h"
+#include "estl/span.h"
 
 namespace reindexer {
 using std::string;
 using std::shared_ptr;
 
 using base_idset = h_vector<IdType, 3>;
+using base_idsetset = btree::btree_set<int>;
 
 class IdSetPlain : protected base_idset {
 public:
@@ -58,11 +60,10 @@ public:
 	bool IsCommited() const { return true; }
 	bool IsEmpty() const { return empty(); }
 	size_t BTreeSize() const { return 0; }
+	const base_idsetset *BTree() const { return nullptr; }
 	void ReserveForSorted(int sortedIdxCount) { reserve(size() * (sortedIdxCount + 1)); }
 	string Dump();
 };
-
-using base_idsetset = btree::btree_set<int>;
 
 // maxmimum size of idset without building btree
 const int kMaxPlainIdsetSize = 16;
@@ -154,6 +155,7 @@ public:
 	bool IsCommited() const { return !usingBtree_; }
 	bool IsEmpty() const { return empty() && (!set_ || set_->empty()); }
 	size_t BTreeSize() const { return set_ ? sizeof(*set_.get()) + set_->size() * sizeof(int) : 0; }
+	const base_idsetset *BTree() const { return set_.get(); }
 	void ReserveForSorted(int sortedIdxCount) { reserve(((set_ ? set_->size() : size())) * (sortedIdxCount + 1)); }
 
 protected:

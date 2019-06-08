@@ -34,8 +34,6 @@ public:
 	virtual ~Index();
 	virtual Variant Upsert(const Variant& key, IdType id) = 0;
 	virtual void Delete(const Variant& key, IdType id) = 0;
-	virtual void DumpKeys() = 0;
-	virtual IdSetRef Find(const Variant& key) = 0;
 
 	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, SelectOpts opts,
 									   BaseFunctionCtx::Ptr ctx) = 0;

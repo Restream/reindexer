@@ -1,17 +1,19 @@
 ﻿#include "replication_api.h"
+#include <thread>
 #include "tools/fsops.h"
+
+const std::string kStoragePath = "/tmp/reindex_repl_test/";
 
 ServerControl::Interface::~Interface() {
 	srv.Stop();
 	tr->join();
-	if (dropDb_) reindexer::fs::RmDirAll("node/" + to_string(id_));
 	stopped_ = true;
 }
 
-ServerControl::ServerControl() { stopped_ = new atomic_bool(false); }
+ServerControl::ServerControl() { stopped_ = new std::atomic_bool(false); }
 ServerControl::~ServerControl() {
 	WLock lock(mtx_);
-	interface = shared_ptr<ServerControl::Interface>();
+	interface = std::shared_ptr<ServerControl::Interface>();
 	delete stopped_;
 }
 
@@ -31,17 +33,18 @@ ServerControl& ServerControl::operator=(ServerControl&& rhs) {
 
 void ServerControl::Interface::SetNeedDrop(bool dropDb) { dropDb_ = dropDb; }
 
-ServerControl::Interface::Interface(size_t id, atomic_bool& stopped, bool dropDb)
-	: api(make_shared<CppClient>()), id_(id), dropDb_(dropDb), stopped_(stopped) {
+ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, bool dropDb)
+	: api(std::make_shared<CppClient>()), id_(id), dropDb_(dropDb), stopped_(stopped) {
 	// Init server in thread
 	stopped_ = false;
 	// clang-format off
     string yaml =
         "storage:\n"
-        "    path: node/" + std::to_string(id_) + "\n"
+        "    path: " + kStoragePath + "node/" + std::to_string(id_) + "\n"
         "logger:\n"
         "   loglevel: none\n"
         "   rpclog: \n"
+        "   serverlog: \n"
         "net:\n"
         "   httpaddr: 0.0.0.0:" + std::to_string(kDefaultHttpPort + id_) + "\n"
         "   rpcaddr: 0.0.0.0:" + std::to_string(kDefaultRpcPort + id_) + "\n";
@@ -50,7 +53,7 @@ ServerControl::Interface::Interface(size_t id, atomic_bool& stopped, bool dropDb
 	auto err = srv.InitFromYAML(yaml);
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	tr = unique_ptr<thread>(new thread([this]() {
+	tr = std::unique_ptr<std::thread>(new std::thread([this]() {
 		auto res = this->srv.Start();
 		(void)res;
 		assert(res == EXIT_SUCCESS);
@@ -116,12 +119,12 @@ ServerControl::Interface::Ptr ServerControl::Get(bool wait) {
 
 void ServerControl::InitServer(size_t id, bool dropDb) {
 	WLock lock(mtx_);
-	auto srvInterface = make_shared<ServerControl::Interface>(id, *stopped_, dropDb);
+	auto srvInterface = std::make_shared<ServerControl::Interface>(id, *stopped_, dropDb);
 	interface = srvInterface;
 }
 void ServerControl::Drop() {
 	WLock lock(mtx_);
-	interface = shared_ptr<ServerControl::Interface>();
+	interface = std::shared_ptr<ServerControl::Interface>();
 }
 
 bool ServerControl::Interface::CheckForSyncCompletion(Ptr) {
@@ -138,7 +141,7 @@ bool ServerControl::Interface::CheckForSyncCompletion(Ptr) {
 }
 
 bool ReplicationApi::StopServer(size_t id, bool dropDb) {
-	std::lock_guard<mutex> lock(m_);
+	std::lock_guard<std::mutex> lock(m_);
 
 	assert(id < svc.size());
 	if (!svc[id].Get()) return false;
@@ -157,7 +160,7 @@ bool ReplicationApi::StopServer(size_t id, bool dropDb) {
 }
 
 bool ReplicationApi::StartServer(size_t id, bool dropDb) {
-	std::lock_guard<mutex> lock(m_);
+	std::lock_guard<std::mutex> lock(m_);
 
 	assert(id < svc.size());
 	if (svc[id].Get()) return false;
@@ -165,7 +168,7 @@ bool ReplicationApi::StartServer(size_t id, bool dropDb) {
 	return true;
 }
 void ReplicationApi::RestartServer(size_t id, bool dropDb) {
-	std::lock_guard<mutex> lock(m_);
+	std::lock_guard<std::mutex> lock(m_);
 
 	assert(id < svc.size());
 	if (svc[id].Get()) {
@@ -185,7 +188,7 @@ void ReplicationApi::RestartServer(size_t id, bool dropDb) {
 }
 // get server
 ServerControl::Interface::Ptr ReplicationApi::GetSrv(size_t id) {
-	std::lock_guard<mutex> lock(m_);
+	std::lock_guard<std::mutex> lock(m_);
 	assert(id < svc.size());
 	auto srv = svc[id].Get();
 	assert(srv);
@@ -193,8 +196,15 @@ ServerControl::Interface::Ptr ReplicationApi::GetSrv(size_t id) {
 }
 
 void ReplicationApi::SetUp() {
-	std::lock_guard<mutex> lock(m_);
-	reindexer::fs::RmDirAll("node");
+	// reindexer::logInstallWriter([&](int level, char* buf) {
+	// 	(void)buf;
+	// 	(void)level;
+	// 	if (/*strstr(buf, "repl") ||*/ level <= LogError) {
+	// 		std::cout << std::this_thread::get_id() << " " << buf << std::endl;
+	// 	}
+	// });
+	std::lock_guard<std::mutex> lock(m_);
+	reindexer::fs::RmDirAll(kStoragePath + "node");
 
 	for (size_t i = 0; i < kDefaultServerCount; i++) {
 		svc.push_back(ServerControl());
@@ -208,7 +218,7 @@ void ReplicationApi::SetUp() {
 }
 
 void ReplicationApi::TearDown() {
-	std::lock_guard<mutex> lock(m_);
+	std::lock_guard<std::mutex> lock(m_);
 	for (auto& server : svc) {
 		if (!server.Get()) continue;
 		server.Get()->SetNeedDrop(true);

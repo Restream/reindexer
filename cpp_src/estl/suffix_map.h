@@ -1,21 +1,21 @@
 #pragma once
 
-#include <unordered_map>
 #include <vector>
+#include "estl/string_view.h"
 #include "libdivsufsort/divsufsort.h"
 
 namespace reindexer {
 
 using std::vector;
 
-template <typename K, typename V>
+template <typename CharT, typename V>
 class suffix_map {
 	typedef size_t size_type;
 	typedef unsigned char char_type;
 
-	class value_type : public std::pair<const typename K::value_type *, V> {
+	class value_type : public std::pair<const CharT *, V> {
 	public:
-		value_type(const std::pair<const typename K::value_type *, V> v) : std::pair<const typename K::value_type *, V>(v) {}
+		value_type(const std::pair<const CharT *, V> v) : std::pair<const CharT *, V>(v) {}
 		const value_type *operator->() const { return this; }
 	};
 
@@ -76,7 +76,7 @@ public:
 	iterator begin() const { return iterator(0, this); }
 	iterator end() const { return iterator(sa_.size(), this); }
 
-	std::pair<iterator, iterator> match_range(const K &str) const {
+	std::pair<iterator, iterator> match_range(string_view str) const {
 		iterator start = lower_bound(str);
 		if (start == end()) return {end(), end()};
 		int idx_ = start.idx_ + 1;
@@ -84,21 +84,21 @@ public:
 		return {start, iterator(idx_, this)};
 	}
 
-	iterator lower_bound(const K &str) const {
+	iterator lower_bound(string_view str) const {
 		if (!built_) {
 			throw std::logic_error("Should call suffix_map::build before search");
 		}
 
 		size_type lo = 0, hi = sa_.size(), mid;
 		int lcp_lo = 0, lcp_hi = 0;
-		auto P = reinterpret_cast<const char_type *>(str.c_str());
-		auto T = reinterpret_cast<const char_type *>(text_.c_str());
+		auto P = reinterpret_cast<const char_type *>(str.data());
+		auto T = reinterpret_cast<const char_type *>(text_.data());
 		while (lo <= hi) {
 			mid = (lo + hi) / 2;
 			int i = std::min(lcp_hi, lcp_lo);
 			bool plt = true;
 			if (mid >= sa_.size()) return end();
-			while (i < int(str.length()) && sa_[mid] + i < int(text_.length())) {
+			while (i < int(str.length()) && sa_[mid] + i < int(text_.size())) {
 				if (P[i] < T[sa_[mid] + i]) {
 					break;
 				} else if (P[i] > T[sa_[mid] + i]) {
@@ -109,14 +109,14 @@ public:
 			}
 			if (plt) {
 				if (mid == lo + 1) {
-					if (strncmp(str.c_str(), &text_[sa_[mid]], std::min(str.length(), strlen(&text_[sa_[mid]])))) return end();
+					if (strncmp(str.data(), &text_[sa_[mid]], std::min(str.length(), strlen(&text_[sa_[mid]])))) return end();
 					return iterator(mid, this);
 				}
 				lcp_hi = i;
 				hi = mid;
 			} else {
 				if (mid == hi - 1) {
-					if (hi >= sa_.size() || strncmp(str.c_str(), &text_[sa_[hi]], std::min(str.length(), strlen(&text_[sa_[hi]]))))
+					if (hi >= sa_.size() || strncmp(str.data(), &text_[sa_[hi]], std::min(str.length(), strlen(&text_[sa_[hi]]))))
 						return end();
 					return iterator(hi, this);
 				}
@@ -127,11 +127,12 @@ public:
 		return end();
 	}
 
-	int insert(const K &word, const V &val, int virtual_len = -1) {
+	int insert(string_view word, const V &val, int virtual_len = -1) {
 		if (virtual_len == -1) virtual_len = word.length();
-		int wpos = text_.length();
+		int wpos = text_.size();
 		size_t real_len = word.length();
-		text_ += word + '\0';
+		text_.insert(text_.end(), word.begin(), word.end());
+		text_.push_back('\0');
 		mapped_.insert(mapped_.end(), real_len + 1, val);
 		words_.push_back(wpos);
 		words_len_.push_back(std::make_pair(real_len, virtual_len));
@@ -139,7 +140,7 @@ public:
 		return wpos;
 	}
 
-	const typename K::value_type *word_at(int idx) const { return &text_[words_[idx]]; }
+	const CharT *word_at(int idx) const { return &text_[words_[idx]]; }
 
 	int16_t word_len_at(int idx) const { return words_len_[idx].first; }
 	int16_t virtual_word_len(int idx) const { return words_len_[idx].second; }
@@ -147,8 +148,8 @@ public:
 	void build() {
 		if (built_) return;
 		text_.shrink_to_fit();
-		sa_.resize(text_.length());
-		if (!sa_.empty()) ::divsufsort(reinterpret_cast<const char_type *>(text_.c_str()), &sa_[0], text_.length());
+		sa_.resize(text_.size());
+		if (!sa_.empty()) ::divsufsort(reinterpret_cast<const char_type *>(text_.data()), &sa_[0], text_.size());
 		build_lcp();
 		built_ = true;
 	}
@@ -171,7 +172,7 @@ public:
 	size_type size() const { return sa_.size(); }
 	size_type word_size() const { return words_.size(); }
 
-	const K &text() const { return text_; }
+	const vector<CharT> &text() const { return text_; }
 	size_t heap_size() {
 		return (sa_.capacity() + words_.capacity()) * sizeof(int) +			  //
 			   (lcp_.capacity() + words_len_.capacity()) * sizeof(int16_t) +  //
@@ -201,7 +202,7 @@ protected:
 	std::vector<int16_t> lcp_;
 	std::vector<std::pair<uint8_t, uint8_t>> words_len_;
 	vector<V> mapped_;
-	K text_;
+	vector<CharT> text_;
 	bool built_ = false;
 };  // namespace reindexer
 

@@ -126,27 +126,31 @@ protected:
 
 	void FillQueryResultFromItem(Item& item, QueryResultRow& resultRow) {
 		for (int idx = 1; idx < item.NumFields(); idx++) {
-			std::string fieldName = item[idx].Name();
+			std::string fieldName(item[idx].Name());
 			resultRow[fieldName] = item[idx];
 		}
 	}
 
-	int ParseItemJsonWithJoins(const QueryResults& queryRes) {
-		if (!queryRes.Count()) return JSON_OK;
-		reindexer::WrSerializer wrSer;
-		queryRes.begin().GetJSON(wrSer, false);
-		string json = reindexer::string_view(reinterpret_cast<const char*>(wrSer.Buf()), wrSer.Len()).ToString();
-
-		char* endptr = nullptr;
-		JsonValue value;
-		JsonAllocator jsonAllocator;
-		return jsonParse(const_cast<char*>(json.c_str()), &endptr, &value, jsonAllocator);
+	Error VerifyResJSON(const QueryResults& queryRes) {
+		Error err;
+		try {
+			reindexer::WrSerializer wrSer;
+			for (auto& qr : queryRes) {
+				wrSer.Reset();
+				err = qr.GetJSON(wrSer, false);
+				if (!err.ok()) break;
+				gason::JsonParser().Parse(reindexer::giftStr(wrSer.Slice()));
+			}
+		} catch (const gason::Exception& ex) {
+			return Error(errParseJson, "VerifyResJSON: %s", ex.what());
+		}
+		return err;
 	}
 
-	void PrintResultRows(reindexer::QueryResults& reindexerRes) {
+	void PrintResultRows(QueryResults& reindexerRes) {
 		for (auto rowIt : reindexerRes) {
 			Item item(rowIt.GetItem());
-			std::cout << "ROW: " << item.GetJSON().ToString() << std::endl;
+			std::cout << "ROW: " << item.GetJSON() << std::endl;
 
 			int idx = 1;
 			const reindexer::QRVector& joinQueryRes = rowIt.GetJoined();
@@ -154,7 +158,7 @@ protected:
 				std::cout << "JOINED: " << idx << std::endl;
 				for (auto itj : joinResult) {
 					Item joinItem(itj.GetItem());
-					std::cout << joinItem.GetJSON().ToString() << std::endl;
+					std::cout << joinItem.GetJSON() << std::endl;
 				}
 				++idx;
 			}

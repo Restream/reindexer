@@ -30,7 +30,7 @@ IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) {
 		it->proc_ *= coof;
 		if (it->proc_ < GetConfig()->minOkProc) continue;
 		assert(it->id_ < this->vdocs_.size());
-		const auto& id_set = reinterpret_cast<const typename T::mapped_type*>(this->vdocs_[it->id_].keyEntry)->Sorted(0);
+		const auto& id_set = this->vdocs_[it->id_].keyEntry->Sorted(0);
 		fctx->Add(id_set.begin(), id_set.end(), it->proc_);
 		mergedIds->Append(id_set.begin(), id_set.end(), IdSet::Unordered);
 	}
@@ -46,9 +46,10 @@ void FuzzyIndexText<T>::commitFulltext() {
 	for (auto& doc : this->idx_map) {
 		auto res = gt.getDocFields(doc.first, bufStrs);
 #ifdef REINDEX_FT_EXTRA_DEBUG
-		this->vdocs_.push_back({&doc.first, &doc.second, {}, {}});
+		string text(res[0].first);
+		this->vdocs_.push_back({(text.length() > 48) ? text.substr(0, 48) + "..." : text, doc.second.get(), {}, {}});
 #else
-		this->vdocs_.push_back({&doc.second, {}, {}});
+		this->vdocs_.push_back({doc.second.get(), {}, {}});
 #endif
 		for (auto& r : res) {
 			engine_.AddData(r.first, this->vdocs_.size() - 1, r.second, this->cfg_->extraWordSymbols);
@@ -67,16 +68,15 @@ void FuzzyIndexText<T>::CreateConfig(const FtFuzzyConfig* cfg) {
 		return;
 	}
 	this->cfg_.reset(new FtFuzzyConfig());
-	string config = this->opts_.config;
-	this->cfg_->parse(&config[0]);
+	this->cfg_->parse(this->opts_.config);
 }
 
 Index* FuzzyIndexText_New(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields) {
 	switch (idef.Type()) {
 		case IndexFuzzyFT:
-			return new FuzzyIndexText<unordered_str_map<Index::KeyEntryPlain>>(idef, payloadType, fields);
+			return new FuzzyIndexText<unordered_str_map<FtKeyEntry>>(idef, payloadType, fields);
 		case IndexCompositeFuzzyFT:
-			return new FuzzyIndexText<unordered_payload_map<Index::KeyEntryPlain>>(idef, payloadType, fields);
+			return new FuzzyIndexText<unordered_payload_map<FtKeyEntryData>>(idef, payloadType, fields);
 		default:
 			abort();
 	}

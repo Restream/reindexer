@@ -153,11 +153,12 @@ func TestUpdateFields(t *testing.T) {
 }
 
 func UpdateField(fieldName string, values interface{}) (items []interface{}) {
-	count, err := DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16).Set(fieldName, values).Update()
-	if err != nil {
-		panic(err)
+	it := DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16).Set(fieldName, values).Update()
+	defer it.Close()
+	if it.Error() != nil {
+		panic(it.Error())
 	}
-	if count == 0 {
+	if it.Count() == 0 {
 		panic(fmt.Errorf("No items updated"))
 	}
 
@@ -174,11 +175,12 @@ func UpdateField(fieldName string, values interface{}) (items []interface{}) {
 }
 
 func CheckUpdateWithExpressions1() {
-	count, err := DB.Query(fieldsUpdateNs).SetExpression("size", "((7+8)*(10-5)*2)/25").Update()
-	if err != nil {
-		panic(err)
+	it := DB.Query(fieldsUpdateNs).SetExpression("size", "((7+8)*(10-5)*2)/25").Update()
+	defer it.Close()
+	if it.Error() != nil {
+		panic(it.Error())
 	}
-	if count == 0 {
+	if it.Count() == 0 {
 		panic(fmt.Errorf("No items updated"))
 	}
 	results, err := DB.Query(fieldsUpdateNs).Exec().FetchAll()
@@ -197,11 +199,12 @@ func CheckUpdateWithExpressions1() {
 }
 
 func CheckUpdateWithExpressions2() {
-	count, err := DB.Query(fieldsUpdateNs).SetExpression("size", "((SERIAL() + 1)*4)/4").Update()
-	if err != nil {
-		panic(err)
+	it := DB.Query(fieldsUpdateNs).SetExpression("size", "((SERIAL() + 1)*4)/4").Update()
+	defer it.Close()
+	if it.Error() != nil {
+		panic(it.Error())
 	}
-	if count == 0 {
+	if it.Count() == 0 {
 		panic(fmt.Errorf("No items updated"))
 	}
 	results, err := DB.Query(fieldsUpdateNs).Exec().FetchAll()
@@ -394,43 +397,57 @@ func CheckTestItemsInsertUpdate() {
 		"NON EXISTING": checkInsertUpdateNonExistsData,
 	}
 
+	preceptsMap := map[string][]string{
+		"WITH PRECEPTS":    {"year=now(sec)"},
+		"WITHOUT PRECEPTS": {},
+	}
+
 	for actionName, doAction := range actionMap {
-		for exists, dataset := range existsMap {
-			log.Printf("DO '%s' %s ITEMS", actionName, exists)
-			for _, item := range dataset {
-				cnt, err := doAction("test_items_insert_update", item)
+		for preceptsText, precepts := range preceptsMap {
+			for exists, dataset := range existsMap {
+				log.Printf("DO '%s' %s ITEMS %s", actionName, exists, preceptsText)
+				for _, item := range dataset {
+					var originalYear int = item.Year
+					cnt, err := doAction("test_items_insert_update", item, precepts...)
 
-				if err != nil {
-					panic(err)
-				}
-
-				act := actionName + " " + exists
-
-				switch act {
-				case "INSERT EXISTING":
-					if cnt != 0 {
-						panic(fmt.Errorf("Expected affected items count = 0, but got %d\n Item: %+v", cnt, item))
+					if err != nil {
+						panic(err)
 					}
 
-				case "INSERT NON EXISTING":
-					if cnt != 1 {
-						panic(fmt.Errorf("Expected affected items count = 1, but got %d\n Item: %+v", cnt, item))
-					}
-					// need to update data before 'UPDATE NON EXISTING'
-					updateNonExistsData(existsMap["NON EXISTING"])
+					act := actionName + " " + exists
 
-				case "UPDATE EXISTING":
-					if cnt != 1 {
-						panic(fmt.Errorf("Expected affected items count = 1, but got %d\n Item: %+v", cnt, item))
-					}
-					// need to update data before 'UPDATE NON EXISTING'
-					updateNonExistsData(existsMap["NON EXISTING"])
+					switch act {
+					case "INSERT EXISTING":
+						if cnt != 0 {
+							panic(fmt.Errorf("Expected affected items count = 0, but got %d\n Item: %+v", cnt, item))
+						}
 
-				case "UPDATE NON EXISTING":
-					if cnt != 0 {
-						panic(fmt.Errorf("Expected affected items count = 0, but got %d\n Item: %+v", cnt, item))
-					}
+					case "INSERT NON EXISTING":
+						if cnt != 1 {
+							panic(fmt.Errorf("Expected affected items count = 1, but got %d\n Item: %+v", cnt, item))
+						}
+						if preceptsText == "WITH PRECEPTS" && item.Year == originalYear {
+							panic(fmt.Errorf("Item has not been updated by Insert with precepts. Item: %+v", item))
+						}
+						// need to update data before 'UPDATE NON EXISTING'
+						updateNonExistsData(existsMap["NON EXISTING"])
 
+					case "UPDATE EXISTING":
+						if cnt != 1 {
+							panic(fmt.Errorf("Expected affected items count = 1, but got %d\n Item: %+v", cnt, item))
+						}
+						if preceptsText == "WITH PRECEPTS" && item.Year == originalYear {
+							panic(fmt.Errorf("Item has not been updated by Update with precepts. Item: %+v", item))
+						}
+						// need to update data before 'UPDATE NON EXISTING'
+						updateNonExistsData(existsMap["NON EXISTING"])
+
+					case "UPDATE NON EXISTING":
+						if cnt != 0 {
+							panic(fmt.Errorf("Expected affected items count = 0, but got %d\n Item: %+v", cnt, item))
+						}
+
+					}
 				}
 			}
 		}

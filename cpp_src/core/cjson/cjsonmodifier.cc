@@ -10,8 +10,8 @@ CJsonModifier::CJsonModifier(TagsMatcher &tagsMatcher, PayloadType pt) : pt_(pt)
 CJsonModifier::Context::Context(const VariantArray &v, WrSerializer &ser, const string_view &tuple) : value(v), wrser(ser), rdser(tuple) {}
 
 Error CJsonModifier::SetFieldValue(const string_view &tuple, const TagsPath &fieldPath, const VariantArray &value, WrSerializer &wrser) {
-	if (fieldPath.empty()) throw Error(errLogic, "Number of fields for update should be > 0");
-	if (value.empty()) throw Error(errLogic, "Update value cannot be empty");
+	if (fieldPath.empty()) return Error(errLogic, "Number of fields for update should be > 0");
+	if (value.empty()) return Error(errLogic, "Update value cannot be empty");
 
 	try {
 		fieldPath_ = fieldPath;
@@ -87,16 +87,20 @@ bool CJsonModifier::buildTuple(Context &ctx) {
 
 	bool exactMatch = false;
 	int field = tag.Field();
-	if (field < 0) {
-		exactMatch = (fieldPath_ == tagsPath_);
-		if (exactMatch && (tagType == TAG_OBJECT)) throw Error(errLogic, "Cannot update entire object!");
-	}
+	// if (field < 0) {
+	exactMatch = (fieldPath_ == tagsPath_);
+	if (exactMatch && (tagType == TAG_OBJECT)) throw Error(errLogic, "Cannot update entire object!");
+	// }
 
 	ctx.wrser.PutVarUint(static_cast<int>(tag));
 	if (field >= 0) {
 		if (tagType == TAG_ARRAY) {
-			carraytag atag = ctx.rdser.GetVarUint();
-			ctx.wrser.PutVarUint(atag.Count());
+			int count = ctx.rdser.GetVarUint();
+			if (exactMatch) {
+				count = ctx.value.size();
+				ctx.fieldUpdated = true;
+			}
+			ctx.wrser.PutVarUint(count);
 		}
 	} else if (field < 0) {
 		if (tagType == TAG_OBJECT) {

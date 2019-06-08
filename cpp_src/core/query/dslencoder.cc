@@ -21,9 +21,6 @@ namespace dsl {
 
 const unordered_map<JoinType, string, EnumClassHash> join_types = {{InnerJoin, "inner"}, {LeftJoin, "left"}, {OrInnerJoin, "orinner"}};
 
-const unordered_map<Filter, string, EnumClassHash> filter_map = {
-	{Filter::Cond, "cond"}, {Filter::Op, "op"}, {Filter::Field, "field"}, {Filter::Value, "value"}};
-
 const unordered_map<CondType, string, EnumClassHash> cond_map = {
 	{CondAny, "any"},	 {CondEq, "eq"},   {CondLt, "lt"},			{CondLe, "le"},		  {CondGt, "gt"},	{CondGe, "ge"},
 	{CondRange, "range"}, {CondSet, "set"}, {CondAllSet, "allset"}, {CondEmpty, "empty"}, {CondEq, "match"}, {CondLike, "like"},
@@ -51,7 +48,6 @@ void encodeSorting(const SortingEntries& sortingEntries, JsonBuilder& builder) {
 }
 
 void encodeFilter(const QueryEntry& qentry, JsonBuilder& builder) {
-	builder.Put("op", get(op_map, qentry.op));
 	builder.Put("cond", get(cond_map, qentry.condition));
 	builder.Put("field", qentry.index);
 
@@ -67,11 +63,7 @@ void encodeFilter(const QueryEntry& qentry, JsonBuilder& builder) {
 
 void encodeFilters(const Query& query, JsonBuilder& builder) {
 	auto arrNode = builder.Array("filters");
-
-	for (const QueryEntry& qe : query.entries) {
-		auto node = arrNode.Object();
-		encodeFilter(qe, node);
-	}
+	query.entries.ToDsl(arrNode);
 }
 
 void toDsl(const Query& query, JsonBuilder& builder);
@@ -168,8 +160,22 @@ std::string toDsl(const Query& query) {
 	toDsl(query, builder);
 
 	builder.End();
-	return ser.Slice().ToString();
+	return string(ser.Slice());
 }
 
 }  // namespace dsl
+
+void QueryEntries::toDsl(const_iterator it, const_iterator to, JsonBuilder& builder) {
+	for (; it != to; ++it) {
+		auto node = builder.Object();
+		node.Put("op", dsl::get(dsl::op_map, it->Op));
+		if (it->IsLeaf()) {
+			dsl::encodeFilter(it->Value(), node);
+		} else {
+			auto arrNode = node.Array("filters");
+			toDsl(it->cbegin(it), it->cend(it), arrNode);
+		}
+	}
+}
+
 }  // namespace reindexer

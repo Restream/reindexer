@@ -63,7 +63,7 @@ Error DBWrapper<_DB>::commandSelect(const string& command) {
 	} catch (const Error& err) {
 		return err;
 	}
-	bool isWALQuery = q.entries.size() == 1 && q.entries[0].index == "#lsn";
+	bool isWALQuery = q.entries.Size() == 1 && q.entries.IsEntry(0) && q.entries[0].index == "#lsn";
 
 	auto err = db_.Select(q, results);
 
@@ -79,7 +79,7 @@ Error DBWrapper<_DB>::commandSelect(const string& command) {
 			output_() << "Explain: " << std::endl;
 			if (variables_[kVariableOutput] == kOutputModePretty) {
 				WrSerializer ser;
-				prettyPrintJSON(explain, ser);
+				prettyPrintJSON(reindexer::giftStr(explain), ser);
 				output_() << ser.Slice() << std::endl;
 			} else {
 				output_() << explain << std::endl;
@@ -172,7 +172,7 @@ Error DBWrapper<_DB>::commandUpsert(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
 
-	string nsName = unescapeName(parser.NextToken());
+	string nsName = reindexer::unescapeString(parser.NextToken());
 
 	auto item = new typename _DB::ItemT(db_.NewItem(nsName));
 
@@ -182,7 +182,7 @@ Error DBWrapper<_DB>::commandUpsert(const string& command) {
 		return status;
 	}
 
-	status = item->Unsafe().FromJSON(const_cast<char*>(parser.CurPtr()));
+	status = item->Unsafe().FromJSON(parser.CurPtr());
 	if (!status.ok()) {
 		delete item;
 		return status;
@@ -196,12 +196,12 @@ Error DBWrapper<_DB>::commandDelete(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
 
-	auto nsName = unescapeName(parser.NextToken());
+	auto nsName = reindexer::unescapeString(parser.NextToken());
 
 	auto item = db_.NewItem(nsName);
 	if (!item.Status().ok()) return item.Status();
 
-	auto err = item.Unsafe().FromJSON(const_cast<char*>(parser.CurPtr()));
+	auto err = item.Unsafe().FromJSON(parser.CurPtr());
 	if (!err.ok()) return err;
 
 	return db_.Delete(nsName, item);
@@ -244,7 +244,7 @@ Error DBWrapper<_DB>::commandDump(const string& command) {
 
 		wrser << "-- Dumping namespace '" << nsDef.name << "' ..." << '\n';
 
-		wrser << "\\NAMESPACES ADD " << escapeName(nsDef.name) << " ";
+		wrser << "\\NAMESPACES ADD " << reindexer::escapeString(nsDef.name) << " ";
 		nsDef.GetJSON(wrser);
 		wrser << '\n';
 
@@ -257,7 +257,8 @@ Error DBWrapper<_DB>::commandDump(const string& command) {
 			err = db_.GetMeta(nsDef.name, mkey, mdata);
 			if (err) return err;
 
-			wrser << "\\META PUT " << escapeName(nsDef.name) << " " << escapeName(mkey) << " " << escapeName(mdata) << '\n';
+			wrser << "\\META PUT " << reindexer::escapeString(nsDef.name) << " " << reindexer::escapeString(mkey) << " "
+				  << reindexer::escapeString(mdata) << '\n';
 		}
 
 		typename _DB::QueryResultsT itemResults;
@@ -267,7 +268,7 @@ Error DBWrapper<_DB>::commandDump(const string& command) {
 
 		for (auto it : itemResults) {
 			if (!it.Status().ok()) return it.Status();
-			wrser << "\\UPSERT " << escapeName(nsDef.name) << ' ';
+			wrser << "\\UPSERT " << reindexer::escapeString(nsDef.name) << ' ';
 			it.GetJSON(wrser, false);
 			wrser << '\n';
 			if (wrser.Len() > 0x100000) {
@@ -289,10 +290,10 @@ Error DBWrapper<_DB>::commandNamespaces(const string& command) {
 	string_view subCommand = parser.NextToken();
 
 	if (iequals(subCommand, "add")) {
-		auto nsName = unescapeName(parser.NextToken());
+		auto nsName = reindexer::unescapeString(parser.NextToken());
 
 		NamespaceDef def("");
-		reindexer::Error err = def.FromJSON(const_cast<char*>(parser.CurPtr()));
+		reindexer::Error err = def.FromJSON(reindexer::giftStr(parser.CurPtr()));
 		if (!err.ok()) {
 			return Error(errParseJson, "Namespace structure is not valid - %s", err.what());
 		}
@@ -311,7 +312,7 @@ Error DBWrapper<_DB>::commandNamespaces(const string& command) {
 		return err;
 
 	} else if (iequals(subCommand, "drop")) {
-		auto nsName = unescapeName(parser.NextToken());
+		auto nsName = reindexer::unescapeString(parser.NextToken());
 		return db_.DropNamespace(nsName);
 	}
 	return Error(errParams, "Unknown sub command '%s' of namespaces command", subCommand);
@@ -324,12 +325,12 @@ Error DBWrapper<_DB>::commandMeta(const string& command) {
 	string_view subCommand = parser.NextToken();
 
 	if (iequals(subCommand, "put")) {
-		string nsName = unescapeName(parser.NextToken());
-		string metaKey = unescapeName(parser.NextToken());
-		string metaData = unescapeName(parser.NextToken());
+		string nsName = reindexer::unescapeString(parser.NextToken());
+		string metaKey = reindexer::unescapeString(parser.NextToken());
+		string metaData = reindexer::unescapeString(parser.NextToken());
 		return db_.PutMeta(nsName, metaKey, metaData);
 	} else if (iequals(subCommand, "list")) {
-		auto nsName = unescapeName(parser.NextToken());
+		auto nsName = reindexer::unescapeString(parser.NextToken());
 		vector<std::string> allMeta;
 		auto err = db_.EnumMeta(nsName, allMeta);
 		for (auto& metaKey : allMeta) {
@@ -380,7 +381,7 @@ Error DBWrapper<_DB>::commandSet(const string& command) {
 	string_view variableName = parser.NextToken();
 	string_view variableValue = parser.NextToken();
 
-	variables_[variableName.ToString()] = variableValue.ToString();
+	variables_[string(variableName)] = string(variableValue);
 	return errOK;
 }
 
@@ -406,7 +407,7 @@ Error DBWrapper<_DB>::commandBench(const string& command) {
 		WrSerializer ser;
 		JsonBuilder(ser).Put("id", i).Put("data", i);
 
-		err = item.FromJSON(ser.c_str());
+		err = item.FromJSON(ser.Slice());
 		if (!err.ok()) return err;
 
 		err = db_.Upsert(kBenchNamespace, item);
@@ -457,9 +458,9 @@ void DBWrapper<_DB>::OnWALUpdate(int64_t lsn, string_view nsName, const reindexe
 	WrSerializer ser;
 	ser << "#" << lsn << " " << nsName << " ";
 	wrec.Dump(ser, [this, nsName](string_view cjson) {
-		auto item = db_.NewItem(nsName.ToString());
+		auto item = db_.NewItem(nsName);
 		item.FromCJSON(cjson);
-		return item.GetJSON().ToString();
+		return string(item.GetJSON());
 	});
 	output_() << ser.Slice() << std::endl;
 }
@@ -478,14 +479,14 @@ Error DBWrapper<_DB>::queryResultsToJson(ostream& o, const typename _DB::QueryRe
 	size_t i = 0;
 	bool prettyPrint = variables_[kVariableOutput] == kOutputModePretty;
 	for (auto it : r) {
-		if (isWALQuery) ser << "#" << it.GetLSN() << " ";
+		if (isWALQuery) ser << '#' << it.GetLSN() << ' ';
 
 		if (it.IsRaw()) {
 			reindexer::WALRecord rec(it.GetRaw());
 			rec.Dump(ser, [this, &r](string_view cjson) {
-				auto item = db_.NewItem(r.GetNamespaces()[0].ToString());
+				auto item = db_.NewItem(r.GetNamespaces()[0]);
 				item.FromCJSON(cjson);
-				return item.GetJSON().ToString();
+				return string(item.GetJSON());
 			});
 		} else {
 			if (isWALQuery) ser << "WalItemUpdate ";
@@ -493,9 +494,9 @@ Error DBWrapper<_DB>::queryResultsToJson(ostream& o, const typename _DB::QueryRe
 			if (!err.ok()) return err;
 
 			if (prettyPrint) {
-				string json = ser.Slice().ToString();
+				string json(ser.Slice());
 				ser.Reset();
-				prettyPrintJSON(json, ser);
+				prettyPrintJSON(reindexer::giftStr(json), ser);
 			}
 		}
 		if ((++i != r.Count()) && !isWALQuery) ser << ',';

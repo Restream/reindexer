@@ -233,12 +233,12 @@ TEST_F(ExtractPK, CJson2CJson_PrintJSON) {
 	CHECK_SUCCESS(item.Status());
 	CHECK_SUCCESS(UpsertAndCommit(SIMPLE_ITEM_NAMESPACE, item));
 
-	string originalJson = item.GetJSON().ToString();
+	string originalJson(item.GetJSON());
 
 	Item test = db_->NewItem(SIMPLE_ITEM_NAMESPACE);
 	CHECK_SUCCESS(test.FromCJSON(item.GetCJSON()));
 
-	string testJson = test.GetJSON().ToString();
+	auto testJson = test.GetJSON();
 	EXPECT_EQ(testJson, originalJson);
 }
 
