@@ -164,10 +164,10 @@ void Query::deserialize(Serializer &ser) {
 				selectFilter_.push_back(string(ser.GetVString()));
 				break;
 			case QueryEqualPosition: {
-				const unsigned start = ser.GetVarUint();
+				const unsigned strt = ser.GetVarUint();
 				vector<string> ep(ser.GetVarUint());
 				for (size_t i = 0; i < ep.size(); ++i) ep[i] = string(ser.GetVString());
-				equalPositions_.insert({start, entries.DetermineEqualPositionIndexes(start, ep)});
+				equalPositions_.insert({strt, entries.DetermineEqualPositionIndexes(strt, ep)});
 				break;
 			}
 			case QueryExplain:
@@ -605,7 +605,7 @@ int Query::selectParse(tokenizer &parser, SqlParsingCtx &ctx) {
 				tok = parser.next_token();
 				for (tok = parser.peek_token(); tok.text() == ","_sv; tok = parser.peek_token()) {
 					tok = parser.next_token();
-					tok = peekSqlToken(parser, ctx, SingleSelectFieldSqlToken);
+					tok = peekSqlToken(parser, ctx, SingleSelectFieldSqlToken);  // -V519
 					entry.fields_.push_back(string(tok.text()));
 					tok = parser.next_token();
 				}

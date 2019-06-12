@@ -326,7 +326,8 @@ int HTTPServer::PostNamespace(http::Context &ctx) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
 	reindexer::NamespaceDef nsdef("");
 
-	auto status = nsdef.FromJSON(giftStr(ctx.body->Read()));
+	std::string body = ctx.body->Read();
+	auto status = nsdef.FromJSON(giftStr(body));
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
@@ -516,7 +517,8 @@ int HTTPServer::PutMetaByKey(http::Context &ctx) {
 	}
 	try {
 		gason::JsonParser parser;
-		auto root = parser.Parse(giftStr(ctx.body->Read()));
+		std::string body = ctx.body->Read();
+		auto root = parser.Parse(giftStr(body));
 		std::string key = root["key"].As<string>();
 		std::string value = root["value"].As<string>();
 		const Error err = db->PutMeta(nsName, key, unescapeString(value));
@@ -605,7 +607,8 @@ int HTTPServer::PutIndex(http::Context &ctx) {
 	}
 
 	reindexer::IndexDef idxDef;
-	idxDef.FromJSON(giftStr(ctx.body->Read()));
+	std::string body = ctx.body->Read();
+	idxDef.FromJSON(giftStr(body));
 
 	auto status = db->UpdateIndex(nsName, idxDef);
 	if (!status.ok()) {
@@ -791,7 +794,7 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataWrite);
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 	vector<string> precepts;
-	for (auto& p: ctx.request->params) {
+	for (auto &p : ctx.request->params) {
 		if (p.name == "precepts" || p.name == "precepts[]") precepts.push_back(urldecode2(p.val));
 	}
 	string itemJson = ctx.body->Read();
@@ -857,7 +860,7 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 	builder.Put("success", true);
 	if (!precepts.empty()) {
 		auto itemsArray = builder.Array("items");
-		for (const string& item: updatedItems) itemsArray.Raw(nullptr, item);
+		for (const string &item : updatedItems) itemsArray.Raw(nullptr, item);
 		itemsArray.End();
 	}
 	builder.End();

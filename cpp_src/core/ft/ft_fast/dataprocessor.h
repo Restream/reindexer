@@ -11,7 +11,7 @@ using std::vector;
 class DataProcessor {
 public:
 	using words_map = fast_hash_map<string, WordEntry>;
-	DataProcessor(DataHolder& holder, size_t fieldSize) : holder_(holder), fieldSize_(fieldSize) {}
+	DataProcessor(DataHolder& holder, size_t fieldSize) : holder_(holder), multithread_(false), fieldSize_(fieldSize) {}
 
 	void Process(bool multithread);
 

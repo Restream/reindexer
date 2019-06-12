@@ -403,9 +403,10 @@ reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in) {
 		if (!result) return ret2c(err_too_many_queries, out);
 		res = db->Update(q, *result);
 		if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
-		if (res.ok())
-			results2c(result, &out);
-		else
+		if (res.ok()) {
+			int32_t ptVers = -1;
+			results2c(result, &out, 0, &ptVers, 1);
+		} else
 			put_results_to_pool(result);
 	}
 	return ret2c(res, out);

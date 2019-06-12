@@ -153,12 +153,12 @@ func TestUpdateFields(t *testing.T) {
 }
 
 func UpdateField(fieldName string, values interface{}) (items []interface{}) {
-	it := DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16).Set(fieldName, values).Update()
-	defer it.Close()
-	if it.Error() != nil {
-		panic(it.Error())
+	res1, err := DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16).Set(fieldName, values).Update().FetchAll()
+
+	if err != nil {
+		panic(err)
 	}
-	if it.Count() == 0 {
+	if len(res1) == 0 {
 		panic(fmt.Errorf("No items updated"))
 	}
 
@@ -167,20 +167,19 @@ func UpdateField(fieldName string, values interface{}) (items []interface{}) {
 		panic(err)
 	}
 
-	if len(results) == 0 {
-		panic(fmt.Errorf("No results found"))
+	if len(results) != len(res1) {
+		panic(fmt.Errorf("Different count of items"))
 	}
 
 	return results
 }
 
 func CheckUpdateWithExpressions1() {
-	it := DB.Query(fieldsUpdateNs).SetExpression("size", "((7+8)*(10-5)*2)/25").Update()
-	defer it.Close()
-	if it.Error() != nil {
-		panic(it.Error())
+	res1, err := DB.Query(fieldsUpdateNs).SetExpression("size", "((7+8)*(10-5)*2)/25").Update().FetchAll()
+	if err != nil {
+		panic(err)
 	}
-	if it.Count() == 0 {
+	if len(res1) == 0 {
 		panic(fmt.Errorf("No items updated"))
 	}
 	results, err := DB.Query(fieldsUpdateNs).Exec().FetchAll()
@@ -199,12 +198,11 @@ func CheckUpdateWithExpressions1() {
 }
 
 func CheckUpdateWithExpressions2() {
-	it := DB.Query(fieldsUpdateNs).SetExpression("size", "((SERIAL() + 1)*4)/4").Update()
-	defer it.Close()
-	if it.Error() != nil {
-		panic(it.Error())
+	res1, err := DB.Query(fieldsUpdateNs).SetExpression("size", "((SERIAL() + 1)*4)/4").Update().FetchAll()
+	if err != nil {
+		panic(err)
 	}
-	if it.Count() == 0 {
+	if len(res1) == 0 {
 		panic(fmt.Errorf("No items updated"))
 	}
 	results, err := DB.Query(fieldsUpdateNs).Exec().FetchAll()

@@ -140,7 +140,7 @@ protected:
 	void onClose() override;
 
 	struct RPCCompletion {
-		RPCCompletion() : next(nullptr), used(false), deadline(0) {}
+		RPCCompletion() : cmd(kCmdPing), seq(0), next(nullptr), used(false), deadline(0) {}
 		CmdCode cmd;
 		uint32_t seq;
 		Completion cmpl;

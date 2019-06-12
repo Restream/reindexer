@@ -125,7 +125,7 @@ public:
 	const char *TypeName() const;
 	string Dump() const;
 
-	bool distinct;
+	bool distinct = false;
 	string name;
 
 protected:
@@ -142,8 +142,8 @@ protected:
 
 	bool isUnsorted = false;
 	bool isReverse_ = false;
-	bool forcedFirst_;
-	int type_;
+	bool forcedFirst_ = false;
+	int type_ = 0;
 	IdType lastVal_ = INT_MIN;
 	iterator lastIt_ = nullptr;
 	IdType end_ = 0;

@@ -59,7 +59,7 @@ private:
 class ClonableNamespace {
 public:
 	ClonableNamespace(size_t size, NamespaceCloner::Ptr nsWarpper);
-	ClonableNamespace() {}
+	ClonableNamespace() : size_(0) {}
 
 	~ClonableNamespace();
 	Namespace *operator->() const noexcept;

@@ -21,11 +21,14 @@ IndexUnordered<T>::IndexUnordered(const IndexUnordered &other)
 	  tracker_(other.tracker_) {}
 
 template <typename key_type>
-static inline size_t heap_size(key_type & /*kt*/) {
+size_t heap_size(const key_type & /*kt*/) {
 	return 0;
 }
 
-static inline size_t heap_size(const key_string &kt) { return kt->heap_size() + sizeof(*kt.get()); }
+template <>
+size_t heap_size<key_string>(const key_string &kt) {
+	return kt->heap_size() + sizeof(*kt.get());
+}
 
 template <typename T>
 void IndexUnordered<T>::addMemStat(typename T::iterator it) {
@@ -138,10 +141,6 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 				throw Error(errParams, "The 'is NULL' condition is suported only by 'sparse' or 'array' indexes");
 			res.push_back(SingleSelectKeyResult(this->empty_ids_, sortId));
 			break;
-		case CondAny:
-			// Get set of any keys
-			return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, opts, ctx);
-			break;
 		// Get set of keys or single key
 		case CondEq:
 		case CondSet:
@@ -188,6 +187,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 			return rslts;
 		}
 
+		case CondAny:  // Get set of any keys
 		case CondGe:
 		case CondLe:
 		case CondRange:

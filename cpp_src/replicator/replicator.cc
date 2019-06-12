@@ -187,9 +187,10 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, string_view reason
 	//  Make query to complete master's namespace data
 	client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 	if (err.ok()) err = master_->Select(Query(ns.name), qr);
-	if (err.ok()) slave_->getNamespace(ns.name)->ReplaceTagsMatcher(qr.getTagsMatcher(0));
-	if (err.ok()) err = applyWAL(ns.name, qr);
-
+	if (err.ok()) {
+		slave_->getNamespace(ns.name)->ReplaceTagsMatcher(qr.getTagsMatcher(0));
+		err = applyWAL(ns.name, qr);
+	}
 	return err;
 }
 

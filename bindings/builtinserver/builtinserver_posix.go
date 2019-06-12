@@ -1,5 +1,5 @@
 // +build !windows
-//go:generate sh -c "cd ../.. && mkdir -p build && cd build && cmake -DLINK_RESOURCES=On .. && make reindexer_server_library -j4"
+//go:generate sh -c "cd ../.. && mkdir -p build && cd build && cmake -DENABLE_LIBUNWIND=Off -DLINK_RESOURCES=On .. && make reindexer_server_library reindexer -j4"
 
 package builtinserver
 

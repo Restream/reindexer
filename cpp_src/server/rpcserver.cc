@@ -373,7 +373,9 @@ Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin) {
 	if (!err.ok()) {
 		return err;
 	}
-	ResultFetchOpts opts{0, {}, 0, INT_MAX};
+
+	int32_t ptVersion = -1;
+	ResultFetchOpts opts{kResultsCJson | kResultsWithPayloadTypes, {&ptVersion, 1}, 0, INT_MAX};
 	return sendResults(ctx, qres, -1, opts);
 }
 

@@ -46,7 +46,6 @@ public:
 protected:
 	void parseFields(wstring &utf16str, wstring::iterator &it, h_vector<float, 8> &fieldsBoost);
 
-	int numFields_;
 	std::function<int(const string &)> resolver_;
 
 	const fast_hash_map<string, int> &fields_;

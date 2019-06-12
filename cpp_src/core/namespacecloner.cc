@@ -156,7 +156,7 @@ ClonableNamespace::~ClonableNamespace() {
 	// if we work in single nm mode
 	if (!clonedNs_) return;
 	// check if it last in order try to close
-	if (clonedNs_ && clonedNs_.use_count() == 2) {
+	if (clonedNs_.use_count() == 2) {
 		atomic_exchange_sptr(&clonedNs_, {});
 		nsCloner_->CloseClonedNs();
 		return;

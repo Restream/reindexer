@@ -227,11 +227,11 @@ Error ReindexerImpl::closeNamespace(string_view nsName, bool dropStorage, bool e
 		if (dropStorage) observers_.OnWALUpdate(0, nsName, WALRecord(WalNamespaceDrop));
 
 	} catch (const Error& err) {
-		nsw = nullptr;
+		nsw = nullptr;  // -V1001
 		return err;
 	}
 	// Here will called destructor
-	nsw = nullptr;
+	nsw = nullptr;  // -V1001
 	return errOK;
 }
 

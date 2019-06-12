@@ -43,7 +43,7 @@ Variant IndexStore<PayloadValue>::Upsert(const Variant &key, IdType /*id*/) {
 
 template <typename T>
 Variant IndexStore<T>::Upsert(const Variant &key, IdType id) {
-	if (!opts_.IsArray() && !opts_.IsDense()) {
+	if (!opts_.IsArray() && !opts_.IsDense() && !opts_.IsSparse() && key.Type() != KeyValueNull) {
 		idx_data.resize(std::max(id + 1, int(idx_data.size())));
 		idx_data[id] = static_cast<T>(key);
 	}

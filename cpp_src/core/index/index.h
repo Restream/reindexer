@@ -21,9 +21,9 @@ class Index {
 public:
 	struct SelectOpts {
 		SelectOpts() : distinct(0), disableIdSetCache(0), forceComparator(0) {}
-		int distinct : 1;
-		int disableIdSetCache : 1;
-		int forceComparator : 1;
+		unsigned distinct : 1;
+		unsigned disableIdSetCache : 1;
+		unsigned forceComparator : 1;
 	};
 	using KeyEntry = reindexer::KeyEntry<IdSet>;
 	using KeyEntryPlain = reindexer::KeyEntry<IdSetPlain>;

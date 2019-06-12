@@ -143,7 +143,7 @@ void QueryEntries::writeSQL(const_iterator from, const_iterator to, WrSerializer
 	for (const_iterator it = from; it != to; ++it) {
 		if (it != from) {
 			ser << ' ';
-			if (unsigned(it->Op) < sizeof(opNames) / sizeof(opNames[0])) ser << opNames[it->Op] << ' ';
+			if (unsigned(it->Op) < sizeof(opNames) / sizeof(opNames[0])) ser << opNames[it->Op] << ' ';  // -V547
 		} else if (it->Op == OpNot) {
 			ser << "NOT ";
 		}

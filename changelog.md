@@ -1,3 +1,21 @@
+# Version 2.1.1 (12.06.2019)
+
+## Core 
+
+- [fix] sparse index crashes on type conflicts
+- [fix] fixed memory stats for dataSize of string hash indexes 
+
+# Reindexer server
+
+- [fix] possible crash on http meta update
+- [fix] return back item data via cproto  on UpdateQuery operation 
+
+# go connector
+
+- [fix] Build builinserver with libunwind conflict fixed
+- [fix] Query.Update panic fixed
+- [fix] Stronger check of namespace's item's type (PkgPath is included to check)
+
 # Version 2.1.0 (08.06.2019)
 
 ## Core

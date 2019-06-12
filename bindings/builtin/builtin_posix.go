@@ -1,5 +1,5 @@
 // +build !windows
-//go:generate sh -c "cd ../.. && mkdir -p build && cd build && cmake .. && make reindexer -j4"
+//go:generate sh -c "cd ../.. && mkdir -p build && cd build && cmake -DENABLE_LIBUNWIND=Off .. && make reindexer -j4"
 
 package builtin
 

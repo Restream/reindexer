@@ -53,7 +53,7 @@ void Namespace::IndexesStorage::MoveBase(IndexesStorage &&src) { Base::operator=
 
 // private implementation and NOT THREADSAFE of copy CTOR
 // use 'Namespace::Clone(Namespace& ns)'
-Namespace::Namespace(const Namespace &src) : indexes_(*this), observers_(src.observers_) { CopyContentsFrom(src); }
+Namespace::Namespace(const Namespace &src) : indexes_(*this), observers_(src.observers_), lastSelectTime_(0) { CopyContentsFrom(src); }
 
 Namespace::Namespace(const string &name, UpdatesObservers &observers)
 	: indexes_(*this),
@@ -67,6 +67,7 @@ Namespace::Namespace(const string &name, UpdatesObservers &observers)
 	  enablePerfCounters_(false),
 	  observers_(observers),
 	  storageLoaded_(false),
+	  lastSelectTime_(0),
 	  cancelCommit_(false),
 	  lastUpdateTime_(0),
 	  itemsCount_(0) {
@@ -907,7 +908,11 @@ void Namespace::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 
 		if (isIndexSparse) {
 			assert(index.Fields().getTagsPathsLength() > 0);
-			plNew.GetByJsonPath(index.Fields().getTagsPath(0), skrefs, index.KeyType());
+			try {
+				plNew.GetByJsonPath(index.Fields().getTagsPath(0), skrefs, index.KeyType());
+			} catch (const Error &err) {
+				skrefs.resize(0);
+			}
 		} else {
 			plNew.Get(field, skrefs);
 		}
@@ -918,7 +923,11 @@ void Namespace::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 		// Check for update
 		if (doUpdate) {
 			if (isIndexSparse) {
-				pl.GetByJsonPath(index.Fields().getTagsPath(0), krefs, index.KeyType());
+				try {
+					pl.GetByJsonPath(index.Fields().getTagsPath(0), krefs, index.KeyType());
+				} catch (const Error &err) {
+					krefs.resize(0);
+				}
 			} else {
 				pl.Get(field, krefs, index.Opts().IsArray());
 			}
@@ -930,10 +939,12 @@ void Namespace::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 		krefs.reserve(skrefs.size());
 		for (auto key : skrefs) krefs.push_back(index.Upsert(key, id));
 
-		// Put value to payload
-		if (!isIndexSparse) pl.Set(field, krefs);
-		// If no krefs doUpsert empty value to index
-		if (!skrefs.size()) index.Upsert(Variant(), id);
+		if (!isIndexSparse) {
+			// Put value to payload
+			pl.Set(field, krefs);
+			// If no krefs doUpsert empty value to index
+			if (!skrefs.size()) index.Upsert(Variant(), id);
+		}
 	} while (++field != borderIdx);
 
 	// Upsert to composite indexes
@@ -948,7 +959,7 @@ void Namespace::ReplaceTagsMatcher(const TagsMatcher &tm) {
 	assert(!items_.size() && repl_.slaveMode);
 	cancelCommit_ = true;
 	WLock lck(mtx_);
-	cancelCommit_ = false;
+	cancelCommit_ = false;  // -V519
 	tagsMatcher_ = tm;
 	tagsMatcher_.UpdatePayloadType(payloadType_);
 }
@@ -1334,7 +1345,7 @@ NamespaceMemStat Namespace::GetMemStat() {
 	ret.indexes.reserve(indexes_.size());
 	for (auto &idx : indexes_) {
 		auto istat = idx->GetMemStat();
-		istat.sortOrdersSize = idx->IsOrdered() ? items_.size() : 0;
+		istat.sortOrdersSize = idx->IsOrdered() ? (items_.size() * sizeof(IdType)) : 0;
 		ret.Total.indexesSize += istat.idsetPlainSize + istat.idsetBTreeSize + istat.sortOrdersSize + istat.fulltextSize + istat.columnSize;
 		ret.Total.dataSize += istat.dataSize;
 		ret.Total.cacheSize += istat.idsetCache.totalSize;

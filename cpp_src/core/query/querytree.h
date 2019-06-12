@@ -44,22 +44,40 @@ private:
 
 		/// @param it - points to this object
 		/// @return iterator points to the first child
-		virtual iterator begin(iterator it) { (void)it, throw std::runtime_error("It is not subtree"); }
+		virtual iterator begin(iterator it) {
+			(void)it;
+			throw std::runtime_error("It is not subtree");
+		}
 		/// @param it - points to this object
 		/// @return iterator points to the first child
-		virtual const_iterator begin(const_iterator it) const { (void)it, throw std::runtime_error("It is not subtree"); }
+		virtual const_iterator begin(const_iterator it) const {
+			(void)it;
+			throw std::runtime_error("It is not subtree");
+		}
 		/// @param it - points to this object
 		/// @return iterator points to the first child
-		virtual const_iterator cbegin(const_iterator it) const { (void)it, throw std::runtime_error("It is not subtree"); }
+		virtual const_iterator cbegin(const_iterator it) const {
+			(void)it;
+			throw std::runtime_error("It is not subtree");
+		}
 		/// @param it - points to this object
 		/// @return iterator points to the node after the last child
-		virtual iterator end(iterator it) { (void)it, throw std::runtime_error("It is not subtree"); }
+		virtual iterator end(iterator it) {  // -V524
+			(void)it;
+			throw std::runtime_error("It is not subtree");
+		}
 		/// @param it - points to this object
 		/// @return iterator points to the node after the last child
-		virtual const_iterator end(const_iterator it) const { (void)it, throw std::runtime_error("It is not subtree"); }
+		virtual const_iterator end(const_iterator it) const {  // -V524
+			(void)it;
+			throw std::runtime_error("It is not subtree");
+		}
 		/// @param it - points to this object
 		/// @return iterator points to the node after the last child
-		virtual const_iterator cend(const_iterator it) const { (void)it, throw std::runtime_error("It is not subtree"); }
+		virtual const_iterator cend(const_iterator it) const {  // -V524
+			(void)it;
+			throw std::runtime_error("It is not subtree");
+		}
 
 		OpType Op = OpAnd;
 	};

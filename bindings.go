@@ -92,7 +92,7 @@ func packItem(ns *reindexerNamespace, item interface{}, json []byte, ser *cjson.
 		if t.Kind() == reflect.Ptr {
 			t = t.Elem()
 		}
-		if ns.rtype.Name() != t.Name() {
+		if ns.rtype.Name() != t.Name() || ns.rtype.PkgPath() != t.PkgPath() {
 			panic(ErrWrongType)
 		}
 
@@ -409,7 +409,9 @@ func (db *reindexerImpl) updateQuery(ctx context.Context, q *Query) *Iterator {
 
 	ser := newSerializer(result.GetBuf())
 	// skip total count
-	rawQueryParams := ser.readRawQueryParams()
+	rawQueryParams := ser.readRawQueryParams(func(nsid int) {
+		ns.cjsonState.ReadPayloadType(&ser.Serializer)
+	})
 
 	ns.cacheLock.Lock()
 	for i := 0; i < rawQueryParams.count; i++ {
@@ -428,6 +430,7 @@ func (db *reindexerImpl) updateQuery(ctx context.Context, q *Query) *Iterator {
 		panic("Internal error: data after end of update query result")
 	}
 
+	q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
 	return newIterator(ctx, q, result, q.nsArray, nil, nil, nil)
 }
 
