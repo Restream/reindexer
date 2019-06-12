@@ -64,7 +64,7 @@ BenchmarkRethinkGetByIDNoObject     5000            216870 ns/op            5886
 BenchmarkArangoGetByIDNoObject      5000            284372 ns/op            5612 B/op         58 allocs/op
 ```
 
-## Query documents with 1 condition. Object cache is disbaled
+## Query documents with 1 condition. Object cache is disabled
 
 In this benchmark the query `SELECT ... FROM ... WHERE year > ? LIMIT 10` is executing, and fetched documents are marshaled to golang objects.
 
