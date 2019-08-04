@@ -174,7 +174,22 @@ std::string socket::addr() const {
 		}
 	}
 	char buf[INET_ADDRSTRLEN];
-	::inet_ntop(saddr.sa_family, addr, buf, INET_ADDRSTRLEN);
+	// ::inet_ntop(saddr.sa_family, addr, buf, INET_ADDRSTRLEN);
+
+	if (saddr.sa_family == AF_INET) {
+		struct sockaddr_in in;
+		memset(&in, 0, sizeof(in));
+		in.sin_family = AF_INET;
+		memcpy(&in.sin_addr, addr, sizeof(in.sin_addr));
+		getnameinfo(reinterpret_cast<sockaddr *>(&in), sizeof(struct sockaddr_in), buf, INET_ADDRSTRLEN, NULL, 0, NI_NUMERICHOST);
+	} else if (saddr.sa_family == AF_INET6) {
+		struct sockaddr_in6 in;
+		memset(&in, 0, sizeof(in));
+		in.sin6_family = AF_INET6;
+		memcpy(&in.sin6_addr, addr, sizeof(in.sin6_addr));
+		getnameinfo(reinterpret_cast<sockaddr *>(&in), sizeof(struct sockaddr_in6), buf, INET_ADDRSTRLEN, NULL, 0, NI_NUMERICHOST);
+	}
+
 	return buf;
 }
 
