@@ -83,8 +83,10 @@ public:
 	RdxActivityContext(string_view activityTracer, string_view user, string_view query, ActivityContainer&, bool clientState = false);
 	RdxActivityContext(RdxActivityContext&&);
 	~RdxActivityContext() {
-		parent_->Unregister(this);
-		assert(refCount_.load(std::memory_order_relaxed) == 0u);
+		if (parent_) {
+			parent_->Unregister(this);
+			assert(refCount_.load(std::memory_order_relaxed) == 0u);
+		}
 	}
 	operator Activity() const;
 
@@ -106,8 +108,8 @@ private:
 
 	const Activity data_;
 	std::atomic<unsigned> state_{serializeState(Activity::InProgress)};  // kStateShift lower bits for state, other for details
-	ActivityContainer* const parent_;
-	std::atomic<unsigned> refCount_{0u};
+	ActivityContainer* parent_;
+	std::atomic<unsigned> refCount_;
 };
 
 }  // namespace reindexer

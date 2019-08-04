@@ -84,7 +84,8 @@ RdxActivityContext::RdxActivityContext(string_view activityTracer, string_view u
 
 RdxActivityContext::RdxActivityContext(RdxActivityContext&& other)
 	: data_(other.data_), state_(other.state_.load(std::memory_order_relaxed)), parent_(other.parent_), refCount_(0u) {
-	parent_->Reregister(&other, this);
+	if (parent_) parent_->Reregister(&other, this);
+	other.parent_ = nullptr;
 }
 
 RdxActivityContext::operator Activity() const {

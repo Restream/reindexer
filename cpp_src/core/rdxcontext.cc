@@ -16,7 +16,7 @@ RdxContext::~RdxContext() {
 	if (holdStatus_ == kHold) {
 		activityCtx_.~RdxActivityContext();
 	} else if (holdStatus_ == kPtr) {
-		const unsigned prevValue = activityPtr_->refCount_.fetch_sub(std::memory_order_relaxed);
+		const unsigned prevValue = activityPtr_->refCount_.fetch_sub(1, std::memory_order_relaxed);
 		assert(prevValue != 0u);
 		(void)prevValue;
 	}
