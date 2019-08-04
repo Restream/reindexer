@@ -64,7 +64,7 @@ void Activity::GetJSON(WrSerializer& ser) const {
 	builder.Put("query_id", id);
 	std::time_t t = system_clock::to_time_t(startTime);
 	char buffer[80];
-	std::strftime(buffer, sizeof(buffer), "%F %T", std::localtime(&t));
+	std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
 	std::stringstream ss;
 	ss << buffer << '.' << std::setw(3) << std::setfill('0') << (duration_cast<milliseconds>(startTime.time_since_epoch()).count() % 1000);
 	builder.Put("query_start", ss.str());
