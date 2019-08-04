@@ -1,10 +1,13 @@
 #pragma once
 
+#include "client/internalrdxcontext.h"
 #include "client/item.h"
 #include "client/queryresults.h"
 #include "client/reindexerconfig.h"
 #include "core/namespacedef.h"
 #include "core/query/query.h"
+
+#include <chrono>
 
 namespace reindexer {
 class IUpdatesObserver;
@@ -12,6 +15,7 @@ class IUpdatesObserver;
 namespace client {
 using std::vector;
 using std::string;
+using std::chrono::milliseconds;
 
 class RPCClient;
 
@@ -32,6 +36,7 @@ public:
 	/// Destrory Reindexer database object
 	~Reindexer();
 	Reindexer(const Reindexer &) = delete;
+	Reindexer(Reindexer &&) noexcept;
 
 	/// Connect - connect to reindexer server
 	/// @param dsn - uri of server and database, like: `cproto://user@password:127.0.0.1:6534/dbname`
@@ -72,44 +77,44 @@ public:
 	Error EnumNamespaces(vector<NamespaceDef> &defs, bool bEnumAll);
 	/// Insert new Item to namespace. If item with same PK is already exists, when item.GetID will
 	/// return -1, on success item.GetID() will return internal Item ID
+	/// May be used with completion
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
-	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
-	Error Insert(string_view nsName, Item &item, Completion cmpl = nullptr);
+	Error Insert(string_view nsName, Item &item);
 	/// Update Item in namespace. If item with same PK is not exists, when item.GetID will
 	/// return -1, on success item.GetID() will return internal Item ID
+	/// May be used with completion
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
-	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
-	Error Update(string_view nsName, Item &item, Completion cmpl = nullptr);
+	Error Update(string_view nsName, Item &item);
 	/// Update or Insert Item in namespace. On success item.GetID() will return internal Item ID
+	/// May be used with completion
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
-	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
-	Error Upsert(string_view nsName, Item &item, Completion cmpl = nullptr);
+	Error Upsert(string_view nsName, Item &item);
 	/// Updates all items in namespace, that satisfy provided query.
 	/// @param query - Query to define items set for update.
 	/// @param result - QueryResults with IDs of deleted items.
 	Error Update(const Query &query, QueryResults &result);
 	/// Delete Item from namespace. On success item.GetID() will return internal Item ID
+	/// May be used with completion
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
-	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
-	Error Delete(string_view nsName, Item &item, Completion cmpl = nullptr);
+	Error Delete(string_view nsName, Item &item);
 	/// Delete all items froms namespace, which matches provided Query
 	/// @param query - Query with conditions
 	/// @param result - QueryResults with IDs of deleted items
 	Error Delete(const Query &query, QueryResults &result);
 	/// Execute SQL Query and return results
+	/// May be used with completion
 	/// @param query - SQL query. Only "SELECT" semantic is supported
 	/// @param result - QueryResults with found items
-	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
-	Error Select(string_view query, QueryResults &result, Completion cmpl = nullptr);
+	Error Select(string_view query, QueryResults &result);
 	/// Execute Query and return results
+	/// May be used with completion
 	/// @param query - Query object with query attributes
 	/// @param result - QueryResults with found items
-	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
-	Error Select(const Query &query, QueryResults &result, Completion cmpl = nullptr);
+	Error Select(const Query &query, QueryResults &result);
 	/// Flush changes to storage
 	/// @param nsName - Name of namespace
 	Error Commit(string_view nsName);
@@ -141,11 +146,22 @@ public:
 	/// @param suggestions - all the suggestions for 'pos' position in query.
 	Error GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string> &suggestions);
 
+	/// Add execution timeout to the next query
+	/// @param timeout - Optional server-side execution timeout for each subquery
+	Reindexer WithTimeout(milliseconds timeout) { return Reindexer(impl_, ctx_.WithTimeout(timeout)); }
+	/// Add completion
+	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
+	Reindexer WithCompletion(Completion cmpl) { return Reindexer(impl_, ctx_.WithCompletion(cmpl)); }
+
 	typedef QueryResults QueryResultsT;
 	typedef Item ItemT;
 
 private:
+	Reindexer(RPCClient *impl, InternalRdxContext ctx) : impl_(impl), owner_(false), ctx_(ctx) {}
+
 	RPCClient *impl_;
+	bool owner_;
+	InternalRdxContext ctx_;
 };
 
 }  // namespace client

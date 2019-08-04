@@ -590,7 +590,6 @@ protected:
 		item[kFieldNamePackages] = packagesVec;
 
 		item[kFieldNameRate] = static_cast<double>(rand() % 100) / 10;
-		item[kFieldNameAge] = static_cast<int>(rand() % 2);
 
 		auto pricesIds(RandIntVector(10, 7000, 50));
 		item[kFieldNamePriceId] = pricesIds;
@@ -616,9 +615,10 @@ protected:
 		for (const bool sortOrder : sortOrders) {
 			for (const char* sortIdx : sortIdxs) {
 				for (const string& distinct : distincts) {
-					int randomGenre = rand() % 50;
-					int randomGenreUpper = rand() % 100;
-					int randomGenreLower = rand() % 100;
+					const int randomAge = rand() % 50;
+					const int randomGenre = rand() % 50;
+					const int randomGenreUpper = rand() % 100;
+					const int randomGenreLower = rand() % 100;
 
 					ExecuteAndVerify(default_namespace,
 									 Query(default_namespace).Distinct(distinct.c_str()).Sort(sortIdx, sortOrder).Limit(1));
@@ -711,6 +711,26 @@ protected:
 															.Where(kFieldNamePackages, CondSet, RandIntVector(10, 10000, 50))
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder));
+
+					// check substituteCompositIndexes
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameAge, CondEq, randomAge)
+															.Where(kFieldNameGenre, CondEq, randomGenre)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 50))
+															.Where(kFieldNameGenre, CondEq, randomGenre)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 50))
+															.Where(kFieldNameGenre, CondSet, RandIntVector(10, 0, 50))
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
+					// end of check substituteCompositIndexes
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.Where(kFieldNamePackages, CondEmpty, 0)

@@ -17,9 +17,9 @@ public:
 	IEncoderDatasourceWithJoins() = default;
 	virtual ~IEncoderDatasourceWithJoins() = default;
 
-	virtual size_t GetJoinedRowsCount() = 0;
-	virtual size_t GetJoinedRowItemsCount(size_t rowId) = 0;
-	virtual ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) = 0;
+	virtual size_t GetJoinedRowsCount() const = 0;
+	virtual size_t GetJoinedRowItemsCount(size_t rowId) const = 0;
+	virtual ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) const = 0;
 	virtual const string &GetJoinedItemNamespace(size_t rowid) = 0;
 	virtual const TagsMatcher &GetJoinedItemTagsMatcher(size_t rowid) = 0;
 	virtual const FieldsSet &GetJoinedItemFieldsFilter(size_t rowid) = 0;

@@ -2,6 +2,46 @@
 #include "ns_api.h"
 #include "tools/serializer.h"
 
+TEST_F(NsApi, IndexDrop) {
+	Error err = rt.reindexer->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	DefineNamespaceDataset(
+		default_namespace,
+		{IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"date", "", "int64", IndexOpts(), 0},
+		 IndexDeclaration{"price", "", "int64", IndexOpts(), 0}, IndexDeclaration{"serialNumber", "", "int64", IndexOpts(), 0},
+		 IndexDeclaration{"fileName", "", "string", IndexOpts(), 0}});
+
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{"ft11", "text", "string", IndexOpts(), 0},
+											   IndexDeclaration{"ft12", "text", "string", IndexOpts(), 0},
+											   IndexDeclaration{"ft11+ft12=ft13", "text", "composite", IndexOpts(), 0}});
+
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{"ft21", "text", "string", IndexOpts(), 0},
+											   IndexDeclaration{"ft22", "text", "string", IndexOpts(), 0},
+											   IndexDeclaration{"ft23", "text", "string", IndexOpts(), 0},
+											   IndexDeclaration{"ft21+ft22+ft23=ft24", "text", "composite", IndexOpts(), 0}});
+
+	for (int i = 0; i < 1000; ++i) {
+		Item item = NewItem(default_namespace);
+		item[idIdxName] = i;
+		item["data"] = rand();
+		item["price"] = rand();
+		item["serialNumber"] = i * 100;
+		item["fileName"] = "File" + std::to_string(i);
+		item["ft11"] = RandString();
+		item["ft12"] = RandString();
+		item["ft21"] = RandString();
+		item["ft22"] = RandString();
+		item["ft23"] = RandString();
+		auto err = rt.reindexer->Insert(default_namespace, item);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
+	reindexer::IndexDef idef("price");
+	err = rt.reindexer->DropIndex(default_namespace, idef);
+	EXPECT_TRUE(err.ok()) << err.what();
+}
+
 TEST_F(NsApi, UpsertWithPrecepts) {
 	Error err = rt.reindexer->OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();

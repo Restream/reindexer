@@ -219,7 +219,7 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 			}
 		}
 	}
-	tx.MustCommit(nil)
+	tx.MustCommit()
 }
 
 func TestEncDec(t *testing.T) {

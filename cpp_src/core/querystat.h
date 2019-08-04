@@ -24,6 +24,10 @@ public:
 	void Hit(const Query &q, std::chrono::microseconds time);
 	void LockHit(const Query &q, std::chrono::microseconds time);
 	const std::vector<QueryPerfStat> Data();
+	void Reset() {
+		std::unique_lock<std::mutex> lck(mtx_);
+		stat_.clear();
+	}
 
 protected:
 	std::mutex mtx_;

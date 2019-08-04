@@ -263,7 +263,7 @@ public:
 	Query &Select(std::initializer_list<const char *> l) {
 		selectFilter_.insert(selectFilter_.begin(), l.begin(), l.end());
 		return *this;
-	};
+	}
 
 	/// Adds an aggregate function for certain column.
 	/// Analog to sql aggregate functions (min, max, avg, etc).

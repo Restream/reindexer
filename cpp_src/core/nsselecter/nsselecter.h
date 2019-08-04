@@ -53,13 +53,14 @@ struct SelectCtx {
 	bool matchedAtLeastOnce = false;
 	bool reqMatchedOnceFlag = false;
 	bool enableSortOrders = false;
+	bool contextCollectingMode = false;
 };
 
 class NsSelecter {
 public:
 	NsSelecter(Namespace *parent) : ns_(parent) {}
 
-	void operator()(QueryResults &result, SelectCtx &ctx);
+	void operator()(QueryResults &result, SelectCtx &ctx, const RdxContext &);
 
 private:
 	struct LoopCtx {
@@ -70,7 +71,7 @@ private:
 	};
 
 	template <bool reverse, bool haveComparators, bool haveDistinct>
-	void selectLoop(LoopCtx &ctx, QueryResults &result);
+	void selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext &);
 	void applyForcedSort(ItemRefVector &result, const SelectCtx &ctx);
 	void applyForcedSortDesc(ItemRefVector &result, const SelectCtx &ctx);
 
@@ -87,7 +88,10 @@ private:
 	void prepareSortingContext(const SortingEntries &sortBy, SelectCtx &ctx, bool isFt);
 	void prepareSortingIndexes(SortingEntries &sortBy);
 	void getSortIndexValue(const SelectCtx::SortingCtx::Entry *sortCtx, IdType rowId, VariantArray &value);
-	bool proccessJoin(SelectCtx &sctx, IdType properRowId, bool found, bool match, bool hasInnerJoin);
+	bool processJoins(SelectCtx &sctx, IdType properRowId, bool found, bool match, bool hasInnerJoins, bool hasLeftJoins,
+					  bool postLoopLimitOffsetProcessing);
+	bool processInnerJoins(const ConstPayload &pl, SelectCtx &sctx, IdType properRowId, bool found, bool match);
+	void processLeftJoins(const ConstPayload &pl, SelectCtx &sctx, IdType properRowId, bool found, bool match);
 
 	Namespace *ns_;
 	SelectFunction::Ptr fnc_;

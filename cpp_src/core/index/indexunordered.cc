@@ -3,6 +3,7 @@
 #include "core/index/payload_map.h"
 #include "core/index/string_map.h"
 #include "core/indexdef.h"
+#include "core/rdxcontext.h"
 #include "tools/errors.h"
 #include "tools/logger.h"
 
@@ -130,8 +131,9 @@ void IndexUnordered<T>::tryIdsetCache(const VariantArray &keys, CondType conditi
 
 template <typename T>
 SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType condition, SortType sortId, Index::SelectOpts opts,
-											  BaseFunctionCtx::Ptr ctx) {
-	if (opts.forceComparator) return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, opts, ctx);
+											  BaseFunctionCtx::Ptr ctx, const RdxContext &rdxCtx) {
+	const auto indexWard(rdxCtx.BeforeIndexWork());
+	if (opts.forceComparator) return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
 
 	SelectKeyResult res;
 
@@ -194,7 +196,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 		case CondGt:
 		case CondLt:
 		case CondLike:
-			return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, opts, ctx);
+			return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
 		default:
 			throw Error(errQueryExec, "Unknown query on index '%s'", this->name_);
 	}

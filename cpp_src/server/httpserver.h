@@ -64,7 +64,7 @@ protected:
 	unsigned prepareLimit(const string_view &limitParam, int limitDefault = kDefaultLimit);
 	unsigned prepareOffset(const string_view &offsetParam, int offsetDefault = kDefaultOffset);
 
-	shared_ptr<Reindexer> getDB(http::Context &ctx, UserRole role);
+	Reindexer getDB(http::Context &ctx, UserRole role);
 	string getNameFromJson(string_view json);
 
 	DBManager &dbMgr_;

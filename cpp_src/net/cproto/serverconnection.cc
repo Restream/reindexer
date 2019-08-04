@@ -58,12 +58,7 @@ void ServerConnection::Detach() {
 
 void ServerConnection::onClose() {
 	if (dispatcher_.onClose_) {
-		Stat stat;
-		Context ctx;
-		ctx.call = nullptr;
-		ctx.writer = this;
-		ctx.stat = stat;
-
+		Context ctx{"", nullptr, this, {}, false};
 		dispatcher_.onClose_(ctx, errOK);
 	}
 	clientData_.reset();
@@ -84,21 +79,18 @@ void ServerConnection::onRead() {
 	CProtoHeader hdr;
 
 	while (!closeConn_) {
-		Context ctx;
-		ctx.call = nullptr;
-		ctx.writer = this;
-		ctx.respSent_ = false;
+		Context ctx{clientAddr_, nullptr, this, {}, false};
 
 		auto len = rdBuf_.peek(reinterpret_cast<char *>(&hdr), sizeof(hdr));
-
 		if (len < sizeof(hdr)) return;
+
 		if (hdr.magic != kCprotoMagic) {
 			responceRPC(ctx, Error(errParams, "Invalid cproto magic %08x", int(hdr.magic)), Args());
 			closeConn_ = true;
 			return;
 		}
 
-		if (hdr.version < kCprotoVersion) {
+		if (hdr.version < kCprotoMinCompatVersion) {
 			responceRPC(ctx,
 						Error(errParams, "Unsupported cproto version %04x. This server expects reindexer client v1.9.8+", int(hdr.version)),
 						Args());
@@ -129,7 +121,18 @@ void ServerConnection::onRead() {
 			ctx.call->cmd = CmdCode(hdr.cmd);
 			ctx.call->seq = hdr.seq;
 			Serializer ser(it.data(), hdr.len);
+			ctx.call->execTimeout_ = milliseconds(0);
+
 			ctx.call->args.Unpack(ser);
+
+			if (hdr.len > sizeof(hdr) + ser.Pos()) {
+				Args ctxArgs;
+				ctxArgs.Unpack(ser);
+				if (ctxArgs.size() > 0) {
+					ctx.call->execTimeout_ = milliseconds(int64_t(ctxArgs[0]));
+				}
+			}
+
 			handleRPC(ctx);
 		} catch (const Error &err) {
 			// Execption occurs on unrecoverble error. Send responce, and drop connection
@@ -185,8 +188,8 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 }
 
 void ServerConnection::CallRPC(CmdCode cmd, const Args &args) {
-	RPCCall call{cmd, 0, {}};
-	cproto::Context ctx{&call, this, {}, false};
+	RPCCall call{cmd, 0, {}, milliseconds(0)};
+	cproto::Context ctx{"", &call, this, {}, false};
 	auto packed = packRPC(chunk(), ctx, errOK, args);
 	updates_mtx_.lock();
 	updates_.emplace_back(std::move(packed));

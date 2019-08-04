@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <vector>
 #include "estl/fast_hash_set.h"
+#include "estl/mutex.h"
 #include "estl/shared_mutex.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
@@ -15,6 +16,7 @@ struct JsonNode;
 
 namespace reindexer {
 class JsonBuilder;
+class RdxContext;
 
 enum ConfigType { ProfilingConf, NamespaceDataConf, ReplicationConf };
 
@@ -23,6 +25,7 @@ struct ProfilingConfigData {
 	size_t queriedThresholdUS = 10;
 	bool perfStats = false;
 	bool memStats = false;
+	bool activityStats = false;
 };
 
 struct NamespaceConfigData {

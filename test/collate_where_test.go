@@ -79,7 +79,7 @@ func FillTestCollateWhereItems() {
 			panic(err)
 		}
 	}
-	cnt := tx.MustCommit(nil)
+	cnt := tx.MustCommit()
 	if cnt != len(testCollateWhereNumericData) {
 		panic(fmt.Errorf("Could not commit testCollateWhereNumericData"))
 	}
@@ -90,7 +90,7 @@ func FillTestCollateWhereItems() {
 			panic(err)
 		}
 	}
-	cnt = tx.MustCommit(nil)
+	cnt = tx.MustCommit()
 	if cnt != len(testCollateWhereAsciiData) {
 		panic(fmt.Errorf("Could not commit testCollateWhereAscii"))
 	}
@@ -100,7 +100,7 @@ func FillTestCollateWhereItems() {
 			panic(err)
 		}
 	}
-	cnt = tx.MustCommit(nil)
+	cnt = tx.MustCommit()
 	if cnt != len(testCollateWhereUtfData) {
 		panic(fmt.Errorf("Could not commit testCollateWhereUtf"))
 	}

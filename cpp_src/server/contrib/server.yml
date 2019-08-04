@@ -305,8 +305,9 @@ paths:
         type: "string"
       responses:
         200:
-          description: "successful operation"
-          type: "string"
+          description: "Successful operation"
+          schema:
+            $ref: "#/definitions/MetaByKeyResponse"
         400:
           description: "Invalid arguments supplied"
           schema:
@@ -829,6 +830,7 @@ paths:
           description: "Invalid status value"
           schema:
             $ref: "#/definitions/StatusResponse"
+
   /check:
     get:
       tags:
@@ -841,6 +843,29 @@ paths:
           description: "successful operation"
           schema:
             $ref: "#/definitions/SysInfo"
+        400:
+          description: "Invalid arguments supplied"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+
+  /db/{database}/namespaces/%23activitystats/items:
+    get:
+      tags:
+      - "system"
+      summary: "Get activity stats information"
+      description: "This operation will return detailed informatiom about current activity of all connected to the database clients"
+      operationId: "getActivityStats"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/ActivityStats"
         400:
           description: "Invalid arguments supplied"
           schema:
@@ -971,6 +996,53 @@ definitions:
       pageheap_unmapped:
         type: "integer"
         description: "Unmapped free heap size in bytes"
+
+  ActivityStats:
+    type: "object"
+    properties:
+      total_items:
+        description: "Total count of documents, matched specified filters"
+        type: "integer"
+      items:
+        type: "array"
+        items:
+          type: "object"
+          required:
+            - client
+            - query
+            - query_id
+            - query_start
+            - state
+          properties:
+            client:
+              type: "string"
+              description: "Client identifier"
+            user:
+              type: "string"
+              description: "User name"
+            query:
+              type: "string"
+              description: "Query text"
+            query_id:
+              type: integer
+              description: "Query identifier"
+            query_start:
+              type: "string"
+              description: "Query start time"
+            state:
+              type: "string"
+              description: "Current operation state"
+              enum:
+              - "in_progress" 
+              - "wait_lock"
+              - "sending"
+              - "indexes_lookup"
+              - "bool"
+              - "select_loop"
+
+            lock_description:
+              type: "string"
+
   Databases:
     type: "object"
     properties:
@@ -1489,6 +1561,18 @@ definitions:
               description: "Optional: Provided if 'with_values' = true"
               type: "string"
 
+  MetaByKeyResponse:
+    type: "object"
+    required:
+      - key
+      - value
+    description: "Meta info of the specified namespace"
+    properties:
+      key:
+        type: "string"
+      value:
+        type: "string"
+
   Items:
     type: "object"
     properties:
@@ -1956,6 +2040,10 @@ definitions:
   ProfilingConfig:
     type: "object"
     properties:
+      activitystats:
+        type: "boolean"
+        description: "Enables tracking activity statistics"
+        default: false
       memstats:
         type: "boolean"
         description: "Enables tracking memory statistics"

@@ -31,7 +31,7 @@ func FillTestSelectTextItemsTx(count int, tx *txTest) {
 func FillTestSelectTextItems(count int) {
 	tx := newTestTx(DB, "test_select_text_item")
 	FillTestSelectTextItemsTx(count, tx)
-	tx.MustCommit(nil)
+	tx.MustCommit()
 }
 
 func TestSelectFunction(t *testing.T) {

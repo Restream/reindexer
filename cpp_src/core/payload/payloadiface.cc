@@ -328,7 +328,7 @@ int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, size_t &fi
 
 			size_t length = std::min(krefs1.size(), krefs2.size());
 			for (size_t i = 0; i < length; ++i) {
-				cmpRes = krefs1[i].Compare(krefs2[i], opts ? *opts : CollateOpts());
+				cmpRes = krefs1[i].RelaxCompare(krefs2[i], opts ? *opts : CollateOpts());
 				if (cmpRes) break;
 			}
 			if (krefs1.size() < krefs2.size()) {

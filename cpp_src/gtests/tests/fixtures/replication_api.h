@@ -9,7 +9,10 @@
 #include "thread"
 #include "tools/logger.h"
 #include "tools/serializer.h"
+
 using namespace reindexer_server;
+using std::shared_ptr;
+
 typedef reindexer::client::Reindexer CppClient;
 typedef ReindexerTestApi<shared_ptr<CppClient>, reindexer::client::Item> BaseApi;
 

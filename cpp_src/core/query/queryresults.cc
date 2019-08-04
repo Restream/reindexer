@@ -18,9 +18,29 @@ struct QueryResults::Context {
 static_assert(sizeof(QueryResults::Context) < QueryResults::kSizeofContext,
 			  "QueryResults::kSizeofContext should >=  sizeof(QueryResults::Context)");
 
-QueryResults::QueryResults(std::initializer_list<ItemRef> l) : items_(l) {}
-QueryResults::QueryResults(int /*flags*/){};
-QueryResults::QueryResults(QueryResults &&) = default;
+QueryResults::QueryResults(std::initializer_list<ItemRef> l) : items_(l), holdActivity_(false), noActivity_(0) {}
+QueryResults::QueryResults(int /*flags*/) : holdActivity_(false), noActivity_(0){};
+QueryResults::QueryResults(QueryResults &&obj)
+	: joined_(std::move(obj.joined_)),
+	  aggregationResults(std::move(obj.aggregationResults)),
+	  totalCount(obj.totalCount),
+	  haveProcent(obj.haveProcent),
+	  nonCacheableData(obj.nonCacheableData),
+	  ctxs(std::move(obj.ctxs)),
+	  explainResults(std::move(obj.explainResults)),
+	  lockedResults_(obj.lockedResults_),
+	  items_(std::move(obj.items_)),
+	  holdActivity_(obj.holdActivity_),
+	  noActivity_(0) {
+	if (holdActivity_) {
+		new (&activityCtx_) RdxActivityContext(std::move(obj.activityCtx_));
+		obj.activityCtx_.~RdxActivityContext();
+		obj.holdActivity_ = false;
+	}
+}
+
+QueryResults::QueryResults(const ItemRefVector::const_iterator &begin, const ItemRefVector::const_iterator &end)
+	: items_(begin, end), holdActivity_(false), noActivity_(0) {}
 QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	if (this != &obj) {
 		unlockResults();
@@ -34,13 +54,22 @@ QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 		nonCacheableData = std::move(obj.nonCacheableData);
 		lockedResults_ = std::move(obj.lockedResults_);
 		explainResults = std::move(obj.explainResults);
-		aggregationResults = std::move(obj.aggregationResults);
+		if (holdActivity_) activityCtx_.~RdxActivityContext();
+		holdActivity_ = obj.holdActivity_;
+		if (holdActivity_) {
+			new (&activityCtx_) RdxActivityContext(std::move(obj.activityCtx_));
+			obj.activityCtx_.~RdxActivityContext();
+			obj.holdActivity_ = false;
+		}
 		obj.lockedResults_ = false;
 	}
 	return *this;
 }
 
-QueryResults::~QueryResults() { unlockResults(); }
+QueryResults::~QueryResults() {
+	unlockResults();
+	if (holdActivity_) activityCtx_.~RdxActivityContext();
+}
 
 void QueryResults::Clear() { *this = QueryResults(); }
 
@@ -49,33 +78,35 @@ void QueryResults::Erase(ItemRefVector::iterator start, ItemRefVector::iterator 
 	items_.erase(start, finish);
 }
 
-void QueryResults::lockResults() {
-	assert(!lockedResults_);
-	for (auto &itemRef : items_) {
-		if (!itemRef.value.IsFree() && !itemRef.raw) {
-			assert(ctxs.size() > itemRef.nsid);
-			Payload(ctxs[itemRef.nsid].type_, itemRef.value).AddRefStrings();
-		}
+void QueryResults::lockItem(ItemRef &itemref, size_t joinedNs, bool lock) {
+	if (!itemref.value.IsFree() && !itemref.raw) {
+		assert(ctxs.size() > joinedNs);
+		Payload pl(ctxs[joinedNs].type_, itemref.value);
+		if (lock)
+			pl.AddRefStrings();
+		else
+			pl.ReleaseStrings();
 	}
-	for (auto &joinded : joined_) {
-		for (auto &jr : joinded) {
-			for (auto &jqr : jr.second) {
-				jqr.lockResults();
-			}
-		}
-	}
-	lockedResults_ = true;
 }
 
-void QueryResults::unlockResults() {
-	if (!lockedResults_) return;
-	for (auto &itemRef : items_) {
-		if (!itemRef.value.IsFree() && !itemRef.raw) {
-			assert(ctxs.size() > itemRef.nsid);
-			Payload(ctxs[itemRef.nsid].type_, itemRef.value).ReleaseStrings();
+void QueryResults::lockResults() { lockResults(true); }
+void QueryResults::unlockResults() { lockResults(false); }
+
+void QueryResults::lockResults(bool lock) {
+	if (!lock && !lockedResults_) return;
+	if (lock) assert(!lockedResults_);
+	for (size_t i = 0; i < items_.size(); ++i) {
+		lockItem(items_[i], items_[i].nsid, lock);
+		if (joined_.empty()) continue;
+		Iterator itemIt{this, int(i), errOK};
+		joins::ItemIterator joinIt = itemIt.GetJoinedItemsIterator();
+		if (joinIt.getJoinedItemsCount() == 0) continue;
+		size_t joinedNs = joined_.size();
+		for (auto fieldIt = joinIt.begin(); fieldIt != joinIt.end(); ++fieldIt, ++joinedNs) {
+			for (int j = 0; j < fieldIt.ItemsCount(); ++j) lockItem(fieldIt[j], joinedNs, lock);
 		}
 	}
-	lockedResults_ = false;
+	lockedResults_ = lock;
 }
 
 void QueryResults::Add(const ItemRef &i) {
@@ -89,26 +120,36 @@ void QueryResults::Add(const ItemRef &i) {
 	}
 }
 
+void QueryResults::Add(const ItemRef &itemref, const PayloadType &pt) {
+	items_.push_back(itemref);
+
+	if (!lockedResults_) return;
+	if (!itemref.value.IsFree() && !itemref.raw) {
+		Payload(pt, items_.back().value).AddRefStrings();
+	}
+}
+
 void QueryResults::Dump() const {
 	string buf;
-	for (auto &r : items_) {
-		if (&r != &*items_.begin()) buf += ",";
-		buf += std::to_string(r.id);
-		for (const auto &joined : joined_) {
-			auto it = joined.find(r.id);
-			if (it != joined.end()) {
-				buf += "[";
-				for (auto &ra : it->second) {
-					if (&ra != &*it->second.begin()) buf += ";";
-					for (auto &rr : ra.items_) {
-						if (&rr != &*ra.items_.begin()) buf += ",";
-						buf += std::to_string(rr.id);
-					}
+	for (size_t i = 0; i < items_.size(); ++i) {
+		if (&items_[i] != &*items_.begin()) buf += ",";
+		buf += std::to_string(items_[i].id);
+		if (joined_.empty()) continue;
+		Iterator itemIt{this, int(i), errOK};
+		joins::ItemIterator joinIt = itemIt.GetJoinedItemsIterator();
+		if (joinIt.getJoinedItemsCount() > 0) {
+			buf += "[";
+			for (auto fieldIt = joinIt.begin(); fieldIt != joinIt.end(); ++fieldIt) {
+				if (fieldIt != joinIt.begin()) buf += ";";
+				for (int j = 0; j < fieldIt.ItemsCount(); ++j) {
+					if (j != 0) buf += ",";
+					buf += std::to_string(fieldIt[j].id);
 				}
-				buf += "]";
 			}
+			buf += "]";
 		}
 	}
+
 	logPrintf(LogInfo, "Query returned: [%s]; total=%d", buf, this->totalCount);
 }
 
@@ -121,17 +162,18 @@ h_vector<string_view, 1> QueryResults::GetNamespaces() const {
 
 class QueryResults::EncoderDatasourceWithJoins : public IEncoderDatasourceWithJoins {
 public:
-	EncoderDatasourceWithJoins(const QRVector &joined, const ContextsVector &ctxs) : joined_(joined), ctxs_(ctxs) {}
+	EncoderDatasourceWithJoins(const joins::ItemIterator &joinedItemIt, const ContextsVector &ctxs)
+		: joinedItemIt_(joinedItemIt), ctxs_(ctxs) {}
 	~EncoderDatasourceWithJoins() {}
 
-	size_t GetJoinedRowsCount() final { return joined_.size(); }
-	size_t GetJoinedRowItemsCount(size_t rowId) final {
-		const QueryResults &queryRes(joined_[rowId]);
-		return queryRes.Count();
+	size_t GetJoinedRowsCount() const final { return joinedItemIt_.getJoinedFieldsCount(); }
+	size_t GetJoinedRowItemsCount(size_t rowId) const final {
+		auto fieldIt = joinedItemIt_.at(rowId);
+		return fieldIt.ItemsCount();
 	}
-	ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) final {
-		const QueryResults &queryRes(joined_[rowid]);
-		const ItemRef &itemRef = queryRes.items_[plIndex];
+	ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) const final {
+		auto fieldIt = joinedItemIt_.at(rowid);
+		const ItemRef &itemRef = fieldIt[plIndex];
 		const Context &ctx = ctxs_[rowid + 1];
 		return ConstPayload(ctx.type_, itemRef.value);
 	}
@@ -150,7 +192,7 @@ public:
 	}
 
 private:
-	const QRVector &joined_;
+	const joins::ItemIterator &joinedItemIt_;
 	const ContextsVector &ctxs_;
 };
 
@@ -168,12 +210,13 @@ void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 
 	JsonBuilder builder(ser, JsonBuilder::TypePlain);
 
-	const QRVector &itJoined = (begin() + idx).GetJoined();
-
-	if (!itJoined.empty()) {
-		EncoderDatasourceWithJoins ds(itJoined, ctxs);
-		encoder.Encode(&pl, builder, &ds);
-		return;
+	if (joined_.size() > 0) {
+		joins::ItemIterator itemIt = (begin() + idx).GetJoinedItemsIterator();
+		if (itemIt.getJoinedItemsCount() > 0) {
+			EncoderDatasourceWithJoins ds(itemIt, ctxs);
+			encoder.Encode(&pl, builder, &ds);
+			return;
+		}
 	}
 	encoder.Encode(&pl, builder);
 }
@@ -247,18 +290,12 @@ Item QueryResults::Iterator::GetItem() {
 	return item;
 }
 
-const QRVector &QueryResults::Iterator::GetJoined() {
-	static QRVector ret;
-	if (qr_->joined_.empty()) {
-		return ret;
-	}
-
+joins::ItemIterator QueryResults::Iterator::GetJoinedItemsIterator() {
+	static joins::NamespaceResults empty;
+	static joins::ItemIterator ret(&empty, 0);
 	auto &itemRef = qr_->items_[idx_];
-	auto it = qr_->joined_[itemRef.nsid].find(itemRef.id);
-	if (it == qr_->joined_[itemRef.nsid].end()) {
-		return ret;
-	}
-	return it->second;
+	if (itemRef.nsid >= qr_->joined_.size()) return ret;
+	return joins::ItemIterator(&qr_->joined_[itemRef.nsid], itemRef.id);
 }
 
 QueryResults::Iterator &QueryResults::Iterator::operator++() {
@@ -293,6 +330,12 @@ const PayloadType &QueryResults::getPayloadType(int nsid) const {
 	assert(nsid < int(ctxs.size()));
 	return ctxs[nsid].type_;
 }
+
+const FieldsSet &QueryResults::getFieldsFilter(int nsid) const {
+	assert(nsid < int(ctxs.size()));
+	return ctxs[nsid].fieldsFilter_;
+}
+
 TagsMatcher &QueryResults::getTagsMatcher(int nsid) {
 	assert(nsid < int(ctxs.size()));
 	return ctxs[nsid].tagsMatcher_;
@@ -302,6 +345,7 @@ PayloadType &QueryResults::getPayloadType(int nsid) {
 	assert(nsid < int(ctxs.size()));
 	return ctxs[nsid].type_;
 }
+
 int QueryResults::getMergedNSCount() const { return ctxs.size(); }
 
 void QueryResults::addNSContext(const PayloadType &type, const TagsMatcher &tagsMatcher, const FieldsSet &filter) {

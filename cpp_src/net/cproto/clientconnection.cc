@@ -31,7 +31,7 @@ ClientConnection::ClientConnection(ev::dynamic_loop &loop, const httpparser::Url
 	deadlineTimer_.set<ClientConnection, &ClientConnection::deadline_check_cb>(this);
 	deadlineTimer_.set(loop);
 	loopThreadID_ = std::this_thread::get_id();
-}
+}  // namespace cproto
 
 ClientConnection::~ClientConnection() { assert(!PendingCompletions()); }
 
@@ -76,7 +76,8 @@ void ClientConnection::connectInternal() {
 		keep_alive_.start(kKeepAliveInterval, kKeepAliveInterval);
 		deadlineTimer_.start(kDeadlineCheckInterval, kDeadlineCheckInterval);
 
-		call(completion, kCmdLogin, loginTimeout_, {Arg{p_string(&userName)}, Arg{p_string(&password)}, Arg{p_string(&dbName)}});
+		call(completion, kCmdLogin, loginTimeout_, milliseconds(0),
+			 {Arg{p_string(&userName)}, Arg{p_string(&password)}, Arg{p_string(&dbName)}});
 	}
 }
 
@@ -154,11 +155,13 @@ void ClientConnection::onRead() {
 			return;
 		}
 
-		if (hdr.version != kCprotoVersion) {
+		if (hdr.version < kCprotoMinCompatVersion) {
 			failInternal(
 				Error(errParams, "Unsupported cproto version %04x. This client expects reindexer server v1.9.8+", int(hdr.version)));
 			return;
 		}
+
+		len = rdBuf_.peek(reinterpret_cast<char *>(&hdr), sizeof(hdr));
 
 		if (hdr.len + sizeof(hdr) > rdBuf_.capacity()) {
 			rdBuf_.reserve(hdr.len + sizeof(hdr) + 0x1000);
@@ -236,7 +239,7 @@ Args RPCAnswer::GetArgs(int minArgs) const {
 
 Error RPCAnswer::Status() const { return status_; }
 
-chunk ClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args) {
+chunk ClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args, const Args &ctxArgs) {
 	CProtoHeader hdr;
 	hdr.len = 0;
 	hdr.magic = kCprotoMagic;
@@ -245,21 +248,25 @@ chunk ClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args) {
 	hdr.seq = seq;
 
 	WrSerializer ser(wrBuf_.get_chunk());
+
 	ser.Write(string_view(reinterpret_cast<char *>(&hdr), sizeof(hdr)));
+
 	args.Pack(ser);
+	ctxArgs.Pack(ser);
+
 	reinterpret_cast<CProtoHeader *>(ser.Buf())->len = ser.Len() - sizeof(hdr);
 
 	return ser.DetachChunk();
 }
 
-void ClientConnection::call(Completion cmpl, CmdCode cmd, seconds timeout, const Args &args) {
+void ClientConnection::call(Completion cmpl, CmdCode cmd, seconds netTimeout, milliseconds execTimeout, const Args &args) {
 	uint32_t seq = seq_++;
-	chunk data = packRPC(cmd, seq, args);
-	auto *completion = &completions_[seq % completions_.size()];
+	chunk data = packRPC(cmd, seq, args, Args{Arg{int64_t(execTimeout.count())}});
 	bool inLoopThread = loopThreadID_ == std::this_thread::get_id();
 
 	std::unique_lock<std::mutex> lck(mtx_);
-	auto deadline = timeout.count() ? Now() + timeout : seconds(0);
+	auto completion = &completions_[seq % completions_.size()];
+	auto deadline = netTimeout.count() ? Now() + netTimeout : seconds(0);
 	if (!inLoopThread) {
 		while (state_ != ConnConnected || completion->used) {
 			switch (state_) {

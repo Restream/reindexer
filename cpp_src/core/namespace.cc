@@ -10,6 +10,7 @@
 #include "core/nsselecter/nsselecter.h"
 #include "core/payload/payloadiface.h"
 #include "core/query/expressionevaluator.h"
+#include "core/rdxcontext.h"
 #include "core/selectfunc/functionexecutor.h"
 #include "itemimpl.h"
 #include "replicator/updatesobserver.h"
@@ -101,7 +102,7 @@ void Namespace::MoveContentsFrom(Namespace &&src) noexcept {
 	wal_ = move(src.wal_);
 	repl_ = move(src.repl_);
 	storageLoaded_ = src.storageLoaded_.load();
-	lastUpdateTime_ = src.lastUpdateTime_.load();
+	lastUpdateTime_.store(src.lastUpdateTime_.load(std::memory_order_acquire), std::memory_order_release);
 	itemsCount_ = src.itemsCount_.load();
 
 	sparseIndexesCount_ = src.sparseIndexesCount_;
@@ -132,7 +133,7 @@ void Namespace::CopyContentsFrom(const Namespace &src) {
 	wal_ = src.wal_;
 	repl_ = src.repl_;
 	storageLoaded_ = src.storageLoaded_.load();
-	lastUpdateTime_ = src.lastUpdateTime_.load();
+	lastUpdateTime_.store(src.lastUpdateTime_.load(std::memory_order_acquire), std::memory_order_release);
 	itemsCount_ = src.itemsCount_.load();
 	sparseIndexesCount_ = src.sparseIndexesCount_;
 	krefs = src.krefs;
@@ -144,11 +145,12 @@ void Namespace::CopyContentsFrom(const Namespace &src) {
 }
 
 Namespace::~Namespace() {
-	WLock wlock(mtx_);
+	const RdxContext dummyCtx;
+	WLock wlock(mtx_, &dummyCtx);
 	logPrintf(LogTrace, "Namespace::~Namespace (%s), %d items", name_, items_.size());
 }
 
-void Namespace::onConfigUpdated(DBConfigProvider &configProvider) {
+void Namespace::onConfigUpdated(DBConfigProvider &configProvider, const RdxContext &ctx) {
 	NamespaceConfigData configData;
 	ReplicationConfigData replicationConf;
 	configProvider.GetNamespaceConfig(GetName(), configData);
@@ -156,7 +158,7 @@ void Namespace::onConfigUpdated(DBConfigProvider &configProvider) {
 
 	enablePerfCounters_ = configProvider.GetProfilingConfig().perfStats;
 
-	WLock lk(mtx_);
+	WLock lk(mtx_, &ctx);
 	config_ = configData;
 	storageOpts_.LazyLoad(configData.lazyLoad);
 	storageOpts_.noQueryIdleThresholdSec = configData.noQueryIdleThreshold;
@@ -301,22 +303,22 @@ void Namespace::addToWAL(const IndexDef &indexDef, WALRecType type) {
 	observers_.OnWALUpdate(lsn, name_, wrec);
 }
 
-void Namespace::AddIndex(const IndexDef &indexDef) {
-	WLock wlock(mtx_);
+void Namespace::AddIndex(const IndexDef &indexDef, const RdxContext &ctx) {
+	WLock wlock(mtx_, &ctx);
 	addIndex(indexDef);
 	saveIndexesToStorage();
 	addToWAL(indexDef, WalIndexAdd);
 }
 
-void Namespace::UpdateIndex(const IndexDef &indexDef) {
-	WLock wlock(mtx_);
+void Namespace::UpdateIndex(const IndexDef &indexDef, const RdxContext &ctx) {
+	WLock wlock(mtx_, &ctx);
 	updateIndex(indexDef);
 	saveIndexesToStorage();
 	addToWAL(indexDef, WalIndexUpdate);
 }
 
-void Namespace::DropIndex(const IndexDef &indexDef) {
-	WLock wlock(mtx_);
+void Namespace::DropIndex(const IndexDef &indexDef, const RdxContext &ctx) {
+	WLock wlock(mtx_, &ctx);
 	dropIndex(indexDef);
 	saveIndexesToStorage();
 	addToWAL(indexDef, WalIndexDrop);
@@ -350,8 +352,8 @@ void Namespace::dropIndex(const IndexDef &index) {
 	}
 
 	// Update indexes fields refs
-	for (int idx = 0; idx < payloadType_->NumFields(); idx++) {
-		FieldsSet fields = indexes_[idx]->Fields(), newFields;
+	for (const unique_ptr<Index> &idx : indexes_) {
+		FieldsSet fields = idx->Fields(), newFields;
 		int jsonPathIdx = 0;
 		for (auto field : fields) {
 			if (field == IndexValueType::SetByJsonPath) {
@@ -362,7 +364,7 @@ void Namespace::dropIndex(const IndexDef &index) {
 				newFields.push_back(field < fieldIdx ? field : field - 1);
 			}
 		}
-		indexes_[idx]->SetFields(std::move(newFields));
+		idx->SetFields(std::move(newFields));
 	}
 
 	if (!isComposite(indexToRemove->Type()) && !indexToRemove->Opts().IsSparse()) {
@@ -501,7 +503,7 @@ void Namespace::addIndex(const IndexDef &indexDef) {
 		newIndex->SetFields(FieldsSet{idxNo});
 		newIndex->UpdatePayloadType(payloadType_);
 
-		FieldsSet changedFields{0, idxNo};
+		FieldsSet changedFields{idxNo};
 		insertIndex(newIndex.release(), idxNo, indexName);
 		updateItems(oldPlType, changedFields, 1);
 	}
@@ -628,20 +630,21 @@ bool Namespace::getIndexByName(const string &name, int &index) const {
 	return true;
 }
 
-void Namespace::Insert(Item &item, bool store) { modifyItem(item, store, ModeInsert); }
+void Namespace::Insert(Item &item, const RdxContext &ctx, bool store) { modifyItem(item, ctx, store, ModeInsert); }
 
-void Namespace::Update(Item &item, bool store) { modifyItem(item, store, ModeUpdate); }
+void Namespace::Update(Item &item, const RdxContext &ctx, bool store) { modifyItem(item, ctx, store, ModeUpdate); }
 
-void Namespace::Update(const Query &query, QueryResults &result, int64_t lsn) {
+void Namespace::Update(const Query &query, QueryResults &result, const RdxContext &ctx, int64_t lsn) {
 	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
-	WLock lock(mtx_);
+	WLock lock(mtx_, &ctx);
 	calc.LockHit();
 
 	if (repl_.slaveMode && lsn == -1) throw Error(errLogic, "Can't modify slave ns '%s'", name_);
 
 	NsSelecter selecter(this);
-	SelectCtx ctx(query);
-	selecter(result, ctx);
+	SelectCtx selCtx(query);
+	selCtx.contextCollectingMode = true;
+	selecter(result, selCtx, ctx);
 
 	auto tmStart = high_resolution_clock::now();
 	// If update statement is expression, and contains functions call, then we should use
@@ -650,6 +653,8 @@ void Namespace::Update(const Query &query, QueryResults &result, int64_t lsn) {
 	for (auto &ue : query.updateFields_)
 		if (ue.isExpression) enableStatementRepl = false;
 	if (repl_.slaveMode && !enableStatementRepl) throw Error(errLogic, "Can't apply update query with expression to slave ns '%s'", name_);
+
+	ThrowOnCancel(ctx);
 
 	for (ItemRef &item : result.Items()) {
 		updateFieldsFromQuery(item.id, query, true);
@@ -682,14 +687,14 @@ void Namespace::Update(const Query &query, QueryResults &result, int64_t lsn) {
 	}
 }
 
-void Namespace::Upsert(Item &item, bool store) { modifyItem(item, store, ModeUpsert); }
+void Namespace::Upsert(Item &item, const RdxContext &ctx, bool store) { modifyItem(item, ctx, store, ModeUpsert); }
 
-void Namespace::Delete(Item &item, bool noLock) {
+void Namespace::Delete(Item &item, const RdxContext &ctx, bool noLock) {
 	ItemImpl *ritem = item.impl_;
 
 	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
 
-	WLock lock(mtx_, defer_lock);
+	WLock lock(mtx_, defer_lock, &ctx);
 
 	if (!noLock) {
 		cancelCommit_ = true;
@@ -707,7 +712,7 @@ void Namespace::Delete(Item &item, bool noLock) {
 
 	updateTagsMatcherFromItem(ritem);
 
-	auto itItem = findByPK(ritem);
+	auto itItem = findByPK(ritem, ctx);
 	IdType id = itItem.first;
 
 	if (!itItem.second) {
@@ -794,10 +799,10 @@ void Namespace::doDelete(IdType id) {
 	}
 }
 
-void Namespace::Delete(const Query &q, QueryResults &result, int64_t lsn, bool noLock) {
+void Namespace::Delete(const Query &q, QueryResults &result, const RdxContext &ctx, int64_t lsn, bool noLock) {
 	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
 
-	WLock lock(mtx_, defer_lock);
+	WLock lock(mtx_, defer_lock, &ctx);
 	if (!noLock) {
 		cancelCommit_ = true;
 		lock.lock();
@@ -808,8 +813,9 @@ void Namespace::Delete(const Query &q, QueryResults &result, int64_t lsn, bool n
 	if (repl_.slaveMode && lsn == -1) throw Error(errLogic, "Can't modify slave ns '%s'", name_);
 
 	NsSelecter selecter(this);
-	SelectCtx ctx(q);
-	selecter(result, ctx);
+	SelectCtx selCtx(q);
+	selCtx.contextCollectingMode = true;
+	selecter(result, selCtx, ctx);
 	result.lockResults();
 
 	auto tmStart = high_resolution_clock::now();
@@ -832,8 +838,8 @@ void Namespace::Delete(const Query &q, QueryResults &result, int64_t lsn, bool n
 	}
 }
 
-ReplicationState Namespace::GetReplState() {
-	RLock lck(mtx_);
+ReplicationState Namespace::GetReplState(const RdxContext &ctx) {
+	RLock lck(mtx_, &ctx);
 	return getReplState();
 }
 
@@ -844,25 +850,26 @@ ReplicationState Namespace::getReplState() {
 	return ret;
 }
 
-void Namespace::SetSlaveLSN(int64_t slaveLsn) {
-	WLock lck(mtx_);
+void Namespace::SetSlaveLSN(int64_t slaveLsn, const RdxContext &ctx) {
+	WLock lck(mtx_, &ctx);
 	assert(repl_.slaveMode);
 	/*if (slaveLsn > repl_.lastLsn)*/ repl_.lastLsn = slaveLsn;
 	unflushedCount_++;
 }
 
-void Namespace::ApplyTransactionStep(TransactionStep &step) {
+void Namespace::ApplyTransactionStep(TransactionStep &step, RdxActivityContext *ctx) {
 	if (step.status_ == ModeDelete) {
-		Delete(step.item_, true);
+		Delete(step.item_, ctx, true);
 	} else {
-		modifyItem(step.item_, true, step.status_, true);
+		modifyItem(step.item_, ctx, true, step.status_, true);
 	}
 }
 
-void Namespace::StartTransaction() {
+void Namespace::StartTransaction(const RdxContext &ctx) {
 	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
 	cancelCommit_ = true;
-	mtx_.lock();
+	WLock lck(mtx_, &ctx);
+	lck.release();
 	cancelCommit_ = false;
 	calc.LockHit();
 }
@@ -910,7 +917,7 @@ void Namespace::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 			assert(index.Fields().getTagsPathsLength() > 0);
 			try {
 				plNew.GetByJsonPath(index.Fields().getTagsPath(0), skrefs, index.KeyType());
-			} catch (const Error &err) {
+			} catch (const Error &) {
 				skrefs.resize(0);
 			}
 		} else {
@@ -925,7 +932,7 @@ void Namespace::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 			if (isIndexSparse) {
 				try {
 					pl.GetByJsonPath(index.Fields().getTagsPath(0), krefs, index.KeyType());
-				} catch (const Error &err) {
+				} catch (const Error &) {
 					krefs.resize(0);
 				}
 			} else {
@@ -955,19 +962,19 @@ void Namespace::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 	ritem->RealValue() = plData;
 }
 
-void Namespace::ReplaceTagsMatcher(const TagsMatcher &tm) {
+void Namespace::ReplaceTagsMatcher(const TagsMatcher &tm, const RdxContext &ctx) {
 	assert(!items_.size() && repl_.slaveMode);
 	cancelCommit_ = true;
-	WLock lck(mtx_);
+	WLock lck(mtx_, &ctx);
 	cancelCommit_ = false;  // -V519
 	tagsMatcher_ = tm;
 	tagsMatcher_.UpdatePayloadType(payloadType_);
 }
 
-void Namespace::UpdateTagsMatcherFromItem(Item *item) {
+void Namespace::UpdateTagsMatcherFromItem(Item *item, const RdxContext &ctx) {
 	cancelCommit_ = true;
-	WLock lck(mtx_);
-	cancelCommit_ = false;
+	WLock lck(mtx_, &ctx);
+	cancelCommit_ = false;  // -V519
 
 	ItemImpl *ritem = item->impl_;
 	updateTagsMatcherFromItem(ritem);
@@ -1105,7 +1112,7 @@ void Namespace::updateFieldsFromQuery(IdType itemId, const Query &q, bool store)
 	markUpdated();
 }
 
-void Namespace::modifyItem(Item &item, bool store, int mode, bool noLock) {
+void Namespace::modifyItem(Item &item, const RdxContext &ctx, bool store, int mode, bool noLock) {
 	if (item.GetLSN() == -1) {
 		if (repl_.slaveMode) throw Error(errLogic, "Can't modify slave ns '%s'", name_);
 	} else {
@@ -1115,7 +1122,7 @@ void Namespace::modifyItem(Item &item, bool store, int mode, bool noLock) {
 
 	// Item to doUpsert
 	ItemImpl *itemImpl = item.impl_;
-	WLock lock(mtx_, defer_lock);
+	WLock lock(mtx_, defer_lock, &ctx);
 	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
 
 	if (!noLock) {
@@ -1128,7 +1135,7 @@ void Namespace::modifyItem(Item &item, bool store, int mode, bool noLock) {
 	updateTagsMatcherFromItem(itemImpl);
 	auto newPl = itemImpl->GetPayload();
 
-	auto realItem = findByPK(itemImpl);
+	auto realItem = findByPK(itemImpl, ctx);
 	bool exists = realItem.second;
 
 	if ((exists && mode == ModeInsert) || (!exists && mode == ModeUpdate)) {
@@ -1176,7 +1183,7 @@ void Namespace::modifyItem(Item &item, bool store, int mode, bool noLock) {
 }
 
 // find id by PK. NOT THREAD SAFE!
-pair<IdType, bool> Namespace::findByPK(ItemImpl *ritem) {
+pair<IdType, bool> Namespace::findByPK(ItemImpl *ritem, const RdxContext &ctx) {
 	auto pkIndexIt = indexesNames_.find(kPKIndexName);
 
 	if (pkIndexIt == indexesNames_.end()) {
@@ -1198,25 +1205,26 @@ pair<IdType, bool> Namespace::findByPK(ItemImpl *ritem) {
 	assertf(krefs.size() == 1, "Pkey field must contain 1 key, but there '%d' in '%s.%s'", int(krefs.size()), name_.c_str(),
 			pkIndex->Name().c_str());
 
-	SelectKeyResult res = pkIndex->SelectKey(krefs, CondEq, 0, Index::SelectOpts(), nullptr)[0];
+	SelectKeyResult res = pkIndex->SelectKey(krefs, CondEq, 0, Index::SelectOpts(), nullptr, ctx)[0];
 	if (res.size() && res[0].ids_.size()) return {res[0].ids_[0], true};
 	return {-1, false};
 }
 
-void Namespace::commitIndexes() {
+void Namespace::commitIndexes(const RdxContext &ctx) {
 	// This is read lock only atomics based implementation of rebuild indexes
 	// If sortOrdersBuilt_ is true, then indexes are completely built
 	// In this case reset sortOrdersBuilt_ to false and/or any idset's and sort orders builds are allowed only protected by write lock
 	if (sortOrdersBuilt_) return;
 	int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-	if (!lastUpdateTime_ || now - lastUpdateTime_ < 300) {
+	auto lastUpdateTime = lastUpdateTime_.load(std::memory_order_acquire);
+	if (!lastUpdateTime || now - lastUpdateTime < 800) {
 		return;
 	}
 	if (!indexes_.size()) {
 		return;
 	}
 
-	RLock lck(mtx_);
+	RLock lck(mtx_, &ctx);
 	if (sortOrdersBuilt_ || cancelCommit_) return;
 
 	logPrintf(LogTrace, "Namespace::commitIndexes(%s) enter", name_);
@@ -1255,7 +1263,9 @@ void Namespace::commitIndexes() {
 		if (cancelCommit_) break;
 	}
 	sortOrdersBuilt_ = !cancelCommit_;
-	if (!cancelCommit_) lastUpdateTime_ = 0;
+	if (!cancelCommit_) {
+		lastUpdateTime_.store(0, std::memory_order_release);
+	}
 	logPrintf(LogTrace, "Namespace::commitIndexes(%s) leave %s", name_, cancelCommit_ ? "(cancelled by concurent update)" : "");
 }
 
@@ -1266,7 +1276,10 @@ void Namespace::markUpdated() {
 	sortOrdersBuilt_ = false;
 	queryCache_->Clear();
 	joinCache_->Clear();
-	lastUpdateTime_ = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	lastUpdateTime_.store(
+		std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),
+		std::memory_order_release);
+	repl_.updatedUnixNano = getTimeNow("nsec"_sv);
 }
 
 void Namespace::updateSelectTime() {
@@ -1275,13 +1288,13 @@ void Namespace::updateSelectTime() {
 
 int64_t Namespace::getLastSelectTime() const { return lastSelectTime_; }
 
-void Namespace::Select(QueryResults &result, SelectCtx &params) {
+void Namespace::Select(QueryResults &result, SelectCtx &params, const RdxContext &ctx) {
 	if (params.query.entries.Size() == 1 && params.query.entries.IsEntry(0) && params.query.entries[0].index == kLSNIndexName) {
 		WALSelecter selecter(this);
 		selecter(result, params);
 	} else {
 		NsSelecter selecter(this);
-		selecter(result, params);
+		selecter(result, params, ctx);
 	}
 }
 
@@ -1316,13 +1329,13 @@ NamespaceDef Namespace::getDefinition() const {
 	return nsDef;
 }
 
-NamespaceDef Namespace::GetDefinition() {
-	RLock rlock(mtx_);
+NamespaceDef Namespace::GetDefinition(const RdxContext &ctx) {
+	RLock rlock(mtx_, &ctx);
 	return getDefinition();
 }
 
-NamespaceMemStat Namespace::GetMemStat() {
-	RLock lck(mtx_);
+NamespaceMemStat Namespace::GetMemStat(const RdxContext &ctx) {
+	RLock lck(mtx_, &ctx);
 
 	NamespaceMemStat ret;
 	ret.name = name_;
@@ -1352,16 +1365,14 @@ NamespaceMemStat Namespace::GetMemStat() {
 		ret.indexes.push_back(istat);
 	}
 
-	char *endp;
-	ret.updatedUnixNano = strtoull(getMeta("updated").c_str(), &endp, 10);
 	ret.storageOK = storage_ != nullptr;
 	ret.storagePath = dbpath_;
 	ret.storageLoaded = storageLoaded_.load();
 	return ret;
 }
 
-NamespacePerfStat Namespace::GetPerfStat() {
-	RLock lck(mtx_);
+NamespacePerfStat Namespace::GetPerfStat(const RdxContext &ctx) {
+	RLock lck(mtx_, &ctx);
 
 	NamespacePerfStat ret;
 	ret.name = name_;
@@ -1371,6 +1382,13 @@ NamespacePerfStat Namespace::GetPerfStat() {
 		ret.indexes.emplace_back(indexes_[i]->GetIndexPerfStat());
 	}
 	return ret;
+}
+
+void Namespace::ResetPerfStat(const RdxContext &ctx) {
+	RLock lck(mtx_, &ctx);
+	selectPerfCounter_.Reset();
+	updatePerfCounter_.Reset();
+	for (auto &i : indexes_) i->ResetIndexPerfStat();
 }
 
 bool Namespace::loadIndexesFromStorage() {
@@ -1479,17 +1497,17 @@ void Namespace::saveReplStateToStorage() {
 	storage_->Write(StorageOpts().FillCache(), string_view(kStorageReplStatePrefix), ser.Slice());
 }
 
-bool Namespace::needToLoadData() const {
-	RLock lk(mtx_);
+bool Namespace::needToLoadData(const RdxContext &ctx) const {
+	RLock lk(mtx_, &ctx);
 
 	return (storage_ && (dbpath_.length() > 0)) ? !storageLoaded_.load() : false;
 }
 
-void Namespace::EnableStorage(const string &path, StorageOpts opts) {
+void Namespace::EnableStorage(const string &path, StorageOpts opts, const RdxContext &ctx) {
 	string dbpath = fs::JoinPath(path, name_);
 	datastorage::StorageType storageType = datastorage::StorageType::LevelDB;
 
-	WLock lock(mtx_);
+	WLock lock(mtx_, &ctx);
 	if (storage_) {
 		throw Error(errLogic, "Storage already enabled for namespace '%s' on path '%s'", name_, path);
 	}
@@ -1524,21 +1542,21 @@ void Namespace::EnableStorage(const string &path, StorageOpts opts) {
 	dbpath_ = dbpath;
 }
 
-StorageOpts Namespace::getStorageOpts() {
-	RLock lk(mtx_);
+StorageOpts Namespace::getStorageOpts(const RdxContext &ctx) {
+	RLock lk(mtx_, &ctx);
 	return storageOpts_;
 }
 
-void Namespace::SetStorageOpts(StorageOpts opts) {
-	WLock lk(mtx_);
+void Namespace::SetStorageOpts(StorageOpts opts, const RdxContext &ctx) {
+	WLock lk(mtx_, &ctx);
 	if (opts.IsSlaveMode()) {
 		storageOpts_.SlaveMode();
 		repl_.slaveMode = true;
 	}
 }
 
-void Namespace::LoadFromStorage() {
-	WLock lock(mtx_);
+void Namespace::LoadFromStorage(const RdxContext &ctx) {
+	WLock lock(mtx_, &ctx);
 
 	StorageOpts opts;
 	opts.FillCache(false);
@@ -1616,26 +1634,27 @@ void Namespace::initWAL(int64_t maxLSN) {
 	repl_.lastLsn = wal_.LSNCounter() - 1;
 }
 
-void Namespace::removeExpiredItems() {
-	WLock wlock(mtx_);
+void Namespace::removeExpiredItems(RdxActivityContext *ctx) {
+	const RdxContext rdxCtx{ctx};
+	WLock wlock(mtx_, &rdxCtx);
 	for (const std::unique_ptr<Index> &index : indexes_) {
 		if ((index->Type() != IndexTtl) || (index->Size() == 0)) continue;
 		int64_t expirationthreshold =
 			std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count() -
 			index->GetTTLValue();
 		QueryResults qr;
-		Delete(Query(name_).Where(index->Name(), CondLt, expirationthreshold), qr, -1, true);
+		Delete(Query(name_).Where(index->Name(), CondLt, expirationthreshold), qr, rdxCtx, -1, true);
 	}
 }
 
-void Namespace::BackgroundRoutine() {
-	flushStorage();
-	commitIndexes();
-	removeExpiredItems();
+void Namespace::BackgroundRoutine(RdxActivityContext *ctx) {
+	flushStorage(ctx);
+	commitIndexes(ctx);
+	removeExpiredItems(ctx);
 }
 
-void Namespace::flushStorage() {
-	RLock rlock(mtx_);
+void Namespace::flushStorage(const RdxContext &ctx) {
+	RLock rlock(mtx_, &ctx);
 	if (storage_) {
 		if (unflushedCount_) {
 			std::unique_lock<std::mutex> lck(storage_mtx_);
@@ -1648,8 +1667,8 @@ void Namespace::flushStorage() {
 	}
 }
 
-void Namespace::DeleteStorage() {
-	WLock lck(mtx_);
+void Namespace::DeleteStorage(const RdxContext &ctx) {
+	WLock lck(mtx_, &ctx);
 	if (storage_) {
 		storage_->Destroy(dbpath_);
 		dbpath_.clear();
@@ -1657,9 +1676,9 @@ void Namespace::DeleteStorage() {
 	}
 }
 
-void Namespace::CloseStorage() {
-	flushStorage();
-	WLock lck(mtx_);
+void Namespace::CloseStorage(const RdxContext &ctx) {
+	flushStorage(ctx);
+	WLock lck(mtx_, &ctx);
 	dbpath_.clear();
 	storage_.reset();
 }
@@ -1683,8 +1702,8 @@ void Namespace::reloadStorage() {
 	storageLoaded_ = false;
 }
 
-bool Namespace::tryToReload() {
-	uint16_t noQueryIdleThresholdSec = getStorageOpts().noQueryIdleThresholdSec;
+bool Namespace::tryToReload(const RdxContext &ctx) {
+	uint16_t noQueryIdleThresholdSec = getStorageOpts(ctx).noQueryIdleThresholdSec;
 	if (noQueryIdleThresholdSec > 0) {
 		int64_t now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 		if ((now - getLastSelectTime()) > noQueryIdleThresholdSec) {
@@ -1695,8 +1714,8 @@ bool Namespace::tryToReload() {
 	return true;
 }
 
-Item Namespace::NewItem() {
-	WLock lock(mtx_);
+Item Namespace::NewItem(const RdxContext &ctx) {
+	WLock lock(mtx_, &ctx);
 	if (pool_.size()) {
 		ItemImpl *impl = pool_.back().release();
 		pool_.pop_back();
@@ -1705,8 +1724,8 @@ Item Namespace::NewItem() {
 	}
 	return Item(new ItemImpl(payloadType_, tagsMatcher_, pkFields()));
 }
-void Namespace::ToPool(ItemImpl *item) {
-	WLock lck(mtx_);
+void Namespace::ToPool(ItemImpl *item, const RdxContext &ctx) {
+	WLock lck(mtx_, &ctx);
 	item->Clear(tagsMatcher_);
 	if (pool_.size() < 1024)
 		pool_.push_back(std::unique_ptr<ItemImpl>(item));
@@ -1715,8 +1734,8 @@ void Namespace::ToPool(ItemImpl *item) {
 }
 
 // Get meta data from storage by key
-string Namespace::GetMeta(const string &key) {
-	RLock lock(mtx_);
+string Namespace::GetMeta(const string &key, const RdxContext &ctx) {
+	RLock lock(mtx_, &ctx);
 	return getMeta(key);
 }
 
@@ -1738,8 +1757,8 @@ string Namespace::getMeta(const string &key) {
 }
 
 // Put meta data to storage by key
-void Namespace::PutMeta(const string &key, const string_view &data, int64_t lsn) {
-	WLock lock(mtx_);
+void Namespace::PutMeta(const string &key, const string_view &data, const RdxContext &ctx, int64_t lsn) {
+	WLock lock(mtx_, &ctx);
 	if (repl_.slaveMode && lsn == -1) throw Error(errLogic, "Can't modify slave ns '%s'", name_);
 	putMeta(key, data);
 }
@@ -1758,10 +1777,10 @@ void Namespace::putMeta(const string &key, const string_view &data) {
 	observers_.OnWALUpdate(lsn, name_, wrec);
 }
 
-vector<string> Namespace::EnumMeta() {
+vector<string> Namespace::EnumMeta(const RdxContext &ctx) {
 	vector<string> ret;
 
-	RLock lck(mtx_);
+	RLock lck(mtx_, &ctx);
 	for (auto &m : meta_) {
 		ret.push_back(m.first);
 	}
@@ -1841,8 +1860,7 @@ int64_t Namespace::GetSerial(const string &field) {
 	return counter;
 }
 
-void Namespace::FillResult(QueryResults &result, IdSet::Ptr ids, const h_vector<string, 1> &selectFilter) {
-	result.addNSContext(payloadType_, tagsMatcher_, FieldsSet(tagsMatcher_, selectFilter));
+void Namespace::FillResult(QueryResults &result, IdSet::Ptr ids) {
 	for (auto &id : *ids) {
 		result.Add({id, items_[id], 0, 0});
 	}

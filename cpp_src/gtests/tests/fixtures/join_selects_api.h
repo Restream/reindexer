@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 #include <map>
 #include <sstream>
+#include "core/query/joinresults.h"
 #include "gason/gason.h"
 #include "reindexer_api.h"
 #include "tools/serializer.h"
@@ -36,7 +37,7 @@ protected:
 		DefineNamespaceDataset(
 			books_namespace,
 			{IndexDeclaration{bookid, "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{title, "text", "string", IndexOpts(), 0},
-			 IndexDeclaration{pages, "hash", "int", IndexOpts(), 0}, IndexDeclaration{price, "tree", "int", IndexOpts(), 0},
+			 IndexDeclaration{pages, "tree", "int", IndexOpts(), 0}, IndexDeclaration{price, "tree", "int", IndexOpts(), 0},
 			 IndexDeclaration{genreId_fk, "hash", "int", IndexOpts(), 0}, IndexDeclaration{authorid_fk, "hash", "int", IndexOpts(), 0},
 			 IndexDeclaration{string(pages + string("+") + bookid).c_str(), "hash", "composite", IndexOpts(), 0}});
 
@@ -81,7 +82,7 @@ protected:
 			item[bookid] = i;
 			item[title] = title + underscore + RandString();
 			item[pages] = rand() % 10000;
-			item[price] = rand() % 1000;
+			item[price] = rand() % 10000;
 			item[authorid_fk] = authorsIds[authorIdIdx];
 			item[genreId_fk] = genresIds[rand() % genresIds.size()];
 			Upsert(books_namespace, item);
@@ -147,38 +148,41 @@ protected:
 		return err;
 	}
 
-	void PrintResultRows(QueryResults& reindexerRes) {
-		for (auto rowIt : reindexerRes) {
+	void PrintResultRows(QueryResults& qr) {
+		for (auto rowIt : qr) {
 			Item item(rowIt.GetItem());
 			std::cout << "ROW: " << item.GetJSON() << std::endl;
 
 			int idx = 1;
-			const reindexer::QRVector& joinQueryRes = rowIt.GetJoined();
-			for (const QueryResults& joinResult : joinQueryRes) {
+			auto itemIt = rowIt.GetJoinedItemsIterator();
+			for (auto joinedFieldIt = itemIt.begin(); joinedFieldIt != itemIt.end(); ++joinedFieldIt) {
 				std::cout << "JOINED: " << idx << std::endl;
-				for (auto itj : joinResult) {
-					Item joinItem(itj.GetItem());
+				for (int i = 0; i < joinedFieldIt.ItemsCount(); ++i) {
+					reindexer::ItemImpl joinItem(joinedFieldIt.GetItem(i, qr.getPayloadType(1), qr.getTagsMatcher(1)));
 					std::cout << joinItem.GetJSON() << std::endl;
 				}
+				std::cout << std::endl;
 				++idx;
+				if (itemIt.getJoinedFieldsCount() > 1) std::cout << std::endl;
 			}
-			if (joinQueryRes.size() > 1) std::cout << std::endl;
 		}
 	}
 
-	void FillQueryResultRows(reindexer::QueryResults& reindexerRes, QueryResultRows& testRes) {
-		for (auto rowIt : reindexerRes) {
+	void FillQueryResultRows(reindexer::QueryResults& qr, QueryResultRows& testRes) {
+		for (auto rowIt : qr) {
 			Item item(rowIt.GetItem());
 
 			BookId bookId = item[bookid].Get<int>();
 			QueryResultRow& resultRow = testRes[bookId];
 
 			FillQueryResultFromItem(item, resultRow);
-			const reindexer::QRVector& joinQueryRes = rowIt.GetJoined();
-			const QueryResults& joinResult(joinQueryRes[0]);
-			for (auto itj : joinResult) {
-				Item joinItem(itj.GetItem());
-				FillQueryResultFromItem(joinItem, resultRow);
+			auto itemIt = rowIt.GetJoinedItemsIterator();
+			auto joinedFieldIt = itemIt.begin();
+			QueryResults jres = joinedFieldIt.ToQueryResults();
+			jres.addNSContext(qr.getPayloadType(1), qr.getTagsMatcher(1), qr.getFieldsFilter(1));
+			for (auto it : jres) {
+				Item joinedItem = it.GetItem();
+				FillQueryResultFromItem(joinedItem, resultRow);
 			}
 		}
 	}

@@ -1,6 +1,7 @@
 package reindexer
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"net/url"
@@ -113,18 +114,22 @@ func (dbw *ReindexerWrapper) DropNamespace(namespace string) error {
 func (dbw *ReindexerWrapper) Query(namespace string) *queryTest {
 	return newTestQuery(dbw, namespace)
 }
+
 func (dbw *ReindexerWrapper) GetBaseQuery(namespace string) *reindexer.Query {
 	return dbw.Reindexer.Query(namespace)
 
 }
 
 func (dbw *ReindexerWrapper) execQuery(qt *queryTest) *reindexer.Iterator {
+	return dbw.execQueryCtx(context.Background(), qt)
+}
 
+func (dbw *ReindexerWrapper) execQueryCtx(ctx context.Context, qt *queryTest) *reindexer.Iterator {
 	if len(dbw.slaveList) == 0 || !qt.readOnly {
 		if !qt.readOnly {
 			dbw.SetSynced(false)
 		}
-		return qt.q.Exec()
+		return qt.q.ExecCtx(ctx)
 	}
 	if !qt.deepReplEqual {
 		sdb := dbw.slaveList[rand.Intn(len(dbw.slaveList))]
@@ -134,13 +139,13 @@ func (dbw *ReindexerWrapper) execQuery(qt *queryTest) *reindexer.Iterator {
 			sdb.ResetCaches()
 		}
 		slaveQuery := qt.q.MakeCopy(&sdb.Reindexer)
-		return slaveQuery.Exec()
+		return slaveQuery.ExecCtx(ctx)
 	}
 
 	baseQuery := qt.q.MakeCopy(&dbw.Reindexer)
-	rm, err := baseQuery.Exec().FetchAll()
+	rm, err := baseQuery.ExecCtx(ctx).FetchAll()
 	if err != nil {
-		return qt.q.MustExec()
+		return qt.q.MustExecCtx(ctx)
 	}
 	m := make(map[string]interface{})
 	for _, item := range rm {
@@ -152,7 +157,7 @@ func (dbw *ReindexerWrapper) execQuery(qt *queryTest) *reindexer.Iterator {
 			db.WaitForSyncMithMaster()
 		}
 		slaveQuery := qt.q.MakeCopy(&db.Reindexer)
-		rs, err := slaveQuery.Exec().FetchAll()
+		rs, err := slaveQuery.ExecCtx(ctx).FetchAll()
 		if err != nil {
 			panic(err)
 		}
@@ -173,8 +178,7 @@ func (dbw *ReindexerWrapper) execQuery(qt *queryTest) *reindexer.Iterator {
 		//reflect.DeepEqual(rm, rs)
 	}
 	dbw.SetSynced(true)
-	return qt.q.MustExec()
-
+	return qt.q.MustExecCtx(ctx)
 }
 
 func (dbw *ReindexerWrapper) setSlaveConfig(slaveDb *ReindexerWrapper) {
@@ -277,4 +281,24 @@ func (dbw *ReindexerWrapper) Update(namespace string, item interface{}, precepts
 func (dbw *ReindexerWrapper) Delete(namespace string, item interface{}, precepts ...string) error {
 	dbw.SetSynced(false)
 	return dbw.Reindexer.Delete(namespace, item, precepts...)
+}
+
+func (dbw *ReindexerWrapper) UpsertCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) error {
+	dbw.SetSynced(false)
+	return dbw.Reindexer.WithContext(ctx).Upsert(namespace, item, precepts...)
+}
+
+func (dbw *ReindexerWrapper) InsertCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) (int, error) {
+	dbw.SetSynced(false)
+	return dbw.Reindexer.WithContext(ctx).Insert(namespace, item, precepts...)
+}
+
+func (dbw *ReindexerWrapper) UpdateCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) (int, error) {
+	dbw.SetSynced(false)
+	return dbw.Reindexer.WithContext(ctx).Update(namespace, item, precepts...)
+}
+
+func (dbw *ReindexerWrapper) DeleteCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) error {
+	dbw.SetSynced(false)
+	return dbw.Reindexer.WithContext(ctx).Delete(namespace, item, precepts...)
 }

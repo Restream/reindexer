@@ -4,7 +4,7 @@
 #include <chrono>
 #include <mutex>
 #include <vector>
-#include "estl/shared_mutex.h"
+#include "estl/mutex.h"
 
 namespace reindexer {
 
@@ -14,6 +14,7 @@ public:
 	PerfStatCounter();
 	void Hit(std::chrono::microseconds time);
 	void LockHit(std::chrono::microseconds time);
+	void Reset();
 	template <class T>
 	T Get() {
 		std::unique_lock<Mutex> lck(mtx_);
@@ -25,11 +26,16 @@ public:
 				 size_t(avgTime.count() / (avgHitCount ? avgHitCount : 1)),
 				 size_t(avgLockTime.count() / (avgHitCount ? avgHitCount : 1)),
 				 stddev,
-				 size_t(minTime.count()),
+				 size_t(minTime == defaultMinTime() ? 0 : minTime.count()),
 				 size_t(maxTime.count())};
 	}
 
 protected:
+	static std::chrono::microseconds defaultMinTime() {
+		static constexpr std::chrono::microseconds defaultValue{std::numeric_limits<size_t>::max() / 2};
+		return defaultValue;
+	}
+
 	void lap();
 	void doCalculations();
 
@@ -44,7 +50,7 @@ protected:
 	std::chrono::microseconds calcLockTime = std::chrono::microseconds(0);
 	std::chrono::time_point<std::chrono::high_resolution_clock> calcStartTime;
 	double stddev = 0.0;
-	std::chrono::microseconds minTime = std::chrono::microseconds(std::numeric_limits<size_t>::max() / 2);
+	std::chrono::microseconds minTime = defaultMinTime();
 	std::chrono::microseconds maxTime = std::chrono::microseconds(std::numeric_limits<size_t>::min());
 	std::vector<size_t> lastValuesUs;
 	Mutex mtx_;

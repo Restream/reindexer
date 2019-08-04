@@ -15,6 +15,7 @@ class ClientConnection;
 namespace client {
 
 using std::chrono::seconds;
+using std::chrono::milliseconds;
 
 class Namespace;
 using NSArray = h_vector<Namespace *, 1>;

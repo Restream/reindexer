@@ -97,10 +97,10 @@ void RPCClient::run(int thIdx) {
 	}
 }
 
-Error RPCClient::AddNamespace(const NamespaceDef& nsDef) {
+Error RPCClient::AddNamespace(const NamespaceDef& nsDef, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	nsDef.GetJSON(ser);
-	auto status = getConn()->Call(cproto::kCmdOpenNamespace, config_.RequestTimeout, ser.Slice()).Status();
+	auto status = getConn()->Call(cproto::kCmdOpenNamespace, config_.RequestTimeout, ctx.execTimeout(), ser.Slice()).Status();
 
 	if (!status.ok()) return status;
 
@@ -110,33 +110,38 @@ Error RPCClient::AddNamespace(const NamespaceDef& nsDef) {
 	return errOK;
 }
 
-Error RPCClient::OpenNamespace(string_view nsName, const StorageOpts& sopts) {
+Error RPCClient::OpenNamespace(string_view nsName, const InternalRdxContext& ctx, const StorageOpts& sopts) {
 	NamespaceDef nsDef(string(nsName), sopts);
-	return AddNamespace(nsDef);
+	return AddNamespace(nsDef, ctx);
 }
 
-Error RPCClient::DropNamespace(string_view nsName) {
-	return getConn()->Call(cproto::kCmdDropNamespace, config_.RequestTimeout, nsName).Status();
-}
-Error RPCClient::CloseNamespace(string_view nsName) {
-	return getConn()->Call(cproto::kCmdCloseNamespace, config_.RequestTimeout, nsName).Status();
-}
-Error RPCClient::Insert(string_view nsName, Item& item, Completion cmpl) {
-	return modifyItem(nsName, item, ModeInsert, cmpl, config_.RequestTimeout);
-}
-Error RPCClient::Update(string_view nsName, Item& item, Completion cmpl) {
-	return modifyItem(nsName, item, ModeUpdate, cmpl, config_.RequestTimeout);
-}
-Error RPCClient::Upsert(string_view nsName, Item& item, Completion cmpl) {
-	return modifyItem(nsName, item, ModeUpsert, cmpl, config_.RequestTimeout);
-}
-Error RPCClient::Delete(string_view nsName, Item& item, Completion cmpl) {
-	return modifyItem(nsName, item, ModeDelete, cmpl, config_.RequestTimeout);
+Error RPCClient::CloseNamespace(string_view nsName, const InternalRdxContext& ctx) {
+	return getConn()->Call(cproto::kCmdCloseNamespace, config_.RequestTimeout, ctx.execTimeout(), nsName).Status();
 }
 
-Error RPCClient::modifyItem(string_view nsName, Item& item, int mode, Completion cmpl, seconds timeout) {
-	if (cmpl) {
-		return modifyItemAsync(nsName, &item, mode, cmpl, nullptr, timeout);
+Error RPCClient::DropNamespace(string_view nsName, const InternalRdxContext& ctx) {
+	return getConn()->Call(cproto::kCmdDropNamespace, config_.RequestTimeout, ctx.execTimeout(), nsName).Status();
+}
+
+Error RPCClient::Insert(string_view nsName, Item& item, const InternalRdxContext& ctx) {
+	return modifyItem(nsName, item, ModeInsert, config_.RequestTimeout, ctx);
+}
+
+Error RPCClient::Update(string_view nsName, Item& item, const InternalRdxContext& ctx) {
+	return modifyItem(nsName, item, ModeUpdate, config_.RequestTimeout, ctx);
+}
+
+Error RPCClient::Upsert(string_view nsName, Item& item, const InternalRdxContext& ctx) {
+	return modifyItem(nsName, item, ModeUpsert, config_.RequestTimeout, ctx);
+}
+
+Error RPCClient::Delete(string_view nsName, Item& item, const InternalRdxContext& ctx) {
+	return modifyItem(nsName, item, ModeDelete, config_.RequestTimeout, ctx);
+}
+
+Error RPCClient::modifyItem(string_view nsName, Item& item, int mode, seconds netTimeout, const InternalRdxContext& ctx) {
+	if (ctx.cmpl()) {
+		return modifyItemAsync(nsName, &item, mode, nullptr, netTimeout, ctx);
 	}
 
 	WrSerializer ser;
@@ -147,24 +152,24 @@ Error RPCClient::modifyItem(string_view nsName, Item& item, int mode, Completion
 		}
 	}
 
-	bool withTimeout = (timeout.count() > 0);
+	bool withNetTimeout = (netTimeout.count() > 0);
 	for (int tryCount = 0;; tryCount++) {
 		auto conn = getConn();
-		auto deadline = conn->Now() + timeout;
-		auto ret = conn->Call(cproto::kCmdModifyItem, timeout, nsName, int(FormatCJson), item.GetCJSON(), mode, ser.Slice(),
-							  item.GetStateToken(), 0);
+		auto netDeadline = conn->Now() + netTimeout;
+		auto ret = conn->Call(cproto::kCmdModifyItem, netTimeout, ctx.execTimeout(), nsName, int(FormatCJson), item.GetCJSON(), mode,
+							  ser.Slice(), item.GetStateToken(), 0);
 		if (!ret.Status().ok()) {
 			if (ret.Status().code() != errStateInvalidated || tryCount > 2) return ret.Status();
-			if (withTimeout) {
-				timeout = deadline - conn->Now();
+			if (withNetTimeout) {
+				netTimeout = netDeadline - conn->Now();
 			}
 			QueryResults qr;
-			auto ret = selectImpl(Query(string(nsName)).Limit(0), qr, nullptr, nullptr, timeout);
+			auto ret = selectImpl(Query(string(nsName)).Limit(0), qr, nullptr, netTimeout, ctx.WithCompletion(nullptr));
 			if (ret.code() == errTimeout) {
 				return errTimeout;
 			}
-			if (withTimeout) {
-				timeout = deadline - conn->Now();
+			if (withNetTimeout) {
+				netTimeout = netDeadline - conn->Now();
 			}
 			auto newItem = NewItem(nsName);
 			char* endp = nullptr;
@@ -186,8 +191,8 @@ Error RPCClient::modifyItem(string_view nsName, Item& item, int mode, Completion
 	}
 }
 
-Error RPCClient::modifyItemAsync(string_view nsName, Item* item, int mode, Completion clientCompl, cproto::ClientConnection* conn,
-								 seconds timeout) {
+Error RPCClient::modifyItemAsync(string_view nsName, Item* item, int mode, cproto::ClientConnection* conn, seconds netTimeout,
+								 const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	if (item->impl_->GetPrecepts().size()) {
 		ser.PutVarUint(item->impl_->GetPrecepts().size());
@@ -198,47 +203,45 @@ Error RPCClient::modifyItemAsync(string_view nsName, Item* item, int mode, Compl
 	if (!conn) conn = getConn();
 
 	string ns(nsName);
-	auto deadline = timeout.count() ? conn->Now() + timeout : seconds(0);
+	auto deadline = netTimeout.count() ? conn->Now() + netTimeout : seconds(0);
 	conn->Call(
-		[this, ns, mode, item, clientCompl, deadline](const net::cproto::RPCAnswer& ret, cproto::ClientConnection* conn) -> void {
+		[this, ns, mode, item, deadline, ctx](const net::cproto::RPCAnswer& ret, cproto::ClientConnection* conn) -> void {
 			if (!ret.Status().ok()) {
-				if (ret.Status().code() != errStateInvalidated) return clientCompl(ret.Status());
-				seconds timeout(0);
+				if (ret.Status().code() != errStateInvalidated) return ctx.cmpl()(ret.Status());
+				seconds netTimeout(0);
 				if (deadline.count()) {
-					timeout = deadline - conn->Now();
+					netTimeout = deadline - conn->Now();
 				}
 				// State invalidated - make select to update state
 				QueryResults* qr = new QueryResults;
-				selectImpl(
-					Query(ns).Limit(0), *qr,
-					[=](const Error& ret) {
-						delete qr;
-						if (!ret.ok()) return clientCompl(ret);
+				selectImpl(Query(ns).Limit(0), *qr, conn, netTimeout, ctx.WithCompletion([=](const Error& ret) {
+					delete qr;
+					if (!ret.ok()) return ctx.cmpl()(ret);
 
-						seconds timeout(0);
-						if (deadline.count()) {
-							timeout = deadline - conn->Now();
-						}
+					seconds timeout(0);
+					if (deadline.count()) {
+						timeout = deadline - conn->Now();
+					}
 
-						// Rebuild item with new state
-						auto newItem = NewItem(ns);
-						Error err = newItem.FromJSON(item->impl_->GetJSON());
-						newItem.SetPrecepts(item->impl_->GetPrecepts());
-						*item = std::move(newItem);
-						modifyItemAsync(ns, item, mode, clientCompl, conn, timeout);
-					},
-					conn, timeout);
+					// Rebuild item with new state
+					auto newItem = NewItem(ns);
+					Error err = newItem.FromJSON(item->impl_->GetJSON());
+					newItem.SetPrecepts(item->impl_->GetPrecepts());
+					*item = std::move(newItem);
+					modifyItemAsync(ns, item, mode, conn, timeout, ctx);
+				}));
 			} else
 				try {
 					auto args = ret.GetArgs(2);
-					clientCompl(QueryResults(conn, {getNamespace(ns)}, nullptr, p_string(args[0]), int(args[1]), 0, config_.FetchAmount,
-											 config_.RequestTimeout)
-									.Status());
+					ctx.cmpl()(QueryResults(conn, {getNamespace(ns)}, nullptr, p_string(args[0]), int(args[1]), 0, config_.FetchAmount,
+											config_.RequestTimeout)
+								   .Status());
 				} catch (const Error& err) {
-					clientCompl(err);
+					ctx.cmpl()(err);
 				}
 		},
-		cproto::kCmdModifyItem, timeout, ns, int(FormatCJson), item->GetCJSON(), mode, ser.Slice(), item->GetStateToken(), 0);
+		cproto::kCmdModifyItem, netTimeout, ctx.execTimeout(), ns, int(FormatCJson), item->GetCJSON(), mode, ser.Slice(),
+		item->GetStateToken(), 0);
 	return errOK;
 }
 
@@ -251,9 +254,9 @@ Item RPCClient::NewItem(string_view nsName) {
 	}
 }
 
-Error RPCClient::GetMeta(string_view nsName, const string& key, string& data) {
+Error RPCClient::GetMeta(string_view nsName, const string& key, string& data, const InternalRdxContext& ctx) {
 	try {
-		auto ret = getConn()->Call(cproto::kCmdGetMeta, config_.RequestTimeout, nsName, key);
+		auto ret = getConn()->Call(cproto::kCmdGetMeta, config_.RequestTimeout, ctx.execTimeout(), nsName, key);
 		if (ret.Status().ok()) {
 			data = ret.GetArgs(1)[0].As<string>();
 		}
@@ -263,13 +266,13 @@ Error RPCClient::GetMeta(string_view nsName, const string& key, string& data) {
 	}
 }
 
-Error RPCClient::PutMeta(string_view nsName, const string& key, const string_view& data) {
-	return getConn()->Call(cproto::kCmdPutMeta, config_.RequestTimeout, nsName, key, data).Status();
+Error RPCClient::PutMeta(string_view nsName, const string& key, const string_view& data, const InternalRdxContext& ctx) {
+	return getConn()->Call(cproto::kCmdPutMeta, config_.RequestTimeout, ctx.execTimeout(), nsName, key, data).Status();
 }
 
-Error RPCClient::EnumMeta(string_view nsName, vector<string>& keys) {
+Error RPCClient::EnumMeta(string_view nsName, vector<string>& keys, const InternalRdxContext& ctx) {
 	try {
-		auto ret = getConn()->Call(cproto::kCmdEnumMeta, config_.RequestTimeout, nsName);
+		auto ret = getConn()->Call(cproto::kCmdEnumMeta, config_.RequestTimeout, ctx.execTimeout(), nsName);
 		if (ret.Status().ok()) {
 			auto args = ret.GetArgs();
 			keys.clear();
@@ -284,7 +287,7 @@ Error RPCClient::EnumMeta(string_view nsName, vector<string>& keys) {
 	}
 }
 
-Error RPCClient::Delete(const Query& query, QueryResults& result) {
+Error RPCClient::Delete(const Query& query, QueryResults& result, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	query.Serialize(ser);
 	auto conn = getConn();
@@ -303,12 +306,12 @@ Error RPCClient::Delete(const Query& query, QueryResults& result) {
 		}
 	};
 
-	auto ret = conn->Call(cproto::kCmdDeleteQuery, config_.RequestTimeout, ser.Slice());
+	auto ret = conn->Call(cproto::kCmdDeleteQuery, config_.RequestTimeout, ctx.execTimeout(), ser.Slice());
 	icompl(ret, conn);
 	return ret.Status();
 }
 
-Error RPCClient::Update(const Query& query, QueryResults& result) {
+Error RPCClient::Update(const Query& query, QueryResults& result, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	query.Serialize(ser);
 	auto conn = getConn();
@@ -327,7 +330,7 @@ Error RPCClient::Update(const Query& query, QueryResults& result) {
 		}
 	};
 
-	auto ret = conn->Call(cproto::kCmdUpdateQuery, config_.RequestTimeout, ser.Slice());
+	auto ret = conn->Call(cproto::kCmdUpdateQuery, config_.RequestTimeout, ctx.execTimeout(), ser.Slice());
 	icompl(ret, conn);
 	return ret.Status();
 }
@@ -340,8 +343,8 @@ void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
 	return;
 }
 
-Error RPCClient::selectImpl(string_view query, QueryResults& result, RPCClient::Completion clientCompl, cproto::ClientConnection* conn,
-							std::chrono::seconds timeout) {
+Error RPCClient::selectImpl(string_view query, QueryResults& result, cproto::ClientConnection* conn, seconds netTimeout,
+							const InternalRdxContext& ctx) {
 	int flags = result.fetchFlags_ ? result.fetchFlags_ : kResultsJson;
 	WrSerializer pser;
 	h_vector<int32_t, 4> vers;
@@ -349,7 +352,7 @@ Error RPCClient::selectImpl(string_view query, QueryResults& result, RPCClient::
 
 	if (!conn) conn = getConn();
 
-	result = QueryResults(conn, {}, clientCompl, result.fetchFlags_, config_.FetchAmount, config_.RequestTimeout);
+	result = QueryResults(conn, {}, ctx.cmpl(), result.fetchFlags_, config_.FetchAmount, config_.RequestTimeout);
 
 	auto icompl = [&result](const RPCAnswer& ret, cproto::ClientConnection* /*conn*/) {
 		try {
@@ -364,18 +367,18 @@ Error RPCClient::selectImpl(string_view query, QueryResults& result, RPCClient::
 		}
 	};
 
-	if (!clientCompl) {
-		auto ret = conn->Call(cproto::kCmdSelectSQL, timeout, query, flags, INT_MAX, pser.Slice());
+	if (!ctx.cmpl()) {
+		auto ret = conn->Call(cproto::kCmdSelectSQL, netTimeout, ctx.execTimeout(), query, flags, INT_MAX, pser.Slice());
 		icompl(ret, conn);
 		return ret.Status();
 	} else {
-		conn->Call(icompl, cproto::kCmdSelectSQL, timeout, query, flags, INT_MAX, pser.Slice());
+		conn->Call(icompl, cproto::kCmdSelectSQL, netTimeout, ctx.execTimeout(), query, flags, INT_MAX, pser.Slice());
 		return errOK;
 	}
 }
 
-Error RPCClient::selectImpl(const Query& query, QueryResults& result, RPCClient::Completion clientCompl, cproto::ClientConnection* conn,
-							std::chrono::seconds timeout) {
+Error RPCClient::selectImpl(const Query& query, QueryResults& result, cproto::ClientConnection* conn, seconds netTimeout,
+							const InternalRdxContext& ctx) {
 	WrSerializer qser, pser;
 	int flags = result.fetchFlags_ ? result.fetchFlags_ : (kResultsWithPayloadTypes | kResultsCJson);
 	NSArray nsArray;
@@ -390,7 +393,7 @@ Error RPCClient::selectImpl(const Query& query, QueryResults& result, RPCClient:
 
 	if (!conn) conn = getConn();
 
-	result = QueryResults(conn, std::move(nsArray), clientCompl, result.fetchFlags_, config_.FetchAmount, config_.RequestTimeout);
+	result = QueryResults(conn, std::move(nsArray), ctx.cmpl(), result.fetchFlags_, config_.FetchAmount, config_.RequestTimeout);
 
 	auto icompl = [&result](const RPCAnswer& ret, cproto::ClientConnection* /*conn*/) {
 		try {
@@ -404,37 +407,39 @@ Error RPCClient::selectImpl(const Query& query, QueryResults& result, RPCClient:
 		}
 	};
 
-	if (!clientCompl) {
-		auto ret = conn->Call(cproto::kCmdSelect, timeout, qser.Slice(), flags, config_.FetchAmount, pser.Slice());
+	if (!ctx.cmpl()) {
+		auto ret = conn->Call(cproto::kCmdSelect, netTimeout, ctx.execTimeout(), qser.Slice(), flags, config_.FetchAmount, pser.Slice());
 		icompl(ret, conn);
 		return ret.Status();
 	} else {
-		conn->Call(icompl, cproto::kCmdSelect, timeout, qser.Slice(), flags, config_.FetchAmount, pser.Slice());
+		conn->Call(icompl, cproto::kCmdSelect, netTimeout, ctx.execTimeout(), qser.Slice(), flags, config_.FetchAmount, pser.Slice());
 		return errOK;
 	}
 }
 
-Error RPCClient::Commit(string_view nsName) { return getConn()->Call(cproto::kCmdCommit, config_.RequestTimeout, nsName).Status(); }
+Error RPCClient::Commit(string_view nsName) {
+	return getConn()->Call(cproto::kCmdCommit, config_.RequestTimeout, milliseconds(0), nsName).Status();
+}
 
-Error RPCClient::AddIndex(string_view nsName, const IndexDef& iDef) {
+Error RPCClient::AddIndex(string_view nsName, const IndexDef& iDef, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	iDef.GetJSON(ser);
-	return getConn()->Call(cproto::kCmdAddIndex, config_.RequestTimeout, nsName, ser.Slice()).Status();
+	return getConn()->Call(cproto::kCmdAddIndex, config_.RequestTimeout, ctx.execTimeout(), nsName, ser.Slice()).Status();
 }
 
-Error RPCClient::UpdateIndex(string_view nsName, const IndexDef& iDef) {
+Error RPCClient::UpdateIndex(string_view nsName, const IndexDef& iDef, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	iDef.GetJSON(ser);
-	return getConn()->Call(cproto::kCmdUpdateIndex, config_.RequestTimeout, nsName, ser.Slice()).Status();
+	return getConn()->Call(cproto::kCmdUpdateIndex, config_.RequestTimeout, ctx.execTimeout(), nsName, ser.Slice()).Status();
 }
 
-Error RPCClient::DropIndex(string_view nsName, const IndexDef& idx) {
-	return getConn()->Call(cproto::kCmdDropIndex, config_.RequestTimeout, nsName, idx.name_).Status();
+Error RPCClient::DropIndex(string_view nsName, const IndexDef& idx, const InternalRdxContext& ctx) {
+	return getConn()->Call(cproto::kCmdDropIndex, config_.RequestTimeout, ctx.execTimeout(), nsName, idx.name_).Status();
 }
 
-Error RPCClient::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll) {
+Error RPCClient::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll, const InternalRdxContext& ctx) {
 	try {
-		auto ret = getConn()->Call(cproto::kCmdEnumNamespaces, config_.RequestTimeout, bEnumAll ? 1 : 0);
+		auto ret = getConn()->Call(cproto::kCmdEnumNamespaces, config_.RequestTimeout, ctx.execTimeout(), bEnumAll ? 1 : 0);
 		if (ret.Status().ok()) {
 			gason::JsonParser parser;
 			auto json = ret.GetArgs(1)[0].As<string>();
@@ -464,20 +469,20 @@ Error RPCClient::SubscribeUpdates(IUpdatesObserver* observer, bool subscribe) {
 	auto updatesConn = updatesConn_.load();
 	if (subscribe && !updatesConn) {
 		auto conn = getConn();
-		err = conn->Call(cproto::kCmdSubscribeUpdates, config_.RequestTimeout, 1).Status();
+		err = conn->Call(cproto::kCmdSubscribeUpdates, config_.RequestTimeout, milliseconds(0), 1).Status();
 		if (err.ok()) {
 			updatesConn_ = conn;
 		}
 		conn->SetUpdatesHandler([this](RPCAnswer&& ans, cproto::ClientConnection* conn) { onUpdates(ans, conn); });
 	} else if (!subscribe && updatesConn) {
-		err = updatesConn->Call(cproto::kCmdSubscribeUpdates, config_.RequestTimeout, 0).Status();
+		err = updatesConn->Call(cproto::kCmdSubscribeUpdates, config_.RequestTimeout, milliseconds(0), 0).Status();
 		updatesConn_ = nullptr;
 	}
 	return err;
 }
 Error RPCClient::GetSqlSuggestions(string_view query, int pos, std::vector<std::string>& suggests) {
 	try {
-		auto ret = getConn()->Call(cproto::kCmdGetSQLSuggestions, config_.RequestTimeout, query, pos);
+		auto ret = getConn()->Call(cproto::kCmdGetSQLSuggestions, config_.RequestTimeout, milliseconds(0), query, pos);
 		if (ret.Status().ok()) {
 			auto rargs = ret.GetArgs();
 			suggests.clear();
@@ -504,9 +509,10 @@ void RPCClient::checkSubscribes() {
 					conn->SetUpdatesHandler([this](RPCAnswer&& ans, cproto::ClientConnection* conn) { onUpdates(ans, conn); });
 				}
 			},
-			cproto::kCmdSubscribeUpdates, config_.RequestTimeout, 1);
+			cproto::kCmdSubscribeUpdates, config_.RequestTimeout, milliseconds(0), 1);
 	} else if (!subscribe && updatesConn) {
-		updatesConn->Call([](const RPCAnswer&, cproto::ClientConnection*) {}, cproto::kCmdSubscribeUpdates, config_.RequestTimeout, 0);
+		updatesConn->Call([](const RPCAnswer&, cproto::ClientConnection*) {}, cproto::kCmdSubscribeUpdates, config_.RequestTimeout,
+						  milliseconds(0), 0);
 		updatesConn_ = nullptr;
 	}
 }
@@ -576,16 +582,14 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 			delayedUpdates_.emplace_back(std::move(ans));
 
 			QueryResults* qr = new QueryResults;
-			Select(
-				Query(string(nsName)).Limit(0), *qr,
-				[=](const Error& /*err*/) {
-					delete qr;
-					// If there are delayed updates, then send them to client
-					auto uq = std::move(delayedUpdates_);
-					delayedUpdates_.clear();
-					for (auto& a1 : uq) onUpdates(a1, conn);
-				},
-				conn);
+			Select(Query(string(nsName)).Limit(0), *qr, InternalRdxContext([=](const Error& /*err*/) {
+															delete qr;
+															// If there are delayed updates, then send them to client
+															auto uq = std::move(delayedUpdates_);
+															delayedUpdates_.clear();
+															for (auto& a1 : uq) onUpdates(a1, conn);
+														}).cmpl(),
+				   conn);
 			return;
 		} else {
 			// We have bundled tagsMatcher

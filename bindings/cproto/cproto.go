@@ -157,7 +157,6 @@ func (binding *NetCProto) ModifyItemTx(txCtx *bindings.TxCtx, format int, data [
 	}
 
 	netBuffer := txCtx.Result.(*NetBuffer)
-
 	txBuf, err := netBuffer.conn.rpcCall(txCtx.UserCtx, cmdAddTxItem, uint32(binding.timeouts.RequestTimeout/time.Second), format, data, mode, packedPercepts, stateToken, int64(txCtx.Id))
 
 	defer txBuf.Free()
@@ -167,6 +166,23 @@ func (binding *NetCProto) ModifyItemTx(txCtx *bindings.TxCtx, format int, data [
 	}
 
 	return nil
+}
+
+func (binding *NetCProto) ModifyItemTxAsync(txCtx *bindings.TxCtx, format int, data []byte, mode int, precepts []string, stateToken int, cmpl bindings.RawCompletion) {
+	var packedPercepts []byte
+	if len(precepts) != 0 {
+		ser1 := cjson.NewPoolSerializer()
+		defer ser1.Close()
+
+		ser1.PutVarCUInt(len(precepts))
+		for _, precept := range precepts {
+			ser1.PutVString(precept)
+		}
+		packedPercepts = ser1.Bytes()
+	}
+
+	netBuffer := txCtx.Result.(*NetBuffer)
+	netBuffer.conn.rpcCallAsync(txCtx.UserCtx, cmdAddTxItem, uint32(binding.timeouts.RequestTimeout/time.Second), cmpl, format, data, mode, packedPercepts, stateToken, int64(txCtx.Id))
 }
 
 func (binding *NetCProto) ModifyItem(ctx context.Context, nsHash int, namespace string, format int, data []byte, mode int, precepts []string, stateToken int) (bindings.RawBuffer, error) {

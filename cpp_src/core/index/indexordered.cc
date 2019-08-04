@@ -1,5 +1,6 @@
 
 #include "indexordered.h"
+#include "core/rdxcontext.h"
 #include "tools/errors.h"
 #include "tools/logger.h"
 
@@ -34,13 +35,14 @@ Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id) {
 
 template <typename T>
 SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType condition, SortType sortId, Index::SelectOpts opts,
-											BaseFunctionCtx::Ptr ctx) {
-	if (opts.forceComparator) return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, opts, ctx);
+											BaseFunctionCtx::Ptr ctx, const RdxContext &rdxCtx) {
+	const auto indexWard(rdxCtx.BeforeIndexWork());
+	if (opts.forceComparator) return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
 	SelectKeyResult res;
 
 	// Get set of keys or single key
 	if (condition == CondSet || condition == CondEq || condition == CondAny || condition == CondEmpty || condition == CondLike)
-		return IndexUnordered<T>::SelectKey(keys, condition, sortId, opts, ctx);
+		return IndexUnordered<T>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
 
 	if (keys.size() < 1) throw Error(errParams, "For condition required at least 1 argument, but provided 0");
 
@@ -123,7 +125,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 			else
 				selector(res);
 		} else {
-			return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, opts, ctx);
+			return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
 		}
 	}
 	return SelectKeyResults(res);

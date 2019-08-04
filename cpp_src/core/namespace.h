@@ -1,12 +1,12 @@
-#pragma once
+﻿#pragma once
 
 #include <atomic>
 #include <memory>
-#include <mutex>
 #include <vector>
 #include "core/cjson/tagsmatcher.h"
 #include "core/dbconfig.h"
 #include "core/item.h"
+#include "estl/contexted_locks.h"
 #include "estl/fast_hash_map.h"
 #include "estl/shared_mutex.h"
 #include "index/keyentry.h"
@@ -37,8 +37,12 @@ class SelectLockUpgrader;
 class UpdatesObservers;
 class QueryPreprocessor;
 class SelectIteratorContainer;
+class RdxContext;
+class RdxActivityContext;
 
 class Namespace {
+	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Namespace>;
+
 protected:
 	friend class NsSelecter;
 	friend class WALSelecter;
@@ -109,63 +113,64 @@ public:
 	const string &GetName() { return name_; }
 	bool isSystem() const { return !name_.empty() && name_[0] == '#'; }
 
-	void EnableStorage(const string &path, StorageOpts opts);
-	void LoadFromStorage();
-	void DeleteStorage();
+	void EnableStorage(const string &path, StorageOpts opts, const RdxContext &ctx);
+	void LoadFromStorage(const RdxContext &ctx);
+	void DeleteStorage(const RdxContext &);
 
 	uint32_t GetItemsCount();
-	void AddIndex(const IndexDef &indexDef);
-	void UpdateIndex(const IndexDef &indexDef);
-	void DropIndex(const IndexDef &indexDef);
+	void AddIndex(const IndexDef &indexDef, const RdxContext &ctx);
+	void UpdateIndex(const IndexDef &indexDef, const RdxContext &ctx);
+	void DropIndex(const IndexDef &indexDef, const RdxContext &ctx);
 
-	void Insert(Item &item, bool store = true);
-	void Update(Item &item, bool store = true);
-	void Update(const Query &query, QueryResults &result, int64_t lsn = -1);
-	void Upsert(Item &item, bool store = true);
+	void Insert(Item &item, const RdxContext &ctx, bool store = true);
+	void Update(Item &item, const RdxContext &ctx, bool store = true);
+	void Update(const Query &query, QueryResults &result, const RdxContext &ctx, int64_t lsn = -1);
+	void Upsert(Item &item, const RdxContext &ctx, bool store = true);
 
-	void Delete(Item &item, bool noLock = false);
-	void Delete(const Query &query, QueryResults &result, int64_t lsn = -1, bool noLock = false);
+	void Delete(Item &item, const RdxContext &ctx, bool noLock = false);
+	void Delete(const Query &query, QueryResults &result, const RdxContext &ctx, int64_t lsn = -1, bool noLock = false);
 
-	void Select(QueryResults &result, SelectCtx &params);
-	NamespaceDef GetDefinition();
-	NamespaceMemStat GetMemStat();
-	NamespacePerfStat GetPerfStat();
-	vector<string> EnumMeta();
+	void Select(QueryResults &result, SelectCtx &params, const RdxContext &);
+	NamespaceDef GetDefinition(const RdxContext &ctx);
+	NamespaceMemStat GetMemStat(const RdxContext &);
+	NamespacePerfStat GetPerfStat(const RdxContext &);
+	void ResetPerfStat(const RdxContext &);
+	vector<string> EnumMeta(const RdxContext &ctx);
 
-	void BackgroundRoutine();
-	void CloseStorage();
+	void BackgroundRoutine(RdxActivityContext *);
+	void CloseStorage(const RdxContext &);
 
-	void ApplyTransactionStep(TransactionStep &step);
+	void ApplyTransactionStep(TransactionStep &step, RdxActivityContext *);
 
-	void StartTransaction();
+	void StartTransaction(const RdxContext &ctx);
 	void EndTransaction();
 
-	Item NewItem();
-	void ToPool(ItemImpl *item);
+	Item NewItem(const RdxContext &ctx);
+	void ToPool(ItemImpl *item, const RdxContext &);
 	// Get meta data from storage by key
-	string GetMeta(const string &key);
+	string GetMeta(const string &key, const RdxContext &ctx);
 	// Put meta data to storage by key
-	void PutMeta(const string &key, const string_view &data, int64_t lsn = -1);
+	void PutMeta(const string &key, const string_view &data, const RdxContext &ctx, int64_t lsn = -1);
 	int64_t GetSerial(const string &field);
 
 	int getIndexByName(const string &index) const;
 	bool getIndexByName(const string &name, int &index) const;
 
-	void FillResult(QueryResults &result, IdSet::Ptr ids, const h_vector<std::string, 1> &selectFilter);
+	void FillResult(QueryResults &result, IdSet::Ptr ids);
 
 	void EnablePerfCounters(bool enable = true) { enablePerfCounters_ = enable; }
 
 	// Replication slave mode functions
-	ReplicationState GetReplState();
+	ReplicationState GetReplState(const RdxContext &);
 	ReplicationState getReplState();
-	void SetSlaveLSN(int64_t slaveLSN);
+	void SetSlaveLSN(int64_t slaveLSN, const RdxContext &);
 
-	void ReplaceTagsMatcher(const TagsMatcher &tm);
+	void ReplaceTagsMatcher(const TagsMatcher &tm, const RdxContext &);
 
-	void UpdateTagsMatcherFromItem(Item *item);
+	void UpdateTagsMatcherFromItem(Item *item, const RdxContext &);
 
 protected:
-	bool tryToReload();
+	bool tryToReload(const RdxContext &);
 	void reloadStorage();
 	void saveIndexesToStorage();
 	bool loadIndexesFromStorage();
@@ -177,12 +182,12 @@ protected:
 
 	void markUpdated();
 	void doUpsert(ItemImpl *ritem, IdType id, bool doUpdate);
-	void modifyItem(Item &item, bool store = true, int mode = ModeUpsert, bool noLock = false);
+	void modifyItem(Item &item, const RdxContext &ctx, bool store = true, int mode = ModeUpsert, bool noLock = false);
 	void updateFieldsFromQuery(IdType itemId, const Query &q, bool store = true);
 	void updateTagsMatcherFromItem(ItemImpl *ritem);
 	void updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields);
 	void doDelete(IdType id);
-	void commitIndexes();
+	void commitIndexes(const RdxContext &);
 	void insertIndex(Index *newIndex, int idxNo, const string &realName);
 	void addIndex(const IndexDef &indexDef);
 	void addCompositeIndex(const IndexDef &indexDef);
@@ -192,18 +197,18 @@ protected:
 	void dropIndex(const IndexDef &index);
 	void addToWAL(const IndexDef &indexDef, WALRecType type);
 	VariantArray preprocessUpdateFieldValues(const UpdateEntry &updateEntry, IdType itemId);
-	void removeExpiredItems();
+	void removeExpiredItems(RdxActivityContext *);
 
 	void recreateCompositeIndexes(int startIdx, int endIdx);
-	void onConfigUpdated(DBConfigProvider &configProvider);
+	void onConfigUpdated(DBConfigProvider &configProvider, const RdxContext &ctx);
 	NamespaceDef getDefinition() const;
 	IndexDef getIndexDefinition(const string &indexName) const;
 
 	string getMeta(const string &key);
-	void flushStorage();
+	void flushStorage(const RdxContext &);
 	void putMeta(const string &key, const string_view &data);
 
-	pair<IdType, bool> findByPK(ItemImpl *ritem);
+	pair<IdType, bool> findByPK(ItemImpl *ritem, const RdxContext &);
 	int getSortedIdxCount() const;
 	void setFieldsBasedOnPrecepts(ItemImpl *ritem);
 
@@ -219,9 +224,9 @@ protected:
 		updates_->Put(key, data);
 	}
 
-	bool needToLoadData() const;
-	StorageOpts getStorageOpts();
-	void SetStorageOpts(StorageOpts opts);
+	bool needToLoadData(const RdxContext &) const;
+	StorageOpts getStorageOpts(const RdxContext &);
+	void SetStorageOpts(StorageOpts opts, const RdxContext &ctx);
 
 	void updateSelectTime();
 	int64_t getLastSelectTime() const;
@@ -243,7 +248,7 @@ protected:
 	datastorage::UpdatesCollection::Ptr updates_;
 	int unflushedCount_;
 
-	mutable shared_timed_mutex mtx_;
+	mutable Mutex mtx_;
 	std::mutex storage_mtx_;
 
 	// Commit phases state
@@ -262,8 +267,8 @@ private:
 	Namespace(const Namespace &src);
 
 private:
-	typedef shared_lock<shared_timed_mutex> RLock;
-	typedef unique_lock<shared_timed_mutex> WLock;
+	typedef contexted_shared_lock<Mutex, const RdxContext> RLock;
+	typedef contexted_unique_lock<Mutex, const RdxContext> WLock;
 
 	IdType createItem(size_t realSize);
 	void MoveContentsFrom(Namespace &&src) noexcept;
@@ -291,6 +296,7 @@ private:
 
 	friend class Query;
 	friend class NamespaceCloner;
+	friend class TransactionImpl;
 };  // namespace reindexer
 
 }  // namespace reindexer

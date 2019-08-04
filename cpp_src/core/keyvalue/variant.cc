@@ -7,6 +7,8 @@
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 #include "utf8cpp/utf8.h"
+#include "vendor/atoi/atoi.h"
+#include "vendor/double-conversion/double-conversion.h"
 
 namespace reindexer {
 
@@ -246,6 +248,50 @@ int Variant::Compare(const Variant &other, const CollateOpts &collateOpts) const
 	}
 }
 
+int Variant::relaxCompareWithString(string_view str) const {
+	switch (Type()) {
+		case KeyValueInt: {
+			bool valid = true;
+			const int res = jsteemann::atoi<int>(str.data(), str.data() + str.size(), valid);
+			if (!valid) return -1;
+			return (value_int == res) ? 0 : ((value_int > res) ? 1 : -1);
+		}
+		case KeyValueInt64: {
+			bool valid = true;
+			const int64_t res = jsteemann::atoi<int64_t>(str.data(), str.data() + str.size(), valid);
+			if (!valid) return -1;
+			return (value_int64 == res) ? 0 : ((value_int64 > res) ? 1 : -1);
+		}
+		case KeyValueDouble: {
+			const int flags = double_conversion::StringToDoubleConverter::NO_FLAGS;
+			const double_conversion::StringToDoubleConverter conv(flags, NAN, NAN, nullptr, nullptr);
+			int count;
+			const double res = conv.StringToDouble(str.data(), str.size(), &count);
+			if (std::isnan(res)) return -1;
+			return (value_double == res) ? 0 : ((value_double > res) ? 1 : -1);
+		}
+		default: {
+			throw Error(errParams, "Not comparable types");
+		}
+	}
+}
+
+int Variant::RelaxCompare(const Variant &other, const CollateOpts &collateOpts) const {
+	if (Type() == other.Type()) return Compare(other, collateOpts);
+	if (Type() == KeyValueString) {
+		return relaxCompareWithString(static_cast<p_string>(other));
+	} else if (other.Type() == KeyValueString) {
+		return -other.relaxCompareWithString(static_cast<p_string>(*this));
+	} else if ((Type() == KeyValueInt || Type() == KeyValueInt64 || Type() == KeyValueDouble) &&
+			   (other.Type() == KeyValueInt || other.Type() == KeyValueInt64 || other.Type() == KeyValueDouble)) {
+		const int64_t lhs = As<int64_t>();
+		const int64_t rhs = other.As<int64_t>();
+		return (lhs == rhs) ? 0 : ((lhs > rhs) ? 1 : -1);
+	} else {
+		throw Error(errParams, "Not comparable types");
+	}
+}
+
 size_t Variant::Hash() const {
 	switch (Type()) {
 		case KeyValueInt:
@@ -405,36 +451,40 @@ Variant::operator const PayloadValue &() const {
 	return *cast<PayloadValue>();
 }
 
+void Variant::Dump(WrSerializer &wrser) const {
+	switch (Type()) {
+		case KeyValueString: {
+			p_string str(*this);
+			if (isPrintable(str)) {
+				wrser << '\'' << string_view(str) << '\'';
+			} else {
+				wrser << "slice{len:" << str.length() << "}";
+			}
+			break;
+		}
+		case KeyValueInt:
+			wrser << operator int();
+			break;
+		case KeyValueBool:
+			wrser << operator bool();
+			break;
+		case KeyValueInt64:
+			wrser << operator int64_t();
+			break;
+		case KeyValueDouble:
+			wrser << operator double();
+			break;
+		default:
+			wrser << "??";
+			break;
+	}
+}
+
 void VariantArray::Dump(WrSerializer &wrser) const {
 	wrser << '{';
-
 	for (auto &arg : *this) {
-		if (&arg != &at(0)) {
-			wrser << ", ";
-		}
-		switch (arg.Type()) {
-			case KeyValueString: {
-				p_string str(arg);
-				if (isPrintable(str)) {
-					wrser << '\'' << string_view(str) << '\'';
-				} else {
-					wrser << "slice{len:" << str.length() << "}";
-				}
-				break;
-			}
-			case KeyValueInt:
-				wrser << int(arg);
-				break;
-			case KeyValueBool:
-				wrser << bool(arg);
-				break;
-			case KeyValueInt64:
-				wrser << int64_t(arg);
-				break;
-			default:
-				wrser << "??";
-				break;
-		}
+		if (&arg != &at(0)) wrser << ", ";
+		arg.Dump(wrser);
 	}
 	wrser << '}';
 }

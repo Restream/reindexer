@@ -151,6 +151,33 @@ int socket::create(string_view addr, struct addrinfo **presults) {
 	return 0;
 }
 
+std::string socket::addr() const {
+	struct sockaddr saddr;
+	socklen_t len = sizeof(saddr);
+	if (::getpeername(fd_, &saddr, &len) != 0) {
+		perror("getpeername");
+		return {};
+	}
+	void *addr;
+	switch (saddr.sa_family) {
+		case AF_INET: {
+			struct sockaddr_in *ipv4 = reinterpret_cast<struct sockaddr_in *>(&saddr);
+			addr = &(ipv4->sin_addr);
+		} break;
+		case AF_INET6: {
+			struct sockaddr_in6 *ipv6 = reinterpret_cast<struct sockaddr_in6 *>(&saddr);  // -V641
+			addr = &(ipv6->sin6_addr);
+		} break;
+		default: {
+			perror("unexpected protocol type");
+			return {};
+		}
+	}
+	char buf[INET_ADDRSTRLEN];
+	::inet_ntop(saddr.sa_family, addr, buf, INET_ADDRSTRLEN);
+	return buf;
+}
+
 socket socket::accept() {
 	struct sockaddr client_addr;
 	memset(&client_addr, 0, sizeof(client_addr));

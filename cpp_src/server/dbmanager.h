@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include "core/reindexer.h"
+#include "estl/mutex.h"
 #include "estl/shared_mutex.h"
 #include "tools/stringstools.h"
 
@@ -12,7 +13,7 @@ namespace reindexer_server {
 
 using namespace reindexer;
 using std::string;
-using std::shared_ptr;
+using std::unique_ptr;
 using std::unordered_map;
 
 /// Possible user roles
@@ -25,7 +26,7 @@ enum UserRole {
 	kRoleOwner,		 /// User can all privilegies on database: kRoleDBAdmin + create & drop database
 };
 
-const char *UserRoleName(UserRole role);
+const char *UserRoleName(UserRole role) noexcept;
 
 /// Record about user credentials
 struct UserRecord {
@@ -51,7 +52,7 @@ public:
 	/// @param role - Requested role one of UserRole enum
 	/// @param ret - Pointer to returned database pointer
 	/// @return Error - error object
-	Error GetDB(UserRole role, shared_ptr<Reindexer> *ret) {
+	Error GetDB(UserRole role, Reindexer **ret) noexcept {
 		if (role > role_)
 			return Error(errForbidden, "Forbidden: need role %s of db '%s' user '%s' have role=%s", UserRoleName(role), dbName_, login_,
 						 UserRoleName(role_));
@@ -78,7 +79,7 @@ protected:
 	string password_;
 	UserRole role_ = kUnauthorized;
 	string dbName_;
-	shared_ptr<Reindexer> db_;
+	Reindexer *db_ = nullptr;
 };
 
 /// Database manager. Control's available databases, users and their roles
@@ -116,13 +117,14 @@ public:
 	vector<string> EnumDatabases();
 
 private:
+	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::DbManager>;
 	Error readUsers();
 	Error loadOrCreateDatabase(const string &name);
 
-	unordered_map<string, shared_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_;
+	unordered_map<string, unique_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_;
 	unordered_map<string, UserRecord> users_;
 	string dbpath_;
-	shared_timed_mutex mtx_;
+	Mutex mtx_;
 	bool noSecurity_;
 };
 

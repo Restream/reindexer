@@ -181,6 +181,45 @@ TEST_F(ReindexerApi, Insert) {
 	ASSERT_NO_THROW(ASSERT_EQ(selItem["value"].As<string>(), "value"));
 }
 
+TEST_F(ReindexerApi, WithTimeoutInterface) {
+	using std::chrono::milliseconds;
+
+	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {"value", "text", "string", IndexOpts()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	Item item(rt.reindexer->NewItem(default_namespace));
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+	err = item.FromJSON(R"_({"id":1234, "value" : "value"})_");
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->WithTimeout(milliseconds(1000)).Insert(default_namespace, item);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->WithTimeout(milliseconds(100)).Commit(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	QueryResults qr;
+	err = rt.reindexer->WithTimeout(milliseconds(1000)).Select(Query(default_namespace), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+
+	// check item consist and check case insensitive access to field by name
+	Item selItem = qr.begin().GetItem();
+	ASSERT_NO_THROW(ASSERT_EQ(selItem["id"].As<int>(), 1234));
+	ASSERT_NO_THROW(ASSERT_EQ(selItem["value"].As<string>(), "value"));
+
+	qr.Clear();
+	err = rt.reindexer->WithTimeout(milliseconds(1000)).Delete(Query(default_namespace), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+
 template <int collateMode>
 struct CollateComparer {
 	bool operator()(const string& lhs, const string& rhs) const {
@@ -530,8 +569,8 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	for (auto it : queryResult) {
-		const reindexer::QRVector& jres = it.GetJoined();
-		EXPECT_TRUE(!jres.empty());
+		auto itemIt = it.GetJoinedItemsIterator();
+		EXPECT_TRUE(itemIt.getJoinedItemsCount() > 0);
 	}
 }
 
@@ -680,4 +719,100 @@ TEST_F(ReindexerApi, DslFieldsTest) {
 	TestDSLParseCorrectness(R"xxx({"req_total":"enabled"})xxx");
 	TestDSLParseCorrectness(R"xxx({"req_total":"disabled"})xxx");
 	TestDSLParseCorrectness(R"xxx({"aggregations":[{"field":"field1", "type":"sum"}, {"field":"field2", "type":"avg"}]})xxx");
+}
+
+TEST_F(ReindexerApi, ContextCancelingTest) {
+	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {"value", "text", "string", IndexOpts()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	Item item(rt.reindexer->NewItem(default_namespace));
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+	err = item.FromJSON(R"_({"id":1234, "value" : "value"})_");
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// Canceled insert
+	CanceledRdxContext canceledCtx;
+	err = rt.reindexer->WithContext(&canceledCtx).Insert(default_namespace, item);
+	ASSERT_TRUE(err.code() == errCanceled);
+
+	err = rt.reindexer->Commit(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// Canceled delete
+	vector<reindexer::NamespaceDef> namespaces;
+	err = rt.reindexer->WithContext(&canceledCtx).EnumNamespaces(namespaces, true);
+	ASSERT_TRUE(err.code() == errCanceled);
+
+	// Canceled select
+	QueryResults qr;
+	err = rt.reindexer->WithContext(&canceledCtx).Select(Query(default_namespace), qr);
+	ASSERT_TRUE(err.code() == errCanceled);
+	string sqlQuery = ("select * from test_namespace");
+	err = rt.reindexer->WithContext(&canceledCtx).Select(sqlQuery, qr);
+	ASSERT_TRUE(err.code() == errCanceled);
+
+	DummyRdxContext dummyCtx;
+	err = rt.reindexer->WithContext(&dummyCtx).Select(Query(default_namespace), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 0);
+	qr.Clear();
+
+	FakeRdxContext fakeCtx;
+	err = rt.reindexer->WithContext(&fakeCtx).Insert(default_namespace, item);
+	EXPECT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->WithContext(&fakeCtx).Select(Query(default_namespace), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+	qr.Clear();
+
+	// Canceled upsert
+	item["value"] = "value1";
+	err = rt.reindexer->WithContext(&canceledCtx).Upsert(default_namespace, item);
+	ASSERT_TRUE(err.code() == errCanceled);
+	err = rt.reindexer->Select(Query(default_namespace), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+	Item selItem = qr.begin().GetItem();
+	ASSERT_NO_THROW(ASSERT_EQ(selItem["id"].As<int>(), 1234));
+	ASSERT_NO_THROW(ASSERT_EQ(selItem["value"].As<string>(), "value"));
+	qr.Clear();
+
+	// Canceled update
+	err = rt.reindexer->WithContext(&canceledCtx).Update(default_namespace, item);
+	ASSERT_TRUE(err.code() == errCanceled);
+	err = rt.reindexer->Select(Query(default_namespace), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+	selItem = qr.begin().GetItem();
+	ASSERT_NO_THROW(ASSERT_EQ(selItem["id"].As<int>(), 1234));
+	ASSERT_NO_THROW(ASSERT_EQ(selItem["value"].As<string>(), "value"));
+	qr.Clear();
+
+	// Canceled delete
+	err = rt.reindexer->WithContext(&canceledCtx).Delete(default_namespace, item);
+	ASSERT_TRUE(err.code() == errCanceled);
+	err = rt.reindexer->Select(Query(default_namespace), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+	qr.Clear();
+
+	err = rt.reindexer->WithContext(&canceledCtx).Delete(Query(default_namespace), qr);
+	ASSERT_TRUE(err.code() == errCanceled);
+	err = rt.reindexer->Select(Query(default_namespace), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+	qr.Clear();
+
+	err = rt.reindexer->WithContext(&fakeCtx).Delete(default_namespace, item);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->Select(Query(default_namespace), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 0);
 }

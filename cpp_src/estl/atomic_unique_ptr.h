@@ -23,15 +23,18 @@ public:
 		return *this;
 	}
 
-	void reset(pointer p = pointer()) {
-		auto old = ptr.exchange(p);
+	void reset(pointer p = pointer(), std::memory_order order = std::memory_order_seq_cst) {
+		auto old = ptr.exchange(p, order);
 		if (old) delete old;
 	}
 	operator pointer() const { return ptr; }
 	pointer operator->() const { return ptr; }
-	pointer get() const { return ptr; }
+	pointer get(std::memory_order order = std::memory_order_seq_cst) const { return ptr.load(order); }
 	explicit operator bool() const { return ptr != pointer(); }
-	pointer release() { return ptr.exchange(pointer()); }
+	pointer release(std::memory_order order = std::memory_order_seq_cst) { return ptr.exchange(pointer(), order); }
+	bool compare_exchange_strong(pointer exp, pointer p, std::memory_order order = std::memory_order_seq_cst) {
+		return ptr.compare_exchange_strong(exp, p, order);
+	}
 	~atomic_unique_ptr() { reset(); }
 };
 
@@ -55,15 +58,18 @@ public:
 		return *this;
 	}
 
-	void reset(pointer p = pointer()) {
-		auto old = ptr.exchange(p);
+	void reset(pointer p = pointer(), std::memory_order order = std::memory_order_seq_cst) {
+		auto old = ptr.exchange(p, order);
 		if (old) delete[] old;
 	}
 	operator pointer() const { return ptr; }
 	pointer operator->() const { return ptr; }
-	pointer get() const { return ptr; }
+	pointer get(std::memory_order order = std::memory_order_seq_cst) const { return ptr.load(order); }
 	explicit operator bool() const { return ptr != pointer(); }
-	pointer release() { return ptr.exchange(pointer()); }
+	pointer release(std::memory_order order = std::memory_order_seq_cst) { return ptr.exchange(pointer(), order); }
+	bool compare_exchange_strong(pointer exp, pointer p, std::memory_order order = std::memory_order_seq_cst) {
+		return ptr.compare_exchange_strong(exp, p, order);
+	}
 	~atomic_unique_ptr() { reset(); }
 };
 

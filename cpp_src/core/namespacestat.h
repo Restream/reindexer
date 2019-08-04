@@ -51,6 +51,8 @@ struct ReplicationState {
 	uint64_t dataHash = 0;
 	// Data count
 	int dataCount = 0;
+	// Data updated
+	unsigned long long updatedUnixNano = 0;
 };
 
 struct ReplicationStat : public ReplicationState {
@@ -66,7 +68,6 @@ struct NamespaceMemStat {
 	std::string storagePath;
 	bool storageOK = false;
 	bool storageLoaded = true;
-	unsigned long long updatedUnixNano = 0;
 	size_t itemsCount = 0;
 	size_t emptyItemsCount = 0;
 	size_t dataSize = 0;

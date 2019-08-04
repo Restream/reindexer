@@ -11,6 +11,14 @@
 #define REINDEX_USE_STD_SHARED_MUTEX 0
 #endif
 
+#ifdef __APPLE__
+#define PTHREAD_TIMED_LOCK_AVAILABLE 0
+#else  // __APPLE__
+#define PTHREAD_TIMED_LOCK_AVAILABLE 1
+#endif  // __APPLE__
+
+#include <chrono>
+
 #if REINDEX_USE_STD_SHARED_MUTEX
 #include <shared_mutex>
 using std::shared_timed_mutex;
@@ -158,64 +166,65 @@ void swap(shared_lock<_Mutex>& __x, shared_lock<_Mutex>& __y) noexcept {
 	__x.swap(__y);
 }
 
-class shared_timed_mutex : public __shared_mutex_pthread {};
-}  // namespace reindexer
-
-#endif
-namespace reindexer {
-
-template <typename Mutex>
-class smart_lock {
+class shared_timed_mutex : public __shared_mutex_pthread {
 public:
-	smart_lock() : mtx_(nullptr), unique_(false), locked_(false) {}
-
-	smart_lock(Mutex& mtx, bool unique = false) : mtx_(&mtx), unique_(unique), locked_(true) {
-		if (unique_)
-			mtx_->lock();
-		else
-			mtx_->lock_shared();
+	template <class Rep, class Period>
+	bool try_lock_for(const std::chrono::duration<Rep, Period>& duration) {
+		return try_lock_until(__clock::now() + duration);
 	}
-	smart_lock(const smart_lock&) = delete;
-	smart_lock& operator=(const smart_lock&) = delete;
 
-	smart_lock(smart_lock&& other) {
-		mtx_ = other.mtx_;
-		unique_ = other.unique_;
-		locked_ = other.locked_;
-		other.mtx_ = nullptr;
-	};
-	smart_lock& operator=(smart_lock&& other) {
-		if (this != &other) {
-			unlock();
-			mtx_ = other.mtx_;
-			unique_ = other.unique_;
-			locked_ = other.locked_;
-			other.mtx_ = nullptr;
+	template <class Rep, class Period>
+	bool try_lock_until(const std::chrono::time_point<Rep, Period>& absTime) {
+		int __ret;
+#if PTHREAD_TIMED_LOCK_AVAILABLE
+		auto __sec = std::chrono::time_point_cast<std::chrono::seconds>(absTime);
+		auto __nsec = std::chrono::duration_cast<std::chrono::nanoseconds>(absTime - __sec);
+		struct timespec __ts = {static_cast<time_t>(__sec.time_since_epoch().count()), static_cast<long>(__nsec.count())};
+
+		do {
+			__ret = pthread_rwlock_timedwrlock(static_cast<pthread_rwlock_t*>(native_handle()), &__ts);
+		} while (__ret == EAGAIN || __ret == EBUSY);
+		if (ETIMEDOUT == __ret || EDEADLK == __ret) {
+			return false;
 		}
-		return *this;
+#else   // PTHREAD_TIMED_LOCK_AVAILABLE
+		(void)absTime;
+		__ret = pthread_rwlock_wrlock(static_cast<pthread_rwlock_t*>(native_handle()));
+#endif  // PTHREAD_TIMED_LOCK_AVAILABLE
+		assert(__ret == 0);
+		return true;
 	}
-	~smart_lock() { unlock(); }
 
-	void unlock() {
-		if (mtx_ && locked_) {
-			if (unique_)
-				mtx_->unlock();
-			else
-				mtx_->unlock_shared();
+	template <class Rep, class Period>
+	bool try_lock_shared_for(const std::chrono::duration<Rep, Period>& duration) {
+		return try_lock_shared_until(__clock::now() + duration);
+	}
+
+	template <class Clock, class Duration>
+	bool try_lock_shared_until(const std::chrono::time_point<Clock, Duration>& absTime) {
+		int __ret;
+#if PTHREAD_TIMED_LOCK_AVAILABLE
+		auto __sec = std::chrono::time_point_cast<std::chrono::seconds>(absTime);
+		auto __nsec = std::chrono::duration_cast<std::chrono::nanoseconds>(absTime - __sec);
+		struct timespec __ts = {static_cast<time_t>(__sec.time_since_epoch().count()), static_cast<long>(__nsec.count())};
+
+		do {
+			__ret = pthread_rwlock_timedrdlock(static_cast<pthread_rwlock_t*>(native_handle()), &__ts);
+		} while (__ret == EAGAIN || __ret == EBUSY);
+		if (ETIMEDOUT == __ret || EDEADLK == __ret) {
+			return false;
 		}
-		locked_ = false;
+#else   // PTHREAD_TIMED_LOCK_AVAILABLE
+		(void)absTime;
+		__ret = pthread_rwlock_rdlock(static_cast<pthread_rwlock_t*>(native_handle()));
+#endif  // PTHREAD_TIMED_LOCK_AVAILABLE
+		assert(__ret == 0);
+		return true;
 	}
 
 private:
-	Mutex* mtx_;
-	bool unique_;
-	bool locked_;
+	using __clock = std::chrono::system_clock;
 };
-
-class dummy_mutex {
-public:
-	void lock() {}
-	void unlock() {}
-};
-
 }  // namespace reindexer
+
+#endif

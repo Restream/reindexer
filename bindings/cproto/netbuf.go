@@ -78,6 +78,13 @@ func (buf *NetBuffer) parseArgs() (err error) {
 	}
 	dec := newRPCDecoder(buf.buf)
 	if err = dec.errCode(); err != nil {
+		if rerr, ok := err.(bindings.Error); ok {
+			if rerr.Code() == bindings.ErrTimeout {
+				err = context.DeadlineExceeded
+			} else if rerr.Code() == bindings.ErrCanceled {
+				err = context.Canceled
+			}
+		}
 		return
 	}
 	retCount := dec.argsCount()

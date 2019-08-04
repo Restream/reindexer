@@ -19,7 +19,7 @@ public:
 	// IServerConnection interface implementation
 	static ConnectionFactory NewFactory(Dispatcher &dispatcher) {
 		return [&dispatcher](ev::dynamic_loop &loop, int fd) { return new ServerConnection(fd, loop, dispatcher); };
-	};
+	}
 
 	bool IsFinished() override final { return !sock_.valid(); }
 	bool Restart(int fd) override final;

@@ -1,4 +1,5 @@
 #include "btree_idsets_api.h"
+#include "core/query/joinresults.h"
 
 TEST_F(BtreeIdsetsApi, SelectByStringField) {
 	QueryResults qr;
@@ -100,12 +101,12 @@ TEST_F(BtreeIdsetsApi, JoinSimpleNs) {
 		prevFieldTwo = currFieldTwo;
 
 		Variant prevJoinedFk;
-		const auto& joined = qr[i].GetJoined();
-		const QueryResults& joinResult = joined[0];
-		EXPECT_TRUE(joinResult.Count() > 0);
-		for (size_t j = 0; j < joinResult.Count(); ++j) {
-			Item joinedItem = joinResult[j].GetItem();
-			Variant joinedFkCurr = joinedItem[kFieldIdFk];
+		auto itemIt = qr[i].GetJoinedItemsIterator();
+		reindexer::joins::JoinedFieldIterator joinedFieldIt = itemIt.begin();
+		EXPECT_TRUE(joinedFieldIt.ItemsCount() > 0);
+		for (int j = 0; j < joinedFieldIt.ItemsCount(); ++j) {
+			reindexer::ItemImpl joinedItem = joinedFieldIt.GetItem(j, qr.getPayloadType(1), qr.getTagsMatcher(1));
+			Variant joinedFkCurr = joinedItem.GetField(qr.getPayloadType(1).FieldByName(kFieldIdFk));
 			EXPECT_TRUE(joinedFkCurr == item[kFieldId]);
 			if (j != 0) {
 				EXPECT_TRUE(joinedFkCurr >= prevJoinedFk);

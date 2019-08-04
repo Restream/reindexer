@@ -186,8 +186,15 @@ func (server *BuiltinServer) CommitTx(txCtx *bindings.TxCtx) (bindings.RawBuffer
 func (server *BuiltinServer) RollbackTx(txCtx *bindings.TxCtx) error {
 	return server.builtin.RollbackTx(txCtx)
 }
+
 func (server *BuiltinServer) ModifyItemTx(txCtx *bindings.TxCtx, format int, data []byte, mode int, precepts []string, stateToken int) error {
 	return server.builtin.ModifyItemTx(txCtx, format, data, mode, precepts, stateToken)
+}
+
+// ModifyItemTxAsync is not implemented for builtin-server binding
+func (server *BuiltinServer) ModifyItemTxAsync(txCtx *bindings.TxCtx, format int, data []byte, mode int, precepts []string, stateToken int, cmpl bindings.RawCompletion) {
+	err := server.builtin.ModifyItemTx(txCtx, format, data, mode, precepts, stateToken)
+	cmpl(nil, err)
 }
 
 func (server *BuiltinServer) Select(ctx context.Context, query string, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {

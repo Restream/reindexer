@@ -17,6 +17,7 @@ namespace cproto {
 
 using std::vector;
 using std::chrono::seconds;
+using std::chrono::milliseconds;
 
 class ClientConnection;
 
@@ -68,14 +69,14 @@ public:
 	typedef std::function<void(RPCAnswer &&ans, ClientConnection *conn)> Completion;
 
 	template <typename... Argss>
-	void Call(const Completion &cmpl, CmdCode cmd, seconds timeout, Argss... argss) {
+	void Call(const Completion &cmpl, CmdCode cmd, seconds netTimeout, milliseconds execTimeout, Argss... argss) {
 		Args args;
 		args.reserve(sizeof...(argss));
-		call(cmpl, cmd, timeout, args, argss...);
+		call(cmpl, cmd, netTimeout, execTimeout, args, argss...);
 	}
 
 	template <typename... Argss>
-	RPCAnswer Call(CmdCode cmd, seconds timeout, Argss... argss) {
+	RPCAnswer Call(CmdCode cmd, seconds netTimeout, milliseconds execTimeout, Argss... argss) {
 		Args args;
 		args.reserve(sizeof...(argss));
 
@@ -87,7 +88,7 @@ public:
 				ret.EnsureHold();
 				set = true;
 			},
-			cmd, timeout, args, argss...);
+			cmd, netTimeout, execTimeout, args, argss...);
 		std::unique_lock<std::mutex> lck(mtx_);
 		bufWait_++;
 		while (!set) {
@@ -107,7 +108,7 @@ protected:
 	void connect_async_cb(ev::async &) { connectInternal(); }
 	void keep_alive_cb(ev::periodic &, int) {
 		if (!terminate_.load(std::memory_order_acquire)) {
-			call([](RPCAnswer &&, ClientConnection *) {}, kCmdPing, keepAliveTimeout_, {});
+			call([](RPCAnswer &&, ClientConnection *) {}, kCmdPing, keepAliveTimeout_, milliseconds(0), {});
 			callback(io_, ev::WRITE);
 		}
 	}
@@ -117,24 +118,27 @@ protected:
 	void failInternal(const Error &error);
 
 	template <typename... Argss>
-	inline void call(const Completion &cmpl, CmdCode cmd, seconds timeout, Args &args, const string_view &val, Argss... argss) {
+	inline void call(const Completion &cmpl, CmdCode cmd, seconds netTimeout, milliseconds execTimeout, Args &args, const string_view &val,
+					 Argss... argss) {
 		args.push_back(Variant(p_string(&val)));
-		return call(cmpl, cmd, timeout, args, argss...);
+		return call(cmpl, cmd, netTimeout, execTimeout, args, argss...);
 	}
 	template <typename... Argss>
-	inline void call(const Completion &cmpl, CmdCode cmd, seconds timeout, Args &args, const string &val, Argss... argss) {
+	inline void call(const Completion &cmpl, CmdCode cmd, seconds netTimeout, milliseconds execTimeout, Args &args, const string &val,
+					 Argss... argss) {
 		args.push_back(Variant(p_string(&val)));
-		return call(cmpl, cmd, timeout, args, argss...);
+		return call(cmpl, cmd, netTimeout, execTimeout, args, argss...);
 	}
 	template <typename T, typename... Argss>
-	inline void call(const Completion &cmpl, CmdCode cmd, seconds timeout, Args &args, const T &val, Argss... argss) {
+	inline void call(const Completion &cmpl, CmdCode cmd, seconds netTimeout, milliseconds execTimeout, Args &args, const T &val,
+					 Argss... argss) {
 		args.push_back(Variant(val));
-		return call(cmpl, cmd, timeout, args, argss...);
+		return call(cmpl, cmd, netTimeout, execTimeout, args, argss...);
 	}
 
-	void call(Completion cmpl, CmdCode cmd, seconds timeout, const Args &args);
+	void call(Completion cmpl, CmdCode cmd, seconds netTimeout, milliseconds execTimeout, const Args &args);
 
-	chunk packRPC(CmdCode cmd, uint32_t seq, const Args &args);
+	chunk packRPC(CmdCode cmd, uint32_t seq, const Args &args, const Args &ctxArgs);
 
 	void onRead() override;
 	void onClose() override;

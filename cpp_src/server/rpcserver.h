@@ -91,7 +91,7 @@ protected:
 	int64_t addTx(cproto::Context &ctx, Transaction &&tr);
 	void clearTx(cproto::Context &ctx, uint64_t txId);
 
-	shared_ptr<Reindexer> getDB(cproto::Context &ctx, UserRole role);
+	Reindexer getDB(cproto::Context &ctx, UserRole role);
 
 	DBManager &dbMgr_;
 	cproto::Dispatcher dispatcher;

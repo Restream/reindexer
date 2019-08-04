@@ -114,22 +114,22 @@ func FillMergeJoinItem2Tx(count int, tx *txTest) {
 func FillTestFullTextItems(count int) {
 	tx := newTestTx(DB, "test_full_text_simple_item")
 	FillFullTextSimpleItemsTx(count, tx)
-	tx.MustCommit(nil)
+	tx.MustCommit()
 	tx = newTestTx(DB, "test_full_text_merged_item")
 	FillTestFullTextMergedItemsTx(count, tx)
-	tx.MustCommit(nil)
+	tx.MustCommit()
 
 	tx = newTestTx(DB, "test_full_text_item")
 	FillTestFullTextItemsTx(count, tx)
-	tx.MustCommit(nil)
+	tx.MustCommit()
 
 	tx = newTestTx(DB, "merge_join_item1")
 	FillMergeJoinItem1Tx(250, tx)
-	tx.MustCommit(nil)
+	tx.MustCommit()
 
 	tx = newTestTx(DB, "merge_join_item2")
 	FillMergeJoinItem2Tx(250, tx)
-	tx.MustCommit(nil)
+	tx.MustCommit()
 
 }
 

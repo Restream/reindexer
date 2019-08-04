@@ -15,7 +15,6 @@ void NamespaceMemStat::GetJSON(WrSerializer &ser) {
 	if (emptyItemsCount) builder.Put("empty_items_count", emptyItemsCount);
 
 	builder.Put("data_size", dataSize);
-	builder.Put("updated_unix_nano", int64_t(updatedUnixNano));
 	builder.Put("storage_ok", storageOK);
 	builder.Put("storage_path", storagePath);
 
@@ -120,6 +119,7 @@ void ReplicationState::GetJSON(JsonBuilder &builder) {
 	builder.Put("incarnation_counter", incarnationCounter);
 	builder.Put("data_hash", dataHash);
 	builder.Put("data_count", dataCount);
+	builder.Put("updated_unix_nano", int64_t(updatedUnixNano));
 }
 
 void ReplicationState::FromJSON(span<char> json) {
@@ -133,6 +133,7 @@ void ReplicationState::FromJSON(span<char> json) {
 		incarnationCounter = root["incarnation_counter"].As<int>();
 		dataHash = root["data_hash"].As<uint64_t>();
 		dataCount = root["data_count"].As<int>();
+		updatedUnixNano = root["updated_unix_nano"].As<int64_t>();
 	} catch (const gason::Exception &ex) {
 		throw Error(errParseJson, "ReplicationState: %s", ex.what());
 	}

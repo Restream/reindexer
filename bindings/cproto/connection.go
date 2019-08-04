@@ -24,8 +24,8 @@ type bufPtr struct {
 type sig chan bufPtr
 
 const bufsCap = 16 * 1024
-const queueSize = 40
-const maxSeqNum = queueSize * 10000000
+const queueSize = 512
+const maxSeqNum = queueSize * 1000000
 
 const cprotoMagic = 0xEEDD1132
 const cprotoVersion = 0x102
@@ -69,6 +69,9 @@ type requestInfo struct {
 	repl      sig
 	deadline  uint32
 	timeoutCh chan uint32
+	isAsync   int32
+	cmpl      bindings.RawCompletion
+	cmplLock  sync.Mutex
 }
 
 type connection struct {
@@ -160,10 +163,25 @@ func (c *connection) deadlineTicker() {
 				continue
 			}
 			deadline := atomic.LoadUint32(&c.requests[i].deadline)
-			if deadline != 0 && now >= deadline {
-				atomic.StoreUint32(&c.requests[i].deadline, 0)
-				timeoutCh := c.requests[i].timeoutCh
-				timeoutCh <- seqNum
+			if deadline != 0 && now >= deadline && atomic.CompareAndSwapUint32(&c.requests[i].deadline, deadline, 0) {
+				if atomic.LoadInt32(&c.requests[i].isAsync) != 0 {
+					c.requests[i].cmplLock.Lock()
+					if c.requests[i].cmpl != nil && deadline == atomic.LoadUint32(&c.requests[i].deadline) {
+						cmpl := c.requests[i].cmpl
+						c.requests[i].cmpl = nil
+						seqNum = atomic.LoadUint32(&c.requests[i].seqNum)
+						atomic.StoreUint32(&c.requests[i].seqNum, maxSeqNum)
+						atomic.StoreInt32(&c.requests[i].isAsync, 0)
+						c.requests[i].cmplLock.Unlock()
+						c.seqs <- nextSeqNum(seqNum)
+						cmpl(nil, bindings.NewError("Async request timeout", bindings.ErrTimeout))
+					} else {
+						c.requests[i].cmplLock.Unlock()
+					}
+				} else {
+					timeoutCh := c.requests[i].timeoutCh
+					timeoutCh <- seqNum
+				}
 			}
 		}
 	}
@@ -264,7 +282,20 @@ func (c *connection) readReply(hdr []byte) (err error) {
 		return
 	}
 
-	if repCh != nil {
+	if atomic.LoadInt32(&c.requests[reqID].isAsync) != 0 {
+		c.requests[reqID].cmplLock.Lock()
+		if c.requests[reqID].cmpl != nil && atomic.LoadUint32(&c.requests[reqID].seqNum) == rseq {
+			cmpl := c.requests[reqID].cmpl
+			c.requests[reqID].cmpl = nil
+			atomic.StoreUint32(&c.requests[reqID].seqNum, maxSeqNum)
+			atomic.StoreInt32(&c.requests[reqID].isAsync, 0)
+			c.requests[reqID].cmplLock.Unlock()
+			c.seqs <- nextSeqNum(rseq)
+			cmpl(answ, answ.parseArgs())
+		} else {
+			c.requests[reqID].cmplLock.Unlock()
+		}
+	} else if repCh != nil {
 		repCh <- bufPtr{rseq, answ}
 	} else {
 		return fmt.Errorf("unexpected answer: %v", answ)
@@ -317,24 +348,7 @@ func nextSeqNum(seqNum uint32) uint32 {
 	return seqNum - maxSeqNum
 }
 
-func (c *connection) rpcCall(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) (buf *NetBuffer, err error) {
-	seq := <-c.seqs
-	reqID := seq % queueSize
-	reply := c.requests[reqID].repl
-	timeoutCh := c.requests[reqID].timeoutCh
-
-	var execTimeout int
-	if execDeadline, ok := ctx.Deadline(); ok {
-		execTimeout = int(execDeadline.Sub(time.Now()) / time.Millisecond)
-		if execTimeout <= 0 {
-			return nil, bindings.NewError("Request was canceled", bindings.ErrCanceled)
-		}
-	}
-
-	if netTimeout != 0 {
-		atomic.StoreUint32(&c.requests[reqID].deadline, atomic.LoadUint32(&c.now)+netTimeout)
-	}
-	atomic.StoreUint32(&c.requests[reqID].seqNum, seq)
+func (c *connection) packRPC(cmd int, seq uint32, execTimeout int, args ...interface{}) {
 	in := newRPCEncoder(cmd, seq)
 	for _, a := range args {
 		switch t := a.(type) {
@@ -360,6 +374,63 @@ func (c *connection) rpcCall(ctx context.Context, cmd int, netTimeout uint32, ar
 
 	c.write(in.ser.Bytes())
 	in.ser.Close()
+}
+
+func getExecTimeout(ctx context.Context) (execTimeout int, expired bool) {
+	if execDeadline, ok := ctx.Deadline(); ok {
+		execTimeout = int(execDeadline.Sub(time.Now()) / time.Millisecond)
+		if execTimeout <= 0 {
+			expired = true
+		}
+	}
+	return
+}
+
+func (c *connection) rpcCallAsync(ctx context.Context, cmd int, netTimeout uint32, cmpl bindings.RawCompletion, args ...interface{}) {
+	if err := c.curError(); err != nil {
+		cmpl(nil, err)
+		return
+	}
+
+	execTimeout, expired := getExecTimeout(ctx)
+	if expired {
+		cmpl(nil, context.DeadlineExceeded)
+		return
+	}
+
+	seq := <-c.seqs
+	reqID := seq % queueSize
+	c.requests[reqID].cmplLock.Lock()
+	c.requests[reqID].cmpl = cmpl
+	atomic.StoreInt32(&c.requests[reqID].isAsync, 1)
+	atomic.StoreUint32(&c.requests[reqID].seqNum, seq)
+	c.requests[reqID].cmplLock.Unlock()
+
+	if netTimeout != 0 {
+		atomic.StoreUint32(&c.requests[reqID].deadline, atomic.LoadUint32(&c.now)+netTimeout)
+	}
+
+	c.packRPC(cmd, seq, execTimeout, args...)
+
+	return
+}
+
+func (c *connection) rpcCall(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) (buf *NetBuffer, err error) {
+	seq := <-c.seqs
+	reqID := seq % queueSize
+	reply := c.requests[reqID].repl
+	timeoutCh := c.requests[reqID].timeoutCh
+
+	execTimeout, expired := getExecTimeout(ctx)
+	if expired {
+		return nil, context.DeadlineExceeded
+	}
+
+	if netTimeout != 0 {
+		atomic.StoreUint32(&c.requests[reqID].deadline, atomic.LoadUint32(&c.now)+netTimeout)
+	}
+	atomic.StoreUint32(&c.requests[reqID].seqNum, seq)
+	c.packRPC(cmd, seq, execTimeout, args...)
 
 for_loop:
 	for {
@@ -368,6 +439,8 @@ for_loop:
 			if bufPtr.rseq == seq {
 				buf = bufPtr.buf
 				break for_loop
+			} else {
+				bufPtr.buf.Free()
 			}
 		case <-c.errCh:
 			c.lock.RLock()
@@ -382,7 +455,6 @@ for_loop:
 		}
 	}
 	atomic.StoreUint32(&c.requests[reqID].seqNum, maxSeqNum)
-
 	c.seqs <- nextSeqNum(seq)
 	if err != nil {
 		return
@@ -405,6 +477,24 @@ func (c *connection) onError(err error) {
 		default:
 			close(c.errCh)
 		}
+
+		for i := range c.requests {
+			if atomic.LoadInt32(&c.requests[i].isAsync) != 0 {
+				c.requests[i].cmplLock.Lock()
+				if c.requests[i].cmpl != nil {
+					cmpl := c.requests[i].cmpl
+					c.requests[i].cmpl = nil
+					seqNum := atomic.LoadUint32(&c.requests[i].seqNum)
+					atomic.StoreUint32(&c.requests[i].seqNum, maxSeqNum)
+					atomic.StoreInt32(&c.requests[i].isAsync, 0)
+					c.requests[i].cmplLock.Unlock()
+					c.seqs <- nextSeqNum(seqNum)
+					cmpl(nil, err)
+				} else {
+					c.requests[i].cmplLock.Unlock()
+				}
+			}
+		}
 	}
 	c.lock.Unlock()
 }
@@ -414,6 +504,12 @@ func (c *connection) hasError() (has bool) {
 	has = c.err != nil
 	c.lock.RUnlock()
 	return
+}
+
+func (c *connection) curError() error {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+	return c.err
 }
 
 func (c *connection) lastReadTime() time.Time {

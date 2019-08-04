@@ -39,6 +39,13 @@ typedef struct reindexer_tx_ret {
 	reindexer_error err;
 } reindexer_tx_ret;
 
+typedef struct reindexer_ctx_info {
+	uint64_t ctx_id;  // 3 most significant bits will be used as flags and discarded
+	int64_t exec_timeout;
+} reindexer_ctx_info;
+
+typedef enum { cancel_expilicitly, cancel_on_timeout } ctx_cancel_type;
+
 #ifdef __cplusplus
 }
 #endif

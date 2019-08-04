@@ -6,10 +6,8 @@ import (
 	"log"
 	"net/url"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/restream/reindexer/bindings"
 	"github.com/restream/reindexer/cjson"
@@ -411,30 +409,6 @@ func (db *reindexerImpl) mustBeginTx(ctx context.Context, namespace string) *Tx 
 		panic(err)
 	}
 	return tx
-}
-
-// TODO make func as void
-// setUpdatedAt - set updated at time for namespace
-func (db *reindexerImpl) setUpdatedAt(ctx context.Context, ns *reindexerNamespace, updatedAt time.Time) error {
-	str := strconv.FormatInt(updatedAt.UnixNano(), 10)
-	db.putMeta(ctx, ns.name, "updated", []byte(str))
-
-	return nil
-}
-
-// getUpdatedAt - get updated at time of namespace
-func (db *reindexerImpl) getUpdatedAt(ctx context.Context, namespace string) (*time.Time, error) {
-	b, err := db.getMeta(ctx, namespace, "updated")
-	if err != nil {
-		return nil, err
-	}
-
-	updatedAtUnixNano, err := strconv.ParseInt(string(b), 10, 64)
-
-	// will return 1970-01-01 on parser error
-	updatedAt := time.Unix(0, updatedAtUnixNano).UTC()
-
-	return &updatedAt, nil
 }
 
 func (db *reindexerImpl) queryFrom(d dsl.DSL) (*Query, error) {

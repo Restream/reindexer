@@ -94,7 +94,6 @@ public:
 		}
 		TestCout() << std::endl;
 	}
-
 	string PrintItem(Item &item) {
 		std::string outBuf = "";
 		for (auto idx = 1; idx < item.NumFields(); idx++) {
@@ -189,4 +188,22 @@ public:
 public:
 	const string default_namespace = "test_namespace";
 	ReindexerTestApi<std::shared_ptr<Reindexer>, Item> rt;
+};
+
+class CanceledRdxContext : public reindexer::IRdxCancelContext {
+public:
+	reindexer::CancelType checkCancel() const noexcept override { return reindexer::CancelType::Explicit; }
+	bool isCancelable() const noexcept override { return true; }
+};
+
+class DummyRdxContext : public reindexer::IRdxCancelContext {
+public:
+	reindexer::CancelType checkCancel() const noexcept override { return reindexer::CancelType::None; }
+	bool isCancelable() const noexcept override { return false; }
+};
+
+class FakeRdxContext : public reindexer::IRdxCancelContext {
+public:
+	reindexer::CancelType checkCancel() const noexcept override { return reindexer::CancelType::None; }
+	bool isCancelable() const noexcept override { return true; }
 };

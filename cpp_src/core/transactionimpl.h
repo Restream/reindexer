@@ -8,6 +8,7 @@ using std::string;
 using std::vector;
 using Completion = Transaction::Completion;
 
+class RdxContext;
 class TransactionStep {
 public:
 	TransactionStep(Item &&item, ItemModifyMode status) : item_(move(item)), status_(status) {}
@@ -37,16 +38,23 @@ public:
 
 class TransactionImpl {
 public:
-	TransactionImpl(const string &nsName, ReindexerImpl *rx, Completion cmpl = nullptr) : nsName_(nsName), cmpl_(cmpl), rx_(rx) {}
+	TransactionImpl(const string &nsName, ReindexerImpl *rx, Completion cmpl = nullptr);
 
 	void Insert(Item &&item);
 	void Update(Item &&item);
 	void Upsert(Item &&item);
 	void Delete(Item &&item);
 	void Modify(Item &&item, ItemModifyMode mode);
+	void UpdateTagsMatcherFromItem(ItemImpl *ritem);
+	Item NewItem();
+
 	const string &GetName() { return nsName_; }
 
 	void checkTagsMatcher(Item &item);
+
+	PayloadType payloadType_;
+	TagsMatcher tagsMatcher_;
+	FieldsSet pkFields_;
 
 	vector<TransactionStep> steps_;
 	string nsName_;

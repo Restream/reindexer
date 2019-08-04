@@ -3,6 +3,7 @@
 
 #include <thread>
 #include "dbmanager.h"
+#include "estl/smart_lock.h"
 #include "gason/gason.h"
 #include "tools/fsops.h"
 #include "tools/jsontools.h"
@@ -35,22 +36,23 @@ Error DBManager::Init() {
 }
 
 Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canCreate) {
+	RdxContext dummyCtx;
 	auto status = Login(dbName, auth);
 	if (!status.ok()) {
 		return status;
 	}
 
-	smart_lock<shared_timed_mutex> lck(mtx_);
+	smart_lock<Mutex> lck(mtx_, dummyCtx);
 	auto it = dbs_.find(dbName);
 	if (it != dbs_.end()) {
-		auth.db_ = it->second;
+		auth.db_ = it->second.get();
 		return 0;
 	}
 	lck.unlock();
-	lck = smart_lock<shared_timed_mutex>(mtx_, true);
+	lck = smart_lock<Mutex>(mtx_, dummyCtx, true);
 	it = dbs_.find(dbName);
 	if (it != dbs_.end()) {
-		auth.db_ = it->second;
+		auth.db_ = it->second.get();
 		return 0;
 	}
 
@@ -78,20 +80,22 @@ Error DBManager::loadOrCreateDatabase(const string &dbName) {
 	string storagePath = fs::JoinPath(dbpath_, dbName);
 
 	logPrintf(LogInfo, "Loading database %s", dbName);
-	auto db = std::make_shared<reindexer::Reindexer>();
+	auto db = unique_ptr<reindexer::Reindexer>(new reindexer::Reindexer);
 	auto status = db->Connect(storagePath);
 	if (status.ok()) {
-		dbs_[dbName] = db;
+		dbs_[dbName] = std::move(db);
 	}
 
 	return status;
 }
 
 Error DBManager::DropDatabase(AuthContext &auth) {
-	shared_ptr<Reindexer> db;
-	auto status = auth.GetDB(kRoleOwner, &db);
-	if (!status.ok()) {
-		return status;
+	{
+		Reindexer *db = nullptr;
+		auto status = auth.GetDB(kRoleOwner, &db);
+		if (!status.ok()) {
+			return status;
+		}
 	}
 	string dbName = auth.dbName_;
 
@@ -195,7 +199,7 @@ Error DBManager::readUsers() {
 	return errOK;
 }
 
-const char *UserRoleName(UserRole role) {
+const char *UserRoleName(UserRole role) noexcept {
 	switch (role) {
 		case kUnauthorized:
 			return "unauthoried";

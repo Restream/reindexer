@@ -1,3 +1,25 @@
+# Version 2.1.2 (04.08.2019)
+
+## Core
+
+- [fea] Added requests execution timeouts and cancelation contexts
+- [fea] Join memory consumption optimization
+- [fea] Current database activity statistics
+- [fea] Use composite indexes for IN condition to index's fields
+- [fea] Reset perfomance and queries statistics by write to corresponding namespace
+- [fix] Crashes on index removal
+- [fix] Do not lock namespace on tx operations
+- [fix] SQL dumper will not add exceeded bracets
+- [fea] Added `updated_at` field to namespace attributes
+
+
+# go connector
+
+- [fea] Added requests execution timeouts and cancelation contexts
+- [fea] Added async tx support
+- [fea] Removed (moved to core) `updated_at` legacy code
+
+
 # Version 2.1.1 (12.06.2019)
 
 ## Core 
@@ -20,7 +42,7 @@
 
 ## Core
 
-- [fea] Bracets in DSL & SQL queries
+- [fea] Bracets in DSL & SQL queries    
 - [fix] Crash on LRUCache fast invalidation
 - [fix] Relaxed JSON validation. Symbols with codes < 0x20 now are valid
 - [fix] '\0' symbol in JSON will not broke parser

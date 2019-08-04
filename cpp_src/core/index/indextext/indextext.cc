@@ -3,8 +3,11 @@
 #include <memory>
 #include "core/ft/ft_fuzzy/searchers/kblayout.h"
 #include "core/ft/ft_fuzzy/searchers/translit.h"
+#include "core/rdxcontext.h"
+#include "estl/smart_lock.h"
 #include "tools/errors.h"
 #include "tools/logger.h"
+
 namespace reindexer {
 
 // Available stemmers for languages
@@ -67,7 +70,8 @@ void IndexText<T>::SetOpts(const IndexOpts &opts) {
 // Generic implemetation for string index
 template <typename T>
 SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType condition, SortType /*stype*/, Index::SelectOpts /*opts*/,
-										 BaseFunctionCtx::Ptr ctx) {
+										 BaseFunctionCtx::Ptr ctx, const RdxContext &rdxCtx) {
+	const auto indexWard(rdxCtx.BeforeIndexWork());
 	if (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
 		throw Error(errParams, "Full text index support only EQ or SET condition with 1 or 2 parameter");
 	}
@@ -103,11 +107,11 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 	FtDSLQuery dsl(this->ftFields_, this->cfg_->stopWords, this->cfg_->extraWordSymbols);
 	dsl.parse(keys[0].As<string>());
 
-	smart_lock<shared_timed_mutex> lck(mtx_);
+	smart_lock<Mutex> lck(mtx_, rdxCtx);
 	if (!isBuilt_) {
 		// non atomic upgrade mutex to unique
 		lck.unlock();
-		lck = smart_lock<shared_timed_mutex>(mtx_, true);
+		lck = smart_lock<Mutex>(mtx_, rdxCtx, true);
 		if (!isBuilt_) {
 			commitFulltext();
 			need_put = false;

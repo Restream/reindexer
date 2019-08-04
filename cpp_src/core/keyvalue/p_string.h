@@ -126,6 +126,15 @@ struct p_string {
 		return key_string(str);
 	};
 
+	key_string getOrMakeKeyString() const {
+		if (type() == tagKeyString) {
+			return getKeyString();
+		} else {
+			const auto sv = operator string_view();
+			return make_key_string(sv.data(), sv.size());
+		}
+	}
+
 	int type() const { return (v & tagMask) >> tagShift; }
 	string toString() const { return string(data(), length()); }
 

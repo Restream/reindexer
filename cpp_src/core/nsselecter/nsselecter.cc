@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
+void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxContext &rdxCtx) {
 	ctx.enableSortOrders = ns_->sortOrdersBuilt_;
 	if (ns_->config_.logLevel > ctx.query.debugLevel) {
 		const_cast<Query *>(&ctx.query)->debugLevel = ns_->config_.logLevel;
@@ -88,7 +88,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	explain.SetPrepareTime();
 
 	qres.PrepareIteratorsForSelectLoop(qPreproc.GetQueryEntries(), 0, qPreproc.GetQueryEntries().Size(), ctx.query.equalPositions_,
-									   ctx.sortingCtx.sortId(), isFt, *ns_, fnc_, ft_ctx_);
+									   ctx.sortingCtx.sortId(), isFt, *ns_, fnc_, ft_ctx_, rdxCtx);
 
 	explain.SetSelectTime();
 
@@ -151,7 +151,9 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	assert(qres.Size());
 	qres.SetExpectMaxIterations(iters);
 
-	result.addNSContext(ns_->payloadType_, ns_->tagsMatcher_, FieldsSet(ns_->tagsMatcher_, ctx.query.selectFilter_));
+	if (ctx.contextCollectingMode) {
+		result.addNSContext(ns_->payloadType_, ns_->tagsMatcher_, FieldsSet(ns_->tagsMatcher_, ctx.query.selectFilter_));
+	}
 
 	explain.SetPostprocessTime();
 
@@ -159,14 +161,14 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx) {
 	lctx.qres = &qres;
 	lctx.calcTotal = needCalcTotal;
 	if (isFt) result.haveProcent = true;
-	if (reverse && hasComparators && hasScan) selectLoop<true, true, true>(lctx, result);
-	if (!reverse && hasComparators && hasScan) selectLoop<false, true, true>(lctx, result);
-	if (reverse && !hasComparators && hasScan) selectLoop<true, false, true>(lctx, result);
-	if (!reverse && !hasComparators && hasScan) selectLoop<false, false, true>(lctx, result);
-	if (reverse && hasComparators && !hasScan) selectLoop<true, true, false>(lctx, result);
-	if (!reverse && hasComparators && !hasScan) selectLoop<false, true, false>(lctx, result);
-	if (reverse && !hasComparators && !hasScan) selectLoop<true, false, false>(lctx, result);
-	if (!reverse && !hasComparators && !hasScan) selectLoop<false, false, false>(lctx, result);
+	if (reverse && hasComparators && hasScan) selectLoop<true, true, true>(lctx, result, rdxCtx);
+	if (!reverse && hasComparators && hasScan) selectLoop<false, true, true>(lctx, result, rdxCtx);
+	if (reverse && !hasComparators && hasScan) selectLoop<true, false, true>(lctx, result, rdxCtx);
+	if (!reverse && !hasComparators && hasScan) selectLoop<false, false, true>(lctx, result, rdxCtx);
+	if (reverse && hasComparators && !hasScan) selectLoop<true, true, false>(lctx, result, rdxCtx);
+	if (!reverse && hasComparators && !hasScan) selectLoop<false, true, false>(lctx, result, rdxCtx);
+	if (reverse && !hasComparators && !hasScan) selectLoop<true, false, false>(lctx, result, rdxCtx);
+	if (!reverse && !hasComparators && !hasScan) selectLoop<false, false, false>(lctx, result, rdxCtx);
 
 	explain.SetLoopTime();
 	explain.StopTiming();
@@ -416,46 +418,57 @@ void NsSelecter::setLimitAndOffset(ItemRefVector &queryResult, size_t offset, si
 	}
 }
 
-bool NsSelecter::proccessJoin(SelectCtx &sctx, IdType properRowId, bool found, bool match, bool hasInnerJoin) {
-	// inner join process
-	ConstPayload pl(ns_->payloadType_, ns_->items_[properRowId]);
-
-	if (hasInnerJoin) {
-		for (size_t i = 0; i < sctx.joinedSelectors->size(); i++) {
-			auto &joinedSelector = sctx.joinedSelectors->at(i);
-			bool res = false;
-			joinedSelector.called++;
-
-			if (joinedSelector.type == JoinType::InnerJoin) {
-				if (found) {
-					res = joinedSelector.func(&joinedSelector, properRowId, sctx.nsid, pl, match);
-					found &= res;
-				}
-			}
-			if (joinedSelector.type == JoinType::OrInnerJoin) {
-				if (!found || !joinedSelector.nodata) {
-					res = joinedSelector.func(&joinedSelector, properRowId, sctx.nsid, pl, match);
-					found |= res;
-				}
-			}
-			if (res) {
-				joinedSelector.matched++;
-			}
-			// If not found, and next op is not OR, then ballout
-			if (!found && !(i + 1 < sctx.joinedSelectors->size() && sctx.joinedSelectors->at(i + 1).type == JoinType::OrInnerJoin)) {
-				break;
-			}
-		}
-	}
-	// left join process
+void NsSelecter::processLeftJoins(const ConstPayload &pl, SelectCtx &sctx, IdType properRowId, bool found, bool match) {
 	if (match && found)
 		for (auto &joinedSelector : *sctx.joinedSelectors)
 			if (joinedSelector.type == JoinType::LeftJoin) joinedSelector.func(&joinedSelector, properRowId, sctx.nsid, pl, match);
+}
+
+bool NsSelecter::processInnerJoins(const ConstPayload &pl, SelectCtx &sctx, IdType properRowId, bool found, bool match) {
+	for (size_t i = 0; i < sctx.joinedSelectors->size(); ++i) {
+		auto &joinedSelector = sctx.joinedSelectors->at(i);
+		bool res = false;
+		joinedSelector.called++;
+
+		if (joinedSelector.type == JoinType::InnerJoin) {
+			if (found) {
+				res = joinedSelector.func(&joinedSelector, properRowId, sctx.nsid, pl, match);
+				found &= res;
+			}
+		}
+		if (joinedSelector.type == JoinType::OrInnerJoin) {
+			if (!found || !joinedSelector.nodata) {
+				res = joinedSelector.func(&joinedSelector, properRowId, sctx.nsid, pl, match);
+				found |= res;
+			}
+		}
+		if (res) {
+			joinedSelector.matched++;
+		}
+		// If not found and next op is not OR then we're done
+		if (!found && !(i + 1 < sctx.joinedSelectors->size() && sctx.joinedSelectors->at(i + 1).type == JoinType::OrInnerJoin)) {
+			break;
+		}
+	}
+	return found;
+}
+
+bool NsSelecter::processJoins(SelectCtx &sctx, IdType properRowId, bool found, bool match, bool hasInnerJoins, bool hasLeftJoins,
+							  bool postLoopLimitOffsetProcessing) {
+	ConstPayload pl(ns_->payloadType_, ns_->items_[properRowId]);
+	if (hasInnerJoins) {
+		bool fullSelect = (match && !postLoopLimitOffsetProcessing);
+		found = processInnerJoins(pl, sctx, properRowId, found, fullSelect);
+	}
+	if (!postLoopLimitOffsetProcessing && hasLeftJoins) {
+		processLeftJoins(pl, sctx, properRowId, found, match);
+	}
 	return found;
 }
 
 template <bool reverse, bool hasComparators, bool hasScan>
-void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
+void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext &rdxCtx) {
+	const auto selectLoopWard = rdxCtx.BeforeSelectLoop();
 	unsigned start = 0;
 	unsigned count = UINT_MAX;
 	SelectCtx &sctx = ctx.sctx;
@@ -477,10 +490,12 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 
 	bool finish = (count == 0) && !sctx.reqMatchedOnceFlag && !calcTotal;
 
-	bool hasInnerJoin = false;
+	bool hasInnerJoins = false, hasLeftJoins = false;
 	if (sctx.joinedSelectors) {
-		for (auto &joinedSelector : *sctx.joinedSelectors)
-			hasInnerJoin |= (joinedSelector.type == JoinType::InnerJoin || joinedSelector.type == JoinType::OrInnerJoin);
+		for (auto &joinedSelector : *sctx.joinedSelectors) {
+			hasInnerJoins |= (joinedSelector.type == JoinType::InnerJoin || joinedSelector.type == JoinType::OrInnerJoin);
+			hasLeftJoins |= (joinedSelector.type == JoinType::LeftJoin);
+		}
 	}
 
 	bool generalSort = false;
@@ -499,6 +514,9 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 			multisortFinished = !(multiSortByOrdered && count > 0);
 		}
 	}
+
+	// When we have non-btree index sorting with limit and(or) offset
+	bool postLoopLimitOffsetProcessing = ((multiSort || generalSort || forcedSort) && (sctx.query.start || sctx.query.count != UINT_MAX));
 
 	VariantArray prevValues;
 	size_t multisortLimitLeft = 0, multisortLimitRight = 0;
@@ -525,7 +543,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 		bool found = qres.Process<reverse, hasComparators>(pv, &finish, &rowId, properRowId);
 
 		if (found && sctx.joinedSelectors) {
-			found = proccessJoin(sctx, properRowId, found, !start && count, hasInnerJoin);
+			found = processJoins(sctx, properRowId, found, !start && count, hasInnerJoins, hasLeftJoins, postLoopLimitOffsetProcessing);
 		}
 
 		if (found) {
@@ -586,6 +604,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 		ItemIterator first = result.Items().begin();
 		ItemIterator last = result.Items().begin() + endPos;
 		ItemIterator end = result.Items().end();
+
 		if (multiSort || generalSort) {
 			applyGeneralSort(first, last, end, sctx);
 		}
@@ -595,6 +614,12 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result) {
 
 		const size_t offset = generalSort ? sctx.query.start : multisortLimitLeft;
 		setLimitAndOffset(result.Items(), offset, sctx.query.count);
+	}
+
+	if (sctx.joinedSelectors && postLoopLimitOffsetProcessing) {
+		for (auto it : result) {
+			processJoins(sctx, it.GetItemRef().id, true, true, hasInnerJoins, hasLeftJoins, false);
+		}
 	}
 
 	for (auto &aggregator : aggregators) {
@@ -627,7 +652,7 @@ void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId,
 	} else if (sctx.preResult && sctx.preResult->mode == JoinPreResult::ModeBuild) {
 		sctx.preResult->ids.Add(rowId, IdSet::Unordered, 0);
 	} else {
-		result.Add({properRowId, ns_->items_[properRowId], proc, sctx.nsid});
+		result.Add({properRowId, ns_->items_[properRowId], proc, sctx.nsid}, ns_->payloadType_);
 	}
 }
 
@@ -722,4 +747,5 @@ void NsSelecter::prepareSortingIndexes(SortingEntries &sortingBy) {
 		ns_->getIndexByName(sortingEntry.column, sortingEntry.index);
 	}
 }
+
 }  // namespace reindexer

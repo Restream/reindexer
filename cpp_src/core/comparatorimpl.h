@@ -154,7 +154,7 @@ public:
 	bool Compare(CondType cond, const p_string &lhs, const CollateOpts &collateOpts) {
 		bool ret = Compare2(cond, lhs, collateOpts);
 		if (!ret || !distS_) return ret;
-		return distS_->emplace(lhs.getKeyString()).second;
+		return distS_->emplace(lhs.getOrMakeKeyString()).second;
 	}
 
 	h_vector<key_string, 1> values_;

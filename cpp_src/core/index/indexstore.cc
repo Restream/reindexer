@@ -1,5 +1,6 @@
 
 #include "indexstore.h"
+#include "core/rdxcontext.h"
 #include "tools/errors.h"
 #include "tools/logger.h"
 
@@ -57,7 +58,8 @@ void IndexStore<T>::Commit() {
 
 template <typename T>
 SelectKeyResults IndexStore<T>::SelectKey(const VariantArray &keys, CondType condition, SortType /*sortId*/, Index::SelectOpts sopts,
-										  BaseFunctionCtx::Ptr /*ctx*/) {
+										  BaseFunctionCtx::Ptr /*ctx*/, const RdxContext &rdxCtx) {
+	const auto indexWard(rdxCtx.BeforeIndexWork());
 	SelectKeyResult res;
 	if (condition == CondEmpty && !this->opts_.IsArray() && !this->opts_.IsSparse())
 		throw Error(errParams, "The 'is NULL' condition is suported only by 'sparse' or 'array' indexes");

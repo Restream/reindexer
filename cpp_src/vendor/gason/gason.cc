@@ -192,6 +192,7 @@ int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAllocator &al
 				}
 				break;
 			case '"':
+				if (s - str.data() < 2) return JSON_UNEXPECTED_CHARACTER;
 				for (char *it = s - 2; l; ++it, ++s, --l) {
 					int c = *it = *s;
 					if (c == '\\') {

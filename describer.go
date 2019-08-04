@@ -89,8 +89,6 @@ type NamespaceMemStat struct {
 	StoragePath string `json:"storage_path"`
 	// Status of disk storage
 	StorageOK bool `json:"storage_ok"`
-	// [[deperecated]]. do not use
-	UpdatedUnixNano int64 `json:"updated_unix_nano"`
 	// Total count of documents in namespace
 	ItemsCount int64 `json:"items_count,omitempty"`
 	// Count of emopy(unused) slots in namespace
@@ -122,6 +120,8 @@ type NamespaceMemStat struct {
 		WalCount int64 `json:"wal_count"`
 		// Total memory consumption of Write Ahead Log (WAL)
 		WalSize int64 `json:"wal_size"`
+		// Data updated timestamp
+		UpdatedUnixNano int64 `json:"updated_unix_nano"`
 	} `json:"replication"`
 	// Indexes memory statistic
 	Indexes []struct {

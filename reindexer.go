@@ -2,7 +2,6 @@ package reindexer
 
 import (
 	"context"
-	"time"
 
 	"github.com/restream/reindexer/bindings"
 	_ "github.com/restream/reindexer/bindings/cproto"
@@ -74,7 +73,6 @@ const (
 	ErrCodeNotFound         = bindings.ErrNotFound
 	ErrCodeStateInvalidated = bindings.ErrStateInvalidated
 	ErrCodeTimeout          = bindings.ErrTimeout
-	ErrCodeCanceled         = bindings.ErrCanceled
 )
 
 var logger Logger = &nullLogger{}
@@ -313,11 +311,6 @@ func (db *Reindexer) BeginTx(namespace string) (*Tx, error) {
 // MustBeginTx - start update transaction, panic on error
 func (db *Reindexer) MustBeginTx(namespace string) *Tx {
 	return db.impl.mustBeginTx(db.ctx, namespace)
-}
-
-// GetUpdatedAt - get updated at time of namespace
-func (db *Reindexer) GetUpdatedAt(namespace string) (*time.Time, error) {
-	return db.impl.getUpdatedAt(db.ctx, namespace)
 }
 
 // QueryFrom - create query from DSL and execute it

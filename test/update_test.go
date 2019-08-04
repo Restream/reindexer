@@ -372,7 +372,7 @@ func FillTestItemsForInsertUpdate() {
 		}
 	}
 
-	cnt := tx.MustCommit(nil)
+	cnt := tx.MustCommit()
 	if cnt != len(checkInsertUpdateExistsData) {
 		panic(fmt.Errorf("Could not commit testSortModeDataCustomSource"))
 	}

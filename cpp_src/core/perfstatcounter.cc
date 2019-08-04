@@ -35,6 +35,25 @@ void PerfStatCounter<Mutex>::LockHit(std::chrono::microseconds time) {
 }
 
 template <typename Mutex>
+void PerfStatCounter<Mutex>::Reset() {
+	static const PerfStatCounter<Mutex> defaultCounter;
+	std::unique_lock<Mutex> lck(mtx_);
+	totalHitCount = defaultCounter.totalHitCount;
+	totalTime = defaultCounter.totalTime;
+	totalLockTime = defaultCounter.totalLockTime;
+	avgHitCount = defaultCounter.avgHitCount;
+	avgTime = defaultCounter.avgTime;
+	avgLockTime = defaultCounter.avgLockTime;
+	calcHitCount = defaultCounter.calcHitCount;
+	calcTime = defaultCounter.calcTime;
+	calcLockTime = defaultCounter.calcLockTime;
+	calcStartTime = defaultCounter.calcStartTime;
+	stddev = defaultCounter.stddev;
+	minTime = defaultCounter.minTime;
+	maxTime = defaultCounter.maxTime;
+}
+
+template <typename Mutex>
 void PerfStatCounter<Mutex>::doCalculations() {
 	if (calcTime > maxTime) {
 		maxTime = calcTime;

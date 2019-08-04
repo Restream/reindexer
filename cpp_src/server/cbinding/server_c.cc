@@ -9,6 +9,7 @@
 using namespace reindexer_server;
 using std::string;
 using reindexer::Error;
+using std::shared_ptr;
 
 static shared_ptr<Server> svc;
 static Error err_not_init(-1, "Reindexer server has not initialized");
@@ -46,16 +47,18 @@ reindexer_error start_reindexer_server(reindexer_string _config) {
 }
 
 reindexer_error get_reindexer_instance(reindexer_string dbname, reindexer_string user, reindexer_string pass, uintptr_t* rx) {
-	shared_ptr<Reindexer> target_db;
+	Reindexer* target_db = nullptr;
 
 	Error err = err_not_init;
 	if (check_server_ready()) {
 		AuthContext ctx(str2c(user), str2c(pass));
 		err = svc->GetDBManager().OpenDatabase(str2c(dbname), ctx, true);
-		if (err.ok()) err = ctx.GetDB(kRoleOwner, &target_db);
+		if (err.ok()) {
+			err = ctx.GetDB(kRoleOwner, &target_db);
+		}
 	}
 
-	*rx = err.ok() ? reinterpret_cast<uintptr_t>(target_db.get()) : 0;
+	*rx = err.ok() ? reinterpret_cast<uintptr_t>(target_db) : 0;
 	return error2c(err);
 }
 

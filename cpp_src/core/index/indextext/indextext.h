@@ -26,7 +26,7 @@ public:
 	}
 
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, Index::SelectOpts opts,
-							   BaseFunctionCtx::Ptr ctx) override final;
+							   BaseFunctionCtx::Ptr ctx, const RdxContext&) override final;
 	void UpdateSortedIds(const UpdateSortedContext&) override {}
 	virtual IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) = 0;
 	void SetOpts(const IndexOpts& opts) override;
@@ -35,6 +35,8 @@ public:
 	void SetSortedIdxCount(int) override final{};
 
 protected:
+	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::IndexText>;
+
 	void initSearchers();
 	FieldsGetter Getter();
 
@@ -42,7 +44,7 @@ protected:
 	fast_hash_map<string, int> ftFields_;
 	unique_ptr<BaseFTConfig> cfg_;
 	DataHolder holder_;
-	shared_timed_mutex mtx_;
+	Mutex mtx_;
 	bool isBuilt_;
 };
 

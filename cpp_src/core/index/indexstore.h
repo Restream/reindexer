@@ -17,7 +17,7 @@ public:
 	Variant Upsert(const Variant &key, IdType id) override;
 	void Delete(const Variant &key, IdType id) override;
 	SelectKeyResults SelectKey(const VariantArray &keys, CondType condition, SortType stype, Index::SelectOpts res_type,
-							   BaseFunctionCtx::Ptr ctx) override;
+							   BaseFunctionCtx::Ptr ctx, const RdxContext &) override;
 	void Commit() override;
 	void UpdateSortedIds(const UpdateSortedContext & /*ctx*/) override {}
 	Index *Clone() override;

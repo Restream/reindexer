@@ -152,12 +152,16 @@ class intrusive_atomic_rc_wrapper;
 
 template <typename T>
 inline static void intrusive_ptr_add_ref(intrusive_atomic_rc_wrapper<T> *x) {
-	if (x) x->refcount++;
+	if (x) {
+		x->refcount.fetch_add(1, std::memory_order_relaxed);
+	}
 }
 
 template <typename T>
 inline static void intrusive_ptr_release(intrusive_atomic_rc_wrapper<T> *x) {
-	if (x && x->refcount-- == 1) delete x;
+	if (x && x->refcount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+		delete x;
+	}
 }
 
 template <typename T>

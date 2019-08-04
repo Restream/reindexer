@@ -65,13 +65,35 @@ int QueryPreprocessor::getCompositeIndex(const FieldsSet &fields) const {
 	return -1;
 }
 
+static void createCompositeKeyValues(const h_vector<std::pair<int, VariantArray>, 4> &values, const PayloadType &plType, Payload *pl,
+									 VariantArray &ret, int n) {
+	PayloadValue d(plType.TotalSize());
+	Payload pl1(plType, d);
+	if (!pl) pl = &pl1;
+
+	assert(n >= 0 && n < static_cast<int>(values.size()));
+	const auto &v = values[n];
+	for (auto it = v.second.cbegin(), end = v.second.cend(); it != end; ++it) {
+		pl->Set(v.first, {*it});
+		if (n + 1 < static_cast<int>(values.size())) {
+			createCompositeKeyValues(values, plType, pl, ret, n + 1);
+		} else {
+			PayloadValue pv(*pl->Value());
+			pv.Clone();
+			ret.push_back(Variant(std::move(pv)));
+		}
+	}
+}
+
 size_t QueryPreprocessor::substituteCompositeIndexes(size_t from, size_t to) const {
 	FieldsSet fields;
 	size_t deleted = 0;
 	for (size_t cur = from, first = from, end = to; cur < end; cur = queries_->Next(cur), end = to - deleted) {
 		if (!queries_->IsEntry(cur) || queries_->GetOperation(cur) != OpAnd ||
-			(queries_->Next(cur) < end && queries_->GetOperation(queries_->Next(cur)) == OpOr) || (*queries_)[cur].condition != CondEq ||
+			(queries_->Next(cur) < end && queries_->GetOperation(queries_->Next(cur)) == OpOr) ||
+			((*queries_)[cur].condition != CondEq && (*queries_)[cur].condition != CondSet) ||
 			(*queries_)[cur].idxNo >= ns_.payloadType_.NumFields() || (*queries_)[cur].idxNo < 0) {
+
 			// If query already rewritten, then copy current unmatched part
 			first = queries_->Next(cur);
 			fields.clear();
@@ -84,19 +106,20 @@ size_t QueryPreprocessor::substituteCompositeIndexes(size_t from, size_t to) con
 		int found = getCompositeIndex(fields);
 		if ((found >= 0) && !isFullText(ns_.indexes_[found]->Type())) {
 			// composite idx found: replace conditions
-			PayloadValue d(ns_.payloadType_.TotalSize());
-			Payload pl(ns_.payloadType_, d);
+			h_vector<std::pair<int, VariantArray>, 4> values;
+			CondType condition = CondEq;
 			for (size_t i = first; i <= cur; i = queries_->Next(i)) {
 				if (ns_.indexes_[found]->Fields().contains((*queries_)[i].idxNo)) {
-					pl.Set((*queries_)[i].idxNo, {(*queries_)[i].values[0]});
+					values.emplace_back((*queries_)[i].idxNo, std::move((*queries_)[i].values));
+					if (values.back().second.size() > 1) condition = CondSet;
 				} else {
 					queries_->SetOperation(queries_->GetOperation(i), first);
 					(*queries_)[first] = (*queries_)[i];
 					first = queries_->Next(first);
 				}
 			}
-			QueryEntry ce(CondEq, ns_.indexes_[found]->Name(), found);
-			ce.values.push_back(Variant(d));
+			QueryEntry ce(condition, ns_.indexes_[found]->Name(), found);
+			createCompositeKeyValues(values, ns_.payloadType_, nullptr, ce.values, 0);
 			queries_->SetOperation(OpAnd, first);
 			(*queries_)[first] = ce;
 			deleted += (queries_->Next(cur) - queries_->Next(first));

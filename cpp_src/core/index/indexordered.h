@@ -13,7 +13,7 @@ public:
 		: IndexUnordered<T>(idef, payloadType, fields) {}
 
 	SelectKeyResults SelectKey(const VariantArray &keys, CondType condition, SortType stype, Index::SelectOpts opts,
-							   BaseFunctionCtx::Ptr ctx) override;
+							   BaseFunctionCtx::Ptr ctx, const RdxContext &) override;
 	Variant Upsert(const Variant &key, IdType id) override;
 	void MakeSortOrders(UpdateSortedContext &ctx) override;
 	Index *Clone() override;

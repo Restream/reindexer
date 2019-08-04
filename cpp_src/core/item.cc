@@ -3,6 +3,7 @@
 #include "core/itemimpl.h"
 #include "core/keyvalue/p_string.h"
 #include "core/namespace.h"
+#include "core/rdxcontext.h"
 
 namespace reindexer {
 
@@ -22,7 +23,7 @@ Item &Item::operator=(Item &&other) noexcept {
 	return *this;
 }
 
-string_view Item::FieldRef::Name() { return field_ >= 0 ? itemImpl_->Type().Field(field_).Name() : jsonPath_; }
+string_view Item::FieldRef::Name() const { return field_ >= 0 ? itemImpl_->Type().Field(field_).Name() : jsonPath_; }
 
 Item::FieldRef::operator Variant() {
 	VariantArray kr;
@@ -37,7 +38,7 @@ Item::FieldRef::operator Variant() {
 	return kr[0];
 }
 
-Item::FieldRef::operator VariantArray() {
+Item::FieldRef::operator VariantArray() const {
 	VariantArray kr;
 	if (field_ >= 0)
 		itemImpl_->GetPayload().Get(field_, kr);
@@ -87,7 +88,7 @@ Item::~Item() {
 	if (impl_) {
 		auto ns = impl_->GetNamespace();
 		if (ns) {
-			ns->ToPool(impl_);
+			ns->ToPool(impl_, RdxContext{});
 			impl_ = nullptr;
 		}
 	}
@@ -100,7 +101,7 @@ string_view Item::GetCJSON() { return impl_->GetCJSON(); }
 string_view Item::GetJSON() { return impl_->GetJSON(); }
 
 int Item::NumFields() { return impl_->Type().NumFields(); }
-Item::FieldRef Item::operator[](int field) {
+Item::FieldRef Item::operator[](int field) const {
 	assert(field >= 0 && field < impl_->Type().NumFields());
 	return FieldRef(field, impl_);
 }
@@ -114,6 +115,7 @@ Item::FieldRef Item::operator[](string_view name) {
 	}
 }
 
+FieldsSet Item::PkFields() const { return impl_->PkFields(); }
 void Item::SetPrecepts(const vector<string> &precepts) { impl_->SetPrecepts(precepts); }
 bool Item::IsTagsUpdated() { return impl_->tagsMatcher().isUpdated(); }
 int Item::GetStateToken() { return impl_->tagsMatcher().stateToken(); }

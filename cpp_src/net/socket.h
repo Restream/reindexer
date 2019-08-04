@@ -22,6 +22,7 @@ public:
 	ssize_t send(const span<char> buf);
 	ssize_t send(span<chunk> chunks);
 	int close();
+	string addr() const;
 
 	int set_nonblock();
 	int set_nodelay();

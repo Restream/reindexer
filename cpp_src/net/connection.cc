@@ -35,7 +35,10 @@ void Connection<Mutex>::attach(ev::dynamic_loop &loop) {
 	assert(!attached_);
 	io_.set<Connection, &Connection::callback>(this);
 	io_.set(loop);
-	if (sock_.valid() && curEvents_) io_.start(sock_.fd(), curEvents_);
+	if (sock_.valid()) {
+		if (curEvents_) io_.start(sock_.fd(), curEvents_);
+		clientAddr_ = sock_.addr();
+	}
 	timeout_.set<Connection, &Connection::timeout_cb>(this);
 	timeout_.set(loop);
 	async_.set<Connection, &Connection::async_cb>(this);

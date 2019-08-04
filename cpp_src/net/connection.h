@@ -4,7 +4,7 @@
 #include <mutex>
 #include "estl/cbuf.h"
 #include "estl/chunk_buf.h"
-#include "estl/shared_mutex.h"
+#include "estl/mutex.h"
 #include "net/ev/ev.h"
 #include "net/socket.h"
 #include "tools/ssize_t.h"
@@ -51,6 +51,7 @@ protected:
 
 	chain_buf<Mutex> wrBuf_;
 	cbuf<char> rdBuf_;
+	string clientAddr_;
 };
 
 using ConnectionST = Connection<reindexer::dummy_mutex>;

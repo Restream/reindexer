@@ -27,13 +27,14 @@ public:
 	}
 
 	ItemImpl(const ItemImpl &) = delete;
-	ItemImpl(ItemImpl &&o) = default;
+	ItemImpl(ItemImpl &&) = default;
 	ItemImpl &operator=(const ItemImpl &) = delete;
 	ItemImpl &operator=(ItemImpl &&) noexcept;
 
 	void SetField(int field, const VariantArray &krs);
 	void SetField(string_view jsonPath, const VariantArray &keys);
 	Variant GetField(int field);
+	FieldsSet PkFields() const { return pkFields_; }
 
 	VariantArray GetValueByJSONPath(string_view jsonPath);
 

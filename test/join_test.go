@@ -69,7 +69,7 @@ func FillTestJoinItems(start int, count int) {
 			panic(err)
 		}
 	}
-	tx.MustCommit(nil)
+	tx.MustCommit()
 }
 
 type byID []*TestJoinItem

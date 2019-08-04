@@ -102,7 +102,8 @@ enum ErrorCode {
 	errOutdatedWAL = 16,
 	errNoWAL = 17,
 	errDataHashMismatch = 18,
-	errTimeout = 19
+	errTimeout = 19,
+	errCanceled = 20
 
 };
 

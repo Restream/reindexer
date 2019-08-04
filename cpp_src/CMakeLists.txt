@@ -13,7 +13,7 @@ option (WITH_GCOV "Enable instrumented code coverage build" OFF)
 option (ENABLE_LIBUNWIND "Enable libunwind" ON)
 option (ENABLE_TCMALLOC "Enable tcmalloc extensions" ON)
 option (ENABLE_JEMALLOC "Enable jemalloc extensions" ON)
-set (REINDEXER_VERSION_DEFAULT "2.1.1")
+set (REINDEXER_VERSION_DEFAULT "2.1.2")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -318,11 +318,12 @@ if (NOT WIN32)
   SET(DIST_INCLUDE_FILES
     "tools/errors.h" "tools/serializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h"
     "core/reindexer.h" "core/type_consts.h" "core/item.h" "core/payload/payloadvalue.h" "core/indexopts.h"
-    "core/namespacedef.h" "core/keyvalue/variant.h" "core/sortingprioritiestable.h"
+    "core/namespacedef.h" "core/keyvalue/variant.h" "core/sortingprioritiestable.h" "core/rdxcontext.h"
     "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" 
     "core/query/query.h" "core/query/querywhere.h" "core/query/queryresults.h" "core/indexdef.h" "core/query/aggregationresult.h"
     "estl/h_vector.h" "estl/string_view.h"
-    "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h" 
+    "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h"
+    "client/internalrdxcontext.h"
     "debug/backtrace.h" "debug/allocdebug.h"
   )
 

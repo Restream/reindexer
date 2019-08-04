@@ -125,7 +125,7 @@ It is possible to merge multiple queries results and sort final result by releva
 	// Iterate over results
 	for iterator.Next() {
 		// Get the next document and cast it to a pointer
-		switch elem := iterator.Ptr().(type) {
+		switch elem := iterator.Object().(type) {
 			case Item:
 				fmt.Printf ("%v,rank=%d\n",*elem,iterator.Rank())
 			case AnotherItem:

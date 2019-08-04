@@ -2,6 +2,7 @@ package reindexer
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,9 +13,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/restream/reindexer"
+	"github.com/restream/reindexer/bindings"
 )
 
 const (
@@ -195,17 +196,44 @@ func (tx *txTest) Delete(s interface{}) error {
 	return tx.tx.Delete(s)
 }
 
-func (tx *txTest) Commit(updatedAt *time.Time) (int, error) {
-	tx.db.SetSynced(false)
-
-	return tx.tx.CommitWithCount(updatedAt)
+func (tx *txTest) InsertAsync(s interface{}, cmpl bindings.Completion) {
+	val := reflect.Indirect(reflect.ValueOf(s))
+	tx.ns.items[getPK(tx.ns, val)] = s
+	tx.tx.InsertAsync(s, cmpl)
 }
 
-func (tx *txTest) MustCommit(updatedAt *time.Time) int {
+func (tx *txTest) UpdateAsync(s interface{}, cmpl bindings.Completion) {
+	val := reflect.Indirect(reflect.ValueOf(s))
+	tx.ns.items[getPK(tx.ns, val)] = s
+	tx.tx.UpdateAsync(s, cmpl)
+}
+
+func (tx *txTest) UpsertAsnc(s interface{}, cmpl bindings.Completion) {
+	val := reflect.Indirect(reflect.ValueOf(s))
+	tx.ns.items[getPK(tx.ns, val)] = s
+	tx.tx.UpsertAsync(s, cmpl)
+}
+
+func (tx *txTest) Commit() (int, error) {
 	tx.db.SetSynced(false)
 
-	res := tx.tx.MustCommit(updatedAt)
+	return tx.tx.CommitWithCount()
+}
+
+func (tx *txTest) MustCommit() int {
+	tx.db.SetSynced(false)
+
+	res := tx.tx.MustCommit()
 	return res
+}
+
+func (tx *txTest) AwaitResults() *txTest {
+	tx.tx.AwaitResults()
+	return tx
+}
+
+func (tx *txTest) Finalize() {
+	tx.tx.Finalize()
 }
 
 func (qt *queryTestEntryTree) toString() (ret string) {
@@ -415,15 +443,22 @@ func (qt *queryTest) Distinct(distinctIndex string) *queryTest {
 }
 
 func (qt *queryTest) GetJson() (json []byte, found bool) {
-
 	return qt.q.GetJson()
 }
 
+func (qt *queryTest) GetJsonCtx(ctx context.Context) (json []byte, found bool) {
+	return qt.q.GetJsonCtx(ctx)
+}
+
 func (qt *queryTest) Delete() (int, error) {
+	return qt.DeleteCtx(context.Background())
+}
+
+func (qt *queryTest) DeleteCtx(ctx context.Context) (int, error) {
 	qt.readOnly = false
 	qt.db.SetSynced(false)
 
-	return qt.q.Delete()
+	return qt.q.DeleteCtx(ctx)
 }
 
 func (qt *queryTest) Set(field string, values interface{}) *queryTest {
@@ -438,6 +473,10 @@ func (qt *queryTest) Get() (item interface{}, found bool) {
 	return qt.q.Get()
 }
 
+func (qt *queryTest) GetCtx(ctx context.Context) (item interface{}, found bool) {
+	return qt.q.GetCtx(ctx)
+}
+
 func (qt *queryTest) ReqTotal(totalNames ...string) *queryTest {
 	qt.q.ReqTotal(totalNames...)
 	qt.reqTotalCount = true
@@ -445,9 +484,13 @@ func (qt *queryTest) ReqTotal(totalNames ...string) *queryTest {
 }
 
 func (qt *queryTest) Update() *reindexer.Iterator {
+	return qt.UpdateCtx(context.Background())
+}
+
+func (qt *queryTest) UpdateCtx(ctx context.Context) *reindexer.Iterator {
 	qt.readOnly = false
 	qt.db.SetSynced(false)
-	return qt.q.Update()
+	return qt.q.UpdateCtx(ctx)
 }
 
 // Limit - Set limit (count) of returned items
@@ -481,10 +524,20 @@ func (qt *queryTest) Exec() *reindexer.Iterator {
 	return qt.MustExec()
 }
 
+// Exec will execute query with context, and return slice of items
+func (qt *queryTest) ExecCtx(ctx context.Context) *reindexer.Iterator {
+	return qt.MustExecCtx(ctx)
+}
+
 // Exec query, and full scan check items returned items
 func (qt *queryTest) ExecAndVerify() *reindexer.Iterator {
+	return qt.ExecAndVerifyCtx(context.Background())
+}
+
+// Exec query with context, and full scan check items returned items
+func (qt *queryTest) ExecAndVerifyCtx(ctx context.Context) *reindexer.Iterator {
 	defer qt.close()
-	it := qt.ManualClose().Exec()
+	it := qt.ManualClose().ExecCtx(ctx)
 	qt.totalCount = it.TotalCount()
 	items, err := it.AllowUnsafe(true).FetchAll()
 	if err != nil {
@@ -498,10 +551,14 @@ func (qt *queryTest) ExecAndVerify() *reindexer.Iterator {
 }
 
 func (qt *queryTest) MustExec(handClose ...bool) *reindexer.Iterator {
+	return qt.MustExecCtx(context.Background(), handClose...)
+}
+
+func (qt *queryTest) MustExecCtx(ctx context.Context, handClose ...bool) *reindexer.Iterator {
 	if !qt.handClose {
 		defer qt.close()
 	}
-	it := qt.db.execQuery(qt)
+	it := qt.db.execQueryCtx(ctx, qt)
 	return it
 }
 
@@ -570,6 +627,11 @@ func (qt *queryTest) Merge(qt2 *queryTest) *queryTest {
 // Exec query, and full scan check items returned items
 func (qt *queryTest) ExecToJson(jsonRoots ...string) *reindexer.JSONIterator {
 	return qt.q.ExecToJson(jsonRoots...)
+}
+
+// Exec query with context, and full scan check items returned items
+func (qt *queryTest) ExecToJsonCtx(ctx context.Context, jsonRoots ...string) *reindexer.JSONIterator {
+	return qt.q.ExecToJsonCtx(ctx, jsonRoots...)
 }
 
 var testNamespaces = make(map[string]*testNamespace, 100)

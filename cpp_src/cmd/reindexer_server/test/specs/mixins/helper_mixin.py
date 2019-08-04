@@ -105,11 +105,6 @@ class HelperMixin(object):
             'value': value
         }
 
-    def helper_meta_response_construct(self, value):
-        return {
-            'message': value
-        }
-
     def helper_meta_list_request_construct(self, sort = False, with_values = False, offset = 0, limit = 0):
         return {
             'sort': sort,

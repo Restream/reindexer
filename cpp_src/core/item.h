@@ -86,7 +86,7 @@ public:
 		FieldRef &operator=(const string &str);
 
 		/// Get field index name
-		string_view Name();
+		string_view Name() const;
 
 		/// Get Variant with field value
 		/// If field is array, and contains not exact 1 element, then throws reindexer::Error
@@ -94,7 +94,7 @@ public:
 		operator Variant();
 		/// Get VariantArray with field values. If field is not array, then 1 elemnt will be returned
 		/// @return VariantArray with field values
-		operator VariantArray();
+		operator VariantArray() const;
 		/// Set field value
 		/// @param kr - key reference object, which will be setted to field
 		FieldRef &operator=(Variant kr);
@@ -150,11 +150,13 @@ public:
 	/// Get field by number
 	/// @param field - number of field. Must be >= 0 && < NumFields
 	/// @return FieldRef which contains reference to indexed field
-	FieldRef operator[](int field);
+	FieldRef operator[](int field) const;
 	/// Get field by name
 	/// @param name - name of field
 	/// @return FieldRef which contains reference to indexed field
 	FieldRef operator[](string_view name);
+	/// Get PK fields
+	FieldsSet PkFields() const;
 	/// Set additional percepts for modify operation
 	/// @param precepts - strings in format "fieldName=Func()"
 	void SetPrecepts(const vector<string> &precepts);
@@ -183,6 +185,8 @@ private:
 	Error status_;
 	int id_ = -1;
 	friend class Namespace;
+	friend class TransactionImpl;
+
 	friend class QueryResults;
 	friend class ReindexerImpl;
 	friend class Replicator;

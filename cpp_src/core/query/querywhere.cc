@@ -132,14 +132,11 @@ const char *opNames[] = {"-", "OR", "AND", "AND NOT"};
 
 void QueryEntries::WriteSQLWhere(WrSerializer &ser, bool stripArgs) const {
 	if (Empty()) return;
-	ser << " WHERE";
+	ser << " WHERE ";
 	writeSQL(cbegin(), cend(), ser, stripArgs);
 }
 
 void QueryEntries::writeSQL(const_iterator from, const_iterator to, WrSerializer &ser, bool stripArgs) {
-	ser << ' ';
-	const bool needBrackets = from + 1 != to;
-	if (needBrackets) ser << '(';
 	for (const_iterator it = from; it != to; ++it) {
 		if (it != from) {
 			ser << ' ';
@@ -148,7 +145,9 @@ void QueryEntries::writeSQL(const_iterator from, const_iterator to, WrSerializer
 			ser << "NOT ";
 		}
 		if (!it->IsLeaf()) {
+			ser << '(';
 			writeSQL(it->cbegin(it), it->cend(it), ser, stripArgs);
+			ser << ')';
 		} else {
 			const QueryEntry &entry = it->Value();
 			if (entry.index.find('.') == string::npos)
@@ -177,7 +176,6 @@ void QueryEntries::writeSQL(const_iterator from, const_iterator to, WrSerializer
 			}
 		}
 	}
-	if (needBrackets) ser << ')';
 }
 
 string QueryEntry::Dump() const {

@@ -6,6 +6,7 @@
 #include "core/query/aggregationresult.h"
 #include "core/query/dslencoder.h"
 #include "core/query/dslparsetools.h"
+#include "core/rdxcontext.h"
 #include "core/type_consts.h"
 #include "expressionevaluator.h"
 #include "gason/gason.h"
@@ -207,21 +208,21 @@ bool checkIfTokenStartsWith(const string_view &src, const string_view &pattern) 
 }
 
 vector<string> Query::GetSuggestions(const string_view &q, size_t pos, const Namespaces &namespaces) {
-	SqlParsingCtx ctx;
-	ctx.suggestionsPos = pos;
-	ctx.autocompleteMode = true;
+	SqlParsingCtx sqlCtx;
+	sqlCtx.suggestionsPos = pos;
+	sqlCtx.autocompleteMode = true;
 
 	try {
 		tokenizer parser(q);
-		Parse(parser, ctx);
+		Parse(parser, sqlCtx);
 	} catch (const Error &) {
 	}
 
-	for (SqlParsingCtx::SuggestionData &item : ctx.suggestions) {
-		checkForTokenSuggestions(item, ctx, namespaces);
+	for (SqlParsingCtx::SuggestionData &item : sqlCtx.suggestions) {
+		checkForTokenSuggestions(item, sqlCtx, namespaces);
 	}
 
-	if (ctx.suggestions.size() > 0) return ctx.suggestions.front().variants;
+	if (sqlCtx.suggestions.size() > 0) return sqlCtx.suggestions.front().variants;
 	return std::vector<string>();
 }
 

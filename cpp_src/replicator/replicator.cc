@@ -84,6 +84,7 @@ void Replicator::run() {
 
 // Sync database
 Error Replicator::syncDatabase() {
+	const static RdxContext dummyCtx;
 	vector<NamespaceDef> nses;
 	logPrintf(LogInfo, "[repl] Starting sync from '%s'", config_.masterDSN);
 
@@ -129,7 +130,7 @@ Error Replicator::syncDatabase() {
 					break;
 				}
 			}
-			int64_t curLSN = slave_->getNamespace(ns.name)->GetReplState().lastLsn;
+			int64_t curLSN = slave_->getNamespace(ns.name, dummyCtx)->GetReplState(dummyCtx).lastLsn;
 			syncMtx_.lock();
 			// Check, if concurrent update attempt happened with LSN bigger, than current LSN
 			// In this case retry sync
@@ -149,8 +150,9 @@ Error Replicator::syncDatabase() {
 // This will completely drop slave namespace
 // read all indexes and data from master, then apply to slave
 Error Replicator::syncNamespaceByWAL(const NamespaceDef &ns) {
-	auto slaveNs = slave_->getNamespace(ns.name);
-	int64_t lsn = slaveNs->GetReplState().lastLsn;
+	const static RdxContext dummyCtx;
+	auto slaveNs = slave_->getNamespace(ns.name, dummyCtx);
+	int64_t lsn = slaveNs->GetReplState(dummyCtx).lastLsn;
 
 	logPrintf(LogTrace, "[repl:%s] Start sync items, lsn %ld", ns.name, lsn);
 
@@ -176,11 +178,14 @@ Error Replicator::syncNamespaceByWAL(const NamespaceDef &ns) {
 // This will completely drop slave namespace
 // read all indexes and data from master, then apply to slave
 Error Replicator::syncNamespaceForced(const NamespaceDef &ns, string_view reason) {
+	const static RdxContext dummyCtx;
 	logPrintf(LogWarning, "[repl:%s] Start FORCED sync: %s", ns.name, reason);
 
 	// Drop and recreate namespace
-	auto err = slave_->closeNamespace(ns.name, true, true);
-	if (err.ok() || err.code() == errNotFound) err = slave_->OpenNamespace(ns.name, StorageOpts().Enabled().CreateIfMissing().SlaveMode());
+	auto err = slave_->closeNamespace(ns.name, dummyCtx, true, true);
+	if (err.ok() || err.code() == errNotFound) {
+		err = slave_->OpenNamespace(ns.name, StorageOpts().Enabled().CreateIfMissing().SlaveMode());
+	}
 	if (err.ok()) err = syncIndexesForced(ns);
 	if (err.ok()) err = syncMetaForced(ns.name);
 
@@ -188,21 +193,22 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, string_view reason
 	client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 	if (err.ok()) err = master_->Select(Query(ns.name), qr);
 	if (err.ok()) {
-		slave_->getNamespace(ns.name)->ReplaceTagsMatcher(qr.getTagsMatcher(0));
+		slave_->getNamespace(ns.name, dummyCtx)->ReplaceTagsMatcher(qr.getTagsMatcher(0), dummyCtx);
 		err = applyWAL(ns.name, qr);
 	}
 	return err;
 }
 
 Error Replicator::applyWAL(string_view nsName, client::QueryResults &qr) {
+	const static RdxContext dummyCtx;
 	Error err;
 	SyncStat stat;
 
-	auto slaveNs = slave_->getNamespace(nsName);
+	auto slaveNs = slave_->getNamespace(nsName, dummyCtx);
 
 	WrSerializer ser;
 	// process WAL
-	int64_t slaveLSN = slaveNs->GetReplState().lastLsn;
+	int64_t slaveLSN = slaveNs->GetReplState(dummyCtx).lastLsn;
 	for (auto it : qr) {
 		if (terminate_) break;
 		try {
@@ -233,9 +239,9 @@ Error Replicator::applyWAL(string_view nsName, client::QueryResults &qr) {
 
 	if (stat.lastError.ok() && !terminate_) {
 		// Set slave LSN if operation successfull
-		slaveNs->SetSlaveLSN(slaveLSN);
+		slaveNs->SetSlaveLSN(slaveLSN, dummyCtx);
 	}
-	ReplicationState slaveState = slaveNs->GetReplState();
+	ReplicationState slaveState = slaveNs->GetReplState(dummyCtx);
 
 	// Check data hash, if operation successfull
 	if (stat.masterState.lastLsn >= 0 && stat.lastError.ok() && !terminate_ && slaveState.dataHash != stat.masterState.dataHash) {
@@ -255,6 +261,7 @@ Error Replicator::applyWAL(string_view nsName, client::QueryResults &qr) {
 
 Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_ptr<Namespace> slaveNs, const WALRecord &rec,
 								 SyncStat &stat) {
+	const static RdxContext dummyCtx;
 	Error err;
 	IndexDef iDef;
 
@@ -271,24 +278,24 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 		// Index added
 		case WalIndexAdd:
 			err = iDef.FromJSON(giftStr(rec.data));
-			if (err.ok()) slaveNs->AddIndex(iDef);
+			if (err.ok()) slaveNs->AddIndex(iDef, dummyCtx);
 			stat.updatedIndexes++;
 			break;
 		// Index dropped
 		case WalIndexDrop:
 			err = iDef.FromJSON(giftStr(rec.data));
-			if (err.ok()) slaveNs->DropIndex(iDef);
+			if (err.ok()) slaveNs->DropIndex(iDef, dummyCtx);
 			stat.deletedIndexes++;
 			break;
 		// Index updated
 		case WalIndexUpdate:
 			err = iDef.FromJSON(giftStr(rec.data));
-			if (err.ok()) slaveNs->UpdateIndex(iDef);
+			if (err.ok()) slaveNs->UpdateIndex(iDef, dummyCtx);
 			stat.updatedIndexes++;
 			break;
 		// Metadata updated
 		case WalPutMeta:
-			slaveNs->PutMeta(string(rec.putMeta.key), rec.putMeta.value, lsn);
+			slaveNs->PutMeta(string(rec.putMeta.key), rec.putMeta.value, dummyCtx, lsn);
 			stat.updatedMeta++;
 			break;
 		// Update query
@@ -298,10 +305,10 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 			q.FromSQL(rec.data);
 			switch (q.type_) {
 				case QueryDelete:
-					slaveNs->Delete(q, result, lsn);
+					slaveNs->Delete(q, result, dummyCtx, lsn);
 					break;
 				case QueryUpdate:
-					slaveNs->Update(q, result, lsn);
+					slaveNs->Update(q, result, dummyCtx, lsn);
 					break;
 				default:
 					break;
@@ -314,7 +321,7 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 			break;
 		// Drop namespace
 		case WalNamespaceDrop:
-			err = slave_->closeNamespace(nsName, true, true);
+			err = slave_->closeNamespace(nsName, dummyCtx, true, true);
 			break;
 		// Replication state
 		case WalReplState:
@@ -334,8 +341,9 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 
 Error Replicator::applyItemCJson(int64_t lsn, std::shared_ptr<Namespace> slaveNs, string_view cjson, int modifyMode, const TagsMatcher &tm,
 								 SyncStat &stat) {
+	const static RdxContext dummyCtx;
 	// break;
-	Item item = slaveNs->NewItem();
+	Item item = slaveNs->NewItem(dummyCtx);
 
 	if (item.impl_->tagsMatcher().size() < tm.size()) {
 		bool res = item.impl_->tagsMatcher().try_merge(tm);
@@ -349,19 +357,19 @@ Error Replicator::applyItemCJson(int64_t lsn, std::shared_ptr<Namespace> slaveNs
 	if (err.ok()) {
 		switch (modifyMode) {
 			case ModeDelete:
-				slaveNs->Delete(item);
+				slaveNs->Delete(item, dummyCtx);
 				stat.deleted++;
 				break;
 			case ModeInsert:
-				slaveNs->Insert(item);
+				slaveNs->Insert(item, dummyCtx);
 				stat.updated++;
 				break;
 			case ModeUpsert:
-				slaveNs->Upsert(item);
+				slaveNs->Upsert(item, dummyCtx);
 				stat.updated++;
 				break;
 			case ModeUpdate:
-				slaveNs->Update(item);
+				slaveNs->Update(item, dummyCtx);
 				stat.updated++;
 				break;
 			default:
@@ -384,14 +392,15 @@ WrSerializer &Replicator::SyncStat::Dump(WrSerializer &ser) {
 }
 
 Error Replicator::syncIndexesForced(const NamespaceDef &masterNsDef) {
+	const static RdxContext dummyCtx;
 	const string &nsName = masterNsDef.name;
-	auto ns = slave_->getNamespace(nsName);
+	auto ns = slave_->getNamespace(nsName, dummyCtx);
 
 	Error err = errOK;
 	for (auto &idx : masterNsDef.indexes) {
 		logPrintf(LogTrace, "[repl:%s] Updating index '%s'", nsName, idx.name_);
 		try {
-			ns->AddIndex(idx);
+			ns->AddIndex(idx, dummyCtx);
 		} catch (const Error &e) {
 			logPrintf(LogError, "[repl:%s] Error add index '%s': %s", nsName, idx.name_, err.what());
 			err = e;
@@ -402,9 +411,10 @@ Error Replicator::syncIndexesForced(const NamespaceDef &masterNsDef) {
 }
 
 Error Replicator::syncMetaForced(string_view nsName) {
+	const static RdxContext dummyCtx;
 	vector<string> keys;
 	auto err = master_->EnumMeta(nsName, keys);
-	auto ns = slave_->getNamespace(nsName);
+	auto ns = slave_->getNamespace(nsName, dummyCtx);
 	if (!err.ok()) return err;
 
 	for (auto &key : keys) {
@@ -415,7 +425,7 @@ Error Replicator::syncMetaForced(string_view nsName) {
 			continue;
 		}
 		try {
-			ns->PutMeta(key, data, 0);
+			ns->PutMeta(key, data, dummyCtx);
 		} catch (const Error &e) {
 			logPrintf(LogError, "[repl:%s] Error set meta '%s': %s", nsName, key, e.what());
 		}
@@ -431,7 +441,7 @@ void Replicator::OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &w
 
 	Error err;
 	try {
-		slaveNs = slave_->getNamespace(nsName);
+		slaveNs = slave_->getNamespace(nsName, RdxContext());
 	} catch (const Error &) {
 	}
 
@@ -443,7 +453,7 @@ void Replicator::OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &w
 		err = e;
 	}
 	if (err.ok() && slaveNs) {
-		slaveNs->SetSlaveLSN(lsn);
+		slaveNs->SetSlaveLSN(lsn, RdxContext());
 	} else if (!err.ok()) {
 		logPrintf(LogError, "[repl:%s] Error apply WAL update: %s", nsName, err.what());
 	}

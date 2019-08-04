@@ -51,7 +51,8 @@ void encodeFilter(const QueryEntry& qentry, JsonBuilder& builder) {
 	builder.Put("cond", get(cond_map, qentry.condition));
 	builder.Put("field", qentry.index);
 
-	if (qentry.values.size() > 1 || ((qentry.values.size() == 1) && qentry.values[0].Type() == KeyValueTuple)) {
+	if (qentry.values.empty()) return;
+	if (qentry.values.size() > 1 || qentry.values[0].Type() == KeyValueTuple) {
 		auto arrNode = builder.Array("value");
 		for (const Variant& kv : qentry.values) {
 			arrNode.Put(nullptr, kv);

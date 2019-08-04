@@ -48,7 +48,7 @@ TEST_F(ReplicationLoadApi, DISABLED_BasicTestNoMasterRestart) {
 	destroyer.join();
 }
 
-TEST_F(ReplicationLoadApi, SinlgeSlaveTest) {
+TEST_F(ReplicationLoadApi, SingleSlaveTest) {
 	InitNs();
 	stop = false;
 	FillData(1000);

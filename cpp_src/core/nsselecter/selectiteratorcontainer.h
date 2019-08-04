@@ -6,6 +6,8 @@
 
 namespace reindexer {
 
+class RdxContext;
+
 template <>
 bool QueryTree<SelectIterator, 2>::Leaf::IsEqual(const Node &) const;
 
@@ -22,7 +24,7 @@ public:
 	void SetExpectMaxIterations(int expectedIterations);
 	void PrepareIteratorsForSelectLoop(const QueryEntries &, size_t queriesBegin, size_t queriesEnd,
 									   const std::multimap<unsigned, EqualPosition> &equalPositions, unsigned sortId, bool isFt,
-									   const Namespace &, SelectFunction::Ptr selectFnc, FtCtx::Ptr &ftCtx);
+									   const Namespace &, SelectFunction::Ptr selectFnc, FtCtx::Ptr &ftCtx, const RdxContext &);
 	template <bool reverse, bool hasComparators>
 	bool Process(PayloadValue &, bool *finish, IdType *rowId, IdType properRowId);
 

@@ -17,6 +17,8 @@ namespace reindexer {
 using std::string;
 using std::vector;
 
+class RdxContext;
+
 class Index {
 public:
 	struct SelectOpts {
@@ -36,7 +38,7 @@ public:
 	virtual void Delete(const Variant& key, IdType id) = 0;
 
 	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, SelectOpts opts,
-									   BaseFunctionCtx::Ptr ctx) = 0;
+									   BaseFunctionCtx::Ptr ctx, const RdxContext&) = 0;
 	virtual void Commit() = 0;
 	virtual void MakeSortOrders(UpdateSortedContext&) {}
 
@@ -68,6 +70,10 @@ public:
 
 	IndexPerfStat GetIndexPerfStat() {
 		return IndexPerfStat(name_, selectPerfCounter_.Get<PerfStat>(), commitPerfCounter_.Get<PerfStat>());
+	}
+	void ResetIndexPerfStat() {
+		selectPerfCounter_.Reset();
+		commitPerfCounter_.Reset();
 	}
 
 protected:

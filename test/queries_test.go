@@ -1,11 +1,13 @@
 package reindexer
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math/rand"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/restream/reindexer"
@@ -188,7 +190,7 @@ func FillTestItemsForNot() {
 	}); err != nil {
 		panic(err)
 	}
-	tx.MustCommit(nil)
+	tx.MustCommit()
 
 }
 
@@ -326,7 +328,7 @@ func FillTestItemsTx(start int, count int, pkgsCount int, tx *txTest) {
 func FillTestItems(ns string, start int, count int, pkgsCount int) {
 	tx := newTestTx(DB, ns)
 	FillTestItemsTx(start, count, pkgsCount, tx)
-	tx.MustCommit(nil)
+	tx.MustCommit()
 }
 
 type testItemsCreator func(int, int) interface{}
@@ -343,11 +345,10 @@ func FillTestItemsTxWithFunc(start, count, pkgsCount int, tx *txTest, fn testIte
 func FillTestItemsWithFunc(ns string, start int, count int, pkgsCount int, fn testItemsCreator) {
 	tx := newTestTx(DB, ns)
 	FillTestItemsTxWithFunc(start, count, pkgsCount, tx, fn)
-	tx.MustCommit(nil)
+	tx.MustCommit()
 }
 
 func TestQueries(t *testing.T) {
-
 	log.Printf("Seeding indexed test items")
 
 	FillTestItemsWithFunc("test_items", 0, 2500, 20, newTestItem)
@@ -424,12 +425,12 @@ func TestQueries(t *testing.T) {
 		tx.Delete(TestItem{ID: mkID(rand.Int() % 500)})
 		FillTestItemsTx(rand.Int()%500, 1, 10, tx)
 		if (i % 1000) == 0 {
-			tx.Commit(nil)
+			tx.Commit()
 			tx = newTestTx(DB, "test_items")
 		}
 	}
 
-	tx.Commit(nil)
+	tx.Commit()
 
 	FillTestItems("test_items", 3000, 1000, 0)
 	FillTestItems("test_items", 4000, 500, 20)
@@ -463,6 +464,7 @@ func CheckAggregateQueries() {
 
 	facetLimit := 100
 	facetOffset := 10
+	ctx, cancel := context.WithCancel(context.Background())
 	q := DB.Query("test_items")
 	q.AggregateAvg("year")
 	q.AggregateSum("YEAR")
@@ -471,7 +473,8 @@ func CheckAggregateQueries() {
 	q.AggregateMin("age")
 	q.AggregateMax("age")
 	q.AggregateFacet("company_name", "rate").Limit(facetLimit).Offset(facetOffset).Sort("count", false).Sort("company_name", true).Sort("rate", false)
-	it := q.Exec()
+	it := q.ExecCtx(ctx)
+	cancel()
 	if it.Error() != nil {
 		panic(it.Error())
 	}
@@ -594,12 +597,14 @@ func CheckAggregateQueries() {
 }
 
 func CheckTestItemsJsonQueries() {
+	ctx, cancel := context.WithCancel(context.Background())
 	json, _ := DB.Query("test_items").Select("ID", "Genre").Limit(3).ReqTotal("total_count").ExecToJson("test_items").FetchAll()
 	//	fmt.Println(string(json))
 	_ = json
 
-	json2, _ := DB.Query("test_items").Select("ID", "Genre").Limit(3).ReqTotal("total_count").GetJson()
+	json2, _ := DB.Query("test_items").Select("ID", "Genre").Limit(3).ReqTotal("total_count").GetJsonCtx(ctx)
 	//	fmt.Println(string(json2))
+	cancel()
 	_ = json2
 	// TODO
 
@@ -1126,14 +1131,40 @@ func CheckTestItemsDSLQueries() {
 	}
 }
 
-func TestDeleteQuery(t *testing.T) {
-	err := DB.Upsert("test_items_delete_query", newTestItem(1000, 5))
+func TestCanceledSelectQuery(t *testing.T) {
+	if !strings.HasPrefix(DB.dsn, "builtin://") {
+		return
+	}
 
+	FillTestItemsWithFunc("test_items", 0, 1000, 80, newTestItem)
+	FillTestItemsWithFunc("test_items", 1000, 1000, 0, newTestItem)
+
+	likePattern := makeLikePattern(randString())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := DB.WithContext(ctx).ExecSQL("SELECT count(*), * FROM test_items WHERE year >= '2016' OR (rate = '1.1' OR company_name LIKE '" + likePattern + "') and AGE_LIMIT <= 50").FetchAll()
+	if err != context.Canceled {
+		panic(fmt.Errorf("Canceled select request was executed"))
+	}
+
+	it := newTestQuery(DB, "test_items").Where("year", reindexer.GE, 2016).Or().OpenBracket().Where("RATE", reindexer.EQ, 1.1).Or().Where("company_name", reindexer.LIKE, likePattern).CloseBracket().Where("age_limit", reindexer.LE, int64(50)).ExecCtx(ctx)
+	defer it.Close()
+	if err != context.Canceled {
+		panic(fmt.Errorf("Canceled select request was executed"))
+	}
+}
+
+func TestDeleteQuery(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	err := DB.UpsertCtx(ctx, "test_items_delete_query", newTestItem(1000, 5))
+	cancel()
 	if err != nil {
 		panic(err)
 	}
 
-	count, err := DB.Query("test_items_delete_query").Where("id", reindexer.EQ, mkID(1000)).Delete()
+	ctx, cancel = context.WithCancel(context.Background())
+	count, err := DB.Query("test_items_delete_query").Where("id", reindexer.EQ, mkID(1000)).DeleteCtx(ctx)
+	cancel()
 	if err != nil {
 		panic(err)
 	}
@@ -1142,12 +1173,37 @@ func TestDeleteQuery(t *testing.T) {
 		panic(fmt.Errorf("Expected delete query return 1 item"))
 	}
 
+	ctx, cancel = context.WithCancel(context.Background())
 	_, ok := DB.Query("test_items_delete_query").Where("id", reindexer.EQ, mkID(1000)).Get()
+	cancel()
 	if ok {
 		panic(fmt.Errorf("Item was found after delete query, but will be deleted"))
 	}
 
 }
+func TestCanceledDeleteQuery(t *testing.T) {
+	if !strings.HasPrefix(DB.dsn, "builtin://") {
+		return
+	}
+
+	err := DB.Upsert("test_items_delete_query", newTestItem(1000, 5))
+	if err != nil {
+		panic(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = DB.Query("test_items_delete_query").Where("id", reindexer.EQ, mkID(1000)).DeleteCtx(ctx)
+	if err != context.Canceled {
+		panic(fmt.Errorf("Canceled delete request was executed"))
+	}
+
+	_, ok := DB.Query("test_items_delete_query").Where("id", reindexer.EQ, mkID(1000)).Get()
+	if !ok {
+		panic(fmt.Errorf("Item was deleted after canceled delete query"))
+	}
+}
+
 func TestUpdateQuery(t *testing.T) {
 	err := DB.Upsert("test_items_update_query", newTestItem(1000, 5))
 
@@ -1155,10 +1211,12 @@ func TestUpdateQuery(t *testing.T) {
 		panic(err)
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	it := DB.Query("test_items_update_query").Where("id", reindexer.EQ, mkID(1000)).
 		Set("name", "hello").
 		Set("empty_int", 1).
-		Set("postal_code", 10).Update()
+		Set("postal_code", 10).UpdateCtx(ctx)
+	cancel()
 	defer it.Close()
 	if it.Error() != nil {
 		panic(it.Error())
@@ -1168,7 +1226,9 @@ func TestUpdateQuery(t *testing.T) {
 		panic(fmt.Errorf("Expected update query return 1 item"))
 	}
 
-	f, ok := DB.Query("test_items_update_query").Where("id", reindexer.EQ, mkID(1000)).Get()
+	ctx, cancel = context.WithCancel(context.Background())
+	f, ok := DB.Query("test_items_update_query").Where("id", reindexer.EQ, mkID(1000)).GetCtx(ctx)
+	cancel()
 	if !ok {
 		panic(fmt.Errorf("Item was not found after update query"))
 	}
@@ -1183,6 +1243,48 @@ func TestUpdateQuery(t *testing.T) {
 	}
 
 }
+func TestCanceledUpdateQuery(t *testing.T) {
+	if !strings.HasPrefix(DB.dsn, "builtin://") {
+		return
+	}
+
+	item := newTestItem(1000, 5)
+	err := DB.Upsert("test_items_update_query", item)
+
+	if err != nil {
+		panic(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = DB.UpsertCtx(ctx, "test_items_update_query", item)
+	if err != context.Canceled {
+		panic(fmt.Errorf("Canceled upsert request was executed"))
+	}
+
+	it := DB.Query("test_items_update_query").Where("id", reindexer.EQ, mkID(1000)).
+		Set("name", "hello").
+		Set("empty_int", 1).
+		Set("postal_code", 10).UpdateCtx(ctx)
+	defer it.Close()
+	if it.Error() != context.Canceled {
+		panic(fmt.Errorf("Canceled update request was executed"))
+	}
+
+	f, ok := DB.Query("test_items_update_query").Where("id", reindexer.EQ, mkID(1000)).Get()
+	if !ok {
+		panic(fmt.Errorf("Item was not found after update query"))
+	}
+	if f.(*TestItem).EmptyInt != item.(*TestItem).EmptyInt {
+		panic(fmt.Errorf("Item have wrong value %d, should %d", f.(*TestItem).EmptyInt, item.(*TestItem).EmptyInt))
+	}
+	if f.(*TestItem).PostalCode != item.(*TestItem).PostalCode {
+		panic(fmt.Errorf("Item have wrong value %d, should %d", f.(*TestItem).PostalCode, item.(*TestItem).PostalCode))
+	}
+	if f.(*TestItem).Name != item.(*TestItem).Name {
+		panic(fmt.Errorf("Item have wrong value %s, should %s", f.(*TestItem).Name, item.(*TestItem).Name))
+	}
+}
 
 func TestDeleteByPK(t *testing.T) {
 	nsOpts := reindexer.DefaultNamespaceOptions()
@@ -1192,7 +1294,7 @@ func TestDeleteByPK(t *testing.T) {
 		assertErrorMessage(t, DB.Upsert("test_items_object_array", newTestItemObjectArray(i, rand.Int()%10)), nil)
 	}
 
-	assertErrorMessage(t, DB.MustBeginTx("test_items_object_array").Commit(nil), nil)
+	assertErrorMessage(t, DB.MustBeginTx("test_items_object_array").Commit(), nil)
 	assertErrorMessage(t, DB.CloseNamespace("test_items_object_array"), nil)
 	assertErrorMessage(t, DB.OpenNamespace("test_items_object_array", nsOpts, TestItemObjectArray{}), nil)
 
@@ -1211,7 +1313,7 @@ func TestDeleteByPK(t *testing.T) {
 		assertErrorMessage(t, DB.Upsert("test_item_delete", newTestItem(i, rand.Int()%20)), nil)
 	}
 
-	assertErrorMessage(t, DB.MustBeginTx("test_item_delete").Commit(nil), nil)
+	assertErrorMessage(t, DB.MustBeginTx("test_item_delete").Commit(), nil)
 	assertErrorMessage(t, DB.CloseNamespace("test_item_delete"), nil)
 	assertErrorMessage(t, DB.OpenNamespace("test_item_delete", nsOpts, TestItem{}), nil)
 
@@ -1230,7 +1332,7 @@ func TestDeleteByPK(t *testing.T) {
 		assertErrorMessage(t, DB.Upsert("test_item_nested_pk", newTestItemNestedPK(i, rand.Int()%20)), nil)
 	}
 
-	assertErrorMessage(t, DB.MustBeginTx("test_item_nested_pk").Commit(nil), nil)
+	assertErrorMessage(t, DB.MustBeginTx("test_item_nested_pk").Commit(), nil)
 	assertErrorMessage(t, DB.CloseNamespace("test_item_nested_pk"), nil)
 	assertErrorMessage(t, DB.OpenNamespace("test_item_nested_pk", nsOpts, TestItemNestedPK{}), nil)
 

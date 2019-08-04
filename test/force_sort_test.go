@@ -133,7 +133,7 @@ func FillTestItemsForceSortOrder() {
 			panic(err)
 		}
 	}
-	cnt := tx.MustCommit(nil)
+	cnt := tx.MustCommit()
 	if cnt != len(forceSortOrderData) {
 		panic(fmt.Errorf("Could not commit forceSortOrderData"))
 	}

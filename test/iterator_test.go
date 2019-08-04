@@ -1,6 +1,7 @@
 package reindexer
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -75,7 +76,9 @@ func TestRaceConditions(t *testing.T) {
 				wg.Done()
 				return
 			case <-time.After(time.Millisecond * 1):
-				DB.Upsert("test_items_iter", newTestItem(1000+rand.Intn(100), 5))
+				ctx, cancel := context.WithCancel(context.Background())
+				DB.UpsertCtx(ctx, "test_items_iter", newTestItem(1000+rand.Intn(100), 5))
+				cancel()
 			}
 		}
 	}
@@ -92,6 +95,7 @@ func TestRaceConditions(t *testing.T) {
 				wg.Done()
 				return
 			default:
+				ctx, cancel := context.WithCancel(context.Background())
 				q := DB.Query("test_items_iter").Limit(2)
 
 				if rand.Int()%100 > 50 {
@@ -112,12 +116,13 @@ func TestRaceConditions(t *testing.T) {
 					q.LeftJoin(qj3, "pricesx").On("location", reindexer.LT, "location").Or().On("price_id", reindexer.SET, "id")
 				}
 
-				it := q.Exec()
+				it := q.ExecCtx(ctx)
 				_ = it.TotalCount()
 				for it.Next() {
 					_ = it.Object().(*TestItem)
 				}
 				it.Close()
+				cancel()
 				_ = q
 			}
 		}
@@ -139,7 +144,7 @@ func TestRaceConditions(t *testing.T) {
 				DB.OpenNamespace("test_items_iter", reindexer.DefaultNamespaceOptions(), TestItem{})
 				tx, _ := DB.BeginTx("test_join_items")
 				tx.Upsert(TestJoinItem{ID: 7000})
-				tx.Commit(nil)
+				tx.Commit()
 			}
 		}
 	}

@@ -1,5 +1,6 @@
 #include "httpserver.h"
 #include <sys/stat.h>
+#include <iomanip>
 #include <sstream>
 #include "base64/base64.h"
 #include "core/cjson/jsonbuilder.h"
@@ -41,7 +42,7 @@ HTTPServer::~HTTPServer() {}
 enum { ModeUpdate, ModeInsert, ModeUpsert, ModeDelete };
 
 int HTTPServer::GetSQLQuery(http::Context &ctx) {
-	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
+	auto db = getDB(ctx, kRoleDataRead);
 	reindexer::QueryResults res;
 	string sqlQuery = urldecode2(ctx.request->params.Get("q"));
 
@@ -55,7 +56,7 @@ int HTTPServer::GetSQLQuery(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Missed `q` parameter"));
 	}
 
-	auto ret = db->Select(sqlQuery, res);
+	auto ret = db.Select(sqlQuery, res);
 	if (!ret.ok()) {
 		http::HttpStatus httpStatus(http::StatusInternalServerError, ret.what());
 
@@ -83,8 +84,8 @@ int HTTPServer::GetSQLSuggest(http::Context &ctx) {
 	logPrintf(LogTrace, "GetSQLSuggest() incoming data: %s, %d", sqlQuery, pos);
 
 	vector<string> suggestions;
-	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
-	db->GetSqlSuggestions(sqlQuery, pos, suggestions);
+	auto db = getDB(ctx, kRoleDataRead);
+	db.GetSqlSuggestions(sqlQuery, pos, suggestions);
 
 	WrSerializer ser(ctx.writer->GetChunk());
 	reindexer::JsonBuilder builder(ser);
@@ -97,7 +98,7 @@ int HTTPServer::GetSQLSuggest(http::Context &ctx) {
 }
 
 int HTTPServer::PostSQLQuery(http::Context &ctx) {
-	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
+	auto db = getDB(ctx, kRoleDataRead);
 	reindexer::QueryResults res;
 
 	string sqlQuery = ctx.body->Read();
@@ -105,7 +106,7 @@ int HTTPServer::PostSQLQuery(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Query is empty"));
 	}
 
-	auto ret = db->Select(sqlQuery, res);
+	auto ret = db.Select(sqlQuery, res);
 	if (!ret.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, ret.what()));
 	}
@@ -113,7 +114,7 @@ int HTTPServer::PostSQLQuery(http::Context &ctx) {
 }
 
 int HTTPServer::PostQuery(http::Context &ctx) {
-	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
+	auto db = getDB(ctx, kRoleDataRead);
 	reindexer::QueryResults res;
 	string dsl = ctx.body->Read();
 
@@ -123,7 +124,7 @@ int HTTPServer::PostQuery(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
 
-	status = db->Select(q, res);
+	status = db.Select(q, res);
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
@@ -131,7 +132,7 @@ int HTTPServer::PostQuery(http::Context &ctx) {
 }
 
 int HTTPServer::DeleteQuery(http::Context &ctx) {
-	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataWrite);
+	auto db = getDB(ctx, kRoleDataWrite);
 	reindexer::QueryResults res;
 	string dsl = ctx.body->Read();
 
@@ -141,7 +142,7 @@ int HTTPServer::DeleteQuery(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
 
-	status = db->Delete(q, res);
+	status = db.Delete(q, res);
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
@@ -154,7 +155,7 @@ int HTTPServer::DeleteQuery(http::Context &ctx) {
 }
 
 int HTTPServer::UpdateQuery(http::Context &ctx) {
-	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataWrite);
+	auto db = getDB(ctx, kRoleDataWrite);
 	reindexer::QueryResults res;
 	string dsl = ctx.body->Read();
 
@@ -164,7 +165,7 @@ int HTTPServer::UpdateQuery(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
 
-	status = db->Update(q, res);
+	status = db.Update(q, res);
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
@@ -261,12 +262,12 @@ int HTTPServer::DeleteDatabase(http::Context &ctx) {
 }
 
 int HTTPServer::GetNamespaces(http::Context &ctx) {
-	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
+	auto db = getDB(ctx, kRoleDataRead);
 
 	string_view sortOrder = ctx.request->params.Get("sort_order");
 
 	vector<reindexer::NamespaceDef> nsDefs;
-	db->EnumNamespaces(nsDefs, false);
+	db.EnumNamespaces(nsDefs, false);
 
 	int sortDirection = 0;
 	if (sortOrder == "asc") {
@@ -301,7 +302,7 @@ int HTTPServer::GetNamespaces(http::Context &ctx) {
 }
 
 int HTTPServer::GetNamespace(http::Context &ctx) {
-	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
+	auto db = getDB(ctx, kRoleDataRead);
 
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 
@@ -310,7 +311,7 @@ int HTTPServer::GetNamespace(http::Context &ctx) {
 	}
 
 	vector<reindexer::NamespaceDef> nsDefs;
-	db->EnumNamespaces(nsDefs, false);
+	db.EnumNamespaces(nsDefs, false);
 	auto nsDefIt = std::find_if(nsDefs.begin(), nsDefs.end(), [&](const NamespaceDef &nsDef) { return nsDef.name == nsName; });
 
 	if (nsDefIt == nsDefs.end()) {
@@ -323,7 +324,7 @@ int HTTPServer::GetNamespace(http::Context &ctx) {
 }
 
 int HTTPServer::PostNamespace(http::Context &ctx) {
-	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
+	auto db = getDB(ctx, kRoleDBAdmin);
 	reindexer::NamespaceDef nsdef("");
 
 	std::string body = ctx.body->Read();
@@ -332,7 +333,7 @@ int HTTPServer::PostNamespace(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
 
-	status = db->AddNamespace(nsdef);
+	status = db.AddNamespace(nsdef);
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
@@ -341,14 +342,14 @@ int HTTPServer::PostNamespace(http::Context &ctx) {
 }
 
 int HTTPServer::DeleteNamespace(http::Context &ctx) {
-	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
+	auto db = getDB(ctx, kRoleDBAdmin);
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 
 	if (nsName.empty()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
 
-	auto status = db->DropNamespace(nsName);
+	auto status = db.DropNamespace(nsName);
 	if (!status.ok()) {
 		http::HttpStatus httpStatus(status);
 
@@ -359,7 +360,7 @@ int HTTPServer::DeleteNamespace(http::Context &ctx) {
 }
 
 int HTTPServer::GetItems(http::Context &ctx) {
-	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
+	auto db = getDB(ctx, kRoleDataRead);
 
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 
@@ -404,7 +405,7 @@ int HTTPServer::GetItems(http::Context &ctx) {
 	q.ReqTotal();
 
 	reindexer::QueryResults res;
-	auto ret = db->Select(q, res);
+	auto ret = db.Select(q, res);
 	if (!ret.ok()) {
 		http::HttpStatus httpStatus(http::StatusInternalServerError, ret.what());
 
@@ -420,7 +421,7 @@ int HTTPServer::PutItems(http::Context &ctx) { return modifyItem(ctx, ModeUpdate
 int HTTPServer::PostItems(http::Context &ctx) { return modifyItem(ctx, ModeInsert); }
 
 int HTTPServer::GetMetaList(http::Context &ctx) {
-	const shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
+	auto db = getDB(ctx, kRoleDataRead);
 	const string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (!nsName.length()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
@@ -452,7 +453,7 @@ int HTTPServer::GetMetaList(http::Context &ctx) {
 	unsigned offset = prepareOffset(offsetParam, 0);
 
 	std::vector<std::string> keys;
-	const Error err = db->EnumMeta(nsName, keys);
+	const Error err = db.EnumMeta(nsName, keys);
 	if (!err.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(err));
 	}
@@ -482,7 +483,7 @@ int HTTPServer::GetMetaList(http::Context &ctx) {
 		objNode.Put("key", *keysIt);
 		if (withValues) {
 			std::string value;
-			const Error err = db->GetMeta(nsName, *keysIt, value);
+			const Error err = db.GetMeta(nsName, *keysIt, value);
 			if (!err.ok()) return jsonStatus(ctx, http::HttpStatus(err));
 			objNode.Put("value", escapeString(value));
 		}
@@ -495,22 +496,27 @@ int HTTPServer::GetMetaList(http::Context &ctx) {
 }
 
 int HTTPServer::GetMetaByKey(http::Context &ctx) {
-	const shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
+	auto db = getDB(ctx, kRoleDataRead);
 	const string nsName = urldecode2(ctx.request->urlParams[1]);
 	const string key = urldecode2(ctx.request->urlParams[2]);
 	if (!nsName.length()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
 	std::string value;
-	const Error err = db->GetMeta(nsName, key, value);
+	const Error err = db.GetMeta(nsName, key, value);
 	if (!err.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(err));
 	}
-	return ctx.String(http::StatusOK, escapeString(value));
+	WrSerializer ser(ctx.writer->GetChunk());
+	JsonBuilder builder(ser);
+	builder.Put("key", escapeString(key));
+	builder.Put("value", escapeString(value));
+	builder.End();
+	return ctx.JSON(http::StatusOK, ser.DetachChunk());
 }
 
 int HTTPServer::PutMetaByKey(http::Context &ctx) {
-	const shared_ptr<Reindexer> db = getDB(ctx, kRoleDataWrite);
+	auto db = getDB(ctx, kRoleDataWrite);
 	const string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (!nsName.length()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
@@ -521,7 +527,7 @@ int HTTPServer::PutMetaByKey(http::Context &ctx) {
 		auto root = parser.Parse(giftStr(body));
 		std::string key = root["key"].As<string>();
 		std::string value = root["value"].As<string>();
-		const Error err = db->PutMeta(nsName, key, unescapeString(value));
+		const Error err = db.PutMeta(nsName, key, unescapeString(value));
 		if (!err.ok()) {
 			return jsonStatus(ctx, http::HttpStatus(err));
 		}
@@ -532,7 +538,7 @@ int HTTPServer::PutMetaByKey(http::Context &ctx) {
 }
 
 int HTTPServer::GetIndexes(http::Context &ctx) {
-	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataRead);
+	auto db = getDB(ctx, kRoleDataRead);
 
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 
@@ -541,7 +547,7 @@ int HTTPServer::GetIndexes(http::Context &ctx) {
 	}
 
 	vector<reindexer::NamespaceDef> nsDefs;
-	db->EnumNamespaces(nsDefs, false);
+	db.EnumNamespaces(nsDefs, false);
 	auto nsDefIt = std::find_if(nsDefs.begin(), nsDefs.end(), [&](const NamespaceDef &nsDef) { return nsDef.name == nsName; });
 
 	if (nsDefIt == nsDefs.end()) {
@@ -562,7 +568,7 @@ int HTTPServer::GetIndexes(http::Context &ctx) {
 }
 
 int HTTPServer::PostIndex(http::Context &ctx) {
-	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
+	auto db = getDB(ctx, kRoleDBAdmin);
 
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (!nsName.length()) {
@@ -573,7 +579,7 @@ int HTTPServer::PostIndex(http::Context &ctx) {
 	string newIdxName = getNameFromJson(json);
 
 	vector<reindexer::NamespaceDef> nsDefs;
-	db->EnumNamespaces(nsDefs, false);
+	db.EnumNamespaces(nsDefs, false);
 	auto nsDefIt = std::find_if(nsDefs.begin(), nsDefs.end(), [&](const NamespaceDef &nsDef) { return nsDef.name == nsName; });
 
 	reindexer::IndexDef idxDef;
@@ -588,7 +594,7 @@ int HTTPServer::PostIndex(http::Context &ctx) {
 		}
 	}
 
-	auto status = db->AddIndex(nsName, idxDef);
+	auto status = db.AddIndex(nsName, idxDef);
 	if (!status.ok()) {
 		http::HttpStatus httpStatus(status);
 
@@ -599,7 +605,7 @@ int HTTPServer::PostIndex(http::Context &ctx) {
 }
 
 int HTTPServer::PutIndex(http::Context &ctx) {
-	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
+	auto db = getDB(ctx, kRoleDBAdmin);
 
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (!nsName.length()) {
@@ -610,7 +616,7 @@ int HTTPServer::PutIndex(http::Context &ctx) {
 	std::string body = ctx.body->Read();
 	idxDef.FromJSON(giftStr(body));
 
-	auto status = db->UpdateIndex(nsName, idxDef);
+	auto status = db.UpdateIndex(nsName, idxDef);
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
@@ -619,7 +625,7 @@ int HTTPServer::PutIndex(http::Context &ctx) {
 }
 
 int HTTPServer::DeleteIndex(http::Context &ctx) {
-	shared_ptr<Reindexer> db = getDB(ctx, kRoleDBAdmin);
+	auto db = getDB(ctx, kRoleDBAdmin);
 
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 	IndexDef idef(urldecode2(ctx.request->urlParams[2]));
@@ -632,7 +638,7 @@ int HTTPServer::DeleteIndex(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Index is not specified"));
 	}
 
-	auto status = db->DropIndex(nsName, idef);
+	auto status = db.DropIndex(nsName, idef);
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
@@ -791,7 +797,7 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 }
 
 int HTTPServer::modifyItem(http::Context &ctx, int mode) {
-	shared_ptr<Reindexer> db = getDB(ctx, kRoleDataWrite);
+	auto db = getDB(ctx, kRoleDataWrite);
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 	vector<string> precepts;
 	for (auto &p : ctx.request->params) {
@@ -808,7 +814,7 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 	int cnt = 0;
 	vector<string> updatedItems;
 	while (jsonPtr && *jsonPtr) {
-		Item item = db->NewItem(nsName);
+		Item item = db.NewItem(nsName);
 		if (!item.Status().ok()) {
 			http::HttpStatus httpStatus(item.Status());
 
@@ -829,16 +835,16 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 
 		switch (mode) {
 			case ModeUpsert:
-				status = db->Upsert(nsName, item);
+				status = db.Upsert(nsName, item);
 				break;
 			case ModeDelete:
-				status = db->Delete(nsName, item);
+				status = db.Delete(nsName, item);
 				break;
 			case ModeInsert:
-				status = db->Insert(nsName, item);
+				status = db.Insert(nsName, item);
 				break;
 			case ModeUpdate:
-				status = db->Update(nsName, item);
+				status = db.Update(nsName, item);
 				break;
 		}
 
@@ -852,7 +858,7 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 			if (!precepts.empty()) updatedItems.push_back(string(item.GetJSON()));
 		}
 	}
-	db->Commit(nsName);
+	db.Commit(nsName);
 
 	WrSerializer ser(ctx.writer->GetChunk());
 	JsonBuilder builder(ser);
@@ -893,7 +899,7 @@ int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, b
 			} else {
 				reindexer::WALRecord rec(res[i].GetRaw());
 				rec.GetJSON(obj, [this, &res, &ctx](string_view cjson) {
-					auto item = getDB(ctx, kRoleDataRead)->NewItem(res.GetNamespaces()[0]);
+					auto item = getDB(ctx, kRoleDataRead).NewItem(res.GetNamespaces()[0]);
 					item.FromCJSON(cjson);
 					return string(item.GetJSON());
 				});
@@ -965,9 +971,9 @@ unsigned HTTPServer::prepareOffset(const string_view &offsetParam, int offsetDef
 	return static_cast<unsigned>(offset);
 }
 
-shared_ptr<Reindexer> HTTPServer::getDB(http::Context &ctx, UserRole role) {
+Reindexer HTTPServer::getDB(http::Context &ctx, UserRole role) {
 	(void)ctx;
-	shared_ptr<Reindexer> db;
+	Reindexer *db = nullptr;
 
 	string dbName(urldecode2(ctx.request->urlParams[0]));
 
@@ -990,7 +996,7 @@ shared_ptr<Reindexer> HTTPServer::getDB(http::Context &ctx, UserRole role) {
 		throw http::HttpStatus(status);
 	}
 	assert(db);
-	return db;
+	return db->NeedTraceActivity() ? db->WithActivityTracer(ctx.request->clientAddr, ctx.request->headers.Get("User-Agent")) : *db;
 }
 
 string HTTPServer::getNameFromJson(string_view json) {

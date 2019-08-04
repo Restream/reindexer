@@ -104,6 +104,7 @@ public:
 };
 
 struct Request {
+	string_view clientAddr;
 	string_view uri;
 	string_view path;
 	string_view method;

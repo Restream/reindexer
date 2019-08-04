@@ -20,8 +20,8 @@ public:
 
 	Variant Upsert(const Variant &key, IdType id) override;
 	void Delete(const Variant &key, IdType id) override;
-	SelectKeyResults SelectKey(const VariantArray &keys, CondType cond, SortType stype, Index::SelectOpts opts,
-							   BaseFunctionCtx::Ptr ctx) override;
+	SelectKeyResults SelectKey(const VariantArray &keys, CondType cond, SortType stype, Index::SelectOpts opts, BaseFunctionCtx::Ptr ctx,
+							   const RdxContext &) override;
 	void Commit() override;
 	void UpdateSortedIds(const UpdateSortedContext &) override;
 	Index *Clone() override;

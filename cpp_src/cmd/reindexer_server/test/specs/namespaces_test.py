@@ -157,11 +157,11 @@ class NamespacesTest(BaseTest):
 
         status, body = self.api_get_namespace_meta(self.current_db, self.test_ns, 'key1')
         self.assertEqual(True, status == self.API_STATUS['success'], body)
-        self.assertEqual(True, body == self.helper_meta_response_construct('value1'), body)
+        self.assertEqual(True, body == self.helper_meta_construct('key1', 'value1'), body)
 
         status, body = self.api_get_namespace_meta(self.current_db, self.test_ns, 'key2')
         self.assertEqual(True, status == self.API_STATUS['success'], body)
-        self.assertEqual(True, body == self.helper_meta_response_construct('value2'), body)
+        self.assertEqual(True, body == self.helper_meta_construct('key2', 'value2'), body)
 
     def test_get_namespaces_meta_info_list(self):
         """Should be able to get namespace meta info list"""

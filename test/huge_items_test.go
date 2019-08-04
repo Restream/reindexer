@@ -27,7 +27,7 @@ func FillTestItemHuge(start int, count int) {
 			panic(err)
 		}
 	}
-	tx.MustCommit(nil)
+	tx.MustCommit()
 }
 
 func TestItemsHuge(t *testing.T) {

@@ -1,5 +1,8 @@
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
+#include "core/itemimpl.h"
+#include "core/query/joinresults.h"
 #include "join_selects_api.h"
 
 TEST_F(JoinSelectsApi, InnerJoinTest) {
@@ -82,10 +85,12 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 			Item item(rowIt.GetItem());
 			Variant authorIdKeyRef1 = item[authorid];
 			const reindexer::ItemRef& rowid = rowIt.GetItemRef();
-			const reindexer::QRVector& queryResults = rowIt.GetJoined();
-			for (const QueryResults& queryRes : queryResults) {
-				Item item2(queryRes.begin().GetItem());
-				Variant authorIdKeyRef2 = item2[authorid_fk];
+
+			auto itemIt = rowIt.GetJoinedItemsIterator();
+			if (itemIt.getJoinedItemsCount() == 0) continue;
+			for (auto joinedFieldIt = itemIt.begin(); joinedFieldIt != itemIt.end(); ++joinedFieldIt) {
+				reindexer::ItemImpl item2(joinedFieldIt.GetItem(0, joinQueryRes.getPayloadType(1), joinQueryRes.getTagsMatcher(1)));
+				Variant authorIdKeyRef2 = item2.GetField(joinQueryRes.getPayloadType(1).FieldByName(authorid_fk));
 				EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
 			}
 
@@ -94,19 +99,20 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 			i++;
 		}
 
-		for (const std::pair<const IdType, reindexer::QRVector>& itempair : joinQueryRes.joined_[0]) {
-			if (itempair.second.empty()) continue;
-			const QueryResults& joinedQueryRes(itempair.second[0]);
-			for (auto it : joinedQueryRes) {
-				Item item(it.GetItem());
+		for (auto rowIt : joinQueryRes) {
+			IdType rowid = rowIt.GetItemRef().id;
+			auto itemIt = rowIt.GetJoinedItemsIterator();
+			if (itemIt.getJoinedItemsCount() == 0) continue;
+			auto joinedFieldIt = itemIt.begin();
+			for (int i = 0; i < joinedFieldIt.ItemsCount(); ++i) {
+				reindexer::ItemImpl item(joinedFieldIt.GetItem(i, joinQueryRes.getPayloadType(1), joinQueryRes.getTagsMatcher(1)));
 
-				Variant authorIdKeyRef1 = item[authorid_fk];
+				Variant authorIdKeyRef1 = item.GetField(joinQueryRes.getPayloadType(1).FieldByName(authorid_fk));
 				int authorId = static_cast<int>(authorIdKeyRef1);
 
 				auto itAutorid(presentedAuthorIds.find(authorId));
 				EXPECT_TRUE(itAutorid != presentedAuthorIds.end());
 
-				int rowid(itempair.first);
 				auto itRowidIndex(rowidsIndexes.find(rowid));
 				EXPECT_TRUE(itRowidIndex != rowidsIndexes.end());
 
@@ -140,23 +146,21 @@ TEST_F(JoinSelectsApi, OrInnerJoinTest) {
 	if (err.ok()) {
 		for (auto rowIt : queryRes) {
 			Item item(rowIt.GetItem());
-			const reindexer::QRVector& joinedResult = rowIt.GetJoined();
+			reindexer::joins::ItemIterator itemIt = rowIt.GetJoinedItemsIterator();
 
-			const QueryResults& authorNsJoinResults = joinedResult[authorsNsJoinIndex];
-			const QueryResults& genresNsJoinResults = joinedResult[genresNsJoinIndex];
-
+			reindexer::joins::JoinedFieldIterator authorIdIt = itemIt.at(authorsNsJoinIndex);
 			Variant authorIdKeyRef1 = item[authorid_fk];
-			for (auto jit : authorNsJoinResults) {
-				Item authorsItem(jit.GetItem());
-				Variant authorIdKeyRef2 = authorsItem[authorid];
+			for (int i = 0; i < authorIdIt.ItemsCount(); ++i) {
+				reindexer::ItemImpl authorsItem(authorIdIt.GetItem(i, queryRes.getPayloadType(1), queryRes.getTagsMatcher(1)));
+				Variant authorIdKeyRef2 = authorsItem.GetField(queryRes.getPayloadType(1).FieldByName(authorid));
 				EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
 			}
 
+			reindexer::joins::JoinedFieldIterator genreIdIt = itemIt.at(genresNsJoinIndex);
 			Variant genresIdKeyRef1 = item[genreId_fk];
-			for (auto jit : genresNsJoinResults) {
-				VariantArray genreIdKeyRef;
-				Item genresItem(jit.GetItem());
-				Variant genresIdKeyRef2 = genresItem[genreid];
+			for (int i = 0; i < genreIdIt.ItemsCount(); ++i) {
+				reindexer::ItemImpl genresItem = genreIdIt.GetItem(i, queryRes.getPayloadType(2), queryRes.getTagsMatcher(2));
+				Variant genresIdKeyRef2 = genresItem.GetField(queryRes.getPayloadType(2).FieldByName(genreid));
 				EXPECT_TRUE(genresIdKeyRef1 == genresIdKeyRef2);
 			}
 		}
@@ -165,26 +169,40 @@ TEST_F(JoinSelectsApi, OrInnerJoinTest) {
 
 TEST_F(JoinSelectsApi, JoinTestSorting) {
 	Query booksQuery = Query(books_namespace, 11, 1111).Sort(price, true);
-	Query joinQuery = Query(authors_namespace).LeftJoin(authorid, authorid_fk, CondEq, booksQuery);
+	Query joinQuery = Query(authors_namespace)
+						  .Where(authorid, CondLe, 100)
+						  .LeftJoin(authorid, authorid_fk, CondEq, booksQuery)
+						  .Sort(age, false)
+						  .Limit(10);
 
 	reindexer::QueryResults joinQueryRes;
 	Error err = rt.reindexer->Select(joinQuery, joinQueryRes);
 	EXPECT_TRUE(err.ok()) << err.what();
 
+	Variant prevField;
 	for (auto rowIt : joinQueryRes) {
-		Item item(rowIt.GetItem());
-		const reindexer::QRVector& joinQueryRes = rowIt.GetJoined();
-		const QueryResults& joinResult(joinQueryRes[0]);
+		Item item = rowIt.GetItem();
+		if (prevField.Type() != KeyValueNull) {
+			EXPECT_TRUE(prevField.Compare(item[age]) <= 0);
+		}
+
+		Variant key = item[authorid];
+		auto itemIt = rowIt.GetJoinedItemsIterator();
+		if (itemIt.getJoinedItemsCount() == 0) continue;
+		auto joinedFieldIt = itemIt.begin();
 
 		Variant prevJoinedValue;
-		for (auto itj : joinResult) {
-			Item joinItem(itj.GetItem());
-			Variant recentJoinedValue = joinItem[price];
+		for (int i = 0; i < joinedFieldIt.ItemsCount(); ++i) {
+			reindexer::ItemImpl joinItem(joinedFieldIt.GetItem(i, joinQueryRes.getPayloadType(1), joinQueryRes.getTagsMatcher(1)));
+			Variant fkey = joinItem.GetField(joinQueryRes.getPayloadType(1).FieldByName(authorid_fk));
+			EXPECT_TRUE(key.Compare(fkey) == 0) << key.As<string>() << " " << fkey.As<string>();
+			Variant recentJoinedValue = joinItem.GetField(joinQueryRes.getPayloadType(1).FieldByName(price));
 			if (prevJoinedValue.Type() != KeyValueNull) {
 				EXPECT_TRUE(prevJoinedValue.Compare(recentJoinedValue) >= 0);
 			}
 			prevJoinedValue = recentJoinedValue;
 		}
+		prevField = item[age];
 	}
 }
 
@@ -243,4 +261,35 @@ TEST_F(JoinSelectsApi, JoinByNonIndexedField) {
 
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr2.Count() == 1) << err.what();
+}
+
+TEST_F(JoinSelectsApi, JoinsEasyStressTest) {
+	auto selectTh = [this]() {
+		Query queryGenres(genres_namespace);
+		Query queryAuthors(authors_namespace);
+		Query queryBooks = Query(books_namespace, 0, 10).Where(price, CondGe, 600).Sort(bookid, false);
+		Query joinQuery1 = Query(queryBooks).InnerJoin(authorid_fk, authorid, CondEq, queryAuthors).Sort(pages, false);
+		Query joinQuery2 = Query(joinQuery1).LeftJoin(authorid_fk, authorid, CondEq, queryAuthors);
+		Query orInnerJoinQuery = Query(joinQuery2).OrInnerJoin(genreId_fk, genreid, CondEq, queryGenres).Sort(price, true).Limit(20);
+		for (size_t i = 0; i < 10; ++i) {
+			reindexer::QueryResults queryRes;
+			Error err = rt.reindexer->Select(orInnerJoinQuery, queryRes);
+			EXPECT_TRUE(err.ok()) << err.what();
+			EXPECT_TRUE(queryRes.Count() > 0);
+		}
+	};
+
+	auto removeTh = [this]() {
+		QueryResults qres;
+		Error err = rt.reindexer->Delete(Query(books_namespace, 0, 10).Where(price, CondGe, 5000), qres);
+		EXPECT_TRUE(err.ok()) << err.what();
+	};
+
+	std::vector<std::thread> threads;
+	for (size_t i = 0; i < 100; ++i) {
+		threads.push_back(std::thread(selectTh));
+		if (i % 10 == 0) threads.push_back(std::thread(removeTh));
+		if (i % 20 == 0) threads.push_back(std::thread([this]() { FillBooksNamespace(1000); }));
+	}
+	for (size_t i = 0; i < threads.size(); ++i) threads[i].join();
 }

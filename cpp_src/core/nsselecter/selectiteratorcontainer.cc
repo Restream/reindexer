@@ -1,6 +1,7 @@
 #include "selectiteratorcontainer.h"
 #include "core/index/index.h"
 #include "core/namespace.h"
+#include "core/rdxcontext.h"
 
 namespace reindexer {
 
@@ -116,13 +117,13 @@ void SelectIteratorContainer::SetExpectMaxIterations(int expectedIterations) {
 void SelectIteratorContainer::PrepareIteratorsForSelectLoop(const QueryEntries &queries, size_t begin, size_t end,
 															const std::multimap<unsigned, EqualPosition> &equalPositions, unsigned sortId,
 															bool isFt, const Namespace &ns, SelectFunction::Ptr selectFnc,
-															FtCtx::Ptr &ftCtx) {
+															FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
 	bool fullText = false;
 	const auto eqPoses = equalPositions.equal_range(begin);
 	for (size_t i = begin; i < end; i = queries.Next(i)) {
 		if (!queries.IsEntry(i)) {
 			OpenBracket(queries.GetOperation(i));
-			PrepareIteratorsForSelectLoop(queries, i + 1, queries.Next(i), equalPositions, sortId, isFt, ns, selectFnc, ftCtx);
+			PrepareIteratorsForSelectLoop(queries, i + 1, queries.Next(i), equalPositions, sortId, isFt, ns, selectFnc, ftCtx, rdxCtx);
 			CloseBracket();
 		} else {
 			const QueryEntry &qe = queries[i];
@@ -156,7 +157,7 @@ void SelectIteratorContainer::PrepareIteratorsForSelectLoop(const QueryEntries &
 					for (auto &key : qe.values) key.EnsureUTF8();
 				}
 				PerfStatCalculatorMT calc(index->GetSelectPerfCounter(), ns.enablePerfCounters_);
-				selectResults = index->SelectKey(qe.values, qe.condition, sortId, opts, ctx);
+				selectResults = index->SelectKey(qe.values, qe.condition, sortId, opts, ctx, rdxCtx);
 			}
 			for (SelectKeyResult &res : selectResults) {
 				const OpType op = queries.GetOperation(i);

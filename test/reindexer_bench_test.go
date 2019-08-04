@@ -129,7 +129,7 @@ func BenchmarkSimpleInsert(b *testing.B) {
 			panic(err)
 		}
 	}
-	tx.MustCommit(nil)
+	tx.MustCommit()
 }
 
 func BenchmarkSimpleUpdate(b *testing.B) {
@@ -139,7 +139,20 @@ func BenchmarkSimpleUpdate(b *testing.B) {
 			panic(err)
 		}
 	}
-	tx.MustCommit(nil)
+	tx.MustCommit()
+}
+
+func BenchmarkSimpleUpdateAsync(b *testing.B) {
+	tx := DBD.MustBeginTx("test_items_simple")
+	for i := 0; i < b.N; i++ {
+		tx.UpsertAsync(TestItemSimple{ID: mkID(i), Year: rand.Int()%1000 + 10, Name: randString()},
+			func(err error) {
+				if err != nil {
+					panic(err)
+				}
+			})
+	}
+	tx.MustCommit()
 }
 
 func BenchmarkSimpleCmplxPKUpsert(b *testing.B) {
@@ -150,7 +163,7 @@ func BenchmarkSimpleCmplxPKUpsert(b *testing.B) {
 			panic(err)
 		}
 	}
-	tx.MustCommit(nil)
+	tx.MustCommit()
 }
 
 func BenchmarkInsert(b *testing.B) {
@@ -161,7 +174,7 @@ func BenchmarkInsert(b *testing.B) {
 			panic(err)
 		}
 	}
-	tx.MustCommit(nil)
+	tx.MustCommit()
 }
 func BenchmarkCJsonEncode(b *testing.B) {
 
@@ -235,7 +248,7 @@ func BenchmarkInsertJson(b *testing.B) {
 			panic(err)
 		}
 	}
-	tx.MustCommit(nil)
+	tx.MustCommit()
 }
 
 func BenchmarkUpdate(b *testing.B) {
@@ -246,7 +259,7 @@ func BenchmarkUpdate(b *testing.B) {
 			panic(err)
 		}
 	}
-	tx.MustCommit(nil)
+	tx.MustCommit()
 }
 
 func BenchmarkDeleteAndUpdate(b *testing.B) {
@@ -257,7 +270,7 @@ func BenchmarkDeleteAndUpdate(b *testing.B) {
 			panic(err)
 		}
 	}
-	tx.Commit(nil)
+	tx.Commit()
 }
 
 func Benchmark4CondQuery(b *testing.B) {

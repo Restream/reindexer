@@ -27,6 +27,7 @@
 #endif
 
 #else
+#include <arpa/inet.h>
 #include <dirent.h>
 #include <fcntl.h>
 #include <ftw.h>

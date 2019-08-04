@@ -188,7 +188,7 @@ Error DBWrapper<_DB>::commandUpsert(const string& command) {
 		return status;
 	}
 
-	return db_.Upsert(nsName, *item, [item](const Error& /*err*/) { delete item; });
+	return db_.WithCompletion([item](const Error& /*err*/) { delete item; }).Upsert(nsName, *item);
 }
 
 template <typename _DB>
@@ -428,10 +428,11 @@ Error DBWrapper<_DB>::commandBench(const string& command) {
 			q.Where(kBenchIndex, CondEq, count % kBenchItemsCount);
 			auto results = new typename _DB::QueryResultsT;
 
-			db_.Select(q, *results, [results, &errCount](const Error& err) {
-				delete results;
-				if (!err.ok()) errCount++;
-			});
+			db_.WithCompletion([results, &errCount](const Error& err) {
+				   delete results;
+				   if (!err.ok()) errCount++;
+			   })
+				.Select(q, *results);
 		}
 	};
 	auto threads = std::unique_ptr<std::thread[]>(new std::thread[numThreads_ - 1]);

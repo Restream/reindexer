@@ -126,6 +126,7 @@ type RawBinding interface {
 	CommitTx(txCtx *TxCtx) (RawBuffer, error)
 	RollbackTx(tx *TxCtx) error
 	ModifyItemTx(txCtx *TxCtx, format int, data []byte, mode int, percepts []string, stateToken int) error
+	ModifyItemTxAsync(txCtx *TxCtx, format int, data []byte, mode int, percepts []string, stateToken int, cmpl RawCompletion)
 
 	PutMeta(ctx context.Context, namespace, key, data string) error
 	GetMeta(ctx context.Context, namespace, key string) (RawBuffer, error)
@@ -172,10 +173,19 @@ type OptionConnPoolSize struct {
 	ConnPoolSize int
 }
 
-//Timeouts resolution equals 1 second
+//OptionTimeouts sets client-side network timeouts on login(connect) and requests
+//Timer resolution here is 1 second
 type OptionTimeouts struct {
 	LoginTimeout   time.Duration
 	RequestTimeout time.Duration
+}
+
+//OptionBuiltintCtxWatch - context watcher settings
+//WatchDelay - minimal delay on context watcher goroutines launch. Timer resolution here is 20 ms
+//WatchersPoolSize - watchers goroutine count (this doesn't affect goroutine count after WatchDelay expiration)
+type OptionBuiltintCtxWatch struct {
+	WatchDelay       time.Duration
+	WatchersPoolSize int
 }
 
 type OptionRetryAttempts struct {
@@ -206,3 +216,7 @@ type StatusBuiltin struct {
 	CGOLimit int
 	CGOUsage int
 }
+
+type Completion func(err error)
+
+type RawCompletion func(buf RawBuffer, err error)

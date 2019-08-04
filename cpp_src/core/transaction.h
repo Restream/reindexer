@@ -9,6 +9,7 @@ class TransactionImpl;
 
 using std::string;
 class ReindexerImpl;
+class RdxContext;
 
 class Transaction {
 public:
@@ -30,6 +31,7 @@ public:
 	void Delete(Item &&item);
 	void Modify(Item &&item, ItemModifyMode mode);
 	bool IsFree() { return impl_ == nullptr; }
+	Item NewItem();
 
 	const string &GetName();
 

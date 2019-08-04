@@ -49,4 +49,6 @@ void Transaction::Modify(Item &&item, ItemModifyMode mode) {
 	if (impl_) impl_->Modify(move(item), mode);
 }
 
+Item Transaction::NewItem() { return impl_->NewItem(); }
+
 }  // namespace reindexer

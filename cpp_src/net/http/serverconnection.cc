@@ -155,6 +155,7 @@ void ServerConnection::onRead() {
 			}
 
 			enableHttp11_ = (minor_version >= 1);
+			request_.clientAddr = clientAddr_;
 			request_.method = string_view(method, method_len);
 			request_.uri = string_view(uri, path_len);
 			request_.headers.clear();

@@ -52,7 +52,8 @@ const char *CmdName(CmdCode code);
 const uint32_t kMaxConcurentQueries = 256;
 
 const uint32_t kCprotoMagic = 0xEEDD1132;
-const uint32_t kCprotoVersion = 0x101;
+const uint32_t kCprotoVersion = 0x102;
+const uint32_t kCprotoMinCompatVersion = 0x101;
 
 #pragma pack(push, 1)
 struct CProtoHeader {
@@ -62,6 +63,7 @@ struct CProtoHeader {
 	uint32_t len;
 	uint32_t seq;
 };
+
 #pragma pack(pop)
 
 }  // namespace cproto

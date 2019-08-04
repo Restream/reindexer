@@ -17,11 +17,13 @@ namespace net {
 namespace cproto {
 
 using std::string;
+using std::chrono::milliseconds;
 
 struct RPCCall {
 	CmdCode cmd;
 	uint32_t seq;
 	Args args;
+	milliseconds execTimeout_;
 };
 
 class ClientData {
@@ -42,9 +44,10 @@ public:
 
 struct Context {
 	void Return(const Args &args) { writer->WriteRPCReturn(*this, args); }
-	void SetClientData(ClientData::Ptr data) { writer->SetClientData(data); };
+	void SetClientData(ClientData::Ptr data) { writer->SetClientData(data); }
 	ClientData::Ptr GetClientData() { return writer->GetClientData(); }
 
+	string_view clientAddr;
 	RPCCall *call;
 	Writer *writer;
 	Stat stat;

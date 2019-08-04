@@ -125,26 +125,26 @@ Error RPCServer::OpenNamespace(cproto::Context &ctx, p_string nsDefJson) {
 
 	nsDef.FromJSON(giftStr(nsDefJson));
 	if (!nsDef.indexes.empty()) {
-		return getDB(ctx, kRoleDataRead)->AddNamespace(nsDef);
+		return getDB(ctx, kRoleDataRead).AddNamespace(nsDef);
 	}
-	return getDB(ctx, kRoleDataRead)->OpenNamespace(nsDef.name, nsDef.storage);
+	return getDB(ctx, kRoleDataRead).OpenNamespace(nsDef.name, nsDef.storage);
 }
 
 Error RPCServer::DropNamespace(cproto::Context &ctx, p_string ns) {
 	//
-	return getDB(ctx, kRoleDBAdmin)->DropNamespace(ns);
+	return getDB(ctx, kRoleDBAdmin).DropNamespace(ns);
 }
 
 Error RPCServer::CloseNamespace(cproto::Context &ctx, p_string ns) {
 	// Do not close.
 	// TODO: add reference counters
 	// return getDB(ctx, kRoleDataRead)->CloseNamespace(ns);
-	return getDB(ctx, kRoleDataRead)->Commit(ns);
+	return getDB(ctx, kRoleDataRead).Commit(ns);
 }
 
 Error RPCServer::EnumNamespaces(cproto::Context &ctx) {
 	vector<NamespaceDef> nsDefs;
-	auto err = getDB(ctx, kRoleDataRead)->EnumNamespaces(nsDefs, true);
+	auto err = getDB(ctx, kRoleDataRead).EnumNamespaces(nsDefs, true);
 	if (!err.ok()) {
 		return err;
 	}
@@ -167,7 +167,7 @@ Error RPCServer::AddIndex(cproto::Context &ctx, p_string ns, p_string indexDef) 
 	if (!err.ok()) {
 		return err;
 	}
-	return getDB(ctx, kRoleDBAdmin)->AddIndex(ns, iDef);
+	return getDB(ctx, kRoleDBAdmin).AddIndex(ns, iDef);
 }
 
 Error RPCServer::UpdateIndex(cproto::Context &ctx, p_string ns, p_string indexDef) {
@@ -176,17 +176,17 @@ Error RPCServer::UpdateIndex(cproto::Context &ctx, p_string ns, p_string indexDe
 	if (!err.ok()) {
 		return err;
 	}
-	return getDB(ctx, kRoleDBAdmin)->UpdateIndex(ns, iDef);
+	return getDB(ctx, kRoleDBAdmin).UpdateIndex(ns, iDef);
 }
 
 Error RPCServer::DropIndex(cproto::Context &ctx, p_string ns, p_string index) {
 	IndexDef idef(index.toString());
-	return getDB(ctx, kRoleDBAdmin)->DropIndex(ns, idef);
+	return getDB(ctx, kRoleDBAdmin).DropIndex(ns, idef);
 }
 
 Error RPCServer::StartTransaction(cproto::Context &ctx, p_string nsName) {
 	auto db = getDB(ctx, kRoleDataWrite);
-	auto tr = db->NewTransaction(nsName);
+	auto tr = db.NewTransaction(nsName);
 
 	auto id = addTx(ctx, std::move(tr));
 
@@ -200,7 +200,7 @@ Error RPCServer::AddTxItem(cproto::Context &ctx, int format, p_string itemData, 
 
 	Transaction &tr = getTx(ctx, txID);
 
-	auto item = db->NewItem(tr.GetName());
+	auto item = tr.NewItem();
 	Error err;
 	if (!item.Status().ok()) {
 		return item.Status();
@@ -243,7 +243,7 @@ Error RPCServer::CommitTx(cproto::Context &ctx, int64_t txId) {
 	auto db = getDB(ctx, kRoleDataWrite);
 
 	Transaction &tr = getTx(ctx, txId);
-	auto err = db->CommitTransaction(tr);
+	auto err = db.CommitTransaction(tr);
 	QueryResults qres;
 
 	auto trAccessor = static_cast<TransactionAccessor *>(&tr);
@@ -270,15 +270,27 @@ Error RPCServer::RollbackTx(cproto::Context &ctx, int64_t txId) {
 	auto db = getDB(ctx, kRoleDataWrite);
 
 	Transaction &tr = getTx(ctx, txId);
-	auto err = db->RollBackTransaction(tr);
+	auto err = db.RollBackTransaction(tr);
 	clearTx(ctx, txId);
 	return err;
 }
 
 Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_string itemData, int mode, p_string perceptsPack,
 							int stateToken, int /*txID*/) {
+	using std::chrono::steady_clock;
+	using std::chrono::milliseconds;
+	using std::chrono::duration_cast;
+
 	auto db = getDB(ctx, kRoleDataWrite);
-	auto item = Item(db->NewItem(ns));
+	auto execTimeout = ctx.call->execTimeout_;
+	auto beginT = steady_clock::now();
+	auto item = Item(db.NewItem(ns));
+	if (execTimeout.count() > 0) {
+		execTimeout -= duration_cast<milliseconds>(beginT - steady_clock::now());
+		if (execTimeout.count() <= 0) {
+			return errCanceled;
+		}
+	}
 	bool tmUpdated = false, sendItemBack = false;
 	Error err;
 	if (!item.Status().ok()) {
@@ -318,16 +330,16 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 	}
 	switch (mode) {
 		case ModeUpsert:
-			err = db->Upsert(ns, item);
+			err = db.WithTimeout(execTimeout).Upsert(ns, item);
 			break;
 		case ModeInsert:
-			err = db->Insert(ns, item);
+			err = db.WithTimeout(execTimeout).Insert(ns, item);
 			break;
 		case ModeUpdate:
-			err = db->Update(ns, item);
+			err = db.WithTimeout(execTimeout).Update(ns, item);
 			break;
 		case ModeDelete:
-			err = db->Delete(ns, item);
+			err = db.WithTimeout(execTimeout).Delete(ns, item);
 			break;
 	}
 	if (!err.ok()) {
@@ -354,7 +366,7 @@ Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin) {
 	query.type_ = QueryDelete;
 
 	QueryResults qres;
-	auto err = getDB(ctx, kRoleDataWrite)->Delete(query, qres);
+	auto err = getDB(ctx, kRoleDataWrite).Delete(query, qres);
 	if (!err.ok()) {
 		return err;
 	}
@@ -369,7 +381,7 @@ Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin) {
 	query.type_ = QueryUpdate;
 
 	QueryResults qres;
-	auto err = getDB(ctx, kRoleDataWrite)->Update(query, qres);
+	auto err = getDB(ctx, kRoleDataWrite).Update(query, qres);
 	if (!err.ok()) {
 		return err;
 	}
@@ -379,15 +391,21 @@ Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin) {
 	return sendResults(ctx, qres, -1, opts);
 }
 
-shared_ptr<Reindexer> RPCServer::getDB(cproto::Context &ctx, UserRole role) {
-	auto clientData = ctx.GetClientData().get();
-	if (clientData) {
-		shared_ptr<Reindexer> db;
-		auto status = dynamic_cast<RPCClientData *>(clientData)->auth.GetDB(role, &db);
-		if (!status.ok()) {
-			throw status;
+Reindexer RPCServer::getDB(cproto::Context &ctx, UserRole role) {
+	if (ctx.GetClientData().get()) {
+		auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData().get());
+		if (clientData) {
+			Reindexer *db = nullptr;
+			auto status = clientData->auth.GetDB(role, &db);
+			if (!status.ok()) {
+				throw status;
+			}
+			if (db != nullptr) {
+				return db->NeedTraceActivity()
+						   ? db->WithTimeout(ctx.call->execTimeout_).WithActivityTracer(ctx.clientAddr, clientData->auth.Login())
+						   : db->WithTimeout(ctx.call->execTimeout_);
+			}
 		}
-		if (db != nullptr) return db;
 	}
 	throw Error(errParams, "Database is not openeded, you should open it first");
 }
@@ -482,7 +500,7 @@ Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int 
 	int id = -1;
 	QueryResults &qres = getQueryResults(ctx, id);
 
-	auto ret = getDB(ctx, kRoleDataRead)->Select(query, qres);
+	auto ret = getDB(ctx, kRoleDataRead).Select(query, qres);
 	if (!ret.ok()) {
 		freeQueryResults(ctx, id);
 		return ret;
@@ -496,7 +514,7 @@ Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int 
 Error RPCServer::SelectSQL(cproto::Context &ctx, p_string querySql, int flags, int limit, p_string ptVersionsPck) {
 	int id = -1;
 	QueryResults &qres = getQueryResults(ctx, id);
-	auto ret = getDB(ctx, kRoleDataRead)->Select(querySql, qres);
+	auto ret = getDB(ctx, kRoleDataRead).Select(querySql, qres);
 	if (!ret.ok()) {
 		freeQueryResults(ctx, id);
 		return ret;
@@ -528,7 +546,7 @@ Error RPCServer::fetchResults(cproto::Context &ctx, int reqId, const ResultFetch
 
 Error RPCServer::GetSQLSuggestions(cproto::Context &ctx, p_string query, int pos) {
 	vector<string> suggests;
-	Error err = getDB(ctx, kRoleDataRead)->GetSqlSuggestions(query, pos, suggests);
+	Error err = getDB(ctx, kRoleDataRead).GetSqlSuggestions(query, pos, suggests);
 
 	if (err.ok()) {
 		cproto::Args ret;
@@ -539,14 +557,11 @@ Error RPCServer::GetSQLSuggestions(cproto::Context &ctx, p_string query, int pos
 	return err;
 }
 
-Error RPCServer::Commit(cproto::Context &ctx, p_string ns) {
-	//
-	return getDB(ctx, kRoleDataWrite)->Commit(ns);
-}
+Error RPCServer::Commit(cproto::Context &ctx, p_string ns) { return getDB(ctx, kRoleDataWrite).Commit(ns); }
 
 Error RPCServer::GetMeta(cproto::Context &ctx, p_string ns, p_string key) {
 	string data;
-	auto err = getDB(ctx, kRoleDataRead)->GetMeta(ns, key.toString(), data);
+	auto err = getDB(ctx, kRoleDataRead).GetMeta(ns, key.toString(), data);
 	if (!err.ok()) {
 		return err;
 	}
@@ -556,12 +571,12 @@ Error RPCServer::GetMeta(cproto::Context &ctx, p_string ns, p_string key) {
 }
 
 Error RPCServer::PutMeta(cproto::Context &ctx, p_string ns, p_string key, p_string data) {
-	return getDB(ctx, kRoleDataWrite)->PutMeta(ns, key.toString(), data);
+	return getDB(ctx, kRoleDataWrite).PutMeta(ns, key.toString(), data);
 }
 
 Error RPCServer::EnumMeta(cproto::Context &ctx, p_string ns) {
 	vector<string> keys;
-	auto err = getDB(ctx, kRoleDataWrite)->EnumMeta(ns, keys);
+	auto err = getDB(ctx, kRoleDataWrite).EnumMeta(ns, keys);
 	if (!err.ok()) {
 		return err;
 	}
@@ -574,8 +589,9 @@ Error RPCServer::EnumMeta(cproto::Context &ctx, p_string ns) {
 }
 
 Error RPCServer::SubscribeUpdates(cproto::Context &ctx, int flag) {
+	auto db = getDB(ctx, kRoleDataRead);
 	auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData().get());
-	auto ret = getDB(ctx, kRoleDataRead)->SubscribeUpdates(&clientData->pusher, flag);
+	auto ret = db.SubscribeUpdates(&clientData->pusher, flag);  // -V522 this thing is handled in midleware (within CheckAuth)
 	if (ret.ok()) clientData->subscribed = bool(flag);
 	return ret;
 }
@@ -628,7 +644,7 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 }
 
 RPCClientData::~RPCClientData() {
-	shared_ptr<Reindexer> db;
+	Reindexer *db = nullptr;
 	auth.GetDB(kRoleNone, &db);
 	if (subscribed && db) {
 		db->SubscribeUpdates(&pusher, false);

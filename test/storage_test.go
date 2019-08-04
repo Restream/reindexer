@@ -105,9 +105,11 @@ func TestStorageChangeFormat(t *testing.T) {
 		T6: "t6val",
 	})
 
-	setUpdatedAt := time.Now().Add(-time.Duration(100 * time.Second)).UTC()
+	beforeUpdate := time.Now().UTC()
 
-	tx.MustCommit(&setUpdatedAt)
+	tx.MustCommit()
+
+	afterUpdate := time.Now().UTC()
 
 	// Test2
 	if err := DB.CloseNamespace("test_items_storage"); err != nil {
@@ -118,28 +120,15 @@ func TestStorageChangeFormat(t *testing.T) {
 		panic(err)
 	}
 
-	vrfUpdatedAt, err := DB.GetUpdatedAt("test_items_storage")
-
-	if err != nil {
-		panic(err)
-	}
-	if vrfUpdatedAt == nil {
-		panic(fmt.Errorf("GetUpdatedAt = nil,expected %v", setUpdatedAt))
-	}
-
-	if setUpdatedAt != *vrfUpdatedAt {
-		panic(fmt.Errorf("%v != %v", setUpdatedAt, *vrfUpdatedAt))
-	}
-
 	stat, err := DB.GetNamespaceMemStat("test_items_storage")
 
 	if err != nil {
 		panic(err)
 	}
 
-	vrfDescUpdatedAt := time.Unix(0, stat.UpdatedUnixNano).UTC()
-	if setUpdatedAt.Round(time.Millisecond) != vrfDescUpdatedAt.Round(time.Millisecond) {
-		panic(fmt.Errorf("%v != %v", setUpdatedAt, vrfDescUpdatedAt))
+	updatedAt := time.Unix(0, stat.Replication.UpdatedUnixNano).UTC()
+	if beforeUpdate.Before(updatedAt) && afterUpdate.After(updatedAt) {
+		panic(fmt.Errorf("%v must be between %v and %v", updatedAt, beforeUpdate, afterUpdate))
 	}
 
 	item, ok := DB.Query("test_items_storage").WhereInt("id", reindexer.EQ, 1).Get()

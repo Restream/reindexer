@@ -95,7 +95,7 @@ bool LRUCache<K, V, hash, equal>::eraseLRU() {
 		putCount_ = 0;
 		getCount_ = 0;
 	}
-	return !lru_.empty ();
+	return !lru_.empty();
 }
 template <typename K, typename V, typename hash, typename equal>
 bool LRUCache<K, V, hash, equal>::Clear() {

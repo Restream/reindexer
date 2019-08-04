@@ -1,6 +1,7 @@
 #include "dbconfig.h"
 #include <limits.h>
 #include "cjson/jsonbuilder.h"
+#include "estl/smart_lock.h"
 #include "gason/gason.h"
 #include "tools/jsontools.h"
 #include "tools/stringstools.h"
@@ -27,6 +28,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 			profilingData_.queriedThresholdUS = profilingNode["queries_threshold_us"].As<size_t>();
 			profilingData_.perfStats = profilingNode["perfstats"].As<bool>();
 			profilingData_.memStats = profilingNode["memstats"].As<bool>();
+			profilingData_.activityStats = profilingNode["activitystats"].As<bool>();
 			auto it = handlers_.find(ProfilingConf);
 			if (it != handlers_.end()) (it->second)();
 		}

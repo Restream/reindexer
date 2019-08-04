@@ -2,6 +2,7 @@
 
 #include <vector>
 #include "core/idset.h"
+#include "sort/pdqsort.hpp"
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -39,7 +40,7 @@ public:
 			assertf(rowid < int(ctx.ids2Sorts().size()), "id=%d,ctx.ids2Sorts().size()=%d", rowid, int(ctx.ids2Sorts().size()));
 			idsAsc[idx++] = ctx.ids2Sorts()[rowid];
 		}
-		std::sort(idsAsc.begin(), idsAsc.end());
+		boost::sort::pdqsort(idsAsc.begin(), idsAsc.end());
 	}
 
 	IdSetT ids_;

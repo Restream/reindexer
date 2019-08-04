@@ -145,7 +145,7 @@ func FillTestItemsWithInsensitiveIndex() {
 			panic(err)
 		}
 	}
-	cnt := tx.MustCommit(nil)
+	cnt := tx.MustCommit()
 	if cnt != len(testSortModeDataNumeric) {
 		panic(fmt.Errorf("Could not commit testSortModeDataNumeric"))
 	}
@@ -156,7 +156,7 @@ func FillTestItemsWithInsensitiveIndex() {
 			panic(err)
 		}
 	}
-	cnt = tx.MustCommit(nil)
+	cnt = tx.MustCommit()
 	if cnt != len(testSortModeDataAscii) {
 		panic(fmt.Errorf("Could not commit testSortModeDataAscii"))
 	}
@@ -166,7 +166,7 @@ func FillTestItemsWithInsensitiveIndex() {
 			panic(err)
 		}
 	}
-	cnt = tx.MustCommit(nil)
+	cnt = tx.MustCommit()
 	if cnt != len(testSortModeDataUtf) {
 		panic(fmt.Errorf("Could not commit testSortModeDataUtf"))
 	}
@@ -176,7 +176,7 @@ func FillTestItemsWithInsensitiveIndex() {
 			panic(err)
 		}
 	}
-	cnt = tx.MustCommit(nil)
+	cnt = tx.MustCommit()
 	if cnt != len(testSortModeDataAsciiHash) {
 		panic(fmt.Errorf("Could not commit testSortModeDataAsciiHash"))
 	}
@@ -187,7 +187,7 @@ func FillTestItemsWithInsensitiveIndex() {
 			panic(err)
 		}
 	}
-	cnt = tx.MustCommit(nil)
+	cnt = tx.MustCommit()
 	if cnt != len(testSortModeDataCustomSource) {
 		panic(fmt.Errorf("Could not commit testSortModeDataCustomSource"))
 	}
