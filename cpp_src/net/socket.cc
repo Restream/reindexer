@@ -152,14 +152,15 @@ int socket::create(string_view addr, struct addrinfo **presults) {
 }
 
 std::string socket::addr() const {
-	struct sockaddr saddr;
+	struct sockaddr_storage saddr;
+	struct sockaddr *paddr = reinterpret_cast<sockaddr *>(&saddr);
 	socklen_t len = sizeof(saddr);
-	if (::getpeername(fd_, &saddr, &len) != 0) {
+	if (::getpeername(fd_, paddr, &len) != 0) {
 		perror("getpeername");
 		return {};
 	}
 	char buf[INET_ADDRSTRLEN] = {};
-	getnameinfo(&saddr, len, buf, INET_ADDRSTRLEN, NULL, 0, NI_NUMERICHOST);
+	getnameinfo(paddr, len, buf, INET_ADDRSTRLEN, NULL, 0, NI_NUMERICHOST);
 	return buf;
 }
 
