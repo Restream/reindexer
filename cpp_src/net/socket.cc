@@ -158,38 +158,8 @@ std::string socket::addr() const {
 		perror("getpeername");
 		return {};
 	}
-	void *addr;
-	switch (saddr.sa_family) {
-		case AF_INET: {
-			struct sockaddr_in *ipv4 = reinterpret_cast<struct sockaddr_in *>(&saddr);
-			addr = &(ipv4->sin_addr);
-		} break;
-		case AF_INET6: {
-			struct sockaddr_in6 *ipv6 = reinterpret_cast<struct sockaddr_in6 *>(&saddr);  // -V641
-			addr = &(ipv6->sin6_addr);
-		} break;
-		default: {
-			perror("unexpected protocol type");
-			return {};
-		}
-	}
-	char buf[INET_ADDRSTRLEN];
-	// ::inet_ntop(saddr.sa_family, addr, buf, INET_ADDRSTRLEN);
-
-	if (saddr.sa_family == AF_INET) {
-		struct sockaddr_in in;
-		memset(&in, 0, sizeof(in));
-		in.sin_family = AF_INET;
-		memcpy(&in.sin_addr, addr, sizeof(in.sin_addr));
-		getnameinfo(reinterpret_cast<sockaddr *>(&in), sizeof(struct sockaddr_in), buf, INET_ADDRSTRLEN, NULL, 0, NI_NUMERICHOST);
-	} else if (saddr.sa_family == AF_INET6) {
-		struct sockaddr_in6 in;
-		memset(&in, 0, sizeof(in));
-		in.sin6_family = AF_INET6;
-		memcpy(&in.sin6_addr, addr, sizeof(in.sin6_addr));
-		getnameinfo(reinterpret_cast<sockaddr *>(&in), sizeof(struct sockaddr_in6), buf, INET_ADDRSTRLEN, NULL, 0, NI_NUMERICHOST);
-	}
-
+	char buf[INET_ADDRSTRLEN] = {};
+	getnameinfo(&saddr, len, buf, INET_ADDRSTRLEN, NULL, 0, NI_NUMERICHOST);
 	return buf;
 }
 
