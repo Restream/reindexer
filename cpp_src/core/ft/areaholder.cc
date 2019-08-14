@@ -1,4 +1,5 @@
 #include "areaholder.h"
+#include "sort/pdqsort.hpp"
 
 namespace reindexer {
 using std::vector;
@@ -29,7 +30,7 @@ void AreaHolder::AddTreeGramm(int pos, int filed) {
 void AreaHolder::Commit() {
 	commited_ = true;
 	for (auto &area : areas) {
-		std::sort(area.begin(), area.end(), [](const Area &rhs, const Area &lhs) { return rhs.start_ < lhs.start_; });
+		boost::sort::pdqsort(area.begin(), area.end(), [](const Area &rhs, const Area &lhs) { return rhs.start_ < lhs.start_; });
 		if (!area.empty()) {
 			for (auto vit = area.begin() + 1; vit != area.end(); ++vit) {
 				auto prev = vit - 1;

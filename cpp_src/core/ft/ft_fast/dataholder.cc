@@ -27,12 +27,11 @@ size_t DataHolder::GetMemStat() {
 	size_t res = 0;
 	for (auto& step : steps) {
 		res += step.typos_.heap_size() + step.suffixes_.heap_size();
-
-		for (auto& w : words_) {
-			res += sizeof(w) + w.vids_.heap_size();
-		}
-		res += vdocs_.capacity() * sizeof(VDocEntry);
 	}
+	for (auto& w : words_) {
+		res += sizeof(w) + w.vids_.heap_size();
+	}
+	res += vdocs_.capacity() * sizeof(VDocEntry);
 	return res;
 }
 

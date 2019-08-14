@@ -101,7 +101,13 @@ public:
 
 	int PendingCompletions();
 	void SetTerminateFlag() noexcept { terminate_.store(true, std::memory_order_release); }
-	void SetUpdatesHandler(Completion handler) { updatesHandler_ = handler; }
+	void SetUpdatesHandler(Completion handler) {
+		auto cur = updatesHandler_.get(std::memory_order_acquire);
+		auto handlerPtr = new Completion(std::move(handler));
+		while (!updatesHandler_.compare_exchange_strong(cur, handlerPtr, std::memory_order_acq_rel))
+			;
+		delete cur;
+	}
 	seconds Now() const { return seconds(now_); }
 
 protected:
@@ -166,7 +172,7 @@ protected:
 	Error lastError_;
 	const httpparser::UrlParser *uri_;
 	ev::async connect_async_;
-	Completion updatesHandler_;
+	atomic_unique_ptr<Completion> updatesHandler_;
 	ev::periodic keep_alive_;
 	ev::periodic deadlineTimer_;
 	std::atomic<uint32_t> now_;

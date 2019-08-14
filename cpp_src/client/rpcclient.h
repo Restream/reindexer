@@ -45,6 +45,7 @@ public:
 	Error AddNamespace(const NamespaceDef &nsDef, const InternalRdxContext &ctx);
 	Error CloseNamespace(string_view nsName, const InternalRdxContext &ctx);
 	Error DropNamespace(string_view nsName, const InternalRdxContext &ctx);
+	Error TruncateNamespace(string_view nsName, const InternalRdxContext &ctx);
 	Error AddIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error UpdateIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error DropIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);

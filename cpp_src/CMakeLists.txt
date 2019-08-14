@@ -13,7 +13,7 @@ option (WITH_GCOV "Enable instrumented code coverage build" OFF)
 option (ENABLE_LIBUNWIND "Enable libunwind" ON)
 option (ENABLE_TCMALLOC "Enable tcmalloc extensions" ON)
 option (ENABLE_JEMALLOC "Enable jemalloc extensions" ON)
-set (REINDEXER_VERSION_DEFAULT "2.1.2")
+set (REINDEXER_VERSION_DEFAULT "2.1.3")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")

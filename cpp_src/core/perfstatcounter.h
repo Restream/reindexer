@@ -14,6 +14,7 @@ public:
 	PerfStatCounter();
 	void Hit(std::chrono::microseconds time);
 	void LockHit(std::chrono::microseconds time);
+	std::chrono::microseconds MaxTime() const { return maxTime; }
 	void Reset();
 	template <class T>
 	T Get() {

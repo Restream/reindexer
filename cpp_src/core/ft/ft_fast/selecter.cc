@@ -1,7 +1,9 @@
 #include "selecter.h"
 #include "core/ft/bm25.h"
 #include "core/ft/typos.h"
+#include "sort/pdqsort.hpp"
 #include "tools/logger.h"
+
 namespace reindexer {
 // Relevancy procent of full word match
 const int kFullMatchProc = 100;
@@ -367,8 +369,8 @@ Selecter::MergeData Selecter::mergeResults(vector<TextSearchResults> &rawResults
 
 	int idsMaxCnt = 0;
 	for (auto &rawRes : rawResults) {
-		std::sort(rawRes.begin(), rawRes.end(),
-				  [](const TextSearchResult &lhs, const TextSearchResult &rhs) { return lhs.proc_ > rhs.proc_; });
+		boost::sort::pdqsort(rawRes.begin(), rawRes.end(),
+							 [](const TextSearchResult &lhs, const TextSearchResult &rhs) { return lhs.proc_ > rhs.proc_; });
 		if (rawRes.term.opts.op == OpOr || !idsMaxCnt) idsMaxCnt += rawRes.idsCnt_;
 	}
 
@@ -386,7 +388,7 @@ Selecter::MergeData Selecter::mergeResults(vector<TextSearchResults> &rawResults
 	}
 	if (holder_.cfg_->logLevel >= LogInfo) logPrintf(LogInfo, "Complex merge (%d patterns): out %d vids", rawResults.size(), merged.size());
 
-	std::sort(merged.begin(), merged.end(), [](const MergeInfo &lhs, const MergeInfo &rhs) { return lhs.proc > rhs.proc; });
+	boost::sort::pdqsort(merged.begin(), merged.end(), [](const MergeInfo &lhs, const MergeInfo &rhs) { return lhs.proc > rhs.proc; });
 
 	return merged;
 }

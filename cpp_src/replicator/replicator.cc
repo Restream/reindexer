@@ -21,11 +21,15 @@ Replicator::Replicator(ReindexerImpl *slave) : slave_(slave), terminate_(false),
 Replicator::~Replicator() { Stop(); }
 
 Error Replicator::Start() {
-	if (master_) return Error(errLogic, "Replicator is already started");
+	std::lock_guard<std::mutex> lck(masterMtx_);
+	if (master_) {
+		return Error(errLogic, "Replicator is already started");
+	}
 
 	if (config_.role != ReplicationSlave) return errOK;
 
 	master_.reset(new client::Reindexer(client::ReindexerConfig(config_.connPoolSize, config_.workerThreads)));
+
 	auto err = master_->Connect(config_.masterDSN);
 	terminate_ = false;
 	if (err.ok()) thread_ = std::thread([this]() { this->run(); });
@@ -33,20 +37,29 @@ Error Replicator::Start() {
 	return err;
 }
 
-bool Replicator::Configure(const ReplicationConfigData &config) {
+bool Replicator::Configure(ReplicationConfigData config) {
+	std::lock_guard<std::mutex> lck(masterMtx_);
 	bool needStop = master_ && (config.role != config_.role || config.masterDSN != config_.masterDSN ||
-								config.clusterID != config_.clusterID || config.connPoolSize != config_.connPoolSize);
+								config.clusterID != config_.clusterID || config.connPoolSize != config_.connPoolSize ||
+								config.workerThreads != config_.workerThreads || config.namespaces != config_.namespaces);
 
-	if (needStop) Stop();
-	config_ = config;
+	if (needStop) {
+		Stop(false);
+	}
+
+	config_.FromReplicationConfig(std::move(config), thread_.joinable());
 
 	return needStop || !master_;
 }
 
-void Replicator::Stop() {
+void Replicator::Stop(bool withLock) {
 	terminate_ = true;
 	stop_.send();
 
+	std::unique_lock<std::mutex> lck(masterMtx_, std::defer_lock);
+	if (withLock) {
+		lck.lock();
+	}
 	if (thread_.joinable()) {
 		thread_.join();
 	}
@@ -117,11 +130,12 @@ Error Replicator::syncDatabase() {
 			if (!err.ok()) {
 				logPrintf(LogError, "[repl:%s] syncNamespace error: %s", ns.name, err.what());
 				if (err.code() == errDataHashMismatch && !terminate_) {
-					if (config_.forceSyncOnWrongDataHash)
+					if (config_.forceSyncOnWrongDataHash.load(std::memory_order_acquire)) {
 						err = syncNamespaceForced(ns, "DataHash mismatch");
-					else
+					} else {
 						err = errOK;
-				} else if (err.code() != errNetwork && !terminate_ && config_.forceSyncOnLogicError) {
+					}
+				} else if (err.code() != errNetwork && !terminate_ && config_.forceSyncOnLogicError.load(std::memory_order_acquire)) {
 					err = syncNamespaceForced(ns, "Logic error occurried");
 				} else
 					break;
@@ -310,6 +324,9 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 				case QueryUpdate:
 					slaveNs->Update(q, result, dummyCtx, lsn);
 					break;
+				case QueryTruncate:
+					slaveNs->Truncate(dummyCtx, lsn);
+					break;
 				default:
 					break;
 			}
@@ -497,6 +514,7 @@ bool Replicator::canApplyUpdate(int64_t lsn, string_view nsName) {
 bool Replicator::isSyncEnabled(string_view nsName) {
 	// SKip system ns
 	if (nsName.size() && nsName[0] == '#') return false;
+
 	// skip non enabled namespaces
 	if (config_.namespaces.size() && config_.namespaces.find(nsName) == config_.namespaces.end()) return false;
 	return true;

@@ -91,6 +91,31 @@ public:
 		EXPECT_TRUE(err.ok()) << err.what();
 		return res;
 	}
+	void RestartWithConfigFile(size_t num, const string &configYaml) {
+		GetSrv(num)->WriteServerConfig(configYaml);
+		StopServer(num);
+		StartServer(num);
+	}
+	void SetServerConfig(size_t num, const ServerConfig &config) {
+		auto srv = GetSrv(num);
+		if (num) {
+			srv->MakeSlave(0, config);
+		} else {
+			srv->MakeMaster(config);
+		}
+	}
+	void CheckSlaveConfigFile(size_t num, const ServerConfig &config) {
+		assert(num);
+		auto srv = GetSrv(num);
+		auto curConfig = srv->GetServerConfig(ServerControl::ConfigType::File);
+		EXPECT_TRUE(config == curConfig);
+	}
+	void CheckSlaveConfigNamespace(size_t num, const ServerConfig &config) {
+		assert(num);
+		auto srv = GetSrv(num);
+		auto curConfig = srv->GetServerConfig(ServerControl::ConfigType::Namespace);
+		EXPECT_TRUE(config == curConfig);
+	}
 	std::atomic_bool stop;
 
 protected:

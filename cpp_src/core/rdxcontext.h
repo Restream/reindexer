@@ -78,7 +78,9 @@ public:
 		: holdStatus_(kHold), activityCtx_(activityTracer, user, query, container), cancelCtx_(cancelCtx), cmpl_(cmpl) {}
 	RdxContext(RdxActivityContext* ptr, const IRdxCancelContext* cancelCtx = nullptr, Completion cmpl = nullptr)
 		: holdStatus_(ptr ? kPtr : kEmpty), activityPtr_(ptr), cancelCtx_(cancelCtx), cmpl_(cmpl) {
+#ifndef NDEBUG
 		if (holdStatus_ == kPtr) activityPtr_->refCount_.fetch_add(1u, std::memory_order_relaxed);
+#endif
 	}
 
 	RdxContext(RdxContext&& other);
@@ -137,8 +139,8 @@ public:
 										(activityTracer_.empty() ? "" : activityTracer_ + "/") + string(activityTracer), user);
 	}
 	void SetActivityTracer(string_view activityTracer, string_view user) {
-		activityTracer_ = activityTracer.data();
-		user_ = user.data();
+		activityTracer_ = string(activityTracer);
+		user_ = string(user);
 	}
 
 	RdxContext CreateRdxContext(string_view query, ActivityContainer&) const;

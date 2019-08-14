@@ -93,7 +93,6 @@ size_t QueryPreprocessor::substituteCompositeIndexes(size_t from, size_t to) con
 			(queries_->Next(cur) < end && queries_->GetOperation(queries_->Next(cur)) == OpOr) ||
 			((*queries_)[cur].condition != CondEq && (*queries_)[cur].condition != CondSet) ||
 			(*queries_)[cur].idxNo >= ns_.payloadType_.NumFields() || (*queries_)[cur].idxNo < 0) {
-
 			// If query already rewritten, then copy current unmatched part
 			first = queries_->Next(cur);
 			fields.clear();
@@ -157,7 +156,7 @@ void QueryPreprocessor::convertWhereValues(QueryEntries::iterator begin, QueryEn
 SortingEntries QueryPreprocessor::DetectOptimalSortOrder() const {
 	if (const Index *maxIdx = findMaxIndex(queries_->cbegin(), queries_->cend())) {
 		SortingEntries sortingEntries;
-		sortingEntries.push_back({maxIdx->Name(), false});
+		sortingEntries.emplace_back(maxIdx->Name(), false);
 		return sortingEntries;
 	}
 	return SortingEntries();

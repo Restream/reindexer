@@ -58,6 +58,66 @@ protected:
 		}
 	}
 
+	void InsertNewTruncateItem(int i) {
+		Item item = NewItem(truncate_namespace);
+		item[idIdxName] = i;
+		item["data"] = rand();
+		item["price"] = rand();
+		item["serialNumber"] = i * 100;
+		item["fileName"] = "File" + std::to_string(i);
+		item["ft11"] = RandString();
+		item["ft12"] = RandString();
+		item["ft21"] = RandString();
+		item["ft22"] = RandString();
+		item["ft23"] = RandString();
+		auto err = rt.reindexer->Insert(truncate_namespace, item);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
+	void TruncateNamespace(const std::function<Error(const std::string&)>& truncate) {
+		Error err = rt.reindexer->OpenNamespace(truncate_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		DefineNamespaceDataset(
+			truncate_namespace,
+			{IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"date", "", "int64", IndexOpts(), 0},
+			 IndexDeclaration{"price", "", "int64", IndexOpts(), 0}, IndexDeclaration{"serialNumber", "", "int64", IndexOpts(), 0},
+			 IndexDeclaration{"fileName", "", "string", IndexOpts(), 0}});
+
+		DefineNamespaceDataset(truncate_namespace, {IndexDeclaration{"ft11", "text", "string", IndexOpts(), 0},
+													IndexDeclaration{"ft12", "text", "string", IndexOpts(), 0},
+													IndexDeclaration{"ft11+ft12=ft13", "text", "composite", IndexOpts(), 0}});
+
+		DefineNamespaceDataset(truncate_namespace, {IndexDeclaration{"ft21", "text", "string", IndexOpts(), 0},
+													IndexDeclaration{"ft22", "text", "string", IndexOpts(), 0},
+													IndexDeclaration{"ft23", "text", "string", IndexOpts(), 0},
+													IndexDeclaration{"ft21+ft22+ft23=ft24", "text", "composite", IndexOpts(), 0}});
+
+		static constexpr int itemsCount = 1000;
+		for (int i = 0; i < itemsCount; ++i) InsertNewTruncateItem(i);
+
+		const static Query q{truncate_namespace};
+		QueryResults qr1;
+		err = rt.reindexer->Select(q, qr1);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(itemsCount, qr1.Count());
+
+		err = truncate(truncate_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		QueryResults qr2;
+		err = rt.reindexer->Select(q, qr2);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(0, qr2.Count());
+
+		InsertNewTruncateItem(1);
+
+		QueryResults qr3;
+		err = rt.reindexer->Select(q, qr3);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(1, qr3.Count());
+	}
+
 	static void CheckItemsEqual(Item& lhs, Item& rhs) {
 		for (auto idx = 1; idx < lhs.NumFields(); idx++) {
 			auto field = lhs[idx].Name();
@@ -65,6 +125,7 @@ protected:
 		}
 	}
 
+	const string truncate_namespace = "truncate_namespace";
 	const string idIdxName = "id";
 	const string updatedTimeSecFieldName = "updated_time_sec";
 	const string updatedTimeMSecFieldName = "updated_time_msec";

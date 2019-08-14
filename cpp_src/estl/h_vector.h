@@ -54,7 +54,7 @@ public:
 		if (other.is_hdata()) {
 			for (size_type i = 0; i < other.size(); i++) {
 				new (ptr() + i) T(std::move(other.ptr()[i]));
-				other.ptr()[i].~T();
+				if (!std::is_trivially_destructible<T>::value) other.ptr()[i].~T();
 			}
 		} else {
 			e_.data_ = other.e_.data_;
@@ -73,7 +73,8 @@ public:
 			std::copy(other.begin(), other.begin() + mv, begin());
 			size_type i = mv;
 			for (; i < other.size(); i++) new (ptr() + i) T(other.ptr()[i]);
-			for (; i < size(); i++) ptr()[i].~T();
+			if (!std::is_trivially_destructible<T>::value)
+				for (; i < size(); i++) ptr()[i].~T();
 			size_ = other.size_;
 		}
 		return *this;
@@ -88,10 +89,12 @@ public:
 				for (; i < other.size(); i++) {
 					new (ptr() + i) T(std::move(other.ptr()[i]));
 				}
-				for (; i < size(); i++) ptr()[i].~T();
+				if (!std::is_trivially_destructible<T>::value) {
+					for (; i < size(); i++) ptr()[i].~T();
 
-				for (i = 0; i < other.size(); i++) {
-					other.ptr()[i].~T();
+					for (i = 0; i < other.size(); i++) {
+						other.ptr()[i].~T();
+					}
 				}
 			} else {
 				clear();
@@ -190,7 +193,7 @@ public:
 		}
 	}
 	void grow(size_type sz) {
-		if (sz > capacity()) reserve(sz + capacity() * 2);
+		if (sz > capacity()) reserve(std::max(sz, capacity() * 2));
 	}
 	void push_back(const T& v) {
 		grow(size_ + 1);

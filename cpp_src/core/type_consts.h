@@ -107,7 +107,7 @@ enum ErrorCode {
 
 };
 
-enum QueryType { QuerySelect, QueryDelete, QueryUpdate };
+enum QueryType { QuerySelect, QueryDelete, QueryUpdate, QueryTruncate };
 
 enum OpType { OpOr = 1, OpAnd = 2, OpNot = 3 };
 

@@ -55,6 +55,40 @@ class NamespacesTest(BaseTest):
         status, body = self.api_get_namespace(self.current_db, self.test_ns)
         self.assertEqual(True, status == self.API_STATUS['not_found'], body)
 
+    def test_truncate_namespace(self):
+        """Should be able to delete all items from namespace"""
+
+        status, body = self.api_create_namespace(self.current_db, self.test_ns)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        index_count = 5
+        items_count = 10
+
+        index_array_of_dicts = self.helper_index_array_construct(index_count)
+        for i in range(0, index_count):
+            status, body = self.api_create_index(
+                self.current_db, self.test_ns, index_array_of_dicts[i])
+            self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        items = self.helper_item_array_construct(items_count)
+        for item_body in items:
+            status, body = self.api_create_item(self.current_db, self.test_ns, item_body)
+            self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        status, body = self.api_get_items(self.current_db, self.test_ns)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+        self.assertEqual(True, len(body['items']) == items_count, body)
+
+        status, body = self.api_truncate_namespace(self.current_db, self.test_ns)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        status, body = self.api_get_items(self.current_db, self.test_ns)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+        self.assertEqual(True, len(body['items']) == 0, body)
+
+        status, body = self.api_delete_namespace(self.test_db, self.test_ns)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
     def test_create_namespace_with_indexes(self):
         """Should be able to create a new namespace with valid indexes"""
 

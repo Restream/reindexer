@@ -232,7 +232,7 @@ size_t PayloadIface<T>::GetHash(const FieldsSet &fields) const {
 	VariantArray keys1;
 	size_t tagPathIdx = 0;
 	for (auto field : fields) {
-		ret <<= 1;
+		ret *= 127;
 		if (field != IndexValueType::SetByJsonPath) {
 			auto &f = t_.Field(field);
 			if (f.IsArray()) {
@@ -240,10 +240,10 @@ size_t PayloadIface<T>::GetHash(const FieldsSet &fields) const {
 				ret ^= arr->len;
 				uint8_t *p = v_->Ptr() + arr->offset;
 				for (int i = 0; i < arr->len; i++, p += f.ElemSizeof()) {
-					ret ^= PayloadFieldValue(f, p).Get().Hash();
+					ret ^= PayloadFieldValue(f, p).Hash();
 				}
 			} else
-				ret ^= Field(field).Get().Hash();
+				ret ^= Field(field).Hash();
 		} else {
 			assert(tagPathIdx < fields.getTagsPathsLength());
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
@@ -267,10 +267,10 @@ uint64_t PayloadIface<T>::GetHash() const {
 			ret ^= arr->len;
 			uint8_t *p = v_->Ptr() + arr->offset;
 			for (int i = 0; i < arr->len; i++, p += f.ElemSizeof()) {
-				ret ^= PayloadFieldValue(f, p).Get().Hash();
+				ret ^= PayloadFieldValue(f, p).Hash();
 			}
 		} else
-			ret ^= Field(field).Get().Hash();
+			ret ^= Field(field).Hash();
 	}
 	return ret;
 }
@@ -292,10 +292,10 @@ bool PayloadIface<T>::IsEQ(const T &other, const FieldsSet &fields) const {
 				uint8_t *p2 = o.v_->Ptr() + arr2->offset;
 
 				for (int i = 0; i < arr1->len; i++, p1 += f.ElemSizeof(), p2 += f.ElemSizeof()) {
-					if (PayloadFieldValue(f, p1).Get() != PayloadFieldValue(f, p2).Get()) return false;
+					if (!PayloadFieldValue(f, p1).IsEQ(PayloadFieldValue(f, p2))) return false;
 				}
 			} else {
-				if (Field(field).Get() != o.Field(field).Get()) return false;
+				if (!Field(field).IsEQ(o.Field(field))) return false;
 			}
 		} else {
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);

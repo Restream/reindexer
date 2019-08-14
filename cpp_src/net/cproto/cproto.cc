@@ -14,6 +14,7 @@ std::unordered_map<int, const char *> kRPCCodes = {
 	{kCmdOpenNamespace, "OpenNamespace"},
 	{kCmdCloseNamespace, "CloseNamespace"},
 	{kCmdDropNamespace, "DropNamespace"},
+	{kCmdTruncateNamespace, "TruncateNamespace"},
 	{kCmdAddIndex, "AddIndex"},
 	{kCmdEnumNamespaces, "EnumNamespaces"},
 	{kCmdDropIndex, "DropIndex"},

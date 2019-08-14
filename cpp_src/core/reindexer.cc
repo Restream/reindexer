@@ -22,6 +22,7 @@ Error Reindexer::AddNamespace(const NamespaceDef& nsDef) { return impl_->AddName
 Error Reindexer::OpenNamespace(string_view nsName, const StorageOpts& storage) { return impl_->OpenNamespace(nsName, storage, ctx_); }
 Error Reindexer::DropNamespace(string_view nsName) { return impl_->DropNamespace(nsName, ctx_); }
 Error Reindexer::CloseNamespace(string_view nsName) { return impl_->CloseNamespace(nsName, ctx_); }
+Error Reindexer::TruncateNamespace(string_view nsName) { return impl_->TruncateNamespace(nsName, ctx_); }
 Error Reindexer::Insert(string_view nsName, Item& item) { return impl_->Insert(nsName, item, ctx_); }
 Error Reindexer::Update(string_view nsName, Item& item) { return impl_->Update(nsName, item, ctx_); }
 Error Reindexer::Upsert(string_view nsName, Item& item) { return impl_->Upsert(nsName, item, ctx_); }

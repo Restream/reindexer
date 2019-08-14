@@ -224,6 +224,11 @@ func (db *Reindexer) DropNamespace(namespace string) error {
 	return db.impl.dropNamespace(db.ctx, namespace)
 }
 
+// TruncateNamespace - delete all items from namespace
+func (db *Reindexer) TruncateNamespace(namespace string) error {
+	return db.impl.truncateNamespace(db.ctx, namespace)
+}
+
 // CloseNamespace - close namespace, but keep storage
 func (db *Reindexer) CloseNamespace(namespace string) error {
 	return db.impl.closeNamespace(db.ctx, namespace)

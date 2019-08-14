@@ -152,9 +152,8 @@ Namespace::~Namespace() {
 
 void Namespace::onConfigUpdated(DBConfigProvider &configProvider, const RdxContext &ctx) {
 	NamespaceConfigData configData;
-	ReplicationConfigData replicationConf;
 	configProvider.GetNamespaceConfig(GetName(), configData);
-	replicationConf = configProvider.GetReplicationConfig();
+	ReplicationConfigData replicationConf = configProvider.GetReplicationConfig();
 
 	enablePerfCounters_ = configProvider.GetProfilingConfig().perfStats;
 
@@ -838,6 +837,46 @@ void Namespace::Delete(const Query &q, QueryResults &result, const RdxContext &c
 	}
 }
 
+void Namespace::Truncate(const RdxContext &ctx, int64_t lsn, bool noLock) {
+	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
+
+	WLock lock(mtx_, defer_lock, &ctx);
+	if (!noLock) {
+		cancelCommit_ = true;
+		lock.lock();
+		cancelCommit_ = false;
+	}
+	calc.LockHit();
+
+	if (repl_.slaveMode && lsn == -1) throw Error(errLogic, "Can't modify slave ns '%s'", name_);
+
+	if (storage_) {
+		for (PayloadValue &pv : items_) {
+			if (pv.IsFree()) continue;
+			Payload pl(payloadType_, pv);
+			WrSerializer pk;
+			pk << kStorageItemPrefix;
+			pl.SerializeFields(pk, pkFields());
+			std::unique_lock<std::mutex> lock(storage_mtx_);
+			updates_->Remove(pk.Slice());
+			++unflushedCount_;
+		}
+	}
+	items_.clear();
+	free_.clear();
+	for (size_t i = 0; i < indexes_.size(); ++i) {
+		const IndexOpts opts = indexes_[i]->Opts();
+		unique_ptr<Index> newIdx{Index::New(getIndexDefinition(i), indexes_[i]->GetPayloadType(), indexes_[i]->Fields())};
+		newIdx->SetOpts(opts);
+		std::swap(indexes_[i], newIdx);
+	}
+
+	WrSerializer ser;
+	WALRecord wrec(WalUpdateQuery, (ser << "TRUNCATE " << name_).Slice());
+	if (!repl_.slaveMode) lsn = wal_.Add(wrec);
+	observers_.OnWALUpdate(lsn, name_, wrec);
+}
+
 ReplicationState Namespace::GetReplState(const RdxContext &ctx) {
 	RLock lck(mtx_, &ctx);
 	return getReplState();
@@ -1298,34 +1337,36 @@ void Namespace::Select(QueryResults &result, SelectCtx &params, const RdxContext
 	}
 }
 
+IndexDef Namespace::getIndexDefinition(size_t i) const {
+	assert(i < indexes_.size());
+	IndexDef indexDef;
+	const Index &index = *indexes_[i];
+	indexDef.name_ = index.Name();
+	indexDef.opts_ = index.Opts();
+	indexDef.FromType(index.Type());
+
+	if (index.Opts().IsSparse() || static_cast<int>(i) >= payloadType_.NumFields()) {
+		int fIdx = 0;
+		for (auto &f : index.Fields()) {
+			if (f != IndexValueType::SetByJsonPath) {
+				indexDef.jsonPaths_.push_back(indexes_[f]->Name());
+			} else {
+				indexDef.jsonPaths_.push_back(index.Fields().getJsonPath(fIdx++));
+			}
+		}
+	} else {
+		indexDef.jsonPaths_ = payloadType_->Field(i).JsonPaths();
+	}
+	return indexDef;
+}
+
 NamespaceDef Namespace::getDefinition() const {
 	auto pt = this->payloadType_;
 	NamespaceDef nsDef(name_, StorageOpts().Enabled(!dbpath_.empty()));
-
 	nsDef.indexes.reserve(indexes_.size());
-	for (int i = 1; i < int(indexes_.size()); i++) {
-		IndexDef indexDef;
-		const Index &index = *indexes_[i];
-		indexDef.name_ = index.Name();
-		indexDef.opts_ = index.Opts();
-		indexDef.FromType(index.Type());
-
-		if (index.Opts().IsSparse() || i >= payloadType_.NumFields()) {
-			int fIdx = 0;
-			for (auto &f : index.Fields()) {
-				if (f != IndexValueType::SetByJsonPath) {
-					indexDef.jsonPaths_.push_back(indexes_[f]->Name());
-				} else {
-					indexDef.jsonPaths_.push_back(index.Fields().getJsonPath(fIdx++));
-				}
-			}
-		} else {
-			indexDef.jsonPaths_ = payloadType_->Field(i).JsonPaths();
-		}
-
-		nsDef.AddIndex(indexDef);
+	for (size_t i = 1; i < indexes_.size(); ++i) {
+		nsDef.AddIndex(getIndexDefinition(i));
 	}
-
 	return nsDef;
 }
 
@@ -1635,6 +1676,9 @@ void Namespace::initWAL(int64_t maxLSN) {
 }
 
 void Namespace::removeExpiredItems(RdxActivityContext *ctx) {
+	if (repl_.slaveMode) {
+		return;
+	}
 	const RdxContext rdxCtx{ctx};
 	WLock wlock(mtx_, &rdxCtx);
 	for (const std::unique_ptr<Index> &index : indexes_) {

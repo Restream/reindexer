@@ -49,6 +49,7 @@ public:
 	virtual IndexMemStat GetMemStat() = 0;
 	virtual int64_t GetTTLValue() const { return 0; }
 
+	const PayloadType& GetPayloadType() const { return payloadType_; }
 	void UpdatePayloadType(const PayloadType payloadType) { payloadType_ = payloadType; }
 
 	static Index* New(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields_);

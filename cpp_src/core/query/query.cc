@@ -227,7 +227,7 @@ vector<string> Query::GetSuggestions(const string_view &q, size_t pos, const Nam
 }
 
 unordered_map<int, set<string>> sqlTokenMatchings = {
-	{Start, {"explain", "select", "delete", "update"}},
+	{Start, {"explain", "select", "delete", "update", "truncate"}},
 	{StartAfterExplain, {"select", "delete", "update"}},
 	{AggregationSqlToken, {"sum", "avg", "max", "min", "facet", "count", "distinct"}},
 	{SelectConditionsStart, {"where", "limit", "offset", "order", "join", "left", "inner", "merge", "or", ";"}},
@@ -575,6 +575,9 @@ int Query::Parse(tokenizer &parser, SqlParsingCtx &ctx) {
 	} else if (tok.text() == "update"_sv) {
 		type_ = QueryUpdate;
 		updateParse(parser, ctx);
+	} else if (tok.text() == "truncate"_sv) {
+		type_ = QueryTruncate;
+		truncateParse(parser, ctx);
 	} else {
 		throw Error(errParams, "Syntax error at or near '%s', %s", tok.text(), parser.where());
 	}
@@ -930,6 +933,15 @@ int Query::updateParse(tokenizer &parser, SqlParsingCtx &ctx) {
 	parser.next_token();
 	parseWhere(parser, ctx);
 
+	return 0;
+}
+
+int Query::truncateParse(tokenizer &parser, SqlParsingCtx &ctx) {
+	parser.next_token();
+	token tok = peekSqlToken(parser, ctx, NamespaceSqlToken);
+	_namespace = string(tok.text());
+	ctx.updateLinkedNs(_namespace);
+	parser.next_token();
 	return 0;
 }
 
@@ -1413,6 +1425,9 @@ WrSerializer &Query::GetSQL(WrSerializer &ser, bool stripArgs) const {
 				}
 				ser << ((field.values.size() != 1) ? "]" : "");
 			}
+			break;
+		case QueryTruncate:
+			ser << "TRUNCATE " << _namespace;
 			break;
 		default:
 			throw Error(errParams, "Not implemented");

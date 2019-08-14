@@ -147,6 +147,10 @@ func (server *BuiltinServer) DropNamespace(ctx context.Context, namespace string
 	return server.builtin.DropNamespace(ctx, namespace)
 }
 
+func (server *BuiltinServer) TruncateNamespace(ctx context.Context, namespace string) error {
+	return server.builtin.TruncateNamespace(ctx, namespace)
+}
+
 func (server *BuiltinServer) EnableStorage(ctx context.Context, namespace string) error {
 	return server.builtin.EnableStorage(ctx, namespace)
 }

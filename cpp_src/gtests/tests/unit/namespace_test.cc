@@ -42,6 +42,14 @@ TEST_F(NsApi, IndexDrop) {
 	EXPECT_TRUE(err.ok()) << err.what();
 }
 
+TEST_F(NsApi, TruncateNamespace) {
+	TruncateNamespace([&](const std::string &nsName) { return rt.reindexer->TruncateNamespace(nsName); });
+	TruncateNamespace([&](const std::string &nsName) {
+		QueryResults qr;
+		return rt.reindexer->Select("TRUNCATE " + nsName, qr);
+	});
+}
+
 TEST_F(NsApi, UpsertWithPrecepts) {
 	Error err = rt.reindexer->OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();

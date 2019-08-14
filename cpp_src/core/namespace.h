@@ -129,6 +129,7 @@ public:
 
 	void Delete(Item &item, const RdxContext &ctx, bool noLock = false);
 	void Delete(const Query &query, QueryResults &result, const RdxContext &ctx, int64_t lsn = -1, bool noLock = false);
+	void Truncate(const RdxContext &ctx, int64_t lsn = -1, bool noLock = false);
 
 	void Select(QueryResults &result, SelectCtx &params, const RdxContext &);
 	NamespaceDef GetDefinition(const RdxContext &ctx);
@@ -203,6 +204,7 @@ protected:
 	void onConfigUpdated(DBConfigProvider &configProvider, const RdxContext &ctx);
 	NamespaceDef getDefinition() const;
 	IndexDef getIndexDefinition(const string &indexName) const;
+	IndexDef getIndexDefinition(size_t) const;
 
 	string getMeta(const string &key);
 	void flushStorage(const RdxContext &);

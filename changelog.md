@@ -1,3 +1,16 @@
+# Version 2.1.3 (14.08.2019)
+
+## Core
+
+- [fea] Added two way sync of replication config and namespace
+- [fea] Memory usage of indexes decreased (tsl::sparesmap has been added)
+- [fea] Added non-normalized query in queries stats
+- [fea] Add truncate namespace function
+- [fix] Fixed unexpected hang and huge memory alloc on select by uncommited indexes
+- [fix] Correct usage of '*' entry as default in namespaces config
+- [fix] Memory statistics calculation are improoved
+- [fix] Slave will not try to clear expired by ttl records
+
 # Version 2.1.2 (04.08.2019)
 
 ## Core

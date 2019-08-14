@@ -80,3 +80,34 @@ TEST_F(ReplicationLoadApi, SingleSlaveTest) {
 	writingThread.join();
 	removingThread.join();
 }
+
+TEST_F(ReplicationLoadApi, ConfigSync) {
+	ServerConfig config("slave", true, false, "cproto://127.0.0.1:6534/0");
+	RestartWithConfigFile(2,
+						  "role: slave\n"
+						  "master_dsn: cproto://127.0.0.1:6534/0\n"
+						  "cluster_id: 2\n"
+						  "force_sync_on_logic_error: true\n"
+						  "force_sync_on_wrong_data_hash: false\n"
+						  "namespaces: []");
+	CheckSlaveConfigFile(2, config);
+	config = ServerConfig("slave", false, true, "cproto://127.0.0.1:6534/12345", {"ns1", "ns2"});
+	SetServerConfig(2, config);
+	CheckSlaveConfigFile(2, config);
+	config = ServerConfig("slave", true, false, "cproto://127.0.0.1:6534/999");
+	SetServerConfig(2, config);
+	CheckSlaveConfigFile(2, config);
+
+	GetSrv(2)->WriteServerConfig(
+		"role: slave\n"
+		"master_dsn: cproto://127.0.0.1:6534/somensname\n"
+		"cluster_id: 2\n"
+		"force_sync_on_logic_error: false\n"
+		"force_sync_on_wrong_data_hash: true\n"
+		"namespaces:\n"
+		"  - ns1\n"
+		"  - ns3\n");
+	config = ServerConfig("slave", false, true, "cproto://127.0.0.1:6534/somensname", {"ns1", "ns3"});
+	std::this_thread::sleep_for(std::chrono::seconds(3));
+	CheckSlaveConfigNamespace(2, config);
+}

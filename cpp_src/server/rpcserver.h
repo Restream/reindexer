@@ -44,6 +44,7 @@ public:
 
 	Error OpenNamespace(cproto::Context &ctx, p_string ns);
 	Error DropNamespace(cproto::Context &ctx, p_string ns);
+	Error TruncateNamespace(cproto::Context &ctx, p_string ns);
 	Error CloseNamespace(cproto::Context &ctx, p_string ns);
 	Error EnumNamespaces(cproto::Context &ctx);
 

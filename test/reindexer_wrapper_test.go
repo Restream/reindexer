@@ -258,6 +258,11 @@ func (dbw *ReindexerWrapper) WaitForSyncMithMaster() {
 	panic(fmt.Sprintf("Can't sync slave ns with master: ns \"%s\" masterlsn: %d , slavelsn %d", nameBad, masterBadLsn, slaveBadLsn))
 }
 
+func (dbw *ReindexerWrapper) TruncateNamespace(namespace string) error {
+	dbw.SetSynced(false)
+	return dbw.Reindexer.TruncateNamespace(namespace)
+}
+
 func (dbw *ReindexerWrapper) CloseNamespace(namespace string) error {
 	dbw.SetSynced(false)
 	return dbw.Reindexer.CloseNamespace(namespace)

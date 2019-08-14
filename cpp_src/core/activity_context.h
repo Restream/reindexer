@@ -51,22 +51,24 @@ class RdxActivityContext {
 		Ward(RdxActivityContext* cont, Activity::State state) : context_(cont) {
 			if (context_) {
 				prevState_ = context_->state_.exchange(serializeState(state), std::memory_order_relaxed);
+#ifndef NDEBUG
 				context_->refCount_.fetch_add(1u, std::memory_order_relaxed);
+#endif
 			}
 		}
 		Ward(RdxActivityContext* cont, MutexMark mutexMark) : context_(cont) {
 			if (context_) {
 				prevState_ = context_->state_.exchange(serializeState(mutexMark), std::memory_order_relaxed);
+#ifndef NDEBUG
 				context_->refCount_.fetch_add(1u, std::memory_order_relaxed);
+#endif
 			}
 		}
 		Ward(Ward&& other) : context_(other.context_), prevState_(other.prevState_) { other.context_ = nullptr; }
 		~Ward() {
 			if (context_) {
 				context_->state_.store(prevState_, std::memory_order_relaxed);
-				const unsigned prevValue = context_->refCount_.fetch_sub(1u, std::memory_order_relaxed);
-				assert(prevValue != 0u);
-				(void)prevValue;
+				assert(context_->refCount_.fetch_sub(1u, std::memory_order_relaxed) != 0u);
 			}
 		}
 
@@ -83,10 +85,8 @@ public:
 	RdxActivityContext(string_view activityTracer, string_view user, string_view query, ActivityContainer&, bool clientState = false);
 	RdxActivityContext(RdxActivityContext&&);
 	~RdxActivityContext() {
-		if (parent_) {
-			parent_->Unregister(this);
-			assert(refCount_.load(std::memory_order_relaxed) == 0u);
-		}
+		if (parent_) parent_->Unregister(this);
+		assert(refCount_.load(std::memory_order_relaxed) == 0u);
 	}
 	operator Activity() const;
 
@@ -109,7 +109,9 @@ private:
 	const Activity data_;
 	std::atomic<unsigned> state_{serializeState(Activity::InProgress)};  // kStateShift lower bits for state, other for details
 	ActivityContainer* parent_;
+#ifndef NDEBUG
 	std::atomic<unsigned> refCount_;
+#endif
 };
 
 }  // namespace reindexer

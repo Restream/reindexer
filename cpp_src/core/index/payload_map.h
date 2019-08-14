@@ -1,12 +1,10 @@
 #pragma once
 
-#include <unordered_map>
 #include "core/payload/fieldsset.h"
 #include "core/payload/payloadiface.h"
 #include "cpp-btree/btree_map.h"
-#include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
-
+#include "sparse-map/sparse_map.h"
 namespace reindexer {
 
 struct equal_composite {
@@ -41,9 +39,12 @@ struct less_composite {
 };
 
 template <typename T1>
-class unordered_payload_map : public std::unordered_map<PayloadValue, T1, hash_composite, equal_composite> {
+class unordered_payload_map
+	: public tsl::sparse_map<PayloadValue, T1, hash_composite, equal_composite, std::allocator<std::pair<PayloadValue, T1>>,
+							 tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low> {
 public:
-	using base_hash_map = std::unordered_map<PayloadValue, T1, hash_composite, equal_composite>;
+	using base_hash_map = tsl::sparse_map<PayloadValue, T1, hash_composite, equal_composite, std::allocator<std::pair<PayloadValue, T1>>,
+										  tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>;
 	using base_hash_map::base_hash_map;
 	unordered_payload_map(const PayloadType payloadType, const FieldsSet &fields, const CollateOpts)
 		: base_hash_map(1000, hash_composite(payloadType, fields), equal_composite(payloadType, fields)) {}

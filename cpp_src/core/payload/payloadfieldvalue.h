@@ -17,6 +17,8 @@ public:
 	// Single value operations
 	void Set(Variant kv);
 	Variant Get(bool enableHold = false) const;
+	size_t Hash() const;
+	bool IsEQ(const PayloadFieldValue &o) const;
 
 	// Type of value, not owning
 	const PayloadFieldType &t_;

@@ -135,6 +135,8 @@ Error RPCServer::DropNamespace(cproto::Context &ctx, p_string ns) {
 	return getDB(ctx, kRoleDBAdmin).DropNamespace(ns);
 }
 
+Error RPCServer::TruncateNamespace(cproto::Context &ctx, p_string ns) { return getDB(ctx, kRoleDBAdmin).TruncateNamespace(ns); }
+
 Error RPCServer::CloseNamespace(cproto::Context &ctx, p_string ns) {
 	// Do not close.
 	// TODO: add reference counters
@@ -604,6 +606,7 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	dispatcher.Register(cproto::kCmdDropDatabase, this, &RPCServer::DropDatabase);
 	dispatcher.Register(cproto::kCmdOpenNamespace, this, &RPCServer::OpenNamespace);
 	dispatcher.Register(cproto::kCmdDropNamespace, this, &RPCServer::DropNamespace);
+	dispatcher.Register(cproto::kCmdTruncateNamespace, this, &RPCServer::TruncateNamespace);
 	dispatcher.Register(cproto::kCmdCloseNamespace, this, &RPCServer::CloseNamespace);
 	dispatcher.Register(cproto::kCmdEnumNamespaces, this, &RPCServer::EnumNamespaces);
 

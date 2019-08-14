@@ -146,7 +146,7 @@ bool SelectIterator::nextFwdSingleIdset(IdType minHint) {
 	if (minHint > lastVal_) lastVal_ = minHint - 1;
 	auto it = begin();
 	if (it->useBtree_) {
-		if (it->itset_ != it->setend_ && *it->it_ >= lastVal_) {
+		if (it->itset_ != it->setend_ && *it->itset_ <= lastVal_) {
 			it->itset_ = it->set_->upper_bound(lastVal_);
 		}
 		lastVal_ = (it->itset_ != it->set_->end()) ? *it->itset_ : INT_MAX;

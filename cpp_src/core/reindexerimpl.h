@@ -16,6 +16,7 @@
 #include "querystat.h"
 #include "replicator/updatesobserver.h"
 #include "tools/errors.h"
+#include "tools/filemtimechecker.h"
 #include "transaction.h"
 
 using std::shared_ptr;
@@ -41,6 +42,7 @@ public:
 	Error AddNamespace(const NamespaceDef &nsDef, const InternalRdxContext &ctx = InternalRdxContext());
 	Error CloseNamespace(string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
 	Error DropNamespace(string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
+	Error TruncateNamespace(string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
 	Error AddIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx = InternalRdxContext());
 	Error UpdateIndex(string_view nsName, const IndexDef &indexDef, const InternalRdxContext &ctx = InternalRdxContext());
 	Error DropIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx = InternalRdxContext());
@@ -124,10 +126,11 @@ protected:
 
 	void syncSystemNamespaces(string_view nsName, const RdxContext &ctx);
 	void createSystemNamespaces();
-	Error updateToSystemNamespace(string_view nsName, Item &, const RdxContext &ctx);
-	void updateConfigProvider(Item &configItem);
+	void updateToSystemNamespace(string_view nsName, Item &, const RdxContext &ctx);
+	void updateConfigProvider(const gason::JsonNode &config);
+	void updateReplicationConfFile(const gason::JsonNode &config);
 	void onProfiligConfigLoad();
-	void tryLoadReplicatorConfFromFile();
+	Error tryLoadReplicatorConfFromFile();
 
 	void backgroundRoutine();
 	Error closeNamespace(string_view nsName, const RdxContext &ctx, bool dropStorage, bool enableDropSlave = false);
@@ -157,6 +160,8 @@ protected:
 	UpdatesObservers observers_;
 	std::unique_ptr<Replicator> replicator_;
 	DBConfigProvider configProvider_;
+	FileMTimeChecker replConfigFileChecker_;
+	bool hasReplConfigLoadError_;
 
 	ActivityContainer activities_;
 

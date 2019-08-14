@@ -28,7 +28,7 @@ public:
 		if (&other != this) {
 			release();
 			p_ = other.p_;
-			if (p_) header()->refcount.fetch_add(1);
+			if (p_) header()->refcount.fetch_add(1, std::memory_order_relaxed);
 		}
 		return *this;
 	}

@@ -282,7 +282,7 @@ Index *FastIndexText_New(const IndexDef &idef, const PayloadType payloadType, co
 		case IndexFastFT:
 			return new FastIndexText<unordered_str_map<FtKeyEntry>>(idef, payloadType, fields);
 		case IndexCompositeFastFT:
-			return new FastIndexText<unordered_payload_map<FtKeyEntryData>>(idef, payloadType, fields);
+			return new FastIndexText<unordered_payload_map<FtKeyEntry>>(idef, payloadType, fields);
 		default:
 			abort();
 	}

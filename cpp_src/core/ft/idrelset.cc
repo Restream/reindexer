@@ -2,6 +2,7 @@
 #include "idrelset.h"
 #include <algorithm>
 #include "estl/h_vector.h"
+#include "sort/pdqsort.hpp"
 #include "tools/varint.h"
 
 namespace reindexer {
@@ -80,13 +81,13 @@ int IdRelSet::Add(VDocIdType id, int pos, int field) {
 }
 
 void IdRelSet::Commit() {
-	std::sort(begin(), end(), [](const IdRelType& lhs, const IdRelType& rhs) { return lhs.rank() > rhs.rank(); });
+	boost::sort::pdqsort(begin(), end(), [](const IdRelType& lhs, const IdRelType& rhs) { return lhs.rank() > rhs.rank(); });
 }
 
 void IdRelSet::SimpleCommit() {
 	for (auto& val : *this) {
-		std::sort(val.pos.begin(), val.pos.end(),
-				  [](const IdRelType::PosType& lhs, const IdRelType::PosType& rhs) { return lhs.pos() < rhs.pos(); });
+		boost::sort::pdqsort(val.pos.begin(), val.pos.end(),
+							 [](const IdRelType::PosType& lhs, const IdRelType::PosType& rhs) { return lhs.pos() < rhs.pos(); });
 	}
 }
 

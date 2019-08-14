@@ -399,7 +399,7 @@ public:
 		}
 
 		for (const auto& element_lhs : lhs) {
-			const auto it_element_rhs = rhs.find(element_lhs);
+			const_iterator it_element_rhs = rhs.find(element_lhs);
 			if (it_element_rhs == rhs.cend()) {
 				return false;
 			}

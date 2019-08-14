@@ -118,6 +118,7 @@ type RawBinding interface {
 	OpenNamespace(ctx context.Context, namespace string, enableStorage, dropOnFileFormatError bool) error
 	CloseNamespace(ctx context.Context, namespace string) error
 	DropNamespace(ctx context.Context, namespace string) error
+	TruncateNamespace(ctx context.Context, namespace string) error
 	EnableStorage(ctx context.Context, namespace string) error
 	AddIndex(ctx context.Context, namespace string, indexDef IndexDef) error
 	UpdateIndex(ctx context.Context, namespace string, indexDef IndexDef) error

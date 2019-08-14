@@ -14,7 +14,7 @@ void IndexStore<key_string>::Delete(const Variant &key, IdType id) {
 	if (keyIt == str_map.end()) return;
 	if (keyIt->second) keyIt->second--;
 	if (!keyIt->second) {
-		memStat_.dataSize -= sizeof(*keyIt->first.get()) + keyIt->first->heap_size();
+		memStat_.dataSize -= sizeof(unordered_str_map<int>::value_type) + sizeof(*keyIt->first.get()) + keyIt->first->heap_size();
 		str_map.erase(keyIt);
 	}
 
@@ -30,7 +30,7 @@ Variant IndexStore<key_string>::Upsert(const Variant &key, IdType /*id*/) {
 	auto keyIt = str_map.find(string_view(key));
 	if (keyIt == str_map.end()) {
 		keyIt = str_map.emplace(static_cast<key_string>(key), 0).first;
-		memStat_.dataSize += sizeof(*keyIt->first.get()) + keyIt->first->heap_size();
+		memStat_.dataSize += sizeof(unordered_str_map<int>::value_type) + sizeof(*keyIt->first.get()) + keyIt->first->heap_size();
 	}
 	keyIt->second++;
 

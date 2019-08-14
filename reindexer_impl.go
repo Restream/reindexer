@@ -227,6 +227,12 @@ func (db *reindexerImpl) dropNamespace(ctx context.Context, namespace string) er
 	return db.binding.DropNamespace(ctx, namespace)
 }
 
+// truncateNamespace - delete all items from namespace
+func (db *reindexerImpl) truncateNamespace(ctx context.Context, namespace string) error {
+	namespace = strings.ToLower(namespace)
+	return db.binding.TruncateNamespace(ctx, namespace)
+}
+
 // closeNamespace - close namespace, but keep storage
 func (db *reindexerImpl) closeNamespace(ctx context.Context, namespace string) error {
 	namespace = strings.ToLower(namespace)

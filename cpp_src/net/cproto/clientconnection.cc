@@ -136,10 +136,9 @@ void ClientConnection::onClose() {
 		for (RPCCompletion *cc = &c; cc; cc = cc->next.get())
 			if (cc->used) cc->cmpl(RPCAnswer(lastError_), this);
 	}
-	auto tmpUpdatesHandler = updatesHandler_;
-	updatesHandler_ = nullptr;
+	std::unique_ptr<Completion> tmpUpdatesHandler(updatesHandler_.release(std::memory_order_acq_rel));
 
-	if (tmpUpdatesHandler) tmpUpdatesHandler(RPCAnswer(lastError_), this);
+	if (tmpUpdatesHandler) (*tmpUpdatesHandler)(RPCAnswer(lastError_), this);
 	bufCond_.notify_all();
 }
 
@@ -194,8 +193,15 @@ void ClientConnection::onRead() {
 			return;
 		}
 
-		if (hdr.cmd == kCmdUpdates && updatesHandler_) {
-			updatesHandler_(std::move(ans), this);
+		if (hdr.cmd == kCmdUpdates) {
+			auto handler = updatesHandler_.release(std::memory_order_acq_rel);
+			if (handler) {
+				(*handler)(std::move(ans), this);
+				Completion *expected = nullptr;
+				if (!updatesHandler_.compare_exchange_strong(expected, handler, std::memory_order_acq_rel)) {
+					delete handler;
+				}
+			}
 		} else {
 			RPCCompletion *completion = &completions_[hdr.seq % completions_.size()];
 

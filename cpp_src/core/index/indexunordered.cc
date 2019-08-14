@@ -33,14 +33,14 @@ size_t heap_size<key_string>(const key_string &kt) {
 
 template <typename T>
 void IndexUnordered<T>::addMemStat(typename T::iterator it) {
-	this->memStat_.idsetPlainSize += sizeof(it->second) + it->second.Unsorted().heap_size();
+	this->memStat_.idsetPlainSize += sizeof(typename T::value_type) + it->second.Unsorted().heap_size();
 	this->memStat_.idsetBTreeSize += it->second.Unsorted().BTreeSize();
 	this->memStat_.dataSize += heap_size(it->first);
 }
 
 template <typename T>
 void IndexUnordered<T>::delMemStat(typename T::iterator it) {
-	this->memStat_.idsetPlainSize -= sizeof(it->second) + it->second.Unsorted().heap_size();
+	this->memStat_.idsetPlainSize -= sizeof(typename T::value_type) + it->second.Unsorted().heap_size();
 	this->memStat_.idsetBTreeSize -= it->second.Unsorted().BTreeSize();
 	this->memStat_.dataSize -= heap_size(it->first);
 }
@@ -291,6 +291,6 @@ template class IndexUnordered<number_map<double, Index::KeyEntry>>;
 template class IndexUnordered<str_map<Index::KeyEntry>>;
 template class IndexUnordered<payload_map<Index::KeyEntry>>;
 template class IndexUnordered<unordered_str_map<FtKeyEntry>>;
-template class IndexUnordered<unordered_payload_map<FtKeyEntryData>>;
+template class IndexUnordered<unordered_payload_map<FtKeyEntry>>;
 
 }  // namespace reindexer

@@ -1,9 +1,11 @@
 #include "dbconfig.h"
 #include <limits.h>
+#include <fstream>
 #include "cjson/jsonbuilder.h"
 #include "estl/smart_lock.h"
 #include "gason/gason.h"
 #include "tools/jsontools.h"
+#include "tools/serializer.h"
 #include "tools/stringstools.h"
 #include "yaml/yaml.h"
 
@@ -71,11 +73,6 @@ void DBConfigProvider::setHandler(ConfigType cfgType, std::function<void()> hand
 	handlers_[cfgType] = handler;
 }
 
-void DBConfigProvider::SetReplicationConfig(const ReplicationConfigData &conf) {
-	smart_lock<shared_timed_mutex> lk(mtx_, false);
-	replicationData_ = conf;
-}
-
 ProfilingConfigData DBConfigProvider::GetProfilingConfig() {
 	smart_lock<shared_timed_mutex> lk(mtx_, false);
 	return profilingData_;
@@ -88,6 +85,9 @@ ReplicationConfigData DBConfigProvider::GetReplicationConfig() {
 bool DBConfigProvider::GetNamespaceConfig(const string &nsName, NamespaceConfigData &data) {
 	smart_lock<shared_timed_mutex> lk(mtx_, false);
 	auto it = namespacesData_.find(nsName);
+	if (it == namespacesData_.end()) {
+		it = namespacesData_.find("*");
+	}
 	if (it == namespacesData_.end()) {
 		data = {};
 		return false;
@@ -151,7 +151,7 @@ ReplicationRole ReplicationConfigData::str2role(const string &role) {
 	throw Error(errParams, "Unknown replication role %s", role);
 }
 
-std::string ReplicationConfigData::role2str(ReplicationRole role) {
+std::string ReplicationConfigData::role2str(ReplicationRole role) noexcept {
 	switch (role) {
 		case ReplicationMaster:
 			return "master";
@@ -164,7 +164,7 @@ std::string ReplicationConfigData::role2str(ReplicationRole role) {
 	}
 }
 
-void ReplicationConfigData::GetJSON(JsonBuilder &jb) {
+void ReplicationConfigData::GetJSON(JsonBuilder &jb) const {
 	jb.Put("role", role2str(role));
 	jb.Put("master_dsn", masterDSN);
 	jb.Put("cluster_id", clusterID);
@@ -172,8 +172,46 @@ void ReplicationConfigData::GetJSON(JsonBuilder &jb) {
 	jb.Put("force_sync_on_wrong_data_hash", forceSyncOnWrongDataHash);
 	{
 		auto arrNode = jb.Array("namespaces");
-		for (auto &ns : namespaces) arrNode.Put(nullptr, ns);
+		for (const auto &ns : namespaces) arrNode.Put(nullptr, ns);
 	}
+}
+
+void ReplicationConfigData::GetYAML(WrSerializer &ser) const {
+	std::string namespacesStr;
+	if (namespaces.empty()) {
+		namespacesStr = "namespaces: []";
+	} else {
+		size_t i = 0;
+		Yaml::Node nsYaml;
+		auto &nsArrayYaml = nsYaml["namespaces"];
+		for (auto &ns : namespaces) {
+			nsArrayYaml.PushBack();
+			nsArrayYaml[i++] = std::move(ns);
+		}
+		Yaml::Serialize(nsYaml, namespacesStr);
+	}
+	// clang-format off
+	ser <<	"# Replication role. May be on of\n"
+			"# none - replication is disabled\n"
+			"# slave - replication as slave\n"
+			"# master - replication as master\n"
+			"role: " + role2str(role) + "\n"
+			"\n"
+			"# DSN to master. Only cproto schema is supported\n"
+			"master_dsn: " + masterDSN + "\n"
+			"\n"
+			"# Cluser ID - must be same for client and for master\n"
+			"cluster_id: " + std::to_string(clusterID) + "\n"
+			"# force resync on logic error conditions\n"
+			"force_sync_on_logic_error: " + (forceSyncOnLogicError ? "true" : "false") + "\n"
+			"\n"
+			"# force resync on wrong data hash conditions\n"
+			"force_sync_on_wrong_data_hash: " + (forceSyncOnWrongDataHash ? "true" : "false") + "\n"
+			"\n"
+			"# List of namespaces for replication. If emply, all namespaces\n"
+			"# All replicated namespaces will become read only for slave\n"
+			+ namespacesStr + '\n';
+	// clang-format on
 }
 
 }  // namespace reindexer

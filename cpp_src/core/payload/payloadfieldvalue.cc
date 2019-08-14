@@ -1,5 +1,6 @@
 #include "payloadfieldvalue.h"
 #include "core/keyvalue/p_string.h"
+#include "tools/stringstools.h"
 
 namespace reindexer {
 
@@ -48,5 +49,37 @@ Variant PayloadFieldValue::Get(bool enableHold) const {
 			abort();
 	}
 }
+size_t PayloadFieldValue::Hash() const {
+	switch (t_.Type()) {
+		case KeyValueBool:
+			return std::hash<bool>()(*reinterpret_cast<const bool *>(p_));
+		case KeyValueInt:
+			return std::hash<int>()(*reinterpret_cast<const int *>(p_));
+		case KeyValueInt64:
+			return std::hash<int64_t>()(*reinterpret_cast<const int64_t *>(p_));
+		case KeyValueDouble:
+			return std::hash<double>()(*reinterpret_cast<const double *>(p_));
+		case KeyValueString:
+			return std::hash<p_string>()(*reinterpret_cast<const p_string *>(p_));
+		default:
+			abort();
+	}
+}
 
+bool PayloadFieldValue::IsEQ(const PayloadFieldValue &o) const {
+	switch (t_.Type()) {
+		case KeyValueBool:
+			return *reinterpret_cast<const bool *>(p_) == *reinterpret_cast<const bool *>(o.p_);
+		case KeyValueInt:
+			return *reinterpret_cast<const int *>(p_) == *reinterpret_cast<const int *>(o.p_);
+		case KeyValueInt64:
+			return *reinterpret_cast<const int64_t *>(p_) == *reinterpret_cast<const int64_t *>(o.p_);
+		case KeyValueDouble:
+			return *reinterpret_cast<const double *>(p_) == *reinterpret_cast<const double *>(o.p_);
+		case KeyValueString:
+			return collateCompare(*reinterpret_cast<const p_string *>(p_), *reinterpret_cast<const p_string *>(o.p_), CollateOpts()) == 0;
+		default:
+			abort();
+	}
+}
 }  // namespace reindexer

@@ -305,6 +305,15 @@ reindexer_error reindexer_drop_namespace(uintptr_t rx, reindexer_string nsName, 
 	return error2c(res);
 }
 
+reindexer_error reindexer_truncate_namespace(uintptr_t rx, reindexer_string nsName, reindexer_ctx_info ctx_info) {
+	Error res = err_not_init;
+	if (rx) {
+		RdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		res = rdxKeeper.db().TruncateNamespace(str2cv(nsName));
+	}
+	return error2c(res);
+}
+
 reindexer_error reindexer_close_namespace(uintptr_t rx, reindexer_string nsName, reindexer_ctx_info ctx_info) {
 	Error res = err_not_init;
 	if (rx) {

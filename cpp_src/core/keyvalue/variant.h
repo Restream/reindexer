@@ -151,7 +151,7 @@ public:
 	using h_vector<Variant, 2>::operator!=;
 	size_t Hash() const {
 		size_t ret = this->size();
-		for (size_t i = 0; i < this->size(); ++i) ret ^= this->at(i).Hash();
+		for (size_t i = 0; i < this->size(); ++i) ret = (ret * 127) ^ this->at(i).Hash();
 		return ret;
 	}
 	void Dump(WrSerializer &wrser) const;

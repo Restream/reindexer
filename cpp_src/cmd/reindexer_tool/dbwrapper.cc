@@ -314,6 +314,9 @@ Error DBWrapper<_DB>::commandNamespaces(const string& command) {
 	} else if (iequals(subCommand, "drop")) {
 		auto nsName = reindexer::unescapeString(parser.NextToken());
 		return db_.DropNamespace(nsName);
+	} else if (iequals(subCommand, "truncate")) {
+		auto nsName = reindexer::unescapeString(parser.NextToken());
+		return db_.TruncateNamespace(nsName);
 	}
 	return Error(errParams, "Unknown sub command '%s' of namespaces command", subCommand);
 }

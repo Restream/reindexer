@@ -211,7 +211,9 @@ public:
 	}
 
 	size_t size() const { return map_->size(); }
-	size_t heap_size() const { return holder_->capacity() + map_->size() * sizeof(V) + multi_.capacity() * sizeof(multi_node); }
+	size_t heap_size() const {
+		return holder_->capacity() + map_->size() * sizeof(typename hash_map::value_type) + multi_.capacity() * sizeof(multi_node);
+	}
 
 	void shrink_to_fit() {
 		holder_->shrink_to_fit();

@@ -64,6 +64,9 @@ public:
 	/// Drop namespace. Will free all memory resorces, associated with namespace and erase all files from disk
 	/// @param nsName - Name of namespace
 	Error DropNamespace(string_view nsName);
+	/// Delete all items from namespace
+	/// @param nsName - Name of namespace
+	Error TruncateNamespace(string_view nsName);
 	/// Add index to namespace
 	/// @param nsName - Name of namespace
 	/// @param index - IndexDef with index name and parameters

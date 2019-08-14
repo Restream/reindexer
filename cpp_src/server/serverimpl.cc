@@ -317,7 +317,6 @@ int ServerImpl::run() {
 
 #ifndef _WIN32
 Error ServerImpl::daemonize() {
-	if (!config_.Daemonize) return 0;
 	pid_t pid = ::fork();
 	switch (pid) {
 		// child process

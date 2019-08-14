@@ -1,8 +1,13 @@
 ﻿#include "replication_api.h"
+#include <fstream>
 #include <thread>
+#include "core/dbconfig.h"
 #include "tools/fsops.h"
+#include "vendor/gason/gason.h"
 
-const std::string kStoragePath = "/tmp/reindex_repl_test/";
+const std::string ReplicationApi::kStoragePath = "/tmp/reindex_repl_test/";
+const std::string ReplicationApi::kReplicationConfigFilename = "replication.conf";
+const std::string ReplicationApi::kConfigNs = "#config";
 
 ServerControl::Interface::~Interface() {
 	srv.Stop();
@@ -33,6 +38,65 @@ ServerControl& ServerControl::operator=(ServerControl&& rhs) {
 
 void ServerControl::Interface::SetNeedDrop(bool dropDb) { dropDb_ = dropDb; }
 
+ServerConfig ServerControl::Interface::GetServerConfig(ConfigType type) {
+	reindexer::ReplicationConfigData config;
+	switch (type) {
+		case ConfigType::File: {
+			std::string replConfYaml;
+			int read = fs::ReadFile(getStotageRoot() + "/node" + std::to_string(id_) + "/" + ReplicationApi::kReplicationConfigFilename,
+									replConfYaml);
+			EXPECT_TRUE(read > 0) << "Repl config read error";
+			auto err = config.FromYML(replConfYaml);
+			EXPECT_TRUE(err.ok()) << err.what();
+			break;
+		}
+		case ConfigType::Namespace: {
+			reindexer::client::QueryResults results;
+			auto err = api.reindexer->Select(Query(ReplicationApi::kConfigNs), results);
+			EXPECT_TRUE(err.ok()) << err.what();
+			EXPECT_TRUE(results.Status().ok()) << results.Status().what();
+			for (auto it : results) {
+				WrSerializer ser;
+				err = it.GetJSON(ser, false);
+				EXPECT_TRUE(err.ok()) << err.what();
+				try {
+					gason::JsonParser parser;
+					gason::JsonNode configJson = parser.Parse(ser.Slice());
+					if (configJson["type"].As<std::string>() != "replication") {
+						continue;
+					}
+					auto& replConfig = configJson["replication"];
+					auto err = config.FromJSON(replConfig);
+					EXPECT_TRUE(err.ok()) << err.what();
+					break;
+				} catch (const Error&) {
+					assert(false);
+				}
+			}
+			break;
+		}
+		default:
+			break;
+	}
+
+	EXPECT_TRUE(config.role == ReplicationMaster || config.role == ReplicationSlave);
+	ServerConfig::NsSet namespaces;
+	for (auto& ns : config.namespaces) {
+		namespaces.insert(ns);
+	}
+	return ServerConfig(config.role == ReplicationMaster ? "master" : "slave", config.forceSyncOnLogicError,
+						config.forceSyncOnWrongDataHash, std::move(config.masterDSN), std::move(namespaces));
+}
+
+void ServerControl::Interface::WriteServerConfig(const std::string& configYaml) {
+	std::ofstream file(getStotageRoot() + "/node" + std::to_string(id_) + "/" + ReplicationApi::kReplicationConfigFilename,
+					   std::ios_base::trunc);
+	file << configYaml;
+	file.flush();
+}
+
+std::string ServerControl::Interface::getStotageRoot() { return ReplicationApi::kStoragePath + "node/" + std::to_string(id_); }
+
 ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, bool dropDb)
 	: api(std::make_shared<CppClient>()), id_(id), dropDb_(dropDb), stopped_(stopped) {
 	// Init server in thread
@@ -40,7 +104,7 @@ ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, bool d
 	// clang-format off
     string yaml =
         "storage:\n"
-        "    path: " + kStoragePath + "node/" + std::to_string(id_) + "\n"
+        "    path: " + getStotageRoot() + "\n"
         "logger:\n"
         "   loglevel: none\n"
         "   rpclog: \n"
@@ -69,32 +133,50 @@ ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, bool d
 	EXPECT_TRUE(err.ok()) << err.what();
 }
 
-void ServerControl::Interface::MakeMaster() { setServerConfig("master", id_); }
-void ServerControl::Interface::MakeSlave(size_t masterId) { setServerConfig("slave", masterId); }
+void ServerControl::Interface::MakeMaster(const ServerConfig& config) {
+	assert(config.role_ == "master");
+	setServerConfig(id_, config);
+}
+void ServerControl::Interface::MakeSlave(size_t masterId, const ServerConfig& config) {
+	assert(config.role_ == "slave");
+	setServerConfig(masterId, config);
+}
 
-void ServerControl::Interface::setServerConfig(const string& role, size_t masterId) {
-	const char* const configNs = "#config";
-
-	auto item = api.NewItem(configNs);
+void ServerControl::Interface::setServerConfig(size_t masterId, const ServerConfig& config) {
+	auto item = api.NewItem(ReplicationApi::kConfigNs);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	// clang-format off
+	string namespaces = "[";
+	size_t num = 0;
+	for (auto& ns : config.namespaces_) {
+		namespaces.append("\"");
+		namespaces.append(ns);
+		namespaces.append("\"");
+		if (++num != config.namespaces_.size()) {
+			namespaces.append(", ");
+		}
+	}
+	namespaces.append("]");
     string replicationConfig = "{\n"
                        "\"type\":\"replication\",\n"
                        "\"replication\":{\n"
-                       "\"role\":\"" + role + "\",\n"
-                       "\"master_dsn\":\"cproto://127.0.0.1:" +std::to_string(kDefaultRpcPort+masterId)+"/node" + std::to_string(masterId)+ "\",\n"
+                       "\"role\":\"" + config.role_ + "\",\n"
+                       "\"master_dsn\":\"" + (config.dsn_.empty() ?
+                                              ("cproto://127.0.0.1:" + std::to_string(kDefaultRpcPort+masterId) + "/node" + std::to_string(masterId)) :
+                                               config.dsn_
+                                             ) + "\",\n"
                        "\"cluster_id\":2,\n"
-                       "\"force_sync_on_logic_error\": false,\n"
-                       "\"force_sync_on_wrong_data_hash\": true,\n"
-                       "\"namespaces\":[]\n"
+                       "\"force_sync_on_logic_error\": " + (config.forceSyncOnLogicError_ ? "true" : "false") + ",\n"
+                       "\"force_sync_on_wrong_data_hash\": " + (config.forceSyncOnWrongDataHash_ ? "true" : "false") + ",\n"
+                       "\"namespaces\": " + namespaces + "\n"
                        "}\n"
                        "}\n";
 	// clang-format on
 
 	auto err = item.FromJSON(replicationConfig);
 	ASSERT_TRUE(err.ok()) << err.what();
-	api.Upsert(configNs, item);
-	err = api.Commit(configNs);
+	api.Upsert(ReplicationApi::kConfigNs, item);
+	err = api.Commit(ReplicationApi::kConfigNs);
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
@@ -163,7 +245,7 @@ bool ReplicationApi::StartServer(size_t id, bool dropDb) {
 	std::lock_guard<std::mutex> lock(m_);
 
 	assert(id < svc.size());
-	if (svc[id].Get()) return false;
+	if (svc[id].IsRunning()) return false;
 	svc[id].InitServer(id, dropDb);
 	return true;
 }

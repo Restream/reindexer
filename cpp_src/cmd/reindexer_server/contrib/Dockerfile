@@ -19,7 +19,7 @@ RUN mkdir /src && \
     make -j8 reindexer_server reindexer_tool && \
     make face swagger && \
     make install -C cpp_src/cmd/reindexer_server && \
-    make install -C cpp_src/cmd/reindexer_tool && \
+    make install -C  cpp_src/cmd/reindexer_tool && \
     cd / && \
     rm -rf /src && \
     apk del g++ cmake make git curl autoconf automake libtool linux-headers && \

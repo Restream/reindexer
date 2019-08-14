@@ -447,6 +447,12 @@ protected:
 	/// @return always returns zero.
 	int updateParse(tokenizer &parser, SqlParsingCtx &ctx);
 
+	/// Parses filter part of sql truncate query.
+	/// @param parser - tokenizer object instance.
+	/// @param ctx - parsing context.
+	/// @return always returns zero.
+	int truncateParse(tokenizer &parser, SqlParsingCtx &ctx);
+
 	/// Parses JSON dsl set.
 	/// @param dsl - dsl set.
 	void parseJson(const string &dsl);

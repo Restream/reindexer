@@ -123,6 +123,10 @@ Error RPCClient::DropNamespace(string_view nsName, const InternalRdxContext& ctx
 	return getConn()->Call(cproto::kCmdDropNamespace, config_.RequestTimeout, ctx.execTimeout(), nsName).Status();
 }
 
+Error RPCClient::TruncateNamespace(string_view nsName, const InternalRdxContext& ctx) {
+	return getConn()->Call(cproto::kCmdTruncateNamespace, config_.RequestTimeout, ctx.execTimeout(), nsName).Status();
+}
+
 Error RPCClient::Insert(string_view nsName, Item& item, const InternalRdxContext& ctx) {
 	return modifyItem(nsName, item, ModeInsert, config_.RequestTimeout, ctx);
 }

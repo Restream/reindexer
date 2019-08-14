@@ -17,6 +17,7 @@ struct JsonNode;
 namespace reindexer {
 class JsonBuilder;
 class RdxContext;
+class WrSerializer;
 
 enum ConfigType { ProfilingConf, NamespaceDataConf, ReplicationConf };
 
@@ -40,9 +41,13 @@ struct NamespaceConfigData {
 enum ReplicationRole { ReplicationNone, ReplicationMaster, ReplicationSlave };
 
 struct ReplicationConfigData {
+	ReplicationConfigData() = default;
+	ReplicationConfigData(const ReplicationConfigData &) = default;
+	ReplicationConfigData(ReplicationConfigData &&) = default;
 	Error FromYML(const string &yml);
 	Error FromJSON(const gason::JsonNode &v);
-	void GetJSON(JsonBuilder &jb);
+	void GetJSON(JsonBuilder &jb) const;
+	void GetYAML(WrSerializer &ser) const;
 
 	ReplicationRole role = ReplicationNone;
 	std::string masterDSN;
@@ -54,8 +59,8 @@ struct ReplicationConfigData {
 	fast_hash_set<string, nocase_hash_str, nocase_equal_str> namespaces;
 
 protected:
-	ReplicationRole str2role(const string &);
-	std::string role2str(ReplicationRole);
+	static ReplicationRole str2role(const string &);
+	static std::string role2str(ReplicationRole) noexcept;
 };
 
 class DBConfigProvider {
@@ -66,7 +71,6 @@ public:
 	DBConfigProvider &operator=(DBConfigProvider &obj) = delete;
 
 	Error FromJSON(const gason::JsonNode &root);
-	void SetReplicationConfig(const ReplicationConfigData &conf);
 	void setHandler(ConfigType cfgType, std::function<void()> handler);
 
 	ProfilingConfigData GetProfilingConfig();

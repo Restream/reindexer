@@ -653,6 +653,14 @@ void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId,
 		sctx.preResult->ids.Add(rowId, IdSet::Unordered, 0);
 	} else {
 		result.Add({properRowId, ns_->items_[properRowId], proc, sctx.nsid}, ns_->payloadType_);
+
+		const int kLimitItems = 10000000;
+		size_t sz = result.Count();
+		if (sz >= kLimitItems && !(sz % kLimitItems)) {
+			WrSerializer ser;
+			logPrintf(LogWarning, "Too big query results ns='%s',count='%d',rowId='%d',q='%s'", ns_->name_, sz, properRowId,
+					  sctx.query.GetSQL(ser).Slice());
+		}
 	}
 }
 

@@ -14,7 +14,7 @@ using std::string;
 namespace client {
 class Reindexer;
 class QueryResults;
-};  // namespace client
+}  // namespace client
 
 class ReindexerImpl;
 struct NamespaceDef;
@@ -25,9 +25,10 @@ class Replicator : public IUpdatesObserver {
 public:
 	Replicator(ReindexerImpl *slave);
 	~Replicator();
-	bool Configure(const ReplicationConfigData &config);
+	bool Configure(ReplicationConfigData config);
 	Error Start();
-	void Stop();
+	void Stop(bool withLock = true);
+	void ShutDown();
 
 protected:
 	struct SyncStat {
@@ -35,6 +36,30 @@ protected:
 		Error lastError;
 		int updated = 0, deleted = 0, errors = 0, updatedIndexes = 0, deletedIndexes = 0, updatedMeta = 0, processed = 0;
 		WrSerializer &Dump(WrSerializer &ser);
+	};
+
+	struct InternalConfig {
+		void FromReplicationConfig(ReplicationConfigData &&config, bool threadSafeOnly) noexcept {
+			if (!threadSafeOnly) {
+				role = config.role;
+				masterDSN = std::move(config.masterDSN);
+				clusterID = config.clusterID;
+				connPoolSize = config.connPoolSize;
+				workerThreads = config.workerThreads;
+				namespaces = std::move(config.namespaces);
+			}
+			forceSyncOnLogicError.store(config.forceSyncOnLogicError, std::memory_order_release);
+			forceSyncOnWrongDataHash.store(config.forceSyncOnWrongDataHash, std::memory_order_release);
+		}
+
+		ReplicationRole role{ReplicationNone};
+		std::string masterDSN;
+		int connPoolSize{1};
+		int workerThreads{1};
+		int clusterID{1};
+		std::atomic<bool> forceSyncOnLogicError{false};
+		std::atomic<bool> forceSyncOnWrongDataHash{false};
+		fast_hash_set<string, nocase_hash_str, nocase_equal_str> namespaces;
 	};
 
 	void run();
@@ -68,7 +93,7 @@ protected:
 	std::thread thread_;
 	net::ev::async stop_;
 	net::ev::async resync_;
-	ReplicationConfigData config_;
+	InternalConfig config_;
 
 	std::atomic<bool> terminate_;
 	enum State { StateInit, StateSyncing, StateIdle };
@@ -76,6 +101,7 @@ protected:
 	fast_hash_map<string, int64_t, nocase_hash_str, nocase_equal_str> maxLsns_;
 
 	std::mutex syncMtx_;
+	std::mutex masterMtx_;
 };
 
-};  // namespace reindexer
+}  // namespace reindexer

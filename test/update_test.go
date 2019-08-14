@@ -11,7 +11,10 @@ import (
 	"github.com/restream/reindexer"
 )
 
-const fieldsUpdateNs = "test_items_fields_update"
+const (
+	fieldsUpdateNs = "test_items_fields_update"
+	truncateNs     = "test_truncate"
+)
 
 func init() {
 	tnamespaces["test_items_insert_update"] = TestItemSimple{}
@@ -450,4 +453,55 @@ func CheckTestItemsInsertUpdate() {
 			}
 		}
 	}
+}
+
+func checkItemsCount(nsName string, expectedCount int) {
+	results, err := DB.Query(nsName).Exec().FetchAll()
+	if err != nil {
+		panic(err)
+	}
+	if len(results) != expectedCount {
+		panic(fmt.Errorf("Expected %d items, but got %d", expectedCount, len(results)))
+	}
+}
+
+func TestTruncateNamespace(t *testing.T) {
+	const itemsCount = 1000
+
+	nsOpts := reindexer.DefaultNamespaceOptions()
+	assertErrorMessage(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}), nil)
+
+	for i := 0; i < itemsCount; i++ {
+		_, err := DB.Insert(truncateNs, newTestItemComplexObject(i))
+		if err != nil {
+			panic(err)
+		}
+	}
+	checkItemsCount(truncateNs, itemsCount)
+
+	assertErrorMessage(t, DB.TruncateNamespace(truncateNs), nil)
+	checkItemsCount(truncateNs, 0)
+
+	assertErrorMessage(t, DB.CloseNamespace(truncateNs), nil)
+	assertErrorMessage(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}), nil)
+	checkItemsCount(truncateNs, 0)
+
+	for i := 0; i < itemsCount; i++ {
+		_, err := DB.Insert(truncateNs, newTestItemComplexObject(i))
+		if err != nil {
+			panic(err)
+		}
+	}
+	checkItemsCount(truncateNs, itemsCount)
+
+	assertErrorMessage(t, DB.CloseNamespace(truncateNs), nil)
+	assertErrorMessage(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}), nil)
+	checkItemsCount(truncateNs, itemsCount)
+
+	assertErrorMessage(t, DB.TruncateNamespace(truncateNs), nil)
+	checkItemsCount(truncateNs, 0)
+
+	assertErrorMessage(t, DB.CloseNamespace(truncateNs), nil)
+	assertErrorMessage(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}), nil)
+	checkItemsCount(truncateNs, 0)
 }

@@ -14,6 +14,7 @@ enum CmdCode {
 	kCmdOpenNamespace = 16,
 	kCmdCloseNamespace = 17,
 	kCmdDropNamespace = 18,
+	kCmdTruncateNamespace = 19,
 	kCmdAddIndex = 21,
 	kCmdEnumNamespaces = 22,
 	kCmdDropIndex = 24,

@@ -17,12 +17,7 @@
 #include <type_traits>
 #include <utility>
 
-#if __cplusplus >= 201103L
-#include <cstdint>
 #define BOOST_PDQSORT_PREFER_MOVE(x) std::move(x)
-#else
-#define BOOST_PDQSORT_PREFER_MOVE(x) (x)
-#endif
 
 namespace boost {
 namespace sort {

@@ -359,6 +359,24 @@ int HTTPServer::DeleteNamespace(http::Context &ctx) {
 	return jsonStatus(ctx);
 }
 
+int HTTPServer::TruncateNamespace(http::Context &ctx) {
+	auto db = getDB(ctx, kRoleDBAdmin);
+	string nsName = urldecode2(ctx.request->urlParams[1]);
+
+	if (nsName.empty()) {
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
+	}
+
+	auto status = db.TruncateNamespace(nsName);
+	if (!status.ok()) {
+		http::HttpStatus httpStatus(status);
+
+		return jsonStatus(ctx, httpStatus);
+	}
+
+	return jsonStatus(ctx);
+}
+
 int HTTPServer::GetItems(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDataRead);
 
@@ -767,6 +785,7 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	router_.GET<HTTPServer, &HTTPServer::GetNamespace>("/api/v1/db/:db/namespaces/:ns", this);
 	router_.POST<HTTPServer, &HTTPServer::PostNamespace>("/api/v1/db/:db/namespaces", this);
 	router_.DELETE<HTTPServer, &HTTPServer::DeleteNamespace>("/api/v1/db/:db/namespaces/:ns", this);
+	router_.DELETE<HTTPServer, &HTTPServer::TruncateNamespace>("/api/v1/db/:db/namespaces/:ns/truncate", this);
 
 	router_.GET<HTTPServer, &HTTPServer::GetItems>("/api/v1/db/:db/namespaces/:ns/items", this);
 	router_.PUT<HTTPServer, &HTTPServer::PutItems>("/api/v1/db/:db/namespaces/:ns/items", this);

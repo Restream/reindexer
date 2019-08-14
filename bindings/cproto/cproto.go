@@ -236,6 +236,10 @@ func (binding *NetCProto) DropNamespace(ctx context.Context, namespace string) e
 	return binding.rpcCallNoResults(ctx, opWr, cmdDropNamespace, namespace)
 }
 
+func (binding *NetCProto) TruncateNamespace(ctx context.Context, namespace string) error {
+	return binding.rpcCallNoResults(ctx, opWr, cmdTruncateNamespace, namespace)
+}
+
 func (binding *NetCProto) AddIndex(ctx context.Context, namespace string, indexDef bindings.IndexDef) error {
 	bIndexDef, err := json.Marshal(indexDef)
 	if err != nil {
