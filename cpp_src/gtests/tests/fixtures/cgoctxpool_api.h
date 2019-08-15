@@ -12,12 +12,16 @@ namespace reindexer {
 std::ostream& operator<<(std::ostream& os, const CancelType& cancel) { return os << static_cast<int>(cancel); }
 }  // namespace reindexer
 
+namespace CGOCtxPoolTests {
+
 class CGOCtxPoolApi : public ::testing::Test {
 public:
 	CGOCtxPoolApi() {}
 	virtual ~CGOCtxPoolApi() {}
 
 protected:
+	enum class MultiThreadTestMode { Simple, Synced };
+
 	void SetUp() {}
 	void TearDown() {}
 
@@ -32,5 +36,7 @@ protected:
 		return ctx;
 	}
 
-private:
+	void multiThreadTest(size_t threadsCount, MultiThreadTestMode mode);
 };
+
+}  // namespace CGOCtxPoolTests

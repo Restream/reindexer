@@ -89,7 +89,7 @@ Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlacehold
 	if (isHaveConfig) {
 		res = OpenNamespace(kConfigNamespace, StorageOpts().Enabled().CreateIfMissing(), ctx);
 	}
-	replConfigFileChecker_.Init(fs::JoinPath(storagePath_, kReplicationConfFilename));
+	replConfigFileChecker_.SetFilepath(fs::JoinPath(storagePath_, kReplicationConfFilename));
 
 	return res;
 }
@@ -133,7 +133,11 @@ Error ReindexerImpl::Connect(const string& dsn) {
 	}
 
 	bool needStart = replicator_->Configure(configProvider_.GetReplicationConfig());
-	return needStart ? replicator_->Start() : errOK;
+	err = needStart ? replicator_->Start() : errOK;
+	if (!err.ok()) {
+		return err;
+	}
+	return replConfigFileChecker_.Enable();
 }
 
 Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, const InternalRdxContext& ctx) {
@@ -940,7 +944,7 @@ void ReindexerImpl::backgroundRoutine() {
 		}
 		bool replConfigWasModified = replConfigFileChecker_.FileWasModified();
 		if (replConfigWasModified) {
-			hasReplConfigLoadError_ = !tryLoadReplicatorConfFromFile();
+			hasReplConfigLoadError_ = !tryLoadReplicatorConfFromFile().ok();
 		} else if (hasReplConfigLoadError_) {
 			// Retry to read error config once
 			// This logic adds delay between write and read, which allows writer to finish all his writes
@@ -1029,6 +1033,7 @@ std::vector<string> defDBConfig = {
 	})json",
 	R"json({
         "type":"replication",
+        "disable_file_update": true,
         "replication":{
 			"role":"none",
 			"master_dsn":"cproto://127.0.0.1:6534/db",

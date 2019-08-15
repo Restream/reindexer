@@ -663,7 +663,7 @@ void Namespace::Update(const Query &query, QueryResults &result, const RdxContex
 	result.lockResults();
 
 	WrSerializer ser;
-	if (enableStatementRepl) {
+	if (enableStatementRepl && result.Count()) {
 		// FAST PATH: statement based repliaction
 		const_cast<Query &>(query).type_ = QueryUpdate;
 		WALRecord wrec(WalUpdateQuery, query.GetSQL(ser).Slice());
@@ -822,15 +822,15 @@ void Namespace::Delete(const Query &q, QueryResults &result, const RdxContext &c
 		doDelete(r.id);
 	}
 
-	WrSerializer ser;
+	if (result.Count()) {
+		WrSerializer ser;
 
-	const_cast<Query &>(q).type_ = QueryDelete;
-	WALRecord wrec(WalUpdateQuery, q.GetSQL(ser).Slice());
+		const_cast<Query &>(q).type_ = QueryDelete;
+		WALRecord wrec(WalUpdateQuery, q.GetSQL(ser).Slice());
+		if (!repl_.slaveMode) lsn = wal_.Add(wrec);
 
-	if (!repl_.slaveMode) lsn = wal_.Add(wrec);
-
-	observers_.OnWALUpdate(lsn, name_, wrec);
-
+		observers_.OnWALUpdate(lsn, name_, wrec);
+	}
 	if (q.debugLevel >= LogInfo) {
 		logPrintf(LogInfo, "Deleted %d items in %d µs", result.Count(),
 				  duration_cast<microseconds>(high_resolution_clock::now() - tmStart).count());
@@ -1676,11 +1676,11 @@ void Namespace::initWAL(int64_t maxLSN) {
 }
 
 void Namespace::removeExpiredItems(RdxActivityContext *ctx) {
+	const RdxContext rdxCtx{ctx};
+	WLock wlock(mtx_, &rdxCtx);
 	if (repl_.slaveMode) {
 		return;
 	}
-	const RdxContext rdxCtx{ctx};
-	WLock wlock(mtx_, &rdxCtx);
 	for (const std::unique_ptr<Index> &index : indexes_) {
 		if ((index->Type() != IndexTtl) || (index->Size() == 0)) continue;
 		int64_t expirationthreshold =

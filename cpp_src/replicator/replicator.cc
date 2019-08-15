@@ -177,7 +177,7 @@ Error Replicator::syncNamespaceByWAL(const NamespaceDef &ns) {
 	switch (err.code()) {
 		case errOutdatedWAL:
 			// Check if WAL has been outdated, if yes, then force resync
-			return syncNamespaceForced(ns, "WAL has been outdated");
+			return syncNamespaceForced(ns, err.what());
 		case errOK:
 			return applyWAL(ns.name, qr);
 		case errNoWAL:

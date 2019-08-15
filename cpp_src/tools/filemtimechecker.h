@@ -7,16 +7,27 @@ namespace reindexer {
 
 class FileMTimeChecker {
 public:
-	void Init(std::string filepath) noexcept {
+	void SetFilepath(std::string filepath, bool enable = false) noexcept {
 		assert(!hasFilepath_.load(std::memory_order_acquire));
 		filepath_ = std::move(filepath);
 		auto stat = fs::StatTime(filepath_);
 		lastReplConfMTime_.store(stat.mtime, std::memory_order_relaxed);
 		hasFilepath_.store(true, std::memory_order_release);
+		if (enable) {
+			isEnabled_.store(true, std::memory_order_release);
+		}
+	}
+
+	Error Enable() noexcept {
+		if (!hasFilepath_.load(std::memory_order_acquire)) {
+			return Error(errLogic, "Filepath for FileMTimeChecker is not set");
+		}
+		isEnabled_.store(true, std::memory_order_release);
+		return errOK;
 	}
 
 	bool FileWasModified() {
-		if (!hasFilepath_.load(std::memory_order_acquire)) {
+		if (!isEnabled_.load(std::memory_order_acquire) || !hasFilepath_.load(std::memory_order_acquire)) {
 			return false;
 		}
 		auto stat = fs::StatTime(filepath_);
@@ -32,6 +43,7 @@ public:
 private:
 	std::string filepath_;
 	std::atomic<bool> hasFilepath_{false};
+	std::atomic<bool> isEnabled_{false};
 	std::atomic<int64_t> lastReplConfMTime_{-1};
 };
 

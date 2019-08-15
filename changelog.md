@@ -1,3 +1,9 @@
+# Version 2.1.4 (15.08.2019)
+
+- [fea] Reindexer server will not start if storage is corrupted, `startwitherrors` config flag is used to override
+- [fix] Do not write to WAL empty update queries
+- [fix] Replication config sync
+
 # Version 2.1.3 (14.08.2019)
 
 ## Core
@@ -10,6 +16,7 @@
 - [fix] Correct usage of '*' entry as default in namespaces config
 - [fix] Memory statistics calculation are improoved
 - [fix] Slave will not try to clear expired by ttl records
+
 
 # Version 2.1.2 (04.08.2019)
 

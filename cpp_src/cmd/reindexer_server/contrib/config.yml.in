@@ -2,6 +2,7 @@
 storage: 
   path: /var/lib/reindexer
   engine: leveldb
+  startwitherrors: false
 
 # Network configuration
 net:

@@ -28,6 +28,7 @@ void ServerConfig::Reset() {
 	RemoveSvc = false;
 	SvcMode = false;
 #endif
+	StartWithErrors = false;
 	EnableSecurity = false;
 	DebugPprof = false;
 	DebugAllocs = false;
@@ -71,6 +72,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 
 	args::Group dbGroup(parser, "Database options");
 	args::ValueFlag<string> storageF(dbGroup, "PATH", "path to 'reindexer' storage", {'s', "db"}, StoragePath, args::Options::Single);
+	args::Flag startWithErrorsF(parser, "", "Allow to start reindexer with DB's load erros", {"startwitherrors"});
 
 	args::Group netGroup(parser, "Network options");
 	args::ValueFlag<string> httpAddrF(netGroup, "PORT", "http listen host:port", {'p', "httpaddr"}, HTTPAddr, args::Options::Single);
@@ -114,6 +116,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	}
 
 	if (storageF) StoragePath = args::get(storageF);
+	if (startWithErrorsF) StartWithErrors = args::get(startWithErrorsF);
 	if (logLevelF) LogLevel = args::get(logLevelF);
 	if (httpAddrF) HTTPAddr = args::get(httpAddrF);
 	if (rpcAddrF) RPCAddr = args::get(rpcAddrF);
@@ -135,12 +138,14 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (rpcLogF) RpcLog = args::get(rpcLogF);
 	if (pprofF) DebugPprof = args::get(pprofF);
 	if (logAllocsF) DebugAllocs = args::get(logAllocsF);
+
 	return 0;
 }
 
 reindexer::Error ServerConfig::fromYaml(Yaml::Node &root) {
 	try {
 		StoragePath = root["storage"]["path"].As<std::string>(StoragePath);
+		StartWithErrors = root["storage"]["startwitherrors"].As<bool>(StartWithErrors);
 		LogLevel = root["logger"]["loglevel"].As<std::string>(LogLevel);
 		ServerLog = root["logger"]["serverlog"].As<std::string>(ServerLog);
 		CoreLog = root["logger"]["corelog"].As<std::string>(CoreLog);

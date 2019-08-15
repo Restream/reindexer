@@ -92,8 +92,9 @@ public:
 	/// Initialize database:
 	/// Read all found databases to RAM
 	/// Read user's database
+	/// @param allowDBErrors - true: Ignore errors during existing DBs load; false: Return error if error occures during DBs load
 	/// @return Error - error object
-	Error Init();
+	Error Init(bool allowDBErrors);
 	/// Authenticate user, and grant roles to database with specified dbName
 	/// @param dbName - database name. Can be empty.
 	/// @param auth - AuthContext with user credentials

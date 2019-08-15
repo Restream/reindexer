@@ -237,7 +237,7 @@ int ServerImpl::run() {
 	try {
 		dbMgr_.reset(new DBManager(config_.StoragePath, !config_.EnableSecurity));
 
-		auto status = dbMgr_->Init();
+		auto status = dbMgr_->Init(config_.StartWithErrors);
 		if (!status.ok()) {
 			logger_.error("Error init database manager: {0}", status.what());
 			return EXIT_FAILURE;

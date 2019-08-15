@@ -157,9 +157,9 @@ TimeStats StatTime(const std::string &path) {
 		if (GetFileTime(hFile, &ftCreate, &ftAccess, &ftWrite)) {
 			// https://docs.microsoft.com/en-us/windows/win32/sysinfo/file-times
 			// A file time is a 64-bit value that represents the number of 100-nanosecond intervals...
-			return {(int64_t(ftAccess.dwHighDateTime) << 32 + ftAccess.dwLowDateTime) * 100,
-					(int64_t(ftCreate.dwHighDateTime) << 32 + ftCreate.dwLowDateTime) * 100,
-					(int64_t(ftWrite.dwHighDateTime) << 32 + ftWrite.dwLowDateTime) * 100};
+			return {((int64_t(ftAccess.dwHighDateTime) << 32) + ftAccess.dwLowDateTime) * 100,
+					((int64_t(ftCreate.dwHighDateTime) << 32) + ftCreate.dwLowDateTime) * 100,
+					((int64_t(ftWrite.dwHighDateTime) << 32) + ftWrite.dwLowDateTime) * 100};
 		}
 		CloseHandle(hFile);
 	}

@@ -7,8 +7,9 @@ import (
 )
 
 type StorageConf struct {
-	Path   string `yaml:"path"`
-	Engine string `yaml:"engine"`
+	Path            string `yaml:"path"`
+	Engine          string `yaml:"engine"`
+	StartWithErrors bool   `yaml:"startwitherrors"`
 }
 
 type NetConf struct {
@@ -54,8 +55,9 @@ func (cfg *ServerConfig) GetYamlString() (string, error) {
 func DefaultServerConfig() *ServerConfig {
 	return &ServerConfig{
 		Storage: StorageConf{
-			Path:   "/tmp/reindex",
-			Engine: "leveldb",
+			Path:            "/tmp/reindex",
+			Engine:          "leveldb",
+			StartWithErrors: false,
 		},
 		Net: NetConf{
 			HTTPAddr: "0.0.0.0:9088",

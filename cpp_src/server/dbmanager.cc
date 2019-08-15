@@ -13,7 +13,7 @@
 namespace reindexer_server {
 DBManager::DBManager(const string &dbpath, bool noSecurity) : dbpath_(dbpath), noSecurity_(noSecurity) {}
 
-Error DBManager::Init() {
+Error DBManager::Init(bool allowDBErrors) {
 	auto status = readUsers();
 	if (!status.ok() && !noSecurity_) {
 		return status;
@@ -29,9 +29,13 @@ Error DBManager::Init() {
 			auto status = loadOrCreateDatabase(de.name);
 			if (!status.ok()) {
 				logPrintf(LogError, "Failed to open database '%s' - %s", de.name, status.what());
+				if (!allowDBErrors) {
+					return status;
+				}
 			}
 		}
 	}
+
 	return 0;
 }
 
