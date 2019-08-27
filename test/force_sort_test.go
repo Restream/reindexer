@@ -5,7 +5,7 @@ import (
 	"log"
 	"testing"
 
-	"git.itv.restr.im/itv-backend/reindexer"
+	"github.com/restream/reindexer"
 )
 
 const testNs string = "test_items_force_sort_order"

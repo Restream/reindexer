@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"git.itv.restr.im/itv-backend/reindexer"
+	"github.com/restream/reindexer"
 )
 
 func init() {

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"unsafe"
 
-	"git.itv.restr.im/itv-backend/reindexer/bindings"
+	"github.com/restream/reindexer/bindings"
 
-	"git.itv.restr.im/itv-backend/reindexer/cjson"
+	"github.com/restream/reindexer/cjson"
 )
 
 type rpcEncoder struct {

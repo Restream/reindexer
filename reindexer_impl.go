@@ -9,9 +9,9 @@ import (
 	"strings"
 	"sync"
 
-	"git.itv.restr.im/itv-backend/reindexer/bindings"
-	"git.itv.restr.im/itv-backend/reindexer/cjson"
-	"git.itv.restr.im/itv-backend/reindexer/dsl"
+	"github.com/restream/reindexer/bindings"
+	"github.com/restream/reindexer/cjson"
+	"github.com/restream/reindexer/dsl"
 )
 
 type reindexerNamespace struct {

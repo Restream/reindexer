@@ -121,13 +121,13 @@ import (
 	"fmt"
 	"math/rand"
 
-	"git.itv.restr.im/itv-backend/reindexer"
+	"github.com/restream/reindexer"
 	// choose how the Reindexer binds to the app (in this case "builtin," which means link Reindexer as a static library)
-	_ "git.itv.restr.im/itv-backend/reindexer/bindings/builtin"
+	_ "github.com/restream/reindexer/bindings/builtin"
 
 	// OR link Reindexer as static library with bundled server.
-	// _ "git.itv.restr.im/itv-backend/reindexer/bindings/builtinserver"
-	// "git.itv.restr.im/itv-backend/reindexer/bindings/builtinserver/config"
+	// _ "github.com/restream/reindexer/bindings/builtinserver"
+	// "github.com/restream/reindexer/bindings/builtinserver/config"
 
 )
 

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"git.itv.restr.im/itv-backend/reindexer"
-	"git.itv.restr.im/itv-backend/reindexer/dsl"
+	"github.com/restream/reindexer"
+	"github.com/restream/reindexer/dsl"
 )
 
 type sortDistinctOptions struct {

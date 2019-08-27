@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"git.itv.restr.im/itv-backend/reindexer"
-	"git.itv.restr.im/itv-backend/reindexer/cjson"
+	"github.com/restream/reindexer"
+	"github.com/restream/reindexer/cjson"
 )
 
 var nsName = "validate_json_tags"

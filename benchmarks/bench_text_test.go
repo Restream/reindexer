@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"git.itv.restr.im/itv-backend/reindexer/benchmarks/repo"
+	"github.com/restream/reindexer/benchmarks/repo"
 )
 
 func BenchmarkElasticFullText(b *testing.B) {

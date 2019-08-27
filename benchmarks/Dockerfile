@@ -35,7 +35,7 @@ RUN git clone https://github.com/wg/wrk.git && cd wrk && \
 
 # Install Benchmark's golang dependencies
 #########################################
-RUN go get -insecure git.itv.restr.im/itv-backend/reindexer && \
+RUN go get -insecure github.com/restream/reindexer && \
     go get github.com/tarantool/go-tarantool && \
     go get github.com/yunge/sphinx && \
     go get gopkg.in/mgo.v2 && \
@@ -50,7 +50,7 @@ RUN go get github.com/boltdb/bolt && \
     go get github.com/labstack/echo
 
 # Build Reindexer
-RUN make -C /go/src/git.itv.restr.im/itv-backend/reindexer/cpp_src -j8 EXTRA_CFLAGS=-DNDEBUG
+RUN make -C /go/src/github.com/restream/reindexer/cpp_src -j8 EXTRA_CFLAGS=-DNDEBUG
 
 # Install elastic search
 ########################

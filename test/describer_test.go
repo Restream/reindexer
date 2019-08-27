@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"git.itv.restr.im/itv-backend/reindexer"
+	"github.com/restream/reindexer"
 )
 
 type TestDescribeStruct struct {

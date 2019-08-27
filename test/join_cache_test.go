@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"git.itv.restr.im/itv-backend/reindexer"
+	"github.com/restream/reindexer"
 )
 
 func TestJoinCache(t *testing.T) {

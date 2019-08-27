@@ -4,9 +4,9 @@ import (
 	"log"
 	"math/rand"
 
-	"git.itv.restr.im/itv-backend/reindexer"
-	_ "git.itv.restr.im/itv-backend/reindexer/bindings/builtin"
-	_ "git.itv.restr.im/itv-backend/reindexer/bindings/cproto"
+	"github.com/restream/reindexer"
+	_ "github.com/restream/reindexer/bindings/builtin"
+	_ "github.com/restream/reindexer/bindings/cproto"
 )
 
 type ReindexRepo struct {

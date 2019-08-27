@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"time"
 
-	"git.itv.restr.im/itv-backend/reindexer/bindings/builtinserver/config"
+	"github.com/restream/reindexer/bindings/builtinserver/config"
 )
 
 type IndexDef struct {

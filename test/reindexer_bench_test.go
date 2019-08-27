@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	"git.itv.restr.im/itv-backend/reindexer"
-	"git.itv.restr.im/itv-backend/reindexer/cjson"
+	"github.com/restream/reindexer"
+	"github.com/restream/reindexer/cjson"
 )
 
 type TestItemBench struct {

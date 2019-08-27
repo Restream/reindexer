@@ -12,9 +12,9 @@ import (
 	"time"
 	"unsafe"
 
-	"git.itv.restr.im/itv-backend/reindexer/bindings"
-	"git.itv.restr.im/itv-backend/reindexer/bindings/builtin"
-	"git.itv.restr.im/itv-backend/reindexer/bindings/builtinserver/config"
+	"github.com/restream/reindexer/bindings"
+	"github.com/restream/reindexer/bindings/builtin"
+	"github.com/restream/reindexer/bindings/builtinserver/config"
 )
 
 var defaultStartupTimeout time.Duration = time.Minute * 3

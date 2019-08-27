@@ -15,8 +15,8 @@ import (
 	"time"
 	"unsafe"
 
-	"git.itv.restr.im/itv-backend/reindexer/bindings"
-	"git.itv.restr.im/itv-backend/reindexer/cjson"
+	"github.com/restream/reindexer/bindings"
+	"github.com/restream/reindexer/cjson"
 )
 
 const defCgoLimit = 2000

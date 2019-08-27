@@ -14,8 +14,8 @@ import (
 	"strings"
 	"sync"
 
-	"git.itv.restr.im/itv-backend/reindexer"
-	"git.itv.restr.im/itv-backend/reindexer/bindings"
+	"github.com/restream/reindexer"
+	"github.com/restream/reindexer/bindings"
 )
 
 const (

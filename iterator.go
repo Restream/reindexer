@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"strings"
 
-	"git.itv.restr.im/itv-backend/reindexer/bindings"
+	"github.com/restream/reindexer/bindings"
 )
 
 // ExplainResults presents query plan

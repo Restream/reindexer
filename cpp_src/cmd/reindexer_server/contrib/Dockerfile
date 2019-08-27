@@ -9,7 +9,7 @@ RUN mkdir /src && \
     echo "noinst_PROGRAMS =" >> Makefile.am && \
     ./autogen.sh &&  ./configure && make -j8 && make install && \
     cd .. && \
-    git clone https://git.itv.restr.im/itv-backend/reindexer && \
+    git clone https://github.com/restream/reindexer && \
     cd reindexer && \
     git checkout develop && \
     ./dependencies.sh && \

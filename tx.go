@@ -5,8 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"git.itv.restr.im/itv-backend/reindexer/bindings"
-	"git.itv.restr.im/itv-backend/reindexer/cjson"
+	"github.com/restream/reindexer/bindings"
+	"github.com/restream/reindexer/cjson"
 )
 
 const maxAsyncRequests = 500

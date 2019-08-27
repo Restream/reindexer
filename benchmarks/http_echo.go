@@ -5,7 +5,7 @@ import (
 	"log"
 	"net/http"
 
-	"git.itv.restr.im/itv-backend/reindexer/benchmarks/repo"
+	"github.com/restream/reindexer/benchmarks/repo"
 
 	"github.com/labstack/echo"
 )
