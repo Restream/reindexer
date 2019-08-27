@@ -169,8 +169,8 @@ protected:
 		CSSymbolGetSymbolOwner = reinterpret_cast<pCSSymbolGetSymbolOwner>(dlsym(hlib, "CSSymbolGetSymbolOwner"));
 
 		bool ok = CSSymbolicatorCreateWithPid && CSRelease && CSSymbolicatorGetSymbolWithAddressAtTime &&
-				  CSSymbolicatorGetSourceInfoWithAddressAtTime && CSSymbolicatorGetSourceInfoWithAddressAtTime &&
-				  CSSourceInfoGetLineNumber && CSSourceInfoGetPath && CSSourceInfoGetSymbol && CSSymbolGetSymbolOwner;
+				  CSSymbolicatorGetSourceInfoWithAddressAtTime && CSSourceInfoGetLineNumber && CSSourceInfoGetPath &&
+				  CSSourceInfoGetSymbol && CSSymbolGetSymbolOwner;
 		if (ok) cs_ = CSSymbolicatorCreateWithPid(getpid());
 		return ok;
 	}

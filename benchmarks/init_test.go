@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/restream/reindexer/benchmarks/repo"
+	"git.itv.restr.im/itv-backend/reindexer/benchmarks/repo"
 )
 
 func TestMain(t *testing.T) {

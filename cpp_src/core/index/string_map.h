@@ -5,7 +5,6 @@
 #include "cpp-btree/btree_map.h"
 #include "sparse-map/sparse_map.h"
 #include "tools/stringstools.h"
-
 namespace reindexer {
 
 class FieldsSet;
@@ -57,10 +56,25 @@ public:
 	str_map(const PayloadType, const FieldsSet&, const CollateOpts& opts) : base_tree_map(less_key_string(opts)) {}
 };
 
+// sparsemap meeds special hash for intergers, due to
+// performance issue https://github.com/greg7mdp/sparsepp#integer-keys-and-other-hash-function-considerations
+template <typename T>
+struct hash_int {};
+
+template <>
+struct hash_int<int64_t> {
+	size_t operator()(int64_t k) const { return (k ^ 14695981039346656037ULL) * 1099511628211ULL; }
+};
+
+template <>
+struct hash_int<int32_t> {
+	size_t operator()(int32_t k) const { return (k ^ 2166136261U) * 16777619UL; }
+};
+
 template <typename K, typename T1>
 class unordered_number_map
-	: public tsl::sparse_map<K, T1, std::hash<K>, std::equal_to<K>, std::allocator<std::pair<K, T1>>,
-							 tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low> {
+	: public tsl::sparse_map<K, T1, hash_int<K>, std::equal_to<K>, std::allocator<std::pair<K, T1>>, tsl::sh::power_of_two_growth_policy<2>,
+							 tsl::sh::exception_safety::basic, tsl::sh::sparsity::low> {
 public:
 	unordered_number_map(const PayloadType, const FieldsSet&, const CollateOpts&) {}
 };

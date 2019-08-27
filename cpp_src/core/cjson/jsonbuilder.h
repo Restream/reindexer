@@ -12,7 +12,7 @@ public:
 		TypePlain,
 	};
 
-	JsonBuilder() : ser_(nullptr){};
+	JsonBuilder() : ser_(nullptr), tm_(nullptr){};
 	JsonBuilder(WrSerializer &ser, ObjType type = TypeObject, const TagsMatcher *tm = nullptr);
 	~JsonBuilder();
 	JsonBuilder(const JsonBuilder &) = delete;

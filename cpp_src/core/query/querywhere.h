@@ -2,6 +2,7 @@
 
 #include <climits>
 #include <string>
+#include <unordered_set>
 #include <vector>
 #include "core/keyvalue/variant.h"
 #include "estl/h_vector.h"
@@ -11,10 +12,14 @@ namespace reindexer {
 
 enum IndexValueType : int { NotSet = -1, SetByJsonPath = -2 };
 
+class Query;
 using std::string;
 using std::vector;
 
 struct QueryEntry {
+	const static int kNoJoins = -1;
+
+	QueryEntry(int joinIdx) : joinIndex(joinIdx) {}
 	QueryEntry(CondType cond, const string &idx, int idxN, bool dist = false) : index(idx), idxNo(idxN), condition(cond), distinct(dist) {}
 	QueryEntry() = default;
 
@@ -26,6 +31,7 @@ struct QueryEntry {
 	CondType condition = CondType::CondAny;
 	bool distinct = false;
 	VariantArray values;
+	int joinIndex = kNoJoins;
 
 	string Dump() const;
 };
@@ -44,13 +50,13 @@ public:
 	std::pair<unsigned, EqualPosition> DetermineEqualPositionIndexes(const T &fields) const;
 	template <typename T>
 	EqualPosition DetermineEqualPositionIndexes(unsigned start, const T &fields) const;
-	void ToDsl(JsonBuilder &builder) const { toDsl(cbegin(), cend(), builder); }
-	void WriteSQLWhere(WrSerializer &, bool stripArgs) const;
+	void ToDsl(const Query &parentQuery, JsonBuilder &builder) const { return toDsl(cbegin(), cend(), parentQuery, builder); }
+	void WriteSQLWhere(const Query &parentQuery, WrSerializer &, bool stripArgs) const;
 	void Serialize(WrSerializer &ser) const { serialize(cbegin(), cend(), ser); }
 
 private:
-	static void toDsl(const_iterator it, const_iterator to, JsonBuilder &);
-	static void writeSQL(const_iterator from, const_iterator to, WrSerializer &, bool stripArgs);
+	static void toDsl(const_iterator it, const_iterator to, const Query &parentQuery, JsonBuilder &);
+	static void writeSQL(const Query &parentQuery, const_iterator from, const_iterator to, WrSerializer &, bool stripArgs);
 	static void serialize(const_iterator it, const_iterator to, WrSerializer &);
 };
 
@@ -75,8 +81,8 @@ struct UpdateEntry {
 
 struct QueryJoinEntry {
 	bool operator==(const QueryJoinEntry &) const;
-	OpType op_;
-	CondType condition_;
+	OpType op_ = OpAnd;
+	CondType condition_ = CondEq;
 	string index_;
 	string joinIndex_;
 	int idxNo = -1;
@@ -96,15 +102,15 @@ struct SortingEntries : public h_vector<SortingEntry, 1> {};
 
 struct AggregateEntry {
 	AggregateEntry() = default;
-	AggregateEntry(AggType type, const h_vector<string, 1> &fields, size_t limit, size_t offset)
+	AggregateEntry(AggType type, const h_vector<string, 1> &fields, unsigned limit, unsigned offset)
 		: type_(type), fields_(fields), limit_(limit), offset_(offset) {}
 	bool operator==(const AggregateEntry &) const;
 	bool operator!=(const AggregateEntry &) const;
 	AggType type_;
 	h_vector<string, 1> fields_;
 	SortingEntries sortingEntries_;
-	size_t limit_ = UINT_MAX;
-	size_t offset_ = 0;
+	unsigned limit_ = UINT_MAX;
+	unsigned offset_ = 0;
 };
 
 class QueryWhere {

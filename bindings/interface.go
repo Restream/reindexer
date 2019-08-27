@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/restream/reindexer/bindings/builtinserver/config"
+	"git.itv.restr.im/itv-backend/reindexer/bindings/builtinserver/config"
 )
 
 type IndexDef struct {
@@ -50,6 +50,31 @@ func (so *StorageOptions) DropOnFileFormatError(value bool) *StorageOptions {
 		*so |= StorageOptions(StorageOptDropOnFileFormatError)
 	} else {
 		*so &= ^StorageOptions(StorageOptDropOnFileFormatError)
+	}
+	return so
+}
+
+type ConnectOptions uint16
+
+const (
+	StorageTypeLevelDB = 0
+	StorageTypeRocksDB = 1
+)
+
+func (so *ConnectOptions) OpenNamespaces(value bool) *ConnectOptions {
+	if value {
+		*so |= ConnectOptions(ConnectOptOpenNamespaces)
+	} else {
+		*so &= ^ConnectOptions(ConnectOptOpenNamespaces)
+	}
+	return so
+}
+
+func (so *ConnectOptions) AllowNamespaceErrors(value bool) *ConnectOptions {
+	if value {
+		*so |= ConnectOptions(ConnectOptAllowNamespaceErrors)
+	} else {
+		*so &= ^ConnectOptions(ConnectOptAllowNamespaceErrors)
 	}
 	return so
 }

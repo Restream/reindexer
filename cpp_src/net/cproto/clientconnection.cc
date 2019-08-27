@@ -91,7 +91,9 @@ int ClientConnection::PendingCompletions() {
 	int ret = 0;
 	for (auto &c : completions_) {
 		for (RPCCompletion *cc = &c; cc; cc = cc->next.get()) {
-			if (cc->used) ret++;
+			if (cc->used) {
+				ret++;
+			}
 		}
 	}
 	return ret;
@@ -113,8 +115,8 @@ void ClientConnection::deadline_check_cb(ev::timer &, int) {
 					bufCond_.notify_all();
 				} else {
 					cc->used = false;
-					io_.loop.break_loop();
 				}
+				io_.loop.break_loop();
 			}
 		}
 	}
@@ -220,8 +222,8 @@ void ClientConnection::onRead() {
 					bufCond_.notify_all();
 				} else {
 					completion->used = false;
-					io_.loop.break_loop();
 				}
+				io_.loop.break_loop();
 				break;
 			}
 			if (!completion) {

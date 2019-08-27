@@ -4,14 +4,14 @@ TEST_F(JoinSelectsApi, JoinsDSLTest) {
 	Query queryGenres(genres_namespace);
 	Query queryAuthors(authors_namespace);
 	Query queryBooks = Query(books_namespace, 0, 10).Where(price, CondGe, 500);
-	Query innerJoinQuery = Query(queryBooks).InnerJoin(authorid_fk, authorid, CondEq, queryAuthors);
-	Query orInnerJoinQuery = Query(innerJoinQuery).OrInnerJoin(genreId_fk, genreid, CondEq, queryGenres);
+	queryBooks.OrInnerJoin(genreId_fk, genreid, CondEq, queryGenres);
+	queryBooks.LeftJoin(authorid_fk, authorid, CondEq, queryAuthors);
 
-	string dsl = orInnerJoinQuery.GetJSON();
+	string dsl = queryBooks.GetJSON();
 	Query testLoadDslQuery;
 	Error err = testLoadDslQuery.ParseJson(dsl);
-	ASSERT_TRUE(err.ok());
-	ASSERT_TRUE(orInnerJoinQuery == testLoadDslQuery);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(queryBooks == testLoadDslQuery);
 }
 
 TEST_F(JoinSelectsApi, MergedQueriesDSLTest) {
@@ -25,7 +25,7 @@ TEST_F(JoinSelectsApi, MergedQueriesDSLTest) {
 	string dsl = mainBooksQuery.GetJSON();
 	Query testLoadDslQuery;
 	Error err = testLoadDslQuery.ParseJson(dsl);
-	ASSERT_TRUE(err.ok());
+	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(mainBooksQuery == testLoadDslQuery);
 }
 
@@ -51,7 +51,7 @@ TEST_F(JoinSelectsApi, AggregateFunctonsDSLTest) {
 	string dsl = query.GetJSON();
 	Query testLoadDslQuery;
 	Error err = testLoadDslQuery.ParseJson(dsl);
-	ASSERT_TRUE(err.ok());
+	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(query == testLoadDslQuery);
 }
 
@@ -64,7 +64,7 @@ TEST_F(JoinSelectsApi, SelectFilterDSLTest) {
 	string dsl = query.GetJSON();
 	Query testLoadDslQuery;
 	Error err = testLoadDslQuery.ParseJson(dsl);
-	ASSERT_TRUE(err.ok());
+	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(query == testLoadDslQuery);
 }
 
@@ -74,21 +74,21 @@ TEST_F(JoinSelectsApi, ReqTotalDSLTest) {
 	string dsl1 = query.GetJSON();
 	Query testLoadDslQuery1;
 	Error err = testLoadDslQuery1.ParseJson(dsl1);
-	ASSERT_TRUE(err.ok());
+	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(query == testLoadDslQuery1);
 
 	query.CachedTotal();
 	string dsl2 = query.GetJSON();
 	Query testLoadDslQuery2;
 	err = testLoadDslQuery2.ParseJson(dsl2);
-	ASSERT_TRUE(err.ok());
+	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(query == testLoadDslQuery2);
 
 	query.ReqTotal();
 	string dsl3 = query.GetJSON();
 	Query testLoadDslQuery3;
 	err = testLoadDslQuery3.ParseJson(dsl3);
-	ASSERT_TRUE(err.ok());
+	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(query == testLoadDslQuery3);
 }
 
@@ -101,7 +101,7 @@ TEST_F(JoinSelectsApi, SelectFunctionsDSLTest) {
 	string dsl = query.GetJSON();
 	Query testLoadDslQuery;
 	Error err = testLoadDslQuery.ParseJson(dsl);
-	ASSERT_TRUE(err.ok());
+	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(query == testLoadDslQuery);
 }
 
@@ -111,7 +111,7 @@ TEST_F(JoinSelectsApi, CompositeValuesDSLTest) {
 	string dsl = query.GetJSON();
 	Query testLoadDslQuery;
 	Error err = testLoadDslQuery.ParseJson(dsl);
-	ASSERT_TRUE(err.ok());
+	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(query == testLoadDslQuery);
 }
 
@@ -145,6 +145,6 @@ TEST_F(JoinSelectsApi, GeneralDSLTest) {
 
 	Query testLoadDslQuery;
 	Error err = testLoadDslQuery.ParseJson(dsl1);
-	ASSERT_TRUE(err.ok());
+	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(testDslQuery == testLoadDslQuery);
 }

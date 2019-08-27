@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/restream/reindexer/bindings"
+	"git.itv.restr.im/itv-backend/reindexer/bindings"
 )
 
 const (

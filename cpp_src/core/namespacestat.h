@@ -52,7 +52,7 @@ struct ReplicationState {
 	// Data count
 	int dataCount = 0;
 	// Data updated
-	unsigned long long updatedUnixNano = 0;
+	uint64_t updatedUnixNano = 0;
 };
 
 struct ReplicationStat : public ReplicationState {

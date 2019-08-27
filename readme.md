@@ -1,7 +1,6 @@
 
 # Reindexer
 
-
 [![GoDoc](https://godoc.org/github.com/Restream/reindexer?status.svg)](https://godoc.org/github.com/Restream/reindexer)
  [![Build Status](https://travis-ci.org/Restream/reindexer.svg?branch=master)](https://travis-ci.org/Restream/reindexer)
  [![Build Status](https://ci.appveyor.com/api/projects/status/yonpih8vx3acaj86?svg=true)](https://ci.appveyor.com/project/olegator77/reindexer)
@@ -122,13 +121,13 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/restream/reindexer"
+	"git.itv.restr.im/itv-backend/reindexer"
 	// choose how the Reindexer binds to the app (in this case "builtin," which means link Reindexer as a static library)
-	_ "github.com/restream/reindexer/bindings/builtin"
+	_ "git.itv.restr.im/itv-backend/reindexer/bindings/builtin"
 
 	// OR link Reindexer as static library with bundled server.
-	// _ "github.com/restream/reindexer/bindings/builtinserver"
-	// "github.com/restream/reindexer/bindings/builtinserver/config"
+	// _ "git.itv.restr.im/itv-backend/reindexer/bindings/builtinserver"
+	// "git.itv.restr.im/itv-backend/reindexer/bindings/builtinserver/config"
 
 )
 

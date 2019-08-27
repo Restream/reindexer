@@ -13,7 +13,8 @@ option (WITH_GCOV "Enable instrumented code coverage build" OFF)
 option (ENABLE_LIBUNWIND "Enable libunwind" ON)
 option (ENABLE_TCMALLOC "Enable tcmalloc extensions" ON)
 option (ENABLE_JEMALLOC "Enable jemalloc extensions" ON)
-set (REINDEXER_VERSION_DEFAULT "2.1.4")
+option (ENABLE_ROCKSDB "Enable rocksdb storage" ON)
+set (REINDEXER_VERSION_DEFAULT "2.2.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -95,12 +96,12 @@ if (NOT WITH_ASAN AND NOT WITH_TSAN)
   endif()
 
   if (NOT GPERFTOOLS_TCMALLOC AND ENABLE_JEMALLOC)
-  find_package(Jemalloc)
-  if(JEMALLOC_FOUND)
-    include_directories(SYSTEM ${JEMALLOC_INCLUDE_DIR})
-    add_definitions(-DREINDEX_WITH_JEMALLOC=1)
-    list (APPEND REINDEXER_LIBRARIES ${JEMALLOC_LIBRARY})
-     endif()
+    find_package(Jemalloc)
+    if(JEMALLOC_FOUND)
+      include_directories(SYSTEM ${JEMALLOC_INCLUDE_DIR})
+      add_definitions(-DREINDEX_WITH_JEMALLOC=1)
+      list (APPEND REINDEXER_LIBRARIES ${JEMALLOC_LIBRARY})
+    endif()
   endif ()
 endif ()
 
@@ -124,8 +125,56 @@ else ()
   list(APPEND REINDEXER_LIBRARIES snappy)
 endif ()
 
-# leveldb
+# storage
 #########
+# rocksdb
+if (ENABLE_ROCKSDB)
+  if(GPERFTOOLS_TCMALLOC AND NOT WIN32 AND WITH_PYTHON)
+    message (STATUS "Python connector is incompatible with both tcmalloc and RocksDB enabled. Disabling RocksDB")
+  else()
+    if (WITH_PYTHON)
+      # librocksdb usually compiles without -fPIC, so it can't be linked to another shared library (i.e. to reindexer python bindings)
+      set (RocksDB_NAMES librocksdb.so)
+    elseif(GPERFTOOLS_TCMALLOC AND NOT WIN32)
+      # shared version of rocksdb can conflict with tcmalloc, so force static version of rocksdb, if tcmalloc enabled
+      set (RocksDB_NAMES librocksdb.a)
+    endif()
+    find_library(RocksDB_LIBRARY NAMES ${RocksDB_NAMES} rocksdb HINTS $ENV{ROCKSDB_ROOT}/lib)
+    find_path(RocksDB_INCLUDE_DIR NAMES rocksdb/db.h HINTS $ENV{ROCKSDB_ROOT}/include /opt/local/include /usr/local/include /usr/include)
+    if (RocksDB_LIBRARY AND RocksDB_INCLUDE_DIR)
+      message (STATUS "Found RocksDB: ${RocksDB_LIBRARY}")
+      find_library(BZ2_LIBRARY bz2 bzip2)
+      if (BZ2_LIBRARY)
+        message (STATUS "Found libbz2: ${BZ2_LIBRARY}")
+        list(APPEND REINDEXER_LIBRARIES ${BZ2_LIBRARY})
+      else()
+        message (STATUS "libbz2: not found")
+      endif()
+
+      find_library(LZ4_LIBRARY lz4)
+      if (LZ4_LIBRARY)
+        message (STATUS "Found liblz4: ${LZ4_LIBRARY}")
+        list(APPEND REINDEXER_LIBRARIES ${LZ4_LIBRARY})
+      else()
+        message (STATUS "liblz4: not found")
+      endif()
+
+      find_library(Z_LIBRARY z)
+      if (Z_LIBRARY)
+        message (STATUS "Found zlib: ${Z_LIBRARY}")
+        list(APPEND REINDEXER_LIBRARIES ${Z_LIBRARY})
+      else()
+        message (STATUS "zlib: not found")
+      endif()
+
+      include_directories(SYSTEM ${RocksDB_INCLUDE_DIR})
+      list(INSERT REINDEXER_LIBRARIES 1 ${RocksDB_LIBRARY})
+      add_definitions(-DREINDEX_WITH_ROCKSDB)
+    endif()
+  endif()
+endif()
+
+# leveldb
 if(GPERFTOOLS_TCMALLOC AND NOT WIN32)
   # shared version of leveldb can conflict with tcmalloc, so force static version of leveldb, if tcmalloc enabled
   set (LevelDB_NAMES libleveldb.a)
@@ -140,7 +189,7 @@ if (NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR)
     leveldb_lib
     GIT_REPOSITORY "https://github.com/restream/leveldb.git"
     GIT_TAG "master"
-    CMAKE_ARGS -DLEVELDB_BUILD_TESTS=OFF -DLEVELDB_BUILD_BENCHMARKS=OFF 
+    CMAKE_ARGS -DLEVELDB_BUILD_TESTS=OFF -DLEVELDB_BUILD_BENCHMARKS=OFF
     -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
     -DCMAKE_CXX_FLAGS=-I${CMAKE_CURRENT_BINARY_DIR}/include
     -DCMAKE_EXE_LINKER_FLAGS=-L${CMAKE_CURRENT_BINARY_DIR}
@@ -158,6 +207,7 @@ else ()
   include_directories(SYSTEM ${LevelDB_INCLUDE_DIR})
   list(INSERT REINDEXER_LIBRARIES 1 ${LevelDB_LIBRARY})
 endif ()
+add_definitions(-DREINDEX_WITH_LEVELDB)
 
 # System libraries
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
@@ -203,7 +253,7 @@ endif()
 if (ENABLE_LIBUNWIND)
   find_library(LIBUNWIND unwind)
   if(LIBUNWIND)
-  list (APPEND REINDEXER_LIBRARIES ${LIBUNWIND} )
+    list (APPEND REINDEXER_LIBRARIES ${LIBUNWIND} )
     find_path(LIBUNWIND_INCLUDE_PATH libunwind.h)
     if (LIBUNWIND_INCLUDE_PATH)
       add_definitions(-DREINDEX_WITH_LIBUNWIND=1)
@@ -288,6 +338,26 @@ if (LevelDB_LIBRARY)
   SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},libleveldb-dev")
   SET(CPACK_RPM_PACKAGE_REQUIRES "${CPACK_RPM_PACKAGE_REQUIRES},leveldb")
 endif ()
+
+if (RocksDB_LIBRARY)
+  SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},librocksdb-dev")
+  SET(CPACK_RPM_PACKAGE_REQUIRES "${CPACK_RPM_PACKAGE_REQUIRES},rocksdb")
+endif ()
+
+if (Z_LIBRARY)
+  SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},zlib1g-dev")
+  SET(CPACK_RPM_PACKAGE_REQUIRES "${CPACK_RPM_PACKAGE_REQUIRES},zlib")
+endif()
+
+if (BZ2_LIBRARY)
+  SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},libbz2-dev")
+  SET(CPACK_RPM_PACKAGE_REQUIRES "${CPACK_RPM_PACKAGE_REQUIRES},bzip2")
+endif()
+
+if (LZ4_LIBRARY)
+  SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},liblz4-dev")
+  SET(CPACK_RPM_PACKAGE_REQUIRES "${CPACK_RPM_PACKAGE_REQUIRES},lz4")
+endif()
 
 if (SNAPPY_FOUND)
   SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},libsnappy-dev")

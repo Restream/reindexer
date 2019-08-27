@@ -82,22 +82,13 @@ public:
 
 	h_vector& operator=(h_vector&& other) noexcept {
 		if (&other != this) {
+			clear();
 			if (other.is_hdata()) {
-				size_type mv = other.size() > size() ? size() : other.size();
-				std::move(other.begin(), other.begin() + mv, begin());
-				size_type i = mv;
-				for (; i < other.size(); i++) {
+				for (size_type i = 0; i < other.size(); i++) {
 					new (ptr() + i) T(std::move(other.ptr()[i]));
-				}
-				if (!std::is_trivially_destructible<T>::value) {
-					for (; i < size(); i++) ptr()[i].~T();
-
-					for (i = 0; i < other.size(); i++) {
-						other.ptr()[i].~T();
-					}
+					if (!std::is_trivially_destructible<T>::value) other.ptr()[i].~T();
 				}
 			} else {
-				clear();
 				e_.data_ = other.e_.data_;
 				e_.cap_ = other.capacity();
 				other.is_hdata_ = 1;

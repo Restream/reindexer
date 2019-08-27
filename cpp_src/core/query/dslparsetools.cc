@@ -17,20 +17,18 @@ enum class Root {
 	Distinct,
 	Filters,
 	Sort,
-	Joined,
 	Merged,
 	SelectFilter,
 	SelectFunctions,
 	ReqTotal,
-	NextOp,
 	Aggregations,
 	Explain
 };
 
 enum class Sort { Desc, Field, Values };
-enum class JoinRoot { Type, On, Op, Namespace, Filters, Sort, Limit, Offset };
+enum class JoinRoot { Type, On, Namespace, Filters, Sort, Limit, Offset };
 enum class JoinEntry { LetfField, RightField, Cond, Op };
-enum class Filter { Cond, Op, Field, Value, Filters };
+enum class Filter { Cond, Op, Field, Value, Distinct, Filters, JoinQuery };
 enum class Aggregation { Fields, Type, Sort, Limit, Offset };
 
 void parseValues(JsonValue& values, VariantArray& kvs);
@@ -45,13 +43,11 @@ static const fast_str_map<Root> root_map = {{"namespace", Root::Namespace},
 											{"distinct", Root::Distinct},
 											{"filters", Root::Filters},
 											{"sort", Root::Sort},
-											{"join_queries", Root::Joined},
 											{"merge_queries", Root::Merged},
 											{"select_filter", Root::SelectFilter},
 											{"select_functions", Root::SelectFunctions},
 											{"req_total", Root::ReqTotal},
 											{"aggregations", Root::Aggregations},
-											{"next_op", Root::NextOp},
 											{"explain", Root::Explain}};
 
 // additional for parse field 'sort'
@@ -61,8 +57,9 @@ static const fast_str_map<Sort> sort_map = {{"desc", Sort::Desc}, {"field", Sort
 // additional for parse field 'joined'
 
 static const fast_str_map<JoinRoot> joins_map = {
-	{"type", JoinRoot::Type},   {"namespace", JoinRoot::Namespace}, {"filters", JoinRoot::Filters}, {"sort", JoinRoot::Sort},
-	{"limit", JoinRoot::Limit}, {"offset", JoinRoot::Offset},		{"on", JoinRoot::On},			{"op", JoinRoot::Op}};
+	{"type", JoinRoot::Type}, {"namespace", JoinRoot::Namespace}, {"filters", JoinRoot::Filters},
+	{"sort", JoinRoot::Sort}, {"limit", JoinRoot::Limit},		  {"offset", JoinRoot::Offset},
+	{"on", JoinRoot::On}};
 
 static const fast_str_map<JoinEntry> joined_entry_map = {
 	{"left_field", JoinEntry::LetfField}, {"right_field", JoinEntry::RightField}, {"cond", JoinEntry::Cond}, {"op", JoinEntry::Op}};
@@ -71,8 +68,9 @@ static const fast_str_map<JoinType> join_types = {{"inner", InnerJoin}, {"left",
 
 // additionalfor parse field 'filters'
 
-static const fast_str_map<Filter> filter_map = {
-	{"cond", Filter::Cond}, {"op", Filter::Op}, {"field", Filter::Field}, {"value", Filter::Value}, {"filters", Filter::Filters}};
+static const fast_str_map<Filter> filter_map = {{"cond", Filter::Cond},			  {"op", Filter::Op},		{"field", Filter::Field},
+												{"distinct", Filter::Distinct},   {"value", Filter::Value}, {"filters", Filter::Filters},
+												{"join_query", Filter::JoinQuery}};
 
 // additional for 'filter::cond' field
 
@@ -204,10 +202,13 @@ void parseValues(JsonValue& values, VariantArray& kvs) {
 	}
 }
 
+void parseSingleJoinQuery(JsonValue& join, Query& query);
+
 void parseFilter(JsonValue& filter, Query& q) {
 	QueryEntry qe;
 	OpType op = OpAnd;
 	checkJsonValueType(filter, "filter", JSON_OBJECT);
+	bool joinEntry = false;
 	enum { ENTRY, BRACKET } entryOrBracket = ENTRY;
 	for (auto elem : filter) {
 		auto& v = elem->value;
@@ -225,6 +226,17 @@ void parseFilter(JsonValue& filter, Query& q) {
 
 			case Filter::Value:
 				parseValues(v, qe.values);
+				break;
+
+			case Filter::Distinct:
+				if ((v.getTag() != JSON_TRUE) && (v.getTag() != JSON_FALSE)) throw Error(errParseJson, "Wrong type of field '%s'", name);
+				qe.distinct = (v.getTag() == JSON_TRUE);
+				break;
+
+			case Filter::JoinQuery:
+				checkJsonValueType(v, name, JSON_OBJECT);
+				parseSingleJoinQuery(v, q);
+				joinEntry = true;
 				break;
 
 			case Filter::Field:
@@ -276,7 +288,15 @@ void parseFilter(JsonValue& filter, Query& q) {
 			break;
 	}
 
-	q.entries.Append(op, std::move(qe));
+	if (joinEntry) {
+		assert(q.joinQueries_.size() > 0);
+		const Query& qjoin = q.joinQueries_.back();
+		if (qjoin.joinType != JoinType::LeftJoin) {
+			q.entries.Append((qjoin.joinType == JoinType::InnerJoin) ? OpAnd : OpOr, QueryEntry(q.joinQueries_.size() - 1));
+		}
+	} else {
+		q.entries.Append(op, std::move(qe));
+	}
 }
 
 void parseJoinedEntries(JsonValue& joinEntries, Query& qjoin) {
@@ -312,50 +332,41 @@ void parseJoinedEntries(JsonValue& joinEntries, Query& qjoin) {
 	}
 }
 
-void parseJoins(JsonValue& joins, Query& query) {
-	for (auto element : joins) {
-		auto& join = element->value;
-		checkJsonValueType(join, "Joined", JSON_OBJECT);
-
-		Query qjoin;
-		for (auto subelement : join) {
-			auto& value = subelement->value;
-			string_view name = subelement->key;
-			switch (get(joins_map, name)) {
-				case JoinRoot::Type:
-					checkJsonValueType(value, name, JSON_STRING);
-					qjoin.joinType = get(join_types, value.toString());
-					break;
-				case JoinRoot::Namespace:
-					checkJsonValueType(value, name, JSON_STRING);
-					qjoin._namespace = string(value.toString());
-					break;
-				case JoinRoot::Op:
-					checkJsonValueType(value, name, JSON_STRING);
-					qjoin.nextOp_ = get(op_map, value.toString());
-					break;
-				case JoinRoot::Filters:
-					checkJsonValueType(value, name, JSON_ARRAY);
-					for (auto filter : value) parseFilter(filter->value, qjoin);
-					break;
-				case JoinRoot::Sort:
-					parseSort(value, qjoin);
-					break;
-				case JoinRoot::Limit:
-					checkJsonValueType(value, name, JSON_NUMBER, JSON_DOUBLE);
-					qjoin.count = static_cast<unsigned>(value.toNumber());
-					break;
-				case JoinRoot::Offset:
-					checkJsonValueType(value, name, JSON_NUMBER, JSON_DOUBLE);
-					qjoin.start = static_cast<unsigned>(value.toNumber());
-					break;
-				case JoinRoot::On:
-					parseJoinedEntries(value, qjoin);
-					break;
-			}
+void parseSingleJoinQuery(JsonValue& join, Query& query) {
+	Query qjoin;
+	for (auto subelement : join) {
+		auto& value = subelement->value;
+		string_view name = subelement->key;
+		switch (get(joins_map, name)) {
+			case JoinRoot::Type:
+				checkJsonValueType(value, name, JSON_STRING);
+				qjoin.joinType = get(join_types, value.toString());
+				break;
+			case JoinRoot::Namespace:
+				checkJsonValueType(value, name, JSON_STRING);
+				qjoin._namespace = string(value.toString());
+				break;
+			case JoinRoot::Filters:
+				checkJsonValueType(value, name, JSON_ARRAY);
+				for (auto filter : value) parseFilter(filter->value, qjoin);
+				break;
+			case JoinRoot::Sort:
+				parseSort(value, qjoin);
+				break;
+			case JoinRoot::Limit:
+				checkJsonValueType(value, name, JSON_NUMBER, JSON_DOUBLE);
+				qjoin.count = static_cast<unsigned>(value.toNumber());
+				break;
+			case JoinRoot::Offset:
+				checkJsonValueType(value, name, JSON_NUMBER, JSON_DOUBLE);
+				qjoin.start = static_cast<unsigned>(value.toNumber());
+				break;
+			case JoinRoot::On:
+				parseJoinedEntries(value, qjoin);
+				break;
 		}
-		query.joinQueries_.emplace_back(qjoin);
 	}
+	query.joinQueries_.emplace_back(qjoin);
 }
 
 void parseMergeQueries(JsonValue& mergeQueries, Query& query) {
@@ -436,17 +447,8 @@ void parse(JsonValue& root, Query& q) {
 				for (auto filter : v) parseFilter(filter->value, q);
 				break;
 
-			case Root::NextOp:
-				checkJsonValueType(v, name, JSON_STRING);
-				q.nextOp_ = get(op_map, v.toString());
-				break;
-
 			case Root::Sort:
 				parseSort(v, q);
-				break;
-			case Root::Joined:
-				checkJsonValueType(v, name, JSON_ARRAY);
-				parseJoins(v, q);
 				break;
 			case Root::Merged:
 				checkJsonValueType(v, name, JSON_ARRAY);

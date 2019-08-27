@@ -188,7 +188,7 @@ Several parameters of full text search engine can be configured from application
 	// Setup another parameters
 	// ...
 	// Create index definition
-	indexDef := bindings.IndexDef {
+	indexDef := reindexer.IndexDef {
 		Name: "description",
 		JSONPaths: []string{"description"},
 		IndexType: "text",

@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.1.4"
+  version: "2.2.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -1233,11 +1233,6 @@ definitions:
         type: "array"
         items:
           $ref: "#/definitions/SortDef"
-      join_queries:
-        description: "Nested queries to be joined on right side of main query"
-        type: "array"
-        items:
-          $ref: "#/definitions/JoinedDef"
       merge_queries:
         description: "Merged queries to be merged with main query"
         type: "array"
@@ -1298,6 +1293,8 @@ definitions:
         description: "Filter for results documents"
         items: 
           $ref: "#/definitions/FilterDef"
+      join_query:
+        $ref: "#/definitions/JoinedDef"
 
   SortDef:
     description: "Specifies results sorting order"
@@ -1333,13 +1330,7 @@ definitions:
         enum:
         - "LEFT"
         - "INNER"
-      op:
-        type: "string"
-        description: "Logic operator"
-        enum:
-        - "AND"
-        - "OR"
-        - "NOT"
+        - "ORINNER"
       filters:
         type: "array"
         description: "Filter for results documents"
@@ -2058,6 +2049,7 @@ definitions:
         - profiling
         - namespaces
         - replication
+        - action
         default: "profiling"
       profiling:
         $ref: "#/definitions/ProfilingConfig"
@@ -2067,6 +2059,8 @@ definitions:
           $ref: "#/definitions/NamespacesConfig"
       replication:
         $ref: "#/definitions/ReplicationConfig"
+      action:
+        $ref: "#/definitions/ActionCommand"
     discriminator: "type"
 
   ProfilingConfig:
@@ -2140,6 +2134,9 @@ definitions:
       master_dsn:
         type: "string"
         description: "DSN to master. Only cproto schema is supported"
+      timeout_sec:
+        type: "integer"
+        description: "Network timeout for communication with master, in seconds"
       cluster_id:
         type: "integer"
         description: "Cluser ID - must be same for client and for master"
@@ -2154,3 +2151,11 @@ definitions:
         description: "List of namespaces for replication. If emply, all namespaces. All replicated namespaces will become read only for slave"
         items:
           type: string
+  ActionCommand:
+    type: "object"
+    properties:  
+      command:
+        type: "string"
+        description: "Command to execute"
+        enum:
+          - restart_replication

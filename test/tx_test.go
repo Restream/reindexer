@@ -80,6 +80,5 @@ func TestAsyncTx(t *testing.T) {
 	tx := newTestTx(DB, testTxAsyncItemNs)
 	count := 5000
 	FillTextTxItemAsync1Tx(count, tx)
-	tx.Finalize()
 	CheckTYx(testTxAsyncItemNs, count)
 }

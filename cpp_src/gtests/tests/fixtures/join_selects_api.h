@@ -217,6 +217,65 @@ protected:
 		return true;
 	}
 
+	void CheckJoinsInComplexWhereCondition(const QueryResults& qr) {
+		for (auto it : qr) {
+			Item item = it.GetItem();
+			Variant priceFieldValue = item[price];
+			bool pagesConditionResult = false;
+			bool joinsBracketConditionsResult = false;
+			bool joinsNoBracketConditionsResult = false;
+			bool priceConditionResult = ((static_cast<int>(priceFieldValue) >= 9540) && (static_cast<int>(priceFieldValue) <= 9550));
+			if (!priceConditionResult) {
+				if ((static_cast<int>(priceFieldValue) >= 1000) && (static_cast<int>(priceFieldValue) <= 2000)) {
+					bool result = false;
+					auto jitemIt = it.GetJoinedItemsIterator();
+					auto authorNsFieldIt = jitemIt.at(0);
+					Variant authorIdFieldValue = item[authorid_fk];
+					if (authorNsFieldIt.ItemsCount() > 0) {
+						EXPECT_TRUE((static_cast<int>(authorIdFieldValue) >= 10) && (static_cast<int>(authorIdFieldValue) <= 25));
+					}
+					for (int i = 0; i < authorNsFieldIt.ItemsCount(); ++i) {
+						reindexer::ItemImpl itemimpl = authorNsFieldIt.GetItem(i, qr.getPayloadType(1), qr.getTagsMatcher(1));
+						Variant authorIdFkFieldValue = itemimpl.GetField(qr.getPayloadType(1).FieldByName(authorid));
+						result = (authorIdFieldValue == authorIdFkFieldValue);
+					}
+					auto genreNsFieldIt = jitemIt.at(1);
+					Variant genreIdFieldValue = item[genreId_fk];
+					if (genreNsFieldIt.ItemsCount() > 0) {
+						EXPECT_TRUE(static_cast<int>(genreIdFieldValue) != 1);
+					}
+					for (int i = 0; i < genreNsFieldIt.ItemsCount(); ++i) {
+						reindexer::ItemImpl itemimpl = genreNsFieldIt.GetItem(i, qr.getPayloadType(2), qr.getTagsMatcher(2));
+						Variant genreIdFkFieldValue = itemimpl.GetField(qr.getPayloadType(2).FieldByName(genreid));
+						result = (genreIdFieldValue == genreIdFkFieldValue);
+					}
+					EXPECT_TRUE(result);
+					joinsBracketConditionsResult |= result;
+					EXPECT_TRUE(joinsBracketConditionsResult);
+				}
+			}
+			if (!priceConditionResult && !joinsBracketConditionsResult) {
+				Variant pagesFieldValue = item[pages];
+				pagesConditionResult = (static_cast<int>(pagesFieldValue) == 0);
+			}
+			if (!pagesConditionResult && !joinsBracketConditionsResult && !priceConditionResult) {
+				auto jitemIt = it.GetJoinedItemsIterator();
+				auto authorNsFieldIt = jitemIt.at(2);
+				Variant authorIdFieldValue = item[authorid_fk];
+				if (authorNsFieldIt.ItemsCount() > 0) {
+					EXPECT_TRUE((static_cast<int>(authorIdFieldValue) >= 300) && (static_cast<int>(authorIdFieldValue) <= 400));
+				}
+				for (int i = 0; i < authorNsFieldIt.ItemsCount(); ++i) {
+					reindexer::ItemImpl itemimpl = authorNsFieldIt.GetItem(i, qr.getPayloadType(3), qr.getTagsMatcher(3));
+					Variant authorIdFkFieldValue = itemimpl.GetField(qr.getPayloadType(3).FieldByName(authorid));
+					EXPECT_TRUE(authorIdFieldValue == authorIdFkFieldValue);
+					joinsNoBracketConditionsResult = true;
+				}
+			}
+			EXPECT_TRUE(pagesConditionResult || joinsBracketConditionsResult || priceConditionResult || joinsNoBracketConditionsResult);
+		}
+	}
+
 	static string addQuotes(const string& str) {
 		string output;
 		output += "\"";

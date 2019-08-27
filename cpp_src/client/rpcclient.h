@@ -93,7 +93,7 @@ private:
 	shared_timed_mutex nsMutex_;
 	httpparser::UrlParser uri_;
 	struct worker {
-		worker() { running = false; }
+		worker() : running(false) {}
 		ev::dynamic_loop loop_;
 		std::thread thread_;
 		ev::async stop_;

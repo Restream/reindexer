@@ -51,7 +51,7 @@ enum HttpStatusCode {
 	StatusGatewayTimeout = 504,
 };
 
-enum HttpMethod {
+enum HttpMethod : int {
 	kMethodGET,
 	kMethodPOST,
 	kMethodOPTIONS,

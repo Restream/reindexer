@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef REINDEX_WITH_LEVELDB
+
 #include <leveldb/write_batch.h>
 #include "idatastorage.h"
 
@@ -24,6 +26,7 @@ public:
 	Error Write(const StorageOpts& opts, const string_view& key, const string_view& value) final;
 	Error Write(const StorageOpts& opts, UpdatesCollection& buffer) final;
 	Error Delete(const StorageOpts& opts, const string_view& key) final;
+	Error Repair(const string& path) final;
 
 	Snapshot::Ptr MakeSnapshot() final;
 	void ReleaseSnapshot(Snapshot::Ptr) final;
@@ -94,3 +97,5 @@ private:
 };
 }  // namespace datastorage
 }  // namespace reindexer
+
+#endif  // REINDEX_WITH_LEVELDB

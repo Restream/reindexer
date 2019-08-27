@@ -41,7 +41,10 @@ public:
 	/// Connect - connect to reindexer database in embeded mode
 	/// Cancelation context doesn't affect this call
 	/// @param dsn - uri of database, like: `builtin:///var/lib/reindexer/dbname` or just `/var/lib/reindexer/dbname`
-	Error Connect(const string &dsn);
+	/// @param opts - Connect options. May contaion any of <br>
+	/// ConnectOpts::AllowNamespaceErrors() - true: Ignore errors during existing NS's load; false: Return error occured during NS's load
+	/// ConnectOpts::OpenNamespaces() - true: Need to open all the namespaces; false: Don't open namespaces
+	Error Connect(const string &dsn, ConnectOpts opts = ConnectOpts());
 
 	/// Enable storage. Must be called before InitSystemNamespaces
 	/// @param storagePath - file system path to database storage

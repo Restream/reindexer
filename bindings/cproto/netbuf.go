@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/restream/reindexer/bindings"
+	"git.itv.restr.im/itv-backend/reindexer/bindings"
 )
 
 var bufPool sync.Pool

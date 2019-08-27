@@ -348,13 +348,11 @@ JsonNode *JsonNode::toNode() const {
 const JsonNode &JsonNode::operator[](string_view key) const {
 	for (auto &v : (*this))
 		if (string_view(v.key) == key) return v;
-	static JsonNode empty_node{{JsonTag(JSON_EMPTY)}, nullptr, {}};  // -V1016
+	static JsonNode empty_node{{JsonTag(JSON_EMPTY)}, nullptr, {}};
 	return empty_node;
 }
 
-bool JsonNode::empty() const {
-	return this->value.u.tag == JSON_EMPTY;  // -V1016
-}
+bool JsonNode::empty() const { return this->value.u.tag == JsonTag(JSON_EMPTY); }
 
 JsonNode JsonParser::Parse(span<char> str) {
 	char *endp = nullptr;

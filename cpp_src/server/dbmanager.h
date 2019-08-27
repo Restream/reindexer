@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include "core/reindexer.h"
+#include "core/storage/storagetype.h"
 #include "estl/mutex.h"
 #include "estl/shared_mutex.h"
 #include "tools/stringstools.h"
@@ -92,9 +93,10 @@ public:
 	/// Initialize database:
 	/// Read all found databases to RAM
 	/// Read user's database
+	/// @param storageEngine - underlying storage engine ("leveldb"/"rocksdb")
 	/// @param allowDBErrors - true: Ignore errors during existing DBs load; false: Return error if error occures during DBs load
 	/// @return Error - error object
-	Error Init(bool allowDBErrors);
+	Error Init(const std::string &storageEngine, bool allowDBErrors);
 	/// Authenticate user, and grant roles to database with specified dbName
 	/// @param dbName - database name. Can be empty.
 	/// @param auth - AuthContext with user credentials
@@ -120,13 +122,14 @@ public:
 private:
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::DbManager>;
 	Error readUsers();
-	Error loadOrCreateDatabase(const string &name);
+	Error loadOrCreateDatabase(const string &name, bool allowDBErrors);
 
 	unordered_map<string, unique_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_;
 	unordered_map<string, UserRecord> users_;
 	string dbpath_;
 	Mutex mtx_;
 	bool noSecurity_;
+	datastorage::StorageType storageType_;
 };
 
 }  // namespace reindexer_server

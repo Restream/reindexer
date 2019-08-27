@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/restream/reindexer"
-	_ "github.com/restream/reindexer/bindings/cproto"
-	// _ "github.com/restream/reindexer/bindings/builtinserver"
+	"git.itv.restr.im/itv-backend/reindexer"
+	_ "git.itv.restr.im/itv-backend/reindexer/bindings/cproto"
+	// _ "git.itv.restr.im/itv-backend/reindexer/bindings/builtinserver"
 )
 
 type ReindexerWrapper struct {

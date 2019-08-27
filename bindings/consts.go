@@ -70,6 +70,7 @@ const (
 	QueryAggregationSort   = 17
 	QueryOpenBracket       = 18
 	QueryCloseBracket      = 19
+	QueryJoinCondition     = 20
 
 	LeftJoin    = 0
 	InnerJoin   = 1
@@ -117,6 +118,9 @@ const (
 	StorageOptEnabled               = 1
 	StorageOptDropOnFileFormatError = 1 << 1
 	StorageOptCreateIfMissing       = 1 << 2
+
+	ConnectOptOpenNamespaces       = 1
+	ConnectOptAllowNamespaceErrors = 1 << 1
 
 	ErrOK               = 0
 	ErrParseSQL         = 1

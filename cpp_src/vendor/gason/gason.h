@@ -13,7 +13,7 @@ namespace gason {
 using reindexer::string_view;
 using reindexer::span;
 
-enum JsonTag { JSON_STRING = 0, JSON_NUMBER, JSON_DOUBLE, JSON_ARRAY, JSON_OBJECT, JSON_TRUE, JSON_FALSE, JSON_NULL = 0xF };
+enum JsonTag : int { JSON_STRING = 0, JSON_NUMBER, JSON_DOUBLE, JSON_ARRAY, JSON_OBJECT, JSON_TRUE, JSON_FALSE, JSON_NULL = 0xF };
 
 struct JsonNode;
 

@@ -15,7 +15,7 @@ public:
 		fillNs(100);
 		closeNs();
 
-		ChangeConfigSettings(default_namespace, true, 3);
+		ChangeConfigSettings(default_namespace, true, 1);
 		openNs();
 		fillNs(100);
 

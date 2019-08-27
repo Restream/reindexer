@@ -5,16 +5,9 @@
 #include <thread>
 #include "core/type_consts.h"
 #include "net/http/serverconnection.h"
+#include "server/pprof/gperf_profiler.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/logger.h"
-
-#if REINDEX_WITH_GPERFTOOLS
-#include <gperftools/heap-profiler.h>
-#include <gperftools/malloc_extension.h>
-#include <gperftools/profiler.h>
-#else
-static void ProfilerRegisterThread(){};
-#endif
 
 namespace reindexer {
 
@@ -193,9 +186,11 @@ void Listener::Fork(int clones) {
 void Listener::clone(std::shared_ptr<Shared> shared) {
 	ev::dynamic_loop loop;
 	Listener listener(loop, shared);
-	if (tc_malloc_available()) {
-		ProfilerRegisterThread();
+#if REINDEX_WITH_GPERFTOOLS
+	if (alloc_ext::TCMallocIsAvailable()) {
+		reindexer_server::pprof::ProfilerRegisterThread();
 	}
+#endif
 	listener.io_.start(listener.shared_->sock_.fd(), ev::READ);
 	while (!listener.shared_->terminating_) {
 		loop.run();

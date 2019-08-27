@@ -41,9 +41,6 @@ struct NamespaceConfigData {
 enum ReplicationRole { ReplicationNone, ReplicationMaster, ReplicationSlave };
 
 struct ReplicationConfigData {
-	ReplicationConfigData() = default;
-	ReplicationConfigData(const ReplicationConfigData &) = default;
-	ReplicationConfigData(ReplicationConfigData &&) = default;
 	Error FromYML(const string &yml);
 	Error FromJSON(const gason::JsonNode &v);
 	void GetJSON(JsonBuilder &jb) const;
@@ -54,9 +51,18 @@ struct ReplicationConfigData {
 	int connPoolSize = 1;
 	int workerThreads = 1;
 	int clusterID = 1;
+	int timeoutSec = 10;
 	bool forceSyncOnLogicError = false;
 	bool forceSyncOnWrongDataHash = false;
 	fast_hash_set<string, nocase_hash_str, nocase_equal_str> namespaces;
+
+	bool operator==(const ReplicationConfigData &rdata) const noexcept {
+		return (role == rdata.role) && (connPoolSize == rdata.connPoolSize) && (workerThreads == rdata.workerThreads) &&
+			   (clusterID == rdata.clusterID) && (forceSyncOnLogicError == rdata.forceSyncOnLogicError) &&
+			   (forceSyncOnWrongDataHash == rdata.forceSyncOnWrongDataHash) && (masterDSN == rdata.masterDSN) &&
+			   (timeoutSec == rdata.timeoutSec) && (namespaces == rdata.namespaces);
+	}
+	bool operator!=(const ReplicationConfigData &rdata) const noexcept { return !operator==(rdata); }
 
 protected:
 	static ReplicationRole str2role(const string &);

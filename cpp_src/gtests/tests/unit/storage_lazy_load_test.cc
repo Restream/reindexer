@@ -10,7 +10,7 @@ TEST_F(StorageLazyLoadApi, BasicTest) {
 	bool storageLoaded = false;
 	int64_t totalItemsCount = getItemsCount(storageLoaded);
 
-	waitFor(5000);
+	waitFor(2500);
 	int64_t itemsNow = getItemsCount(storageLoaded);
 	EXPECT_TRUE(itemsNow == 0) << "Expected 0 items, not " << itemsNow;
 	EXPECT_TRUE(!storageLoaded);
@@ -29,7 +29,7 @@ TEST_F(StorageLazyLoadApi, BasicTest) {
 	EXPECT_TRUE(itemsNow == totalItemsCount) << "Expected " << totalItemsCount << " items after insertion, not " << itemsNow;
 	EXPECT_TRUE(storageLoaded);
 
-	waitFor(5000);
+	waitFor(2500);
 	itemsNow = getItemsCount(storageLoaded);
 	EXPECT_TRUE(itemsNow == 0) << "Expected 0 items, not " << itemsNow;
 	EXPECT_TRUE(!storageLoaded);
@@ -44,7 +44,7 @@ TEST_F(StorageLazyLoadApi, ReadWriteTest) {
 	int lastOperation;
 	std::mutex m;
 
-	waitFor(5000);
+	waitFor(2500);
 
 	std::vector<std::thread> selectThreads;
 	std::vector<std::thread> insertThreads;
@@ -144,7 +144,7 @@ TEST_F(StorageLazyLoadApi, TestForTSAN) {
 	// here we reload it (i.e. make items count = 0)
 	// and after first Select it's size should include
 	// items from storage
-	waitFor(4000);
+	waitFor(2500);
 
 	std::vector<std::thread> selectThreads;
 	for (size_t i = 0; i < 30; ++i) {

@@ -12,10 +12,10 @@
 #include "core/query/expressionevaluator.h"
 #include "core/rdxcontext.h"
 #include "core/selectfunc/functionexecutor.h"
+#include "core/storage/storagefactory.h"
 #include "itemimpl.h"
 #include "replicator/updatesobserver.h"
 #include "replicator/walselecter.h"
-#include "storage/storagefactory.h"
 #include "tools/errors.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
@@ -54,7 +54,9 @@ void Namespace::IndexesStorage::MoveBase(IndexesStorage &&src) { Base::operator=
 
 // private implementation and NOT THREADSAFE of copy CTOR
 // use 'Namespace::Clone(Namespace& ns)'
-Namespace::Namespace(const Namespace &src) : indexes_(*this), observers_(src.observers_), lastSelectTime_(0) { CopyContentsFrom(src); }
+Namespace::Namespace(const Namespace &src) : indexes_(*this), observers_(src.observers_), lastSelectTime_(0), cancelCommit_(false) {
+	CopyContentsFrom(src);
+}
 
 Namespace::Namespace(const string &name, UpdatesObservers &observers)
 	: indexes_(*this),
@@ -178,12 +180,14 @@ void Namespace::onConfigUpdated(DBConfigProvider &configProvider, const RdxConte
 	if (repl_.slaveMode == bool(replicationConf.role == ReplicationSlave)) return;
 
 	unflushedCount_++;
+	logPrintf(LogInfo, "Replication role changed '%s' %d", name_, replicationConf.role);
 
 	// CASE2: Replication enabled in state, but disabled in config
 	if (repl_.slaveMode && replicationConf.role != ReplicationSlave) {
 		// switch slave -> master
 		repl_.slaveMode = false;
-		logPrintf(LogTrace, "Disable slave mode for namespace '%s'", name_);
+		initWAL(repl_.lastLsn);
+		logPrintf(LogInfo, "Disable slave mode for namespace '%s'", name_);
 		return;
 	}
 
@@ -192,7 +196,7 @@ void Namespace::onConfigUpdated(DBConfigProvider &configProvider, const RdxConte
 		// switch master -> slave
 		if (storageOpts_.IsSlaveMode()) {
 			repl_.slaveMode = true;
-			logPrintf(LogTrace, "Enable slave mode for namespace '%s'", name_);
+			logPrintf(LogInfo, "Enable slave mode for namespace '%s'", name_);
 			repl_.incarnationCounter++;
 		}
 		return;
@@ -241,6 +245,7 @@ void Namespace::updateItems(PayloadType oldPlType, const FieldsSet &changedField
 	newItem.Unsafe(true);
 	int errCount = 0;
 	Error lastErr = errOK;
+	repl_.dataHash = 0;
 	for (size_t rowId = 0; rowId < items_.size(); rowId++) {
 		if (items_[rowId].IsFree()) {
 			continue;
@@ -287,6 +292,7 @@ void Namespace::updateItems(PayloadType oldPlType, const FieldsSet &changedField
 		}
 
 		plCurr = std::move(plNew);
+		repl_.dataHash ^= Payload(payloadType_, plCurr).GetHash();
 	}
 	markUpdated();
 	if (errCount != 0) {
@@ -502,7 +508,7 @@ void Namespace::addIndex(const IndexDef &indexDef) {
 		newIndex->SetFields(FieldsSet{idxNo});
 		newIndex->UpdatePayloadType(payloadType_);
 
-		FieldsSet changedFields{idxNo};
+		FieldsSet changedFields{0, idxNo};
 		insertIndex(newIndex.release(), idxNo, indexName);
 		updateItems(oldPlType, changedFields, 1);
 	}
@@ -686,7 +692,7 @@ void Namespace::Update(const Query &query, QueryResults &result, const RdxContex
 	}
 }
 
-void Namespace::Upsert(Item &item, const RdxContext &ctx, bool store) { modifyItem(item, ctx, store, ModeUpsert); }
+void Namespace::Upsert(Item &item, const RdxContext &ctx, bool store, bool noLock) { modifyItem(item, ctx, store, ModeUpsert, noLock); }
 
 void Namespace::Delete(Item &item, const RdxContext &ctx, bool noLock) {
 	ItemImpl *ritem = item.impl_;
@@ -925,13 +931,8 @@ void Namespace::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 	if (doUpdate) {
 		repl_.dataHash ^= pl.GetHash();
 		plData.Clone(pl.RealSize());
-	}
 
-	// keep them in nsamespace, to prevent allocs
-	// VariantArray krefs, skrefs;
-
-	// Delete from composite indexes first
-	if (doUpdate) {
+		// Delete from composite indexes first
 		for (int field = indexes_.firstCompositePos(); field < indexes_.totalSize(); ++field) {
 			indexes_[field]->Delete(Variant(plData), id);
 		}
@@ -1544,9 +1545,8 @@ bool Namespace::needToLoadData(const RdxContext &ctx) const {
 	return (storage_ && (dbpath_.length() > 0)) ? !storageLoaded_.load() : false;
 }
 
-void Namespace::EnableStorage(const string &path, StorageOpts opts, const RdxContext &ctx) {
+void Namespace::EnableStorage(const string &path, StorageOpts opts, StorageType storageType, const RdxContext &ctx) {
 	string dbpath = fs::JoinPath(path, name_);
-	datastorage::StorageType storageType = datastorage::StorageType::LevelDB;
 
 	WLock lock(mtx_, &ctx);
 	if (storage_) {
@@ -1593,6 +1593,7 @@ void Namespace::SetStorageOpts(StorageOpts opts, const RdxContext &ctx) {
 	if (opts.IsSlaveMode()) {
 		storageOpts_.SlaveMode();
 		repl_.slaveMode = true;
+		logPrintf(LogInfo, "Enable slave mode for namespace '%s'", name_);
 	}
 }
 
@@ -1673,6 +1674,7 @@ void Namespace::initWAL(int64_t maxLSN) {
 		}
 	}
 	repl_.lastLsn = wal_.LSNCounter() - 1;
+	logPrintf(LogInfo, "[%s] WAL initalized lsn #%ld", name_, repl_.lastLsn);
 }
 
 void Namespace::removeExpiredItems(RdxActivityContext *ctx) {

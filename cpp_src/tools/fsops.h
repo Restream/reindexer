@@ -40,6 +40,7 @@ string GetDirPath(const string &path);
 string GetTempDir();
 string GetHomeDir();
 string GetRelativePath(const string &path, unsigned maxUp = 1024);
+inline static int Rename(const string &from, const string &to) { return rename(from.c_str(), to.c_str()); }
 
 Error TryCreateDirectory(const string &dir);
 Error ChangeUser(const char *userName);

@@ -1,32 +1,43 @@
 #include "je_malloc_extension.h"
 
-#if REINDEX_WITH_JEMALLOC && defined(_WIN32)
-bool je_malloc_available() { return true; }
-#elif REINDEX_WITH_JEMALLOC
-#include <dlfcn.h>
+#if REINDEX_WITH_JEMALLOC
 #include <jemalloc/jemalloc.h>
+#ifndef _WIN32
+#include <dlfcn.h>
 #include <stdlib.h>
 #include <mutex>
+#endif  // _WIN32
+#endif  // REINDEX_WITH_JEMALLOC && !defined(_WIN32)
 
-namespace {
+namespace reindexer {
+namespace alloc_ext {
 
-using mallctl_fn = int (*)(const char *name, void *oldp, size_t *oldlenp, void *newp, size_t newlen);
+#if REINDEX_WITH_JEMALLOC && defined(_WIN32)
 
-static mallctl_fn get_mallctl_fn() {
-	static auto get_instance_fn = reinterpret_cast<mallctl_fn>(dlsym(RTLD_NEXT, "mallctl"));
-	return get_instance_fn;
+int mallctl(const char* /*name*/, void* /*oldp*/, size_t* /*oldlenp*/, void* /*newp*/, size_t /*newlen*/) { return -1; }
+
+bool JEMallocIsAvailable() { return true; }
+
+#elif REINDEX_WITH_JEMALLOC
+
+using MallctlFn = int (*)(const char *name, void *oldp, size_t *oldlenp, void *newp, size_t newlen);
+
+static MallctlFn getMallctlFn() {
+	static auto getInstanceFn = reinterpret_cast<MallctlFn>(dlsym(RTLD_DEFAULT, "mallctl"));
+	return getInstanceFn;
 }
-}  // namespace
 
-int WEAK_ATTR mallctl(const char *name, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
-	auto get_instance_fn = get_mallctl_fn();
-	if (get_instance_fn) {
-		return get_instance_fn(name, oldp, oldlenp, newp, newlen);
+int mallctl(const char *name, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
+	auto getInstanceFn = getMallctlFn();
+	if (getInstanceFn) {
+		return getInstanceFn(name, oldp, oldlenp, newp, newlen);
 	}
 	return -1;
 }
 
-bool je_malloc_available() { return (get_mallctl_fn() != nullptr); }
-#else
-bool je_malloc_available() { return false; }
-#endif
+bool JEMallocIsAvailable() { return (getMallctlFn() != nullptr); }
+
+#endif  // REINDEX_WITH_JEMALLOC
+
+}  // namespace alloc_ext
+}  // namespace reindexer

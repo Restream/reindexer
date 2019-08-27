@@ -3,10 +3,10 @@ package reindexer
 import (
 	"context"
 
-	"github.com/restream/reindexer/bindings"
-	_ "github.com/restream/reindexer/bindings/cproto"
-	"github.com/restream/reindexer/dsl"
-	// _ "github.com/restream/reindexer/bindings/builtinserver"
+	"git.itv.restr.im/itv-backend/reindexer/bindings"
+	_ "git.itv.restr.im/itv-backend/reindexer/bindings/cproto"
+	"git.itv.restr.im/itv-backend/reindexer/dsl"
+	// _ "git.itv.restr.im/itv-backend/reindexer/bindings/builtinserver"
 )
 
 // Condition types

@@ -3,6 +3,7 @@
 #include <climits>
 #include <functional>
 #include <initializer_list>
+#include <unordered_set>
 #include "estl/fast_hash_map.h"
 #include "querywhere.h"
 #include "tools/errors.h"
@@ -190,6 +191,9 @@ public:
 		joinEntry.joinIndex_ = joinIndex;
 		qr.joinType = joinType;
 		qr.joinEntries_.push_back(joinEntry);
+		if (joinType != JoinType::LeftJoin) {
+			entries.Append((joinType == JoinType::InnerJoin) ? OpType::OpAnd : OpType::OpOr, QueryEntry(joinQueries_.size()));
+		}
 		joinQueries_.push_back(qr);
 		return *this;
 	}
@@ -274,8 +278,8 @@ public:
 	/// @param limit - number of rows to get from result set.
 	/// @param offset - index of the first row to get from result set.
 	/// @return Query object ready to be executed.
-	Query &Aggregate(AggType type, const h_vector<string, 1> &fields, const vector<pair<string, bool>> &sort = {}, size_t limit = UINT_MAX,
-					 size_t offset = 0) {
+	Query &Aggregate(AggType type, const h_vector<string, 1> &fields, const vector<pair<string, bool>> &sort = {},
+					 unsigned limit = UINT_MAX, unsigned offset = 0) {
 		AggregateEntry aggEntry{type, fields, limit, offset};
 		aggEntry.sortingEntries_.reserve(sort.size());
 		for (const auto &s : sort) {
@@ -379,6 +383,12 @@ public:
 			for (auto &jq : mq.joinQueries_) visitor(jq);
 	}
 
+	/// Gets printable sql version of joined query set by idx.
+	/// @param idx - index of joined query in joinQueries_.
+	/// @param ser - serializer to store SQL string.
+	/// @param stripArgs - replace condition values with '?'.
+	void DumpSingleJoinQuery(size_t idx, WrSerializer &ser, bool stripArgs) const;
+
 protected:
 	/// Sql parser context
 	struct SqlParsingCtx {
@@ -459,7 +469,8 @@ protected:
 
 	/// Deserializes query data from stream.
 	/// @param ser - serializer object.
-	void deserialize(Serializer &ser);
+	/// @param hasJoinConditions - Output
+	void deserialize(Serializer &ser, bool &hasJoinConditions);
 
 	/// Parse where entries
 	int parseWhere(tokenizer &parser, SqlParsingCtx &ctx);

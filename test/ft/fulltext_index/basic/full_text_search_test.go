@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/restream/reindexer"
-	_ "github.com/restream/reindexer/bindings/builtin"
-	. "github.com/restream/reindexer/test/ft/specs"
+	"git.itv.restr.im/itv-backend/reindexer"
+	_ "git.itv.restr.im/itv-backend/reindexer/bindings/builtin"
+	. "git.itv.restr.im/itv-backend/reindexer/test/ft/specs"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )

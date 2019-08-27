@@ -1,10 +1,17 @@
 #pragma once
 
-bool je_malloc_available();
-bool je_malloc_hooks_available();
+#include <stddef.h>
 
-#if defined(__GNUC__) && !defined(WEAK_ATTR)
-#define WEAK_ATTR __attribute__((weak))
-#else
-#define WEAK_ATTR
-#endif
+#if REINDEX_WITH_JEMALLOC
+
+namespace reindexer {
+namespace alloc_ext {
+
+int mallctl(const char *name, void *oldp, size_t *oldlenp, void *newp, size_t newlen);
+
+bool JEMallocIsAvailable();
+
+}  // namespace alloc_ext
+}  // namespace reindexer
+
+#endif  // REINDEX_WITH_JEMALLOC

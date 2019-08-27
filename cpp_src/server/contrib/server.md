@@ -72,9 +72,8 @@ Reindexer is fast.
     - [UpdateResponse](#updateresponse)
 
 
-
 ### Version information
-*Version* : 2.1.4
+*Version* : 2.2.0
 
 
 ### License information
@@ -336,6 +335,38 @@ Can not be undone. USE WITH CAUTION.
 
 
 
+### Truncate namespace
+```
+DELETE /db/{database}/namespaces/{name}/truncate
+```
+
+
+#### Description
+This operation will delete all items from namespace.
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Path**|**name**  <br>*required*|Namespace name|string|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* namespaces
+
+
+
 ### Get list of namespace's meta info
 ```
 GET /db/{database}/namespaces/{name}/metalist
@@ -395,7 +426,7 @@ This operation will return value of namespace's meta with specified key
 
 |HTTP Code|Description|Schema|
 |---|---|---|
-|**200**|successful operation|No Content|
+|**200**|Successful operation|[MetaByKeyResponse](#metabykeyresponse)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 
 
@@ -498,6 +529,7 @@ Each document should be in request body as separate JSON object, e.g.
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
 |**Path**|**name**  <br>*required*|Namespace name|string|
+|**Query**|**precepts**  <br>*required*|Precepts to be done|< string > array(multi)|
 |**Body**|**body**  <br>*required*||object|
 
 
@@ -505,7 +537,7 @@ Each document should be in request body as separate JSON object, e.g.
 
 |HTTP Code|Description|Schema|
 |---|---|---|
-|**200**|successful operation|[UpdateResponse](#updateresponse)|
+|**200**|successful operation|[ItemsUpdateResponse](#itemsupdateresponse)|
 |**400**|Invalid status value|[StatusResponse](#statusresponse)|
 
 
@@ -537,6 +569,7 @@ Each document should be in request body as separate JSON object, e.g.
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
 |**Path**|**name**  <br>*required*|Namespace name|string|
+|**Query**|**precepts**  <br>*optional*|Precepts to be done|< string > array(multi)|
 |**Body**|**body**  <br>*required*||object|
 
 
@@ -544,7 +577,7 @@ Each document should be in request body as separate JSON object, e.g.
 
 |HTTP Code|Description|Schema|
 |---|---|---|
-|**200**|successful operation|[UpdateResponse](#updateresponse)|
+|**200**|successful operation|[ItemsUpdateResponse](#itemsupdateresponse)|
 |**400**|Invalid status value|[StatusResponse](#statusresponse)|
 
 
@@ -576,6 +609,7 @@ Each document should be in request body as separate JSON object, e.g.
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
 |**Path**|**name**  <br>*required*|Namespace name|string|
+|**Query**|**precepts**  <br>*required*|Precepts to be done|< string > array(multi)|
 |**Body**|**body**  <br>*required*||object|
 
 
@@ -583,7 +617,7 @@ Each document should be in request body as separate JSON object, e.g.
 
 |HTTP Code|Description|Schema|
 |---|---|---|
-|**200**|successful operation|[UpdateResponse](#updateresponse)|
+|**200**|successful operation|[ItemsUpdateResponse](#itemsupdateresponse)|
 |**400**|Invalid status value|[StatusResponse](#statusresponse)|
 
 
@@ -916,6 +950,37 @@ This operation will return system informatiom about server version, uptime, and 
 
 
 
+### Get activity stats information
+```
+GET /db/{database}/namespaces/%23activitystats/items
+```
+
+
+#### Description
+This operation will return detailed informatiom about current activity of all connected to the database clients
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|successful operation|[ActivityStats](#activitystats)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* system
+
+
+
 ### Get memory stats information
 ```
 GET /db/{database}/namespaces/%23memstats/items
@@ -1046,6 +1111,36 @@ This operation will update system configuration:
 
 
 ## Definitions
+
+
+### ActionCommand
+
+|Name|Description|Schema|
+|---|---|---|
+|**command**  <br>*optional*|Command to execute|enum (restart_replication)|
+
+
+
+### ActivityStats
+
+|Name|Description|Schema|
+|---|---|---|
+|**items**  <br>*optional*||< [items](#activitystats-items) > array|
+|**total_items**  <br>*optional*|Total count of documents, matched specified filters|integer|
+
+
+**items**
+
+|Name|Description|Schema|
+|---|---|---|
+|**client**  <br>*required*|Client identifier|string|
+|**lock_description**  <br>*optional*||string|
+|**query**  <br>*required*|Query text|string|
+|**query_id**  <br>*required*|Query identifier|integer|
+|**query_start**  <br>*required*|Query start time|string|
+|**state**  <br>*required*|Current operation state|enum (in_progress, wait_lock, sending, indexes_lookup, bool, select_loop)|
+|**user**  <br>*optional*|User name|string|
+
 
 
 ### AggregationResDef
@@ -1182,11 +1277,15 @@ Query execution explainings
 
 
 ### FilterDef
+If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not contains 'filters' then 'field' and 'cond' are required.
+
 
 |Name|Description|Schema|
 |---|---|---|
-|**cond**  <br>*required*|Condition operator|enum (EQ, GT, GE, LE, LT, RANGE, SET, EMPTY)|
-|**field**  <br>*required*|Field json path or index name for filter|string|
+|**cond**  <br>*optional*|Condition operator|enum (EQ, GT, GE, LE, LT, RANGE, SET, EMPTY)|
+|**field**  <br>*optional*|Field json path or index name for filter|string|
+|**filters**  <br>*optional*|Filter for results documents|< [FilterDef](#filterdef) > array|
+|**join_query**  <br>*optional*||[JoinedDef](#joineddef)|
 |**op**  <br>*optional*|Logic operator|enum (AND, OR, NOT)|
 |**value**  <br>*optional*|Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, or variable len array for SET condition|object|
 
@@ -1286,6 +1385,15 @@ Idset cache stats. Stores merged reverse index results of SELECT field IN(...) b
 
 
 
+### ItemsUpdateResponse
+
+|Name|Description|Schema|
+|---|---|---|
+|**items**  <br>*optional*|Updated documents. Contains only if precepts were provided|< object > array|
+|**updated**  <br>*optional*|Count of updated items|integer|
+
+
+
 ### JoinCacheMemStats
 Join cache stats. Stores results of selects to right table by ON condition
 
@@ -1309,10 +1417,20 @@ Join cache stats. Stores results of selects to right table by ON condition
 |**limit**  <br>*optional*|Maximum count of returned items|integer|
 |**namespace**  <br>*required*|Namespace name|string|
 |**offset**  <br>*optional*|Offset of first returned item|integer|
-|**op**  <br>*optional*|Logic operator|enum (AND, OR, NOT)|
 |**sort**  <br>*optional*||[SortDef](#sortdef)|
 |**true**  <br>*optional*|Join ON statement|< [OnDef](#ondef) > array|
-|**type**  <br>*required*|Join type|enum (LEFT, INNER)|
+|**type**  <br>*required*|Join type|enum (LEFT, INNER, ORINNER)|
+
+
+
+### MetaByKeyResponse
+Meta info of the specified namespace
+
+
+|Name|Schema|
+|---|---|
+|**key**  <br>*required*|string|
+|**value**  <br>*required*|string|
 
 
 
@@ -1434,7 +1552,9 @@ List of meta info of the specified namespace
 |**join_cache_mode**  <br>*optional*|Join cache mode|enum (aggressive)|
 |**lazyload**  <br>*optional*|Enable namespace lazy load (namespace shoud be loaded from disk on first call, not at reindexer startup)|boolean|
 |**log_level**  <br>*optional*|Log level of queries core logger|enum (none, error, warning, info, trace)|
+|**merge_limit_count**  <br>*optional*|Merge write namespace after get thi count of operations|integer|
 |**namespace**  <br>*optional*|Name of namespace, or `*` for setting to all namespaces|string|
+|**start_copy_politics_count**  <br>*optional*|Copy namespce policts will start only after item's count become greater in this param|integer|
 |**unload_idle_threshold**  <br>*optional*|Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded|integer|
 
 
@@ -1454,6 +1574,7 @@ List of meta info of the specified namespace
 
 |Name|Description|Schema|
 |---|---|---|
+|**activitystats**  <br>*optional*|Enables tracking activity statistics  <br>**Default** : `false`|boolean|
 |**memstats**  <br>*optional*|Enables tracking memory statistics  <br>**Default** : `true`|boolean|
 |**perfstats**  <br>*optional*|Enables tracking overal perofrmance statistics  <br>**Default** : `false`|boolean|
 |**queries_threshold_us**  <br>*optional*|Minimum query execution time to be recoreded in #queriesperfstats namespace|integer|
@@ -1478,7 +1599,6 @@ List of meta info of the specified namespace
 |**distinct**  <br>*optional*|Distinct field/index name. Results will contain's document with distinct field value|string|
 |**explain**  <br>*optional*|Add query execution explain information  <br>**Default** : `false`|boolean|
 |**filters**  <br>*optional*|Filter for results documents|< [FilterDef](#filterdef) > array|
-|**join_queries**  <br>*optional*|Nested queries to be joined on right side of main query|< [JoinedDef](#joineddef) > array|
 |**limit**  <br>*optional*|Maximum count of returned items|integer|
 |**merge_queries**  <br>*optional*|Merged queries to be merged with main query|< [Query](#query) > array|
 |**namespace**  <br>*required*|Namespace name|string|
@@ -1530,9 +1650,10 @@ Performance statistics per each query
 |**last_sec_avg_lock_time_us**  <br>*optional*|Average waiting time for acquiring lock to this object at last second|integer|
 |**last_sec_qps**  <br>*optional*|Count of queries to this object, requested at last second|integer|
 |**latency_stddev**  <br>*optional*|Standard deviation of latency values|number|
+|**longest_query**  <br>*optional*|not normalized SQL representation of longest query|string|
 |**max_latency_us**  <br>*optional*|Maximum latency value|integer|
 |**min_latency_us**  <br>*optional*|Minimal latency value|integer|
-|**query**  <br>*optional*|SQL representation of query|string|
+|**query**  <br>*optional*|normalized SQL representation of query|string|
 |**total_avg_latency_us**  <br>*optional*|Average latency (execution time) for queries to this object|integer|
 |**total_avg_lock_time_us**  <br>*optional*|Average waiting time for acquiring lock to this object|integer|
 |**total_queries_count**  <br>*optional*|Total count of queries to this object|integer|
@@ -1549,6 +1670,7 @@ Performance statistics per each query
 |**master_dsn**  <br>*optional*|DSN to master. Only cproto schema is supported|string|
 |**namespaces**  <br>*optional*|List of namespaces for replication. If emply, all namespaces. All replicated namespaces will become read only for slave|< string > array|
 |**role**  <br>*optional*|Replication role|enum (none, slave, master)|
+|**timeout_sec**  <br>*optional*|Network timeout for communction with master, in seconds|integer|
 
 
 
@@ -1636,10 +1758,11 @@ Specifies results sorting order
 
 |Name|Description|Schema|
 |---|---|---|
+|**action**  <br>*optional*||[ActionCommand](#actioncommand)|
 |**namespaces**  <br>*optional*||< [NamespacesConfig](#namespacesconfig) > array|
 |**profiling**  <br>*optional*||[ProfilingConfig](#profilingconfig)|
 |**replication**  <br>*optional*||[ReplicationConfig](#replicationconfig)|
-|**type**  <br>*required*|**Default** : `"profiling"`|enum (profiling, namespaces, replication)|
+|**type**  <br>*required*|**Default** : `"profiling"`|enum (profiling, namespaces, replication, action)|
 
 
 

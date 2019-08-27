@@ -16,7 +16,7 @@
 #include "querystat.h"
 #include "replicator/updatesobserver.h"
 #include "tools/errors.h"
-#include "tools/filemtimechecker.h"
+#include "tools/filecontentwatcher.h"
 #include "transaction.h"
 
 using std::shared_ptr;
@@ -35,7 +35,7 @@ public:
 	ReindexerImpl();
 	~ReindexerImpl();
 
-	Error Connect(const string &dsn);
+	Error Connect(const string &dsn, ConnectOpts opts = ConnectOpts());
 	Error EnableStorage(const string &storagePath, bool skipPlaceholderCheck = false, const InternalRdxContext &ctx = InternalRdxContext());
 	Error OpenNamespace(string_view nsName, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing(),
 						const InternalRdxContext &ctx = InternalRdxContext());
@@ -128,9 +128,10 @@ protected:
 	void createSystemNamespaces();
 	void updateToSystemNamespace(string_view nsName, Item &, const RdxContext &ctx);
 	void updateConfigProvider(const gason::JsonNode &config);
-	void updateReplicationConfFile(const gason::JsonNode &config);
+	void updateReplicationConfFile();
 	void onProfiligConfigLoad();
 	Error tryLoadReplicatorConfFromFile();
+	Error tryLoadReplicatorConfFromYAML(const std::string &yamlReplConf);
 
 	void backgroundRoutine();
 	Error closeNamespace(string_view nsName, const RdxContext &ctx, bool dropStorage, bool enableDropSlave = false);
@@ -160,12 +161,13 @@ protected:
 	UpdatesObservers observers_;
 	std::unique_ptr<Replicator> replicator_;
 	DBConfigProvider configProvider_;
-	FileMTimeChecker replConfigFileChecker_;
+	FileContetWatcher replConfigFileChecker_;
 	bool hasReplConfigLoadError_;
 
 	ActivityContainer activities_;
 
 	StorageMutex storageMtx_;
+	StorageType storageType_;
 	friend class Replicator;
 	friend class TransactionImpl;
 };

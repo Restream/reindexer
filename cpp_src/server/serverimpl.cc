@@ -10,17 +10,11 @@
 #include "reindexer_version.h"
 #include "rpcserver.h"
 #include "serverimpl.h"
+#include "tools/alloc_ext/je_malloc_extension.h"
+#include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/fsops.h"
 #include "tools/stringstools.h"
 #include "yaml/yaml.h"
-
-#if REINDEX_WITH_GPERFTOOLS
-#include "tools/alloc_ext/tc_malloc_extension.h"
-#endif
-#if REINDEX_WITH_JEMALLOC
-#include <jemalloc/jemalloc.h>
-#include "tools/alloc_ext/je_malloc_extension.h"
-#endif
 
 #ifdef _WIN32
 #include "winservice.h"
@@ -170,8 +164,10 @@ int ServerImpl::Start() {
 }
 
 void ServerImpl::Stop() {
-	running_ = false;
-	async_.send();
+	if (running_) {
+		running_ = false;
+		async_.send();
+	}
 }
 
 int ServerImpl::run() {
@@ -211,13 +207,13 @@ int ServerImpl::run() {
 				"not possible.");
 		}
 #elif REINDEX_WITH_JEMALLOC
-		if (je_malloc_available()) {
+		if (alloc_ext::JEMallocIsAvailable()) {
 			size_t val = 0, sz = sizeof(size_t);
-			mallctl("config.prof", &val, &sz, NULL, 0);
+			alloc_ext::mallctl("config.prof", &val, &sz, NULL, 0);
 			if (!val) {
 				logger_.warn("debug.pprof is enabled, but jemalloc compiled without profiling support. Heap profiling is not possible.");
 			} else {
-				mallctl("opt.prof", &val, &sz, NULL, 0);
+				alloc_ext::mallctl("opt.prof", &val, &sz, NULL, 0);
 				if (!val) {
 					logger_.warn(
 						"debug.pprof is enabled, but jemmalloc profiler is off. Heap profiling is not possible. export "
@@ -237,7 +233,7 @@ int ServerImpl::run() {
 	try {
 		dbMgr_.reset(new DBManager(config_.StoragePath, !config_.EnableSecurity));
 
-		auto status = dbMgr_->Init(config_.StartWithErrors);
+		auto status = dbMgr_->Init(config_.StorageEngine, config_.StartWithErrors);
 		if (!status.ok()) {
 			logger_.error("Error init database manager: {0}", status.what());
 			return EXIT_FAILURE;
@@ -310,10 +306,11 @@ int ServerImpl::run() {
 	logger_.info("Reindexer server shutdown completed.");
 
 	spdlog::drop_all();
-	sinks_.clear();
 	async_.reset();
+	logger_ = LoggerWrapper();
+	coreLogger_ = LoggerWrapper();
 	return 0;
-}  // namespace reindexer_server
+}
 
 #ifndef _WIN32
 Error ServerImpl::daemonize() {

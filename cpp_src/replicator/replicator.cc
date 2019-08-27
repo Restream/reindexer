@@ -28,7 +28,9 @@ Error Replicator::Start() {
 
 	if (config_.role != ReplicationSlave) return errOK;
 
-	master_.reset(new client::Reindexer(client::ReindexerConfig(config_.connPoolSize, config_.workerThreads)));
+	master_.reset(
+		new client::Reindexer(client::ReindexerConfig(config_.connPoolSize, config_.workerThreads, 10000,
+													  std::chrono::seconds(config_.timeoutSec), std::chrono::seconds(config_.timeoutSec))));
 
 	auto err = master_->Connect(config_.masterDSN);
 	terminate_ = false;
@@ -37,32 +39,31 @@ Error Replicator::Start() {
 	return err;
 }
 
-bool Replicator::Configure(ReplicationConfigData config) {
-	std::lock_guard<std::mutex> lck(masterMtx_);
-	bool needStop = master_ && (config.role != config_.role || config.masterDSN != config_.masterDSN ||
-								config.clusterID != config_.clusterID || config.connPoolSize != config_.connPoolSize ||
-								config.workerThreads != config_.workerThreads || config.namespaces != config_.namespaces);
+bool Replicator::Configure(const ReplicationConfigData &config) {
+	std::unique_lock<std::mutex> lck(masterMtx_);
+	bool changed = (config_ != config);
 
-	if (needStop) {
-		Stop(false);
+	if (changed) {
+		if (master_) stop();
+		config_ = config;
 	}
 
-	config_.FromReplicationConfig(std::move(config), thread_.joinable());
-
-	return needStop || !master_;
+	return changed || !master_;
 }
 
-void Replicator::Stop(bool withLock) {
+void Replicator::Stop() {
+	std::unique_lock<std::mutex> lck(masterMtx_);
+	stop();
+}
+
+void Replicator::stop() {
 	terminate_ = true;
 	stop_.send();
 
-	std::unique_lock<std::mutex> lck(masterMtx_, std::defer_lock);
-	if (withLock) {
-		lck.lock();
-	}
 	if (thread_.joinable()) {
 		thread_.join();
 	}
+
 	if (master_) {
 		master_->Stop();
 		master_.reset();
@@ -130,12 +131,12 @@ Error Replicator::syncDatabase() {
 			if (!err.ok()) {
 				logPrintf(LogError, "[repl:%s] syncNamespace error: %s", ns.name, err.what());
 				if (err.code() == errDataHashMismatch && !terminate_) {
-					if (config_.forceSyncOnWrongDataHash.load(std::memory_order_acquire)) {
+					if (config_.forceSyncOnWrongDataHash) {
 						err = syncNamespaceForced(ns, "DataHash mismatch");
 					} else {
 						err = errOK;
 					}
-				} else if (err.code() != errNetwork && !terminate_ && config_.forceSyncOnLogicError.load(std::memory_order_acquire)) {
+				} else if (err.code() != errNetwork && !terminate_ && config_.forceSyncOnLogicError) {
 					err = syncNamespaceForced(ns, "Logic error occurried");
 				} else
 					break;
@@ -205,7 +206,7 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, string_view reason
 
 	//  Make query to complete master's namespace data
 	client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-	if (err.ok()) err = master_->Select(Query(ns.name), qr);
+	if (err.ok()) err = master_->Select(Query(ns.name).Where("#lsn", CondAny, {}), qr);
 	if (err.ok()) {
 		slave_->getNamespace(ns.name, dummyCtx)->ReplaceTagsMatcher(qr.getTagsMatcher(0), dummyCtx);
 		err = applyWAL(ns.name, qr);
@@ -253,6 +254,7 @@ Error Replicator::applyWAL(string_view nsName, client::QueryResults &qr) {
 
 	if (stat.lastError.ok() && !terminate_) {
 		// Set slave LSN if operation successfull
+		slaveLSN = std::max(stat.masterState.lastLsn, slaveLSN);
 		slaveNs->SetSlaveLSN(slaveLSN, dummyCtx);
 	}
 	ReplicationState slaveState = slaveNs->GetReplState(dummyCtx);
@@ -346,8 +348,8 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 			stat.masterState.FromJSON(giftStr(rec.data));
 			if (stat.masterState.clusterID != config_.clusterID) {
 				terminate_ = true;
-				throw Error(errLogic, "Wrong cluster ID expect %d, got %d from master. Terminating replicator.", config_.clusterID,
-							stat.masterState.clusterID);
+				return Error(errLogic, "Wrong cluster ID expect %d, got %d from master. Terminating replicator.", config_.clusterID,
+							 stat.masterState.clusterID);
 			}
 			break;
 		default:
@@ -469,7 +471,7 @@ void Replicator::OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &w
 	} catch (const Error &e) {
 		err = e;
 	}
-	if (err.ok() && slaveNs) {
+	if (err.ok() && slaveNs && wrec.type != WalNamespaceDrop) {
 		slaveNs->SetSlaveLSN(lsn, RdxContext());
 	} else if (!err.ok()) {
 		logPrintf(LogError, "[repl:%s] Error apply WAL update: %s", nsName, err.what());

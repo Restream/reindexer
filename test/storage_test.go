@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer"
+	"git.itv.restr.im/itv-backend/reindexer"
 )
 
 type SubStruct struct {

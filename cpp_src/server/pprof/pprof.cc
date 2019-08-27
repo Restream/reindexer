@@ -4,22 +4,15 @@
 #include <thread>
 #include "debug/resolver.h"
 #include "estl/chunk_buf.h"
+#include "gperf_profiler.h"
+#include "pprof/gperf_profiler.h"
+#include "tools/alloc_ext/je_malloc_extension.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/fsops.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 
 const string kProfileNamePrefix = "reindexer_server";
-
-#if REINDEX_WITH_GPERFTOOLS
-#include <gperftools/heap-profiler.h>
-#include <gperftools/malloc_extension.h>
-#include <gperftools/profiler.h>
-#include "gperf_profiler.h"
-#endif
-#if REINDEX_WITH_JEMALLOC
-#include <jemalloc/jemalloc.h>
-#endif
 
 namespace reindexer_server {
 using namespace reindexer;
@@ -57,12 +50,12 @@ int Pprof::Profile(http::Context &ctx) {
 	if (secondsParam.length()) seconds = stoi(secondsParam);
 	if (seconds < 1) seconds = 30;
 
-	if (tc_malloc_available()) {
-		ProfilerStart(filePath.c_str());
+	if (alloc_ext::TCMallocIsAvailable()) {
+		pprof::ProfilerStart(filePath.c_str());
 	}
 	std::this_thread::sleep_for(std::chrono::seconds(seconds));
-	if (tc_malloc_available()) {
-		ProfilerStop();
+	if (alloc_ext::TCMallocIsAvailable()) {
+		pprof::ProfilerStop();
 	}
 	string content;
 	if (fs::ReadFile(filePath, content) < 0) {
@@ -76,15 +69,15 @@ int Pprof::Profile(http::Context &ctx) {
 
 int Pprof::ProfileHeap(http::Context &ctx) {
 #if REINDEX_WITH_GPERFTOOLS
-	if (gperf_profiler_is_available()) {
+	if (pprof::GperfProfilerIsAvailable()) {
 		if (std::getenv("HEAPPROFILE")) {
-			char *profile = GetHeapProfile();
+			char *profile = pprof::GetHeapProfile();
 			int res = ctx.String(http::StatusOK, profile);
 			free(profile);
 			return res;
 		}
 		string profile;
-		MallocExtension::instance()->GetHeapSample(&profile);
+		alloc_ext::instance()->GetHeapSample(&profile);
 		return ctx.String(http::StatusOK, profile);
 	} else {
 		return ctx.String(http::StatusInternalServerError, "Reindexer was compiled with gperftools, but was not able to link it properly");
@@ -94,7 +87,7 @@ int Pprof::ProfileHeap(http::Context &ctx) {
 	string filePath = fs::JoinPath(fs::GetTempDir(), kProfileNamePrefix + ".heapprofile");
 	const char *pfp = &filePath[0];
 
-	mallctl("prof.dump", NULL, NULL, &pfp, sizeof(pfp));
+	alloc_ext::mallctl("prof.dump", NULL, NULL, &pfp, sizeof(pfp));
 	if (fs::ReadFile(filePath, content) < 0) {
 		return ctx.String(http::StatusNotFound, "Profile file not found");
 	}
@@ -107,9 +100,9 @@ int Pprof::ProfileHeap(http::Context &ctx) {
 
 int Pprof::Growth(http::Context &ctx) {
 #if REINDEX_WITH_GPERFTOOLS
-	if (tc_malloc_available()) {
+	if (alloc_ext::TCMallocIsAvailable()) {
 		string output;
-		MallocExtension::instance()->GetHeapGrowthStacks(&output);
+		alloc_ext::instance()->GetHeapGrowthStacks(&output);
 		return ctx.String(http::StatusOK, output);
 	} else {
 		return ctx.String(http::StatusInternalServerError, "Reindexer was compiled with gperftools, but was not able to link it properly");

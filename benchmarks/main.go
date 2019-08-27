@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 
-	"github.com/restream/reindexer/benchmarks/repo"
+	"git.itv.restr.im/itv-backend/reindexer/benchmarks/repo"
 )
 
 const itemsInDataSet = 100000

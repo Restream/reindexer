@@ -375,6 +375,14 @@ reindexer_error reindexer_enable_storage(uintptr_t rx, reindexer_string path, re
 	return error2c(res);
 }
 
+reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpts opts) {
+	Reindexer* db = reinterpret_cast<Reindexer*>(rx);
+	if (!db) return error2c(err_not_init);
+	Error err = db->Connect(str2c(dsn), opts);
+	if (err.ok() && db->NeedTraceActivity()) db->SetActivityTracer("builtin", "");
+	return error2c(err);
+}
+
 reindexer_error reindexer_init_system_namespaces(uintptr_t rx) {
 	Reindexer* db = reinterpret_cast<Reindexer*>(rx);
 	if (!db) return error2c(err_not_init);

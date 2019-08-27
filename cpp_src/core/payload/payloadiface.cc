@@ -204,7 +204,7 @@ void PayloadIface<T>::SerializeFields(WrSerializer &ser, const FieldsSet &fields
 template <typename T>
 std::string PayloadIface<T>::Dump() const {
 	string printString;
-	for (int i = 1; i < NumFields(); ++i) {
+	for (int i = 0; i < NumFields(); ++i) {
 		VariantArray fieldValues;
 		Get(i, fieldValues);
 
@@ -214,7 +214,13 @@ std::string PayloadIface<T>::Dump() const {
 		if (Type().Field(i).IsArray()) printString += "[";
 		for (size_t j = 0; j < fieldValues.size(); ++j) {
 			auto &fieldValue = fieldValues[j];
-			printString += fieldValue.As<string>();
+			auto str = fieldValue.As<string>();
+			if (i != 0)
+				printString += str;
+			else {
+				for (size_t z = 0; z < str.length(); z++) printString += std::to_string(uint8_t(str[z])) + " ";
+			}
+
 			if (j != fieldValues.size() - 1) {
 				printString += ", ";
 			}

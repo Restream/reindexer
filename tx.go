@@ -2,12 +2,11 @@ package reindexer
 
 import (
 	"context"
-	"runtime"
 	"sync"
 	"sync/atomic"
 
-	"github.com/restream/reindexer/bindings"
-	"github.com/restream/reindexer/cjson"
+	"git.itv.restr.im/itv-backend/reindexer/bindings"
+	"git.itv.restr.im/itv-backend/reindexer/cjson"
 )
 
 const maxAsyncRequests = 500
@@ -72,7 +71,6 @@ func (tx *Tx) startAsyncRoutines() (err error) {
 		tx.cmplCh = make(chan modifyInfo, asyncResponseQueueSize)
 		tx.cmplCond = sync.NewCond(&tx.lock)
 		go tx.cmplHandlingRoutine(tx.cmplCh)
-		runtime.SetFinalizer(tx, (*Tx).Finalize)
 	}
 
 	tx.checkReqCount()
@@ -210,9 +208,12 @@ func (tx *Tx) AwaitResults() *Tx {
 	return tx
 }
 
-// Finalize transaction
-func (tx *Tx) Finalize() {
-	close(tx.cmplCh)
+// finalize transaction
+func (tx *Tx) finalize() {
+	if tx.cmplCh != nil {
+		close(tx.cmplCh)
+		tx.cmplCh = nil
+	}
 }
 
 func (tx *Tx) modifyInternal(item interface{}, json []byte, mode int, precepts ...string) (err error) {
@@ -292,7 +293,6 @@ func (tx *Tx) cmplHandlingRoutine(cmplCh chan modifyInfo) {
 		} else {
 			return
 		}
-
 	}
 }
 
@@ -344,6 +344,7 @@ func (tx *Tx) commitInternal() (count int, err error) {
 	count = 0
 
 	tx.AwaitResults()
+	defer tx.finalize()
 	if tx.asyncErr != nil {
 		asyncErr := tx.asyncErr
 		err = tx.db.binding.RollbackTx(&tx.ctx)
@@ -388,6 +389,7 @@ func (tx *Tx) Rollback() error {
 	tx.asyncErr = nil
 
 	err := tx.db.binding.RollbackTx(&tx.ctx)
+	tx.finalize()
 	if err != nil {
 		return err
 	}

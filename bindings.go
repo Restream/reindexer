@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/restream/reindexer/bindings"
-	"github.com/restream/reindexer/bindings/builtinserver/config"
-	"github.com/restream/reindexer/cjson"
+	"git.itv.restr.im/itv-backend/reindexer/bindings"
+	"git.itv.restr.im/itv-backend/reindexer/bindings/builtinserver/config"
+	"git.itv.restr.im/itv-backend/reindexer/cjson"
 )
 
 const (

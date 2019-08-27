@@ -262,7 +262,7 @@ TEST_F(NsApi, QueryperfstatsNsDummyTest) {
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_TRUE(qr.Count() > 0) << "#queriesperfstats table is empty!";
 			for (size_t i = 0; i < qr.Count(); ++i) {
-				std::cout << qr[0].GetItem().GetJSON() << std::endl;
+				std::cout << qr[i].GetItem().GetJSON() << std::endl;
 			}
 		}
 		ASSERT_TRUE(qres.Count() == 1) << "Expected 1 row for this query, got " << qres.Count();

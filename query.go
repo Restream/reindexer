@@ -35,6 +35,7 @@ const (
 	queryAggregationSort   = bindings.QueryAggregationSort
 	queryOpenBracket       = bindings.QueryOpenBracket
 	queryCloseBracket      = bindings.QueryCloseBracket
+	queryJoinCondition     = bindings.QueryJoinCondition
 )
 
 // Constants for calc total
@@ -776,6 +777,11 @@ func (q *Query) join(q2 *Query, field string, joinType int) *Query {
 	}
 	if q2.root != nil {
 		panic(errors.New("query.Join call on already joined query. You shoud create new Query"))
+	}
+	if joinType != leftJoin {
+		q.ser.PutVarCUInt(queryJoinCondition)
+		q.ser.PutVarCUInt(joinType)
+		q.ser.PutVarCUInt(len(q.joinQueries)) // index of join query
 	}
 	q2.joinType = joinType
 	q2.root = q

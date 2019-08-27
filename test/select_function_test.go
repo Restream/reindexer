@@ -4,7 +4,7 @@ import (
 	"log"
 	"testing"
 
-	"github.com/restream/reindexer"
+	"git.itv.restr.im/itv-backend/reindexer"
 
 	"fmt"
 )

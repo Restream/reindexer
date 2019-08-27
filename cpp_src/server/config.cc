@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include "args/args.hpp"
+#include "core/storage/storagefactory.h"
 #include "tools/fsops.h"
 #include "yaml/yaml.h"
 
@@ -72,6 +73,16 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 
 	args::Group dbGroup(parser, "Database options");
 	args::ValueFlag<string> storageF(dbGroup, "PATH", "path to 'reindexer' storage", {'s', "db"}, StoragePath, args::Options::Single);
+	auto availableStorageTypes = reindexer::datastorage::StorageFactory::getAvailableTypes();
+	std::string availabledStorages;
+	for (const auto &type : availableStorageTypes) {
+		if (!availabledStorages.empty()) {
+			availabledStorages.append(", ");
+		}
+		availabledStorages.append("'" + reindexer::datastorage::StorageTypeToString(type) + "'");
+	}
+	args::ValueFlag<string> storageEngineF(dbGroup, "NAME", "'reindexer' storage engine (" + availabledStorages + ")", {'e', "engine"},
+										   StorageEngine, args::Options::Single);
 	args::Flag startWithErrorsF(parser, "", "Allow to start reindexer with DB's load erros", {"startwitherrors"});
 
 	args::Group netGroup(parser, "Network options");
@@ -116,6 +127,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	}
 
 	if (storageF) StoragePath = args::get(storageF);
+	if (storageEngineF) StorageEngine = args::get(storageEngineF);
 	if (startWithErrorsF) StartWithErrors = args::get(startWithErrorsF);
 	if (logLevelF) LogLevel = args::get(logLevelF);
 	if (httpAddrF) HTTPAddr = args::get(httpAddrF);
@@ -145,6 +157,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 reindexer::Error ServerConfig::fromYaml(Yaml::Node &root) {
 	try {
 		StoragePath = root["storage"]["path"].As<std::string>(StoragePath);
+		StorageEngine = root["storage"]["engine"].As<std::string>(StorageEngine);
 		StartWithErrors = root["storage"]["startwitherrors"].As<bool>(StartWithErrors);
 		LogLevel = root["logger"]["loglevel"].As<std::string>(LogLevel);
 		ServerLog = root["logger"]["serverlog"].As<std::string>(ServerLog);

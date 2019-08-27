@@ -128,6 +128,7 @@ int loop_select_backend::capacity() { return FD_SETSIZE; }
 class loop_poll_backend_private {
 public:
 	std::vector<pollfd> fds_;
+	bool wasErased_;
 };
 
 loop_poll_backend::loop_poll_backend() : private_(new loop_poll_backend_private) {}
@@ -140,7 +141,7 @@ void loop_poll_backend::init(dynamic_loop *owner) {
 }
 
 void loop_poll_backend::set(int fd, int events, int /*oldevents*/) {
-	short ev = ((events & READ) ? POLLRDNORM : 0) | ((events & WRITE) ? POLLWRNORM : 0);
+	short ev = ((events & READ) ? (POLLRDNORM | POLLIN) : 0) | ((events & WRITE) ? (POLLWRNORM | POLLOUT) : 0);
 	int &idx = owner_->fds_[fd].idx;
 
 	if (idx < 0) {
@@ -165,19 +166,25 @@ void loop_poll_backend::stop(int fd) {
 
 	private_->fds_.pop_back();
 	owner_->fds_.at(fd).idx = -1;
+	private_->wasErased_ = true;
 }
 
 int loop_poll_backend::runonce(int64_t t) {
 	int ret = poll(&private_->fds_[0], private_->fds_.size(), t != -1 ? t / 1000 : -1);
 	if (ret < 1) return ret;
 
-	for (pollfd &pfd : private_->fds_) {
-		if (pfd.revents == 0) continue;
-		int events = ((pfd.revents & (POLLRDNORM | POLLHUP)) ? READ : 0) | ((pfd.revents & POLLWRNORM) ? WRITE : 0);
-		if (events) {
-			if (!check_async(pfd.fd)) owner_->io_callback(pfd.fd, events);
-			pfd.revents = 0;
+	for (size_t i = 0; i < private_->fds_.size();) {
+		pollfd &pfd = private_->fds_[i];
+		private_->wasErased_ = false;
+		if (pfd.revents != 0) {
+			int events =
+				((pfd.revents & (POLLRDNORM | POLLIN | POLLHUP)) ? READ : 0) | ((pfd.revents & (POLLWRNORM | POLLOUT)) ? WRITE : 0);
+			if (events) {
+				if (!check_async(pfd.fd)) owner_->io_callback(pfd.fd, events);
+				if (!private_->wasErased_) pfd.revents = 0;
+			}
 		}
+		if (!private_->wasErased_) ++i;
 	}
 	return ret;
 }

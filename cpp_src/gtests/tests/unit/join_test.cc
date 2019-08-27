@@ -5,6 +5,84 @@
 #include "core/query/joinresults.h"
 #include "join_selects_api.h"
 
+TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest) {
+	Query queryGenres = Query(genres_namespace).Not().Where(genreid, CondEq, 1);
+	Query queryAuthors = Query(authors_namespace).Where(authorid, CondGe, 10).Where(authorid, CondLe, 25);
+	Query queryAuthors2 = Query(authors_namespace).Where(authorid, CondGe, 300).Where(authorid, CondLe, 400);
+	Query queryBooks = Query(books_namespace, 0, 50)
+						   .OpenBracket()
+						   .Where(price, CondGe, 9540)
+						   .Where(price, CondLe, 9550)
+						   .CloseBracket()
+						   .Or()
+						   .OpenBracket()
+						   .Where(price, CondGe, 1000)
+						   .Where(price, CondLe, 2000)
+						   .InnerJoin(authorid_fk, authorid, CondEq, queryAuthors)
+						   .OrInnerJoin(genreId_fk, genreid, CondEq, queryGenres)
+						   .CloseBracket()
+						   .Or()
+						   .OpenBracket()
+						   .Where(pages, CondEq, 0)
+						   .CloseBracket()
+						   .Or()
+						   .InnerJoin(authorid_fk, authorid, CondEq, queryAuthors2);
+
+	reindexer::QueryResults qr;
+	Error err = rt.reindexer->Select(queryBooks, qr);
+	EXPECT_TRUE(err.ok()) << err.what();
+	EXPECT_TRUE(qr.Count() <= 50);
+	CheckJoinsInComplexWhereCondition(qr);
+}
+
+TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest2) {
+	string sql =
+		"SELECT * FROM books_namespace WHERE "
+		"(price >= 9540 AND price <= 9550) "
+		"OR (price >= 1000 AND price <= 2000 INNER JOIN (SELECT * FROM authors_namespace WHERE authorid >= 10 AND authorid <= 25)ON "
+		"authors_namespace.authorid = books_namespace.authorid_fk OR INNER JOIN (SELECT * FROM genres_namespace WHERE NOT genreid = 1) ON "
+		"genres_namespace.genreid = books_namespace.genreid_fk) "
+		"OR (pages = 0) "
+		"OR INNER JOIN (SELECT *FROM authors_namespace WHERE authorid >= 300 AND authorid <= 400) ON authors_namespace.authorid = "
+		"books_namespace.authorid_fk LIMIT 50";
+
+	Query query;
+	query.FromSQL(sql);
+	reindexer::QueryResults qr;
+	Error err = rt.reindexer->Select(query, qr);
+	EXPECT_TRUE(err.ok()) << err.what();
+	EXPECT_TRUE(qr.Count() <= 50);
+	CheckJoinsInComplexWhereCondition(qr);
+}
+
+TEST_F(JoinSelectsApi, SqlPasringTest) {
+	string sql =
+		"select * from books_namespace where (pages > 0 and inner join (select * from authors_namespace limit 10) on "
+		"authors_namespace.authorid = "
+		"books_namespace.authorid_fk and price > 1000 or inner join (select * from genres_namespace limit 10) on "
+		"genres_namespace.genreid = books_namespace.genreid_fk and pages < 10000 and inner join (select * from authors_namespace WHERE "
+		"(authorid >= 10 AND authorid <= 20) limit 100) on "
+		"authors_namespace.authorid = books_namespace.authorid_fk) or pages == 3 limit 20";
+
+	Query srcQuery;
+	srcQuery.FromSQL(sql);
+
+	reindexer::WrSerializer wrser;
+	srcQuery.GetSQL(wrser);
+
+	Query dstQuery;
+	dstQuery.FromSQL(wrser.Slice());
+
+	ASSERT_TRUE(srcQuery == dstQuery);
+
+	wrser.Reset();
+	srcQuery.Serialize(wrser);
+	Query deserializedQuery;
+	reindexer::Serializer ser(wrser.Buf(), wrser.Len());
+	deserializedQuery.Deserialize(ser);
+	ASSERT_TRUE(srcQuery == deserializedQuery);
+}
+
 TEST_F(JoinSelectsApi, InnerJoinTest) {
 	Query queryAuthors(authors_namespace);
 	Query queryBooks = Query(books_namespace, 0, 10).Where(price, CondGe, 600);

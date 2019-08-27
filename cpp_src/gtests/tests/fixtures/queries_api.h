@@ -973,6 +973,51 @@ protected:
 		}
 	}
 
+	template <typename FacetMap>
+	static void frameFacet(FacetMap& facet, size_t offset, size_t limit) {
+		if (offset >= facet.size()) {
+			facet.clear();
+		} else {
+			auto end = facet.begin();
+			std::advance(end, offset);
+			facet.erase(facet.begin(), end);
+		}
+		if (limit < facet.size()) {
+			auto begin = facet.begin();
+			std::advance(begin, limit);
+			facet.erase(begin, facet.end());
+		}
+	}
+
+	static void checkFacetValues(const reindexer::h_vector<std::string, 1>& result, const std::string& expected, const std::string& name) {
+		ASSERT_EQ(result.size(), 1) << (name + " aggregation Facet result is incorrect!");
+		EXPECT_EQ(result[0], expected) << (name + " aggregation Facet result is incorrect!");
+	}
+
+	static void checkFacetValues(const reindexer::h_vector<std::string, 1>& result, int expected, const std::string& name) {
+		ASSERT_EQ(result.size(), 1) << (name + " aggregation Facet result is incorrect!");
+		EXPECT_EQ(std::stoi(result[0]), expected) << (name + " aggregation Facet result is incorrect!");
+	}
+
+	template <typename T>
+	static void checkFacetValues(const reindexer::h_vector<std::string, 1>& result, const T& expected, const std::string& name) {
+		ASSERT_EQ(result.size(), 2) << (name + " aggregation Facet result is incorrect!");
+		EXPECT_EQ(result[0], expected.name) << (name + " aggregation Facet result is incorrect!");
+		EXPECT_EQ(std::stoi(result[1]), expected.year) << (name + " aggregation Facet result is incorrect!");
+	}
+
+	template <typename ExpectedFacet>
+	static void checkFacet(const reindexer::h_vector<reindexer::FacetResult, 1>& result, const ExpectedFacet& expected,
+						   const std::string& name) {
+		ASSERT_EQ(result.size(), expected.size()) << (name + " aggregation Facet result is incorrect!");
+		auto resultIt = result.begin();
+		auto expectedIt = expected.cbegin();
+		for (; resultIt != result.end() && expectedIt != expected.cend(); ++resultIt, ++expectedIt) {
+			checkFacetValues(resultIt->values, expectedIt->first, name);
+			EXPECT_EQ(resultIt->count, expectedIt->second) << (name + " aggregation Facet result is incorrect!");
+		}
+	}
+
 	void CheckAggregationQueries() {
 		constexpr size_t facetLimit = 10;
 		constexpr size_t facetOffset = 10;
@@ -1007,15 +1052,18 @@ protected:
 		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "The aggregation facet cannot provide sort by 'name'");
 
-		const Query wrongQuery6 = Query(default_namespace).Aggregate(AggFacet, {kFieldNameCountries});
+		const Query wrongQuery6 = Query(default_namespace).Aggregate(AggFacet, {kFieldNameCountries, kFieldNameYear});
 		reindexer::QueryResults wrongQr6;
 		err = rt.reindexer->Select(wrongQuery6, wrongQr6);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Can't do facet by array field");
+		EXPECT_EQ(err.what(), "Multifield facet cannot contain an array field");
 
 		Query testQuery = Query(default_namespace)
 							  .Aggregate(AggAvg, {kFieldNameYear})
 							  .Aggregate(AggSum, {kFieldNameYear})
+							  .Aggregate(AggMin, {kFieldNamePackages})
+							  .Aggregate(AggFacet, {kFieldNameName}, {{"Count", false}}, facetLimit, facetOffset)
+							  .Aggregate(AggFacet, {kFieldNamePackages}, {}, facetLimit, facetOffset)
 							  .Aggregate(AggFacet, {kFieldNameName, kFieldNameYear}, {{kFieldNameYear, true}, {kFieldNameName, false}},
 										 facetLimit, facetOffset);
 		Query checkQuery = Query(default_namespace);
@@ -1029,46 +1077,45 @@ protected:
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		double yearSum = 0.0;
-		struct CompositeFacetItem {
+		int packagesMin = std::numeric_limits<int>::max();
+		struct MultifieldFacetItem {
 			std::string name;
 			int year;
-			bool operator<(const CompositeFacetItem& other) const {
+			bool operator<(const MultifieldFacetItem& other) const {
 				if (year == other.year) return name < other.name;
 				return year > other.year;
 			}
 		};
-		std::map<CompositeFacetItem, int> compositeFacet;
+		std::map<MultifieldFacetItem, int> multifieldFacet;
+		std::unordered_map<std::string, int> singlefieldFacetMap;
+		std::map<int, int> arrayFacet;
 		for (auto it : checkQr) {
 			Item item(it.GetItem());
 			yearSum += item[kFieldNameYear].Get<int>();
-			++compositeFacet[CompositeFacetItem{string(item[kFieldNameName].Get<reindexer::string_view>()),
-												item[kFieldNameYear].Get<int>()}];
+			++multifieldFacet[MultifieldFacetItem{string(item[kFieldNameName].Get<reindexer::string_view>()),
+												  item[kFieldNameYear].Get<int>()}];
+			++singlefieldFacetMap[string(item[kFieldNameName].Get<reindexer::string_view>())];
+			for (const Variant& pack : static_cast<reindexer::VariantArray>(item[kFieldNamePackages])) {
+				const int value = pack.As<int>();
+				packagesMin = std::min(value, packagesMin);
+				++arrayFacet[value];
+			}
 		}
-		if (facetOffset >= compositeFacet.size()) {
-			compositeFacet.clear();
-		} else {
-			auto end = compositeFacet.begin();
-			std::advance(end, facetOffset);
-			compositeFacet.erase(compositeFacet.begin(), end);
-		}
-		if (facetLimit < compositeFacet.size()) {
-			auto begin = compositeFacet.begin();
-			std::advance(begin, facetLimit);
-			compositeFacet.erase(begin, compositeFacet.end());
-		}
+		std::vector<std::pair<std::string, int>> singlefieldFacet(singlefieldFacetMap.begin(), singlefieldFacetMap.end());
+		std::sort(singlefieldFacet.begin(), singlefieldFacet.end(),
+				  [](const std::pair<std::string, int>& lhs, const std::pair<std::string, int>& rhs) {
+					  return lhs.second == rhs.second ? lhs.first < rhs.first : lhs.second < rhs.second;
+				  });
+		frameFacet(multifieldFacet, facetOffset, facetLimit);
+		frameFacet(singlefieldFacet, facetOffset, facetLimit);
+		frameFacet(arrayFacet, facetOffset, facetLimit);
 
+		EXPECT_DOUBLE_EQ(testQr.aggregationResults[0].value, yearSum / checkQr.Count()) << "Aggregation Avg result is incorrect!";
 		EXPECT_DOUBLE_EQ(testQr.aggregationResults[1].value, yearSum) << "Aggregation Sum result is incorrect!";
-		EXPECT_DOUBLE_EQ(testQr.aggregationResults[0].value, yearSum / checkQr.Count()) << "Aggregation Sum result is incorrect!";
-		const auto& resultFacets = testQr.aggregationResults[2].facets;
-		ASSERT_EQ(resultFacets.size(), compositeFacet.size()) << "Composite aggregation Facet result is incorrect!";
-		auto result = resultFacets.begin();
-		auto expected = compositeFacet.cbegin();
-		for (; result != resultFacets.end() && expected != compositeFacet.cend(); ++result, ++expected) {
-			ASSERT_EQ(result->values.size(), 2) << "Composite aggregation Facet result is incorrect!";
-			EXPECT_EQ(result->values[0], expected->first.name) << "Composite aggregation Facet result is incorrect!";
-			EXPECT_EQ(std::stoi(result->values[1]), expected->first.year) << "Composite aggregation Facet result is incorrect!";
-			EXPECT_EQ(result->count, expected->second) << "Composite aggregation Facet result is incorrect!";
-		}
+		EXPECT_DOUBLE_EQ(testQr.aggregationResults[2].value, packagesMin) << "Aggregation Min result is incorrect!";
+		checkFacet(testQr.aggregationResults[3].facets, singlefieldFacet, "Singlefield");
+		checkFacet(testQr.aggregationResults[4].facets, arrayFacet, "Array");
+		checkFacet(testQr.aggregationResults[5].facets, multifieldFacet, "Multifield");
 	}
 
 	void CompareQueryResults(const QueryResults& lhs, const QueryResults& rhs) {

@@ -1,3 +1,23 @@
+# Version 2.2.0 (27.08.2019)
+
+## Core
+
+- [fea] Dynamic switch of replication role
+- [fea] Facets by array fields 
+- [fea] JOIN now can be used in expression with another query conditions 
+- [fea] Support rocksdb as storage engine
+- [fix] Race on concurent read from system namespaces
+- [fix] Replication config sync fixed
+
+## Reindexer tool
+
+- [fea] Add repair storage function
+
+## go connector
+
+- [fix] Async tx goroutine fixed
+- [fix] Replication in builtin mode fixed
+
 # Version 2.1.4 (15.08.2019)
 
 - [fea] Reindexer server will not start if storage is corrupted, `startwitherrors` config flag is used to override
@@ -16,7 +36,6 @@
 - [fix] Correct usage of '*' entry as default in namespaces config
 - [fix] Memory statistics calculation are improoved
 - [fix] Slave will not try to clear expired by ttl records
-
 
 # Version 2.1.2 (04.08.2019)
 

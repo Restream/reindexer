@@ -71,7 +71,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	prepareSortingContext(sortBy, ctx, isFt);
 
 	// Add preresults with common conditions of join Queres
-	SelectIteratorContainer qres;
+	SelectIteratorContainer qres(ns_->payloadType_, &ctx);
 	if (ctx.preResult && ctx.preResult->mode == JoinPreResult::ModeIdSet) {
 		SelectKeyResult res;
 		res.push_back(SingleSelectKeyResult(ctx.preResult->ids));
@@ -418,52 +418,24 @@ void NsSelecter::setLimitAndOffset(ItemRefVector &queryResult, size_t offset, si
 	}
 }
 
-void NsSelecter::processLeftJoins(const ConstPayload &pl, SelectCtx &sctx, IdType properRowId, bool found, bool match) {
-	if (match && found)
+void NsSelecter::processLeftJoins(QueryResults &qr, SelectCtx &sctx) {
+	if (!checkIfThereAreLeftJoins(sctx)) return;
+	for (auto it : qr) {
+		IdType rowid = it.GetItemRef().id;
+		ConstPayload pl(ns_->payloadType_, ns_->items_[rowid]);
 		for (auto &joinedSelector : *sctx.joinedSelectors)
-			if (joinedSelector.type == JoinType::LeftJoin) joinedSelector.func(&joinedSelector, properRowId, sctx.nsid, pl, match);
+			if (joinedSelector.type == JoinType::LeftJoin) joinedSelector.func(&joinedSelector, rowid, sctx.nsid, pl, true);
+	}
 }
 
-bool NsSelecter::processInnerJoins(const ConstPayload &pl, SelectCtx &sctx, IdType properRowId, bool found, bool match) {
-	for (size_t i = 0; i < sctx.joinedSelectors->size(); ++i) {
-		auto &joinedSelector = sctx.joinedSelectors->at(i);
-		bool res = false;
-		joinedSelector.called++;
-
-		if (joinedSelector.type == JoinType::InnerJoin) {
-			if (found) {
-				res = joinedSelector.func(&joinedSelector, properRowId, sctx.nsid, pl, match);
-				found &= res;
-			}
-		}
-		if (joinedSelector.type == JoinType::OrInnerJoin) {
-			if (!found || !joinedSelector.nodata) {
-				res = joinedSelector.func(&joinedSelector, properRowId, sctx.nsid, pl, match);
-				found |= res;
-			}
-		}
-		if (res) {
-			joinedSelector.matched++;
-		}
-		// If not found and next op is not OR then we're done
-		if (!found && !(i + 1 < sctx.joinedSelectors->size() && sctx.joinedSelectors->at(i + 1).type == JoinType::OrInnerJoin)) {
-			break;
+bool NsSelecter::checkIfThereAreLeftJoins(SelectCtx &sctx) const {
+	if (!sctx.joinedSelectors) return false;
+	for (auto &joinedSelector : *sctx.joinedSelectors) {
+		if (joinedSelector.type == JoinType::LeftJoin) {
+			return true;
 		}
 	}
-	return found;
-}
-
-bool NsSelecter::processJoins(SelectCtx &sctx, IdType properRowId, bool found, bool match, bool hasInnerJoins, bool hasLeftJoins,
-							  bool postLoopLimitOffsetProcessing) {
-	ConstPayload pl(ns_->payloadType_, ns_->items_[properRowId]);
-	if (hasInnerJoins) {
-		bool fullSelect = (match && !postLoopLimitOffsetProcessing);
-		found = processInnerJoins(pl, sctx, properRowId, found, fullSelect);
-	}
-	if (!postLoopLimitOffsetProcessing && hasLeftJoins) {
-		processLeftJoins(pl, sctx, properRowId, found, match);
-	}
-	return found;
+	return false;
 }
 
 template <bool reverse, bool hasComparators, bool hasScan>
@@ -490,14 +462,6 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 
 	bool finish = (count == 0) && !sctx.reqMatchedOnceFlag && !calcTotal;
 
-	bool hasInnerJoins = false, hasLeftJoins = false;
-	if (sctx.joinedSelectors) {
-		for (auto &joinedSelector : *sctx.joinedSelectors) {
-			hasInnerJoins |= (joinedSelector.type == JoinType::InnerJoin || joinedSelector.type == JoinType::OrInnerJoin);
-			hasLeftJoins |= (joinedSelector.type == JoinType::LeftJoin);
-		}
-	}
-
 	bool generalSort = false;
 	bool multisortFinished = true;
 	bool multiSortByOrdered = false;
@@ -510,13 +474,10 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 		generalSort = !sortCtx->index;
 		if (sortCtx->index) {
 			firstSortIndex = sortCtx->index;
-			multiSortByOrdered = multiSort && firstSortIndex;
+			multiSortByOrdered = multiSort;
 			multisortFinished = !(multiSortByOrdered && count > 0);
 		}
 	}
-
-	// When we have non-btree index sorting with limit and(or) offset
-	bool postLoopLimitOffsetProcessing = ((multiSort || generalSort || forcedSort) && (sctx.query.start || sctx.query.count != UINT_MAX));
 
 	VariantArray prevValues;
 	size_t multisortLimitLeft = 0, multisortLimitRight = 0;
@@ -540,13 +501,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 		assert(static_cast<size_t>(properRowId) < ns_->items_.size());
 		PayloadValue &pv = ns_->items_[properRowId];
 		assert(pv.Ptr());
-		bool found = qres.Process<reverse, hasComparators>(pv, &finish, &rowId, properRowId);
-
-		if (found && sctx.joinedSelectors) {
-			found = processJoins(sctx, properRowId, found, !start && count, hasInnerJoins, hasLeftJoins, postLoopLimitOffsetProcessing);
-		}
-
-		if (found) {
+		if (qres.Process<reverse, hasComparators>(pv, &finish, &rowId, properRowId, !start && count)) {
 			sctx.matchedAtLeastOnce = true;
 			uint8_t proc = ft_ctx_ ? ft_ctx_->Proc(firstIterator.Pos()) : 0;
 			// Check distinct condition:
@@ -616,11 +571,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 		setLimitAndOffset(result.Items(), offset, sctx.query.count);
 	}
 
-	if (sctx.joinedSelectors && postLoopLimitOffsetProcessing) {
-		for (auto it : result) {
-			processJoins(sctx, it.GetItemRef().id, true, true, hasInnerJoins, hasLeftJoins, false);
-		}
-	}
+	processLeftJoins(result, sctx);
 
 	for (auto &aggregator : aggregators) {
 		result.aggregationResults.push_back(aggregator.GetResult());
@@ -700,8 +651,8 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) {
 			if (ns_->getIndexByName(ag.fields_[i], idx)) {
 				if (ns_->indexes_[idx]->Opts().IsSparse()) {
 					fields.push_back(ns_->indexes_[idx]->Fields().getTagsPath(0));
-				} else if (ag.type_ == AggFacet && ns_->indexes_[idx]->Opts().IsArray()) {
-					throw Error(errQueryExec, "Can't do facet by array field");
+				} else if (ag.type_ == AggFacet && ag.fields_.size() > 1 && ns_->indexes_[idx]->Opts().IsArray()) {
+					throw Error(errQueryExec, "Multifield facet cannot contain an array field");
 				} else {
 					fields.push_back(idx);
 				}

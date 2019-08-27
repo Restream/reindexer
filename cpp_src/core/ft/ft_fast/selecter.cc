@@ -36,7 +36,7 @@ void Selecter::prepareVariants(FtSelectContext &ctx, FtDSLEntry &term, std::vect
 	}
 
 	// Apply stemmers
-	string tmpstr;
+	string tmpstr, stemstr;
 	for (auto &v : variantsUtf16) {
 		utf16_to_utf8(v.first, tmpstr);
 		ctx.variants.push_back({tmpstr, term.opts, v.second});
@@ -46,15 +46,14 @@ void Selecter::prepareVariants(FtSelectContext &ctx, FtDSLEntry &term, std::vect
 				if (stemIt == holder_.stemmers_.end()) {
 					throw Error(errParams, "Stemmer for language %s is not available", lang);
 				}
-				char *stembuf = reinterpret_cast<char *>(alloca(1 + tmpstr.size() * 4));
-				stemIt->second.stem(stembuf, 1 + tmpstr.size() * 4, tmpstr.data(), tmpstr.length());
-				if (tmpstr != stembuf) {
+				stemIt->second.stem(tmpstr, stemstr);
+				if (tmpstr != stemstr) {
 					FtDslOpts opts = term.opts;
 					opts.pref = true;
 
 					if (&v != &variantsUtf16[0]) opts.suff = false;
 
-					ctx.variants.push_back({stembuf, opts, v.second - kStemProcDecrease});
+					ctx.variants.push_back({stemstr, opts, v.second - kStemProcDecrease});
 				}
 			}
 		}

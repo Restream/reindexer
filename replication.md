@@ -54,6 +54,7 @@ To configure replication special document of namespace `#config` is used:
    - `slave` - replication as slave
    - `master` - replication as master
 - `master_dsn` DSN to master. Only cproto schema is supported
+- `timeout_sec` Network timeout for communication with master, in seconds
 - `cluster_id` Cluser ID - must be same for client and for master
 - `force_sync_on_logic_error` - Force resync on logic error conditions
 - `force_sync_on_wrong_data_hash` - Force resync if dataHash mismatch
@@ -78,7 +79,9 @@ will return JSON object with status of namespace `media_items `replication
 	"cluster_id": 2, 
 	"slave_mode": true, 
 	"incarnation_counter": 1, 
-	"data_hash": 2207033076418442500 
+	"data_hash": 2207033076418442500,
+	"data_count": 20,
+	"updated_unix_nano" : 1566579062277714700
 }
 ```
 

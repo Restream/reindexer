@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <string>
 #include "libstemmer/include/libstemmer.h"
 
 namespace reindexer {
@@ -15,11 +16,11 @@ public:
 	}
 	~stemmer() { sb_stemmer_delete(stemmer_); }
 
-	void stem(char *dst, size_t dst_len, const char *src, size_t src_len) {
+	void stem(const std::string &src, std::string &dst) {
 		std::lock_guard<mutex> lock(lock_);
 
-		auto res = sb_stemmer_stem(stemmer_, reinterpret_cast<const sb_symbol *>(src), src_len);
-		strncpy(dst, reinterpret_cast<const char *>(res), dst_len);
+		auto res = sb_stemmer_stem(stemmer_, reinterpret_cast<const sb_symbol *>(src.data()), src.length());
+		dst.assign(reinterpret_cast<const char *>(res));
 	}
 
 	sb_stemmer *stemmer_ = nullptr;

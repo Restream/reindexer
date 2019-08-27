@@ -12,18 +12,12 @@
 #include "reindexer_version.h"
 #include "replicator/walrecord.h"
 #include "resources_wrapper.h"
+#include "tools/alloc_ext/je_malloc_extension.h"
+#include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/fsops.h"
 #include "tools/jsontools.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
-#if REINDEX_WITH_GPERFTOOLS
-#include <gperftools/malloc_extension.h>
-#include "tools/alloc_ext/tc_malloc_extension.h"
-#endif
-#if REINDEX_WITH_JEMALLOC
-#include <jemalloc/jemalloc.h>
-#include "tools/alloc_ext/je_malloc_extension.h"
-#endif
 
 using std::string;
 using std::stringstream;
@@ -676,38 +670,38 @@ int HTTPServer::Check(http::Context &ctx) {
 		builder.Put("uptime", uptime);
 
 #if REINDEX_WITH_JEMALLOC
-		if (je_malloc_available()) {
+		if (alloc_ext::JEMallocIsAvailable()) {
 			size_t val = 0, val1 = 1, sz = sizeof(size_t);
 
 			uint64_t epoch = 1;
 			sz = sizeof(epoch);
-			mallctl("epoch", &epoch, &sz, &epoch, sz);
+			alloc_ext::mallctl("epoch", &epoch, &sz, &epoch, sz);
 
-			mallctl("stats.resident", &val, &sz, NULL, 0);
+			alloc_ext::mallctl("stats.resident", &val, &sz, NULL, 0);
 			builder.Put("heap_size", val);
 
-			mallctl("stats.allocated", &val, &sz, NULL, 0);
+			alloc_ext::mallctl("stats.allocated", &val, &sz, NULL, 0);
 			builder.Put("current_allocated_bytes", val);
 
-			mallctl("stats.active", &val1, &sz, NULL, 0);
+			alloc_ext::mallctl("stats.active", &val1, &sz, NULL, 0);
 			builder.Put("pageheap_free", val1 - val);
 
-			mallctl("stats.retained", &val, &sz, NULL, 0);
+			alloc_ext::mallctl("stats.retained", &val, &sz, NULL, 0);
 			builder.Put("pageheap_unmapped", val);
 		}
 #elif REINDEX_WITH_GPERFTOOLS
-		if (tc_malloc_available()) {
+		if (alloc_ext::TCMallocIsAvailable()) {
 			size_t val = 0;
-			MallocExtension::instance()->GetNumericProperty("generic.current_allocated_bytes", &val);
+			alloc_ext::instance()->GetNumericProperty("generic.current_allocated_bytes", &val);
 			builder.Put("current_allocated_bytes", val);
 
-			MallocExtension::instance()->GetNumericProperty("generic.heap_size", &val);
+			alloc_ext::instance()->GetNumericProperty("generic.heap_size", &val);
 			builder.Put("heap_size", val);
 
-			MallocExtension::instance()->GetNumericProperty("tcmalloc.pageheap_free_bytes", &val);
+			alloc_ext::instance()->GetNumericProperty("tcmalloc.pageheap_free_bytes", &val);
 			builder.Put("pageheap_free", val);
 
-			MallocExtension::instance()->GetNumericProperty("tcmalloc.pageheap_unmapped_bytes", &val);
+			alloc_ext::instance()->GetNumericProperty("tcmalloc.pageheap_unmapped_bytes", &val);
 			builder.Put("pageheap_unmapped", val);
 		}
 #endif

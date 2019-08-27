@@ -1,11 +1,8 @@
 #pragma once
 
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 #include <algorithm>
 #include <climits>
-#include <vector>
+#include <memory>
 #include "span.h"
 
 namespace reindexer {
@@ -13,7 +10,7 @@ namespace reindexer {
 template <typename T>
 class cbuf {
 public:
-	cbuf(size_t bufsize = 0) : buf_(bufsize) {
+	cbuf(size_t bufsize = 0) : buf_(new T[bufsize]) {
 		head_ = 0;
 		tail_ = 0;
 		full_ = false;
@@ -33,7 +30,6 @@ public:
 			tail_ = other.tail_;
 			full_ = other.full_;
 			buf_size_ = other.buf_size_;
-			buf_ = other.buf_;
 			other.head_ = 0;
 			other.tail_ = 0;
 			other.full_ = false;
@@ -101,7 +97,7 @@ public:
 	}
 
 	size_t size() {
-		int D = head_ - tail_;
+		std::ptrdiff_t D = head_ - tail_;
 		if (D < 0 || (D == 0 && full_)) D += buf_size_;
 		return D;
 	}
@@ -110,12 +106,12 @@ public:
 
 	span<T> tail(size_t s_ins = INT_MAX) {
 		size_t cnt = ((tail_ > head_ || full_) ? buf_size_ : head_) - tail_;
-		return span<T>(buf_.data() + tail_, (cnt > s_ins) ? s_ins : cnt);
+		return span<T>(&buf_[tail_], (cnt > s_ins) ? s_ins : cnt);
 	}
 
 	span<T> head(size_t s_ins = INT_MAX) {
 		size_t cnt = ((head_ >= tail_ && !full_) ? buf_size_ : tail_) - head_;
-		return span<T>(buf_.data() + head_, (cnt > s_ins) ? s_ins : cnt);
+		return span<T>(&buf_[head_], (cnt > s_ins) ? s_ins : cnt);
 	}
 
 	size_t advance_head(size_t cnt) {
@@ -137,10 +133,9 @@ protected:
 		size_t lSize = buf_size_ - tail_;
 		sz = size();
 
-		std::vector<T> new_buf;
-		new_buf.reserve(new_size);
-		new_buf.insert(new_buf.begin(), &buf_[tail_], &buf_[tail_ + std::min(sz, lSize)]);
-		if (sz > lSize) new_buf.insert(new_buf.end(), &buf_[0], &buf_[sz - lSize]);
+		std::unique_ptr<T[]> new_buf(new T[new_size]);
+		std::copy(&buf_[tail_], &buf_[tail_ + std::min(sz, lSize)], &new_buf[0]);
+		if (sz > lSize) std::copy(&buf_[0], &buf_[head_], &new_buf[lSize]);
 
 		tail_ = 0;
 		head_ = sz % new_size;
@@ -151,7 +146,7 @@ protected:
 
 	size_t head_, tail_, buf_size_;
 	bool full_;
-	std::vector<T> buf_;
+	std::unique_ptr<T[]> buf_;
 };
 
 }  // namespace reindexer

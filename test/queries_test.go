@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/restream/reindexer"
-	"github.com/restream/reindexer/dsl"
+	"git.itv.restr.im/itv-backend/reindexer"
+	"git.itv.restr.im/itv-backend/reindexer/dsl"
 )
 
 type sortDistinctOptions struct {
@@ -473,6 +473,7 @@ func CheckAggregateQueries() {
 	q.AggregateMin("age")
 	q.AggregateMax("age")
 	q.AggregateFacet("company_name", "rate").Limit(facetLimit).Offset(facetOffset).Sort("count", false).Sort("company_name", true).Sort("rate", false)
+	q.AggregateFacet("packages")
 	it := q.ExecCtx(ctx)
 	cancel()
 	if it.Error() != nil {
@@ -486,13 +487,14 @@ func CheckAggregateQueries() {
 	}
 
 	aggregations := it.AggResults()
-	if len(aggregations) != 7 {
-		panic(fmt.Errorf("%d != 7", len(aggregations)))
+	if len(aggregations) != 8 {
+		panic(fmt.Errorf("%d != 8", len(aggregations)))
 	}
 
 	var sum float64
 	ageFacet := make(map[int]int, 0)
 	nameFacet := make(map[string]int, 0)
+	packagesFacet := make(map[int]int, 0)
 	type CompositeFacetItem struct {
 		CompanyName string
 		Rate        float64
@@ -505,6 +507,9 @@ func CheckAggregateQueries() {
 		sum += float64(testItem.Year)
 		ageFacet[testItem.Age]++
 		nameFacet[testItem.Name]++
+		for _, pack := range testItem.Packages {
+			packagesFacet[pack]++
+		}
 		compositeFacet[CompositeFacetItem{testItem.CompanyName, testItem.Rate}]++
 		if testItem.Age > ageMax {
 			ageMax = testItem.Age
@@ -592,6 +597,24 @@ func CheckAggregateQueries() {
 			panic(fmt.Errorf("Facet 'company_name', 'rate' #%d {'%s', '%s': %d} != {'%s', '%f': %d}", i,
 				aggregations[6].Facets[i].Values[0], aggregations[6].Facets[i].Values[1], aggregations[6].Facets[i].Count,
 				compositeFacetResult[i].CompanyName, compositeFacetResult[i].Rate, compositeFacetResult[i].Count))
+		}
+	}
+	if len(aggregations[7].Fields) != 1 {
+		panic(fmt.Errorf("%d != 1", len(aggregations[7].Fields)))
+	}
+	if aggregations[7].Fields[0] != "packages" {
+		panic(fmt.Errorf("%s != %s", aggregations[7].Fields[0], "packages"))
+	}
+	for _, facet := range aggregations[7].Facets {
+		if len(facet.Values) != 1 {
+			panic(fmt.Errorf("%d != 1", len(facet.Values)))
+		}
+		value, err := strconv.Atoi(facet.Values[0])
+		if err != nil {
+			panic(err)
+		}
+		if count, ok := packagesFacet[value]; ok != true || count != facet.Count {
+			panic(fmt.Errorf("facet '%s' val '%s' (%d): %d != %d", aggregations[7].Fields[0], facet.Values[0], value, count, facet.Count))
 		}
 	}
 }

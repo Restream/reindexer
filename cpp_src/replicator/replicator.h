@@ -4,6 +4,7 @@
 #include <thread>
 #include "core/dbconfig.h"
 #include "core/namespacestat.h"
+#include "estl/atomic_unique_ptr.h"
 #include "estl/fast_hash_map.h"
 #include "net/ev/ev.h"
 #include "tools/errors.h"
@@ -25,10 +26,9 @@ class Replicator : public IUpdatesObserver {
 public:
 	Replicator(ReindexerImpl *slave);
 	~Replicator();
-	bool Configure(ReplicationConfigData config);
+	bool Configure(const ReplicationConfigData &config);
 	Error Start();
-	void Stop(bool withLock = true);
-	void ShutDown();
+	void Stop();
 
 protected:
 	struct SyncStat {
@@ -38,31 +38,8 @@ protected:
 		WrSerializer &Dump(WrSerializer &ser);
 	};
 
-	struct InternalConfig {
-		void FromReplicationConfig(ReplicationConfigData &&config, bool threadSafeOnly) noexcept {
-			if (!threadSafeOnly) {
-				role = config.role;
-				masterDSN = std::move(config.masterDSN);
-				clusterID = config.clusterID;
-				connPoolSize = config.connPoolSize;
-				workerThreads = config.workerThreads;
-				namespaces = std::move(config.namespaces);
-			}
-			forceSyncOnLogicError.store(config.forceSyncOnLogicError, std::memory_order_release);
-			forceSyncOnWrongDataHash.store(config.forceSyncOnWrongDataHash, std::memory_order_release);
-		}
-
-		ReplicationRole role{ReplicationNone};
-		std::string masterDSN;
-		int connPoolSize{1};
-		int workerThreads{1};
-		int clusterID{1};
-		std::atomic<bool> forceSyncOnLogicError{false};
-		std::atomic<bool> forceSyncOnWrongDataHash{false};
-		fast_hash_set<string, nocase_hash_str, nocase_equal_str> namespaces;
-	};
-
 	void run();
+	void stop();
 	// Sync database
 	Error syncDatabase();
 	// Read and apply WAL from master
@@ -93,7 +70,7 @@ protected:
 	std::thread thread_;
 	net::ev::async stop_;
 	net::ev::async resync_;
-	InternalConfig config_;
+	ReplicationConfigData config_;
 
 	std::atomic<bool> terminate_;
 	enum State { StateInit, StateSyncing, StateIdle };

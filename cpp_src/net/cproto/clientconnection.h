@@ -91,7 +91,7 @@ public:
 			cmd, netTimeout, execTimeout, args, argss...);
 		std::unique_lock<std::mutex> lck(mtx_);
 		bufWait_++;
-		while (!set) {
+		while (!set) {  // -V776
 			bufCond_.wait(lck);
 		}
 		bufWait_--;

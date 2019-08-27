@@ -1,4 +1,6 @@
 #include "querywhere.h"
+#include <stdlib.h>
+#include "query.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 
@@ -10,6 +12,7 @@ bool QueryEntry::operator==(const QueryEntry &obj) const {
 	if (idxNo != obj.idxNo) return false;
 	if (distinct != obj.distinct) return false;
 	if (values != obj.values) return false;
+	if (joinIndex != obj.joinIndex) return false;
 	return true;
 }
 
@@ -49,13 +52,19 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer 
 	for (; it != to; ++it) {
 		if (it->IsLeaf()) {
 			const QueryEntry &entry = it->Value();
-			entry.distinct ? ser.PutVarUint(QueryDistinct) : ser.PutVarUint(QueryCondition);
-			ser.PutVString(entry.index);
-			if (entry.distinct) continue;
-			ser.PutVarUint(it->Op);
-			ser.PutVarUint(entry.condition);
-			ser.PutVarUint(entry.values.size());
-			for (auto &kv : entry.values) ser.PutVariant(kv);
+			if (entry.joinIndex == QueryEntry::kNoJoins) {
+				entry.distinct ? ser.PutVarUint(QueryDistinct) : ser.PutVarUint(QueryCondition);
+				ser.PutVString(entry.index);
+				if (entry.distinct) continue;
+				ser.PutVarUint(it->Op);
+				ser.PutVarUint(entry.condition);
+				ser.PutVarUint(entry.values.size());
+				for (auto &kv : entry.values) ser.PutVariant(kv);
+			} else {
+				ser.PutVarUint(QueryJoinCondition);
+				ser.PutVarUint((it->Op == OpAnd) ? JoinType::InnerJoin : JoinType::OrInnerJoin);
+				ser.PutVarUint(entry.joinIndex);
+			}
 		} else {
 			ser.PutVarUint(QueryOpenBracket);
 			ser.PutVarUint(it->Op);
@@ -130,49 +139,59 @@ CondType QueryWhere::getCondType(string_view cond) {
 const char *condNames[] = {"IS NOT NULL", "=", "<", "<=", ">", ">=", "RANGE", "IN", "ALLSET", "IS NULL", "LIKE"};
 const char *opNames[] = {"-", "OR", "AND", "AND NOT"};
 
-void QueryEntries::WriteSQLWhere(WrSerializer &ser, bool stripArgs) const {
+void QueryEntries::WriteSQLWhere(const Query &parentQuery, WrSerializer &ser, bool stripArgs) const {
 	if (Empty()) return;
 	ser << " WHERE ";
-	writeSQL(cbegin(), cend(), ser, stripArgs);
+	writeSQL(parentQuery, cbegin(), cend(), ser, stripArgs);
 }
 
-void QueryEntries::writeSQL(const_iterator from, const_iterator to, WrSerializer &ser, bool stripArgs) {
+void QueryEntries::writeSQL(const Query &parentQuery, const_iterator from, const_iterator to, WrSerializer &ser, bool stripArgs) {
 	for (const_iterator it = from; it != to; ++it) {
 		if (it != from) {
+			bool orInnerJoin = false;
+			if (it->IsLeaf() && (it->Value().joinIndex != QueryEntry::kNoJoins)) {
+				if (parentQuery.joinQueries_[it->Value().joinIndex].joinType == JoinType::OrInnerJoin) {
+					orInnerJoin = true;
+				}
+			}
 			ser << ' ';
-			if (unsigned(it->Op) < sizeof(opNames) / sizeof(opNames[0])) ser << opNames[it->Op] << ' ';  // -V547
+			if (!orInnerJoin) ser << opNames[it->Op] << ' ';  // -V547}
 		} else if (it->Op == OpNot) {
 			ser << "NOT ";
 		}
 		if (!it->IsLeaf()) {
 			ser << '(';
-			writeSQL(it->cbegin(it), it->cend(it), ser, stripArgs);
+			writeSQL(parentQuery, it->cbegin(it), it->cend(it), ser, stripArgs);
 			ser << ')';
 		} else {
 			const QueryEntry &entry = it->Value();
-			if (entry.index.find('.') == string::npos)
-				ser << entry.index << ' ';
-			else
-				ser << '\'' << entry.index << "\' ";
+			if (entry.joinIndex == QueryEntry::kNoJoins) {
+				if (entry.index.find('.') == string::npos)
+					ser << entry.index << ' ';
+				else
+					ser << '\'' << entry.index << "\' ";
 
-			if (entry.condition < sizeof(condNames) / sizeof(condNames[0]))
-				ser << condNames[entry.condition] << ' ';
-			else
-				ser << "<unknown cond> ";
-			if (entry.condition == CondEmpty || entry.condition == CondAny) {
-			} else if (stripArgs) {
-				ser << '?';
-			} else {
-				if (entry.values.size() != 1) ser << '(';
-				for (auto &v : entry.values) {
-					if (&v != &entry.values[0]) ser << ',';
-					if (v.Type() == KeyValueString) {
-						ser << '\'' << v.As<string>() << '\'';
-					} else {
-						ser << v.As<string>();
+				if (entry.condition < sizeof(condNames) / sizeof(condNames[0]))
+					ser << condNames[entry.condition] << ' ';
+				else
+					ser << "<unknown cond> ";
+				if (entry.condition == CondEmpty || entry.condition == CondAny) {
+				} else if (stripArgs) {
+					ser << '?';
+				} else {
+					if (entry.values.size() != 1) ser << '(';
+					for (auto &v : entry.values) {
+						if (&v != &entry.values[0]) ser << ',';
+						if (v.Type() == KeyValueString) {
+							ser << '\'' << v.As<string>() << '\'';
+						} else {
+							ser << v.As<string>();
+						}
 					}
+					ser << ((entry.values.size() != 1) ? ")" : "");
 				}
-				ser << ((entry.values.size() != 1) ? ")" : "");
+			} else {
+				parentQuery.DumpSingleJoinQuery(entry.joinIndex, ser, stripArgs);
 			}
 		}
 	}

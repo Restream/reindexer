@@ -3,15 +3,21 @@
 #include "args/args.hpp"
 #include "client/reindexer.h"
 #include "core/reindexer.h"
+#include "core/storage/storagefactory.h"
 #include "dbwrapper.h"
 #include "debug/backtrace.h"
 #include "reindexer_version.h"
+#include "tools/fsops.h"
 #include "tools/logger.h"
+#include "tools/stringstools.h"
+
+namespace reindexer_tool {
 
 using args::Options;
-using namespace reindexer_tool;
 
 int llevel;
+
+const char* const kStoragePlaceholderFilename = ".reindexer.storage";
 
 void InstallLogLevel(const vector<string>& args) {
 	try {
@@ -33,7 +39,71 @@ void InstallLogLevel(const vector<string>& args) {
 	});
 }
 
+int RepairStorage(const std::string& dsn) {
+	if (dsn.compare(0, 10, "builtin://") != 0) {
+		std::cerr << "Invalid DSN format for repair: " << dsn << " Must begin from builtin://" << std::endl;
+		return 1;
+	}
+
+	std::cout << "Starting databases repair..." << std::endl;
+	auto path = dsn.substr(10);
+	vector<reindexer::fs::DirEntry> foundDb;
+	if (reindexer::fs::ReadDir(path, foundDb) < 0) {
+		std::cerr << "Can't read dir to repair: " << path << std::endl;
+		return 1;
+	}
+
+	bool hasErrors = false;
+	for (auto& de : foundDb) {
+		if (de.isDir && reindexer::validateObjectName(de.name)) {
+			auto dePath = reindexer::fs::JoinPath(path, de.name);
+			auto storageType = reindexer::datastorage::StorageType::LevelDB;
+			std::string content;
+			int res = reindexer::fs::ReadFile(reindexer::fs::JoinPath(dePath, kStoragePlaceholderFilename), content);
+			if (res > 0) {
+				std::unique_ptr<reindexer::datastorage::IDataStorage> storage;
+				try {
+					storageType = reindexer::datastorage::StorageTypeFromString(content);
+				} catch (const Error&) {
+					std::cerr << "Skiping DB at \"" << dePath << "\" - it has unexpected storage type: \"" << content << "\"";
+					continue;
+				}
+				try {
+					storage.reset(reindexer::datastorage::StorageFactory::create(storageType));
+				} catch (std::exception& ex) {
+					std::cerr << ex.what();
+					return 1;
+				}
+				vector<reindexer::fs::DirEntry> foundNs;
+				if (reindexer::fs::ReadDir(dePath, foundNs) < 0) {
+					std::cerr << "Can't read dir to repair: " << dePath << std::endl;
+					continue;
+				}
+				for (auto& ns : foundNs) {
+					if (ns.isDir && reindexer::validateObjectName(de.name)) {
+						auto nsPath = reindexer::fs::JoinPath(dePath, ns.name);
+						std::cout << "Repairing " << nsPath << "..." << std::endl;
+						auto err = storage->Repair(nsPath);
+						if (!err.ok()) {
+							hasErrors = true;
+							std::cerr << "Repair error [" << nsPath << "]: " << err.what() << std::endl;
+						}
+					}
+				}
+			} else {
+				std::cerr << "Skiping DB at \"" << dePath << "\" - directory doesn't contain valid reindexer placeholder";
+				continue;
+			}
+		}
+	}
+
+	return hasErrors ? 2 : 0;
+}
+
+}  // namespace reindexer_tool
+
 int main(int argc, char* argv[]) {
+	using namespace reindexer_tool;
 	reindexer::debug::backtrace_init();
 
 	args::ArgumentParser parser("Reindexer client tool");
@@ -57,6 +127,8 @@ int main(int argc, char* argv[]) {
 	args::ActionFlag logLevel(progOptions, "INT=1..5", "reindexer logging level", {'l', "log"}, 1, &InstallLogLevel,
 							  Options::Single | Options::Global);
 
+	args::Flag repair(progOptions, "", "Repair database", {'r', "repair"});
+
 	args::GlobalOptions globals(parser, progOptions);
 
 	try {
@@ -78,8 +150,14 @@ int main(int argc, char* argv[]) {
 #ifndef _WIN32
 	signal(SIGPIPE, SIG_IGN);
 #endif
-	if (!args::get(command).length() && !args::get(fileName).length())
+
+	if (repair && args::get(repair)) {
+		return RepairStorage(dsn);
+	}
+
+	if (!args::get(command).length() && !args::get(fileName).length()) {
 		std::cout << "Reindexer command line tool version " << REINDEX_VERSION << std::endl;
+	}
 
 	reindexer::client::ReindexerConfig config;
 	config.ConnPoolSize = args::get(connPoolSize);
@@ -95,7 +173,7 @@ int main(int argc, char* argv[]) {
 		err = db.Connect(dsn);
 		if (err.ok()) ok = db.Run();
 	} else {
-		std::cerr << "Invalid DSN formt: " << dsn << " Must begin from cproto:// or builtin://" << std::endl;
+		std::cerr << "Invalid DSN format: " << dsn << " Must begin from cproto:// or builtin://" << std::endl;
 	}
 	if (!err.ok()) {
 		std::cerr << "ERROR: " << err.what() << std::endl;

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include "estl/string_view.h"
 #include "tools/errors.h"
 
 struct StorageOpts;
@@ -96,6 +95,10 @@ public:
 	/// Destroy the storage.
 	/// @param path - path to Storage.
 	virtual void Destroy(const string& path) = 0;
+
+	/// Repair the storage
+	/// @param path - path to Storage.
+	virtual Error Repair(const string& path) = 0;
 };
 
 /// Buffer for a Batch Write.

@@ -19,18 +19,18 @@ using std::string;
 using std::vector;
 using namespace std::placeholders;
 
-const char* kPerfStatsNamespace = "#perfstats";
-const char* kQueriesPerfStatsNamespace = "#queriesperfstats";
-const char* kMemStatsNamespace = "#memstats";
-const char* kNamespacesNamespace = "#namespaces";
-const char* kConfigNamespace = "#config";
-const char* kActivityStatsNamespace = "#activitystats";
-const char* kStoragePlaceholderFilename = ".reindexer.storage";
-const char* kReplicationConfFilename = "replication.conf";
+const char* const kPerfStatsNamespace = "#perfstats";
+const char* const kQueriesPerfStatsNamespace = "#queriesperfstats";
+const char* const kMemStatsNamespace = "#memstats";
+const char* const kNamespacesNamespace = "#namespaces";
+const char* const kConfigNamespace = "#config";
+const char* const kActivityStatsNamespace = "#activitystats";
+const char* const kStoragePlaceholderFilename = ".reindexer.storage";
+const char* const kReplicationConfFilename = "replication.conf";
 
 namespace reindexer {
 
-ReindexerImpl::ReindexerImpl() : replicator_(new Replicator(this)), hasReplConfigLoadError_(false) {
+ReindexerImpl::ReindexerImpl() : replicator_(new Replicator(this)), hasReplConfigLoadError_(false), storageType_(StorageType::LevelDB) {
 	stopBackgroundThread_ = false;
 	configProvider_.setHandler(ProfilingConf, std::bind(&ReindexerImpl::onProfiligConfigLoad, this));
 	backgroundThread_ = std::thread([this]() { this->backgroundRoutine(); });
@@ -66,17 +66,35 @@ Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlacehold
 	}
 
 	if (!isEmpty && !skipPlaceholderCheck) {
-		FILE* f = fopen(fs::JoinPath(storagePath, kStoragePlaceholderFilename).c_str(), "r");
-		if (f) {
-			fclose(f);
+		std::string content;
+		int res = fs::ReadFile(fs::JoinPath(storagePath, kStoragePlaceholderFilename), content);
+		if (res > 0) {
+			auto currentStorageType = StorageType::LevelDB;
+			try {
+				currentStorageType = reindexer::datastorage::StorageTypeFromString(content);
+			} catch (const Error&) {
+				return Error(errParams,
+							 "Cowadly refusing to use directory '%s' - it's not empty and contains reindexer placeholder with unexpected "
+							 "content: \"%s\"",
+							 storagePath, content);
+			}
+			if (storageType_ != currentStorageType) {
+				logPrintf(LogWarning, "Placeholder content doesn't correspond to chosen storage type. Forcing \"%s\"", content);
+				storageType_ = currentStorageType;
+			}
 		} else {
-			return Error(errParams, "Cowadly refusing to use directory '%s' - it's not empty, and doesn't contains reindexer placeholder",
+			return Error(errParams, "Cowadly refusing to use directory '%s' - it's not empty and doesn't contain reindexer placeholder",
 						 storagePath);
 		}
 	} else {
 		FILE* f = fopen(fs::JoinPath(storagePath, kStoragePlaceholderFilename).c_str(), "w");
 		if (f) {
-			fwrite("leveldb", 7, 1, f);
+			auto storageName = datastorage::StorageTypeToString(storageType_);
+			int res = fwrite(storageName.c_str(), storageName.size(), 1, f);
+			if (res != 1) {
+				return Error(errParams, "Can't create placeholder in directory '%s' for reindexer storage - reason %s", storagePath,
+							 strerror(errno));
+			}
 			fclose(f);
 		} else {
 			return Error(errParams, "Can't create placeholder in directory '%s' for reindexer storage - reason %s", storagePath,
@@ -94,46 +112,63 @@ Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlacehold
 	return res;
 }
 
-Error ReindexerImpl::Connect(const string& dsn) {
+Error ReindexerImpl::Connect(const string& dsn, ConnectOpts opts) {
 	string path = dsn;
 	if (dsn.compare(0, 10, "builtin://") == 0) {
 		path = dsn.substr(10);
 	}
 
-	auto err = EnableStorage(path);
-	if (!err.ok()) return err;
-
 	vector<reindexer::fs::DirEntry> foundNs;
-	if (fs::ReadDir(path, foundNs) < 0) {
-		return Error(errParams, "Can't read database dir %s", path);
+
+	switch (opts.StorageType()) {
+		case kStorageTypeOptLevelDB:
+			storageType_ = StorageType::LevelDB;
+			break;
+		case kStorageTypeOptRocksDB:
+			storageType_ = StorageType::RocksDB;
+			break;
+	}
+
+	bool enableStorage = (path.length() > 0 && path != "/");
+	if (enableStorage) {
+		auto err = EnableStorage(path);
+		if (!err.ok()) return err;
+		if (fs::ReadDir(path, foundNs) < 0) {
+			return Error(errParams, "Can't read database dir %s", path);
+		}
 	}
 
 	InitSystemNamespaces();
 
-	int maxLoadWorkers = std::min(int(std::thread::hardware_concurrency()), 8);
-	std::unique_ptr<std::thread[]> thrs(new std::thread[maxLoadWorkers]);
-
-	for (int i = 0; i < maxLoadWorkers; i++) {
-		thrs[i] = std::thread(
-			[&](int i) {
-				for (int j = i; j < int(foundNs.size()); j += maxLoadWorkers) {
-					auto& de = foundNs[j];
-					if (de.isDir && validateObjectName(de.name)) {
-						auto status = OpenNamespace(de.name, StorageOpts().Enabled());
-						if (!status.ok()) {
-							logPrintf(LogError, "Failed to open namespace '%s' - %s", de.name, status.what());
+	if (enableStorage && opts.IsOpenNamespaces()) {
+		int maxLoadWorkers = std::min(int(std::thread::hardware_concurrency()), 8);
+		std::unique_ptr<std::thread[]> thrs(new std::thread[maxLoadWorkers]);
+		std::atomic_flag hasNsErrors{false};
+		for (int i = 0; i < maxLoadWorkers; i++) {
+			thrs[i] = std::thread(
+				[&](int i) {
+					for (int j = i; j < int(foundNs.size()); j += maxLoadWorkers) {
+						auto& de = foundNs[j];
+						if (de.isDir && validateObjectName(de.name)) {
+							auto status = OpenNamespace(de.name, StorageOpts().Enabled());
+							if (!status.ok()) {
+								logPrintf(LogError, "Failed to open namespace '%s' - %s", de.name, status.what());
+								hasNsErrors.test_and_set(std::memory_order_relaxed);
+							}
 						}
 					}
-				}
-			},
-			i);
-	}
-	for (int i = 0; i < maxLoadWorkers; i++) {
-		thrs[i].join();
+				},
+				i);
+		}
+		for (int i = 0; i < maxLoadWorkers; i++) thrs[i].join();
+
+		if (!opts.IsAllowNamespaceErrors() && hasNsErrors.test_and_set(std::memory_order_relaxed)) {
+			return Error(errNotValid, "Namespaces load error");
+		}
 	}
 
 	bool needStart = replicator_->Configure(configProvider_.GetReplicationConfig());
-	err = needStart ? replicator_->Start() : errOK;
+	Error err = needStart ? replicator_->Start() : errOK;
 	if (!err.ok()) {
 		return err;
 	}
@@ -158,7 +193,7 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, const InternalRdxCo
 		bool readyToLoadStorage = (nsDef.storage.IsEnabled() && !storagePath_.empty());
 		ns = std::make_shared<Namespace>(nsDef.name, observers_);
 		if (readyToLoadStorage) {
-			ns->EnableStorage(storagePath_, nsDef.storage, rdxCtx);
+			ns->EnableStorage(storagePath_, nsDef.storage, storageType_, rdxCtx);
 		}
 		ns->onConfigUpdated(configProvider_, rdxCtx);
 		if (readyToLoadStorage) {
@@ -198,7 +233,7 @@ Error ReindexerImpl::OpenNamespace(string_view name, const StorageOpts& storageO
 		string nameStr(name);
 		ns = std::make_shared<Namespace>(nameStr, observers_);
 		if (storageOpts.IsEnabled() && !storagePath_.empty()) {
-			ns->EnableStorage(storagePath_, storageOpts, rdxCtx);
+			ns->EnableStorage(storagePath_, storageOpts, storageType_, rdxCtx);
 			ns->onConfigUpdated(configProvider_, rdxCtx);
 			if (!ns->getStorageOpts(rdxCtx).IsLazyLoad()) ns->LoadFromStorage(rdxCtx);
 		}
@@ -253,11 +288,11 @@ Error ReindexerImpl::closeNamespace(string_view nsName, const RdxContext& ctx, b
 		if (dropStorage) observers_.OnWALUpdate(0, nsName, WALRecord(WalNamespaceDrop));
 
 	} catch (const Error& err) {
-		nsw = nullptr;  // -V1001
+		nsw.reset();
 		return err;
 	}
 	// Here will called destructor
-	nsw = nullptr;  // -V1001
+	nsw.reset();
 	return errOK;
 }
 
@@ -451,7 +486,6 @@ Error ReindexerImpl::Delete(string_view nsName, Item& item, const InternalRdxCon
 			activities_);
 		auto ns = getClonableNamespace(nsName, rdxCtx);
 		ns->Delete(item, rdxCtx);
-		updateToSystemNamespace(nsName, item, rdxCtx);
 	} catch (const Error& e) {
 		err = e;
 	}
@@ -914,7 +948,7 @@ Error ReindexerImpl::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll, c
 					}
 					unique_ptr<Namespace> tmpNs(new Namespace(d.name, observers_));
 					try {
-						tmpNs->EnableStorage(storagePath_, StorageOpts(), rdxCtx);
+						tmpNs->EnableStorage(storagePath_, StorageOpts(), storageType_, rdxCtx);
 						defs.push_back(tmpNs->GetDefinition(rdxCtx));
 					} catch (reindexer::Error) {
 					}
@@ -942,9 +976,10 @@ void ReindexerImpl::backgroundRoutine() {
 				logPrintf(LogWarning, "flusherThread() failed with ns: %s", name);
 			}
 		}
-		bool replConfigWasModified = replConfigFileChecker_.FileWasModified();
+		std::string yamlReplConf;
+		bool replConfigWasModified = replConfigFileChecker_.ReadIfFileWasModified(yamlReplConf);
 		if (replConfigWasModified) {
-			hasReplConfigLoadError_ = !tryLoadReplicatorConfFromFile().ok();
+			hasReplConfigLoadError_ = !(tryLoadReplicatorConfFromYAML(yamlReplConf).ok());
 		} else if (hasReplConfigLoadError_) {
 			// Retry to read error config once
 			// This logic adds delay between write and read, which allows writer to finish all his writes
@@ -1033,7 +1068,6 @@ std::vector<string> defDBConfig = {
 	})json",
 	R"json({
         "type":"replication",
-        "disable_file_update": true,
         "replication":{
 			"role":"none",
 			"master_dsn":"cproto://127.0.0.1:6534/db",
@@ -1041,6 +1075,12 @@ std::vector<string> defDBConfig = {
 			"force_sync_on_logic_error": false,
 			"force_sync_on_wrong_data_hash": false,
 			"namespaces":[]
+		}
+    })json",
+	R"json({
+        "type":"action",
+        "action":{
+			"command":""
 		}
     })json"};
 
@@ -1051,9 +1091,21 @@ Error ReindexerImpl::InitSystemNamespaces() {
 	auto err = Select(Query(kConfigNamespace), results);
 	if (!err.ok()) return err;
 
+	bool hasReplicatorConfig = false;
 	if (results.Count() == 0) {
 		// Set default config
-		for (auto conf : defDBConfig) {
+		for (const auto& conf : defDBConfig) {
+			if (!hasReplicatorConfig) {
+				gason::JsonParser parser;
+				gason::JsonNode configJson = parser.Parse(string_view(conf));
+				if (configJson["type"].As<std::string>() == "replication") {
+					hasReplicatorConfig = true;
+					if (tryLoadReplicatorConfFromFile().ok()) {
+						continue;
+					}
+				}
+			}
+
 			Item item = NewItem(kConfigNamespace);
 			if (!item.Status().ok()) return item.Status();
 			err = item.FromJSON(conf);
@@ -1078,41 +1130,51 @@ Error ReindexerImpl::InitSystemNamespaces() {
 		}
 	}
 
-	tryLoadReplicatorConfFromFile();
+	if (!hasReplicatorConfig) {
+		tryLoadReplicatorConfFromFile();
+	}
+
 	return errOK;
 }
 
 Error ReindexerImpl::tryLoadReplicatorConfFromFile() {
 	std::string yamlReplConf;
 	int res = fs::ReadFile(fs::JoinPath(storagePath_, kReplicationConfFilename), yamlReplConf);
-	ReplicationConfigData replConf;
 	if (res > 0) {
-		Error err = replConf.FromYML(yamlReplConf);
-		if (!err.ok()) {
-			logPrintf(LogError, "Error parsing replication config YML: %s", err.what());
-			return Error(errParams, "Error parsing replication config YML: %s", err.what());
-		} else {
-			WrSerializer ser;
-			JsonBuilder jb(ser);
-			jb.Put("type", "replication");
-			jb.Put("disable_file_update", true);
-			auto replNode = jb.Object("replication");
-			replConf.GetJSON(replNode);
-			replNode.End();
-			jb.End();
-
-			Item item = NewItem(kConfigNamespace);
-			if (!item.Status().ok()) {
-				return item.Status();
-			}
-			err = item.FromJSON(ser.Slice());
-			if (!err.ok()) {
-				return err;
-			}
-			return Upsert(kConfigNamespace, item);
-		}
+		return tryLoadReplicatorConfFromYAML(yamlReplConf);
 	}
 	return Error(errNotFound);
+}
+
+Error ReindexerImpl::tryLoadReplicatorConfFromYAML(const std::string& yamlReplConf) {
+	if (yamlReplConf.empty()) {
+		return Error(errNotFound);
+	}
+
+	ReplicationConfigData replConf;
+	Error err = replConf.FromYML(yamlReplConf);
+	if (!err.ok()) {
+		logPrintf(LogError, "Error parsing replication config YML: %s", err.what());
+		return Error(errParams, "Error parsing replication config YML: %s", err.what());
+	} else {
+		WrSerializer ser;
+		JsonBuilder jb(ser);
+		jb.Put("type", "replication");
+		auto replNode = jb.Object("replication");
+		replConf.GetJSON(replNode);
+		replNode.End();
+		jb.End();
+
+		Item item = NewItem(kConfigNamespace);
+		if (!item.Status().ok()) {
+			return item.Status();
+		}
+		err = item.FromJSON(ser.Slice());
+		if (!err.ok()) {
+			return err;
+		}
+		return Upsert(kConfigNamespace, item);
+	}
 }
 
 void ReindexerImpl::updateToSystemNamespace(string_view nsName, Item& item, const RdxContext& ctx) {
@@ -1121,14 +1183,27 @@ void ReindexerImpl::updateToSystemNamespace(string_view nsName, Item& item, cons
 		gason::JsonNode configJson = parser.Parse(item.GetJSON());
 
 		updateConfigProvider(configJson);
-		updateReplicationConfFile(configJson);
-		bool needStart = replicator_->Configure(configProvider_.GetReplicationConfig());
+
+		bool needStartReplicator = false;
+		if (!configJson["replication"].empty()) {
+			updateReplicationConfFile();
+			needStartReplicator = replicator_->Configure(configProvider_.GetReplicationConfig());
+		}
 		for (auto& ns : getNamespaces(ctx)) {
 			ns->onConfigUpdated(configProvider_, ctx);
 		}
-		if (needStart) {
+		auto& actionNode = configJson["action"];
+		if (!actionNode.empty()) {
+			string_view command = actionNode["command"].As<string_view>();
+			if (command == "restart_replication"_sv) {
+				replicator_->Stop();
+				needStartReplicator = true;
+			}
+		}
+		if (needStartReplicator && !stopBackgroundThread_) {
 			if (Error err = replicator_->Start()) throw err;
 		}
+
 	} else if (nsName == kQueriesPerfStatsNamespace) {
 		queriesStatTracker_.Reset();
 	} else if (nsName == kPerfStatsNamespace) {
@@ -1146,21 +1221,20 @@ void ReindexerImpl::updateConfigProvider(const gason::JsonNode& config) {
 	if (!err.ok()) throw err;
 }
 
-void ReindexerImpl::updateReplicationConfFile(const gason::JsonNode& config) {
-	const auto& replConfig = config["replication"];
-	const auto& disableFlag = config["disable_file_update"];
-	if (!replConfig.empty() && !disableFlag.As<bool>(false)) {
-		auto configPath = fs::JoinPath(storagePath_, kReplicationConfFilename);
-		auto statRes = fs::Stat(configPath);
-		if (statRes == fs::StatFile) {
-			WrSerializer ser;
-			configProvider_.GetReplicationConfig().GetYAML(ser);
-
-			static std::mutex mtx;
-			std::lock_guard<std::mutex> lck(mtx);
-			auto written = fs::WriteFile(configPath, ser.Slice());
-			if (written < 0) throw Error(errParams, "updateReplicationConfFile: write config error");
+void ReindexerImpl::updateReplicationConfFile() {
+	WrSerializer ser;
+	auto oldReplConf = configProvider_.GetReplicationConfig();
+	oldReplConf.GetYAML(ser);
+	auto err = replConfigFileChecker_.RewriteFile(std::string(ser.Slice()), [&oldReplConf](const string& content) {
+		ReplicationConfigData replConf;
+		Error err = replConf.FromYML(content);
+		if (err.ok()) {
+			return replConf == oldReplConf;
 		}
+		return false;
+	});
+	if (!err.ok()) {
+		throw err;
 	}
 }
 
@@ -1169,56 +1243,74 @@ void ReindexerImpl::syncSystemNamespaces(string_view name, const RdxContext& ctx
 	WrSerializer ser;
 	const auto activityCtx = ctx.OnlyActivity();
 
-	auto forEachNS = [&](Namespace::Ptr sysNs, std::function<void(Namespace::Ptr ns)> filler) {
-		sysNs->Truncate(ctx);
+	auto forEachNS = [&](Namespace::Ptr sysNs, bool withSystem, std::function<void(Namespace::Ptr ns)> filler) {
+		std::vector<Item> items;
+		items.reserve(nsarray.size());
 		for (auto& ns : nsarray) {
+			if (ns->isSystem() && !withSystem) continue;
 			ser.Reset();
 			filler(ns);
-			auto item = sysNs->NewItem(activityCtx);
-			auto err = item.FromJSON(ser.Slice());
+			items.push_back(sysNs->NewItem(ctx));
+			auto err = items.back().FromJSON(ser.Slice());
 			if (!err.ok()) throw err;
-			sysNs->Upsert(item, activityCtx);
+		}
+		const Namespace::WLock lock(sysNs->mtx_, &ctx);
+		sysNs->Truncate(ctx, -1, true);
+		for (Item& i : items) {
+			sysNs->Upsert(i, activityCtx, true, true);
 		}
 	};
 
 	ProfilingConfigData profilingCfg = configProvider_.GetProfilingConfig();
 
 	if (profilingCfg.perfStats && (name.empty() || name == kPerfStatsNamespace)) {
-		forEachNS(getNamespace(kPerfStatsNamespace, ctx), [&](Namespace::Ptr ns) { ns->GetPerfStat(ctx).GetJSON(ser); });
+		forEachNS(getNamespace(kPerfStatsNamespace, ctx), false, [&](Namespace::Ptr ns) { ns->GetPerfStat(ctx).GetJSON(ser); });
 	}
 
 	if (profilingCfg.memStats && (name.empty() || name == kMemStatsNamespace)) {
-		forEachNS(getNamespace(kMemStatsNamespace, ctx), [&](Namespace::Ptr ns) { ns->GetMemStat(ctx).GetJSON(ser); });
+		forEachNS(getNamespace(kMemStatsNamespace, ctx), false, [&](Namespace::Ptr ns) { ns->GetMemStat(ctx).GetJSON(ser); });
 	}
 
 	if (name.empty() || name == kNamespacesNamespace) {
-		forEachNS(getNamespace(kNamespacesNamespace, ctx),
+		forEachNS(getNamespace(kNamespacesNamespace, ctx), true,
 				  [&](Namespace::Ptr ns) { ns->GetDefinition(ctx).GetJSON(ser, kIndexJSONWithDescribe); });
 	}
 
 	if (profilingCfg.queriesPerfStats && (name.empty() || name == kQueriesPerfStatsNamespace)) {
+		const auto data = queriesStatTracker_.Data();
+		std::vector<Item> items;
+		items.reserve(data.size());
 		auto queriesperfstatsNs = getNamespace(kQueriesPerfStatsNamespace, ctx);
-		queriesperfstatsNs->Truncate(ctx);
-		for (const auto& stat : queriesStatTracker_.Data()) {
+		for (const auto& stat : data) {
 			ser.Reset();
 			stat.GetJSON(ser);
-			auto item = queriesperfstatsNs->NewItem(ctx);
-			auto err = item.FromJSON(ser.Slice());
+			items.push_back(queriesperfstatsNs->NewItem(ctx));
+			auto err = items.back().FromJSON(ser.Slice());
 			if (!err.ok()) throw err;
-			queriesperfstatsNs->Upsert(item, ctx);
+		}
+		const Namespace::WLock lock(queriesperfstatsNs->mtx_, &ctx);
+		queriesperfstatsNs->Truncate(ctx, -1, true);
+		for (Item& i : items) {
+			queriesperfstatsNs->Upsert(i, activityCtx, true, true);
 		}
 	}
 
 	if (name.empty() || name == kActivityStatsNamespace) {
+		const auto data = activities_.List();
+		std::vector<Item> items;
+		items.reserve(data.size());
 		auto activityNs = getNamespace(kActivityStatsNamespace, ctx);
-		activityNs->Truncate(ctx);
-		for (const auto& act : activities_.List()) {
+		for (const auto& act : data) {
 			ser.Reset();
 			act.GetJSON(ser);
-			auto item = activityNs->NewItem(ctx);
-			auto err = item.FromJSON(ser.Slice());
+			items.push_back(activityNs->NewItem(ctx));
+			auto err = items.back().FromJSON(ser.Slice());
 			if (!err.ok()) throw err;
-			activityNs->Insert(item, ctx);
+		}
+		const Namespace::WLock lock(activityNs->mtx_, &ctx);
+		activityNs->Truncate(ctx, -1, true);
+		for (Item& i : items) {
+			activityNs->Upsert(i, activityCtx, true, true);
 		}
 	}
 }

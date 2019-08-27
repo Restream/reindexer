@@ -88,10 +88,8 @@ private:
 	void prepareSortingContext(const SortingEntries &sortBy, SelectCtx &ctx, bool isFt);
 	void prepareSortingIndexes(SortingEntries &sortBy);
 	void getSortIndexValue(const SelectCtx::SortingCtx::Entry *sortCtx, IdType rowId, VariantArray &value);
-	bool processJoins(SelectCtx &sctx, IdType properRowId, bool found, bool match, bool hasInnerJoins, bool hasLeftJoins,
-					  bool postLoopLimitOffsetProcessing);
-	bool processInnerJoins(const ConstPayload &pl, SelectCtx &sctx, IdType properRowId, bool found, bool match);
-	void processLeftJoins(const ConstPayload &pl, SelectCtx &sctx, IdType properRowId, bool found, bool match);
+	void processLeftJoins(QueryResults &qr, SelectCtx &sctx);
+	bool checkIfThereAreLeftJoins(SelectCtx &sctx) const;
 
 	Namespace *ns_;
 	SelectFunction::Ptr fnc_;

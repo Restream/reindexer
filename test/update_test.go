@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/restream/reindexer"
+	"git.itv.restr.im/itv-backend/reindexer"
 )
 
 const (

@@ -17,7 +17,7 @@ Error RPCServerFake::Ping(cproto::Context &) {
 }
 
 Error RPCServerFake::Login(cproto::Context &ctx, p_string /*login*/, p_string /*password*/, p_string /*db*/) {
-	std::this_thread::sleep_for(std::chrono::seconds(5));
+	std::this_thread::sleep_for(std::chrono::seconds(2));
 	if (ctx.GetClientData()) {
 		return Error(errParams, "Already logged in");
 	}
@@ -45,7 +45,7 @@ Error RPCServerFake::CheckAuth(cproto::Context &ctx) {
 }
 
 Error RPCServerFake::OpenNamespace(cproto::Context &, p_string) {
-	std::this_thread::sleep_for(std::chrono::seconds(5));
+	std::this_thread::sleep_for(std::chrono::seconds(2));
 	return 0;
 }
 

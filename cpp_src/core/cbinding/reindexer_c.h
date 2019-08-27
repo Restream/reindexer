@@ -10,6 +10,7 @@ extern "C" {
 uintptr_t init_reindexer();
 void destroy_reindexer(uintptr_t rx);
 
+reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpts opts);
 reindexer_error reindexer_ping(uintptr_t rx);
 
 reindexer_error reindexer_enable_storage(uintptr_t rx, reindexer_string path, reindexer_ctx_info ctx_info);

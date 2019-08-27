@@ -70,8 +70,7 @@ public:
 			ring_[head_] = std::move(ch);
 			head_ = (head_ + 1) % ring_.size();
 			assert(head_ != tail_);
-		} else
-			std::move(ch);
+		}
 	}
 	void write(string_view sv) {
 		chunk chunk = get_chunk();

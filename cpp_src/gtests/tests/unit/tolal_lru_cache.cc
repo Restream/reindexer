@@ -6,11 +6,8 @@
 #include "core/query/querycache.h"
 #include "debug/allocdebug.h"
 #include "gtests/tests/gtest_cout.h"
-#include "tools/serializer.h"
-
-#if REINDEX_WITH_GPERFTOOLS
 #include "tools/alloc_ext/tc_malloc_extension.h"
-#endif
+#include "tools/serializer.h"
 
 using reindexer::Query;
 using reindexer::WrSerializer;
@@ -66,7 +63,7 @@ TEST(LruCache, StressTest) {
 
 	bool gperfEnabled = false;
 #if REINDEX_WITH_GPERFTOOLS
-	gperfEnabled = tc_malloc_available();
+	gperfEnabled = reindexer::alloc_ext::TCMallocIsAvailable();
 #endif
 
 	allocdebug_init_mt();

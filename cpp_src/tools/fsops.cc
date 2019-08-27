@@ -34,8 +34,8 @@ int MkDirAll(const string &path) {
 
 int RmDirAll(const string &path) {
 #ifndef _WIN32
-	return nftw(path.c_str(), [](const char *fpath, const struct stat *, int, struct FTW *) { return ::remove(fpath); }, 64,
-				FTW_DEPTH | FTW_PHYS);
+	return nftw(
+		path.c_str(), [](const char *fpath, const struct stat *, int, struct FTW *) { return ::remove(fpath); }, 64, FTW_DEPTH | FTW_PHYS);
 #else
 	(void)path;
 	return 0;
@@ -64,7 +64,7 @@ int64_t WriteFile(const std::string &path, string_view content) {
 	auto written = fwrite(content.data(), content.size(), 1, f);
 	fflush(f);
 	fclose(f);
-	return static_cast<int64_t>(written);
+	return static_cast<int64_t>((written > 0) ? content.size() : written);
 }
 
 int ReadDir(const string &path, vector<DirEntry> &content) {
@@ -122,17 +122,15 @@ string GetTempDir() {
 	::GetTempPathA(sizeof(tmpBuf), tmpBuf);
 	return tmpBuf;
 #else
-	if (const char *tmpDir = getenv("TMPDIR")) {
-		if (tmpDir && *tmpDir) return tmpDir;
-	}
+	const char *tmpDir = getenv("TMPDIR");
+	if (tmpDir && *tmpDir) return tmpDir;
 	return "/tmp";
 #endif
 }
 
 string GetHomeDir() {
-	if (const char *homeDir = getenv("HOME")) {
-		if (homeDir && *homeDir) return homeDir;
-	}
+	const char *homeDir = getenv("HOME");
+	if (homeDir && *homeDir) return homeDir;
 	return ".";
 }
 

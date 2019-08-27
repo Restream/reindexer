@@ -17,6 +17,7 @@
 #include "query/querycache.h"
 #include "replicator/waltracker.h"
 #include "storage/idatastorage.h"
+#include "storage/storagetype.h"
 #include "transactionimpl.h"
 
 namespace reindexer {
@@ -27,6 +28,8 @@ using std::string;
 using std::unique_lock;
 using std::unique_ptr;
 using std::vector;
+
+using reindexer::datastorage::StorageType;
 
 class Index;
 struct SelectCtx;
@@ -113,7 +116,7 @@ public:
 	const string &GetName() { return name_; }
 	bool isSystem() const { return !name_.empty() && name_[0] == '#'; }
 
-	void EnableStorage(const string &path, StorageOpts opts, const RdxContext &ctx);
+	void EnableStorage(const string &path, StorageOpts opts, StorageType storageType, const RdxContext &ctx);
 	void LoadFromStorage(const RdxContext &ctx);
 	void DeleteStorage(const RdxContext &);
 
@@ -125,7 +128,7 @@ public:
 	void Insert(Item &item, const RdxContext &ctx, bool store = true);
 	void Update(Item &item, const RdxContext &ctx, bool store = true);
 	void Update(const Query &query, QueryResults &result, const RdxContext &ctx, int64_t lsn = -1);
-	void Upsert(Item &item, const RdxContext &ctx, bool store = true);
+	void Upsert(Item &item, const RdxContext &ctx, bool store = true, bool noLock = false);
 
 	void Delete(Item &item, const RdxContext &ctx, bool noLock = false);
 	void Delete(const Query &query, QueryResults &result, const RdxContext &ctx, int64_t lsn = -1, bool noLock = false);

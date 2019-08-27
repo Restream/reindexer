@@ -1,6 +1,7 @@
 ﻿#include "replication_api.h"
 #include <fstream>
 #include <thread>
+#include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
 #include "tools/fsops.h"
 #include "vendor/gason/gason.h"
@@ -15,10 +16,12 @@ ServerControl::Interface::~Interface() {
 	stopped_ = true;
 }
 
+void ServerControl::Interface::Stop() { srv.Stop(); }
+
 ServerControl::ServerControl() { stopped_ = new std::atomic_bool(false); }
 ServerControl::~ServerControl() {
 	WLock lock(mtx_);
-	interface = std::shared_ptr<ServerControl::Interface>();
+	interface.reset();
 	delete stopped_;
 }
 
@@ -36,9 +39,7 @@ ServerControl& ServerControl::operator=(ServerControl&& rhs) {
 	return *this;
 }
 
-void ServerControl::Interface::SetNeedDrop(bool dropDb) { dropDb_ = dropDb; }
-
-ServerConfig ServerControl::Interface::GetServerConfig(ConfigType type) {
+ReplicationConfig ServerControl::Interface::GetServerConfig(ConfigType type) {
 	reindexer::ReplicationConfigData config;
 	switch (type) {
 		case ConfigType::File: {
@@ -80,12 +81,12 @@ ServerConfig ServerControl::Interface::GetServerConfig(ConfigType type) {
 	}
 
 	EXPECT_TRUE(config.role == ReplicationMaster || config.role == ReplicationSlave);
-	ServerConfig::NsSet namespaces;
+	ReplicationConfig::NsSet namespaces;
 	for (auto& ns : config.namespaces) {
 		namespaces.insert(ns);
 	}
-	return ServerConfig(config.role == ReplicationMaster ? "master" : "slave", config.forceSyncOnLogicError,
-						config.forceSyncOnWrongDataHash, std::move(config.masterDSN), std::move(namespaces));
+	return ReplicationConfig(config.role == ReplicationMaster ? "master" : "slave", config.forceSyncOnLogicError,
+							 config.forceSyncOnWrongDataHash, std::move(config.masterDSN), std::move(namespaces));
 }
 
 void ServerControl::Interface::WriteServerConfig(const std::string& configYaml) {
@@ -97,8 +98,7 @@ void ServerControl::Interface::WriteServerConfig(const std::string& configYaml) 
 
 std::string ServerControl::Interface::getStotageRoot() { return ReplicationApi::kStoragePath + "node/" + std::to_string(id_); }
 
-ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, bool dropDb)
-	: api(std::make_shared<CppClient>()), id_(id), dropDb_(dropDb), stopped_(stopped) {
+ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped) : id_(id), stopped_(stopped) {
 	// Init server in thread
 	stopped_ = false;
 	// clang-format off
@@ -126,54 +126,43 @@ ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, bool d
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
 	// init client
-	string dsn;
-	dsn = "cproto://127.0.0.1:" + std::to_string(kDefaultRpcPort + id_) + "/node" + std::to_string(id_);
+	string dsn = "cproto://127.0.0.1:" + std::to_string(kDefaultRpcPort + id_) + "/node" + std::to_string(id_);
 
 	err = api.reindexer->Connect(dsn);
 	EXPECT_TRUE(err.ok()) << err.what();
 }
 
-void ServerControl::Interface::MakeMaster(const ServerConfig& config) {
+void ServerControl::Interface::MakeMaster(const ReplicationConfig& config) {
 	assert(config.role_ == "master");
-	setServerConfig(id_, config);
+	setReplicationConfig(id_, config);
 }
-void ServerControl::Interface::MakeSlave(size_t masterId, const ServerConfig& config) {
+void ServerControl::Interface::MakeSlave(size_t masterId, const ReplicationConfig& config) {
 	assert(config.role_ == "slave");
-	setServerConfig(masterId, config);
+	setReplicationConfig(masterId, config);
 }
 
-void ServerControl::Interface::setServerConfig(size_t masterId, const ServerConfig& config) {
+void ServerControl::Interface::setReplicationConfig(size_t masterId, const ReplicationConfig& config) {
 	auto item = api.NewItem(ReplicationApi::kConfigNs);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-	// clang-format off
-	string namespaces = "[";
-	size_t num = 0;
-	for (auto& ns : config.namespaces_) {
-		namespaces.append("\"");
-		namespaces.append(ns);
-		namespaces.append("\"");
-		if (++num != config.namespaces_.size()) {
-			namespaces.append(", ");
-		}
-	}
-	namespaces.append("]");
-    string replicationConfig = "{\n"
-                       "\"type\":\"replication\",\n"
-                       "\"replication\":{\n"
-                       "\"role\":\"" + config.role_ + "\",\n"
-                       "\"master_dsn\":\"" + (config.dsn_.empty() ?
-                                              ("cproto://127.0.0.1:" + std::to_string(kDefaultRpcPort+masterId) + "/node" + std::to_string(masterId)) :
-                                               config.dsn_
-                                             ) + "\",\n"
-                       "\"cluster_id\":2,\n"
-                       "\"force_sync_on_logic_error\": " + (config.forceSyncOnLogicError_ ? "true" : "false") + ",\n"
-                       "\"force_sync_on_wrong_data_hash\": " + (config.forceSyncOnWrongDataHash_ ? "true" : "false") + ",\n"
-                       "\"namespaces\": " + namespaces + "\n"
-                       "}\n"
-                       "}\n";
-	// clang-format on
+	WrSerializer ser;
+	JsonBuilder jb(ser);
+	jb.Put("type", "replication");
+	auto replConf = jb.Object("replication");
+	replConf.Put("role", config.role_);
+	replConf.Put("master_dsn", config.dsn_.empty() ? ("cproto://127.0.0.1:" + std::to_string(kDefaultRpcPort + masterId) + "/node" +
+													  std::to_string(masterId))
+												   : config.dsn_);
+	replConf.Put("cluster_id", 2);
+	replConf.Put("force_sync_on_logic_error", config.forceSyncOnLogicError_);
+	replConf.Put("force_sync_on_wrong_data_hash", config.forceSyncOnWrongDataHash_);
 
-	auto err = item.FromJSON(replicationConfig);
+	auto nsArray = replConf.Array("namespaces");
+	for (auto& ns : config.namespaces_) nsArray.Put(nullptr, ns);
+	nsArray.End();
+	replConf.End();
+	jb.End();
+
+	auto err = item.FromJSON(ser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what();
 	api.Upsert(ReplicationApi::kConfigNs, item);
 	err = api.Commit(ReplicationApi::kConfigNs);
@@ -199,38 +188,55 @@ ServerControl::Interface::Ptr ServerControl::Get(bool wait) {
 	return interface;
 }
 
-void ServerControl::InitServer(size_t id, bool dropDb) {
+void ServerControl::InitServer(size_t id) {
 	WLock lock(mtx_);
-	auto srvInterface = std::make_shared<ServerControl::Interface>(id, *stopped_, dropDb);
+	auto srvInterface = std::make_shared<ServerControl::Interface>(id, *stopped_);
 	interface = srvInterface;
 }
 void ServerControl::Drop() {
 	WLock lock(mtx_);
-	interface = std::shared_ptr<ServerControl::Interface>();
+	interface.reset();
 }
 
-bool ServerControl::Interface::CheckForSyncCompletion(Ptr) {
-	/* Query qr = Query("#memstats").Where("name", CondEq, ns);
-	// reindexer::client::QueryResults res;
-	 auto err = rts[num].reindexer->Select(qr, res);
-	 EXPECT_TRUE(err.ok()) << err.what();
-	 for (auto it : res) {
-		 auto item = it.GetItem();
+ReplicationState ServerControl::Interface::GetState(const std::string& ns) {
+	Query qr = Query("#memstats").Where("name", CondEq, ns);
+	reindexer::client::QueryResults res;
+	auto err = api.reindexer->Select(qr, res);
+	EXPECT_TRUE(err.ok()) << err.what();
+	ReplicationState state{-1, 0, 0};
+	for (auto it : res) {
+		WrSerializer ser;
+		err = it.GetJSON(ser, false);
+		EXPECT_TRUE(err.ok()) << err.what();
+		gason::JsonParser parser;
+		auto root = parser.Parse(ser.Slice());
+		state.lsn = root["replication"]["last_lsn"].As<int64_t>();
+		state.dataCount = root["replication"]["data_count"].As<int64_t>();
+		state.dataHash = root["replication"]["data_hash"].As<uint64_t>();
 
-		 // std::cout << ser.c_str() << std::endl;
-	 }*/
-	return false;
+		// std::cout << state.lsn << " " << state.dataCount << " " << state.dataHash /*<< " " << ser.c_str()*/ << std::endl;
+	}
+	return state;
 }
 
-bool ReplicationApi::StopServer(size_t id, bool dropDb) {
+void ServerControl::Interface::ForceSync() {
+	reindexer::client::QueryResults res;
+	Error err;
+	auto item = api.NewItem("#config");
+	EXPECT_TRUE(item.Status().ok()) << item.Status().what();
+	err = item.FromJSON(R"json({"type":"action","action":{"command":"restart_replication"}})json");
+	EXPECT_TRUE(err.ok()) << err.what();
+	api.Upsert("#config", item);
+}
+
+bool ReplicationApi::StopServer(size_t id) {
 	std::lock_guard<std::mutex> lock(m_);
 
-	assert(id < svc.size());
-	if (!svc[id].Get()) return false;
-	svc[id].Get()->SetNeedDrop(dropDb);
-	svc[id].Drop();
+	assert(id < svc_.size());
+	if (!svc_[id].Get()) return false;
+	svc_[id].Drop();
 	size_t counter = 0;
-	while (svc[id].IsRunning()) {
+	while (svc_[id].IsRunning()) {
 		counter++;
 		// we have only 10sec timeout to restart server!!!!
 		EXPECT_TRUE(counter / 100 < kMaxServerStartTimeSec);
@@ -241,23 +247,22 @@ bool ReplicationApi::StopServer(size_t id, bool dropDb) {
 	return true;
 }
 
-bool ReplicationApi::StartServer(size_t id, bool dropDb) {
+bool ReplicationApi::StartServer(size_t id) {
 	std::lock_guard<std::mutex> lock(m_);
 
-	assert(id < svc.size());
-	if (svc[id].IsRunning()) return false;
-	svc[id].InitServer(id, dropDb);
+	assert(id < svc_.size());
+	if (svc_[id].IsRunning()) return false;
+	svc_[id].InitServer(id);
 	return true;
 }
-void ReplicationApi::RestartServer(size_t id, bool dropDb) {
+void ReplicationApi::RestartServer(size_t id) {
 	std::lock_guard<std::mutex> lock(m_);
 
-	assert(id < svc.size());
-	if (svc[id].Get()) {
-		svc[id].Get()->SetNeedDrop(dropDb);
-		svc[id].Drop();
+	assert(id < svc_.size());
+	if (svc_[id].Get()) {
+		svc_[id].Drop();
 		size_t counter = 0;
-		while (svc[id].IsRunning()) {
+		while (svc_[id].IsRunning()) {
 			counter++;
 			// we have only 10sec timeout to restart server!!!!
 			EXPECT_TRUE(counter < 1000);
@@ -266,13 +271,50 @@ void ReplicationApi::RestartServer(size_t id, bool dropDb) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
 	}
-	svc[id].InitServer(id, dropDb);
+	svc_[id].InitServer(id);
 }
-// get server
+
+void ReplicationApi::WaitSync(const std::string& ns) {
+	size_t counter = 0;
+	// we have only 10sec timeout to restart server!!!!
+
+	ReplicationState state{-1, 0, 0};
+	while (state.lsn == -1) {
+		counter++;
+		EXPECT_TRUE(counter / 100 < kMaxSyncTimeSec);
+		for (size_t i = 0; i < svc_.size(); i++) {
+			ReplicationState xstate = GetSrv((i + masterId_) % svc_.size())->GetState(ns);
+			if (i == 0)
+				state = xstate;
+			else if (xstate.lsn != state.lsn)
+				state.lsn = -1;
+			else if (state.lsn != -1) {
+				ASSERT_EQ(state.dataHash, xstate.dataHash) << "lsns" << state.lsn << " " << xstate.lsn;
+				ASSERT_EQ(state.dataCount, xstate.dataCount);
+			}
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+}
+
+void ReplicationApi::ForceSync() {
+	for (size_t i = 0; i < svc_.size(); i++) {
+		if (i != masterId_) GetSrv(i)->ForceSync();
+	}
+}
+void ReplicationApi::SwitchMaster(size_t id) {
+	if (id == masterId_) return;
+	masterId_ = id;
+	GetSrv(masterId_)->MakeMaster();
+	for (size_t i = 0; i < svc_.size(); i++) {
+		if (i != masterId_) GetSrv(i)->MakeSlave(masterId_);
+	}
+}
+
 ServerControl::Interface::Ptr ReplicationApi::GetSrv(size_t id) {
 	std::lock_guard<std::mutex> lock(m_);
-	assert(id < svc.size());
-	auto srv = svc[id].Get();
+	assert(id < svc_.size());
+	auto srv = svc_[id].Get();
 	assert(srv);
 	return srv;
 }
@@ -281,7 +323,7 @@ void ReplicationApi::SetUp() {
 	// reindexer::logInstallWriter([&](int level, char* buf) {
 	// 	(void)buf;
 	// 	(void)level;
-	// 	if (/*strstr(buf, "repl") ||*/ level <= LogError) {
+	// 	if (strstr(buf, "repl") || level <= LogError) {
 	// 		std::cout << std::this_thread::get_id() << " " << buf << std::endl;
 	// 	}
 	// });
@@ -289,21 +331,23 @@ void ReplicationApi::SetUp() {
 	reindexer::fs::RmDirAll(kStoragePath + "node");
 
 	for (size_t i = 0; i < kDefaultServerCount; i++) {
-		svc.push_back(ServerControl());
-		svc.back().InitServer(i);
+		svc_.push_back(ServerControl());
+		svc_.back().InitServer(i);
 		if (i == 0) {
-			svc.back().Get()->MakeMaster();
+			svc_.back().Get()->MakeMaster();
 		} else {
-			svc.back().Get()->MakeSlave(0);
+			svc_.back().Get()->MakeSlave(0);
 		}
 	}
 }
 
 void ReplicationApi::TearDown() {
 	std::lock_guard<std::mutex> lock(m_);
-	for (auto& server : svc) {
+	for (auto& server : svc_) {
+		if (server.Get()) server.Get()->Stop();
+	}
+	for (auto& server : svc_) {
 		if (!server.Get()) continue;
-		server.Get()->SetNeedDrop(true);
 		server.Drop();
 		size_t counter = 0;
 		while (server.IsRunning()) {
@@ -315,5 +359,5 @@ void ReplicationApi::TearDown() {
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
 	}
-	svc.clear();
+	svc_.clear();
 }

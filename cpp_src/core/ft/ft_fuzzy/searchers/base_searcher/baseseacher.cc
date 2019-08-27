@@ -26,7 +26,6 @@ pair<bool, size_t> BaseSearcher::GetData(BaseHolder::Ptr holder, unsigned int i,
 		counter = abs(offset);
 		offset = 0;
 	} else if (size_t(offset) >= data_size) {
-		offset = data_size - 1;
 		return make_pair(false, 0);
 	}
 	size_t data_counter = holder->cfg_.bufferSize - counter;

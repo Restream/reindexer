@@ -59,6 +59,7 @@ typedef enum QueryItemType {
 	QueryAggregationSort,
 	QueryOpenBracket,
 	QueryCloseBracket,
+	QueryJoinCondition,
 } QueryItemType;
 
 typedef enum QuerySerializeMode {
@@ -218,3 +219,45 @@ typedef struct StorageOpts {
 	uint16_t options;
 	uint16_t noQueryIdleThresholdSec;
 } StorageOpts;
+
+typedef enum ConnectOpt {
+	kConnectOptOpenNamespaces = 1 << 0,
+	kConnectOptAllowNamespaceErrors = 1 << 1,
+} ConnectOpt;
+
+typedef enum StorageTypeOpt {
+	kStorageTypeOptLevelDB = 0,
+	kStorageTypeOptRocksDB = 1,
+} StorageTypeOpt;
+
+typedef struct ConnectOpts {
+#ifdef __cplusplus
+	ConnectOpts() : storage(kStorageTypeOptLevelDB), options(kConnectOptOpenNamespaces) {}
+
+	bool IsOpenNamespaces() const { return options & kConnectOptOpenNamespaces; }
+	bool IsAllowNamespaceErrors() const { return options & kConnectOptAllowNamespaceErrors; }
+
+	ConnectOpts& OpenNamespaces(bool value = true) {
+		options = value ? options | kConnectOptOpenNamespaces : options & ~(kConnectOptOpenNamespaces);
+		return *this;
+	}
+
+	ConnectOpts& AllowNamespaceErrors(bool value = true) {
+		options = value ? options | kConnectOptAllowNamespaceErrors : options & ~(kConnectOptAllowNamespaceErrors);
+		return *this;
+	}
+
+	ConnectOpts& WithStorageType(StorageTypeOpt type) {
+		storage = static_cast<uint16_t>(type);
+		return *this;
+	}
+	StorageTypeOpt StorageType() const {
+		if (storage == static_cast<uint16_t>(kStorageTypeOptRocksDB)) {
+			return kStorageTypeOptRocksDB;
+		}
+		return kStorageTypeOptLevelDB;
+	}
+#endif
+	uint16_t storage;
+	uint16_t options;
+} ConnectOpts;

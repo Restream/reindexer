@@ -103,10 +103,11 @@ Error ReplicationConfigData::FromYML(const string &yaml) {
 		masterDSN = root["master_dsn"].As<std::string>(masterDSN);
 		connPoolSize = root["conn_pool_size"].As<int>(connPoolSize);
 		workerThreads = root["worker_threads"].As<int>(workerThreads);
+		timeoutSec = root["timeout_sec"].As<int>(timeoutSec);
 		clusterID = root["cluster_id"].As<int>(clusterID);
 		role = str2role(root["role"].As<std::string>(role2str(role)));
-		forceSyncOnLogicError = root["force_sync_on_logic_error"].As<bool>();
-		forceSyncOnWrongDataHash = root["force_sync_on_wrong_data_hash"].As<bool>();
+		forceSyncOnLogicError = root["force_sync_on_logic_error"].As<bool>(forceSyncOnLogicError);
+		forceSyncOnWrongDataHash = root["force_sync_on_wrong_data_hash"].As<bool>(forceSyncOnWrongDataHash);
 
 		auto &node = root["namespaces"];
 		namespaces.clear();
@@ -126,6 +127,7 @@ Error ReplicationConfigData::FromJSON(const gason::JsonNode &root) {
 		masterDSN = root["master_dsn"].As<string>();
 		connPoolSize = root["conn_pool_size"].As<int>(1);
 		workerThreads = root["worker_threads"].As<int>(1);
+		timeoutSec = root["timeout_sec"].As<int>(10);
 		clusterID = root["cluster_id"].As<int>(1);
 		role = str2role(root["role"].As<string>("none"));
 		forceSyncOnLogicError = root["force_sync_on_logic_error"].As<bool>();
@@ -168,6 +170,7 @@ void ReplicationConfigData::GetJSON(JsonBuilder &jb) const {
 	jb.Put("role", role2str(role));
 	jb.Put("master_dsn", masterDSN);
 	jb.Put("cluster_id", clusterID);
+	jb.Put("timeout_sec", timeoutSec);
 	jb.Put("force_sync_on_logic_error", forceSyncOnLogicError);
 	jb.Put("force_sync_on_wrong_data_hash", forceSyncOnWrongDataHash);
 	{
@@ -210,6 +213,7 @@ void ReplicationConfigData::GetYAML(WrSerializer &ser) const {
 			"\n"
 			"# List of namespaces for replication. If emply, all namespaces\n"
 			"# All replicated namespaces will become read only for slave\n"
+			"# It should be written as YAML sequence, JSON-style arrays are not supported\n"
 			+ namespacesStr + '\n';
 	// clang-format on
 }

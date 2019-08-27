@@ -28,11 +28,12 @@ using reindexer::Reindexer;
 
 typedef std::tuple<const char *, const char *, const char *, IndexOpts, int64_t> IndexDeclaration;
 
-template <class ReindexerPtr, class ItemType>
+template <typename DB>
 class ReindexerTestApi {
 public:
-	ReindexerTestApi(ReindexerPtr rx) : reindexer(rx) {}
+	using ItemType = typename DB::ItemT;
 
+	ReindexerTestApi() : reindexer(std::shared_ptr<DB>(new DB)) {}
 	void DefineNamespaceDataset(const string &ns, std::initializer_list<const IndexDeclaration> fields) {
 		auto err = Error();
 		for (auto field : fields) {
@@ -70,10 +71,15 @@ public:
 
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
+	void Upsert(const std::string &ns, ItemType &item, std::function<void(const reindexer::Error &)> cmpl) {
+		assert(!!item);
+		auto err = reindexer->WithCompletion(cmpl).Upsert(ns, item);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
 	void PrintQueryResults(const std::string &ns, const QueryResults &res) {
 		if (!verbose) return;
 		{
-			Item rdummy(reindexer->NewItem(ns));
+			ItemType rdummy(reindexer->NewItem(ns));
 			std::string outBuf;
 			for (auto idx = 1; idx < rdummy.NumFields(); idx++) {
 				outBuf += "\t";
@@ -152,7 +158,7 @@ public:
 		}
 		return vec;
 	}
-	ReindexerPtr reindexer;
+	std::shared_ptr<DB> reindexer;
 
 private:
 	const string letters = "abcdefghijklmnopqrstuvwxyz";
@@ -162,12 +168,12 @@ private:
 
 class ReindexerApi : public ::testing::Test {
 protected:
-	void SetUp() { rt.reindexer.reset(new Reindexer); }
+	void SetUp() {}
 
 	void TearDown() {}
 
 public:
-	ReindexerApi() : rt(std::make_shared<Reindexer>()) {}
+	ReindexerApi() {}
 
 	void DefineNamespaceDataset(const string &ns, std::initializer_list<const IndexDeclaration> fields) {
 		rt.DefineNamespaceDataset(ns, fields);
@@ -187,7 +193,7 @@ public:
 
 public:
 	const string default_namespace = "test_namespace";
-	ReindexerTestApi<std::shared_ptr<Reindexer>, Item> rt;
+	ReindexerTestApi<reindexer::Reindexer> rt;
 };
 
 class CanceledRdxContext : public reindexer::IRdxCancelContext {

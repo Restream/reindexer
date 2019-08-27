@@ -14,29 +14,28 @@
 using namespace reindexer_server;
 using std::shared_ptr;
 
-typedef reindexer::client::Reindexer CppClient;
-typedef ReindexerTestApi<shared_ptr<CppClient>, reindexer::client::Item> BaseApi;
+using BaseApi = ReindexerTestApi<reindexer::client::Reindexer>;
 
 // for now in default serve 0  always master - other slave - inited in ReplicationApi::SetUp
 const size_t kDefaultServerCount = 4;
 const size_t kDefaultRpcPort = 4444;
 const size_t kDefaultHttpPort = 5555;
 const size_t kMaxServerStartTimeSec = 20;
+const size_t kMaxSyncTimeSec = 20;
 
-class ServerConfig {
-public:
+struct ReplicationConfig {
 	using NsSet = std::unordered_set<std::string, nocase_hash_str, nocase_equal_str>;
 
-	ServerConfig(std::string role) : role_(std::move(role)), forceSyncOnLogicError_(false), forceSyncOnWrongDataHash_(true) {}
-	ServerConfig(std::string role, bool forceSyncOnLogicError, bool forceSyncOnWrongDataHash, std::string dsn = std::string(),
-				 NsSet namespaces = NsSet())
+	ReplicationConfig(std::string role) : role_(std::move(role)), forceSyncOnLogicError_(false), forceSyncOnWrongDataHash_(true) {}
+	ReplicationConfig(std::string role, bool forceSyncOnLogicError, bool forceSyncOnWrongDataHash, std::string dsn = std::string(),
+					  NsSet namespaces = NsSet())
 		: role_(std::move(role)),
 		  forceSyncOnLogicError_(forceSyncOnLogicError),
 		  forceSyncOnWrongDataHash_(forceSyncOnWrongDataHash),
 		  dsn_(std::move(dsn)),
 		  namespaces_(std::move(namespaces)) {}
 
-	bool operator==(const ServerConfig& config) const {
+	bool operator==(const ReplicationConfig& config) const {
 		return role_ == config.role_ && forceSyncOnLogicError_ == config.forceSyncOnLogicError_ &&
 			   forceSyncOnWrongDataHash_ == config.forceSyncOnWrongDataHash_ && dsn_ == config.dsn_ && namespaces_ == config.namespaces_;
 	}
@@ -46,6 +45,12 @@ public:
 	bool forceSyncOnWrongDataHash_;
 	std::string dsn_;
 	NsSet namespaces_;
+};
+
+struct ReplicationState {
+	int64_t lsn;
+	uint64_t dataHash;
+	size_t dataCount;
 };
 
 class ServerControl {
@@ -61,38 +66,38 @@ public:
 
 	struct Interface {
 		typedef std::shared_ptr<Interface> Ptr;
-		Interface(size_t id, std::atomic_bool& stopped, bool dropDb = false);
+		Interface(size_t id, std::atomic_bool& stopped);
 		~Interface();
+		// Stop server
+		void Stop();
 
 		// Make this server master
-		void MakeMaster(const ServerConfig& config = ServerConfig("master"));
+		void MakeMaster(const ReplicationConfig& config = ReplicationConfig("master"));
 		// Make this server slave
-		void MakeSlave(size_t masterId, const ServerConfig& config = ServerConfig("slave"));
+		void MakeSlave(size_t masterId, const ReplicationConfig& config = ReplicationConfig("slave"));
 		// check with master or slave that sync complete
-		bool CheckForSyncCompletion(Ptr rhs);
-		// drop db from hdd
-		void SetNeedDrop(bool dropDb);
+		ReplicationState GetState(const std::string& ns);
+		// Force sync (restart slave's replicator)
+		void ForceSync();
 		// get server config from file
-		ServerConfig GetServerConfig(ConfigType type);
+		ReplicationConfig GetServerConfig(ConfigType type);
 		// write server config to file
 		void WriteServerConfig(const std::string& configYaml);
-		//
 
 		Server srv;
 		BaseApi api;
 
 	private:
 		std::string getStotageRoot();
-		void setServerConfig(size_t masterId, const ServerConfig& config);
+		void setReplicationConfig(size_t masterId, const ReplicationConfig& config);
 
 		size_t id_;
-		bool dropDb_;
 		std::unique_ptr<std::thread> tr;
 		std::atomic_bool& stopped_;
 	};
 	// Get server - wait means wait until server starts if no server
 	Interface::Ptr Get(bool wait = true);
-	void InitServer(size_t id, bool dropDb = false);
+	void InitServer(size_t id);
 	void Drop();
 	bool IsRunning();
 
@@ -115,15 +120,24 @@ public:
 	void TearDown();
 
 	// stop is sync
-	bool StopServer(size_t id, bool dropDb = false);
+	bool StopServer(size_t id);
 	// start is sync
-	bool StartServer(size_t id, bool dropDb = false);
+	bool StartServer(size_t id);
 	// restart is sync
-	void RestartServer(size_t id, bool dropDb = false);
+	void RestartServer(size_t id);
 	// get server
 	ServerControl::Interface::Ptr GetSrv(size_t id);
+	// wait sync for ns
+	void WaitSync(const std::string& ns);
+	// force resync
+	void ForceSync();
+	// Switch master
+	void SwitchMaster(size_t id);
+	//
+
+	size_t masterId_ = 0;
 
 private:
-	vector<ServerControl> svc;
+	vector<ServerControl> svc_;
 	std::mutex m_;
 };

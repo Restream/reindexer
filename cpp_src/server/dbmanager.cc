@@ -11,9 +11,10 @@
 #include "tools/stringstools.h"
 
 namespace reindexer_server {
-DBManager::DBManager(const string &dbpath, bool noSecurity) : dbpath_(dbpath), noSecurity_(noSecurity) {}
+DBManager::DBManager(const string &dbpath, bool noSecurity)
+	: dbpath_(dbpath), noSecurity_(noSecurity), storageType_(datastorage::StorageType::LevelDB) {}
 
-Error DBManager::Init(bool allowDBErrors) {
+Error DBManager::Init(const std::string &storageEngine, bool allowDBErrors) {
 	auto status = readUsers();
 	if (!status.ok() && !noSecurity_) {
 		return status;
@@ -24,12 +25,19 @@ Error DBManager::Init(bool allowDBErrors) {
 		return Error(errParams, "Can't read reindexer dir %s", dbpath_);
 	}
 
+	try {
+		storageType_ = datastorage::StorageTypeFromString(storageEngine);
+	} catch (const Error &err) {
+		return err;
+	}
+
 	for (auto &de : foundDb) {
 		if (de.isDir && validateObjectName(de.name)) {
-			auto status = loadOrCreateDatabase(de.name);
+			auto status = loadOrCreateDatabase(de.name, allowDBErrors);
 			if (!status.ok()) {
 				logPrintf(LogError, "Failed to open database '%s' - %s", de.name, status.what());
-				if (!allowDBErrors) {
+				if (status.code() == errNotValid) {
+					logPrintf(LogError, "Try to run:\n\treindexer_tool --dsn \"builtin://%s\" --repair\nto restore data", dbpath_);
 					return status;
 				}
 			}
@@ -71,7 +79,7 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 		return Error(errParams, "Database name contains invalid character. Only alphas, digits,'_','-, are allowed");
 	}
 
-	status = loadOrCreateDatabase(dbName);
+	status = loadOrCreateDatabase(dbName, true);
 	if (!status.ok()) {
 		return status;
 	}
@@ -80,12 +88,21 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 	return OpenDatabase(dbName, auth, false);
 }
 
-Error DBManager::loadOrCreateDatabase(const string &dbName) {
+Error DBManager::loadOrCreateDatabase(const string &dbName, bool allowDBErrors) {
 	string storagePath = fs::JoinPath(dbpath_, dbName);
 
 	logPrintf(LogInfo, "Loading database %s", dbName);
 	auto db = unique_ptr<reindexer::Reindexer>(new reindexer::Reindexer);
-	auto status = db->Connect(storagePath);
+	StorageTypeOpt storageType = kStorageTypeOptLevelDB;
+	switch (storageType_) {
+		case datastorage::StorageType::LevelDB:
+			storageType = kStorageTypeOptLevelDB;
+			break;
+		case datastorage::StorageType::RocksDB:
+			storageType = kStorageTypeOptRocksDB;
+			break;
+	}
+	auto status = db->Connect(storagePath, ConnectOpts().AllowNamespaceErrors(allowDBErrors).WithStorageType(storageType));
 	if (status.ok()) {
 		dbs_[dbName] = std::move(db);
 	}

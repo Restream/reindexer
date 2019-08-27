@@ -14,8 +14,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/restream/reindexer"
-	"github.com/restream/reindexer/bindings"
+	"git.itv.restr.im/itv-backend/reindexer"
+	"git.itv.restr.im/itv-backend/reindexer/bindings"
 )
 
 const (
@@ -230,10 +230,6 @@ func (tx *txTest) MustCommit() int {
 func (tx *txTest) AwaitResults() *txTest {
 	tx.tx.AwaitResults()
 	return tx
-}
-
-func (tx *txTest) Finalize() {
-	tx.tx.Finalize()
 }
 
 func (qt *queryTestEntryTree) toString() (ret string) {

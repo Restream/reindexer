@@ -4,6 +4,7 @@
 #include "core/namespacedef.h"
 #include "gason/gason.h"
 #include "tools/errors.h"
+#include "tools/logger.h"
 
 using std::string;
 using std::vector;
@@ -78,7 +79,7 @@ void RPCClient::run(int thIdx) {
 		checker.start(5, 5);
 	}
 
-	workers_[thIdx].running = true;
+	workers_[thIdx].running.store(true);
 	for (;;) {
 		workers_[thIdx].loop_.run();
 		bool doTerminate = terminate;
@@ -586,12 +587,13 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 			delayedUpdates_.emplace_back(std::move(ans));
 
 			QueryResults* qr = new QueryResults;
-			Select(Query(string(nsName)).Limit(0), *qr, InternalRdxContext([=](const Error& /*err*/) {
+			Select(Query(string(nsName)).Limit(0), *qr, InternalRdxContext([=](const Error& err) {
 															delete qr;
 															// If there are delayed updates, then send them to client
 															auto uq = std::move(delayedUpdates_);
 															delayedUpdates_.clear();
-															for (auto& a1 : uq) onUpdates(a1, conn);
+															if (err.ok())
+																for (auto& a1 : uq) onUpdates(a1, conn);
 														}).cmpl(),
 				   conn);
 			return;

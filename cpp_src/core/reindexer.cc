@@ -14,7 +14,8 @@ Reindexer::Reindexer(Reindexer&& rdx) noexcept : impl_(rdx.impl_), owner_(rdx.ow
 
 bool Reindexer::NeedTraceActivity() const { return impl_->NeedTraceActivity(); }
 
-Error Reindexer::Connect(const string& dsn) { return impl_->Connect(dsn); }
+Error Reindexer::Connect(const string& dsn, ConnectOpts opts) { return impl_->Connect(dsn, opts); }
+
 Error Reindexer::EnableStorage(const string& storagePath, bool skipPlaceholderCheck) {
 	return impl_->EnableStorage(storagePath, skipPlaceholderCheck, ctx_);
 }

@@ -20,14 +20,14 @@ struct NamespaceDef {
 
 	NamespaceDef(const string &iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing()) : name(iname), storage(istorage) {}
 
-	NamespaceDef &AddIndex(const string &name, const string &indexType, const string &fieldType, IndexOpts opts = IndexOpts()) {
-		indexes.push_back({name, {name}, indexType, fieldType, opts});
+	NamespaceDef &AddIndex(const string &iname, const string &indexType, const string &fieldType, IndexOpts opts = IndexOpts()) {
+		indexes.push_back({iname, {iname}, indexType, fieldType, opts});
 		return *this;
 	}
 
-	NamespaceDef &AddIndex(const string &name, const JsonPaths &jsonPaths, const string &indexType, const string &fieldType,
+	NamespaceDef &AddIndex(const string &iname, const JsonPaths &jsonPaths, const string &indexType, const string &fieldType,
 						   IndexOpts opts = IndexOpts()) {
-		indexes.push_back({name, jsonPaths, indexType, fieldType, opts});
+		indexes.push_back({iname, jsonPaths, indexType, fieldType, opts});
 		return *this;
 	}
 

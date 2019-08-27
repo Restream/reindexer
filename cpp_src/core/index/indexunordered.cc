@@ -31,6 +31,14 @@ size_t heap_size<key_string>(const key_string &kt) {
 	return kt->heap_size() + sizeof(*kt.get());
 }
 
+template <typename T, typename std::enable_if<std::is_const<T>::value>::type * = nullptr>
+void free_node(T &) {}
+
+template <typename T, typename std::enable_if<!std::is_const<T>::value>::type * = nullptr>
+void free_node(T &v) {
+	v = T();
+}
+
 template <typename T>
 void IndexUnordered<T>::addMemStat(typename T::iterator it) {
 	this->memStat_.idsetPlainSize += sizeof(typename T::value_type) + it->second.Unsorted().heap_size();
@@ -95,6 +103,8 @@ void IndexUnordered<T>::Delete(const Variant &key, IdType id) {
 
 	if (keyIt->second.Unsorted().IsEmpty()) {
 		this->tracker_.markDeleted(keyIt);
+		free_node(keyIt->first);
+		free_node(keyIt->second);
 		idx_map.erase(keyIt);
 	} else {
 		addMemStat(keyIt);

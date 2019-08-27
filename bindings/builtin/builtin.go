@@ -15,8 +15,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/restream/reindexer/bindings"
-	"github.com/restream/reindexer/cjson"
+	"git.itv.restr.im/itv-backend/reindexer/bindings"
+	"git.itv.restr.im/itv-backend/reindexer/cjson"
 )
 
 const defCgoLimit = 2000
@@ -183,14 +183,15 @@ func (binding *Builtin) Init(u *url.URL, options ...interface{}) error {
 
 	binding.ctxWatcher = NewCtxWatcher(ctxWatchersPoolSize, ctxWatchDelay)
 
-	if len(u.Path) != 0 && u.Path != "/" {
-		err := binding.EnableStorage(context.TODO(), u.Path)
-		if err != nil {
-			return err
-		}
+	var connectOptions bindings.ConnectOptions
+	connectOptions.OpenNamespaces(false)
+	connectOptions.AllowNamespaceErrors(true)
+	opts := C.ConnectOpts{
+		storage: C.uint16_t(bindings.StorageTypeLevelDB),
+		options: C.uint16_t(connectOptions),
 	}
 
-	return err2go(C.reindexer_init_system_namespaces(binding.rx))
+	return err2go(C.reindexer_connect(binding.rx, str2c(u.Path), opts))
 }
 
 func (binding *Builtin) Clone() bindings.RawBinding {

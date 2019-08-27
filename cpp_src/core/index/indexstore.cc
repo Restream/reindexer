@@ -15,6 +15,7 @@ void IndexStore<key_string>::Delete(const Variant &key, IdType id) {
 	if (keyIt->second) keyIt->second--;
 	if (!keyIt->second) {
 		memStat_.dataSize -= sizeof(unordered_str_map<int>::value_type) + sizeof(*keyIt->first.get()) + keyIt->first->heap_size();
+		keyIt->first = key_string();
 		str_map.erase(keyIt);
 	}
 

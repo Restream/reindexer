@@ -9,7 +9,7 @@ RUN mkdir /src && \
     echo "noinst_PROGRAMS =" >> Makefile.am && \
     ./autogen.sh &&  ./configure && make -j8 && make install && \
     cd .. && \
-    git clone https://github.com/restream/reindexer && \
+    git clone https://git.itv.restr.im/itv-backend/reindexer && \
     cd reindexer && \
     git checkout develop && \
     ./dependencies.sh && \
@@ -21,7 +21,7 @@ RUN mkdir /src && \
     make install -C cpp_src/cmd/reindexer_server && \
     make install -C  cpp_src/cmd/reindexer_tool && \
     cd / && \
-    rm -rf /src && \
+    rm -rf /src  && \
     apk del g++ cmake make git curl autoconf automake libtool linux-headers && \
     rm -rf /var/cache/apk/* /usr/local/lib/*.a /usr/local/include/* /usr/local/lib/libtcmalloc_debug* /usr/local/lib/libtcmalloc_minimal* \
     /usr/local/lib/libprofiler* /usr/local/lib/libtcmalloc.*

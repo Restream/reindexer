@@ -1,11 +1,11 @@
+#ifdef REINDEX_WITH_LEVELDB
+
 #include "leveldbstorage.h"
 
 #include <leveldb/comparator.h>
 #include <leveldb/db.h>
 #include <leveldb/iterator.h>
 #include <leveldb/slice.h>
-
-const char* storageNotInitialized = "Storage is not initialized";
 
 void toWriteOptions(const StorageOpts& opts, leveldb::WriteOptions& wopts) { wopts.sync = opts.IsSync(); }
 
@@ -16,6 +16,8 @@ void toReadOptions(const StorageOpts& opts, leveldb::ReadOptions& ropts) {
 
 namespace reindexer {
 namespace datastorage {
+
+const char* const kStorageNotInitialized = "Storage is not initialized";
 
 LevelDbStorage::LevelDbStorage() {}
 
@@ -34,9 +36,6 @@ Error LevelDbStorage::Open(const string& path, const StorageOpts& opts) {
 	leveldb::Status status = leveldb::DB::Open(options, path, &db);
 	if (status.ok()) {
 		db_ = shared_ptr<leveldb::DB>(db);
-	}
-
-	if (status.ok()) {
 		opts_ = opts;
 		dbpath_ = path;
 		return Error();
@@ -46,7 +45,7 @@ Error LevelDbStorage::Open(const string& path, const StorageOpts& opts) {
 }
 
 Error LevelDbStorage::Read(const StorageOpts& opts, const string_view& key, string& value) {
-	if (!db_) throw Error(errParams, storageNotInitialized);
+	if (!db_) throw Error(errParams, kStorageNotInitialized);
 
 	leveldb::ReadOptions options;
 	toReadOptions(opts, options);
@@ -56,7 +55,7 @@ Error LevelDbStorage::Read(const StorageOpts& opts, const string_view& key, stri
 }
 
 Error LevelDbStorage::Write(const StorageOpts& opts, const string_view& key, const string_view& value) {
-	if (!db_) throw Error(errParams, storageNotInitialized);
+	if (!db_) throw Error(errParams, kStorageNotInitialized);
 
 	leveldb::WriteOptions options;
 	toWriteOptions(opts, options);
@@ -66,7 +65,7 @@ Error LevelDbStorage::Write(const StorageOpts& opts, const string_view& key, con
 }
 
 Error LevelDbStorage::Write(const StorageOpts& opts, UpdatesCollection& buffer) {
-	if (!db_) throw Error(errParams, storageNotInitialized);
+	if (!db_) throw Error(errParams, kStorageNotInitialized);
 
 	leveldb::WriteOptions options;
 	toWriteOptions(opts, options);
@@ -77,7 +76,7 @@ Error LevelDbStorage::Write(const StorageOpts& opts, UpdatesCollection& buffer) 
 }
 
 Error LevelDbStorage::Delete(const StorageOpts& opts, const string_view& key) {
-	if (!db_) throw Error(errParams, storageNotInitialized);
+	if (!db_) throw Error(errParams, kStorageNotInitialized);
 
 	leveldb::WriteOptions options;
 	toWriteOptions(opts, options);
@@ -86,15 +85,22 @@ Error LevelDbStorage::Delete(const StorageOpts& opts, const string_view& key) {
 	return Error(errLogic, status.ToString());
 }
 
+Error LevelDbStorage::Repair(const std::string& path) {
+	leveldb::Options options;
+	auto status = leveldb::RepairDB(path, options);
+	if (status.ok()) return Error();
+	return Error(errLogic, status.ToString());
+}
+
 Snapshot::Ptr LevelDbStorage::MakeSnapshot() {
-	if (!db_) throw Error(errParams, storageNotInitialized);
+	if (!db_) throw Error(errParams, kStorageNotInitialized);
 	const leveldb::Snapshot* ldbSnapshot = db_->GetSnapshot();
 	assert(ldbSnapshot);
 	return std::make_shared<LevelDbSnapshot>(ldbSnapshot);
 }
 
 void LevelDbStorage::ReleaseSnapshot(Snapshot::Ptr snapshot) {
-	if (!db_) throw Error(errParams, storageNotInitialized);
+	if (!db_) throw Error(errParams, kStorageNotInitialized);
 	if (!snapshot) throw Error(errParams, "Storage pointer is null");
 	const LevelDbSnapshot* levelDbSnpshot = static_cast<const LevelDbSnapshot*>(snapshot.get());
 	db_->ReleaseSnapshot(levelDbSnpshot->snapshot_);
@@ -122,7 +128,7 @@ void LevelDbStorage::Destroy(const string& path) {
 }
 
 Cursor* LevelDbStorage::GetCursor(StorageOpts& opts) {
-	if (!db_) throw Error(errParams, storageNotInitialized);
+	if (!db_) throw Error(errParams, kStorageNotInitialized);
 	leveldb::ReadOptions options;
 	toReadOptions(opts, options);
 	options.fill_cache = false;
@@ -181,3 +187,5 @@ LevelDbSnapshot::LevelDbSnapshot(const leveldb::Snapshot* snapshot) : snapshot_(
 LevelDbSnapshot::~LevelDbSnapshot() { snapshot_ = nullptr; }
 }  // namespace datastorage
 }  // namespace reindexer
+
+#endif  // REINDEX_WITH_LEVELDB

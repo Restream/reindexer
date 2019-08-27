@@ -8,10 +8,13 @@ TEST_F(ReplicationLoadApi, Base) {
 	FillData(1000);
 
 	std::thread destroyer([this]() {
+		int count = 0;
 		while (!stop) {
-			int i = rand() % 4;
-			RestartServer(i, i);
-			std::this_thread::sleep_for(std::chrono::seconds(3));
+			if (!(count % 30)) {
+				int i = rand() % 4;
+				RestartServer(i);
+			}
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		}
 	});
 
@@ -23,6 +26,10 @@ TEST_F(ReplicationLoadApi, Base) {
 
 	stop = true;
 	destroyer.join();
+
+	ForceSync();
+	WaitSync("some");
+	WaitSync("some1");
 }
 
 TEST_F(ReplicationLoadApi, DISABLED_BasicTestNoMasterRestart) {
@@ -32,7 +39,7 @@ TEST_F(ReplicationLoadApi, DISABLED_BasicTestNoMasterRestart) {
 
 	std::thread destroyer([this]() {
 		while (!stop) {
-			RestartServer(rand() % 3 + 1, true);
+			RestartServer(rand() % 3 + 1);
 			std::this_thread::sleep_for(std::chrono::seconds(3));
 		}
 	});
@@ -66,7 +73,7 @@ TEST_F(ReplicationLoadApi, SingleSlaveTest) {
 			int i = rand() % 2;
 			counter++;
 
-			RestartServer(i, i);
+			RestartServer(i);
 			if (counter % 3 == 0) DeleteFromMaster();
 		}
 	});
@@ -79,35 +86,50 @@ TEST_F(ReplicationLoadApi, SingleSlaveTest) {
 	stop = true;
 	writingThread.join();
 	removingThread.join();
+	ForceSync();
+	WaitSync("some");
+	WaitSync("some1");
 }
 
 TEST_F(ReplicationLoadApi, ConfigSync) {
-	ServerConfig config("slave", true, false, "cproto://127.0.0.1:6534/0");
-	RestartWithConfigFile(2,
+	ReplicationConfig config("slave", true, false, "cproto://127.0.0.1:6534/0");
+	const size_t kTestSlaveID = 2;
+	RestartWithConfigFile(kTestSlaveID,
 						  "role: slave\n"
 						  "master_dsn: cproto://127.0.0.1:6534/0\n"
 						  "cluster_id: 2\n"
 						  "force_sync_on_logic_error: true\n"
 						  "force_sync_on_wrong_data_hash: false\n"
 						  "namespaces: []");
-	CheckSlaveConfigFile(2, config);
-	config = ServerConfig("slave", false, true, "cproto://127.0.0.1:6534/12345", {"ns1", "ns2"});
-	SetServerConfig(2, config);
-	CheckSlaveConfigFile(2, config);
-	config = ServerConfig("slave", true, false, "cproto://127.0.0.1:6534/999");
-	SetServerConfig(2, config);
-	CheckSlaveConfigFile(2, config);
+	CheckSlaveConfigFile(kTestSlaveID, config);
+	config = ReplicationConfig("slave", false, true, "cproto://127.0.0.1:6534/12345", {"ns1", "ns2"});
+	SetServerConfig(kTestSlaveID, config);
+	CheckSlaveConfigFile(kTestSlaveID, config);
+	config = ReplicationConfig("slave", true, false, "cproto://127.0.0.1:6534/999");
+	SetServerConfig(kTestSlaveID, config);
+	CheckSlaveConfigFile(kTestSlaveID, config);
+	std::this_thread::sleep_for(std::chrono::seconds(2));  // In case if OS doesn't have nanosecods in stat result
 
-	GetSrv(2)->WriteServerConfig(
-		"role: slave\n"
-		"master_dsn: cproto://127.0.0.1:6534/somensname\n"
-		"cluster_id: 2\n"
-		"force_sync_on_logic_error: false\n"
-		"force_sync_on_wrong_data_hash: true\n"
-		"namespaces:\n"
-		"  - ns1\n"
-		"  - ns3\n");
-	config = ServerConfig("slave", false, true, "cproto://127.0.0.1:6534/somensname", {"ns1", "ns3"});
-	std::this_thread::sleep_for(std::chrono::seconds(3));
-	CheckSlaveConfigNamespace(2, config);
+	GetSrv(kTestSlaveID)
+		->WriteServerConfig(
+			"role: slave\n"
+			"master_dsn: cproto://127.0.0.1:6534/somensname\n"
+			"cluster_id: 2\n"
+			"force_sync_on_logic_error: false\n"
+			"force_sync_on_wrong_data_hash: true\n"
+			"namespaces:\n"
+			"  - ns1\n"
+			"  - ns3\n");
+	config = ReplicationConfig("slave", false, true, "cproto://127.0.0.1:6534/somensname", {"ns1", "ns3"});
+	CheckSlaveConfigNamespace(kTestSlaveID, config, std::chrono::seconds(3));
+}
+
+TEST_F(ReplicationLoadApi, DynamicRoleSwitch) {
+	InitNs();
+	for (size_t i = 1; i < 8; i++) {
+		FillData(1000);
+		WaitSync("some");
+		WaitSync("some1");
+		SwitchMaster(i % 4);
+	}
 }
