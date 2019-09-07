@@ -32,6 +32,8 @@ void ServerConfig::Reset() {
 	StartWithErrors = false;
 	EnableSecurity = false;
 	DebugPprof = false;
+	EnablePrometheus = false;
+	PrometheusCollectPeriod = std::chrono::milliseconds(1000);
 	DebugAllocs = false;
 }
 
@@ -91,6 +93,11 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::ValueFlag<string> webRootF(netGroup, "PATH", "web root", {'w', "webroot"}, WebRoot, args::Options::Single);
 	args::Flag pprofF(netGroup, "", "Enable pprof http handler", {'f', "pprof"});
 
+	args::Group metricsGroup(parser, "Metrics options");
+	args::Flag prometheusF(metricsGroup, "", "Enable prometheus handler", {"prometheus"});
+	args::ValueFlag<int> prometheusPeriodF(metricsGroup, "", "Prometheus stats collect period (ms)", {"prometheus-period"},
+										   PrometheusCollectPeriod.count(), args::Options::Single);
+
 	args::Group logGroup(parser, "Logging options");
 	args::ValueFlag<string> logLevelF(logGroup, "", "log level (none, warning, error, info, trace)", {'l', "loglevel"}, LogLevel,
 									  args::Options::Single);
@@ -149,6 +156,8 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (httpLogF) HttpLog = args::get(httpLogF);
 	if (rpcLogF) RpcLog = args::get(rpcLogF);
 	if (pprofF) DebugPprof = args::get(pprofF);
+	if (prometheusF) EnablePrometheus = args::get(prometheusF);
+	if (prometheusPeriodF) PrometheusCollectPeriod = std::chrono::milliseconds(args::get(prometheusPeriodF));
 	if (logAllocsF) DebugAllocs = args::get(logAllocsF);
 
 	return 0;
@@ -168,6 +177,8 @@ reindexer::Error ServerConfig::fromYaml(Yaml::Node &root) {
 		RPCAddr = root["net"]["rpcaddr"].As<std::string>(RPCAddr);
 		WebRoot = root["net"]["webroot"].As<std::string>(WebRoot);
 		EnableSecurity = root["net"]["security"].As<bool>(EnableSecurity);
+		EnablePrometheus = root["metrics"]["prometheus"].As<bool>(EnablePrometheus);
+		PrometheusCollectPeriod = std::chrono::milliseconds(root["metrics"]["collect_period"].As<int>(PrometheusCollectPeriod.count()));
 #ifndef _WIN32
 		UserName = root["system"]["user"].As<std::string>(UserName);
 		Daemonize = root["system"]["daemonize"].As<bool>(Daemonize);

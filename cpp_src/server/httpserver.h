@@ -11,6 +11,9 @@
 
 namespace reindexer_server {
 
+class Prometheus;
+struct IStatsWatcher;
+
 using std::string;
 using namespace reindexer::net;
 
@@ -20,8 +23,18 @@ struct HTTPClientData : public http::ClientData {
 
 class HTTPServer {
 public:
-	HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper logger, bool allocDebug = false, bool enablePprof = false);
-	~HTTPServer();
+	class OptionalConfig {
+	public:
+		OptionalConfig(bool allocDebugI = false, bool enablePprofI = false, Prometheus *prometheusI = nullptr,
+					   IStatsWatcher *statsWatcherI = nullptr)
+			: allocDebug(allocDebugI), enablePprof(enablePprofI), prometheus(prometheusI), statsWatcher(statsWatcherI) {}
+		bool allocDebug;
+		bool enablePprof;
+		Prometheus *prometheus;
+		IStatsWatcher *statsWatcher;
+	};
+
+	HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper logger, OptionalConfig config = OptionalConfig());
 
 	bool Start(const string &addr, ev::dynamic_loop &loop);
 	void Stop() { listener_->Stop(); }
@@ -56,6 +69,7 @@ public:
 	int DeleteIndex(http::Context &ctx);
 	int CheckAuth(http::Context &ctx);
 	void Logger(http::Context &ctx);
+	void OnResponse(http::Context &ctx);
 
 protected:
 	int modifyItem(http::Context &ctx, int mode);
@@ -67,9 +81,12 @@ protected:
 
 	Reindexer getDB(http::Context &ctx, UserRole role);
 	string getNameFromJson(string_view json);
+	constexpr static string_view statsSourceName() { return "http"_sv; }
 
 	DBManager &dbMgr_;
 	Pprof pprof_;
+	Prometheus *prometheus_;
+	IStatsWatcher *statsWatcher_;
 
 	string webRoot_;
 
@@ -79,6 +96,7 @@ protected:
 	LoggerWrapper logger_;
 	bool allocDebug_;
 	bool enablePprof_;
+
 	std::chrono::system_clock::time_point startTs_;
 
 	static const int kDefaultLimit = INT_MAX;

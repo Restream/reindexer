@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <string>
 #include <vector>
 #include "tools/errors.h"
@@ -46,6 +47,8 @@ struct ServerConfig {
 #endif
 	bool EnableSecurity;
 	bool DebugPprof;
+	bool EnablePrometheus;
+	std::chrono::milliseconds PrometheusCollectPeriod;
 	bool DebugAllocs;
 
 protected:

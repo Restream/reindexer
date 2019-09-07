@@ -29,6 +29,7 @@ public:
 	bool Configure(const ReplicationConfigData &config);
 	Error Start();
 	void Stop();
+	void Enable() { enabled_.store(true, std::memory_order_release); }
 
 protected:
 	struct SyncStat {
@@ -79,6 +80,7 @@ protected:
 
 	std::mutex syncMtx_;
 	std::mutex masterMtx_;
+	std::atomic<bool> enabled_;
 };
 
 }  // namespace reindexer

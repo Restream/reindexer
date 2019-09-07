@@ -31,14 +31,7 @@ Listener::Listener(ev::dynamic_loop &loop, std::shared_ptr<Shared> shared) : loo
 Listener::Listener(ev::dynamic_loop &loop, ConnectionFactory connFactory, int maxListeners)
 	: Listener(loop, std::make_shared<Shared>(connFactory, maxListeners ? maxListeners : std::thread::hardware_concurrency())) {}
 
-Listener::~Listener() {
-	io_.stop();
-	std::lock_guard<std::mutex> lck(shared_->lck_);
-	auto it = std::find(shared_->listeners_.begin(), shared_->listeners_.end(), this);
-	assert(it != shared_->listeners_.end());
-	shared_->listeners_.erase(it);
-	shared_->count_--;
-}
+Listener::~Listener() { io_.stop(); }
 
 bool Listener::Bind(string addr) {
 	if (shared_->sock_.valid()) {
@@ -166,12 +159,11 @@ void Listener::Stop() {
 	for (auto listener : shared_->listeners_) {
 		listener->async_.send();
 	}
-	if (shared_->listeners_.size() && this == shared_->listeners_.front()) {
-		while (shared_->listeners_.size() != 1) {
-			shared_->lck_.unlock();
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
-			shared_->lck_.lock();
-		}
+	assert(this == shared_->listeners_.front());
+	while (shared_->count_.load() > 1) {
+		shared_->lck_.unlock();
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		shared_->lck_.lock();
 	}
 }
 
@@ -184,17 +176,25 @@ void Listener::Fork(int clones) {
 }
 
 void Listener::clone(std::shared_ptr<Shared> shared) {
-	ev::dynamic_loop loop;
-	Listener listener(loop, shared);
+	std::unique_lock<std::mutex> lck(shared->lck_, std::defer_lock);
+	{
+		ev::dynamic_loop loop;
+		Listener listener(loop, shared);
 #if REINDEX_WITH_GPERFTOOLS
-	if (alloc_ext::TCMallocIsAvailable()) {
-		reindexer_server::pprof::ProfilerRegisterThread();
-	}
+		if (alloc_ext::TCMallocIsAvailable()) {
+			reindexer_server::pprof::ProfilerRegisterThread();
+		}
 #endif
-	listener.io_.start(listener.shared_->sock_.fd(), ev::READ);
-	while (!listener.shared_->terminating_) {
-		loop.run();
+		listener.io_.start(listener.shared_->sock_.fd(), ev::READ);
+		while (!listener.shared_->terminating_) {
+			loop.run();
+		}
+		lck.lock();
+		auto it = std::find(shared->listeners_.begin(), shared->listeners_.end(), &listener);
+		assert(it != shared->listeners_.end());
+		shared->listeners_.erase(it);
 	}
+	shared->count_--;
 }
 
 void Listener::reserveStack() {

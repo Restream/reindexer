@@ -40,6 +40,9 @@ Error Replicator::Start() {
 }
 
 bool Replicator::Configure(const ReplicationConfigData &config) {
+	if (!enabled_.load(std::memory_order_acquire)) {
+		return false;
+	}
 	std::unique_lock<std::mutex> lck(masterMtx_);
 	bool changed = (config_ != config);
 

@@ -19,7 +19,7 @@ public:
 
 	static ConnectionFactory NewFactory(Router &router) {
 		return [&router](ev::dynamic_loop &loop, int fd) { return new ServerConnection(fd, loop, router); };
-	};
+	}
 
 	bool IsFinished() override final { return !sock_.valid(); }
 	bool Restart(int fd) override final;
@@ -49,8 +49,8 @@ protected:
 		virtual chunk GetChunk() override final;
 
 		bool IsRespSent() { return respSend_; }
-		virtual int RespCode() override final { return code_; };
-		virtual ssize_t Written() override final { return written_; };
+		virtual int RespCode() override final { return code_; }
+		virtual ssize_t Written() override final { return written_; }
 
 	protected:
 		bool isChunkedResponse() { return contentLength_ == -1; }
@@ -78,7 +78,7 @@ protected:
 	bool formData_ = false;
 	bool enableHttp11_ = false;
 	bool expectContinue_ = false;
-	phr_chunked_decoder chunked_decoder_;
+	phr_chunked_decoder chunked_decoder_{0, 0, 0, 0};
 	// cbuf<char> tmpBuf_;
 };
 }  // namespace http

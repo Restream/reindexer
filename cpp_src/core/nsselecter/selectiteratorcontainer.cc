@@ -6,80 +6,118 @@
 
 namespace reindexer {
 
-void SelectIteratorContainer::sortByCost(iterator from, iterator to, int expectedIterations) {
-	for (iterator it = from; it != to; ++it) {
-		if (!it->IsLeaf()) {
-			sortByCost(it->begin(it), it->end(it), expectedIterations);
-		} else if (it->Value().distinct && (it->Op == OpOr || (it + 1 != to && (it + 1)->Op == OpOr))) {
+void SelectIteratorContainer::SortByCost(int expectedIterations) {
+	h_vector<size_t, 4> indexes;
+	h_vector<double, 4> costs;
+	indexes.reserve(container_.size());
+	costs.resize(container_.size());
+	for (size_t i = 0; i < container_.size(); ++i) {
+		indexes.push_back(i);
+	}
+	sortByCost(indexes, costs, 0, container_.size(), expectedIterations);
+	for (size_t i = 0; i < container_.size(); ++i) {
+		if (indexes[i] != i) {
+			size_t positionOfTmp = i + 1;
+			for (; positionOfTmp < indexes.size(); ++positionOfTmp) {
+				if (indexes[positionOfTmp] == i) break;
+			}
+			assert(positionOfTmp < indexes.size());
+			Container::value_type tmp = std::move(container_[i]);
+			container_[i] = std::move(container_[indexes[i]]);
+			container_[indexes[i]] = std::move(tmp);
+			indexes[positionOfTmp] = indexes[i];
+		}
+	}
+}
+
+void SelectIteratorContainer::sortByCost(h_vector<size_t, 4> &indexes, h_vector<double, 4> &costs, size_t from, size_t to,
+										 int expectedIterations) {
+	for (size_t cur = from, next; cur < to; cur = next) {
+		next = cur + Size(indexes[cur]);
+		if (!IsValue(indexes[cur])) {
+			sortByCost(indexes, costs, cur + 1, next, expectedIterations);
+		} else if ((*this)[indexes[cur]].distinct &&
+				   (container_[indexes[cur]]->Op == OpOr || (next < to && container_[indexes[next]]->Op == OpOr))) {
 			throw Error(errQueryExec, "OR operator with distinct query");
 		}
 	}
-	h_vector<size_t, 4> indexes;
-	h_vector<double, 4> costs;
-	indexes.resize(from.DistanceTo(to));
-	costs.resize(indexes.size());
-	size_t i = 0;
-	for (iterator it = from; it != to; ++it, ++i) {
-		indexes[i] = i;
-		costs[i] = fullCost(it, from, to, expectedIterations);
+	for (size_t cur = from, next; cur < to; cur = next) {
+		next = cur + Size(indexes[cur]);
+		const double cst = fullCost(indexes, cur, from, to, expectedIterations);
+		for (size_t j = cur; j < next; ++j) {
+			costs[indexes[j]] = cst;
+		}
 	}
-	std::stable_sort(indexes.begin(), indexes.end(), [&from, &costs](size_t i1, size_t i2) {
-		const const_iterator it1 = from + i1, it2 = from + i2;
-		if (it1->IsLeaf()) {
-			if (it2->IsLeaf()) {
-				if (it1->Value().distinct < it2->Value().distinct) return true;
-				if (it1->Value().distinct > it2->Value().distinct) return false;
+	std::stable_sort(indexes.begin() + from, indexes.begin() + to, [&costs, this](size_t i1, size_t i2) {
+		if (IsValue(i1)) {
+			if (IsValue(i2)) {
+				if (operator[](i1).distinct < operator[](i2).distinct) return true;
+				if (operator[](i1).distinct > operator[](i2).distinct) return false;
 			} else {
-				if (it1->Value().distinct) return false;
+				if (operator[](i1).distinct) return false;
 			}
-		} else if (it2->IsLeaf() && it2->Value().distinct) {
+		} else if (IsValue(i2) && operator[](i2).distinct) {
 			return true;
 		}
 		return costs[i1] < costs[i2];
 	});
-	Container tmp;
-	tmp.reserve(std::distance(from.PlainIterator(), to.PlainIterator()));
-	for (const size_t i : indexes) {
-		for (Container::iterator it = (from + i).PlainIterator(), end = (from + i + 1).PlainIterator(); it != end; ++it) {
-			tmp.emplace_back(std::move(*it));
+	moveJoinsToTheBeginingOfORs(indexes, from, to);
+}
+
+void SelectIteratorContainer::moveJoinsToTheBeginingOfORs(h_vector<size_t, 4> &indexes, size_t from, size_t to) {
+	size_t firstNotJoin = from;
+	for (size_t cur = from, next; cur < to; cur = next) {
+		next = cur + Size(indexes[cur]);
+		if (GetOperation(indexes[cur]) != OpOr) {
+			firstNotJoin = cur;
+		} else if (IsValue(indexes[cur]) && !(*this)[indexes[cur]].joinIndexes.empty()) {
+			while (firstNotJoin < cur && (GetOperation(firstNotJoin) == OpNot ||
+										  (IsValue(indexes[firstNotJoin]) && !(*this)[indexes[firstNotJoin]].joinIndexes.empty()))) {
+				firstNotJoin += Size(indexes[firstNotJoin]);
+			}
+			if (firstNotJoin < cur) {
+				SetOperation(GetOperation(indexes[firstNotJoin]), indexes[cur]);
+				SetOperation(OpOr, indexes[firstNotJoin]);
+				size_t tmp = indexes[cur];
+				for (size_t i = cur; i > firstNotJoin; --i) indexes[i] = indexes[i - 1];
+				indexes[firstNotJoin] = tmp;
+			}
+			++firstNotJoin;
 		}
 	}
-	for (Container::iterator dst = from.PlainIterator(), src = tmp.begin(), end = tmp.end(); src != end; ++src, ++dst) {
-		*dst = std::move(*src);
-	}
 }
 
-double SelectIteratorContainer::cost(const_iterator it, int expectedIterations) const {
-	if (it->IsLeaf()) {
-		return it->Value().Cost(expectedIterations);
+double SelectIteratorContainer::cost(const h_vector<size_t, 4> &indexes, size_t cur, int expectedIterations) const {
+	if (IsValue(indexes[cur])) {
+		return (*this)[indexes[cur]].Cost(expectedIterations);
 	} else {
-		return cost(it->cbegin(it), it->cend(it), expectedIterations);
+		return cost(indexes, cur + 1, cur + Size(indexes[cur]), expectedIterations);
 	}
 }
 
-double SelectIteratorContainer::cost(const_iterator from, const_iterator to, int expectedIterations) const {
+double SelectIteratorContainer::cost(const h_vector<size_t, 4> &indexes, size_t from, size_t to, int expectedIterations) const {
 	double result = 0.0;
-	for (const_iterator it = from; it != to; ++it) result += cost(it, expectedIterations);
+	for (size_t cur = from; cur < to; cur += Size(indexes[cur])) {
+		result += cost(indexes, cur, expectedIterations);
+	}
 	return result;
 }
 
-double SelectIteratorContainer::fullCost(const_iterator it, const_iterator begin, const_iterator end, int expectedIterations) const {
-	double result = cost(it, expectedIterations);
-	for (const_iterator i = begin; i != it;) {
-		++i;
-		if (i->Op != OpOr) begin = i;
+double SelectIteratorContainer::fullCost(const h_vector<size_t, 4> &indexes, size_t cur, size_t from, size_t to,
+										 int expectedIterations) const {
+	double result = 0.0;
+	for (size_t i = from; i <= cur; i += Size(indexes[i])) {
+		if (GetOperation(indexes[i]) != OpOr) from = i;
 	}
-	for (; begin != it; ++begin) {
-		result += cost(begin, expectedIterations);
-	}
-	for (++it; it != end && it->Op == OpOr; ++it) {
-		result += cost(it, expectedIterations);
+	for (; from <= cur || (from < to && GetOperation(indexes[from]) == OpOr); from += Size(indexes[from])) {
+		result += cost(indexes, from, expectedIterations);
 	}
 	return result;
 }
 
 bool SelectIteratorContainer::isIdset(const_iterator it, const_iterator end) {
-	return it->Op == OpAnd && it->IsLeaf() && it->Value().comparators_.empty() && !it->Value().empty() && (++it == end || it->Op != OpOr);
+	return it->Op == OpAnd && it->IsLeaf() && it->Value().comparators_.empty() && it->Value().joinIndexes.empty() && !it->Value().empty() &&
+		   (++it == end || it->Op != OpOr);
 }
 
 bool SelectIteratorContainer::HasIdsets() const {
@@ -273,33 +311,33 @@ void SelectIteratorContainer::PrepareIteratorsForSelectLoop(const QueryEntries &
 	processEqualPositions(equalPositions, begin, end, ns, queries);
 }
 
-bool SelectIteratorContainer::processJoins(SelectIterator &it, const ConstPayload &pl, IdType rowId, bool found, bool match) {
+bool SelectIteratorContainer::processJoins(SelectIterator &it, const ConstPayload &pl, IdType rowId, bool match) {
+	bool joinResult = false;
 	for (size_t i = 0; i < it.joinIndexes.size(); ++i) {
 		auto &joinedSelector = (*ctx_->joinedSelectors)[it.joinIndexes[i]];
 		joinedSelector.called++;
 
-		bool result = false;
-		if ((joinedSelector.type == JoinType::InnerJoin) && found) {
-			result = joinedSelector.func(&joinedSelector, rowId, ctx_->nsid, pl, match);
-			found &= result;
+		bool loopResult = false;
+		if (joinedSelector.type == JoinType::InnerJoin) {
+			assert(i == 0);
+			loopResult = joinedSelector.func(&joinedSelector, rowId, ctx_->nsid, pl, match);
+			joinResult = loopResult;
 		}
 		if (joinedSelector.type == JoinType::OrInnerJoin) {
-			if (!found || !joinedSelector.nodata) {
-				result = joinedSelector.func(&joinedSelector, rowId, ctx_->nsid, pl, match);
-				found |= result;
-			}
+			loopResult = joinedSelector.func(&joinedSelector, rowId, ctx_->nsid, pl, match);
+			joinResult |= loopResult;
 		}
 
-		if (result) joinedSelector.matched++;
+		if (loopResult) joinedSelector.matched++;
 	}
-	return found;
+	return joinResult;
 }
 
 template <bool reverse, bool hasComparators>
 bool SelectIteratorContainer::checkIfSatisfyCondition(SelectIterator &it, PayloadValue &pv, bool *finish, IdType rowId, IdType properRowId,
-													  OpType op, bool found, bool match) {
+													  bool match) {
 	bool result = true;
-	bool pureJoinIterator = (it.empty() && it.joinIndexes.size() > 0);
+	const bool pureJoinIterator = (it.empty() && it.comparators_.empty() && !it.joinIndexes.empty());
 	if (!pureJoinIterator && (!hasComparators || !it.TryCompare(pv, properRowId))) {
 		while (((reverse && it.Val() > rowId) || (!reverse && it.Val() < rowId)) && it.Next(rowId)) {
 		}
@@ -310,12 +348,11 @@ bool SelectIteratorContainer::checkIfSatisfyCondition(SelectIterator &it, Payloa
 			result = false;
 		}
 	}
-	if (it.joinIndexes.size() > 0) {
-		if ((op == OpAnd && result) || (op == OpNot && result) || (op == OpOr && (!result || !found))) {
-			assert(ctx_->joinedSelectors);
-			ConstPayload pl(*pt_, pv);
-			result = processJoins(it, pl, properRowId, found, match);
-		}
+	if (!it.joinIndexes.empty()) {
+		assert(ctx_->joinedSelectors);
+		ConstPayload pl(*pt_, pv);
+		const bool joinResult = processJoins(it, pl, properRowId, match);
+		result = (result && !pureJoinIterator) || joinResult;
 	}
 	return result;
 }
@@ -327,25 +364,26 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 	bool currentFinish = false;
 	for (iterator it = begin; it != end; ++it) {
 		if (it->Op == OpOr) {
-			if (result) continue;
+			// no short-circuit evaluation for TRUE OR JOIN
+			// suggest that all JOINs in chain of OR ... OR ... OR ... OR will be before all not JOINs (see SortByCost)
+			if (result && (!it->IsLeaf() || it->Value().joinIndexes.empty())) continue;
 		} else {
 			if (!result) break;
 		}
 		bool lastFinish = false;
+		bool lastResult;
 		if (it->IsLeaf()) {
-			result =
-				checkIfSatisfyCondition<reverse, hasComparators>(it->Value(), pv, &lastFinish, rowId, properRowId, it->Op, result, match);
+			lastResult = checkIfSatisfyCondition<reverse, hasComparators>(it->Value(), pv, &lastFinish, rowId, properRowId, match);
 		} else {
-			result = checkIfSatisfyAllConditions<reverse, hasComparators>(it->begin(it), it->end(it), pv, &lastFinish, rowId, properRowId,
-																		  match);
+			lastResult = checkIfSatisfyAllConditions<reverse, hasComparators>(it->begin(it), it->end(it), pv, &lastFinish, rowId,
+																			  properRowId, match);
 		}
-		if (result == (it->Op == OpNot)) {
+		if (it->Op == OpOr) {
+			result |= lastResult;
+			currentFinish &= (!result && lastFinish);
+		} else if (lastResult == (it->Op == OpNot)) {
 			result = false;
-			if (it->Op == OpOr) {
-				currentFinish = currentFinish && lastFinish;
-			} else {
-				currentFinish = lastFinish;
-			}
+			currentFinish = lastFinish;
 		} else {
 			result = true;
 			currentFinish = false;

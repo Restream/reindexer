@@ -19,7 +19,7 @@ public:
 	void ForeachIterator(const std::function<void(const SelectIterator &, OpType)> &func) const { ForeachValue(func); }
 	void ForeachIterator(const std::function<void(SelectIterator &)> &func) { ForeachValue(func); }
 
-	void SortByCost(int expectedIterations) { sortByCost(begin(), end(), expectedIterations); }
+	void SortByCost(int expectedIterations);
 	bool HasIdsets() const;
 	// Check NOT or comparator must not be 1st
 	void CheckFirstQuery();
@@ -35,15 +35,15 @@ public:
 	void ExplainJSON(int iters, JsonBuilder &builder) const { explainJSON(cbegin(), cend(), iters, builder); }
 
 private:
-	void sortByCost(iterator from, iterator to, int expectedIterations);
-	double fullCost(const_iterator it, const_iterator begin, const_iterator end, int expectedIterations) const;
-	double cost(const_iterator, int expectedIterations) const;
-	double cost(const_iterator from, const_iterator to, int expectedIterations) const;
+	void sortByCost(h_vector<size_t, 4> &indexes, h_vector<double, 4> &costs, size_t from, size_t to, int expectedIterations);
+	double fullCost(const h_vector<size_t, 4> &indexes, size_t i, size_t from, size_t to, int expectedIterations) const;
+	double cost(const h_vector<size_t, 4> &indexes, size_t cur, int expectedIterations) const;
+	double cost(const h_vector<size_t, 4> &indexes, size_t from, size_t to, int expectedIterations) const;
+	void moveJoinsToTheBeginingOfORs(h_vector<size_t, 4> &indexes, size_t from, size_t to);
 	// Check idset must be 1st
 	static void checkFirstQuery(Container &);
 	template <bool reverse, bool hasComparators>
-	bool checkIfSatisfyCondition(SelectIterator &, PayloadValue &, bool *finish, IdType rowId, IdType properRowId, OpType op, bool result,
-								 bool match);
+	bool checkIfSatisfyCondition(SelectIterator &, PayloadValue &, bool *finish, IdType rowId, IdType properRowId, bool match);
 	template <bool reverse, bool hasComparators>
 	bool checkIfSatisfyAllConditions(iterator begin, iterator end, PayloadValue &, bool *finish, IdType rowId, IdType properRowId,
 									 bool match);
@@ -63,7 +63,7 @@ private:
 								  const QueryEntry &qe, bool isIndexFt, bool isIndexSparse, bool nonIndexField);
 	void processEqualPositions(const std::multimap<unsigned, EqualPosition> &equalPositions, size_t begin, size_t end, const Namespace &ns,
 							   const QueryEntries &queries);
-	bool processJoins(SelectIterator &it, const ConstPayload &pl, IdType properRowId, bool found, bool match);
+	bool processJoins(SelectIterator &it, const ConstPayload &pl, IdType properRowId, bool match);
 
 	PayloadType pt_;
 	SelectCtx *ctx_;

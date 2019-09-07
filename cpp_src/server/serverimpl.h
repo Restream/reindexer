@@ -5,7 +5,6 @@
 #include <string>
 #include <unordered_map>
 #include "config.h"
-#include "dbmanager.h"
 #include "loggerwrapper.h"
 #include "net/ev/ev.h"
 
@@ -17,6 +16,12 @@
 
 namespace reindexer_server {
 using namespace reindexer::net;
+
+class HTTPServer;
+class RPCServer;
+class DBManager;
+struct IDBManagerStatsCollector;
+struct IRPCServerStatsCollector;
 
 class ServerImpl {
 	using SinkMap = std::unordered_map<string, std::shared_ptr<spdlog::sinks::simple_file_sink_mt>>;
@@ -70,6 +75,5 @@ private:
 	bool enableHandleSignals_ = false;
 	ev::async async_;
 	ev::dynamic_loop loop_;
-
 };  // class server
 }  // namespace reindexer_server

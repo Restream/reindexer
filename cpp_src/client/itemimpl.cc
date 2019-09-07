@@ -59,7 +59,7 @@ Error ItemImpl::FromCJSON(const string_view &slice) {
 Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool /*pkOnly*/) {
 	string_view data = slice;
 	if (!unsafe_ && endp == nullptr) {
-		holder_.push_back(string(slice));
+		holder_.emplace_back(slice);
 		data = holder_.back();
 	}
 

@@ -16,7 +16,7 @@ void RPCUpdatesPusher::OnWALUpdate(int64_t lsn, string_view nsName, const WALRec
 	writer_->CallRPC(kCmdUpdates, {Arg(lsn), Arg(p_string(&nsName)), Arg(p_string(&pwal))});
 }
 
-void RPCUpdatesPusher::OnConnectionState(const Error &){};
+void RPCUpdatesPusher::OnConnectionState(const Error &) {}
 
 }  // namespace cproto
 }  // namespace net

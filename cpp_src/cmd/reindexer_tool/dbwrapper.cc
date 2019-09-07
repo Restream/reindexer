@@ -594,10 +594,8 @@ template <typename _DB>
 bool DBWrapper<_DB>::Run() {
 	auto err = output_.Status();
 	if (!err.ok()) {
-		if (!err.ok()) {
-			std::cerr << "Output error: " << err.what() << std::endl;
-			return false;
-		}
+		std::cerr << "Output error: " << err.what() << std::endl;
+		return false;
 	}
 
 	if (!command_.empty()) {

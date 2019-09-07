@@ -55,6 +55,7 @@ void ServerConnection::handleRequest(Request &req) {
 	ctx.request = &req;
 	ctx.writer = &writer;
 	ctx.body = &reader;
+	ctx.stat.sizeStat.reqSizeBytes = req.size;
 
 	try {
 		router_.handle(ctx);
@@ -70,20 +71,28 @@ void ServerConnection::handleRequest(Request &req) {
 	router_.log(ctx);
 
 	ctx.writer->Write(string_view());
+	ctx.stat.sizeStat.respSizeBytes = ctx.writer->Written();
+	if (router_.onResponse_) {
+		router_.onResponse_(ctx);
+	}
 }
 
 void ServerConnection::badRequest(int code, const char *msg) {
 	ResponseWriter writer(this);
-	Stat stat;
+	HandlerStat stat;
 	Context ctx;
 	ctx.request = nullptr;
 	ctx.writer = &writer;
 	ctx.body = nullptr;
 	ctx.clientData = nullptr;
-	ctx.stat = stat;
+	ctx.stat.allocStat = stat;
 
 	closeConn_ = true;
 	ctx.String(code, msg);
+	ctx.stat.sizeStat.respSizeBytes = ctx.writer->Written();
+	if (router_.onResponse_) {
+		router_.onResponse_(ctx);
+	}
 }
 
 void ServerConnection::parseParams(const string_view &str) {
@@ -160,6 +169,7 @@ void ServerConnection::onRead() {
 			request_.uri = string_view(uri, path_len);
 			request_.headers.clear();
 			request_.params.clear();
+			request_.size = size_t(res);
 
 			auto p = request_.uri.find('?');
 			if (p != string_view::npos) {
@@ -221,11 +231,13 @@ void ServerConnection::onRead() {
 				parseParams(string_view(chunk.data(), bodyLeft_));
 			}
 
+			request_.size += size_t(bodyLeft_);
 			handleRequest(request_);
 			rdBuf_.erase(bodyLeft_);
 			bodyLeft_ = 0;
-		} else
+		} else {
 			break;
+		}
 	}
 	if (!rdBuf_.size() && !bodyLeft_) rdBuf_.clear();
 }

@@ -9,7 +9,7 @@
 
 Reindexer's goal is to provide fast search with complex queries. We at Restream weren't happy with Elasticsearch and created Reindexer as a more performant alternative.
 
-The core is written in C++ and the application level API is in Go. 
+The core is written in C++ and the application level API is in Go.
 
 # Table of contents:
 
@@ -46,6 +46,7 @@ The core is written in C++ and the application level API is in Go.
 	- [Turn on logger](#turn-on-logger)
 	- [Debug queries](#debug-queries)
 	- [Profiling](#profiling)
+	- [Prometheus](#prometheus)
 - [Maintenance](#maintenance)
     - [Web interface](#web-interface)
     - [Command line tool](#command-line-tool)
@@ -61,7 +62,7 @@ The core is written in C++ and the application level API is in Go.
 
 Key features:
 
-- Sortable indices 
+- Sortable indices
 - Aggregation queries
 - Indices on array fields
 - Complex primary keys
@@ -69,8 +70,8 @@ Key features:
 - Join operations
 - Full-text search
 - Up to 64 indices for one namespace
-- ORM-like query interface 
-- SQL queries 
+- ORM-like query interface
+- SQL queries
 
 
 ### Performance
@@ -97,7 +98,7 @@ To achieve that, several optimizations are employed, both on the C++ and Go leve
 
 - There is an object cache on the Go level for deserialized documents produced after query execution. Future queries use pre-deserialized documents, which cuts repeated deserialization and allocation costs
 
-- The Query interface uses `sync.Pool` for reusing internal structures and buffers. 
+- The Query interface uses `sync.Pool` for reusing internal structures and buffers.
 Combining of these techings let's Reindexer execute most of queries without any allocations.
 
 ### Full text search
@@ -204,7 +205,7 @@ func main() {
 		panic(err)
 	}
 }
-``` 
+```
 ### SQL compatible interface
 
 As alternative to Query builder Reindexer provides SQL compatible query interface. Here is sample of SQL interface usage:
@@ -218,7 +219,7 @@ Please note, that Query builder interface is prefferable way: It have more featu
 
 ## Installation
 
-Reindexer can run in 3 different modes: 
+Reindexer can run in 3 different modes:
  - `embeded (builtin)` Reindexer is embeded into application as static library, and does not reuqire separate server proccess.
  - `embeded with server (builtinserver)` Reindexer is embeded into application as static library, and start server. In this mode other
  clients can connect to application via cproto or http.
@@ -231,7 +232,7 @@ Reindexer can run in 3 different modes:
 
 #### Official docker image
 
-The simplest way to get reindexer server, is pulling & run docker image from [dockerhub](https://hub.docker.com/r/reindexer/reindexer/). 
+The simplest way to get reindexer server, is pulling & run docker image from [dockerhub](https://hub.docker.com/r/reindexer/reindexer/).
 
 ````bash
 docker run -p9088:9088 -p6534:6534 -it reindexer/reindexer
@@ -275,7 +276,7 @@ Queries are possible only on the indexed fields, marked with `reindex` tag. The 
     - `tree` – fast select by RANGE, GT, and LT matches. A bit slower for EQ and SET matches than `hash` index. Allows fast sorting results by field.
     - `text` – full text search index. Usage details of full text search is described [here](fulltext.md)
     - `-` – column index. Can't perform fast select because it's implemented with full-scan technic. Has the smallest memory overhead.
-    - `ttl` - TTL index that works only with int64 fields. These indexes are quite convenient for representation of date fields (stored as UNIX timestamps) that expire after specified amount of seconds. 
+    - `ttl` - TTL index that works only with int64 fields. These indexes are quite convenient for representation of date fields (stored as UNIX timestamps) that expire after specified amount of seconds.
 - `opts` – additional index options:
     - `pk` – field is part of a primary key. Struct must have at least 1 field tagged with `pk`
     - `composite` – create composite index. The field type must be an empty struct: `struct{}`.
@@ -287,7 +288,7 @@ Queries are possible only on the indexed fields, marked with `reindex` tag. The 
 	- `collate_utf8` - create case-insensitive string index works with UTF8. The field type must be a string.
 	- `collate_custom=<ORDER>` - create custom order string index. The field type must be a string. `<ORDER>` is sequence of letters, which defines sort order.
 
-Fields with regular indexes are not nullable. Condition `is NULL` is supported only by `sparse` and `array` indexes. 
+Fields with regular indexes are not nullable. Condition `is NULL` is supported only by `sparse` and `array` indexes.
 
 ### Nested Structs
 
@@ -323,23 +324,69 @@ type Actor struct {
 }
 
 type ItemWithJoin struct {
-	ID        int      `reindex:"id"`
-	Name      string   `reindex:"name"`
-	ActorsIDs []int    `reindex:"actors_ids"`
-	Actors    []*Actor `reindex:"actors,,joined"`
+	ID          int      `reindex:"id"`
+	Name        string   `reindex:"name"`
+	ActorsIDs   []int    `reindex:"actors_ids"`
+	ActorsNames []int    `reindex:"actors_names"`
+	Actors      []*Actor `reindex:"actors,,joined"`
 }
 ....
-    
-	query := db.Query("items_with_join").Join(
-		db.Query("actors").
-			WhereBool("is_visible", reindexer.EQ, true),
-		"actors",
-	).On("actors_ids", reindexer.SET, "id")
 
-	query.Exec ()
+query := db.Query("items_with_join").Join(
+	db.Query("actors").
+		WhereBool("is_visible", reindexer.EQ, true),
+	"actors"
+).On("actors_ids", reindexer.SET, "id")
+
+query.Exec ()
 ```
 
-In this example, Reindexer uses reflection under the hood to create Actor slice and copy Actor struct. 
+In this example, Reindexer uses reflection under the hood to create Actor slice and copy Actor struct.
+
+Join query may have from one to several `On` conditions connected with `And` (by default), `Or` or `Not` operators:
+
+```go
+query := db.Query("items_with_join").
+	Join(
+		db.Query("actors").
+			WhereBool("is_visible", reindexer.EQ, true),
+		"actors").
+	On("actors_ids", reindexer.SET, "id").
+	Or().
+	On("actors_names", reindexer.SET, "name")
+```
+An `InnerJoin` combines data from two namespaces where there is a match on the joining fields in both namespaces. A `LeftJoin` returns all valid items from the namespaces on the left side of the `LeftJoin` keyword, along with the values from the table on the right side, or nothing if a matching item doesn't exist. `Join` is an alias for `LeftJoin`.
+
+`InnerJoins` can be used as a condition in `Where` clause:
+```go
+query1 := db.Query("items_with_join").
+	WhereInt("id", reindexer.RANGE, []int{0, 100}).
+	Or().
+	InnerJoin(db.Query("actors").WhereString("name", reindexer.EQ, "ActorName"), "actors").
+	On("actors_ids", reindexer.SET, "id").
+	Or().
+	InnerJoin(db.Query("actors").WhereInt("id", reindexer.RANGE, []int{100, 200}), "actors").
+	On("actors_ids", reindexer.SET, "id")
+
+query2 := db.Query("items_with_join").
+	WhereInt("id", reindexer.RANGE, []int{0, 100}).
+	Or().
+	OpenBracket().
+		InnerJoin(db.Query("actors").WhereString("name", reindexer.EQ, "ActorName"), "actors").
+		On("actors_ids", reindexer.SET, "id").
+		InnerJoin(db.Query("actors").WhereInt("id", reindexer.RANGE, []int{100, 200}), "actors").
+		On("actors_ids", reindexer.SET, "id").
+	CloseBracket()
+
+query3 := db.Query("items_with_join").
+	WhereInt("id", reindexer.RANGE, []int{0, 100}).
+	Or().
+	InnerJoin(db.Query("actors").WhereInt("id", reindexer.RANGE, []int{100, 200}), "actors").
+	On("actors_ids", reindexer.SET, "id").
+	Limit(0)
+```
+Note that usually `Or` operator implements short-circuiting for `Where` conditions: if the previous condition is true the next one is not evaluated. But in case of `InnerJoin` it works differently: in `query1` (from the example above) both `InnerJoin` conditions are evaluated despite the result of `WhereInt`.
+`Limit(0)` as part of `InnerJoin` (`query3` from the example above) does not join any data - it works like a filter only to verify conditions.
 
 #### Joinable interface
 
@@ -394,7 +441,7 @@ type Item struct {
 
 ```
 
-Also composite indexes are useful for sorting results by multiple fields: 
+Also composite indexes are useful for sorting results by multiple fields:
 
 ```go
 type Item struct {
@@ -473,7 +520,7 @@ If these functions are provided, the passed by reference item will be changed to
    // set ID field from serial generator   
    db.Insert ("items",&item,"id=serial()")
 
-   // set current timestamp in nanoseconds to updated_at field 
+   // set current timestamp in nanoseconds to updated_at field
    db.Update ("items",&item,"updated_at=now(NSEC)")
 
    // set current timestamp and ID
@@ -484,7 +531,7 @@ If these functions are provided, the passed by reference item will be changed to
 ### Expire Data from Namespace by Setting TTL
 Data expiration is useful for some classes of information, including machine generated event data, logs, and session information that only need to persist for a limited period of time.
 
-Reindexer makes it possible to set TTL (time to live) for Namespace items. Adding TtlIndex to Namespace automatically removes items after a specified number of seconds. 
+Reindexer makes it possible to set TTL (time to live) for Namespace items. Adding TtlIndex to Namespace automatically removes items after a specified number of seconds.
 
 Ttl indexes work only with int64 fields and store UNIX timestamp data. Items containig ttl index expire after `expire_after` seconds. Example of decalring TtlIndex in Golang:
 
@@ -504,9 +551,9 @@ A TTL index supports queries in the same way non-TTL indexes do.
 
 #### Upsert data in JSON format
 
-If source data is available in JSON format, then it is possible to improve performance of Upsert/Delete operations by directly passing JSON to reindexer. JSON deserialization will be done by C++ code, without extra allocs/deserialization in Go code. 
+If source data is available in JSON format, then it is possible to improve performance of Upsert/Delete operations by directly passing JSON to reindexer. JSON deserialization will be done by C++ code, without extra allocs/deserialization in Go code.
 
-Upsert or Delete functions can process JSON just by passing []byte argument with json 
+Upsert or Delete functions can process JSON just by passing []byte argument with json
 ```go
 	json := []byte (`{"id":1,"name":"test"}`)
 	db.Upsert  ("items",json)
@@ -521,7 +568,7 @@ It is just faster equalent of:
 
 #### Get Query results in JSON format
 
-In case of requiment to serialize results of Query in JSON format, then it is possible to improve performance by directly obtaining results in JSON format from reindexer. JSON serialization will be done by C++ code, without extra allocs/serialization in Go code. 
+In case of requiment to serialize results of Query in JSON format, then it is possible to improve performance by directly obtaining results in JSON format from reindexer. JSON serialization will be done by C++ code, without extra allocs/serialization in Go code.
 
 ```go
 ...		
@@ -544,7 +591,7 @@ This code will print something like:
 ```
 ### Using object cache
 
-To avoid race conditions, by default object cache is turned off and all objects are allocated and deserialized from reindexer internal format (called `CJSON`) per each query. 
+To avoid race conditions, by default object cache is turned off and all objects are allocated and deserialized from reindexer internal format (called `CJSON`) per each query.
 The deserialization is uses reflection, so it's speed is not optimal (in fact `CJSON` deserialization is ~3-10x faster than `JSON`, and ~1.2x faster than `GOB`), but perfrormance is still seriously limited by reflection overhead.
 
 There are 2 ways to enable object cache:
@@ -554,7 +601,7 @@ There are 2 ways to enable object cache:
 
 #### DeepCopy interface
 
-If object is implements DeepCopy intreface, then reindexer will turn on object cache and use DeepCopy interface to copy objects from cache to query results. The DeepCopy interface is responsible to 
+If object is implements DeepCopy intreface, then reindexer will turn on object cache and use DeepCopy interface to copy objects from cache to query results. The DeepCopy interface is responsible to
 make deep copy of source object.
 
 Here is sample of DeepCopy interface implementation
@@ -571,13 +618,13 @@ func (item *Item) DeepCopy () interface {} {
 }
 ```
 
-There are availbale code generation tool [gencopy](../gencopy), which can automatically generate DeepCopy interface for structs. 
+There are availbale code generation tool [gencopy](../gencopy), which can automatically generate DeepCopy interface for structs.
 
 #### Get shared objects from object cache (USE WITH CAUTION)
 
 To speed up queries and do not allocate new objects per each query it is possible ask query return objects directly from object cache. For enable this behaviour, call `AllowUnsafe(true)` on `Iterator`.
 
-WARNING: when used `AllowUnsafe(true)` queries returns shared pointers to structs in object cache. Therefore application MUST NOT modify returned objects. 
+WARNING: when used `AllowUnsafe(true)` queries returns shared pointers to structs in object cache. Therefore application MUST NOT modify returned objects.
 
 ```go
 	res, err := db.Query("items").WhereInt ("id",reindexer.EQ,1).Exec().AllowUnsafe(true).FetchAll()
@@ -646,6 +693,18 @@ go func() {
 pprof -symbolize remote http://localhost:6060/debug/cgo/pprof/heap
 ```
 
+### Prometheus
+
+Reindexer has a banch prometheus metrics available via http-URL `/metrics`. This metrics may be enabled by passing `--prometheus` as reindexer_server command line argument or by setting `metrics:prometheus` flag in server yaml-config file. Some of the metrics also require
+`perfstats` to be enabled in `profiling`-config
+
+`reindexer_qps_total` - total queries per second for each database, namespace and query type
+`reindexer_avg_latency` - average queryies latency for each database, namespace and query type
+`reindexer_caches_size_bytes`, `reindexer_indexes_size_bytes`, `reindexer_data_size_bytes` - caches, indexes and data size for each namespace
+`reindexer_memory_allocated_bytes` - current amount of dynamicly allocated memory according to tcmalloc/jemalloc
+`reindexer_rpc_clients_count` - current number of RPC clients for each database
+`reindexer_input_traffic_total_bytes`, `reindexer_output_traffic_total_bytes` - total input/output RPC/http traffic for each database
+
 ## Maintenance
 
 For maintenance and work with data, stored in reindexer database there are 2 methods available:
@@ -660,14 +719,14 @@ or application with `builtinserver` mode, and open http://server-ip:9088/face in
 
 ### Command line tool
 
-To work with database from command line you can use reindexer [command line tool](cpp_src/cmd/reindexer_tool/readme.md) 
+To work with database from command line you can use reindexer [command line tool](cpp_src/cmd/reindexer_tool/readme.md)
 Command line tool have the following functions
 
 - Backup whole database into text file or console.
 - Make queries to database
 - Modify documents and DB metadata
 
-Command line tool can run in 2 modes. With server via network, and in server-less mode, directly with storage. 
+Command line tool can run in 2 modes. With server via network, and in server-less mode, directly with storage.
 
 ### Dump and restore database
 
@@ -684,7 +743,7 @@ reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --filename mydb.rxdump
 ```
 ### Replication
 
-Reindexer is support master slave replication. To create slave DB the following command can be used: 
+Reindexer is support master slave replication. To create slave DB the following command can be used:
 
 ```sh
 reindexer_tool --dsn cproto://127.0.0.1:6534/slavedb --command '\upsert #config {"type":"replication","replication":{"role":"slave","master_dsn":"cproto://127.0.0.1:6534/masterdb","cluster_id":2}}'
@@ -726,4 +785,3 @@ You can get help in several ways:
 
 1. Join Reindexer [Telegram group](https://t.me/reindexer)
 2. Write [an issue](https://github.com/restream/reindexer/issues/new)
-

@@ -174,9 +174,17 @@ public:
 	void UpdateTagsMatcherFromItem(Item *item, const RdxContext &);
 
 protected:
+	struct SysRecordsVersions {
+		uint64_t idxVersion{0};
+		uint64_t tagsVersion{0};
+		uint64_t replVersion{0};
+	};
+
 	bool tryToReload(const RdxContext &);
 	void reloadStorage();
+	std::string sysRecordName(string_view sysTag, uint64_t version);
 	void saveIndexesToStorage();
+	Error loadLatestSysRecord(string_view baseSysTag, uint64_t &version, string &content);
 	bool loadIndexesFromStorage();
 	void saveReplStateToStorage();
 	void loadReplStateFromStorage();
@@ -267,6 +275,8 @@ protected:
 
 	int sparseIndexesCount_ = 0;
 	VariantArray krefs, skrefs;
+
+	SysRecordsVersions sysRecordsVersions_;
 
 private:
 	Namespace(const Namespace &src);

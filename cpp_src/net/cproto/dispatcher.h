@@ -51,7 +51,7 @@ struct Context {
 	RPCCall *call;
 	Writer *writer;
 	Stat stat;
-	bool respSent_;
+	bool respSent;
 };
 
 class ServerConnection;
@@ -101,6 +101,14 @@ public:
 	template <class K>
 	void OnClose(K *object, void (K::*func)(Context &ctx, const Error &err)) {
 		onClose_ = [=](Context &ctx, const Error &err) { (static_cast<K *>(object)->*func)(ctx, err); };
+	}
+
+	/// Set response sent notifier
+	/// @param object class object
+	/// @param func function, to be called on response sent
+	template <class K>
+	void OnResponse(K *object, void (K::*func)(Context &ctx)) {
+		onResponse_ = [=](Context &ctx) { (static_cast<K *>(object)->*func)(ctx); };
 	}
 
 protected:
@@ -153,6 +161,7 @@ protected:
 
 	std::function<void(Context &ctx, const Error &err, const Args &args)> logger_;
 	std::function<void(Context &ctx, const Error &err)> onClose_;
+	std::function<void(Context &ctx)> onResponse_;
 };
 }  // namespace cproto
 }  // namespace net

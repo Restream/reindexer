@@ -11,8 +11,9 @@ namespace reindexer {
 
 class TagsMatcher {
 public:
-	TagsMatcher() : impl_(std::make_shared<TagsMatcherImpl>()), updated_(false) {}
-	TagsMatcher(PayloadType payloadType) : impl_(std::make_shared<TagsMatcherImpl>(payloadType)), updated_(false) {}
+	TagsMatcher() : impl_(make_intrusive<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>()), updated_(false) {}
+	TagsMatcher(PayloadType payloadType)
+		: impl_(make_intrusive<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>(payloadType)), updated_(false) {}
 
 	int name2tag(string_view name) const { return impl_->name2tag(name); }
 	int name2tag(string_view name, bool canAdd) {

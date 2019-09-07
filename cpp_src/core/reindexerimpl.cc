@@ -91,11 +91,13 @@ Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlacehold
 		if (f) {
 			auto storageName = datastorage::StorageTypeToString(storageType_);
 			int res = fwrite(storageName.c_str(), storageName.size(), 1, f);
+			int errnoSv = errno;
+			fclose(f);
 			if (res != 1) {
 				return Error(errParams, "Can't create placeholder in directory '%s' for reindexer storage - reason %s", storagePath,
-							 strerror(errno));
+							 strerror(errnoSv));
 			}
-			fclose(f);
+
 		} else {
 			return Error(errParams, "Can't create placeholder in directory '%s' for reindexer storage - reason %s", storagePath,
 						 strerror(errno));
@@ -167,6 +169,7 @@ Error ReindexerImpl::Connect(const string& dsn, ConnectOpts opts) {
 		}
 	}
 
+	replicator_->Enable();
 	bool needStart = replicator_->Configure(configProvider_.GetReplicationConfig());
 	Error err = needStart ? replicator_->Start() : errOK;
 	if (!err.ok()) {
@@ -1048,7 +1051,7 @@ std::vector<string> defDBConfig = {
 		"profiling":{
             "queriesperfstats":false,
 			"queries_threshold_us":10,
-            "perfstats":false,
+			"perfstats":false,
 			"memstats":true
 		}
 	})json",

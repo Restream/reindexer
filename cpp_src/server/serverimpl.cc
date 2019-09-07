@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "args/args.hpp"
+#include "dbmanager.h"
 #include "debug/allocdebug.h"
 #include "debug/backtrace.h"
 #include "httpserver.h"
@@ -10,6 +11,8 @@
 #include "reindexer_version.h"
 #include "rpcserver.h"
 #include "serverimpl.h"
+#include "statscollect/prometheus.h"
+#include "statscollect/statscollector.h"
 #include "tools/alloc_ext/je_malloc_extension.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/fsops.h"
@@ -250,14 +253,23 @@ int ServerImpl::run() {
 		}
 #endif
 		LoggerWrapper httpLogger("http");
-		HTTPServer httpServer(*dbMgr_, config_.WebRoot, httpLogger, config_.DebugAllocs, config_.DebugPprof);
+
+		std::unique_ptr<Prometheus> prometheus;
+		std::unique_ptr<StatsCollector> statsCollector;
+		if (config_.EnablePrometheus) {
+			prometheus.reset(new Prometheus);
+			statsCollector.reset(new StatsCollector(prometheus.get(), config_.PrometheusCollectPeriod));
+		}
+
+		HTTPServer httpServer(*dbMgr_, config_.WebRoot, httpLogger,
+							  HTTPServer::OptionalConfig{config_.DebugAllocs, config_.DebugPprof, prometheus.get(), statsCollector.get()});
 		if (!httpServer.Start(config_.HTTPAddr, loop_)) {
 			logger_.error("Can't listen HTTP on '{0}'", config_.HTTPAddr);
 			return EXIT_FAILURE;
 		}
 
 		LoggerWrapper rpcLogger("rpc");
-		RPCServer rpcServer(*dbMgr_, rpcLogger, config_.DebugAllocs);
+		RPCServer rpcServer(*dbMgr_, rpcLogger, config_.DebugAllocs, statsCollector.get());
 		if (!rpcServer.Start(config_.RPCAddr, loop_)) {
 			logger_.error("Can't listen RPC on '{0}'", config_.RPCAddr);
 			return EXIT_FAILURE;
@@ -267,6 +279,8 @@ int ServerImpl::run() {
 			running_ = false;
 			sig.loop.break_loop();
 		};
+
+		if (statsCollector) statsCollector->Start(*dbMgr_);
 
 		ev::sig sterm, sint, shup;
 
@@ -297,6 +311,7 @@ int ServerImpl::run() {
 		}
 		logger_.info("Reindexer server terminating...");
 
+		if (statsCollector) statsCollector->Stop();
 		rpcServer.Stop();
 		httpServer.Stop();
 	} catch (const Error &err) {
@@ -400,6 +415,7 @@ void ServerImpl::initCoreLogger() {
 	if (coreLogLevel_) reindexer::logInstallWriter(callback);
 	(void)callback;
 }
+
 ServerImpl::~ServerImpl() {
 	if (coreLogLevel_) reindexer::logInstallWriter(nullptr);
 }

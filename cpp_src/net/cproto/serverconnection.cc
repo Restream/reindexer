@@ -58,7 +58,7 @@ void ServerConnection::Detach() {
 
 void ServerConnection::onClose() {
 	if (dispatcher_.onClose_) {
-		Context ctx{"", nullptr, this, {}, false};
+		Context ctx{"", nullptr, this, {{}, {}}, false};
 		dispatcher_.onClose_(ctx, errOK);
 	}
 	clientData_.reset();
@@ -70,7 +70,7 @@ void ServerConnection::onClose() {
 void ServerConnection::handleRPC(Context &ctx) {
 	Error err = dispatcher_.handle(ctx);
 
-	if (!ctx.respSent_) {
+	if (!ctx.respSent) {
 		responceRPC(ctx, err, Args());
 	}
 }
@@ -79,7 +79,7 @@ void ServerConnection::onRead() {
 	CProtoHeader hdr;
 
 	while (!closeConn_) {
-		Context ctx{clientAddr_, nullptr, this, {}, false};
+		Context ctx{clientAddr_, nullptr, this, {{}, {}}, false};
 
 		auto len = rdBuf_.peek(reinterpret_cast<char *>(&hdr), sizeof(hdr));
 		if (len < sizeof(hdr)) return;
@@ -118,6 +118,7 @@ void ServerConnection::onRead() {
 
 		ctx.call = &call_;
 		try {
+			ctx.stat.sizeStat.reqSizeBytes = hdr.len + sizeof(hdr);
 			ctx.call->cmd = CmdCode(hdr.cmd);
 			ctx.call->seq = hdr.seq;
 			Serializer ser(it.data(), hdr.len);
@@ -146,7 +147,7 @@ void ServerConnection::onRead() {
 	}
 }
 
-static chunk packRPC(chunk chunk, Context &ctx, const Error &status, const Args &args) {
+chunk ServerConnection::packRPC(chunk chunk, Context &ctx, const Error &status, const Args &args) {
 	WrSerializer ser(std::move(chunk));
 
 	CProtoHeader hdr;
@@ -166,18 +167,23 @@ static chunk packRPC(chunk chunk, Context &ctx, const Error &status, const Args 
 	ser.PutVString(status.what());
 	args.Pack(ser);
 	reinterpret_cast<CProtoHeader *>(ser.Buf())->len = ser.Len() - sizeof(hdr);
+
+	if (dispatcher_.onResponse_) {
+		ctx.stat.sizeStat.respSizeBytes = ser.Len();
+		dispatcher_.onResponse_(ctx);
+	}
+
 	return ser.DetachChunk();
 }
 
 void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args &args) {
-	if (ctx.respSent_) {
+	if (ctx.respSent) {
 		fprintf(stderr, "Warning - RPC responce already sent\n");
 		return;
 	}
 
 	wrBuf_.write(packRPC(wrBuf_.get_chunk(), ctx, status, args));
-
-	ctx.respSent_ = true;
+	ctx.respSent = true;
 	// if (canWrite_) {
 	// 	write_cb();
 	// }
@@ -189,7 +195,7 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 
 void ServerConnection::CallRPC(CmdCode cmd, const Args &args) {
 	RPCCall call{cmd, 0, {}, milliseconds(0)};
-	cproto::Context ctx{"", &call, this, {}, false};
+	cproto::Context ctx{"", &call, this, {{}, {}}, false};
 	auto packed = packRPC(chunk(), ctx, errOK, args);
 	updates_mtx_.lock();
 	updates_.emplace_back(std::move(packed));
@@ -206,14 +212,18 @@ void ServerConnection::sendUpdates() {
 	updates_mtx_.lock();
 	updates.swap(updates_);
 	updates_mtx_.unlock();
+	cproto::Context ctx{"", nullptr, this, {{}, {}}, false};
+	size_t len = 0;
 	if (updates.size() > 2) {
 		WrSerializer ser(wrBuf_.get_chunk());
 		for (auto &ch : updates) {
 			ser.Write(string_view(reinterpret_cast<char *>(ch.data()), ch.size()));
 		}
+		len = ser.Len();
 		wrBuf_.write(ser.DetachChunk());
 	} else {
 		for (auto &ch : updates) {
+			len += ch.len_;
 			wrBuf_.write(std::move(ch));
 		}
 	}

@@ -48,11 +48,19 @@ func (item *TestItem) Join(field string, subitems []interface{}, context interfa
 func TestJoin(t *testing.T) {
 	FillTestItems("test_items_for_join", 0, 10000, 20)
 	FillTestJoinItems(7000, 500)
-	CheckTestItemsJoinQueries(true, false, false)
-	CheckTestItemsJoinQueries(false, true, true)
-	CheckTestItemsJoinQueries(true, true, true)
-	CheckTestItemsJoinQueries(false, true, false)
-	CheckTestItemsJoinQueries(true, true, false)
+	for _, left := range []bool{true, false} {
+		for _, inner := range []bool{true, false} {
+			if inner {
+				for _, whereOrJoin := range []bool{true, false} {
+					for _, orInner := range []bool{true, false} {
+						CheckTestItemsJoinQueries(left, inner, whereOrJoin, orInner)
+					}
+				}
+			} else {
+				CheckTestItemsJoinQueries(left, false, false, false)
+			}
+		}
+	}
 	CheckJoinsAsWhereCondition()
 }
 
@@ -168,26 +176,102 @@ func CheckJoinsAsWhereCondition() {
 	}
 }
 
-func CheckTestItemsJoinQueries(left, inner, or bool) {
+func appendJoined(item *TestItem, jr1 *reindexer.Iterator, jr2 *reindexer.Iterator) {
+	item.Pricesx = make([]*TestJoinItem, 0)
+	for jr1.Next() {
+		item.Pricesx = append(item.Pricesx, jr1.Object().(*TestJoinItem))
+	}
+	for jr2.Next() {
+		item.Pricesx = append(item.Pricesx, jr2.Object().(*TestJoinItem))
+	}
+	jr1.Close()
+	jr2.Close()
+}
+
+const (
+	ageMin = 1
+	ageMax = 3
+)
+
+type addCondition func()
+
+func permutateOr(q *queryTest, orConditions []addCondition) {
+	if len(orConditions) == 0 {
+		return
+	}
+	if len(orConditions) == 1 {
+		panic(fmt.Errorf("Or cannot connect just 1 condition"))
+	}
+	rand.Shuffle(len(orConditions), func(i, j int){
+			orConditions[i], orConditions[j] = orConditions[j], orConditions[i]
+	})
+	orConditions[0]()
+	for i := 1; i < len(orConditions); i++ {
+		q.Or()
+		orConditions[i]()
+	}
+}
+
+func permutate(q *queryTest, andConditions []addCondition, orConditions []addCondition) {
+	var indexes []int
+	for i := 0; i <= len(andConditions); i++ {
+		indexes = append(indexes, i)
+	}
+	rand.Shuffle(len(indexes), func(i, j int){
+			indexes[i], indexes[j] = indexes[j], indexes[i]
+	})
+	for i := range(indexes) {
+		if i == len(andConditions) {
+			permutateOr(q, orConditions)
+		} else {
+			andConditions[i]()
+		}
+	}
+}
+
+func CheckTestItemsJoinQueries(left, inner, whereOrJoin bool, orInner bool) {
 	qj1 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "ottstb").Sort("NAME", true)
 	qj2 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "android").Where("AMOUNT", reindexer.GT, 2)
 	qj3 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "iphone")
 
-	qjoin := DB.Query("test_items_for_join").Where("GENRE", reindexer.EQ, 10).Limit(10).Debug(reindexer.TRACE)
+	qjoin := DB.Query("test_items_for_join").Limit(10).Debug(reindexer.TRACE)
+
+	var andConditions []addCondition
+	var orConditions []addCondition
+
+	andConditions = append(andConditions, func(){
+			qjoin.Where("GENRE", reindexer.EQ, 10)
+	})
 
 	if left {
-		qjoin.LeftJoin(qj1, "PRICES").On("PRICE_ID", reindexer.SET, "ID")
+		andConditions = append(andConditions, func(){
+				qjoin.LeftJoin(qj1, "PRICES").On("PRICE_ID", reindexer.SET, "ID")
+		})
 	}
 	if inner {
-		qjoin.InnerJoin(qj2, "PRICESX").On("LOCATION", reindexer.EQ, "LOCATION").On("PRICE_ID", reindexer.SET, "ID")
-
-		if or {
-			qjoin.Or()
+		firstInner := func(){
+				qjoin.InnerJoin(qj2, "PRICESX").On("LOCATION", reindexer.EQ, "LOCATION").On("PRICE_ID", reindexer.SET, "ID")
 		}
-		qjoin.InnerJoin(qj3, "PRICESX").
-			On("LOCATION", reindexer.LT, "LOCATION").
-			Or().On("PRICE_ID", reindexer.SET, "ID")
+		if whereOrJoin || orInner {
+			orConditions = append(orConditions, firstInner)
+		} else {
+			andConditions = append(andConditions, firstInner)
+		}
+		secondInner := func(){
+				qjoin.InnerJoin(qj3, "PRICESX").On("LOCATION", reindexer.LT, "LOCATION").Or().On("PRICE_ID", reindexer.SET, "ID")
+		}
+		if orInner {
+			orConditions = append(orConditions, secondInner)
+		} else {
+			andConditions = append(andConditions, secondInner)
+		}
+		if whereOrJoin {
+			orConditions = append(orConditions, func(){
+					qjoin.Where("AGE", reindexer.RANGE, []int{ageMin, ageMax})
+			})
+		}
 	}
+	permutate(qjoin, andConditions, orConditions)
 
 	rjoin, _ := qjoin.MustExec().FetchAll()
 
@@ -234,20 +318,32 @@ func CheckTestItemsJoinQueries(left, inner, or bool) {
 				Where("LOCATION", reindexer.LT, item.LocationID).
 				MustExec()
 
-			if (or && (rj2.Count() != 0 || rj3.Count() != 0)) || (!or && (rj2.Count() != 0 && rj3.Count() != 0)) {
-				item.Pricesx = make([]*TestJoinItem, 0)
-				for rj2.Next() {
-					item.Pricesx = append(item.Pricesx, rj2.Object().(*TestJoinItem))
+			if whereOrJoin && orInner {
+				if rj2.Count() != 0 || rj3.Count() != 0 {
+					appendJoined(item, rj2, rj3)
+				} else {
+					rj2.Close()
+					rj3.Close()
+					if item.Age < ageMin || item.Age > ageMax {
+						continue
+					}
 				}
-				for rj3.Next() {
-					item.Pricesx = append(item.Pricesx, rj3.Object().(*TestJoinItem))
+			} else if whereOrJoin && !orInner {
+				if rj3.Count() != 0 && (rj2.Count() != 0 || (item.Age >= ageMin && item.Age <= ageMax)) {
+					appendJoined(item, rj2, rj3)
+				} else {
+					rj2.Close()
+					rj3.Close()
+					continue
 				}
-				rj2.Close()
-				rj3.Close()
 			} else {
-				rj2.Close()
-				rj3.Close()
-				continue
+				if (orInner && (rj2.Count() != 0 || rj3.Count() != 0)) || (!orInner && (rj2.Count() != 0 && rj3.Count() != 0)) {
+					appendJoined(item, rj2, rj3)
+				} else {
+					rj2.Close()
+					rj3.Close()
+					continue
+				}
 			}
 		}
 		rjcheck = append(rjcheck, item)

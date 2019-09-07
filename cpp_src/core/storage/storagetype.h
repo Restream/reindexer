@@ -18,9 +18,12 @@ inline string StorageTypeToString(StorageType type) {
 }
 
 inline StorageType StorageTypeFromString(string_view str) {
-	if (str == kLevelDBName) {
+	if (str.empty()) {
 		return StorageType::LevelDB;
-	} else if (str == kRocksDBName) {
+	}
+	if (str.substr(0, sizeof(kLevelDBName) - 1) == kLevelDBName) {
+		return StorageType::LevelDB;
+	} else if (str.substr(0, sizeof(kRocksDBName) - 1) == kRocksDBName) {
 		return StorageType::RocksDB;
 	} else {
 		throw Error(errParams, "Invalid storage type string: %s", str);

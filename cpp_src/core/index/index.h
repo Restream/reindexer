@@ -67,7 +67,7 @@ public:
 	virtual void SetSortedIdxCount(int sortedIdxCount) { sortedIdxCount_ = sortedIdxCount; }
 
 	PerfStatCounterMT& GetSelectPerfCounter() { return selectPerfCounter_; }
-	PerfStatCounterST& GetCommitPerfCounter() { return commitPerfCounter_; }
+	PerfStatCounterMT& GetCommitPerfCounter() { return commitPerfCounter_; }
 
 	IndexPerfStat GetIndexPerfStat() {
 		return IndexPerfStat(name_, selectPerfCounter_.Get<PerfStat>(), commitPerfCounter_.Get<PerfStat>());
@@ -93,7 +93,7 @@ protected:
 	// Fields in index. Valid only for composite indexes
 	FieldsSet fields_;
 	// Perfstat counter
-	PerfStatCounterST commitPerfCounter_;
+	PerfStatCounterMT commitPerfCounter_;
 	PerfStatCounterMT selectPerfCounter_;
 	KeyValueType keyType_, selectKeyType_;
 	// Count of sorted indexes in namespace to resereve additional space in idsets

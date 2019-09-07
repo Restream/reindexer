@@ -9,8 +9,8 @@ class TagsMatcher;
 namespace net {
 namespace cproto {
 class ClientConnection;
-};
-};  // namespace net
+}
+}  // namespace net
 
 namespace client {
 

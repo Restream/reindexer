@@ -490,12 +490,16 @@ func (q *Query) Sort(sortIndex string, desc bool, values ...interface{}) *Query 
 }
 
 // OR - next condition will added with OR
+// Implements short-circuiting:
+// if the previous condition is successful the next will not be evaluated, but except Join conditions
 func (q *Query) Or() *Query {
 	q.nextOp = opOR
 	return q
 }
 
 // Not - next condition will added with NOT AND
+// Implements short-circuiting:
+// if the previous condition is failed the next will not be evaluated
 func (q *Query) Not() *Query {
 	q.nextOp = opNOT
 	return q

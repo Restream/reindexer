@@ -46,7 +46,8 @@ static const string kLSNIndexName = "#lsn";
 
 namespace reindexer {
 
-const int64_t kStorageSerialInitial = 1;
+constexpr int64_t kStorageSerialInitial = 1;
+constexpr uint8_t kSysRecordsBackupCount = 8;
 
 Namespace::IndexesStorage::IndexesStorage(const Namespace &ns) : ns_(ns) {}
 
@@ -1133,9 +1134,10 @@ void Namespace::updateFieldsFromQuery(IdType itemId, const Query &q, bool store)
 	if (storage_ && store) {
 		if (tagsMatcher_.isUpdated()) {
 			WrSerializer ser;
+			ser.PutUInt64(sysRecordsVersions_.tagsVersion);
 			tagsMatcher_.serialize(ser);
 			tagsMatcher_.clearUpdated();
-			writeToStorage(string_view(kStorageTagsPrefix), ser.Slice());
+			writeToStorage(sysRecordName(kStorageTagsPrefix, sysRecordsVersions_.tagsVersion++), ser.Slice());
 			logPrintf(LogTrace, "Saving tags of namespace %s:\n%s", name_, tagsMatcher_.dump());
 		}
 
@@ -1203,9 +1205,10 @@ void Namespace::modifyItem(Item &item, const RdxContext &ctx, bool store, int mo
 	if (storage_ && store) {
 		if (tagsMatcher_.isUpdated()) {
 			WrSerializer ser;
+			ser.PutUInt64(sysRecordsVersions_.tagsVersion);
 			tagsMatcher_.serialize(ser);
 			tagsMatcher_.clearUpdated();
-			writeToStorage(string_view(kStorageTagsPrefix), ser.Slice());
+			writeToStorage(sysRecordName(kStorageTagsPrefix, sysRecordsVersions_.tagsVersion++), ser.Slice());
 			logPrintf(LogTrace, "Saving tags of namespace %s:\n%s", name_, tagsMatcher_.dump());
 		}
 
@@ -1272,7 +1275,7 @@ void Namespace::commitIndexes(const RdxContext &ctx) {
 	int field = indexes_.firstCompositePos();
 	do {
 		field %= indexes_.totalSize();
-		PerfStatCalculatorST calc(indexes_[field]->GetCommitPerfCounter(), enablePerfCounters_);
+		PerfStatCalculatorMT calc(indexes_[field]->GetCommitPerfCounter(), enablePerfCounters_);
 		calc.LockHit();
 		indexes_[field]->Commit();
 	} while (++field != indexes_.firstCompositePos() && !cancelCommit_);
@@ -1433,31 +1436,67 @@ void Namespace::ResetPerfStat(const RdxContext &ctx) {
 	for (auto &i : indexes_) i->ResetIndexPerfStat();
 }
 
+Error Namespace::loadLatestSysRecord(string_view baseSysTag, uint64_t &version, string &content) {
+	std::string key(baseSysTag);
+	key.append(".");
+	std::string latestContent;
+	version = 0;
+	Error err = errOK;
+	for (int i = 0; i < kSysRecordsBackupCount; ++i) {
+		Error status = storage_->Read(StorageOpts().FillCache(), string_view(key + std::to_string(i)), content);
+		if (!status.ok() && status.code() != errNotFound) {
+			logPrintf(LogTrace, "Error on namespace service info(tag: %s, id: %u) load '%s': %s", baseSysTag, i, name_, status.what());
+			err = Error(errNotValid, "Error load namespace from storage '%s': %s", name_, status.what());
+		}
+
+		if (content.size()) {
+			Serializer ser(content.data(), content.size());
+			auto curVersion = ser.GetUInt64();
+			if (curVersion >= version) {
+				version = curVersion;
+				latestContent = std::move(content);
+				err = errOK;
+			}
+		}
+	}
+
+	if (latestContent.empty()) {
+		Error status = storage_->Read(StorageOpts().FillCache(), baseSysTag, content);
+		if (!status.ok() && status.code() != errNotFound) {
+			return Error(errNotValid, "Error load namespace from storage '%s': %s", name_, status.what());
+		}
+		return status;
+	}
+
+	version++;
+	latestContent.erase(0, sizeof(uint64_t));
+	content = std::move(latestContent);
+	return err;
+}
+
 bool Namespace::loadIndexesFromStorage() {
 	// Check if indexes structures are ready.
 	assert(indexes_.size() == 1);
 	assert(items_.size() == 0);
 
 	string def;
-	Error status = storage_->Read(StorageOpts().FillCache(), string_view(kStorageTagsPrefix), def);
+	Error status = loadLatestSysRecord(kStorageTagsPrefix, sysRecordsVersions_.tagsVersion, def);
 	if (!status.ok() && status.code() != errNotFound) {
-		throw Error(errNotValid, "Error load namespace from storage '%s': %s", name_, status.what());
+		throw status;
 	}
-
 	if (def.size()) {
 		Serializer ser(def.data(), def.size());
 		tagsMatcher_.deserialize(ser);
 		tagsMatcher_.clearUpdated();
-		logPrintf(LogTrace, "Loaded tags of namespace %s:\n%s", name_, tagsMatcher_.dump());
+		logPrintf(LogTrace, "Loaded tags(version: %lld) of namespace %s:\n%s",
+				  sysRecordsVersions_.tagsVersion ? sysRecordsVersions_.tagsVersion - 1 : 0, name_, tagsMatcher_.dump());
 	}
 
 	def.clear();
-	status = storage_->Read(StorageOpts().FillCache(), string_view(kStorageIndexesPrefix), def);
-
+	status = loadLatestSysRecord(kStorageIndexesPrefix, sysRecordsVersions_.idxVersion, def);
 	if (!status.ok() && status.code() != errNotFound) {
-		throw Error(errNotValid, "Error load namespace from storage '%s': %s", name_, status.what());
+		throw status;
 	}
-
 	if (def.size()) {
 		Serializer ser(def.data(), def.size());
 		const uint32_t dbMagic = ser.GetUInt32();
@@ -1482,20 +1521,22 @@ bool Namespace::loadIndexesFromStorage() {
 		}
 	}
 
-	logPrintf(LogTrace, "Loaded index structure of namespace '%s'\n%s", name_, payloadType_->ToString());
+	logPrintf(LogTrace, "Loaded index structure(version %lld) of namespace '%s'\n%s",
+			  sysRecordsVersions_.idxVersion ? sysRecordsVersions_.idxVersion - 1 : 0, name_, payloadType_->ToString());
 
 	return true;
 }
 
 void Namespace::loadReplStateFromStorage() {
 	string json;
-	Error status = storage_->Read(StorageOpts().FillCache(), string_view(kStorageReplStatePrefix), json);
+	Error status = loadLatestSysRecord(kStorageReplStatePrefix, sysRecordsVersions_.replVersion, json);
 	if (!status.ok() && status.code() != errNotFound) {
-		throw Error(errNotValid, "Error load replication state from storage '%s': %s", name_, status.what());
+		throw status;
 	}
 
 	if (json.size()) {
-		logPrintf(LogTrace, "Loading replication state of namespace %s: %s", name_, json);
+		logPrintf(LogTrace, "Loading replication state(version %lld) of namespace %s: %s",
+				  sysRecordsVersions_.replVersion ? sysRecordsVersions_.replVersion - 1 : 0, name_, json);
 		repl_.FromJSON(giftStr(json));
 	}
 }
@@ -1509,6 +1550,7 @@ void Namespace::saveIndexesToStorage() {
 	logPrintf(LogTrace, "Namespace::saveIndexesToStorage (%s)", name_);
 
 	WrSerializer ser;
+	ser.PutUInt64(sysRecordsVersions_.idxVersion);
 	ser.PutUInt32(kStorageMagic);
 	ser.PutUInt32(kStorageVersion);
 
@@ -1521,7 +1563,11 @@ void Namespace::saveIndexesToStorage() {
 		ser.PutVString(wrser.Slice());
 	}
 
-	storage_->Write(StorageOpts().FillCache(), string_view(kStorageIndexesPrefix), ser.Slice());
+	StorageOpts opts;
+	if (0 == sysRecordsVersions_.idxVersion) {  // Write first index synchronously
+		opts.Sync();
+	}
+	storage_->Write(opts.FillCache(), sysRecordName(kStorageIndexesPrefix, sysRecordsVersions_.idxVersion++), ser.Slice());
 
 	saveReplStateToStorage();
 }
@@ -1532,11 +1578,12 @@ void Namespace::saveReplStateToStorage() {
 	logPrintf(LogTrace, "Namespace::saveReplStateToStorage (%s)", name_);
 
 	WrSerializer ser;
+	ser.PutUInt64(sysRecordsVersions_.replVersion);
 	JsonBuilder builder(ser);
 	getReplState().GetJSON(builder);
 	builder.End();
 
-	storage_->Write(StorageOpts().FillCache(), string_view(kStorageReplStatePrefix), ser.Slice());
+	storage_->Write(StorageOpts().FillCache(), sysRecordName(kStorageReplStatePrefix, sysRecordsVersions_.replVersion++), ser.Slice());
 }
 
 bool Namespace::needToLoadData(const RdxContext &ctx) const {
@@ -1729,6 +1776,18 @@ void Namespace::CloseStorage(const RdxContext &ctx) {
 	storage_.reset();
 }
 
+bool Namespace::tryToReload(const RdxContext &ctx) {
+	uint16_t noQueryIdleThresholdSec = getStorageOpts(ctx).noQueryIdleThresholdSec;
+	if (noQueryIdleThresholdSec > 0) {
+		int64_t now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+		if ((now - getLastSelectTime()) > noQueryIdleThresholdSec) {
+			reloadStorage();
+			return true;
+		}
+	}
+	return true;
+}
+
 void Namespace::reloadStorage() {
 	unique_lock<shared_timed_mutex> lk(mtx_);
 	items_.clear();
@@ -1748,16 +1807,12 @@ void Namespace::reloadStorage() {
 	storageLoaded_ = false;
 }
 
-bool Namespace::tryToReload(const RdxContext &ctx) {
-	uint16_t noQueryIdleThresholdSec = getStorageOpts(ctx).noQueryIdleThresholdSec;
-	if (noQueryIdleThresholdSec > 0) {
-		int64_t now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-		if ((now - getLastSelectTime()) > noQueryIdleThresholdSec) {
-			reloadStorage();
-			return true;
-		}
-	}
-	return true;
+std::string Namespace::sysRecordName(string_view sysTag, uint64_t version) {
+	std::string backupRecord(sysTag);
+	static_assert(kSysRecordsBackupCount && ((kSysRecordsBackupCount & (kSysRecordsBackupCount - 1)) == 0),
+				  "kBackupsCount has to be power of 2");
+	backupRecord.append(".").append(std::to_string(version & (kSysRecordsBackupCount - 1)));
+	return backupRecord;
 }
 
 Item Namespace::NewItem(const RdxContext &ctx) {

@@ -41,7 +41,7 @@ void NamespaceMemStat::GetJSON(WrSerializer &ser) {
 		auto obj = arr.Object();
 		index.GetJSON(obj);
 	}
-};
+}
 
 void LRUCacheMemStat::GetJSON(JsonBuilder &builder) {
 	builder.Put("total_size", totalSize);

@@ -12,6 +12,8 @@
 #include "reindexer_version.h"
 #include "replicator/walrecord.h"
 #include "resources_wrapper.h"
+#include "statscollect/istatswatcher.h"
+#include "statscollect/prometheus.h"
 #include "tools/alloc_ext/je_malloc_extension.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/fsops.h"
@@ -24,14 +26,15 @@ using std::stringstream;
 
 namespace reindexer_server {
 
-HTTPServer::HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper logger, bool allocDebug, bool enablePprof)
+HTTPServer::HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper logger, OptionalConfig config)
 	: dbMgr_(dbMgr),
+	  prometheus_(config.prometheus),
+	  statsWatcher_(config.statsWatcher),
 	  webRoot_(reindexer::fs::JoinPath(webRoot, "")),
 	  logger_(logger),
-	  allocDebug_(allocDebug),
-	  enablePprof_(enablePprof),
+	  allocDebug_(config.allocDebug),
+	  enablePprof_(config.enablePprof),
 	  startTs_(std::chrono::system_clock::now()) {}
-HTTPServer::~HTTPServer() {}
 
 enum { ModeUpdate, ModeInsert, ModeUpsert, ModeDelete };
 
@@ -795,6 +798,7 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	router_.GET<HTTPServer, &HTTPServer::GetMetaByKey>("/api/v1/db/:db/namespaces/:ns/metabykey/:key", this);
 	router_.PUT<HTTPServer, &HTTPServer::PutMetaByKey>("/api/v1/db/:db/namespaces/:ns/metabykey", this);
 
+	router_.OnResponse(this, &HTTPServer::OnResponse);
 	router_.Middleware<HTTPServer, &HTTPServer::CheckAuth>(this);
 
 	if (logger_) {
@@ -803,6 +807,9 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 
 	if (enablePprof_) {
 		pprof_.Attach(router_);
+	}
+	if (prometheus_) {
+		prometheus_->Attach(router_);
 	}
 	listener_.reset(new Listener(loop, http::ServerConnection::NewFactory(router_)));
 
@@ -1057,13 +1064,24 @@ int HTTPServer::CheckAuth(http::Context &ctx) {
 
 void HTTPServer::Logger(http::Context &ctx) {
 	if (allocDebug_) {
-		Stat statDiff = Stat() - ctx.stat;
+		HandlerStat statDiff = HandlerStat() - ctx.stat.allocStat;
 
 		logger_.info("{0} {1} {2} {3} | elapsed: {4}us, allocs: {5}, allocated: {6} byte(s)", ctx.request->method, ctx.request->uri,
 					 ctx.writer->RespCode(), ctx.writer->Written(), statDiff.GetTimeElapsed(), statDiff.GetAllocsCnt(),
 					 statDiff.GetAllocsBytes());
 	} else {
 		logger_.info("{0} {1} {2} {3}", ctx.request->method, ctx.request->uri, ctx.writer->RespCode(), ctx.writer->Written());
+	}
+}
+
+void HTTPServer::OnResponse(http::Context &ctx) {
+	if (statsWatcher_) {
+		std::string dbName = "<unknown>";
+		if (!ctx.request->urlParams.empty() && 0 == ctx.request->path.find("/api/v1/db/"_sv)) {
+			dbName = urldecode2(ctx.request->urlParams[0]);
+		}
+		statsWatcher_->OnInputTraffic(dbName, statsSourceName(), ctx.stat.sizeStat.reqSizeBytes);
+		statsWatcher_->OnOutputTraffic(dbName, statsSourceName(), ctx.stat.sizeStat.respSizeBytes);
 	}
 }
 

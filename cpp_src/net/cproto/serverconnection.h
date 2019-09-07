@@ -36,6 +36,7 @@ protected:
 	void onRead() override;
 	void onClose() override;
 	void handleRPC(Context &ctx);
+	chunk packRPC(chunk chunk, Context &ctx, const Error &status, const Args &args);
 	void responceRPC(Context &ctx, const Error &error, const Args &args);
 	void async_cb(ev::async &) { sendUpdates(); }
 	void timeout_cb(ev::periodic &, int) { sendUpdates(); }

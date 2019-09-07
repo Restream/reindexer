@@ -257,13 +257,13 @@ void SelectIterator::AppendAndBind(SelectKeyResult &other, PayloadType type, int
 
 double SelectIterator::Cost(int expectedIterations) const {
 	if (forcedFirst_) return -GetMaxIterations();
-	if (empty() && !joinIndexes.empty()) return UINT_MAX;
-
-	if (size() < 2 && !comparators_.size()) return double(GetMaxIterations());
-
-	if (comparators_.size()) return expectedIterations + GetMaxIterations() * size() + 1;
-
-	return GetMaxIterations() * size();
+	double result = joinIndexes.size() * static_cast<double>(std::numeric_limits<float>::max());
+	if (!comparators_.empty()) {
+		result += expectedIterations + 1;
+	} else if (empty()) {
+		result += GetMaxIterations();
+	}
+	return result + static_cast<double>(GetMaxIterations()) * size();
 }
 
 void SelectIterator::SetExpectMaxIterations(int expectedIterations) {

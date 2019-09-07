@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <unordered_map>
 #include "core/cbinding/resultserializer.h"
 #include "core/keyvalue/variant.h"
 #include "core/reindexer.h"
@@ -9,6 +10,7 @@
 #include "net/cproto/dispatcher.h"
 #include "net/listener.h"
 #include "rpcupdatespusher.h"
+#include "statscollect/istatswatcher.h"
 
 namespace reindexer_server {
 
@@ -30,7 +32,7 @@ struct RPCClientData : public cproto::ClientData {
 
 class RPCServer {
 public:
-	RPCServer(DBManager &dbMgr, LoggerWrapper logger, bool allocDebug = false);
+	RPCServer(DBManager &dbMgr, LoggerWrapper logger, bool allocDebug = false, IStatsWatcher *statsCollector = nullptr);
 	~RPCServer();
 
 	bool Start(const string &addr, ev::dynamic_loop &loop);
@@ -81,6 +83,7 @@ public:
 	Error CheckAuth(cproto::Context &ctx);
 	void Logger(cproto::Context &ctx, const Error &err, const cproto::Args &ret);
 	void OnClose(cproto::Context &ctx, const Error &err);
+	void OnResponse(cproto::Context &ctx);
 
 protected:
 	Error sendResults(cproto::Context &ctx, QueryResults &qr, int reqId, const ResultFetchOpts &opts);
@@ -93,13 +96,15 @@ protected:
 	void clearTx(cproto::Context &ctx, uint64_t txId);
 
 	Reindexer getDB(cproto::Context &ctx, UserRole role);
+	constexpr static string_view statsSourceName() { return "rpc"_sv; }
 
 	DBManager &dbMgr_;
-	cproto::Dispatcher dispatcher;
+	cproto::Dispatcher dispatcher_;
 	std::unique_ptr<Listener> listener_;
 
 	LoggerWrapper logger_;
 	bool allocDebug_;
+	IStatsWatcher *statsWatcher_;
 
 	std::chrono::system_clock::time_point startTs_;
 };

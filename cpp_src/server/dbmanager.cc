@@ -61,12 +61,6 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 		return 0;
 	}
 	lck.unlock();
-	lck = smart_lock<Mutex>(mtx_, dummyCtx, true);
-	it = dbs_.find(dbName);
-	if (it != dbs_.end()) {
-		auth.db_ = it->second.get();
-		return 0;
-	}
 
 	if (!canCreate) {
 		return Error(errParams, "Database '%s' not found", dbName);
@@ -74,9 +68,15 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 	if (auth.role_ < kRoleOwner) {
 		return Error(errForbidden, "Forbidden to create database %s", dbName);
 	}
-
 	if (!validateObjectName(dbName)) {
 		return Error(errParams, "Database name contains invalid character. Only alphas, digits,'_','-, are allowed");
+	}
+
+	lck = smart_lock<Mutex>(mtx_, dummyCtx, true);
+	it = dbs_.find(dbName);
+	if (it != dbs_.end()) {
+		auth.db_ = it->second.get();
+		return 0;
 	}
 
 	status = loadOrCreateDatabase(dbName, true);
@@ -110,6 +110,8 @@ Error DBManager::loadOrCreateDatabase(const string &dbName, bool allowDBErrors) 
 	return status;
 }
 
+void DBManager::collectStats() noexcept {}
+
 Error DBManager::DropDatabase(AuthContext &auth) {
 	{
 		Reindexer *db = nullptr;
@@ -140,6 +142,11 @@ vector<string> DBManager::EnumDatabases() {
 }
 
 Error DBManager::Login(const string &dbName, AuthContext &auth) {
+	if (kRoleSystem == auth.role_) {
+		auth.dbName_ = dbName;
+		return 0;
+	}
+
 	if (IsNoSecurity()) {
 		auth.role_ = kRoleOwner;
 		auth.dbName_ = dbName;
@@ -234,6 +241,8 @@ const char *UserRoleName(UserRole role) noexcept {
 			return "db_admin";
 		case kRoleOwner:
 			return "owner";
+		case kRoleSystem:
+			return "system";
 	}
 	return "";
 }

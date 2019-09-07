@@ -21,7 +21,7 @@ RUN mkdir /src && \
     make install -C cpp_src/cmd/reindexer_server && \
     make install -C  cpp_src/cmd/reindexer_tool && \
     cd / && \
-    rm -rf /src  && \
+    rm -rf /src && \
     apk del g++ cmake make git curl autoconf automake libtool linux-headers && \
     rm -rf /var/cache/apk/* /usr/local/lib/*.a /usr/local/include/* /usr/local/lib/libtcmalloc_debug* /usr/local/lib/libtcmalloc_minimal* \
     /usr/local/lib/libprofiler* /usr/local/lib/libtcmalloc.*

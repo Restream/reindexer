@@ -9,8 +9,8 @@
 
 namespace reindexer_server {
 
-RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper logger, bool allocDebug)
-	: dbMgr_(dbMgr), logger_(logger), allocDebug_(allocDebug), startTs_(std::chrono::system_clock::now()) {}
+RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper logger, bool allocDebug, IStatsWatcher *statsCollector)
+	: dbMgr_(dbMgr), logger_(logger), allocDebug_(allocDebug), statsWatcher_(statsCollector), startTs_(std::chrono::system_clock::now()) {}
 
 RPCServer::~RPCServer() {}
 
@@ -28,18 +28,21 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 
 	auto clientData = std::make_shared<RPCClientData>();
 
-	clientData->connID = connCounter.load();
+	clientData->connID = connCounter.fetch_add(1, std::memory_order_relaxed);
 	clientData->pusher.SetWriter(ctx.writer);
 	clientData->subscribed = false;
-	connCounter++;
 
 	clientData->auth = AuthContext(login.toString(), password.toString());
 
-	auto status = dbMgr_.Login(db.toString(), clientData->auth);
+	auto dbName = db.toString();
+	auto status = dbMgr_.Login(dbName, clientData->auth);
 	if (!status.ok()) {
 		return status;
 	}
 	ctx.SetClientData(clientData);
+	if (statsWatcher_) {
+		statsWatcher_->OnClientConnected(dbName, statsSourceName());
+	}
 	int64_t startTs = std::chrono::duration_cast<std::chrono::seconds>(startTs_.time_since_epoch()).count();
 	static string_view version = REINDEX_VERSION;
 
@@ -84,7 +87,26 @@ void RPCServer::OnClose(cproto::Context &ctx, const Error &err) {
 	(void)ctx;
 	(void)err;
 
+	if (statsWatcher_) {
+		auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData().get());
+		if (clientData) {
+			statsWatcher_->OnClientDisconnected(clientData->auth.DBName(), statsSourceName());
+		}
+	}
 	logger_.info("RPC: Client disconnected");
+}
+
+void RPCServer::OnResponse(cproto::Context &ctx) {
+	if (statsWatcher_) {
+		auto clientDataRaw = ctx.GetClientData();
+		auto clientData = dynamic_cast<RPCClientData *>(clientDataRaw.get());
+		auto dbName = (clientData != nullptr) ? clientData->auth.DBName() : "<unknown>";
+		statsWatcher_->OnOutputTraffic(dbName, statsSourceName(), ctx.stat.sizeStat.respSizeBytes);
+		if (ctx.stat.sizeStat.respSizeBytes) {
+			// Don't update stats on responses like "updates push"
+			statsWatcher_->OnInputTraffic(dbName, statsSourceName(), ctx.stat.sizeStat.reqSizeBytes);
+		}
+	}
 }
 
 void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Args &ret) {
@@ -111,7 +133,7 @@ void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Arg
 	}
 
 	if (allocDebug_) {
-		Stat statDiff = Stat() - ctx.stat;
+		HandlerStat statDiff = HandlerStat() - ctx.stat.allocStat;
 
 		ser << " | elapsed: " << statDiff.GetTimeElapsed() << "us, allocs: " << statDiff.GetAllocsCnt()
 			<< ", allocated: " << statDiff.GetAllocsBytes() << " byte(s)";
@@ -599,50 +621,51 @@ Error RPCServer::SubscribeUpdates(cproto::Context &ctx, int flag) {
 }
 
 bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
-	dispatcher.Register(cproto::kCmdPing, this, &RPCServer::Ping);
-	dispatcher.Register(cproto::kCmdLogin, this, &RPCServer::Login);
-	dispatcher.Register(cproto::kCmdOpenDatabase, this, &RPCServer::OpenDatabase);
-	dispatcher.Register(cproto::kCmdCloseDatabase, this, &RPCServer::CloseDatabase);
-	dispatcher.Register(cproto::kCmdDropDatabase, this, &RPCServer::DropDatabase);
-	dispatcher.Register(cproto::kCmdOpenNamespace, this, &RPCServer::OpenNamespace);
-	dispatcher.Register(cproto::kCmdDropNamespace, this, &RPCServer::DropNamespace);
-	dispatcher.Register(cproto::kCmdTruncateNamespace, this, &RPCServer::TruncateNamespace);
-	dispatcher.Register(cproto::kCmdCloseNamespace, this, &RPCServer::CloseNamespace);
-	dispatcher.Register(cproto::kCmdEnumNamespaces, this, &RPCServer::EnumNamespaces);
+	dispatcher_.Register(cproto::kCmdPing, this, &RPCServer::Ping);
+	dispatcher_.Register(cproto::kCmdLogin, this, &RPCServer::Login);
+	dispatcher_.Register(cproto::kCmdOpenDatabase, this, &RPCServer::OpenDatabase);
+	dispatcher_.Register(cproto::kCmdCloseDatabase, this, &RPCServer::CloseDatabase);
+	dispatcher_.Register(cproto::kCmdDropDatabase, this, &RPCServer::DropDatabase);
+	dispatcher_.Register(cproto::kCmdOpenNamespace, this, &RPCServer::OpenNamespace);
+	dispatcher_.Register(cproto::kCmdDropNamespace, this, &RPCServer::DropNamespace);
+	dispatcher_.Register(cproto::kCmdTruncateNamespace, this, &RPCServer::TruncateNamespace);
+	dispatcher_.Register(cproto::kCmdCloseNamespace, this, &RPCServer::CloseNamespace);
+	dispatcher_.Register(cproto::kCmdEnumNamespaces, this, &RPCServer::EnumNamespaces);
 
-	dispatcher.Register(cproto::kCmdAddIndex, this, &RPCServer::AddIndex);
-	dispatcher.Register(cproto::kCmdUpdateIndex, this, &RPCServer::UpdateIndex);
-	dispatcher.Register(cproto::kCmdDropIndex, this, &RPCServer::DropIndex);
-	dispatcher.Register(cproto::kCmdCommit, this, &RPCServer::Commit);
+	dispatcher_.Register(cproto::kCmdAddIndex, this, &RPCServer::AddIndex);
+	dispatcher_.Register(cproto::kCmdUpdateIndex, this, &RPCServer::UpdateIndex);
+	dispatcher_.Register(cproto::kCmdDropIndex, this, &RPCServer::DropIndex);
+	dispatcher_.Register(cproto::kCmdCommit, this, &RPCServer::Commit);
 
-	dispatcher.Register(cproto::kCmdStartTransaction, this, &RPCServer::StartTransaction);
-	dispatcher.Register(cproto::kCmdAddTxItem, this, &RPCServer::AddTxItem);
-	dispatcher.Register(cproto::kCmdCommitTx, this, &RPCServer::CommitTx);
-	dispatcher.Register(cproto::kCmdRollbackTx, this, &RPCServer::RollbackTx);
+	dispatcher_.Register(cproto::kCmdStartTransaction, this, &RPCServer::StartTransaction);
+	dispatcher_.Register(cproto::kCmdAddTxItem, this, &RPCServer::AddTxItem);
+	dispatcher_.Register(cproto::kCmdCommitTx, this, &RPCServer::CommitTx);
+	dispatcher_.Register(cproto::kCmdRollbackTx, this, &RPCServer::RollbackTx);
 
-	dispatcher.Register(cproto::kCmdModifyItem, this, &RPCServer::ModifyItem);
-	dispatcher.Register(cproto::kCmdDeleteQuery, this, &RPCServer::DeleteQuery);
-	dispatcher.Register(cproto::kCmdUpdateQuery, this, &RPCServer::UpdateQuery);
+	dispatcher_.Register(cproto::kCmdModifyItem, this, &RPCServer::ModifyItem);
+	dispatcher_.Register(cproto::kCmdDeleteQuery, this, &RPCServer::DeleteQuery);
+	dispatcher_.Register(cproto::kCmdUpdateQuery, this, &RPCServer::UpdateQuery);
 
-	dispatcher.Register(cproto::kCmdSelect, this, &RPCServer::Select);
-	dispatcher.Register(cproto::kCmdSelectSQL, this, &RPCServer::SelectSQL);
-	dispatcher.Register(cproto::kCmdFetchResults, this, &RPCServer::FetchResults);
-	dispatcher.Register(cproto::kCmdCloseResults, this, &RPCServer::CloseResults);
+	dispatcher_.Register(cproto::kCmdSelect, this, &RPCServer::Select);
+	dispatcher_.Register(cproto::kCmdSelectSQL, this, &RPCServer::SelectSQL);
+	dispatcher_.Register(cproto::kCmdFetchResults, this, &RPCServer::FetchResults);
+	dispatcher_.Register(cproto::kCmdCloseResults, this, &RPCServer::CloseResults);
 
-	dispatcher.Register(cproto::kCmdGetSQLSuggestions, this, &RPCServer::GetSQLSuggestions);
+	dispatcher_.Register(cproto::kCmdGetSQLSuggestions, this, &RPCServer::GetSQLSuggestions);
 
-	dispatcher.Register(cproto::kCmdGetMeta, this, &RPCServer::GetMeta);
-	dispatcher.Register(cproto::kCmdPutMeta, this, &RPCServer::PutMeta);
-	dispatcher.Register(cproto::kCmdEnumMeta, this, &RPCServer::EnumMeta);
-	dispatcher.Register(cproto::kCmdSubscribeUpdates, this, &RPCServer::SubscribeUpdates);
-	dispatcher.Middleware(this, &RPCServer::CheckAuth);
-	dispatcher.OnClose(this, &RPCServer::OnClose);
+	dispatcher_.Register(cproto::kCmdGetMeta, this, &RPCServer::GetMeta);
+	dispatcher_.Register(cproto::kCmdPutMeta, this, &RPCServer::PutMeta);
+	dispatcher_.Register(cproto::kCmdEnumMeta, this, &RPCServer::EnumMeta);
+	dispatcher_.Register(cproto::kCmdSubscribeUpdates, this, &RPCServer::SubscribeUpdates);
+	dispatcher_.Middleware(this, &RPCServer::CheckAuth);
+	dispatcher_.OnClose(this, &RPCServer::OnClose);
+	dispatcher_.OnResponse(this, &RPCServer::OnResponse);
 
 	if (logger_) {
-		dispatcher.Logger(this, &RPCServer::Logger);
+		dispatcher_.Logger(this, &RPCServer::Logger);
 	}
 
-	listener_.reset(new Listener(loop, cproto::ServerConnection::NewFactory(dispatcher)));
+	listener_.reset(new Listener(loop, cproto::ServerConnection::NewFactory(dispatcher_)));
 	return listener_->Bind(addr);
 }
 

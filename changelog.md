@@ -1,3 +1,21 @@
+# Version 2.2.1 (07.09.2019)
+
+# Core 
+
+- [fea] Updated behaviour of Or InnerJoin statement
+- [fea] Store backups of system records in storage
+- [fix] Replicator can start before db initalization completed
+- [fix] Search prefixes if enabled only postfixes
+
+# Reindexer server
+
+- [fea] Added prometheus /metrics handler
+
+# Face
+
+- [fea] Fulltext config editor
+- [fea] Quick copy item's JSON from list view
+
 # Version 2.2.0 (27.08.2019)
 
 ## Core

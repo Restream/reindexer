@@ -108,7 +108,7 @@ void Selecter::processStepVariants(FtSelectContext &ctx, DataHolder::CommitStep 
 	auto keyIt = suffixes.lower_bound(tmpstr);
 
 	int matched = 0, skipped = 0, vids = 0;
-	bool withPrefixes = (variant.opts.pref || variant.opts.suff);
+	bool withPrefixes = variant.opts.pref;
 	bool withSuffixes = variant.opts.suff;
 
 	// Walk current variant in suffixes array and fill results
@@ -126,7 +126,7 @@ void Selecter::processStepVariants(FtSelectContext &ctx, DataHolder::CommitStep 
 		int matchLen = tmpstr.length();
 
 		if (!withSuffixes && suffixLen) continue;
-		if (!withPrefixes && wordLength != matchLen) break;
+		if (!withPrefixes && wordLength != matchLen + suffixLen) break;
 
 		int matchDif = std::abs(long(wordLength - matchLen + suffixLen));
 		int proc =

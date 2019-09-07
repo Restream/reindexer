@@ -112,6 +112,8 @@ struct Request {
 	Headers headers;
 	Params params;
 	h_vector<UrlParam, 4> urlParams;
+
+	size_t size{0};
 };
 
 class Writer {
@@ -238,6 +240,14 @@ public:
 		notFoundHandler_ = Handler{func_wrapper<K, func>, object};
 	}
 
+	/// Set response sent notifier
+	/// @param object class object
+	/// @param func function, to be called on response sent
+	template <class K>
+	void OnResponse(K *object, void (K::*func)(Context &ctx)) {
+		onResponse_ = [=](Context &ctx) { (static_cast<K *>(object)->*func)(ctx); };
+	}
+
 protected:
 	int handle(Context &ctx);
 	void log(Context &ctx) {
@@ -271,8 +281,9 @@ protected:
 	std::vector<Route> routes_[kMaxMethod];
 	std::vector<Handler> middlewares_;
 
-	Handler notFoundHandler_;
+	Handler notFoundHandler_{{}, nullptr};
 	std::function<void(Context &ctx)> logger_;
+	std::function<void(Context &ctx)> onResponse_;
 };
 }  // namespace http
 }  // namespace net

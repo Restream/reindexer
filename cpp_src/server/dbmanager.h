@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include "core/reindexer.h"
 #include "core/storage/storagetype.h"
@@ -24,7 +25,8 @@ enum UserRole {
 	kRoleDataRead,   /// User can read data from database
 	kRoleDataWrite,  /// User can write data to database
 	kRoleDBAdmin,	/// User can manage database: kRoleDataWrite + create & delete namespaces, modify indexes
-	kRoleOwner,		 /// User can all privilegies on database: kRoleDBAdmin + create & drop database
+	kRoleOwner,		 /// User has all privilegies on database: kRoleDBAdmin + create & drop database
+	kRoleSystem,	 /// Special role for internal usage
 };
 
 const char *UserRoleName(UserRole role) noexcept;
@@ -38,9 +40,13 @@ struct UserRecord {
 
 class DBManager;
 
+class AuthContext;
+static AuthContext MakeSystemAuthContext();
+
 /// Context of user authentification
 class AuthContext {
 	friend DBManager;
+	friend AuthContext MakeSystemAuthContext();
 
 public:
 	/// Constuct empty context
@@ -76,12 +82,16 @@ public:
 	const string &DBName() { return dbName_; }
 
 protected:
+	AuthContext(UserRole role) : role_(role) {}
+
 	string login_;
 	string password_;
 	UserRole role_ = kUnauthorized;
 	string dbName_;
 	Reindexer *db_ = nullptr;
 };
+
+static inline AuthContext MakeSystemAuthContext() { return AuthContext(kRoleSystem); }
 
 /// Database manager. Control's available databases, users and their roles
 class DBManager {
@@ -123,6 +133,7 @@ private:
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::DbManager>;
 	Error readUsers();
 	Error loadOrCreateDatabase(const string &name, bool allowDBErrors);
+	void collectStats() noexcept;
 
 	unordered_map<string, unique_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_;
 	unordered_map<string, UserRecord> users_;

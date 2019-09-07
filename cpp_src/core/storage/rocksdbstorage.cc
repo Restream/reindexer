@@ -36,9 +36,6 @@ Error RocksDbStorage::Open(const string& path, const StorageOpts& opts) {
 	rocksdb::Status status = rocksdb::DB::Open(options, path, &db);
 	if (status.ok()) {
 		db_ = shared_ptr<rocksdb::DB>(db);
-	}
-
-	if (status.ok()) {
 		opts_ = opts;
 		dbpath_ = path;
 		return Error();

@@ -1,4 +1,3 @@
 # Uninstrumented library.
 called_from_lib:libleveldb
 
-race:reindexer::client::QueryResults::Bind
