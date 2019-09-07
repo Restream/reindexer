@@ -195,6 +195,22 @@ const (
 
 type addCondition func()
 
+func shuffle(n int, swap func(i, j int)) {
+	if n < 0 {
+		panic("invalid argument to Shuffle")
+	}
+
+	i := n - 1
+	for ; i > 1<<31-1-1; i-- {
+		j := int(rand.Int63n(int64(i + 1)))
+		swap(i, j)
+	}
+	for ; i > 0; i-- {
+		j := int(rand.Int31n(int32(i + 1)))
+		swap(i, j)
+	}
+}
+
 func permutateOr(q *queryTest, orConditions []addCondition) {
 	if len(orConditions) == 0 {
 		return
@@ -202,8 +218,8 @@ func permutateOr(q *queryTest, orConditions []addCondition) {
 	if len(orConditions) == 1 {
 		panic(fmt.Errorf("Or cannot connect just 1 condition"))
 	}
-	rand.Shuffle(len(orConditions), func(i, j int){
-			orConditions[i], orConditions[j] = orConditions[j], orConditions[i]
+	shuffle(len(orConditions), func(i, j int) {
+		orConditions[i], orConditions[j] = orConditions[j], orConditions[i]
 	})
 	orConditions[0]()
 	for i := 1; i < len(orConditions); i++ {
@@ -217,10 +233,10 @@ func permutate(q *queryTest, andConditions []addCondition, orConditions []addCon
 	for i := 0; i <= len(andConditions); i++ {
 		indexes = append(indexes, i)
 	}
-	rand.Shuffle(len(indexes), func(i, j int){
-			indexes[i], indexes[j] = indexes[j], indexes[i]
+	shuffle(len(indexes), func(i, j int) {
+		indexes[i], indexes[j] = indexes[j], indexes[i]
 	})
-	for i := range(indexes) {
+	for i := range indexes {
 		if i == len(andConditions) {
 			permutateOr(q, orConditions)
 		} else {
@@ -239,26 +255,26 @@ func CheckTestItemsJoinQueries(left, inner, whereOrJoin bool, orInner bool) {
 	var andConditions []addCondition
 	var orConditions []addCondition
 
-	andConditions = append(andConditions, func(){
-			qjoin.Where("GENRE", reindexer.EQ, 10)
+	andConditions = append(andConditions, func() {
+		qjoin.Where("GENRE", reindexer.EQ, 10)
 	})
 
 	if left {
-		andConditions = append(andConditions, func(){
-				qjoin.LeftJoin(qj1, "PRICES").On("PRICE_ID", reindexer.SET, "ID")
+		andConditions = append(andConditions, func() {
+			qjoin.LeftJoin(qj1, "PRICES").On("PRICE_ID", reindexer.SET, "ID")
 		})
 	}
 	if inner {
-		firstInner := func(){
-				qjoin.InnerJoin(qj2, "PRICESX").On("LOCATION", reindexer.EQ, "LOCATION").On("PRICE_ID", reindexer.SET, "ID")
+		firstInner := func() {
+			qjoin.InnerJoin(qj2, "PRICESX").On("LOCATION", reindexer.EQ, "LOCATION").On("PRICE_ID", reindexer.SET, "ID")
 		}
 		if whereOrJoin || orInner {
 			orConditions = append(orConditions, firstInner)
 		} else {
 			andConditions = append(andConditions, firstInner)
 		}
-		secondInner := func(){
-				qjoin.InnerJoin(qj3, "PRICESX").On("LOCATION", reindexer.LT, "LOCATION").Or().On("PRICE_ID", reindexer.SET, "ID")
+		secondInner := func() {
+			qjoin.InnerJoin(qj3, "PRICESX").On("LOCATION", reindexer.LT, "LOCATION").Or().On("PRICE_ID", reindexer.SET, "ID")
 		}
 		if orInner {
 			orConditions = append(orConditions, secondInner)
@@ -266,8 +282,8 @@ func CheckTestItemsJoinQueries(left, inner, whereOrJoin bool, orInner bool) {
 			andConditions = append(andConditions, secondInner)
 		}
 		if whereOrJoin {
-			orConditions = append(orConditions, func(){
-					qjoin.Where("AGE", reindexer.RANGE, []int{ageMin, ageMax})
+			orConditions = append(orConditions, func() {
+				qjoin.Where("AGE", reindexer.RANGE, []int{ageMin, ageMax})
 			})
 		}
 	}
