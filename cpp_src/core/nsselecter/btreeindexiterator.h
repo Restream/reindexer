@@ -11,7 +11,7 @@ template <class T>
 class BtreeIndexIterator : public IndexIterator {
 public:
 	explicit BtreeIndexIterator(const T& idxMap) : idxMap_(idxMap), first_(idxMap.begin()), last_(idxMap.end()) {}
-	BtreeIndexIterator(const T& idxMap, const decltype(idxMap.begin())& first, const decltype(idxMap.begin())& last)
+	BtreeIndexIterator(const T& idxMap, const typename T::iterator& first, const typename T::iterator& last)
 		: idxMap_(idxMap), first_(first), last_(last) {}
 	~BtreeIndexIterator() override final {}
 
@@ -59,8 +59,8 @@ public:
 private:
 	std::shared_ptr<BtreeIndexIteratorImpl<T>> impl_;
 	const T& idxMap_;
-	decltype(idxMap_.begin()) first_;
-	decltype(idxMap_.begin()) last_;
+	const typename T::const_iterator first_;
+	const typename T::const_iterator last_;
 	size_t cachedIters_ = std::numeric_limits<size_t>::max();
 };
 

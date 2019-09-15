@@ -119,8 +119,8 @@ protected:
 	IdType currVal_ = INT_MIN;
 	IdsetType currentIdsetType_;
 
-	typedef decltype(idxMap_.begin()) ForwardIterator;
-	typedef decltype(idxMap_.rbegin()) ReverseIterator;
+	using ForwardIterator = typename T::const_iterator;
+	using ReverseIterator = typename T::const_reverse_iterator;
 };
 
 template <class T>
