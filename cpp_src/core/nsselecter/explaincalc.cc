@@ -80,6 +80,7 @@ void SelectIteratorContainer::explainJSON(const_iterator it, const_iterator end,
 			}
 			jsonSel.Put("matched", siter.GetMatchedCount());
 			jsonSel.Put("method", isScanIterator || siter.comparators_.size() ? "scan" : "index");
+			jsonSel.Put("type", siter.TypeName());
 		} else {
 			auto jsonSelArr = jsonSel.Array("selectors");
 			explainJSON(it->cbegin(it), it->cend(it), iters, jsonSelArr);

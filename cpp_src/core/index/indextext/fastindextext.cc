@@ -100,7 +100,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
 
 	auto merdeInfo = Selecter(this->holder_, this->fields_.size(), fctx->NeedArea()).Process(dsl);
 	// convert vids(uniq documents id) to ids (real ids)
-	IdSet::Ptr mergedIds = std::make_shared<IdSet>();
+	IdSet::Ptr mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 	auto &holder = this->holder_;
 	auto &vdocs = holder.vdocs_;
 

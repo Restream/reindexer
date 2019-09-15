@@ -126,7 +126,7 @@ void ServerConnection::onRead() {
 
 			ctx.call->args.Unpack(ser);
 
-			if (hdr.len > sizeof(hdr) + ser.Pos()) {
+			if (!ser.Eof()) {
 				Args ctxArgs;
 				ctxArgs.Unpack(ser);
 				if (ctxArgs.size() > 0) {

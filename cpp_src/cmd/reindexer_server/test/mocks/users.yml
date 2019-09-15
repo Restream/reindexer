@@ -1,0 +1,16 @@
+user_data_read:
+  hash: $1$salt1$sxceK5uCFboYZNAuscl7U.
+  roles:
+    *: data_read
+user_data_write:
+  hash: $1$salt2$mVTUg8rz3JZbWZdu8BmgB.
+  roles:
+    *: data_write
+user_db_admin:
+  hash: $1$salt3$vX3bUgz2B6qUtO8/Pp8..1
+  roles:
+    *: db_admin
+user_owner:
+  hash: $1$salt4$FP6vfMCasfDJIl7o3YzvC.
+  roles:
+    *: owner

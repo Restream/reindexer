@@ -18,7 +18,7 @@ template <typename T>
 IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) {
 	auto result = engine_.Search(dsl);
 
-	auto mergedIds = make_shared<IdSet>();
+	auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 
 	mergedIds->reserve(result.data_->size() * 2);
 	fctx->Reserve(result.data_->size() * 2);

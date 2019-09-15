@@ -1,4 +1,8 @@
 #include "btree_idsets_api.h"
+#include "core/index/index.h"
+#include "core/index/string_map.h"
+#include "core/indexopts.h"
+#include "core/nsselecter/btreeindexiterator.h"
 #include "core/query/joinresults.h"
 
 TEST_F(BtreeIdsetsApi, SelectByStringField) {
@@ -114,4 +118,47 @@ TEST_F(BtreeIdsetsApi, JoinSimpleNs) {
 			prevJoinedFk = joinedFkCurr;
 		}
 	}
+}
+
+TEST_F(ReindexerApi, BtreeUnbuiltIndexIteratorsTest) {
+	CollateOpts opts;
+	reindexer::PayloadType pt;
+	reindexer::FieldsSet fdset;
+	reindexer::number_map<int64_t, reindexer::Index::KeyEntry> m1(pt, fdset, opts);
+	reindexer::number_map<int64_t, reindexer::Index::KeyEntryPlain> m2(pt, fdset, opts);
+
+	vector<IdType> ids1, ids2;
+	for (size_t i = 0; i < 10000; ++i) {
+		auto it1 = m1.insert({i, reindexer::KeyEntry<reindexer::IdSet>()});
+		for (int i = 0; i < rand() % 100 + 50; ++i) {
+			it1.first->second.Unsorted().Add(IdType(i), reindexer::IdSet::Unordered, 1);
+			ids1.push_back(i);
+		}
+		auto it2 = m2.insert({i, reindexer::KeyEntry<reindexer::IdSetPlain>()});
+		for (int i = 0; i < rand() % 100 + 50; ++i) {
+			it2.first->second.Unsorted().Add(IdType(i), reindexer::IdSet::Unordered, 1);
+			ids2.push_back(i);
+		}
+	}
+
+	size_t pos = 0;
+
+	reindexer::BtreeIndexIterator<typeof(m1)> bIt1(m1);
+	bIt1.Start(false);
+	while (bIt1.Next()) {
+		EXPECT_TRUE(bIt1.Value() == ids1[pos]) << "iterator value = " << bIt1.Value() << "; expected value = " << ids1[pos];
+		++pos;
+	}
+	EXPECT_TRUE(pos == ids1.size());
+	EXPECT_TRUE(!bIt1.Next());
+
+	reindexer::BtreeIndexIterator<typeof(m2)> bIt2(m2);
+	bIt2.Start(true);
+	pos = ids2.size() - 1;
+	while (bIt2.Next()) {
+		EXPECT_TRUE(bIt2.Value() == ids2[pos]) << "iterator value = " << bIt2.Value() << "; expected value = " << ids2[pos];
+		if (pos) --pos;
+	}
+	EXPECT_TRUE(pos == 0);
+	EXPECT_TRUE(!bIt2.Next());
 }

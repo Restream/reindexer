@@ -3,6 +3,7 @@
 #include "core/index/index.h"
 #include "core/joincache.h"
 #include "core/nsselecter/selectiteratorcontainer.h"
+#include "sortingcontext.h"
 
 namespace reindexer {
 
@@ -27,32 +28,22 @@ struct JoinPreResult {
 	SelectIteratorContainer iterators;
 	Mode mode = ModeEmpty;
 	bool enableSortOrders = false;
+	bool btreeIndexOptimizationEnabled = true;
 };
 
 struct SelectCtx {
 	explicit SelectCtx(const Query &query_) : query(query_) {}
 	const Query &query;
 	JoinedSelectors *joinedSelectors = nullptr;
-
 	SelectFunctionsHolder *functions = nullptr;
-	struct SortingCtx {
-		struct Entry {
-			const SortingEntry *data = nullptr;
-			Index *index = nullptr;
-			const CollateOpts *opts = nullptr;
-		};
-		h_vector<Entry, 1> entries;
-		Index *sortIndex() { return entries.empty() ? nullptr : entries[0].index; }
-		int sortId() { return sortIndex() ? sortIndex()->SortId() : 0; }
-	};
+
 	JoinPreResult::Ptr preResult;
-	SortingCtx sortingCtx;
+	SortingContext sortingContext;
 	uint8_t nsid = 0;
 	bool isForceAll = false;
 	bool skipIndexesLookup = false;
 	bool matchedAtLeastOnce = false;
 	bool reqMatchedOnceFlag = false;
-	bool enableSortOrders = false;
 	bool contextCollectingMode = false;
 };
 
@@ -87,9 +78,12 @@ private:
 	void setLimitAndOffset(ItemRefVector &result, size_t offset, size_t limit);
 	void prepareSortingContext(const SortingEntries &sortBy, SelectCtx &ctx, bool isFt);
 	void prepareSortingIndexes(SortingEntries &sortBy);
-	void getSortIndexValue(const SelectCtx::SortingCtx::Entry *sortCtx, IdType rowId, VariantArray &value);
+	void getSortIndexValue(const SortingContext::Entry *sortCtx, IdType rowId, VariantArray &value);
 	void processLeftJoins(QueryResults &qr, SelectCtx &sctx);
 	bool checkIfThereAreLeftJoins(SelectCtx &sctx) const;
+	void sortResults(reindexer::SelectCtx &sctx, QueryResults &result, const SortingOptions &sortingOptions, size_t multisortLimitLeft);
+
+	bool isSortOptimizatonEffective(const QueryEntries &qe, SelectCtx &ctx, const RdxContext &rdxCtx);
 
 	Namespace *ns_;
 	SelectFunction::Ptr fnc_;

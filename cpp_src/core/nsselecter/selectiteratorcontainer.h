@@ -35,11 +35,11 @@ public:
 	void ExplainJSON(int iters, JsonBuilder &builder) const { explainJSON(cbegin(), cend(), iters, builder); }
 
 private:
-	void sortByCost(h_vector<size_t, 4> &indexes, h_vector<double, 4> &costs, size_t from, size_t to, int expectedIterations);
-	double fullCost(const h_vector<size_t, 4> &indexes, size_t i, size_t from, size_t to, int expectedIterations) const;
-	double cost(const h_vector<size_t, 4> &indexes, size_t cur, int expectedIterations) const;
-	double cost(const h_vector<size_t, 4> &indexes, size_t from, size_t to, int expectedIterations) const;
-	void moveJoinsToTheBeginingOfORs(h_vector<size_t, 4> &indexes, size_t from, size_t to);
+	void sortByCost(span<unsigned> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations);
+	double fullCost(span<unsigned> indexes, unsigned i, unsigned from, unsigned to, int expectedIterations) const;
+	double cost(span<unsigned> indexes, unsigned cur, int expectedIterations) const;
+	double cost(span<unsigned> indexes, unsigned from, unsigned to, int expectedIterations) const;
+	void moveJoinsToTheBeginingOfORs(span<unsigned> indexes, unsigned from, unsigned to);
 	// Check idset must be 1st
 	static void checkFirstQuery(Container &);
 	template <bool reverse, bool hasComparators>
@@ -55,8 +55,8 @@ private:
 	static bool isIdset(const_iterator it, const_iterator end);
 
 	SelectKeyResults processQueryEntry(const QueryEntry &qe, const Namespace &ns);
-	SelectKeyResults processQueryEntry(const QueryEntry &qe, const Namespace &ns, unsigned sortId, bool isQueryFt,
-									   SelectFunction::Ptr selectFnc, bool &isIndexFt, bool &isIndexSparse, FtCtx::Ptr &,
+	SelectKeyResults processQueryEntry(const QueryEntry &qe, bool enableSortIndexOptimize, const Namespace &ns, unsigned sortId,
+									   bool isQueryFt, SelectFunction::Ptr selectFnc, bool &isIndexFt, bool &isIndexSparse, FtCtx::Ptr &,
 									   const RdxContext &);
 	void processJoinEntry(const QueryEntry &qe, OpType op);
 	void processQueryEntryResults(SelectKeyResults &selectResults, const QueryEntries &queries, int qeIdx, const Namespace &ns,

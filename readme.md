@@ -743,7 +743,7 @@ reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --filename mydb.rxdump
 ```
 ### Replication
 
-Reindexer is support master slave replication. To create slave DB the following command can be used:
+Reindexer supports master slave replication. To create slave DB the following command can be used:
 
 ```sh
 reindexer_tool --dsn cproto://127.0.0.1:6534/slavedb --command '\upsert #config {"type":"replication","replication":{"role":"slave","master_dsn":"cproto://127.0.0.1:6534/masterdb","cluster_id":2}}'
@@ -751,6 +751,11 @@ reindexer_tool --dsn cproto://127.0.0.1:6534/slavedb --command '\upsert #config 
 
 More details about replication is [here](replication.md)
 
+## Security
+
+Reindexer server supports login/password authorization for http/rpc client with different access levels for each user/database. To enable this feature `security` flag should be set in server.yml.
+If security option is active reindexer will try to load users list from `users.yml` or `users.json`(deprecate) found in database path. If users-file was not found the default one
+will be created automaticly (default login/password are `reindexer`/`reindexer`)
 
 ## Integration with other program languages
 

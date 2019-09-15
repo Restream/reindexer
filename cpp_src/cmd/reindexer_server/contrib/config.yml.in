@@ -9,6 +9,7 @@ net:
   httpaddr: 0.0.0.0:9088
   rpcaddr: 0.0.0.0:6534
   webroot: ${REINDEXER_INSTALL_PREFIX}/share/reindexer/web
+  # Enables authorization via login/password (requires users.yml file in db directory)
   security: false
 
 # Logger configuration
@@ -27,4 +28,10 @@ system:
 debug:
   pprof: false
   allocs: false
+
+# Metrics configuration
+metrics:
+  prometheus: false
+  # Metrics collect period in millisecods
+  collect_period: 1000
 

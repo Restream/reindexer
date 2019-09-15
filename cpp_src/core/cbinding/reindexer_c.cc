@@ -76,6 +76,7 @@ static QueryResultsWrapper* new_results() {
 	}
 	alloced_res_count++;
 	if (res_pool.empty()) {
+		lck.unlock();
 		return new QueryResultsWrapper;
 	} else {
 		auto res = res_pool.back().release();

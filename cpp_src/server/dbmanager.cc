@@ -8,9 +8,16 @@
 #include "tools/fsops.h"
 #include "tools/jsontools.h"
 #include "tools/logger.h"
+#include "tools/md5crypt.h"
 #include "tools/stringstools.h"
+#include "vendor/hash/md5.h"
+#include "vendor/yaml/yaml.h"
 
 namespace reindexer_server {
+
+const std::string kUsersYAMLFilename = "users.yml";
+const std::string kUsersJSONFilename = "users.json";
+
 DBManager::DBManager(const string &dbpath, bool noSecurity)
 	: dbpath_(dbpath), noSecurity_(noSecurity), storageType_(datastorage::StorageType::LevelDB) {}
 
@@ -110,8 +117,6 @@ Error DBManager::loadOrCreateDatabase(const string &dbName, bool allowDBErrors) 
 	return status;
 }
 
-void DBManager::collectStats() noexcept {}
-
 Error DBManager::DropDatabase(AuthContext &auth) {
 	{
 		Reindexer *db = nullptr;
@@ -162,7 +167,11 @@ Error DBManager::Login(const string &dbName, AuthContext &auth) {
 		return Error(errForbidden, "Unauthorized");
 	}
 	// TODO change to SCRAM-RSA
-	if (it->second.hash != auth.password_) {
+	if (!it->second.salt.empty()) {
+		if (it->second.hash != reindexer::MD5crypt(auth.password_, it->second.salt)) {
+			return Error(errForbidden, "Unauthorized");
+		}
+	} else if (it->second.hash != auth.password_) {
 		return Error(errForbidden, "Unauthorized");
 	}
 
@@ -188,43 +197,133 @@ Error DBManager::Login(const string &dbName, AuthContext &auth) {
 	return 0;
 }
 
-Error DBManager::readUsers() {
+Error DBManager::readUsers() noexcept {
 	users_.clear();
+	auto result = readUsersYAML();
+	if (!result.ok()) {
+		result = readUsersJSON();
+		if (result.code() == errNotFound) {
+			return createDefaultUsersYAML();
+		}
+	}
+	return result;
+}
+
+Error DBManager::readUsersYAML() noexcept {
 	string content;
-	int res = fs::ReadFile(fs::JoinPath(dbpath_, "users.json"), content);
-	if (res < 0) return Error(errParams, "Can't read users.json file");
+	int res = fs::ReadFile(fs::JoinPath(dbpath_, kUsersYAMLFilename), content);
+	if (res < 0) return Error(errNotFound, "Can't read '%s' file", kUsersYAMLFilename);
+	Yaml::Node root;
+	try {
+		Yaml::Parse(root, content);
+		for (auto userIt = root.Begin(); userIt != root.End(); userIt++) {
+			UserRecord urec;
+			urec.login = (*userIt).first;
+			auto &userNode = (*userIt).second;
+			auto err = ParseMd5CryptString(userNode["hash"].As<string>(), urec.hash, urec.salt);
+			if (!err.ok()) {
+				logPrintf(LogWarning, "Hash parsing error for user '%s': %s", urec.login, err.what());
+				continue;
+			}
+			auto userRoles = userNode["roles"];
+			if (userRoles.Type() == Yaml::Node::MapType) {
+				for (auto roleIt = userRoles.Begin(); roleIt != userRoles.End(); roleIt++) {
+					string db((*roleIt).first);
+					try {
+						UserRole role = userRoleFromString((*roleIt).second.As<string>());
+						urec.roles.emplace(db, role);
+					} catch (const Error &err) {
+						logPrintf(LogWarning, "Skipping user '%s' for db '%s': ", urec.login, db, err.what());
+					}
+				}
+				if (urec.roles.empty()) {
+					logPrintf(LogWarning, "User '%s' doesn't have valid roles", urec.login);
+				} else {
+					users_.emplace(urec.login, urec);
+				}
+			} else {
+				logPrintf(LogWarning, "Skipping user '%s': no 'roles' node found", urec.login);
+			}
+		}
+	} catch (const Yaml::Exception &ex) {
+		return Error(errParseJson, "Users: %s", ex.what());
+	}
+	return errOK;
+}
+
+Error DBManager::readUsersJSON() noexcept {
+	string content;
+	int res = fs::ReadFile(fs::JoinPath(dbpath_, kUsersJSONFilename), content);
+	if (res < 0) return Error(errNotFound, "Can't read '%s' file", kUsersJSONFilename);
 
 	try {
 		gason::JsonParser parser;
 		auto root = parser.Parse(giftStr(content));
-
 		for (auto &userNode : root) {
 			UserRecord urec;
 			urec.login = string(userNode.key);
-			urec.hash = userNode["hash"].As<string>();
+			auto err = ParseMd5CryptString(userNode["hash"].As<string>(), urec.hash, urec.salt);
+			if (!err.ok()) {
+				logPrintf(LogWarning, "Hash parsing error for user '%s': %s", urec.login, err.what());
+				continue;
+			}
 			for (auto &roleNode : userNode["roles"]) {
 				string db(roleNode.key);
-				UserRole role = kRoleDataRead;
-				string_view strRole = roleNode.As<string_view>();
-				if (strRole == "data_read"_sv) {
-					role = kRoleDataRead;
-				} else if (strRole == "data_write"_sv) {
-					role = kRoleDataWrite;
-				} else if (strRole == "db_admin"_sv) {
-					role = kRoleDBAdmin;
-				} else if (strRole == "owner"_sv) {
-					role = kRoleOwner;
-				} else {
-					logPrintf(LogWarning, "Skipping invalid role '%s' of user '%s' for db '%s'", strRole, urec.login, db);
+				try {
+					UserRole role = userRoleFromString(roleNode.As<string_view>());
+					urec.roles.emplace(db, role);
+				} catch (const Error &err) {
+					logPrintf(LogWarning, "Skipping user '%s' for db '%s': ", urec.login, db, err.what());
 				}
-				urec.roles.emplace(db, role);
 			}
-			users_.emplace(urec.login, urec);
+			if (urec.roles.empty()) {
+				logPrintf(LogWarning, "User '%s' doesn't have valid roles", urec.login);
+			} else {
+				users_.emplace(urec.login, urec);
+			}
 		}
 	} catch (const gason::Exception &ex) {
 		return Error(errParseJson, "Users: %s", ex.what());
 	}
 	return errOK;
+}
+
+Error DBManager::createDefaultUsersYAML() noexcept {
+	logPrintf(LogInfo, "Creating default users.yaml file");
+	int res = fs::WriteFile(fs::JoinPath(dbpath_, kUsersYAMLFilename),
+							"# List of db's users, their's roles and privileges\n\n"
+							"# Username\n"
+							"reindexer:\n"
+							"  # Hash type(right now '$1' is the only value), salt and hash in BSD MD5 Crypt format\n"
+							"  # Hash may be generated via openssl tool - `openssl passwd -1 -salt MySalt MyPassword`\n"
+							"  # If hash doesn't start with '$' sign it will be used as raw password itself\n"
+							"  hash: $1$rdxsalt$VIR.dzIB8pasIdmyVGV0E/\n"
+							"  # User's roles for specific databases, * in place of db name means any database\n"
+							"  # Allowed roles:\n"
+							"  # 1) data_read - user can read data from database\n"
+							"  # 2) data_write - user can write data to database\n"
+							"  # 3) db_admin - user can manage database: kRoleDataWrite + create & delete namespaces, modify indexes\n"
+							"  # 4) owner - user has all privilegies on database: kRoleDBAdmin + create & drop database\n"
+							"  roles:\n"
+							"    *: owner\n");
+	if (res < 0) {
+		return Error(errParams, "Unable to write default config file: %s", strerror(errno));
+	}
+	users_.emplace("reindexer", UserRecord{"reindexer", "VIR.dzIB8pasIdmyVGV0E/", "rdxsalt", {{"*", kRoleOwner}}});
+	return errOK;
+}
+
+UserRole DBManager::userRoleFromString(string_view strRole) {
+	if (strRole == "data_read"_sv) {
+		return kRoleDataRead;
+	} else if (strRole == "data_write"_sv) {
+		return kRoleDataWrite;
+	} else if (strRole == "db_admin"_sv) {
+		return kRoleDBAdmin;
+	} else if (strRole == "owner"_sv) {
+		return kRoleOwner;
+	}
+	throw Error(errParams, "Role \'%s\' is invalid", strRole);
 }
 
 const char *UserRoleName(UserRole role) noexcept {

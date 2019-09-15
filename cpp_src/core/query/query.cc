@@ -1431,8 +1431,9 @@ WrSerializer &Query::GetSQL(WrSerializer &ser, bool stripArgs) const {
 					for (const auto &se : a.sortingEntries_) {
 						ser << " ORDER BY " << se.column << (se.desc ? " DESC" : " ASC");
 					}
-					if (a.offset_ != 0) ser << " OFFSET " << a.offset_;
-					if (a.limit_ != UINT_MAX) ser << " LIMIT " << a.limit_;
+
+					if (a.offset_ != 0 && !stripArgs) ser << " OFFSET " << a.offset_;
+					if (a.limit_ != UINT_MAX && !stripArgs) ser << " LIMIT " << a.limit_;
 					ser << ')';
 				}
 			} else if (selectFilter_.size()) {
@@ -1481,8 +1482,8 @@ WrSerializer &Query::GetSQL(WrSerializer &ser, bool stripArgs) const {
 	dumpMerged(ser, stripArgs);
 	dumpOrderBy(ser, stripArgs);
 
-	if (start != 0) ser << " OFFSET " << start;
-	if (count != UINT_MAX) ser << " LIMIT " << count;
+	if (start != 0 && !stripArgs) ser << " OFFSET " << start;
+	if (count != UINT_MAX && !stripArgs) ser << " LIMIT " << count;
 	return ser;
 }
 

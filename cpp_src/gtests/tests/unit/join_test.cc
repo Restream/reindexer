@@ -1,3 +1,4 @@
+#include <chrono>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -246,41 +247,55 @@ TEST_F(JoinSelectsApi, OrInnerJoinTest) {
 }
 
 TEST_F(JoinSelectsApi, JoinTestSorting) {
-	Query booksQuery = Query(books_namespace, 11, 1111).Sort(price, true);
-	Query joinQuery = Query(authors_namespace)
-						  .Where(authorid, CondLe, 100)
-						  .LeftJoin(authorid, authorid_fk, CondEq, booksQuery)
-						  .Sort(age, false)
-						  .Limit(10);
-
-	reindexer::QueryResults joinQueryRes;
-	Error err = rt.reindexer->Select(joinQuery, joinQueryRes);
-	EXPECT_TRUE(err.ok()) << err.what();
-
-	Variant prevField;
-	for (auto rowIt : joinQueryRes) {
-		Item item = rowIt.GetItem();
-		if (prevField.Type() != KeyValueNull) {
-			EXPECT_TRUE(prevField.Compare(item[age]) <= 0);
+	for (size_t i = 0; i < 10; ++i) {
+		int booksTimeout = 1000, authorsTimeout = 0;
+		if (i % 2 == 0) {
+			std::swap(booksTimeout, authorsTimeout);
+		} else if (i % 3) {
+			authorsTimeout = booksTimeout;
 		}
+		ChangeNsOptimizationTimeout(books_namespace, booksTimeout);
+		ChangeNsOptimizationTimeout(authors_namespace, authorsTimeout);
+		std::this_thread::sleep_for(std::chrono::milliseconds(150));
+		Query booksQuery = Query(books_namespace, 11, 1111).Where(pages, CondGe, 100).Where(price, CondGe, 200).Sort(price, true);
+		Query joinQuery = Query(authors_namespace)
+							  .Where(authorid, CondLe, 100)
+							  .LeftJoin(authorid, authorid_fk, CondEq, booksQuery)
+							  .Sort(age, false)
+							  .Limit(10);
 
-		Variant key = item[authorid];
-		auto itemIt = rowIt.GetJoinedItemsIterator();
-		if (itemIt.getJoinedItemsCount() == 0) continue;
-		auto joinedFieldIt = itemIt.begin();
+		reindexer::QueryResults joinQueryRes;
+		Error err = rt.reindexer->Select(joinQuery, joinQueryRes);
+		ASSERT_TRUE(err.ok()) << err.what();
 
-		Variant prevJoinedValue;
-		for (int i = 0; i < joinedFieldIt.ItemsCount(); ++i) {
-			reindexer::ItemImpl joinItem(joinedFieldIt.GetItem(i, joinQueryRes.getPayloadType(1), joinQueryRes.getTagsMatcher(1)));
-			Variant fkey = joinItem.GetField(joinQueryRes.getPayloadType(1).FieldByName(authorid_fk));
-			EXPECT_TRUE(key.Compare(fkey) == 0) << key.As<string>() << " " << fkey.As<string>();
-			Variant recentJoinedValue = joinItem.GetField(joinQueryRes.getPayloadType(1).FieldByName(price));
-			if (prevJoinedValue.Type() != KeyValueNull) {
-				EXPECT_TRUE(prevJoinedValue.Compare(recentJoinedValue) >= 0);
+		Variant prevField;
+		for (auto rowIt : joinQueryRes) {
+			Item item = rowIt.GetItem();
+			if (prevField.Type() != KeyValueNull) {
+				ASSERT_TRUE(prevField.Compare(item[age]) <= 0);
 			}
-			prevJoinedValue = recentJoinedValue;
+
+			Variant key = item[authorid];
+			auto itemIt = rowIt.GetJoinedItemsIterator();
+			if (itemIt.getJoinedItemsCount() == 0) continue;
+			auto joinedFieldIt = itemIt.begin();
+
+			Variant prevJoinedValue;
+			for (int i = 0; i < joinedFieldIt.ItemsCount(); ++i) {
+				reindexer::ItemImpl joinItem(joinedFieldIt.GetItem(i, joinQueryRes.getPayloadType(1), joinQueryRes.getTagsMatcher(1)));
+				Variant fkey = joinItem.GetField(joinQueryRes.getPayloadType(1).FieldByName(authorid_fk));
+				ASSERT_TRUE(key.Compare(fkey) == 0) << key.As<string>() << " " << fkey.As<string>();
+				Variant recentJoinedValue = joinItem.GetField(joinQueryRes.getPayloadType(1).FieldByName(price));
+				ASSERT_TRUE(recentJoinedValue.As<int>() >= 200);
+				if (prevJoinedValue.Type() != KeyValueNull) {
+					ASSERT_TRUE(prevJoinedValue.Compare(recentJoinedValue) >= 0);
+				}
+				Variant pagesValue = joinItem.GetField(joinQueryRes.getPayloadType(1).FieldByName(pages));
+				ASSERT_TRUE(pagesValue.As<int>() >= 100);
+				prevJoinedValue = recentJoinedValue;
+			}
+			prevField = item[age];
 		}
-		prevField = item[age];
 	}
 }
 
@@ -364,10 +379,10 @@ TEST_F(JoinSelectsApi, JoinsEasyStressTest) {
 	};
 
 	std::vector<std::thread> threads;
-	for (size_t i = 0; i < 100; ++i) {
+	for (size_t i = 0; i < 20; ++i) {
 		threads.push_back(std::thread(selectTh));
-		if (i % 10 == 0) threads.push_back(std::thread(removeTh));
-		if (i % 20 == 0) threads.push_back(std::thread([this]() { FillBooksNamespace(1000); }));
+		if (i % 2 == 0) threads.push_back(std::thread(removeTh));
+		if (i % 4 == 0) threads.push_back(std::thread([this]() { FillBooksNamespace(1000); }));
 	}
 	for (size_t i = 0; i < threads.size(); ++i) threads[i].join();
 }

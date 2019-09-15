@@ -28,7 +28,11 @@ while ((1==1)); do
   attempt=`expr $attempt + 1`
 done
 
-python3 .
+if [ -z "$1" ]; then
+  python3 .
+else
+  python3 . "$1"
+fi
 test_exit_code=$?
 
 pycleanup --cache --pyc --egg > /dev/null

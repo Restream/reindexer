@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.2.0"
+  version: "2.2.2"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -2121,6 +2121,9 @@ definitions:
       merge_limit_count:
         type: "integer"
         description: "Merge write namespace after get thi count of operations"
+      optimization_timeout_ms:
+        type: "integer"
+        description: "Timeout before background indexes optimization after last update"
   ReplicationConfig:
     type: "object"
     properties:  

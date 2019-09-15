@@ -35,6 +35,7 @@ const char *UserRoleName(UserRole role) noexcept;
 struct UserRecord {
 	string login;							/// User's login
 	string hash;							/// User's password or hash
+	string salt;							/// Password salt
 	unordered_map<string, UserRole> roles;  /// map of user's roles on databases
 };
 
@@ -131,9 +132,12 @@ public:
 
 private:
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::DbManager>;
-	Error readUsers();
+	Error readUsers() noexcept;
+	Error readUsersYAML() noexcept;
+	Error readUsersJSON() noexcept;
+	Error createDefaultUsersYAML() noexcept;
+	static UserRole userRoleFromString(string_view strRole);
 	Error loadOrCreateDatabase(const string &name, bool allowDBErrors);
-	void collectStats() noexcept;
 
 	unordered_map<string, unique_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_;
 	unordered_map<string, UserRecord> users_;

@@ -5,6 +5,7 @@
 
 #include "core/comparator.h"
 #include "core/idset.h"
+#include "core/index/indexiterator.h"
 #include "index/keyentry.h"
 
 namespace reindexer {
@@ -20,6 +21,9 @@ class SingleSelectKeyResult {
 
 public:
 	SingleSelectKeyResult() {}
+	SingleSelectKeyResult(IndexIterator::Ptr indexForwardIter) : indexForwardIter_(indexForwardIter) {
+		assert(indexForwardIter_ != nullptr);
+	}
 	template <typename KeyEntryT>
 	explicit SingleSelectKeyResult(const KeyEntryT &ids, SortType sortId) {
 		if (ids.Unsorted().IsCommited()) {
@@ -38,6 +42,7 @@ public:
 		: tempIds_(other.tempIds_),
 		  ids_(other.ids_),
 		  set_(other.set_),
+		  indexForwardIter_(other.indexForwardIter_),
 		  bsearch_(other.bsearch_),
 		  isRange_(other.isRange_),
 		  useBtree_(other.useBtree_) {
@@ -65,6 +70,7 @@ public:
 			tempIds_ = other.tempIds_;
 			ids_ = other.ids_;
 			set_ = other.set_;
+			indexForwardIter_ = other.indexForwardIter_;
 			bsearch_ = other.bsearch_;
 			isRange_ = other.isRange_;
 			useBtree_ = other.useBtree_;
@@ -123,6 +129,8 @@ protected:
 		int rrIt_;
 	};
 
+	IndexIterator::Ptr indexForwardIter_;
+
 	// if isRange is true then bsearch is always false
 	bool bsearch_ = false;
 	bool isRange_ = false;
@@ -135,7 +143,28 @@ protected:
 /// following keys: 10, 11, 12, 13, ... 19).
 class SelectKeyResult : public h_vector<SingleSelectKeyResult, 1> {
 public:
-	h_vector<Comparator, 1> comparators_;
+	h_vector<Comparator, 0> comparators_;
+
+	/// Returns total amount of rowIds in all
+	/// the SingleSelectKeyResult objects, i.e.
+	/// maximum amonut of possible iterations.
+	/// @return amount of loops.
+	size_t GetMaxIterations(size_t limitIters = std::numeric_limits<size_t>::max()) const {
+		size_t cnt = 0;
+		for (const SingleSelectKeyResult &r : *this) {
+			if (r.indexForwardIter_) {
+				cnt += r.indexForwardIter_->GetMaxIterations(limitIters);
+			} else if (r.isRange_) {
+				cnt += std::abs(r.rEnd_ - r.rBegin_);
+			} else if (r.useBtree_) {
+				cnt += r.set_->size();
+			} else {
+				cnt += r.ids_.size();
+			}
+			if (cnt > limitIters) break;
+		}
+		return cnt;
+	}
 
 	/// Represents data as one sorted set.
 	/// Creates 1 set from all the inner
@@ -145,7 +174,7 @@ public:
 	/// @return Pointer to a sorted IdSet object made
 	/// from all the SingleSelectKeyResult inner objects.
 	IdSet::Ptr mergeIdsets() {
-		auto mergedIds = std::make_shared<IdSet>();
+		auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 
 		size_t expectSize = 0;
 		for (auto it = begin(); it != end(); it++) {

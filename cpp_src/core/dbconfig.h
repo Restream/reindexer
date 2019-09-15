@@ -36,6 +36,7 @@ struct NamespaceConfigData {
 	CacheMode cacheMode = CacheModeOff;
 	int startCopyPoliticsCount = 20000;
 	int mergeLimitCount = 30000;
+	int optimizationTimeout = 800;
 };
 
 enum ReplicationRole { ReplicationNone, ReplicationMaster, ReplicationSlave };

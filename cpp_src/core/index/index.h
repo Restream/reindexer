@@ -11,6 +11,7 @@
 #include "core/perfstatcounter.h"
 #include "core/selectfunc/ctx/basefunctionctx.h"
 #include "core/selectkeyresult.h"
+#include "indexiterator.h"
 
 namespace reindexer {
 
@@ -22,10 +23,11 @@ class RdxContext;
 class Index {
 public:
 	struct SelectOpts {
-		SelectOpts() : distinct(0), disableIdSetCache(0), forceComparator(0) {}
+		SelectOpts() : distinct(0), disableIdSetCache(0), forceComparator(0), unbuiltSortOrders(0) {}
 		unsigned distinct : 1;
 		unsigned disableIdSetCache : 1;
 		unsigned forceComparator : 1;
+		unsigned unbuiltSortOrders : 1;
 	};
 	using KeyEntry = reindexer::KeyEntry<IdSet>;
 	using KeyEntryPlain = reindexer::KeyEntry<IdSetPlain>;
@@ -48,6 +50,7 @@ public:
 	virtual bool IsOrdered() const { return false; }
 	virtual IndexMemStat GetMemStat() = 0;
 	virtual int64_t GetTTLValue() const { return 0; }
+	virtual IndexIterator::Ptr CreateIterator() const { return nullptr; }
 
 	const PayloadType& GetPayloadType() const { return payloadType_; }
 	void UpdatePayloadType(const PayloadType payloadType) { payloadType_ = payloadType; }

@@ -709,7 +709,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 			}
 			if (joinResLong.needPut) {
 				JoinCacheVal val;
-				val.ids_ = std::make_shared<IdSet>();
+				val.ids_ = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 				val.matchedAtLeastOnce = matchedAtLeastOnce;
 				for (auto& r : joinItemR.Items()) {
 					val.ids_->Add(r.id, IdSet::Unordered, 0);
@@ -1065,7 +1065,8 @@ std::vector<string> defDBConfig = {
 				"unload_idle_threshold":0,
 				"join_cache_mode":"off",
 				"start_copy_politics_count":10000,
-				"merge_limit_count":20000
+				"merge_limit_count":20000,
+				"optimization_timeout_ms":800
 			}
     	]
 	})json",

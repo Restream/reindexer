@@ -1,3 +1,17 @@
+# Version 2.2.2 (15.09.2019)
+
+# Core 
+
+- [fea] More effective usage of btree index for GT/LT and sort in concurent read write operations
+- [fix] Potential crash on index update or deletion
+- [fea] Timeout of background indexes optimization can be changed from #config namespace
+
+# Reindexer server
+
+- [fea] User list moved from users.json to users.yml
+- [fea] Hash is used insead of plain password in users.yml file
+- [fix] Pass operation timeout from cproto client to core
+
 # Version 2.2.1 (07.09.2019)
 
 # Core 

@@ -6,6 +6,7 @@
 #include <string>
 #include "cpp-btree/btree_set.h"
 #include "estl/h_vector.h"
+#include "estl/intrusive_ptr.h"
 #include "estl/span.h"
 
 namespace reindexer {
@@ -29,9 +30,12 @@ public:
 	using base_idset::shrink_to_fit;
 	using base_idset::back;
 	using base_idset::heap_size;
-
-	iterator begin() { return base_idset::begin(); }
-	iterator end() { return base_idset::end(); }
+	using base_idset::begin;
+	using base_idset::end;
+	using base_idset::rbegin;
+	using base_idset::rend;
+	using base_idset::const_reverse_iterator;
+	using base_idset::const_iterator;
 
 	enum EditMode {
 		Ordered,   // Keep idset ordered, and ready to select (insert is slow O(logN)+O(N))
@@ -72,7 +76,7 @@ class IdSet : public IdSetPlain {
 	friend class SingleSelectKeyResult;
 
 public:
-	typedef shared_ptr<IdSet> Ptr;
+	using Ptr = intrusive_ptr<intrusive_atomic_rc_wrapper<IdSet>>;
 	IdSet() : usingBtree_(false) {}
 	IdSet(const IdSet &other)
 		: IdSetPlain(other), set_(!other.set_ ? nullptr : new base_idsetset(*other.set_)), usingBtree_(other.usingBtree_.load()) {}
@@ -159,6 +163,11 @@ public:
 	void ReserveForSorted(int sortedIdxCount) { reserve(((set_ ? set_->size() : size())) * (sortedIdxCount + 1)); }
 
 protected:
+	template <typename>
+	friend class BtreeIndexForwardIteratorImpl;
+	template <typename>
+	friend class BtreeIndexReverseIteratorImpl;
+
 	std::unique_ptr<base_idsetset> set_;
 	std::atomic<bool> usingBtree_;
 };

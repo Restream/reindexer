@@ -124,13 +124,13 @@ public:
 	const_iterator end() const noexcept { return ptr() + size_; }
 	const_iterator cbegin() const noexcept { return ptr(); }
 	const_iterator cend() const noexcept { return ptr() + size_; }
-	reverse_iterator rbegin() const noexcept {
-		reverse_iterator it;
+	const_reverse_iterator rbegin() const noexcept {
+		const_reverse_iterator it;
 		it = end();
 		return it;
 	}
-	reverse_iterator rend() const noexcept {
-		reverse_iterator it;
+	const_reverse_iterator rend() const noexcept {
+		const_reverse_iterator it;
 		it = begin();
 		return it;
 	}

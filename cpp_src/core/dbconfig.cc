@@ -46,6 +46,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 				data.cacheMode = str2cacheMode(nsNode["join_cache_mode"].As<string>("off"));
 				data.startCopyPoliticsCount = nsNode["start_copy_politics_count"].As<int>(data.startCopyPoliticsCount);
 				data.mergeLimitCount = nsNode["merge_limit_count"].As<int>(data.mergeLimitCount);
+				data.optimizationTimeout = nsNode["optimization_timeout_ms"].As<int>(data.optimizationTimeout);
 				namespacesData_.emplace(nsNode["namespace"].As<string>(), std::move(data));
 			}
 			auto it = handlers_.find(NamespaceDataConf);
@@ -77,6 +78,7 @@ ProfilingConfigData DBConfigProvider::GetProfilingConfig() {
 	smart_lock<shared_timed_mutex> lk(mtx_, false);
 	return profilingData_;
 }
+
 ReplicationConfigData DBConfigProvider::GetReplicationConfig() {
 	smart_lock<shared_timed_mutex> lk(mtx_, false);
 	return replicationData_;

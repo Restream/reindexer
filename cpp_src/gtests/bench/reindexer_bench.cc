@@ -5,7 +5,6 @@
 #include "api_tv_composite.h"
 #include "api_tv_simple.h"
 #include "join_items.h"
-#include "ttl_index.h"
 
 #include "tools/fsops.h"
 
@@ -36,7 +35,6 @@ int main(int argc, char** argv) {
 	JoinItems joinItems(DB.get(), 500);
 	ApiTvSimple apiTvSimple(DB.get(), "ApiTvSimple", kItemsInBenchDataset);
 	ApiTvComposite apiTvComposite(DB.get(), "ApiTvComposite", kItemsInBenchDataset);
-	TtlIndexFixture ttlIndex(DB.get(), "TtlIndex", kItemsInBenchDataset);
 
 	auto err = apiTvSimple.Initialize();
 	if (!err.ok()) return err.code();
@@ -47,16 +45,12 @@ int main(int argc, char** argv) {
 	err = apiTvComposite.Initialize();
 	if (!err.ok()) return err.code();
 
-	err = ttlIndex.Initialize();
-	if (!err.ok()) return err.code();
-
 	::benchmark::Initialize(&argc, argv);
 	if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
 
 	joinItems.RegisterAllCases();
 	apiTvSimple.RegisterAllCases();
 	apiTvComposite.RegisterAllCases();
-	ttlIndex.RegisterAllCases();
 
 	::benchmark::RunSpecifiedBenchmarks();
 }

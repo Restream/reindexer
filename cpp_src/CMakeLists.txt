@@ -14,7 +14,7 @@ option (ENABLE_LIBUNWIND "Enable libunwind" ON)
 option (ENABLE_TCMALLOC "Enable tcmalloc extensions" ON)
 option (ENABLE_JEMALLOC "Enable jemalloc extensions" ON)
 option (ENABLE_ROCKSDB "Enable rocksdb storage" ON)
-set (REINDEXER_VERSION_DEFAULT "2.2.0")
+set (REINDEXER_VERSION_DEFAULT "2.2.2")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -433,5 +433,5 @@ add_custom_target(collect_coverage
   COMMAND lcov --directory . --capture -o coverage.info
   COMMAND lcov --remove coverage.info '/usr/*' '/Library/*' '${PROJECT_SOURCE_DIR}/vendor/*' -o coverage_filtered.info
   COMMAND genhtml coverage_filtered.info -o coverage_output
-  COMMENT "Coollecting Reindexer coverage"
+  COMMENT "Collecting Reindexer coverage"
 )

@@ -17,6 +17,7 @@ public:
 		RevSingleIdset,
 		OnlyComparator,
 		Unsorted,
+		UnbuiltSortOrdersIndex,
 	};
 
 	SelectIterator();
@@ -58,6 +59,9 @@ public:
 			case Unsorted:
 				res = nextUnsorted();
 				break;
+			case UnbuiltSortOrdersIndex:
+				res = nextUnbuiltSortOrders();
+				break;
 		}
 		if (res) matchedCount_++;
 		return res;
@@ -67,11 +71,12 @@ public:
 	inline void SetUnsorted() { isUnsorted = true; }
 
 	/// Current rowId
-	int Val() const { return lastVal_; }
+	int Val() const;
+
 	/// Current rowId index since the beginning
 	/// of current SingleKeyValue object.
 	int Pos() const {
-		assert(!lastIt_->useBtree_);
+		assert(!lastIt_->useBtree_ && (type_ != UnbuiltSortOrdersIndex));
 		return lastIt_->it_ - lastIt_->begin_ - 1;
 	}
 
@@ -110,11 +115,6 @@ public:
 	/// cost goes before others.
 	double Cost(int expectedIterations) const;
 
-	/// Returns total amount of rowIds in all
-	/// the SingleSelectKeyResult objects, i.e.
-	/// maximum amonut of possible iterations.
-	/// @return amount of loops.
-	int GetMaxIterations() const;
 	/// Switches SingleSelectKeyResult to btree search
 	/// mode if it's more efficient than just comparing
 	/// each object in sequence.
@@ -139,6 +139,7 @@ protected:
 	bool nextFwdSingleIdset(IdType minHint);
 	bool nextRevSingleRange(IdType minHint);
 	bool nextRevSingleIdset(IdType minHint);
+	bool nextUnbuiltSortOrders();
 	bool nextUnsorted();
 
 	bool isUnsorted = false;
@@ -149,7 +150,6 @@ protected:
 	iterator lastIt_ = nullptr;
 	IdType end_ = 0;
 	int matchedCount_ = 0;
-	int counter_ = 0;
 };
 
 }  // namespace reindexer

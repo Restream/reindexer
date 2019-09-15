@@ -155,7 +155,8 @@ public:
 
 			bool conditionsSatisfied = checkConditions(itemr, query.entries.cbegin(), query.entries.cend());
 			if (conditionsSatisfied) ++itemsCount;
-			EXPECT_TRUE(conditionsSatisfied) << "Item doesn't match conditions: " << itemr.GetJSON();
+			EXPECT_TRUE(conditionsSatisfied) << "Item doesn't match conditions: " << itemr.GetJSON() << std::endl
+											 << "explain: " << qr.GetExplainResults();
 			if (!conditionsSatisfied) {
 				reindexer::WrSerializer ser;
 				TEST_COUT << query.GetSQL(ser).Slice() << std::endl;

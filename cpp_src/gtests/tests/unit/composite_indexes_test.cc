@@ -9,6 +9,39 @@ TEST_F(CompositeIndexesApi, CompositeIndexesAddTest) {
 	fillNamespace(201, 300);
 }
 
+TEST_F(CompositeIndexesApi, AddIndexWithExistingCompositeIndex) {
+	static constexpr const char* namespaceName = "test_ns_add_index";
+	static const std::string kFieldNameComposite = std::string{kFieldNameName} + compositePlus + kFieldNameTitle;
+	static const std::vector<std::string> suffixes = {"Vol1", "Vol2", "Vol3"};
+	static constexpr int size = 10;
+	std::vector<std::string> names;
+	names.reserve(size);
+	for (int i = 0; i < size; ++i) {
+		names.push_back(kFieldNameName + suffixes[i % suffixes.size()]);
+	}
+
+	Error err = rt.reindexer->OpenNamespace(namespaceName);
+	ASSERT_TRUE(err.ok()) << err.what();
+	DefineNamespaceDataset(namespaceName, {IndexDeclaration{kFieldNameBookid, "hash", "int", IndexOpts().PK(), 0},
+										   IndexDeclaration{kFieldNameBookid2, "hash", "int", IndexOpts(), 0},
+										   IndexDeclaration{kFieldNamePages, "hash", "int", IndexOpts(), 0},
+										   IndexDeclaration{kFieldNamePrice, "hash", "int", IndexOpts(), 0},
+										   IndexDeclaration{kFieldNameComposite.c_str(), "text", "composite", IndexOpts(), 0}});
+	for (int i = 0; i < size; ++i) {
+		Item item = NewItem(namespaceName);
+		item[this->kFieldNameBookid] = i;
+		item[this->kFieldNameBookid2] = 777;
+		item[this->kFieldNamePages] = 1010;
+		item[this->kFieldNamePrice] = 1200;
+		item[this->kFieldNameName] = names[i];
+		item[this->kFieldNameTitle] = kFieldNameTitle;
+		Upsert(namespaceName, item);
+		Commit(namespaceName);
+	}
+	err = rt.reindexer->AddIndex(namespaceName, {kFieldNameName, {kFieldNameName}, "text", "string", IndexOpts()});
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+
 void selectAll(reindexer::Reindexer* reindexer, const string& ns) {
 	QueryResults qr;
 	Error err = reindexer->Select(Query(ns, 0, 1000, ModeAccurateTotal), qr);

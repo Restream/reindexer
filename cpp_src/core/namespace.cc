@@ -74,6 +74,7 @@ Namespace::Namespace(const string &name, UpdatesObservers &observers)
 	  lastSelectTime_(0),
 	  cancelCommit_(false),
 	  lastUpdateTime_(0),
+	  optimizationTimeout_(0),
 	  itemsCount_(0) {
 	logPrintf(LogTrace, "Namespace::Namespace (%s)", name_);
 	items_.reserve(10000);
@@ -106,6 +107,7 @@ void Namespace::MoveContentsFrom(Namespace &&src) noexcept {
 	repl_ = move(src.repl_);
 	storageLoaded_ = src.storageLoaded_.load();
 	lastUpdateTime_.store(src.lastUpdateTime_.load(std::memory_order_acquire), std::memory_order_release);
+	optimizationTimeout_.store(src.optimizationTimeout_.load(std::memory_order_acquire), std::memory_order_release);
 	itemsCount_ = src.itemsCount_.load();
 
 	sparseIndexesCount_ = src.sparseIndexesCount_;
@@ -137,6 +139,7 @@ void Namespace::CopyContentsFrom(const Namespace &src) {
 	repl_ = src.repl_;
 	storageLoaded_ = src.storageLoaded_.load();
 	lastUpdateTime_.store(src.lastUpdateTime_.load(std::memory_order_acquire), std::memory_order_release);
+	optimizationTimeout_.store(src.optimizationTimeout_.load(std::memory_order_acquire), std::memory_order_release);
 	itemsCount_ = src.itemsCount_.load();
 	sparseIndexesCount_ = src.sparseIndexesCount_;
 	krefs = src.krefs;
@@ -159,6 +162,7 @@ void Namespace::onConfigUpdated(DBConfigProvider &configProvider, const RdxConte
 	ReplicationConfigData replicationConf = configProvider.GetReplicationConfig();
 
 	enablePerfCounters_ = configProvider.GetProfilingConfig().perfStats;
+	optimizationTimeout_.store(configData.optimizationTimeout, std::memory_order_release);
 
 	WLock lk(mtx_, &ctx);
 	config_ = configData;
@@ -214,11 +218,6 @@ void Namespace::recreateCompositeIndexes(int startIdx, int endIdx) {
 			indexDef.FromType(index->Type());
 
 			index.reset(Index::New(indexDef, payloadType_, index->Fields()));
-			for (IdType rowId = 0; rowId < static_cast<int>(items_.size()); ++rowId) {
-				if (!items_[rowId].IsFree()) {
-					indexes_[i]->Upsert(Variant(items_[rowId]), rowId);
-				}
-			}
 		}
 	}
 }
@@ -241,7 +240,7 @@ void Namespace::updateItems(PayloadType oldPlType, const FieldsSet &changedField
 		idx->UpdatePayloadType(payloadType_);
 	}
 
-	VariantArray krefs, skrefs;
+	VariantArray krefs, skrefsDel, skrefsUps;
 	ItemImpl newItem(payloadType_, tagsMatcher_);
 	newItem.Unsafe(true);
 	int errCount = 0;
@@ -266,22 +265,18 @@ void Namespace::updateItems(PayloadType oldPlType, const FieldsSet &changedField
 		plNew.SetLSN(plCurr.GetLSN());
 		Payload newValue(payloadType_, plNew);
 
-		for (int fieldIdx = compositeStartIdx; fieldIdx < compositeEndIdx; ++fieldIdx) {
-			indexes_[fieldIdx]->Delete(Variant(plCurr), rowId);
-		}
-
 		for (auto fieldIdx : changedFields) {
 			auto &index = *indexes_[fieldIdx];
 			if ((fieldIdx == 0) || deltaFields <= 0) {
-				oldValue.Get(fieldIdx, skrefs);
-				for (auto key : skrefs) index.Delete(key, rowId);
-				if (skrefs.empty()) index.Delete(Variant(), rowId);
+				oldValue.Get(fieldIdx, skrefsDel, true);
+				for (auto key : skrefsDel) index.Delete(key, rowId);
+				if (skrefsDel.empty()) index.Delete(Variant(), rowId);
 			}
 
 			if ((fieldIdx == 0) || deltaFields >= 0) {
-				newItem.GetPayload().Get(fieldIdx, skrefs);
+				newItem.GetPayload().Get(fieldIdx, skrefsUps);
 				krefs.resize(0);
-				for (auto key : skrefs) krefs.push_back(index.Upsert(key, rowId));
+				for (auto key : skrefsUps) krefs.push_back(index.Upsert(key, rowId));
 
 				newValue.Set(fieldIdx, krefs);
 				if (krefs.empty()) index.Upsert(Variant(), rowId);
@@ -1253,24 +1248,26 @@ pair<IdType, bool> Namespace::findByPK(ItemImpl *ritem, const RdxContext &ctx) {
 	return {-1, false};
 }
 
-void Namespace::commitIndexes(const RdxContext &ctx) {
+void Namespace::optimizeIndexes(const RdxContext &ctx) {
 	// This is read lock only atomics based implementation of rebuild indexes
 	// If sortOrdersBuilt_ is true, then indexes are completely built
 	// In this case reset sortOrdersBuilt_ to false and/or any idset's and sort orders builds are allowed only protected by write lock
 	if (sortOrdersBuilt_) return;
 	int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 	auto lastUpdateTime = lastUpdateTime_.load(std::memory_order_acquire);
-	if (!lastUpdateTime || now - lastUpdateTime < 800) {
-		return;
-	}
-	if (!indexes_.size()) {
+	if (!lastUpdateTime || now - lastUpdateTime < optimizationTimeout_.load()) {
 		return;
 	}
 
 	RLock lck(mtx_, &ctx);
+
+	if (!indexes_.size()) {
+		return;
+	}
+
 	if (sortOrdersBuilt_ || cancelCommit_) return;
 
-	logPrintf(LogTrace, "Namespace::commitIndexes(%s) enter", name_);
+	logPrintf(LogTrace, "Namespace::optimizeIndexes(%s) enter", name_);
 	assert(indexes_.firstCompositePos() != 0);
 	int field = indexes_.firstCompositePos();
 	do {
@@ -1309,7 +1306,7 @@ void Namespace::commitIndexes(const RdxContext &ctx) {
 	if (!cancelCommit_) {
 		lastUpdateTime_.store(0, std::memory_order_release);
 	}
-	logPrintf(LogTrace, "Namespace::commitIndexes(%s) leave %s", name_, cancelCommit_ ? "(cancelled by concurent update)" : "");
+	logPrintf(LogTrace, "Namespace::optimizeIndexes(%s) leave %s", name_, cancelCommit_ ? "(cancelled by concurent update)" : "");
 }
 
 uint32_t Namespace::GetItemsCount() { return itemsCount_.load(); }
@@ -1742,7 +1739,7 @@ void Namespace::removeExpiredItems(RdxActivityContext *ctx) {
 
 void Namespace::BackgroundRoutine(RdxActivityContext *ctx) {
 	flushStorage(ctx);
-	commitIndexes(ctx);
+	optimizeIndexes(ctx);
 	removeExpiredItems(ctx);
 }
 

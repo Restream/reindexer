@@ -199,7 +199,7 @@ protected:
 	void updateTagsMatcherFromItem(ItemImpl *ritem);
 	void updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields);
 	void doDelete(IdType id);
-	void commitIndexes(const RdxContext &);
+	void optimizeIndexes(const RdxContext &);
 	void insertIndex(Index *newIndex, int idxNo, const string &realName);
 	void addIndex(const IndexDef &indexDef);
 	void addCompositeIndex(const IndexDef &indexDef);
@@ -306,6 +306,7 @@ private:
 	vector<std::unique_ptr<ItemImpl>> pool_;
 	std::atomic<bool> cancelCommit_;
 	std::atomic<int64_t> lastUpdateTime_;
+	std::atomic<int> optimizationTimeout_;
 
 	std::atomic<uint32_t> itemsCount_;
 

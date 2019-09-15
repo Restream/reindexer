@@ -2,6 +2,7 @@
 #include "selectiterator.h"
 #include <algorithm>
 #include <cmath>
+#include "core/index/indexiterator.h"
 
 namespace reindexer {
 
@@ -58,7 +59,10 @@ void SelectIterator::Start(bool reverse) {
 
 	lastVal_ = isReverse_ ? INT_MAX : INT_MIN;
 	type_ = isReverse_ ? Reverse : Forward;
-	if (isUnsorted) {
+	if (size() == 1 && begin()->indexForwardIter_) {
+		type_ = UnbuiltSortOrdersIndex;
+		begin()->indexForwardIter_->Start(reverse);
+	} else if (isUnsorted) {
 		type_ = Unsorted;
 
 	} else if (size() == 1 && !isReverse_) {
@@ -120,15 +124,14 @@ bool SelectIterator::nextRev(IdType maxHint) {
 				maxVal = *it->ritset_;
 				lastIt_ = it;
 			}
-		}
-		if (it->isRange_ && it->rrIt_ != it->rrEnd_) {
+		} else if (it->isRange_ && it->rrIt_ != it->rrEnd_) {
 			it->rrIt_ = max(it->rrEnd_, min(it->rrIt_, lastVal_ - 1));
 
 			if (it->rrIt_ != it->rrEnd_ && it->rrIt_ > maxVal) {
 				maxVal = it->rrIt_;
 				lastIt_ = it;
 			}
-		} else if (!it->isRange_ && it->rit_ != it->rend_) {
+		} else if (!it->isRange_ && !it->useBtree_ && it->rit_ != it->rend_) {
 			for (; it->rit_ != it->rend_ && *it->rit_ >= lastVal_; it->rit_++) {
 			}
 			if (it->rit_ != it->rend_ && *it->rit_ > maxVal) {
@@ -227,8 +230,12 @@ bool SelectIterator::nextUnsorted() {
 	return false;
 }
 
+bool SelectIterator::nextUnbuiltSortOrders() { return begin()->indexForwardIter_->Next(); }
+
 void SelectIterator::ExcludeLastSet() {
-	if (!End() && lastIt_ != end()) {
+	if (type_ == UnbuiltSortOrdersIndex) {
+		begin()->indexForwardIter_->ExcludeLastSet();
+	} else if (!End() && lastIt_ != end()) {
 		assert(!lastIt_->isRange_);
 		if (lastIt_->useBtree_) {
 			lastIt_->itset_ = lastIt_->setend_;
@@ -256,6 +263,7 @@ void SelectIterator::AppendAndBind(SelectKeyResult &other, PayloadType type, int
 }
 
 double SelectIterator::Cost(int expectedIterations) const {
+	if (type_ == UnbuiltSortOrdersIndex) return std::numeric_limits<float>::min();
 	if (forcedFirst_) return -GetMaxIterations();
 	double result = joinIndexes.size() * static_cast<double>(std::numeric_limits<float>::max());
 	if (!comparators_.empty()) {
@@ -266,6 +274,14 @@ double SelectIterator::Cost(int expectedIterations) const {
 	return result + static_cast<double>(GetMaxIterations()) * size();
 }
 
+int SelectIterator::Val() const {
+	if (type_ == UnbuiltSortOrdersIndex) {
+		return begin()->indexForwardIter_->Value();
+	} else {
+		return lastVal_;
+	}
+}
+
 void SelectIterator::SetExpectMaxIterations(int expectedIterations) {
 	for (SingleSelectKeyResult &r : *this) {
 		if (!r.isRange_ && r.ids_.size() > 1) {
@@ -274,20 +290,6 @@ void SelectIterator::SetExpectMaxIterations(int expectedIterations) {
 			r.bsearch_ = itersbsearch < itersloop;
 		}
 	}
-}
-
-int SelectIterator::GetMaxIterations() const {
-	int cnt = 0;
-	for (const SingleSelectKeyResult &r : *this) {
-		if (r.isRange_) {
-			cnt += std::abs(r.rEnd_ - r.rBegin_);
-		} else if (r.useBtree_) {
-			cnt += r.set_->size();
-		} else {
-			cnt += r.ids_.size();
-		}
-	}
-	return cnt;
 }
 
 const char *SelectIterator::TypeName() const {
@@ -308,6 +310,8 @@ const char *SelectIterator::TypeName() const {
 			return "OnlyComparator";
 		case Unsorted:
 			return "Unsorted";
+		case UnbuiltSortOrdersIndex:
+			return "UnbuiltSortOrdersIndex";
 		default:
 			return "<unknown>";
 	}

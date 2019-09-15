@@ -3,9 +3,12 @@
 #include <gtest/gtest.h>
 #include <map>
 #include <sstream>
+#include "core/cjson/jsonbuilder.h"
+#include "core/dbconfig.h"
 #include "core/query/joinresults.h"
 #include "gason/gason.h"
 #include "reindexer_api.h"
+#include "tools/fsops.h"
 #include "tools/serializer.h"
 
 class JoinSelectsApi : public ReindexerApi {
@@ -18,6 +21,10 @@ protected:
 	void SetUp() override {
 		Error err;
 
+		reindexer::fs::RmDirAll("/tmp/join_test/");
+		err = rt.reindexer->Connect("builtin:///tmp/join_test/");
+		ASSERT_TRUE(err.ok()) << err.what();
+
 		err = rt.reindexer->OpenNamespace(authors_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
@@ -28,15 +35,15 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		DefineNamespaceDataset(genres_namespace, {IndexDeclaration{genreid, "hash", "int", IndexOpts().PK(), 0},
-												  IndexDeclaration{genrename, "text", "string", IndexOpts(), 0}});
+												  IndexDeclaration{genrename, "hash", "string", IndexOpts(), 0}});
 
 		DefineNamespaceDataset(authors_namespace, {IndexDeclaration{authorid, "hash", "int", IndexOpts().PK(), 0},
-												   IndexDeclaration{name, "text", "string", IndexOpts(), 0},
-												   IndexDeclaration{age, "hash", "int", IndexOpts(), 0}});
+												   IndexDeclaration{name, "hash", "string", IndexOpts(), 0},
+												   IndexDeclaration{age, "tree", "int", IndexOpts(), 0}});
 
 		DefineNamespaceDataset(
 			books_namespace,
-			{IndexDeclaration{bookid, "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{title, "text", "string", IndexOpts(), 0},
+			{IndexDeclaration{bookid, "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{title, "hash", "string", IndexOpts(), 0},
 			 IndexDeclaration{pages, "tree", "int", IndexOpts(), 0}, IndexDeclaration{price, "tree", "int", IndexOpts(), 0},
 			 IndexDeclaration{genreId_fk, "hash", "int", IndexOpts(), 0}, IndexDeclaration{authorid_fk, "hash", "int", IndexOpts(), 0},
 			 IndexDeclaration{string(pages + string("+") + bookid).c_str(), "hash", "composite", IndexOpts(), 0}});
@@ -217,6 +224,36 @@ protected:
 		return true;
 	}
 
+	void ChangeNsOptimizationTimeout(const string& nsName, int optimizationTimeout) {
+		reindexer::WrSerializer ser;
+		reindexer::JsonBuilder jb(ser);
+
+		jb.Put("type", "namespaces");
+		auto nsArray = jb.Array("namespaces");
+		auto ns = nsArray.Object();
+		ns.Put("namespace", nsName.c_str());
+		ns.Put("log_level", "none");
+		ns.Put("lazyload", false);
+		ns.Put("unload_idle_threshold", 0);
+		ns.Put("join_cache_mode", "off");
+		ns.Put("start_copy_politics_count", 10000);
+		ns.Put("merge_limit_count", 20000);
+		ns.Put("optimization_timeout_ms", optimizationTimeout);
+		ns.End();
+		nsArray.End();
+		jb.End();
+
+		auto item = rt.NewItem(config_namespace);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+		auto err = item.FromJSON(ser.Slice());
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		rt.Upsert(config_namespace, item);
+		err = rt.Commit(config_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
 	void CheckJoinsInComplexWhereCondition(const QueryResults& qr) {
 		for (auto it : qr) {
 			Item item = it.GetItem();
@@ -304,6 +341,7 @@ protected:
 	const std::string books_namespace = "books_namespace";
 	const std::string authors_namespace = "authors_namespace";
 	const std::string genres_namespace = "genres_namespace";
+	const std::string config_namespace = "#config";
 
 	std::vector<int> authorsIds;
 	std::vector<int> genresIds;

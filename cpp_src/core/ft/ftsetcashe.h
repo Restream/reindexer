@@ -5,7 +5,7 @@
 namespace reindexer {
 
 struct FtIdSetCacheVal {
-	FtIdSetCacheVal() : ids(std::make_shared<IdSet>()) {}
+	FtIdSetCacheVal() : ids(make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>()) {}
 	FtIdSetCacheVal(const IdSet::Ptr &i) : ids(i) {}
 	FtIdSetCacheVal(const IdSet::Ptr &i, FtCtx::Data::Ptr c) : ids(i), ctx(c) {}
 

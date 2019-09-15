@@ -281,7 +281,7 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 	Query query = Query(default_namespace, offset, limit).Sort("column1", true).Sort("column2", false).Sort("column3", false);
 	err = rt.reindexer->Select(query, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
-	EXPECT_TRUE(qr.Count() == limit);
+	EXPECT_TRUE(qr.Count() == limit) << qr.Count();
 
 	PrintQueryResults(default_namespace, qr);
 
@@ -364,7 +364,7 @@ TEST_F(ReindexerApi, SortByMultipleColumnsWithLimits) {
 	Query query = Query(default_namespace, offset, limit).Sort("f1", false).Sort("f2", false);
 	err = rt.reindexer->Select(query, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
-	EXPECT_TRUE(qr.Count() == limit);
+	EXPECT_TRUE(qr.Count() == limit) << qr.Count();
 
 	const std::vector<int> properRes = {5, 6, 7};
 	for (size_t i = 0; i < qr.Count(); ++i) {

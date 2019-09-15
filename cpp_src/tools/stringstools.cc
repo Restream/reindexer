@@ -295,7 +295,7 @@ int collateCompare(string_view lhs, string_view rhs, const CollateOpts &collateO
 
 			if (res != 0) return res;
 
-			return lhs.size() > rhs.size() ? 1 : (lhs.size() > rhs.size() ? -1 : 0);
+			return lhs.size() > rhs.size() ? 1 : (lhs.size() < rhs.size() ? -1 : 0);
 		}
 
 		return numl > numr ? 1 : (numl < numr ? -1 : 0);

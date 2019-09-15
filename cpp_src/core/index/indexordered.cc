@@ -1,5 +1,6 @@
 
 #include "indexordered.h"
+#include "core/nsselecter/btreeindexiterator.h"
 #include "core/rdxcontext.h"
 #include "tools/errors.h"
 #include "tools/logger.h"
@@ -85,11 +86,15 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 			throw Error(errParams, "Unknown query type %d", condition);
 	}
 
-	if (endIt == startIt || startIt == this->idx_map.end() || endIt == this->idx_map.begin())
+	if (endIt == startIt || startIt == this->idx_map.end() || endIt == this->idx_map.begin()) {
 		// Empty result
 		return SelectKeyResults(res);
+	}
 
-	if (sortId && this->sortId_ == sortId && !opts.distinct) {
+	if (opts.unbuiltSortOrders) {
+		IndexIterator::Ptr btreeIt(make_intrusive<BtreeIndexIterator<T>>(this->idx_map, startIt, endIt));
+		res.push_back(SingleSelectKeyResult(btreeIt));
+	} else if (sortId && this->sortId_ == sortId && !opts.distinct) {
 		assert(startIt->second.Sorted(this->sortId_).size());
 		IdType idFirst = startIt->second.Sorted(this->sortId_).front();
 
@@ -181,6 +186,11 @@ Index *IndexOrdered<T>::Clone() {
 template <typename T>
 bool IndexOrdered<T>::IsOrdered() const {
 	return true;
+}
+
+template <typename T>
+IndexIterator::Ptr IndexOrdered<T>::CreateIterator() const {
+	return make_intrusive<BtreeIndexIterator<T>>(this->idx_map);
 }
 
 template <typename KeyEntryT>

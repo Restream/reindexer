@@ -7,7 +7,7 @@
 namespace reindexer {
 
 void SelectIteratorContainer::SortByCost(int expectedIterations) {
-	h_vector<size_t, 4> indexes;
+	h_vector<unsigned, 4> indexes;
 	h_vector<double, 4> costs;
 	indexes.reserve(container_.size());
 	costs.resize(container_.size());
@@ -30,8 +30,7 @@ void SelectIteratorContainer::SortByCost(int expectedIterations) {
 	}
 }
 
-void SelectIteratorContainer::sortByCost(h_vector<size_t, 4> &indexes, h_vector<double, 4> &costs, size_t from, size_t to,
-										 int expectedIterations) {
+void SelectIteratorContainer::sortByCost(span<unsigned> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations) {
 	for (size_t cur = from, next; cur < to; cur = next) {
 		next = cur + Size(indexes[cur]);
 		if (!IsValue(indexes[cur])) {
@@ -48,7 +47,7 @@ void SelectIteratorContainer::sortByCost(h_vector<size_t, 4> &indexes, h_vector<
 			costs[indexes[j]] = cst;
 		}
 	}
-	std::stable_sort(indexes.begin() + from, indexes.begin() + to, [&costs, this](size_t i1, size_t i2) {
+	std::stable_sort(indexes.begin() + from, indexes.begin() + to, [&costs, this](unsigned i1, unsigned i2) {
 		if (IsValue(i1)) {
 			if (IsValue(i2)) {
 				if (operator[](i1).distinct < operator[](i2).distinct) return true;
@@ -64,7 +63,7 @@ void SelectIteratorContainer::sortByCost(h_vector<size_t, 4> &indexes, h_vector<
 	moveJoinsToTheBeginingOfORs(indexes, from, to);
 }
 
-void SelectIteratorContainer::moveJoinsToTheBeginingOfORs(h_vector<size_t, 4> &indexes, size_t from, size_t to) {
+void SelectIteratorContainer::moveJoinsToTheBeginingOfORs(span<unsigned> indexes, unsigned from, unsigned to) {
 	size_t firstNotJoin = from;
 	for (size_t cur = from, next; cur < to; cur = next) {
 		next = cur + Size(indexes[cur]);
@@ -87,7 +86,7 @@ void SelectIteratorContainer::moveJoinsToTheBeginingOfORs(h_vector<size_t, 4> &i
 	}
 }
 
-double SelectIteratorContainer::cost(const h_vector<size_t, 4> &indexes, size_t cur, int expectedIterations) const {
+double SelectIteratorContainer::cost(span<unsigned> indexes, unsigned cur, int expectedIterations) const {
 	if (IsValue(indexes[cur])) {
 		return (*this)[indexes[cur]].Cost(expectedIterations);
 	} else {
@@ -95,7 +94,7 @@ double SelectIteratorContainer::cost(const h_vector<size_t, 4> &indexes, size_t 
 	}
 }
 
-double SelectIteratorContainer::cost(const h_vector<size_t, 4> &indexes, size_t from, size_t to, int expectedIterations) const {
+double SelectIteratorContainer::cost(span<unsigned> indexes, unsigned from, unsigned to, int expectedIterations) const {
 	double result = 0.0;
 	for (size_t cur = from; cur < to; cur += Size(indexes[cur])) {
 		result += cost(indexes, cur, expectedIterations);
@@ -103,8 +102,7 @@ double SelectIteratorContainer::cost(const h_vector<size_t, 4> &indexes, size_t 
 	return result;
 }
 
-double SelectIteratorContainer::fullCost(const h_vector<size_t, 4> &indexes, size_t cur, size_t from, size_t to,
-										 int expectedIterations) const {
+double SelectIteratorContainer::fullCost(span<unsigned> indexes, unsigned cur, unsigned from, unsigned to, int expectedIterations) const {
 	double result = 0.0;
 	for (size_t i = from; i <= cur; i += Size(indexes[i])) {
 		if (GetOperation(indexes[i]) != OpOr) from = i;
@@ -166,17 +164,28 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 	return selectResults;
 }
 
-SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe, const Namespace &ns, unsigned sortId, bool isQueryFt,
-															SelectFunction::Ptr selectFnc, bool &isIndexFt, bool &isIndexSparse,
-															FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
+SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe, bool enableSortIndexOptimize, const Namespace &ns,
+															unsigned sortId, bool isQueryFt, SelectFunction::Ptr selectFnc, bool &isIndexFt,
+															bool &isIndexSparse, FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
 	auto &index = ns.indexes_[qe.idxNo];
 	isIndexFt = isFullText(index->Type());
 	isIndexSparse = index->Opts().IsSparse();
 
 	Index::SelectOpts opts;
 	if (!ns.sortOrdersBuilt_) opts.disableIdSetCache = 1;
-	if (isQueryFt) opts.forceComparator = 1;
-	if (qe.distinct) opts.distinct = 1;
+	if (isQueryFt) {
+		opts.forceComparator = 1;
+	}
+	if (ctx_->sortingContext.isOptimizationEnabled()) {
+		if (ctx_->sortingContext.uncommitedIndex == qe.idxNo && enableSortIndexOptimize) {
+			opts.unbuiltSortOrders = 1;
+		} else {
+			opts.forceComparator = 1;
+		}
+	}
+	if (qe.distinct) {
+		opts.distinct = 1;
+	}
 
 	auto ctx = selectFnc ? selectFnc->CreateCtx(qe.idxNo) : BaseFunctionCtx::Ptr{};
 	if (ctx && ctx->type == BaseFunctionCtx::kFtCtx) ftCtx = reindexer::reinterpret_pointer_cast<FtCtx>(ctx);
@@ -283,7 +292,10 @@ void SelectIteratorContainer::PrepareIteratorsForSelectLoop(const QueryEntries &
 															const std::multimap<unsigned, EqualPosition> &equalPositions, unsigned sortId,
 															bool isQueryFt, const Namespace &ns, SelectFunction::Ptr selectFnc,
 															FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
+	size_t next = 0;
 	for (size_t i = begin; i < end; i = queries.Next(i)) {
+		next = queries.Next(i);
+		auto op = queries.GetOperation(i);
 		if (queries.IsEntry(i)) {
 			const QueryEntry &qe = queries[i];
 			SelectKeyResults selectResults;
@@ -295,15 +307,18 @@ void SelectIteratorContainer::PrepareIteratorsForSelectLoop(const QueryEntries &
 				if (nonIndexField) {
 					selectResults = processQueryEntry(qe, ns);
 				} else {
-					selectResults = processQueryEntry(qe, ns, sortId, isQueryFt, selectFnc, isIndexFt, isIndexSparse, ftCtx, rdxCtx);
+					bool enableSortIndexOptimize =
+						!this->Size() && (op != OpNot) && !qe.distinct && (next == end || queries.GetOperation(next) != OpOr);
+					selectResults = processQueryEntry(qe, enableSortIndexOptimize, ns, sortId, isQueryFt, selectFnc, isIndexFt,
+													  isIndexSparse, ftCtx, rdxCtx);
 				}
 
 				processQueryEntryResults(selectResults, queries, i, ns, qe, isIndexFt, isIndexSparse, nonIndexField);
 			} else {
-				processJoinEntry(qe, queries.GetOperation(i));
+				processJoinEntry(qe, op);
 			}
 		} else {
-			OpenBracket(queries.GetOperation(i));
+			OpenBracket(op);
 			PrepareIteratorsForSelectLoop(queries, i + 1, queries.Next(i), equalPositions, sortId, isQueryFt, ns, selectFnc, ftCtx, rdxCtx);
 			CloseBracket();
 		}

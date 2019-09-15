@@ -16,6 +16,7 @@ public:
 							   BaseFunctionCtx::Ptr ctx, const RdxContext &) override;
 	Variant Upsert(const Variant &key, IdType id) override;
 	void MakeSortOrders(UpdateSortedContext &ctx) override;
+	IndexIterator::Ptr CreateIterator() const override;
 	Index *Clone() override;
 	bool IsOrdered() const override;
 };
