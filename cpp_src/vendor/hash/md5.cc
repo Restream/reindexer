@@ -9,9 +9,9 @@
 #ifdef __APPLE__
 #include <machine/endian.h>
 #else  //__APPLE__
-#ifndef _MSC_VER
+#ifndef _WIN32
 #include <endian.h>
-#endif  // _MSC_VER
+#endif  // _WIN32
 #endif  //__APPLE__
 
 /// same as reset()
