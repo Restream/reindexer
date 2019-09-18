@@ -224,6 +224,10 @@ type DBNamespacesConfig struct {
 	StartCopyPoliticsCount int `json:"start_copy_politics_count"`
 	// Merge write namespace after get thi count of operations
 	MergeLimitCount int `json:"merge_limit_count"`
+	// Timeout before background indexes optimization start after last update. 0 - disable optimizations
+	OptimizationTimeout int `json:"optimization_timeout_ms"`
+	// Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations
+	OptimizationSortWorkers int `json:"optimization_sort_workers"`
 }
 
 // DBReplicationConfig is part of reindexer configuration contains replication options
@@ -232,8 +236,8 @@ type DBReplicationConfig struct {
 	Role string `json:"role"`
 	// DSN to master. Only cproto schema is supported
 	MasterDSN string `json:"master_dsn"`
-	// Cluser ID - must be same for client and for master
-	ClusteID int `json:"cluster_id"`
+	// Cluster ID - must be same for client and for master
+	ClusterID int `json:"cluster_id"`
 	// force resync on logic error conditions
 	ForceSyncOnLogicError bool `json:"force_sync_on_logic_error"`
 	// force resync on wrong data hash conditions

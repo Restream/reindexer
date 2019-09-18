@@ -447,7 +447,7 @@ Error Replicator::syncMetaForced(string_view nsName) {
 			continue;
 		}
 		try {
-			ns->PutMeta(key, data, dummyCtx);
+			ns->PutMeta(key, data, dummyCtx, 1);
 		} catch (const Error &e) {
 			logPrintf(LogError, "[repl:%s] Error set meta '%s': %s", nsName, key, e.what());
 		}

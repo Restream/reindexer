@@ -377,12 +377,22 @@ func (c *connection) packRPC(cmd int, seq uint32, execTimeout int, args ...inter
 	in.ser.Close()
 }
 
-func getExecTimeout(ctx context.Context) (execTimeout int, expired bool) {
-	if execDeadline, ok := ctx.Deadline(); ok {
-		execTimeout = int(execDeadline.Sub(time.Now()) / time.Millisecond)
-		if execTimeout <= 0 {
-			expired = true
+func (c *connection) awaitSeqNum(ctx context.Context) (seq uint32, remainingTimeout int, err error) {
+	select {
+	case seq = <-c.seqs:
+		if err = ctx.Err(); err != nil {
+			c.seqs <- seq
+			return
 		}
+		if execDeadline, ok := ctx.Deadline(); ok {
+			remainingTimeout = int(execDeadline.Sub(time.Now()) / time.Millisecond)
+			if remainingTimeout <= 0 {
+				c.seqs <- seq
+				err = context.DeadlineExceeded
+			}
+		}
+	case <-ctx.Done():
+		err = ctx.Err()
 	}
 	return
 }
@@ -393,13 +403,11 @@ func (c *connection) rpcCallAsync(ctx context.Context, cmd int, netTimeout uint3
 		return
 	}
 
-	execTimeout, expired := getExecTimeout(ctx)
-	if expired {
-		cmpl(nil, context.DeadlineExceeded)
+	seq, execTimeout, err := c.awaitSeqNum(ctx)
+	if err != nil {
+		cmpl(nil, err)
 		return
 	}
-
-	seq := <-c.seqs
 	reqID := seq % queueSize
 	c.requests[reqID].cmplLock.Lock()
 	c.requests[reqID].cmpl = cmpl
@@ -417,15 +425,14 @@ func (c *connection) rpcCallAsync(ctx context.Context, cmd int, netTimeout uint3
 }
 
 func (c *connection) rpcCall(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) (buf *NetBuffer, err error) {
-	seq := <-c.seqs
+	seq, execTimeout, err := c.awaitSeqNum(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	reqID := seq % queueSize
 	reply := c.requests[reqID].repl
 	timeoutCh := c.requests[reqID].timeoutCh
-
-	execTimeout, expired := getExecTimeout(ctx)
-	if expired {
-		return nil, context.DeadlineExceeded
-	}
 
 	if netTimeout != 0 {
 		atomic.StoreUint32(&c.requests[reqID].deadline, atomic.LoadUint32(&c.now)+netTimeout)

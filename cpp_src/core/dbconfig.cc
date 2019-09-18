@@ -47,6 +47,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 				data.startCopyPoliticsCount = nsNode["start_copy_politics_count"].As<int>(data.startCopyPoliticsCount);
 				data.mergeLimitCount = nsNode["merge_limit_count"].As<int>(data.mergeLimitCount);
 				data.optimizationTimeout = nsNode["optimization_timeout_ms"].As<int>(data.optimizationTimeout);
+				data.optimizationSortWorkers = nsNode["optimization_sort_workers"].As<int>(data.optimizationSortWorkers);
 				namespacesData_.emplace(nsNode["namespace"].As<string>(), std::move(data));
 			}
 			auto it = handlers_.find(NamespaceDataConf);

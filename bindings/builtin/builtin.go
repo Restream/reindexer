@@ -153,6 +153,7 @@ func (binding *Builtin) Init(u *url.URL, options ...interface{}) error {
 	ctxWatchersPoolSize := defWatchersPoolSize
 	cgoLimit := defCgoLimit
 	var rx uintptr
+	connectOptions := *bindings.DefaultConnectOptions()
 	for _, option := range options {
 		switch v := option.(type) {
 		case bindings.OptionCgoLimit:
@@ -166,6 +167,8 @@ func (binding *Builtin) Init(u *url.URL, options ...interface{}) error {
 			if v.WatchersPoolSize > 0 {
 				ctxWatchersPoolSize = v.WatchersPoolSize
 			}
+		case bindings.ConnectOptions:
+			connectOptions = v
 		default:
 			fmt.Printf("Unknown builtin option: %v\n", option)
 		}
@@ -183,12 +186,9 @@ func (binding *Builtin) Init(u *url.URL, options ...interface{}) error {
 
 	binding.ctxWatcher = NewCtxWatcher(ctxWatchersPoolSize, ctxWatchDelay)
 
-	var connectOptions bindings.ConnectOptions
-	connectOptions.OpenNamespaces(false)
-	connectOptions.AllowNamespaceErrors(true)
 	opts := C.ConnectOpts{
-		storage: C.uint16_t(bindings.StorageTypeLevelDB),
-		options: C.uint16_t(connectOptions),
+		storage: C.uint16_t(connectOptions.Storage),
+		options: C.uint16_t(connectOptions.Opts),
 	}
 
 	return err2go(C.reindexer_connect(binding.rx, str2c(u.Path), opts))
@@ -202,9 +202,23 @@ func (binding *Builtin) Ping(ctx context.Context) error {
 	return err2go(C.reindexer_ping(binding.rx))
 }
 
-func (binding *Builtin) ModifyItem(ctx context.Context, nsHash int, namespace string, format int, data []byte, mode int, precepts []string, stateToken int) (bindings.RawBuffer, error) {
+func (binding *Builtin) awaitLimiter(ctx context.Context) (withLimiter bool, err error) {
 	if binding.cgoLimiter != nil {
-		binding.cgoLimiter <- struct{}{}
+		select {
+		case binding.cgoLimiter <- struct{}{}:
+			withLimiter = true
+		case <-ctx.Done():
+			err = ctx.Err()
+		}
+		return
+	}
+	return
+}
+
+func (binding *Builtin) ModifyItem(ctx context.Context, nsHash int, namespace string, format int, data []byte, mode int, precepts []string, stateToken int) (bindings.RawBuffer, error) {
+	if withLimiter, err := binding.awaitLimiter(ctx); err != nil {
+		return nil, err
+	} else if withLimiter {
 		defer func() { <-binding.cgoLimiter }()
 	}
 
@@ -231,8 +245,9 @@ func (binding *Builtin) ModifyItem(ctx context.Context, nsHash int, namespace st
 }
 
 func (binding *Builtin) ModifyItemTx(txCtx *bindings.TxCtx, format int, data []byte, mode int, precepts []string, stateToken int) error {
-	if binding.cgoLimiter != nil {
-		binding.cgoLimiter <- struct{}{}
+	if withLimiter, err := binding.awaitLimiter(txCtx.UserCtx); err != nil {
+		return err
+	} else if withLimiter {
 		defer func() { <-binding.cgoLimiter }()
 	}
 
@@ -380,8 +395,9 @@ func (binding *Builtin) GetMeta(ctx context.Context, namespace, key string) (bin
 }
 
 func (binding *Builtin) Select(ctx context.Context, query string, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
-	if binding.cgoLimiter != nil {
-		binding.cgoLimiter <- struct{}{}
+	if withLimiter, err := binding.awaitLimiter(ctx); err != nil {
+		return nil, err
+	} else if withLimiter {
 		defer func() { <-binding.cgoLimiter }()
 	}
 
@@ -418,8 +434,9 @@ func (binding *Builtin) RollbackTx(txCtx *bindings.TxCtx) error {
 }
 
 func (binding *Builtin) SelectQuery(ctx context.Context, data []byte, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
-	if binding.cgoLimiter != nil {
-		binding.cgoLimiter <- struct{}{}
+	if withLimiter, err := binding.awaitLimiter(ctx); err != nil {
+		return nil, err
+	} else if withLimiter {
 		defer func() { <-binding.cgoLimiter }()
 	}
 
@@ -433,8 +450,9 @@ func (binding *Builtin) SelectQuery(ctx context.Context, data []byte, asJson boo
 }
 
 func (binding *Builtin) DeleteQuery(ctx context.Context, nsHash int, data []byte) (bindings.RawBuffer, error) {
-	if binding.cgoLimiter != nil {
-		binding.cgoLimiter <- struct{}{}
+	if withLimiter, err := binding.awaitLimiter(ctx); err != nil {
+		return nil, err
+	} else if withLimiter {
 		defer func() { <-binding.cgoLimiter }()
 	}
 
@@ -448,8 +466,9 @@ func (binding *Builtin) DeleteQuery(ctx context.Context, nsHash int, data []byte
 }
 
 func (binding *Builtin) UpdateQuery(ctx context.Context, nsHash int, data []byte) (bindings.RawBuffer, error) {
-	if binding.cgoLimiter != nil {
-		binding.cgoLimiter <- struct{}{}
+	if withLimiter, err := binding.awaitLimiter(ctx); err != nil {
+		return nil, err
+	} else if withLimiter {
 		defer func() { <-binding.cgoLimiter }()
 	}
 

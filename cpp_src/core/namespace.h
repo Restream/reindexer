@@ -223,6 +223,7 @@ protected:
 
 	pair<IdType, bool> findByPK(ItemImpl *ritem, const RdxContext &);
 	int getSortedIdxCount() const;
+	void updateSortedIdxCount();
 	void setFieldsBasedOnPrecepts(ItemImpl *ritem);
 
 	void PutToJoinCache(JoinCacheRes &res, std::shared_ptr<JoinPreResult> preResult);
@@ -306,7 +307,6 @@ private:
 	vector<std::unique_ptr<ItemImpl>> pool_;
 	std::atomic<bool> cancelCommit_;
 	std::atomic<int64_t> lastUpdateTime_;
-	std::atomic<int> optimizationTimeout_;
 
 	std::atomic<uint32_t> itemsCount_;
 

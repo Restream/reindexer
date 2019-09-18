@@ -54,27 +54,45 @@ func (so *StorageOptions) DropOnFileFormatError(value bool) *StorageOptions {
 	return so
 }
 
-type ConnectOptions uint16
+type ConnectOptions struct {
+	Storage uint16
+	Opts    uint16
+}
 
 const (
 	StorageTypeLevelDB = 0
 	StorageTypeRocksDB = 1
 )
 
+func DefaultConnectOptions() *ConnectOptions {
+	var so ConnectOptions
+	return so.AllowNamespaceErrors(true).OpenNamespaces(false).StorageType(StorageTypeLevelDB)
+}
+
 func (so *ConnectOptions) OpenNamespaces(value bool) *ConnectOptions {
 	if value {
-		*so |= ConnectOptions(ConnectOptOpenNamespaces)
+		so.Opts |= uint16(ConnectOptOpenNamespaces)
 	} else {
-		*so &= ^ConnectOptions(ConnectOptOpenNamespaces)
+		so.Opts &= ^uint16(ConnectOptOpenNamespaces)
 	}
 	return so
 }
 
 func (so *ConnectOptions) AllowNamespaceErrors(value bool) *ConnectOptions {
 	if value {
-		*so |= ConnectOptions(ConnectOptAllowNamespaceErrors)
+		so.Opts |= uint16(ConnectOptAllowNamespaceErrors)
 	} else {
-		*so &= ^ConnectOptions(ConnectOptAllowNamespaceErrors)
+		so.Opts &= ^uint16(ConnectOptAllowNamespaceErrors)
+	}
+	return so
+}
+
+// Choose storage type
+func (so *ConnectOptions) StorageType(value uint16) *ConnectOptions {
+	if value != StorageTypeLevelDB && value != StorageTypeRocksDB {
+		so.Storage = StorageTypeLevelDB
+	} else {
+		so.Storage = value
 	}
 	return so
 }

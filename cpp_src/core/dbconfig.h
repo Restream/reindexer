@@ -37,6 +37,7 @@ struct NamespaceConfigData {
 	int startCopyPoliticsCount = 20000;
 	int mergeLimitCount = 30000;
 	int optimizationTimeout = 800;
+	int optimizationSortWorkers = 4;
 };
 
 enum ReplicationRole { ReplicationNone, ReplicationMaster, ReplicationSlave };

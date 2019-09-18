@@ -74,7 +74,6 @@ Namespace::Namespace(const string &name, UpdatesObservers &observers)
 	  lastSelectTime_(0),
 	  cancelCommit_(false),
 	  lastUpdateTime_(0),
-	  optimizationTimeout_(0),
 	  itemsCount_(0) {
 	logPrintf(LogTrace, "Namespace::Namespace (%s)", name_);
 	items_.reserve(10000);
@@ -107,7 +106,6 @@ void Namespace::MoveContentsFrom(Namespace &&src) noexcept {
 	repl_ = move(src.repl_);
 	storageLoaded_ = src.storageLoaded_.load();
 	lastUpdateTime_.store(src.lastUpdateTime_.load(std::memory_order_acquire), std::memory_order_release);
-	optimizationTimeout_.store(src.optimizationTimeout_.load(std::memory_order_acquire), std::memory_order_release);
 	itemsCount_ = src.itemsCount_.load();
 
 	sparseIndexesCount_ = src.sparseIndexesCount_;
@@ -139,7 +137,6 @@ void Namespace::CopyContentsFrom(const Namespace &src) {
 	repl_ = src.repl_;
 	storageLoaded_ = src.storageLoaded_.load();
 	lastUpdateTime_.store(src.lastUpdateTime_.load(std::memory_order_acquire), std::memory_order_release);
-	optimizationTimeout_.store(src.optimizationTimeout_.load(std::memory_order_acquire), std::memory_order_release);
 	itemsCount_ = src.itemsCount_.load();
 	sparseIndexesCount_ = src.sparseIndexesCount_;
 	krefs = src.krefs;
@@ -162,12 +159,13 @@ void Namespace::onConfigUpdated(DBConfigProvider &configProvider, const RdxConte
 	ReplicationConfigData replicationConf = configProvider.GetReplicationConfig();
 
 	enablePerfCounters_ = configProvider.GetProfilingConfig().perfStats;
-	optimizationTimeout_.store(configData.optimizationTimeout, std::memory_order_release);
 
 	WLock lk(mtx_, &ctx);
 	config_ = configData;
 	storageOpts_.LazyLoad(configData.lazyLoad);
 	storageOpts_.noQueryIdleThresholdSec = configData.noQueryIdleThreshold;
+
+	updateSortedIdxCount();
 
 	if (isSystem()) return;
 
@@ -378,8 +376,7 @@ void Namespace::dropIndex(const IndexDef &index) {
 
 	indexes_.erase(indexes_.begin() + fieldIdx);
 	indexesNames_.erase(itIdxName);
-	int sortedIdxCount = getSortedIdxCount();
-	for (auto &idx : indexes_) idx->SetSortedIdxCount(sortedIdxCount);
+	updateSortedIdxCount();
 }
 
 static void verifyConvertTypes(KeyValueType from, KeyValueType to, const PayloadType &payloadType, const FieldsSet &fields) {
@@ -508,8 +505,7 @@ void Namespace::addIndex(const IndexDef &indexDef) {
 		insertIndex(newIndex.release(), idxNo, indexName);
 		updateItems(oldPlType, changedFields, 1);
 	}
-	int sortedIdxCount = getSortedIdxCount();
-	for (auto &idx : indexes_) idx->SetSortedIdxCount(sortedIdxCount);
+	updateSortedIdxCount();
 }
 
 void Namespace::updateIndex(const IndexDef &indexDef) {
@@ -596,8 +592,7 @@ void Namespace::addCompositeIndex(const IndexDef &indexDef) {
 			indexes_[idxPos]->Upsert(Variant(items_[rowId]), rowId);
 		}
 	}
-	int sortedIdxCount = getSortedIdxCount();
-	for (auto &idx : indexes_) idx->SetSortedIdxCount(sortedIdxCount);
+	updateSortedIdxCount();
 }
 
 void Namespace::insertIndex(Index *newIndex, int idxNo, const string &realName) {
@@ -1255,11 +1250,11 @@ void Namespace::optimizeIndexes(const RdxContext &ctx) {
 	if (sortOrdersBuilt_) return;
 	int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 	auto lastUpdateTime = lastUpdateTime_.load(std::memory_order_acquire);
-	if (!lastUpdateTime || now - lastUpdateTime < optimizationTimeout_.load()) {
-		return;
-	}
 
 	RLock lck(mtx_, &ctx);
+	if (!lastUpdateTime || !config_.optimizationTimeout || now - lastUpdateTime < config_.optimizationTimeout) {
+		return;
+	}
 
 	if (!indexes_.size()) {
 		return;
@@ -1280,13 +1275,12 @@ void Namespace::optimizeIndexes(const RdxContext &ctx) {
 	// Update sort orders and sort_id for each index
 
 	int i = 1;
+	int maxIndexWorkers = std::min(int(std::thread::hardware_concurrency()), config_.optimizationSortWorkers);
 	for (auto &idxIt : indexes_) {
-		if (idxIt->IsOrdered()) {
+		if (idxIt->IsOrdered() && maxIndexWorkers != 0) {
 			NSUpdateSortedContext sortCtx(*this, i++);
 			idxIt->MakeSortOrders(sortCtx);
 			// Build in multiple threads
-			int maxIndexWorkers = std::thread::hardware_concurrency();
-			// if (maxIndexWorkers > 4) maxIndexWorkers = 4;
 			unique_ptr<thread[]> thrs(new thread[maxIndexWorkers]);
 			auto indexes = &this->indexes_;
 
@@ -1903,10 +1897,16 @@ vector<string> Namespace::EnumMeta(const RdxContext &ctx) {
 }
 
 int Namespace::getSortedIdxCount() const {
+	if (!config_.optimizationSortWorkers) return 0;
 	int cnt = 0;
 	for (auto &it : indexes_)
 		if (it->IsOrdered()) cnt++;
 	return cnt;
+}
+
+void Namespace::updateSortedIdxCount() {
+	int sortedIdxCount = getSortedIdxCount();
+	for (auto &idx : indexes_) idx->SetSortedIdxCount(sortedIdxCount);
 }
 
 IdType Namespace::createItem(size_t realSize) {

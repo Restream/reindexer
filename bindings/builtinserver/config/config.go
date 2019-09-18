@@ -35,13 +35,17 @@ type DebugConf struct {
 	Pprof  bool `yaml:"pprof"`
 	Allocs bool `yaml:"allocs"`
 }
-
+type MetricsConf struct {
+	Prometheus    bool  `yaml:"prometheus"`
+	CollectPeriod int64 `yaml:"collect_period"`
+}
 type ServerConfig struct {
 	Storage StorageConf `yaml:"storage"`
 	Net     NetConf     `yaml:"net"`
 	Logger  LoggerConf  `yaml:"logger"`
 	System  SystemConf  `yaml:"system"`
 	Debug   DebugConf   `yaml:"debug"`
+	Metrics MetricsConf `yaml:"metrics"`
 }
 
 func (cfg *ServerConfig) GetYamlString() (string, error) {
@@ -74,6 +78,10 @@ func DefaultServerConfig() *ServerConfig {
 		Debug: DebugConf{
 			Pprof:  false,
 			Allocs: false,
+		},
+		Metrics: MetricsConf{
+			Prometheus:    false,
+			CollectPeriod: 1000,
 		},
 	}
 }

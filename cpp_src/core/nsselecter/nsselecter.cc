@@ -16,7 +16,6 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	explain.StartTiming();
 
 	bool needPutCachedTotal = false;
-	bool forcedSort = !ctx.query.forcedSortOrder.empty();
 	bool needCalcTotal = ctx.query.calcTotal == ModeAccurateTotal;
 
 	QueryCacheKey ckey;
@@ -74,7 +73,8 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		// Unbuilt btree index optimization is available for query with
 		// Check, is it really possible to use it
 
-		if ((ctx.preResult /*&& !ctx.preResult->btreeIndexOptimizationEnabled*/) ||  // Disabled in join preresult (TMP: now disable for all
+		if (isFt ||																	 // Disabled if there are search results
+			(ctx.preResult /*&& !ctx.preResult->btreeIndexOptimizationEnabled*/) ||  // Disabled in join preresult (TMP: now disable for all
 																					 // right queries), TODO: enable right queries)
 			(!tmpWhereEntries.Empty() && tmpWhereEntries.GetOperation(0) == OpNot) ||  // Not in first condition
 			!isSortOptimizatonEffective(tmpWhereEntries, ctx,
@@ -134,7 +134,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		// Build preResult as single IdSet
 	}
 
-	bool hasComparators = false, hasScan = false;
+	bool hasComparators = false;
 	bool reverse = !isFt && ctx.sortingContext.sortIndex() && ctx.sortingContext.entries[0].data->desc;
 
 	qres.ForeachIterator([&hasComparators](const SelectIterator &it, OpType) {
@@ -156,7 +156,6 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 				limit = index->SortOrders().size();
 			}
 			res.push_back(SingleSelectKeyResult(0, limit));
-			hasScan = ctx.sortingContext.sortIndex() && !forcedSort ? false : true;
 		}
 		qres.AppendFront(OpAnd, SelectIterator(res, false, "-scan", true));
 	}
@@ -190,14 +189,10 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	lctx.qres = &qres;
 	lctx.calcTotal = needCalcTotal;
 	if (isFt) result.haveProcent = true;
-	if (reverse && hasComparators && hasScan) selectLoop<true, true, true>(lctx, result, rdxCtx);
-	if (!reverse && hasComparators && hasScan) selectLoop<false, true, true>(lctx, result, rdxCtx);
-	if (reverse && !hasComparators && hasScan) selectLoop<true, false, true>(lctx, result, rdxCtx);
-	if (!reverse && !hasComparators && hasScan) selectLoop<false, false, true>(lctx, result, rdxCtx);
-	if (reverse && hasComparators && !hasScan) selectLoop<true, true, false>(lctx, result, rdxCtx);
-	if (!reverse && hasComparators && !hasScan) selectLoop<false, true, false>(lctx, result, rdxCtx);
-	if (reverse && !hasComparators && !hasScan) selectLoop<true, false, false>(lctx, result, rdxCtx);
-	if (!reverse && !hasComparators && !hasScan) selectLoop<false, false, false>(lctx, result, rdxCtx);
+	if (reverse && hasComparators) selectLoop<true, true>(lctx, result, rdxCtx);
+	if (!reverse && hasComparators) selectLoop<false, true>(lctx, result, rdxCtx);
+	if (reverse && !hasComparators) selectLoop<true, false>(lctx, result, rdxCtx);
+	if (!reverse && !hasComparators) selectLoop<false, false>(lctx, result, rdxCtx);
 
 	explain.SetLoopTime();
 	explain.StopTiming();
@@ -467,7 +462,7 @@ bool NsSelecter::checkIfThereAreLeftJoins(SelectCtx &sctx) const {
 	return false;
 }
 
-template <bool reverse, bool hasComparators, bool hasScan>
+template <bool reverse, bool hasComparators>
 void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext &rdxCtx) {
 	const auto selectLoopWard = rdxCtx.BeforeSelectLoop();
 	unsigned start = 0;
@@ -507,7 +502,6 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 		rowId = firstIterator.Val();
 		IdType properRowId = rowId;
 
-		if (hasScan && ns_->items_[properRowId].IsFree()) continue;
 		if (firstSortIndex && sctx.sortingContext.enableSortOrders) {
 			assert(firstSortIndex->SortOrders().size() > static_cast<size_t>(rowId));
 			properRowId = firstSortIndex->SortOrders()[rowId];
@@ -737,35 +731,54 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 	if (qentries.Size() == 0 || (qentries.Size() == 1 && qentries.IsEntry(0) && qentries[0].idxNo == ctx.sortingContext.uncommitedIndex))
 		return true;
 
-	size_t costOptimized = ns_->items_.size();
-	size_t costNormal = ns_->items_.size();
+	size_t costNormal = ns_->items_.size() - ns_->free_.size();
 
-	qentries.ForeachEntry([this, &ctx, &rdxCtx, &costOptimized, &costNormal](const QueryEntry &qe, OpType) {
-		if (qe.idxNo < 0) return;
-		if (costNormal == 0 || costOptimized == 0) return;
+	qentries.ForeachEntry([this, &ctx, &rdxCtx, &costNormal](const QueryEntry &qe, OpType) {
+		if (qe.idxNo < 0 || qe.idxNo == ctx.sortingContext.uncommitedIndex) return;
+		if (costNormal == 0) return;
 
 		auto &index = ns_->indexes_[qe.idxNo];
 		if (isFullText(index->Type())) return;
 
 		Index::SelectOpts opts;
 		opts.disableIdSetCache = 1;
-		opts.unbuiltSortOrders = (qe.idxNo == ctx.sortingContext.uncommitedIndex) ? 1 : 0;
 
 		try {
 			SelectKeyResults reslts = index->SelectKey(qe.values, qe.condition, 0, opts, nullptr, rdxCtx);
-
 			for (const SelectKeyResult &res : reslts) {
 				if (res.comparators_.empty()) {
-					if (opts.unbuiltSortOrders)
-						costOptimized = std::min(costOptimized, res.GetMaxIterations(costNormal));
-					else
-						costNormal = std::min(costNormal, res.GetMaxIterations(costNormal));
+					costNormal = std::min(costNormal, res.GetMaxIterations(costNormal));
 				}
 			}
 		} catch (const Error &err) {
 			// std::cout << err.what() << std::endl;
 		}
 	});
+
+	size_t costOptimized = ns_->items_.size() - ns_->free_.size();
+	costNormal *= 2;
+	if (costNormal < costOptimized) {
+		costOptimized = costNormal + 1;
+		qentries.ForeachEntry([this, &ctx, &rdxCtx, &costOptimized](const QueryEntry &qe, OpType) {
+			if (qe.idxNo < 0 || qe.idxNo != ctx.sortingContext.uncommitedIndex) return;
+
+			Index::SelectOpts opts;
+			opts.disableIdSetCache = 1;
+			opts.unbuiltSortOrders = 1;
+
+			try {
+				SelectKeyResults reslts = ns_->indexes_[qe.idxNo]->SelectKey(qe.values, qe.condition, 0, opts, nullptr, rdxCtx);
+				for (const SelectKeyResult &res : reslts) {
+					if (res.comparators_.empty()) {
+						costOptimized = std::min(costOptimized, res.GetMaxIterations(costOptimized));
+					}
+				}
+			} catch (const Error &err) {
+				// std::cout << err.what() << std::endl;
+			}
+		});
+	}
+
 	// if (costOptimized > costNormal) {
 	// WrSerializer wr;
 	// ctx.query.GetSQL(wr);

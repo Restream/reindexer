@@ -44,7 +44,7 @@ Error DBManager::Init(const std::string &storageEngine, bool allowDBErrors) {
 			if (!status.ok()) {
 				logPrintf(LogError, "Failed to open database '%s' - %s", de.name, status.what());
 				if (status.code() == errNotValid) {
-					logPrintf(LogError, "Try to run:\n\treindexer_tool --dsn \"builtin://%s\" --repair\nto restore data", dbpath_);
+					logPrintf(LogError, "Try to run:\t`reindexer_tool --dsn \"builtin://%s\" --repair`  to restore data", dbpath_);
 					return status;
 				}
 			}

@@ -61,7 +61,7 @@ private:
 		SelectCtx &sctx;
 	};
 
-	template <bool reverse, bool haveComparators, bool haveDistinct>
+	template <bool reverse, bool haveComparators>
 	void selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext &);
 	void applyForcedSort(ItemRefVector &result, const SelectCtx &ctx);
 	void applyForcedSortDesc(ItemRefVector &result, const SelectCtx &ctx);

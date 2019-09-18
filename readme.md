@@ -52,6 +52,9 @@ The core is written in C++ and the application level API is in Go.
     - [Command line tool](#command-line-tool)
     - [Dump and restore database](#dump-and-restore-database)
     - [Replication](#replication)
+- [Security](#security)
+- [Alternative storages](#alternative-storages)
+    - [RockDB](#rocksdb)
 - [Integration with other program languages](#integration-with-other-program-languages)
 	- [Pyreindexer](#pyreindexer)
 	- [HTTP REST API](#http-rest-api)
@@ -756,6 +759,30 @@ More details about replication is [here](replication.md)
 Reindexer server supports login/password authorization for http/rpc client with different access levels for each user/database. To enable this feature `security` flag should be set in server.yml.
 If security option is active reindexer will try to load users list from `users.yml` or `users.json`(deprecate) found in database path. If users-file was not found the default one
 will be created automaticly (default login/password are `reindexer`/`reindexer`)
+
+## Alternative storages
+
+A list of storages, which may be used by reindexer as an alternative for LevelDB.
+
+Storage type may be selected by passing command line option to reindexer_server like this:
+
+```sh
+reindexer_server --db /tmp/rx --engine rocksdb
+```
+
+Also storage type may be set via server's `config.yml`:
+
+```yaml
+storage:
+  engine: leveldb
+```
+
+To configure storage type for Go bindings either `bindings.ConnectOptions` (for builtin) or `confg.ServerConfig` (for builtinserver) structs may be used.
+
+### RocksDB
+
+Reindexer will try to autodetect RocksDB library and it's dependencies at compile time if CMake flag `ENABLE_ROCKSDB` was passed (enabled by default). 
+If reindexer library was built with rocksdb, it requires Go build tag `rocksdb` in order to link with go-applications and go-bindinds.
 
 ## Integration with other program languages
 

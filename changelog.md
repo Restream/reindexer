@@ -1,3 +1,17 @@
+# Version 2.2.3 (18.09.2019)
+
+# Core 
+
+- [fix] Fulltext queries sort by another field
+- [fea] Number of bacground threads for sort optimization can be changed from #config namespace
+- [fix] Sort optimization choose logic is improoved
+
+# go connectpr
+
+- [fix] leak seq from chan
+- [fix] check ctx.Done while waiting on cgo limiter
+
+
 # Version 2.2.2 (15.09.2019)
 
 # Core 

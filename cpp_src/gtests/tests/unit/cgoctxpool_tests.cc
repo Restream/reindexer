@@ -8,7 +8,7 @@ using std::unique_ptr;
 using reindexer::CancelType;
 
 static const size_t kCtxPoolSize = 4096;
-static const size_t kCtxPoolTestsRepeatCount = 200;
+static const size_t kCtxPoolTestsRepeatCount = 40;
 
 TEST_F(CGOCtxPoolApi, SingleThread) {
 	static const size_t kFirstIterCount = kCtxPoolSize + 1;
@@ -236,7 +236,7 @@ TEST_F(CGOCtxPoolApi, MultiThread) {
 
 TEST_F(CGOCtxPoolApi, MultiThreadSynced) {
 	const size_t kThreadsCount = 16;
-	for (size_t testNum = 0; testNum < kCtxPoolTestsRepeatCount / 2; ++testNum) {
+	for (size_t testNum = 0; testNum < kCtxPoolTestsRepeatCount; ++testNum) {
 		multiThreadTest(kThreadsCount, MultiThreadTestMode::Synced);
 	}
 }

@@ -263,7 +263,7 @@ void SelectIterator::AppendAndBind(SelectKeyResult &other, PayloadType type, int
 }
 
 double SelectIterator::Cost(int expectedIterations) const {
-	if (type_ == UnbuiltSortOrdersIndex) return std::numeric_limits<float>::min();
+	if (type_ == UnbuiltSortOrdersIndex) return -1;
 	if (forcedFirst_) return -GetMaxIterations();
 	double result = joinIndexes.size() * static_cast<double>(std::numeric_limits<float>::max());
 	if (!comparators_.empty()) {
