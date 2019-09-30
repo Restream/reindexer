@@ -5,6 +5,7 @@
 #include "gason/gason.h"
 #include "tools/errors.h"
 #include "tools/logger.h"
+#include "vendor/gason/gason.h"
 
 using std::string;
 using std::vector;
@@ -463,6 +464,26 @@ Error RPCClient::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll, const
 		return Error(errParseJson, "EnumNamespaces: %s", err.what());
 	}
 }
+
+Error RPCClient::EnumDatabases(vector<string>& dbList, const InternalRdxContext& ctx) {
+	try {
+		auto ret = getConn()->Call(cproto::kCmdEnumDatabases, config_.RequestTimeout, ctx.execTimeout(), 0);
+		if (ret.Status().ok()) {
+			gason::JsonParser parser;
+			auto json = ret.GetArgs(1)[0].As<string>();
+			auto root = parser.Parse(giftStr(json));
+			for (auto& elem : root["databases"]) {
+				dbList.emplace_back(elem.As<string>());
+			}
+		}
+		return ret.Status();
+	} catch (const Error& err) {
+		return err;
+	} catch (const gason::Exception& err) {
+		return Error(errParseJson, "EnumDatabases: %s", err.what());
+	}
+}
+
 Error RPCClient::SubscribeUpdates(IUpdatesObserver* observer, bool subscribe) {
 	if (subscribe) {
 		observers_.Add(observer);
@@ -485,6 +506,7 @@ Error RPCClient::SubscribeUpdates(IUpdatesObserver* observer, bool subscribe) {
 	}
 	return err;
 }
+
 Error RPCClient::GetSqlSuggestions(string_view query, int pos, std::vector<std::string>& suggests) {
 	try {
 		auto ret = getConn()->Call(cproto::kCmdGetSQLSuggestions, config_.RequestTimeout, milliseconds(0), query, pos);
@@ -587,14 +609,16 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 			delayedUpdates_.emplace_back(std::move(ans));
 
 			QueryResults* qr = new QueryResults;
-			Select(Query(string(nsName)).Limit(0), *qr, InternalRdxContext([=](const Error& err) {
-															delete qr;
-															// If there are delayed updates, then send them to client
-															auto uq = std::move(delayedUpdates_);
-															delayedUpdates_.clear();
-															if (err.ok())
-																for (auto& a1 : uq) onUpdates(a1, conn);
-														}).cmpl(),
+			Select(Query(string(nsName)).Limit(0), *qr,
+				   InternalRdxContext([=](const Error& err) {
+					   delete qr;
+					   // If there are delayed updates, then send them to client
+					   auto uq = std::move(delayedUpdates_);
+					   delayedUpdates_.clear();
+					   if (err.ok())
+						   for (auto& a1 : uq) onUpdates(a1, conn);
+				   })
+					   .cmpl(),
 				   conn);
 			return;
 		} else {

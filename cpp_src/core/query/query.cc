@@ -2,7 +2,6 @@
 #include "core/query/query.h"
 #include "core/keyvalue/key_string.h"
 #include "core/namespace.h"
-#include "core/namespacecloner.h"
 #include "core/query/aggregationresult.h"
 #include "core/query/dslencoder.h"
 #include "core/query/dslparsetools.h"
@@ -276,7 +275,7 @@ void getMatchingNamespacesNames(const Namespaces &namespaces, const string &toke
 void Query::getMatchingIndexesNames(const Namespaces &namespaces, const string &nsName, const string &token, vector<string> &variants) {
 	auto itNs = namespaces.find(nsName);
 	if (itNs == namespaces.end()) return;
-	Namespace::Ptr ns = itNs->second->GetOriginNs();
+	Namespace::Ptr ns = itNs->second;
 	for (auto it = ns->indexesNames_.begin(); it != ns->indexesNames_.end(); ++it) {
 		if (it->first == "#pk" || it->first == "-tuple") continue;
 		if (isBlank(token) || checkIfStartsWith(token, it->first)) variants.push_back(it->first);
@@ -346,7 +345,7 @@ bool Query::findInPossibleTokens(int type, const string &v) {
 bool Query::findInPossibleIndexes(const string &tok, const string &nsName, const Namespaces &namespaces) {
 	auto itNs = namespaces.find(nsName);
 	if (itNs == namespaces.end()) return false;
-	Namespace::Ptr ns = itNs->second->GetOriginNs();
+	Namespace::Ptr ns = itNs->second;
 	return ns->indexesNames_.find(tok) != ns->indexesNames_.end();
 }
 
@@ -881,7 +880,7 @@ static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry 
 		};
 		while (!eof(parser)) {
 			++count;
-			expression += string(parser.next_token().text());
+			expression += string(parser.next_token(false).text());
 		}
 		updateField.values.push_back(count ? Variant(expression) : token2kv(currTok, parser));
 		updateField.isExpression = count != 0;
@@ -890,7 +889,7 @@ static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry 
 
 UpdateEntry Query::parseUpdateField(tokenizer &parser, SqlParsingCtx &ctx) {
 	UpdateEntry updateField;
-	token tok = peekSqlToken(parser, ctx, FieldNameSqlToken);
+	token tok = peekSqlToken(parser, ctx, FieldNameSqlToken, false);
 	if (tok.type != TokenName && tok.type != TokenString)
 		throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
 	updateField.column = string(tok.text());
@@ -899,12 +898,12 @@ UpdateEntry Query::parseUpdateField(tokenizer &parser, SqlParsingCtx &ctx) {
 	tok = parser.next_token();
 	if (tok.text() != "="_sv) throw Error(errParams, "Expected '=' but found '%s' in query, '%s'", tok.text(), parser.where());
 
-	tok = parser.next_token();
+	tok = parser.next_token(false);
 	if (tok.text() == "["_sv) {
 		for (;;) {
-			tok = parser.next_token();
+			tok = parser.next_token(false);
 			addUpdateValue(tok, parser, updateField);
-			tok = parser.next_token();
+			tok = parser.next_token(false);
 			if (tok.text() == "]"_sv) break;
 			if (tok.text() != ","_sv)
 				throw Error(errParseSQL, "Expected ']' or ',', but found '%s' in query, %s", tok.text(), parser.where());

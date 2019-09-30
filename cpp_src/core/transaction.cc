@@ -2,35 +2,24 @@
 #include "transactionimpl.h"
 namespace reindexer {
 
-using std::string;
-using std::move;
-
-Transaction::~Transaction() {
-	if (impl_) {
-		delete impl_;
+Transaction::Transaction(const string &nsName, ReindexerImpl *rx, Completion cmpl) : impl_(nullptr) {
+	try {
+		impl_.reset(new TransactionImpl(nsName, rx, cmpl));
+	} catch (const Error &err) {
+		status_ = err;
 	}
 }
-Transaction::Transaction(const string &nsName, ReindexerImpl *rx, Completion cmpl) : impl_(new TransactionImpl(nsName, rx, cmpl)) {}
 
-Transaction::Transaction(Transaction &&rhs) noexcept {
-	impl_ = rhs.impl_;
-	rhs.impl_ = nullptr;
-}
-
-Transaction &Transaction::operator=(Transaction &&rhs) noexcept {
-	if (&rhs != this) {
-		if (impl_) delete impl_;
-		impl_ = rhs.impl_;
-		rhs.impl_ = nullptr;
-	}
-	return *this;
-}
+Transaction::~Transaction() = default;
+Transaction::Transaction(Transaction &&) = default;
+Transaction &Transaction::operator=(Transaction &&) = default;
 
 const string &Transaction::GetName() {
+	static std::string empty;
 	if (impl_)
 		return impl_->nsName_;
 	else
-		return empty_;
+		return empty;
 }
 
 void Transaction::Insert(Item &&item) {
@@ -49,6 +38,14 @@ void Transaction::Modify(Item &&item, ItemModifyMode mode) {
 	if (impl_) impl_->Modify(move(item), mode);
 }
 
+void Transaction::Modify(Query &&query) {
+	if (impl_) impl_->Modify(move(query));
+}
+
 Item Transaction::NewItem() { return impl_->NewItem(); }
+
+Completion Transaction::GetCmpl() { return impl_->cmpl_; }
+
+vector<TransactionStep> &Transaction::GetSteps() { return impl_->steps_; }
 
 }  // namespace reindexer

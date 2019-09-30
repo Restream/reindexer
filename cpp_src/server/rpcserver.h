@@ -49,6 +49,7 @@ public:
 	Error TruncateNamespace(cproto::Context &ctx, p_string ns);
 	Error CloseNamespace(cproto::Context &ctx, p_string ns);
 	Error EnumNamespaces(cproto::Context &ctx);
+	Error EnumDatabases(cproto::Context &ctx);
 
 	Error AddIndex(cproto::Context &ctx, p_string ns, p_string indexDef);
 	Error UpdateIndex(cproto::Context &ctx, p_string ns, p_string indexDef);
@@ -62,6 +63,9 @@ public:
 	Error StartTransaction(cproto::Context &ctx, p_string nsName);
 
 	Error AddTxItem(cproto::Context &ctx, int format, p_string itemData, int mode, p_string percepsPack, int stateToken, int64_t txID);
+	Error DeleteQueryTx(cproto::Context &ctx, p_string query, int64_t txID);
+	Error UpdateQueryTx(cproto::Context &ctx, p_string query, int64_t txID);
+
 	Error CommitTx(cproto::Context &ctx, int64_t txId);
 
 	Error RollbackTx(cproto::Context &ctx, int64_t txId);

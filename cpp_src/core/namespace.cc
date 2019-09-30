@@ -630,9 +630,15 @@ void Namespace::Insert(Item &item, const RdxContext &ctx, bool store) { modifyIt
 
 void Namespace::Update(Item &item, const RdxContext &ctx, bool store) { modifyItem(item, ctx, store, ModeUpdate); }
 
-void Namespace::Update(const Query &query, QueryResults &result, const RdxContext &ctx, int64_t lsn) {
+void Namespace::Update(const Query &query, QueryResults &result, const RdxContext &ctx, int64_t lsn, bool noLock) {
 	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
-	WLock lock(mtx_, &ctx);
+	WLock lock(mtx_, defer_lock, &ctx);
+
+	if (!noLock) {
+		cancelCommit_ = true;
+		lock.lock();
+		cancelCommit_ = false;
+	}
 	calc.LockHit();
 
 	if (repl_.slaveMode && lsn == -1) throw Error(errLogic, "Can't modify slave ns '%s'", name_);
@@ -894,7 +900,15 @@ void Namespace::SetSlaveLSN(int64_t slaveLsn, const RdxContext &ctx) {
 }
 
 void Namespace::ApplyTransactionStep(TransactionStep &step, RdxActivityContext *ctx) {
-	if (step.status_ == ModeDelete) {
+	if (step.query_) {
+		QueryResults qr;
+		if (step.query_->type_ == QueryDelete) {
+			Delete(*step.query_, qr, ctx, -1, true);
+		} else {
+			Update(*step.query_, qr, ctx, -1, true);
+		}
+
+	} else if (step.status_ == ModeDelete) {
 		Delete(step.item_, ctx, true);
 	} else {
 		modifyItem(step.item_, ctx, true, step.status_, true);
@@ -1296,7 +1310,7 @@ void Namespace::optimizeIndexes(const RdxContext &ctx) {
 		}
 		if (cancelCommit_) break;
 	}
-	sortOrdersBuilt_ = !cancelCommit_;
+	sortOrdersBuilt_ = !cancelCommit_ && maxIndexWorkers;
 	if (!cancelCommit_) {
 		lastUpdateTime_.store(0, std::memory_order_release);
 	}

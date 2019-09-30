@@ -358,7 +358,11 @@ func (db *reindexerImpl) setDefaultQueryDebug(ctx context.Context, namespace str
 
 // query Create new Query for building request
 func (db *reindexerImpl) query(namespace string) *Query {
-	return newQuery(db, namespace)
+	return newQuery(db, namespace, nil)
+}
+
+func (db *reindexerImpl) queryTx(namespace string, tx *Tx) *Query {
+	return newQuery(db, namespace, tx)
 }
 
 // execSQL make query to database. Query is a SQL statement.

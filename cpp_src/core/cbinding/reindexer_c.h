@@ -28,6 +28,8 @@ reindexer_error reindexer_drop_index(uintptr_t rx, reindexer_string nsName, rein
 reindexer_tx_ret reindexer_start_transaction(uintptr_t rx, reindexer_string nsName);
 
 reindexer_error reindexer_modify_item_packed_tx(uintptr_t rx, uintptr_t tr, reindexer_buffer args, reindexer_buffer data);
+reindexer_error reindexer_update_query_tx(uintptr_t rx, uintptr_t tr, reindexer_buffer in);
+reindexer_error reindexer_delete_query_tx(uintptr_t rx, uintptr_t tr, reindexer_buffer in);
 reindexer_ret reindexer_commit_transaction(uintptr_t rx, uintptr_t tr, reindexer_ctx_info ctx_info);
 
 reindexer_error reindexer_rollback_transaction(uintptr_t rx, uintptr_t tr);

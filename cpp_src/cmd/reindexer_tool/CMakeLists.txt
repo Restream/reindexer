@@ -13,7 +13,7 @@ if (NOT ReplXX_LIBRARY OR NOT ReplXX_INCLUDE_DIR)
   ExternalProject_Add(
     replxx_lib
     GIT_REPOSITORY "https://github.com/Restream/replxx"
-    GIT_TAG "master"
+    GIT_TAG "b50b7b7a8c2835b45607cffabc18e4742072e9e6"
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
   )
   include_directories (${CMAKE_CURRENT_BINARY_DIR}/include)

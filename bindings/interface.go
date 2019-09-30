@@ -171,6 +171,8 @@ type RawBinding interface {
 	RollbackTx(tx *TxCtx) error
 	ModifyItemTx(txCtx *TxCtx, format int, data []byte, mode int, percepts []string, stateToken int) error
 	ModifyItemTxAsync(txCtx *TxCtx, format int, data []byte, mode int, percepts []string, stateToken int, cmpl RawCompletion)
+	DeleteQueryTx(txCtx *TxCtx, rawQuery []byte) error
+	UpdateQueryTx(txCtx *TxCtx, rawQuery []byte) error
 
 	PutMeta(ctx context.Context, namespace, key, data string) error
 	GetMeta(ctx context.Context, namespace, key string) (RawBuffer, error)

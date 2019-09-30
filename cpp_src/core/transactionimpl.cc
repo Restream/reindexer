@@ -4,17 +4,6 @@ namespace reindexer {
 
 using std::string;
 
-TransactionAccessor::TransactionAccessor(TransactionAccessor &&rhs) noexcept : Transaction(std::move(rhs)) {}
-TransactionAccessor &TransactionAccessor::operator=(TransactionAccessor &&rhs) noexcept {
-	Transaction::operator=(std::move(rhs));
-	return *this;
-}
-const string &TransactionAccessor::GetName() { return impl_->nsName_; }
-
-Completion TransactionAccessor::GetCmpl() { return impl_->cmpl_; }
-
-vector<TransactionStep> &TransactionAccessor::GetSteps() { return impl_->steps_; }
-
 void TransactionImpl::checkTagsMatcher(Item &item) {
 	if (item.IsTagsUpdated()) {
 		ItemImpl *ritem = item.impl_;
@@ -26,7 +15,7 @@ Item TransactionImpl::NewItem() { return Item(new ItemImpl(payloadType_, tagsMat
 
 TransactionImpl::TransactionImpl(const string &nsName, ReindexerImpl *rx, Completion cmpl) : nsName_(nsName), cmpl_(cmpl), rx_(rx) {
 	static const RdxContext dummyCtx;
-	auto nsPtr_ = rx_->getClonableNamespace(nsName_, dummyCtx);
+	auto nsPtr_ = rx_->getNamespace(nsName_, dummyCtx);
 	Namespace::RLock lck(nsPtr_->mtx_, &dummyCtx);
 	payloadType_ = nsPtr_->payloadType_;
 	tagsMatcher_ = nsPtr_->tagsMatcher_;
@@ -75,5 +64,7 @@ void TransactionImpl::Modify(Item &&item, ItemModifyMode mode) {
 	checkTagsMatcher(item);
 	steps_.emplace_back(TransactionStep{move(item), mode});
 }
+
+void TransactionImpl::Modify(Query &&query) { steps_.emplace_back(TransactionStep(std::move(query))); }
 
 }  // namespace reindexer

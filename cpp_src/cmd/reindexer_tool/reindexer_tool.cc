@@ -2,9 +2,9 @@
 #include <limits>
 #include "args/args.hpp"
 #include "client/reindexer.h"
+#include "commandsprocessor.h"
 #include "core/reindexer.h"
 #include "core/storage/storagefactory.h"
-#include "dbwrapper.h"
 #include "debug/backtrace.h"
 #include "reindexer_version.h"
 #include "tools/fsops.h"
@@ -111,7 +111,7 @@ int main(int argc, char* argv[]) {
 
 	args::Group progOptions("options");
 	args::ValueFlag<string> dbDsn(progOptions, "DSN", "DSN to 'reindexer'. Can be 'cproto://<ip>:<port>/<dbname>' or 'builtin://<path>'",
-								  {'d', "dsn"}, "", Options::Single | Options::Global | Options::Required);
+								  {'d', "dsn"}, "", Options::Single | Options::Global);
 	args::ValueFlag<string> fileName(progOptions, "FILENAME", "execute commands from file, then exit", {'f', "filename"}, "",
 									 Options::Single | Options::Global);
 	args::ValueFlag<string> command(progOptions, "COMMAND", "run only single command (SQL or internal) and exit'", {'c', "command"}, "",
@@ -123,6 +123,8 @@ int main(int argc, char* argv[]) {
 
 	args::ValueFlag<int> connThreads(progOptions, "INT", "Number of threads used by db connector", {'t', "threads"}, 1,
 									 Options::Single | Options::Global);
+
+	args::Positional<string> dbName(progOptions, "DB name", "Name of a database to get connected to", Options::Single);
 
 	args::ActionFlag logLevel(progOptions, "INT=1..5", "reindexer logging level", {'l', "log"}, 1, &InstallLogLevel,
 							  Options::Single | Options::Global);
@@ -151,6 +153,16 @@ int main(int argc, char* argv[]) {
 	signal(SIGPIPE, SIG_IGN);
 #endif
 
+	string db;
+	if (dsn.empty()) {
+		db = args::get(dbName);
+		if (db.empty()) {
+			std::cerr << "Error: --dsn either database name should be set as a first argument" << std::endl;
+			return 2;
+		}
+		dsn = "cproto://127.0.0.1:6534/" + db;
+	}
+
 	if (repair && args::get(repair)) {
 		return RepairStorage(dsn);
 	}
@@ -163,15 +175,16 @@ int main(int argc, char* argv[]) {
 	config.ConnPoolSize = args::get(connPoolSize);
 	config.WorkerThreads = 1;  // args::get(connThreads);
 	if (dsn.compare(0, 9, "cproto://") == 0) {
-		DBWrapper<reindexer::client::Reindexer> db(args::get(outFileName), args::get(fileName), args::get(command), config.ConnPoolSize,
-												   args::get(connThreads), config);
-		err = db.Connect(dsn);
-		if (err.ok()) ok = db.Run();
+		CommandsProcessor<reindexer::client::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName), args::get(command),
+																		  config.ConnPoolSize, args::get(connThreads), config);
+		err = commandsProcessor.Connect(dsn);
+		if (err.ok()) ok = commandsProcessor.Run();
 	} else if (dsn.compare(0, 10, "builtin://") == 0) {
-		DBWrapper<reindexer::Reindexer> db(args::get(outFileName), args::get(fileName), args::get(command), config.ConnPoolSize,
-										   args::get(connThreads));
-		err = db.Connect(dsn);
-		if (err.ok()) ok = db.Run();
+		reindexer::Reindexer db;
+		CommandsProcessor<reindexer::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName), args::get(command),
+																  config.ConnPoolSize, args::get(connThreads));
+		err = commandsProcessor.Connect(dsn);
+		if (err.ok()) ok = commandsProcessor.Run();
 	} else {
 		std::cerr << "Invalid DSN format: " << dsn << " Must begin from cproto:// or builtin://" << std::endl;
 	}

@@ -31,7 +31,10 @@ type Tx struct {
 
 func newTx(db *reindexerImpl, namespace string, ctx context.Context) (*Tx, error) {
 	tx := &Tx{db: db, namespace: namespace, forceCommitCount: 0}
-	tx.startTxCtx(ctx)
+	err := tx.startTxCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
 	tx.ns, _ = tx.db.getNS(tx.namespace)
 
 	return tx, nil
@@ -39,7 +42,10 @@ func newTx(db *reindexerImpl, namespace string, ctx context.Context) (*Tx, error
 
 func newTxAutocommit(db *reindexerImpl, namespace string, forceCommitCount uint32) (*Tx, error) {
 	tx := &Tx{db: db, namespace: namespace, forceCommitCount: forceCommitCount}
-	tx.startTx()
+	err := tx.startTx()
+	if err != nil {
+		return nil, err
+	}
 	tx.ns, _ = tx.db.getNS(tx.namespace)
 
 	return tx, nil
@@ -206,6 +212,11 @@ func (tx *Tx) AwaitResults() *Tx {
 		tx.cmplCond.L.Unlock()
 	}
 	return tx
+}
+
+// Query creates Query in transaction for Update or Delete operation
+func (tx *Tx) Query() *Query {
+	return tx.db.queryTx(tx.namespace, tx)
 }
 
 // finalize transaction

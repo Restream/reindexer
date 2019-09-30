@@ -1,4 +1,4 @@
-#include "dbwrapper.h"
+#include "commandsprocessor.h"
 #include <iomanip>
 #include <thread>
 #include "client/reindexer.h"
@@ -11,6 +11,7 @@
 #include "core/cjson/jsonbuilder.h"
 #include "tools/fsops.h"
 #include "tools/jsontools.h"
+#include "tools/stringstools.h"
 #include "vendor/gason/gason.h"
 
 namespace reindexer_tool {
@@ -32,17 +33,26 @@ const string kBenchIndex = "id";
 const int kBenchItemsCount = 10000;
 const int kBenchDefaultTime = 5;
 
-template <typename _DB>
-Error DBWrapper<_DB>::Connect(const string& dsn) {
+const static std::vector<string> cCommandsSuggestions = {
+	"\\upsert",	"\\delete", "\\dump", "\\namespaces", "\\meta",  "\\set",	   "\\bench", "\\subscribe", "\\quit", "\\help",
+	"\\databases", "put",	  "list",   "output",		 "\\bench", "\\subscribe", "on",	  "off",		 "use"};
+
+template <typename DBInterface>
+Error CommandsProcessor<DBInterface>::Connect(const string& dsn) {
 	variables_[kVariableOutput] = kOutputModePrettyCollapsed;
+	if (!uri_.parse(dsn)) {
+		return Error(errNotValid, "Cannot connect to DB: Not a valid uri");
+	}
 	return db_.Connect(dsn);
 }
 
-template <typename _DB>
-DBWrapper<_DB>::~DBWrapper() {}
+template <typename DBInterface>
+CommandsProcessor<DBInterface>::~CommandsProcessor() {
+	stop();
+}
 
-template <typename _DB>
-Error DBWrapper<_DB>::ProcessCommand(string command) {
+template <typename DBInterface>
+Error CommandsProcessor<DBInterface>::Process(string command) {
 	LineParser parser(command);
 	auto token = parser.NextToken();
 
@@ -54,9 +64,9 @@ Error DBWrapper<_DB>::ProcessCommand(string command) {
 	return Error(errParams, "Unknown command '%s'. Type '\\help' to list of available commands", token);
 }
 
-template <typename _DB>
-Error DBWrapper<_DB>::commandSelect(const string& command) {
-	typename _DB::QueryResultsT results(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+template <typename DBInterface>
+Error CommandsProcessor<DBInterface>::commandSelect(const string& command) {
+	typename DBInterface::QueryResultsT results(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 	Query q;
 	try {
 		q.FromSQL(command);
@@ -133,9 +143,9 @@ Error DBWrapper<_DB>::commandSelect(const string& command) {
 	}
 	return err;
 }
-template <typename _DB>
-Error DBWrapper<_DB>::commandDeleteSQL(const string& command) {
-	typename _DB::QueryResultsT results;
+template <typename DBInterface>
+Error CommandsProcessor<DBInterface>::commandDeleteSQL(const string& command) {
+	typename DBInterface::QueryResultsT results;
 	Query q;
 	try {
 		q.FromSQL(command);
@@ -150,9 +160,9 @@ Error DBWrapper<_DB>::commandDeleteSQL(const string& command) {
 	return err;
 }
 
-template <typename _DB>
-Error DBWrapper<_DB>::commandUpdateSQL(const string& command) {
-	typename _DB::QueryResultsT results;
+template <typename DBInterface>
+Error CommandsProcessor<DBInterface>::commandUpdateSQL(const string& command) {
+	typename DBInterface::QueryResultsT results;
 	Query q;
 	try {
 		q.FromSQL(command);
@@ -167,14 +177,14 @@ Error DBWrapper<_DB>::commandUpdateSQL(const string& command) {
 	return err;
 }
 
-template <typename _DB>
-Error DBWrapper<_DB>::commandUpsert(const string& command) {
+template <typename DBInterface>
+Error CommandsProcessor<DBInterface>::commandUpsert(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
 
 	string nsName = reindexer::unescapeString(parser.NextToken());
 
-	auto item = new typename _DB::ItemT(db_.NewItem(nsName));
+	auto item = new typename DBInterface::ItemT(db_.NewItem(nsName));
 
 	Error status = item->Status();
 	if (!status.ok()) {
@@ -191,8 +201,8 @@ Error DBWrapper<_DB>::commandUpsert(const string& command) {
 	return db_.WithCompletion([item](const Error& /*err*/) { delete item; }).Upsert(nsName, *item);
 }
 
-template <typename _DB>
-Error DBWrapper<_DB>::commandDelete(const string& command) {
+template <typename DBInterface>
+Error CommandsProcessor<DBInterface>::commandDelete(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
 
@@ -207,8 +217,8 @@ Error DBWrapper<_DB>::commandDelete(const string& command) {
 	return db_.Delete(nsName, item);
 }
 
-template <typename _DB>
-Error DBWrapper<_DB>::commandDump(const string& command) {
+template <typename DBInterface>
+Error CommandsProcessor<DBInterface>::commandDump(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
 
@@ -261,7 +271,7 @@ Error DBWrapper<_DB>::commandDump(const string& command) {
 				  << reindexer::escapeString(mdata) << '\n';
 		}
 
-		typename _DB::QueryResultsT itemResults;
+		typename DBInterface::QueryResultsT itemResults;
 		err = db_.Select(Query(nsDef.name), itemResults);
 
 		if (!err.ok()) return err;
@@ -282,8 +292,8 @@ Error DBWrapper<_DB>::commandDump(const string& command) {
 	return errOK;
 }
 
-template <typename _DB>
-Error DBWrapper<_DB>::commandNamespaces(const string& command) {
+template <typename DBInterface>
+Error CommandsProcessor<DBInterface>::commandNamespaces(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
 
@@ -321,8 +331,8 @@ Error DBWrapper<_DB>::commandNamespaces(const string& command) {
 	return Error(errParams, "Unknown sub command '%s' of namespaces command", subCommand);
 }
 
-template <typename _DB>
-Error DBWrapper<_DB>::commandMeta(const string& command) {
+template <typename DBInterface>
+Error CommandsProcessor<DBInterface>::commandMeta(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
 	string_view subCommand = parser.NextToken();
@@ -346,8 +356,8 @@ Error DBWrapper<_DB>::commandMeta(const string& command) {
 	return Error(errParams, "Unknown sub command '%s' of meta command", subCommand);
 }
 
-template <typename _DB>
-Error DBWrapper<_DB>::commandHelp(const string& command) {
+template <typename DBInterface>
+Error CommandsProcessor<DBInterface>::commandHelp(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
 	string_view subCommand = parser.NextToken();
@@ -370,14 +380,14 @@ Error DBWrapper<_DB>::commandHelp(const string& command) {
 	return errOK;
 }
 
-template <typename _DB>
-Error DBWrapper<_DB>::commandQuit(const string&) {
+template <typename DBInterface>
+Error CommandsProcessor<DBInterface>::commandQuit(const string&) {
 	terminate_ = true;
 	return errOK;
 }
 
-template <typename _DB>
-Error DBWrapper<_DB>::commandSet(const string& command) {
+template <typename DBInterface>
+Error CommandsProcessor<DBInterface>::commandSet(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
 
@@ -388,8 +398,8 @@ Error DBWrapper<_DB>::commandSet(const string& command) {
 	return errOK;
 }
 
-template <typename _DB>
-Error DBWrapper<_DB>::commandBench(const string& command) {
+template <typename DBInterface>
+Error CommandsProcessor<DBInterface>::commandBench(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
 
@@ -429,7 +439,7 @@ Error DBWrapper<_DB>::commandBench(const string& command) {
 		for (; (count % 1000) || std::chrono::system_clock::now() < deadline; count++) {
 			Query q(kBenchNamespace);
 			q.Where(kBenchIndex, CondEq, count % kBenchItemsCount);
-			auto results = new typename _DB::QueryResultsT;
+			auto results = new typename DBInterface::QueryResultsT;
 
 			db_.WithCompletion([results, &errCount](const Error& err) {
 				   delete results;
@@ -447,8 +457,8 @@ Error DBWrapper<_DB>::commandBench(const string& command) {
 
 	return errOK;
 }
-template <typename _DB>
-Error DBWrapper<_DB>::commandSubscribe(const string& command) {
+template <typename DBInterface>
+Error CommandsProcessor<DBInterface>::commandSubscribe(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
 
@@ -457,8 +467,8 @@ Error DBWrapper<_DB>::commandSubscribe(const string& command) {
 	return db_.SubscribeUpdates(this, on);
 }
 
-template <typename _DB>
-void DBWrapper<_DB>::OnWALUpdate(int64_t lsn, string_view nsName, const reindexer::WALRecord& wrec) {
+template <typename DBInterface>
+void CommandsProcessor<DBInterface>::OnWALUpdate(int64_t lsn, string_view nsName, const reindexer::WALRecord& wrec) {
 	WrSerializer ser;
 	ser << "#" << lsn << " " << nsName << " ";
 	wrec.Dump(ser, [this, nsName](string_view cjson) {
@@ -469,16 +479,16 @@ void DBWrapper<_DB>::OnWALUpdate(int64_t lsn, string_view nsName, const reindexe
 	output_() << ser.Slice() << std::endl;
 }
 
-template <typename _DB>
-void DBWrapper<_DB>::OnConnectionState(const Error& err) {
+template <typename DBInterface>
+void CommandsProcessor<DBInterface>::OnConnectionState(const Error& err) {
 	if (err.ok())
 		output_() << "[OnConnectionState] connected" << std::endl;
 	else
 		output_() << "[OnConnectionState] closed, reason: " << err.what() << std::endl;
 }
 
-template <typename _DB>
-Error DBWrapper<_DB>::queryResultsToJson(ostream& o, const typename _DB::QueryResultsT& r, bool isWALQuery) {
+template <typename DBInterface>
+Error CommandsProcessor<DBInterface>::queryResultsToJson(ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery) {
 	WrSerializer ser;
 	size_t i = 0;
 	bool prettyPrint = variables_[kVariableOutput] == kOutputModePretty;
@@ -514,22 +524,81 @@ Error DBWrapper<_DB>::queryResultsToJson(ostream& o, const typename _DB::QueryRe
 	return errOK;
 }
 
-template <typename _DB>
-bool DBWrapper<_DB>::Interactive() {
+template <typename DBInterface>
+void CommandsProcessor<DBInterface>::addCommandsSuggestions(std::string const& cmd, std::vector<string>& suggestions) {
+	string input(cmd);
+	size_t pos = cmd.rfind(' ');
+	if (pos != string::npos) {
+		input = cmd.substr(pos + 1, cmd.size() - pos - 1);
+	}
+
+	vector<NamespaceDef> allNsDefs;
+	Error err = db_.EnumNamespaces(allNsDefs, true);
+	if (err.ok()) {
+		for (auto& ns : allNsDefs) {
+			if (reindexer::checkIfStartsWith(input, ns.name)) {
+				suggestions.emplace_back(ns.name);
+			}
+		}
+	}
+	for (const string& command : cCommandsSuggestions) {
+		if (reindexer::checkIfStartsWith(input, command)) {
+			suggestions.emplace_back(command);
+		}
+	}
+	vector<string> dbList;
+	err = getAvailableDatabases(dbList);
+	if (err.ok()) {
+		for (const string& dbName : dbList) {
+			if (reindexer::checkIfStartsWith(input, dbName)) {
+				suggestions.emplace_back(dbName);
+			}
+		}
+	}
+}
+
+template <typename DBInterface>
+template <typename T>
+void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_completion_callback)(new_v_callback_t const&)) {
+	(rx.*set_completion_callback)([this](std::string const& input, int) -> replxx::Replxx::completions_t {
+		std::vector<string> completions;
+		db_.GetSqlSuggestions(input, input.empty() ? 0 : input.length() - 1, completions);
+		if (completions.empty()) {
+			addCommandsSuggestions(input, completions);
+		}
+		replxx::Replxx::completions_t result;
+		for (const string& suggestion : completions) result.emplace_back(suggestion);
+		return result;
+	});
+}
+
+template <typename DBInterface>
+template <typename T>
+void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_completion_callback)(old_v_callback_t const&, void*)) {
+	(rx.*set_completion_callback)(
+		[this](std::string const& input, int, void*) -> replxx::Replxx::completions_t {
+			std::vector<string> completions;
+			db_.GetSqlSuggestions(input, input.empty() ? 0 : input.length() - 1, completions);
+			if (completions.empty()) {
+				addCommandsSuggestions(input, completions);
+			}
+			return completions;
+		},
+		nullptr);
+}
+
+template <typename DBInterface>
+bool CommandsProcessor<DBInterface>::Interactive() {
 	bool wasError = false;
 #if REINDEX_WITH_REPLXX
 	replxx::Replxx rx;
 	std::string history_file = reindexer::fs::JoinPath(reindexer::fs::GetHomeDir(), ".reindexer_history.txt");
 
+	// rx.set_max_line_size(16384);
 	rx.history_load(history_file);
 	rx.set_max_history_size(1000);
-	// rx.set_max_line_size(16384);
 	rx.set_max_hint_rows(8);
-	rx.set_completion_callback([this](std::string const& input, int /*pos*/) -> replxx::Replxx::completions_t {
-		replxx::Replxx::completions_t completions;
-		db_.GetSqlSuggestions(input, input.empty() ? 0 : input.length() - 1, completions);
-		return completions;
-	});
+	setCompletionCallback(rx, &replxx::Replxx::set_completion_callback);
 
 	std::string prompt = "\x1b[1;32mReindexer\x1b[0m> ";
 
@@ -544,7 +613,7 @@ bool DBWrapper<_DB>::Interactive() {
 
 		if (!*input) continue;
 
-		Error err = ProcessCommand(input);
+		Error err = Process(input);
 		if (!err.ok()) {
 			std::cerr << "ERROR: " << err.what() << std::endl;
 			wasError = true;
@@ -570,8 +639,8 @@ bool DBWrapper<_DB>::Interactive() {
 	return !wasError;
 }
 
-template <typename _DB>
-bool DBWrapper<_DB>::FromFile() {
+template <typename DBInterface>
+bool CommandsProcessor<DBInterface>::FromFile() {
 	bool wasError = false;
 	std::ifstream infile(fileName_);
 	if (!infile) {
@@ -581,7 +650,7 @@ bool DBWrapper<_DB>::FromFile() {
 
 	std::string line;
 	while (std::getline(infile, line)) {
-		Error err = ProcessCommand(line);
+		Error err = Process(line);
 		if (!err.ok()) {
 			std::cerr << "ERROR: " << err.what() << std::endl;
 			wasError = true;
@@ -590,8 +659,8 @@ bool DBWrapper<_DB>::FromFile() {
 	return !wasError;
 }
 
-template <typename _DB>
-bool DBWrapper<_DB>::Run() {
+template <typename DBInterface>
+bool CommandsProcessor<DBInterface>::Run() {
 	auto err = output_.Status();
 	if (!err.ok()) {
 		std::cerr << "Output error: " << err.what() << std::endl;
@@ -599,7 +668,7 @@ bool DBWrapper<_DB>::Run() {
 	}
 
 	if (!command_.empty()) {
-		err = ProcessCommand(command_);
+		err = Process(command_);
 		if (!err.ok()) {
 			std::cerr << "ERROR: " << err.what() << std::endl;
 			return false;
@@ -613,7 +682,67 @@ bool DBWrapper<_DB>::Run() {
 	}
 }
 
-template class DBWrapper<reindexer::client::Reindexer>;
-template class DBWrapper<reindexer::Reindexer>;
+template <typename DBInterface>
+string CommandsProcessor<DBInterface>::getCurrentDsn() const {
+	string dsn(uri_.scheme() + "://");
+	if (!uri_.password().empty() && !uri_.username().empty()) {
+		dsn += uri_.username() + ":" + uri_.password() + "@";
+	}
+	dsn += uri_.hostname() + ":" + uri_.port() + "/";
+	return dsn;
+}
+
+template <>
+Error CommandsProcessor<reindexer::client::Reindexer>::stop() {
+	return db_.Stop();
+}
+
+template <>
+Error CommandsProcessor<reindexer::Reindexer>::stop() {
+	return Error();
+}
+
+template <typename DBInterface>
+Error CommandsProcessor<DBInterface>::commandProcessDatabases(const string& command) {
+	LineParser parser(command);
+	parser.NextToken();
+	string_view subCommand = parser.NextToken();
+	if (subCommand == "list") {
+		if (uri_.scheme() == "cproto") {
+			vector<string> dbList;
+			Error err = getAvailableDatabases(dbList);
+			if (!err.ok()) return err;
+			for (const string& dbName : dbList) std::cout << dbName << std::endl;
+		} else {
+			std::cout << uri_.path() << std::endl;
+		}
+		return Error();
+	} else if (subCommand == "use") {
+		if (uri_.scheme() == "cproto") {
+			string currentDsn = getCurrentDsn() + std::string(parser.NextToken());
+			Error err = stop();
+			if (!err.ok()) return err;
+			err = db_.Connect(currentDsn);
+			if (err.ok()) std::cout << "Succesfully connected to " << currentDsn << std::endl;
+			return err;
+		} else {
+			return Error(errLogic, "Switching between databases is only possible with 'cproto' connection");
+		}
+	}
+	return Error(errNotValid, "Invalid command");
+}
+
+template <>
+Error CommandsProcessor<reindexer::client::Reindexer>::getAvailableDatabases(vector<string>& dbList) {
+	return db_.EnumDatabases(dbList);
+}
+
+template <>
+Error CommandsProcessor<reindexer::Reindexer>::getAvailableDatabases(vector<string>&) {
+	return Error();
+}
+
+template class CommandsProcessor<reindexer::client::Reindexer>;
+template class CommandsProcessor<reindexer::Reindexer>;
 
 }  // namespace reindexer_tool

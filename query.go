@@ -107,12 +107,13 @@ type Query struct {
 	fetchCount      int
 	queriesCount    int
 	opennedBrackets []int
+	tx              *Tx
 }
 
 var queryPool sync.Pool
 
 // Create new DB query
-func newQuery(db *reindexerImpl, namespace string) *Query {
+func newQuery(db *reindexerImpl, namespace string, tx *Tx) *Query {
 	var q *Query
 	obj := queryPool.Get()
 	if obj != nil {
@@ -122,6 +123,7 @@ func newQuery(db *reindexerImpl, namespace string) *Query {
 		q = &Query{}
 		q.ser = cjson.NewSerializer(q.initBuf[:0])
 	} else {
+		q.tx = nil
 		q.nextOp = 0
 		q.root = nil
 		q.joinType = 0
@@ -144,6 +146,7 @@ func newQuery(db *reindexerImpl, namespace string) *Query {
 	q.db = db
 	q.nextOp = opAND
 	q.fetchCount = defaultFetchCount
+	q.tx = tx
 
 	q.ser.PutVString(namespace)
 	return q
@@ -588,6 +591,10 @@ func (q *Query) ExecCtx(ctx context.Context) *Iterator {
 	if q.executed {
 		panic(errors.New("Exec call on already executed query. You shoud create new Query"))
 	}
+	if q.tx != nil {
+		panic(errors.New("For tx query only Update or Delete operations are supported"))
+	}
+
 	q.executed = true
 
 	return q.db.execQuery(ctx, q)
@@ -608,6 +615,9 @@ func (q *Query) ExecToJsonCtx(ctx context.Context, jsonRoots ...string) *JSONIte
 	}
 	if q.executed {
 		panic(errors.New("Exec call on already executed query. You shoud create new Query"))
+	}
+	if q.tx != nil {
+		panic(errors.New("For tx query only Update or Delete operations are supported"))
 	}
 	q.executed = true
 
@@ -644,6 +654,7 @@ func (q *Query) close() {
 	}
 
 	q.closed = true
+	q.tx = nil
 	queryPool.Put(q)
 }
 
@@ -664,6 +675,9 @@ func (q *Query) DeleteCtx(ctx context.Context) (int, error) {
 	}
 
 	defer q.close()
+	if q.tx != nil {
+		return q.db.deleteQueryTx(ctx, q, q.tx)
+	}
 	return q.db.deleteQuery(ctx, q)
 }
 
@@ -722,6 +736,9 @@ func (q *Query) UpdateCtx(ctx context.Context) *Iterator {
 		panic(errors.New("Update call on already closed query. You shoud create new Query"))
 	}
 	q.executed = true
+	if q.tx != nil {
+		return q.db.updateQueryTx(ctx, q, q.tx)
+	}
 
 	return q.db.updateQuery(ctx, q)
 }

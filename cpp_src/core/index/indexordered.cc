@@ -9,6 +9,7 @@ namespace reindexer {
 
 template <typename T>
 Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id) {
+	if (this->cache_) this->cache_.reset();
 	if (key.Type() == KeyValueNull) {
 		this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_);
 		// Return invalid ref
@@ -24,7 +25,6 @@ Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id) {
 
 	keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_);
 	this->tracker_.markUpdated(this->idx_map, keyIt);
-	if (this->cache_) this->cache_.reset();
 	this->addMemStat(keyIt);
 
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {

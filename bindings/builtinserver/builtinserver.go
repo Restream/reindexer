@@ -200,6 +200,13 @@ func (server *BuiltinServer) ModifyItemTxAsync(txCtx *bindings.TxCtx, format int
 	err := server.builtin.ModifyItemTx(txCtx, format, data, mode, precepts, stateToken)
 	cmpl(nil, err)
 }
+func (server *BuiltinServer) DeleteQueryTx(txCtx *bindings.TxCtx, rawQuery []byte) error {
+	return server.builtin.DeleteQueryTx(txCtx, rawQuery)
+}
+
+func (server *BuiltinServer) UpdateQueryTx(txCtx *bindings.TxCtx, rawQuery []byte) error {
+	return server.builtin.UpdateQueryTx(txCtx, rawQuery)
+}
 
 func (server *BuiltinServer) Select(ctx context.Context, query string, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
 	return server.builtin.Select(ctx, query, asJson, ptVersions, fetchCount)

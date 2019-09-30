@@ -11,6 +11,7 @@ enum CmdCode {
 	kCmdOpenDatabase = 2,
 	kCmdCloseDatabase = 3,
 	kCmdDropDatabase = 4,
+	kCmdEnumDatabases = 5,
 	kCmdOpenNamespace = 16,
 	kCmdCloseNamespace = 17,
 	kCmdDropNamespace = 18,
@@ -24,6 +25,8 @@ enum CmdCode {
 	kCmdCommitTx = 27,
 	kCmdRollbackTx = 28,
 	kCmdStartTransaction = 29,
+	kCmdDeleteQueryTx = 30,
+	kCmdUpdateQueryTx = 31,
 
 	kCmdCommit = 32,
 	kCmdModifyItem = 33,

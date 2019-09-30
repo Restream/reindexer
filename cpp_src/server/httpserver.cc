@@ -1077,7 +1077,7 @@ void HTTPServer::Logger(http::Context &ctx) {
 void HTTPServer::OnResponse(http::Context &ctx) {
 	if (statsWatcher_) {
 		std::string dbName = "<unknown>";
-		if (!ctx.request->urlParams.empty() && 0 == ctx.request->path.find("/api/v1/db/"_sv)) {
+		if (nullptr != ctx.request && !ctx.request->urlParams.empty() && 0 == ctx.request->path.find("/api/v1/db/"_sv)) {
 			dbName = urldecode2(ctx.request->urlParams[0]);
 		}
 		statsWatcher_->OnInputTraffic(dbName, statsSourceName(), ctx.stat.sizeStat.reqSizeBytes);

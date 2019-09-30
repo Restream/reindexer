@@ -1,6 +1,7 @@
 #include "rpcserver.h"
 #include <sys/stat.h>
 #include <sstream>
+#include "core/cjson/jsonbuilder.h"
 #include "core/transactionimpl.h"
 #include "net/cproto/cproto.h"
 #include "net/cproto/serverconnection.h"
@@ -185,6 +186,20 @@ Error RPCServer::EnumNamespaces(cproto::Context &ctx) {
 	return 0;
 }
 
+Error RPCServer::EnumDatabases(cproto::Context &ctx) {
+	auto dbList = dbMgr_.EnumDatabases();
+
+	WrSerializer ser;
+	JsonBuilder jb(ser);
+	span<string> array(&dbList[0], dbList.size());
+	jb.Array("databases"_sv, array);
+	jb.End();
+
+	auto resSlice = ser.Slice();
+	ctx.Return({cproto::Arg(p_string(&resSlice))});
+	return errOK;
+}
+
 Error RPCServer::AddIndex(cproto::Context &ctx, p_string ns, p_string indexDef) {
 	IndexDef iDef;
 	auto err = iDef.FromJSON(giftStr(indexDef));
@@ -211,6 +226,9 @@ Error RPCServer::DropIndex(cproto::Context &ctx, p_string ns, p_string index) {
 Error RPCServer::StartTransaction(cproto::Context &ctx, p_string nsName) {
 	auto db = getDB(ctx, kRoleDataWrite);
 	auto tr = db.NewTransaction(nsName);
+	if (!tr.Status().ok()) {
+		return tr.Status();
+	}
 
 	auto id = addTx(ctx, std::move(tr));
 
@@ -263,29 +281,56 @@ Error RPCServer::AddTxItem(cproto::Context &ctx, int format, p_string itemData, 
 
 	return err;
 }
+
+Error RPCServer::DeleteQueryTx(cproto::Context &ctx, p_string queryBin, int64_t txID) {
+	auto db = getDB(ctx, kRoleDataWrite);
+
+	Transaction &tr = getTx(ctx, txID);
+	Query query;
+	Serializer ser(queryBin.data(), queryBin.size());
+	query.Deserialize(ser);
+	query.type_ = QueryDelete;
+	tr.Modify(std::move(query));
+	return errOK;
+}
+
+Error RPCServer::UpdateQueryTx(cproto::Context &ctx, p_string queryBin, int64_t txID) {
+	auto db = getDB(ctx, kRoleDataWrite);
+
+	Transaction &tr = getTx(ctx, txID);
+	Query query;
+	Serializer ser(queryBin.data(), queryBin.size());
+	query.Deserialize(ser);
+	query.type_ = QueryUpdate;
+	tr.Modify(std::move(query));
+	return errOK;
+}
+
 Error RPCServer::CommitTx(cproto::Context &ctx, int64_t txId) {
 	auto db = getDB(ctx, kRoleDataWrite);
 
 	Transaction &tr = getTx(ctx, txId);
 	auto err = db.CommitTransaction(tr);
-	QueryResults qres;
+	if (err.ok()) {
+		QueryResults qres;
+		bool tmUpdated = false;
 
-	auto trAccessor = static_cast<TransactionAccessor *>(&tr);
+		for (auto &step : tr.GetSteps()) {
+			if (!step.query_) {
+				qres.AddItem(step.item_);
+				if (!tmUpdated) tmUpdated = step.item_.IsTagsUpdated();
+			}
+		}
+		int32_t ptVers = -1;
+		ResultFetchOpts opts;
+		if (tmUpdated) {
+			opts = ResultFetchOpts{kResultsWithItemID | kResultsWithPayloadTypes, span<int32_t>(&ptVers, 1), 0, INT_MAX};
+		} else {
+			opts = ResultFetchOpts{kResultsWithItemID, {}, 0, INT_MAX};
+		}
 
-	bool tmUpdated = false;
-
-	for (auto &step : trAccessor->GetSteps()) {
-		qres.AddItem(step.item_);
-		if (!tmUpdated) tmUpdated = step.item_.IsTagsUpdated();
+		err = sendResults(ctx, qres, -1, opts);
 	}
-	int32_t ptVers = -1;
-	ResultFetchOpts opts;
-	if (tmUpdated) {
-		opts = ResultFetchOpts{kResultsWithItemID | kResultsWithPayloadTypes, span<int32_t>(&ptVers, 1), 0, INT_MAX};
-	} else {
-		opts = ResultFetchOpts{kResultsWithItemID, {}, 0, INT_MAX};
-	}
-	err = sendResults(ctx, qres, -1, opts);
 	clearTx(ctx, txId);
 	return err;
 }
@@ -631,6 +676,7 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	dispatcher_.Register(cproto::kCmdTruncateNamespace, this, &RPCServer::TruncateNamespace);
 	dispatcher_.Register(cproto::kCmdCloseNamespace, this, &RPCServer::CloseNamespace);
 	dispatcher_.Register(cproto::kCmdEnumNamespaces, this, &RPCServer::EnumNamespaces);
+	dispatcher_.Register(cproto::kCmdEnumDatabases, this, &RPCServer::EnumDatabases);
 
 	dispatcher_.Register(cproto::kCmdAddIndex, this, &RPCServer::AddIndex);
 	dispatcher_.Register(cproto::kCmdUpdateIndex, this, &RPCServer::UpdateIndex);
@@ -639,6 +685,8 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 
 	dispatcher_.Register(cproto::kCmdStartTransaction, this, &RPCServer::StartTransaction);
 	dispatcher_.Register(cproto::kCmdAddTxItem, this, &RPCServer::AddTxItem);
+	dispatcher_.Register(cproto::kCmdDeleteQueryTx, this, &RPCServer::DeleteQueryTx);
+	dispatcher_.Register(cproto::kCmdUpdateQueryTx, this, &RPCServer::UpdateQueryTx);
 	dispatcher_.Register(cproto::kCmdCommitTx, this, &RPCServer::CommitTx);
 	dispatcher_.Register(cproto::kCmdRollbackTx, this, &RPCServer::RollbackTx);
 

@@ -185,7 +185,7 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, const InternalRdxCo
 		const auto rdxCtx =
 			ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "CREATE NAMESPACE " << nsDef.name).Slice() : ""_sv, activities_);
 		{
-			ULock lock(mtx_, rdxCtx);
+			ULock lock(mtx_, &rdxCtx);
 			if (namespaces_.find(nsDef.name) != namespaces_.end()) {
 				return Error(errParams, "Namespace '%s' already exists", nsDef.name);
 			}
@@ -203,9 +203,8 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, const InternalRdxCo
 			if (!ns->getStorageOpts(rdxCtx).IsLazyLoad()) ns->LoadFromStorage(rdxCtx);
 		}
 		{
-			ULock lock(mtx_, rdxCtx);
-			NamespaceCloner::Ptr wr = std::make_shared<NamespaceCloner>(ns);
-			namespaces_.insert({nsDef.name, wr});
+			ULock lock(mtx_, &rdxCtx);
+			namespaces_.insert({nsDef.name, ns});
 		}
 		observers_.OnWALUpdate(0, nsDef.name, WALRecord(WalNamespaceAdd));
 		for (auto& indexDef : nsDef.indexes) ns->AddIndex(indexDef, rdxCtx);
@@ -226,7 +225,7 @@ Error ReindexerImpl::OpenNamespace(string_view name, const StorageOpts& storageO
 			SLock lock(mtx_, &rdxCtx);
 			auto nsIt = namespaces_.find(name);
 			if (nsIt != namespaces_.end() && nsIt->second) {
-				nsIt->second->GetOriginNs()->SetStorageOpts(storageOpts, rdxCtx);
+				nsIt->second->SetStorageOpts(storageOpts, rdxCtx);
 				return 0;
 			}
 		}
@@ -242,8 +241,7 @@ Error ReindexerImpl::OpenNamespace(string_view name, const StorageOpts& storageO
 		}
 		{
 			lock_guard<shared_timed_mutex> lock(mtx_);
-			NamespaceCloner::Ptr nmWrapper = std::make_shared<NamespaceCloner>(ns);
-			namespaces_.insert({nameStr, nmWrapper});
+			namespaces_.insert({nameStr, ns});
 		}
 		observers_.OnWALUpdate(0, name, WALRecord(WalNamespaceAdd));
 	} catch (const Error& err) {
@@ -267,17 +265,16 @@ Error ReindexerImpl::CloseNamespace(string_view nsName, const InternalRdxContext
 }
 
 Error ReindexerImpl::closeNamespace(string_view nsName, const RdxContext& ctx, bool dropStorage, bool enableDropSlave) {
-	NamespaceCloner::Ptr nsw;
+	Namespace::Ptr ns;
 	try {
-		ULock lock(mtx_, ctx);
+		ULock lock(mtx_, &ctx);
 		auto nsIt = namespaces_.find(nsName);
 
 		if (nsIt == namespaces_.end()) {
 			return Error(errNotFound, "Namespace '%s' does not exist", nsName);
 		}
 		// Temporary save namespace. This will call destructor without lock
-		nsw = nsIt->second;
-		auto ns = ClonableNamespace(1, nsw);
+		ns = nsIt->second;
 		if (ns->GetReplState(ctx).slaveMode && !enableDropSlave) {
 			return Error(errLogic, "Can't modify slave ns '%s'", nsName);
 		}
@@ -291,11 +288,11 @@ Error ReindexerImpl::closeNamespace(string_view nsName, const RdxContext& ctx, b
 		if (dropStorage) observers_.OnWALUpdate(0, nsName, WALRecord(WalNamespaceDrop));
 
 	} catch (const Error& err) {
-		nsw.reset();
+		ns.reset();
 		return err;
 	}
 	// Here will called destructor
-	nsw.reset();
+	ns.reset();
 	return errOK;
 }
 
@@ -304,7 +301,7 @@ Error ReindexerImpl::TruncateNamespace(string_view nsName, const InternalRdxCont
 	try {
 		WrSerializer ser;
 		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "TRUNCATE " << nsName).Slice() : ""_sv, activities_);
-		auto ns = getClonableNamespace(nsName, rdxCtx);
+		auto ns = getNamespace(nsName, rdxCtx);
 		ns->Truncate(rdxCtx);
 	} catch (const Error& e) {
 		err = e;
@@ -318,7 +315,7 @@ Error ReindexerImpl::Insert(string_view nsName, Item& item, const InternalRdxCon
 	try {
 		WrSerializer ser;
 		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "INSERT INTO " << nsName).Slice() : ""_sv, activities_);
-		auto ns = getClonableNamespace(nsName, rdxCtx);
+		auto ns = getNamespace(nsName, rdxCtx);
 		ns->Insert(item, rdxCtx);
 		updateToSystemNamespace(nsName, item, rdxCtx);
 	} catch (const Error& e) {
@@ -345,7 +342,7 @@ Error ReindexerImpl::Update(string_view nsName, Item& item, const InternalRdxCon
 		WrSerializer ser;
 		const auto rdxCtx = ctx.CreateRdxContext(
 			ctx.NeedTraceActivity() ? (ser << "UPDATE " << nsName << " WHERE ", printPkFields(item, ser)).Slice() : ""_sv, activities_);
-		auto ns = getClonableNamespace(nsName, rdxCtx);
+		auto ns = getNamespace(nsName, rdxCtx);
 
 		ns->Update(item, rdxCtx);
 		updateToSystemNamespace(nsName, item, rdxCtx);
@@ -360,7 +357,7 @@ Error ReindexerImpl::Update(const Query& q, QueryResults& result, const Internal
 	try {
 		WrSerializer ser;
 		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? q.GetSQL(ser).Slice() : ""_sv, activities_, result);
-		auto ns = getClonableNamespace(q._namespace, rdxCtx);
+		auto ns = getNamespace(q._namespace, rdxCtx);
 		ensureDataLoaded(ns, rdxCtx);
 		ns->Update(q, result, rdxCtx);
 	} catch (const Error& err) {
@@ -376,7 +373,7 @@ Error ReindexerImpl::Upsert(string_view nsName, Item& item, const InternalRdxCon
 		const auto rdxCtx = ctx.CreateRdxContext(
 			ctx.NeedTraceActivity() ? (ser << "UPSERT INTO " << nsName << " WHERE ", printPkFields(item, ser)).Slice() : ""_sv,
 			activities_);
-		auto ns = getClonableNamespace(nsName, rdxCtx);
+		auto ns = getNamespace(nsName, rdxCtx);
 		ns->Upsert(item, rdxCtx);
 		updateToSystemNamespace(nsName, item, rdxCtx);
 	} catch (const Error& e) {
@@ -399,29 +396,20 @@ Item ReindexerImpl::NewItem(string_view nsName, const InternalRdxContext& ctx) {
 		return Item(err);
 	}
 }
-Transaction ReindexerImpl::NewTransaction(const std::string& _namespace) {
-	TransactionAccessor tr(_namespace, this);
-
-	return std::move(tr);
-}
+Transaction ReindexerImpl::NewTransaction(const std::string& _namespace) { return Transaction(_namespace, this); }
 
 Error ReindexerImpl::CommitTransaction(Transaction& tr, const InternalRdxContext& ctx) {
 	Error err = errOK;
-	auto trAccessor = static_cast<TransactionAccessor*>(&tr);
 
-#if ATOMIC_NS_CLONE
-	ClonableNamespace ns;
-#else
 	Namespace::Ptr ns;
-#endif
 	try {
 		const RdxContext rdxCtx = ctx.CreateRdxContext("COMMIT TRANSACTION", activities_);
-		ns = getClonableNamespace(trAccessor->GetName(), rdxCtx, trAccessor->impl_->steps_.size());
+		ns = getNamespace(tr.GetName(), rdxCtx);
 		ns->StartTransaction(rdxCtx);
 		RdxActivityContext* const actCtx = rdxCtx.Activity();
-		for (auto& step : tr.impl_->steps_) {
+		for (auto& step : tr.GetSteps()) {
 			ns->ApplyTransactionStep(step, actCtx);
-			updateToSystemNamespace(trAccessor->GetName(), step.item_, rdxCtx);
+			updateToSystemNamespace(tr.GetName(), step.item_, rdxCtx);
 		}
 
 	} catch (const Error& e) {
@@ -429,16 +417,13 @@ Error ReindexerImpl::CommitTransaction(Transaction& tr, const InternalRdxContext
 	}
 	if (ns) ns->EndTransaction();
 
-	if (trAccessor->GetCmpl()) trAccessor->GetCmpl()(err);
+	if (tr.GetCmpl()) tr.GetCmpl()(err);
 	return err;
 }
 Error ReindexerImpl::RollBackTransaction(Transaction& tr) {
-	Error err = errOK;
-	auto trAccessor = static_cast<TransactionAccessor*>(&tr);
+	tr.GetSteps().clear();
 
-	trAccessor->GetSteps().clear();
-
-	return err;
+	return errOK;
 }
 
 Error ReindexerImpl::GetMeta(string_view nsName, const string& key, string& data, const InternalRdxContext& ctx) {
@@ -461,7 +446,7 @@ Error ReindexerImpl::PutMeta(string_view nsName, const string& key, string_view 
 			ctx.NeedTraceActivity() ? (ser << "UPDATE " << nsName << " SET META = '" << data << "' WHERE KEY = '" << key << '\'').Slice()
 									: ""_sv,
 			activities_);
-		getClonableNamespace(nsName, rdxCtx)->PutMeta(key, data, rdxCtx);
+		getNamespace(nsName, rdxCtx)->PutMeta(key, data, rdxCtx);
 	} catch (const Error& err) {
 		return err;
 	}
@@ -487,7 +472,7 @@ Error ReindexerImpl::Delete(string_view nsName, Item& item, const InternalRdxCon
 		const auto rdxCtx = ctx.CreateRdxContext(
 			ctx.NeedTraceActivity() ? (ser << "DELETE FROM " << nsName << " WHERE ", printPkFields(item, ser)).Slice() : ""_sv,
 			activities_);
-		auto ns = getClonableNamespace(nsName, rdxCtx);
+		auto ns = getNamespace(nsName, rdxCtx);
 		ns->Delete(item, rdxCtx);
 	} catch (const Error& e) {
 		err = e;
@@ -499,7 +484,7 @@ Error ReindexerImpl::Delete(const Query& q, QueryResults& result, const Internal
 	try {
 		WrSerializer ser;
 		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? q.GetSQL(ser).Slice() : "", activities_, result);
-		auto ns = getClonableNamespace(q._namespace, rdxCtx);
+		auto ns = getNamespace(q._namespace, rdxCtx);
 		ensureDataLoaded(ns, rdxCtx);
 		ns->Delete(q, result, rdxCtx);
 	} catch (const Error& err) {
@@ -836,31 +821,15 @@ Namespace::Ptr ReindexerImpl::getNamespace(string_view nsName, const RdxContext&
 	}
 
 	assert(nsIt->second);
-	return nsIt->second->GetOriginNs();
+	return nsIt->second;
 }
-
-#if ATOMIC_NS_CLONE
-ClonableNamespace ReindexerImpl::getClonableNamespace(string_view nsName, const RdxContext& ctx, size_t actionsSize) {
-	SLock lock(mtx_, ctx);
-	auto nsIt = namespaces_.find(nsName);
-
-	if (nsIt == namespaces_.end()) {
-		throw Error(errParams, "Namespace '%s' does not exist", nsName);
-	}
-
-	assert(nsIt->second);
-
-	ClonableNamespace some(actionsSize, nsIt->second);
-	return some;
-}
-#endif
 
 Error ReindexerImpl::AddIndex(string_view nsName, const IndexDef& indexDef, const InternalRdxContext& ctx) {
 	try {
 		WrSerializer ser;
 		const auto rdxCtx = ctx.CreateRdxContext(
 			ctx.NeedTraceActivity() ? (ser << "CREATE INDEX " << indexDef.name_ << " ON " << nsName).Slice() : ""_sv, activities_);
-		auto ns = getClonableNamespace(nsName, rdxCtx);
+		auto ns = getNamespace(nsName, rdxCtx);
 		ns->AddIndex(indexDef, rdxCtx);
 	} catch (const Error& err) {
 		return err;
@@ -873,7 +842,7 @@ Error ReindexerImpl::UpdateIndex(string_view nsName, const IndexDef& indexDef, c
 		WrSerializer ser;
 		const auto rdxCtx = ctx.CreateRdxContext(
 			ctx.NeedTraceActivity() ? (ser << "UPDATE INDEX " << indexDef.name_ << " ON " << nsName).Slice() : ""_sv, activities_);
-		auto ns = getClonableNamespace(nsName, rdxCtx);
+		auto ns = getNamespace(nsName, rdxCtx);
 		ns->UpdateIndex(indexDef, rdxCtx);
 	} catch (const Error& err) {
 		return err;
@@ -886,7 +855,7 @@ Error ReindexerImpl::DropIndex(string_view nsName, const IndexDef& indexDef, con
 		WrSerializer ser;
 		const auto rdxCtx = ctx.CreateRdxContext(
 			ctx.NeedTraceActivity() ? (ser << "DROP INDEX " << indexDef.name_ << " ON " << nsName).Slice() : ""_sv, activities_);
-		auto ns = getClonableNamespace(nsName, rdxCtx);
+		auto ns = getNamespace(nsName, rdxCtx);
 		ns->DropIndex(indexDef, rdxCtx);
 	} catch (const Error& err) {
 		return err;
@@ -897,28 +866,17 @@ void ReindexerImpl::ensureDataLoaded(Namespace::Ptr& ns, const RdxContext& ctx) 
 	SStorageLock readlock(storageMtx_, &ctx);
 	if (ns->needToLoadData(ctx)) {
 		readlock.unlock();
-		UStorageLock writelock(storageMtx_, ctx);
+		UStorageLock writelock(storageMtx_, &ctx);
 		if (ns->needToLoadData(ctx)) ns->LoadFromStorage(ctx);
 	}
 }
-
-#if ATOMIC_NS_CLONE
-void ReindexerImpl::ensureDataLoaded(ClonableNamespace& ns, const RdxContext& ctx) {
-	SStorageLock readlock(storageMtx_, &ctx);
-	if (ns->needToLoadData()) {
-		readlock.unlock();
-		UStorageLock writelock(storageMtx_, ctx);
-		if (ns->needToLoadData()) ns->LoadFromStorage(ctx);
-	}
-}
-#endif
 
 std::vector<Namespace::Ptr> ReindexerImpl::getNamespaces(const RdxContext& ctx) {
 	SLock lock(mtx_, &ctx);
 	std::vector<Namespace::Ptr> ret;
 	ret.reserve(namespaces_.size());
 	for (auto& ns : namespaces_) {
-		ret.push_back(ns.second->GetOriginNs());
+		ret.push_back(ns.second);
 	}
 	return ret;
 }
@@ -970,7 +928,7 @@ void ReindexerImpl::backgroundRoutine() {
 		auto nsarray = getNamespacesNames(dummyCtx);
 		for (auto name : nsarray) {
 			try {
-				auto ns = getClonableNamespace(name, dummyCtx);
+				auto ns = getNamespace(name, dummyCtx);
 				ns->tryToReload(dummyCtx);
 				ns->BackgroundRoutine(nullptr);
 			} catch (Error err) {

@@ -127,7 +127,7 @@ public:
 
 	void Insert(Item &item, const RdxContext &ctx, bool store = true);
 	void Update(Item &item, const RdxContext &ctx, bool store = true);
-	void Update(const Query &query, QueryResults &result, const RdxContext &ctx, int64_t lsn = -1);
+	void Update(const Query &query, QueryResults &result, const RdxContext &ctx, int64_t lsn = -1, bool noLock = false);
 	void Upsert(Item &item, const RdxContext &ctx, bool store = true, bool noLock = false);
 
 	void Delete(Item &item, const RdxContext &ctx, bool noLock = false);

@@ -48,7 +48,7 @@ struct QueryResultsWrapper : QueryResults {
 	WrResultSerializer ser;
 };
 struct TransactionWrapper {
-	TransactionWrapper(Transaction&& tr) : tr_(move(tr)) {}
+	TransactionWrapper(Transaction&& tr) : tr_(std::move(tr)) {}
 	WrResultSerializer ser_;
 	Transaction tr_;
 };
@@ -230,15 +230,18 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 
 reindexer_tx_ret reindexer_start_transaction(uintptr_t rx, reindexer_string nsName) {
 	auto db = reinterpret_cast<Reindexer*>(rx);
-	reindexer_tx_ret ret;
+	reindexer_tx_ret ret{0, {nullptr, 0}};
 	if (!db) {
 		ret.err = error2c(err_not_init);
 		return ret;
 	}
 	Transaction tr = db->NewTransaction(str2cv(nsName));
-	auto trw = new TransactionWrapper(move(tr));
-	ret.tx_id = reinterpret_cast<uintptr_t>(trw);
-	ret.err = error2c(0);
+	if (tr.Status().ok()) {
+		auto trw = new TransactionWrapper(move(tr));
+		ret.tx_id = reinterpret_cast<uintptr_t>(trw);
+	} else {
+		ret.err = error2c(tr.Status());
+	}
 	return ret;
 }
 
@@ -268,7 +271,6 @@ reindexer_ret reindexer_commit_transaction(uintptr_t rx, uintptr_t tr, reindexer
 	auto err = rdxKeeper.db().CommitTransaction(trw->tr_);
 
 	reindexer_resbuffer out = {0, 0, 0};
-	auto trAccessor = static_cast<TransactionAccessor*>(&trw->tr_);
 
 	bool tmUpdated = false;
 
@@ -277,9 +279,11 @@ reindexer_ret reindexer_commit_transaction(uintptr_t rx, uintptr_t tr, reindexer
 		if (!res) {
 			return ret2c(err_too_many_queries, out);
 		}
-		for (auto& step : trAccessor->GetSteps()) {
-			res->AddItem(step.item_);
-			if (!tmUpdated) tmUpdated = step.item_.IsTagsUpdated();
+		for (auto& step : trw->tr_.GetSteps()) {
+			if (!step.query_) {
+				res->AddItem(step.item_);
+				if (!tmUpdated) tmUpdated = step.item_.IsTagsUpdated();
+			}
 		}
 		int32_t ptVers = -1;
 		results2c(res, &out, 0, tmUpdated ? &ptVers : nullptr, tmUpdated ? 1 : 0);
@@ -503,6 +507,44 @@ reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in, reindexe
 		}
 	}
 	return ret2c(res, out);
+}
+
+reindexer_error reindexer_delete_query_tx(uintptr_t rx, uintptr_t tr, reindexer_buffer in) {
+	auto db = reinterpret_cast<Reindexer*>(rx);
+	TransactionWrapper* trw = reinterpret_cast<TransactionWrapper*>(tr);
+	if (!db) {
+		return error2c(err_not_init);
+	}
+	if (!tr) {
+		return error2c(errOK);
+	}
+	Serializer ser(in.data, in.len);
+	Query q;
+	q.Deserialize(ser);
+	q.type_ = QueryDelete;
+
+	trw->tr_.Modify(std::move(q));
+
+	return error2c(errOK);
+}
+
+reindexer_error reindexer_update_query_tx(uintptr_t rx, uintptr_t tr, reindexer_buffer in) {
+	auto db = reinterpret_cast<Reindexer*>(rx);
+	TransactionWrapper* trw = reinterpret_cast<TransactionWrapper*>(tr);
+	if (!db) {
+		return error2c(err_not_init);
+	}
+	if (!tr) {
+		return error2c(errOK);
+	}
+	Serializer ser(in.data, in.len);
+	Query q;
+	q.Deserialize(ser);
+	q.type_ = QueryUpdate;
+
+	trw->tr_.Modify(std::move(q));
+
+	return error2c(errOK);
 }
 
 reindexer_error reindexer_put_meta(uintptr_t rx, reindexer_string ns, reindexer_string key, reindexer_string data,

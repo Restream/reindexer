@@ -71,6 +71,7 @@ void SelectIteratorContainer::explainJSON(const_iterator it, const_iterator end,
 			const SelectIterator &siter = it->Value();
 			bool isScanIterator = bool(siter.name == "-scan");
 			if (!isScanIterator) {
+				if (siter.name.empty() && !siter.joinIndexes.empty()) continue;
 				jsonSel.Put("field", siter.name);
 				jsonSel.Put("keys", siter.size());
 				jsonSel.Put("comparators", siter.comparators_.size());

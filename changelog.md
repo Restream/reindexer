@@ -1,12 +1,32 @@
+# Version 2.2.4 (30.09.2019)
+
+## Core
+
+- [fix] Idset cache invalidation on upsert/delete null values to indexes
+- [fix] Possibe crash if sort orders disabled
+- [fix] Wrong lowercasing field name on SQL UPDATE query
+- [fea] Delete & Update queries in transactions
+
+## Reindexer tool
+
+- [fea] Add command `databases` for operating with databases
+- [fea] Add suggestions for commands and databases names
+- [fix] Replxx dependency reverted to stable version
+- [fea] Using default dsn cproto:://127.0.0.1:6534/
+
+## go connector
+
+- [fea] Delete & Update queries in transactions
+
 # Version 2.2.3 (18.09.2019)
 
-# Core 
+## Core 
 
 - [fix] Fulltext queries sort by another field
 - [fea] Number of bacground threads for sort optimization can be changed from #config namespace
 - [fix] Sort optimization choose logic is improoved
 
-# go connectpr
+## go connectpr
 
 - [fix] leak seq from chan
 - [fix] check ctx.Done while waiting on cgo limiter
@@ -14,13 +34,13 @@
 
 # Version 2.2.2 (15.09.2019)
 
-# Core 
+## Core 
 
 - [fea] More effective usage of btree index for GT/LT and sort in concurent read write operations
 - [fix] Potential crash on index update or deletion
 - [fea] Timeout of background indexes optimization can be changed from #config namespace
 
-# Reindexer server
+## Reindexer server
 
 - [fea] User list moved from users.json to users.yml
 - [fea] Hash is used insead of plain password in users.yml file
@@ -28,18 +48,18 @@
 
 # Version 2.2.1 (07.09.2019)
 
-# Core 
+## Core 
 
 - [fea] Updated behaviour of Or InnerJoin statement
 - [fea] Store backups of system records in storage
 - [fix] Replicator can start before db initalization completed
 - [fix] Search prefixes if enabled only postfixes
 
-# Reindexer server
+## Reindexer server
 
 - [fea] Added prometheus /metrics handler
 
-# Face
+## Face
 
 - [fea] Fulltext config editor
 - [fea] Quick copy item's JSON from list view

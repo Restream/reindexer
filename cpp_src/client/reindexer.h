@@ -78,6 +78,9 @@ public:
 	/// @param defs - std::vector of NamespaceDef of available namespaves
 	/// @param bEnumAll - Also include currenty not opened, but exists on disk namespaces
 	Error EnumNamespaces(vector<NamespaceDef> &defs, bool bEnumAll);
+	/// Gets a list of available databases for a certain server.
+	/// @param dbList - list of DB names
+	Error EnumDatabases(vector<string> &dbList);
 	/// Insert new Item to namespace. If item with same PK is already exists, when item.GetID will
 	/// return -1, on success item.GetID() will return internal Item ID
 	/// May be used with completion

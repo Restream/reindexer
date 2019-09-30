@@ -37,6 +37,7 @@ Error Reindexer::AddIndex(string_view nsName, const IndexDef& idx) { return impl
 Error Reindexer::UpdateIndex(string_view nsName, const IndexDef& idx) { return impl_->UpdateIndex(nsName, idx, ctx_); }
 Error Reindexer::DropIndex(string_view nsName, const IndexDef& index) { return impl_->DropIndex(nsName, index, ctx_); }
 Error Reindexer::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll) { return impl_->EnumNamespaces(defs, bEnumAll, ctx_); }
+Error Reindexer::EnumDatabases(vector<string>& dbList) { return impl_->EnumDatabases(dbList, ctx_); }
 Error Reindexer::SubscribeUpdates(IUpdatesObserver* observer, bool subscribe) { return impl_->SubscribeUpdates(observer, subscribe); }
 Error Reindexer::GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string>& suggests) {
 	return impl_->GetSqlSuggestions(sqlQuery, pos, suggests);

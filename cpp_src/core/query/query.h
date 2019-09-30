@@ -22,8 +22,7 @@ using std::initializer_list;
 using std::pair;
 
 class Namespace;
-class NamespaceCloner;
-typedef fast_hash_map<string, std::shared_ptr<NamespaceCloner>, nocase_hash_str, nocase_equal_str> Namespaces;
+typedef fast_hash_map<string, std::shared_ptr<Namespace>, nocase_hash_str, nocase_equal_str> Namespaces;
 
 /// @class Query
 /// Allows to select data from DB.

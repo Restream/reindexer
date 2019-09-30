@@ -50,6 +50,7 @@ public:
 	Error UpdateIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error DropIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error EnumNamespaces(vector<NamespaceDef> &defs, bool bEnumAll, const InternalRdxContext &ctx);
+	Error EnumDatabases(vector<string> &dbList, const InternalRdxContext &ctx);
 	Error Insert(string_view nsName, client::Item &item, const InternalRdxContext &ctx);
 	Error Update(string_view nsName, client::Item &item, const InternalRdxContext &ctx);
 	Error Upsert(string_view nsName, client::Item &item, const InternalRdxContext &ctx);

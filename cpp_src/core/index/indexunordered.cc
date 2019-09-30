@@ -56,6 +56,7 @@ void IndexUnordered<T>::delMemStat(typename T::iterator it) {
 template <typename T>
 Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id) {
 	// reset cache
+	if (cache_) cache_.reset();
 	if (key.Type() == KeyValueNull) {
 		this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_);
 		// Return invalid ref
@@ -71,7 +72,6 @@ Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id) {
 
 	keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_);
 	this->tracker_.markUpdated(this->idx_map, keyIt);
-	if (cache_) cache_.reset();
 
 	addMemStat(keyIt);
 
@@ -84,6 +84,7 @@ Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id) {
 
 template <typename T>
 void IndexUnordered<T>::Delete(const Variant &key, IdType id) {
+	if (cache_) cache_.reset();
 	int delcnt = 0;
 	if (key.Type() == KeyValueNull) {
 		delcnt = this->empty_ids_.Unsorted().Erase(id);
@@ -114,7 +115,6 @@ void IndexUnordered<T>::Delete(const Variant &key, IdType id) {
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
 		IndexStore<typename T::key_type>::Delete(key, id);
 	}
-	if (cache_) cache_.reset();
 }
 
 template <typename T>

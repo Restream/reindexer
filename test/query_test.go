@@ -232,6 +232,12 @@ func (tx *txTest) AwaitResults() *txTest {
 	return tx
 }
 
+func (tx *txTest) Query() *queryTest {
+	q := tx.tx.Query()
+	return &queryTest{q: q, db: tx.db, ns: tx.ns}
+
+}
+
 func (qt *queryTestEntryTree) toString() (ret string) {
 	if len(qt.data) < 1 {
 		return ret
@@ -330,11 +336,6 @@ func (qt *queryTest) SetExpression(field string, value string) *queryTest {
 
 func (qt *queryTest) DeepReplEqual() *queryTest {
 	qt.deepReplEqual = true
-	return qt
-}
-
-func (qt *queryTest) NoRepl() *queryTest {
-	qt.readOnly = false
 	return qt
 }
 

@@ -266,6 +266,14 @@ func (binding *Builtin) ModifyItemTx(txCtx *bindings.TxCtx, format int, data []b
 	return err2go(C.reindexer_modify_item_packed_tx(binding.rx, C.uintptr_t(txCtx.Id), buf2c(packedArgs), buf2c(data)))
 }
 
+func (binding *Builtin) DeleteQueryTx(txCtx *bindings.TxCtx, rawQuery []byte) error {
+	return err2go(C.reindexer_delete_query_tx(binding.rx, C.uintptr_t(txCtx.Id), buf2c(rawQuery)))
+}
+func (binding *Builtin) UpdateQueryTx(txCtx *bindings.TxCtx, rawQuery []byte) error {
+
+	return err2go(C.reindexer_update_query_tx(binding.rx, C.uintptr_t(txCtx.Id), buf2c(rawQuery)))
+}
+
 // ModifyItemTxAsync is not implemented for builtin binding
 func (binding *Builtin) ModifyItemTxAsync(txCtx *bindings.TxCtx, format int, data []byte, mode int, precepts []string, stateToken int, cmpl bindings.RawCompletion) {
 	err := binding.ModifyItemTx(txCtx, format, data, mode, precepts, stateToken)

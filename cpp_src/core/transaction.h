@@ -6,40 +6,41 @@
 namespace reindexer {
 
 class TransactionImpl;
-
-using std::string;
 class ReindexerImpl;
 class RdxContext;
+class TransactionStep;
 
 class Transaction {
 public:
 	/// Completion routine
 	typedef std::function<void(const Error &err)> Completion;
-	Transaction() : impl_(nullptr) {}
 
 	Transaction(const string &nsName, ReindexerImpl *rx, Completion cmpl = nullptr);
 	~Transaction();
-	Transaction(const Transaction &) = delete;
-	Transaction &operator=(const Transaction &) = delete;
-
-	Transaction(Transaction &&) noexcept;
-	Transaction &operator=(Transaction &&) noexcept;
+	Transaction() = default;
+	Transaction(Transaction &&);
+	Transaction &operator=(Transaction &&);
 
 	void Insert(Item &&item);
 	void Update(Item &&item);
 	void Upsert(Item &&item);
 	void Delete(Item &&item);
 	void Modify(Item &&item, ItemModifyMode mode);
+	void Modify(Query &&query);
 	bool IsFree() { return impl_ == nullptr; }
 	Item NewItem();
+	Error Status() { return status_; }
 
-	const string &GetName();
+	const std::string &GetName();
 
 	friend class ReindexerImpl;
 
+	vector<TransactionStep> &GetSteps();
+	Completion GetCmpl();
+
 protected:
-	string empty_;
-	TransactionImpl *impl_;
+	std::unique_ptr<TransactionImpl> impl_;
+	Error status_;
 };
 
 }  // namespace reindexer

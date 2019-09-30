@@ -185,6 +185,32 @@ func (binding *NetCProto) ModifyItemTxAsync(txCtx *bindings.TxCtx, format int, d
 	netBuffer.conn.rpcCallAsync(txCtx.UserCtx, cmdAddTxItem, uint32(binding.timeouts.RequestTimeout/time.Second), cmpl, format, data, mode, packedPercepts, stateToken, int64(txCtx.Id))
 }
 
+func (binding *NetCProto) DeleteQueryTx(txCtx *bindings.TxCtx, rawQuery []byte) error {
+	netBuffer := txCtx.Result.(*NetBuffer)
+	txBuf, err := netBuffer.conn.rpcCall(txCtx.UserCtx, cmdDeleteQueryTx, uint32(binding.timeouts.RequestTimeout/time.Second), rawQuery, int64(txCtx.Id))
+
+	defer txBuf.Free()
+	if err != nil {
+		netBuffer.close()
+		return err
+	}
+
+	return nil
+}
+
+func (binding *NetCProto) UpdateQueryTx(txCtx *bindings.TxCtx, rawQuery []byte) error {
+	netBuffer := txCtx.Result.(*NetBuffer)
+	txBuf, err := netBuffer.conn.rpcCall(txCtx.UserCtx, cmdUpdateQueryTx, uint32(binding.timeouts.RequestTimeout/time.Second), rawQuery, int64(txCtx.Id))
+
+	defer txBuf.Free()
+	if err != nil {
+		netBuffer.close()
+		return err
+	}
+
+	return nil
+}
+
 func (binding *NetCProto) ModifyItem(ctx context.Context, nsHash int, namespace string, format int, data []byte, mode int, precepts []string, stateToken int) (bindings.RawBuffer, error) {
 
 	var packedPercepts []byte

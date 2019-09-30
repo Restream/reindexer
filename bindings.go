@@ -434,6 +434,18 @@ func (db *reindexerImpl) updateQuery(ctx context.Context, q *Query) *Iterator {
 	return newIterator(ctx, q, result, q.nsArray, nil, nil, nil)
 }
 
+// Execute query
+func (db *reindexerImpl) updateQueryTx(ctx context.Context, q *Query, tx *Tx) *Iterator {
+	err := db.binding.UpdateQueryTx(&tx.ctx, q.ser.Bytes())
+	return errIterator(err)
+}
+
+// Execute query
+func (db *reindexerImpl) deleteQueryTx(ctx context.Context, q *Query, tx *Tx) (int, error) {
+	err := db.binding.DeleteQueryTx(&tx.ctx, q.ser.Bytes())
+	return 0, err
+}
+
 func (db *Reindexer) ResetCaches() {
 	db.impl.resetCachesCtx(db.ctx)
 }

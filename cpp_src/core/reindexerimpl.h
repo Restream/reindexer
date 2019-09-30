@@ -12,7 +12,6 @@
 #include "estl/fast_hash_map.h"
 #include "estl/h_vector.h"
 #include "estl/smart_lock.h"
-#include "namespacecloner.h"
 #include "querystat.h"
 #include "replicator/updatesobserver.h"
 #include "tools/errors.h"
@@ -73,9 +72,9 @@ public:
 
 protected:
 	typedef contexted_shared_lock<Mutex, const RdxContext> SLock;
-	typedef contexted_lock_guard<Mutex, const RdxContext> ULock;
+	typedef contexted_unique_lock<Mutex, const RdxContext> ULock;
 	typedef contexted_shared_lock<StorageMutex, const RdxContext> SStorageLock;
-	typedef contexted_lock_guard<StorageMutex, const RdxContext> UStorageLock;
+	typedef contexted_unique_lock<StorageMutex, const RdxContext> UStorageLock;
 
 	template <typename Context>
 	class NsLocker : public h_vector<pair<Namespace::Ptr, smart_lock<Namespace::Mutex>>, 4> {
@@ -121,7 +120,6 @@ protected:
 	JoinedSelectors prepareJoinedSelectors(const Query &q, QueryResults &result, NsLocker<T> &locks, SelectFunctionsHolder &func,
 										   const RdxContext &ctx);
 
-	void ensureDataLoaded(ClonableNamespace &ns, const RdxContext &ctx);
 	void ensureDataLoaded(Namespace::Ptr &ns, const RdxContext &ctx);
 
 	void syncSystemNamespaces(string_view nsName, const RdxContext &ctx);
@@ -137,19 +135,11 @@ protected:
 	Error closeNamespace(string_view nsName, const RdxContext &ctx, bool dropStorage, bool enableDropSlave = false);
 
 	Namespace::Ptr getNamespace(string_view nsName, const RdxContext &ctx);
-#if ATOMIC_NS_CLONE
-	ClonableNamespace getClonableNamespace(string_view nsName, const RdxContext &ctx, size_t actionsSize = 1);
-#else
-	Namespace::Ptr getClonableNamespace(string_view nsName, const RdxContext &ctx, size_t actionsSize = 1) {
-		(void)actionsSize;
-		return getNamespace(nsName, ctx);
-	}
-#endif
 
 	std::vector<Namespace::Ptr> getNamespaces(const RdxContext &ctx);
 	std::vector<string> getNamespacesNames(const RdxContext &ctx);
 
-	fast_hash_map<string, NamespaceCloner::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
+	fast_hash_map<string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
 
 	Mutex mtx_;
 	string storagePath_;

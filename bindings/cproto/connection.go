@@ -51,6 +51,8 @@ const (
 	cmdCommitTx          = 27
 	cmdRollbackTx        = 28
 	cmdStartTransaction  = 29
+	cmdDeleteQueryTx     = 30
+	cmdUpdateQueryTx     = 31
 	cmdCommit            = 32
 	cmdModifyItem        = 33
 	cmdDeleteQuery       = 34
