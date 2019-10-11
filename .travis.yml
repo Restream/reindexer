@@ -22,7 +22,7 @@ git:
   os: linux
   env:
     - WITH_DOXYGEN=0 # set to 1 when doxy doc deploy is ready
-    - CMAKE_OPTS="-DCMAKE_BUILD_TYPE=Release"
+    - CMAKE_OPTS="-DCMAKE_BUILD_TYPE=Release -DENABLE_LIBUNWIND=Off"
   before_install:
     - mkdir -p ${BUILD_DIR}
     - mkdir -p ${GOPATH}/src/github.com/restream && ln -s `pwd` ${GOPATH}/src/github.com/restream/reindexer
@@ -47,7 +47,7 @@ git:
   <<: *stage_build_linux_template
   env:
     - WITH_DOXYGEN=0
-    - CMAKE_OPTS="-DWITH_ASAN=On"
+    - CMAKE_OPTS="-DWITH_ASAN=On -DENABLE_LIBUNWIND=Off"
   script:
     - cd ${BUILD_DIR} && cmake ${CMAKE_OPTS} ${TRAVIS_BUILD_DIR} && make -j4
     - ctest --verbose
@@ -57,13 +57,13 @@ git:
   <<: *stage_build_linux_template
   env:
     - WITH_DOXYGEN=0
-    - CMAKE_OPTS="-DWITH_TSAN=On"
+    - CMAKE_OPTS="-DWITH_TSAN=On -DENABLE_LIBUNWIND=Off"
 
 .stage_build_linux_cov_template: &stage_build_linux_cov_template
   <<: *stage_build_linux_template
   env:
     - WITH_DOXYGEN=0
-    - CMAKE_OPTS="-DWITH_COVERAGE=On"
+    - CMAKE_OPTS="-DWITH_COVERAGE=On -DENABLE_LIBUNWIND=Off"
   script:
     - cd ${BUILD_DIR} && cmake ${CMAKE_OPTS} ${TRAVIS_BUILD_DIR} && make -j4
     - ctest --verbose
