@@ -67,14 +67,9 @@ private:
 };
 #endif
 
-static void sighandler(int sig, siginfo_t *, void *ctx) {
+int backtrace_internal(void **addrlist, size_t size, void *ctx, string_view &method) {
 	(void)ctx;
-	std::ostringstream sout;
-
-	auto resolver = TraceResolver::New();
-	void *addrlist[64] = {};
-	int addrlen = 0;
-	string_view method;
+	size_t addrlen = 0;
 
 #if REINDEX_WITH_LIBUNWIND
 	method = "libunwind"_sv;
@@ -87,23 +82,34 @@ static void sighandler(int sig, siginfo_t *, void *ctx) {
 		unw_word_t ip;
 		unw_get_reg(&cursor, UNW_REG_IP, &ip);
 		addrlist[addrlen++] = reinterpret_cast<void *>(ip);
-	} while (unw_step(&cursor) && addrlen < int(sizeof(addrlist) / sizeof(addrlist[0])));
+	} while (unw_step(&cursor) && addrlen < size);
 #endif
 
 #if REINDEX_WITH_UNWIND
 	Unwinder unw;
 	if (addrlen < 3) {
 		method = "unwind"_sv;
-		addrlen = unw(span<void *>(addrlist, sizeof(addrlist) / sizeof(addrlist[0])));
+		addrlen = unw(span<void *>(addrlist, size));
 	}
 #endif
 
 #if REINDEX_WITH_EXECINFO
 	if (addrlen < 3) {
 		method = "execinfo"_sv;
-		addrlen = backtrace(addrlist, sizeof(addrlist) / sizeof(addrlist[0]));
+		addrlen = ::backtrace(addrlist, size);
 	}
 #endif
+	return addrlen;
+}
+
+static void sighandler(int sig, siginfo_t *, void *ctx) {
+	std::ostringstream sout;
+	void *addrlist[64] = {};
+
+	auto resolver = TraceResolver::New();
+	string_view method;
+
+	int addrlen = backtrace_internal(addrlist, sizeof(addrlist) / sizeof(addrlist[0]), ctx, method);
 
 #if !REINDEX_WITH_EXECINFO && !REINDEX_WITH_UNWIND && !REINDEX_WITH_LIBUNWIND
 	sout << "Sorry, reindexer has been compiled without any backtrace methods." << std::endl;
@@ -139,6 +145,8 @@ namespace reindexer {
 namespace debug {
 void backtrace_init() {}
 void backtrace_set_writer(std::function<void(string_view out)>) {}
+int backtrace_internal(void **, size_t, void *, string_view &) { return 0; }
+
 }  // namespace debug
 }  // namespace reindexer
 

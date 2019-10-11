@@ -289,7 +289,7 @@ void ReplicationApi::WaitSync(const std::string& ns) {
 			else if (xstate.lsn != state.lsn)
 				state.lsn = -1;
 			else if (state.lsn != -1) {
-				ASSERT_EQ(state.dataHash, xstate.dataHash) << "lsns" << state.lsn << " " << xstate.lsn;
+				ASSERT_EQ(state.dataHash, xstate.dataHash) << "name: " << ns << ", lsns: " << state.lsn << " " << xstate.lsn;
 				ASSERT_EQ(state.dataCount, xstate.dataCount);
 			}
 		}

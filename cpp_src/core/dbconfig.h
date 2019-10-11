@@ -53,7 +53,7 @@ struct ReplicationConfigData {
 	int connPoolSize = 1;
 	int workerThreads = 1;
 	int clusterID = 1;
-	int timeoutSec = 10;
+	int timeoutSec = 30;
 	bool forceSyncOnLogicError = false;
 	bool forceSyncOnWrongDataHash = false;
 	fast_hash_set<string, nocase_hash_str, nocase_equal_str> namespaces;

@@ -83,7 +83,7 @@ public:
 				if (!jsonPath.length()) continue;
 				pathIdx.clear();
 				for (auto &name : split(jsonPath, ".", true, pathParts)) {
-					pathIdx.push_back(name2tag(name.c_str(), true, updated));
+					pathIdx.push_back(name2tag(name, true, updated));
 				}
 				pathCache_.set(pathIdx.data(), pathIdx.size(), i);
 			}

@@ -47,9 +47,12 @@ protected:
 	bool FromFile();
 	string getCurrentDsn() const;
 	Error queryResultsToJson(ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery);
-	void addCommandsSuggestions(std::string const& input, std::vector<string>& suggestions);
 	Error getAvailableDatabases(vector<string>&);
 	Error stop();
+
+	void addCommandsSuggestions(std::string const& input, std::vector<string>& suggestions);
+	void checkForNsNameMatch(string_view str, std::vector<string>& suggestions);
+	void checkForCommandNameMatch(string_view str, std::initializer_list<string_view> cmds, std::vector<string>& suggestions);
 
 	template <typename T>
 	void setCompletionCallback(T& rx, void (T::*set_completion_callback)(new_v_callback_t const&));
@@ -148,6 +151,7 @@ protected:
 		Format can be one of the following:
 		- 'json' Unformatted JSON
 		- 'pretty' Pretty printed JSON
+        - 'table' Table view
 		)help"},
         {"\\bench",		"Run benchmark",&CommandsProcessor::commandBench,R"help(
 	Syntax:

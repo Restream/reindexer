@@ -8,13 +8,6 @@
 #include "backtrace.h"
 #include "pprof.h"
 
-void cgo_pprof_init() {
-	char* flag = getenv("CGOBACKTRACE");
-	if (flag && strlen(flag) > 0) {
-		backtrace_init();
-	}
-}
-
 char* cgo_pprof_get_heapprofile() {
 	size_t val = 0, sz = sizeof(size_t);
 	mallctl("config.prof", &val, &sz, NULL, 0);
@@ -48,7 +41,7 @@ char* cgo_pprof_get_heapprofile() {
 	return profile;
 }
 
-char* cgo_pprof_lookup_symbol(void* ptr) { return resolve_symbol(ptr, true); }
+char* cgo_pprof_lookup_symbol(void* ptr) { return resolve_symbol(ptr); }
 
 int cgo_pprof_start_cpu_profile(char* fname) { return -1; }
 void cgo_pprof_stop_cpu_profile() {}

@@ -110,8 +110,7 @@ TEST_F(QueriesApi, QueriesSqlGenerate) {
 	const auto check = [](const string& sql) {
 		Query q;
 		q.FromSQL(sql);
-		reindexer::WrSerializer ser;
-		EXPECT_EQ(sql, string(q.GetSQL(ser).Slice()));
+		EXPECT_EQ(sql, q.GetSQL());
 	};
 
 	check("SELECT ID,Year,Genre FROM test_namespace WHERE year > '2016' ORDER BY year DESC LIMIT 10000000");

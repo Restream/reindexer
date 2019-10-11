@@ -1,6 +1,6 @@
 #ifdef __linux__
 /* mmap.c -- Memory allocation with mmap.
-   Copyright (C) 2012-2015 Free Software Foundation, Inc.
+   Copyright (C) 2012-2018 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Google.
 
 Redistribution and use in source and binary forms, with or without
@@ -51,6 +51,10 @@ POSSIBILITY OF SUCH DAMAGE.  */
 #define MAP_ANONYMOUS MAP_ANON
 #endif
 
+#ifndef MAP_FAILED
+#define MAP_FAILED ((void *)-1)
+#endif
+
 /* A list of free memory blocks.  */
 
 struct backtrace_freelist_struct {
@@ -63,9 +67,27 @@ struct backtrace_freelist_struct {
 /* Free memory allocated by backtrace_alloc.  */
 
 static void backtrace_free_locked(struct backtrace_state *state, void *addr, size_t size) {
-	/* Just leak small blocks.  We don't have to be perfect.  */
+	/* Just leak small blocks.  We don't have to be perfect.  Don't put
+	   more than 16 entries on the free list, to avoid wasting time
+	   searching when allocating a block.  If we have more than 16
+	   entries, leak the smallest entry.  */
+
 	if (size >= sizeof(struct backtrace_freelist_struct)) {
+		size_t c;
+		struct backtrace_freelist_struct **ppsmall;
+		struct backtrace_freelist_struct **pp;
 		struct backtrace_freelist_struct *p;
+
+		c = 0;
+		ppsmall = NULL;
+		for (pp = &state->freelist; *pp != NULL; pp = &(*pp)->next) {
+			if (ppsmall == NULL || (*pp)->size < (*ppsmall)->size) ppsmall = pp;
+			++c;
+		}
+		if (c >= 16) {
+			if (size <= (*ppsmall)->size) return;
+			*ppsmall = (*ppsmall)->next;
+		}
 
 		p = (struct backtrace_freelist_struct *)addr;
 		p->next = state->freelist;

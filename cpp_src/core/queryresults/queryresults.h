@@ -19,7 +19,6 @@ using std::unique_ptr;
 class TagsMatcher;
 class PayloadType;
 class WrSerializer;
-class QRVector;
 
 /// QueryResults is an interface for iterating over documents, returned by Query from Reindexer.<br>
 /// *Lifetime*: QueryResults uses Copy-On-Write semantics, so it has independent lifetime and state - e.g., acquired from Reindexer.
@@ -116,11 +115,6 @@ private:
 		RdxActivityContext activityCtx_;
 	};
 	friend InternalRdxContext;
-};
-
-class QRVector : public h_vector<QueryResults, 2> {
-public:
-	using h_vector<QueryResults, 2>::h_vector;
 };
 
 }  // namespace reindexer

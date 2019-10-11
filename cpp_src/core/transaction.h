@@ -1,21 +1,20 @@
 #pragma once
 #include "core/namespacedef.h"
 #include "core/query/query.h"
-#include "core/query/queryresults.h"
+#include "core/queryresults/queryresults.h"
 
 namespace reindexer {
 
 class TransactionImpl;
-class ReindexerImpl;
-class RdxContext;
 class TransactionStep;
+class PayloadType;
+class TagsMatcher;
+class FieldsSet;
 
 class Transaction {
 public:
-	/// Completion routine
-	typedef std::function<void(const Error &err)> Completion;
-
-	Transaction(const string &nsName, ReindexerImpl *rx, Completion cmpl = nullptr);
+	Transaction(const string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf);
+	Transaction(const Error &err);
 	~Transaction();
 	Transaction() = default;
 	Transaction(Transaction &&);
@@ -36,7 +35,6 @@ public:
 	friend class ReindexerImpl;
 
 	vector<TransactionStep> &GetSteps();
-	Completion GetCmpl();
 
 protected:
 	std::unique_ptr<TransactionImpl> impl_;

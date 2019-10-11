@@ -1,6 +1,7 @@
-#include "dslparsetools.h"
-#include <string>
+#include "dslparser.h"
+#include "core/query/query.h"
 #include "estl/fast_hash_map.h"
+#include "gason/gason.h"
 #include "tools/errors.h"
 #include "tools/json2kv.h"
 #include "tools/stringstools.h"
@@ -30,8 +31,6 @@ enum class JoinRoot { Type, On, Namespace, Filters, Sort, Limit, Offset };
 enum class JoinEntry { LetfField, RightField, Cond, Op };
 enum class Filter { Cond, Op, Field, Value, Distinct, Filters, JoinQuery };
 enum class Aggregation { Fields, Type, Sort, Limit, Offset };
-
-void parseValues(JsonValue& values, VariantArray& kvs);
 
 // additional for parse root DSL fields
 template <typename T>
@@ -123,6 +122,23 @@ void parseStringArray(JsonValue& stringArray, h_vector<T, holdSize>& array) {
 	}
 }
 
+template <typename Array>
+void parseValues(JsonValue& values, Array& kvs) {
+	if (values.getTag() == JSON_ARRAY) {
+		for (auto elem : values) {
+			Variant kv;
+			if (elem->value.getTag() != JSON_NULL) {
+				kv = jsonValue2Variant(elem->value, KeyValueUndefined);
+			}
+			if (kvs.size() > 1 && kvs.back().Type() != kv.Type()) throw Error(errParseJson, "Array of filter values must be homogeneous.");
+			kvs.push_back(std::move(kv));
+		}
+	} else if (values.getTag() != JSON_NULL) {
+		kvs.push_back(jsonValue2Variant(values, KeyValueUndefined));
+	}
+}
+void parse(JsonValue& root, Query& q);
+
 void parseSortEntry(JsonValue& entry, Query& q) {
 	checkJsonValueType(entry, "Sort", JSON_OBJECT);
 	SortingEntry sortingEntry;
@@ -175,7 +191,6 @@ void parseSortEntry(JsonValue& entry, AggregateEntry& agg) {
 		agg.sortingEntries_.push_back(std::move(sortingEntry));
 	}
 }
-
 template <typename T>
 void parseSort(JsonValue& v, T& q) {
 	if (v.getTag() == JSON_ARRAY) {
@@ -184,21 +199,6 @@ void parseSort(JsonValue& v, T& q) {
 		parseSortEntry(v, q);
 	} else {
 		throw Error(errConflict, "Wrong type of field 'Sort'");
-	}
-}
-
-void parseValues(JsonValue& values, VariantArray& kvs) {
-	if (values.getTag() == JSON_ARRAY) {
-		for (auto elem : values) {
-			Variant kv;
-			if (elem->value.getTag() != JSON_NULL) {
-				kv = jsonValue2Variant(elem->value, KeyValueUndefined);
-			}
-			if (kvs.size() > 1 && kvs.back().Type() != kv.Type()) throw Error(errParseJson, "Array of filter values must be homogeneous.");
-			kvs.push_back(std::move(kv));
-		}
-	} else if (values.getTag() != JSON_NULL) {
-		kvs.push_back(jsonValue2Variant(values, KeyValueUndefined));
 	}
 }
 
@@ -290,7 +290,7 @@ void parseFilter(JsonValue& filter, Query& q) {
 
 	if (joinEntry) {
 		assert(q.joinQueries_.size() > 0);
-		const Query& qjoin = q.joinQueries_.back();
+		const auto& qjoin = q.joinQueries_.back();
 		if (qjoin.joinType != JoinType::LeftJoin) {
 			q.entries.Append((qjoin.joinType == JoinType::InnerJoin) ? OpAnd : OpOr, QueryEntry(q.joinQueries_.size() - 1));
 		}
@@ -299,7 +299,7 @@ void parseFilter(JsonValue& filter, Query& q) {
 	}
 }
 
-void parseJoinedEntries(JsonValue& joinEntries, Query& qjoin) {
+void parseJoinedEntries(JsonValue& joinEntries, JoinedQuery& qjoin) {
 	checkJsonValueType(joinEntries, "Joined", JSON_ARRAY);
 	for (auto element : joinEntries) {
 		auto& joinEntry = element->value;
@@ -333,7 +333,7 @@ void parseJoinedEntries(JsonValue& joinEntries, Query& qjoin) {
 }
 
 void parseSingleJoinQuery(JsonValue& join, Query& query) {
-	Query qjoin;
+	JoinedQuery qjoin;
 	for (auto subelement : join) {
 		auto& value = subelement->value;
 		string_view name = subelement->key;
@@ -373,7 +373,7 @@ void parseMergeQueries(JsonValue& mergeQueries, Query& query) {
 	for (auto element : mergeQueries) {
 		auto& merged = element->value;
 		checkJsonValueType(merged, "Merged", JSON_OBJECT);
-		Query qmerged;
+		JoinedQuery qmerged;
 		parse(merged, qmerged);
 		query.mergeQueries_.emplace_back(qmerged);
 	}
@@ -476,6 +476,20 @@ void parse(JsonValue& root, Query& q) {
 				break;
 		}
 	}
+}
+
+Error Parse(const string& str, Query& q) {
+	try {
+		gason::JsonParser parser;
+
+		auto root = parser.Parse(giftStr(str));
+		dsl::parse(root.value, q);
+	} catch (const gason::Exception& ex) {
+		return Error(errParseJson, "Query: %s", ex.what());
+	} catch (const Error& err) {
+		return err;
+	}
+	return errOK;
 }
 
 }  // namespace dsl

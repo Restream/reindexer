@@ -5,7 +5,6 @@
 #include <sstream>
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
-#include "core/query/joinresults.h"
 #include "gason/gason.h"
 #include "reindexer_api.h"
 #include "tools/fsops.h"

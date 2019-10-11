@@ -7,19 +7,6 @@
 
 namespace reindexer {
 
-struct JoinedSelector {
-	typedef std::function<bool(JoinedSelector *, IdType, int nsId, ConstPayload, bool)> FuncType;
-	JoinType type;
-	bool nodata;
-	FuncType func;
-	int called, matched;
-	string ns;
-	JoinCacheRes joinRes;
-	Query query;
-};
-
-typedef vector<JoinedSelector> JoinedSelectors;
-
 struct JoinPreResult {
 	enum Mode { ModeBuild, ModeIterators, ModeIdSet, ModeEmpty };
 
@@ -30,6 +17,63 @@ struct JoinPreResult {
 	bool enableSortOrders = false;
 	bool btreeIndexOptimizationEnabled = true;
 };
+
+class JoinedSelector {
+public:
+	JoinedSelector(JoinType joinType, std::shared_ptr<Namespace> leftNs, std::shared_ptr<Namespace> rightNs, JoinCacheRes &&joinRes,
+				   Query &&itemQuery, QueryResults &result, const JoinedQuery &joinQuery, JoinPreResult::Ptr preResult,
+				   size_t joinedFieldIdx, SelectFunctionsHolder &selectFunctions, int joinedSelectorsCount, const RdxContext &rdxCtx)
+		: joinType_(joinType),
+		  called_(0),
+		  matched_(0),
+		  leftNs_(std::move(leftNs)),
+		  rightNs_(std::move(rightNs)),
+		  joinRes_(std::move(joinRes)),
+		  itemQuery_(std::move(itemQuery)),
+		  result_(result),
+		  joinQuery_(joinQuery),
+		  preResult_(preResult),
+		  joinedFieldIdx_(joinedFieldIdx),
+		  selectFunctions_(selectFunctions),
+		  joinedSelectorsCount_(joinedSelectorsCount),
+		  rdxCtx_(rdxCtx),
+		  optimized_(false) {}
+
+	JoinedSelector(JoinedSelector &&) = default;
+
+	JoinedSelector(const JoinedSelector &) = delete;
+	JoinedSelector &operator=(const JoinedSelector &) = delete;
+	JoinedSelector &operator=(JoinedSelector &&) = delete;
+
+	bool Process(IdType, int nsId, ConstPayload, bool match);
+	JoinType Type() const { return joinType_; }
+	const Namespace &RightNs() const { return *rightNs_; }
+	int Called() const { return called_; }
+	int Matched() const { return matched_; }
+	bool AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer &, int maxIterations, unsigned sortId, SelectFunction::Ptr,
+											 const RdxContext &);
+
+private:
+	template <bool byJsonPath>
+	void readValues(VariantArray &values, const Index &leftIndex, int rightIdxNo, const std::string &rightIndex) const;
+
+	JoinType joinType_;
+	int called_, matched_;
+	std::shared_ptr<Namespace> leftNs_;
+	std::shared_ptr<Namespace> rightNs_;
+	JoinCacheRes joinRes_;
+	Query itemQuery_;
+	QueryResults &result_;
+	const JoinedQuery &joinQuery_;
+	JoinPreResult::Ptr preResult_;
+	size_t joinedFieldIdx_;
+	SelectFunctionsHolder &selectFunctions_;
+	int joinedSelectorsCount_;
+	const RdxContext &rdxCtx_;
+	bool optimized_;
+};
+
+typedef vector<JoinedSelector> JoinedSelectors;
 
 struct SelectCtx {
 	explicit SelectCtx(const Query &query_) : query(query_) {}

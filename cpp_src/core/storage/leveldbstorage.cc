@@ -17,32 +17,11 @@ void toReadOptions(const StorageOpts& opts, leveldb::ReadOptions& ropts) {
 namespace reindexer {
 namespace datastorage {
 
-const char* const kStorageNotInitialized = "Storage is not initialized";
+constexpr auto kStorageNotInitialized = "Storage is not initialized"_sv;
 
 LevelDbStorage::LevelDbStorage() {}
 
 LevelDbStorage::~LevelDbStorage() {}
-
-Error LevelDbStorage::Open(const string& path, const StorageOpts& opts) {
-	if (path.empty()) {
-		throw Error(errParams, "Cannot enable storage: the path is empty '%s'", path);
-	}
-
-	leveldb::Options options;
-	options.create_if_missing = opts.IsCreateIfMissing();
-	options.max_open_files = 50;
-
-	leveldb::DB* db;
-	leveldb::Status status = leveldb::DB::Open(options, path, &db);
-	if (status.ok()) {
-		db_ = shared_ptr<leveldb::DB>(db);
-		opts_ = opts;
-		dbpath_ = path;
-		return Error();
-	}
-
-	return Error(errLogic, status.ToString());
-}
 
 Error LevelDbStorage::Read(const StorageOpts& opts, const string_view& key, string& value) {
 	if (!db_) throw Error(errParams, kStorageNotInitialized);
@@ -117,16 +96,6 @@ void LevelDbStorage::Flush() {
 	Open(dbpath_, opts_);
 }
 
-void LevelDbStorage::Destroy(const string& path) {
-	leveldb::Options options;
-	options.create_if_missing = true;
-	db_.reset();
-	leveldb::Status status = leveldb::DestroyDB(path.c_str(), options);
-	if (!status.ok()) {
-		printf("Cannot destroy DB: %s, %s\n", path.c_str(), status.ToString().c_str());
-	}
-}
-
 Cursor* LevelDbStorage::GetCursor(StorageOpts& opts) {
 	if (!db_) throw Error(errParams, kStorageNotInitialized);
 	leveldb::ReadOptions options;
@@ -136,6 +105,37 @@ Cursor* LevelDbStorage::GetCursor(StorageOpts& opts) {
 }
 
 UpdatesCollection* LevelDbStorage::GetUpdatesCollection() { return new LevelDbBatchBuffer(); }
+
+Error LevelDbStorage::doOpen(const string& path, const StorageOpts& opts) {
+	if (path.empty()) {
+		throw Error(errParams, "Cannot enable storage: the path is empty '%s'", path);
+	}
+
+	leveldb::Options options;
+	options.create_if_missing = opts.IsCreateIfMissing();
+	options.max_open_files = 50;
+
+	leveldb::DB* db;
+	leveldb::Status status = leveldb::DB::Open(options, path, &db);
+	if (status.ok()) {
+		db_.reset(db);
+		opts_ = opts;
+		dbpath_ = path;
+		return Error();
+	}
+
+	return Error(errLogic, status.ToString());
+}
+
+void LevelDbStorage::doDestroy(const string& path) {
+	leveldb::Options options;
+	options.create_if_missing = true;
+	db_.reset();
+	leveldb::Status status = leveldb::DestroyDB(path.c_str(), options);
+	if (!status.ok()) {
+		printf("Cannot destroy DB: %s, %s\n", path.c_str(), status.ToString().c_str());
+	}
+}
 
 LevelDbBatchBuffer::LevelDbBatchBuffer() {}
 

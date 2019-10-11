@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-WALSelecter::WALSelecter(Namespace *ns) : ns_(ns) {}
+WALSelecter::WALSelecter(const Namespace *ns) : ns_(ns) {}
 
 void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 	const Query &q = params.query;
@@ -26,7 +26,7 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 		int64_t fromLSN = std::min(q.entries[0].values[0].As<int64_t>(), std::numeric_limits<int64_t>::max() - 1);
 
 		if (ns_->wal_.is_outdated(fromLSN) && count)
-			throw Error(errOutdatedWAL, "Query to WAL with outdated LSN %ld, LSN counter %ld", long(fromLSN), long(ns_->wal_.LSNCounter()));
+			throw Error(errOutdatedWAL, "Query to WAL with outdated LSN %ld, LSN counter %ld", fromLSN, ns_->wal_.LSNCounter());
 
 		for (auto it = ns_->wal_.upper_bound(fromLSN); count && it != ns_->wal_.end(); ++it) {
 			WALRecord rec = *it;
@@ -37,8 +37,8 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 						start--;
 					} else if (count) {
 						// Put as usual ItemRef
-						assertf(ns_->items_[rec.id].GetLSN() == it.GetLSN(), "lsn %ld != %ld, ns=%s", long(ns_->items_[rec.id].GetLSN()),
-								long(it.GetLSN()), ns_->name_.c_str());
+						assertf(ns_->items_[rec.id].GetLSN() == it.GetLSN(), "lsn %ld != %ld, ns=%s", ns_->items_[rec.id].GetLSN(),
+								it.GetLSN(), ns_->name_);
 						result.Add(ItemRef(rec.id, ns_->items_[rec.id]));
 						count--;
 					}
@@ -100,4 +100,4 @@ void WALSelecter::putReplState(QueryResults &result) {
 	pv.SetLSN(-1);
 	result.Add(ItemRef(-1, pv, 0, 0, true));
 }
-};  // namespace reindexer
+}  // namespace reindexer

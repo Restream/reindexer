@@ -40,14 +40,13 @@ Variant PayloadIface<T>::Get(int field, int idx, bool enableHold) const {
 
 	if (t_.Field(field).IsArray()) {
 		auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
-		assertf(idx < arr->len, "Field '%s.%s' bound exceed idx %d > len %d", Type().Name().c_str(), Type().Field(field).Name().c_str(),
-				idx, int(arr->len));
+		assertf(idx < arr->len, "Field '%s.%s' bound exceed idx %d > len %d", Type().Name(), Type().Field(field).Name(), idx, arr->len);
 
 		PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + idx * t_.Field(field).ElemSizeof());
 		return pv.Get(enableHold);
 
 	} else {
-		assertf(idx == 0, "Field '%s.%s' is not array, can't get idx %d", Type().Name().c_str(), Type().Field(field).Name().c_str(), idx);
+		assertf(idx == 0, "Field '%s.%s' is not array, can't get idx %d", Type().Name(), Type().Field(field).Name(), idx);
 		return Field(field).Get(enableHold);
 	}
 }

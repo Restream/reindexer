@@ -1029,7 +1029,8 @@ public:
 		  m_load_threshold_rehash(other.m_load_threshold_rehash),
 		  m_load_threshold_clear_deleted(other.m_load_threshold_clear_deleted),
 		  m_max_load_factor(other.m_max_load_factor) {
-		copy_buckets_from(other), m_sparse_buckets = m_sparse_buckets_data.data();
+		copy_buckets_from(other);
+		m_sparse_buckets = m_sparse_buckets_data.empty() ? static_empty_sparse_bucket_ptr() : m_sparse_buckets_data.data();
 	}
 
 	sparse_hash(sparse_hash&& other) noexcept(

@@ -10,8 +10,11 @@ namespace client {
 
 using namespace reindexer::net;
 
-QueryResults::QueryResults(int fetchFlags) : fetchFlags_(fetchFlags), fetchAmount_(0), requestTimeout_(0){};
+QueryResults::QueryResults(int fetchFlags)
+	: conn_(nullptr), queryID_(0), fetchOffset_(0), fetchFlags_(fetchFlags), fetchAmount_(0), requestTimeout_(0) {}
+
 QueryResults::QueryResults(QueryResults &&) = default;
+
 QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	if (this != &obj) {
 		rawResult_ = std::move(obj.rawResult_);
@@ -24,6 +27,7 @@ QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 		queryID_ = std::move(obj.queryID_);
 		status_ = std::move(obj.status_);
 		cmpl_ = std::move(obj.cmpl_);
+		requestTimeout_ = obj.requestTimeout_;
 	}
 	return *this;
 }
@@ -32,6 +36,7 @@ QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArra
 						   seconds timeout)
 	: conn_(conn),
 	  nsArray_(std::move(nsArray)),
+	  queryID_(0),
 	  fetchOffset_(0),
 	  fetchFlags_(fetchFlags),
 	  fetchAmount_(fetchAmount),

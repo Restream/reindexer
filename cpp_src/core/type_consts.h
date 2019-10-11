@@ -66,7 +66,8 @@ typedef enum QuerySerializeMode {
 	Normal = 0x0,
 	SkipJoinQueries = 0x01,
 	SkipMergeQueries = 0x02,
-	SkipLimitOffset = 0x04
+	SkipLimitOffset = 0x04,
+	WithJoinEntries = 0x08,
 } QuerySerializeMode;
 
 typedef enum CondType {
@@ -157,7 +158,8 @@ typedef enum StotageOpt {
 	kStorageOptFillCache = 1 << 4,
 	kStorageOptSync = 1 << 5,
 	kStorageOptLazyLoad = 1 << 6,
-	kStorageOptSlaveMode = 1 << 7
+	kStorageOptSlaveMode = 1 << 7,
+	kStorageOptTemporary = 1 << 8,
 } StorageOpt;
 
 enum CollateMode { CollateNone = 0, CollateASCII, CollateUTF8, CollateNumeric, CollateCustom };
@@ -176,6 +178,7 @@ typedef struct StorageOpts {
 	bool IsSync() const { return options & kStorageOptSync; }
 	bool IsLazyLoad() const { return options & kStorageOptLazyLoad; }
 	bool IsSlaveMode() const { return options & kStorageOptSlaveMode; }
+	bool IsTemporary() const { return options & kStorageOptTemporary; }
 
 	StorageOpts& Enabled(bool value = true) {
 		options = value ? options | kStorageOptEnabled : options & ~(kStorageOptEnabled);
@@ -211,8 +214,14 @@ typedef struct StorageOpts {
 		options = value ? options | kStorageOptLazyLoad : options & ~(kStorageOptLazyLoad);
 		return *this;
 	}
+
 	StorageOpts& SlaveMode(bool value = true) {
 		options = value ? options | kStorageOptSlaveMode : options & ~(kStorageOptSlaveMode);
+		return *this;
+	}
+
+	StorageOpts& Temporary(bool value = true) {
+		options = value ? options | kStorageOptTemporary : options & ~(kStorageOptTemporary);
 		return *this;
 	}
 #endif
@@ -261,3 +270,5 @@ typedef struct ConnectOpts {
 	uint16_t storage;
 	uint16_t options;
 } ConnectOpts;
+
+enum IndexValueType { NotSet = -1, SetByJsonPath = -2 };

@@ -1,9 +1,37 @@
+# Version 2.3.0 (11.10.2019)
+
+## Core
+
+- [fix] Possible deadlock on tx, if it is canceled by timeout
+- [fea] Join optimization (use indexes from left ns, instead of scan) if possible
+- [fix] Replication races fixes
+- [fea] Atomic namespace replace on forced sync replication
+- [fea] Try to auto repair storage if reindexer does not shutdown correctly
+
+## Reindexer tool
+- [fea] Table mode output
+
+## Reindexer server
+
+- [fea] Added columns  pre calculation for table output  in GET /query request
+
+## go connector
+
+- [fea] Added averaged cgo limiter usage statistics
+- [fea] CGOSymbolizer added, output mixed go/c++ backtraces on crash
+
+## Face
+
+- [fea] Improved SQL editor component
+- [fix] Fixed behavior of keyboard shortcuts
+- [fix] Total count of update/select operation in perf stats
+
 # Version 2.2.4 (30.09.2019)
 
 ## Core
 
 - [fix] Idset cache invalidation on upsert/delete null values to indexes
-- [fix] Possibe crash if sort orders disabled
+- [fix] Possible crash if sort orders disabled
 - [fix] Wrong lowercasing field name on SQL UPDATE query
 - [fea] Delete & Update queries in transactions
 
@@ -17,16 +45,15 @@
 ## go connector
 
 - [fea] Delete & Update queries in transactions
-
 # Version 2.2.3 (18.09.2019)
 
 ## Core 
 
 - [fix] Fulltext queries sort by another field
-- [fea] Number of bacground threads for sort optimization can be changed from #config namespace
+- [fea] Number of background threads for sort optimization can be changed from #config namespace
 - [fix] Sort optimization choose logic is improoved
 
-## go connectpr
+## go connector
 
 - [fix] leak seq from chan
 - [fix] check ctx.Done while waiting on cgo limiter

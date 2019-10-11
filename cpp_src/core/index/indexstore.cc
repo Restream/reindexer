@@ -10,7 +10,7 @@ template <>
 void IndexStore<key_string>::Delete(const Variant &key, IdType id) {
 	if (key.Type() == KeyValueNull) return;
 	auto keyIt = str_map.find(string_view(key));
-	// assertf(keyIt != str_map.end(), "Delete unexists key from index '%s' id=%d", name_.c_str(), id);
+	// assertf(keyIt != str_map.end(), "Delete unexists key from index '%s' id=%d", name_, id);
 	if (keyIt == str_map.end()) return;
 	if (keyIt->second) keyIt->second--;
 	if (!keyIt->second) {

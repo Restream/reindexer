@@ -158,8 +158,7 @@ public:
 			EXPECT_TRUE(conditionsSatisfied) << "Item doesn't match conditions: " << itemr.GetJSON() << std::endl
 											 << "explain: " << qr.GetExplainResults();
 			if (!conditionsSatisfied) {
-				reindexer::WrSerializer ser;
-				TEST_COUT << query.GetSQL(ser).Slice() << std::endl;
+				TEST_COUT << query.GetSQL() << std::endl;
 				PrintFailedQueryEntries(query.entries);
 			}
 			EXPECT_TRUE(checkDistincts(itemr, query, distincts)) << "Distinction check failed";
@@ -187,8 +186,7 @@ public:
 							(sortingEntry.desc && cmpRes[j] >= 0) || (!sortingEntry.desc && cmpRes[j] <= 0) || (cmpRes[j] == 0);
 						EXPECT_TRUE(sortOrderSatisfied) << "\nSort order is incorrect for column: " << sortingEntry.column;
 						if (!sortOrderSatisfied) {
-							reindexer::WrSerializer ser;
-							TEST_COUT << query.GetSQL(ser).Slice() << std::endl;
+							TEST_COUT << query.GetSQL() << std::endl;
 							PrintFailedSortOrder(query, qr, i);
 						}
 					}
@@ -224,10 +222,9 @@ public:
 			if (pks.find(insertedItem.first) != pks.end()) continue;
 			bool conditionsSatisfied = checkConditions(insertedItem.second, query.entries.cbegin(), query.entries.cend());
 
-			reindexer::WrSerializer ser;
 			EXPECT_FALSE(conditionsSatisfied) << "Item match conditions (found " << qr.Count()
 											  << " items), but not found: " << insertedItem.second.GetJSON() << std::endl
-											  << "query:" << query.GetSQL(ser).Slice() << std::endl
+											  << "query:" << query.GetSQL() << std::endl
 											  << "explain: " << qr.GetExplainResults() << std::endl;
 		}
 

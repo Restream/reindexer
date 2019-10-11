@@ -23,7 +23,8 @@ Index::Index(const Index& obj)
 	  payloadType_(obj.payloadType_),
 	  fields_(obj.fields_),
 	  keyType_(obj.keyType_),
-	  selectKeyType_(obj.selectKeyType_) {}
+	  selectKeyType_(obj.selectKeyType_),
+	  sortedIdxCount_(obj.sortedIdxCount_) {}
 
 Index::~Index() {}
 

@@ -52,11 +52,11 @@ void JsonDecoder::decodeJsonObject(Payload *pl, CJsonBuilder &builder, const gas
 				}
 				int pos = pl->ResizeArray(field, count, true);
 				for (auto subelem : elem->value) {
-					pl->Set(field, pos++, jsonValue2Variant(subelem->value, f.Type(), f.Name().c_str()));
+					pl->Set(field, pos++, jsonValue2Variant(subelem->value, f.Type(), f.Name()));
 				}
 				builder.ArrayRef(tagName, field, count);
 			} else if (elem->value.getTag() != gason::JSON_NULL) {
-				Variant v = jsonValue2Variant(elem->value, f.Type(), f.Name().c_str());
+				Variant v = jsonValue2Variant(elem->value, f.Type(), f.Name());
 				pl->Set(field, {v}, true);
 				builder.Ref(tagName, v, field);
 			} else {

@@ -114,7 +114,8 @@ double SelectIteratorContainer::fullCost(span<unsigned> indexes, unsigned cur, u
 }
 
 bool SelectIteratorContainer::isIdset(const_iterator it, const_iterator end) {
-	return it->Op == OpAnd && it->IsLeaf() && it->Value().comparators_.empty() && it->Value().joinIndexes.empty() && !it->Value().empty() &&
+	return it->Op == OpAnd && it->IsLeaf() && it->Value().comparators_.empty() &&
+		   it->Value().joinIndexes.empty() &&  // !it->Value().empty() &&
 		   (++it == end || it->Op != OpOr);
 }
 
@@ -221,11 +222,9 @@ void SelectIteratorContainer::processJoinEntry(const QueryEntry &qe, OpType op) 
 	}
 }
 
-void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectResults, const QueryEntries &queries, int qeIdx,
-													   const Namespace &ns, const QueryEntry &qe, bool isIndexFt, bool isIndexSparse,
-													   bool nonIndexField) {
+void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectResults, OpType op, const Namespace &ns,
+													   const QueryEntry &qe, bool isIndexFt, bool isIndexSparse, bool nonIndexField) {
 	for (SelectKeyResult &res : selectResults) {
-		const OpType op = queries.GetOperation(qeIdx);
 		switch (op) {
 			case OpOr: {
 				const iterator last = lastAppendedOrClosed();
@@ -313,7 +312,7 @@ void SelectIteratorContainer::PrepareIteratorsForSelectLoop(const QueryEntries &
 													  isIndexSparse, ftCtx, rdxCtx);
 				}
 
-				processQueryEntryResults(selectResults, queries, i, ns, qe, isIndexFt, isIndexSparse, nonIndexField);
+				processQueryEntryResults(selectResults, op, ns, qe, isIndexFt, isIndexSparse, nonIndexField);
 			} else {
 				processJoinEntry(qe, op);
 			}
@@ -330,20 +329,17 @@ bool SelectIteratorContainer::processJoins(SelectIterator &it, const ConstPayloa
 	bool joinResult = false;
 	for (size_t i = 0; i < it.joinIndexes.size(); ++i) {
 		auto &joinedSelector = (*ctx_->joinedSelectors)[it.joinIndexes[i]];
-		joinedSelector.called++;
-
-		bool loopResult = false;
-		if (joinedSelector.type == JoinType::InnerJoin) {
-			assert(i == 0);
-			loopResult = joinedSelector.func(&joinedSelector, rowId, ctx_->nsid, pl, match);
-			joinResult = loopResult;
+		switch (joinedSelector.Type()) {
+			case JoinType::InnerJoin:
+				assert(i == 0);
+				joinResult = joinedSelector.Process(rowId, ctx_->nsid, pl, match);
+				break;
+			case JoinType::OrInnerJoin:
+				joinResult |= joinedSelector.Process(rowId, ctx_->nsid, pl, match);
+				break;
+			default:
+				break;
 		}
-		if (joinedSelector.type == JoinType::OrInnerJoin) {
-			loopResult = joinedSelector.func(&joinedSelector, rowId, ctx_->nsid, pl, match);
-			joinResult |= loopResult;
-		}
-
-		if (loopResult) joinedSelector.matched++;
 	}
 	return joinResult;
 }

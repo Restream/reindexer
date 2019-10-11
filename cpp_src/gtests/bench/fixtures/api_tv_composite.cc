@@ -1,7 +1,6 @@
 #include "api_tv_composite.h"
 #include "core/keyvalue/variant.h"
 #include "core/query/query.h"
-#include "core/query/queryresults.h"
 #include "helpers.h"
 
 using benchmark::RegisterBenchmark;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <climits>
 #include "core/payload/payloadiface.h"
 #include "core/type_consts.h"
 #include "vendor/cpp-btree/btree_map.h"

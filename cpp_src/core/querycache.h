@@ -1,8 +1,8 @@
 #pragma once
 
 #include "core/lrucache.h"
+#include "core/query/query.h"
 #include "estl/h_vector.h"
-#include "query.h"
 #include "tools/serializer.h"
 #include "vendor/murmurhash/MurmurHash3.h"
 

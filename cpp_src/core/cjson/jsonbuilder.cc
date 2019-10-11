@@ -17,7 +17,7 @@ JsonBuilder::JsonBuilder(WrSerializer &ser, ObjType type, const TagsMatcher *tm)
 
 JsonBuilder::~JsonBuilder() { End(); }
 
-const char *JsonBuilder::getNameByTag(int tagName) { return tagName ? tm_->tag2name(tagName).c_str() : nullptr; }
+string_view JsonBuilder::getNameByTag(int tagName) { return tagName ? tm_->tag2name(tagName) : string_view(); }
 
 JsonBuilder &JsonBuilder::End() {
 	switch (type_) {

@@ -34,10 +34,15 @@ protected:
 #ifdef NDEBUG
 #define assertf(...) ((void)0)
 #else
-#define assertf(e, fmt, ...)                                                                         \
-	if (!(e)) {                                                                                      \
-		fprintf(stderr, "%s:%d: failed assertion '%s':\n" fmt, __FILE__, __LINE__, #e, __VA_ARGS__); \
-		abort();                                                                                     \
+template <typename... Args>
+void assertf_fmt(const char *fmt, const Args &... args) {
+	fmt::fprintf(std::cerr, fmt, args...);
+}
+
+#define assertf(e, fmt, ...)                                                                     \
+	if (!(e)) {                                                                                  \
+		assertf_fmt("%s:%d: failed assertion '%s':\n" fmt, __FILE__, __LINE__, #e, __VA_ARGS__); \
+		abort();                                                                                 \
 	}
 #endif
 

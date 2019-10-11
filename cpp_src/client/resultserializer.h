@@ -1,6 +1,6 @@
 #pragma once
 #include <functional>
-#include "core/query/aggregationresult.h"
+#include "core/queryresults/aggregationresult.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -19,10 +19,10 @@ public:
 	};
 
 	struct QueryParams {
-		int totalcount;
-		int qcount;
-		int count;
-		int flags;
+		int totalcount = 0;
+		int qcount = 0;
+		int count = 0;
+		int flags = 0;
 		std::vector<AggregationResult> aggResults;
 		string explainResults;
 	};

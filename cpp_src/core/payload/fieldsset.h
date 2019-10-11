@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include "core/cjson/tagsmatcher.h"
-#include "core/query/querywhere.h"
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
 

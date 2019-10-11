@@ -1,6 +1,6 @@
 #pragma once
 #include "core/item.h"
-#include "core/query/queryresults.h"
+#include "core/queryresults/queryresults.h"
 #include "core/selectfunc/selectfuncparser.h"
 
 namespace reindexer {

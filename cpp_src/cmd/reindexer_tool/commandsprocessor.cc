@@ -1,5 +1,4 @@
 #include "commandsprocessor.h"
-#include <iomanip>
 #include <thread>
 #include "client/reindexer.h"
 #include "core/reindexer.h"
@@ -8,11 +7,19 @@
 #include "replxx.hxx"
 #endif
 
+#include <iomanip>
+#include <iostream>
 #include "core/cjson/jsonbuilder.h"
+#include "core/queryresults/tableviewbuilder.h"
 #include "tools/fsops.h"
 #include "tools/jsontools.h"
 #include "tools/stringstools.h"
 #include "vendor/gason/gason.h"
+
+using std::vector;
+using std::unordered_map;
+using std::string;
+using std::list;
 
 namespace reindexer_tool {
 
@@ -24,22 +31,18 @@ using reindexer::Query;
 
 const string kVariableOutput = "output";
 const string kOutputModeJson = "json";
+const string kOutputModeTable = "table";
 const string kOutputModePretty = "pretty";
 const string kOutputModePrettyCollapsed = "collapsed";
-const string kOutputModeTable = "table";
 const string kBenchNamespace = "rxtool_bench";
 const string kBenchIndex = "id";
 
 const int kBenchItemsCount = 10000;
 const int kBenchDefaultTime = 5;
 
-const static std::vector<string> cCommandsSuggestions = {
-	"\\upsert",	"\\delete", "\\dump", "\\namespaces", "\\meta",  "\\set",	   "\\bench", "\\subscribe", "\\quit", "\\help",
-	"\\databases", "put",	  "list",   "output",		 "\\bench", "\\subscribe", "on",	  "off",		 "use"};
-
 template <typename DBInterface>
 Error CommandsProcessor<DBInterface>::Connect(const string& dsn) {
-	variables_[kVariableOutput] = kOutputModePrettyCollapsed;
+	variables_[kVariableOutput] = kOutputModeJson;
 	if (!uri_.parse(dsn)) {
 		return Error(errNotValid, "Cannot connect to DB: Not a valid uri");
 	}
@@ -79,9 +82,15 @@ Error CommandsProcessor<DBInterface>::commandSelect(const string& command) {
 
 	if (err.ok()) {
 		if (results.Count()) {
-			output_() << "[" << std::endl;
-			err = queryResultsToJson(output_(), results, isWALQuery);
-			output_() << "]" << std::endl;
+			string outputType = variables_[kVariableOutput];
+			if (outputType == kOutputModeTable) {
+				reindexer::TableViewBuilder<typename DBInterface::QueryResultsT> tableResultsBuilder(results);
+				tableResultsBuilder.Build(output_());
+			} else {
+				output_() << "[" << std::endl;
+				err = queryResultsToJson(output_(), results, isWALQuery);
+				output_() << "]" << std::endl;
+			}
 		}
 
 		string explain = results.GetExplainResults();
@@ -457,6 +466,7 @@ Error CommandsProcessor<DBInterface>::commandBench(const string& command) {
 
 	return errOK;
 }
+
 template <typename DBInterface>
 Error CommandsProcessor<DBInterface>::commandSubscribe(const string& command) {
 	LineParser parser(command);
@@ -525,33 +535,81 @@ Error CommandsProcessor<DBInterface>::queryResultsToJson(ostream& o, const typen
 }
 
 template <typename DBInterface>
-void CommandsProcessor<DBInterface>::addCommandsSuggestions(std::string const& cmd, std::vector<string>& suggestions) {
-	string input(cmd);
-	size_t pos = cmd.rfind(' ');
-	if (pos != string::npos) {
-		input = cmd.substr(pos + 1, cmd.size() - pos - 1);
-	}
-
+void CommandsProcessor<DBInterface>::checkForNsNameMatch(string_view str, std::vector<string>& suggestions) {
 	vector<NamespaceDef> allNsDefs;
 	Error err = db_.EnumNamespaces(allNsDefs, true);
-	if (err.ok()) {
-		for (auto& ns : allNsDefs) {
-			if (reindexer::checkIfStartsWith(input, ns.name)) {
-				suggestions.emplace_back(ns.name);
+	if (!err.ok()) return;
+	for (auto& ns : allNsDefs) {
+		if (str.empty() || reindexer::isBlank(str) || ((str.length() < ns.name.length()) && reindexer::checkIfStartsWith(str, ns.name))) {
+			suggestions.emplace_back(ns.name);
+		}
+	}
+}
+
+template <typename DBInterface>
+void CommandsProcessor<DBInterface>::checkForCommandNameMatch(string_view str, std::initializer_list<string_view> cmds,
+															  std::vector<string>& suggestions) {
+	for (string_view cmd : cmds) {
+		if (str.empty() || reindexer::isBlank(str) || ((str.length() < cmd.length()) && reindexer::checkIfStartsWith(str, cmd))) {
+			suggestions.emplace_back(cmd);
+		}
+	}
+}
+
+template <typename DBInterface>
+void CommandsProcessor<DBInterface>::addCommandsSuggestions(std::string const& cmd, std::vector<string>& suggestions) {
+	LineParser parser(cmd);
+	string_view token = parser.NextToken();
+
+	if ((token == "\\upsert") || (token == "\\delete")) {
+		token = parser.NextToken();
+		if (parser.End()) {
+			checkForNsNameMatch(token, suggestions);
+		}
+	} else if ((token == "\\dump") && !parser.End()) {
+		while (!parser.End()) {
+			checkForNsNameMatch(parser.NextToken(), suggestions);
+		}
+	} else if (token == "\\namespaces") {
+		token = parser.NextToken();
+		if (token == "drop") {
+			checkForNsNameMatch(parser.NextToken(), suggestions);
+		} else {
+			checkForCommandNameMatch(token, {"add", "list", "drop"}, suggestions);
+		}
+	} else if (token == "\\meta") {
+		checkForCommandNameMatch(parser.NextToken(), {"put", "list"}, suggestions);
+	} else if (token == "\\set") {
+		token = parser.NextToken();
+		if (token == "output") {
+			checkForCommandNameMatch(parser.NextToken(), {"json", "pretty", "table"}, suggestions);
+		} else {
+			checkForCommandNameMatch(token, {"output"}, suggestions);
+		}
+	} else if (token == "\\subscribe") {
+		checkForCommandNameMatch(parser.NextToken(), {"on", "off"}, suggestions);
+	} else if (token == "\\databases") {
+		token = parser.NextToken();
+		if (token == "use") {
+			vector<string> dbList;
+			Error err = getAvailableDatabases(dbList);
+			if (err.ok()) {
+				token = parser.NextToken();
+				for (const string& dbName : dbList) {
+					if (token.empty() || reindexer::isBlank(token) ||
+						((token.length() < dbName.length()) && reindexer::checkIfStartsWith(token, dbName))) {
+						suggestions.emplace_back(dbName);
+					}
+				}
 			}
+		} else {
+			checkForCommandNameMatch(token, {"use", "list"}, suggestions);
 		}
-	}
-	for (const string& command : cCommandsSuggestions) {
-		if (reindexer::checkIfStartsWith(input, command)) {
-			suggestions.emplace_back(command);
-		}
-	}
-	vector<string> dbList;
-	err = getAvailableDatabases(dbList);
-	if (err.ok()) {
-		for (const string& dbName : dbList) {
-			if (reindexer::checkIfStartsWith(input, dbName)) {
-				suggestions.emplace_back(dbName);
+	} else {
+		for (const commandDefinition& cmdDef : cmds_) {
+			if (token.empty() || reindexer::isBlank(token) ||
+				((token.length() < cmdDef.command.length()) && reindexer::checkIfStartsWith(token, cmdDef.command))) {
+				suggestions.emplace_back(cmdDef.command);
 			}
 		}
 	}

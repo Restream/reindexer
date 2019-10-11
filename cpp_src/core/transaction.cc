@@ -2,13 +2,10 @@
 #include "transactionimpl.h"
 namespace reindexer {
 
-Transaction::Transaction(const string &nsName, ReindexerImpl *rx, Completion cmpl) : impl_(nullptr) {
-	try {
-		impl_.reset(new TransactionImpl(nsName, rx, cmpl));
-	} catch (const Error &err) {
-		status_ = err;
-	}
-}
+Transaction::Transaction(const string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf)
+	: impl_(new TransactionImpl(nsName, pt, tm, pf)) {}
+
+Transaction::Transaction(const Error &err) : status_(err) {}
 
 Transaction::~Transaction() = default;
 Transaction::Transaction(Transaction &&) = default;
@@ -43,8 +40,6 @@ void Transaction::Modify(Query &&query) {
 }
 
 Item Transaction::NewItem() { return impl_->NewItem(); }
-
-Completion Transaction::GetCmpl() { return impl_->cmpl_; }
 
 vector<TransactionStep> &Transaction::GetSteps() { return impl_->steps_; }
 

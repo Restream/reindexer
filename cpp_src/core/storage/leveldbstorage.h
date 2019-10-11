@@ -3,7 +3,7 @@
 #ifdef REINDEX_WITH_LEVELDB
 
 #include <leveldb/write_batch.h>
-#include "idatastorage.h"
+#include "basestorage.h"
 
 using std::unique_ptr;
 
@@ -16,30 +16,34 @@ class Iterator;
 namespace reindexer {
 namespace datastorage {
 
-class LevelDbStorage : public IDataStorage {
+class LevelDbStorage : public BaseStorage {
 public:
 	LevelDbStorage();
 	~LevelDbStorage();
 
-	Error Open(const string& path, const StorageOpts& opts) final;
-	Error Read(const StorageOpts& opts, const string_view& key, string& value) final;
-	Error Write(const StorageOpts& opts, const string_view& key, const string_view& value) final;
-	Error Write(const StorageOpts& opts, UpdatesCollection& buffer) final;
-	Error Delete(const StorageOpts& opts, const string_view& key) final;
-	Error Repair(const string& path) final;
+	Error Read(const StorageOpts& opts, const string_view& key, string& value) override final;
+	Error Write(const StorageOpts& opts, const string_view& key, const string_view& value) override final;
+	Error Write(const StorageOpts& opts, UpdatesCollection& buffer) override final;
+	Error Delete(const StorageOpts& opts, const string_view& key) override final;
+	Error Repair(const string& path) override final;
 
-	Snapshot::Ptr MakeSnapshot() final;
-	void ReleaseSnapshot(Snapshot::Ptr) final;
+	StorageType Type() const noexcept override final { return StorageType::LevelDB; }
+
+	Snapshot::Ptr MakeSnapshot() override final;
+	void ReleaseSnapshot(Snapshot::Ptr) override final;
 
 	void Flush() final;
-	void Destroy(const string& path) final;
-	Cursor* GetCursor(StorageOpts& opts) final;
-	UpdatesCollection* GetUpdatesCollection() final;
+	Cursor* GetCursor(StorageOpts& opts) override final;
+	UpdatesCollection* GetUpdatesCollection() override final;
+
+protected:
+	Error doOpen(const string& path, const StorageOpts& opts) override final;
+	void doDestroy(const string& path) override final;
 
 private:
 	string dbpath_;
 	StorageOpts opts_;
-	shared_ptr<leveldb::DB> db_;
+	unique_ptr<leveldb::DB> db_;
 };
 
 class LevelDbBatchBuffer : public UpdatesCollection {
@@ -47,9 +51,9 @@ public:
 	LevelDbBatchBuffer();
 	~LevelDbBatchBuffer();
 
-	void Put(const string_view& key, const string_view& value) final;
-	void Remove(const string_view& key) final;
-	void Clear() final;
+	void Put(const string_view& key, const string_view& value) override final;
+	void Remove(const string_view& key) override final;
+	void Clear() override final;
 
 private:
 	leveldb::WriteBatch batchWrite_;
@@ -61,7 +65,7 @@ public:
 	LevelDbComparator() = default;
 	~LevelDbComparator() = default;
 
-	int Compare(const string_view& a, const string_view& b) const final;
+	int Compare(const string_view& a, const string_view& b) const override final;
 };
 
 class LevelDbIterator : public Cursor {
@@ -69,15 +73,15 @@ public:
 	LevelDbIterator(leveldb::Iterator* iterator);
 	~LevelDbIterator();
 
-	bool Valid() const final;
-	void SeekToFirst() final;
-	void SeekToLast() final;
-	void Seek(const string_view& target) final;
-	void Next() final;
-	void Prev() final;
+	bool Valid() const override final;
+	void SeekToFirst() override final;
+	void SeekToLast() override final;
+	void Seek(const string_view& target) override final;
+	void Next() override final;
+	void Prev() override final;
 
-	string_view Key() const final;
-	string_view Value() const final;
+	string_view Key() const override final;
+	string_view Value() const override final;
 
 	Comparator& GetComparator() final;
 

@@ -23,7 +23,7 @@ public:
 	PayloadTypeImpl(const string &name, std::initializer_list<PayloadFieldType> fields = {}) : fields_(fields), name_(name) {}
 
 	const PayloadFieldType &Field(int field) const {
-		assertf(field < NumFields(), "%s: %d, %d", name_.c_str(), field, NumFields());
+		assertf(field < NumFields(), "%s: %d, %d", name_, field, NumFields());
 		return fields_[field];
 	}
 

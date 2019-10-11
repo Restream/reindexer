@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.2.4"
+  version: "2.3.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -412,7 +412,7 @@ paths:
         type: "array"
         collectionFormat: "multi"
         description: "Precepts to be done"
-        required: true
+        required: false
         items:
           type: "string"
       responses:
@@ -504,7 +504,7 @@ paths:
         type: "array"
         collectionFormat: "multi"
         description: "Precepts to be done"
-        required: true
+        required: false
         items:
           type: "string"
       responses:
@@ -733,6 +733,16 @@ paths:
         in: "query"
         type: "integer"
         description: "Offset of first returned item"
+      - name: with_columns
+        in: "query"
+        type: "boolean"
+        description: "Return columns names and widths for table format output"
+        required: false
+      - name: width
+        in: "query"
+        type: "integer"
+        description: "Total width in rows of view for table format output"
+        required: false
       responses:
         200:
           description: "successful operation"
@@ -761,6 +771,16 @@ paths:
         required: true
         schema:
           $ref: "#/definitions/Query"
+      - name: with_columns
+        in: "query"
+        type: "boolean"
+        description: "Return columns names and widths for table format output"
+        required: false
+      - name: width
+        in: "query"
+        type: "integer"
+        description: "Total width in rows of view for table format output"
+        required: false
       responses:
         200:
           description: "successful operation"
@@ -820,6 +840,11 @@ paths:
         type: "integer"
         description: "Cursor position for suggest"
         required: true
+      - name: "line"
+        in: "query"
+        type: "integer"
+        description: "Cursor line for suggest"
+        required: false
       responses:
         200:
           description: "successful operation"
@@ -850,6 +875,16 @@ paths:
           type: "string"
         description: "SQL query"
         required: true
+      - name: with_columns
+        in: "query"
+        type: "boolean"
+        description: "Return columns names and widths for table format output"
+        required: false
+      - name: width
+        in: "query"
+        type: "integer"
+        description: "Total width in rows of view for table format output"
+        required: false
       responses:
         200:
           description: "successful operation"
@@ -1636,6 +1671,11 @@ definitions:
         description: "Aggregation functions results"
         items:
           $ref: "#/definitions/AggregationResDef"
+      columns:
+        type: "array"
+        description: "Columns for table output"
+        items:
+          $ref: "#/definitions/QueryColumnDef"
       explain:
         $ref: "#/definitions/ExplainDef"
 
@@ -1739,6 +1779,23 @@ definitions:
             count: 
               type: "integer"
               description: "Count of elemens these fields values"
+
+  QueryColumnDef:
+    type: "object"
+    description: "Query columns for table outputs"
+    properties:
+      name:
+        type: "string"
+        description: "Column name"
+      width_percents:
+        type: "number"
+        description: "Column width in percents of total width"
+      width_chars:
+        type: "number"
+        description: "Column width in chars"
+      max_chars:
+        type: "number"
+        description: "Maximum count of chars in column"
 
   StatusResponse:
     type: "object"
@@ -1923,6 +1980,12 @@ definitions:
       slave_mode:
         type: "boolean"
         description: "If true, then namespace is in slave mode"
+      error_code:
+        type: "integer"
+        description: "Error code of last replication"
+      error_message:
+        type: "string"
+        description: "Error message of last replication"
       incarnation_counter:
         type: "integer"
         description: "Number of storage's master <-> slave switches"

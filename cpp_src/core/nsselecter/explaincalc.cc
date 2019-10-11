@@ -1,6 +1,8 @@
 #include "explaincalc.h"
 #include "core/cbinding/reindexer_ctypes.h"
 #include "core/cjson/jsonbuilder.h"
+#include "core/namespace.h"
+#include "core/query/sql/sqlencoder.h"
 #include "nsselecter.h"
 #include "tools/logger.h"
 
@@ -25,10 +27,11 @@ void ExplainCalc::LogDump(int logLevel) {
 
 		if (jselectors_) {
 			for (auto &js : *jselectors_) {
-				if (js.type == JoinType::LeftJoin || js.type == JoinType::Merge) {
-					logPrintf(LogInfo, "%s %s: called %d", Query::JoinTypeName(js.type), js.ns, js.called);
+				if (js.Type() == JoinType::LeftJoin || js.Type() == JoinType::Merge) {
+					logPrintf(LogInfo, "%s %s: called %d", SQLEncoder::JoinTypeName(js.Type()), js.RightNs().GetName(), js.Called());
 				} else {
-					logPrintf(LogInfo, "%s %s: called %d, matched %d", Query::JoinTypeName(js.type), js.ns, js.called, js.matched);
+					logPrintf(LogInfo, "%s %s: called %d, matched %d", SQLEncoder::JoinTypeName(js.Type()), js.RightNs().GetName(), js.Called(),
+							  js.Matched());
 				}
 			}
 		}
@@ -54,9 +57,9 @@ string ExplainCalc::GetJSON() {
 		if (jselectors_) {
 			for (JoinedSelector &js : *jselectors_) {
 				auto jsonSel = jsonSelArr.Object();
-				jsonSel.Put("field", js.ns);
-				jsonSel.Put("method", JoinTypeName(js.type));
-				jsonSel.Put("matched", js.matched);
+				jsonSel.Put("field", js.RightNs().GetName());
+				jsonSel.Put("method", JoinTypeName(js.Type()));
+				jsonSel.Put("matched", js.Matched());
 			}
 		}
 	}

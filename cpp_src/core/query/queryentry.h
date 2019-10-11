@@ -2,15 +2,12 @@
 
 #include <climits>
 #include <string>
-#include <unordered_set>
 #include <vector>
 #include "core/keyvalue/variant.h"
 #include "estl/h_vector.h"
 #include "querytree.h"
 
 namespace reindexer {
-
-enum IndexValueType : int { NotSet = -1, SetByJsonPath = -2 };
 
 class Query;
 using std::string;
@@ -111,22 +108,6 @@ struct AggregateEntry {
 	SortingEntries sortingEntries_;
 	unsigned limit_ = UINT_MAX;
 	unsigned offset_ = 0;
-};
-
-class QueryWhere {
-public:
-	QueryWhere() {}
-
-	bool operator==(const QueryWhere &) const;
-
-protected:
-	static CondType getCondType(string_view cond);
-
-public:
-	QueryEntries entries;
-	h_vector<AggregateEntry, 1> aggregations_;
-	// Condition for join. Filled in each subqueries, empty in  root query
-	vector<QueryJoinEntry> joinEntries_;
 };
 
 }  // namespace reindexer

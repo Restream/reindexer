@@ -1,4 +1,4 @@
-#include "core/query/queryresults.h"
+#include "core/queryresults/queryresults.h"
 #include "core/cjson/baseencoder.h"
 #include "core/itemimpl.h"
 #include "tools/logger.h"

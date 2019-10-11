@@ -19,7 +19,7 @@ int64_t WALTracker::Add(const WALRecord &rec, int64_t oldLsn) {
 	}
 
 	return lsn;
-};
+}
 
 bool WALTracker::Set(const WALRecord &rec, int64_t lsn) {
 	if (!available(lsn)) {
@@ -48,7 +48,7 @@ void WALTracker::put(int64_t lsn, const WALRecord &rec) {
 	uint64_t pos = lsn % walSize_;
 	if (pos >= records_.size()) records_.resize(pos + 1);
 	records_[pos].Pack(rec);
-};
+}
 
 void WALTracker::writeToStorage(int64_t lsn) {
 	uint64_t pos = lsn % walSize_;

@@ -1,6 +1,6 @@
 #include "resultserializer.h"
 #include "core/cjson/tagsmatcher.h"
-#include "core/query/queryresults.h"
+#include "core/queryresults/queryresults.h"
 #include "tools/logger.h"
 
 namespace reindexer {

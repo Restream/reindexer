@@ -59,13 +59,12 @@ public:
 	}
 	const vector<string> &GetPrecepts() { return precepts_; }
 	void Unsafe(bool enable) { unsafe_ = enable; }
-	void Clear(const TagsMatcher &tagsMatcher) {
-		tagsMatcher_ = tagsMatcher;
+	void Clear() {
+		tagsMatcher_ = TagsMatcher();
 		precepts_.clear();
 		cjson_ = string_view();
 		holder_.clear();
 		ser_ = WrSerializer();
-		tagsMatcher_.clearUpdated();
 		GetPayload().Reset();
 		payloadValue_.SetLSN(-1);
 		unsafe_ = false;

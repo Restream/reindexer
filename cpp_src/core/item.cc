@@ -88,7 +88,7 @@ Item::~Item() {
 	if (impl_) {
 		auto ns = impl_->GetNamespace();
 		if (ns) {
-			ns->ToPool(impl_, RdxContext{});
+			ns->ToPool(impl_);
 			impl_ = nullptr;
 		}
 	}

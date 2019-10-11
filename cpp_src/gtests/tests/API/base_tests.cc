@@ -7,12 +7,15 @@
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/variant.h"
 #include "core/reindexer.h"
+#include "tools/fsops.h"
 #include "tools/logger.h"
 #include "tools/stringstools.h"
 
 #include <deque>
 
 using reindexer::Reindexer;
+
+static const std::string kBaseTestsStoragePath = "/tmp/reindex/base_tests";
 
 TEST_F(ReindexerApi, AddNamespace) {
 	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
@@ -105,6 +108,21 @@ TEST_F(ReindexerApi, CloseNamespace) {
 	QueryResults qr;
 	err = rt.reindexer->Select(Query(default_namespace), qr);
 	ASSERT_FALSE(err.ok()) << "Namespace '" << default_namespace << "' open. But must be closed";
+}
+
+TEST_F(ReindexerApi, DropStorage) {
+	rt.reindexer->Connect("builtin://" + kBaseTestsStoragePath);
+	auto storagePath = reindexer::fs::JoinPath(kBaseTestsStoragePath, default_namespace);
+	Error err = rt.reindexer->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(reindexer::fs::Stat(storagePath) == reindexer::fs::StatDir);
+
+	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->DropNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(reindexer::fs::Stat(storagePath) == reindexer::fs::StatError);
 }
 
 TEST_F(ReindexerApi, DeleteNonExistingNamespace) {
@@ -576,7 +594,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 
 void TestDSLParseCorrectness(const string& testDsl) {
 	Query query;
-	Error err = query.ParseJson(testDsl);
+	Error err = query.FromJSON(testDsl);
 	EXPECT_TRUE(err.ok()) << err.what();
 }
 

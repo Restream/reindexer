@@ -37,13 +37,13 @@ public:
 		iterator &operator++() { return idx_++, *this; }
 		bool operator!=(const iterator &other) const { return idx_ != other.idx_; }
 		WALRecord operator*() const {
-			assertf(idx_ % wt_->walSize_ < int(wt_->records_.size()), "idx=%d,wt_->records_.size()=%d,lsnCounter=%d %p", int(idx_),
-					int(wt_->records_.size()), int(wt_->lsnCounter_), wt_);
+			assertf(idx_ % wt_->walSize_ < int(wt_->records_.size()), "idx=%d,wt_->records_.size()=%d,lsnCounter=%d", idx_,
+					wt_->records_.size(), wt_->lsnCounter_);
 
 			return WALRecord(span<uint8_t>(wt_->records_[idx_ % wt_->walSize_]));
 		}
 		span<uint8_t> GetRaw() const { return wt_->records_[idx_ % wt_->walSize_]; }
-		int64_t GetLSN() const { return idx_; };
+		int64_t GetLSN() const { return idx_; }
 		int64_t idx_;
 		const WALTracker *wt_;
 	};
@@ -61,7 +61,7 @@ public:
 	/// Check is LSN outdated, and complete log is not available
 	/// @param lsn LSN of record
 	/// @return true if LSN is outdated
-	bool is_outdated(int64_t lsn) { return bool(lsnCounter_ - lsn >= walSize_); }
+	bool is_outdated(int64_t lsn) const { return bool(lsnCounter_ - lsn >= walSize_); }
 
 	/// Get WAL size
 	/// @return count of actual records in WAL

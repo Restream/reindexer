@@ -40,7 +40,7 @@ bool Listener::Bind(string addr) {
 
 	shared_->addr_ = addr;
 
-	if (shared_->sock_.bind(addr.c_str()) < 0) {
+	if (shared_->sock_.bind(addr) < 0) {
 		return false;
 	}
 
@@ -145,7 +145,7 @@ void Listener::rebalance() {
 }
 
 void Listener::async_cb(ev::async &watcher) {
-	logPrintf(LogInfo, "Listener(%s) %d async received", shared_->addr_.c_str(), id_);
+	logPrintf(LogInfo, "Listener(%s) %d async received", shared_->addr_, id_);
 	std::unique_lock<std::mutex> lck(shared_->lck_);
 	for (auto &it : connections_) {
 		if (!it->IsFinished()) it->Attach(loop_);

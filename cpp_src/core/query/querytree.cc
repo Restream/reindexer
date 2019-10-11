@@ -1,5 +1,6 @@
 #include "querytree.h"
 #include "core/nsselecter/selectiterator.h"
+#include "queryentry.h"
 
 namespace reindexer {
 

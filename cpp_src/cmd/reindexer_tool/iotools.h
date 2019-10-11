@@ -3,9 +3,8 @@
 #include <fstream>
 #include <iostream>
 
-#include "client/queryresults.h"
-#include "core/query/queryresults.h"
 #include "tools/errors.h"
+#include "tools/serializer.h"
 
 namespace reindexer_tool {
 

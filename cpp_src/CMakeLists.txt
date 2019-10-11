@@ -14,7 +14,7 @@ option (ENABLE_LIBUNWIND "Enable libunwind" ON)
 option (ENABLE_TCMALLOC "Enable tcmalloc extensions" ON)
 option (ENABLE_JEMALLOC "Enable jemalloc extensions" ON)
 option (ENABLE_ROCKSDB "Enable rocksdb storage" ON)
-set (REINDEXER_VERSION_DEFAULT "2.2.4")
+set (REINDEXER_VERSION_DEFAULT "2.3.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -25,10 +25,18 @@ include(GNUInstallDirs)
 
 project(reindexer)
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake/modules )
+include (CheckLinkerFlag)
 
 # Configure compile options
 string( REPLACE "-DNDEBUG" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
 string( REPLACE "-g" "-g1" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
+
+if (NOT MSVC AND NOT APPLE)
+  check_linker_flag (-gz cxx_linker_supports_gz)
+  if (cxx_linker_supports_gz) 
+     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -gz")
+   endif ()
+endif ()
 
 if (MSVC)
   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -MP")
@@ -191,15 +199,16 @@ if (NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR)
     GIT_TAG "master"
     CMAKE_ARGS -DLEVELDB_BUILD_TESTS=OFF -DLEVELDB_BUILD_BENCHMARKS=OFF
     -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
-    -DCMAKE_CXX_FLAGS=-I${CMAKE_CURRENT_BINARY_DIR}/include
+    "-DCMAKE_CXX_FLAGS=-fPIC -I${CMAKE_CURRENT_BINARY_DIR}/include"
     -DCMAKE_EXE_LINKER_FLAGS=-L${CMAKE_CURRENT_BINARY_DIR}
     -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}
   )
   if (NOT SNAPPY_FOUND)
     add_dependencies(leveldb_lib snappy_lib)
   endif()
-  link_directories(${CMAKE_CURRENT_BINARY_DIR})
   include_directories (${CMAKE_CURRENT_BINARY_DIR}/include)
+  link_directories(${CMAKE_CURRENT_BINARY_DIR})
+  list(APPEND REINDEXER_LINK_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR})
   list(INSERT REINDEXER_LIBRARIES 1 leveldb)
   add_dependencies(reindexer leveldb_lib)
 else ()
@@ -272,6 +281,7 @@ if (WIN32)
 endif ()
 
 set (REINDEXER_LIBRARIES_GLOBAL ${REINDEXER_LIBRARIES} PARENT_SCOPE)
+set (REINDEXER_LINK_DIRECTORIES_GLOBAL ${REINDEXER_LINK_DIRECTORIES} PARENT_SCOPE)
 
 # Get version string
 if(EXISTS ${PROJECT_SOURCE_DIR}/.git OR EXISTS ${PROJECT_SOURCE_DIR}/../.git )
@@ -390,7 +400,7 @@ if (NOT WIN32)
     "core/reindexer.h" "core/type_consts.h" "core/item.h" "core/payload/payloadvalue.h" "core/indexopts.h"
     "core/namespacedef.h" "core/keyvalue/variant.h" "core/sortingprioritiestable.h" "core/rdxcontext.h"
     "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" 
-    "core/query/query.h" "core/query/querywhere.h" "core/query/queryresults.h" "core/indexdef.h" "core/query/aggregationresult.h"
+    "core/query/query.h" "core/query/queryentry.h" "core/queryresults/queryresults.h" "core/indexdef.h" "core/queryresults/aggregationresult.h"
     "estl/h_vector.h" "estl/string_view.h"
     "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h"
     "client/internalrdxcontext.h"

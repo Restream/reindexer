@@ -55,7 +55,7 @@ void BaseEncoder<Builder>::encodeJoinedItems(Builder& builder, IEncoderDatasourc
 	if (!itemsCount) return;
 
 	string nsTagName("joined_" + ds->GetJoinedItemNamespace(rowid));
-	auto arrNode = builder.Array(nsTagName.c_str());
+	auto arrNode = builder.Array(nsTagName);
 
 	BaseEncoder<Builder> subEnc(&ds->GetJoinedItemTagsMatcher(rowid), &ds->GetJoinedItemFieldsFilter(rowid));
 	for (size_t i = 0; i < itemsCount; ++i) {

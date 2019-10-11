@@ -37,6 +37,9 @@ int mallctl(const char *name, void *oldp, size_t *oldlenp, void *newp, size_t ne
 
 bool JEMallocIsAvailable() { return (getMallctlFn() != nullptr); }
 
+#else
+// suppress clang warngig
+int ___je_malloc_extension_dummy_suppress_warning;
 #endif  // REINDEX_WITH_JEMALLOC
 
 }  // namespace alloc_ext

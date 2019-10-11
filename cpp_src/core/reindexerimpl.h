@@ -29,7 +29,7 @@ class ReindexerImpl {
 	using StorageMutex = MarkedMutex<shared_timed_mutex, MutexMark::ReindexerStorage>;
 
 public:
-	using Completion = Transaction::Completion;
+	using Completion = std::function<void(const Error &err)>;
 
 	ReindexerImpl();
 	~ReindexerImpl();
@@ -42,6 +42,8 @@ public:
 	Error CloseNamespace(string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
 	Error DropNamespace(string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
 	Error TruncateNamespace(string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
+	Error RenameNamespace(string_view srcNsName, const std::string &dstNsName, bool requireDst = false,
+						  const InternalRdxContext &ctx = InternalRdxContext());
 	Error AddIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx = InternalRdxContext());
 	Error UpdateIndex(string_view nsName, const IndexDef &indexDef, const InternalRdxContext &ctx = InternalRdxContext());
 	Error DropIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx = InternalRdxContext());
@@ -57,7 +59,7 @@ public:
 	Error Commit(string_view nsName);
 	Item NewItem(string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
 
-	Transaction NewTransaction(const string &nsName);
+	Transaction NewTransaction(string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
 	Error CommitTransaction(Transaction &tr, const InternalRdxContext &ctx = InternalRdxContext());
 	Error RollBackTransaction(Transaction &tr);
 
@@ -66,7 +68,8 @@ public:
 	Error EnumMeta(string_view nsName, vector<string> &keys, const InternalRdxContext &ctx = InternalRdxContext());
 	Error InitSystemNamespaces();
 	Error SubscribeUpdates(IUpdatesObserver *observer, bool subscribe);
-	Error GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string> &suggestions);
+	Error GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string> &suggestions,
+							const InternalRdxContext &ctx = InternalRdxContext());
 
 	bool NeedTraceActivity() { return configProvider_.GetProfilingConfig().activityStats; }
 
@@ -136,7 +139,7 @@ protected:
 
 	Namespace::Ptr getNamespace(string_view nsName, const RdxContext &ctx);
 
-	std::vector<Namespace::Ptr> getNamespaces(const RdxContext &ctx);
+	std::vector<std::pair<string, Namespace::Ptr>> getNamespaces(const RdxContext &ctx);
 	std::vector<string> getNamespacesNames(const RdxContext &ctx);
 
 	fast_hash_map<string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;

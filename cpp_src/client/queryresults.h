@@ -55,7 +55,7 @@ public:
 
 	size_t Count() const { return queryParams_.qcount; }
 	int TotalCount() const { return queryParams_.totalcount; }
-	bool HaveProcent() const { return queryParams_.flags & kResultsWithPercents; };
+	bool HaveProcent() const { return queryParams_.flags & kResultsWithPercents; }
 	const string &GetExplainResults() const { return queryParams_.explainResults; }
 	const vector<AggregationResult> &GetAggregationResults() const { return queryParams_.aggResults; }
 	Error Status() { return status_; }

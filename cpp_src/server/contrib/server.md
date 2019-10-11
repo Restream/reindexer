@@ -1,79 +1,16 @@
 # Reindexer REST API
 
+
+
 ## Overview
 **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
 Reindexer's goal is to provide fast search with complex queries.
 The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
 Reindexer is fast.
 
-- [Reindexer REST API](#reindexer-rest-api)
-  - [Methods](#paths)
-    - [List available databases](#list-available-databases)
-    - [Create new database](#create-new-database)
-    - [Drop database](#drop-database)
-    - [List available namespaces](#list-available-namespaces)
-    - [Create namespace](#create-namespace)
-    - [Get namespace description](#get-namespace-description)
-    - [Drop namespace](#drop-namespace)
-    - [Get documents from namespace](#get-documents-from-namespace)
-    - [Update documents in namespace](#update-documents-in-namespace)
-    - [Insert documents to namespace](#insert-documents-to-namespace)
-    - [Delete documents from namespace](#delete-documents-from-namespace)
-    - [List available indexes](#list-available-indexes)
-    - [Update index in namespace](#update-index-in-namespace)
-    - [Add new index to namespace](#add-new-index-to-namespace)
-    - [Drop index from namespace](#drop-index-from-namespace)
-    - [SQL Query documents from namespace](#query-documents-from-namespace)
-    - [DSL Query documents from namespace](#query-documents-from-namespace-1)
-    - [Delete documents from namespace by query](#delete-documents-from-namespace-1)
-    - [Get system information](#get-system-information)
-    - [Get memory stats information](#get-memory-stats-information)
-    - [Get performance stats information](#get-performance-stats-information)
-    - [Get SELECT queries performance stats information](#get-select-queries-performance-stats-information)
-    - [Update system config](#update-system-config)
-  - [Definitions](#definitions)
-    - [AggregationResDef](#aggregationresdef)
-    - [AggregationsDef](#aggregationsdef)
-    - [CacheMemStats](#cachememstats)
-    - [CommonPerfStats](#commonperfstats)
-    - [Database](#database)
-    - [DatabaseMemStats](#databasememstats)
-    - [DatabasePerfStats](#databaseperfstats)
-    - [Databases](#databases)
-    - [ExplainDef](#explaindef)
-    - [FilterDef](#filterdef)
-    - [FulltextConfig](#fulltextconfig)
-    - [Index](#index)
-    - [IndexCacheMemStats](#indexcachememstats)
-    - [IndexMemStat](#indexmemstat)
-    - [Indexes](#indexes)
-    - [Items](#items)
-    - [JoinCacheMemStats](#joincachememstats)
-    - [JoinedDef](#joineddef)
-    - [NamespacesConfig](#namespacesconfig)
-    - [Namespace](#namespace)
-    - [NamespaceMemStats](#namespacememstats)
-    - [NamespacePerfStats](#namespaceperfstats)
-    - [Namespaces](#namespaces)
-    - [OnDef](#ondef)
-    - [ProfilingConfig](#profilingconfig)
-    - [QueriesPerfStats](#queriesperfstats)
-    - [Query](#query)
-    - [QueryCacheMemStats](#querycachememstats)
-    - [QueryItems](#queryitems)
-    - [QueryPerfStats](#queryperfstats)
-    - [ReplicationConfig](#replicationconfig)
-    - [SelectPerfStats](#selectperfstats)
-    - [SortDef](#sortdef)
-    - [StatusResponse](#statusresponse)
-    - [SysInfo](#sysinfo)
-    - [SystemConfigItem](#systemconfigitem)
-    - [UpdatePerfStats](#updateperfstats)
-    - [UpdateResponse](#updateresponse)
-
 
 ### Version information
-*Version* : 2.2.4
+*Version* : 2.3.0
 
 
 ### License information
@@ -529,7 +466,7 @@ Each document should be in request body as separate JSON object, e.g.
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
 |**Path**|**name**  <br>*required*|Namespace name|string|
-|**Query**|**precepts**  <br>*required*|Precepts to be done|< string > array(multi)|
+|**Query**|**precepts**  <br>*optional*|Precepts to be done|< string > array(multi)|
 |**Body**|**body**  <br>*required*||object|
 
 
@@ -609,7 +546,7 @@ Each document should be in request body as separate JSON object, e.g.
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
 |**Path**|**name**  <br>*required*|Namespace name|string|
-|**Query**|**precepts**  <br>*required*|Precepts to be done|< string > array(multi)|
+|**Query**|**precepts**  <br>*optional*|Precepts to be done|< string > array(multi)|
 |**Body**|**body**  <br>*required*||object|
 
 
@@ -781,6 +718,8 @@ then `limit` and `offset` from http request.
 |**Query**|**limit**  <br>*optional*|Maximum count of returned items|integer|
 |**Query**|**offset**  <br>*optional*|Offset of first returned item|integer|
 |**Query**|**q**  <br>*required*|SQL query|string|
+|**Query**|**width**  <br>*optional*|Total width in rows of view for table format output|integer|
+|**Query**|**with_columns**  <br>*optional*|Return columns names and widths for table format output|boolean|
 
 
 #### Responses
@@ -812,6 +751,8 @@ This opertaion queries documents from namespace by DSL query.
 |Type|Name|Description|Schema|
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
+|**Query**|**width**  <br>*optional*|Total width in rows of view for table format output|integer|
+|**Query**|**with_columns**  <br>*optional*|Return columns names and widths for table format output|boolean|
 |**Body**|**body**  <br>*required*|DSL query|[Query](#query)|
 
 
@@ -876,6 +817,7 @@ This operation pareses SQL query, and suggests autocompletion variants
 |Type|Name|Description|Schema|
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
+|**Query**|**line**  <br>*optional*|Cursor line for suggest|integer|
 |**Query**|**pos**  <br>*required*|Cursor position for suggest|integer|
 |**Query**|**q**  <br>*required*|SQL query|string|
 
@@ -909,6 +851,8 @@ This opertaion queries documents from namespace by SQL query. Query can be prece
 |Type|Name|Description|Schema|
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
+|**Query**|**width**  <br>*optional*|Total width in rows of view for table format output|integer|
+|**Query**|**with_columns**  <br>*optional*|Return columns names and widths for table format output|boolean|
 |**Body**|**q**  <br>*required*|SQL query|string|
 
 
@@ -1554,6 +1498,8 @@ List of meta info of the specified namespace
 |**log_level**  <br>*optional*|Log level of queries core logger|enum (none, error, warning, info, trace)|
 |**merge_limit_count**  <br>*optional*|Merge write namespace after get thi count of operations|integer|
 |**namespace**  <br>*optional*|Name of namespace, or `*` for setting to all namespaces|string|
+|**optimization_sort_workers**  <br>*optional*|Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations|integer|
+|**optimization_timeout_ms**  <br>*optional*|Timeout before background indexes optimization start after last update. 0 - disable optimizations|integer|
 |**start_copy_politics_count**  <br>*optional*|Copy namespce policts will start only after item's count become greater in this param|integer|
 |**unload_idle_threshold**  <br>*optional*|Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded|integer|
 
@@ -1625,12 +1571,26 @@ Query cache stats. Stores results of SELECT COUNT(*) by Where conditions
 
 
 
+### QueryColumnDef
+Query columns for table outputs
+
+
+|Name|Description|Schema|
+|---|---|---|
+|**max_chars**  <br>*optional*|Maximum count of chars in column|number|
+|**name**  <br>*optional*|Column name|string|
+|**width_chars**  <br>*optional*|Column width in chars|number|
+|**width_percents**  <br>*optional*|Column width in percents of total width|number|
+
+
+
 ### QueryItems
 
 |Name|Description|Schema|
 |---|---|---|
 |**aggregations**  <br>*optional*|Aggregation functions results|< [AggregationResDef](#aggregationresdef) > array|
 |**cache_enabled**  <br>*optional*|Enables to client cache returned items. If false, then returned items has been modified  by reindexer, e.g. by select filter, or by functions, and can't be cached|boolean|
+|**columns**  <br>*optional*|Columns for table output|< [QueryColumnDef](#querycolumndef) > array|
 |**explain**  <br>*optional*||[ExplainDef](#explaindef)|
 |**items**  <br>*optional*|Documents, matched query|< object > array|
 |**namespaces**  <br>*optional*|Namespaces, used in query|< string > array|
@@ -1670,7 +1630,7 @@ Performance statistics per each query
 |**master_dsn**  <br>*optional*|DSN to master. Only cproto schema is supported|string|
 |**namespaces**  <br>*optional*|List of namespaces for replication. If emply, all namespaces. All replicated namespaces will become read only for slave|< string > array|
 |**role**  <br>*optional*|Replication role|enum (none, slave, master)|
-|**timeout_sec**  <br>*optional*|Network timeout for communction with master, in seconds|integer|
+|**timeout_sec**  <br>*optional*|Network timeout for communication with master, in seconds|integer|
 
 
 
@@ -1682,6 +1642,8 @@ State of namespace replication
 |---|---|---|
 |**cluster_id**  <br>*optional*|Cluster ID - must be same for client and for master|integer|
 |**data_hash**  <br>*optional*|Hashsum of all records in namespace|integer|
+|**error_code**  <br>*optional*|Error code of last replication|integer|
+|**error_message**  <br>*optional*|Error message of last replication|string|
 |**incarnation_counter**  <br>*optional*|Number of storage's master <-> slave switches|integer|
 |**last_lsn**  <br>*optional*|Last Log Sequence Number (LSN) of applied namespace modification|integer|
 |**slave_mode**  <br>*optional*|If true, then namespace is in slave mode|boolean|

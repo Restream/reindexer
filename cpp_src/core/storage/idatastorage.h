@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include "storagetype.h"
 #include "tools/errors.h"
 
 struct StorageOpts;
@@ -99,6 +100,9 @@ public:
 	/// Repair the storage
 	/// @param path - path to Storage.
 	virtual Error Repair(const string& path) = 0;
+
+	/// Get storage type
+	virtual StorageType Type() const noexcept = 0;
 };
 
 /// Buffer for a Batch Write.

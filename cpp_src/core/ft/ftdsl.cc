@@ -60,7 +60,7 @@ void FtDSLQuery::parse(wstring &utf16str) {
 					if (end == start)
 						throw Error(errParseDSL, "Expected digit after '~' operator in phrase, but found '%c' ", char(*start));
 				}
-				assertf(groupcnt <= int(size()), "groupcnt=%d,size=%d", groupcnt, int(size()));
+				assertf(groupcnt <= int(size()), "groupcnt=%d,size=%d", groupcnt, size());
 				if (groupcnt > 1) {
 					auto fteIt = end();
 					while (--groupcnt) {
@@ -156,7 +156,7 @@ void FtDSLQuery::parseFields(wstring &utf16str, wstring::iterator &it, h_vector<
 			if (f == fields_.end()) {
 				throw Error(errLogic, "Field '%s',is not included to full text index", fname);
 			}
-			assertf(f->second < int(fieldsBoost.size()), "f=%d,fieldsBoost.size()=%d", f->second, int(fieldsBoost.size()));
+			assertf(f->second < int(fieldsBoost.size()), "f=%d,fieldsBoost.size()=%d", f->second, fieldsBoost.size());
 			fieldsBoost[f->second] = boost;
 		}
 		if (it == utf16str.end() || *it++ != ',') break;

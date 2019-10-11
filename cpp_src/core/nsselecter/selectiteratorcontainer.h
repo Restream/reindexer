@@ -59,8 +59,8 @@ private:
 									   bool isQueryFt, SelectFunction::Ptr selectFnc, bool &isIndexFt, bool &isIndexSparse, FtCtx::Ptr &,
 									   const RdxContext &);
 	void processJoinEntry(const QueryEntry &qe, OpType op);
-	void processQueryEntryResults(SelectKeyResults &selectResults, const QueryEntries &queries, int qeIdx, const Namespace &ns,
-								  const QueryEntry &qe, bool isIndexFt, bool isIndexSparse, bool nonIndexField);
+	void processQueryEntryResults(SelectKeyResults &selectResults, OpType, const Namespace &ns, const QueryEntry &qe, bool isIndexFt,
+								  bool isIndexSparse, bool nonIndexField);
 	void processEqualPositions(const std::multimap<unsigned, EqualPosition> &equalPositions, size_t begin, size_t end, const Namespace &ns,
 							   const QueryEntries &queries);
 	bool processJoins(SelectIterator &it, const ConstPayload &pl, IdType properRowId, bool match);

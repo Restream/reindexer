@@ -172,7 +172,7 @@ Error RPCClient::modifyItem(string_view nsName, Item& item, int mode, seconds ne
 			QueryResults qr;
 			auto ret = selectImpl(Query(string(nsName)).Limit(0), qr, nullptr, netTimeout, ctx.WithCompletion(nullptr));
 			if (ret.code() == errTimeout) {
-				return errTimeout;
+				return Error(errTimeout, "Request timeout");
 			}
 			if (withNetTimeout) {
 				netTimeout = netDeadline - conn->Now();

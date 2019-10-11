@@ -172,10 +172,7 @@ void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext &ctx) {
 		}
 	}
 
-	if (idx != totalIds) {
-		fprintf(stderr, "Internal error: Index %s is broken. totalids=%d, but indexed=%d\n", this->name_.c_str(), int(totalIds), int(idx));
-		assert(0);
-	}
+	assertf(idx == totalIds, "Internal error: Index %s is broken. totalids=%d, but indexed=%d\n", this->name_, totalIds, idx);
 }
 
 template <typename T>

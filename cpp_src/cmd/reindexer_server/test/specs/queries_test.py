@@ -27,6 +27,32 @@ class QueriesTest(BaseTest):
         self.assertEqual(True, status == self.API_STATUS['success'], body)
         self.assertEqual(True, 'items' in body, body)
         self.assertEqual(True, 'query_total_items' in body, body)
+        
+    def test_query_sql_with_columns(self):
+        """Should be able to get column parameters with sql query results"""
+        
+        sql_query = 'SELECT COUNT(*),* FROM ' + self.current_ns
+        status, body = self.api_sql_exec_with_columns(self.current_db, sql_query)
+
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+        self.assertEqual(True, 'columns' in body, body)
+        assert len(body['columns'])>0
+
+        widths = [None] * 10
+        for item in body['items']:
+            columnIdx = 0
+            for key in item:
+                value = item[key]
+                widths[columnIdx] = max(len(key), len(str(value)))
+                columnIdx += 1
+
+        suppositiveScreenWidth = 100
+
+        for i in range(len(body['columns'])):
+            column_data = body['columns'][i] 
+            self.assertEqual(True, 'width_percents' in column_data, column_data)
+            assert column_data['max_chars'] == widths[i]
+            assert column_data['width_percents'] == (float(widths[i])/suppositiveScreenWidth)*100
 
     def test_query_dsl_(self):
         """Should be able to exec a dsl query"""

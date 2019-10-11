@@ -4,7 +4,7 @@
 #include "core/keyvalue/p_string.h"
 namespace reindexer {
 
-Variant jsonValue2Variant(gason::JsonValue &v, KeyValueType t, const char *fieldName) {
+Variant jsonValue2Variant(gason::JsonValue &v, KeyValueType t, string_view fieldName) {
 	switch (v.getTag()) {
 		case gason::JSON_NUMBER:
 			switch (t) {

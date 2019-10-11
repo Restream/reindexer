@@ -4,6 +4,7 @@
 #include <sstream>
 #include "base64/base64.h"
 #include "core/cjson/jsonbuilder.h"
+#include "core/queryresults/tableviewbuilder.h"
 #include "core/type_consts.h"
 #include "gason/gason.h"
 #include "loggerwrapper.h"
@@ -70,19 +71,28 @@ int HTTPServer::GetSQLSuggest(http::Context &ctx) {
 	}
 
 	string_view posParam = ctx.request->params.Get("pos");
+	string_view lineParam = ctx.request->params.Get("line");
 	int pos = stoi(posParam);
 	if (pos < 0) {
-		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "`pos` parameter should be greater or equal than 0"));
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "`pos` parameter should be >= 0"));
+	}
+	if (pos > 0) --pos;  // JS style pos starts from 1
+	int line = stoi(lineParam);
+	if (line < 0) {
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "`line` parameter should be >= 0"));
 	}
 
-	// Here we receive position in JS style: starts from 1 (not from 0).
-	if (pos > 0) --pos;
+	size_t bytePos = 0;
+	Error err = cursosPosToBytePos(sqlQuery, line, pos, bytePos);
+	if (!err.ok()) {
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, err.what()));
+	}
 
-	logPrintf(LogTrace, "GetSQLSuggest() incoming data: %s, %d", sqlQuery, pos);
+	logPrintf(LogTrace, "GetSQLSuggest() incoming data: %s, %d", sqlQuery, bytePos);
 
 	vector<string> suggestions;
 	auto db = getDB(ctx, kRoleDataRead);
-	db.GetSqlSuggestions(sqlQuery, pos, suggestions);
+	db.GetSqlSuggestions(sqlQuery, bytePos, suggestions);
 
 	WrSerializer ser(ctx.writer->GetChunk());
 	reindexer::JsonBuilder builder(ser);
@@ -116,7 +126,7 @@ int HTTPServer::PostQuery(http::Context &ctx) {
 	string dsl = ctx.body->Read();
 
 	reindexer::Query q;
-	auto status = q.ParseJson(dsl);
+	auto status = q.FromJSON(dsl);
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
@@ -134,7 +144,7 @@ int HTTPServer::DeleteQuery(http::Context &ctx) {
 	string dsl = ctx.body->Read();
 
 	reindexer::Query q;
-	auto status = q.ParseJson(dsl);
+	auto status = q.FromJSON(dsl);
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
@@ -157,7 +167,7 @@ int HTTPServer::UpdateQuery(http::Context &ctx) {
 	string dsl = ctx.body->Read();
 
 	reindexer::Query q;
-	auto status = q.ParseJson(dsl);
+	auto status = q.FromJSON(dsl);
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
@@ -895,6 +905,10 @@ int HTTPServer::modifyItem(http::Context &ctx, int mode) {
 }
 
 int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset) {
+	string_view width = ctx.request->params.Get("width");
+	string_view withColumnsParam = ctx.request->params.Get("with_columns");
+	bool withColumns = ((withColumnsParam == "1") && (stoi(width) > 0)) ? true : false;
+
 	WrSerializer wrSer(ctx.writer->GetChunk());
 	JsonBuilder builder(wrSer);
 
@@ -953,6 +967,21 @@ int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, b
 		builder.Put("query_total_items", res.totalCount);
 		if (limit == kDefaultLimit) builder.Put("total_items", res.totalCount);
 	}
+
+	if (withColumns) {
+		reindexer::TableCalculator<reindexer::QueryResults> tableCalculator(res, stoi(width));
+		auto &columnsSettings = tableCalculator.GetColumnsSettings();
+		auto array = builder.Array("columns");
+		for (const std::pair<const string, ColumnData> &settings : columnsSettings) {
+			array.Object()
+				.Put("name", settings.first)
+				.Put("width_percents", settings.second.widthTerminalPercentage)
+				.Put("max_chars", settings.second.maxWidthCh)
+				.Put("width_chars", settings.second.widthCh);
+		}
+		array.End();
+	}
+
 	builder.End();
 
 	return ctx.JSON(http::StatusOK, wrSer.DetachChunk());
@@ -1063,14 +1092,15 @@ int HTTPServer::CheckAuth(http::Context &ctx) {
 }
 
 void HTTPServer::Logger(http::Context &ctx) {
+	HandlerStat statDiff = HandlerStat() - ctx.stat.allocStat;
+	auto clientData = reinterpret_cast<HTTPClientData *>(ctx.clientData.get());
 	if (allocDebug_) {
-		HandlerStat statDiff = HandlerStat() - ctx.stat.allocStat;
-
-		logger_.info("{0} {1} {2} {3} | elapsed: {4}us, allocs: {5}, allocated: {6} byte(s)", ctx.request->method, ctx.request->uri,
-					 ctx.writer->RespCode(), ctx.writer->Written(), statDiff.GetTimeElapsed(), statDiff.GetAllocsCnt(),
-					 statDiff.GetAllocsBytes());
+		logger_.info("{} - {} {} {} {} {} {}us | allocs: {}, allocated: {} byte(s)", ctx.request->clientAddr,
+					 clientData ? clientData->auth.Login() : "", ctx.request->method, ctx.request->uri, ctx.writer->RespCode(),
+					 ctx.writer->Written(), statDiff.GetTimeElapsed(), statDiff.GetAllocsCnt(), statDiff.GetAllocsBytes());
 	} else {
-		logger_.info("{0} {1} {2} {3}", ctx.request->method, ctx.request->uri, ctx.writer->RespCode(), ctx.writer->Written());
+		logger_.info("{} - {} {} {} {} {} {}us", ctx.request->clientAddr, clientData ? clientData->auth.Login() : "", ctx.request->method,
+					 ctx.request->uri, ctx.writer->RespCode(), ctx.writer->Written(), statDiff.GetTimeElapsed());
 	}
 }
 

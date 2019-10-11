@@ -17,32 +17,11 @@ void toReadOptions(const StorageOpts& opts, rocksdb::ReadOptions& ropts) {
 namespace reindexer {
 namespace datastorage {
 
-const char* const kStorageNotInitialized = "Storage is not initialized";
+constexpr auto kStorageNotInitialized = "Storage is not initialized"_sv;
 
 RocksDbStorage::RocksDbStorage() {}
 
 RocksDbStorage::~RocksDbStorage() {}
-
-Error RocksDbStorage::Open(const string& path, const StorageOpts& opts) {
-	if (path.empty()) {
-		throw Error(errParams, "Cannot enable storage: the path is empty '%s'", path);
-	}
-
-	rocksdb::Options options;
-	options.create_if_missing = opts.IsCreateIfMissing();
-	options.max_open_files = 50;
-
-	rocksdb::DB* db;
-	rocksdb::Status status = rocksdb::DB::Open(options, path, &db);
-	if (status.ok()) {
-		db_ = shared_ptr<rocksdb::DB>(db);
-		opts_ = opts;
-		dbpath_ = path;
-		return Error();
-	}
-
-	return Error(errLogic, status.ToString());
-}
 
 Error RocksDbStorage::Read(const StorageOpts& opts, const string_view& key, string& value) {
 	if (!db_) throw Error(errParams, kStorageNotInitialized);
@@ -117,16 +96,6 @@ void RocksDbStorage::Flush() {
 	Open(dbpath_, opts_);
 }
 
-void RocksDbStorage::Destroy(const string& path) {
-	rocksdb::Options options;
-	options.create_if_missing = true;
-	db_.reset();
-	rocksdb::Status status = rocksdb::DestroyDB(path.c_str(), options);
-	if (!status.ok()) {
-		printf("Cannot destroy DB: %s, %s\n", path.c_str(), status.ToString().c_str());
-	}
-}
-
 Cursor* RocksDbStorage::GetCursor(StorageOpts& opts) {
 	if (!db_) throw Error(errParams, kStorageNotInitialized);
 	rocksdb::ReadOptions options;
@@ -136,6 +105,37 @@ Cursor* RocksDbStorage::GetCursor(StorageOpts& opts) {
 }
 
 UpdatesCollection* RocksDbStorage::GetUpdatesCollection() { return new RocksDbBatchBuffer(); }
+
+Error RocksDbStorage::doOpen(const string& path, const StorageOpts& opts) {
+	if (path.empty()) {
+		throw Error(errParams, "Cannot enable storage: the path is empty '%s'", path);
+	}
+
+	rocksdb::Options options;
+	options.create_if_missing = opts.IsCreateIfMissing();
+	options.max_open_files = 50;
+
+	rocksdb::DB* db;
+	rocksdb::Status status = rocksdb::DB::Open(options, path, &db);
+	if (status.ok()) {
+		db_.reset(db);
+		opts_ = opts;
+		dbpath_ = path;
+		return Error();
+	}
+
+	return Error(errLogic, status.ToString());
+}
+
+void RocksDbStorage::doDestroy(const string& path) {
+	rocksdb::Options options;
+	options.create_if_missing = true;
+	db_.reset();
+	rocksdb::Status status = rocksdb::DestroyDB(path.c_str(), options);
+	if (!status.ok()) {
+		printf("Cannot destroy DB: %s, %s\n", path.c_str(), status.ToString().c_str());
+	}
+}
 
 RocksDbBatchBuffer::RocksDbBatchBuffer() {}
 
@@ -187,5 +187,8 @@ RocksDbSnapshot::RocksDbSnapshot(const rocksdb::Snapshot* snapshot) : snapshot_(
 RocksDbSnapshot::~RocksDbSnapshot() { snapshot_ = nullptr; }
 }  // namespace datastorage
 }  // namespace reindexer
+#else
+// suppress clang warngig
+int ___rocksdbsrorage_dummy_suppress_warning;
 
 #endif  // REINDEX_WITH_ROCKSDB

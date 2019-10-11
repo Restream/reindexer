@@ -115,32 +115,32 @@ void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Arg
 	WrSerializer ser;
 
 	if (clientData) {
-		ser << "c='" << clientData->connID << "' db='" << clientData->auth.Login() << "@" << clientData->auth.DBName() << "' ";
+		ser << "c='"_sv << clientData->connID << "' db='"_sv << clientData->auth.Login() << "@"_sv << clientData->auth.DBName() << "' "_sv;
 	} else {
-		ser << "- - ";
+		ser << "- - "_sv;
 	}
 
 	if (ctx.call) {
-		ser << cproto::CmdName(ctx.call->cmd) << " ";
+		ser << cproto::CmdName(ctx.call->cmd) << " "_sv;
 		ctx.call->args.Dump(ser);
 	} else {
 		ser << '-';
 	}
 
-	ser << " -> " << (err.ok() ? "OK" : err.what());
+	ser << " -> "_sv << (err.ok() ? "OK"_sv : err.what());
 	if (ret.size()) {
 		ser << ' ';
 		ret.Dump(ser);
 	}
 
-	if (allocDebug_) {
-		HandlerStat statDiff = HandlerStat() - ctx.stat.allocStat;
+	HandlerStat statDiff = HandlerStat() - ctx.stat.allocStat;
+	ser << ' ' << statDiff.GetTimeElapsed() << "us"_sv;
 
-		ser << " | elapsed: " << statDiff.GetTimeElapsed() << "us, allocs: " << statDiff.GetAllocsCnt()
-			<< ", allocated: " << statDiff.GetAllocsBytes() << " byte(s)";
+	if (allocDebug_) {
+		ser << " |  allocs: "_sv << statDiff.GetAllocsCnt() << ", allocated: " << statDiff.GetAllocsBytes() << " byte(s)";
 	}
 
-	logger_.info("{0}", ser.Slice());
+	logger_.info("{}", ser.Slice());
 }
 
 Error RPCServer::OpenNamespace(cproto::Context &ctx, p_string nsDefJson) {

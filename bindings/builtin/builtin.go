@@ -36,9 +36,10 @@ var logMtx sync.Mutex
 var bufPool sync.Pool
 
 type Builtin struct {
-	cgoLimiter chan struct{}
-	rx         C.uintptr_t
-	ctxWatcher *CtxWatcher
+	cgoLimiter     chan struct{}
+	cgoLimiterStat *cgoLimiterStat
+	rx             C.uintptr_t
+	ctxWatcher     *CtxWatcher
 }
 
 type RawCBuffer struct {
@@ -182,6 +183,7 @@ func (binding *Builtin) Init(u *url.URL, options ...interface{}) error {
 
 	if cgoLimit != 0 {
 		binding.cgoLimiter = make(chan struct{}, cgoLimit)
+		binding.cgoLimiterStat = newCgoLimiterStat(binding)
 	}
 
 	binding.ctxWatcher = NewCtxWatcher(ctxWatchersPoolSize, ctxWatchDelay)
@@ -245,11 +247,6 @@ func (binding *Builtin) ModifyItem(ctx context.Context, nsHash int, namespace st
 }
 
 func (binding *Builtin) ModifyItemTx(txCtx *bindings.TxCtx, format int, data []byte, mode int, precepts []string, stateToken int) error {
-	if withLimiter, err := binding.awaitLimiter(txCtx.UserCtx); err != nil {
-		return err
-	} else if withLimiter {
-		defer func() { <-binding.cgoLimiter }()
-	}
 
 	ser1 := cjson.NewPoolSerializer()
 	defer ser1.Close()
@@ -418,6 +415,11 @@ func (binding *Builtin) Select(ctx context.Context, query string, asJson bool, p
 	return ret2go(C.reindexer_select(binding.rx, str2c(query), bool2cint(asJson), (*C.int32_t)(unsafe.Pointer(&ptVersions[0])), C.int(len(ptVersions)), ctxInfo.cCtx))
 }
 func (binding *Builtin) BeginTx(ctx context.Context, namespace string) (txCtx bindings.TxCtx, err error) {
+	if withLimiter, err := binding.awaitLimiter(ctx); err != nil {
+		return txCtx, err
+	} else if withLimiter {
+		defer func() { <-binding.cgoLimiter }()
+	}
 	ret := C.reindexer_start_transaction(binding.rx, str2c(namespace))
 	err = err2go(ret.err)
 	if err != nil {
@@ -428,6 +430,13 @@ func (binding *Builtin) BeginTx(ctx context.Context, namespace string) (txCtx bi
 }
 
 func (binding *Builtin) CommitTx(txCtx *bindings.TxCtx) (bindings.RawBuffer, error) {
+
+	if withLimiter, err := binding.awaitLimiter(txCtx.UserCtx); err != nil {
+		return nil, err
+	} else if withLimiter {
+		defer func() { <-binding.cgoLimiter }()
+	}
+
 	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(txCtx.UserCtx)
 	if err != nil {
 		return nil, err
@@ -520,16 +529,23 @@ func (binding *Builtin) DisableLogger() {
 func (binding *Builtin) Finalize() error {
 	C.destroy_reindexer(binding.rx)
 	binding.rx = 0
+	if binding.cgoLimiterStat != nil {
+		binding.cgoLimiterStat.Stop()
+	}
 	return binding.ctxWatcher.Finalize()
 }
 
 func (binding *Builtin) Status() (status bindings.Status) {
-	return bindings.Status{
+	status = bindings.Status{
 		Builtin: bindings.StatusBuiltin{
 			CGOLimit: cap(binding.cgoLimiter),
 			CGOUsage: len(binding.cgoLimiter),
 		},
 	}
+	if binding.cgoLimiterStat != nil {
+		status.Builtin.CGOUsageLastMinAvg = binding.cgoLimiterStat.LastMinAvg()
+	}
+	return status
 }
 
 func newBufFreeBatcher() (bf *bufFreeBatcher) {

@@ -19,7 +19,6 @@ import (
 )
 
 func init() {
-	C.cgo_pprof_init()
 	http.Handle("/debug/cgo/pprof/heap", http.HandlerFunc(ProfileHeap))
 	http.Handle("/debug/cgo/pprof/cmdline", http.HandlerFunc(Cmdline))
 	http.Handle("/debug/cgo/pprof/profile", http.HandlerFunc(Profile))

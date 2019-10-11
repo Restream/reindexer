@@ -1,5 +1,5 @@
 #include "rdxcontext.h"
-#include "core/query/queryresults.h"
+#include "core/queryresults/queryresults.h"
 
 namespace reindexer {
 

@@ -130,7 +130,7 @@ Error ReplicationConfigData::FromJSON(const gason::JsonNode &root) {
 		masterDSN = root["master_dsn"].As<string>();
 		connPoolSize = root["conn_pool_size"].As<int>(1);
 		workerThreads = root["worker_threads"].As<int>(1);
-		timeoutSec = root["timeout_sec"].As<int>(10);
+		timeoutSec = root["timeout_sec"].As<int>(30);
 		clusterID = root["cluster_id"].As<int>(1);
 		role = str2role(root["role"].As<string>("none"));
 		forceSyncOnLogicError = root["force_sync_on_logic_error"].As<bool>();
@@ -210,6 +210,9 @@ void ReplicationConfigData::GetYAML(WrSerializer &ser) const {
 			"cluster_id: " + std::to_string(clusterID) + "\n"
 			"# force resync on logic error conditions\n"
 			"force_sync_on_logic_error: " + (forceSyncOnLogicError ? "true" : "false") + "\n"
+			"\n"
+			"# Master response timeout\n"
+			"timeout_sec: " + std::to_string(timeoutSec) + "\n"
 			"\n"
 			"# force resync on wrong data hash conditions\n"
 			"force_sync_on_wrong_data_hash: " + (forceSyncOnWrongDataHash ? "true" : "false") + "\n"

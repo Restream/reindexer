@@ -9,7 +9,6 @@
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/variant.h"
 #include "core/query/query.h"
-#include "core/query/querywhere.h"
 #include "core/reindexer.h"
 #include "gtests/tests/gtest_cout.h"
 #include "tools/errors.h"

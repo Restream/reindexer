@@ -157,7 +157,7 @@ void IndexDef::GetJSON(WrSerializer &ser, int formatFlags) const {
 		.Put("collate_mode", getCollateMode())
 		.Put("sort_order_letters", opts_.collateOpts_.sortOrderTable.GetSortOrderCharacters())
 		.Put("expire_after", expireAfter_)
-		.Raw("config", opts_.hasConfig() ? opts_.config.c_str() : "{}");
+		.Raw("config", opts_.hasConfig() ? opts_.config : "{}");
 
 	if (formatFlags & kIndexJSONWithDescribe) {
 		// extra data for support describe.

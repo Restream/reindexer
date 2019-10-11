@@ -211,6 +211,9 @@ class ApiMixin(object):
     def api_sql_exec(self, dbname, sql_query=''):
         return self._api_call('GET', '/db/' + dbname + '/query?' + urlencode({'q': sql_query}))
 
+    def api_sql_exec_with_columns(self, dbname, sql_query=''):
+        return self._api_call('GET', '/db/' + dbname + '/query?' + urlencode({'q': sql_query, 'with_columns': 1, 'width': 100}))
+
     def api_sql_post(self, dbname, body):
         return self._api_call('POST', '/db/' + dbname + '/sqlquery', body, headers={'Content-type': 'text/plain'}, as_json=False)
 

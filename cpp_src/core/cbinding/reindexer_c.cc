@@ -9,6 +9,7 @@
 #include "core/selectfunc/selectfuncparser.h"
 #include "core/transactionimpl.h"
 #include "debug/allocdebug.h"
+#include "estl/syncpool.h"
 #include "resultserializer.h"
 #include "tools/logger.h"
 #include "tools/stringstools.h"
@@ -53,37 +54,16 @@ struct TransactionWrapper {
 	Transaction tr_;
 };
 
-static std::mutex res_pool_lck;
-static h_vector<std::unique_ptr<QueryResultsWrapper>, 2> res_pool;
-static int alloced_res_count;
+static sync_pool<QueryResultsWrapper, kQueryResultsPoolSize, kMaxConcurentQueries> res_pool;
 static CGOCtxPool ctx_pool(kCtxArrSize);
 
 static void put_results_to_pool(QueryResultsWrapper* res) {
 	res->Clear();
 	res->ser.Reset();
-	std::unique_lock<std::mutex> lck(res_pool_lck);
-	alloced_res_count--;
-	if (res_pool.size() < kQueryResultsPoolSize)
-		res_pool.push_back(std::unique_ptr<QueryResultsWrapper>(res));
-	else
-		delete res;
+	res_pool.put(res);
 }
 
-static QueryResultsWrapper* new_results() {
-	std::unique_lock<std::mutex> lck(res_pool_lck);
-	if (alloced_res_count > kMaxConcurentQueries) {
-		return nullptr;
-	}
-	alloced_res_count++;
-	if (res_pool.empty()) {
-		lck.unlock();
-		return new QueryResultsWrapper;
-	} else {
-		auto res = res_pool.back().release();
-		res_pool.pop_back();
-		return res;
-	}
-}
+static QueryResultsWrapper* new_results() { return res_pool.get(); }
 
 static void results2c(QueryResultsWrapper* result, struct reindexer_resbuffer* out, int as_json = 0, int32_t* pt_versions = nullptr,
 					  int pt_versions_count = 0) {
@@ -428,7 +408,7 @@ reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, i
 		Query q;
 		q.Deserialize(ser);
 		while (!ser.Eof()) {
-			Query q1;
+			JoinedQuery q1;
 			q1.joinType = JoinType(ser.GetVarUint());
 			q1.Deserialize(ser);
 			q1.debugLevel = q.debugLevel;

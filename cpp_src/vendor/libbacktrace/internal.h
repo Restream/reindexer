@@ -1,5 +1,5 @@
 /* internal.h -- Internal header file for stack backtrace library.
-   Copyright (C) 2012-2015 Free Software Foundation, Inc.
+   Copyright (C) 2012-2018 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Google.
 
 Redistribution and use in source and binary forms, with or without
@@ -237,8 +237,8 @@ extern int backtrace_vector_release(struct backtrace_state *state, struct backtr
    for different file formats.  Each system will compile the
    appropriate one.  */
 
-extern int backtrace_initialize(struct backtrace_state *state, int descriptor, backtrace_error_callback error_callback, void *data,
-								fileline *fileline_fn);
+extern int backtrace_initialize(struct backtrace_state *state, const char *filename, int descriptor,
+								backtrace_error_callback error_callback, void *data, fileline *fileline_fn);
 
 /* Add file/line information for a DWARF module.  */
 
@@ -247,5 +247,10 @@ extern int backtrace_dwarf_add(struct backtrace_state *state, uintptr_t base_add
 							   const unsigned char *dwarf_abbrev, size_t dwarf_abbrev_size, const unsigned char *dwarf_ranges,
 							   size_t dwarf_range_size, const unsigned char *dwarf_str, size_t dwarf_str_size, int is_bigendian,
 							   backtrace_error_callback error_callback, void *data, fileline *fileline_fn);
+
+/* A test-only hook for elf_uncompress_zdebug.  */
+
+extern int backtrace_uncompress_zdebug(struct backtrace_state *, const unsigned char *compressed, size_t compressed_size,
+									   backtrace_error_callback, void *data, unsigned char **uncompressed, size_t *uncompressed_size);
 
 #endif

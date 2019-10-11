@@ -43,6 +43,10 @@ struct ReplicationState {
 	int64_t lastLsn = -1;
 	// Slave mode flag
 	bool slaveMode = false;
+	// Temporary namespace flag
+	bool temporary = false;
+	// Replication error
+	Error replError = errOK;
 	// Cluster ID
 	int clusterID = -1;
 	// Incarnation counter

@@ -71,7 +71,7 @@ public:
 
 protected:
 	void putName(string_view name);
-	const char *getNameByTag(int tagName);
+	string_view getNameByTag(int tagName);
 
 	WrSerializer *ser_;
 	const TagsMatcher *tm_;

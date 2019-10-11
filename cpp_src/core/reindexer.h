@@ -2,7 +2,7 @@
 
 #include "core/namespacedef.h"
 #include "core/query/query.h"
-#include "core/query/queryresults.h"
+#include "core/queryresults/queryresults.h"
 #include "core/rdxcontext.h"
 #include "transaction.h"
 
@@ -26,7 +26,7 @@ class IUpdatesObserver;
 class Reindexer {
 public:
 	/// Completion routine
-	using Completion = Transaction::Completion;
+	using Completion = std::function<void(const Error &err)>;
 
 	/// Create Reindexer database object
 	Reindexer();

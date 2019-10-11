@@ -3,7 +3,6 @@
 #include "core/index/string_map.h"
 #include "core/indexopts.h"
 #include "core/nsselecter/btreeindexiterator.h"
-#include "core/query/joinresults.h"
 
 TEST_F(BtreeIdsetsApi, SelectByStringField) {
 	QueryResults qr;

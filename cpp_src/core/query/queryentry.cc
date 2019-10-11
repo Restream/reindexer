@@ -1,4 +1,4 @@
-#include "querywhere.h"
+#include "queryentry.h"
 #include <stdlib.h>
 #include "query.h"
 #include "tools/serializer.h"
@@ -108,94 +108,7 @@ bool SortingEntry::operator==(const SortingEntry &obj) const {
 
 bool SortingEntry::operator!=(const SortingEntry &obj) const { return !operator==(obj); }
 
-bool QueryWhere::operator==(const QueryWhere &obj) const {
-	if (entries != obj.entries) return false;
-	if (aggregations_ != obj.aggregations_) return false;
-	if (joinEntries_ != obj.joinEntries_) return false;
-	return true;
-}
-
-CondType QueryWhere::getCondType(string_view cond) {
-	if (cond == "="_sv || cond == "=="_sv || cond == "is"_sv) {
-		return CondEq;
-	} else if (cond == ">"_sv) {
-		return CondGt;
-	} else if (cond == ">="_sv) {
-		return CondGe;
-	} else if (cond == "<"_sv) {
-		return CondLt;
-	} else if (cond == "<="_sv) {
-		return CondLe;
-	} else if (iequals(cond, "in"_sv)) {
-		return CondSet;
-	} else if (iequals(cond, "range"_sv)) {
-		return CondRange;
-	} else if (iequals(cond, "like"_sv)) {
-		return CondLike;
-	}
-	throw Error(errParseSQL, "Expected condition operator, but found '%s' in query", cond);
-}
-
 const char *condNames[] = {"IS NOT NULL", "=", "<", "<=", ">", ">=", "RANGE", "IN", "ALLSET", "IS NULL", "LIKE"};
-const char *opNames[] = {"-", "OR", "AND", "AND NOT"};
-
-void QueryEntries::WriteSQLWhere(const Query &parentQuery, WrSerializer &ser, bool stripArgs) const {
-	if (Empty()) return;
-	ser << " WHERE ";
-	writeSQL(parentQuery, cbegin(), cend(), ser, stripArgs);
-}
-
-void QueryEntries::writeSQL(const Query &parentQuery, const_iterator from, const_iterator to, WrSerializer &ser, bool stripArgs) {
-	for (const_iterator it = from; it != to; ++it) {
-		if (it != from) {
-			bool orInnerJoin = false;
-			if (it->IsLeaf() && (it->Value().joinIndex != QueryEntry::kNoJoins)) {
-				if (parentQuery.joinQueries_[it->Value().joinIndex].joinType == JoinType::OrInnerJoin) {
-					orInnerJoin = true;
-				}
-			}
-			ser << ' ';
-			if (!orInnerJoin) ser << opNames[it->Op] << ' ';  // -V547}
-		} else if (it->Op == OpNot) {
-			ser << "NOT ";
-		}
-		if (!it->IsLeaf()) {
-			ser << '(';
-			writeSQL(parentQuery, it->cbegin(it), it->cend(it), ser, stripArgs);
-			ser << ')';
-		} else {
-			const QueryEntry &entry = it->Value();
-			if (entry.joinIndex == QueryEntry::kNoJoins) {
-				if (entry.index.find('.') == string::npos)
-					ser << entry.index << ' ';
-				else
-					ser << '\'' << entry.index << "\' ";
-
-				if (entry.condition < sizeof(condNames) / sizeof(condNames[0]))
-					ser << condNames[entry.condition] << ' ';
-				else
-					ser << "<unknown cond> ";
-				if (entry.condition == CondEmpty || entry.condition == CondAny) {
-				} else if (stripArgs) {
-					ser << '?';
-				} else {
-					if (entry.values.size() != 1) ser << '(';
-					for (auto &v : entry.values) {
-						if (&v != &entry.values[0]) ser << ',';
-						if (v.Type() == KeyValueString) {
-							ser << '\'' << v.As<string>() << '\'';
-						} else {
-							ser << v.As<string>();
-						}
-					}
-					ser << ((entry.values.size() != 1) ? ")" : "");
-				}
-			} else {
-				parentQuery.DumpSingleJoinQuery(entry.joinIndex, ser, stripArgs);
-			}
-		}
-	}
-}
 
 string QueryEntry::Dump() const {
 	string result;

@@ -1,15 +1,10 @@
 #pragma once
 
-#include <climits>
 #include <functional>
 #include <initializer_list>
-#include <unordered_set>
-#include "estl/fast_hash_map.h"
-#include "querywhere.h"
+#include "queryentry.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
-
-#include "estl/tokenizer.h"
 
 /// @namespace reindexer
 /// The base namespace
@@ -17,17 +12,15 @@ namespace reindexer {
 
 class WrSerializer;
 class Serializer;
+class JoinedQuery;
 
 using std::initializer_list;
 using std::pair;
 
-class Namespace;
-typedef fast_hash_map<string, std::shared_ptr<Namespace>, nocase_hash_str, nocase_equal_str> Namespaces;
-
 /// @class Query
 /// Allows to select data from DB.
 /// Analog to ansi-sql select query.
-class Query : public QueryWhere {
+class Query {
 public:
 	/// Creates an object for certain namespace with appropriate settings.
 	/// @param nsName - name of the namespace the data to be selected from.
@@ -45,17 +38,25 @@ public:
 	/// Parses pure sql select query and initializes Query object data members as a result.
 	/// @param q - sql query.
 	/// @return always returns 0.
-	int FromSQL(const string_view &q);
-
-	/// Parses JSON dsl set.
-	/// @param dsl - dsl set.
-	/// @return always returns errOk or throws an exception.
-	Error ParseJson(const string &dsl);
+	void FromSQL(const string_view &q);
 
 	/// Logs query in 'Select field1, ... field N from namespace ...' format.
 	/// @param ser - serializer to store SQL string
 	/// @param stripArgs - replace condition values with '?'
 	WrSerializer &GetSQL(WrSerializer &ser, bool stripArgs = false) const;
+
+	/// Logs query in 'Select field1, ... field N from namespace ...' format.
+	/// @param stripArgs - replace condition values with '?'
+	/// @return Query in SQL format
+	string GetSQL(bool stripArgs = false) const;
+
+	/// Parses JSON dsl set.
+	/// @param dsl - dsl set.
+	/// @return always returns errOk or throws an exception.
+	Error FromJSON(const string &dsl);
+
+	/// returns structure of a query in JSON dsl format
+	string GetJSON() const;
 
 	/// Enable explain query
 	/// @param on - signaling on/off
@@ -182,20 +183,7 @@ public:
 	/// @param op - operation type (and, or, not).
 	/// @param qr - query of the namespace that is going to be joined with this one.
 	/// @return Query object ready to be executed.
-	Query &Join(JoinType joinType, const string &index, const string &joinIndex, CondType cond, OpType op, Query &qr) {
-		QueryJoinEntry joinEntry;
-		joinEntry.op_ = op;
-		joinEntry.condition_ = cond;
-		joinEntry.index_ = index;
-		joinEntry.joinIndex_ = joinIndex;
-		qr.joinType = joinType;
-		qr.joinEntries_.push_back(joinEntry);
-		if (joinType != JoinType::LeftJoin) {
-			entries.Append((joinType == JoinType::InnerJoin) ? OpType::OpAnd : OpType::OpOr, QueryEntry(joinQueries_.size()));
-		}
-		joinQueries_.push_back(qr);
-		return *this;
-	}
+	Query &Join(JoinType joinType, const string &index, const string &joinIndex, CondType cond, OpType op, Query &qr);
 
 	/// @public
 	/// Inner Join of this namespace with another one.
@@ -359,212 +347,43 @@ public:
 	/// @param ser - serializer object.
 	void Deserialize(Serializer &ser);
 
-	/// returns structure of a query in JSON format
-	string GetJSON() const;
-
-	/// Gets suggestions for autocomplte
-	/// @param q - query to parse.
-	/// @param pos - pos of cursor in query.
-	/// @param namespaces - list of namespaces to be checked for existing fields.
-	vector<string> GetSuggestions(const string_view &q, size_t pos, const Namespaces &namespaces);
-
-	/// Get  readaby Join Type
-	/// @param type - join tyoe
-	/// @return string with join type name
-	static const char *JoinTypeName(JoinType type);
-
-	void WalkNested(bool withSelf, bool withMerged, std::function<void(const Query &q)> visitor) const {
-		if (withSelf) visitor(*this);
-		if (withMerged)
-			for (auto &mq : mergeQueries_) visitor(mq);
-		for (auto &jq : joinQueries_) visitor(jq);
-		for (auto &mq : mergeQueries_)
-			for (auto &jq : mq.joinQueries_) visitor(jq);
-	}
-
-	/// Gets printable sql version of joined query set by idx.
-	/// @param idx - index of joined query in joinQueries_.
-	/// @param ser - serializer to store SQL string.
-	/// @param stripArgs - replace condition values with '?'.
-	void DumpSingleJoinQuery(size_t idx, WrSerializer &ser, bool stripArgs) const;
+	void WalkNested(bool withSelf, bool withMerged, std::function<void(const Query &q)> visitor) const;
 
 protected:
-	/// Sql parser context
-	struct SqlParsingCtx {
-		struct SuggestionData {
-			SuggestionData(string tok, int tokType) : token(tok), tokenType(tokType) {}
-			string token;
-			int tokenType = 0;
-			vector<string> variants;
-		};
-		void updateLinkedNs(const string &ns) {
-			if (autocompleteMode && (!foundPossibleSuggestions || possibleSuggestionDetectedInThisClause)) {
-				suggestionLinkedNs = ns;
-			}
-			possibleSuggestionDetectedInThisClause = false;
-		}
-		bool autocompleteMode = false;
-		bool foundPossibleSuggestions = false;
-		bool possibleSuggestionDetectedInThisClause = false;
-		size_t suggestionsPos = 0;
-		vector<int> tokens;
-		vector<SuggestionData> suggestions;
-		string suggestionLinkedNs;
-	};
-
-	/// Parses query.
-	/// @param tok - tokenizer object instance.
-	/// @param ctx - parsing context.
-	/// @return always returns zero.
-	int Parse(tokenizer &tok, SqlParsingCtx &ctx);
-
-	/// Peeks next sql token.
-	/// @param parser - tokenizer object instance.
-	/// @param ctx - parsing context.
-	/// @param tokenType - token type.
-	/// @param toLower - transform to lower representation.
-	/// @return sql token object.
-	static token peekSqlToken(tokenizer &parser, SqlParsingCtx &ctx, int tokenType, bool toLower = true);
-
-	/// Finds suggestions for token
-	/// @param ctx - suggestion context.
-	/// @param nsName - name of active Namespace.
-	/// @param namespaces - list of namespaces in db.
-	void getSuggestionsForToken(SqlParsingCtx::SuggestionData &ctx, const string &nsName, const Namespaces &namespaces);
-
-	/// Is current token last in autocomplete mode?
-	static bool reachedAutocompleteToken(tokenizer &parser, const token &tok, SqlParsingCtx &ctx);
-
-	/// Checks whether suggestion is neede for a token
-	void checkForTokenSuggestions(SqlParsingCtx::SuggestionData &data, const SqlParsingCtx &ctx, const Namespaces &namespaces);
-
-	/// Parses filter part of sql query.
-	/// @param parser - tokenizer object instance.
-	/// @param ctx - parsing context.
-	/// @return always returns zero.
-	int selectParse(tokenizer &parser, SqlParsingCtx &ctx);
-
-	/// Parses filter part of sql delete query.
-	/// @param parser - tokenizer object instance.
-	/// @param ctx - parsing context.
-	/// @return always returns zero.
-	int deleteParse(tokenizer &parser, SqlParsingCtx &ctx);
-
-	/// Parses filter part of sql update query.
-	/// @param parser - tokenizer object instance.
-	/// @param ctx - parsing context.
-	/// @return always returns zero.
-	int updateParse(tokenizer &parser, SqlParsingCtx &ctx);
-
-	/// Parses filter part of sql truncate query.
-	/// @param parser - tokenizer object instance.
-	/// @param ctx - parsing context.
-	/// @return always returns zero.
-	int truncateParse(tokenizer &parser, SqlParsingCtx &ctx);
-
-	/// Parses JSON dsl set.
-	/// @param dsl - dsl set.
-	void parseJson(const string &dsl);
-
-	/// Deserializes query data from stream.
-	/// @param ser - serializer object.
-	/// @param hasJoinConditions - Output
 	void deserialize(Serializer &ser, bool &hasJoinConditions);
 
-	/// Parse where entries
-	int parseWhere(tokenizer &parser, SqlParsingCtx &ctx);
-
-	/// Parse order by
-	static int parseOrderBy(tokenizer &parser, SortingEntries &, VariantArray &forcedSortOrder, SqlParsingCtx &ctx);
-
-	/// Parse join entries
-	void parseJoin(JoinType type, tokenizer &tok, SqlParsingCtx &ctx);
-
-	/// Parse join entries
-	void parseJoinEntries(tokenizer &parser, const string &mainNs, SqlParsingCtx &ctx);
-
-	/// Parse update field entries
-	UpdateEntry parseUpdateField(tokenizer &parser, SqlParsingCtx &ctx);
-
-	/// Parse joined Ns name: [Namespace.field]
-	string parseJoinedFieldName(tokenizer &parser, string &name, SqlParsingCtx &ctx);
-
-	/// Parse merge entries
-	void parseMerge(tokenizer &parser, SqlParsingCtx &ctx);
-
-	/// Tries to find token value among accepted tokens.
-	bool findInPossibleTokens(int type, const string &v);
-	/// Tries to find token value among indexes.
-	bool findInPossibleIndexes(const string &tok, const string &nsName, const Namespaces &namespaces);
-	/// Tries to find among possible namespaces.
-	bool findInPossibleNamespaces(const string &tok, const Namespaces &namespaces);
-	/// Gets names of indexes that start with 'token'.
-	void getMatchingIndexesNames(const Namespaces &namespaces, const string &nsName, const string &token, vector<string> &variants);
-
-	/// Builds print version of a query with join in sql format.
-	/// @param ser - serializer to store SQL string
-	/// @param stripArgs - replace condition values with '?'
-	void dumpJoined(WrSerializer &ser, bool stripArgs) const;
-
-	/// Builds a print version of a query with merge queries in sql format.
-	/// @param ser - serializer to store SQL string
-	/// @param stripArgs - replace condition values with '?'
-	void dumpMerged(WrSerializer &ser, bool stripArgs) const;
-
-	/// Builds a print version of a query's order by statement
-	/// @param ser - serializer to store SQL string
-	/// @param stripArgs - replace condition values with '?'
-	void dumpOrderBy(WrSerializer &ser, bool stripArgs) const;
-
 public:
-	/// Next operation constant.
-	OpType nextOp_ = OpAnd;
+	string _namespace;						/// Name of the namespace.
+	unsigned start = 0;						/// First row index from result set.
+	unsigned count = UINT_MAX;				/// Number of rows from result set.
+	int debugLevel = 0;						/// Debug level.
+	bool explain_ = false;					/// Explain query if true
+	CalcTotalMode calcTotal = ModeNoTotal;  /// Calculation mode.
+	QueryType type_ = QuerySelect;			/// Query type
+	OpType nextOp_ = OpAnd;					/// Next operation constant.
+	SortingEntries sortingEntries_;			/// Sorting data.
+	h_vector<Variant, 0> forcedSortOrder;   /// Keys that always go first - before any ordered values.
+	vector<JoinedQuery> joinQueries_;		/// List of queries for join.
+	vector<JoinedQuery> mergeQueries_;		/// List of merge queries.
+	h_vector<string, 1> selectFilter_;		/// List of columns in a final result set.
+	h_vector<string, 0> selectFunctions_;   /// List of sql functions
 
-	/// Name of the namespace.
-	string _namespace;
+	std::multimap<unsigned, EqualPosition> equalPositions_;  /// List of same position fields for queries with arrays
+	QueryEntries entries;
 
-	/// Sorting data.
-	SortingEntries sortingEntries_;
+	h_vector<AggregateEntry, 0> aggregations_;
+	h_vector<UpdateEntry, 0> updateFields_;  /// List of fields (and values) for update.
+};
 
-	/// Calculation mode.
-	CalcTotalMode calcTotal = ModeNoTotal;
+class JoinedQuery : public Query {
+public:
+	JoinedQuery() = default;
+	JoinedQuery(const Query &q) : Query(q) {}
+	using Query::Query;
+	bool operator==(const JoinedQuery &obj) const;
 
-	/// First row index from result set.
-	unsigned start = 0;
-
-	/// Number of rows from result set.
-	unsigned count = UINT_MAX;
-
-	/// Debug level.
-	int debugLevel = 0;
-
-	/// Default join type.
-	JoinType joinType = JoinType::LeftJoin;
-
-	/// Keys that always go first - before any ordered values.
-	VariantArray forcedSortOrder;
-
-	/// List of queries for join.
-	vector<Query> joinQueries_;
-
-	/// List of merge queries.
-	vector<Query> mergeQueries_;
-
-	/// List of columns in a final result set.
-	h_vector<string, 1> selectFilter_;
-
-	/// List of sql functions
-	h_vector<string, 0> selectFunctions_;
-
-	/// List of same position fields for queries with arrays
-	std::multimap<unsigned, EqualPosition> equalPositions_;
-
-	/// Explain query if true
-	bool explain_ = false;
-	QueryType type_ = QuerySelect;
-
-	/// List of fields (and values) for update.
-	h_vector<UpdateEntry, 0> updateFields_;
+	JoinType joinType{JoinType::LeftJoin};	 /// Default join type.
+	h_vector<QueryJoinEntry, 0> joinEntries_;  /// Condition for join. Filled in each subqueries, empty in  root query
 };
 
 }  // namespace reindexer

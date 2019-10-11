@@ -1,11 +1,11 @@
-#include "core/query/dslencoder.h"
+#include "dslencoder.h"
 #include <unordered_map>
 #include "core/cjson/jsonbuilder.h"
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/p_string.h"
-#include "core/query/aggregationresult.h"
-#include "core/query/dslparsetools.h"
 #include "core/query/query.h"
+#include "core/queryresults/aggregationresult.h"
+#include "dslparser.h"
 
 using std::unordered_map;
 
@@ -47,10 +47,10 @@ void encodeSorting(const SortingEntries& sortingEntries, JsonBuilder& builder) {
 	}
 }
 
-void encodeSingleJoinQuery(const Query& joinQuery, JsonBuilder& builder);
+void encodeSingleJoinQuery(const JoinedQuery& joinQuery, JsonBuilder& builder);
 
 void encodeJoins(const Query& query, JsonBuilder& builder) {
-	for (const Query& joinQuery : query.joinQueries_) {
+	for (const auto& joinQuery : query.joinQueries_) {
 		if (joinQuery.joinType == LeftJoin) {
 			auto node = builder.Object();
 			encodeSingleJoinQuery(joinQuery, node);
@@ -108,7 +108,7 @@ void encodeJoinEntry(const QueryJoinEntry& joinEntry, JsonBuilder& builder) {
 	builder.Put("op", get(op_map, joinEntry.op_));
 }
 
-void encodeSingleJoinQuery(const Query& joinQuery, JsonBuilder& builder) {
+void encodeSingleJoinQuery(const JoinedQuery& joinQuery, JsonBuilder& builder) {
 	auto node = builder.Object("join_query"_sv);
 
 	node.Put("type", get(join_types, joinQuery.joinType));
@@ -129,7 +129,7 @@ void encodeSingleJoinQuery(const Query& joinQuery, JsonBuilder& builder) {
 
 void encodeFilter(const Query& parentQuery, const QueryEntry& qentry, JsonBuilder& builder) {
 	if (qentry.joinIndex == QueryEntry::kNoJoins) {
-		builder.Put("cond", get(cond_map, qentry.condition));
+		builder.Put("cond", get(cond_map, CondType(qentry.condition)));
 		builder.Put("field", qentry.index);
 
 		if (qentry.values.empty()) return;

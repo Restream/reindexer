@@ -1,7 +1,7 @@
 #include "core/aggregator.h"
 #include <algorithm>
 #include <limits>
-#include "core/query/queryresults.h"
+#include "core/queryresults/queryresults.h"
 
 namespace reindexer {
 

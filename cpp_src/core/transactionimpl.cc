@@ -1,5 +1,5 @@
 #include "transactionimpl.h"
-#include "reindexerimpl.h"
+#include "item.h"
 namespace reindexer {
 
 using std::string;
@@ -13,14 +13,8 @@ void TransactionImpl::checkTagsMatcher(Item &item) {
 
 Item TransactionImpl::NewItem() { return Item(new ItemImpl(payloadType_, tagsMatcher_, pkFields_)); }
 
-TransactionImpl::TransactionImpl(const string &nsName, ReindexerImpl *rx, Completion cmpl) : nsName_(nsName), cmpl_(cmpl), rx_(rx) {
-	static const RdxContext dummyCtx;
-	auto nsPtr_ = rx_->getNamespace(nsName_, dummyCtx);
-	Namespace::RLock lck(nsPtr_->mtx_, &dummyCtx);
-	payloadType_ = nsPtr_->payloadType_;
-	tagsMatcher_ = nsPtr_->tagsMatcher_;
-	pkFields_ = nsPtr_->pkFields();
-}
+TransactionImpl::TransactionImpl(const string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf)
+	: payloadType_(pt), tagsMatcher_(tm), pkFields_(pf), nsName_(nsName) {}
 
 void TransactionImpl::UpdateTagsMatcherFromItem(ItemImpl *ritem) {
 	if (ritem->Type().get() != payloadType_.get() || (ritem->tagsMatcher().isUpdated() && !tagsMatcher_.try_merge(ritem->tagsMatcher()))) {

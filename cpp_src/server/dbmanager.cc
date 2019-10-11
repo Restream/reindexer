@@ -192,7 +192,7 @@ Error DBManager::Login(const string &dbName, AuthContext &auth) {
 		}
 	}
 	auth.dbName_ = dbName;
-	logPrintf(LogInfo, "Authorized user '%s', to db '%s', role=%s", auth.login_, dbName, UserRoleName(auth.role_));
+	// logPrintf(LogInfo, "Authorized user '%s', to db '%s', role=%s", auth.login_, dbName, UserRoleName(auth.role_));
 
 	return 0;
 }

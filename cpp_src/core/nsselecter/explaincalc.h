@@ -10,7 +10,7 @@
 namespace reindexer {
 
 class SelectIteratorContainer;
-struct JoinedSelector;
+class JoinedSelector;
 typedef std::vector<JoinedSelector> JoinedSelectors;
 
 class ExplainCalc {

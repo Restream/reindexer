@@ -1,12 +1,12 @@
 #pragma once
 
-#include "core/query/query.h"
+#include <string>
 #include "core/type_consts.h"
-#include "gason/gason.h"
+#include "tools/errors.h"
 
 namespace reindexer {
 class Query;
 namespace dsl {
-void parse(gason::JsonValue& value, Query& q);
+Error Parse(const std::string& dsl, Query& q);
 }  // namespace dsl
 }  // namespace reindexer

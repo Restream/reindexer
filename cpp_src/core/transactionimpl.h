@@ -3,12 +3,6 @@
 
 namespace reindexer {
 
-using std::move;
-using std::string;
-using std::vector;
-using Completion = Transaction::Completion;
-
-class RdxContext;
 class TransactionStep {
 public:
 	TransactionStep(Item &&item, ItemModifyMode status) : item_(move(item)), status_(status), query_(nullptr) {}
@@ -26,7 +20,7 @@ public:
 
 class TransactionImpl {
 public:
-	TransactionImpl(const string &nsName, ReindexerImpl *rx, Completion cmpl = nullptr);
+	TransactionImpl(const std::string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf);
 
 	void Insert(Item &&item);
 	void Update(Item &&item);
@@ -38,7 +32,7 @@ public:
 	void UpdateTagsMatcherFromItem(ItemImpl *ritem);
 	Item NewItem();
 
-	const string &GetName() { return nsName_; }
+	const std::string &GetName() { return nsName_; }
 
 	void checkTagsMatcher(Item &item);
 
@@ -46,10 +40,8 @@ public:
 	TagsMatcher tagsMatcher_;
 	FieldsSet pkFields_;
 
-	vector<TransactionStep> steps_;
-	string nsName_;
-	Completion cmpl_;
-	ReindexerImpl *rx_;
+	std::vector<TransactionStep> steps_;
+	std::string nsName_;
 };
 
 }  // namespace reindexer

@@ -104,7 +104,7 @@ public:
 		if (&other != this) {
 			if (size() != other.size()) return false;
 			for (size_t i = 0; i < size(); ++i) {
-				if (at(i) != other.at(i)) return false;
+				if (!(at(i) == other.at(i))) return false;
 			}
 			return true;
 		}

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/query/querywhere.h"
+#include "core/query/queryentry.h"
 #include "estl/h_vector.h"
 
 namespace reindexer {

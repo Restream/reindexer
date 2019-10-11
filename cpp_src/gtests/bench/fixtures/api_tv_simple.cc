@@ -37,6 +37,7 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("Query2CondLeftJoin", &ApiTvSimple::Query2CondLeftJoin, this);
 	Register("Query2CondLeftJoinTotal", &ApiTvSimple::Query2CondLeftJoinTotal, this);
 	Register("Query2CondLeftJoinCachedTotal", &ApiTvSimple::Query2CondLeftJoinCachedTotal, this);
+	Register("Query0CondInnerJoinUnlimit", &ApiTvSimple::Query0CondInnerJoinUnlimit, this);
 	Register("Query2CondInnerJoin", &ApiTvSimple::Query2CondInnerJoin, this);
 	Register("Query2CondInnerJoinTotal", &ApiTvSimple::Query2CondInnerJoinTotal, this);
 	Register("Query2CondInnerJoinCachedTotal", &ApiTvSimple::Query2CondInnerJoinCachedTotal, this);
@@ -427,6 +428,23 @@ void ApiTvSimple::Query2CondLeftJoinCachedTotal(benchmark::State& state) {
 			.Where("year", CondRange, {2010, 2016})
 			.LeftJoin("price_id", "id", CondSet, q4join)
 			.CachedTotal();
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvSimple::Query0CondInnerJoinUnlimit(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {
+		Query q4join("JoinItems");
+		Query q(nsdef_.name);
+		q.ReqTotal().Limit(1);
+
+		q4join.Where("device", CondEq, "ottstb").Where("location", CondEq, "mos");
+
+		q.InnerJoin("price_id", "id", CondSet, q4join);
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);

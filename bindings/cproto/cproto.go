@@ -99,12 +99,14 @@ func (binding *NetCProto) Ping(ctx context.Context) error {
 
 func (binding *NetCProto) BeginTx(ctx context.Context, namespace string) (txCtx bindings.TxCtx, err error) {
 	buf, err := binding.rpcCall(ctx, opWr, cmdStartTransaction, namespace)
-
-	if len(buf.args) == 0 {
+	if err != nil {
 		return
 	}
+
 	txCtx.Result = buf
-	txCtx.Id = uint64(buf.args[0].(int64))
+	if len(buf.args) > 0 {
+		txCtx.Id = uint64(buf.args[0].(int64))
+	}
 	return
 }
 
@@ -134,8 +136,9 @@ func (binding *NetCProto) RollbackTx(txCtx *bindings.TxCtx) error {
 	defer txBuf.Free()
 	defer netBuffer.Free()
 	netBuffer.needClose = false
-	txBuf.needClose = false
-
+	if txBuf != nil {
+		txBuf.needClose = false
+	}
 	if err != nil {
 		return err
 	}

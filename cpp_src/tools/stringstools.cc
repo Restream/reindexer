@@ -440,13 +440,69 @@ bool isBlank(string_view str) {
 	return true;
 }
 
+int getUTF8StringCharactersCount(string_view str) {
+	int len = 0;
+	try {
+		for (auto it = str.begin(); it != str.end(); ++len) {
+			utf8::next(it, str.end());
+		}
+	} catch (const std::exception &) {
+		return str.length();
+	}
+	return len;
+}
+
 int stoi(string_view sl) {
 	bool valid;
 	return jsteemann::atoi<int>(sl.begin(), sl.end(), valid);
 }
+
 int64_t stoll(string_view sl) {
 	bool valid;
 	return jsteemann::atoi<int64_t>(sl.begin(), sl.end(), valid);
+}
+
+std::string randStringAlph(size_t len) {
+	static const std::string symbols = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+	std::string result;
+	result.reserve(len);
+	while (result.size() < len) {
+		const size_t f = rand() % symbols.size();
+		result += symbols[f];
+	}
+	return result;
+}
+
+template <bool isUtf8>
+Error getBytePosInMultilineString(string_view str, const size_t line, const size_t charPos, size_t &bytePos) {
+	auto it = str.begin();
+	size_t currLine = 0, currCharPos = 0;
+	for (; it != str.end();) {
+		if (*it == '\n')
+			++currLine;
+		else if (currLine == line) {
+			if (currCharPos == charPos) break;
+			++currCharPos;
+		}
+		if (isUtf8) {
+			utf8::next(it, str.end());
+		} else {
+			++it;
+		}
+	}
+	if ((currLine == line) && (charPos == currCharPos)) {
+		bytePos = it - str.begin();
+		return errOK;
+	}
+	return Error(errNotValid, "Wrong cursor position: line=%d, pos=&d", line, charPos);
+}
+
+Error cursosPosToBytePos(string_view str, size_t line, size_t charPos, size_t &bytePos) {
+	try {
+		return getBytePosInMultilineString<true>(str, line, charPos, bytePos);
+	} catch (const utf8::exception &) {
+		return getBytePosInMultilineString<false>(str, line, charPos, bytePos);
+	}
 }
 
 }  // namespace reindexer

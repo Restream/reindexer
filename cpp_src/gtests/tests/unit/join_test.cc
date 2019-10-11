@@ -3,7 +3,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "core/itemimpl.h"
-#include "core/query/joinresults.h"
 #include "join_selects_api.h"
 
 TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest) {

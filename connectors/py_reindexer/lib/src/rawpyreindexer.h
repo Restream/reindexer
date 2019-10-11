@@ -17,10 +17,8 @@
 #include "tools/serializer.h"
 
 #ifdef PYREINDEXER_CPROTO
-#include "client/queryresults.h"
 #include "client/reindexer.h"
 #else
-#include "core/query/queryresults.h"
 #include "core/reindexer.h"
 #endif
 

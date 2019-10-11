@@ -259,8 +259,9 @@ type StatusCProto struct {
 }
 
 type StatusBuiltin struct {
-	CGOLimit int
-	CGOUsage int
+	CGOLimit           int
+	CGOUsage           int
+	CGOUsageLastMinAvg int
 }
 
 type Completion func(err error)

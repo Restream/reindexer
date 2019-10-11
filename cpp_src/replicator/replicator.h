@@ -3,6 +3,7 @@
 #include <string>
 #include <thread>
 #include "core/dbconfig.h"
+#include "core/namespace.h"
 #include "core/namespacestat.h"
 #include "estl/atomic_unique_ptr.h"
 #include "estl/fast_hash_map.h"
@@ -18,9 +19,6 @@ class QueryResults;
 }  // namespace client
 
 class ReindexerImpl;
-struct NamespaceDef;
-class Namespace;
-class TagsMatcher;
 
 class Replicator : public IUpdatesObserver {
 public:
@@ -47,12 +45,14 @@ protected:
 	Error syncNamespaceByWAL(const NamespaceDef &ns);
 	// Apply WAL from master to namespace
 	Error applyWAL(string_view nsName, client::QueryResults &qr);
+	// Apply WAL from master to namespace
+	Error applyWAL(Namespace::Ptr slaveNs, client::QueryResults &qr);
 	// Sync indexes of namespace
-	Error syncIndexesForced(const NamespaceDef &ns);
+	Error syncIndexesForced(Namespace::Ptr slaveNs, const NamespaceDef &masterNsDef);
 	// Forced sync of namespace
 	Error syncNamespaceForced(const NamespaceDef &ns, string_view reason);
 	// Sync meta data
-	Error syncMetaForced(string_view nsName);
+	Error syncMetaForced(reindexer::Namespace::Ptr slaveNs);
 	// Apply single WAL record
 	Error applyWALRecord(int64_t lsn, string_view nsName, std::shared_ptr<Namespace> ns, const WALRecord &wrec, SyncStat &stat);
 	// Apply single cjson item
@@ -81,6 +81,8 @@ protected:
 	std::mutex syncMtx_;
 	std::mutex masterMtx_;
 	std::atomic<bool> enabled_;
+
+	const RdxContext dummyCtx_;
 };
 
 }  // namespace reindexer

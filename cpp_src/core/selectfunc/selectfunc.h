@@ -1,7 +1,7 @@
 #pragma once
 #include <set>
 #include "core/query/query.h"
-#include "core/query/queryresults.h"
+#include "core/queryresults/queryresults.h"
 #include "ctx/basefunctionctx.h"
 #include "nsselectfuncinterface.h"
 

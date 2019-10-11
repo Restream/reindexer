@@ -60,13 +60,13 @@ void ClientConnection::connectInternal() {
 		state_ = ans.Status().ok() ? ConnConnected : ConnFailed;
 		wrBuf_.clear();
 		connectCond_.notify_all();
-		if (lastError_.code() == errTimeout) {
+		if (!lastError_.ok()) {
 			lck.unlock();
 			closeConn();
 		}
 	};
 
-	sock_.connect((uri_->hostname() + ":" + port).c_str());
+	sock_.connect((uri_->hostname() + ":" + port));
 	if (!sock_.valid()) {
 		completion(RPCAnswer(Error(errNetwork, "Socket connect error: %d", sock_.last_error())), this);
 	} else {
@@ -105,7 +105,7 @@ void ClientConnection::deadline_check_cb(ev::timer &, int) {
 	for (auto &c : completions_) {
 		for (RPCCompletion *cc = &c; cc; cc = cc->next.get()) {
 			if (cc->used && cc->deadline.count() && cc->deadline.count() <= now_) {
-				cc->cmpl(RPCAnswer(errTimeout), this);
+				cc->cmpl(RPCAnswer(Error(errTimeout, "Request deadline exceeded")), this);
 				if (state_ == ConnFailed) {
 					return;
 				}
@@ -290,12 +290,13 @@ void ClientConnection::call(Completion cmpl, CmdCode cmd, seconds netTimeout, mi
 						connectCond_.wait(lck);
 						if (deadline.count() && deadline <= Now()) {
 							lck.unlock();
-							cmpl(RPCAnswer(errTimeout), this);
+							cmpl(RPCAnswer(Error(errTimeout, "Connection deadline exceeded")), this);
 							return;
 						}
 						if (state_ == ConnFailed) {
+							auto err = lastError_;
 							lck.unlock();
-							cmpl(RPCAnswer(lastError_), this);
+							cmpl(RPCAnswer(err), this);
 							return;
 						}
 					}

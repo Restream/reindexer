@@ -8,6 +8,7 @@
 #include "core/type_consts.h"
 #include "estl/string_view.h"
 #include "tools/customhash.h"
+#include "tools/errors.h"
 
 using std::string;
 using std::vector;
@@ -45,6 +46,8 @@ void split(string_view str, string& buf, vector<const char*>& words, const strin
 size_t calcUTf8Size(const char* s, size_t size, size_t limit);
 size_t calcUTf8SizeEnd(const char* end, int pos, size_t limit);
 
+int getUTF8StringCharactersCount(string_view str);
+
 class Word2PosHelper {
 public:
 	Word2PosHelper(string_view data, const string& extraWordSymbols);
@@ -80,6 +83,10 @@ bool iequals(string_view lhs, string_view rhs);
 bool checkIfStartsWith(string_view src, string_view pattern);
 bool isPrintable(string_view str);
 bool isBlank(string_view token);
+
+Error cursosPosToBytePos(string_view str, size_t line, size_t charPos, size_t& bytePos);
+
+string randStringAlph(size_t len);
 
 struct nocase_equal_str {
 	using is_transparent = void;

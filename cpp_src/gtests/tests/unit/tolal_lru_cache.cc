@@ -3,7 +3,7 @@
 #include <vector>
 
 #include "core/query/query.h"
-#include "core/query/querycache.h"
+#include "core/querycache.h"
 #include "debug/allocdebug.h"
 #include "gtests/tests/gtest_cout.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"

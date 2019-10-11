@@ -29,7 +29,7 @@ Error Reindexer::Update(string_view nsName, Item& item) { return impl_->Update(n
 Error Reindexer::Upsert(string_view nsName, Item& item) { return impl_->Upsert(nsName, item, ctx_); }
 Error Reindexer::Delete(string_view nsName, Item& item) { return impl_->Delete(nsName, item, ctx_); }
 Item Reindexer::NewItem(string_view nsName) { return impl_->NewItem(nsName, ctx_); }
-Transaction Reindexer::NewTransaction(string_view nsName) { return impl_->NewTransaction(string(nsName)); }
+Transaction Reindexer::NewTransaction(string_view nsName) { return impl_->NewTransaction(nsName, ctx_); }
 Error Reindexer::CommitTransaction(Transaction& tr) { return impl_->CommitTransaction(tr, ctx_); }
 Error Reindexer::RollBackTransaction(Transaction& tr) { return impl_->RollBackTransaction(tr); }
 Error Reindexer::GetMeta(string_view nsName, const string& key, string& data) { return impl_->GetMeta(nsName, key, data, ctx_); }
@@ -47,7 +47,7 @@ Error Reindexer::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll) { ret
 Error Reindexer::InitSystemNamespaces() { return impl_->InitSystemNamespaces(); }
 Error Reindexer::SubscribeUpdates(IUpdatesObserver* observer, bool subscribe) { return impl_->SubscribeUpdates(observer, subscribe); }
 Error Reindexer::GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string>& suggestions) {
-	return impl_->GetSqlSuggestions(sqlQuery, pos, suggestions);
+	return impl_->GetSqlSuggestions(sqlQuery, pos, suggestions, ctx_);
 }
 
 }  // namespace reindexer

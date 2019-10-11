@@ -24,6 +24,8 @@ IDataStorage* StorageFactory::create(StorageType type) {
 	}
 }
 
+IDataStorage* create(string_view type) { return StorageFactory::create(StorageTypeFromString(type)); }
+
 std::vector<StorageType> StorageFactory::getAvailableTypes() {
 	std::vector<StorageType> types;
 #ifdef REINDEX_WITH_LEVELDB

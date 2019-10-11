@@ -116,6 +116,9 @@ void ReplicationState::GetJSON(JsonBuilder &builder) {
 	builder.Put("last_lsn", lastLsn);
 	builder.Put("cluster_id", clusterID);
 	builder.Put("slave_mode", slaveMode);
+	builder.Put("temporary", temporary);
+	builder.Put("error_code", replError.code());
+	builder.Put("error_message", replError.what());
 	builder.Put("incarnation_counter", incarnationCounter);
 	builder.Put("data_hash", dataHash);
 	builder.Put("data_count", dataCount);
@@ -130,6 +133,9 @@ void ReplicationState::FromJSON(span<char> json) {
 		lastLsn = root["last_lsn"].As<int64_t>();
 		clusterID = root["cluster_id"].As<int>();
 		slaveMode = root["slave_mode"].As<bool>();
+		temporary = root["temporary"].As<bool>();
+		int errCode = root["error_code"].As<int>();
+		replError = Error(errCode, root["error_message"].As<std::string>());
 		incarnationCounter = root["incarnation_counter"].As<int>();
 		dataHash = root["data_hash"].As<uint64_t>();
 		dataCount = root["data_count"].As<int>();

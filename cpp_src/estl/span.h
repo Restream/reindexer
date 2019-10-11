@@ -57,11 +57,26 @@ public:
 	constexpr const T& at(size_type pos) const { return data_[pos]; }
 	constexpr const T& front() const { return data_[0]; }
 	constexpr const T& back() const { return data_[size() - 1]; }
+	T& at(size_type pos) { return data_[pos]; }
+	T& front() { return data_[0]; }
+	T& back() { return data_[size() - 1]; }
+
 	constexpr pointer data() const noexcept { return data_; }
 	span subspan(size_type offset, size_type count) const noexcept {
 		assert(offset + count <= size_);
 		return span(data_ + offset, count);
 	}
+	bool operator==(const span& other) const noexcept {
+		if (&other != this) {
+			if (size() != other.size()) return false;
+			for (size_t i = 0; i < size(); ++i) {
+				if (!(at(i) == other.at(i))) return false;
+			}
+			return true;
+		}
+		return true;
+	}
+	bool operator!=(const span& other) const noexcept { return !operator==(other); }
 
 protected:
 	pointer data_;

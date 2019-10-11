@@ -7,12 +7,12 @@ class QueryResults;
 struct SelectCtx;
 class WALSelecter {
 public:
-	WALSelecter(Namespace *ns);
+	WALSelecter(const Namespace *ns);
 	void operator()(QueryResults &result, SelectCtx &params);
 
 protected:
 	void putReplState(QueryResults &result);
-	Namespace *ns_;
+	const Namespace *ns_;
 };
 
-};  // namespace reindexer
+}  // namespace reindexer
