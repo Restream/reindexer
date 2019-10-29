@@ -25,7 +25,7 @@ public:
 	typedef std::function<void(const Error &err)> Completion;
 	QueryResults(int fetchFlags = 0);
 	QueryResults(const QueryResults &) = delete;
-	QueryResults(QueryResults &&);
+	QueryResults(QueryResults &&) = default;
 	~QueryResults();
 	QueryResults &operator=(const QueryResults &) = delete;
 	QueryResults &operator=(QueryResults &&obj) noexcept;

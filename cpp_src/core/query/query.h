@@ -349,6 +349,9 @@ public:
 
 	void WalkNested(bool withSelf, bool withMerged, std::function<void(const Query &q)> visitor) const;
 
+	bool HasLimit() const noexcept { return count != UINT_MAX; }
+	bool HasOffset() const noexcept { return start != 0; }
+
 protected:
 	void deserialize(Serializer &ser, bool &hasJoinConditions);
 

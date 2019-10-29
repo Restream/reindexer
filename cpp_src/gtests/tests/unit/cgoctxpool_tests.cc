@@ -38,14 +38,14 @@ TEST_F(CGOCtxPoolApi, SingleThread) {
 	auto& contexts = pool->contexts();
 	ASSERT_EQ(contexts.size(), kCtxPoolSize);
 	for (size_t i = 0; i < kCtxPoolSize; ++i) {
-		EXPECT_TRUE(ContextsPool<CGORdxContext>::isInitialized(contexts[i].ctxID));
-		EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceling(contexts[i].ctxID));
-		EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceled(contexts[i].ctxID));
+		EXPECT_TRUE(ContextsPoolImpl<CancelContextImpl>::isInitialized(contexts[i].ctxID));
+		EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceling(contexts[i].ctxID));
+		EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceled(contexts[i].ctxID));
 		if (i < kCtxPoolSize / 2 + 1 && i != 0) {
 			ASSERT_TRUE(contexts[i].next != nullptr);
-			EXPECT_TRUE(ContextsPool<CGORdxContext>::isInitialized(contexts[i].next->ctxID));
-			EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceling(contexts[i].next->ctxID));
-			EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceled(contexts[i].next->ctxID));
+			EXPECT_TRUE(ContextsPoolImpl<CancelContextImpl>::isInitialized(contexts[i].next->ctxID));
+			EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceling(contexts[i].next->ctxID));
+			EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceled(contexts[i].next->ctxID));
 			ASSERT_TRUE(contexts[i].next->next == nullptr);
 		} else {
 			ASSERT_TRUE(contexts[i].next == nullptr);
@@ -56,25 +56,25 @@ TEST_F(CGOCtxPoolApi, SingleThread) {
 	EXPECT_FALSE(pool->cancelContext(0, CancelType::Explicit));
 	for (uint64_t i = 1; i < kCtxPoolSize / 2 + 1; ++i) {
 		ASSERT_TRUE(pool->cancelContext(i, CancelType::Explicit));
-		EXPECT_EQ(ctxPtrs[i - 1]->checkCancel(), CancelType::Explicit);
+		EXPECT_EQ(ctxPtrs[i - 1]->GetCancelType(), CancelType::Explicit);
 	}
 
 	auto validateAfterCancel = [&]() {
 		for (size_t i = 0; i < kCtxPoolSize; ++i) {
 			if (i < kCtxPoolSize / 2 + 1 && i != 0) {
-				EXPECT_TRUE(ContextsPool<CGORdxContext>::isInitialized(contexts[i].ctxID));
-				EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceling(contexts[i].ctxID));
-				EXPECT_TRUE(ContextsPool<CGORdxContext>::isCanceled(contexts[i].ctxID));
+				EXPECT_TRUE(ContextsPoolImpl<CancelContextImpl>::isInitialized(contexts[i].ctxID));
+				EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceling(contexts[i].ctxID));
+				EXPECT_TRUE(ContextsPoolImpl<CancelContextImpl>::isCanceled(contexts[i].ctxID));
 
 				ASSERT_TRUE(contexts[i].next != nullptr);
-				EXPECT_TRUE(ContextsPool<CGORdxContext>::isInitialized(contexts[i].next->ctxID));
-				EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceling(contexts[i].next->ctxID));
-				EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceled(contexts[i].next->ctxID));
+				EXPECT_TRUE(ContextsPoolImpl<CancelContextImpl>::isInitialized(contexts[i].next->ctxID));
+				EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceling(contexts[i].next->ctxID));
+				EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceled(contexts[i].next->ctxID));
 				ASSERT_TRUE(contexts[i].next->next == nullptr);
 			} else {
-				EXPECT_TRUE(ContextsPool<CGORdxContext>::isInitialized(contexts[i].ctxID));
-				EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceling(contexts[i].ctxID));
-				EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceled(contexts[i].ctxID));
+				EXPECT_TRUE(ContextsPoolImpl<CancelContextImpl>::isInitialized(contexts[i].ctxID));
+				EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceling(contexts[i].ctxID));
+				EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceled(contexts[i].ctxID));
 				ASSERT_TRUE(contexts[i].next == nullptr);
 			}
 		}
@@ -93,21 +93,21 @@ TEST_F(CGOCtxPoolApi, SingleThread) {
 	}
 
 	for (size_t i = 0; i < kCtxPoolSize; ++i) {
-		EXPECT_TRUE(ContextsPool<CGORdxContext>::isInitialized(contexts[i].ctxID));
-		EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceling(contexts[i].ctxID));
+		EXPECT_TRUE(ContextsPoolImpl<CancelContextImpl>::isInitialized(contexts[i].ctxID));
+		EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceling(contexts[i].ctxID));
 		ASSERT_TRUE(contexts[i].next != nullptr);
-		EXPECT_TRUE(ContextsPool<CGORdxContext>::isInitialized(contexts[i].next->ctxID));
-		EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceling(contexts[i].next->ctxID));
-		EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceled(contexts[i].next->ctxID));
+		EXPECT_TRUE(ContextsPoolImpl<CancelContextImpl>::isInitialized(contexts[i].next->ctxID));
+		EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceling(contexts[i].next->ctxID));
+		EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceled(contexts[i].next->ctxID));
 		if (i < kCtxPoolSize / 2 + 1 && i != 0) {
-			EXPECT_TRUE(ContextsPool<CGORdxContext>::isCanceled(contexts[i].ctxID));
+			EXPECT_TRUE(ContextsPoolImpl<CancelContextImpl>::isCanceled(contexts[i].ctxID));
 			ASSERT_TRUE(contexts[i].next->next != nullptr);
-			EXPECT_TRUE(ContextsPool<CGORdxContext>::isInitialized(contexts[i].next->next->ctxID));
-			EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceling(contexts[i].next->next->ctxID));
-			EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceled(contexts[i].next->next->ctxID));
+			EXPECT_TRUE(ContextsPoolImpl<CancelContextImpl>::isInitialized(contexts[i].next->next->ctxID));
+			EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceling(contexts[i].next->next->ctxID));
+			EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceled(contexts[i].next->next->ctxID));
 			ASSERT_TRUE(contexts[i].next->next->next == nullptr);
 		} else {
-			EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceled(contexts[i].ctxID));
+			EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceled(contexts[i].ctxID));
 			ASSERT_TRUE(contexts[i].next->next == nullptr);
 		}
 	}
@@ -122,14 +122,14 @@ TEST_F(CGOCtxPoolApi, SingleThread) {
 		for (size_t i = 0; i < kCtxPoolSize; ++i) {
 			EXPECT_EQ(contexts[i].ctxID, 0);
 			ASSERT_TRUE(contexts[i].next != nullptr);
-			EXPECT_TRUE(ContextsPool<CGORdxContext>::isInitialized(contexts[i].next->ctxID));
-			EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceling(contexts[i].next->ctxID));
-			EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceled(contexts[i].next->ctxID));
+			EXPECT_TRUE(ContextsPoolImpl<CancelContextImpl>::isInitialized(contexts[i].next->ctxID));
+			EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceling(contexts[i].next->ctxID));
+			EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceled(contexts[i].next->ctxID));
 			if (i < kCtxPoolSize / 2 + 1 && i != 0) {
 				ASSERT_TRUE(contexts[i].next->next != nullptr);
-				EXPECT_TRUE(ContextsPool<CGORdxContext>::isInitialized(contexts[i].next->next->ctxID));
-				EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceling(contexts[i].next->next->ctxID));
-				EXPECT_FALSE(ContextsPool<CGORdxContext>::isCanceled(contexts[i].next->next->ctxID));
+				EXPECT_TRUE(ContextsPoolImpl<CancelContextImpl>::isInitialized(contexts[i].next->next->ctxID));
+				EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceling(contexts[i].next->next->ctxID));
+				EXPECT_FALSE(ContextsPoolImpl<CancelContextImpl>::isCanceled(contexts[i].next->next->ctxID));
 				ASSERT_TRUE(contexts[i].next->next->next == nullptr);
 			} else {
 				ASSERT_TRUE(contexts[i].next->next == nullptr);
@@ -194,7 +194,7 @@ void CGOCtxPoolApi::multiThreadTest(size_t threadsCount, MultiThreadTestMode mod
 				if (ctxPtrs[i] && i % 2 == 0) {
 					EXPECT_TRUE(pool->cancelContext(i + 1, CancelType::Explicit));
 					if (mode == MultiThreadTestMode::Synced) {
-						EXPECT_EQ(ctxPtrs[i]->checkCancel(), CancelType::Explicit);
+						EXPECT_EQ(ctxPtrs[i]->GetCancelType(), CancelType::Explicit);
 					}
 				}
 			}
@@ -270,7 +270,7 @@ TEST_F(CGOCtxPoolApi, ConcurrentCancel) {
 				}
 
 				for (uint64_t i = kCtxCount * threadID, j = 0; i < kCtxCount * (threadID + 1); ++i, ++j) {
-					while (ctxPtrs[j]->checkCancel() == CancelType::None) {
+					while (ctxPtrs[j]->GetCancelType() == CancelType::None) {
 						std::this_thread::yield();
 					}
 					EXPECT_TRUE(pool->removeContext(i + 1));

@@ -21,7 +21,7 @@ void ServerConfig::Reset() {
 #ifndef _WIN32
 	StoragePath = "/tmp/reindex";
 	UserName.clear();
-	DaemonPidFile = "/tmp/reindexer.pid";
+	DaemonPidFile = "reindexer.pid";
 	Daemonize = false;
 #else
 	StoragePath = "\\reindexer";
@@ -35,6 +35,7 @@ void ServerConfig::Reset() {
 	EnablePrometheus = false;
 	PrometheusCollectPeriod = std::chrono::milliseconds(1000);
 	DebugAllocs = false;
+	Autorepair = false;
 }
 
 reindexer::Error ServerConfig::ParseYaml(const std::string &yaml) {
@@ -72,6 +73,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::HelpFlag help(parser, "help", "Show this message", {'h', "help"});
 	args::Flag securityF(parser, "", "Enable per-user security", {"security"});
 	args::ValueFlag<string> configF(parser, "CONFIG", "Path to reindexer config file", {'c', "config"}, args::Options::Single);
+	args::Flag startWithErrorsF(parser, "", "Allow to start reindexer with DB's load erros", {"startwitherrors"});
 
 	args::Group dbGroup(parser, "Database options");
 	args::ValueFlag<string> storageF(dbGroup, "PATH", "path to 'reindexer' storage", {'s', "db"}, StoragePath, args::Options::Single);
@@ -85,7 +87,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	}
 	args::ValueFlag<string> storageEngineF(dbGroup, "NAME", "'reindexer' storage engine (" + availabledStorages + ")", {'e', "engine"},
 										   StorageEngine, args::Options::Single);
-	args::Flag startWithErrorsF(parser, "", "Allow to start reindexer with DB's load erros", {"startwitherrors"});
+	args::Flag autorepairF(dbGroup, "", "Enable autorepair for storages after unexpected shutdowns", {"autorepair"});
 
 	args::Group netGroup(parser, "Network options");
 	args::ValueFlag<string> httpAddrF(netGroup, "PORT", "http listen host:port", {'p', "httpaddr"}, HTTPAddr, args::Options::Single);
@@ -136,6 +138,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (storageF) StoragePath = args::get(storageF);
 	if (storageEngineF) StorageEngine = args::get(storageEngineF);
 	if (startWithErrorsF) StartWithErrors = args::get(startWithErrorsF);
+	if (autorepairF) Autorepair = args::get(autorepairF);
 	if (logLevelF) LogLevel = args::get(logLevelF);
 	if (httpAddrF) HTTPAddr = args::get(httpAddrF);
 	if (rpcAddrF) RPCAddr = args::get(rpcAddrF);
@@ -168,6 +171,7 @@ reindexer::Error ServerConfig::fromYaml(Yaml::Node &root) {
 		StoragePath = root["storage"]["path"].As<std::string>(StoragePath);
 		StorageEngine = root["storage"]["engine"].As<std::string>(StorageEngine);
 		StartWithErrors = root["storage"]["startwitherrors"].As<bool>(StartWithErrors);
+		Autorepair = root["storage"]["autorepair"].As<bool>(Autorepair);
 		LogLevel = root["logger"]["loglevel"].As<std::string>(LogLevel);
 		ServerLog = root["logger"]["serverlog"].As<std::string>(ServerLog);
 		CoreLog = root["logger"]["corelog"].As<std::string>(CoreLog);

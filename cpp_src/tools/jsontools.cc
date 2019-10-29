@@ -1,12 +1,13 @@
 #include "jsontools.h"
 #include <string.h>
 #include <cmath>
+#include "core/cjson/jsonbuilder.h"
 #include "stringstools.h"
 
 namespace reindexer {
 
-void jsonValueToString(gason::JsonValue o, WrSerializer &ser, int shift, int indent) {
-	bool enableEol = shift != 0 || indent != 0;
+void jsonValueToString(gason::JsonValue o, WrSerializer &ser, int shift, int indent, bool escapeStrings) {
+	bool enableEol = (shift != 0) || (indent != 0);
 	switch (o.getTag()) {
 		case gason::JSON_NUMBER:
 			ser << int64_t(o.toNumber());
@@ -15,7 +16,11 @@ void jsonValueToString(gason::JsonValue o, WrSerializer &ser, int shift, int ind
 			ser << o.toDouble();
 			break;
 		case gason::JSON_STRING:
-			ser.PrintJsonString(o.toString());
+			if (escapeStrings) {
+				ser.PrintJsonString(o.toString());
+			} else {
+				ser << o.toString();
+			}
 			break;
 		case gason::JSON_ARRAY:
 			if (!o.toNode()) {

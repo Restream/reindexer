@@ -17,49 +17,6 @@ namespace reindexer {
 const string kSeparator = " | ";
 const int kSuppositiveScreenWidth = 100;
 
-string getJsonNodeStringValue(const gason::JsonNode& elem) {
-	string fieldValue;
-	switch (elem.value.getTag()) {
-		case gason::JSON_NUMBER:
-			fieldValue = std::to_string(elem.value.toNumber());
-			break;
-		case gason::JSON_DOUBLE:
-			fieldValue = std::to_string(elem.value.toDouble());
-			break;
-		case gason::JSON_STRING:
-			fieldValue = string(elem.value.toString());
-			break;
-		case gason::JSON_TRUE:
-			fieldValue = "true";
-			break;
-		case gason::JSON_FALSE:
-			fieldValue = "false";
-			break;
-		case gason::JSON_NULL:
-			fieldValue = "NULL";
-			break;
-		case gason::JSON_OBJECT: {
-			WrSerializer ser;
-			JsonBuilder jsonBuilder(ser);
-			for (auto item : elem.value) {
-				jsonBuilder.Put(item->key, getJsonNodeStringValue(*item));
-			}
-			fieldValue = string(ser.Slice());
-		} break;
-		case gason::JSON_ARRAY: {
-			int idx = 0;
-			for (auto item : elem.value) {
-				if (idx++ != 0) fieldValue += ",";
-				fieldValue += getJsonNodeStringValue(*item);
-			}
-		} break;
-		default:
-			fieldValue = "NULL";
-			break;
-	}
-	return fieldValue;
-}
-
 bool ColumnData::IsNumber() const { return (type == gason::JSON_NUMBER) || (type == gason::JSON_DOUBLE); }
 
 bool ColumnData::IsBoolean() const { return (type == gason::JSON_TRUE) || (type == gason::JSON_FALSE); }
@@ -86,7 +43,9 @@ void TableCalculator<QueryResultsT>::calculate() {
 		Row rowData;
 
 		for (auto& elem : root) {
-			string fieldValue = getJsonNodeStringValue(elem);
+			WrSerializer wrser;
+			jsonValueToString(elem.value, wrser, 0, 0, false);
+			string fieldValue = string(wrser.Slice());
 			string fieldName = string(elem.key);
 			ColumnData& columnData = columnsData_[fieldName];
 
@@ -108,7 +67,7 @@ void TableCalculator<QueryResultsT>::calculate() {
 
 	int currentLength = 0;
 	for (auto it = header_.begin(); it != header_.end();) {
-		const string& columnName = *it;
+		string columnName = *it;
 		ColumnData& columnData = columnsData_[columnName];
 		if ((columnData.entries <= int(rows_.size() / 3)) || (columnData.emptyValues == int(rows_.size()))) {
 			it = header_.erase(it);
@@ -176,15 +135,19 @@ template <typename QueryResultsT>
 TableViewBuilder<QueryResultsT>::TableViewBuilder(const QueryResultsT& r) : r_(r) {}
 
 template <typename QueryResultsT>
-void TableViewBuilder<QueryResultsT>::Build(std::ostream& o) {
+void TableViewBuilder<QueryResultsT>::Build(std::ostream& o, const std::function<bool(void)>& isCanceled) {
+	if (isCanceled()) return;
 	TerminalSize terminalSize = reindexer::getTerminalSize();
 	TableCalculator<QueryResultsT> tableCalculator(r_, terminalSize.width);
-	buildHeader(o, tableCalculator);
-	buildTable(o, tableCalculator);
+	BuildHeader(o, tableCalculator, isCanceled);
+	BuildTable(o, tableCalculator, isCanceled);
 }
 
 template <typename QueryResultsT>
-void TableViewBuilder<QueryResultsT>::buildHeader(std::ostream& o, TableCalculator<QueryResultsT>& tableCalculator) {
+void TableViewBuilder<QueryResultsT>::BuildHeader(std::ostream& o, TableCalculator<QueryResultsT>& tableCalculator,
+												  const std::function<bool(void)>& isCanceled) {
+	if (isCanceled()) return;
+
 	auto& header = tableCalculator.GetHeader();
 	auto& columnsData = tableCalculator.GetColumnsSettings();
 
@@ -212,82 +175,93 @@ bool TableViewBuilder<QueryResultsT>::isValueMultiline(string_view value, bool b
 }
 
 template <typename QueryResultsT>
-void TableViewBuilder<QueryResultsT>::buildTable(std::ostream& o, TableCalculator<QueryResultsT>& tableCalculator) {
-	auto startLine = [&o](const int& currLineWidth) {
-		o << std::endl;
-		for (size_t i = 0; i < currLineWidth - kSeparator.length(); ++i) o << " ";
-		o << kSeparator;
-	};
-	auto& rows = tableCalculator.GetRows();
+void TableViewBuilder<QueryResultsT>::startLine(std::ostream& o, const int& currLineWidth) {
+	o << std::endl;
+	for (size_t i = 0; i < currLineWidth - kSeparator.length(); ++i) o << " ";
+	o << kSeparator;
+}
+
+template <typename QueryResultsT>
+void TableViewBuilder<QueryResultsT>::BuildRow(std::ostream& o, int idx, TableCalculator<QueryResultsT>& tableCalculator) {
 	auto& columnsData = tableCalculator.GetColumnsSettings();
 	auto& header = tableCalculator.GetHeader();
-	for (size_t i = 0; i < rows.size(); ++i) {
-		size_t columnIdx = 0;
-		int currLineWidth = 0;
-		auto& row = rows[i];
-		for (auto it = header.begin(); it != header.end(); ++it, ++columnIdx) {
-			const string& columnName = *it;
-			auto& columnData = columnsData[columnName];
-			string& value = row[columnName];
 
-			ensureFieldWidthIsOk(value, columnData.widthCh);
+	size_t columnIdx = 0;
+	int currLineWidth = 0;
+	auto& row = tableCalculator.GetRows()[idx];
+	for (auto it = header.begin(); it != header.end(); ++it, ++columnIdx) {
+		const string& columnName = *it;
+		auto& columnData = columnsData[columnName];
+		string& value = row[columnName];
 
-			const int symbolsTillTheEOFLine = tableCalculator.GetOutputWidth() - currLineWidth;
-			bool lastColumn = (columnIdx == header.size() - 1);
-			bool breakingTheLine = (currLineWidth + columnData.widthCh > tableCalculator.GetOutputWidth());
-			bool mutliLineValue = isValueMultiline(value, breakingTheLine, columnData, symbolsTillTheEOFLine);
+		ensureFieldWidthIsOk(value, columnData.widthCh);
 
-			if (mutliLineValue) {
-				int sz = 0, count = 0;
-				int pos = 0, total = 0;
-				int currWidth = 0;
+		const int symbolsTillTheEOFLine = tableCalculator.GetOutputWidth() - currLineWidth;
+		bool lastColumn = (columnIdx == header.size() - 1);
+		bool breakingTheLine = (currLineWidth + columnData.widthCh > tableCalculator.GetOutputWidth());
+		bool mutliLineValue = isValueMultiline(value, breakingTheLine, columnData, symbolsTillTheEOFLine);
 
-				const char* cstr = value.c_str();
-				const char* end = cstr + value.length();
+		if (mutliLineValue) {
+			int sz = 0, count = 0;
+			int pos = 0, total = 0;
+			int currWidth = 0;
 
-				for (wchar_t wc; (sz = std::mbtowc(&wc, cstr, end - cstr)) > 0; cstr += sz) {
-					currWidth += mk_wcwidth(wc);
-					if (currWidth >= symbolsTillTheEOFLine) {
-						if (pos != 0) startLine(currLineWidth);
-						o << std::left;
-						o << value.substr(pos, count);
-						pos = total;
-						currWidth = count = 0;
-					}
-					count += sz;
-					total += sz;
-				}
+			const char* cstr = value.c_str();
+			const char* end = cstr + value.length();
 
-				if (count > 0) {
-					if (pos != 0) startLine(currLineWidth);
-					o << value.substr(pos, count);
-				}
-			} else {
-				o << std::setw(computeFieldWidth(value, columnData.widthCh));
-				if (columnData.IsNumber() && columnIdx && !lastColumn) {
-					o << std::right;
-				} else {
+			for (wchar_t wc; (sz = std::mbtowc(&wc, cstr, end - cstr)) > 0; cstr += sz) {
+				currWidth += mk_wcwidth(wc);
+				if (currWidth >= symbolsTillTheEOFLine) {
+					if (pos != 0) startLine(o, currLineWidth);
 					o << std::left;
+					o << value.substr(pos, count);
+					pos = total;
+					currWidth = count = 0;
 				}
-				o << value;
+				count += sz;
+				total += sz;
 			}
-			if (!lastColumn) {
-				if (breakingTheLine) {
-					currLineWidth = (currLineWidth + columnData.widthCh) - tableCalculator.GetOutputWidth();
-					currLineWidth += kSeparator.length();
-					if (mutliLineValue) {
-						startLine(currLineWidth);
-					} else {
-						o << kSeparator;
-					}
+
+			if (count > 0) {
+				if (pos != 0) startLine(o, currLineWidth);
+				o << value.substr(pos, count);
+			}
+		} else {
+			o << std::setw(computeFieldWidth(value, columnData.widthCh));
+			if (columnData.IsNumber() && columnIdx && !lastColumn) {
+				o << std::right;
+			} else {
+				o << std::left;
+			}
+			o << value;
+		}
+		if (!lastColumn) {
+			if (breakingTheLine) {
+				currLineWidth = (currLineWidth + columnData.widthCh) - tableCalculator.GetOutputWidth();
+				currLineWidth += kSeparator.length();
+				if (mutliLineValue) {
+					startLine(o, currLineWidth);
 				} else {
-					currLineWidth += columnData.widthCh;
-					currLineWidth += kSeparator.length();
 					o << kSeparator;
 				}
+			} else {
+				currLineWidth += columnData.widthCh;
+				currLineWidth += kSeparator.length();
+				o << kSeparator;
 			}
 		}
-		o << std::endl;
+	}
+	o << std::endl;
+}
+
+template <typename QueryResultsT>
+void TableViewBuilder<QueryResultsT>::BuildTable(std::ostream& o, TableCalculator<QueryResultsT>& tableCalculator,
+												 const std::function<bool(void)>& isCanceled) {
+	if (isCanceled()) return;
+	auto& rows = tableCalculator.GetRows();
+	for (size_t i = 0; i < rows.size(); ++i) {
+		if (isCanceled()) return;
+		BuildRow(o, i, tableCalculator);
 	}
 }
 

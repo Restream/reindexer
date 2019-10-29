@@ -1,13 +1,14 @@
 package cjson
 
 import (
+	"reflect"
 	"sync"
 )
 
 type StateData struct {
 	tagsMatcher tagsMatcher
 	payloadType payloadType
-	ctagsCache  ctagsCache
+	structCache structCache
 	ctagsWCache ctagsWCache
 	Version     int32
 	StateToken  int32
@@ -55,10 +56,26 @@ func (state *State) NewEncoder() Encoder {
 	}
 }
 
-func (state *State) NewDecoder() Decoder {
-	return Decoder{
+func (state *State) NewDecoder(item interface{}) Decoder {
+	dec := Decoder{
 		state: state,
 	}
+
+	dec.state.lock.Lock()
+	if dec.state.structCache == nil {
+		dec.state.structCache = make(map[reflect.Type]*ctagsCache, 1)
+	}
+
+	if st, ok := dec.state.structCache[reflect.TypeOf(item)]; ok {
+		dec.ctagsCache = st
+	} else {
+		cc := &ctagsCache{}
+		dec.state.structCache[reflect.TypeOf(item)] = cc
+		dec.ctagsCache = cc
+	}
+	dec.state.lock.Unlock()
+
+	return dec
 }
 
 func (state *State) Reset() {

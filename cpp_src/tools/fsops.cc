@@ -34,8 +34,8 @@ int MkDirAll(const string &path) {
 
 int RmDirAll(const string &path) {
 #ifndef _WIN32
-	return nftw(
-		path.c_str(), [](const char *fpath, const struct stat *, int, struct FTW *) { return ::remove(fpath); }, 64, FTW_DEPTH | FTW_PHYS);
+	return nftw(path.c_str(), [](const char *fpath, const struct stat *, int, struct FTW *) { return ::remove(fpath); }, 64,
+				FTW_DEPTH | FTW_PHYS);
 #else
 	(void)path;
 	return 0;
@@ -219,7 +219,7 @@ Error TryCreateDirectory(const string &dir) {
 
 string GetDirPath(const string &path) {
 	size_t lastSlashPos = path.find_last_of("/\\");
-	return path.substr(0, lastSlashPos + 1);
+	return lastSlashPos == std::string::npos ? string() : path.substr(0, lastSlashPos + 1);
 }
 
 Error ChownDir(const string &path, const string &user) {

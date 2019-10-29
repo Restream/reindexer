@@ -5,13 +5,13 @@
 namespace reindexer {
 namespace client {
 
-Reindexer::Reindexer(const ReindexerConfig& config) : impl_(new RPCClient(config)), owner_(true) {}
+Reindexer::Reindexer(const ReindexerConfig& config) : impl_(new RPCClient(config)), owner_(true), ctx_() {}
 Reindexer::~Reindexer() {
 	if (owner_) {
 		delete impl_;
 	}
 }
-Reindexer::Reindexer(Reindexer&& rdx) noexcept : impl_(rdx.impl_), owner_(rdx.owner_) { rdx.owner_ = false; }
+Reindexer::Reindexer(Reindexer&& rdx) noexcept : impl_(rdx.impl_), owner_(rdx.owner_), ctx_(rdx.ctx_) { rdx.owner_ = false; }
 
 Error Reindexer::Connect(const string& dsn) { return impl_->Connect(dsn); }
 Error Reindexer::Stop() { return impl_->Stop(); }

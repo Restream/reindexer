@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "core/cancelcontextpool.h"
 #include "iotools.h"
 #include "replicator/updatesobserver.h"
 #include "tools/errors.h"
@@ -28,12 +29,15 @@ public:
 	template <typename... Args>
 	CommandsProcessor(const string& outFileName, const string& inFileName, const string& command, int connPoolSize, int numThreads,
 					  Args... args)
-		: db_(args...),
+		: dbNoCtx_(args...),
+		  db_(dbNoCtx_.WithContext(&cancelCtx_)),
 		  output_(outFileName),
 		  fileName_(inFileName),
 		  command_(command),
 		  connPoolSize_(connPoolSize),
-		  numThreads_(numThreads) {}
+		  numThreads_(numThreads) {
+		cancelCtx_.Reset();
+	}
 	CommandsProcessor(const CommandsProcessor&) = delete;
 	CommandsProcessor(const CommandsProcessor&&) = delete;
 	CommandsProcessor& operator=(const CommandsProcessor&) = delete;
@@ -49,6 +53,7 @@ protected:
 	Error queryResultsToJson(ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery);
 	Error getAvailableDatabases(vector<string>&);
 	Error stop();
+	void onSigInt(int);
 
 	void addCommandsSuggestions(std::string const& input, std::vector<string>& suggestions);
 	void checkForNsNameMatch(string_view str, std::vector<string>& suggestions);
@@ -174,6 +179,8 @@ protected:
     };
 	// clang-format on
 
+	DBInterface dbNoCtx_;
+	reindexer::CancelContextImpl cancelCtx_;
 	DBInterface db_;
 	Output output_;
 	string fileName_;

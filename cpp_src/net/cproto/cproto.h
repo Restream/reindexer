@@ -2,10 +2,12 @@
 
 #include <stdint.h>
 
+#include "estl/string_view.h"
+
 namespace reindexer {
 namespace net {
 namespace cproto {
-enum CmdCode {
+enum CmdCode : uint16_t {
 	kCmdPing = 0,
 	kCmdLogin = 1,
 	kCmdOpenDatabase = 2,
@@ -50,7 +52,7 @@ enum CmdCode {
 	kCmdCodeMax = 128
 };
 
-const char *CmdName(CmdCode code);
+string_view CmdName(uint16_t code);
 
 // Maximum number of active queries per cleint
 const uint32_t kMaxConcurentQueries = 256;

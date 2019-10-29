@@ -970,14 +970,16 @@ int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, b
 
 	if (withColumns) {
 		reindexer::TableCalculator<reindexer::QueryResults> tableCalculator(res, stoi(width));
+		auto &header = tableCalculator.GetHeader();
 		auto &columnsSettings = tableCalculator.GetColumnsSettings();
 		auto array = builder.Array("columns");
-		for (const std::pair<const string, ColumnData> &settings : columnsSettings) {
+		for (auto it = header.begin(); it != header.end(); ++it) {
+			ColumnData &data = columnsSettings[*it];
 			array.Object()
-				.Put("name", settings.first)
-				.Put("width_percents", settings.second.widthTerminalPercentage)
-				.Put("max_chars", settings.second.maxWidthCh)
-				.Put("width_chars", settings.second.widthCh);
+				.Put("name", *it)
+				.Put("width_percents", data.widthTerminalPercentage)
+				.Put("max_chars", data.maxWidthCh)
+				.Put("width_chars", data.widthCh);
 		}
 		array.End();
 	}

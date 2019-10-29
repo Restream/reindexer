@@ -181,13 +181,16 @@ func (db *reindexerImpl) registerNamespaceImpl(namespace string, opts *Namespace
 		// Ns exists, and have the same type.
 		return nil
 	}
+	haveDeepCopy := false
 
-	copier, haveDeepCopy := reflect.New(t).Interface().(DeepCopy)
-	if haveDeepCopy {
-		cpy := copier.DeepCopy()
-		cpyType := reflect.TypeOf(reflect.Indirect(reflect.ValueOf(cpy)).Interface())
-		if cpyType != reflect.TypeOf(s) {
-			return ErrDeepCopyType
+	if !opts.disableObjCache {
+		copier, haveDeepCopy := reflect.New(t).Interface().(DeepCopy)
+		if haveDeepCopy {
+			cpy := copier.DeepCopy()
+			cpyType := reflect.TypeOf(reflect.Indirect(reflect.ValueOf(cpy)).Interface())
+			if cpyType != reflect.TypeOf(s) {
+				return ErrDeepCopyType
+			}
 		}
 	}
 

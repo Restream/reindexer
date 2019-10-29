@@ -68,18 +68,18 @@ RdxActivityContext::Ward RdxContext::BeforeSelectLoop() const {
 
 RdxContext InternalRdxContext::CreateRdxContext(string_view query, ActivityContainer& activityContainer) const {
 	if (activityTracer_.empty() || query.empty()) {
-		return {(deadlineCtx_.isCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
+		return {(deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
 	} else {
-		return {activityTracer_, user_, query, activityContainer, (deadlineCtx_.isCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
+		return {activityTracer_, user_, query, activityContainer, (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
 	}
 }
 
 RdxContext InternalRdxContext::CreateRdxContext(string_view query, ActivityContainer& activityContainer, QueryResults& qresults) const {
-	if (activityTracer_.empty() || query.empty()) return {(deadlineCtx_.isCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
+	if (activityTracer_.empty() || query.empty()) return {(deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
 	assert(!qresults.holdActivity_);
 	new (&qresults.activityCtx_) RdxActivityContext(activityTracer_, user_, query, activityContainer, true);
 	qresults.holdActivity_ = true;
-	return {&qresults.activityCtx_, (deadlineCtx_.isCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
+	return {&qresults.activityCtx_, (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
 }
 
 }  // namespace reindexer

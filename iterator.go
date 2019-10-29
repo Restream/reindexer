@@ -132,20 +132,25 @@ func (it *Iterator) setBuffer(result bindings.RawBuffer) {
 
 // Next moves iterator pointer to the next element.
 // Returns bool, that indicates the availability of the next elements.
-func (it *Iterator) Next() (hasNext bool) {
+// Decode result to given struct
+func (it *Iterator) NextObj(obj interface{}) (hasNext bool) {
 	if it.ptr >= it.rawQueryParams.qcount || it.err != nil {
 		return
 	}
 	if it.needMore() {
 		it.fetchResults()
 	}
-	it.current.obj, it.current.rank = it.readItem()
+	it.current.obj, it.current.rank = it.readItem(obj)
 	if it.err != nil {
 		return
 	}
 	it.resPtr++
 	it.ptr++
 	return it.ptr <= it.rawQueryParams.qcount
+}
+
+func (it *Iterator) Next() (hasNext bool) {
+	return it.NextObj(nil)
 }
 
 func (it *Iterator) joinedNsIndexOffset(parentNsID int) int {
@@ -160,7 +165,7 @@ func (it *Iterator) joinedNsIndexOffset(parentNsID int) int {
 	return offset
 }
 
-func (it *Iterator) readItem() (item interface{}, rank int) {
+func (it *Iterator) readItem(toObj interface{}) (item interface{}, rank int) {
 	params := it.ser.readRawtItemParams()
 	if (it.rawQueryParams.flags & bindings.ResultsWithPercents) != 0 {
 		rank = params.proc
@@ -171,7 +176,7 @@ func (it *Iterator) readItem() (item interface{}, rank int) {
 	if (it.rawQueryParams.flags & bindings.ResultsWithJoined) != 0 {
 		subNSRes = int(it.ser.GetVarUInt())
 	}
-	item, it.err = unpackItem(&it.nsArray[params.nsid], &params, it.allowUnsafe && (subNSRes == 0), (it.rawQueryParams.flags&bindings.ResultsWithItemID) == 0, nil)
+	item, it.err = unpackItem(&it.nsArray[params.nsid], &params, it.allowUnsafe && (subNSRes == 0), (it.rawQueryParams.flags&bindings.ResultsWithItemID) == 0, toObj)
 	if it.err != nil {
 		return
 	}
@@ -186,7 +191,7 @@ func (it *Iterator) readItem() (item interface{}, rank int) {
 		subitems := make([]interface{}, siRes)
 		for i := 0; i < siRes; i++ {
 			subparams := it.ser.readRawtItemParams()
-			subitems[i], it.err = unpackItem(&it.nsArray[nsIndex+nsIndexOffset], &subparams, it.allowUnsafe, (it.rawQueryParams.flags&bindings.ResultsWithItemID) == 0, nil)
+			subitems[i], it.err = unpackItem(&it.nsArray[nsIndex+nsIndexOffset], &subparams, it.allowUnsafe, (it.rawQueryParams.flags&bindings.ResultsWithItemID) == 0, toObj)
 			if it.err != nil {
 				return
 			}

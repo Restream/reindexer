@@ -1,3 +1,26 @@
+# Version 2.3.3 (29.10.2019)
+
+## Core
+- [fix] disabled OR operator for Fulltext indexes
+- [fix] replication: using row records instead of statements for UpdateQuery/DeleteQuery (performance improvement)
+
+## Reindexer server
+- [fea] new statistics parameter: items count (for prometheus)
+
+## Reindexer tool
+- [fix] UpdateQuery/DeleteQuery crash fix
+- [fea] Cancelling queries execution by Ctrl+C
+
+## go connector
+- [fea] Iterator.NextObj() unmarshals data to any user provided struct
+
+# Version 2.3.2 (25.10.2019)
+
+# Core
+- [fix] wrong WAL ring buffer size calculation on load from storage
+- [fix] Make storage autorepair optional
+- [fix] firstSortIndex assert on sort by hash indexes
+
 # Version 2.3.0 (11.10.2019)
 
 ## Core
@@ -13,7 +36,7 @@
 
 ## Reindexer server
 
-- [fea] Added columns  pre calculation for table output  in GET /query request
+- [fea] Added columns pre calculation for table output  in GET /query request
 
 ## go connector
 

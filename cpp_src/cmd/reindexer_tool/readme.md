@@ -80,6 +80,16 @@ List available namespaces
 ```
 Drop namespace
 
+### Working with databases
+List of available databases
+```
+\databases list
+```
+Switching to existing database
+```
+\databases use <namespace>
+```
+
 ### Manipulate metadata
 *Syntax:*
 ```
@@ -94,10 +104,10 @@ List all metadata in name
 ```
 \set output <format>
 ```
-
 Format can be one of the following:
 - `json` Unformatted JSON
 - `pretty` Pretty printed JSON
+- `table` Table view (with lines and columns)
 
 ### Run simple benchmark
 *Syntax:*

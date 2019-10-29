@@ -704,6 +704,7 @@ Reindexer has a banch prometheus metrics available via http-URL `/metrics`. This
 `reindexer_qps_total` - total queries per second for each database, namespace and query type
 `reindexer_avg_latency` - average queryies latency for each database, namespace and query type
 `reindexer_caches_size_bytes`, `reindexer_indexes_size_bytes`, `reindexer_data_size_bytes` - caches, indexes and data size for each namespace
+`reindexer_items_count` - items count in each namespace
 `reindexer_memory_allocated_bytes` - current amount of dynamicly allocated memory according to tcmalloc/jemalloc
 `reindexer_rpc_clients_count` - current number of RPC clients for each database
 `reindexer_input_traffic_total_bytes`, `reindexer_output_traffic_total_bytes` - total input/output RPC/http traffic for each database

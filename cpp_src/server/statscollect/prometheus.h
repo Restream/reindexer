@@ -29,6 +29,7 @@ public:
 	void RegisterCachesSize(const string &db, const string &ns, size_t size) { setMetricValue(caches_, size, db, ns); }
 	void RegisterIndexesSize(const string &db, const string &ns, size_t size) { setMetricValue(indexes_, size, db, ns); }
 	void RegisterDataSize(const string &db, const string &ns, size_t size) { setMetricValue(data_, size, db, ns); }
+	void RegisterItemsCount(const string &db, const string &ns, size_t count) { setMetricValue(itemsCount_, count, db, ns); }
 	void RegisterAllocatedMemory(size_t memoryConsumationBytes) { setMetricValue(memory_, memoryConsumationBytes); }
 	void RegisterRPCClients(const string &db, size_t count) { setMetricValue(rpcClients_, count, db); }
 	void RegisterInputTraffic(const string &db, string_view type, size_t bytes) { setMetricValue(inputTraffic_, bytes, db, type); }
@@ -51,6 +52,7 @@ public:
 	PFamily<PGauge> *rpcClients_{nullptr};
 	PFamily<PGauge> *inputTraffic_{nullptr};
 	PFamily<PGauge> *outputTraffic_{nullptr};
+	PFamily<PGauge> *itemsCount_{nullptr};
 };
 
 }  // namespace reindexer_server

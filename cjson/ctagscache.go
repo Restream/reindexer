@@ -1,5 +1,9 @@
 package cjson
 
+import (
+	"reflect"
+)
+
 type ctagsCacheEntry struct {
 	structIdx []int
 	subCache  ctagsCache
@@ -7,8 +11,10 @@ type ctagsCacheEntry struct {
 
 type ctagsCache []ctagsCacheEntry
 
+type structCache map[reflect.Type]*ctagsCache
+
 func (tc *ctagsCache) Reset() {
-	(*tc) = (*tc)[:0]
+	*tc = (*tc)[:0]
 }
 
 func (tc *ctagsCache) Lockup(cachePath []int, canAdd bool) *[]int {
@@ -23,7 +29,7 @@ func (tc *ctagsCache) Lockup(cachePath []int, canAdd bool) *[]int {
 			*tc = nc
 		}
 		for n := len(*tc); n < ctag+1; n++ {
-			(*tc) = append((*tc), ctagsCacheEntry{})
+			*tc = append(*tc, ctagsCacheEntry{})
 		}
 	}
 	if len(cachePath) == 1 {

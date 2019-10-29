@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/restream/reindexer"
+	"github.com/restream/reindexer/test/custom_struct_another"
 )
 
 func init() {
@@ -161,4 +162,90 @@ func TestRaceConditions(t *testing.T) {
 	time.Sleep(time.Millisecond * 20000)
 	close(done)
 	wg.Wait()
+}
+
+func TestNextObj(t *testing.T) {
+	ctx := context.Background()
+	itemsExp := []*TestItem{
+		newTestItem(20000, 5).(*TestItem),
+		newTestItem(20001, 5).(*TestItem),
+		newTestItem(20002, 5).(*TestItem),
+	}
+	itemCustomExp := &TestItemCustom{
+		ID:                itemsExp[1].ID,
+		Name:              itemsExp[1].Name,
+		Genre:             itemsExp[1].Genre,
+		Year:              itemsExp[1].Year,
+		CustomUniqueField: rand.Int(),
+		Actor:             itemsExp[1].Actor,
+	}
+	for _, v := range itemsExp {
+		if err := DB.Upsert("test_items_iter", v); err != nil {
+			panic(err)
+		}
+	}
+
+	// should use two structs in one test, to use cTagsCache
+	t.Run("parse to custom and original structs", func(t *testing.T) {
+		it := DB.Query("test_items_iter").
+			WhereInt("id", reindexer.SET, itemsExp[0].ID, itemsExp[1].ID, itemsExp[2].ID).
+			ExecCtx(ctx)
+		defer it.Close()
+
+		// use one original struct
+		item := TestItem{}
+		if it.NextObj(&item) {
+			if itemsExp[0].ID != item.ID {
+				t.Errorf("unexpected item, exp=%#v, current=%#v", itemsExp[0], item)
+			}
+		}
+
+		// use custom struct
+		itemCustom := TestItemCustom{}
+		if it.NextObj(&itemCustom) {
+			if itemCustomExp.ID != itemCustom.ID || itemCustomExp.Name != itemCustom.Name || itemCustomExp.Genre != itemCustom.Genre ||
+				itemCustomExp.Year != itemCustom.Year || itemCustomExp.Actor != itemCustom.Actor || 0 != itemCustom.CustomUniqueField {
+				t.Errorf("unexpected item, exp=%#v, current=%#v", itemCustomExp, itemCustom)
+			}
+		}
+
+		// and second original struct
+		item2 := TestItem{}
+		if it.NextObj(&item2) {
+			if itemsExp[2].ID != item2.ID {
+				t.Errorf("unexpected item, exp=%#v, current=%#v", itemsExp[2], item2)
+			}
+		}
+		if it.Error() != nil {
+			panic(it.Error())
+		}
+	})
+
+	t.Run("parse to the same struct from separate packages", func(t *testing.T) {
+		it := DB.Query("test_items_iter").
+			WhereInt("id", reindexer.SET, itemsExp[0].ID, itemsExp[1].ID).
+			ExecCtx(ctx)
+		defer it.Close()
+
+		// use another custom struct
+		itemCustomAnother := custom_struct_another.TestItemCustom{}
+		if it.NextObj(&itemCustomAnother) {
+			if itemsExp[0].ID != itemCustomAnother.ID {
+				t.Errorf("unexpected item, exp=%#v, current=%#v", itemsExp[0], itemCustomAnother)
+			}
+		}
+
+		// use custom struct
+		itemCustom := TestItemCustom{}
+		if it.NextObj(&itemCustom) {
+			if itemCustomExp.ID != itemCustom.ID || itemCustomExp.Name != itemCustom.Name || itemCustomExp.Genre != itemCustom.Genre ||
+				itemCustomExp.Year != itemCustom.Year || itemCustomExp.Actor != itemCustom.Actor || 0 != itemCustom.CustomUniqueField {
+				t.Errorf("unexpected item, exp=%#v, current=%#v", itemCustomExp, itemCustom)
+			}
+		}
+
+		if it.Error() != nil {
+			panic(it.Error())
+		}
+	})
 }

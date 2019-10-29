@@ -96,6 +96,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) noexcept {
 				prometheus_->RegisterCachesSize(dbName, nsName, item["total.cache_size"].As<int64_t>());
 				prometheus_->RegisterIndexesSize(dbName, nsName, item["total.indexes_size"].As<int64_t>());
 				prometheus_->RegisterDataSize(dbName, nsName, item["total.data_size"].As<int64_t>());
+				prometheus_->RegisterItemsCount(dbName, nsName, item["items_count"].As<int64_t>());
 			}
 		}
 	}

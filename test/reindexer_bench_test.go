@@ -189,7 +189,7 @@ func BenchmarkCJsonEncode(b *testing.B) {
 
 func BenchmarkCJsonDecode(b *testing.B) {
 
-	dec := cjsonState.NewDecoder()
+	dec := cjsonState.NewDecoder(TestItem{})
 	for i := 0; i < b.N; i++ {
 		ti := TestItem{}
 		dec.Decode(testItemsCJsonSeed[i%len(testItemsCJsonSeed)], &ti)

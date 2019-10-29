@@ -36,6 +36,7 @@ struct ServerConfig {
 	string RpcLog;
 	string StoragePath;
 	bool StartWithErrors;
+	bool Autorepair;
 #ifndef _WIN32
 	string UserName;
 	string DaemonPidFile;

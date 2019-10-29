@@ -13,8 +13,6 @@ using namespace reindexer::net;
 QueryResults::QueryResults(int fetchFlags)
 	: conn_(nullptr), queryID_(0), fetchOffset_(0), fetchFlags_(fetchFlags), fetchAmount_(0), requestTimeout_(0) {}
 
-QueryResults::QueryResults(QueryResults &&) = default;
-
 QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	if (this != &obj) {
 		rawResult_ = std::move(obj.rawResult_);
@@ -82,7 +80,7 @@ void QueryResults::Bind(string_view rawResult, int queryID) {
 void QueryResults::fetchNextResults() {
 	using std::chrono::seconds;
 	int flags = fetchFlags_ ? (fetchFlags_ & ~kResultsWithPayloadTypes) : kResultsCJson;
-	auto ret = conn_->Call(cproto::kCmdFetchResults, requestTimeout_, milliseconds(0), queryID_, flags, queryParams_.count + fetchOffset_,
+	auto ret = conn_->Call({cproto::kCmdFetchResults, requestTimeout_, milliseconds(0)}, queryID_, flags, queryParams_.count + fetchOffset_,
 						   fetchAmount_);
 	if (!ret.Status().ok()) {
 		throw ret.Status();

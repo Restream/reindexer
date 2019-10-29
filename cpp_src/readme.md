@@ -25,7 +25,29 @@ brew install reindexer
 
 ## Linux
 
-Repositories with packages is comming soon. Now it is possible to install reindexer from sources
+## RHEL/Centos/Fefora
+````bash
+yum install -y epel-release yum-utils
+rpm --import http://repo.reindexer.org/RX-KEY.GPG
+yum-config-manager --add-repo  http://repo.reindexer.org/<distro>/x86_64/
+yum update
+yum install reindexer-server
+````
+
+Available distros: `centos-6`,`centos-7`,`centos-8`,`fedora-30`,`fedora-31`,
+
+
+## Ubuntu/Debian
+
+````bash
+curl http://repo.reindexer.org/RX-KEY.GPG | apt-key add
+echo "deb http://repo.reindexer.org/<distro> /" >> /etc/apt/sources.list
+apt update
+apt install reindexer-server
+````
+
+Available distros: `debian-buster`, `debian-stretch`, `ubuntu-bionic`, `ubuntu-xenial`
+
 
 ## Windows
 

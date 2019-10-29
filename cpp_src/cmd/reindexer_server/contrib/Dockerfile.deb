@@ -1,21 +1,23 @@
-FROM debian:stable-slim
+FROM debian:stable-slim AS build
+
+RUN apt update -y && apt install -y  libunwind-dev build-essential libsnappy-dev libleveldb-dev make curl unzip git cmake libjemalloc-dev
 
 ADD . /src
 
-RUN apt update -y && apt install -y  libunwind-dev build-essential libsnappy-dev libleveldb-dev make curl unzip git cmake libjemalloc-dev && \
-    cd /src && \
+RUN cd /src && \
     mkdir build && \
     cd build && \
     cmake -DCMAKE_BUILD_TYPE=Release .. && \
     make -j8 reindexer_server reindexer_tool && \
     make face swagger && \
     make install -C cpp_src/cmd/reindexer_server && \
-    make install -C cpp_src/cmd/reindexer_tool && \
-    cd / && \
-    rm -rf /src && \
-    apt remove --purge -y  build-essential cmake make curl unzip git && \
-    apt autoremove -y && \
-    rm -rf /var/lib/apt /usr/lib/x86_64-linux-gnu/*.a /usr/local/lib/*.a
+    make install -C  cpp_src/cmd/reindexer_tool && \
+    cp /src/cpp_src/cmd/reindexer_server/contrib/entrypoint.sh /entrypoint.sh
+
+FROM debian:stable-slim
+COPY --from=build /usr/local /usr/local
+COPY --from=build /entrypoint.sh /entrypoint.sh
+RUN apt update -y && apt install -y libleveldb1d libunwind8 libjemalloc2 && rm -rf /var/lib/apt
 
 ENV RX_DATABASE /db
 ENV RX_CORELOG stdout
@@ -24,7 +26,6 @@ ENV RX_RPCLOG stdout
 ENV RX_SERVERLOG stdout
 ENV RX_LOGLEVEL info
 
-COPY cpp_src/cmd/reindexer_server/contrib/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 EXPOSE 9088 6534

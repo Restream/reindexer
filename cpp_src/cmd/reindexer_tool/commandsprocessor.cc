@@ -1,4 +1,6 @@
 #include "commandsprocessor.h"
+#include <csignal>
+#include <functional>
 #include <thread>
 #include "client/reindexer.h"
 #include "core/reindexer.h"
@@ -29,6 +31,8 @@ using reindexer::NamespaceDef;
 using reindexer::JsonBuilder;
 using reindexer::Query;
 
+const string kConfigFile = "rxtool_settings.txt";
+
 const string kVariableOutput = "output";
 const string kOutputModeJson = "json";
 const string kOutputModeTable = "table";
@@ -40,18 +44,46 @@ const string kBenchIndex = "id";
 const int kBenchItemsCount = 10000;
 const int kBenchDefaultTime = 5;
 
+static std::function<void(int)> sigIntHandler;
+
+void sigint_handler(int signal) {
+	if (sigIntHandler) sigIntHandler(signal);
+}
+
 template <typename DBInterface>
 Error CommandsProcessor<DBInterface>::Connect(const string& dsn) {
-	variables_[kVariableOutput] = kOutputModeJson;
+	string outputMode;
+	if (reindexer::fs::ReadFile(reindexer::fs::JoinPath(reindexer::fs::GetHomeDir(), kConfigFile), outputMode) > 0) {
+		gason::JsonParser jsonParser;
+		gason::JsonNode value = jsonParser.Parse(reindexer::giftStr(outputMode));
+		for (auto node : value) {
+			WrSerializer ser;
+			reindexer::jsonValueToString(node.value, ser, 0, 0, false);
+			variables_[kVariableOutput] = string(ser.Slice());
+		}
+	}
+	if (variables_.empty()) {
+		variables_[kVariableOutput] = kOutputModeJson;
+	}
 	if (!uri_.parse(dsn)) {
 		return Error(errNotValid, "Cannot connect to DB: Not a valid uri");
 	}
-	return db_.Connect(dsn);
+	Error err = db_.Connect(dsn);
+	if (err.ok()) {
+		sigIntHandler = std::bind(&CommandsProcessor::onSigInt, this, std::placeholders::_1);
+		signal(SIGINT, sigint_handler);
+	}
+	return err;
 }
 
 template <typename DBInterface>
 CommandsProcessor<DBInterface>::~CommandsProcessor() {
 	stop();
+}
+
+template <typename DBInterface>
+void CommandsProcessor<DBInterface>::onSigInt(int) {
+	cancelCtx_.Cancel();
 }
 
 template <typename DBInterface>
@@ -61,8 +93,11 @@ Error CommandsProcessor<DBInterface>::Process(string command) {
 
 	if (!token.length() || token.substr(0, 2) == "--") return errOK;
 
+	cancelCtx_.Reset();
 	for (auto& c : cmds_) {
-		if (iequals(token, c.command)) return (this->*(c.handler))(command);
+		if (iequals(token, c.command)) {
+			return (this->*(c.handler))(command);
+		}
 	}
 	return Error(errParams, "Unknown command '%s'. Type '\\help' to list of available commands", token);
 }
@@ -84,8 +119,9 @@ Error CommandsProcessor<DBInterface>::commandSelect(const string& command) {
 		if (results.Count()) {
 			string outputType = variables_[kVariableOutput];
 			if (outputType == kOutputModeTable) {
+				auto isCanceled = [this]() -> bool { return cancelCtx_.IsCancelled(); };
 				reindexer::TableViewBuilder<typename DBInterface::QueryResultsT> tableResultsBuilder(results);
-				tableResultsBuilder.Build(output_());
+				tableResultsBuilder.Build(output_(), isCanceled);
 			} else {
 				output_() << "[" << std::endl;
 				err = queryResultsToJson(output_(), results, isWALQuery);
@@ -94,7 +130,7 @@ Error CommandsProcessor<DBInterface>::commandSelect(const string& command) {
 		}
 
 		string explain = results.GetExplainResults();
-		if (!explain.empty()) {
+		if (!explain.empty() && !cancelCtx_.IsCancelled()) {
 			output_() << "Explain: " << std::endl;
 			if (variables_[kVariableOutput] == kOutputModePretty) {
 				WrSerializer ser;
@@ -109,7 +145,7 @@ Error CommandsProcessor<DBInterface>::commandSelect(const string& command) {
 		output_() << std::endl;
 
 		auto& aggResults = results.GetAggregationResults();
-		if (aggResults.size()) {
+		if (aggResults.size() && !cancelCtx_.IsCancelled()) {
 			output_() << "Aggregations: " << std::endl;
 			for (auto& agg : aggResults) {
 				if (!agg.facets.empty()) {
@@ -152,6 +188,7 @@ Error CommandsProcessor<DBInterface>::commandSelect(const string& command) {
 	}
 	return err;
 }
+
 template <typename DBInterface>
 Error CommandsProcessor<DBInterface>::commandDeleteSQL(const string& command) {
 	typename DBInterface::QueryResultsT results;
@@ -178,6 +215,7 @@ Error CommandsProcessor<DBInterface>::commandUpdateSQL(const string& command) {
 	} catch (const Error& err) {
 		return err;
 	}
+
 	auto err = db_.Update(q, results);
 
 	if (err.ok()) {
@@ -404,6 +442,15 @@ Error CommandsProcessor<DBInterface>::commandSet(const string& command) {
 	string_view variableValue = parser.NextToken();
 
 	variables_[string(variableName)] = string(variableValue);
+
+	WrSerializer wrser;
+	reindexer::JsonBuilder configBuilder(wrser);
+	for (auto it = variables_.begin(); it != variables_.end(); ++it) {
+		configBuilder.Put(it->first, it->second);
+	}
+	configBuilder.End();
+	reindexer::fs::WriteFile(reindexer::fs::JoinPath(reindexer::fs::GetHomeDir(), kConfigFile), wrser.Slice());
+
 	return errOK;
 }
 
@@ -499,10 +546,13 @@ void CommandsProcessor<DBInterface>::OnConnectionState(const Error& err) {
 
 template <typename DBInterface>
 Error CommandsProcessor<DBInterface>::queryResultsToJson(ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery) {
+	if (cancelCtx_.IsCancelled()) return errOK;
 	WrSerializer ser;
 	size_t i = 0;
 	bool prettyPrint = variables_[kVariableOutput] == kOutputModePretty;
 	for (auto it : r) {
+		if (cancelCtx_.IsCancelled()) break;
+
 		if (isWALQuery) ser << '#' << it.GetLSN() << ' ';
 
 		if (it.IsRaw()) {

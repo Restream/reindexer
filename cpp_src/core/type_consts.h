@@ -160,6 +160,7 @@ typedef enum StotageOpt {
 	kStorageOptLazyLoad = 1 << 6,
 	kStorageOptSlaveMode = 1 << 7,
 	kStorageOptTemporary = 1 << 8,
+	kStorageOptAutorepair = 1 << 9,
 } StorageOpt;
 
 enum CollateMode { CollateNone = 0, CollateASCII, CollateUTF8, CollateNumeric, CollateCustom };
@@ -179,6 +180,7 @@ typedef struct StorageOpts {
 	bool IsLazyLoad() const { return options & kStorageOptLazyLoad; }
 	bool IsSlaveMode() const { return options & kStorageOptSlaveMode; }
 	bool IsTemporary() const { return options & kStorageOptTemporary; }
+	bool IsAutorepair() const { return options & kStorageOptAutorepair; }
 
 	StorageOpts& Enabled(bool value = true) {
 		options = value ? options | kStorageOptEnabled : options & ~(kStorageOptEnabled);
@@ -224,6 +226,11 @@ typedef struct StorageOpts {
 		options = value ? options | kStorageOptTemporary : options & ~(kStorageOptTemporary);
 		return *this;
 	}
+
+	StorageOpts& Autorepair(bool value = true) {
+		options = value ? options | kStorageOptAutorepair : options & ~(kStorageOptAutorepair);
+		return *this;
+	}
 #endif
 	uint16_t options;
 	uint16_t noQueryIdleThresholdSec;
@@ -232,6 +239,7 @@ typedef struct StorageOpts {
 typedef enum ConnectOpt {
 	kConnectOptOpenNamespaces = 1 << 0,
 	kConnectOptAllowNamespaceErrors = 1 << 1,
+	kConnectOptAutorepair = 1 << 2,
 } ConnectOpt;
 
 typedef enum StorageTypeOpt {
@@ -245,6 +253,7 @@ typedef struct ConnectOpts {
 
 	bool IsOpenNamespaces() const { return options & kConnectOptOpenNamespaces; }
 	bool IsAllowNamespaceErrors() const { return options & kConnectOptAllowNamespaceErrors; }
+	bool IsAutorepair() const { return options & kConnectOptAutorepair; }
 
 	ConnectOpts& OpenNamespaces(bool value = true) {
 		options = value ? options | kConnectOptOpenNamespaces : options & ~(kConnectOptOpenNamespaces);
@@ -253,6 +262,11 @@ typedef struct ConnectOpts {
 
 	ConnectOpts& AllowNamespaceErrors(bool value = true) {
 		options = value ? options | kConnectOptAllowNamespaceErrors : options & ~(kConnectOptAllowNamespaceErrors);
+		return *this;
+	}
+
+	ConnectOpts& Autorepair(bool value = true) {
+		options = value ? options | kConnectOptAutorepair : options & ~(kConnectOptAutorepair);
 		return *this;
 	}
 

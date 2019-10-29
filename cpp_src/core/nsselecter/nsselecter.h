@@ -50,7 +50,7 @@ public:
 	const Namespace &RightNs() const { return *rightNs_; }
 	int Called() const { return called_; }
 	int Matched() const { return matched_; }
-	bool AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer &, int maxIterations, unsigned sortId, SelectFunction::Ptr,
+	void AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer &, int *maxIterations, unsigned sortId, SelectFunction::Ptr,
 											 const RdxContext &);
 
 private:

@@ -5,7 +5,7 @@
 #include <locale>
 #include <mutex>
 
-#include "cgoctxpool.h"
+#include "cgocancelcontextpool.h"
 #include "core/selectfunc/selectfuncparser.h"
 #include "core/transactionimpl.h"
 #include "debug/allocdebug.h"
@@ -170,7 +170,7 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 	reindexer_resbuffer out = {0, 0, 0};
 	Error err = err_not_init;
 	if (rx) {
-		RdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 
 		Item item = rdxKeeper.db().NewItem(ns);
 
@@ -247,7 +247,7 @@ reindexer_ret reindexer_commit_transaction(uintptr_t rx, uintptr_t tr, reindexer
 		return ret2c(errOK, reindexer_resbuffer());
 	}
 
-	RdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+	CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 	auto err = rdxKeeper.db().CommitTransaction(trw->tr_);
 
 	reindexer_resbuffer out = {0, 0, 0};
@@ -275,7 +275,7 @@ reindexer_ret reindexer_commit_transaction(uintptr_t rx, uintptr_t tr, reindexer
 reindexer_error reindexer_open_namespace(uintptr_t rx, reindexer_string nsName, StorageOpts opts, reindexer_ctx_info ctx_info) {
 	Error res = err_not_init;
 	if (rx) {
-		RdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 		res = rdxKeeper.db().OpenNamespace(str2cv(nsName), opts);
 	}
 	return error2c(res);
@@ -284,7 +284,7 @@ reindexer_error reindexer_open_namespace(uintptr_t rx, reindexer_string nsName, 
 reindexer_error reindexer_drop_namespace(uintptr_t rx, reindexer_string nsName, reindexer_ctx_info ctx_info) {
 	Error res = err_not_init;
 	if (rx) {
-		RdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 		res = rdxKeeper.db().DropNamespace(str2cv(nsName));
 	}
 	return error2c(res);
@@ -293,7 +293,7 @@ reindexer_error reindexer_drop_namespace(uintptr_t rx, reindexer_string nsName, 
 reindexer_error reindexer_truncate_namespace(uintptr_t rx, reindexer_string nsName, reindexer_ctx_info ctx_info) {
 	Error res = err_not_init;
 	if (rx) {
-		RdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 		res = rdxKeeper.db().TruncateNamespace(str2cv(nsName));
 	}
 	return error2c(res);
@@ -302,7 +302,7 @@ reindexer_error reindexer_truncate_namespace(uintptr_t rx, reindexer_string nsNa
 reindexer_error reindexer_close_namespace(uintptr_t rx, reindexer_string nsName, reindexer_ctx_info ctx_info) {
 	Error res = err_not_init;
 	if (rx) {
-		RdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 		res = rdxKeeper.db().CloseNamespace(str2cv(nsName));
 	}
 	return error2c(res);
@@ -311,7 +311,7 @@ reindexer_error reindexer_close_namespace(uintptr_t rx, reindexer_string nsName,
 reindexer_error reindexer_add_index(uintptr_t rx, reindexer_string nsName, reindexer_string indexDefJson, reindexer_ctx_info ctx_info) {
 	Error res = err_not_init;
 	if (rx) {
-		RdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 		string json(str2cv(indexDefJson));
 		IndexDef indexDef;
 
@@ -328,7 +328,7 @@ reindexer_error reindexer_add_index(uintptr_t rx, reindexer_string nsName, reind
 reindexer_error reindexer_update_index(uintptr_t rx, reindexer_string nsName, reindexer_string indexDefJson, reindexer_ctx_info ctx_info) {
 	Error res = err_not_init;
 	if (rx) {
-		RdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 		string json(str2cv(indexDefJson));
 		IndexDef indexDef;
 
@@ -345,7 +345,7 @@ reindexer_error reindexer_update_index(uintptr_t rx, reindexer_string nsName, re
 reindexer_error reindexer_drop_index(uintptr_t rx, reindexer_string nsName, reindexer_string index, reindexer_ctx_info ctx_info) {
 	Error res = err_not_init;
 	if (rx) {
-		RdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 		res = rdxKeeper.db().DropIndex(str2cv(nsName), IndexDef(str2c(index)));
 	}
 	return error2c(res);
@@ -354,7 +354,7 @@ reindexer_error reindexer_drop_index(uintptr_t rx, reindexer_string nsName, rein
 reindexer_error reindexer_enable_storage(uintptr_t rx, reindexer_string path, reindexer_ctx_info ctx_info) {
 	Error res = err_not_init;
 	if (rx) {
-		RdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 		res = rdxKeeper.db().EnableStorage(str2c(path));
 	}
 	return error2c(res);
@@ -381,7 +381,7 @@ reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int as_json
 	reindexer_resbuffer out = {0, 0, 0};
 	Error res = err_not_init;
 	if (rx) {
-		RdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 		auto result = new_results();
 		if (!result) {
 			return ret2c(err_too_many_queries, out);
@@ -403,7 +403,7 @@ reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, i
 	if (rx) {
 		res = Error(errOK);
 		Serializer ser(in.data, in.len);
-		RdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 
 		Query q;
 		q.Deserialize(ser);
@@ -440,7 +440,7 @@ reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in, reindexe
 	if (rx) {
 		res = Error(errOK);
 		Serializer ser(in.data, in.len);
-		RdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 
 		Query q;
 		q.type_ = QueryDelete;
@@ -467,7 +467,7 @@ reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in, reindexe
 	if (rx) {
 		res = Error(errOK);
 		Serializer ser(in.data, in.len);
-		RdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 
 		Query q;
 		q.Deserialize(ser);
@@ -531,7 +531,7 @@ reindexer_error reindexer_put_meta(uintptr_t rx, reindexer_string ns, reindexer_
 								   reindexer_ctx_info ctx_info) {
 	Error res = err_not_init;
 	if (rx) {
-		RdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 		res = rdxKeeper.db().PutMeta(str2c(ns), str2c(key), str2c(data));
 	}
 	return error2c(res);
@@ -541,7 +541,7 @@ reindexer_ret reindexer_get_meta(uintptr_t rx, reindexer_string ns, reindexer_st
 	reindexer_resbuffer out{0, 0, 0};
 	Error res = err_not_init;
 	if (rx) {
-		RdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 		QueryResultsWrapper* results = new_results();
 		if (!results) {
 			return ret2c(err_too_many_queries, out);

@@ -38,6 +38,9 @@ void UpdatesObservers::OnModifyItem(int64_t lsn, string_view nsName, ItemImpl *i
 }
 
 void UpdatesObservers::OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &walRec) {
+	// Disable updates of system namespaces (it may cause recursive lock)
+	if (nsName.size() && nsName[0] == '#') return;
+
 	shared_lock<shared_timed_mutex> lck(mtx_);
 	for (auto observer : observers_) {
 		observer->OnWALUpdate(lsn, nsName, walRec);

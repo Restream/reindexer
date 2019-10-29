@@ -15,6 +15,8 @@ void Prometheus::Attach(http::Router& router) {
 	collectables_.emplace_back(indexes_);
 	data_ = &BuildGauge().Name("reindexer_data_size_bytes").Help("Namespace data size in bytes").Register(registry_);
 	collectables_.emplace_back(data_);
+	itemsCount_ = &BuildGauge().Name("reindexer_items_count").Help("Items count in namespace").Register(registry_);
+	collectables_.emplace_back(itemsCount_);
 	memory_ = &BuildGauge()
 				   .Name("reindexer_memory_allocated_bytes")
 				   .Help("Currently allocated bytes, according to allocator library")

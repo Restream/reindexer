@@ -21,7 +21,7 @@ const std::string kUsersJSONFilename = "users.json";
 DBManager::DBManager(const string &dbpath, bool noSecurity)
 	: dbpath_(dbpath), noSecurity_(noSecurity), storageType_(datastorage::StorageType::LevelDB) {}
 
-Error DBManager::Init(const std::string &storageEngine, bool allowDBErrors) {
+Error DBManager::Init(const std::string &storageEngine, bool allowDBErrors, bool withAutorepair) {
 	auto status = readUsers();
 	if (!status.ok() && !noSecurity_) {
 		return status;
@@ -40,7 +40,7 @@ Error DBManager::Init(const std::string &storageEngine, bool allowDBErrors) {
 
 	for (auto &de : foundDb) {
 		if (de.isDir && validateObjectName(de.name)) {
-			auto status = loadOrCreateDatabase(de.name, allowDBErrors);
+			auto status = loadOrCreateDatabase(de.name, allowDBErrors, withAutorepair);
 			if (!status.ok()) {
 				logPrintf(LogError, "Failed to open database '%s' - %s", de.name, status.what());
 				if (status.code() == errNotValid) {
@@ -86,7 +86,7 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 		return 0;
 	}
 
-	status = loadOrCreateDatabase(dbName, true);
+	status = loadOrCreateDatabase(dbName, true, true);
 	if (!status.ok()) {
 		return status;
 	}
@@ -95,7 +95,7 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 	return OpenDatabase(dbName, auth, false);
 }
 
-Error DBManager::loadOrCreateDatabase(const string &dbName, bool allowDBErrors) {
+Error DBManager::loadOrCreateDatabase(const string &dbName, bool allowDBErrors, bool withAutorepair) {
 	string storagePath = fs::JoinPath(dbpath_, dbName);
 
 	logPrintf(LogInfo, "Loading database %s", dbName);
@@ -109,7 +109,8 @@ Error DBManager::loadOrCreateDatabase(const string &dbName, bool allowDBErrors) 
 			storageType = kStorageTypeOptRocksDB;
 			break;
 	}
-	auto status = db->Connect(storagePath, ConnectOpts().AllowNamespaceErrors(allowDBErrors).WithStorageType(storageType));
+	auto status =
+		db->Connect(storagePath, ConnectOpts().AllowNamespaceErrors(allowDBErrors).WithStorageType(storageType).Autorepair(withAutorepair));
 	if (status.ok()) {
 		dbs_[dbName] = std::move(db);
 	}
@@ -289,7 +290,7 @@ Error DBManager::readUsersJSON() noexcept {
 }
 
 Error DBManager::createDefaultUsersYAML() noexcept {
-	logPrintf(LogInfo, "Creating default users.yaml file");
+	logPrintf(LogInfo, "Creating default %s file", kUsersYAMLFilename);
 	int res = fs::WriteFile(fs::JoinPath(dbpath_, kUsersYAMLFilename),
 							"# List of db's users, their's roles and privileges\n\n"
 							"# Username\n"

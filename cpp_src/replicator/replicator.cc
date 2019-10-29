@@ -157,17 +157,26 @@ Error Replicator::syncDatabase() {
 				openErr = err = syncNamespaceForced(ns, "Can't open namespace");
 			}
 			if (err.ok()) {
-				int64_t curLSN = slave_->getNamespace(ns.name, dummyCtx_)->GetReplState(dummyCtx_).lastLsn;
-				std::lock_guard<std::mutex> lck(syncMtx_);
-				// Check, if concurrent update attempt happened with LSN bigger, than current LSN
-				// In this case retry sync
-				if (maxLsns_[ns.name] <= curLSN) {
-					done = true;
-					maxLsns_.erase(ns.name);
+				int64_t curLSN = -1;
+				try {
+					curLSN = slave_->getNamespace(ns.name, dummyCtx_)->GetReplState(dummyCtx_).lastLsn;
+					std::lock_guard<std::mutex> lck(syncMtx_);
+					// Check, if concurrent update attempt happened with LSN bigger, than current LSN
+					// In this case retry sync
+					if (maxLsns_[ns.name] <= curLSN) {
+						done = true;
+						maxLsns_.erase(ns.name);
+					}
+				} catch (const Error &e) {
+					err = e;
 				}
 			} else {
 				if (openErr.ok()) {
-					slave_->getNamespace(ns.name, dummyCtx_)->SetSlaveReplError(err, dummyCtx_);
+					try {
+						slave_->getNamespace(ns.name, dummyCtx_)->SetSlaveReplError(err, dummyCtx_);
+					} catch (const Error &e) {
+						err = e;
+					}
 				}
 				logPrintf(LogError, "Sync error: %s", err.what());
 			}
@@ -182,7 +191,13 @@ Error Replicator::syncDatabase() {
 // This will completely drop slave namespace
 // read all indexes and data from master, then apply to slave
 Error Replicator::syncNamespaceByWAL(const NamespaceDef &ns) {
-	auto slaveNs = slave_->getNamespace(ns.name, dummyCtx_);
+	Namespace::Ptr slaveNs;
+	try {
+		slaveNs = slave_->getNamespace(ns.name, dummyCtx_);
+	} catch (const Error &err) {
+		return err;
+	}
+
 	int64_t lsn = slaveNs->GetReplState(dummyCtx_).lastLsn;
 
 	logPrintf(LogTrace, "[repl:%s] Start sync items, lsn %ld", ns.name, lsn);
@@ -247,7 +262,13 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, string_view reason
 	return err;
 }
 
-Error Replicator::applyWAL(string_view nsName, client::QueryResults &qr) { return applyWAL(slave_->getNamespace(nsName, dummyCtx_), qr); }
+Error Replicator::applyWAL(string_view nsName, client::QueryResults &qr) {
+	try {
+		return applyWAL(slave_->getNamespace(nsName, dummyCtx_), qr);
+	} catch (const Error &err) {
+		return err;
+	}
+}
 
 Error Replicator::applyWAL(Namespace::Ptr slaveNs, client::QueryResults &qr) {
 	Error err;

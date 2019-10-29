@@ -97,11 +97,11 @@ void JoinedSelector::readValues(VariantArray &values, const Index &leftIndex, in
 	}
 }
 
-bool JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer &iterators, int maxIterations, unsigned sortId,
+void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer &iterators, int *maxIterations, unsigned sortId,
 														 SelectFunction::Ptr selectFnc, const RdxContext &rdxCtx) {
 	if (joinType_ != JoinType::InnerJoin || preResult_->mode != JoinPreResult::ModeIdSet ||
-		preResult_->ids.size() > maxIterations * kMaxIterationsScaleForInnerJoinOptimization) {
-		return false;
+		preResult_->ids.size() > *maxIterations * kMaxIterationsScaleForInnerJoinOptimization) {
+		return;
 	}
 	unsigned optimized = 0;
 	for (auto it = joinQuery_.joinEntries_.cbegin(), end = joinQuery_.joinEntries_.cend(); it != end; ++it) {
@@ -133,13 +133,14 @@ bool JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 			SelectIterator selIter{res, false, joinEntry.index_, false};
 			selIter.Bind(leftNs_->payloadType_, joinEntry.idxNo);
 			assert(selIter.comparators_.empty());
+			const int curIterations = selIter.GetMaxIterations();
+			if (curIterations && curIterations < *maxIterations) *maxIterations = curIterations;
 			iterators.Append(OpAnd, std::move(selIter));
 			was = true;
 		}
 		if (was) optimized++;
 	}
 	optimized_ = optimized == joinQuery_.joinEntries_.size();
-	return optimized_;
 }
 
 static int GetMaxIterations(const SelectIteratorContainer &iterators) {
@@ -284,7 +285,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 					if (selectIter.empty() && selectIter.comparators_.empty() && selectIter.joinIndexes.size() == 1) {
 						assert(ctx.joinedSelectors && ctx.joinedSelectors->size() > size_t(selectIter.joinIndexes[0]));
 						(*ctx.joinedSelectors)[selectIter.joinIndexes[0]].AppendSelectIteratorOfJoinIndexData(
-							qres, maxIterations, ctx.sortingContext.sortId(), fnc_, rdxCtx);
+							qres, &maxIterations, ctx.sortingContext.sortId(), fnc_, rdxCtx);
 					}
 				}
 			}
@@ -298,12 +299,13 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		if (it.comparators_.size()) hasComparators = true;
 	});
 
-	if ((qres.Empty() || (!isFt && (!qres.HasIdsets() || qres.GetOperation(0) == OpNot)))) {
+	if (!isFt && !qres.HasIdsets()) {
 		SelectKeyResult scan;
 		if (ctx.sortingContext.isOptimizationEnabled()) {
 			auto it = ns_->indexes_[ctx.sortingContext.uncommitedIndex]->CreateIterator();
 			it->SetMaxIterations(ns_->items_.size());
 			scan.push_back(SingleSelectKeyResult(it));
+			maxIterations = ns_->items_.size();
 		} else {
 			// special case - no idset in query
 			IdType limit = ns_->items_.size();
@@ -313,9 +315,9 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 				limit = index->SortOrders().size();
 			}
 			scan.push_back(SingleSelectKeyResult(0, limit));
+			maxIterations = limit;
 		}
 		qres.AppendFront(OpAnd, SelectIterator{scan, false, "-scan", true});
-		maxIterations = ns_->items_.size();
 	}
 	// Get maximum iterations count, for right calculation comparators costs
 	qres.SortByCost(maxIterations);
@@ -636,7 +638,8 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 	bool finish = (count == 0) && !sctx.reqMatchedOnceFlag && !calcTotal;
 
 	SortingOptions sortingOptions(sctx.query, sctx.sortingContext);
-	Index *firstSortIndex = sctx.sortingContext.sortIndex();
+	const Index *const firstSortIndex =
+		(sctx.sortingContext.isIndexOrdered() && sctx.sortingContext.enableSortOrders) ? sctx.sortingContext.sortIndex() : nullptr;
 	bool multiSortFinished = !(sortingOptions.multiColumnByBtreeIndex && count > 0);
 
 	VariantArray prevValues;
@@ -651,8 +654,10 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 		rowId = firstIterator.Val();
 		IdType properRowId = rowId;
 
-		if (firstSortIndex && sctx.sortingContext.enableSortOrders) {
-			assert(firstSortIndex->SortOrders().size() > static_cast<size_t>(rowId));
+		if (firstSortIndex) {
+			assertf(firstSortIndex->SortOrders().size() > static_cast<size_t>(rowId),
+					"FirstIterator: %s, firstSortIndex: %s, firstSortIndex size: %d, rowId: %d", firstIterator.name.c_str(),
+					firstSortIndex->Name().c_str(), static_cast<int>(firstSortIndex->SortOrders().size()), rowId);
 			properRowId = firstSortIndex->SortOrders()[rowId];
 		}
 

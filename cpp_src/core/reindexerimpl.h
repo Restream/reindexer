@@ -161,6 +161,7 @@ protected:
 
 	StorageMutex storageMtx_;
 	StorageType storageType_;
+	bool autorepairEnabled_;
 	friend class Replicator;
 	friend class TransactionImpl;
 };

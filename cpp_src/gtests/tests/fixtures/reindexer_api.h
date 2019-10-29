@@ -197,18 +197,18 @@ public:
 
 class CanceledRdxContext : public reindexer::IRdxCancelContext {
 public:
-	reindexer::CancelType checkCancel() const noexcept override { return reindexer::CancelType::Explicit; }
-	bool isCancelable() const noexcept override { return true; }
+	reindexer::CancelType GetCancelType() const noexcept override { return reindexer::CancelType::Explicit; }
+	bool IsCancelable() const noexcept override { return true; }
 };
 
 class DummyRdxContext : public reindexer::IRdxCancelContext {
 public:
-	reindexer::CancelType checkCancel() const noexcept override { return reindexer::CancelType::None; }
-	bool isCancelable() const noexcept override { return false; }
+	reindexer::CancelType GetCancelType() const noexcept override { return reindexer::CancelType::None; }
+	bool IsCancelable() const noexcept override { return false; }
 };
 
 class FakeRdxContext : public reindexer::IRdxCancelContext {
 public:
-	reindexer::CancelType checkCancel() const noexcept override { return reindexer::CancelType::None; }
-	bool isCancelable() const noexcept override { return true; }
+	reindexer::CancelType GetCancelType() const noexcept override { return reindexer::CancelType::None; }
+	bool IsCancelable() const noexcept override { return true; }
 };

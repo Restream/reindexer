@@ -297,6 +297,10 @@ void SelectIteratorContainer::PrepareIteratorsForSelectLoop(const QueryEntries &
 		auto op = queries.GetOperation(i);
 		if (queries.IsEntry(i)) {
 			const QueryEntry &qe = queries[i];
+			if (qe.idxNo != IndexValueType::SetByJsonPath && isFullText(ns.indexes_[qe.idxNo]->Type()) &&
+				(op == OpOr || (i + 1 < end && queries.GetOperation(i + 1) == OpOr))) {
+				throw Error(errLogic, "OR operation is not allowed with fulltext index");
+			}
 			SelectKeyResults selectResults;
 
 			if (qe.joinIndex == QueryEntry::kNoJoins) {

@@ -128,6 +128,15 @@ type TestItemSimple struct {
 	Phone string
 }
 
+type TestItemCustom struct {
+	Actor             Actor `reindex:"actor"`
+	Genre             int64
+	Name              string `reindex:"name"`
+	CustomUniqueField int
+	ID                int `reindex:"id,,pk"`
+	Year              int `reindex:"year,tree"`
+}
+
 type TestItemSimpleCmplxPK struct {
 	ID    int32    `reindex:"id,-"`
 	Year  int32    `reindex:"year,tree"`

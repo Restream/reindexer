@@ -10,8 +10,8 @@ using std::chrono::milliseconds;
 enum class CancelType : uint8_t { None = 0, Explicit, Timeout };
 
 struct IRdxCancelContext {
-	virtual CancelType checkCancel() const noexcept = 0;
-	virtual bool isCancelable() const noexcept = 0;
+	virtual CancelType GetCancelType() const noexcept = 0;
+	virtual bool IsCancelable() const noexcept = 0;
 
 	virtual ~IRdxCancelContext() = default;
 };
@@ -45,18 +45,18 @@ public:
 	RdxDeadlineContext(duration timeout, const IRdxCancelContext* parent = nullptr)
 		: deadline_((timeout.count() > 0) ? (ClockT::now() + timeout) : time_point()), parent_(parent) {}
 
-	CancelType checkCancel() const noexcept override final {
+	CancelType GetCancelType() const noexcept override final {
 		if ((deadline_.time_since_epoch().count() > 0) &&
 			(deadline_.time_since_epoch().count() < ClockT::now().time_since_epoch().count())) {
 			return CancelType::Timeout;
 		}
 		if (parent_) {
-			return parent_->checkCancel();
+			return parent_->GetCancelType();
 		}
 		return CancelType::None;
 	}
-	bool isCancelable() const noexcept override final {
-		return (deadline_.time_since_epoch().count() > 0) || (parent_ != nullptr && parent_->isCancelable());
+	bool IsCancelable() const noexcept override final {
+		return (deadline_.time_since_epoch().count() > 0) || (parent_ != nullptr && parent_->IsCancelable());
 	}
 	const IRdxCancelContext* parent() const noexcept { return parent_; }
 	const time_point deadline() const noexcept { return deadline_; }
@@ -90,10 +90,10 @@ public:
 	RdxContext& operator=(const RdxContext&) = delete;
 	RdxContext& operator=(RdxContext&&) = delete;
 
-	bool isCancelable() const noexcept { return cancelCtx_ && cancelCtx_->isCancelable(); }
+	bool isCancelable() const noexcept { return cancelCtx_ && cancelCtx_->IsCancelable(); }
 	CancelType checkCancel() const noexcept {
 		if (!cancelCtx_) return CancelType::None;
-		return cancelCtx_->checkCancel();
+		return cancelCtx_->GetCancelType();
 	}
 	/// returning value should be assined to a local variable which will be destroyed after the locking complete
 	/// lifetime of the local variable should not exceed of the context's

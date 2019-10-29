@@ -16,8 +16,9 @@ var (
 )
 
 type Decoder struct {
-	ser   *Serializer
-	state *State
+	ser        *Serializer
+	state      *State
+	ctagsCache *ctagsCache
 }
 
 func fieldByTag(t reflect.Type, tag string) (result reflect.StructField, ok bool) {
@@ -258,7 +259,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 		}
 		switch k {
 		case reflect.Int:
-			if ! isPtr {
+			if !isPtr {
 				sl := (*[1 << 28]int)(ptr)[:count:count]
 				for i := 0; i < count; i++ {
 					sl[i] = int(asInt(rdser, subtag))
@@ -271,7 +272,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 				}
 			}
 		case reflect.Uint:
-			if ! isPtr {
+			if !isPtr {
 				sl := (*[1 << 28]uint)(ptr)[:count:count]
 				for i := 0; i < count; i++ {
 					sl[i] = uint(asInt(rdser, subtag))
@@ -284,7 +285,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 				}
 			}
 		case reflect.Int64:
-			if ! isPtr {
+			if !isPtr {
 				sl := (*[1 << 27]int64)(ptr)[:count:count]
 				for i := 0; i < count; i++ {
 					sl[i] = int64(asInt(rdser, subtag))
@@ -297,7 +298,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 				}
 			}
 		case reflect.Uint64:
-			if ! isPtr {
+			if !isPtr {
 				sl := (*[1 << 27]uint64)(ptr)[:count:count]
 				for i := 0; i < count; i++ {
 					sl[i] = uint64(asInt(rdser, subtag))
@@ -310,7 +311,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 				}
 			}
 		case reflect.Int32:
-			if ! isPtr {
+			if !isPtr {
 				sl := (*[1 << 28]int32)(ptr)[:count:count]
 				for i := 0; i < count; i++ {
 					sl[i] = int32(asInt(rdser, subtag))
@@ -323,7 +324,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 				}
 			}
 		case reflect.Uint32:
-			if ! isPtr {
+			if !isPtr {
 				sl := (*[1 << 28]uint32)(ptr)[:count:count]
 				for i := 0; i < count; i++ {
 					sl[i] = uint32(asInt(rdser, subtag))
@@ -349,7 +350,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 				}
 			}
 		case reflect.Uint16:
-			if ! isPtr {
+			if !isPtr {
 				sl := (*[1 << 29]uint16)(ptr)[:count:count]
 				for i := 0; i < count; i++ {
 					sl[i] = uint16(asInt(rdser, subtag))
@@ -362,7 +363,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 				}
 			}
 		case reflect.Int8:
-			if ! isPtr {
+			if !isPtr {
 				sl := (*[1 << 30]int8)(ptr)[:count:count]
 				for i := 0; i < count; i++ {
 					sl[i] = int8(asInt(rdser, subtag))
@@ -375,7 +376,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 				}
 			}
 		case reflect.Uint8:
-			if ! isPtr {
+			if !isPtr {
 				sl := (*[1 << 30]uint8)(ptr)[:count:count]
 				for i := 0; i < count; i++ {
 					sl[i] = uint8(asInt(rdser, subtag))
@@ -388,7 +389,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 				}
 			}
 		case reflect.Float32:
-			if ! isPtr {
+			if !isPtr {
 				sl := (*[1 << 28]float32)(ptr)[:count:count]
 				for i := 0; i < count; i++ {
 					sl[i] = float32(asFloat(rdser, subtag))
@@ -401,7 +402,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 				}
 			}
 		case reflect.Float64:
-			if ! isPtr {
+			if !isPtr {
 				sl := (*[1 << 27]float64)(ptr)[:count:count]
 				for i := 0; i < count; i++ {
 					sl[i] = asFloat(rdser, subtag)
@@ -414,7 +415,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 				}
 			}
 		case reflect.Bool:
-			if ! isPtr {
+			if !isPtr {
 				sl := (*[1 << 27]bool)(ptr)[:count:count]
 				for i := 0; i < count; i++ {
 					sl[i] = rdser.GetVarUInt() != 0
@@ -427,7 +428,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 				}
 			}
 		case reflect.String:
-			if ! isPtr {
+			if !isPtr {
 				sl := (*[1 << 27]string)(ptr)[:count:count]
 				for i := 0; i < count; i++ {
 					sl[i] = asString(rdser, subtag)
@@ -501,7 +502,7 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 		} else if k == reflect.Struct {
 
 			// try to find in cache in RO mode
-			idx = dec.state.ctagsCache.Lockup(cctagsPath, false)
+			idx = dec.ctagsCache.Lockup(cctagsPath, false)
 
 			if idx == nil || len(*idx) == 0 {
 				// not found in cache
@@ -511,7 +512,7 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 				dec.state.lock.RUnlock()
 				dec.state.lock.Lock()
 				if idx == nil {
-					idx = dec.state.ctagsCache.Lockup(cctagsPath, true)
+					idx = dec.ctagsCache.Lockup(cctagsPath, true)
 				}
 				if len(*idx) == 0 {
 					if sf, ok := fieldByTag(v.Type(), name); ok {
@@ -643,7 +644,7 @@ func (dec *Decoder) DecodeCPtr(cptr uintptr, dest interface{}) (err error) {
 				dec.state.tagsMatcher.Names,
 				dec.state.payloadType.Fields,
 				pl.getAsMap(),
-				dec.state.ctagsCache,
+				dec.state.structCache,
 				hex.Dump(ser.Bytes()),
 				ret,
 			)
@@ -676,7 +677,7 @@ func (dec *Decoder) Decode(cjson []byte, dest interface{}) (err error) {
 				ser.Pos(),
 				dec.state.Version,
 				dec.state.tagsMatcher.Names,
-				dec.state.ctagsCache,
+				dec.state.structCache,
 				hex.Dump(ser.Bytes()),
 				ret,
 			)

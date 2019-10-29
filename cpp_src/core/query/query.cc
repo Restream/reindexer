@@ -244,11 +244,11 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 	ser.PutVarUint(debugLevel);
 
 	if (!(mode & SkipLimitOffset)) {
-		if (count != UINT_MAX) {
+		if (HasLimit()) {
 			ser.PutVarUint(QueryLimit);
 			ser.PutVarUint(count);
 		}
-		if (start) {
+		if (HasOffset()) {
 			ser.PutVarUint(QueryOffset);
 			ser.PutVarUint(start);
 		}

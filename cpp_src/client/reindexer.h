@@ -152,6 +152,10 @@ public:
 	/// @param suggestions - all the suggestions for 'pos' position in query.
 	Error GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string> &suggestions);
 
+	/// Add cancelable context
+	/// @param cancelCtx - context pointer
+	Reindexer WithContext(const IRdxCancelContext *cancelCtx) { return Reindexer(impl_, ctx_.WithCancelContext(cancelCtx)); }
+
 	/// Add execution timeout to the next query
 	/// @param timeout - Optional server-side execution timeout for each subquery
 	Reindexer WithTimeout(milliseconds timeout) { return Reindexer(impl_, ctx_.WithTimeout(timeout)); }
@@ -163,7 +167,7 @@ public:
 	typedef Item ItemT;
 
 private:
-	Reindexer(RPCClient *impl, InternalRdxContext ctx) : impl_(impl), owner_(false), ctx_(ctx) {}
+	Reindexer(RPCClient *impl, InternalRdxContext &&ctx) : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}
 
 	RPCClient *impl_;
 	bool owner_;

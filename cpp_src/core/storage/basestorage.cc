@@ -26,7 +26,7 @@ Error BaseStorage::Open(const std::string& path, const StorageOpts& opts) {
 	if (info_->IsDestroyed()) {
 		info_->CreatePaceholder();
 	}
-	if (!info_->repaired) {
+	if (opts.IsAutorepair() && !info_->repaired) {
 		info_->repaired = true;
 		lck.unlock();
 		logPrintf(LogWarning, "Calling repair for '%s'", path);

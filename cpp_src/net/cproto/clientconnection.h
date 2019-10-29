@@ -12,6 +12,9 @@
 #include "urlparser/urlparser.h"
 
 namespace reindexer {
+
+struct IRdxCancelContext;
+
 namespace net {
 namespace cproto {
 
@@ -68,15 +71,24 @@ public:
 	~ClientConnection();
 	typedef std::function<void(RPCAnswer &&ans, ClientConnection *conn)> Completion;
 
+	struct CommandParams {
+		CommandParams(CmdCode c, seconds n, milliseconds e, const IRdxCancelContext *ctx = nullptr)
+			: cmd(c), netTimeout(n), execTimeout(e), cancelCtx(ctx) {}
+		CmdCode cmd;
+		seconds netTimeout;
+		milliseconds execTimeout;
+		const IRdxCancelContext *cancelCtx;
+	};
+
 	template <typename... Argss>
-	void Call(const Completion &cmpl, CmdCode cmd, seconds netTimeout, milliseconds execTimeout, Argss... argss) {
+	void Call(const Completion &cmpl, const CommandParams &opts, Argss... argss) {
 		Args args;
 		args.reserve(sizeof...(argss));
-		call(cmpl, cmd, netTimeout, execTimeout, args, argss...);
+		call(cmpl, opts, args, argss...);
 	}
 
 	template <typename... Argss>
-	RPCAnswer Call(CmdCode cmd, seconds netTimeout, milliseconds execTimeout, Argss... argss) {
+	RPCAnswer Call(const CommandParams &opts, Argss... argss) {
 		Args args;
 		args.reserve(sizeof...(argss));
 
@@ -88,7 +100,7 @@ public:
 				ret.EnsureHold();
 				set = true;
 			},
-			cmd, netTimeout, execTimeout, args, argss...);
+			opts, args, argss...);
 		std::unique_lock<std::mutex> lck(mtx_);
 		bufWait_++;
 		while (!set) {  // -V776
@@ -114,7 +126,7 @@ protected:
 	void connect_async_cb(ev::async &) { connectInternal(); }
 	void keep_alive_cb(ev::periodic &, int) {
 		if (!terminate_.load(std::memory_order_acquire)) {
-			call([](RPCAnswer &&, ClientConnection *) {}, kCmdPing, keepAliveTimeout_, milliseconds(0), {});
+			call([](RPCAnswer &&, ClientConnection *) {}, {kCmdPing, keepAliveTimeout_, milliseconds(0)}, {});
 			callback(io_, ev::WRITE);
 		}
 	}
@@ -124,25 +136,22 @@ protected:
 	void failInternal(const Error &error);
 
 	template <typename... Argss>
-	inline void call(const Completion &cmpl, CmdCode cmd, seconds netTimeout, milliseconds execTimeout, Args &args, const string_view &val,
-					 Argss... argss) {
+	inline void call(const Completion &cmpl, const CommandParams &opts, Args &args, const string_view &val, Argss... argss) {
 		args.push_back(Variant(p_string(&val)));
-		return call(cmpl, cmd, netTimeout, execTimeout, args, argss...);
+		return call(cmpl, opts, args, argss...);
 	}
 	template <typename... Argss>
-	inline void call(const Completion &cmpl, CmdCode cmd, seconds netTimeout, milliseconds execTimeout, Args &args, const string &val,
-					 Argss... argss) {
+	inline void call(const Completion &cmpl, const CommandParams &opts, Args &args, const string &val, Argss... argss) {
 		args.push_back(Variant(p_string(&val)));
-		return call(cmpl, cmd, netTimeout, execTimeout, args, argss...);
+		return call(cmpl, opts, args, argss...);
 	}
 	template <typename T, typename... Argss>
-	inline void call(const Completion &cmpl, CmdCode cmd, seconds netTimeout, milliseconds execTimeout, Args &args, const T &val,
-					 Argss... argss) {
+	inline void call(const Completion &cmpl, const CommandParams &opts, Args &args, const T &val, Argss... argss) {
 		args.push_back(Variant(val));
-		return call(cmpl, cmd, netTimeout, execTimeout, args, argss...);
+		return call(cmpl, opts, args, argss...);
 	}
 
-	void call(Completion cmpl, CmdCode cmd, seconds netTimeout, milliseconds execTimeout, const Args &args);
+	void call(Completion cmpl, const CommandParams &opts, const Args &args);
 
 	chunk packRPC(CmdCode cmd, uint32_t seq, const Args &args, const Args &ctxArgs);
 
@@ -150,13 +159,14 @@ protected:
 	void onClose() override;
 
 	struct RPCCompletion {
-		RPCCompletion() : cmd(kCmdPing), seq(0), next(nullptr), used(false), deadline(0) {}
+		RPCCompletion() : cmd(kCmdPing), seq(0), next(nullptr), used(false), deadline(0), cancelCtx(nullptr) {}
 		CmdCode cmd;
 		uint32_t seq;
 		Completion cmpl;
 		atomic_unique_ptr<RPCCompletion> next;
 		std::atomic<bool> used;
 		seconds deadline;
+		const reindexer::IRdxCancelContext *cancelCtx;
 	};
 
 	enum State { ConnInit, ConnConnecting, ConnConnected, ConnFailed };

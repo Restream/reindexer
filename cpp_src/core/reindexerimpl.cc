@@ -31,7 +31,8 @@ constexpr char kActivityStatsNamespace[] = "#activitystats";
 constexpr char kStoragePlaceholderFilename[] = ".reindexer.storage";
 constexpr char kReplicationConfFilename[] = "replication.conf";
 
-ReindexerImpl::ReindexerImpl() : replicator_(new Replicator(this)), hasReplConfigLoadError_(false), storageType_(StorageType::LevelDB) {
+ReindexerImpl::ReindexerImpl()
+	: replicator_(new Replicator(this)), hasReplConfigLoadError_(false), storageType_(StorageType::LevelDB), autorepairEnabled_(false) {
 	stopBackgroundThread_ = false;
 	configProvider_.setHandler(ProfilingConf, std::bind(&ReindexerImpl::onProfiligConfigLoad, this));
 	backgroundThread_ = std::thread([this]() { this->backgroundRoutine(); });
@@ -132,6 +133,8 @@ Error ReindexerImpl::Connect(const string& dsn, ConnectOpts opts) {
 			storageType_ = StorageType::RocksDB;
 			break;
 	}
+
+	autorepairEnabled_ = opts.IsAutorepair();
 
 	bool enableStorage = (path.length() > 0 && path != "/");
 	if (enableStorage) {
@@ -244,7 +247,8 @@ Error ReindexerImpl::OpenNamespace(string_view name, const StorageOpts& storageO
 		string nameStr(name);
 		ns = std::make_shared<Namespace>(nameStr, observers_);
 		if (storageOpts.IsEnabled() && !storagePath_.empty()) {
-			ns->EnableStorage(storagePath_, storageOpts, storageType_, rdxCtx);
+			auto opts = storageOpts;
+			ns->EnableStorage(storagePath_, opts.Autorepair(autorepairEnabled_), storageType_, rdxCtx);
 			ns->onConfigUpdated(configProvider_, rdxCtx);
 			if (!ns->getStorageOpts(rdxCtx).IsLazyLoad()) ns->LoadFromStorage(rdxCtx);
 		}
@@ -986,7 +990,8 @@ std::vector<string> defDBConfig = {
             "queriesperfstats":false,
 			"queries_threshold_us":10,
 			"perfstats":false,
-			"memstats":true
+			"memstats":true,
+			"activitystats":false
 		}
 	})json",
 	R"json({
@@ -1015,7 +1020,7 @@ std::vector<string> defDBConfig = {
 			"namespaces":[]
 		}
     })json",
-    R"json({
+	R"json({
         "type":"action",
         "action":{
 			"command":""

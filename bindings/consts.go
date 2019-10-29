@@ -121,6 +121,7 @@ const (
 
 	ConnectOptOpenNamespaces       = 1
 	ConnectOptAllowNamespaceErrors = 1 << 1
+	ConnectOptAutorepair           = 1 << 2
 
 	ErrOK               = 0
 	ErrParseSQL         = 1

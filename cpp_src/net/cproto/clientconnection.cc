@@ -2,6 +2,7 @@
 
 #include "clientconnection.h"
 #include <errno.h>
+#include "core/rdxcontext.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -76,7 +77,7 @@ void ClientConnection::connectInternal() {
 		keep_alive_.start(kKeepAliveInterval, kKeepAliveInterval);
 		deadlineTimer_.start(kDeadlineCheckInterval, kDeadlineCheckInterval);
 
-		call(completion, kCmdLogin, loginTimeout_, milliseconds(0),
+		call(completion, {kCmdLogin, loginTimeout_, milliseconds(0)},
 			 {Arg{p_string(&userName)}, Arg{p_string(&password)}, Arg{p_string(&dbName)}});
 	}
 }
@@ -101,11 +102,13 @@ int ClientConnection::PendingCompletions() {
 
 void ClientConnection::deadline_check_cb(ev::timer &, int) {
 	now_ += kDeadlineCheckInterval;
-
 	for (auto &c : completions_) {
 		for (RPCCompletion *cc = &c; cc; cc = cc->next.get()) {
-			if (cc->used && cc->deadline.count() && cc->deadline.count() <= now_) {
-				cc->cmpl(RPCAnswer(Error(errTimeout, "Request deadline exceeded")), this);
+			if (!cc->used) continue;
+			bool expired = (cc->deadline.count() && cc->deadline.count() <= now_);
+			if (expired || (cc->cancelCtx && cc->cancelCtx->IsCancelable() && (cc->cancelCtx->GetCancelType() == CancelType::Explicit))) {
+				Error err(expired ? errTimeout : errCanceled, expired ? "Request deadline exceeded" : "Canceled");
+				cc->cmpl(RPCAnswer(err), this);
 				if (state_ == ConnFailed) {
 					return;
 				}
@@ -227,7 +230,8 @@ void ClientConnection::onRead() {
 				break;
 			}
 			if (!completion) {
-				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%d\n", int(hdr.cmd), int(hdr.seq));
+				auto cmdSv = CmdName(hdr.cmd);
+				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%d(%.*s)\n", int(hdr.seq), hdr.cmd, int(cmdSv.size()), cmdSv.data());
 			}
 		}
 		rdBuf_.erase(hdr.len);
@@ -267,14 +271,14 @@ chunk ClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args, con
 	return ser.DetachChunk();
 }
 
-void ClientConnection::call(Completion cmpl, CmdCode cmd, seconds netTimeout, milliseconds execTimeout, const Args &args) {
+void ClientConnection::call(Completion cmpl, const CommandParams &opts, const Args &args) {
 	uint32_t seq = seq_++;
-	chunk data = packRPC(cmd, seq, args, Args{Arg{int64_t(execTimeout.count())}});
+	chunk data = packRPC(opts.cmd, seq, args, Args{Arg{int64_t(opts.execTimeout.count())}});
 	bool inLoopThread = loopThreadID_ == std::this_thread::get_id();
 
 	std::unique_lock<std::mutex> lck(mtx_);
 	auto completion = &completions_[seq % completions_.size()];
-	auto deadline = netTimeout.count() ? Now() + netTimeout : seconds(0);
+	auto deadline = opts.netTimeout.count() ? Now() + opts.netTimeout : seconds(0);
 	if (!inLoopThread) {
 		while (state_ != ConnConnected || completion->used) {
 			switch (state_) {
@@ -331,8 +335,9 @@ void ClientConnection::call(Completion cmpl, CmdCode cmd, seconds netTimeout, mi
 
 	completion->cmpl = cmpl;
 	completion->seq = seq;
-	completion->cmd = cmd;
+	completion->cmd = opts.cmd;
 	completion->deadline = deadline;
+	completion->cancelCtx = opts.cancelCtx;
 	completion->used = true;
 
 	wrBuf_.write(std::move(data));

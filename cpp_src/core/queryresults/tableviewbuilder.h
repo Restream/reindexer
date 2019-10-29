@@ -57,15 +57,17 @@ public:
 	TableViewBuilder operator=(const TableViewBuilder&) = delete;
 	TableViewBuilder operator=(TableViewBuilder&&) = delete;
 
-	void Build(std::ostream& o);
+	void Build(std::ostream& o, const std::function<bool(void)>& isCanceled);
+
+	void BuildHeader(std::ostream& o, TableCalculator<QueryResultsT>& tableCalculator, const std::function<bool(void)>& isCanceled);
+	void BuildTable(std::ostream& o, TableCalculator<QueryResultsT>& tableCalculator, const std::function<bool(void)>& isCanceled);
+	void BuildRow(std::ostream& o, int idx, TableCalculator<QueryResultsT>& tableCalculator);
 
 private:
-	void buildHeader(std::ostream& o, TableCalculator<QueryResultsT>& tableCalculator);
-	void buildTable(std::ostream& o, TableCalculator<QueryResultsT>& tableCalculator);
-
 	static int computeFieldWidth(string_view str, int maxWidth);
 	static void ensureFieldWidthIsOk(std::string& str, int maxWidth);
 	static bool isValueMultiline(string_view, bool breakingTheLine, const ColumnData&, int symbolsTillTheEOFLine);
+	static void startLine(std::ostream& o, const int& currLineWidth);
 
 private:
 	const QueryResultsT& r_;

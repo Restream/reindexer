@@ -186,6 +186,8 @@ type NamespaceOptions struct {
 	dropOnIndexesConflict bool
 	// Drop on file errors
 	dropOnFileFormatError bool
+	// Disable object cache
+	disableObjCache bool
 }
 
 // DefaultNamespaceOptions return defailt namespace options
@@ -205,6 +207,11 @@ func (opts *NamespaceOptions) DropOnIndexesConflict() *NamespaceOptions {
 
 func (opts *NamespaceOptions) DropOnFileFormatError() *NamespaceOptions {
 	opts.dropOnFileFormatError = true
+	return opts
+}
+
+func (opts *NamespaceOptions) DisableObjCache() *NamespaceOptions {
+	opts.disableObjCache = true
 	return opts
 }
 

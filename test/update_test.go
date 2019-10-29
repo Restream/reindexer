@@ -14,6 +14,7 @@ import (
 const (
 	fieldsUpdateNs = "test_items_fields_update"
 	truncateNs     = "test_truncate"
+	removeItemsNs  = "test_remove_items"
 )
 
 func init() {
@@ -46,6 +47,11 @@ type testInnerObject struct {
 	First  int    `reindex:"first" json:"first"`
 	Second string `reindex:"second" json:"second"`
 	Extra  string `json:"extra,omitempty"`
+}
+
+type testDummyObject struct {
+	ID   int    `reindex:"id,,pk" json:"id"`
+	Name string `reindex:"name" json:"name"`
 }
 
 type testItemObject struct {
@@ -142,6 +148,8 @@ func TestUpdateFields(t *testing.T) {
 		assertErrorMessage(t, DB.Upsert(fieldsUpdateNs, newTestItemComplexObject(i)), nil)
 	}
 
+	RemoveDummyItems(t)
+
 	CheckIndexedFieldUpdate()
 	CheckNonIndexedFieldUpdate()
 	CheckNonIndexedArrayFieldUpdate()
@@ -153,6 +161,28 @@ func TestUpdateFields(t *testing.T) {
 	CheckAddComplexField("main_obj.main.nested.val", []string{"main_obj", "main", "nested", "val"})
 	CheckUpdateWithExpressions1()
 	CheckUpdateWithExpressions2()
+}
+
+func RemoveDummyItems(t *testing.T) {
+	nsOpts := reindexer.DefaultNamespaceOptions()
+	assertErrorMessage(t, DB.OpenNamespace(removeItemsNs, nsOpts, testDummyObject{}), nil)
+	for i := 0; i < 10; i++ {
+		assertErrorMessage(t, DB.Upsert(removeItemsNs, testDummyObject{
+			ID:   i,
+			Name: randString(),
+		}), nil)
+	}
+
+	count, err := DB.Query(removeItemsNs).WhereInt("id", reindexer.LT, 3).Delete()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("Removed = %d\n", count)
+
+	if count != 3 {
+		panic(fmt.Errorf("Remove failed"))
+	}
 }
 
 func UpdateField(fieldName string, values interface{}) (items []interface{}) {

@@ -106,8 +106,9 @@ public:
 	/// Read user's database
 	/// @param storageEngine - underlying storage engine ("leveldb"/"rocksdb")
 	/// @param allowDBErrors - true: Ignore errors during existing DBs load; false: Return error if error occures during DBs load
+	/// @param withAutorepair - true: Enable storage autorepair feature for this DB; false: Disable storage autorepair feature for this DB
 	/// @return Error - error object
-	Error Init(const std::string &storageEngine, bool allowDBErrors);
+	Error Init(const std::string &storageEngine, bool allowDBErrors, bool withAutorepair);
 	/// Authenticate user, and grant roles to database with specified dbName
 	/// @param dbName - database name. Can be empty.
 	/// @param auth - AuthContext with user credentials
@@ -137,7 +138,7 @@ private:
 	Error readUsersJSON() noexcept;
 	Error createDefaultUsersYAML() noexcept;
 	static UserRole userRoleFromString(string_view strRole);
-	Error loadOrCreateDatabase(const string &name, bool allowDBErrors);
+	Error loadOrCreateDatabase(const string &name, bool allowDBErrors, bool withAutorepair);
 
 	unordered_map<string, unique_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_;
 	unordered_map<string, UserRecord> users_;

@@ -40,6 +40,7 @@ using std::defer_lock;
 
 static const string kPKIndexName = "#pk";
 static const string kLSNIndexName = "#lsn";
+const int kWALStatementItemsThreshold = 5;
 
 #define kStorageMagic 0x1234FEDC
 #define kStorageVersion 0x8
@@ -624,8 +625,9 @@ void Namespace::Update(const Query &query, QueryResults &result, const RdxContex
 	// If update statement is expression, and contains functions call, then we should use
 	// row statement replication to preserve data consistense
 	bool enableStatementRepl = true;
-	for (auto &ue : query.updateFields_)
+	for (auto &ue : query.updateFields_) {
 		if (ue.isExpression) enableStatementRepl = false;
+	}
 	if (repl_.slaveMode && !enableStatementRepl) throw Error(errLogic, "Can't apply update query with expression to slave ns '%s'", name_);
 
 	ThrowOnCancel(ctx);
@@ -638,7 +640,7 @@ void Namespace::Update(const Query &query, QueryResults &result, const RdxContex
 	result.lockResults();
 
 	WrSerializer ser;
-	if (enableStatementRepl && result.Count()) {
+	if (enableStatementRepl && !query.HasLimit() && !query.HasOffset() && (result.Count() >= kWALStatementItemsThreshold)) {
 		// FAST PATH: statement based repliaction
 		const_cast<Query &>(query).type_ = QueryUpdate;
 		WALRecord wrec(WalUpdateQuery, query.GetSQL(ser).Slice());
@@ -792,7 +794,7 @@ void Namespace::Delete(const Query &q, QueryResults &result, const RdxContext &c
 		doDelete(r.id);
 	}
 
-	if (result.Count()) {
+	if (!q.HasLimit() && !q.HasOffset() && result.Count() >= kWALStatementItemsThreshold) {
 		WrSerializer ser;
 
 		const_cast<Query &>(q).type_ = QueryDelete;
@@ -800,6 +802,14 @@ void Namespace::Delete(const Query &q, QueryResults &result, const RdxContext &c
 		if (!repl_.slaveMode) lsn = wal_.Add(wrec);
 
 		observers_->OnWALUpdate(lsn, name_, wrec);
+	} else if (result.Count() > 0) {
+		for (auto it : result) {
+			WrSerializer cjson;
+			it.GetCJSON(cjson, false);
+			int id = it.GetItemRef().id;
+			lsn = wal_.Add(WALRecord(WalItemModify, cjson.Slice(), tagsMatcher_.version(), ModeDelete), items_[id].GetLSN());
+			observers_->OnWALUpdate(lsn, name_, WALRecord(WalItemModify, cjson.Slice(), tagsMatcher_.version(), ModeDelete));
+		}
 	}
 	if (q.debugLevel >= LogInfo) {
 		logPrintf(LogInfo, "Deleted %d items in %d µs", result.Count(),

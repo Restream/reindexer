@@ -35,7 +35,7 @@ void WALTracker::Init(int64_t maxLSN, shared_ptr<datastorage::IDataStorage> stor
 	maxLSN++;
 
 	records_.clear();
-	records_.resize(maxLSN % walSize_);
+	records_.resize(std::min(maxLSN, walSize_));
 	lsnCounter_ = maxLSN;
 
 	// Fill records from storage
