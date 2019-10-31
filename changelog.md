@@ -1,3 +1,11 @@
+# Version 2.3.4 (29.10.2019)
+
+## go connector
+- [fix] Iterator.NextObj(): performance fix
+
+## Core
+- [fix] Fix of Windows build
+
 # Version 2.3.3 (29.10.2019)
 
 ## Core

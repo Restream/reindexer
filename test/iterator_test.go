@@ -14,6 +14,7 @@ import (
 
 func init() {
 	tnamespaces["test_items_iter"] = TestItem{}
+	tnamespaces["test_items_iter_next_obj"] = TestItem{}
 }
 
 func TestQueryIter(t *testing.T) {
@@ -166,6 +167,12 @@ func TestRaceConditions(t *testing.T) {
 
 func TestNextObj(t *testing.T) {
 	ctx := context.Background()
+
+	err := DB.OpenNamespace("test_items_iter_next_obj", reindexer.DefaultNamespaceOptions(), TestItem{})
+	if err != nil {
+		panic(err)
+	}
+
 	itemsExp := []*TestItem{
 		newTestItem(20000, 5).(*TestItem),
 		newTestItem(20001, 5).(*TestItem),
@@ -180,14 +187,14 @@ func TestNextObj(t *testing.T) {
 		Actor:             itemsExp[1].Actor,
 	}
 	for _, v := range itemsExp {
-		if err := DB.Upsert("test_items_iter", v); err != nil {
+		if err := DB.Upsert("test_items_iter_next_obj", v); err != nil {
 			panic(err)
 		}
 	}
 
 	// should use two structs in one test, to use cTagsCache
 	t.Run("parse to custom and original structs", func(t *testing.T) {
-		it := DB.Query("test_items_iter").
+		it := DB.Query("test_items_iter_next_obj").
 			WhereInt("id", reindexer.SET, itemsExp[0].ID, itemsExp[1].ID, itemsExp[2].ID).
 			ExecCtx(ctx)
 		defer it.Close()
@@ -222,7 +229,7 @@ func TestNextObj(t *testing.T) {
 	})
 
 	t.Run("parse to the same struct from separate packages", func(t *testing.T) {
-		it := DB.Query("test_items_iter").
+		it := DB.Query("test_items_iter_next_obj").
 			WhereInt("id", reindexer.SET, itemsExp[0].ID, itemsExp[1].ID).
 			ExecCtx(ctx)
 		defer it.Close()
