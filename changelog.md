@@ -383,7 +383,7 @@
 ## Core
 
 - [fea] Incremental fulltext search index rebuild 
-- [fea] Async C++ RPC client  
+- [fea] Async C++ RPC client
 - [fix] Fixed incorrect behaviour with non indexed field conditions
 - [fix] Extra non indexed fields tests added
 - [fix] Json parser memleak fixed
