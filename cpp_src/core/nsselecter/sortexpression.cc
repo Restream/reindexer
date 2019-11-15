@@ -121,9 +121,9 @@ string_view::iterator SortExpression::parse(string_view::iterator it, string_vie
 						skipSpaces();
 						if (it == end || *it != ')') throwParseError();
 						++it;
-						Append({op, negative}, {});
+						Append(SortExpressionOperation{op, negative}, {});
 					} else {
-						Append({op, negative}, {name});
+						Append(SortExpressionOperation{op, negative}, {name});
 					}
 					*containIndexOrFunction = true;
 				}

@@ -22,6 +22,8 @@ struct SortExpressionValue {
 bool operator==(const SortExpressionValue&, const SortExpressionValue&);
 
 struct SortExpressionOperation {
+	constexpr SortExpressionOperation(ArithmeticOpType _op = OpPlus, bool _negative = false) : op(_op), negative(_negative) {}
+
 	ArithmeticOpType op;
 	bool negative;
 };
@@ -35,7 +37,7 @@ public:
 		return calculate(cbegin(), cend(), pv, proc, tagsMatcher);
 	}
 	bool JustByIndex() const {
-		static constexpr SortExpressionOperation noOperation{OpPlus, false};
+		static constexpr SortExpressionOperation noOperation;
 		return Size() == 1 && IsValue(0) && operator[](0).type == SortExpressionValue::Index && GetOperation(0) == noOperation;
 	}
 	bool ContainRank() const {
