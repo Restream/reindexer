@@ -52,6 +52,7 @@ protected:
 	void Query2CondLeftJoinTotal(State& state);
 	void Query2CondLeftJoinCachedTotal(State& state);
 	void Query0CondInnerJoinUnlimit(State& state);
+	void Query0CondInnerJoinPreResultStoreValues(benchmark::State& state);
 	void Query2CondInnerJoin(State& state);
 	void Query2CondInnerJoinTotal(State& state);
 	void Query2CondInnerJoinCachedTotal(State& state);

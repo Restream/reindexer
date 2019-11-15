@@ -231,14 +231,14 @@ int SQLParser::parseOrderBy(tokenizer &parser, SortingEntries &sortingEntries, h
 		if (tok.type != TokenName && tok.type != TokenString)
 			throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
 		SortingEntry sortingEntry;
-		sortingEntry.column = string(tok.text());
+		sortingEntry.expression = string(tok.text());
 		tok = peekSqlToken(parser, SortDirectionSqlToken);
 		if (tok.text() == "("_sv && nameWithCase.text() == "field"_sv) {
 			parser.next_token();
 			tok = peekSqlToken(parser, FieldNameSqlToken, false);
 			if (tok.type != TokenName && tok.type != TokenString)
 				throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
-			sortingEntry.column = string(tok.text());
+			sortingEntry.expression = string(tok.text());
 			tok = parser.next_token(false);
 			for (;;) {
 				tok = parser.next_token();

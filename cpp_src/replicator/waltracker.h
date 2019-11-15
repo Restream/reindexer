@@ -77,7 +77,8 @@ protected:
 	void put(int64_t lsn, const WALRecord &rec);
 	/// check if lsn is available. e.g. in range of ring buffer
 	bool available(int64_t lsn) const { return lsn < lsnCounter_ && lsnCounter_ - lsn < walSize_; }
-
+	/// flushes lsn value to storage
+	/// @param lsn - lsn value
 	void writeToStorage(int64_t lsn);
 	std::vector<std::pair<int64_t, std::string>> readFromStorage(int64_t &maxLsn);
 

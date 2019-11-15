@@ -172,7 +172,9 @@ public:
 	ReplicationState GetReplState(const RdxContext &) const;
 	ReplicationState getReplState() const;
 	void SetSlaveLSN(int64_t slaveLSN, const RdxContext &);
-	void SetSlaveReplError(const Error &err, const RdxContext &);
+	void SetSlaveReplStatus(ReplicationState::Status, const Error &, const RdxContext &);
+	void SetSlaveReplStatus(ReplicationState::Status, const RdxContext &);
+	void SetSlaveReplMasterState(MasterState state, const RdxContext &);
 
 	void ReplaceTagsMatcher(const TagsMatcher &tm, const RdxContext &);
 
@@ -202,7 +204,7 @@ protected:
 	void markUpdated();
 	void doUpsert(ItemImpl *ritem, IdType id, bool doUpdate);
 	void modifyItem(Item &item, const RdxContext &ctx, bool store = true, int mode = ModeUpsert, bool noLock = false);
-	void updateFieldsFromQuery(IdType itemId, const Query &q, bool store = true);
+	void updateFieldsFromQuery(IdType itemId, const Query &q, bool rowBasedReplication, bool store = true);
 	void updateTagsMatcherFromItem(ItemImpl *ritem);
 	void updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields);
 	void doDelete(IdType id);

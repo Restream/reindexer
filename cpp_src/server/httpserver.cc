@@ -969,7 +969,7 @@ int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, b
 	}
 
 	if (withColumns) {
-		reindexer::TableCalculator<reindexer::QueryResults> tableCalculator(res, stoi(width));
+		reindexer::TableCalculator<reindexer::QueryResults> tableCalculator(res, stoi(width), limit);
 		auto &header = tableCalculator.GetHeader();
 		auto &columnsSettings = tableCalculator.GetColumnsSettings();
 		auto array = builder.Array("columns");
@@ -1087,9 +1087,9 @@ int HTTPServer::CheckAuth(http::Context &ctx) {
 		return -1;
 	}
 
-	auto clientData = std::make_shared<HTTPClientData>();
-	ctx.clientData = clientData;
+	std::unique_ptr<HTTPClientData> clientData(new HTTPClientData);
 	clientData->auth = auth;
+	ctx.clientData = std::move(clientData);
 	return 0;
 }
 

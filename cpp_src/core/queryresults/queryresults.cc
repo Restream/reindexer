@@ -79,9 +79,9 @@ void QueryResults::Erase(ItemRefVector::iterator start, ItemRefVector::iterator 
 }
 
 void QueryResults::lockItem(ItemRef &itemref, size_t joinedNs, bool lock) {
-	if (!itemref.value.IsFree() && !itemref.raw) {
+	if (!itemref.Value().IsFree() && !itemref.Raw()) {
 		assert(ctxs.size() > joinedNs);
-		Payload pl(ctxs[joinedNs].type_, itemref.value);
+		Payload pl(ctxs[joinedNs].type_, itemref.Value());
 		if (lock)
 			pl.AddRefStrings();
 		else
@@ -96,7 +96,7 @@ void QueryResults::lockResults(bool lock) {
 	if (!lock && !lockedResults_) return;
 	if (lock) assert(!lockedResults_);
 	for (size_t i = 0; i < items_.size(); ++i) {
-		lockItem(items_[i], items_[i].nsid, lock);
+		lockItem(items_[i], items_[i].Nsid(), lock);
 		if (joined_.empty()) continue;
 		Iterator itemIt{this, int(i), errOK};
 		joins::ItemIterator joinIt = itemIt.GetJoinedItemsIterator();
@@ -114,9 +114,9 @@ void QueryResults::Add(const ItemRef &i) {
 
 	if (!lockedResults_) return;
 
-	if (!i.value.IsFree() && !i.raw) {
-		assert(ctxs.size() > items_.back().nsid);
-		Payload(ctxs[items_.back().nsid].type_, items_.back().value).AddRefStrings();
+	if (!i.Value().IsFree() && !i.Raw()) {
+		assert(ctxs.size() > items_.back().Nsid());
+		Payload(ctxs[items_.back().Nsid()].type_, items_.back().Value()).AddRefStrings();
 	}
 }
 
@@ -124,8 +124,8 @@ void QueryResults::Add(const ItemRef &itemref, const PayloadType &pt) {
 	items_.push_back(itemref);
 
 	if (!lockedResults_) return;
-	if (!itemref.value.IsFree() && !itemref.raw) {
-		Payload(pt, items_.back().value).AddRefStrings();
+	if (!itemref.Value().IsFree() && !itemref.Raw()) {
+		Payload(pt, items_.back().Value()).AddRefStrings();
 	}
 }
 
@@ -133,7 +133,7 @@ void QueryResults::Dump() const {
 	string buf;
 	for (size_t i = 0; i < items_.size(); ++i) {
 		if (&items_[i] != &*items_.begin()) buf += ",";
-		buf += std::to_string(items_[i].id);
+		buf += std::to_string(items_[i].Id());
 		if (joined_.empty()) continue;
 		Iterator itemIt{this, int(i), errOK};
 		joins::ItemIterator joinIt = itemIt.GetJoinedItemsIterator();
@@ -143,7 +143,7 @@ void QueryResults::Dump() const {
 				if (fieldIt != joinIt.begin()) buf += ";";
 				for (int j = 0; j < fieldIt.ItemsCount(); ++j) {
 					if (j != 0) buf += ",";
-					buf += std::to_string(fieldIt[j].id);
+					buf += std::to_string(fieldIt[j].Id());
 				}
 			}
 			buf += "]";
@@ -175,7 +175,7 @@ public:
 		auto fieldIt = joinedItemIt_.at(rowid);
 		const ItemRef &itemRef = fieldIt[plIndex];
 		const Context &ctx = ctxs_[rowid + 1];
-		return ConstPayload(ctx.type_, itemRef.value);
+		return ConstPayload(ctx.type_, itemRef.Value());
 	}
 	const TagsMatcher &GetJoinedItemTagsMatcher(size_t rowid) final {
 		const Context &ctx = ctxs_[rowid + 1];
@@ -198,14 +198,14 @@ private:
 
 void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 	auto &itemRef = items_[idx];
-	assert(ctxs.size() > itemRef.nsid);
-	auto &ctx = ctxs[itemRef.nsid];
+	assert(ctxs.size() > itemRef.Nsid());
+	auto &ctx = ctxs[itemRef.Nsid()];
 
-	if (itemRef.value.IsFree()) {
+	if (itemRef.Value().IsFree()) {
 		ser << "{}";
 		return;
 	}
-	ConstPayload pl(ctx.type_, itemRef.value);
+	ConstPayload pl(ctx.type_, itemRef.Value());
 	JsonEncoder encoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
 
 	JsonBuilder builder(ser, JsonBuilder::TypePlain);
@@ -239,14 +239,14 @@ Error QueryResults::Iterator::GetJSON(WrSerializer &ser, bool withHdrLen) {
 Error QueryResults::Iterator::GetCJSON(WrSerializer &ser, bool withHdrLen) {
 	try {
 		auto &itemRef = qr_->items_[idx_];
-		assert(qr_->ctxs.size() > itemRef.nsid);
-		auto &ctx = qr_->ctxs[itemRef.nsid];
+		assert(qr_->ctxs.size() > itemRef.Nsid());
+		auto &ctx = qr_->ctxs[itemRef.Nsid()];
 
-		if (itemRef.value.IsFree()) {
+		if (itemRef.Value().IsFree()) {
 			return Error(errNotFound, "Item not found");
 		}
 
-		ConstPayload pl(ctx.type_, itemRef.value);
+		ConstPayload pl(ctx.type_, itemRef.Value());
 		CJsonBuilder builder(ser, CJsonBuilder::TypePlain);
 		CJsonEncoder cjsonEncoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
 
@@ -265,28 +265,28 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer &ser, bool withHdrLen) {
 
 bool QueryResults::Iterator::IsRaw() const {
 	auto &itemRef = qr_->items_[idx_];
-	return itemRef.raw;
+	return itemRef.Raw();
 }
 string_view QueryResults::Iterator::GetRaw() const {
 	auto &itemRef = qr_->items_[idx_];
-	assert(itemRef.raw);
-	return string_view(reinterpret_cast<char *>(itemRef.value.Ptr()), itemRef.value.GetCapacity());
+	assert(itemRef.Raw());
+	return string_view(reinterpret_cast<char *>(itemRef.Value().Ptr()), itemRef.Value().GetCapacity());
 }
 
 Item QueryResults::Iterator::GetItem() {
 	auto &itemRef = qr_->items_[idx_];
 
-	assert(qr_->ctxs.size() > itemRef.nsid);
-	auto &ctx = qr_->ctxs[itemRef.nsid];
+	assert(qr_->ctxs.size() > itemRef.Nsid());
+	auto &ctx = qr_->ctxs[itemRef.Nsid()];
 
-	if (itemRef.value.IsFree()) {
+	if (itemRef.Value().IsFree()) {
 		return Item(Error(errNotFound, "Item not found"));
 	}
 
-	PayloadValue v(itemRef.value);
+	PayloadValue v(itemRef.Value());
 
 	auto item = Item(new ItemImpl(ctx.type_, v, ctx.tagsMatcher_));
-	item.setID(itemRef.id);
+	item.setID(itemRef.Id());
 	return item;
 }
 
@@ -294,8 +294,8 @@ joins::ItemIterator QueryResults::Iterator::GetJoinedItemsIterator() {
 	static joins::NamespaceResults empty;
 	static joins::ItemIterator ret(&empty, 0);
 	auto &itemRef = qr_->items_[idx_];
-	if (itemRef.nsid >= qr_->joined_.size()) return ret;
-	return joins::ItemIterator(&qr_->joined_[itemRef.nsid], itemRef.id);
+	if (itemRef.Nsid() >= qr_->joined_.size()) return ret;
+	return joins::ItemIterator(&qr_->joined_[itemRef.Nsid()], itemRef.Id());
 }
 
 QueryResults::Iterator &QueryResults::Iterator::operator++() {

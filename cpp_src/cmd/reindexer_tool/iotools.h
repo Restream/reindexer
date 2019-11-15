@@ -12,6 +12,7 @@ using std::ofstream;
 using std::ostream;
 using std::istream;
 using std::string;
+using std::stringstream;
 using std::numeric_limits;
 using reindexer::string_view;
 using reindexer::Error;

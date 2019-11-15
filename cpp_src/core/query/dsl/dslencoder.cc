@@ -43,7 +43,7 @@ void encodeSorting(const SortingEntries& sortingEntries, JsonBuilder& builder) {
 	auto arrNode = builder.Array("sort");
 
 	for (const SortingEntry& sortingEntry : sortingEntries) {
-		arrNode.Object().Put("field", sortingEntry.column).Put("desc", sortingEntry.desc);
+		arrNode.Object().Put("field", sortingEntry.expression).Put("desc", sortingEntry.desc);
 	}
 }
 
@@ -184,7 +184,7 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 			dsl::encodeFilter(parentQuery, it->Value(), node);
 		} else {
 			auto arrNode = node.Array("filters");
-			toDsl(it->cbegin(it), it->cend(it), parentQuery, arrNode);
+			toDsl(it.cbegin(), it.cend(), parentQuery, arrNode);
 		}
 	}
 }

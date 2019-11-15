@@ -3,6 +3,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "core/itemimpl.h"
+#include "core/nsselecter/joinedselector.h"
 #include "join_selects_api.h"
 
 TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest) {
@@ -173,12 +174,12 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 			}
 
 			presentedAuthorIds.insert(static_cast<int>(authorIdKeyRef1));
-			rowidsIndexes.insert({rowid.id, i});
+			rowidsIndexes.insert({rowid.Id(), i});
 			i++;
 		}
 
 		for (auto rowIt : joinQueryRes) {
-			IdType rowid = rowIt.GetItemRef().id;
+			IdType rowid = rowIt.GetItemRef().Id();
 			auto itemIt = rowIt.GetJoinedItemsIterator();
 			if (itemIt.getJoinedItemsCount() == 0) continue;
 			auto joinedFieldIt = itemIt.begin();
@@ -384,4 +385,55 @@ TEST_F(JoinSelectsApi, JoinsEasyStressTest) {
 		if (i % 4 == 0) threads.push_back(std::thread([this]() { FillBooksNamespace(1000); }));
 	}
 	for (size_t i = 0; i < threads.size(); ++i) threads[i].join();
+}
+
+TEST_F(JoinSelectsApi, JoinPreResultStoreValuesOptimizationStressTest) {
+	using reindexer::JoinedSelector;
+	static const string rightNs = "rightNs";
+	static constexpr char const* data = "data";
+	static constexpr int maxDataValue = 10;
+	static constexpr int maxRightNsRowCount = maxDataValue * JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization();
+	static constexpr int maxLeftNsRowCount = 10000;
+	static constexpr size_t leftNsCount = 100;
+	static vector<string> leftNs;
+	if (leftNs.empty()) {
+		leftNs.reserve(leftNsCount);
+		for (size_t i = 0; i < leftNsCount; ++i) leftNs.push_back("leftNs" + std::to_string(i));
+	}
+
+	const auto createNs = [this](const string& ns) {
+		Error err = rt.reindexer->OpenNamespace(ns);
+		ASSERT_TRUE(err.ok()) << err.what();
+		DefineNamespaceDataset(
+			ns, {IndexDeclaration{id, "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{data, "hash", "int", IndexOpts(), 0}});
+	};
+	const auto fill = [this](const string& ns, int startId, int endId) {
+		for (int i = startId; i < endId; ++i) {
+			Item item = NewItem(ns);
+			item[id] = i;
+			item[data] = rand() % maxDataValue;
+			Upsert(ns, item);
+		}
+		Commit(ns);
+	};
+
+	createNs(rightNs);
+	fill(rightNs, 0, maxRightNsRowCount);
+	std::atomic<bool> start{false};
+	vector<std::thread> threads;
+	threads.reserve(leftNs.size());
+	for (size_t i = 0; i < leftNs.size(); ++i) {
+		createNs(leftNs[i]);
+		fill(leftNs[i], 0, maxLeftNsRowCount);
+		threads.emplace_back([this, i, &start]() {
+			// about 50% of queries will use the optimization
+			Query q = Query(leftNs[i]).InnerJoin(data, data, CondEq, Query(rightNs).Where(data, CondEq, rand() % maxDataValue));
+			QueryResults qres;
+			while (!start) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			Error err = rt.reindexer->Select(q, qres);
+			EXPECT_TRUE(err.ok()) << err.what();
+		});
+	}
+	start = true;
+	for (auto& th : threads) th.join();
 }

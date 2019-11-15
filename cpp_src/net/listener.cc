@@ -167,14 +167,6 @@ void Listener::Stop() {
 	}
 }
 
-void Listener::Fork(int clones) {
-	for (int i = 0; i < clones; i++) {
-		std::thread th(&Listener::clone, shared_);
-		th.detach();
-		shared_->count_++;
-	}
-}
-
 void Listener::clone(std::shared_ptr<Shared> shared) {
 	std::unique_lock<std::mutex> lck(shared->lck_, std::defer_lock);
 	{

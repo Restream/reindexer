@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.3.4"
+  version: "2.4.1"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -1986,6 +1986,31 @@ definitions:
       error_message:
         type: "string"
         description: "Error message of last replication"
+      status:
+        type: "string"
+        enum:
+          - idle
+          - error
+          - fatal
+          - syncing
+          - none
+        description: "Current replication status for this namespace"
+      master_state:
+        type: "object"
+        description: "State of current master namespace"
+        properties:
+           data_hash:
+             type: "integer"
+             description: "Hashsum of all records in namespace"
+           last_lsn:
+             type: "integer"
+             description: "Last Log Sequence Number (LSN) of applied namespace modification"
+           updated_unix_nano:
+             type: "integer"
+             description: "Last update time"
+           data_count:
+             type: "integer"
+             description: "Items count in master namespace"
       incarnation_counter:
         type: "integer"
         description: "Number of storage's master <-> slave switches"
@@ -1998,6 +2023,12 @@ definitions:
       wal_size:
         type: "integer"
         description: "Total memory consumption of Write Ahead Log (WAL)"
+      updated_unix_nano:
+        type: "integer"
+        description: "Last update time"
+      data_count:
+        type: "integer"
+        description: "Items count in namespace"
 
   DatabasePerfStats:
     type: "object"

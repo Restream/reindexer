@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include "dispatcher.h"
+#include "estl/atomic_unique_ptr.h"
 #include "net/connection.h"
 #include "net/iserverconnection.h"
 #include "replicator/updatesobserver.h"
@@ -29,21 +30,20 @@ public:
 	// Writer iterface implementation
 	void WriteRPCReturn(Context &ctx, const Args &args) override final { responceRPC(ctx, errOK, args); }
 	void CallRPC(CmdCode cmd, const Args &args) override final;
-	void SetClientData(ClientData::Ptr data) override final { clientData_ = data; }
-	ClientData::Ptr GetClientData() override final { return clientData_; }
+	void SetClientData(std::unique_ptr<ClientData> data) override final { clientData_ = std::move(data); }
+	ClientData *GetClientData() override final { return clientData_.get(); }
 
 protected:
 	void onRead() override;
 	void onClose() override;
 	void handleRPC(Context &ctx);
-	chunk packRPC(chunk chunk, Context &ctx, const Error &status, const Args &args);
 	void responceRPC(Context &ctx, const Error &error, const Args &args);
 	void async_cb(ev::async &) { sendUpdates(); }
 	void timeout_cb(ev::periodic &, int) { sendUpdates(); }
 	void sendUpdates();
 
 	Dispatcher &dispatcher_;
-	ClientData::Ptr clientData_;
+	std::unique_ptr<ClientData> clientData_;
 	// keep here to prevent allocs
 	RPCCall call_;
 	std::vector<chunk> updates_;

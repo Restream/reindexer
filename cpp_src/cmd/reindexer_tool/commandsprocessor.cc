@@ -13,6 +13,7 @@
 #include <iostream>
 #include "core/cjson/jsonbuilder.h"
 #include "core/queryresults/tableviewbuilder.h"
+#include "tableviewscroller.h"
 #include "tools/fsops.h"
 #include "tools/jsontools.h"
 #include "tools/stringstools.h"
@@ -121,7 +122,13 @@ Error CommandsProcessor<DBInterface>::commandSelect(const string& command) {
 			if (outputType == kOutputModeTable) {
 				auto isCanceled = [this]() -> bool { return cancelCtx_.IsCancelled(); };
 				reindexer::TableViewBuilder<typename DBInterface::QueryResultsT> tableResultsBuilder(results);
-				tableResultsBuilder.Build(output_(), isCanceled);
+				if (fileName_.empty()) {
+					TableViewScroller<typename DBInterface::QueryResultsT> resultsScroller(results, tableResultsBuilder,
+																						   reindexer::getTerminalSize().height - 1);
+					resultsScroller.Scroll(output_, isCanceled);
+				} else {
+					tableResultsBuilder.Build(output_(), isCanceled);
+				}
 			} else {
 				output_() << "[" << std::endl;
 				err = queryResultsToJson(output_(), results, isWALQuery);
@@ -549,12 +556,16 @@ Error CommandsProcessor<DBInterface>::queryResultsToJson(ostream& o, const typen
 	if (cancelCtx_.IsCancelled()) return errOK;
 	WrSerializer ser;
 	size_t i = 0;
+	bool scrollable = fileName_.empty();
+	reindexer::TerminalSize terminalSize;
+	if (scrollable) {
+		terminalSize = reindexer::getTerminalSize();
+		scrollable = (int(r.Count()) > terminalSize.height);
+	}
 	bool prettyPrint = variables_[kVariableOutput] == kOutputModePretty;
 	for (auto it : r) {
 		if (cancelCtx_.IsCancelled()) break;
-
 		if (isWALQuery) ser << '#' << it.GetLSN() << ' ';
-
 		if (it.IsRaw()) {
 			reindexer::WALRecord rec(it.GetRaw());
 			rec.Dump(ser, [this, &r](string_view cjson) {
@@ -575,12 +586,17 @@ Error CommandsProcessor<DBInterface>::queryResultsToJson(ostream& o, const typen
 		}
 		if ((++i != r.Count()) && !isWALQuery) ser << ',';
 		ser << '\n';
-		if (ser.Len() > 0x100000 || prettyPrint) {
+		if ((ser.Len() > 0x100000) || prettyPrint || scrollable) {
+			if (scrollable && (i % (terminalSize.height - 1) == 0)) {
+				WaitEnterToContinue(o, terminalSize.width, [this]() -> bool { return cancelCtx_.IsCancelled(); });
+			}
 			o << ser.Slice();
 			ser.Reset();
 		}
 	}
-	o << ser.Slice();
+	if (!cancelCtx_.IsCancelled()) {
+		o << ser.Slice();
+	}
 	return errOK;
 }
 

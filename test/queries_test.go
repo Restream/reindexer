@@ -1009,7 +1009,7 @@ func CheckTestItemsQueries() {
 			Name:      "TEST WITH COMMON INDEXES",
 			Namespace: "test_items",
 			Options: sortDistinctOptions{
-				SortIndexes:     []string{"", "NAME", "YEAR", "RATE"},
+				SortIndexes:     []string{"", "NAME", "YEAR", "RATE", "RATE + (GENRE - 40) * ISDELETED"},
 				DistinctIndexes: []string{"", "YEAR", "RATE"},
 				TestComposite:   true,
 			},
@@ -1019,7 +1019,7 @@ func CheckTestItemsQueries() {
 			Name:      "TEST WITH ID ONLY INDEX",
 			Namespace: "test_items_id_only",
 			Options: sortDistinctOptions{
-				SortIndexes:     []string{"", "name", "year", "rate"},
+				SortIndexes:     []string{"", "name", "year", "rate", "rate + (genre - 40) * isdeleted"},
 				DistinctIndexes: []string{"", "year", "rate"},
 				TestComposite:   false,
 			},
@@ -1029,7 +1029,7 @@ func CheckTestItemsQueries() {
 			Name:      "TEST WITH SPARSE INDEXES",
 			Namespace: "test_items_with_sparse",
 			Options: sortDistinctOptions{
-				SortIndexes:     []string{"", "NAME", "YEAR", "RATE"},
+				SortIndexes:     []string{"", "NAME", "YEAR", "RATE", "-ID + (END_TIME - START_TIME) / 100"},
 				DistinctIndexes: []string{"", "YEAR", "RATE"},
 				TestComposite:   false,
 			},

@@ -112,17 +112,72 @@ void IndexPerfStat::GetJSON(JsonBuilder &builder) {
 	}
 }
 
+void MasterState::GetJSON(JsonBuilder &builder) {
+	builder.Put("last_lsn", lastLsn);
+	builder.Put("data_hash", dataHash);
+	builder.Put("data_count", dataCount);
+	builder.Put("updated_unix_nano", int64_t(updatedUnixNano));
+}
+
+void MasterState::FromJSON(span<char> json) {
+	try {
+		gason::JsonParser parser;
+		auto root = parser.Parse(json);
+
+		lastLsn = root["last_lsn"].As<int64_t>();
+		dataHash = root["data_hash"].As<uint64_t>();
+		dataCount = root["data_count"].As<int>();
+		updatedUnixNano = root["updated_unix_nano"].As<int64_t>();
+	} catch (const gason::Exception &ex) {
+		throw Error(errParseJson, "MasterState: %s", ex.what());
+	}
+}
+
+static string_view replicationStatusToStr(ReplicationState::Status status) {
+	switch (status) {
+		case ReplicationState::Status::Idle:
+			return "idle"_sv;
+		case ReplicationState::Status::Error:
+			return "error"_sv;
+		case ReplicationState::Status::Fatal:
+			return "fatal"_sv;
+		case ReplicationState::Status::Syncing:
+			return "syncing"_sv;
+		case ReplicationState::Status::None:
+		default:
+			return "none"_sv;
+	}
+}
+
+static ReplicationState::Status strToReplicationStatus(string_view status) {
+	if (status == "idle"_sv) {
+		return ReplicationState::Status::Idle;
+	} else if (status == "error"_sv) {
+		return ReplicationState::Status::Error;
+	} else if (status == "fatal"_sv) {
+		return ReplicationState::Status::Fatal;
+	} else if (status == "syncing"_sv) {
+		return ReplicationState::Status::Syncing;
+	}
+	return ReplicationState::Status::None;
+}
+
 void ReplicationState::GetJSON(JsonBuilder &builder) {
 	builder.Put("last_lsn", lastLsn);
 	builder.Put("cluster_id", clusterID);
 	builder.Put("slave_mode", slaveMode);
 	builder.Put("temporary", temporary);
-	builder.Put("error_code", replError.code());
-	builder.Put("error_message", replError.what());
 	builder.Put("incarnation_counter", incarnationCounter);
 	builder.Put("data_hash", dataHash);
 	builder.Put("data_count", dataCount);
 	builder.Put("updated_unix_nano", int64_t(updatedUnixNano));
+	builder.Put("status", replicationStatusToStr(status));
+	if (slaveMode) {
+		builder.Put("error_code", replError.code());
+		builder.Put("error_message", replError.what());
+		auto masterObj = builder.Object("master_state");
+		masterState.GetJSON(masterObj);
+	}
 }
 
 void ReplicationState::FromJSON(span<char> json) {
@@ -134,12 +189,20 @@ void ReplicationState::FromJSON(span<char> json) {
 		clusterID = root["cluster_id"].As<int>();
 		slaveMode = root["slave_mode"].As<bool>();
 		temporary = root["temporary"].As<bool>();
-		int errCode = root["error_code"].As<int>();
-		replError = Error(errCode, root["error_message"].As<std::string>());
 		incarnationCounter = root["incarnation_counter"].As<int>();
 		dataHash = root["data_hash"].As<uint64_t>();
 		dataCount = root["data_count"].As<int>();
 		updatedUnixNano = root["updated_unix_nano"].As<int64_t>();
+		status = strToReplicationStatus(root["status"].As<string_view>());
+		if (slaveMode) {
+			int errCode = root["error_code"].As<int>();
+			replError = Error(errCode, root["error_message"].As<std::string>());
+			try {
+				masterState.FromJSON(root["master_state"].As<string_view>());
+			} catch (const Error &) {
+			} catch (const gason::Exception &) {
+			}
+		}
 	} catch (const gason::Exception &ex) {
 		throw Error(errParseJson, "ReplicationState: %s", ex.what());
 	}

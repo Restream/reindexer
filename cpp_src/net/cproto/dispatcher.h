@@ -26,9 +26,7 @@ struct RPCCall {
 	milliseconds execTimeout_;
 };
 
-class ClientData {
-public:
-	typedef std::shared_ptr<ClientData> Ptr;
+struct ClientData {
 	virtual ~ClientData() = default;
 };
 
@@ -38,14 +36,14 @@ public:
 	virtual ~Writer() = default;
 	virtual void WriteRPCReturn(Context &ctx, const Args &args) = 0;
 	virtual void CallRPC(CmdCode cmd, const Args &args) = 0;
-	virtual void SetClientData(ClientData::Ptr data) = 0;
-	virtual ClientData::Ptr GetClientData() = 0;
+	virtual void SetClientData(std::unique_ptr<ClientData> data) = 0;
+	virtual ClientData *GetClientData() = 0;
 };
 
 struct Context {
 	void Return(const Args &args) { writer->WriteRPCReturn(*this, args); }
-	void SetClientData(ClientData::Ptr data) { writer->SetClientData(data); }
-	ClientData::Ptr GetClientData() { return writer->GetClientData(); }
+	void SetClientData(std::unique_ptr<ClientData> data) { writer->SetClientData(std::move(data)); }
+	ClientData *GetClientData() { return writer->GetClientData(); }
 
 	string_view clientAddr;
 	RPCCall *call;
@@ -161,6 +159,7 @@ protected:
 
 	std::function<void(Context &ctx, const Error &err, const Args &args)> logger_;
 	std::function<void(Context &ctx, const Error &err)> onClose_;
+	// This should be called from the connection thread only to prevet access to other connection's ClientData
 	std::function<void(Context &ctx)> onResponse_;
 };
 }  // namespace cproto

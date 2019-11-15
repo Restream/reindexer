@@ -50,7 +50,7 @@ public:
 		string name(n);
 		auto res = names2tags_.emplace(name, tags2names_.size());
 		if (res.second) {
-			tags2names_.push_back(name);
+			tags2names_.emplace_back(std::move(name));
 			version_++;
 		}
 		updated |= res.second;
@@ -63,7 +63,7 @@ public:
 		if (tag == 0) return emptystr;
 
 		if (tag - 1 >= int(tags2names_.size())) {
-			throw Error(errLogic, "Unknown tag %d in cjson", tag);
+			throw Error(errTagsMissmatch, "Unknown tag %d in cjson", tag);
 		}
 
 		return tags2names_[tag - 1];

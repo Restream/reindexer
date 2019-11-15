@@ -1,6 +1,7 @@
 
 
 #include "core/query/sql/sqlencoder.h"
+#include "core/nsselecter/sortexpression.h"
 #include "core/query/query.h"
 #include "core/queryresults/aggregationresult.h"
 #include "tools/serializer.h"
@@ -69,18 +70,22 @@ void SQLEncoder::dumpOrderBy(WrSerializer &ser, bool stripArgs) const {
 	ser << " ORDER BY ";
 	for (size_t i = 0; i < query_.sortingEntries_.size(); ++i) {
 		const SortingEntry &sortingEntry(query_.sortingEntries_[i]);
-		if (query_.forcedSortOrder.empty()) {
-			ser << sortingEntry.column;
-		} else {
-			ser << "FIELD(" << sortingEntry.column;
-			if (stripArgs) {
-				ser << '?';
+		if (SortExpression::Parse(sortingEntry.expression).JustByIndex()) {
+			if (query_.forcedSortOrder.empty()) {
+				ser << sortingEntry.expression;
 			} else {
-				for (auto &v : query_.forcedSortOrder) {
-					ser << ", '" << v.As<string>() << "'";
+				ser << "FIELD(" << sortingEntry.expression;
+				if (stripArgs) {
+					ser << '?';
+				} else {
+					for (auto &v : query_.forcedSortOrder) {
+						ser << ", '" << v.As<string>() << "'";
+					}
 				}
+				ser << ")";
 			}
-			ser << ")";
+		} else {
+			ser << '\'' << sortingEntry.expression << '\'';
 		}
 		ser << (sortingEntry.desc ? " DESC" : "");
 		if (i != query_.sortingEntries_.size() - 1) ser << ", ";
@@ -100,7 +105,13 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 						ser << f;
 					}
 					for (const auto &se : a.sortingEntries_) {
-						ser << " ORDER BY " << se.column << (se.desc ? " DESC" : " ASC");
+						ser << " ORDER BY ";
+						if (SortExpression::Parse(se.expression).JustByIndex()) {
+							ser << se.expression;
+						} else {
+							ser << '\'' << se.expression << '\'';
+						}
+						ser << (se.desc ? " DESC" : " ASC");
 					}
 
 					if (a.offset_ != 0 && !stripArgs) ser << " OFFSET " << a.offset_;
@@ -178,7 +189,7 @@ static void writeSQL(const Query &parentQuery, QueryEntries::const_iterator from
 		}
 		if (!it->IsLeaf()) {
 			ser << '(';
-			writeSQL(parentQuery, it->cbegin(it), it->cend(it), ser, stripArgs);
+			writeSQL(parentQuery, it.cbegin(), it.cend(), ser, stripArgs);
 			ser << ')';
 		} else {
 			const QueryEntry &entry = it->Value();

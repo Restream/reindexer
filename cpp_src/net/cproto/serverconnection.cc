@@ -37,7 +37,6 @@ void ServerConnection::Attach(ev::dynamic_loop &loop) {
 	async_.set<ServerConnection, &ServerConnection::async_cb>(this);
 	if (!attached_) {
 		attach(loop);
-
 		timeout_.start(kCProtoTimeoutSec);
 		updates_async_.set(loop);
 		updates_async_.start();
@@ -147,7 +146,7 @@ void ServerConnection::onRead() {
 	}
 }
 
-chunk ServerConnection::packRPC(chunk chunk, Context &ctx, const Error &status, const Args &args) {
+static chunk packRPC(chunk chunk, Context &ctx, const Error &status, const Args &args) {
 	WrSerializer ser(std::move(chunk));
 
 	CProtoHeader hdr;
@@ -168,11 +167,6 @@ chunk ServerConnection::packRPC(chunk chunk, Context &ctx, const Error &status, 
 	args.Pack(ser);
 	reinterpret_cast<CProtoHeader *>(ser.Buf())->len = ser.Len() - sizeof(hdr);
 
-	if (dispatcher_.onResponse_) {
-		ctx.stat.sizeStat.respSizeBytes = ser.Len();
-		dispatcher_.onResponse_(ctx);
-	}
-
 	return ser.DetachChunk();
 }
 
@@ -182,7 +176,15 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 		return;
 	}
 
-	wrBuf_.write(packRPC(wrBuf_.get_chunk(), ctx, status, args));
+	auto &&chunck = packRPC(wrBuf_.get_chunk(), ctx, status, args);
+	auto len = chunck.len_;
+	wrBuf_.write(std::move(chunck));
+
+	if (dispatcher_.onResponse_) {
+		ctx.stat.sizeStat.respSizeBytes = len;
+		dispatcher_.onResponse_(ctx);
+	}
+
 	ctx.respSent = true;
 	// if (canWrite_) {
 	// 	write_cb();
@@ -226,6 +228,11 @@ void ServerConnection::sendUpdates() {
 			len += ch.len_;
 			wrBuf_.write(std::move(ch));
 		}
+	}
+
+	if (dispatcher_.onResponse_) {
+		ctx.stat.sizeStat.respSizeBytes = len;
+		dispatcher_.onResponse_(ctx);
 	}
 
 	callback(io_, ev::WRITE);

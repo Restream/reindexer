@@ -108,11 +108,12 @@ static void procces_packed_item(Item& item, int mode, int state_token, reindexer
 				err = item.FromJSON(string_view(reinterpret_cast<const char*>(data.data), data.len), 0, mode == ModeDelete);
 				break;
 			case FormatCJson:
-				if (item.GetStateToken() != state_token)
+				if (item.GetStateToken() != state_token) {
 					err = Error(errStateInvalidated, "stateToken mismatch:  %08X, need %08X. Can't process item", state_token,
 								item.GetStateToken());
-				else
+				} else {
 					err = item.FromCJSON(string_view(reinterpret_cast<const char*>(data.data), data.len), mode == ModeDelete);
+				}
 				break;
 			default:
 				err = Error(-1, "Invalid source item format %d", format);
@@ -147,7 +148,13 @@ reindexer_error reindexer_modify_item_packed_tx(uintptr_t rx, uintptr_t tr, rein
 	Error err = err_not_init;
 	auto item = trw->tr_.NewItem();
 	procces_packed_item(item, mode, state_token, data, precepts, format, err);
-
+	if (err.code() == errTagsMissmatch) {
+		item = db->NewItem(trw->tr_.GetName());
+		err = item.Status();
+		if (err.ok()) {
+			procces_packed_item(item, mode, state_token, data, precepts, format, err);
+		}
+	}
 	if (err.ok()) {
 		trw->tr_.Modify(std::move(item), ItemModifyMode(mode));
 	}

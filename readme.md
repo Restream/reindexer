@@ -30,6 +30,7 @@ The core is written in C++ and the application level API is in Go.
 	- [Index Types and Their Capabilites](#index-types-and-their-capabilites)
 	- [Nested Structs](#nested-structs)
 	- [Complex Primary Keys and Composite Indexes](#complex-primary-keys-and-composite-indexes)
+	- [Sort](#sort)
 	- [Join](#join)
 		- [Joinable interface](#joinable-interface)
 	- [Complex Primary Keys and Composite Indices](#complex-primary-keys-and-composite-indices)
@@ -313,6 +314,45 @@ type ComplexItem struct {
 	Year     int     `reindex:"year,tree"`
 	parent   *Item   `reindex:"-"` // Index fields of parent will NOT be added to reindex
 }
+```
+
+### Sort
+
+Reindexer can sort documents by fields (including nested) or by expressions in asceding or descending order.
+
+Sort expressions can contain fields names (including nested) of int, float or bool type, numbers, function rank(), parenthesis and arithmetic operations: +, - (unary and binary), * and /.
+Fields names must end by space (before close parenthesis space is optional).
+Rank() means fulltext rank of match and is applicable only in fulltext query.
+In SQL query sort expression must be quoted.
+
+```go
+type Person struct {
+	Name string `reindex:"name"`
+	Age  int    `reindex:"age"`
+}
+
+type Actor struct {
+	ID          int    `reindex:"id"`
+	PersonData  Person `reindex:"person"`
+	Price       int    `reindex:"price"`
+	Description string `reindex:"description,text"`
+}
+....
+
+query := db.Query("actors").Sort("id", true)           // Sort by field
+....
+query = db.Query("actors").Sort("person.age", true)   // Sort by nested field
+....
+// Sort by expression:
+query = db.Query("actors").Sort("person.age / -10 + price / 1000 * (id - 5)", true)
+....
+query = db.Query("actors").Where("description", reindexer.EQ, "ququ").
+    Sort("rank() + id / 100", true)   // Sort with fulltext rank
+....
+// In SQL query:
+iterator := db.ExecSQL ("SELECT * FROM actors ORDER BY person.name ASC")
+....
+iterator := db.ExecSQL ("SELECT * FROM actors WHERE description = 'ququ' ORDER BY 'rank() + id / 100' DESC")
 ```
 
 ### Join
@@ -782,7 +822,7 @@ To configure storage type for Go bindings either `bindings.ConnectOptions` (for 
 
 ### RocksDB
 
-Reindexer will try to autodetect RocksDB library and it's dependencies at compile time if CMake flag `ENABLE_ROCKSDB` was passed (enabled by default). 
+Reindexer will try to autodetect RocksDB library and it's dependencies at compile time if CMake flag `ENABLE_ROCKSDB` was passed (enabled by default).
 If reindexer library was built with rocksdb, it requires Go build tag `rocksdb` in order to link with go-applications and go-bindinds.
 
 ## Integration with other program languages

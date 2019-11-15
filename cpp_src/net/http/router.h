@@ -140,9 +140,7 @@ public:
 	virtual ~Reader() = default;
 };
 
-class ClientData {
-public:
-	typedef std::shared_ptr<ClientData> Ptr;
+struct ClientData {
 	virtual ~ClientData() = default;
 };
 
@@ -157,7 +155,7 @@ struct Context {
 	Request *request;
 	Writer *writer;
 	Reader *body;
-	ClientData::Ptr clientData;
+	std::unique_ptr<ClientData> clientData;
 
 	Stat stat;
 };

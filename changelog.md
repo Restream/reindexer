@@ -1,3 +1,23 @@
+# Version 2.4.1 (15.11.2019)
+
+## Core
+- [fea] Sort by expressions
+- [fea] Optimized lock time for joins with small preresult set
+- [fea] Added more info about replication state to #memstat namespace
+- [fix] LSN on row-based query replication (possible assert on server startup)
+- [fix] Replication clusterID for namespaces without storage
+- [fix] PK precepts replication
+
+## Reindexer server
+- [fix] Query results row calculation for http queries with limit
+
+## Reindexer tool
+- [fea] Table pagination
+- [fea] Queries cancellation
+
+## go connector
+- [fix] Tags race on concurrent transactions
+
 # Version 2.3.4 (29.10.2019)
 
 ## go connector
@@ -205,7 +225,7 @@
 
 ## Core
 
-- [fea] Bracets in DSL & SQL queries    
+- [fea] Bracets in DSL & SQL queries
 - [fix] Crash on LRUCache fast invalidation
 - [fix] Relaxed JSON validation. Symbols with codes < 0x20 now are valid
 - [fix] '\0' symbol in JSON will not broke parser

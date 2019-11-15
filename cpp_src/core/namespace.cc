@@ -622,39 +622,37 @@ void Namespace::Update(const Query &query, QueryResults &result, const RdxContex
 	selecter(result, selCtx, ctx);
 
 	auto tmStart = high_resolution_clock::now();
-	// If update statement is expression, and contains functions call, then we should use
-	// row statement replication to preserve data consistense
-	bool enableStatementRepl = true;
-	for (auto &ue : query.updateFields_) {
-		if (ue.isExpression) enableStatementRepl = false;
-	}
-	if (repl_.slaveMode && !enableStatementRepl) throw Error(errLogic, "Can't apply update query with expression to slave ns '%s'", name_);
 
+	bool isExpression = false;
+	for (const UpdateEntry &ue : query.updateFields_) {
+		if (ue.isExpression) {
+			isExpression = true;
+			break;
+		}
+	}
+
+	if (repl_.slaveMode && isExpression) throw Error(errLogic, "Can't apply update query with expression to slave ns '%s'", name_);
 	ThrowOnCancel(ctx);
 
+	// If update statement is expression and contains function calls then we use
+	// row-based replication (to preserve data consistense), otherwise we update
+	// it via 'WalUpdateQuery' (statement-based replication).
+	bool enableStatementRepl =
+		(!isExpression && !query.HasLimit() && !query.HasOffset() && (result.Count() >= kWALStatementItemsThreshold));
+
 	for (ItemRef &item : result.Items()) {
-		updateFieldsFromQuery(item.id, query, true);
-		item.value = items_[item.id];
+		updateFieldsFromQuery(item.Id(), query, !enableStatementRepl, true);
+		item.Value() = items_[item.Id()];
 	}
 	result.getTagsMatcher(0) = tagsMatcher_;
 	result.lockResults();
 
-	WrSerializer ser;
-	if (enableStatementRepl && !query.HasLimit() && !query.HasOffset() && (result.Count() >= kWALStatementItemsThreshold)) {
-		// FAST PATH: statement based repliaction
+	if (enableStatementRepl) {
+		WrSerializer ser;
 		const_cast<Query &>(query).type_ = QueryUpdate;
 		WALRecord wrec(WalUpdateQuery, query.GetSQL(ser).Slice());
 		if (!repl_.slaveMode) lsn = wal_.Add(wrec);
 		observers_->OnWALUpdate(lsn, name_, wrec);
-	} else {
-		// SLOW PATH: row based repliaction
-		for (auto it : result) {
-			int id = it.GetItemRef().id;
-			lsn = wal_.Add(WALRecord(WalItemUpdate, id), items_[id].GetLSN());
-			ser.Reset();
-			it.GetCJSON(ser, false);
-			observers_->OnWALUpdate(lsn, name_, WALRecord(WalItemModify, ser.Slice(), tagsMatcher_.version(), ModeUpdate));
-		}
 	}
 
 	if (query.debugLevel >= LogInfo) {
@@ -791,7 +789,7 @@ void Namespace::Delete(const Query &q, QueryResults &result, const RdxContext &c
 
 	auto tmStart = high_resolution_clock::now();
 	for (auto &r : result.Items()) {
-		doDelete(r.id);
+		doDelete(r.Id());
 	}
 
 	if (!q.HasLimit() && !q.HasOffset() && result.Count() >= kWALStatementItemsThreshold) {
@@ -806,7 +804,7 @@ void Namespace::Delete(const Query &q, QueryResults &result, const RdxContext &c
 		for (auto it : result) {
 			WrSerializer cjson;
 			it.GetCJSON(cjson, false);
-			int id = it.GetItemRef().id;
+			int id = it.GetItemRef().Id();
 			lsn = wal_.Add(WALRecord(WalItemModify, cjson.Slice(), tagsMatcher_.version(), ModeDelete), items_[id].GetLSN());
 			observers_->OnWALUpdate(lsn, name_, WALRecord(WalItemModify, cjson.Slice(), tagsMatcher_.version(), ModeDelete));
 		}
@@ -876,10 +874,31 @@ void Namespace::SetSlaveLSN(int64_t slaveLsn, const RdxContext &ctx) {
 	unflushedCount_.fetch_add(1, std::memory_order_release);
 }
 
-void Namespace::SetSlaveReplError(const Error &err, const RdxContext &ctx) {
+void Namespace::SetSlaveReplStatus(ReplicationState::Status status, const Error &err, const RdxContext &ctx) {
 	WLock lck(mtx_, &ctx);
 	assert(repl_.slaveMode);
+	if (status == ReplicationState::Status::Idle || status == ReplicationState::Status::Syncing) {
+		assert(err.code() == errOK);
+	} else {
+		assert(err.code() != errOK);
+	}
 	repl_.replError = err;
+	repl_.status = status;
+	unflushedCount_.fetch_add(1, std::memory_order_release);
+}
+
+void Namespace::SetSlaveReplStatus(ReplicationState::Status status, const RdxContext &ctx) {
+	WLock lck(mtx_, &ctx);
+	assert(repl_.slaveMode);
+	repl_.replError = errOK;
+	repl_.status = status;
+	unflushedCount_.fetch_add(1, std::memory_order_release);
+}
+
+void Namespace::SetSlaveReplMasterState(MasterState state, const RdxContext &ctx) {
+	WLock lck(mtx_, &ctx);
+	assert(repl_.slaveMode);
+	repl_.masterState = state;
 	unflushedCount_.fetch_add(1, std::memory_order_release);
 }
 
@@ -1055,7 +1074,7 @@ VariantArray Namespace::preprocessUpdateFieldValues(const UpdateEntry &updateEnt
 	return {expressionEvaluator.Evaluate(static_cast<string_view>(updateEntry.values.front()), items_[itemId])};
 }
 
-void Namespace::updateFieldsFromQuery(IdType itemId, const Query &q, bool store) {
+void Namespace::updateFieldsFromQuery(IdType itemId, const Query &q, bool rowBasedReplication, bool store) {
 	if (isEmptyAfterStorageReload()) {
 		reloadStorage();
 	}
@@ -1126,8 +1145,16 @@ void Namespace::updateFieldsFromQuery(IdType itemId, const Query &q, bool store)
 		indexes_[field]->Upsert(Variant(pv), itemId);
 	}
 
+	if (rowBasedReplication) {
+		int64_t lsn = wal_.Add(WALRecord(WalItemUpdate, itemId), items_[itemId].GetLSN());
+		pv.SetLSN(lsn);
+		ItemImpl item(payloadType_, pv, tagsMatcher_);
+		string_view cjson = item.GetCJSON(false);
+		observers_->OnWALUpdate(lsn, name_, WALRecord(WalItemModify, cjson, tagsMatcher_.version(), ModeUpdate));
+	}
+
 	repl_.dataHash ^= pl.GetHash();
-	if (storage_ && store) {
+	if (store && storage_) {
 		if (tagsMatcher_.isUpdated()) {
 			WrSerializer ser;
 			ser.PutUInt64(sysRecordsVersions_.tagsVersion);
@@ -1165,6 +1192,7 @@ void Namespace::modifyItem(Item &item, const RdxContext &ctx, bool store, int mo
 	}
 	calc.LockHit();
 
+	setFieldsBasedOnPrecepts(itemImpl);
 	updateTagsMatcherFromItem(itemImpl);
 	auto newPl = itemImpl->GetPayload();
 
@@ -1177,7 +1205,6 @@ void Namespace::modifyItem(Item &item, const RdxContext &ctx, bool store, int mo
 	}
 
 	IdType id = exists ? realItem.first : createItem(newPl.RealSize());
-	setFieldsBasedOnPrecepts(itemImpl);
 
 	int64_t lsn = item.GetLSN();
 	if (repl_.slaveMode) {
@@ -1996,8 +2023,8 @@ void Namespace::checkApplySlaveUpdate(int64_t lsn) {
 	if (repl_.slaveMode) {
 		if (lsn == -1) {
 			throw Error(errLogic, "Can't modify slave ns '%s'", name_);
-		} else if (!repl_.replError.ok()) {
-			throw Error(errLogic, "Can't modify slave ns '%s', ns has replication error: %s", name_, repl_.replError.what());
+		} else if (repl_.status == ReplicationState::Status::Fatal) {
+			throw Error(errLogic, "Can't modify slave ns '%s', ns has fatal replication error: %s", name_, repl_.replError.what());
 		}
 	}
 }

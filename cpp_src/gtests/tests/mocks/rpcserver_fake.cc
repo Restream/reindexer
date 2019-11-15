@@ -22,7 +22,7 @@ Error RPCServerFake::Login(cproto::Context &ctx, p_string /*login*/, p_string /*
 		return Error(errParams, "Already logged in");
 	}
 
-	ctx.SetClientData(std::make_shared<RPCClientData>());
+	ctx.SetClientData(std::unique_ptr<RPCClientData>(new RPCClientData));
 	int64_t startTs = std::chrono::duration_cast<std::chrono::seconds>(startTs_.time_since_epoch()).count();
 
 	ctx.Return({cproto::Arg(p_string(REINDEX_VERSION)), cproto::Arg(startTs)});
@@ -31,7 +31,7 @@ Error RPCServerFake::Login(cproto::Context &ctx, p_string /*login*/, p_string /*
 }
 
 Error RPCServerFake::CheckAuth(cproto::Context &ctx) {
-	auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData().get());
+	auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData());
 
 	if (ctx.call->cmd == cproto::kCmdLogin || ctx.call->cmd == cproto::kCmdPing) {
 		return 0;

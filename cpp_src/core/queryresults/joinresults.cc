@@ -56,7 +56,7 @@ void JoinedFieldIterator::updateOffset() {
 
 ItemImpl JoinedFieldIterator::GetItem(int itemIdx, const PayloadType& pt, const TagsMatcher& tm) const {
 	const_reference constItemRef = operator[](itemIdx);
-	return ItemImpl(pt, constItemRef.value, tm);
+	return ItemImpl(pt, constItemRef.Value(), tm);
 }
 
 QueryResults JoinedFieldIterator::ToQueryResults() const {

@@ -7,6 +7,7 @@
 #include <regex>
 #include <unordered_map>
 #include <unordered_set>
+#include "core/nsselecter/sortexpression.h"
 #include "reindexer_api.h"
 #include "tools/string_regexp_functions.h"
 #include "tools/stringstools.h"
@@ -125,6 +126,48 @@ public:
 		}
 	}
 
+	static double CalculateSortExpression(reindexer::SortExpression::const_iterator begin, reindexer::SortExpression::const_iterator end,
+										  Item& item) {
+		double result = 0.0;
+		assert(begin != end);
+		assert(begin->Op.op == OpPlus);
+		for (auto it = begin; it != end; ++it) {
+			double value = 0.0;
+			if (it->IsLeaf()) {
+				const auto& sortExprValue = it->Value();
+				switch (sortExprValue.type) {
+					case reindexer::SortExpressionValue::Value:
+						value = sortExprValue.value;
+						break;
+					case reindexer::SortExpressionValue::Index:
+						value = item[sortExprValue.column].As<double>();
+						break;
+					case reindexer::SortExpressionValue::Rank:
+						assert(0);
+				}
+			} else {
+				value = CalculateSortExpression(it.cbegin(), it.cend(), item);
+			}
+			if (it->Op.negative) value = -value;
+			switch (it->Op.op) {
+				case OpPlus:
+					result += value;
+					break;
+				case OpMinus:
+					result -= value;
+					break;
+				case OpMult:
+					result *= value;
+					break;
+				case OpDiv:
+					assert(value != 0.0);
+					result /= value;
+					break;
+			}
+		}
+		return result;
+	}
+
 	void Verify(const string& ns, const QueryResults& qr, const Query& query) {
 		unordered_set<string> pks;
 		unordered_map<string, unordered_set<string>> distincts;
@@ -169,22 +212,26 @@ public:
 			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
 				if (!query.forcedSortOrder.empty()) break;
 				const reindexer::SortingEntry& sortingEntry(query.sortingEntries_[j]);
-				Variant sortedValue = itemr[sortingEntry.column];
+				const auto sortExpr = reindexer::SortExpression::Parse(sortingEntry.expression);
+				Variant sortedValue;
+				if (sortExpr.JustByIndex()) {
+					sortedValue = itemr[sortingEntry.expression];
+				} else {
+					sortedValue = Variant{CalculateSortExpression(sortExpr.cbegin(), sortExpr.cend(), itemr)};
+				}
 				if (lastSortedColumnValues[j].Type() != KeyValueNull) {
 					bool needToVerify = true;
-					if (j != 0) {
-						for (int k = j - 1; k >= 0; --k)
-							if (cmpRes[k] != 0) {
-								needToVerify = false;
-								break;
-							}
+					for (int k = j - 1; k >= 0; --k) {
+						if (cmpRes[k] != 0) {
+							needToVerify = false;
+							break;
+						}
 					}
-					needToVerify = (j == 0) || needToVerify;
 					if (needToVerify) {
 						cmpRes[j] = lastSortedColumnValues[j].Compare(sortedValue);
 						bool sortOrderSatisfied =
 							(sortingEntry.desc && cmpRes[j] >= 0) || (!sortingEntry.desc && cmpRes[j] <= 0) || (cmpRes[j] == 0);
-						EXPECT_TRUE(sortOrderSatisfied) << "\nSort order is incorrect for column: " << sortingEntry.column;
+						EXPECT_TRUE(sortOrderSatisfied) << "\nSort order is incorrect for column: " << sortingEntry.expression;
 						if (!sortOrderSatisfied) {
 							TEST_COUT << query.GetSQL() << std::endl;
 							PrintFailedSortOrder(query, qr, i);
@@ -200,7 +247,7 @@ public:
 			if (query.forcedSortOrder.size() <= qr.Count()) {
 				for (size_t i = 0; i < qr.Count(); ++i) {
 					Item item(qr[i].GetItem());
-					Variant sortedValue = item[query.sortingEntries_[0].column];
+					Variant sortedValue = item[query.sortingEntries_[0].expression];
 					EXPECT_EQ(query.forcedSortOrder[i].Compare(sortedValue), 0) << "Forced sort order is incorrect!";
 				}
 			}
@@ -213,7 +260,7 @@ public:
 
 		// If query has distinct, skip verification
 		bool haveDistinct = false;
-		query.entries.ForeachEntry([&haveDistinct](const reindexer::QueryEntry& qe, OpType) {
+		query.entries.ForEachEntry([&haveDistinct](const reindexer::QueryEntry& qe, OpType) {
 			if (qe.distinct) haveDistinct = true;
 		});
 		if (haveDistinct) return;
@@ -266,7 +313,7 @@ protected:
 				if (it->Value().distinct) continue;
 				iterationResult = checkCondition(item, it->Value());
 			} else {
-				iterationResult = checkConditions(item, it->cbegin(it), it->cend(it));
+				iterationResult = checkConditions(item, it.cbegin(), it.cend());
 			}
 			switch (it->Op) {
 				case OpNot:
@@ -604,14 +651,19 @@ protected:
 	}
 
 	void CheckStandartQueries() {
-		const char* sortIdxs[] = {"", kFieldNameName, kFieldNameYear, kFieldNameRate, kFieldNameBtreeIdsets};
-		const vector<string> distincts = {"", kFieldNameYear, kFieldNameRate};
-		const vector<bool> sortOrders = {true, false};
+		static const vector<string> sortIdxs = {"",
+												kFieldNameName,
+												kFieldNameYear,
+												kFieldNameRate,
+												kFieldNameBtreeIdsets,
+												string{"-2.5 * "} + kFieldNameRate + " / (" + kFieldNameYear + " + " + kFieldNameId + ')'};
+		static const vector<string> distincts = {"", kFieldNameYear, kFieldNameRate};
+		static const vector<bool> sortOrders = {true, false};
 
-		const string compositeIndexName(kFieldNameAge + compositePlus + kFieldNameGenre);
+		static const string compositeIndexName(kFieldNameAge + compositePlus + kFieldNameGenre);
 
 		for (const bool sortOrder : sortOrders) {
-			for (const char* sortIdx : sortIdxs) {
+			for (const string& sortIdx : sortIdxs) {
 				for (const string& distinct : distincts) {
 					const int randomAge = rand() % 50;
 					const int randomGenre = rand() % 50;
@@ -1239,6 +1291,38 @@ protected:
 
 		CompareQueryResults(sqlQr5, checkQr5);
 		Verify(default_namespace, checkQr5, checkQuery5);
+
+		sqlQuery = string("SELECT ID FROM test_namespace ORDER BY '") + kFieldNameYear + " + " + kFieldNameId + " * 5' DESC LIMIT 10000000";
+		const Query checkQuery6 =
+			Query(default_namespace, 0, 10000000).Sort(kFieldNameYear + std::string(" + ") + kFieldNameId + " * 5", true);
+
+		QueryResults sqlQr6;
+		err = rt.reindexer->Select(sqlQuery, sqlQr6);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		QueryResults checkQr6;
+		err = rt.reindexer->Select(checkQuery6, checkQr6);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		CompareQueryResults(sqlQr6, checkQr6);
+		Verify(default_namespace, checkQr6, checkQuery6);
+
+		sqlQuery = string("SELECT ID FROM test_namespace ORDER BY '") + kFieldNameYear + " + " + kFieldNameId +
+				   " * 5' DESC ORDER BY '2 * " + kFieldNameGenre + " / (1 + " + kFieldNameIsDeleted + ")' ASC LIMIT 10000000";
+		const Query checkQuery7 = Query(default_namespace, 0, 10000000)
+									  .Sort(kFieldNameYear + string(" + ") + kFieldNameId + " * 5", true)
+									  .Sort(string("2 * ") + kFieldNameGenre + " / (1 + " + kFieldNameIsDeleted + ')', false);
+
+		QueryResults sqlQr7;
+		err = rt.reindexer->Select(sqlQuery, sqlQr7);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		QueryResults checkQr7;
+		err = rt.reindexer->Select(checkQuery7, checkQr7);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		CompareQueryResults(sqlQr7, checkQr7);
+		Verify(default_namespace, checkQr7, checkQuery7);
 	}
 
 	void CheckCompositeIndexesQueries() {
@@ -1346,7 +1430,7 @@ protected:
 			if (it->IsLeaf()) {
 				TestCout() << it->Value().Dump();
 			} else {
-				PrintQueryEntries(it->cbegin(it), it->cend(it));
+				PrintQueryEntries(it.cbegin(), it.cend());
 			}
 		}
 		TestCout() << ")";
@@ -1362,7 +1446,7 @@ protected:
 		Item rdummy(qr[0].GetItem());
 		boldOn();
 		for (size_t idx = 0; idx < query.sortingEntries_.size(); idx++) {
-			TestCout() << rdummy[query.sortingEntries_[idx].column].Name() << " ";
+			TestCout() << rdummy[query.sortingEntries_[idx].expression].Name() << " ";
 		}
 		boldOff();
 		TestCout() << std::endl << std::endl;
@@ -1373,7 +1457,7 @@ protected:
 			Item item(qr[i].GetItem());
 			if (i == itemIndex) boldOn();
 			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
-				TestCout() << item[query.sortingEntries_[j].column].As<string>() << " ";
+				TestCout() << item[query.sortingEntries_[j].expression].As<string>() << " ";
 			}
 			if (i == itemIndex) boldOff();
 			TestCout() << std::endl;
@@ -1387,7 +1471,7 @@ protected:
 		for (int i = firstItem; i < lastItem; ++i) {
 			Item item(qr[i].GetItem());
 			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
-				TestCout() << item[query.sortingEntries_[j].column].As<string>() << " ";
+				TestCout() << item[query.sortingEntries_[j].expression].As<string>() << " ";
 			}
 			TestCout() << std::endl;
 		}

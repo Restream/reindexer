@@ -312,7 +312,7 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 
 		for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
 			const reindexer::SortingEntry& sortingEntry(query.sortingEntries_[j]);
-			Variant sortedValue = item[sortingEntry.column];
+			Variant sortedValue = item[sortingEntry.expression];
 			if (lastValues[j].Type() != KeyValueNull) {
 				cmpRes[j] = lastValues[j].Compare(sortedValue);
 				bool needToVerify = true;
@@ -328,7 +328,7 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 					bool sortOrderSatisfied =
 						(sortingEntry.desc && cmpRes[j] >= 0) || (!sortingEntry.desc && cmpRes[j] <= 0) || (cmpRes[j] == 0);
 					EXPECT_TRUE(sortOrderSatisfied)
-						<< "\nSort order is incorrect for column: " << sortingEntry.column << "; rowID: " << item[1].As<int>();
+						<< "\nSort order is incorrect for column: " << sortingEntry.expression << "; rowID: " << item[1].As<int>();
 				}
 			}
 		}

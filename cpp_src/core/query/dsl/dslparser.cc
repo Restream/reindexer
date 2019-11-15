@@ -153,7 +153,7 @@ void parseSortEntry(JsonValue& entry, Query& q) {
 
 			case Sort::Field:
 				checkJsonValueType(v, name, JSON_STRING);
-				sortingEntry.column.assign(string(v.toString()));
+				sortingEntry.expression.assign(string(v.toString()));
 				break;
 
 			case Sort::Values:
@@ -161,7 +161,7 @@ void parseSortEntry(JsonValue& entry, Query& q) {
 				break;
 		}
 	}
-	if (!sortingEntry.column.empty()) {
+	if (!sortingEntry.expression.empty()) {
 		q.sortingEntries_.push_back(std::move(sortingEntry));
 	}
 }
@@ -180,14 +180,14 @@ void parseSortEntry(JsonValue& entry, AggregateEntry& agg) {
 
 			case Sort::Field:
 				checkJsonValueType(v, name, JSON_STRING);
-				sortingEntry.column.assign(string(v.toString()));
+				sortingEntry.expression.assign(string(v.toString()));
 				break;
 
 			case Sort::Values:
 				throw Error(errConflict, "Fixed values not available in aggregation sort");
 		}
 	}
-	if (!sortingEntry.column.empty()) {
+	if (!sortingEntry.expression.empty()) {
 		agg.sortingEntries_.push_back(std::move(sortingEntry));
 	}
 }

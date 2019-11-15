@@ -81,7 +81,17 @@ will return JSON object with status of namespace `media_items `replication
 	"incarnation_counter": 1, 
 	"data_hash": 2207033076418442500,
 	"data_count": 20,
-	"updated_unix_nano" : 1566579062277714700
+	"updated_unix_nano" : 1566579062277714700,
+	"error_code": 0,
+    "error_message": "",
+    "status": "idle",
+    "master_state":
+    {
+        "data_hash": 2207033076418442500,
+        "last_lsn": 31863,
+        "updated_unix_nano": 1566579062277000000,
+        "data_count": 20
+    }
 }
 ```
 

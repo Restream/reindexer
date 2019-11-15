@@ -36,7 +36,7 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 	if (tagName) {
 		// Check
 		(void)tagsMatcher_.tag2name(tagName);
-		tagsPath_.push_back(tagName);
+		tagsPath_.emplace_back(tagName);
 	}
 
 	int field = tagsMatcher_.tags2field(tagsPath_.data(), tagsPath_.size());

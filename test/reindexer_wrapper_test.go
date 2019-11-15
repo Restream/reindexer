@@ -134,7 +134,7 @@ func (dbw *ReindexerWrapper) execQueryCtx(ctx context.Context, qt *queryTest) *r
 	if !qt.deepReplEqual {
 		sdb := dbw.slaveList[rand.Intn(len(dbw.slaveList))]
 		if !dbw.IsSynced() {
-			sdb.WaitForSyncMithMaster()
+			sdb.WaitForSyncWithMaster()
 			dbw.SetSynced(true)
 			sdb.ResetCaches()
 		}
@@ -154,7 +154,7 @@ func (dbw *ReindexerWrapper) execQueryCtx(ctx context.Context, qt *queryTest) *r
 	}
 	for _, db := range dbw.slaveList {
 		if !dbw.IsSynced() {
-			db.WaitForSyncMithMaster()
+			db.WaitForSyncWithMaster()
 		}
 		slaveQuery := qt.q.MakeCopy(&db.Reindexer)
 		rs, err := slaveQuery.ExecCtx(ctx).FetchAll()
@@ -200,7 +200,7 @@ func (dbw *ReindexerWrapper) setSlaveConfig(slaveDb *ReindexerWrapper) {
 
 }
 
-func (dbw *ReindexerWrapper) WaitForSyncMithMaster() {
+func (dbw *ReindexerWrapper) WaitForSyncWithMaster() {
 	complete := true
 
 	var nameBad string

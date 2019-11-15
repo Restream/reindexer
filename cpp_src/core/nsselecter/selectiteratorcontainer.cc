@@ -390,8 +390,8 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 		if (it->IsLeaf()) {
 			lastResult = checkIfSatisfyCondition<reverse, hasComparators>(it->Value(), pv, &lastFinish, rowId, properRowId, match);
 		} else {
-			lastResult = checkIfSatisfyAllConditions<reverse, hasComparators>(it->begin(it), it->end(it), pv, &lastFinish, rowId,
-																			  properRowId, match);
+			lastResult =
+				checkIfSatisfyAllConditions<reverse, hasComparators>(it.begin(), it.end(), pv, &lastFinish, rowId, properRowId, match);
 		}
 		if (it->Op == OpOr) {
 			result |= lastResult;
@@ -417,7 +417,7 @@ IdType SelectIteratorContainer::next(const_iterator it, IdType from) {
 		if (!reverse && siter.Val() > from) return siter.Val() - 1;
 		return from;
 	} else {
-		return getNextItemId<reverse>(it->cbegin(it), it->cend(it), from);
+		return getNextItemId<reverse>(it.cbegin(), it.cend(), from);
 	}
 }
 

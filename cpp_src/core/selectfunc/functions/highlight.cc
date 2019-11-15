@@ -11,11 +11,11 @@ bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 	if (!func.ctx || func.ctx->type != BaseFunctionCtx::kFtCtx) return false;
 
 	FtCtx::Ptr ftctx = reindexer::reinterpret_pointer_cast<FtCtx>(func.ctx);
-	AreaHolder::Ptr area = ftctx->Area(res.id);
+	AreaHolder::Ptr area = ftctx->Area(res.Id());
 	if (!area) {
 		return false;
 	}
-	Payload pl(pl_type, res.value);
+	Payload pl(pl_type, res.Value());
 
 	VariantArray kr;
 	if (func.tagsPath.empty()) {
@@ -53,7 +53,7 @@ bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 	key_string_release(const_cast<string *>(data));
 	auto str = make_key_string(result_string);
 	key_string_add_ref(str.get());
-	res.value.Clone();
+	res.Value().Clone();
 
 	if (func.tagsPath.empty()) {
 		pl.Set(func.field, VariantArray{Variant{str}});

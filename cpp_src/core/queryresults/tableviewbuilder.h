@@ -8,6 +8,8 @@
 #include "tools/errors.h"
 #include "tools/terminalutils.h"
 
+#include <numeric>
+
 namespace reindexer {
 
 struct ColumnData {
@@ -30,7 +32,7 @@ public:
 	using Rows = std::vector<Row>;
 	using ColumnsData = std::unordered_map<std::string, ColumnData>;
 
-	TableCalculator(const QueryResultsT& r, int outputWidth);
+	TableCalculator(const QueryResultsT& r, int outputWidth, size_t limit = std::numeric_limits<size_t>::max());
 
 	Header& GetHeader();
 	Rows& GetRows();
@@ -38,7 +40,7 @@ public:
 	int GetOutputWidth() const;
 
 private:
-	void calculate();
+	void calculate(size_t limit);
 
 	const QueryResultsT& r_;
 	Header header_;

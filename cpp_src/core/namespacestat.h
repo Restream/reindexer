@@ -35,7 +35,23 @@ struct IndexMemStat {
 	LRUCacheMemStat idsetCache;
 };
 
+struct MasterState {
+	void GetJSON(JsonBuilder &builder);
+	void FromJSON(span<char>);
+
+	// LSN of last change
+	int64_t lastLsn = -1;
+	// Data hash
+	uint64_t dataHash = 0;
+	// Data count
+	int dataCount = 0;
+	// Data updated
+	uint64_t updatedUnixNano = 0;
+};
+
 struct ReplicationState {
+	enum class Status { None, Idle, Error, Fatal, Syncing };
+
 	void GetJSON(JsonBuilder &builder);
 	void FromJSON(span<char>);
 
@@ -57,6 +73,10 @@ struct ReplicationState {
 	int dataCount = 0;
 	// Data updated
 	uint64_t updatedUnixNano = 0;
+	// Current replication status
+	Status status = Status::None;
+	// Current master state
+	MasterState masterState;
 };
 
 struct ReplicationStat : public ReplicationState {

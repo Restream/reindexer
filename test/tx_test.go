@@ -2,7 +2,9 @@ package reindexer
 
 import (
 	"fmt"
+	"math/rand"
 	"strconv"
+	"sync"
 	"testing"
 
 	"github.com/restream/reindexer"
@@ -14,14 +16,22 @@ type TextTxItem struct {
 	Data string
 }
 
+type UntaggedTxItem struct {
+	ID         int64  `json:"id" reindex:"id,,pk"`
+	Data       int64  `json:"data"`
+	DataString string `json:"data_string"`
+}
+
 const testTxItemNs = "test_tx_item"
 const testTxAsyncItemNs = "test_tx_async_item"
 const testTxQueryItemNs = "test_tx_queries_item"
+const testTxConcurrentTagsItemNs = "test_tx_concurrent_tags_item"
 
 func init() {
 	tnamespaces[testTxItemNs] = TextTxItem{}
 	tnamespaces[testTxAsyncItemNs] = TextTxItem{}
 	tnamespaces[testTxQueryItemNs] = TextTxItem{}
+	tnamespaces[testTxConcurrentTagsItemNs] = UntaggedTxItem{}
 }
 
 func FillTextTxItem1Tx(count int, tx *txTest) {
@@ -40,7 +50,6 @@ func FillTextTxFullItems(count int) {
 	tx := newTestTx(DB, testTxItemNs)
 	FillTextTxItem1Tx(count, tx)
 	tx.MustCommit()
-
 }
 
 func CheckTYx(ns string, count int) {
@@ -118,5 +127,55 @@ func TestTxQueries(t *testing.T) {
 	if some.Data != "testdata" {
 		panic(fmt.Errorf("expect %s, got %s", "testdata", some.Data))
 	}
+}
 
+func newUntaggedItems(itemID int64, count int) []*UntaggedTxItem {
+	items := make([]*UntaggedTxItem, count)
+	for i := range items {
+		items[i] = &UntaggedTxItem{
+			ID:         itemID,
+			Data:       rand.Int63(),
+			DataString: randString(),
+		}
+	}
+	return items
+}
+
+func TestConcurrentTagsTx(t *testing.T) {
+	const concurrency = 20
+	wg := sync.WaitGroup{}
+	wg.Add(concurrency)
+	for i := 0; i < concurrency; i++ {
+		go func() {
+			defer wg.Done()
+			cnt := rand.Intn(20) + 1
+			for i := 0; i < cnt; i++ {
+				ID := int64(rand.Intn(20) + 1)
+				items := newUntaggedItems(ID, rand.Intn(5))
+				tx, err := DB.BeginTx(testTxConcurrentTagsItemNs)
+				if err != nil {
+					panic(err)
+				}
+				for i := range items {
+					err := tx.Upsert(items[i])
+					if err != nil {
+						panic(err)
+					}
+				}
+				count := tx.MustCommit()
+				if count != len(items) {
+					panic("Wrong items count in Tx")
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	DB.SetSynced(false)
+	items, err := DB.Query(testTxConcurrentTagsItemNs).MustExec().FetchAll()
+	if err != nil {
+		panic(err)
+	}
+	if len(items) == 0 {
+		panic("Empty items array")
+	}
 }

@@ -2,6 +2,7 @@
 #include <thread>
 #include "allocs_tracker.h"
 #include "core/cjson/jsonbuilder.h"
+#include "core/nsselecter/joinedselector.h"
 #include "core/reindexer.h"
 #include "tools/string_regexp_functions.h"
 
@@ -38,6 +39,7 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("Query2CondLeftJoinTotal", &ApiTvSimple::Query2CondLeftJoinTotal, this);
 	Register("Query2CondLeftJoinCachedTotal", &ApiTvSimple::Query2CondLeftJoinCachedTotal, this);
 	Register("Query0CondInnerJoinUnlimit", &ApiTvSimple::Query0CondInnerJoinUnlimit, this);
+	Register("Query0CondInnerJoinPreResultStoreValues", &ApiTvSimple::Query0CondInnerJoinPreResultStoreValues, this);
 	Register("Query2CondInnerJoin", &ApiTvSimple::Query2CondInnerJoin, this);
 	Register("Query2CondInnerJoinTotal", &ApiTvSimple::Query2CondInnerJoinTotal, this);
 	Register("Query2CondInnerJoinCachedTotal", &ApiTvSimple::Query2CondInnerJoinCachedTotal, this);
@@ -469,6 +471,59 @@ void ApiTvSimple::Query2CondInnerJoin(benchmark::State& state) {
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvSimple::Query0CondInnerJoinPreResultStoreValues(benchmark::State& state) {
+	using reindexer::JoinedSelector;
+	static const string rightNs = "rightNs";
+	static const vector<string> leftNs = {"leftNs1", "leftNs2", "leftNs3", "leftNs4"};
+	static constexpr char const* id = "id";
+	static constexpr char const* data = "data";
+	static constexpr int maxDataValue = 10;
+	static constexpr int maxRightNsRowCount = maxDataValue * (JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization() - 1);
+	static constexpr int maxLeftNsRowCount = 10000;
+
+	const auto createNs = [this, &state](const string& ns) {
+		Error err = db_->OpenNamespace(ns);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		err = db_->AddIndex(ns, {id, "hash", "int", IndexOpts().PK()});
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		err = db_->AddIndex(ns, {data, "hash", "int", IndexOpts()});
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	};
+	const auto fill = [this, &state](const string& ns, int startId, int endId) {
+		Error err;
+		for (int i = startId; i < endId; ++i) {
+			Item item = db_->NewItem(ns);
+			item[id] = i;
+			item[data] = i % maxDataValue;
+			err = db_->Upsert(ns, item);
+			if (!err.ok()) state.SkipWithError(err.what().c_str());
+		}
+		err = db_->Commit(ns);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	};
+
+	createNs(rightNs);
+	fill(rightNs, 0, maxRightNsRowCount);
+	for (size_t i = 0; i < leftNs.size(); ++i) {
+		createNs(leftNs[i]);
+		fill(leftNs[i], 0, maxLeftNsRowCount);
+	}
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {
+		vector<std::thread> threads;
+		threads.reserve(leftNs.size());
+		for (size_t i = 0; i < leftNs.size(); ++i) {
+			threads.emplace_back([this, i, &state]() {
+				Query q = Query(leftNs[i]).InnerJoin(data, data, CondEq, Query(rightNs).Where(data, CondEq, rand() % maxDataValue));
+				QueryResults qres;
+				Error err = db_->Select(q, qres);
+				if (!err.ok()) state.SkipWithError(err.what().c_str());
+			});
+		}
+		for (auto& th : threads) th.join();
 	}
 }
 

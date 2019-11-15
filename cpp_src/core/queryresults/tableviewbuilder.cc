@@ -26,15 +26,18 @@ bool ColumnData::PossibleToBreakTheLine() const {
 }
 
 template <typename QueryResultsT>
-TableCalculator<QueryResultsT>::TableCalculator(const QueryResultsT& r, int outputWidth) : r_(r), outputWidth_(outputWidth) {
-	calculate();
+TableCalculator<QueryResultsT>::TableCalculator(const QueryResultsT& r, int outputWidth, size_t limit) : r_(r), outputWidth_(outputWidth) {
+	calculate(limit);
 }
 
 template <typename QueryResultsT>
-void TableCalculator<QueryResultsT>::calculate() {
+void TableCalculator<QueryResultsT>::calculate(size_t limit) {
+	size_t i = 0;
 	WrSerializer ser;
-	rows_.reserve(r_.Count());
+	const size_t size = std::min(limit, r_.Count());
+	rows_.reserve(size);
 	for (auto it : r_) {
+		if (it.IsRaw()) continue;
 		Error err = it.GetJSON(ser, false);
 		if (!err.ok()) continue;
 
@@ -62,6 +65,8 @@ void TableCalculator<QueryResultsT>::calculate() {
 		}
 
 		rows_.emplace_back(std::move(rowData));
+
+		if (++i == size) break;
 		ser.Reset();
 	}
 
@@ -90,7 +95,7 @@ void TableCalculator<QueryResultsT>::calculate() {
 			if (header_.size() == 1) {
 				columnData.widthCh = outputWidth_;
 			} else {
-				if (columnIdx == header_.size() - 1) {
+				if ((columnIdx == header_.size() - 1) && (outputWidth_ > currPos)) {
 					columnData.widthCh = outputWidth_ - currPos - ((kSeparator.length() * (columnIdx + 1)) - kSeparator.length());
 				} else {
 					double widthPercentage = (double(columnData.maxWidthCh) / outputWidth_) * 100;

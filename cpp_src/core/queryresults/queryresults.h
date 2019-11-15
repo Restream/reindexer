@@ -55,7 +55,7 @@ public:
 		Item GetItem();
 		joins::ItemIterator GetJoinedItemsIterator();
 		const ItemRef &GetItemRef() const { return qr_->items_[idx_]; }
-		int64_t GetLSN() const { return qr_->items_[idx_].value.GetLSN(); }
+		int64_t GetLSN() const { return qr_->items_[idx_].Value().GetLSN(); }
 		bool IsRaw() const;
 		string_view GetRaw() const;
 		Iterator &operator++();

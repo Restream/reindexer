@@ -154,7 +154,7 @@ void SelectFunctionsHolder::Process(QueryResults &res) {
 	bool changed = false;
 
 	for (size_t i = 0; i < res.Count(); ++i) {
-		auto &pl_type = res.getPayloadType(res.Items()[i].nsid);
+		auto &pl_type = res.getPayloadType(res.Items()[i].Nsid());
 		auto it = querys_->find(pl_type.Name());
 		if (it != querys_->end()) {
 			if (it->second->ProcessItem(res.Items()[i], pl_type)) changed = true;

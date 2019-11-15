@@ -1,6 +1,6 @@
 #pragma once
+#include "core/expressiontree.h"
 #include "core/nsselecter/selectiterator.h"
-#include "core/query/querytree.h"
 #include "core/selectfunc/ctx/ftctx.h"
 #include "core/selectfunc/selectfunc.h"
 
@@ -10,14 +10,14 @@ struct SelectCtx;
 class RdxContext;
 
 template <>
-bool QueryTree<SelectIterator, 2>::Leaf::IsEqual(const Node &) const;
+bool ExpressionTree<SelectIterator, OpType, 2>::Leaf::IsEqual(const Node &) const;
 
-class SelectIteratorContainer : public QueryTree<SelectIterator, 2> {
+class SelectIteratorContainer : public ExpressionTree<SelectIterator, OpType, 2> {
 public:
 	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx *ctx = nullptr) : pt_(pt), ctx_(ctx){};
 
-	void ForeachIterator(const std::function<void(const SelectIterator &, OpType)> &func) const { ForeachValue(func); }
-	void ForeachIterator(const std::function<void(SelectIterator &)> &func) { ForeachValue(func); }
+	void ForEachIterator(const std::function<void(const SelectIterator &, OpType)> &func) const { ForEachValue(func); }
+	void ForEachIterator(const std::function<void(SelectIterator &)> &func) { ForEachValue(func); }
 
 	void SortByCost(int expectedIterations);
 	bool HasIdsets() const;
@@ -64,6 +64,16 @@ private:
 	void processEqualPositions(const std::multimap<unsigned, EqualPosition> &equalPositions, size_t begin, size_t end, const Namespace &ns,
 							   const QueryEntries &queries);
 	bool processJoins(SelectIterator &it, const ConstPayload &pl, IdType properRowId, bool match);
+
+	/// @return end() if empty or last opened bracket is empty
+	iterator lastAppendedOrClosed() {
+		typename Container::iterator it = this->container_.begin(), end = this->container_.end();
+		if (!this->activeBrackets_.empty()) it += (this->activeBrackets_.back() + 1);
+		if (it == end) return this->end();
+		iterator i = it, e = end;
+		while (i + 1 != e) ++i;
+		return i;
+	}
 
 	PayloadType pt_;
 	SelectCtx *ctx_;

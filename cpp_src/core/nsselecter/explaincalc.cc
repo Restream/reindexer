@@ -19,7 +19,7 @@ void ExplainCalc::LogDump(int logLevel) {
 
 	if (logLevel >= LogTrace) {
 		if (selectors_) {
-			selectors_->ForeachIterator([this](const SelectIterator &s, OpType) {
+			selectors_->ForEachIterator([this](const SelectIterator &s, OpType) {
 				logPrintf(LogInfo, "%s: %d idsets, %d comparators, cost %g, matched %d, %s", s.name, s.size(), s.comparators_.size(),
 						  s.Cost(iters_), s.GetMatchedCount(), s.Dump());
 			});
@@ -28,9 +28,9 @@ void ExplainCalc::LogDump(int logLevel) {
 		if (jselectors_) {
 			for (auto &js : *jselectors_) {
 				if (js.Type() == JoinType::LeftJoin || js.Type() == JoinType::Merge) {
-					logPrintf(LogInfo, "%s %s: called %d", SQLEncoder::JoinTypeName(js.Type()), js.RightNs().GetName(), js.Called());
+					logPrintf(LogInfo, "%s %s: called %d", SQLEncoder::JoinTypeName(js.Type()), js.RightNsName(), js.Called());
 				} else {
-					logPrintf(LogInfo, "%s %s: called %d, matched %d", SQLEncoder::JoinTypeName(js.Type()), js.RightNs().GetName(), js.Called(),
+					logPrintf(LogInfo, "%s %s: called %d, matched %d", SQLEncoder::JoinTypeName(js.Type()), js.RightNsName(), js.Called(),
 							  js.Matched());
 				}
 			}
@@ -57,7 +57,7 @@ string ExplainCalc::GetJSON() {
 		if (jselectors_) {
 			for (JoinedSelector &js : *jselectors_) {
 				auto jsonSel = jsonSelArr.Object();
-				jsonSel.Put("field", js.RightNs().GetName());
+				jsonSel.Put("field", js.RightNsName());
 				jsonSel.Put("method", JoinTypeName(js.Type()));
 				jsonSel.Put("matched", js.Matched());
 			}
@@ -87,7 +87,7 @@ void SelectIteratorContainer::explainJSON(const_iterator it, const_iterator end,
 			jsonSel.Put("type", siter.TypeName());
 		} else {
 			auto jsonSelArr = jsonSel.Array("selectors");
-			explainJSON(it->cbegin(it), it->cend(it), iters, jsonSelArr);
+			explainJSON(it.cbegin(), it.cend(), iters, jsonSelArr);
 		}
 	}
 }

@@ -140,4 +140,5 @@ const (
 	ErrStateInvalidated = 14
 	ErrTimeout          = 19
 	ErrCanceled         = 20
+	ErrTagsMissmatch    = 21
 )

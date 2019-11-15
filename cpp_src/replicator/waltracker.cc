@@ -1,5 +1,6 @@
 
 #include "waltracker.h"
+#include "tools/logger.h"
 #include "tools/serializer.h"
 
 #define kStorageWALPrefix "W"
@@ -12,12 +13,9 @@ int64_t WALTracker::Add(const WALRecord &rec, int64_t oldLsn) {
 	if (oldLsn >= 0 && available(oldLsn)) {
 		put(oldLsn, WALRecord());
 	}
-
 	if (rec.type != WalItemUpdate) {
-		//
 		writeToStorage(lsn);
 	}
-
 	return lsn;
 }
 
@@ -25,8 +23,14 @@ bool WALTracker::Set(const WALRecord &rec, int64_t lsn) {
 	if (!available(lsn)) {
 		return false;
 	}
-	put(lsn, rec);
-	return true;
+	size_t pos = lsn % walSize_;
+	if ((pos >= records_.size()) || records_[pos].empty()) {
+		put(lsn, rec);
+		return true;
+	} else {
+		logPrintf(LogWarning, "WALRecord for LSN = %d is not empty", lsn);
+	}
+	return false;
 }
 
 void WALTracker::Init(int64_t maxLSN, shared_ptr<datastorage::IDataStorage> storage) {

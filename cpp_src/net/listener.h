@@ -28,9 +28,6 @@ public:
 	/// @param addr - tcp host:port for bind
 	/// @return true - if bind successful, false - on bind error
 	bool Bind(std::string addr);
-	/// Fork preforks additional listener threads
-	/// @param clones - Number of threads
-	void Fork(int clones);
 	/// Stop synchroniusly stops listener
 	void Stop();
 

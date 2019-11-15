@@ -3,9 +3,10 @@
 #include <climits>
 #include <string>
 #include <vector>
+#include "core/expressiontree.h"
 #include "core/keyvalue/variant.h"
+#include "core/payload/payloadiface.h"
 #include "estl/h_vector.h"
-#include "querytree.h"
 
 namespace reindexer {
 
@@ -36,12 +37,12 @@ struct QueryEntry {
 struct EqualPosition : public h_vector<unsigned, 2> {};
 
 class JsonBuilder;
-extern template bool QueryTree<QueryEntry, 4>::Leaf::IsEqual(const Node &) const;
+extern template bool ExpressionTree<QueryEntry, OpType, 4>::Leaf::IsEqual(const Node &) const;
 
-class QueryEntries : public QueryTree<QueryEntry, 4> {
+class QueryEntries : public ExpressionTree<QueryEntry, OpType, 4> {
 public:
 	bool IsEntry(size_t i) const { return IsValue(i); }
-	void ForeachEntry(const std::function<void(const QueryEntry &, OpType)> &func) const { ForeachValue(func); }
+	void ForEachEntry(const std::function<void(const QueryEntry &, OpType)> &func) const { ForEachValue(func); }
 
 	template <typename T>
 	std::pair<unsigned, EqualPosition> DetermineEqualPositionIndexes(const T &fields) const;
@@ -50,11 +51,16 @@ public:
 	void ToDsl(const Query &parentQuery, JsonBuilder &builder) const { return toDsl(cbegin(), cend(), parentQuery, builder); }
 	void WriteSQLWhere(const Query &parentQuery, WrSerializer &, bool stripArgs) const;
 	void Serialize(WrSerializer &ser) const { serialize(cbegin(), cend(), ser); }
+	bool CheckIfSatisfyConditions(const ConstPayload &pl, TagsMatcher &tm) const {
+		return checkIfSatisfyConditions(cbegin(), cend(), pl, tm);
+	}
 
 private:
 	static void toDsl(const_iterator it, const_iterator to, const Query &parentQuery, JsonBuilder &);
 	static void writeSQL(const Query &parentQuery, const_iterator from, const_iterator to, WrSerializer &, bool stripArgs);
 	static void serialize(const_iterator it, const_iterator to, WrSerializer &);
+	static bool checkIfSatisfyConditions(const_iterator begin, const_iterator end, const ConstPayload &, TagsMatcher &);
+	static bool checkIfSatisfyCondition(const QueryEntry &, const ConstPayload &, TagsMatcher &);
 };
 
 extern template EqualPosition QueryEntries::DetermineEqualPositionIndexes<vector<string>>(unsigned start,
@@ -87,10 +93,10 @@ struct QueryJoinEntry {
 
 struct SortingEntry {
 	SortingEntry() {}
-	SortingEntry(const string &c, bool d) : column(c), desc(d) {}
+	SortingEntry(const string &e, bool d) : expression(e), desc(d) {}
 	bool operator==(const SortingEntry &) const;
 	bool operator!=(const SortingEntry &) const;
-	string column;
+	string expression;
 	bool desc = false;
 	int index = IndexValueType::NotSet;
 };

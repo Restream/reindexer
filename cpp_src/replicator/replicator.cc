@@ -127,11 +127,20 @@ Error Replicator::syncDatabase() {
 
 		auto openErr = slave_->OpenNamespace(ns.name, StorageOpts().Enabled().SlaveMode());
 		if (!openErr.ok()) {
-			logPrintf(LogError, "[repl:%s] Error: %s", ns.name, openErr.what());
+			logPrintf(LogWarning, "[repl:%s] Error: %s", ns.name, openErr.what());
 		}
 
 		// Protect for concurent updates stream of same namespace
 		// if state is StateSync is set, then concurent updates will not modify data, but just set maxLsn_
+
+		Namespace::Ptr slaveNs;
+		if (openErr.ok()) {
+			try {
+				slaveNs = slave_->getNamespace(ns.name, dummyCtx_);
+				slaveNs->SetSlaveReplStatus(ReplicationState::Status::Syncing, dummyCtx_);
+			} catch (const Error &) {
+			}
+		}
 
 		for (bool done = false; err.ok() && !done && !terminate_;) {
 			if (openErr.ok()) {
@@ -146,8 +155,9 @@ Error Replicator::syncDatabase() {
 						}
 					} else if (err.code() != errNetwork && !terminate_ && config_.forceSyncOnLogicError) {
 						err = syncNamespaceForced(ns, "Logic error occurried");
-					} else
+					} else {
 						break;
+					}
 					if (!err.ok()) {
 						logPrintf(LogError, "[repl:%s] syncNamespace error: %s", ns.name, err.what());
 						break;
@@ -159,23 +169,30 @@ Error Replicator::syncDatabase() {
 			if (err.ok()) {
 				int64_t curLSN = -1;
 				try {
-					curLSN = slave_->getNamespace(ns.name, dummyCtx_)->GetReplState(dummyCtx_).lastLsn;
-					std::lock_guard<std::mutex> lck(syncMtx_);
-					// Check, if concurrent update attempt happened with LSN bigger, than current LSN
-					// In this case retry sync
-					if (maxLsns_[ns.name] <= curLSN) {
-						done = true;
-						maxLsns_.erase(ns.name);
+					if (!slaveNs) {
+						slaveNs = slave_->getNamespace(ns.name, dummyCtx_);
 					}
+					curLSN = slaveNs->GetReplState(dummyCtx_).lastLsn;
+					{
+						std::lock_guard<std::mutex> lck(syncMtx_);
+						// Check, if concurrent update attempt happened with LSN bigger, than current LSN
+						// In this case retry sync
+						if (maxLsns_[ns.name] <= curLSN) {
+							done = true;
+							maxLsns_.erase(ns.name);
+						}
+					}
+					slaveNs->SetSlaveReplStatus(ReplicationState::Status::Idle, dummyCtx_);
 				} catch (const Error &e) {
 					err = e;
 				}
 			} else {
 				if (openErr.ok()) {
-					try {
-						slave_->getNamespace(ns.name, dummyCtx_)->SetSlaveReplError(err, dummyCtx_);
-					} catch (const Error &e) {
-						err = e;
+					assert(slaveNs);
+					if (err.code() == errNetwork) {
+						slaveNs->SetSlaveReplStatus(ReplicationState::Status::Error, err, dummyCtx_);
+					} else {
+						slaveNs->SetSlaveReplStatus(ReplicationState::Status::Fatal, err, dummyCtx_);
 					}
 				}
 				logPrintf(LogError, "Sync error: %s", err.what());
@@ -239,6 +256,7 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, string_view reason
 
 	try {
 		tmpNs = slave_->getNamespace(tmpNsDef.name, dummyCtx_);
+		tmpNs->SetSlaveReplStatus(ReplicationState::Status::Syncing, errOK, dummyCtx_);
 	} catch (const Error &exErr) {
 		logPrintf(LogWarning, "Unable to get temporary namespace %s for the force sync: %s", tmpNsDef.name, err.what());
 		return exErr;
@@ -397,15 +415,22 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 			err = slave_->closeNamespace(nsName, dummyCtx_, true, true);
 			break;
 		// Replication state
-		case WalReplState:
+		case WalReplState: {
 			stat.processed--;
 			stat.masterState.FromJSON(giftStr(rec.data));
+			MasterState masterState;
+			masterState.dataCount = stat.masterState.dataCount;
+			masterState.dataHash = stat.masterState.dataHash;
+			masterState.lastLsn = stat.masterState.lastLsn;
+			masterState.updatedUnixNano = stat.masterState.updatedUnixNano;
+			slaveNs->SetSlaveReplMasterState(masterState, dummyCtx_);
 			if (stat.masterState.clusterID != config_.clusterID) {
 				terminate_ = true;
 				return Error(errLogic, "Wrong cluster ID expect %d, got %d from master. Terminating replicator.", config_.clusterID,
 							 stat.masterState.clusterID);
 			}
 			break;
+		}
 		default:
 			break;
 	}
@@ -523,6 +548,9 @@ void Replicator::OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &w
 	if (err.ok() && slaveNs && wrec.type != WalNamespaceDrop) {
 		slaveNs->SetSlaveLSN(lsn, dummyCtx_);
 	} else if (!err.ok()) {
+		if (slaveNs) {
+			slaveNs->SetSlaveReplStatus(ReplicationState::Status::Fatal, err, dummyCtx_);
+		}
 		logPrintf(LogError, "[repl:%s] Error apply WAL update: %s", nsName, err.what());
 	}
 }

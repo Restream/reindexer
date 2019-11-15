@@ -251,6 +251,8 @@ Error ReindexerImpl::OpenNamespace(string_view name, const StorageOpts& storageO
 			ns->EnableStorage(storagePath_, opts.Autorepair(autorepairEnabled_), storageType_, rdxCtx);
 			ns->onConfigUpdated(configProvider_, rdxCtx);
 			if (!ns->getStorageOpts(rdxCtx).IsLazyLoad()) ns->LoadFromStorage(rdxCtx);
+		} else {
+			ns->onConfigUpdated(configProvider_, rdxCtx);
 		}
 		{
 			lock_guard<shared_timed_mutex> lock(mtx_);
@@ -574,13 +576,13 @@ Error ReindexerImpl::Select(string_view query, QueryResults& result, const Inter
 
 struct ItemRefLess {
 	bool operator()(const ItemRef& lhs, const ItemRef& rhs) const {
-		if (lhs.proc == rhs.proc) {
-			if (lhs.nsid == rhs.nsid) {
-				return lhs.id < rhs.id;
+		if (lhs.Proc() == rhs.Proc()) {
+			if (lhs.Nsid() == rhs.Nsid()) {
+				return lhs.Id() < rhs.Id();
 			}
-			return lhs.nsid < rhs.nsid;
+			return lhs.Nsid() < rhs.Nsid();
 		}
-		return lhs.proc > rhs.proc;
+		return lhs.Proc() > rhs.Proc();
 	}
 };
 
@@ -637,48 +639,48 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 	return errOK;
 }
 
+struct ReindexerImpl::QueryResultsContext {
+	QueryResultsContext() {}
+	QueryResultsContext(PayloadType type, TagsMatcher tagsMatcher, const FieldsSet& fieldsFilter)
+		: type_(type), tagsMatcher_(tagsMatcher), fieldsFilter_(fieldsFilter) {}
+
+	PayloadType type_;
+	TagsMatcher tagsMatcher_;
+	FieldsSet fieldsFilter_;
+};
+
+bool ReindexerImpl::isPreResultValuesModeOptimizationAvailable(const Query& jItemQ, const Namespace::Ptr& jns) {
+	bool result = true;
+	jItemQ.entries.ForEachEntry([&jns, &result](const QueryEntry& qe, OpType) {
+		if (qe.idxNo >= 0) {
+			assert(jns->indexes_.size() > static_cast<size_t>(qe.idxNo));
+			const IndexType indexType = jns->indexes_[qe.idxNo]->Type();
+			if (isComposite(indexType) || isFullText(indexType)) result = false;
+		}
+	});
+	return result;
+}
+
 template <typename T>
 JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResults& result, NsLocker<T>& locks, SelectFunctionsHolder& func,
-													  const RdxContext& rdxCtx) {
+													  vector<QueryResultsContext>& queryResultsContexts, const RdxContext& rdxCtx) {
 	JoinedSelectors joinedSelectors;
 	if (q.joinQueries_.empty()) return joinedSelectors;
 	auto ns = locks.Get(q._namespace);
+	assert(ns);
 
 	// For each joined queries
 	int joinedSelectorsCount = q.joinQueries_.size();
 	for (auto& jq : q.joinQueries_) {
 		// Get common results from joined namespaces_
 		auto jns = locks.Get(jq._namespace);
-
-		Query jjq(jq);
-
-		JoinPreResult::Ptr preResult = std::make_shared<JoinPreResult>();
-		size_t joinedFieldIdx = joinedSelectors.size();
-
-		JoinCacheRes joinRes;
-		joinRes.key.SetData(jq);
-		jns->GetFromJoinCache(joinRes);
-		if (!jjq.entries.Empty() && !joinRes.haveData) {
-			QueryResults jr;
-			jjq.Limit(UINT_MAX);
-			SelectCtx ctx(jjq);
-			ctx.preResult = preResult;
-			ctx.preResult->mode = JoinPreResult::ModeBuild;
-			ctx.functions = &func;
-			jns->Select(jr, ctx, rdxCtx);
-			assert(ctx.preResult->mode != JoinPreResult::ModeBuild);
-		}
-		if (joinRes.haveData) {
-			preResult = joinRes.it.val.preResult;
-		} else if (joinRes.needPut) {
-			jns->PutToJoinCache(joinRes, preResult);
-		}
+		assert(jns);
 
 		// Do join for each item in main result
 		Query jItemQ(jq._namespace);
 		jItemQ.Debug(jq.debugLevel).Limit(jq.count);
-		for (size_t i = 0; i < jjq.sortingEntries_.size(); ++i) {
-			jItemQ.Sort(jjq.sortingEntries_[i].column, jq.sortingEntries_[i].desc);
+		for (size_t i = 0; i < jq.sortingEntries_.size(); ++i) {
+			jItemQ.Sort(jq.sortingEntries_[i].expression, jq.sortingEntries_[i].desc);
 		}
 
 		jItemQ.entries.Reserve(jq.joinEntries_.size());
@@ -696,6 +698,39 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 			jItemQ.entries.Append(je.op_, std::move(qe));
 		}
 
+		Query jjq(jq);
+		JoinPreResult::Ptr preResult = std::make_shared<JoinPreResult>();
+		size_t joinedFieldIdx = joinedSelectors.size();
+		JoinCacheRes joinRes;
+		joinRes.key.SetData(jq);
+		jns->GetFromJoinCache(joinRes);
+		if (!jjq.entries.Empty() && !joinRes.haveData) {
+			QueryResults jr;
+			jjq.Limit(UINT_MAX);
+			SelectCtx ctx(jjq);
+			ctx.preResult = preResult;
+			ctx.preResult->executionMode = JoinPreResult::ModeBuild;
+			ctx.preResult->enableStoredValues = isPreResultValuesModeOptimizationAvailable(jItemQ, jns);
+			ctx.functions = &func;
+			jns->Select(jr, ctx, rdxCtx);
+			assert(ctx.preResult->executionMode == JoinPreResult::ModeExecute);
+		}
+		if (joinRes.haveData) {
+			preResult = joinRes.it.val.preResult;
+		} else if (joinRes.needPut) {
+			jns->PutToJoinCache(joinRes, preResult);
+		}
+
+		queryResultsContexts.emplace_back(jns->payloadType_, jns->tagsMatcher_, FieldsSet(jns->tagsMatcher_, jItemQ.selectFilter_));
+
+		if (preResult->dataMode == JoinPreResult::ModeValues) {
+			jItemQ.entries.ForEachValue([&jns](QueryEntry& qe) {
+				if (jns->indexes_[qe.idxNo]->Opts().IsSparse()) qe.idxNo = IndexValueType::SetByJsonPath;
+			});
+			preResult->values.Lock();
+			locks.Delete(jns);
+			jns.reset();
+		}
 		joinedSelectors.push_back({jq.joinType, ns, std::move(jns), std::move(joinRes), std::move(jItemQ), result, jq, preResult,
 								   joinedFieldIdx, func, joinedSelectorsCount, rdxCtx});
 		ThrowOnCancel(rdxCtx);
@@ -706,13 +741,16 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 template <typename T>
 void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& locks, SelectFunctionsHolder& func, const RdxContext& ctx) {
 	auto ns = locks.Get(q._namespace);
+	assert(ns);
 	if (!ns) {
 		throw Error(errParams, "Namespace '%s' is not exists", q._namespace);
 	}
+	vector<QueryResultsContext> joinQueryResultsContexts;
+	// should be destroyed after results.lockResults()
+	JoinedSelectors mainJoinedSelectors = prepareJoinedSelectors(q, result, locks, func, joinQueryResultsContexts, ctx);
 	{
-		JoinedSelectors joinedSelectors = prepareJoinedSelectors(q, result, locks, func, ctx);
 		SelectCtx selCtx(q);
-		selCtx.joinedSelectors = joinedSelectors.size() ? &joinedSelectors : nullptr;
+		selCtx.joinedSelectors = mainJoinedSelectors.size() ? &mainJoinedSelectors : nullptr;
 		selCtx.contextCollectingMode = true;
 		selCtx.functions = &func;
 		selCtx.nsid = 0;
@@ -720,18 +758,22 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& 
 		ns->Select(result, selCtx, ctx);
 	}
 
+	// should be destroyed after results.lockResults()
+	vector<JoinedSelectors> mergeJoinedSelectors;
 	if (!q.mergeQueries_.empty()) {
+		mergeJoinedSelectors.reserve(q.mergeQueries_.size());
 		uint8_t counter = 0;
 
 		for (auto& mq : q.mergeQueries_) {
 			auto mns = locks.Get(mq._namespace);
+			assert(mns);
 			SelectCtx mctx(mq);
 			mctx.nsid = ++counter;
 			mctx.isForceAll = true;
 			mctx.functions = &func;
 			mctx.contextCollectingMode = true;
-			JoinedSelectors joinedSelectors = prepareJoinedSelectors(mq, result, locks, func, ctx);
-			mctx.joinedSelectors = joinedSelectors.size() ? &joinedSelectors : nullptr;
+			mergeJoinedSelectors.emplace_back(prepareJoinedSelectors(mq, result, locks, func, joinQueryResultsContexts, ctx));
+			mctx.joinedSelectors = mergeJoinedSelectors.back().size() ? &mergeJoinedSelectors.back() : nullptr;
 
 			mns->Select(result, mctx, ctx);
 		}
@@ -764,15 +806,7 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& 
 		}
 	}
 	// Adding context to QueryResults
-	if (!q.joinQueries_.empty() || !q.mergeQueries_.empty()) {
-		q.WalkNested(false, false, [&locks, &result, &ctx](const Query& nestedQuery) {
-			Query q = Query(nestedQuery._namespace, 0, 0);
-			SelectCtx jctx(q);
-			jctx.contextCollectingMode = true;
-			Namespace::Ptr ns = locks.Get(nestedQuery._namespace);
-			ns->Select(result, jctx, ctx);
-		});
-	}
+	for (const auto& jctx : joinQueryResultsContexts) result.addNSContext(jctx.type_, jctx.tagsMatcher_, jctx.fieldsFilter_);
 	result.lockResults();
 }
 

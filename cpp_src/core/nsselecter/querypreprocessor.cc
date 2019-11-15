@@ -20,7 +20,7 @@ void QueryPreprocessor::lookupQueryIndexes(QueryEntries *dst, QueryEntries::cons
 	for (auto it = srcBegin; it != srcEnd; ++it) {
 		if (!it->IsLeaf()) {
 			dst->OpenBracket(it->Op);
-			lookupQueryIndexes(dst, it->cbegin(it), it->cend(it));
+			lookupQueryIndexes(dst, it.cbegin(), it.cend());
 			dst->CloseBracket();
 		} else {
 			QueryEntry entry = it->Value();
@@ -148,7 +148,7 @@ void QueryPreprocessor::convertWhereValues(QueryEntries::iterator begin, QueryEn
 		if (it->IsLeaf()) {
 			convertWhereValues(&it->Value());
 		} else {
-			convertWhereValues(it->begin(it), it->end(it));
+			convertWhereValues(it.begin(), it.end());
 		}
 	}
 }
@@ -176,7 +176,7 @@ const Index *QueryPreprocessor::findMaxIndex(QueryEntries::const_iterator begin,
 				}
 			}
 		} else {
-			const Index *foundIdx = findMaxIndex(it->cbegin(it), it->cend(it));
+			const Index *foundIdx = findMaxIndex(it.cbegin(), it.cend());
 			if (!maxIdx || (foundIdx && foundIdx->Size() > maxIdx->Size())) {
 				maxIdx = foundIdx;
 			}

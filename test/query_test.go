@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/restream/reindexer"
 	"github.com/restream/reindexer/bindings"
@@ -633,6 +635,221 @@ func (qt *queryTest) ExecToJsonCtx(ctx context.Context, jsonRoots ...string) *re
 
 var testNamespaces = make(map[string]*testNamespace, 100)
 
+const (
+	containField = iota
+	containValue
+)
+
+type sortExprValue struct {
+	contain   int
+	field     [][]int
+	fieldName string
+	value     float64
+}
+
+func convertToDouble(v reflect.Value, sortStr string, fieldName string, item interface{}) float64 {
+	switch v.Type().Kind() {
+	case reflect.String:
+		if result, err := strconv.ParseFloat(v.String(), 64); err == nil {
+			return result
+		} else {
+			panic(err)
+		}
+	case reflect.Float32, reflect.Float64:
+		return v.Float()
+	case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Int8,
+		reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uint8:
+		return float64(v.Int())
+	case reflect.Bool:
+		if v.Bool() {
+			return 1.0
+		} else {
+			return 0.0
+		}
+	case reflect.Array, reflect.Slice:
+		if v.Len() != 1 {
+			panic(fmt.Errorf("Found len(values) != 1 on sort by '%s' index %s in item %+v", sortStr, fieldName, item))
+		}
+		return convertToDouble(v.Index(0), sortStr, fieldName, item)
+	}
+	panic(fmt.Errorf("Unknown field type on sort by '%s' index %s in item %+v", sortStr, fieldName, item))
+}
+
+func (value *sortExprValue) getValue(item interface{}, sortStr string) float64 {
+	if value.contain == containValue {
+		return value.value
+	}
+	vals := getValues(item, value.field)
+	if len(vals) != 1 {
+		panic(fmt.Errorf("Found len(values) != 1 on sort by '%s' index %s in item %+v", sortStr, value.fieldName, item))
+	}
+	return convertToDouble(vals[0], sortStr, value.fieldName, item)
+}
+
+const (
+	opPlus = iota
+	opMinus
+	opMult
+	opDiv
+)
+
+type sortExprEntry struct {
+	negative  bool
+	operation int
+	isSubExpr bool
+	value     *sortExprValue
+	subExpr   []*sortExprEntry
+}
+
+func justIndex(sortExpr []*sortExprEntry) bool {
+	return len(sortExpr) == 1 && !sortExpr[0].isSubExpr && sortExpr[0].value.contain == containField && sortExpr[0].operation == opPlus && !sortExpr[0].negative
+}
+
+func skipSpaces(sortStr string, pos int) int {
+	for pos < len(sortStr) {
+		if r, w := utf8.DecodeRuneInString(sortStr[pos:]); unicode.IsSpace(r) {
+			pos += w
+		} else {
+			break
+		}
+	}
+	return pos
+}
+
+func getSortValueOrIndex(sortStr string, pos int) (string, int) {
+	i := pos
+	for i < len(sortStr) {
+		if r, w := utf8.DecodeRuneInString(sortStr[i:]); !unicode.IsSpace(r) && r != ')' {
+			i += w
+		} else {
+			break
+		}
+	}
+	return sortStr[pos:i], i
+}
+
+func parseSortExpr(sortStr string, pos int, ns *testNamespace) ([]*sortExprEntry, int) {
+	result := make([]*sortExprEntry, 0)
+	expectValue := true
+	inSubExpression := false
+	lastOperationPlusOrMinus := false
+	op := opPlus
+	pos = skipSpaces(sortStr, pos)
+	for pos < len(sortStr) {
+		if expectValue {
+			negative := false
+			if sortStr[pos] == '-' {
+				negative = true
+				pos = skipSpaces(sortStr, pos+1)
+				if pos >= len(sortStr) {
+					panic(fmt.Errorf("Parse of sort expression '%s' failed", sortStr))
+				}
+			}
+			entry := new(sortExprEntry)
+			entry.operation = op
+			entry.negative = negative
+			if sortStr[pos] == '(' {
+				var subExpr []*sortExprEntry
+				subExpr, pos = parseSortExpr(sortStr, pos+1, ns)
+				if pos >= len(sortStr) || sortStr[pos] != ')' {
+					panic(fmt.Errorf("Parse of sort expression '%s' failed", sortStr))
+				}
+				pos++
+				entry.isSubExpr = true
+				entry.subExpr = subExpr
+			} else {
+				exprValue := new(sortExprValue)
+				var valueStr string
+				valueStr, pos = getSortValueOrIndex(sortStr, pos)
+				if value, err := strconv.ParseFloat(valueStr, 64); err == nil {
+					exprValue.contain = containValue
+					exprValue.value = value
+				} else {
+					exprValue.contain = containField
+					exprValue.fieldName = valueStr
+					exprValue.field, _ = ns.getField(valueStr)
+				}
+				entry.isSubExpr = false
+				entry.value = exprValue
+			}
+			if inSubExpression {
+				result[len(result)-1].subExpr = append(result[len(result)-1].subExpr, entry)
+			} else {
+				result = append(result, entry)
+			}
+			expectValue = false
+		} else {
+			switch sortStr[pos] {
+			case ')':
+				return result, pos
+			case '+':
+				op = opPlus
+				lastOperationPlusOrMinus = true
+				inSubExpression = false
+			case '-':
+				op = opMinus
+				lastOperationPlusOrMinus = true
+				inSubExpression = false
+			case '*', '/':
+				if op = opMult; sortStr[pos] == '/' {
+					op = opDiv
+				}
+				if lastOperationPlusOrMinus {
+					lastEntry := result[len(result)-1]
+					newSubExpr := new(sortExprEntry)
+					newSubExpr.negative = false
+					newSubExpr.operation = lastEntry.operation
+					newSubExpr.isSubExpr = true
+					newSubExpr.subExpr = make([]*sortExprEntry, 1)
+					newSubExpr.subExpr[0] = lastEntry
+					lastEntry.operation = opPlus
+					result[len(result)-1] = newSubExpr
+					lastOperationPlusOrMinus = false
+					inSubExpression = true
+				}
+			default:
+				panic(fmt.Errorf("Parse of sort expression '%s' failed, char '%c'", sortStr, sortStr[pos]))
+			}
+			pos++
+			expectValue = true
+		}
+		pos = skipSpaces(sortStr, pos)
+	}
+	if expectValue {
+		panic(fmt.Errorf("Parse of sort expression '%s' failed", sortStr))
+	}
+	return result, pos
+}
+
+func calculate(sortExpr []*sortExprEntry, item interface{}, sortStr string) float64 {
+	var result float64 = 0.0
+	for _, sortEntry := range sortExpr {
+		var value float64
+		if sortEntry.isSubExpr {
+			value = calculate(sortEntry.subExpr, item, sortStr)
+		} else {
+			value = sortEntry.value.getValue(item, sortStr)
+		}
+		if sortEntry.negative {
+			value = -value
+		}
+		switch sortEntry.operation {
+		case opPlus:
+			result += value
+		case opMinus:
+			result -= value
+		case opMult:
+			result *= value
+		case opDiv:
+			if value == 0.0 {
+				panic(fmt.Errorf("Division by zero on sort by '%s' in item %+v", sortStr, item))
+			}
+			result /= value
+		}
+	}
+	return result
+}
+
 func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
 	// map of found ids
 	foundIds := make(map[string]int, len(items))
@@ -690,14 +907,25 @@ func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
 	// Check sorting
 	sortIdxCount := len(qt.sortIndex)
 	var sortIdxs map[int][][]int
-	var prevVals map[int][]reflect.Value
+	var prevVals map[int]reflect.Value
+	var byExpr map[int]bool
+	var exprs map[int][]*sortExprEntry
 	var res []int
 	if sortIdxCount > 0 {
 		sortIdxs = make(map[int][][]int)
+		byExpr = make(map[int]bool)
+		exprs = make(map[int][]*sortExprEntry)
 		for k := 0; k < sortIdxCount; k++ {
-			sortIdxs[k], _ = qt.ns.getField(qt.sortIndex[k])
+			sortExpr, _ := parseSortExpr(qt.sortIndex[k], 0, qt.ns)
+			if justIndex(sortExpr) {
+				sortIdxs[k], _ = qt.ns.getField(qt.sortIndex[k])
+				byExpr[k] = false
+			} else {
+				exprs[k] = sortExpr
+				byExpr[k] = true
+			}
 		}
-		prevVals = make(map[int][]reflect.Value)
+		prevVals = make(map[int]reflect.Value)
 		res = make([]int, sortIdxCount)
 	}
 	for i := 0; i < len(items); i++ {
@@ -705,9 +933,15 @@ func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
 			res[j] = -1
 		}
 		for k := 0; k < sortIdxCount; k++ {
-			vals := getValues(items[i], sortIdxs[k])
-			if len(vals) != 1 {
-				log.Fatalf("Found len(values) != 1 on sort index %s in item %+v", qt.sortIndex[k], items[i])
+			var val reflect.Value
+			if byExpr[k] {
+				val = reflect.ValueOf(calculate(exprs[k], items[i], qt.sortIndex[k]))
+			} else {
+				vals := getValues(items[i], sortIdxs[k])
+				if len(vals) != 1 {
+					log.Fatalf("Found len(values) != 1 on sort index %s in item %+v", qt.sortIndex[k], items[i])
+				}
+				val = vals[0]
 			}
 
 			if i > 0 {
@@ -720,14 +954,14 @@ func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
 						}
 					}
 					if needToVerify {
-						res[k] = compareValues(prevVals[k][0], vals[0])
+						res[k] = compareValues(prevVals[k], val)
 						if (res[k] > 0 && !qt.sortDesc) || (res[k] < 0 && qt.sortDesc) {
-							log.Fatalf("Sort error on index %s,desc=%v ... %v ... %v .... ", qt.sortIndex[k], qt.sortDesc, prevVals[0], vals[0])
+							log.Fatalf("Sort error by '%s',desc=%v ... %v ... %v .... ", qt.sortIndex[k], qt.sortDesc, prevVals, val)
 						}
 					}
 				}
 			}
-			prevVals[k] = vals
+			prevVals[k] = val
 		}
 	}
 

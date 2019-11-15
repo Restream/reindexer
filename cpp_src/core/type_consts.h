@@ -105,13 +105,15 @@ enum ErrorCode {
 	errNoWAL = 17,
 	errDataHashMismatch = 18,
 	errTimeout = 19,
-	errCanceled = 20
-
+	errCanceled = 20,
+	errTagsMissmatch = 21,
 };
 
 enum QueryType { QuerySelect, QueryDelete, QueryUpdate, QueryTruncate };
 
 enum OpType { OpOr = 1, OpAnd = 2, OpNot = 3 };
+
+enum ArithmeticOpType { OpPlus = 0, OpMinus = 1, OpMult = 2, OpDiv = 3 };
 
 enum AggType { AggSum, AggAvg, AggFacet, AggMin, AggMax, AggUnknown = -1 };
 
