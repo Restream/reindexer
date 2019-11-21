@@ -8,11 +8,11 @@ constexpr int kMaxIterationsForIdsetPreresult = 10000;
 
 namespace reindexer {
 
-static int GetMaxIterations(const SelectIteratorContainer &iterators) {
+static int GetMaxIterations(const SelectIteratorContainer &iterators, bool withZero = false) {
 	int maxIterations = std::numeric_limits<int>::max();
-	iterators.ForEachIterator([&maxIterations](const SelectIterator &it, OpType) {
+	iterators.ForEachIterator([&maxIterations, withZero](const SelectIterator &it, OpType) {
 		int cur = it.GetMaxIterations();
-		if (it.comparators_.empty() && cur && cur < maxIterations) maxIterations = cur;
+		if (it.comparators_.empty() && (cur || withZero) && cur < maxIterations) maxIterations = cur;
 	});
 	return maxIterations;
 }
@@ -131,10 +131,17 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 			// Building pre result for next joins
 
 			static_assert(kMaxIterationsForIdsetPreresult > JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization(), "");
-			// Return preResult as QueryIterators if:
-			if (maxIterations >= kMaxIterationsForIdsetPreresult ||  // 1. We have > QueryIterator which expects more than 10000 iterations.
-				(ctx.sortingContext.entries.size() && !ctx.sortingContext.sortIndex())  // 2. We have sorted query, by unordered index
-				|| ctx.preResult->btreeIndexOptimizationEnabled) {						// 3. We have btree-index that is not committed yet
+			if (ctx.preResult->enableStoredValues &&
+				GetMaxIterations(qres, true) <= JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization()) {
+				ctx.preResult->dataMode = JoinPreResult::ModeValues;
+				ctx.preResult->values.tagsMatcher = ns_->tagsMatcher_;
+				ctx.preResult->values.payloadType = ns_->payloadType_;
+				// Return preResult as QueryIterators if:
+			} else if (maxIterations >=
+						   kMaxIterationsForIdsetPreresult ||  // 1. We have > QueryIterator which expects more than 10000 iterations.
+					   (ctx.sortingContext.entries.size() &&
+						!ctx.sortingContext.sortIndex())				   // 2. We have sorted query, by unordered index
+					   || ctx.preResult->btreeIndexOptimizationEnabled) {  // 3. We have btree-index that is not committed yet
 				ctx.preResult->iterators.Append(qres.cbegin(), qres.cend());
 				if (ctx.query.debugLevel >= LogInfo) {
 					logPrintf(LogInfo, "Built preResult (expected %d iterations) with %d iterators, q='%s'", maxIterations, qres.Size(),
@@ -144,16 +151,11 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 				ctx.preResult->dataMode = JoinPreResult::ModeIterators;
 				ctx.preResult->executionMode = JoinPreResult::ModeExecute;
 				return;
-			} else if (!ctx.preResult->enableStoredValues ||
-					   maxIterations > JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization()) {
+			} else {
 				// Build preResult as single IdSet
 				ctx.preResult->dataMode = JoinPreResult::ModeIdSet;
 				// For building join preresult always use ASC sort orders
 				for (SortingEntry &se : sortBy) se.desc = false;
-			} else {
-				ctx.preResult->dataMode = JoinPreResult::ModeValues;
-				ctx.preResult->values.tagsMatcher = ns_->tagsMatcher_;
-				ctx.preResult->values.payloadType = ns_->payloadType_;
 			}
 		}
 	} else if (!ctx.sortingContext.isOptimizationEnabled()) {

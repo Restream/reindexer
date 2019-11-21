@@ -184,7 +184,8 @@ func (db *reindexerImpl) registerNamespaceImpl(namespace string, opts *Namespace
 	haveDeepCopy := false
 
 	if !opts.disableObjCache {
-		copier, haveDeepCopy := reflect.New(t).Interface().(DeepCopy)
+		var copier DeepCopy
+		copier, haveDeepCopy = reflect.New(t).Interface().(DeepCopy)
 		if haveDeepCopy {
 			cpy := copier.DeepCopy()
 			cpyType := reflect.TypeOf(reflect.Indirect(reflect.ValueOf(cpy)).Interface())

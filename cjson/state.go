@@ -9,6 +9,7 @@ type StateData struct {
 	tagsMatcher tagsMatcher
 	payloadType payloadType
 	structCache structCache
+	sCacheLock  sync.RWMutex
 	ctagsWCache ctagsWCache
 	Version     int32
 	StateToken  int32
@@ -61,33 +62,33 @@ func (state *State) NewDecoder(item interface{}) Decoder {
 		state: state,
 	}
 
-	dec.state.lock.RLock()
+	dec.state.sCacheLock.RLock()
 	if dec.state.structCache == nil {
-		dec.state.lock.RUnlock()
-		dec.state.lock.Lock()
+		dec.state.sCacheLock.RUnlock()
+		dec.state.sCacheLock.Lock()
 		if dec.state.structCache == nil {
 			dec.state.structCache = make(map[reflect.Type]*ctagsCache, 1)
 		}
-		dec.state.lock.Unlock()
-		dec.state.lock.RLock()
+		dec.state.sCacheLock.Unlock()
+		dec.state.sCacheLock.RLock()
 	}
 
 	if st, ok := dec.state.structCache[reflect.TypeOf(item)]; ok {
 		dec.ctagsCache = st
 	} else {
 		cachePtr := &ctagsCache{}
-		dec.state.lock.RUnlock()
-		dec.state.lock.Lock()
+		dec.state.sCacheLock.RUnlock()
+		dec.state.sCacheLock.Lock()
 		if st, ok := dec.state.structCache[reflect.TypeOf(item)]; ok {
 			cachePtr = st
 		} else {
 			dec.state.structCache[reflect.TypeOf(item)] = cachePtr
 		}
-		dec.state.lock.Unlock()
-		dec.state.lock.RLock()
+		dec.state.sCacheLock.Unlock()
+		dec.state.sCacheLock.RLock()
 		dec.ctagsCache = cachePtr
 	}
-	dec.state.lock.RUnlock()
+	dec.state.sCacheLock.RUnlock()
 
 	return dec
 }

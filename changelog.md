@@ -1,3 +1,11 @@
+# Version 2.4.2 (21.11.2019)
+
+## Core
+- [fix] Joins optimizations
+
+## go connector
+- [fix] cjson lock + deep copy performance fixes
+
 # Version 2.4.1 (15.11.2019)
 
 ## Core
