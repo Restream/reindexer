@@ -132,6 +132,9 @@ int SQLParser::selectParse(tokenizer &parser) {
 				if (name.text() == "count"_sv) {
 					query_.calcTotal = ModeAccurateTotal;
 					if (!wasSelectFilter) query_.count = 0;
+				} else if (name.text() == "count_cached"_sv) {
+					query_.calcTotal = ModeCachedTotal;
+					if (!wasSelectFilter) query_.count = 0;
 				} else if (name.text() == "distinct"_sv) {
 					query_.Distinct(string(tok.text()));
 					if (!wasSelectFilter) query_.selectFilter_.push_back(string(tok.text()));

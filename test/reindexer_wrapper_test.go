@@ -25,7 +25,7 @@ type ReindexerWrapper struct {
 }
 
 func NewReindexWrapper(dsn string, options ...interface{}) *ReindexerWrapper {
-	return &ReindexerWrapper{Reindexer: *reindexer.NewReindex(dsn, options), isMaster: true, dsn: dsn, syncedStatus: 0}
+	return &ReindexerWrapper{Reindexer: *reindexer.NewReindex(dsn, options...), isMaster: true, dsn: dsn, syncedStatus: 0}
 }
 
 func (dbw *ReindexerWrapper) SetSynced(sync bool) {
@@ -48,7 +48,7 @@ func (dbw *ReindexerWrapper) addSlave(dsn string, options ...interface{}) *Reind
 	if dbw.dsn == dsn {
 		return nil
 	}
-	slaveDb := NewReindexWrapper(dsn, options)
+	slaveDb := NewReindexWrapper(dsn, options...)
 	slaveDb.isMaster = false
 	slaveDb.master = dbw
 	slaveDb.SetSynced(false)

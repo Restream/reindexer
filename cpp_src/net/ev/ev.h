@@ -330,7 +330,7 @@ class async {
 	friend class dynamic_loop;
 
 public:
-	async() : sent_(false){};
+	async() : sent_(false) {}
 	async(const async &) = delete;
 	~async() { stop(); }
 

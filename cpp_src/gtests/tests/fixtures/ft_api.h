@@ -1,10 +1,12 @@
 #pragma once
 #include <limits>
+#include "core/cjson/jsonbuilder.h"
+#include "core/ft/config/ftfastconfig.h"
 #include "reindexer_api.h"
 
 class FTApi : public ReindexerApi {
 public:
-	void SetUp() {
+	void Init(const reindexer::FtFastConfig& ftCfg) {
 		rt.reindexer.reset(new Reindexer);
 		Error err;
 
@@ -14,19 +16,33 @@ public:
 		err = rt.reindexer->OpenNamespace("nm2");
 		ASSERT_TRUE(err.ok()) << err.what();
 
+		reindexer::WrSerializer wrser;
+		reindexer::JsonBuilder cfgBuilder(wrser);
+		cfgBuilder.Put("enable_translit", ftCfg.enableTranslit);
+		cfgBuilder.Put("enable_numbers_search", ftCfg.enableNumbersSearch);
+		cfgBuilder.Put("enable_kb_layout", ftCfg.enableKbLayout);
+		cfgBuilder.Put("merge_limit", ftCfg.mergeLimit);
+		cfgBuilder.Put("log_level", ftCfg.logLevel);
+		cfgBuilder.Put("max_step_size", ftCfg.maxStepSize);
+		cfgBuilder.End();
+
 		DefineNamespaceDataset(
-			"nm1",
-			{IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
-			 IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
-			 IndexDeclaration{
-				 "ft1+ft2=ft3", "text", "composite",
-				 IndexOpts().SetConfig(
-					 R"xxx({"enable_translit": true,"enable_numbers_search": true,"enable_kb_layout": true,"merge_limit": 20000,"log_level": 5,"max_step_size": 100})xxx"),
-				 0}});
+			"nm1", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
+					IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
+					IndexDeclaration{"ft1+ft2=ft3", "text", "composite", IndexOpts().SetConfig(string(wrser.Slice())), 0}});
 		DefineNamespaceDataset(
 			"nm2", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
 					IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
 					IndexDeclaration{"ft1+ft2=ft3", "text", "composite", IndexOpts(), 0}});
+	}
+
+	reindexer::FtFastConfig GetDefaultConfig() {
+		reindexer::FtFastConfig cfg;
+		cfg.enableNumbersSearch = true;
+		cfg.logLevel = 5;
+		cfg.mergeLimit = 20000;
+		cfg.maxStepSize = 100;
+		return cfg;
 	}
 
 	void FillData(int64_t count) {

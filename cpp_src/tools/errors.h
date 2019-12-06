@@ -24,7 +24,7 @@ public:
 
 protected:
 	struct payload {
-		payload(int code, const string &what) : code_(code), what_(what){};
+		payload(int code, const string &what) : code_(code), what_(what) {}
 		int code_;
 		std::string what_;
 	};

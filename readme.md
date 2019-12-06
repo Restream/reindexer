@@ -149,7 +149,8 @@ func main() {
 	db := reindexer.NewReindex("builtin:///tmp/reindex/testdb")
 
 	// OR - Init a database instance and choose the binding (connect to server)
-	// db := reindexer.NewReindex("cproto://127.0.0.1:6534/testdb")
+	// Database should be created explicitly via reindexer_tool or via WithCreateDBIfMissing option:
+	// db := reindexer.NewReindex("cproto://127.0.0.1:6534/testdb", reindexer.WithCreateDBIfMissing())
 
 	// OR - Init a database instance and choose the binding (builtin, with bundled server)
 	// serverConfig := config.DefaultServerConfig ()
@@ -773,6 +774,11 @@ Command line tool have the following functions
 Command line tool can run in 2 modes. With server via network, and in server-less mode, directly with storage.
 
 ### Dump and restore database
+
+Database creation via reindexer_tool:
+```sh
+reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --command '\databases create mydb'
+```
 
 To dump and restore database in normal way there reindexer command line tool is used
 

@@ -24,11 +24,10 @@ RPCClient::RPCClient(const ReindexerConfig& config) : workers_(config.WorkerThre
 
 RPCClient::~RPCClient() { Stop(); }
 
-Error RPCClient::Connect(const string& dsn) {
+Error RPCClient::Connect(const string& dsn, const client::ConnectOpts& opts) {
 	if (connections_.size()) {
 		return Error(errLogic, "Client is already started");
 	}
-
 	if (!uri_.parse(dsn)) {
 		return Error(errParams, "%s is not valid uri", dsn);
 	}
@@ -38,7 +37,7 @@ Error RPCClient::Connect(const string& dsn) {
 
 	connections_.resize(config_.ConnPoolSize);
 	for (unsigned i = 0; i < workers_.size(); i++) {
-		workers_[i].thread_ = std::thread([this](int i) { this->run(i); }, i);
+		workers_[i].thread_ = std::thread([this](int i, client::ConnectOpts opts) { this->run(i, opts); }, i, opts);
 		while (!workers_[i].running) std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
 	return errOK;
@@ -57,7 +56,7 @@ Error RPCClient::Stop() {
 	return errOK;
 }
 
-void RPCClient::run(int thIdx) {
+void RPCClient::run(int thIdx, const client::ConnectOpts& opts) {
 	bool terminate = false;
 
 	workers_[thIdx].stop_.set(workers_[thIdx].loop_);
@@ -70,7 +69,10 @@ void RPCClient::run(int thIdx) {
 	delayedUpdates_.clear();
 
 	for (int i = thIdx; i < config_.ConnPoolSize; i += config_.WorkerThreads) {
-		connections_[i].reset(new cproto::ClientConnection(workers_[thIdx].loop_, &uri_, config_.ConnectTimeout, config_.RequestTimeout));
+		connections_[i].reset(new cproto::ClientConnection(
+			workers_[thIdx].loop_, &uri_,
+			cproto::ClientConnection::Options(config_.ConnectTimeout, config_.RequestTimeout, opts.IsCreateDBIfMissing(),
+											  opts.HasExpectedClusterID(), opts.ExpectedClusterID())));
 	}
 
 	ev::periodic checker;
@@ -97,6 +99,7 @@ void RPCClient::run(int thIdx) {
 	for (int i = thIdx; i < config_.ConnPoolSize; i += config_.WorkerThreads) {
 		connections_[i].reset();
 	}
+	workers_[thIdx].running.store(false);
 }
 
 Error RPCClient::AddNamespace(const NamespaceDef& nsDef, const InternalRdxContext& ctx) {
@@ -534,6 +537,8 @@ Error RPCClient::GetSqlSuggestions(string_view query, int pos, std::vector<std::
 		return err;
 	}
 }
+
+Error RPCClient::Status() { return getConn()->CheckConnection(); }
 
 void RPCClient::checkSubscribes() {
 	bool subscribe = !observers_.empty();

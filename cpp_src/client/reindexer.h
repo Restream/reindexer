@@ -40,7 +40,9 @@ public:
 
 	/// Connect - connect to reindexer server
 	/// @param dsn - uri of server and database, like: `cproto://user@password:127.0.0.1:6534/dbname`
-	Error Connect(const string &dsn);
+	/// @param opts - Connect options. May contaion any of <br>
+	/// ConnectOpts::OpenNamespaces() - true: Need to open all the namespaces; false: Don't open namespaces
+	Error Connect(const string &dsn, const client::ConnectOpts &opts = client::ConnectOpts());
 	/// Stop - shutdown connector
 	Error Stop();
 	/// Open or create namespace
@@ -151,6 +153,8 @@ public:
 	/// @param pos - position in sql query for suggestions.
 	/// @param suggestions - all the suggestions for 'pos' position in query.
 	Error GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string> &suggestions);
+	/// Get curret connection status
+	Error Status();
 
 	/// Add cancelable context
 	/// @param cancelCtx - context pointer

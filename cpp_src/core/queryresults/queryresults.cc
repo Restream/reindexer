@@ -160,10 +160,18 @@ h_vector<string_view, 1> QueryResults::GetNamespaces() const {
 	return ret;
 }
 
+int QueryResults::GetJoinedNsCtxIndex(int nsid) const {
+	int ctxIndex = joined_.size();
+	for (int ns = 0; ns < nsid; ++ns) {
+		ctxIndex += joined_[ns].GetJoinedSelectorsCount();
+	};
+	return ctxIndex;
+}
+
 class QueryResults::EncoderDatasourceWithJoins : public IEncoderDatasourceWithJoins {
 public:
-	EncoderDatasourceWithJoins(const joins::ItemIterator &joinedItemIt, const ContextsVector &ctxs)
-		: joinedItemIt_(joinedItemIt), ctxs_(ctxs) {}
+	EncoderDatasourceWithJoins(const joins::ItemIterator &joinedItemIt, const ContextsVector &ctxs, int ctxIdx)
+		: joinedItemIt_(joinedItemIt), ctxs_(ctxs), ctxId_(ctxIdx) {}
 	~EncoderDatasourceWithJoins() {}
 
 	size_t GetJoinedRowsCount() const final { return joinedItemIt_.getJoinedFieldsCount(); }
@@ -174,26 +182,27 @@ public:
 	ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) const final {
 		auto fieldIt = joinedItemIt_.at(rowid);
 		const ItemRef &itemRef = fieldIt[plIndex];
-		const Context &ctx = ctxs_[rowid + 1];
+		const Context &ctx = ctxs_[ctxId_ + rowid];
 		return ConstPayload(ctx.type_, itemRef.Value());
 	}
 	const TagsMatcher &GetJoinedItemTagsMatcher(size_t rowid) final {
-		const Context &ctx = ctxs_[rowid + 1];
+		const Context &ctx = ctxs_[ctxId_ + rowid];
 		return ctx.tagsMatcher_;
 	}
 	virtual const FieldsSet &GetJoinedItemFieldsFilter(size_t rowid) final {
-		const Context &ctx = ctxs_[rowid + 1];
+		const Context &ctx = ctxs_[ctxId_ + rowid];
 		return ctx.fieldsFilter_;
 	}
 
 	const string &GetJoinedItemNamespace(size_t rowid) final {
-		const Context &ctx = ctxs_[rowid + 1];
+		const Context &ctx = ctxs_[ctxId_ + rowid];
 		return ctx.type_->Name();
 	}
 
 private:
 	const joins::ItemIterator &joinedItemIt_;
 	const ContextsVector &ctxs_;
+	const int ctxId_;
 };
 
 void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
@@ -213,7 +222,7 @@ void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 	if (joined_.size() > 0) {
 		joins::ItemIterator itemIt = (begin() + idx).GetJoinedItemsIterator();
 		if (itemIt.getJoinedItemsCount() > 0) {
-			EncoderDatasourceWithJoins ds(itemIt, ctxs);
+			EncoderDatasourceWithJoins ds(itemIt, ctxs, GetJoinedNsCtxIndex(itemRef.Nsid()));
 			encoder.Encode(&pl, builder, &ds);
 			return;
 		}

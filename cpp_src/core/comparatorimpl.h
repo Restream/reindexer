@@ -20,7 +20,7 @@ struct ComparatorVars {
 		  collateOpts_(collateOpts),
 		  payloadType_(payloadType),
 		  fields_(fields) {}
-	ComparatorVars(){};
+	ComparatorVars() {}
 
 	CondType cond_ = CondEq;
 	KeyValueType type_ = KeyValueUndefined;
@@ -118,21 +118,21 @@ public:
 		}
 	}
 
-	bool inline Compare2(CondType cond, const p_string &lhs, const CollateOpts &collateOpts) {
-		const key_string &rhs = values_[0];
+	bool inline Compare2(CondType cond, p_string lhs, const CollateOpts &collateOpts) {
+		auto rhs = cachedValueSV_;
 		switch (cond) {
 			case CondEq:
-				return collateCompare(string_view(lhs), string_view(*rhs), collateOpts) == 0;
+				return collateCompare(string_view(lhs), rhs, collateOpts) == 0;
 			case CondGe:
-				return collateCompare(string_view(lhs), string_view(*rhs), collateOpts) >= 0;
+				return collateCompare(string_view(lhs), rhs, collateOpts) >= 0;
 			case CondLe:
-				return collateCompare(string_view(lhs), string_view(*rhs), collateOpts) <= 0;
+				return collateCompare(string_view(lhs), rhs, collateOpts) <= 0;
 			case CondLt:
-				return collateCompare(string_view(lhs), string_view(*rhs), collateOpts) < 0;
+				return collateCompare(string_view(lhs), rhs, collateOpts) < 0;
 			case CondGt:
-				return collateCompare(string_view(lhs), string_view(*rhs), collateOpts) > 0;
+				return collateCompare(string_view(lhs), rhs, collateOpts) > 0;
 			case CondRange:
-				return collateCompare(string_view(lhs), string_view(*rhs), collateOpts) >= 0 &&
+				return collateCompare(string_view(lhs), rhs, collateOpts) >= 0 &&
 					   collateCompare(string_view(lhs), string_view(*values_[1]), collateOpts) <= 0;
 			case CondSet:
 				// if (collateOpts.mode == CollateNone) return valuesS_->find(lhs) != valuesS_->end();
@@ -145,19 +145,20 @@ public:
 			case CondEmpty:
 				return false;
 			case CondLike: {
-				return matchLikePattern(string_view(lhs), string_view(*rhs));
+				return matchLikePattern(string_view(lhs), rhs);
 			}
 			default:
 				abort();
 		}
 	}
-	bool Compare(CondType cond, const p_string &lhs, const CollateOpts &collateOpts) {
+	bool Compare(CondType cond, p_string lhs, const CollateOpts &collateOpts) {
 		bool ret = Compare2(cond, lhs, collateOpts);
 		if (!ret || !distS_) return ret;
 		return distS_->emplace(lhs.getOrMakeKeyString()).second;
 	}
 
 	h_vector<key_string, 1> values_;
+	string_view cachedValueSV_;
 	intrusive_ptr<intrusive_atomic_rc_wrapper<fast_hash_set<key_string>>> valuesS_, distS_;
 
 private:
@@ -166,6 +167,9 @@ private:
 			valuesS_->emplace(value);
 		} else {
 			values_.push_back(value);
+			if (values_.size() == 1) {
+				cachedValueSV_ = string_view(*values_[0]);
+			}
 		}
 	}
 };

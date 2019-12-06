@@ -78,6 +78,18 @@ type CacheMemStat struct {
 	HitCountLimit int64 `json:"hit_count_limit"`
 }
 
+// MasterReplicationState information about reindexer-master state
+type MasterReplicationState struct {
+	// Last Log Sequence Number (LSN) of applied namespace modification
+	LastLSN int64 `json:"last_lsn"`
+	// Hashsum of all records in namespace
+	DataHash uint64 `json:"data_hash"`
+	// Data updated timestamp
+	UpdatedUnixNano int64 `json:"updated_unix_nano"`
+	// Items count in master namespace
+	DataCount int64 `json:"data_count"`
+}
+
 // NamespaceMemStat information about reindexer's namespace memory statisctics
 // and located in '#memstats' system namespace
 type NamespaceMemStat struct {
@@ -108,8 +120,6 @@ type NamespaceMemStat struct {
 	Replication struct {
 		// Last Log Sequence Number (LSN) of applied namespace modification
 		LastLSN int64 `json:"last_lsn"`
-		// Cluster ID - must be same for client and for master
-		ClusterID int64 `json:"cluster_id"`
 		// If true, then namespace is in slave mode
 		SlaveMode bool `json:"slave_mode"`
 		// Number of storage's master <-> slave switches
@@ -122,6 +132,14 @@ type NamespaceMemStat struct {
 		WalSize int64 `json:"wal_size"`
 		// Data updated timestamp
 		UpdatedUnixNano int64 `json:"updated_unix_nano"`
+		// Last replication error code
+		ErrorCode int64 `json:"error_code"`
+		// Last replication error message
+		ErrorMessage string `json:"error_message"`
+		// Master's state
+		MasterState MasterReplicationState `json:"master_state"`
+		// Current replication status
+		Status string `json:"status"`
 	} `json:"replication"`
 	// Indexes memory statistic
 	Indexes []struct {
@@ -309,3 +327,4 @@ func (db *Reindexer) GetNamespaceMemStat(namespace string) (*NamespaceMemStat, e
 	}
 	return desc.(*NamespaceMemStat), nil
 }
+

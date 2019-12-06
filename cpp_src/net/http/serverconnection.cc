@@ -157,6 +157,9 @@ void ServerConnection::onRead() {
 					rdBuf_.unroll();
 					continue;
 				}
+				if (rdBuf_.size() == rdBuf_.capacity()) {
+					rdBuf_.reserve(rdBuf_.capacity() * 2);
+				}
 				return;
 			} else if (res < 0) {
 				badRequest(StatusBadRequest, "");

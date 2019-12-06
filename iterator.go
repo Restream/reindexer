@@ -74,8 +74,17 @@ func newIterator(
 	it.ptr = 0
 	it.err = nil
 	it.userCtx = userCtx
-	if len(it.joinToFields) > 0 {
-		it.current.joinObj = make([][]interface{}, len(it.joinToFields))
+	joinObjSize := len(it.joinToFields)
+	if q != nil {
+		for _, mq := range q.mergedQueries {
+			joinSize := len(mq.joinToFields)
+			if joinSize > joinObjSize {
+				joinObjSize = joinSize
+			}
+		}
+	}
+	if joinObjSize > 0 {
+		it.current.joinObj = make([][]interface{}, joinObjSize)
 	}
 	it.setBuffer(result)
 
@@ -158,9 +167,18 @@ func (it *Iterator) joinedNsIndexOffset(parentNsID int) int {
 		return 1
 	}
 
+	// main NS + count of merged ones
 	offset := 1 + len(it.query.mergedQueries)
-	for m := 0; m < parentNsID; m++ {
-		offset += len(it.query.mergedQueries[m].joinQueries)
+
+	mergedNsIdx := parentNsID
+	if mergedNsIdx > 0 {
+		offset += len(it.query.joinQueries)
+		// it.query.mergedQueries doesn't store main object joined data
+		mergedNsIdx--
+	}
+
+	for i := 0; i < mergedNsIdx; i++ {
+		offset += len(it.query.mergedQueries[i].joinQueries)
 	}
 	return offset
 }
@@ -196,6 +214,7 @@ func (it *Iterator) readItem(toObj interface{}) (item interface{}, rank int) {
 				return
 			}
 		}
+
 		it.current.joinObj[nsIndex] = subitems
 		it.join(nsIndex, nsIndexOffset, params.nsid, item)
 	}
@@ -228,16 +247,22 @@ func (it *Iterator) fetchResults() {
 }
 
 func (it *Iterator) join(nsIndex, nsIndexOffset, parentNsID int, item interface{}) {
-	field := it.joinToFields[nsIndex]
-	subitems := it.current.joinObj[nsIndex]
-	handler := it.joinHandlers[nsIndex]
+	var field string
+	var handler JoinHandler
+	if parentNsID == 0 {
+		field = it.joinToFields[nsIndex]
+		handler = it.joinHandlers[nsIndex]
+	} else {
+		field = it.query.mergedQueries[parentNsID-1].joinToFields[nsIndex]
+		handler = it.query.mergedQueries[parentNsID-1].joinHandlers[nsIndex]
+	}
 
+	subitems := it.current.joinObj[nsIndex]
 	if handler != nil {
 		if !handler(field, item, subitems) {
 			return
 		}
 	}
-
 	if joinable, ok := item.(Joinable); ok {
 		joinable.Join(field, subitems, it.queryContext)
 	} else {

@@ -76,7 +76,6 @@ will return JSON object with status of namespace `media_items `replication
 ```JSON
 {
 	"last_lsn": 31863, 
-	"cluster_id": 2, 
 	"slave_mode": true, 
 	"incarnation_counter": 1, 
 	"data_hash": 2207033076418442500,

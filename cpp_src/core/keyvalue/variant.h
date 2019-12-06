@@ -23,7 +23,7 @@ public:
 	explicit Variant(int64_t v) : type_(KeyValueInt64), value_int64(v) {}
 	explicit Variant(double v) : type_(KeyValueDouble), value_double(v) {}
 	explicit Variant(const char *v);
-	explicit Variant(const p_string &v, bool enableHold = true);
+	explicit Variant(p_string v, bool enableHold = true);
 	explicit Variant(const string &v);
 	explicit Variant(const key_string &v);
 	explicit Variant(const PayloadValue &v);
@@ -142,7 +142,7 @@ protected:
 		// key_string h_value_string;
 	};
 	int relaxCompareWithString(string_view) const;
-};  // namespace reindexer
+};	// namespace reindexer
 
 class VariantArray : public h_vector<Variant, 2> {
 public:

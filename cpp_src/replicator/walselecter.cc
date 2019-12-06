@@ -17,7 +17,9 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 	if (q.entries.Size() != 1 || !q.entries.IsEntry(0)) {
 		throw Error(errLogic, "Query to WAL should contain only 1 condition '#lsn > number'");
 	}
-	if (ns_->repl_.slaveMode) throw Error(errNoWAL, "Query to WAL, but WAL is disabled. Set replication role to master to continue");
+	if (ns_->repl_.slaveMode) {
+		throw Error(errNoWAL, "Query to WAL, but WAL is disabled. Set replication role to master to continue");
+	}
 
 	result.addNSContext(ns_->payloadType_, ns_->tagsMatcher_, FieldsSet(ns_->tagsMatcher_, q.selectFilter_));
 	putReplState(result);

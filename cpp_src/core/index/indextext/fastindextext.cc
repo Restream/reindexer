@@ -274,6 +274,7 @@ void FastIndexText<T>::SetOpts(const IndexOpts &opts) {
 		this->holder_.status_ = FullRebuild;
 		this->holder_.Clear();
 		this->cache_ft_->Clear();
+		for (auto& idx: this->idx_map) idx.second.VDocID() = FtKeyEntryData::ndoc;
 	}
 }
 

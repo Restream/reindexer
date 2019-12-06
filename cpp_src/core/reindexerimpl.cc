@@ -32,7 +32,11 @@ constexpr char kStoragePlaceholderFilename[] = ".reindexer.storage";
 constexpr char kReplicationConfFilename[] = "replication.conf";
 
 ReindexerImpl::ReindexerImpl()
-	: replicator_(new Replicator(this)), hasReplConfigLoadError_(false), storageType_(StorageType::LevelDB), autorepairEnabled_(false) {
+	: replicator_(new Replicator(this)),
+	  hasReplConfigLoadError_(false),
+	  storageType_(StorageType::LevelDB),
+	  autorepairEnabled_(false),
+	  connected_(false) {
 	stopBackgroundThread_ = false;
 	configProvider_.setHandler(ProfilingConf, std::bind(&ReindexerImpl::onProfiligConfigLoad, this));
 	backgroundThread_ = std::thread([this]() { this->backgroundRoutine(); });
@@ -118,6 +122,26 @@ Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlacehold
 }
 
 Error ReindexerImpl::Connect(const string& dsn, ConnectOpts opts) {
+	auto checkReplConf = [this](const ConnectOpts& opts) {
+		if (opts.HasExpectedClusterID()) {
+			auto replConfig = configProvider_.GetReplicationConfig();
+			if (replConfig.role != ReplicationMaster) {
+				return Error(errReplParams, "Replication is disabled on master's side");
+			}
+			if (replConfig.clusterID != opts.ExpectedClusterID()) {
+				return Error(errReplParams, "Expected master's clusted ID(%d) is not equal to actual clusted ID(%d)",
+							 opts.ExpectedClusterID(), replConfig.clusterID);
+			}
+		}
+		return Error();
+	};
+	bool connected = connected_.load(std::memory_order_relaxed);
+	if (connected) {
+		auto status = checkReplConf(opts);
+		if (!status.ok()) {
+			return status;
+		}
+	}
 	string path = dsn;
 	if (dsn.compare(0, 10, "builtin://") == 0) {
 		path = dsn.substr(10);
@@ -181,13 +205,23 @@ Error ReindexerImpl::Connect(const string& dsn, ConnectOpts opts) {
 		}
 	}
 
+	if (!connected) {
+		auto status = checkReplConf(opts);
+		if (!status.ok()) {
+			return status;
+		}
+	}
 	replicator_->Enable();
 	bool needStart = replicator_->Configure(configProvider_.GetReplicationConfig());
 	Error err = needStart ? replicator_->Start() : errOK;
 	if (!err.ok()) {
 		return err;
 	}
-	return replConfigFileChecker_.Enable();
+	err = replConfigFileChecker_.Enable();
+	if (err.ok()) {
+		connected_.store(true, std::memory_order_release);
+	}
+	return err;
 }
 
 Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, const InternalRdxContext& ctx) {
@@ -597,7 +631,7 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 		mainNs = getNamespace(q._namespace, rdxCtx);
 
 		ProfilingConfigData profilingCfg = configProvider_.GetProfilingConfig();
-		PerfStatCalculatorMT calc(mainNs->selectPerfCounter_, mainNs->enablePerfCounters_);  // todo more accurate detect joined queries
+		PerfStatCalculatorMT calc(mainNs->selectPerfCounter_, mainNs->enablePerfCounters_);	 // todo more accurate detect joined queries
 		auto& tracker = queriesStatTracker_;
 		QueryStatCalculator statCalculator(
 			[&q, &tracker](bool lockHit, std::chrono::microseconds time) {
@@ -1092,9 +1126,6 @@ Error ReindexerImpl::InitSystemNamespaces() {
 		}
 	} else {
 		// Load config from namespace #config
-		QueryResults results;
-		auto err = Select(Query(kConfigNamespace), results);
-		if (!err.ok()) return err;
 		for (auto it : results) {
 			auto item = it.GetItem();
 			try {
@@ -1332,6 +1363,13 @@ Error ReindexerImpl::GetSqlSuggestions(const string_view sqlQuery, int pos, vect
 
 	suggestions = suggester.GetSuggestions(sqlQuery, pos, nses);
 	return errOK;
+}
+
+Error ReindexerImpl::Status() {
+	if (connected_.load(std::memory_order_acquire)) {
+		return errOK;
+	}
+	return Error(errNotValid, "DB is not connected"_sv);
 }
 
 }  // namespace reindexer

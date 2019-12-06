@@ -544,10 +544,10 @@ void NsSelecter::setLimitAndOffset(ItemRefVector &queryResult, size_t offset, si
 	}
 }
 
-void NsSelecter::processLeftJoins(QueryResults &qr, SelectCtx &sctx) {
+void NsSelecter::processLeftJoins(QueryResults &qr, SelectCtx &sctx, size_t startPos) {
 	if (!checkIfThereAreLeftJoins(sctx)) return;
-	for (auto it : qr) {
-		IdType rowid = it.GetItemRef().Id();
+	for (size_t i = startPos; i < qr.Count(); ++i) {
+		IdType rowid = qr[i].GetItemRef().Id();
 		ConstPayload pl(ns_->payloadType_, ns_->items_[rowid]);
 		for (auto &joinedSelector : *sctx.joinedSelectors)
 			if (joinedSelector.Type() == JoinType::LeftJoin) joinedSelector.Process(rowid, sctx.nsid, pl, true);
@@ -602,6 +602,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 	auto aggregators = getAggregators(sctx.query);
 	// do not calc total by loop, if we have only 1 condition with 1 idset
 	bool calcTotal = ctx.calcTotal && (qres.Size() > 1 || hasComparators || (qres.IsIterator(0) && qres[0].size() > 1));
+	size_t resultInitSize = result.Count();
 
 	// reserve queryresults, if we have only 1 condition with 1 idset
 	if (qres.Size() == 1 && qres.IsIterator(0) && qres[0].size() == 1) {
@@ -695,7 +696,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 		const size_t offset = sortingOptions.usingGeneralAlgorithm ? sctx.query.start : multisortLimitLeft;
 		setLimitAndOffset(result.Items(), offset, sctx.query.count);
 	}
-	processLeftJoins(result, sctx);
+	processLeftJoins(result, sctx, resultInitSize);
 	for (ItemRef &iref : result.Items()) {
 		if (!iref.ValueInitialized()) iref.SetValue(ns_->items_[iref.Id()]);
 	}

@@ -69,10 +69,9 @@ public:
 		  optimized_(false) {}
 
 	JoinedSelector(JoinedSelector &&) = default;
-
+	JoinedSelector &operator=(JoinedSelector &&) = delete;
 	JoinedSelector(const JoinedSelector &) = delete;
 	JoinedSelector &operator=(const JoinedSelector &) = delete;
-	JoinedSelector &operator=(JoinedSelector &&) = delete;
 
 	bool Process(IdType, int nsId, ConstPayload, bool match);
 	JoinType Type() const { return joinType_; }

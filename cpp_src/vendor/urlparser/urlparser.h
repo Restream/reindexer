@@ -15,9 +15,9 @@ class UrlParser {
 public:
 	UrlParser() : valid(false) {}
 
-	explicit UrlParser(const std::string &url) : valid(true) { parse(url); }
+	explicit UrlParser(const std::string& url) : valid(true) { parse(url); }
 
-	bool parse(const std::string &str) {
+	bool parse(const std::string& str) {
 		url = Url();
 		parse_(str);
 
@@ -26,42 +26,42 @@ public:
 
 	bool isValid() const { return valid; }
 
-	std::string scheme() const {
+	const std::string& scheme() const {
 		assert(isValid());
 		return url.scheme;
 	}
 
-	std::string username() const {
+	const std::string& username() const {
 		assert(isValid());
 		return url.username;
 	}
 
-	std::string password() const {
+	const std::string& password() const {
 		assert(isValid());
 		return url.password;
 	}
 
-	std::string hostname() const {
+	const std::string& hostname() const {
 		assert(isValid());
 		return url.hostname;
 	}
 
-	std::string port() const {
+	const std::string& port() const {
 		assert(isValid());
 		return url.port;
 	}
 
-	std::string path() const {
+	const std::string& path() const {
 		assert(isValid());
 		return url.path;
 	}
 
-	std::string query() const {
+	const std::string& query() const {
 		assert(isValid());
 		return url.query;
 	}
 
-	std::string fragment() const {
+	const std::string& fragment() const {
 		assert(isValid());
 		return url.fragment;
 	}
@@ -97,7 +97,7 @@ private:
 		return false;
 	}
 
-	void parse_(const std::string &str) {
+	void parse_(const std::string& str) {
 		enum {
 			Scheme,
 			SlashAfterScheme1,

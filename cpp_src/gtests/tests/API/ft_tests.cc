@@ -7,6 +7,7 @@
 #include "tools/stringstools.h"
 
 TEST_F(FTApi, CompositeSelect) {
+	Init(GetDefaultConfig());
 	Add("An entity is something|", "| that in exists entity as itself");
 	Add("In law, a legal entity is|", "|an entity that is capable of something bearing legal rights");
 	Add("In politics, entity is used as|", "| term for entity territorial divisions of some countries");
@@ -39,7 +40,119 @@ TEST_F(FTApi, CompositeSelect) {
 	EXPECT_TRUE(data.empty());
 }
 
+TEST_F(FTApi, SelectWithEscaping) {
+	reindexer::FtFastConfig ftCfg = GetDefaultConfig();
+	ftCfg.extraWordSymbols = "+-\\";
+	Init(ftCfg);
+	Add("Go to -hell+hell+hell!!");
+
+	auto res = SimpleSelect("\\-hell\\+hell\\+hell");
+	EXPECT_TRUE(res.Count() == 1);
+
+	for (auto it : res) {
+		Item ritem(it.GetItem());
+		string val = ritem["ft1"].As<string>();
+		EXPECT_TRUE(val == "Go to !-hell+hell+hell!!!");
+	}
+}
+
+TEST_F(FTApi, SelectWithPlus) {
+	Init(GetDefaultConfig());
+
+	Add("added three words");
+	Add("added something else");
+
+	auto res = SimpleSelect("+added");
+	EXPECT_TRUE(res.Count() == 2);
+
+	const char* results[] = {"!added! something else", "!added! three words"};
+	for (size_t i = 0; i < res.Count(); ++i) {
+		Item ritem = res[i].GetItem();
+		string val = ritem["ft1"].As<string>();
+		EXPECT_TRUE(val == results[i]);
+	}
+}
+
+TEST_F(FTApi, SelectWithMinus) {
+	Init(GetDefaultConfig());
+
+	Add("including me, excluding you");
+	Add("including all of them");
+
+	auto res = SimpleSelect("+including -excluding");
+	EXPECT_TRUE(res.Count() == 1);
+
+	for (size_t i = 0; i < res.Count(); ++i) {
+		Item ritem = res[i].GetItem();
+		string val = ritem["ft1"].As<string>();
+		EXPECT_TRUE(val == "!including! all of them");
+	}
+}
+
+TEST_F(FTApi, SelectWithFieldsList) {
+	Init(GetDefaultConfig());
+
+	Add("nm1", "Never watch their games", "Because nothing can be worse than Spartak Moscow");
+	Add("nm1", "Spartak Moscow is the worst team right now", "Yes, for sure");
+
+	auto res = SimpleSelect("@ft1 Spartak Moscow");
+	EXPECT_TRUE(res.Count() == 1);
+
+	for (size_t i = 0; i < res.Count(); ++i) {
+		Item ritem = res[i].GetItem();
+		string val = ritem["ft1"].As<string>();
+		EXPECT_TRUE(val == "!Spartak Moscow! is the worst team right now");
+	}
+}
+
+TEST_F(FTApi, SelectWithRelevanceBoost) {
+	Init(GetDefaultConfig());
+
+	Add("She was a very bad girl");
+	Add("All the naughty kids go to hell, not to heaven");
+	Add("I've never seen a man as cruel as him");
+
+	auto res = SimpleSelect("@ft1 girl^2 kids cruel^3");
+	EXPECT_TRUE(res.Count() == 3);
+
+	const char* results[] = {"I've never seen a man as !cruel! as him", "She was a very bad !girl!",
+							 "All the naughty !kids! go to hell, not to heaven"};
+	for (size_t i = 0; i < res.Count(); ++i) {
+		Item ritem = res[i].GetItem();
+		string val = ritem["ft1"].As<string>();
+		EXPECT_TRUE(val == results[i]);
+	}
+}
+
+TEST_F(FTApi, SelectWithDistance) {
+	Init(GetDefaultConfig());
+
+	Add("Her nose was very very long");
+	Add("Her nose was exceptionally long");
+	Add("Her nose was long");
+
+	auto res = SimpleSelect("'nose long'~3");
+	const char* results[] = {"Her !nose! was !long!", "Her !nose! was exceptionally !long!"};
+	EXPECT_TRUE(res.Count() == 2) << res.Count();
+
+	for (size_t i = 0; i < res.Count(); ++i) {
+		Item ritem = res[i].GetItem();
+		string val = ritem["ft1"].As<string>();
+		EXPECT_TRUE(val == results[i]);
+	}
+
+	auto res2 = SimpleSelect("'nose long'~2");
+	EXPECT_TRUE(res2.Count() == 1) << res.Count();
+
+	for (size_t i = 0; i < res2.Count(); ++i) {
+		Item ritem = res2[i].GetItem();
+		string val = ritem["ft1"].As<string>();
+		EXPECT_TRUE(val == "Her !nose! was !long!");
+	}
+}
+
 TEST_F(FTApi, NumberToWordsSelect) {
+	Init(GetDefaultConfig());
 	Add("оценка 5 майкл джордан 23", "");
 
 	auto res = SimpleSelect("пять +двадцать +три");
@@ -55,8 +168,9 @@ TEST_F(FTApi, NumberToWordsSelect) {
 }
 
 TEST_F(FTApi, DeleteTest) {
-	std::unordered_map<string, int> data;
+	Init(GetDefaultConfig());
 
+	std::unordered_map<string, int> data;
 	for (int i = 0; i < 10000; ++i) {
 		data.insert(Add(RuRandString()));
 	}
@@ -88,6 +202,8 @@ TEST_F(FTApi, DeleteTest) {
 }
 
 TEST_F(FTApi, Stress) {
+	Init(GetDefaultConfig());
+
 	vector<string> data;
 	vector<string> phrase;
 
@@ -123,6 +239,8 @@ TEST_F(FTApi, Stress) {
 	}
 }
 TEST_F(FTApi, Unique) {
+	Init(GetDefaultConfig());
+
 	std::vector<string> data;
 	std::set<size_t> check;
 	std::set<string> checks;

@@ -34,11 +34,11 @@ type NetCProto struct {
 	serverStartTime  int64
 	retryAttempts    bindings.OptionRetryAttempts
 	timeouts         bindings.OptionTimeouts
+	connectOpts      bindings.OptionConnect
 	termCh           chan struct{}
 }
 
 func (binding *NetCProto) Init(u *url.URL, options ...interface{}) (err error) {
-
 	connPoolSize := defConnPoolSize
 
 	for _, option := range options {
@@ -49,6 +49,8 @@ func (binding *NetCProto) Init(u *url.URL, options ...interface{}) (err error) {
 			binding.retryAttempts = v
 		case bindings.OptionTimeouts:
 			binding.timeouts = v
+		case bindings.OptionConnect:
+			binding.connectOpts = v
 		default:
 			fmt.Printf("Unknown cproto option: %v\n", option)
 		}

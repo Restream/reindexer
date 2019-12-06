@@ -63,8 +63,6 @@ struct ReplicationState {
 	bool temporary = false;
 	// Replication error
 	Error replError = errOK;
-	// Cluster ID
-	int clusterID = -1;
 	// Incarnation counter
 	int incarnationCounter = 0;
 	// Data hash

@@ -164,7 +164,6 @@ static ReplicationState::Status strToReplicationStatus(string_view status) {
 
 void ReplicationState::GetJSON(JsonBuilder &builder) {
 	builder.Put("last_lsn", lastLsn);
-	builder.Put("cluster_id", clusterID);
 	builder.Put("slave_mode", slaveMode);
 	builder.Put("temporary", temporary);
 	builder.Put("incarnation_counter", incarnationCounter);
@@ -186,7 +185,6 @@ void ReplicationState::FromJSON(span<char> json) {
 		auto root = parser.Parse(json);
 
 		lastLsn = root["last_lsn"].As<int64_t>();
-		clusterID = root["cluster_id"].As<int>();
 		slaveMode = root["slave_mode"].As<bool>();
 		temporary = root["temporary"].As<bool>();
 		incarnationCounter = root["incarnation_counter"].As<int>();

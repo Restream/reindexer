@@ -55,7 +55,7 @@ private:
 	void setLimitAndOffset(ItemRefVector &result, size_t offset, size_t limit);
 	void prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, bool isFt);
 	void getSortIndexValue(const SortingContext &sortCtx, IdType rowId, VariantArray &value, uint8_t proc);
-	void processLeftJoins(QueryResults &qr, SelectCtx &sctx);
+	void processLeftJoins(QueryResults &qr, SelectCtx &sctx, size_t startPos);
 	bool checkIfThereAreLeftJoins(SelectCtx &sctx) const;
 	template <typename Items>
 	void sortResults(reindexer::SelectCtx &sctx, Items &items, const SortingOptions &sortingOptions);

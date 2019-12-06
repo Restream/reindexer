@@ -83,6 +83,11 @@ public:
 	struct Context;
 	// precalc context size
 	static constexpr int kSizeofContext = 128;  // sizeof(void *) * 2 + sizeof(void *) * 3 + 32 + sizeof(void *);
+
+	// Order of storing contexts for namespaces:
+	// [0]      - main NS context
+	// [1;N]    - contexts of all the merged namespaces
+	// [N+1; M] - contexts of all the joined namespaces for all the merged namespaces:
 	using ContextsVector = h_vector<Context, 1, kSizeofContext>;
 	ContextsVector ctxs;
 
@@ -96,6 +101,7 @@ public:
 	void lockResults();
 	ItemRefVector &Items() { return items_; }
 	const ItemRefVector &Items() const { return items_; }
+	int GetJoinedNsCtxIndex(int nsid) const;
 
 	string explainResults;
 

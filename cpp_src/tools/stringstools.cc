@@ -113,7 +113,7 @@ void split(string_view str, string &buf, vector<const char *> &words, const stri
 	for (auto it = str.begin(); it != str.end();) {
 		auto ch = utf8::unchecked::next(it);
 
-		while (it != str.end() && !IsAlpha(ch) && !IsDigit(ch)) {
+		while (it != str.end() && extraWordSymbols.find(ch) == string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
 			ch = utf8::unchecked::next(it);
 		}
 
@@ -147,7 +147,7 @@ std::pair<int, int> word2Pos(string_view str, int wordPos, int endPos, const str
 	for (; it != str.end();) {
 		auto ch = utf8::unchecked::next(it);
 
-		while (it != str.end() && !IsAlpha(ch) && !IsDigit(ch)) {
+		while (it != str.end() && extraWordSymbols.find(ch) == string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
 			wordStartIt = it;
 			ch = utf8::unchecked::next(it);
 		}

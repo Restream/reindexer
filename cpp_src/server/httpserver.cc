@@ -76,7 +76,7 @@ int HTTPServer::GetSQLSuggest(http::Context &ctx) {
 	if (pos < 0) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "`pos` parameter should be >= 0"));
 	}
-	if (pos > 0) --pos;  // JS style pos starts from 1
+	if (pos > 0) --pos;	 // JS style pos starts from 1
 	int line = stoi(lineParam);
 	if (line < 0) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "`line` parameter should be >= 0"));

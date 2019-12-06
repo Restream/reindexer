@@ -13,7 +13,7 @@ Reindexer::~Reindexer() {
 }
 Reindexer::Reindexer(Reindexer&& rdx) noexcept : impl_(rdx.impl_), owner_(rdx.owner_), ctx_(rdx.ctx_) { rdx.owner_ = false; }
 
-Error Reindexer::Connect(const string& dsn) { return impl_->Connect(dsn); }
+Error Reindexer::Connect(const string& dsn, const client::ConnectOpts& opts) { return impl_->Connect(dsn, opts); }
 Error Reindexer::Stop() { return impl_->Stop(); }
 Error Reindexer::AddNamespace(const NamespaceDef& nsDef) { return impl_->AddNamespace(nsDef, ctx_); }
 Error Reindexer::OpenNamespace(string_view nsName, const StorageOpts& storage) { return impl_->OpenNamespace(nsName, ctx_, storage); }
@@ -42,6 +42,7 @@ Error Reindexer::SubscribeUpdates(IUpdatesObserver* observer, bool subscribe) { 
 Error Reindexer::GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string>& suggests) {
 	return impl_->GetSqlSuggestions(sqlQuery, pos, suggests);
 }
+Error Reindexer::Status() { return impl_->Status(); }
 
 }  // namespace client
 }  // namespace reindexer

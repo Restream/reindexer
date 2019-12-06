@@ -491,3 +491,7 @@ func WithServerConfig(startupTimeout time.Duration, serverConfig *config.ServerC
 func WithTimeouts(loginTimeout time.Duration, requestTimeout time.Duration) interface{} {
 	return bindings.OptionTimeouts{loginTimeout, requestTimeout}
 }
+
+func WithCreateDBIfMissing() interface{} {
+	return bindings.OptionConnect{CreateDBIfMissing: true}
+}

@@ -38,14 +38,14 @@ func TestMain(m *testing.M) {
 	if udsn.Scheme == "builtin" {
 		os.RemoveAll("/tmp/reindex_test/")
 	}
-	DB = NewReindexWrapper(*dsn)
+	DB = NewReindexWrapper(*dsn, reindexer.WithCreateDBIfMissing())
 	DBD = &DB.Reindexer
 	if err = DB.Status().Err; err != nil {
 		panic(err)
 	}
 
 	if *dsnSlave != "" {
-		DB.AddSlave(*dsnSlave, *slaveCount)
+		DB.AddSlave(*dsnSlave, *slaveCount, reindexer.WithCreateDBIfMissing())
 	}
 
 	if testing.Verbose() {

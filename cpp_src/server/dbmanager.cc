@@ -60,17 +60,25 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 	if (!status.ok()) {
 		return status;
 	}
+	auto dbConnect = [&auth](Reindexer *db) {
+		if (auth.checkClusterID_) {
+			return db->Connect(std::string(), ConnectOpts().WithExpectedClusterID(auth.expectedClusterID_));
+		}
+		return Error();
+	};
 
 	smart_lock<Mutex> lck(mtx_, dummyCtx);
 	auto it = dbs_.find(dbName);
 	if (it != dbs_.end()) {
+		status = dbConnect(it->second.get());
+		if (!status.ok()) return status;
 		auth.db_ = it->second.get();
-		return 0;
+		return errOK;
 	}
 	lck.unlock();
 
 	if (!canCreate) {
-		return Error(errParams, "Database '%s' not found", dbName);
+		return Error(errNotFound, "Database '%s' not found", dbName);
 	}
 	if (auth.role_ < kRoleOwner) {
 		return Error(errForbidden, "Forbidden to create database %s", dbName);
@@ -82,20 +90,24 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 	lck = smart_lock<Mutex>(mtx_, dummyCtx, true);
 	it = dbs_.find(dbName);
 	if (it != dbs_.end()) {
+		status = dbConnect(it->second.get());
+		if (!status.ok()) return status;
 		auth.db_ = it->second.get();
-		return 0;
+		return errOK;
 	}
 
-	status = loadOrCreateDatabase(dbName, true, true);
+	status = loadOrCreateDatabase(dbName, true, true, auth);
 	if (!status.ok()) {
 		return status;
 	}
 
-	lck.unlock();
-	return OpenDatabase(dbName, auth, false);
+	it = dbs_.find(dbName);
+	assert(it != dbs_.end());
+	auth.db_ = it->second.get();
+	return errOK;
 }
 
-Error DBManager::loadOrCreateDatabase(const string &dbName, bool allowDBErrors, bool withAutorepair) {
+Error DBManager::loadOrCreateDatabase(const string &dbName, bool allowDBErrors, bool withAutorepair, const AuthContext &auth) {
 	string storagePath = fs::JoinPath(dbpath_, dbName);
 
 	logPrintf(LogInfo, "Loading database %s", dbName);
@@ -109,8 +121,11 @@ Error DBManager::loadOrCreateDatabase(const string &dbName, bool allowDBErrors, 
 			storageType = kStorageTypeOptRocksDB;
 			break;
 	}
-	auto status =
-		db->Connect(storagePath, ConnectOpts().AllowNamespaceErrors(allowDBErrors).WithStorageType(storageType).Autorepair(withAutorepair));
+	auto opts = ConnectOpts().AllowNamespaceErrors(allowDBErrors).WithStorageType(storageType).Autorepair(withAutorepair);
+	if (auth.checkClusterID_) {
+		opts = opts.WithExpectedClusterID(auth.expectedClusterID_);
+	}
+	auto status = db->Connect(storagePath, opts);
 	if (status.ok()) {
 		dbs_[dbName] = std::move(db);
 	}

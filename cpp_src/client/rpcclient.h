@@ -37,7 +37,7 @@ public:
 	RPCClient(const ReindexerConfig &config);
 	~RPCClient();
 
-	Error Connect(const string &dsn);
+	Error Connect(const string &dsn, const client::ConnectOpts &opts);
 	Error Stop();
 
 	Error OpenNamespace(string_view nsName, const InternalRdxContext &ctx,
@@ -70,6 +70,7 @@ public:
 	Error EnumMeta(string_view nsName, vector<string> &keys, const InternalRdxContext &ctx);
 	Error SubscribeUpdates(IUpdatesObserver *observer, bool subscribe);
 	Error GetSqlSuggestions(string_view query, int pos, std::vector<std::string> &suggests);
+	Error Status();
 
 private:
 	Error selectImpl(string_view query, QueryResults &result, cproto::ClientConnection *, seconds netTimeout,
@@ -80,7 +81,7 @@ private:
 	Error modifyItemAsync(string_view nsName, Item *item, int mode, cproto::ClientConnection *, seconds netTimeout,
 						  const InternalRdxContext &ctx);
 	Namespace *getNamespace(string_view nsName);
-	void run(int thIdx);
+	void run(int thIdx, const ConnectOpts &opts);
 	void onUpdates(net::cproto::RPCAnswer &ans, cproto::ClientConnection *conn);
 
 	void checkSubscribes();

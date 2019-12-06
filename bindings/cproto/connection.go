@@ -220,7 +220,7 @@ func (c *connection) login(owner *NetCProto, timeout uint32) (err error) {
 		path = path[1:]
 	}
 
-	buf, err := c.rpcCall(context.TODO(), cmdLogin, timeout, username, password, path)
+	buf, err := c.rpcCall(context.TODO(), cmdLogin, timeout, username, password, path, c.owner.connectOpts.CreateDBIfMissing)
 	if err != nil {
 		if rdxError, ok := err.(bindings.Error); ok && rdxError.Code() == bindings.ErrTimeout {
 			c.err = bindings.NewError("Login timeout", bindings.ErrTimeout)

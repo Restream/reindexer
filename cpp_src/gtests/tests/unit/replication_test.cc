@@ -11,7 +11,7 @@ TEST_F(ReplicationLoadApi, Base) {
 		int count = 0;
 		while (!stop) {
 			if (!(count % 30)) {
-				int i = rand() % 4;
+				int i = rand() % kDefaultServerCount;
 				RestartServer(i);
 			}
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));

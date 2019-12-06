@@ -76,6 +76,7 @@ public:
 	Error SubscribeUpdates(IUpdatesObserver *observer, bool subscribe);
 	Error GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string> &suggestions,
 							const InternalRdxContext &ctx = InternalRdxContext());
+	Error Status();
 
 	bool NeedTraceActivity() { return configProvider_.GetProfilingConfig().activityStats; }
 
@@ -181,6 +182,8 @@ protected:
 	StorageMutex storageMtx_;
 	StorageType storageType_;
 	bool autorepairEnabled_;
+	std::atomic<bool> connected_;
+
 	friend class Replicator;
 	friend class TransactionImpl;
 };

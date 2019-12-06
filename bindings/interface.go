@@ -245,6 +245,12 @@ type OptionBuiltinWithServer struct {
 	ServerConfig    *config.ServerConfig
 }
 
+// OptionConnect - DB connect options for server
+// CreateDBIfMissing - allow to create DB on coonect if DB doesn't exist already
+type OptionConnect struct {
+	CreateDBIfMissing bool
+}
+
 type Status struct {
 	Err     error
 	CProto  StatusCProto

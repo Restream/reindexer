@@ -1,3 +1,19 @@
+# Version 2.4.3 (06.12.2019)
+
+## Core
+- [fea] Add '\' as a special escaping symbol to FtDSL
+- [fix] Merge-join queries fixes and optimizations
+- [fix] Fix hit_count_to_cache overflow for idset cache
+
+## Reindexer server
+- [fea] Add master's config check on slave connect
+- [fea] Disable automatic database creation on RPC-connect
+- [fix] Add force-resync after online replication errors
+- [fix] Fix lsn overflow after convertion to int
+
+## go connector
+- [fea] Add replication status to memstats
+
 # Version 2.4.2 (21.11.2019)
 
 ## Core

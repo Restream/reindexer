@@ -89,6 +89,10 @@ The format of query is:
 - `+` - next pattern must present in found document
 - `-` - next pattern must not present in found document
 
+### Escape character
+`\` character allows to include any special character (`+`,`-`,`@`,`*`,`^`,`~`) to a word to be searched:
+`\*crisis` means to search literally `*crisis` and not all words that end with 'crisis'. 
+
 ## Examples of text queris
 
 `termina* -genesis` - find documents contains words begins with `termina`, exclude documents contains word `genesis`  

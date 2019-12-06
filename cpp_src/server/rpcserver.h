@@ -39,8 +39,9 @@ public:
 	void Stop() { listener_->Stop(); }
 
 	Error Ping(cproto::Context &ctx);
-	Error Login(cproto::Context &ctx, p_string login, p_string password, p_string db);
-	Error OpenDatabase(cproto::Context &ctx, p_string db);
+	Error Login(cproto::Context &ctx, p_string login, p_string password, p_string db, cproto::optional<bool> createDBIfMissing,
+				cproto::optional<bool> checkClusterID, cproto::optional<int> expectedClusterID);
+	Error OpenDatabase(cproto::Context &ctx, p_string db, cproto::optional<bool> createDBIfMissing);
 	Error CloseDatabase(cproto::Context &ctx);
 	Error DropDatabase(cproto::Context &ctx);
 

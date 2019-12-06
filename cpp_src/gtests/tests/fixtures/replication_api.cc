@@ -128,7 +128,7 @@ ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped) : id_(
 	// init client
 	string dsn = "cproto://127.0.0.1:" + std::to_string(kDefaultRpcPort + id_) + "/node" + std::to_string(id_);
 
-	err = api.reindexer->Connect(dsn);
+	err = api.reindexer->Connect(dsn, client::ConnectOpts().CreateDBIfMissing());
 	EXPECT_TRUE(err.ok()) << err.what();
 }
 

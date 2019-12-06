@@ -35,7 +35,7 @@ public:
 		uintptr_t pend = pstart + sizeof(string);
 		uintptr_t pdata = uintptr_t(data());
 		return (pdata >= pstart && pdata < pend) ? 0 : capacity();
-	};
+	}
 
 	// delete all modification methods - to be sure, that base_key_string is mutable, and export will not invalidate after construction
 	iterator begin() = delete;

@@ -10,6 +10,7 @@
 namespace reindexer {
 
 const size_t kElemSizeOverhead = 256;
+const int kMaxHitCountToCache = 1024;
 
 template <typename K, typename V, typename hash, typename equal>
 typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(const K &key) {
@@ -31,7 +32,6 @@ typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(
 	if (++it->second.hitCount < hitCountToCache_) {
 		return Iterator();
 	}
-
 	++getCount_;
 
 	// logPrintf(LogInfo, "Cache::Get (cond=%d,sortId=%d,keys=%d), total in cache items=%d,size=%d", key.cond, key.sort,
@@ -55,6 +55,15 @@ void LRUCache<K, V, hash, equal>::Put(const K &key, const V &v) {
 	++putCount_;
 
 	eraseLRU();
+
+	if (eraseCount_ && putCount_ * 16 > getCount_) {
+		logPrintf(LogWarning, "IdSetCache::eraseLRU () cache invalidates too fast eraseCount=%d,putCount=%d,getCount=%d", eraseCount_,
+				  putCount_, eraseCount_);
+		eraseCount_ = 0;
+		hitCountToCache_ = std::min(hitCountToCache_ * 2, kMaxHitCountToCache);
+		putCount_ = 0;
+		getCount_ = 0;
+	}
 }
 
 template <typename K, typename V, typename hash, typename equal>
@@ -87,14 +96,6 @@ bool LRUCache<K, V, hash, equal>::eraseLRU() {
 		++eraseCount_;
 	}
 
-	if (eraseCount_ && putCount_ * 16 > getCount_) {
-		logPrintf(LogWarning, "IdSetCache::eraseLRU () cache invalidates too fast eraseCount=%d,putCount=%d,getCount=%d", eraseCount_,
-				  putCount_, eraseCount_);
-		eraseCount_ = 0;
-		hitCountToCache_ *= 2;
-		putCount_ = 0;
-		getCount_ = 0;
-	}
 	return !lru_.empty();
 }
 template <typename K, typename V, typename hash, typename equal>

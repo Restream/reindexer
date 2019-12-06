@@ -826,36 +826,6 @@ Error CommandsProcessor<reindexer::Reindexer>::stop() {
 	return Error();
 }
 
-template <typename DBInterface>
-Error CommandsProcessor<DBInterface>::commandProcessDatabases(const string& command) {
-	LineParser parser(command);
-	parser.NextToken();
-	string_view subCommand = parser.NextToken();
-	if (subCommand == "list") {
-		if (uri_.scheme() == "cproto") {
-			vector<string> dbList;
-			Error err = getAvailableDatabases(dbList);
-			if (!err.ok()) return err;
-			for (const string& dbName : dbList) std::cout << dbName << std::endl;
-		} else {
-			std::cout << uri_.path() << std::endl;
-		}
-		return Error();
-	} else if (subCommand == "use") {
-		if (uri_.scheme() == "cproto") {
-			string currentDsn = getCurrentDsn() + std::string(parser.NextToken());
-			Error err = stop();
-			if (!err.ok()) return err;
-			err = db_.Connect(currentDsn);
-			if (err.ok()) std::cout << "Succesfully connected to " << currentDsn << std::endl;
-			return err;
-		} else {
-			return Error(errLogic, "Switching between databases is only possible with 'cproto' connection");
-		}
-	}
-	return Error(errNotValid, "Invalid command");
-}
-
 template <>
 Error CommandsProcessor<reindexer::client::Reindexer>::getAvailableDatabases(vector<string>& dbList) {
 	return db_.EnumDatabases(dbList);
@@ -864,6 +834,54 @@ Error CommandsProcessor<reindexer::client::Reindexer>::getAvailableDatabases(vec
 template <>
 Error CommandsProcessor<reindexer::Reindexer>::getAvailableDatabases(vector<string>&) {
 	return Error();
+}
+
+template <>
+Error CommandsProcessor<reindexer::client::Reindexer>::commandProcessDatabases(const string& command) {
+	LineParser parser(command);
+	parser.NextToken();
+	string_view subCommand = parser.NextToken();
+	assert(uri_.scheme() == "cproto");
+	if (subCommand == "list") {
+		vector<string> dbList;
+		Error err = getAvailableDatabases(dbList);
+		if (!err.ok()) return err;
+		for (const string& dbName : dbList) std::cout << dbName << std::endl;
+		return Error();
+	} else if (subCommand == "use") {
+		string currentDsn = getCurrentDsn() + std::string(parser.NextToken());
+		Error err = stop();
+		if (!err.ok()) return err;
+		err = db_.Connect(currentDsn);
+		if (err.ok()) std::cout << "Succesfully connected to " << currentDsn << std::endl;
+		return err;
+	} else if (subCommand == "create") {
+		auto dbName = parser.NextToken();
+		string currentDsn = getCurrentDsn() + std::string(dbName);
+		Error err = stop();
+		if (!err.ok()) return err;
+		std::cout << "Creating database '" << dbName << "'" << std::endl;
+		err = db_.Connect(currentDsn, reindexer::client::ConnectOpts().CreateDBIfMissing());
+		if (!err.ok()) {
+			std::cout << "Error on database '" << dbName << "' creation" << std::endl;
+			return err;
+		}
+		std::vector<std::string> dbNames;
+		err = db_.EnumDatabases(dbNames);
+		if (std::find(dbNames.begin(), dbNames.end(), std::string(dbName)) != dbNames.end()) {
+			std::cout << "Succesfully created database '" << dbName << "'" << std::endl;
+		} else {
+			std::cout << "Error on database '" << dbName << "' creation" << std::endl;
+		}
+		return err;
+	}
+	return Error(errNotValid, "Invalid command");
+}
+
+template <>
+Error CommandsProcessor<reindexer::Reindexer>::commandProcessDatabases(const string& command) {
+	(void)command;
+	return Error(errNotValid, "Database processing commands are not supported in builtin mode");
 }
 
 template class CommandsProcessor<reindexer::client::Reindexer>;

@@ -175,6 +175,9 @@ protected:
 
          \databases use <db>
          Switches to one of the existing databases.
+
+         \databases create <db>
+         Creates new database.
          )help"}
     };
 	// clang-format on

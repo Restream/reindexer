@@ -28,7 +28,7 @@ public:
 	void Attach(ev::dynamic_loop &loop) override final;
 
 	// Writer iterface implementation
-	void WriteRPCReturn(Context &ctx, const Args &args) override final { responceRPC(ctx, errOK, args); }
+	void WriteRPCReturn(Context &ctx, const Args &args, const Error &status) override final { responceRPC(ctx, status, args); }
 	void CallRPC(CmdCode cmd, const Args &args) override final;
 	void SetClientData(std::unique_ptr<ClientData> data) override final { clientData_ = std::move(data); }
 	ClientData *GetClientData() override final { return clientData_.get(); }

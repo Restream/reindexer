@@ -73,8 +73,10 @@ void StatsCollector::collectStats(DBManager& dbMngr) noexcept {
 		assert(db);
 		(void)status;
 
+		constexpr static auto kPerfstatsNs = "#perfstats"_sv;
+		constexpr static auto kMemstatsNs = "#memstats"_sv;
 		QueryResults qr;
-		status = db->Select(Query("#perfstats"), qr);
+		status = db->Select(Query(string(kPerfstatsNs)), qr);
 		if (status.ok() && qr.Count()) {
 			for (auto it = qr.begin(); it != qr.end(); ++it) {
 				auto item = it.GetItem();
@@ -88,7 +90,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) noexcept {
 			}
 		}
 		qr.Clear();
-		status = db->Select(Query("#memstats"), qr);
+		status = db->Select(Query(string(kMemstatsNs)), qr);
 		if (status.ok() && qr.Count()) {
 			for (auto it = qr.begin(); it != qr.end(); ++it) {
 				auto item = it.GetItem();
@@ -114,7 +116,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) noexcept {
 		alloc_ext::mallctl("stats.allocated", &memoryConsumationBytes, &sz, NULL, 0);
 		prometheus_->RegisterAllocatedMemory(memoryConsumationBytes);
 	}
-#endif  // REINDEX_WITH_JEMALLOC
+#endif	// REINDEX_WITH_JEMALLOC
 
 	{
 		std::lock_guard<std::mutex> lck(mtx_);

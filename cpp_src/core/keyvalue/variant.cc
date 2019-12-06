@@ -20,7 +20,7 @@ Variant::Variant(const string &v) : type_(KeyValueString), hold_(true) { new (ca
 
 Variant::Variant(const key_string &v) : type_(KeyValueString), hold_(true) { new (cast<void>()) key_string(v); }
 Variant::Variant(const char *v) : Variant(p_string(v)) {}
-Variant::Variant(const p_string &v, bool enableHold) : type_(KeyValueString) {
+Variant::Variant(p_string v, bool enableHold) : type_(KeyValueString) {
 	if (v.type() == p_string::tagKeyString && enableHold) {
 		hold_ = true;
 		new (cast<void>()) key_string(v.getKeyString());

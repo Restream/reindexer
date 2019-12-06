@@ -20,11 +20,11 @@ using std::unordered_map;
 
 /// Possible user roles
 enum UserRole {
-	kUnauthorized,   /// User is not authorized
+	kUnauthorized,	 /// User is not authorized
 	kRoleNone,		 /// User is authenticaTed, but has no any righs
-	kRoleDataRead,   /// User can read data from database
-	kRoleDataWrite,  /// User can write data to database
-	kRoleDBAdmin,	/// User can manage database: kRoleDataWrite + create & delete namespaces, modify indexes
+	kRoleDataRead,	 /// User can read data from database
+	kRoleDataWrite,	 /// User can write data to database
+	kRoleDBAdmin,	 /// User can manage database: kRoleDataWrite + create & delete namespaces, modify indexes
 	kRoleOwner,		 /// User has all privilegies on database: kRoleDBAdmin + create & drop database
 	kRoleSystem,	 /// Special role for internal usage
 };
@@ -36,7 +36,7 @@ struct UserRecord {
 	string login;							/// User's login
 	string hash;							/// User's password or hash
 	string salt;							/// Password salt
-	unordered_map<string, UserRole> roles;  /// map of user's roles on databases
+	unordered_map<string, UserRole> roles;	/// map of user's roles on databases
 };
 
 class DBManager;
@@ -56,6 +56,12 @@ public:
 	/// @param login - User's login
 	/// @param password - User's password
 	AuthContext(const string &login, const string &password) : login_(login), password_(password) {}
+	/// Set expected master's replication clusted ID
+	/// @param clusterID - Expected cluster ID value
+	void SetExpectedClusterID(int clusterID) {
+		checkClusterID_ = true;
+		expectedClusterID_ = clusterID;
+	}
 	/// Check if reqired role meets role from context, and get pointer to Reindexer DB object
 	/// @param role - Requested role one of UserRole enum
 	/// @param ret - Pointer to returned database pointer
@@ -89,6 +95,8 @@ protected:
 	string password_;
 	UserRole role_ = kUnauthorized;
 	string dbName_;
+	int expectedClusterID_ = -1;
+	bool checkClusterID_ = false;
 	Reindexer *db_ = nullptr;
 };
 
@@ -138,7 +146,7 @@ private:
 	Error readUsersJSON() noexcept;
 	Error createDefaultUsersYAML() noexcept;
 	static UserRole userRoleFromString(string_view strRole);
-	Error loadOrCreateDatabase(const string &name, bool allowDBErrors, bool withAutorepair);
+	Error loadOrCreateDatabase(const string &name, bool allowDBErrors, bool withAutorepair, const AuthContext &auth = AuthContext());
 
 	unordered_map<string, unique_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_;
 	unordered_map<string, UserRecord> users_;

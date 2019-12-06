@@ -125,7 +125,8 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 				}
 			} else
 				ser << '*';
-			if (query_.calcTotal != ModeNoTotal) ser << ", COUNT(*)";
+			if (query_.calcTotal == ModeAccurateTotal) ser << ", COUNT(*)";
+			if (query_.calcTotal == ModeCachedTotal) ser << ", COUNT_CACHED(*)";
 			ser << " FROM " << query_._namespace;
 			break;
 		case QueryDelete:

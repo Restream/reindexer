@@ -22,7 +22,8 @@ Error RPCServer::Ping(cproto::Context &) {
 
 static std::atomic<int> connCounter;
 
-Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, p_string db) {
+Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, p_string db, cproto::optional<bool> createDBIfMissing,
+					   cproto::optional<bool> checkClusterID, cproto::optional<int> expectedClusterID) {
 	if (ctx.GetClientData()) {
 		return Error(errParams, "Already logged in");
 	}
@@ -36,6 +37,10 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 	clientData->auth = AuthContext(login.toString(), password.toString());
 
 	auto dbName = db.toString();
+	if (checkClusterID.hasValue() && checkClusterID.value()) {
+		assert(expectedClusterID.hasValue());
+		clientData->auth.SetExpectedClusterID(expectedClusterID.value());
+	}
 	auto status = dbMgr_.Login(dbName, clientData->auth);
 	if (!status.ok()) {
 		return status;
@@ -47,23 +52,30 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 	int64_t startTs = std::chrono::duration_cast<std::chrono::seconds>(startTs_.time_since_epoch()).count();
 	static string_view version = REINDEX_VERSION;
 
-	ctx.Return({cproto::Arg(p_string(&version)), cproto::Arg(startTs)});
+	status = db.length() ? OpenDatabase(ctx, db, createDBIfMissing) : errOK;
+	if (status.ok()) {
+		ctx.Return({cproto::Arg(p_string(&version)), cproto::Arg(startTs)}, status);
+	}
 
-	return db.length() ? OpenDatabase(ctx, db) : 0;
+	return status;
 }
 
-Error RPCServer::OpenDatabase(cproto::Context &ctx, p_string db) {
+Error RPCServer::OpenDatabase(cproto::Context &ctx, p_string db, cproto::optional<bool> createDBIfMissing) {
 	auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData());
 	if (clientData->auth.HaveDB()) {  // -V522 this thing is handled in midleware (within CheckAuth)
 		return Error(errParams, "Database already opened");
 	}
-	return dbMgr_.OpenDatabase(db.toString(), clientData->auth, true);
+	auto status = dbMgr_.OpenDatabase(db.toString(), clientData->auth, createDBIfMissing.hasValue() && createDBIfMissing.value());
+	if (!status.ok()) {
+		clientData->auth.ResetDB();
+	}
+	return status;
 }
 
 Error RPCServer::CloseDatabase(cproto::Context &ctx) {
 	auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData());
 	clientData->auth.ResetDB();	 // -V522 this thing is handled in midleware (within CheckAuth)
-	return 0;
+	return errOK;
 }
 Error RPCServer::DropDatabase(cproto::Context &ctx) {
 	auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData());
@@ -75,14 +87,14 @@ Error RPCServer::CheckAuth(cproto::Context &ctx) {
 	auto clientData = dynamic_cast<RPCClientData *>(ptr);
 
 	if (ctx.call->cmd == cproto::kCmdLogin || ctx.call->cmd == cproto::kCmdPing) {
-		return 0;
+		return errOK;
 	}
 
 	if (!clientData) {
 		return Error(errForbidden, "You should login");
 	}
 
-	return 0;
+	return errOK;
 }
 
 void RPCServer::OnClose(cproto::Context &ctx, const Error &err) {
@@ -183,7 +195,7 @@ Error RPCServer::EnumNamespaces(cproto::Context &ctx) {
 	auto resSlice = ser.Slice();
 
 	ctx.Return({cproto::Arg(p_string(&resSlice))});
-	return 0;
+	return errOK;
 }
 
 Error RPCServer::EnumDatabases(cproto::Context &ctx) {
@@ -469,7 +481,7 @@ Reindexer RPCServer::getDB(cproto::Context &ctx, UserRole role) {
 			}
 		}
 	}
-	throw Error(errParams, "Database is not openeded, you should open it first");
+	throw Error(errParams, "Database is not opened, you should open it first");
 }
 
 Error RPCServer::sendResults(cproto::Context &ctx, QueryResults &qres, int reqId, const ResultFetchOpts &opts) {
@@ -484,7 +496,7 @@ Error RPCServer::sendResults(cproto::Context &ctx, QueryResults &qres, int reqId
 
 	string_view resSlice = rser.Slice();
 	ctx.Return({cproto::Arg(p_string(&resSlice)), cproto::Arg(int(reqId))});
-	return 0;
+	return errOK;
 }
 
 Error RPCServer::processTxItem(DataFormat format, string_view itemData, Item &item, ItemModifyMode mode, int stateToken) const noexcept {
@@ -616,7 +628,6 @@ Error RPCServer::CloseResults(cproto::Context &ctx, int reqId) {
 }
 
 Error RPCServer::fetchResults(cproto::Context &ctx, int reqId, const ResultFetchOpts &opts) {
-	cproto::Args ret;
 	QueryResults &qres = getQueryResults(ctx, reqId);
 
 	return sendResults(ctx, qres, reqId, opts);
@@ -645,7 +656,7 @@ Error RPCServer::GetMeta(cproto::Context &ctx, p_string ns, p_string key) {
 	}
 
 	ctx.Return({cproto::Arg(data)});
-	return 0;
+	return errOK;
 }
 
 Error RPCServer::PutMeta(cproto::Context &ctx, p_string ns, p_string key, p_string data) {
@@ -676,7 +687,7 @@ Error RPCServer::SubscribeUpdates(cproto::Context &ctx, int flag) {
 
 bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	dispatcher_.Register(cproto::kCmdPing, this, &RPCServer::Ping);
-	dispatcher_.Register(cproto::kCmdLogin, this, &RPCServer::Login);
+	dispatcher_.Register(cproto::kCmdLogin, this, &RPCServer::Login, true);
 	dispatcher_.Register(cproto::kCmdOpenDatabase, this, &RPCServer::OpenDatabase);
 	dispatcher_.Register(cproto::kCmdCloseDatabase, this, &RPCServer::CloseDatabase);
 	dispatcher_.Register(cproto::kCmdDropDatabase, this, &RPCServer::DropDatabase);

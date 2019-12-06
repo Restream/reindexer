@@ -1,5 +1,6 @@
 
 #include "core/ft/ftdsl.h"
+#include <algorithm>
 #include <locale>
 #include "tools/customlocal.h"
 #include "tools/errors.h"
@@ -12,7 +13,8 @@ using std::string;
 // Format: see fulltext.md
 
 bool is_dslbegin(int ch) {
-	return IsAlpha(ch) || IsDigit(ch) || ch == '+' || ch == '-' || ch == '*' || ch == '\'' || ch == '\"' || ch == '@' || ch == '=';
+	return IsAlpha(ch) || IsDigit(ch) || ch == '+' || ch == '-' || ch == '*' || ch == '\'' || ch == '\"' || ch == '@' || ch == '=' ||
+		   ch == '\\';
 }
 bool is_term(int ch, const string &extraWordSymbols) { return IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != string::npos; }
 
@@ -31,59 +33,68 @@ void FtDSLQuery::parse(wstring &utf16str) {
 	for (auto it = utf16str.begin(); it != utf16str.end();) {
 		while (it != utf16str.end() && !is_dslbegin(*it)) it++;
 
-		if (*it == '@') {
-			it++;
-			parseFields(utf16str, it, fieldsBoost);
-			continue;
-		}
-
 		FtDSLEntry fte;
 		fte.opts.fieldsBoost = fieldsBoost;
 
-		if (*it == '-') {
-			fte.opts.op = OpNot;
-			it++;
-		} else if (*it == '+') {
-			fte.opts.op = OpAnd;
-			it++;
-		}
-		if (it != utf16str.end() && (*it == '\'' || *it == '\"')) {
-			ingroup = !ingroup;
-			it++;
-			// closing group
-			if (!ingroup) {
-				int distance = 1;
-				if (it != utf16str.end() && *it == '~') {
-					wchar_t *end = nullptr, *start = &*++it;
-					distance = wcstod(start, &end);
-					it += end - start;
-					if (end == start)
-						throw Error(errParseDSL, "Expected digit after '~' operator in phrase, but found '%c' ", char(*start));
-				}
-				assertf(groupcnt <= int(size()), "groupcnt=%d,size=%d", groupcnt, size());
-				if (groupcnt > 1) {
-					auto fteIt = end();
-					while (--groupcnt) {
-						fteIt--;
-						fteIt->opts.distance = distance;
-						fteIt->opts.op = OpAnd;
+		bool isSlash = (*it == '\\');
+		if (isSlash) {
+			++it;
+		} else {
+			if (*it == '@') {
+				it++;
+				parseFields(utf16str, it, fieldsBoost);
+				continue;
+			}
+
+			if (*it == '-') {
+				fte.opts.op = OpNot;
+				it++;
+			} else if (*it == '+') {
+				fte.opts.op = OpAnd;
+				it++;
+			}
+			if (it != utf16str.end() && (*it == '\'' || *it == '\"')) {
+				ingroup = !ingroup;
+				it++;
+				// closing group
+				if (!ingroup) {
+					int distance = 1;
+					if (it != utf16str.end() && *it == '~') {
+						wchar_t *end = nullptr, *start = &*++it;
+						distance = wcstod(start, &end);
+						it += end - start;
+						if (end == start)
+							throw Error(errParseDSL, "Expected digit after '~' operator in phrase, but found '%c' ", char(*start));
+					}
+					assertf(groupcnt <= int(size()), "groupcnt=%d,size=%d", groupcnt, size());
+					if (groupcnt > 1) {
+						auto fteIt = end();
+						while (--groupcnt) {
+							fteIt--;
+							fteIt->opts.distance = distance;
+							fteIt->opts.op = OpAnd;
+						}
 					}
 				}
 			}
-		}
-		if (it != utf16str.end() && *it == '=') {
-			fte.opts.exact = true;
-			it++;
-		}
-		if (it != utf16str.end() && *it == '*') {
-			fte.opts.suff = true;
-			it++;
+			if (it != utf16str.end() && *it == '=') {
+				fte.opts.exact = true;
+				it++;
+			}
+			if (it != utf16str.end() && *it == '*') {
+				fte.opts.suff = true;
+				it++;
+			}
 		}
 		auto begIt = it;
-		while (it != utf16str.end() && is_term(*it, extraWordSymbols_)) {
+		while (it != utf16str.end() && (isSlash || is_term(*it, extraWordSymbols_))) {
 			*it = ToLower(*it);
 			check_for_replacement(*it);
-			it++;
+			isSlash = (*(++it) == '\\');
+			if (isSlash) {
+				std::move(it + 1, utf16str.end(), it);
+				utf16str.pop_back();
+			}
 		}
 		auto endIt = it;
 		for (; it != utf16str.end(); it++) {
@@ -126,7 +137,7 @@ void FtDSLQuery::parse(wstring &utf16str) {
 		e.opts.termLenBoost = float(e.pattern.length()) / maxPatternLen;
 		e.opts.qpos = cnt++;
 	}
-}
+}  // namespace reindexer
 
 void FtDSLQuery::parseFields(wstring &utf16str, wstring::iterator &it, h_vector<float, 8> &fieldsBoost) {
 	float defFieldBoost = 0.0;

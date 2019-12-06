@@ -49,5 +49,6 @@ Error Reindexer::SubscribeUpdates(IUpdatesObserver* observer, bool subscribe) { 
 Error Reindexer::GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string>& suggestions) {
 	return impl_->GetSqlSuggestions(sqlQuery, pos, suggestions, ctx_);
 }
+Error Reindexer::Status() { return impl_->Status(); }
 
 }  // namespace reindexer

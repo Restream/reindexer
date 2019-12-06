@@ -44,7 +44,7 @@ ResultSerializer::ItemParams ResultSerializer::GetItemParams(int flags) {
 
 	if (flags & kResultsWithItemID) {
 		ret.id = int(GetVarUint());
-		ret.lsn = int(GetVarUint());
+		ret.lsn = int64_t(GetVarUint());
 	}
 
 	if (flags & kResultsWithNsID) {

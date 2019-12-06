@@ -54,7 +54,35 @@ struct p_string {
 	explicit p_string(const string_view *ptr) : v((uintptr_t(ptr) & ~tagMask) | (tagSlice << tagShift)) {}
 	p_string() : v(0) {}
 
-	operator string_view() const { return string_view(data(), length()); }
+	operator string_view() const {
+		switch (type()) {
+			case tagCstr: {
+				auto str = reinterpret_cast<const char *>(ptr());
+				return string_view(str, strlen(str));
+			}
+			case tagCxxstr:
+			case tagKeyString:
+				return string_view(*reinterpret_cast<const string *>(ptr()));
+			case tagSlice:
+				return *reinterpret_cast<const string_view *>(ptr());
+			case tagLstr: {
+				const auto &str = *reinterpret_cast<const l_string_hdr *>(ptr());
+				return string_view(&str.data[0], str.length);
+			}
+			case tagVstr: {
+				auto p = reinterpret_cast<const uint8_t *>(ptr());
+				auto l = scan_varint(10, p);
+				return string_view(reinterpret_cast<const char *>(p) + l, parse_uint32(l, p));
+			}
+			case tagJsonStr: {
+				auto p = reinterpret_cast<const uint8_t *>(ptr());
+				auto len = p[0] | (p[1] << 8) | (p[2] << 16);
+				return string_view(reinterpret_cast<const char *>(p) - len, len);
+			}
+			default:
+				abort();
+		}
+	}
 	const char *data() const {
 		switch (type()) {
 			case tagCstr:
@@ -81,28 +109,31 @@ struct p_string {
 	}
 	size_t size() const { return length(); }
 	size_t length() const {
-		switch (type()) {
-			case tagCstr:
-				return strlen(reinterpret_cast<const char *>(ptr()));
-			case tagCxxstr:
-			case tagKeyString:
-				return (reinterpret_cast<const string *>(ptr()))->length();
-			case tagSlice:
-				return (reinterpret_cast<const string_view *>(ptr()))->size();
-			case tagLstr:
-				return (reinterpret_cast<const l_string_hdr *>(ptr()))->length;
-			case tagVstr: {
-				auto p = reinterpret_cast<const uint8_t *>(ptr());
-				auto l = scan_varint(10, p);
-				return parse_uint32(l, p);
+		if (v) {
+			switch (type()) {
+				case tagCstr:
+					return strlen(reinterpret_cast<const char *>(ptr()));
+				case tagCxxstr:
+				case tagKeyString:
+					return (reinterpret_cast<const string *>(ptr()))->length();
+				case tagSlice:
+					return (reinterpret_cast<const string_view *>(ptr()))->size();
+				case tagLstr:
+					return (reinterpret_cast<const l_string_hdr *>(ptr()))->length;
+				case tagVstr: {
+					auto p = reinterpret_cast<const uint8_t *>(ptr());
+					auto l = scan_varint(10, p);
+					return parse_uint32(l, p);
+				}
+				case tagJsonStr: {
+					auto p = reinterpret_cast<const uint8_t *>(ptr());
+					return p[0] | (p[1] << 8) | (p[2] << 16);
+				}
+				default:
+					abort();
 			}
-			case tagJsonStr: {
-				auto p = reinterpret_cast<const uint8_t *>(ptr());
-				return p[0] | (p[1] << 8) | (p[2] << 16);
-			}
-			default:
-				abort();
 		}
+		return 0;
 	}
 	int compare(p_string other) const {
 		int l1 = length();
@@ -118,13 +149,13 @@ struct p_string {
 	const string *getCxxstr() const {
 		assert(type() == tagCxxstr || type() == tagKeyString);
 		return reinterpret_cast<const string *>(ptr());
-	};
+	}
 
 	key_string getKeyString() const {
 		assert(type() == tagKeyString);
 		auto *str = reinterpret_cast<intrusive_atomic_rc_wrapper<base_key_string> *>(const_cast<void *>(ptr()));
 		return key_string(str);
-	};
+	}
 
 	key_string getOrMakeKeyString() const {
 		if (type() == tagKeyString) {

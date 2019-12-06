@@ -35,8 +35,12 @@ Error Replicator::Start() {
 		new client::Reindexer(client::ReindexerConfig(config_.connPoolSize, config_.workerThreads, 10000,
 													  std::chrono::seconds(config_.timeoutSec), std::chrono::seconds(config_.timeoutSec))));
 
-	auto err = master_->Connect(config_.masterDSN);
-	terminate_ = false;
+	auto err = master_->Connect(config_.masterDSN, client::ConnectOpts().WithExpectedClusterID(config_.clusterID));
+	if (err.ok()) err = master_->Status();
+	if (err.code() == errOK || err.code() == errNetwork) {
+		err = errOK;
+		terminate_ = false;
+	}
 	if (err.ok()) thread_ = std::thread([this]() { this->run(); });
 
 	return err;
@@ -109,7 +113,10 @@ Error Replicator::syncDatabase() {
 
 	Error err = master_->EnumNamespaces(nses, false);
 	if (!err.ok()) {
-		logPrintf(LogError, "[repl] EnumNamespaces error: %s", err.what());
+		if (err.code() == errForbidden || err.code() == errReplParams) {
+			terminate_ = true;
+		}
+		logPrintf(LogError, "[repl] EnumNamespaces error: %s%s", err.what(), terminate_ ? ", terminatng replication"_sv : ""_sv);
 		return err;
 	}
 
@@ -133,17 +140,23 @@ Error Replicator::syncDatabase() {
 		// Protect for concurent updates stream of same namespace
 		// if state is StateSync is set, then concurent updates will not modify data, but just set maxLsn_
 
+		bool forceSync = false;
 		Namespace::Ptr slaveNs;
+		ReplicationState replState;
 		if (openErr.ok()) {
 			try {
 				slaveNs = slave_->getNamespace(ns.name, dummyCtx_);
+				if (config_.forceSyncOnLogicError) {
+					replState = slaveNs->GetReplState(dummyCtx_);
+					forceSync = (replState.status == ReplicationState::Status::Fatal);
+				}
 				slaveNs->SetSlaveReplStatus(ReplicationState::Status::Syncing, dummyCtx_);
 			} catch (const Error &) {
 			}
 		}
 
 		for (bool done = false; err.ok() && !done && !terminate_;) {
-			if (openErr.ok()) {
+			if (openErr.ok() && !forceSync) {
 				err = syncNamespaceByWAL(ns);
 				if (!err.ok()) {
 					logPrintf(LogError, "[repl:%s] syncNamespace error: %s", ns.name, err.what());
@@ -164,7 +177,7 @@ Error Replicator::syncDatabase() {
 					}
 				}
 			} else {
-				openErr = err = syncNamespaceForced(ns, "Can't open namespace");
+				openErr = err = syncNamespaceForced(ns, forceSync ? replState.replError.what() : "Can't open namespace");
 			}
 			if (err.ok()) {
 				int64_t curLSN = -1;
@@ -216,9 +229,7 @@ Error Replicator::syncNamespaceByWAL(const NamespaceDef &ns) {
 	}
 
 	int64_t lsn = slaveNs->GetReplState(dummyCtx_).lastLsn;
-
 	logPrintf(LogTrace, "[repl:%s] Start sync items, lsn %ld", ns.name, lsn);
-
 	//  Make query to master's WAL
 	client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 	Error err = master_->Select(Query(ns.name).Where("#lsn", CondGt, lsn), qr);
@@ -424,11 +435,6 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 			masterState.lastLsn = stat.masterState.lastLsn;
 			masterState.updatedUnixNano = stat.masterState.updatedUnixNano;
 			slaveNs->SetSlaveReplMasterState(masterState, dummyCtx_);
-			if (stat.masterState.clusterID != config_.clusterID) {
-				terminate_ = true;
-				return Error(errLogic, "Wrong cluster ID expect %d, got %d from master. Terminating replicator.", config_.clusterID,
-							 stat.masterState.clusterID);
-			}
 			break;
 		}
 		default:
@@ -552,6 +558,11 @@ void Replicator::OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &w
 			slaveNs->SetSlaveReplStatus(ReplicationState::Status::Fatal, err, dummyCtx_);
 		}
 		logPrintf(LogError, "[repl:%s] Error apply WAL update: %s", nsName, err.what());
+		if (config_.forceSyncOnLogicError) {
+			std::unique_lock<std::mutex> lck(syncMtx_);
+			state_.store(StateSyncing, std::memory_order_release);
+			resync_.send();
+		}
 	}
 }
 

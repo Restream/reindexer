@@ -13,7 +13,7 @@ const int kMaxCompletions = 512;
 const int kKeepAliveInterval = 30;
 const int kDeadlineCheckInterval = 1;
 
-ClientConnection::ClientConnection(ev::dynamic_loop &loop, const httpparser::UrlParser *uri, seconds loginTimeout, seconds requestTimeout)
+ClientConnection::ClientConnection(ev::dynamic_loop &loop, const httpparser::UrlParser *uri, const Options &options)
 	: ConnectionMT(-1, loop),
 	  state_(ConnInit),
 	  completions_(kMaxCompletions),
@@ -21,9 +21,8 @@ ClientConnection::ClientConnection(ev::dynamic_loop &loop, const httpparser::Url
 	  bufWait_(0),
 	  uri_(uri),
 	  now_(0),
-	  loginTimeout_(loginTimeout),
-	  keepAliveTimeout_(requestTimeout),
-	  terminate_(false) {
+	  terminate_(false),
+	  options_(options) {
 	connect_async_.set<ClientConnection, &ClientConnection::connect_async_cb>(this);
 	connect_async_.set(loop);
 	connect_async_.start();
@@ -32,7 +31,7 @@ ClientConnection::ClientConnection(ev::dynamic_loop &loop, const httpparser::Url
 	deadlineTimer_.set<ClientConnection, &ClientConnection::deadline_check_cb>(this);
 	deadlineTimer_.set(loop);
 	loopThreadID_ = std::this_thread::get_id();
-}  // namespace cproto
+}
 
 ClientConnection::~ClientConnection() { assert(!PendingCompletions()); }
 
@@ -77,8 +76,9 @@ void ClientConnection::connectInternal() {
 		keep_alive_.start(kKeepAliveInterval, kKeepAliveInterval);
 		deadlineTimer_.start(kDeadlineCheckInterval, kDeadlineCheckInterval);
 
-		call(completion, {kCmdLogin, loginTimeout_, milliseconds(0)},
-			 {Arg{p_string(&userName)}, Arg{p_string(&password)}, Arg{p_string(&dbName)}});
+		call(completion, {kCmdLogin, options_.loginTimeout, milliseconds(0)},
+			 {Arg{p_string(&userName)}, Arg{p_string(&password)}, Arg{p_string(&dbName)}, Arg{options_.createDB},
+			  Arg{options_.hasExpectedClusterID}, Arg{options_.expectedClusterID}});
 	}
 }
 
@@ -98,6 +98,29 @@ int ClientConnection::PendingCompletions() {
 		}
 	}
 	return ret;
+}
+
+Error ClientConnection::CheckConnection() {
+	assert(loopThreadID_ != std::this_thread::get_id());
+	std::unique_lock<std::mutex> lck(mtx_);
+	switch (state_) {
+		case ConnConnected:
+			return errOK;
+		case ConnInit:
+			connect_async_.send();
+			// fall through
+		case ConnConnecting:
+			connectCond_.wait(lck);
+			if (state_ == ConnFailed) {
+				return lastError_;
+			}
+			return errOK;
+		case ConnFailed:
+			return lastError_;
+		default:
+			std::abort();
+	}
+	return lastError_;
 }
 
 void ClientConnection::deadline_check_cb(ev::timer &, int) {

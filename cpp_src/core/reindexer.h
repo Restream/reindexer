@@ -165,6 +165,8 @@ public:
 	/// @param pos - position in sql query for suggestions.
 	/// @param suggestions - all the suggestions for 'pos' position in query.
 	Error GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string> &suggestions);
+	/// Get curret connection status
+	Error Status();
 
 	/// Init system namepaces, and load config from config namespace
 	/// Cancelation context doesn't affect this call

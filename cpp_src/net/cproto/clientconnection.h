@@ -66,8 +66,23 @@ protected:
 
 class ClientConnection : public ConnectionMT {
 public:
-	ClientConnection(ev::dynamic_loop &loop, const httpparser::UrlParser *uri, seconds loginTimeout = seconds(0),
-					 seconds requestTimeout = seconds(0));
+	struct Options {
+		Options() : loginTimeout(0), keepAliveTimeout(0), createDB(false), hasExpectedClusterID(false), expectedClusterID(-1) {}
+		Options(seconds _loginTimeout, seconds _keepAliveTimeout, bool _createDB, bool _hasExpectedClusterID, int _expectedClusterID)
+			: loginTimeout(_loginTimeout),
+			  keepAliveTimeout(_keepAliveTimeout),
+			  createDB(_createDB),
+			  hasExpectedClusterID(_hasExpectedClusterID),
+			  expectedClusterID(_expectedClusterID) {}
+
+		seconds loginTimeout;
+		seconds keepAliveTimeout;
+		bool createDB;
+		bool hasExpectedClusterID;
+		int expectedClusterID;
+	};
+
+	ClientConnection(ev::dynamic_loop &loop, const httpparser::UrlParser *uri, const Options &options = Options());
 	~ClientConnection();
 	typedef std::function<void(RPCAnswer &&ans, ClientConnection *conn)> Completion;
 
@@ -103,7 +118,7 @@ public:
 			opts, args, argss...);
 		std::unique_lock<std::mutex> lck(mtx_);
 		bufWait_++;
-		while (!set) {  // -V776
+		while (!set) {	// -V776
 			bufCond_.wait(lck);
 		}
 		bufWait_--;
@@ -121,12 +136,13 @@ public:
 		delete cur;
 	}
 	seconds Now() const { return seconds(now_); }
+	Error CheckConnection();
 
 protected:
 	void connect_async_cb(ev::async &) { connectInternal(); }
 	void keep_alive_cb(ev::periodic &, int) {
 		if (!terminate_.load(std::memory_order_acquire)) {
-			call([](RPCAnswer &&, ClientConnection *) {}, {kCmdPing, keepAliveTimeout_, milliseconds(0)}, {});
+			call([](RPCAnswer &&, ClientConnection *) {}, {kCmdPing, options_.keepAliveTimeout, milliseconds(0)}, {});
 			callback(io_, ev::WRITE);
 		}
 	}
@@ -186,9 +202,8 @@ protected:
 	ev::periodic keep_alive_;
 	ev::periodic deadlineTimer_;
 	std::atomic<uint32_t> now_;
-	const seconds loginTimeout_;
-	const seconds keepAliveTimeout_;
 	std::atomic<bool> terminate_;
+	const Options options_;
 };
 }  // namespace cproto
 }  // namespace net

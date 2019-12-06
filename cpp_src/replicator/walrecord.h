@@ -29,7 +29,7 @@ class JsonBuilder;
 struct WALRecord {
 	explicit WALRecord(span<uint8_t>);
 	explicit WALRecord(string_view sv);
-	explicit WALRecord(WALRecType _type = WalEmpty, IdType _id = 0) : type(_type), id(_id){};
+	explicit WALRecord(WALRecType _type = WalEmpty, IdType _id = 0) : type(_type), id(_id) {}
 	explicit WALRecord(WALRecType _type, string_view _data) : type(_type), data(_data) {}
 	explicit WALRecord(WALRecType _type, string_view key, string_view value) : type(_type) { putMeta = {key, value}; }
 	explicit WALRecord(WALRecType _type, string_view cjson, int tmVersion, int modifyMode) : type(_type) {

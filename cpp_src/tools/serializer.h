@@ -94,7 +94,7 @@ public:
 		SliceHelper(WrSerializer *ser, size_t pos) : ser_(ser), pos_(pos) {}
 		SliceHelper(const WrSerializer &) = delete;
 		SliceHelper operator=(const WrSerializer &) = delete;
-		SliceHelper(SliceHelper &&other) noexcept : ser_(other.ser_), pos_(other.pos_) { other.ser_ = nullptr; };
+		SliceHelper(SliceHelper &&other) noexcept : ser_(other.ser_), pos_(other.pos_) { other.ser_ = nullptr; }
 		~SliceHelper();
 
 		WrSerializer *ser_;
