@@ -70,10 +70,12 @@ git:
 
 .stage_build_osx_template: &stage_build_osx_template
   <<: *stage_build_linux_template
+  env:
+    - CMAKE_OPTS="-DCMAKE_BUILD_TYPE=Release -DENABLE_LIBUNWIND=Off -DWITH_PYTHON=Off"
   os: osx
   osx_image: xcode9.3
   install:
-    - brew update > /dev/null && brew install gperftools leveldb snappy flex && brew upgrade python
+    - brew update > /dev/null && brew install gperftools leveldb snappy flex
     - sudo sysctl -w kern.maxfiles=20480 && sudo sysctl -w kern.maxfilesperproc=20480 && sudo launchctl limit maxfiles 20480
     - ulimit -S -n 20480 && ulimit -n
 
