@@ -330,9 +330,28 @@ static KeyValueType detectValueType(const token &currTok) {
 	return KeyValueString;
 }
 
-static Variant token2kv(const token &currTok, tokenizer &parser) {
+static Variant token2kv(const token &currTok, tokenizer &parser, bool allowComposite) {
 	if (currTok.text() == "true"_sv) return Variant(true);
 	if (currTok.text() == "false"_sv) return Variant(false);
+
+	if (currTok.text() == "{"_sv) {
+		// Composite value parsing
+		if (!allowComposite) {
+			throw Error(errParseSQL, "Unexpected '{' in query, %s", parser.where());
+		}
+		VariantArray compositeValues;
+		for (;;) {
+			auto tok = parser.next_token();
+			compositeValues.push_back(token2kv(tok, parser, false));
+			tok = parser.next_token();
+			if (tok.text() == "}"_sv) {
+				return compositeValues;
+			}
+			if (tok.text() != ","_sv) {
+				throw Error(errParseSQL, "Expected ',', but found '%s' in query, %s", tok.text(), parser.where());
+			}
+		}
+	}
 
 	if (currTok.type != TokenNumber && currTok.type != TokenString)
 		throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", currTok.text(), parser.where());
@@ -354,7 +373,7 @@ static Variant token2kv(const token &currTok, tokenizer &parser) {
 
 static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry &updateField) {
 	if (currTok.type == TokenString) {
-		updateField.values.push_back(token2kv(currTok, parser));
+		updateField.values.push_back(token2kv(currTok, parser, false));
 	} else {
 		int count = 0;
 		string expression(currTok.text());
@@ -367,7 +386,7 @@ static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry 
 			++count;
 			expression += string(parser.next_token(false).text());
 		}
-		updateField.values.push_back(count ? Variant(expression) : token2kv(currTok, parser));
+		updateField.values.push_back(count ? Variant(expression) : token2kv(currTok, parser, false));
 		updateField.isExpression = count != 0;
 	}
 }
@@ -519,14 +538,14 @@ int SQLParser::parseWhere(tokenizer &parser) {
 					for (;;) {
 						tok = parser.next_token();
 						if (tok.text() == ")"_sv && tok.type == TokenSymbol) break;
-						entry.values.push_back(token2kv(tok, parser));
+						entry.values.push_back(token2kv(tok, parser, true));
 						tok = parser.next_token();
 						if (tok.text() == ")"_sv) break;
 						if (tok.text() != ","_sv)
 							throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text(), parser.where());
 					}
 				} else {
-					entry.values.push_back(token2kv(tok, parser));
+					entry.values.push_back(token2kv(tok, parser, true));
 				}
 				query_.entries.Append(nextOp, std::move(entry));
 				nextOp = OpAnd;

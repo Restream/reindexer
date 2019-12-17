@@ -452,7 +452,6 @@ void NsSelecter::applyGeneralSort(It itFirst, It itLast, It itEnd, const SelectC
 			byExpr.push_back({i, sortingCtx.data->desc});
 			continue;
 		}
-		byIndex.push_back({i, sortingCtx.data->desc});
 		int fieldIdx = sortingCtx.data->index;
 		if (fieldIdx == IndexValueType::SetByJsonPath || ns_->indexes_[fieldIdx]->Opts().IsSparse()) {
 			TagsPath tagsPath;
@@ -467,6 +466,7 @@ void NsSelecter::applyGeneralSort(It itFirst, It itLast, It itEnd, const SelectC
 				throw Error(errQueryExec, "Can't sort by 2 equal indexes: %s", sortingCtx.data->expression);
 			}
 			fields.push_back(tagsPath);
+			byIndex.push_back({i, sortingCtx.data->desc});
 		} else {
 			if (ns_->indexes_[fieldIdx]->Opts().IsArray()) {
 				throw Error(errQueryExec, "Sorting cannot be applied to array field.");
@@ -476,17 +476,19 @@ void NsSelecter::applyGeneralSort(It itFirst, It itLast, It itEnd, const SelectC
 					throw Error(errQueryExec, "Multicolumn sorting cannot be applied to composite fields: %s", sortingCtx.data->expression);
 				}
 				fields = ns_->indexes_[fieldIdx]->Fields();
+				byIndex = {fields.size(), {i, sortingCtx.data->desc}};
 			} else {
 				if (fields.contains(fieldIdx)) {
 					throw Error(errQueryExec, "You cannot sort by 2 same indexes: %s", sortingCtx.data->expression);
 				}
 				fields.push_back(fieldIdx);
+				byIndex.push_back({i, sortingCtx.data->desc});
 			}
 		}
 		collateOpts.push_back(entries[i].opts);
 	}
 	assert(byExpr.size() == exprResults.size());
-	assert(byIndex.size() == entries.size() - exprResults.size());
+	assert(byIndex.size() == fields.size());
 
 	std::partial_sort(itFirst, itLast, itEnd, [&](const ItemRef &lhs, const ItemRef &rhs) {
 		size_t firstDifferentExprIdx = 0;
@@ -501,10 +503,14 @@ void NsSelecter::applyGeneralSort(It itFirst, It itLast, It itEnd, const SelectC
 		assert(exprCmpRes == 0 || firstDifferentExprIdx < byExpr.size());
 
 		size_t firstDifferentFieldIdx = 0;
-		int fieldsCmpRes =
-			ConstPayload(payloadType, ns_->items_[lhs.Id()]).Compare(ns_->items_[rhs.Id()], fields, firstDifferentFieldIdx, collateOpts);
-		assertf(fieldsCmpRes == 0 || firstDifferentFieldIdx < byIndex.size(), "firstDifferentFieldIdx fail %d,%d -> %d",
-				int(firstDifferentFieldIdx), int(byIndex.size()), int(fields.size()));
+		int fieldsCmpRes = 0;
+		// do not perform comparation by indexes if not necessary
+		if (exprCmpRes == 0 || byExpr[firstDifferentExprIdx].first != 0) {
+			fieldsCmpRes = ConstPayload(payloadType, ns_->items_[lhs.Id()])
+							   .Compare(ns_->items_[rhs.Id()], fields, firstDifferentFieldIdx, collateOpts);
+			assertf(fieldsCmpRes == 0 || firstDifferentFieldIdx < byIndex.size(), "%d < %d\n", int(firstDifferentFieldIdx),
+					int(byIndex.size()));
+		}
 
 		int cmpRes;
 		bool desc;

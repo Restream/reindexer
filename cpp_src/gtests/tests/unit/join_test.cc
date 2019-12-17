@@ -36,6 +36,18 @@ TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest) {
 	CheckJoinsInComplexWhereCondition(qr);
 }
 
+TEST_F(JoinSelectsApi, JoinsLockWithCache_364) {
+	Query queryGenres = Query(genres_namespace).Where(genreid, CondEq, 1);
+	Query queryBooks = Query(books_namespace, 0, 50).InnerJoin(genreId_fk, genreid, CondEq, queryGenres);
+	TurnOnJoinCache(genres_namespace);
+
+	for (int i = 0; i < 10; ++i) {
+		reindexer::QueryResults qr;
+		Error err = rt.reindexer->Select(queryBooks, qr);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+}
+
 TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest2) {
 	string sql =
 		"SELECT * FROM books_namespace WHERE "

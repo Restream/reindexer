@@ -253,6 +253,35 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
+	void TurnOnJoinCache(const string& nsName) {
+		reindexer::WrSerializer ser;
+		reindexer::JsonBuilder jb(ser);
+
+		jb.Put("type", "namespaces");
+		auto nsArray = jb.Array("namespaces");
+		auto ns = nsArray.Object();
+		ns.Put("namespace", nsName.c_str());
+		ns.Put("log_level", "none");
+		ns.Put("lazyload", false);
+		ns.Put("unload_idle_threshold", 0);
+		ns.Put("join_cache_mode", "on");
+		ns.Put("start_copy_politics_count", 10000);
+		ns.Put("merge_limit_count", 20000);
+		ns.End();
+		nsArray.End();
+		jb.End();
+
+		auto item = rt.NewItem(config_namespace);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+		auto err = item.FromJSON(ser.Slice());
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		rt.Upsert(config_namespace, item);
+		err = rt.Commit(config_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
 	void CheckJoinsInComplexWhereCondition(const QueryResults& qr) {
 		for (auto it : qr) {
 			Item item = it.GetItem();

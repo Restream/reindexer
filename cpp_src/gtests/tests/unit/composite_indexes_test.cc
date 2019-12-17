@@ -115,10 +115,8 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	addOneRow(300, 3000, titleValue, pagesValue, priceValue, nameValue);
 	fillNamespace(101, 200);
 
-	QueryResults qr;
-	Error err = rt.reindexer->Select(
-		Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondEq, {{Variant(priceValue), Variant(pagesValue)}}), qr);
-	EXPECT_TRUE(err.ok()) << err.what();
+	auto qr = execAndCompareQuery(
+		Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondEq, {{Variant(priceValue), Variant(pagesValue)}}));
 	EXPECT_TRUE(qr.Count() == 1);
 
 	Item pricePageRow = qr.begin().GetItem();
@@ -127,42 +125,28 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	EXPECT_EQ(static_cast<int>(selectedPrice), priceValue);
 	EXPECT_EQ(static_cast<int>(selectedPages), pagesValue);
 
-	QueryResults qr1;
-	err = rt.reindexer->Select(
-		Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondLt, {{Variant(priceValue), Variant(pagesValue)}}), qr1);
-	EXPECT_TRUE(err.ok()) << err.what();
+	Item titleNameRow = qr.begin().GetItem();
+	Variant selectedTitle = titleNameRow[kFieldNameTitle];
+	Variant selectedName = titleNameRow[kFieldNameName];
+	EXPECT_TRUE(static_cast<reindexer::key_string>(selectedTitle)->compare(string(titleValue)) == 0);
+	EXPECT_TRUE(static_cast<reindexer::key_string>(selectedName)->compare(string(nameValue)) == 0);
 
-	QueryResults qr2;
-	err = rt.reindexer->Select(
-		Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondLe, {{Variant(priceValue), Variant(pagesValue)}}), qr2);
-	EXPECT_TRUE(err.ok()) << err.what();
-
-	QueryResults qr3;
-	err = rt.reindexer->Select(
-		Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondGt, {{Variant(priceValue), Variant(pagesValue)}}), qr3);
-	EXPECT_TRUE(err.ok()) << err.what();
-
-	QueryResults qr4;
-	err = rt.reindexer->Select(
-		Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondGe, {{Variant(priceValue), Variant(pagesValue)}}), qr4);
-	EXPECT_TRUE(err.ok()) << err.what();
+	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondLt, {{Variant(priceValue), Variant(pagesValue)}}));
+	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondLe, {{Variant(priceValue), Variant(pagesValue)}}));
+	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondGt, {{Variant(priceValue), Variant(pagesValue)}}));
+	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondGe, {{Variant(priceValue), Variant(pagesValue)}}));
 
 	fillNamespace(301, 400);
 
-	QueryResults qr5;
-	err = rt.reindexer->Select(
+	execAndCompareQuery(
 		Query(default_namespace)
-			.WhereComposite(compositeIndexName.c_str(), CondRange, {{Variant(1), Variant(1)}, {Variant(priceValue), Variant(pagesValue)}}),
-		qr5);
-	EXPECT_TRUE(err.ok()) << err.what();
+			.WhereComposite(compositeIndexName, CondRange, {{Variant(1), Variant(1)}, {Variant(priceValue), Variant(pagesValue)}}));
 
-	QueryResults qr6;
 	vector<VariantArray> intKeys;
 	for (int i = 0; i < 10; ++i) {
 		intKeys.emplace_back(VariantArray{Variant(i), Variant(i * 5)});
 	}
-	err = rt.reindexer->Select(Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondSet, intKeys), qr6);
-	EXPECT_TRUE(err.ok()) << err.what();
+	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondSet, intKeys));
 
 	dropIndex(compositeIndexName);
 	fillNamespace(401, 500);
@@ -172,62 +156,33 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 
 	fillNamespace(700, 200);
 
-	QueryResults qr7;
-	err = rt.reindexer->Select(
+	execAndCompareQuery(
 		Query(default_namespace)
-			.WhereComposite(compositeIndexName2.c_str(), CondEq, {{Variant(string(titleValue)), Variant(string(nameValue))}}),
-		qr7);
-	EXPECT_TRUE(err.ok()) << err.what();
-	EXPECT_TRUE(qr7.Count() == 1);
-
-	Item titleNameRow = qr.begin().GetItem();
-	Variant selectedTitle = titleNameRow[kFieldNameTitle];
-	Variant selectedName = titleNameRow[kFieldNameName];
-	EXPECT_TRUE(static_cast<reindexer::key_string>(selectedTitle)->compare(string(titleValue)) == 0);
-	EXPECT_TRUE(static_cast<reindexer::key_string>(selectedName)->compare(string(nameValue)) == 0);
-
-	QueryResults qr8;
-	err = rt.reindexer->Select(
+			.WhereComposite(compositeIndexName2.c_str(), CondEq, {{Variant(string(titleValue)), Variant(string(nameValue))}}));
+	execAndCompareQuery(
 		Query(default_namespace)
-			.WhereComposite(compositeIndexName2.c_str(), CondGe, {{Variant(string(titleValue)), Variant(string(nameValue))}}),
-		qr8);
-	EXPECT_TRUE(err.ok()) << err.what();
-
-	QueryResults qr9;
-	err = rt.reindexer->Select(
+			.WhereComposite(compositeIndexName2.c_str(), CondGe, {{Variant(string(titleValue)), Variant(string(nameValue))}}));
+	execAndCompareQuery(
 		Query(default_namespace)
-			.WhereComposite(compositeIndexName2.c_str(), CondLt, {{Variant(string(titleValue)), Variant(string(nameValue))}}),
-		qr9);
-	EXPECT_TRUE(err.ok()) << err.what();
-
-	QueryResults qr10;
-	err = rt.reindexer->Select(
+			.WhereComposite(compositeIndexName2.c_str(), CondLt, {{Variant(string(titleValue)), Variant(string(nameValue))}}));
+	execAndCompareQuery(
 		Query(default_namespace)
-			.WhereComposite(compositeIndexName2.c_str(), CondLe, {{Variant(string(titleValue)), Variant(string(nameValue))}}),
-		qr10);
-	EXPECT_TRUE(err.ok()) << err.what();
+			.WhereComposite(compositeIndexName2.c_str(), CondLe, {{Variant(string(titleValue)), Variant(string(nameValue))}}));
 
 	fillNamespace(1200, 1000);
 
-	QueryResults qr11;
 	vector<VariantArray> stringKeys;
 	for (size_t i = 0; i < 1010; ++i) {
 		stringKeys.emplace_back(VariantArray{Variant(RandString()), Variant(RandString())});
 	}
-	err = rt.reindexer->Select(Query(default_namespace).WhereComposite(compositeIndexName2.c_str(), CondSet, stringKeys), qr11);
-
-	QueryResults qr12;
-	err = rt.reindexer->Select(
+	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName2.c_str(), CondSet, stringKeys));
+	execAndCompareQuery(
 		Query(default_namespace)
 			.Where(kFieldNameName, CondEq, nameValue)
-			.WhereComposite(compositeIndexName2.c_str(), CondEq, {{Variant(string(titleValue)), Variant(string(nameValue))}}),
-		qr12);
-	EXPECT_TRUE(err.ok()) << err.what();
+			.WhereComposite(compositeIndexName2.c_str(), CondEq, {{Variant(string(titleValue)), Variant(string(nameValue))}}));
 
 	dropIndex(compositeIndexName2);
 	fillNamespace(201, 300);
 
-	QueryResults qr13;
-	err = rt.reindexer->Select(Query(default_namespace), qr13);
-	EXPECT_TRUE(err.ok()) << err.what();
+	execAndCompareQuery(Query(default_namespace));
 }

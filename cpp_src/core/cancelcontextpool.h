@@ -28,8 +28,8 @@ public:
 	bool IsCancelable() const noexcept override final { return true; }
 	CancelType GetCancelType() const noexcept override final { return cancelType_.load(std::memory_order_acquire); }
 
-    bool IsCancelled() const { return cancelType_.load(std::memory_order_acquire) == CancelType::Explicit; }
-    void Cancel(CancelType type = CancelType::Explicit) noexcept { cancelType_.store(type, std::memory_order_release); }
+	bool IsCancelled() const { return cancelType_.load(std::memory_order_acquire) == CancelType::Explicit; }
+	void Cancel(CancelType type = CancelType::Explicit) noexcept { cancelType_.store(type, std::memory_order_release); }
 	void Reset() noexcept { cancelType_.store(CancelType::None, std::memory_order_release); }
 
 private:
@@ -84,7 +84,7 @@ public:
 		node = appendNewNode(node, ctxID);
 		if (ctxIDExists(head, node, ctxID)) {
 			node->ctxID.store(0, std::memory_order_release);
-			return nullptr;  // Already exists
+			return nullptr;	 // Already exists
 		}
 		node->ctxID.store(toInitialized(ctxID), std::memory_order_release);
 		return &node->ctx;
@@ -166,7 +166,7 @@ private:
 	Node* appendNewNode(Node* here, uint64_t ctxID) {
 		Node* node = new Node;
 		node->ctxID.store(ctxID, std::memory_order_relaxed);
-		while (true) {
+		for (;;) {
 			Node* exp = nullptr;
 			if (!here->next && here->next.compare_exchange_strong(exp, node, std::memory_order_acq_rel)) {
 				return node;

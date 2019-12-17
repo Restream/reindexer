@@ -10,7 +10,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 2.4.2
+*Version* : 2.4.4
 
 
 ### License information

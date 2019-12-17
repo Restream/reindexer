@@ -54,6 +54,7 @@ protected:
 	std::chrono::microseconds minTime = defaultMinTime();
 	std::chrono::microseconds maxTime = std::chrono::microseconds(std::numeric_limits<size_t>::min());
 	std::vector<size_t> lastValuesUs;
+	size_t posInValuesUs = 0;
 	Mutex mtx_;
 };
 

@@ -21,7 +21,7 @@ public:
 	token(token &&other) : type(other.type), text_(std::move(other.text_)) {
 		text_.reserve(other.text_.size() + 1);
 		*(text_.begin() + text_.size()) = 0;
-	};
+	}
 	token &operator=(token &&other) {
 		if (&other != this) {
 			type = other.type;
@@ -30,7 +30,7 @@ public:
 			*(text_.begin() + text_.size()) = 0;
 		}
 		return *this;
-	};
+	}
 
 	string_view text() const { return string_view(text_.data(), text_.size()); }
 

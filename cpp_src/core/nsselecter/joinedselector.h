@@ -23,6 +23,7 @@ struct JoinPreResult {
 				for (size_t i = 0; i < size(); ++i) Payload{payloadType, (*this)[i].Value()}.ReleaseStrings();
 			}
 		}
+		bool Locked() const { return locked_; }
 		void Lock() {
 			assert(!locked_);
 			for (size_t i = 0; i < size(); ++i) Payload{payloadType, (*this)[i].Value()}.AddRefStrings();

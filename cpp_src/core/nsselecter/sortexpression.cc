@@ -5,7 +5,7 @@
 
 namespace reindexer {
 
-static void throwParseError() { throw Error(errParams, "Sort expression parse failed"); }
+static void throwParseError(string_view sortExpr) { throw Error(errParams, "'%s' is not valid sort expression", sortExpr); }
 
 double SortExpressionValue::GetValue(ConstPayload pv, uint8_t proc, TagsMatcher& tagsMatcher) const {
 	switch (type) {
@@ -52,8 +52,9 @@ bool operator==(const SortExpressionOperation& lhs, const SortExpressionOperatio
 SortExpression SortExpression::Parse(string_view expression) {
 	SortExpression result;
 	bool containIndexOrFunction = false;
-	if (result.parse(expression.begin(), expression.end(), &containIndexOrFunction) != expression.end()) throwParseError();
-	if (!containIndexOrFunction) throwParseError();
+	if (result.parse(expression.begin(), expression.end(), &containIndexOrFunction, expression) != expression.end())
+		throwParseError(expression);
+	if (!containIndexOrFunction) throwParseError(expression);
 	return result;
 }
 
@@ -70,7 +71,8 @@ void SortExpression::openBracketBeforeLastAppended() {
 	container_.insert(container_.begin() + pos, {{op, false}, container_.size() - pos + 1});
 }
 
-string_view::iterator SortExpression::parse(string_view::iterator it, string_view::iterator end, bool* containIndexOrFunction) {
+string_view::iterator SortExpression::parse(string_view::iterator it, string_view::iterator end, bool* containIndexOrFunction,
+											string_view fullExpr) {
 	using namespace double_conversion;
 	static const StringToDoubleConverter converter{StringToDoubleConverter::ALLOW_TRAILING_JUNK |
 													   StringToDoubleConverter::ALLOW_TRAILING_SPACES |
@@ -95,13 +97,13 @@ string_view::iterator SortExpression::parse(string_view::iterator it, string_vie
 				}
 				++it;
 				skipSpaces();
-				if (it == end) throwParseError();
+				if (it == end) throwParseError(fullExpr);
 			}
 			if (*it == '(') {
 				++it;
 				OpenBracket({op, negative});
-				it = parse(it, end, containIndexOrFunction);
-				if (it == end || *it != ')') throwParseError();
+				it = parse(it, end, containIndexOrFunction, fullExpr);
+				if (it == end || *it != ')') throwParseError(fullExpr);
 				++it;
 				CloseBracket();
 			} else {
@@ -116,10 +118,10 @@ string_view::iterator SortExpression::parse(string_view::iterator it, string_vie
 					const string_view name{start, static_cast<size_t>(it - start)};
 					skipSpaces();
 					if (it != end && *it == '(') {
-						if (!iequals(name, "rank")) throwParseError();
+						if (!iequals(name, "rank")) throwParseError(fullExpr);
 						++it;
 						skipSpaces();
-						if (it == end || *it != ')') throwParseError();
+						if (it == end || *it != ')') throwParseError(fullExpr);
 						++it;
 						Append(SortExpressionOperation{op, negative}, {});
 					} else {
@@ -153,14 +155,14 @@ string_view::iterator SortExpression::parse(string_view::iterator it, string_vie
 					}
 					break;
 				default:
-					throwParseError();
+					throwParseError(fullExpr);
 			}
 			++it;
 			expectValue = true;
 		}
 		skipSpaces();
 	}
-	if (expectValue) throwParseError();
+	if (expectValue) throwParseError(fullExpr);
 	if (needCloseBracket) CloseBracket();
 	return it;
 }

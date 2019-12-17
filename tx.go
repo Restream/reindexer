@@ -230,7 +230,8 @@ func (tx *Tx) modifyInternal(item interface{}, json []byte, mode int, precepts .
 		if err != nil {
 			rerr, ok := err.(bindings.Error)
 			if ok && rerr.Code() == bindings.ErrStateInvalidated {
-				tx.db.query(tx.ns.name).Limit(0).ExecCtx(tx.ctx.UserCtx)
+				it := tx.db.query(tx.ns.name).Limit(0).ExecCtx(tx.ctx.UserCtx)
+				it.Close()
 				err = rerr
 				continue
 			}
@@ -268,7 +269,9 @@ func (tx *Tx) cmplHandlingRoutine(cmplCh chan modifyInfo) {
 			if err != nil {
 				rerr, ok := err.(bindings.Error)
 				if ok && rerr.Code() == bindings.ErrStateInvalidated && modifyRes.retries > 0 {
-					err = tx.db.query(tx.ns.name).Limit(0).ExecCtx(tx.ctx.UserCtx).Error()
+					it := tx.db.query(tx.ns.name).Limit(0).ExecCtx(tx.ctx.UserCtx)
+					err = it.Error()
+					it.Close()
 				}
 			}
 			if err == nil && modifyRes.retries > 0 {

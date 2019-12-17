@@ -21,7 +21,13 @@ void PerfStatCounter<Mutex>::Hit(std::chrono::microseconds time) {
 	calcTime += time;
 	calcHitCount++;
 	totalHitCount++;
-	lastValuesUs.push_back(std::chrono::duration_cast<std::chrono::microseconds>(calcTime).count());
+	if (lastValuesUs.size() < kMaxValuesCountForStddev) {
+		lastValuesUs.push_back(std::chrono::duration_cast<std::chrono::microseconds>(calcTime).count());
+		posInValuesUs = kMaxValuesCountForStddev - 1;
+	} else {
+		posInValuesUs = (posInValuesUs + 1) % kMaxValuesCountForStddev;
+		lastValuesUs[posInValuesUs] = std::chrono::duration_cast<std::chrono::microseconds>(calcTime).count();
+	}
 	doCalculations();
 	lap();
 }
@@ -69,10 +75,6 @@ void PerfStatCounter<Mutex>::doCalculations() {
 		}
 		dispersion /= lastValuesUs.size();
 		stddev = sqrt(dispersion);
-	}
-	if (lastValuesUs.size() > kMaxValuesCountForStddev) {
-		lastValuesUs.clear();
-		lastValuesUs.reserve(kMaxValuesCountForStddev);
 	}
 }
 

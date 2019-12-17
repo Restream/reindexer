@@ -1,3 +1,15 @@
+# Version 2.4.4 (17.12.2019)
+
+## Core
+- [fix] Do not lock preResult values if from cache fixed potential assert on queries with join with used join cache
+- [fix] Fix assert in sort by composite indexes
+- [fea] Add composite values parsing for SQL select
+- [fix] Make circular accumulator for stddev performance statistic
+- [fix] Fix unhandled exception while caclulating perf stat
+
+## go connector
+- [fix] RawBuffer leak due to unclosed iterators in transactions
+
 # Version 2.4.3 (06.12.2019)
 
 ## Core

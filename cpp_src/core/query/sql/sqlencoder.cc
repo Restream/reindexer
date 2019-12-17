@@ -195,7 +195,7 @@ static void writeSQL(const Query &parentQuery, QueryEntries::const_iterator from
 		} else {
 			const QueryEntry &entry = it->Value();
 			if (entry.joinIndex == QueryEntry::kNoJoins) {
-				if (entry.index.find('.') == string::npos)
+				if (entry.index.find('.') == string::npos && entry.index.find('+') == string::npos)
 					ser << entry.index << ' ';
 				else
 					ser << '\'' << entry.index << "\' ";

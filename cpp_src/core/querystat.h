@@ -12,7 +12,7 @@ class WrSerializer;
 class Query;
 
 struct QueryPerfStat {
-	void GetJSON(WrSerializer &ser) const;
+	void GetJSON(WrSerializer& ser) const;
 	std::string query;
 	PerfStat perf;
 	std::string longestQuery;
@@ -20,8 +20,13 @@ struct QueryPerfStat {
 
 class QueriesStatTracer {
 public:
-	void Hit(const Query &q, std::chrono::microseconds time) { hit<&PerfStatCounterST::Hit>(q, time); }
-	void LockHit(const Query &q, std::chrono::microseconds time) { hit<&PerfStatCounterST::LockHit>(q, time); }
+	struct QuerySQL {
+		string_view normolized;
+		string_view nonNormolized;
+	};
+
+	void Hit(const QuerySQL& sql, std::chrono::microseconds time) { hit<&PerfStatCounterST::Hit>(sql, time); }
+	void LockHit(const QuerySQL& sql, std::chrono::microseconds time) { hit<&PerfStatCounterST::LockHit>(sql, time); }
 	const std::vector<QueryPerfStat> Data();
 	void Reset() {
 		std::unique_lock<std::mutex> lck(mtx_);
@@ -35,13 +40,13 @@ protected:
 	};
 
 	template <void (PerfStatCounterST::*hitFunc)(std::chrono::microseconds)>
-	void hit(const Query &, std::chrono::microseconds);
+	void hit(const QuerySQL&, std::chrono::microseconds);
 
 	std::mutex mtx_;
 	fast_hash_map<std::string, Stat, hash_str, equal_str> stat_;
 };
-extern template void QueriesStatTracer::hit<&PerfStatCounterST::Hit>(const Query &, std::chrono::microseconds);
-extern template void QueriesStatTracer::hit<&PerfStatCounterST::LockHit>(const Query &, std::chrono::microseconds);
+extern template void QueriesStatTracer::hit<&PerfStatCounterST::Hit>(const QuerySQL&, std::chrono::microseconds);
+extern template void QueriesStatTracer::hit<&PerfStatCounterST::LockHit>(const QuerySQL&, std::chrono::microseconds);
 
 class QueryStatCalculator {
 public:

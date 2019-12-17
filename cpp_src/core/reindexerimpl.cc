@@ -622,8 +622,9 @@ struct ItemRefLess {
 
 Error ReindexerImpl::Select(const Query& q, QueryResults& result, const InternalRdxContext& ctx) {
 	try {
-		WrSerializer ser;
-		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? q.GetSQL(ser).Slice() : "", activities_, result);
+		WrSerializer normolizedSQL, nonNormolizedSQL;
+		if (ctx.NeedTraceActivity()) q.GetSQL(nonNormolizedSQL, false);
+		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? nonNormolizedSQL.Slice() : "", activities_, result);
 		NsLocker<const RdxContext> locks(rdxCtx);
 
 		Namespace::Ptr mainNs;
@@ -631,14 +632,19 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 		mainNs = getNamespace(q._namespace, rdxCtx);
 
 		ProfilingConfigData profilingCfg = configProvider_.GetProfilingConfig();
-		PerfStatCalculatorMT calc(mainNs->selectPerfCounter_, mainNs->enablePerfCounters_);	 // todo more accurate detect joined queries
+		PerfStatCalculatorMT calc(mainNs->selectPerfCounter_, mainNs->enablePerfCounters_);  // todo more accurate detect joined queries
 		auto& tracker = queriesStatTracker_;
+		if (profilingCfg.queriesPerfStats) {
+			q.GetSQL(normolizedSQL, true);
+			if (!ctx.NeedTraceActivity()) q.GetSQL(nonNormolizedSQL, false);
+		}
+		const QueriesStatTracer::QuerySQL sql{normolizedSQL.Slice(), nonNormolizedSQL.Slice()};
 		QueryStatCalculator statCalculator(
-			[&q, &tracker](bool lockHit, std::chrono::microseconds time) {
+			[&sql, &tracker](bool lockHit, std::chrono::microseconds time) {
 				if (lockHit)
-					tracker.LockHit(q, time);
+					tracker.LockHit(sql, time);
 				else
-					tracker.Hit(q, time);
+					tracker.Hit(sql, time);
 			},
 			std::chrono::microseconds(profilingCfg.queriedThresholdUS), profilingCfg.queriesPerfStats);
 
@@ -761,7 +767,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 			jItemQ.entries.ForEachValue([&jns](QueryEntry& qe) {
 				if (jns->indexes_[qe.idxNo]->Opts().IsSparse()) qe.idxNo = IndexValueType::SetByJsonPath;
 			});
-			preResult->values.Lock();
+			if (!preResult->values.Locked()) preResult->values.Lock();  // If not from cache
 			locks.Delete(jns);
 			jns.reset();
 		}

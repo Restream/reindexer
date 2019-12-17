@@ -51,7 +51,7 @@ public:
 	std::string Dump() const;
 
 private:
-	string_view::iterator parse(string_view::iterator begin, string_view::iterator end, bool* containIndexOrFunction);
+	string_view::iterator parse(string_view::iterator begin, string_view::iterator end, bool* containIndexOrFunction, string_view fullExpr);
 	static double calculate(const_iterator begin, const_iterator end, ConstPayload, uint8_t proc, TagsMatcher&);
 
 	void openBracketBeforeLastAppended();

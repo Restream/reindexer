@@ -84,6 +84,25 @@ public:
 		}
 	}
 
+	QueryResults execAndCompareQuery(const Query& query) {
+		QueryResults qr;
+		auto err = rt.reindexer->Select(query, qr);
+		EXPECT_TRUE(err.ok()) << err.what();
+
+		QueryResults qrSql;
+		auto sqlQuery = query.GetSQL();
+		err = rt.reindexer->Select(query.GetSQL(), qrSql);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(qr.Count(), qrSql.Count()) << "SQL: " << sqlQuery;
+		for (auto it = qr.begin(), itSql = qrSql.begin(); it != qr.end() && itSql != qrSql.end(); ++it, ++itSql) {
+			reindexer::WrSerializer ser, serSql;
+			it.GetCJSON(ser);
+			itSql.GetCJSON(serSql);
+			EXPECT_EQ(ser.Slice(), serSql.Slice()) << "SQL: " << sqlQuery;
+		}
+		return qr;
+	}
+
 	const char* kFieldNameBookid = "bookid";
 	const char* kFieldNameBookid2 = "bookid2";
 	const char* kFieldNameTitle = "title";
