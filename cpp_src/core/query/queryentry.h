@@ -5,12 +5,16 @@
 #include <vector>
 #include "core/expressiontree.h"
 #include "core/keyvalue/variant.h"
-#include "core/payload/payloadiface.h"
 #include "estl/h_vector.h"
 
 namespace reindexer {
 
 class Query;
+template <typename T>
+class PayloadIface;
+using ConstPayload = PayloadIface<const PayloadValue>;
+
+class TagsMatcher;
 using std::string;
 using std::vector;
 
@@ -51,9 +55,7 @@ public:
 	void ToDsl(const Query &parentQuery, JsonBuilder &builder) const { return toDsl(cbegin(), cend(), parentQuery, builder); }
 	void WriteSQLWhere(const Query &parentQuery, WrSerializer &, bool stripArgs) const;
 	void Serialize(WrSerializer &ser) const { serialize(cbegin(), cend(), ser); }
-	bool CheckIfSatisfyConditions(const ConstPayload &pl, TagsMatcher &tm) const {
-		return checkIfSatisfyConditions(cbegin(), cend(), pl, tm);
-	}
+	bool CheckIfSatisfyConditions(const ConstPayload &pl, TagsMatcher &tm) const;
 
 private:
 	static void toDsl(const_iterator it, const_iterator to, const Query &parentQuery, JsonBuilder &);

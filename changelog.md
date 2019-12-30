@@ -1,3 +1,17 @@
+# Version 2.4.5 (30.12.2019)
+
+## Core
+- [fix] Fix: forced replication can lead to infinite loop
+- [fea] Add .pkg file and autotest in -dev package
+- [fix] Replication of meta in forcedSync
+
+## go connector
+- [fea] Canceling of connecting to server if the deadline is expired
+
+## Reindexer tool
+- [fix] Fix of incorrect paging when output to file or stdout redirection
+- [fix] Fix of suggest of '\<key word>'
+
 # Version 2.4.4 (17.12.2019)
 
 ## Core

@@ -14,7 +14,7 @@ option (ENABLE_LIBUNWIND "Enable libunwind" ON)
 option (ENABLE_TCMALLOC "Enable tcmalloc extensions" ON)
 option (ENABLE_JEMALLOC "Enable jemalloc extensions" ON)
 option (ENABLE_ROCKSDB "Enable rocksdb storage" ON)
-set (REINDEXER_VERSION_DEFAULT "2.4.4")
+set (REINDEXER_VERSION_DEFAULT "2.4.5")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -40,7 +40,7 @@ endif ()
 
 if (MSVC)
   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -MP")
-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -wd4244 -wd4267 -wd4996 -wd4717 -wd4800 -wd4396 -wd4503 -MP")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -wd4800 -wd4396 -wd4503 -MP")
 else()
   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror")
   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wextra -Werror -Wold-style-cast")
@@ -84,6 +84,7 @@ include_directories(${REINDEXER_SOURCE_PATH}/vendor)
 
 list(APPEND REINDEXER_LIBRARIES reindexer)
 add_library(${TARGET} STATIC ${HDRS} ${SRCS} ${VENDORS})
+add_definitions(-DREINDEX_CORE_BUILD=1)
 
 
 # add_definitions(-DREINDEX_FT_EXTRA_DEBUG=1)
@@ -324,6 +325,7 @@ if (WIN32)
   set (CPACK_GENERATOR "NSIS")
 elseif (LINUX_ISSUE MATCHES "Fedora" OR LINUX_ISSUE MATCHES "CentOS" OR LINUX_ISSUE MATCHES "Mandriva")
   set(CPACK_GENERATOR "RPM")
+  set(CPACK_RPM_PACKAGE_RELOCATABLE OFF)
 elseif (LINUX_ISSUE MATCHES "Ubuntu" OR LINUX_ISSUE MATCHES "Debian" OR LINUX_ISSUE MATCHES "Mint")
   set(CPACK_GENERATOR "DEB")
 endif()
@@ -337,6 +339,12 @@ SET(CPACK_PACKAGE_VERSION ${REINDEXER_VERSION})
 set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
 set(CPACK_RPM_COMPONENT_INSTALL ON)
 set(CPACK_DEB_COMPONENT_INSTALL ON)
+if (WIN32)
+  set(CPACK_SET_DESTDIR OFF)
+else ()
+  set(CPACK_SET_DESTDIR ON)
+endif()
+
 
 set(CPACK_RESOURCE_FILE_LICENSE ${REINDEXER_SOURCE_PATH}/../LICENSE)
 
@@ -380,12 +388,18 @@ if (GPERFTOOLS_TCMALLOC)
 endif ()
 
 # Remove first ',' from list of dependencies
-if (NOT CPACK_DEBIAN_PACKAGE_DEPENDS STREQUAL "")
+if (CPACK_DEBIAN_PACKAGE_DEPENDS STREQUAL "")
+  set (CPACK_DEBIAN_DEV_PACKAGE_DEPENDS "libleveldb-dev")
+else ()
   string (SUBSTRING "${CPACK_DEBIAN_PACKAGE_DEPENDS}" 1 -1 CPACK_DEBIAN_PACKAGE_DEPENDS)
+  set (CPACK_DEBIAN_DEV_PACKAGE_DEPENDS "libleveldb-dev,${CPACK_DEBIAN_PACKAGE_DEPENDS}")
 endif ()
 
-if (NOT CPACK_RPM_PACKAGE_REQUIRES STREQUAL "")
+if (CPACK_RPM_PACKAGE_REQUIRES STREQUAL "")
+  set (CPACK_RPM_DEV_PACKAGE_REQUIRES "leveldb")
+else()
   string (SUBSTRING "${CPACK_RPM_PACKAGE_REQUIRES}" 1 -1 CPACK_RPM_PACKAGE_REQUIRES)
+  set (CPACK_RPM_DEV_PACKAGE_REQUIRES "leveldb,${CPACK_RPM_PACKAGE_REQUIRES}")
 endif ()
 
 set (CPACK_DEBIAN_SERVER_FILE_NAME "DEB-DEFAULT")
@@ -397,11 +411,14 @@ if (NOT WIN32)
   SET(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "server")
   SET(DIST_INCLUDE_FILES
     "tools/errors.h" "tools/serializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h"
-    "core/reindexer.h" "core/type_consts.h" "core/item.h" "core/payload/payloadvalue.h" "core/indexopts.h"
-    "core/namespacedef.h" "core/keyvalue/variant.h" "core/sortingprioritiestable.h" "core/rdxcontext.h"
-    "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" 
+    "core/reindexer.h" "core/type_consts.h" "core/item.h" "core/payload/payloadvalue.h" "core/payload/payloadiface.h" "core/indexopts.h"
+    "core/namespacedef.h" "core/keyvalue/variant.h" "core/sortingprioritiestable.h"
+    "core/rdxcontext.h" "core/activity_context.h"
+    "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" "core/transaction.h"
     "core/query/query.h" "core/query/queryentry.h" "core/queryresults/queryresults.h" "core/indexdef.h" "core/queryresults/aggregationresult.h"
-    "estl/h_vector.h" "estl/string_view.h"
+    "core/queryresults/itemref.h"
+    "core/expressiontree.h"
+    "estl/h_vector.h" "estl/string_view.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/span.h"
     "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h"
     "client/internalrdxcontext.h"
     "debug/backtrace.h" "debug/allocdebug.h"
@@ -412,12 +429,31 @@ if (NOT WIN32)
       install( FILES ${PROJECT_SOURCE_DIR}/${file} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/reindexer/${dir} COMPONENT dev )
   endforeach()
 
+  set (VERSION ${REINDEXER_VERSION})
+  set (prefix ${CMAKE_INSTALL_PREFIX})
+  set (exec_prefix ${CMAKE_INSTALL_FULL_BINDIR})
+  set (libdir ${CMAKE_INSTALL_FULL_LIBDIR})
+  set (includedir ${CMAKE_INSTALL_FULL_INCLUDEDIR}/reindexer)
+
+  configure_file (
+    "${PROJECT_SOURCE_DIR}/libreindexer.pc.in"
+    "${PROJECT_BINARY_DIR}/pkgconfig/libreindexer.pc"
+    @ONLY
+  )
+
+  unset (VERSION)
+  unset (prefix)
+  unset (exec_prefix)
+  unset (libdir)
+  unset (includedir)
+
   install(TARGETS ${TARGET}
       RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
       LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
       ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
       COMPONENT dev
   )
+  install(DIRECTORY ${PROJECT_BINARY_DIR}/pkgconfig DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT dev)
 endif ()
 
 add_subdirectory(server)

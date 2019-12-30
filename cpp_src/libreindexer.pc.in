@@ -1,0 +1,10 @@
+prefix=@prefix@
+exec_prefix=@exec_prefix@
+libdir=@libdir@
+includedir=@includedir@
+
+Name: libreindexer
+Description: Reindexer library
+Version: @VERSION@
+Libs: -L${libdir} -lreindexer -lpthread -lleveldb
+Cflags: -I${includedir}

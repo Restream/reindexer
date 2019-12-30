@@ -158,6 +158,7 @@ protected:
 	Error closeNamespace(string_view nsName, const RdxContext &ctx, bool dropStorage, bool enableDropSlave = false);
 
 	Namespace::Ptr getNamespace(string_view nsName, const RdxContext &ctx);
+	Namespace::Ptr getNamespaceNoThrow(string_view nsName, const RdxContext &ctx);
 
 	std::vector<std::pair<string, Namespace::Ptr>> getNamespaces(const RdxContext &ctx);
 	std::vector<string> getNamespacesNames(const RdxContext &ctx);

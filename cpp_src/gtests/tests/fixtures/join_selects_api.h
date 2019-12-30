@@ -5,6 +5,7 @@
 #include <sstream>
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
+#include "core/queryresults/joinresults.h"
 #include "gason/gason.h"
 #include "reindexer_api.h"
 #include "tools/fsops.h"
@@ -160,7 +161,7 @@ protected:
 			std::cout << "ROW: " << item.GetJSON() << std::endl;
 
 			int idx = 1;
-			auto itemIt = rowIt.GetJoinedItemsIterator();
+			auto itemIt = reindexer::joins::ItemIterator::FromQRIterator(rowIt);
 			for (auto joinedFieldIt = itemIt.begin(); joinedFieldIt != itemIt.end(); ++joinedFieldIt) {
 				std::cout << "JOINED: " << idx << std::endl;
 				for (int i = 0; i < joinedFieldIt.ItemsCount(); ++i) {
@@ -182,7 +183,7 @@ protected:
 			QueryResultRow& resultRow = testRes[bookId];
 
 			FillQueryResultFromItem(item, resultRow);
-			auto itemIt = rowIt.GetJoinedItemsIterator();
+			auto itemIt = reindexer::joins::ItemIterator::FromQRIterator(rowIt);
 			auto joinedFieldIt = itemIt.begin();
 			QueryResults jres = joinedFieldIt.ToQueryResults();
 			jres.addNSContext(qr.getPayloadType(1), qr.getTagsMatcher(1), qr.getFieldsFilter(1));
@@ -291,7 +292,7 @@ protected:
 
 			bool joinsBracketConditionsResult = false;
 			if ((static_cast<int>(priceFieldValue) >= 1000) && (static_cast<int>(priceFieldValue) <= 2000)) {
-				auto jitemIt = it.GetJoinedItemsIterator();
+				auto jitemIt = reindexer::joins::ItemIterator::FromQRIterator(it);
 				auto authorNsFieldIt = jitemIt.at(0);
 				auto genreNsFieldIt = jitemIt.at(1);
 				if (authorNsFieldIt != jitemIt.end() && genreNsFieldIt != jitemIt.end() &&
@@ -322,7 +323,7 @@ protected:
 			const bool pagesConditionResult = (static_cast<int>(pagesFieldValue) == 0);
 
 			bool joinsNoBracketConditionsResult = false;
-			auto jitemIt = it.GetJoinedItemsIterator();
+			auto jitemIt = reindexer::joins::ItemIterator::FromQRIterator(it);
 			auto authorNsFieldIt = jitemIt.at(2);
 			if ((authorNsFieldIt != jitemIt.end() ||
 				 ((authorNsFieldIt = jitemIt.at(0)) != jitemIt.end() && jitemIt.at(1) == jitemIt.end())) &&

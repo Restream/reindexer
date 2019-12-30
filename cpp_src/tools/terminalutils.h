@@ -10,5 +10,6 @@ struct TerminalSize {
 };
 TerminalSize getTerminalSize();
 int getStringTerminalWidth(string_view str);
+bool isStdoutRedirected();
 
 }  // namespace reindexer

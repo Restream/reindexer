@@ -1,5 +1,6 @@
 #include "joinedselector.h"
 #include "core/namespace.h"
+#include "core/queryresults/joinresults.h"
 #include "nsselecter.h"
 
 constexpr size_t kMaxIterationsScaleForInnerJoinOptimization = 100;
@@ -89,10 +90,10 @@ bool JoinedSelector::Process(IdType rowId, int nsId, ConstPayload payload, bool 
 		selectFromRightNs(joinItemR, found, matchedAtLeastOnce);
 	}
 	if (match && found) {
-		if (nsId >= static_cast<int>(result_.joined_.size())) {
-			result_.joined_.resize(nsId + 1);
+		if (nsId >= static_cast<int>(result_.joined_->size())) {
+			result_.joined_->resize(nsId + 1);
 		}
-		joins::NamespaceResults &nsJoinRes = result_.joined_[nsId];
+		joins::NamespaceResults &nsJoinRes = (*result_.joined_)[nsId];
 		nsJoinRes.SetJoinedSelectorsCount(joinedSelectorsCount_);
 		nsJoinRes.Insert(rowId, joinedFieldIdx_, std::move(joinItemR));
 	}

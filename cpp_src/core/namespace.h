@@ -173,7 +173,6 @@ public:
 	ReplicationState getReplState() const;
 	void SetSlaveLSN(int64_t slaveLSN, const RdxContext &);
 	void SetSlaveReplStatus(ReplicationState::Status, const Error &, const RdxContext &);
-	void SetSlaveReplStatus(ReplicationState::Status, const RdxContext &);
 	void SetSlaveReplMasterState(MasterState state, const RdxContext &);
 
 	void ReplaceTagsMatcher(const TagsMatcher &tm, const RdxContext &);

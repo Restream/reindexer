@@ -1,5 +1,7 @@
 #include "transactionimpl.h"
 #include "item.h"
+#include "itemimpl.h"
+
 namespace reindexer {
 
 using std::string;

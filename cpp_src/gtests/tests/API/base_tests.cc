@@ -6,6 +6,7 @@
 #include "core/item.h"
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/variant.h"
+#include "core/queryresults/joinresults.h"
 #include "core/reindexer.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
@@ -265,9 +266,9 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	const std::vector<string> possibleValues = {
-		"apple",	 "arrangment", "agreement", "banana",   "bull",  "beech", "crocodile", "crucifix", "coat",	 "day",
-		"dog",		 "deer",	   "easter",	"ear",		"eager", "fair",  "fool",	  "foot",	 "genes",	"genres",
-		"greatness", "hockey",	 "homeless",  "homocide", "key",   "kit",   "knockdown", "motion",   "monument", "movement"};
+		"apple",	 "arrangment", "agreement", "banana",	"bull",	 "beech", "crocodile", "crucifix", "coat",	   "day",
+		"dog",		 "deer",	   "easter",	"ear",		"eager", "fair",  "fool",	   "foot",	   "genes",	   "genres",
+		"greatness", "hockey",	   "homeless",	"homocide", "key",	 "kit",	  "knockdown", "motion",   "monument", "movement"};
 
 	int sameOldValue = 0;
 	int stringValuedIdx = 0;
@@ -587,7 +588,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	for (auto it : queryResult) {
-		auto itemIt = it.GetJoinedItemsIterator();
+		auto itemIt = reindexer::joins::ItemIterator::FromQRIterator(it);
 		EXPECT_TRUE(itemIt.getJoinedItemsCount() > 0);
 	}
 }

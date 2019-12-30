@@ -1,4 +1,5 @@
 #pragma once
+#include "payload/fieldsset.h"
 #include "transaction.h"
 
 namespace reindexer {

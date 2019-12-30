@@ -3,7 +3,6 @@
 #include "core/payload/payloadvalue.h"
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
-#include "tools/logger.h"
 
 namespace reindexer {
 

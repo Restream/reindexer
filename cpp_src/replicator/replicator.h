@@ -44,15 +44,13 @@ protected:
 	// Read and apply WAL from master
 	Error syncNamespaceByWAL(const NamespaceDef &ns);
 	// Apply WAL from master to namespace
-	Error applyWAL(string_view nsName, client::QueryResults &qr);
-	// Apply WAL from master to namespace
 	Error applyWAL(Namespace::Ptr slaveNs, client::QueryResults &qr);
 	// Sync indexes of namespace
 	Error syncIndexesForced(Namespace::Ptr slaveNs, const NamespaceDef &masterNsDef);
 	// Forced sync of namespace
 	Error syncNamespaceForced(const NamespaceDef &ns, string_view reason);
 	// Sync meta data
-	Error syncMetaForced(reindexer::Namespace::Ptr slaveNs);
+	Error syncMetaForced(reindexer::Namespace::Ptr slaveNs, string_view nsName);
 	// Apply single WAL record
 	Error applyWALRecord(int64_t lsn, string_view nsName, std::shared_ptr<Namespace> ns, const WALRecord &wrec, SyncStat &stat);
 	// Apply single cjson item

@@ -11,7 +11,7 @@ using std::vector;
 
 class UpdateSortedContext {
 public:
-	virtual ~UpdateSortedContext(){};
+	virtual ~UpdateSortedContext() {}
 	virtual int getSortedIdxCount() const = 0;
 	virtual SortType getCurSortId() const = 0;
 	virtual const vector<SortType>& ids2Sorts() const = 0;

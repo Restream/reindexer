@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vector>
 #include "idatastorage.h"
 #include "storagetype.h"
 

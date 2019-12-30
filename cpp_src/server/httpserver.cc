@@ -1074,7 +1074,8 @@ int HTTPServer::CheckAuth(http::Context &ctx) {
 		return -1;
 	}
 
-	char *credBuf = reinterpret_cast<char *>(alloca(authHeader.length()));
+	h_vector<char, 128> credVec(authHeader.length());
+	char *credBuf = &credVec.front();
 	Base64decode(credBuf, authHeader.data() + 6);
 	char *password = strchr(credBuf, ':');
 	if (password != nullptr) *password++ = 0;

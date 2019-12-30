@@ -1,5 +1,6 @@
 #include "resultserializer.h"
 #include "core/cjson/tagsmatcher.h"
+#include "core/queryresults/joinresults.h"
 #include "core/queryresults/queryresults.h"
 #include "tools/logger.h"
 
@@ -129,7 +130,7 @@ bool WrResultSerializer::PutResults(const QueryResults* result) {
 	if (result->getMergedNSCount() > 1) opts_.flags |= kResultsWithNsID;
 
 	// Result has joined items, so pass them to client within items from main NS
-	if (result->joined_.size() > 0) opts_.flags |= kResultsWithJoined;
+	if (result->joined_->size() > 0) opts_.flags |= kResultsWithJoined;
 
 	if (result->haveProcent) opts_.flags |= kResultsWithPercents;
 	// If data is not cacheable, just do not pass item's ID and LSN. Clients should not cache this data
@@ -146,12 +147,12 @@ bool WrResultSerializer::PutResults(const QueryResults* result) {
 
 		if (opts_.flags & kResultsWithJoined) {
 			auto rowIt = result->begin() + (i + opts_.fetchOffset);
-			joins::ItemIterator jIt = rowIt.GetJoinedItemsIterator();
+			auto jIt = joins::ItemIterator::FromQRIterator(rowIt);
 			PutVarUint(jIt.getJoinedItemsCount() > 0 ? jIt.getJoinedFieldsCount() : 0);
 			if (jIt.getJoinedItemsCount() > 0) {
-				size_t joinedField = rowIt.qr_->joined_.size();
+				size_t joinedField = rowIt.qr_->joined_->size();
 				for (size_t ns = 0; ns < rowIt.GetItemRef().Nsid(); ++ns) {
-					joinedField += rowIt.qr_->joined_[ns].GetJoinedSelectorsCount();
+					joinedField += (*rowIt.qr_->joined_)[ns].GetJoinedSelectorsCount();
 				}
 				for (auto it = jIt.begin(); it != jIt.end(); ++it, ++joinedField) {
 					PutVarUint(it.ItemsCount());

@@ -10,6 +10,7 @@
 #include "core/query/sql/sqlsuggester.h"
 #include "core/selectfunc/selectfunc.h"
 #include "estl/contexted_locks.h"
+#include "queryresults/joinresults.h"
 #include "replicator/replicator.h"
 #include "tools/errors.h"
 #include "tools/fsops.h"
@@ -632,7 +633,7 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 		mainNs = getNamespace(q._namespace, rdxCtx);
 
 		ProfilingConfigData profilingCfg = configProvider_.GetProfilingConfig();
-		PerfStatCalculatorMT calc(mainNs->selectPerfCounter_, mainNs->enablePerfCounters_);  // todo more accurate detect joined queries
+		PerfStatCalculatorMT calc(mainNs->selectPerfCounter_, mainNs->enablePerfCounters_);	 // todo more accurate detect joined queries
 		auto& tracker = queriesStatTracker_;
 		if (profilingCfg.queriesPerfStats) {
 			q.GetSQL(normolizedSQL, true);
@@ -666,7 +667,7 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 		statCalculator.LockHit();
 		SelectFunctionsHolder func;
 		if (!q.joinQueries_.empty()) {
-			result.joined_.resize(1 + q.mergeQueries_.size());
+			result.joined_->resize(1 + q.mergeQueries_.size());
 		}
 
 		doSelect(q, result, locks, func, rdxCtx);
@@ -767,7 +768,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 			jItemQ.entries.ForEachValue([&jns](QueryEntry& qe) {
 				if (jns->indexes_[qe.idxNo]->Opts().IsSparse()) qe.idxNo = IndexValueType::SetByJsonPath;
 			});
-			if (!preResult->values.Locked()) preResult->values.Lock();  // If not from cache
+			if (!preResult->values.Locked()) preResult->values.Lock();	// If not from cache
 			locks.Delete(jns);
 			jns.reset();
 		}
@@ -873,6 +874,12 @@ Namespace::Ptr ReindexerImpl::getNamespace(string_view nsName, const RdxContext&
 
 	assert(nsIt->second);
 	return nsIt->second;
+}
+
+Namespace::Ptr ReindexerImpl::getNamespaceNoThrow(string_view nsName, const RdxContext& ctx) {
+	SLock lock(mtx_, &ctx);
+	auto nsIt = namespaces_.find(nsName);
+	return (nsIt == namespaces_.end()) ? nullptr : nsIt->second;
 }
 
 Error ReindexerImpl::AddIndex(string_view nsName, const IndexDef& indexDef, const InternalRdxContext& ctx) {

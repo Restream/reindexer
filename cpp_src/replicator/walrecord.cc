@@ -29,6 +29,7 @@ void PackedWALRecord::Pack(const WALRecord &rec) {
 			ser.PutVarUint(rec.itemModify.tmVersion);
 			break;
 		case WalEmpty:
+			return;
 		case WalNamespaceAdd:
 		case WalNamespaceDrop:
 			break;

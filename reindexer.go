@@ -161,7 +161,7 @@ func NewReindex(dsn string, options ...interface{}) *Reindexer {
 
 // Status will return current db status
 func (db *Reindexer) Status() bindings.Status {
-	return db.impl.getStatus()
+	return db.impl.getStatus(db.ctx)
 }
 
 // SetLogger sets logger interface for output reindexer logs

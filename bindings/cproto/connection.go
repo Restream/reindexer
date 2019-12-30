@@ -68,13 +68,12 @@ const (
 )
 
 type requestInfo struct {
-	seqNum    uint32
-	repl      sig
-	deadline  uint32
-	timeoutCh chan uint32
-	isAsync   int32
-	cmpl      bindings.RawCompletion
-	cmplLock  sync.Mutex
+	seqNum   uint32
+	repl     sig
+	deadline uint32
+	isAsync  int32
+	cmpl     bindings.RawCompletion
+	cmplLock sync.Mutex
 }
 
 type connection struct {
@@ -100,7 +99,7 @@ type connection struct {
 	requests [queueSize]requestInfo
 }
 
-func newConnection(owner *NetCProto) (c *connection, err error) {
+func newConnection(ctx context.Context, owner *NetCProto) (c *connection, err error) {
 	c = &connection{
 		owner:  owner,
 		wrBuf:  bytes.NewBuffer(make([]byte, 0, bufsCap)),
@@ -113,27 +112,21 @@ func newConnection(owner *NetCProto) (c *connection, err error) {
 	for i := 0; i < queueSize; i++ {
 		c.seqs <- uint32(i)
 		c.requests[i].repl = make(sig)
-		c.requests[i].timeoutCh = make(chan uint32)
 	}
 
 	go c.deadlineTicker()
 
-	loginTimeout := uint32(owner.timeouts.LoginTimeout / time.Second)
-	if err = c.connect(loginTimeout); err != nil {
+	intCtx, cancel := applyTimeout(ctx, uint32(owner.timeouts.LoginTimeout/time.Second))
+	if cancel != nil {
+		defer cancel()
+	}
+
+	if err = c.connect(intCtx); err != nil {
 		c.onError(err)
 		return
 	}
 
-	if loginTimeout != 0 {
-		if loginTimeout > atomic.LoadUint32(&c.now) {
-			loginTimeout = loginTimeout - atomic.LoadUint32(&c.now)
-		} else {
-			c.onError(bindings.NewError("Connect timeout", bindings.ErrTimeout))
-			return
-		}
-	}
-
-	if err = c.login(owner, loginTimeout); err != nil {
+	if err = c.login(intCtx, owner); err != nil {
 		c.onError(err)
 		return
 	}
@@ -177,29 +170,20 @@ func (c *connection) deadlineTicker() {
 						atomic.StoreInt32(&c.requests[i].isAsync, 0)
 						c.requests[i].cmplLock.Unlock()
 						c.seqs <- nextSeqNum(seqNum)
-						cmpl(nil, bindings.NewError("Async request timeout", bindings.ErrTimeout))
+						cmpl(nil, context.DeadlineExceeded)
 					} else {
 						c.requests[i].cmplLock.Unlock()
 					}
-				} else {
-					timeoutCh := c.requests[i].timeoutCh
-					timeoutCh <- seqNum
 				}
 			}
 		}
 	}
 }
 
-func (c *connection) connect(timeout uint32) (err error) {
-	if timeout == 0 {
-		c.conn, err = net.Dial("tcp", c.owner.url.Host)
-	} else {
-		c.conn, err = net.DialTimeout("tcp", c.owner.url.Host, time.Duration(timeout)*time.Second)
-	}
+func (c *connection) connect(ctx context.Context) (err error) {
+	var d net.Dialer
+	c.conn, err = d.DialContext(ctx, "tcp", c.owner.url.Host)
 	if err != nil {
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			return bindings.NewError("Connect timeout", bindings.ErrTimeout)
-		}
 		return err
 	}
 	c.conn.(*net.TCPConn).SetNoDelay(true)
@@ -210,7 +194,7 @@ func (c *connection) connect(timeout uint32) (err error) {
 	return
 }
 
-func (c *connection) login(owner *NetCProto, timeout uint32) (err error) {
+func (c *connection) login(ctx context.Context, owner *NetCProto) (err error) {
 	password, username, path := "", "", owner.url.Path
 	if owner.url.User != nil {
 		username = owner.url.User.Username()
@@ -220,13 +204,9 @@ func (c *connection) login(owner *NetCProto, timeout uint32) (err error) {
 		path = path[1:]
 	}
 
-	buf, err := c.rpcCall(context.TODO(), cmdLogin, timeout, username, password, path, c.owner.connectOpts.CreateDBIfMissing)
+	buf, err := c.rpcCall(ctx, cmdLogin, 0, username, password, path, c.owner.connectOpts.CreateDBIfMissing)
 	if err != nil {
-		if rdxError, ok := err.(bindings.Error); ok && rdxError.Code() == bindings.ErrTimeout {
-			c.err = bindings.NewError("Login timeout", bindings.ErrTimeout)
-		} else {
-			c.err = err
-		}
+		c.err = err
 		return
 	}
 	defer buf.Free()
@@ -399,13 +379,25 @@ func (c *connection) awaitSeqNum(ctx context.Context) (seq uint32, remainingTime
 	return
 }
 
+func applyTimeout(ctx context.Context, timeout uint32) (context.Context, context.CancelFunc) {
+	if timeout == 0 {
+		return ctx, nil
+	}
+	return context.WithTimeout(ctx, time.Second*time.Duration(timeout))
+}
+
 func (c *connection) rpcCallAsync(ctx context.Context, cmd int, netTimeout uint32, cmpl bindings.RawCompletion, args ...interface{}) {
 	if err := c.curError(); err != nil {
 		cmpl(nil, err)
 		return
 	}
 
-	seq, execTimeout, err := c.awaitSeqNum(ctx)
+	intCtx, cancel := applyTimeout(ctx, netTimeout)
+	if cancel != nil {
+		defer cancel()
+	}
+
+	seq, timeout, err := c.awaitSeqNum(intCtx)
 	if err != nil {
 		cmpl(nil, err)
 		return
@@ -417,30 +409,30 @@ func (c *connection) rpcCallAsync(ctx context.Context, cmd int, netTimeout uint3
 	atomic.StoreUint32(&c.requests[reqID].seqNum, seq)
 	c.requests[reqID].cmplLock.Unlock()
 
-	if netTimeout != 0 {
-		atomic.StoreUint32(&c.requests[reqID].deadline, atomic.LoadUint32(&c.now)+netTimeout)
+	if timeout != 0 {
+		atomic.StoreUint32(&c.requests[reqID].deadline, atomic.LoadUint32(&c.now)+uint32(timeout))
 	}
 
-	c.packRPC(cmd, seq, execTimeout, args...)
+	c.packRPC(cmd, seq, timeout, args...)
 
 	return
 }
 
 func (c *connection) rpcCall(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) (buf *NetBuffer, err error) {
-	seq, execTimeout, err := c.awaitSeqNum(ctx)
+	intCtx, cancel := applyTimeout(ctx, netTimeout)
+	if cancel != nil {
+		defer cancel()
+	}
+	seq, timeout, err := c.awaitSeqNum(intCtx)
 	if err != nil {
 		return nil, err
 	}
 
 	reqID := seq % queueSize
 	reply := c.requests[reqID].repl
-	timeoutCh := c.requests[reqID].timeoutCh
 
-	if netTimeout != 0 {
-		atomic.StoreUint32(&c.requests[reqID].deadline, atomic.LoadUint32(&c.now)+netTimeout)
-	}
 	atomic.StoreUint32(&c.requests[reqID].seqNum, seq)
-	c.packRPC(cmd, seq, execTimeout, args...)
+	c.packRPC(cmd, seq, timeout, args...)
 
 for_loop:
 	for {
@@ -457,14 +449,20 @@ for_loop:
 			err = c.err
 			c.lock.RUnlock()
 			break for_loop
-		case timeoutSeq := <-timeoutCh:
-			if timeoutSeq == seq {
-				err = bindings.NewError("Request timeout", bindings.ErrTimeout)
-				break for_loop
-			}
+		case <-intCtx.Done():
+			err = intCtx.Err()
+			break for_loop
 		}
 	}
+
 	atomic.StoreUint32(&c.requests[reqID].seqNum, maxSeqNum)
+
+	select {
+	case bufPtr := <-reply:
+		bufPtr.buf.Free()
+	default:
+	}
+
 	c.seqs <- nextSeqNum(seq)
 	if err != nil {
 		return

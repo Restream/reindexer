@@ -177,7 +177,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 			Variant authorIdKeyRef1 = item[authorid];
 			const reindexer::ItemRef& rowid = rowIt.GetItemRef();
 
-			auto itemIt = rowIt.GetJoinedItemsIterator();
+			auto itemIt = reindexer::joins::ItemIterator::FromQRIterator(rowIt);
 			if (itemIt.getJoinedItemsCount() == 0) continue;
 			for (auto joinedFieldIt = itemIt.begin(); joinedFieldIt != itemIt.end(); ++joinedFieldIt) {
 				reindexer::ItemImpl item2(joinedFieldIt.GetItem(0, joinQueryRes.getPayloadType(1), joinQueryRes.getTagsMatcher(1)));
@@ -192,7 +192,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 
 		for (auto rowIt : joinQueryRes) {
 			IdType rowid = rowIt.GetItemRef().Id();
-			auto itemIt = rowIt.GetJoinedItemsIterator();
+			auto itemIt = reindexer::joins::ItemIterator::FromQRIterator(rowIt);
 			if (itemIt.getJoinedItemsCount() == 0) continue;
 			auto joinedFieldIt = itemIt.begin();
 			for (int i = 0; i < joinedFieldIt.ItemsCount(); ++i) {
@@ -237,7 +237,7 @@ TEST_F(JoinSelectsApi, OrInnerJoinTest) {
 	if (err.ok()) {
 		for (auto rowIt : queryRes) {
 			Item item(rowIt.GetItem());
-			reindexer::joins::ItemIterator itemIt = rowIt.GetJoinedItemsIterator();
+			auto itemIt = reindexer::joins::ItemIterator::FromQRIterator(rowIt);
 
 			reindexer::joins::JoinedFieldIterator authorIdIt = itemIt.at(authorsNsJoinIndex);
 			Variant authorIdKeyRef1 = item[authorid_fk];
@@ -288,7 +288,7 @@ TEST_F(JoinSelectsApi, JoinTestSorting) {
 			}
 
 			Variant key = item[authorid];
-			auto itemIt = rowIt.GetJoinedItemsIterator();
+			auto itemIt = reindexer::joins::ItemIterator::FromQRIterator(rowIt);
 			if (itemIt.getJoinedItemsCount() == 0) continue;
 			auto joinedFieldIt = itemIt.begin();
 

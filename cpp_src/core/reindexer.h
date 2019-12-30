@@ -4,7 +4,7 @@
 #include "core/query/query.h"
 #include "core/queryresults/queryresults.h"
 #include "core/rdxcontext.h"
-#include "transaction.h"
+#include "core/transaction.h"
 
 #include <chrono>
 

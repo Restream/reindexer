@@ -4,8 +4,11 @@
 #include "core/type_consts.h"
 #include "estl/intrusive_ptr.h"
 #include "estl/string_view.h"
+
+#ifdef REINDEX_CORE_BUILD
 #include "spdlog/fmt/bundled/printf.h"
 #include "spdlog/fmt/fmt.h"
+#endif	// REINDEX_CORE_BUILD
 
 namespace reindexer {
 
@@ -13,8 +16,10 @@ class Error {
 public:
 	Error(int code = errOK);
 	Error(int code, string_view what);
+#ifdef REINDEX_CORE_BUILD
 	template <typename... Args>
 	Error(int code, const char *fmt, const Args &... args) : Error(code, fmt::sprintf(fmt, args...)) {}
+#endif	// REINDEX_CORE_BUILD
 
 	const string &what() const;
 	int code() const;
@@ -31,7 +36,7 @@ protected:
 	intrusive_ptr<intrusive_atomic_rc_wrapper<payload>> ptr_;
 };
 
-#ifdef NDEBUG
+#if defined(NDEBUG) || !defined(REINDEX_CORE_BUILD)
 #define assertf(...) ((void)0)
 #else
 template <typename... Args>

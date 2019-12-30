@@ -107,7 +107,7 @@ h_vector<string_view, 1> QueryResults::GetNamespaces() const {
 	return ret;
 }
 
-const TagsMatcher &QueryResults::getTagsMatcher(int nsid) const { return nsArray_[nsid]->tagsMatcher_; };
+const TagsMatcher &QueryResults::getTagsMatcher(int nsid) const { return nsArray_[nsid]->tagsMatcher_; }
 
 Error QueryResults::Iterator::GetJSON(WrSerializer &wrser, bool withHdrLen) {
 	readNext();

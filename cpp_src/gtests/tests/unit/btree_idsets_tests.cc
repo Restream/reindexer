@@ -3,6 +3,7 @@
 #include "core/index/string_map.h"
 #include "core/indexopts.h"
 #include "core/nsselecter/btreeindexiterator.h"
+#include "core/queryresults/joinresults.h"
 
 TEST_F(BtreeIdsetsApi, SelectByStringField) {
 	QueryResults qr;
@@ -104,7 +105,7 @@ TEST_F(BtreeIdsetsApi, JoinSimpleNs) {
 		prevFieldTwo = currFieldTwo;
 
 		Variant prevJoinedFk;
-		auto itemIt = qr[i].GetJoinedItemsIterator();
+		auto itemIt = reindexer::joins::ItemIterator::FromQRIterator(qr[i]);
 		reindexer::joins::JoinedFieldIterator joinedFieldIt = itemIt.begin();
 		EXPECT_TRUE(joinedFieldIt.ItemsCount() > 0);
 		for (int j = 0; j < joinedFieldIt.ItemsCount(); ++j) {

@@ -535,7 +535,7 @@ func (binding *Builtin) Finalize() error {
 	return binding.ctxWatcher.Finalize()
 }
 
-func (binding *Builtin) Status() (status bindings.Status) {
+func (binding *Builtin) Status(ctx context.Context) (status bindings.Status) {
 	status = bindings.Status{
 		Builtin: bindings.StatusBuiltin{
 			CGOLimit: cap(binding.cgoLimiter),

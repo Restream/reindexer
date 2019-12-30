@@ -2,6 +2,7 @@
 #include "core/namespace.h"
 #include "explaincalc.h"
 #include "querypreprocessor.h"
+#include "tools/logger.h"
 
 constexpr int kMinIterationsForInnerJoinOptimization = 100;
 constexpr int kMaxIterationsForIdsetPreresult = 10000;

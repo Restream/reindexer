@@ -87,8 +87,8 @@ func newReindexImpl(dsn string, options ...interface{}) *reindexerImpl {
 }
 
 // getStatus will return current db status
-func (db *reindexerImpl) getStatus() bindings.Status {
-	status := db.binding.Status()
+func (db *reindexerImpl) getStatus(ctx context.Context) bindings.Status {
+	status := db.binding.Status(ctx)
 	status.Err = db.status
 	return status
 }

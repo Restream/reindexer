@@ -32,7 +32,8 @@ public:
 		: dbNoCtx_(args...),
 		  db_(dbNoCtx_.WithContext(&cancelCtx_)),
 		  output_(outFileName),
-		  fileName_(inFileName),
+		  outFileName_(outFileName),
+		  inFileName_(inFileName),
 		  command_(command),
 		  connPoolSize_(connPoolSize),
 		  numThreads_(numThreads) {
@@ -186,7 +187,8 @@ protected:
 	reindexer::CancelContextImpl cancelCtx_;
 	DBInterface db_;
 	Output output_;
-	string fileName_;
+	string outFileName_;
+	string inFileName_;
 	string command_;
 	int connPoolSize_;
 	int numThreads_;

@@ -95,7 +95,7 @@ void Namespace::CopyContentsFrom(const Namespace &src) {
 	tagsMatcher_ = src.tagsMatcher_;
 	storage_ = src.storage_;
 	updates_ = src.updates_;
-	unflushedCount_.store(src.unflushedCount_.load(std::memory_order_acquire), std::memory_order_release);	// 0
+	unflushedCount_.store(src.unflushedCount_.load(std::memory_order_acquire), std::memory_order_release);  // 0
 	sortOrdersBuilt_ = src.sortOrdersBuilt_.load();															// false
 	meta_ = src.meta_;
 	dbpath_ = src.dbpath_;
@@ -879,14 +879,6 @@ void Namespace::SetSlaveReplStatus(ReplicationState::Status status, const Error 
 	unflushedCount_.fetch_add(1, std::memory_order_release);
 }
 
-void Namespace::SetSlaveReplStatus(ReplicationState::Status status, const RdxContext &ctx) {
-	WLock lck(mtx_, &ctx);
-	assert(repl_.slaveMode);
-	repl_.replError = errOK;
-	repl_.status = status;
-	unflushedCount_.fetch_add(1, std::memory_order_release);
-}
-
 void Namespace::SetSlaveReplMasterState(MasterState state, const RdxContext &ctx) {
 	WLock lck(mtx_, &ctx);
 	assert(repl_.slaveMode);
@@ -903,7 +895,7 @@ void Namespace::CommitTransaction(Transaction &tx, const RdxContext &ctx) {
 	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
 	cancelCommit_ = true;  // -V519
 	WLock lck(mtx_, &ctx);
-	cancelCommit_ = false;	// -V519
+	cancelCommit_ = false;  // -V519
 	calc.LockHit();
 
 	RdxActivityContext *const actCtx = ctx.Activity();
@@ -1009,7 +1001,7 @@ void Namespace::ReplaceTagsMatcher(const TagsMatcher &tm, const RdxContext &ctx)
 	assert(!items_.size() && repl_.slaveMode);
 	cancelCommit_ = true;
 	WLock lck(mtx_, &ctx);
-	cancelCommit_ = false;	// -V519
+	cancelCommit_ = false;  // -V519
 	tagsMatcher_ = tm;
 	tagsMatcher_.UpdatePayloadType(payloadType_);
 }
@@ -1180,7 +1172,7 @@ void Namespace::modifyItem(Item &item, const RdxContext &ctx, bool store, int mo
 	if (!noLock) {
 		cancelCommit_ = true;  // -V519
 		lock.lock();
-		cancelCommit_ = false;	// -V519
+		cancelCommit_ = false;  // -V519
 	}
 	calc.LockHit();
 
@@ -1358,6 +1350,7 @@ IndexDef Namespace::getIndexDefinition(size_t i) const {
 	indexDef.name_ = index.Name();
 	indexDef.opts_ = index.Opts();
 	indexDef.FromType(index.Type());
+	indexDef.expireAfter_ = index.GetTTLValue();
 
 	if (index.Opts().IsSparse() || static_cast<int>(i) >= payloadType_.NumFields()) {
 		int fIdx = 0;
@@ -1615,8 +1608,9 @@ void Namespace::EnableStorage(const string &path, StorageOpts opts, StorageType 
 	bool success = false;
 	while (!success) {
 		if (!opts.IsCreateIfMissing() && fs::Stat(dbpath) != fs::StatDir) {
-			throw Error(errLogic, "Storage directory doesn't exist for namespace '%s' on path '%s' and CreateIfMissing option is not set",
-						name_, path);
+			throw Error(errNotFound,
+						"Storage directory doesn't exist for namespace '%s' on path '%s' and CreateIfMissing option is not set", name_,
+						path);
 		}
 		storage_.reset(datastorage::StorageFactory::create(storageType));
 		Error status = storage_->Open(dbpath, opts);

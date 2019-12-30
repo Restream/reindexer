@@ -69,6 +69,7 @@ void Connection<Mutex>::closeConn() {
 	timeout_.stop();
 	async_.stop();
 	onClose();
+	closeConn_ = false;
 }
 
 // Generic callback

@@ -186,7 +186,7 @@ type RawBinding interface {
 	DisableLogger()
 	Ping(ctx context.Context) error
 	Finalize() error
-	Status() Status
+	Status(ctx context.Context) Status
 }
 
 type RawBindingChanging interface {

@@ -123,10 +123,15 @@ public:
 	}
 	FTApi() {}
 
-private:
+protected:
 	struct Data {
 		std::string ft1;
 		std::string ft2;
+	};
+	struct FTDSLQueryParams {
+		reindexer::fast_hash_map<string, int> fields;
+		reindexer::fast_hash_set<string, reindexer::hash_str, reindexer::equal_str> stopWords;
+		string extraWordSymbols = "-/+";
 	};
 	int counter_ = 0;
 };

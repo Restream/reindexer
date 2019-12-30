@@ -1,10 +1,11 @@
 #pragma once
 
-#include <estl/fast_hash_map.h>
 #include <vector>
 #include "core/indexopts.h"
 #include "core/itemimpl.h"
+#include "estl/fast_hash_map.h"
 #include "itemref.h"
+#include "queryresults.h"
 
 namespace reindexer {
 
@@ -64,7 +65,7 @@ private:
 };
 
 /// Results of joining all the namespaces (in case of merge queries)
-using Results = h_vector<NamespaceResults, 0>;
+class Results : public h_vector<NamespaceResults, 0> {};
 
 /// Joined field iterator for Item
 /// of left Namespace (main ns).
@@ -108,6 +109,8 @@ public:
 
 	int getJoinedFieldsCount() const;
 	int getJoinedItemsCount() const;
+
+	static ItemIterator FromQRIterator(QueryResults::Iterator it);
 
 private:
 	const NamespaceResults* joinRes_;

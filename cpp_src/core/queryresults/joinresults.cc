@@ -116,6 +116,14 @@ int ItemIterator::getJoinedItemsCount() const {
 	return joinedItemsCount_;
 }
 
+ItemIterator ItemIterator::FromQRIterator(QueryResults::Iterator it) {
+	static NamespaceResults empty;
+	static ItemIterator ret(&empty, 0);
+	auto& itemRef = it.qr_->Items()[it.idx_];
+	if (itemRef.Nsid() >= it.qr_->joined_->size()) return ret;
+	return ItemIterator(&((*it.qr_->joined_)[itemRef.Nsid()]), itemRef.Id());
+}
+
 ItemOffset::ItemOffset() : field(0), offset(0), size(0) {}
 ItemOffset::ItemOffset(size_t f, int o, int s) : field(uint8_t(f)), offset(o), size(s) {}
 bool ItemOffset::operator==(const ItemOffset& other) const {

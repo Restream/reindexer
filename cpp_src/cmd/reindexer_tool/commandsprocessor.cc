@@ -122,7 +122,7 @@ Error CommandsProcessor<DBInterface>::commandSelect(const string& command) {
 			if (outputType == kOutputModeTable) {
 				auto isCanceled = [this]() -> bool { return cancelCtx_.IsCancelled(); };
 				reindexer::TableViewBuilder<typename DBInterface::QueryResultsT> tableResultsBuilder(results);
-				if (fileName_.empty()) {
+				if (outFileName_.empty() && !reindexer::isStdoutRedirected()) {
 					TableViewScroller<typename DBInterface::QueryResultsT> resultsScroller(results, tableResultsBuilder,
 																						   reindexer::getTerminalSize().height - 1);
 					resultsScroller.Scroll(output_, isCanceled);
@@ -556,7 +556,7 @@ Error CommandsProcessor<DBInterface>::queryResultsToJson(ostream& o, const typen
 	if (cancelCtx_.IsCancelled()) return errOK;
 	WrSerializer ser;
 	size_t i = 0;
-	bool scrollable = fileName_.empty();
+	bool scrollable = outFileName_.empty() && !reindexer::isStdoutRedirected();
 	reindexer::TerminalSize terminalSize;
 	if (scrollable) {
 		terminalSize = reindexer::getTerminalSize();
@@ -675,7 +675,7 @@ void CommandsProcessor<DBInterface>::addCommandsSuggestions(std::string const& c
 		for (const commandDefinition& cmdDef : cmds_) {
 			if (token.empty() || reindexer::isBlank(token) ||
 				((token.length() < cmdDef.command.length()) && reindexer::checkIfStartsWith(token, cmdDef.command))) {
-				suggestions.emplace_back(cmdDef.command);
+				suggestions.emplace_back(cmdDef.command[0] == '\\' ? cmdDef.command.substr(1) : cmdDef.command);
 			}
 		}
 	}
@@ -686,7 +686,7 @@ template <typename T>
 void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_completion_callback)(new_v_callback_t const&)) {
 	(rx.*set_completion_callback)([this](std::string const& input, int) -> replxx::Replxx::completions_t {
 		std::vector<string> completions;
-		db_.GetSqlSuggestions(input, input.empty() ? 0 : input.length() - 1, completions);
+		if (!input.empty() && input[0] != '\\') db_.GetSqlSuggestions(input, input.length() - 1, completions);
 		if (completions.empty()) {
 			addCommandsSuggestions(input, completions);
 		}
@@ -702,7 +702,7 @@ void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_
 	(rx.*set_completion_callback)(
 		[this](std::string const& input, int, void*) -> replxx::Replxx::completions_t {
 			std::vector<string> completions;
-			db_.GetSqlSuggestions(input, input.empty() ? 0 : input.length() - 1, completions);
+			if (!input.empty() && input[0] != '\\') db_.GetSqlSuggestions(input, input.length() - 1, completions);
 			if (completions.empty()) {
 				addCommandsSuggestions(input, completions);
 			}
@@ -766,9 +766,9 @@ bool CommandsProcessor<DBInterface>::Interactive() {
 template <typename DBInterface>
 bool CommandsProcessor<DBInterface>::FromFile() {
 	bool wasError = false;
-	std::ifstream infile(fileName_);
+	std::ifstream infile(inFileName_);
 	if (!infile) {
-		std::cerr << "ERROR: Can't open " << fileName_ << std::endl;
+		std::cerr << "ERROR: Can't open " << inFileName_ << std::endl;
 		return false;
 	}
 
@@ -799,7 +799,7 @@ bool CommandsProcessor<DBInterface>::Run() {
 		}
 		return true;
 	}
-	if (!fileName_.empty()) {
+	if (!inFileName_.empty()) {
 		return FromFile();
 	} else {
 		return Interactive();
@@ -853,6 +853,7 @@ Error CommandsProcessor<reindexer::client::Reindexer>::commandProcessDatabases(c
 		Error err = stop();
 		if (!err.ok()) return err;
 		err = db_.Connect(currentDsn);
+		if (err.ok()) err = db_.Status();
 		if (err.ok()) std::cout << "Succesfully connected to " << currentDsn << std::endl;
 		return err;
 	} else if (subCommand == "create") {

@@ -1,5 +1,6 @@
 #include "queryentry.h"
 #include <stdlib.h>
+#include "core/payload/payloadiface.h"
 #include "query.h"
 #include "tools/serializer.h"
 #include "tools/string_regexp_functions.h"
@@ -48,6 +49,10 @@ template std::pair<unsigned, EqualPosition> QueryEntries::DetermineEqualPosition
 	const h_vector<string, 4> &) const;
 template std::pair<unsigned, EqualPosition> QueryEntries::DetermineEqualPositionIndexes<std::initializer_list<string>>(
 	const std::initializer_list<string> &) const;
+
+bool QueryEntries::CheckIfSatisfyConditions(const ConstPayload &pl, TagsMatcher &tm) const {
+	return checkIfSatisfyConditions(cbegin(), cend(), pl, tm);
+}
 
 void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer &ser) {
 	for (; it != to; ++it) {

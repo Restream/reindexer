@@ -40,6 +40,31 @@ Variant::Variant(const VariantArray &values) {
 	hold_ = true;
 }
 
+inline static void assertKeyType(KeyValueType got, KeyValueType exp) {
+	(void)got, (void)exp;
+	assertf(exp == got, "Expected value '%s', but got '%s'", Variant::TypeName(exp), Variant::TypeName(got));
+}
+
+Variant::operator int() const {
+	assertKeyType(type_, KeyValueInt);
+	return value_int;
+}
+
+Variant::operator bool() const {
+	assertKeyType(type_, KeyValueBool);
+	return value_bool;
+}
+
+Variant::operator int64_t() const {
+	assertKeyType(type_, KeyValueInt64);
+	return value_int64;
+}
+
+Variant::operator double() const {
+	assertKeyType(type_, KeyValueDouble);
+	return value_double;
+}
+
 void Variant::free() {
 	assert(hold_);
 	switch (type_) {

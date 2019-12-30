@@ -4,6 +4,7 @@
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
 #include "tools/errors.h"
+
 namespace reindexer {
 
 class WrSerializer;
@@ -63,28 +64,10 @@ public:
 		return *this;
 	}
 
-	inline static void assertKeyType(KeyValueType got, KeyValueType exp) {
-		(void)got, (void)exp;
-		assertf(exp == got, "Expected value '%s', but got '%s'", TypeName(exp), TypeName(got));
-	}
-
-	explicit operator int() const {
-		assertKeyType(type_, KeyValueInt);
-		return value_int;
-	}
-	explicit operator bool() const {
-		assertKeyType(type_, KeyValueBool);
-		return value_bool;
-	}
-
-	explicit operator int64_t() const {
-		assertKeyType(type_, KeyValueInt64);
-		return value_int64;
-	}
-	explicit operator double() const {
-		assertKeyType(type_, KeyValueDouble);
-		return value_double;
-	}
+	explicit operator int() const;
+	explicit operator bool() const;
+	explicit operator int64_t() const;
+	explicit operator double() const;
 
 	explicit operator p_string() const;
 	explicit operator string_view() const;
