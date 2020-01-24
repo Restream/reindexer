@@ -774,7 +774,7 @@ static int r_standard_suffix(struct SN_env * z) {
             }
             {   int m_keep = z->l - z->c;/* (void) m_keep;*/ /* try, line 130 */
                 z->ket = z->c; /* [, line 131 */
-                if (z->c - 1 <= z->lb || z->p[z->c - 1] >> 5 != 3 || !((4198408 >> (z->p[z->c - 1] & 0x1f)) & 1)) { z->c = z->l - m_keep; goto lab6; }
+                if (z->c - 1 <= z->lb || z->p[z->c - 1] >> 5 != 3 || !((4198408 >> (z->p[z->c - 1] & 0x1f)) & 1)) { z->c = z->l - m_keep; goto lab6; }  // -V1048
                 among_var = find_among_b(z, a_3, 3); /* substring, line 131 */
                 if (!(among_var)) { z->c = z->l - m_keep; goto lab6; }
                 z->bra = z->c; /* ], line 131 */

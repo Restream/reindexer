@@ -15,6 +15,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 	CheckSqlQueries();
 	CheckCompositeIndexesQueries();
 	CheckComparatorsQueries();
+	CheckDistinctQueries();
 
 	int itemsCount = 0;
 	InsertedItemsByPk& items = insertedItems[default_namespace];
@@ -73,6 +74,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 	CheckSqlQueries();
 	CheckCompositeIndexesQueries();
 	CheckComparatorsQueries();
+	CheckDistinctQueries();
 }
 
 TEST_F(QueriesApi, TransactionStress) {
@@ -118,4 +120,48 @@ TEST_F(QueriesApi, QueriesSqlGenerate) {
 	check(
 		"SELECT ID FROM test_namespace WHERE name LIKE 'something' AND (genre IN ('1','2','3') AND year > '2016') OR age IN "
 		"('1','2','3','4') LIMIT 10000000");
+}
+
+std::vector<int> generateForcedSortOrder(int maxValue, size_t size) {
+	std::set<int> res;
+	while (res.size() < size) res.insert(rand() % maxValue);
+	return {res.cbegin(), res.cend()};
+}
+
+TEST_F(QueriesApi, ForcedSortOffsetTest) {
+	FillForcedSortNamespace();
+	for (size_t i = 0; i < 100; ++i) {
+		const auto forcedSortOrder =
+			generateForcedSortOrder(forcedSortOffsetMaxValue * 1.1, rand() % static_cast<int>(forcedSortOffsetNsSize * 1.1));
+		const size_t offset = rand() % static_cast<size_t>(forcedSortOffsetNsSize * 1.1);
+		const size_t limit = rand() % static_cast<size_t>(forcedSortOffsetNsSize * 1.1);
+		const bool desc = rand() % 2;
+		// Single column sort
+		auto expectedResults = ForcedSortOffsetTestExpectedResults(offset, limit, desc, forcedSortOrder, First);
+		ExecuteAndVerify(forcedSortOffsetNs,
+						 Query(forcedSortOffsetNs).Sort(kFieldNameColumnHash, desc, forcedSortOrder).Offset(offset).Limit(limit),
+						 kFieldNameColumnHash, expectedResults);
+		expectedResults = ForcedSortOffsetTestExpectedResults(offset, limit, desc, forcedSortOrder, Second);
+		ExecuteAndVerify(forcedSortOffsetNs,
+						 Query(forcedSortOffsetNs).Sort(kFieldNameColumnTree, desc, forcedSortOrder).Offset(offset).Limit(limit),
+						 kFieldNameColumnTree, expectedResults);
+		// Multicolumn sort
+		const bool desc2 = rand() % 2;
+		auto expectedResultsMult = ForcedSortOffsetTestExpectedResults(offset, limit, desc, desc2, forcedSortOrder, First);
+		ExecuteAndVerify(forcedSortOffsetNs,
+						 Query(forcedSortOffsetNs)
+							 .Sort(kFieldNameColumnHash, desc, forcedSortOrder)
+							 .Sort(kFieldNameColumnTree, desc2)
+							 .Offset(offset)
+							 .Limit(limit),
+						 kFieldNameColumnHash, expectedResultsMult.first, kFieldNameColumnTree, expectedResultsMult.second);
+		expectedResultsMult = ForcedSortOffsetTestExpectedResults(offset, limit, desc, desc2, forcedSortOrder, Second);
+		ExecuteAndVerify(forcedSortOffsetNs,
+						 Query(forcedSortOffsetNs)
+							 .Sort(kFieldNameColumnTree, desc2, forcedSortOrder)
+							 .Sort(kFieldNameColumnHash, desc)
+							 .Offset(offset)
+							 .Limit(limit),
+						 kFieldNameColumnHash, expectedResultsMult.first, kFieldNameColumnTree, expectedResultsMult.second);
+	}
 }

@@ -17,8 +17,6 @@ int SQLParser::Parse(const string_view &q) {
 bool SQLParser::reachedAutocompleteToken(tokenizer &parser, const token &tok) {
 	if (!ctx_.foundPossibleSuggestions) {
 		size_t pos = parser.pos() + tok.text().length();
-		if ((parser.pos() == 0) && (tok.text().length() > 0)) --pos;
-		if ((pos == 0) && (parser.length() == 0)) return true;
 		return (pos >= ctx_.suggestionsPos);
 	}
 	return false;
@@ -27,17 +25,8 @@ bool SQLParser::reachedAutocompleteToken(tokenizer &parser, const token &tok) {
 token SQLParser::peekSqlToken(tokenizer &parser, int tokenType, bool toLower) {
 	token tok = parser.peek_token(toLower);
 	bool eof = ((parser.pos() + tok.text().length()) == parser.length());
-	if (ctx_.autocompleteMode && ctx_.suggestions.empty() && reachedAutocompleteToken(parser, tok)) {
-		int tokenLength = 0;
-		if (eof) {
-			tokenLength = tok.text().length();
-		} else {
-			tokenLength = ctx_.suggestionsPos - parser.pos();
-			if (parser.pos() == 0) ++tokenLength;
-			if (ctx_.suggestionsPos == parser.pos()) tokenLength = 0;
-		}
-		if (tokenLength < 0) tokenLength = 0;
-		ctx_.suggestions.emplace_back(string(tok.text_.data(), tokenLength), tokenType);
+	if (ctx_.autocompleteMode && !tok.text().empty() && reachedAutocompleteToken(parser, tok)) {
+		ctx_.suggestions.emplace_back(string(tok.text_.data(), tok.text().length()), tokenType);
 		ctx_.foundPossibleSuggestions = true;
 		ctx_.possibleSuggestionDetectedInThisClause = true;
 	}
@@ -137,7 +126,7 @@ int SQLParser::selectParse(tokenizer &parser) {
 					if (!wasSelectFilter) query_.count = 0;
 				} else if (name.text() == "distinct"_sv) {
 					query_.Distinct(string(tok.text()));
-					if (!wasSelectFilter) query_.selectFilter_.push_back(string(tok.text()));
+					if (!wasSelectFilter) query_.selectFilter_.emplace_back(tok.text());
 				} else {
 					throw Error(errParams, "Unknown function name SQL - %s, %s", name.text(), parser.where());
 				}
@@ -190,7 +179,7 @@ int SQLParser::selectParse(tokenizer &parser) {
 			query_.start = stoi(tok.text());
 		} else if (tok.text() == "order"_sv) {
 			parser.next_token();
-			parseOrderBy(parser, query_.sortingEntries_, query_.forcedSortOrder);
+			parseOrderBy(parser, query_.sortingEntries_, query_.forcedSortOrder_);
 			ctx_.updateLinkedNs(query_._namespace);
 		} else if (tok.text() == "join"_sv) {
 			parser.next_token();
@@ -224,7 +213,7 @@ int SQLParser::selectParse(tokenizer &parser) {
 	return 0;
 }
 
-int SQLParser::parseOrderBy(tokenizer &parser, SortingEntries &sortingEntries, h_vector<Variant, 0> &forcedSortOrder) {
+int SQLParser::parseOrderBy(tokenizer &parser, SortingEntries &sortingEntries, h_vector<Variant, 0> &forcedSortOrder_) {
 	// Just skip token (BY)
 	peekSqlToken(parser, BySqlToken);
 	parser.next_token();
@@ -251,7 +240,7 @@ int SQLParser::parseOrderBy(tokenizer &parser, SortingEntries &sortingEntries, h
 				tok = peekSqlToken(parser, FieldNameSqlToken);
 				if (tok.type != TokenNumber && tok.type != TokenString)
 					throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text(), parser.where());
-				forcedSortOrder.push_back(Variant(string(tok.text())));
+				forcedSortOrder_.push_back(Variant(string(tok.text())));
 				parser.next_token();
 			}
 			tok = parser.peek_token();
@@ -301,7 +290,7 @@ int SQLParser::deleteParse(tokenizer &parser) {
 			query_.start = stoi(tok.text());
 		} else if (tok.text() == "order"_sv) {
 			parser.next_token();
-			parseOrderBy(parser, query_.sortingEntries_, query_.forcedSortOrder);
+			parseOrderBy(parser, query_.sortingEntries_, query_.forcedSortOrder_);
 			ctx_.updateLinkedNs(query_._namespace);
 		} else
 			break;
@@ -553,6 +542,11 @@ int SQLParser::parseWhere(tokenizer &parser) {
 		}
 
 		tok = parser.peek_token();
+		while (tok.text() == "equal_position"_sv) {
+			parseEqualPositions(parser);
+			tok = parser.peek_token();
+		}
+
 		while (openBracketCount > 0 && tok.text() == ")"_sv) {
 			query_.entries.CloseBracket();
 			--openBracketCount;
@@ -580,6 +574,46 @@ int SQLParser::parseWhere(tokenizer &parser) {
 		}
 	}
 	return 0;
+}
+
+void SQLParser::parseEqualPositions(tokenizer &parser) {
+	parser.next_token();
+	auto tok = parser.next_token();
+	if (tok.text() != "("_sv) {
+		throw Error(errParseSQL, "Expected '(', but found %s, %s", tok.text(), parser.where());
+	}
+	vector<string> fields;
+	for (;;) {
+		auto nameWithCase = peekSqlToken(parser, FieldNameSqlToken);
+		tok = parser.next_token(false);
+		if (tok.type != TokenName && tok.type != TokenString) {
+			throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
+		}
+		bool validField = false;
+		for (auto it = query_.entries.begin_this_bracket(); it != query_.entries.end(); ++it) {
+			if (it->IsLeaf()) {
+				if (nameWithCase.text() == it->Value().index) {
+					validField = true;
+					break;
+				}
+			}
+		}
+		if (!validField) {
+			throw Error(errParseSQL,
+						"Only fields that present in 'Where' condition are allowed to use in equal_position(), but found '%s' in query, %s",
+						nameWithCase.text(), parser.where());
+		}
+		fields.emplace_back(nameWithCase.text());
+		tok = parser.next_token(false);
+		if (tok.text() == ")"_sv) break;
+		if (tok.text() != ","_sv) {
+			throw Error(errParseSQL, "Expected ',', but found %s, %s", tok.text(), parser.where());
+		}
+	}
+	if (fields.size() < 2) {
+		throw Error(errLogic, "equal_position() is supposed to have at least 2 arguments");
+	}
+	query_.equalPositions_.emplace(query_.entries.DetermineEqualPositionIndexes(fields));
 }
 
 void SQLParser::parseJoin(JoinType type, tokenizer &parser) {

@@ -241,9 +241,7 @@ private:
 				case Query:
 					if (ch == '#') {
 						state = Fragment;
-					} else if (ch == '?') {
-						state = Query;
-					} else {
+					} else if (ch != '?') {
 						url.query += ch;
 					}
 					break;

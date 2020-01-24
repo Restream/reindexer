@@ -1,6 +1,95 @@
-# Reindexer REST API
+# Reindexer REST API \n
 
+<!-- toc -->
 
+- [Overview](#overview)
+  * [Version information](#version-information)
+  * [License information](#license-information)
+  * [URI scheme](#uri-scheme)
+  * [Tags](#tags)
+  * [Produces](#produces)
+- [Paths](#paths)
+  * [List available databases](#list-available-databases)
+  * [Create new database](#create-new-database)
+  * [Drop database](#drop-database)
+  * [List available namespaces](#list-available-namespaces)
+  * [Create namespace](#create-namespace)
+  * [Get namespace description](#get-namespace-description)
+  * [Drop namespace](#drop-namespace)
+  * [Truncate namespace](#truncate-namespace)
+  * [Get list of namespace's meta info](#get-list-of-namespaces-meta-info)
+  * [Get namespace's meta info by key](#get-namespaces-meta-info-by-key)
+  * [Put namespace's meta info with specified key and value](#put-namespaces-meta-info-with-specified-key-and-value)
+  * [Get documents from namespace](#get-documents-from-namespace)
+  * [Update documents in namespace](#update-documents-in-namespace)
+  * [Insert documents to namespace](#insert-documents-to-namespace)
+  * [Delete documents from namespace](#delete-documents-from-namespace)
+  * [List available indexes](#list-available-indexes)
+  * [Update index in namespace](#update-index-in-namespace)
+  * [Add new index to namespace](#add-new-index-to-namespace)
+  * [Drop index from namespace](#drop-index-from-namespace)
+  * [Query documents from namespace](#query-documents-from-namespace)
+  * [Query documents from namespace](#query-documents-from-namespace-1)
+  * [Delete documents from namespace](#delete-documents-from-namespace-1)
+  * [Suggest for autocompletion of SQL query](#suggest-for-autocompletion-of-sql-query)
+  * [Query documents from namespace](#query-documents-from-namespace-2)
+  * [Get system information](#get-system-information)
+  * [Get activity stats information](#get-activity-stats-information)
+  * [Get memory stats information](#get-memory-stats-information)
+  * [Get performance stats information](#get-performance-stats-information)
+  * [Get SELECT queries performance stats information](#get-select-queries-performance-stats-information)
+  * [Update system config](#update-system-config)
+- [Definitions](#definitions)
+  * [ActionCommand](#actioncommand)
+  * [ActivityStats](#activitystats)
+  * [AggregationResDef](#aggregationresdef)
+  * [AggregationsDef](#aggregationsdef)
+  * [AggregationsSortDef](#aggregationssortdef)
+  * [CacheMemStats](#cachememstats)
+  * [CommonPerfStats](#commonperfstats)
+  * [Database](#database)
+  * [DatabaseMemStats](#databasememstats)
+  * [DatabasePerfStats](#databaseperfstats)
+  * [Databases](#databases)
+  * [ExplainDef](#explaindef)
+  * [FilterDef](#filterdef)
+  * [FulltextConfig](#fulltextconfig)
+  * [Index](#index)
+  * [IndexCacheMemStats](#indexcachememstats)
+  * [IndexMemStat](#indexmemstat)
+  * [Indexes](#indexes)
+  * [Items](#items)
+  * [ItemsUpdateResponse](#itemsupdateresponse)
+  * [JoinCacheMemStats](#joincachememstats)
+  * [JoinedDef](#joineddef)
+  * [MetaByKeyResponse](#metabykeyresponse)
+  * [MetaInfo](#metainfo)
+  * [MetaListResponse](#metalistresponse)
+  * [Namespace](#namespace)
+  * [NamespaceMemStats](#namespacememstats)
+  * [NamespacePerfStats](#namespaceperfstats)
+  * [Namespaces](#namespaces)
+  * [NamespacesConfig](#namespacesconfig)
+  * [OnDef](#ondef)
+  * [ProfilingConfig](#profilingconfig)
+  * [QueriesPerfStats](#queriesperfstats)
+  * [Query](#query)
+  * [QueryCacheMemStats](#querycachememstats)
+  * [QueryColumnDef](#querycolumndef)
+  * [QueryItems](#queryitems)
+  * [QueryPerfStats](#queryperfstats)
+  * [ReplicationConfig](#replicationconfig)
+  * [ReplicationStats](#replicationstats)
+  * [SelectPerfStats](#selectperfstats)
+  * [SortDef](#sortdef)
+  * [StatusResponse](#statusresponse)
+  * [SuggestItems](#suggestitems)
+  * [SysInfo](#sysinfo)
+  * [SystemConfigItem](#systemconfigitem)
+  * [UpdatePerfStats](#updateperfstats)
+  * [UpdateResponse](#updateresponse)
+
+<!-- tocstop -->
 
 ## Overview
 **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
@@ -10,7 +99,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 2.4.5
+*Version* : 2.4.6
 
 
 ### License information
@@ -1362,7 +1451,7 @@ Join cache stats. Stores results of selects to right table by ON condition
 |**namespace**  <br>*required*|Namespace name|string|
 |**offset**  <br>*optional*|Offset of first returned item|integer|
 |**sort**  <br>*optional*||[SortDef](#sortdef)|
-|**true**  <br>*optional*|Join ON statement|< [OnDef](#ondef) > array|
+|**on**  <br>*optional*|Join ON statement|< [OnDef](#ondef) > array|
 |**type**  <br>*required*|Join type|enum (LEFT, INNER, ORINNER)|
 
 
@@ -1542,7 +1631,8 @@ List of meta info of the specified namespace
 |Name|Description|Schema|
 |---|---|---|
 |**aggregations**  <br>*optional*|Ask query calculate aggregation|< [AggregationsDef](#aggregationsdef) > array|
-|**distinct**  <br>*optional*|Distinct field/index name. Results will contain's document with distinct field value|string|
+|**distinct**  <br>*optional*|Distinct field/index name. Results will contain's document with distinct field value|< string > array|
+|**equal_positions**  <br>*optional*|Array fields to be searched with equal array indexes|< string > array|
 |**explain**  <br>*optional*|Add query execution explain information  <br>**Default** : `false`|boolean|
 |**filters**  <br>*optional*|Filter for results documents|< [FilterDef](#filterdef) > array|
 |**limit**  <br>*optional*|Maximum count of returned items|integer|
@@ -1591,6 +1681,7 @@ Query columns for table outputs
 |**aggregations**  <br>*optional*|Aggregation functions results|< [AggregationResDef](#aggregationresdef) > array|
 |**cache_enabled**  <br>*optional*|Enables to client cache returned items. If false, then returned items has been modified  by reindexer, e.g. by select filter, or by functions, and can't be cached|boolean|
 |**columns**  <br>*optional*|Columns for table output|< [QueryColumnDef](#querycolumndef) > array|
+|**equal_position**  <br>*optional*|Array fields to be searched with equal array indexes|< string > array|
 |**explain**  <br>*optional*||[ExplainDef](#explaindef)|
 |**items**  <br>*optional*|Documents, matched query|< object > array|
 |**namespaces**  <br>*optional*|Namespaces, used in query|< string > array|
@@ -1641,14 +1732,28 @@ State of namespace replication
 |Name|Description|Schema|
 |---|---|---|
 |**cluster_id**  <br>*optional*|Cluster ID - must be same for client and for master|integer|
+|**data_count**  <br>*optional*|Items count in namespace|integer|
 |**data_hash**  <br>*optional*|Hashsum of all records in namespace|integer|
 |**error_code**  <br>*optional*|Error code of last replication|integer|
 |**error_message**  <br>*optional*|Error message of last replication|string|
 |**incarnation_counter**  <br>*optional*|Number of storage's master <-> slave switches|integer|
 |**last_lsn**  <br>*optional*|Last Log Sequence Number (LSN) of applied namespace modification|integer|
+|**master_state**  <br>*optional*|State of current master namespace|[master_state](#replicationstats-master_state)|
 |**slave_mode**  <br>*optional*|If true, then namespace is in slave mode|boolean|
+|**status**  <br>*optional*|Current replication status for this namespace|enum (idle, error, fatal, syncing, none)|
+|**updated_unix_nano**  <br>*optional*|Last update time|integer|
 |**wal_count**  <br>*optional*|Write Ahead Log (WAL) records count|integer|
 |**wal_size**  <br>*optional*|Total memory consumption of Write Ahead Log (WAL)|integer|
+
+
+**master_state**
+
+|Name|Description|Schema|
+|---|---|---|
+|**data_count**  <br>*optional*|Items count in master namespace|integer|
+|**data_hash**  <br>*optional*|Hashsum of all records in namespace|integer|
+|**last_lsn**  <br>*optional*|Last Log Sequence Number (LSN) of applied namespace modification|integer|
+|**updated_unix_nano**  <br>*optional*|Last update time|integer|
 
 
 

@@ -665,11 +665,8 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 
 		calc.LockHit();
 		statCalculator.LockHit();
-		SelectFunctionsHolder func;
-		if (!q.joinQueries_.empty()) {
-			result.joined_->resize(1 + q.mergeQueries_.size());
-		}
 
+		SelectFunctionsHolder func;
 		doSelect(q, result, locks, func, rdxCtx);
 		func.Process(result);
 	} catch (const Error& err) {
@@ -700,6 +697,21 @@ bool ReindexerImpl::isPreResultValuesModeOptimizationAvailable(const Query& jIte
 		}
 	});
 	return result;
+}
+
+void ReindexerImpl::prepareJoinResults(const Query& q, QueryResults& result) {
+	bool thereAreJoins = !q.joinQueries_.empty();
+	if (!thereAreJoins) {
+		for (const Query& mq : q.mergeQueries_) {
+			if (!mq.joinQueries_.empty()) {
+				thereAreJoins = true;
+				break;
+			}
+		}
+	}
+	if (thereAreJoins) {
+		result.joined_.resize(1 + q.mergeQueries_.size());
+	}
 }
 
 template <typename T>
@@ -789,13 +801,14 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& 
 	vector<QueryResultsContext> joinQueryResultsContexts;
 	// should be destroyed after results.lockResults()
 	JoinedSelectors mainJoinedSelectors = prepareJoinedSelectors(q, result, locks, func, joinQueryResultsContexts, ctx);
+	prepareJoinResults(q, result);
 	{
 		SelectCtx selCtx(q);
 		selCtx.joinedSelectors = mainJoinedSelectors.size() ? &mainJoinedSelectors : nullptr;
 		selCtx.contextCollectingMode = true;
 		selCtx.functions = &func;
 		selCtx.nsid = 0;
-		selCtx.isForceAll = !q.mergeQueries_.empty() || !q.forcedSortOrder.empty();
+		selCtx.isForceAll = !q.mergeQueries_.empty() || !q.forcedSortOrder_.empty();
 		ns->Select(result, selCtx, ctx);
 	}
 
@@ -1279,9 +1292,10 @@ void ReindexerImpl::syncSystemNamespaces(string_view name, const RdxContext& ctx
 			}
 		}
 		const Namespace::WLock lock(sysNs->mtx_, &ctx);
-		sysNs->Truncate(ctx, -1, true);
+		sysNs->Truncate(NsContext(ctx).NoLock());
+		const auto nsCtx = NsContext(activityCtx).NoLock();
 		for (Item& i : items) {
-			sysNs->Upsert(i, activityCtx, true, true);
+			sysNs->Upsert(i, nsCtx);
 		}
 	};
 
@@ -1327,9 +1341,10 @@ void ReindexerImpl::syncSystemNamespaces(string_view name, const RdxContext& ctx
 			if (!err.ok()) throw err;
 		}
 		const Namespace::WLock lock(queriesperfstatsNs->mtx_, &ctx);
-		queriesperfstatsNs->Truncate(ctx, -1, true);
+		queriesperfstatsNs->Truncate(NsContext(ctx).NoLock());
+		const auto nsCtx = NsContext(activityCtx).NoLock();
 		for (Item& i : items) {
-			queriesperfstatsNs->Upsert(i, activityCtx, true, true);
+			queriesperfstatsNs->Upsert(i, nsCtx);
 		}
 	}
 
@@ -1346,9 +1361,10 @@ void ReindexerImpl::syncSystemNamespaces(string_view name, const RdxContext& ctx
 			if (!err.ok()) throw err;
 		}
 		const Namespace::WLock lock(activityNs->mtx_, &ctx);
-		activityNs->Truncate(ctx, -1, true);
+		activityNs->Truncate(NsContext(ctx).NoLock());
+		const auto nsCtx = NsContext(activityCtx).NoLock();
 		for (Item& i : items) {
-			activityNs->Upsert(i, activityCtx, true, true);
+			activityNs->Upsert(i, nsCtx);
 		}
 	}
 }

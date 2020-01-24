@@ -96,7 +96,7 @@ void TableViewScroller<QueryResultsT>::Scroll(Output& output, const std::functio
 	}
 
 #ifndef WIN32
-	if (pfile) fclose(pfile);
+	if (pfile) pclose(pfile);
 #endif
 }
 

@@ -114,9 +114,17 @@ public:
 			 IndexDeclaration{kFieldNameColumnFullText, "text", "string", IndexOpts().SetConfig(R"xxx({"stemmers":[]})xxx"), 0},
 			 IndexDeclaration{kFieldNameColumnStringNumeric, "-", "string", IndexOpts().SetCollateMode(CollateNumeric), 0}});
 		comparatorsNsPks.push_back(kFieldNameColumnInt64);
+
+		err = rt.reindexer->OpenNamespace(forcedSortOffsetNs);
+		ASSERT_TRUE(err.ok()) << err.what();
+		DefineNamespaceDataset(forcedSortOffsetNs, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
+													IndexDeclaration{kFieldNameColumnHash, "hash", "int", IndexOpts(), 0},
+													IndexDeclaration{kFieldNameColumnTree, "tree", "int", IndexOpts(), 0}});
+		forcedSortOffsetNsPks.push_back(kFieldNameId);
 	}
 
-	void ExecuteAndVerify(const string& ns, const Query& query) {
+	template <typename... T>
+	bool ExecuteAndVerify(const string& ns, const Query& query, T... args) {
 		reindexer::QueryResults qr;
 		const_cast<Query&>(query).Explain();
 		Error err = rt.reindexer->Select(query, qr);
@@ -124,6 +132,17 @@ public:
 		if (err.ok()) {
 			Verify(ns, qr, query);
 		}
+		Verify(qr, args...);
+		return err.ok();
+	}
+
+	bool ExecuteAndVerifyWithSql(const string& ns, const Query& query) {
+		if (ExecuteAndVerify(ns, query)) {
+			Query queryFromSql;
+			queryFromSql.FromSQL(query.GetSQL());
+			return ExecuteAndVerify(ns, queryFromSql);
+		}
+		return false;
 	}
 
 	static double CalculateSortExpression(reindexer::SortExpression::const_iterator begin, reindexer::SortExpression::const_iterator end,
@@ -168,6 +187,44 @@ public:
 		return result;
 	}
 
+	void Verify(const QueryResults&) {}
+
+	template <typename... T>
+	void Verify(const QueryResults& qr, const char* fieldName, const vector<Variant> expectedValues, T... args) {
+		reindexer::WrSerializer ser;
+		if (qr.Count() != expectedValues.size()) {
+			ser << "Sizes different: expected size " << expectedValues.size() << ", obtained size " << qr.Count() << '\n';
+		} else {
+			for (size_t i = 0; i < expectedValues.size(); ++i) {
+				Item item(qr[i].GetItem());
+				const Variant fieldValue = item[fieldName];
+				if (fieldValue != expectedValues[i]) {
+					ser << "Field " << fieldName << " of item " << i << " different: expected ";
+					expectedValues[i].Dump(ser);
+					ser << " obtained ";
+					fieldValue.Dump(ser);
+					ser << '\n';
+				}
+			}
+		}
+		if (ser.Len()) {
+			ser << "\nExpected values:\n";
+			for (size_t i = 0; i < expectedValues.size(); ++i) {
+				if (i != 0) ser << ", ";
+				expectedValues[i].Dump(ser);
+			}
+			ser << "\nObtained values:\n";
+			for (size_t i = 0; i < qr.Count(); ++i) {
+				if (i != 0) ser << ", ";
+				Item item(qr[i].GetItem());
+				const Variant fieldValue = item[fieldName];
+				fieldValue.Dump(ser);
+			}
+			FAIL() << ser.Slice() << std::endl;
+		}
+		Verify(qr, args...);
+	}
+
 	void Verify(const string& ns, const QueryResults& qr, const Query& query) {
 		unordered_set<string> pks;
 		unordered_map<string, unordered_set<string>> distincts;
@@ -210,7 +267,6 @@ public:
 			std::fill(cmpRes.begin(), cmpRes.end(), -1);
 
 			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
-				if (!query.forcedSortOrder.empty()) break;
 				const reindexer::SortingEntry& sortingEntry(query.sortingEntries_[j]);
 				const auto sortExpr = reindexer::SortExpression::Parse(sortingEntry.expression);
 				Variant sortedValue;
@@ -228,7 +284,22 @@ public:
 						}
 					}
 					if (needToVerify) {
-						cmpRes[j] = lastSortedColumnValues[j].Compare(sortedValue);
+						if (j == 0 && !query.forcedSortOrder_.empty()) {
+							const auto currValIt = std::find(query.forcedSortOrder_.cbegin(), query.forcedSortOrder_.cend(), sortedValue);
+							const auto lastValIt =
+								std::find(query.forcedSortOrder_.cbegin(), query.forcedSortOrder_.cend(), lastSortedColumnValues[0]);
+							if (lastValIt < currValIt) {
+								cmpRes[0] = -1;
+							} else if (lastValIt > currValIt) {
+								cmpRes[0] = 1;
+							} else if (lastValIt == query.forcedSortOrder_.cend()) {
+								cmpRes[0] = lastSortedColumnValues[0].Compare(sortedValue);
+							} else {
+								cmpRes[0] = 0;
+							}
+						} else {
+							cmpRes[j] = lastSortedColumnValues[j].Compare(sortedValue);
+						}
 						bool sortOrderSatisfied =
 							(sortingEntry.desc && cmpRes[j] >= 0) || (!sortingEntry.desc && cmpRes[j] <= 0) || (cmpRes[j] == 0);
 						EXPECT_TRUE(sortOrderSatisfied) << "\nSort order is incorrect for column: " << sortingEntry.expression;
@@ -239,17 +310,6 @@ public:
 					}
 				}
 				lastSortedColumnValues[j] = sortedValue;
-			}
-		}
-
-		if (!query.forcedSortOrder.empty()) {
-			EXPECT_TRUE(query.forcedSortOrder.size() <= qr.Count()) << "Size of QueryResults is incorrect!";
-			if (query.forcedSortOrder.size() <= qr.Count()) {
-				for (size_t i = 0; i < qr.Count(); ++i) {
-					Item item(qr[i].GetItem());
-					Variant sortedValue = item[query.sortingEntries_[0].expression];
-					EXPECT_EQ(query.forcedSortOrder[i].Compare(sortedValue), 0) << "Forced sort order is incorrect!";
-				}
 			}
 		}
 
@@ -293,6 +353,7 @@ protected:
 		if (ns == testSimpleNs) return simpleTestNsPks;
 		if (ns == compositeIndexesNs) return compositeIndexesNsPks;
 		if (ns == comparatorsNs) return comparatorsNsPks;
+		if (ns == forcedSortOffsetNs) return forcedSortOffsetNsPks;
 		std::abort();
 	}
 
@@ -459,7 +520,6 @@ protected:
 
 	bool checkCondition(Item& item, const QueryEntry& qentry) {
 		EXPECT_TRUE(item.NumFields() > 0);
-		EXPECT_TRUE(qentry.values.size() > 0);
 
 		bool result = false;
 		IndexOpts& opts = indexesOptions[qentry.index];
@@ -538,6 +598,22 @@ protected:
 		insertedItems[compositeIndexesNs][pkString] = std::move(lastItem);
 	}
 
+	void FillForcedSortNamespace() {
+		forcedSortOffsetValues.clear();
+		forcedSortOffsetValues.reserve(forcedSortOffsetNsSize);
+		for (size_t i = 0; i < forcedSortOffsetNsSize; ++i) {
+			Item item = NewItem(forcedSortOffsetNs);
+			item[kFieldNameId] = static_cast<int>(i);
+			forcedSortOffsetValues.emplace_back(rand() % forcedSortOffsetMaxValue, rand() % forcedSortOffsetMaxValue);
+			item[kFieldNameColumnHash] = forcedSortOffsetValues.back().first;
+			item[kFieldNameColumnTree] = forcedSortOffsetValues.back().second;
+			Upsert(forcedSortOffsetNs, item);
+			string pkString = getPkString(item, forcedSortOffsetNs);
+			insertedItems[forcedSortOffsetNs][pkString] = std::move(item);
+		}
+		Commit(forcedSortOffsetNs);
+	}
+
 	void FillTestSimpleNamespace() {
 		Item item1 = NewItem(testSimpleNs);
 		item1[kFieldNameId] = 1;
@@ -558,6 +634,93 @@ protected:
 		insertedItems[testSimpleNs].emplace(pkString, std::move(item2));
 
 		Commit(testSimpleNs);
+	}
+
+	enum Column { First, Second };
+
+	vector<Variant> ForcedSortOffsetTestExpectedResults(size_t offset, size_t limit, bool desc, const vector<int>& forcedSortOrder,
+														Column column) const {
+		if (limit == 0 || offset >= forcedSortOffsetValues.size()) return {};
+		vector<int> res;
+		res.resize(forcedSortOffsetValues.size());
+		std::transform(
+			forcedSortOffsetValues.cbegin(), forcedSortOffsetValues.cend(), res.begin(),
+			column == First ? [](const pair<int, int>& v) { return v.first; } : [](const pair<int, int>& v) { return v.second; });
+		std::sort(
+			res.begin(), res.end(), desc ? [](int lhs, int rhs) { return lhs > rhs; } : [](int lhs, int rhs) { return lhs < rhs; });
+		const auto boundary = std::stable_partition(res.begin(), res.end(), [&forcedSortOrder, desc](int v) {
+			return desc == (std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), v) == forcedSortOrder.cend());
+		});
+		if (desc) {
+			std::sort(boundary, res.end(), [&forcedSortOrder](int lhs, int rhs) {
+				return std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), lhs) >
+					   std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), rhs);
+			});
+		} else {
+			std::sort(res.begin(), boundary, [&forcedSortOrder](int lhs, int rhs) {
+				return std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), lhs) <
+					   std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), rhs);
+			});
+		}
+		return {res.cbegin() + offset, (offset + limit >= res.size()) ? res.cend() : (res.begin() + offset + limit)};
+	}
+
+	pair<vector<Variant>, vector<Variant>> ForcedSortOffsetTestExpectedResults(size_t offset, size_t limit, bool desc1Column,
+																			   bool desc2Column, const vector<int>& forcedSortOrder,
+																			   Column firstSortColumn) {
+		if (limit == 0 || offset >= forcedSortOffsetValues.size()) return {};
+		if (firstSortColumn == First) {
+			std::sort(forcedSortOffsetValues.begin(), forcedSortOffsetValues.end(),
+					  [desc1Column, desc2Column](pair<int, int> lhs, pair<int, int> rhs) {
+						  return lhs.first == rhs.first ? (desc2Column ? (lhs.second > rhs.second) : (lhs.second < rhs.second))
+														: (desc1Column ? (lhs.first > rhs.first) : (lhs.first < rhs.first));
+					  });
+			const auto boundary = std::stable_partition(
+				forcedSortOffsetValues.begin(), forcedSortOffsetValues.end(), [&forcedSortOrder, desc1Column](pair<int, int> v) {
+					return desc1Column == (std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), v.first) == forcedSortOrder.cend());
+				});
+			std::sort(desc1Column ? boundary : forcedSortOffsetValues.begin(), desc1Column ? forcedSortOffsetValues.end() : boundary,
+					  [&forcedSortOrder, desc1Column, desc2Column](pair<int, int> lhs, pair<int, int> rhs) {
+						  const auto lhsPos = std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), lhs.first);
+						  const auto rhsPos = std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), rhs.first);
+						  if (lhsPos == rhsPos) {
+							  return desc2Column ? lhs.second > rhs.second : lhs.second < rhs.second;
+						  } else {
+							  return desc1Column ? lhsPos > rhsPos : lhsPos < rhsPos;
+						  }
+					  });
+		} else {
+			std::sort(forcedSortOffsetValues.begin(), forcedSortOffsetValues.end(),
+					  [desc1Column, desc2Column](pair<int, int> lhs, pair<int, int> rhs) {
+						  return lhs.second == rhs.second ? (desc1Column ? (lhs.first > rhs.first) : (lhs.first < rhs.first))
+														  : (desc2Column ? (lhs.second > rhs.second) : (lhs.second < rhs.second));
+					  });
+			const auto boundary = std::stable_partition(
+				forcedSortOffsetValues.begin(), forcedSortOffsetValues.end(), [&forcedSortOrder, desc2Column](pair<int, int> v) {
+					return desc2Column == (std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), v.second) == forcedSortOrder.cend());
+				});
+			std::sort(desc2Column ? boundary : forcedSortOffsetValues.begin(), desc2Column ? forcedSortOffsetValues.end() : boundary,
+					  [&forcedSortOrder, desc1Column, desc2Column](pair<int, int> lhs, pair<int, int> rhs) {
+						  const auto lhsPos = std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), lhs.second);
+						  const auto rhsPos = std::find(forcedSortOrder.cbegin(), forcedSortOrder.cend(), rhs.second);
+						  if (lhsPos == rhsPos) {
+							  return desc1Column ? lhs.first > rhs.first : lhs.first < rhs.first;
+						  } else {
+							  return desc2Column ? lhsPos > rhsPos : lhsPos < rhsPos;
+						  }
+					  });
+		}
+		vector<Variant> resFirstColumn, resSecondColumn;
+		resFirstColumn.resize(std::min(limit, forcedSortOffsetValues.size() - offset));
+		resSecondColumn.resize(std::min(limit, forcedSortOffsetValues.size() - offset));
+		const bool byLimit = limit + offset < forcedSortOffsetValues.size();
+		std::transform(forcedSortOffsetValues.cbegin() + offset,
+					   byLimit ? (forcedSortOffsetValues.cbegin() + offset + limit) : forcedSortOffsetValues.cend(), resFirstColumn.begin(),
+					   [](const pair<int, int>& v) { return Variant(v.first); });
+		std::transform(forcedSortOffsetValues.cbegin() + offset,
+					   byLimit ? (forcedSortOffsetValues.cbegin() + offset + limit) : forcedSortOffsetValues.cend(),
+					   resSecondColumn.begin(), [](const pair<int, int>& v) { return Variant(v.second); });
+		return std::make_pair(std::move(resFirstColumn), std::move(resSecondColumn));
 	}
 
 	void FillComparatorsNamespace() {
@@ -648,6 +811,53 @@ protected:
 		item[kFieldNameBtreeIdsets] = GetcurrBtreeIdsetsValue(idValue);
 
 		return item;
+	}
+
+	void CheckDistinctQueries() {
+		static const vector<string> distincts = {"", kFieldNameYear, kFieldNameRate};
+
+		for (const string& distinct : distincts) {
+			const int randomAge = rand() % 50;
+			const int randomGenre = rand() % 50;
+
+			ExecuteAndVerifyWithSql(
+				default_namespace,
+				Query(default_namespace).Where(kFieldNameGenre, CondEq, randomGenre).Distinct(distinct.c_str()).Sort(kFieldNameYear, true));
+
+			ExecuteAndVerifyWithSql(
+				default_namespace,
+				Query(default_namespace).Where(kFieldNameName, CondEq, RandString()).Distinct(distinct.c_str()).Sort(kFieldNameYear, true));
+
+			ExecuteAndVerifyWithSql(default_namespace, Query(default_namespace)
+														   .Where(kFieldNameRate, CondEq, static_cast<double>(rand() % 100) / 10)
+														   .Distinct(distinct.c_str())
+														   .Sort(kFieldNameYear, true));
+
+			ExecuteAndVerifyWithSql(default_namespace, Query(default_namespace)
+														   .Where(kFieldNameGenre, CondGt, randomGenre)
+														   .Distinct(distinct.c_str())
+														   .Sort(kFieldNameYear, true)
+														   .Debug(LogTrace));
+
+			ExecuteAndVerifyWithSql(
+				default_namespace,
+				Query(default_namespace).Where(kFieldNameName, CondGt, RandString()).Distinct(distinct.c_str()).Sort(kFieldNameYear, true));
+
+			ExecuteAndVerifyWithSql(default_namespace, Query(default_namespace)
+														   .Where(kFieldNameRate, CondGt, static_cast<double>(rand() % 100) / 10)
+														   .Distinct(distinct.c_str())
+														   .Sort(kFieldNameYear, true));
+
+			ExecuteAndVerifyWithSql(
+				default_namespace,
+				Query(default_namespace).Where(kFieldNameGenre, CondLt, randomGenre).Distinct(distinct.c_str()).Sort(kFieldNameYear, true));
+
+			ExecuteAndVerifyWithSql(default_namespace, Query(default_namespace)
+														   .Where(kFieldNameAge, CondEq, randomAge)
+														   .Where(kFieldNameGenre, CondEq, randomGenre)
+														   .Distinct(distinct.c_str())
+														   .Sort(kFieldNameYear, true));
+		}
 	}
 
 	void CheckStandartQueries() {
@@ -809,6 +1019,8 @@ protected:
 															.Sort(kFieldNameActor, false)
 															.Sort(kFieldNameRate, true)
 															.Sort(kFieldNameLocation, false));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace).Sort(kFieldNameGenre, true, {10, 20, 30}));
 
 					ExecuteAndVerify(
 						default_namespace,
@@ -1516,10 +1728,14 @@ protected:
 	const char* kFieldNameColumnFullText = "columnFullText";
 	const char* kFieldNameColumnStringNumeric = "columnStringNumeric";
 
+	const char* kFieldNameColumnHash = "columnHash";
+	const char* kFieldNameColumnTree = "columnTree";
+
 	const string compositePlus = "+";
 	const string testSimpleNs = "test_simple_namespace";
 	const string compositeIndexesNs = "composite_indexes_namespace";
 	const string comparatorsNs = "comparators_namespace";
+	const string forcedSortOffsetNs = "forced_sort_offset_namespace";
 
 	const string kCompositeFieldPricePages = kFieldNamePrice + compositePlus + kFieldNamePages;
 	const string kCompositeFieldTitleName = kFieldNameTitle + compositePlus + kFieldNameName;
@@ -1528,7 +1744,11 @@ protected:
 	vector<string> simpleTestNsPks;
 	vector<string> compositeIndexesNsPks;
 	vector<string> comparatorsNsPks;
+	vector<string> forcedSortOffsetNsPks;
 	std::mutex m_;
 
 	int currBtreeIdsetsValue = rand() % 10000;
+	static constexpr size_t forcedSortOffsetNsSize = 1000;
+	static constexpr int forcedSortOffsetMaxValue = 1000;
+	vector<pair<int, int>> forcedSortOffsetValues;
 };

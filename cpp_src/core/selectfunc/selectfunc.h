@@ -1,11 +1,8 @@
 #pragma once
-#include <set>
 #include "core/query/query.h"
 #include "core/queryresults/queryresults.h"
 #include "ctx/basefunctionctx.h"
 #include "nsselectfuncinterface.h"
-
-#include <unordered_set>
 
 namespace reindexer {
 class Namespace;
@@ -61,6 +58,6 @@ private:
 	/// Indicates if object is empty and was created wuth flag force = true.
 	bool force_only_ = true;
 	/// Container of sql functions for every namespace.
-	unique_ptr<fast_hash_map<string, SelectFunction::Ptr>> querys_;
+	std::unique_ptr<fast_hash_map<string, SelectFunction::Ptr>> querys_;
 };
 }  // namespace reindexer

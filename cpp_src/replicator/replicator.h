@@ -54,7 +54,7 @@ protected:
 	// Apply single WAL record
 	Error applyWALRecord(int64_t lsn, string_view nsName, std::shared_ptr<Namespace> ns, const WALRecord &wrec, SyncStat &stat);
 	// Apply single cjson item
-	Error applyItemCJson(int64_t, std::shared_ptr<Namespace> ns, string_view cjson, int modifyMode, const TagsMatcher &tm, SyncStat &stat);
+	Error modifyItem(int64_t, std::shared_ptr<Namespace> ns, string_view cjson, int modifyMode, const TagsMatcher &tm, SyncStat &stat);
 
 	void OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &walRec) override final;
 	void OnConnectionState(const Error &err) override final;

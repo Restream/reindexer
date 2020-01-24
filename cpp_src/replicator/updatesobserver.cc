@@ -29,10 +29,8 @@ Error UpdatesObservers::Delete(IUpdatesObserver *observer) {
 
 void UpdatesObservers::OnModifyItem(int64_t lsn, string_view nsName, ItemImpl *impl, int modifyMode) {
 	WrSerializer ser;
-	WALRecord walRec(WalItemModify);
-	walRec.itemModify.tmVersion = impl->tagsMatcher().version();
-	walRec.itemModify.itemCJson = impl->tagsMatcher().isUpdated() ? impl->GetCJSON(ser, true) : impl->GetCJSON();
-	walRec.itemModify.modifyMode = modifyMode;
+	WALRecord walRec(WalItemModify, impl->tagsMatcher().isUpdated() ? impl->GetCJSON(ser, true) : impl->GetCJSON(),
+					 impl->tagsMatcher().version(), modifyMode);
 
 	OnWALUpdate(lsn, nsName, walRec);
 }

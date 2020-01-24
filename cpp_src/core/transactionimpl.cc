@@ -1,6 +1,8 @@
 #include "transactionimpl.h"
+#include "cjson/jsonbuilder.h"
 #include "item.h"
 #include "itemimpl.h"
+#include "namespace.h"
 
 namespace reindexer {
 
@@ -62,5 +64,125 @@ void TransactionImpl::Modify(Item &&item, ItemModifyMode mode) {
 }
 
 void TransactionImpl::Modify(Query &&query) { steps_.emplace_back(TransactionStep(std::move(query))); }
+
+Transaction::Serializer::Serializer(const Transaction &tx)
+	: steps_(tx.GetSteps()), currentStep_(0), writtenStepsCount_(0), finalized_(false) {
+	tx.impl_->tagsMatcher_.serialize(ser_);
+	stepsCountPos_ = ser_.Len();
+	ser_.PutUInt32(0);
+}
+
+void Transaction::Serializer::SerializeNextStep() {
+	assert(!finalized_);
+	assert(currentStep_ < steps_.size());
+	const auto sliceHelper = ser_.StartSlice();
+	steps_[currentStep_++].Serialize(ser_);
+	++writtenStepsCount_;
+}
+
+enum { ItemTransactionStep, QueryTransactionStep };
+
+static void serializeItemStep(WrSerializer &ser, ItemImpl &item, ItemModifyMode modifyMode) {
+	ser.PutVarUint(ItemTransactionStep);
+	ser.PutVarUint(modifyMode);
+	item.GetCJSON(ser);
+}
+
+void Transaction::Serializer::Serialize(ItemImpl &item, ItemModifyMode modifyMode) {
+	assert(!finalized_);
+	const auto sliceHelper = ser_.StartSlice();
+	serializeItemStep(ser_, item, modifyMode);
+	++writtenStepsCount_;
+}
+
+string_view Transaction::Serializer::Slice() {
+	if (!finalized_) {
+		assert(currentStep_ == steps_.size());
+		memcpy(&ser_.Buf()[stepsCountPos_], &writtenStepsCount_, sizeof(writtenStepsCount_));
+		finalized_ = true;
+	}
+	return ser_.Slice();
+}
+
+Error TransactionImpl::Deserialize(string_view data, int64_t lsn) try {
+	Serializer ser(data);
+	tagsMatcher_.deserialize(ser);
+	steps_.clear();
+	const uint32_t stepsCount = ser.GetUInt32();
+	steps_.reserve(stepsCount);
+	for (size_t i = 0; i < stepsCount; ++i) {
+		steps_.push_back(TransactionStep::Deserialize(ser.GetSlice(), lsn, payloadType_, tagsMatcher_, pkFields_));
+	}
+	return {};
+} catch (const Error &err) {
+	return err;
+}
+
+void TransactionImpl::ConvertCJSONtoJSON(string_view cjson, JsonBuilder &jb, std::function<string(string_view)> cjsonViewer) {
+	Serializer ser(cjson);
+	TagsMatcher tagsMatcher;
+	tagsMatcher.deserialize(ser);
+	const uint32_t stepsCount = ser.GetUInt32();
+	auto stepsArrayBuilder = jb.Array("steps");
+	for (size_t i = 0; i < stepsCount; ++i) {
+		auto stepBuilder = stepsArrayBuilder.Object();
+		TransactionStep::ConvertCJSONtoJSON(ser.GetSlice(), stepBuilder, cjsonViewer);
+	}
+}
+
+void TransactionStep::Serialize(WrSerializer &ser) const {
+	if (query_) {
+		ser.PutVarUint(QueryTransactionStep);
+		const auto sliceHelper = ser.StartSlice();
+		query_->GetSQL(ser);
+	} else {
+		serializeItemStep(ser, *item_.impl_, modifyMode_);
+	}
+}
+
+TransactionStep TransactionStep::Deserialize(string_view data, int64_t lsn, const PayloadType &pt, const TagsMatcher &tm,
+											 const FieldsSet &fs) {
+	Serializer ser(data);
+	if (ser.GetVarUint() == QueryTransactionStep) {
+		Query query;
+		query.FromSQL(ser.GetSlice());
+		return {std::move(query)};
+	} else {
+		const ItemModifyMode modifyMode = static_cast<ItemModifyMode>(ser.GetVarUint());
+		std::unique_ptr<ItemImpl> itemImpl{new ItemImpl{pt, tm, fs}};
+		itemImpl->tagsMatcher() = tm;
+		Item item{itemImpl.release()};
+		item.setLSN(lsn);
+		const Error err = item.FromCJSON(data.substr(ser.Pos()));
+		if (!err.ok()) throw err;
+		return {std::move(item), modifyMode};
+	}
+}
+
+static const char *toStr(ItemModifyMode mode) {
+	switch (mode) {
+		case ModeUpdate:
+			return "Update";
+		case ModeInsert:
+			return "Insert";
+		case ModeUpsert:
+			return "Upsert";
+		case ModeDelete:
+			return "Delete";
+		default:
+			return "<Unknown>";
+	}
+}
+
+void TransactionStep::ConvertCJSONtoJSON(string_view cjson, JsonBuilder &jb, std::function<string(string_view)> cjsonViewer) {
+	Serializer ser(cjson);
+	if (ser.GetVarUint() == QueryTransactionStep) {
+		jb.Put("query", ser.GetSlice());
+	} else {
+		const ItemModifyMode modifyMode = static_cast<ItemModifyMode>(ser.GetVarUint());
+		jb.Put("mode", toStr(modifyMode));
+		jb.Raw("item", cjsonViewer(cjson.substr(ser.Pos())));
+	}
+}
 
 }  // namespace reindexer

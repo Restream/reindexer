@@ -346,6 +346,11 @@ public:
 	const_iterator end() const { return {container_.end()}; }
 	/// @return iterator points to the node after the last child of root
 	const_iterator cend() const { return {container_.end()}; }
+	/// @return iterator to first entry of current bracket
+	const_iterator begin_this_bracket() {
+		if (activeBrackets_.empty()) return container_.begin();
+		return container_.begin() + activeBrackets_.back() + 1;
+	}
 
 protected:
 	Container container_;

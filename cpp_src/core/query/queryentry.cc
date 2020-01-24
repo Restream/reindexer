@@ -24,7 +24,7 @@ template <typename T>
 EqualPosition QueryEntries::DetermineEqualPositionIndexes(unsigned start, const T &fields) const {
 	if (fields.size() < 2) throw Error(errLogic, "Amount of fields with equal index position should be 2 or more!");
 	EqualPosition result;
-	for (size_t i = start; i < Size(); i = Next(i)) {
+	for (size_t i = start; i < Size(); ++i) {
 		if (!container_[i]->IsLeaf()) continue;
 		for (const auto &f : fields) {
 			if (container_[i]->Value().index == f) {

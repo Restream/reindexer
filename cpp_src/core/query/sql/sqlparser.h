@@ -92,6 +92,9 @@ protected:
 	/// Parse join entries
 	void parseJoinEntries(tokenizer &parser, const string &mainNs, JoinedQuery &jquery);
 
+	/// Parse equal_positions
+	void parseEqualPositions(tokenizer &parser);
+
 	/// Parse update field entries
 	UpdateEntry parseUpdateField(tokenizer &parser);
 

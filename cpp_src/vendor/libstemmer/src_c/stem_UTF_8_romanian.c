@@ -968,7 +968,7 @@ extern int romanian_UTF_8_stem(struct SN_env * z) {
             if (!(z->B[0])) goto lab6; /* Boolean test standard_suffix_removed, line 231 */
             goto lab5;
         lab6:
-            z->c = z->l - m6;
+            z->c = z->l - m6; // -V1048
             {   int ret = r_verb_suffix(z);
                 if (ret == 0) goto lab4; /* call verb_suffix, line 231 */
                 if (ret < 0) return ret;

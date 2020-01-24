@@ -190,6 +190,7 @@ private:
 	friend class QueryResults;
 	friend class ReindexerImpl;
 	friend class Replicator;
+	friend class TransactionStep;
 	friend class client::ReindexerImpl;
 	friend class client::Namespace;
 };

@@ -34,7 +34,7 @@ void SortingContext::resetOptimization() {
 }
 
 SortingOptions::SortingOptions(const Query &q, const SortingContext &sortingContext)
-	: forcedMode{!q.forcedSortOrder.empty()},
+	: forcedMode{!q.forcedSortOrder_.empty()},
 	  multiColumn{sortingContext.entries.size() > 1},
 	  haveExpression{!sortingContext.expressions.empty()} {
 	if (sortingContext.entries.empty()) {

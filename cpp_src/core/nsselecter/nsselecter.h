@@ -23,6 +23,8 @@ struct SelectCtx {
 	bool contextCollectingMode = false;
 };
 
+class ItemComparator;
+
 class NsSelecter {
 public:
 	NsSelecter(Namespace *parent) : ns_(parent) {}
@@ -39,13 +41,10 @@ private:
 
 	template <bool reverse, bool haveComparators>
 	void selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext &);
-	template <typename Items>
-	void applyForcedSort(Items &items, const SelectCtx &ctx);
-	template <typename Items>
-	void applyForcedSortDesc(Items &items, const SelectCtx &ctx);
-
+	template <bool desc, bool multiColumnSort, typename Items>
+	typename Items::iterator applyForcedSort(Items &items, const ItemComparator &, const SelectCtx &ctx);
 	template <typename It>
-	void applyGeneralSort(It itFirst, It itLast, It itEnd, const SelectCtx &ctx);
+	void applyGeneralSort(It itFirst, It itLast, It itEnd, const ItemComparator &, const SelectCtx &ctx);
 
 	void addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &sctx, h_vector<Aggregator, 4> &aggregators,
 						 QueryResults &result);

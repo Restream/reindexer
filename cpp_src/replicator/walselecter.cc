@@ -52,6 +52,7 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 				case WalPutMeta:
 				case WalUpdateQuery:
 				case WalItemModify:
+				case WalTransaction:
 					if (start) {
 						start--;
 					} else if (count) {

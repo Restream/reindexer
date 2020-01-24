@@ -19,6 +19,11 @@ const string &Transaction::GetName() {
 		return empty;
 }
 
+Error Transaction::Deserialize(string_view data, int64_t lsn) {
+	assert(impl_);
+	return impl_->Deserialize(data, lsn);
+}
+
 void Transaction::Insert(Item &&item) {
 	if (impl_) impl_->Insert(move(item));
 }
@@ -41,6 +46,14 @@ void Transaction::Modify(Query &&query) {
 
 Item Transaction::NewItem() { return impl_->NewItem(); }
 
-vector<TransactionStep> &Transaction::GetSteps() { return impl_->steps_; }
+vector<TransactionStep> &Transaction::GetSteps() {
+	assert(impl_);
+	return impl_->steps_;
+}
+
+const vector<TransactionStep> &Transaction::GetSteps() const {
+	assert(impl_);
+	return impl_->steps_;
+}
 
 }  // namespace reindexer

@@ -702,7 +702,7 @@ TEST_F(ReindexerApi, DslFieldsTest) {
                                     "namespace": "services",
                                     "offset": 0,
                                     "limit": 3,
-                                    "distinct": "",
+                                    "distinct": [],
                                     "sort": {
                                         "field": "",
                                         "desc": true
@@ -718,7 +718,7 @@ TEST_F(ReindexerApi, DslFieldsTest) {
                                     "namespace": "services",
                                     "offset": 1,
                                     "limit": 5,
-                                    "distinct": "",
+                                    "distinct": [],
                                     "sort": {
                                         "field": "field1",
                                         "desc": false
@@ -738,6 +738,31 @@ TEST_F(ReindexerApi, DslFieldsTest) {
 	TestDSLParseCorrectness(R"xxx({"req_total":"enabled"})xxx");
 	TestDSLParseCorrectness(R"xxx({"req_total":"disabled"})xxx");
 	TestDSLParseCorrectness(R"xxx({"aggregations":[{"field":"field1", "type":"sum"}, {"field":"field2", "type":"avg"}]})xxx");
+}
+
+TEST_F(ReindexerApi, DistinctQueriesEncodingTest) {
+	const string sql = "select distinct(country), distinct(city) from clients;";
+
+	Query q1;
+	q1.FromSQL(sql);
+	EXPECT_TRUE(q1.entries.Size() == 2);
+	EXPECT_TRUE(q1.entries[0].distinct);
+	EXPECT_TRUE(q1.entries[0].index == "country");
+	EXPECT_TRUE(q1.entries[1].distinct);
+	EXPECT_TRUE(q1.entries[1].index == "city");
+
+	string dsl = q1.GetJSON();
+	Query q2;
+	q2.FromJSON(dsl);
+	EXPECT_TRUE(q1 == q2);
+
+	Query q3 = Query(default_namespace).Distinct("name").Distinct("city").Where("id", CondGt, static_cast<int64_t>(10));
+	string sql2 = q3.GetSQL();
+
+	Query q4;
+	q4.FromSQL(sql2);
+	EXPECT_TRUE(q3 == q4);
+	EXPECT_TRUE(sql2 == q4.GetSQL());
 }
 
 TEST_F(ReindexerApi, ContextCancelingTest) {
@@ -834,4 +859,45 @@ TEST_F(ReindexerApi, ContextCancelingTest) {
 	err = rt.reindexer->Select(Query(default_namespace), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.Count(), 0);
+}
+
+TEST_F(ReindexerApi, JoinConditionsSqlParserTest) {
+	Query query;
+	const string sql = "SELECT * FROM ns WHERE a > 0 AND  INNER JOIN (SELECT * FROM ns2 WHERE b > 10 AND c = 1) ON ns2.id = ns.fk_id";
+	query.FromSQL(sql);
+	ASSERT_TRUE(query.GetSQL() == sql);
+}
+
+TEST_F(ReindexerApi, EqualPositionsSqlParserTest) {
+	const string sql =
+		"SELECT * FROM ns WHERE (f1 = 1 AND f2 = 2 OR f3 = 3 equal_position(f1,f2) equal_position(f1,f3)) OR (f4 = 4 AND f5 > 5 "
+		"equal_position(f4,f5))";
+
+	Query query;
+	query.FromSQL(sql);
+	EXPECT_TRUE(query.equalPositions_.size() == 3);
+
+	auto rangeBracket1 = query.equalPositions_.equal_range(0);
+	EXPECT_TRUE(rangeBracket1.first != query.equalPositions_.end());
+	EXPECT_TRUE(std::next(rangeBracket1.first) != query.equalPositions_.end());
+
+	const reindexer::EqualPosition& ep1 = rangeBracket1.first->second;
+	EXPECT_TRUE(ep1.size() == 2) << ep1.size();
+	EXPECT_TRUE(ep1[0] == 1) << ep1[0];
+	EXPECT_TRUE(ep1[1] == 2) << ep1[1];
+
+	const reindexer::EqualPosition& ep2 = std::next(rangeBracket1.first)->second;
+	EXPECT_TRUE(ep2.size() == 2) << ep2.size();
+	EXPECT_TRUE(ep2[0] == 1) << ep2[0];
+	EXPECT_TRUE(ep2[1] == 3) << ep2[1];
+
+	auto rangeBracket2 = query.equalPositions_.equal_range(4);
+	EXPECT_TRUE(rangeBracket2.first != query.equalPositions_.end());
+	EXPECT_TRUE(std::next(rangeBracket2.first) == query.equalPositions_.end());
+	const reindexer::EqualPosition& ep3 = rangeBracket2.first->second;
+	EXPECT_TRUE(ep3.size() == 2) << ep3.size();
+	EXPECT_TRUE(ep3[0] == 5) << ep3[0];
+	EXPECT_TRUE(ep3[1] == 6) << ep3[1];
+
+	EXPECT_TRUE(query.GetSQL() == sql);
 }

@@ -21,7 +21,7 @@ bool Query::operator==(const Query &obj) const {
 	if (start != obj.start) return false;
 	if (count != obj.count) return false;
 	if (debugLevel != obj.debugLevel) return false;
-	if (forcedSortOrder != obj.forcedSortOrder) return false;
+	if (forcedSortOrder_ != obj.forcedSortOrder_) return false;
 
 	if (selectFilter_ != obj.selectFilter_) return false;
 	if (selectFunctions_ != obj.selectFunctions_) return false;
@@ -122,8 +122,8 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 					sortingEntries_.push_back(std::move(sortingEntry));
 				}
 				int cnt = ser.GetVarUint();
-				forcedSortOrder.reserve(cnt);
-				while (cnt--) forcedSortOrder.push_back(ser.GetVariant().EnsureHold());
+				forcedSortOrder_.reserve(cnt);
+				while (cnt--) forcedSortOrder_.push_back(ser.GetVariant().EnsureHold());
 				break;
 			}
 			case QueryJoinOn:
@@ -218,9 +218,9 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 		ser.PutVarUint(QuerySortIndex);
 		ser.PutVString(sortginEntry.expression);
 		ser.PutVarUint(sortginEntry.desc);
-		int cnt = forcedSortOrder.size();
+		int cnt = forcedSortOrder_.size();
 		ser.PutVarUint(cnt);
-		for (auto &kv : forcedSortOrder) ser.PutVariant(kv);
+		for (auto &kv : forcedSortOrder_) ser.PutVariant(kv);
 	}
 
 	if (mode & WithJoinEntries) {

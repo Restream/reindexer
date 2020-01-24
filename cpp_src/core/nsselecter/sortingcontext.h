@@ -30,6 +30,7 @@ struct SortingContext {
 	bool enableSortOrders = false;
 	h_vector<Entry, 1> entries;
 	int uncommitedIndex = -1;
+	bool forcedMode = false;
 	vector<SortExpression> expressions;
 	vector<h_vector<double, 32>> exprResults;
 };

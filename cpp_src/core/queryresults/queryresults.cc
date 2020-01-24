@@ -19,9 +19,8 @@ struct QueryResults::Context {
 static_assert(sizeof(QueryResults::Context) < QueryResults::kSizeofContext,
 			  "QueryResults::kSizeofContext should >=  sizeof(QueryResults::Context)");
 
-QueryResults::QueryResults(std::initializer_list<ItemRef> l)
-	: joined_(new joins::Results), items_(l), holdActivity_(false), noActivity_(0) {}
-QueryResults::QueryResults(int /*flags*/) : joined_(new joins::Results), holdActivity_(false), noActivity_(0) {}
+QueryResults::QueryResults(std::initializer_list<ItemRef> l) : items_(l), holdActivity_(false), noActivity_(0) {}
+QueryResults::QueryResults(int /*flags*/) : holdActivity_(false), noActivity_(0) {}
 QueryResults::QueryResults(QueryResults &&obj)
 	: joined_(std::move(obj.joined_)),
 	  aggregationResults(std::move(obj.aggregationResults)),
@@ -99,11 +98,11 @@ void QueryResults::lockResults(bool lock) {
 	if (lock) assert(!lockedResults_);
 	for (size_t i = 0; i < items_.size(); ++i) {
 		lockItem(items_[i], items_[i].Nsid(), lock);
-		if (joined_->empty()) continue;
+		if (joined_.empty()) continue;
 		Iterator itemIt{this, int(i), errOK};
 		auto joinIt = joins::ItemIterator::FromQRIterator(itemIt);
 		if (joinIt.getJoinedItemsCount() == 0) continue;
-		size_t joinedNs = joined_->size();
+		size_t joinedNs = joined_.size();
 		for (auto fieldIt = joinIt.begin(); fieldIt != joinIt.end(); ++fieldIt, ++joinedNs) {
 			for (int j = 0; j < fieldIt.ItemsCount(); ++j) lockItem(fieldIt[j], joinedNs, lock);
 		}
@@ -136,7 +135,7 @@ void QueryResults::Dump() const {
 	for (size_t i = 0; i < items_.size(); ++i) {
 		if (&items_[i] != &*items_.begin()) buf += ",";
 		buf += std::to_string(items_[i].Id());
-		if (joined_->empty()) continue;
+		if (joined_.empty()) continue;
 		Iterator itemIt{this, int(i), errOK};
 		auto joinIt = joins::ItemIterator::FromQRIterator(itemIt);
 		if (joinIt.getJoinedItemsCount() > 0) {
@@ -163,9 +162,9 @@ h_vector<string_view, 1> QueryResults::GetNamespaces() const {
 }
 
 int QueryResults::GetJoinedNsCtxIndex(int nsid) const {
-	int ctxIndex = joined_->size();
+	int ctxIndex = joined_.size();
 	for (int ns = 0; ns < nsid; ++ns) {
-		ctxIndex += (*joined_)[ns].GetJoinedSelectorsCount();
+		ctxIndex += joined_[ns].GetJoinedSelectorsCount();
 	};
 	return ctxIndex;
 }
@@ -221,7 +220,7 @@ void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 
 	JsonBuilder builder(ser, JsonBuilder::TypePlain);
 
-	if (joined_->size() > 0) {
+	if (!joined_.empty()) {
 		joins::ItemIterator itemIt = joins::ItemIterator::FromQRIterator(begin() + idx);
 		if (itemIt.getJoinedItemsCount() > 0) {
 			EncoderDatasourceWithJoins ds(itemIt, ctxs, GetJoinedNsCtxIndex(itemRef.Nsid()));

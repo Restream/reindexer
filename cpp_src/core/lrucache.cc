@@ -122,7 +122,6 @@ LRUCacheMemStat LRUCache<K, V, hash, equal>::GetMemStat() {
 	LRUCacheMemStat ret;
 	ret.totalSize = totalCacheSize_;
 	ret.itemsCount = items_.size();
-	ret.emptyCount = 0;
 	// for (auto &item : items_) {
 	// 	if (item.second.val.Empty()) ret.emptyCount++;
 	// }
@@ -130,7 +129,7 @@ LRUCacheMemStat LRUCache<K, V, hash, equal>::GetMemStat() {
 	ret.hitCountLimit = hitCountToCache_;
 
 	return ret;
-};
+}
 template class LRUCache<IdSetCacheKey, IdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
 template class LRUCache<IdSetCacheKey, FtIdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
 template class LRUCache<QueryCacheKey, QueryCacheVal, HashQueryCacheKey, EqQueryCacheKey>;

@@ -189,9 +189,6 @@ Error Replicator::syncDatabase() {
 	return err;
 }
 
-// Foced namespace sync
-// This will completely drop slave namespace
-// read all indexes and data from master, then apply to slave
 Error Replicator::syncNamespaceByWAL(const NamespaceDef &nsDef) {
 	auto slaveNs = slave_->getNamespaceNoThrow(nsDef.name, dummyCtx_);
 	if (!slaveNs) return Error(errNotFound, "Namespace %s not found", nsDef.name);
@@ -217,7 +214,7 @@ Error Replicator::syncNamespaceByWAL(const NamespaceDef &nsDef) {
 	}
 }
 
-// Foced namespace sync
+// Forced namespace sync
 // This will completely drop slave namespace
 // read all indexes and data from master, then apply to slave
 Error Replicator::syncNamespaceForced(const NamespaceDef &ns, string_view reason) {
@@ -284,7 +281,7 @@ Error Replicator::applyWAL(Namespace::Ptr slaveNs, client::QueryResults &qr) {
 					// Simple item updated
 					ser.Reset();
 					err = it.GetCJSON(ser, false);
-					if (err.ok()) err = applyItemCJson(lsn, slaveNs, ser.Slice(), ModeUpsert, qr.getTagsMatcher(0), stat);
+					if (err.ok()) err = modifyItem(lsn, slaveNs, ser.Slice(), ModeUpsert, qr.getTagsMatcher(0), stat);
 				}
 			} catch (const Error &e) {
 				err = e;
@@ -337,8 +334,8 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 	switch (rec.type) {
 		// Modify item
 		case WalItemModify:
-			err = applyItemCJson(lsn, slaveNs, rec.itemModify.itemCJson, rec.itemModify.modifyMode,
-								 master_->NewItem(nsName).impl_->tagsMatcher(), stat);
+			err = modifyItem(lsn, slaveNs, rec.itemModify.itemCJson, rec.itemModify.modifyMode,
+							 master_->NewItem(nsName).impl_->tagsMatcher(), stat);
 			break;
 		// Index added
 		case WalIndexAdd:
@@ -360,7 +357,7 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 			break;
 		// Metadata updated
 		case WalPutMeta:
-			slaveNs->PutMeta(string(rec.putMeta.key), rec.putMeta.value, dummyCtx_, lsn);
+			slaveNs->PutMeta(string(rec.putMeta.key), rec.putMeta.value, NsContext(dummyCtx_).Lsn(lsn));
 			stat.updatedMeta++;
 			break;
 		// Update query
@@ -368,15 +365,16 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 			QueryResults result;
 			Query q;
 			q.FromSQL(rec.data);
+			const auto nsCtx = NsContext(dummyCtx_).Lsn(lsn);
 			switch (q.type_) {
 				case QueryDelete:
-					slaveNs->Delete(q, result, dummyCtx_, lsn);
+					slaveNs->Delete(q, result, nsCtx);
 					break;
 				case QueryUpdate:
-					slaveNs->Update(q, result, dummyCtx_, lsn);
+					slaveNs->Update(q, result, nsCtx);
 					break;
 				case QueryTruncate:
-					slaveNs->Truncate(dummyCtx_, lsn);
+					slaveNs->Truncate(nsCtx);
 					break;
 				default:
 					break;
@@ -403,15 +401,20 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 			slaveNs->SetSlaveReplMasterState(masterState, dummyCtx_);
 			break;
 		}
-		default:
+		case WalTransaction: {
+			Transaction tx = slaveNs->NewTransaction(dummyCtx_);
+			err = tx.Deserialize(rec.data, lsn);
+			if (err.ok()) slaveNs->CommitTransaction(tx, dummyCtx_);
 			break;
+		}
+		default:
+			return Error(errLogic, "Unexpected WAL rec type %d\n", int(rec.type));
 	}
 	return err;
 }
 
-Error Replicator::applyItemCJson(int64_t lsn, std::shared_ptr<Namespace> slaveNs, string_view cjson, int modifyMode, const TagsMatcher &tm,
-								 SyncStat &stat) {
-	// break;
+Error Replicator::modifyItem(int64_t lsn, std::shared_ptr<Namespace> slaveNs, string_view cjson, int modifyMode, const TagsMatcher &tm,
+							 SyncStat &stat) {
 	Item item = slaveNs->NewItem(dummyCtx_);
 
 	if (item.impl_->tagsMatcher().size() < tm.size()) {
@@ -489,7 +492,7 @@ Error Replicator::syncMetaForced(Namespace::Ptr slaveNs, string_view nsName) {
 			continue;
 		}
 		try {
-			slaveNs->PutMeta(key, data, dummyCtx_, 1);
+			slaveNs->PutMeta(key, data, NsContext(dummyCtx_).Lsn(1));
 		} catch (const Error &e) {
 			logPrintf(LogError, "[repl:%s] Error set meta '%s': %s", slaveNs->GetName(), key, e.what());
 		}

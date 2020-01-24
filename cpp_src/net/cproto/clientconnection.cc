@@ -333,9 +333,7 @@ void ClientConnection::call(Completion cmpl, const CommandParams &opts, const Ar
 			}
 			if (completion->used) {
 				bufWait_++;
-				while (completion->used) {
-					bufCond_.wait(lck);
-				}
+				bufCond_.wait(lck, [&completion]() { return !completion->used.load(); });
 				bufWait_--;
 			}
 		}

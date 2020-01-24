@@ -739,7 +739,7 @@ extern int finnish_UTF_8_stem(struct SN_env * z) {
         }
         goto lab5;
     lab6:
-        z->c = z->l - m6;
+        z->c = z->l - m6; // -V1048
         {   int m8 = z->l - z->c; (void)m8; /* do, line 192 */
             {   int ret = r_t_plural(z);
                 if (ret == 0) goto lab8; /* call t_plural, line 192 */

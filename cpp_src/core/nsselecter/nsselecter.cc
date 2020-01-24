@@ -1,6 +1,7 @@
 #include "nsselecter.h"
 #include "core/namespace.h"
 #include "explaincalc.h"
+#include "itemcomparator.h"
 #include "querypreprocessor.h"
 #include "tools/logger.h"
 
@@ -20,6 +21,7 @@ static int GetMaxIterations(const SelectIteratorContainer &iterators, bool withZ
 
 void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxContext &rdxCtx) {
 	ctx.sortingContext.enableSortOrders = ns_->sortOrdersBuilt_;
+	ctx.sortingContext.forcedMode = !ctx.query.forcedSortOrder_.empty();
 	if (ns_->config_.logLevel > ctx.query.debugLevel) {
 		const_cast<Query *>(&ctx.query)->debugLevel = ns_->config_.logLevel;
 	}
@@ -287,18 +289,14 @@ const PayloadValue &getValue<JoinPreResult::Values>(const ItemRef &itemRef, cons
 	return itemRef.Value();
 }
 
-template <typename Items>
-void NsSelecter::applyForcedSort(Items &items, const SelectCtx &ctx) {
+template <bool desc, bool multiColumnSort, typename Items>
+typename Items::iterator NsSelecter::applyForcedSort(Items &items, const ItemComparator &compare, const SelectCtx &ctx) {
 	assert(!ctx.query.sortingEntries_.empty());
 	assert(!ctx.sortingContext.entries.empty());
-	if (ctx.sortingContext.entries[0].expression != SortingContext::Entry::NoExpression)
+	if (ctx.sortingContext.entries[0].expression != SortingContext::Entry::NoExpression) {
 		throw Error(errLogic, "Force sort could not be performed by expression.");
-
+	}
 	if (ctx.query.mergeQueries_.size() > 1) throw Error(errLogic, "Force sort could not be applied to 'merged' queries.");
-	if (ctx.query.sortingEntries_[0].desc) {
-		applyForcedSortDesc(items, ctx);
-		return;
-	}
 
 	auto payloadType = ns_->payloadType_;
 	const string &fieldName = ctx.query.sortingEntries_[0].expression;
@@ -313,32 +311,64 @@ void NsSelecter::applyForcedSort(Items &items, const SelectCtx &ctx) {
 	if (idx < ns_->indexes_.firstCompositePos()) {
 		// implementation for regular indexes
 		fast_hash_map<Variant, ItemRefVector::difference_type> sortMap;
-		for (auto value : ctx.query.forcedSortOrder) {
+		for (auto value : ctx.query.forcedSortOrder_) {
 			value.convert(fieldType);
 			sortMap.insert({value, cost});
 			cost++;
 		}
 
 		VariantArray keyRefs;
-		auto sortEnd = std::stable_partition(items.begin(), items.end(), [&sortMap, &payloadType, idx, &keyRefs, this](ItemRef &itemRef) {
-			ConstPayload(payloadType, getValue<Items>(itemRef, ns_->items_)).Get(idx, keyRefs);
-			return !keyRefs.empty() && (sortMap.find(keyRefs[0]) != sortMap.end());
-		});
+		const auto boundary =
+			std::stable_partition(items.begin(), items.end(), [&sortMap, &payloadType, idx, &keyRefs, this](ItemRef &itemRef) {
+				ConstPayload(payloadType, getValue<Items>(itemRef, ns_->items_)).Get(idx, keyRefs);
+				if (desc) {
+					return keyRefs.empty() || (sortMap.find(keyRefs[0]) == sortMap.end());
+				} else {
+					return !keyRefs.empty() && (sortMap.find(keyRefs[0]) != sortMap.end());
+				}
+			});
 
-		VariantArray firstItemValue;
-		VariantArray secondItemValue;
-		std::sort(items.begin(), sortEnd,
-				  [&sortMap, &payloadType, idx, &firstItemValue, &secondItemValue, this](const ItemRef &lhs, const ItemRef &rhs) {
-					  ConstPayload(payloadType, getValue<Items>(lhs, ns_->items_)).Get(idx, firstItemValue);
-					  assertf(!firstItemValue.empty(), "Item lost in query results%s", "");
-					  assertf(sortMap.find(firstItemValue[0]) != sortMap.end(), "Item not found in 'sortMap'%s", "");
+		VariantArray lhsItemValue;
+		VariantArray rhsItemValue;
+		typename Items::iterator from, to;
+		if (desc) {
+			from = boundary;
+			to = items.end();
+		} else {
+			from = items.begin();
+			to = boundary;
+		}
+		std::sort(from, to,
+				  [&sortMap, &payloadType, idx, &lhsItemValue, &rhsItemValue, &compare, this](const ItemRef &lhs, const ItemRef &rhs) {
+					  ConstPayload(payloadType, getValue<Items>(lhs, ns_->items_)).Get(idx, lhsItemValue);
+					  assertf(!lhsItemValue.empty(), "Item lost in query results%s", "");
+					  assertf(sortMap.find(lhsItemValue[0]) != sortMap.end(), "Item not found in 'sortMap'%s", "");
 
-					  ConstPayload(payloadType, getValue<Items>(rhs, ns_->items_)).Get(idx, secondItemValue);
-					  assertf(sortMap.find(secondItemValue[0]) != sortMap.end(), "Item not found in 'sortMap'%s", "");
-					  assertf(!secondItemValue.empty(), "Item lost in query results%s", "");
+					  ConstPayload(payloadType, getValue<Items>(rhs, ns_->items_)).Get(idx, rhsItemValue);
+					  assertf(sortMap.find(rhsItemValue[0]) != sortMap.end(), "Item not found in 'sortMap'%s", "");
+					  assertf(!rhsItemValue.empty(), "Item lost in query results%s", "");
 
-					  return sortMap.find(firstItemValue[0])->second < sortMap.find(secondItemValue[0])->second;
+					  const auto lhsPos = sortMap.find(lhsItemValue[0])->second;
+					  const auto rhsPos = sortMap.find(rhsItemValue[0])->second;
+					  if (lhsPos == rhsPos) {
+						  if (multiColumnSort) {
+							  return compare(lhs, rhs);
+						  } else {
+							  if (desc) {
+								  return lhs.Id() > rhs.Id();
+							  } else {
+								  return lhs.Id() < rhs.Id();
+							  }
+						  }
+					  } else {
+						  if (desc) {
+							  return lhsPos > rhsPos;
+						  } else {
+							  return lhsPos < rhsPos;
+						  }
+					  }
 				  });
+		return boundary;
 	} else {
 		// implementation for composite indexes
 		FieldsSet fields = ns_->indexes_[idx]->Fields();
@@ -346,198 +376,60 @@ void NsSelecter::applyForcedSort(Items &items, const SelectCtx &ctx) {
 		unordered_payload_map<ItemRefVector::difference_type> sortMap(0, hash_composite(payloadType, fields),
 																	  equal_composite(payloadType, fields));
 
-		for (auto value : ctx.query.forcedSortOrder) {
+		for (auto value : ctx.query.forcedSortOrder_) {
 			value.convert(fieldType, &payloadType, &fields);
 			sortMap.insert({static_cast<const PayloadValue &>(value), cost});
 			cost++;
 		}
 
-		auto sortEnd = std::stable_partition(items.begin(), items.end(), [&sortMap, this](ItemRef &itemRef) {
-			return (sortMap.find(getValue<Items>(itemRef, ns_->items_)) != sortMap.end());
+		const auto boundary = std::stable_partition(items.begin(), items.end(), [&sortMap, this](ItemRef &itemRef) {
+			if (desc) {
+				return (sortMap.find(getValue<Items>(itemRef, ns_->items_)) == sortMap.end());
+			} else {
+				return (sortMap.find(getValue<Items>(itemRef, ns_->items_)) != sortMap.end());
+			}
 		});
 
-		std::sort(items.begin(), sortEnd, [&sortMap, this](const ItemRef &lhs, const ItemRef &rhs) {
-			return sortMap.find(getValue<Items>(lhs, ns_->items_))->second < sortMap.find(getValue<Items>(rhs, ns_->items_))->second;
-		});
-	}
-}
-
-template <typename Items>
-void NsSelecter::applyForcedSortDesc(Items &items, const SelectCtx &ctx) {
-	assert(!ctx.query.sortingEntries_.empty());
-
-	auto payloadType = ns_->payloadType_;
-	const string &fieldName = ctx.query.sortingEntries_[0].expression;
-
-	int idx = ns_->getIndexByName(fieldName);
-
-	if (ns_->indexes_[idx]->Opts().IsArray()) throw Error(errQueryExec, "This type of sorting cannot be applied to a field of array type.");
-
-	ItemRefVector::difference_type cost = 0;
-	KeyValueType fieldType = ns_->indexes_[idx]->KeyType();
-
-	if (idx < ns_->indexes_.firstCompositePos()) {
-		// implementation for regular indexes
-		fast_hash_map<Variant, ItemRefVector::difference_type> sortMap;
-		for (auto value : ctx.query.forcedSortOrder) {
-			value.convert(fieldType);
-			sortMap.insert({value, cost});
-			cost++;
+		typename Items::iterator from, to;
+		if (desc) {
+			from = boundary;
+			to = items.end();
+		} else {
+			from = items.begin();
+			to = boundary;
 		}
-
-		VariantArray keyRefs;
-		auto sortBeg = std::stable_partition(items.begin(), items.end(), [&sortMap, &payloadType, idx, &keyRefs, this](ItemRef &itemRef) {
-			ConstPayload(payloadType, getValue<Items>(itemRef, ns_->items_)).Get(idx, keyRefs);
-			return keyRefs.empty() || (sortMap.find(keyRefs[0]) == sortMap.end());
+		std::sort(from, to, [&sortMap, &compare, this](const ItemRef &lhs, const ItemRef &rhs) {
+			const auto lhsPos = sortMap.find(getValue<Items>(lhs, ns_->items_))->second;
+			const auto rhsPos = sortMap.find(getValue<Items>(rhs, ns_->items_))->second;
+			if (lhsPos == rhsPos) {
+				if (multiColumnSort) {
+					return compare(lhs, rhs);
+				} else {
+					if (desc) {
+						return lhs.Id() > rhs.Id();
+					} else {
+						return lhs.Id() < rhs.Id();
+					}
+				}
+			} else {
+				if (desc) {
+					return lhsPos > rhsPos;
+				} else {
+					return lhsPos < rhsPos;
+				}
+			}
 		});
-
-		VariantArray firstItemValue;
-		VariantArray secondItemValue;
-		std::sort(sortBeg, items.end(),
-				  [&sortMap, &payloadType, idx, &firstItemValue, &secondItemValue, this](const ItemRef &lhs, const ItemRef &rhs) {
-					  ConstPayload(payloadType, getValue<Items>(lhs, ns_->items_)).Get(idx, firstItemValue);
-					  assertf(!firstItemValue.empty(), "Item lost in query results%s", "");
-					  assertf(sortMap.find(firstItemValue[0]) != sortMap.end(), "Item not found in 'sortMap'%s", "");
-
-					  ConstPayload(payloadType, getValue<Items>(rhs, ns_->items_)).Get(idx, secondItemValue);
-					  assertf(sortMap.find(secondItemValue[0]) != sortMap.end(), "Item not found in 'sortMap'%s", "");
-					  assertf(!secondItemValue.empty(), "Item lost in query results%s", "");
-
-					  return sortMap.find(firstItemValue[0])->second > sortMap.find(secondItemValue[0])->second;
-				  });
-	} else {
-		// implementation for composite indexes
-		FieldsSet fields = ns_->indexes_[idx]->Fields();
-
-		unordered_payload_map<ItemRefVector::difference_type> sortMap(0, hash_composite(payloadType, fields),
-																	  equal_composite(payloadType, fields));
-
-		for (auto value : ctx.query.forcedSortOrder) {
-			value.convert(fieldType, &payloadType, &fields);
-			sortMap.insert({static_cast<const PayloadValue &>(value), cost});
-			cost++;
-		}
-
-		auto sortBeg = std::stable_partition(items.begin(), items.end(), [&sortMap, this](ItemRef &itemRef) {
-			return (sortMap.find(getValue<Items>(itemRef, ns_->items_)) == sortMap.end());
-		});
-
-		std::sort(sortBeg, items.begin(), [&sortMap, this](const ItemRef &lhs, const ItemRef &rhs) {
-			return sortMap.find(getValue<Items>(lhs, ns_->items_))->second > sortMap.find(getValue<Items>(rhs, ns_->items_))->second;
-		});
+		return boundary;
 	}
 }
 
 template <typename It>
-void NsSelecter::applyGeneralSort(It itFirst, It itLast, It itEnd, const SelectCtx &ctx) {
+void NsSelecter::applyGeneralSort(It itFirst, It itLast, It itEnd, const ItemComparator &comparator, const SelectCtx &ctx) {
 	if (ctx.query.mergeQueries_.size() > 1) {
 		throw Error(errLogic, "Sorting cannot be applied to merged queries.");
 	}
-	const auto &entries = ctx.sortingContext.entries;
-	const auto &exprResults = ctx.sortingContext.exprResults;
 
-	if (entries.empty()) return;
-
-	FieldsSet fields;
-	auto &payloadType = ns_->payloadType_;
-	bool multiSort = entries.size() > 1;
-	h_vector<const CollateOpts *, 1> collateOpts;
-	vector<pair<size_t, bool>> byExpr, byIndex;
-	byExpr.reserve(exprResults.size());
-	assert(entries.size() >= exprResults.size());
-	byIndex.reserve(entries.size() - exprResults.size());
-
-	for (size_t i = 0; i < entries.size(); ++i) {
-		const auto &sortingCtx = entries[i];
-		if (sortingCtx.expression != SortingContext::Entry::NoExpression) {
-			byExpr.push_back({i, sortingCtx.data->desc});
-			continue;
-		}
-		int fieldIdx = sortingCtx.data->index;
-		if (fieldIdx == IndexValueType::SetByJsonPath || ns_->indexes_[fieldIdx]->Opts().IsSparse()) {
-			TagsPath tagsPath;
-			if (fieldIdx != IndexValueType::SetByJsonPath) {
-				const FieldsSet &fs = ns_->indexes_[fieldIdx]->Fields();
-				assert(fs.getTagsPathsLength() > 0);
-				tagsPath = fs.getTagsPath(0);
-			} else {
-				tagsPath = ns_->tagsMatcher_.path2tag(sortingCtx.data->expression);
-			}
-			if (fields.contains(tagsPath)) {
-				throw Error(errQueryExec, "Can't sort by 2 equal indexes: %s", sortingCtx.data->expression);
-			}
-			fields.push_back(tagsPath);
-			byIndex.push_back({i, sortingCtx.data->desc});
-		} else {
-			if (ns_->indexes_[fieldIdx]->Opts().IsArray()) {
-				throw Error(errQueryExec, "Sorting cannot be applied to array field.");
-			}
-			if (fieldIdx >= ns_->indexes_.firstCompositePos()) {
-				if (multiSort) {
-					throw Error(errQueryExec, "Multicolumn sorting cannot be applied to composite fields: %s", sortingCtx.data->expression);
-				}
-				fields = ns_->indexes_[fieldIdx]->Fields();
-				byIndex = {fields.size(), {i, sortingCtx.data->desc}};
-			} else {
-				if (fields.contains(fieldIdx)) {
-					throw Error(errQueryExec, "You cannot sort by 2 same indexes: %s", sortingCtx.data->expression);
-				}
-				fields.push_back(fieldIdx);
-				byIndex.push_back({i, sortingCtx.data->desc});
-			}
-		}
-		collateOpts.push_back(entries[i].opts);
-	}
-	assert(byExpr.size() == exprResults.size());
-	assert(byIndex.size() == fields.size());
-
-	std::partial_sort(itFirst, itLast, itEnd, [&](const ItemRef &lhs, const ItemRef &rhs) {
-		size_t firstDifferentExprIdx = 0;
-		int exprCmpRes = 0;
-		for (const auto &eR : exprResults) {
-			if (eR[lhs.SortExprResultsIdx()] != eR[rhs.SortExprResultsIdx()]) {
-				exprCmpRes = (eR[lhs.SortExprResultsIdx()] > eR[rhs.SortExprResultsIdx()]) ? 1 : -1;
-				break;
-			}
-			++firstDifferentExprIdx;
-		}
-		assert(exprCmpRes == 0 || firstDifferentExprIdx < byExpr.size());
-
-		size_t firstDifferentFieldIdx = 0;
-		int fieldsCmpRes = 0;
-		// do not perform comparation by indexes if not necessary
-		if (exprCmpRes == 0 || byExpr[firstDifferentExprIdx].first != 0) {
-			fieldsCmpRes = ConstPayload(payloadType, ns_->items_[lhs.Id()])
-							   .Compare(ns_->items_[rhs.Id()], fields, firstDifferentFieldIdx, collateOpts);
-			assertf(fieldsCmpRes == 0 || firstDifferentFieldIdx < byIndex.size(), "%d < %d\n", int(firstDifferentFieldIdx),
-					int(byIndex.size()));
-		}
-
-		int cmpRes;
-		bool desc;
-		if (exprCmpRes != 0) {
-			if (fieldsCmpRes == 0 || byExpr[firstDifferentExprIdx].first < byIndex[firstDifferentFieldIdx].first) {
-				cmpRes = exprCmpRes;
-				desc = byExpr[firstDifferentExprIdx].second;
-			} else {
-				cmpRes = fieldsCmpRes;
-				desc = byIndex[firstDifferentFieldIdx].second;
-			}
-		} else if (fieldsCmpRes != 0) {
-			cmpRes = fieldsCmpRes;
-			desc = byIndex[firstDifferentFieldIdx].second;
-		} else {
-			// If values are equal, then sort by row ID, to give consistent results
-			cmpRes = (lhs.Id() > rhs.Id()) ? 1 : ((lhs.Id() < rhs.Id()) ? -1 : 0);
-			desc = entries[0].data->desc;
-		}
-
-		if (desc) {
-			return (cmpRes > 0);
-		} else {
-			return (cmpRes < 0);
-		}
-	});
+	std::partial_sort(itFirst, itLast, itEnd, comparator);
 }
 
 void NsSelecter::setLimitAndOffset(ItemRefVector &queryResult, size_t offset, size_t limit) {
@@ -578,19 +470,36 @@ void NsSelecter::sortResults(reindexer::SelectCtx &sctx, Items &items, const Sor
 		assert(eR.size() == items.size());
 	}
 #endif
-	int endPos = items.size();
-	if (sortingOptions.usingGeneralAlgorithm) {
-		endPos = std::min<decltype(items.size())>(sctx.query.count + sctx.query.start, items.size());
-	}
 	auto first = items.begin();
-	auto last = items.begin() + endPos;
 	auto end = items.end();
 
-	if (sortingOptions.multiColumn || sortingOptions.usingGeneralAlgorithm) {
-		applyGeneralSort(first, last, end, sctx);
-	}
+	ItemComparatorState comparatorState;
+	ItemComparator comparator{*ns_, sctx, comparatorState};
 	if (sortingOptions.forcedMode) {
-		applyForcedSort(items, sctx);
+		comparator.BindForForcedSort();
+		assert(!sctx.query.sortingEntries_.empty());
+		if (sctx.query.sortingEntries_[0].desc) {
+			if (sctx.sortingContext.entries.size() > 1) {
+				end = applyForcedSort<true, true>(items, comparator, sctx);
+			} else {
+				end = applyForcedSort<true, false>(items, comparator, sctx);
+			}
+		} else {
+			if (sctx.sortingContext.entries.size() > 1) {
+				first = applyForcedSort<false, true>(items, comparator, sctx);
+			} else {
+				first = applyForcedSort<false, false>(items, comparator, sctx);
+			}
+		}
+	}
+	if (sortingOptions.multiColumn || sortingOptions.usingGeneralAlgorithm) {
+		comparator.BindForGeneralSort();
+		int endPos = end - first;
+		if (sortingOptions.usingGeneralAlgorithm) {
+			endPos = std::min<decltype(items.size())>(sctx.query.count + sctx.query.start, endPos);
+		}
+		auto last = first + endPos;
+		applyGeneralSort(first, last, end, comparator, sctx);
 	}
 }
 
@@ -700,7 +609,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 		sortResults(sctx, sctx.preResult->values, sortingOptions);
 	} else if (sortingOptions.postLoopSortingRequired()) {
 		sortResults(sctx, result.Items(), sortingOptions);
-		const size_t offset = sortingOptions.usingGeneralAlgorithm ? sctx.query.start : multisortLimitLeft;
+		const size_t offset = sctx.isForceAll ? sctx.query.start : multisortLimitLeft;
 		setLimitAndOffset(result.Items(), offset, sctx.query.count);
 	}
 	processLeftJoins(result, sctx, resultInitSize);
@@ -848,7 +757,7 @@ void NsSelecter::prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, b
 				if (i == 0) {
 					if (sortIndex->IsOrdered() && !ctx.sortingContext.enableSortOrders) {
 						ctx.sortingContext.uncommitedIndex = sortingEntry.index;
-						ctx.isForceAll = false;
+						ctx.isForceAll = ctx.sortingContext.forcedMode;
 					} else if (!sortIndex->IsOrdered() || isFt || !ctx.sortingContext.enableSortOrders) {
 						ctx.isForceAll = true;
 						sortingCtx.index = nullptr;

@@ -168,12 +168,16 @@ public:
 
 	std::pair<iterator, iterator> equal_range(string_view_t str) {
 		auto it = map_->find(str);
-		return {iterator(it, this), iterator(it == map_->end() ? it : ++it, this)};
+		auto it2 = it;
+		if (it2 != map_->end()) ++it2;
+		return {iterator(it, this), iterator(it2, this)};
 	}
 
 	std::pair<const_iterator, const_iterator> equal_range(string_view_t str) const {
 		auto it = map_->find(str);
-		return {iterator(it, this), iterator(it == map_->end() ? it : ++it, this)};
+		auto it2 = it;
+		if (it2 != map_->end()) ++it2;
+		return {iterator(it, this), iterator(it2, this)};
 	}
 
 	std::pair<iterator, bool> insert(string_view_t str, const V &v) {

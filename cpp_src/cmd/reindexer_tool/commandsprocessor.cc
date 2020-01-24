@@ -711,6 +711,27 @@ void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_
 		nullptr);
 }
 
+template <typename T>
+class HasSetMaxLineSize {
+private:
+	typedef char YesType[1], NoType[2];
+
+	template <typename C>
+	static YesType& test(decltype(&C::set_max_line_size));
+	template <typename C>
+	static NoType& test(...);
+
+public:
+	enum { value = sizeof(test<T>(0)) == sizeof(YesType) };
+};
+
+template <class T>
+void setMaxLineSize(T* rx, int arg, typename std::enable_if<HasSetMaxLineSize<T>::value>::type* = 0) {
+	return rx->set_max_line_size(arg);
+}
+
+void setMaxLineSize(...) {}
+
 template <typename DBInterface>
 bool CommandsProcessor<DBInterface>::Interactive() {
 	bool wasError = false;
@@ -718,7 +739,7 @@ bool CommandsProcessor<DBInterface>::Interactive() {
 	replxx::Replxx rx;
 	std::string history_file = reindexer::fs::JoinPath(reindexer::fs::GetHomeDir(), ".reindexer_history.txt");
 
-	// rx.set_max_line_size(16384);
+	setMaxLineSize(&rx, 0x10000);
 	rx.history_load(history_file);
 	rx.set_max_history_size(1000);
 	rx.set_max_hint_rows(8);

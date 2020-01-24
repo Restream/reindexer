@@ -1,3 +1,16 @@
+# Version 2.4.6 (24.01.2020)
+## Core
+- [fea] Replication of transactions
+- [fea] EqualPosition support in sql in dsl
+- [fix] Forced sort fixes
+- [fix] Distinct keyword fixes in sql-dsl parsers/encoders 
+- [fix] Sql auto-complete fixes
+- [fix] Replication lsn mismatch fix
+- [fix] Merge queries with joins fix 
+
+## Reindexer tool
+- [fix] Mac OS X table-view paging fix
+
 # Version 2.4.5 (30.12.2019)
 
 ## Core

@@ -93,6 +93,8 @@ void ApiTvComposite::RegisterAllCases() {
 
 	Register("SortByTreeCompositeIntInt", &ApiTvComposite::SortByTreeCompositeIntInt, this);
 	Register("SortByTreeCompositeIntStrCollateUTF8", &ApiTvComposite::SortByTreeCompositeIntStrCollateUTF8, this);
+	Register("ForcedSortByHashInt", &ApiTvComposite::ForcedSortByHashInt, this);
+	Register("ForcedSortWithSecondCondition", &ApiTvComposite::ForcedSortWithSecondCondition, this);
 }
 
 void ApiTvComposite::Insert(State& state) { BaseFixture::Insert(state); }
@@ -443,6 +445,32 @@ void ApiTvComposite::SortByHashInt(benchmark::State& state) {
 		Query q(nsdef_.name);
 
 		q.Sort("id", false).Limit(20);
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvComposite::ForcedSortByHashInt(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {
+		Query q(nsdef_.name);
+
+		q.Sort("id", false, {10, 20, 30, 40, 50}).Limit(20);
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvComposite::ForcedSortWithSecondCondition(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {
+		Query q(nsdef_.name);
+
+		q.Sort("id", false, {10, 20, 30, 40, 50}).Sort("location", false).Limit(20);
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);

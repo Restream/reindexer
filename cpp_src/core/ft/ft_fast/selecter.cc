@@ -239,7 +239,7 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 
 	for (auto &r : rawRes) {
 		auto idf = IDF(totalDocsCount, r.vids_->size());
-		auto termLenBoost = bound(rawRes.term.opts.boost, holder_.cfg_->termLenWeight, holder_.cfg_->termLenBoost);
+		auto termLenBoost = bound(rawRes.term.opts.termLenBoost, holder_.cfg_->termLenWeight, holder_.cfg_->termLenBoost);
 		if (holder_.cfg_->logLevel >= LogTrace) {
 			logPrintf(LogTrace, "Pattern %s, idf %f, termLenBoost %f", r.pattern, idf, termLenBoost);
 		}

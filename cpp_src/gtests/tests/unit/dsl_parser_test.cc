@@ -8,10 +8,26 @@ TEST_F(JoinSelectsApi, JoinsDSLTest) {
 	queryBooks.LeftJoin(authorid_fk, authorid, CondEq, queryAuthors);
 
 	string dsl = queryBooks.GetJSON();
-	Query testLoadDslQuery, testLoadSQLQuery;
+	Query testLoadDslQuery;
 	Error err = testLoadDslQuery.FromJSON(dsl);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(queryBooks == testLoadDslQuery);
+}
+
+TEST_F(JoinSelectsApi, EqualPositionDSLTest) {
+	Query query = Query(default_namespace);
+	query.Where("f1", CondEq, 1).Where("f2", CondEq, 2).Or().Where("f3", CondEq, 2);
+	query.AddEqualPosition({"f1", "f2"});
+	query.AddEqualPosition({"f1", "f3"});
+	query.OpenBracket().Where("f4", CondEq, 4).Where("f5", CondLt, 10);
+	query.AddEqualPosition({"f4", "f5"});
+	query.CloseBracket();
+
+	string dsl = query.GetJSON();
+	Query testLoadDslQuery;
+	Error err = testLoadDslQuery.FromJSON(dsl);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(query == testLoadDslQuery);
 }
 
 TEST_F(JoinSelectsApi, MergedQueriesDSLTest) {

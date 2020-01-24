@@ -493,7 +493,7 @@ static int r_Step_1a(struct SN_env * z) {
     int among_var;
     {   int m_keep = z->l - z->c;/* (void) m_keep;*/ /* try, line 59 */
         z->ket = z->c; /* [, line 60 */
-        if (z->c <= z->lb || (z->p[z->c - 1] != 39 && z->p[z->c - 1] != 115)) { z->c = z->l - m_keep; goto lab0; }
+        if (z->c <= z->lb || (z->p[z->c - 1] != 39 && z->p[z->c - 1] != 115)) { z->c = z->l - m_keep; goto lab0; }  // -V1048
         among_var = find_among_b(z, a_1, 3); /* substring, line 60 */
         if (!(among_var)) { z->c = z->l - m_keep; goto lab0; }
         z->bra = z->c; /* ], line 60 */
@@ -531,7 +531,7 @@ static int r_Step_1a(struct SN_env * z) {
                 }
                 goto lab1;
             lab2:
-                z->c = z->l - m1;
+                z->c = z->l - m1;  // -V1048
                 {   int ret = slice_from_s(z, 2, s_7); /* <-, line 68 */
                     if (ret < 0) return ret;
                 }
@@ -649,7 +649,7 @@ lab0:
         if (z->c > z->lb) goto lab2; /* atlimit, line 95 */
         return 0;
     lab2:
-        z->c = z->l - m2;
+        z->c = z->l - m2;  // -V1048
     }
     {   int ret = slice_from_s(z, 1, s_13); /* <-, line 96 */
         if (ret < 0) return ret;
@@ -1016,7 +1016,7 @@ extern int english_UTF_8_stem(struct SN_env * z) {
             }
             goto lab2;
         lab3:
-            z->c = c2;
+            z->c = c2;  // -V1048
         }
         goto lab0;
     lab2:

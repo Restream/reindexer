@@ -201,7 +201,7 @@ class HelperMixin(object):
             'on': on
         }
 
-    def helper_query_dsl_construct(self, namespace, limit=10, offset=0, distinct='',
+    def helper_query_dsl_construct(self, namespace, limit=10, offset=0, distinct=[],
                                    req_total='disabled', filters=[], sort={}, joined=[], merged=[],
                                    aggregations=[], select_filter=[], select_functions=[]):
         return {

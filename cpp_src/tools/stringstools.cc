@@ -88,13 +88,13 @@ size_t calcUTf8SizeEnd(const char *end, int pos, size_t limit) {
 }
 
 void check_for_replacement(wchar_t &ch) {
-	if (ch == 0x451) {  // 'ё'
+	if (ch == 0x451) {	// 'ё'
 		ch = 0x435;		// 'е'
 	}
 }
 
 void check_for_replacement(uint32_t &ch) {
-	if (ch == 0x451) {  // 'ё'
+	if (ch == 0x451) {	// 'ё'
 		ch = 0x435;		// 'е'
 	}
 }
@@ -474,27 +474,52 @@ std::string randStringAlph(size_t len) {
 }
 
 template <bool isUtf8>
+void toNextCh(string_view::iterator &it, const string_view &str) {
+	if (isUtf8) {
+		utf8::next(it, str.end());
+	} else {
+		++it;
+	}
+}
+
+template <bool isUtf8>
+void toPrevCh(string_view::iterator &it, const string_view &str) {
+	if (isUtf8) {
+		utf8::previous(it, str.begin());
+	} else {
+		--it;
+	}
+}
+
+template <bool isUtf8>
 Error getBytePosInMultilineString(string_view str, const size_t line, const size_t charPos, size_t &bytePos) {
 	auto it = str.begin();
-	size_t currLine = 0, currCharPos = 0;
-	for (; it != str.end();) {
-		if (*it == '\n')
+	size_t currLine = 0, currCharPos = 0, lastSpacePos = std::string::npos;
+	for (size_t i = 0; it != str.end() && ((currLine != line) || (currCharPos != charPos)); toNextCh<isUtf8>(it, str), ++i) {
+		if (*it == '\n') {
 			++currLine;
-		else if (currLine == line) {
-			if (currCharPos == charPos) break;
+		} else if (currLine == line) {
 			++currCharPos;
 		}
-		if (isUtf8) {
-			utf8::next(it, str.end());
-		} else {
-			++it;
+		if ((currLine == line) && (*it == ' ' || *it == '\t' || *it == '\n')) {
+			lastSpacePos = i;
 		}
 	}
 	if ((currLine == line) && (charPos == currCharPos)) {
-		bytePos = it - str.begin();
+		size_t spaces = 0;
+		if (lastSpacePos != std::string::npos) {
+			auto last = str.begin() + lastSpacePos;
+			auto it2 = last;
+			while (*it2 == ' ' || *it2 == '\t' || *it2 == '\n') {
+				if (it2 == str.begin()) break;
+				toPrevCh<isUtf8>(it2, str);
+				++spaces;
+			}
+		}
+		bytePos = it - str.begin() - spaces - 1;
 		return errOK;
 	}
-	return Error(errNotValid, "Wrong cursor position: line=%d, pos=&d", line, charPos);
+	return Error(errNotValid, "Wrong cursor position: line=%d, pos=%d", line, charPos);
 }
 
 Error cursosPosToBytePos(string_view str, size_t line, size_t charPos, size_t &bytePos) {

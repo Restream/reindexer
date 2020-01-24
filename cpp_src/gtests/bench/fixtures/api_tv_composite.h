@@ -77,6 +77,8 @@ protected:
 	void SortByHashCompositeIntStr(State& state);
 	void SortByTreeCompositeIntInt(State& state);
 	void SortByTreeCompositeIntStrCollateUTF8(State& state);
+	void ForcedSortByHashInt(State& state);
+	void ForcedSortWithSecondCondition(State& state);
 
 private:
 	vector<string> locations_;

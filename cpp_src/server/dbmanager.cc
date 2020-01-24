@@ -195,7 +195,6 @@ Error DBManager::Login(const string &dbName, AuthContext &auth) {
 
 	if (!dbName.empty()) {
 		const UserRecord &urec = it->second;
-		auth.role_ = kRoleNone;
 
 		auto dbIt = urec.roles.find("*");
 		if (dbIt != urec.roles.end()) {

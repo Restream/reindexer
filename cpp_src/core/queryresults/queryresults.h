@@ -1,26 +1,22 @@
 #pragma once
 
-#include <unordered_map>
 #include "aggregationresult.h"
 #include "core/item.h"
 #include "core/payload/payloadvalue.h"
 #include "core/rdxcontext.h"
-#include "estl/h_vector.h"
 #include "itemref.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
 
 using std::string;
-using std::unordered_map;
-using std::unique_ptr;
 
 class TagsMatcher;
 class PayloadType;
 class WrSerializer;
 
 namespace joins {
-class Results;
+class NamespaceResults;
 }
 
 /// QueryResults is an interface for iterating over documents, returned by Query from Reindexer.<br>
@@ -76,7 +72,7 @@ public:
 	Iterator end() const { return Iterator{this, int(items_.size()), errOK}; }
 	Iterator operator[](int idx) const { return Iterator{this, idx, errOK}; }
 
-	std::unique_ptr<joins::Results> joined_;
+	std::vector<joins::NamespaceResults> joined_;
 	vector<AggregationResult> aggregationResults;
 	int totalCount = 0;
 	bool haveProcent = false;

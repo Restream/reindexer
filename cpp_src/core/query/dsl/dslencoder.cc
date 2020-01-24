@@ -22,7 +22,7 @@ namespace dsl {
 const unordered_map<JoinType, string, EnumClassHash> join_types = {{InnerJoin, "inner"}, {LeftJoin, "left"}, {OrInnerJoin, "orinner"}};
 
 const unordered_map<CondType, string, EnumClassHash> cond_map = {
-	{CondAny, "any"},	 {CondEq, "eq"},   {CondLt, "lt"},			{CondLe, "le"},		  {CondGt, "gt"},	 {CondGe, "ge"},
+	{CondAny, "any"},	  {CondEq, "eq"},	{CondLt, "lt"},			{CondLe, "le"},		  {CondGt, "gt"},	  {CondGe, "ge"},
 	{CondRange, "range"}, {CondSet, "set"}, {CondAllSet, "allset"}, {CondEmpty, "empty"}, {CondLike, "like"},
 };
 
@@ -58,6 +58,17 @@ void encodeJoins(const Query& query, JsonBuilder& builder) {
 	}
 }
 
+void encodeEqualPositions(const Query& query, JsonBuilder& builder) {
+	if (query.equalPositions_.empty()) return;
+	for (auto it = query.equalPositions_.begin(); it != query.equalPositions_.end(); ++it) {
+		auto epNode = builder.Array("equal_position");
+		for (auto it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
+			assert(query.entries.IsValue(*it2));
+			epNode.Put(nullptr, query.entries[*it2].index);
+		}
+	}
+}
+
 void encodeFilters(const Query& query, JsonBuilder& builder) {
 	auto arrNode = builder.Array("filters");
 	query.entries.ToDsl(query, arrNode);
@@ -83,6 +94,15 @@ void encodeSelectFilter(const Query& query, JsonBuilder& builder) {
 void encodeSelectFunctions(const Query& query, JsonBuilder& builder) {
 	auto arrNode = builder.Array("select_functions");
 	for (auto& str : query.selectFunctions_) arrNode.Put(nullptr, str);
+}
+
+void encodeDistinct(const Query& query, JsonBuilder& builder) {
+	auto arrNode = builder.Array("distinct");
+	for (auto it = query.entries.begin(); it != query.entries.end(); ++it) {
+		if (it->IsLeaf() && it->Value().distinct) {
+			arrNode.Put(nullptr, it->Value().index);
+		}
+	}
 }
 
 void encodeAggregationFunctions(const Query& query, JsonBuilder& builder) {
@@ -128,6 +148,7 @@ void encodeSingleJoinQuery(const JoinedQuery& joinQuery, JsonBuilder& builder) {
 }
 
 void encodeFilter(const Query& parentQuery, const QueryEntry& qentry, JsonBuilder& builder) {
+	if (qentry.distinct) return;
 	if (qentry.joinIndex == QueryEntry::kNoJoins) {
 		builder.Put("cond", get(cond_map, CondType(qentry.condition)));
 		builder.Put("field", qentry.index);
@@ -151,16 +172,17 @@ void toDsl(const Query& query, JsonBuilder& builder) {
 	builder.Put("namespace", query._namespace);
 	builder.Put("limit", query.count);
 	builder.Put("offset", query.start);
-	// builder.Put("distinct", "");
 	builder.Put("req_total", get(reqtotal_values, query.calcTotal));
 	builder.Put("explain", query.explain_);
 
+	encodeDistinct(query, builder);
 	encodeSelectFilter(query, builder);
 	encodeSelectFunctions(query, builder);
 	encodeSorting(query.sortingEntries_, builder);
 	encodeFilters(query, builder);
 	encodeMergedQueries(query, builder);
 	encodeAggregationFunctions(query, builder);
+	encodeEqualPositions(query, builder);
 }
 
 std::string toDsl(const Query& query) {
@@ -177,10 +199,11 @@ std::string toDsl(const Query& query) {
 void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& parentQuery, JsonBuilder& builder) {
 	for (; it != to; ++it) {
 		auto node = builder.Object();
-		if (it->Value().joinIndex == QueryEntry::kNoJoins) {
-			node.Put("op", dsl::get(dsl::op_map, it->Op));
-		}
 		if (it->IsLeaf()) {
+			if (it->Value().distinct) continue;
+			if (it->Value().joinIndex == QueryEntry::kNoJoins) {
+				node.Put("op", dsl::get(dsl::op_map, it->Op));
+			}
 			dsl::encodeFilter(parentQuery, it->Value(), node);
 		} else {
 			auto arrNode = node.Array("filters");

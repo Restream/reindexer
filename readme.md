@@ -549,6 +549,43 @@ Example code for aggregate `items` by `price` and `name`
 
 ```
 
+### Searching in array fields with matching array indexes
+Reindexer allows to search data in array fields when matching values have same indixes positions.
+For instance, we've got an array of structures:
+
+```go
+type Elem struct {
+   F1 int `reindex:"f1"`
+   F2 int `reindex:"f2"`
+}
+
+type A struct {
+   Elems []Elem
+}
+```
+Common attempt to search values in this array 
+```go 
+Where ("f1",EQ,1).Where ("f2",EQ,2) 
+```
+finds all items of array `Elem[]` where `f1` is equal to 1 and `f2` is equal to 2. 
+
+`EqualPosition` function allows to search in array fields with equal indices. 
+Search like this:
+```go 
+Where("f1", reindexer.GE, 5).Where("f2", reindexer.EQ, 100).EqualPosition("f1", "f2")
+```
+or
+```sql
+SELECT * FROM Namespace WHERE f1 >= 5 AND f2 = 100 EQUAL_POSITION(f1,f2); 
+```
+
+finds all items of array `Elem[]` where `f1` is greater or equal to 5 and `f2` is equal to 100 `and` their indices are always equal (for instance, query returned 5 items where only 3rd element of array has appropriate values). 
+
+With complex expressions (expressions with brackets) equal_position() works only within a bracket:
+```sql
+SELECT * FROM Namespace WHERE (f1 >= 5 AND f2 = 100 EQUAL_POSITION(f1,f2)) OR (f3 = 3 AND f4 < 4 EQUAL_POSITION(f3,f4)); 
+```
+
 ### Atomic on update functions
 
 There are atomic functions, which executes under namespace lock, and therefore guarantes data consistency:

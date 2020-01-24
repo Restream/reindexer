@@ -141,6 +141,7 @@ protected:
 	template <typename T>
 	JoinedSelectors prepareJoinedSelectors(const Query &q, QueryResults &result, NsLocker<T> &locks, SelectFunctionsHolder &func,
 										   vector<QueryResultsContext> &, const RdxContext &ctx);
+	void prepareJoinResults(const Query &q, QueryResults &result);
 	static bool isPreResultValuesModeOptimizationAvailable(const Query &jItemQ, const Namespace::Ptr &jns);
 
 	void ensureDataLoaded(Namespace::Ptr &ns, const RdxContext &ctx);

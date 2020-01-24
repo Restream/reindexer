@@ -43,6 +43,28 @@ class QueryPreprocessor;
 class SelectIteratorContainer;
 class RdxContext;
 class RdxActivityContext;
+class ItemComparator;
+
+struct NsContext {
+	NsContext(const RdxContext &rdxCtx) : rdxContext(rdxCtx) {}
+	NsContext &NoLock() {
+		noLock = true;
+		return *this;
+	}
+	NsContext &Lsn(int64_t lsn_) {
+		lsn = lsn_;
+		return *this;
+	}
+	NsContext &TxSer(Transaction::Serializer &ser) {
+		txSerializer = &ser;
+		return *this;
+	}
+
+	const RdxContext &rdxContext;
+	bool noLock = false;
+	int64_t lsn = -1;
+	Transaction::Serializer *txSerializer = nullptr;
+};
 
 class Namespace {
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Namespace>;
@@ -55,6 +77,7 @@ protected:
 	friend class ReindexerImpl;
 	friend QueryPreprocessor;
 	friend SelectIteratorContainer;
+	friend ItemComparator;
 
 	class NSUpdateSortedContext : public UpdateSortedContext {
 	public:
@@ -131,14 +154,14 @@ public:
 	void UpdateIndex(const IndexDef &indexDef, const RdxContext &ctx);
 	void DropIndex(const IndexDef &indexDef, const RdxContext &ctx);
 
-	void Insert(Item &item, const RdxContext &ctx, bool store = true);
-	void Update(Item &item, const RdxContext &ctx, bool store = true);
-	void Update(const Query &query, QueryResults &result, const RdxContext &ctx, int64_t lsn = -1, bool noLock = false);
-	void Upsert(Item &item, const RdxContext &ctx, bool store = true, bool noLock = false);
+	void Insert(Item &item, const RdxContext &ctx);
+	void Update(Item &item, const RdxContext &ctx);
+	void Update(const Query &query, QueryResults &result, const NsContext &);
+	void Upsert(Item &item, const NsContext &);
 
-	void Delete(Item &item, const RdxContext &ctx, bool noLock = false);
-	void Delete(const Query &query, QueryResults &result, const RdxContext &ctx, int64_t lsn = -1, bool noLock = false);
-	void Truncate(const RdxContext &ctx, int64_t lsn = -1, bool noLock = false);
+	void Delete(Item &item, const NsContext &);
+	void Delete(const Query &query, QueryResults &result, const NsContext &);
+	void Truncate(const NsContext &);
 
 	void Select(QueryResults &result, SelectCtx &params, const RdxContext &);
 	NamespaceDef GetDefinition(const RdxContext &ctx);
@@ -158,7 +181,7 @@ public:
 	// Get meta data from storage by key
 	string GetMeta(const string &key, const RdxContext &ctx);
 	// Put meta data to storage by key
-	void PutMeta(const string &key, const string_view &data, const RdxContext &ctx, int64_t lsn = -1);
+	void PutMeta(const string &key, const string_view &data, const NsContext &);
 	int64_t GetSerial(const string &field);
 
 	int getIndexByName(const string &index) const;
@@ -202,8 +225,8 @@ protected:
 
 	void markUpdated();
 	void doUpsert(ItemImpl *ritem, IdType id, bool doUpdate);
-	void modifyItem(Item &item, const RdxContext &ctx, bool store = true, int mode = ModeUpsert, bool noLock = false);
-	void updateFieldsFromQuery(IdType itemId, const Query &q, bool rowBasedReplication, bool store = true);
+	void modifyItem(Item &item, const NsContext &, int mode = ModeUpsert);
+	void updateFieldsFromQuery(IdType itemId, const Query &q, bool rowBasedReplication, const NsContext &);
 	void updateTagsMatcherFromItem(ItemImpl *ritem);
 	void updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields);
 	void doDelete(IdType id);
@@ -276,7 +299,7 @@ protected:
 	// Commit phases state
 	std::atomic<bool> sortOrdersBuilt_;
 
-	unordered_map<string, string> meta_;
+	std::unordered_map<string, string> meta_;
 
 	string dbpath_;
 
@@ -320,6 +343,6 @@ private:
 
 	std::atomic<uint32_t> itemsCount_;
 
-};  // namespace reindexer
+};	// namespace reindexer
 
 }  // namespace reindexer

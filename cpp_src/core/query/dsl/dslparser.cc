@@ -23,13 +23,14 @@ enum class Root {
 	SelectFunctions,
 	ReqTotal,
 	Aggregations,
-	Explain
+	Explain,
+	EqualPosition,
 };
 
 enum class Sort { Desc, Field, Values };
 enum class JoinRoot { Type, On, Namespace, Filters, Sort, Limit, Offset };
 enum class JoinEntry { LetfField, RightField, Cond, Op };
-enum class Filter { Cond, Op, Field, Value, Distinct, Filters, JoinQuery };
+enum class Filter { Cond, Op, Field, Value, Filters, JoinQuery };
 enum class Aggregation { Fields, Type, Sort, Limit, Offset };
 
 // additional for parse root DSL fields
@@ -47,7 +48,8 @@ static const fast_str_map<Root> root_map = {{"namespace", Root::Namespace},
 											{"select_functions", Root::SelectFunctions},
 											{"req_total", Root::ReqTotal},
 											{"aggregations", Root::Aggregations},
-											{"explain", Root::Explain}};
+											{"explain", Root::Explain},
+											{"equal_position", Root::EqualPosition}};
 
 // additional for parse field 'sort'
 
@@ -67,14 +69,13 @@ static const fast_str_map<JoinType> join_types = {{"inner", InnerJoin}, {"left",
 
 // additionalfor parse field 'filters'
 
-static const fast_str_map<Filter> filter_map = {{"cond", Filter::Cond},			  {"op", Filter::Op},		{"field", Filter::Field},
-												{"distinct", Filter::Distinct},   {"value", Filter::Value}, {"filters", Filter::Filters},
-												{"join_query", Filter::JoinQuery}};
+static const fast_str_map<Filter> filter_map = {{"cond", Filter::Cond},	  {"op", Filter::Op},			{"field", Filter::Field},
+												{"value", Filter::Value}, {"filters", Filter::Filters}, {"join_query", Filter::JoinQuery}};
 
 // additional for 'filter::cond' field
 
 static const fast_str_map<CondType> cond_map = {
-	{"any", CondAny},	 {"eq", CondEq},   {"lt", CondLt},			{"le", CondLe},		  {"gt", CondGt},	{"ge", CondGe},
+	{"any", CondAny},	  {"eq", CondEq},	{"lt", CondLt},			{"le", CondLe},		  {"gt", CondGt},	 {"ge", CondGe},
 	{"range", CondRange}, {"set", CondSet}, {"allset", CondAllSet}, {"empty", CondEmpty}, {"match", CondEq}, {"like", CondLike},
 };
 
@@ -157,7 +158,7 @@ void parseSortEntry(JsonValue& entry, Query& q) {
 				break;
 
 			case Sort::Values:
-				parseValues(v, q.forcedSortOrder);
+				parseValues(v, q.forcedSortOrder_);
 				break;
 		}
 	}
@@ -210,6 +211,7 @@ void parseFilter(JsonValue& filter, Query& q) {
 	checkJsonValueType(filter, "filter", JSON_OBJECT);
 	bool joinEntry = false;
 	enum { ENTRY, BRACKET } entryOrBracket = ENTRY;
+	int elemsParsed = 0;
 	for (auto elem : filter) {
 		auto& v = elem->value;
 		auto name = elem->key;
@@ -226,11 +228,6 @@ void parseFilter(JsonValue& filter, Query& q) {
 
 			case Filter::Value:
 				parseValues(v, qe.values);
-				break;
-
-			case Filter::Distinct:
-				if ((v.getTag() != JSON_TRUE) && (v.getTag() != JSON_FALSE)) throw Error(errParseJson, "Wrong type of field '%s'", name);
-				qe.distinct = (v.getTag() == JSON_TRUE);
 				break;
 
 			case Filter::JoinQuery:
@@ -252,7 +249,9 @@ void parseFilter(JsonValue& filter, Query& q) {
 				entryOrBracket = BRACKET;
 				break;
 		}
+		++elemsParsed;
 	}
+	if (elemsParsed == 0) return;
 	if (entryOrBracket == BRACKET) {
 		q.entries.SetLastOperation(op);
 		return;
@@ -438,8 +437,11 @@ void parse(JsonValue& root, Query& q) {
 				break;
 
 			case Root::Distinct:
-				checkJsonValueType(v, name, JSON_STRING);
-				if (v.toString().size()) q.Distinct(string(v.toString()));
+				checkJsonValueType(v, name, JSON_ARRAY);
+				for (auto f : v) {
+					checkJsonValueType(f->value, f->key, JSON_STRING);
+					if (f->value.toString().size()) q.Distinct(string(f->value.toString()));
+				}
 				break;
 
 			case Root::Filters:
@@ -474,6 +476,16 @@ void parse(JsonValue& root, Query& q) {
 				checkJsonValueType(v, name, JSON_FALSE, JSON_TRUE);
 				q.explain_ = v.getTag() == JSON_TRUE;
 				break;
+			case Root::EqualPosition: {
+				checkJsonValueType(v, name, JSON_ARRAY);
+				vector<string> ep;
+				for (auto f : v) {
+					checkJsonValueType(f->value, f->key, JSON_STRING);
+					ep.emplace_back(f->value.toString());
+				}
+				if (ep.size() < 2) throw Error(errLogic, "equal_position() is supposed to have at least 2 arguments");
+				q.equalPositions_.emplace(q.entries.DetermineEqualPositionIndexes(ep));
+			} break;
 		}
 	}
 }

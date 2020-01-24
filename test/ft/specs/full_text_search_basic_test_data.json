@@ -555,7 +555,7 @@
       "A phrase we are looking for is here!"
     ],
     "valid_queries": [
-      "*en *er +looking +fo*"
+      "*en* *er* +looking +fo*"
     ],
     "invalid_queries": []
   },
@@ -1016,7 +1016,7 @@
       "Фраза, которую мы ищем, находится тут!"
     ],
     "valid_queries": [
-      "вы~ +ищем"
+      "кыторую~ +ищем"
     ],
     "invalid_queries": []
   },
@@ -1051,10 +1051,9 @@
     ],
     "documents_expected_to_match": [
       "Предложение с фразой, которую мы ищем.",
-      "Фраза, которую мы ищем, находится тут!"
     ],
     "valid_queries": [
-      "которую +вы~ +ищем"
+      "которую +фрызой~ +ищем"
     ],
     "invalid_queries": []
   },
