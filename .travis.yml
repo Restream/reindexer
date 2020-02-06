@@ -37,6 +37,7 @@ git:
     - if [[ ${WITH_DOXYGEN} -eq 1 ]]; then git clone https://github.com/mosra/m.css.git /tmp/dep_mcss && sudo ln -s /tmp/dep_mcss/doxygen/dox2html5.py /usr/local/bin; fi
     - go get github.com/cheggaaa/deepcopy
     - go get gopkg.in/yaml.v2
+    - go get github.com/stretchr/testify/assert
   script:
     - cd ${BUILD_DIR} && cmake ${CMAKE_OPTS} ${TRAVIS_BUILD_DIR} && make -j4
     - ctest --verbose
