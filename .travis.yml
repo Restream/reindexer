@@ -96,5 +96,5 @@ jobs:
     # - stage: build
     #   <<: *stage_build_linux_tsan_template
 
-    - stage: build
-      <<: *stage_build_linux_cov_template
+    # - stage: build
+    #   <<: *stage_build_linux_cov_template
