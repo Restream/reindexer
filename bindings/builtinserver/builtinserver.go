@@ -151,6 +151,10 @@ func (server *BuiltinServer) TruncateNamespace(ctx context.Context, namespace st
 	return server.builtin.TruncateNamespace(ctx, namespace)
 }
 
+func (server *BuiltinServer) RenameNamespace(ctx context.Context, srcNs string, dstNs string) error {
+	return server.builtin.RenameNamespace(ctx, srcNs, dstNs)
+}
+
 func (server *BuiltinServer) EnableStorage(ctx context.Context, namespace string) error {
 	return server.builtin.EnableStorage(ctx, namespace)
 }

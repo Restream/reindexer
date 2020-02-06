@@ -111,7 +111,7 @@ Error Replicator::syncDatabase() {
 	vector<NamespaceDef> nses;
 	logPrintf(LogInfo, "[repl] Starting sync from '%s'", config_.masterDSN);
 
-	Error err = master_->EnumNamespaces(nses, false);
+	Error err = master_->EnumNamespaces(nses, EnumNamespacesOpts());
 	if (!err.ok()) {
 		if (err.code() == errForbidden || err.code() == errReplParams) {
 			terminate_ = true;
@@ -402,9 +402,10 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 			break;
 		}
 		case WalTransaction: {
+			QueryResults res;
 			Transaction tx = slaveNs->NewTransaction(dummyCtx_);
 			err = tx.Deserialize(rec.data, lsn);
-			if (err.ok()) slaveNs->CommitTransaction(tx, dummyCtx_);
+			if (err.ok()) slaveNs->CommitTransaction(tx, res, dummyCtx_);
 			break;
 		}
 		default:

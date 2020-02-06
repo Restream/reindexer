@@ -12,17 +12,39 @@ using std::vector;
 
 namespace reindexer {
 
+struct ItemImplRawData {
+	ItemImplRawData(PayloadValue v) : payloadValue_(v) {}
+	ItemImplRawData() {}
+	ItemImplRawData(const ItemImplRawData &) = delete;
+	ItemImplRawData(ItemImplRawData &&) noexcept;
+	ItemImplRawData &operator=(const ItemImplRawData &) = delete;
+	ItemImplRawData &operator=(ItemImplRawData &&) noexcept;
+
+	PayloadValue payloadValue_;
+	std::unique_ptr<uint8_t[]> tupleData_;
+	std::unique_ptr<char[]> sourceData_;
+	vector<string> precepts_;
+	std::unique_ptr<std::deque<std::string>> holder_;
+};
+
 class Namespace;
-class ItemImpl {
+class ItemImpl : public ItemImplRawData {
 public:
 	// Construct empty item
 	ItemImpl(PayloadType type, const TagsMatcher &tagsMatcher, const FieldsSet &pkFields = {})
-		: payloadType_(type), payloadValue_(type.TotalSize(), 0, type.TotalSize() + 0x100), tagsMatcher_(tagsMatcher), pkFields_(pkFields) {
+		: ItemImplRawData(PayloadValue(type.TotalSize(), 0, type.TotalSize() + 0x100)),
+		  payloadType_(type),
+		  tagsMatcher_(tagsMatcher),
+		  pkFields_(pkFields) {
 		tagsMatcher_.clearUpdated();
 	}
 
+	// Construct empty item
+	ItemImpl(PayloadType type, const TagsMatcher &tagsMatcher, const FieldsSet &pkFields, ItemImplRawData &&rawData)
+		: ItemImplRawData(std::move(rawData)), payloadType_(type), tagsMatcher_(tagsMatcher), pkFields_(pkFields) {}
+
 	ItemImpl(PayloadType type, PayloadValue v, const TagsMatcher &tagsMatcher)
-		: payloadType_(type), payloadValue_(v), tagsMatcher_(tagsMatcher) {
+		: ItemImplRawData(v), payloadType_(type), tagsMatcher_(tagsMatcher) {
 		tagsMatcher_.clearUpdated();
 	}
 
@@ -63,10 +85,14 @@ public:
 		tagsMatcher_ = TagsMatcher();
 		precepts_.clear();
 		cjson_ = string_view();
-		holder_.clear();
+		holder_.reset();
+		sourceData_.reset();
+		tupleData_.reset();
 		ser_ = WrSerializer();
+
 		GetPayload().Reset();
 		payloadValue_.SetLSN(-1);
+
 		unsafe_ = false;
 		ns_.reset();
 		realValue_ = PayloadValue();
@@ -77,17 +103,13 @@ public:
 protected:
 	// Index fields payload data
 	PayloadType payloadType_;
-	PayloadValue payloadValue_;
 	PayloadValue realValue_;
 	TagsMatcher tagsMatcher_;
 	FieldsSet pkFields_;
 
 	WrSerializer ser_;
-	string tupleData_;
 
-	vector<string> precepts_;
 	bool unsafe_ = false;
-	std::deque<std::string> holder_;
 	string_view cjson_;
 	std::shared_ptr<Namespace> ns_;
 };

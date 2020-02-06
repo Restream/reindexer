@@ -162,6 +162,7 @@ type RawBinding interface {
 	CloseNamespace(ctx context.Context, namespace string) error
 	DropNamespace(ctx context.Context, namespace string) error
 	TruncateNamespace(ctx context.Context, namespace string) error
+	RenameNamespace(ctx context.Context, srcNs string, dstNs string) error
 	EnableStorage(ctx context.Context, namespace string) error
 	AddIndex(ctx context.Context, namespace string, indexDef IndexDef) error
 	UpdateIndex(ctx context.Context, namespace string, indexDef IndexDef) error

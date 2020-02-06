@@ -27,7 +27,7 @@ FROM alpine:latest
 
 COPY --from=build /usr/local /usr/local
 COPY --from=build /entrypoint.sh /entrypoint.sh
-RUN apk update && apk add libstdc++ libunwind snappy libexecinfo && rm -rf /var/cache/apk/*
+RUN apk update && apk add libstdc++ libunwind snappy libexecinfo leveldb && rm -rf /var/cache/apk/*
 
 ENV RX_DATABASE /db
 ENV RX_CORELOG stdout

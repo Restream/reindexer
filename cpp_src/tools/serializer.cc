@@ -367,6 +367,22 @@ chunk WrSerializer::DetachChunk() {
 	return ch;
 }
 
+std::unique_ptr<uint8_t[]> WrSerializer::DetachBuf() {
+	std::unique_ptr<uint8_t[]> ret;
+
+	reinterpret_cast<l_string_hdr *>(buf_)->length = len_ - sizeof(uint32_t);
+	if (buf_ == inBuf_) {
+		ret.reset(new uint8_t[len_]);
+		memcpy(ret.get(), buf_, len_);
+	} else {
+		ret.reset(buf_);
+	}
+	buf_ = inBuf_;
+	cap_ = sizeof(inBuf_);
+	len_ = 0;
+	return ret;
+};
+
 void WrSerializer::Write(string_view slice) {
 	grow(slice.size());
 	memcpy(&buf_[len_], slice.data(), slice.size());

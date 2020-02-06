@@ -238,7 +238,7 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, const InternalRdxCo
 			}
 		}
 		if (!validateObjectName(nsDef.name)) {
-			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-, are allowed");
+			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
 		}
 		bool readyToLoadStorage = (nsDef.storage.IsEnabled() && !storagePath_.empty());
 		ns = std::make_shared<Namespace>(nsDef.name, observers_);
@@ -277,7 +277,7 @@ Error ReindexerImpl::OpenNamespace(string_view name, const StorageOpts& storageO
 			}
 		}
 		if (!validateObjectName(name)) {
-			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-, are allowed");
+			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
 		}
 		string nameStr(name);
 		ns = std::make_shared<Namespace>(nameStr, observers_);
@@ -360,12 +360,29 @@ Error ReindexerImpl::TruncateNamespace(string_view nsName, const InternalRdxCont
 	return err;
 }
 
-Error ReindexerImpl::RenameNamespace(string_view srcNsName, const std::string& dstNsName, bool requireDst, const InternalRdxContext& ctx) {
+Error ReindexerImpl::RenameNamespace(string_view srcNsName, const std::string& dstNsName, const InternalRdxContext& ctx) {
 	Namespace::Ptr dstNs, srcNs;
 	try {
+		if (dstNsName == srcNsName.data()) return errOK;
+		const char kSystemNamespacePrefix = '#';
+		if (!srcNsName.empty() && srcNsName[0] == kSystemNamespacePrefix) {
+			return Error(errParams, "Can't rename system namespace (%s)", srcNsName);
+		}
+		if (dstNsName.empty()) {
+			return Error(errParams, "Can't rename namespace to empty name");
+		}
+		if (!validateObjectName(dstNsName)) {
+			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed (%s)", dstNsName);
+		}
+
+		if (dstNsName[0] == kSystemNamespacePrefix) {
+			return Error(errParams, "Can't rename to system namespace name (%s)", dstNsName);
+		}
+
 		WrSerializer ser;
 		const auto rdxCtx = ctx.CreateRdxContext(
 			ctx.NeedTraceActivity() ? (ser << "RENAME " << srcNsName << " to " << dstNsName).Slice() : ""_sv, activities_);
+
 		ULock lock(mtx_, &rdxCtx);
 		auto srcIt = namespaces_.find(srcNsName);
 		if (srcIt == namespaces_.end()) {
@@ -381,9 +398,6 @@ Error ReindexerImpl::RenameNamespace(string_view srcNsName, const std::string& d
 			srcNs->Rename(dstNs, storagePath_, rdxCtx);
 			observers_.OnWALUpdate(0, dstNsName, WALRecord(WalNamespaceDrop));
 		} else {
-			if (requireDst) {
-				return Error(errParams, "Dst namespace '%s' doesn't exist", dstNsName);
-			}
 			srcNs->Rename(dstNsName, storagePath_, rdxCtx);
 		}
 
@@ -491,7 +505,7 @@ Transaction ReindexerImpl::NewTransaction(string_view _namespace, const Internal
 	}
 }
 
-Error ReindexerImpl::CommitTransaction(Transaction& tr, const InternalRdxContext& ctx) {
+Error ReindexerImpl::CommitTransaction(Transaction& tr, QueryResults& result, const InternalRdxContext& ctx) {
 	Error err = errOK;
 
 	Namespace::Ptr ns;
@@ -499,8 +513,8 @@ Error ReindexerImpl::CommitTransaction(Transaction& tr, const InternalRdxContext
 		WrSerializer ser;
 		const RdxContext rdxCtx =
 			ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "COMMIT TRANSACTION "_sv << tr.GetName()).Slice() : ""_sv, activities_);
-		getNamespace(tr.GetName(), rdxCtx)->CommitTransaction(tr, rdxCtx);
-		for (auto& step : tr.GetSteps()) updateToSystemNamespace(tr.GetName(), step.item_, rdxCtx);
+		// for (auto& step : tr.GetSteps()) updateToSystemNamespace(tr.GetName(), step.item_, rdxCtx);
+		getNamespace(tr.GetName(), rdxCtx)->CommitTransaction(tr, result, rdxCtx);
 	} catch (const Error& e) {
 		err = e;
 	}
@@ -649,7 +663,13 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 			},
 			std::chrono::microseconds(profilingCfg.queriedThresholdUS), profilingCfg.queriesPerfStats);
 
-		if (q._namespace.size() && q._namespace[0] == '#') syncSystemNamespaces(q._namespace, rdxCtx);
+		if (q._namespace.size() && q._namespace[0] == '#') {
+			string filterNsName;
+			if (q.entries.Size() == 1 && q.entries.IsEntry(0) && q.entries[0].condition == CondEq && q.entries[0].values.size() == 1)
+				filterNsName = q.entries[0].values[0].As<string>();
+
+			syncSystemNamespaces(q._namespace, filterNsName, rdxCtx);
+		}
 		// Lookup and lock namespaces_
 		ensureDataLoaded(mainNs, rdxCtx);
 		mainNs->updateSelectTime();
@@ -675,7 +695,7 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 	}
 	if (ctx.Compl()) ctx.Compl()(errOK);
 	return errOK;
-}
+}  // namespace reindexer
 
 struct ReindexerImpl::QueryResultsContext {
 	QueryResultsContext() {}
@@ -960,23 +980,28 @@ std::vector<string> ReindexerImpl::getNamespacesNames(const RdxContext& ctx) {
 	return ret;
 }
 
-Error ReindexerImpl::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll, const InternalRdxContext& ctx) {
+Error ReindexerImpl::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const InternalRdxContext& ctx) {
+	logPrintf(LogTrace, "ReindexerImpl::EnumNamespaces (%d,%s)", opts.options_, opts.filter_);
 	try {
 		const auto rdxCtx = ctx.CreateRdxContext("SELECT NAMESPACES", activities_);
 		auto nsarray = getNamespaces(rdxCtx);
 		for (auto& nspair : nsarray) {
-			auto nsDef = nspair.second->GetDefinition(rdxCtx);
+			if (!opts.MatchFilter(nspair.first)) continue;
+			NamespaceDef nsDef(nspair.first);
+			if (!opts.IsOnlyNames()) {
+				nsDef = nspair.second->GetDefinition(rdxCtx);
+			}
 			if (nsDef.name == nspair.first) {
 				defs.emplace_back(std::move(nsDef));
 			}
 		}
 
-		if (bEnumAll && !storagePath_.empty()) {
+		if (opts.IsWithClosed() && !storagePath_.empty()) {
 			vector<fs::DirEntry> dirs;
 			if (fs::ReadDir(storagePath_, dirs) != 0) return Error(errLogic, "Could not read database dir");
 
 			for (auto& d : dirs) {
-				if (d.isDir && d.name != "." && d.name != "..") {
+				if (d.isDir && d.name != "." && d.name != ".." && opts.MatchFilter(d.name)) {
 					{
 						SLock lock(mtx_, &rdxCtx);
 						if (namespaces_.find(d.name) != namespaces_.end()) continue;
@@ -1272,7 +1297,8 @@ void ReindexerImpl::updateReplicationConfFile() {
 	}
 }
 
-void ReindexerImpl::syncSystemNamespaces(string_view name, const RdxContext& ctx) {
+void ReindexerImpl::syncSystemNamespaces(string_view sysNsName, string_view filterNsName, const RdxContext& ctx) {
+	logPrintf(LogTrace, "ReindexerImpl::syncSystemNamespaces (%s,%s)", sysNsName, filterNsName);
 	auto nsarray = getNamespaces(ctx);
 	WrSerializer ser;
 	const auto activityCtx = ctx.OnlyActivity();
@@ -1281,6 +1307,7 @@ void ReindexerImpl::syncSystemNamespaces(string_view name, const RdxContext& ctx
 		std::vector<Item> items;
 		items.reserve(nsarray.size());
 		for (auto& nspair : nsarray) {
+			if (!filterNsName.empty() && filterNsName != nspair.first) continue;
 			if (nspair.second->IsSystem(activityCtx) && !withSystem) continue;
 			ser.Reset();
 			if (filler(nspair)) {
@@ -1301,7 +1328,7 @@ void ReindexerImpl::syncSystemNamespaces(string_view name, const RdxContext& ctx
 
 	ProfilingConfigData profilingCfg = configProvider_.GetProfilingConfig();
 
-	if (profilingCfg.perfStats && (name.empty() || name == kPerfStatsNamespace)) {
+	if (profilingCfg.perfStats && sysNsName == kPerfStatsNamespace) {
 		forEachNS(getNamespace(kPerfStatsNamespace, ctx), false, [&](std::pair<string, Namespace::Ptr>& nspair) {
 			auto stats = nspair.second->GetPerfStat(ctx);
 			bool notRenamed = (stats.name == nspair.first);
@@ -1310,7 +1337,7 @@ void ReindexerImpl::syncSystemNamespaces(string_view name, const RdxContext& ctx
 		});
 	}
 
-	if (profilingCfg.memStats && (name.empty() || name == kMemStatsNamespace)) {
+	if (profilingCfg.memStats && sysNsName == kMemStatsNamespace) {
 		forEachNS(getNamespace(kMemStatsNamespace, ctx), false, [&](std::pair<string, Namespace::Ptr>& nspair) {
 			auto stats = nspair.second->GetMemStat(ctx);
 			bool notRenamed = (stats.name == nspair.first);
@@ -1319,7 +1346,7 @@ void ReindexerImpl::syncSystemNamespaces(string_view name, const RdxContext& ctx
 		});
 	}
 
-	if (name.empty() || name == kNamespacesNamespace) {
+	if (sysNsName == kNamespacesNamespace) {
 		forEachNS(getNamespace(kNamespacesNamespace, ctx), true, [&](std::pair<string, Namespace::Ptr>& nspair) {
 			auto stats = nspair.second->GetDefinition(ctx);
 			bool notRenamed = (stats.name == nspair.first);
@@ -1328,7 +1355,7 @@ void ReindexerImpl::syncSystemNamespaces(string_view name, const RdxContext& ctx
 		});
 	}
 
-	if (profilingCfg.queriesPerfStats && (name.empty() || name == kQueriesPerfStatsNamespace)) {
+	if (profilingCfg.queriesPerfStats && sysNsName == kQueriesPerfStatsNamespace) {
 		const auto data = queriesStatTracker_.Data();
 		std::vector<Item> items;
 		items.reserve(data.size());
@@ -1348,7 +1375,7 @@ void ReindexerImpl::syncSystemNamespaces(string_view name, const RdxContext& ctx
 		}
 	}
 
-	if (name.empty() || name == kActivityStatsNamespace) {
+	if (sysNsName == kActivityStatsNamespace) {
 		const auto data = activities_.List();
 		std::vector<Item> items;
 		items.reserve(data.size());
@@ -1388,9 +1415,11 @@ Error ReindexerImpl::GetSqlSuggestions(const string_view sqlQuery, int pos, vect
 	Query query;
 	SQLSuggester suggester(query);
 	std::vector<NamespaceDef> nses;
-	EnumNamespaces(nses, false, ctx);
 
-	suggestions = suggester.GetSuggestions(sqlQuery, pos, nses);
+	suggestions = suggester.GetSuggestions(sqlQuery, pos, [&, this](EnumNamespacesOpts opts) {
+		EnumNamespaces(nses, opts, ctx);
+		return nses;
+	});
 	return errOK;
 }
 

@@ -322,6 +322,17 @@ func (binding *Builtin) TruncateNamespace(ctx context.Context, namespace string)
 	return err2go(C.reindexer_truncate_namespace(binding.rx, str2c(namespace), ctxInfo.cCtx))
 }
 
+func (binding *Builtin) RenameNamespace(ctx context.Context, srcNs string, dstNs string) error {
+	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	if err != nil {
+		return err
+	}
+	defer binding.ctxWatcher.StopWatchOnCtx(ctxInfo)
+
+	return err2go(C.reindexer_rename_namespace(binding.rx, str2c(srcNs), str2c(dstNs), ctxInfo.cCtx))
+}
+
+
 func (binding *Builtin) EnableStorage(ctx context.Context, path string) error {
 	l := len(path)
 	if l > 0 && path[l-1] != '/' {

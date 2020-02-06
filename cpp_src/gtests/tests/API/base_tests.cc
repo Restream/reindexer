@@ -42,6 +42,95 @@ TEST_F(ReindexerApi, AddExistingNamespace) {
 	ASSERT_FALSE(err.ok()) << err.what();
 }
 
+TEST_F(ReindexerApi, RenameNamespace) {
+	Error err = rt.reindexer->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok());
+	for (int i = 0; i < 10; ++i) {
+		Item item(rt.reindexer->NewItem(default_namespace));
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+		item["id"] = i;
+		item["column1"] = i + 100;
+		err = rt.reindexer->Upsert(default_namespace, item);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
+	const std::string renameNamespace("rename_namespace");
+	const std::string existingNamespace("existing_namespace");
+
+	err = rt.reindexer->OpenNamespace(existingNamespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	auto testInList = [&](const std::string& testNamespaceName, bool inList) {
+		vector<reindexer::NamespaceDef> namespacesList;
+		err = rt.reindexer->EnumNamespaces(namespacesList, reindexer::EnumNamespacesOpts());
+		ASSERT_TRUE(err.ok()) << err.what();
+		auto r = std::find_if(namespacesList.begin(), namespacesList.end(),
+							  [testNamespaceName](const reindexer::NamespaceDef& d) { return d.name == testNamespaceName; });
+		if (inList) {
+			ASSERT_FALSE(r == namespacesList.end()) << testNamespaceName << " not exist";
+		} else {
+			ASSERT_TRUE(r == namespacesList.end()) << testNamespaceName << " exist";
+		}
+	};
+
+	auto getRowsInJSON = [&](const std::string& namespaceName, std::vector<std::string>& resStrings) {
+		QueryResults result;
+		rt.reindexer->Select(Query(namespaceName), result);
+		resStrings.clear();
+		for (auto it = result.begin(); it != result.end(); ++it) {
+			reindexer::WrSerializer sr;
+			it.GetJSON(sr, false);
+			reindexer::string_view sv = sr.Slice();
+			resStrings.emplace_back(sv.data(), sv.size());
+		}
+	};
+
+	std::vector<std::string> resStrings;
+	std::vector<std::string> resStringsBeforeTest;
+	getRowsInJSON(default_namespace, resStringsBeforeTest);
+
+	// ok
+	err = rt.reindexer->RenameNamespace(default_namespace, renameNamespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+	testInList(renameNamespace, true);
+	testInList(default_namespace, false);
+	getRowsInJSON(renameNamespace, resStrings);
+	ASSERT_TRUE(resStrings == resStringsBeforeTest) << "Data in namespace changed";
+
+	// rename to equal name
+	err = rt.reindexer->RenameNamespace(renameNamespace, renameNamespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+	testInList(renameNamespace, true);
+	getRowsInJSON(renameNamespace, resStrings);
+	ASSERT_TRUE(resStrings == resStringsBeforeTest) << "Data in namespace changed";
+
+	// rename to empty namespace
+	err = rt.reindexer->RenameNamespace(renameNamespace, "");
+	ASSERT_FALSE(err.ok()) << err.what();
+	testInList(renameNamespace, true);
+	getRowsInJSON(renameNamespace, resStrings);
+	ASSERT_TRUE(resStrings == resStringsBeforeTest) << "Data in namespace changed";
+
+	// rename to system namespace
+	err = rt.reindexer->RenameNamespace(renameNamespace, "#rename_namespace");
+	ASSERT_FALSE(err.ok()) << err.what();
+	testInList(renameNamespace, true);
+	getRowsInJSON(renameNamespace, resStrings);
+	ASSERT_TRUE(resStrings == resStringsBeforeTest) << "Data in namespace changed";
+
+	// rename to existing namespace
+	err = rt.reindexer->RenameNamespace(renameNamespace, existingNamespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+	testInList(renameNamespace, false);
+	testInList(existingNamespace, true);
+	getRowsInJSON(existingNamespace, resStrings);
+	ASSERT_TRUE(resStrings == resStringsBeforeTest) << "Data in namespace changed";
+}
+
 TEST_F(ReindexerApi, AddIndex) {
 	Error err = rt.reindexer->OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -791,7 +880,7 @@ TEST_F(ReindexerApi, ContextCancelingTest) {
 
 	// Canceled delete
 	vector<reindexer::NamespaceDef> namespaces;
-	err = rt.reindexer->WithContext(&canceledCtx).EnumNamespaces(namespaces, true);
+	err = rt.reindexer->WithContext(&canceledCtx).EnumNamespaces(namespaces, reindexer::EnumNamespacesOpts());
 	ASSERT_TRUE(err.code() == errCanceled);
 
 	// Canceled select

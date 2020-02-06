@@ -132,6 +132,30 @@ Error RPCClient::TruncateNamespace(string_view nsName, const InternalRdxContext&
 	return getConn()->Call({cproto::kCmdTruncateNamespace, config_.RequestTimeout, ctx.execTimeout()}, nsName).Status();
 }
 
+Error RPCClient::RenameNamespace(string_view srcNsName, const std::string& dstNsName, const InternalRdxContext& ctx) {
+	auto status = getConn()->Call({cproto::kCmdRenameNamespace, config_.RequestTimeout, ctx.execTimeout()}, srcNsName, dstNsName).Status();
+
+	if (!status.ok()) return status;
+
+	if (srcNsName != dstNsName) {
+		std::unique_lock<shared_timed_mutex> lock(nsMutex_);
+
+		auto namespacePtr = namespaces_.find(srcNsName);
+		auto namespacePtrDst = namespaces_.find(dstNsName);
+		if (namespacePtr != namespaces_.end()) {
+			if (namespacePtrDst == namespaces_.end()) {
+				namespaces_.emplace(dstNsName, namespacePtr->second);
+			} else {
+				namespacePtrDst->second = namespacePtr->second;
+			}
+			namespaces_.erase(namespacePtr);
+		} else {
+			namespaces_.erase(namespacePtrDst);
+		}
+	}
+	return errOK;
+}
+
 Error RPCClient::Insert(string_view nsName, Item& item, const InternalRdxContext& ctx) {
 	return modifyItem(nsName, item, ModeInsert, config_.RequestTimeout, ctx);
 }
@@ -458,9 +482,10 @@ Error RPCClient::DropIndex(string_view nsName, const IndexDef& idx, const Intern
 	return getConn()->Call({cproto::kCmdDropIndex, config_.RequestTimeout, ctx.execTimeout()}, nsName, idx.name_).Status();
 }
 
-Error RPCClient::EnumNamespaces(vector<NamespaceDef>& defs, bool bEnumAll, const InternalRdxContext& ctx) {
+Error RPCClient::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const InternalRdxContext& ctx) {
 	try {
-		auto ret = getConn()->Call({cproto::kCmdEnumNamespaces, config_.RequestTimeout, ctx.execTimeout()}, bEnumAll ? 1 : 0);
+		auto ret = getConn()->Call({cproto::kCmdEnumNamespaces, config_.RequestTimeout, ctx.execTimeout()}, int(opts.options_),
+								   p_string(&opts.filter_));
 		if (ret.Status().ok()) {
 			gason::JsonParser parser;
 			auto json = ret.GetArgs(1)[0].As<string>();

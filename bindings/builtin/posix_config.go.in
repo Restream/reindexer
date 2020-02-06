@@ -1,0 +1,9 @@
+// +build !windows
+//go:generate sh -c "cd ../.. && mkdir -p build && cd build && cmake -DGO_BUILTIN_EXPORT_PKG_PATH=\"../bindings/builtin\" .. && make reindexer -j@cgo_proc_count@"
+
+package builtin
+
+// #cgo CXXFLAGS: -std=c++11 -g -O2 -Wall -Wpedantic -Wextra @cgo_cxx_flags@
+// #cgo CFLAGS: -std=c99 -g -O2 -Wall -Wpedantic -Wno-unused-variable @cgo_c_flags@
+// #cgo LDFLAGS: @cgo_ld_flags@ -g
+import "C"

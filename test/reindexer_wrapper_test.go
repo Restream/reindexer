@@ -263,6 +263,11 @@ func (dbw *ReindexerWrapper) TruncateNamespace(namespace string) error {
 	return dbw.Reindexer.TruncateNamespace(namespace)
 }
 
+func (dbw *ReindexerWrapper) RenameNamespace(srcNsName string, dstNsName string) error {
+	dbw.SetSynced(false)
+	return dbw.Reindexer.RenameNamespace(srcNsName, dstNsName)
+}
+
 func (dbw *ReindexerWrapper) CloseNamespace(namespace string) error {
 	dbw.SetSynced(false)
 	return dbw.Reindexer.CloseNamespace(namespace)

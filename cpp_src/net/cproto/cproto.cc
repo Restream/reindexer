@@ -26,6 +26,8 @@ string_view CmdName(uint16_t cmd) {
 			return "DropNamespace"_sv;
 		case kCmdTruncateNamespace:
 			return "TruncateNamespace"_sv;
+		case kCmdRenameNamespace:
+			return "RenameNamespace"_sv;
 		case kCmdAddIndex:
 			return "AddIndex"_sv;
 		case kCmdEnumNamespaces:

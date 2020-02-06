@@ -46,6 +46,7 @@ Error ItemImpl::FromCJSON(const string_view &slice) {
 
 	Payload pl = GetPayload();
 	CJsonDecoder decoder(tagsMatcher_);
+	ser_.Reset();
 	auto err = decoder.Decode(&pl, rdser, ser_);
 
 	if (err.ok() && !rdser.Eof() && rdser.Pos() != tmOffset)
@@ -78,6 +79,7 @@ Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool /*pkOnly*/)
 	// Split parsed json into indexes and tuple
 	JsonDecoder decoder(tagsMatcher_);
 	Payload pl = GetPayload();
+	ser_.Reset();
 	auto err = decoder.Decode(&pl, ser_, value);
 
 	if (err.ok()) {

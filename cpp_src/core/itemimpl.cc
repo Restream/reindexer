@@ -10,16 +10,31 @@
 using std::move;
 
 namespace reindexer {
+
+ItemImplRawData &ItemImplRawData::operator=(ItemImplRawData &&other) noexcept {
+	if (&other != this) {
+		payloadValue_ = std::move(other.payloadValue_);
+		tupleData_ = std::move(other.tupleData_);
+		sourceData_ = std::move(other.sourceData_);
+		precepts_ = std::move(other.precepts_);
+		holder_ = std::move(other.holder_);
+	}
+	return *this;
+}
+ItemImplRawData::ItemImplRawData(ItemImplRawData &&other) noexcept
+	: payloadValue_(std::move(other.payloadValue_)),
+	  tupleData_(std::move(other.tupleData_)),
+	  sourceData_(std::move(other.sourceData_)),
+	  precepts_(std::move(other.precepts_)),
+	  holder_(std::move(other.holder_)) {}
+
 ItemImpl &ItemImpl::operator=(ItemImpl &&other) noexcept {
 	if (&other != this) {
+		ItemImplRawData::operator=(std::move(other));
 		payloadType_ = std::move(other.payloadType_);
-		payloadValue_ = std::move(other.payloadValue_);
 		tagsMatcher_ = std::move(other.tagsMatcher_);
 		ser_ = std::move(other.ser_);
-		tupleData_ = std::move(other.tupleData_);
-		precepts_ = std::move(other.precepts_);
 		unsafe_ = other.unsafe_;
-		holder_ = std::move(other.holder_);
 		cjson_ = std::move(other.cjson_);
 		ns_ = std::move(other.ns_);
 	}
@@ -32,9 +47,10 @@ void ItemImpl::SetField(int field, const VariantArray &krs) {
 	if (!unsafe_ && !krs.empty() && krs[0].Type() == KeyValueString) {
 		VariantArray krsCopy;
 		krsCopy.reserve(krs.size());
+		if (!holder_) holder_.reset(new std::deque<std::string>);
 		for (auto &kr : krs) {
-			holder_.push_back(kr.As<string>());
-			krsCopy.push_back(Variant(p_string(&holder_.back())));
+			holder_->push_back(kr.As<string>());
+			krsCopy.push_back(Variant(p_string(&holder_->back())));
 		}
 
 		GetPayload().Set(field, krsCopy, false);
@@ -48,6 +64,7 @@ void ItemImpl::SetField(string_view jsonPath, const VariantArray &keys) {
 	Payload pl = GetPayload();
 
 	ser_.Reset();
+	ser_.PutUInt32(0);
 	WrSerializer generatedCjson;
 	string_view cjson(pl.Get(0, 0));
 
@@ -60,8 +77,8 @@ void ItemImpl::SetField(string_view jsonPath, const VariantArray &keys) {
 	Error err = cjsonModifier.SetFieldValue(cjson, tagsMatcher_.path2tag(jsonPath), keys, ser_);
 	if (!err.ok()) throw Error(errLogic, "Error setting field value: '%s'", err.what());
 
-	tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
-	pl.Set(0, {Variant(p_string(&tupleData_))});
+	tupleData_ = ser_.DetachBuf();
+	pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
 }
 
 Variant ItemImpl::GetField(int field) { return GetPayload().Get(field, 0); }
@@ -71,8 +88,9 @@ Error ItemImpl::FromCJSON(const string_view &slice, bool pkOnly) {
 	GetPayload().Reset();
 	string_view data = slice;
 	if (!unsafe_) {
-		holder_.push_back(string(slice));
-		data = holder_.back();
+		sourceData_.reset(new char[slice.size()]);
+		std::copy(data.begin(), data.end(), sourceData_.get());
+		data = string_view(sourceData_.get(), data.size());
 	}
 
 	// check tags matcher update
@@ -97,12 +115,14 @@ Error ItemImpl::FromCJSON(const string_view &slice, bool pkOnly) {
 
 	Payload pl = GetPayload();
 	CJsonDecoder decoder(tagsMatcher_, pkOnly ? &pkFields_ : nullptr);
+	ser_.Reset();
+	ser_.PutUInt32(0);
 	auto err = decoder.Decode(&pl, rdser, ser_);
 
 	if (err.ok() && !rdser.Eof()) return Error(errParseJson, "Internal error - left unparsed data %d", rdser.Pos());
 
-	tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
-	pl.Set(0, {Variant(p_string(&tupleData_))});
+	tupleData_ = ser_.DetachBuf();
+	pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
 	return err;
 }
 
@@ -111,8 +131,9 @@ Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool pkOnly) {
 	cjson_ = string_view();
 
 	if (!unsafe_ && endp == nullptr) {
-		holder_.push_back(string(slice));
-		data = holder_.back();
+		sourceData_.reset(new char[slice.size()]);
+		std::copy(data.begin(), data.end(), sourceData_.get());
+		data = string_view(sourceData_.get(), data.size());
 	}
 
 	payloadValue_.Clone();
@@ -130,12 +151,13 @@ Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool pkOnly) {
 	JsonDecoder decoder(tagsMatcher_, pkOnly ? &pkFields_ : nullptr);
 	Payload pl = GetPayload();
 
+	ser_.Reset();
+	ser_.PutUInt32(0);
 	auto err = decoder.Decode(&pl, ser_, value);
 
 	// Put tuple to field[0]
-	tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
-	pl.Set(0, {Variant(p_string(&tupleData_))});
-	ser_ = WrSerializer();
+	tupleData_ = ser_.DetachBuf();
+	pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
 	return err;
 }
 

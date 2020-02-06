@@ -23,14 +23,14 @@ bool WALTracker::Set(const WALRecord &rec, int64_t lsn) {
 	if (!available(lsn)) {
 		return false;
 	}
-	size_t pos = lsn % walSize_;
-	if ((pos >= records_.size()) || records_[pos].empty()) {
-		put(lsn, rec);
-		return true;
-	} else {
-		logPrintf(LogWarning, "WALRecord for LSN = %d is not empty", lsn);
-	}
-	return false;
+	// size_t pos = lsn % walSize_;
+	// if ((pos >= records_.size()) || records_[pos].empty()) {
+	put(lsn, rec);
+	return true;
+	// } else {
+	// logPrintf(LogWarning, "WALRecord for LSN = %d is not empty", lsn);
+	// }
+	// return false;
 }
 
 void WALTracker::Init(int64_t maxLSN, shared_ptr<datastorage::IDataStorage> storage) {

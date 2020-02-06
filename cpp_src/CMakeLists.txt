@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(CMakeToolsHelpers OPTIONAL)
 include(ExternalProject)
+include(ProcessorCount)
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 
 option (WITH_ASAN "Enable AddressSanitized build" OFF)
@@ -14,7 +15,7 @@ option (ENABLE_LIBUNWIND "Enable libunwind" ON)
 option (ENABLE_TCMALLOC "Enable tcmalloc extensions" ON)
 option (ENABLE_JEMALLOC "Enable jemalloc extensions" ON)
 option (ENABLE_ROCKSDB "Enable rocksdb storage" ON)
-set (REINDEXER_VERSION_DEFAULT "2.4.6")
+set (REINDEXER_VERSION_DEFAULT "2.5.3")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -222,7 +223,7 @@ add_definitions(-DREINDEX_WITH_LEVELDB)
 # System libraries
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 find_package(Threads REQUIRED ON)
-list(APPEND REINDEXER_LIBRARIES reindexer ${CMAKE_THREAD_LIBS_INIT} )
+list(APPEND REINDEXER_LIBRARIES ${CMAKE_THREAD_LIBS_INIT} )
 
 # librt
 find_library(LIBRT rt)
@@ -269,7 +270,6 @@ if (ENABLE_LIBUNWIND)
       add_definitions(-DREINDEX_WITH_LIBUNWIND=1)
       message ("-- Found Libunwind: ${LIBUNWIND} ${LIBUNWIND_INCLUDE_PATH}") 
     endif()
-  else ()
   endif()
 endif ()
 
@@ -382,6 +382,10 @@ if (SNAPPY_FOUND)
   SET(CPACK_RPM_PACKAGE_REQUIRES "${CPACK_RPM_PACKAGE_REQUIRES},snappy")
 endif ()
 
+if (LIBUNWIND)
+  SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},libunwind-dev")
+endif()
+
 if (GPERFTOOLS_TCMALLOC)
   SET(CPACK_DEBIAN_PACKAGE_DEPENDS "${CPACK_DEBIAN_PACKAGE_DEPENDS},libgoogle-perftools4")
   SET(CPACK_RPM_PACKAGE_REQUIRES "${CPACK_RPM_PACKAGE_REQUIRES},gperftools-libs")
@@ -396,10 +400,21 @@ else ()
 endif ()
 
 if (CPACK_RPM_PACKAGE_REQUIRES STREQUAL "")
-  set (CPACK_RPM_DEV_PACKAGE_REQUIRES "leveldb")
+  set (CPACK_RPM_DEV_PACKAGE_REQUIRES "leveldb-devel")
 else()
   string (SUBSTRING "${CPACK_RPM_PACKAGE_REQUIRES}" 1 -1 CPACK_RPM_PACKAGE_REQUIRES)
-  set (CPACK_RPM_DEV_PACKAGE_REQUIRES "leveldb,${CPACK_RPM_PACKAGE_REQUIRES}")
+  set (CPACK_RPM_DEV_PACKAGE_REQUIRES "")
+  string(REPLACE "," ";" CPACK_RPM_PACKAGE_REQUIRES_LIST "${CPACK_RPM_PACKAGE_REQUIRES}")
+  foreach (DEP ${CPACK_RPM_PACKAGE_REQUIRES_LIST})
+    if (NOT "${lib}" STREQUAL "snappy" OR SNAPPY_FOUND)
+      if (NOT "${DEP}" STREQUAL "gperftools-libs")
+        list(APPEND CPACK_RPM_DEV_PACKAGE_REQUIRES "${DEP}-devel")
+      else ()
+        list(APPEND CPACK_RPM_DEV_PACKAGE_REQUIRES "${DEP}")
+      endif ()
+    endif ()
+  endforeach (DEP)
+  string(REPLACE ";" "," CPACK_RPM_DEV_PACKAGE_REQUIRES "${CPACK_RPM_DEV_PACKAGE_REQUIRES}")
 endif ()
 
 set (CPACK_DEBIAN_SERVER_FILE_NAME "DEB-DEFAULT")
@@ -407,7 +422,63 @@ set (CPACK_DEBIAN_DEV_FILE_NAME "DEB-DEFAULT")
 set (CPACK_RPM_SERVER_FILE_NAME "RPM-DEFAULT")
 set (CPACK_RPM_DEV_FILE_NAME "RPM-DEFAULT")
 
+if (NOT GO_BUILTIN_EXPORT_PKG_PATH)
+  set (GO_BUILTIN_EXPORT_PKG_PATH "${PROJECT_SOURCE_DIR}/../bindings/builtin")
+endif ()
+
+if (NOT GO_BUILTIN_SERVER_EXPORT_PKG_PATH)
+  set (GO_BUILTIN_SERVER_EXPORT_PKG_PATH "${PROJECT_SOURCE_DIR}/../bindings/builtinserver")
+endif ()
+
+find_package(PkgConfig)
+if (PKG_CONFIG_FOUND)
+  if (GO_BUILTIN_EXPORT_PKG_PATH OR GO_BUILTIN_SERVER_EXPORT_PKG_PATH)
+    pkg_check_modules(REINDEXER_PKG libreindexer)
+  endif ()
+endif ()
+
+if (GO_BUILTIN_EXPORT_PKG_PATH AND NOT IS_ABSOLUTE ${GO_BUILTIN_EXPORT_PKG_PATH})
+  set (GO_BUILTIN_EXPORT_PKG_PATH "${CMAKE_CURRENT_SOURCE_DIR}/${GO_BUILTIN_EXPORT_PKG_PATH}")
+endif ()
+
 if (NOT WIN32)
+  function(generate_libs_list INPUT_LIBS OUTPUT_LIST_NAME)
+    set (flibs ${${OUTPUT_LIST_NAME}})
+    foreach(lib ${INPUT_LIBS})
+      if (${lib} MATCHES "jemalloc" OR ${lib} MATCHES "tcmalloc")
+      elseif (${lib} STREQUAL "-pthread")
+        list(APPEND flibs " -lpthread")
+      elseif ("${lib}" MATCHES "^\\-.*")
+        list(APPEND flibs " ${lib}")
+      else ()
+        if (NOT "${lib}" STREQUAL "snappy" OR SNAPPY_FOUND)
+          get_filename_component(lib ${lib} NAME_WE)
+          string(REGEX REPLACE "^lib" "" lib ${lib})
+          list(APPEND flibs " -l${lib}")
+        endif()
+      endif ()
+    endforeach(lib)
+    list(APPEND flibs " -lstdc++")
+    set (${OUTPUT_LIST_NAME} ${flibs} PARENT_SCOPE)
+  endfunction (generate_libs_list)
+
+  if (GO_BUILTIN_EXPORT_PKG_PATH AND NOT REINDEXER_PKG_FOUND AND EXISTS "${GO_BUILTIN_EXPORT_PKG_PATH}/posix_config.go.in")
+    ProcessorCount (cgo_proc_count)
+    set (cgo_cxx_flags "-I../../cpp_src")
+    set (cgo_c_flags "-I../../cpp_src")
+    set (cgo_ld_flags "-L\${SRCDIR}/../../build/cpp_src/")
+    generate_libs_list("${REINDEXER_LIBRARIES}" cgo_ld_flags)
+    string(REPLACE ";" "" cgo_ld_flags "${cgo_ld_flags}")
+    configure_file (
+      "${GO_BUILTIN_EXPORT_PKG_PATH}/posix_config.go.in"
+      "${GO_BUILTIN_EXPORT_PKG_PATH}/builtin_posix.go"
+      @ONLY
+    )
+    unset (cgo_cxx_flags)
+    unset (cgo_c_flags)
+    unset (cgo_ld_flags)
+  endif ()
+
   SET(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "server")
   SET(DIST_INCLUDE_FILES
     "tools/errors.h" "tools/serializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h"
@@ -421,7 +492,7 @@ if (NOT WIN32)
     "estl/h_vector.h" "estl/string_view.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/span.h"
     "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h"
     "client/internalrdxcontext.h"
-    "debug/backtrace.h" "debug/allocdebug.h"
+    "debug/backtrace.h" "debug/allocdebug.h" "debug/resolver.h"
   )
 
   foreach ( file ${DIST_INCLUDE_FILES} )
@@ -434,6 +505,10 @@ if (NOT WIN32)
   set (exec_prefix ${CMAKE_INSTALL_FULL_BINDIR})
   set (libdir ${CMAKE_INSTALL_FULL_LIBDIR})
   set (includedir ${CMAKE_INSTALL_FULL_INCLUDEDIR}/reindexer)
+  set (libs "")
+
+  generate_libs_list("${REINDEXER_LIBRARIES}" libs)
+  string(REPLACE ";" "" libs "${libs}")
 
   configure_file (
     "${PROJECT_SOURCE_DIR}/libreindexer.pc.in"
@@ -446,6 +521,7 @@ if (NOT WIN32)
   unset (exec_prefix)
   unset (libdir)
   unset (includedir)
+  unset (libs)
 
   install(TARGETS ${TARGET}
       RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

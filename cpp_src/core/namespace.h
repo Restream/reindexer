@@ -174,7 +174,7 @@ public:
 	void CloseStorage(const RdxContext &);
 
 	Transaction NewTransaction(const RdxContext &ctx);
-	void CommitTransaction(Transaction &tx, const RdxContext &ctx);
+	void CommitTransaction(Transaction &tx, QueryResults &result, const RdxContext &ctx);
 
 	Item NewItem(const RdxContext &ctx);
 	void ToPool(ItemImpl *item);
@@ -266,8 +266,9 @@ protected:
 	void writeToStorage(const string_view &key, const string_view &data) {
 		std::unique_lock<std::mutex> lck(storage_mtx_);
 		updates_->Put(key, data);
-		unflushedCount_.fetch_add(1, std::memory_order_release);
+		if (unflushedCount_.fetch_add(1, std::memory_order_release) > 20000) doFlushStorage();
 	}
+	void doFlushStorage();
 
 	bool needToLoadData(const RdxContext &) const;
 	StorageOpts getStorageOpts(const RdxContext &);

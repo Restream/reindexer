@@ -16,7 +16,6 @@ Error CJsonModifier::SetFieldValue(const string_view &tuple, const TagsPath &fie
 	try {
 		fieldPath_ = fieldPath;
 		tagsPath_.clear();
-		wrser.Reset();
 		Context ctx(value, wrser, tuple);
 		buildTuple(ctx);
 	} catch (const Error &err) {

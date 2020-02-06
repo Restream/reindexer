@@ -89,6 +89,18 @@ class NamespacesTest(BaseTest):
         status, body = self.api_delete_namespace(self.test_db, self.test_ns)
         self.assertEqual(True, status == self.API_STATUS['success'], body)
 
+    def test_rename_namespace(self):
+        """Should be able to rename a namespace"""
+        status, body = self.api_create_namespace(self.current_db, self.test_ns)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        ren_ns = "rename_namespace"
+        status, body = self.api_rename_namespace(self.current_db, self.test_ns, ren_ns)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        status, body = self.api_get_namespace(self.current_db, ren_ns)
+        self.validate_get_namespace_response(status, body)
+
     def test_create_namespace_with_indexes(self):
         """Should be able to create a new namespace with valid indexes"""
 

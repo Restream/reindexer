@@ -18,6 +18,7 @@ enum CmdCode : uint16_t {
 	kCmdCloseNamespace = 17,
 	kCmdDropNamespace = 18,
 	kCmdTruncateNamespace = 19,
+	kCmdRenameNamespace = 20,
 	kCmdAddIndex = 21,
 	kCmdEnumNamespaces = 22,
 	kCmdDropIndex = 24,

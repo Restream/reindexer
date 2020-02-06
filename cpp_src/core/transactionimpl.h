@@ -1,4 +1,5 @@
 #pragma once
+#include "core/itemimpl.h"
 #include "payload/fieldsset.h"
 #include "transaction.h"
 
@@ -6,7 +7,10 @@ namespace reindexer {
 
 class TransactionStep {
 public:
-	TransactionStep(Item &&item, ItemModifyMode modifyMode) : item_(move(item)), modifyMode_(modifyMode), query_(nullptr) {}
+	TransactionStep(Item &&item, ItemModifyMode modifyMode) : itemData_(move(*item.impl_)), modifyMode_(modifyMode), query_(nullptr) {
+		delete item.impl_;
+		item.impl_ = nullptr;
+	}
 	TransactionStep(Query &&query) : modifyMode_(ModeUpdate), query_(new Query(std::move(query))) {}
 
 	TransactionStep(const TransactionStep &) = delete;
@@ -17,7 +21,7 @@ public:
 	static TransactionStep Deserialize(string_view, int64_t lsn, const PayloadType &, const TagsMatcher &, const FieldsSet &);
 	static void ConvertCJSONtoJSON(string_view cjson, JsonBuilder &, std::function<string(string_view)> cjsonViewer);
 
-	Item item_;
+	ItemImplRawData itemData_;
 	ItemModifyMode modifyMode_;
 	std::unique_ptr<Query> query_;
 };
@@ -35,6 +39,7 @@ public:
 
 	void UpdateTagsMatcherFromItem(ItemImpl *ritem);
 	Item NewItem();
+	Item GetItem(TransactionStep &&st);
 
 	const std::string &GetName() { return nsName_; }
 	Error Deserialize(string_view, int64_t lsn);
@@ -48,6 +53,7 @@ public:
 
 	std::vector<TransactionStep> steps_;
 	std::string nsName_;
+	bool tagsUpdated_;
 };
 
 }  // namespace reindexer

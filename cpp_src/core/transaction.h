@@ -51,6 +51,7 @@ public:
 	void Modify(Query &&query);
 	bool IsFree() { return impl_ == nullptr; }
 	Item NewItem();
+	Item GetItem(TransactionStep &&st);
 	Error Status() { return status_; }
 	Error Deserialize(string_view, int64_t lsn);
 
@@ -60,6 +61,7 @@ public:
 
 	vector<TransactionStep> &GetSteps();
 	const vector<TransactionStep> &GetSteps() const;
+	bool IsTagsUpdated() const;
 
 protected:
 	std::unique_ptr<TransactionImpl> impl_;

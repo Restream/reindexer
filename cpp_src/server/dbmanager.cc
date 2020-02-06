@@ -84,7 +84,7 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 		return Error(errForbidden, "Forbidden to create database %s", dbName);
 	}
 	if (!validateObjectName(dbName)) {
-		return Error(errParams, "Database name contains invalid character. Only alphas, digits,'_','-, are allowed");
+		return Error(errParams, "Database name contains invalid character. Only alphas, digits,'_','-', are allowed");
 	}
 
 	lck = smart_lock<Mutex>(mtx_, dummyCtx, true);

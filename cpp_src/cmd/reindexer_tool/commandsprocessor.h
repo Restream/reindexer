@@ -142,6 +142,12 @@ protected:
 
 		\namespaces drop <namespace>
 		Drop namespace
+		
+		\namespaces truncate <namespace>
+		Truncate namespace
+		
+		\namespaces rename <oldName> <newName>
+		Rename namespace
 		)help"},
         {"\\meta",		"Manipulate meta",&CommandsProcessor::commandMeta,R"help(
 	Syntax:

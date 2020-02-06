@@ -12,7 +12,6 @@ CJsonDecoder::CJsonDecoder(TagsMatcher &tagsMatcher, const FieldsSet *filter)
 
 Error CJsonDecoder::Decode(Payload *pl, Serializer &rdser, WrSerializer &wrser) {
 	try {
-		wrser.Reset();
 		decodeCJson(pl, rdser, wrser, true);
 	}
 

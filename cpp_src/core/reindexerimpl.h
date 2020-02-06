@@ -48,12 +48,11 @@ public:
 	Error CloseNamespace(string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
 	Error DropNamespace(string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
 	Error TruncateNamespace(string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
-	Error RenameNamespace(string_view srcNsName, const std::string &dstNsName, bool requireDst = false,
-						  const InternalRdxContext &ctx = InternalRdxContext());
+	Error RenameNamespace(string_view srcNsName, const std::string &dstNsName, const InternalRdxContext &ctx = InternalRdxContext());
 	Error AddIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx = InternalRdxContext());
 	Error UpdateIndex(string_view nsName, const IndexDef &indexDef, const InternalRdxContext &ctx = InternalRdxContext());
 	Error DropIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx = InternalRdxContext());
-	Error EnumNamespaces(vector<NamespaceDef> &defs, bool bEnumAll, const InternalRdxContext &ctx = InternalRdxContext());
+	Error EnumNamespaces(vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx = InternalRdxContext());
 	Error Insert(string_view nsName, Item &item, const InternalRdxContext &ctx = InternalRdxContext());
 	Error Update(string_view nsName, Item &item, const InternalRdxContext &ctx = InternalRdxContext());
 	Error Update(const Query &query, QueryResults &result, const InternalRdxContext &ctx = InternalRdxContext());
@@ -66,7 +65,7 @@ public:
 	Item NewItem(string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
 
 	Transaction NewTransaction(string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
-	Error CommitTransaction(Transaction &tr, const InternalRdxContext &ctx = InternalRdxContext());
+	Error CommitTransaction(Transaction &tr, QueryResults &result, const InternalRdxContext &ctx = InternalRdxContext());
 	Error RollBackTransaction(Transaction &tr);
 
 	Error GetMeta(string_view nsName, const string &key, string &data, const InternalRdxContext &ctx = InternalRdxContext());
@@ -146,7 +145,7 @@ protected:
 
 	void ensureDataLoaded(Namespace::Ptr &ns, const RdxContext &ctx);
 
-	void syncSystemNamespaces(string_view nsName, const RdxContext &ctx);
+	void syncSystemNamespaces(string_view sysNsName, string_view filterNsName, const RdxContext &ctx);
 	void createSystemNamespaces();
 	void updateToSystemNamespace(string_view nsName, Item &, const RdxContext &ctx);
 	void updateConfigProvider(const gason::JsonNode &config);

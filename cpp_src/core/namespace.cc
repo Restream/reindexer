@@ -95,7 +95,7 @@ void Namespace::CopyContentsFrom(const Namespace &src) {
 	tagsMatcher_ = src.tagsMatcher_;
 	storage_ = src.storage_;
 	updates_ = src.updates_;
-	unflushedCount_.store(src.unflushedCount_.load(std::memory_order_acquire), std::memory_order_release);  // 0
+	unflushedCount_.store(src.unflushedCount_.load(std::memory_order_acquire), std::memory_order_release);	// 0
 	sortOrdersBuilt_ = src.sortOrdersBuilt_.load();															// false
 	meta_ = src.meta_;
 	dbpath_ = src.dbpath_;
@@ -918,20 +918,20 @@ Transaction Namespace::NewTransaction(const RdxContext &ctx) {
 	return Transaction(name_, payloadType_, tagsMatcher_, pkFields());
 }
 
-void Namespace::CommitTransaction(Transaction &tx, const RdxContext &ctx) {
+void Namespace::CommitTransaction(Transaction &tx, QueryResults &result, const RdxContext &ctx) {
 	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
 	cancelCommit_ = true;  // -V519
 	WLock lck(mtx_, &ctx);
-	cancelCommit_ = false;  // -V519
+	cancelCommit_ = false;	// -V519
 	calc.LockHit();
 	const RdxContext actCtx{ctx.OnlyActivity()};
-	Transaction::Serializer ser(tx);
+	// Transaction::Serializer ser(tx);
 	NsContext nsCtx{ctx};
 	NsContext nsActCtx{actCtx};
-	nsCtx.TxSer(ser);
+	/*nsCtx.TxSer(ser);
 	nsActCtx.TxSer(ser);
 	nsCtx.Lsn(repl_.slaveMode ? -1 : wal_.LSNCounter());
-	nsActCtx.Lsn(nsCtx.lsn);
+	nsActCtx.Lsn(nsCtx.lsn);*/
 	nsCtx.NoLock();
 	nsActCtx.NoLock();
 	for (auto &step : tx.GetSteps()) {
@@ -942,17 +942,20 @@ void Namespace::CommitTransaction(Transaction &tx, const RdxContext &ctx) {
 			} else {
 				Update(*step.query_, qr, nsActCtx);
 			}
-		} else if (step.modifyMode_ == ModeDelete) {
-			Delete(step.item_, nsCtx);
-			ser.SerializeNextStep();
 		} else {
-			modifyItem(step.item_, nsCtx, step.modifyMode_);
-			ser.SerializeNextStep();
+			Item item = tx.GetItem(std::move(step));
+			if (step.modifyMode_ == ModeDelete) {
+				Delete(item, nsCtx);
+			} else {
+				modifyItem(item, nsCtx, step.modifyMode_);
+			}
+			// ser.SerializeNextStep();
+			result.AddItem(item);
 		}
 	}
-	WALRecord wrec(WalTransaction, ser.Slice());
+	/*WALRecord wrec(WalTransaction, ser.Slice());
 	if (!repl_.slaveMode) wal_.Add(wrec);
-	observers_->OnWALUpdate(nsCtx.lsn, name_, wrec);
+	observers_->OnWALUpdate(nsCtx.lsn, name_, wrec);*/
 }
 
 void Namespace::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
@@ -1041,7 +1044,7 @@ void Namespace::ReplaceTagsMatcher(const TagsMatcher &tm, const RdxContext &ctx)
 	assert(!items_.size() && repl_.slaveMode);
 	cancelCommit_ = true;
 	WLock lck(mtx_, &ctx);
-	cancelCommit_ = false;  // -V519
+	cancelCommit_ = false;	// -V519
 	tagsMatcher_ = tm;
 	tagsMatcher_.UpdatePayloadType(payloadType_);
 }
@@ -1218,7 +1221,7 @@ void Namespace::modifyItem(Item &item, const NsContext &ctx, int mode) {
 	if (!ctx.noLock) {
 		cancelCommit_ = true;  // -V519
 		lock.lock();
-		cancelCommit_ = false;  // -V519
+		cancelCommit_ = false;	// -V519
 	}
 	calc.LockHit();
 
@@ -1241,8 +1244,9 @@ void Namespace::modifyItem(Item &item, const NsContext &ctx, int mode) {
 		lsn = ctx.lsn;
 	} else if (repl_.slaveMode) {
 		lsn = item.GetLSN();
-		if (repl_.lastLsn >= lsn)
+		if (repl_.lastLsn >= lsn) {
 			logPrintf(LogError, "[repl:%s] Namespace::modifyItem lsn = %ld lastLsn = %ld ", name_, lsn, repl_.lastLsn);
+		}
 	} else {
 		lsn = wal_.Add(WALRecord(WalItemUpdate, id), exists ? items_[id].GetLSN() : -1);
 	}
@@ -1812,13 +1816,17 @@ void Namespace::flushStorage(const RdxContext &ctx) {
 	if (storage_) {
 		if (unflushedCount_.load(std::memory_order_acquire) > 0) {
 			std::unique_lock<std::mutex> lck(storage_mtx_);
-			Error status = storage_->Write(StorageOpts().FillCache(), *(updates_.get()));
-			if (!status.ok()) throw Error(errLogic, "Error write ns '%s' to storage: %s", name_, status.what());
-			unflushedCount_.store(0, std::memory_order_release);
-			updates_->Clear();
-			saveReplStateToStorage();
+			doFlushStorage();
 		}
 	}
+}
+
+void Namespace::doFlushStorage() {
+	Error status = storage_->Write(StorageOpts(), *(updates_.get()));
+	if (!status.ok()) throw Error(errLogic, "Error write ns '%s' to storage: %s", name_, status.what());
+	unflushedCount_.store(0, std::memory_order_release);
+	updates_->Clear();
+	saveReplStateToStorage();
 }
 
 void Namespace::DeleteStorage(const RdxContext &ctx) {

@@ -183,6 +183,7 @@ public:
 	// Buffer manipulation functions
 	void Write(string_view buf);
 	uint8_t *Buf() const;
+	std::unique_ptr<uint8_t[]> DetachBuf();
 	chunk DetachChunk();
 	void Reset() { len_ = 0; }
 	size_t Len() const { return len_; }

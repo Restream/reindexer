@@ -64,6 +64,10 @@ public:
 	/// Delete all items in namespace
 	/// @param nsName - Name of namespace
 	Error TruncateNamespace(string_view nsName);
+	/// Rename namespace. If namespace with dstNsName exists, then it is replaced.
+	/// @param srcNsName  - Name of namespace
+	/// @param dstNsName  - desired name of namespace
+	Error RenameNamespace(string_view srcNsName, const std::string &dstNsName);
 	/// Add index to namespace
 	/// @param nsName - Name of namespace
 	/// @param index - IndexDef with index name and parameters
@@ -78,8 +82,8 @@ public:
 	Error DropIndex(string_view nsName, const IndexDef &index);
 	/// Get list of all available namespaces
 	/// @param defs - std::vector of NamespaceDef of available namespaves
-	/// @param bEnumAll - Also include currenty not opened, but exists on disk namespaces
-	Error EnumNamespaces(vector<NamespaceDef> &defs, bool bEnumAll);
+	/// @param opts - Enumerartion options
+	Error EnumNamespaces(vector<NamespaceDef> &defs, EnumNamespacesOpts opts);
 	/// Gets a list of available databases for a certain server.
 	/// @param dbList - list of DB names
 	Error EnumDatabases(vector<string> &dbList);

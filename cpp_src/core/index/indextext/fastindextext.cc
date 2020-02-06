@@ -269,7 +269,7 @@ void FastIndexText<T>::SetOpts(const IndexOpts &opts) {
 
 	if (!eq_c(oldCfg.stopWords, newCfg.stopWords) || oldCfg.stemmers != newCfg.stemmers || oldCfg.maxTypoLen != newCfg.maxTypoLen ||
 		oldCfg.enableNumbersSearch != newCfg.enableNumbersSearch || oldCfg.extraWordSymbols != newCfg.extraWordSymbols) {
-		logPrintf(LogInfo, "FulltextIndex config changed, it will be febuilt on next search");
+		logPrintf(LogInfo, "FulltextIndex config changed, it will be rebuilt on next search");
 		this->isBuilt_ = false;
 		this->holder_.status_ = FullRebuild;
 		this->holder_.Clear();

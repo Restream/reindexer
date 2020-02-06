@@ -48,8 +48,10 @@ public:
 	Error OpenNamespace(cproto::Context &ctx, p_string ns);
 	Error DropNamespace(cproto::Context &ctx, p_string ns);
 	Error TruncateNamespace(cproto::Context &ctx, p_string ns);
+	Error RenameNamespace(cproto::Context &ctx, p_string srcNsName, p_string dstNsName);
+
 	Error CloseNamespace(cproto::Context &ctx, p_string ns);
-	Error EnumNamespaces(cproto::Context &ctx);
+	Error EnumNamespaces(cproto::Context &ctx, cproto::optional<int> opts, cproto::optional<p_string> filter);
 	Error EnumDatabases(cproto::Context &ctx);
 
 	Error AddIndex(cproto::Context &ctx, p_string ns, p_string indexDef);

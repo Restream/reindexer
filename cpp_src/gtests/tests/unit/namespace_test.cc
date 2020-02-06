@@ -177,7 +177,7 @@ TEST_F(NsApi, UpdateIndex) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	vector<reindexer::NamespaceDef> nsDefs;
-	err = rt.reindexer->EnumNamespaces(nsDefs, false);
+	err = rt.reindexer->EnumNamespaces(nsDefs, reindexer::EnumNamespacesOpts());
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	auto nsDefIt =

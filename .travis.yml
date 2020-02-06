@@ -20,6 +20,7 @@ git:
   async: true
   fail_fast: true
   os: linux
+  dist: bionic
   env:
     - WITH_DOXYGEN=0 # set to 1 when doxy doc deploy is ready
     - CMAKE_OPTS="-DCMAKE_BUILD_TYPE=Release -DENABLE_LIBUNWIND=Off"
@@ -39,7 +40,7 @@ git:
   script:
     - cd ${BUILD_DIR} && cmake ${CMAKE_OPTS} ${TRAVIS_BUILD_DIR} && make -j4
     - ctest --verbose
-    - cd ${TRAVIS_BUILD_DIR} && go test ./test -bench . -cpu 1 -benchmem -benchtime 100ms && go test ./test  -run=TestRaceConditions -race
+    - cd ${TRAVIS_BUILD_DIR} && go test ./test -bench . -cpu 1 -benchmem -benchtime 100ms
   after_script:
     - find . -name CMakeFiles | xargs -n1 rm -rf
 

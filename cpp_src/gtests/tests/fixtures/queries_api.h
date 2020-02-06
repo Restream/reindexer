@@ -774,8 +774,8 @@ protected:
 
 			tr.Insert(move(item));
 		}
-
-		rt.reindexer->CommitTransaction(tr);
+		QueryResults res;
+		rt.reindexer->CommitTransaction(tr,res);
 		Commit(default_namespace);
 	}
 

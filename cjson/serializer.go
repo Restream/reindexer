@@ -101,17 +101,6 @@ func (s *Serializer) WriteString(vx string) *Serializer {
 
 }
 
-func (s *Serializer) PutBytes(v []byte) *Serializer {
-	sl := len(v)
-	s.PutUInt32(uint32(sl))
-	l := len(s.buf)
-	s.grow(sl)
-	for i := 0; i < sl; i++ {
-		s.buf[i+l] = v[i]
-	}
-	return s
-}
-
 func (s *Serializer) PutVBytes(v []byte) *Serializer {
 	sl := len(v)
 	s.PutVarUInt(uint64(sl))

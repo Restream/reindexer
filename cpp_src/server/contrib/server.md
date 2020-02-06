@@ -1,4 +1,4 @@
-# Reindexer REST API \n
+# Reindexer REST API
 
 <!-- toc -->
 
@@ -17,6 +17,7 @@
   * [Get namespace description](#get-namespace-description)
   * [Drop namespace](#drop-namespace)
   * [Truncate namespace](#truncate-namespace)
+  * [Rename namespace](#rename-namespace)
   * [Get list of namespace's meta info](#get-list-of-namespaces-meta-info)
   * [Get namespace's meta info by key](#get-namespaces-meta-info-by-key)
   * [Put namespace's meta info with specified key and value](#put-namespaces-meta-info-with-specified-key-and-value)
@@ -99,7 +100,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 2.4.6
+*Version* : 2.5.3
 
 
 ### License information
@@ -377,6 +378,39 @@ This operation will delete all items from namespace.
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
 |**Path**|**name**  <br>*required*|Namespace name|string|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* namespaces
+
+
+
+### Rename namespace
+```
+GET /db/{database}/namespaces/{name}/rename/{newname}
+```
+
+
+#### Description
+This operation will rename namespace.
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Path**|**name**  <br>*required*|Namespace name|string|
+|**Path**|**newname**  <br>*required*|Namespace new name|string|
 
 
 #### Responses

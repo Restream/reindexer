@@ -1,3 +1,21 @@
+# Version 2.5.3 (06.02.2020)
+## Core
+
+- [fea] Added rename namespace API
+- [fea] Improoved -dev package behaviour
+- [fix] Transactions memory consumption are seriously decreased
+
+# Reindexer tool
+- [fea] Added `\namespace rename` command
+
+# Reindexer server
+- [add] Added HTTP API method /namespaces/rename
+- [fix] Fixed docker image
+
+## go connector
+- [fea] Auto pass list of detected C/C++ dependencies libraries to go 
+- [fea] Added RenameNamespace function
+
 # Version 2.4.6 (24.01.2020)
 ## Core
 - [fea] Replication of transactions

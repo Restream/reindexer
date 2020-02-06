@@ -46,10 +46,11 @@ public:
 	Error CloseNamespace(string_view nsName, const InternalRdxContext &ctx);
 	Error DropNamespace(string_view nsName, const InternalRdxContext &ctx);
 	Error TruncateNamespace(string_view nsName, const InternalRdxContext &ctx);
+	Error RenameNamespace(string_view srcNsName, const std::string &dstNsName, const InternalRdxContext &ctx);
 	Error AddIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error UpdateIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error DropIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
-	Error EnumNamespaces(vector<NamespaceDef> &defs, bool bEnumAll, const InternalRdxContext &ctx);
+	Error EnumNamespaces(vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx);
 	Error EnumDatabases(vector<string> &dbList, const InternalRdxContext &ctx);
 	Error Insert(string_view nsName, client::Item &item, const InternalRdxContext &ctx);
 	Error Update(string_view nsName, client::Item &item, const InternalRdxContext &ctx);

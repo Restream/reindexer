@@ -24,7 +24,7 @@
 #endif
 #ifdef LINK_RESOURCES
 #include <cmrc/cmrc.hpp>
-void init_resources() { CMRC_INIT(resources); }
+void init_resources() { CMRC_INIT(reindexer_server_resources); }
 #else
 void init_resources() {}
 #endif
@@ -95,7 +95,7 @@ Error ServerImpl::init() {
 		GetDirPath(config_.DaemonPidFile),
 #endif
 		GetDirPath(config_.CoreLog),	   GetDirPath(config_.HttpLog), GetDirPath(config_.RpcLog),
-		GetDirPath(config_.ServerLog),	 config_.StoragePath};
+		GetDirPath(config_.ServerLog),	   config_.StoragePath};
 
 	for (const string &dir : dirs) {
 		err = TryCreateDirectory(dir);
@@ -137,10 +137,10 @@ int ServerImpl::Start() {
 			run();
 			running = false;
 		},
-		[]() {  //
+		[]() {	//
 			raise(SIGTERM);
 		},
-		[&]() {  //
+		[&]() {	 //
 			return running;
 		});
 

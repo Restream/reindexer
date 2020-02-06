@@ -236,6 +236,11 @@ func (db *Reindexer) TruncateNamespace(namespace string) error {
 	return db.impl.truncateNamespace(db.ctx, namespace)
 }
 
+// RenameNamespace - Rename namespace. If namespace with dstNsName exists, then it is replaced.
+func (db *Reindexer) RenameNamespace(srcNsName string, dstNsName string) error {
+	return db.impl.renameNamespace(db.ctx, srcNsName, dstNsName)
+}
+
 // CloseNamespace - close namespace, but keep storage
 func (db *Reindexer) CloseNamespace(namespace string) error {
 	return db.impl.closeNamespace(db.ctx, namespace)

@@ -56,4 +56,14 @@ const vector<TransactionStep> &Transaction::GetSteps() const {
 	return impl_->steps_;
 }
 
+Item Transaction::GetItem(TransactionStep &&st) {
+	assert(impl_);
+	return impl_->GetItem(std::move(st));
+}
+
+bool Transaction::IsTagsUpdated() const {
+	assert(impl_);
+	return impl_->tagsUpdated_;
+}
+
 }  // namespace reindexer

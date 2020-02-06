@@ -278,7 +278,7 @@ Error CommandsProcessor<DBInterface>::commandDump(const string& command) {
 
 	vector<NamespaceDef> allNsDefs, doNsDefs;
 
-	auto err = db_.EnumNamespaces(allNsDefs, false);
+	auto err = db_.EnumNamespaces(allNsDefs, reindexer::EnumNamespacesOpts());
 	if (err) return err;
 
 	if (!parser.End()) {
@@ -303,8 +303,8 @@ Error CommandsProcessor<DBInterface>::commandDump(const string& command) {
 	wrser << "-- VERSION 1.0" << '\n';
 
 	for (auto& nsDef : doNsDefs) {
-		// skip system namespaces
-		if (nsDef.name.length() > 0 && nsDef.name[0] == '#') continue;
+		// skip system namespaces, except #config
+		if (nsDef.name.length() > 0 && nsDef.name[0] == '#' && nsDef.name != "#config") continue;
 
 		wrser << "-- Dumping namespace '" << nsDef.name << "' ..." << '\n';
 
@@ -369,7 +369,7 @@ Error CommandsProcessor<DBInterface>::commandNamespaces(const string& command) {
 	} else if (iequals(subCommand, "list")) {
 		vector<NamespaceDef> allNsDefs;
 
-		auto err = db_.EnumNamespaces(allNsDefs, true);
+		auto err = db_.EnumNamespaces(allNsDefs, reindexer::EnumNamespacesOpts().WithClosed());
 		for (auto& ns : allNsDefs) {
 			std::cout << ns.name << std::endl;
 		}
@@ -381,6 +381,10 @@ Error CommandsProcessor<DBInterface>::commandNamespaces(const string& command) {
 	} else if (iequals(subCommand, "truncate")) {
 		auto nsName = reindexer::unescapeString(parser.NextToken());
 		return db_.TruncateNamespace(nsName);
+	} else if (iequals(subCommand, "rename")) {
+		auto nsName = reindexer::unescapeString(parser.NextToken());
+		auto nsNewName = reindexer::unescapeString(parser.NextToken());
+		return db_.RenameNamespace(nsName, nsNewName);
 	}
 	return Error(errParams, "Unknown sub command '%s' of namespaces command", subCommand);
 }
@@ -603,7 +607,7 @@ Error CommandsProcessor<DBInterface>::queryResultsToJson(ostream& o, const typen
 template <typename DBInterface>
 void CommandsProcessor<DBInterface>::checkForNsNameMatch(string_view str, std::vector<string>& suggestions) {
 	vector<NamespaceDef> allNsDefs;
-	Error err = db_.EnumNamespaces(allNsDefs, true);
+	Error err = db_.EnumNamespaces(allNsDefs, reindexer::EnumNamespacesOpts().WithClosed());
 	if (!err.ok()) return;
 	for (auto& ns : allNsDefs) {
 		if (str.empty() || reindexer::isBlank(str) || ((str.length() < ns.name.length()) && reindexer::checkIfStartsWith(str, ns.name))) {

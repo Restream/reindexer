@@ -273,7 +273,7 @@ int HTTPServer::GetNamespaces(http::Context &ctx) {
 	string_view sortOrder = ctx.request->params.Get("sort_order");
 
 	vector<reindexer::NamespaceDef> nsDefs;
-	db.EnumNamespaces(nsDefs, false);
+	db.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames());
 
 	int sortDirection = 0;
 	if (sortOrder == "asc") {
@@ -317,15 +317,14 @@ int HTTPServer::GetNamespace(http::Context &ctx) {
 	}
 
 	vector<reindexer::NamespaceDef> nsDefs;
-	db.EnumNamespaces(nsDefs, false);
-	auto nsDefIt = std::find_if(nsDefs.begin(), nsDefs.end(), [&](const NamespaceDef &nsDef) { return nsDef.name == nsName; });
+	db.EnumNamespaces(nsDefs, EnumNamespacesOpts().WithFilter(nsName));
 
-	if (nsDefIt == nsDefs.end()) {
+	if (nsDefs.empty()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusNotFound, "Namespace is not found"));
 	}
 
 	WrSerializer wrSer(ctx.writer->GetChunk());
-	nsDefIt->GetJSON(wrSer);
+	nsDefs[0].GetJSON(wrSer);
 	return ctx.JSON(http::StatusOK, wrSer.DetachChunk());
 }
 
@@ -374,6 +373,29 @@ int HTTPServer::TruncateNamespace(http::Context &ctx) {
 	}
 
 	auto status = db.TruncateNamespace(nsName);
+	if (!status.ok()) {
+		http::HttpStatus httpStatus(status);
+
+		return jsonStatus(ctx, httpStatus);
+	}
+
+	return jsonStatus(ctx);
+}
+
+int HTTPServer::RenameNamespace(http::Context &ctx) {
+	auto db = getDB(ctx, kRoleDBAdmin);
+	string srcNsName = urldecode2(ctx.request->urlParams[1]);
+	string dstNsName = urldecode2(ctx.request->urlParams[2]);
+
+	if (srcNsName.empty()) {
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
+	}
+
+	if (dstNsName.empty()) {
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "New namespace name is not specified"));
+	}
+
+	auto status = db.RenameNamespace(srcNsName, dstNsName);
 	if (!status.ok()) {
 		http::HttpStatus httpStatus(status);
 
@@ -571,19 +593,18 @@ int HTTPServer::GetIndexes(http::Context &ctx) {
 	}
 
 	vector<reindexer::NamespaceDef> nsDefs;
-	db.EnumNamespaces(nsDefs, false);
-	auto nsDefIt = std::find_if(nsDefs.begin(), nsDefs.end(), [&](const NamespaceDef &nsDef) { return nsDef.name == nsName; });
+	db.EnumNamespaces(nsDefs, EnumNamespacesOpts().WithFilter(nsName));
 
-	if (nsDefIt == nsDefs.end()) {
+	if (nsDefs.empty()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusNotFound, "Namespace is not found"));
 	}
 
 	WrSerializer ser(ctx.writer->GetChunk());
 	{
 		JsonBuilder builder(ser);
-		builder.Put("total_items", nsDefIt->indexes.size());
+		builder.Put("total_items", nsDefs[0].indexes.size());
 		auto arrNode = builder.Array("items");
-		for (auto &idxDef : nsDefIt->indexes) {
+		for (auto &idxDef : nsDefs[0].indexes) {
 			arrNode.Raw(nullptr, "");
 			idxDef.GetJSON(ser);
 		}
@@ -603,14 +624,13 @@ int HTTPServer::PostIndex(http::Context &ctx) {
 	string newIdxName = getNameFromJson(json);
 
 	vector<reindexer::NamespaceDef> nsDefs;
-	db.EnumNamespaces(nsDefs, false);
-	auto nsDefIt = std::find_if(nsDefs.begin(), nsDefs.end(), [&](const NamespaceDef &nsDef) { return nsDef.name == nsName; });
+	db.EnumNamespaces(nsDefs, EnumNamespacesOpts().WithFilter(nsName));
 
 	reindexer::IndexDef idxDef;
 	idxDef.FromJSON(giftStr(json));
 
-	if (nsDefIt != nsDefs.end()) {
-		auto &indexes = nsDefIt->indexes;
+	if (!nsDefs.empty()) {
+		auto &indexes = nsDefs[0].indexes;
 		auto foundIndexIt =
 			std::find_if(indexes.begin(), indexes.end(), [&newIdxName](const IndexDef &idx) { return idx.name_ == newIdxName; });
 		if (foundIndexIt != indexes.end()) {
@@ -792,6 +812,7 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	router_.POST<HTTPServer, &HTTPServer::PostNamespace>("/api/v1/db/:db/namespaces", this);
 	router_.DELETE<HTTPServer, &HTTPServer::DeleteNamespace>("/api/v1/db/:db/namespaces/:ns", this);
 	router_.DELETE<HTTPServer, &HTTPServer::TruncateNamespace>("/api/v1/db/:db/namespaces/:ns/truncate", this);
+	router_.GET<HTTPServer, &HTTPServer::RenameNamespace>("/api/v1/db/:db/namespaces/:ns/rename/:nns", this);
 
 	router_.GET<HTTPServer, &HTTPServer::GetItems>("/api/v1/db/:db/namespaces/:ns/items", this);
 	router_.PUT<HTTPServer, &HTTPServer::PutItems>("/api/v1/db/:db/namespaces/:ns/items", this);

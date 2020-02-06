@@ -11,7 +11,6 @@ JsonDecoder::JsonDecoder(TagsMatcher &tagsMatcher, const FieldsSet *filter) : ta
 
 Error JsonDecoder::Decode(Payload *pl, WrSerializer &wrser, const gason::JsonValue &v) {
 	try {
-		wrser.Reset();
 		CJsonBuilder builder(wrser, CJsonBuilder::TypePlain, &tagsMatcher_);
 		decodeJson(pl, builder, v, 0, true);
 	}

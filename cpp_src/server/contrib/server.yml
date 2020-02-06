@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.4.6"
+  version: "2.5.3"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -253,6 +253,42 @@ paths:
           description: "Invalid arguments supplied"
           schema:
             $ref: "#/definitions/StatusResponse"
+
+  /db/{database}/namespaces/{name}/rename/{newname}:
+    get:
+      tags:
+      - "namespaces"
+      summary: "Rename namespace"
+      description: |
+        This operation will rename namespace.
+      operationId: "renameNamespace"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "name"
+        in: "path"
+        type: "string"
+        description: "Namespace name"
+        required: true
+      - name: "newname"
+        in: "path"
+        type: "string"
+        description: "Namespace new name"
+        required: true
+
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+        400:
+          description: "Invalid arguments supplied"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+
 
   /db/{database}/namespaces/{name}/metalist:
     get:

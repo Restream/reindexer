@@ -43,6 +43,7 @@ const (
 	cmdCloseNamespace    = 17
 	cmdDropNamespace     = 18
 	cmdTruncateNamespace = 19
+	cmdRenameNamespace   = 20
 	cmdAddIndex          = 21
 	cmdEnumNamespaces    = 22
 	cmdDropIndex         = 24

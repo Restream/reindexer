@@ -56,6 +56,7 @@ public:
 	int PostNamespace(http::Context &ctx);
 	int DeleteNamespace(http::Context &ctx);
 	int TruncateNamespace(http::Context &ctx);
+	int RenameNamespace(http::Context &ctx);
 	int GetItems(http::Context &ctx);
 	int PostItems(http::Context &ctx);
 	int PutItems(http::Context &ctx);

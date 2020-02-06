@@ -130,6 +130,10 @@ class ApiMixin(object):
     def api_truncate_namespace(self, dbname, nsname):
         return self._api_call('DELETE', '/db/' + dbname + '/namespaces/' + nsname + '/truncate')
 
+    def api_rename_namespace(self, dbname, srcnsname,dstnsname):
+        return self._api_call('GET', '/db/' + dbname + '/namespaces/' + srcnsname + '/rename/' + dstnsname)
+
+
     def api_get_sorted_namespaces(self, dbname, dir=''):
         order = '?sort_order=' + dir
 

@@ -4,8 +4,8 @@ libdir=@libdir@
 includedir=@includedir@
 libs=@libs@
 
-Name: libreindexer
-Description: Reindexer library
+Name: libreindexer_server
+Description: Reindexer server library
 Version: @VERSION@
 Libs: -L${libdir} ${libs}
 Cflags: -I${includedir}

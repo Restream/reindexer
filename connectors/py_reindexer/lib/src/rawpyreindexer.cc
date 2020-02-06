@@ -107,7 +107,7 @@ static PyObject *NamespaceDrop(PyObject *self, PyObject *args) {
 static PyObject *IndexAdd(PyObject *self, PyObject *args) {
 	uintptr_t rx;
 	char *ns;
-	PyObject *indexDefDict = NULL;  // borrowed ref after ParseTuple
+	PyObject *indexDefDict = NULL;	// borrowed ref after ParseTuple
 
 	if (!PyArg_ParseTuple(args, "ksO!", &rx, &ns, &PyDict_Type, &indexDefDict)) {
 		return NULL;
@@ -141,7 +141,7 @@ static PyObject *IndexAdd(PyObject *self, PyObject *args) {
 static PyObject *IndexUpdate(PyObject *self, PyObject *args) {
 	uintptr_t rx;
 	char *ns;
-	PyObject *indexDefDict = NULL;  // borrowed ref after ParseTuple
+	PyObject *indexDefDict = NULL;	// borrowed ref after ParseTuple
 
 	if (!PyArg_ParseTuple(args, "ksO!", &rx, &ns, &PyDict_Type, &indexDefDict)) {
 		return NULL;
@@ -189,8 +189,8 @@ static PyObject *IndexDrop(PyObject *self, PyObject *args) {
 static PyObject *itemModify(PyObject *self, PyObject *args, ItemModifyMode mode) {
 	uintptr_t rx;
 	char *ns;
-	PyObject *itemDefDict = NULL;   // borrowed ref after ParseTuple
-	PyObject *preceptsList = NULL;  // borrowed ref after ParseTuple if passed
+	PyObject *itemDefDict = NULL;	// borrowed ref after ParseTuple
+	PyObject *preceptsList = NULL;	// borrowed ref after ParseTuple if passed
 
 	if (!PyArg_ParseTuple(args, "ksO!|O!", &rx, &ns, &PyDict_Type, &itemDefDict, &PyList_Type, &preceptsList)) {
 		return NULL;
@@ -351,7 +351,7 @@ static PyObject *EnumMeta(PyObject *self, PyObject *args) {
 	for (auto it = keys.begin(); it != keys.end(); it++) {
 		unsigned pos = std::distance(keys.begin(), it);
 
-		PyList_SetItem(list, pos, Py_BuildValue("s", it->c_str()));  // stolen ref
+		PyList_SetItem(list, pos, Py_BuildValue("s", it->c_str()));	 // stolen ref
 	}
 
 	PyObject *res = Py_BuildValue("isO", err.code(), err.what().c_str(), list);
@@ -369,12 +369,12 @@ static PyObject *EnumNamespaces(PyObject *self, PyObject *args) {
 	}
 
 	vector<NamespaceDef> nsDefs;
-	Error err = getDB(rx)->EnumNamespaces(nsDefs, static_cast<bool>(enumAll));
+	Error err = getDB(rx)->EnumNamespaces(nsDefs, reindexer::EnumNamespacesOpts().WithClosed(enumAll));
 	if (!err.ok()) {
 		return Py_BuildValue("is[]", err.code(), err.what().c_str());
 	}
 
-	PyObject *list = PyList_New(nsDefs.size());  // new ref
+	PyObject *list = PyList_New(nsDefs.size());	 // new ref
 	if (!list) {
 		return NULL;
 	}

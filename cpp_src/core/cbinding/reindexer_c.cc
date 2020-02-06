@@ -246,34 +246,28 @@ reindexer_error reindexer_rollback_transaction(uintptr_t rx, uintptr_t tr) {
 }
 
 reindexer_ret reindexer_commit_transaction(uintptr_t rx, uintptr_t tr, reindexer_ctx_info ctx_info) {
+	reindexer_resbuffer out = {0, 0, 0};
+
 	if (!rx) {
-		return ret2c(err_not_init, reindexer_resbuffer());
+		return ret2c(err_not_init, out);
 	}
-	auto trw = std::unique_ptr<TransactionWrapper>(reinterpret_cast<TransactionWrapper*>(tr));
+	std::unique_ptr<TransactionWrapper> trw(reinterpret_cast<TransactionWrapper*>(tr));
 	if (!trw) {
-		return ret2c(errOK, reindexer_resbuffer());
+		return ret2c(errOK, out);
+	}
+
+	std::unique_ptr<QueryResultsWrapper> res(new_results());
+	if (!res) {
+		return ret2c(err_too_many_queries, out);
 	}
 
 	CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
-	auto err = rdxKeeper.db().CommitTransaction(trw->tr_);
 
-	reindexer_resbuffer out = {0, 0, 0};
-
-	bool tmUpdated = false;
+	auto err = rdxKeeper.db().CommitTransaction(trw->tr_, *res);
 
 	if (err.ok()) {
-		QueryResultsWrapper* res = new_results();
-		if (!res) {
-			return ret2c(err_too_many_queries, out);
-		}
-		for (auto& step : trw->tr_.GetSteps()) {
-			if (!step.query_) {
-				res->AddItem(step.item_);
-				if (!tmUpdated) tmUpdated = step.item_.IsTagsUpdated();
-			}
-		}
 		int32_t ptVers = -1;
-		results2c(res, &out, 0, tmUpdated ? &ptVers : nullptr, tmUpdated ? 1 : 0);
+		results2c(res.release(), &out, 0, trw->tr_.IsTagsUpdated() ? &ptVers : nullptr, trw->tr_.IsTagsUpdated() ? 1 : 0);
 	}
 
 	return ret2c(err, out);
@@ -302,6 +296,16 @@ reindexer_error reindexer_truncate_namespace(uintptr_t rx, reindexer_string nsNa
 	if (rx) {
 		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 		res = rdxKeeper.db().TruncateNamespace(str2cv(nsName));
+	}
+	return error2c(res);
+}
+
+reindexer_error reindexer_rename_namespace(uintptr_t rx, reindexer_string srcNsName, reindexer_string dstNsName,
+										   reindexer_ctx_info ctx_info) {
+	Error res = err_not_init;
+	if (rx) {
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+		res = rdxKeeper.db().RenameNamespace(str2cv(srcNsName), str2c(dstNsName));
 	}
 	return error2c(res);
 }

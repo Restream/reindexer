@@ -172,6 +172,10 @@ Error RPCServer::DropNamespace(cproto::Context &ctx, p_string ns) {
 
 Error RPCServer::TruncateNamespace(cproto::Context &ctx, p_string ns) { return getDB(ctx, kRoleDBAdmin).TruncateNamespace(ns); }
 
+Error RPCServer::RenameNamespace(cproto::Context &ctx, p_string srcNsName, p_string dstNsName) {
+	return getDB(ctx, kRoleDBAdmin).RenameNamespace(srcNsName, dstNsName.toString());
+}
+
 Error RPCServer::CloseNamespace(cproto::Context &ctx, p_string ns) {
 	// Do not close.
 	// TODO: add reference counters
@@ -179,9 +183,13 @@ Error RPCServer::CloseNamespace(cproto::Context &ctx, p_string ns) {
 	return getDB(ctx, kRoleDataRead).Commit(ns);
 }
 
-Error RPCServer::EnumNamespaces(cproto::Context &ctx) {
+Error RPCServer::EnumNamespaces(cproto::Context &ctx, cproto::optional<int> opts, cproto::optional<p_string> filter) {
 	vector<NamespaceDef> nsDefs;
-	auto err = getDB(ctx, kRoleDataRead).EnumNamespaces(nsDefs, true);
+	EnumNamespacesOpts eopts;
+	if (opts.hasValue()) eopts.options_ = opts.value();
+	if (filter.hasValue()) eopts.filter_ = filter.value();
+
+	auto err = getDB(ctx, kRoleDataRead).EnumNamespaces(nsDefs, eopts);
 	if (!err.ok()) {
 		return err;
 	}
@@ -314,20 +322,12 @@ Error RPCServer::CommitTx(cproto::Context &ctx, int64_t txId) {
 	auto db = getDB(ctx, kRoleDataWrite);
 
 	Transaction &tr = getTx(ctx, txId);
-	auto err = db.CommitTransaction(tr);
+	QueryResults qres;
+	auto err = db.CommitTransaction(tr, qres);
 	if (err.ok()) {
-		QueryResults qres;
-		bool tmUpdated = false;
-
-		for (auto &step : tr.GetSteps()) {
-			if (!step.query_) {
-				qres.AddItem(step.item_);
-				if (!tmUpdated) tmUpdated = step.item_.IsTagsUpdated();
-			}
-		}
 		int32_t ptVers = -1;
 		ResultFetchOpts opts;
-		if (tmUpdated) {
+		if (tr.IsTagsUpdated()) {
 			opts = ResultFetchOpts{kResultsWithItemID | kResultsWithPayloadTypes, span<int32_t>(&ptVers, 1), 0, INT_MAX};
 		} else {
 			opts = ResultFetchOpts{kResultsWithItemID, {}, 0, INT_MAX};
@@ -694,6 +694,7 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	dispatcher_.Register(cproto::kCmdOpenNamespace, this, &RPCServer::OpenNamespace);
 	dispatcher_.Register(cproto::kCmdDropNamespace, this, &RPCServer::DropNamespace);
 	dispatcher_.Register(cproto::kCmdTruncateNamespace, this, &RPCServer::TruncateNamespace);
+	dispatcher_.Register(cproto::kCmdRenameNamespace, this, &RPCServer::RenameNamespace);
 	dispatcher_.Register(cproto::kCmdCloseNamespace, this, &RPCServer::CloseNamespace);
 	dispatcher_.Register(cproto::kCmdEnumNamespaces, this, &RPCServer::EnumNamespaces);
 	dispatcher_.Register(cproto::kCmdEnumDatabases, this, &RPCServer::EnumDatabases);

@@ -136,7 +136,7 @@ void buildPayloadTuple(const PayloadIface<T> *pl, const TagsMatcher *tagsMatcher
 		if (fieldType.JsonPaths().size() < 1 || fieldType.JsonPaths()[0].empty()) continue;
 
 		int tagName = tagsMatcher->name2tag(fieldType.JsonPaths()[0]);
-		assert(tagName != 0);
+		assertf(tagName != 0, "ns=%s, field=%s", pl->Type().Name(), fieldType.JsonPaths()[0]);
 
 		if (fieldType.IsArray()) {
 			builder.ArrayRef(tagName, field, pl->GetArrayLen(field));

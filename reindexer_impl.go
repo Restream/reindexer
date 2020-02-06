@@ -237,6 +237,27 @@ func (db *reindexerImpl) truncateNamespace(ctx context.Context, namespace string
 	return db.binding.TruncateNamespace(ctx, namespace)
 }
 
+// RenameNamespace - Rename namespace. If namespace with dstNsName exists, then it is replaced.
+func (db *reindexerImpl) renameNamespace(ctx context.Context, srcNsName string, dstNsName string) error {
+	srcNsName = strings.ToLower(srcNsName)
+	dstNsName = strings.ToLower(dstNsName)
+	err := db.binding.RenameNamespace(ctx, srcNsName, dstNsName)
+	if err != nil {
+		return err
+	}
+	db.lock.Lock()
+	defer db.lock.Unlock()
+
+	srcNs, ok := db.ns[srcNsName]
+	if ok {
+		delete(db.ns, srcNsName)
+		db.ns[dstNsName] = srcNs
+	} else {
+		delete(db.ns, dstNsName)
+	}
+	return err
+}
+
 // closeNamespace - close namespace, but keep storage
 func (db *reindexerImpl) closeNamespace(ctx context.Context, namespace string) error {
 	namespace = strings.ToLower(namespace)
