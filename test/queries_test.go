@@ -402,9 +402,14 @@ func TestQueries(t *testing.T) {
 		FillTestItemsForNot()
 		CheckNotQueries()
 
-		assert.NoError(t, DB.CloseNamespace("test_items"))
+		if err := DB.CloseNamespace("test_items"); err != nil {
+			panic(err)
+		}
 
-		assert.NoError(t, DB.OpenNamespace("test_items", reindexer.DefaultNamespaceOptions(), TestItem{}))
+		if err := DB.OpenNamespace("test_items", reindexer.DefaultNamespaceOptions(), TestItem{}); err != nil {
+			panic(err)
+		}
+
 		CheckTestItemsJsonQueries()
 
 		CheckAggregateQueries()
@@ -416,9 +421,10 @@ func TestQueries(t *testing.T) {
 		// Delete test
 		tx := newTestTx(DB, "test_items")
 		for i := 0; i < 4000; i++ {
-			assert.NoError(t, tx.Delete(TestItem{ID: mkID(i)}))
+			if err := tx.Delete(TestItem{ID: mkID(i)}); err != nil {
+				panic(err)
+			}
 		}
-
 		// Check insert after delete
 		FillTestItemsTx(0, 500, 0, tx)
 		//Check second update
@@ -455,9 +461,13 @@ func TestQueries(t *testing.T) {
 		FillTestItemsWithFunc("test_items_id_only", 0, 500, 20, newTestItemIDOnly)
 		FillTestItemsWithFunc("test_items_id_only", 500, 500, 0, newTestItemIDOnly)
 
-		assert.NoError(t, DB.CloseNamespace("test_items_id_only"))
+		if err := DB.CloseNamespace("test_items_id_only"); err != nil {
+			panic(err)
+		}
 
-		assert.NoError(t, DB.OpenNamespace("test_items_id_only", reindexer.DefaultNamespaceOptions(), TestItemIDOnly{}))
+		if err := DB.OpenNamespace("test_items_id_only", reindexer.DefaultNamespaceOptions(), TestItemIDOnly{}); err != nil {
+			panic(err)
+		}
 
 		CheckTestItemsQueries(testCaseWithIDOnlyIndexe)
 	})
@@ -467,9 +477,13 @@ func TestQueries(t *testing.T) {
 		FillTestItemsWithFunc("test_items_with_sparse", 0, 2500, 20, newTestItemWithSparse)
 		FillTestItemsWithFunc("test_items_with_sparse", 2500, 2500, 0, newTestItemWithSparse)
 
-		assert.NoError(t, DB.CloseNamespace("test_items_with_sparse"))
+		if err := DB.CloseNamespace("test_items_with_sparse"); err != nil {
+			panic(err)
+		}
 
-		assert.NoError(t, DB.OpenNamespace("test_items_with_sparse", reindexer.DefaultNamespaceOptions(), TestItemWithSparse{}))
+		if err := DB.OpenNamespace("test_items_with_sparse", reindexer.DefaultNamespaceOptions(), TestItemWithSparse{}); err != nil {
+			panic(err)
+		}
 
 		CheckTestItemsQueries(testCaseWithSparseIndexes)
 	})
