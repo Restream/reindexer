@@ -36,6 +36,7 @@ const (
 	queryOpenBracket       = bindings.QueryOpenBracket
 	queryCloseBracket      = bindings.QueryCloseBracket
 	queryJoinCondition     = bindings.QueryJoinCondition
+	QueryDropField         = bindings.QueryDropField
 )
 
 // Constants for calc total
@@ -681,7 +682,7 @@ func (q *Query) DeleteCtx(ctx context.Context) (int, error) {
 	return q.db.deleteQuery(ctx, q)
 }
 
-// Set will add update field request for update query
+// Set adds update field request for update query
 func (q *Query) Set(field string, values interface{}) *Query {
 	t := reflect.TypeOf(values)
 	v := reflect.ValueOf(values)
@@ -705,6 +706,13 @@ func (q *Query) Set(field string, values interface{}) *Query {
 		q.putValue(v)
 	}
 
+	return q
+}
+
+// Drop removes field from item within Update statement
+func (q *Query) Drop(field string) *Query {
+	q.ser.PutVarCUInt(QueryDropField)
+	q.ser.PutVString(field)
 	return q
 }
 

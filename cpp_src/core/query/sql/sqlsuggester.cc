@@ -53,6 +53,7 @@ std::unordered_map<int, std::set<string>> sqlTokenMatchings = {
 	{WhereSqlToken, {"where"}},
 	{AllFieldsToken, {"*"}},
 	{DeleteConditionsStart, {"where", "limit", "offset", "order"}},
+	{UpdateOptions, {"set", "drop"}},
 };
 
 void getMatchingTokens(int tokenType, const string &token, vector<string> &variants) {
@@ -98,6 +99,7 @@ void SQLSuggester::getSuggestionsForToken(SqlParsingCtx::SuggestionData &ctx) {
 		case BySqlToken:
 		case SetSqlToken:
 		case WhereSqlToken:
+		case UpdateOptions:
 			getMatchingTokens(ctx.tokenType, ctx.token, ctx.variants);
 			break;
 		case SingleSelectFieldSqlToken:

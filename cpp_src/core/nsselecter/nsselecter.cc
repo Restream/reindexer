@@ -1,8 +1,10 @@
 #include "nsselecter.h"
-#include "core/namespace.h"
+#include "core/namespace/namespaceimpl.h"
+#include "core/queryresults/joinresults.h"
 #include "explaincalc.h"
 #include "itemcomparator.h"
 #include "querypreprocessor.h"
+#include "sortexpression.h"
 #include "tools/logger.h"
 
 constexpr int kMinIterationsForInnerJoinOptimization = 100;
@@ -12,7 +14,7 @@ namespace reindexer {
 
 static int GetMaxIterations(const SelectIteratorContainer &iterators, bool withZero = false) {
 	int maxIterations = std::numeric_limits<int>::max();
-	iterators.ForEachIterator([&maxIterations, withZero](const SelectIterator &it, OpType) {
+	iterators.ForEachIterator([&maxIterations, withZero](const SelectIterator &it) {
 		int cur = it.GetMaxIterations();
 		if (it.comparators_.empty() && (cur || withZero) && cur < maxIterations) maxIterations = cur;
 	});
@@ -85,11 +87,11 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		// Check, is it really possible to use it
 
 		if (isFt ||																	 // Disabled if there are search results
-			(ctx.preResult /*&& !ctx.preResult->btreeIndexOptimizationEnabled*/) ||  // Disabled in join preresult (TMP: now disable for all
+			(ctx.preResult /*&& !ctx.preResult->btreeIndexOptimizationEnabled*/) ||	 // Disabled in join preresult (TMP: now disable for all
 																					 // right queries), TODO: enable right queries)
 			(!tmpWhereEntries.Empty() && tmpWhereEntries.GetOperation(0) == OpNot) ||  // Not in first condition
 			!isSortOptimizatonEffective(tmpWhereEntries, ctx,
-										rdxCtx)  // Optimization is not effective (e.g. query contains more effecive filters)
+										rdxCtx)	 // Optimization is not effective (e.g. query contains more effecive filters)
 		) {
 			ctx.sortingContext.resetOptimization();
 			ctx.isForceAll = true;
@@ -180,7 +182,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	bool hasComparators = false;
 	bool reverse = !isFt && ctx.sortingContext.sortIndex() && ctx.sortingContext.entries[0].data->desc;
 
-	qres.ForEachIterator([&hasComparators](const SelectIterator &it, OpType) {
+	qres.ForEachIterator([&hasComparators](const SelectIterator &it) {
 		if (it.comparators_.size()) hasComparators = true;
 	});
 
@@ -505,10 +507,12 @@ void NsSelecter::sortResults(reindexer::SelectCtx &sctx, Items &items, const Sor
 
 template <bool reverse, bool hasComparators>
 void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext &rdxCtx) {
+	static const JoinedSelectors emptyJoinedSelectors;
 	const auto selectLoopWard = rdxCtx.BeforeSelectLoop();
 	unsigned start = 0;
 	unsigned count = UINT_MAX;
 	SelectCtx &sctx = ctx.sctx;
+	const auto &joinedSelectors = sctx.joinedSelectors ? *sctx.joinedSelectors : emptyJoinedSelectors;
 	SelectIteratorContainer &qres = *ctx.qres;
 
 	if (!sctx.isForceAll) {
@@ -567,7 +571,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 			if ((start || (count == 0)) && sortingOptions.multiColumnByBtreeIndex) {
 				VariantArray recentValues;
 				size_t lastResSize = result.Count();
-				getSortIndexValue(sctx.sortingContext, properRowId, recentValues, proc);
+				getSortIndexValue(sctx.sortingContext, properRowId, recentValues, proc, result.joined_[sctx.nsid], joinedSelectors);
 				if (prevValues.empty() && result.Items().empty()) {
 					prevValues = recentValues;
 				} else {
@@ -597,7 +601,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 				addSelectResult(proc, rowId, properRowId, sctx, aggregators, result);
 				--count;
 				if (!count && sortingOptions.multiColumn && !multiSortFinished)
-					getSortIndexValue(sctx.sortingContext, properRowId, prevValues, proc);
+					getSortIndexValue(sctx.sortingContext, properRowId, prevValues, proc, result.joined_[sctx.nsid], joinedSelectors);
 			}
 			if (!count && !calcTotal && multiSortFinished) break;
 			if (calcTotal) result.totalCount++;
@@ -631,12 +635,14 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 	}
 }
 
-void NsSelecter::getSortIndexValue(const SortingContext &sortCtx, IdType rowId, VariantArray &value, uint8_t proc) {
+void NsSelecter::getSortIndexValue(const SortingContext &sortCtx, IdType rowId, VariantArray &value, uint8_t proc,
+								   joins::NamespaceResults &joinResults, const JoinedSelectors &js) {
 	const SortingContext::Entry *firstEntry = sortCtx.getFirstColumnEntry();
 	ConstPayload pv(ns_->payloadType_, ns_->items_[rowId]);
 	if (firstEntry->expression != SortingContext::Entry::NoExpression) {
 		assert(firstEntry->expression >= 0 && static_cast<size_t>(firstEntry->expression) < sortCtx.expressions.size());
-		value = VariantArray{Variant{sortCtx.expressions[firstEntry->expression].Calculate(pv, proc, ns_->tagsMatcher_)}};
+		value = VariantArray{
+			Variant{sortCtx.expressions[firstEntry->expression].Calculate(rowId, pv, joinResults, js, proc, ns_->tagsMatcher_)}};
 	} else if ((firstEntry->data->index == IndexValueType::SetByJsonPath) || ns_->indexes_[firstEntry->data->index]->Opts().IsSparse()) {
 		pv.GetByJsonPath(firstEntry->data->expression, ns_->tagsMatcher_, value, KeyValueUndefined);
 	} else {
@@ -646,6 +652,7 @@ void NsSelecter::getSortIndexValue(const SortingContext &sortCtx, IdType rowId, 
 
 void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &sctx, h_vector<Aggregator, 4> &aggregators,
 								 QueryResults &result) {
+	static const JoinedSelectors emptyJoinedSelectors;
 	if (aggregators.size()) {
 		for (auto &aggregator : aggregators) aggregator.Aggregate(ns_->items_[properRowId]);
 	} else if (sctx.preResult && sctx.preResult->executionMode == JoinPreResult::ModeBuild) {
@@ -667,8 +674,10 @@ void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId,
 			assert(exprs.size() == exprResults.size());
 			exprResultIdx = exprResults[0].size();
 			const ConstPayload pv(ns_->payloadType_, ns_->items_[properRowId]);
+			const auto &joinedSelectors = sctx.joinedSelectors ? *sctx.joinedSelectors : emptyJoinedSelectors;
 			for (size_t i = 0; i < exprs.size(); ++i) {
-				exprResults[i].push_back(exprs[i].Calculate(pv, proc, ns_->tagsMatcher_));
+				exprResults[i].push_back(
+					exprs[i].Calculate(rowId, pv, result.joined_[sctx.nsid], joinedSelectors, proc, ns_->tagsMatcher_));
 			}
 		}
 		result.Add({properRowId, exprResultIdx, proc, sctx.nsid}, ns_->payloadType_);
@@ -740,13 +749,15 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) {
 }
 
 void NsSelecter::prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, bool isFt) {
+	static const JoinedSelectors emptyJoinedSelectors;
+	const auto &joinedSelectors = ctx.joinedSelectors ? *ctx.joinedSelectors : emptyJoinedSelectors;
 	for (size_t i = 0; i < sortBy.size(); ++i) {
 		SortingEntry &sortingEntry(sortBy[i]);
 		SortingContext::Entry sortingCtx;
 		sortingCtx.data = &sortingEntry;
 		assert(!sortingEntry.expression.empty());
-		SortExpression expr{SortExpression::Parse(sortingEntry.expression)};
-		if (expr.JustByIndex()) {
+		SortExpression expr{SortExpression::Parse(sortingEntry.expression, joinedSelectors)};
+		if (expr.ByIndexField()) {
 			sortingEntry.index = IndexValueType::SetByJsonPath;
 			ns_->getIndexByName(sortingEntry.expression, sortingEntry.index);
 			if (sortingEntry.index >= 0) {
@@ -772,23 +783,25 @@ void NsSelecter::prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, b
 			if (!ctx.query.mergeQueries_.empty()) {
 				throw Error(errLogic, "Sorting by expression cannot be applied to merged queries.");
 			}
-			expr.ForEachValue([this, isFt](SortExpressionValue &exprValue) {
-				switch (exprValue.type) {
-					case SortExpressionValue::Index:
-						assert(!exprValue.column.empty());
-						exprValue.index = IndexValueType::SetByJsonPath;
-						if (ns_->getIndexByName(string{exprValue.column}, exprValue.index) &&
-							ns_->indexes_[exprValue.index]->Opts().IsSparse()) {
-							exprValue.index = IndexValueType::SetByJsonPath;
-						}
-						break;
-					case SortExpressionValue::Rank:
-						if (!isFt) throw Error(errLogic, "Sort by rank() available only for fulltext query");
-						break;
-					case SortExpressionValue::Value:
-						break;
-				}
-			});
+			expr.ExecuteAppropriateForEach<SortExpressionIndex, SortExpressionJoinedIndex, SortExpressionFuncRank>(
+				[this](SortExpressionIndex &exprIndex) {
+					assert(!exprIndex.column.empty());
+					exprIndex.index = IndexValueType::SetByJsonPath;
+					if (ns_->getIndexByName(string{exprIndex.column}, exprIndex.index) &&
+						ns_->indexes_[exprIndex.index]->Opts().IsSparse()) {
+						exprIndex.index = IndexValueType::SetByJsonPath;
+					}
+				},
+				[&joinedSelectors](SortExpressionJoinedIndex &exprIndex) {
+					assert(!exprIndex.column.empty());
+					exprIndex.index = IndexValueType::SetByJsonPath;
+					const auto &js = joinedSelectors[exprIndex.fieldIdx];
+					(js.preResult_->dataMode == JoinPreResult::ModeValues ? js.preResult_->values.payloadType : js.rightNs_->payloadType_)
+						.FieldByName(string{exprIndex.column}, exprIndex.index);
+				},
+				[isFt](SortExpressionFuncRank &) {
+					if (!isFt) throw Error(errLogic, "Sort by rank() available only for fulltext query");
+				});
 			ctx.sortingContext.expressions.push_back(std::move(expr));
 			sortingCtx.expression = ctx.sortingContext.expressions.size() - 1;
 			ctx.isForceAll = true;
@@ -804,7 +817,7 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 
 	size_t costNormal = ns_->items_.size() - ns_->free_.size();
 
-	qentries.ForEachEntry([this, &ctx, &rdxCtx, &costNormal](const QueryEntry &qe, OpType) {
+	qentries.ForEachEntry([this, &ctx, &rdxCtx, &costNormal](const QueryEntry &qe) {
 		if (qe.idxNo < 0 || qe.idxNo == ctx.sortingContext.uncommitedIndex) return;
 		if (costNormal == 0) return;
 
@@ -829,7 +842,7 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 	costNormal *= 2;
 	if (costNormal < costOptimized) {
 		costOptimized = costNormal + 1;
-		qentries.ForEachEntry([this, &ctx, &rdxCtx, &costOptimized](const QueryEntry &qe, OpType) {
+		qentries.ForEachEntry([this, &ctx, &rdxCtx, &costOptimized](const QueryEntry &qe) {
 			if (qe.idxNo < 0 || qe.idxNo != ctx.sortingContext.uncommitedIndex) return;
 
 			Index::SelectOpts opts;

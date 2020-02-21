@@ -5,7 +5,7 @@
 #include <list>
 #include <mutex>
 #include <unordered_map>
-#include "namespacestat.h"
+#include "namespace/namespacestat.h"
 
 namespace reindexer {
 

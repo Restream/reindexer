@@ -100,7 +100,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 2.5.3
+*Version* : 2.6.0
 
 
 ### License information
@@ -1583,6 +1583,7 @@ List of meta info of the specified namespace
 |**name**  <br>*optional*|Name of namespace|string|
 |**selects**  <br>*optional*||[SelectPerfStats](#selectperfstats)|
 |**updates**  <br>*optional*||[UpdatePerfStats](#updateperfstats)|
+|**transactions**  <br>*optional*||[TransactionsPerfStats](#transactionsperfstats)|
 
 
 **indexes**
@@ -1623,7 +1624,9 @@ List of meta info of the specified namespace
 |**namespace**  <br>*optional*|Name of namespace, or `*` for setting to all namespaces|string|
 |**optimization_sort_workers**  <br>*optional*|Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations|integer|
 |**optimization_timeout_ms**  <br>*optional*|Timeout before background indexes optimization start after last update. 0 - disable optimizations|integer|
-|**start_copy_politics_count**  <br>*optional*|Copy namespce policts will start only after item's count become greater in this param|integer|
+|**start_copy_policy_tx_size**  <br>*optional*|Enable namespace copying for transaction with steps count greater than this value (if copy_politics_multiplier also allows this)|integer|
+|**copy_policy_multiplier**  <br>*optional*|Disables copy policy if namespace size is greater than copy_policy_multiplier * start_copy_policy_tx_size|integer|
+|**tx_size_to_always_copy**  <br>*optional*|Force namespace copying for transaction with steps count greater than this value|integer|
 |**unload_idle_threshold**  <br>*optional*|Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded|integer|
 
 
@@ -1893,6 +1896,31 @@ Performance statistics for update operations
 |---|---|---|
 |**updated**  <br>*optional*|Count of updated items|integer|
 
+
+
+
+### TransactionsPerfStats
+Performance statistics for transactions
+
+*Polymorphism* : Composition
+
+
+|Name|Description|Schema|
+|---|---|---|
+|**total_count**  <br>*optional*|Total transactions count for this object|integer|
+|**total_copy_count**  <br>*optional*|Total object copy operations|integer|
+|**avg_steps_count**  <br>*optional*|Average steps count in transactions for this object|integer|
+|**min_steps_count**  <br>*optional*|Minimum steps count in transactions for this object|number|
+|**max_steps_count**  <br>*optional*|Maximum steps count in transactions for this object|integer|
+|**avg_prepare_time_us**  <br>*optional*|Average transaction preparation time usec|integer|
+|**min_prepare_time_us**  <br>*optional*|Minimum transaction preparation time usec|integer|
+|**max_prepare_time_us**  <br>*optional*|Maximum transaction preparation time usec|integer|
+|**avg_commit_time_us**  <br>*optional*|Average transaction commit time usec|integer|
+|**min_commit_time_us**  <br>*optional*|Minimum transaction commit time usec|integer|
+|**max_commit_time_us**  <br>*optional*|Maximum transaction commit time usec|integer|
+|**avg_copy_time_us**  <br>*optional*|Average object copy time usec|integer|
+|**min_copy_time_us**  <br>*optional*|Maximum object copy time usec|integer|
+|**max_copy_time_us**  <br>*optional*|Minimum object copy time usec|integer|
 
 
 

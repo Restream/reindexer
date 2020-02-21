@@ -60,27 +60,38 @@ void ItemImpl::SetField(int field, const VariantArray &krs) {
 	}
 }
 
-void ItemImpl::SetField(string_view jsonPath, const VariantArray &keys) {
+void ItemImpl::ModifyField(string_view jsonPath, const VariantArray &keys, FieldModifyMode mode) {
 	Payload pl = GetPayload();
 
 	ser_.Reset();
 	ser_.PutUInt32(0);
 	WrSerializer generatedCjson;
 	string_view cjson(pl.Get(0, 0));
-
 	if (cjson.empty()) {
 		buildPayloadTuple(&pl, &tagsMatcher_, generatedCjson);
 		cjson = generatedCjson.Slice();
 	}
 
+	Error err;
 	CJsonModifier cjsonModifier(tagsMatcher_, payloadType_);
-	Error err = cjsonModifier.SetFieldValue(cjson, tagsMatcher_.path2tag(jsonPath), keys, ser_);
-	if (!err.ok()) throw Error(errLogic, "Error setting field value: '%s'", err.what());
+	switch (mode) {
+		case FieldModeSet:
+			err = cjsonModifier.SetFieldValue(cjson, tagsMatcher_.path2tag(jsonPath), keys, ser_);
+			break;
+		case FieldModeDrop:
+			err = cjsonModifier.RemoveFieldValue(cjson, tagsMatcher_.path2tag(jsonPath), ser_);
+			break;
+		default:
+			std::abort();
+	}
+	if (!err.ok()) throw Error(errLogic, "Error modifying field value: '%s'", err.what());
 
 	tupleData_ = ser_.DetachBuf();
 	pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
 }
 
+void ItemImpl::SetField(string_view jsonPath, const VariantArray &keys) { ModifyField(jsonPath, keys, FieldModeSet); }
+void ItemImpl::DropField(string_view jsonPath) { ModifyField(jsonPath, {}, FieldModeDrop); }
 Variant ItemImpl::GetField(int field) { return GetPayload().Get(field, 0); }
 
 // Construct item from compressed json

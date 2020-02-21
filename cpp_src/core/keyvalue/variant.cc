@@ -476,6 +476,8 @@ Variant::operator const PayloadValue &() const {
 	return *cast<PayloadValue>();
 }
 
+bool Variant::IsNullValue() const { return type_ == KeyValueNull; }
+
 void Variant::Dump(WrSerializer &wrser) const {
 	switch (Type()) {
 		case KeyValueString: {
@@ -504,6 +506,8 @@ void Variant::Dump(WrSerializer &wrser) const {
 			break;
 	}
 }
+
+bool VariantArray::IsNullValue() const { return (size() == 1 && front().IsNullValue()); }
 
 void VariantArray::Dump(WrSerializer &wrser) const {
 	wrser << '{';

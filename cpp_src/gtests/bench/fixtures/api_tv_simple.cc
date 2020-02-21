@@ -136,76 +136,28 @@ void ApiTvSimple::WarmUpIndexes(State& state) {
 		Error err;
 
 		// Ensure indexes complete build
-		// In current implementation - just wait
-		// Index build process is in background routine
-		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+		WaitForOptimization();
+		for (size_t i = 0; i < packages_.size() * 2; i++) {
+			QueryResults qres;
+			Query q(nsdef_.name);
+			q.Where("packages", CondSet, packages_.at(i % packages_.size())).Limit(20).Sort("start_time", false);
+			err = db_->Select(q, qres);
+			if (!err.ok()) state.SkipWithError(err.what().c_str());
+		}
 
-		for (size_t i = 0; i < packages_.size() * 3; i++) {
-			{
-				QueryResults qres;
-				Query q(nsdef_.name);
-				auto randIdx = random<size_t>(0, packages_.size() - 1);
-				q.Where("packages", CondSet, toArray<int>(packages_.at(randIdx))).Limit(20).Sort("start_time", false);
-				err = db_->Select(q, qres);
-				if (!err.ok()) state.SkipWithError(err.what().c_str());
-			}
-
-			{
-				QueryResults qres;
-				Query q(nsdef_.name);
-				auto randIdx = random<size_t>(0, packages_.size() - 1);
-				q.Where("packages", CondSet, toArray<int>(packages_.at(randIdx))).Limit(20).Sort("year", false);
-				err = db_->Select(q, qres);
-				if (!err.ok()) state.SkipWithError(err.what().c_str());
-			}
-
-			{
-				QueryResults qres;
-				Query q(nsdef_.name);
-				q.Where("year", CondRange, {2010, 2016}).Limit(20);
-				err = db_->Select(q, qres);
-				if (!err.ok()) state.SkipWithError(err.what().c_str());
-			}
+		for (size_t i = 0; i < packages_.size() * 2; i++) {
+			QueryResults qres;
+			Query q(nsdef_.name);
+			q.Where("packages", CondSet, packages_.at(i % packages_.size())).Limit(20).Sort("year", false);
+			err = db_->Select(q, qres);
+			if (!err.ok()) state.SkipWithError(err.what().c_str());
 		}
 
 		for (size_t i = 0; i < priceIDs_.size() * 3; i++) {
 			QueryResults qres;
 			Query q("JoinItems");
-			auto randIdx = random<size_t>(0, priceIDs_.size() - 1);
-			q.Where("id", CondSet, toArray<int>(priceIDs_.at(randIdx))).Limit(20);
+			q.Where("id", CondSet, priceIDs_.at(i % priceIDs_.size())).Limit(20);
 			err = db_->Select(q, qres);
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
-		}
-
-		for (size_t i = 0; i < 1000; ++i) {
-			Query q(nsdef_.name);
-			q.Where("start_time", CondEq, start_times_.at(random<size_t>(0, start_times_.size() - 1)));
-			QueryResults qres;
-			auto err = db_->Select(q, qres);
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
-		}
-
-		for (size_t i = 0; i < priceIDs_.size() * 3; ++i) {
-			Query q(nsdef_.name);
-			q.Where("price_id", CondEq, priceIDs_[random<size_t>(0, priceIDs_.size() - 1)]);
-			QueryResults qres;
-			auto err = db_->Select(q, qres);
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
-		}
-
-		for (size_t i = 0; i < countries_.size() * 3; ++i) {
-			Query q(nsdef_.name);
-			q.Where("countries", CondEq, countries_[random<size_t>(0, countries_.size() - 1)]);
-			QueryResults qres;
-			auto err = db_->Select(q, qres);
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
-		}
-
-		for (size_t i = 0; i < countryLikePatterns_.size() * 3; ++i) {
-			Query q(nsdef_.name);
-			q.Where("countries", CondLike, countryLikePatterns_[random<size_t>(0, countryLikePatterns_.size() - 1)]);
-			QueryResults qres;
-			auto err = db_->Select(q, qres);
 			if (!err.ok()) state.SkipWithError(err.what().c_str());
 		}
 	}

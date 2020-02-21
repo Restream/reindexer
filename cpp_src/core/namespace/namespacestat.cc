@@ -19,6 +19,7 @@ void NamespaceMemStat::GetJSON(WrSerializer &ser) {
 	builder.Put("storage_path", storagePath);
 
 	builder.Put("storage_loaded", storageLoaded);
+	builder.Put("optimization_completed", optimizationCompleted);
 
 	builder.Object("total").Put("data_size", Total.dataSize).Put("indexes_size", Total.indexesSize).Put("cache_size", Total.cacheSize);
 
@@ -90,6 +91,10 @@ void NamespacePerfStat::GetJSON(WrSerializer &ser) {
 	{
 		auto obj = builder.Object("selects");
 		selects.GetJSON(obj);
+	}
+	{
+		auto obj = builder.Object("transactions");
+		transactions.GetJSON(obj);
 	}
 
 	auto arr = builder.Array("indexes");
@@ -212,6 +217,23 @@ void ReplicationStat::GetJSON(JsonBuilder &builder) {
 		builder.Put("wal_count", walCount);
 		builder.Put("wal_size", walSize);
 	}
+}
+
+void TxPerfStat::GetJSON(JsonBuilder &builder) {
+	builder.Put("total_count", totalCount);
+	builder.Put("total_copy_count", totalCopyCount);
+	builder.Put("avg_steps_count", avgStepsCount);
+	builder.Put("min_steps_count", minStepsCount);
+	builder.Put("max_steps_count", maxStepsCount);
+	builder.Put("avg_prepare_time_us", avgPrepareTimeUs);
+	builder.Put("min_prepare_time_us", minPrepareTimeUs);
+	builder.Put("max_prepare_time_us", maxPrepareTimeUs);
+	builder.Put("avg_commit_time_us", avgCommitTimeUs);
+	builder.Put("min_commit_time_us", minCommitTimeUs);
+	builder.Put("max_commit_time_us", maxCommitTimeUs);
+	builder.Put("avg_copy_time_us", avgCopyTimeUs);
+	builder.Put("min_copy_time_us", minCopyTimeUs);
+	builder.Put("max_copy_time_us", maxCopyTimeUs);
 }
 
 }  // namespace reindexer

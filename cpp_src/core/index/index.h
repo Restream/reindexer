@@ -6,7 +6,7 @@
 #include "core/indexdef.h"
 #include "core/indexopts.h"
 #include "core/keyvalue/variant.h"
-#include "core/namespacestat.h"
+#include "core/namespace/namespacestat.h"
 #include "core/payload/payloadiface.h"
 #include "core/perfstatcounter.h"
 #include "core/selectfunc/ctx/basefunctionctx.h"

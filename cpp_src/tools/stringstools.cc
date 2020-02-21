@@ -20,6 +20,13 @@ using std::make_pair;
 
 namespace reindexer {
 
+string toLower(string_view src) {
+	string ret;
+	ret.reserve(src.size());
+	for (char ch : src) ret.push_back(tolower(ch));
+	return ret;
+}
+
 string escapeString(string_view str) {
 	string dst = "";
 	dst.reserve(str.length());

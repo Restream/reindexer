@@ -3,6 +3,7 @@
 
 using std::thread;
 
+#if !defined(REINDEX_WITH_TSAN)
 TEST_F(QueriesApi, QueriesStandardTestSet) {
 	FillDefaultNamespace(0, 2500, 20);
 	FillDefaultNamespace(2500, 2500, 0);
@@ -76,6 +77,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 	CheckComparatorsQueries();
 	CheckDistinctQueries();
 }
+#endif
 
 TEST_F(QueriesApi, TransactionStress) {
 	vector<thread> pool;
@@ -115,11 +117,15 @@ TEST_F(QueriesApi, QueriesSqlGenerate) {
 		EXPECT_EQ(sql, q.GetSQL());
 	};
 
-	check("SELECT ID,Year,Genre FROM test_namespace WHERE year > '2016' ORDER BY year DESC LIMIT 10000000");
+	check("SELECT ID,Year,Genre FROM test_namespace WHERE year > '2016' ORDER BY 'year' DESC LIMIT 10000000");
 
 	check(
 		"SELECT ID FROM test_namespace WHERE name LIKE 'something' AND (genre IN ('1','2','3') AND year > '2016') OR age IN "
 		"('1','2','3','4') LIMIT 10000000");
+
+	check(
+		"SELECT * FROM test_namespace WHERE  INNER JOIN join_ns ON join_ns.id = test_namespace.id ORDER BY 'year + join_ns.year * (5 - "
+		"rand())'");
 }
 
 std::vector<int> generateForcedSortOrder(int maxValue, size_t size) {

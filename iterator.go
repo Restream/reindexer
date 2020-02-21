@@ -148,6 +148,9 @@ func (it *Iterator) NextObj(obj interface{}) (hasNext bool) {
 	}
 	if it.needMore() {
 		it.fetchResults()
+		if it.err != nil {
+			return
+		}
 	}
 	it.current.obj, it.current.rank = it.readItem(obj)
 	if it.err != nil {

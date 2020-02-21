@@ -1,12 +1,12 @@
 
 #include "walselecter.h"
 #include "core/cjson/jsonbuilder.h"
-#include "core/namespace.h"
+#include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/nsselecter.h"
 
 namespace reindexer {
 
-WALSelecter::WALSelecter(const Namespace *ns) : ns_(ns) {}
+WALSelecter::WALSelecter(const NamespaceImpl *ns) : ns_(ns) {}
 
 void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 	const Query &q = params.query;
@@ -52,7 +52,8 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 				case WalPutMeta:
 				case WalUpdateQuery:
 				case WalItemModify:
-				case WalTransaction:
+				case WalInitTransaction:
+				case WalCommitTransaction:
 					if (start) {
 						start--;
 					} else if (count) {

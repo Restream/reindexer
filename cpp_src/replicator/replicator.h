@@ -3,8 +3,8 @@
 #include <string>
 #include <thread>
 #include "core/dbconfig.h"
-#include "core/namespace.h"
-#include "core/namespacestat.h"
+#include "core/namespace/namespace.h"
+#include "core/namespace/namespacestat.h"
 #include "estl/atomic_unique_ptr.h"
 #include "estl/fast_hash_map.h"
 #include "net/ev/ev.h"
@@ -36,6 +36,10 @@ protected:
 		int updated = 0, deleted = 0, errors = 0, updatedIndexes = 0, deletedIndexes = 0, updatedMeta = 0, processed = 0;
 		WrSerializer &Dump(WrSerializer &ser);
 	};
+	struct NsErrorMsg {
+		Error err;
+		uint64_t count = 0;
+	};
 
 	void run();
 	void stop();
@@ -52,9 +56,13 @@ protected:
 	// Sync meta data
 	Error syncMetaForced(reindexer::Namespace::Ptr slaveNs, string_view nsName);
 	// Apply single WAL record
-	Error applyWALRecord(int64_t lsn, string_view nsName, std::shared_ptr<Namespace> ns, const WALRecord &wrec, SyncStat &stat);
+	Error applyWALRecord(int64_t lsn, string_view nsName, Namespace::Ptr ns, const WALRecord &wrec, SyncStat &stat);
+	// Apply single transaction WAL record
+	Error applyTxWALRecord(int64_t lsn, string_view nsName, Namespace::Ptr ns, const WALRecord &wrec);
+	void checkNoOpenedTransaction(string_view nsName, Namespace::Ptr slaveNs);
 	// Apply single cjson item
-	Error modifyItem(int64_t, std::shared_ptr<Namespace> ns, string_view cjson, int modifyMode, const TagsMatcher &tm, SyncStat &stat);
+	Error modifyItem(int64_t, Namespace::Ptr ns, string_view cjson, int modifyMode, const TagsMatcher &tm, SyncStat &stat);
+	static Error unpackItem(Item &, int64_t, string_view cjson, const TagsMatcher &tm);
 
 	void OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &walRec) override final;
 	void OnConnectionState(const Error &err) override final;
@@ -69,6 +77,7 @@ protected:
 	std::thread thread_;
 	net::ev::async stop_;
 	net::ev::async resync_;
+	net::ev::timer resyncTimer_;
 	ReplicationConfigData config_;
 
 	std::atomic<bool> terminate_;
@@ -81,6 +90,8 @@ protected:
 	std::atomic<bool> enabled_;
 
 	const RdxContext dummyCtx_;
+	std::unordered_map<const Namespace *, Transaction> transactions_;
+	fast_hash_map<string, NsErrorMsg, nocase_hash_str, nocase_equal_str> lastNsErrMsg_;
 };
 
 }  // namespace reindexer

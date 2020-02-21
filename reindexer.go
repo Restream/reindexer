@@ -178,6 +178,19 @@ func (db *Reindexer) Close() {
 	db.impl.close()
 }
 
+func (db *Reindexer) RenameNs(srcNsName string, dstNsName string) {
+	db.impl.lock.Lock()
+	defer db.impl.lock.Unlock()
+	srcNs, ok := (db.impl).ns[srcNsName]
+	if ok {
+		delete(db.impl.ns, srcNsName)
+		db.impl.ns[dstNsName] = srcNs
+	} else {
+		delete(db.impl.ns, dstNsName)
+	}
+
+}
+
 // NamespaceOptions is options for namespace
 type NamespaceOptions struct {
 	// Only in memory namespace

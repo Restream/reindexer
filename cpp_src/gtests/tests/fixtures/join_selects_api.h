@@ -6,6 +6,7 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
 #include "core/queryresults/joinresults.h"
+#include "estl/shared_mutex.h"
 #include "gason/gason.h"
 #include "reindexer_api.h"
 #include "tools/fsops.h"
@@ -50,15 +51,18 @@ protected:
 
 		FillGenresNamespace();
 		FillAuthorsNamespace(500);
-		FillBooksNamespace(10000);
+		FillBooksNamespace(0, 10000);
 		FillAuthorsNamespace(10);
 	}
 
 	void FillAuthorsNamespace(int32_t count) {
 		int authorIdValue = 0;
-		auto itMaxIt = std::max_element(authorsIds.begin(), authorsIds.end());
-		if (itMaxIt != authorsIds.end()) {
-			authorIdValue = *itMaxIt;
+		{
+			reindexer::shared_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
+			auto itMaxIt = std::max_element(authorsIds.begin(), authorsIds.end());
+			if (itMaxIt != authorsIds.end()) {
+				authorIdValue = *itMaxIt;
+			}
 		}
 		for (int32_t i = 0; i < count; ++i) {
 			Item item = NewItem(authors_namespace);
@@ -69,7 +73,10 @@ protected:
 			Upsert(authors_namespace, item);
 			Commit(authors_namespace);
 
-			authorsIds.push_back(authorIdValue);
+			{
+				std::unique_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
+				authorsIds.push_back(authorIdValue);
+			}
 		}
 
 		Item bestItem = NewItem(authors_namespace);
@@ -79,23 +86,39 @@ protected:
 		Upsert(authors_namespace, bestItem);
 		Commit(authors_namespace);
 
-		authorsIds.push_back(DostoevskyAuthorId);
+		{
+			std::unique_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
+			authorsIds.push_back(DostoevskyAuthorId);
+		}
 	}
 
-	void FillBooksNamespace(int32_t count) {
-		int authorIdIdx = rand() % authorsIds.size();
-		for (int32_t i = 0; i < count; ++i) {
+	void FillBooksNamespace(int32_t since, int32_t count) {
+		int authorIdIdx = 0;
+		{
+			reindexer::shared_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
+			authorIdIdx = rand() % authorsIds.size();
+		}
+
+		for (int32_t i = since; i < count; ++i) {
 			Item item = NewItem(books_namespace);
 			item[bookid] = i;
 			item[title] = title + underscore + RandString();
 			item[pages] = rand() % 10000;
 			item[price] = rand() % 10000;
-			item[authorid_fk] = authorsIds[authorIdIdx];
+
+			{
+				reindexer::shared_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
+				item[authorid_fk] = authorsIds[authorIdIdx];
+			}
+
 			item[genreId_fk] = genresIds[rand() % genresIds.size()];
 			Upsert(books_namespace, item);
 			Commit(books_namespace);
 
-			if (i % 4 == 0) authorIdIdx = rand() % authorsIds.size();
+			{
+				reindexer::shared_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
+				if (i % 4 == 0) authorIdIdx = rand() % authorsIds.size();
+			}
 		}
 
 		std::stringstream json;
@@ -236,7 +259,7 @@ protected:
 		ns.Put("lazyload", false);
 		ns.Put("unload_idle_threshold", 0);
 		ns.Put("join_cache_mode", "off");
-		ns.Put("start_copy_politics_count", 10000);
+		ns.Put("start_copy_policy_tx_size", 10000);
 		ns.Put("merge_limit_count", 20000);
 		ns.Put("optimization_timeout_ms", optimizationTimeout);
 		ns.End();
@@ -266,7 +289,7 @@ protected:
 		ns.Put("lazyload", false);
 		ns.Put("unload_idle_threshold", 0);
 		ns.Put("join_cache_mode", "on");
-		ns.Put("start_copy_politics_count", 10000);
+		ns.Put("start_copy_policy_tx_size", 10000);
 		ns.Put("merge_limit_count", 20000);
 		ns.End();
 		nsArray.End();
@@ -374,4 +397,6 @@ protected:
 
 	std::vector<int> authorsIds;
 	std::vector<int> genresIds;
+
+	reindexer::shared_timed_mutex authorsMutex;
 };

@@ -6,53 +6,86 @@
 namespace reindexer {
 
 class Index;
+class JoinedSelector;
+
+namespace joins {
+class NamespaceResults;
+}  // namespace joins
 
 struct SortExpressionValue {
-	SortExpressionValue() : type{Rank} {}
-	SortExpressionValue(double v) : type{Value}, value{v} {}
-	SortExpressionValue(string_view c) : type{Index}, column{c} {}
+	SortExpressionValue(double v) : value{v} {}
+	bool operator==(const SortExpressionValue& other) const noexcept { return value == other.value; }
 
-	double GetValue(ConstPayload, uint8_t proc, TagsMatcher&) const;
+	double value;
+};
 
-	enum Type { Index, Value, Rank } type = Index;
+struct SortExpressionIndex {
+	SortExpressionIndex(string_view c) : column{c}, index{IndexValueType::NotSet} {}
+	double GetValue(ConstPayload, TagsMatcher&) const;
+	bool operator==(const SortExpressionIndex& other) const noexcept { return column == other.column && index == other.index; }
+
 	string_view column;
 	int index = IndexValueType::NotSet;
-	double value = 0.0;
 };
-bool operator==(const SortExpressionValue&, const SortExpressionValue&);
+
+struct SortExpressionJoinedIndex {
+	SortExpressionJoinedIndex(size_t fieldInd, string_view c) : fieldIdx{fieldInd}, column{c}, index{IndexValueType::NotSet} {}
+	double GetValue(IdType rowId, joins::NamespaceResults&, const std::vector<JoinedSelector>&) const;
+	bool operator==(const SortExpressionJoinedIndex& other) const noexcept {
+		return fieldIdx == other.fieldIdx && column == other.column && index == other.index;
+	}
+
+	size_t fieldIdx;
+	string_view column;
+	int index = IndexValueType::NotSet;
+};
+
+struct SortExpressionFuncRank {
+	constexpr SortExpressionFuncRank() = default;
+	constexpr bool operator==(const SortExpressionFuncRank&) const noexcept { return true; }
+};
 
 struct SortExpressionOperation {
-	constexpr SortExpressionOperation(ArithmeticOpType _op = OpPlus, bool _negative = false) : op(_op), negative(_negative) {}
+	constexpr SortExpressionOperation(ArithmeticOpType _op = OpPlus, bool neg = false) : op(_op), negative(neg) {}
+	bool operator==(const SortExpressionOperation& other) const noexcept { return op == other.op && negative == other.negative; }
 
 	ArithmeticOpType op;
 	bool negative;
 };
-bool operator==(const SortExpressionOperation&, const SortExpressionOperation&);
 
-extern template bool ExpressionTree<SortExpressionValue, SortExpressionOperation, 2>::Leaf::IsEqual(const Node&) const;
-class SortExpression : public ExpressionTree<SortExpressionValue, SortExpressionOperation, 2> {
+class SortExpressionBracket : private Bracket {
 public:
-	static SortExpression Parse(string_view);
-	double Calculate(ConstPayload pv, uint8_t proc, TagsMatcher& tagsMatcher) const {
-		return calculate(cbegin(), cend(), pv, proc, tagsMatcher);
+	SortExpressionBracket(size_t s, bool abs = false) : Bracket{s}, isAbs_{abs} {}
+	using Bracket::Size;
+	using Bracket::Append;
+	using Bracket::Erase;
+	bool IsAbs() const noexcept { return isAbs_; }
+	void CopyPayloadFrom(const SortExpressionBracket& other) noexcept { isAbs_ = other.isAbs_; }
+	bool operator==(const SortExpressionBracket& other) const noexcept { return Bracket::operator==(other) && isAbs_ == other.isAbs_; }
+
+private:
+	bool isAbs_ = false;
+};
+
+class SortExpression : public ExpressionTree<SortExpressionOperation, SortExpressionBracket, 2, SortExpressionValue, SortExpressionIndex,
+											 SortExpressionJoinedIndex, SortExpressionFuncRank> {
+public:
+	template <typename T>
+	static SortExpression Parse(string_view, const std::vector<T>& joinedSelectors);
+	double Calculate(IdType rowId, ConstPayload pv, joins::NamespaceResults& results, const std::vector<JoinedSelector>& js, uint8_t proc,
+					 TagsMatcher& tagsMatcher) const {
+		return calculate(cbegin(), cend(), rowId, pv, results, js, proc, tagsMatcher);
 	}
-	bool JustByIndex() const {
-		static constexpr SortExpressionOperation noOperation;
-		return Size() == 1 && IsValue(0) && operator[](0).type == SortExpressionValue::Index && GetOperation(0) == noOperation;
-	}
-	bool ContainRank() const {
-		bool result = false;
-		ForEachValue([&result](const SortExpressionValue& v, SortExpressionOperation) {
-			if (v.type == SortExpressionValue::Rank) result = true;
-		});
-		return result;
-	}
+	bool ByIndexField() const;
 
 	std::string Dump() const;
 
 private:
-	string_view::iterator parse(string_view::iterator begin, string_view::iterator end, bool* containIndexOrFunction, string_view fullExpr);
-	static double calculate(const_iterator begin, const_iterator end, ConstPayload, uint8_t proc, TagsMatcher&);
+	template <typename T>
+	string_view::iterator parse(string_view::iterator begin, string_view::iterator end, bool* containIndexOrFunction, string_view fullExpr,
+								const std::vector<T>& joinedSelectors);
+	static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload, joins::NamespaceResults&,
+							const std::vector<JoinedSelector>&, uint8_t proc, TagsMatcher&);
 
 	void openBracketBeforeLastAppended();
 	static void dump(const_iterator begin, const_iterator end, WrSerializer&);

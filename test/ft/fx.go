@@ -23,7 +23,7 @@ type TextItem struct {
 	TextField string
 }
 
-func createReindexDbInstance(rx *reindexer.Reindexer, namespace string, indexType string) {
+func createReindexDbInstance(rx *reindexer.Reindexer, namespace string, indexType string, mergeLimit int) {
 	err := rx.OpenNamespace(namespace, reindexer.DefaultNamespaceOptions(), TextItem{})
 	if err != nil {
 		panic(fmt.Errorf("Couldn't create namespace: "+namespace, err))
@@ -37,6 +37,9 @@ func createReindexDbInstance(rx *reindexer.Reindexer, namespace string, indexTyp
 		cfg.Stemmers = []string{}
 		cfg.EnableKbLayout = false
 		cfg.EnableTranslit = false
+		if mergeLimit > 0 {
+			cfg.MergeLimit = mergeLimit
+		}
 		config = cfg
 	} else {
 		cfg := reindexer.DefaultFtFastConfig()
@@ -44,6 +47,9 @@ func createReindexDbInstance(rx *reindexer.Reindexer, namespace string, indexTyp
 		cfg.Stemmers = []string{}
 		cfg.EnableKbLayout = false
 		cfg.EnableTranslit = false
+		if mergeLimit > 0 {
+			cfg.MergeLimit = mergeLimit
+		}
 		config = cfg
 	}
 

@@ -4,6 +4,7 @@
 #include <functional>
 #include <random>
 #include <string>
+#include <thread>
 
 using std::string;
 
@@ -59,4 +60,20 @@ void BaseFixture::Update(benchmark::State& state) {
 	}
 	auto err = db_->Commit(nsdef_.name);
 	if (!err.ok()) state.SkipWithError(err.what().c_str());
+}
+
+void BaseFixture::WaitForOptimization() {
+	for (;;) {
+		reindexer::Query q("#memstats");
+		q.Where("name", CondEq, nsdef_.name);
+		reindexer::QueryResults res;
+		auto e = db_->Select(q, res);
+		assert(e.ok());
+		assert(res.Count() == 1);
+		auto item = res[0].GetItem();
+		if (item["optimization_completed"].As<bool>() == true) {
+			break;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	}
 }

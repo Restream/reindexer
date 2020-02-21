@@ -57,9 +57,10 @@ func (state *State) NewEncoder() Encoder {
 	}
 }
 
-func (state *State) NewDecoder(item interface{}) Decoder {
+func (state *State) NewDecoder(item interface{},logger Logger) Decoder {
 	dec := Decoder{
 		state: state,
+		logger: logger,
 	}
 
 	dec.state.sCacheLock.RLock()

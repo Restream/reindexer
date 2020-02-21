@@ -1,11 +1,11 @@
 #include "functionexecutor.h"
-#include "core/namespace.h"
+#include "core/namespace/namespaceimpl.h"
 #include "core/selectfunc/selectfuncparser.h"
 #include "tools/timetools.h"
 
 namespace reindexer {
 
-FunctionExecutor::FunctionExecutor(Namespace& ns) : ns_(ns) {}
+FunctionExecutor::FunctionExecutor(NamespaceImpl& ns) : ns_(ns) {}
 
 Variant FunctionExecutor::Execute(SelectFuncStruct& funcData) {
 	if (funcData.funcName == "now") {

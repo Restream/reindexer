@@ -26,7 +26,7 @@ struct QueryEntry {
 	QueryEntry() = default;
 
 	bool operator==(const QueryEntry &) const;
-	bool operator!=(const QueryEntry &) const;
+	bool operator!=(const QueryEntry &other) const { return !operator==(other); }
 
 	string index;
 	int idxNo = IndexValueType::NotSet;
@@ -41,12 +41,20 @@ struct QueryEntry {
 struct EqualPosition : public h_vector<unsigned, 2> {};
 
 class JsonBuilder;
-extern template bool ExpressionTree<QueryEntry, OpType, 4>::Leaf::IsEqual(const Node &) const;
 
-class QueryEntries : public ExpressionTree<QueryEntry, OpType, 4> {
+class QueryEntries : public ExpressionTree<OpType, Bracket, 4, QueryEntry> {
 public:
 	bool IsEntry(size_t i) const { return IsValue(i); }
-	void ForEachEntry(const std::function<void(const QueryEntry &, OpType)> &func) const { ForEachValue(func); }
+	void ForEachEntry(const std::function<void(const QueryEntry &)> &func) const { ExecuteAppropriateForEach(func); }
+	void ForEachEntry(const std::function<void(QueryEntry &)> &func) { ExecuteAppropriateForEach(func); }
+	const QueryEntry &operator[](size_t i) const {
+		assert(i < container_.size());
+		return container_[i].Value();
+	}
+	QueryEntry &operator[](size_t i) {
+		assert(i < container_.size());
+		return container_[i].Value();
+	}
 
 	template <typename T>
 	std::pair<unsigned, EqualPosition> DetermineEqualPositionIndexes(const T &fields) const;
@@ -76,11 +84,12 @@ extern template std::pair<unsigned, EqualPosition> QueryEntries::DetermineEqualP
 
 struct UpdateEntry {
 	UpdateEntry() {}
-	UpdateEntry(const string &c, const VariantArray &v) : column(c), values(v) {}
+	UpdateEntry(const string &c, const VariantArray &v, FieldModifyMode m = FieldModeSet) : column(c), values(v), mode(m) {}
 	bool operator==(const UpdateEntry &) const;
 	bool operator!=(const UpdateEntry &) const;
 	string column;
 	VariantArray values;
+	FieldModifyMode mode = FieldModeSet;
 	bool isExpression = false;
 };
 

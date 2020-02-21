@@ -3,7 +3,6 @@ package reindexer
 import (
 	//	"fmt"
 
-	"log"
 	"strconv"
 	"testing"
 
@@ -30,11 +29,6 @@ func GetAllDataFromNamespace(namespace string) (item []interface{}, err error) {
 }
 
 func TestRenameNamespace(t *testing.T) {
-
-	if len(DB.slaveList) != 0 {
-		log.Printf("Test RenameNamespace is not allowed during replication.\n")
-		return
-	}
 
 	const testRenameNamespace = "test_rename_namespace"
 	const testRenameNamespaceTo = "test_rename_namespace_to"

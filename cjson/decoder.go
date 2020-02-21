@@ -15,10 +15,15 @@ var (
 	ifaceSliceType = reflect.TypeOf(ifaceSlice)
 )
 
+type Logger interface {
+	Printf(level int, fmt string, msg ...interface{})
+}
+
 type Decoder struct {
 	ser        *Serializer
 	state      *State
 	ctagsCache *ctagsCache
+	logger     Logger
 }
 
 func fieldByTag(t reflect.Type, tag string) (result reflect.StructField, ok bool) {
@@ -636,18 +641,20 @@ func (dec *Decoder) DecodeCPtr(cptr uintptr, dest interface{}) (err error) {
 
 	defer func() {
 		if ret := recover(); ret != nil {
-			fmt.Printf(
-				"Interface: %#v\nRead position: %d\nTags(v%d): %v\nPayload Type: %+v\nPayload Value: %v\nTags cache: %+v\nData dump:\n%s\nError: %v\n",
-				dest,
-				ser.Pos(),
-				dec.state.Version,
-				dec.state.tagsMatcher.Names,
-				dec.state.payloadType.Fields,
-				pl.getAsMap(),
-				dec.state.structCache,
-				hex.Dump(ser.Bytes()),
-				ret,
-			)
+			if dec.logger != nil {
+				dec.logger.Printf(1,
+					"Interface: %#v\nRead position: %d\nTags(v%d): %v\nPayload Type: %+v\nPayload Value: %v\nTags cache: %+v\nData dump:\n%s\nError: %v\n",
+					dest,
+					ser.Pos(),
+					dec.state.Version,
+					dec.state.tagsMatcher.Names,
+					dec.state.payloadType.Fields,
+					pl.getAsMap(),
+					dec.state.structCache,
+					hex.Dump(ser.Bytes()),
+					ret,
+				)
+			}
 			err = ret.(error)
 		}
 	}()
@@ -671,16 +678,18 @@ func (dec *Decoder) Decode(cjson []byte, dest interface{}) (err error) {
 
 	defer func() {
 		if ret := recover(); ret != nil {
-			fmt.Printf(
-				"Interface: %#v\nRead position: %d\nTags(v%d): %v\nTags cache: %+v\nData dump:\n%s\nError: %v\n",
-				dest,
-				ser.Pos(),
-				dec.state.Version,
-				dec.state.tagsMatcher.Names,
-				dec.state.structCache,
-				hex.Dump(ser.Bytes()),
-				ret,
-			)
+			if dec.logger != nil {
+				dec.logger.Printf(1,
+					"Interface: %#v\nRead position: %d\nTags(v%d): %v\nTags cache: %+v\nData dump:\n%s\nError: %v\n",
+					dest,
+					ser.Pos(),
+					dec.state.Version,
+					dec.state.tagsMatcher.Names,
+					dec.state.structCache,
+					hex.Dump(ser.Bytes()),
+					ret,
+				)
+			}
 			err = ret.(error)
 		}
 	}()

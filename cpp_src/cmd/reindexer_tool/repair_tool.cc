@@ -1,6 +1,6 @@
 #include "repair_tool.h"
 #include <cctype>
-#include "core/namespace.h"
+#include "core/namespace/namespaceimpl.h"
 #include "core/storage/storagefactory.h"
 #include "estl/string_view.h"
 #include "iotools.h"
@@ -65,7 +65,7 @@ Error RepairTool::repairNamespace(IDataStorage* storage, const std::string& stor
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
 		}
 		reindexer::UpdatesObservers emptyObserversList;
-		reindexer::Namespace ns(name, emptyObserversList);
+		reindexer::NamespaceImpl ns(name, emptyObserversList);
 		StorageOpts storageOpts;
 		reindexer::RdxContext dummyCtx;
 		std::cout << "Loading " << name << std::endl;

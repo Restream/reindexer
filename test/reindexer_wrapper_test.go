@@ -265,7 +265,18 @@ func (dbw *ReindexerWrapper) TruncateNamespace(namespace string) error {
 
 func (dbw *ReindexerWrapper) RenameNamespace(srcNsName string, dstNsName string) error {
 	dbw.SetSynced(false)
-	return dbw.Reindexer.RenameNamespace(srcNsName, dstNsName)
+
+	err := dbw.Reindexer.RenameNamespace(srcNsName, dstNsName)
+	if err != nil {
+		return err
+	}
+	//change client ns tables
+	for _, db := range dbw.slaveList {
+		db.Reindexer.RenameNs(srcNsName, dstNsName)
+	}
+
+	renameTestNamespace(srcNsName, dstNsName)
+	return err
 }
 
 func (dbw *ReindexerWrapper) CloseNamespace(namespace string) error {

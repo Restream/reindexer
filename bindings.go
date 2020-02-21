@@ -150,7 +150,7 @@ func unpackItem(ns *nsArrayEntry, params *rawResultItemParams, allowUnsafe bool,
 		} else {
 			ns.cacheLock.RUnlock()
 			item = reflect.New(ns.rtype).Interface()
-			dec := ns.localCjsonState.NewDecoder(item)
+			dec := ns.localCjsonState.NewDecoder(item, logger)
 			if params.cptr != 0 {
 				err = dec.DecodeCPtr(params.cptr, item)
 			} else if params.data != nil {
@@ -169,7 +169,7 @@ func unpackItem(ns *nsArrayEntry, params *rawResultItemParams, allowUnsafe bool,
 		if item == nil {
 			item = reflect.New(ns.rtype).Interface()
 		}
-		dec := ns.localCjsonState.NewDecoder(item)
+		dec := ns.localCjsonState.NewDecoder(item, logger)
 		if params.cptr != 0 {
 			err = dec.DecodeCPtr(params.cptr, item)
 		} else if params.data != nil {

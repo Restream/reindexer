@@ -17,9 +17,6 @@ public:
 	TransactionStep &operator=(const TransactionStep &) = delete;
 	TransactionStep(TransactionStep && /*rhs*/) noexcept = default;
 	TransactionStep &operator=(TransactionStep && /*rhs*/) = default;
-	void Serialize(WrSerializer &) const;
-	static TransactionStep Deserialize(string_view, int64_t lsn, const PayloadType &, const TagsMatcher &, const FieldsSet &);
-	static void ConvertCJSONtoJSON(string_view cjson, JsonBuilder &, std::function<string(string_view)> cjsonViewer);
 
 	ItemImplRawData itemData_;
 	ItemModifyMode modifyMode_;
@@ -42,8 +39,6 @@ public:
 	Item GetItem(TransactionStep &&st);
 
 	const std::string &GetName() { return nsName_; }
-	Error Deserialize(string_view, int64_t lsn);
-	static void ConvertCJSONtoJSON(string_view cjson, JsonBuilder &, std::function<string(string_view)> cjsonViewer);
 
 	void checkTagsMatcher(Item &item);
 
@@ -54,6 +49,8 @@ public:
 	std::vector<TransactionStep> steps_;
 	std::string nsName_;
 	bool tagsUpdated_;
+	std::mutex mtx_;
+	Transaction::time_point startTime_;
 };
 
 }  // namespace reindexer

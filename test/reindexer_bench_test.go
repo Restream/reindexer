@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/restream/reindexer"
 	"github.com/restream/reindexer/cjson"
@@ -99,27 +100,8 @@ func BenchmarkPrepare(b *testing.B) {
 	prepared = true
 	DBD.SetLogger(nil)
 	FillTestItemsBench(0, *benchmarkSeedCount, 10)
-	FillTestJoinItems(7000, 500)
-	// force commit and make sort orders
-	for i := 0; i < 10; i++ {
-		DBD.Query("test_items_bench").Where("year", reindexer.EQ, 1).Sort("year", false).Limit(1).MustExec().Close()
-	}
-	for i := 0; i < len(pkgs)*3; i++ {
-		DBD.Query("test_items_bench").Limit(20).Sort("start_time", false).
-			Where("packages", reindexer.SET, pkgs[i%len(pkgs)]).
-			MustExec().Close()
-		DBD.Query("test_items_bench").Limit(20).Sort("year", false).
-			Where("packages", reindexer.SET, pkgs[i%len(pkgs)]).
-			MustExec().Close()
-		DBD.Query("test_items_bench").Limit(20).
-			Where("year", reindexer.RANGE, []int{2010, 2016}).
-			MustExec().Close()
-	}
-	for i := 0; i < len(priceIds)*3; i++ {
-		DBD.Query("test_join_items").Limit(20).
-			Where("id", reindexer.SET, priceIds[i%len(priceIds)]).
-			MustExec().Close()
-	}
+	FillTestJoinItems(7000, 500, "test_join_items")
+
 }
 
 func BenchmarkSimpleInsert(b *testing.B) {
@@ -189,7 +171,7 @@ func BenchmarkCJsonEncode(b *testing.B) {
 
 func BenchmarkCJsonDecode(b *testing.B) {
 
-	dec := cjsonState.NewDecoder(TestItem{})
+	dec := cjsonState.NewDecoder(TestItem{}, nil)
 	for i := 0; i < b.N; i++ {
 		ti := TestItem{}
 		dec.Decode(testItemsCJsonSeed[i%len(testItemsCJsonSeed)], &ti)
@@ -271,6 +253,33 @@ func BenchmarkDeleteAndUpdate(b *testing.B) {
 		}
 	}
 	tx.Commit()
+}
+
+func BenchmarkWarmup(b *testing.B) {
+	for {
+		if items, err := DBD.Query("#memstats").Where("name", reindexer.EQ, "test_items_bench").Exec().FetchAll(); err != nil {
+			panic(err)
+		} else if items[0].(*reindexer.NamespaceMemStat).OptimizationCompleted {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for i := 0; i < len(pkgs)*3; i++ {
+		DBD.Query("test_items_bench").Limit(20).Sort("start_time", false).
+			Where("packages", reindexer.SET, pkgs[i%len(pkgs)]).
+			MustExec().Close()
+		DBD.Query("test_items_bench").Limit(20).Sort("year", false).
+			Where("packages", reindexer.SET, pkgs[i%len(pkgs)]).
+			MustExec().Close()
+		DBD.Query("test_items_bench").Limit(20).
+			Where("year", reindexer.RANGE, []int{2010, 2016}).
+			MustExec().Close()
+	}
+	for i := 0; i < len(priceIds)*3; i++ {
+		DBD.Query("test_join_items").Limit(20).
+			Where("id", reindexer.SET, priceIds[i%len(priceIds)]).
+			MustExec().Close()
+	}
 }
 
 func Benchmark4CondQuery(b *testing.B) {

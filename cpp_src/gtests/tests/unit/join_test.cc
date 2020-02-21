@@ -311,6 +311,39 @@ TEST_F(JoinSelectsApi, JoinTestSorting) {
 	}
 }
 
+TEST_F(JoinSelectsApi, TestSortingByJoinedNs) {
+	Query joinedQuery1 = Query(books_namespace);
+	Query query1 =
+		Query(authors_namespace).LeftJoin(authorid, authorid_fk, CondEq, joinedQuery1).Sort(books_namespace + '.' + price, false);
+
+	reindexer::QueryResults joinQueryRes1;
+	Error err = rt.reindexer->Select(query1, joinQueryRes1);
+	// several book to one author, cannot sort
+	ASSERT_FALSE(err.ok()) << err.what();
+
+	Query joinedQuery2 = Query(authors_namespace);
+	Query query2 = Query(books_namespace).InnerJoin(authorid_fk, authorid, CondEq, joinedQuery2).Sort(authors_namespace + '.' + age, false);
+
+	reindexer::QueryResults joinQueryRes2;
+	err = rt.reindexer->Select(query2, joinQueryRes2);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	Variant prevValue;
+	for (auto rowIt : joinQueryRes2) {
+		const auto itemIt = reindexer::joins::ItemIterator::FromQRIterator(rowIt);
+		ASSERT_EQ(itemIt.getJoinedItemsCount(), 1);
+		const auto joinedFieldIt = itemIt.begin();
+		reindexer::ItemImpl joinItem(joinedFieldIt.GetItem(0, joinQueryRes2.getPayloadType(1), joinQueryRes2.getTagsMatcher(1)));
+		const Variant recentValue = joinItem.GetField(joinQueryRes2.getPayloadType(1).FieldByName(age));
+		reindexer::WrSerializer ser;
+		if (prevValue.Type() != KeyValueNull) {
+			reindexer::WrSerializer ser;
+			ASSERT_TRUE(prevValue.Compare(recentValue) <= 0) << (prevValue.Dump(ser), ser << ' ', recentValue.Dump(ser), ser.Slice());
+		}
+		prevValue = recentValue;
+	}
+}
+
 TEST_F(JoinSelectsApi, JoinTestSelectNonIndexedField) {
 	reindexer::QueryResults qr;
 	Query authorsQuery = Query(authors_namespace);
@@ -390,11 +423,13 @@ TEST_F(JoinSelectsApi, JoinsEasyStressTest) {
 		EXPECT_TRUE(err.ok()) << err.what();
 	};
 
+	int32_t since = 0, count = 1000;
 	std::vector<std::thread> threads;
 	for (size_t i = 0; i < 20; ++i) {
 		threads.push_back(std::thread(selectTh));
 		if (i % 2 == 0) threads.push_back(std::thread(removeTh));
-		if (i % 4 == 0) threads.push_back(std::thread([this]() { FillBooksNamespace(1000); }));
+		if (i % 4 == 0) threads.push_back(std::thread([this, since, count]() { FillBooksNamespace(since, count); }));
+		since += 1000;
 	}
 	for (size_t i = 0; i < threads.size(); ++i) threads[i].join();
 }
@@ -448,4 +483,50 @@ TEST_F(JoinSelectsApi, JoinPreResultStoreValuesOptimizationStressTest) {
 	}
 	start = true;
 	for (auto& th : threads) th.join();
+}
+
+bool checkForAllowedJsonTags(const vector<string>& tags, gason::JsonValue jsonValue) {
+	size_t count = 0;
+	for (auto elem : jsonValue) {
+		if (std::find(tags.begin(), tags.end(), string(elem->key)) == tags.end()) {
+			return false;
+		}
+		++count;
+	}
+	return (count == tags.size());
+}
+
+TEST_F(JoinSelectsApi, JoinWithSelectFilter) {
+	Query queryAuthors(authors_namespace);
+	queryAuthors.selectFilter_.emplace_back(name);
+	queryAuthors.selectFilter_.emplace_back(age);
+
+	Query queryBooks = Query(books_namespace).Where(pages, CondGe, 100).InnerJoin(authorid_fk, authorid, CondEq, queryAuthors);
+	queryBooks.selectFilter_.emplace_back(title);
+	queryBooks.selectFilter_.emplace_back(price);
+
+	QueryResults qr;
+	Error err = rt.reindexer->Select(queryBooks, qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	for (auto it : qr) {
+		reindexer::WrSerializer wrser;
+		it.GetJSON(wrser, false);
+
+		reindexer::joins::ItemIterator joinIt = reindexer::joins::ItemIterator::FromQRIterator(it);
+		gason::JsonParser jsonParser;
+		gason::JsonNode root = jsonParser.Parse(reindexer::giftStr(wrser.Slice()));
+		EXPECT_TRUE(checkForAllowedJsonTags({title, price, "joined_authors_namespace"}, root.value));
+
+		for (auto fieldIt = joinIt.begin(); fieldIt != joinIt.end(); ++fieldIt) {
+			QueryResults jqr = fieldIt.ToQueryResults();
+			jqr.addNSContext(qr.getPayloadType(1), qr.getTagsMatcher(1), qr.getFieldsFilter(1));
+			for (auto jit : jqr) {
+				wrser.Reset();
+				jit.GetJSON(wrser, false);
+				root = jsonParser.Parse(reindexer::giftStr(wrser.Slice()));
+				EXPECT_TRUE(checkForAllowedJsonTags({name, age}, root.value));
+			}
+		}
+	}
 }

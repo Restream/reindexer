@@ -29,6 +29,7 @@ int kvType2Tag(KeyValueType kvType) {
 }
 
 void copyCJsonValue(int tagType, const Variant &value, WrSerializer &wrser) {
+	if (value.Type() == KeyValueNull) return;
 	switch (tagType) {
 		case TAG_DOUBLE:
 			wrser.PutDouble(static_cast<double>(value.convert(KeyValueDouble)));

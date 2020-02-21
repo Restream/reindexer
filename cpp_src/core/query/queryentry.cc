@@ -18,16 +18,14 @@ bool QueryEntry::operator==(const QueryEntry &obj) const {
 	return true;
 }
 
-bool QueryEntry::operator!=(const QueryEntry &obj) const { return !operator==(obj); }
-
 template <typename T>
 EqualPosition QueryEntries::DetermineEqualPositionIndexes(unsigned start, const T &fields) const {
 	if (fields.size() < 2) throw Error(errLogic, "Amount of fields with equal index position should be 2 or more!");
 	EqualPosition result;
 	for (size_t i = start; i < Size(); ++i) {
-		if (!container_[i]->IsLeaf()) continue;
+		if (container_[i].IsSubTree()) continue;
 		for (const auto &f : fields) {
-			if (container_[i]->Value().index == f) {
+			if (container_[i].Value().index == f) {
 				result.push_back(i);
 				break;
 			}
@@ -62,18 +60,18 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer 
 				entry.distinct ? ser.PutVarUint(QueryDistinct) : ser.PutVarUint(QueryCondition);
 				ser.PutVString(entry.index);
 				if (entry.distinct) continue;
-				ser.PutVarUint(it->Op);
+				ser.PutVarUint(it->operation);
 				ser.PutVarUint(entry.condition);
 				ser.PutVarUint(entry.values.size());
 				for (auto &kv : entry.values) ser.PutVariant(kv);
 			} else {
 				ser.PutVarUint(QueryJoinCondition);
-				ser.PutVarUint((it->Op == OpAnd) ? JoinType::InnerJoin : JoinType::OrInnerJoin);
+				ser.PutVarUint((it->operation == OpAnd) ? JoinType::InnerJoin : JoinType::OrInnerJoin);
 				ser.PutVarUint(entry.joinIndex);
 			}
 		} else {
 			ser.PutVarUint(QueryOpenBracket);
-			ser.PutVarUint(it->Op);
+			ser.PutVarUint(it->operation);
 			serialize(it.cbegin(), it.cend(), ser);
 			ser.PutVarUint(QueryCloseBracket);
 		}
@@ -81,9 +79,10 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer 
 }
 
 bool UpdateEntry::operator==(const UpdateEntry &obj) const {
-	if (column != obj.column) return false;
-	if (values != obj.values) return false;
 	if (isExpression != obj.isExpression) return false;
+	if (column != obj.column) return false;
+	if (mode != obj.mode) return false;
+	if (values != obj.values) return false;
 	return true;
 }
 
@@ -137,10 +136,10 @@ string QueryEntry::Dump() const {
 }
 
 bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator end, const ConstPayload &pl, TagsMatcher &tagsMatcher) {
-	assert(begin != end && begin->Op != OpOr);
+	assert(begin != end && begin->operation != OpOr);
 	bool result = true;
 	for (auto it = begin; it != end; ++it) {
-		if (it->Op == OpOr) {
+		if (it->operation == OpOr) {
 			if (result) continue;
 		} else if (!result) {
 			break;
@@ -151,7 +150,7 @@ bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator
 		} else {
 			lastResult = checkIfSatisfyConditions(it.cbegin(), it.cend(), pl, tagsMatcher);
 		}
-		result = (lastResult != (it->Op == OpNot));
+		result = (lastResult != (it->operation == OpNot));
 	}
 	return result;
 }

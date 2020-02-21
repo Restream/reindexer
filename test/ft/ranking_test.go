@@ -24,7 +24,7 @@ func doRankingTest(t *testing.T, indexType string) {
 		testCase := testC
 
 		namespace := "ft_rank_" + strconv.Itoa(i)
-		createReindexDbInstance(rx, namespace, indexType)
+		createReindexDbInstance(rx, namespace, indexType, 0)
 		fillReindexWithData(rx, namespace, testCase.AllDocuments)
 
 		t.Run("Running test case: "+testCase.Description, func(t *testing.T) {

@@ -4,16 +4,16 @@
 
 namespace reindexer {
 
-class Namespace;
+class NamespaceImpl;
 struct SelectFuncStruct;
 
 class FunctionExecutor {
 public:
-	explicit FunctionExecutor(Namespace& ns);
+	explicit FunctionExecutor(NamespaceImpl& ns);
 	Variant Execute(SelectFuncStruct& funcData);
 
 private:
-	Namespace& ns_;
+	NamespaceImpl& ns_;
 };
 
 }  // namespace reindexer

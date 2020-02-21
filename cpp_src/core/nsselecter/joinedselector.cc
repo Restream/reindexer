@@ -1,5 +1,5 @@
 #include "joinedselector.h"
-#include "core/namespace.h"
+#include "core/namespace/namespaceimpl.h"
 #include "core/queryresults/joinresults.h"
 #include "nsselecter.h"
 
@@ -12,11 +12,11 @@ void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, bool &found, boo
 
 	JoinCacheRes joinResLong;
 	joinResLong.key.SetData(joinQuery_, itemQuery_);
-	rightNs_->GetFromJoinCache(joinResLong);
+	rightNs_->getFromJoinCache(joinResLong);
 
-	rightNs_->GetIndsideFromJoinCache(joinRes_);
+	rightNs_->getIndsideFromJoinCache(joinRes_);
 	if (joinRes_.needPut) {
-		rightNs_->PutToJoinCache(joinRes_, preResult_);
+		rightNs_->putToJoinCache(joinRes_, preResult_);
 	}
 	if (joinResLong.haveData) {
 		found = joinResLong.it.val.ids_->size();
@@ -41,7 +41,7 @@ void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, bool &found, boo
 		for (auto &r : joinItemR.Items()) {
 			val.ids_->Add(r.Id(), IdSet::Unordered, 0);
 		}
-		rightNs_->PutToJoinCache(joinResLong, val);
+		rightNs_->putToJoinCache(joinResLong, val);
 	}
 }
 

@@ -223,7 +223,7 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 }
 
 func TestEncDec(t *testing.T) {
-
+	t.Parallel()
 	// Fill items by cjson encoder
 	FillTestItemsEncDec(0, 5000, 20, false)
 

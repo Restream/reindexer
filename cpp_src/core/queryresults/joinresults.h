@@ -13,6 +13,7 @@ class QueryResults;
 class PayloadType;
 class TagsMatcher;
 class FieldsSet;
+struct SortExpressionJoinedIndex;
 
 namespace joins {
 
@@ -34,7 +35,7 @@ struct ItemOffset {
 };
 using ItemOffsets = h_vector<ItemOffset, 1>;
 
-/// Result of joining entire Namespace
+/// Result of joining entire NamespaceImpl
 class NamespaceResults {
 public:
 	/// Move-insertion of QueryResults (for n-th joined field)
@@ -56,6 +57,7 @@ public:
 private:
 	friend class ItemIterator;
 	friend class JoinedFieldIterator;
+	friend SortExpressionJoinedIndex;
 	/// Offsets in 'result' for every item
 	fast_hash_map<IdType, ItemOffsets> offsets_;
 	/// Items for all the joined fields
@@ -68,7 +70,7 @@ private:
 class Results : public h_vector<NamespaceResults, 0> {};
 
 /// Joined field iterator for Item
-/// of left Namespace (main ns).
+/// of left NamespaceImpl (main ns).
 class JoinedFieldIterator {
 public:
 	using reference = ItemRef&;

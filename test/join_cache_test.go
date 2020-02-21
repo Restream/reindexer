@@ -1,32 +1,28 @@
 package reindexer
 
 import (
-	"encoding/json"
-	"fmt"
-	"log"
 	"math/rand"
-	"reflect"
 	"sync"
 	"testing"
 
 	"github.com/restream/reindexer"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestJoinCache(t *testing.T) {
-	log.Printf("DO JOIN CACHE TESTS")
 
 	FillTestItems("test_items_for_join", 0, 10000, 20)
-	FillTestJoinItems(7000, 500)
-	RunInMultiThread(CheckTestCachedItemsJoinLeftQueries, 20)
-	RunInMultiThread(CheckTestCachedItemsJoinInnerQueries, 20)
-	RunInMultiThread(CheckTestCachedItemsJoinSortQueries, 8)
+	FillTestJoinItems(7000, 500, "test_join_items")
+	RunInMultiThread(t, CheckTestCachedItemsJoinLeftQueries, 20)
+	RunInMultiThread(t, CheckTestCachedItemsJoinInnerQueries, 20)
+	RunInMultiThread(t, CheckTestCachedItemsJoinSortQueries, 8)
 
 }
-func RunInMultiThread(fn func(*sync.WaitGroup), thread_count int) {
+func RunInMultiThread(t *testing.T, fn func(*testing.T, *sync.WaitGroup), threadCount int) {
 	var wg sync.WaitGroup
-	wg.Add(thread_count)
-	for i := 0; i < thread_count; i++ {
-		go fn(&wg)
+	wg.Add(threadCount)
+	for i := 0; i < threadCount; i++ {
+		go fn(t, &wg)
 	}
 	wg.Wait()
 }
@@ -47,34 +43,16 @@ func PrepareJoinQueryResult(sort1 string, sort2 string) []interface{} {
 	return rjoin
 }
 
-func expectSlicesEqual(expect []interface{}, got []interface{}) {
-	if len(expect) != len(got) {
-		panic(fmt.Errorf("Result len is not equal"))
-	}
-	wasErr := false
-	for j := 0; j < len(expect); j++ {
-		if !reflect.DeepEqual(expect[j], got[j]) {
-			i1s, _ := json.Marshal(expect[j])
-			i2s, _ := json.Marshal(got[j])
-			fmt.Printf("%d:-----expect:\n%s\n-----got:\n%s\n", j, string(i1s), string(i2s))
-			wasErr = true
-		}
-	}
-	if wasErr {
-		panic(fmt.Errorf("Error occuried"))
-	}
-}
-
-func CheckTestCachedItemsJoinLeftQueries(wg *sync.WaitGroup) {
+func CheckTestCachedItemsJoinLeftQueries(t *testing.T, wg *sync.WaitGroup) {
 	defer wg.Done()
 	resultSort1 := PrepareJoinQueryResult("device", "name")
 
 	for i := 0; i < 20; i++ {
-		expectSlicesEqual(resultSort1, PrepareJoinQueryResult("device", "name"))
+		assert.Equal(t, resultSort1, PrepareJoinQueryResult("device", "name"))
 	}
 }
 
-func CheckTestCachedItemsJoinInnerQueries(wg *sync.WaitGroup) {
+func CheckTestCachedItemsJoinInnerQueries(t *testing.T, wg *sync.WaitGroup) {
 	defer wg.Done()
 	var result_without_cahce []interface{}
 	for i := 0; i < 20; i++ {
@@ -92,12 +70,12 @@ func CheckTestCachedItemsJoinInnerQueries(wg *sync.WaitGroup) {
 		if i == 0 {
 			result_without_cahce = append([]interface{}(nil), rjoin...)
 		} else {
-			expectSlicesEqual(rjoin, result_without_cahce)
+			assert.Equal(t, rjoin, result_without_cahce)
 		}
 	}
 }
 
-func CheckTestCachedItemsJoinSortQueries(wg *sync.WaitGroup) {
+func CheckTestCachedItemsJoinSortQueries(t *testing.T, wg *sync.WaitGroup) {
 	defer wg.Done()
 	resultSort := [][]interface{}{PrepareJoinQueryResult("device", "genre"),
 		PrepareJoinQueryResult("location", "name"),
@@ -110,15 +88,15 @@ func CheckTestCachedItemsJoinSortQueries(wg *sync.WaitGroup) {
 		op := rand.Intn(5)
 		switch op {
 		case 0:
-			expectSlicesEqual(resultSort[op], PrepareJoinQueryResult("device", "genre"))
+			assert.Equal(t, resultSort[op], PrepareJoinQueryResult("device", "genre"))
 		case 1:
-			expectSlicesEqual(resultSort[op], PrepareJoinQueryResult("location", "name"))
+			assert.Equal(t, resultSort[op], PrepareJoinQueryResult("location", "name"))
 		case 2:
-			expectSlicesEqual(resultSort[op], PrepareJoinQueryResult("name", "name"))
+			assert.Equal(t, resultSort[op], PrepareJoinQueryResult("name", "name"))
 		case 3:
-			expectSlicesEqual(resultSort[op], PrepareJoinQueryResult("amount", "rate"))
+			assert.Equal(t, resultSort[op], PrepareJoinQueryResult("amount", "rate"))
 		case 4:
-			expectSlicesEqual(resultSort[op], PrepareJoinQueryResult("", ""))
+			assert.Equal(t, resultSort[op], PrepareJoinQueryResult("", ""))
 		}
 	}
 }

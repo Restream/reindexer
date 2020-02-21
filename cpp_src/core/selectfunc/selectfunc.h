@@ -5,7 +5,7 @@
 #include "nsselectfuncinterface.h"
 
 namespace reindexer {
-class Namespace;
+class NamespaceImpl;
 
 /// Represents sql function in a query
 /// (like avg(x) or sum(x)).
@@ -49,7 +49,7 @@ public:
 	/// @param force - forces to create SelectFunction object
 	/// even if the list of sql-functions in this query is empty.
 	/// @return pointer to SelectFunction object or nullptr in case of error.
-	SelectFunction::Ptr AddNamespace(const Query& q, const Namespace& nm, bool force);
+	SelectFunction::Ptr AddNamespace(const Query& q, const NamespaceImpl& nm, bool force);
 	/// Processing of results of an executed query.
 	/// @param res - results of query execution.
 	void Process(QueryResults& res);

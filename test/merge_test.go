@@ -1,16 +1,14 @@
 package reindexer
 
 import (
-	"fmt"
-	"log"
 	"math/rand"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/restream/reindexer"
+	"github.com/stretchr/testify/assert"
 )
 
 type TestFullTextSimpleItem struct {
@@ -135,7 +133,7 @@ func FillTestFullTextItems(count int) {
 
 func TestMerge(t *testing.T) {
 	FillTestFullTextItems(5000)
-	CheckTestItemsMergeQueries()
+	CheckTestItemsMergeQueries(t)
 }
 
 type SortFullText struct {
@@ -150,10 +148,9 @@ func (a ByProc) Less(i, j int) bool {
 	return a[i].Proc > a[j].Proc
 }
 
-func CreateSort(result []interface{}, procList []int) (res ByProc) {
-	if len(result) != len(procList) {
-		panic(fmt.Errorf("Procent Count form query is wrong, got %d expects %d", len(result), len(procList)))
-	}
+func CreateSort(t *testing.T, result []interface{}, procList []int) (res ByProc) {
+	assert.Equal(t, len(result), len(procList), "Procent Count form query is wrong")
+
 	for i, item := range result {
 		id := 0
 
@@ -165,15 +162,14 @@ func CreateSort(result []interface{}, procList []int) (res ByProc) {
 		case *TestFullTextItem:
 			id = item.(*TestFullTextItem).ID
 		default:
-			panic(fmt.Errorf("[%d] Unknown type after merge: %T", i, item))
+			assert.Fail(t, "[%d] Unknown type after merge: %T", i, item)
 		}
 		res = append(res, SortFullText{id, procList[i]})
 	}
 	return res
 }
 
-func CheckTestItemsMergeQueries() {
-	log.Printf("DO MERGE TESTS")
+func CheckTestItemsMergeQueries(t *testing.T) {
 
 	first := randLangString()
 	second := randLangString()
@@ -192,20 +188,17 @@ func CheckTestItemsMergeQueries() {
 	merge, q1Procs, _ := qm.MustExec().FetchAllWithRank()
 
 	lmerge, _ := qq1.Limit(2).MustExec().FetchAll()
-	if len(lmerge) > 2 {
-		panic(fmt.Errorf("LIMIT NOT WORKING"))
-	}
+	assert.LessOrEqual(t, len(lmerge), 2, "LIMIT NOT WORKING")
+
 	//TEST SIMPLE SORT
 
-	usorted := CreateSort(merge, q1Procs)
+	usorted := CreateSort(t, merge, q1Procs)
 	sorted := make([]SortFullText, len(usorted))
 	copy(sorted, usorted)
 	sort.Sort(ByProc(sorted))
 	//After Sort result with same proc can be not in same order (smart oreder in c++) that why no use reflect.DeepEqual
 	for i := 0; i < len(merge); i++ {
-		if usorted[i].Proc != sorted[i].Proc {
-			panic(fmt.Errorf("Merge sort in go not equual to c sort simple"))
-		}
+		assert.Equal(t, usorted[i].Proc, sorted[i].Proc, "Merge sort in go not equual to c sort simple")
 	}
 	qs1 := DB.Query("test_full_text_simple_item").Where("name", reindexer.EQ, strings.ToUpper(first)).
 		Join(DB.Query("merge_join_item1"), "joined").
@@ -215,19 +208,14 @@ func CheckTestItemsMergeQueries() {
 		On("join_id", reindexer.EQ, "id")
 	qs3 := DB.Query("test_full_text_item").Where("name", reindexer.EQ, strings.ToUpper(third))
 	r1, rr1, e1 := qs1.MustExec().FetchAllWithRank()
+	assert.NoError(t, e1)
 	r2, rr2, e2 := qs2.MustExec().FetchAllWithRank()
+	assert.NoError(t, e2)
 	r3, rr3, e3 := qs3.MustExec().FetchAllWithRank()
-	if e1 != nil || e2 != nil || e3 != nil {
-		panic(fmt.Errorf("query error:[1:%v;\t2:%v;\t3:%v]", e1, e2, e3))
-	}
+	assert.NoError(t, e3)
 	//TEST LEN
-	if len(r1)+len(r2)+len(r3) != len(merge) {
-		panic(fmt.Errorf("%d != %d (%d+%d+%d) (%p, %p, %p)", len(r1)+len(r2)+len(r3), len(merge), len(r1), len(r2), len(r3), qs1, qs2, qs3))
-	}
-
-	if len(merge) == 0 {
-		panic(fmt.Errorf("Full text dosen't return any result - somthing bad happend"))
-	}
+	assert.Equal(t, len(r1)+len(r2)+len(r3), len(merge), "(%d+%d+%d) (%p, %p, %p)", len(r1), len(r2), len(r3), qs1, qs2, qs3)
+	assert.NotEqual(t, len(merge), 0, "Full text dosen't return any result - somthing bad happend")
 
 	var items []interface{}
 	check := make(map[string]interface{})
@@ -239,12 +227,10 @@ func CheckTestItemsMergeQueries() {
 	for _, item := range r2 {
 		items = append(items, item)
 		check[strconv.Itoa(item.(*TestFullTextMergedItem).ID)+"test_full_text_merged_item"] = item
-
 	}
 	for _, item := range r3 {
 		items = append(items, item)
 		check[strconv.Itoa(item.(*TestFullTextItem).ID)+"test_full_text_item"] = item
-
 	}
 
 	//TEST MERGE IS WORKING AND WORKING WITHOUT CACHE
@@ -252,56 +238,39 @@ func CheckTestItemsMergeQueries() {
 		switch item.(type) {
 		case *TestFullTextSimpleItem:
 			key := strconv.Itoa(item.(*TestFullTextSimpleItem).ID) + "test_full_text_simple_item"
-			if sitem, ok := check[key]; ok {
-				if !reflect.DeepEqual(item, sitem) {
-					panic(fmt.Errorf("Item %v not same as from cahe %v", item, sitem))
-				}
-				delete(check, key)
-
-			} else {
-				panic(fmt.Errorf("Item %s not fond in simple check", key))
-			}
+			sitem, ok := check[key]
+			assert.True(t, ok, "Item %s not fond in simple check", key)
+			assert.Equal(t, item, sitem, "Item not same as from cache")
+			delete(check, key)
 		case *TestFullTextMergedItem:
 			key := strconv.Itoa(item.(*TestFullTextMergedItem).ID) + "test_full_text_merged_item"
-			if sitem, ok := check[key]; ok {
-				if !reflect.DeepEqual(item, sitem) {
-					panic(fmt.Errorf("Item %v not same as from cahe %v", item, sitem))
-				}
-				delete(check, key)
-			} else {
-				panic(fmt.Errorf("Item %s not fond in simple check", key))
-			}
+			sitem, ok := check[key]
+			assert.True(t, ok, "Item %s not fond in simple check", key)
+			assert.Equal(t, item, sitem, "Item not same as from cache")
+			delete(check, key)
 		case *TestFullTextItem:
 			key := strconv.Itoa(item.(*TestFullTextItem).ID) + "test_full_text_item"
-			if sitem, ok := check[key]; ok {
-				if !reflect.DeepEqual(item, sitem) {
-					panic(fmt.Errorf("Item %v not same as from cahe %v", item, sitem))
-				}
-				delete(check, key)
-			} else {
-				panic(fmt.Errorf("Item %s not fond in simple check", key))
-			}
+			sitem, ok := check[key]
+			assert.True(t, ok, "Item %s not fond in simple check", key)
+			assert.Equal(t, item, sitem, "Item not same as from cache")
+			delete(check, key)
 		default:
-			panic(fmt.Errorf("Unknown type after merge "))
+			assert.Fail(t, "Unknown type after merge ")
 		}
 	}
-	if len(check) != 0 {
-		panic(fmt.Errorf("Not all data in merge"))
-	}
-	//TEST  SORT
-	sortedNew := CreateSort(r1, rr1)
-	sortedNew = append(sortedNew, CreateSort(r2, rr2)...)
 
-	sortedNew = append(sortedNew, CreateSort(r3, rr3)...)
+	assert.Equal(t, len(check), 0, "Not all data in merge")
+
+	//TEST  SORT
+	sortedNew := CreateSort(t, r1, rr1)
+	sortedNew = append(sortedNew, CreateSort(t, r2, rr2)...)
+
+	sortedNew = append(sortedNew, CreateSort(t, r3, rr3)...)
 
 	sort.Sort(ByProc(sortedNew))
 
 	//In second read result can not directly same
 	for i := 0; i < len(usorted); i++ {
-		if usorted[i].Proc != sortedNew[i].Proc {
-			fmt.Printf("usorted=%v\nsorted=%v", usorted, sortedNew)
-			panic(fmt.Errorf("Merge sort in go not equal to c sort"))
-
-		}
+		assert.Equal(t, usorted[i].Proc, sortedNew[i].Proc, "Merge sort in go not equual to c sort simple")
 	}
 }

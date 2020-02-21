@@ -152,7 +152,7 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 				const unsigned strt = ser.GetVarUint();
 				vector<string> ep(ser.GetVarUint());
 				for (size_t i = 0; i < ep.size(); ++i) ep[i] = string(ser.GetVString());
-				equalPositions_.insert({strt, entries.DetermineEqualPositionIndexes(strt, ep)});
+				equalPositions_.emplace(strt, entries.DetermineEqualPositionIndexes(strt, ep));
 				break;
 			}
 			case QueryExplain:
@@ -161,9 +161,16 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 			case QuerySelectFunction:
 				selectFunctions_.push_back(string(ser.GetVString()));
 				break;
+			case QueryDropField: {
+				updateFields_.push_back({string(ser.GetVString()), {}});
+				auto &field = updateFields_.back();
+				field.mode = FieldModeDrop;
+				break;
+			}
 			case QueryUpdateField: {
 				updateFields_.push_back({string(ser.GetVString()), {}});
 				auto &field = updateFields_.back();
+				field.mode = FieldModeSet;
 				int numValues = ser.GetVarUint();
 				while (numValues--) {
 					field.isExpression = ser.GetVarUint();
@@ -269,12 +276,19 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 	}
 
 	for (const UpdateEntry &field : updateFields_) {
-		ser.PutVarUint(QueryUpdateField);
-		ser.PutVString(field.column);
-		ser.PutVarUint(field.values.size());
-		for (const Variant &val : field.values) {
-			ser.PutVarUint(field.isExpression);
-			ser.PutVariant(val);
+		if (field.mode == FieldModeSet) {
+			ser.PutVarUint(QueryUpdateField);
+			ser.PutVString(field.column);
+			ser.PutVarUint(field.values.size());
+			for (const Variant &val : field.values) {
+				ser.PutVarUint(field.isExpression);
+				ser.PutVariant(val);
+			}
+		} else if (field.mode == FieldModeDrop) {
+			ser.PutVarUint(QueryDropField);
+			ser.PutVString(field.column);
+		} else {
+			throw Error(errLogic, "Unsupported item modification mode = %d", field.mode);
 		}
 	}
 

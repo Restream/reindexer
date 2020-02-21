@@ -96,6 +96,8 @@ public:
 	Variant convert(KeyValueType type, const PayloadType * = nullptr, const FieldsSet * = nullptr) const;
 	VariantArray getCompositeValues() const;
 
+	bool IsNullValue() const;
+
 	void Dump(WrSerializer &wrser) const;
 
 protected:
@@ -137,6 +139,7 @@ public:
 		for (size_t i = 0; i < this->size(); ++i) ret = (ret * 127) ^ this->at(i).Hash();
 		return ret;
 	}
+	bool IsNullValue() const;
 	void Dump(WrSerializer &wrser) const;
 };
 

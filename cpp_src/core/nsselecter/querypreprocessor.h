@@ -6,12 +6,12 @@
 namespace reindexer {
 
 class Index;
-class Namespace;
+class NamespaceImpl;
 class SelectIteratorContainer;
 
 class QueryPreprocessor {
 public:
-	QueryPreprocessor(Namespace *ns, QueryEntries *queries) : ns_(*ns), queries_(queries) {}
+	QueryPreprocessor(NamespaceImpl *ns, QueryEntries *queries) : ns_(*ns), queries_(queries) {}
 	void SetQueryEntries(QueryEntries *queries) { queries_ = queries; }
 	const QueryEntries &GetQueryEntries() const { return *queries_; }
 
@@ -31,7 +31,7 @@ private:
 	void convertWhereValues(QueryEntry *) const;
 	const Index *findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end) const;
 
-	Namespace &ns_;
+	NamespaceImpl &ns_;
 	QueryEntries *queries_;
 };
 

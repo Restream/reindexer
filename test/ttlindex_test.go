@@ -1,9 +1,10 @@
 package reindexer
 
 import (
-	"fmt"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 type TestItemWithTtl struct {
@@ -24,17 +25,11 @@ func newTestItemWithTtlObject(id int, date int64) *TestItemWithTtl {
 	}
 }
 
-func makeTestItemsReady() {
+func TestBasicCheckItemsTtlExpired(t *testing.T) {
 	tx := newTestTx(DB, "test_items_with_ttl")
 	for i := 0; i < 1000; i++ {
-		if err := tx.Upsert(newTestItemWithTtlObject(i, time.Now().Unix())); err != nil {
-			panic(err)
-		}
+		assert.NoError(t, tx.Upsert(newTestItemWithTtlObject(i, time.Now().Unix())))
 	}
-}
-
-func TestBasicCheckItemsTtlExpired(t *testing.T) {
-	makeTestItemsReady()
 
 	time.Sleep(3)
 
@@ -43,7 +38,6 @@ func TestBasicCheckItemsTtlExpired(t *testing.T) {
 		panic(err)
 	}
 
-	if len(results) != 0 {
-		panic(fmt.Errorf("Namespace should be empty!"))
-	}
+	assert.Equal(t, len(results), 0, "Namespace should be empty!")
+
 }

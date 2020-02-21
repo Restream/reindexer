@@ -101,6 +101,8 @@ type NamespaceMemStat struct {
 	StoragePath string `json:"storage_path"`
 	// Status of disk storage
 	StorageOK bool `json:"storage_ok"`
+	// Background indexes optimization has been completed
+	OptimizationCompleted bool `json:"optimization_completed"`
 	// Total count of documents in namespace
 	ItemsCount int64 `json:"items_count,omitempty"`
 	// Count of emopy(unused) slots in namespace
@@ -188,6 +190,38 @@ type PerfStat struct {
 	LatencyStddev int64 `json:"latency_stddev"`
 }
 
+// TxPerfStat is information about transactions performance statistics
+type TxPerfStat struct {
+	// Total transactions count for namespace
+	TotalCount int64 `json:"total_count"`
+	// Total namespace copy operations
+	TotalCopyCount int64 `json:"total_copy_count"`
+	// Average steps count in transactions for this namespace
+	AvgStepsCount int64 `json:"avg_steps_count"`
+	// Minimum steps count in transactions for this namespace
+	MinStepsCount int64 `json:"min_steps_count"`
+	// Maximum steps count in transactions for this namespace
+	MaxStepsCount int64 `json:"max_steps_count"`
+	// Average transaction preparation time usec
+	AvgPrepareTimeUs int64 `json:"avg_prepare_time_us"`
+	// Minimum transaction preparation time usec
+	MinPrepareTimeUs int64 `json:"min_prepare_time_us"`
+	// Maximum transaction preparation time usec
+	MaxPrepareTimeUs int64 `json:"max_prepare_time_us"`
+	// Average transaction commit time usec
+	AvgCommitTimeUs int64 `json:"avg_commit_time_us"`
+	// Minimum transaction commit time usec
+	MinCommitTimeUs int64 `json:"min_commit_time_us"`
+	// Maximum transaction commit time usec
+	MaxCommitTimeUs int64 `json:"max_commit_time_us"`
+	// Average namespace copy time usec
+	AvgCopyTimeUs int64 `json:"avg_copy_time_us"`
+	// Maximum namespace copy time usec
+	MinCopyTimeUs int64 `json:"min_copy_time_us"`
+	// Minimum namespace copy time usec
+	MaxCopyTimeUs int64 `json:"max_copy_time_us"`
+}
+
 // NamespacePerfStat is information about namespace's performance statistics
 // and located in '#perfstats' system namespace
 type NamespacePerfStat struct {
@@ -197,6 +231,8 @@ type NamespacePerfStat struct {
 	Updates PerfStat `json:"updates"`
 	// Performance statistics for select operations
 	Selects PerfStat `json:"selects"`
+	// Performance statistics for transactions
+	Transactions TxPerfStat `json:"transactions"`
 }
 
 // QueryPerfStat is information about query's performance statistics
@@ -238,10 +274,12 @@ type DBNamespacesConfig struct {
 	Lazyload bool `json:"lazyload"`
 	// Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded
 	UnloadIdleThreshold int `json:"unload_idle_threshold"`
-	// Copy namespce policts will start only after item's count become greater in this param
-	StartCopyPoliticsCount int `json:"start_copy_politics_count"`
-	// Merge write namespace after get thi count of operations
-	MergeLimitCount int `json:"merge_limit_count"`
+	// Enable namespace copying for transaction with steps count greater than this value (if copy_politics_multiplier also allows this)
+	StartCopyPolicyTxSize int `json:"start_copy_policy_tx_size"`
+	// Disables copy policy if namespace size is greater than copy_policy_multiplier * start_copy_policy_tx_size
+	CopyPolicyMultiplier int `json:"copy_policy_multiplier"`
+	// Force namespace copying for transaction with steps count greater than this value
+	TxSizeToAlwaysCopy int `json:"tx_size_to_always_copy"`
 	// Timeout before background indexes optimization start after last update. 0 - disable optimizations
 	OptimizationTimeout int `json:"optimization_timeout_ms"`
 	// Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations
@@ -327,4 +365,3 @@ func (db *Reindexer) GetNamespaceMemStat(namespace string) (*NamespaceMemStat, e
 	}
 	return desc.(*NamespaceMemStat), nil
 }
-

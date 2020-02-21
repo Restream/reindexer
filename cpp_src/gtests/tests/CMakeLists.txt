@@ -14,7 +14,13 @@ file (GLOB_RECURSE SRCS *.cc *.h)
 add_executable(${TARGET} ${SRCS})
 
 target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES} ${GTEST_LIBRARY})
-add_test (NAME gtests COMMAND ${TARGET} --gtest_color=yes )
+
+find_program (GTEST_PARALLEL "gtest-parallel")
+if (GTEST_PARALLEL)
+  add_test (NAME gtests COMMAND gtest-parallel --serialize_test_cases --print_test_times "./${TARGET}" )
+else()
+  add_test (NAME gtests COMMAND ${TARGET} --gtest_color=yes )
+endif()
 
 if (WITH_TSAN)
   set_tests_properties( gtests PROPERTIES ENVIRONMENT TSAN_OPTIONS=suppressions=${REINDEXER_SOURCE_PATH}/gtests/tsan.suppressions )

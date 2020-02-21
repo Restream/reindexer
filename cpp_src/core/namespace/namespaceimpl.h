@@ -2,25 +2,27 @@
 
 #include <atomic>
 #include <memory>
+#include <thread>
 #include <vector>
 #include "core/cjson/tagsmatcher.h"
 #include "core/dbconfig.h"
+#include "core/index/keyentry.h"
 #include "core/item.h"
+#include "core/joincache.h"
+#include "core/namespacedef.h"
+#include "core/payload/payloadiface.h"
+#include "core/perfstatcounter.h"
+#include "core/querycache.h"
+#include "core/storage/idatastorage.h"
+#include "core/storage/storagetype.h"
+#include "core/transactionimpl.h"
 #include "estl/contexted_locks.h"
 #include "estl/fast_hash_map.h"
 #include "estl/shared_mutex.h"
+#include "estl/smart_lock.h"
 #include "estl/syncpool.h"
-#include "index/keyentry.h"
-#include "joincache.h"
-#include "namespacedef.h"
-#include "payload/payloadiface.h"
-#include "perfstatcounter.h"
-#include "querycache.h"
 #include "replicator/updatesobserver.h"
 #include "replicator/waltracker.h"
-#include "storage/idatastorage.h"
-#include "storage/storagetype.h"
-#include "transactionimpl.h"
 
 namespace reindexer {
 
@@ -44,6 +46,7 @@ class SelectIteratorContainer;
 class RdxContext;
 class RdxActivityContext;
 class ItemComparator;
+struct SortExpressionJoinedIndex;
 
 struct NsContext {
 	NsContext(const RdxContext &rdxCtx) : rdxContext(rdxCtx) {}
@@ -55,33 +58,33 @@ struct NsContext {
 		lsn = lsn_;
 		return *this;
 	}
-	NsContext &TxSer(Transaction::Serializer &ser) {
-		txSerializer = &ser;
+	NsContext &InTransaction() {
+		inTransaction = true;
 		return *this;
 	}
 
 	const RdxContext &rdxContext;
 	bool noLock = false;
 	int64_t lsn = -1;
-	Transaction::Serializer *txSerializer = nullptr;
+	bool inTransaction = false;
 };
 
-class Namespace {
-	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Namespace>;
-
+class NamespaceImpl {
 protected:
 	friend class NsSelecter;
 	friend class JoinedSelector;
 	friend class WALSelecter;
 	friend class NsSelectFuncInterface;
+	friend class QueryPreprocessor;
+	friend class SelectIteratorContainer;
+	friend class ItemComparator;
+	friend class Namespace;
+	friend struct SortExpressionJoinedIndex;
 	friend class ReindexerImpl;
-	friend QueryPreprocessor;
-	friend SelectIteratorContainer;
-	friend ItemComparator;
 
 	class NSUpdateSortedContext : public UpdateSortedContext {
 	public:
-		NSUpdateSortedContext(const Namespace &ns, SortType curSortId)
+		NSUpdateSortedContext(const NamespaceImpl &ns, SortType curSortId)
 			: ns_(ns), sorted_indexes_(ns_.getSortedIdxCount()), curSortId_(curSortId) {
 			ids2Sorts_.reserve(ns.items_.size());
 			for (IdType i = 0; i < IdType(ns_.items_.size()); i++)
@@ -93,7 +96,7 @@ protected:
 		vector<SortType> &ids2Sorts() override { return ids2Sorts_; }
 
 	protected:
-		const Namespace &ns_;
+		const NamespaceImpl &ns_;
 		const int sorted_indexes_;
 		const IdType curSortId_;
 		vector<SortType> ids2Sorts_;
@@ -103,7 +106,7 @@ protected:
 	public:
 		using Base = vector<unique_ptr<Index>>;
 
-		IndexesStorage(const Namespace &ns);
+		IndexesStorage(const NamespaceImpl &ns);
 
 		IndexesStorage(const IndexesStorage &src) = delete;
 		IndexesStorage &operator=(const IndexesStorage &src) = delete;
@@ -122,7 +125,7 @@ protected:
 		int totalSize() const { return size(); }
 
 	private:
-		const Namespace &ns_;
+		const NamespaceImpl &ns_;
 	};
 
 	class Items : public vector<PayloadValue> {
@@ -131,16 +134,16 @@ protected:
 	};
 
 public:
-	typedef shared_ptr<Namespace> Ptr;
+	typedef shared_ptr<NamespaceImpl> Ptr;
+	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Namespace>;
 
-	Namespace(const string &_name, UpdatesObservers &observers);
-	Namespace &operator=(const Namespace &) = delete;
-	void CopyContentsFrom(const Namespace &);
-	~Namespace();
+	NamespaceImpl(const string &_name, UpdatesObservers &observers);
+	NamespaceImpl &operator=(const NamespaceImpl &) = delete;
+	~NamespaceImpl();
 
 	const string &GetName() const { return name_; }
 	bool IsSystem(const RdxContext &ctx) const {
-		RLock lck(mtx_, &ctx);
+		auto rlck = rLock(ctx);
 		return isSystem();
 	}
 	bool IsTemporary(const RdxContext &ctx) const { return GetReplState(ctx).temporary; }
@@ -149,7 +152,8 @@ public:
 	void LoadFromStorage(const RdxContext &ctx);
 	void DeleteStorage(const RdxContext &);
 
-	uint32_t GetItemsCount();
+	uint32_t GetItemsCount() const { return itemsCount_.load(std::memory_order_relaxed); }
+	uint32_t GetItemsCapacity() const { return itemsCapacity_.load(std::memory_order_relaxed); }
 	void AddIndex(const IndexDef &indexDef, const RdxContext &ctx);
 	void UpdateIndex(const IndexDef &indexDef, const RdxContext &ctx);
 	void DropIndex(const IndexDef &indexDef, const RdxContext &ctx);
@@ -162,6 +166,7 @@ public:
 	void Delete(Item &item, const NsContext &);
 	void Delete(const Query &query, QueryResults &result, const NsContext &);
 	void Truncate(const NsContext &);
+	void Refill(vector<Item> &, const NsContext &);
 
 	void Select(QueryResults &result, SelectCtx &params, const RdxContext &);
 	NamespaceDef GetDefinition(const RdxContext &ctx);
@@ -174,7 +179,7 @@ public:
 	void CloseStorage(const RdxContext &);
 
 	Transaction NewTransaction(const RdxContext &ctx);
-	void CommitTransaction(Transaction &tx, QueryResults &result, const RdxContext &ctx);
+	void CommitTransaction(Transaction &tx, QueryResults &result, const NsContext &ctx);
 
 	Item NewItem(const RdxContext &ctx);
 	void ToPool(ItemImpl *item);
@@ -193,15 +198,15 @@ public:
 
 	// Replication slave mode functions
 	ReplicationState GetReplState(const RdxContext &) const;
-	ReplicationState getReplState() const;
 	void SetSlaveLSN(int64_t slaveLSN, const RdxContext &);
 	void SetSlaveReplStatus(ReplicationState::Status, const Error &, const RdxContext &);
 	void SetSlaveReplMasterState(MasterState state, const RdxContext &);
 
 	void ReplaceTagsMatcher(const TagsMatcher &tm, const RdxContext &);
 
-	void Rename(Namespace::Ptr dst, const std::string &storagePath, const RdxContext &ctx);
-	void Rename(const std::string &newName, const std::string &storagePath, const RdxContext &ctx);
+	void OnConfigUpdated(DBConfigProvider &configProvider, const RdxContext &ctx);
+	void SetStorageOpts(StorageOpts opts, const RdxContext &ctx);
+	StorageOpts GetStorageOpts(const RdxContext &);
 
 protected:
 	struct SysRecordsVersions {
@@ -210,6 +215,36 @@ protected:
 		uint64_t replVersion{0};
 	};
 
+	class Locker {
+	public:
+		typedef contexted_shared_lock<Mutex, const RdxContext> RLockT;
+		typedef contexted_unique_lock<Mutex, const RdxContext> WLockT;
+
+		RLockT RLock(const RdxContext &ctx) const { return RLockT(mtx_, &ctx); }
+		WLockT WLock(const RdxContext &ctx) const {
+			WLockT lck(mtx_, &ctx);
+			if (readonly_.load(std::memory_order_acquire)) {
+				throw Error(errNamespaceInvalidated, "NS invalidated"_sv);
+			}
+			return lck;
+		}
+		unique_lock<std::mutex> StorageLock() const {
+			unique_lock<std::mutex> lck(storage_mtx_);
+			if (readonly_.load(std::memory_order_acquire)) {
+				throw Error(errNamespaceInvalidated, "NS invalidated"_sv);
+			}
+			return lck;
+		}
+		void MarkReadOnly() { readonly_.store(true, std::memory_order_release); }
+
+	private:
+		mutable Mutex mtx_;
+		mutable std::mutex storage_mtx_;
+		std::atomic<bool> readonly_ = {false};
+	};
+
+	void copyContentsFrom(const NamespaceImpl &);
+	ReplicationState getReplState() const;
 	bool tryToReload(const RdxContext &);
 	void reloadStorage();
 	std::string sysRecordName(string_view sysTag, uint64_t version);
@@ -243,7 +278,6 @@ protected:
 	void removeExpiredItems(RdxActivityContext *);
 
 	void recreateCompositeIndexes(int startIdx, int endIdx);
-	void onConfigUpdated(DBConfigProvider &configProvider, const RdxContext &ctx);
 	NamespaceDef getDefinition() const;
 	IndexDef getIndexDefinition(const string &indexName) const;
 	IndexDef getIndexDefinition(size_t) const;
@@ -257,32 +291,29 @@ protected:
 	void updateSortedIdxCount();
 	void setFieldsBasedOnPrecepts(ItemImpl *ritem);
 
-	void PutToJoinCache(JoinCacheRes &res, std::shared_ptr<JoinPreResult> preResult) const;
-	void PutToJoinCache(JoinCacheRes &res, JoinCacheVal &val) const;
-	void GetFromJoinCache(JoinCacheRes &ctx) const;
-	void GetIndsideFromJoinCache(JoinCacheRes &ctx) const;
+	void putToJoinCache(JoinCacheRes &res, std::shared_ptr<JoinPreResult> preResult) const;
+	void putToJoinCache(JoinCacheRes &res, JoinCacheVal &val) const;
+	void getFromJoinCache(JoinCacheRes &ctx) const;
+	void getIndsideFromJoinCache(JoinCacheRes &ctx) const;
 
 	const FieldsSet &pkFields();
-	void writeToStorage(const string_view &key, const string_view &data) {
-		std::unique_lock<std::mutex> lck(storage_mtx_);
-		updates_->Put(key, data);
-		if (unflushedCount_.fetch_add(1, std::memory_order_release) > 20000) doFlushStorage();
-	}
+	void writeToStorage(const string_view &key, const string_view &data);
 	void doFlushStorage();
 
 	bool needToLoadData(const RdxContext &) const;
-	StorageOpts getStorageOpts(const RdxContext &);
-	void SetStorageOpts(StorageOpts opts, const RdxContext &ctx);
 
 	void updateSelectTime();
 	int64_t getLastSelectTime() const;
+	void markReadOnly() { locker_.MarkReadOnly(); }
+	Locker::WLockT wLock(const RdxContext &ctx) const { return locker_.WLock(ctx); }
+	Locker::RLockT rLock(const RdxContext &ctx) const { return locker_.RLock(ctx); }
 
 	IndexesStorage indexes_;
 	fast_hash_map<string, int, nocase_hash_str, nocase_equal_str> indexesNames_;
 	// All items with data
 	Items items_;
 	vector<IdType> free_;
-	// Namespace name
+	// NamespaceImpl name
 	string name_;
 	// Payload types
 	PayloadType payloadType_;
@@ -293,9 +324,6 @@ protected:
 	shared_ptr<datastorage::IDataStorage> storage_;
 	datastorage::UpdatesCollection::Ptr updates_;
 	std::atomic<int> unflushedCount_;
-
-	mutable Mutex mtx_;
-	std::mutex storage_mtx_;
 
 	// Commit phases state
 	std::atomic<bool> sortOrdersBuilt_;
@@ -311,16 +339,14 @@ protected:
 
 	SysRecordsVersions sysRecordsVersions_;
 
-private:
-	Namespace(const Namespace &src);
+	Locker locker_;
 
-	typedef contexted_shared_lock<Mutex, const RdxContext> RLock;
-	typedef contexted_unique_lock<Mutex, const RdxContext> WLock;
+private:
+	NamespaceImpl(const NamespaceImpl &src);
 
 	bool isSystem() const { return !name_.empty() && name_[0] == '#'; }
 	IdType createItem(size_t realSize);
 	void deleteStorage();
-	void doRename(Namespace::Ptr dst, const std::string &newName, const std::string &storagePath, const RdxContext &ctx);
 	void checkApplySlaveUpdate(int64_t lsn);
 
 	JoinCache::Ptr joinCache_;
@@ -342,8 +368,8 @@ private:
 	std::atomic<bool> cancelCommit_;
 	std::atomic<int64_t> lastUpdateTime_;
 
-	std::atomic<uint32_t> itemsCount_;
-
-};	// namespace reindexer
+	std::atomic<uint32_t> itemsCount_ = {0};
+	std::atomic<uint32_t> itemsCapacity_ = {0};
+};
 
 }  // namespace reindexer

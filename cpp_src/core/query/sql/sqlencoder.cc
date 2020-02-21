@@ -1,5 +1,3 @@
-
-
 #include "core/query/sql/sqlencoder.h"
 #include "core/nsselecter/sortexpression.h"
 #include "core/queryresults/aggregationresult.h"
@@ -65,26 +63,21 @@ void SQLEncoder::dumpMerged(WrSerializer &ser, bool stripArgs) const {
 
 void SQLEncoder::dumpOrderBy(WrSerializer &ser, bool stripArgs) const {
 	if (query_.sortingEntries_.empty()) return;
-
 	ser << " ORDER BY ";
 	for (size_t i = 0; i < query_.sortingEntries_.size(); ++i) {
 		const SortingEntry &sortingEntry(query_.sortingEntries_[i]);
-		if (SortExpression::Parse(sortingEntry.expression).JustByIndex()) {
-			if (query_.forcedSortOrder_.empty()) {
-				ser << sortingEntry.expression;
-			} else {
-				ser << "FIELD(" << sortingEntry.expression;
-				if (stripArgs) {
-					ser << '?';
-				} else {
-					for (auto &v : query_.forcedSortOrder_) {
-						ser << ", '" << v.As<string>() << "'";
-					}
-				}
-				ser << ")";
-			}
-		} else {
+		if (query_.forcedSortOrder_.empty()) {
 			ser << '\'' << sortingEntry.expression << '\'';
+		} else {
+			ser << "FIELD(" << sortingEntry.expression;
+			if (stripArgs) {
+				ser << '?';
+			} else {
+				for (auto &v : query_.forcedSortOrder_) {
+					ser << ", '" << v.As<string>() << "'";
+				}
+			}
+			ser << ")";
 		}
 		ser << (sortingEntry.desc ? " DESC" : "");
 		if (i != query_.sortingEntries_.size() - 1) ser << ", ";
@@ -132,13 +125,7 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 						ser << f;
 					}
 					for (const auto &se : a.sortingEntries_) {
-						ser << " ORDER BY ";
-						if (SortExpression::Parse(se.expression).JustByIndex()) {
-							ser << se.expression;
-						} else {
-							ser << '\'' << se.expression << '\'';
-						}
-						ser << (se.desc ? " DESC" : " ASC");
+						ser << " ORDER BY " << '\'' << se.expression << '\'' << (se.desc ? " DESC" : " ASC");
 					}
 
 					if (a.offset_ != 0 && !stripArgs) ser << " OFFSET " << a.offset_;
@@ -171,27 +158,38 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 		case QueryDelete:
 			ser << "DELETE FROM " << query_._namespace;
 			break;
-		case QueryUpdate:
-			ser << "UPDATE " << query_._namespace << " SET ";
+		case QueryUpdate: {
+			if (query_.updateFields_.empty()) break;
+			ser << "UPDATE " << query_._namespace;
+			bool isUpdate = (query_.updateFields_.front().mode == FieldModeSet);
+			if (isUpdate) {
+				ser << " SET ";
+			} else {
+				ser << " DROP ";
+			}
 			for (const UpdateEntry &field : query_.updateFields_) {
 				if (&field != &*query_.updateFields_.begin()) ser << ',';
-				if (field.column.find('.') == string::npos)
-					ser << field.column << " = ";
-				else
-					ser << "'" << field.column << "' = ";
-
-				if (field.values.size() != 1) ser << '[';
-				for (const Variant &v : field.values) {
-					if (&v != &*field.values.begin()) ser << ',';
-					if (v.Type() == KeyValueString && !field.isExpression) {
-						ser << '\'' << v.As<string>() << '\'';
-					} else {
-						ser << v.As<string>();
-					}
+				if (field.column.find('.') == string::npos) {
+					ser << field.column;
+				} else {
+					ser << "'" << field.column << "'";
 				}
-				ser << ((field.values.size() != 1) ? "]" : "");
+				if (isUpdate) {
+					ser << " = ";
+					if (field.values.size() != 1) ser << '[';
+					for (const Variant &v : field.values) {
+						if (&v != &*field.values.begin()) ser << ',';
+						if (v.Type() == KeyValueString && !field.isExpression) {
+							ser << '\'' << v.As<string>() << '\'';
+						} else {
+							ser << v.As<string>();
+						}
+					}
+					ser << ((field.values.size() != 1) ? "]" : "");
+				}
 			}
 			break;
+		}
 		case QueryTruncate:
 			ser << "TRUNCATE " << query_._namespace;
 			break;
@@ -226,8 +224,8 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 				}
 			}
 			ser << ' ';
-			if (!orInnerJoin) ser << opNames[it->Op] << ' ';  // -V547}
-		} else if (it->Op == OpNot) {
+			if (!orInnerJoin) ser << opNames[it->operation] << ' ';	 // -V547}
+		} else if (it->operation == OpNot) {
 			ser << "NOT ";
 		}
 		if (!isLeaf) {

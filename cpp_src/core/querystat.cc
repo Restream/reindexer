@@ -19,7 +19,7 @@ void QueriesStatTracer::hit(const QuerySQL &sql, std::chrono::microseconds time)
 			it->second.longestQuery = string(sql.nonNormolized);
 		}
 	}
-};
+}
 template void QueriesStatTracer::hit<&PerfStatCounterST::Hit>(const QuerySQL &, std::chrono::microseconds);
 template void QueriesStatTracer::hit<&PerfStatCounterST::LockHit>(const QuerySQL &, std::chrono::microseconds);
 

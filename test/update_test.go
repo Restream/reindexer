@@ -3,12 +3,12 @@ package reindexer
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/rand"
 	"strings"
 	"testing"
 
 	"github.com/restream/reindexer"
+	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -136,149 +136,153 @@ func newTestItemComplexObject(id int) *TestItemComplexObject {
 	}
 }
 
-func TestUpdate(b *testing.T) {
-	FillTestItemsForInsertUpdate()
-	CheckTestItemsInsertUpdate()
+func TestUpdate(t *testing.T) {
+	FillTestItemsForInsertUpdate(t)
+	CheckTestItemsInsertUpdate(t)
 }
 
 func TestUpdateFields(t *testing.T) {
 	nsOpts := reindexer.DefaultNamespaceOptions()
-	assertErrorMessage(t, DB.OpenNamespace(fieldsUpdateNs, nsOpts, TestItemComplexObject{}), nil)
+	assert.NoError(t, DB.OpenNamespace(fieldsUpdateNs, nsOpts, TestItemComplexObject{}))
 	for i := 0; i < 1000; i++ {
-		assertErrorMessage(t, DB.Upsert(fieldsUpdateNs, newTestItemComplexObject(i)), nil)
+		assert.NoError(t, DB.Upsert(fieldsUpdateNs, newTestItemComplexObject(i)))
 	}
 
 	RemoveDummyItems(t)
 
-	CheckIndexedFieldUpdate()
-	CheckNonIndexedFieldUpdate()
-	CheckNonIndexedArrayFieldUpdate()
-	CheckIndexedArrayFieldUpdate()
-	CheckNestedFieldUpdate()
-	CheckNestedFieldUpdate2()
-	CheckAddSimpleFields()
-	CheckAddComplexField("nested2.nested3.nested4.val", []string{"nested2", "nested3", "nested4", "val"})
-	CheckAddComplexField("main_obj.main.nested.val", []string{"main_obj", "main", "nested", "val"})
-	CheckUpdateWithExpressions1()
-	CheckUpdateWithExpressions2()
+	CheckFieldsDrop(t)
+	CheckIndexedFieldUpdate(t)
+	CheckNonIndexedFieldUpdate(t)
+	CheckNonIndexedArrayFieldUpdate(t)
+	CheckIndexedArrayFieldUpdate(t)
+	CheckNestedFieldUpdate(t)
+	CheckNestedFieldUpdate2(t)
+	CheckAddSimpleFields(t)
+	CheckAddComplexField(t, "nested2.nested3.nested4.val", []string{"nested2", "nested3", "nested4", "val"})
+	CheckAddComplexField(t, "main_obj.main.nested.val", []string{"main_obj", "main", "nested", "val"})
+	CheckUpdateWithExpressions1(t)
+	CheckUpdateWithExpressions2(t)
 }
 
 func RemoveDummyItems(t *testing.T) {
 	nsOpts := reindexer.DefaultNamespaceOptions()
-	assertErrorMessage(t, DB.OpenNamespace(removeItemsNs, nsOpts, testDummyObject{}), nil)
+	assert.NoError(t, DB.OpenNamespace(removeItemsNs, nsOpts, testDummyObject{}))
 	for i := 0; i < 10; i++ {
-		assertErrorMessage(t, DB.Upsert(removeItemsNs, testDummyObject{
+		assert.NoError(t, DB.Upsert(removeItemsNs, testDummyObject{
 			ID:   i,
 			Name: randString(),
-		}), nil)
+		}))
 	}
 
 	count, err := DB.Query(removeItemsNs).WhereInt("id", reindexer.LT, 3).Delete()
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, count, 3, "Remove failed")
 
-	fmt.Printf("Removed = %d\n", count)
-
-	if count != 3 {
-		panic(fmt.Errorf("Remove failed"))
-	}
 }
 
-func UpdateField(fieldName string, values interface{}) (items []interface{}) {
-	res1, err := DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16).Set(fieldName, values).Update().FetchAll()
-
-	if err != nil {
-		panic(err)
-	}
-	if len(res1) == 0 {
-		panic(fmt.Errorf("No items updated"))
-	}
+func DropField(t *testing.T, fieldName string) (items []interface{}) {
+	res1, err := DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16).Drop(fieldName).Update().FetchAll()
+	assert.NoError(t, err)
+	assert.NotEqual(t, len(res1), 0, "No items updated")
 
 	results, err := DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16).Exec().FetchAll()
-	if err != nil {
-		panic(err)
-	}
-
-	if len(results) != len(res1) {
-		panic(fmt.Errorf("Different count of items"))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, len(results), len(res1), "Different count of items")
 
 	return results
 }
 
-func CheckUpdateWithExpressions1() {
+func UpdateField(t *testing.T, fieldName string, values interface{}) (items []interface{}) {
+	res1, err := DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16).Set(fieldName, values).Update().FetchAll()
+	assert.NoError(t, err)
+	assert.NotEqual(t, len(res1), 0, "No items updated")
+
+	results, err := DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16).Exec().FetchAll()
+	assert.NoError(t, err)
+	assert.Equal(t, len(results), len(res1), "Different count of items")
+
+	return results
+}
+
+func CheckUpdateWithExpressions1(t *testing.T) {
 	res1, err := DB.Query(fieldsUpdateNs).SetExpression("size", "((7+8)*(10-5)*2)/25").Update().FetchAll()
-	if err != nil {
-		panic(err)
-	}
-	if len(res1) == 0 {
-		panic(fmt.Errorf("No items updated"))
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, len(res1), 0, "No items updated")
+
 	results, err := DB.Query(fieldsUpdateNs).Exec().FetchAll()
-	if err != nil {
-		panic(err)
-	}
-	if len(results) == 0 {
-		panic(fmt.Errorf("No results found"))
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, len(results), 0, "No results found")
+
 	for i := 0; i < len(results); i++ {
 		size := results[i].(*TestItemComplexObject).Size
-		if size != 6 {
-			panic(fmt.Errorf("Update of field 'Size' has shown wrong results %d", size))
-		}
+		assert.Equal(t, size, 6, "Update of field 'Size' has shown wrong results %d", size)
 	}
 }
 
-func CheckUpdateWithExpressions2() {
+func CheckUpdateWithExpressions2(t *testing.T) {
 	res1, err := DB.Query(fieldsUpdateNs).SetExpression("size", "((SERIAL() + 1)*4)/4").Update().FetchAll()
-	if err != nil {
-		panic(err)
-	}
-	if len(res1) == 0 {
-		panic(fmt.Errorf("No items updated"))
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, len(res1), 0, "No items updated")
+
 	results, err := DB.Query(fieldsUpdateNs).Exec().FetchAll()
-	if err != nil {
-		panic(err)
-	}
-	if len(results) == 0 {
-		panic(fmt.Errorf("No results found"))
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, len(results), 0, "No results found")
+
 	for i := 0; i < len(results); i++ {
 		size := results[i].(*TestItemComplexObject).Size
-		if size != (((i + 2) * 4) / 4) {
-			panic(fmt.Errorf("Update of field 'Size' has shown wrong results %d", size))
-		}
+		assert.Equal(t, size, (((i + 2) * 4) / 4), "Update of field 'Size' has shown wrong results %d", size)
 	}
 }
 
-func CheckIndexedFieldUpdate() {
-	results := UpdateField("main_obj.year", 2007)
+func checkExtraFieldForEquality(t *testing.T, items []interface{}, val string) {
+	for i := 0; i < len(items); i++ {
+		obj := items[i].(*TestItemComplexObject).MainObj.Main
+		assert.Equal(t, obj.Extra, val, "Field 'extra' has a wrong value = %s", obj.Extra)
+	}
+}
+
+func CheckFieldsDrop(t *testing.T) {
+	const errorMessage = "Field '%s' was not removed from item"
+
+	results := DropField(t, "numbers")
+	assert.False(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16), "numbers"), errorMessage, "Numbers")
+
+	for i := 0; i < len(results); i++ {
+		obj := results[i].(*TestItemComplexObject)
+		assert.Nil(t, obj.Numbers, "Field 'Numbers' {%#v, %d} was not removed from item", obj.Numbers, len(obj.Numbers))
+	}
+
+	results2 := UpdateField(t, "main_obj.main.extra", "best value")
+	checkExtraFieldForEquality(t, results2, "best value")
+
+	results3 := DropField(t, "main_obj.main.extra")
+	assert.False(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16), "main_obj.main.extra"), errorMessage, "main_obj.main.extra")
+
+	checkExtraFieldForEquality(t, results3, "")
+}
+
+func CheckIndexedFieldUpdate(t *testing.T) {
+	results := UpdateField(t, "main_obj.year", 2007)
 	for i := 0; i < len(results); i++ {
 		year := results[i].(*TestItemComplexObject).MainObj.Year
-		if year != 2007 {
-			panic(fmt.Errorf("Update of field 'main_obj.year' has shown wrong results %d", year))
-		}
+		assert.Equal(t, year, 2007, "Update of field 'main_obj.year' has shown wrong results %d", year)
 	}
 }
 
-func CheckNonIndexedFieldUpdate() {
-	results := UpdateField("size", 45)
+func CheckNonIndexedFieldUpdate(t *testing.T) {
+	results := UpdateField(t, "size", 45)
 	for i := 0; i < len(results); i++ {
 		size := results[i].(*TestItemComplexObject).Size
-		if size != 45 {
-			panic(fmt.Errorf("Update of field 'size' has shown wrong results %d", size))
-		}
+		assert.Equal(t, size, 45, "Update of field 'size' has shown wrong results %d", size)
 	}
 }
 
-func CheckNonIndexedArrayFieldUpdate() {
+func CheckNonIndexedArrayFieldUpdate(t *testing.T) {
 	newAnimals := make([]string, 0, 20)
 	for i := 0; i < 20; i++ {
 		newAnimals = append(newAnimals, randString())
 	}
-	results := UpdateField("animals", newAnimals)
+	results := UpdateField(t, "animals", newAnimals)
 	for i := 0; i < len(results); i++ {
 		animals := results[i].(*TestItemComplexObject).Animals
 		equal := (len(newAnimals) == len(animals))
@@ -290,18 +294,16 @@ func CheckNonIndexedArrayFieldUpdate() {
 				}
 			}
 		}
-		if !equal {
-			panic(fmt.Errorf("Update of field 'animals' has shown wrong results"))
-		}
+		assert.True(t, equal, "Update of field 'animals' has shown wrong results")
 	}
 }
 
-func CheckIndexedArrayFieldUpdate() {
+func CheckIndexedArrayFieldUpdate(t *testing.T) {
 	newEmployees := make([]string, 0, 20)
 	for i := 0; i < 20; i++ {
 		newEmployees = append(newEmployees, randString())
 	}
-	results := UpdateField("employees", newEmployees)
+	results := UpdateField(t, "employees", newEmployees)
 	for i := 0; i < len(results); i++ {
 		employees := results[i].(*TestItemComplexObject).Employees
 		equal := (len(newEmployees) == len(employees))
@@ -313,55 +315,43 @@ func CheckIndexedArrayFieldUpdate() {
 				}
 			}
 		}
-		if !equal {
-			panic(fmt.Errorf("Update of field 'employees' has shown wrong results"))
-		}
+		assert.True(t, equal, "Update of field 'employees' has shown wrong results")
 	}
 }
 
-func CheckNestedFieldUpdate() {
-	results := UpdateField("main_obj.main.first", 777)
+func CheckNestedFieldUpdate(t *testing.T) {
+	results := UpdateField(t, "main_obj.main.first", 777)
 	for i := 0; i < len(results); i++ {
 		first := results[i].(*TestItemComplexObject).MainObj.Main.First
-		if first != 777 {
-			panic(fmt.Errorf("Update of field 'nested_obj.main.first' has shown wrong results %d", first))
-		}
+		assert.Equal(t, first, 777, "Update of field 'nested_obj.main.first' has shown wrong results %d", first)
 	}
 }
 
-func CheckNestedFieldUpdate2() {
-	results := UpdateField("main_obj.main.second", "bingo!")
+func CheckNestedFieldUpdate2(t *testing.T) {
+	results := UpdateField(t, "main_obj.main.second", "bingo!")
 	for i := 0; i < len(results); i++ {
 		second := results[i].(*TestItemComplexObject).MainObj.Main.Second
-		if second != "bingo!" {
-			panic(fmt.Errorf("Update of field 'nested_obj.main.second' has shown wrong results %s", second))
-		}
+		assert.Equal(t, second, "bingo!", "Update of field 'nested_obj.main.second' has shown wrong results %s", second)
 	}
 }
 
-func CheckAddSimpleFields() {
-	results := UpdateField("optional", "new field")
+func CheckAddSimpleFields(t *testing.T) {
+	results := UpdateField(t, "optional", "new field")
 	for i := 0; i < len(results); i++ {
 		optional := results[i].(*TestItemComplexObject).Optional
-		if optional != "new field" {
-			panic(fmt.Errorf("Adding of field 'nested_obj.main.first' went wrong: %s", optional))
-		}
+		assert.Equal(t, optional, "new field", "Adding of field 'nested_obj.main.first' went wrong: %s", optional)
 	}
 
-	results2 := UpdateField("main_obj.bonus", 777)
+	results2 := UpdateField(t, "main_obj.bonus", 777)
 	for i := 0; i < len(results2); i++ {
 		bonus := results2[i].(*TestItemComplexObject).MainObj.Bonus
-		if bonus != 777 {
-			panic(fmt.Errorf("Adding of field 'nested_obj.main.first' went wrong: %d", bonus))
-		}
+		assert.Equal(t, bonus, 777, "Adding of field 'nested_obj.main.first' went wrong: %d", bonus)
 	}
 
-	results3 := UpdateField("main_obj.main.extra", "new nested field")
+	results3 := UpdateField(t, "main_obj.main.extra", "new nested field")
 	for i := 0; i < len(results3); i++ {
 		extra := results3[i].(*TestItemComplexObject).MainObj.Main.Extra
-		if extra != "new nested field" {
-			panic(fmt.Errorf("Adding of field 'nested_obj.main.first' went wrong: %s", extra))
-		}
+		assert.Equal(t, extra, "new nested field", "Adding of field 'nested_obj.main.first' went wrong: %s", extra)
 	}
 }
 
@@ -380,15 +370,27 @@ func hasJSONPath(path []string, data map[string]interface{}) bool {
 	return false
 }
 
-func CheckAddComplexField(path string, subfields []string) {
-	UpdateField(path, "extra value")
+func CheckIfFieldInJSON(t *testing.T, q *queryTest, field string) bool {
+	jsonIter := q.ExecToJson()
+	for jsonIter.Next() {
+		jsonB := jsonIter.JSON()
+		var data map[string]interface{}
+		assert.NoError(t, json.Unmarshal(jsonB, &data))
+		json := string(jsonB[:])
+		if strings.Contains(json, field) {
+			return true
+		}
+	}
+	return false
+}
+
+func CheckAddComplexField(t *testing.T, path string, subfields []string) {
+	UpdateField(t, path, "extra value")
 	jsonIter := DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16).ExecToJson()
 	for jsonIter.Next() {
 		jsonB := jsonIter.JSON()
 		var data map[string]interface{}
-		if err := json.Unmarshal(jsonB, &data); err != nil {
-			panic(err)
-		}
+		assert.NoError(t, json.Unmarshal(jsonB, &data))
 		if hasJSONPath(subfields, data) == false {
 			fmt.Println(string(jsonB[:]))
 			fmt.Printf("Adding of field '%s' went wrong\n", path)
@@ -396,22 +398,16 @@ func CheckAddComplexField(path string, subfields []string) {
 	}
 }
 
-func FillTestItemsForInsertUpdate() {
+func FillTestItemsForInsertUpdate(t *testing.T) {
 	tx := newTestTx(DB, "test_items_insert_update")
 
 	for _, item := range checkInsertUpdateExistsData {
-		if err := tx.Insert(item); err != nil {
-			panic(err)
-		}
+		assert.NoError(t, tx.Insert(item))
 	}
-
-	cnt := tx.MustCommit()
-	if cnt != len(checkInsertUpdateExistsData) {
-		panic(fmt.Errorf("Could not commit testSortModeDataCustomSource"))
-	}
+	assert.Equal(t, tx.MustCommit(), len(checkInsertUpdateExistsData), "Could not commit testSortModeDataCustomSource")
 }
 
-func CheckTestItemsInsertUpdate() {
+func CheckTestItemsInsertUpdate(t *testing.T) {
 	actionMap := map[string]func(string, interface{}, ...string) (int, error){
 		"INSERT": DB.Insert,
 		"UPDATE": DB.Update,
@@ -436,102 +432,81 @@ func CheckTestItemsInsertUpdate() {
 	for actionName, doAction := range actionMap {
 		for preceptsText, precepts := range preceptsMap {
 			for exists, dataset := range existsMap {
-				log.Printf("DO '%s' %s ITEMS %s", actionName, exists, preceptsText)
-				for _, item := range dataset {
-					var originalYear int = item.Year
-					cnt, err := doAction("test_items_insert_update", item, precepts...)
+				t.Run(fmt.Sprintf("%s %s ITEMS %s", actionName, exists, preceptsText), func(t *testing.T) {
+					for _, item := range dataset {
+						var originalYear int = item.Year
+						cnt, err := doAction("test_items_insert_update", item, precepts...)
+						assert.NoError(t, err)
 
-					if err != nil {
-						panic(err)
+						act := actionName + " " + exists
+
+						switch act {
+						case "INSERT EXISTING":
+							assert.Equal(t, cnt, 0, "Expected affected items count = 0, but got %d\n Item: %+v", cnt, item)
+						case "INSERT NON EXISTING":
+							assert.Equal(t, cnt, 1, "Expected affected items count = 1, but got %d\n Item: %+v", cnt, item)
+							assert.False(t, preceptsText == "WITH PRECEPTS" && item.Year == originalYear,
+								"Item has not been updated by Insert with precepts. Item: %+v", item)
+							// need to update data before 'UPDATE NON EXISTING'
+							updateNonExistsData(existsMap["NON EXISTING"])
+
+						case "UPDATE EXISTING":
+							assert.Equal(t, cnt, 1, "Expected affected items count = 1, but got %d\n Item: %+v", cnt, item)
+							assert.False(t, preceptsText == "WITH PRECEPTS" && item.Year == originalYear,
+								"Item has not been updated by Insert with precepts. Item: %+v", item)
+							// need to update data before 'UPDATE NON EXISTING'
+							updateNonExistsData(existsMap["NON EXISTING"])
+
+						case "UPDATE NON EXISTING":
+							assert.Equal(t, cnt, 0, "Expected affected items count = 0, but got %d\n Item: %+v", cnt, item)
+
+						}
 					}
-
-					act := actionName + " " + exists
-
-					switch act {
-					case "INSERT EXISTING":
-						if cnt != 0 {
-							panic(fmt.Errorf("Expected affected items count = 0, but got %d\n Item: %+v", cnt, item))
-						}
-
-					case "INSERT NON EXISTING":
-						if cnt != 1 {
-							panic(fmt.Errorf("Expected affected items count = 1, but got %d\n Item: %+v", cnt, item))
-						}
-						if preceptsText == "WITH PRECEPTS" && item.Year == originalYear {
-							panic(fmt.Errorf("Item has not been updated by Insert with precepts. Item: %+v", item))
-						}
-						// need to update data before 'UPDATE NON EXISTING'
-						updateNonExistsData(existsMap["NON EXISTING"])
-
-					case "UPDATE EXISTING":
-						if cnt != 1 {
-							panic(fmt.Errorf("Expected affected items count = 1, but got %d\n Item: %+v", cnt, item))
-						}
-						if preceptsText == "WITH PRECEPTS" && item.Year == originalYear {
-							panic(fmt.Errorf("Item has not been updated by Update with precepts. Item: %+v", item))
-						}
-						// need to update data before 'UPDATE NON EXISTING'
-						updateNonExistsData(existsMap["NON EXISTING"])
-
-					case "UPDATE NON EXISTING":
-						if cnt != 0 {
-							panic(fmt.Errorf("Expected affected items count = 0, but got %d\n Item: %+v", cnt, item))
-						}
-
-					}
-				}
+				})
 			}
 		}
 	}
 }
 
-func checkItemsCount(nsName string, expectedCount int) {
+func checkItemsCount(t *testing.T, nsName string, expectedCount int) {
 	results, err := DB.Query(nsName).Exec().FetchAll()
-	if err != nil {
-		panic(err)
-	}
-	if len(results) != expectedCount {
-		panic(fmt.Errorf("Expected %d items, but got %d", expectedCount, len(results)))
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, len(results), expectedCount, "Expected %d items, but got %d", expectedCount, len(results))
 }
 
 func TestTruncateNamespace(t *testing.T) {
 	const itemsCount = 1000
 
 	nsOpts := reindexer.DefaultNamespaceOptions()
-	assertErrorMessage(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}), nil)
+	assert.NoError(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}))
 
 	for i := 0; i < itemsCount; i++ {
 		_, err := DB.Insert(truncateNs, newTestItemComplexObject(i))
-		if err != nil {
-			panic(err)
-		}
+		assert.NoError(t, err)
 	}
-	checkItemsCount(truncateNs, itemsCount)
+	checkItemsCount(t, truncateNs, itemsCount)
 
-	assertErrorMessage(t, DB.TruncateNamespace(truncateNs), nil)
-	checkItemsCount(truncateNs, 0)
+	assert.NoError(t, DB.TruncateNamespace(truncateNs))
+	checkItemsCount(t, truncateNs, 0)
 
-	assertErrorMessage(t, DB.CloseNamespace(truncateNs), nil)
-	assertErrorMessage(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}), nil)
-	checkItemsCount(truncateNs, 0)
+	assert.NoError(t, DB.CloseNamespace(truncateNs))
+	assert.NoError(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}))
+	checkItemsCount(t, truncateNs, 0)
 
 	for i := 0; i < itemsCount; i++ {
 		_, err := DB.Insert(truncateNs, newTestItemComplexObject(i))
-		if err != nil {
-			panic(err)
-		}
+		assert.NoError(t, err)
 	}
-	checkItemsCount(truncateNs, itemsCount)
+	checkItemsCount(t, truncateNs, itemsCount)
 
-	assertErrorMessage(t, DB.CloseNamespace(truncateNs), nil)
-	assertErrorMessage(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}), nil)
-	checkItemsCount(truncateNs, itemsCount)
+	assert.NoError(t, DB.CloseNamespace(truncateNs))
+	assert.NoError(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}))
+	checkItemsCount(t, truncateNs, itemsCount)
 
-	assertErrorMessage(t, DB.TruncateNamespace(truncateNs), nil)
-	checkItemsCount(truncateNs, 0)
+	assert.NoError(t, DB.TruncateNamespace(truncateNs))
+	checkItemsCount(t, truncateNs, 0)
 
-	assertErrorMessage(t, DB.CloseNamespace(truncateNs), nil)
-	assertErrorMessage(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}), nil)
-	checkItemsCount(truncateNs, 0)
+	assert.NoError(t, DB.CloseNamespace(truncateNs))
+	assert.NoError(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}))
+	checkItemsCount(t, truncateNs, 0)
 }

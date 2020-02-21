@@ -2,7 +2,7 @@
 
 #include <string>
 #include "estl/fast_hash_map.h"
-#include "namespacestat.h"
+#include "namespace/namespacestat.h"
 #include "perfstatcounter.h"
 #include "tools/stringstools.h"
 

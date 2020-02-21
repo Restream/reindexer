@@ -1,6 +1,6 @@
 #include "querypreprocessor.h"
 #include "core/index/index.h"
-#include "core/namespace.h"
+#include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/selectiteratorcontainer.h"
 #include "core/payload/fieldsset.h"
 
@@ -19,7 +19,7 @@ void QueryPreprocessor::lookupQueryIndexes(QueryEntries *dst, QueryEntries::cons
 	for (int &i : iidx) i = -1;
 	for (auto it = srcBegin; it != srcEnd; ++it) {
 		if (!it->IsLeaf()) {
-			dst->OpenBracket(it->Op);
+			dst->OpenBracket(it->operation);
 			lookupQueryIndexes(dst, it.cbegin(), it.cend());
 			dst->CloseBracket();
 		} else {
@@ -34,22 +34,21 @@ void QueryPreprocessor::lookupQueryIndexes(QueryEntries *dst, QueryEntries::cons
 
 			// try merge entries with AND opetator
 			const auto nextEntry = it + 1;
-			if (isIndexField && (it->Op == OpAnd) && (nextEntry == srcEnd || nextEntry->Op == OpAnd)) {
+			if (isIndexField && (it->operation == OpAnd) && (nextEntry == srcEnd || nextEntry->operation == OpAnd)) {
 				if (iidx[entry.idxNo] >= 0 && !ns_.indexes_[entry.idxNo]->Opts().IsArray()) {
 					if (mergeQueryEntries(&(*dst)[iidx[entry.idxNo]], &entry)) continue;
 				} else {
 					iidx[entry.idxNo] = dst->Size();
 				}
 			}
-			dst->Append(it->Op, std::move(entry));
+			dst->Append(it->operation, std::move(entry));
 		}
 	}
 }
 
 bool QueryPreprocessor::ContainsFullTextIndexes() const {
 	for (auto it = queries_->cbegin().PlainIterator(), end = queries_->cend().PlainIterator(); it != end; ++it) {
-		if ((*it)->IsLeaf() && (*it)->Value().idxNo != IndexValueType::SetByJsonPath &&
-			isFullText(ns_.indexes_[(*it)->Value().idxNo]->Type())) {
+		if (it->IsLeaf() && it->Value().idxNo != IndexValueType::SetByJsonPath && isFullText(ns_.indexes_[it->Value().idxNo]->Type())) {
 			return true;
 		}
 	}

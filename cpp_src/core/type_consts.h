@@ -60,6 +60,7 @@ typedef enum QueryItemType {
 	QueryOpenBracket,
 	QueryCloseBracket,
 	QueryJoinCondition,
+	QueryDropField,
 } QueryItemType;
 
 typedef enum QuerySerializeMode {
@@ -108,6 +109,7 @@ enum ErrorCode {
 	errCanceled = 20,
 	errTagsMissmatch = 21,
 	errReplParams = 22,
+	errNamespaceInvalidated = 23,
 };
 
 enum QueryType { QuerySelect, QueryDelete, QueryUpdate, QueryTruncate };
@@ -167,6 +169,11 @@ typedef enum StotageOpt {
 } StorageOpt;
 
 enum CollateMode { CollateNone = 0, CollateASCII, CollateUTF8, CollateNumeric, CollateCustom };
+
+enum FieldModifyMode {
+	FieldModeSet = 0,
+	FieldModeDrop = 1,
+};
 
 enum ItemModifyMode { ModeUpdate = 0, ModeInsert = 1, ModeUpsert = 2, ModeDelete = 3 };
 

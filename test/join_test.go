@@ -1,15 +1,14 @@
 package reindexer
 
 import (
-	"encoding/json"
 	"fmt"
 	"math/rand"
-	"reflect"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/restream/reindexer"
+	"github.com/stretchr/testify/assert"
 )
 
 func init() {
@@ -47,25 +46,25 @@ func (item *TestItem) Join(field string, subitems []interface{}, context interfa
 
 func TestJoin(t *testing.T) {
 	FillTestItems("test_items_for_join", 0, 10000, 20)
-	FillTestJoinItems(7000, 500)
+	FillTestJoinItems(7000, 500, "test_join_items")
 	for _, left := range []bool{true, false} {
 		for _, inner := range []bool{true, false} {
 			if inner {
 				for _, whereOrJoin := range []bool{true, false} {
 					for _, orInner := range []bool{true, false} {
-						CheckTestItemsJoinQueries(left, inner, whereOrJoin, orInner)
+						CheckTestItemsJoinQueries(t, left, inner, whereOrJoin, orInner)
 					}
 				}
 			} else {
-				CheckTestItemsJoinQueries(left, false, false, false)
+				CheckTestItemsJoinQueries(t, left, false, false, false)
 			}
 		}
 	}
-	CheckJoinsAsWhereCondition()
+	CheckJoinsAsWhereCondition(t)
 }
 
-func FillTestJoinItems(start int, count int) {
-	tx := newTestTx(DB, "test_join_items")
+func FillTestJoinItems(start int, count int, ns string) {
+	tx := newTestTx(DB, ns)
 
 	for i := 0; i < count; i++ {
 		if err := tx.Upsert(&TestJoinItem{
@@ -93,7 +92,7 @@ func (s byID) Less(i, j int) bool {
 	return s[i].ID < s[j].ID
 }
 
-func CheckJoinsAsWhereCondition() {
+func CheckJoinsAsWhereCondition(t *testing.T) {
 	qj1 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "ottstb").Sort("NAME", true)
 	qj2 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "android").Where("AMOUNT", reindexer.GT, 2)
 	qj3 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "iphone")
@@ -157,9 +156,7 @@ func CheckJoinsAsWhereCondition() {
 	}
 
 	rjoin, _ := qjoin.MustExec().FetchAll()
-	if len(rjcheck) != len(rjoin) {
-		panic(fmt.Errorf("%d != %d", len(rjcheck), len(rjoin)))
-	}
+	assert.Equal(t, len(rjcheck), len(rjoin))
 	for i := 0; i < len(rjcheck); i++ {
 		i1 := rjcheck[i].(*TestItem)
 		i2 := rjoin[i].(*TestItem)
@@ -167,12 +164,7 @@ func CheckJoinsAsWhereCondition() {
 		sort.Sort(byID(i2.Pricesx))
 		sort.Sort(byID(i1.Prices))
 		sort.Sort(byID(i2.Prices))
-		if !reflect.DeepEqual(i1, i2) {
-			i1s, _ := json.Marshal(i1)
-			i2s, _ := json.Marshal(i2)
-			panic(fmt.Errorf("%d:-----expect:\n%s\n-----got:\n%s", i, string(i1s), string(i2s)))
-
-		}
+		assert.Equal(t, i1, i2)
 	}
 }
 
@@ -245,7 +237,7 @@ func permutate(q *queryTest, andConditions []addCondition, orConditions []addCon
 	}
 }
 
-func CheckTestItemsJoinQueries(left, inner, whereOrJoin bool, orInner bool) {
+func CheckTestItemsJoinQueries(t *testing.T, left, inner, whereOrJoin bool, orInner bool) {
 	qj1 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "ottstb").Sort("NAME", true)
 	qj2 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "android").Where("AMOUNT", reindexer.GT, 2)
 	qj3 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "iphone")
@@ -369,9 +361,7 @@ func CheckTestItemsJoinQueries(left, inner, whereOrJoin bool, orInner bool) {
 		}
 	}
 
-	if len(rjcheck) != len(rjoin) {
-		panic(fmt.Errorf("%d != %d", len(rjcheck), len(rjoin)))
-	}
+	assert.Equal(t, len(rjcheck), len(rjoin))
 	for i := 0; i < len(rjcheck); i++ {
 		i1 := rjcheck[i].(*TestItem)
 		i2 := rjoin[i].(*TestItem)
@@ -379,13 +369,7 @@ func CheckTestItemsJoinQueries(left, inner, whereOrJoin bool, orInner bool) {
 		sort.Sort(byID(i2.Pricesx))
 		sort.Sort(byID(i1.Prices))
 		sort.Sort(byID(i2.Prices))
-		if !reflect.DeepEqual(i1, i2) {
-			i1s, _ := json.Marshal(i1)
-			i2s, _ := json.Marshal(i2)
-
-			panic(fmt.Errorf("%d:-----expect:\n%s\n-----got:\n%s", i, string(i1s), string(i2s)))
-
-		}
+		assert.Equal(t, i1, i2)
 	}
 }
 
@@ -399,12 +383,10 @@ func TestJoinQueryResultsOnIterator(t *testing.T) {
 	var handlerSubitems []interface{}
 
 	qjoin.JoinHandler("PRICES", func(field string, item interface{}, subitems []interface{}) (isContinue bool) {
-		if !strings.EqualFold(field, "prices") {
-			t.Errorf("field expected: '%v'; actual: '%v'", "prices", field)
-		}
-		if item == nil {
-			t.Errorf("item in handler is nil")
-		}
+
+		assert.True(t, strings.EqualFold(field, "prices"), "field expected: '%v'; actual: '%v'", "prices", field)
+		assert.NotNil(t, item, "item in handler is nil")
+
 		handlerSubitems = subitems
 		return true
 	})
@@ -415,35 +397,16 @@ func TestJoinQueryResultsOnIterator(t *testing.T) {
 	for iter.Next() {
 		item := iter.Object().(*TestItem)
 		joinResultsPrices, err := iter.JoinedObjects("PRICES")
-		if err != nil {
-			t.Fatalf("Can't get join objects from iterator: %v", err)
-		}
+		assert.NoError(t, err)
 		joinResultsPricesx, err := iter.JoinedObjects("PRICESX")
-		if err != nil {
-			t.Fatalf("Can't get join objects from iterator: %v", err)
-		}
+		assert.NoError(t, err)
 
 		for i := range item.Prices {
-			if !reflect.DeepEqual(item.Prices[i], joinResultsPrices[i]) {
-				i1s, _ := json.Marshal(item.Prices[i])
-				i2s, _ := json.Marshal(joinResultsPrices[i])
-
-				panic(fmt.Errorf("-----expect:\n%s\n-----got:\n%s", string(i1s), string(i2s)))
-			}
-			if !reflect.DeepEqual(item.Prices[i], handlerSubitems[i]) {
-				i1s, _ := json.Marshal(item.Prices[i])
-				i2s, _ := json.Marshal(handlerSubitems[i])
-
-				panic(fmt.Errorf("-----expect:\n%s\n-----got:\n%s", string(i1s), string(i2s)))
-			}
+			assert.EqualValues(t, item.Prices[i], joinResultsPrices[i])
+			assert.EqualValues(t, item.Prices[i], handlerSubitems[i])
 		}
 		for i := range item.Pricesx {
-			if !reflect.DeepEqual(item.Pricesx[i], joinResultsPricesx[i]) {
-				i1s, _ := json.Marshal(item.Pricesx[i])
-				i2s, _ := json.Marshal(joinResultsPricesx[i])
-
-				panic(fmt.Errorf("-----expect:\n%s\n-----got:\n%s", string(i1s), string(i2s)))
-			}
+			assert.EqualValues(t, item.Pricesx[i], joinResultsPricesx[i])
 		}
 	}
 }

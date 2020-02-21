@@ -1,4 +1,5 @@
 #include "expressionevaluator.h"
+#include "core/cjson/tagsmatcher.h"
 #include "core/payload/payloadiface.h"
 #include "core/selectfunc/functionexecutor.h"
 #include "core/selectfunc/selectfunc.h"
@@ -6,8 +7,10 @@
 
 namespace reindexer {
 
-ExpressionEvaluator::ExpressionEvaluator(const PayloadType& type, FunctionExecutor& func, const string& forField)
-	: type_(type), functionExecutor_(func), forField_(forField) {}
+const char* kWrongFieldTypeError = "Only integral type non-array fields are supported in arithmetical expressions: %s";
+
+ExpressionEvaluator::ExpressionEvaluator(const PayloadType& type, TagsMatcher& tagsMatcher, FunctionExecutor& func, const string& forField)
+	: type_(type), tagsMatcher_(tagsMatcher), functionExecutor_(func), forField_(forField) {}
 
 double ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValue& v) {
 	token tok = parser.peek_token(true, true);
@@ -22,20 +25,29 @@ double ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValu
 		return strtod(tok.text().data(), &p);
 	} else if (tok.type == TokenName) {
 		int field = 0;
+		VariantArray fieldValue;
+		ConstPayload pv(type_, v);
 		if (type_.FieldByName(tok.text(), field)) {
 			KeyValueType type = type_.Field(field).Type();
 			if (type_.Field(field).IsArray() || ((type != KeyValueInt) && (type != KeyValueInt64) && (type != KeyValueDouble)))
-				throw Error(errLogic, "Only integral type non-array fields are supported in arithmetical expressions: %s", tok.text());
-			VariantArray fieldValue;
-			ConstPayload pv(type_, v);
+				throw Error(errLogic, kWrongFieldTypeError, tok.text());
 			pv.Get(field, fieldValue);
 			if (fieldValue.size() == 0) throw Error(errLogic, "Calculating value of an empty field is impossible: %s", tok.text());
 			parser.next_token();
 			return fieldValue.front().As<double>();
 		} else {
-			SelectFuncStruct funcData = SelectFuncParser().ParseFunction(parser, true);
-			funcData.field = forField_;
-			return functionExecutor_.Execute(funcData).As<double>();
+			pv.GetByJsonPath(tok.text(), tagsMatcher_, fieldValue, KeyValueUndefined);
+			if (fieldValue.size() > 0) {
+				KeyValueType type = fieldValue.front().Type();
+				if ((fieldValue.size() > 1) || ((type != KeyValueInt) && (type != KeyValueInt64) && (type != KeyValueDouble)))
+					throw Error(errLogic, kWrongFieldTypeError, tok.text());
+				parser.next_token();
+				return fieldValue.front().As<double>();
+			} else {
+				SelectFuncStruct funcData = SelectFuncParser().ParseFunction(parser, true);
+				funcData.field = forField_;
+				return functionExecutor_.Execute(funcData).As<double>();
+			}
 		}
 	} else {
 		throw Error(errLogic, "Only integral type non-array fields are supported in arithmetical expressions");
@@ -43,30 +55,35 @@ double ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValu
 	return 0.0;
 }
 
-double ExpressionEvaluator::performMultiplicationAndDivision(tokenizer& parser, const PayloadValue& v) {
+double ExpressionEvaluator::performMultiplicationAndDivision(tokenizer& parser, const PayloadValue& v, token& tok) {
 	double left = getPrimaryToken(parser, v);
-	token tok = parser.peek_token(true, true);
-	if (tok.text() == "*"_sv) {
-		parser.next_token();
-		left *= performMultiplicationAndDivision(parser, v);
-	} else if (tok.text() == "/"_sv) {
-		parser.next_token();
-		double val = performMultiplicationAndDivision(parser, v);
-		if (val == 0) throw Error(errLogic, "Division by zero!");
-		left /= val;
+	tok = parser.peek_token(true, true);
+	while (tok.text() == "*"_sv || tok.text() == "/"_sv) {
+		if (tok.text() == "*"_sv) {
+			parser.next_token();
+			left *= performMultiplicationAndDivision(parser, v, tok);
+		} else if (tok.text() == "/"_sv) {
+			parser.next_token();
+			double val = performMultiplicationAndDivision(parser, v, tok);
+			if (val == 0) throw Error(errLogic, "Division by zero!");
+			left /= val;
+		}
 	}
 	return left;
 }
 
 double ExpressionEvaluator::performSumAndSubtracting(tokenizer& parser, const PayloadValue& v) {
-	double left = performMultiplicationAndDivision(parser, v);
-	token tok = parser.peek_token(true, true);
-	if (tok.text() == "+"_sv) {
-		parser.next_token(true, true);
-		left += performMultiplicationAndDivision(parser, v);
-	} else if (tok.text() == "-"_sv) {
-		parser.next_token(true, true);
-		left -= performMultiplicationAndDivision(parser, v);
+	token tok;
+	double left = performMultiplicationAndDivision(parser, v, tok);
+	tok = parser.peek_token(true, true);
+	while (tok.text() == "+"_sv || tok.text() == "-"_sv) {
+		if (tok.text() == "+"_sv) {
+			parser.next_token(true, true);
+			left += performMultiplicationAndDivision(parser, v, tok);
+		} else if (tok.text() == "-"_sv) {
+			parser.next_token(true, true);
+			left -= performMultiplicationAndDivision(parser, v, tok);
+		}
 	}
 	return left;
 }

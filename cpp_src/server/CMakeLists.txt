@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.0)
 
-option(LINK_RESOURCES "Link web resources as binary data" OFF)
 
 project(reindexer_server_library)
 
@@ -116,11 +115,11 @@ if (NOT WIN32)
     set (GO_BUILTIN_SERVER_EXPORT_PKG_PATH "${CMAKE_CURRENT_SOURCE_DIR}/${GO_BUILTIN_SERVER_EXPORT_PKG_PATH}")
   endif ()
 
-  if (GO_BUILTIN_SERVER_EXPORT_PKG_PATH AND NOT REINDEXER_PKG_FOUND AND EXISTS "${GO_BUILTIN_SERVER_EXPORT_PKG_PATH}/posix_config.go.in")
+  if (GO_BUILTIN_SERVER_EXPORT_PKG_PATH AND EXISTS "${GO_BUILTIN_SERVER_EXPORT_PKG_PATH}/posix_config.go.in")
     ProcessorCount (cgo_proc_count)
-    set (cgo_cxx_flags "-I../../cpp_src")
-    set (cgo_c_flags "-I../../cpp_src")
-    set (cgo_ld_flags "-L\${SRCDIR}/../../build/cpp_src/ -L\${SRCDIR}/../../build/cpp_src/server/ -lreindexer_server_library")
+    set (cgo_cxx_flags "-I../../cpp_src ${EXTRA_FLAGS}")
+    set (cgo_c_flags "-I../../cpp_src ${EXTRA_FLAGS}")
+    set (cgo_ld_flags "-L\${SRCDIR}/../../build/cpp_src/ -L\${SRCDIR}/../../build/cpp_src/server/ -lreindexer_server_library ${EXTRA_FLAGS}")
     generate_libs_list("${REINDEXER_LIBRARIES}" cgo_ld_flags)
     string(REPLACE ";" "" cgo_ld_flags "${cgo_ld_flags}")
     configure_file (

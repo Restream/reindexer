@@ -16,7 +16,6 @@ RUN ./dependencies.sh && \
     cd build && \
     cmake -DCMAKE_BUILD_TYPE=Release .. && \
     make -j8 reindexer_server reindexer_tool && \
-    make face swagger && \
     make install -C cpp_src/cmd/reindexer_server && \
     make install -C cpp_src/cmd/reindexer_tool && \
     cp ../cpp_src/cmd/reindexer_server/contrib/entrypoint.sh /entrypoint.sh && \

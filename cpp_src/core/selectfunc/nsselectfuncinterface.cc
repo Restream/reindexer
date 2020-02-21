@@ -1,6 +1,6 @@
 #include "nsselectfuncinterface.h"
 #include "core/index/index.h"
-#include "core/namespace.h"
+#include "core/namespace/namespaceimpl.h"
 namespace reindexer {
 
 const string& NsSelectFuncInterface::GetName() const { return nm_.name_; };

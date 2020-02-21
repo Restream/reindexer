@@ -319,10 +319,12 @@ type ComplexItem struct {
 
 ### Sort
 
-Reindexer can sort documents by fields (including nested) or by expressions in asceding or descending order.
+Reindexer can sort documents by fields (including nested and fields of joined `namespaces`) or by expressions in asceding or descending order.
 
-Sort expressions can contain fields names (including nested) of int, float or bool type, numbers, function rank(), parenthesis and arithmetic operations: +, - (unary and binary), * and /.
-Fields names must end by space (before close parenthesis space is optional).
+Sort expressions can contain fields names (including nested and fields of joined `namespaces`) of int, float or bool type, numbers, functions rank() and abs(), parenthesis and arithmetic operations: +, - (unary and binary), * and /.
+If field name followed by '+' they must be separated by space (to distinguish composite index name).
+Fields of joined namespaces writes in form `joined_namespace.field`.
+Abs() means absolute value of an argument.
 Rank() means fulltext rank of match and is applicable only in fulltext query.
 In SQL query sort expression must be quoted.
 
@@ -332,17 +334,28 @@ type Person struct {
 	Age  int    `reindex:"age"`
 }
 
+type City struct {
+	Id                 int `reindex:"id"`
+	NumberOfPopulation int `reindex:"population"`
+}
+
 type Actor struct {
 	ID          int    `reindex:"id"`
 	PersonData  Person `reindex:"person"`
 	Price       int    `reindex:"price"`
 	Description string `reindex:"description,text"`
+	BirthPlace  int    `reindex:"birth_place_id"`
 }
 ....
 
 query := db.Query("actors").Sort("id", true)           // Sort by field
 ....
 query = db.Query("actors").Sort("person.age", true)   // Sort by nested field
+....
+// Sort by joined field
+query = db.Query("actors").
+	Join(db.Query("cities")).On("birth_place_id", reindexer.EQ, "id").
+	Sort("cities.population", true)
 ....
 // Sort by expression:
 query = db.Query("actors").Sort("person.age / -10 + price / 1000 * (id - 5)", true)
@@ -354,6 +367,71 @@ query = db.Query("actors").Where("description", reindexer.EQ, "ququ").
 iterator := db.ExecSQL ("SELECT * FROM actors ORDER BY person.name ASC")
 ....
 iterator := db.ExecSQL ("SELECT * FROM actors WHERE description = 'ququ' ORDER BY 'rank() + id / 100' DESC")
+```
+
+It is also possible to set a custom sort order like this
+```go
+type SortModeCustomItem struct {
+	ID      int    `reindex:"id,,pk"`
+	InsItem string `reindex:"item_custom,hash,collate_custom=a-zA-Z0-9"`
+}
+```
+or like this
+```go
+type SortModeCustomItem struct {
+	ID      int    `reindex:"id,,pk"`
+	InsItem string `reindex:"item_custom,hash,collate_custom=АаБбВвГгДдЕеЖжЗзИиКкЛлМмНнОоПпРрСсТтУуФфХхЦцЧчШшЩщЪъЫыЬьЭ-ЯAaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0-9ЁёЙйэ-я"`
+}
+```
+The very first character in this list has the highest priority, priority of the last character is the smallest one. It means that sorting algorithm will put items that start with the first character before others. If some characters are skipped their priorities would have their usual values (according to characters in the list).   
+
+### Update queries
+
+UPDATE queries are used to modify the existing records in a namespace.
+There are several kinds of update queries: updating existing fields, adding new fields and dropping existing non-indexed fields.
+
+UPDATE Sql-Syntax 
+```sql
+UPDATE nsName
+SET field1 = value1, field2 = value2, ..
+WHERE condition; 
+```
+It is also possible to use arithmetic expressions with +, -, /, * and brackets
+```sql
+UPDATE NS SET field1 = field2+field3-(field4+5)/2
+```
+make an array-field empty
+```sql
+UPDATE NS SET arrayfield = [] where id = 100
+```
+and set field to null
+```sql
+UPDATE NS SET field = null where id > 100
+```
+In case of non-indexed fields setting it's value to a value of a different type will replace it completely, in case of indexed fields it is only possible to convert it from adjacent type (integral types and bool), convert numeric strings (like "123456") to integral types and back. Setting indexed field to null resets it to a default value.
+
+It is possible to add new fields to existing items
+```sql
+UPDATE Ns set newField = 'Brand new!' where id > 100
+```
+and even add a new field by a complex nested path like this
+```sql
+UPDATE Ns set nested.nested2.nested3.nested4.newField = 'new nested field!' where id > 100
+```
+will create the following nested objects: nested, nested2, nested3, nested4 and newField as a member of object nested4. 
+
+Example of using Update queries in golang code
+```go
+db.Query("items").Where("id", reindexer.EQ, 40).Set("field1", values).Update()
+```
+UPDATE Sql-Syntax of queries that drop existing non-indexed fields
+```sql
+UPDATE nsName
+DROP field1, field2, ..
+WHERE condition; 
+```
+```go
+db.Query("items").Where("id", reindexer.EQ, 40).Drop("field1").Update()
 ```
 
 ### Join
@@ -563,27 +641,27 @@ type A struct {
    Elems []Elem
 }
 ```
-Common attempt to search values in this array 
-```go 
-Where ("f1",EQ,1).Where ("f2",EQ,2) 
+Common attempt to search values in this array
+```go
+Where ("f1",EQ,1).Where ("f2",EQ,2)
 ```
-finds all items of array `Elem[]` where `f1` is equal to 1 and `f2` is equal to 2. 
+finds all items of array `Elem[]` where `f1` is equal to 1 and `f2` is equal to 2.
 
-`EqualPosition` function allows to search in array fields with equal indices. 
+`EqualPosition` function allows to search in array fields with equal indices.
 Search like this:
-```go 
+```go
 Where("f1", reindexer.GE, 5).Where("f2", reindexer.EQ, 100).EqualPosition("f1", "f2")
 ```
 or
 ```sql
-SELECT * FROM Namespace WHERE f1 >= 5 AND f2 = 100 EQUAL_POSITION(f1,f2); 
+SELECT * FROM Namespace WHERE f1 >= 5 AND f2 = 100 EQUAL_POSITION(f1,f2);
 ```
 
-finds all items of array `Elem[]` where `f1` is greater or equal to 5 and `f2` is equal to 100 `and` their indices are always equal (for instance, query returned 5 items where only 3rd element of array has appropriate values). 
+finds all items of array `Elem[]` where `f1` is greater or equal to 5 and `f2` is equal to 100 `and` their indices are always equal (for instance, query returned 5 items where only 3rd element of array has appropriate values).
 
 With complex expressions (expressions with brackets) equal_position() works only within a bracket:
 ```sql
-SELECT * FROM Namespace WHERE (f1 >= 5 AND f2 = 100 EQUAL_POSITION(f1,f2)) OR (f3 = 3 AND f4 < 4 EQUAL_POSITION(f3,f4)); 
+SELECT * FROM Namespace WHERE (f1 >= 5 AND f2 = 100 EQUAL_POSITION(f1,f2)) OR (f3 = 3 AND f4 < 4 EQUAL_POSITION(f3,f4));
 ```
 
 ### Atomic on update functions

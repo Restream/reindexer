@@ -90,6 +90,7 @@ struct NamespaceMemStat {
 	std::string storagePath;
 	bool storageOK = false;
 	bool storageLoaded = true;
+	bool optimizationCompleted = false;
 	size_t itemsCount = 0;
 	size_t emptyItemsCount = 0;
 	size_t dataSize = 0;
@@ -106,6 +107,7 @@ struct NamespaceMemStat {
 
 struct PerfStat {
 	void GetJSON(JsonBuilder &builder);
+
 	size_t totalHitCount;
 	size_t totalTimeUs;
 	size_t totalLockTimeUs;
@@ -115,6 +117,25 @@ struct PerfStat {
 	double stddev;
 	size_t minTimeUs;
 	size_t maxTimeUs;
+};
+
+struct TxPerfStat {
+	void GetJSON(JsonBuilder &builder);
+
+	size_t totalCount;
+	size_t totalCopyCount;
+	size_t avgStepsCount;
+	size_t minStepsCount;
+	size_t maxStepsCount;
+	size_t avgPrepareTimeUs;
+	size_t minPrepareTimeUs;
+	size_t maxPrepareTimeUs;
+	size_t avgCommitTimeUs;
+	size_t minCommitTimeUs;
+	size_t maxCommitTimeUs;
+	size_t avgCopyTimeUs;
+	size_t minCopyTimeUs;
+	size_t maxCopyTimeUs;
 };
 
 struct IndexPerfStat {
@@ -130,9 +151,11 @@ struct IndexPerfStat {
 
 struct NamespacePerfStat {
 	void GetJSON(WrSerializer &ser);
+
 	std::string name;
 	PerfStat updates;
 	PerfStat selects;
+	TxPerfStat transactions;
 	std::vector<IndexPerfStat> indexes;
 };
 

@@ -217,7 +217,7 @@ TEST_F(NsApi, QueryperfstatsNsDummyTest) {
                        "type":"profiling",
                        "profiling":{
                            "queriesperfstats":true,
-                           "queries_threshold_us":10,
+                           "queries_threshold_us":0,
                            "perfstats":true,
                            "memstats":true
                        }
@@ -298,7 +298,7 @@ TEST_F(NsApi, QueryperfstatsNsDummyTest) {
 
 void checkIfItemJSONValid(QueryResults::Iterator &it, bool print = false) {
 	reindexer::WrSerializer wrser;
-	Error err = it.GetJSON(wrser);
+	Error err = it.GetJSON(wrser, false);
 	ASSERT_TRUE(err.ok()) << err.what();
 	if (err.ok() && print) std::cout << wrser.Slice() << std::endl;
 }
@@ -393,7 +393,7 @@ void updateArrayField(std::shared_ptr<reindexer::Reindexer> reindexer, const str
 	for (auto it : qrAll) {
 		Item item = it.GetItem();
 		VariantArray val = item[updateFieldPath.c_str()];
-		ASSERT_TRUE(val.size() == values.size());
+		ASSERT_TRUE(val.size() == values.size()) << val.size() << ":" << values.size();
 		ASSERT_TRUE(val == values);
 		checkIfItemJSONValid(it);
 	}
@@ -478,7 +478,7 @@ void checkFieldConversion(std::shared_ptr<reindexer::Reindexer> reindexer, const
 			VariantArray val = item[updateFieldPath.c_str()];
 			ASSERT_TRUE(val.size() == updatedValue.size());
 			for (const Variant &v : val) {
-				ASSERT_TRUE(v.Type() == sourceType);
+				ASSERT_TRUE(v.Type() == sourceType) << v.Type();
 			}
 			ASSERT_TRUE(val == updatedValue);
 			checkIfItemJSONValid(it);
@@ -568,22 +568,22 @@ TEST_F(NsApi, TestIntNonindexedFieldConversion) {
 	AddUnindexedData();
 
 	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(static_cast<double>(13.33f))},
-						 {Variant(static_cast<int64_t>(13))}, KeyValueInt64, false);
+						 {Variant(static_cast<double>(13.33f))}, KeyValueDouble, false);
 
 	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(static_cast<int>(13))},
 						 {Variant(static_cast<int64_t>(13))}, KeyValueInt64, false);
 
 	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(static_cast<bool>(false))},
-						 {Variant(static_cast<int64_t>(0))}, KeyValueInt64, false);
+						 {Variant(static_cast<bool>(false))}, KeyValueBool, false);
 
 	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(static_cast<bool>(true))},
-						 {Variant(static_cast<int64_t>(1))}, KeyValueInt64, false);
+						 {Variant(static_cast<bool>(true))}, KeyValueBool, false);
 
-	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(string("100500"))},
-						 {Variant(static_cast<int64_t>(100500))}, KeyValueInt64, false);
+	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(string("100500"))}, {Variant(string("100500"))},
+						 KeyValueString, false);
 
 	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(string("Jesus Christ"))},
-						 {Variant(static_cast<int64_t>(0))}, KeyValueInt64, true);
+						 {Variant(string("Jesus Christ"))}, KeyValueString, false);
 }
 
 TEST_F(NsApi, TestIndexedArrayFieldConversion) {
@@ -604,6 +604,122 @@ TEST_F(NsApi, TestNonIndexedArrayFieldConversion) {
 
 	VariantArray newValue = {Variant(3.33f), Variant(4.33), Variant(5.33), Variant(6.33)};
 	checkFieldConversion(rt.reindexer, default_namespace, "array_field", newValue, newValue, KeyValueDouble, false);
+}
+
+TEST_F(NsApi, TestUpdatePkFieldNoConditions) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	QueryResults qr;
+	Error err = rt.reindexer->Select("update test_namespace set id = id + 1;", qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qr.Count() > 0);
+
+	int i = 1;
+	for (auto &it : qr) {
+		Item item = it.GetItem();
+		Variant intFieldVal = item[idIdxName];
+		ASSERT_TRUE(static_cast<int>(intFieldVal) == i++);
+	}
+}
+
+TEST_F(NsApi, TestUpdateIndexArrayWithNull) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	QueryResults qr;
+	Error err = rt.reindexer->Select("update test_namespace set indexed_array_field = null where id = 1;", qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qr.Count() == 1);
+
+	for (auto &it : qr) {
+		Item item = it.GetItem();
+		VariantArray fieldVal = item[indexedArrayField];
+		ASSERT_TRUE(fieldVal.empty());
+	}
+}
+
+TEST_F(NsApi, TestUpdateNonIndexFieldWithNull) {
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	QueryResults qr;
+	Error err = rt.reindexer->Select("update test_namespace set extra = null where id = 1001;", qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qr.Count() == 1);
+
+	for (auto &it : qr) {
+		Item item = it.GetItem();
+		Variant fieldVal = item["extra"];
+		ASSERT_TRUE(fieldVal.Type() == KeyValueNull);
+	}
+}
+
+TEST_F(NsApi, TestUpdateIndexedFieldWithNull) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	QueryResults qr;
+	Error err = rt.reindexer->Select("update test_namespace set string_field = null where id = 1;", qr);
+	EXPECT_TRUE(!err.ok());
+}
+
+TEST_F(NsApi, TestUpdateEmptyArrayField) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	QueryResults qr;
+	Error err = rt.reindexer->Select("update test_namespace set indexed_array_field = [] where id = 1;", qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qr.Count() == 1);
+
+	Item item = qr[0].GetItem();
+	Variant idFieldVal = item[idIdxName];
+	ASSERT_TRUE(static_cast<int>(idFieldVal) == 1);
+
+	VariantArray arrayFieldVal = item[indexedArrayField];
+	ASSERT_TRUE(arrayFieldVal.empty());
+}
+
+TEST_F(NsApi, TestDropField) {
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	QueryResults qr;
+	Error err = rt.reindexer->Select("update test_namespace drop extra where id >= 1000 and id < 1010;", qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qr.Count() == 10) << qr.Count();
+
+	for (auto it : qr) {
+		Item item = it.GetItem();
+		VariantArray val = item["extra"];
+		EXPECT_TRUE(val.empty());
+		EXPECT_TRUE(item.GetJSON().find("extra") == string::npos);
+	}
+
+	QueryResults qr2;
+	err = rt.reindexer->Select("update test_namespace drop 'nested.bonus' where id >= 1005 and id < 1010;", qr2);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qr2.Count() == 5);
+
+	for (auto it : qr2) {
+		Item item = it.GetItem();
+		VariantArray val = item["nested.bonus"];
+		EXPECT_TRUE(val.empty());
+		EXPECT_TRUE(item.GetJSON().find("nested.bonus") == string::npos);
+	}
+
+	QueryResults qr3;
+	err = rt.reindexer->Select("update test_namespace drop string_field where id >= 1000 and id < 1010;", qr3);
+	ASSERT_TRUE(!err.ok());
+
+	QueryResults qr4;
+	err = rt.reindexer->Select("update test_namespace drop nested2 where id >= 1030 and id <= 1040;", qr4);
+	ASSERT_TRUE(err.ok()) << err.what();
+	for (auto it : qr4) {
+		Item item = it.GetItem();
+		EXPECT_TRUE(item.GetJSON().find("nested2") == string::npos);
+	}
 }
 
 TEST_F(NsApi, TestUpdateFieldWithFunction) {
@@ -653,4 +769,16 @@ TEST_F(NsApi, TestUpdateFieldWithExpressions) {
 		ASSERT_TRUE(timeFieldVal.As<int>() == 4) << timeFieldVal.As<int>();
 		++i;
 	}
+}
+
+TEST_F(NsApi, TestUpdateQuerySqlEncoder) {
+	const string sqlUpdate = "UPDATE ns SET field1 = 5,field2 = field2+1 WHERE a > 0 AND b = 77";
+	Query q1;
+	q1.FromSQL(sqlUpdate);
+	EXPECT_TRUE(q1.GetSQL() == sqlUpdate) << q1.GetSQL();
+
+	const string sqlDrop = "UPDATE ns DROP field1,field2 WHERE a > 0 AND b = 77";
+	Query q2;
+	q2.FromSQL(sqlDrop);
+	EXPECT_TRUE(q2.GetSQL() == sqlDrop) << q2.GetSQL();
 }

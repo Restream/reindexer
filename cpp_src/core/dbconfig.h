@@ -34,8 +34,9 @@ struct NamespaceConfigData {
 	int noQueryIdleThreshold = 0;
 	LogLevel logLevel = LogNone;
 	CacheMode cacheMode = CacheModeOff;
-	int startCopyPoliticsCount = 20000;
-	int mergeLimitCount = 30000;
+	int startCopyPolicyTxSize = 10000;
+	int copyPolicyMultiplier = 5;
+	int txSizeToAlwaysCopy = 100000;
 	int optimizationTimeout = 800;
 	int optimizationSortWorkers = 4;
 };
@@ -54,6 +55,8 @@ struct ReplicationConfigData {
 	int workerThreads = 1;
 	int clusterID = 1;
 	int timeoutSec = 30;
+	int retrySyncIntervalSec = 20;
+	int onlineReplErrorsThreshold = 100;
 	bool forceSyncOnLogicError = false;
 	bool forceSyncOnWrongDataHash = false;
 	fast_hash_set<string, nocase_hash_str, nocase_equal_str> namespaces;
@@ -62,6 +65,7 @@ struct ReplicationConfigData {
 		return (role == rdata.role) && (connPoolSize == rdata.connPoolSize) && (workerThreads == rdata.workerThreads) &&
 			   (clusterID == rdata.clusterID) && (forceSyncOnLogicError == rdata.forceSyncOnLogicError) &&
 			   (forceSyncOnWrongDataHash == rdata.forceSyncOnWrongDataHash) && (masterDSN == rdata.masterDSN) &&
+			   (retrySyncIntervalSec == rdata.retrySyncIntervalSec) && (onlineReplErrorsThreshold == rdata.onlineReplErrorsThreshold) &&
 			   (timeoutSec == rdata.timeoutSec) && (namespaces == rdata.namespaces);
 	}
 	bool operator!=(const ReplicationConfigData &rdata) const noexcept { return !operator==(rdata); }

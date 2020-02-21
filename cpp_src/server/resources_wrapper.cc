@@ -7,7 +7,6 @@
 namespace reindexer {
 
 #ifdef LINK_RESOURCES
-
 fs::FileStatus web::stat(const std::string& target) {
 	auto& table = cmrc::detail::table_instance();
 
@@ -19,7 +18,7 @@ fs::FileStatus web::stat(const std::string& target) {
 		}
 	}
 
-	return fs::StatError;
+	return webRoot_.empty() ? fs::StatError : fs::Stat(webRoot_ + target);
 }
 
 int web::file(Context& ctx, HttpStatusCode code, const std::string& target) {
@@ -27,18 +26,18 @@ int web::file(Context& ctx, HttpStatusCode code, const std::string& target) {
 	auto end = cmrc::detail::table_instance().end();
 
 	if (it == end) {
-		return ctx.String(net::http::StatusNotFound, "File not found");
+		return webRoot_.empty() ? ctx.String(net::http::StatusNotFound, "File not found") : ctx.File(code, webRoot_ + target);
 	}
 
 	auto file_entry = cmrc::open(target);
 	string_view slice(file_entry.begin(), std::distance(file_entry.begin(), file_entry.end()));
-	return ctx.File(code, target.c_str(), slice);
+	return ctx.File(code, target, slice);
 }
 
 #else
 
-fs::FileStatus web::stat(const std::string &target) { return fs::Stat(target); }
-int web::file(Context &ctx, HttpStatusCode code, const std::string &target) { return ctx.File(code, target.c_str()); }
+fs::FileStatus web::stat(const std::string &target) { return fs::Stat(webRoot_ + target); }
+int web::file(Context &ctx, HttpStatusCode code, const std::string &target) { return ctx.File(code, webRoot_ + target); }
 
 #endif
 

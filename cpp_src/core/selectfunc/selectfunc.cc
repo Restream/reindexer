@@ -25,7 +25,7 @@ static inline void trim(std::string &s) {
 	rtrim(s);
 }
 
-SelectFunction::Ptr SelectFunctionsHolder::AddNamespace(const Query &q, const Namespace &nm, bool force) {
+SelectFunction::Ptr SelectFunctionsHolder::AddNamespace(const Query &q, const NamespaceImpl &nm, bool force) {
 	if (q.selectFunctions_.empty() && !force) {
 		return nullptr;
 	} else if (!q.selectFunctions_.empty()) {

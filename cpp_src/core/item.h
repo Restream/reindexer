@@ -184,7 +184,7 @@ private:
 	ItemImpl *impl_;
 	Error status_;
 	int id_ = -1;
-	friend class Namespace;
+	friend class NamespaceImpl;
 	friend class TransactionImpl;
 
 	friend class QueryResults;

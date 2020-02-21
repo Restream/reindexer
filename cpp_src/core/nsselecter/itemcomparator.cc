@@ -1,5 +1,5 @@
 #include "itemcomparator.h"
-#include "core/namespace.h"
+#include "core/namespace/namespaceimpl.h"
 #include "nsselecter.h"
 
 namespace reindexer {

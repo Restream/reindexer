@@ -48,9 +48,15 @@ struct JoinPreResult {
 	bool enableStoredValues = false;
 };
 
+struct SortExpressionJoinedIndex;
+class NsSelecter;
+
 class JoinedSelector {
+	friend SortExpressionJoinedIndex;
+	friend NsSelecter;
+
 public:
-	JoinedSelector(JoinType joinType, std::shared_ptr<Namespace> leftNs, std::shared_ptr<Namespace> rightNs, JoinCacheRes &&joinRes,
+	JoinedSelector(JoinType joinType, std::shared_ptr<NamespaceImpl> leftNs, std::shared_ptr<NamespaceImpl> rightNs, JoinCacheRes &&joinRes,
 				   Query &&itemQuery, QueryResults &result, const JoinedQuery &joinQuery, JoinPreResult::Ptr preResult,
 				   size_t joinedFieldIdx, SelectFunctionsHolder &selectFunctions, int joinedSelectorsCount, const RdxContext &rdxCtx)
 		: joinType_(joinType),
@@ -93,8 +99,8 @@ private:
 
 	JoinType joinType_;
 	int called_, matched_;
-	std::shared_ptr<Namespace> leftNs_;
-	std::shared_ptr<Namespace> rightNs_;
+	std::shared_ptr<NamespaceImpl> leftNs_;
+	std::shared_ptr<NamespaceImpl> rightNs_;
 	JoinCacheRes joinRes_;
 	Query itemQuery_;
 	QueryResults &result_;

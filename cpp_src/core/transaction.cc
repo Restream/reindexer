@@ -19,11 +19,6 @@ const string &Transaction::GetName() {
 		return empty;
 }
 
-Error Transaction::Deserialize(string_view data, int64_t lsn) {
-	assert(impl_);
-	return impl_->Deserialize(data, lsn);
-}
-
 void Transaction::Insert(Item &&item) {
 	if (impl_) impl_->Insert(move(item));
 }
@@ -64,6 +59,11 @@ Item Transaction::GetItem(TransactionStep &&st) {
 bool Transaction::IsTagsUpdated() const {
 	assert(impl_);
 	return impl_->tagsUpdated_;
+}
+
+Transaction::time_point Transaction::GetStartTime() const {
+	assert(impl_);
+	return impl_->startTime_;
 }
 
 }  // namespace reindexer

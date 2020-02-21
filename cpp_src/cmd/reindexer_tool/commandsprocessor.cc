@@ -112,7 +112,6 @@ Error CommandsProcessor<DBInterface>::commandSelect(const string& command) {
 	} catch (const Error& err) {
 		return err;
 	}
-	bool isWALQuery = q.entries.Size() == 1 && q.entries.IsEntry(0) && q.entries[0].index == "#lsn";
 
 	auto err = db_.Select(q, results);
 
@@ -131,7 +130,7 @@ Error CommandsProcessor<DBInterface>::commandSelect(const string& command) {
 				}
 			} else {
 				output_() << "[" << std::endl;
-				err = queryResultsToJson(output_(), results, isWALQuery);
+				err = queryResultsToJson(output_(), results, q.IsWALQuery());
 				output_() << "]" << std::endl;
 			}
 		}

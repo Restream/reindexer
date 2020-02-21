@@ -1,11 +1,10 @@
 package reindexer
 
 import (
-	"fmt"
-	"log"
 	"testing"
 
 	"github.com/restream/reindexer"
+	"github.com/stretchr/testify/assert"
 )
 
 const testNs string = "test_items_force_sort_order"
@@ -72,11 +71,9 @@ func newSortOrderValues(query *queryTest) *SortOrderValues {
 	}
 }
 
-func (so *SortOrderValues) GetVerifyItems() []interface{} {
+func (so *SortOrderValues) GetVerifyItems(t *testing.T) []interface{} {
 	items, err := so.q.Exec().FetchAll()
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(t, err)
 
 	begin, end := 0, 0
 	if so.offset >= len(items)-1 {
@@ -93,74 +90,52 @@ func (so *SortOrderValues) GetVerifyItems() []interface{} {
 	return items[begin:end]
 }
 
-func execAndVerifyForceSortOrderQuery(query *queryTest) {
+func execAndVerifyForceSortOrderQuery(t *testing.T, query *queryTest) {
 
 	defer query.close()
 
 	items, err := query.ManualClose().Exec().FetchAll()
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(t, err)
 
 	sortOrderValues := newSortOrderValues(query)
-	checkItems := sortOrderValues.GetVerifyItems()
+	checkItems := sortOrderValues.GetVerifyItems(t)
 	sortIdx, _ := query.ns.getField(query.sortIndex[0])
 
-	ret := ""
-	if len(items) == len(checkItems) {
-		for i := 0; i < len(items); i++ {
-			// log.Println(" --- ", items[i].(*TestForceSortOrderItem), " == ", checkItems[i].(*TestForceSortOrderItem))
-			v1 := getValues(items[i], sortIdx)
-			ret += fmt.Sprintf("%v ", v1[0].Interface())
+	// if len(items) == len(checkItems) {
+	for i := 0; i < len(items); i++ {
+		v1 := getValues(items[i], sortIdx)
 
-			v2 := getValues(checkItems[i], sortIdx)
-			if len(v1) != len(v2) {
-				log.Fatalf("Found len(values) != len(sort) on sort index %s in item %+v", query.sortIndex, items[i])
-			}
+		v2 := getValues(checkItems[i], sortIdx)
+		assert.Equal(t, len(v1), len(v2), "Found len(values) != len(sort) on sort index %s in item %+v", query.sortIndex, items[i])
 
-			if compareValues(v1[0], v2[0]) != 0 {
-				log.Fatalf("Sort error on index %s,desc=%v ... expected: %v ... real: %v .... ", query.sortIndex, query.sortDesc, v2[0], v1[0])
-			}
-		}
+		assert.Equal(t, compareValues(v1[0], v2[0]), 0,
+			"Sort error on index %s,desc=%v ... expected: %v ... real: %v .... ", query.sortIndex, query.sortDesc, v2[0], v1[0])
 	}
-	log.Printf("\t %s -> %s", query.toString(), ret)
+	// }
 }
 
-func FillTestItemsForceSortOrder() {
+func TestForceSortOrder(t *testing.T) {
 	tx := newTestTx(DB, testNs)
 	for _, item := range forceSortOrderData {
-		if err := tx.Insert(item); err != nil {
-			panic(err)
-		}
+		assert.NoError(t, tx.Insert(item))
 	}
-	cnt := tx.MustCommit()
-	if cnt != len(forceSortOrderData) {
-		panic(fmt.Errorf("Could not commit forceSortOrderData"))
-	}
-}
+	assert.Equal(t, tx.MustCommit(), len(forceSortOrderData), "Could not commit forceSortOrderData")
 
-func CheckTestItemsForceSorted() {
-	log.Println("Check force sort order ...")
-	execAndVerifyForceSortOrderQuery(newTestQuery(DB, testNs).Sort("id", false, 7, 8, 6, 5))
-	execAndVerifyForceSortOrderQuery(newTestQuery(DB, testNs).Sort("id", false, 8, 7, 6, 5).Limit(3))
-	execAndVerifyForceSortOrderQuery(newTestQuery(DB, testNs).Sort("id", false, 8, 7, 6, 5).Limit(3).Offset(2))
-	execAndVerifyForceSortOrderQuery(newTestQuery(DB, testNs).Sort("id", false, 8, 7, 6, 5).Limit(3).Offset(9))
-	execAndVerifyForceSortOrderQuery(newTestQuery(DB, testNs).Sort("year", false, 2007, 2003, 2005, 2002).Where("id", reindexer.GT, 2))
-	execAndVerifyForceSortOrderQuery(newTestQuery(DB, testNs).Sort("name", false, "item3", "item5", "item6", "item8"))
-	execAndVerifyForceSortOrderQuery(newTestQuery(DB, testNs).Sort("phone", false, "444444", "111111", "333333", "222222"))
-	execAndVerifyForceSortOrderQuery(newTestQuery(DB, testNs).Sort("id", false, 11, 3, 16, 2, 15, 1))
-	execAndVerifyForceSortOrderQuery(newTestQuery(DB, testNs).Sort("id", false, 18, 17, 16, 15))
-	execAndVerifyForceSortOrderQuery(newTestQuery(DB, testNs).Where("phone", reindexer.SET, []string{"111111", "222222"}).Sort("id", true, 1, 6, 2, 5).Offset(1).Limit(3))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id", false, 7, 8, 6, 5))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id", false, 8, 7, 6, 5).Limit(3))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id", false, 8, 7, 6, 5).Limit(3).Offset(2))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id", false, 8, 7, 6, 5).Limit(3).Offset(9))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("year", false, 2007, 2003, 2005, 2002).Where("id", reindexer.GT, 2))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("name", false, "item3", "item5", "item6", "item8"))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("phone", false, "444444", "111111", "333333", "222222"))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id", false, 11, 3, 16, 2, 15, 1))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id", false, 18, 17, 16, 15))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Where("phone", reindexer.SET, []string{"111111", "222222"}).Sort("id", true, 1, 6, 2, 5).Offset(1).Limit(3))
 
-	execAndVerifyForceSortOrderQuery(newTestQuery(DB, testNs).Sort("id+phone", false,
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id+phone", false,
 		[]interface{}{7, "333333"},
 		[]interface{}{4, "444444"},
 		[]interface{}{5, "222222"},
 	))
 
-}
-
-func TestForceSortOrder(b *testing.T) {
-	FillTestItemsForceSortOrder()
-	CheckTestItemsForceSorted()
 }

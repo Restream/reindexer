@@ -10,13 +10,13 @@ struct ItemComparatorState {
 	vector<pair<size_t, bool>> byIndex_;
 };
 
-class Namespace;
+class NamespaceImpl;
 struct SelectCtx;
 class ItemRef;
 
 class ItemComparator {
 public:
-	ItemComparator(const Namespace &ns, const SelectCtx &ctx, ItemComparatorState &state)
+	ItemComparator(const NamespaceImpl &ns, const SelectCtx &ctx, ItemComparatorState &state)
 		: ns_(ns), ctx_(ctx), fields_(state.fields_), collateOpts_(state.collateOpts_), byExpr_(state.byExpr_), byIndex_(state.byIndex_) {}
 
 	bool operator()(const ItemRef &lhs, const ItemRef &rhs) const;
@@ -31,7 +31,7 @@ private:
 	class BackInserter;
 	class FrontInserter;
 
-	const Namespace &ns_;
+	const NamespaceImpl &ns_;
 	const SelectCtx &ctx_;
 	FieldsSet &fields_;
 	h_vector<const CollateOpts *, 1> &collateOpts_;

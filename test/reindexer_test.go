@@ -48,9 +48,9 @@ func TestMain(m *testing.M) {
 		DB.AddSlave(*dsnSlave, *slaveCount, reindexer.WithCreateDBIfMissing())
 	}
 
-	if testing.Verbose() {
-		DB.SetLogger(&TestLogger{})
-	}
+	// if testing.Verbose() {
+	// 	DB.SetLogger(&TestLogger{})
+	// }
 	for k, v := range tnamespaces {
 		DB.DropNamespace(k)
 

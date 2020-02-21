@@ -1,13 +1,13 @@
 package reindexer
 
 import (
-	"fmt"
 	"math/rand"
 	"strconv"
 	"sync"
 	"testing"
 
 	"github.com/restream/reindexer"
+	"github.com/stretchr/testify/assert"
 )
 
 type TextTxItem struct {
@@ -52,54 +52,45 @@ func FillTextTxFullItems(count int) {
 	tx.MustCommit()
 }
 
-func CheckTYx(ns string, count int) {
+func CheckTYx(t *testing.T, ns string, count int) {
 	q1 := DB.Query(ns)
 	res, _ := q1.MustExec().FetchAll()
 	resMap := make(map[int]string)
 	for _, item := range res {
 		some := item.(*TextTxItem)
-		if strconv.Itoa(some.ID) != some.Name {
-			panic("Unexpected item content after tx")
-		}
+		assert.Equal(t, strconv.Itoa(some.ID), some.Name, "Unexpected item content after tx")
 		_, ok := resMap[some.ID]
-		if ok {
-			panic("Duplicate item after tx")
-		}
+		assert.False(t, ok, "Duplicate item after tx")
 		resMap[some.ID] = some.Name
 	}
-	if count != len(resMap) {
-		panic(fmt.Errorf("Expect %d results, but got %d", count, len(resMap)))
-	}
+	assert.Equal(t, count, len(resMap), "Expect %d results, but got %d", count, len(resMap))
+
 }
 
 func TestTx(t *testing.T) {
 	count := 3
 	FillTextTxFullItems(count)
-	CheckTYx(testTxItemNs, count)
+	CheckTYx(t, testTxItemNs, count)
 }
 
-func FillTextTxItemAsync1Tx(count int, tx *txTest) {
+func FillTextTxItemAsync1Tx(t *testing.T, count int, tx *txTest) {
 	for i := 0; i < count; i++ {
 		tx.InsertAsync(&TextTxItem{
 			ID:   i,
 			Name: strconv.Itoa(i),
 		}, func(err error) {
-			if err != nil {
-				panic(err)
-			}
+			assert.NoError(t, err)
 		})
 	}
 	resCount := tx.MustCommit()
-	if resCount != count {
-		panic("Unexpected items count on commit")
-	}
+	assert.Equal(t, resCount, count, "Unexpected items count on commit")
 }
 
 func TestAsyncTx(t *testing.T) {
 	tx := newTestTx(DB, testTxAsyncItemNs)
 	count := 5000
-	FillTextTxItemAsync1Tx(count, tx)
-	CheckTYx(testTxAsyncItemNs, count)
+	FillTextTxItemAsync1Tx(t, count, tx)
+	CheckTYx(t, testTxAsyncItemNs, count)
 }
 
 func TestTxQueries(t *testing.T) {
@@ -107,13 +98,13 @@ func TestTxQueries(t *testing.T) {
 	count := 5000
 	FillTextTxItem1Tx(count, tx)
 	tx.MustCommit()
-	CheckTYx(testTxQueryItemNs, count)
+	CheckTYx(t, testTxQueryItemNs, count)
 
 	tx = newTestTx(DB, testTxQueryItemNs)
 	tx.Query().WhereInt("id", reindexer.LT, 100).Delete()
 	tx.MustCommit()
 
-	CheckTYx(testTxQueryItemNs, count-100)
+	CheckTYx(t, testTxQueryItemNs, count-100)
 
 	tx = newTestTx(DB, testTxQueryItemNs)
 	tx.Query().WhereInt("id", reindexer.EQ, 1000).Set("Data", "testdata").Update()
@@ -124,9 +115,7 @@ func TestTxQueries(t *testing.T) {
 		panic(err)
 	}
 	some := item.(*TextTxItem)
-	if some.Data != "testdata" {
-		panic(fmt.Errorf("expect %s, got %s", "testdata", some.Data))
-	}
+	assert.Equal(t, some.Data, "testdata", "expect %s, got %s", "testdata", some.Data)
 }
 
 func newUntaggedItems(itemID int64, count int) []*UntaggedTxItem {
@@ -157,25 +146,16 @@ func TestConcurrentTagsTx(t *testing.T) {
 					panic(err)
 				}
 				for i := range items {
-					err := tx.Upsert(items[i])
-					if err != nil {
-						panic(err)
-					}
+					assert.NoError(t, tx.Upsert(items[i]))
 				}
 				count := tx.MustCommit()
-				if count != len(items) {
-					panic("Wrong items count in Tx")
-				}
+				assert.Equal(t, count, len(items), "Wrong items count in Tx")
 			}
 		}()
 	}
 	wg.Wait()
 	DB.SetSynced(false)
 	items, err := DB.Query(testTxConcurrentTagsItemNs).MustExec().FetchAll()
-	if err != nil {
-		panic(err)
-	}
-	if len(items) == 0 {
-		panic("Empty items array")
-	}
+	assert.NoError(t, err)
+	assert.NotEqual(t, len(items), 0, "Empty items array")
 }

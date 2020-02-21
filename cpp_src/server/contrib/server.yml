@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.5.3"
+  version: "2.6.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -1932,6 +1932,9 @@ definitions:
       storage_path:
         type: "string"
         description: "Filesystem path to namespace storage"
+      optimization_completed:
+        type: "boolean"
+        description: "Background indexes optimization has been completed"
       total:
         type: "object"
         description: "Summary of total namespace memory consumption"
@@ -2100,6 +2103,8 @@ definitions:
         $ref: "#/definitions/UpdatePerfStats"
       selects:
         $ref: "#/definitions/SelectPerfStats"
+      transactions:
+        $ref: "#/definitions/TransactionsPerfStats"
       indexes:
         type: "array"
         description: "Memory consumption of each namespace index"
@@ -2154,6 +2159,53 @@ definitions:
     description: "Performance statistics for select operations"
     allOf: 
       - $ref: "#/definitions/CommonPerfStats"
+
+  TransactionsPerfStats:
+    description: "Performance statistics for transactions"
+    type: "object"
+    properties:
+      total_count:
+        type: integer
+        description: "Total transactions count for this namespace"
+      total_copy_count:
+        type: integer
+        description: "Total namespace copy operations"
+      avg_steps_count:
+        type: integer
+        description: "Average steps count in transactions for this namespace"
+      min_steps_count:
+        type: integer
+        description: "Minimum steps count in transactions for this namespace"
+      max_steps_count:
+        type: integer
+        description: "Maximum steps count in transactions for this namespace"
+      avg_prepare_time_us:
+        type: integer
+        description: "Average transaction preparation time usec"
+      min_prepare_time_us:
+        type: integer
+        description: "Minimum transaction preparation time usec"
+      max_prepare_time_us:
+        type: integer
+        description: "Maximum transaction preparation time usec"
+      avg_commit_time_us:
+        type: integer
+        description: "Average transaction commit time usec"
+      min_commit_time_us:
+        type: integer
+        description: "Minimum transaction commit time usec"
+      max_commit_time_us:
+        type: integer
+        description: "Maximum transaction commit time usec"
+      avg_copy_time_us:
+        type: integer
+        description: "Average namespace copy time usec"
+      min_copy_time_us:
+        type: integer
+        description: "Maximum namespace copy time usec"
+      max_copy_time_us:
+        type: integer
+        description: "Minimum namespace copy time usec"
 
   QueriesPerfStats:
     type: "object"
@@ -2257,12 +2309,15 @@ definitions:
       unload_idle_threshold:
         type: "integer"
         description: "Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded"
-      start_copy_politics_count:
+      start_copy_policy_tx_size:
         type: "integer"
-        description: "Copy namespce policts will start only after item's count become greater in this param"
-      merge_limit_count:
+        description: "Enable namespace copying for transaction with steps count greater than this value (if copy_politics_multiplier also allows this)"
+      copy_policy_multiplier:
         type: "integer"
-        description: "Merge write namespace after get thi count of operations"
+        description: "Disables copy policy if namespace size is greater than copy_policy_multiplier * start_copy_policy_tx_size"
+      tx_size_to_always_copy:
+        type: "integer"
+        description: "Force namespace copying for transaction with steps count greater than this value"
       optimization_timeout_ms:
         type: "integer"
         description: "Timeout before background indexes optimization start after last update. 0 - disable optimizations"

@@ -4,14 +4,14 @@
 #include <string>
 
 namespace reindexer {
-class Namespace;
+class NamespaceImpl;
 class Index;
 using std::string;
 class FieldsSet;
 
 class NsSelectFuncInterface {
 public:
-	NsSelectFuncInterface(const Namespace& nm) : nm_(nm) {}
+	NsSelectFuncInterface(const NamespaceImpl& nm) : nm_(nm) {}
 	const string& GetName() const;
 	int getIndexByName(const string& index) const;
 	bool getIndexByName(const string& name, int& index) const;
@@ -22,6 +22,6 @@ public:
 	TagsPath getTagsPathForField(const string& jsonPath) const;
 
 private:
-	const Namespace& nm_;
+	const NamespaceImpl& nm_;
 };
 }  // namespace reindexer

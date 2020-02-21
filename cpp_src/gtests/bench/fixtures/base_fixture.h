@@ -58,6 +58,7 @@ protected:
 	void Update(State& state);
 
 	virtual Item MakeItem() = 0;
+	void WaitForOptimization();
 
 	template <typename Fn, typename Cl>
 	Benchmark* Register(const string& name, Fn fn, Cl* cl) {

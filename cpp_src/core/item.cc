@@ -2,7 +2,7 @@
 #include "core/item.h"
 #include "core/itemimpl.h"
 #include "core/keyvalue/p_string.h"
-#include "core/namespace.h"
+#include "core/namespace/namespace.h"
 #include "core/rdxcontext.h"
 
 namespace reindexer {

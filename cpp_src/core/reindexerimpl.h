@@ -5,7 +5,7 @@
 #include <string>
 #include <thread>
 
-#include "core/namespace.h"
+#include "core/namespace/namespace.h"
 #include "core/nsselecter/nsselecter.h"
 #include "core/rdxcontext.h"
 #include "dbconfig.h"
@@ -28,9 +28,9 @@ class ReindexerImpl {
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Reindexer>;
 	using StorageMutex = MarkedMutex<shared_timed_mutex, MutexMark::ReindexerStorage>;
 	struct NsLockerItem {
-		NsLockerItem(Namespace::Ptr ins = {}) : ns(std::move(ins)), count(1) {}
-		Namespace::Ptr ns;
-		smart_lock<Namespace::Mutex> mtx;
+		NsLockerItem(NamespaceImpl::Ptr ins = {}) : ns(std::move(ins)), count(1) {}
+		NamespaceImpl::Ptr ns;
+		NamespaceImpl::Locker::RLockT nsLck;
 		unsigned count = 1;
 	};
 
@@ -95,7 +95,7 @@ protected:
 			}
 		}
 
-		void Add(Namespace::Ptr ns) {
+		void Add(NamespaceImpl::Ptr ns) {
 			assert(!locked_);
 			for (auto it = begin(); it != end(); ++it) {
 				if (it->ns.get() == ns.get()) {
@@ -107,7 +107,7 @@ protected:
 			emplace_back(ns);
 			return;
 		}
-		void Delete(Namespace::Ptr ns) {
+		void Delete(NamespaceImpl::Ptr ns) {
 			for (auto it = begin(); it != end(); ++it) {
 				if (it->ns.get() == ns.get()) {
 					if (!--(it->count)) erase(it);
@@ -119,12 +119,12 @@ protected:
 		void Lock() {
 			std::sort(begin(), end(), [](const NsLockerItem &lhs, const NsLockerItem &rhs) { return lhs.ns.get() < rhs.ns.get(); });
 			for (auto it = begin(); it != end(); ++it) {
-				it->mtx = smart_lock<Namespace::Mutex>(it->ns->mtx_, context_, false);
+				it->nsLck = it->ns->rLock(context_);
 			}
 			locked_ = true;
 		}
 
-		Namespace::Ptr Get(const string &name) {
+		NamespaceImpl::Ptr Get(const string &name) {
 			for (auto it = begin(); it != end(); it++)
 				if (iequals(it->ns->name_, name)) return it->ns;
 			return nullptr;
@@ -141,7 +141,7 @@ protected:
 	JoinedSelectors prepareJoinedSelectors(const Query &q, QueryResults &result, NsLocker<T> &locks, SelectFunctionsHolder &func,
 										   vector<QueryResultsContext> &, const RdxContext &ctx);
 	void prepareJoinResults(const Query &q, QueryResults &result);
-	static bool isPreResultValuesModeOptimizationAvailable(const Query &jItemQ, const Namespace::Ptr &jns);
+	static bool isPreResultValuesModeOptimizationAvailable(const Query &jItemQ, const NamespaceImpl::Ptr &jns);
 
 	void ensureDataLoaded(Namespace::Ptr &ns, const RdxContext &ctx);
 

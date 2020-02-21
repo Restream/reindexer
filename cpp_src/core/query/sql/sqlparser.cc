@@ -364,19 +364,33 @@ static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry 
 	if (currTok.type == TokenString) {
 		updateField.values.push_back(token2kv(currTok, parser, false));
 	} else {
-		int count = 0;
-		string expression(currTok.text());
-		auto eof = [](tokenizer &parser) -> bool {
-			if (parser.end()) return true;
-			token nextTok = parser.peek_token();
-			return ((nextTok.text() == "where"_sv) || (nextTok.text() == "]"_sv) || (nextTok.text() == ","_sv));
-		};
-		while (!eof(parser)) {
-			++count;
-			expression += string(parser.next_token(false).text());
+		if ((currTok.type == TokenName) && (currTok.text() == "null"_sv)) {
+			updateField.values.push_back(Variant());
+		} else {
+			int count = 0;
+			string expression(currTok.text());
+			auto eof = [](tokenizer &parser) -> bool {
+				if (parser.end()) return true;
+				token nextTok = parser.peek_token();
+				return ((nextTok.text() == "where"_sv) || (nextTok.text() == "]"_sv) || (nextTok.text() == ","_sv));
+			};
+			while (!eof(parser)) {
+				expression += string(parser.next_token(false).text());
+				++count;
+			}
+			if (count > 0) {
+				updateField.values.push_back(Variant(expression));
+				updateField.isExpression = true;
+			} else {
+				try {
+					Variant val = token2kv(currTok, parser, false);
+					updateField.values.push_back(val);
+				} catch (const Error &) {
+					updateField.values.push_back(Variant(expression));
+					updateField.isExpression = true;
+				}
+			}
 		}
-		updateField.values.push_back(count ? Variant(expression) : token2kv(currTok, parser, false));
-		updateField.isExpression = count != 0;
 	}
 }
 
@@ -395,6 +409,10 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
 	if (tok.text() == "["_sv) {
 		for (;;) {
 			tok = parser.next_token(false);
+			if (tok.text() == "]") {
+				if (updateField.values.empty()) break;
+				throw Error(errParseSQL, "Expected field value, but found ']' in query, %s", parser.where());
+			}
 			addUpdateValue(tok, parser, updateField);
 			tok = parser.next_token(false);
 			if (tok.text() == "]"_sv) break;
@@ -404,6 +422,7 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
 	} else {
 		addUpdateValue(tok, parser, updateField);
 	}
+	updateField.mode = FieldModeSet;
 	return updateField;
 }
 
@@ -415,24 +434,42 @@ int SQLParser::updateParse(tokenizer &parser) {
 	ctx_.updateLinkedNs(query_._namespace);
 	parser.next_token();
 
-	tok = peekSqlToken(parser, SetSqlToken);
-	if (tok.text() != "set"_sv) throw Error(errParams, "Expected 'SET', but found '%s' in query, %s", tok.text(), parser.where());
-	parser.next_token();
-
-	while (!parser.end()) {
-		UpdateEntry updateField = parseUpdateField(parser);
-		query_.updateFields_.push_back(std::move(updateField));
-
-		tok = parser.peek_token();
-		if (tok.text() != ","_sv) break;
+	tok = peekSqlToken(parser, UpdateOptions);
+	if (tok.text() == "set"_sv) {
 		parser.next_token();
+		while (!parser.end()) {
+			UpdateEntry updateField = parseUpdateField(parser);
+			query_.updateFields_.push_back(std::move(updateField));
+
+			tok = parser.peek_token();
+			if (tok.text() != ","_sv) break;
+			parser.next_token();
+		}
+	} else if (tok.text() == "drop"_sv) {
+		while (!parser.end()) {
+			parser.next_token();
+			tok = peekSqlToken(parser, FieldNameSqlToken, false);
+			if (tok.type != TokenName && tok.type != TokenString)
+				throw Error(errParseSQL, "Expected field name, but found '%s' in query, %s", tok.text(), parser.where());
+			UpdateEntry updateField;
+			updateField.column = string(tok.text());
+			updateField.mode = FieldModeDrop;
+			query_.updateFields_.push_back(std::move(updateField));
+			parser.next_token();
+			tok = parser.peek_token();
+			if (tok.text() != ","_sv) break;
+		}
+	} else {
+		throw Error(errParseSQL, "Expected 'SET' or 'DROP' but found '%s' in query %s", tok.text(), parser.where());
 	}
+
 	if (parser.end()) return 0;
 
 	tok = peekSqlToken(parser, WhereSqlToken);
-	if (tok.text() != "where"_sv) throw Error(errParams, "Expected 'WHERE', but found '%s' in query, %s", tok.text(), parser.where());
-	parser.next_token();
-	parseWhere(parser);
+	if (tok.text() == "where"_sv) {
+		parser.next_token();
+		parseWhere(parser);
+	}
 
 	return 0;
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/restream/reindexer"
 	"github.com/restream/reindexer/dsl"
+	"github.com/stretchr/testify/assert"
 )
 
 type sortDistinctOptions struct {
@@ -170,8 +171,23 @@ type TestItemNestedPK struct {
 	Nested    TestItem `json:"nested"`
 }
 
+type TestItemEqualPosition struct {
+	ID         string                        `reindex:"id,,pk"`
+	Name       string                        `reindex:"name"`
+	SecondName string                        `reindex:"second_name"`
+	TestFlag   bool                          `reindex:"test_flag"`
+	ItemsArray []*TestArrayItemEqualPosition `reindex:"items_array,-"`
+	_          struct{}                      `reindex:"name+second_name=searching,text,composite"`
+}
+
+type TestArrayItemEqualPosition struct {
+	SpaceId string `reindex:"space_id"`
+	Value   int    `reindex:"value"`
+}
+
 func init() {
 	tnamespaces["test_items"] = TestItem{}
+	tnamespaces["test_items_cancel"] = TestItem{}
 	tnamespaces["test_items_id_only"] = TestItemIDOnly{}
 	tnamespaces["test_items_with_sparse"] = TestItemWithSparse{}
 
@@ -180,6 +196,7 @@ func init() {
 	tnamespaces["test_items_not"] = TestItemSimple{}
 	tnamespaces["test_items_delete_query"] = TestItem{}
 	tnamespaces["test_items_update_query"] = TestItem{}
+	tnamespaces["test_items_eqaul_position"] = TestItemEqualPosition{}
 }
 
 func FillTestItemsForNot() {
@@ -325,6 +342,23 @@ func newTestItemObjectArray(id int, arrSize int) *TestItemObjectArray {
 	}
 }
 
+func newTestItemEqualPosition(id int, arrSize int) *TestItemEqualPosition {
+	av := make([]*TestArrayItemEqualPosition, id%arrSize)
+	for j := range av {
+		av[j] = &TestArrayItemEqualPosition{
+			SpaceId: "space_" + strconv.Itoa(j),
+			Value:   id % 2,
+		}
+	}
+	return &TestItemEqualPosition{
+		ID:         strconv.Itoa(id),
+		Name:       "Name_" + strconv.Itoa(id),
+		SecondName: "Second_name_" + strconv.Itoa(id),
+		TestFlag:   id%4 > 2,
+		ItemsArray: av,
+	}
+}
+
 func FillTestItemsTx(start int, count int, pkgsCount int, tx *txTest) {
 	for i := 0; i < count; i++ {
 		testItem := newTestItem(start+i, pkgsCount)
@@ -358,94 +392,87 @@ func FillTestItemsWithFunc(ns string, start int, count int, pkgsCount int, fn te
 }
 
 func TestQueries(t *testing.T) {
-	log.Printf("Seeding indexed test items")
 
-	FillTestItemsWithFunc("test_items", 0, 2500, 20, newTestItem)
-	FillTestItemsWithFunc("test_items", 2500, 2500, 0, newTestItem)
+	t.Run("Common indexed queries", func(t *testing.T) {
+		t.Parallel()
 
-	log.Println("Seeding non-indexed test items ...")
+		FillTestItemsWithFunc("test_items", 0, 2500, 20, newTestItem)
+		FillTestItemsWithFunc("test_items", 2500, 2500, 0, newTestItem)
 
-	FillTestItemsWithFunc("test_items_id_only", 0, 2500, 20, newTestItemIDOnly)
-	FillTestItemsWithFunc("test_items_id_only", 2500, 2500, 0, newTestItemIDOnly)
+		FillTestItemsForNot()
+		CheckNotQueries()
 
-	log.Println("Seeding sparse indexed test items ...")
+		assert.NoError(t, DB.CloseNamespace("test_items"))
 
-	FillTestItemsWithFunc("test_items_with_sparse", 0, 2500, 20, newTestItemWithSparse)
-	FillTestItemsWithFunc("test_items_with_sparse", 2500, 2500, 0, newTestItemWithSparse)
+		assert.NoError(t, DB.OpenNamespace("test_items", reindexer.DefaultNamespaceOptions(), TestItem{}))
+		CheckTestItemsJsonQueries()
 
-	//// FillTestItems("test_items", 0, 2500, 20)
-	//// FillTestItems("test_items", 2500, 2500, 0)
-	FillTestItemsForNot()
+		CheckAggregateQueries()
 
-	if err := DB.CloseNamespace("test_items"); err != nil {
-		panic(err)
-	}
+		CheckTestItemsQueries(testCaseWithCommonIndexes)
+		CheckTestItemsSQLQueries()
+		CheckTestItemsDSLQueries()
 
-	if err := DB.OpenNamespace("test_items", reindexer.DefaultNamespaceOptions(), TestItem{}); err != nil {
-		panic(err)
-	}
-
-	if err := DB.CloseNamespace("test_items_id_only"); err != nil {
-		panic(err)
-	}
-
-	if err := DB.OpenNamespace("test_items_id_only", reindexer.DefaultNamespaceOptions(), TestItemIDOnly{}); err != nil {
-		panic(err)
-	}
-
-	if err := DB.CloseNamespace("test_items_with_sparse"); err != nil {
-		panic(err)
-	}
-
-	if err := DB.OpenNamespace("test_items_with_sparse", reindexer.DefaultNamespaceOptions(), TestItemWithSparse{}); err != nil {
-		panic(err)
-	}
-
-	CheckTestItemsJsonQueries()
-
-	CheckAggregateQueries()
-
-	log.Println("Start queries tests ...")
-
-	CheckTestItemsQueries()
-	CheckTestItemsSQLQueries()
-	CheckTestItemsDSLQueries()
-
-	// Delete test
-	tx := newTestTx(DB, "test_items")
-	for i := 0; i < 4000; i++ {
-		if err := tx.Delete(TestItem{ID: mkID(i)}); err != nil {
-			panic(err)
+		// Delete test
+		tx := newTestTx(DB, "test_items")
+		for i := 0; i < 4000; i++ {
+			assert.NoError(t, tx.Delete(TestItem{ID: mkID(i)}))
 		}
-	}
-	// Check insert after delete
-	FillTestItemsTx(0, 500, 0, tx)
-	//Check second update
-	FillTestItemsTx(0, 1000, 5, tx)
 
-	for i := 0; i < 5000; i++ {
-		tx.Delete(TestItem{ID: mkID(i)})
-	}
+		// Check insert after delete
+		FillTestItemsTx(0, 500, 0, tx)
+		//Check second update
+		FillTestItemsTx(0, 1000, 5, tx)
 
-	// Stress test delete & update & insert
-	for i := 0; i < 5000; i++ {
-		tx.Delete(TestItem{ID: mkID(rand.Int() % 500)})
-		FillTestItemsTx(rand.Int()%500, 1, 0, tx)
-		tx.Delete(TestItem{ID: mkID(rand.Int() % 500)})
-		FillTestItemsTx(rand.Int()%500, 1, 10, tx)
-		if (i % 1000) == 0 {
-			tx.Commit()
-			tx = newTestTx(DB, "test_items")
+		for i := 0; i < 5000; i++ {
+			tx.Delete(TestItem{ID: mkID(i)})
 		}
-	}
 
-	tx.Commit()
+		// Stress test delete & update & insert
+		for i := 0; i < 5000; i++ {
+			tx.Delete(TestItem{ID: mkID(rand.Int() % 500)})
+			FillTestItemsTx(rand.Int()%500, 1, 0, tx)
+			tx.Delete(TestItem{ID: mkID(rand.Int() % 500)})
+			FillTestItemsTx(rand.Int()%500, 1, 10, tx)
+			if (i % 1000) == 0 {
+				tx.Commit()
+				tx = newTestTx(DB, "test_items")
+			}
+		}
 
-	FillTestItems("test_items", 3000, 1000, 0)
-	FillTestItems("test_items", 4000, 500, 20)
-	CheckTestItemsQueries()
-	CheckTestItemsSQLQueries()
-	CheckTestItemsDSLQueries()
+		tx.Commit()
+
+		FillTestItems("test_items", 3000, 1000, 0)
+		FillTestItems("test_items", 4000, 500, 20)
+		CheckTestItemsQueries(testCaseWithCommonIndexes)
+		CheckTestItemsSQLQueries()
+		CheckTestItemsDSLQueries()
+	})
+
+	t.Run("Non Indexed queries", func(t *testing.T) {
+		t.Parallel()
+
+		FillTestItemsWithFunc("test_items_id_only", 0, 500, 20, newTestItemIDOnly)
+		FillTestItemsWithFunc("test_items_id_only", 500, 500, 0, newTestItemIDOnly)
+
+		assert.NoError(t, DB.CloseNamespace("test_items_id_only"))
+
+		assert.NoError(t, DB.OpenNamespace("test_items_id_only", reindexer.DefaultNamespaceOptions(), TestItemIDOnly{}))
+
+		CheckTestItemsQueries(testCaseWithIDOnlyIndexe)
+	})
+	t.Run("Sparse indexed queries", func(t *testing.T) {
+		t.Parallel()
+
+		FillTestItemsWithFunc("test_items_with_sparse", 0, 2500, 20, newTestItemWithSparse)
+		FillTestItemsWithFunc("test_items_with_sparse", 2500, 2500, 0, newTestItemWithSparse)
+
+		assert.NoError(t, DB.CloseNamespace("test_items_with_sparse"))
+
+		assert.NoError(t, DB.OpenNamespace("test_items_with_sparse", reindexer.DefaultNamespaceOptions(), TestItemWithSparse{}))
+
+		CheckTestItemsQueries(testCaseWithSparseIndexes)
+	})
 
 }
 
@@ -911,34 +938,6 @@ func callQueriesSequence(namespace, distinct, sort string, desc, testComposite b
 		Not().Where("genre", reindexer.EQ, 10).
 		ExecAndVerify()
 
-	newTestQuery(DB, "TEST_ITEMS_NOT").ReqTotal().
-		Where("NAME", reindexer.EQ, "blabla").
-		ExecAndVerify()
-
-	newTestQuery(DB, "test_items_not").ReqTotal().
-		Where("year", reindexer.EQ, 2002).
-		ExecAndVerify()
-
-	newTestQuery(DB, "test_items_not").ReqTotal().
-		Where("YEAR", reindexer.EQ, 2002).
-		Not().Where("name", reindexer.EQ, "blabla").
-		ExecAndVerify()
-
-	newTestQuery(DB, "TEST_ITEMS_NOT").ReqTotal().
-		Where("name", reindexer.EQ, "blabla").
-		Not().Where("year", reindexer.EQ, 2002).
-		ExecAndVerify()
-
-	newTestQuery(DB, "test_items_not").ReqTotal().
-		Where("name", reindexer.EQ, "blabla").
-		Not().Where("year", reindexer.EQ, 2001).
-		ExecAndVerify()
-
-	newTestQuery(DB, "test_items_not").ReqTotal().
-		Where("year", reindexer.EQ, 2002).
-		Not().Where("name", reindexer.EQ, "sss").
-		ExecAndVerify()
-
 	newTestQuery(DB, namespace).Where("end_time", reindexer.GT, 10000).Not().Where("genre", reindexer.EQ, 10).Distinct(distinct).Sort(sort, desc).ExecAndVerify()
 
 	if !testComposite {
@@ -1003,50 +1002,79 @@ func callQueriesSequence(namespace, distinct, sort string, desc, testComposite b
 		ExecAndVerify()
 }
 
-func CheckTestItemsQueries() {
-	testCases := []IndexesTestCase{
-		{
-			Name:      "TEST WITH COMMON INDEXES",
-			Namespace: "test_items",
-			Options: sortDistinctOptions{
-				SortIndexes:     []string{"", "NAME", "YEAR", "RATE", "RATE + (GENRE - 40) * ISDELETED"},
-				DistinctIndexes: []string{"", "YEAR", "RATE"},
-				TestComposite:   true,
-			},
-			Item: TestItem{},
-		},
-		{
-			Name:      "TEST WITH ID ONLY INDEX",
-			Namespace: "test_items_id_only",
-			Options: sortDistinctOptions{
-				SortIndexes:     []string{"", "name", "year", "rate", "rate + (genre - 40) * isdeleted"},
-				DistinctIndexes: []string{"", "year", "rate"},
-				TestComposite:   false,
-			},
-			Item: TestItemIDOnly{},
-		},
-		{
-			Name:      "TEST WITH SPARSE INDEXES",
-			Namespace: "test_items_with_sparse",
-			Options: sortDistinctOptions{
-				SortIndexes:     []string{"", "NAME", "YEAR", "RATE", "-ID + (END_TIME - START_TIME) / 100"},
-				DistinctIndexes: []string{"", "YEAR", "RATE"},
-				TestComposite:   false,
-			},
-			Item: TestItemWithSparse{},
-		},
-	}
+func CheckNotQueries() {
+	newTestQuery(DB, "TEST_ITEMS_NOT").ReqTotal().
+		Where("NAME", reindexer.EQ, "blabla").
+		ExecAndVerify()
 
-	for _, testCase := range testCases {
-		log.Println(testCase.Name)
-		for _, desc := range []bool{true, false} {
-			for _, sort := range testCase.Options.SortIndexes {
-				for _, distinct := range testCase.Options.DistinctIndexes {
-					log.Printf("\tDISTINCT '%s' SORT '%s' DESC %v\n", distinct, sort, desc)
-					// Just take all items from namespace
-					newTestQuery(DB, testCase.Namespace).Distinct(distinct).Sort(sort, desc).Limit(1).ExecAndVerify()
-					callQueriesSequence(testCase.Namespace, distinct, sort, desc, testCase.Options.TestComposite)
-				}
+	newTestQuery(DB, "test_items_not").ReqTotal().
+		Where("year", reindexer.EQ, 2002).
+		ExecAndVerify()
+
+	newTestQuery(DB, "test_items_not").ReqTotal().
+		Where("YEAR", reindexer.EQ, 2002).
+		Not().Where("name", reindexer.EQ, "blabla").
+		ExecAndVerify()
+
+	newTestQuery(DB, "TEST_ITEMS_NOT").ReqTotal().
+		Where("name", reindexer.EQ, "blabla").
+		Not().Where("year", reindexer.EQ, 2002).
+		ExecAndVerify()
+
+	newTestQuery(DB, "test_items_not").ReqTotal().
+		Where("name", reindexer.EQ, "blabla").
+		Not().Where("year", reindexer.EQ, 2001).
+		ExecAndVerify()
+
+	newTestQuery(DB, "test_items_not").ReqTotal().
+		Where("year", reindexer.EQ, 2002).
+		Not().Where("name", reindexer.EQ, "sss").
+		ExecAndVerify()
+
+}
+
+var testCaseWithCommonIndexes = IndexesTestCase{
+
+	Name:      "TEST WITH COMMON INDEXES",
+	Namespace: "test_items",
+	Options: sortDistinctOptions{
+		SortIndexes:     []string{"", "NAME", "YEAR", "RATE", "RATE + (GENRE - 40) * ISDELETED"},
+		DistinctIndexes: []string{"", "YEAR", "RATE"},
+		TestComposite:   true,
+	},
+	Item: TestItem{},
+}
+var testCaseWithIDOnlyIndexe = IndexesTestCase{
+	Name:      "TEST WITH ID ONLY INDEX",
+	Namespace: "test_items_id_only",
+	Options: sortDistinctOptions{
+		SortIndexes:     []string{"", "name", "year", "rate", "rate + (genre - 40) * isdeleted"},
+		DistinctIndexes: []string{"", "year", "rate"},
+		TestComposite:   false,
+	},
+	Item: TestItemIDOnly{},
+}
+var testCaseWithSparseIndexes = IndexesTestCase{
+	Name:      "TEST WITH SPARSE INDEXES",
+	Namespace: "test_items_with_sparse",
+	Options: sortDistinctOptions{
+		SortIndexes:     []string{"", "NAME", "YEAR", "RATE", "-ID + (END_TIME - START_TIME) / 100"},
+		DistinctIndexes: []string{"", "YEAR", "RATE"},
+		TestComposite:   false,
+	},
+	Item: TestItemWithSparse{},
+}
+
+func CheckTestItemsQueries(testCase IndexesTestCase) {
+
+	log.Println(testCase.Name)
+	for _, desc := range []bool{true, false} {
+		for _, sort := range testCase.Options.SortIndexes {
+			for _, distinct := range testCase.Options.DistinctIndexes {
+				log.Printf("\tDISTINCT '%s' SORT '%s' DESC %v\n", distinct, sort, desc)
+				// Just take all items from namespace
+				newTestQuery(DB, testCase.Namespace).Distinct(distinct).Sort(sort, desc).Limit(1).ExecAndVerify()
+				callQueriesSequence(testCase.Namespace, distinct, sort, desc, testCase.Options.TestComposite)
 			}
 		}
 	}
@@ -1168,18 +1196,18 @@ func TestCanceledSelectQuery(t *testing.T) {
 		return
 	}
 
-	FillTestItemsWithFunc("test_items", 0, 1000, 80, newTestItem)
-	FillTestItemsWithFunc("test_items", 1000, 1000, 0, newTestItem)
+	FillTestItemsWithFunc("test_items_cancel", 0, 1000, 80, newTestItem)
+	FillTestItemsWithFunc("test_items_cancel", 1000, 1000, 0, newTestItem)
 
 	likePattern := makeLikePattern(randString())
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := DB.WithContext(ctx).ExecSQL("SELECT count(*), * FROM test_items WHERE year >= '2016' OR (rate = '1.1' OR company_name LIKE '" + likePattern + "') and AGE_LIMIT <= 50").FetchAll()
+	_, err := DB.WithContext(ctx).ExecSQL("SELECT count(*), * FROM test_items_cancel WHERE year >= '2016' OR (rate = '1.1' OR company_name LIKE '" + likePattern + "') and AGE_LIMIT <= 50").FetchAll()
 	if err != context.Canceled {
 		panic(fmt.Errorf("Canceled select request was executed"))
 	}
 
-	it := newTestQuery(DB, "test_items").Where("year", reindexer.GE, 2016).Or().OpenBracket().Where("RATE", reindexer.EQ, 1.1).Or().Where("company_name", reindexer.LIKE, likePattern).CloseBracket().Where("age_limit", reindexer.LE, int64(50)).ExecCtx(ctx)
+	it := newTestQuery(DB, "test_items_cancel").Where("year", reindexer.GE, 2016).Or().OpenBracket().Where("RATE", reindexer.EQ, 1.1).Or().Where("company_name", reindexer.LIKE, likePattern).CloseBracket().Where("age_limit", reindexer.LE, int64(50)).ExecCtx(ctx)
 	defer it.Close()
 	if err != context.Canceled {
 		panic(fmt.Errorf("Canceled select request was executed"))
@@ -1376,5 +1404,50 @@ func TestDeleteByPK(t *testing.T) {
 		if item, found := DB.Query("test_item_nested_pk").WhereInt("id", reindexer.EQ, mkID(i)).Get(); found {
 			t.Fatalf("Item has not been deleted. < %+v > ", item)
 		}
+	}
+}
+
+func TestEqualPosition(t *testing.T) {
+	nsName := "test_items_eqaul_position"
+
+	tx := newTestTx(DB, nsName)
+	for i := 0; i < 20; i++ {
+		tx.Upsert(newTestItemEqualPosition(i, 3))
+	}
+	tx.MustCommit()
+
+	expectedIds := map[string]bool{
+		"2":  true,
+		"4":  true,
+		"8":  true,
+		"10": true,
+		"14": true,
+		"16": true,
+	}
+	it := newTestQuery(DB, nsName).
+		Match("searching", "name Name*").
+		Where("items_array.space_id", reindexer.EQ, "space_0").
+		Where("items_array.value", reindexer.EQ, 0).
+		EqualPosition("items_array.space_id", "items_array.value").
+		MustExec()
+	assert.Equal(t, len(expectedIds), it.Count())
+	for it.Next() {
+		assert.True(t, expectedIds[it.Object().(*TestItemEqualPosition).ID])
+	}
+
+	expectedIds = map[string]bool{
+		"5":  true,
+		"17": true,
+	}
+	it = newTestQuery(DB, nsName).
+		Match("searching", "name Name*").
+		Where("items_array.space_id", reindexer.EQ, "space_1").
+		Where("items_array.value", reindexer.EQ, 1).
+		WhereBool("test_flag", reindexer.EQ, false).
+		EqualPosition("items_array.space_id", "items_array.value").
+		MustExec()
+	assert.Equal(t, len(expectedIds), it.Count())
+	for it.Next() {
+		assert.True(t, expectedIds[it.Object().(*TestItemEqualPosition).ID])
 	}
 }

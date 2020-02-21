@@ -27,7 +27,7 @@ class ItemComparator;
 
 class NsSelecter {
 public:
-	NsSelecter(Namespace *parent) : ns_(parent) {}
+	NsSelecter(NamespaceImpl *parent) : ns_(parent) {}
 
 	void operator()(QueryResults &result, SelectCtx &ctx, const RdxContext &);
 
@@ -53,7 +53,8 @@ private:
 	int getCompositeIndex(const FieldsSet &fieldsmask);
 	void setLimitAndOffset(ItemRefVector &result, size_t offset, size_t limit);
 	void prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, bool isFt);
-	void getSortIndexValue(const SortingContext &sortCtx, IdType rowId, VariantArray &value, uint8_t proc);
+	void getSortIndexValue(const SortingContext &sortCtx, IdType rowId, VariantArray &value, uint8_t proc, joins::NamespaceResults &,
+						   const JoinedSelectors &);
 	void processLeftJoins(QueryResults &qr, SelectCtx &sctx, size_t startPos);
 	bool checkIfThereAreLeftJoins(SelectCtx &sctx) const;
 	template <typename Items>
@@ -61,7 +62,7 @@ private:
 
 	bool isSortOptimizatonEffective(const QueryEntries &qe, SelectCtx &ctx, const RdxContext &rdxCtx);
 
-	Namespace *ns_;
+	NamespaceImpl *ns_;
 	SelectFunction::Ptr fnc_;
 	FtCtx::Ptr ft_ctx_;
 };

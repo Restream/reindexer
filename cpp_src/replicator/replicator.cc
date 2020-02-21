@@ -3,7 +3,7 @@
 #include "client/itemimpl.h"
 #include "client/reindexer.h"
 #include "core/itemimpl.h"
-#include "core/namespace.h"
+#include "core/namespace/namespaceimpl.h"
 #include "core/namespacedef.h"
 #include "core/reindexerimpl.h"
 #include "tools/logger.h"
@@ -19,6 +19,7 @@ static constexpr size_t kTmpNsPostfixLen = 20;
 Replicator::Replicator(ReindexerImpl *slave) : slave_(slave), terminate_(false), state_(StateInit), enabled_(false) {
 	stop_.set(loop_);
 	resync_.set(loop_);
+	resyncTimer_.set(loop_);
 }
 
 Replicator::~Replicator() { Stop(); }
@@ -94,6 +95,7 @@ void Replicator::run() {
 
 	resync_.set([this](ev::async &) { syncDatabase(); });
 	resync_.start();
+	resyncTimer_.set([this](ev::timer &, int) { syncDatabase(); });
 
 	syncDatabase();
 
@@ -103,7 +105,18 @@ void Replicator::run() {
 
 	resync_.stop();
 	stop_.stop();
+	resyncTimer_.stop();
 	logPrintf(LogInfo, "[repl] Replicator with %s stopped", config_.masterDSN);
+}
+
+static bool errorIsFatal(Error err) {
+	switch (err.code()) {
+		case errOK:
+		case errNetwork:
+			return false;
+		default:
+			return true;
+	}
 }
 
 // Sync database
@@ -113,10 +126,13 @@ Error Replicator::syncDatabase() {
 
 	Error err = master_->EnumNamespaces(nses, EnumNamespacesOpts());
 	if (!err.ok()) {
+		logPrintf(LogError, "[repl] EnumNamespaces error: %s%s", err.what(), terminate_ ? ", terminatng replication"_sv : ""_sv);
 		if (err.code() == errForbidden || err.code() == errReplParams) {
 			terminate_ = true;
+		} else if (!errorIsFatal(err)) {
+			resyncTimer_.start(config_.retrySyncIntervalSec);
+			logPrintf(LogInfo, "[repl] Sync done with errors, resync is scheduled");
 		}
-		logPrintf(LogError, "[repl] EnumNamespaces error: %s%s", err.what(), terminate_ ? ", terminatng replication"_sv : ""_sv);
 		return err;
 	}
 
@@ -127,6 +143,7 @@ Error Replicator::syncDatabase() {
 	state_.store(StateSyncing, std::memory_order_release);
 	syncMtx_.unlock();
 
+	bool requireRetry = false;
 	// Loop for all master namespaces
 	for (auto &ns : nses) {
 		// skip system & non enabled namespaces
@@ -178,10 +195,22 @@ Error Replicator::syncDatabase() {
 					}
 				}
 				slaveNs->SetSlaveReplStatus(ReplicationState::Status::Idle, errOK, dummyCtx_);
-			} else if (slaveNs)
-				slaveNs->SetSlaveReplStatus(err.code() == errNetwork ? ReplicationState::Status::Error : ReplicationState::Status::Fatal,
-											err, dummyCtx_);
+			} else {
+				if (!errorIsFatal(err)) {
+					requireRetry = true;
+				}
+				if (slaveNs) {
+					slaveNs->SetSlaveReplStatus(errorIsFatal(err) ? ReplicationState::Status::Fatal : ReplicationState::Status::Error, err,
+												dummyCtx_);
+				}
+			}
 		}
+	}
+	if (requireRetry) {
+		resyncTimer_.start(config_.retrySyncIntervalSec);
+		logPrintf(LogInfo, "[repl] Sync done with errors, resync is scheduled");
+	} else {
+		resyncTimer_.stop();
 	}
 	state_.store(StateIdle, std::memory_order_release);
 	logPrintf(LogInfo, "[repl] Done sync with '%s'", config_.masterDSN);
@@ -223,7 +252,7 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, string_view reason
 	// Create temporary namespace
 	NamespaceDef tmpNsDef;
 	tmpNsDef.storage = StorageOpts().Enabled().CreateIfMissing().SlaveMode().Temporary();
-	shared_ptr<Namespace> tmpNs;
+	Namespace::Ptr tmpNs;
 	tmpNsDef.name = ns.name + "_tmp_" + randStringAlph(kTmpNsPostfixLen);
 	auto err = slave_->AddNamespace(tmpNsDef);
 	if (!err.ok()) {
@@ -322,8 +351,58 @@ Error Replicator::applyWAL(Namespace::Ptr slaveNs, client::QueryResults &qr) {
 	return stat.lastError;
 }
 
-Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_ptr<Namespace> slaveNs, const WALRecord &rec,
-								 SyncStat &stat) {
+Error Replicator::applyTxWALRecord(int64_t lsn, string_view nsName, Namespace::Ptr slaveNs, const WALRecord &rec) {
+	switch (rec.type) {
+		// Modify item
+		case WalItemModify: {
+			std::lock_guard<std::mutex> lck(syncMtx_);
+			Transaction &tx = transactions_[slaveNs.get()];
+			if (tx.IsFree()) return Error(errLogic, "[repl:%s] Transaction was not initiated.", nsName);
+			Item item = tx.NewItem();
+			const Error err = unpackItem(item, lsn, rec.itemModify.itemCJson, master_->NewItem(nsName).impl_->tagsMatcher());
+			if (!err.ok()) return err;
+			tx.Modify(std::move(item), static_cast<ItemModifyMode>(rec.itemModify.modifyMode));
+		} break;
+		// Update query
+		case WalUpdateQuery: {
+			QueryResults result;
+			Query q;
+			q.FromSQL(rec.data);
+			std::lock_guard<std::mutex> lck(syncMtx_);
+			Transaction &tx = transactions_[slaveNs.get()];
+			if (tx.IsFree()) return Error(errLogic, "[repl:%s] Transaction was not initiated.", nsName);
+			tx.Modify(std::move(q));
+		} break;
+		case WalInitTransaction: {
+			std::lock_guard<std::mutex> lck(syncMtx_);
+			Transaction &tx = transactions_[slaveNs.get()];
+			if (!tx.IsFree()) logPrintf(LogError, "[repl:%s] Init transaction befor commit of previous one.", nsName);
+			tx = slaveNs->NewTransaction(dummyCtx_);
+		} break;
+		case WalCommitTransaction: {
+			QueryResults res;
+			std::lock_guard<std::mutex> lck(syncMtx_);
+			Transaction &tx = transactions_[slaveNs.get()];
+			if (tx.IsFree()) return Error(errLogic, "[repl:%s] Commit of transaction befor initiate it.", nsName);
+			slaveNs->CommitTransaction(tx, res, dummyCtx_);
+			tx = Transaction{};
+		} break;
+		default:
+			return Error(errLogic, "Unexpected for transaction WAL rec type %d\n", int(rec.type));
+	}
+	return {};
+}
+
+void Replicator::checkNoOpenedTransaction(string_view nsName, Namespace::Ptr slaveNs) {
+	std::lock_guard<std::mutex> lck(syncMtx_);
+	Transaction &tx = transactions_[slaveNs.get()];
+	if (!tx.IsFree()) {
+		logPrintf(LogError, "[repl:%s] Transaction started but not commited", nsName);
+		tx = Transaction{};
+	}
+}
+
+Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, Namespace::Ptr slaveNs, const WALRecord &rec, SyncStat &stat) {
 	Error err;
 	IndexDef iDef;
 
@@ -331,9 +410,12 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 		return Error(errParams, "Namespace %s not found", nsName);
 	}
 
+	if (rec.inTransaction) return applyTxWALRecord(lsn, nsName, slaveNs, rec);
+
 	switch (rec.type) {
 		// Modify item
 		case WalItemModify:
+			checkNoOpenedTransaction(nsName, slaveNs);
 			err = modifyItem(lsn, slaveNs, rec.itemModify.itemCJson, rec.itemModify.modifyMode,
 							 master_->NewItem(nsName).impl_->tagsMatcher(), stat);
 			break;
@@ -362,6 +444,7 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 			break;
 		// Update query
 		case WalUpdateQuery: {
+			checkNoOpenedTransaction(nsName, slaveNs);
 			QueryResults result;
 			Query q;
 			q.FromSQL(rec.data);
@@ -389,6 +472,10 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 		case WalNamespaceDrop:
 			err = slave_->closeNamespace(nsName, dummyCtx_, true, true);
 			break;
+		// Rename namespace
+		case WalNamespaceRename:
+			err = slave_->RenameNamespace(nsName, string(rec.data));
+			break;
 		// Replication state
 		case WalReplState: {
 			stat.processed--;
@@ -401,32 +488,25 @@ Error Replicator::applyWALRecord(int64_t lsn, string_view nsName, std::shared_pt
 			slaveNs->SetSlaveReplMasterState(masterState, dummyCtx_);
 			break;
 		}
-		case WalTransaction: {
-			QueryResults res;
-			Transaction tx = slaveNs->NewTransaction(dummyCtx_);
-			err = tx.Deserialize(rec.data, lsn);
-			if (err.ok()) slaveNs->CommitTransaction(tx, res, dummyCtx_);
-			break;
-		}
 		default:
 			return Error(errLogic, "Unexpected WAL rec type %d\n", int(rec.type));
 	}
 	return err;
 }
 
-Error Replicator::modifyItem(int64_t lsn, std::shared_ptr<Namespace> slaveNs, string_view cjson, int modifyMode, const TagsMatcher &tm,
+Error Replicator::unpackItem(Item &item, int64_t lsn, string_view cjson, const TagsMatcher &tm) {
+	if (item.impl_->tagsMatcher().size() < tm.size()) {
+		const bool res = item.impl_->tagsMatcher().try_merge(tm);
+		if (!res) return Error(errNotValid, "Can't merge tagsmatcher of item with lsn %ld", lsn);
+	}
+	item.setLSN(lsn);
+	return item.FromCJSON(cjson);
+}
+
+Error Replicator::modifyItem(int64_t lsn, Namespace::Ptr slaveNs, string_view cjson, int modifyMode, const TagsMatcher &tm,
 							 SyncStat &stat) {
 	Item item = slaveNs->NewItem(dummyCtx_);
-
-	if (item.impl_->tagsMatcher().size() < tm.size()) {
-		bool res = item.impl_->tagsMatcher().try_merge(tm);
-		if (!res) {
-			return Error(errNotValid, "Can't merge tagsmatcher of item with lsn %ld", lsn);
-		}
-	}
-
-	item.setLSN(lsn);
-	Error err = item.FromCJSON(cjson);
+	Error err = unpackItem(item, lsn, cjson, tm);
 	if (err.ok()) {
 		switch (modifyMode) {
 			case ModeDelete:
@@ -521,7 +601,26 @@ void Replicator::OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &w
 		if (slaveNs) {
 			slaveNs->SetSlaveReplStatus(ReplicationState::Status::Fatal, err, dummyCtx_);
 		}
-		logPrintf(LogError, "[repl:%s] Error apply WAL update: %s", nsName, err.what());
+		auto lastErrIt = lastNsErrMsg_.find(nsName);
+		if (lastErrIt == lastNsErrMsg_.end()) {
+			lastErrIt = lastNsErrMsg_.emplace(string(nsName), NsErrorMsg{}).first;
+		}
+		auto &lastErr = lastErrIt->second;
+		bool isDifferentError = lastErr.err.what() != err.what();
+		if (isDifferentError || lastErr.count == static_cast<uint64_t>(config_.onlineReplErrorsThreshold)) {
+			if (!lastErr.err.ok() && lastErr.count > 1) {
+				logPrintf(LogError, "[repl:%s] Error apply WAL update: %s. Repeated %d times", nsName, err.what(), lastErr.count - 1);
+			} else {
+				logPrintf(LogError, "[repl:%s] Error apply WAL update: %s", nsName, err.what());
+			}
+			lastErr.count = 1;
+			if (!isDifferentError) {
+				lastErr.err = err;
+			}
+		} else {
+			++lastErr.count;
+		}
+
 		if (config_.forceSyncOnLogicError) {
 			resync_.send();
 		}

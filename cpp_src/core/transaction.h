@@ -10,32 +10,11 @@ class TransactionStep;
 class PayloadType;
 class TagsMatcher;
 class FieldsSet;
-class Namespace;
 
 class Transaction {
 public:
-	class Serializer {
-	public:
-		Serializer(const Transaction &);
-		void SerializeNextStep();
-		void Serialize(ItemImpl &, ItemModifyMode);
-		void IgnoreNextStep() {
-			assert(!finalized_);
-			++currentStep_;
-		}
-		string_view Slice();
+	using time_point = std::chrono::time_point<std::chrono::high_resolution_clock>;
 
-		Serializer(const Serializer &) = delete;
-		Serializer &operator=(const Serializer &) = delete;
-
-	private:
-		WrSerializer ser_;
-		size_t stepsCountPos_;
-		const vector<TransactionStep> &steps_;
-		size_t currentStep_ = 0;
-		uint32_t writtenStepsCount_ = 0;
-		bool finalized_ = false;
-	};
 	Transaction(const string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf);
 	Transaction(const Error &err);
 	~Transaction();
@@ -53,7 +32,6 @@ public:
 	Item NewItem();
 	Item GetItem(TransactionStep &&st);
 	Error Status() { return status_; }
-	Error Deserialize(string_view, int64_t lsn);
 
 	const std::string &GetName();
 
@@ -62,6 +40,7 @@ public:
 	vector<TransactionStep> &GetSteps();
 	const vector<TransactionStep> &GetSteps() const;
 	bool IsTagsUpdated() const;
+	time_point GetStartTime() const;
 
 protected:
 	std::unique_ptr<TransactionImpl> impl_;

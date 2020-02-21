@@ -14,7 +14,7 @@ reindexer::Error ApiTvComposite::Initialize() {
 	auto err = BaseFixture::Initialize();
 	if (!err.ok()) return err;
 
-	names_ = {"ox",   "ant",  "ape",  "asp",  "bat",  "bee",  "boa",  "bug",  "cat",  "cod",  "cow",  "cub",  "doe",  "dog",
+	names_ = {"ox",	  "ant",  "ape",  "asp",  "bat",  "bee",  "boa",  "bug",  "cat",  "cod",  "cow",  "cub",  "doe",  "dog",
 			  "eel",  "eft",  "elf",  "elk",  "emu",  "ewe",  "fly",  "fox",  "gar",  "gnu",  "hen",  "hog",  "imp",  "jay",
 			  "kid",  "kit",  "koi",  "lab",  "man",  "owl",  "pig",  "pug",  "pup",  "ram",  "rat",  "ray",  "yak",  "bass",
 			  "bear", "bird", "boar", "buck", "bull", "calf", "chow", "clam", "colt", "crab", "crow", "dane", "deer", "dodo",
@@ -103,34 +103,7 @@ void ApiTvComposite::WarmUpIndexes(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {
 		// Ensure indexes complete build
-		for (int i = 0; i < 10; i++) {
-			Query q(nsdef_.name);
-			q.Where("sub_id", CondLe, std::to_string(random<int>(id_seq_->Start(), id_seq_->End())));
-
-			QueryResults qres;
-			auto err = db_->Select(q, qres);
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
-		}
-
-		{
-			Query q(nsdef_.name);
-			auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-			auto leftStartTime = random<int>(0, 24999);
-			auto rightStartTime = random<int>(0, 50000);
-			q.WhereComposite("id+start_time", CondRange,
-							 {{Variant(idRange.first), Variant(leftStartTime)}, {Variant(idRange.second), Variant(rightStartTime)}})
-				.Sort("start_time", false)
-				.Limit(20);
-		}
-
-		{
-			Query q(nsdef_.name);
-			q.Where("location", CondSet, {"mos", "vlg", "ural"}).Sort("age", false);
-
-			QueryResults qres;
-			auto err = db_->Select(q, qres);
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
-		}
+		WaitForOptimization();
 	}
 }
 

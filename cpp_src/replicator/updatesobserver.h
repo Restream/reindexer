@@ -22,7 +22,7 @@ public:
 	Error Add(IUpdatesObserver *observer);
 	Error Delete(IUpdatesObserver *observer);
 
-	void OnModifyItem(int64_t lsn, string_view nsName, ItemImpl *item, int modifyMode);
+	void OnModifyItem(int64_t lsn, string_view nsName, ItemImpl *item, int modifyMode, bool inTransaction);
 
 	void OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &rec);
 

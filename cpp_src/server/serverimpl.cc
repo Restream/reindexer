@@ -246,12 +246,6 @@ int ServerImpl::run() {
 		logger_.info("Starting reindexer_server ({0}) on {1} HTTP, {2} RPC, with db '{3}'", REINDEX_VERSION, config_.HTTPAddr,
 					 config_.RPCAddr, config_.StoragePath);
 
-#if LINK_RESOURCES
-		if (config_.WebRoot.length() != 0) {
-			logger_.warn("Reindexer server built with embeded web resources. Specified web root '{0}' will be ignored", config_.WebRoot);
-			config_.WebRoot.clear();
-		}
-#endif
 		LoggerWrapper httpLogger("http");
 
 		std::unique_ptr<Prometheus> prometheus;

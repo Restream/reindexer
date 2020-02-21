@@ -6,17 +6,18 @@
 
 namespace reindexer {
 
-CJsonModifier::CJsonModifier(TagsMatcher &tagsMatcher, PayloadType pt) : pt_(pt), tagsMatcher_(tagsMatcher) {}
-CJsonModifier::Context::Context(const VariantArray &v, WrSerializer &ser, const string_view &tuple) : value(v), wrser(ser), rdser(tuple) {}
+CJsonModifier::Context::Context(const VariantArray &v, WrSerializer &ser, string_view tuple, FieldModifyMode m)
+	: value(v), wrser(ser), rdser(tuple), mode(m) {}
 
-Error CJsonModifier::SetFieldValue(const string_view &tuple, const TagsPath &fieldPath, const VariantArray &value, WrSerializer &wrser) {
+CJsonModifier::CJsonModifier(TagsMatcher &tagsMatcher, PayloadType pt) : pt_(pt), tagsMatcher_(tagsMatcher) {}
+
+Error CJsonModifier::SetFieldValue(string_view tuple, const TagsPath &fieldPath, const VariantArray &value, WrSerializer &wrser) {
 	if (fieldPath.empty()) return Error(errLogic, "Number of fields for update should be > 0");
-	if (value.empty()) return Error(errLogic, "Update value cannot be empty");
 
 	try {
 		fieldPath_ = fieldPath;
 		tagsPath_.clear();
-		Context ctx(value, wrser, tuple);
+		Context ctx(value, wrser, tuple, FieldModeSet);
 		buildTuple(ctx);
 	} catch (const Error &err) {
 		return err;
@@ -25,30 +26,45 @@ Error CJsonModifier::SetFieldValue(const string_view &tuple, const TagsPath &fie
 	return errOK;
 }
 
-void CJsonModifier::replaceField(int tagType, Context &ctx, size_t idx) {
-	assert(idx < ctx.value.size());
-	copyCJsonValue(tagType, ctx.value[idx], ctx.wrser);
-	ctx.fieldUpdated = true;
+Error CJsonModifier::RemoveFieldValue(string_view tuple, const TagsPath &fieldPath, WrSerializer &wrser) {
+	try {
+		fieldPath_ = fieldPath;
+		tagsPath_.clear();
+		Context ctx({}, wrser, tuple, FieldModeDrop);
+		buildTuple(ctx);
+	} catch (const Error &err) {
+		return err;
+	}
+	return errOK;
+}
+
+void CJsonModifier::updateField(Context &ctx, size_t idx) {
+	if (ctx.isModeSet()) {
+		assert(idx < ctx.value.size());
+		copyCJsonValue(kvType2Tag(ctx.value[idx].Type()), ctx.value[idx], ctx.wrser);
+	}
 }
 
 void CJsonModifier::putNewTags(Context &ctx) {
-	assert(ctx.currObjPath.size() < fieldPath_.size());
-	int newNestedObjects = 0;
+	if (ctx.isModeSet()) {
+		assert(ctx.currObjPath.size() < fieldPath_.size());
+		int newNestedObjects = 0;
 
-	for (size_t i = ctx.currObjPath.size(); i < fieldPath_.size(); ++i) {
-		bool objectTag = (i != fieldPath_.size() - 1);
-		int tagType = objectTag ? TAG_OBJECT : kvType2Tag(ctx.value.front().Type());
-		int tagName = fieldPath_[i];
-		if (objectTag) {
-			ctx.wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName)));
-			++newNestedObjects;
-		} else {
-			putCJsonValue(tagType, tagName, ctx.value, ctx.wrser);
+		for (size_t i = ctx.currObjPath.size(); i < fieldPath_.size(); ++i) {
+			bool objectTag = (i != fieldPath_.size() - 1);
+			int tagType = objectTag ? TAG_OBJECT : kvType2Tag(ctx.value.front().Type());
+			int tagName = fieldPath_[i];
+			if (objectTag) {
+				ctx.wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName)));
+				++newNestedObjects;
+			} else {
+				putCJsonValue(tagType, tagName, ctx.value, ctx.wrser);
+			}
 		}
-	}
 
-	while (newNestedObjects-- > 0) ctx.wrser.PutVarUint(TAG_END);
-	ctx.currObjPath.clear();
+		while (newNestedObjects-- > 0) ctx.wrser.PutVarUint(TAG_END);
+		ctx.currObjPath.clear();
+	}
 	ctx.fieldUpdated = true;
 }
 
@@ -64,6 +80,16 @@ bool CJsonModifier::checkIfPathCorrect(Context &ctx) {
 		return correctPath;
 	}
 	return false;
+}
+
+int CJsonModifier::determineUpdateTagType(const Context &ctx) {
+	if (ctx.value.empty()) {
+		return TAG_NULL;
+	} else if (ctx.value.size() > 1) {
+		return TAG_ARRAY;
+	} else {
+		return kvType2Tag(ctx.value.front().Type());
+	}
 }
 
 bool CJsonModifier::buildTuple(Context &ctx) {
@@ -84,38 +110,51 @@ bool CJsonModifier::buildTuple(Context &ctx) {
 		tagsPath_.push_back(tagName);
 	}
 
-	bool exactMatch = false;
 	int field = tag.Field();
-	// if (field < 0) {
-	exactMatch = (fieldPath_ == tagsPath_);
-	if (exactMatch && (tagType == TAG_OBJECT)) throw Error(errLogic, "Cannot update entire object!");
-	// }
+	bool exactMatch = (fieldPath_ == tagsPath_);
+	bool tagToDrop = (exactMatch && ctx.isModeDrop());
 
-	ctx.wrser.PutVarUint(static_cast<int>(tag));
+	if (!tagToDrop) {
+		if (exactMatch) {
+			if (tagType == TAG_OBJECT) throw Error(errLogic, "Cannot update entire object!");
+			if (field < 0) tagType = determineUpdateTagType(ctx);
+		}
+		ctx.wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName, field)));
+	}
+
 	if (field >= 0) {
 		if (tagType == TAG_ARRAY) {
 			int count = ctx.rdser.GetVarUint();
 			if (exactMatch) {
-				count = ctx.value.size();
 				ctx.fieldUpdated = true;
+				count = ctx.value.IsNullValue() ? 0 : ctx.value.size();
 			}
-			ctx.wrser.PutVarUint(count);
+			if (!tagToDrop) {
+				ctx.wrser.PutVarUint(count);
+			}
 		}
 	} else if (field < 0) {
 		if (tagType == TAG_OBJECT) {
-			// We always skip main object tag
-			bool nestedObject = (!ctx.fieldUpdated && tagName > 0);
-			if (nestedObject) ctx.currObjPath.push_back(tagName);
-			while (buildTuple(ctx)) {
+			if (tagToDrop) {
+				skipCjsonTag(tag, ctx.rdser);
+			} else {
+				// We always skip main object tag
+				bool nestedObject = (!ctx.fieldUpdated && tagName > 0);
+				if (nestedObject) ctx.currObjPath.push_back(tagName);
+				while (buildTuple(ctx)) {
+				}
+				if (nestedObject && !ctx.currObjPath.empty()) ctx.currObjPath.pop_back();
 			}
-			if (nestedObject && !ctx.currObjPath.empty()) ctx.currObjPath.pop_back();
 		} else if (tagType == TAG_ARRAY) {
 			if (exactMatch) {
+				ctx.fieldUpdated = true;
 				skipCjsonTag(tag, ctx.rdser);
-				int arrayTagType = ctx.value.empty() ? TAG_NULL : kvType2Tag(ctx.value.front().Type());
-				ctx.wrser.PutUInt32(int(carraytag(ctx.value.size(), arrayTagType)));
-				for (size_t i = 0; i < ctx.value.size(); ++i) {
-					replaceField(kvType2Tag(ctx.value[i].Type()), ctx, i);
+				if (!tagToDrop) {
+					int arrayTagType = ctx.value.empty() ? TAG_NULL : kvType2Tag(ctx.value.front().Type());
+					ctx.wrser.PutUInt32(int(carraytag(ctx.value.size(), arrayTagType)));
+					for (size_t i = 0; i < ctx.value.size(); ++i) {
+						updateField(ctx, i);
+					}
 				}
 			} else {
 				carraytag atag = ctx.rdser.GetUInt32();
@@ -135,8 +174,10 @@ bool CJsonModifier::buildTuple(Context &ctx) {
 			}
 		} else {
 			if (exactMatch) {
-				replaceField(tagType, ctx, 0);
+				if (!tagToDrop && ctx.value.empty()) throw Error(errLogic, "Update value cannot be empty");
+				updateField(ctx, 0);
 				skipCjsonTag(tag, ctx.rdser);
+				ctx.fieldUpdated = true;
 			} else {
 				copyCJsonValue(tagType, ctx.rdser, ctx.wrser);
 			}

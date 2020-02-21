@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 type TestSortModeNumericItem struct {
@@ -138,59 +140,36 @@ func init() {
 	tnamespaces[testSortDataCustom] = TestSortModeCustomItem{}
 }
 
-func FillTestItemsWithInsensitiveIndex() {
+func FillTestItemsWithInsensitiveIndex(t *testing.T) {
 	tx := newTestTx(DB, testSortDataNumeric)
 	for _, item := range testSortModeDataNumeric {
-		if err := tx.Insert(item); err != nil {
-			panic(err)
-		}
+		assert.NoError(t, tx.Insert(item))
 	}
-	cnt := tx.MustCommit()
-	if cnt != len(testSortModeDataNumeric) {
-		panic(fmt.Errorf("Could not commit testSortModeDataNumeric"))
-	}
+	assert.Equal(t, tx.MustCommit(), len(testSortModeDataNumeric), "Could not commit testSortModeDataNumeric")
 
 	tx = newTestTx(DB, testSortDataAscii)
 	for _, item := range testSortModeDataAscii {
-		if err := tx.Insert(item); err != nil {
-			panic(err)
-		}
+		assert.NoError(t, tx.Insert(item))
 	}
-	cnt = tx.MustCommit()
-	if cnt != len(testSortModeDataAscii) {
-		panic(fmt.Errorf("Could not commit testSortModeDataAscii"))
-	}
+	assert.Equal(t, tx.MustCommit(), len(testSortModeDataAscii), "Could not commit testSortModeDataAscii")
+
 	tx = newTestTx(DB, testSortDataUtf)
 	for _, item := range testSortModeDataUtf {
-		if err := tx.Insert(item); err != nil {
-			panic(err)
-		}
+		assert.NoError(t, tx.Insert(item))
 	}
-	cnt = tx.MustCommit()
-	if cnt != len(testSortModeDataUtf) {
-		panic(fmt.Errorf("Could not commit testSortModeDataUtf"))
-	}
+	assert.Equal(t, tx.MustCommit(), len(testSortModeDataUtf), "Could not commit testSortModeDataUtf")
+
 	tx = newTestTx(DB, testSortDataAsciiHash)
 	for _, item := range testSortModeDataAsciiHash {
-		if err := tx.Insert(item); err != nil {
-			panic(err)
-		}
+		assert.NoError(t, tx.Insert(item))
 	}
-	cnt = tx.MustCommit()
-	if cnt != len(testSortModeDataAsciiHash) {
-		panic(fmt.Errorf("Could not commit testSortModeDataAsciiHash"))
-	}
-	tx = newTestTx(DB, testSortDataCustom)
+	assert.Equal(t, tx.MustCommit(), len(testSortModeDataAsciiHash), "Could not commit testSortModeDataAsciiHash")
 
+	tx = newTestTx(DB, testSortDataCustom)
 	for _, item := range testSortModeDataCustomSource {
-		if err := tx.Insert(item); err != nil {
-			panic(err)
-		}
+		assert.NoError(t, tx.Insert(item))
 	}
-	cnt = tx.MustCommit()
-	if cnt != len(testSortModeDataCustomSource) {
-		panic(fmt.Errorf("Could not commit testSortModeDataCustomSource"))
-	}
+	assert.Equal(t, tx.MustCommit(), len(testSortModeDataCustomSource), "Could not commit testSortModeDataCustomSource")
 }
 
 func StrToInt(s string) (v int, hasValue bool) {
@@ -222,13 +201,11 @@ func StrToInt(s string) (v int, hasValue bool) {
 }
 
 func TestSortDataIndexMode(t *testing.T) {
-	FillTestItemsWithInsensitiveIndex()
+	FillTestItemsWithInsensitiveIndex(t)
 
 	// Numeric
 	results, err := DB.Query(testSortDataNumeric).Sort("item_numeric", false).Exec().FetchAll()
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(t, err)
 
 	// Test: Numeric words are sorted
 	var nums []int
@@ -239,31 +216,23 @@ func TestSortDataIndexMode(t *testing.T) {
 	}
 
 	for i := 0; i < len(nums); i += 2 {
-		if nums[i] > nums[i+1] {
-			panic(fmt.Errorf("Numeric collate doesn't provide sorted results. Expected %d <= %d", nums[i], nums[i+1]))
-		}
+		assert.LessOrEqual(t, nums[i], nums[i+1], "Numeric collate doesn't provide sorted results. Expected %d <= %d", nums[i], nums[i+1])
 	}
 
 	// ASCII
 	results, err = DB.Query(testSortDataAscii).Sort("item_ascii", false).Exec().FetchAll()
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(t, err)
 
 	// Test: ASCII words are sorted
 	for i := 0; i < len(results); i += 2 {
 		lword := results[i].(*TestSortModeAsciiItem).InsItem
 		rword := results[i+1].(*TestSortModeAsciiItem).InsItem
-		if strings.ToLower(lword) != strings.ToLower(rword) {
-			panic(fmt.Errorf("Expected words %s and %s are the same", lword, rword))
-		}
+		assert.Equal(t, strings.ToLower(lword), strings.ToLower(rword), "Expected words %s and %s are the same", lword, rword)
 	}
 
 	// UTF8
 	results, err = DB.Query(testSortDataUtf).Sort("item_utf", false).Exec().FetchAll()
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(t, err)
 
 	// Test: UTF8 words are sorted
 	for i := 0; i < len(results); i += 2 {
@@ -276,19 +245,13 @@ func TestSortDataIndexMode(t *testing.T) {
 
 	// Custom
 	results, err = DB.Query(testSortDataCustom).Sort("item_custom", false).Exec().FetchAll()
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(t, err)
 
 	// Test: Custom mode words are sorted
-	if len(results) != len(testSortModeDataCustomSorted) {
-		panic(fmt.Errorf("Custom mode containers have different sizes"))
-	}
+	assert.Equal(t, len(results), len(testSortModeDataCustomSorted), "Custom mode containers have different sizes")
 	for i := 0; i < len(results); i++ {
 		lword := results[i].(*TestSortModeCustomItem).InsItem
 		rword := testSortModeDataCustomSorted[i].InsItem
-		if strings.ToLower(lword) != strings.ToLower(rword) {
-			panic(fmt.Errorf("Expected words %s and %s are the same", lword, rword))
-		}
+		assert.Equal(t, strings.ToLower(lword), strings.ToLower(rword), "Expected words %s and %s are the same", lword, rword)
 	}
 }

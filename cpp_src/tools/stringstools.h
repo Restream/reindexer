@@ -23,6 +23,7 @@ string unescapeString(string_view str);
 static inline bool isalpha(char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
 static inline bool isdigit(char c) { return (c >= '0' && c <= '9'); }
 static inline char tolower(char c) { return (c >= 'A' && c <= 'Z') ? c + 'a' - 'A' : c; }
+string toLower(string_view src);
 
 template <typename Container>
 Container& split(const typename Container::value_type& str, const string& delimiters, bool trimEmpty, Container& tokens) {

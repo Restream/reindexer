@@ -17,9 +17,11 @@ install(TARGETS ${TARGET}
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
 )
 
-install(DIRECTORY ${SERVER_LIB_DIR}/swagger ${SERVER_LIB_DIR}/face
-    DESTINATION share/reindexer/web OPTIONAL
-)
+if (NOT LINK_RESOURCES)
+  install(DIRECTORY ${SERVER_LIB_DIR}/swagger ${SERVER_LIB_DIR}/face
+      DESTINATION share/reindexer/web OPTIONAL
+  )
+endif()
 
 set (DESTINATION_ETC_DIR etc)
 if (NOT APPLE AND NOT WIN32)

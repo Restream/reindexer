@@ -27,10 +27,10 @@ Error UpdatesObservers::Delete(IUpdatesObserver *observer) {
 	return errOK;
 }
 
-void UpdatesObservers::OnModifyItem(int64_t lsn, string_view nsName, ItemImpl *impl, int modifyMode) {
+void UpdatesObservers::OnModifyItem(int64_t lsn, string_view nsName, ItemImpl *impl, int modifyMode, bool inTransaction) {
 	WrSerializer ser;
 	WALRecord walRec(WalItemModify, impl->tagsMatcher().isUpdated() ? impl->GetCJSON(ser, true) : impl->GetCJSON(),
-					 impl->tagsMatcher().version(), modifyMode);
+					 impl->tagsMatcher().version(), modifyMode, inTransaction);
 
 	OnWALUpdate(lsn, nsName, walRec);
 }

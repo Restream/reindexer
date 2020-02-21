@@ -31,6 +31,7 @@ func FillTestItemHuge(start int, count int) {
 }
 
 func TestItemsHuge(t *testing.T) {
+	t.Parallel()
 
 	// Fill items by cjson encoder
 	FillTestItemHuge(0, 50)

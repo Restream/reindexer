@@ -53,8 +53,10 @@ public:
 	ItemImpl &operator=(const ItemImpl &) = delete;
 	ItemImpl &operator=(ItemImpl &&) noexcept;
 
+	void ModifyField(string_view jsonPath, const VariantArray &keys, FieldModifyMode mode);
 	void SetField(int field, const VariantArray &krs);
 	void SetField(string_view jsonPath, const VariantArray &keys);
+	void DropField(string_view jsonPath);
 	Variant GetField(int field);
 	FieldsSet PkFields() const { return pkFields_; }
 
@@ -97,7 +99,7 @@ public:
 		ns_.reset();
 		realValue_ = PayloadValue();
 	}
-	void SetNamespace(std::shared_ptr<Namespace> ns) { ns_ = ns; }
+	void SetNamespace(std::shared_ptr<Namespace> ns) { ns_ = std::move(ns); }
 	std::shared_ptr<Namespace> GetNamespace() { return ns_; }
 
 protected:

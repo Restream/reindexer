@@ -102,8 +102,12 @@ void PayloadIface<T>::Set(int field, const VariantArray &keys, bool append) {
 		return;
 	}
 
-	int pos = ResizeArray(field, keys.size(), append);
+	if (keys.IsNullValue()) {
+		ResizeArray(field, 0, append);
+		return;
+	}
 
+	int pos = ResizeArray(field, keys.size(), append);
 	auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
 	auto elemSize = t_.Field(field).ElemSizeof();
 

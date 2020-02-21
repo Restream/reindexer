@@ -1,12 +1,10 @@
 package reindexer
 
 import (
-	"log"
 	"testing"
 
 	"github.com/restream/reindexer"
-
-	"fmt"
+	"github.com/stretchr/testify/assert"
 )
 
 type TestSelectTextItem struct {
@@ -36,30 +34,21 @@ func FillTestSelectTextItems(count int) {
 
 func TestSelectFunction(t *testing.T) {
 	FillTestSelectTextItems(50)
-	CheckSelectItemsQueries()
+	CheckSelectItemsQueries(t)
 }
 
-func CheckSelectItemsQueries() {
-	log.Printf("DO SELECT FUCNTIONS TESTS")
+func CheckSelectItemsQueries(t *testing.T) {
 
 	first := randLangString()
 
 	q1 := DB.Query("test_select_text_item").Where("name", reindexer.EQ, first).Functions("name.snippet(<b>,<b>,3,3)")
 
-	res, _, er := q1.MustExec().FetchAllWithRank()
-
-	if er != nil {
-		panic(fmt.Errorf("query error:[%v;]", er))
-	}
+	res, _, err := q1.MustExec().FetchAllWithRank()
+	assert.NoError(t, err)
 
 	for _, item := range res {
-		switch item.(type) {
-		case *TestSelectTextItem:
-
-			_ = item.(*TestSelectTextItem).Name
-		default:
-			panic(fmt.Errorf("Unknown type after merge "))
-		}
+		_, ok := item.(*TestSelectTextItem)
+		assert.True(t, ok, "Unknown type after merge ")
 	}
 
 }

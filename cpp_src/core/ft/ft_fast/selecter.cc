@@ -138,7 +138,7 @@ void Selecter::processStepVariants(FtSelectContext &ctx, DataHolder::CommitStep 
 			res.idsCnt_ += holder_.getWordById(glbwordId).vids_.size();
 			ctx.foundWords[glbwordId] = std::make_pair(ctx.rawResults.size() - 1, res.size() - 1);
 			if (holder_.cfg_->logLevel >= LogTrace)
-				logPrintf(LogTrace, " matched %s '%s' of word '%s', %d vids, %d%%", suffixLen ? "suffix" : "prefix", keyIt->first, word,
+				logPrintf(LogInfo, " matched %s '%s' of word '%s', %d vids, %d%%", suffixLen ? "suffix" : "prefix", keyIt->first, word,
 						  holder_.getWordById(glbwordId).vids_.size(), proc);
 			matched++;
 			vids += holder_.getWordById(glbwordId).vids_.size();
@@ -192,7 +192,7 @@ void Selecter::processTypos(FtSelectContext &ctx, FtDSLEntry &term) {
 					ctx.foundWords.emplace(wordIdglb, std::make_pair(ctx.rawResults.size() - 1, res.size() - 1));
 
 					if (holder_.cfg_->logLevel >= LogTrace)
-						logPrintf(LogTrace, " matched typo '%s' of word '%s', %d ids, %d%%", typoIt->first,
+						logPrintf(LogInfo, " matched typo '%s' of word '%s', %d ids, %d%%", typoIt->first,
 								  step.suffixes_.word_at(wordIdSfx), holder_.getWordById(wordIdglb).vids_.size(), proc);
 					++matched;
 					vids += holder_.getWordById(wordIdglb).vids_.size();
@@ -211,7 +211,7 @@ void Selecter::debugMergeStep(const char *msg, int vid, float normBm25, float no
 #ifdef REINDEX_FT_EXTRA_DEBUG
 	if (holder_.cfg_->logLevel < LogTrace) return;
 
-	logPrintf(LogTrace, "%s - '%s' (vid %d), bm25 %f, dist %f, rank %d (prev rank %d)", msg, holder_.vdocs_[vid].keyDoc, vid, normBm25,
+	logPrintf(LogInfo, "%s - '%s' (vid %d), bm25 %f, dist %f, rank %d (prev rank %d)", msg, holder_.vdocs_[vid].keyDoc, vid, normBm25,
 			  normDist, finalRank, prevRank);
 #else
 	(void)msg;
@@ -241,7 +241,7 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 		auto idf = IDF(totalDocsCount, r.vids_->size());
 		auto termLenBoost = bound(rawRes.term.opts.termLenBoost, holder_.cfg_->termLenWeight, holder_.cfg_->termLenBoost);
 		if (holder_.cfg_->logLevel >= LogTrace) {
-			logPrintf(LogTrace, "Pattern %s, idf %f, termLenBoost %f", r.pattern, idf, termLenBoost);
+			logPrintf(LogInfo, "Pattern %s, idf %f, termLenBoost %f", r.pattern, idf, termLenBoost);
 		}
 
 		for (auto &relid : *r.vids_) {

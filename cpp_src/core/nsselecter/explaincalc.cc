@@ -1,7 +1,7 @@
 #include "explaincalc.h"
 #include "core/cbinding/reindexer_ctypes.h"
 #include "core/cjson/jsonbuilder.h"
-#include "core/namespace.h"
+#include "core/namespace/namespaceimpl.h"
 #include "core/query/sql/sqlencoder.h"
 #include "nsselecter.h"
 #include "tools/logger.h"
@@ -19,7 +19,7 @@ void ExplainCalc::LogDump(int logLevel) {
 
 	if (logLevel >= LogTrace) {
 		if (selectors_) {
-			selectors_->ForEachIterator([this](const SelectIterator &s, OpType) {
+			selectors_->ForEachIterator([this](const SelectIterator &s) {
 				logPrintf(LogInfo, "%s: %d idsets, %d comparators, cost %g, matched %d, %s", s.name, s.size(), s.comparators_.size(),
 						  s.Cost(iters_), s.GetMatchedCount(), s.Dump());
 			});

@@ -7,7 +7,9 @@
 #include <regex>
 #include <unordered_map>
 #include <unordered_set>
+#include "core/nsselecter/joinedselectormock.h"
 #include "core/nsselecter/sortexpression.h"
+#include "core/queryresults/joinresults.h"
 #include "reindexer_api.h"
 #include "tools/string_regexp_functions.h"
 #include "tools/stringstools.h"
@@ -72,8 +74,16 @@ public:
 								   IndexDeclaration{string(kFieldNameAge + compositePlus + kFieldNameGenre).c_str(), "hash", "composite",
 													indexesOptions[kFieldNameAge + compositePlus + kFieldNameGenre], 0},
 							   });
+
 		defaultNsPks.push_back(kFieldNameId);
 		defaultNsPks.push_back(kFieldNameTemp);
+
+		err = rt.reindexer->OpenNamespace(joinNs);
+		ASSERT_TRUE(err.ok()) << err.what();
+		DefineNamespaceDataset(joinNs, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
+										IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts(), 0},
+										IndexDeclaration{kFieldNameName, "tree", "string", IndexOpts(), 0}});
+		joinNsPks.push_back(kFieldNameId);
 
 		err = rt.reindexer->OpenNamespace(testSimpleNs);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -146,29 +156,35 @@ public:
 	}
 
 	static double CalculateSortExpression(reindexer::SortExpression::const_iterator begin, reindexer::SortExpression::const_iterator end,
-										  Item& item) {
+										  Item& item, const QueryResults& qr) {
 		double result = 0.0;
 		assert(begin != end);
-		assert(begin->Op.op == OpPlus);
+		assert(begin->operation.op == OpPlus);
 		for (auto it = begin; it != end; ++it) {
-			double value = 0.0;
-			if (it->IsLeaf()) {
-				const auto& sortExprValue = it->Value();
-				switch (sortExprValue.type) {
-					case reindexer::SortExpressionValue::Value:
-						value = sortExprValue.value;
-						break;
-					case reindexer::SortExpressionValue::Index:
-						value = item[sortExprValue.column].As<double>();
-						break;
-					case reindexer::SortExpressionValue::Rank:
-						assert(0);
-				}
-			} else {
-				value = CalculateSortExpression(it.cbegin(), it.cend(), item);
-			}
-			if (it->Op.negative) value = -value;
-			switch (it->Op.op) {
+			double value = it->CalculateAppropriate<double>(
+				[&it, &item, &qr](const reindexer::SortExpressionBracket&) {
+					return CalculateSortExpression(it.cbegin(), it.cend(), item, qr);
+				},
+				[](const reindexer::SortExpressionValue& v) { return v.value; },
+				[&item](const reindexer::SortExpressionIndex& i) { return item[i.column].As<double>(); },
+				[&item, &qr](const reindexer::SortExpressionJoinedIndex& i) {
+					const reindexer::joins::ItemIterator itemIt{&qr.joined_[0], item.GetID()};
+					const auto joinedIt = itemIt.at(i.fieldIdx);
+					assert(joinedIt.ItemsCount() == 1);
+					auto joinedItem = joinedIt.GetItem(0, qr.getPayloadType(i.fieldIdx + 1), qr.getTagsMatcher(i.fieldIdx + 1));
+					Variant value;
+					if (i.index == IndexValueType::SetByJsonPath) {
+						const auto values = joinedItem.GetValueByJSONPath(i.column);
+						assert(values.size() == 1);
+						value = values[0];
+					} else {
+						value = joinedItem.GetField(i.index);
+					}
+					return value.As<double>();
+				},
+				[](const reindexer::SortExpressionFuncRank&) -> double { abort(); });
+			if (it->operation.negative) value = -value;
+			switch (it->operation.op) {
 				case OpPlus:
 					result += value;
 					break;
@@ -233,6 +249,7 @@ public:
 		lastSortedColumnValues.resize(query.sortingEntries_.size());
 
 		size_t itemsCount = 0;
+		const auto joinedSelectors = getJoinedSelectors(query);
 		for (size_t i = 0; i < qr.Count(); ++i) {
 			Item itemr(qr[i].GetItem());
 
@@ -268,12 +285,12 @@ public:
 
 			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
 				const reindexer::SortingEntry& sortingEntry(query.sortingEntries_[j]);
-				const auto sortExpr = reindexer::SortExpression::Parse(sortingEntry.expression);
+				const auto sortExpr = reindexer::SortExpression::Parse(sortingEntry.expression, joinedSelectors);
 				Variant sortedValue;
-				if (sortExpr.JustByIndex()) {
+				if (sortExpr.ByIndexField()) {
 					sortedValue = itemr[sortingEntry.expression];
 				} else {
-					sortedValue = Variant{CalculateSortExpression(sortExpr.cbegin(), sortExpr.cend(), itemr)};
+					sortedValue = Variant{CalculateSortExpression(sortExpr.cbegin(), sortExpr.cend(), itemr, qr)};
 				}
 				if (lastSortedColumnValues[j].Type() != KeyValueNull) {
 					bool needToVerify = true;
@@ -320,7 +337,7 @@ public:
 
 		// If query has distinct, skip verification
 		bool haveDistinct = false;
-		query.entries.ForEachEntry([&haveDistinct](const reindexer::QueryEntry& qe, OpType) {
+		query.entries.ForEachEntry([&haveDistinct](const reindexer::QueryEntry& qe) {
 			if (qe.distinct) haveDistinct = true;
 		});
 		if (haveDistinct) return;
@@ -351,6 +368,7 @@ protected:
 	const std::vector<string>& getNsPks(const string& ns) {
 		if (ns == default_namespace) return defaultNsPks;
 		if (ns == testSimpleNs) return simpleTestNsPks;
+		if (ns == joinNs) return joinNsPks;
 		if (ns == compositeIndexesNs) return compositeIndexesNsPks;
 		if (ns == comparatorsNs) return comparatorsNsPks;
 		if (ns == forcedSortOffsetNs) return forcedSortOffsetNsPks;
@@ -376,7 +394,7 @@ protected:
 			} else {
 				iterationResult = checkConditions(item, it.cbegin(), it.cend());
 			}
-			switch (it->Op) {
+			switch (it->operation) {
 				case OpNot:
 					if (!result) return false;
 					result = !iterationResult;
@@ -545,6 +563,13 @@ protected:
 		return result;
 	}
 
+	static std::vector<JoinedSelectorMock> getJoinedSelectors(const Query& query) {
+		std::vector<JoinedSelectorMock> result;
+		result.reserve(query.joinQueries_.size());
+		for (const auto& jq : query.joinQueries_) result.emplace_back(jq._namespace);
+		return result;
+	}
+
 	bool checkDistincts(reindexer::Item& item, const Query& qr, unordered_map<string, unordered_set<string>>& distincts) {
 		bool result = true;
 		// check only on root level
@@ -612,6 +637,20 @@ protected:
 			insertedItems[forcedSortOffsetNs][pkString] = std::move(item);
 		}
 		Commit(forcedSortOffsetNs);
+	}
+
+	void FillTestJoinNamespace() {
+		for (int i = 0; i < 1000; ++i) {
+			Item item = NewItem(joinNs);
+			item[kFieldNameId] = i;
+			item[kFieldNameYear] = rand() % 50 + 2000;
+			item[kFieldNameName] = RandString().c_str();
+			item[kFieldNameGenre] = rand() % 50;
+			Upsert(joinNs, item);
+			string pkString = getPkString(item, joinNs);
+			insertedItems[joinNs].emplace(pkString, std::move(item));
+		}
+		Commit(testSimpleNs);
 	}
 
 	void FillTestSimpleNamespace() {
@@ -775,7 +814,7 @@ protected:
 			tr.Insert(move(item));
 		}
 		QueryResults res;
-		rt.reindexer->CommitTransaction(tr,res);
+		rt.reindexer->CommitTransaction(tr, res);
 		Commit(default_namespace);
 	}
 
@@ -871,9 +910,10 @@ protected:
 		static const vector<bool> sortOrders = {true, false};
 
 		static const string compositeIndexName(kFieldNameAge + compositePlus + kFieldNameGenre);
+		Query joinQuery(joinNs);
 
 		for (const bool sortOrder : sortOrders) {
-			for (const string& sortIdx : sortIdxs) {
+			for (const auto& sortIdx : sortIdxs) {
 				for (const string& distinct : distincts) {
 					const int randomAge = rand() % 50;
 					const int randomGenre = rand() % 50;
@@ -1230,6 +1270,18 @@ protected:
 															.Sort(sortIdx, sortOrder)
 															.WhereComposite(compositeIndexName.c_str(), CondEq,
 																			{{Variant(rand() % 10), Variant(rand() % 50)}}));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.InnerJoin(kFieldNameYear, kFieldNameYear, CondEq, joinQuery)
+															.Distinct(distinct)
+															.Sort(joinNs + '.' + kFieldNameId, sortOrder));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.InnerJoin(kFieldNameYear, kFieldNameYear, CondEq, joinQuery)
+															.Distinct(distinct)
+															.Sort(joinNs + '.' + kFieldNameId + " * " + joinNs + '.' + kFieldNameGenre +
+																	  (sortIdx.empty() ? "" : (" + " + sortIdx)),
+																  sortOrder));
 				}
 			}
 		}
@@ -1638,7 +1690,7 @@ protected:
 	static void PrintQueryEntries(reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator to) {
 		TestCout() << "(";
 		for (; it != to; ++it) {
-			TestCout() << (it->Op == OpAnd ? "AND" : (it->Op == OpOr ? "OR" : "NOT"));
+			TestCout() << (it->operation == OpAnd ? "AND" : (it->operation == OpOr ? "OR" : "NOT"));
 			if (it->IsLeaf()) {
 				TestCout() << it->Value().Dump();
 			} else {
@@ -1733,6 +1785,7 @@ protected:
 
 	const string compositePlus = "+";
 	const string testSimpleNs = "test_simple_namespace";
+	const string joinNs = "join_namespace";
 	const string compositeIndexesNs = "composite_indexes_namespace";
 	const string comparatorsNs = "comparators_namespace";
 	const string forcedSortOffsetNs = "forced_sort_offset_namespace";
@@ -1742,6 +1795,7 @@ protected:
 
 	vector<string> defaultNsPks;
 	vector<string> simpleTestNsPks;
+	vector<string> joinNsPks;
 	vector<string> compositeIndexesNsPks;
 	vector<string> comparatorsNsPks;
 	vector<string> forcedSortOffsetNsPks;

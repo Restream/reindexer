@@ -274,7 +274,10 @@ void FastIndexText<T>::SetOpts(const IndexOpts &opts) {
 		this->holder_.status_ = FullRebuild;
 		this->holder_.Clear();
 		this->cache_ft_->Clear();
-		for (auto& idx: this->idx_map) idx.second.VDocID() = FtKeyEntryData::ndoc;
+		for (auto &idx : this->idx_map) idx.second.VDocID() = FtKeyEntryData::ndoc;
+	} else {
+		logPrintf(LogInfo, "FulltextIndex config changed, cache cleared");
+		this->cache_ft_->Clear();
 	}
 }
 

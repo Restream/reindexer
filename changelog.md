@@ -1,3 +1,24 @@
+# Version 2.6.0 (21.02.2020)
+
+## Core
+
+- [fea] Atomic applying transaction with namespace copy & replace
+- [fea] Transaction performance statistics
+- [fix] Equal position behavior fixed
+- [fea] Sort queries by right namespace field 
+- [fix] UPDATE statement fixes 
+- [fix] Transaction replication fixes 
+- [fix] Select fields filter fix for right namespace
+
+# Reindexer server
+- [fea] web static resources are embeded to server binary by default
+
+
+# Version 2.5.5 (07.02.2020)
+
+# Reindexer server
+- [fix] Fixed backward compat of RPC with 2.5.2-
+
 # Version 2.5.3 (06.02.2020)
 ## Core
 

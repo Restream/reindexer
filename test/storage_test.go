@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/restream/reindexer"
+	"github.com/stretchr/testify/assert"
 )
 
 type SubStruct struct {
@@ -112,24 +113,14 @@ func TestStorageChangeFormat(t *testing.T) {
 	afterUpdate := time.Now().UTC()
 
 	// Test2
-	if err := DB.CloseNamespace("test_items_storage"); err != nil {
-		panic(err)
-	}
-
-	if err := DB.OpenNamespace("test_items_storage", reindexer.DefaultNamespaceOptions(), TestItemV2{}); err != nil {
-		panic(err)
-	}
+	assert.NoError(t, DB.CloseNamespace("test_items_storage"))
+	assert.NoError(t, DB.OpenNamespace("test_items_storage", reindexer.DefaultNamespaceOptions(), TestItemV2{}))
 
 	stat, err := DB.GetNamespaceMemStat("test_items_storage")
-
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(t, err)
 
 	updatedAt := time.Unix(0, stat.Replication.UpdatedUnixNano).UTC()
-	if beforeUpdate.Before(updatedAt) && afterUpdate.After(updatedAt) {
-		panic(fmt.Errorf("%v must be between %v and %v", updatedAt, beforeUpdate, afterUpdate))
-	}
+	assert.False(t, beforeUpdate.Before(updatedAt) && afterUpdate.After(updatedAt), "%v must be between %v and %v", updatedAt, beforeUpdate, afterUpdate)
 
 	item, ok := DB.Query("test_items_storage").WhereInt("id", reindexer.EQ, 1).Get()
 
@@ -147,89 +138,49 @@ func TestStorageChangeFormat(t *testing.T) {
 	}
 
 	// Test3
-	if err := DB.CloseNamespace("test_items_storage"); err != nil {
-		panic(err)
-	}
-	if err := DB.OpenNamespace("test_items_storage", reindexer.DefaultNamespaceOptions(), TestItemV3{}); err != nil {
-		panic(err)
-	}
+	assert.NoError(t, DB.CloseNamespace("test_items_storage"))
+	assert.NoError(t, DB.OpenNamespace("test_items_storage", reindexer.DefaultNamespaceOptions(), TestItemV3{}))
 
 	item, ok = DB.Query("test_items_storage").WhereInt("id", reindexer.EQ, 1).Get()
 
-	if !ok {
-		panic(fmt.Errorf("Not found test item after update fields struct"))
-	}
+	assert.True(t, ok, "Not found test item after update fields struct")
+
 	itemv3 := item.(*TestItemV3)
 
-	if itemv3.ID != 1 || itemv3.F1 != 100 || itemv3.F3 != 300 || itemv3.T2.F5 != "f5val" ||
+	assert.False(t, itemv3.ID != 1 || itemv3.F1 != 100 || itemv3.F3 != 300 || itemv3.T2.F5 != "f5val" ||
 		itemv3.T2.F7[0] != 1 || itemv3.T2.F7[1] != 2 ||
-		itemv3.T2.F8[0] != 7 || itemv3.T2.F8[1] != 8 {
-		panic(fmt.Errorf("%v", *itemv2))
-	}
+		itemv3.T2.F8[0] != 7 || itemv3.T2.F8[1] != 8, "%v", *itemv2)
 
 	// Test4
-	if err := DB.CloseNamespace("test_items_storage"); err != nil {
-		panic(err)
-	}
-
-	if err := DB.OpenNamespace("test_items_storage", reindexer.DefaultNamespaceOptions(), TestItemV4{}); err == nil {
-		panic(fmt.Errorf("expecting storage error on index conflict, but it's ok"))
-	}
+	assert.NoError(t, DB.CloseNamespace("test_items_storage"))
+	assert.Error(t, DB.OpenNamespace("test_items_storage", reindexer.DefaultNamespaceOptions(), TestItemV4{}), "expecting storage error on index conflict, but it's ok")
 
 	// Test5
 	// Open namespace with different non indexed field type
-
 	DB.CloseNamespace("test_items_storage")
-	if err := DB.OpenNamespace("test_items_storage", reindexer.DefaultNamespaceOptions(), TestItemV5{}); err != nil {
-		panic(err)
-	}
+	assert.NoError(t, DB.OpenNamespace("test_items_storage", reindexer.DefaultNamespaceOptions(), TestItemV5{}))
 
 	iterator := DB.Query("test_items_storage").WhereInt("id", reindexer.EQ, 1).DeepReplEqual().Exec()
-
-	if err = iterator.Error(); err != nil {
-		panic(err)
-	}
-
-	if iterator.Count() != 1 {
-		panic(fmt.Errorf("Expecting 1 item, found %d ", iterator.Count()))
-	}
-
+	assert.NoError(t, iterator.Error())
+	assert.Equal(t, iterator.Count(), 1, "Expecting 1 item, found %d ", iterator.Count())
 	iterator.Next()
-
-	if err = iterator.Error(); err == nil {
-		panic(fmt.Errorf("expecting iterator error on wrong type cast, but it's ok"))
-	}
+	assert.Error(t, iterator.Error(), "expecting iterator error on wrong type cast, but it's ok")
 
 	// Test6
-	if err := DB.CloseNamespace("test_items_storage"); err != nil {
-		panic(err)
-	}
-
-	if err := DB.OpenNamespace("test_items_storage", reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), TestItemV6{}); err != nil {
-		panic(err)
-	}
-
+	assert.NoError(t, DB.CloseNamespace("test_items_storage"))
+	assert.NoError(t, DB.OpenNamespace("test_items_storage", reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), TestItemV6{}))
 	stat, err = DB.GetNamespaceMemStat("test_items_storage")
+	assert.NoError(t, err)
 
-	if err != nil {
-		panic(err)
-	}
-	if stat.ItemsCount != 0 {
-		panic(fmt.Errorf("expected 0 items in ns,found %d", stat.ItemsCount))
-	}
+	assert.Equal(t, int(stat.ItemsCount), 0, "expected 0 items in ns,found %d", stat.ItemsCount)
 
 	udsn, err := url.Parse(*dsn)
-	if err != nil {
-		panic(err)
-	}
+	assert.NoError(t, err)
+
 	if udsn.Scheme == "builtin" {
 		// Test7
 		// Try to create DB on exists file path - must fail
 		ioutil.WriteFile(udsn.Path+"blocked_storage", []byte{}, os.ModePerm)
-		err = DB.OpenNamespace("blocked_storage", reindexer.DefaultNamespaceOptions(), TestItemV1{})
-
-		if err == nil {
-			panic(fmt.Errorf("Expecting storage error, but it's ok"))
-		}
+		assert.Error(t, DB.OpenNamespace("blocked_storage", reindexer.DefaultNamespaceOptions(), TestItemV1{}), "Expecting storage error, but it's ok")
 	}
 }

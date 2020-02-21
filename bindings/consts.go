@@ -71,6 +71,7 @@ const (
 	QueryOpenBracket       = 18
 	QueryCloseBracket      = 19
 	QueryJoinCondition     = 20
+	QueryDropField         = 21
 
 	LeftJoin    = 0
 	InnerJoin   = 1

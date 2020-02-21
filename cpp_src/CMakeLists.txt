@@ -15,7 +15,13 @@ option (ENABLE_LIBUNWIND "Enable libunwind" ON)
 option (ENABLE_TCMALLOC "Enable tcmalloc extensions" ON)
 option (ENABLE_JEMALLOC "Enable jemalloc extensions" ON)
 option (ENABLE_ROCKSDB "Enable rocksdb storage" ON)
-set (REINDEXER_VERSION_DEFAULT "2.5.3")
+if (WIN32)
+  option (LINK_RESOURCES "Link web resources as binary data" OFF)
+else()
+  option (LINK_RESOURCES "Link web resources as binary data" ON)
+endif()
+
+set (REINDEXER_VERSION_DEFAULT "2.6.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -47,20 +53,22 @@ else()
   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wextra -Werror -Wold-style-cast")
 endif ()
 
+set (EXTRA_FLAGS "")
+
 if (WITH_ASAN)
-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
-  set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
+  set (EXTRA_FLAGS "-fsanitize=address")
   add_definitions(-DREINDEX_WITH_ASAN)
 elseif (WITH_TSAN)
-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=thread")
-  set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=thread")
+  set (EXTRA_FLAGS "-fsanitize=thread")
   add_definitions(-DREINDEX_WITH_TSAN)
 endif ()
-
-if (WITH_COVERAGE)
-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-arcs -ftest-coverage")
-  set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fprofile-arcs -ftest-coverage")
+if (WITH_GCOV)
+  set (EXTRA_FLAGS "-fprofile-arcs -ftest-coverage")
 endif ()
+
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${EXTRA_FLAGS}")
+set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EXTRA_FLAGS}")
+
 
 # Build project
 set(TARGET reindexer)
@@ -325,7 +333,7 @@ if (WIN32)
   set (CPACK_GENERATOR "NSIS")
 elseif (LINUX_ISSUE MATCHES "Fedora" OR LINUX_ISSUE MATCHES "CentOS" OR LINUX_ISSUE MATCHES "Mandriva")
   set(CPACK_GENERATOR "RPM")
-  set(CPACK_RPM_PACKAGE_RELOCATABLE OFF)
+  set(CPACK_PACKAGE_RELOCATABLE OFF)
 elseif (LINUX_ISSUE MATCHES "Ubuntu" OR LINUX_ISSUE MATCHES "Debian" OR LINUX_ISSUE MATCHES "Mint")
   set(CPACK_GENERATOR "DEB")
 endif()
@@ -430,13 +438,6 @@ if (NOT GO_BUILTIN_SERVER_EXPORT_PKG_PATH)
   set (GO_BUILTIN_SERVER_EXPORT_PKG_PATH "${PROJECT_SOURCE_DIR}/../bindings/builtinserver")
 endif ()
 
-find_package(PkgConfig)
-if (PKG_CONFIG_FOUND)
-  if (GO_BUILTIN_EXPORT_PKG_PATH OR GO_BUILTIN_SERVER_EXPORT_PKG_PATH)
-    pkg_check_modules(REINDEXER_PKG libreindexer)
-  endif ()
-endif ()
-
 if (GO_BUILTIN_EXPORT_PKG_PATH AND NOT IS_ABSOLUTE ${GO_BUILTIN_EXPORT_PKG_PATH})
   set (GO_BUILTIN_EXPORT_PKG_PATH "${CMAKE_CURRENT_SOURCE_DIR}/${GO_BUILTIN_EXPORT_PKG_PATH}")
 endif ()
@@ -462,11 +463,11 @@ if (NOT WIN32)
     set (${OUTPUT_LIST_NAME} ${flibs} PARENT_SCOPE)
   endfunction (generate_libs_list)
 
-  if (GO_BUILTIN_EXPORT_PKG_PATH AND NOT REINDEXER_PKG_FOUND AND EXISTS "${GO_BUILTIN_EXPORT_PKG_PATH}/posix_config.go.in")
+  if (GO_BUILTIN_EXPORT_PKG_PATH AND EXISTS "${GO_BUILTIN_EXPORT_PKG_PATH}/posix_config.go.in")
     ProcessorCount (cgo_proc_count)
-    set (cgo_cxx_flags "-I../../cpp_src")
-    set (cgo_c_flags "-I../../cpp_src")
-    set (cgo_ld_flags "-L\${SRCDIR}/../../build/cpp_src/")
+    set (cgo_cxx_flags "-I../../cpp_src ${EXTRA_FLAGS}")
+    set (cgo_c_flags "-I../../cpp_src ${EXTRA_FLAGS}")
+    set (cgo_ld_flags "-L\${SRCDIR}/../../build/cpp_src/ ${EXTRA_FLAGS}")
     generate_libs_list("${REINDEXER_LIBRARIES}" cgo_ld_flags)
     string(REPLACE ";" "" cgo_ld_flags "${cgo_ld_flags}")
     configure_file (
@@ -493,6 +494,7 @@ if (NOT WIN32)
     "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h"
     "client/internalrdxcontext.h"
     "debug/backtrace.h" "debug/allocdebug.h" "debug/resolver.h"
+    "vendor/mpark/variant.h"
   )
 
   foreach ( file ${DIST_INCLUDE_FILES} )

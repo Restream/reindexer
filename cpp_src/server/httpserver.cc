@@ -753,26 +753,27 @@ int HTTPServer::DocHandler(http::Context &ctx) {
 		return ctx.Redirect("face/");
 	}
 
-	string fsPath = webRoot_ + path;
+	web web(webRoot_);
 
-	if (web::stat(fsPath) == fs::StatFile) {
-		return web::file(ctx, http::StatusOK, fsPath);
+	auto stat = web.stat(path);
+	if (stat == fs::StatFile) {
+		return web.file(ctx, http::StatusOK, path);
 	}
 
-	if (web::stat(fsPath) == fs::StatDir && !endsWithSlash) {
+	if (stat == fs::StatDir && !endsWithSlash) {
 		return ctx.Redirect(path + "/");
 	}
 
-	for (; fsPath.length() > webRoot_.length();) {
-		string file = fs::JoinPath(fsPath, "index.html");
-		if (web::stat(file) == fs::StatFile) {
-			return web::file(ctx, http::StatusOK, file);
+	for (; path.length() > 0;) {
+		string file = fs::JoinPath(path, "index.html");
+		if (web.stat(file) == fs::StatFile) {
+			return web.file(ctx, http::StatusOK, file);
 		}
 
-		auto pos = fsPath.find_last_of('/');
+		auto pos = path.find_last_of('/');
 		if (pos == string::npos) break;
 
-		fsPath = fsPath.erase(pos);
+		path = path.erase(pos);
 	}
 
 	return NotFoundHandler(ctx);

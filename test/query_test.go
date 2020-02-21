@@ -158,6 +158,15 @@ func newTestNamespace(namespace string, item interface{}) {
 	prepareStruct(ns, reflect.TypeOf(item), []int{}, "")
 }
 
+func renameTestNamespace(namespace string, dstName string) {
+	ns, ok := testNamespaces[namespace]
+	if !ok {
+		return
+	}
+	testNamespaces[strings.ToLower(dstName)] = ns
+	delete(testNamespaces, namespace)
+}
+
 func newTestTx(db *ReindexerWrapper, namespace string) *txTest {
 	tx := &txTest{namespace: namespace, db: db, ns: testNamespaces[namespace]}
 	tx.tx = db.MustBeginTx(namespace)
@@ -458,6 +467,14 @@ func (qt *queryTest) DeleteCtx(ctx context.Context) (int, error) {
 	qt.db.SetSynced(false)
 
 	return qt.q.DeleteCtx(ctx)
+}
+
+func (qt *queryTest) Drop(field string) *queryTest {
+	qt.q.Drop(field)
+	qt.db.SetSynced(false)
+
+	qt.readOnly = false
+	return qt
 }
 
 func (qt *queryTest) Set(field string, values interface{}) *queryTest {

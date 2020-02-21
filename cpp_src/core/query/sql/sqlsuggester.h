@@ -17,14 +17,12 @@ public:
 	/// Gets suggestions for autocomplte
 	/// @param q - query to parse.
 	/// @param pos - pos of cursor in query.
-	/// @param namespaces - list of namespaces to be checked for existing fields.
+	/// @param enumNamespaces - functor which enums namespaces to be checked for existing fields.
 	std::vector<string> GetSuggestions(const string_view &q, size_t pos, EnumNamespacesF enumNamespaces);
 
 protected:
 	/// Finds suggestions for token
 	/// @param ctx - suggestion context.
-	/// @param nsName - name of active Namespace.
-	/// @param namespaces - list of namespaces in db.
 	void getSuggestionsForToken(SqlParsingCtx::SuggestionData &ctx);
 
 	/// Checks whether suggestion is neede for a token

@@ -202,7 +202,7 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 		if (it->IsLeaf()) {
 			if (it->Value().distinct) continue;
 			if (it->Value().joinIndex == QueryEntry::kNoJoins) {
-				node.Put("op", dsl::get(dsl::op_map, it->Op));
+				node.Put("op", dsl::get(dsl::op_map, it->operation));
 			}
 			dsl::encodeFilter(parentQuery, it->Value(), node);
 		} else {

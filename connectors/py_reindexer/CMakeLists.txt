@@ -48,6 +48,10 @@ if (PYTHONINTERP_FOUND AND PYTHONLIBS_FOUND AND NOT WIN32 AND NOT WITH_ASAN AND 
     set_target_properties(${LIB_BUILTIN_NAME} PROPERTIES PREFIX "")
     set_target_properties(${LIB_CPROTO_NAME} PROPERTIES PREFIX "")
 
+    if (WITH_GCOV)
+        target_link_libraries(${LIB_BUILTIN_NAME} -fprofile-arcs)
+        target_link_libraries(${LIB_CPROTO_NAME} -fprofile-arcs)
+    endif (WITH_GCOV)
     add_test (NAME pyreindexer_test COMMAND "python3" "-m" "unittest" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests)
     set_tests_properties(pyreindexer_test PROPERTIES ENVIRONMENT "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}:${CMAKE_CURRENT_BINARY_DIR}")
 
