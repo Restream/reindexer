@@ -2,6 +2,7 @@
 #include "walrecord.h"
 #include "core/cjson/baseencoder.h"
 #include "core/transactionimpl.h"
+#include "tools/logger.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -90,8 +91,8 @@ WALRecord::WALRecord(span<uint8_t> packed) {
 		case WalCommitTransaction:
 			break;
 		default:
-			fprintf(stderr, "Unexpected WAL rec type %d\n", int(type));
-			std::abort();
+			logPrintf(LogWarning, "Unexpected WAL rec type %d\n", int(type));
+			break;
 	}
 }
 

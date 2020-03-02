@@ -11,6 +11,7 @@
 #include "net/listener.h"
 #include "rpcupdatespusher.h"
 #include "statscollect/istatswatcher.h"
+#include "tools/semversion.h"
 
 namespace reindexer_server {
 
@@ -28,6 +29,7 @@ struct RPCClientData : public cproto::ClientData {
 	cproto::RPCUpdatesPusher pusher;
 	int connID;
 	bool subscribed;
+	SemVersion rxVersion;
 };
 
 class RPCServer {
@@ -40,7 +42,7 @@ public:
 
 	Error Ping(cproto::Context &ctx);
 	Error Login(cproto::Context &ctx, p_string login, p_string password, p_string db, cproto::optional<bool> createDBIfMissing,
-				cproto::optional<bool> checkClusterID, cproto::optional<int> expectedClusterID);
+				cproto::optional<bool> checkClusterID, cproto::optional<int> expectedClusterID, cproto::optional<p_string> clientRxVersion);
 	Error OpenDatabase(cproto::Context &ctx, p_string db, cproto::optional<bool> createDBIfMissing);
 	Error CloseDatabase(cproto::Context &ctx);
 	Error DropDatabase(cproto::Context &ctx);

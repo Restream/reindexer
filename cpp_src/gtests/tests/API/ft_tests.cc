@@ -415,3 +415,45 @@ TEST_F(FTApi, Unique) {
 		}
 	}
 }
+
+TEST_F(FTApi, SelectSynonyms) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.synonyms = {{{"лыв", "лав"}, {"love"}}, {{"лар", "hate"}, {"rex", "looove"}}};
+	Init(ftCfg);
+
+	Add("nm1", "test", "love rex");
+	Add("nm1", "test", "no looove");
+	Add("nm1", "test", "no match");
+
+	auto qr = SimpleSelect("лыв");
+	EXPECT_EQ(qr.Count(), 1);
+	auto item = qr[0].GetItem();
+	EXPECT_EQ(item["ft2"].As<string>(), "!love! rex");
+	qr = SimpleSelect("hate");
+	EXPECT_EQ(qr.Count(), 2);
+	std::vector<std::string> res{qr[0].GetItem()["ft2"].As<string>(), qr[1].GetItem()["ft2"].As<string>()};
+	std::sort(res.begin(), res.end());
+	EXPECT_EQ(res[0], "love !rex!");
+	EXPECT_EQ(res[1], "no !looove!");
+}
+
+TEST_F(FTApi, SelectFullMatch) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.fullMatchBoost = 0.9;
+	Init(ftCfg);
+
+	Add("nm1", "test", "love");
+	Add("nm1", "test", "love second");
+
+	auto qr = SimpleSelect("love");
+	EXPECT_EQ(qr.Count(), 2);
+	auto item = qr[0].GetItem();
+	EXPECT_EQ(item["ft2"].As<string>(), "!love! second");
+
+	ftCfg.fullMatchBoost = 1.1;
+	SetFTConfig(ftCfg, "nm1", "ft3");
+	qr = SimpleSelect("love");
+	EXPECT_EQ(qr.Count(), 2);
+	item = qr[0].GetItem();
+	EXPECT_EQ(item["ft2"].As<string>(), "!love!");
+}

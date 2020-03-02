@@ -118,7 +118,7 @@ public:
 			opts, args, argss...);
 		std::unique_lock<std::mutex> lck(mtx_);
 		bufWait_++;
-		bufCond_.wait(lck, [&set]() { return set.load();});
+		bufCond_.wait(lck, [&set]() { return set.load(); });
 		bufWait_--;
 
 		return ret;

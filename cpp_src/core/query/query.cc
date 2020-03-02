@@ -8,6 +8,9 @@
 
 namespace reindexer {
 
+const string_view kLsnIndexName = "#lsn"_sv;
+const string_view kSlaveVersionIndexName = "#slave_version"_sv;
+
 Query::Query(const string &__namespace, unsigned _start, unsigned _count, CalcTotalMode _calcTotal)
 	: _namespace(__namespace), start(_start), count(_count), calcTotal(_calcTotal) {}
 
@@ -357,6 +360,18 @@ void Query::WalkNested(bool withSelf, bool withMerged, std::function<void(const 
 	for (auto &jq : joinQueries_) visitor(jq);
 	for (auto &mq : mergeQueries_)
 		for (auto &jq : mq.joinQueries_) visitor(jq);
+}
+
+bool Query::IsWALQuery() const noexcept {
+	if (entries.Size() == 1 && entries.IsEntry(0) && kLsnIndexName == entries[0].index) {
+		return true;
+	} else if (entries.Size() == 2 && entries.IsEntry(0) && entries.IsEntry(1)) {
+		if ((kLsnIndexName == entries[0].index && kSlaveVersionIndexName == entries[1].index) ||
+			(kLsnIndexName == entries[1].index && kSlaveVersionIndexName == entries[0].index)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 }  // namespace reindexer

@@ -254,6 +254,7 @@ void FastIndexText<T>::CreateConfig(const FtFastConfig *cfg) {
 	this->cfg_.reset(new FtFastConfig());
 	this->cfg_->parse(this->opts_.config);
 	this->holder_.SetConfig(static_cast<FtFastConfig *>(this->cfg_.get()));
+	this->holder_.synonyms_->SetConfig(this->cfg_.get());
 }
 
 template <typename Container>
@@ -279,6 +280,7 @@ void FastIndexText<T>::SetOpts(const IndexOpts &opts) {
 		logPrintf(LogInfo, "FulltextIndex config changed, cache cleared");
 		this->cache_ft_->Clear();
 	}
+	this->holder_.synonyms_->SetConfig(&newCfg);
 }
 
 Index *FastIndexText_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields) {

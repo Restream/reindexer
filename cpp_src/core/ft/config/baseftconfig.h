@@ -17,6 +17,10 @@ using std::string;
 
 class BaseFTConfig {
 public:
+	struct Synonym {
+		vector<string> tokens;
+		vector<string> alternatives;
+	};
 	BaseFTConfig();
 	virtual ~BaseFTConfig() = default;
 
@@ -28,6 +32,7 @@ public:
 	bool enableKbLayout = true;
 	bool enableNumbersSearch = false;
 	fast_hash_set<string, hash_str, equal_str> stopWords;
+	vector<Synonym> synonyms;
 	int logLevel = 0;
 	string extraWordSymbols = "-/+";
 

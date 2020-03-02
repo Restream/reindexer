@@ -1,20 +1,14 @@
 #pragma once
 
-#include <map>
-#include <memory>
-#include "isearcher.h"
+#include "itokenfilter.h"
 
-using std::map;
-using std::string;
+namespace reindexer {
 
-namespace search_engine {
-
-class Translit : public ISeacher {
+class Translit : public ITokenFilter {
 public:
-	typedef shared_ptr<Translit> Ptr;
 	Translit();
 
-	virtual void Build(const wchar_t *data, size_t len, vector<pair<std::wstring, ProcType>> &result) override final;
+	virtual void GetVariants(const std::wstring &data, std::vector<std::pair<std::wstring, int>> &result) override final;
 
 private:
 	void PrepareRussian();
@@ -35,7 +29,7 @@ private:
 		size_t total_count_;
 		unsigned short num_[2];
 	};
-	pair<uint8_t, wchar_t> GetEnglish(wchar_t, size_t, Context &ctx);
+	std::pair<uint8_t, wchar_t> GetEnglish(wchar_t, size_t, Context &ctx);
 	bool CheckIsEn(wchar_t symbol);
 
 	static const int ruLettersStartUTF16 = 1072;
@@ -44,10 +38,10 @@ private:
 	static const int enAlfavitSize = 26;
 	static const int maxTraslitVariants = 3;
 
-	wstring ru_buf_[ruAlfavitSize][maxTraslitVariants];
+	std::wstring ru_buf_[ruAlfavitSize][maxTraslitVariants];
 	wchar_t en_buf_[enAlfavitSize];
 	wchar_t en_d_buf_[enAlfavitSize][enAlfavitSize];
 	wchar_t en_t_buf_[enAlfavitSize][enAlfavitSize][enAlfavitSize];
 };
 
-}  // namespace search_engine
+}  // namespace reindexer

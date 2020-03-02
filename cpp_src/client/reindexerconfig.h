@@ -37,11 +37,6 @@ struct ConnectOpts {
 		options = value ? options | kConnectOptCreateIfMissing : options & ~(kConnectOptCreateIfMissing);
 		return *this;
 	}
-	ConnectOpts& CheckClusterID(int value) {
-		expectedClusterID = value;
-		return *this;
-	}
-
 	ConnectOpts& WithExpectedClusterID(int clusterID) {
 		expectedClusterID = clusterID;
 		options |= kConnectOptCheckClusterID;

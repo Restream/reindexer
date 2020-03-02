@@ -16,24 +16,15 @@ public:
 		err = rt.reindexer->OpenNamespace("nm2");
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		reindexer::WrSerializer wrser;
-		reindexer::JsonBuilder cfgBuilder(wrser);
-		cfgBuilder.Put("enable_translit", ftCfg.enableTranslit);
-		cfgBuilder.Put("enable_numbers_search", ftCfg.enableNumbersSearch);
-		cfgBuilder.Put("enable_kb_layout", ftCfg.enableKbLayout);
-		cfgBuilder.Put("merge_limit", ftCfg.mergeLimit);
-		cfgBuilder.Put("log_level", ftCfg.logLevel);
-		cfgBuilder.Put("max_step_size", ftCfg.maxStepSize);
-		cfgBuilder.End();
-
 		DefineNamespaceDataset(
 			"nm1", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
 					IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
-					IndexDeclaration{"ft1+ft2=ft3", "text", "composite", IndexOpts().SetConfig(string(wrser.Slice())), 0}});
+					IndexDeclaration{"ft1+ft2=ft3", "text", "composite", IndexOpts(), 0}});
 		DefineNamespaceDataset(
 			"nm2", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
 					IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
 					IndexDeclaration{"ft1+ft2=ft3", "text", "composite", IndexOpts(), 0}});
+		SetFTConfig(ftCfg, "nm1", "ft3");
 	}
 
 	reindexer::FtFastConfig GetDefaultConfig() {
@@ -43,6 +34,41 @@ public:
 		cfg.mergeLimit = 20000;
 		cfg.maxStepSize = 100;
 		return cfg;
+	}
+
+	void SetFTConfig(const reindexer::FtFastConfig& ftCfg, const string& ns, const string& index) {
+		reindexer::WrSerializer wrser;
+		reindexer::JsonBuilder cfgBuilder(wrser);
+		cfgBuilder.Put("enable_translit", ftCfg.enableTranslit);
+		cfgBuilder.Put("enable_numbers_search", ftCfg.enableNumbersSearch);
+		cfgBuilder.Put("enable_kb_layout", ftCfg.enableKbLayout);
+		cfgBuilder.Put("merge_limit", ftCfg.mergeLimit);
+		cfgBuilder.Put("log_level", ftCfg.logLevel);
+		cfgBuilder.Put("max_step_size", ftCfg.maxStepSize);
+		cfgBuilder.Put("full_match_boost", ftCfg.fullMatchBoost);
+		{
+			auto synonymsNode = cfgBuilder.Array("synonyms");
+			for (auto& synonym : ftCfg.synonyms) {
+				auto synonymObj = synonymsNode.Object();
+				{
+					auto tokensNode = synonymObj.Array("tokens");
+					for (auto& token : synonym.tokens) tokensNode.Put(nullptr, token);
+				}
+				{
+					auto alternativesNode = synonymObj.Array("alternatives");
+					for (auto& token : synonym.alternatives) alternativesNode.Put(nullptr, token);
+				}
+			}
+		}
+		cfgBuilder.End();
+		vector<reindexer::NamespaceDef> nses;
+		rt.reindexer->EnumNamespaces(nses, reindexer::EnumNamespacesOpts().WithFilter(ns));
+		auto it = std::find_if(nses[0].indexes.begin(), nses[0].indexes.end(),
+							   [&index](const reindexer::IndexDef& idef) { return idef.name_ == index; });
+		it->opts_.SetConfig(wrser.c_str());
+
+		auto err = rt.reindexer->UpdateIndex(ns, *it);
+		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
 	void FillData(int64_t count) {

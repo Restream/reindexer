@@ -55,6 +55,7 @@
   * [ExplainDef](#explaindef)
   * [FilterDef](#filterdef)
   * [FulltextConfig](#fulltextconfig)
+  * [FulltextSynonym](#fulltextsynonym)
   * [Index](#index)
   * [IndexCacheMemStats](#indexcachememstats)
   * [IndexMemStat](#indexmemstat)
@@ -87,6 +88,7 @@
   * [SuggestItems](#suggestitems)
   * [SysInfo](#sysinfo)
   * [SystemConfigItem](#systemconfigitem)
+  * [TransactionsPerfStats](#transactionsperfstats)
   * [UpdatePerfStats](#updateperfstats)
   * [UpdateResponse](#updateresponse)
 
@@ -100,7 +102,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 2.6.0
+*Version* : 2.6.1
 
 
 ### License information
@@ -1372,8 +1374,9 @@ Fulltext Index configuration
 |**enable_numbers_search**  <br>*optional*|Enable number variants processing. e.g. term '100' will match words one hundred  <br>**Default** : `false`|boolean|
 |**enable_translit**  <br>*optional*|Enable russian translit variants processing. e.g. term 'luntik' will match word 'лунтик'  <br>**Default** : `true`|boolean|
 |**extra_word_symbols**  <br>*optional*|List of symbols, which will be threated as word part, all other symbols will be thrated as wors separators  <br>**Default** : `"-/+"`|string|
+|**full_match_boost**  <br>*optional*|Boost of full match of search phrase with doc  <br>**Default** : `1.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**log_level**  <br>*optional*|Log level of full text search engine  <br>**Minimum value** : `0`  <br>**Maximum value** : `4`|integer|
-|**max_rebuild_steps**  <br>*optional*|Maximum steps withou full rebuild of ft - more steps faster commit slower select - optimal about 15.  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**max_rebuild_steps**  <br>*optional*|Maximum steps without full rebuild of ft - more steps faster commit slower select - optimal about 15.  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
 |**max_step_size**  <br>*optional*|Maximum unique words to step  <br>**Minimum value** : `5`  <br>**Maximum value** : `1000000000`|integer|
 |**max_typo_len**  <br>*optional*|Maximum word length for building and matching variants with typos.  <br>**Minimum value** : `0`  <br>**Maximum value** : `100`|integer|
 |**max_typos_in_word**  <br>*optional*|Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 1 possible typo -It will seriously increase RAM usage, and decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `2`|integer|
@@ -1381,8 +1384,20 @@ Fulltext Index configuration
 |**min_relevancy**  <br>*optional*|Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned  <br>**Default** : `0.05`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**stemmers**  <br>*optional*|List of stemmers to use|< string > array|
 |**stop_words**  <br>*optional*|List of stop words. Words from this list will be ignored in documents and queries|< string > array|
+|**synonyms**  <br>*optional*|List of synonyms for replacement|< [FulltextSynonym](#fulltextsynonym) > array|
 |**term_len_boost**  <br>*optional*|Boost of search query term length  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**term_len_weght**  <br>*optional*|Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range  <br>**Default** : `0.3`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
+
+
+
+### FulltextSynonym
+Fulltext synonym definition
+
+
+|Name|Description|Schema|
+|---|---|---|
+|**alternatives**  <br>*optional*|List of alternatives, which will be used for search documents|< string > array|
+|**tokens**  <br>*optional*|List source tokens in query, which will be replaced with alternatives|< string > array|
 
 
 
@@ -1557,6 +1572,7 @@ List of meta info of the specified namespace
 |**items_count**  <br>*optional*|Total count of documents in namespace|integer|
 |**join_cache**  <br>*optional*||[JoinCacheMemStats](#joincachememstats)|
 |**name**  <br>*optional*|Name of namespace|string|
+|**optimization_completed**  <br>*optional*|Background indexes optimization has been completed|boolean|
 |**query_cache**  <br>*optional*||[QueryCacheMemStats](#querycachememstats)|
 |**replication**  <br>*optional*||[ReplicationStats](#replicationstats)|
 |**storage_ok**  <br>*optional*|Status of disk storage|boolean|
@@ -1582,8 +1598,8 @@ List of meta info of the specified namespace
 |**indexes**  <br>*optional*|Memory consumption of each namespace index|< [indexes](#namespaceperfstats-indexes) > array|
 |**name**  <br>*optional*|Name of namespace|string|
 |**selects**  <br>*optional*||[SelectPerfStats](#selectperfstats)|
-|**updates**  <br>*optional*||[UpdatePerfStats](#updateperfstats)|
 |**transactions**  <br>*optional*||[TransactionsPerfStats](#transactionsperfstats)|
+|**updates**  <br>*optional*||[UpdatePerfStats](#updateperfstats)|
 
 
 **indexes**
@@ -1617,15 +1633,14 @@ List of meta info of the specified namespace
 
 |Name|Description|Schema|
 |---|---|---|
+|**copy_policy_multiplier**  <br>*optional*|Disables copy policy if namespace size is greater than copy_policy_multiplier * start_copy_policy_tx_size|integer|
 |**join_cache_mode**  <br>*optional*|Join cache mode|enum (aggressive)|
 |**lazyload**  <br>*optional*|Enable namespace lazy load (namespace shoud be loaded from disk on first call, not at reindexer startup)|boolean|
 |**log_level**  <br>*optional*|Log level of queries core logger|enum (none, error, warning, info, trace)|
-|**merge_limit_count**  <br>*optional*|Merge write namespace after get thi count of operations|integer|
 |**namespace**  <br>*optional*|Name of namespace, or `*` for setting to all namespaces|string|
 |**optimization_sort_workers**  <br>*optional*|Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations|integer|
 |**optimization_timeout_ms**  <br>*optional*|Timeout before background indexes optimization start after last update. 0 - disable optimizations|integer|
 |**start_copy_policy_tx_size**  <br>*optional*|Enable namespace copying for transaction with steps count greater than this value (if copy_politics_multiplier also allows this)|integer|
-|**copy_policy_multiplier**  <br>*optional*|Disables copy policy if namespace size is greater than copy_policy_multiplier * start_copy_policy_tx_size|integer|
 |**tx_size_to_always_copy**  <br>*optional*|Force namespace copying for transaction with steps count greater than this value|integer|
 |**unload_idle_threshold**  <br>*optional*|Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded|integer|
 
@@ -1870,6 +1885,29 @@ Specifies results sorting order
 
 
 
+### TransactionsPerfStats
+Performance statistics for transactions
+
+
+|Name|Description|Schema|
+|---|---|---|
+|**avg_commit_time_us**  <br>*optional*|Average transaction commit time usec|integer|
+|**avg_copy_time_us**  <br>*optional*|Average namespace copy time usec|integer|
+|**avg_prepare_time_us**  <br>*optional*|Average transaction preparation time usec|integer|
+|**avg_steps_count**  <br>*optional*|Average steps count in transactions for this namespace|integer|
+|**max_commit_time_us**  <br>*optional*|Maximum transaction commit time usec|integer|
+|**max_copy_time_us**  <br>*optional*|Minimum namespace copy time usec|integer|
+|**max_prepare_time_us**  <br>*optional*|Maximum transaction preparation time usec|integer|
+|**max_steps_count**  <br>*optional*|Maximum steps count in transactions for this namespace|integer|
+|**min_commit_time_us**  <br>*optional*|Minimum transaction commit time usec|integer|
+|**min_copy_time_us**  <br>*optional*|Maximum namespace copy time usec|integer|
+|**min_prepare_time_us**  <br>*optional*|Minimum transaction preparation time usec|integer|
+|**min_steps_count**  <br>*optional*|Minimum steps count in transactions for this namespace|integer|
+|**total_copy_count**  <br>*optional*|Total namespace copy operations|integer|
+|**total_count**  <br>*optional*|Total transactions count for this namespace|integer|
+
+
+
 ### UpdatePerfStats
 Performance statistics for update operations
 
@@ -1896,31 +1934,6 @@ Performance statistics for update operations
 |---|---|---|
 |**updated**  <br>*optional*|Count of updated items|integer|
 
-
-
-
-### TransactionsPerfStats
-Performance statistics for transactions
-
-*Polymorphism* : Composition
-
-
-|Name|Description|Schema|
-|---|---|---|
-|**total_count**  <br>*optional*|Total transactions count for this object|integer|
-|**total_copy_count**  <br>*optional*|Total object copy operations|integer|
-|**avg_steps_count**  <br>*optional*|Average steps count in transactions for this object|integer|
-|**min_steps_count**  <br>*optional*|Minimum steps count in transactions for this object|number|
-|**max_steps_count**  <br>*optional*|Maximum steps count in transactions for this object|integer|
-|**avg_prepare_time_us**  <br>*optional*|Average transaction preparation time usec|integer|
-|**min_prepare_time_us**  <br>*optional*|Minimum transaction preparation time usec|integer|
-|**max_prepare_time_us**  <br>*optional*|Maximum transaction preparation time usec|integer|
-|**avg_commit_time_us**  <br>*optional*|Average transaction commit time usec|integer|
-|**min_commit_time_us**  <br>*optional*|Minimum transaction commit time usec|integer|
-|**max_commit_time_us**  <br>*optional*|Maximum transaction commit time usec|integer|
-|**avg_copy_time_us**  <br>*optional*|Average object copy time usec|integer|
-|**min_copy_time_us**  <br>*optional*|Maximum object copy time usec|integer|
-|**max_copy_time_us**  <br>*optional*|Minimum object copy time usec|integer|
 
 
 

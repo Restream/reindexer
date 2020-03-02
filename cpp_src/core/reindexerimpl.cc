@@ -218,7 +218,10 @@ Error ReindexerImpl::Connect(const string& dsn, ConnectOpts opts) {
 	if (!err.ok()) {
 		return err;
 	}
-	err = replConfigFileChecker_.Enable();
+	if (!storagePath_.empty()) {
+		err = replConfigFileChecker_.Enable();
+	}
+
 	if (err.ok()) {
 		connected_.store(true, std::memory_order_release);
 	}

@@ -113,6 +113,8 @@ static bool errorIsFatal(Error err) {
 	switch (err.code()) {
 		case errOK:
 		case errNetwork:
+		case errTimeout:
+		case errCanceled:
 			return false;
 		default:
 			return true;

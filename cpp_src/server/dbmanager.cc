@@ -28,7 +28,7 @@ Error DBManager::Init(const std::string &storageEngine, bool allowDBErrors, bool
 	}
 
 	vector<fs::DirEntry> foundDb;
-	if (fs::ReadDir(dbpath_, foundDb) < 0) {
+	if (!dbpath_.empty() && fs::ReadDir(dbpath_, foundDb) < 0) {
 		return Error(errParams, "Can't read reindexer dir %s", dbpath_);
 	}
 
@@ -108,7 +108,7 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 }
 
 Error DBManager::loadOrCreateDatabase(const string &dbName, bool allowDBErrors, bool withAutorepair, const AuthContext &auth) {
-	string storagePath = fs::JoinPath(dbpath_, dbName);
+	string storagePath = !dbpath_.empty() ? fs::JoinPath(dbpath_, dbName) : "";
 
 	logPrintf(LogInfo, "Loading database %s", dbName);
 	auto db = unique_ptr<reindexer::Reindexer>(new reindexer::Reindexer);

@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.6.0"
+  version: "2.6.1"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -1550,6 +1550,11 @@ definitions:
         description: "List of stemmers to use"
         items:
           type: "string"
+      synonyms:
+        type: "array"
+        description: "List of synonyms for replacement"
+        items:
+          $ref: "#/definitions/FulltextSynonym"
       bm25_boost:
         type: "number"
         format: "float"
@@ -1592,6 +1597,13 @@ definitions:
         minimum: 0.0
         maximum: 1.0
         description: "Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range"
+      full_match_boost:
+        type: "number"
+        format: "float"
+        default: 1.1
+        minimum: 0.0
+        maximum: 10.0
+        description: "Boost of full match of search phrase with doc"
       min_relevancy:
         type: "number"
         format: "float"
@@ -1613,7 +1625,7 @@ definitions:
         maximum: 100
       max_rebuild_steps:
         type: "integer"
-        description: "Maximum steps withou full rebuild of ft - more steps faster commit slower select - optimal about 15."
+        description: "Maximum steps without full rebuild of ft - more steps faster commit slower select - optimal about 15."
         default: 50
         minimum: 0
         maximum: 500
@@ -1624,6 +1636,20 @@ definitions:
         minimum: 5
         maximum: 1000000000
 
+  FulltextSynonym:
+    type: "object"
+    description: "Fulltext synonym definition"
+    properties:
+      tokens:
+        type: "array"
+        description: "List source tokens in query, which will be replaced with alternatives"
+        items:
+          type: "string"
+      alternatives:
+        type: "array"
+        description: "List of alternatives, which will be used for search documents"
+        items:
+          type: "string"
   MetaInfo:
     type: "object"
     required:

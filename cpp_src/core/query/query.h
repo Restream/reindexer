@@ -377,7 +377,7 @@ public:
 
 	bool HasLimit() const noexcept { return count != UINT_MAX; }
 	bool HasOffset() const noexcept { return start != 0; }
-	bool IsWALQuery() const noexcept { return entries.Size() == 1 && entries.IsEntry(0) && "#lsn"_sv == entries[0].index; }
+	bool IsWALQuery() const noexcept;
 
 protected:
 	void deserialize(Serializer &ser, bool &hasJoinConditions);

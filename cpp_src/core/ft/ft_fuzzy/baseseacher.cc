@@ -2,9 +2,9 @@
 #include <chrono>
 #include <iostream>
 #include <thread>
+#include "core/ft/filters/kblayout.h"
+#include "core/ft/filters/translit.h"
 #include "core/ft/ft_fuzzy/advacedpackedvec.h"
-#include "core/ft/ft_fuzzy/searchers/kblayout.h"
-#include "core/ft/ft_fuzzy/searchers/translit.h"
 #include "core/ft/ftdsl.h"
 #include "tools/customhash.h"
 #include "tools/stringstools.h"
@@ -15,7 +15,7 @@ using std::pair;
 using std::make_pair;
 using namespace reindexer;
 
-void BaseSearcher::AddSeacher(ISeacher::Ptr seacher) { searchers_.push_back(seacher); }
+void BaseSearcher::AddSeacher(ITokenFilter::Ptr &&seacher) { searchers_.push_back(std::move(seacher)); }
 
 pair<bool, size_t> BaseSearcher::GetData(BaseHolder::Ptr holder, unsigned int i, wchar_t *buf, const wchar_t *src_data, size_t data_size) {
 	size_t counter = 0;
@@ -74,7 +74,7 @@ size_t BaseSearcher::ParseData(BaseHolder::Ptr holder, const wstring &src_data, 
 SearchResult BaseSearcher::Compare(BaseHolder::Ptr holder, const FtDSLQuery &dsl) {
 	size_t data_size = 0;
 
-	vector<pair<std::wstring, ProcType>> data;
+	vector<pair<std::wstring, int>> data;
 	pair<PosType, ProcType> pos;
 	pos.first = 0;
 
@@ -88,13 +88,13 @@ SearchResult BaseSearcher::Compare(BaseHolder::Ptr holder, const FtDSLQuery &dsl
 		data_size += ParseData(holder, term.pattern, max_id, min_id, rusults, term.opts, 1);
 
 		if (holder->cfg_.enableTranslit) {
-			searchers_[0]->Build(term.pattern.c_str(), term.pattern.size(), data);
+			searchers_[0]->GetVariants(term.pattern, data);
 
 			ParseData(holder, data[0].first, max_id, min_id, rusults, term.opts, holder->cfg_.startDefaultDecreese);
 		}
 		if (holder->cfg_.enableKbLayout) {
 			data.clear();
-			searchers_[1]->Build(term.pattern.c_str(), term.pattern.size(), data);
+			searchers_[1]->GetVariants(term.pattern, data);
 			ParseData(holder, data[0].first, max_id, min_id, rusults, term.opts, holder->cfg_.startDefaultDecreese);
 		}
 	}

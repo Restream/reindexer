@@ -2,18 +2,17 @@
 #include <tools/stringstools.h>
 #include <locale>
 #include <string>
+#include "core/ft/filters/kblayout.h"
+#include "core/ft/filters/translit.h"
 #include "estl/string_view.h"
-#include "searchers/isearcher.h"
-#include "searchers/kblayout.h"
-#include "searchers/translit.h"
 
 namespace search_engine {
-using reindexer::utf8_to_utf16;
+using namespace reindexer;
 using std::make_shared;
 
 SearchEngine::SearchEngine() {
-	seacher_.AddSeacher(ISeacher::Ptr(new Translit));
-	seacher_.AddSeacher(ISeacher::Ptr(new KbLayout));
+	seacher_.AddSeacher(ITokenFilter::Ptr(new Translit));
+	seacher_.AddSeacher(ITokenFilter::Ptr(new KbLayout));
 	last_max_id_ = 0;
 	holder_ = make_shared<BaseHolder>();
 	commited_ = false;

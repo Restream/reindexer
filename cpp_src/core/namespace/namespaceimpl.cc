@@ -18,6 +18,7 @@
 #include "replicator/updatesobserver.h"
 #include "replicator/walselecter.h"
 #include "tools/errors.h"
+#include "tools/flagguard.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
 #include "tools/stringstools.h"
@@ -58,7 +59,7 @@ void NamespaceImpl::IndexesStorage::MoveBase(IndexesStorage &&src) { Base::opera
 // private implementation and NOT THREADSAFE of copy CTOR
 // use 'NamespaceImpl::Clone(NamespaceImpl& ns)'
 NamespaceImpl::NamespaceImpl(const NamespaceImpl &src)
-	: indexes_(*this), observers_(src.observers_), lastSelectTime_(0), cancelCommit_(false) {
+	: indexes_(*this), observers_(src.observers_), lastSelectTime_(0), cancelCommit_(false), nsIsLoading_(false) {
 	copyContentsFrom(src);
 }
 
@@ -76,8 +77,10 @@ NamespaceImpl::NamespaceImpl(const string &name, UpdatesObservers &observers)
 	  storageLoaded_(false),
 	  lastSelectTime_(0),
 	  cancelCommit_(false),
-	  lastUpdateTime_(0) {
+	  lastUpdateTime_(0),
+	  nsIsLoading_(false) {
 	logPrintf(LogTrace, "NamespaceImpl::NamespaceImpl (%s)", name_);
+	FlagGuardT nsLoadingGuard(nsIsLoading_);
 	items_.reserve(10000);
 	itemsCapacity_.store(items_.capacity());
 
@@ -1360,10 +1363,12 @@ void NamespaceImpl::markUpdated() {
 	sortOrdersBuilt_ = false;
 	queryCache_->Clear();
 	joinCache_->Clear();
-	lastUpdateTime_.store(
-		std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),
-		std::memory_order_release);
-	repl_.updatedUnixNano = getTimeNow("nsec"_sv);
+	if (!nsIsLoading_) {
+		lastUpdateTime_.store(
+			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),
+			std::memory_order_release);
+		repl_.updatedUnixNano = getTimeNow("nsec"_sv);
+	}
 }
 
 void NamespaceImpl::updateSelectTime() {
@@ -1641,6 +1646,8 @@ void NamespaceImpl::EnableStorage(const string &path, StorageOpts opts, StorageT
 	string dbpath = fs::JoinPath(path, name_);
 
 	auto wlck = wLock(ctx);
+	FlagGuardT nsLoadingGuard(nsIsLoading_);
+
 	if (storage_) {
 		throw Error(errLogic, "Storage already enabled for namespace '%s' on path '%s'", name_, path);
 	}
@@ -1696,6 +1703,7 @@ StorageOpts NamespaceImpl::GetStorageOpts(const RdxContext &ctx) {
 
 void NamespaceImpl::LoadFromStorage(const RdxContext &ctx) {
 	auto wlck = wLock(ctx);
+	FlagGuardT nsLoadingGuard(nsIsLoading_);
 
 	StorageOpts opts;
 	opts.FillCache(false);

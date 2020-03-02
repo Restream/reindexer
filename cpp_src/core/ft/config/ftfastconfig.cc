@@ -20,6 +20,7 @@ void FtFastConfig::parse(string_view json) {
 		distanceWeight = root["distance_weight"].As<>(distanceWeight, 0.0, 1.0);
 		termLenBoost = root["term_len_boost"].As<>(termLenBoost, 0.0, 10.0);
 		termLenWeight = root["term_len_weight"].As<>(termLenWeight, 0.0, 1.0);
+		fullMatchBoost = root["full_match_boost"].As<>(fullMatchBoost, 0.0, 10.0);
 		minRelevancy = root["min_relevancy"].As<>(minRelevancy, 0.0, 1.0);
 		maxTyposInWord = root["max_typos_in_word"].As<>(maxTyposInWord, 0, 2);
 		maxTypoLen = root["max_typo_len"].As<>(maxTypoLen, 0, 100);

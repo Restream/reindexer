@@ -23,16 +23,18 @@ const int kStemProcDecrease = 15;
 void Selecter::prepareVariants(FtSelectContext &ctx, FtDSLEntry &term, std::vector<string> &langs) {
 	ctx.variants.clear();
 
-	vector<pair<std::wstring, search_engine::ProcType>> variantsUtf16{{term.pattern, kFullMatchProc}};
+	vector<pair<std::wstring, int>> variantsUtf16{{term.pattern, kFullMatchProc}};
 
 	if (!holder_.cfg_->enableNumbersSearch || !term.opts.number) {
 		// Make translit and kblayout variants
-		if (holder_.cfg_->enableTranslit && holder_.searchers_.size() > 0 && !term.opts.exact) {
-			holder_.searchers_[0]->Build(term.pattern.data(), term.pattern.length(), variantsUtf16);
+		if (holder_.cfg_->enableTranslit && !term.opts.exact) {
+			holder_.translit_->GetVariants(term.pattern, variantsUtf16);
 		}
-		if (holder_.cfg_->enableKbLayout && holder_.searchers_.size() > 1 && !term.opts.exact) {
-			holder_.searchers_[1]->Build(term.pattern.data(), term.pattern.length(), variantsUtf16);
+		if (holder_.cfg_->enableKbLayout && !term.opts.exact) {
+			holder_.kbLayout_->GetVariants(term.pattern, variantsUtf16);
 		}
+		// Synonims
+		holder_.synonyms_->GetVariants(term.pattern, variantsUtf16);
 	}
 
 	// Apply stemmers
@@ -305,6 +307,7 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 								debugMergeStep("merged better score ", vid, normBm25, normDist, finalRank, merged_rd[moffset].rank);
 							} else {
 								debugMergeStep("merged new ", vid, normBm25, normDist, finalRank, merged_rd[moffset].rank);
+								merged[moffset].matched++;
 							}
 							merged[moffset].proc += finalRank;
 							if (needArea_) {
@@ -328,6 +331,8 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 				MergeInfo info;
 				info.id = vid;
 				info.proc = termRank;
+				info.matched = 1;
+				info.field = field;
 				if (needArea_) {
 					info.holder.reset(new AreaHolder);
 					info.holder->ReserveField(fieldSize_);
@@ -386,6 +391,14 @@ Selecter::MergeData Selecter::mergeResults(vector<TextSearchResults> &rawResults
 		if (rawRes.term.opts.op != OpNot) merged.mergeCnt++;
 	}
 	if (holder_.cfg_->logLevel >= LogInfo) logPrintf(LogInfo, "Complex merge (%d patterns): out %d vids", rawResults.size(), merged.size());
+
+	// Update full match rank
+	for (size_t ofs = 0; ofs < merged.size(); ++ofs) {
+		auto &m = merged[ofs];
+		if (size_t(vdocs[m.id].wordsCount[m.field]) == rawResults.size()) {
+			m.proc *= holder_.cfg_->fullMatchBoost;
+		}
+	}
 
 	boost::sort::pdqsort(merged.begin(), merged.end(), [](const MergeInfo &lhs, const MergeInfo &rhs) { return lhs.proc > rhs.proc; });
 

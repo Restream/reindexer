@@ -10,6 +10,8 @@
 
 namespace reindexer_server {
 
+const reindexer::SemVersion kMinTxReplSupportRxVersion("2.6.0");
+
 RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper logger, bool allocDebug, IStatsWatcher *statsCollector)
 	: dbMgr_(dbMgr), logger_(logger), allocDebug_(allocDebug), statsWatcher_(statsCollector), startTs_(std::chrono::system_clock::now()) {}
 
@@ -23,7 +25,8 @@ Error RPCServer::Ping(cproto::Context &) {
 static std::atomic<int> connCounter;
 
 Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, p_string db, cproto::optional<bool> createDBIfMissing,
-					   cproto::optional<bool> checkClusterID, cproto::optional<int> expectedClusterID) {
+					   cproto::optional<bool> checkClusterID, cproto::optional<int> expectedClusterID,
+					   cproto::optional<p_string> clientRxVersion) {
 	if (ctx.GetClientData()) {
 		return Error(errParams, "Already logged in");
 	}
@@ -33,7 +36,6 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 	clientData->connID = connCounter.fetch_add(1, std::memory_order_relaxed);
 	clientData->pusher.SetWriter(ctx.writer);
 	clientData->subscribed = false;
-
 	clientData->auth = AuthContext(login.toString(), password.toString());
 
 	auto dbName = db.toString();
@@ -45,6 +47,22 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 	if (!status.ok()) {
 		return status;
 	}
+
+	if (clientRxVersion.hasValue()) {
+		clientData->rxVersion = SemVersion(string_view(clientRxVersion.value()));
+	} else {
+		clientData->rxVersion = SemVersion();
+	}
+	if (clientData->rxVersion < kMinTxReplSupportRxVersion) {
+		clientData->pusher.SetFilter([](WALRecord &rec) {
+			if (rec.type == WalCommitTransaction || rec.type == WalInitTransaction) {
+				return true;
+			}
+			rec.inTransaction = false;
+			return false;
+		});
+	}
+
 	ctx.SetClientData(std::move(clientData));
 	if (statsWatcher_) {
 		statsWatcher_->OnClientConnected(dbName, statsSourceName());
@@ -586,6 +604,12 @@ Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int 
 	Query query;
 	Serializer ser(queryBin);
 	query.Deserialize(ser);
+
+	if (query.IsWALQuery()) {
+		auto data = dynamic_cast<RPCClientData *>(ctx.GetClientData());
+		query.Where(string("#slave_version"_sv), CondEq,
+					data->rxVersion.StrippedString());	// -V522 this thing is handled in midleware (within CheckAuth)
+	}
 
 	int id = -1;
 	QueryResults &qres = getQueryResults(ctx, id);

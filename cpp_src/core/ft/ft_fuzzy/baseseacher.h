@@ -1,8 +1,8 @@
 #pragma once
 #include "core/ft/config/ftfastconfig.h"
+#include "core/ft/filters/itokenfilter.h"
 #include "core/ft/ft_fuzzy/dataholder/basebuildedholder.h"
 #include "core/ft/ft_fuzzy/merger/basemerger.h"
-#include "core/ft/ft_fuzzy/searchers/isearcher.h"
 #include "core/ft/ftdsl.h"
 
 #include <string>
@@ -16,10 +16,11 @@ namespace search_engine {
 using std::vector;
 using std::wstring;
 using std::pair;
+using reindexer::ITokenFilter;
 
 class BaseSearcher {
 public:
-	void AddSeacher(ISeacher::Ptr seacher);
+	void AddSeacher(ITokenFilter::Ptr &&seacher);
 	void AddIndex(BaseHolder::Ptr holder, const reindexer::string_view &src_data, const IdType id, int field,
 				  const string &extraWordSymbols);
 	SearchResult Compare(BaseHolder::Ptr holder, const reindexer::FtDSLQuery &dsl);
@@ -38,6 +39,6 @@ private:
 
 	void AddIdToInfo(Info *info, const IdType id, pair<PosType, ProcType> pos, uint32_t total_size);
 	uint32_t FindHash(const wstring &data);
-	vector<ISeacher::Ptr> searchers_;
+	vector<std::unique_ptr<ITokenFilter>> searchers_;
 };
 }  // namespace search_engine

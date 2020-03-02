@@ -20,6 +20,8 @@ type FtFastConfig struct {
 	// 0: term length will not change final rank.
 	// 1: term length will affect to final rank in 0 - 100% range
 	TermLenWeight float64 `json:"term_len_weight"`
+	// Boost of full match of search phrase with doc
+	FullMatchBoost float64 `json:"full_match_boost"`
 	// Minimum rank of found documents
 	MinRelevancy float64 `json:"min_relevancy"`
 	// Maximum possible typos in word.
@@ -45,6 +47,13 @@ type FtFastConfig struct {
 	EnableKbLayout bool `json:"enable_kb_layout"`
 	// List of stop words. Words from this list will be ignored in documents and queries
 	StopWords []string `json:"stop_words"`
+	// List of synonyms for replacement
+	Synonyms []struct {
+		// List source tokens in query, which will be replaced with alternatives
+		Tokens []string `json:"tokens"`
+		// List of alternatives, which will be used for search documents
+		Alternatives []string `json:"alternatives"`
+	} `json:"synonyms"`
 	// Log level of full text search engine
 	LogLevel int `json:"log_level"`
 	// Enable search by numbers as words and backwards
@@ -61,6 +70,7 @@ func DefaultFtFastConfig() FtFastConfig {
 		DistanceWeight:   0.5,
 		TermLenBoost:     1.0,
 		TermLenWeight:    0.3,
+		FullMatchBoost:   1.1,
 		MinRelevancy:     0.05,
 		MaxTyposInWord:   1,
 		MaxTypoLen:       15,

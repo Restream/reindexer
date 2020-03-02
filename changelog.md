@@ -1,7 +1,20 @@
+# Version 2.6.1 (02.03.2020)
+
+# Core
+- [fea] Synonyms feature in fulltext search
+- [fea] New full_match_boost parameter in fulltext search
+- [fix] last_updated_time of ns will not change on restart
+
+# Reindexer server
+- [fea] Enable server startup without storage
+- [fea] Backward compatibility of tx replication with old reindexer versions
+
+## go connector
+- [fix] Windows build
+
 # Version 2.6.0 (21.02.2020)
 
 ## Core
-
 - [fea] Atomic applying transaction with namespace copy & replace
 - [fea] Transaction performance statistics
 - [fix] Equal position behavior fixed
@@ -12,7 +25,6 @@
 
 # Reindexer server
 - [fea] web static resources are embeded to server binary by default
-
 
 # Version 2.5.5 (07.02.2020)
 

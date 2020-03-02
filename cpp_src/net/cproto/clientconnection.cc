@@ -3,6 +3,7 @@
 #include "clientconnection.h"
 #include <errno.h>
 #include "core/rdxcontext.h"
+#include "reindexer_version.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -78,7 +79,7 @@ void ClientConnection::connectInternal() {
 
 		call(completion, {kCmdLogin, options_.loginTimeout, milliseconds(0)},
 			 {Arg{p_string(&userName)}, Arg{p_string(&password)}, Arg{p_string(&dbName)}, Arg{options_.createDB},
-			  Arg{options_.hasExpectedClusterID}, Arg{options_.expectedClusterID}});
+			  Arg{options_.hasExpectedClusterID}, Arg{options_.expectedClusterID}, Arg{p_string(REINDEX_VERSION)}});
 	}
 }
 

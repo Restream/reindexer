@@ -16,6 +16,7 @@ struct FtFastConfig : public BaseFTConfig {
 	double distanceWeight = 0.5;
 	double termLenBoost = 1.0;
 	double termLenWeight = 0.3;
+	double fullMatchBoost = 1.1;
 	double minRelevancy = 0.05;
 
 	int maxTyposInWord = 1;

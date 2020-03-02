@@ -2,11 +2,11 @@
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
+#include "baseseacher.h"
 #include "core/ft/config/ftfuzzyconfig.h"
 #include "core/ft/ftdsl.h"
 #include "core/idset.h"
 #include "dataholder/basebuildedholder.h"
-#include "searchers/base_searcher/baseseacher.h"
 
 namespace reindexer {
 class string_view;

@@ -19,9 +19,12 @@ public:
 		int16_t wordLen_;
 	};
 
+	// Final information about found document
 	struct MergeInfo {
-		IdType id;
-		int proc;
+		IdType id;		 // Virual of merged document (index in vdocs)
+		int16_t proc;	 // Rank of document
+		int8_t matched;	 // Count of matched terms in document
+		int8_t field;	 // Field index, where was match
 		AreaHolder::UniquePtr holder;
 	};
 
@@ -29,11 +32,12 @@ public:
 		int mergeCnt = 0;
 	};
 
+	// Intermediate information about found document in current merge step. Used only for queries with 2 or more terms
 	struct MergedIdRel {
-		IdRelType cur;
-		IdRelType next;
-		int rank;
-		int qpos;
+		IdRelType cur;	 // Ids & pos of matched document of current step
+		IdRelType next;	 // Ids & pos of matched document of next step
+		int rank;		 // Rank of curent matched document
+		int qpos;		 // Position in query
 	};
 	struct FtVariantEntry {
 		string pattern;

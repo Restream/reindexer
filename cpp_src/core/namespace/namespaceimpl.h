@@ -370,6 +370,7 @@ private:
 
 	std::atomic<uint32_t> itemsCount_ = {0};
 	std::atomic<uint32_t> itemsCapacity_ = {0};
+	bool nsIsLoading_;
 };
 
 }  // namespace reindexer

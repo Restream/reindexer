@@ -2,8 +2,8 @@
 
 #include <mutex>
 #include "core/ft/config/baseftconfig.h"
+#include "core/ft/filters/itokenfilter.h"
 #include "core/ft/ft_fast/dataholder.h"
-#include "core/ft/ft_fuzzy/searchers/isearcher.h"
 #include "core/ft/ftdsl.h"
 #include "core/ft/ftsetcashe.h"
 #include "core/index/indexunordered.h"
