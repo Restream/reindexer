@@ -1,6 +1,7 @@
 #include <chrono>
 #include "ns_api.h"
 #include "tools/serializer.h"
+#include "vendor/gason/gason.h"
 
 TEST_F(NsApi, IndexDrop) {
 	Error err = rt.reindexer->OpenNamespace(default_namespace);
@@ -321,7 +322,7 @@ TEST_F(NsApi, TestUpdateIndexedField) {
 		Item item = it.GetItem();
 		Variant val = item[stringField];
 		ASSERT_TRUE(val.Type() == KeyValueString);
-		ASSERT_TRUE(val.As<string>() == "bingo!");
+		ASSERT_TRUE(val.As<string>() == "bingo!") << val.As<string>();
 		checkIfItemJSONValid(it);
 	}
 }
@@ -407,11 +408,85 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField) {
 					  Variant(static_cast<int64_t>(6))});
 }
 
+TEST_F(NsApi, TestUpdateNonindexedArrayField2) {
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	QueryResults qr;
+	Error err = rt.reindexer->Select(R"(update test_namespace set 'nested.bonus'=[{"first":1,"second":2,"third":3}] where id = 1000;)", qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
+
+	Item item = qr[0].GetItem();
+	reindexer::string_view json = item.GetJSON();
+	size_t pos = json.find(R"("nested":{"bonus":[{"first":1,"second":2,"third":3}]})");
+	ASSERT_TRUE(pos != std::string::npos) << "'nested.bonus' was not updated properly" << json;
+}
+
+TEST_F(NsApi, TestUpdateNonindexedArrayField3) {
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	QueryResults qr;
+	Error err =
+		rt.reindexer->Select(R"(update test_namespace set 'nested.bonus'=[{"id":1},{"id":2},{"id":3},{"id":4}] where id = 1000;)", qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
+
+	Item item = qr[0].GetItem();
+	VariantArray val = item["nested.bonus"];
+	ASSERT_TRUE(val.size() == 4);
+
+	size_t length = 0;
+	reindexer::string_view json = item.GetJSON();
+	gason::JsonParser jsonParser;
+	ASSERT_NO_THROW(jsonParser.Parse(json, &length));
+	ASSERT_TRUE(length > 0);
+
+	size_t pos = json.find(R"("nested":{"bonus":[{"id":1},{"id":2},{"id":3},{"id":4}]})");
+	ASSERT_TRUE(pos != std::string::npos) << "'nested.bonus' was not updated properly" << json;
+}
+
+TEST_F(NsApi, TestUpdateNonindexedArrayField4) {
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	QueryResults qr;
+	Error err = rt.reindexer->Select(R"(update test_namespace set 'nested.bonus'=[0] where id = 1000;)", qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
+
+	Item item = qr[0].GetItem();
+	reindexer::string_view json = item.GetJSON();
+	size_t pos = json.find(R"("nested":{"bonus":[0]})");
+	ASSERT_TRUE(pos != std::string::npos) << "'nested.bonus' was not updated properly" << json;
+}
+
 TEST_F(NsApi, TestUpdateIndexedArrayField) {
 	DefineDefaultNamespace();
 	FillDefaultNamespace();
 	updateArrayField(rt.reindexer, default_namespace, indexedArrayField,
 					 {Variant(7), Variant(8), Variant(9), Variant(10), Variant(11), Variant(12), Variant(13)});
+}
+
+TEST_F(NsApi, TestUpdateIndexedArrayField2) {
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	QueryResults qr;
+	Query q = Query(default_namespace).Where(idIdxName, CondEq, static_cast<int>(1000));
+	VariantArray value;
+	value.MarkArray();
+	value.emplace_back(static_cast<int>(77));
+	q.updateFields_.emplace_back(reindexer::UpdateEntry(indexedArrayField, value, FieldModeSet));
+	Error err = rt.reindexer->Update(q, qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
+
+	Item item = qr[0].GetItem();
+	reindexer::string_view json = item.GetJSON();
+	size_t pos = json.find(R"("indexed_array_field":[77])");
+	ASSERT_TRUE(pos != std::string::npos) << "'indexed_array_field' was not updated properly" << json;
 }
 
 void addAndSetNonindexedField(std::shared_ptr<reindexer::Reindexer> reindexer, const string &ns, const string &updateFieldPath) {
@@ -756,7 +831,7 @@ TEST_F(NsApi, TestUpdateFieldWithExpressions) {
 		"0;",
 		qr);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr.Count() > 0);
+	ASSERT_TRUE(qr.Count() > 0) << qr.Count();
 
 	int i = 1;
 	for (auto &it : qr) {
@@ -781,4 +856,10 @@ TEST_F(NsApi, TestUpdateQuerySqlEncoder) {
 	Query q2;
 	q2.FromSQL(sqlDrop);
 	EXPECT_TRUE(q2.GetSQL() == sqlDrop) << q2.GetSQL();
+
+	const string sqlUpdateWithObject =
+		R"(UPDATE ns SET field = {"id":0,"name":"apple","price":1000,"nested":{"n_id":1,"desription":"good"},"bonus":7} WHERE a > 0 AND b = 77)";
+	Query q3;
+	q3.FromSQL(sqlUpdateWithObject);
+	EXPECT_TRUE(q3.GetSQL() == sqlUpdateWithObject) << q3.GetSQL();
 }

@@ -15,11 +15,11 @@ using reindexer::h_vector;
 
 class ServerConnection : public ConnectionST, public IServerConnection, public Writer {
 public:
-	ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher);
+	ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher, bool enableStat);
 
 	// IServerConnection interface implementation
-	static ConnectionFactory NewFactory(Dispatcher &dispatcher) {
-		return [&dispatcher](ev::dynamic_loop &loop, int fd) { return new ServerConnection(fd, loop, dispatcher); };
+	static ConnectionFactory NewFactory(Dispatcher &dispatcher, bool enableStat) {
+		return [&dispatcher, enableStat](ev::dynamic_loop &loop, int fd) { return new ServerConnection(fd, loop, dispatcher, enableStat); };
 	}
 
 	bool IsFinished() override final { return !sock_.valid(); }
@@ -32,6 +32,7 @@ public:
 	void CallRPC(CmdCode cmd, const Args &args) override final;
 	void SetClientData(std::unique_ptr<ClientData> data) override final { clientData_ = std::move(data); }
 	ClientData *GetClientData() override final { return clientData_.get(); }
+	std::shared_ptr<ConnectionStat> GetConnectionStat() override final { return stat_; }
 
 protected:
 	void onRead() override;

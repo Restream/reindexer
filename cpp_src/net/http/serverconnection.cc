@@ -15,7 +15,7 @@ namespace http {
 static const string_view kStrEOL = "\r\n"_sv;
 extern std::unordered_map<int, string_view> kHTTPCodes;
 
-ServerConnection::ServerConnection(int fd, ev::dynamic_loop &loop, Router &router) : ConnectionST(fd, loop), router_(router) {
+ServerConnection::ServerConnection(int fd, ev::dynamic_loop &loop, Router &router) : ConnectionST(fd, loop, false), router_(router) {
 	callback(io_, ev::READ);
 }
 

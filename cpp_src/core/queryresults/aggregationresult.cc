@@ -19,6 +19,8 @@ string_view AggregationResult::aggTypeToStr(AggType type) {
 			return "facet"_sv;
 		case AggAvg:
 			return "avg"_sv;
+		case AggDistinct:
+			return "distinct"_sv;
 		default:
 			return "?"_sv;
 	}
@@ -35,6 +37,8 @@ AggType AggregationResult::strToAggType(string_view type) {
 		return AggMin;
 	} else if (type == "max"_sv) {
 		return AggMax;
+	} else if (type == "distinct"_sv) {
+		return AggDistinct;
 	}
 	return AggUnknown;
 }
@@ -55,6 +59,11 @@ void AggregationResult::GetJSON(WrSerializer &ser) const {
 				arrNode.Put(nullptr, v);
 			}
 		}
+	}
+
+	if (distincts.size()) {
+		auto distArr = builder.Array("distincts");
+		for (const std::string &v : distincts) distArr.Put(nullptr, v);
 	}
 
 	auto fldNode = builder.Array("fields");
@@ -84,6 +93,9 @@ Error AggregationResult::FromJSON(span<char> json) {
 			facets.push_back(facet);
 		}
 
+		for (auto &distinctNode : root["distincts"]) {
+			distincts.emplace_back(distinctNode.As<string>());
+		}
 	} catch (const gason::Exception &ex) {
 		return Error(errParseJson, "AggregationResult: %s", ex.what());
 	}

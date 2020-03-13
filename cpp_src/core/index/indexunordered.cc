@@ -9,6 +9,8 @@
 
 namespace reindexer {
 
+constexpr int kMaxIdsForDistinct = 500;
+
 template <typename T>
 IndexUnordered<T>::IndexUnordered(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields)
 	: IndexStore<typename T::key_type>(idef, payloadType, fields), idx_map(payloadType, fields, idef.opts_.collateOpts_) {}
@@ -199,7 +201,13 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 			return rslts;
 		}
 
-		case CondAny:  // Get set of any keys
+		case CondAny:
+			if (opts.distinct && this->idx_map.size() < kMaxIdsForDistinct) {  // TODO change to more clever condition
+				// Get set of any keys
+				res.reserve(this->idx_map.size());
+				for (auto &keyIt : this->idx_map) res.emplace_back(keyIt.second, sortId);
+				break;
+			}  // else fallthrough
 		case CondGe:
 		case CondLe:
 		case CondRange:

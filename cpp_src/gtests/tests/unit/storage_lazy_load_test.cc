@@ -6,7 +6,7 @@
 
 void waitFor(int millisec) { std::this_thread::sleep_for(std::chrono::milliseconds(millisec)); }
 
-TEST_F(StorageLazyLoadApi, BasicTest) {
+TEST_F(DISABLED_StorageLazyLoadApi, BasicTest) {
 	bool storageLoaded = false;
 	int64_t totalItemsCount = getItemsCount(storageLoaded);
 
@@ -35,7 +35,7 @@ TEST_F(StorageLazyLoadApi, BasicTest) {
 	EXPECT_TRUE(!storageLoaded);
 }
 
-TEST_F(StorageLazyLoadApi, ReadWriteTest) {
+TEST_F(DISABLED_StorageLazyLoadApi, ReadWriteTest) {
 	bool storageLoaded = false;
 	int totalItemsCount(getItemsCount(storageLoaded));
 	totalItemsCount += 100;	 // 100 is not loaded from storage yet
@@ -78,7 +78,7 @@ TEST_F(StorageLazyLoadApi, ReadWriteTest) {
 	}
 }
 
-TEST_F(StorageLazyLoadApi, DISABLED_AttemptToReadWriteInParallelTest) {
+TEST_F(DISABLED_StorageLazyLoadApi, DISABLED_AttemptToReadWriteInParallelTest) {
 	bool storageLoaded = false;
 	std::atomic<int> totalItemsCount(getItemsCount(storageLoaded));
 	totalItemsCount += 100;	 // 100 is not loaded from storage yet
@@ -134,7 +134,7 @@ TEST_F(StorageLazyLoadApi, DISABLED_AttemptToReadWriteInParallelTest) {
 	EXPECT_TRUE(totalItemsCount == inserted_);
 }
 
-TEST_F(StorageLazyLoadApi, TestForTSAN) {
+TEST_F(DISABLED_StorageLazyLoadApi, TestForTSAN) {
 	auto writeFn = [&]() { fillNs(200); };
 	auto readFn = [&]() {
 		SelectAll();

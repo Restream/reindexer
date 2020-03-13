@@ -1,5 +1,5 @@
 #pragma once
-#include "core/aggregator.h"
+#include "aggregator.h"
 #include "core/index/index.h"
 #include "joinedselector.h"
 #include "sortingcontext.h"
@@ -33,23 +33,25 @@ public:
 
 private:
 	struct LoopCtx {
-		LoopCtx(SelectCtx &ctx) : sctx(ctx) {}
+		LoopCtx(SelectCtx &ctx, h_vector<Aggregator, 4> &agg) : sctx(ctx), aggregators(agg) {}
 		SelectIteratorContainer *qres = nullptr;
 		bool calcTotal = false;
 		SelectCtx &sctx;
+		h_vector<Aggregator, 4> &aggregators;
 	};
 
-	template <bool reverse, bool haveComparators>
+	template <bool reverse, bool haveComparators, bool aggregationsOnly>
 	void selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext &);
 	template <bool desc, bool multiColumnSort, typename Items>
 	typename Items::iterator applyForcedSort(Items &items, const ItemComparator &, const SelectCtx &ctx);
 	template <typename It>
 	void applyGeneralSort(It itFirst, It itLast, It itEnd, const ItemComparator &, const SelectCtx &ctx);
 
+	template <bool aggregationsOnly>
 	void addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &sctx, h_vector<Aggregator, 4> &aggregators,
 						 QueryResults &result);
 
-	h_vector<Aggregator, 4> getAggregators(const Query &q);
+	h_vector<Aggregator, 4> getAggregators(const Query &) const;
 	int getCompositeIndex(const FieldsSet &fieldsmask);
 	void setLimitAndOffset(ItemRefVector &result, size_t offset, size_t limit);
 	void prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, bool isFt);

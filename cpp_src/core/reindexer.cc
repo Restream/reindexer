@@ -3,12 +3,13 @@
 
 namespace reindexer {
 
-Reindexer::Reindexer() : impl_(new ReindexerImpl), owner_(true) {}
+Reindexer::Reindexer(IClientsStats* clientsStats) : impl_(new ReindexerImpl(clientsStats)), owner_(true) {}
 Reindexer::~Reindexer() {
 	if (owner_) {
 		delete impl_;
 	}
 }
+
 Reindexer::Reindexer(const Reindexer& rdx) noexcept : impl_(rdx.impl_), owner_(false), ctx_(rdx.ctx_) {}
 Reindexer::Reindexer(Reindexer&& rdx) noexcept : impl_(rdx.impl_), owner_(rdx.owner_), ctx_(std::move(rdx.ctx_)) { rdx.owner_ = false; }
 

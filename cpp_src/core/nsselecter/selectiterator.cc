@@ -232,10 +232,13 @@ bool SelectIterator::nextUnsorted() {
 
 bool SelectIterator::nextUnbuiltSortOrders() { return begin()->indexForwardIter_->Next(); }
 
-void SelectIterator::ExcludeLastSet() {
+void SelectIterator::ExcludeLastSet(const PayloadValue &value, IdType rowId, IdType properRowId) {
+	for (auto &comp : comparators_) comp.ExcludeDistinct(value, properRowId);
 	if (type_ == UnbuiltSortOrdersIndex) {
-		begin()->indexForwardIter_->ExcludeLastSet();
-	} else if (!End() && lastIt_ != end()) {
+		if (begin()->indexForwardIter_->Value() == rowId) {
+			begin()->indexForwardIter_->ExcludeLastSet();
+		}
+	} else if (!End() && lastIt_ != end() && lastVal_ == rowId) {
 		assert(!lastIt_->isRange_);
 		if (lastIt_->useBtree_) {
 			lastIt_->itset_ = lastIt_->setend_;

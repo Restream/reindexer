@@ -41,7 +41,7 @@ protected:
 	void AddUnindexedData() {
 		char sourceJson[1024];
 		const char jsonPattern[] =
-			R"json({"id": %s, "indexed_array_field": [0,0], "":{"empty_obj_field":"not empty"}, "array_field": [1,2,3], "extra" : "%s", "sparse_field": %ld, "nested":{"bonus":%ld}, "nested2":{"bonus2":%ld}})json";
+			R"json({"id": %s, "":{"empty_obj_field":"not empty"}, "array_field": [1,2,3], "extra" : "%s", "sparse_field": %ld, "nested":{"bonus":%ld}, "nested2":{"bonus2":%ld}})json";
 		for (size_t i = 1000; i < 2000; ++i) {
 			Item item = NewItem(default_namespace);
 			EXPECT_TRUE(item.Status().ok()) << item.Status().what();

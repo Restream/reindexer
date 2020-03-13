@@ -352,6 +352,28 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 			}
 			v.Set(slice)
 		}
+	case valueBool:
+		pb := (*[1 << 27]Cbool)(ptr)[:l:l]
+		switch a := v.Addr().Interface().(type) {
+		case *[]bool:
+			*a = make([]bool, cnt, cnt)
+			for i := 0; i < cnt; i++ {
+				(*a)[i] = bool(pb[i] != 0)
+			}
+		default:
+			slice := reflect.MakeSlice(v.Type(), cnt, cnt)
+			for i := 0; i < cnt; i++ {
+				sv := slice.Index(i)
+				if sv.Type().Kind() == reflect.Ptr {
+					el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
+					el.Elem().SetBool(bool(pb[i] != 0))
+					sv.Set(el)
+				} else {
+					sv.SetBool(bool(pb[i] != 0))
+				}
+			}
+			v.Set(slice)
+		}
 	case valueString:
 		if a, ok := v.Addr().Interface().(*[]string); ok {
 			*a = make([]string, cnt, cnt)
@@ -373,6 +395,8 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 			}
 			v.Set(slice)
 		}
+	default:
+		panic(fmt.Errorf("Got C array with elements of unknown C type %d in field '%s' for go type '%s'", pl.t.Fields[field].Type, pl.t.Fields[field].Name, v.Type().Elem().Kind().String()))
 	}
 }
 

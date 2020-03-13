@@ -9,6 +9,10 @@
 #include "estl/shared_mutex.h"
 #include "tools/stringstools.h"
 
+namespace reindexer {
+class IClientsStats;
+}
+
 /// @namespace reindexer_server
 /// The namespace for reindexer server implementation
 namespace reindexer_server {
@@ -87,6 +91,9 @@ public:
 	/// Get database name
 	/// @return db name
 	const string &DBName() { return dbName_; }
+	/// Get user rights
+	/// @return user rights
+	UserRole UserRights() const { return role_; }
 
 protected:
 	AuthContext(UserRole role) : role_(role) {}
@@ -108,7 +115,8 @@ public:
 	/// Construct DBManager
 	/// @param dbpath - path to database on file system
 	/// @param noSecurity - if true, then disable all security validations and users authentication
-	DBManager(const string &dbpath, bool noSecurity);
+	/// @param clientsStats - object for receiving clients statistics
+	DBManager(const string &dbpath, bool noSecurity, IClientsStats *clientsStats = nullptr);
 	/// Initialize database:
 	/// Read all found databases to RAM
 	/// Read user's database
@@ -154,6 +162,8 @@ private:
 	Mutex mtx_;
 	bool noSecurity_;
 	datastorage::StorageType storageType_;
+
+	IClientsStats *clientsStats_ = nullptr;
 };
 
 }  // namespace reindexer_server

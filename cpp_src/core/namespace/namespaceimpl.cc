@@ -74,7 +74,6 @@ NamespaceImpl::NamespaceImpl(const string &name, UpdatesObservers &observers)
 	  joinCache_(make_shared<JoinCache>()),
 	  enablePerfCounters_(false),
 	  observers_(&observers),
-	  storageLoaded_(false),
 	  lastSelectTime_(0),
 	  cancelCommit_(false),
 	  lastUpdateTime_(0),
@@ -110,7 +109,6 @@ void NamespaceImpl::copyContentsFrom(const NamespaceImpl &src) {
 	config_ = src.config_;
 	wal_ = src.wal_;
 	repl_ = src.repl_;
-	storageLoaded_ = src.storageLoaded_.load();
 	lastUpdateTime_.store(src.lastUpdateTime_.load(std::memory_order_acquire), std::memory_order_release);
 	itemsCount_ = items_.size();
 	itemsCapacity_ = items_.capacity();
@@ -595,9 +593,9 @@ bool NamespaceImpl::getIndexByName(const string &name, int &index) const {
 	return true;
 }
 
-void NamespaceImpl::Insert(Item &item, const RdxContext &ctx) { modifyItem(item, ctx, ModeInsert); }
+void NamespaceImpl::Insert(Item &item, const NsContext &ctx) { modifyItem(item, ctx, ModeInsert); }
 
-void NamespaceImpl::Update(Item &item, const RdxContext &ctx) { modifyItem(item, ctx, ModeUpdate); }
+void NamespaceImpl::Update(Item &item, const NsContext &ctx) { modifyItem(item, ctx, ModeUpdate); }
 
 void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsContext &ctx) {
 	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
@@ -619,25 +617,26 @@ void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsCon
 
 	auto tmStart = high_resolution_clock::now();
 
-	bool isExpression = false;
+	bool withJsonUpdates = false;
+	bool withExpressions = false;
 	for (const UpdateEntry &ue : query.updateFields_) {
-		if (ue.isExpression) {
-			isExpression = true;
-			break;
-		}
+		if (!withExpressions && ue.isExpression) withExpressions = true;
+		if (!withJsonUpdates && ue.mode == FieldModeSetJson) withJsonUpdates = true;
+		if (withExpressions && withJsonUpdates) break;
 	}
 
-	if (repl_.slaveMode && isExpression) throw Error(errLogic, "Can't apply update query with expression to slave ns '%s'", name_);
+	if (repl_.slaveMode && withExpressions) throw Error(errLogic, "Can't apply update query with expression to slave ns '%s'", name_);
 	ThrowOnCancel(ctx.rdxContext);
 
 	// If update statement is expression and contains function calls then we use
 	// row-based replication (to preserve data consistense), otherwise we update
-	// it via 'WalUpdateQuery' (statement-based replication).
-	bool enableStatementRepl =
-		(!isExpression && !query.HasLimit() && !query.HasOffset() && (result.Count() >= kWALStatementItemsThreshold));
+	// it via 'WalUpdateQuery' (statement-based replication). If Update statement
+	// contains update of entire object (via JSON) then statement replication is not possible.
+	bool enableStatementRepl = (!withJsonUpdates && !withExpressions && !query.HasLimit() && !query.HasOffset() &&
+								(result.Count() >= kWALStatementItemsThreshold));
 
 	for (ItemRef &item : result.Items()) {
-		updateFieldsFromQuery(item.Id(), query, !enableStatementRepl, ctx);
+		updateItemFromQuery(item.Id(), query, !enableStatementRepl, ctx, withJsonUpdates);
 		item.Value() = items_[item.Id()];
 	}
 	result.getTagsMatcher(0) = tagsMatcher_;
@@ -648,7 +647,16 @@ void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsCon
 		const_cast<Query &>(query).type_ = QueryUpdate;
 		WALRecord wrec(WalUpdateQuery, query.GetSQL(ser).Slice(), ctx.inTransaction);
 		int64_t lsn = ctx.lsn;
-		if (!repl_.slaveMode) lsn = wal_.Add(wrec);
+		if (repl_.slaveMode) {
+			if (repl_.lastLsn >= lsn) {
+				logPrintf(LogError, "[repl:%s] Namespace::modifyItem lsn = %ld lastLsn = %ld ", name_, lsn, repl_.lastLsn);
+			}
+		} else {
+			lsn = wal_.Add(wrec);
+		}
+		for (ItemRef &item : result.Items()) {
+			item.Value().SetLSN(lsn);
+		}
 		observers_->OnWALUpdate(lsn, name_, wrec);
 	}
 
@@ -1021,7 +1029,7 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 				pl.Get(field, krefs, index.Opts().IsArray());
 			}
 			for (auto key : krefs) index.Delete(key, id);
-			if (!krefs.size()) index.Delete(Variant(), id);
+			if (krefs.empty()) index.Delete(Variant(), id);
 		}
 		// Put value to index
 		krefs.resize(0);
@@ -1032,7 +1040,7 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 			// Put value to payload
 			pl.Set(field, krefs);
 			// If no krefs doUpsert empty value to index
-			if (!skrefs.size()) index.Upsert(Variant(), id);
+			if (skrefs.empty()) index.Upsert(Variant(), id);
 		}
 	} while (++field != borderIdx);
 
@@ -1081,8 +1089,6 @@ void NamespaceImpl::updateTagsMatcherFromItem(ItemImpl *ritem) {
 	}
 }
 
-bool NamespaceImpl::isEmptyAfterStorageReload() const { return items_.empty() && !storageLoaded_; }
-
 VariantArray NamespaceImpl::preprocessUpdateFieldValues(const UpdateEntry &updateEntry, IdType itemId) {
 	if (!updateEntry.isExpression) return updateEntry.values;
 	assert(updateEntry.values.size() > 0);
@@ -1091,21 +1097,79 @@ VariantArray NamespaceImpl::preprocessUpdateFieldValues(const UpdateEntry &updat
 	return {expressionEvaluator.Evaluate(static_cast<string_view>(updateEntry.values.front()), items_[itemId])};
 }
 
-void NamespaceImpl::updateFieldsFromQuery(IdType itemId, const Query &q, bool rowBasedReplication, const NsContext &ctx) {
-	if (isEmptyAfterStorageReload()) {
-		reloadStorage();
-	}
-
-	assert(items_.exists(itemId));
-
+void NamespaceImpl::updateItemFromCJSON(IdType itemId, const Query &q, const NsContext &ctx) {
+	PayloadValue pv = items_[itemId];
+	Payload pl(payloadType_, pv);
+	pv.Clone(pl.RealSize());
+	ItemImpl itemimpl(payloadType_, pv, tagsMatcher_);
 	for (const UpdateEntry &updateField : q.updateFields_) {
-		int fieldIdx = 0;
-		if (!getIndexByName(updateField.column, fieldIdx)) {
-			bool updated = false;
-			tagsMatcher_.path2tag(updateField.column, updated);
-		}
+		VariantArray values = preprocessUpdateFieldValues(updateField, itemId);
+		itemimpl.ModifyField(updateField.column, values, updateField.mode);
+	}
+	NsContext nsCtx{ctx.rdxContext};
+	nsCtx.NoLock();
+
+	Item item = NewItem(nsCtx);
+	Error err = item.FromCJSON(itemimpl.GetCJSON(true));
+	if (!err.ok()) throw err;
+	Update(item, nsCtx);
+}
+
+void NamespaceImpl::updateFieldIndex(IdType itemId, int field, const VariantArray &values, Payload &pl) {
+	Index &index = *indexes_[field];
+	if (values.IsNullValue() && !index.Opts().IsArray()) {
+		throw Error(errParams, "Non-array index fields cannot be set to null!");
+	}
+	if (skrefs.empty()) index.Delete(Variant(), itemId);
+	for (const Variant &key : skrefs) index.Delete(key, itemId);
+	krefs.resize(0);
+	krefs.reserve(values.size());
+	for (Variant key : values) {
+		key.convert(index.KeyType());
+		krefs.push_back(index.Upsert(key, itemId));
+	}
+	if (krefs.empty()) index.Upsert(Variant(), itemId);
+	if (!index.Opts().IsSparse()) {
+		pl.Set(field, krefs);
+	}
+}
+
+void NamespaceImpl::updateSingleField(const UpdateEntry &updateField, const IdType &itemId, Payload &pl) {
+	int fieldIdx = 0;
+	bool isIndexedField = getIndexByName(updateField.column, fieldIdx);
+
+	Index &index = *indexes_[fieldIdx];
+	if (isIndexedField && !index.Opts().IsSparse() && (updateField.mode == FieldModeDrop)) {
+		throw Error(errLogic, "It's only possible to drop sparse or non-index fields via UPDATE statement!");
 	}
 
+	assert(!index.Opts().IsSparse() || (index.Opts().IsSparse() && index.Fields().getTagsPathsLength() > 0));
+	VariantArray values = preprocessUpdateFieldValues(updateField, itemId);
+
+	if (index.Opts().IsSparse()) {
+		pl.GetByJsonPath(index.Fields().getTagsPath(0), skrefs, index.KeyType());
+	} else {
+		pl.Get(fieldIdx, skrefs, index.Opts().IsArray());
+	}
+
+	if (index.Opts().GetCollateMode() == CollateUTF8) {
+		for (const Variant &key : values) key.EnsureUTF8();
+	}
+
+	if (isIndexedField) {
+		updateFieldIndex(itemId, fieldIdx, values, pl);
+	}
+
+	if (index.Opts().IsSparse() || !isIndexedField || index.Opts().IsArray()) {
+		ItemImpl item(payloadType_, *(pl.Value()), tagsMatcher_);
+		item.ModifyField(updateField.column, values, updateField.mode);
+		Variant tupleValue = indexes_[0]->Upsert(item.GetField(0), itemId);
+		pl.Set(0, {tupleValue});
+		tagsMatcher_.try_merge(item.tagsMatcher());
+	}
+}
+
+void NamespaceImpl::updateItemFields(IdType itemId, const Query &q, bool rowBasedReplication, const NsContext &ctx) {
 	PayloadValue &pv = items_[itemId];
 	Payload pl(payloadType_, pv);
 	uint64_t oldPlHash = pl.GetHash();
@@ -1116,53 +1180,7 @@ void NamespaceImpl::updateFieldsFromQuery(IdType itemId, const Query &q, bool ro
 	}
 
 	for (const UpdateEntry &updateField : q.updateFields_) {
-		int fieldIdx = 0;
-		bool isIndexedField = getIndexByName(updateField.column, fieldIdx);
-
-		Index &index = *indexes_[fieldIdx];
-		bool isIndexSparse = index.Opts().IsSparse();
-		if (isIndexedField && !isIndexSparse && (updateField.mode == FieldModeDrop)) {
-			throw Error(errLogic, "It's only possible to drop sparse or non-index fields via UPDATE statement!");
-		}
-
-		assert(!isIndexSparse || (isIndexSparse && index.Fields().getTagsPathsLength() > 0));
-		VariantArray values = preprocessUpdateFieldValues(updateField, itemId);
-
-		if (isIndexSparse) {
-			pl.GetByJsonPath(index.Fields().getTagsPath(0), skrefs, index.KeyType());
-		} else {
-			pl.Get(fieldIdx, skrefs, index.Opts().IsArray());
-		}
-
-		if (index.Opts().GetCollateMode() == CollateUTF8)
-			for (const Variant &key : values) key.EnsureUTF8();
-
-		if (isIndexedField) {
-			if (values.IsNullValue() && !index.Opts().IsArray()) {
-				throw Error(errParams, "Non-array index fields cannot be set to null!");
-			}
-			if (skrefs.empty()) index.Delete(Variant(), itemId);
-			for (const Variant &key : skrefs) index.Delete(key, itemId);
-
-			krefs.resize(0);
-			krefs.reserve(values.size());
-			for (Variant key : values) {
-				key.convert(index.KeyType());
-				krefs.push_back(index.Upsert(key, itemId));
-			}
-			if (krefs.empty()) index.Upsert(Variant(), itemId);
-			if (!isIndexSparse) {
-				pl.Set(fieldIdx, krefs);
-			}
-		}
-
-		bool isIndexedArray = (isIndexedField && index.Opts().IsArray());
-		if (isIndexSparse || !isIndexedField || isIndexedArray) {
-			ItemImpl item(payloadType_, pv, tagsMatcher_);
-			item.ModifyField(updateField.column, values, updateField.mode);
-			Variant tupleValue = indexes_[0]->Upsert(item.GetField(0), itemId);
-			pl.Set(0, {tupleValue});
-		}
+		updateSingleField(updateField, itemId, pl);
 	}
 
 	for (int field = indexes_.firstCompositePos(); field < indexes_.totalSize(); ++field) {
@@ -1198,8 +1216,24 @@ void NamespaceImpl::updateFieldsFromQuery(IdType itemId, const Query &q, bool ro
 		item.GetCJSON(data);
 		writeToStorage(pk.Slice(), data.Slice());
 	}
-
 	markUpdated();
+}
+
+void NamespaceImpl::updateItemFromQuery(IdType itemId, const Query &q, bool rowBasedReplication, const NsContext &ctx,
+										bool withJsonUpdates) {
+	assert(items_.exists(itemId));
+	for (const UpdateEntry &updateField : q.updateFields_) {
+		int fieldIdx = 0;
+		if (!getIndexByName(updateField.column, fieldIdx)) {
+			bool updated = false;
+			tagsMatcher_.path2tag(updateField.column, updated);
+		}
+	}
+	if (withJsonUpdates) {
+		updateItemFromCJSON(itemId, q, ctx);
+	} else {
+		updateItemFields(itemId, q, rowBasedReplication, ctx);
+	}
 }
 
 void NamespaceImpl::modifyItem(Item &item, const NsContext &ctx, int mode) {
@@ -1241,11 +1275,9 @@ void NamespaceImpl::modifyItem(Item &item, const NsContext &ctx, int mode) {
 		lsn = wal_.Add(WALRecord(WalItemUpdate, id, ctx.inTransaction), exists ? items_[id].GetLSN() : -1);
 	}
 
-	if (!isEmptyAfterStorageReload()) {
-		item.setLSN(lsn);
-		item.setID(id);
-		doUpsert(itemImpl, id, exists);
-	}
+	item.setLSN(lsn);
+	item.setID(id);
+	doUpsert(itemImpl, id, exists);
 
 	if (storage_) {
 		if (tagsMatcher_.isUpdated()) {
@@ -1268,7 +1300,7 @@ void NamespaceImpl::modifyItem(Item &item, const NsContext &ctx, int mode) {
 	observers_->OnModifyItem(lsn, name_, item.impl_, mode, ctx.inTransaction);
 
 	markUpdated();
-}
+}  // namespace reindexer
 
 // find id by PK. NOT THREAD SAFE!
 pair<IdType, bool> NamespaceImpl::findByPK(ItemImpl *ritem, const RdxContext &ctx) {
@@ -1459,7 +1491,6 @@ NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext &ctx) {
 
 	ret.storageOK = storage_ != nullptr;
 	ret.storagePath = dbpath_;
-	ret.storageLoaded = storageLoaded_.load();
 	ret.optimizationCompleted = sortOrdersBuilt_;
 	return ret;
 }
@@ -1636,12 +1667,6 @@ void NamespaceImpl::saveReplStateToStorage() {
 	writeSysRecToStorage(ser.Slice(), kStorageReplStatePrefix, sysRecordsVersions_.replVersion, true);
 }
 
-bool NamespaceImpl::needToLoadData(const RdxContext &ctx) const {
-	auto rlck = rLock(ctx);
-
-	return (storage_ && (dbpath_.length() > 0)) ? !storageLoaded_.load() : false;
-}
-
 void NamespaceImpl::EnableStorage(const string &path, StorageOpts opts, StorageType storageType, const RdxContext &ctx) {
 	string dbpath = fs::JoinPath(path, name_);
 
@@ -1759,7 +1784,6 @@ void NamespaceImpl::LoadFromStorage(const RdxContext &ctx) {
 	logPrintf(LogInfo, "[%s] Done loading storage. %d items loaded (%d errors %s), lsn #%ld%s, total size=%dM, dataHash=%ld", name_,
 			  items_.size(), errCount, lastErr.what(), repl_.lastLsn, repl_.slaveMode ? " (slave)" : "", ldcount / (1024 * 1024),
 			  repl_.dataHash);
-	storageLoaded_ = true;
 	if (dataHash != repl_.dataHash) {
 		logPrintf(LogError, "[%s] Warning dataHash mismatch %lu != %lu", name_, dataHash, repl_.dataHash);
 		unflushedCount_.fetch_add(1, std::memory_order_release);
@@ -1840,39 +1864,6 @@ void NamespaceImpl::CloseStorage(const RdxContext &ctx) {
 	storage_.reset();
 }
 
-bool NamespaceImpl::tryToReload(const RdxContext &ctx) {
-	uint16_t noQueryIdleThresholdSec = GetStorageOpts(ctx).noQueryIdleThresholdSec;
-	if (noQueryIdleThresholdSec > 0) {
-		int64_t now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-		if ((now - getLastSelectTime()) > noQueryIdleThresholdSec) {
-			reloadStorage();
-			return true;
-		}
-	}
-	return true;
-}
-
-void NamespaceImpl::reloadStorage() {
-	auto wlck = wLock(RdxContext());
-	items_.clear();
-	for (auto it = indexesNames_.begin(); it != indexesNames_.end();) {
-		payloadType_.Drop(it->first);
-		it = indexesNames_.erase(it);
-	}
-	indexes_.clear();
-	free_.clear();
-	IndexDef tupleIndexDef(kTupleName, {}, IndexStrStore, IndexOpts());
-	addIndex(tupleIndexDef);
-	loadIndexesFromStorage();
-	updateSelectTime();
-	itemsCount_.store(items_.size(), std::memory_order_release);
-	itemsCapacity_.store(items_.capacity(), std::memory_order_release);
-	wlck.unlock();
-
-	logPrintf(LogInfo, "NS reloaded: %s", GetName());
-	storageLoaded_ = false;
-}
-
 std::string NamespaceImpl::sysRecordName(string_view sysTag, uint64_t version) {
 	std::string backupRecord(sysTag);
 	static_assert(kSysRecordsBackupCount && ((kSysRecordsBackupCount & (kSysRecordsBackupCount - 1)) == 0),
@@ -1893,13 +1884,17 @@ void NamespaceImpl::writeSysRecToStorage(string_view data, string_view sysTag, u
 	}
 }
 
-Item NamespaceImpl::NewItem(const RdxContext &ctx) {
-	auto rlck = rLock(ctx);
+Item NamespaceImpl::NewItem(const NsContext &ctx) {
+	Locker::RLockT rlck;
+	if (!ctx.noLock) {
+		rlck = rLock(ctx.rdxContext);
+	}
 	auto impl_ = pool_.get(ItemImpl(payloadType_, tagsMatcher_, pkFields()));
 	impl_->tagsMatcher() = tagsMatcher_;
 	impl_->tagsMatcher().clearUpdated();
 	return Item(impl_);
 }
+
 void NamespaceImpl::ToPool(ItemImpl *item) {
 	item->Clear();
 	pool_.put(item);

@@ -59,6 +59,6 @@ bool RPCServerFake::Start(const string &addr, ev::dynamic_loop &loop) {
 
 	dispatcher_.Middleware(this, &RPCServerFake::CheckAuth);
 
-	listener_.reset(new Listener(loop, cproto::ServerConnection::NewFactory(dispatcher_)));
+	listener_.reset(new Listener(loop, cproto::ServerConnection::NewFactory(dispatcher_, false)));
 	return listener_->Bind(addr);
 }

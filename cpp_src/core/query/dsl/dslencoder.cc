@@ -96,15 +96,6 @@ void encodeSelectFunctions(const Query& query, JsonBuilder& builder) {
 	for (auto& str : query.selectFunctions_) arrNode.Put(nullptr, str);
 }
 
-void encodeDistinct(const Query& query, JsonBuilder& builder) {
-	auto arrNode = builder.Array("distinct");
-	for (auto it = query.entries.begin(); it != query.entries.end(); ++it) {
-		if (it->IsLeaf() && it->Value().distinct) {
-			arrNode.Put(nullptr, it->Value().index);
-		}
-	}
-}
-
 void encodeAggregationFunctions(const Query& query, JsonBuilder& builder) {
 	auto arrNode = builder.Array("aggregations");
 
@@ -175,7 +166,6 @@ void toDsl(const Query& query, JsonBuilder& builder) {
 	builder.Put("req_total", get(reqtotal_values, query.calcTotal));
 	builder.Put("explain", query.explain_);
 
-	encodeDistinct(query, builder);
 	encodeSelectFilter(query, builder);
 	encodeSelectFunctions(query, builder);
 	encodeSorting(query.sortingEntries_, builder);

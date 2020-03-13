@@ -10,8 +10,10 @@
 #include "core/transactionimpl.h"
 #include "debug/allocdebug.h"
 #include "estl/syncpool.h"
+#include "reindexer_version.h"
 #include "resultserializer.h"
 #include "tools/logger.h"
+#include "tools/semversion.h"
 #include "tools/stringstools.h"
 
 using namespace reindexer;
@@ -371,7 +373,16 @@ reindexer_error reindexer_enable_storage(uintptr_t rx, reindexer_string path, re
 	return error2c(res);
 }
 
-reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpts opts) {
+reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpts opts, reindexer_string client_vers) {
+	if (opts.options & kConnectOptWarnVersion) {
+		SemVersion cliVersion(str2cv(client_vers));
+		SemVersion libVersion(REINDEX_VERSION);
+		if (cliVersion != libVersion) {
+			std::cerr << "Warning: Used Reindexer client version: " << str2cv(client_vers) << " with library version: " << REINDEX_VERSION
+					  << ". It is strongly recommended to sync client & library versions" << std::endl;
+		}
+	}
+
 	Reindexer* db = reinterpret_cast<Reindexer*>(rx);
 	if (!db) return error2c(err_not_init);
 	Error err = db->Connect(str2c(dsn), opts);

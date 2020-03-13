@@ -13,6 +13,7 @@ public:
 	~Comparator();
 
 	bool Compare(const PayloadValue &lhs, int rowId);
+	void ExcludeDistinct(const PayloadValue &, int rowId);
 	void Bind(PayloadType type, int field);
 	void BindEqualPosition(int field, const VariantArray &val, CondType cond);
 	void BindEqualPosition(const TagsPath &tagsPath, const VariantArray &val, CondType cond);
@@ -57,6 +58,46 @@ protected:
 				return cmpComposite.Compare(cond_, *static_cast<const PayloadValue *>(ptr), *this);
 			default:
 				abort();
+		}
+	}
+
+	void excludeDistinct(const Variant &kr) {
+		switch (kr.Type()) {
+			case KeyValueInt:
+				return cmpInt.ExcludeDistinct(static_cast<int>(kr));
+			case KeyValueBool:
+				return cmpBool.ExcludeDistinct(static_cast<bool>(kr));
+			case KeyValueInt64:
+				return cmpInt64.ExcludeDistinct(static_cast<int64_t>(kr));
+			case KeyValueDouble:
+				return cmpDouble.ExcludeDistinct(static_cast<double>(kr));
+			case KeyValueString:
+				return cmpString.ExcludeDistinct(static_cast<p_string>(kr));
+			case KeyValueComposite:
+				throw Error(errQueryExec, "Distinct by composite index");
+			case KeyValueNull:
+			default:
+				break;
+		}
+	}
+
+	void excludeDistinct(const void *ptr) {
+		switch (type_) {
+			case KeyValueBool:
+				return cmpBool.ExcludeDistinct(*static_cast<const bool *>(ptr));
+			case KeyValueInt:
+				return cmpInt.ExcludeDistinct(*static_cast<const int *>(ptr));
+			case KeyValueInt64:
+				return cmpInt64.ExcludeDistinct(*static_cast<const int64_t *>(ptr));
+			case KeyValueDouble:
+				return cmpDouble.ExcludeDistinct(*static_cast<const double *>(ptr));
+			case KeyValueString:
+				return cmpString.ExcludeDistinct(*static_cast<const p_string *>(ptr));
+			case KeyValueComposite:
+				throw Error(errQueryExec, "Distinct by composite index");
+			case KeyValueNull:
+			default:
+				break;
 		}
 	}
 

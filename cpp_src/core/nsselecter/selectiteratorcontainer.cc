@@ -35,9 +35,19 @@ void SelectIteratorContainer::sortByCost(span<unsigned> indexes, span<double> co
 		next = cur + Size(indexes[cur]);
 		if (!IsValue(indexes[cur])) {
 			sortByCost(indexes, costs, cur + 1, next, expectedIterations);
-		} else if ((*this)[indexes[cur]].distinct &&
-				   (container_[indexes[cur]].operation == OpOr || (next < to && container_[indexes[next]].operation == OpOr))) {
-			throw Error(errQueryExec, "OR operator with distinct query");
+			if (next < to && GetOperation(indexes[next]) == OpOr && IsValue(indexes[next]) && (*this)[indexes[next]].distinct) {
+				throw Error(errQueryExec, "OR operator between bracket and distinct query");
+			}
+		} else if (next < to && GetOperation(indexes[next]) == OpOr) {
+			if (IsValue(indexes[next])) {
+				if ((*this)[indexes[cur]].distinct != (*this)[indexes[next]].distinct) {
+					throw Error(errQueryExec, "OR operator between distinct and non distinct queries");
+				}
+			} else {
+				if ((*this)[indexes[cur]].distinct) {
+					throw Error(errQueryExec, "OR operator between distinct query and bracket");
+				}
+			}
 		}
 	}
 	for (size_t cur = from, next; cur < to; cur = next) {
@@ -229,14 +239,13 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectR
 			case OpOr: {
 				const iterator last = lastAppendedOrClosed();
 				if (last == this->end()) throw Error(errQueryExec, "OR operator in first condition or after left join ");
-				if (last->IsLeaf()) {
+				if (last->IsLeaf() && !last->Value().distinct) {
 					SelectIterator &it = last->Value();
 					if (nonIndexField || isIndexSparse) {
 						it.Append(res);
 					} else {
 						it.AppendAndBind(res, ns.payloadType_, qe.idxNo);
 					}
-					it.distinct |= qe.distinct;
 					it.name += " OR " + qe.index;
 					break;
 				}  // else fallthrough

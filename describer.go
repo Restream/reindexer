@@ -11,6 +11,7 @@ const (
 	NamespacesNamespaceName       = "#namespaces"
 	PerfstatsNamespaceName        = "#perfstats"
 	QueriesperfstatsNamespaceName = "#queriesperfstats"
+	ClientsStatsNamespaceName     = "#clientsstats"
 )
 
 // Map from cond name to index type
@@ -233,6 +234,31 @@ type NamespacePerfStat struct {
 	Selects PerfStat `json:"selects"`
 	// Performance statistics for transactions
 	Transactions TxPerfStat `json:"transactions"`
+}
+
+// ClientConnectionStat is information about client connection
+type ClientConnectionStat struct {
+
+	// Connection identifier
+	ConnectionId int64 `json:"connection_id"`
+	// client ip address
+	Ip string `json:"ip"`
+	// User name
+	UserName string `json:"user_name"`
+	// User right
+	UserRights string `json:"user_rights"`
+	// Database name
+	DbName string `json:"db_name"`
+	// Current activity
+	CurrentActivity string `json:"current_activity"`
+	// Server start time in unix timestamp
+	StartTime int64 `json:"start_time"`
+	// Receive bytes
+	RecvBytes int64 `json:"recv_bytes"`
+	// Sent bytes
+	SentBytes int64 `json:"sent_bytes"`
+	// Client version string
+	ClientVersion string `json:"client_version"`
 }
 
 // QueryPerfStat is information about query's performance statistics

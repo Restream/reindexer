@@ -147,7 +147,7 @@ bool WrResultSerializer::PutResults(const QueryResults* result) {
 
 		if (opts_.flags & kResultsWithJoined) {
 			auto rowIt = result->begin() + (i + opts_.fetchOffset);
-			auto jIt = joins::ItemIterator::FromQRIterator(rowIt);
+			auto jIt = rowIt.GetJoined();
 			PutVarUint(jIt.getJoinedItemsCount() > 0 ? jIt.getJoinedFieldsCount() : 0);
 			if (jIt.getJoinedItemsCount() > 0) {
 				size_t joinedField = rowIt.qr_->joined_.size();

@@ -74,6 +74,7 @@ func newIterator(
 	it.ptr = 0
 	it.err = nil
 	it.userCtx = userCtx
+	it.allowUnsafe = false
 	joinObjSize := len(it.joinToFields)
 	if q != nil {
 		for _, mq := range q.mergedQueries {

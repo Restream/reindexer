@@ -57,9 +57,9 @@ func (state *State) NewEncoder() Encoder {
 	}
 }
 
-func (state *State) NewDecoder(item interface{},logger Logger) Decoder {
+func (state *State) NewDecoder(item interface{}, logger Logger) Decoder {
 	dec := Decoder{
-		state: state,
+		state:  state,
 		logger: logger,
 	}
 
@@ -76,6 +76,7 @@ func (state *State) NewDecoder(item interface{},logger Logger) Decoder {
 
 	if st, ok := dec.state.structCache[reflect.TypeOf(item)]; ok {
 		dec.ctagsCache = st
+		dec.state.sCacheLock.RUnlock()
 	} else {
 		cachePtr := &ctagsCache{}
 		dec.state.sCacheLock.RUnlock()
@@ -85,11 +86,9 @@ func (state *State) NewDecoder(item interface{},logger Logger) Decoder {
 		} else {
 			dec.state.structCache[reflect.TypeOf(item)] = cachePtr
 		}
-		dec.state.sCacheLock.Unlock()
-		dec.state.sCacheLock.RLock()
 		dec.ctagsCache = cachePtr
+		dec.state.sCacheLock.Unlock()
 	}
-	dec.state.sCacheLock.RUnlock()
 
 	return dec
 }

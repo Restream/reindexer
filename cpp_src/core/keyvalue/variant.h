@@ -131,6 +131,7 @@ protected:
 
 class VariantArray : public h_vector<Variant, 2> {
 public:
+	void MarkArray() { isArrayValue = true; }
 	using h_vector<Variant, 2>::h_vector;
 	using h_vector<Variant, 2>::operator==;
 	using h_vector<Variant, 2>::operator!=;
@@ -139,8 +140,13 @@ public:
 		for (size_t i = 0; i < this->size(); ++i) ret = (ret * 127) ^ this->at(i).Hash();
 		return ret;
 	}
+	bool IsArrayValue() const;
 	bool IsNullValue() const;
+	KeyValueType ArrayType() const;
 	void Dump(WrSerializer &wrser) const;
+
+private:
+	bool isArrayValue = false;
 };
 
 }  // namespace reindexer

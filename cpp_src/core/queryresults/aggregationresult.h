@@ -8,13 +8,12 @@
 #include "tools/errors.h"
 
 namespace reindexer {
-using std::string;
 class WrSerializer;
 
 struct FacetResult {
 	FacetResult(const h_vector<std::string, 1> &v, int c) : values(v), count(c) {}
 	FacetResult() : count(0) {}
-	h_vector<string, 1> values;
+	h_vector<std::string, 1> values;
 	int count;
 };
 
@@ -24,10 +23,11 @@ struct AggregationResult {
 	AggType type = AggSum;
 	h_vector<string, 1> fields;
 	double value = 0;
-	h_vector<FacetResult, 1> facets;
+	std::vector<FacetResult> facets;
+	std::vector<std::string> distincts;
 
 	static AggType strToAggType(string_view type);
 	static string_view aggTypeToStr(AggType type);
 };
 
-};  // namespace reindexer
+};	// namespace reindexer

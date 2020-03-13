@@ -80,8 +80,10 @@ public:
 	bool Compare(CondType cond, T lhs) {
 		bool ret = Compare2(cond, lhs);
 		if (!ret || !distS_) return ret;
-		return distS_->emplace(lhs).second;
+		return distS_->find(lhs) == distS_->end();
 	}
+
+	void ExcludeDistinct(T value) { distS_->emplace(value); }
 
 	h_vector<T, 1> values_;
 	intrusive_ptr<intrusive_atomic_rc_wrapper<fast_hash_set<T>>> valuesS_, distS_;
@@ -154,8 +156,10 @@ public:
 	bool Compare(CondType cond, p_string lhs, const CollateOpts &collateOpts) {
 		bool ret = Compare2(cond, lhs, collateOpts);
 		if (!ret || !distS_) return ret;
-		return distS_->emplace(lhs.getOrMakeKeyString()).second;
+		return distS_->find(lhs.getOrMakeKeyString()) == distS_->end();
 	}
+
+	void ExcludeDistinct(p_string value) { distS_->emplace(value.getOrMakeKeyString()); }
 
 	h_vector<key_string, 1> values_;
 	string_view cachedValueSV_;

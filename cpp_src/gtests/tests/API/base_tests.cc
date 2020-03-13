@@ -677,7 +677,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	for (auto it : queryResult) {
-		auto itemIt = reindexer::joins::ItemIterator::FromQRIterator(it);
+		auto itemIt = it.GetJoined();
 		EXPECT_TRUE(itemIt.getJoinedItemsCount() > 0);
 	}
 }
@@ -834,11 +834,14 @@ TEST_F(ReindexerApi, DistinctQueriesEncodingTest) {
 
 	Query q1;
 	q1.FromSQL(sql);
-	EXPECT_TRUE(q1.entries.Size() == 2);
-	EXPECT_TRUE(q1.entries[0].distinct);
-	EXPECT_TRUE(q1.entries[0].index == "country");
-	EXPECT_TRUE(q1.entries[1].distinct);
-	EXPECT_TRUE(q1.entries[1].index == "city");
+	EXPECT_EQ(q1.entries.Size(), 0);
+	ASSERT_EQ(q1.aggregations_.size(), 2);
+	EXPECT_EQ(q1.aggregations_[0].type_, AggDistinct);
+	ASSERT_EQ(q1.aggregations_[0].fields_.size(), 1);
+	EXPECT_EQ(q1.aggregations_[0].fields_[0], "country");
+	EXPECT_EQ(q1.aggregations_[1].type_, AggDistinct);
+	ASSERT_EQ(q1.aggregations_[1].fields_.size(), 1);
+	EXPECT_EQ(q1.aggregations_[1].fields_[0], "city");
 
 	string dsl = q1.GetJSON();
 	Query q2;

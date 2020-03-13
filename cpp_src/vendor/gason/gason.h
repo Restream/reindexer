@@ -208,9 +208,9 @@ int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAllocator &al
 class JsonParser {
 public:
 	// Inplace parse. Buffer pointed by str will be changed
-	JsonNode Parse(span<char> str);
+	JsonNode Parse(span<char> str, size_t *length = nullptr);
 	// Copy str. Buffer pointed by str will be copied
-	JsonNode Parse(string_view str);
+	JsonNode Parse(string_view str, size_t *length = nullptr);
 
 private:
 	JsonAllocator alloc_;

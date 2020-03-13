@@ -154,40 +154,50 @@ Error CommandsProcessor<DBInterface>::commandSelect(const string& command) {
 		if (aggResults.size() && !cancelCtx_.IsCancelled()) {
 			output_() << "Aggregations: " << std::endl;
 			for (auto& agg : aggResults) {
-				if (!agg.facets.empty()) {
-					assert(!agg.fields.empty());
-					reindexer::h_vector<int, 1> maxW;
-					maxW.reserve(agg.fields.size());
-					for (const auto& field : agg.fields) {
-						maxW.push_back(field.length());
-					}
-					for (auto& row : agg.facets) {
-						assert(row.values.size() == agg.fields.size());
-						for (size_t i = 0; i < row.values.size(); ++i) {
-							maxW.at(i) = std::max(maxW.at(i), int(row.values[i].length()));
+				switch (agg.type) {
+					case AggFacet: {
+						assert(!agg.fields.empty());
+						reindexer::h_vector<int, 1> maxW;
+						maxW.reserve(agg.fields.size());
+						for (const auto& field : agg.fields) {
+							maxW.push_back(field.length());
 						}
-					}
-					int rowWidth = 8 + (maxW.size() - 1) * 2;
-					for (auto& mW : maxW) {
-						mW += 3;
-						rowWidth += mW;
-					}
-					for (size_t i = 0; i < agg.fields.size(); ++i) {
-						if (i != 0) output_() << "| ";
-						output_() << std::left << std::setw(maxW.at(i)) << agg.fields[i];
-					}
-					output_() << "| count" << std::endl;
-					output_() << std::left << std::setw(rowWidth) << std::setfill('-') << "" << std::endl << std::setfill(' ');
-					for (auto& row : agg.facets) {
-						for (size_t i = 0; i < row.values.size(); ++i) {
+						for (auto& row : agg.facets) {
+							assert(row.values.size() == agg.fields.size());
+							for (size_t i = 0; i < row.values.size(); ++i) {
+								maxW.at(i) = std::max(maxW.at(i), int(row.values[i].length()));
+							}
+						}
+						int rowWidth = 8 + (maxW.size() - 1) * 2;
+						for (auto& mW : maxW) {
+							mW += 3;
+							rowWidth += mW;
+						}
+						for (size_t i = 0; i < agg.fields.size(); ++i) {
 							if (i != 0) output_() << "| ";
-							output_() << std::left << std::setw(maxW.at(i)) << row.values[i];
+							output_() << std::left << std::setw(maxW.at(i)) << agg.fields[i];
 						}
-						output_() << "| " << row.count << std::endl;
-					}
-				} else {
-					assert(agg.fields.size() == 1);
-					output_() << agg.aggTypeToStr(agg.type) << "(" << agg.fields.front() << ") = " << agg.value << std::endl;
+						output_() << "| count" << std::endl;
+						output_() << std::left << std::setw(rowWidth) << std::setfill('-') << "" << std::endl << std::setfill(' ');
+						for (auto& row : agg.facets) {
+							for (size_t i = 0; i < row.values.size(); ++i) {
+								if (i != 0) output_() << "| ";
+								output_() << std::left << std::setw(maxW.at(i)) << row.values[i];
+							}
+							output_() << "| " << row.count << std::endl;
+						}
+					} break;
+					case AggDistinct:
+						assert(agg.fields.size() == 1);
+						output_() << "Distinct (" << agg.fields.front() << ")" << std::endl;
+						for (auto& v : agg.distincts) {
+							output_() << v << std::endl;
+						}
+						output_() << "Returned " << agg.distincts.size() << " values" << std::endl;
+						break;
+					default:
+						assert(agg.fields.size() == 1);
+						output_() << agg.aggTypeToStr(agg.type) << "(" << agg.fields.front() << ") = " << agg.value << std::endl;
 				}
 			}
 		}

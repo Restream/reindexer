@@ -354,21 +354,23 @@ const JsonNode &JsonNode::operator[](string_view key) const {
 
 bool JsonNode::empty() const { return this->value.u.tag == JsonTag(JSON_EMPTY); }
 
-JsonNode JsonParser::Parse(span<char> str) {
+JsonNode JsonParser::Parse(span<char> str, size_t *length) {
 	char *endp = nullptr;
 	JsonNode val{{}, nullptr, {}};
+	const char *begin = str.data();
 	int status = jsonParse(str, &endp, &val.value, alloc_);
 	if (status != JSON_OK) {
 		size_t pos = endp - str.data();
 		throw Exception(std::string("Error parsing json: ") + jsonStrError(status) + ", pos " + std::to_string(pos));
 	}
+	if (length) *length = endp - begin;
 	return val;
 }
 
-JsonNode JsonParser::Parse(string_view str) {
+JsonNode JsonParser::Parse(string_view str, size_t *length) {
 	tmp_.reserve(str.size());
 	tmp_.assign(str.begin(), str.end());
-	return Parse(span<char>(&tmp_[0], tmp_.size()));
+	return Parse(span<char>(&tmp_[0], tmp_.size()), length);
 }
 
 }  // namespace gason

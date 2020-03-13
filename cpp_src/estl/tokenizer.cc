@@ -105,7 +105,14 @@ token tokenizer::peek_token(bool to_lower, bool treatSignAsToken) {
 	return res;
 }
 
-size_t tokenizer::pos() const { return pos_; }
+void tokenizer::setPos(size_t pos) {
+	int delta = pos - pos_;
+	pos_ += delta;
+	cur_ += delta;
+}
+size_t tokenizer::getPos() const { return pos_; }
+
 size_t tokenizer::length() const { return q_.length(); }
+const char *tokenizer::begin() const { return q_.begin(); }
 
 }  // namespace reindexer

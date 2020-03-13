@@ -154,7 +154,7 @@ public:
 	/// Get field by name
 	/// @param name - name of field
 	/// @return FieldRef which contains reference to indexed field
-	FieldRef operator[](string_view name);
+	FieldRef operator[](string_view name) const;
 	/// Get PK fields
 	FieldsSet PkFields() const;
 	/// Set additional percepts for modify operation

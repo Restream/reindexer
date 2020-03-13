@@ -22,6 +22,10 @@ public:
 	}
 	void CopyPayloadFrom(const Bracket&) const noexcept {}
 	bool operator==(const Bracket& other) const noexcept { return size_ == other.size_; }
+	void ReduceBy(size_t count) noexcept {
+		assert(count < size_);
+		size_ -= count;
+	}
 
 private:
 	/// size of all children + 1

@@ -7,9 +7,10 @@ namespace reindexer {
 namespace net {
 
 template <typename Mutex>
-Connection<Mutex>::Connection(int fd, ev::dynamic_loop &loop, size_t readBufSize, size_t writeBufSize)
+Connection<Mutex>::Connection(int fd, ev::dynamic_loop &loop, bool enableStat, size_t readBufSize, size_t writeBufSize)
 	: sock_(fd), curEvents_(0), wrBuf_(writeBufSize), rdBuf_(readBufSize) {
 	attach(loop);
+	if (enableStat) stat_ = std::make_shared<ConnectionStat>();
 }
 
 template <typename Mutex>
@@ -28,6 +29,7 @@ void Connection<Mutex>::restart(int fd) {
 	rdBuf_.clear();
 	curEvents_ = 0;
 	closeConn_ = false;
+	if (stat_) stat_.reset(new ConnectionStat());
 }
 
 template <typename Mutex>
@@ -61,7 +63,6 @@ void Connection<Mutex>::detach() {
 template <typename Mutex>
 void Connection<Mutex>::closeConn() {
 	io_.loop.break_loop();
-
 	if (sock_.valid()) {
 		io_.stop();
 		sock_.close();
@@ -112,6 +113,7 @@ void Connection<Mutex>::write_cb() {
 			return;
 		}
 
+		if (stat_) stat_->sentBytes += written;
 		ssize_t toWrite = 0;
 		for (auto &chunk : chunks) toWrite += chunk.size();
 		wrBuf_.erase(written);
@@ -137,6 +139,7 @@ void Connection<Mutex>::read_cb() {
 			closeConn();
 			return;
 		} else if (nread > 0) {
+			if (stat_) stat_->recvBytes += nread;
 			rdBuf_.advance_head(nread);
 			if (!closeConn_) onRead();
 		}

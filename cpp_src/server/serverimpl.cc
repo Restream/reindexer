@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "args/args.hpp"
+#include "clientsstats.h"
 #include "dbmanager.h"
 #include "debug/allocdebug.h"
 #include "debug/backtrace.h"
@@ -233,8 +234,10 @@ int ServerImpl::run() {
 	}
 
 	initCoreLogger();
+	std::unique_ptr<ClientsStats> clientsStats;
+	if (config_.EnableConnectionsStats) clientsStats.reset(new ClientsStats());
 	try {
-		dbMgr_.reset(new DBManager(config_.StoragePath, !config_.EnableSecurity));
+		dbMgr_.reset(new DBManager(config_.StoragePath, !config_.EnableSecurity, clientsStats.get()));
 
 		auto status = dbMgr_->Init(config_.StorageEngine, config_.StartWithErrors, config_.Autorepair);
 		if (!status.ok()) {
@@ -263,8 +266,8 @@ int ServerImpl::run() {
 		}
 
 		LoggerWrapper rpcLogger("rpc");
-		RPCServer rpcServer(*dbMgr_, rpcLogger, config_.DebugAllocs, statsCollector.get());
-		if (!rpcServer.Start(config_.RPCAddr, loop_)) {
+		RPCServer rpcServer(*dbMgr_, rpcLogger, clientsStats.get(), config_.DebugAllocs, statsCollector.get());
+		if (!rpcServer.Start(config_.RPCAddr, loop_, config_.EnableConnectionsStats)) {
 			logger_.error("Can't listen RPC on '{0}'", config_.RPCAddr);
 			return EXIT_FAILURE;
 		}

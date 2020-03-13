@@ -37,6 +37,6 @@ func TestItemsHuge(t *testing.T) {
 	FillTestItemHuge(0, 50)
 
 	// get and decode all items by cjson decoder
-	newTestQuery(DB, "test_items_huge").ExecAndVerify()
+	newTestQuery(DB, "test_items_huge").ExecAndVerify(t)
 
 }

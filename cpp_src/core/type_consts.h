@@ -61,6 +61,7 @@ typedef enum QueryItemType {
 	QueryCloseBracket,
 	QueryJoinCondition,
 	QueryDropField,
+	QueryUpdateObject,
 } QueryItemType;
 
 typedef enum QuerySerializeMode {
@@ -118,7 +119,7 @@ enum OpType { OpOr = 1, OpAnd = 2, OpNot = 3 };
 
 enum ArithmeticOpType { OpPlus = 0, OpMinus = 1, OpMult = 2, OpDiv = 3 };
 
-enum AggType { AggSum, AggAvg, AggFacet, AggMin, AggMax, AggUnknown = -1 };
+enum AggType { AggSum, AggAvg, AggFacet, AggMin, AggMax, AggDistinct, AggUnknown = -1 };
 
 enum JoinType { LeftJoin, InnerJoin, OrInnerJoin, Merge };
 
@@ -173,6 +174,7 @@ enum CollateMode { CollateNone = 0, CollateASCII, CollateUTF8, CollateNumeric, C
 enum FieldModifyMode {
 	FieldModeSet = 0,
 	FieldModeDrop = 1,
+	FieldModeSetJson = 2,
 };
 
 enum ItemModifyMode { ModeUpdate = 0, ModeInsert = 1, ModeUpsert = 2, ModeDelete = 3 };
@@ -251,6 +253,7 @@ typedef enum ConnectOpt {
 	kConnectOptAllowNamespaceErrors = 1 << 1,
 	kConnectOptAutorepair = 1 << 2,
 	kConnectOptCheckClusterID = 1 << 3,
+	kConnectOptWarnVersion = 1 << 4,
 } ConnectOpt;
 
 typedef enum StorageTypeOpt {

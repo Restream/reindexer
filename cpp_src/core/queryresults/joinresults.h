@@ -112,7 +112,7 @@ public:
 	int getJoinedFieldsCount() const;
 	int getJoinedItemsCount() const;
 
-	static ItemIterator FromQRIterator(QueryResults::Iterator it);
+	static ItemIterator CreateFrom(QueryResults::Iterator it);
 
 private:
 	const NamespaceResults* joinRes_;

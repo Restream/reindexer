@@ -91,6 +91,7 @@ struct UpdateEntry {
 	VariantArray values;
 	FieldModifyMode mode = FieldModeSet;
 	bool isExpression = false;
+	bool isArray = false;
 };
 
 struct QueryJoinEntry {
@@ -116,7 +117,7 @@ struct SortingEntries : public h_vector<SortingEntry, 1> {};
 
 struct AggregateEntry {
 	AggregateEntry() = default;
-	AggregateEntry(AggType type, const h_vector<string, 1> &fields, unsigned limit, unsigned offset)
+	AggregateEntry(AggType type, const h_vector<string, 1> &fields, unsigned limit = UINT_MAX, unsigned offset = 0)
 		: type_(type), fields_(fields), limit_(limit), offset_(offset) {}
 	bool operator==(const AggregateEntry &) const;
 	bool operator!=(const AggregateEntry &) const;

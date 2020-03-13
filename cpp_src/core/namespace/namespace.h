@@ -29,9 +29,9 @@ public:
 	void AddIndex(const IndexDef &indexDef, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::AddIndex)(indexDef, ctx); }
 	void UpdateIndex(const IndexDef &indexDef, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::UpdateIndex)(indexDef, ctx); }
 	void DropIndex(const IndexDef &indexDef, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::DropIndex)(indexDef, ctx); }
-	void Insert(Item &item, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::Insert)(item, ctx); }
-	void Update(Item &item, const RdxContext &ctx) {
-		nsFuncWrapper<void (NamespaceImpl::*)(Item &, const RdxContext &), &NamespaceImpl::Update>(item, ctx);
+	void Insert(Item &item, const NsContext &ctx) { handleInvalidation(NamespaceImpl::Insert)(item, ctx); }
+	void Update(Item &item, const NsContext &ctx) {
+		nsFuncWrapper<void (NamespaceImpl::*)(Item &, const NsContext &), &NamespaceImpl::Update>(item, ctx);
 	}
 	void Update(const Query &query, QueryResults &result, const NsContext &ctx) {
 		nsFuncWrapper<void (NamespaceImpl::*)(const Query &, QueryResults &, const NsContext &ctx), &NamespaceImpl::Update>(query, result,
@@ -120,8 +120,6 @@ public:
 
 protected:
 	friend class ReindexerImpl;
-	bool tryToReload(const RdxContext &ctx) const { return handleInvalidation(NamespaceImpl::tryToReload)(ctx); }
-	bool needToLoadData(const RdxContext &ctx) const { return handleInvalidation(NamespaceImpl::needToLoadData)(ctx); }
 	void updateSelectTime() const { handleInvalidation(NamespaceImpl::updateSelectTime)(); }
 
 	NamespaceImpl::Ptr getMainNs() const { return atomicLoadMainNs(); }

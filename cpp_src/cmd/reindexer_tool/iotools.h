@@ -40,7 +40,7 @@ private:
 
 class LineParser {
 public:
-	LineParser(const string& line) : line_(line), cur_(line.data()){};
+	LineParser(const string& line) : line_(line), cur_(line.data()) {}
 	string_view NextToken() {
 		while (*cur_ == ' ' || *cur_ == '\t') cur_++;
 

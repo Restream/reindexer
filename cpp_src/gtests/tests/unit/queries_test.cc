@@ -117,7 +117,7 @@ TEST_F(QueriesApi, QueriesSqlGenerate) {
 		EXPECT_EQ(sql, q.GetSQL());
 	};
 
-	check("SELECT ID,Year,Genre FROM test_namespace WHERE year > '2016' ORDER BY 'year' DESC LIMIT 10000000");
+	check("SELECT ID, Year, Genre FROM test_namespace WHERE year > '2016' ORDER BY 'year' DESC LIMIT 10000000");
 
 	check(
 		"SELECT ID FROM test_namespace WHERE name LIKE 'something' AND (genre IN ('1','2','3') AND year > '2016') OR age IN "

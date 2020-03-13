@@ -13,9 +13,7 @@ CJsonDecoder::CJsonDecoder(TagsMatcher &tagsMatcher, const FieldsSet *filter)
 Error CJsonDecoder::Decode(Payload *pl, Serializer &rdser, WrSerializer &wrser) {
 	try {
 		decodeCJson(pl, rdser, wrser, true);
-	}
-
-	catch (const Error &err) {
+	} catch (const Error &err) {
 		return err;
 	}
 	return lastErr_;
@@ -39,6 +37,10 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 	}
 
 	int field = tagsMatcher_.tags2field(tagsPath_.data(), tagsPath_.size());
+	if (tag.Field() >= 0) {
+		throw Error(errLogic, "Reference tag was found in transport CJSON for field %d[%s] in ns [%s]", tag.Field(),
+					tagsMatcher_.tag2name(tagName), pl->Type().Name());
+	}
 
 	if (filter_) {
 		if (field >= 0)
@@ -89,8 +91,8 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 		wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName, field)));
 
 		if (tagType == TAG_OBJECT) {
-			while (decodeCJson(pl, rdser, wrser, match)) {
-			}
+			while (decodeCJson(pl, rdser, wrser, match))
+				;
 		} else if (!match) {
 			skipCjsonTag(tag, rdser);
 		} else if (tagType == TAG_ARRAY) {

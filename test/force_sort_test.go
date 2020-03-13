@@ -54,7 +54,7 @@ func copyWholeTree(query *queryTest, tree *queryTestEntryTree) {
 
 func newSortOrderValues(query *queryTest) *SortOrderValues {
 	q := newTestQuery(query.db, query.namespace)
-	q.Distinct(query.distinctIndex)
+	q.Distinct(query.distinctIndexes)
 	for i := 0; i < len(query.sortIndex); i++ {
 		q.Sort(query.sortIndex[i], query.sortDesc, query.sortValues[query.sortIndex[i]]...)
 	}

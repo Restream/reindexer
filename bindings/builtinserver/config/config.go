@@ -39,6 +39,7 @@ type DebugConf struct {
 type MetricsConf struct {
 	Prometheus    bool  `yaml:"prometheus"`
 	CollectPeriod int64 `yaml:"collect_period"`
+	ClientsStats  bool  `yaml:"clientsstats"`
 }
 type ServerConfig struct {
 	Storage StorageConf `yaml:"storage"`
@@ -84,6 +85,7 @@ func DefaultServerConfig() *ServerConfig {
 		Metrics: MetricsConf{
 			Prometheus:    false,
 			CollectPeriod: 1000,
+			ClientsStats:  false,
 		},
 	}
 }

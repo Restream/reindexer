@@ -69,14 +69,18 @@ bool PayloadTypeImpl::Drop(string_view field) {
 		++it;
 	}
 
-	fieldsByJsonPath_.erase(field);
-	fieldsByName_.erase(field);
-
 	fields_.erase(fields_.begin() + fieldIdx);
 	for (size_t idx = static_cast<size_t>(fieldIdx); idx < fields_.size(); ++idx) {
-		const PayloadFieldType &plTypePrev(fields_[idx - 1]);
-		fields_[idx].SetOffset(plTypePrev.Offset() + plTypePrev.Sizeof());
+		if (idx == 0) {
+			fields_[idx].SetOffset(0);
+		} else {
+			const PayloadFieldType &plTypePrev(fields_[idx - 1]);
+			fields_[idx].SetOffset(plTypePrev.Offset() + plTypePrev.Sizeof());
+		}
 	}
+
+	fieldsByJsonPath_.erase(field);
+	fieldsByName_.erase(field);
 
 	return true;
 }

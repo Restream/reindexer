@@ -82,7 +82,7 @@ func newReindexImpl(dsn string, options ...interface{}) *reindexerImpl {
 	rx.registerNamespaceImpl(MemstatsNamespaceName, &NamespaceOptions{}, NamespaceMemStat{})
 	rx.registerNamespaceImpl(QueriesperfstatsNamespaceName, &NamespaceOptions{}, QueryPerfStat{})
 	rx.registerNamespaceImpl(ConfigNamespaceName, &NamespaceOptions{}, DBConfigItem{})
-
+	rx.registerNamespaceImpl(ClientsStatsNamespaceName, &NamespaceOptions{}, ClientConnectionStat{})
 	return rx
 }
 
@@ -361,7 +361,7 @@ func (db *reindexerImpl) setDefaultQueryDebug(ctx context.Context, namespace str
 	}
 
 	citem = item.(*DBConfigItem)
-
+	defaultCfg := DBNamespacesConfig{}
 	found := false
 
 	if citem.Namespaces == nil {
@@ -370,13 +370,19 @@ func (db *reindexerImpl) setDefaultQueryDebug(ctx context.Context, namespace str
 	}
 
 	for i := range *citem.Namespaces {
-		if (*citem.Namespaces)[i].Namespace == namespace {
+		switch (*citem.Namespaces)[i].Namespace {
+		case namespace:
 			(*citem.Namespaces)[i].LogLevel = loglevelToString(level)
 			found = true
+		case "*":
+			defaultCfg = (*citem.Namespaces)[i]
 		}
 	}
 	if !found {
-		*citem.Namespaces = append(*citem.Namespaces, DBNamespacesConfig{Namespace: namespace, LogLevel: loglevelToString(level)})
+		nsCfg := defaultCfg
+		nsCfg.Namespace = namespace
+		nsCfg.LogLevel = loglevelToString(level)
+		*citem.Namespaces = append(*citem.Namespaces, nsCfg)
 	}
 	return db.upsert(ctx, ConfigNamespaceName, citem)
 }
@@ -464,6 +470,32 @@ func (db *reindexerImpl) queryFrom(d dsl.DSL) (*Query, error) {
 	if d.Distinct != "" {
 		q.Distinct(d.Distinct)
 	}
+
+	for _, agg := range d.Aggregations {
+		if len(agg.Fields) == 0 {
+			return nil, ErrEmptyAggFieldName
+		}
+		switch agg.AggType {
+		case AggSum:
+			q.AggregateSum(agg.Fields[0])
+		case AggAvg:
+			q.AggregateAvg(agg.Fields[0])
+		case AggFacet:
+			aggReq := q.AggregateFacet(agg.Fields...).Limit(agg.Limit).Offset(agg.Offset)
+			for _, sort := range agg.Sort {
+				aggReq.Sort(sort.Field, sort.Desc)
+			}
+		case AggMin:
+			q.AggregateMin(agg.Fields[0])
+		case AggMax:
+			q.AggregateMax(agg.Fields[0])
+		case AggDistinct:
+			q.Distinct(agg.Fields[0])
+		default:
+			return nil, ErrAggInvalid
+		}
+	}
+
 	if d.Sort.Field != "" {
 		q.Sort(d.Sort.Field, d.Sort.Desc, d.Sort.Values...)
 	}

@@ -205,7 +205,7 @@ func (c *connection) login(ctx context.Context, owner *NetCProto) (err error) {
 		path = path[1:]
 	}
 
-	buf, err := c.rpcCall(ctx, cmdLogin, 0, username, password, path, c.owner.connectOpts.CreateDBIfMissing)
+	buf, err := c.rpcCall(ctx, cmdLogin, 0, username, password, path, c.owner.connectOpts.CreateDBIfMissing, false, -1, bindings.ReindexerVersion)
 	if err != nil {
 		c.err = err
 		return
@@ -259,8 +259,7 @@ func (c *connection) readReply(hdr []byte) (err error) {
 		return
 	}
 	repCh := c.requests[reqID].repl
-	answ := newNetBuffer()
-	answ.reset(size, c)
+	answ := newNetBuffer(size, c)
 
 	if _, err = io.ReadFull(c.rdBuf, answ.buf); err != nil {
 		return
@@ -466,12 +465,20 @@ for_loop:
 
 	c.seqs <- nextSeqNum(seq)
 	if err != nil {
-		return
+		buf.Free()
+		return nil, err
 	}
 	if err = buf.parseArgs(); err != nil {
-		return
+		buf.Free()
+		return nil, err
 	}
-	return
+	return buf, nil
+}
+
+func (c *connection) rpcCallNoResults(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) error {
+	buf, err := c.rpcCall(ctx, cmd, netTimeout, args...)
+	buf.Free()
+	return err
 }
 
 func (c *connection) onError(err error) {

@@ -19,6 +19,7 @@ struct Activity {
 	std::string activityTracer;
 	std::string user;
 	std::string query;
+	int connectionId;
 	std::chrono::system_clock::time_point startTime;
 	enum State : unsigned { InProgress = 0, WaitLock, Sending, IndexesLookup, SelectLoop } state;
 	string_view description;
@@ -34,13 +35,19 @@ public:
 	void Unregister(const RdxActivityContext*);
 	void Reregister(const RdxActivityContext* oldCtx, const RdxActivityContext* newCtx);
 	std::vector<Activity> List();
+	bool ActivityForIpConnection(int id, Activity& act);
 
 private:
 	std::mutex mtx_;
 	std::unordered_set<const RdxActivityContext*> cont_;
 };
 
-/// The only threadsafe operation with objects of this class is cast to Activity
+/// Threadsafe operations of objects of this class are
+///		cast to Activity
+///		BeforeLock
+///		BeforeIndexWork
+///		BeforeSelectLoop
+///		CheckConnectionId
 class RdxActivityContext {
 	constexpr static unsigned kStateShift = 3u;
 	constexpr static unsigned kStateMask = (1u << kStateShift) - 1u;
@@ -82,7 +89,8 @@ class RdxActivityContext {
 	};
 
 public:
-	RdxActivityContext(string_view activityTracer, string_view user, string_view query, ActivityContainer&, bool clientState = false);
+	RdxActivityContext(string_view activityTracer, string_view user, string_view query, ActivityContainer&, int ipConnectionId,
+					   bool clientState = false);
 	RdxActivityContext(RdxActivityContext&&);
 	~RdxActivityContext() {
 		if (parent_) parent_->Unregister(this);
@@ -100,6 +108,8 @@ public:
 	Ward BeforeIndexWork() { return Ward(this, Activity::IndexesLookup); }
 	Ward BeforeSelectLoop() { return Ward(this, Activity::SelectLoop); }
 
+	bool CheckConnectionId(int connectionId) const { return (data_.connectionId == connectionId); }
+
 private:
 	static unsigned serializeState(MutexMark);
 	static unsigned serializeState(Activity::State);
@@ -107,7 +117,7 @@ private:
 	static unsigned nextId() noexcept;
 
 	const Activity data_;
-	std::atomic<unsigned> state_{serializeState(Activity::InProgress)};  // kStateShift lower bits for state, other for details
+	std::atomic<unsigned> state_{serializeState(Activity::InProgress)};	 // kStateShift lower bits for state, other for details
 	ActivityContainer* parent_;
 #ifndef NDEBUG
 	std::atomic<unsigned> refCount_;

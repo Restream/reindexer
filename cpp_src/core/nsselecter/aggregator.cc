@@ -1,4 +1,4 @@
-#include "core/aggregator.h"
+#include "aggregator.h"
 #include <algorithm>
 #include <limits>
 #include "core/queryresults/queryresults.h"
@@ -17,7 +17,7 @@ static void moveFrames(It &begin, It &end, size_t size, size_t offset, size_t li
 }
 
 template <typename It>
-static void copy(It begin, It end, h_vector<FacetResult, 1> &facets, const FieldsSet &fields, const PayloadType &payloadType) {
+static void copy(It begin, It end, std::vector<FacetResult> &facets, const FieldsSet &fields, const PayloadType &payloadType) {
 	for (; begin != end; ++begin) {
 		facets.push_back({{}, begin->second});
 		int tagPathIdx = 0;
@@ -36,7 +36,7 @@ static void copy(It begin, It end, h_vector<FacetResult, 1> &facets, const Field
 }
 
 template <typename It>
-static void copy(It begin, It end, h_vector<FacetResult, 1> &facets) {
+static void copy(It begin, It end, std::vector<FacetResult> &facets) {
 	for (; begin != end; ++begin) {
 		facets.push_back({{begin->first.template As<string>()}, begin->second});
 	}
@@ -203,6 +203,9 @@ Aggregator::Aggregator(const PayloadType &payloadType, const FieldsSet &fields, 
 				multifieldFacets_.reset(new MultifieldMap{MultifieldComparator{sort, fields_, payloadType_}});
 			}
 			break;
+		case AggDistinct:
+			distincts_.reset(new fast_hash_set<Variant>);
+			break;
 		case AggMin:
 			result_ = std::numeric_limits<double>::max();
 			break;
@@ -218,7 +221,7 @@ Aggregator::Aggregator(const PayloadType &payloadType, const FieldsSet &fields, 
 }
 
 template <typename FacetMap, typename... Args>
-static void fillFacetResult(h_vector<FacetResult, 1> &result, const FacetMap &facets, size_t offset, size_t limit, const Args &... args) {
+static void fillFacetResult(std::vector<FacetResult> &result, const FacetMap &facets, size_t offset, size_t limit, const Args &... args) {
 	if (offset >= static_cast<size_t>(facets.size())) return;
 	result.reserve(std::min(limit, facets.size() - offset));
 	const auto &comparator = facets.key_comp();
@@ -258,6 +261,12 @@ AggregationResult Aggregator::GetResult() const {
 			} else {
 				assert(singlefieldFacets_);
 				fillFacetResult(ret.facets, *singlefieldFacets_, offset_, limit_);
+			}
+			break;
+		case AggDistinct:
+			assert(distincts_);
+			for (const Variant &value : *distincts_) {
+				ret.distincts.push_back(value.As<string>());
 			}
 			break;
 		default:
@@ -311,6 +320,10 @@ void Aggregator::aggregate(const Variant &v) {
 		case AggFacet:
 			assert(singlefieldFacets_);
 			++(*singlefieldFacets_)[v];
+			break;
+		case AggDistinct:
+			assert(distincts_);
+			distincts_->insert(v);
 			break;
 		case AggUnknown:
 			break;

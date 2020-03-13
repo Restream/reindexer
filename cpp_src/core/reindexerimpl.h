@@ -24,6 +24,8 @@ using std::string;
 namespace reindexer {
 
 class Replicator;
+class IClientsStats;
+
 class ReindexerImpl {
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Reindexer>;
 	using StorageMutex = MarkedMutex<shared_timed_mutex, MutexMark::ReindexerStorage>;
@@ -37,7 +39,8 @@ class ReindexerImpl {
 public:
 	using Completion = std::function<void(const Error &err)>;
 
-	ReindexerImpl();
+	ReindexerImpl(IClientsStats *clientsStats = nullptr);
+
 	~ReindexerImpl();
 
 	Error Connect(const string &dsn, ConnectOpts opts = ConnectOpts());
@@ -143,8 +146,6 @@ protected:
 	void prepareJoinResults(const Query &q, QueryResults &result);
 	static bool isPreResultValuesModeOptimizationAvailable(const Query &jItemQ, const NamespaceImpl::Ptr &jns);
 
-	void ensureDataLoaded(Namespace::Ptr &ns, const RdxContext &ctx);
-
 	void syncSystemNamespaces(string_view sysNsName, string_view filterNsName, const RdxContext &ctx);
 	void createSystemNamespaces();
 	void updateToSystemNamespace(string_view nsName, Item &, const RdxContext &ctx);
@@ -184,6 +185,8 @@ protected:
 	StorageType storageType_;
 	bool autorepairEnabled_;
 	std::atomic<bool> connected_;
+
+	IClientsStats *clientsStats_ = nullptr;
 
 	friend class Replicator;
 	friend class TransactionImpl;

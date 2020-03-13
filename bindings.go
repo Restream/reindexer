@@ -138,12 +138,19 @@ func (db *reindexerImpl) getMeta(ctx context.Context, namespace, key string) ([]
 }
 
 func unpackItem(ns *nsArrayEntry, params *rawResultItemParams, allowUnsafe bool, nonCacheableData bool, item interface{}) (interface{}, error) {
-	useCache := item == nil && (ns.deepCopyIface || allowUnsafe) && !nonCacheableData && ns.cacheItems != nil
+	useCache := item == nil && (ns.deepCopyIface || allowUnsafe) && !nonCacheableData
+	hasCache := false
 	needCopy := ns.deepCopyIface && !allowUnsafe
 	var err error
 
 	if useCache {
 		ns.cacheLock.RLock()
+		hasCache = ns.cacheItems != nil
+		if !hasCache {
+			ns.cacheLock.RUnlock()
+		}
+	}
+	if useCache && hasCache {
 		if citem, ok := ns.cacheItems[params.id]; ok && citem.version == params.version {
 			item = citem.item
 			ns.cacheLock.RUnlock()
@@ -162,7 +169,15 @@ func unpackItem(ns *nsArrayEntry, params *rawResultItemParams, allowUnsafe bool,
 				return item, err
 			}
 			ns.cacheLock.Lock()
-			ns.cacheItems[params.id] = cacheItem{item: item, version: params.version}
+			if citem, ok := ns.cacheItems[params.id]; ok {
+				if citem.version == params.version {
+					item = citem.item
+				} else if citem.version < params.version {
+					ns.cacheItems[params.id] = cacheItem{item: item, version: params.version}
+				}
+			} else {
+				ns.cacheItems[params.id] = cacheItem{item: item, version: params.version}
+			}
 			ns.cacheLock.Unlock()
 		}
 	} else {

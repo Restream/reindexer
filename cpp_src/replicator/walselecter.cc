@@ -45,7 +45,7 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 		if (ns_->wal_.is_outdated(fromLSN) && count)
 			throw Error(errOutdatedWAL, "Query to WAL with outdated LSN %ld, LSN counter %ld", fromLSN, ns_->wal_.LSNCounter());
 
-		auto slaveVersion = versionIdx >= 0 ? SemVersion() : SemVersion(q.entries[versionIdx].values[0].As<string>());
+		auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.entries[versionIdx].values[0].As<string>());
 		for (auto it = ns_->wal_.upper_bound(fromLSN); count && it != ns_->wal_.end(); ++it) {
 			WALRecord rec = *it;
 			switch (rec.type) {

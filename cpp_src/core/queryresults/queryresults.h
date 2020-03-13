@@ -17,7 +17,8 @@ class WrSerializer;
 
 namespace joins {
 class NamespaceResults;
-}
+class ItemIterator;
+}  // namespace joins
 
 /// QueryResults is an interface for iterating over documents, returned by Query from Reindexer.<br>
 /// *Lifetime*: QueryResults uses Copy-On-Write semantics, so it has independent lifetime and state - e.g., acquired from Reindexer.
@@ -52,6 +53,7 @@ public:
 		Error GetJSON(WrSerializer &wrser, bool withHdrLen = true);
 		Error GetCJSON(WrSerializer &wrser, bool withHdrLen = true);
 		Item GetItem();
+		joins::ItemIterator GetJoined();
 		const ItemRef &GetItemRef() const { return qr_->items_[idx_]; }
 		int64_t GetLSN() const { return qr_->items_[idx_].Value().GetLSN(); }
 		bool IsRaw() const;

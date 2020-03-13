@@ -113,39 +113,14 @@ func (binding *NetCProto) BeginTx(ctx context.Context, namespace string) (txCtx 
 }
 
 func (binding *NetCProto) CommitTx(txCtx *bindings.TxCtx) (bindings.RawBuffer, error) {
-	netBuffer := txCtx.Result.(*NetBuffer)
-
-	txBuf, err := netBuffer.conn.rpcCall(txCtx.UserCtx, cmdCommitTx, uint32(binding.timeouts.RequestTimeout/time.Second), int64(txCtx.Id))
-	if err != nil {
-		return nil, err
-	}
-
-	defer txBuf.Free()
-	defer netBuffer.close()
-	netBuffer.needClose = false
-	txBuf.needClose = false
-
-	txBuf.buf, netBuffer.buf = netBuffer.buf, txBuf.buf
-	netBuffer.result = txBuf.args[0].([]byte)
-	return netBuffer, nil
+	return txCtx.Result.(*NetBuffer).conn.rpcCall(txCtx.UserCtx, cmdCommitTx, uint32(binding.timeouts.RequestTimeout/time.Second), int64(txCtx.Id))
 }
 
 func (binding *NetCProto) RollbackTx(txCtx *bindings.TxCtx) error {
-	netBuffer := txCtx.Result.(*NetBuffer)
-
-	txBuf, err := netBuffer.conn.rpcCall(txCtx.UserCtx, cmdRollbackTx, uint32(binding.timeouts.RequestTimeout/time.Second), int64(txCtx.Id))
-
-	defer txBuf.Free()
-	defer netBuffer.Free()
-	netBuffer.needClose = false
-	if txBuf != nil {
-		txBuf.needClose = false
+	if txCtx.Result == nil {
+		return nil
 	}
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return txCtx.Result.(*NetBuffer).conn.rpcCallNoResults(txCtx.UserCtx, cmdRollbackTx, uint32(binding.timeouts.RequestTimeout/time.Second), int64(txCtx.Id))
 }
 
 func (binding *NetCProto) ModifyItemTx(txCtx *bindings.TxCtx, format int, data []byte, mode int, precepts []string, stateToken int) error {
@@ -162,15 +137,7 @@ func (binding *NetCProto) ModifyItemTx(txCtx *bindings.TxCtx, format int, data [
 	}
 
 	netBuffer := txCtx.Result.(*NetBuffer)
-	txBuf, err := netBuffer.conn.rpcCall(txCtx.UserCtx, cmdAddTxItem, uint32(binding.timeouts.RequestTimeout/time.Second), format, data, mode, packedPercepts, stateToken, int64(txCtx.Id))
-
-	defer txBuf.Free()
-	if err != nil {
-		netBuffer.close()
-		return err
-	}
-
-	return nil
+	return netBuffer.conn.rpcCallNoResults(txCtx.UserCtx, cmdAddTxItem, uint32(binding.timeouts.RequestTimeout/time.Second), format, data, mode, packedPercepts, stateToken, int64(txCtx.Id))
 }
 
 func (binding *NetCProto) ModifyItemTxAsync(txCtx *bindings.TxCtx, format int, data []byte, mode int, precepts []string, stateToken int, cmpl bindings.RawCompletion) {
@@ -192,28 +159,13 @@ func (binding *NetCProto) ModifyItemTxAsync(txCtx *bindings.TxCtx, format int, d
 
 func (binding *NetCProto) DeleteQueryTx(txCtx *bindings.TxCtx, rawQuery []byte) error {
 	netBuffer := txCtx.Result.(*NetBuffer)
-	txBuf, err := netBuffer.conn.rpcCall(txCtx.UserCtx, cmdDeleteQueryTx, uint32(binding.timeouts.RequestTimeout/time.Second), rawQuery, int64(txCtx.Id))
+	return netBuffer.conn.rpcCallNoResults(txCtx.UserCtx, cmdDeleteQueryTx, uint32(binding.timeouts.RequestTimeout/time.Second), rawQuery, int64(txCtx.Id))
 
-	defer txBuf.Free()
-	if err != nil {
-		netBuffer.close()
-		return err
-	}
-
-	return nil
 }
 
 func (binding *NetCProto) UpdateQueryTx(txCtx *bindings.TxCtx, rawQuery []byte) error {
 	netBuffer := txCtx.Result.(*NetBuffer)
-	txBuf, err := netBuffer.conn.rpcCall(txCtx.UserCtx, cmdUpdateQueryTx, uint32(binding.timeouts.RequestTimeout/time.Second), rawQuery, int64(txCtx.Id))
-
-	defer txBuf.Free()
-	if err != nil {
-		netBuffer.close()
-		return err
-	}
-
-	return nil
+	return netBuffer.conn.rpcCallNoResults(txCtx.UserCtx, cmdUpdateQueryTx, uint32(binding.timeouts.RequestTimeout/time.Second), rawQuery, int64(txCtx.Id))
 }
 
 func (binding *NetCProto) ModifyItem(ctx context.Context, nsHash int, namespace string, format int, data []byte, mode int, precepts []string, stateToken int) (bindings.RawBuffer, error) {
@@ -230,13 +182,7 @@ func (binding *NetCProto) ModifyItem(ctx context.Context, nsHash int, namespace 
 		packedPercepts = ser1.Bytes()
 	}
 
-	buf, err := binding.rpcCall(ctx, opWr, cmdModifyItem, namespace, format, data, mode, packedPercepts, stateToken, 0)
-	if err != nil {
-		return nil, err
-	}
-	buf.result = buf.args[0].([]byte)
-	buf.reqID = -1
-	return buf, nil
+	return binding.rpcCall(ctx, opWr, cmdModifyItem, namespace, format, data, mode, packedPercepts, stateToken, 0)
 }
 
 func (binding *NetCProto) OpenNamespace(ctx context.Context, namespace string, enableStorage, dropOnFormatError bool) error {
@@ -302,14 +248,7 @@ func (binding *NetCProto) PutMeta(ctx context.Context, namespace, key, data stri
 }
 
 func (binding *NetCProto) GetMeta(ctx context.Context, namespace, key string) (bindings.RawBuffer, error) {
-	buf, err := binding.rpcCall(ctx, opRd, cmdGetMeta, namespace, key)
-	if err != nil {
-		buf.Free()
-		return nil, err
-	}
-	buf.result = buf.args[0].([]byte)
-	buf.reqID = -1
-	return buf, nil
+	return binding.rpcCall(ctx, opRd, cmdGetMeta, namespace, key)
 }
 
 func (binding *NetCProto) Select(ctx context.Context, query string, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
@@ -325,14 +264,10 @@ func (binding *NetCProto) Select(ctx context.Context, query string, asJson bool,
 	}
 
 	buf, err := binding.rpcCall(ctx, opRd, cmdSelectSQL, query, flags, int32(fetchCount), ptVersions)
-	if err != nil {
-		buf.Free()
-		return nil, err
+	if buf != nil {
+		buf.reqID = buf.args[1].(int)
 	}
-	buf.result = buf.args[0].([]byte)
-	buf.reqID = buf.args[1].(int)
-	buf.needClose = buf.reqID != -1
-	return buf, nil
+	return buf, err
 }
 
 func (binding *NetCProto) SelectQuery(ctx context.Context, data []byte, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
@@ -348,34 +283,18 @@ func (binding *NetCProto) SelectQuery(ctx context.Context, data []byte, asJson b
 	}
 
 	buf, err := binding.rpcCall(ctx, opRd, cmdSelect, data, flags, int32(fetchCount), ptVersions)
-	if err != nil {
-		buf.Free()
-		return nil, err
+	if buf != nil {
+		buf.reqID = buf.args[1].(int)
 	}
-	buf.result = buf.args[0].([]byte)
-	buf.reqID = buf.args[1].(int)
-	buf.needClose = buf.reqID != -1
-	return buf, nil
+	return buf, err
 }
 
 func (binding *NetCProto) DeleteQuery(ctx context.Context, nsHash int, data []byte) (bindings.RawBuffer, error) {
-	buf, err := binding.rpcCall(ctx, opWr, cmdDeleteQuery, data)
-	if err != nil {
-		buf.Free()
-		return nil, err
-	}
-	buf.result = buf.args[0].([]byte)
-	return buf, nil
+	return binding.rpcCall(ctx, opWr, cmdDeleteQuery, data)
 }
 
 func (binding *NetCProto) UpdateQuery(ctx context.Context, nsHash int, data []byte) (bindings.RawBuffer, error) {
-	buf, err := binding.rpcCall(ctx, opWr, cmdUpdateQuery, data)
-	if err != nil {
-		buf.Free()
-		return nil, err
-	}
-	buf.result = buf.args[0].([]byte)
-	return buf, nil
+	return binding.rpcCall(ctx, opWr, cmdUpdateQuery, data)
 }
 
 func (binding *NetCProto) Commit(ctx context.Context, namespace string) error {

@@ -75,5 +75,5 @@ private:
 	bool enableHandleSignals_ = false;
 	ev::async async_;
 	ev::dynamic_loop loop_;
-};  // class server
+};	// class server
 }  // namespace reindexer_server

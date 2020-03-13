@@ -70,14 +70,20 @@ RdxContext InternalRdxContext::CreateRdxContext(string_view query, ActivityConta
 	if (activityTracer_.empty() || query.empty()) {
 		return {(deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
 	} else {
-		return {activityTracer_, user_, query, activityContainer, (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
+		return {activityTracer_,
+				user_,
+				query,
+				activityContainer,
+				connectionId_,
+				(deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr),
+				cmpl_};
 	}
 }
 
 RdxContext InternalRdxContext::CreateRdxContext(string_view query, ActivityContainer& activityContainer, QueryResults& qresults) const {
 	if (activityTracer_.empty() || query.empty()) return {(deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
 	assert(!qresults.holdActivity_);
-	new (&qresults.activityCtx_) RdxActivityContext(activityTracer_, user_, query, activityContainer, true);
+	new (&qresults.activityCtx_) RdxActivityContext(activityTracer_, user_, query, activityContainer, connectionId_, true);
 	qresults.holdActivity_ = true;
 	return {&qresults.activityCtx_, (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
 }

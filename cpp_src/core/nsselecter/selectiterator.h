@@ -100,7 +100,7 @@ public:
 
 	/// Excludes last set of ids from each result
 	/// to remove duplicated keys
-	void ExcludeLastSet();
+	void ExcludeLastSet(const PayloadValue &, IdType rowId, IdType properRowId);
 
 	/// Appends result to an existing set.
 	/// @param other - results to add.

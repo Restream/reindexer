@@ -1,3 +1,27 @@
+# Version 2.6.2 (13.03.2020)
+
+# Core
+- [fea] Multiple distinct in single query using indexes
+- [fix] Unload by idle timeout feature is disabled
+- [fea] Update Query now can update object or array of objects
+
+# Reindexer server
+- [fea] Enable tx.Rollback after tx.Commit
+- [fix] Crash on Upsert to tables with composite pk with non indexed fields as part of PK
+- [fea] Stronger txID & queryID validation and isolation between clients
+- [fix] Correct lsn & id invalidation after UpdateQuery
+- [fea] Clients connection statistics added
+
+
+# go connector
+- [fea] Enable tx.Rollback after tx.Commit, 
+- [fea] Added read tx.Query support
+- [fea] Log warning about reindexer library and client mismatch
+- [fix] Unmarshall []bool indexed fields
+- [fix] Unsafe Query flag reset after recycle from sync.Pool
+- [fea] DB.SetDefaultQueryDebug now copies default ns settings
+
+
 # Version 2.6.1 (02.03.2020)
 
 # Core
@@ -35,7 +59,7 @@
 ## Core
 
 - [fea] Added rename namespace API
-- [fea] Improoved -dev package behaviour
+- [fea] Improved -dev package behavior
 - [fix] Transactions memory consumption are seriously decreased
 
 # Reindexer tool

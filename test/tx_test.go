@@ -98,6 +98,7 @@ func TestTxQueries(t *testing.T) {
 	count := 5000
 	FillTextTxItem1Tx(count, tx)
 	tx.MustCommit()
+	assert.NoError(t, tx.Rollback())
 	CheckTYx(t, testTxQueryItemNs, count)
 
 	tx = newTestTx(DB, testTxQueryItemNs)

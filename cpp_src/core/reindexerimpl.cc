@@ -4,6 +4,7 @@
 #include <thread>
 #include "cjson/jsonbuilder.h"
 #include "core/cjson/jsondecoder.h"
+#include "core/iclientsstats.h"
 #include "core/index/index.h"
 #include "core/itemimpl.h"
 #include "core/namespacedef.h"
@@ -29,15 +30,17 @@ constexpr char kMemStatsNamespace[] = "#memstats";
 constexpr char kNamespacesNamespace[] = "#namespaces";
 constexpr char kConfigNamespace[] = "#config";
 constexpr char kActivityStatsNamespace[] = "#activitystats";
+constexpr char kClientsStatsNamespace[] = "#clientsstats";
 constexpr char kStoragePlaceholderFilename[] = ".reindexer.storage";
 constexpr char kReplicationConfFilename[] = "replication.conf";
 
-ReindexerImpl::ReindexerImpl()
+ReindexerImpl::ReindexerImpl(IClientsStats* clientsStats)
 	: replicator_(new Replicator(this)),
 	  hasReplConfigLoadError_(false),
 	  storageType_(StorageType::LevelDB),
 	  autorepairEnabled_(false),
-	  connected_(false) {
+	  connected_(false),
+	  clientsStats_(clientsStats) {
 	stopBackgroundThread_ = false;
 	configProvider_.setHandler(ProfilingConf, std::bind(&ReindexerImpl::onProfiligConfigLoad, this));
 	backgroundThread_ = std::thread([this]() { this->backgroundRoutine(); });
@@ -250,7 +253,7 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, const InternalRdxCo
 		}
 		ns->OnConfigUpdated(configProvider_, rdxCtx);
 		if (readyToLoadStorage) {
-			if (!ns->GetStorageOpts(rdxCtx).IsLazyLoad()) ns->LoadFromStorage(rdxCtx);
+			ns->LoadFromStorage(rdxCtx);
 		}
 		{
 			ULock lock(mtx_, &rdxCtx);
@@ -287,7 +290,7 @@ Error ReindexerImpl::OpenNamespace(string_view name, const StorageOpts& storageO
 			auto opts = storageOpts;
 			ns->EnableStorage(storagePath_, opts.Autorepair(autorepairEnabled_), storageType_, rdxCtx);
 			ns->OnConfigUpdated(configProvider_, rdxCtx);
-			if (!ns->GetStorageOpts(rdxCtx).IsLazyLoad()) ns->LoadFromStorage(rdxCtx);
+			ns->LoadFromStorage(rdxCtx);
 		} else {
 			ns->OnConfigUpdated(configProvider_, rdxCtx);
 		}
@@ -427,13 +430,23 @@ Error ReindexerImpl::Insert(string_view nsName, Item& item, const InternalRdxCon
 	return err;
 }
 
+static void printPkValue(const Item::FieldRef& f, WrSerializer& ser) {
+	ser << f.Name() << " = ";
+	Variant(f).Dump(ser);
+}
+
 static WrSerializer& printPkFields(const Item& item, WrSerializer& ser) {
+	size_t jsonPathIdx = 0;
 	const FieldsSet fields = item.PkFields();
 	for (auto it = fields.begin(); it != fields.end(); ++it) {
 		if (it != fields.begin()) ser << " AND ";
-		const Item::FieldRef f = item[*it];
-		ser << f.Name() << " = ";
-		Variant(f).Dump(ser);
+		int field = *it;
+		if (field == IndexValueType::SetByJsonPath) {
+			assert(jsonPathIdx < fields.getTagsPathsLength());
+			printPkValue(item[fields.getJsonPath(jsonPathIdx++)], ser);
+		} else {
+			printPkValue(item[field], ser);
+		}
 	}
 	return ser;
 }
@@ -460,8 +473,13 @@ Error ReindexerImpl::Update(const Query& q, QueryResults& result, const Internal
 		WrSerializer ser;
 		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? q.GetSQL(ser).Slice() : ""_sv, activities_, result);
 		auto ns = getNamespace(q._namespace, rdxCtx);
-		ensureDataLoaded(ns, rdxCtx);
 		ns->Update(q, result, rdxCtx);
+		if (ns->IsSystem(rdxCtx)) {
+			for (auto it = result.begin(); it != result.end(); ++it) {
+				auto item = it.GetItem();
+				updateToSystemNamespace(ns->GetName(), item, rdxCtx);
+			}
+		}
 	} catch (const Error& err) {
 		return err;
 	}
@@ -586,7 +604,6 @@ Error ReindexerImpl::Delete(const Query& q, QueryResults& result, const Internal
 		WrSerializer ser;
 		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? q.GetSQL(ser).Slice() : "", activities_, result);
 		auto ns = getNamespace(q._namespace, rdxCtx);
-		ensureDataLoaded(ns, rdxCtx);
 		ns->Delete(q, result, rdxCtx);
 	} catch (const Error& err) {
 		return err;
@@ -643,7 +660,6 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 		NsLocker<const RdxContext> locks(rdxCtx);
 
 		auto mainNsWrp = getNamespace(q._namespace, rdxCtx);
-		ensureDataLoaded(mainNsWrp, rdxCtx);
 		auto mainNs = q.IsWALQuery() ? mainNsWrp->awaitMainNs(rdxCtx) : mainNsWrp->getMainNs();
 
 		ProfilingConfigData profilingCfg = configProvider_.GetProfilingConfig();
@@ -675,7 +691,6 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 		locks.Add(mainNs);
 		q.WalkNested(false, true, [this, &locks, &rdxCtx](const Query q) {
 			auto nsWrp = getNamespace(q._namespace, rdxCtx);
-			ensureDataLoaded(nsWrp, rdxCtx);
 			auto ns = q.IsWALQuery() ? nsWrp->awaitMainNs(rdxCtx) : nsWrp->getMainNs();
 			ns->updateSelectTime();
 			locks.Add(ns);
@@ -953,14 +968,6 @@ Error ReindexerImpl::DropIndex(string_view nsName, const IndexDef& indexDef, con
 	}
 	return Error(errOK);
 }
-void ReindexerImpl::ensureDataLoaded(Namespace::Ptr& ns, const RdxContext& ctx) {
-	SStorageLock readlock(storageMtx_, &ctx);
-	if (ns->needToLoadData(ctx)) {
-		readlock.unlock();
-		UStorageLock writelock(storageMtx_, &ctx);
-		if (ns->needToLoadData(ctx)) ns->LoadFromStorage(ctx);
-	}
-}
 
 std::vector<std::pair<std::string, Namespace::Ptr>> ReindexerImpl::getNamespaces(const RdxContext& ctx) {
 	SLock lock(mtx_, &ctx);
@@ -1028,7 +1035,6 @@ void ReindexerImpl::backgroundRoutine() {
 		for (auto name : nsarray) {
 			try {
 				auto ns = getNamespace(name, dummyCtx);
-				ns->tryToReload(dummyCtx);
 				ns->BackgroundRoutine(nullptr);
 			} catch (Error err) {
 				logPrintf(LogWarning, "flusherThread() failed: %s", err.what());
@@ -1106,6 +1112,17 @@ void ReindexerImpl::createSystemNamespaces() {
 					 .AddIndex("total.data_size", "-", "int64", IndexOpts().Dense())
 					 .AddIndex("total.indexes_size", "-", "int64", IndexOpts().Dense())
 					 .AddIndex("total.cache_size", "-", "int64", IndexOpts().Dense()));
+
+	AddNamespace(NamespaceDef(kClientsStatsNamespace, StorageOpts())
+					 .AddIndex("connection_id", "hash", "int", IndexOpts().PK())
+					 .AddIndex("ip", "-", "string", IndexOpts().Dense())
+					 .AddIndex("user_name", "-", "string", IndexOpts().Dense())
+					 .AddIndex("user_rights", "-", "string", IndexOpts().Dense())
+					 .AddIndex("db_name", "-", "string", IndexOpts().Dense())
+					 .AddIndex("current_activity", "-", "string", IndexOpts().Dense())
+					 .AddIndex("start_time", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("send_bytes", "-", "int64", IndexOpts().Dense())
+					 .AddIndex("recv_bytes", "-", "int64", IndexOpts().Dense()));
 }
 
 std::vector<string> defDBConfig = {
@@ -1361,7 +1378,7 @@ void ReindexerImpl::syncSystemNamespaces(string_view sysNsName, string_view filt
 		const auto data = queriesStatTracker_.Data();
 		std::vector<Item> items;
 		items.reserve(data.size());
-		auto queriesperfstatsNs = getNamespace(kQueriesPerfStatsNamespace, ctx)->getMainNs();
+		auto queriesperfstatsNs = getNamespace(kQueriesPerfStatsNamespace, ctx);
 		for (const auto& stat : data) {
 			ser.Reset();
 			stat.GetJSON(ser);
@@ -1376,7 +1393,7 @@ void ReindexerImpl::syncSystemNamespaces(string_view sysNsName, string_view filt
 		const auto data = activities_.List();
 		std::vector<Item> items;
 		items.reserve(data.size());
-		auto activityNs = getNamespace(kActivityStatsNamespace, ctx)->getMainNs();
+		auto activityNs = getNamespace(kActivityStatsNamespace, ctx);
 		for (const auto& act : data) {
 			ser.Reset();
 			act.GetJSON(ser);
@@ -1385,6 +1402,25 @@ void ReindexerImpl::syncSystemNamespaces(string_view sysNsName, string_view filt
 			if (!err.ok()) throw err;
 		}
 		activityNs->Refill(items, NsContext(ctx));
+	}
+	if (sysNsName == kClientsStatsNamespace) {
+		if (clientsStats_) {
+			std::vector<reindexer::ClientStat> clientInf;
+			clientsStats_->GetClientInfo(clientInf);
+			auto clientsNs = getNamespace(kClientsStatsNamespace, ctx);
+			std::vector<Item> items;
+			for (auto& i : clientInf) {
+				ser.Reset();
+				Activity activ;
+				bool isExist = activities_.ActivityForIpConnection(i.connectionId, activ);
+				if (isExist) i.currentActivity = activ.query;
+				i.GetJSON(ser);
+				items.push_back(clientsNs->NewItem(ctx));
+				auto err = items.back().FromJSON(ser.Slice());
+				if (!err.ok()) throw err;
+			}
+			clientsNs->Refill(items, NsContext(ctx));
+		}
 	}
 }
 

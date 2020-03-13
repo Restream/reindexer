@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.6.1"
+  version: "2.6.2"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -971,6 +971,32 @@ paths:
           schema:
             $ref: "#/definitions/StatusResponse"
 
+  /db/{database}/namespaces/%23clientsstats/items:
+    get:
+      tags:
+      - "system"
+      summary: "Get client connection information"
+      description: "This operation will return detailed informatiom about all connections on the server"
+      operationId: "getClientsStats"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/ClientsStats"
+        400:
+          description: "Invalid arguments supplied"
+          schema:
+            $ref: "#/definitions/StatusResponse"
+
+
+
+
   /db/{database}/namespaces/%23memstats/items:
     get:
       tags:
@@ -1139,9 +1165,63 @@ definitions:
               - "indexes_lookup"
               - "bool"
               - "select_loop"
-
             lock_description:
               type: "string"
+
+  ClientsStats:
+    type: "object"
+    properties:
+      total_items:
+        description: "Count of connected clients"
+        type: "integer"
+      items:
+        type: "array"
+        items:
+          type: "object"
+          required:
+            - connection_id
+            - ip
+            - user_name
+            - user_rights
+            - db_name
+            - current_activity
+            - start_time
+            - recv_bytes
+            - sent_bytes
+            - client_version
+          properties:
+            connection_id:
+              type: "integer"
+              description: "Connection identifier"
+            ip:
+              type: "string"
+              description: "Ip"
+            user_name:
+              type: "string"
+              description: "User name"
+            user_rights:
+              type: string
+              description: "User right"
+            db_name:
+              type: "string"
+              description: "Database name"
+            current_activity:
+              type: "string"
+              description: "Current activity"
+            start_time:
+              type: "integer"
+              description: "Server start time in unix timestamp"
+            recv_bytes:
+              type: "integer"
+              description: "Receive byte"
+            sent_bytes:
+              type: "integer"
+              description: "Send byte"
+            client_version:
+              type: string
+              description: "Client version string"
+
+
 
   Databases:
     type: "object"
@@ -1283,11 +1363,6 @@ definitions:
       offset:
         description: "Offset of first returned item"
         type: "integer"
-      distinct:
-        description: "Distinct field/index name. Results will contain's document with distinct field value"
-        type: "array"
-        items:
-          type: "string"
       req_total:
         description: "Ask query to calculate total documents, match condition"
         type: "string"
@@ -1463,6 +1538,9 @@ definitions:
 
   AggregationsDef:
     type: "object"
+    required:
+      - fields
+      - type
     properties:
       fields:
         type: "array"
@@ -1478,8 +1556,9 @@ definitions:
         - "MIN"
         - "MAX"
         - "FACET"
+        - "DISTINCT"
       sort:
-        description: "Specifies results sorting order"
+        description: "Specifies results sorting order. Allowed only for FACET"
         type: "array"
         items:
           $ref: "#/definitions/AggregationsSortDef"
@@ -1487,12 +1566,12 @@ definitions:
         type: "integer"
         default: UINT_MAX
         minimum: 0
-        description: "Number of rows to get from result set"
+        description: "Number of rows to get from result set. Allowed only for FACET"
       offset:
         type: "integer"
         default: 0
         minimum: 0
-        description: "Index of the first row to get from result set"
+        description: "Index of the first row to get from result set. Allowed only for FACET"
 
   AggregationsSortDef:
     description: "Specifies facet aggregations results sorting order"
@@ -1821,6 +1900,9 @@ definitions:
 
   AggregationResDef:
     type: "object"
+    required:
+      - fields
+      - type
     properties:
       fields:
         type: "array"
@@ -1836,6 +1918,7 @@ definitions:
         - "MIN"
         - "MAX"
         - "FACET"
+        - "DISTINCT"
       value:
         type: "number"
         description: "Value, calculated by aggregator"
@@ -1844,6 +1927,9 @@ definitions:
         description: "Facets, calculated by aggregator"
         items:
           type: "object"
+          required:
+            - values
+            - count
           properties:
             values:
               type: "array"
@@ -1853,6 +1939,11 @@ definitions:
             count: 
               type: "integer"
               description: "Count of elemens these fields values"
+      distincts:
+        type: "array"
+        description: "List of distinct values of the field"
+        items:
+          type: "string"
 
   QueryColumnDef:
     type: "object"

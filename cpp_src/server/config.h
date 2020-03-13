@@ -49,6 +49,7 @@ struct ServerConfig {
 	bool EnableSecurity;
 	bool DebugPprof;
 	bool EnablePrometheus;
+	bool EnableConnectionsStats;
 	std::chrono::milliseconds PrometheusCollectPeriod;
 	bool DebugAllocs;
 

@@ -49,11 +49,11 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		}
 	}
 
-	QueryPreprocessor qPreproc(ns_, const_cast<QueryEntries *>(&ctx.query.entries));
-	QueryEntries tmpWhereEntries(ctx.skipIndexesLookup ? QueryEntries() : qPreproc.LookupQueryIndexes());
-	if (!ctx.skipIndexesLookup) {
-		qPreproc.SetQueryEntries(&tmpWhereEntries);
-	}
+	QueryPreprocessor qPreproc(ctx.query.entries, ns_);
+	auto aggregators = getAggregators(ctx.query);
+	qPreproc.AddDistinctEntries(aggregators);
+	const bool aggregationsOnly = aggregators.size() > 1 || (aggregators.size() == 1 && aggregators[0].Type() != AggDistinct);
+	if (!ctx.skipIndexesLookup) qPreproc.LookupQueryIndexes();
 
 	const bool isFt = qPreproc.ContainsFullTextIndexes();
 	if (!ctx.skipIndexesLookup && !isFt) qPreproc.SubstituteCompositeIndexes();
@@ -89,8 +89,8 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		if (isFt ||																	 // Disabled if there are search results
 			(ctx.preResult /*&& !ctx.preResult->btreeIndexOptimizationEnabled*/) ||	 // Disabled in join preresult (TMP: now disable for all
 																					 // right queries), TODO: enable right queries)
-			(!tmpWhereEntries.Empty() && tmpWhereEntries.GetOperation(0) == OpNot) ||  // Not in first condition
-			!isSortOptimizatonEffective(tmpWhereEntries, ctx,
+			(!qPreproc.GetQueryEntries().Empty() && qPreproc.GetQueryEntries().GetOperation(0) == OpNot) ||	 // Not in first condition
+			!isSortOptimizatonEffective(qPreproc.GetQueryEntries(), ctx,
 										rdxCtx)	 // Optimization is not effective (e.g. query contains more effecive filters)
 		) {
 			ctx.sortingContext.resetOptimization();
@@ -225,14 +225,18 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 
 	explain.SetPostprocessTime();
 
-	LoopCtx lctx(ctx);
+	LoopCtx lctx(ctx, aggregators);
 	lctx.qres = &qres;
 	lctx.calcTotal = needCalcTotal;
 	if (isFt) result.haveProcent = true;
-	if (reverse && hasComparators) selectLoop<true, true>(lctx, result, rdxCtx);
-	if (!reverse && hasComparators) selectLoop<false, true>(lctx, result, rdxCtx);
-	if (reverse && !hasComparators) selectLoop<true, false>(lctx, result, rdxCtx);
-	if (!reverse && !hasComparators) selectLoop<false, false>(lctx, result, rdxCtx);
+	if (reverse && hasComparators && aggregationsOnly) selectLoop<true, true, true>(lctx, result, rdxCtx);
+	if (!reverse && hasComparators && aggregationsOnly) selectLoop<false, true, true>(lctx, result, rdxCtx);
+	if (reverse && !hasComparators && aggregationsOnly) selectLoop<true, false, true>(lctx, result, rdxCtx);
+	if (!reverse && !hasComparators && aggregationsOnly) selectLoop<false, false, true>(lctx, result, rdxCtx);
+	if (reverse && hasComparators && !aggregationsOnly) selectLoop<true, true, false>(lctx, result, rdxCtx);
+	if (!reverse && hasComparators && !aggregationsOnly) selectLoop<false, true, false>(lctx, result, rdxCtx);
+	if (reverse && !hasComparators && !aggregationsOnly) selectLoop<true, false, false>(lctx, result, rdxCtx);
+	if (!reverse && !hasComparators && !aggregationsOnly) selectLoop<false, false, false>(lctx, result, rdxCtx);
 
 	explain.SetLoopTime();
 	explain.StopTiming();
@@ -505,7 +509,7 @@ void NsSelecter::sortResults(reindexer::SelectCtx &sctx, Items &items, const Sor
 	}
 }
 
-template <bool reverse, bool hasComparators>
+template <bool reverse, bool hasComparators, bool aggregationsOnly>
 void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext &rdxCtx) {
 	static const JoinedSelectors emptyJoinedSelectors;
 	const auto selectLoopWard = rdxCtx.BeforeSelectLoop();
@@ -514,12 +518,12 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 	SelectCtx &sctx = ctx.sctx;
 	const auto &joinedSelectors = sctx.joinedSelectors ? *sctx.joinedSelectors : emptyJoinedSelectors;
 	SelectIteratorContainer &qres = *ctx.qres;
+	auto &aggregators = ctx.aggregators;
 
 	if (!sctx.isForceAll) {
 		start = sctx.query.start;
 		count = sctx.query.count;
 	}
-	auto aggregators = getAggregators(sctx.query);
 	// do not calc total by loop, if we have only 1 condition with 1 idset
 	bool calcTotal = ctx.calcTotal && (qres.Size() > 1 || hasComparators || (qres.IsIterator(0) && qres[0].size() > 1));
 	size_t resultInitSize = result.Count();
@@ -565,9 +569,11 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 			// Check distinct condition:
 			// Exclude last sets of id from each query result, so duplicated keys will
 			// be removed
-			qres.ForEachIterator([](SelectIterator &it) {
-				if (it.distinct) it.ExcludeLastSet();
-			});
+			for (auto &it : qres) {
+				if (it.IsLeaf() && it.Value().distinct) {
+					it.Value().ExcludeLastSet(pv, rowId, properRowId);
+				}
+			}
 			if ((start || (count == 0)) && sortingOptions.multiColumnByBtreeIndex) {
 				VariantArray recentValues;
 				size_t lastResSize = result.Count();
@@ -587,7 +593,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 					}
 				}
 				if (!multiSortFinished) {
-					addSelectResult(proc, rowId, properRowId, sctx, aggregators, result);
+					addSelectResult<aggregationsOnly>(proc, rowId, properRowId, sctx, aggregators, result);
 				}
 				if (lastResSize < result.Count()) {
 					if (start) {
@@ -598,7 +604,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 			if (start) {
 				--start;
 			} else if (count) {
-				addSelectResult(proc, rowId, properRowId, sctx, aggregators, result);
+				addSelectResult<aggregationsOnly>(proc, rowId, properRowId, sctx, aggregators, result);
 				--count;
 				if (!count && sortingOptions.multiColumn && !multiSortFinished)
 					getSortIndexValue(sctx.sortingContext, properRowId, prevValues, proc, result.joined_[sctx.nsid], joinedSelectors);
@@ -650,12 +656,13 @@ void NsSelecter::getSortIndexValue(const SortingContext &sortCtx, IdType rowId, 
 	}
 }
 
+template <bool aggregationsOnly>
 void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &sctx, h_vector<Aggregator, 4> &aggregators,
 								 QueryResults &result) {
 	static const JoinedSelectors emptyJoinedSelectors;
-	if (aggregators.size()) {
-		for (auto &aggregator : aggregators) aggregator.Aggregate(ns_->items_[properRowId]);
-	} else if (sctx.preResult && sctx.preResult->executionMode == JoinPreResult::ModeBuild) {
+	for (auto &aggregator : aggregators) aggregator.Aggregate(ns_->items_[properRowId]);
+	if (aggregationsOnly) return;
+	if (sctx.preResult && sctx.preResult->executionMode == JoinPreResult::ModeBuild) {
 		switch (sctx.preResult->dataMode) {
 			case JoinPreResult::ModeIdSet:
 				sctx.preResult->ids.Add(rowId, IdSet::Unordered, 0);
@@ -691,9 +698,10 @@ void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId,
 	}
 }
 
-h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) {
+h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) const {
 	static constexpr int NotFilled = -2;
 	h_vector<Aggregator, 4> ret;
+	h_vector<size_t, 4> distinctIndexes;
 
 	for (auto &ag : q.aggregations_) {
 		if (ag.fields_.empty()) {
@@ -742,7 +750,19 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) {
 							ag.sortingEntries_[i].expression);
 			}
 		}
-		ret.push_back(Aggregator(ns_->payloadType_, fields, ag.type_, ag.fields_, sortingEntries, ag.limit_, ag.offset_));
+		if (ag.type_ == AggDistinct) distinctIndexes.push_back(ret.size());
+		ret.emplace_back(ns_->payloadType_, fields, ag.type_, ag.fields_, sortingEntries, ag.limit_, ag.offset_);
+	}
+
+	if (distinctIndexes.size() <= 1) return ret;
+	for (const Aggregator &agg : ret) {
+		if (agg.Type() == AggDistinct) continue;
+		for (const string &name : agg.Names()) {
+			if (std::find_if(distinctIndexes.cbegin(), distinctIndexes.cend(),
+							 [&ret, &name](size_t idx) { return ret[idx].Names()[0] == name; }) == distinctIndexes.cend()) {
+				throw Error(errQueryExec, "Cannot be combined several distincts and non distinct aggregator on index %s", name);
+			}
+		}
 	}
 
 	return ret;

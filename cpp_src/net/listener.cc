@@ -70,11 +70,16 @@ void Listener::io_accept(ev::io & /*watcher*/, int revents) {
 	if (shared_->idle_.size()) {
 		auto conn = std::move(shared_->idle_.back());
 		shared_->idle_.pop_back();
+		lck.unlock();
 		conn->Attach(loop_);
 		conn->Restart(client.fd());
+		lck.lock();
 		connections_.push_back(std::move(conn));
 	} else {
-		connections_.push_back(std::unique_ptr<IServerConnection>(shared_->connFactory_(loop_, client.fd())));
+		lck.unlock();
+		auto conn = std::unique_ptr<IServerConnection>(shared_->connFactory_(loop_, client.fd()));
+		lck.lock();
+		connections_.push_back(std::move(conn));
 	}
 	rebalance();
 

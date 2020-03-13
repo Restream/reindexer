@@ -69,7 +69,9 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 	ctag tag = rdser.GetVarUint();
 	int tagType = tag.Type();
 
-	if (tagType == TAG_END) return false;
+	if (tagType == TAG_END) {
+		return false;
+	}
 
 	if (tag.Name() && filter_) {
 		curTagsPath_.push_back(tag.Name());

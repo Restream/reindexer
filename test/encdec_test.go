@@ -2,10 +2,12 @@ package reindexer
 
 import (
 	"encoding/json"
-	"fmt"
 	"math/rand"
 	"testing"
 	"time"
+
+	"github.com/restream/reindexer"
+	"github.com/stretchr/testify/require"
 )
 
 type Actor struct {
@@ -49,6 +51,8 @@ type TestItemEncDec struct {
 	UPackages64        []uint64              `reindex:"upackages64,hash"`
 	FPackages          []float32             `reindex:"fpackages,tree"`
 	FPackages64        []float64             `reindex:"fpackages64,tree"`
+	Bool               bool                  `reindex:"bool"`
+	Bools              []bool                `reindex:"bools"`
 	Name               string                `reindex:"name,tree"`
 	Countries          []string              `reindex:"countries,tree"`
 	Description        string                `reindex:"description,fuzzytext"`
@@ -91,6 +95,7 @@ type TestItemEncDec struct {
 	NegativeSliceInt64 []int64
 	SliceF64           []float64
 	SliceF32           []float32
+	SliceBool          []bool
 	UInt64             uint64
 	UInt32             uint32
 	UInt               uint
@@ -186,6 +191,8 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 			Packages:           randIntArr(pkgsCount, 10000, 50),
 			UPackages:          []uint{uint(rand.Uint32() >> 1), uint(rand.Uint32() >> 1)},
 			UPackages64:        []uint64{uint64(rand.Int63()) >> 1, uint64(rand.Int63()) >> 1 /*, math.MaxUint64*/},
+			Bools:              []bool{true, false},
+			Bool:               (rand.Int() % 2) != 0,
 			SliceUInt:          []uint{uint(rand.Uint32() >> 1), uint(rand.Uint32() >> 1)},
 			SliceUInt64:        []uint64{uint64(rand.Int63()) >> 1, uint64(rand.Int63()) >> 1},
 			NegativeSliceInt64: []int64{0 - rand.Int63(), 0 - rand.Int63()},
@@ -193,6 +200,7 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 			FPackages64:        []float64{rand.Float64(), rand.Float64()},
 			SliceF32:           []float32{rand.Float32(), rand.Float32()},
 			SliceF64:           []float64{rand.Float64(), rand.Float64()},
+			SliceBool:          []bool{false, true},
 			Rate:               float64(rand.Int()%100) / 10.0,
 			IsDeleted:          rand.Int()%2 != 0,
 			PricesIDs:          randIntArr(10, 7000, 50),
@@ -231,26 +239,21 @@ func TestEncDec(t *testing.T) {
 	FillTestItemsEncDec(5000, 10000, 20, true)
 
 	// get and decode all items by cjson decoder
-	newTestQuery(DB, "test_items_encdec").ExecAndVerify()
+	newTestQuery(DB, "test_items_encdec").ExecAndVerify(t)
 
 	// get and decode all items in json format
 	q := newTestQuery(DB, "test_items_encdec")
 	it := q.ExecToJson()
 	defer it.Close()
-	if it.Error() != nil {
-		panic(it.Error())
-	}
+	require.NoError(t, it.Error())
 
 	iitems := make([]interface{}, 0, 5000)
 	for it.Next() {
 		item := &TestItemEncDec{}
 		err := json.Unmarshal(it.JSON(), &item)
-		if err != nil {
-			fmt.Printf("error json was: %s\n", it.JSON())
-			panic(err)
-		}
+		require.NoError(t, err, "error json was: %s\n", it.JSON())
 		iitems = append(iitems, item)
 	}
-	q.Verify(iitems, true)
+	q.Verify(t, iitems, []reindexer.AggregationResult{}, true)
 
 }

@@ -48,11 +48,12 @@ const (
 
 // Aggregation funcs
 const (
-	AggAvg   = bindings.AggAvg
-	AggSum   = bindings.AggSum
-	AggFacet = bindings.AggFacet
-	AggMin   = bindings.AggMin
-	AggMax   = bindings.AggMax
+	AggAvg      = bindings.AggAvg
+	AggSum      = bindings.AggSum
+	AggFacet    = bindings.AggFacet
+	AggMin      = bindings.AggMin
+	AggMax      = bindings.AggMax
+	AggDistinct = bindings.AggDistinct
 )
 
 // Reindexer error codes
@@ -130,8 +131,10 @@ var (
 	errJoinUnexpectedField = bindings.NewError("rq: Unexpected join field", ErrCodeParams)
 	ErrEmptyNamespace      = bindings.NewError("rq: empty namespace name", ErrCodeParams)
 	ErrEmptyFieldName      = bindings.NewError("rq: empty field name in filter", ErrCodeParams)
+	ErrEmptyAggFieldName   = bindings.NewError("rq: empty field name in aggregation", ErrCodeParams)
 	ErrCondType            = bindings.NewError("rq: cond type not found", ErrCodeParams)
 	ErrOpInvalid           = bindings.NewError("rq: op is invalid", ErrCodeParams)
+	ErrAggInvalid          = bindings.NewError("rq: agg is invalid", ErrCodeParams)
 	ErrNoPK                = bindings.NewError("rq: No pk field in struct", ErrCodeParams)
 	ErrWrongType           = bindings.NewError("rq: Wrong type of item", ErrCodeParams)
 	ErrMustBePointer       = bindings.NewError("rq: Argument must be a pointer to element, not element", ErrCodeParams)
@@ -142,11 +145,12 @@ var (
 type AggregationResult struct {
 	Fields []string `json:"fields"`
 	Type   string   `json:"type"`
-	Value  float64  `json:"value"`
+	Value  float64  `json:"value,omitempty"`
 	Facets []struct {
 		Values []string `json:"values"`
 		Count  int      `json:"count"`
-	} `json:"facets"`
+	} `json:"facets,omitempty"`
+	Distincts []string `json:"distincts,omitempty"`
 }
 
 // NewReindex Create new instanse of Reindexer DB
@@ -333,7 +337,11 @@ func (db *Reindexer) ExecSQLToJSON(query string) *JSONIterator {
 	return db.impl.execSQLToJSON(db.ctx, query)
 }
 
-// BeginTx - start update transaction
+// BeginTx - start update transaction. Please not:
+// 1. Returned transaction object is not thread safe and can't be used from different goroutines.
+// 2. Transaction object holds Reindexer's resources, therefore application should explicitly
+//    call Rollback or Commit, otherwise resources will leak
+
 func (db *Reindexer) BeginTx(namespace string) (*Tx, error) {
 	return db.impl.beginTx(db.ctx, namespace)
 }

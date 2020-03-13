@@ -60,10 +60,11 @@ void copyCJsonValue(int tagType, const Variant &value, WrSerializer &wrser) {
 }
 
 void putCJsonValue(int tagType, int tagName, const VariantArray &values, WrSerializer &wrser) {
-	if (values.size() > 1) {
+	if (values.IsArrayValue()) {
+		int elemType = kvType2Tag(values.ArrayType());
 		wrser.PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
-		wrser.PutUInt32(int(carraytag(values.size(), tagType)));
-		for (const Variant &value : values) copyCJsonValue(tagType, value, wrser);
+		wrser.PutUInt32(int(carraytag(values.size(), elemType)));
+		for (const Variant &value : values) copyCJsonValue(elemType, value, wrser);
 	} else if (values.size() == 1) {
 		wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName)));
 		copyCJsonValue(tagType, values.front(), wrser);
@@ -131,7 +132,6 @@ Variant cjsonValueToVariant(int tag, Serializer &rdser, KeyValueType dstType, Er
 template <typename T>
 void buildPayloadTuple(const PayloadIface<T> *pl, const TagsMatcher *tagsMatcher, WrSerializer &wrser) {
 	CJsonBuilder builder(wrser, CJsonBuilder::TypeObject);
-
 	for (int field = 1; field < pl->NumFields(); ++field) {
 		const PayloadFieldType &fieldType = pl->Type().Field(field);
 		if (fieldType.JsonPaths().size() < 1 || fieldType.JsonPaths()[0].empty()) continue;
@@ -145,7 +145,6 @@ void buildPayloadTuple(const PayloadIface<T> *pl, const TagsMatcher *tagsMatcher
 			builder.Ref(tagName, pl->Get(field, 0), field);
 		}
 	}
-	builder.End();
 }
 
 template void buildPayloadTuple<const PayloadValue>(const PayloadIface<const PayloadValue> *pl, const TagsMatcher *tagsMatcher,

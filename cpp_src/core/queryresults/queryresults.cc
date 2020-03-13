@@ -100,7 +100,7 @@ void QueryResults::lockResults(bool lock) {
 		lockItem(items_[i], items_[i].Nsid(), lock);
 		if (joined_.empty()) continue;
 		Iterator itemIt{this, int(i), errOK};
-		auto joinIt = joins::ItemIterator::FromQRIterator(itemIt);
+		auto joinIt = itemIt.GetJoined();
 		if (joinIt.getJoinedItemsCount() == 0) continue;
 		size_t joinedNs = joined_.size();
 		for (auto fieldIt = joinIt.begin(); fieldIt != joinIt.end(); ++fieldIt, ++joinedNs) {
@@ -137,7 +137,7 @@ void QueryResults::Dump() const {
 		buf += std::to_string(items_[i].Id());
 		if (joined_.empty()) continue;
 		Iterator itemIt{this, int(i), errOK};
-		auto joinIt = joins::ItemIterator::FromQRIterator(itemIt);
+		auto joinIt = itemIt.GetJoined();
 		if (joinIt.getJoinedItemsCount() > 0) {
 			buf += "[";
 			for (auto fieldIt = joinIt.begin(); fieldIt != joinIt.end(); ++fieldIt) {
@@ -221,7 +221,7 @@ void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 	JsonBuilder builder(ser, JsonBuilder::TypePlain);
 
 	if (!joined_.empty()) {
-		joins::ItemIterator itemIt = joins::ItemIterator::FromQRIterator(begin() + idx);
+		joins::ItemIterator itemIt = (begin() + idx).GetJoined();
 		if (itemIt.getJoinedItemsCount() > 0) {
 			EncoderDatasourceWithJoins ds(itemIt, ctxs, GetJoinedNsCtxIndex(itemRef.Nsid()));
 			encoder.Encode(&pl, builder, &ds);
@@ -230,6 +230,8 @@ void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 	}
 	encoder.Encode(&pl, builder);
 }
+
+joins::ItemIterator QueryResults::Iterator::GetJoined() { return reindexer::joins::ItemIterator::CreateFrom(*this); }
 
 Error QueryResults::Iterator::GetJSON(WrSerializer &ser, bool withHdrLen) {
 	try {

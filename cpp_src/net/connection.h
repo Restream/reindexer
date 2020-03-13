@@ -17,10 +17,20 @@ using reindexer::cbuf;
 const ssize_t kConnReadbufSize = 0x8000;
 const ssize_t kConnWriteBufSize = 0x800;
 
+struct ConnectionStat {
+	ConnectionStat() {
+		startTime = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	}
+	std::atomic_uint_fast64_t recvBytes{0};
+	std::atomic_uint_fast64_t sentBytes{0};
+	int64_t startTime{0};
+};
+
 template <typename Mutex>
 class Connection {
 public:
-	Connection(int fd, ev::dynamic_loop &loop, size_t readBufSize = kConnReadbufSize, size_t writeBufSize = kConnWriteBufSize);
+	Connection(int fd, ev::dynamic_loop &loop, bool enableStat, size_t readBufSize = kConnReadbufSize,
+			   size_t writeBufSize = kConnWriteBufSize);
 	virtual ~Connection();
 
 protected:
@@ -52,6 +62,8 @@ protected:
 	chain_buf<Mutex> wrBuf_;
 	cbuf<char> rdBuf_;
 	string clientAddr_;
+
+	std::shared_ptr<ConnectionStat> stat_;
 };
 
 using ConnectionST = Connection<reindexer::dummy_mutex>;

@@ -155,6 +155,7 @@ func (binding *Builtin) Init(u *url.URL, options ...interface{}) error {
 	cgoLimit := defCgoLimit
 	var rx uintptr
 	connectOptions := *bindings.DefaultConnectOptions()
+	connectOptions.Opts |= bindings.ConnectOptWarnVersion
 	for _, option := range options {
 		switch v := option.(type) {
 		case bindings.OptionCgoLimit:
@@ -193,7 +194,7 @@ func (binding *Builtin) Init(u *url.URL, options ...interface{}) error {
 		options: C.uint16_t(connectOptions.Opts),
 	}
 
-	return err2go(C.reindexer_connect(binding.rx, str2c(u.Path), opts))
+	return err2go(C.reindexer_connect(binding.rx, str2c(u.Path), opts, str2c(bindings.ReindexerVersion)))
 }
 
 func (binding *Builtin) Clone() bindings.RawBinding {
@@ -332,7 +333,6 @@ func (binding *Builtin) RenameNamespace(ctx context.Context, srcNs string, dstNs
 	return err2go(C.reindexer_rename_namespace(binding.rx, str2c(srcNs), str2c(dstNs), ctxInfo.cCtx))
 }
 
-
 func (binding *Builtin) EnableStorage(ctx context.Context, path string) error {
 	l := len(path)
 	if l > 0 && path[l-1] != '/' {
@@ -453,12 +453,15 @@ func (binding *Builtin) CommitTx(txCtx *bindings.TxCtx) (bindings.RawBuffer, err
 		return nil, err
 	}
 	defer binding.ctxWatcher.StopWatchOnCtx(ctxInfo)
-
-	return ret2go(C.reindexer_commit_transaction(binding.rx, C.uintptr_t(txCtx.Id), ctxInfo.cCtx))
+	txID := txCtx.Id
+	txCtx.Id = 0
+	return ret2go(C.reindexer_commit_transaction(binding.rx, C.uintptr_t(txID), ctxInfo.cCtx))
 }
 
 func (binding *Builtin) RollbackTx(txCtx *bindings.TxCtx) error {
-	return err2go(C.reindexer_rollback_transaction(binding.rx, C.uintptr_t(txCtx.Id)))
+	txID := txCtx.Id
+	txCtx.Id = 0
+	return err2go(C.reindexer_rollback_transaction(binding.rx, C.uintptr_t(txID)))
 }
 
 func (binding *Builtin) SelectQuery(ctx context.Context, data []byte, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {

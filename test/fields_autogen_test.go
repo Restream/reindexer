@@ -1,9 +1,12 @@
 package reindexer
 
 import (
-	"fmt"
+	"math/rand"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type TestItemAutogen struct {
@@ -16,132 +19,106 @@ type TestItemAutogen struct {
 	UpdatedTimeMilli int64 `reindex:"updated_time_milli,-"`
 }
 
+var ns = "test_items_autogen"
+
 func init() {
 	tnamespaces["test_items_autogen"] = TestItemAutogen{}
 }
 
 func TestAutogen(t *testing.T) {
-	precepts := []string{"updated_time=NOW()"}
+	t.Run("field should be updated with current timestamp using NOW() function", func(t *testing.T) {
+		precepts := []string{"updated_time=NOW()"}
+		item := TestItemAutogen{}
+		err := DB.Upsert(ns, &item, precepts...)
+		require.NoError(t, err)
+		assert.Equal(t, time.Now().Unix(), item.UpdatedTime)
+	})
 
-	defaultTestItem := TestItemAutogen{
-		ID:               1,
-		Genre:            0,
-		Age:              0,
-		UpdatedTime:      0,
-		UpdatedTimeNano:  0,
-		UpdatedTimeMicro: 0,
-		UpdatedTimeMilli: 0,
-	}
+	t.Run("field should contain different count of digits after 'nsec, usec, msec, sec' params usage", func(t *testing.T) {
+		precepts := []string{"updated_time=NOW(sec)", "updated_time_milli=NOW(MSEC)", "updated_time_micro=now(usec)", "updated_time_nano=now(NSEC)"}
+		item := TestItemAutogen{}
+		err := DB.Upsert(ns, &item, precepts...)
+		require.NoError(t, err)
 
-	// Test1: A field should be updated with current timestamp using NOW() function
-	DB.Upsert("test_items_autogen", defaultTestItem, precepts...)
+		assert.True(t, item.UpdatedTimeMilli > time.Now().Unix()*1000)
+		assert.True(t, item.UpdatedTimeMicro > time.Now().Unix()*1000000)
+		assert.True(t, item.UpdatedTimeNano > time.Now().Unix()*1000000000)
+	})
 
-	results, err := DB.ExecSQL("SELECT * FROM test_items_autogen WHERE id=1").FetchAll()
-	if err != nil {
-		panic(err)
-	}
+	t.Run("serial field shoud be increased by one", func(t *testing.T) {
+		precepts := []string{"genre=SERIAL()", "age=serial()"}
+		item := TestItemAutogen{}
+		err := DB.Upsert(ns, &item, precepts...)
+		require.NoError(t, err)
 
-	result := results[0]
-	res, ok := result.(*TestItemAutogen)
-	if !ok {
-		panic(fmt.Sprintf("wait %T, got %T", TestItemAutogen{}, result))
-	}
+		assert.Equal(t, 1, item.Age)
+		assert.Equal(t, int64(1), item.Genre)
 
-	if res.UpdatedTime == defaultTestItem.UpdatedTime {
-		panic(fmt.Errorf("NOW function doesn't work. The same value received."))
-	}
+		t.Run("serial field should be increased by 5 after 5 iterations (must be equal 6 after previous test)", func(t *testing.T) {
+			precepts := []string{"genre=SERIAL()", "age=serial()"}
+			item := TestItemAutogen{}
+			for i := 0; i < 5; i++ {
+				err := DB.Upsert(ns, &item, precepts...)
+				require.NoError(t, err)
+			}
 
-	// Test2: A field should be updated with current timestamp using NOW() function not later than 1 second
-	DB.Upsert("test_items_autogen", defaultTestItem, precepts...)
+			assert.Equal(t, 6, item.Age)
+			assert.Equal(t, int64(6), item.Genre)
+		})
+	})
 
-	results, err = DB.ExecSQL("SELECT * FROM test_items_autogen WHERE id=1").FetchAll()
-	if err != nil {
-		panic(err)
-	}
+	t.Run("fill on insert, update, upsert", func(t *testing.T) {
+		precepts := []string{"updated_time=NOW()"}
 
-	result = results[0]
-	res, ok = result.(*TestItemAutogen)
-	if !ok {
-		panic(fmt.Sprintf("wait %T, got %T", TestItemAutogen{}, result))
-	}
+		item := TestItemAutogen{ID: rand.Intn(100000000)}
+		_, err := DB.Insert(ns, &item, precepts...)
+		require.NoError(t, err)
+		assert.Equal(t, time.Now().Unix(), item.UpdatedTime)
 
-	if time.Now().UTC().Unix()-res.UpdatedTime > 1 {
-		panic(fmt.Errorf("NOW function doesn't work properly. It took more than 2 seconds for value update."))
-	}
+		item = TestItemAutogen{}
+		err = DB.Upsert(ns, &item, precepts...)
+		require.NoError(t, err)
+		assert.Equal(t, time.Now().Unix(), item.UpdatedTime)
 
-	// Test3: A field should contain different count of digits after "nsec, usec, msec, sec" params usage
-	precepts = []string{"updated_time=NOW(sec)", "updated_time_milli=NOW(MSEC)", "updated_time_micro=now(usec)", "updated_time_nano=now(NSEC)"}
+		item = TestItemAutogen{}
+		_, err = DB.Update(ns, &item, precepts...)
+		require.NoError(t, err)
+		assert.Equal(t, time.Now().Unix(), item.UpdatedTime)
+	})
 
-	DB.Upsert("test_items_autogen", defaultTestItem, precepts...)
+	t.Run("fill on upsert not exist item", func(t *testing.T) {
+		precepts := []string{"updated_time=NOW()"}
+		item := TestItemAutogen{ID: rand.Intn(100000000)}
 
-	results, err = DB.ExecSQL("SELECT * FROM test_items_autogen WHERE id=1").FetchAll()
-	if err != nil {
-		panic(err)
-	}
+		err := DB.Upsert(ns, &item, precepts...)
+		require.NoError(t, err)
+		assert.Equal(t, time.Now().Unix(), item.UpdatedTime)
+	})
 
-	result = results[0]
-	res, ok = result.(*TestItemAutogen)
-	if !ok {
-		panic(fmt.Sprintf("wait %T, got %T", TestItemAutogen{}, result))
-	}
+	t.Run("not fill on update not exist item", func(t *testing.T) {
+		precepts := []string{"updated_time=NOW()"}
+		item := TestItemAutogen{ID: rand.Intn(100000000)}
 
-	if res.UpdatedTimeMilli-1000*res.UpdatedTime > 1000 {
-		panic(fmt.Errorf("NOW(msec) gave an incorrect value."))
-	}
+		count, err := DB.Update(ns, &item, precepts...)
+		require.NoError(t, err)
+		assert.Equal(t, 0, count)
+		assert.Equal(t, int64(0), item.UpdatedTime)
+	})
 
-	if res.UpdatedTimeMicro-1000000*res.UpdatedTime > 1000000 {
-		panic(fmt.Errorf("NOW(usec) gave an incorrect value."))
-	}
+	t.Run("not fill on insert exist item", func(t *testing.T) {
+		precepts := []string{"updated_time=NOW()"}
+		id := rand.Intn(100000000)
+		item := TestItemAutogen{ID: id}
 
-	if res.UpdatedTimeNano-1000000000*res.UpdatedTime > 1000000000 {
-		panic(fmt.Errorf("NOW(nsec) gave an incorrect value."))
-	}
+		count, err := DB.Insert(ns, &item, precepts...)
+		require.NoError(t, err)
+		assert.Equal(t, 1, count)
+		assert.Equal(t, time.Now().Unix(), item.UpdatedTime)
 
-	// Test4: A serial field shoud be increased by one
-	precepts = []string{"genre=SERIAL()", "age=serial()"}
-
-	DB.Upsert("test_items_autogen", defaultTestItem, precepts...)
-
-	results, err = DB.ExecSQL("SELECT * FROM test_items_autogen WHERE id=1").FetchAll()
-	if err != nil {
-		panic(err)
-	}
-
-	result = results[0]
-	res, ok = result.(*TestItemAutogen)
-	if !ok {
-		panic(fmt.Sprintf("wait %T, got %T", TestItemAutogen{}, result))
-	}
-
-	if res.Age != defaultTestItem.Age+1 {
-		panic(fmt.Errorf("SERIAL function doesn't work. Int field was not incremented."))
-	}
-
-	if res.Genre != defaultTestItem.Genre+1 {
-		panic(fmt.Errorf("SERIAL function doesn't work. Int64 field was not incremented."))
-	}
-
-	// Test5: A serial field should be increased by 5 after 5 iterations (must be equal 6 after Test4)
-	for i := 0; i < 5; i++ {
-		DB.Upsert("test_items_autogen", defaultTestItem, precepts...)
-	}
-
-	results, err = DB.ExecSQL("SELECT * FROM test_items_autogen WHERE id=1").FetchAll()
-	if err != nil {
-		panic(err)
-	}
-
-	result = results[0]
-	res, ok = result.(*TestItemAutogen)
-	if !ok {
-		panic(fmt.Sprintf("wait %T, got %T", TestItemAutogen{}, result))
-	}
-
-	if res.Age != 6 {
-		panic(fmt.Errorf("SERIAL function doesn't work. Int field was not incremented."))
-	}
-
-	if res.Genre != 6 {
-		panic(fmt.Errorf("SERIAL function doesn't work. Int64 field was not incremented."))
-	}
+		item = TestItemAutogen{ID: id}
+		count, err = DB.Insert(ns, &item, precepts...)
+		require.NoError(t, err)
+		assert.Equal(t, 0, count)
+		assert.Equal(t, int64(0), item.UpdatedTime)
+	})
 }

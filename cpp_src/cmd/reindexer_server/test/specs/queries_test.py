@@ -121,8 +121,9 @@ class QueriesTest(BaseTest):
 
         distinct = self.helper_items_second_key_of_item(items)
         limit = total_items + items_count
+        aggregations = self.helper_query_dsl_aggregation_construct(field=distinct, aggr_type='distinct')
         query_dsl = self.helper_query_dsl_construct(
-            self.current_ns, distinct=[distinct], limit=limit,req_total="enabled")
+            self.current_ns, aggregations=[aggregations], limit=limit,req_total="enabled")
         status, body = self.api_query_dsl(self.current_db, query_dsl)
 
         self.assertEqual(True, status == self.API_STATUS['success'], body)

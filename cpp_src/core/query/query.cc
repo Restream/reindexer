@@ -173,8 +173,20 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 			case QueryUpdateField: {
 				updateFields_.push_back({string(ser.GetVString()), {}});
 				auto &field = updateFields_.back();
-				field.mode = FieldModeSet;
+				field.mode = FieldModifyMode(FieldModeSet);
 				int numValues = ser.GetVarUint();
+				while (numValues--) {
+					field.isExpression = ser.GetVarUint();
+					field.values.push_back(ser.GetVariant());
+				}
+				break;
+			}
+			case QueryUpdateObject: {
+				updateFields_.push_back({string(ser.GetVString()), {}});
+				auto &field = updateFields_.back();
+				field.mode = FieldModifyMode(FieldModeSetJson);
+				int numValues = ser.GetVarUint();
+				if (ser.GetVarUint() == 1) field.values.MarkArray();
 				while (numValues--) {
 					field.isExpression = ser.GetVarUint();
 					field.values.push_back(ser.GetVariant());

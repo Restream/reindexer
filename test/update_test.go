@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/restream/reindexer"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -76,10 +76,10 @@ type TestItemComplexObject struct {
 	Languages []string         `json:"languages"`
 	Numbers   []int            `json:"numbers"`
 	Objects   []testItemObject `json:"objects"`
-	Optional  string           `json:"optional,omitempty"`
+	Optional  interface{}      `json:"optional,omitempty"`
 }
 
-func newTestItemComplexObject(id int) *TestItemComplexObject {
+func randInnerObject() []testInnerObject {
 	innerObjectsCnt := rand.Int()%20 + 1
 	innerObjects := make([]testInnerObject, 0, innerObjectsCnt)
 	for i := 0; i < innerObjectsCnt; i++ {
@@ -88,18 +88,25 @@ func newTestItemComplexObject(id int) *TestItemComplexObject {
 			Second: randString(),
 		})
 	}
+	return innerObjects
+}
 
+func randTestItemObject() testItemObject {
+	return testItemObject{
+		Name:   randString(),
+		Age:    rand.Int()%60 + 10,
+		Year:   rand.Int() % 2019,
+		Price:  rand.Int63() % 100000,
+		Main:   testInnerObject{First: rand.Int() % 1000, Second: randString()},
+		Nested: randInnerObject(),
+	}
+}
+
+func newTestItemComplexObject(id int) *TestItemComplexObject {
 	nestedItemObjectCnt := rand.Int()%10 + 1
 	nestedItemObject := make([]testItemObject, 0, nestedItemObjectCnt)
 	for i := 0; i < nestedItemObjectCnt; i++ {
-		nestedItemObject = append(nestedItemObject, testItemObject{
-			Name:   randString(),
-			Age:    rand.Int()%60 + 10,
-			Year:   rand.Int() % 2019,
-			Price:  rand.Int63() % 100000,
-			Main:   testInnerObject{First: rand.Int() % 1000, Second: randString()},
-			Nested: innerObjects,
-		})
+		nestedItemObject = append(nestedItemObject, randTestItemObject())
 	}
 
 	nestedArraySize := rand.Int()%10 + 1
@@ -119,7 +126,7 @@ func newTestItemComplexObject(id int) *TestItemComplexObject {
 		Code:      rand.Int63() % 10000000,
 		IsEnabled: (rand.Int() % 2) == 0,
 		Desc:      randString(),
-		Size:      rand.Int() % 200000,
+		Size:      rand.Int()%200000 + 100,
 		Employees: employees,
 		Animals:   animals,
 		Languages: languages,
@@ -131,7 +138,7 @@ func newTestItemComplexObject(id int) *TestItemComplexObject {
 			Year:   rand.Int() % 2019,
 			Price:  rand.Int63() % 100000,
 			Main:   testInnerObject{First: rand.Int() % 1000, Second: randString()},
-			Nested: innerObjects,
+			Nested: randInnerObject(),
 		},
 	}
 }
@@ -143,9 +150,9 @@ func TestUpdate(t *testing.T) {
 
 func TestUpdateFields(t *testing.T) {
 	nsOpts := reindexer.DefaultNamespaceOptions()
-	assert.NoError(t, DB.OpenNamespace(fieldsUpdateNs, nsOpts, TestItemComplexObject{}))
+	require.NoError(t, DB.OpenNamespace(fieldsUpdateNs, nsOpts, TestItemComplexObject{}))
 	for i := 0; i < 1000; i++ {
-		assert.NoError(t, DB.Upsert(fieldsUpdateNs, newTestItemComplexObject(i)))
+		require.NoError(t, DB.Upsert(fieldsUpdateNs, newTestItemComplexObject(i)))
 	}
 
 	RemoveDummyItems(t)
@@ -155,6 +162,13 @@ func TestUpdateFields(t *testing.T) {
 	CheckNonIndexedFieldUpdate(t)
 	CheckNonIndexedArrayFieldUpdate(t)
 	CheckIndexedArrayFieldUpdate(t)
+	CheckUpdateObject(t)
+	CheckUpdateObject2(t)
+	CheckAddObject(t)
+	CheckAddObject2(t)
+	CheckUpdateArrayOfObjects(t, 10)
+	CheckUpdateArrayOfObjects(t, 1)
+	CheckUpdateArrayOfObjects(t, 0)
 	CheckNestedFieldUpdate(t)
 	CheckNestedFieldUpdate2(t)
 	CheckAddSimpleFields(t)
@@ -166,78 +180,93 @@ func TestUpdateFields(t *testing.T) {
 
 func RemoveDummyItems(t *testing.T) {
 	nsOpts := reindexer.DefaultNamespaceOptions()
-	assert.NoError(t, DB.OpenNamespace(removeItemsNs, nsOpts, testDummyObject{}))
+	require.NoError(t, DB.OpenNamespace(removeItemsNs, nsOpts, testDummyObject{}))
 	for i := 0; i < 10; i++ {
-		assert.NoError(t, DB.Upsert(removeItemsNs, testDummyObject{
+		require.NoError(t, DB.Upsert(removeItemsNs, testDummyObject{
 			ID:   i,
 			Name: randString(),
 		}))
 	}
 
 	count, err := DB.Query(removeItemsNs).WhereInt("id", reindexer.LT, 3).Delete()
-	assert.NoError(t, err)
-	assert.Equal(t, count, 3, "Remove failed")
+	require.NoError(t, err)
+	require.Equal(t, count, 3, "Remove failed")
 
 }
 
 func DropField(t *testing.T, fieldName string) (items []interface{}) {
-	res1, err := DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16).Drop(fieldName).Update().FetchAll()
-	assert.NoError(t, err)
-	assert.NotEqual(t, len(res1), 0, "No items updated")
+	res1, err := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Drop(fieldName).Update().FetchAll()
+	require.NoError(t, err)
+	require.NotEqual(t, len(res1), 0, "No items updated")
 
-	results, err := DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16).Exec().FetchAll()
-	assert.NoError(t, err)
-	assert.Equal(t, len(results), len(res1), "Different count of items")
+	results, err := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Exec().AllowUnsafe(true).FetchAll()
+	require.NoError(t, err)
+	require.Equal(t, len(results), len(res1), "Different count of items")
+
+	return results
+}
+
+func UpdateItemField(t *testing.T, fieldName string, values interface{}, objectField bool) (items []interface{}) {
+	var q *queryTest
+	if objectField {
+		q = DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).SetObject(fieldName, values)
+	} else {
+		q = DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Set(fieldName, values)
+	}
+
+	res1, err := q.Update().AllowUnsafe(true).FetchAll()
+	require.NoError(t, err)
+	require.NotEqual(t, len(res1), 0, "No items updated")
+
+	results, err := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Exec().AllowUnsafe(true).FetchAll()
+	require.NoError(t, err)
+	require.Equal(t, len(results), len(res1), "Different count of items")
 
 	return results
 }
 
 func UpdateField(t *testing.T, fieldName string, values interface{}) (items []interface{}) {
-	res1, err := DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16).Set(fieldName, values).Update().FetchAll()
-	assert.NoError(t, err)
-	assert.NotEqual(t, len(res1), 0, "No items updated")
+	return UpdateItemField(t, fieldName, values, false)
+}
 
-	results, err := DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16).Exec().FetchAll()
-	assert.NoError(t, err)
-	assert.Equal(t, len(results), len(res1), "Different count of items")
-
-	return results
+func UpdateObject(t *testing.T, fieldName string, values interface{}) (items []interface{}) {
+	return UpdateItemField(t, fieldName, values, true)
 }
 
 func CheckUpdateWithExpressions1(t *testing.T) {
-	res1, err := DB.Query(fieldsUpdateNs).SetExpression("size", "((7+8)*(10-5)*2)/25").Update().FetchAll()
-	assert.NoError(t, err)
-	assert.NotEqual(t, len(res1), 0, "No items updated")
+	res1, err := DB.Query(fieldsUpdateNs).SetExpression("size", "((7+8)*(10-5)*2)/25").Update().AllowUnsafe(true).FetchAll()
+	require.NoError(t, err)
+	require.NotEqual(t, len(res1), 0, "No items updated")
 
-	results, err := DB.Query(fieldsUpdateNs).Exec().FetchAll()
-	assert.NoError(t, err)
-	assert.NotEqual(t, len(results), 0, "No results found")
+	results, err := DB.Query(fieldsUpdateNs).Exec().AllowUnsafe(true).FetchAll()
+	require.NoError(t, err)
+	require.NotEqual(t, len(results), 0, "No results found")
 
 	for i := 0; i < len(results); i++ {
 		size := results[i].(*TestItemComplexObject).Size
-		assert.Equal(t, size, 6, "Update of field 'Size' has shown wrong results %d", size)
+		require.Equal(t, size, 6, "Update of field 'Size' has shown wrong results %d", size)
 	}
 }
 
 func CheckUpdateWithExpressions2(t *testing.T) {
-	res1, err := DB.Query(fieldsUpdateNs).SetExpression("size", "((SERIAL() + 1)*4)/4").Update().FetchAll()
-	assert.NoError(t, err)
-	assert.NotEqual(t, len(res1), 0, "No items updated")
+	res1, err := DB.Query(fieldsUpdateNs).SetExpression("size", "((SERIAL() + 1)*4)/4").Update().AllowUnsafe(true).FetchAll()
+	require.NoError(t, err)
+	require.NotEqual(t, len(res1), 0, "No items updated")
 
-	results, err := DB.Query(fieldsUpdateNs).Exec().FetchAll()
-	assert.NoError(t, err)
-	assert.NotEqual(t, len(results), 0, "No results found")
+	results, err := DB.Query(fieldsUpdateNs).Exec().AllowUnsafe(true).FetchAll()
+	require.NoError(t, err)
+	require.NotEqual(t, len(results), 0, "No results found")
 
 	for i := 0; i < len(results); i++ {
 		size := results[i].(*TestItemComplexObject).Size
-		assert.Equal(t, size, (((i + 2) * 4) / 4), "Update of field 'Size' has shown wrong results %d", size)
+		require.Equal(t, size, (((i + 2) * 4) / 4), "Update of field 'Size' has shown wrong results %d", size)
 	}
 }
 
 func checkExtraFieldForEquality(t *testing.T, items []interface{}, val string) {
 	for i := 0; i < len(items); i++ {
 		obj := items[i].(*TestItemComplexObject).MainObj.Main
-		assert.Equal(t, obj.Extra, val, "Field 'extra' has a wrong value = %s", obj.Extra)
+		require.Equal(t, obj.Extra, val, "Field 'extra' has a wrong value = %s", obj.Extra, val)
 	}
 }
 
@@ -245,27 +274,114 @@ func CheckFieldsDrop(t *testing.T) {
 	const errorMessage = "Field '%s' was not removed from item"
 
 	results := DropField(t, "numbers")
-	assert.False(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16), "numbers"), errorMessage, "Numbers")
+	require.False(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), "numbers"), errorMessage, "Numbers")
 
 	for i := 0; i < len(results); i++ {
 		obj := results[i].(*TestItemComplexObject)
-		assert.Nil(t, obj.Numbers, "Field 'Numbers' {%#v, %d} was not removed from item", obj.Numbers, len(obj.Numbers))
+		require.Nil(t, obj.Numbers, "Field 'Numbers' {%#v, %d} was not removed from item", obj.Numbers, len(obj.Numbers))
 	}
 
 	results2 := UpdateField(t, "main_obj.main.extra", "best value")
 	checkExtraFieldForEquality(t, results2, "best value")
 
 	results3 := DropField(t, "main_obj.main.extra")
-	assert.False(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16), "main_obj.main.extra"), errorMessage, "main_obj.main.extra")
+	require.False(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), "main_obj.main.extra"), errorMessage, "main_obj.main.extra")
 
 	checkExtraFieldForEquality(t, results3, "")
+}
+
+func CheckUpdateObject(t *testing.T) {
+	for i := 0; i < 5; i++ {
+		itemObj := randTestItemObject()
+		results := UpdateField(t, "main_obj", itemObj)
+		for i := 0; i < len(results); i++ {
+			changedField := results[i].(*TestItemComplexObject).MainObj
+			retObjJSON, err := json.Marshal(changedField)
+			require.NoError(t, err)
+
+			obj := testItemObject{}
+			json.Unmarshal(retObjJSON, &obj)
+			require.Equal(t, obj, itemObj)
+		}
+	}
+}
+
+type NestedObject struct {
+	NestedID    int
+	Description string
+	IsFree      bool
+}
+type SmallObject struct {
+	ID     int
+	Name   string
+	Price  float64
+	Nested NestedObject
+	Bonus  int
+}
+
+func CheckUpdateObject2(t *testing.T) {
+	obj := randTestItemObject()
+	objJson, err := json.Marshal(obj)
+	require.NoError(t, err)
+	UpdateObject(t, "main_obj", objJson)
+	require.True(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), string(objJson)))
+}
+
+func CheckUpdateArrayOfObjects(t *testing.T, length int) {
+	objects := make([]testItemObject, length)
+	for i := 0; i < len(objects); i++ {
+		objects[i] = randTestItemObject()
+	}
+	results := UpdateObject(t, "objects", objects)
+	for i := 0; i < len(results); i++ {
+		newObjects := results[i].(*TestItemComplexObject).Objects
+		require.NotNil(t, newObjects)
+
+		retObjJSON, err := json.Marshal(newObjects)
+		require.NoError(t, err)
+
+		var objects1 []testItemObject
+		json.Unmarshal(retObjJSON, &objects1)
+		require.Equal(t, objects, objects1)
+	}
+}
+
+func CheckAddObject(t *testing.T) {
+	obj := SmallObject{0, "new", 1000, NestedObject{0, "great", false}, 77}
+	results := UpdateField(t, "optional", obj)
+	for i := 0; i < len(results); i++ {
+		newField := results[i].(*TestItemComplexObject).Optional
+		require.NotNil(t, newField)
+		retObjJSON, err := json.Marshal(newField)
+		require.NoError(t, err)
+
+		obj1 := SmallObject{}
+		json.Unmarshal(retObjJSON, &obj1)
+		require.Equal(t, obj1, obj)
+	}
+}
+
+func CheckAddObject2(t *testing.T) {
+	newClient := make(map[string]interface{})
+	newClient["id"] = 1
+	newClient["name"] = "Donald Trump"
+	newClient["address"] = "Washington DC"
+	nested := make(map[string]interface{})
+	nested["nested_id"] = 100
+	nested["description"] = "weird"
+	nested["price"] = 699
+	newClient["nested"] = nested
+	UpdateObject(t, "optional", newClient)
+	objJson, err := json.Marshal(newClient)
+	require.NoError(t, err)
+	require.True(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), string(objJson)))
 }
 
 func CheckIndexedFieldUpdate(t *testing.T) {
 	results := UpdateField(t, "main_obj.year", 2007)
 	for i := 0; i < len(results); i++ {
 		year := results[i].(*TestItemComplexObject).MainObj.Year
-		assert.Equal(t, year, 2007, "Update of field 'main_obj.year' has shown wrong results %d", year)
+		require.Equal(t, year, 2007, "Update of field 'main_obj.year' has shown wrong results %d", year)
 	}
 }
 
@@ -273,7 +389,7 @@ func CheckNonIndexedFieldUpdate(t *testing.T) {
 	results := UpdateField(t, "size", 45)
 	for i := 0; i < len(results); i++ {
 		size := results[i].(*TestItemComplexObject).Size
-		assert.Equal(t, size, 45, "Update of field 'size' has shown wrong results %d", size)
+		require.Equal(t, size, 45, "Update of field 'size' has shown wrong results %d", size)
 	}
 }
 
@@ -294,7 +410,7 @@ func CheckNonIndexedArrayFieldUpdate(t *testing.T) {
 				}
 			}
 		}
-		assert.True(t, equal, "Update of field 'animals' has shown wrong results")
+		require.True(t, equal, "Update of field 'animals' has shown wrong results")
 	}
 }
 
@@ -315,7 +431,7 @@ func CheckIndexedArrayFieldUpdate(t *testing.T) {
 				}
 			}
 		}
-		assert.True(t, equal, "Update of field 'employees' has shown wrong results")
+		require.True(t, equal, "Update of field 'employees' has shown wrong results")
 	}
 }
 
@@ -323,7 +439,7 @@ func CheckNestedFieldUpdate(t *testing.T) {
 	results := UpdateField(t, "main_obj.main.first", 777)
 	for i := 0; i < len(results); i++ {
 		first := results[i].(*TestItemComplexObject).MainObj.Main.First
-		assert.Equal(t, first, 777, "Update of field 'nested_obj.main.first' has shown wrong results %d", first)
+		require.Equal(t, first, 777, "Update of field 'nested_obj.main.first' has shown wrong results %d", first)
 	}
 }
 
@@ -331,7 +447,7 @@ func CheckNestedFieldUpdate2(t *testing.T) {
 	results := UpdateField(t, "main_obj.main.second", "bingo!")
 	for i := 0; i < len(results); i++ {
 		second := results[i].(*TestItemComplexObject).MainObj.Main.Second
-		assert.Equal(t, second, "bingo!", "Update of field 'nested_obj.main.second' has shown wrong results %s", second)
+		require.Equal(t, second, "bingo!", "Update of field 'nested_obj.main.second' has shown wrong results %s", second)
 	}
 }
 
@@ -339,19 +455,19 @@ func CheckAddSimpleFields(t *testing.T) {
 	results := UpdateField(t, "optional", "new field")
 	for i := 0; i < len(results); i++ {
 		optional := results[i].(*TestItemComplexObject).Optional
-		assert.Equal(t, optional, "new field", "Adding of field 'nested_obj.main.first' went wrong: %s", optional)
+		require.Equal(t, optional, "new field", "Adding of field 'nested_obj.main.first' went wrong: %s", optional)
 	}
 
 	results2 := UpdateField(t, "main_obj.bonus", 777)
 	for i := 0; i < len(results2); i++ {
 		bonus := results2[i].(*TestItemComplexObject).MainObj.Bonus
-		assert.Equal(t, bonus, 777, "Adding of field 'nested_obj.main.first' went wrong: %d", bonus)
+		require.Equal(t, bonus, 777, "Adding of field 'nested_obj.main.first' went wrong: %d", bonus)
 	}
 
 	results3 := UpdateField(t, "main_obj.main.extra", "new nested field")
 	for i := 0; i < len(results3); i++ {
 		extra := results3[i].(*TestItemComplexObject).MainObj.Main.Extra
-		assert.Equal(t, extra, "new nested field", "Adding of field 'nested_obj.main.first' went wrong: %s", extra)
+		require.Equal(t, extra, "new nested field", "Adding of field 'nested_obj.main.first' went wrong: %s", extra)
 	}
 }
 
@@ -375,7 +491,7 @@ func CheckIfFieldInJSON(t *testing.T, q *queryTest, field string) bool {
 	for jsonIter.Next() {
 		jsonB := jsonIter.JSON()
 		var data map[string]interface{}
-		assert.NoError(t, json.Unmarshal(jsonB, &data))
+		require.NoError(t, json.Unmarshal(jsonB, &data))
 		json := string(jsonB[:])
 		if strings.Contains(json, field) {
 			return true
@@ -386,11 +502,11 @@ func CheckIfFieldInJSON(t *testing.T, q *queryTest, field string) bool {
 
 func CheckAddComplexField(t *testing.T, path string, subfields []string) {
 	UpdateField(t, path, "extra value")
-	jsonIter := DB.Query(fieldsUpdateNs).Where("main_obj.age", reindexer.GE, 16).ExecToJson()
+	jsonIter := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).ExecToJson()
 	for jsonIter.Next() {
 		jsonB := jsonIter.JSON()
 		var data map[string]interface{}
-		assert.NoError(t, json.Unmarshal(jsonB, &data))
+		require.NoError(t, json.Unmarshal(jsonB, &data))
 		if hasJSONPath(subfields, data) == false {
 			fmt.Println(string(jsonB[:]))
 			fmt.Printf("Adding of field '%s' went wrong\n", path)
@@ -402,9 +518,9 @@ func FillTestItemsForInsertUpdate(t *testing.T) {
 	tx := newTestTx(DB, "test_items_insert_update")
 
 	for _, item := range checkInsertUpdateExistsData {
-		assert.NoError(t, tx.Insert(item))
+		require.NoError(t, tx.Insert(item))
 	}
-	assert.Equal(t, tx.MustCommit(), len(checkInsertUpdateExistsData), "Could not commit testSortModeDataCustomSource")
+	require.Equal(t, tx.MustCommit(), len(checkInsertUpdateExistsData), "Could not commit testSortModeDataCustomSource")
 }
 
 func CheckTestItemsInsertUpdate(t *testing.T) {
@@ -436,29 +552,29 @@ func CheckTestItemsInsertUpdate(t *testing.T) {
 					for _, item := range dataset {
 						var originalYear int = item.Year
 						cnt, err := doAction("test_items_insert_update", item, precepts...)
-						assert.NoError(t, err)
+						require.NoError(t, err)
 
 						act := actionName + " " + exists
 
 						switch act {
 						case "INSERT EXISTING":
-							assert.Equal(t, cnt, 0, "Expected affected items count = 0, but got %d\n Item: %+v", cnt, item)
+							require.Equal(t, cnt, 0, "Expected affected items count = 0, but got %d\n Item: %+v", cnt, item)
 						case "INSERT NON EXISTING":
-							assert.Equal(t, cnt, 1, "Expected affected items count = 1, but got %d\n Item: %+v", cnt, item)
-							assert.False(t, preceptsText == "WITH PRECEPTS" && item.Year == originalYear,
+							require.Equal(t, cnt, 1, "Expected affected items count = 1, but got %d\n Item: %+v", cnt, item)
+							require.False(t, preceptsText == "WITH PRECEPTS" && item.Year == originalYear,
 								"Item has not been updated by Insert with precepts. Item: %+v", item)
 							// need to update data before 'UPDATE NON EXISTING'
 							updateNonExistsData(existsMap["NON EXISTING"])
 
 						case "UPDATE EXISTING":
-							assert.Equal(t, cnt, 1, "Expected affected items count = 1, but got %d\n Item: %+v", cnt, item)
-							assert.False(t, preceptsText == "WITH PRECEPTS" && item.Year == originalYear,
+							require.Equal(t, cnt, 1, "Expected affected items count = 1, but got %d\n Item: %+v", cnt, item)
+							require.False(t, preceptsText == "WITH PRECEPTS" && item.Year == originalYear,
 								"Item has not been updated by Insert with precepts. Item: %+v", item)
 							// need to update data before 'UPDATE NON EXISTING'
 							updateNonExistsData(existsMap["NON EXISTING"])
 
 						case "UPDATE NON EXISTING":
-							assert.Equal(t, cnt, 0, "Expected affected items count = 0, but got %d\n Item: %+v", cnt, item)
+							require.Equal(t, cnt, 0, "Expected affected items count = 0, but got %d\n Item: %+v", cnt, item)
 
 						}
 					}
@@ -469,44 +585,44 @@ func CheckTestItemsInsertUpdate(t *testing.T) {
 }
 
 func checkItemsCount(t *testing.T, nsName string, expectedCount int) {
-	results, err := DB.Query(nsName).Exec().FetchAll()
-	assert.NoError(t, err)
-	assert.Equal(t, len(results), expectedCount, "Expected %d items, but got %d", expectedCount, len(results))
+	results, err := DB.Query(nsName).Exec().AllowUnsafe(true).FetchAll()
+	require.NoError(t, err)
+	require.Equal(t, len(results), expectedCount, "Expected %d items, but got %d", expectedCount, len(results))
 }
 
 func TestTruncateNamespace(t *testing.T) {
 	const itemsCount = 1000
 
 	nsOpts := reindexer.DefaultNamespaceOptions()
-	assert.NoError(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}))
+	require.NoError(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}))
 
 	for i := 0; i < itemsCount; i++ {
 		_, err := DB.Insert(truncateNs, newTestItemComplexObject(i))
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 	checkItemsCount(t, truncateNs, itemsCount)
 
-	assert.NoError(t, DB.TruncateNamespace(truncateNs))
+	require.NoError(t, DB.TruncateNamespace(truncateNs))
 	checkItemsCount(t, truncateNs, 0)
 
-	assert.NoError(t, DB.CloseNamespace(truncateNs))
-	assert.NoError(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}))
+	require.NoError(t, DB.CloseNamespace(truncateNs))
+	require.NoError(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}))
 	checkItemsCount(t, truncateNs, 0)
 
 	for i := 0; i < itemsCount; i++ {
 		_, err := DB.Insert(truncateNs, newTestItemComplexObject(i))
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 	checkItemsCount(t, truncateNs, itemsCount)
 
-	assert.NoError(t, DB.CloseNamespace(truncateNs))
-	assert.NoError(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}))
+	require.NoError(t, DB.CloseNamespace(truncateNs))
+	require.NoError(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}))
 	checkItemsCount(t, truncateNs, itemsCount)
 
-	assert.NoError(t, DB.TruncateNamespace(truncateNs))
+	require.NoError(t, DB.TruncateNamespace(truncateNs))
 	checkItemsCount(t, truncateNs, 0)
 
-	assert.NoError(t, DB.CloseNamespace(truncateNs))
-	assert.NoError(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}))
+	require.NoError(t, DB.CloseNamespace(truncateNs))
+	require.NoError(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}))
 	checkItemsCount(t, truncateNs, 0)
 }

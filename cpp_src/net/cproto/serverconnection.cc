@@ -11,8 +11,8 @@ namespace cproto {
 const auto kCProtoTimeoutSec = 300.;
 const auto kUpdatesResendTimeout = 0.1;
 
-ServerConnection::ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher)
-	: net::ConnectionST(fd, loop), dispatcher_(dispatcher) {
+ServerConnection::ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher, bool enableStat)
+	: net::ConnectionST(fd, loop, enableStat), dispatcher_(dispatcher) {
 	timeout_.start(kCProtoTimeoutSec);
 	updates_async_.set<ServerConnection, &ServerConnection::async_cb>(this);
 	updates_timeout_.set<ServerConnection, &ServerConnection::timeout_cb>(this);

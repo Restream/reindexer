@@ -177,7 +177,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 			Variant authorIdKeyRef1 = item[authorid];
 			const reindexer::ItemRef& rowid = rowIt.GetItemRef();
 
-			auto itemIt = reindexer::joins::ItemIterator::FromQRIterator(rowIt);
+			auto itemIt = rowIt.GetJoined();
 			if (itemIt.getJoinedItemsCount() == 0) continue;
 			for (auto joinedFieldIt = itemIt.begin(); joinedFieldIt != itemIt.end(); ++joinedFieldIt) {
 				reindexer::ItemImpl item2(joinedFieldIt.GetItem(0, joinQueryRes.getPayloadType(1), joinQueryRes.getTagsMatcher(1)));
@@ -192,7 +192,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 
 		for (auto rowIt : joinQueryRes) {
 			IdType rowid = rowIt.GetItemRef().Id();
-			auto itemIt = reindexer::joins::ItemIterator::FromQRIterator(rowIt);
+			auto itemIt = rowIt.GetJoined();
 			if (itemIt.getJoinedItemsCount() == 0) continue;
 			auto joinedFieldIt = itemIt.begin();
 			for (int i = 0; i < joinedFieldIt.ItemsCount(); ++i) {
@@ -237,7 +237,7 @@ TEST_F(JoinSelectsApi, OrInnerJoinTest) {
 	if (err.ok()) {
 		for (auto rowIt : queryRes) {
 			Item item(rowIt.GetItem());
-			auto itemIt = reindexer::joins::ItemIterator::FromQRIterator(rowIt);
+			auto itemIt = rowIt.GetJoined();
 
 			reindexer::joins::JoinedFieldIterator authorIdIt = itemIt.at(authorsNsJoinIndex);
 			Variant authorIdKeyRef1 = item[authorid_fk];
@@ -288,7 +288,7 @@ TEST_F(JoinSelectsApi, JoinTestSorting) {
 			}
 
 			Variant key = item[authorid];
-			auto itemIt = reindexer::joins::ItemIterator::FromQRIterator(rowIt);
+			auto itemIt = rowIt.GetJoined();
 			if (itemIt.getJoinedItemsCount() == 0) continue;
 			auto joinedFieldIt = itemIt.begin();
 
@@ -330,7 +330,7 @@ TEST_F(JoinSelectsApi, TestSortingByJoinedNs) {
 
 	Variant prevValue;
 	for (auto rowIt : joinQueryRes2) {
-		const auto itemIt = reindexer::joins::ItemIterator::FromQRIterator(rowIt);
+		const auto itemIt = rowIt.GetJoined();
 		ASSERT_EQ(itemIt.getJoinedItemsCount(), 1);
 		const auto joinedFieldIt = itemIt.begin();
 		reindexer::ItemImpl joinItem(joinedFieldIt.GetItem(0, joinQueryRes2.getPayloadType(1), joinQueryRes2.getTagsMatcher(1)));
@@ -513,7 +513,7 @@ TEST_F(JoinSelectsApi, JoinWithSelectFilter) {
 		reindexer::WrSerializer wrser;
 		it.GetJSON(wrser, false);
 
-		reindexer::joins::ItemIterator joinIt = reindexer::joins::ItemIterator::FromQRIterator(it);
+		reindexer::joins::ItemIterator joinIt = it.GetJoined();
 		gason::JsonParser jsonParser;
 		gason::JsonNode root = jsonParser.Parse(reindexer::giftStr(wrser.Slice()));
 		EXPECT_TRUE(checkForAllowedJsonTags({title, price, "joined_authors_namespace"}, root.value));

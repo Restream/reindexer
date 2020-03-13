@@ -13,9 +13,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"testing"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/stretchr/testify/require"
 	"github.com/restream/reindexer"
 	"github.com/restream/reindexer/bindings"
 )
@@ -35,7 +37,7 @@ var queryNames = map[int]string{
 	reindexer.GE:    ">=",
 	reindexer.LE:    "<=",
 	reindexer.SET:   "SET",
-	reindexer.RANGE: "in",
+	reindexer.RANGE: "RANGE",
 	reindexer.ANY:   "ANY",
 	reindexer.EMPTY: "EMPTY",
 	reindexer.LIKE:  "LIKE",
@@ -67,25 +69,25 @@ type queryTestEntry struct {
 
 // Test Query to DB object
 type queryTest struct {
-	q              *reindexer.Query
-	entries        queryTestEntryTree
-	distinctIndex  string
-	sortIndex      []string
-	sortDesc       bool
-	sortValues     map[string][]interface{}
-	limitItems     int
-	startOffset    int
-	reqTotalCount  bool
-	db             *ReindexerWrapper
-	namespace      string
-	nextOp         int
-	ns             *testNamespace
-	totalCount     int
-	equalPositions EqualPositions
-	readOnly       bool
-	deepReplEqual  bool
-	needVerify     bool
-	handClose      bool
+	q               *reindexer.Query
+	entries         queryTestEntryTree
+	distinctIndexes []string
+	sortIndex       []string
+	sortDesc        bool
+	sortValues      map[string][]interface{}
+	limitItems      int
+	startOffset     int
+	reqTotalCount   bool
+	db              *ReindexerWrapper
+	namespace       string
+	nextOp          int
+	ns              *testNamespace
+	totalCount      int
+	equalPositions  EqualPositions
+	readOnly        bool
+	deepReplEqual   bool
+	needVerify      bool
+	handClose       bool
 }
 type testNamespace struct {
 	items     map[string]interface{}
@@ -111,7 +113,7 @@ func newTestQuery(db *ReindexerWrapper, namespace string, needVerify ...bool) *q
 	if qt == nil {
 		qt = &queryTest{}
 	} else {
-		qt.distinctIndex = ""
+		qt.distinctIndexes = []string{}
 		qt.sortIndex = qt.sortIndex[:0]
 		qt.entries.data = qt.entries.data[:0]
 		qt.entries.activeChild = 0
@@ -231,6 +233,12 @@ func (tx *txTest) Commit() (int, error) {
 	return tx.tx.CommitWithCount()
 }
 
+func (tx *txTest) Rollback() error {
+	tx.db.SetSynced(false)
+
+	return tx.tx.Rollback()
+}
+
 func (tx *txTest) MustCommit() int {
 	tx.db.SetSynced(false)
 
@@ -291,6 +299,7 @@ func (qt *queryTestEntryTree) toString() (ret string) {
 }
 
 func (qt *queryTest) toString() (ret string) {
+	ret += " FROM " + qt.q.Namespace;
 	if len(qt.entries.data) > 0 {
 		ret += " WHERE " + qt.entries.toString()
 	}
@@ -320,8 +329,11 @@ func (qt *queryTest) toString() (ret string) {
 	if qt.startOffset != 0 {
 		ret += " OFFSET " + strconv.Itoa(qt.startOffset)
 	}
-	if len(qt.distinctIndex) > 0 {
-		ret += " DISTINCT " + qt.distinctIndex
+	for i, dIdx := range(qt.distinctIndexes) {
+		if i != 0 {
+			ret += ","
+		}
+		ret += " DISTINCT(" + dIdx + ")"
 	}
 
 	return ret
@@ -442,11 +454,11 @@ func (qt *queryTest) Not() *queryTest {
 }
 
 // Distinct - Return only items with uniq value of field
-func (qt *queryTest) Distinct(distinctIndex string) *queryTest {
-	if len(distinctIndex) > 0 {
-		qt.q.Distinct(distinctIndex)
-		qt.distinctIndex = distinctIndex
+func (qt *queryTest) Distinct(distinctIndexes []string) *queryTest {
+	for _, dIdx := range distinctIndexes {
+		qt.q.Distinct(dIdx)
 	}
+	qt.distinctIndexes = distinctIndexes
 	return qt
 }
 
@@ -479,6 +491,14 @@ func (qt *queryTest) Drop(field string) *queryTest {
 
 func (qt *queryTest) Set(field string, values interface{}) *queryTest {
 	qt.q.Set(field, values)
+	qt.db.SetSynced(false)
+
+	qt.readOnly = false
+	return qt
+}
+
+func (qt *queryTest) SetObject(field string, values interface{}) *queryTest {
+	qt.q.SetObject(field, values)
 	qt.db.SetSynced(false)
 
 	qt.readOnly = false
@@ -546,20 +566,21 @@ func (qt *queryTest) ExecCtx(ctx context.Context) *reindexer.Iterator {
 }
 
 // Exec query, and full scan check items returned items
-func (qt *queryTest) ExecAndVerify() *reindexer.Iterator {
-	return qt.ExecAndVerifyCtx(context.Background())
+func (qt *queryTest) ExecAndVerify(t *testing.T) *reindexer.Iterator {
+	return qt.ExecAndVerifyCtx(t, context.Background())
 }
 
 // Exec query with context, and full scan check items returned items
-func (qt *queryTest) ExecAndVerifyCtx(ctx context.Context) *reindexer.Iterator {
+func (qt *queryTest) ExecAndVerifyCtx(t *testing.T, ctx context.Context) *reindexer.Iterator {
 	defer qt.close()
 	it := qt.ManualClose().ExecCtx(ctx)
 	qt.totalCount = it.TotalCount()
+	aggregations := it.AggResults()
 	items, err := it.AllowUnsafe(true).FetchAll()
 	if err != nil {
 		panic(err)
 	}
-	qt.Verify(items, true)
+	qt.Verify(t, items, aggregations, true)
 	//	logger.Printf(reindexer.INFO, "%s -> %d\n", qt.toString(), len(items))
 	_ = items
 
@@ -867,11 +888,22 @@ func calculate(sortExpr []*sortExprEntry, item interface{}, sortStr string) floa
 	return result
 }
 
-func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
+func (qt *queryTest) Verify(t *testing.T, items []interface{}, aggResults []reindexer.AggregationResult, checkEq bool) {
+	if len(qt.distinctIndexes) > 1 {
+		require.Equal(t, len(items), 0, "Returned items with several distincts")
+	}
 	// map of found ids
 	foundIds := make(map[string]int, len(items))
-	distincts := make(map[interface{}]int, 100)
-	distIdx, _ := qt.ns.getField(qt.distinctIndex)
+	var distIndexes [][][]int
+	for _, dIdx := range(qt.distinctIndexes) {
+		distIdx, _ := qt.ns.getField(dIdx)
+		distIndexes = append(distIndexes, distIdx)
+	}
+	distinctsByItems := make(map[string]int, 1000)
+	distinctsByAggRes := make([]map[string]int, len(distIndexes))
+	for i := 0; i < len(distinctsByAggRes); i++ {
+		distinctsByAggRes[i] = make(map[string]int, 1000)
+	}
 	totalItems := 0
 
 	// Check returned items for match query conditions
@@ -908,16 +940,24 @@ func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
 		}
 
 		// Check distinct
-		if len(qt.distinctIndex) > 0 {
-			vals := getValues(item, distIdx)
-			if len(vals) != 1 {
-				log.Fatalf("Found len(values) != 1 on distinct %s in item %+v", qt.distinctIndex, item)
-			}
-			intf := vals[0].Interface()
-			if _, ok := distincts[intf]; ok {
-				log.Fatalf("Duplicate distinct value %+v in item %+v", intf, item)
-			}
-			distincts[intf] = 0
+		if len(qt.distinctIndexes) == 1 {
+			vals := getValues(item, distIndexes[0])
+			require.Equalf(t, len(vals), 1, "Found len(values) != 1 on distinct '%s' in item %#v", qt.distinctIndexes[0], item)
+			valStr := fmt.Sprint(vals[0])
+			_, ok := distinctsByItems[valStr]
+			require.Falsef(t, ok, "Duplicate distinct value '%s' in item %#v", valStr, item)
+			distinctsByItems[valStr] = 0
+		}
+	}
+	require.Equal(t, len(aggResults), len(qt.distinctIndexes))
+	for i, agg := range aggResults {
+		require.Equal(t, agg.Type, "distinct")
+		require.Equal(t, len(agg.Fields), 1)
+		require.Equal(t, agg.Fields[0], qt.distinctIndexes[i])
+		for _, v := range agg.Distincts {
+			_, ok := distinctsByAggRes[i][v]
+			require.Falsef(t, ok, "Duplicate distinct value '%s' by index '%s'", v, agg.Fields[0])
+			distinctsByAggRes[i][v] = 0
 		}
 	}
 
@@ -987,20 +1027,19 @@ func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
 		if _, ok := foundIds[pk]; !ok {
 			if qt.entries.verifyConditions(qt.ns, item) {
 				// If request with limit or offset - do not check not found items
-				if qt.startOffset == 0 && (qt.limitItems == 0 || len(items) < qt.limitItems) {
-					if len(qt.distinctIndex) > 0 {
+				if qt.startOffset == 0 && (qt.limitItems == 0 || len(qt.distinctIndexes) <= 1 && len(items) < qt.limitItems) {
+					itemJson, _ := json.Marshal(item)
+					require.Greaterf(t, len(qt.distinctIndexes), 0, "Not found item pkey=%s, match condition '%s', expected total items=%d, found=%d\n%s", pk, qt.toString(), len(qt.ns.items), len(items), string(itemJson))
+					for i, distIdx := range(distIndexes) {
 						vals := getValues(item, distIdx)
-						if len(vals) != 1 {
-							log.Fatalf("Found len(values) != 1 on distinct %s in item %+v", qt.distinctIndex, item)
+						require.Equalf(t, len(vals), 1, "Found len(values) != 1 on distinct %#v in item %s", qt.distinctIndexes, string(itemJson))
+						valStr := fmt.Sprint(vals[0])
+						_, ok := distinctsByAggRes[i][valStr]
+						require.Truef(t, ok, "In query '%s'\nNot present distinct value '%s' by index '%s' of item %s in aggregation results", qt.toString(), valStr, qt.distinctIndexes[i], string(itemJson))
+						if len(qt.distinctIndexes) == 1 {
+							_, ok := distinctsByItems[valStr]
+							require.Truef(t, ok, "In query '%s'\nNot present distinct value '%s' by index '%s' of item %s in aggregation results", qt.toString(), valStr, qt.distinctIndexes[0], string(itemJson))
 						}
-						intf := vals[0].Interface()
-						if _, ok := distincts[intf]; !ok {
-							log.Fatalf("Not present distinct value %+v in item %+v", intf, item)
-						}
-					} else {
-						json1, _ := json.Marshal(item)
-						log.Fatalf("Not found item pkey=%s, match condition '%s',expected total items=%d,found=%d\n%s",
-							pk, qt.toString(), len(qt.ns.items), len(items), string(json1))
 					}
 				}
 				totalItems++
@@ -1009,7 +1048,7 @@ func (qt *queryTest) Verify(items []interface{}, checkEq bool) {
 	}
 
 	// Check total count
-	if qt.reqTotalCount && totalItems != qt.totalCount && len(qt.distinctIndex) == 0 {
+	if qt.reqTotalCount && totalItems != qt.totalCount && len(qt.distinctIndexes) == 0 {
 		panic(fmt.Errorf("Total mismatch: %d != %d (%d)", totalItems, qt.totalCount, len(items)))
 	}
 }

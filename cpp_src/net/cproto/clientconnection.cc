@@ -15,7 +15,7 @@ const int kKeepAliveInterval = 30;
 const int kDeadlineCheckInterval = 1;
 
 ClientConnection::ClientConnection(ev::dynamic_loop &loop, const httpparser::UrlParser *uri, const Options &options)
-	: ConnectionMT(-1, loop),
+	: ConnectionMT(-1, loop, false),
 	  state_(ConnInit),
 	  completions_(kMaxCompletions),
 	  seq_(0),

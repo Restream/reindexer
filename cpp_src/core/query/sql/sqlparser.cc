@@ -4,6 +4,7 @@
 #include "core/query/query.h"
 #include "core/queryresults/aggregationresult.h"
 #include "sqltokentype.h"
+#include "vendor/gason/gason.h"
 
 namespace reindexer {
 
@@ -16,7 +17,7 @@ int SQLParser::Parse(const string_view &q) {
 
 bool SQLParser::reachedAutocompleteToken(tokenizer &parser, const token &tok) {
 	if (!ctx_.foundPossibleSuggestions) {
-		size_t pos = parser.pos() + tok.text().length();
+		size_t pos = parser.getPos() + tok.text().length();
 		return (pos >= ctx_.suggestionsPos);
 	}
 	return false;
@@ -24,9 +25,9 @@ bool SQLParser::reachedAutocompleteToken(tokenizer &parser, const token &tok) {
 
 token SQLParser::peekSqlToken(tokenizer &parser, int tokenType, bool toLower) {
 	token tok = parser.peek_token(toLower);
-	bool eof = ((parser.pos() + tok.text().length()) == parser.length());
+	bool eof = ((parser.getPos() + tok.text().length()) == parser.length());
 	if (ctx_.autocompleteMode && !tok.text().empty() && reachedAutocompleteToken(parser, tok)) {
-		ctx_.suggestions.emplace_back(string(tok.text_.data(), tok.text().length()), tokenType);
+		ctx_.suggestions.emplace_back(string(tok.text()), tokenType);
 		ctx_.foundPossibleSuggestions = true;
 		ctx_.possibleSuggestionDetectedInThisClause = true;
 	}
@@ -124,9 +125,6 @@ int SQLParser::selectParse(tokenizer &parser) {
 				} else if (name.text() == "count_cached"_sv) {
 					query_.calcTotal = ModeCachedTotal;
 					if (!wasSelectFilter) query_.count = 0;
-				} else if (name.text() == "distinct"_sv) {
-					query_.Distinct(string(tok.text()));
-					if (!wasSelectFilter) query_.selectFilter_.emplace_back(tok.text());
 				} else {
 					throw Error(errParams, "Unknown function name SQL - %s, %s", name.text(), parser.where());
 				}
@@ -361,19 +359,33 @@ static Variant token2kv(const token &currTok, tokenizer &parser, bool allowCompo
 }
 
 static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry &updateField) {
+	updateField.mode = FieldModeSet;
 	if (currTok.type == TokenString) {
 		updateField.values.push_back(token2kv(currTok, parser, false));
 	} else {
 		if ((currTok.type == TokenName) && (currTok.text() == "null"_sv)) {
 			updateField.values.push_back(Variant());
+		} else if ((currTok.type == TokenSymbol) && (currTok.text() == "{"_sv)) {
+			try {
+				size_t jsonPos = parser.getPos() - 1;
+				string json(parser.begin() + jsonPos, parser.length() - jsonPos);
+				size_t jsonLength = 0;
+				gason::JsonParser jsonParser;
+				jsonParser.Parse(giftStr(json), &jsonLength);
+				updateField.values.emplace_back(Variant(string(parser.begin() + jsonPos, jsonLength)));
+				updateField.mode = FieldModeSetJson;
+				parser.setPos(jsonPos + jsonLength);
+			} catch (const gason::Exception &e) {
+				throw Error(errParseSQL, "%s, in query %s", e.what(), parser.where());
+			}
 		} else {
-			int count = 0;
-			string expression(currTok.text());
 			auto eof = [](tokenizer &parser) -> bool {
 				if (parser.end()) return true;
 				token nextTok = parser.peek_token();
 				return ((nextTok.text() == "where"_sv) || (nextTok.text() == "]"_sv) || (nextTok.text() == ","_sv));
 			};
+			int count = 0;
+			string expression(currTok.text());
 			while (!eof(parser)) {
 				expression += string(parser.next_token(false).text());
 				++count;
@@ -407,6 +419,7 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
 
 	tok = parser.next_token(false);
 	if (tok.text() == "["_sv) {
+		updateField.values.MarkArray();
 		for (;;) {
 			tok = parser.next_token(false);
 			if (tok.text() == "]") {
@@ -422,7 +435,6 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
 	} else {
 		addUpdateValue(tok, parser, updateField);
 	}
-	updateField.mode = FieldModeSet;
 	return updateField;
 }
 
@@ -434,7 +446,7 @@ int SQLParser::updateParse(tokenizer &parser) {
 	ctx_.updateLinkedNs(query_._namespace);
 	parser.next_token();
 
-	tok = peekSqlToken(parser, UpdateOptions);
+	tok = peekSqlToken(parser, UpdateOptionsSqlToken);
 	if (tok.text() == "set"_sv) {
 		parser.next_token();
 		while (!parser.end()) {
@@ -462,8 +474,6 @@ int SQLParser::updateParse(tokenizer &parser) {
 	} else {
 		throw Error(errParseSQL, "Expected 'SET' or 'DROP' but found '%s' in query %s", tok.text(), parser.where());
 	}
-
-	if (parser.end()) return 0;
 
 	tok = peekSqlToken(parser, WhereSqlToken);
 	if (tok.text() == "where"_sv) {

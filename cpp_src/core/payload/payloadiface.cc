@@ -189,16 +189,20 @@ void PayloadIface<T>::SerializeFields(WrSerializer &ser, const FieldsSet &fields
 	size_t tagPathIdx = 0;
 	VariantArray varr;
 	for (int field : fields) {
-		if (field != IndexValueType::SetByJsonPath) {
-			ser.PutVariant(Field(field).Get());
-		} else {
+		if (field == IndexValueType::SetByJsonPath) {
 			assert(tagPathIdx < fields.getTagsPathsLength());
-			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
+			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx);
 			varr = GetByJsonPath(tagsPath, varr, KeyValueUndefined);
-			if (varr.size() != 1) {
-				throw Error(errParams, "PK error - field should present, and not array");
+			if (varr.empty()) {
+				throw Error(errParams, "PK serializing error: field [%s] cannot not be empty", fields.getJsonPath(tagPathIdx));
+			}
+			if (varr.size() > 1) {
+				throw Error(errParams, "PK serializing error: field [%s] cannot not be array", fields.getJsonPath(tagPathIdx));
 			}
 			ser.PutVariant(varr[0]);
+			++tagPathIdx;
+		} else {
+			ser.PutVariant(Field(field).Get());
 		}
 	}
 	return;

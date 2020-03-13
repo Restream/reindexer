@@ -18,8 +18,8 @@ namespace reindexer_server {
 const std::string kUsersYAMLFilename = "users.yml";
 const std::string kUsersJSONFilename = "users.json";
 
-DBManager::DBManager(const string &dbpath, bool noSecurity)
-	: dbpath_(dbpath), noSecurity_(noSecurity), storageType_(datastorage::StorageType::LevelDB) {}
+DBManager::DBManager(const string &dbpath, bool noSecurity, IClientsStats *clientsStats)
+	: dbpath_(dbpath), noSecurity_(noSecurity), storageType_(datastorage::StorageType::LevelDB), clientsStats_(clientsStats) {}
 
 Error DBManager::Init(const std::string &storageEngine, bool allowDBErrors, bool withAutorepair) {
 	auto status = readUsers();
@@ -111,7 +111,7 @@ Error DBManager::loadOrCreateDatabase(const string &dbName, bool allowDBErrors, 
 	string storagePath = !dbpath_.empty() ? fs::JoinPath(dbpath_, dbName) : "";
 
 	logPrintf(LogInfo, "Loading database %s", dbName);
-	auto db = unique_ptr<reindexer::Reindexer>(new reindexer::Reindexer);
+	auto db = unique_ptr<reindexer::Reindexer>(new reindexer::Reindexer(clientsStats_));
 	StorageTypeOpt storageType = kStorageTypeOptLevelDB;
 	switch (storageType_) {
 		case datastorage::StorageType::LevelDB:

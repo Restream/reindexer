@@ -2,6 +2,8 @@ package bindings
 
 const CInt32Max = int(^uint32(0) >> 1)
 
+const ReindexerVersion = "v2.6.2"
+
 // public go consts from type_consts.h and reindexer_ctypes.h
 const (
 	ANY    = 0
@@ -21,11 +23,12 @@ const (
 	INFO    = 3
 	TRACE   = 4
 
-	AggSum   = 0
-	AggAvg   = 1
-	AggFacet = 2
-	AggMin   = 3
-	AggMax   = 4
+	AggSum      = 0
+	AggAvg      = 1
+	AggFacet    = 2
+	AggMin      = 3
+	AggMax      = 4
+	AggDistinct = 5
 
 	CollateNone    = 0
 	CollateASCII   = 1
@@ -72,6 +75,7 @@ const (
 	QueryCloseBracket      = 19
 	QueryJoinCondition     = 20
 	QueryDropField         = 21
+	QueryUpdateObject      = 22
 
 	LeftJoin    = 0
 	InnerJoin   = 1
@@ -123,6 +127,7 @@ const (
 	ConnectOptOpenNamespaces       = 1
 	ConnectOptAllowNamespaceErrors = 1 << 1
 	ConnectOptAutorepair           = 1 << 2
+	ConnectOptWarnVersion          = 1 << 4
 
 	ErrOK               = 0
 	ErrParseSQL         = 1

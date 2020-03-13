@@ -15,7 +15,6 @@ enum class Root {
 	Namespace,
 	Limit,
 	Offset,
-	Distinct,
 	Filters,
 	Sort,
 	Merged,
@@ -29,7 +28,7 @@ enum class Root {
 
 enum class Sort { Desc, Field, Values };
 enum class JoinRoot { Type, On, Namespace, Filters, Sort, Limit, Offset };
-enum class JoinEntry { LetfField, RightField, Cond, Op };
+enum class JoinEntry { LeftField, RightField, Cond, Op };
 enum class Filter { Cond, Op, Field, Value, Filters, JoinQuery };
 enum class Aggregation { Fields, Type, Sort, Limit, Offset };
 
@@ -40,7 +39,6 @@ using fast_str_map = fast_hash_map<string, T, nocase_hash_str, nocase_equal_str>
 static const fast_str_map<Root> root_map = {{"namespace", Root::Namespace},
 											{"limit", Root::Limit},
 											{"offset", Root::Offset},
-											{"distinct", Root::Distinct},
 											{"filters", Root::Filters},
 											{"sort", Root::Sort},
 											{"merge_queries", Root::Merged},
@@ -63,7 +61,7 @@ static const fast_str_map<JoinRoot> joins_map = {
 	{"on", JoinRoot::On}};
 
 static const fast_str_map<JoinEntry> joined_entry_map = {
-	{"left_field", JoinEntry::LetfField}, {"right_field", JoinEntry::RightField}, {"cond", JoinEntry::Cond}, {"op", JoinEntry::Op}};
+	{"left_field", JoinEntry::LeftField}, {"right_field", JoinEntry::RightField}, {"cond", JoinEntry::Cond}, {"op", JoinEntry::Op}};
 
 static const fast_str_map<JoinType> join_types = {{"inner", InnerJoin}, {"left", LeftJoin}, {"orinner", OrInnerJoin}};
 
@@ -93,8 +91,8 @@ static const fast_str_map<Aggregation> aggregation_map = {{"fields", Aggregation
 														  {"sort", Aggregation::Sort},
 														  {"limit", Aggregation::Limit},
 														  {"offset", Aggregation::Offset}};
-static const fast_str_map<AggType> aggregation_types = {
-	{"sum", AggSum}, {"avg", AggAvg}, {"max", AggMax}, {"min", AggMin}, {"facet", AggFacet}};
+static const fast_str_map<AggType> aggregation_types = {{"sum", AggSum}, {"avg", AggAvg},	  {"max", AggMax},
+														{"min", AggMin}, {"facet", AggFacet}, {"distinct", AggDistinct}};
 
 bool checkTag(JsonValue& val, JsonTag tag) { return val.getTag() == tag; }
 
@@ -309,7 +307,7 @@ void parseJoinedEntries(JsonValue& joinEntries, JoinedQuery& qjoin) {
 			auto& value = subelement->value;
 			string_view name = subelement->key;
 			switch (get(joined_entry_map, name)) {
-				case JoinEntry::LetfField:
+				case JoinEntry::LeftField:
 					checkJsonValueType(value, name, JSON_STRING);
 					qjoinEntry.index_ = string(value.toString());
 					break;
@@ -434,14 +432,6 @@ void parse(JsonValue& root, Query& q) {
 			case Root::Offset:
 				checkJsonValueType(v, name, JSON_NUMBER, JSON_DOUBLE);
 				q.start = static_cast<unsigned>(v.toNumber());
-				break;
-
-			case Root::Distinct:
-				checkJsonValueType(v, name, JSON_ARRAY);
-				for (auto f : v) {
-					checkJsonValueType(f->value, f->key, JSON_STRING);
-					if (f->value.toString().size()) q.Distinct(string(f->value.toString()));
-				}
 				break;
 
 			case Root::Filters:

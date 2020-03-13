@@ -2,6 +2,7 @@
 #include <sys/stat.h>
 #include <sstream>
 #include "core/cjson/jsonbuilder.h"
+#include "core/iclientsstats.h"
 #include "core/transactionimpl.h"
 #include "net/cproto/cproto.h"
 #include "net/cproto/serverconnection.h"
@@ -9,11 +10,15 @@
 #include "reindexer_version.h"
 
 namespace reindexer_server {
-
 const reindexer::SemVersion kMinTxReplSupportRxVersion("2.6.0");
 
-RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper logger, bool allocDebug, IStatsWatcher *statsCollector)
-	: dbMgr_(dbMgr), logger_(logger), allocDebug_(allocDebug), statsWatcher_(statsCollector), startTs_(std::chrono::system_clock::now()) {}
+RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper logger, IClientsStats *clientsStats, bool allocDebug, IStatsWatcher *statsCollector)
+	: dbMgr_(dbMgr),
+	  logger_(logger),
+	  allocDebug_(allocDebug),
+	  statsWatcher_(statsCollector),
+	  clientsStats_(clientsStats),
+	  startTs_(std::chrono::system_clock::now()) {}
 
 RPCServer::~RPCServer() {}
 
@@ -63,6 +68,12 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 		});
 	}
 
+	std::shared_ptr<ConnectionStat> connetcionStat = ctx.writer->GetConnectionStat();
+	if (clientsStats_)
+		clientsStats_->AddConnection(connetcionStat, clientData->connID, ctx.clientAddr.data(), clientData->auth.Login(),
+									 clientData->auth.DBName(), UserRoleName(clientData->auth.UserRights()),
+									 clientData->rxVersion.StrippedString());
+
 	ctx.SetClientData(std::move(clientData));
 	if (statsWatcher_) {
 		statsWatcher_->OnClientConnected(dbName, statsSourceName());
@@ -78,9 +89,17 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 	return status;
 }
 
+static RPCClientData *getClientDataUnsafe(cproto::Context &ctx) { return dynamic_cast<RPCClientData *>(ctx.GetClientData()); }
+
+static RPCClientData *getClientDataSafe(cproto::Context &ctx) {
+	auto ret = dynamic_cast<RPCClientData *>(ctx.GetClientData());
+	if (!ret) std::abort();	 // It should be set by middleware
+	return ret;
+}
+
 Error RPCServer::OpenDatabase(cproto::Context &ctx, p_string db, cproto::optional<bool> createDBIfMissing) {
-	auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData());
-	if (clientData->auth.HaveDB()) {  // -V522 this thing is handled in midleware (within CheckAuth)
+	auto *clientData = getClientDataSafe(ctx);
+	if (clientData->auth.HaveDB()) {
 		return Error(errParams, "Database already opened");
 	}
 	auto status = dbMgr_.OpenDatabase(db.toString(), clientData->auth, createDBIfMissing.hasValue() && createDBIfMissing.value());
@@ -91,13 +110,13 @@ Error RPCServer::OpenDatabase(cproto::Context &ctx, p_string db, cproto::optiona
 }
 
 Error RPCServer::CloseDatabase(cproto::Context &ctx) {
-	auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData());
-	clientData->auth.ResetDB();	 // -V522 this thing is handled in midleware (within CheckAuth)
+	auto clientData = getClientDataSafe(ctx);
+	clientData->auth.ResetDB();
 	return errOK;
 }
 Error RPCServer::DropDatabase(cproto::Context &ctx) {
-	auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData());
-	return dbMgr_.DropDatabase(clientData->auth);  // -V522 this thing is handled in midleware (within CheckAuth)
+	auto clientData = getClientDataSafe(ctx);
+	return dbMgr_.DropDatabase(clientData->auth);
 }
 
 Error RPCServer::CheckAuth(cproto::Context &ctx) {
@@ -120,17 +139,21 @@ void RPCServer::OnClose(cproto::Context &ctx, const Error &err) {
 	(void)err;
 
 	if (statsWatcher_) {
-		auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData());
+		auto clientData = getClientDataUnsafe(ctx);
 		if (clientData) {
 			statsWatcher_->OnClientDisconnected(clientData->auth.DBName(), statsSourceName());
 		}
+	}
+	if (clientsStats_) {
+		auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData());
+		if (clientData) clientsStats_->DeleteConnection(clientData->connID);
 	}
 	logger_.info("RPC: Client disconnected");
 }
 
 void RPCServer::OnResponse(cproto::Context &ctx) {
 	if (statsWatcher_) {
-		auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData());
+		auto clientData = getClientDataUnsafe(ctx);
 		auto dbName = (clientData != nullptr) ? clientData->auth.DBName() : "<unknown>";
 		statsWatcher_->OnOutputTraffic(dbName, statsSourceName(), ctx.stat.sizeStat.respSizeBytes);
 		if (ctx.stat.sizeStat.respSizeBytes) {
@@ -141,7 +164,7 @@ void RPCServer::OnResponse(cproto::Context &ctx) {
 }
 
 void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Args &ret) {
-	auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData());
+	auto clientData = getClientDataUnsafe(ctx);
 	WrSerializer ser;
 
 	if (clientData) {
@@ -461,7 +484,7 @@ Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin) {
 	if (!err.ok()) {
 		return err;
 	}
-	ResultFetchOpts opts{0, {}, 0, INT_MAX};
+	ResultFetchOpts opts{kResultsWithItemID, {}, 0, INT_MAX};
 	return sendResults(ctx, qres, -1, opts);
 }
 
@@ -478,7 +501,7 @@ Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin) {
 	}
 
 	int32_t ptVersion = -1;
-	ResultFetchOpts opts{kResultsCJson | kResultsWithPayloadTypes, {&ptVersion, 1}, 0, INT_MAX};
+	ResultFetchOpts opts{kResultsWithItemID | kResultsCJson | kResultsWithPayloadTypes, {&ptVersion, 1}, 0, INT_MAX};
 	return sendResults(ctx, qres, -1, opts);
 }
 
@@ -493,9 +516,9 @@ Reindexer RPCServer::getDB(cproto::Context &ctx, UserRole role) {
 				throw status;
 			}
 			if (db != nullptr) {
-				return db->NeedTraceActivity()
-						   ? db->WithTimeout(ctx.call->execTimeout_).WithActivityTracer(ctx.clientAddr, clientData->auth.Login())
-						   : db->WithTimeout(ctx.call->execTimeout_);
+				return db->NeedTraceActivity() ? db->WithTimeout(ctx.call->execTimeout_)
+													 .WithActivityTracer(ctx.clientAddr, clientData->auth.Login(), clientData->connID)
+											   : db->WithTimeout(ctx.call->execTimeout_);
 			}
 		}
 	}
@@ -533,62 +556,78 @@ Error RPCServer::processTxItem(DataFormat format, string_view itemData, Item &it
 	}
 }
 
-QueryResults &RPCServer::getQueryResults(cproto::Context &ctx, int &id) {
-	auto data = dynamic_cast<RPCClientData *>(ctx.GetClientData());
+static int64_t getIdxFromId(int64_t id, RPCClientData &data) {
+	int64_t expConnID = (id >> 16) - 1;
+	if (expConnID != int64_t(data.connID)) {
+		throw Error(errLogic, "Wrong conn id: %d, expected: %d", data.connID, expConnID);
+	}
+	int64_t mask = (int64_t(data.connID) + 1) << 16;
+	return id & ~mask;
+}
+static int64_t getIdFromIdx(int64_t idx, RPCClientData &data) { return idx |= (int64_t(data.connID) + 1) << 16; }
 
-	if (id < 0) {
-		for (id = 0; id < int(data->results.size()); id++) {
-			if (!data->results[id].second) {
-				data->results[id] = {QueryResults(), true};
-				return data->results[id].first;
+QueryResults &RPCServer::getQueryResults(cproto::Context &ctx, int &qrId) {
+	auto data = getClientDataSafe(ctx);
+	int64_t idx = 0;
+	if (qrId < 0) {
+		for (; idx < data->results.size(); ++idx) {
+			if (!data->results[idx].second) {
+				data->results[idx] = {QueryResults(), true};
+				qrId = getIdFromIdx(idx, *data);
+				return data->results[idx].first;
 			}
 		}
 
 		if (data->results.size() > cproto::kMaxConcurentQueries) throw Error(errLogic, "Too many paralell queries");
-		id = data->results.size();
+		idx = data->results.size();
 		data->results.push_back({QueryResults(), true});
+	} else {
+		idx = getIdxFromId(qrId, *data);
 	}
 
-	if (id >= int(data->results.size())) {
-		throw Error(errLogic, "Invalid query id");
+	if (idx < 0 || size_t(idx) >= data->results.size()) {
+		throw Error(errLogic, "Invalid query id: %d, connID: %d", qrId, data->connID);
 	}
-	return data->results[id].first;
+	qrId = getIdFromIdx(idx, *data);
+	return data->results[idx].first;
 }
 
-Transaction &RPCServer::getTx(cproto::Context &ctx, int64_t id) {
-	auto data = dynamic_cast<RPCClientData *>(ctx.GetClientData());
-
-	if (size_t(id) >= data->txs.size()) {
-		throw Error(errLogic, "Invalid tx id");
+Transaction &RPCServer::getTx(cproto::Context &ctx, int64_t txId) {
+	auto data = getClientDataSafe(ctx);
+	auto idx = getIdxFromId(txId, *data);
+	if (idx < 0 || size_t(idx) >= data->txs.size()) {
+		throw Error(errLogic, "Invalid tx id: %d, connID: %d", txId, data->connID);
 	}
-	return data->txs[id];
+	return data->txs[idx];
 }
 
 int64_t RPCServer::addTx(cproto::Context &ctx, Transaction &&tr) {
-	auto data = dynamic_cast<RPCClientData *>(ctx.GetClientData());
-	for (size_t i = 0; i < data->txs.size(); ++i) {	 // -V522 this thing is handled in midleware (within CheckAuth)
+	auto data = getClientDataSafe(ctx);
+	for (size_t i = 0; i < data->txs.size(); ++i) {
 		if (data->txs[i].IsFree()) {
 			data->txs[i] = std::move(tr);
-			return i;
+			return getIdFromIdx(i, *data);
 		}
 	}
 	data->txs.emplace_back(std::move(tr));
-	return int64_t(data->txs.size() - 1);
+	return getIdFromIdx(int64_t(data->txs.size() - 1), *data);
 }
 void RPCServer::clearTx(cproto::Context &ctx, uint64_t txId) {
-	auto data = dynamic_cast<RPCClientData *>(ctx.GetClientData());
-	if (txId >= data->txs.size()) {	 // -V522 this thing is handled in midleware (within CheckAuth)
-		throw Error(errLogic, "Invalid tx id");
+	auto data = getClientDataSafe(ctx);
+	auto idx = getIdxFromId(txId, *data);
+	if (idx < 0 || size_t(idx) >= data->txs.size()) {
+		throw Error(errLogic, "Invalid tx id: %d, connID: %d", txId, data->connID);
 	}
-	data->txs[txId] = Transaction();
+	data->txs[idx] = Transaction();
 }
 
-void RPCServer::freeQueryResults(cproto::Context &ctx, int id) {
-	auto data = dynamic_cast<RPCClientData *>(ctx.GetClientData());
-	if (id >= int(data->results.size()) || id < 0) {  // -V522 this thing is handled in midleware (within CheckAuth)
-		throw Error(errLogic, "Invalid query id");
+void RPCServer::freeQueryResults(cproto::Context &ctx, int qrId) {
+	auto data = getClientDataSafe(ctx);
+	auto idx = getIdxFromId(qrId, *data);
+	if (idx < 0 || size_t(idx) >= data->results.size()) {
+		throw Error(errLogic, "Invalid query id: %d, connID: %d", qrId, data->connID);
 	}
-	data->results[id] = {QueryResults(), false};
+	data->results[idx] = {QueryResults(), false};
 }
 
 static h_vector<int32_t, 4> pack2vec(p_string pack) {
@@ -606,9 +645,8 @@ Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int 
 	query.Deserialize(ser);
 
 	if (query.IsWALQuery()) {
-		auto data = dynamic_cast<RPCClientData *>(ctx.GetClientData());
-		query.Where(string("#slave_version"_sv), CondEq,
-					data->rxVersion.StrippedString());	// -V522 this thing is handled in midleware (within CheckAuth)
+		auto data = getClientDataSafe(ctx);
+		query.Where(string("#slave_version"_sv), CondEq, data->rxVersion.StrippedString());
 	}
 
 	int id = -1;
@@ -703,13 +741,13 @@ Error RPCServer::EnumMeta(cproto::Context &ctx, p_string ns) {
 
 Error RPCServer::SubscribeUpdates(cproto::Context &ctx, int flag) {
 	auto db = getDB(ctx, kRoleDataRead);
-	auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData());
-	auto ret = db.SubscribeUpdates(&clientData->pusher, flag);	// -V522 this thing is handled in midleware (within CheckAuth)
+	auto clientData = getClientDataSafe(ctx);
+	auto ret = db.SubscribeUpdates(&clientData->pusher, flag);
 	if (ret.ok()) clientData->subscribed = bool(flag);
 	return ret;
 }
 
-bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
+bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop, bool enableStat) {
 	dispatcher_.Register(cproto::kCmdPing, this, &RPCServer::Ping);
 	dispatcher_.Register(cproto::kCmdLogin, this, &RPCServer::Login, true);
 	dispatcher_.Register(cproto::kCmdOpenDatabase, this, &RPCServer::OpenDatabase, true);
@@ -758,7 +796,7 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 		dispatcher_.Logger(this, &RPCServer::Logger);
 	}
 
-	listener_.reset(new Listener(loop, cproto::ServerConnection::NewFactory(dispatcher_)));
+	listener_.reset(new Listener(loop, cproto::ServerConnection::NewFactory(dispatcher_, enableStat)));
 	return listener_->Bind(addr);
 }
 

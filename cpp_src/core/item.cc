@@ -106,7 +106,7 @@ Item::FieldRef Item::operator[](int field) const {
 	return FieldRef(field, impl_);
 }
 
-Item::FieldRef Item::operator[](string_view name) {
+Item::FieldRef Item::operator[](string_view name) const {
 	int field = 0;
 	if (impl_->Type().FieldByName(name, field)) {
 		return FieldRef(field, impl_);

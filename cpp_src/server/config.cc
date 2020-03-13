@@ -36,6 +36,7 @@ void ServerConfig::Reset() {
 	PrometheusCollectPeriod = std::chrono::milliseconds(1000);
 	DebugAllocs = false;
 	Autorepair = false;
+	EnableConnectionsStats = true;
 }
 
 reindexer::Error ServerConfig::ParseYaml(const std::string &yaml) {
@@ -99,6 +100,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::Flag prometheusF(metricsGroup, "", "Enable prometheus handler", {"prometheus"});
 	args::ValueFlag<int> prometheusPeriodF(metricsGroup, "", "Prometheus stats collect period (ms)", {"prometheus-period"},
 										   PrometheusCollectPeriod.count(), args::Options::Single);
+	args::Flag clientsConnectionsStatF(metricsGroup, "", "Enable client connection statistic", {"clientsstats"});
 
 	args::Group logGroup(parser, "Logging options");
 	args::ValueFlag<string> logLevelF(logGroup, "", "log level (none, warning, error, info, trace)", {'l', "loglevel"}, LogLevel,
@@ -161,6 +163,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (pprofF) DebugPprof = args::get(pprofF);
 	if (prometheusF) EnablePrometheus = args::get(prometheusF);
 	if (prometheusPeriodF) PrometheusCollectPeriod = std::chrono::milliseconds(args::get(prometheusPeriodF));
+	if (clientsConnectionsStatF) EnableConnectionsStats = args::get(clientsConnectionsStatF);
 	if (logAllocsF) DebugAllocs = args::get(logAllocsF);
 
 	return 0;
@@ -183,6 +186,7 @@ reindexer::Error ServerConfig::fromYaml(Yaml::Node &root) {
 		EnableSecurity = root["net"]["security"].As<bool>(EnableSecurity);
 		EnablePrometheus = root["metrics"]["prometheus"].As<bool>(EnablePrometheus);
 		PrometheusCollectPeriod = std::chrono::milliseconds(root["metrics"]["collect_period"].As<int>(PrometheusCollectPeriod.count()));
+		EnableConnectionsStats = root["metrics"]["clientsstats"].As<bool>(EnableConnectionsStats);
 #ifndef _WIN32
 		UserName = root["system"]["user"].As<std::string>(UserName);
 		Daemonize = root["system"]["daemonize"].As<bool>(Daemonize);

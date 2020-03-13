@@ -161,6 +161,21 @@ public:
 		return *this;
 	}
 
+	/// Sets a new value for a field.
+	/// @param field - field name.
+	/// @param value - new value.
+	Query &SetField(const string &field, const VariantArray &value) {
+		updateFields_.emplace_back(field, value, FieldModeSet);
+		return *this;
+	}
+	/// Sets a value for a field as an object.
+	/// @param field - field name.
+	/// @param value - new value.
+	Query &SetObject(const string &field, const string &objectJson) {
+		updateFields_.emplace_back(UpdateEntry(field, {Variant(objectJson)}, FieldModeSetJson));
+		return *this;
+	}
+
 	/// Add sql-function to query.
 	/// @param function - function declaration.
 	void AddFunction(const string &function) { selectFunctions_.push_back(std::move(function)); }
@@ -267,10 +282,8 @@ public:
 	/// @param indexName - name of index for distict operation.
 	Query &Distinct(const string &indexName) {
 		if (indexName.length()) {
-			QueryEntry qentry;
-			qentry.index = indexName;
-			qentry.distinct = true;
-			entries.Append(OpAnd, std::move(qentry));
+			AggregateEntry aggEntry{AggDistinct, {indexName}};
+			aggregations_.emplace_back(std::move(aggEntry));
 		}
 		return *this;
 	}
@@ -401,7 +414,7 @@ public:
 	std::multimap<unsigned, EqualPosition> equalPositions_;	 /// List of same position fields for queries with arrays
 	QueryEntries entries;
 
-	h_vector<AggregateEntry, 0> aggregations_;
+	vector<AggregateEntry> aggregations_;
 	h_vector<UpdateEntry, 0> updateFields_;	 /// List of fields (and values) for update.
 };
 

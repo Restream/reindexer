@@ -34,10 +34,11 @@ struct RPCClientData : public cproto::ClientData {
 
 class RPCServer {
 public:
-	RPCServer(DBManager &dbMgr, LoggerWrapper logger, bool allocDebug = false, IStatsWatcher *statsCollector = nullptr);
+	RPCServer(DBManager &dbMgr, LoggerWrapper logger, IClientsStats *clientsStats, bool allocDebug = false,
+			  IStatsWatcher *statsCollector = nullptr);
 	~RPCServer();
 
-	bool Start(const string &addr, ev::dynamic_loop &loop);
+	bool Start(const string &addr, ev::dynamic_loop &loop, bool enableStat);
 	void Stop() { listener_->Stop(); }
 
 	Error Ping(cproto::Context &ctx);
@@ -99,9 +100,9 @@ protected:
 	Error processTxItem(DataFormat format, string_view itemData, Item &item, ItemModifyMode mode, int stateToken) const noexcept;
 
 	Error fetchResults(cproto::Context &ctx, int reqId, const ResultFetchOpts &opts);
-	void freeQueryResults(cproto::Context &ctx, int id);
-	QueryResults &getQueryResults(cproto::Context &ctx, int &id);
-	Transaction &getTx(cproto::Context &ctx, int64_t id);
+	void freeQueryResults(cproto::Context &ctx, int qrId);
+	QueryResults &getQueryResults(cproto::Context &ctx, int &qrId);
+	Transaction &getTx(cproto::Context &ctx, int64_t txId);
 	int64_t addTx(cproto::Context &ctx, Transaction &&tr);
 	void clearTx(cproto::Context &ctx, uint64_t txId);
 
@@ -115,6 +116,8 @@ protected:
 	LoggerWrapper logger_;
 	bool allocDebug_;
 	IStatsWatcher *statsWatcher_;
+
+	IClientsStats *clientsStats_;
 
 	std::chrono::system_clock::time_point startTs_;
 };

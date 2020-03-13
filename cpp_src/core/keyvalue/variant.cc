@@ -507,7 +507,9 @@ void Variant::Dump(WrSerializer &wrser) const {
 	}
 }
 
-bool VariantArray::IsNullValue() const { return (size() == 1 && front().IsNullValue()); }
+bool VariantArray::IsArrayValue() const { return isArrayValue || size() > 1; }
+bool VariantArray::IsNullValue() const { return size() == 1 && front().IsNullValue(); }
+KeyValueType VariantArray::ArrayType() const { return empty() ? KeyValueNull : front().Type(); }
 
 void VariantArray::Dump(WrSerializer &wrser) const {
 	wrser << '{';

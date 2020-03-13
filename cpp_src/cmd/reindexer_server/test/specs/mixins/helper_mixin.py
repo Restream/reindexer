@@ -185,7 +185,7 @@ class HelperMixin(object):
 
     def helper_query_dsl_aggregation_construct(self, field, aggr_type):
         return {
-            'field': field,
+            'fields': [field],
             'type': aggr_type
         }
 

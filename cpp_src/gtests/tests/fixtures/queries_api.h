@@ -336,11 +336,9 @@ public:
 		if (query.start != 0 || query.count != UINT_MAX) return;
 
 		// If query has distinct, skip verification
-		bool haveDistinct = false;
-		query.entries.ForEachEntry([&haveDistinct](const reindexer::QueryEntry& qe) {
-			if (qe.distinct) haveDistinct = true;
-		});
-		if (haveDistinct) return;
+		for (const auto& agg : query.aggregations_) {
+			if (agg.type_ == AggDistinct) return;
+		}
 
 		for (auto& insertedItem : insertedItems[ns]) {
 			if (pks.find(insertedItem.first) != pks.end()) continue;
@@ -1321,8 +1319,7 @@ protected:
 	}
 
 	template <typename ExpectedFacet>
-	static void checkFacet(const reindexer::h_vector<reindexer::FacetResult, 1>& result, const ExpectedFacet& expected,
-						   const std::string& name) {
+	static void checkFacet(const std::vector<reindexer::FacetResult>& result, const ExpectedFacet& expected, const std::string& name) {
 		ASSERT_EQ(result.size(), expected.size()) << (name + " aggregation Facet result is incorrect!");
 		auto resultIt = result.begin();
 		auto expectedIt = expected.cbegin();

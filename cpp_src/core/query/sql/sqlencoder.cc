@@ -104,19 +104,7 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 	switch (query_.type_) {
 		case QuerySelect: {
 			ser << "SELECT ";
-			vector<int> distinctIndices;
-			for (size_t i = 0; i != query_.entries.Size(); ++i) {
-				if (query_.entries.IsValue(i) && query_.entries[i].distinct) {
-					distinctIndices.emplace_back(i);
-				}
-			}
-			for (size_t i = 0; i < distinctIndices.size(); ++i) {
-				assert(size_t(distinctIndices[i]) < query_.entries.Size());
-				if (i != 0) ser << ",";
-				ser << "DISTINCT(" << query_.entries[distinctIndices[i]].index << ")";
-			}
 			if (query_.aggregations_.size()) {
-				if (distinctIndices.size() > 0) ser << ",";
 				for (const auto &a : query_.aggregations_) {
 					if (&a != &*query_.aggregations_.begin()) ser << ',';
 					ser << AggregationResult::aggTypeToStr(a.type_) << "(";
@@ -132,24 +120,25 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 					if (a.limit_ != UINT_MAX && !stripArgs) ser << " LIMIT " << a.limit_;
 					ser << ')';
 				}
-			} else if (query_.selectFilter_.size()) {
-				for (size_t i = 0; i < query_.selectFilter_.size(); ++i) {
-					bool isDistinct = false;
-					for (size_t j = 0; j < distinctIndices.size(); ++j) {
-						if (query_.selectFilter_[i] == query_.entries[j].index) {
-							isDistinct = true;
-							break;
-						}
-					}
-					if (isDistinct) continue;
-					if (i != 0 || distinctIndices.size() > 0) {
-						ser << ',';
-					}
-					ser << query_.selectFilter_[i];
+			}
+			if (query_.aggregations_.empty() || (query_.aggregations_.size() == 1 && query_.aggregations_[0].type_ == AggDistinct)) {
+				string distinctIndex;
+				if (!query_.aggregations_.empty()) {
+					assert(query_.aggregations_[0].fields_.size() == 1);
+					distinctIndex = query_.aggregations_[0].fields_[0];
 				}
-			} else {
-				if (distinctIndices.size() > 0) ser << ",";
-				ser << '*';
+				if (!query_.selectFilter_.empty()) {
+					for (size_t i = 0; i < query_.selectFilter_.size(); ++i) {
+						if (query_.selectFilter_[i] == distinctIndex) continue;
+						if (i != 0 || !query_.aggregations_.empty()) {
+							ser << ", ";
+						}
+						ser << query_.selectFilter_[i];
+					}
+				} else {
+					if (!query_.aggregations_.empty()) ser << ", ";
+					ser << '*';
+				}
 			}
 			if (query_.calcTotal == ModeAccurateTotal) ser << ", COUNT(*)";
 			if (query_.calcTotal == ModeCachedTotal) ser << ", COUNT_CACHED(*)";
@@ -161,7 +150,8 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 		case QueryUpdate: {
 			if (query_.updateFields_.empty()) break;
 			ser << "UPDATE " << query_._namespace;
-			bool isUpdate = (query_.updateFields_.front().mode == FieldModeSet);
+			FieldModifyMode mode = query_.updateFields_.front().mode;
+			bool isUpdate = (mode == FieldModeSet || mode == FieldModeSetJson);
 			if (isUpdate) {
 				ser << " SET ";
 			} else {
@@ -179,7 +169,7 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 					if (field.values.size() != 1) ser << '[';
 					for (const Variant &v : field.values) {
 						if (&v != &*field.values.begin()) ser << ',';
-						if (v.Type() == KeyValueString && !field.isExpression) {
+						if ((v.Type() == KeyValueString) && !field.isExpression && (mode != FieldModeSetJson)) {
 							ser << '\'' << v.As<string>() << '\'';
 						} else {
 							ser << v.As<string>();

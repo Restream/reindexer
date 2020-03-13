@@ -9,6 +9,7 @@
 #include "core/keyvalue/p_string.h"
 #include "cproto.h"
 #include "estl/string_view.h"
+#include "net/connection.h"
 #include "net/stat.h"
 #include "tools/errors.h"
 
@@ -38,6 +39,7 @@ public:
 	virtual void CallRPC(CmdCode cmd, const Args &args) = 0;
 	virtual void SetClientData(std::unique_ptr<ClientData> data) = 0;
 	virtual ClientData *GetClientData() = 0;
+	virtual std::shared_ptr<reindexer::net::ConnectionStat> GetConnectionStat() = 0;
 };
 
 struct Context {

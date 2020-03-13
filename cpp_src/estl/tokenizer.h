@@ -45,9 +45,11 @@ public:
 	token peek_token(bool to_lower = true, bool treatSignAsToken = false);
 	void skip_space();
 	bool end() const;
+	size_t getPos() const;
+	void setPos(size_t pos);
 	string where() const;
-	size_t pos() const;
 	size_t length() const;
+	const char *begin() const;
 
 protected:
 	string_view q_;

@@ -3,6 +3,7 @@
 #include <climits>
 #include "core/payload/payloadiface.h"
 #include "core/type_consts.h"
+#include "estl/fast_hash_set.h"
 #include "vendor/cpp-btree/btree_map.h"
 
 namespace reindexer {
@@ -18,7 +19,7 @@ public:
 	};
 
 	Aggregator(const PayloadType &, const FieldsSet &, AggType aggType, const h_vector<string, 1> &names,
-			   const h_vector<SortingEntry, 1> &sort, size_t limit, size_t offset);
+			   const h_vector<SortingEntry, 1> &sort = {}, size_t limit = UINT_MAX, size_t offset = 0);
 	Aggregator();
 	Aggregator(Aggregator &&);
 	~Aggregator();
@@ -29,6 +30,9 @@ public:
 	Aggregator(const Aggregator &) = delete;
 	Aggregator &operator=(const Aggregator &) = delete;
 	Aggregator &operator=(Aggregator &&) = delete;
+
+	AggType Type() const noexcept { return aggType_; }
+	const h_vector<string, 1> &Names() const noexcept { return names_; }
 
 protected:
 	enum Direction { Desc = -1, Asc = 1 };
@@ -50,6 +54,7 @@ protected:
 
 	std::unique_ptr<MultifieldMap> multifieldFacets_;
 	std::unique_ptr<SinglefieldMap> singlefieldFacets_;
+	std::unique_ptr<fast_hash_set<Variant>> distincts_;
 };
 
 }  // namespace reindexer

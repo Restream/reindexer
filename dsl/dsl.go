@@ -10,13 +10,22 @@ import (
 )
 
 type DSL struct {
-	Namespace string   `json:"namespace"`
-	Offset    int      `json:"offset"`
-	Limit     int      `json:"limit"`
-	Distinct  string   `json:"distinct"`
-	Sort      Sort     `json:"sort"`
-	Filters   []Filter `json:"filters"`
-	Explain   bool     `json:"explain,omitempty"`
+	Namespace    string        `json:"namespace"`
+	Offset       int           `json:"offset"`
+	Limit        int           `json:"limit"`
+	Distinct     string        `json:"distinct"`  // deprecated, use aggregation with type AggDistinct instead
+	Sort         Sort          `json:"sort"`
+	Filters      []Filter      `json:"filters"`
+	Explain      bool          `json:"explain,omitempty"`
+	Aggregations []Aggregation `json:"aggregations"`
+}
+
+type Aggregation struct {
+	AggType int      `json:"type"`
+	Sort    []Sort   `json:"sort"`
+	Limit   int      `json:"limit"`
+	Offset  int      `json:"offset"`
+	Fields  []string `json:"fields"`
 }
 
 type sort Sort

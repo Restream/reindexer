@@ -15,7 +15,7 @@ using std::chrono::milliseconds;
 
 class ReindexerImpl;
 class IUpdatesObserver;
-
+class IClientsStats;
 /// The main Reindexer interface. Holds database object<br>
 /// *Thread safety*: All methods of Reindexer are thread safe. <br>
 /// *Resources lifetime*: All resources aquired from Reindexer, e.g Item or QueryResults are uses Copy-On-Write
@@ -29,7 +29,8 @@ public:
 	using Completion = std::function<void(const Error &err)>;
 
 	/// Create Reindexer database object
-	Reindexer();
+	/// @param clientsStats - object for receiving clients statistics
+	Reindexer(IClientsStats *clientsStats = nullptr);
 	/// Destrory Reindexer database object
 	~Reindexer();
 	/// Create not holding copy
@@ -195,13 +196,23 @@ public:
 	/// Add activityTracer
 	/// @param activityTracer - name of activity tracer
 	/// @param user - user identifying information
+	/// @param connectionId - unique identifier for the connection
+	Reindexer WithActivityTracer(string_view activityTracer, string_view user, int connectionId) const {
+		return Reindexer(impl_, ctx_.WithActivityTracer(activityTracer, user, connectionId));
+	}
 	Reindexer WithActivityTracer(string_view activityTracer, string_view user) const {
 		return Reindexer(impl_, ctx_.WithActivityTracer(activityTracer, user));
 	}
+
 	/// Set activityTracer to current DB
 	/// @param activityTracer - name of activity tracer
 	/// @param user - user identifying information
+	/// @param connectionId - unique identifier for the connection
 	void SetActivityTracer(string_view activityTracer, string_view user) { ctx_.SetActivityTracer(activityTracer, user); }
+	void SetActivityTracer(string_view activityTracer, string_view user, int connectionId) {
+		ctx_.SetActivityTracer(activityTracer, user, connectionId);
+	}
+
 	bool NeedTraceActivity() const;
 
 	typedef QueryResults QueryResultsT;

@@ -158,8 +158,8 @@ public:
 	void UpdateIndex(const IndexDef &indexDef, const RdxContext &ctx);
 	void DropIndex(const IndexDef &indexDef, const RdxContext &ctx);
 
-	void Insert(Item &item, const RdxContext &ctx);
-	void Update(Item &item, const RdxContext &ctx);
+	void Insert(Item &item, const NsContext &ctx);
+	void Update(Item &item, const NsContext &ctx);
 	void Update(const Query &query, QueryResults &result, const NsContext &);
 	void Upsert(Item &item, const NsContext &);
 
@@ -181,7 +181,7 @@ public:
 	Transaction NewTransaction(const RdxContext &ctx);
 	void CommitTransaction(Transaction &tx, QueryResults &result, const NsContext &ctx);
 
-	Item NewItem(const RdxContext &ctx);
+	Item NewItem(const NsContext &ctx);
 	void ToPool(ItemImpl *item);
 	// Get meta data from storage by key
 	string GetMeta(const string &key, const RdxContext &ctx);
@@ -245,8 +245,6 @@ protected:
 
 	void copyContentsFrom(const NamespaceImpl &);
 	ReplicationState getReplState() const;
-	bool tryToReload(const RdxContext &);
-	void reloadStorage();
 	std::string sysRecordName(string_view sysTag, uint64_t version);
 	void writeSysRecToStorage(string_view data, string_view sysTag, uint64_t &version, bool direct);
 	void saveIndexesToStorage();
@@ -254,14 +252,17 @@ protected:
 	bool loadIndexesFromStorage();
 	void saveReplStateToStorage();
 	void loadReplStateFromStorage();
-	bool isEmptyAfterStorageReload() const;
 
 	void initWAL(int64_t maxLSN);
 
 	void markUpdated();
 	void doUpsert(ItemImpl *ritem, IdType id, bool doUpdate);
 	void modifyItem(Item &item, const NsContext &, int mode = ModeUpsert);
-	void updateFieldsFromQuery(IdType itemId, const Query &q, bool rowBasedReplication, const NsContext &);
+	void updateItemFromCJSON(IdType id, const Query &q, const NsContext &);
+	void updateFieldIndex(IdType id, int field, const VariantArray &v, Payload &pl);
+	void updateSingleField(const UpdateEntry &updateField, const IdType &itemId, Payload &pl);
+	void updateItemFields(IdType itemId, const Query &q, bool rowBasedReplication, const NsContext &);
+	void updateItemFromQuery(IdType itemId, const Query &q, bool rowBasedReplication, const NsContext &, bool withJsonUpdates);
 	void updateTagsMatcherFromItem(ItemImpl *ritem);
 	void updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields);
 	void doDelete(IdType id);
@@ -299,8 +300,6 @@ protected:
 	const FieldsSet &pkFields();
 	void writeToStorage(const string_view &key, const string_view &data);
 	void doFlushStorage();
-
-	bool needToLoadData(const RdxContext &) const;
 
 	void updateSelectTime();
 	int64_t getLastSelectTime() const;
@@ -361,7 +360,6 @@ private:
 	UpdatesObservers *observers_;
 
 	StorageOpts storageOpts_;
-	std::atomic<bool> storageLoaded_;
 	std::atomic<int64_t> lastSelectTime_;
 
 	sync_pool<ItemImpl, 1024> pool_;

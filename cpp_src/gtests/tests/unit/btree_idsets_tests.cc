@@ -105,7 +105,7 @@ TEST_F(BtreeIdsetsApi, JoinSimpleNs) {
 		prevFieldTwo = currFieldTwo;
 
 		Variant prevJoinedFk;
-		auto itemIt = reindexer::joins::ItemIterator::FromQRIterator(qr[i]);
+		auto itemIt = qr[i].GetJoined();
 		reindexer::joins::JoinedFieldIterator joinedFieldIt = itemIt.begin();
 		EXPECT_TRUE(joinedFieldIt.ItemsCount() > 0);
 		for (int j = 0; j < joinedFieldIt.ItemsCount(); ++j) {

@@ -78,8 +78,11 @@ void ItemImpl::ModifyField(string_view jsonPath, const VariantArray &keys, Field
 		case FieldModeSet:
 			err = cjsonModifier.SetFieldValue(cjson, tagsMatcher_.path2tag(jsonPath), keys, ser_);
 			break;
+		case FieldModeSetJson:
+			err = cjsonModifier.SetObject(cjson, tagsMatcher_.path2tag(jsonPath), keys, ser_, &pl);
+			break;
 		case FieldModeDrop:
-			err = cjsonModifier.RemoveFieldValue(cjson, tagsMatcher_.path2tag(jsonPath), ser_);
+			err = cjsonModifier.RemoveField(cjson, tagsMatcher_.path2tag(jsonPath), ser_);
 			break;
 		default:
 			std::abort();

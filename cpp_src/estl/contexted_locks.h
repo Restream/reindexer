@@ -123,10 +123,6 @@ public:
 		assert(_M_context);
 		lock();
 	}
-	explicit contexted_shared_lock(MutexType& __mtx, defer_lock_t, Context* __context, milliseconds __chkTimeout = kDefaultCondChkTime)
-		: _M_mtx(&__mtx), _M_owns(false), _M_context(__context), _M_chkTimeout(__chkTimeout) {
-		assert(_M_context);
-	}
 	explicit contexted_shared_lock(MutexType& __mtx, adopt_lock_t, Context* __context, milliseconds __chkTimeout = kDefaultCondChkTime)
 		: _M_mtx(&__mtx), _M_owns(true), _M_context(__context), _M_chkTimeout(__chkTimeout) {
 		assert(_M_context);

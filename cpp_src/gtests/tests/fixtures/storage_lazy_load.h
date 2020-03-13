@@ -3,10 +3,10 @@
 #include "reindexer_api.h"
 #include "tools/fsops.h"
 
-class StorageLazyLoadApi : public ReindexerApi {
+class DISABLED_StorageLazyLoadApi : public ReindexerApi {
 public:
-	StorageLazyLoadApi() : pk_(0), inserted_(0) { rt.reindexer.reset(new Reindexer); }
-	~StorageLazyLoadApi() { dropNs(); }
+	DISABLED_StorageLazyLoadApi() : pk_(0), inserted_(0) { rt.reindexer.reset(new Reindexer); }
+	~DISABLED_StorageLazyLoadApi() { dropNs(); }
 
 	void SetUp() override {
 		connectToDb();

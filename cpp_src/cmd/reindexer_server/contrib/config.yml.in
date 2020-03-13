@@ -35,4 +35,6 @@ metrics:
   prometheus: false
   # Metrics collect period in millisecods
   collect_period: 1000
+  # Clients connections statistic
+  clientsstats: false
 

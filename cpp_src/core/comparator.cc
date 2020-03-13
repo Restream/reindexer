@@ -112,4 +112,28 @@ bool Comparator::Compare(const PayloadValue &data, int rowId) {
 	return false;
 }
 
+void Comparator::ExcludeDistinct(const PayloadValue &data, int rowId) {
+	assert(!cmpEqualPosition.IsBinded());
+	if (fields_.getTagsPathsLength() > 0) {
+		// Exclude field by CJSON path (slow path)
+		VariantArray rhs;
+		ConstPayload(payloadType_, data).GetByJsonPath(fields_.getTagsPath(0), rhs, type_);
+		for (const auto& v: rhs) excludeDistinct(v);
+	} else {
+		// Exclude field from payload by offset (fast path)
+
+		assert(type_ != KeyValueComposite);
+
+		// Check if we have column (rawData_), then go to fastest path with column
+		if (rawData_) return excludeDistinct(rawData_ + rowId * sizeof_);
+
+		// Not array: Just exclude field by offset in PayloadValue
+		if (!isArray_) return excludeDistinct(data.Ptr() + offset_);
+
+		PayloadFieldValue::Array *arr = reinterpret_cast<PayloadFieldValue::Array *>(data.Ptr() + offset_);
+		uint8_t *ptr = data.Ptr() + arr->offset;
+		for (int i = 0; i < arr->len; i++, ptr += sizeof_) excludeDistinct(ptr);
+	}
+}
+
 }  // namespace reindexer

@@ -17,7 +17,8 @@ public:
 		return std::lexicographical_compare(versionDigits_.begin(), versionDigits_.end(), rVersion.versionDigits_.begin(),
 											rVersion.versionDigits_.end());
 	}
-	bool operator>=(const SemVersion &rVersion) const { return !(*this < rVersion); }
+	bool operator==(const SemVersion &rVersion) const { return (versionDigits_ == rVersion.versionDigits_); }
+	bool operator!=(const SemVersion &rVersion) const { return (versionDigits_ != rVersion.versionDigits_); }
 
 	const std::string &StrippedString() const { return versionStr_; }
 

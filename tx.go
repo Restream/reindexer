@@ -13,6 +13,9 @@ const maxAsyncRequests = 500
 const asyncResponseQueueSize = 2 * maxAsyncRequests
 const retriesOnInvalidStateCnt = 1
 
+// Tx is transaction object. Transaction are performs atomic namespace update.
+// There are synchronous and async transaction available. To start transaction method `db.BeginTx()` is used.
+// This method creates transaction object
 type Tx struct {
 	namespace    string
 	started      bool
@@ -84,13 +87,13 @@ func (tx *Tx) Update(item interface{}, precepts ...string) error {
 	return tx.modifyInternal(item, nil, modeUpdate, precepts...)
 }
 
-// Upsert (Insert or Update) item to index
+// Upsert (Insert or Update) item to namespace
 func (tx *Tx) Upsert(item interface{}, precepts ...string) error {
 	tx.startTx()
 	return tx.modifyInternal(item, nil, modeUpsert, precepts...)
 }
 
-// UpsertJSON (Insert or Update) item to index
+// UpsertJSON (Insert or Update) item to namespace
 func (tx *Tx) UpsertJSON(json []byte, precepts ...string) error {
 	tx.startTx()
 	return tx.modifyInternal(nil, json, modeUpsert, precepts...)
@@ -109,6 +112,7 @@ func (tx *Tx) DeleteJSON(json []byte, precepts ...string) error {
 	return tx.modifyInternal(nil, json, modeDelete, precepts...)
 }
 
+// UpdateAsync Insert item to namespace. Calls completion on result
 func (tx *Tx) InsertAsync(item interface{}, cmpl bindings.Completion, precepts ...string) error {
 	tx.startTx()
 	if err := tx.startAsyncRoutines(); err != nil {
@@ -117,6 +121,7 @@ func (tx *Tx) InsertAsync(item interface{}, cmpl bindings.Completion, precepts .
 	return tx.modifyInternalAsync(item, nil, modeInsert, cmpl, retriesOnInvalidStateCnt, precepts...)
 }
 
+// UpdateAsync Update item to namespace. Calls completion on result
 func (tx *Tx) UpdateAsync(item interface{}, cmpl bindings.Completion, precepts ...string) error {
 	tx.startTx()
 	if err := tx.startAsyncRoutines(); err != nil {
@@ -125,7 +130,7 @@ func (tx *Tx) UpdateAsync(item interface{}, cmpl bindings.Completion, precepts .
 	return tx.modifyInternalAsync(item, nil, modeUpdate, cmpl, retriesOnInvalidStateCnt, precepts...)
 }
 
-// UpsertAsync (Insert or Update) item to index. Calls completion on result
+// UpsertAsync (Insert or Update) item to namespace. Calls completion on result
 func (tx *Tx) UpsertAsync(item interface{}, cmpl bindings.Completion, precepts ...string) error {
 	tx.startTx()
 	if err := tx.startAsyncRoutines(); err != nil {
@@ -162,7 +167,7 @@ func (tx *Tx) DeleteJSONAsync(json []byte, cmpl bindings.Completion, precepts ..
 	return tx.modifyInternalAsync(nil, json, modeDelete, cmpl, retriesOnInvalidStateCnt, precepts...)
 }
 
-// CommitWithCount apply changes with count
+// CommitWithCount apply changes, and return count of changed items
 func (tx *Tx) CommitWithCount() (count int, err error) {
 	if !tx.started {
 		return 0, nil
@@ -174,7 +179,10 @@ func (tx *Tx) CommitWithCount() (count int, err error) {
 	return
 }
 
-// Commit apply changes
+// Commit - apply changes. Commit also waits for all async operations done, and then apply changes.
+// if any error occurred during prepare process, then tx.Commit should
+// return an error. So it is enough, to check error returned by Commit - to be sure
+// that all data has been successfully committed or not.
 func (tx *Tx) Commit() error {
 	_, err := tx.CommitWithCount()
 	return err
@@ -201,7 +209,10 @@ func (tx *Tx) AwaitResults() *Tx {
 	return tx
 }
 
-// Query creates Query in transaction for Update or Delete operation
+// Query creates Query in transaction for Update or Delete or Read
+// Read-committed isolation is available for read operations.
+// Changes made in active transaction is invisible to current and another transactions.
+
 func (tx *Tx) Query() *Query {
 	return tx.db.queryTx(tx.namespace, tx)
 }
@@ -211,6 +222,10 @@ func (tx *Tx) finalize() {
 	if tx.cmplCh != nil {
 		close(tx.cmplCh)
 		tx.cmplCh = nil
+	}
+	if tx.ctx.Result != nil {
+		tx.ctx.Result.Free()
+		tx.ctx.Result = nil
 	}
 }
 
@@ -378,15 +393,12 @@ func (tx *Tx) commitInternal() (count int, err error) {
 	return
 }
 
-// Rollback update
+// Rollback transaction.
+// It is safe to call Rollback after Commit
+
 func (tx *Tx) Rollback() error {
 	tx.AwaitResults()
 	tx.asyncErr = nil
-
-	err := tx.db.binding.RollbackTx(&tx.ctx)
-	tx.finalize()
-	if err != nil {
-		return err
-	}
-	return nil
+	defer tx.finalize()
+	return tx.db.binding.RollbackTx(&tx.ctx)
 }
