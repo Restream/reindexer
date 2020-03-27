@@ -86,9 +86,9 @@ func (buf *NetBuffer) parseArgs() (err error) {
 
 func (buf *NetBuffer) close() {
 	if buf.needClose() {
-		buf.reqID = -1
 		netTimeout := uint32(buf.conn.owner.timeouts.RequestTimeout / time.Second)
 		closeBuf, err := buf.conn.rpcCall(context.TODO(), cmdCloseResults, netTimeout, buf.reqID)
+		buf.reqID = -1
 		if err != nil {
 			fmt.Printf("rx: query close error: %v", err)
 		}

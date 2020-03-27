@@ -63,6 +63,7 @@ void ServerConnection::onClose() {
 	clientData_.reset();
 	updates_mtx_.lock();
 	updates_.clear();
+	updatesPackError_ = errOK;
 	updates_mtx_.unlock();
 }
 
@@ -84,24 +85,33 @@ void ServerConnection::onRead() {
 		if (len < sizeof(hdr)) return;
 
 		if (hdr.magic != kCprotoMagic) {
-			responceRPC(ctx, Error(errParams, "Invalid cproto magic %08x", int(hdr.magic)), Args());
+			try {
+				responceRPC(ctx, Error(errParams, "Invalid cproto magic %08x", int(hdr.magic)), Args());
+			} catch (const Error &err) {
+				fprintf(stderr, "responceRPC unexpected error: %s", err.what().c_str());
+			}
 			closeConn_ = true;
 			return;
 		}
 
 		if (hdr.version < kCprotoMinCompatVersion) {
-			responceRPC(ctx,
-						Error(errParams, "Unsupported cproto version %04x. This server expects reindexer client v1.9.8+", int(hdr.version)),
-						Args());
+			try {
+				responceRPC(
+					ctx,
+					Error(errParams, "Unsupported cproto version %04x. This server expects reindexer client v1.9.8+", int(hdr.version)),
+					Args());
+			} catch (const Error &err) {
+				fprintf(stderr, "responceRPC unexpected error: %s", err.what().c_str());
+			}
 			closeConn_ = true;
 			return;
 		}
 
-		if (hdr.len + sizeof(hdr) > rdBuf_.capacity()) {
-			rdBuf_.reserve(hdr.len + sizeof(hdr) + 0x1000);
+		if (size_t(hdr.len) + sizeof(hdr) > rdBuf_.capacity()) {
+			rdBuf_.reserve(size_t(hdr.len) + sizeof(hdr) + 0x1000);
 		}
 
-		if (hdr.len + sizeof(hdr) > rdBuf_.size()) {
+		if (size_t(hdr.len) + sizeof(hdr) > rdBuf_.size()) {
 			if (!rdBuf_.size()) rdBuf_.clear();
 			return;
 		}
@@ -109,15 +119,15 @@ void ServerConnection::onRead() {
 		rdBuf_.erase(sizeof(hdr));
 
 		auto it = rdBuf_.tail();
-		if (it.size() < hdr.len) {
+		if (it.size() < size_t(hdr.len)) {
 			rdBuf_.unroll();
 			it = rdBuf_.tail();
 		}
-		assert(it.size() >= hdr.len);
+		assert(it.size() >= size_t(hdr.len));
 
 		ctx.call = &call_;
 		try {
-			ctx.stat.sizeStat.reqSizeBytes = hdr.len + sizeof(hdr);
+			ctx.stat.sizeStat.reqSizeBytes = size_t(hdr.len) + sizeof(hdr);
 			ctx.call->cmd = CmdCode(hdr.cmd);
 			ctx.call->seq = hdr.seq;
 			Serializer ser(it.data(), hdr.len);
@@ -137,7 +147,11 @@ void ServerConnection::onRead() {
 		} catch (const Error &err) {
 			// Execption occurs on unrecoverble error. Send responce, and drop connection
 			fprintf(stderr, "drop connect, reason: %s\n", err.what().c_str());
-			responceRPC(ctx, err, Args());
+			try {
+				responceRPC(ctx, err, Args());
+			} catch (const Error &err) {
+				fprintf(stderr, "responceRPC unexpected error: %s", err.what().c_str());
+			}
 			closeConn_ = true;
 		}
 
@@ -165,6 +179,9 @@ static chunk packRPC(chunk chunk, Context &ctx, const Error &status, const Args 
 	ser.PutVarUint(status.code());
 	ser.PutVString(status.what());
 	args.Pack(ser);
+	if (ser.Len() >= std::numeric_limits<int32_t>::max()) {
+		throw Error(errNetwork, "Too large RPC message(%d), size: %d bytes", hdr.cmd, ser.Len());
+	}
 	reinterpret_cast<CProtoHeader *>(ser.Buf())->len = ser.Len() - sizeof(hdr);
 
 	return ser.DetachChunk();
@@ -198,10 +215,17 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 void ServerConnection::CallRPC(CmdCode cmd, const Args &args) {
 	RPCCall call{cmd, 0, {}, milliseconds(0)};
 	cproto::Context ctx{"", &call, this, {{}, {}}, false};
-	auto packed = packRPC(chunk(), ctx, errOK, args);
-	updates_mtx_.lock();
-	updates_.emplace_back(std::move(packed));
-	updates_mtx_.unlock();
+	try {
+		auto packed = packRPC(chunk(), ctx, errOK, args);
+		updates_mtx_.lock();
+		updates_.emplace_back(std::move(packed));
+		updates_mtx_.unlock();
+	} catch (const Error &err) {
+		updates_mtx_.lock();
+		updatesPackError_ = err;
+		updates_mtx_.unlock();
+	}
+
 	// async_.send();
 }
 
@@ -211,23 +235,41 @@ void ServerConnection::sendUpdates() {
 	}
 
 	std::vector<chunk> updates;
+	Error err;
 	updates_mtx_.lock();
 	updates.swap(updates_);
+	err = updatesPackError_;
+	updatesPackError_ = errOK;
 	updates_mtx_.unlock();
-	cproto::Context ctx{"", nullptr, this, {{}, {}}, false};
+	RPCCall call{kCmdUpdates, 0, {}, milliseconds(0)};
+	cproto::Context ctx{"", &call, this, {{}, {}}, false};
 	size_t len = 0;
-	if (updates.size() > 2) {
-		WrSerializer ser(wrBuf_.get_chunk());
-		for (auto &ch : updates) {
-			ser.Write(string_view(reinterpret_cast<char *>(ch.data()), ch.size()));
+	if (err.ok()) {
+		if (updates.size() > 2) {
+			WrSerializer ser(wrBuf_.get_chunk());
+			for (auto &ch : updates) {
+				ser.Write(string_view(reinterpret_cast<char *>(ch.data()), ch.size()));
+			}
+			len = ser.Len();
+			wrBuf_.write(ser.DetachChunk());
+		} else {
+			for (auto &ch : updates) {
+				len += ch.len_;
+				wrBuf_.write(std::move(ch));
+			}
 		}
-		len = ser.Len();
-		wrBuf_.write(ser.DetachChunk());
 	} else {
-		for (auto &ch : updates) {
-			len += ch.len_;
-			wrBuf_.write(std::move(ch));
+		try {
+			auto packed = packRPC(chunk(), ctx, err, Args());
+			len = packed.len_;
+			wrBuf_.write(std::move(packed));
+			if (dispatcher_.logger_ != nullptr) {
+				dispatcher_.logger_(ctx, err, Args());
+			}
+		} catch (const Error &err) {
+			fprintf(stderr, "responceRPC unexpected error: %s", err.what().c_str());
 		}
+		closeConn_ = true;
 	}
 
 	if (dispatcher_.onResponse_) {

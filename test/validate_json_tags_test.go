@@ -5,6 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/restream/reindexer"
 	"github.com/restream/reindexer/cjson"
 )
@@ -85,6 +88,26 @@ type EmbeddedFailType struct {
 	Number int
 }
 
+type RecursiveType struct {
+	ID            int             `json:"id" reindex:"id,,pk"`
+	Recursive     []RecursiveType `json:"recursive"`
+	RecursiveWrap RecursiveWrap
+}
+
+type RecursiveWrap struct {
+	Recursive []RecursiveType
+}
+
+type RecursiveTypePtr struct {
+	ID            int                 `json:"id" reindex:"id,,pk"`
+	Recursive     []*RecursiveTypePtr `json:"recursive"`
+	RecursiveWrap *RecursiveWrapPtr
+}
+
+type RecursiveWrapPtr struct {
+	Recursive []*RecursiveTypePtr
+}
+
 var (
 	rootLevelErrMessage                       = fmt.Sprintf(errMessageFormat, "title", "Desc", "string")
 	internalLevelErrMessage                   = fmt.Sprintf(errMessageFormat, "name", "Title.Surname", "string")
@@ -102,15 +125,17 @@ func assertErrorMessage(t *testing.T, actual error, expected error) {
 func TestReturnEncoderValidateError(t *testing.T) {
 	enc := cjson.Validator{}
 
-	assertErrorMessage(t, enc.Validate(RootLevelFailType{}), fmt.Errorf(rootLevelErrMessage))
-	assertErrorMessage(t, enc.Validate(InternalLevelFailType{}), fmt.Errorf(internalLevelErrMessage))
-	assertErrorMessage(t, enc.Validate(DeepInternalLevelFailType{}), fmt.Errorf(deepInternalLevelErrMessage))
-	assertErrorMessage(t, enc.Validate(DBItemType{}), nil)
-	assertErrorMessage(t, enc.Validate(ServiceType{}), nil)
-	assertErrorMessage(t, enc.Validate(ElementType{}), nil)
-	assertErrorMessage(t, enc.Validate(DBItemFailType{}), fmt.Errorf(deepInternalLevelWithOmitSymbolErrMessage))
-	assertErrorMessage(t, enc.Validate(EmbeddedSuccessType{}), nil)
-	assertErrorMessage(t, enc.Validate(EmbeddedFailType{}), fmt.Errorf(embeddedInternalLevelErrMessage))
+	assert.Equal(t, fmt.Errorf(rootLevelErrMessage), enc.Validate(RootLevelFailType{}))
+	assert.Equal(t, fmt.Errorf(internalLevelErrMessage), enc.Validate(InternalLevelFailType{}))
+	assert.Equal(t, fmt.Errorf(deepInternalLevelErrMessage), enc.Validate(DeepInternalLevelFailType{}))
+	require.NoError(t, enc.Validate(DBItemType{}))
+	require.NoError(t, enc.Validate(ServiceType{}))
+	require.NoError(t, enc.Validate(ElementType{}))
+	assert.Equal(t, fmt.Errorf(deepInternalLevelWithOmitSymbolErrMessage), enc.Validate(DBItemFailType{}))
+	require.NoError(t, enc.Validate(EmbeddedSuccessType{}))
+	assert.Equal(t, fmt.Errorf(embeddedInternalLevelErrMessage), enc.Validate(EmbeddedFailType{}))
+	require.NoError(t, enc.Validate(RecursiveType{}))
+	require.NoError(t, enc.Validate(&RecursiveTypePtr{}))
 }
 
 func OpenNamespaceWrapper(ns string, opts *reindexer.NamespaceOptions, s interface{}) (err error) {
@@ -126,17 +151,21 @@ func OpenNamespaceWrapper(ns string, opts *reindexer.NamespaceOptions, s interfa
 
 func TestReturnRegisterNamespaceError(t *testing.T) {
 	NsOptions := reindexer.DefaultNamespaceOptions()
-	assertErrorMessage(t, OpenNamespaceWrapper(nsName, NsOptions, RootLevelFailType{}), fmt.Errorf(rootLevelErrMessage))
-	assertErrorMessage(t, OpenNamespaceWrapper(nsName, NsOptions, InternalLevelFailType{}), fmt.Errorf(internalLevelErrMessage))
-	assertErrorMessage(t, OpenNamespaceWrapper(nsName, NsOptions, DeepInternalLevelFailType{}), fmt.Errorf(deepInternalLevelErrMessage))
-	assertErrorMessage(t, OpenNamespaceWrapper(nsName, NsOptions, DBItemType{}), nil)
+	assert.Equal(t, fmt.Errorf(rootLevelErrMessage), OpenNamespaceWrapper(nsName, NsOptions, RootLevelFailType{}))
+	assert.Equal(t, fmt.Errorf(internalLevelErrMessage), OpenNamespaceWrapper(nsName, NsOptions, InternalLevelFailType{}))
+	assert.Equal(t, fmt.Errorf(deepInternalLevelErrMessage), OpenNamespaceWrapper(nsName, NsOptions, DeepInternalLevelFailType{}))
+	require.NoError(t, OpenNamespaceWrapper(nsName, NsOptions, DBItemType{}))
 	DB.CloseNamespace(nsName)
-	assertErrorMessage(t, OpenNamespaceWrapper(nsName, NsOptions, ServiceType{}), nil)
+	require.NoError(t, OpenNamespaceWrapper(nsName, NsOptions, ServiceType{}))
 	DB.CloseNamespace(nsName)
-	assertErrorMessage(t, OpenNamespaceWrapper(nsName, NsOptions, ElementType{}), nil)
+	require.NoError(t, OpenNamespaceWrapper(nsName, NsOptions, ElementType{}))
 	DB.CloseNamespace(nsName)
-	assertErrorMessage(t, OpenNamespaceWrapper(nsName, NsOptions, DBItemFailType{}), fmt.Errorf(deepInternalLevelWithOmitSymbolErrMessage))
-	assertErrorMessage(t, OpenNamespaceWrapper(nsName, NsOptions, EmbeddedFailType{}), fmt.Errorf(embeddedInternalLevelErrMessage))
-	assertErrorMessage(t, OpenNamespaceWrapper(nsName, NsOptions, EmbeddedSuccessType{}), nil)
+	assert.Equal(t, fmt.Errorf(deepInternalLevelWithOmitSymbolErrMessage), OpenNamespaceWrapper(nsName, NsOptions, DBItemFailType{}))
+	assert.Equal(t, fmt.Errorf(embeddedInternalLevelErrMessage), OpenNamespaceWrapper(nsName, NsOptions, EmbeddedFailType{}))
+	require.NoError(t, OpenNamespaceWrapper(nsName, NsOptions, EmbeddedSuccessType{}))
+	DB.CloseNamespace(nsName)
+	require.NoError(t, OpenNamespaceWrapper(nsName, NsOptions, RecursiveType{}))
+	DB.CloseNamespace(nsName)
+	require.NoError(t, OpenNamespaceWrapper(nsName, NsOptions, &RecursiveTypePtr{}))
 	DB.CloseNamespace(nsName)
 }

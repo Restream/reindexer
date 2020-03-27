@@ -8,17 +8,19 @@ namespace client {
 using std::chrono::seconds;
 
 struct ReindexerConfig {
-	ReindexerConfig(int _ConnPoolSize = 4, int _WorkerThreads = 1, int _FetchAmount = 10000, seconds _ConnectTimeout = seconds(0),
-					seconds _RequestTimeout = seconds(0))
+	ReindexerConfig(int _ConnPoolSize = 4, int _WorkerThreads = 1, int _FetchAmount = 10000, int _ReconnectAttempts = 0,
+					seconds _ConnectTimeout = seconds(0), seconds _RequestTimeout = seconds(0))
 		: ConnPoolSize(_ConnPoolSize),
 		  WorkerThreads(_WorkerThreads),
 		  FetchAmount(_FetchAmount),
+		  ReconnectAttempts(_ReconnectAttempts),
 		  ConnectTimeout(_ConnectTimeout),
 		  RequestTimeout(_RequestTimeout) {}
 
 	int ConnPoolSize;
 	int WorkerThreads;
 	int FetchAmount;
+	int ReconnectAttempts;
 	seconds ConnectTimeout;
 	seconds RequestTimeout;
 };

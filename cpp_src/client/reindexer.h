@@ -41,8 +41,10 @@ public:
 	/// Connect - connect to reindexer server
 	/// @param dsn - uri of server and database, like: `cproto://user@password:127.0.0.1:6534/dbname`
 	/// @param opts - Connect options. May contaion any of <br>
-	/// ConnectOpts::OpenNamespaces() - true: Need to open all the namespaces; false: Don't open namespaces
 	Error Connect(const string &dsn, const client::ConnectOpts &opts = client::ConnectOpts());
+	/// Connect - connect to reindexer server
+	/// @param connectData - list of server dsn + it's ConnectOpts
+	Error Connect(const vector<pair<string, client::ConnectOpts>> &connectData);
 	/// Stop - shutdown connector
 	Error Stop();
 	/// Open or create namespace

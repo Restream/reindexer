@@ -8,3 +8,12 @@ add_subdirectory(cpp_src)
 option (WITH_PYTHON "Enable build python connector" ON)
 
 add_subdirectory(connectors)
+
+find_program (BASH_CMD bash)
+if (BASH_CMD)
+  add_test (rx_tool_test ${BASH_CMD}
+      ${CMAKE_CURRENT_SOURCE_DIR}/cpp_src/cmd/reindexer_tool/contrib/rx_tool_tests.sh
+      ${CMAKE_CURRENT_SOURCE_DIR}/cpp_src/cmd/reindexer_tool/contrib/dbtest.dump
+      /tmp/reindexer_test
+      ${CMAKE_CURRENT_SOURCE_DIR})
+endif (BASH_CMD)

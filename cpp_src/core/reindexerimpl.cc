@@ -139,12 +139,8 @@ Error ReindexerImpl::Connect(const string& dsn, ConnectOpts opts) {
 		}
 		return Error();
 	};
-	bool connected = connected_.load(std::memory_order_relaxed);
-	if (connected) {
-		auto status = checkReplConf(opts);
-		if (!status.ok()) {
-			return status;
-		}
+	if (connected_.load(std::memory_order_relaxed)) {
+		return checkReplConf(opts);
 	}
 	string path = dsn;
 	if (dsn.compare(0, 10, "builtin://") == 0) {
@@ -173,7 +169,8 @@ Error ReindexerImpl::Connect(const string& dsn, ConnectOpts opts) {
 		}
 	}
 
-	InitSystemNamespaces();
+	Error err = InitSystemNamespaces();
+	if (!err.ok()) return err;
 
 	if (enableStorage && opts.IsOpenNamespaces()) {
 		int maxLoadWorkers = std::min(int(std::thread::hardware_concurrency()), 8);
@@ -209,15 +206,12 @@ Error ReindexerImpl::Connect(const string& dsn, ConnectOpts opts) {
 		}
 	}
 
-	if (!connected) {
-		auto status = checkReplConf(opts);
-		if (!status.ok()) {
-			return status;
-		}
-	}
+	err = checkReplConf(opts);
+	if (!err.ok()) return err;
+
 	replicator_->Enable();
 	bool needStart = replicator_->Configure(configProvider_.GetReplicationConfig());
-	Error err = needStart ? replicator_->Start() : errOK;
+	err = needStart ? replicator_->Start() : errOK;
 	if (!err.ok()) {
 		return err;
 	}

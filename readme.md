@@ -284,7 +284,7 @@ Queries are possible only on the indexed fields, marked with `reindex` tag. The 
 
 - `name` – index name.
 - `type` – index type:
-    - `hash` – fast select by EQ and SET match. Does not allow sorting results by field. Used by default. Allows *slow* and uneffecient sorting by field
+    - `hash` – fast select by EQ and SET match. Used by default. Allows *slow* and ineffecient sorting by field.
     - `tree` – fast select by RANGE, GT, and LT matches. A bit slower for EQ and SET matches than `hash` index. Allows fast sorting results by field.
     - `text` – full text search index. Usage details of full text search is described [here](fulltext.md)
     - `-` – column index. Can't perform fast select because it's implemented with full-scan technic. Has the smallest memory overhead.

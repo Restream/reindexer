@@ -14,6 +14,7 @@ Reindexer::~Reindexer() {
 Reindexer::Reindexer(Reindexer&& rdx) noexcept : impl_(rdx.impl_), owner_(rdx.owner_), ctx_(rdx.ctx_) { rdx.owner_ = false; }
 
 Error Reindexer::Connect(const string& dsn, const client::ConnectOpts& opts) { return impl_->Connect(dsn, opts); }
+Error Reindexer::Connect(const vector<pair<string, client::ConnectOpts>>& connectData) { return impl_->Connect(connectData); }
 Error Reindexer::Stop() { return impl_->Stop(); }
 Error Reindexer::AddNamespace(const NamespaceDef& nsDef) { return impl_->AddNamespace(nsDef, ctx_); }
 Error Reindexer::OpenNamespace(string_view nsName, const StorageOpts& storage) { return impl_->OpenNamespace(nsName, ctx_, storage); }

@@ -381,7 +381,7 @@ std::unique_ptr<uint8_t[]> WrSerializer::DetachBuf() {
 	cap_ = sizeof(inBuf_);
 	len_ = 0;
 	return ret;
-};
+}
 
 void WrSerializer::Write(string_view slice) {
 	grow(slice.size());

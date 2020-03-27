@@ -110,6 +110,30 @@ public:
 		Upsert(ns, item);
 		Commit(ns);
 	}
+
+	void AddInBothFields(const std::string& w1, const std::string& w2) {
+		AddInBothFields("nm1", w1, w2);
+		AddInBothFields("nm2", w1, w2);
+	}
+
+	void AddInBothFields(const std::string& ns, const std::string& w1, const std::string& w2) {
+		Item item = NewItem(ns);
+		item["id"] = counter_;
+		++counter_;
+		item["ft1"] = w1;
+		item["ft2"] = w1;
+		Upsert(ns, item);
+
+		item = NewItem(ns);
+		item["id"] = counter_;
+		++counter_;
+		item["ft1"] = w2;
+		item["ft2"] = w2;
+		Upsert(ns, item);
+
+		Commit(ns);
+	}
+
 	QueryResults SimpleSelect(string word) {
 		Query qr = Query("nm1").Where("ft3", CondEq, word);
 		QueryResults res;
@@ -134,6 +158,20 @@ public:
 
 		qr.mergeQueries_.push_back(mqr);
 		qr.AddFunction("ft3 = highlight(<b>,</b>)");
+		auto err = rt.reindexer->Select(qr, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+
+		return res;
+	}
+	QueryResults CompositeSelectField(const string& field, string word) {
+		word = '@' + field + ' ' + word;
+		Query qr = Query("nm1").Where("ft3", CondEq, word);
+		QueryResults res;
+		Query mqr = Query("nm2").Where("ft3", CondEq, word);
+		mqr.AddFunction(field + " = snippet(<b>,\"\"</b>,3,2,,d)");
+
+		qr.mergeQueries_.push_back(mqr);
+		qr.AddFunction(field + " = highlight(<b>,</b>)");
 		auto err = rt.reindexer->Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
 

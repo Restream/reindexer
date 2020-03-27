@@ -11,6 +11,7 @@
 
 namespace reindexer_server {
 const reindexer::SemVersion kMinTxReplSupportRxVersion("2.6.0");
+const int kConnIdMask = 0xFFFF;
 
 RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper logger, IClientsStats *clientsStats, bool allocDebug, IStatsWatcher *statsCollector)
 	: dbMgr_(dbMgr),
@@ -557,14 +558,14 @@ Error RPCServer::processTxItem(DataFormat format, string_view itemData, Item &it
 }
 
 static int64_t getIdxFromId(int64_t id, RPCClientData &data) {
-	int64_t expConnID = (id >> 16) - 1;
-	if (expConnID != int64_t(data.connID)) {
+	int64_t expConnID = ((id >> 16) - 1);
+	if (expConnID != int64_t(data.connID & kConnIdMask)) {
 		throw Error(errLogic, "Wrong conn id: %d, expected: %d", data.connID, expConnID);
 	}
 	int64_t mask = (int64_t(data.connID) + 1) << 16;
 	return id & ~mask;
 }
-static int64_t getIdFromIdx(int64_t idx, RPCClientData &data) { return idx |= (int64_t(data.connID) + 1) << 16; }
+static int64_t getIdFromIdx(int64_t idx, RPCClientData &data) { return idx |= (int64_t((data.connID + 1) & kConnIdMask)) << 16; }
 
 QueryResults &RPCServer::getQueryResults(cproto::Context &ctx, int &qrId) {
 	auto data = getClientDataSafe(ctx);

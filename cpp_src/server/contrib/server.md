@@ -102,7 +102,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 2.6.2
+*Version* : 2.6.3
 
 
 ### License information

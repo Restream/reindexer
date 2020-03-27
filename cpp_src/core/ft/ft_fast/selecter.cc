@@ -233,10 +233,13 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 	bool simple = idoffsets.size() == 0;
 	auto op = rawRes.term.opts.op;
 
-	vector<bool> curExists(simple ? 0 : totalDocsCount, false);
+	vector<bool> curExists((simple && rawRes.size() <= 1) ? 0 : totalDocsCount, false);
+	if (simple && rawRes.size() > 1) {
+		idoffsets.resize(totalDocsCount);
+	}
 
 	for (auto &m_rd : merged_rd) {
-		if (m_rd.next.pos.size()) m_rd.cur = std::move(m_rd.next);
+		if (m_rd.next.Size()) m_rd.cur = std::move(m_rd.next);
 	}
 
 	for (auto &r : rawRes) {
@@ -247,7 +250,7 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 		}
 
 		for (auto &relid : *r.vids_) {
-			int vid = relid.id;
+			int vid = relid.Id();
 
 			// Do not calc anithing if
 			if (op == OpAnd && !exists[vid]) {
@@ -256,31 +259,43 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 
 			assert(vid < int(exists.size()));
 
-			int field = relid.pos[0].field();
-			assert(field < int(vdocs[vid].wordsCount.size()));
-			assert(field < int(rawRes.term.opts.fieldsBoost.size()));
+			// Find field with max rank
+			int field = 0;
+			double normBm25 = 0.0, termRank = 0.0;
+			for (uint64_t fieldsMask = relid.UsedFieldsMask(), f = 0; fieldsMask;) {
+				while ((fieldsMask & 1) == 0) {
+					++f;
+					fieldsMask >>= 1;
+				}
+				assert(f < vdocs[vid].wordsCount.size());
+				assert(f < rawRes.term.opts.fieldsBoost.size());
+				auto fboost = rawRes.term.opts.fieldsBoost[f];
+				if (fboost) {
+					// raw bm25
+					const double bm25 = idf * bm25score(relid.WordsInField(f), vdocs[vid].mostFreqWordCount[f], vdocs[vid].wordsCount[f],
+														holder_.avgWordsCount_[f]);
 
-			auto fboost = rawRes.term.opts.fieldsBoost[field];
-			if (!fboost) {
-				// TODO: search another fields
-				continue;
-			};
+					// normalized bm25
+					const double normBm25Tmp = bound(bm25, holder_.cfg_->bm25Weight, holder_.cfg_->bm25Boost);
 
-			// raw bm25
-			auto bm25 = idf * bm25score(relid.wordsInField(field), vdocs[vid].mostFreqWordCount[field], vdocs[vid].wordsCount[field],
-										holder_.avgWordsCount_[field]);
-
-			// normalized bm25
-			auto normBm25 = bound(bm25, holder_.cfg_->bm25Weight, holder_.cfg_->bm25Boost);
-
-			// final term rank calculation
-			double termRank = fboost * r.proc_ * normBm25 * rawRes.term.opts.boost * termLenBoost;
+					// final term rank calculation
+					const double termRankTmp = fboost * r.proc_ * normBm25Tmp * rawRes.term.opts.boost * termLenBoost;
+					if (termRankTmp > termRank) {
+						field = f;
+						normBm25 = normBm25Tmp;
+						termRank = termRankTmp;
+					}
+				}
+				++f;
+				fieldsMask >>= 1;
+			}
+			if (!termRank) continue;
 
 			if (!simple) {
 				auto moffset = idoffsets[vid];
 				if (exists[vid]) {
-					assert(relid.pos.size());
-					assert(merged_rd[moffset].cur.pos.size());
+					assert(relid.Size());
+					assert(merged_rd[moffset].cur.Size());
 
 					// match of 2-rd, and next terms
 					if (op == OpNot) {
@@ -292,7 +307,7 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 						float normDist = 1;
 
 						if (merged_rd[moffset].qpos != rawRes.term.opts.qpos) {
-							distance = merged_rd[moffset].cur.distance(relid, INT_MAX);
+							distance = merged_rd[moffset].cur.Distance(relid, INT_MAX);
 
 							// Normaized distance
 							normDist =
@@ -311,7 +326,7 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 							}
 							merged[moffset].proc += finalRank;
 							if (needArea_) {
-								for (auto pos : relid.pos) {
+								for (auto pos : relid.Pos()) {
 									if (!merged[moffset].holder->AddWord(pos.pos(), r.wordLen_, pos.field())) {
 										break;
 									}
@@ -326,7 +341,9 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 					}
 				}
 			}
-			if (int(merged.size()) < holder_.cfg_->mergeLimit && op == OpOr && !exists[vid]) {
+			if (int(merged.size()) < holder_.cfg_->mergeLimit && op == OpOr) {
+				const bool currentlyAddedLessRankedMerge = !curExists.empty() && curExists[vid] && merged[idoffsets[vid]].proc < static_cast<int16_t>(termRank);
+				if (exists[vid] && !(simple && currentlyAddedLessRankedMerge)) continue;
 				// match of 1-st term
 				MergeInfo info;
 				info.id = vid;
@@ -336,17 +353,23 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 				if (needArea_) {
 					info.holder.reset(new AreaHolder);
 					info.holder->ReserveField(fieldSize_);
-					for (auto pos : relid.pos) {
+					for (auto pos : relid.Pos()) {
 						info.holder->AddWord(pos.pos(), r.wordLen_, pos.field());
 					}
 				}
-				merged.push_back(std::move(info));
-				exists[vid] = true;
+				if (exists[vid]) {
+					merged[idoffsets[vid]] = std::move(info);
+				} else {
+					merged.push_back(std::move(info));
+					exists[vid] = true;
+					if (!curExists.empty()) {
+						curExists[vid] = true;
+						idoffsets[vid] = merged.size() - 1;
+					}
+				}
 				if (simple) continue;
 				// prepare for intersect with next terms
 				merged_rd.push_back({IdRelType(std::move(relid)), IdRelType(), int(termRank), rawRes.term.opts.qpos});
-				curExists[vid] = true;
-				idoffsets[vid] = merged.size() - 1;
 			}
 		}
 	}

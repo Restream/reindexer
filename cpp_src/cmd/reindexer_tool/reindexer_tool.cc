@@ -96,7 +96,11 @@ int main(int argc, char* argv[]) {
 			std::cerr << "Error: --dsn either database name should be set as a first argument" << std::endl;
 			return 2;
 		}
-		dsn = "cproto://reindexer:reindexer@127.0.0.1:6534/" + db;
+		if (db.substr(0, 9) == "cproto://" || db.substr(0, 10) == "builtin://") {
+			dsn = db;
+		} else {
+			dsn = "cproto://reindexer:reindexer@127.0.0.1:6534/" + db;
+		}
 	}
 
 	if (repair && args::get(repair)) {

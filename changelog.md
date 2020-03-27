@@ -1,3 +1,24 @@
+# Version 2.6.3 (27.03.2020)
+
+# Core
+- [fix] Full text search ranking with synonyms
+- [fea] Distinct execution plan optimization
+- [fix] Crash on incorrect json in config (array, when object expected)
+- [fix] Crash on concurrent full text updates/selects
+- [fix] Search by second field in full text, while term present in first field
+- [fea] Multiple dsn support in cproto client
+
+# Reindexer server
+- [fix] Do not create users.yml in in-memory only mode
+- [fix] Wrong conn id fix
+
+# Reindexer tool
+- [fix] Hang on error in batch mode
+- [fix] db name begins with cproto or builtin correct handling 
+
+ # go connector
+- [fix] Hang on parsing recursive types references in struct
+
 # Version 2.6.2 (13.03.2020)
 
 # Core

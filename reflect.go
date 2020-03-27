@@ -9,6 +9,7 @@ import (
 	"unsafe"
 
 	"github.com/restream/reindexer/bindings"
+	"github.com/restream/reindexer/cjson"
 )
 
 const (
@@ -35,15 +36,14 @@ type indexOptions struct {
 }
 
 func parseIndex(namespace string, st reflect.Type, joined *map[string][]int) (indexDefs []bindings.IndexDef, err error) {
-
-	if err = parse(&indexDefs, st, false, "", "", joined); err != nil {
+	if err = parse(&indexDefs, st, false, "", "", joined, nil); err != nil {
 		return nil, err
 	}
 
 	return indexDefs, nil
 }
 
-func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reindexBasePath, jsonBasePath string, joined *map[string][]int) (err error) {
+func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reindexBasePath, jsonBasePath string, joined *map[string][]int, parsed *map[string]bool) (err error) {
 	if len(jsonBasePath) != 0 && !strings.HasSuffix(jsonBasePath, ".") {
 		jsonBasePath = jsonBasePath + "."
 	}
@@ -54,6 +54,11 @@ func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reind
 
 	if st.Kind() == reflect.Ptr {
 		st = st.Elem()
+	}
+
+	isParsed, parsed := cjson.IsStructParsed(st, parsed)
+	if isParsed {
+		return nil
 	}
 
 	for i := 0; i < st.NumField(); i++ {
@@ -110,7 +115,7 @@ func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reind
 				return err
 			}
 		} else if t.Kind() == reflect.Struct {
-			if err := parse(indexDefs, t, subArray, reindexPath, jsonPath, joined); err != nil {
+			if err := parse(indexDefs, t, subArray, reindexPath, jsonPath, joined, parsed); err != nil {
 				return err
 			}
 		} else if (t.Kind() == reflect.Slice || t.Kind() == reflect.Array) &&
@@ -118,7 +123,7 @@ func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reind
 			// Check if field nested slice of struct
 			if parseByKeyWord(&idxSettings, "joined") && len(idxName) > 0 {
 				(*joined)[tagsSlice[0]] = st.Field(i).Index
-			} else if err := parse(indexDefs, t.Elem(), true, reindexPath, jsonPath, joined); err != nil {
+			} else if err := parse(indexDefs, t.Elem(), true, reindexPath, jsonPath, joined, parsed); err != nil {
 				return err
 			}
 		} else if len(idxName) > 0 {

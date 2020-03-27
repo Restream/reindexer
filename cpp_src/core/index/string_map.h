@@ -42,6 +42,7 @@ class unordered_str_map
 	: public tsl::sparse_map<key_string, T1, hash_key_string, equal_key_string, std::allocator<std::pair<key_string, T1>>,
 							 tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low> {
 public:
+	static_assert(std::is_nothrow_move_constructible<std::pair<key_string, T1>>::value, "Nothrow movebale key and value required");
 	using base_hash_map = tsl::sparse_map<key_string, T1, hash_key_string, equal_key_string, std::allocator<std::pair<key_string, T1>>,
 										  tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>;
 	unordered_str_map() : base_hash_map() {}

@@ -8,30 +8,25 @@ namespace reindexer {
 
 typedef uint32_t VDocIdType;
 
-struct IdRelType {
+class IdRelType {
+public:
 	// Disable copy - enable only move
-	IdRelType() = default;
+	explicit IdRelType(VDocIdType id = 0) : id_(id) {}
 	IdRelType(IdRelType&&) noexcept = default;
 	IdRelType(const IdRelType&) = delete;
 	IdRelType& operator=(IdRelType&&) noexcept = default;
 	IdRelType& operator=(const IdRelType&) = delete;
 
-	int pos2rank(int pos) const {
-		if (pos <= 10) return 100 - pos;
-		if (pos <= 100) return 90 - (pos / 10);
-		if (pos <= 1000) return 80 - (pos / 100);
-		return 70;
-	}
+	VDocIdType Id() const noexcept { return id_; }
+	int Rank() const { return !pos_.size() ? 0 : pos2rank(pos_.front().pos()) + std::max(10, int(pos_.size())); }
 
-	int rank() const { return !pos.size() ? 0 : pos2rank(pos.front().pos()) + std::max(10, int(pos.size())); }
+	int Distance(const IdRelType& other, int max) const;
 
-	int distance(const IdRelType& other, int max) const;
-
-	int wordsInField(int field);
+	int WordsInField(int field);
 	// packed_vector callbacks
 	size_t pack(uint8_t* buf) const;
 	size_t unpack(const uint8_t* buf, unsigned len);
-	size_t maxpackedsize() const { return 2 * (sizeof(VDocIdType) + 1) + (pos.size() * (sizeof(uint32_t) + 1)); }
+	size_t maxpackedsize() const { return 2 * (sizeof(VDocIdType) + 1) + (pos_.size() * (sizeof(uint32_t) + 1)); }
 
 	struct PosType {
 		static const int posBits = 24;
@@ -42,15 +37,42 @@ struct IdRelType {
 		unsigned fpos;
 	};
 
-	h_vector<PosType, 3> pos;
-	VDocIdType id = 0;
+	void Add(int pos, int field) {
+		pos_.emplace_back(pos, field);
+		addField(field);
+	}
+	size_t Size() const noexcept { return pos_.size(); }
+	void SimpleCommit();
+	const h_vector<PosType, 3>& Pos() const { return pos_; }
+	uint64_t UsedFieldsMask() const noexcept { return usedFieldsMask_; }
+
+private:
+	static constexpr int maxField = 63;
+
+	int pos2rank(int pos) const {
+		if (pos <= 10) return 100 - pos;
+		if (pos <= 100) return 90 - (pos / 10);
+		if (pos <= 1000) return 80 - (pos / 100);
+		return 70;
+	}
+
+	void addField(int field) noexcept {
+		assert(0 <= field && field <= maxField);
+		usedFieldsMask_ |= (uint64_t(1) << field);
+	}
+
+	h_vector<PosType, 3> pos_;
+	uint64_t usedFieldsMask_ = 0;
+	VDocIdType id_ = 0;
 };
 
 class IdRelSet : public h_vector<IdRelType, 0> {
 public:
 	int Add(VDocIdType id, int pos, int field);
 	void Commit();
-	void SimpleCommit();
+	void SimpleCommit() {
+		for (auto& val : *this) val.SimpleCommit();
+	}
 
 	VDocIdType max_id_ = 0;
 	VDocIdType min_id_ = INT_MAX;

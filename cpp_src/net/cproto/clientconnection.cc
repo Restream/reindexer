@@ -14,16 +14,22 @@ const int kMaxCompletions = 512;
 const int kKeepAliveInterval = 30;
 const int kDeadlineCheckInterval = 1;
 
-ClientConnection::ClientConnection(ev::dynamic_loop &loop, const httpparser::UrlParser *uri, const Options &options)
+bool ClientConnection::ConnectData::ThereAreReconnectOptions() const { return entries.size() > 1; }
+bool ClientConnection::ConnectData::CurrDsnFailed(int failedDsnIdx) const { return failedDsnIdx == validEntryIdx; }
+int ClientConnection::ConnectData::GetNextDsnIndex() const { return (validEntryIdx.load(std::memory_order_acquire) + 1) % entries.size(); }
+
+ClientConnection::ClientConnection(ev::dynamic_loop &loop, ConnectData *connectData, ConnectionFailCallback connectionFailCallback)
 	: ConnectionMT(-1, loop, false),
 	  state_(ConnInit),
 	  completions_(kMaxCompletions),
 	  seq_(0),
 	  bufWait_(0),
-	  uri_(uri),
 	  now_(0),
 	  terminate_(false),
-	  options_(options) {
+	  onConnectionFailed_(connectionFailCallback),
+	  connectData_(connectData),
+	  currDsnIdx_(connectData->validEntryIdx.load(std::memory_order_acquire)),
+	  actualDsnIdx_(currDsnIdx_) {
 	connect_async_.set<ClientConnection, &ClientConnection::connect_async_cb>(this);
 	connect_async_.set(loop);
 	connect_async_.start();
@@ -31,17 +37,24 @@ ClientConnection::ClientConnection(ev::dynamic_loop &loop, const httpparser::Url
 	keep_alive_.set(loop);
 	deadlineTimer_.set<ClientConnection, &ClientConnection::deadline_check_cb>(this);
 	deadlineTimer_.set(loop);
+	reconnect_.set(loop);
+	reconnect_.set([this](ev::async &sig) {
+		disconnect();
+		sig.loop.break_loop();
+	});
+	reconnect_.start();
 	loopThreadID_ = std::this_thread::get_id();
 }
 
 ClientConnection::~ClientConnection() { assert(!PendingCompletions()); }
 
-void ClientConnection::connectInternal() {
+void ClientConnection::connectInternal() noexcept {
 	mtx_.lock();
 	if (state_ == ConnConnecting || state_ == ConnConnected) {
 		mtx_.unlock();
 		return;
 	}
+	actualDsnIdx_ = connectData_->validEntryIdx;
 	assert(!sock_.valid());
 	assert(wrBuf_.size() == 0);
 	state_ = ConnConnecting;
@@ -49,10 +62,12 @@ void ClientConnection::connectInternal() {
 
 	mtx_.unlock();
 
-	string port = uri_->port().length() ? uri_->port() : string("6534");
-	string dbName = uri_->path();
-	string userName = uri_->username();
-	string password = uri_->password();
+	assert(connectData_->validEntryIdx < int(connectData_->entries.size()));
+	ConnectData::Entry &connectEntry = connectData_->entries[actualDsnIdx_];
+	string port = connectEntry.uri.port().length() ? connectEntry.uri.port() : string("6534");
+	string dbName = connectEntry.uri.path();
+	string userName = connectEntry.uri.username();
+	string password = connectEntry.uri.password();
 	if (dbName[0] == '/') dbName = dbName.substr(1);
 
 	auto completion = [this](const RPCAnswer &ans, ClientConnection *) {
@@ -61,13 +76,13 @@ void ClientConnection::connectInternal() {
 		state_ = ans.Status().ok() ? ConnConnected : ConnFailed;
 		wrBuf_.clear();
 		connectCond_.notify_all();
+		currDsnIdx_ = actualDsnIdx_;
 		if (!lastError_.ok()) {
 			lck.unlock();
 			closeConn();
 		}
 	};
-
-	sock_.connect((uri_->hostname() + ":" + port));
+	sock_.connect((connectEntry.uri.hostname() + ":" + port));
 	if (!sock_.valid()) {
 		completion(RPCAnswer(Error(errNetwork, "Socket connect error: %d", sock_.last_error())), this);
 	} else {
@@ -77,9 +92,9 @@ void ClientConnection::connectInternal() {
 		keep_alive_.start(kKeepAliveInterval, kKeepAliveInterval);
 		deadlineTimer_.start(kDeadlineCheckInterval, kDeadlineCheckInterval);
 
-		call(completion, {kCmdLogin, options_.loginTimeout, milliseconds(0)},
-			 {Arg{p_string(&userName)}, Arg{p_string(&password)}, Arg{p_string(&dbName)}, Arg{options_.createDB},
-			  Arg{options_.hasExpectedClusterID}, Arg{options_.expectedClusterID}, Arg{p_string(REINDEX_VERSION)}});
+		call(completion, {kCmdLogin, connectEntry.opts.loginTimeout, milliseconds(0)},
+			 {Arg{p_string(&userName)}, Arg{p_string(&password)}, Arg{p_string(&dbName)}, Arg{connectEntry.opts.createDB},
+			  Arg{connectEntry.opts.hasExpectedClusterID}, Arg{connectEntry.opts.expectedClusterID}, Arg{p_string(REINDEX_VERSION)}});
 	}
 }
 
@@ -116,6 +131,7 @@ Error ClientConnection::CheckConnection() {
 				return lastError_;
 			}
 			return errOK;
+		case ConnClosing:
 		case ConnFailed:
 			return lastError_;
 		default:
@@ -133,7 +149,7 @@ void ClientConnection::deadline_check_cb(ev::timer &, int) {
 			if (expired || (cc->cancelCtx && cc->cancelCtx->IsCancelable() && (cc->cancelCtx->GetCancelType() == CancelType::Explicit))) {
 				Error err(expired ? errTimeout : errCanceled, expired ? "Request deadline exceeded" : "Canceled");
 				cc->cmpl(RPCAnswer(err), this);
-				if (state_ == ConnFailed) {
+				if (state_ == ConnFailed || state_ == ConnClosing) {
 					return;
 				}
 				if (bufWait_) {
@@ -149,26 +165,75 @@ void ClientConnection::deadline_check_cb(ev::timer &, int) {
 	}
 }
 
-void ClientConnection::onClose() {
-	vector<RPCCompletion> tmpCompletions(kMaxCompletions);
-	mtx_.lock();
-	wrBuf_.clear();
-	if (lastError_.ok()) lastError_ = Error(errNetwork, "Socket connection closed");
-	closeConn_ = false;
-	state_ = ConnFailed;
-	completions_.swap(tmpCompletions);
-	mtx_.unlock();
-	keep_alive_.stop();
-	deadlineTimer_.stop();
+void ClientConnection::Reconnect() { reconnect_.send(); }
 
-	for (auto &c : tmpCompletions) {
-		for (RPCCompletion *cc = &c; cc; cc = cc->next.get())
-			if (cc->used) cc->cmpl(RPCAnswer(lastError_), this);
+void ClientConnection::disconnect() {
+	assert(loopThreadID_ == std::this_thread::get_id());
+	std::unique_lock<std::mutex> lck(mtx_);
+	State prevState = state_;
+	actualDsnIdx_ = connectData_->validEntryIdx.load(std::memory_order_acquire);
+	if (state_ != ConnFailed && state_ != ConnClosing) {
+		state_ = ConnClosing;
+		lck.unlock();
+		closeConn();
+		if (prevState == ConnConnecting) {
+			currDsnIdx_ = actualDsnIdx_;
+			connectCond_.notify_all();
+		}
+	} else {
+		state_ = ConnFailed;
+		closingCond_.notify_all();
 	}
-	std::unique_ptr<Completion> tmpUpdatesHandler(updatesHandler_.release(std::memory_order_acq_rel));
+}
 
-	if (tmpUpdatesHandler) (*tmpUpdatesHandler)(RPCAnswer(lastError_), this);
-	bufCond_.notify_all();
+void ClientConnection::onClose() {
+	bool needToReconnect = false;
+	{
+		// we need to make sure tmpCompletions is destructed
+		// before we switch to ConnFailed state
+		vector<RPCCompletion> tmpCompletions(kMaxCompletions);
+
+		mtx_.lock();
+		wrBuf_.clear();
+		if (lastError_.ok())
+			lastError_ = Error(errNetwork, "Socket connection to %s closed",
+							   connectData_ && actualDsnIdx_ < int(connectData_->entries.size())
+								   ? connectData_->entries[actualDsnIdx_].uri.hostname()
+								   : "");
+		closeConn_ = false;
+		State prevState = state_;
+		state_ = ConnClosing;
+		completions_.swap(tmpCompletions);
+		mtx_.unlock();
+
+		keep_alive_.stop();
+		deadlineTimer_.stop();
+
+		for (auto &c : tmpCompletions) {
+			for (RPCCompletion *cc = &c; cc; cc = cc->next.get())
+				if (cc->used && cc->cmd != kCmdLogin && cc->cmd != kCmdPing) {
+					cc->cmpl(RPCAnswer(lastError_), this);
+				}
+		}
+
+		std::unique_ptr<Completion> tmpUpdatesHandler(updatesHandler_.release(std::memory_order_acq_rel));
+
+		if (tmpUpdatesHandler) (*tmpUpdatesHandler)(RPCAnswer(lastError_), this);
+		bufCond_.notify_all();
+
+		if (prevState == ConnConnecting) {
+			currDsnIdx_ = actualDsnIdx_;
+			connectCond_.notify_all();
+		} else if (connectData_ && onConnectionFailed_) {
+			needToReconnect = onConnectionFailed_(currDsnIdx_);
+		}
+	}
+
+	if (!needToReconnect) {
+		std::unique_lock<std::mutex> lck(mtx_);
+		state_ = ConnFailed;
+		closingCond_.notify_all();
+	}
 }
 
 void ClientConnection::onRead() {
@@ -189,22 +254,20 @@ void ClientConnection::onRead() {
 			return;
 		}
 
-		len = rdBuf_.peek(reinterpret_cast<char *>(&hdr), sizeof(hdr));
-
-		if (hdr.len + sizeof(hdr) > rdBuf_.capacity()) {
-			rdBuf_.reserve(hdr.len + sizeof(hdr) + 0x1000);
+		if (size_t(hdr.len) + sizeof(hdr) > rdBuf_.capacity()) {
+			rdBuf_.reserve(size_t(hdr.len) + sizeof(hdr) + 0x1000);
 		}
 
-		if ((rdBuf_.size() - sizeof(hdr)) < hdr.len) return;
+		if ((rdBuf_.size() - sizeof(hdr)) < size_t(hdr.len)) return;
 
 		rdBuf_.erase(sizeof(hdr));
 
 		auto it = rdBuf_.tail();
-		if (it.size() < hdr.len) {
+		if (it.size() < size_t(hdr.len)) {
 			rdBuf_.unroll();
 			it = rdBuf_.tail();
 		}
-		assert(it.size() >= hdr.len);
+		assert(it.size() >= size_t(hdr.len));
 
 		RPCAnswer ans;
 
@@ -216,7 +279,7 @@ void ClientConnection::onRead() {
 			if (errCode != errOK) {
 				ans.status_ = Error(errCode, errMsg);
 			}
-			ans.data_ = {reinterpret_cast<uint8_t *>(it.data()) + ser.Pos(), hdr.len - ser.Pos()};
+			ans.data_ = {reinterpret_cast<uint8_t *>(it.data()) + ser.Pos(), size_t(hdr.len) - ser.Pos()};
 		} catch (const Error &err) {
 			failInternal(err);
 			return;
@@ -232,6 +295,7 @@ void ClientConnection::onRead() {
 				}
 			}
 		} else {
+			auto complPtr = completions_.data();
 			RPCCompletion *completion = &completions_[hdr.seq % completions_.size()];
 
 			for (; completion; completion = completion->next.get()) {
@@ -243,6 +307,10 @@ void ClientConnection::onRead() {
 						Error(errParams, "Invalid cmdCode %d, expected %d for seq = %d", int(completion->cmd), int(hdr.cmd), int(hdr.seq));
 				}
 				completion->cmpl(std::move(ans), this);
+				if (completions_.data() != complPtr) {
+					rdBuf_.clear();
+					return;
+				}
 				if (bufWait_) {
 					std::unique_lock<std::mutex> lck(mtx_);
 					completion->used = false;
@@ -290,6 +358,7 @@ chunk ClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args, con
 	args.Pack(ser);
 	ctxArgs.Pack(ser);
 
+	assert(ser.Len() < std::numeric_limits<int32_t>::max());
 	reinterpret_cast<CProtoHeader *>(ser.Buf())->len = ser.Len() - sizeof(hdr);
 
 	return ser.DetachChunk();
@@ -315,11 +384,18 @@ void ClientConnection::call(Completion cmpl, const CommandParams &opts, const Ar
 					// fall through
 				case ConnConnecting:
 					while (state_ != ConnConnected && state_ != ConnFailed) {
-						connectCond_.wait(lck);
-						if (deadline.count() && deadline <= Now()) {
-							lck.unlock();
-							cmpl(RPCAnswer(Error(errTimeout, "Connection deadline exceeded")), this);
-							return;
+						if (state_ == ConnClosing) {
+							while (state_ != ConnFailed) {
+								closingCond_.wait(lck);
+							}
+							completion = &completions_[seq % completions_.size()];
+						} else {
+							connectCond_.wait(lck);
+							if (deadline.count() && deadline <= Now()) {
+								lck.unlock();
+								cmpl(RPCAnswer(Error(errTimeout, "Connection deadline exceeded")), this);
+								return;
+							}
 						}
 						if (state_ == ConnFailed) {
 							auto err = lastError_;
@@ -328,6 +404,12 @@ void ClientConnection::call(Completion cmpl, const CommandParams &opts, const Ar
 							return;
 						}
 					}
+					break;
+				case ConnClosing:
+					while (state_ != ConnFailed) {
+						closingCond_.wait(lck);
+					}
+					completion = &completions_[seq % completions_.size()];
 					break;
 				default:
 					std::abort();

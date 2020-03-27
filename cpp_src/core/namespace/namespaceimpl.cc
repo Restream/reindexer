@@ -612,6 +612,8 @@ void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsCon
 
 	NsSelecter selecter(this);
 	SelectCtx selCtx(query);
+	SelectFunctionsHolder func;
+	selCtx.functions = &func;
 	selCtx.contextCollectingMode = true;
 	selecter(result, selCtx, ctx.rdxContext);
 
@@ -795,6 +797,8 @@ void NamespaceImpl::Delete(const Query &q, QueryResults &result, const NsContext
 	NsSelecter selecter(this);
 	SelectCtx selCtx(q);
 	selCtx.contextCollectingMode = true;
+	SelectFunctionsHolder func;
+	selCtx.functions = &func;
 	selecter(result, selCtx, ctx.rdxContext);
 	result.lockResults();
 
@@ -859,6 +863,7 @@ void NamespaceImpl::Truncate(const NsContext &ctx) {
 	}
 	items_.clear();
 	free_.clear();
+	repl_.dataHash = 0;
 	for (size_t i = 0; i < indexes_.size(); ++i) {
 		const IndexOpts opts = indexes_[i]->Opts();
 		unique_ptr<Index> newIdx{Index::New(getIndexDefinition(i), indexes_[i]->GetPayloadType(), indexes_[i]->Fields())};

@@ -8,8 +8,30 @@ import (
 type Validator struct {
 }
 
-func (enc *Validator) validateLevel(src reflect.Type, fieldName string) error {
+func IsStructParsed(src reflect.Type, parsed *map[string]bool) (bool, *map[string]bool) {
+	if src.Kind() == reflect.Struct {
+		fullPath := src.PkgPath() + src.Name()
+		if parsed == nil {
+			m := make(map[string]bool)
+			parsed = &m
+		}
+		if _, ok := (*parsed)[fullPath]; ok {
+			return true, parsed
+		}
+
+		(*parsed)[fullPath] = true
+	}
+
+	return false, parsed
+}
+
+func (enc *Validator) validateLevel(src reflect.Type, fieldName string, parsed *map[string]bool) error {
 	tags := map[string]struct{}{}
+
+	isParsed, parsed := IsStructParsed(src, parsed)
+	if isParsed {
+		return nil
+	}
 
 	for i := 0; i < src.NumField(); i++ {
 		field := src.Field(i)
@@ -42,7 +64,7 @@ func (enc *Validator) validateLevel(src reflect.Type, fieldName string) error {
 		}
 
 		if t.Kind() == reflect.Struct {
-			if err := enc.validateLevel(t, fname); err != nil {
+			if err := enc.validateLevel(t, fname, parsed); err != nil {
 				return err
 			}
 		}
@@ -57,5 +79,5 @@ func (enc *Validator) Validate(src interface{}) error {
 		t = t.Elem()
 	}
 
-	return enc.validateLevel(t, "")
+	return enc.validateLevel(t, "", nil)
 }

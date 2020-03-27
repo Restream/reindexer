@@ -274,7 +274,7 @@ double SelectIterator::Cost(int expectedIterations) const {
 	} else if (empty()) {
 		result += GetMaxIterations();
 	}
-	return result + static_cast<double>(GetMaxIterations()) * size();
+	return result + static_cast<double>(distinct ? 1 : GetMaxIterations()) * size();
 }
 
 int SelectIterator::Val() const {

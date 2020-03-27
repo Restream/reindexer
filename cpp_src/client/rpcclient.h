@@ -35,9 +35,14 @@ class RPCClient {
 public:
 	typedef std::function<void(const Error &err)> Completion;
 	RPCClient(const ReindexerConfig &config);
+	RPCClient(const RPCClient &) = delete;
+	RPCClient(RPCClient &&) = delete;
+	RPCClient &operator=(const RPCClient &) = delete;
+	RPCClient &operator=(RPCClient &&) = delete;
 	~RPCClient();
 
 	Error Connect(const string &dsn, const client::ConnectOpts &opts);
+	Error Connect(const vector<pair<string, client::ConnectOpts>> &connectData);
 	Error Stop();
 
 	Error OpenNamespace(string_view nsName, const InternalRdxContext &ctx,
@@ -74,6 +79,13 @@ public:
 	Error Status();
 
 private:
+	struct worker {
+		worker() : running(false) {}
+		ev::dynamic_loop loop_;
+		std::thread thread_;
+		ev::async stop_;
+		atomic_bool running;
+	};
 	Error selectImpl(string_view query, QueryResults &result, cproto::ClientConnection *, seconds netTimeout,
 					 const InternalRdxContext &ctx);
 	Error selectImpl(const Query &query, QueryResults &result, cproto::ClientConnection *, seconds netTimeout,
@@ -82,8 +94,11 @@ private:
 	Error modifyItemAsync(string_view nsName, Item *item, int mode, cproto::ClientConnection *, seconds netTimeout,
 						  const InternalRdxContext &ctx);
 	Namespace *getNamespace(string_view nsName);
-	void run(int thIdx, const ConnectOpts &opts);
+	Error startWorkers();
+	Error addConnectEntry(const string &dsn, const client::ConnectOpts &opts, size_t idx);
+	void run(int thIdx);
 	void onUpdates(net::cproto::RPCAnswer &ans, cproto::ClientConnection *conn);
+	bool onConnectionFail(int failedDsnIndex);
 
 	void checkSubscribes();
 
@@ -94,20 +109,13 @@ private:
 	fast_hash_map<string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
 
 	shared_timed_mutex nsMutex_;
-	httpparser::UrlParser uri_;
-	struct worker {
-		worker() : running(false) {}
-		ev::dynamic_loop loop_;
-		std::thread thread_;
-		ev::async stop_;
-		atomic_bool running;
-	};
 	std::vector<worker> workers_;
 	std::atomic<unsigned> curConnIdx_;
 	ReindexerConfig config_;
 	UpdatesObservers observers_;
 	std::atomic<net::cproto::ClientConnection *> updatesConn_;
 	vector<net::cproto::RPCAnswer> delayedUpdates_;
+	cproto::ClientConnection::ConnectData connectData_;
 };
 
 }  // namespace client

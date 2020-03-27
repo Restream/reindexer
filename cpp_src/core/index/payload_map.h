@@ -43,6 +43,7 @@ class unordered_payload_map
 	: public tsl::sparse_map<PayloadValue, T1, hash_composite, equal_composite, std::allocator<std::pair<PayloadValue, T1>>,
 							 tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low> {
 public:
+	static_assert(std::is_nothrow_move_constructible<std::pair<PayloadValue, T1>>::value, "Nothrow movebale key and value required");
 	using base_hash_map = tsl::sparse_map<PayloadValue, T1, hash_composite, equal_composite, std::allocator<std::pair<PayloadValue, T1>>,
 										  tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>;
 	using base_hash_map::base_hash_map;

@@ -592,9 +592,9 @@ func (q *Query) ExecCtx(ctx context.Context) *Iterator {
 	if q.executed {
 		panic(errors.New("Exec call on already executed query. You shoud create new Query"))
 	}
-	if q.tx != nil {
-		panic(errors.New("For tx query only Update or Delete operations are supported"))
-	}
+	// if q.tx != nil {
+	// 	panic(errors.New("For tx query only Update or Delete operations are supported"))
+	// }
 
 	q.executed = true
 

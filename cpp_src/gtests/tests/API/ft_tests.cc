@@ -35,11 +35,70 @@ TEST_F(FTApi, CompositeSelect) {
 			auto field = ritem[idx].Name();
 			if (field == "id") continue;
 			auto it = data.find(ritem[field].As<string>());
-			EXPECT_TRUE(it != data.end());
+			ASSERT_TRUE(it != data.end());
 			data.erase(it);
 		}
 	}
 	EXPECT_TRUE(data.empty());
+}
+
+TEST_F(FTApi, CompositeSelectWithFields) {
+	Init(GetDefaultConfig());
+	AddInBothFields("An entity is something|", "| that in exists entity as itself");
+	AddInBothFields("In law, a legal entity is|", "|an entity that is capable of something bearing legal rights");
+	AddInBothFields("In politics, entity is used as|", "| term for entity territorial divisions of some countries");
+
+	for (const char* field : {"ft1", "ft2"}) {
+		auto res = CompositeSelectField(field, "*entity somethin*");
+		std::unordered_set<string> data{"An <b>entity</b> is <b>something</b>|",
+										"An <b>entity</b> is <b>something</b>|d",
+										"| that in exists <b>entity</b> as itself",
+										"In law, a legal <b>entity</b> is|",
+										"|an <b>entity</b> that is capable of <b>something</b> bearing legal rights",
+										"an <b>entity</b> tdof <b>something</b> bd",
+										"al <b>entity</b> id",
+										"In politics, <b>entity</b> is used as|",
+										"| term for <b>entity</b> territorial divisions of some countries",
+										"ts <b>entity</b> ad",
+										"s, <b>entity</b> id",
+										"or <b>entity</b> td"};
+
+		PrintQueryResults("nm1", res);
+		for (auto it : res) {
+			Item ritem(it.GetItem());
+			for (auto idx = 1; idx < ritem.NumFields(); idx++) {
+				auto curField = ritem[idx].Name();
+				if (curField != field) continue;
+				auto it = data.find(ritem[curField].As<string>());
+				ASSERT_TRUE(it != data.end());
+				data.erase(it);
+			}
+		}
+		EXPECT_TRUE(data.empty());
+	}
+}
+
+TEST_F(FTApi, CompositeRankWithSynonyms) {
+	auto cfg = GetDefaultConfig();
+	cfg.synonyms = {{{"word"}, {"слово"}}};
+	Init(cfg);
+	Add("word", "слово");
+	Add("world", "world");
+
+	// rank of synonym is higher
+	Query qr2 = Query("nm1").Where("ft3", CondEq, "@ft1^0.5, ft2^2 word~").Sort("rank()", true);
+	QueryResults res2;
+	auto err = rt.reindexer->Select(qr2, res2);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(res2.Count() == 2);
+
+	auto it = res2.begin();
+	string val = it.GetItem()["ft1"].As<string>();
+	EXPECT_EQ(val, "word");
+
+	++it;
+	val = it.GetItem()["ft1"].As<string>();
+	EXPECT_EQ(val, "world");
 }
 
 TEST_F(FTApi, SelectWithEscaping) {

@@ -33,7 +33,7 @@ Error Replicator::Start() {
 	if (config_.role != ReplicationSlave) return errOK;
 
 	master_.reset(
-		new client::Reindexer(client::ReindexerConfig(config_.connPoolSize, config_.workerThreads, 10000,
+		new client::Reindexer(client::ReindexerConfig(config_.connPoolSize, config_.workerThreads, 10000, 0,
 													  std::chrono::seconds(config_.timeoutSec), std::chrono::seconds(config_.timeoutSec))));
 
 	auto err = master_->Connect(config_.masterDSN, client::ConnectOpts().WithExpectedClusterID(config_.clusterID));
@@ -597,9 +597,11 @@ void Replicator::OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &w
 	} catch (const Error &e) {
 		err = e;
 	}
-	if (err.ok() && slaveNs && wrec.type != WalNamespaceDrop) {
-		slaveNs->SetSlaveLSN(lsn, dummyCtx_);
-	} else if (!err.ok()) {
+	if (err.ok()) {
+		if (slaveNs && wrec.type != WalNamespaceDrop && (!wrec.inTransaction || wrec.type == WalCommitTransaction)) {
+			slaveNs->SetSlaveLSN(lsn, dummyCtx_);
+		}
+	} else {
 		if (slaveNs) {
 			slaveNs->SetSlaveReplStatus(ReplicationState::Status::Fatal, err, dummyCtx_);
 		}

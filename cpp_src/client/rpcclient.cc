@@ -1,5 +1,6 @@
 #include "client/rpcclient.h"
 #include <stdio.h>
+#include <functional>
 #include "client/itemimpl.h"
 #include "core/namespacedef.h"
 #include "gason/gason.h"
@@ -24,30 +25,60 @@ RPCClient::RPCClient(const ReindexerConfig& config) : workers_(config.WorkerThre
 
 RPCClient::~RPCClient() { Stop(); }
 
+Error RPCClient::startWorkers() {
+	connections_.resize(config_.ConnPoolSize);
+	for (unsigned i = 0; i < workers_.size(); i++) {
+		workers_[i].thread_ = std::thread([this](int i) { this->run(i); }, i);
+		while (!workers_[i].running) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+	return errOK;
+}
+
+Error RPCClient::addConnectEntry(const string& dsn, const client::ConnectOpts& opts, size_t idx) {
+	assert(idx < connectData_.entries.size());
+	cproto::ClientConnection::ConnectData::Entry& connectEntry = connectData_.entries[idx];
+	if (!connectEntry.uri.parse(dsn)) {
+		return Error(errParams, "%s is not valid uri", dsn);
+	}
+	if (connectEntry.uri.scheme() != "cproto") {
+		return Error(errParams, "Scheme must be cproto");
+	}
+	connectEntry.opts = cproto::ClientConnection::Options(config_.ConnectTimeout, config_.RequestTimeout, opts.IsCreateDBIfMissing(),
+														  opts.HasExpectedClusterID(), opts.ExpectedClusterID(), config_.ReconnectAttempts);
+	return errOK;
+}
+
 Error RPCClient::Connect(const string& dsn, const client::ConnectOpts& opts) {
 	if (connections_.size()) {
 		return Error(errLogic, "Client is already started");
 	}
-	if (!uri_.parse(dsn)) {
-		return Error(errParams, "%s is not valid uri", dsn);
-	}
-	if (uri_.scheme() != "cproto") {
-		return Error(errParams, "Scheme must be cproto");
-	}
+	std::vector<cproto::ClientConnection::ConnectData::Entry> tmpConnectData(1);
+	connectData_.entries.swap(tmpConnectData);
+	Error err = addConnectEntry(dsn, opts, 0);
+	if (err.ok()) return startWorkers();
+	return err;
+}
 
-	connections_.resize(config_.ConnPoolSize);
-	for (unsigned i = 0; i < workers_.size(); i++) {
-		workers_[i].thread_ = std::thread([this](int i, client::ConnectOpts opts) { this->run(i, opts); }, i, opts);
-		while (!workers_[i].running) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+Error RPCClient::Connect(const vector<pair<string, client::ConnectOpts>>& connectData) {
+	if (connections_.size()) {
+		return Error(errLogic, "Client is already started");
 	}
-	return errOK;
+	if (connectData.empty()) {
+		return Error(errLogic, "Connections data is empty!");
+	}
+	std::vector<cproto::ClientConnection::ConnectData::Entry> tmpConnectData(connectData.size());
+	connectData_.entries.swap(tmpConnectData);
+	for (size_t i = 0; i < connectData.size(); ++i) {
+		Error err = addConnectEntry(connectData[i].first, connectData[i].second, i);
+		if (!err.ok()) return err;
+	}
+	return startWorkers();
 }
 
 Error RPCClient::Stop() {
 	if (!connections_.size()) return errOK;
 	for (auto& worker : workers_) {
 		worker.stop_.send();
-
 		if (worker.thread_.joinable()) {
 			worker.thread_.join();
 		}
@@ -56,7 +87,7 @@ Error RPCClient::Stop() {
 	return errOK;
 }
 
-void RPCClient::run(int thIdx, const client::ConnectOpts& opts) {
+void RPCClient::run(int thIdx) {
 	bool terminate = false;
 
 	workers_[thIdx].stop_.set(workers_[thIdx].loop_);
@@ -69,10 +100,8 @@ void RPCClient::run(int thIdx, const client::ConnectOpts& opts) {
 	delayedUpdates_.clear();
 
 	for (int i = thIdx; i < config_.ConnPoolSize; i += config_.WorkerThreads) {
-		connections_[i].reset(new cproto::ClientConnection(
-			workers_[thIdx].loop_, &uri_,
-			cproto::ClientConnection::Options(config_.ConnectTimeout, config_.RequestTimeout, opts.IsCreateDBIfMissing(),
-											  opts.HasExpectedClusterID(), opts.ExpectedClusterID())));
+		connections_[i].reset(new cproto::ClientConnection(workers_[thIdx].loop_, &connectData_,
+														   std::bind(&RPCClient::onConnectionFail, this, std::placeholders::_1)));
 	}
 
 	ev::periodic checker;
@@ -643,10 +672,10 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 		ns->lck_.unlock_shared();
 
 		if (tmVersion < wrec.itemModify.tmVersion && !bundledTagsMatcher) {
-			// If tags matcher has been updated, but there are no bundled tags matcher in cjson
-			// Then we need ask server to send tags marcher
+			// If tagsMatcher has been updated but there is no bundled tagsMatcher in cjson
+			// then we need to ask server to send tagsMatcher.
 
-			// Delay this update, and all futhure updates, until responce from server
+			// Delay this update and all the further updates until we get responce from server.
 			ans.EnsureHold();
 			delayedUpdates_.emplace_back(std::move(ans));
 
@@ -655,7 +684,7 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 				   InternalRdxContext(nullptr,
 									  [=](const Error& err) {
 										  delete qr;
-										  // If there are delayed updates, then send them to client
+										  // If there are delayed updates then send them to client
 										  auto uq = std::move(delayedUpdates_);
 										  delayedUpdates_.clear();
 										  if (err.ok())
@@ -680,6 +709,19 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 	}
 
 	observers_.OnWALUpdate(lsn, nsName, wrec);
+}
+
+bool RPCClient::onConnectionFail(int failedDsnIndex) {
+	if (!connectData_.ThereAreReconnectOptions()) return false;
+	if (!connectData_.CurrDsnFailed(failedDsnIndex)) return false;
+
+	connectData_.lastFailedEntryIdx = failedDsnIndex;
+	connectData_.validEntryIdx.store(connectData_.GetNextDsnIndex(), std::memory_order_release);
+
+	for (size_t i = 0; i < connections_.size(); ++i) {
+		connections_[i]->Reconnect();
+	}
+	return true;
 }
 
 }  // namespace client

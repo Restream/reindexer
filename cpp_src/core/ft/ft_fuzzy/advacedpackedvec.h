@@ -3,7 +3,7 @@
 #include "estl/packed_vector.h"
 namespace reindexer {
 class IdRelSet;
-struct IdRelType;
+class IdRelType;
 
 class AdvacedPackedVec : public packed_vector<IdRelType> {
 public:

@@ -48,6 +48,7 @@ protected:
 	// keep here to prevent allocs
 	RPCCall call_;
 	std::vector<chunk> updates_;
+	Error updatesPackError_;
 	std::mutex updates_mtx_;
 	ev::periodic updates_timeout_;
 	ev::async updates_async_;

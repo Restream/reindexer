@@ -22,9 +22,11 @@ DBManager::DBManager(const string &dbpath, bool noSecurity, IClientsStats *clien
 	: dbpath_(dbpath), noSecurity_(noSecurity), storageType_(datastorage::StorageType::LevelDB), clientsStats_(clientsStats) {}
 
 Error DBManager::Init(const std::string &storageEngine, bool allowDBErrors, bool withAutorepair) {
-	auto status = readUsers();
-	if (!status.ok() && !noSecurity_) {
-		return status;
+	if (!noSecurity_) {
+		auto status = readUsers();
+		if (!status.ok()) {
+			return status;
+		}
 	}
 
 	vector<fs::DirEntry> foundDb;

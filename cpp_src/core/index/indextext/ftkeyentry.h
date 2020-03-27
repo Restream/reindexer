@@ -20,7 +20,7 @@ public:
 
 class FtKeyEntry {
 public:
-	FtKeyEntry() : impl_(new FtKeyEntryData){};
+	FtKeyEntry() : impl_(new FtKeyEntryData) {}
 	FtKeyEntry(const FtKeyEntry& other) : impl_(other.impl_ ? new FtKeyEntryData(*other.impl_.get()) : nullptr) {}
 	FtKeyEntry& operator=(const FtKeyEntry& other) {
 		if (this != &other) {

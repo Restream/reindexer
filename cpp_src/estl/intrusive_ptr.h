@@ -41,9 +41,9 @@ public:
 		return *this;
 	}
 
-	intrusive_ptr(intrusive_ptr &&rhs) : px(rhs.px) { rhs.px = 0; }
+	intrusive_ptr(intrusive_ptr &&rhs) noexcept : px(rhs.px) { rhs.px = 0; }
 
-	intrusive_ptr &operator=(intrusive_ptr &&rhs) {
+	intrusive_ptr &operator=(intrusive_ptr &&rhs) noexcept {
 		this_type(static_cast<intrusive_ptr &&>(rhs)).swap(*this);
 		return *this;
 	}

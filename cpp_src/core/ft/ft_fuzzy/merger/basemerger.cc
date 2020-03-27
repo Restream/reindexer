@@ -90,9 +90,9 @@ SearchResult BaseMerger::Merge(MergeCtx& ctx) {
 	double max_proc = 0;
 	for (auto& res : *ctx.rusults) {
 		for (auto it = res.data->begin(); it != res.data->end(); ++it) {
-			IDCtx id_ctx{&it->pos, res.pos, &max_proc, ctx.total_size, res.opts, *ctx.cfg, res.proc, ctx.sizes};
+			IDCtx id_ctx{&it->Pos(), res.pos, &max_proc, ctx.total_size, res.opts, *ctx.cfg, res.proc, ctx.sizes};
 
-			data_set.AddData(it->id, id_ctx);
+			data_set.AddData(it->Id(), id_ctx);
 			pos++;
 		}
 	}

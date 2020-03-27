@@ -142,7 +142,7 @@ protected:
 		full_ = (sz == new_size);
 		buf_ = std::move(new_buf);
 		buf_size_ = new_size;
-	};
+	}
 
 	size_t head_, tail_, buf_size_;
 	bool full_;

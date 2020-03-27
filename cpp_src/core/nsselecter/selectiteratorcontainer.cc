@@ -57,19 +57,7 @@ void SelectIteratorContainer::sortByCost(span<unsigned> indexes, span<double> co
 			costs[indexes[j]] = cst;
 		}
 	}
-	std::stable_sort(indexes.begin() + from, indexes.begin() + to, [&costs, this](unsigned i1, unsigned i2) {
-		if (IsValue(i1)) {
-			if (IsValue(i2)) {
-				if (operator[](i1).distinct < operator[](i2).distinct) return true;
-				if (operator[](i1).distinct > operator[](i2).distinct) return false;
-			} else {
-				if (operator[](i1).distinct) return false;
-			}
-		} else if (IsValue(i2) && operator[](i2).distinct) {
-			return true;
-		}
-		return costs[i1] < costs[i2];
-	});
+	std::stable_sort(indexes.begin() + from, indexes.begin() + to, [&costs](unsigned i1, unsigned i2) { return costs[i1] < costs[i2]; });
 	moveJoinsToTheBeginingOfORs(indexes, from, to);
 }
 

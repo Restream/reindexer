@@ -346,6 +346,9 @@ JsonNode *JsonNode::toNode() const {
 }
 
 const JsonNode &JsonNode::operator[](string_view key) const {
+	if (value.getTag() != JSON_OBJECT && value.getTag() != JSON_NULL) {
+		throw Exception(std::string("Can't obtain json field '") + std::string(key) + "' from non-object json node");
+	}
 	for (auto &v : (*this))
 		if (string_view(v.key) == key) return v;
 	static JsonNode empty_node{{JsonTag(JSON_EMPTY)}, nullptr, {}};

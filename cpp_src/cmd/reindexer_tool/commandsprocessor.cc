@@ -811,6 +811,9 @@ bool CommandsProcessor<DBInterface>::FromFile() {
 		Error err = Process(line);
 		if (!err.ok()) {
 			std::cerr << "ERROR: " << err.what() << std::endl;
+			if (!wasError && !db_.Status().ok()) {
+				return false;
+			}
 			wasError = true;
 		}
 	}
@@ -833,6 +836,7 @@ bool CommandsProcessor<DBInterface>::Run() {
 		}
 		return true;
 	}
+
 	if (!inFileName_.empty()) {
 		return FromFile();
 	} else {
