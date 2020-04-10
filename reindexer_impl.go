@@ -47,20 +47,12 @@ type cacheItem struct {
 
 // NewReindexImpl Create new instanse of Reindexer DB
 // Returns pointer to created instance
-func newReindexImpl(dsn string, options ...interface{}) *reindexerImpl {
+func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
+	scheme, dsnParsed := dsnParse(dsn)
 
-	if dsn == "builtin" {
-		dsn += "://"
-	}
-
-	u, err := url.Parse(dsn)
-	if err != nil {
-		panic(fmt.Errorf("Can't parse DB DSN '%s'", dsn))
-	}
-
-	binding := bindings.GetBinding(u.Scheme)
+	binding := bindings.GetBinding(scheme)
 	if binding == nil {
-		panic(fmt.Errorf("Reindex binding '%s' is not available, can't create DB", u.Scheme))
+		panic(fmt.Errorf("Reindex binding '%s' is not available, can't create DB", scheme))
 	}
 
 	binding = binding.Clone()
@@ -69,7 +61,7 @@ func newReindexImpl(dsn string, options ...interface{}) *reindexerImpl {
 		binding: binding,
 	}
 
-	if err = binding.Init(u, options...); err != nil {
+	if err := binding.Init(dsnParsed, options...); err != nil {
 		rx.status = err
 	}
 
@@ -524,6 +516,42 @@ func (db *reindexerImpl) queryFrom(d dsl.DSL) (*Query, error) {
 	}
 
 	return q, nil
+}
+
+func dsnParse(dsn interface{}) (string, []url.URL) {
+	var dsnSlice []string
+	var scheme string
+
+	switch v := dsn.(type) {
+	case string:
+		dsnSlice = []string{v}
+	case []string:
+		if len(v) == 0 {
+			panic(fmt.Errorf("Empty multi DSN config. DSN: '%#v'. ", dsn))
+		}
+		dsnSlice = v
+	default:
+		panic(fmt.Errorf("DSN format not supported. Support []string or string. DSN: '%#v'. ", dsn))
+	}
+
+	dsnParsed := make([]url.URL, 0, len(dsnSlice))
+	for i := range dsnSlice {
+		if dsnSlice[i] == "builtin" {
+			dsnSlice[i] += "://"
+		}
+
+		u, err := url.Parse(dsnSlice[i])
+		if err != nil {
+			panic(fmt.Errorf("Can't parse DB DSN '%s'", dsn))
+		}
+		if scheme != "" && scheme != u.Scheme {
+			panic(fmt.Sprintf("DSN has a different schemas. %s", dsn))
+		}
+		dsnParsed = append(dsnParsed, *u)
+		scheme = u.Scheme
+	}
+
+	return scheme, dsnParsed
 }
 
 // GetStats Get local thread reindexer usage stats

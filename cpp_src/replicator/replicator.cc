@@ -32,9 +32,9 @@ Error Replicator::Start() {
 
 	if (config_.role != ReplicationSlave) return errOK;
 
-	master_.reset(
-		new client::Reindexer(client::ReindexerConfig(config_.connPoolSize, config_.workerThreads, 10000, 0,
-													  std::chrono::seconds(config_.timeoutSec), std::chrono::seconds(config_.timeoutSec))));
+	master_.reset(new client::Reindexer(client::ReindexerConfig(config_.connPoolSize, config_.workerThreads, 10000, 0,
+																std::chrono::seconds(config_.timeoutSec),
+																std::chrono::seconds(config_.timeoutSec), config_.enableCompression)));
 
 	auto err = master_->Connect(config_.masterDSN, client::ConnectOpts().WithExpectedClusterID(config_.clusterID));
 	if (err.ok()) err = master_->Status();
@@ -121,6 +121,17 @@ static bool errorIsFatal(Error err) {
 	}
 }
 
+bool Replicator::retryIfNetworkError(const Error &err) {
+	if (err.ok()) return false;
+	if (!errorIsFatal(err)) {
+		state_.store(StateInit, std::memory_order_release);
+		resyncTimer_.start(config_.retrySyncIntervalSec);
+		logPrintf(LogInfo, "[repl] Sync done with errors, resync is scheduled");
+		return true;
+	}
+	return false;
+}
+
 // Sync database
 Error Replicator::syncDatabase() {
 	vector<NamespaceDef> nses;
@@ -128,12 +139,11 @@ Error Replicator::syncDatabase() {
 
 	Error err = master_->EnumNamespaces(nses, EnumNamespacesOpts());
 	if (!err.ok()) {
-		logPrintf(LogError, "[repl] EnumNamespaces error: %s%s", err.what(), terminate_ ? ", terminatng replication"_sv : ""_sv);
+		logPrintf(LogError, "[repl] EnumNamespaces error: %s%s", err.what(), terminate_ ? ", terminating replication"_sv : ""_sv);
 		if (err.code() == errForbidden || err.code() == errReplParams) {
 			terminate_ = true;
-		} else if (!errorIsFatal(err)) {
-			resyncTimer_.start(config_.retrySyncIntervalSec);
-			logPrintf(LogInfo, "[repl] Sync done with errors, resync is scheduled");
+		} else {
+			retryIfNetworkError(err);
 		}
 		return err;
 	}
@@ -143,9 +153,10 @@ Error Replicator::syncDatabase() {
 	// if state is StateSyncing is set, then concurent updates will not modify data, but just set maxLsns_[nsname]
 	for (auto &ns : nses) maxLsns_[ns.name] = -1;
 	state_.store(StateSyncing, std::memory_order_release);
+	transactions_.clear();
 	syncMtx_.unlock();
 
-	bool requireRetry = false;
+	resyncTimer_.stop();
 	// Loop for all master namespaces
 	for (auto &ns : nses) {
 		// skip system & non enabled namespaces
@@ -159,6 +170,8 @@ Error Replicator::syncDatabase() {
 		if (err.ok() && slaveNs) {
 			replState = slaveNs->GetReplState(dummyCtx_);
 			slaveNs->SetSlaveReplStatus(ReplicationState::Status::Syncing, errOK, dummyCtx_);
+		} else if (retryIfNetworkError(err)) {
+			return err;
 		} else if (err.code() != errNotFound) {
 			logPrintf(LogWarning, "[repl:%s] Error: %s", ns.name, err.what());
 		}
@@ -170,9 +183,9 @@ Error Replicator::syncDatabase() {
 		for (bool done = false; err.ok() && !done && !terminate_;) {
 			if (!forceSync) {
 				err = syncNamespaceByWAL(ns);
+				if (retryIfNetworkError(err)) return err;
 				if (!err.ok() && !terminate_) {
-					if ((err.code() == errDataHashMismatch && config_.forceSyncOnWrongDataHash) ||
-						(err.code() != errNetwork && config_.forceSyncOnLogicError)) {
+					if ((err.code() == errDataHashMismatch && config_.forceSyncOnWrongDataHash) || config_.forceSyncOnLogicError) {
 						err = syncNamespaceForced(ns, err.what());
 					}
 				}
@@ -198,21 +211,13 @@ Error Replicator::syncDatabase() {
 				}
 				slaveNs->SetSlaveReplStatus(ReplicationState::Status::Idle, errOK, dummyCtx_);
 			} else {
-				if (!errorIsFatal(err)) {
-					requireRetry = true;
-				}
 				if (slaveNs) {
 					slaveNs->SetSlaveReplStatus(errorIsFatal(err) ? ReplicationState::Status::Fatal : ReplicationState::Status::Error, err,
 												dummyCtx_);
 				}
+				if (retryIfNetworkError(err)) return err;
 			}
 		}
-	}
-	if (requireRetry) {
-		resyncTimer_.start(config_.retrySyncIntervalSec);
-		logPrintf(LogInfo, "[repl] Sync done with errors, resync is scheduled");
-	} else {
-		resyncTimer_.stop();
 	}
 	state_.store(StateIdle, std::memory_order_release);
 	logPrintf(LogInfo, "[repl] Done sync with '%s'", config_.masterDSN);
@@ -378,7 +383,7 @@ Error Replicator::applyTxWALRecord(int64_t lsn, string_view nsName, Namespace::P
 		case WalInitTransaction: {
 			std::lock_guard<std::mutex> lck(syncMtx_);
 			Transaction &tx = transactions_[slaveNs.get()];
-			if (!tx.IsFree()) logPrintf(LogError, "[repl:%s] Init transaction befor commit of previous one.", nsName);
+			if (!tx.IsFree()) logPrintf(LogError, "[repl:%s] Init transaction before commit of previous one.", nsName);
 			tx = slaveNs->NewTransaction(dummyCtx_);
 		} break;
 		case WalCommitTransaction: {
@@ -603,7 +608,9 @@ void Replicator::OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &w
 		}
 	} else {
 		if (slaveNs) {
-			slaveNs->SetSlaveReplStatus(ReplicationState::Status::Fatal, err, dummyCtx_);
+			if (slaveNs->GetReplState(dummyCtx_).status != ReplicationState::Status::Fatal) {
+				slaveNs->SetSlaveReplStatus(ReplicationState::Status::Fatal, err, dummyCtx_);
+			}
 		}
 		auto lastErrIt = lastNsErrMsg_.find(nsName);
 		if (lastErrIt == lastNsErrMsg_.end()) {
@@ -633,13 +640,13 @@ void Replicator::OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &w
 
 void Replicator::OnConnectionState(const Error &err) {
 	if (err.ok()) {
-		logPrintf(LogTrace, "[repl:] OnConnectionState connected");
-		std::unique_lock<std::mutex> lck(syncMtx_);
-		state_.store(StateInit, std::memory_order_release);
-		resync_.send();
+		logPrintf(LogInfo, "[repl:] OnConnectionState connected");
 	} else {
-		logPrintf(LogTrace, "[repl:] OnConnectionState closed, reason: %s", err.what());
+		logPrintf(LogInfo, "[repl:] OnConnectionState closed, reason: %s", err.what());
 	}
+	std::unique_lock<std::mutex> lck(syncMtx_);
+	state_.store(StateInit, std::memory_order_release);
+	resync_.send();
 }
 
 bool Replicator::canApplyUpdate(int64_t lsn, string_view nsName) {

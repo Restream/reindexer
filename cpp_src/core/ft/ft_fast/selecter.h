@@ -9,6 +9,9 @@ namespace reindexer {
 using std::vector;
 
 class Selecter {
+	using index_t = uint32_t;
+	enum : index_t { kExcluded = std::numeric_limits<index_t>::max() };
+
 public:
 	Selecter(DataHolder& holder, size_t fieldSize, bool needArea) : holder_(holder), fieldSize_(fieldSize), needArea_(needArea) {}
 
@@ -58,15 +61,15 @@ public:
 		vector<TextSearchResults> rawResults;
 	};
 	MergeData mergeResults(vector<TextSearchResults>& rawResults);
-	void mergeItaration(TextSearchResults& rawRes, vector<bool>& exists, vector<MergeInfo>& merged, vector<MergedIdRel>& merged_rd,
-						h_vector<int16_t>& idoffsets);
+	void mergeItaration(TextSearchResults& rawRes, index_t rawResIndex, fast_hash_map<VDocIdType, index_t>& added,
+						vector<MergeInfo>& merged, vector<MergedIdRel>& merged_rd, h_vector<int16_t>& idoffsets, vector<bool>& curExists);
 
 	void debugMergeStep(const char* msg, int vid, float normBm25, float normDist, int finalRank, int prevRank);
 	void processVariants(FtSelectContext&);
-	void prepareVariants(FtSelectContext&, FtDSLEntry&, std::vector<string>& langs);
+	void prepareVariants(FtSelectContext&, const FtDSLEntry&, const std::vector<string>& langs, FtDSLQuery&, bool needVariants);
 	void processStepVariants(FtSelectContext& ctx, DataHolder::CommitStep& step, const FtVariantEntry& variant, TextSearchResults& res);
 
-	void processTypos(FtSelectContext&, FtDSLEntry&);
+	void processTypos(FtSelectContext&, const FtDSLEntry&);
 
 	DataHolder& holder_;
 	size_t fieldSize_;

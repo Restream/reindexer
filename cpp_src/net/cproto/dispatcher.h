@@ -32,11 +32,16 @@ struct ClientData {
 };
 
 struct Context;
+struct IRPCCall {
+	void (*Get)(IRPCCall *, CmdCode &, Args &);
+	intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> data_;
+};
+
 class Writer {
 public:
 	virtual ~Writer() = default;
 	virtual void WriteRPCReturn(Context &ctx, const Args &args, const Error &status) = 0;
-	virtual void CallRPC(CmdCode cmd, const Args &args) = 0;
+	virtual void CallRPC(const IRPCCall &call) = 0;
 	virtual void SetClientData(std::unique_ptr<ClientData> data) = 0;
 	virtual ClientData *GetClientData() = 0;
 	virtual std::shared_ptr<reindexer::net::ConnectionStat> GetConnectionStat() = 0;

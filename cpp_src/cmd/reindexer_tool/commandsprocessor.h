@@ -44,12 +44,13 @@ public:
 	CommandsProcessor& operator=(const CommandsProcessor&) = delete;
 	CommandsProcessor& operator=(const CommandsProcessor&&) = delete;
 	~CommandsProcessor();
-	Error Connect(const string& dsn);
+	template <typename... Args>
+	Error Connect(const string& dsn, Args... args);
 	bool Run();
 
 protected:
 	bool Interactive();
-	bool FromFile();
+	bool FromFile(std::istream& in);
 	string getCurrentDsn() const;
 	Error queryResultsToJson(ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery);
 	Error getAvailableDatabases(vector<string>&);

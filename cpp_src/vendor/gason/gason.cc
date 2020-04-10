@@ -376,5 +376,14 @@ JsonNode JsonParser::Parse(string_view str, size_t *length) {
 	return Parse(span<char>(&tmp_[0], tmp_.size()), length);
 }
 
+bool isHomogeneousArray(const gason::JsonValue &v) {
+	int i = 0;
+	gason::JsonTag prevTag;
+	for (auto elem : v) {
+		if (i++ && prevTag != elem->value.getTag()) return false;
+		prevTag = elem->value.getTag();
+	}
+	return true;
+}
+
 }  // namespace gason
-   // namespace gason

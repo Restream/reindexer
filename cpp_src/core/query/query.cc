@@ -177,7 +177,7 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 				int numValues = ser.GetVarUint();
 				while (numValues--) {
 					field.isExpression = ser.GetVarUint();
-					field.values.push_back(ser.GetVariant());
+					field.values.push_back(ser.GetVariant().EnsureHold());
 				}
 				break;
 			}
@@ -189,7 +189,7 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 				if (ser.GetVarUint() == 1) field.values.MarkArray();
 				while (numValues--) {
 					field.isExpression = ser.GetVarUint();
-					field.values.push_back(ser.GetVariant());
+					field.values.push_back(ser.GetVariant().EnsureHold());
 				}
 				break;
 			}

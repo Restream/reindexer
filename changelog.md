@@ -1,3 +1,39 @@
+# Version 2.7.0 (10.04.2020)
+
+# Core
+- [fix] Requests with general sort and offset without limit can produce wrong sort
+- [fix] Full text synonyms can not work after transactions
+- [fea] More efficient arrays packing from json source
+- [fix] NOT operator in full text queries
+- [fix] Tuple memory leak on Update by condition
+- [fea] Multi-word synonyms support 
+- [fix] Potential large memory allocation on DISTINCT queries
+- [fix] Potential crash with aggregation on object fields
+
+# Reindexer server
+- [fea] Optional snappy network traffic compression
+- [fea] OnWALUpdates now used shared buffers - can seriously decrease memory usage with many slave
+- [fix] Replication fixes on bad network connections
+- [fix] Connection ID overflow, and bad connID error fixed
+
+# Reindexer tool
+- [fea] Added --createdb flag.
+- [fea] Improved behavior while input is redirected
+
+# Go connector
+- [fix] Enable to create multiple instances of builtinserver
+- [fea] Multiple dsn support in cproto
+
+# Face
+- [fix] Fixed precepts of new item
+- [fea] Rename namespace feature
+- [fea] Namespace config moved to dedicated page
+
+# Version 2.6.4 (31.03.2020)
+
+# Reindexer server
+- [fix] Wrong conn id full fix 
+
 # Version 2.6.3 (27.03.2020)
 
 # Core

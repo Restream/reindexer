@@ -38,7 +38,7 @@ func TestMain(m *testing.M) {
 	if udsn.Scheme == "builtin" {
 		os.RemoveAll("/tmp/reindex_test/")
 	}
-	DB = NewReindexWrapper(*dsn, reindexer.WithCreateDBIfMissing())
+	DB = NewReindexWrapper(*dsn, reindexer.WithCreateDBIfMissing(), reindexer.WithNetCompression())
 	DBD = &DB.Reindexer
 	if err = DB.Status().Err; err != nil {
 		panic(err)

@@ -69,6 +69,7 @@ protected:
 
 	bool canApplyUpdate(int64_t lsn, string_view nsName);
 	bool isSyncEnabled(string_view nsName);
+	bool retryIfNetworkError(const Error &err);
 
 	std::unique_ptr<client::Reindexer> master_;
 	ReindexerImpl *slave_;

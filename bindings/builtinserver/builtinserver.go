@@ -21,7 +21,6 @@ var defaultStartupTimeout time.Duration = time.Minute * 3
 var defaultShutdownTimeout time.Duration = defaultStartupTimeout
 
 func init() {
-	C.init_reindexer_server()
 	bindings.RegisterBinding("builtinserver", new(BuiltinServer))
 }
 
@@ -38,18 +37,19 @@ func str2c(str string) C.reindexer_string {
 	return C.reindexer_string{p: unsafe.Pointer(hdr.Data), n: C.int(hdr.Len)}
 }
 
-func checkStorageReady() bool {
-	return int(C.check_server_ready()) == 1
+func (server *BuiltinServer) checkStorageReady() bool {
+	return int(C.check_server_ready(server.svc)) == 1
 }
 
 type BuiltinServer struct {
 	builtin         bindings.RawBinding
 	wg              sync.WaitGroup
 	shutdownTimeout time.Duration
+	svc             C.uintptr_t
 }
 
 func (server *BuiltinServer) stopServer(timeout time.Duration) error {
-	if err := err2go(C.stop_reindexer_server()); err != nil {
+	if err := err2go(C.stop_reindexer_server(server.svc)); err != nil {
 		return err
 	}
 
@@ -67,10 +67,11 @@ func (server *BuiltinServer) stopServer(timeout time.Duration) error {
 	}
 }
 
-func (server *BuiltinServer) Init(u *url.URL, options ...interface{}) error {
+func (server *BuiltinServer) Init(u []url.URL, options ...interface{}) error {
 	if server.builtin != nil {
 		return bindings.NewError("already initialized", bindings.ErrConflict)
 	}
+	server.svc = C.init_reindexer_server()
 
 	server.builtin = &builtin.Builtin{}
 	startupTimeout := defaultStartupTimeout
@@ -103,32 +104,32 @@ func (server *BuiltinServer) Init(u *url.URL, options ...interface{}) error {
 	server.wg.Add(1)
 	go func() {
 		defer server.wg.Done()
-		err := err2go(C.start_reindexer_server(str2c(yamlStr)))
+		err := err2go(C.start_reindexer_server(server.svc, str2c(yamlStr)))
 		if err != nil {
 			panic(err)
 		}
 	}()
 
 	tTimeout := time.Now().Add(startupTimeout)
-	for !checkStorageReady() {
+	for !server.checkStorageReady() {
 		if time.Now().After(tTimeout) {
 			panic(bindings.NewError("Server startup timeout expired.", bindings.ErrLogic))
 		}
 		time.Sleep(time.Second)
 	}
 
-	pass, _ := u.User.Password()
+	pass, _ := u[0].User.Password()
 
 	var rx C.uintptr_t = 0
-	if err := err2go(C.get_reindexer_instance(str2c(u.Host), str2c(u.User.Username()), str2c(pass), &rx)); err != nil {
+	if err := err2go(C.get_reindexer_instance(server.svc, str2c(u[0].Host), str2c(u[0].User.Username()), str2c(pass), &rx)); err != nil {
 		return err
 	}
 
-	url := *u
-	url.Path = ""
+	builtinURL := append(u[:0:0], u...)
+	builtinURL[0].Path = ""
 
 	options = append(options, bindings.OptionReindexerInstance{Instance: uintptr(rx)})
-	return server.builtin.Init(&url, options...)
+	return server.builtin.Init(builtinURL, options...)
 }
 
 func (server *BuiltinServer) Clone() bindings.RawBinding {
@@ -244,7 +245,7 @@ func (server *BuiltinServer) Finalize() error {
 	if err := server.stopServer(server.shutdownTimeout); err != nil {
 		return err
 	}
-	C.destroy_reindexer_server()
+	C.destroy_reindexer_server(server.svc)
 	server.builtin = nil
 	server.shutdownTimeout = 0
 	return nil

@@ -17,9 +17,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/stretchr/testify/require"
 	"github.com/restream/reindexer"
 	"github.com/restream/reindexer/bindings"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -228,21 +228,20 @@ func (tx *txTest) UpsertAsnc(s interface{}, cmpl bindings.Completion) {
 }
 
 func (tx *txTest) Commit() (int, error) {
-	tx.db.SetSynced(false)
-
-	return tx.tx.CommitWithCount()
+	res, err := tx.tx.CommitWithCount()
+	tx.db.SetSyncRequired()
+	return res, err
 }
 
 func (tx *txTest) Rollback() error {
-	tx.db.SetSynced(false)
-
-	return tx.tx.Rollback()
+	err := tx.tx.Rollback()
+	tx.db.SetSyncRequired()
+	return err
 }
 
 func (tx *txTest) MustCommit() int {
-	tx.db.SetSynced(false)
-
 	res := tx.tx.MustCommit()
+	tx.db.SetSyncRequired()
 	return res
 }
 
@@ -299,7 +298,7 @@ func (qt *queryTestEntryTree) toString() (ret string) {
 }
 
 func (qt *queryTest) toString() (ret string) {
-	ret += " FROM " + qt.q.Namespace;
+	ret += " FROM " + qt.q.Namespace
 	if len(qt.entries.data) > 0 {
 		ret += " WHERE " + qt.entries.toString()
 	}
@@ -329,7 +328,7 @@ func (qt *queryTest) toString() (ret string) {
 	if qt.startOffset != 0 {
 		ret += " OFFSET " + strconv.Itoa(qt.startOffset)
 	}
-	for i, dIdx := range(qt.distinctIndexes) {
+	for i, dIdx := range qt.distinctIndexes {
 		if i != 0 {
 			ret += ","
 		}
@@ -475,32 +474,33 @@ func (qt *queryTest) Delete() (int, error) {
 }
 
 func (qt *queryTest) DeleteCtx(ctx context.Context) (int, error) {
-	qt.readOnly = false
-	qt.db.SetSynced(false)
+	res, err := qt.q.DeleteCtx(ctx)
 
-	return qt.q.DeleteCtx(ctx)
+	qt.db.SetSyncRequired()
+	qt.readOnly = false
+	return res, err
 }
 
 func (qt *queryTest) Drop(field string) *queryTest {
 	qt.q.Drop(field)
-	qt.db.SetSynced(false)
 
+	qt.db.SetSyncRequired()
 	qt.readOnly = false
 	return qt
 }
 
 func (qt *queryTest) Set(field string, values interface{}) *queryTest {
 	qt.q.Set(field, values)
-	qt.db.SetSynced(false)
 
+	qt.db.SetSyncRequired()
 	qt.readOnly = false
 	return qt
 }
 
 func (qt *queryTest) SetObject(field string, values interface{}) *queryTest {
 	qt.q.SetObject(field, values)
-	qt.db.SetSynced(false)
 
+	qt.db.SetSyncRequired()
 	qt.readOnly = false
 	return qt
 }
@@ -524,9 +524,11 @@ func (qt *queryTest) Update() *reindexer.Iterator {
 }
 
 func (qt *queryTest) UpdateCtx(ctx context.Context) *reindexer.Iterator {
+	it := qt.q.UpdateCtx(ctx)
+
+	qt.db.SetSyncRequired()
 	qt.readOnly = false
-	qt.db.SetSynced(false)
-	return qt.q.UpdateCtx(ctx)
+	return it
 }
 
 // Limit - Set limit (count) of returned items
@@ -895,7 +897,7 @@ func (qt *queryTest) Verify(t *testing.T, items []interface{}, aggResults []rein
 	// map of found ids
 	foundIds := make(map[string]int, len(items))
 	var distIndexes [][][]int
-	for _, dIdx := range(qt.distinctIndexes) {
+	for _, dIdx := range qt.distinctIndexes {
 		distIdx, _ := qt.ns.getField(dIdx)
 		distIndexes = append(distIndexes, distIdx)
 	}
@@ -1030,7 +1032,7 @@ func (qt *queryTest) Verify(t *testing.T, items []interface{}, aggResults []rein
 				if qt.startOffset == 0 && (qt.limitItems == 0 || len(qt.distinctIndexes) <= 1 && len(items) < qt.limitItems) {
 					itemJson, _ := json.Marshal(item)
 					require.Greaterf(t, len(qt.distinctIndexes), 0, "Not found item pkey=%s, match condition '%s', expected total items=%d, found=%d\n%s", pk, qt.toString(), len(qt.ns.items), len(items), string(itemJson))
-					for i, distIdx := range(distIndexes) {
+					for i, distIdx := range distIndexes {
 						vals := getValues(item, distIdx)
 						require.Equalf(t, len(vals), 1, "Found len(values) != 1 on distinct %#v in item %s", qt.distinctIndexes, string(itemJson))
 						valStr := fmt.Sprint(vals[0])

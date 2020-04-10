@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/restream/reindexer/bindings"
+	"github.com/golang/snappy"
 )
 
 var bufPool sync.Pool
@@ -116,4 +117,9 @@ func newNetBuffer(size int, conn *connection) (buf *NetBuffer) {
 	}
 
 	return buf
+}
+
+func (buf *NetBuffer) decompress() (err error) {
+	buf.buf, err = snappy.Decode(nil, buf.buf)
+	return err
 }

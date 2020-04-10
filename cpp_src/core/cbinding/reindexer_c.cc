@@ -21,9 +21,11 @@ using std::move;
 const int kQueryResultsPoolSize = 1024;
 const int kMaxConcurentQueries = 65534;
 const size_t kCtxArrSize = 1024;
+const size_t kWarnLargeResultsLimit = 0x40000000;
+const size_t kMaxPooledResultsCap = 0x10000;
 
 static Error err_not_init(-1, "Reindexer db has not initialized");
-static Error err_too_many_queries(errLogic, "Too many paralell queries");
+static Error err_too_many_queries(errLogic, "Too many parallel queries");
 
 static reindexer_error error2c(const Error& err_) {
 	reindexer_error err;
@@ -61,7 +63,11 @@ static CGOCtxPool ctx_pool(kCtxArrSize);
 
 static void put_results_to_pool(QueryResultsWrapper* res) {
 	res->Clear();
-	res->ser.Reset();
+	if (res->ser.Cap() > kMaxPooledResultsCap) {
+		res->ser = WrResultSerializer();
+	} else {
+		res->ser.Reset();
+	}
 	res_pool.put(res);
 }
 
@@ -411,6 +417,10 @@ reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int as_json
 		res = rdxKeeper.db().Select(str2cv(query), *result);
 		if (res.ok()) {
 			results2c(result, &out, as_json, pt_versions, pt_versions_count);
+			if (result->ser.Cap() >= kWarnLargeResultsLimit) {
+				logPrintf(LogWarning, "Query too large results: count=%d size=%d,cap=%d, q=%s", result->Count(), result->ser.Len(),
+						  result->ser.Cap(), str2cv(query));
+			}
 		} else {
 			put_results_to_pool(result);
 		}
@@ -450,6 +460,10 @@ reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, i
 		if (res.ok()) {
 			results2c(result, &out, as_json, pt_versions, pt_versions_count);
 		} else {
+			if (result->ser.Cap() >= kWarnLargeResultsLimit) {
+				logPrintf(LogWarning, "Query too large results: count=%d size=%d,cap=%d, q=%s", result->Count(), result->ser.Len(),
+						  result->ser.Cap(), q.GetSQL());
+			}
 			put_results_to_pool(result);
 		}
 	}

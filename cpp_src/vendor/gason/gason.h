@@ -203,6 +203,7 @@ public:
 };
 
 int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAllocator &allocator);
+bool isHomogeneousArray(const JsonValue &v);
 
 // Parser wrapper
 class JsonParser {

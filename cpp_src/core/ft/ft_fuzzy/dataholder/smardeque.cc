@@ -148,6 +148,19 @@ SmartDeque<T, block_size>::SmartDeque(SmartDeque&& rhs) noexcept {
 }
 
 template <class T, size_t block_size>
+SmartDeque<T, block_size>& SmartDeque<T, block_size>::operator=(SmartDeque&& rhs) noexcept {
+	if (this != &rhs) {
+		size_ = rhs.size_;
+		count_ = rhs.count_;
+		data_ = rhs.data_;
+		rhs.size_ = 0;
+		rhs.count_ = 0;
+		rhs.data_ = nullptr;
+	}
+	return *this;
+}
+
+template <class T, size_t block_size>
 SmartDeque<T, block_size>::~SmartDeque() {
 	if (!data_) return;
 	for (size_t i = 0; i < size_; ++i) {

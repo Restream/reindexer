@@ -52,7 +52,8 @@ void sigint_handler(int signal) {
 }
 
 template <typename DBInterface>
-Error CommandsProcessor<DBInterface>::Connect(const string& dsn) {
+template <typename... Args>
+Error CommandsProcessor<DBInterface>::Connect(const string& dsn, Args... args) {
 	string outputMode;
 	if (reindexer::fs::ReadFile(reindexer::fs::JoinPath(reindexer::fs::GetHomeDir(), kConfigFile), outputMode) > 0) {
 		gason::JsonParser jsonParser;
@@ -69,7 +70,7 @@ Error CommandsProcessor<DBInterface>::Connect(const string& dsn) {
 	if (!uri_.parse(dsn)) {
 		return Error(errNotValid, "Cannot connect to DB: Not a valid uri");
 	}
-	Error err = db_.Connect(dsn);
+	Error err = db_.Connect(dsn, args...);
 	if (err.ok()) {
 		sigIntHandler = std::bind(&CommandsProcessor::onSigInt, this, std::placeholders::_1);
 		signal(SIGINT, sigint_handler);
@@ -798,9 +799,8 @@ bool CommandsProcessor<DBInterface>::Interactive() {
 }
 
 template <typename DBInterface>
-bool CommandsProcessor<DBInterface>::FromFile() {
+bool CommandsProcessor<DBInterface>::FromFile(std::istream& infile) {
 	bool wasError = false;
-	std::ifstream infile(inFileName_);
 	if (!infile) {
 		std::cerr << "ERROR: Can't open " << inFileName_ << std::endl;
 		return false;
@@ -838,7 +838,10 @@ bool CommandsProcessor<DBInterface>::Run() {
 	}
 
 	if (!inFileName_.empty()) {
-		return FromFile();
+		std::ifstream infile(inFileName_);
+		return FromFile(infile);
+	} else if (reindexer::isStdinRedirected()) {
+		return FromFile(std::cin);
 	} else {
 		return Interactive();
 	}
@@ -925,5 +928,8 @@ Error CommandsProcessor<reindexer::Reindexer>::commandProcessDatabases(const str
 
 template class CommandsProcessor<reindexer::client::Reindexer>;
 template class CommandsProcessor<reindexer::Reindexer>;
+template Error CommandsProcessor<reindexer::Reindexer>::Connect(const string& dsn);
+template Error CommandsProcessor<reindexer::client::Reindexer>::Connect(const string& dsn);
+template Error CommandsProcessor<reindexer::client::Reindexer>::Connect(const string& dsn, reindexer::client::ConnectOpts opts);
 
 }  // namespace reindexer_tool

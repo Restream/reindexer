@@ -25,7 +25,7 @@ public:
 	typedef std::function<void(const Error &err)> Completion;
 	QueryResults(int fetchFlags = 0);
 	QueryResults(const QueryResults &) = delete;
-	QueryResults(QueryResults &&) = default;
+	QueryResults(QueryResults &&) noexcept;
 	~QueryResults();
 	QueryResults &operator=(const QueryResults &) = delete;
 	QueryResults &operator=(QueryResults &&obj) noexcept;
@@ -62,7 +62,7 @@ public:
 	h_vector<string_view, 1> GetNamespaces() const;
 	bool IsCacheEnabled() const { return queryParams_.flags & kResultsWithItemID; }
 
-	const TagsMatcher &getTagsMatcher(int nsid) const;
+	TagsMatcher getTagsMatcher(int nsid) const;
 
 private:
 	friend class RPCClient;

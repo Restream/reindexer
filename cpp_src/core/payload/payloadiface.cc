@@ -81,7 +81,7 @@ VariantArray PayloadIface<T>::GetByJsonPath(const TagsPath &jsonPath, VariantArr
 	FieldsSet filter({jsonPath});
 	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
 	krefs.resize(0);
-	FieldsExtractor extractor(&krefs, expectedType);
+	FieldsExtractor extractor(&krefs, expectedType, jsonPath.size());
 
 	encoder.Encode(&pl, extractor);
 	return krefs;
@@ -238,6 +238,20 @@ std::string PayloadIface<T>::Dump() const {
 	return printString;
 }
 
+template <>
+void PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher &tm, WrSerializer &ser) {
+	JsonBuilder b(ser);
+	JsonEncoder e(&tm);
+	e.Encode(this, b);
+}
+
+template <>
+std::string PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher &tm) {
+	WrSerializer ser;
+	GetJSON(tm, ser);
+	return string(ser.Slice());
+}
+
 // Get fields hash
 template <typename T>
 size_t PayloadIface<T>::GetHash(const FieldsSet &fields) const {
@@ -366,43 +380,49 @@ int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, const Coll
 }
 
 template <typename T>
-void PayloadIface<T>::AddRefStrings() {
-	for (auto field : t_.StrFields()) {
-		auto &f = t_.Field(field);
-		assert(f.Type() == KeyValueString);
+void PayloadIface<T>::AddRefStrings(int field) {
+	auto &f = t_.Field(field);
+	assert(f.Type() == KeyValueString);
 
-		// direct payloadvalue manipulation for speed optimize
-		if (!f.IsArray()) {
-			auto str = *reinterpret_cast<const p_string *>((v_->Ptr() + f.Offset()));
+	// direct payloadvalue manipulation for speed optimize
+	if (!f.IsArray()) {
+		auto str = *reinterpret_cast<const p_string *>((v_->Ptr() + f.Offset()));
+		key_string_add_ref(const_cast<string *>(str.getCxxstr()));
+	} else {
+		auto arr = reinterpret_cast<PayloadFieldValue::Array *>(v_->Ptr() + f.Offset());
+		for (int i = 0; i < arr->len; i++) {
+			auto str = *reinterpret_cast<const p_string *>(v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
 			key_string_add_ref(const_cast<string *>(str.getCxxstr()));
-		} else {
-			auto arr = reinterpret_cast<PayloadFieldValue::Array *>(v_->Ptr() + f.Offset());
-			for (int i = 0; i < arr->len; i++) {
-				auto str = *reinterpret_cast<const p_string *>(v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
-				key_string_add_ref(const_cast<string *>(str.getCxxstr()));
-			}
+		}
+	}
+}
+
+template <typename T>
+void PayloadIface<T>::AddRefStrings() {
+	for (auto field : t_.StrFields()) AddRefStrings(field);
+}
+
+template <typename T>
+void PayloadIface<T>::ReleaseStrings(int field) {
+	auto &f = t_.Field(field);
+	assert(f.Type() == KeyValueString);
+
+	// direct payloadvalue manipulation for speed optimize
+	if (!f.IsArray()) {
+		auto str = *reinterpret_cast<p_string *>((v_->Ptr() + f.Offset()));
+		key_string_release(const_cast<string *>(str.getCxxstr()));
+	} else {
+		auto arr = reinterpret_cast<PayloadFieldValue::Array *>(v_->Ptr() + f.Offset());
+		for (int i = 0; i < arr->len; i++) {
+			auto str = *reinterpret_cast<const p_string *>(v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
+			key_string_release(const_cast<string *>(str.getCxxstr()));
 		}
 	}
 }
 
 template <typename T>
 void PayloadIface<T>::ReleaseStrings() {
-	for (auto field : t_.StrFields()) {
-		auto &f = t_.Field(field);
-		assert(f.Type() == KeyValueString);
-
-		// direct payloadvalue manipulation for speed optimize
-		if (!f.IsArray()) {
-			auto str = *reinterpret_cast<p_string *>((v_->Ptr() + f.Offset()));
-			key_string_release(const_cast<string *>(str.getCxxstr()));
-		} else {
-			auto arr = reinterpret_cast<PayloadFieldValue::Array *>(v_->Ptr() + f.Offset());
-			for (int i = 0; i < arr->len; i++) {
-				auto str = *reinterpret_cast<const p_string *>(v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
-				key_string_release(const_cast<string *>(str.getCxxstr()));
-			}
-		}
-	}
+	for (auto field : t_.StrFields()) ReleaseStrings(field);
 }
 
 template <typename T>

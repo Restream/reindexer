@@ -33,13 +33,21 @@ size_t heap_size<key_string>(const key_string &kt) {
 	return kt->heap_size() + sizeof(*kt.get());
 }
 
-template <typename T, typename std::enable_if<std::is_const<T>::value>::type * = nullptr>
-void free_node(T &) {}
+struct DeepClean {
+	template <typename T>
+	void operator()(T &v) const {
+		free_node(v.first);
+		free_node(v.second);
+	}
 
-template <typename T, typename std::enable_if<!std::is_const<T>::value>::type * = nullptr>
-void free_node(T &v) {
-	v = T();
-}
+	template <typename T, typename std::enable_if<std::is_const<T>::value>::type * = nullptr>
+	static void free_node(T &) {}
+
+	template <typename T, typename std::enable_if<!std::is_const<T>::value>::type * = nullptr>
+	static void free_node(T &v) {
+		v = T();
+	}
+};
 
 template <typename T>
 void IndexUnordered<T>::addMemStat(typename T::iterator it) {
@@ -101,14 +109,12 @@ void IndexUnordered<T>::Delete(const Variant &key, IdType id) {
 	delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
-	assertf(this->opts_.IsArray() || this->Opts().IsSparse() || delcnt, "Delete unexists id from index '%s' id=%d,key=%s", this->name_, id,
-			key.As<string>());
+	assertf(this->opts_.IsArray() || this->Opts().IsSparse() || delcnt, "Delete unexists id from index '%s' id=%d,key=%s (%s)", this->name_,
+			id, key.As<string>(this->payloadType_, this->fields_), Variant(keyIt->first).As<string>(this->payloadType_, this->fields_));
 
 	if (keyIt->second.Unsorted().IsEmpty()) {
 		this->tracker_.markDeleted(keyIt);
-		free_node(keyIt->first);
-		free_node(keyIt->second);
-		idx_map.erase(keyIt);
+		idx_map.template erase<DeepClean>(keyIt);
 	} else {
 		addMemStat(keyIt);
 		this->tracker_.markUpdated(this->idx_map, keyIt);
@@ -287,7 +293,7 @@ static Index *IndexUnordered_New(const IndexDef &idef, const PayloadType payload
 		case IndexStrHash:
 			return new IndexUnordered<unordered_str_map<KeyEntryT>>(idef, payloadType, fields);
 		case IndexCompositeHash:
-			return new IndexUnordered<unordered_payload_map<KeyEntryT>>(idef, payloadType, fields);
+			return new IndexUnordered<unordered_payload_map<KeyEntryT, true>>(idef, payloadType, fields);
 		default:
 			abort();
 	}
@@ -302,13 +308,13 @@ template class IndexUnordered<number_map<int, Index::KeyEntryPlain>>;
 template class IndexUnordered<number_map<int64_t, Index::KeyEntryPlain>>;
 template class IndexUnordered<number_map<double, Index::KeyEntryPlain>>;
 template class IndexUnordered<str_map<Index::KeyEntryPlain>>;
-template class IndexUnordered<payload_map<Index::KeyEntryPlain>>;
+template class IndexUnordered<payload_map<Index::KeyEntryPlain, true>>;
 template class IndexUnordered<number_map<int, Index::KeyEntry>>;
 template class IndexUnordered<number_map<int64_t, Index::KeyEntry>>;
 template class IndexUnordered<number_map<double, Index::KeyEntry>>;
 template class IndexUnordered<str_map<Index::KeyEntry>>;
-template class IndexUnordered<payload_map<Index::KeyEntry>>;
+template class IndexUnordered<payload_map<Index::KeyEntry, true>>;
 template class IndexUnordered<unordered_str_map<FtKeyEntry>>;
-template class IndexUnordered<unordered_payload_map<FtKeyEntry>>;
+template class IndexUnordered<unordered_payload_map<FtKeyEntry, true>>;
 
 }  // namespace reindexer

@@ -20,6 +20,8 @@ public:
 	struct Synonym {
 		vector<string> tokens;
 		vector<string> alternatives;
+		bool operator==(const Synonym& other) const { return tokens == other.tokens && alternatives == other.alternatives; }
+		bool operator!=(const Synonym& other) const { return !(*this == other); }
 	};
 	BaseFTConfig();
 	virtual ~BaseFTConfig() = default;
@@ -37,7 +39,7 @@ public:
 	string extraWordSymbols = "-/+";
 
 protected:
-	void parseBase(const gason::JsonNode &root);
+	void parseBase(const gason::JsonNode& root);
 };
 
 }  // namespace reindexer

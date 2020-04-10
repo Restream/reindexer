@@ -13,6 +13,19 @@ using namespace reindexer::net;
 QueryResults::QueryResults(int fetchFlags)
 	: conn_(nullptr), queryID_(0), fetchOffset_(0), fetchFlags_(fetchFlags), fetchAmount_(0), requestTimeout_(0) {}
 
+QueryResults::QueryResults(QueryResults &&obj) noexcept
+	: conn_(std::move(obj.conn_)),
+	  nsArray_(std::move(obj.nsArray_)),
+	  rawResult_(std::move(obj.rawResult_)),
+	  queryID_(std::move(obj.queryID_)),
+	  fetchOffset_(std::move(obj.fetchOffset_)),
+	  fetchFlags_(std::move(obj.fetchFlags_)),
+	  fetchAmount_(std::move(obj.fetchAmount_)),
+	  requestTimeout_(obj.requestTimeout_),
+	  queryParams_(std::move(obj.queryParams_)),
+	  status_(std::move(obj.status_)),
+	  cmpl_(std::move(obj.cmpl_)) {}
+
 QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	if (this != &obj) {
 		rawResult_ = std::move(obj.rawResult_);
@@ -107,7 +120,7 @@ h_vector<string_view, 1> QueryResults::GetNamespaces() const {
 	return ret;
 }
 
-const TagsMatcher &QueryResults::getTagsMatcher(int nsid) const {
+TagsMatcher QueryResults::getTagsMatcher(int nsid) const {
 	shared_lock<shared_timed_mutex> lck(nsArray_[nsid]->lck_);
 	return nsArray_[nsid]->tagsMatcher_;
 }
@@ -117,7 +130,8 @@ Error QueryResults::Iterator::GetJSON(WrSerializer &wrser, bool withHdrLen) {
 	try {
 		switch (qr_->queryParams_.flags & kResultsFormatMask) {
 			case kResultsCJson: {
-				JsonEncoder enc(&qr_->getTagsMatcher(itemParams_.nsid));
+				auto tm = qr_->getTagsMatcher(itemParams_.nsid);
+				JsonEncoder enc(&tm);
 				JsonBuilder builder(wrser, JsonBuilder::TypePlain);
 
 				if (withHdrLen) {

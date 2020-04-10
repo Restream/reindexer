@@ -141,13 +141,16 @@ TEST_F(FTApi, SelectWithMinus) {
 	Add("including all of them");
 
 	auto res = SimpleSelect("+including -excluding");
-	EXPECT_TRUE(res.Count() == 1);
+	CheckResults(res, {{"!including! all of them", ""}});
 
-	for (size_t i = 0; i < res.Count(); ++i) {
-		Item ritem = res[i].GetItem();
-		string val = ritem["ft1"].As<string>();
-		EXPECT_TRUE(val == "!including! all of them");
-	}
+	res = SimpleSelect("including -excluding");
+	CheckResults(res, {{"!including! all of them", ""}});
+
+	res = SimpleSelect("-excluding +including");
+	CheckResults(res, {{"!including! all of them", ""}});
+
+	res = SimpleSelect("-excluding including");
+	CheckResults(res, {{"!including! all of them", ""}});
 }
 
 TEST_F(FTApi, SelectWithFieldsList) {
@@ -466,7 +469,6 @@ TEST_F(FTApi, Unique) {
 				if (res.Count() != 1) {
 					for (auto it : res) {
 						Item ritem(it.GetItem());
-						std::cout << ritem["ft1"].As<string>() << std::endl;
 					}
 					abort();
 				}
@@ -494,6 +496,270 @@ TEST_F(FTApi, SelectSynonyms) {
 	std::sort(res.begin(), res.end());
 	EXPECT_EQ(res[0], "love !rex!");
 	EXPECT_EQ(res[1], "no !looove!");
+}
+
+TEST_F(FTApi, SelectMultiwordSynonyms) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.synonyms = {{{"whole world", "UN", "United Nations"},
+					   {"UN", "ООН", "целый мир", "планета", "генеральная ассамблея организации объединенных наций"}},
+					  {{"word"}, {"одно слово"}}};
+	Init(ftCfg);
+
+	Add("nm1", "whole world", "test");
+	Add("nm1", "world whole", "test");
+	Add("nm1", "whole", "world");
+	Add("nm1", "world", "test");
+	Add("nm1", "whole", "test");
+	Add("nm1", "целый мир", "test");
+	Add("nm1", "целый", "мир");
+	Add("nm1", "целый", "test");
+	Add("nm1", "мир", "test");
+	Add("nm1", "планета", "test");
+	Add("nm1", "генеральная ассамблея организации объединенных наций", "test");
+	Add("nm1", "ассамблея генеральная наций объединенных организации", "test");
+	Add("nm1", "генеральная прегенеральная ассамблея", "организации объединенных свободных наций");
+	Add("nm1", "генеральная прегенеральная ", "организации объединенных свободных наций");
+	Add("nm1", "UN", "UN");
+
+	Add("nm1", "word", "test");
+	Add("nm1", "test", "word");
+	Add("nm1", "word", "слово");
+	Add("nm1", "word", "одно");
+	Add("nm1", "слово", "test");
+	Add("nm1", "слово всего лишь одно", "test");
+	Add("nm1", "одно", "test");
+	Add("nm1", "слово", "одно");
+	Add("nm1", "слово одно", "test");
+	Add("nm1", "одно слово", "word");
+
+	auto qr = SimpleSelect("world");
+	CheckResults(qr, {{"whole !world!", "test"}, {"!world! whole", "test"}, {"whole", "!world!"}, {"!world!", "test"}});
+
+	qr = SimpleSelect("whole world");
+	CheckResults(qr, {{"!whole world!", "test"},
+					  {"!world whole!", "test"},
+					  {"!whole!", "!world!"},
+					  {"!world!", "test"},
+					  {"!whole!", "test"},
+					  {"!целый мир!", "test"},
+					  {"!целый!", "!мир!"},
+					  {"!планета!", "test"},
+					  {"!генеральная ассамблея организации объединенных наций!", "test"},
+					  {"!ассамблея генеральная наций объединенных организации!", "test"},
+					  {"!генеральная! прегенеральная !ассамблея!", "!организации объединенных! свободных !наций!"},
+					  {"!UN!", "!UN!"}});
+
+	qr = SimpleSelect("UN");
+	CheckResults(qr, {{"!целый мир!", "test"},
+					  {"!целый!", "!мир!"},
+					  {"!планета!", "test"},
+					  {"!генеральная ассамблея организации объединенных наций!", "test"},
+					  {"!ассамблея генеральная наций объединенных организации!", "test"},
+					  {"!генеральная! прегенеральная !ассамблея!", "!организации объединенных! свободных !наций!"},
+					  {"!UN!", "!UN!"}});
+
+	qr = SimpleSelect("United Nations");
+	CheckResults(qr, {{"!целый мир!", "test"},
+					  {"!целый!", "!мир!"},
+					  {"!планета!", "test"},
+					  {"!генеральная ассамблея организации объединенных наций!", "test"},
+					  {"!ассамблея генеральная наций объединенных организации!", "test"},
+					  {"!генеральная! прегенеральная !ассамблея!", "!организации объединенных! свободных !наций!"},
+					  {"!UN!", "!UN!"}});
+
+	qr = SimpleSelect("целый мир");
+	CheckResults(qr, {{"!целый мир!", "test"}, {"!целый!", "test"}, {"!мир!", "test"}, {"!целый!", "!мир!"}});
+
+	qr = SimpleSelect("ООН");
+	CheckResults(qr, {});
+
+	qr = SimpleSelect("word");
+	CheckResults(qr, {{"!word!", "test"},
+					  {"test", "!word!"},
+					  {"!word!", "!слово!"},
+					  {"!word!", "!одно!"},
+					  {"!слово! всего лишь !одно!", "test"},
+					  {"!слово!", "!одно!"},
+					  {"!слово одно!", "test"},
+					  {"!одно слово!", "!word!"}});
+}
+
+TEST_F(FTApi, SelectWithMinusWithSynonyms) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.synonyms = {{{"word", "several lexems"}, {"слово", "сколькото лексем"}}};
+	Init(ftCfg);
+
+	Add("nm1", "word", "test");
+	Add("nm1", "several lexems", "test");
+	Add("nm1", "слово", "test");
+	Add("nm1", "сколькото лексем", "test");
+
+	auto qr = SimpleSelect("test word");
+	CheckResults(qr, {{"!word!", "!test!"}, {"several lexems", "!test!"}, {"!слово!", "!test!"}, {"!сколькото лексем!", "!test!"}});
+	// Don't use synonyms
+	qr = SimpleSelect("test -word");
+	CheckResults(qr, {{"several lexems", "!test!"}, {"слово", "!test!"}, {"сколькото лексем", "!test!"}});
+	qr = SimpleSelect("test several lexems");
+	CheckResults(qr, {{"word", "!test!"}, {"!several lexems!", "!test!"}, {"!слово!", "!test!"}, {"!сколькото лексем!", "!test!"}});
+	// Don't use synonyms
+	qr = SimpleSelect("test several -lexems");
+	CheckResults(qr, {{"word", "!test!"}, {"слово", "!test!"}, {"сколькото лексем", "!test!"}});
+	// Don't use synonyms
+	qr = SimpleSelect("test -several lexems");
+	CheckResults(qr, {{"word", "!test!"}, {"слово", "!test!"}, {"сколькото лексем", "!test!"}});
+}
+
+TEST_F(FTApi, ChangeSynonymsCfg) {
+	auto ftCfg = GetDefaultConfig();
+	Init(ftCfg);
+
+	Add("nm1", "UN", "test");
+	Add("nm1", "United Nations", "test");
+	Add("nm1", "ООН", "test");
+	Add("nm1", "организация объединенных наций", "test");
+
+	Add("nm1", "word", "test");
+	Add("nm1", "several lexems", "test");
+	Add("nm1", "слово", "test");
+	Add("nm1", "сколькото лексем", "test");
+
+	auto qr = SimpleSelect("UN");
+	CheckResults(qr, {{"!UN!", "test"}});
+	qr = SimpleSelect("United Nations");
+	CheckResults(qr, {{"!United Nations!", "test"}});
+	qr = SimpleSelect("word");
+	CheckResults(qr, {{"!word!", "test"}});
+	qr = SimpleSelect("several lexems");
+	CheckResults(qr, {{"!several lexems!", "test"}});
+
+	// Add synonyms
+	ftCfg.synonyms = {{{"UN", "United Nations"}, {"ООН", "организация объединенных наций"}}};
+	SetFTConfig(ftCfg, "nm1", "ft3");
+
+	qr = SimpleSelect("UN");
+	CheckResults(qr, {{"!UN!", "test"}, {"!ООН!", "test"}, {"!организация объединенных наций!", "test"}});
+	qr = SimpleSelect("United Nations");
+	CheckResults(qr, {{"!United Nations!", "test"}, {"!ООН!", "test"}, {"!организация объединенных наций!", "test"}});
+	qr = SimpleSelect("word");
+	CheckResults(qr, {{"!word!", "test"}});
+	qr = SimpleSelect("several lexems");
+	CheckResults(qr, {{"!several lexems!", "test"}});
+
+	// Change synonyms
+	ftCfg.synonyms = {{{"word", "several lexems"}, {"слово", "сколькото лексем"}}};
+	SetFTConfig(ftCfg, "nm1", "ft3");
+
+	qr = SimpleSelect("UN");
+	CheckResults(qr, {{"!UN!", "test"}});
+	qr = SimpleSelect("United Nations");
+	CheckResults(qr, {{"!United Nations!", "test"}});
+	qr = SimpleSelect("word");
+	CheckResults(qr, {{"!word!", "test"}, {"!слово!", "test"}, {"!сколькото лексем!", "test"}});
+	qr = SimpleSelect("several lexems");
+	CheckResults(qr, {{"!several lexems!", "test"}, {"!слово!", "test"}, {"!сколькото лексем!", "test"}});
+
+	// Remove synonyms
+	ftCfg.synonyms.clear();
+	SetFTConfig(ftCfg, "nm1", "ft3");
+
+	qr = SimpleSelect("UN");
+	CheckResults(qr, {{"!UN!", "test"}});
+	qr = SimpleSelect("United Nations");
+	CheckResults(qr, {{"!United Nations!", "test"}});
+	qr = SimpleSelect("word");
+	CheckResults(qr, {{"!word!", "test"}});
+	qr = SimpleSelect("several lexems");
+	CheckResults(qr, {{"!several lexems!", "test"}});
+}
+
+TEST_F(FTApi, SelectWithRelevanceBoostWithSynonyms) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.synonyms = {{{"word"}, {"одно слово"}}, {{"United Nations"}, {"ООН"}}};
+	Init(ftCfg);
+
+	Add("nm1", "одно слово", "");
+	Add("nm1", "", "ООН");
+
+	auto res = SimpleSelect("word^2 United^0.5 Nations");
+	ASSERT_EQ(res.Count(), 2);
+
+	Item ritem = res[0].GetItem();
+	string val = ritem["ft1"].As<string>();
+	EXPECT_EQ(val, "!одно слово!");
+
+	ritem = res[1].GetItem();
+	val = ritem["ft2"].As<string>();
+	EXPECT_EQ(val, "!ООН!");
+
+	res = SimpleSelect("word^0.5 United^2 Nations^0.5");
+	ASSERT_EQ(res.Count(), 2);
+
+	ritem = res[0].GetItem();
+	val = ritem["ft2"].As<string>();
+	EXPECT_EQ(val, "!ООН!");
+
+	ritem = res[1].GetItem();
+	val = ritem["ft1"].As<string>();
+	EXPECT_EQ(val, "!одно слово!");
+}
+
+TEST_F(FTApi, SelectWithFieldsBoostWithSynonyms) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.synonyms = {{{"word"}, {"одно слово"}}};
+	Init(ftCfg);
+
+	Add("nm1", "одно слово", "");
+	Add("nm1", "одно", "слово");
+	Add("nm1", "", "одно слово");
+
+	auto res = SimpleSelect("@ft1^2, ft2^0.5 word");
+	ASSERT_EQ(res.Count(), 3);
+
+	Item ritem = res[0].GetItem();
+	string val = ritem["ft1"].As<string>();
+	EXPECT_EQ(val, "!одно слово!");
+
+	ritem = res[1].GetItem();
+	val = ritem["ft1"].As<string>();
+	EXPECT_EQ(val, "!одно!");
+
+	ritem = res[2].GetItem();
+	val = ritem["ft2"].As<string>();
+	EXPECT_EQ(val, "!одно слово!");
+
+	res = SimpleSelect("@ft1^0.5, ft2^2 word");
+	ASSERT_EQ(res.Count(), 3);
+
+	ritem = res[0].GetItem();
+	val = ritem["ft2"].As<string>();
+	EXPECT_EQ(val, "!одно слово!");
+
+	ritem = res[1].GetItem();
+	val = ritem["ft1"].As<string>();
+	EXPECT_EQ(val, "!одно!");
+
+	ritem = res[2].GetItem();
+	val = ritem["ft1"].As<string>();
+	EXPECT_EQ(val, "!одно слово!");
+}
+
+TEST_F(FTApi, SelectWithFieldsListWithSynonyms) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.synonyms = {{{"word"}, {"одно слово"}}};
+	Init(ftCfg);
+
+	Add("nm1", "одно слово", "");
+	Add("nm1", "одно", "слово");
+	Add("nm1", "", "одно слово");
+
+	auto qr = SimpleSelect("word");
+	CheckResults(qr, {{"!одно слово!", ""}, {"!одно!", "!слово!"}, {"", "!одно слово!"}});
+
+	qr = SimpleSelect("@ft1 word");
+	CheckResults(qr, {{"!одно слово!", ""}});
+
+	qr = SimpleSelect("@ft2 word");
+	CheckResults(qr, {{"", "!одно слово!"}});
 }
 
 TEST_F(FTApi, SelectFullMatch) {

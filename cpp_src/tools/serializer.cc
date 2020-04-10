@@ -124,6 +124,14 @@ p_string Serializer::GetPVString() {
 	return p_string(ret);
 }
 
+p_string Serializer::GetPSlice() {
+	auto ret = reinterpret_cast<const l_string_hdr *>(buf + pos);
+	uint32_t l = GetUInt32();
+	checkbound(pos, l, len);
+	pos += l;
+	return p_string(ret);
+}
+
 bool Serializer::GetBool() { return bool(GetVarUint()); }
 
 WrSerializer::WrSerializer() : buf_(inBuf_), len_(0), cap_(sizeof(inBuf_)) {}

@@ -75,7 +75,7 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id) {
 			assert(keyIt->second.VDocID() < int(this->holder_.vdocs_.size()));
 			this->holder_.vdocs_[keyIt->second.VDocID()].keyEntry = nullptr;
 		}
-		this->idx_map.erase(keyIt);
+		this->idx_map.template erase<no_deep_clean>(keyIt);
 	} else {
 		this->addMemStat(keyIt);
 	}
@@ -249,6 +249,7 @@ void FastIndexText<T>::CreateConfig(const FtFastConfig *cfg) {
 	if (cfg) {
 		this->cfg_.reset(new FtFastConfig(*cfg));
 		this->holder_.SetConfig(static_cast<FtFastConfig *>(this->cfg_.get()));
+		this->holder_.synonyms_->SetConfig(this->cfg_.get());
 		return;
 	}
 	this->cfg_.reset(new FtFastConfig());
@@ -269,7 +270,8 @@ void FastIndexText<T>::SetOpts(const IndexOpts &opts) {
 	auto newCfg = *GetConfig();
 
 	if (!eq_c(oldCfg.stopWords, newCfg.stopWords) || oldCfg.stemmers != newCfg.stemmers || oldCfg.maxTypoLen != newCfg.maxTypoLen ||
-		oldCfg.enableNumbersSearch != newCfg.enableNumbersSearch || oldCfg.extraWordSymbols != newCfg.extraWordSymbols) {
+		oldCfg.enableNumbersSearch != newCfg.enableNumbersSearch || oldCfg.extraWordSymbols != newCfg.extraWordSymbols ||
+		oldCfg.synonyms != newCfg.synonyms) {
 		logPrintf(LogInfo, "FulltextIndex config changed, it will be rebuilt on next search");
 		this->isBuilt_ = false;
 		this->holder_.status_ = FullRebuild;
@@ -288,7 +290,7 @@ Index *FastIndexText_New(const IndexDef &idef, const PayloadType payloadType, co
 		case IndexFastFT:
 			return new FastIndexText<unordered_str_map<FtKeyEntry>>(idef, payloadType, fields);
 		case IndexCompositeFastFT:
-			return new FastIndexText<unordered_payload_map<FtKeyEntry>>(idef, payloadType, fields);
+			return new FastIndexText<unordered_payload_map<FtKeyEntry, true>>(idef, payloadType, fields);
 		default:
 			abort();
 	}

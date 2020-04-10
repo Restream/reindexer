@@ -22,7 +22,7 @@ Error Dispatcher::handle(Context &ctx) {
 			return handler.func_(handler.object_, ctx);
 		}
 	}
-	return Error(errParams, "Invalid RPC call. CmdCode %08X\n", ctx.call->cmd);
+	return Error(errParams, "Invalid RPC call. CmdCode %08X\n", int(ctx.call->cmd));
 }
 
 }  // namespace cproto

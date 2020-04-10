@@ -75,15 +75,17 @@ public:
 			  createDB(false),
 			  hasExpectedClusterID(false),
 			  expectedClusterID(-1),
-			  reconnectAttempts() {}
+			  reconnectAttempts(),
+			  enableCompression(false) {}
 		Options(seconds _loginTimeout, seconds _keepAliveTimeout, bool _createDB, bool _hasExpectedClusterID, int _expectedClusterID,
-				int _reconnectAttempts)
+				int _reconnectAttempts, bool _enableCompression)
 			: loginTimeout(_loginTimeout),
 			  keepAliveTimeout(_keepAliveTimeout),
 			  createDB(_createDB),
 			  hasExpectedClusterID(_hasExpectedClusterID),
 			  expectedClusterID(_expectedClusterID),
-			  reconnectAttempts(_reconnectAttempts) {}
+			  reconnectAttempts(_reconnectAttempts),
+			  enableCompression(_enableCompression) {}
 
 		seconds loginTimeout;
 		seconds keepAliveTimeout;
@@ -91,6 +93,7 @@ public:
 		bool hasExpectedClusterID;
 		int expectedClusterID;
 		int reconnectAttempts;
+		bool enableCompression;
 	};
 	struct ConnectData {
 		struct Entry {
@@ -166,13 +169,7 @@ protected:
 	enum State { ConnInit, ConnConnecting, ConnConnected, ConnFailed, ConnClosing };
 
 	void connect_async_cb(ev::async &) { connectInternal(); }
-	void keep_alive_cb(ev::periodic &, int) {
-		if (!terminate_.load(std::memory_order_acquire)) {
-			call([](RPCAnswer &&, ClientConnection *) {},
-				 {kCmdPing, connectData_->entries[connectData_->validEntryIdx].opts.keepAliveTimeout, milliseconds(0)}, {});
-			callback(io_, ev::WRITE);
-		}
-	}
+	void keep_alive_cb(ev::periodic &, int);
 	void deadline_check_cb(ev::timer &, int);
 
 	void connectInternal() noexcept;
@@ -231,6 +228,8 @@ protected:
 	ConnectData *connectData_;
 	int currDsnIdx_, actualDsnIdx_;
 	ev::async reconnect_;
+	std::atomic<bool> enableSnappy_;
+	std::atomic<bool> enableCompression_;
 };
 }  // namespace cproto
 }  // namespace net

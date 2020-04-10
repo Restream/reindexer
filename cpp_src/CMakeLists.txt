@@ -21,7 +21,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "2.6.3")
+set (REINDEXER_VERSION_DEFAULT "2.7.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -547,8 +547,8 @@ if (GTEST_FOUND)
 endif()
 
 find_package(GBenchmark)
-if (benchmark_FOUND)
-    include_directories(SYSTEM ${benchmark_INCLUDE_DIR})
+if (GBENCHMARK_FOUND)
+    include_directories(SYSTEM ${GBENCHMARK_INCLUDE_DIR})
     add_subdirectory(gtests/bench)
 endif()
 

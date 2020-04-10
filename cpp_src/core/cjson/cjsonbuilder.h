@@ -13,6 +13,7 @@ public:
 	enum ObjType {
 		TypeObject,
 		TypeArray,
+		TypeObjectArray,
 		TypePlain,
 	};
 
@@ -21,7 +22,7 @@ public:
 	~CJsonBuilder();
 	CJsonBuilder(const CJsonBuilder &) = delete;
 	CJsonBuilder(CJsonBuilder &&other)
-		: tm_(other.tm_), ser_(other.ser_), type_(other.type_), savePos_(other.savePos_), count_(other.count_) {
+		: tm_(other.tm_), ser_(other.ser_), type_(other.type_), savePos_(other.savePos_), count_(other.count_), itemType_(other.itemType_) {
 		other.type_ = TypePlain;
 	}
 
@@ -32,9 +33,9 @@ public:
 
 	/// Start new object
 	CJsonBuilder Object(int tagName);
-	CJsonBuilder Array(int tagName);
+	CJsonBuilder Array(int tagName, ObjType type = ObjType::TypeObjectArray);
 
-	CJsonBuilder Array(string_view name) { return Array(tm_->name2tag(name, true)); }
+	CJsonBuilder Array(string_view name, ObjType type = ObjType::TypeObjectArray) { return Array(tm_->name2tag(name, true), type); }
 	CJsonBuilder Object(string_view name) { return Object(tm_->name2tag(name, true)); }
 
 	void Array(int tagName, span<p_string> data) {
@@ -97,6 +98,7 @@ protected:
 	ObjType type_;
 	int savePos_ = 0;
 	int count_ = 0;
+	int itemType_ = TAG_OBJECT;
 };
 
 }  // namespace reindexer

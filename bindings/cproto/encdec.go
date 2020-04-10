@@ -5,27 +5,32 @@ import (
 	"unsafe"
 
 	"github.com/restream/reindexer/bindings"
-
 	"github.com/restream/reindexer/cjson"
+	"github.com/golang/snappy"
 )
 
 type rpcEncoder struct {
 	lastArgsChunckStart int
 	ser                 *cjson.Serializer
+	enableSnappy        bool
 }
 
 type rpcDecoder struct {
 	ser cjson.Serializer
 }
 
-func newRPCEncoder(cmd int, seq uint32) rpcEncoder {
-	enc := rpcEncoder{ser: cjson.NewPoolSerializer()}
+func newRPCEncoder(cmd int, seq uint32, enableSnappy bool) rpcEncoder {
+	enc := rpcEncoder{ser: cjson.NewPoolSerializer(), enableSnappy: enableSnappy}
 	enc.start(cmd, seq)
 	return enc
 }
 
 func (r *rpcEncoder) start(cmd int, seq uint32) {
 	r.ser.PutUInt32(cprotoMagic)
+	vers := cprotoVersion
+	if r.enableSnappy {
+		vers |= cprotoVersionCompressionFlag
+	}
 	r.ser.PutUInt16(cprotoVersion)
 	r.ser.PutUInt16(uint16(cmd))
 	r.ser.PutUInt32(0) // len
@@ -89,6 +94,17 @@ func (r *rpcEncoder) int64Arg(v int64) {
 func (r *rpcEncoder) update() {
 	r.ser.Bytes()[r.lastArgsChunckStart]++
 	*(*uint32)(unsafe.Pointer(&r.ser.Bytes()[8])) = uint32(len(r.ser.Bytes()) - cprotoHdrLen)
+}
+
+func (r *rpcEncoder) bytes() []byte {
+	if r.enableSnappy {
+		out := snappy.Encode(nil, r.ser.Bytes()[cprotoHdrLen:])
+		r.ser.Truncate(cprotoHdrLen)
+		r.ser.Write(out)
+		*(*uint16)(unsafe.Pointer(&r.ser.Bytes()[4])) |= cprotoVersionCompressionFlag
+		*(*uint32)(unsafe.Pointer(&r.ser.Bytes()[8])) = uint32(len(r.ser.Bytes()) - cprotoHdrLen)
+	}
+	return r.ser.Bytes()
 }
 
 func newRPCDecoder(buf []byte) rpcDecoder {

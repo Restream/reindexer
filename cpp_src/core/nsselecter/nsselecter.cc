@@ -379,8 +379,7 @@ typename Items::iterator NsSelecter::applyForcedSort(Items &items, const ItemCom
 		// implementation for composite indexes
 		FieldsSet fields = ns_->indexes_[idx]->Fields();
 
-		unordered_payload_map<ItemRefVector::difference_type> sortMap(0, hash_composite(payloadType, fields),
-																	  equal_composite(payloadType, fields));
+		unordered_payload_map<ItemRefVector::difference_type, false> sortMap(0, payloadType, fields, CollateOpts{});
 
 		for (auto value : ctx.query.forcedSortOrder_) {
 			value.convert(fieldType, &payloadType, &fields);
@@ -500,9 +499,9 @@ void NsSelecter::sortResults(reindexer::SelectCtx &sctx, Items &items, const Sor
 	}
 	if (sortingOptions.multiColumn || sortingOptions.usingGeneralAlgorithm) {
 		comparator.BindForGeneralSort();
-		int endPos = end - first;
+		size_t endPos = end - first;
 		if (sortingOptions.usingGeneralAlgorithm) {
-			endPos = std::min<decltype(items.size())>(sctx.query.count + sctx.query.start, endPos);
+			endPos = std::min(static_cast<size_t>(sctx.query.count) + sctx.query.start, endPos);
 		}
 		auto last = first + endPos;
 		applyGeneralSort(first, last, end, comparator, sctx);

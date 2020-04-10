@@ -76,7 +76,7 @@ Index* FuzzyIndexText_New(const IndexDef& idef, const PayloadType payloadType, c
 		case IndexFuzzyFT:
 			return new FuzzyIndexText<unordered_str_map<FtKeyEntry>>(idef, payloadType, fields);
 		case IndexCompositeFuzzyFT:
-			return new FuzzyIndexText<unordered_payload_map<FtKeyEntry>>(idef, payloadType, fields);
+			return new FuzzyIndexText<unordered_payload_map<FtKeyEntry, true>>(idef, payloadType, fields);
 		default:
 			abort();
 	}

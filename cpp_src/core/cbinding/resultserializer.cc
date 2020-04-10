@@ -140,6 +140,7 @@ bool WrResultSerializer::PutResults(const QueryResults* result) {
 	if ((opts_.flags & kResultsFormatMask) == kResultsJson) opts_.flags &= ~(kResultsWithJoined | kResultsWithPayloadTypes);
 
 	putQueryParams(result);
+	size_t saveLen = len_;
 
 	for (unsigned i = 0; i < opts_.fetchLimit; ++i) {
 		// Put Item ID and version
@@ -164,7 +165,7 @@ bool WrResultSerializer::PutResults(const QueryResults* result) {
 				}
 			}
 		}
-		if (i == 0) grow((opts_.fetchLimit - 1) * len_);
+		if (i == 0) grow((opts_.fetchLimit - 1) * (len_ - saveLen));
 	}
 	return opts_.fetchOffset + opts_.fetchLimit >= result->Count();
 }

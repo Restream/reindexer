@@ -105,11 +105,16 @@ public:
 
 	// Add refs to strings - make payload value complete self holding
 	void AddRefStrings();
+	void AddRefStrings(int field);
 	// Release strings
 	void ReleaseStrings();
+	void ReleaseStrings(int field);
 
 	// Item values' string for printing
 	std::string Dump() const;
+	// Item as JSON
+	std::string GetJSON(const TagsMatcher &tm);
+	void GetJSON(const TagsMatcher &tm, WrSerializer &ser);
 
 private:
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>

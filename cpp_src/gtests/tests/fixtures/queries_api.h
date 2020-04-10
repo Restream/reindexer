@@ -7,6 +7,7 @@
 #include <regex>
 #include <unordered_map>
 #include <unordered_set>
+#include "core/cjson/jsonbuilder.h"
 #include "core/nsselecter/joinedselectormock.h"
 #include "core/nsselecter/sortexpression.h"
 #include "core/queryresults/joinresults.h"
@@ -1329,6 +1330,26 @@ protected:
 		}
 	}
 
+	void InitNSObj() {
+		Error err = rt.reindexer->OpenNamespace(nsWithObject);
+		ASSERT_TRUE(err.ok()) << err.what();
+		DefineNamespaceDataset(nsWithObject, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}});
+		reindexer::WrSerializer ser;
+		for (int i = 0; i < 10; ++i) {
+			ser.Reset();
+			reindexer::JsonBuilder bld(ser);
+			bld.Put("id", i);
+			auto objNode = bld.Object(kFieldNameObjectField);
+			objNode.Put("data", rand() % 3);
+			objNode.End();
+			bld.End();
+			auto item = NewItem(nsWithObject);
+			item.FromJSON(ser.Slice());
+			Upsert(nsWithObject, item);
+		}
+		Commit(nsWithObject);
+	}
+
 	void CheckAggregationQueries() {
 		constexpr size_t facetLimit = 10;
 		constexpr size_t facetOffset = 10;
@@ -1368,6 +1389,13 @@ protected:
 		err = rt.reindexer->Select(wrongQuery6, wrongQr6);
 		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "Multifield facet cannot contain an array field");
+
+		InitNSObj();
+		const Query wrongQuery7 = Query(nsWithObject).Distinct(kFieldNameObjectField);
+		reindexer::QueryResults wrongQr7;
+		err = rt.reindexer->Select(wrongQuery7, wrongQr7);
+		ASSERT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "Cannot aggregate object field");
 
 		Query testQuery = Query(default_namespace)
 							  .Aggregate(AggAvg, {kFieldNameYear})
@@ -1779,6 +1807,7 @@ protected:
 
 	const char* kFieldNameColumnHash = "columnHash";
 	const char* kFieldNameColumnTree = "columnTree";
+	const char* kFieldNameObjectField = "object";
 
 	const string compositePlus = "+";
 	const string testSimpleNs = "test_simple_namespace";
@@ -1786,6 +1815,7 @@ protected:
 	const string compositeIndexesNs = "composite_indexes_namespace";
 	const string comparatorsNs = "comparators_namespace";
 	const string forcedSortOffsetNs = "forced_sort_offset_namespace";
+	const string nsWithObject = "namespace_with_object";
 
 	const string kCompositeFieldPricePages = kFieldNamePrice + compositePlus + kFieldNamePages;
 	const string kCompositeFieldTitleName = kFieldNameTitle + compositePlus + kFieldNameName;

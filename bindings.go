@@ -510,3 +510,7 @@ func WithTimeouts(loginTimeout time.Duration, requestTimeout time.Duration) inte
 func WithCreateDBIfMissing() interface{} {
 	return bindings.OptionConnect{CreateDBIfMissing: true}
 }
+
+func WithNetCompression() interface{} {
+	return bindings.OptionCompression{EnableCompression: true}
+}

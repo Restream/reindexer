@@ -172,7 +172,7 @@ inline static void intrusive_ptr_release(intrusive_atomic_rc_wrapper<T> *x) {
 
 template <typename T>
 inline static bool intrusive_ptr_is_unique(intrusive_atomic_rc_wrapper<T> *x) {
-	// std::memory_order_acquire - is essetial for COW constructions based on intrusive_ptr
+	// std::memory_order_acquire - is essential for COW constructions based on intrusive_ptr
 	return !x || (x->refcount.load(std::memory_order_acquire) == 1);
 }
 
@@ -180,7 +180,7 @@ template <typename T>
 class intrusive_atomic_rc_wrapper : public T {
 public:
 	template <typename... Args>
-	intrusive_atomic_rc_wrapper(Args &&... args) : T(args...), refcount(0) {}
+	intrusive_atomic_rc_wrapper(Args &&... args) : T(std::forward<Args>(args)...), refcount(0) {}
 	intrusive_atomic_rc_wrapper &operator=(const intrusive_atomic_rc_wrapper &) = delete;
 
 protected:

@@ -11,7 +11,6 @@
 
 namespace reindexer_server {
 const reindexer::SemVersion kMinTxReplSupportRxVersion("2.6.0");
-const int kConnIdMask = 0xFFFF;
 
 RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper logger, IClientsStats *clientsStats, bool allocDebug, IStatsWatcher *statsCollector)
 	: dbMgr_(dbMgr),
@@ -557,49 +556,35 @@ Error RPCServer::processTxItem(DataFormat format, string_view itemData, Item &it
 	}
 }
 
-static int64_t getIdxFromId(int64_t id, RPCClientData &data) {
-	int64_t expConnID = ((id >> 16) - 1);
-	if (expConnID != int64_t(data.connID & kConnIdMask)) {
-		throw Error(errLogic, "Wrong conn id: %d, expected: %d", data.connID, expConnID);
-	}
-	int64_t mask = (int64_t(data.connID) + 1) << 16;
-	return id & ~mask;
-}
-static int64_t getIdFromIdx(int64_t idx, RPCClientData &data) { return idx |= (int64_t((data.connID + 1) & kConnIdMask)) << 16; }
-
-QueryResults &RPCServer::getQueryResults(cproto::Context &ctx, int &qrId) {
+QueryResults &RPCServer::getQueryResults(cproto::Context &ctx, int &id) {
 	auto data = getClientDataSafe(ctx);
-	int64_t idx = 0;
-	if (qrId < 0) {
-		for (; idx < data->results.size(); ++idx) {
-			if (!data->results[idx].second) {
-				data->results[idx] = {QueryResults(), true};
-				qrId = getIdFromIdx(idx, *data);
-				return data->results[idx].first;
+
+	if (id < 0) {
+		for (id = 0; id < int(data->results.size()); id++) {
+			if (!data->results[id].second) {
+				data->results[id] = {QueryResults(), true};
+				return data->results[id].first;
 			}
 		}
 
 		if (data->results.size() > cproto::kMaxConcurentQueries) throw Error(errLogic, "Too many paralell queries");
-		idx = data->results.size();
+		id = data->results.size();
 		data->results.push_back({QueryResults(), true});
-	} else {
-		idx = getIdxFromId(qrId, *data);
 	}
 
-	if (idx < 0 || size_t(idx) >= data->results.size()) {
-		throw Error(errLogic, "Invalid query id: %d, connID: %d", qrId, data->connID);
+	if (id >= int(data->results.size())) {
+		throw Error(errLogic, "Invalid query id");
 	}
-	qrId = getIdFromIdx(idx, *data);
-	return data->results[idx].first;
+	return data->results[id].first;
 }
 
-Transaction &RPCServer::getTx(cproto::Context &ctx, int64_t txId) {
+Transaction &RPCServer::getTx(cproto::Context &ctx, int64_t id) {
 	auto data = getClientDataSafe(ctx);
-	auto idx = getIdxFromId(txId, *data);
-	if (idx < 0 || size_t(idx) >= data->txs.size()) {
-		throw Error(errLogic, "Invalid tx id: %d, connID: %d", txId, data->connID);
+
+	if (size_t(id) >= data->txs.size() || data->txs[id].IsFree()) {
+		throw Error(errLogic, "Invalid tx id");
 	}
-	return data->txs[idx];
+	return data->txs[id];
 }
 
 int64_t RPCServer::addTx(cproto::Context &ctx, Transaction &&tr) {
@@ -607,28 +592,26 @@ int64_t RPCServer::addTx(cproto::Context &ctx, Transaction &&tr) {
 	for (size_t i = 0; i < data->txs.size(); ++i) {
 		if (data->txs[i].IsFree()) {
 			data->txs[i] = std::move(tr);
-			return getIdFromIdx(i, *data);
+			return i;
 		}
 	}
 	data->txs.emplace_back(std::move(tr));
-	return getIdFromIdx(int64_t(data->txs.size() - 1), *data);
+	return int64_t(data->txs.size() - 1);
 }
 void RPCServer::clearTx(cproto::Context &ctx, uint64_t txId) {
 	auto data = getClientDataSafe(ctx);
-	auto idx = getIdxFromId(txId, *data);
-	if (idx < 0 || size_t(idx) >= data->txs.size()) {
-		throw Error(errLogic, "Invalid tx id: %d, connID: %d", txId, data->connID);
+	if (txId >= data->txs.size()) {
+		throw Error(errLogic, "Invalid tx id %d", txId);
 	}
-	data->txs[idx] = Transaction();
+	data->txs[txId] = Transaction();
 }
 
-void RPCServer::freeQueryResults(cproto::Context &ctx, int qrId) {
+void RPCServer::freeQueryResults(cproto::Context &ctx, int id) {
 	auto data = getClientDataSafe(ctx);
-	auto idx = getIdxFromId(qrId, *data);
-	if (idx < 0 || size_t(idx) >= data->results.size()) {
-		throw Error(errLogic, "Invalid query id: %d, connID: %d", qrId, data->connID);
+	if (id >= int(data->results.size()) || id < 0) {
+		throw Error(errLogic, "Invalid query id");
 	}
-	data->results[idx] = {QueryResults(), false};
+	data->results[id] = {QueryResults(), false};
 }
 
 static h_vector<int32_t, 4> pack2vec(p_string pack) {

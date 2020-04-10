@@ -28,8 +28,13 @@ const queueSize = 512
 const maxSeqNum = queueSize * 1000000
 
 const cprotoMagic = 0xEEDD1132
-const cprotoVersion = 0x102
+const cprotoVersion = 0x103
 const cprotoMinCompatVersion = 0x101
+const cprotoMinSnappyVersion = 0x103
+
+const cprotoVersionCompressionFlag = 1 << 10
+const cprotoVersionMask = 0x3FF
+
 const cprotoHdrLen = 16
 const deadlineCheckPeriodSec = 1
 
@@ -97,7 +102,9 @@ type connection struct {
 	now    uint32
 	termCh chan struct{}
 
-	requests [queueSize]requestInfo
+	requests        [queueSize]requestInfo
+	enableSnappy    int32
+	isServerChanged bool
 }
 
 func newConnection(ctx context.Context, owner *NetCProto) (c *connection, err error) {
@@ -183,7 +190,7 @@ func (c *connection) deadlineTicker() {
 
 func (c *connection) connect(ctx context.Context) (err error) {
 	var d net.Dialer
-	c.conn, err = d.DialContext(ctx, "tcp", c.owner.url.Host)
+	c.conn, err = d.DialContext(ctx, "tcp", c.owner.getActiveDSN().Host)
 	if err != nil {
 		return err
 	}
@@ -196,10 +203,11 @@ func (c *connection) connect(ctx context.Context) (err error) {
 }
 
 func (c *connection) login(ctx context.Context, owner *NetCProto) (err error) {
-	password, username, path := "", "", owner.url.Path
-	if owner.url.User != nil {
-		username = owner.url.User.Username()
-		password, _ = owner.url.User.Password()
+	dsn := owner.getActiveDSN()
+	password, username, path := "", "", dsn.Path
+	if dsn.User != nil {
+		username = dsn.User.Username()
+		password, _ = dsn.User.Password()
 	}
 	if len(path) > 0 && path[0] == '/' {
 		path = path[1:]
@@ -213,7 +221,11 @@ func (c *connection) login(ctx context.Context, owner *NetCProto) (err error) {
 	defer buf.Free()
 
 	if len(buf.args) > 1 {
-		owner.checkServerStartTime(buf.args[1].(int64))
+		serverStartTS := buf.args[1].(int64)
+		old := atomic.SwapInt64(&owner.serverStartTime, serverStartTS)
+		if old != 0 && old != serverStartTS {
+			c.isServerChanged = true
+		}
 	}
 	return
 }
@@ -246,8 +258,16 @@ func (c *connection) readReply(hdr []byte) (err error) {
 	size := int(ser.GetUInt32())
 	rseq := uint32(ser.GetUInt32())
 
+	compressed := (version & cprotoVersionCompressionFlag) != 0
+	version &= cprotoVersionMask
+
 	if version < cprotoMinCompatVersion {
 		return fmt.Errorf("Unsupported cproto version '%04X'. This client expects reindexer server v1.9.8+", version)
+	}
+
+	if c.owner.compression.EnableCompression && version >= cprotoMinSnappyVersion {
+		enableSnappy := int32(1)
+		atomic.StoreInt32(&c.enableSnappy, enableSnappy)
 	}
 
 	if !seqNumIsValid(rseq) {
@@ -263,6 +283,10 @@ func (c *connection) readReply(hdr []byte) (err error) {
 
 	if _, err = io.ReadFull(c.rdBuf, answ.buf); err != nil {
 		return
+	}
+
+	if compressed {
+		answ.decompress()
 	}
 
 	if atomic.LoadInt32(&c.requests[reqID].isAsync) != 0 {
@@ -332,7 +356,8 @@ func nextSeqNum(seqNum uint32) uint32 {
 }
 
 func (c *connection) packRPC(cmd int, seq uint32, execTimeout int, args ...interface{}) {
-	in := newRPCEncoder(cmd, seq)
+
+	in := newRPCEncoder(cmd, seq, atomic.LoadInt32(&c.enableSnappy) != 0)
 	for _, a := range args {
 		switch t := a.(type) {
 		case bool:
@@ -355,7 +380,7 @@ func (c *connection) packRPC(cmd int, seq uint32, execTimeout int, args ...inter
 	in.startArgsChunck()
 	in.int64Arg(int64(execTimeout))
 
-	c.write(in.ser.Bytes())
+	c.write(in.bytes())
 	in.ser.Close()
 }
 

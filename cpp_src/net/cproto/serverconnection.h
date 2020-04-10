@@ -29,7 +29,7 @@ public:
 
 	// Writer iterface implementation
 	void WriteRPCReturn(Context &ctx, const Args &args, const Error &status) override final { responceRPC(ctx, status, args); }
-	void CallRPC(CmdCode cmd, const Args &args) override final;
+	void CallRPC(const IRPCCall &call) override final;
 	void SetClientData(std::unique_ptr<ClientData> data) override final { clientData_ = std::move(data); }
 	ClientData *GetClientData() override final { return clientData_.get(); }
 	std::shared_ptr<ConnectionStat> GetConnectionStat() override final { return stat_; }
@@ -47,11 +47,11 @@ protected:
 	std::unique_ptr<ClientData> clientData_;
 	// keep here to prevent allocs
 	RPCCall call_;
-	std::vector<chunk> updates_;
-	Error updatesPackError_;
+	std::vector<IRPCCall> updates_;
 	std::mutex updates_mtx_;
 	ev::periodic updates_timeout_;
 	ev::async updates_async_;
+	bool enableSnappy_;
 };
 }  // namespace cproto
 }  // namespace net

@@ -45,6 +45,22 @@ TraceEntry::TraceEntry(TraceEntry &&other)
 	  holder_(other.holder_) {
 	other.holder_ = nullptr;
 }
+
+TraceEntry &TraceEntry::operator=(TraceEntry &&other) {
+	if (this != &other) {
+		funcName_ = other.funcName_;
+		objFile_ = other.objFile_;
+		srcFile_ = other.srcFile_;
+		srcLine_ = other.srcLine_;
+		ofs_ = other.ofs_;
+		addr_ = other.addr_;
+		baseAddr_ = other.baseAddr_;
+		holder_ = other.holder_;
+		other.holder_ = nullptr;
+	}
+	return *this;
+}
+
 TraceEntry::~TraceEntry() {
 	free(holder_);
 	holder_ = nullptr;

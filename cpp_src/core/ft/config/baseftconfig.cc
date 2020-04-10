@@ -31,6 +31,7 @@ void BaseFTConfig::parseBase(const gason::JsonNode &root) {
 		stemmers.clear();
 		for (auto &st : stemmersNode) stemmers.push_back(st.As<string>());
 	}
+	synonyms.clear();
 	for (auto &se : root["synonyms"]) {
 		Synonym synonym;
 		for (auto &ae : se["alternatives"]) synonym.alternatives.push_back(ae.As<string>());

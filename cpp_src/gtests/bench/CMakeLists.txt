@@ -7,17 +7,17 @@ set(FT_TARGET ft_benchmarking)
 
 include_directories(fixtures)
 include_directories(tools)
-include_directories(${benchmark_INCLUDE_DIRS})
+include_directories(${GBENCHMARK_INCLUDE_DIRS})
 
 file (GLOB_RECURSE FIXT_SRCS fixtures/*)
 file (GLOB_RECURSE FT_FIXT_SRCS fixtures/ft_* fixtures/base_fixture.*)
 file (GLOB_RECURSE TOOLS_SRCS tools/*)
 
 add_executable(${TARGET} ${FIXT_SRCS} ${TOOLS_SRCS} reindexer_bench.cc)
-target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES} ${benchmark_LIBRARY})
+target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES} ${GBENCHMARK_LIBRARY})
 
 add_executable(${FT_TARGET} ${FT_FIXT_SRCS} ${TOOLS_SRCS} ft_bench.cc)
-target_link_libraries(${FT_TARGET} ${REINDEXER_LIBRARIES} ${benchmark_LIBRARY})
+target_link_libraries(${FT_TARGET} ${REINDEXER_LIBRARIES} ${GBENCHMARK_LIBRARY})
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/dict.txt ${CMAKE_CURRENT_BINARY_DIR}/dict.txt COPYONLY)
 
 add_test (NAME bench COMMAND ${TARGET} --benchmark_color=true --benchmark_counters_tabular=true --benchmark_min_time=0.1)

@@ -32,7 +32,7 @@ error_msg() {
 
 # declare dependencies arrays for systems
 osx_deps="gperftools leveldb snappy cmake git"
-centos8_debs="gcc-c++ make leveldb-devel findutils curl tar unzip rpm-build rpmdevtools git"
+centos8_debs="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
 centos7_debs="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
 centos6_debs="centos-release-scl devtoolset-7-gcc devtoolset-7-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build git"
 debian_debs="build-essential g++ libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git"
@@ -94,6 +94,8 @@ install_osx() {
 install_centos8() {
     yum install -y epel-release >/dev/null 2>&1 || true
     yum install -y http://rpms.remirepo.net/enterprise/remi-release-8.rpm >/dev/null 2>&1 || true
+    yum install -y dnf-plugins-core 2>&1 || true
+    yum config-manager --set-enabled PowerTools 2>&1 || true
     for pkg in ${centos8_debs}
     do
         if rpm -qa | grep -qw ${pkg} ; then

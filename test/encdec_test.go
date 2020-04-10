@@ -96,6 +96,8 @@ type TestItemEncDec struct {
 	SliceF64           []float64
 	SliceF32           []float32
 	SliceBool          []bool
+	SliceIface         []interface{}
+	SliceIface1        []interface{}
 	UInt64             uint64
 	UInt32             uint32
 	UInt               uint
@@ -108,8 +110,27 @@ type TestItemEncDec struct {
 	_ struct{} `reindex:"age+genre,,composite"`
 }
 
+type HeterogeneousArrayItem struct {
+	ID        int `reindex:"id,,pk"`
+	Interface interface{}
+}
+
+func FillHeteregeneousArrayItem() {
+	item := &HeterogeneousArrayItem{
+		ID:        1,
+		Interface: map[string]interface{}{"HeterogeneousArray": []interface{}{"John Doe", 32, 9.1, true, "Jesus Christ", 33, false}},
+	}
+	tx := newTestTx(DB, "test_array_encdec")
+	if err := tx.UpsertJSON(item); err != nil {
+		panic(err)
+	}
+	tx.MustCommit()
+
+}
+
 func init() {
 	tnamespaces["test_items_encdec"] = TestItemEncDec{}
+	tnamespaces["test_array_encdec"] = HeterogeneousArrayItem{}
 }
 
 func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
@@ -178,7 +199,7 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 					"strfield2":   "xxx",
 					"intfield":    4,
 					"intarrfield": []int{1, 2, 3},
-					"intfarr":     []interface{}{"xxx", 2, 1.2},
+					"intfarr":     []interface{}{"xxx", 2, 1.2, false, true, "John Doe"},
 					"time":        time.Unix(1234567890, 987654321),
 				},
 				"": "Empty field string value",
@@ -201,6 +222,8 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 			SliceF32:           []float32{rand.Float32(), rand.Float32()},
 			SliceF64:           []float64{rand.Float64(), rand.Float64()},
 			SliceBool:          []bool{false, true},
+			SliceIface:         []interface{}{"aa", "bb"},
+			SliceIface1:        []interface{}{"aa", "bb", 3},
 			Rate:               float64(rand.Int()%100) / 10.0,
 			IsDeleted:          rand.Int()%2 != 0,
 			PricesIDs:          randIntArr(10, 7000, 50),
@@ -230,6 +253,23 @@ func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
 	tx.MustCommit()
 }
 
+func TestHeterogeneusArrayEncDec(t *testing.T) {
+	FillHeteregeneousArrayItem()
+
+	q := newTestQuery(DB, "test_array_encdec")
+	it := q.ExecToJson()
+	defer it.Close()
+	require.NoError(t, it.Error())
+
+	items := make([]interface{}, 0, 1)
+	for it.Next() {
+		item := &TestItemEncDec{}
+		err := json.Unmarshal(it.JSON(), &item)
+		require.NoError(t, err, "error json was: %s\n", it.JSON())
+		items = append(items, item)
+	}
+}
+
 func TestEncDec(t *testing.T) {
 	t.Parallel()
 	// Fill items by cjson encoder
@@ -255,5 +295,4 @@ func TestEncDec(t *testing.T) {
 		iitems = append(iitems, item)
 	}
 	q.Verify(t, iitems, []reindexer.AggregationResult{}, true)
-
 }

@@ -136,6 +136,6 @@ FieldsGetter IndexText<T>::Getter() {
 }
 
 template class IndexText<unordered_str_map<FtKeyEntry>>;
-template class IndexText<unordered_payload_map<FtKeyEntry>>;
+template class IndexText<unordered_payload_map<FtKeyEntry, true>>;
 
 }  // namespace reindexer

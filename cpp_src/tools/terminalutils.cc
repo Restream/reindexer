@@ -9,12 +9,8 @@
 
 namespace reindexer {
 
-bool isStdoutRedirected() {
-	if (!isatty(fileno(stdout))) {
-		return true;
-	}
-	return false;
-}
+bool isStdoutRedirected() { return (!isatty(fileno(stdout))); }
+bool isStdinRedirected() { return (!isatty(fileno(stdin))); }
 
 Error getTerminalSize(int fd, int& columns, int& lines) {
 	int retCode = -1;

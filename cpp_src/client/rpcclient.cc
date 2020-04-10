@@ -44,7 +44,8 @@ Error RPCClient::addConnectEntry(const string& dsn, const client::ConnectOpts& o
 		return Error(errParams, "Scheme must be cproto");
 	}
 	connectEntry.opts = cproto::ClientConnection::Options(config_.ConnectTimeout, config_.RequestTimeout, opts.IsCreateDBIfMissing(),
-														  opts.HasExpectedClusterID(), opts.ExpectedClusterID(), config_.ReconnectAttempts);
+														  opts.HasExpectedClusterID(), opts.ExpectedClusterID(), config_.ReconnectAttempts,
+														  config_.EnableCompression);
 	return errOK;
 }
 
@@ -654,7 +655,14 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 		return;
 	}
 
-	auto args = ans.GetArgs(3);
+	cproto::Args args;
+	try {
+		args = ans.GetArgs(3);
+	} catch (const Error& err) {
+		logPrintf(LogError, "Parsing updates error: %s", err.what());
+		return;
+	}
+
 	int64_t lsn(args[0]);
 	string_view nsName(args[1]);
 	string_view pwalRec(args[2]);

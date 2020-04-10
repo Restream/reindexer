@@ -202,7 +202,7 @@ static Index *IndexOrdered_New(const IndexDef &idef, const PayloadType payloadTy
 		case IndexDoubleBTree:
 			return new IndexOrdered<number_map<double, KeyEntryT>>(idef, payloadType, fields);
 		case IndexCompositeBTree:
-			return new IndexOrdered<payload_map<KeyEntryT>>(idef, payloadType, fields);
+			return new IndexOrdered<payload_map<KeyEntryT, true>>(idef, payloadType, fields);
 		default:
 			abort();
 	}

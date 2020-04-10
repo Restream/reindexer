@@ -20,12 +20,13 @@ const int kTypoStepProc = 15;
 // Decrease procent of relevancy if pattern found by word stem
 const int kStemProcDecrease = 15;
 
-void Selecter::prepareVariants(FtSelectContext &ctx, FtDSLEntry &term, std::vector<string> &langs) {
+void Selecter::prepareVariants(FtSelectContext &ctx, const FtDSLEntry &term, const std::vector<string> &langs, FtDSLQuery &dsl,
+							   bool needVariants) {
 	ctx.variants.clear();
 
 	vector<pair<std::wstring, int>> variantsUtf16{{term.pattern, kFullMatchProc}};
 
-	if (!holder_.cfg_->enableNumbersSearch || !term.opts.number) {
+	if (needVariants && (!holder_.cfg_->enableNumbersSearch || !term.opts.number)) {
 		// Make translit and kblayout variants
 		if (holder_.cfg_->enableTranslit && !term.opts.exact) {
 			holder_.translit_->GetVariants(term.pattern, variantsUtf16);
@@ -33,8 +34,11 @@ void Selecter::prepareVariants(FtSelectContext &ctx, FtDSLEntry &term, std::vect
 		if (holder_.cfg_->enableKbLayout && !term.opts.exact) {
 			holder_.kbLayout_->GetVariants(term.pattern, variantsUtf16);
 		}
-		// Synonims
-		holder_.synonyms_->GetVariants(term.pattern, variantsUtf16);
+		// Synonyms
+		if (term.opts.op != OpNot) {
+			holder_.synonyms_->GetVariants(term.pattern, variantsUtf16);
+			holder_.synonyms_->PostProcess(term, dsl);
+		}
 	}
 
 	// Apply stemmers
@@ -65,13 +69,15 @@ void Selecter::prepareVariants(FtSelectContext &ctx, FtDSLEntry &term, std::vect
 Selecter::MergeData Selecter::Process(FtDSLQuery &dsl) {
 	FtSelectContext ctx;
 	// STEP 2: Search dsl terms for each variant
-	for (auto &term : dsl) {
+	const size_t originalDslSize = dsl.size();
+	holder_.synonyms_->PreProcess(dsl);
+	for (size_t i = 0; i < dsl.size(); ++i) {
 		ctx.rawResults.push_back(TextSearchResults());
 		TextSearchResults &res = ctx.rawResults.back();
-		res.term = term;
+		res.term = dsl[i];
 
-		// Prepare term variants (original + translit + stemmed + kblayout)
-		this->prepareVariants(ctx, term, holder_.cfg_->stemmers);
+		// Prepare term variants (original + translit + stemmed + kblayout + synonym)
+		this->prepareVariants(ctx, res.term, holder_.cfg_->stemmers, dsl, i < originalDslSize);
 
 		if (holder_.cfg_->logLevel >= LogInfo) {
 			WrSerializer wrSer;
@@ -81,8 +87,8 @@ Selecter::MergeData Selecter::Process(FtDSLQuery &dsl) {
 			}
 			wrSer << "], typos: [";
 			typos_context tctx[kMaxTyposInWord];
-			if (term.opts.typos)
-				mktypos(tctx, term.pattern, holder_.cfg_->maxTyposInWord, holder_.cfg_->maxTypoLen, [&wrSer](string_view typo, int) {
+			if (res.term.opts.typos)
+				mktypos(tctx, res.term.pattern, holder_.cfg_->maxTyposInWord, holder_.cfg_->maxTypoLen, [&wrSer](string_view typo, int) {
 					wrSer << typo;
 					wrSer << ", ";
 				});
@@ -90,9 +96,9 @@ Selecter::MergeData Selecter::Process(FtDSLQuery &dsl) {
 		}
 
 		processVariants(ctx);
-		if (term.opts.typos) {
+		if (res.term.opts.typos) {
 			// Lookup typos from typos_ map and fill results
-			processTypos(ctx, term);
+			processTypos(ctx, res.term);
 		}
 	}
 
@@ -168,7 +174,7 @@ void Selecter::processVariants(FtSelectContext &ctx) {
 	}
 }
 
-void Selecter::processTypos(FtSelectContext &ctx, FtDSLEntry &term) {
+void Selecter::processTypos(FtSelectContext &ctx, const FtDSLEntry &term) {
 	TextSearchResults &res = ctx.rawResults.back();
 
 	for (auto &step : holder_.steps) {
@@ -225,15 +231,19 @@ void Selecter::debugMergeStep(const char *msg, int vid, float normBm25, float no
 #endif
 }
 
-void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, vector<MergeInfo> &merged, vector<MergedIdRel> &merged_rd,
-							  h_vector<int16_t> &idoffsets) {
+void Selecter::mergeItaration(TextSearchResults &rawRes, index_t rawResIndex, fast_hash_map<VDocIdType, index_t> &statuses,
+							  vector<MergeInfo> &merged, vector<MergedIdRel> &merged_rd, h_vector<int16_t> &idoffsets,
+							  vector<bool> &curExists) {
 	auto &vdocs = holder_.vdocs_;
 
 	int totalDocsCount = vdocs.size();
 	bool simple = idoffsets.size() == 0;
 	auto op = rawRes.term.opts.op;
 
-	vector<bool> curExists((simple && rawRes.size() <= 1) ? 0 : totalDocsCount, false);
+	curExists.clear();
+	if (!simple || rawRes.size() > 1) {
+		curExists.resize(totalDocsCount, false);
+	}
 	if (simple && rawRes.size() > 1) {
 		idoffsets.resize(totalDocsCount);
 	}
@@ -251,14 +261,19 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 
 		for (auto &relid : *r.vids_) {
 			int vid = relid.Id();
+			index_t &vidStatus = statuses[vid];
 
 			// Do not calc anithing if
-			if (op == OpAnd && !exists[vid]) {
+			if (vidStatus == kExcluded || (op == OpAnd && !vidStatus)) {
 				continue;
 			}
-
-			assert(vid < int(exists.size()));
-
+			if (op == OpNot) {
+				if (!simple && vidStatus) {
+					merged[idoffsets[vid]].proc = 0;
+				}
+				vidStatus = kExcluded;
+				continue;
+			}
 			// Find field with max rank
 			int field = 0;
 			double normBm25 = 0.0, termRank = 0.0;
@@ -291,59 +306,52 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 			}
 			if (!termRank) continue;
 
-			if (!simple) {
+			// match of 2-rd, and next terms
+			if (!simple && vidStatus) {
+				assert(relid.Size());
 				auto moffset = idoffsets[vid];
-				if (exists[vid]) {
-					assert(relid.Size());
-					assert(merged_rd[moffset].cur.Size());
+				assert(merged_rd[moffset].cur.Size());
 
-					// match of 2-rd, and next terms
-					if (op == OpNot) {
-						merged[moffset].proc = 0;
-						exists[vid] = false;
+				// Calculate words distance
+				int distance = 0;
+				float normDist = 1;
+
+				if (merged_rd[moffset].qpos != rawRes.term.opts.qpos) {
+					distance = merged_rd[moffset].cur.Distance(relid, INT_MAX);
+
+					// Normaized distance
+					normDist = bound(1.0 / double(std::max(distance, 1)), holder_.cfg_->distanceWeight, holder_.cfg_->distanceBoost);
+				}
+				int finalRank = normDist * termRank;
+
+				if (distance <= rawRes.term.opts.distance && (!curExists[vid] || finalRank > merged_rd[moffset].rank)) {
+					// distance and rank is better, than prev. update rank
+					if (curExists[vid]) {
+						merged[moffset].proc -= merged_rd[moffset].rank;
+						debugMergeStep("merged better score ", vid, normBm25, normDist, finalRank, merged_rd[moffset].rank);
 					} else {
-						// Calculate words distance
-						int distance = 0;
-						float normDist = 1;
-
-						if (merged_rd[moffset].qpos != rawRes.term.opts.qpos) {
-							distance = merged_rd[moffset].cur.Distance(relid, INT_MAX);
-
-							// Normaized distance
-							normDist =
-								bound(1.0 / double(std::max(distance, 1)), holder_.cfg_->distanceWeight, holder_.cfg_->distanceBoost);
-						}
-						int finalRank = normDist * termRank;
-
-						if (distance <= rawRes.term.opts.distance && (!curExists[vid] || finalRank > merged_rd[moffset].rank)) {
-							// distance and rank is better, than prev. update rank
-							if (curExists[vid]) {
-								merged[moffset].proc -= merged_rd[moffset].rank;
-								debugMergeStep("merged better score ", vid, normBm25, normDist, finalRank, merged_rd[moffset].rank);
-							} else {
-								debugMergeStep("merged new ", vid, normBm25, normDist, finalRank, merged_rd[moffset].rank);
-								merged[moffset].matched++;
+						debugMergeStep("merged new ", vid, normBm25, normDist, finalRank, merged_rd[moffset].rank);
+						merged[moffset].matched++;
+					}
+					merged[moffset].proc += finalRank;
+					if (needArea_) {
+						for (auto pos : relid.Pos()) {
+							if (!merged[moffset].holder->AddWord(pos.pos(), r.wordLen_, pos.field())) {
+								break;
 							}
-							merged[moffset].proc += finalRank;
-							if (needArea_) {
-								for (auto pos : relid.Pos()) {
-									if (!merged[moffset].holder->AddWord(pos.pos(), r.wordLen_, pos.field())) {
-										break;
-									}
-								}
-							}
-							merged_rd[moffset].rank = finalRank;
-							merged_rd[moffset].next = std::move(relid);
-							curExists[vid] = true;
-						} else {
-							debugMergeStep("skiped ", vid, normBm25, normDist, finalRank, merged_rd[moffset].rank);
 						}
 					}
+					merged_rd[moffset].rank = finalRank;
+					merged_rd[moffset].next = std::move(relid);
+					curExists[vid] = true;
+				} else {
+					debugMergeStep("skiped ", vid, normBm25, normDist, finalRank, merged_rd[moffset].rank);
 				}
 			}
 			if (int(merged.size()) < holder_.cfg_->mergeLimit && op == OpOr) {
-				const bool currentlyAddedLessRankedMerge = !curExists.empty() && curExists[vid] && merged[idoffsets[vid]].proc < static_cast<int16_t>(termRank);
-				if (exists[vid] && !(simple && currentlyAddedLessRankedMerge)) continue;
+				const bool currentlyAddedLessRankedMerge =
+					!curExists.empty() && curExists[vid] && merged[idoffsets[vid]].proc < static_cast<int16_t>(termRank);
+				if (!(simple && currentlyAddedLessRankedMerge) && vidStatus) continue;
 				// match of 1-st term
 				MergeInfo info;
 				info.id = vid;
@@ -357,11 +365,11 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 						info.holder->AddWord(pos.pos(), r.wordLen_, pos.field());
 					}
 				}
-				if (exists[vid]) {
+				if (vidStatus) {
 					merged[idoffsets[vid]] = std::move(info);
 				} else {
 					merged.push_back(std::move(info));
-					exists[vid] = true;
+					vidStatus = rawResIndex + 1;
 					if (!curExists.empty()) {
 						curExists[vid] = true;
 						idoffsets[vid] = merged.size() - 1;
@@ -373,15 +381,6 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, vector<bool> &exists, v
 			}
 		}
 	}
-	if (op == OpAnd) {
-		for (auto &info : merged) {
-			auto vid = info.id;
-			if (exists[vid] && !curExists[vid]) {
-				info.proc = 0;
-				exists[vid] = false;
-			}
-		}
-	}
 }
 
 Selecter::MergeData Selecter::mergeResults(vector<TextSearchResults> &rawResults) {
@@ -390,7 +389,11 @@ Selecter::MergeData Selecter::mergeResults(vector<TextSearchResults> &rawResults
 
 	if (!rawResults.size() || !vdocs.size()) return merged;
 
-	vector<bool> exists(vdocs.size(), false);
+	assert(kExcluded > rawResults.size());
+	// 0: means not added,
+	// kExcluded: means should not be added
+	// others: 1 + index of rawResult which added
+	fast_hash_map<VDocIdType, index_t> statuses;
 	vector<MergedIdRel> merged_rd;
 	h_vector<int16_t> idoffsets;
 
@@ -407,11 +410,37 @@ Selecter::MergeData Selecter::mergeResults(vector<TextSearchResults> &rawResults
 		idoffsets.resize(vdocs.size());
 		merged_rd.reserve(std::min(holder_.cfg_->mergeLimit, idsMaxCnt));
 	}
-	rawResults[0].term.opts.op = OpOr;
 	for (auto &rawRes : rawResults) {
-		mergeItaration(rawRes, exists, merged, merged_rd, idoffsets);
+		switch (rawRes.term.opts.op) {
+			case OpNot:
+				continue;
+			case OpAnd:
+				rawRes.term.opts.op = OpOr;
+				break;
+			case OpOr:
+				break;
+		}
+		break;
+	}
+	vector<bool> curExists;
+	for (index_t i = 0, lastNotAnd = 0; i < rawResults.size(); ++i) {
+		mergeItaration(rawResults[i], i, statuses, merged, merged_rd, idoffsets, curExists);
 
-		if (rawRes.term.opts.op != OpNot) merged.mergeCnt++;
+		if (rawResults[i].term.opts.op == OpAnd) {
+			for (auto &info : merged) {
+				auto vid = info.id;
+				if (!curExists[vid]) {
+					index_t &vidStatus = statuses[vid];
+					if (vidStatus != kExcluded && vidStatus > lastNotAnd) {
+						info.proc = 0;
+						vidStatus = 0;
+					}
+				}
+			}
+		} else {
+			lastNotAnd = i;
+		}
+		if (rawResults[i].term.opts.op != OpNot) merged.mergeCnt++;
 	}
 	if (holder_.cfg_->logLevel >= LogInfo) logPrintf(LogInfo, "Complex merge (%d patterns): out %d vids", rawResults.size(), merged.size());
 

@@ -726,7 +726,7 @@ void NamespaceImpl::doDelete(IdType id) {
 
 	if (storage_) {
 		try {
-			auto lck = locker_.StorageLock();
+			unique_lock<std::mutex> lck(locker_.StorageLock());
 			updates_->Remove(pk.Slice());
 			unflushedCount_.fetch_add(1, std::memory_order_release);
 		} catch (const Error &err) {
@@ -851,7 +851,7 @@ void NamespaceImpl::Truncate(const NsContext &ctx) {
 			pk << kStorageItemPrefix;
 			pl.SerializeFields(pk, pkFields());
 			try {
-				auto lck = locker_.StorageLock();
+				unique_lock<std::mutex> lck(locker_.StorageLock());
 				updates_->Remove(pk.Slice());
 				unflushedCount_.fetch_add(1, std::memory_order_release);
 			} catch (const Error &err) {
@@ -1167,6 +1167,9 @@ void NamespaceImpl::updateSingleField(const UpdateEntry &updateField, const IdTy
 
 	if (index.Opts().IsSparse() || !isIndexedField || index.Opts().IsArray()) {
 		ItemImpl item(payloadType_, *(pl.Value()), tagsMatcher_);
+		Variant oldTupleValue = item.GetField(0);
+		oldTupleValue.EnsureHold();
+		indexes_[0]->Delete(oldTupleValue, itemId);
 		item.ModifyField(updateField.column, values, updateField.mode);
 		Variant tupleValue = indexes_[0]->Upsert(item.GetField(0), itemId);
 		pl.Set(0, {tupleValue});
@@ -1838,7 +1841,7 @@ void NamespaceImpl::flushStorage(const RdxContext &ctx) {
 	if (storage_) {
 		if (unflushedCount_.load(std::memory_order_acquire) > 0) {
 			try {
-				auto lck = locker_.StorageLock();
+				unique_lock<std::mutex> lck(locker_.StorageLock());
 				doFlushStorage();
 			} catch (const Error &err) {
 				if (err.code() != errNamespaceInvalidated) {
@@ -2116,7 +2119,7 @@ const FieldsSet &NamespaceImpl::pkFields() {
 
 void NamespaceImpl::writeToStorage(const string_view &key, const string_view &data) {
 	try {
-		auto lck = locker_.StorageLock();
+		unique_lock<std::mutex> lck(locker_.StorageLock());
 		updates_->Put(key, data);
 		if (unflushedCount_.fetch_add(1, std::memory_order_release) > 20000) doFlushStorage();
 	} catch (const Error &err) {

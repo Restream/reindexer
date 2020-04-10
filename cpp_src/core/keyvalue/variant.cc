@@ -146,6 +146,34 @@ string Variant::As<string>() const {
 }
 
 template <>
+string Variant::As<string>(const PayloadType &pt, const FieldsSet &fields) const {
+	switch (type_) {
+		case KeyValueComposite: {
+			ConstPayload pl(pt, operator const PayloadValue &());
+			VariantArray va;
+			size_t tagsPathIdx = 0;
+			for (auto field : fields) {
+				bool fieldFromCjson = (field == IndexValueType::SetByJsonPath);
+				VariantArray va1;
+				if (fieldFromCjson) {
+					assert(tagsPathIdx < fields.getTagsPathsLength());
+					pl.GetByJsonPath(fields.getTagsPath(tagsPathIdx++), va1, type_);
+				} else {
+					pl.Get(field, va1);
+				}
+				va.insert(va.end(), va1.begin(), va1.end());
+			}
+			WrSerializer wrser;
+			va.Dump(wrser);
+			return string(wrser.Slice());
+		}
+
+		default:
+			return As<string>();
+	}
+}
+
+template <>
 int Variant::As<int>() const {
 	try {
 		switch (type_) {
@@ -459,8 +487,15 @@ const char *Variant::TypeName(KeyValueType t) {
 
 Variant::operator key_string() const {
 	assertKeyType(type_, KeyValueString);
-	return hold_ ? *cast<key_string>() : make_key_string(cast<p_string>()->data(), cast<p_string>()->size());
+	if (hold_) {
+		return *cast<key_string>();
+	} else if (cast<p_string>()->type() == p_string::tagKeyString) {
+		return cast<p_string>()->getKeyString();
+	} else {
+		return make_key_string(cast<p_string>()->data(), cast<p_string>()->size());
+	}
 }
+
 Variant::operator p_string() const {
 	assertKeyType(type_, KeyValueString);
 	return hold_ ? p_string(*cast<key_string>()) : *cast<p_string>();
@@ -507,7 +542,7 @@ void Variant::Dump(WrSerializer &wrser) const {
 	}
 }
 
-bool VariantArray::IsArrayValue() const { return isArrayValue || size() > 1; }
+bool VariantArray::IsArrayValue() const noexcept { return isArrayValue || (!isObjectValue && size() > 1); }
 bool VariantArray::IsNullValue() const { return size() == 1 && front().IsNullValue(); }
 KeyValueType VariantArray::ArrayType() const { return empty() ? KeyValueNull : front().Type(); }
 

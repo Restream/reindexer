@@ -77,6 +77,9 @@ public:
 	template <typename T>
 	T As() const;
 
+	template <typename T>
+	T As(const PayloadType &, const FieldsSet &) const;
+
 	bool operator==(const Variant &other) const { return Compare(other) == 0; }
 	bool operator!=(const Variant &other) const { return Compare(other) != 0; }
 	bool operator<(const Variant &other) const { return Compare(other) < 0; }
@@ -131,7 +134,8 @@ protected:
 
 class VariantArray : public h_vector<Variant, 2> {
 public:
-	void MarkArray() { isArrayValue = true; }
+	void MarkArray() noexcept { isArrayValue = true; }
+	void MarkObject() noexcept { isObjectValue = true; }
 	using h_vector<Variant, 2>::h_vector;
 	using h_vector<Variant, 2>::operator==;
 	using h_vector<Variant, 2>::operator!=;
@@ -140,13 +144,15 @@ public:
 		for (size_t i = 0; i < this->size(); ++i) ret = (ret * 127) ^ this->at(i).Hash();
 		return ret;
 	}
-	bool IsArrayValue() const;
+	bool IsArrayValue() const noexcept;
+	bool IsObjectValue() const noexcept { return isObjectValue; }
 	bool IsNullValue() const;
 	KeyValueType ArrayType() const;
 	void Dump(WrSerializer &wrser) const;
 
 private:
 	bool isArrayValue = false;
+	bool isObjectValue = false;
 };
 
 }  // namespace reindexer

@@ -168,6 +168,10 @@ func asIface(rdser *Serializer, tagType int) interface{} {
 		return rdser.GetDouble()
 	case TAG_BOOL:
 		return rdser.GetVarInt() != 0
+	case TAG_STRING:
+		return rdser.GetVString()
+	case TAG_NULL:
+		return nil
 	default:
 		panic(fmt.Errorf("Can't convert tagType %s to iface", tagTypeName(tagType)))
 	}

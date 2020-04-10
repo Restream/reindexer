@@ -37,6 +37,8 @@ public:
 	~Reindexer();
 	Reindexer(const Reindexer &) = delete;
 	Reindexer(Reindexer &&) noexcept;
+	Reindexer &operator=(const Reindexer &) = delete;
+	Reindexer &operator=(Reindexer &&) noexcept;
 
 	/// Connect - connect to reindexer server
 	/// @param dsn - uri of server and database, like: `cproto://user@password:127.0.0.1:6534/dbname`

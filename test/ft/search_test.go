@@ -121,3 +121,54 @@ func TestFTFuzzySearch(t *testing.T) {
 func TestFTIndexCopy(t *testing.T) {
 	doFTIndexCopy(t, "text")
 }
+
+func TestFTSynonymsAfterTx(t *testing.T) {
+	rx := reindexer.NewReindex(*dsn)
+	defer rx.Close()
+
+	namespace := "ft_synonyms_after_tx"
+	dataCount := 50000
+
+	err := rx.OpenNamespace(namespace, reindexer.DefaultNamespaceOptions(), TextItem{})
+	assert.NoError(t, err)
+
+	config := reindexer.DefaultFtFastConfig()
+	config.Synonyms = []struct{
+		Tokens[]string `json:"tokens"`
+		Alternatives []string `json:"alternatives"`
+	} {
+		{
+			[]string{"word"},
+			[]string{"слово"},
+		},
+	}
+
+	rx.DropIndex(namespace, "text_field")
+	err = rx.AddIndex(namespace, reindexer.IndexDef{
+		Name:      "text_field",
+		JSONPaths: []string{"TextField"},
+		Config:    config,
+		IndexType: "text",
+		FieldType: "string",
+	})
+	assert.NoError(t, err)
+
+	fillReindexWithData(rx, namespace, []string{"word", "слово"})
+
+	dbItems, err := rx.Query(namespace).
+		WhereString("text_field", reindexer.EQ, "word", "").
+		Exec().
+		FetchAll()
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(dbItems))
+
+	fillTestItemsTx(namespace, 10, dataCount, "data", rx)
+
+	dbItems, err = rx.Query(namespace).
+		WhereString("text_field", reindexer.EQ, "word", "").
+		Exec().
+		FetchAll()
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(dbItems))
+}
+

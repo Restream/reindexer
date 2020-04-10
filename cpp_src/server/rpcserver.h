@@ -100,9 +100,9 @@ protected:
 	Error processTxItem(DataFormat format, string_view itemData, Item &item, ItemModifyMode mode, int stateToken) const noexcept;
 
 	Error fetchResults(cproto::Context &ctx, int reqId, const ResultFetchOpts &opts);
-	void freeQueryResults(cproto::Context &ctx, int qrId);
-	QueryResults &getQueryResults(cproto::Context &ctx, int &qrId);
-	Transaction &getTx(cproto::Context &ctx, int64_t txId);
+	void freeQueryResults(cproto::Context &ctx, int id);
+	QueryResults &getQueryResults(cproto::Context &ctx, int &id);
+	Transaction &getTx(cproto::Context &ctx, int64_t id);
 	int64_t addTx(cproto::Context &ctx, Transaction &&tr);
 	void clearTx(cproto::Context &ctx, uint64_t txId);
 

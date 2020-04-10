@@ -54,19 +54,20 @@ struct ReplicationConfigData {
 	int connPoolSize = 1;
 	int workerThreads = 1;
 	int clusterID = 1;
-	int timeoutSec = 30;
+	int timeoutSec = 60;
 	int retrySyncIntervalSec = 20;
 	int onlineReplErrorsThreshold = 100;
 	bool forceSyncOnLogicError = false;
 	bool forceSyncOnWrongDataHash = false;
 	fast_hash_set<string, nocase_hash_str, nocase_equal_str> namespaces;
+	bool enableCompression = true;
 
 	bool operator==(const ReplicationConfigData &rdata) const noexcept {
 		return (role == rdata.role) && (connPoolSize == rdata.connPoolSize) && (workerThreads == rdata.workerThreads) &&
 			   (clusterID == rdata.clusterID) && (forceSyncOnLogicError == rdata.forceSyncOnLogicError) &&
 			   (forceSyncOnWrongDataHash == rdata.forceSyncOnWrongDataHash) && (masterDSN == rdata.masterDSN) &&
 			   (retrySyncIntervalSec == rdata.retrySyncIntervalSec) && (onlineReplErrorsThreshold == rdata.onlineReplErrorsThreshold) &&
-			   (timeoutSec == rdata.timeoutSec) && (namespaces == rdata.namespaces);
+			   (timeoutSec == rdata.timeoutSec) && (namespaces == rdata.namespaces) && (enableCompression == rdata.enableCompression);
 	}
 	bool operator!=(const ReplicationConfigData &rdata) const noexcept { return !operator==(rdata); }
 

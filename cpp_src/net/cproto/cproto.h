@@ -55,17 +55,20 @@ enum CmdCode : uint16_t {
 
 string_view CmdName(uint16_t code);
 
-// Maximum number of active queries per cleint
+// Maximum number of active queries per client
 const uint32_t kMaxConcurentQueries = 256;
 
 const uint32_t kCprotoMagic = 0xEEDD1132;
-const uint32_t kCprotoVersion = 0x102;
+const uint32_t kCprotoVersion = 0x103;
 const uint32_t kCprotoMinCompatVersion = 0x101;
+const uint32_t kCprotoMinSnappyVersion = 0x103;
 
 #pragma pack(push, 1)
 struct CProtoHeader {
 	uint32_t magic;
-	uint16_t version;
+	uint16_t version : 10;
+	uint16_t compressed : 1;
+	uint16_t _reserved : 5;
 	uint16_t cmd;
 	uint32_t len;
 	uint32_t seq;

@@ -14,6 +14,13 @@ public:
 		stemmer_ = other.stemmer_;
 		other.stemmer_ = nullptr;
 	}
+	stemmer &operator=(stemmer &&other) noexcept {
+		if (this != &other) {
+			stemmer_ = other.stemmer_;
+			other.stemmer_ = nullptr;
+		}
+		return *this;
+	}
 	~stemmer() { sb_stemmer_delete(stemmer_); }
 
 	void stem(const std::string &src, std::string &dst) {

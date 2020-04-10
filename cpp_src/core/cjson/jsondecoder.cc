@@ -97,7 +97,13 @@ void JsonDecoder::decodeJson(Payload *pl, CJsonBuilder &builder, const gason::Js
 			builder.Null(tagName);
 			break;
 		case gason::JSON_ARRAY: {
-			auto arrNode = builder.Array(tagName);
+			CJsonBuilder::ObjType type;
+			if (gason::isHomogeneousArray(v)) {
+				type = CJsonBuilder::TypeArray;
+			} else {
+				type = CJsonBuilder::TypeObjectArray;
+			}
+			auto arrNode = builder.Array(tagName, type);
 			for (auto elem : v) {
 				decodeJson(pl, arrNode, elem->value, 0, match);
 			}

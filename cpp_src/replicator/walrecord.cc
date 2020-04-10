@@ -11,10 +11,16 @@ enum { TxBit = (1 << 7) };
 
 void PackedWALRecord::Pack(const WALRecord &rec) {
 	WrSerializer ser;
-	ser.PutVarUint(rec.inTransaction ? (rec.type | TxBit) : rec.type);
-	switch (rec.type) {
+	rec.Pack(ser);
+	assign(ser.Buf(), ser.Buf() + ser.Len());
+}
+
+void WALRecord::Pack(WrSerializer &ser) const {
+	if (type == WalEmpty) return;
+	ser.PutVarUint(inTransaction ? (type | TxBit) : type);
+	switch (type) {
 		case WalItemUpdate:
-			ser.PutUInt32(rec.id);
+			ser.PutUInt32(id);
 			break;
 		case WalUpdateQuery:
 		case WalIndexAdd:
@@ -22,16 +28,16 @@ void PackedWALRecord::Pack(const WALRecord &rec) {
 		case WalIndexUpdate:
 		case WalReplState:
 		case WalNamespaceRename:
-			ser.PutVString(rec.data);
+			ser.PutVString(data);
 			break;
 		case WalPutMeta:
-			ser.PutVString(rec.putMeta.key);
-			ser.PutVString(rec.putMeta.value);
+			ser.PutVString(putMeta.key);
+			ser.PutVString(putMeta.value);
 			break;
 		case WalItemModify:
-			ser.PutVString(rec.itemModify.itemCJson);
-			ser.PutVarUint(rec.itemModify.modifyMode);
-			ser.PutVarUint(rec.itemModify.tmVersion);
+			ser.PutVString(itemModify.itemCJson);
+			ser.PutVarUint(itemModify.modifyMode);
+			ser.PutVarUint(itemModify.tmVersion);
 			break;
 		case WalEmpty:
 			ser.Reset();
@@ -42,11 +48,9 @@ void PackedWALRecord::Pack(const WALRecord &rec) {
 		case WalCommitTransaction:
 			break;
 		default:
-			fprintf(stderr, "Unexpected WAL rec type %d\n", int(rec.type));
+			fprintf(stderr, "Unexpected WAL rec type %d\n", int(type));
 			std::abort();
 	}
-	clear();
-	assign(ser.Buf(), ser.Buf() + ser.Len());
 }
 
 WALRecord::WALRecord(span<uint8_t> packed) {
@@ -206,5 +210,30 @@ void WALRecord::GetJSON(JsonBuilder &jb, std::function<string(string_view)> cjso
 }
 
 WALRecord::WALRecord(string_view data) : WALRecord(span<uint8_t>(reinterpret_cast<const uint8_t *>(data.data()), data.size())) {}
+
+SharedWALRecord WALRecord::GetShared(int64_t lsn, string_view nsName) const {
+	if (!shared_.packed_) {
+		shared_ = SharedWALRecord(lsn, nsName, *this);
+	}
+	return shared_;
+}
+SharedWALRecord::SharedWALRecord(int64_t lsn, string_view nsName, const WALRecord &rec) {
+	WrSerializer ser;
+	ser.PutVarint(lsn);
+	ser.PutVString(nsName);
+	{
+		auto sl = ser.StartSlice();
+		rec.Pack(ser);
+	}
+	packed_.reset(new intrusive_atomic_rc_wrapper<chunk>(ser.DetachChunk()));
+}
+
+SharedWALRecord::Unpacked SharedWALRecord::Unpack() {
+	Serializer rdser(packed_->data(), packed_->size());
+	int64_t lsn = rdser.GetVarint();
+	p_string nsName = rdser.GetPVString();
+	p_string pwal = rdser.GetPSlice();
+	return {lsn, nsName, pwal};
+}
 
 }  // namespace reindexer

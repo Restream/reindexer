@@ -155,7 +155,7 @@ func TestConcurrentTagsTx(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	DB.SetSynced(false)
+	DB.SetSyncRequired()
 	items, err := DB.Query(testTxConcurrentTagsItemNs).MustExec().FetchAll()
 	assert.NoError(t, err)
 	assert.NotEqual(t, len(items), 0, "Empty items array")

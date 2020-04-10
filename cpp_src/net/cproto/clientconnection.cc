@@ -2,6 +2,7 @@
 
 #include "clientconnection.h"
 #include <errno.h>
+#include <snappy.h>
 #include "core/rdxcontext.h"
 #include "reindexer_version.h"
 #include "tools/serializer.h"
@@ -57,6 +58,8 @@ void ClientConnection::connectInternal() noexcept {
 	actualDsnIdx_ = connectData_->validEntryIdx;
 	assert(!sock_.valid());
 	assert(wrBuf_.size() == 0);
+	rdBuf_.clear();
+	enableSnappy_ = false;
 	state_ = ConnConnecting;
 	lastError_ = errOK;
 
@@ -69,6 +72,7 @@ void ClientConnection::connectInternal() noexcept {
 	string userName = connectEntry.uri.username();
 	string password = connectEntry.uri.password();
 	if (dbName[0] == '/') dbName = dbName.substr(1);
+	enableCompression_ = connectEntry.opts.enableCompression;
 
 	auto completion = [this](const RPCAnswer &ans, ClientConnection *) {
 		std::unique_lock<std::mutex> lck(mtx_);
@@ -138,6 +142,19 @@ Error ClientConnection::CheckConnection() {
 			std::abort();
 	}
 	return lastError_;
+}
+
+void ClientConnection::keep_alive_cb(ev::periodic &, int) {
+	if (terminate_.load(std::memory_order_acquire)) return;
+	call(
+		[this](RPCAnswer &&ans, ClientConnection *) {
+			if (!ans.Status().ok()) {
+				failInternal(ans.Status());
+				closeConn();
+			}
+		},
+		{kCmdPing, connectData_->entries[connectData_->validEntryIdx].opts.keepAliveTimeout, milliseconds(0)}, {});
+	callback(io_, ev::WRITE);
 }
 
 void ClientConnection::deadline_check_cb(ev::timer &, int) {
@@ -219,7 +236,9 @@ void ClientConnection::onClose() {
 		std::unique_ptr<Completion> tmpUpdatesHandler(updatesHandler_.release(std::memory_order_acq_rel));
 
 		if (tmpUpdatesHandler) (*tmpUpdatesHandler)(RPCAnswer(lastError_), this);
+		mtx_.lock();
 		bufCond_.notify_all();
+		mtx_.unlock();
 
 		if (prevState == ConnConnecting) {
 			currDsnIdx_ = actualDsnIdx_;
@@ -238,6 +257,7 @@ void ClientConnection::onClose() {
 
 void ClientConnection::onRead() {
 	CProtoHeader hdr;
+	std::string uncompressed;
 
 	while (!closeConn_) {
 		auto len = rdBuf_.peek(reinterpret_cast<char *>(&hdr), sizeof(hdr));
@@ -253,6 +273,7 @@ void ClientConnection::onRead() {
 				Error(errParams, "Unsupported cproto version %04x. This client expects reindexer server v1.9.8+", int(hdr.version)));
 			return;
 		}
+		enableSnappy_ = (hdr.version >= kCprotoMinSnappyVersion) && enableCompression_;
 
 		if (size_t(hdr.len) + sizeof(hdr) > rdBuf_.capacity()) {
 			rdBuf_.reserve(size_t(hdr.len) + sizeof(hdr) + 0x1000);
@@ -274,12 +295,19 @@ void ClientConnection::onRead() {
 		int errCode = 0;
 		try {
 			Serializer ser(it.data(), hdr.len);
+			if (hdr.compressed) {
+				if (!snappy::Uncompress(it.data(), hdr.len, &uncompressed)) {
+					throw Error(errParseBin, "Can't decompress data from peer");
+				}
+				ser = Serializer(uncompressed);
+			}
+
 			errCode = ser.GetVarUint();
 			string_view errMsg = ser.GetVString();
 			if (errCode != errOK) {
 				ans.status_ = Error(errCode, errMsg);
 			}
-			ans.data_ = {reinterpret_cast<uint8_t *>(it.data()) + ser.Pos(), size_t(hdr.len) - ser.Pos()};
+			ans.data_ = {ser.Buf() + ser.Pos(), ser.Len() - ser.Pos()};
 		} catch (const Error &err) {
 			failInternal(err);
 			return;
@@ -348,16 +376,22 @@ chunk ClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args, con
 	hdr.len = 0;
 	hdr.magic = kCprotoMagic;
 	hdr.version = kCprotoVersion;
+	hdr.compressed = enableSnappy_;
 	hdr.cmd = cmd;
 	hdr.seq = seq;
 
 	WrSerializer ser(wrBuf_.get_chunk());
 
 	ser.Write(string_view(reinterpret_cast<char *>(&hdr), sizeof(hdr)));
-
 	args.Pack(ser);
 	ctxArgs.Pack(ser);
-
+	if (hdr.compressed) {
+		auto data = ser.Slice().substr(sizeof(hdr));
+		std::string compressed;
+		snappy::Compress(data.data(), data.length(), &compressed);
+		ser.Reset(sizeof(hdr));
+		ser.Write(compressed);
+	}
 	assert(ser.Len() < std::numeric_limits<int32_t>::max());
 	reinterpret_cast<CProtoHeader *>(ser.Buf())->len = ser.Len() - sizeof(hdr);
 

@@ -12,6 +12,15 @@ Reindexer::~Reindexer() {
 	}
 }
 Reindexer::Reindexer(Reindexer&& rdx) noexcept : impl_(rdx.impl_), owner_(rdx.owner_), ctx_(rdx.ctx_) { rdx.owner_ = false; }
+Reindexer& Reindexer::operator=(Reindexer&& rdx) noexcept {
+	if (this != &rdx) {
+		impl_ = rdx.impl_;
+		owner_ = rdx.owner_;
+		ctx_ = rdx.ctx_;
+		rdx.owner_ = false;
+	}
+	return *this;
+}
 
 Error Reindexer::Connect(const string& dsn, const client::ConnectOpts& opts) { return impl_->Connect(dsn, opts); }
 Error Reindexer::Connect(const vector<pair<string, client::ConnectOpts>>& connectData) { return impl_->Connect(connectData); }

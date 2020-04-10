@@ -185,6 +185,22 @@ public:
 
 		return res;
 	}
+	void CheckResults(const QueryResults& qr, std::unordered_multimap<std::string, std::string> expectedResults) {
+		EXPECT_EQ(qr.Count(), expectedResults.size());
+		for (auto itRes : qr) {
+			const auto item = itRes.GetItem();
+			const auto range = expectedResults.equal_range(item["ft1"].As<string>());
+			const auto it = std::find_if(range.first, range.second, [&item](const std::pair<std::string, std::string>& p) {
+				return p.second == item["ft2"].As<string>();
+			});
+			EXPECT_TRUE(it != range.second && it != expectedResults.end())
+				<< "Found not expected: \"" << item["ft1"].As<string>() << "\" \"" << item["ft2"].As<string>() << '"';
+			if (it != range.second && it != expectedResults.end()) expectedResults.erase(it);
+		}
+		for (const auto& expected : expectedResults) {
+			ADD_FAILURE() << "Not found: \"" << expected.first << "\" \"" << expected.second << '"';
+		}
+	}
 	FTApi() {}
 
 protected:

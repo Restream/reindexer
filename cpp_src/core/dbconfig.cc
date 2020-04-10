@@ -114,6 +114,7 @@ Error ReplicationConfigData::FromYML(const string &yaml) {
 		forceSyncOnWrongDataHash = root["force_sync_on_wrong_data_hash"].As<bool>(forceSyncOnWrongDataHash);
 		retrySyncIntervalSec = root["retry_sync_interval_sec"].As<int>(retrySyncIntervalSec);
 		onlineReplErrorsThreshold = root["online_repl_errors_threshold"].As<int>(onlineReplErrorsThreshold);
+		enableCompression = root["enable_compression"].As<bool>(enableCompression);
 
 		auto &node = root["namespaces"];
 		namespaces.clear();
@@ -140,6 +141,7 @@ Error ReplicationConfigData::FromJSON(const gason::JsonNode &root) {
 		forceSyncOnWrongDataHash = root["force_sync_on_wrong_data_hash"].As<bool>();
 		retrySyncIntervalSec = root["retry_sync_interval_sec"].As<int>(retrySyncIntervalSec);
 		onlineReplErrorsThreshold = root["online_repl_errors_threshold"].As<int>(onlineReplErrorsThreshold);
+		enableCompression = root["enable_compression"].As<bool>(enableCompression);
 
 		namespaces.clear();
 		for (auto &objNode : root["namespaces"]) {
@@ -179,6 +181,7 @@ void ReplicationConfigData::GetJSON(JsonBuilder &jb) const {
 	jb.Put("master_dsn", masterDSN);
 	jb.Put("cluster_id", clusterID);
 	jb.Put("timeout_sec", timeoutSec);
+	jb.Put("enable_compression", enableCompression);
 	jb.Put("force_sync_on_logic_error", forceSyncOnLogicError);
 	jb.Put("force_sync_on_wrong_data_hash", forceSyncOnWrongDataHash);
 	jb.Put("retry_sync_interval_sec", retrySyncIntervalSec);

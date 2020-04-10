@@ -156,7 +156,7 @@ type Stats struct {
 
 // Raw binding to reindexer
 type RawBinding interface {
-	Init(u *url.URL, options ...interface{}) error
+	Init(u []url.URL, options ...interface{}) error
 	Clone() RawBinding
 	OpenNamespace(ctx context.Context, namespace string, enableStorage, dropOnFileFormatError bool) error
 	CloseNamespace(ctx context.Context, namespace string) error
@@ -247,9 +247,16 @@ type OptionBuiltinWithServer struct {
 }
 
 // OptionConnect - DB connect options for server
-// CreateDBIfMissing - allow to create DB on coonect if DB doesn't exist already
+// CreateDBIfMissing - allow to create DB on connect if DB doesn't exist already
+// EnableCompression - request compress traffic by snappy library
 type OptionConnect struct {
 	CreateDBIfMissing bool
+}
+
+// OptionCompression - DB connect options for server
+// EnableCompression - request compress traffic by snappy library
+type OptionCompression struct {
+	EnableCompression bool
 }
 
 type Status struct {
@@ -263,6 +270,7 @@ type StatusCProto struct {
 	ConnPoolUsage  int
 	ConnQueueSize  int
 	ConnQueueUsage int
+	ConnAddr       string
 }
 
 type StatusBuiltin struct {

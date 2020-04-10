@@ -1,4 +1,4 @@
-# Reindexer REST API
+# Reindexer REST API \n
 
 <!-- toc -->
 
@@ -36,6 +36,7 @@
   * [Query documents from namespace](#query-documents-from-namespace-2)
   * [Get system information](#get-system-information)
   * [Get activity stats information](#get-activity-stats-information)
+  * [Get client connection information](#get-client-connection-information)
   * [Get memory stats information](#get-memory-stats-information)
   * [Get performance stats information](#get-performance-stats-information)
   * [Get SELECT queries performance stats information](#get-select-queries-performance-stats-information)
@@ -47,6 +48,7 @@
   * [AggregationsDef](#aggregationsdef)
   * [AggregationsSortDef](#aggregationssortdef)
   * [CacheMemStats](#cachememstats)
+  * [ClientsStats](#clientsstats)
   * [CommonPerfStats](#commonperfstats)
   * [Database](#database)
   * [DatabaseMemStats](#databasememstats)
@@ -102,7 +104,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 2.6.3
+*Version* : 2.7.0
 
 
 ### License information
@@ -1050,6 +1052,37 @@ This operation will return detailed informatiom about current activity of all co
 
 
 
+### Get client connection information
+```
+GET /db/{database}/namespaces/%23clientsstats/items
+```
+
+
+#### Description
+This operation will return detailed informatiom about all connections on the server
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|successful operation|[ClientsStats](#clientsstats)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* system
+
+
+
 ### Get memory stats information
 ```
 GET /db/{database}/namespaces/%23memstats/items
@@ -1216,9 +1249,10 @@ This operation will update system configuration:
 
 |Name|Description|Schema|
 |---|---|---|
+|**distincts**  <br>*optional*|List of distinct values of the field|< string > array|
 |**facets**  <br>*optional*|Facets, calculated by aggregator|< [facets](#aggregationresdef-facets) > array|
-|**fields**  <br>*optional*|Fields or indexes names for aggregation function|< string > array|
-|**type**  <br>*optional*|Aggregation function|enum (SUM, AVG, MIN, MAX, FACET)|
+|**fields**  <br>*required*|Fields or indexes names for aggregation function|< string > array|
+|**type**  <br>*required*|Aggregation function|enum (SUM, AVG, MIN, MAX, FACET, DISTINCT)|
 |**value**  <br>*optional*|Value, calculated by aggregator|number|
 
 
@@ -1226,8 +1260,8 @@ This operation will update system configuration:
 
 |Name|Description|Schema|
 |---|---|---|
-|**count**  <br>*optional*|Count of elemens these fields values|integer|
-|**values**  <br>*optional*|Facet fields values|< string > array|
+|**count**  <br>*required*|Count of elemens these fields values|integer|
+|**values**  <br>*required*|Facet fields values|< string > array|
 
 
 
@@ -1235,11 +1269,11 @@ This operation will update system configuration:
 
 |Name|Description|Schema|
 |---|---|---|
-|**fields**  <br>*optional*|Fields or indexes names for aggregation function|< string > array|
-|**limit**  <br>*optional*|Number of rows to get from result set  <br>**Minimum value** : `0`|integer|
-|**offset**  <br>*optional*|Index of the first row to get from result set  <br>**Minimum value** : `0`|integer|
-|**sort**  <br>*optional*|Specifies results sorting order|< [AggregationsSortDef](#aggregationssortdef) > array|
-|**type**  <br>*optional*|Aggregation function|enum (SUM, AVG, MIN, MAX, FACET)|
+|**fields**  <br>*required*|Fields or indexes names for aggregation function|< string > array|
+|**limit**  <br>*optional*|Number of rows to get from result set. Allowed only for FACET  <br>**Minimum value** : `0`|integer|
+|**offset**  <br>*optional*|Index of the first row to get from result set. Allowed only for FACET  <br>**Minimum value** : `0`|integer|
+|**sort**  <br>*optional*|Specifies results sorting order. Allowed only for FACET|< [AggregationsSortDef](#aggregationssortdef) > array|
+|**type**  <br>*required*|Aggregation function|enum (SUM, AVG, MIN, MAX, FACET, DISTINCT)|
 
 
 
@@ -1262,6 +1296,31 @@ Specifies facet aggregations results sorting order
 |**hit_count_limit**  <br>*optional*|Number of hits of queries, to store results in cache|integer|
 |**items_count**  <br>*optional*|Count of used elements stored in this cache|integer|
 |**total_size**  <br>*optional*|Total memory consumption by this cache|integer|
+
+
+
+### ClientsStats
+
+|Name|Description|Schema|
+|---|---|---|
+|**items**  <br>*optional*||< [items](#clientsstats-items) > array|
+|**total_items**  <br>*optional*|Count of connected clients|integer|
+
+
+**items**
+
+|Name|Description|Schema|
+|---|---|---|
+|**client_version**  <br>*required*|Client version string|string|
+|**connection_id**  <br>*required*|Connection identifier|integer|
+|**current_activity**  <br>*required*|Current activity|string|
+|**db_name**  <br>*required*|Database name|string|
+|**ip**  <br>*required*|Ip|string|
+|**recv_bytes**  <br>*required*|Receive byte|integer|
+|**sent_bytes**  <br>*required*|Send byte|integer|
+|**start_time**  <br>*required*|Server start time in unix timestamp|integer|
+|**user_name**  <br>*required*|User name|string|
+|**user_rights**  <br>*required*|User right|string|
 
 
 
@@ -1683,7 +1742,6 @@ List of meta info of the specified namespace
 |Name|Description|Schema|
 |---|---|---|
 |**aggregations**  <br>*optional*|Ask query calculate aggregation|< [AggregationsDef](#aggregationsdef) > array|
-|**distinct**  <br>*optional*|Distinct field/index name. Results will contain's document with distinct field value|< string > array|
 |**equal_positions**  <br>*optional*|Array fields to be searched with equal array indexes|< string > array|
 |**explain**  <br>*optional*|Add query execution explain information  <br>**Default** : `false`|boolean|
 |**filters**  <br>*optional*|Filter for results documents|< [FilterDef](#filterdef) > array|
@@ -1768,6 +1826,7 @@ Performance statistics per each query
 |Name|Description|Schema|
 |---|---|---|
 |**cluster_id**  <br>*optional*|Cluser ID - must be same for client and for master|integer|
+|**enable_compression**  <br>*optional*|Enable network traffic compression|boolean|
 |**force_sync_on_logic_error**  <br>*optional*|force resync on logic error conditions|boolean|
 |**force_sync_on_wrong_data_hash**  <br>*optional*|force resync on wrong data hash conditions|boolean|
 |**master_dsn**  <br>*optional*|DSN to master. Only cproto schema is supported|string|

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"reflect"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -22,18 +23,21 @@ type ReindexerWrapper struct {
 	master       *ReindexerWrapper
 	dsn          string
 	syncedStatus int32
+	syncMutex    sync.RWMutex
 }
 
 func NewReindexWrapper(dsn string, options ...interface{}) *ReindexerWrapper {
 	return &ReindexerWrapper{Reindexer: *reindexer.NewReindex(dsn, options...), isMaster: true, dsn: dsn, syncedStatus: 0}
 }
 
-func (dbw *ReindexerWrapper) SetSynced(sync bool) {
-	if sync {
-		atomic.StoreInt32(&dbw.syncedStatus, 1)
-	} else {
-		atomic.StoreInt32(&dbw.syncedStatus, 0)
-	}
+func (dbw *ReindexerWrapper) setSynced() {
+	atomic.StoreInt32(&dbw.syncedStatus, 1)
+}
+
+func (dbw *ReindexerWrapper) SetSyncRequired() {
+	dbw.syncMutex.RLock()
+	atomic.StoreInt32(&dbw.syncedStatus, 0)
+	dbw.syncMutex.RUnlock()
 }
 
 func (dbw *ReindexerWrapper) IsSynced() bool {
@@ -51,7 +55,7 @@ func (dbw *ReindexerWrapper) addSlave(dsn string, options ...interface{}) *Reind
 	slaveDb := NewReindexWrapper(dsn, options...)
 	slaveDb.isMaster = false
 	slaveDb.master = dbw
-	slaveDb.SetSynced(false)
+	slaveDb.SetSyncRequired()
 	dbw.slaveList = append(dbw.slaveList, slaveDb)
 	dbw.setSlaveConfig(slaveDb)
 
@@ -84,7 +88,7 @@ func (dbw *ReindexerWrapper) SetLogger(log reindexer.Logger) {
 }
 
 func (dbw *ReindexerWrapper) OpenNamespace(namespace string, opts *reindexer.NamespaceOptions, s interface{}) (err error) {
-	dbw.SetSynced(false)
+	dbw.SetSyncRequired()
 	err = dbw.Reindexer.OpenNamespace(namespace, opts, s)
 	if err != nil {
 		return err
@@ -100,7 +104,7 @@ func (dbw *ReindexerWrapper) OpenNamespace(namespace string, opts *reindexer.Nam
 }
 
 func (dbw *ReindexerWrapper) DropNamespace(namespace string) error {
-	dbw.SetSynced(false)
+	dbw.SetSyncRequired()
 
 	err := dbw.Reindexer.DropNamespace(namespace)
 	if err != nil {
@@ -127,16 +131,18 @@ func (dbw *ReindexerWrapper) execQuery(qt *queryTest) *reindexer.Iterator {
 func (dbw *ReindexerWrapper) execQueryCtx(ctx context.Context, qt *queryTest) *reindexer.Iterator {
 	if len(dbw.slaveList) == 0 || !qt.readOnly {
 		if !qt.readOnly {
-			dbw.SetSynced(false)
+			dbw.SetSyncRequired()
 		}
 		return qt.q.ExecCtx(ctx)
 	}
 	if !qt.deepReplEqual {
 		sdb := dbw.slaveList[rand.Intn(len(dbw.slaveList))]
 		if !dbw.IsSynced() {
+			dbw.syncMutex.Lock()
 			sdb.WaitForSyncWithMaster()
-			dbw.SetSynced(true)
+			dbw.setSynced()
 			sdb.ResetCaches()
+			dbw.syncMutex.Unlock()
 		}
 		slaveQuery := qt.q.MakeCopy(&sdb.Reindexer)
 		return slaveQuery.ExecCtx(ctx)
@@ -152,10 +158,16 @@ func (dbw *ReindexerWrapper) execQueryCtx(ctx context.Context, qt *queryTest) *r
 		pk := getPK(qt.ns, reflect.Indirect(reflect.ValueOf(item)))
 		m[pk+reflect.TypeOf(item).String()] = item
 	}
-	for _, db := range dbw.slaveList {
-		if !dbw.IsSynced() {
+
+	if !dbw.IsSynced() {
+		dbw.syncMutex.Lock()
+		for _, db := range dbw.slaveList {
 			db.WaitForSyncWithMaster()
 		}
+		dbw.setSynced()
+		dbw.syncMutex.Unlock()
+	}
+	for _, db := range dbw.slaveList {
 		slaveQuery := qt.q.MakeCopy(&db.Reindexer)
 		rs, err := slaveQuery.ExecCtx(ctx).FetchAll()
 		if err != nil {
@@ -177,7 +189,7 @@ func (dbw *ReindexerWrapper) execQueryCtx(ctx context.Context, qt *queryTest) *r
 		//TODO NOT GOOD - can be not equal do somthing
 		//reflect.DeepEqual(rm, rs)
 	}
-	dbw.SetSynced(true)
+
 	return qt.q.MustExecCtx(ctx)
 }
 
@@ -249,7 +261,7 @@ func (dbw *ReindexerWrapper) WaitForSyncWithMaster() {
 			}
 		}
 		if complete {
-			dbw.SetSynced(true)
+			dbw.setSynced()
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -259,12 +271,12 @@ func (dbw *ReindexerWrapper) WaitForSyncWithMaster() {
 }
 
 func (dbw *ReindexerWrapper) TruncateNamespace(namespace string) error {
-	dbw.SetSynced(false)
+	dbw.SetSyncRequired()
 	return dbw.Reindexer.TruncateNamespace(namespace)
 }
 
 func (dbw *ReindexerWrapper) RenameNamespace(srcNsName string, dstNsName string) error {
-	dbw.SetSynced(false)
+	dbw.SetSyncRequired()
 
 	err := dbw.Reindexer.RenameNamespace(srcNsName, dstNsName)
 	if err != nil {
@@ -280,46 +292,46 @@ func (dbw *ReindexerWrapper) RenameNamespace(srcNsName string, dstNsName string)
 }
 
 func (dbw *ReindexerWrapper) CloseNamespace(namespace string) error {
-	dbw.SetSynced(false)
+	dbw.SetSyncRequired()
 	return dbw.Reindexer.CloseNamespace(namespace)
 }
 
 func (dbw *ReindexerWrapper) Upsert(namespace string, item interface{}, precepts ...string) error {
-	dbw.SetSynced(false)
+	dbw.SetSyncRequired()
 	return dbw.Reindexer.Upsert(namespace, item, precepts...)
 }
 
 func (dbw *ReindexerWrapper) Insert(namespace string, item interface{}, precepts ...string) (int, error) {
-	dbw.SetSynced(false)
+	dbw.SetSyncRequired()
 	return dbw.Reindexer.Insert(namespace, item, precepts...)
 }
 
 func (dbw *ReindexerWrapper) Update(namespace string, item interface{}, precepts ...string) (int, error) {
-	dbw.SetSynced(false)
+	dbw.SetSyncRequired()
 	return dbw.Reindexer.Update(namespace, item, precepts...)
 }
 
 func (dbw *ReindexerWrapper) Delete(namespace string, item interface{}, precepts ...string) error {
-	dbw.SetSynced(false)
+	dbw.SetSyncRequired()
 	return dbw.Reindexer.Delete(namespace, item, precepts...)
 }
 
 func (dbw *ReindexerWrapper) UpsertCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) error {
-	dbw.SetSynced(false)
+	dbw.SetSyncRequired()
 	return dbw.Reindexer.WithContext(ctx).Upsert(namespace, item, precepts...)
 }
 
 func (dbw *ReindexerWrapper) InsertCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) (int, error) {
-	dbw.SetSynced(false)
+	dbw.SetSyncRequired()
 	return dbw.Reindexer.WithContext(ctx).Insert(namespace, item, precepts...)
 }
 
 func (dbw *ReindexerWrapper) UpdateCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) (int, error) {
-	dbw.SetSynced(false)
+	dbw.SetSyncRequired()
 	return dbw.Reindexer.WithContext(ctx).Update(namespace, item, precepts...)
 }
 
 func (dbw *ReindexerWrapper) DeleteCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) error {
-	dbw.SetSynced(false)
+	dbw.SetSyncRequired()
 	return dbw.Reindexer.WithContext(ctx).Delete(namespace, item, precepts...)
 }
