@@ -120,10 +120,10 @@ Reindexer is fast.
 
 ### Tags
 
-* databases : Databases managment
+* databases : Databases management
 * indexes : Indexes management
-* items : Documents managment
-* namespaces : Namespaces managment
+* items : Documents management
+* namespaces : Namespaces management
 * queries : Queries to reindexer (dsl/sql)
 * system : System methods
 
