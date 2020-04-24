@@ -73,7 +73,7 @@ SelectKeyResults IndexStore<T>::SelectKey(const VariantArray &keys, CondType con
 
 	res.comparators_.push_back(Comparator(condition, KeyType(), keys, opts_.IsArray(), sopts.distinct, payloadType_, fields_,
 										  idx_data.size() ? idx_data.data() : nullptr, opts_.collateOpts_));
-	return SelectKeyResults(res);
+	return SelectKeyResults(std::move(res));
 }
 
 template <typename T>

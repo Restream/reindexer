@@ -46,6 +46,9 @@ public:
 		cfgBuilder.Put("log_level", ftCfg.logLevel);
 		cfgBuilder.Put("max_step_size", ftCfg.maxStepSize);
 		cfgBuilder.Put("full_match_boost", ftCfg.fullMatchBoost);
+		cfgBuilder.Put("extra_word_symbols", ftCfg.extraWordSymbols);
+		cfgBuilder.Put("position_boost", ftCfg.positionBoost);
+		cfgBuilder.Put("position_weight", ftCfg.positionWeight);
 		{
 			auto synonymsNode = cfgBuilder.Array("synonyms");
 			for (auto& synonym : ftCfg.synonyms) {

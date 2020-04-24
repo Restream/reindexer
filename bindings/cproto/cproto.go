@@ -3,12 +3,12 @@ package cproto
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"net"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/restream/reindexer/bindings"
@@ -28,7 +28,7 @@ func init() {
 }
 
 type NetCProto struct {
-	dsn              dsn
+	url              url.URL
 	pool             chan *connection
 	onChangeCallback func()
 	serverStartTime  int64
@@ -37,25 +37,9 @@ type NetCProto struct {
 	connectOpts      bindings.OptionConnect
 	compression      bindings.OptionCompression
 	termCh           chan struct{}
-	lock             sync.RWMutex
 }
 
-type dsn struct {
-	url         []url.URL
-	connVersion int
-	active      int
-}
-
-func (binding *NetCProto) getActiveDSN() *url.URL {
-	return &binding.dsn.url[binding.dsn.active]
-}
-
-func (binding *NetCProto) nextDSN() {
-	binding.dsn.active = (binding.dsn.active + 1) % len(binding.dsn.url)
-	binding.dsn.connVersion++
-}
-
-func (binding *NetCProto) Init(u []url.URL, options ...interface{}) (err error) {
+func (binding *NetCProto) Init(u *url.URL, options ...interface{}) (err error) {
 	connPoolSize := defConnPoolSize
 
 	for _, option := range options {
@@ -86,21 +70,14 @@ func (binding *NetCProto) Init(u []url.URL, options ...interface{}) (err error) 
 		binding.retryAttempts.Write = 0
 	}
 
-	binding.dsn.url = u
-	binding.newPool(context.Background(), connPoolSize)
-	binding.termCh = make(chan struct{})
-	go binding.pinger()
-	return
-}
-
-func (binding *NetCProto) newPool(ctx context.Context, connPoolSize int) error {
-	var wg sync.WaitGroup
+	binding.url = *u
 	binding.pool = make(chan *connection, connPoolSize)
+	var wg sync.WaitGroup
 	wg.Add(connPoolSize)
 	for i := 0; i < connPoolSize; i++ {
 		go func(binding *NetCProto, wg *sync.WaitGroup) {
 			defer wg.Done()
-			conn, _ := newConnection(ctx, binding)
+			conn, _ := newConnection(context.TODO(), binding)
 			binding.pool <- conn
 		}(binding, &wg)
 	}
@@ -108,12 +85,13 @@ func (binding *NetCProto) newPool(ctx context.Context, connPoolSize int) error {
 	for i := 0; i < connPoolSize; i++ {
 		conn := <-binding.pool
 		if conn.err != nil {
-			return conn.err
+			err = conn.err
 		}
 		binding.pool <- conn
 	}
-
-	return nil
+	binding.termCh = make(chan struct{})
+	go binding.pinger()
+	return
 }
 
 func (binding *NetCProto) Clone() bindings.RawBinding {
@@ -336,6 +314,10 @@ func (binding *NetCProto) EnableLogger(log bindings.Logger) {
 func (binding *NetCProto) DisableLogger() {
 	fmt.Println("cproto binding DisableLogger method is dummy")
 }
+func (binding *NetCProto) ReopenLogFiles() error {
+	fmt.Println("cproto binding ReopenLogFiles method is dummy")
+	return nil
+}
 
 func (binding *NetCProto) EnableStorage(ctx context.Context, path string) error {
 	fmt.Println("cproto binding EnableStorage method is dummy")
@@ -344,11 +326,7 @@ func (binding *NetCProto) EnableStorage(ctx context.Context, path string) error 
 
 func (binding *NetCProto) Status(ctx context.Context) bindings.Status {
 	var totalQueueSize, totalQueueUsage, connUsage int
-	binding.lock.RLock()
-	poolCap := cap(binding.pool)
-	binding.lock.RUnlock()
-	var remoteAddr string
-	for i := 0; i < poolCap; i++ {
+	for i := 0; i < cap(binding.pool); i++ {
 		conn, _ := binding.getConn(ctx)
 		totalQueueSize += cap(conn.seqs)
 		queueUsage := cap(conn.seqs) - len(conn.seqs)
@@ -356,16 +334,13 @@ func (binding *NetCProto) Status(ctx context.Context) bindings.Status {
 		if queueUsage > 0 {
 			connUsage++
 		}
-		remoteAddr = conn.conn.RemoteAddr().String()
 	}
-
 	return bindings.Status{
 		CProto: bindings.StatusCProto{
-			ConnPoolSize:   poolCap,
+			ConnPoolSize:   cap(binding.pool),
 			ConnPoolUsage:  connUsage,
 			ConnQueueSize:  totalQueueSize,
 			ConnQueueUsage: totalQueueUsage,
-			ConnAddr:       remoteAddr,
 		},
 	}
 }
@@ -374,68 +349,25 @@ func (binding *NetCProto) Finalize() error {
 	if binding.termCh != nil {
 		close(binding.termCh)
 	}
-	binding.lock.RLock()
 	for i := 0; i < cap(binding.pool); i++ {
 		conn := <-binding.pool
 		conn.Finalize()
 	}
-	binding.lock.RUnlock()
 
 	return nil
 }
 
 func (binding *NetCProto) getConn(ctx context.Context) (conn *connection, err error) {
-	binding.lock.RLock()
 	select {
 	case conn = <-binding.pool:
 		if conn.hasError() {
-			currVersion := binding.dsn.connVersion
-			binding.lock.RUnlock()
-			binding.lock.Lock()
-			if currVersion == binding.dsn.connVersion {
-				conn, err = binding.reconnect(ctx)
-				binding.lock.Unlock()
-				if err != nil {
-					return nil, err
-				}
-				if conn.isServerChanged {
-					binding.onChangeCallback()
-				}
-			} else {
-				binding.lock.Unlock()
-				conn, err = binding.getConn(ctx)
-				if err != nil {
-					return nil, err
-				}
-			}
-		} else {
-			binding.lock.RUnlock()
+			conn, err = newConnection(ctx, binding)
 		}
 		binding.pool <- conn
 	case <-ctx.Done():
-		binding.lock.RUnlock()
 		err = ctx.Err()
 	}
 	return
-}
-
-func (binding *NetCProto) reconnect(ctx context.Context) (conn *connection, err error) {
-	errWrap := errors.New("failed to connect with provided dsn")
-	for i := 0; i < len(binding.dsn.url); i++ {
-		binding.nextDSN()
-		err = binding.newPool(ctx, cap(binding.pool))
-		if err != nil {
-			errWrap = fmt.Errorf("%s; %s", errWrap, err)
-			continue
-		}
-
-		errWrap = nil
-		conn = <-binding.pool
-
-		break
-	}
-
-	return conn, errWrap
 }
 
 func (binding *NetCProto) rpcCall(ctx context.Context, op int, cmd int, args ...interface{}) (buf *NetBuffer, err error) {
@@ -487,19 +419,20 @@ func (binding *NetCProto) pinger() {
 		}
 		if ticksCount == pingerTimeoutSec {
 			ticksCount = 0
-			binding.lock.RLock()
-			poolCap := cap(binding.pool)
-			binding.lock.RUnlock()
-			for i := 0; i < poolCap; i++ {
-				conn, err := binding.getConn(context.TODO())
-				if err != nil || conn.hasError() {
-					continue
-				}
-				if conn.lastReadTime().Add(timeout).Before(now) {
+			for i := 0; i < cap(binding.pool); i++ {
+				conn, _ := binding.getConn(context.TODO())
+				if !conn.hasError() && conn.lastReadTime().Add(timeout).Before(now) {
 					buf, _ := conn.rpcCall(context.TODO(), cmdPing, uint32(binding.timeouts.RequestTimeout*time.Second))
 					buf.Free()
 				}
 			}
 		}
+	}
+}
+
+func (binding *NetCProto) checkServerStartTime(timestamp int64) {
+	old := atomic.SwapInt64(&binding.serverStartTime, timestamp)
+	if old != 0 && old != timestamp && binding.onChangeCallback != nil {
+		binding.onChangeCallback()
 	}
 }

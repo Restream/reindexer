@@ -102,9 +102,8 @@ type connection struct {
 	now    uint32
 	termCh chan struct{}
 
-	requests        [queueSize]requestInfo
-	enableSnappy    int32
-	isServerChanged bool
+	requests     [queueSize]requestInfo
+	enableSnappy int32
 }
 
 func newConnection(ctx context.Context, owner *NetCProto) (c *connection, err error) {
@@ -190,7 +189,7 @@ func (c *connection) deadlineTicker() {
 
 func (c *connection) connect(ctx context.Context) (err error) {
 	var d net.Dialer
-	c.conn, err = d.DialContext(ctx, "tcp", c.owner.getActiveDSN().Host)
+	c.conn, err = d.DialContext(ctx, "tcp", c.owner.url.Host)
 	if err != nil {
 		return err
 	}
@@ -203,11 +202,10 @@ func (c *connection) connect(ctx context.Context) (err error) {
 }
 
 func (c *connection) login(ctx context.Context, owner *NetCProto) (err error) {
-	dsn := owner.getActiveDSN()
-	password, username, path := "", "", dsn.Path
-	if dsn.User != nil {
-		username = dsn.User.Username()
-		password, _ = dsn.User.Password()
+	password, username, path := "", "", owner.url.Path
+	if owner.url.User != nil {
+		username = owner.url.User.Username()
+		password, _ = owner.url.User.Password()
 	}
 	if len(path) > 0 && path[0] == '/' {
 		path = path[1:]
@@ -221,11 +219,7 @@ func (c *connection) login(ctx context.Context, owner *NetCProto) (err error) {
 	defer buf.Free()
 
 	if len(buf.args) > 1 {
-		serverStartTS := buf.args[1].(int64)
-		old := atomic.SwapInt64(&owner.serverStartTime, serverStartTS)
-		if old != 0 && old != serverStartTS {
-			c.isServerChanged = true
-		}
+		owner.checkServerStartTime(buf.args[1].(int64))
 	}
 	return
 }

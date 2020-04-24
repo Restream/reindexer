@@ -174,6 +174,14 @@ void ServerImpl::Stop() {
 	}
 }
 
+void ServerImpl::ReopenLogFiles() {
+#ifndef _WIN32
+	for (auto &sync : sinks_) {
+		sync.second->reopen();
+	}
+#endif
+}
+
 int ServerImpl::run() {
 	loggerConfigure();
 	reindexer::debug::backtrace_set_writer([](string_view out) {
@@ -291,7 +299,7 @@ int ServerImpl::run() {
 #ifndef _WIN32
 			auto sigHupCallback = [&](ev::sig &sig) {
 				(void)sig;
-				loggerReopen();
+				ReopenLogFiles();
 			};
 			shup.set(loop_);
 			shup.set(sigHupCallback);

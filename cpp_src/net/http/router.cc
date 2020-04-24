@@ -41,6 +41,8 @@ HttpStatusCode HttpStatus::errCodeToHttpStatus(int errCode) {
 	switch (errCode) {
 		case errOK:
 			return StatusOK;
+		case errNotFound:
+			return StatusNotFound;
 		case errParams:
 			return StatusBadRequest;
 		case errForbidden:

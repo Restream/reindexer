@@ -148,17 +148,17 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 			ser << "DELETE FROM " << query_._namespace;
 			break;
 		case QueryUpdate: {
-			if (query_.updateFields_.empty()) break;
+			if (query_.UpdateFields().empty()) break;
 			ser << "UPDATE " << query_._namespace;
-			FieldModifyMode mode = query_.updateFields_.front().mode;
+			FieldModifyMode mode = query_.UpdateFields().front().mode;
 			bool isUpdate = (mode == FieldModeSet || mode == FieldModeSetJson);
 			if (isUpdate) {
 				ser << " SET ";
 			} else {
 				ser << " DROP ";
 			}
-			for (const UpdateEntry &field : query_.updateFields_) {
-				if (&field != &*query_.updateFields_.begin()) ser << ',';
+			for (const UpdateEntry &field : query_.UpdateFields()) {
+				if (&field != &*query_.UpdateFields().begin()) ser << ',';
 				if (field.column.find('.') == string::npos) {
 					ser << field.column;
 				} else {

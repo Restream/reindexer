@@ -111,7 +111,6 @@ vector<WordIdType> DataProcessor::BuildSuffix(words_map &words_um, DataHolder &h
 		// if we still haven't whis word we add it to new suffix tree else we will only add info to current word
 
 		auto id = words.size();
-		// keyIt->second.vids_.Commit();
 		WordIdType pos;
 		pos = holder_.findWord(keyIt->first);
 		found.push_back(pos);

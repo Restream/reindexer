@@ -1,6 +1,7 @@
 #!/bin/sh
 
 set -e
+echo "Starting manual repair test"
 test_db="${1}"
 build_dir="build"
 [ -z "${test_db}" ] && echo "usage ${0} <test_db> <build_dir>" && exit 1
@@ -24,4 +25,5 @@ server_pid=$!
 sleep 15
 kill ${server_pid}
 wait ${server_pid}
+echo "Manual repair test done"
 

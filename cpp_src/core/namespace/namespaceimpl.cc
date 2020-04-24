@@ -621,7 +621,7 @@ void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsCon
 
 	bool withJsonUpdates = false;
 	bool withExpressions = false;
-	for (const UpdateEntry &ue : query.updateFields_) {
+	for (const UpdateEntry &ue : query.UpdateFields()) {
 		if (!withExpressions && ue.isExpression) withExpressions = true;
 		if (!withJsonUpdates && ue.mode == FieldModeSetJson) withJsonUpdates = true;
 		if (withExpressions && withJsonUpdates) break;
@@ -1107,7 +1107,7 @@ void NamespaceImpl::updateItemFromCJSON(IdType itemId, const Query &q, const NsC
 	Payload pl(payloadType_, pv);
 	pv.Clone(pl.RealSize());
 	ItemImpl itemimpl(payloadType_, pv, tagsMatcher_);
-	for (const UpdateEntry &updateField : q.updateFields_) {
+	for (const UpdateEntry &updateField : q.UpdateFields()) {
 		VariantArray values = preprocessUpdateFieldValues(updateField, itemId);
 		itemimpl.ModifyField(updateField.column, values, updateField.mode);
 	}
@@ -1187,7 +1187,7 @@ void NamespaceImpl::updateItemFields(IdType itemId, const Query &q, bool rowBase
 		indexes_[field]->Delete(Variant(pv), itemId);
 	}
 
-	for (const UpdateEntry &updateField : q.updateFields_) {
+	for (const UpdateEntry &updateField : q.UpdateFields()) {
 		updateSingleField(updateField, itemId, pl);
 	}
 
@@ -1230,7 +1230,7 @@ void NamespaceImpl::updateItemFields(IdType itemId, const Query &q, bool rowBase
 void NamespaceImpl::updateItemFromQuery(IdType itemId, const Query &q, bool rowBasedReplication, const NsContext &ctx,
 										bool withJsonUpdates) {
 	assert(items_.exists(itemId));
-	for (const UpdateEntry &updateField : q.updateFields_) {
+	for (const UpdateEntry &updateField : q.UpdateFields()) {
 		int fieldIdx = 0;
 		if (!getIndexByName(updateField.column, fieldIdx)) {
 			bool updated = false;

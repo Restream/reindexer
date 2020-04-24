@@ -25,6 +25,7 @@ public:
 	void EnableHandleSignals(bool enable = true);
 	DBManager& GetDBManager();
 	bool IsReady();
+	void ReopenLogFiles();
 
 protected:
 	std::unique_ptr<ServerImpl> impl_;

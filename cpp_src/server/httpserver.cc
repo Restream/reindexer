@@ -301,7 +301,6 @@ int HTTPServer::GetNamespaces(http::Context &ctx) {
 		for (auto &nsDef : nsDefs) {
 			auto objNode = arrNode.Object(nullptr);
 			objNode.Put("name", nsDef.name);
-			objNode.Put("storage_enabled", nsDef.storage.IsEnabled());
 		}
 	}
 	return ctx.JSON(http::StatusOK, ser.DetachChunk());

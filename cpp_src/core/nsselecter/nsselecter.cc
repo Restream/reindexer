@@ -225,7 +225,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 
 	explain.SetPostprocessTime();
 
-	LoopCtx lctx(ctx, aggregators);
+	LoopCtx lctx(ctx, aggregators, explain);
 	lctx.qres = &qres;
 	lctx.calcTotal = needCalcTotal;
 	if (isFt) result.haveProcent = true;
@@ -240,6 +240,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 
 	explain.SetLoopTime();
 	explain.StopTiming();
+	explain.SetSortOptimization(ctx.sortingContext.isOptimizationEnabled());
 	explain.PutSortIndex(ctx.sortingContext.sortIndex() ? ctx.sortingContext.sortIndex()->Name() : "-"_sv);
 	explain.PutCount((ctx.preResult && ctx.preResult->executionMode == JoinPreResult::ModeBuild)
 						 ? (ctx.preResult->dataMode == JoinPreResult::ModeIdSet ? ctx.preResult->ids.size() : ctx.preResult->values.size())
@@ -253,7 +254,11 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		explain.LogDump(ctx.query.debugLevel);
 	}
 	if (ctx.query.explain_) {
-		result.explainResults = explain.GetJSON();
+		if (ctx.preResult && ctx.preResult->executionMode == JoinPreResult::ModeBuild) {
+			ctx.preResult->explainPreSelect = explain.GetJSON();
+		} else {
+			result.explainResults = explain.GetJSON();
+		}
 	}
 	if (ctx.query.debugLevel >= LogTrace) result.Dump();
 
@@ -469,7 +474,9 @@ bool NsSelecter::checkIfThereAreLeftJoins(SelectCtx &sctx) const {
 }
 
 template <typename Items>
-void NsSelecter::sortResults(reindexer::SelectCtx &sctx, Items &items, const SortingOptions &sortingOptions) {
+void NsSelecter::sortResults(LoopCtx &ctx, Items &items, const SortingOptions &sortingOptions) {
+	SelectCtx &sctx = ctx.sctx;
+	ctx.explain.StartSort();
 #ifndef NDEBUG
 	for (const auto &eR : sctx.sortingContext.exprResults) {
 		assert(eR.size() == items.size());
@@ -506,6 +513,7 @@ void NsSelecter::sortResults(reindexer::SelectCtx &sctx, Items &items, const Sor
 		auto last = first + endPos;
 		applyGeneralSort(first, last, end, comparator, sctx);
 	}
+	ctx.explain.StopSort();
 }
 
 template <bool reverse, bool hasComparators, bool aggregationsOnly>
@@ -615,9 +623,9 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 
 	if (sctx.preResult && sctx.preResult->dataMode == JoinPreResult::ModeValues) {
 		assert(sctx.preResult->executionMode == JoinPreResult::ModeBuild);
-		sortResults(sctx, sctx.preResult->values, sortingOptions);
+		sortResults(ctx, sctx.preResult->values, sortingOptions);
 	} else if (sortingOptions.postLoopSortingRequired()) {
-		sortResults(sctx, result.Items(), sortingOptions);
+		sortResults(ctx, result.Items(), sortingOptions);
 		const size_t offset = sctx.isForceAll ? sctx.query.start : multisortLimitLeft;
 		setLimitAndOffset(result.Items(), offset, sctx.query.count);
 	}

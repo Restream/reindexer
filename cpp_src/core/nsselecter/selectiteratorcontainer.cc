@@ -234,7 +234,7 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectR
 					} else {
 						it.AppendAndBind(res, ns.payloadType_, qe.idxNo);
 					}
-					it.name += " OR " + qe.index;
+					it.name += " or " + qe.index;
 					break;
 				}  // else fallthrough
 			}	   // fallthrough
@@ -412,7 +412,8 @@ template <bool reverse>
 IdType SelectIteratorContainer::next(const_iterator it, IdType from) {
 	if (it->IsLeaf()) {
 		const SelectIterator &siter = it->Value();
-		if (siter.comparators_.size() || siter.End()) return from;
+		if (siter.comparators_.size() || siter.joinIndexes.size() || siter.End())
+			return from;
 		if (reverse && siter.Val() < from) return siter.Val() + 1;
 		if (!reverse && siter.Val() > from) return siter.Val() - 1;
 		return from;

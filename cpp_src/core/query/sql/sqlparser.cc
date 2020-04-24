@@ -450,8 +450,7 @@ int SQLParser::updateParse(tokenizer &parser) {
 	if (tok.text() == "set"_sv) {
 		parser.next_token();
 		while (!parser.end()) {
-			UpdateEntry updateField = parseUpdateField(parser);
-			query_.updateFields_.push_back(std::move(updateField));
+			query_.updateFields_.emplace_back(parseUpdateField(parser));
 
 			tok = parser.peek_token();
 			if (tok.text() != ","_sv) break;
@@ -463,10 +462,7 @@ int SQLParser::updateParse(tokenizer &parser) {
 			tok = peekSqlToken(parser, FieldNameSqlToken, false);
 			if (tok.type != TokenName && tok.type != TokenString)
 				throw Error(errParseSQL, "Expected field name, but found '%s' in query, %s", tok.text(), parser.where());
-			UpdateEntry updateField;
-			updateField.column = string(tok.text());
-			updateField.mode = FieldModeDrop;
-			query_.updateFields_.push_back(std::move(updateField));
+			query_.Drop(string(tok.text()));
 			parser.next_token();
 			tok = parser.peek_token();
 			if (tok.text() != ","_sv) break;

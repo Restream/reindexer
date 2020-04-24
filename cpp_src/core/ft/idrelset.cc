@@ -80,10 +80,6 @@ int IdRelSet::Add(VDocIdType id, int pos, int field) {
 	return back().Size();
 }
 
-void IdRelSet::Commit() {
-	boost::sort::pdqsort(begin(), end(), [](const IdRelType& lhs, const IdRelType& rhs) { return lhs.Rank() > rhs.Rank(); });
-}
-
 void IdRelType::SimpleCommit() {
 	boost::sort::pdqsort(pos_.begin(), pos_.end(),
 						 [](const IdRelType::PosType& lhs, const IdRelType::PosType& rhs) { return lhs.pos() < rhs.pos(); });

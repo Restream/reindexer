@@ -156,7 +156,7 @@ type Stats struct {
 
 // Raw binding to reindexer
 type RawBinding interface {
-	Init(u []url.URL, options ...interface{}) error
+	Init(u *url.URL, options ...interface{}) error
 	Clone() RawBinding
 	OpenNamespace(ctx context.Context, namespace string, enableStorage, dropOnFileFormatError bool) error
 	CloseNamespace(ctx context.Context, namespace string) error
@@ -185,6 +185,7 @@ type RawBinding interface {
 	Commit(ctx context.Context, namespace string) error
 	EnableLogger(logger Logger)
 	DisableLogger()
+	ReopenLogFiles() error
 	Ping(ctx context.Context) error
 	Finalize() error
 	Status(ctx context.Context) Status
@@ -270,7 +271,6 @@ type StatusCProto struct {
 	ConnPoolUsage  int
 	ConnQueueSize  int
 	ConnQueueUsage int
-	ConnAddr       string
 }
 
 type StatusBuiltin struct {

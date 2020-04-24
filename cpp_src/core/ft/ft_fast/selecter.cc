@@ -231,6 +231,15 @@ void Selecter::debugMergeStep(const char *msg, int vid, float normBm25, float no
 #endif
 }
 
+static double pos2rank(int pos) {
+	if (pos <= 10) return 1.0 - (pos / 100.0);
+	if (pos <= 100) return 0.9 - (pos / 1000.0);
+	if (pos <= 1000) return 0.8 - (pos / 10000.0);
+	if (pos <= 10000) return 0.7 - (pos / 100000.0);
+	if (pos <= 100000) return 0.6 - (pos / 1000000.0);
+	return 0.5;
+}
+
 void Selecter::mergeItaration(TextSearchResults &rawRes, index_t rawResIndex, fast_hash_map<VDocIdType, index_t> &statuses,
 							  vector<MergeInfo> &merged, vector<MergedIdRel> &merged_rd, h_vector<int16_t> &idoffsets,
 							  vector<bool> &curExists) {
@@ -293,8 +302,12 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, index_t rawResIndex, fa
 					// normalized bm25
 					const double normBm25Tmp = bound(bm25, holder_.cfg_->bm25Weight, holder_.cfg_->bm25Boost);
 
+					assert(!relid.Pos().empty());
+					const double positionRank =
+						bound(pos2rank(relid.Pos().front().pos()), holder_.cfg_->positionWeight, holder_.cfg_->positionBoost);
+
 					// final term rank calculation
-					const double termRankTmp = fboost * r.proc_ * normBm25Tmp * rawRes.term.opts.boost * termLenBoost;
+					const double termRankTmp = fboost * r.proc_ * normBm25Tmp * rawRes.term.opts.boost * termLenBoost * positionRank;
 					if (termRankTmp > termRank) {
 						field = f;
 						normBm25 = normBm25Tmp;

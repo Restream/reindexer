@@ -84,7 +84,8 @@ extern template std::pair<unsigned, EqualPosition> QueryEntries::DetermineEqualP
 
 struct UpdateEntry {
 	UpdateEntry() {}
-	UpdateEntry(const string &c, const VariantArray &v, FieldModifyMode m = FieldModeSet) : column(c), values(v), mode(m) {}
+	UpdateEntry(string c, VariantArray v, FieldModifyMode m = FieldModeSet, bool e = false)
+		: column(std::move(c)), values(std::move(v)), mode(m), isExpression(e) {}
 	bool operator==(const UpdateEntry &) const;
 	bool operator!=(const UpdateEntry &) const;
 	string column;

@@ -18,7 +18,6 @@ public:
 	IdRelType& operator=(const IdRelType&) = delete;
 
 	VDocIdType Id() const noexcept { return id_; }
-	int Rank() const { return !pos_.size() ? 0 : pos2rank(pos_.front().pos()) + std::max(10, int(pos_.size())); }
 
 	int Distance(const IdRelType& other, int max) const;
 
@@ -49,13 +48,6 @@ public:
 private:
 	static constexpr int maxField = 63;
 
-	int pos2rank(int pos) const {
-		if (pos <= 10) return 100 - pos;
-		if (pos <= 100) return 90 - (pos / 10);
-		if (pos <= 1000) return 80 - (pos / 100);
-		return 70;
-	}
-
 	void addField(int field) noexcept {
 		assert(0 <= field && field <= maxField);
 		usedFieldsMask_ |= (uint64_t(1) << field);
@@ -69,7 +61,6 @@ private:
 class IdRelSet : public h_vector<IdRelType, 0> {
 public:
 	int Add(VDocIdType id, int pos, int field);
-	void Commit();
 	void SimpleCommit() {
 		for (auto& val : *this) val.SimpleCommit();
 	}

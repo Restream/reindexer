@@ -45,11 +45,7 @@ std::string ClientsStatsApi::GetConnectionString() {
 }
 
 void ClientsStatsApi::SetProfilingFlag(bool val, const std::string& column, reindexer::client::Reindexer* c) {
-	reindexer::Query qup = reindexer::Query("#config").Where("type", CondEq, "profiling");
-	reindexer::UpdateEntry ue;
-	ue.column = column;
-	ue.values.push_back(reindexer::Variant(val));
-	qup.updateFields_.push_back(ue);
+	reindexer::Query qup = reindexer::Query("#config").Where("type", CondEq, "profiling").Set(column, val);
 	reindexer::client::QueryResults result;
 	auto err = c->Update(qup, result);
 	ASSERT_TRUE(err.ok()) << err.what();

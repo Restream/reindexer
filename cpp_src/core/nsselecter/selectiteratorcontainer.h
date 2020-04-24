@@ -8,6 +8,7 @@ namespace reindexer {
 
 struct SelectCtx;
 class RdxContext;
+class JoinedSelector;
 
 class SelectIteratorContainer : public ExpressionTree<OpType, Bracket, 2, SelectIterator> {
 public:
@@ -37,7 +38,9 @@ public:
 	bool Process(PayloadValue &, bool *finish, IdType *rowId, IdType, bool match);
 
 	bool IsIterator(size_t i) const { return IsValue(i); }
-	void ExplainJSON(int iters, JsonBuilder &builder) const { explainJSON(cbegin(), cend(), iters, builder); }
+	void ExplainJSON(int iters, JsonBuilder &builder, const vector<JoinedSelector> *js) const {
+		explainJSON(cbegin(), cend(), iters, builder, js);
+	}
 
 private:
 	void sortByCost(span<unsigned> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations);
@@ -52,7 +55,7 @@ private:
 	template <bool reverse, bool hasComparators>
 	bool checkIfSatisfyAllConditions(iterator begin, iterator end, PayloadValue &, bool *finish, IdType rowId, IdType properRowId,
 									 bool match);
-	static void explainJSON(const_iterator it, const_iterator to, int iters, JsonBuilder &builder);
+	static void explainJSON(const_iterator it, const_iterator to, int iters, JsonBuilder &builder, const vector<JoinedSelector> *);
 	template <bool reverse>
 	static IdType next(const_iterator, IdType from);
 	template <bool reverse>
@@ -66,8 +69,8 @@ private:
 	void processJoinEntry(const QueryEntry &qe, OpType op);
 	void processQueryEntryResults(SelectKeyResults &selectResults, OpType, const NamespaceImpl &ns, const QueryEntry &qe, bool isIndexFt,
 								  bool isIndexSparse, bool nonIndexField);
-	void processEqualPositions(const std::multimap<unsigned, EqualPosition> &equalPositions, size_t begin, size_t end, const NamespaceImpl &ns,
-							   const QueryEntries &queries);
+	void processEqualPositions(const std::multimap<unsigned, EqualPosition> &equalPositions, size_t begin, size_t end,
+							   const NamespaceImpl &ns, const QueryEntries &queries);
 	bool processJoins(SelectIterator &it, const ConstPayload &pl, IdType properRowId, bool match);
 
 	/// @return end() if empty or last opened bracket is empty

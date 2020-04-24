@@ -20,6 +20,12 @@ type FtFastConfig struct {
 	// 0: term length will not change final rank.
 	// 1: term length will affect to final rank in 0 - 100% range
 	TermLenWeight float64 `json:"term_len_weight"`
+	// boost of search query term position. default value 1
+	PositionBoost float64 `json:"position_boost"`
+	// weight of search query term position in final rank.
+	// 0: term position will not change final rank.
+	// 1: term position will affect to final rank in 0 - 100% range
+	PositionWeight float64 `json:"position_weight"`
 	// Boost of full match of search phrase with doc
 	FullMatchBoost float64 `json:"full_match_boost"`
 	// Minimum rank of found documents
@@ -65,11 +71,13 @@ type FtFastConfig struct {
 func DefaultFtFastConfig() FtFastConfig {
 	return FtFastConfig{
 		Bm25Boost:        1.0,
-		Bm25Weight:       0.5,
+		Bm25Weight:       0.1,
 		DistanceBoost:    1.0,
 		DistanceWeight:   0.5,
 		TermLenBoost:     1.0,
 		TermLenWeight:    0.3,
+		PositionBoost:    1.0,
+		PositionWeight:   0.1,
 		FullMatchBoost:   1.1,
 		MinRelevancy:     0.05,
 		MaxTyposInWord:   1,

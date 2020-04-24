@@ -217,7 +217,7 @@ public:
 class SelectKeyResults : public h_vector<SelectKeyResult, 1> {
 public:
 	SelectKeyResults(std::initializer_list<SelectKeyResult> l) { insert(end(), l.begin(), l.end()); }
-	SelectKeyResults(const SelectKeyResult &res) { push_back(res); }
+	SelectKeyResults(SelectKeyResult &&res) { push_back(std::move(res)); }
 	SelectKeyResults() {}
 };
 

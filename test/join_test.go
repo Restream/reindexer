@@ -9,6 +9,7 @@ import (
 
 	"github.com/restream/reindexer"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func init() {
@@ -409,4 +410,173 @@ func TestJoinQueryResultsOnIterator(t *testing.T) {
 			assert.EqualValues(t, item.Pricesx[i], joinResultsPricesx[i])
 		}
 	}
+}
+
+type explainNs struct {
+	Id int `reindex:"id,,pk"`
+	Data int `reindex:"data"`
+	InnerJoinedData []*explainNs `reindex:"inner_joined,,joined"`
+	OrInnerJoinedData []*explainNs `reindex:"or_inner_joined,,joined"`
+	LeftJoinedData []*explainNs `reindex:"left_joined,,joined"`
+}
+
+func initNsForExplain(t *testing.T, ns string) {
+	DB.DropNamespace(ns)
+	err := DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), explainNs{})
+	assert.NoError(t, err)
+	tx := newTestTx(DB, ns)
+	for i := 0; i < 5; i++ {
+		testItem := explainNs{i, i, nil, nil, nil}
+		err = tx.Upsert(testItem)
+		assert.NoError(t, err)
+	}
+	tx.MustCommit()
+}
+
+type expectedExplain struct {
+	Field string
+	Method string
+	Keys int
+	Comparators int
+	Matched int
+	Preselect []expectedExplain
+	JoinSelect []expectedExplain
+}
+
+func checkExplain(t *testing.T, res *reindexer.ExplainResults, expected []expectedExplain, fieldName string) {
+	require.Equal(t, len(expected), len(res.Selectors))
+	for i := 0; i < len(expected); i++ {
+		assert.Equalf(t, expected[i].Field, res.Selectors[i].Field, fieldName + expected[i].Field)
+		assert.Equalf(t, expected[i].Method, res.Selectors[i].Method, fieldName + expected[i].Field)
+		assert.Equalf(t, expected[i].Matched, res.Selectors[i].Matched, fieldName + expected[i].Field)
+		assert.Equalf(t, expected[i].Keys, res.Selectors[i].Keys, fieldName + expected[i].Field)
+		assert.Equalf(t, expected[i].Comparators, res.Selectors[i].Comparators, fieldName + expected[i].Field)
+		if len(expected[i].Preselect) == 0 {
+			assert.Nil(t, res.Selectors[i].ExplainPreselect, fieldName + expected[i].Field)
+		} else {
+			checkExplain(t, res.Selectors[i].ExplainPreselect, expected[i].Preselect, fieldName + expected[i].Field + " -> ")
+		}
+		if len(expected[i].JoinSelect) == 0 {
+			assert.Nil(t, res.Selectors[i].ExplainSelect, fieldName + expected[i].Field)
+		} else {
+			checkExplain(t, res.Selectors[i].ExplainSelect, expected[i].JoinSelect, fieldName + expected[i].Field + " -> ")
+		}
+	}
+}
+
+func TestExplainJoin(t *testing.T) {
+	nsMain := "test_explain_main"
+	nsJoined := "test_explain_joined"
+	initNsForExplain(t, nsMain)
+	initNsForExplain(t, nsJoined)
+
+	qjoin1 := DB.Query(nsJoined).Where("data", reindexer.GT, 0)
+	qjoin2 := DB.Query(nsJoined).Where("data", reindexer.SET, []int{1, 2, 4})
+	qjoin3 := DB.Query(nsJoined).Where("data", reindexer.EQ, 1)
+	q := DB.Query(nsMain).Explain()
+	q.InnerJoin(qjoin1, "inner_joined").On("id", reindexer.EQ, "id")
+	q.Or().Where("id", reindexer.EQ, 1)
+	q.Or().InnerJoin(qjoin2, "or_inner_joined").On("id", reindexer.EQ, "id")
+	q.Not().Where("data", reindexer.EQ, 4)
+	q.LeftJoin(qjoin3, "left_joined").On("id", reindexer.EQ, "id")
+
+	iter := q.MustExec()
+	explainRes, err := iter.GetExplainResults()
+	assert.NoError(t, err)
+	assert.NotNil(t, explainRes)
+	checkExplain(t, explainRes, []expectedExplain{
+		{
+			Field: "",
+			Method: "scan",
+			Keys: 0,
+			Comparators: 0,
+			Matched: 5,
+			Preselect: nil,
+			JoinSelect: nil,
+		},
+		{
+			Field: "not data",
+			Method: "index",
+			Keys: 1,
+			Comparators: 0,
+			Matched: 1,
+			Preselect: nil,
+			JoinSelect: nil,
+		},
+		{
+			Field: "inner_join test_explain_joined",
+			Method: "no_preselect",
+			Keys: 1,
+			Comparators: 0,
+			Matched: 3,
+			Preselect: nil,
+			JoinSelect: []expectedExplain {
+				{
+					Field: "id",
+					Method: "index",
+					Keys: 1,
+					Comparators: 0,
+					Matched: 1,
+					Preselect: nil,
+					JoinSelect: nil,
+				},
+				{
+					Field: "data",
+					Method: "scan",
+					Keys: 0,
+					Comparators: 1,
+					Matched: 0,
+					Preselect: nil,
+					JoinSelect: nil,
+				},
+			},
+		},
+		{
+			Field: " or id",
+			Method: "index",
+			Keys: 1,
+			Comparators: 0,
+			Matched: 1,
+			Preselect: nil,
+			JoinSelect: nil,
+		},
+		{
+			Field: "or_inner_join test_explain_joined",
+			Method: "preselected_values",
+			Keys: 3,
+			Comparators: 0,
+			Matched: 2,
+			Preselect: []expectedExplain {
+				{
+					Field: "data",
+					Method: "index",
+					Keys: 3,
+					Comparators: 0,
+					Matched: 3,
+					Preselect: nil,
+					JoinSelect: nil,
+				},
+			},
+			JoinSelect: nil,
+		},
+		{
+			Field: "left_join test_explain_joined",
+			Method: "preselected_values",
+			Keys: 1,
+			Comparators: 0,
+			Matched: 1,
+			Preselect: []expectedExplain {
+				{
+					Field: "data",
+					Method: "index",
+					Keys: 1,
+					Comparators: 0,
+					Matched: 1,
+					Preselect: nil,
+					JoinSelect: nil,
+				},
+			},
+			JoinSelect: nil,
+		},
+	}, "")
 }

@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.7.0"
+  version: "2.8.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -1254,9 +1254,6 @@ definitions:
             name:
               type: "string"
               description: "Name of namespace"
-            storage_enabled:
-              type: "boolean"
-              description: "If true, then documents will be stored to disc storage, else all data will be lost on server shutdown"
       total_items:
         type: "integer"
         description: "Total count of namespaces"
@@ -1644,7 +1641,7 @@ definitions:
       bm25_weight:
         type: "number"
         format: "float"
-        default: 0.5
+        default: 0.1
         minimum: 0.0
         maximum: 1.0
         description: "Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to finl rank in 0 - 100% range"
@@ -1676,6 +1673,20 @@ definitions:
         minimum: 0.0
         maximum: 1.0
         description: "Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range"
+      position_boost:
+        type: "number"
+        format: "float"
+        default: 1.0
+        minimum: 0.0
+        maximum: 10.0
+        description: "Boost of search query term position"
+      position_weght:
+        type: "number"
+        format: "float"
+        default: 0.1
+        minimum: 0.0
+        maximum: 1.0
+        description: "Weight of search query term position in final rank. 0: term position will not change final rank. 1: term position will affect to final rank in 0 - 100% range"
       full_match_boost:
         type: "number"
         format: "float"
@@ -1842,7 +1853,7 @@ definitions:
       total_items:
         type: "integer"
         description: "Total count of indexes"
-        
+
   ExplainDef:
     type: "object"
     description: "Query execution explainings"
@@ -1862,9 +1873,15 @@ definitions:
       prepare_us:
         type: "integer"
         description: "Query prepare and optimize time"
+      general_sort_us:
+        type: "integer"
+        description: "Result sort time"
       sort_index: 
         type: "string"
         description: "Index, which used for sort results"
+      sort_by_uncommitted_index:
+        type: "boolean"
+        description: "Optimization of sort by uncompleted index has been performed"
       selectors:
         type: "array"
         description: "Filter selectos, used to proccess query conditions"
@@ -1897,6 +1914,12 @@ definitions:
             keys:
               type: "integer"
               description: "Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching"
+            explain_preselect:
+              description: "Preselect in joined namespace execution explainings"
+              $ref: "#/definitions/ExplainDef"
+            explain_select:
+              description: "One of selects in joined namespace execution explainings"
+              $ref: "#/definitions/ExplainDef"
 
   AggregationResDef:
     type: "object"

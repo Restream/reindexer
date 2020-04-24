@@ -1,3 +1,31 @@
+# Version 2.8.0 (24.04.2020)
+
+# Core
+
+- [fea] Fulltext - rank by word position
+- [fea] Explain information improoved
+- [fix] Memory corruption on copying tx-es
+
+# Reindexer tool
+- [fix] Fixed crash on query with joins
+
+# Reindexer server
+- [del] Removed useless "storage_enabled" flag from GET db/namespaces method response
+
+# Face
+
+- [fea] Query builder refactored
+- [fea] New document page now modal
+
+# Misc
+
+- [ci] Ubuntu 20.04 build added
+
+# Version 2.7.1 (14.04.2020)
+
+# Go connector
+- [rev] Disabled multiple dsn support in cproto
+
 # Version 2.7.0 (10.04.2020)
 
 # Core

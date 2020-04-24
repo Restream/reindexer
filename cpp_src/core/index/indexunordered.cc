@@ -225,7 +225,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 			throw Error(errQueryExec, "Unknown query on index '%s'", this->name_);
 	}
 
-	return SelectKeyResults(res);
+	return SelectKeyResults(std::move(res));
 }
 
 template <typename T>

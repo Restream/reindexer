@@ -78,7 +78,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(static_cast<ref_type>(key2), endIt->first)) endIt++;
 
 			if (endIt != this->idx_map.end() && this->idx_map.key_comp()(endIt->first, static_cast<ref_type>(key1))) {
-				return SelectKeyResults({res});
+				return SelectKeyResults(std::move(res));
 			}
 
 		} break;
@@ -88,7 +88,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 
 	if (endIt == startIt || startIt == this->idx_map.end() || endIt == this->idx_map.begin()) {
 		// Empty result
-		return SelectKeyResults(res);
+		return SelectKeyResults(std::move(res));
 	}
 
 	if (opts.unbuiltSortOrders) {
@@ -133,7 +133,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 			return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
 		}
 	}
-	return SelectKeyResults(res);
+	return SelectKeyResults(std::move(res));
 }
 
 template <typename T>

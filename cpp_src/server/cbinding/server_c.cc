@@ -75,7 +75,17 @@ reindexer_error stop_reindexer_server(uintptr_t psvc) {
 	auto svc = reinterpret_cast<Server*>(psvc);
 	if (svc) {
 		svc->Stop();
-		err = Error(0);
+		err = Error(errOK);
+	}
+	return error2c(err);
+}
+
+reindexer_error reopen_log_files(uintptr_t psvc) {
+	Error err = err_not_init;
+	auto svc = reinterpret_cast<Server*>(psvc);
+	if (svc) {
+		svc->ReopenLogFiles();
+		err = Error(errOK);
 	}
 	return error2c(err);
 }

@@ -5,6 +5,7 @@ dump=${1}
 test_db=${2}
 source_tree_path="."
 [ "${3}" != "" ] && source_tree_path=${3}
+test_mode=${4}
 test_dump="/tmp/dbtest.dump.tmp"
 test_srv_dump="/tmp/dbtest.dump.tmp"
 
@@ -35,5 +36,7 @@ rm -f "${test_srv_dump}"
 kill ${server_pid}
 wait ${server_pid}
 ${source_tree_path}/cpp_src/cmd/reindexer_tool/contrib/manual_repair_test.sh "${test_db}" "${source_tree_path}/build"
-${source_tree_path}/cpp_src/cmd/reindexer_tool/contrib/auto_repair_test.sh "${test_db}" "${source_tree_path}/build"
+if [ "${test_mode}" == "full" ]; then
+	${source_tree_path}/cpp_src/cmd/reindexer_tool/contrib/auto_repair_test.sh "${test_db}" "${source_tree_path}/build"
+fi
 

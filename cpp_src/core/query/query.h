@@ -164,15 +164,82 @@ public:
 	/// Sets a new value for a field.
 	/// @param field - field name.
 	/// @param value - new value.
-	Query &SetField(const string &field, const VariantArray &value) {
-		updateFields_.emplace_back(field, value, FieldModeSet);
+	/// @param hasExpressions - true: value has expresions in it
+	template <typename ValueType>
+	Query &Set(string field, ValueType value, bool hasExpressions = false) {
+		return Set(std::move(field), {value}, hasExpressions);
+	}
+	/// Sets a new value for a field.
+	/// @param field - field name.
+	/// @param l - new value.
+	/// @param hasExpressions - true: value has expresions in it
+	template <typename ValueType>
+	Query &Set(string field, std::initializer_list<ValueType> l, bool hasExpressions = false) {
+		VariantArray value;
+		value.reserve(l.size());
+		for (auto it = l.begin(); it != l.end(); it++) value.emplace_back(*it);
+		return Set(std::move(field), std::move(value), hasExpressions);
+	}
+	/// Sets a new value for a field.
+	/// @param field - field name.
+	/// @param l - new value.
+	/// @param hasExpressions - true: value has expresions in it
+	template <typename T>
+	Query &Set(string field, const std::vector<T> &l, bool hasExpressions = false) {
+		VariantArray value;
+		value.reserve(l.size());
+		value.MarkArray();
+		for (auto it = l.begin(); it != l.end(); it++) value.emplace_back(*it);
+		return Set(std::move(field), std::move(value), hasExpressions);
+	}
+	/// Sets a new value for a field.
+	/// @param field - field name.
+	/// @param value - new value.
+	/// @param hasExpressions - true: value has expresions in it
+	Query &Set(string field, VariantArray value, bool hasExpressions = false) {
+		updateFields_.emplace_back(std::move(field), std::move(value), FieldModeSet, hasExpressions);
 		return *this;
 	}
 	/// Sets a value for a field as an object.
 	/// @param field - field name.
 	/// @param value - new value.
-	Query &SetObject(const string &field, const string &objectJson) {
-		updateFields_.emplace_back(UpdateEntry(field, {Variant(objectJson)}, FieldModeSetJson));
+	/// @param hasExpressions - true: value has expresions in it
+	template <typename ValueType>
+	Query &SetObject(string field, ValueType value, bool hasExpressions = false) {
+		return SetObject(std::move(field), {value}, hasExpressions);
+	}
+	/// Sets a new value for a field as an object.
+	/// @param field - field name.
+	/// @param l - new value.
+	/// @param hasExpressions - true: value has expresions in it
+	template <typename ValueType>
+	Query &SetObject(string field, std::initializer_list<ValueType> l, bool hasExpressions = false) {
+		VariantArray value;
+		value.reserve(l.size());
+		for (auto it = l.begin(); it != l.end(); it++) value.emplace_back(Variant(*it));
+		return SetObject(std::move(field), std::move(value), hasExpressions);
+	}
+	/// Sets a new value for a field as an object.
+	/// @param field - field name.
+	/// @param l - new value.
+	/// @param hasExpressions - true: value has expresions in it
+	template <typename T>
+	Query &SetObject(string field, const std::vector<T> &l, bool hasExpressions = false) {
+		VariantArray value;
+		value.reserve(l.size());
+		value.MarkArray();
+		for (auto it = l.begin(); it != l.end(); it++) value.emplace_back(Variant(*it));
+		return SetObject(std::move(field), std::move(value), hasExpressions);
+	}
+	/// Sets a value for a field as an object.
+	/// @param field - field name.
+	/// @param value - new value.
+	/// @param hasExpressions - true: value has expresions in it
+	Query &SetObject(string field, VariantArray value, bool hasExpressions = false);
+	/// Drops a value for a field.
+	/// @param field - field name.
+	Query &Drop(string field) {
+		updateFields_.emplace_back(std::move(field), VariantArray(), FieldModeDrop);
 		return *this;
 	}
 
@@ -391,6 +458,7 @@ public:
 	bool HasLimit() const noexcept { return count != UINT_MAX; }
 	bool HasOffset() const noexcept { return start != 0; }
 	bool IsWALQuery() const noexcept;
+	const h_vector<UpdateEntry, 0> &UpdateFields() const noexcept { return updateFields_; }
 
 protected:
 	void deserialize(Serializer &ser, bool &hasJoinConditions);
@@ -415,7 +483,11 @@ public:
 	QueryEntries entries;
 
 	vector<AggregateEntry> aggregations_;
+
+private:
 	h_vector<UpdateEntry, 0> updateFields_;	 /// List of fields (and values) for update.
+
+	friend class SQLParser;
 };
 
 class JoinedQuery : public Query {

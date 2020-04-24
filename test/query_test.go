@@ -551,6 +551,11 @@ func (qt *queryTest) Debug(level int) *queryTest {
 	return qt
 }
 
+func (qt *queryTest) Explain() *queryTest {
+	qt.q.Explain()
+	return qt
+}
+
 // SelectFilter
 func (qt *queryTest) Select(filters ...string) *queryTest {
 	qt.q.Select(filters...)

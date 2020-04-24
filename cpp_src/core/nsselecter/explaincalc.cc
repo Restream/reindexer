@@ -13,8 +13,8 @@ namespace reindexer {
 
 void ExplainCalc::LogDump(int logLevel) {
 	if (logLevel >= LogInfo) {
-		logPrintf(LogInfo, "Got %d items in %d µs [prepare %d µs, select %d µs, postprocess %d µs loop %d µs], sortindex %s", count_,
-				  to_us(total_), to_us(prepare_), to_us(select_), to_us(postprocess_), to_us(loop_), sortIndex_);
+		logPrintf(LogInfo, "Got %d items in %d µs [prepare %d µs, select %d µs, postprocess %d µs loop %d µs, general sort %d µs], sortindex %s", count_,
+				  to_us(total_), to_us(prepare_), to_us(select_), to_us(postprocess_), to_us(loop_), to_us(sort_), sortIndex_);
 	}
 
 	if (logLevel >= LogTrace) {
@@ -38,6 +38,58 @@ void ExplainCalc::LogDump(int logLevel) {
 	}
 }
 
+static const char *joinTypeName(JoinType type) {
+	switch (type) {
+		case JoinType::InnerJoin:
+			return "inner_join ";
+		case JoinType::OrInnerJoin:
+			return "or_inner_join ";
+		case JoinType::LeftJoin:
+			return "left_join ";
+		case JoinType::Merge:
+			return "merge ";
+		default:
+			return "<unknown>";
+	}
+}
+
+static void addToJSON(JsonBuilder &builder, const JoinedSelector &js) {
+	auto jsonSel = builder.Object();
+	jsonSel.Put("field", joinTypeName(js.Type()) + js.RightNsName());
+	jsonSel.Put("matched", js.Matched());
+	switch (js.Type()) {
+		case JoinType::InnerJoin:
+		case JoinType::OrInnerJoin:
+		case JoinType::LeftJoin:
+			assert(js.PreResult());
+			switch (js.PreResult()->dataMode) {
+				case JoinPreResult::ModeValues:
+					jsonSel.Put("method", "preselected_values");
+					jsonSel.Put("keys", js.PreResult()->values.size());
+					break;
+				case JoinPreResult::ModeIdSet:
+					jsonSel.Put("method", "preselected_rows");
+					jsonSel.Put("keys", js.PreResult()->ids.size());
+					break;
+				case JoinPreResult::ModeIterators:
+					jsonSel.Put("method", "no_preselect");
+					jsonSel.Put("keys", js.PreResult()->iterators.Size());
+					break;
+				default:
+					break;
+			}
+			if (!js.PreResult()->explainPreSelect.empty()) {
+				jsonSel.Raw("explain_preselect", js.PreResult()->explainPreSelect);
+			}
+			if (!js.PreResult()->explainOneSelect.empty()) {
+				jsonSel.Raw("explain_select", js.PreResult()->explainOneSelect);
+			}
+			break;
+		default:
+			break;
+	}
+}
+
 string ExplainCalc::GetJSON() {
 	WrSerializer ser;
 	{
@@ -47,19 +99,20 @@ string ExplainCalc::GetJSON() {
 		json.Put("indexes_us", to_us(select_));
 		json.Put("postprocess_us", to_us(postprocess_));
 		json.Put("loop_us", to_us(loop_));
+		json.Put("general_sort_us", to_us(sort_));
 		json.Put("sort_index", sortIndex_);
+		json.Put("sort_by_uncommitted_index", sortOptimization_);
+
 		auto jsonSelArr = json.Array("selectors");
 
 		if (selectors_) {
-			selectors_->ExplainJSON(iters_, jsonSelArr);
+			selectors_->ExplainJSON(iters_, jsonSelArr, jselectors_);
 		}
 
 		if (jselectors_) {
 			for (JoinedSelector &js : *jselectors_) {
-				auto jsonSel = jsonSelArr.Object();
-				jsonSel.Put("field", js.RightNsName());
-				jsonSel.Put("method", JoinTypeName(js.Type()));
-				jsonSel.Put("matched", js.Matched());
+				if (js.Type() == JoinType::InnerJoin || js.Type() == JoinType::OrInnerJoin) continue;
+				addToJSON(jsonSelArr, js);
 			}
 		}
 	}
@@ -67,27 +120,47 @@ string ExplainCalc::GetJSON() {
 	return string(ser.Slice());
 }
 
-void SelectIteratorContainer::explainJSON(const_iterator it, const_iterator end, int iters, JsonBuilder &builder) {
+void SelectIteratorContainer::explainJSON(const_iterator it, const_iterator end, int iters, JsonBuilder &builder,
+										  const JoinedSelectors *jselectors) {
 	for (; it != end; ++it) {
-		auto jsonSel = builder.Object();
 		if (it->IsLeaf()) {
 			const SelectIterator &siter = it->Value();
-			bool isScanIterator = bool(siter.name == "-scan");
-			if (!isScanIterator) {
-				if (siter.name.empty() && !siter.joinIndexes.empty()) continue;
-				jsonSel.Put("field", siter.name);
-				jsonSel.Put("keys", siter.size());
-				jsonSel.Put("comparators", siter.comparators_.size());
-				jsonSel.Put("cost", siter.Cost(iters));
-			} else {
-				jsonSel.Put("items", siter.GetMaxIterations());
+			if (jselectors && !siter.joinIndexes.empty()) {
+				const size_t jIdx = siter.joinIndexes[0];
+				assert(jIdx < jselectors->size());
+				if ((*jselectors)[jIdx].Type() == JoinType::InnerJoin) {
+					addToJSON(builder, (*jselectors)[jIdx]);
+				}
 			}
-			jsonSel.Put("matched", siter.GetMatchedCount());
-			jsonSel.Put("method", isScanIterator || siter.comparators_.size() ? "scan" : "index");
-			jsonSel.Put("type", siter.TypeName());
+			if (!siter.name.empty() || siter.joinIndexes.empty()) {
+				auto jsonSel = builder.Object();
+				bool isScanIterator = bool(siter.name == "-scan");
+				if (!isScanIterator) {
+					jsonSel.Put("field", (it->operation == OpNot ? "not " : "") + siter.name);
+					jsonSel.Put("keys", siter.size());
+					jsonSel.Put("comparators", siter.comparators_.size());
+					jsonSel.Put("cost", siter.Cost(iters));
+				} else {
+					jsonSel.Put("items", siter.GetMaxIterations());
+				}
+				jsonSel.Put("matched", siter.GetMatchedCount());
+				jsonSel.Put("method", isScanIterator || siter.comparators_.size() ? "scan" : "index");
+				jsonSel.Put("type", siter.TypeName());
+			}
+			if (jselectors) {
+				for (size_t i = 0; i < siter.joinIndexes.size(); ++i) {
+					const size_t jIdx = siter.joinIndexes[i];
+					assert(jIdx < jselectors->size());
+					if (((*jselectors)[jIdx].Type() == JoinType::InnerJoin && i != 0) ||
+						(*jselectors)[jIdx].Type() == JoinType::OrInnerJoin) {
+						addToJSON(builder, (*jselectors)[jIdx]);
+					}
+				}
+			}
 		} else {
+			auto jsonSel = builder.Object();
 			auto jsonSelArr = jsonSel.Array("selectors");
-			explainJSON(it.cbegin(), it.cend(), iters, jsonSelArr);
+			explainJSON(it.cbegin(), it.cend(), iters, jsonSelArr, jselectors);
 		}
 	}
 }
@@ -100,21 +173,6 @@ ExplainCalc::duration ExplainCalc::lap() {
 }
 
 int ExplainCalc::to_us(const ExplainCalc::duration &d) { return duration_cast<microseconds>(d).count(); }
-
-const char *ExplainCalc::JoinTypeName(JoinType type) {
-	switch (type) {
-		case JoinType::InnerJoin:
-			return "inner_join";
-		case JoinType::OrInnerJoin:
-			return "or_inner_join";
-		case JoinType::LeftJoin:
-			return "left_join";
-		case JoinType::Merge:
-			return "merge";
-		default:
-			return "<unknown>";
-	}
-}
 
 void reindexer::ExplainCalc::StartTiming() {
 	if (enabled_) lap();
@@ -138,6 +196,14 @@ void reindexer::ExplainCalc::SetPostprocessTime() {
 
 void reindexer::ExplainCalc::SetLoopTime() {
 	if (enabled_) loop_ = lap();
+}
+
+void reindexer::ExplainCalc::StartSort() {
+	if (enabled_) sort_start_point_ = clock::now();
+}
+
+void reindexer::ExplainCalc::StopSort() {
+	if (enabled_) sort_ = clock::now() - sort_start_point_;
 }
 
 void reindexer::ExplainCalc::SetIterations(int iters) { iters_ = iters; }

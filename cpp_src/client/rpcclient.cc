@@ -417,7 +417,8 @@ void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
 
 Error RPCClient::selectImpl(string_view query, QueryResults& result, cproto::ClientConnection* conn, seconds netTimeout,
 							const InternalRdxContext& ctx) {
-	int flags = result.fetchFlags_ ? result.fetchFlags_ : kResultsJson;
+	int flags = result.fetchFlags_ ? (result.fetchFlags_ & ~kResultsFormatMask) | kResultsJson : kResultsJson;
+
 	WrSerializer pser;
 	h_vector<int32_t, 4> vers;
 	vec2pack(vers, pser);
@@ -454,6 +455,19 @@ Error RPCClient::selectImpl(const Query& query, QueryResults& result, cproto::Cl
 							const InternalRdxContext& ctx) {
 	WrSerializer qser, pser;
 	int flags = result.fetchFlags_ ? result.fetchFlags_ : (kResultsWithPayloadTypes | kResultsCJson);
+	bool hasJoins = !query.joinQueries_.empty();
+	if (!hasJoins) {
+		for (auto& mq : query.mergeQueries_) {
+			if (!mq.joinQueries_.empty()) {
+				hasJoins = true;
+				break;
+			}
+		}
+	}
+	if (hasJoins) {
+		flags &= ~kResultsFormatMask;
+		flags |= kResultsJson;
+	}
 	NSArray nsArray;
 	query.Serialize(qser);
 	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });

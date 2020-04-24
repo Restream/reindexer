@@ -760,6 +760,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 
 		// Do join for each item in main result
 		Query jItemQ(jq._namespace);
+		jItemQ.explain_ = q.explain_;
 		jItemQ.Debug(jq.debugLevel).Limit(jq.count);
 		for (size_t i = 0; i < jq.sortingEntries_.size(); ++i) {
 			jItemQ.Sort(jq.sortingEntries_[i].expression, jq.sortingEntries_[i].desc);
@@ -786,6 +787,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 		JoinCacheRes joinRes;
 		joinRes.key.SetData(jq);
 		jns->getFromJoinCache(joinRes);
+		jjq.explain_ = q.explain_;
 		if (!jjq.entries.Empty() && !joinRes.haveData) {
 			QueryResults jr;
 			jjq.Limit(UINT_MAX);

@@ -24,6 +24,7 @@ struct SelectCtx {
 };
 
 class ItemComparator;
+class ExplainCalc;
 
 class NsSelecter {
 public:
@@ -33,11 +34,12 @@ public:
 
 private:
 	struct LoopCtx {
-		LoopCtx(SelectCtx &ctx, h_vector<Aggregator, 4> &agg) : sctx(ctx), aggregators(agg) {}
+		LoopCtx(SelectCtx &ctx, h_vector<Aggregator, 4> &agg, ExplainCalc &expl) : sctx(ctx), aggregators(agg), explain(expl) {}
 		SelectIteratorContainer *qres = nullptr;
 		bool calcTotal = false;
 		SelectCtx &sctx;
 		h_vector<Aggregator, 4> &aggregators;
+		ExplainCalc &explain;
 	};
 
 	template <bool reverse, bool haveComparators, bool aggregationsOnly>
@@ -60,7 +62,7 @@ private:
 	void processLeftJoins(QueryResults &qr, SelectCtx &sctx, size_t startPos);
 	bool checkIfThereAreLeftJoins(SelectCtx &sctx) const;
 	template <typename Items>
-	void sortResults(reindexer::SelectCtx &sctx, Items &items, const SortingOptions &sortingOptions);
+	void sortResults(LoopCtx &sctx, Items &items, const SortingOptions &sortingOptions);
 
 	bool isSortOptimizatonEffective(const QueryEntries &qe, SelectCtx &ctx, const RdxContext &rdxCtx);
 

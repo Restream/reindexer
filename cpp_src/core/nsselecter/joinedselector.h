@@ -38,6 +38,7 @@ struct JoinPreResult {
 	};
 
 	typedef shared_ptr<JoinPreResult> Ptr;
+	typedef shared_ptr<const JoinPreResult> CPtr;
 	IdSet ids;
 	SelectIteratorContainer iterators;
 	Values values;
@@ -46,6 +47,7 @@ struct JoinPreResult {
 	bool enableSortOrders = false;
 	bool btreeIndexOptimizationEnabled = true;
 	bool enableStoredValues = false;
+	string explainPreSelect, explainOneSelect;
 };
 
 struct SortExpressionJoinedIndex;
@@ -88,6 +90,7 @@ public:
 	void AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer &, int *maxIterations, unsigned sortId, SelectFunction::Ptr,
 											 const RdxContext &);
 	static constexpr int MaxIterationsForPreResultStoreValuesOptimization() { return 200; }
+	JoinPreResult::CPtr PreResult() const {return preResult_;}
 
 private:
 	template <bool byJsonPath>

@@ -30,6 +30,9 @@ void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, bool &found, boo
 		ctx.skipIndexesLookup = true;
 		ctx.functions = &selectFunctions_;
 		rightNs_->Select(joinItemR, ctx, rdxCtx_);
+		if (preResult_->explainOneSelect.empty() && !joinItemR.explainResults.empty()) {
+			preResult_->explainOneSelect = joinItemR.explainResults;
+		}
 
 		found = joinItemR.Count();
 		matchedAtLeastOnce = ctx.matchedAtLeastOnce;

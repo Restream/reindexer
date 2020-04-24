@@ -155,7 +155,7 @@ type AggregationResult struct {
 
 // NewReindex Create new instanse of Reindexer DB
 // Returns pointer to created instance
-func NewReindex(dsn interface{}, options ...interface{}) *Reindexer {
+func NewReindex(dsn string, options ...interface{}) *Reindexer {
 	rx := &Reindexer{
 		impl: newReindexImpl(dsn, options...),
 		ctx:  context.TODO(),
@@ -171,6 +171,11 @@ func (db *Reindexer) Status() bindings.Status {
 // SetLogger sets logger interface for output reindexer logs
 func (db *Reindexer) SetLogger(log Logger) {
 	db.impl.setLogger(log)
+}
+
+// ReopenLogFiles reopens log files
+func (db *Reindexer) ReopenLogFiles() error {
+	return db.impl.reopenLogFiles()
 }
 
 // Ping checks connection with reindexer

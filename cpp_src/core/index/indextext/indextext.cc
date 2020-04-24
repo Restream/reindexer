@@ -92,7 +92,7 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 			logPrintf(LogInfo, "Get search results for '%s' in '%s' from cache", keys[0].As<string>(),
 					  this->payloadType_ ? this->payloadType_->Name() : "");
 			res.push_back(SingleSelectKeyResult(cache_ft.val.ids));
-			SelectKeyResults r(res);
+			SelectKeyResults r(std::move(res));
 			assert(cache_ft.val.ctx);
 			ftctx->SetData(cache_ft.val.ctx);
 			return r;
@@ -126,8 +126,7 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 
 		res.push_back(SingleSelectKeyResult(mergedIds));
 	}
-	SelectKeyResults r(res);
-	return r;
+	return SelectKeyResults(std::move(res));
 }
 
 template <typename T>

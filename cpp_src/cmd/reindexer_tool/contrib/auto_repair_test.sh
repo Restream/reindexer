@@ -1,6 +1,7 @@
 #!/bin/sh
 
 set -e
+echo "Starting autorepair test"
 test_db="$1"
 build_dir="build"
 [ -z "${test_db}" ] && echo "usage $0 <test_db> <build_dir>" && exit 1
@@ -14,7 +15,8 @@ rm -f "${test_db}/test/items/000007.sst"
 > "${test_db}/test/items/.rdx_shutdown"
 ${build_dir}/cpp_src/cmd/reindexer_server/reindexer_server --db "${test_db}" --autorepair &
 server_pid=$!
-sleep 15
+sleep 2
 kill ${server_pid} || true
 wait ${server_pid}
+echo "Autorepair test done"
 

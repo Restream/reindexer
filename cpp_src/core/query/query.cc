@@ -46,6 +46,17 @@ Error Query::FromJSON(const string &dsl) { return dsl::Parse(dsl, *this); }
 
 string Query::GetJSON() const { return dsl::toDsl(*this); }
 
+Query &Query::SetObject(std::string field, VariantArray value, bool hasExpressions) {
+	for (auto &it : value) {
+		if (it.Type() != KeyValueString) {
+			throw Error(errLogic, "Unexpected variant type in SetObject: %s. Expecting KeyValueString with JSON-content",
+						Variant::TypeName(it.Type()));
+		}
+	}
+	updateFields_.emplace_back(std::move(field), std::move(value), FieldModeSetJson, hasExpressions);
+	return *this;
+}
+
 WrSerializer &Query::GetSQL(WrSerializer &ser, bool stripArgs) const { return SQLEncoder(*this).GetSQL(ser, stripArgs); }
 
 string Query::GetSQL(bool stripArgs) const {
@@ -165,32 +176,32 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 				selectFunctions_.push_back(string(ser.GetVString()));
 				break;
 			case QueryDropField: {
-				updateFields_.push_back({string(ser.GetVString()), {}});
-				auto &field = updateFields_.back();
-				field.mode = FieldModeDrop;
+				Drop(string(ser.GetVString()));
 				break;
 			}
 			case QueryUpdateField: {
-				updateFields_.push_back({string(ser.GetVString()), {}});
-				auto &field = updateFields_.back();
-				field.mode = FieldModifyMode(FieldModeSet);
+				VariantArray val;
+				string field(ser.GetVString());
 				int numValues = ser.GetVarUint();
+				bool hasExpressions = false;
 				while (numValues--) {
-					field.isExpression = ser.GetVarUint();
-					field.values.push_back(ser.GetVariant().EnsureHold());
+					hasExpressions = ser.GetVarUint();
+					val.emplace_back(ser.GetVariant().EnsureHold());
 				}
+				Set(std::move(field), std::move(val), hasExpressions);
 				break;
 			}
 			case QueryUpdateObject: {
-				updateFields_.push_back({string(ser.GetVString()), {}});
-				auto &field = updateFields_.back();
-				field.mode = FieldModifyMode(FieldModeSetJson);
+				VariantArray val;
+				string field(ser.GetVString());
+				bool hasExpressions = false;
 				int numValues = ser.GetVarUint();
-				if (ser.GetVarUint() == 1) field.values.MarkArray();
+				if (ser.GetVarUint() == 1) val.MarkArray();
 				while (numValues--) {
-					field.isExpression = ser.GetVarUint();
-					field.values.push_back(ser.GetVariant().EnsureHold());
+					hasExpressions = ser.GetVarUint();
+					val.emplace_back(ser.GetVariant().EnsureHold());
 				}
+				SetObject(std::move(field), std::move(val), hasExpressions);
 				break;
 			}
 			case QueryOpenBracket: {

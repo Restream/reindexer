@@ -24,7 +24,11 @@ type ExplainResults struct {
 	LoopUs int `json:"loop_us"`
 	// Index, which used for sort results
 	SortIndex string `json:"sort_index"`
-	// Filter selectos, used to proccess query conditions
+	// General sort time
+	GeneralSortUs int `json:"general_sort_us"`
+	// Optimization of sort by uncompleted index has been performed
+	SortByUncommittedIndex bool `json:"sort_by_uncommitted_index"`
+	// Filter selectors, used to proccess query conditions
 	Selectors []struct {
 		// Field or index name
 		Field string `json:"field"`
@@ -35,11 +39,15 @@ type ExplainResults struct {
 		// Count of comparators used, for this selector
 		Comparators int `json:"comparators"`
 		// Cost expectation of this selector
-		Cost float32 `json:"cost"`
+		Cost float64 `json:"cost"`
 		// Count of processed documents, matched this selector
 		Matched int `json:"matched"`
 		// Count of scanned documents by this selector
 		Items int `json:"items"`
+		// Preselect in joined namespace execution explainings
+		ExplainPreselect *ExplainResults `json:"explain_preselect,omitempty"`
+		// One of selects in joined namespace execution explainings
+		ExplainSelect *ExplainResults `json:"explain_select,omitempty"`
 	} `json:"selectors"`
 }
 
@@ -422,7 +430,7 @@ func (it *Iterator) GetExplainResults() (*ExplainResults, error) {
 	if len(it.rawQueryParams.explainResults) > 0 {
 		explain := &ExplainResults{}
 		if err := json.Unmarshal(it.rawQueryParams.explainResults, explain); err != nil {
-			return nil, fmt.Errorf("Explain query results is broken")
+			return nil, fmt.Errorf("Explain query results is broken: %v", err)
 		}
 		return explain, nil
 	}
@@ -499,7 +507,7 @@ func (it *JSONIterator) GetExplainResults() (*ExplainResults, error) {
 	if len(it.explain) > 0 {
 		explain := &ExplainResults{}
 		if err := json.Unmarshal(it.explain, explain); err != nil {
-			return nil, fmt.Errorf("Explain query results is broken")
+			return nil, fmt.Errorf("Explain query results is broken: %v", err)
 		}
 		return explain, nil
 	}

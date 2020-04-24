@@ -762,6 +762,37 @@ TEST_F(FTApi, SelectWithFieldsListWithSynonyms) {
 	CheckResults(qr, {{"", "!одно слово!"}});
 }
 
+TEST_F(FTApi, RankWithPosition) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.positionWeight = 1.0;
+	Init(ftCfg);
+
+	Add("nm1", "one two three word", "");
+	Add("nm1", "one two three four five six word", "");
+	Add("nm1", "one two three four word", "");
+	Add("nm1", "one word", "");
+	Add("nm1", "one two three four five word", "");
+	Add("nm1", "word", "");
+	Add("nm1", "one two word", "");
+
+	auto qr = SimpleSelect("word");
+	const char* expected[]{"!word!",
+						   "one !word!",
+						   "one two !word!",
+						   "one two three !word!",
+						   "one two three four !word!",
+						   "one two three four five !word!",
+						   "one two three four five six !word!"};
+
+	ASSERT_TRUE(qr.Count() == (sizeof(expected) / sizeof(const char*)));
+
+	const char** expIt = expected;
+	for (auto resIt = qr.begin(); resIt != qr.end(); ++resIt, ++expIt) {
+		Item item(resIt.GetItem());
+		EXPECT_EQ(item["ft1"].As<string>(), *expIt);
+	}
+}
+
 TEST_F(FTApi, SelectFullMatch) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.fullMatchBoost = 0.9;
