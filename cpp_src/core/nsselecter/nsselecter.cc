@@ -228,7 +228,14 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	LoopCtx lctx(ctx, aggregators, explain);
 	lctx.qres = &qres;
 	lctx.calcTotal = needCalcTotal;
-	if (isFt) result.haveProcent = true;
+	if (isFt) result.haveRank = true;
+	if (ctx.query.IsWithRank()) {
+		if (isFt) {
+			result.needOutputRank = true;
+		} else {
+			throw Error(errLogic, "Rank() is available only for fulltext query");
+		}
+	}
 	if (reverse && hasComparators && aggregationsOnly) selectLoop<true, true, true>(lctx, result, rdxCtx);
 	if (!reverse && hasComparators && aggregationsOnly) selectLoop<false, true, true>(lctx, result, rdxCtx);
 	if (reverse && !hasComparators && aggregationsOnly) selectLoop<true, false, true>(lctx, result, rdxCtx);
@@ -716,7 +723,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) const {
 		}
 		if (ag.type_ != AggFacet) {
 			if (ag.fields_.size() != 1) {
-				throw Error(errQueryExec, "For aggregation %s available exactly one field", AggregationResult::aggTypeToStr(ag.type_));
+				throw Error(errQueryExec, "For aggregation %s is available exactly one field", AggregationResult::aggTypeToStr(ag.type_));
 			}
 			if (!ag.sortingEntries_.empty()) {
 				throw Error(errQueryExec, "Sort is not available for aggregation %s", AggregationResult::aggTypeToStr(ag.type_));
@@ -827,7 +834,7 @@ void NsSelecter::prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, b
 						.FieldByName(string{exprIndex.column}, exprIndex.index);
 				},
 				[isFt](SortExpressionFuncRank &) {
-					if (!isFt) throw Error(errLogic, "Sort by rank() available only for fulltext query");
+					if (!isFt) throw Error(errLogic, "Sort by rank() is available only for fulltext query");
 				});
 			ctx.sortingContext.expressions.push_back(std::move(expr));
 			sortingCtx.expression = ctx.sortingContext.expressions.size() - 1;

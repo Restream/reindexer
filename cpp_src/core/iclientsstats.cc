@@ -16,6 +16,7 @@ void ClientStat::GetJSON(WrSerializer& ser) const {
 	builder.Put("user_rights", userRights);
 	builder.Put("start_time", startTime);
 	builder.Put("client_version", clientVersion);
+	builder.Put("app_name", appName);
 	builder.End();
 }
 

@@ -444,6 +444,15 @@ public:
 		return *this;
 	}
 
+	/// Output fulltext rank
+	/// Allowed only with fulltext query
+	/// @return Query object
+	Query &WithRank() noexcept {
+		withRank_ = true;
+		return *this;
+	}
+	bool IsWithRank() const noexcept { return withRank_; }
+
 	/// Serializes query data to stream.
 	/// @param ser - serializer object for write.
 	/// @param mode - serialization mode.
@@ -486,6 +495,7 @@ public:
 
 private:
 	h_vector<UpdateEntry, 0> updateFields_;	 /// List of fields (and values) for update.
+	bool withRank_ = false;
 
 	friend class SQLParser;
 };

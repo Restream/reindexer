@@ -33,6 +33,7 @@ public:
 	const std::string kport = "7777";
 	const std::string kUserName = "reindexer";
 	const std::string kPassword = "reindexer";
+	const std::string kAppName = "test_app_name";
 
 	std::string GetConnectionString();
 

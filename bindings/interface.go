@@ -156,7 +156,7 @@ type Stats struct {
 
 // Raw binding to reindexer
 type RawBinding interface {
-	Init(u *url.URL, options ...interface{}) error
+	Init(u []url.URL, options ...interface{}) error
 	Clone() RawBinding
 	OpenNamespace(ctx context.Context, namespace string, enableStorage, dropOnFileFormatError bool) error
 	CloseNamespace(ctx context.Context, namespace string) error
@@ -260,6 +260,11 @@ type OptionCompression struct {
 	EnableCompression bool
 }
 
+// AppName - Application name, which will be used in server connect info
+type OptionAppName struct {
+	AppName string
+}
+
 type Status struct {
 	Err     error
 	CProto  StatusCProto
@@ -271,6 +276,7 @@ type StatusCProto struct {
 	ConnPoolUsage  int
 	ConnQueueSize  int
 	ConnQueueUsage int
+	ConnAddr       string
 }
 
 type StatusBuiltin struct {

@@ -2,7 +2,7 @@ package bindings
 
 const CInt32Max = int(^uint32(0) >> 1)
 
-const ReindexerVersion = "v2.7.1"
+const ReindexerVersion = "v2.9.0"
 
 // public go consts from type_consts.h and reindexer_ctypes.h
 const (
@@ -76,6 +76,7 @@ const (
 	QueryJoinCondition     = 20
 	QueryDropField         = 21
 	QueryUpdateObject      = 22
+	QueryWithRank          = 23
 
 	LeftJoin    = 0
 	InnerJoin   = 1

@@ -68,7 +68,7 @@ public:
 	size_t size() const { return lsnCounter_ > walSize_ ? walSize_ : lsnCounter_; }
 	/// Get WAL heap size
 	/// @return WAL memory consumption
-	size_t heap_size() const;
+	size_t heap_size() const { return heapSize_ + records_.capacity() * sizeof(PackedWALRecord); }
 
 protected:
 	/// put WAL record into lsn position, grow ring buffer, if neccessary
@@ -88,6 +88,8 @@ protected:
 	int64_t lsnCounter_ = 0;
 	/// Size of ring buffer
 	int64_t walSize_ = kDefaultWALSize;
+
+	size_t heapSize_ = 0;
 
 	std::weak_ptr<datastorage::IDataStorage> storage_;
 };

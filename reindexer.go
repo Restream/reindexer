@@ -155,7 +155,7 @@ type AggregationResult struct {
 
 // NewReindex Create new instanse of Reindexer DB
 // Returns pointer to created instance
-func NewReindex(dsn string, options ...interface{}) *Reindexer {
+func NewReindex(dsn interface{}, options ...interface{}) *Reindexer {
 	rx := &Reindexer{
 		impl: newReindexImpl(dsn, options...),
 		ctx:  context.TODO(),

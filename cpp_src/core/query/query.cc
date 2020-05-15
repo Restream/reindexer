@@ -172,6 +172,9 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 			case QueryExplain:
 				explain_ = true;
 				break;
+			case QueryWithRank:
+				withRank_ = true;
+				break;
 			case QuerySelectFunction:
 				selectFunctions_.push_back(string(ser.GetVString()));
 				break;
@@ -299,6 +302,10 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 
 	if (explain_) {
 		ser.PutVarUint(QueryExplain);
+	}
+
+	if (withRank_) {
+		ser.PutVarUint(QueryWithRank);
 	}
 
 	for (const UpdateEntry &field : updateFields_) {

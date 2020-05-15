@@ -71,6 +71,9 @@ int main(int argc, char* argv[]) {
 
 	args::GlobalOptions globals(parser, progOptions);
 
+	args::ValueFlag<string> appName(progOptions, "Application name", "Application name which will be used in login info", {'a', "appname"},
+									"reindexer_tool", Options::Single | Options::Global);
+
 	try {
 		parser.ParseCLI(argc, argv);
 	} catch (const args::Help&) {
@@ -122,6 +125,7 @@ int main(int argc, char* argv[]) {
 	config.ConnPoolSize = args::get(connPoolSize);
 	config.WorkerThreads = 1;  // args::get(connThreads);
 	config.EnableCompression = true;
+	config.AppName = args::get(appName);
 	if (dsn.compare(0, 9, "cproto://") == 0) {
 		CommandsProcessor<reindexer::client::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName), args::get(command),
 																		  config.ConnPoolSize, args::get(connThreads), config);

@@ -46,7 +46,7 @@ apt update
 apt install reindexer-server
 ````
 
-Available distros: `debian-buster`, `debian-stretch`, `ubuntu-bionic`, `ubuntu-xenial`, `focal-fossa`
+Available distros: `debian-buster`, `debian-stretch`, `ubuntu-bionic`, `ubuntu-xenial`, `ubuntu-focal`
 
 
 ## Windows

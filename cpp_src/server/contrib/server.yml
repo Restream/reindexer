@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.8.0"
+  version: "2.9.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -47,13 +47,15 @@ paths:
           $ref: "#/definitions/Database"
       responses:
         200:
-          description: "successful operation"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/OK"
         400:
-          description: "Invalid parameters"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
     get:
       tags:
@@ -76,9 +78,13 @@ paths:
           schema:
             $ref: "#/definitions/Databases"
         400:
-          description: "Invalid arguments supplied"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /db/{database}:
     delete:
@@ -98,13 +104,15 @@ paths:
         required: true
       responses:
         200:
-          description: "successful operation"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/OK"
         400:
-          description: "Invalid arguments supplied"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /db/{database}/namespaces:
     post:
@@ -129,13 +137,15 @@ paths:
         required: true
       responses:
         200:
-          description: "successful operation"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/OK"
         400:
-          description: "Invalid parameters"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
     get:
       tags:
       - "namespaces"
@@ -163,9 +173,13 @@ paths:
           schema:
             $ref: "#/definitions/Namespaces"
         400:
-          description: "Invalid arguments supplied"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /db/{database}/namespaces/{name}:
     get:
@@ -192,9 +206,13 @@ paths:
           schema:
             $ref: "#/definitions/Namespace"
         400:
-          description: "Invalid arguments supplied"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
     delete:
       tags:
       - "namespaces"
@@ -217,13 +235,15 @@ paths:
         required: true
       responses:
         200:
-          description: "successful operation"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/OK"
         400:
-          description: "Invalid arguments supplied"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /db/{database}/namespaces/{name}/truncate:
     delete:
@@ -246,13 +266,15 @@ paths:
         required: true
       responses:
         200:
-          description: "successful operation"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/OK"
         400:
-          description: "Invalid arguments supplied"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /db/{database}/namespaces/{name}/rename/{newname}:
     get:
@@ -281,13 +303,15 @@ paths:
 
       responses:
         200:
-          description: "successful operation"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/OK"
         400:
-          description: "Invalid arguments supplied"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
 
   /db/{database}/namespaces/{name}/metalist:
@@ -340,9 +364,13 @@ paths:
           schema:
             $ref: "#/definitions/MetaListResponse"
         400:
-          description: "Invalid arguments supplied"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /db/{database}/namespaces/{name}/metabykey/{key}:
     get:
@@ -374,9 +402,13 @@ paths:
           schema:
             $ref: "#/definitions/MetaByKeyResponse"
         400:
-          description: "Invalid arguments supplied"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /db/{database}/namespaces/{name}/metabykey:
     put:
@@ -409,9 +441,13 @@ paths:
           schema:
             $ref: "#/definitions/UpdateResponse"
         400:
-          description: "Invalid arguments supplied"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /db/{database}/namespaces/{name}/items:
     delete:
@@ -457,9 +493,13 @@ paths:
           schema:
             $ref: "#/definitions/ItemsUpdateResponse"
         400:
-          description: "Invalid status value"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
     post:
       tags:
       - "items"
@@ -503,9 +543,13 @@ paths:
           schema:
             $ref: "#/definitions/ItemsUpdateResponse"
         400:
-          description: "Invalid status value"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
     put:
       tags:
       - "items"
@@ -549,9 +593,13 @@ paths:
           schema:
             $ref: "#/definitions/ItemsUpdateResponse"
         400:
-          description: "Invalid status value"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
     get:
       tags:
       - "items"
@@ -603,9 +651,13 @@ paths:
           schema:
             $ref: '#/definitions/Items'
         400:
-          description: "Invalid arguments supplied"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /db/{database}/namespaces/{name}/indexes:
     get:
@@ -632,9 +684,13 @@ paths:
           schema:
             $ref: "#/definitions/Indexes"
         400:
-          description: "Invalid arguments supplied"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
     post:
       tags:
       - "indexes"
@@ -662,14 +718,15 @@ paths:
         required: true
       responses:
         200:
-          description: "successful operation"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/OK"
         400:
-          description: "Invalid status value"
-          schema:
-            $ref: "#/definitions/StatusResponse"
-
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
     put:
       tags:
       - "indexes"
@@ -697,13 +754,15 @@ paths:
         required: true
       responses:
         200:
-          description: "successful operation"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/OK"
         400:
-          description: "Invalid status value"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /db/{database}/namespaces/{name}/indexes/{indexname}:
     delete:
@@ -732,13 +791,15 @@ paths:
         required: true
       responses:
         200:
-          description: "successful operation"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/OK"
         400:
-          description: "Invalid status value"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /db/{database}/query:
     get:
@@ -785,9 +846,13 @@ paths:
           schema:
             $ref: '#/definitions/QueryItems'
         400:
-          description: "Invalid status value"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
     post:
       tags:
       - "queries"
@@ -823,9 +888,13 @@ paths:
           schema:
             $ref: '#/definitions/QueryItems'
         400:
-          description: "Invalid status value"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
     delete:
       tags:
       - "queries"
@@ -847,11 +916,16 @@ paths:
           $ref: "#/definitions/Query"
       responses:
         200:
-          description: "successful operation"
+          $ref: "#/responses/OK"
         400:
-          description: "Invalid status value"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
+
   /db/{database}/suggest:
     get:
       tags:
@@ -887,9 +961,13 @@ paths:
           schema:
             $ref: '#/definitions/SuggestItems'
         400:
-          description: "Invalid status value"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /db/{database}/sqlquery:
     post:
@@ -927,9 +1005,13 @@ paths:
           schema:
             $ref: '#/definitions/QueryItems'
         400:
-          description: "Invalid status value"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /check:
     get:
@@ -944,9 +1026,13 @@ paths:
           schema:
             $ref: "#/definitions/SysInfo"
         400:
-          description: "Invalid arguments supplied"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /db/{database}/namespaces/%23activitystats/items:
     get:
@@ -967,9 +1053,13 @@ paths:
           schema:
             $ref: "#/definitions/ActivityStats"
         400:
-          description: "Invalid arguments supplied"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /db/{database}/namespaces/%23clientsstats/items:
     get:
@@ -990,12 +1080,13 @@ paths:
           schema:
             $ref: "#/definitions/ClientsStats"
         400:
-          description: "Invalid arguments supplied"
-          schema:
-            $ref: "#/definitions/StatusResponse"
-
-
-
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /db/{database}/namespaces/%23memstats/items:
     get:
@@ -1016,9 +1107,13 @@ paths:
           schema:
             $ref: "#/definitions/DatabaseMemStats"
         400:
-          description: "Invalid arguments supplied"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /db/{database}/namespaces/%23perfstats/items:
     get:
@@ -1039,9 +1134,13 @@ paths:
           schema:
             $ref: "#/definitions/DatabasePerfStats"
         400:
-          description: "Invalid arguments supplied"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /db/{database}/namespaces/%23queriesperfstats/items:
     get:
@@ -1062,9 +1161,13 @@ paths:
           schema:
             $ref: "#/definitions/QueriesPerfStats"
         400:
-          description: "Invalid arguments supplied"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
 
   /db/{database}/namespaces/%23config/items:
     put:
@@ -1093,9 +1196,35 @@ paths:
           schema:
             $ref: "#/definitions/UpdateResponse"
         400:
-          description: "Invalid status value"
-          schema:
-            $ref: "#/definitions/StatusResponse"
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
+
+responses:
+  OK:
+    description: "Successful operation"
+    schema:
+      $ref: "#/definitions/StatusResponse"
+  BadRequest:
+    description: "Invalid arguments supplied"
+    schema:
+      $ref: "#/definitions/StatusResponse"
+  Forbidden:
+    description: "Forbidden"
+    schema:
+      $ref: "#/definitions/StatusResponse"
+  NotFound:
+    description: "Entry not found"
+    schema:
+      $ref: "#/definitions/StatusResponse"
+  UnexpectedError:
+    description: "Unexpected internal error"
+    schema:
+      $ref: "#/definitions/StatusResponse"
 
 definitions:
   SysInfo:
@@ -1189,6 +1318,7 @@ definitions:
             - recv_bytes
             - sent_bytes
             - client_version
+            - app_name
           properties:
             connection_id:
               type: "integer"
@@ -1220,8 +1350,9 @@ definitions:
             client_version:
               type: string
               description: "Client version string"
-
-
+            app_name:
+              type: string
+              description: "Client's aplication name"
 
   Databases:
     type: "object"
@@ -1406,6 +1537,10 @@ definitions:
           type: "string"
       explain:
         description: "Add query execution explain information"
+        type: "boolean"
+        default: false
+      select_with_rank:
+        description: "Output fulltext rank in QueryResult. Allowed only with fulltext query"
         type: "boolean"
         default: false
 
@@ -2464,6 +2599,7 @@ definitions:
       optimization_sort_workers:
         type: "integer"
         description: "Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations"
+
   ReplicationConfig:
     type: "object"
     properties:  
@@ -2477,6 +2613,9 @@ definitions:
       master_dsn:
         type: "string"
         description: "DSN to master. Only cproto schema is supported"
+      app_name:
+        type: "string"
+        description: "Application name, used by replicator as a login tag"
       timeout_sec:
         type: "integer"
         description: "Network timeout for communication with master, in seconds"
@@ -2497,6 +2636,7 @@ definitions:
         description: "List of namespaces for replication. If emply, all namespaces. All replicated namespaces will become read only for slave"
         items:
           type: string
+
   ActionCommand:
     type: "object"
     properties:  

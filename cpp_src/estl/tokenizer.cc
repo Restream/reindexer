@@ -80,6 +80,7 @@ token tokenizer::next_token(bool to_lower, bool treatSignAsToken) {
 	// null terminate it
 	res.text_.reserve(res.text_.size() + 1);
 	*(res.text_.begin() + res.text_.size()) = 0;
+	skip_space();
 	return res;
 }
 

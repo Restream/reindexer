@@ -8,5 +8,6 @@ namespace debug {
 void backtrace_init();
 void backtrace_set_writer(std::function<void(string_view out)>);
 int backtrace_internal(void **addrlist, size_t size, void *ctx, string_view &method);
+void getBackTraceString(std::ostringstream &sout, void *ctx, int sig);
 }  // namespace debug
 }  // namespace reindexer

@@ -49,9 +49,31 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_swagger.cmake
      file(REMOVE \"${PROJECT_BINARY_DIR}/swagger.tar.gz\")"
 )
 
+if (FACE_STAGING)
 file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
     "file(
-	DOWNLOAD \"https://codeload.github.com/restream/reindexer-face-dist/tar.gz/${FACE_BRANCH}\"
+	DOWNLOAD \"https://git.itv.restr.im/api/v4/projects/itv-backend%2Freindexer-face/jobs/artifacts/staging/download?job=build_and_deploy_staging\"
+	\"${PROJECT_BINARY_DIR}/face.zip\"
+     )
+     execute_process(
+	 COMMAND \"${CMAKE_COMMAND}\" -E remove_directory \"${PROJECT_BINARY_DIR}/face\"
+	 RESULT_VARIABLE ret
+     )
+     execute_process(
+	 COMMAND \"${CMAKE_COMMAND}\" -E tar xzvf \"face.zip\" WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
+	 RESULT_VARIABLE ret
+     )
+     if (NOT \"\${ret}\" STREQUAL \"0\")
+	 message(FATAL_ERROR \"Could not unzip 'face.zip'\")
+     endif()
+     file(RENAME \"${PROJECT_BINARY_DIR}/dist\" \"${PROJECT_BINARY_DIR}/facestaging\")
+     file(REMOVE \"${PROJECT_BINARY_DIR}/face.zip\")"
+     )
+else()
+
+file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
+    "file(
+  DOWNLOAD \"https://codeload.github.com/restream/reindexer-face-dist/tar.gz/${FACE_BRANCH}\"
 	\"${PROJECT_BINARY_DIR}/face.tar.gz\"
      )
      execute_process(
@@ -68,11 +90,10 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
      file(RENAME \"${PROJECT_BINARY_DIR}/reindexer-face-dist-${FACE_BRANCH}\" \"${PROJECT_BINARY_DIR}/face\")
      file(REMOVE \"${PROJECT_BINARY_DIR}/face.tar.gz\")"
 )
-
+endif ()
 if (LINK_RESOURCES)
 	include(CMakeRC)
 	execute_process(
-	    COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_BINARY_DIR}/make_face.cmake"
 	    COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_BINARY_DIR}/make_swagger.cmake"
 	    RESULT_VARIABLE ret
 	    ERROR_VARIABLE err
@@ -80,8 +101,16 @@ if (LINK_RESOURCES)
 	if (NOT "${ret}" STREQUAL "0")
 	    message(FATAL_ERROR "Could not prepare 'face' and 'swagger' files. Reason: ${err}")
 	endif()
+	execute_process(
+	    COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_BINARY_DIR}/make_face.cmake"
+	    RESULT_VARIABLE ret
+	    ERROR_VARIABLE err
+	)
+	if (NOT "${ret}" STREQUAL "0")
+	    message(FATAL_ERROR "Could not prepare 'face' and 'swagger' files. Reason: ${err}")
+	endif()
 
-	file(GLOB_RECURSE FACE_FILES ${PROJECT_BINARY_DIR}/face/*)
+	file(GLOB_RECURSE FACE_FILES ${PROJECT_BINARY_DIR}/face*/*)
 	file(GLOB_RECURSE SWAGGER_FILES ${PROJECT_BINARY_DIR}/swagger/*)
 	cmrc_add_resource_library(reindexer_server_resources WHENCE ${PROJECT_BINARY_DIR} ${FACE_FILES})
 	cmrc_add_resources(reindexer_server_resources WHENCE ${PROJECT_BINARY_DIR} ${SWAGGER_FILES})

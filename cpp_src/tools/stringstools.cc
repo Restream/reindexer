@@ -501,29 +501,16 @@ void toPrevCh(string_view::iterator &it, const string_view &str) {
 template <bool isUtf8>
 Error getBytePosInMultilineString(string_view str, const size_t line, const size_t charPos, size_t &bytePos) {
 	auto it = str.begin();
-	size_t currLine = 0, currCharPos = 0, lastSpacePos = std::string::npos;
+	size_t currLine = 0, currCharPos = 0;
 	for (size_t i = 0; it != str.end() && ((currLine != line) || (currCharPos != charPos)); toNextCh<isUtf8>(it, str), ++i) {
 		if (*it == '\n') {
 			++currLine;
 		} else if (currLine == line) {
 			++currCharPos;
 		}
-		if ((currLine == line) && (*it == ' ' || *it == '\t' || *it == '\n')) {
-			lastSpacePos = i;
-		}
 	}
 	if ((currLine == line) && (charPos == currCharPos)) {
-		size_t spaces = 0;
-		if (lastSpacePos != std::string::npos) {
-			auto last = str.begin() + lastSpacePos;
-			auto it2 = last;
-			while (*it2 == ' ' || *it2 == '\t' || *it2 == '\n') {
-				if (it2 == str.begin()) break;
-				toPrevCh<isUtf8>(it2, str);
-				++spaces;
-			}
-		}
-		bytePos = it - str.begin() - spaces - 1;
+		bytePos = it - str.begin() - 1;
 		return errOK;
 	}
 	return Error(errNotValid, "Wrong cursor position: line=%d, pos=%d", line, charPos);

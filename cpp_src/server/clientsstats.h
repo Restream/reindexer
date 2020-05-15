@@ -15,14 +15,14 @@ struct ClientConnectionStat {
 	std::string dbName;
 	std::string userRights;
 	std::string clientVersion;
+	std::string appName;
 };
 
 class ClientsStats : public reindexer::IClientsStats {
 public:
 	void GetClientInfo(std::vector<reindexer::ClientStat>& datas) override final;
-	void AddConnection(std::shared_ptr<reindexer::net::ConnectionStat> connStat, int connectionId, const std::string& ip,
-					   const std::string& userName, const std::string& dbName, const std::string& userRights,
-					   const std::string& clientVersion) override final;
+	void AddConnection(std::shared_ptr<reindexer::net::ConnectionStat> connStat, int connectionId, std::string ip, std::string userName,
+					   std::string dbName, std::string userRights, std::string clientVersion, std::string appName) override final;
 	void DeleteConnection(int64_t connectionId) override final;
 	virtual ~ClientsStats() {}
 

@@ -102,8 +102,9 @@ type connection struct {
 	now    uint32
 	termCh chan struct{}
 
-	requests     [queueSize]requestInfo
-	enableSnappy int32
+	requests        [queueSize]requestInfo
+	enableSnappy    int32
+	isServerChanged bool
 }
 
 func newConnection(ctx context.Context, owner *NetCProto) (c *connection, err error) {
@@ -189,7 +190,7 @@ func (c *connection) deadlineTicker() {
 
 func (c *connection) connect(ctx context.Context) (err error) {
 	var d net.Dialer
-	c.conn, err = d.DialContext(ctx, "tcp", c.owner.url.Host)
+	c.conn, err = d.DialContext(ctx, "tcp", c.owner.getActiveDSN().Host)
 	if err != nil {
 		return err
 	}
@@ -202,16 +203,17 @@ func (c *connection) connect(ctx context.Context) (err error) {
 }
 
 func (c *connection) login(ctx context.Context, owner *NetCProto) (err error) {
-	password, username, path := "", "", owner.url.Path
-	if owner.url.User != nil {
-		username = owner.url.User.Username()
-		password, _ = owner.url.User.Password()
+	dsn := owner.getActiveDSN()
+	password, username, path := "", "", dsn.Path
+	if dsn.User != nil {
+		username = dsn.User.Username()
+		password, _ = dsn.User.Password()
 	}
 	if len(path) > 0 && path[0] == '/' {
 		path = path[1:]
 	}
 
-	buf, err := c.rpcCall(ctx, cmdLogin, 0, username, password, path, c.owner.connectOpts.CreateDBIfMissing, false, -1, bindings.ReindexerVersion)
+	buf, err := c.rpcCall(ctx, cmdLogin, 0, username, password, path, c.owner.connectOpts.CreateDBIfMissing, false, -1, bindings.ReindexerVersion, c.owner.appName)
 	if err != nil {
 		c.err = err
 		return
@@ -219,7 +221,11 @@ func (c *connection) login(ctx context.Context, owner *NetCProto) (err error) {
 	defer buf.Free()
 
 	if len(buf.args) > 1 {
-		owner.checkServerStartTime(buf.args[1].(int64))
+		serverStartTS := buf.args[1].(int64)
+		old := atomic.SwapInt64(&owner.serverStartTime, serverStartTS)
+		if old != 0 && old != serverStartTS {
+			c.isServerChanged = true
+		}
 	}
 	return
 }

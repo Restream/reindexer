@@ -24,6 +24,7 @@ enum class Root {
 	Aggregations,
 	Explain,
 	EqualPosition,
+	WithRank,
 };
 
 enum class Sort { Desc, Field, Values };
@@ -47,7 +48,8 @@ static const fast_str_map<Root> root_map = {{"namespace", Root::Namespace},
 											{"req_total", Root::ReqTotal},
 											{"aggregations", Root::Aggregations},
 											{"explain", Root::Explain},
-											{"equal_position", Root::EqualPosition}};
+											{"equal_position", Root::EqualPosition},
+											{"select_with_rank", Root::WithRank}};
 
 // additional for parse field 'sort'
 
@@ -465,6 +467,10 @@ void parse(JsonValue& root, Query& q) {
 			case Root::Explain:
 				checkJsonValueType(v, name, JSON_FALSE, JSON_TRUE);
 				q.explain_ = v.getTag() == JSON_TRUE;
+				break;
+			case Root::WithRank:
+				checkJsonValueType(v, name, JSON_FALSE, JSON_TRUE);
+				if (v.getTag() == JSON_TRUE) q.WithRank();
 				break;
 			case Root::EqualPosition: {
 				checkJsonValueType(v, name, JSON_ARRAY);

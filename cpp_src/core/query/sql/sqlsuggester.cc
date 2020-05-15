@@ -12,7 +12,7 @@ bool checkIfTokenStartsWith(const string_view &src, const string_view &pattern) 
 	return checkIfStartsWith(src, pattern) && src.length() < pattern.length();
 }
 
-vector<string> SQLSuggester::GetSuggestions(const string_view &q, size_t pos, EnumNamespacesF enumNamespaces) {
+vector<string> SQLSuggester::GetSuggestions(string_view q, size_t pos, EnumNamespacesF enumNamespaces) {
 	ctx_.suggestionsPos = pos;
 	ctx_.autocompleteMode = true;
 	enumNamespaces_ = enumNamespaces;
@@ -26,14 +26,18 @@ vector<string> SQLSuggester::GetSuggestions(const string_view &q, size_t pos, En
 		checkForTokenSuggestions(item);
 	}
 
-	if (ctx_.suggestions.size() > 0) return ctx_.suggestions.front().variants;
+	for (auto &it : ctx_.suggestions) {
+		if (!it.variants.empty()) {
+			return it.variants;
+		}
+	}
 	return std::vector<string>();
 }
 
 std::unordered_map<int, std::set<string>> sqlTokenMatchings = {
 	{Start, {"explain", "select", "delete", "update", "truncate"}},
 	{StartAfterExplain, {"select", "delete", "update"}},
-	{AggregationSqlToken, {"sum", "avg", "max", "min", "facet", "count", "distinct"}},
+	{AggregationSqlToken, {"sum", "avg", "max", "min", "facet", "count", "distinct", "rank"}},
 	{SelectConditionsStart, {"where", "limit", "offset", "order", "join", "left", "inner", "equal_position", "merge", "or", ";"}},
 	{ConditionSqlToken, {">", ">=", "<", "<=", "<>", "in", "range", "is", "==", "="}},
 	{WhereFieldValueSqlToken, {"null", "empty", "not"}},
@@ -56,10 +60,12 @@ std::unordered_map<int, std::set<string>> sqlTokenMatchings = {
 	{UpdateOptionsSqlToken, {"set", "drop"}},
 };
 
-void getMatchingTokens(int tokenType, const string &token, vector<string> &variants) {
+static void getMatchingTokens(int tokenType, const string &token, vector<string> &variants) {
 	const std::set<string> &suggestions = sqlTokenMatchings[tokenType];
 	for (auto it = suggestions.begin(); it != suggestions.end(); ++it) {
-		if (isBlank(token) || checkIfStartsWith(token, *it)) variants.push_back(*it);
+		if (isBlank(token) || checkIfStartsWith(token, *it)) {
+			variants.push_back(*it);
+		}
 	}
 }
 
@@ -285,9 +291,6 @@ void SQLSuggester::checkForTokenSuggestions(SqlParsingCtx::SuggestionData &data)
 				break;
 			}
 			if (findInPossibleIndexes(data.token)) break;
-			if (checkIfTokenStartsWith(data.token, "not")) {
-				getSuggestionsForToken(data);
-			}
 			getSuggestionsForToken(data);
 			break;
 		case FieldNameSqlToken:

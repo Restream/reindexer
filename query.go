@@ -38,6 +38,7 @@ const (
 	queryJoinCondition     = bindings.QueryJoinCondition
 	queryDropField         = bindings.QueryDropField
 	queryUpdateObject      = bindings.QueryUpdateObject
+	queryWithRank          = bindings.QueryWithRank
 )
 
 // Constants for calc total
@@ -563,6 +564,13 @@ func (q *Query) Debug(level int) *Query {
 // Explain - Request explain for query
 func (q *Query) Explain() *Query {
 	q.ser.PutVarCUInt(queryExplain)
+	return q
+}
+
+// Output fulltext rank
+// Allowed only with fulltext query
+func (q *Query) WithRank() *Query {
+	q.ser.PutVarCUInt(queryWithRank)
 	return q
 }
 

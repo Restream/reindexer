@@ -104,22 +104,29 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 	switch (query_.type_) {
 		case QuerySelect: {
 			ser << "SELECT ";
-			if (query_.aggregations_.size()) {
-				for (const auto &a : query_.aggregations_) {
-					if (&a != &*query_.aggregations_.begin()) ser << ',';
-					ser << AggregationResult::aggTypeToStr(a.type_) << "(";
-					for (const auto &f : a.fields_) {
-						if (&f != &*a.fields_.begin()) ser << ',';
-						ser << f;
-					}
-					for (const auto &se : a.sortingEntries_) {
-						ser << " ORDER BY " << '\'' << se.expression << '\'' << (se.desc ? " DESC" : " ASC");
-					}
-
-					if (a.offset_ != 0 && !stripArgs) ser << " OFFSET " << a.offset_;
-					if (a.limit_ != UINT_MAX && !stripArgs) ser << " LIMIT " << a.limit_;
-					ser << ')';
+			bool needComma = false;
+			if (query_.IsWithRank()) {
+				ser << "RANK()";
+				needComma = true;
+			}
+			for (const auto &a : query_.aggregations_) {
+				if (needComma) {
+					ser << ", ";
+				} else {
+					needComma = true;
 				}
+				ser << AggregationResult::aggTypeToStr(a.type_) << "(";
+				for (const auto &f : a.fields_) {
+					if (&f != &*a.fields_.begin()) ser << ", ";
+					ser << f;
+				}
+				for (const auto &se : a.sortingEntries_) {
+					ser << " ORDER BY " << '\'' << se.expression << '\'' << (se.desc ? " DESC" : " ASC");
+				}
+
+				if (a.offset_ != 0 && !stripArgs) ser << " OFFSET " << a.offset_;
+				if (a.limit_ != UINT_MAX && !stripArgs) ser << " LIMIT " << a.limit_;
+				ser << ')';
 			}
 			if (query_.aggregations_.empty() || (query_.aggregations_.size() == 1 && query_.aggregations_[0].type_ == AggDistinct)) {
 				string distinctIndex;
@@ -128,15 +135,17 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 					distinctIndex = query_.aggregations_[0].fields_[0];
 				}
 				if (!query_.selectFilter_.empty()) {
-					for (size_t i = 0; i < query_.selectFilter_.size(); ++i) {
-						if (query_.selectFilter_[i] == distinctIndex) continue;
-						if (i != 0 || !query_.aggregations_.empty()) {
+					for (const auto &filter : query_.selectFilter_) {
+						if (filter == distinctIndex) continue;
+						if (needComma) {
 							ser << ", ";
+						} else {
+							needComma = true;
 						}
-						ser << query_.selectFilter_[i];
+						ser << filter;
 					}
 				} else {
-					if (!query_.aggregations_.empty()) ser << ", ";
+					if (needComma) ser << ", ";
 					ser << '*';
 				}
 			}

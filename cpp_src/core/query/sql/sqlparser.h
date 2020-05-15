@@ -25,7 +25,7 @@ protected:
 	/// Sql parser context
 	struct SqlParsingCtx {
 		struct SuggestionData {
-			SuggestionData(string tok, int tokType) : token(tok), tokenType(tokType) {}
+			SuggestionData(string tok, int tokType) : token(std::move(tok)), tokenType(tokType) {}
 			string token;
 			int tokenType = 0;
 			std::vector<string> variants;
@@ -64,6 +64,12 @@ protected:
 	/// @param parser - tokenizer object instance.
 	/// @return always returns zero.
 	int selectParse(tokenizer &parser);
+
+	/// Parses filter part of sql query and gets suggestions from nested SQLParser
+	/// @param parser - nested parser object instance.
+	/// @param tok - tokenizer object instance.
+	/// @return always returns zero.
+	int nestedSelectParse(SQLParser &parser, tokenizer &tok);
 
 	/// Parses filter part of sql delete query.
 	/// @param parser - tokenizer object instance.

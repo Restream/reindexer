@@ -77,8 +77,9 @@ public:
 	std::vector<joins::NamespaceResults> joined_;
 	vector<AggregationResult> aggregationResults;
 	int totalCount = 0;
-	bool haveProcent = false;
+	bool haveRank = false;
 	bool nonCacheableData = false;
+	bool needOutputRank = false;
 
 	struct Context;
 	// precalc context size
@@ -107,6 +108,7 @@ public:
 
 protected:
 	class EncoderDatasourceWithJoins;
+	class EncoderAdditionalDatasource;
 
 private:
 	void lockResults(bool lock);

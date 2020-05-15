@@ -13,7 +13,7 @@ template <typename Builder>
 BaseEncoder<Builder>::BaseEncoder(const TagsMatcher* tagsMatcher, const FieldsSet* filter) : tagsMatcher_(tagsMatcher), filter_(filter) {}
 
 template <typename Builder>
-void BaseEncoder<Builder>::Encode(string_view tuple, Builder& builder) {
+void BaseEncoder<Builder>::Encode(string_view tuple, Builder& builder, IAdditionalDatasource<Builder>* ds) {
 	Serializer rdser(tuple);
 	builder.SetTagsMatcher(tagsMatcher_);
 
@@ -23,10 +23,14 @@ void BaseEncoder<Builder>::Encode(string_view tuple, Builder& builder) {
 	Builder objNode = builder.Object(nullptr);
 	while (encode(nullptr, rdser, objNode, true))
 		;
+	if (ds) {
+		assert(!ds->GetJoinsDatasource());
+		ds->PutAdditionalFields(objNode);
+	}
 }
 
 template <typename Builder>
-void BaseEncoder<Builder>::Encode(ConstPayload* pl, Builder& builder, IEncoderDatasourceWithJoins* ds) {
+void BaseEncoder<Builder>::Encode(ConstPayload* pl, Builder& builder, IAdditionalDatasource<Builder>* ds) {
 	Serializer rdser(getPlTuple(pl));
 	if (rdser.Eof()) {
 		return;
@@ -42,10 +46,13 @@ void BaseEncoder<Builder>::Encode(ConstPayload* pl, Builder& builder, IEncoderDa
 	while (encode(pl, rdser, objNode, true))
 		;
 
-	if (!ds || !ds->GetJoinedRowsCount()) return;
-
-	for (size_t i = 0; i < ds->GetJoinedRowsCount(); ++i) {
-		encodeJoinedItems(objNode, ds, i);
+	if (ds) {
+		if (const auto joinsDs = ds->GetJoinsDatasource()) {
+			for (size_t i = 0; i < joinsDs->GetJoinedRowsCount(); ++i) {
+				encodeJoinedItems(objNode, joinsDs, i);
+			}
+		}
+		ds->PutAdditionalFields(objNode);
 	}
 }
 

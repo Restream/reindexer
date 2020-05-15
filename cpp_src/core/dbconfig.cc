@@ -105,6 +105,7 @@ Error ReplicationConfigData::FromYML(const string &yaml) {
 	try {
 		Yaml::Parse(root, yaml);
 		masterDSN = root["master_dsn"].As<std::string>(masterDSN);
+		appName = root["app_name"].As<std::string>(appName);
 		connPoolSize = root["conn_pool_size"].As<int>(connPoolSize);
 		workerThreads = root["worker_threads"].As<int>(workerThreads);
 		timeoutSec = root["timeout_sec"].As<int>(timeoutSec);
@@ -132,6 +133,7 @@ Error ReplicationConfigData::FromYML(const string &yaml) {
 Error ReplicationConfigData::FromJSON(const gason::JsonNode &root) {
 	try {
 		masterDSN = root["master_dsn"].As<string>();
+		appName = root["app_name"].As<string>(std::move(appName));
 		connPoolSize = root["conn_pool_size"].As<int>(connPoolSize);
 		workerThreads = root["worker_threads"].As<int>(workerThreads);
 		timeoutSec = root["timeout_sec"].As<int>(timeoutSec);
@@ -179,6 +181,7 @@ std::string ReplicationConfigData::role2str(ReplicationRole role) noexcept {
 void ReplicationConfigData::GetJSON(JsonBuilder &jb) const {
 	jb.Put("role", role2str(role));
 	jb.Put("master_dsn", masterDSN);
+	jb.Put("app_name", appName);
 	jb.Put("cluster_id", clusterID);
 	jb.Put("timeout_sec", timeoutSec);
 	jb.Put("enable_compression", enableCompression);
@@ -207,7 +210,7 @@ void ReplicationConfigData::GetYAML(WrSerializer &ser) const {
 		Yaml::Serialize(nsYaml, namespacesStr);
 	}
 	// clang-format off
-	ser <<	"# Replication role. May be on of\n"
+	ser <<	"# Replication role. May be one of\n"
 			"# none - replication is disabled\n"
 			"# slave - replication as slave\n"
 			"# master - replication as master\n"
@@ -215,6 +218,9 @@ void ReplicationConfigData::GetYAML(WrSerializer &ser) const {
 			"\n"
 			"# DSN to master. Only cproto schema is supported\n"
 			"master_dsn: " + masterDSN + "\n"
+			"\n"
+			"# Application name used by replicator as login tag\n"
+			"app_name: " + appName + "\n"
 			"\n"
 			"# Cluser ID - must be same for client and for master\n"
 			"cluster_id: " + std::to_string(clusterID) + "\n"

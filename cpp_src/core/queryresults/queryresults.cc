@@ -25,8 +25,9 @@ QueryResults::QueryResults(QueryResults &&obj)
 	: joined_(std::move(obj.joined_)),
 	  aggregationResults(std::move(obj.aggregationResults)),
 	  totalCount(obj.totalCount),
-	  haveProcent(obj.haveProcent),
+	  haveRank(obj.haveRank),
 	  nonCacheableData(obj.nonCacheableData),
+	  needOutputRank(obj.needOutputRank),
 	  ctxs(std::move(obj.ctxs)),
 	  explainResults(std::move(obj.explainResults)),
 	  lockedResults_(obj.lockedResults_),
@@ -49,8 +50,9 @@ QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 		assert(!obj.items_.size());
 		joined_ = std::move(obj.joined_);
 		aggregationResults = std::move(obj.aggregationResults);
-		totalCount = std::move(obj.totalCount);
-		haveProcent = std::move(obj.haveProcent);
+		totalCount = obj.totalCount;
+		haveRank = obj.haveRank;
+		needOutputRank = obj.needOutputRank;
 		ctxs = std::move(obj.ctxs);
 		nonCacheableData = std::move(obj.nonCacheableData);
 		lockedResults_ = std::move(obj.lockedResults_);
@@ -173,7 +175,7 @@ class QueryResults::EncoderDatasourceWithJoins : public IEncoderDatasourceWithJo
 public:
 	EncoderDatasourceWithJoins(const joins::ItemIterator &joinedItemIt, const ContextsVector &ctxs, int ctxIdx)
 		: joinedItemIt_(joinedItemIt), ctxs_(ctxs), ctxId_(ctxIdx) {}
-	~EncoderDatasourceWithJoins() {}
+	~EncoderDatasourceWithJoins() override = default;
 
 	size_t GetJoinedRowsCount() const final { return joinedItemIt_.getJoinedFieldsCount(); }
 	size_t GetJoinedRowItemsCount(size_t rowId) const final {
@@ -206,6 +208,21 @@ private:
 	const int ctxId_;
 };
 
+class AdditionalDatasource : public IAdditionalDatasource<JsonBuilder> {
+public:
+	AdditionalDatasource(double r, IEncoderDatasourceWithJoins *jds) : joinsDs_(jds), withRank_(true), rank_(r) {}
+	AdditionalDatasource(IEncoderDatasourceWithJoins *jds) : joinsDs_(jds), withRank_(false), rank_(0.0) {}
+	void PutAdditionalFields(JsonBuilder &builder) const final {
+		if (withRank_) builder.Put("rank()", rank_);
+	}
+	IEncoderDatasourceWithJoins *GetJoinsDatasource() final { return joinsDs_; }
+
+private:
+	IEncoderDatasourceWithJoins *joinsDs_;
+	bool withRank_;
+	double rank_;
+};
+
 void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 	auto &itemRef = items_[idx];
 	assert(ctxs.size() > itemRef.Nsid());
@@ -217,18 +234,28 @@ void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 	}
 	ConstPayload pl(ctx.type_, itemRef.Value());
 	JsonEncoder encoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
-
 	JsonBuilder builder(ser, JsonBuilder::TypePlain);
 
 	if (!joined_.empty()) {
 		joins::ItemIterator itemIt = (begin() + idx).GetJoined();
 		if (itemIt.getJoinedItemsCount() > 0) {
-			EncoderDatasourceWithJoins ds(itemIt, ctxs, GetJoinedNsCtxIndex(itemRef.Nsid()));
-			encoder.Encode(&pl, builder, &ds);
+			EncoderDatasourceWithJoins joinsDs(itemIt, ctxs, GetJoinedNsCtxIndex(itemRef.Nsid()));
+			if (needOutputRank) {
+				AdditionalDatasource ds(itemRef.Proc(), &joinsDs);
+				encoder.Encode(&pl, builder, &ds);
+			} else {
+				AdditionalDatasource ds(&joinsDs);
+				encoder.Encode(&pl, builder, &ds);
+			}
 			return;
 		}
 	}
-	encoder.Encode(&pl, builder);
+	if (needOutputRank) {
+		AdditionalDatasource ds(itemRef.Proc(), nullptr);
+		encoder.Encode(&pl, builder, &ds);
+	} else {
+		encoder.Encode(&pl, builder);
+	}
 }
 
 joins::ItemIterator QueryResults::Iterator::GetJoined() { return reindexer::joins::ItemIterator::CreateFrom(*this); }

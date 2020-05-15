@@ -27,23 +27,28 @@ struct ReplicationConfig {
 	using NsSet = std::unordered_set<std::string, nocase_hash_str, nocase_equal_str>;
 
 	ReplicationConfig(std::string role) : role_(std::move(role)), forceSyncOnLogicError_(false), forceSyncOnWrongDataHash_(true) {}
+	ReplicationConfig(std::string role, std::string appName)
+		: role_(std::move(role)), forceSyncOnLogicError_(false), forceSyncOnWrongDataHash_(true), appName_(std::move(appName)) {}
 	ReplicationConfig(std::string role, bool forceSyncOnLogicError, bool forceSyncOnWrongDataHash, std::string dsn = std::string(),
-					  NsSet namespaces = NsSet())
+					  std::string appName = std::string(), NsSet namespaces = NsSet())
 		: role_(std::move(role)),
 		  forceSyncOnLogicError_(forceSyncOnLogicError),
 		  forceSyncOnWrongDataHash_(forceSyncOnWrongDataHash),
 		  dsn_(std::move(dsn)),
+		  appName_(std::move(appName)),
 		  namespaces_(std::move(namespaces)) {}
 
 	bool operator==(const ReplicationConfig& config) const {
 		return role_ == config.role_ && forceSyncOnLogicError_ == config.forceSyncOnLogicError_ &&
-			   forceSyncOnWrongDataHash_ == config.forceSyncOnWrongDataHash_ && dsn_ == config.dsn_ && namespaces_ == config.namespaces_;
+			   forceSyncOnWrongDataHash_ == config.forceSyncOnWrongDataHash_ && dsn_ == config.dsn_ && appName_ == config.appName_ &&
+			   namespaces_ == config.namespaces_;
 	}
 
 	std::string role_;
 	bool forceSyncOnLogicError_;
 	bool forceSyncOnWrongDataHash_;
 	std::string dsn_;
+	std::string appName_;
 	NsSet namespaces_;
 };
 
@@ -74,7 +79,7 @@ public:
 		// Make this server master
 		void MakeMaster(const ReplicationConfig& config = ReplicationConfig("master"));
 		// Make this server slave
-		void MakeSlave(size_t masterId, const ReplicationConfig& config = ReplicationConfig("slave"));
+		void MakeSlave(size_t masterId, const ReplicationConfig& config);
 		// check with master or slave that sync complete
 		ReplicationState GetState(const std::string& ns);
 		// Force sync (restart slave's replicator)

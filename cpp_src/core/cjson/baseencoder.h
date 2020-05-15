@@ -26,11 +26,18 @@ public:
 };
 
 template <typename Builder>
+class IAdditionalDatasource {
+public:
+	virtual void PutAdditionalFields(Builder &) const = 0;
+	virtual IEncoderDatasourceWithJoins *GetJoinsDatasource() = 0;
+};
+
+template <typename Builder>
 class BaseEncoder {
 public:
 	BaseEncoder(const TagsMatcher *tagsMatcher, const FieldsSet *filter = nullptr);
-	void Encode(ConstPayload *pl, Builder &builder, IEncoderDatasourceWithJoins *ds = nullptr);
-	void Encode(string_view tuple, Builder &wrSer);
+	void Encode(ConstPayload *pl, Builder &builder, IAdditionalDatasource<Builder> * = nullptr);
+	void Encode(string_view tuple, Builder &wrSer, IAdditionalDatasource<Builder> *);
 
 protected:
 	bool encode(ConstPayload *pl, Serializer &rdser, Builder &builder, bool visible);

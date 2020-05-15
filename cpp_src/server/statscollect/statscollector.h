@@ -16,7 +16,7 @@ class StatsCollector : public IStatsWatcher {
 public:
 	StatsCollector(Prometheus* prometheus, std::chrono::milliseconds collectPeriod)
 		: prometheus_(prometheus), terminate_(false), enabled_(false), collectPeriod_(collectPeriod) {}
-
+	~StatsCollector() { Stop(); }
 	void Start(DBManager& dbMngr);
 	void Stop();
 

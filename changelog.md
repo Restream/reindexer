@@ -1,9 +1,25 @@
+
+# Version 2.9.0 (15.05.2020)
+
+# Core
+- [fea] Output relevancy rank information to json format
+- [fea] Optimized query to #memstats. Now it's O(1) 
+- [fea] Added app_name field #clientsstats
+- [fix] Fixed SQL suggestion behavior on concatenated tokens
+
+# Go connector
+- [fix] Fixed and enabled multiple dsn support in cproto
+
+# Version 2.8.1 (12.05.2020)
+
+- [fix] unexpected "terminate called" 
+
 # Version 2.8.0 (24.04.2020)
 
 # Core
 
 - [fea] Fulltext - rank by word position
-- [fea] Explain information improoved
+- [fea] Explain information improved
 - [fix] Memory corruption on copying tx-es
 
 # Reindexer tool

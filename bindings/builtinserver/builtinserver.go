@@ -67,7 +67,7 @@ func (server *BuiltinServer) stopServer(timeout time.Duration) error {
 	}
 }
 
-func (server *BuiltinServer) Init(u *url.URL, options ...interface{}) error {
+func (server *BuiltinServer) Init(u []url.URL, options ...interface{}) error {
 	if server.builtin != nil {
 		return bindings.NewError("already initialized", bindings.ErrConflict)
 	}
@@ -118,18 +118,18 @@ func (server *BuiltinServer) Init(u *url.URL, options ...interface{}) error {
 		time.Sleep(time.Second)
 	}
 
-	pass, _ := u.User.Password()
+	pass, _ := u[0].User.Password()
 
 	var rx C.uintptr_t = 0
-	if err := err2go(C.get_reindexer_instance(server.svc, str2c(u.Host), str2c(u.User.Username()), str2c(pass), &rx)); err != nil {
+	if err := err2go(C.get_reindexer_instance(server.svc, str2c(u[0].Host), str2c(u[0].User.Username()), str2c(pass), &rx)); err != nil {
 		return err
 	}
 
-	url := *u
-	url.Path = ""
+	builtinURL := append(u[:0:0], u...)
+	builtinURL[0].Path = ""
 
 	options = append(options, bindings.OptionReindexerInstance{Instance: uintptr(rx)})
-	return server.builtin.Init(&url, options...)
+	return server.builtin.Init(builtinURL, options...)
 }
 
 func (server *BuiltinServer) Clone() bindings.RawBinding {

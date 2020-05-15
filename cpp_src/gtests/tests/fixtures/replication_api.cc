@@ -86,7 +86,8 @@ ReplicationConfig ServerControl::Interface::GetServerConfig(ConfigType type) {
 		namespaces.insert(ns);
 	}
 	return ReplicationConfig(config.role == ReplicationMaster ? "master" : "slave", config.forceSyncOnLogicError,
-							 config.forceSyncOnWrongDataHash, std::move(config.masterDSN), std::move(namespaces));
+							 config.forceSyncOnWrongDataHash, std::move(config.masterDSN), std::move(config.appName),
+							 std::move(namespaces));
 }
 
 void ServerControl::Interface::WriteServerConfig(const std::string& configYaml) {
@@ -152,6 +153,7 @@ void ServerControl::Interface::setReplicationConfig(size_t masterId, const Repli
 	replConf.Put("master_dsn", config.dsn_.empty() ? ("cproto://127.0.0.1:" + std::to_string(kDefaultRpcPort + masterId) + "/node" +
 													  std::to_string(masterId))
 												   : config.dsn_);
+	replConf.Put("app_name", config.appName_);
 	replConf.Put("cluster_id", 2);
 	replConf.Put("force_sync_on_logic_error", config.forceSyncOnLogicError_);
 	replConf.Put("force_sync_on_wrong_data_hash", config.forceSyncOnWrongDataHash_);
@@ -307,7 +309,7 @@ void ReplicationApi::SwitchMaster(size_t id) {
 	masterId_ = id;
 	GetSrv(masterId_)->MakeMaster();
 	for (size_t i = 0; i < svc_.size(); i++) {
-		if (i != masterId_) GetSrv(i)->MakeSlave(masterId_);
+		if (i != masterId_) GetSrv(i)->MakeSlave(masterId_, ReplicationConfig("slave", "slave_" + std::to_string(i)));
 	}
 }
 
@@ -336,7 +338,7 @@ void ReplicationApi::SetUp() {
 		if (i == 0) {
 			svc_.back().Get()->MakeMaster();
 		} else {
-			svc_.back().Get()->MakeSlave(0);
+			svc_.back().Get()->MakeSlave(0, ReplicationConfig("slave", "slave_" + std::to_string(i)));
 		}
 	}
 }

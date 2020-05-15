@@ -62,6 +62,7 @@ typedef enum QueryItemType {
 	QueryJoinCondition,
 	QueryDropField,
 	QueryUpdateObject,
+	QueryWithRank,
 } QueryItemType;
 
 typedef enum QuerySerializeMode {
@@ -148,10 +149,11 @@ enum {
 
 	kResultsWithPayloadTypes = 0x10,
 	kResultsWithItemID = 0x20,
-	kResultsWithPercents = 0x40,
+	kResultsWithRank = 0x40,
 	kResultsWithNsID = 0x80,
 	kResultsWithJoined = 0x100,
-	kResultsWithRaw = 0x200
+	kResultsWithRaw = 0x200,
+	kResultsNeedOutputRank = 0x400,
 };
 
 typedef enum IndexOpt { kIndexOptPK = 1 << 7, kIndexOptArray = 1 << 6, kIndexOptDense = 1 << 5, kIndexOptSparse = 1 << 3 } IndexOpt;

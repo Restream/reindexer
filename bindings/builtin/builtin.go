@@ -145,7 +145,7 @@ func bool2cint(v bool) C.int {
 	return 0
 }
 
-func (binding *Builtin) Init(u *url.URL, options ...interface{}) error {
+func (binding *Builtin) Init(u []url.URL, options ...interface{}) error {
 	if binding.rx != 0 {
 		return bindings.NewError("already initialized", bindings.ErrConflict)
 	}
@@ -194,7 +194,7 @@ func (binding *Builtin) Init(u *url.URL, options ...interface{}) error {
 		options: C.uint16_t(connectOptions.Opts),
 	}
 
-	return err2go(C.reindexer_connect(binding.rx, str2c(u.Path), opts, str2c(bindings.ReindexerVersion)))
+	return err2go(C.reindexer_connect(binding.rx, str2c(u[0].Path), opts, str2c(bindings.ReindexerVersion)))
 }
 
 func (binding *Builtin) Clone() bindings.RawBinding {

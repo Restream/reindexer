@@ -92,6 +92,7 @@ NamespaceImpl::NamespaceImpl(const string &name, UpdatesObservers &observers)
 void NamespaceImpl::copyContentsFrom(const NamespaceImpl &src) {
 	indexesNames_ = src.indexesNames_;
 	items_ = src.items_;
+	itemsDataSize_ = src.itemsDataSize_;
 	free_ = src.free_;
 	name_ = src.name_;
 	payloadType_ = src.payloadType_;
@@ -211,6 +212,7 @@ void NamespaceImpl::updateItems(PayloadType oldPlType, const FieldsSet &changedF
 	int errCount = 0;
 	Error lastErr = errOK;
 	repl_.dataHash = 0;
+	itemsDataSize_ = 0;
 	for (size_t rowId = 0; rowId < items_.size(); rowId++) {
 		if (items_[rowId].IsFree()) {
 			continue;
@@ -254,6 +256,7 @@ void NamespaceImpl::updateItems(PayloadType oldPlType, const FieldsSet &changedF
 
 		plCurr = std::move(plNew);
 		repl_.dataHash ^= Payload(payloadType_, plCurr).GetHash();
+		itemsDataSize_ += plCurr.GetCapacity() + sizeof(PayloadValue::dataHeader);
 	}
 	markUpdated();
 	if (errCount != 0) {
@@ -772,6 +775,7 @@ void NamespaceImpl::doDelete(IdType id) {
 	} while (++field != borderIdx);
 
 	// free PayloadValue
+	itemsDataSize_ -= items_[id].GetCapacity() + sizeof(PayloadValue::dataHeader);
 	items_[id].Free();
 	free_.push_back(id);
 	if (free_.size() == items_.size()) {
@@ -864,6 +868,7 @@ void NamespaceImpl::Truncate(const NsContext &ctx) {
 	items_.clear();
 	free_.clear();
 	repl_.dataHash = 0;
+	itemsDataSize_ = 0;
 	for (size_t i = 0; i < indexes_.size(); ++i) {
 		const IndexOpts opts = indexes_[i]->Opts();
 		unique_ptr<Index> newIdx{Index::New(getIndexDefinition(i), indexes_[i]->GetPayloadType(), indexes_[i]->Fields())};
@@ -985,6 +990,7 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 	Payload plNew = ritem->GetPayload();
 	if (doUpdate) {
 		repl_.dataHash ^= pl.GetHash();
+		itemsDataSize_ -= plData.GetCapacity() + sizeof(PayloadValue::dataHeader);
 		plData.Clone(pl.RealSize());
 
 		// Delete from composite indexes first
@@ -1054,6 +1060,7 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 		indexes_[field]->Upsert(Variant(plData), id);
 	}
 	repl_.dataHash ^= pl.GetHash();
+	itemsDataSize_ += plData.GetCapacity() + sizeof(PayloadValue::dataHeader);
 	ritem->RealValue() = plData;
 }
 
@@ -1181,6 +1188,7 @@ void NamespaceImpl::updateItemFields(IdType itemId, const Query &q, bool rowBase
 	PayloadValue &pv = items_[itemId];
 	Payload pl(payloadType_, pv);
 	uint64_t oldPlHash = pl.GetHash();
+	auto oldItemCapacity = pv.GetCapacity();
 	pv.Clone(pl.RealSize());
 
 	for (int field = indexes_.firstCompositePos(); field < indexes_.totalSize(); ++field) {
@@ -1205,6 +1213,8 @@ void NamespaceImpl::updateItemFields(IdType itemId, const Query &q, bool rowBase
 
 	repl_.dataHash ^= oldPlHash;
 	repl_.dataHash ^= pl.GetHash();
+	itemsDataSize_ -= oldItemCapacity;
+	itemsDataSize_ += pl.Value()->GetCapacity();
 	if (storage_) {
 		if (tagsMatcher_.isUpdated()) {
 			WrSerializer ser;
@@ -1467,34 +1477,30 @@ NamespaceDef NamespaceImpl::GetDefinition(const RdxContext &ctx) {
 }
 
 NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext &ctx) {
-	auto rlck = rLock(ctx);
-
 	NamespaceMemStat ret;
+	auto rlck = rLock(ctx);
 	ret.name = name_;
 	ret.joinCache = joinCache_->GetMemStat();
 	ret.queryCache = queryCache_->GetMemStat();
 
 	ret.itemsCount = items_.size() - free_.size();
-	for (auto &item : items_) {
-		if (!item.IsFree()) ret.dataSize += item.GetCapacity() + sizeof(PayloadValue::dataHeader);
-	}
 	*(static_cast<ReplicationState *>(&ret.replication)) = getReplState();
 	ret.replication.walCount = wal_.size();
 	ret.replication.walSize = wal_.heap_size();
 
 	ret.emptyItemsCount = free_.size();
 
-	ret.Total.dataSize = ret.dataSize + items_.capacity() * sizeof(PayloadValue);
+	ret.Total.dataSize = itemsDataSize_ + items_.capacity() * sizeof(PayloadValue);
 	ret.Total.cacheSize = ret.joinCache.totalSize + ret.queryCache.totalSize;
 
 	ret.indexes.reserve(indexes_.size());
 	for (auto &idx : indexes_) {
-		auto istat = idx->GetMemStat();
+		ret.indexes.emplace_back(idx->GetMemStat());
+		auto &istat = ret.indexes.back();
 		istat.sortOrdersSize = idx->IsOrdered() ? (items_.size() * sizeof(IdType)) : 0;
 		ret.Total.indexesSize += istat.idsetPlainSize + istat.idsetBTreeSize + istat.sortOrdersSize + istat.fulltextSize + istat.columnSize;
 		ret.Total.dataSize += istat.dataSize;
 		ret.Total.cacheSize += istat.idsetCache.totalSize;
-		ret.indexes.push_back(istat);
 	}
 
 	ret.storageOK = storage_ != nullptr;
@@ -1751,6 +1757,7 @@ void NamespaceImpl::LoadFromStorage(const RdxContext &ctx) {
 
 	uint64_t dataHash = repl_.dataHash;
 	repl_.dataHash = 0;
+	itemsDataSize_ = 0;
 	for (dbIter->Seek(kStorageItemPrefix);
 		 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), string_view(kStorageItemPrefix "\xFF")) < 0; dbIter->Next()) {
 		string_view dataSlice = dbIter->Value();

@@ -45,7 +45,7 @@ Error RPCClient::addConnectEntry(const string& dsn, const client::ConnectOpts& o
 	}
 	connectEntry.opts = cproto::ClientConnection::Options(config_.ConnectTimeout, config_.RequestTimeout, opts.IsCreateDBIfMissing(),
 														  opts.HasExpectedClusterID(), opts.ExpectedClusterID(), config_.ReconnectAttempts,
-														  config_.EnableCompression);
+														  config_.EnableCompression, config_.AppName);
 	return errOK;
 }
 

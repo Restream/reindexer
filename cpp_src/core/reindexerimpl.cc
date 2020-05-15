@@ -17,6 +17,10 @@
 #include "tools/fsops.h"
 #include "tools/logger.h"
 
+#include "debug/terminate_handler.h"
+
+reindexer::SetTerminateHandler sth;
+
 using std::lock_guard;
 using std::string;
 using std::vector;
@@ -1405,13 +1409,14 @@ void ReindexerImpl::syncSystemNamespaces(string_view sysNsName, string_view filt
 			clientsStats_->GetClientInfo(clientInf);
 			auto clientsNs = getNamespace(kClientsStatsNamespace, ctx);
 			std::vector<Item> items;
+			items.reserve(clientInf.size());
 			for (auto& i : clientInf) {
 				ser.Reset();
 				Activity activ;
 				bool isExist = activities_.ActivityForIpConnection(i.connectionId, activ);
 				if (isExist) i.currentActivity = activ.query;
 				i.GetJSON(ser);
-				items.push_back(clientsNs->NewItem(ctx));
+				items.emplace_back(clientsNs->NewItem(ctx));
 				auto err = items.back().FromJSON(ser.Slice());
 				if (!err.ok()) throw err;
 			}

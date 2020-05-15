@@ -1364,7 +1364,7 @@ protected:
 		reindexer::QueryResults wrongQr2;
 		err = rt.reindexer->Select(wrongQuery2, wrongQr2);
 		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "For aggregation avg available exactly one field");
+		EXPECT_EQ(err.what(), "For aggregation avg is available exactly one field");
 
 		const Query wrongQuery3 = Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear}, {{kFieldNameYear, true}});
 		reindexer::QueryResults wrongQr3;

@@ -18,7 +18,7 @@ public:
 	/// @param q - query to parse.
 	/// @param pos - pos of cursor in query.
 	/// @param enumNamespaces - functor which enums namespaces to be checked for existing fields.
-	std::vector<string> GetSuggestions(const string_view &q, size_t pos, EnumNamespacesF enumNamespaces);
+	std::vector<string> GetSuggestions(string_view q, size_t pos, EnumNamespacesF enumNamespaces);
 
 protected:
 	/// Finds suggestions for token

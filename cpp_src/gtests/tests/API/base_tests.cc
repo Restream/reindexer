@@ -13,6 +13,8 @@
 #include "tools/stringstools.h"
 
 #include <deque>
+#include <thread>
+#include "debug/backtrace.h"
 
 using reindexer::Reindexer;
 

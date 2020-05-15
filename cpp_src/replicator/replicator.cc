@@ -32,9 +32,9 @@ Error Replicator::Start() {
 
 	if (config_.role != ReplicationSlave) return errOK;
 
-	master_.reset(new client::Reindexer(client::ReindexerConfig(config_.connPoolSize, config_.workerThreads, 10000, 0,
-																std::chrono::seconds(config_.timeoutSec),
-																std::chrono::seconds(config_.timeoutSec), config_.enableCompression)));
+	master_.reset(new client::Reindexer(
+		client::ReindexerConfig(config_.connPoolSize, config_.workerThreads, 10000, 0, std::chrono::seconds(config_.timeoutSec),
+								std::chrono::seconds(config_.timeoutSec), config_.enableCompression, config_.appName)));
 
 	auto err = master_->Connect(config_.masterDSN, client::ConnectOpts().WithExpectedClusterID(config_.clusterID));
 	if (err.ok()) err = master_->Status();
@@ -42,8 +42,15 @@ Error Replicator::Start() {
 		err = errOK;
 		terminate_ = false;
 	}
-	if (err.ok()) thread_ = std::thread([this]() { this->run(); });
-
+	if (err.ok()) {
+		if (thread_.joinable()) {
+			logPrintf(LogError, "Start thread, not joined");
+			terminate_ = true;
+			stop_.send();
+			thread_.join();
+		}
+		thread_ = std::thread([this]() { this->run(); });
+	}
 	return err;
 }
 

@@ -6,36 +6,39 @@ void ClientsStats::GetClientInfo(std::vector<reindexer::ClientStat>& datas) {
 	datas.clear();
 	std::lock_guard<std::mutex> lck(mtx_);
 
-	for (auto i = connections_.begin(); i != connections_.end(); ++i) {
+	datas.reserve(connections_.size());
+	for (auto& c : connections_) {
 		reindexer::ClientStat d;
-		d.connectionId = i->second.connectionId;
-		if (i->second.connectionStat) {
-			d.recvBytes = i->second.connectionStat->recvBytes.load();
-			d.sentBytes = i->second.connectionStat->sentBytes.load();
+		d.connectionId = c.second.connectionId;
+		if (c.second.connectionStat) {
+			d.recvBytes = c.second.connectionStat->recvBytes.load();
+			d.sentBytes = c.second.connectionStat->sentBytes.load();
 		}
-		d.startTime = i->second.connectionStat->startTime;
-		d.dbName = i->second.dbName;
-		d.ip = i->second.ip;
-		d.userName = i->second.userName;
-		d.userRights = i->second.userRights;
-		d.clientVersion = i->second.clientVersion;
-		datas.push_back(d);
+		d.startTime = c.second.connectionStat->startTime;
+		d.dbName = c.second.dbName;
+		d.ip = c.second.ip;
+		d.userName = c.second.userName;
+		d.userRights = c.second.userRights;
+		d.clientVersion = c.second.clientVersion;
+		d.appName = c.second.appName;
+		datas.emplace_back(std::move(d));
 	}
 }
 
-void ClientsStats::AddConnection(std::shared_ptr<reindexer::net::ConnectionStat> connStat, int connectionId, const std::string& ip,
-								 const std::string& userName, const std::string& dbName, const std::string& userRights,
-								 const std::string& clientVersion) {
+void ClientsStats::AddConnection(std::shared_ptr<reindexer::net::ConnectionStat> connStat, int connectionId, std::string ip,
+								 std::string userName, std::string dbName, std::string userRights, std::string clientVersion,
+								 std::string appName) {
 	ClientConnectionStat client;
-	client.connectionStat = connStat;
+	client.connectionStat = std::move(connStat);
 	client.connectionId = connectionId;
-	client.ip = ip;
-	client.userName = userName;
-	client.dbName = dbName;
-	client.userRights = userRights;
-	client.clientVersion = clientVersion;
+	client.ip = std::move(ip);
+	client.userName = std::move(userName);
+	client.dbName = std::move(dbName);
+	client.userRights = std::move(userRights);
+	client.clientVersion = std::move(clientVersion);
+	client.appName = std::move(appName);
 	std::lock_guard<std::mutex> lck(mtx_);
-	connections_.insert(std::make_pair(connectionId, client));
+	connections_.emplace(connectionId, std::move(client));
 }
 
 void ClientsStats::DeleteConnection(int64_t connectionId) {

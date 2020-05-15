@@ -102,24 +102,27 @@ int backtrace_internal(void **addrlist, size_t size, void *ctx, string_view &met
 	return addrlen;
 }
 
-static void sighandler(int sig, siginfo_t *, void *ctx) {
-	std::ostringstream sout;
-	void *addrlist[64] = {};
-
-	auto resolver = TraceResolver::New();
-	string_view method;
-
-	int addrlen = backtrace_internal(addrlist, sizeof(addrlist) / sizeof(addrlist[0]), ctx, method);
-
+void getBackTraceString(std::ostringstream &sout, void *ctx, int sig) {
 #if !REINDEX_WITH_EXECINFO && !REINDEX_WITH_UNWIND && !REINDEX_WITH_LIBUNWIND
 	sout << "Sorry, reindexer has been compiled without any backtrace methods." << std::endl;
-#endif
+#else
+	void *addrlist[64] = {};
+	auto resolver = TraceResolver::New();
+	string_view method;
+	int addrlen = backtrace_internal(addrlist, sizeof(addrlist) / sizeof(addrlist[0]), ctx, method);
+
 	sout << "Signal " << sig << " backtrace (" << method << "):" << std::endl;
 	for (int i = 1; i < addrlen; i++) {
 		auto te = TraceEntry(uintptr_t(addrlist[i]));
 		resolver->Resolve(te);
 		sout << " #" << i << " " << te << std::endl;
 	}
+#endif
+}
+
+static void sighandler(int sig, siginfo_t *, void *ctx) {
+	std::ostringstream sout;
+	getBackTraceString(sout, ctx, sig);
 	g_writer(sout.str());
 
 	raise(sig);
@@ -146,6 +149,7 @@ namespace debug {
 void backtrace_init() {}
 void backtrace_set_writer(std::function<void(string_view out)>) {}
 int backtrace_internal(void **, size_t, void *, string_view &) { return 0; }
+void getBackTraceString(std::ostringstream &, void *, int) {}
 
 }  // namespace debug
 }  // namespace reindexer

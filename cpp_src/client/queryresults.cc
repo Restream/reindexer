@@ -125,6 +125,16 @@ TagsMatcher QueryResults::getTagsMatcher(int nsid) const {
 	return nsArray_[nsid]->tagsMatcher_;
 }
 
+class AdditionalRank : public IAdditionalDatasource<JsonBuilder> {
+public:
+	AdditionalRank(double r) : rank_(r) {}
+	void PutAdditionalFields(JsonBuilder &builder) const final { builder.Put("rank()", rank_); }
+	IEncoderDatasourceWithJoins *GetJoinsDatasource() final { return nullptr; }
+
+private:
+	double rank_;
+};
+
 Error QueryResults::Iterator::GetJSON(WrSerializer &wrser, bool withHdrLen) {
 	readNext();
 	try {
@@ -134,11 +144,21 @@ Error QueryResults::Iterator::GetJSON(WrSerializer &wrser, bool withHdrLen) {
 				JsonEncoder enc(&tm);
 				JsonBuilder builder(wrser, JsonBuilder::TypePlain);
 
-				if (withHdrLen) {
-					auto slicePosSaver = wrser.StartSlice();
-					enc.Encode(itemParams_.data, builder);
+				if (qr_->NeedOutputRank()) {
+					AdditionalRank ar(itemParams_.proc);
+					if (withHdrLen) {
+						auto slicePosSaver = wrser.StartSlice();
+						enc.Encode(itemParams_.data, builder, &ar);
+					} else {
+						enc.Encode(itemParams_.data, builder, &ar);
+					}
 				} else {
-					enc.Encode(itemParams_.data, builder);
+					if (withHdrLen) {
+						auto slicePosSaver = wrser.StartSlice();
+						enc.Encode(itemParams_.data, builder, nullptr);
+					} else {
+						enc.Encode(itemParams_.data, builder, nullptr);
+					}
 				}
 				break;
 			}

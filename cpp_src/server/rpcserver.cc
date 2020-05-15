@@ -31,7 +31,7 @@ static std::atomic<int> connCounter;
 
 Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, p_string db, cproto::optional<bool> createDBIfMissing,
 					   cproto::optional<bool> checkClusterID, cproto::optional<int> expectedClusterID,
-					   cproto::optional<p_string> clientRxVersion) {
+					   cproto::optional<p_string> clientRxVersion, cproto::optional<p_string> appName) {
 	if (ctx.GetClientData()) {
 		return Error(errParams, "Already logged in");
 	}
@@ -69,10 +69,11 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 	}
 
 	std::shared_ptr<ConnectionStat> connetcionStat = ctx.writer->GetConnectionStat();
-	if (clientsStats_)
+	if (clientsStats_) {
 		clientsStats_->AddConnection(connetcionStat, clientData->connID, ctx.clientAddr.data(), clientData->auth.Login(),
 									 clientData->auth.DBName(), UserRoleName(clientData->auth.UserRights()),
-									 clientData->rxVersion.StrippedString());
+									 clientData->rxVersion.StrippedString(), appName.hasValue() ? appName.value().toString() : string());
+	}
 
 	ctx.SetClientData(std::move(clientData));
 	if (statsWatcher_) {

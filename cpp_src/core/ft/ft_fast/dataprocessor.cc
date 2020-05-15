@@ -197,19 +197,27 @@ size_t DataProcessor::buildWordsMap(words_map &words_um) {
 		for (uint32_t t = 0; t < maxIndexWorkers; t++) ctxs[t].thread = thread(worker, t);
 		// Merge results into single map
 		for (uint32_t i = 0; i < maxIndexWorkers; i++) {
-			ctxs[i].thread.join();
-			for (auto it = ctxs[i].words_um.begin(); it != ctxs[i].words_um.end(); it++) {
-				auto idxIt = words_um.find(it->first);
+			try {
+				ctxs[i].thread.join();
+				for (auto it = ctxs[i].words_um.begin(); it != ctxs[i].words_um.end(); it++) {
+					auto idxIt = words_um.find(it->first);
 
-				if (idxIt == words_um.end()) {
-					words_um.emplace(it->first, std::move(it->second));
-				} else {
-					idxIt->second.vids_.reserve(it->second.vids_.size() + idxIt->second.vids_.size());
-					for (auto &r : it->second.vids_) idxIt->second.vids_.push_back(std::move(r));
-					it->second.vids_ = IdRelSet();
+					if (idxIt == words_um.end()) {
+						words_um.emplace(it->first, std::move(it->second));
+					} else {
+						idxIt->second.vids_.reserve(it->second.vids_.size() + idxIt->second.vids_.size());
+						for (auto &r : it->second.vids_) idxIt->second.vids_.push_back(std::move(r));
+						it->second.vids_ = IdRelSet();
+					}
 				}
+				words_map().swap(ctxs[i].words_um);
+			} catch (const Error &e) {
+				logPrintf(LogError, "Exeption in loop with thread.join() error= [%s]", e.what());
+			} catch (const std::exception &e) {
+				logPrintf(LogError, "Exeption in loop with thread.join() error= [%s]", e.what());
+			} catch (...) {
+				logPrintf(LogError, "Exeption in loop with thread.join()");
 			}
-			words_map().swap(ctxs[i].words_um);
 		}
 	}
 

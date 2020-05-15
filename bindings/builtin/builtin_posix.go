@@ -1,10 +1,9 @@
 // +build !windows
-//go:generate sh -c "cd ../.. && mkdir -p build && cd build && cmake -DGO_BUILTIN_EXPORT_PKG_PATH=\"../bindings/builtin\" .. && make reindexer -j4"
+//go:generate sh -c "cd ../.. && mkdir -p build && cd build && cmake -DGO_BUILTIN_EXPORT_PKG_PATH=\"../bindings/builtin\" .. && make reindexer -j8"
 
 package builtin
 
-// #cgo pkg-config: libreindexer
-// #cgo CXXFLAGS: -std=c++11 -g -O2 -Wall -Wpedantic -Wextra 
-// #cgo CFLAGS: -std=c99 -g -O2 -Wall -Wpedantic -Wno-unused-variable 
-// #cgo LDFLAGS:  -g
+// #cgo CXXFLAGS: -std=c++11 -g -O2 -Wall -Wpedantic -Wextra -I../../cpp_src 
+// #cgo CFLAGS: -std=c99 -g -O2 -Wall -Wpedantic -Wno-unused-variable -I../../cpp_src 
+// #cgo LDFLAGS: -L${SRCDIR}/../../build/cpp_src/  -lreindexer -lleveldb -lsnappy -ldl -lstdc++ -g
 import "C"

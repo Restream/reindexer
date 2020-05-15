@@ -73,7 +73,7 @@ void WrResultSerializer::putItemParams(const QueryResults* result, int idx, bool
 		PutVarUint(itemRef.Nsid());
 	}
 
-	if (opts_.flags & kResultsWithPercents) {
+	if (opts_.flags & kResultsWithRank) {
 		PutVarUint(itemRef.Proc());
 	}
 
@@ -132,7 +132,8 @@ bool WrResultSerializer::PutResults(const QueryResults* result) {
 	// Result has joined items, so pass them to client within items from main NS
 	if (result->joined_.size() > 0) opts_.flags |= kResultsWithJoined;
 
-	if (result->haveProcent) opts_.flags |= kResultsWithPercents;
+	if (result->haveRank) opts_.flags |= kResultsWithRank;
+	if (result->needOutputRank) opts_.flags |= kResultsNeedOutputRank;
 	// If data is not cacheable, just do not pass item's ID and LSN. Clients should not cache this data
 	if (result->nonCacheableData) opts_.flags &= ~kResultsWithItemID;
 	// for JSON results joined field are embeded to json's, so no need to transfer separate joined data items

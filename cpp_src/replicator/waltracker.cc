@@ -40,6 +40,7 @@ void WALTracker::Init(int64_t maxLSN, shared_ptr<datastorage::IDataStorage> stor
 
 	records_.clear();
 	records_.resize(std::min(maxLSN, walSize_));
+	heapSize_ = 0;
 	lsnCounter_ = maxLSN;
 
 	// Fill records from storage
@@ -51,7 +52,9 @@ void WALTracker::Init(int64_t maxLSN, shared_ptr<datastorage::IDataStorage> stor
 void WALTracker::put(int64_t lsn, const WALRecord &rec) {
 	uint64_t pos = lsn % walSize_;
 	if (pos >= records_.size()) records_.resize(pos + 1);
+	heapSize_ -= records_[pos].heap_size();
 	records_[pos].Pack(rec);
+	heapSize_ += records_[pos].heap_size();
 }
 
 void WALTracker::writeToStorage(int64_t lsn) {
@@ -91,13 +94,6 @@ std::vector<std::pair<int64_t, std::string>> WALTracker::readFromStorage(int64_t
 	}
 
 	return data;
-}
-
-size_t WALTracker::heap_size() const {
-	size_t ret = records_.capacity() * sizeof(PackedWALRecord);
-	for (auto &rec : records_) ret += rec.heap_size();
-
-	return ret;
 }
 
 }  // namespace reindexer

@@ -78,14 +78,15 @@ public:
 			  reconnectAttempts(),
 			  enableCompression(false) {}
 		Options(seconds _loginTimeout, seconds _keepAliveTimeout, bool _createDB, bool _hasExpectedClusterID, int _expectedClusterID,
-				int _reconnectAttempts, bool _enableCompression)
+				int _reconnectAttempts, bool _enableCompression, std::string _appName)
 			: loginTimeout(_loginTimeout),
 			  keepAliveTimeout(_keepAliveTimeout),
 			  createDB(_createDB),
 			  hasExpectedClusterID(_hasExpectedClusterID),
 			  expectedClusterID(_expectedClusterID),
 			  reconnectAttempts(_reconnectAttempts),
-			  enableCompression(_enableCompression) {}
+			  enableCompression(_enableCompression),
+			  appName(std::move(_appName)) {}
 
 		seconds loginTimeout;
 		seconds keepAliveTimeout;
@@ -94,6 +95,7 @@ public:
 		int expectedClusterID;
 		int reconnectAttempts;
 		bool enableCompression;
+		std::string appName;
 	};
 	struct ConnectData {
 		struct Entry {

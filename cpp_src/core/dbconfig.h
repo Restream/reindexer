@@ -51,6 +51,7 @@ struct ReplicationConfigData {
 
 	ReplicationRole role = ReplicationNone;
 	std::string masterDSN;
+	std::string appName = "rx_slave";
 	int connPoolSize = 1;
 	int workerThreads = 1;
 	int clusterID = 1;
@@ -67,7 +68,8 @@ struct ReplicationConfigData {
 			   (clusterID == rdata.clusterID) && (forceSyncOnLogicError == rdata.forceSyncOnLogicError) &&
 			   (forceSyncOnWrongDataHash == rdata.forceSyncOnWrongDataHash) && (masterDSN == rdata.masterDSN) &&
 			   (retrySyncIntervalSec == rdata.retrySyncIntervalSec) && (onlineReplErrorsThreshold == rdata.onlineReplErrorsThreshold) &&
-			   (timeoutSec == rdata.timeoutSec) && (namespaces == rdata.namespaces) && (enableCompression == rdata.enableCompression);
+			   (timeoutSec == rdata.timeoutSec) && (namespaces == rdata.namespaces) && (enableCompression == rdata.enableCompression) &&
+			   (appName == rdata.appName);
 	}
 	bool operator!=(const ReplicationConfigData &rdata) const noexcept { return !operator==(rdata); }
 

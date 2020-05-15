@@ -59,6 +59,7 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 	reindexer::client::ReindexerConfig config;
 	config.ConnPoolSize = 1;
 	config.WorkerThreads = 1;
+	config.AppName = kAppName;
 	reindexer::client::Reindexer reindexer(config);
 	reindexer::client::ConnectOpts opts;
 	opts.CreateDBIfMissing();
@@ -94,6 +95,8 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 		ASSERT_TRUE(userName == kUserName) << "userName =[" << userName << "]";
 		std::string dbName = clientsStats["db_name"].As<std::string>();
 		ASSERT_TRUE(dbName == kdbName) << "dbName =[" << dbName << "]";
+		std::string appName = clientsStats["app_name"].As<std::string>();
+		ASSERT_TRUE(appName == kAppName) << "appName =[" << appName << "]";
 		std::string userRights = clientsStats["user_rights"].As<std::string>();
 		ASSERT_TRUE(userRights == "owner") << "userRights =[" << userRights << "]";
 		std::string clientVersion = clientsStats["client_version"].As<std::string>();

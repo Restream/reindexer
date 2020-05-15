@@ -50,7 +50,7 @@ ResultSerializer::ItemParams ResultSerializer::GetItemParams(int flags) {
 	if (flags & kResultsWithNsID) {
 		ret.nsid = int(GetVarUint());
 	}
-	if (flags & kResultsWithPercents) {
+	if (flags & kResultsWithRank) {
 		ret.proc = int(GetVarUint());
 	}
 

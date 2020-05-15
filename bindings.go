@@ -514,3 +514,7 @@ func WithCreateDBIfMissing() interface{} {
 func WithNetCompression() interface{} {
 	return bindings.OptionCompression{EnableCompression: true}
 }
+
+func WithAppName(appName string) interface{} {
+	return bindings.OptionAppName{AppName: appName}
+}

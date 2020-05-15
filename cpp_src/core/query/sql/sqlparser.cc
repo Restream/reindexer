@@ -16,20 +16,23 @@ int SQLParser::Parse(const string_view &q) {
 }
 
 bool SQLParser::reachedAutocompleteToken(tokenizer &parser, const token &tok) {
-	if (!ctx_.foundPossibleSuggestions) {
-		size_t pos = parser.getPos() + tok.text().length();
-		return (pos >= ctx_.suggestionsPos);
-	}
-	return false;
+	size_t pos = parser.getPos() + tok.text().length();
+	return (pos > ctx_.suggestionsPos);
 }
 
 token SQLParser::peekSqlToken(tokenizer &parser, int tokenType, bool toLower) {
 	token tok = parser.peek_token(toLower);
 	bool eof = ((parser.getPos() + tok.text().length()) == parser.length());
 	if (ctx_.autocompleteMode && !tok.text().empty() && reachedAutocompleteToken(parser, tok)) {
-		ctx_.suggestions.emplace_back(string(tok.text()), tokenType);
-		ctx_.foundPossibleSuggestions = true;
-		ctx_.possibleSuggestionDetectedInThisClause = true;
+		size_t tokenLen = 0;
+		if (ctx_.suggestionsPos >= parser.getPos()) {
+			tokenLen = ctx_.suggestionsPos - parser.getPos() + 1;
+		}
+		if (!ctx_.foundPossibleSuggestions || tokenLen) {
+			ctx_.suggestions.emplace_back(string(tok.text().data(), tokenLen), tokenType);
+			ctx_.foundPossibleSuggestions = true;
+			ctx_.possibleSuggestionDetectedInThisClause = true;
+		}
 	}
 	if (!ctx_.foundPossibleSuggestions) ctx_.tokens.push_back(tokenType);
 	if (eof && ctx_.autocompleteMode) throw Error(errLogic, "SQLParser eof is reached!");
@@ -37,6 +40,7 @@ token SQLParser::peekSqlToken(tokenizer &parser, int tokenType, bool toLower) {
 }
 
 int SQLParser::Parse(tokenizer &parser) {
+	parser.skip_space();
 	token tok = peekSqlToken(parser, Start);
 	if (tok.text() == "explain"_sv) {
 		query_.explain_ = true;
@@ -122,13 +126,16 @@ int SQLParser::selectParse(tokenizer &parser) {
 				if (name.text() == "count"_sv) {
 					query_.calcTotal = ModeAccurateTotal;
 					if (!wasSelectFilter) query_.count = 0;
+					tok = parser.next_token();
 				} else if (name.text() == "count_cached"_sv) {
 					query_.calcTotal = ModeCachedTotal;
 					if (!wasSelectFilter) query_.count = 0;
+					tok = parser.next_token();
+				} else if (name.text() == "rank"_sv) {
+					query_.WithRank();
 				} else {
 					throw Error(errParams, "Unknown function name SQL - %s, %s", name.text(), parser.where());
 				}
-				tok = parser.next_token();
 			}
 			tok = parser.peek_token();
 			if (tok.text() != ")"_sv) {
@@ -209,6 +216,28 @@ int SQLParser::selectParse(tokenizer &parser) {
 		}
 	}
 	return 0;
+}
+
+template <typename T>
+static void MoveAppend(T &dst, T &src) {
+	if (dst.empty()) {
+		dst = std::move(src);
+	} else {
+		dst.reserve(dst.size() + src.size());
+		std::move(std::begin(src), std::end(src), std::back_inserter(dst));
+		src.clear();
+	}
+}
+
+int SQLParser::nestedSelectParse(SQLParser &parser, tokenizer &tok) {
+	try {
+		int res = parser.selectParse(tok);
+		MoveAppend(ctx_.suggestions, parser.ctx_.suggestions);
+		return res;
+	} catch (...) {
+		MoveAppend(ctx_.suggestions, parser.ctx_.suggestions);
+		throw;
+	}
 }
 
 int SQLParser::parseOrderBy(tokenizer &parser, SortingEntries &sortingEntries, h_vector<Variant, 0> &forcedSortOrder_) {
@@ -662,6 +691,10 @@ void SQLParser::parseEqualPositions(tokenizer &parser) {
 void SQLParser::parseJoin(JoinType type, tokenizer &parser) {
 	JoinedQuery jquery;
 	SQLParser jparser(jquery);
+	if (ctx_.autocompleteMode) {
+		jparser.ctx_.suggestionsPos = ctx_.suggestionsPos;
+		jparser.ctx_.autocompleteMode = true;
+	}
 	auto tok = parser.next_token();
 	if (tok.text() == "("_sv) {
 		peekSqlToken(parser, SelectSqlToken);
@@ -669,7 +702,9 @@ void SQLParser::parseJoin(JoinType type, tokenizer &parser) {
 		if (tok.text() != "select"_sv) {
 			throw Error(errParseSQL, "Expected 'SELECT', but found %s, %s", tok.text(), parser.where());
 		}
-		jparser.selectParse(parser);
+
+		nestedSelectParse(jparser, parser);
+
 		tok = parser.next_token();
 		if (tok.text() != ")"_sv) {
 			throw Error(errParseSQL, "Expected ')', but found %s, %s", tok.text(), parser.where());
@@ -691,6 +726,10 @@ void SQLParser::parseJoin(JoinType type, tokenizer &parser) {
 void SQLParser::parseMerge(tokenizer &parser) {
 	JoinedQuery mquery;
 	SQLParser mparser(mquery);
+	if (ctx_.autocompleteMode) {
+		mparser.ctx_.suggestionsPos = ctx_.suggestionsPos;
+		mparser.ctx_.autocompleteMode = true;
+	}
 	auto tok = parser.next_token();
 	if (tok.text() == "("_sv) {
 		peekSqlToken(parser, SelectSqlToken);
@@ -698,7 +737,9 @@ void SQLParser::parseMerge(tokenizer &parser) {
 		if (tok.text() != "select"_sv) {
 			throw Error(errParseSQL, "Expected 'SELECT', but found %s, %s", tok.text(), parser.where());
 		}
-		mparser.selectParse(parser);
+
+		nestedSelectParse(mparser, parser);
+
 		tok = parser.next_token();
 		if (tok.text() != ")"_sv) {
 			throw Error(errParseSQL, "Expected ')', but found %s, %s", tok.text(), parser.where());
