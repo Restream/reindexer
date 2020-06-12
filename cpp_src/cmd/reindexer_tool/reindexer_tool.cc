@@ -78,6 +78,7 @@ int main(int argc, char* argv[]) {
 		parser.ParseCLI(argc, argv);
 	} catch (const args::Help&) {
 		std::cout << parser;
+		return 2;
 	} catch (const args::Error& e) {
 		std::cerr << "ERROR: " << e.what() << std::endl;
 		std::cout << parser.Help() << std::endl;

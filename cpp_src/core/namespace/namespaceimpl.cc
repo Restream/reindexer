@@ -1356,6 +1356,7 @@ void NamespaceImpl::optimizeIndexes(const RdxContext &ctx) {
 	auto lastUpdateTime = lastUpdateTime_.load(std::memory_order_acquire);
 
 	auto rlck = rLock(ctx);
+	if (isSystem()) return;
 	if (!lastUpdateTime || !config_.optimizationTimeout || now - lastUpdateTime < config_.optimizationTimeout) {
 		return;
 	}

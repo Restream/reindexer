@@ -16,6 +16,9 @@
 #include <thread>
 #include "debug/backtrace.h"
 
+#include "gason/gason.h"
+#include "tools/serializer.h"
+
 using reindexer::Reindexer;
 
 static const std::string kBaseTestsStoragePath = "/tmp/reindex/base_tests";
@@ -139,6 +142,59 @@ TEST_F(ReindexerApi, AddIndex) {
 
 	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
 	ASSERT_TRUE(err.ok()) << err.what();
+}
+
+TEST_F(ReindexerApi, DistinctDiffType) {
+	Error err = rt.reindexer->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	{
+		Item item(rt.reindexer->NewItem(default_namespace));
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+		item["id"] = 1;
+		item["column1"] = int64_t(3350977461);
+		err = rt.reindexer->Upsert(default_namespace, item);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+	{
+		Item item(rt.reindexer->NewItem(default_namespace));
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+		item["id"] = 2;
+		item["column1"] = "abc";
+		err = rt.reindexer->Upsert(default_namespace, item);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+	{
+		Item item(rt.reindexer->NewItem(default_namespace));
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+		item["id"] = 3;
+		item["column1"] = "abc";
+		err = rt.reindexer->Upsert(default_namespace, item);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
+	QueryResults result;
+	err = rt.reindexer->Select("select distinct(column1) from test_namespace;", result);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(result.Count(), 2);
+	std::set<std::string> BaseVals = {"{\"id\":1,3350977461}", "{\"id\":2,\"abc\"}"};
+	std::set<std::string> Vals;
+	for (auto r : result) {
+		reindexer::WrSerializer ser;
+		auto err = r.GetJSON(ser, false);
+		ASSERT_TRUE(err.ok()) << err.what();
+		Vals.insert(ser.c_str());
+	}
+	ASSERT_TRUE(bool(BaseVals == Vals));
 }
 
 TEST_F(ReindexerApi, AddIndex_CaseInsensitive) {

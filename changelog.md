@@ -1,4 +1,21 @@
 
+# Version 2.9.1 (10.06.2020)
+
+# Core 
+- [fix] Fulltext search kb layout filter with symbols like ',' ']'
+- [fix] Segfault with distinct on field with different types
+
+# Reindexer tool 
+- [fix] Behavior of --help command line argument
+- [fix] Do not report error on restore exiting namespaces with compatible indexes
+
+# Reindexer server
+- [fix] Backtrace behavior with musl builds
+
+# Go connector
+- [fix] Turn cgo backtrace symbolizer off by default (fixes random crashes on go 1.14)
+- [fix] Alpine linux build
+
 # Version 2.9.0 (15.05.2020)
 
 # Core

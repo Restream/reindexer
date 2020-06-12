@@ -14,6 +14,10 @@ if [ -n "$RX_SECURITY" ]; then
     RX_ARGS="$RX_ARGS --security"
 fi
 
+if [ -n "$RX_PROMETHEUS" ]; then
+    RX_ARGS="$RX_ARGS --prometheus"
+fi
+
 if [ -z "$@" ]; then
    reindexer_server $RX_ARGS
 else 

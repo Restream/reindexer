@@ -1,3 +1,5 @@
+// +build cgosymbolizer
+
 package builtin
 
 // extern void cgoTraceback(void*);

@@ -1,6 +1,7 @@
 #include "backtrace.h"
 #ifndef WIN32
 #include <signal.h>
+#include <unistd.h>
 #include <sstream>
 #include "estl/span.h"
 #include "resolver.h"
@@ -15,11 +16,31 @@
 #endif
 
 #if REINDEX_WITH_UNWIND
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #include <unwind.h>
 #endif
 
 #if REINDEX_WITH_EXECINFO
 #include <execinfo.h>
+#endif
+
+#if REINDEX_OVERRIDE_ABORT
+#include <syscall.h>
+// Override abort/__assert_fail for musl build for correct backtrace
+extern "C" void abort() {
+	pid_t tid = syscall(SYS_gettid);
+	syscall(SYS_tkill, tid, SIGABRT);
+	for (;;) {
+	}
+}
+
+extern "C" void __assert_fail(const char *expr, const char *file, int line, const char *func) {
+	fprintf(stderr, "Assertion failed: %s (%s: %s: %d)\n", expr, file, func, line);
+	fflush(NULL);
+	abort();
+}
 #endif
 
 namespace reindexer {
@@ -70,10 +91,19 @@ private:
 int backtrace_internal(void **addrlist, size_t size, void *ctx, string_view &method) {
 	(void)ctx;
 	size_t addrlen = 0;
+	(void)size;
+	(void)method;
+	(void)addrlist;
 
 #if REINDEX_WITH_LIBUNWIND
 	method = "libunwind"_sv;
 	unw_cursor_t cursor;
+	unw_context_t uc;
+
+	if (!ctx) {
+		unw_getcontext(&uc);
+		ctx = &uc;
+	}
 
 	unw_init_local(&cursor, reinterpret_cast<unw_context_t *>(ctx));
 
@@ -84,7 +114,6 @@ int backtrace_internal(void **addrlist, size_t size, void *ctx, string_view &met
 		addrlist[addrlen++] = reinterpret_cast<void *>(ip);
 	} while (unw_step(&cursor) && addrlen < size);
 #endif
-
 #if REINDEX_WITH_UNWIND
 	Unwinder unw;
 	if (addrlen < 3) {
@@ -92,7 +121,6 @@ int backtrace_internal(void **addrlist, size_t size, void *ctx, string_view &met
 		addrlen = unw(span<void *>(addrlist, size));
 	}
 #endif
-
 #if REINDEX_WITH_EXECINFO
 	if (addrlen < 3) {
 		method = "execinfo"_sv;
@@ -102,7 +130,7 @@ int backtrace_internal(void **addrlist, size_t size, void *ctx, string_view &met
 	return addrlen;
 }
 
-void getBackTraceString(std::ostringstream &sout, void *ctx, int sig) {
+void inline getBackTraceString(std::ostringstream &sout, void *ctx, int sig) {
 #if !REINDEX_WITH_EXECINFO && !REINDEX_WITH_UNWIND && !REINDEX_WITH_LIBUNWIND
 	sout << "Sorry, reindexer has been compiled without any backtrace methods." << std::endl;
 #else

@@ -11,12 +11,17 @@ namespace reindexer {
 using std::string;
 
 // Format: see fulltext.md
+bool is_term(int ch, const string &extraWordSymbols) {
+	return IsAlpha(ch) || IsDigit(ch) ||
+		   extraWordSymbols.find(ch) != string::npos
+		   // wrong kb layout
+		   || ch == '[' || ch == ';' || ch == ',' || ch == '.';
+}
 
-bool is_dslbegin(int ch) {
-	return IsAlpha(ch) || IsDigit(ch) || ch == '+' || ch == '-' || ch == '*' || ch == '\'' || ch == '\"' || ch == '@' || ch == '=' ||
+bool is_dslbegin(int ch, const string &extraWordSymbols) {
+	return is_term(ch, extraWordSymbols) || ch == '+' || ch == '-' || ch == '*' || ch == '\'' || ch == '\"' || ch == '@' || ch == '=' ||
 		   ch == '\\';
 }
-bool is_term(int ch, const string &extraWordSymbols) { return IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != string::npos; }
 
 void FtDSLQuery::parse(const string &q) {
 	wstring utf16str;
@@ -31,7 +36,7 @@ void FtDSLQuery::parse(wstring &utf16str) {
 	fieldsBoost.insert(fieldsBoost.end(), std::max(int(fields_.size()), 1), 1.0);
 
 	for (auto it = utf16str.begin(); it != utf16str.end();) {
-		if (!is_dslbegin(*it)) {
+		if (!is_dslbegin(*it, extraWordSymbols_)) {
 			++it;
 			continue;
 		}

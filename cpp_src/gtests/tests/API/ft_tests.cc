@@ -498,6 +498,31 @@ TEST_F(FTApi, SelectSynonyms) {
 	EXPECT_EQ(res[1], "no !looove!");
 }
 
+TEST_F(FTApi, SelectTranslitWithComma) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.logLevel = 5;
+	Init(ftCfg);
+
+	Add("nm1", "хлебопечка", "");
+	Add("nm1", "электрон", "");
+	Add("nm1", "матэ", "");
+
+	auto qr = SimpleSelect("@ft1 [kt,jgtxrf");
+	EXPECT_EQ(qr.Count(), 1);
+	auto item = qr[0].GetItem();
+	EXPECT_EQ(item["ft1"].As<string>(), "!хлебопечка!");
+
+	qr = SimpleSelect("@ft1 \\'ktrnhjy");
+	EXPECT_EQ(qr.Count(), 1);
+	item = qr[0].GetItem();
+	EXPECT_EQ(item["ft1"].As<string>(), "!электрон!");
+
+	qr = SimpleSelect("@ft1 vfn\\'");
+	EXPECT_EQ(qr.Count(), 1);
+	item = qr[0].GetItem();
+	EXPECT_EQ(item["ft1"].As<string>(), "!матэ!");
+}
+
 TEST_F(FTApi, SelectMultiwordSynonyms) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.synonyms = {{{"whole world", "UN", "United Nations"},

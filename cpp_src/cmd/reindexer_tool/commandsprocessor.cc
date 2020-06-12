@@ -375,7 +375,18 @@ Error CommandsProcessor<DBInterface>::commandNamespaces(const string& command) {
 		def.storage.DropOnFileFormatError(true);
 		def.storage.CreateIfMissing(true);
 
-		return db_.AddNamespace(def);
+		err = db_.OpenNamespace(def.name);
+		if (!err.ok()) {
+			return err;
+		}
+		for (auto& idx : def.indexes) {
+			err = db_.AddIndex(def.name, idx);
+			if (!err.ok()) {
+				return err;
+			}
+		}
+		return errOK;
+
 	} else if (iequals(subCommand, "list")) {
 		vector<NamespaceDef> allNsDefs;
 

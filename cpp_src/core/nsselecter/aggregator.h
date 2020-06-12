@@ -54,7 +54,15 @@ protected:
 
 	std::unique_ptr<MultifieldMap> multifieldFacets_;
 	std::unique_ptr<SinglefieldMap> singlefieldFacets_;
-	std::unique_ptr<fast_hash_set<Variant>> distincts_;
+	class RelaxVariantCompare {
+	public:
+		bool operator()(const Variant &v1, const Variant &v2) const {
+			if (v1.Type() != v2.Type()) return false;
+			return v1.Compare(v2) == 0;
+		}
+	};
+	typedef fast_hash_set<Variant, std::hash<Variant>, RelaxVariantCompare> HashSetVariantRelax;
+	std::unique_ptr<HashSetVariantRelax> distincts_;
 };
 
 }  // namespace reindexer

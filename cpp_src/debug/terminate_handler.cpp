@@ -14,14 +14,7 @@ namespace reindexer {
 
 void terminate_handler() {
 	std::ostringstream sout;
-	void* ctx = nullptr;
-#if REINDEX_WITH_LIBUNWIND
-	unw_context_t uc;
-	unw_getcontext(&uc);
-	ctx = &uc;
-#endif
-
-	debug::getBackTraceString(sout, ctx, -1);
+	debug::getBackTraceString(sout, nullptr, -1);
 	std::string traceString(sout.str());
 	FILE* fp = fopen(fs::JoinPath(fs::GetTempDir(), "crash_reindexer.log").c_str(), "wb");
 	if (fp) {

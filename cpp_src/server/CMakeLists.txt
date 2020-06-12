@@ -93,6 +93,7 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
 endif ()
 if (LINK_RESOURCES)
 	include(CMakeRC)
+  message ("-- Downloading swagger html assets...") 
 	execute_process(
 	    COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_BINARY_DIR}/make_swagger.cmake"
 	    RESULT_VARIABLE ret
@@ -101,6 +102,7 @@ if (LINK_RESOURCES)
 	if (NOT "${ret}" STREQUAL "0")
 	    message(FATAL_ERROR "Could not prepare 'face' and 'swagger' files. Reason: ${err}")
 	endif()
+  message ("-- Downloading face html assets...") 
 	execute_process(
 	    COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_BINARY_DIR}/make_face.cmake"
 	    RESULT_VARIABLE ret

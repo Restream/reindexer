@@ -205,7 +205,7 @@ Aggregator::Aggregator(const PayloadType &payloadType, const FieldsSet &fields, 
 			}
 			break;
 		case AggDistinct:
-			distincts_.reset(new fast_hash_set<Variant>);
+			distincts_.reset(new HashSetVariantRelax);
 			break;
 		case AggMin:
 			result_ = std::numeric_limits<double>::max();

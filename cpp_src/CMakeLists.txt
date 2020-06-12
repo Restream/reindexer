@@ -21,7 +21,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "2.9.0")
+set (REINDEXER_VERSION_DEFAULT "2.9.1")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -239,11 +239,6 @@ if(LIBRT)
   list (APPEND REINDEXER_LIBRARIES ${LIBRT})
 endif()
 
-# execinfo
-find_library(LIBEXECINFO execinfo)
-if(LIBEXECINFO)
-  list (APPEND REINDEXER_LIBRARIES ${LIBEXECINFO})
-endif()
 
 if (NOT WIN32)
   # libdl
@@ -254,20 +249,18 @@ if (NOT WIN32)
   endif()
 endif()
 
-find_path(EXECINFO_INCLUDE_PATH execinfo.h)
-if (EXECINFO_INCLUDE_PATH)
-  add_definitions(-DREINDEX_WITH_EXECINFO=1)
-endif()
-
 # Unwind from libgcc or clang
 include (CheckSymbolExists)
+list(APPEND CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
 check_symbol_exists (_Unwind_Backtrace unwind.h HAVE_BACKTRACE)
 check_symbol_exists (_Unwind_GetIPInfo unwind.h HAVE_GETIPINFO)
+list(REMOVE_ITEM CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
 if (HAVE_BACKTRACE AND HAVE_GETIPINFO)
+  set (SYSUNWIND On)
   message ("-- Found system unwind") 
-  add_definitions(-DREINDEX_WITH_UNWIND=1)
+  add_definitions(-DREINDEX_WITH_UNWIND=1) 
 endif()
-
+  
 # libunwind
 if (ENABLE_LIBUNWIND)
   find_library(LIBUNWIND unwind)
@@ -280,6 +273,27 @@ if (ENABLE_LIBUNWIND)
     endif()
   endif()
 endif ()
+
+if(NOT LIBUNWIND AND NOT SYSUNWIND)
+  # Try execinfo
+  find_path(EXECINFO_INCLUDE_PATH execinfo.h)
+  if (EXECINFO_INCLUDE_PATH)
+    message ("-- Found execinfo.h: ${EXECINFO_INCLUDE_PATH}") 
+    add_definitions(-DREINDEX_WITH_EXECINFO=1)
+    find_library(LIBEXECINFO execinfo)
+    if(LIBEXECINFO)
+      list (APPEND REINDEXER_LIBRARIES ${LIBEXECINFO})
+    endif()
+  endif()
+endif ()
+
+find_library(MUSL ld-musl-x86_64.so.1)
+if (MUSL)
+  message ("-- Found musl, will override abort and assert_fail to fix stacktraces") 
+  add_definitions(-DREINDEX_OVERRIDE_ABORT=1)
+  set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
+endif()
 
 if (APPLE)
   add_definitions (-DREINDEX_WITH_APPLE_SYMBOLICATION=1)

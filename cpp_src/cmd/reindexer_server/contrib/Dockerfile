@@ -14,7 +14,7 @@ WORKDIR /src
 RUN ./dependencies.sh && \
     mkdir build && \
     cd build && \
-    cmake -DCMAKE_BUILD_TYPE=Release .. && \
+    cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo .. && \
     make -j8 reindexer_server reindexer_tool && \
     make install -C cpp_src/cmd/reindexer_server && \
     make install -C cpp_src/cmd/reindexer_tool && \

@@ -393,7 +393,7 @@ chunk ClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args, con
 		ser.Reset(sizeof(hdr));
 		ser.Write(compressed);
 	}
-	assert(ser.Len() < std::numeric_limits<int32_t>::max());
+	assert(ser.Len() < size_t(std::numeric_limits<int32_t>::max()));
 	reinterpret_cast<CProtoHeader *>(ser.Buf())->len = ser.Len() - sizeof(hdr);
 
 	return ser.DetachChunk();

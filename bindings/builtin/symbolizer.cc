@@ -36,6 +36,11 @@ extern "C" void cgoSymbolizer(cgoSymbolizerArg* arg) {
 extern "C" void cgoTraceback(cgoTracebackArg* arg) {
 	reindexer::string_view method;
 	void* addrlist[64] = {};
+
+	if (arg->context != 0) {
+		arg->buf[0] = 0;
+		return;
+	}
 	uintptr_t addrlen = reindexer::debug::backtrace_internal(addrlist, sizeof(addrlist) / sizeof(addrlist[0]),
 															 reinterpret_cast<void*>(arg->context), method);
 	if (addrlen > 3) memcpy(arg->buf, addrlist + 3, std::min(addrlen - 3, arg->max) * sizeof(void*));

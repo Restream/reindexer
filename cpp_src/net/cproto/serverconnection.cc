@@ -198,7 +198,7 @@ static void packRPC(WrSerializer &ser, Context &ctx, const Error &status, const 
 		ser.Reset(sizeof(hdr) + savePos);
 		ser.Write(compressed);
 	}
-	if (ser.Len() - savePos >= std::numeric_limits<int32_t>::max()) {
+	if (ser.Len() - savePos >= size_t(std::numeric_limits<int32_t>::max())) {
 		throw Error(errNetwork, "Too large RPC message(%d), size: %d bytes", hdr.cmd, ser.Len());
 	}
 	reinterpret_cast<CProtoHeader *>(ser.Buf() + savePos)->len = ser.Len() - savePos - sizeof(hdr);

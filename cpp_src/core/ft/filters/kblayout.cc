@@ -61,7 +61,7 @@ void KbLayout::PrepareRuLayout() {
 	ru_layout_[18] = L'n';	 //т
 	ru_layout_[19] = L'e';	 //у
 	ru_layout_[20] = L'a';	 //ф
-	ru_layout_[21] = L'x';	 //х
+	ru_layout_[21] = L'[';	 //х
 	ru_layout_[22] = L'w';	 //ц
 	ru_layout_[23] = L'x';	 //ч
 	ru_layout_[24] = L'i';	 //ш

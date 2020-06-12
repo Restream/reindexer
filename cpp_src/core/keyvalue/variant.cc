@@ -331,9 +331,9 @@ int Variant::relaxCompareWithString(string_view str) const {
 
 int Variant::RelaxCompare(const Variant &other, const CollateOpts &collateOpts) const {
 	if (Type() == other.Type()) return Compare(other, collateOpts);
-	if (Type() == KeyValueString) {
+	if (other.Type() == KeyValueString) {
 		return relaxCompareWithString(static_cast<p_string>(other));
-	} else if (other.Type() == KeyValueString) {
+	} else if (Type() == KeyValueString) {
 		return -other.relaxCompareWithString(static_cast<p_string>(*this));
 	} else if ((Type() == KeyValueInt || Type() == KeyValueInt64 || Type() == KeyValueDouble) &&
 			   (other.Type() == KeyValueInt || other.Type() == KeyValueInt64 || other.Type() == KeyValueDouble)) {
