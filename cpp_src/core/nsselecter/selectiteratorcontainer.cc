@@ -171,6 +171,7 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 	isIndexSparse = index->Opts().IsSparse();
 
 	Index::SelectOpts opts;
+	opts.itemsCountInNamespace = ns.items_.size() - ns.free_.size();
 	if (!ns.sortOrdersBuilt_) opts.disableIdSetCache = 1;
 	if (isQueryFt) {
 		opts.forceComparator = 1;
@@ -412,8 +413,7 @@ template <bool reverse>
 IdType SelectIteratorContainer::next(const_iterator it, IdType from) {
 	if (it->IsLeaf()) {
 		const SelectIterator &siter = it->Value();
-		if (siter.comparators_.size() || siter.joinIndexes.size() || siter.End())
-			return from;
+		if (siter.comparators_.size() || siter.joinIndexes.size() || siter.End()) return from;
 		if (reverse && siter.Val() < from) return siter.Val() + 1;
 		if (!reverse && siter.Val() > from) return siter.Val() - 1;
 		return from;

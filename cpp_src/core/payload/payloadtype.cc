@@ -69,6 +69,10 @@ bool PayloadTypeImpl::Drop(string_view field) {
 		++it;
 	}
 
+	for (auto &jp : fields_[fieldIdx].JsonPaths()) {
+		fieldsByJsonPath_.erase(jp);
+	}
+
 	fields_.erase(fields_.begin() + fieldIdx);
 	for (size_t idx = static_cast<size_t>(fieldIdx); idx < fields_.size(); ++idx) {
 		if (idx == 0) {
@@ -79,7 +83,6 @@ bool PayloadTypeImpl::Drop(string_view field) {
 		}
 	}
 
-	fieldsByJsonPath_.erase(field);
 	fieldsByName_.erase(field);
 
 	return true;

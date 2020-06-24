@@ -1,4 +1,9 @@
 
+# Version 2.9.2 (24.06.2020)
+- [fix] Optimize indexes after ns load
+- [fix] Correct Drop fields by json path 
+- [opt] Execution plan with wide IN condition to low selectivity indexes
+
 # Version 2.9.1 (10.06.2020)
 
 # Core 

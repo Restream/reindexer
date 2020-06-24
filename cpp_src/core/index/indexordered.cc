@@ -112,6 +112,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 			it++;
 			count++;
 		}
+		// TODO: use count of items in ns to more clever select plan
 		if (count < 50) {
 			struct {
 				T *i_map;
@@ -119,10 +120,11 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 				typename T::iterator startIt, endIt;
 			} ctx = {&this->idx_map, sortId, startIt, endIt};
 
-			auto selector = [&ctx](SelectKeyResult &res) {
+			auto selector = [&ctx](SelectKeyResult &res) -> bool {
 				for (auto it = ctx.startIt; it != ctx.endIt && it != ctx.i_map->end(); it++) {
 					res.push_back(SingleSelectKeyResult(it->second, ctx.sortId));
 				}
+				return false;
 			};
 
 			if (count > 1 && !opts.distinct && !opts.disableIdSetCache)

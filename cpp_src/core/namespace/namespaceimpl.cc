@@ -1414,10 +1414,10 @@ void NamespaceImpl::markUpdated() {
 	sortOrdersBuilt_ = false;
 	queryCache_->Clear();
 	joinCache_->Clear();
+	lastUpdateTime_.store(
+		std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),
+		std::memory_order_release);
 	if (!nsIsLoading_) {
-		lastUpdateTime_.store(
-			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),
-			std::memory_order_release);
 		repl_.updatedUnixNano = getTimeNow("nsec"_sv);
 	}
 }

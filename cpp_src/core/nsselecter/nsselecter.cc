@@ -860,6 +860,7 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 
 		Index::SelectOpts opts;
 		opts.disableIdSetCache = 1;
+		opts.itemsCountInNamespace = ns_->items_.size() - ns_->free_.size();
 
 		try {
 			SelectKeyResults reslts = index->SelectKey(qe.values, qe.condition, 0, opts, nullptr, rdxCtx);
@@ -880,6 +881,7 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 			if (qe.idxNo < 0 || qe.idxNo != ctx.sortingContext.uncommitedIndex) return;
 
 			Index::SelectOpts opts;
+			opts.itemsCountInNamespace = ns_->items_.size() - ns_->free_.size();
 			opts.disableIdSetCache = 1;
 			opts.unbuiltSortOrders = 1;
 

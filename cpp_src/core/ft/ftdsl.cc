@@ -164,7 +164,7 @@ void FtDSLQuery::parseFields(wstring &utf16str, wstring::iterator &it, h_vector<
 		if (it == utf16str.end()) break;
 
 		auto begIt = it;
-		while (it != utf16str.end() && (IsAlpha(*it) || IsDigit(*it) || *it == '*' || *it == '_')) it++;
+		while (it != utf16str.end() && (IsAlpha(*it) || IsDigit(*it) || *it == '*' || *it == '_' || *it == '.')) it++;
 		auto endIt = it;
 
 		float boost = 1.0;
