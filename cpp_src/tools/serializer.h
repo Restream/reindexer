@@ -215,4 +215,6 @@ protected:
 	uint8_t inBuf_[0x100];
 };
 
+int msgpack_wrserializer_write(void *data, const char *buf, size_t len);
+
 }  // namespace reindexer

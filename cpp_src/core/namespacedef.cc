@@ -29,17 +29,24 @@ void NamespaceDef::FromJSON(const gason::JsonNode &root) {
 		idx.FromJSON(arrelem);
 		indexes.push_back(idx);
 	}
+	isTemporary = root["temporary"].As<bool>(false);
+	schemaJson = root["schema"].As<string>(schemaJson);
 }
 
 void NamespaceDef::GetJSON(WrSerializer &ser, int formatFlags) const {
 	JsonBuilder json(ser);
 	json.Put("name", name);
 	json.Object("storage").Put("enabled", storage.IsEnabled());
-	auto arr = json.Array("indexes");
-
-	for (auto &idx : indexes) {
-		arr.Raw(nullptr, "");
-		idx.GetJSON(ser, formatFlags);
+	{
+		auto arr = json.Array("indexes");
+		for (auto &idx : indexes) {
+			arr.Raw(nullptr, "");
+			idx.GetJSON(ser, formatFlags);
+		}
+	}
+	json.Put("temporary", isTemporary);
+	if (!schemaJson.empty()) {
+		json.Put("schema", schemaJson);
 	}
 }
 

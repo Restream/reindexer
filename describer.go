@@ -79,10 +79,18 @@ type CacheMemStat struct {
 	HitCountLimit int64 `json:"hit_count_limit"`
 }
 
+//Operation counter and server id
+type LsnT struct {
+	// Operation counter
+	Counter int64 `json:"counter"`
+	// Node identifyer
+	ServerId int `json:"server_id"`
+}
+
 // MasterReplicationState information about reindexer-master state
 type MasterReplicationState struct {
 	// Last Log Sequence Number (LSN) of applied namespace modification
-	LastLSN int64 `json:"last_lsn"`
+	LastLSN LsnT `json:"last_upstream_lsn"`
 	// Hashsum of all records in namespace
 	DataHash uint64 `json:"data_hash"`
 	// Data updated timestamp
@@ -122,28 +130,41 @@ type NamespaceMemStat struct {
 	// Replication status of namespace
 	Replication struct {
 		// Last Log Sequence Number (LSN) of applied namespace modification
-		LastLSN int64 `json:"last_lsn"`
+		LastLSN LsnT `json:"last_lsn_v2"`
 		// If true, then namespace is in slave mode
 		SlaveMode bool `json:"slave_mode"`
+		// True enable replication
+		ReplicatorEnabled bool `json:"replicator_enabled"`
+		// Temporary namespace flag
+		Temporary bool `json:"temporary"`
 		// Number of storage's master <-> slave switches
 		IncarnationCounter int64 `json:"incarnation_counter"`
 		// Hashsum of all records in namespace
 		DataHash uint64 `json:"data_hash"`
+		// Data count
+		DataCount int `json:"data_count"`
 		// Write Ahead Log (WAL) records count
 		WalCount int64 `json:"wal_count"`
 		// Total memory consumption of Write Ahead Log (WAL)
 		WalSize int64 `json:"wal_size"`
 		// Data updated timestamp
 		UpdatedUnixNano int64 `json:"updated_unix_nano"`
+		// Current replication status
+		Status string `json:"status"`
+		// Origin LSN of last replication operation
+		OriginLSN LsnT `json:"origin_lsn"`
+		// Last LSN of api operation (not from replication)
+		LastSelfLSN LsnT `json:"last_self_lsn"`
+		// Last Log Sequence Number (LSN) of applied namespace modification
+		LastUpstreamLSN LsnT `json:"last_upstream_lsn"`
 		// Last replication error code
 		ErrorCode int64 `json:"error_code"`
 		// Last replication error message
 		ErrorMessage string `json:"error_message"`
 		// Master's state
 		MasterState MasterReplicationState `json:"master_state"`
-		// Current replication status
-		Status string `json:"status"`
 	} `json:"replication"`
+
 	// Indexes memory statistic
 	Indexes []struct {
 		// Name of index. There are special index with name `-tuple`. It's stores original document's json structure with non indexe fields

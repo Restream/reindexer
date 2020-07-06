@@ -165,6 +165,10 @@ void toDsl(const Query& query, JsonBuilder& builder) {
 	builder.Put("offset", query.start);
 	builder.Put("req_total", get(reqtotal_values, query.calcTotal));
 	builder.Put("explain", query.explain_);
+	auto strictMode = strictModeToString(query.strictMode);
+	if (!strictMode.empty()) {
+		builder.Put("strict_mode", strictMode);
+	}
 	builder.Put("select_with_rank", query.IsWithRank());
 
 	encodeSelectFilter(query, builder);

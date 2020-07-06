@@ -131,7 +131,7 @@ Variant cjsonValueToVariant(int tag, Serializer &rdser, KeyValueType dstType, Er
 
 template <typename T>
 void buildPayloadTuple(const PayloadIface<T> *pl, const TagsMatcher *tagsMatcher, WrSerializer &wrser) {
-	CJsonBuilder builder(wrser, CJsonBuilder::TypeObject);
+	CJsonBuilder builder(wrser, ObjType::TypeObject);
 	for (int field = 1; field < pl->NumFields(); ++field) {
 		const PayloadFieldType &fieldType = pl->Type().Field(field);
 		if (fieldType.JsonPaths().size() < 1 || fieldType.JsonPaths()[0].empty()) continue;

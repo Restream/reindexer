@@ -7,11 +7,15 @@
 
 namespace reindexer {
 
-int64_t WALTracker::Add(const WALRecord &rec, int64_t oldLsn) {
+WALTracker::WALTracker() { logPrintf(LogTrace, "[WALTracker] Create LSN=%ld", lsnCounter_); }
+
+int64_t WALTracker::Add(const WALRecord &rec, lsn_t oldLsn) {
 	int64_t lsn = lsnCounter_++;
 	put(lsn, rec);
-	if (oldLsn >= 0 && available(oldLsn)) {
-		put(oldLsn, WALRecord());
+	if (!oldLsn.isEmpty()) {
+		if (available(oldLsn.Counter())) {
+			put(oldLsn.Counter(), WALRecord());
+		}
 	}
 	if (rec.type != WalItemUpdate) {
 		writeToStorage(lsn);
@@ -34,15 +38,20 @@ bool WALTracker::Set(const WALRecord &rec, int64_t lsn) {
 }
 
 void WALTracker::Init(int64_t maxLSN, shared_ptr<datastorage::IDataStorage> storage) {
+	logPrintf(LogTrace, "WALTracker::Init maxLSN=%ld", maxLSN);
 	storage_ = storage;
-	auto data = readFromStorage(maxLSN);
-	maxLSN++;
-
+	// input maxLSN of namespace Item or -1 if namespace is empty
+	auto data = readFromStorage(maxLSN);  // return maxLSN of wal record or input value
+	if (maxLSN == -1)					  // new table
+	{
+		maxLSN = lsnCounter_;
+	} else {
+		maxLSN++;
+		lsnCounter_ = maxLSN;
+	}
 	records_.clear();
 	records_.resize(std::min(maxLSN, walSize_));
 	heapSize_ = 0;
-	lsnCounter_ = maxLSN;
-
 	// Fill records from storage
 	for (auto &rec : data) {
 		Set(WALRecord(string_view(rec.second)), rec.first);

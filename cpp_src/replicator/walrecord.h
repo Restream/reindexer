@@ -27,6 +27,8 @@ enum WALRecType {
 	WalNamespaceRename,
 	WalInitTransaction,
 	WalCommitTransaction,
+	WalForceSync,
+	WalSetSchema,
 };
 
 class WrSerializer;
@@ -35,11 +37,12 @@ struct WALRecord;
 
 struct SharedWALRecord {
 	struct Unpacked {
-		int64_t lsn;
+		int64_t upstreamLSN;
+		int64_t originLSN;
 		p_string nsName, pwalRec;
 	};
 	SharedWALRecord(intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> packed = nullptr) : packed_(packed) {}
-	SharedWALRecord(int64_t lsn, string_view nsName, const WALRecord &rec);
+	SharedWALRecord(int64_t upstreamLSN, int64_t originLSN, string_view nsName, const WALRecord &rec);
 	Unpacked Unpack();
 
 	intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> packed_;
@@ -56,7 +59,7 @@ struct WALRecord {
 	WrSerializer &Dump(WrSerializer &ser, std::function<std::string(string_view)> cjsonViewer) const;
 	void GetJSON(JsonBuilder &jb, std::function<string(string_view)> cjsonViewer) const;
 	void Pack(WrSerializer &ser) const;
-	SharedWALRecord GetShared(int64_t lsn, string_view nsName) const;
+	SharedWALRecord GetShared(int64_t lsn, int64_t upstreamLSN, string_view nsName) const;
 
 	WALRecType type;
 	union {

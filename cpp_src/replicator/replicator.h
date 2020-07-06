@@ -33,7 +33,7 @@ protected:
 	struct SyncStat {
 		ReplicationState masterState;
 		Error lastError;
-		int updated = 0, deleted = 0, errors = 0, updatedIndexes = 0, deletedIndexes = 0, updatedMeta = 0, processed = 0;
+		int updated = 0, deleted = 0, errors = 0, updatedIndexes = 0, deletedIndexes = 0, updatedMeta = 0, processed = 0, schemasSet = 0;
 		WrSerializer &Dump(WrSerializer &ser);
 	};
 	struct NsErrorMsg {
@@ -51,23 +51,25 @@ protected:
 	Error applyWAL(Namespace::Ptr slaveNs, client::QueryResults &qr);
 	// Sync indexes of namespace
 	Error syncIndexesForced(Namespace::Ptr slaveNs, const NamespaceDef &masterNsDef);
+	// Sync namespace schema
+	Error syncSchemaForced(Namespace::Ptr slaveNs, const NamespaceDef &masterNsDef);
 	// Forced sync of namespace
 	Error syncNamespaceForced(const NamespaceDef &ns, string_view reason);
 	// Sync meta data
 	Error syncMetaForced(reindexer::Namespace::Ptr slaveNs, string_view nsName);
 	// Apply single WAL record
-	Error applyWALRecord(int64_t lsn, string_view nsName, Namespace::Ptr ns, const WALRecord &wrec, SyncStat &stat);
+	Error applyWALRecord(LSNPair LSNs, string_view nsName, Namespace::Ptr ns, const WALRecord &wrec, SyncStat &stat);
 	// Apply single transaction WAL record
-	Error applyTxWALRecord(int64_t lsn, string_view nsName, Namespace::Ptr ns, const WALRecord &wrec);
+	Error applyTxWALRecord(LSNPair LSNs, string_view nsName, Namespace::Ptr ns, const WALRecord &wrec);
 	void checkNoOpenedTransaction(string_view nsName, Namespace::Ptr slaveNs);
 	// Apply single cjson item
-	Error modifyItem(int64_t, Namespace::Ptr ns, string_view cjson, int modifyMode, const TagsMatcher &tm, SyncStat &stat);
-	static Error unpackItem(Item &, int64_t, string_view cjson, const TagsMatcher &tm);
+	Error modifyItem(LSNPair LSNs, Namespace::Ptr ns, string_view cjson, int modifyMode, const TagsMatcher &tm, SyncStat &stat);
+	static Error unpackItem(Item &, lsn_t, string_view cjson, const TagsMatcher &tm);
 
-	void OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &walRec) override final;
+	void OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &walRec) override final;
 	void OnConnectionState(const Error &err) override final;
 
-	bool canApplyUpdate(int64_t lsn, string_view nsName);
+	bool canApplyUpdate(lsn_t upstreamLSN, string_view nsName);
 	bool isSyncEnabled(string_view nsName);
 	bool retryIfNetworkError(const Error &err);
 
@@ -79,12 +81,16 @@ protected:
 	net::ev::async stop_;
 	net::ev::async resync_;
 	net::ev::timer resyncTimer_;
+	net::ev::async walForcesyncAsync_;
 	ReplicationConfigData config_;
 
 	std::atomic<bool> terminate_;
 	enum State { StateInit, StateSyncing, StateIdle };
 	std::atomic<State> state_;
-	fast_hash_map<string, int64_t, nocase_hash_str, nocase_equal_str> maxLsns_;
+
+	// 1. if the table name is in the list, then synchronization state
+	// 2. if lsn is not empty, then an entry has arrived in onWalUpdate and the LSN of the last such operation is written to this list
+	fast_hash_map<string, lsn_t, nocase_hash_str, nocase_equal_str> maxUpstreamLsns_;
 
 	std::mutex syncMtx_;
 	std::mutex masterMtx_;
@@ -93,6 +99,18 @@ protected:
 	const RdxContext dummyCtx_;
 	std::unordered_map<const Namespace *, Transaction> transactions_;
 	fast_hash_map<string, NsErrorMsg, nocase_hash_str, nocase_equal_str> lastNsErrMsg_;
+
+	class ForceSyncQuery {
+	public:
+		ForceSyncQuery() {}
+		void Push(std::string &nsName, NamespaceDef &nsDef);
+		bool Pop(NamespaceDef &def);
+
+	private:
+		std::unordered_map<std::string, NamespaceDef> query_;
+		std::mutex mtx_;
+	};
+	ForceSyncQuery forcesyncQuery_;
 };
 
 }  // namespace reindexer

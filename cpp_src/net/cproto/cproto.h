@@ -45,6 +45,8 @@ enum CmdCode : uint16_t {
 	kCmdPutMeta = 65,
 	kCmdEnumMeta = 66,
 
+	kCmdSetSchema = 67,
+
 	kCmdSubscribeUpdates = 90,
 	kCmdUpdates = 91,
 

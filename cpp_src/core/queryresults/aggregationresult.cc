@@ -1,9 +1,11 @@
 
 #include "aggregationresult.h"
 #include "core/cjson/jsonbuilder.h"
+#include "core/cjson/msgpackbuilder.h"
 #include "gason/gason.h"
 #include "tools/jsontools.h"
 #include "tools/serializer.h"
+#include "vendor/msgpack/msgpackparser.h"
 
 namespace reindexer {
 
@@ -45,57 +47,38 @@ AggType AggregationResult::strToAggType(string_view type) {
 
 void AggregationResult::GetJSON(WrSerializer &ser) const {
 	JsonBuilder builder(ser);
+	return get(builder);
+}
 
-	if (value != 0) builder.Put("value", value);
-	builder.Put("type", aggTypeToStr(type));
+void AggregationResult::GetMsgPack(WrSerializer &wrser) const {
+	int elements = 2;
+	if (value != 0) ++elements;
+	if (!facets.empty()) ++elements;
+	if (!distincts.empty()) ++elements;
+	MsgPackBuilder msgpackBuilder(wrser, ObjType::TypeObject, elements);
+	get(msgpackBuilder);
+}
 
-	if (facets.size()) {
-		auto arrNode = builder.Array("facets");
-		for (auto &facet : facets) {
-			auto objNode = arrNode.Object();
-			objNode.Put("count", facet.count);
-			auto arrNode = objNode.Array("values");
-			for (const auto &v : facet.values) {
-				arrNode.Put(nullptr, v);
-			}
+Error AggregationResult::FromMsgPack(span<char> msgpack) {
+	try {
+		size_t offset = 0;
+		MsgPackParser parser;
+		MsgPackValue root = parser.Parse(msgpack, offset);
+		if (!root.p) {
+			return Error(errLogic, "Error unpacking aggregation data in msgpack");
 		}
+		from(root);
+	} catch (const Error &err) {
+		return err;
 	}
-
-	if (distincts.size()) {
-		auto distArr = builder.Array("distincts");
-		for (const std::string &v : distincts) distArr.Put(nullptr, v);
-	}
-
-	auto fldNode = builder.Array("fields");
-	for (auto &field : fields) {
-		fldNode.Put(nullptr, field);
-	}
+	return errOK;
 }
 
 Error AggregationResult::FromJSON(span<char> json) {
 	try {
 		gason::JsonParser parser;
 		auto root = parser.Parse(json);
-
-		value = root["value"].As<double>();
-		type = strToAggType(root["type"].As<string>());
-
-		for (auto &subElem : root["fields"]) {
-			fields.push_back(subElem.As<string>());
-		}
-
-		for (auto &facetNode : root["facets"]) {
-			FacetResult facet;
-			facet.count = facetNode["count"].As<int>();
-			for (auto &subElem : facetNode["values"]) {
-				facet.values.push_back(subElem.As<string>());
-			}
-			facets.push_back(facet);
-		}
-
-		for (auto &distinctNode : root["distincts"]) {
-			distincts.emplace_back(distinctNode.As<string>());
-		}
+		from(root);
 	} catch (const gason::Exception &ex) {
 		return Error(errParseJson, "AggregationResult: %s", ex.what());
 	}

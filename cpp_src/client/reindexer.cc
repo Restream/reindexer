@@ -49,6 +49,7 @@ Error Reindexer::Commit(string_view nsName) { return impl_->Commit(nsName); }
 Error Reindexer::AddIndex(string_view nsName, const IndexDef& idx) { return impl_->AddIndex(nsName, idx, ctx_); }
 Error Reindexer::UpdateIndex(string_view nsName, const IndexDef& idx) { return impl_->UpdateIndex(nsName, idx, ctx_); }
 Error Reindexer::DropIndex(string_view nsName, const IndexDef& index) { return impl_->DropIndex(nsName, index, ctx_); }
+Error Reindexer::SetSchema(string_view nsName, string_view schema) { return impl_->SetSchema(nsName, schema, ctx_); }
 Error Reindexer::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOpts opts) { return impl_->EnumNamespaces(defs, opts, ctx_); }
 Error Reindexer::EnumDatabases(vector<string>& dbList) { return impl_->EnumDatabases(dbList, ctx_); }
 Error Reindexer::SubscribeUpdates(IUpdatesObserver* observer, bool subscribe) { return impl_->SubscribeUpdates(observer, subscribe); }
@@ -56,6 +57,10 @@ Error Reindexer::GetSqlSuggestions(const string_view sqlQuery, int pos, vector<s
 	return impl_->GetSqlSuggestions(sqlQuery, pos, suggests);
 }
 Error Reindexer::Status() { return impl_->Status(); }
+
+Transaction Reindexer::NewTransaction(string_view nsName) { return impl_->NewTransaction(nsName, ctx_); }
+Error Reindexer::CommitTransaction(Transaction& tr) { return impl_->CommitTransaction(tr, ctx_); }
+Error Reindexer::RollBackTransaction(Transaction& tr) { return impl_->RollBackTransaction(tr, ctx_); }
 
 }  // namespace client
 }  // namespace reindexer

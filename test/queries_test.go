@@ -2,6 +2,7 @@ package reindexer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
@@ -26,6 +27,11 @@ type IndexesTestCase struct {
 	Namespace string
 	Options   sortDistinctOptions
 	Item      interface{}
+}
+
+type StrictTestNest struct {
+	Name string
+	Age  int
 }
 
 // TestItem common test case
@@ -55,6 +61,7 @@ type TestItem struct {
 	EndTime       int             `reindex:"end_time,-"`
 	StartTime     int             `reindex:"start_time,tree"`
 	Tmp           string          `reindex:"tmp,-"`
+	Nested        StrictTestNest  `reindex:"-" json:"nested"`
 	_             struct{}        `reindex:"id+tmp,,composite,pk"`
 	_             struct{}        `reindex:"age+genre,,composite"`
 	_             struct{}        `reindex:"location+rate,,composite"`
@@ -197,6 +204,8 @@ func init() {
 	tnamespaces["test_items_delete_query"] = TestItem{}
 	tnamespaces["test_items_update_query"] = TestItem{}
 	tnamespaces["test_items_eqaul_position"] = TestItemEqualPosition{}
+	tnamespaces["test_items_strict"] = TestItem{}
+	tnamespaces["test_items_strict_joined"] = TestJoinItem{}
 }
 
 func FillTestItemsForNot() {
@@ -1465,4 +1474,169 @@ func TestEqualPosition(t *testing.T) {
 	for it.Next() {
 		assert.True(t, expectedIds[it.Object().(*TestItemEqualPosition).ID])
 	}
+}
+
+type FakeTestItem TestItem
+
+func TestStrictMode(t *testing.T) {
+	namespace := "test_items_strict"
+	namespaceJoined := "test_items_strict_joined"
+
+	t.Run("Strict filtering/sort by folded fields (empty namespace)", func(t *testing.T) {
+		{
+			itNames := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNames).Where("nested.Name", reindexer.ANY, 0).Sort("nested.Name", false).MustExec()
+			assert.Equal(t, itNames.Count(), 0)
+			itNone := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNone).Where("nested.Name", reindexer.ANY, 0).Sort("nested.Name", false).MustExec()
+			assert.Equal(t, itNone.Count(), 0)
+			itIndexes := DBD.Query(namespace).Strict(reindexer.QueryStrictModeIndexes).Where("nested.Name", reindexer.ANY, 0).Sort("nested.Name", false).Exec()
+			assert.Error(t, itIndexes.Error())
+		}
+	})
+
+	tx := newTestTx(DB, namespace)
+	itemsCount := 500
+	for i := 0; i < itemsCount; i++ {
+		item := newTestItem(i, rand.Int()%4)
+		var itemJSON []byte
+		var err error
+		testItem, _ := item.(*TestItem)
+		testItem.Year = i
+		itemJSON, err = json.Marshal(struct {
+			FakeTestItem
+			RealNewField int `json:"real_new_field"`
+		}{
+			FakeTestItem: FakeTestItem(*testItem),
+			RealNewField: i % 3,
+		})
+		assert.NoError(t, err)
+		tx.tx.UpsertJSON(itemJSON)
+	}
+	tx.MustCommit()
+
+	FillTestJoinItems(0, 100, namespaceJoined)
+
+	t.Run("Strict sort check", func(t *testing.T) {
+		yearVal := rand.Int()%250 + 50
+		itNames := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNames).Distinct("age").Where("year", reindexer.GE, yearVal).Sort("year", false).ExecToJson()
+		itIndexes := DBD.Query(namespace).Strict(reindexer.QueryStrictModeIndexes).Distinct("age").Where("year", reindexer.GE, yearVal).Sort("year", false).ExecToJson()
+		itNone := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNone).Distinct("age").Where("year", reindexer.GE, yearVal).Sort("year", false).ExecToJson()
+
+		itNames1 := DBD.Query(namespace).Distinct("age").Where("year", reindexer.GE, yearVal).Sort("real_new_field", false).Sort("year", false).
+			Strict(reindexer.QueryStrictModeNone).
+			ExecToJson()
+		assert.Equal(t, itNames.Count(), itNames1.Count())
+		itNone1 := DBD.Query(namespace).Distinct("age").Strict(reindexer.QueryStrictModeNames).Where("year", reindexer.GE, yearVal).Sort("real_new_field", false).Sort("year", false).
+			ExecToJson()
+		assert.Equal(t, itNone.Count(), itNone1.Count())
+		itIndexes1 := DBD.Query(namespace).Strict(reindexer.QueryStrictModeIndexes).Where("year", reindexer.GE, yearVal).Sort("real_new_field", false).Sort("year", false).
+			Exec()
+		assert.Error(t, itIndexes1.Error())
+
+		itNames2 := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNames).Where("year", reindexer.GE, yearVal).Sort("unknown_field", false).Sort("year", false).
+			ExecToJson()
+		assert.Error(t, itNames2.Error())
+		itNone2 := DBD.Query(namespace).Distinct("age").Strict(reindexer.QueryStrictModeNone).Where("year", reindexer.GE, yearVal).Sort("unknown_field", false).Sort("year", false).
+			ExecToJson()
+		itIndexes2 := DBD.Query(namespace).Strict(reindexer.QueryStrictModeIndexes).Where("year", reindexer.GE, yearVal).Sort("unknown_field", false).Sort("year", false).
+			Exec()
+		assert.Error(t, itIndexes2.Error())
+
+		for itNone.Next() {
+			assert.True(t, itNames.Next())
+			assert.True(t, itIndexes.Next())
+			assert.True(t, itNone2.Next())
+			assert.Equal(t, itNames.JSON(), itNone.JSON())
+			assert.Equal(t, itIndexes.JSON(), itNone.JSON())
+			assert.Equal(t, itNone2.JSON(), itNone.JSON())
+		}
+		assert.NoError(t, itNone1.Error())
+	})
+
+	t.Run("Strict filtering with non-index field", func(t *testing.T) {
+		itNames := DBD.Query(namespace).Where("real_new_field", reindexer.EQ, 0).Sort("year", true).
+			Sort("name", false).Strict(reindexer.QueryStrictModeNames).MustExec()
+		itNone := DBD.Query(namespace).Where("real_new_field", reindexer.EQ, 0).Sort("year", true).
+			Sort("name", false).Strict(reindexer.QueryStrictModeNone).MustExec()
+		assert.Equal(t, itNames.Count(), itNone.Count())
+		itIndexes := DBD.Query(namespace).Where("real_new_field", reindexer.EQ, 0).Sort("year", true).
+			Sort("name", false).Strict(reindexer.QueryStrictModeIndexes).Exec()
+		assert.Error(t, itIndexes.Error())
+
+		itNames1 := DBD.Query(namespace).Distinct("real_new_field").Sort("year", true).
+			Sort("name", false).Strict(reindexer.QueryStrictModeNames).MustExec()
+		itNone1 := DBD.Query(namespace).Distinct("real_new_field").Sort("year", true).
+			Sort("name", false).Strict(reindexer.QueryStrictModeNone).MustExec()
+		assert.Equal(t, itNames1.Count(), itNone1.Count())
+		itIndexes1 := DBD.Query(namespace).Distinct("real_new_field").Sort("year", true).
+			Sort("name", false).Strict(reindexer.QueryStrictModeIndexes).Exec()
+		assert.Error(t, itIndexes1.Error())
+	})
+
+	t.Run("Strict filtering with non-existing field", func(t *testing.T) {
+		{
+			itNames := DBD.Query(namespace).Where("unknown_field", reindexer.EQ, true).Sort("year", true).
+				Sort("name", false).Strict(reindexer.QueryStrictModeNames).Exec()
+			assert.Error(t, itNames.Error())
+			itNone := DBD.Query(namespace).Where("unknown_field", reindexer.EQ, true).Sort("year", true).
+				Sort("name", false).Strict(reindexer.QueryStrictModeNone).MustExec()
+			assert.Equal(t, itNone.Count(), 0)
+			itIndexes := DBD.Query(namespace).Where("unknown_field", reindexer.EQ, true).Sort("year", true).
+				Sort("name", false).Strict(reindexer.QueryStrictModeIndexes).Exec()
+			assert.Error(t, itIndexes.Error())
+
+			itNames1 := DBD.Query(namespace).Distinct("unknown_field").Sort("year", true).
+				Sort("name", false).Strict(reindexer.QueryStrictModeNames).Exec()
+			assert.Error(t, itNames1.Error())
+			itNone1 := DBD.Query(namespace).Distinct("unknown_field").Sort("year", true).
+				Sort("name", false).Strict(reindexer.QueryStrictModeNone).MustExec()
+			assert.Equal(t, itNone1.Count(), 0)
+			itIndexes1 := DBD.Query(namespace).Distinct("unknown_field").Sort("year", true).
+				Sort("name", false).Strict(reindexer.QueryStrictModeIndexes).Exec()
+			assert.Error(t, itIndexes1.Error())
+
+			itNone3 := DBD.Query(namespace).Where("unknown_field", reindexer.EMPTY, 0).Sort("year", true).
+				Sort("name", false).Strict(reindexer.QueryStrictModeNone).MustExec()
+			assert.Equal(t, itNone3.Count(), itemsCount)
+		}
+
+		{
+			itNames := DBD.Query(namespace).Where("unknown_field", reindexer.EMPTY, 0).Sort("year", true).
+				Sort("name", false).Strict(reindexer.QueryStrictModeNames).Exec()
+			assert.Error(t, itNames.Error())
+			itNone := DBD.Query(namespace).Where("unknown_field", reindexer.EMPTY, 0).Sort("year", true).
+				Sort("name", false).Strict(reindexer.QueryStrictModeNone).MustExec()
+			itAll := DBD.Query(namespace).Sort("year", true).
+				Sort("name", false).Strict(reindexer.QueryStrictModeNone).MustExec()
+			assert.Equal(t, itNone.Count(), itAll.Count())
+			itIndexes := DBD.Query(namespace).Where("unknown_field", reindexer.EMPTY, 0).Sort("year", true).
+				Sort("name", false).Strict(reindexer.QueryStrictModeIndexes).Exec()
+			assert.Error(t, itIndexes.Error())
+		}
+	})
+
+	t.Run("Strict filtering/sort by joined fields", func(t *testing.T) {
+		{
+			priceVal := rand.Int()%500 + 50
+			itNames := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNames).InnerJoin(DBD.Query(namespaceJoined), "prices").On("year", reindexer.EQ, "id").Where("price", reindexer.LE, priceVal).Sort("price", false).MustExec()
+			itNone := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNone).InnerJoin(DBD.Query(namespaceJoined), "prices").On("year", reindexer.EQ, "id").Where("price", reindexer.LE, priceVal).Sort("price", false).MustExec()
+			assert.Equal(t, itNames.Count(), itNone.Count())
+			itIndexes := DBD.Query(namespace).Strict(reindexer.QueryStrictModeIndexes).InnerJoin(DBD.Query(namespaceJoined), "prices").On("year", reindexer.EQ, "id").Where("price", reindexer.LE, priceVal).Sort("price", false).Exec()
+			assert.Error(t, itIndexes.Error())
+		}
+		{
+			itNames := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNames).Sort(namespaceJoined+".price", false).InnerJoin(DBD.Query(namespaceJoined), "prices").On("year", reindexer.EQ, "id").MustExec()
+			itNone := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNone).Sort(namespaceJoined+".price", false).InnerJoin(DBD.Query(namespaceJoined), "prices").On("year", reindexer.EQ, "id").MustExec()
+			assert.Equal(t, itNames.Count(), itNone.Count())
+			itIndexes := DBD.Query(namespace).Strict(reindexer.QueryStrictModeIndexes).Sort(namespaceJoined+".price", false).InnerJoin(DBD.Query(namespaceJoined), "prices").On("year", reindexer.EQ, "id").Exec()
+			assert.Error(t, itIndexes.Error())
+		}
+		{
+			itNames := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNames).Sort(namespaceJoined+".amount", false).InnerJoin(DBD.Query(namespaceJoined), "prices").On("year", reindexer.EQ, "id").MustExec()
+			itNone := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNone).Sort(namespaceJoined+".amount", false).InnerJoin(DBD.Query(namespaceJoined), "prices").On("year", reindexer.EQ, "id").MustExec()
+			assert.Equal(t, itNames.Count(), itNone.Count())
+			itIndexes := DBD.Query(namespace).Strict(reindexer.QueryStrictModeIndexes).Sort(namespaceJoined+".amount", false).InnerJoin(DBD.Query(namespaceJoined), "prices").On("year", reindexer.EQ, "id").MustExec()
+			assert.Equal(t, itIndexes.Count(), itNone.Count())
+		}
+	})
+
 }

@@ -385,6 +385,10 @@ Error CommandsProcessor<DBInterface>::commandNamespaces(const string& command) {
 				return err;
 			}
 		}
+		err = db_.SetSchema(def.name, def.schemaJson);
+		if (!err.ok()) {
+			return err;
+		}
 		return errOK;
 
 	} else if (iequals(subCommand, "list")) {
@@ -557,9 +561,9 @@ Error CommandsProcessor<DBInterface>::commandSubscribe(const string& command) {
 }
 
 template <typename DBInterface>
-void CommandsProcessor<DBInterface>::OnWALUpdate(int64_t lsn, string_view nsName, const reindexer::WALRecord& wrec) {
+void CommandsProcessor<DBInterface>::OnWALUpdate(reindexer::LSNPair LSNs, string_view nsName, const reindexer::WALRecord& wrec) {
 	WrSerializer ser;
-	ser << "#" << lsn << " " << nsName << " ";
+	ser << "# LSN " << int64_t(LSNs.upstreamLSN_) << " originLSN " << int64_t(LSNs.originLSN_) << nsName << " ";
 	wrec.Dump(ser, [this, nsName](string_view cjson) {
 		auto item = db_.NewItem(nsName);
 		item.FromCJSON(cjson);

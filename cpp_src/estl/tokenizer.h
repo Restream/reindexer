@@ -40,7 +40,7 @@ public:
 
 class tokenizer {
 public:
-	tokenizer(const string_view &query);
+	tokenizer(string_view query);
 	token next_token(bool to_lower = true, bool treatSignAsToken = false);
 	token peek_token(bool to_lower = true, bool treatSignAsToken = false);
 	void skip_space();

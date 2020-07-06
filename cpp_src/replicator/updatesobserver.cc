@@ -3,6 +3,7 @@
 #include "core/indexdef.h"
 #include "core/itemimpl.h"
 #include "core/keyvalue/p_string.h"
+
 namespace reindexer {
 
 IUpdatesObserver::~IUpdatesObserver() {}
@@ -27,21 +28,21 @@ Error UpdatesObservers::Delete(IUpdatesObserver *observer) {
 	return errOK;
 }
 
-void UpdatesObservers::OnModifyItem(int64_t lsn, string_view nsName, ItemImpl *impl, int modifyMode, bool inTransaction) {
+void UpdatesObservers::OnModifyItem(LSNPair LSNs, string_view nsName, ItemImpl *impl, int modifyMode, bool inTransaction) {
 	WrSerializer ser;
 	WALRecord walRec(WalItemModify, impl->tagsMatcher().isUpdated() ? impl->GetCJSON(ser, true) : impl->GetCJSON(),
 					 impl->tagsMatcher().version(), modifyMode, inTransaction);
 
-	OnWALUpdate(lsn, nsName, walRec);
+	OnWALUpdate(LSNs, nsName, walRec);
 }
 
-void UpdatesObservers::OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &walRec) {
+void UpdatesObservers::OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &walRec) {
 	// Disable updates of system namespaces (it may cause recursive lock)
 	if (nsName.size() && nsName[0] == '#') return;
 
 	shared_lock<shared_timed_mutex> lck(mtx_);
 	for (auto observer : observers_) {
-		observer->OnWALUpdate(lsn, nsName, walRec);
+		observer->OnWALUpdate(LSNs, nsName, walRec);
 	}
 }
 

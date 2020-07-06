@@ -288,6 +288,15 @@ func (binding *NetCProto) AddIndex(ctx context.Context, namespace string, indexD
 	return binding.rpcCallNoResults(ctx, opWr, cmdAddIndex, namespace, bIndexDef)
 }
 
+func (binding *NetCProto) SetSchema(ctx context.Context, namespace string, schema bindings.SchemaDef) error {
+	schemaJSON, err := json.Marshal(schema)
+	if err != nil {
+		return err
+	}
+
+	return binding.rpcCallNoResults(ctx, opWr, cmdSetSchema, namespace, schemaJSON)
+}
+
 func (binding *NetCProto) UpdateIndex(ctx context.Context, namespace string, indexDef bindings.IndexDef) error {
 	bIndexDef, err := json.Marshal(indexDef)
 	if err != nil {
@@ -530,7 +539,9 @@ func (binding *NetCProto) rpcCall(ctx context.Context, op int, cmd int, args ...
 
 func (binding *NetCProto) rpcCallNoResults(ctx context.Context, op int, cmd int, args ...interface{}) error {
 	buf, err := binding.rpcCall(ctx, op, cmd, args...)
-	buf.Free()
+	if buf != nil {
+		buf.Free()
+	}
 	return err
 }
 

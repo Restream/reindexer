@@ -20,6 +20,11 @@ bool SortExpression::ByIndexField() const {
 	return Size() == 1 && IsValue(0) && container_[0].Holds<SortExpressionIndex>() && GetOperation(0) == noOperation;
 }
 
+bool SortExpression::ByJoinedIndexField() const {
+	static constexpr SortExpressionOperation noOperation;
+	return Size() == 1 && IsValue(0) && container_[0].Holds<SortExpressionJoinedIndex>() && GetOperation(0) == noOperation;
+}
+
 double SortExpressionIndex::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
 	VariantArray va;
 	if (index == IndexValueType::SetByJsonPath) {

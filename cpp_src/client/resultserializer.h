@@ -3,12 +3,15 @@
 #include "core/queryresults/aggregationresult.h"
 #include "tools/serializer.h"
 
+struct msgpack_object;
+
 namespace reindexer {
 namespace client {
 
 class ResultSerializer : public Serializer {
 public:
 	using Serializer::Serializer;
+
 	struct ItemParams {
 		int id = 0;
 		int16_t nsid = 0;

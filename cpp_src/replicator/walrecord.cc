@@ -28,6 +28,8 @@ void WALRecord::Pack(WrSerializer &ser) const {
 		case WalIndexUpdate:
 		case WalReplState:
 		case WalNamespaceRename:
+		case WalForceSync:
+		case WalSetSchema:
 			ser.PutVString(data);
 			break;
 		case WalPutMeta:
@@ -77,6 +79,8 @@ WALRecord::WALRecord(span<uint8_t> packed) {
 		case WalIndexUpdate:
 		case WalReplState:
 		case WalNamespaceRename:
+		case WalForceSync:
+		case WalSetSchema:
 			data = ser.GetVString();
 			break;
 		case WalPutMeta:
@@ -130,6 +134,10 @@ string_view wrecType2Str(WALRecType t) {
 			return "WalInitTransaction"_sv;
 		case WalCommitTransaction:
 			return "WalCommitTransaction"_sv;
+		case WalForceSync:
+			return "WalForceSync"_sv;
+		case WalSetSchema:
+			return "WalSetSchema"_sv;
 		default:
 			return "<Unknown>"_sv;
 	}
@@ -154,6 +162,8 @@ WrSerializer &WALRecord::Dump(WrSerializer &ser, std::function<string(string_vie
 		case WalIndexDrop:
 		case WalIndexUpdate:
 		case WalReplState:
+		case WalForceSync:
+		case WalSetSchema:
 			return ser << ' ' << data;
 		case WalPutMeta:
 			return ser << ' ' << putMeta.key << "=" << putMeta.value;
@@ -186,6 +196,9 @@ void WALRecord::GetJSON(JsonBuilder &jb, std::function<string(string_view)> cjso
 		case WalNamespaceRename:
 			jb.Put("dst_ns_name", data);
 			return;
+		case WalForceSync:
+			jb.Put("ns_def", data);
+			return;
 		case WalIndexAdd:
 		case WalIndexDrop:
 		case WalIndexUpdate:
@@ -202,6 +215,9 @@ void WALRecord::GetJSON(JsonBuilder &jb, std::function<string(string_view)> cjso
 			jb.Put("mode", itemModify.modifyMode);
 			jb.Raw("item", cjsonViewer(itemModify.itemCJson));
 			return;
+		case WalSetSchema:
+			jb.Raw("schema", data);
+			return;
 		default:
 			fprintf(stderr, "Unexpected WAL rec type %d\n", int(type));
 			std::abort();
@@ -211,15 +227,16 @@ void WALRecord::GetJSON(JsonBuilder &jb, std::function<string(string_view)> cjso
 
 WALRecord::WALRecord(string_view data) : WALRecord(span<uint8_t>(reinterpret_cast<const uint8_t *>(data.data()), data.size())) {}
 
-SharedWALRecord WALRecord::GetShared(int64_t lsn, string_view nsName) const {
+SharedWALRecord WALRecord::GetShared(int64_t lsn, int64_t upstreamLSN, string_view nsName) const {
 	if (!shared_.packed_) {
-		shared_ = SharedWALRecord(lsn, nsName, *this);
+		shared_ = SharedWALRecord(lsn, upstreamLSN, nsName, *this);
 	}
 	return shared_;
 }
-SharedWALRecord::SharedWALRecord(int64_t lsn, string_view nsName, const WALRecord &rec) {
+SharedWALRecord::SharedWALRecord(int64_t lsn, int64_t originLSN, string_view nsName, const WALRecord &rec) {
 	WrSerializer ser;
 	ser.PutVarint(lsn);
+	ser.PutVarint(originLSN);
 	ser.PutVString(nsName);
 	{
 		auto sl = ser.StartSlice();
@@ -231,9 +248,10 @@ SharedWALRecord::SharedWALRecord(int64_t lsn, string_view nsName, const WALRecor
 SharedWALRecord::Unpacked SharedWALRecord::Unpack() {
 	Serializer rdser(packed_->data(), packed_->size());
 	int64_t lsn = rdser.GetVarint();
+	int64_t originLSN = rdser.GetVarint();
 	p_string nsName = rdser.GetPVString();
 	p_string pwal = rdser.GetPSlice();
-	return {lsn, nsName, pwal};
+	return {lsn, originLSN, nsName, pwal};
 }
 
 }  // namespace reindexer

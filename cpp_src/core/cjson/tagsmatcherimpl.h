@@ -18,20 +18,27 @@ class TagsMatcherImpl {
 public:
 	TagsMatcherImpl() : version_(0), stateToken_(rand()) {}
 	TagsMatcherImpl(PayloadType payloadType) : payloadType_(payloadType), version_(0), stateToken_(rand()) {}
-	~TagsMatcherImpl() {
-		//	if (tags2names_.size()) printf("~TagsMatcherImpl::TagsMatcherImpl %d\n", int(tags2names_.size()));
-	}
+	~TagsMatcherImpl() {}
 
 	TagsPath path2tag(string_view jsonPath) const {
+		bool updated = false;
+		return const_cast<TagsMatcherImpl *>(this)->path2tag(jsonPath, false, updated);
+	}
+
+	TagsPath path2tag(string_view jsonPath, bool canAdd, bool &updated) {
 		TagsPath fieldTags;
 		for (size_t pos = 0, lastPos = 0; pos != jsonPath.length(); lastPos = pos + 1) {
-			pos = jsonPath.find(".", lastPos);
+			pos = jsonPath.find('.', lastPos);
 			if (pos == string_view::npos) {
 				pos = jsonPath.length();
 			}
 			if (pos != lastPos) {
 				string_view field = jsonPath.substr(lastPos, pos - lastPos);
-				int fieldTag = name2tag(field);
+				int fieldTag = name2tag(field, canAdd, updated);
+				if (!fieldTag) {
+					fieldTags.clear();
+					return fieldTags;
+				}
 				fieldTags.push_back(static_cast<int16_t>(fieldTag));
 			}
 		}

@@ -45,10 +45,14 @@ void WrResultSerializer::putQueryParams(const QueryResults* results) {
 }
 
 void WrResultSerializer::putExtraParams(const QueryResults* results) {
-	for (auto& ar : results->aggregationResults) {
+	for (const AggregationResult& aggregationRes : results->aggregationResults) {
 		PutVarUint(QueryResultAggregation);
 		auto slicePosSaver = StartSlice();
-		ar.GetJSON(*this);
+		if ((opts_.flags & kResultsFormatMask) == kResultsMsgPack) {
+			aggregationRes.GetMsgPack(*this);
+		} else {
+			aggregationRes.GetJSON(*this);
+		}
 	}
 
 	if (!results->explainResults.empty()) {
@@ -98,6 +102,9 @@ void WrResultSerializer::putItemParams(const QueryResults* result, int idx, bool
 			break;
 		case kResultsPure:
 			break;
+		case kResultsMsgPack:
+			err = it.GetMsgPack(*this);
+			break;
 		default:
 			throw Error(errParams, "Can't serialize query results: unknown formar %d", int((opts_.flags & kResultsFormatMask)));
 	}
@@ -128,7 +135,6 @@ bool WrResultSerializer::PutResults(const QueryResults* result) {
 
 	// Result has items from multiple namespaces, so pass nsid to each item
 	if (result->getMergedNSCount() > 1) opts_.flags |= kResultsWithNsID;
-
 	// Result has joined items, so pass them to client within items from main NS
 	if (result->joined_.size() > 0) opts_.flags |= kResultsWithJoined;
 
@@ -136,9 +142,11 @@ bool WrResultSerializer::PutResults(const QueryResults* result) {
 	if (result->needOutputRank) opts_.flags |= kResultsNeedOutputRank;
 	// If data is not cacheable, just do not pass item's ID and LSN. Clients should not cache this data
 	if (result->nonCacheableData) opts_.flags &= ~kResultsWithItemID;
-	// for JSON results joined field are embeded to json's, so no need to transfer separate joined data items
-	// JSON results already has resolved names, so no need to transfer payload types
-	if ((opts_.flags & kResultsFormatMask) == kResultsJson) opts_.flags &= ~(kResultsWithJoined | kResultsWithPayloadTypes);
+	// MsgPack items contain fields names so there is no need to transfer payload types
+	// and joined data, as well as for JSON (they both contain it already)
+	if ((opts_.flags & kResultsFormatMask) == kResultsJson || (opts_.flags & kResultsFormatMask) == kResultsMsgPack) {
+		opts_.flags &= ~(kResultsWithJoined | kResultsWithPayloadTypes);
+	}
 
 	putQueryParams(result);
 	size_t saveLen = len_;

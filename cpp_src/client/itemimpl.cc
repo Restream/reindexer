@@ -2,6 +2,8 @@
 #include "core/cjson/baseencoder.h"
 #include "core/cjson/cjsondecoder.h"
 #include "core/cjson/jsondecoder.h"
+#include "core/cjson/msgpackbuilder.h"
+#include "core/cjson/msgpackdecoder.h"
 
 using std::move;
 
@@ -91,6 +93,19 @@ Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool /*pkOnly*/)
 	return err;
 }
 
+Error ItemImpl::FromMsgPack(const string_view &buf, size_t &offset) {
+	Payload pl = GetPayload();
+	MsgPackDecoder decoder(&tagsMatcher_);
+
+	ser_.Reset();
+	Error err = decoder.Decode(buf, &pl, ser_, offset);
+	if (err.ok()) {
+		tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
+		pl.Set(0, {Variant(p_string(&tupleData_))});
+	}
+	return err;
+}
+
 Error ItemImpl::FromCJSON(ItemImpl *other) {
 	auto cjson = other->GetCJSON();
 	auto err = FromCJSON(cjson);
@@ -98,9 +113,23 @@ Error ItemImpl::FromCJSON(ItemImpl *other) {
 	return err;
 }
 
+string_view ItemImpl::GetMsgPack() {
+	int startTag = 0;
+	ConstPayload pl = GetConstPayload();
+
+	MsgPackEncoder msgpackEncoder(&tagsMatcher_);
+	const TagsLengths &tagsLengths = msgpackEncoder.GetTagsMeasures(&pl);
+
+	ser_.Reset();
+	MsgPackBuilder msgpackBuilder(ser_, &tagsLengths, &startTag, ObjType::TypePlain, &tagsMatcher_);
+	msgpackEncoder.Encode(&pl, msgpackBuilder);
+
+	return ser_.Slice();
+}
+
 string_view ItemImpl::GetJSON() {
 	ConstPayload pl(payloadType_, payloadValue_);
-	JsonBuilder builder(ser_, JsonBuilder::TypePlain);
+	JsonBuilder builder(ser_, ObjType::TypePlain);
 	JsonEncoder encoder(&tagsMatcher_);
 
 	ser_.Reset();
@@ -111,7 +140,7 @@ string_view ItemImpl::GetJSON() {
 
 string_view ItemImpl::GetCJSON() {
 	ConstPayload pl(payloadType_, payloadValue_);
-	CJsonBuilder builder(ser_, CJsonBuilder::TypePlain);
+	CJsonBuilder builder(ser_, ObjType::TypePlain);
 	CJsonEncoder encoder(&tagsMatcher_);
 
 	ser_.Reset();

@@ -25,6 +25,7 @@ enum class Root {
 	Explain,
 	EqualPosition,
 	WithRank,
+	StrictMode,
 };
 
 enum class Sort { Desc, Field, Values };
@@ -49,7 +50,8 @@ static const fast_str_map<Root> root_map = {{"namespace", Root::Namespace},
 											{"aggregations", Root::Aggregations},
 											{"explain", Root::Explain},
 											{"equal_position", Root::EqualPosition},
-											{"select_with_rank", Root::WithRank}};
+											{"select_with_rank", Root::WithRank},
+											{"strict_mode", Root::StrictMode}};
 
 // additional for parse field 'sort'
 
@@ -471,6 +473,13 @@ void parse(JsonValue& root, Query& q) {
 			case Root::WithRank:
 				checkJsonValueType(v, name, JSON_FALSE, JSON_TRUE);
 				if (v.getTag() == JSON_TRUE) q.WithRank();
+				break;
+			case Root::StrictMode:
+				checkJsonValueType(v, name, JSON_STRING);
+				q.strictMode = strictModeFromString(string(v.toString()));
+				if (q.strictMode == StrictModeNotSet) {
+					throw Error(errParseDSL, "Unexpected strict mode value: %s", v.toString());
+				}
 				break;
 			case Root::EqualPosition: {
 				checkJsonValueType(v, name, JSON_ARRAY);

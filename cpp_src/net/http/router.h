@@ -147,6 +147,7 @@ struct ClientData {
 struct Context {
 	int JSON(int code, string_view slice);
 	int JSON(int code, chunk &&chunk);
+	int MSGPACK(int code, chunk &&chunk);
 	int String(int code, string_view slice);
 	int String(int code, chunk &&chunk);
 	int File(int code, string_view path, string_view data = string_view());

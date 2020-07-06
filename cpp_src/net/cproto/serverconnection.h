@@ -16,6 +16,7 @@ using reindexer::h_vector;
 class ServerConnection : public ConnectionST, public IServerConnection, public Writer {
 public:
 	ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher, bool enableStat);
+	~ServerConnection();
 
 	// IServerConnection interface implementation
 	static ConnectionFactory NewFactory(Dispatcher &dispatcher, bool enableStat) {

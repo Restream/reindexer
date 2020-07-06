@@ -70,6 +70,7 @@ const (
 	cmdGetMeta           = 64
 	cmdPutMeta           = 65
 	cmdEnumMeta          = 66
+	cmdSetSchema         = 67
 	cmdCodeMax           = 128
 )
 

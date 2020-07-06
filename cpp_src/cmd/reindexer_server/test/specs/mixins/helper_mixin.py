@@ -95,7 +95,7 @@ class HelperMixin(object):
             'is_sparse': False,
             'collate_mode': 'none',
             'sort_order_letters': '',
-            'expire_after':0,
+            'expire_after': 0,
             'config': {}
         }
 
@@ -105,7 +105,7 @@ class HelperMixin(object):
             'value': value
         }
 
-    def helper_meta_list_request_construct(self, sort = False, with_values = False, offset = 0, limit = 0):
+    def helper_meta_list_request_construct(self, sort=False, with_values=False, offset=0, limit=0):
         return {
             'sort': sort,
             'with_values': with_values,

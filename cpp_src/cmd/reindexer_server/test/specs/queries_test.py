@@ -1,4 +1,5 @@
 import random
+import msgpack
 from specs import BaseTest
 
 
@@ -18,25 +19,94 @@ class QueriesTest(BaseTest):
         self.assertEqual(True, 'items' in body, body)
         self.assertEqual(True, 'query_total_items' in body, body)
 
+    def test_query_sql_msgpack(self):
+        """Should be able to execute sql query and get response in msgpack format"""
+
+        sql_query = 'explain SELECT COUNT(*),* FROM ' + self.current_ns
+        status, body = self.api_sql_exec_with_columns(
+            self.current_db, sql_query, self.EncodingType.MsgPack)
+
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+        self.assertEqual(True, 'message' in body, body)
+
+        data = msgpack.loads(body.get('message'))
+        self.assertEqual(True, 'namespaces' in data, data)
+        self.assertEqual(True, 'items' in data, data)
+        self.assertEqual(True, 'cache_enabled' in data, data)
+        self.assertEqual(True, 'explain' in data, data)
+        explainData = data['explain']
+        self.assertEqual(True, 'total_us' in explainData, explainData)
+        self.assertEqual(True, 'prepare_us' in explainData, explainData)
+        self.assertEqual(True, 'indexes_us' in explainData, explainData)
+        self.assertEqual(True, 'postprocess_us' in explainData, explainData)
+        self.assertEqual(True, 'loop_us' in explainData, explainData)
+        self.assertEqual(True, 'general_sort_us' in explainData, explainData)
+
+        self.assertEqual(True, 'columns' in data, data)
+        assert len(data['columns']) > 0
+        for i in range(len(data['columns'])):
+            columnData = data['columns'][i]
+            self.assertEqual(True, 'max_chars' in columnData, columnData)
+            self.assertEqual(True, 'width_chars' in columnData, columnData)
+            self.assertEqual(True, 'width_percents' in columnData, columnData)
+            self.assertEqual(True, 'name' in columnData, columnData)
+
+
+    def test_aggregation_sql_query_msgpack(self):
+        """Should be able to execute sql query with aggregate functions and get response in msgpack format"""
+
+        sql_query = 'SELECT avg(test_1) FROM ' + self.current_ns
+        status, body = self.api_sql_exec(
+            self.current_db, sql_query, self.EncodingType.MsgPack)
+
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+        self.assertEqual(True, 'message' in body, body)
+
+        data = msgpack.loads(body.get('message'))
+        self.assertEqual(True, 'namespaces' in data, data)
+        self.assertEqual(True, 'items' in data, data)
+        self.assertEqual(True, 'cache_enabled' in data, data)
+        self.assertEqual(True, 'aggregations' in data, data)
+
+        aggregations = data.get('aggregations')
+        self.assertEqual(True, len(aggregations) == 1, aggregations)
+        aggregation = aggregations[0]
+        self.assertEqual(True, 'value' in aggregation, aggregation)
+        self.assertEqual(True, 'type' in aggregation, aggregation)
+        self.assertEqual(True, aggregation['type'] == 'avg', aggregation)
+        self.assertEqual(True, 'fields' in aggregation, aggregation)
+        self.assertEqual(True, len(aggregation['fields']) == 1, aggregation)
+        self.assertEqual(
+            True, aggregation['fields'][0] == 'test_1', aggregation)
+
     def test_query_sql_post(self):
         """Should be able to post an sql query"""
 
-        query_body = 'SELECT COUNT(*),* FROM ' + self.current_ns
-        status, body = self.api_sql_post(self.current_db, query_body)
+        query_body = 'explain SELECT COUNT(*),* FROM ' + self.current_ns
+        status, body = self.api_sql_post(
+            self.current_db, query_body, self.EncodingType.PlainText)
 
         self.assertEqual(True, status == self.API_STATUS['success'], body)
         self.assertEqual(True, 'items' in body, body)
         self.assertEqual(True, 'query_total_items' in body, body)
-        
+        explainData = body['explain']
+        self.assertEqual(True, 'total_us' in explainData, explainData)
+        self.assertEqual(True, 'prepare_us' in explainData, explainData)
+        self.assertEqual(True, 'indexes_us' in explainData, explainData)
+        self.assertEqual(True, 'postprocess_us' in explainData, explainData)
+        self.assertEqual(True, 'loop_us' in explainData, explainData)
+        self.assertEqual(True, 'general_sort_us' in explainData, explainData)
+
     def test_query_sql_with_columns(self):
         """Should be able to get column parameters with sql query results"""
-        
+
         sql_query = 'SELECT COUNT(*),* FROM ' + self.current_ns
-        status, body = self.api_sql_exec_with_columns(self.current_db, sql_query)
+        status, body = self.api_sql_exec_with_columns(
+            self.current_db, sql_query)
 
         self.assertEqual(True, status == self.API_STATUS['success'], body)
         self.assertEqual(True, 'columns' in body, body)
-        assert len(body['columns'])>0
+        assert len(body['columns']) > 0
 
         widths = [None] * 10
         for item in body['items']:
@@ -49,10 +119,12 @@ class QueriesTest(BaseTest):
         suppositiveScreenWidth = 100
 
         for i in range(len(body['columns'])):
-            column_data = body['columns'][i] 
-            self.assertEqual(True, 'width_percents' in column_data, column_data)
+            column_data = body['columns'][i]
+            self.assertEqual(
+                True, 'width_percents' in column_data, column_data)
             assert column_data['max_chars'] == widths[i]
-            assert column_data['width_percents'] == (float(widths[i])/suppositiveScreenWidth)*100
+            assert column_data['width_percents'] == (
+                float(widths[i])/suppositiveScreenWidth)*100
 
     def test_query_dsl_(self):
         """Should be able to exec a dsl query"""
@@ -121,9 +193,10 @@ class QueriesTest(BaseTest):
 
         distinct = self.helper_items_second_key_of_item(items)
         limit = total_items + items_count
-        aggregations = self.helper_query_dsl_aggregation_construct(field=distinct, aggr_type='distinct')
+        aggregations = self.helper_query_dsl_aggregation_construct(
+            field=distinct, aggr_type='distinct')
         query_dsl = self.helper_query_dsl_construct(
-            self.current_ns, aggregations=[aggregations], limit=limit,req_total="enabled")
+            self.current_ns, aggregations=[aggregations], limit=limit, req_total="enabled")
         status, body = self.api_query_dsl(self.current_db, query_dsl)
 
         self.assertEqual(True, status == self.API_STATUS['success'], body)
@@ -166,7 +239,8 @@ class QueriesTest(BaseTest):
         self.assertEqual(True, status == self.API_STATUS['success'], body)
         self.assertEqual(True, 'items' in body, body)
         self.assertEqual(True, 'query_total_items' in body, body)
-        self.assertEqual(True, body['query_total_items'] == self.items_count, body)
+        self.assertEqual(
+            True, body['query_total_items'] == self.items_count, body)
 
     def test_query_dsl_filter_eq(self):
         """Should be able to exec a dsl query with EQ filter"""

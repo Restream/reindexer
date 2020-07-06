@@ -1,8 +1,18 @@
 import random
+import msgpack
 from specs import BaseTest
 
 
 class ItemsTest(BaseTest):
+    def check_update_msgpack_response(self, data, itemsCount, updatedItems=0):
+        self.assertEqual(True, 'updated' in data, data)
+        self.assertEqual(True, data['updated'] == itemsCount, data)
+        self.assertEqual(True, 'success' in data, data)
+        self.assertEqual(True, data['success'] == True, data)
+        if updatedItems > 0:
+            self.assertEqual(True, 'items' in data, data)
+            self.assertEqual(True, len(data['items']) == updatedItems, data['items'])
+
     def setUp(self):
         super().setUp()
 
@@ -56,6 +66,53 @@ class ItemsTest(BaseTest):
             status, body = self.api_get_items(self.current_db, self.current_ns)
             self.assertEqual(True, status == 200, body)
             self.assertEqual(True, item_body in body['items'], body)
+
+    def test_update_item_msgpack(self):
+        """Should be able to update item with msgpack"""
+        count = 10
+        index_array_of_dicts = self.helper_index_array_construct(count)
+
+        for i in range(0, count):
+            status, body = self.api_create_index(
+                self.current_db, self.test_ns, index_array_of_dicts[i])
+            self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        items = []
+        for i in range(0, 10):
+            item_body = self.helper_item_construct(count, i, i*10)
+            data = msgpack.dumps(item_body)
+            status, body = self.api_create_item(
+                self.current_db, self.current_ns, data, self.EncodingType.MsgPack)
+            self.assertEqual(True, status == self.API_STATUS['success'], body)
+            self.assertEqual(True, 'message' in body, body)
+            data = msgpack.loads(body.get('message'))
+            self.check_update_msgpack_response(data, 1)
+            item_body['index'] = i
+            items.append(item_body)
+
+        status, body = self.api_get_items(self.current_db, self.current_ns, self.EncodingType.MsgPack)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+        self.assertEqual(True, 'message' in body, body)
+        data = msgpack.loads(body.get('message'))
+        self.assertEqual(True, 'namespaces' in data, data)
+        self.assertEqual(True, 'items' in data, data)
+        self.assertEqual(True, 'cache_enabled' in data, data)
+
+        packer = msgpack.Packer(use_bin_type=True, autoreset=False)
+        for i in range(0, len(items)):
+            packer.pack(items[i])
+        
+        last_index = 'test_' + str(count)
+        precepts = [last_index + '=serial()']
+        
+        new_items_body = packer.getbuffer()
+        status, body = self.api_update_item(
+            self.current_db, self.current_ns, new_items_body, precepts, self.EncodingType.MsgPack)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+        self.assertEqual(True, 'message' in body, body)
+        data = msgpack.loads(body.get('message'))
+        self.check_update_msgpack_response(data, 10, 10)
+
 
     def test_update_item(self):
         """Should be able to update item"""

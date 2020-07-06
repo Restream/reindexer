@@ -434,7 +434,7 @@ class AuthTest(BaseTest):
 
         self.role = 'none'
         status, _ = self.api_sql_post(
-            self.test_db, 'SELECT * FROM ' + self.test_ns)
+            self.test_db, 'SELECT * FROM ' + self.test_ns, self.EncodingType.PlainText)
         self.assertEqual(
             True, status == self.API_STATUS['unauthorized'], self.helper_msg_role_status(status))
 
@@ -442,7 +442,7 @@ class AuthTest(BaseTest):
         for role in roles:
             self.role = role
             status, _ = self.api_sql_post(
-                self.test_db, 'SELECT * FROM ' + self.test_ns)
+                self.test_db, 'SELECT * FROM ' + self.test_ns, self.EncodingType.PlainText)
             self.assertEqual(
                 True, status == self.API_STATUS['success'], self.helper_msg_role_status(status))
 

@@ -53,6 +53,8 @@ public:
 	Error TruncateNamespace(string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
 	Error RenameNamespace(string_view srcNsName, const std::string &dstNsName, const InternalRdxContext &ctx = InternalRdxContext());
 	Error AddIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx = InternalRdxContext());
+	Error SetSchema(string_view nsName, string_view schema, const InternalRdxContext &ctx = InternalRdxContext());
+	Error GetSchema(string_view nsName, string &schema, const InternalRdxContext &ctx = InternalRdxContext());
 	Error UpdateIndex(string_view nsName, const IndexDef &indexDef, const InternalRdxContext &ctx = InternalRdxContext());
 	Error DropIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx = InternalRdxContext());
 	Error EnumNamespaces(vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx = InternalRdxContext());
@@ -157,6 +159,8 @@ protected:
 
 	void backgroundRoutine();
 	Error closeNamespace(string_view nsName, const RdxContext &ctx, bool dropStorage, bool enableDropSlave = false);
+
+	Error forceSyncDownstream(string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
 
 	Namespace::Ptr getNamespace(string_view nsName, const RdxContext &ctx);
 	Namespace::Ptr getNamespaceNoThrow(string_view nsName, const RdxContext &ctx);

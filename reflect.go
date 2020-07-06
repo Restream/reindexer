@@ -10,6 +10,7 @@ import (
 
 	"github.com/restream/reindexer/bindings"
 	"github.com/restream/reindexer/cjson"
+	"github.com/restream/reindexer/jsonschema"
 )
 
 const (
@@ -35,15 +36,53 @@ type indexOptions struct {
 	isSparse    bool
 }
 
-func parseIndex(namespace string, st reflect.Type, joined *map[string][]int) (indexDefs []bindings.IndexDef, err error) {
-	if err = parse(&indexDefs, st, false, "", "", joined, nil); err != nil {
+func parseRxTags(field reflect.StructField) (idxName string, idxType string, expireAfter string, idxSettings []string) {
+	tagsSlice := strings.SplitN(field.Tag.Get("reindex"), ",", 3)
+	var idxOpts string
+	idxName, idxType, expireAfter, idxOpts = tagsSlice[0], "", "", ""
+
+	if len(tagsSlice) > 1 {
+		idxType = tagsSlice[1]
+	}
+	if len(tagsSlice) > 2 {
+		if idxType == "ttl" {
+			expireAfter = strings.SplitN(tagsSlice[2], "=", 2)[1]
+		} else {
+			idxOpts = tagsSlice[2]
+		}
+	}
+	idxSettings = splitOptions(idxOpts)
+	return
+}
+
+func parseIndexes(namespace string, st reflect.Type, joined *map[string][]int) (indexDefs []bindings.IndexDef, err error) {
+	if err = parseIndexesImpl(&indexDefs, st, false, "", "", joined, nil); err != nil {
 		return nil, err
 	}
 
 	return indexDefs, nil
 }
 
-func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reindexBasePath, jsonBasePath string, joined *map[string][]int, parsed *map[string]bool) (err error) {
+func parseSchema(namespace string, st reflect.Type) *bindings.SchemaDef {
+	reflector := &jsonschema.Reflector{}
+	reflector.FieldIsInScheme = func(f reflect.StructField) bool {
+		_, _, _, idxSettings := parseRxTags(f)
+		if parseByKeyWord(&idxSettings, "joined") || parseByKeyWord(&idxSettings, "composite") {
+			return false
+		}
+		return true
+	}
+	reflector.DoNotReference = true
+	reflector.FullyQualifyTypeNames = true
+	if schema := reflector.ReflectFromType(st); schema != nil {
+		schemaDef := bindings.SchemaDef(*schema)
+		return &schemaDef
+	}
+	return nil
+
+}
+
+func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reindexBasePath, jsonBasePath string, joined *map[string][]int, parsed *map[string]bool) (err error) {
 	if len(jsonBasePath) != 0 && !strings.HasSuffix(jsonBasePath, ".") {
 		jsonBasePath = jsonBasePath + "."
 	}
@@ -62,13 +101,11 @@ func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reind
 	}
 
 	for i := 0; i < st.NumField(); i++ {
-
 		t := st.Field(i).Type
 		if t.Kind() == reflect.Ptr {
 			t = t.Elem()
 		}
 		// Get and parse tags
-		tagsSlice := strings.SplitN(st.Field(i).Tag.Get("reindex"), ",", 3)
 		jsonPath := strings.Split(st.Field(i).Tag.Get("json"), ",")[0]
 
 		if len(jsonPath) == 0 && !st.Field(i).Anonymous {
@@ -76,25 +113,11 @@ func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reind
 		}
 		jsonPath = jsonBasePath + jsonPath
 
-		idxName, idxType, expireAfter, idxOpts := tagsSlice[0], "", "", ""
+		idxName, idxType, expireAfter, idxSettings := parseRxTags(st.Field(i))
 		if idxName == "-" {
 			continue
 		}
-
-		if len(tagsSlice) > 1 {
-			idxType = tagsSlice[1]
-		}
-		if len(tagsSlice) > 2 {
-			if idxType == "ttl" {
-				expireAfter = strings.SplitN(tagsSlice[2], "=", 2)[1]
-			} else {
-				idxOpts = tagsSlice[2]
-			}
-		}
-
 		reindexPath := reindexBasePath + idxName
-
-		idxSettings := splitOptions(idxOpts)
 
 		opts := parseOpts(&idxSettings)
 		if t.Kind() == reflect.Slice || t.Kind() == reflect.Array || subArray {
@@ -107,7 +130,7 @@ func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reind
 
 		if parseByKeyWord(&idxSettings, "composite") {
 			if t.Kind() != reflect.Struct || t.NumField() != 0 {
-				return fmt.Errorf("'composite' tag allowed only on empty on structs: Invalid tags %v on field %s", tagsSlice, st.Field(i).Name)
+				return fmt.Errorf("'composite' tag allowed only on empty on structs: Invalid tags %v on field %s", strings.SplitN(st.Field(i).Tag.Get("reindex"), ",", 3), st.Field(i).Name)
 			}
 
 			indexDef := makeIndexDef(parseCompositeName(reindexPath), parseCompositeJsonPaths(reindexPath), idxType, "composite", opts, CollateNone, "", parseExpireAfter(expireAfter))
@@ -115,33 +138,31 @@ func parse(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray bool, reind
 				return err
 			}
 		} else if t.Kind() == reflect.Struct {
-			if err := parse(indexDefs, t, subArray, reindexPath, jsonPath, joined, parsed); err != nil {
+			if err := parseIndexesImpl(indexDefs, t, subArray, reindexPath, jsonPath, joined, parsed); err != nil {
 				return err
 			}
 		} else if (t.Kind() == reflect.Slice || t.Kind() == reflect.Array) &&
 			(t.Elem().Kind() == reflect.Struct || (t.Elem().Kind() == reflect.Ptr && t.Elem().Elem().Kind() == reflect.Struct)) {
 			// Check if field nested slice of struct
 			if parseByKeyWord(&idxSettings, "joined") && len(idxName) > 0 {
-				(*joined)[tagsSlice[0]] = st.Field(i).Index
-			} else if err := parse(indexDefs, t.Elem(), true, reindexPath, jsonPath, joined, parsed); err != nil {
+				(*joined)[idxName] = st.Field(i).Index
+			} else if err := parseIndexesImpl(indexDefs, t.Elem(), true, reindexPath, jsonPath, joined, parsed); err != nil {
 				return err
 			}
 		} else if len(idxName) > 0 {
 			collateMode, sortOrderLetters := parseCollate(&idxSettings)
-
-			if fieldType, err := getFieldType(t); err != nil {
+			var fieldType string
+			if fieldType, err = getFieldType(t); err != nil {
 				return err
-			} else {
-				indexDef := makeIndexDef(reindexPath, []string{jsonPath}, idxType, fieldType, opts, collateMode, sortOrderLetters, parseExpireAfter(expireAfter))
-				if err := indexDefAppend(indexDefs, indexDef, opts.isAppenable); err != nil {
-					return err
-				}
+			}
+			indexDef := makeIndexDef(reindexPath, []string{jsonPath}, idxType, fieldType, opts, collateMode, sortOrderLetters, parseExpireAfter(expireAfter))
+			if err := indexDefAppend(indexDefs, indexDef, opts.isAppenable); err != nil {
+				return err
 			}
 		}
 		if len(idxSettings) > 0 {
 			return fmt.Errorf("Unknown index settings are found: %v", idxSettings)
 		}
-
 	}
 
 	return nil
@@ -315,6 +336,14 @@ func getJoinedField(val reflect.Value, joined map[string][]int, name string) (re
 		ret = reflect.Indirect(reflect.Indirect(val).FieldByIndex(idx))
 	}
 	return ret
+}
+
+func makeFieldDef(JSONPath string, fieldType string, isArray bool) bindings.FieldDef {
+	return bindings.FieldDef{
+		JSONPath: JSONPath,
+		Type:     fieldType,
+		IsArray:  isArray,
+	}
 }
 
 func makeIndexDef(index string, jsonPaths []string, indexType, fieldType string, opts indexOptions, collateMode int, sortOrder string, expireAfter int) bindings.IndexDef {

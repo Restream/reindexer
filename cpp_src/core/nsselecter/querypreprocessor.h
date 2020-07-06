@@ -12,7 +12,8 @@ class SelectIteratorContainer;
 
 class QueryPreprocessor : private QueryEntries {
 public:
-	QueryPreprocessor(const QueryEntries &queries, NamespaceImpl *ns) : QueryEntries(queries), ns_(*ns) {}
+	QueryPreprocessor(const QueryEntries &queries, NamespaceImpl *ns, StrictMode strictMode)
+		: QueryEntries(queries), ns_(*ns), strictMode_(strictMode) {}
 	const QueryEntries &GetQueryEntries() const { return *this; }
 
 	void LookupQueryIndexes() {
@@ -36,6 +37,7 @@ private:
 	const Index *findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end) const;
 
 	NamespaceImpl &ns_;
+	StrictMode strictMode_;
 };
 
 }  // namespace reindexer

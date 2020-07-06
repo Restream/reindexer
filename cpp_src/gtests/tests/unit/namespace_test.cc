@@ -1,7 +1,14 @@
 #include <chrono>
+#include "core/cbinding/resultserializer.h"
+#include "core/cjson/ctag.h"
+#include "core/cjson/jsonbuilder.h"
+#include "core/cjson/msgpackbuilder.h"
+#include "core/cjson/msgpackdecoder.h"
+#include "core/itemimpl.h"
 #include "ns_api.h"
 #include "tools/serializer.h"
 #include "vendor/gason/gason.h"
+#include "vendor/msgpack/msgpack.h"
 
 TEST_F(NsApi, IndexDrop) {
 	Error err = rt.reindexer->OpenNamespace(default_namespace);
@@ -856,4 +863,188 @@ TEST_F(NsApi, TestUpdateQuerySqlEncoder) {
 	Query q3;
 	q3.FromSQL(sqlUpdateWithObject);
 	EXPECT_TRUE(q3.GetSQL() == sqlUpdateWithObject) << q3.GetSQL();
+}
+
+void generateObject(reindexer::JsonBuilder &builder, const string &prefix, ReindexerApi *rtapi) {
+	builder.Put(prefix + "ID", rand() % 1000);
+	builder.Put(prefix + "Name", rtapi->RandString());
+	builder.Put(prefix + "Rating", rtapi->RandString());
+	builder.Put(prefix + "Description", rtapi->RandString());
+	builder.Put(prefix + "Price", rand() % 1000 + 100);
+	builder.Put(prefix + "IMDB", 7.77777777777f);
+	builder.Put(prefix + "Subsription", bool(rand() % 100 > 50 ? 1 : 0));
+	{
+		auto idsArray = builder.Array(prefix + "IDS");
+		for (auto id : rtapi->RandIntVector(10, 10, 1000)) idsArray.Put(0, id);
+	}
+	{
+		auto homogeneousArray = builder.Array(prefix + "HomogeneousValues");
+		for (int i = 0; i < 20; ++i) {
+			if (i % 2 == 0) {
+				homogeneousArray.Put(0, rand());
+			} else {
+				if (i % 5 == 0) {
+					homogeneousArray.Put(0, 234.778f);
+				} else {
+					homogeneousArray.Put(0, rtapi->RandString());
+				}
+			}
+		}
+	}
+}
+
+void addObjectsArray(reindexer::JsonBuilder &builder, bool withInnerArray, ReindexerApi *rtapi) {
+	size_t size = rand() % 10 + 5;
+	reindexer::JsonBuilder array = builder.Array("object");
+	for (size_t i = 0; i < size; ++i) {
+		reindexer::JsonBuilder obj = array.Object(0);
+		generateObject(obj, "item", rtapi);
+		if (withInnerArray && i % 5 == 0) {
+			addObjectsArray(obj, false, rtapi);
+		}
+	}
+}
+
+TEST_F(NsApi, MsgPackEncodingTest) {
+	DefineDefaultNamespace();
+
+	reindexer::WrSerializer wrSer1;
+
+	vector<string> items;
+	for (int i = 0; i < 100; ++i) {
+		reindexer::WrSerializer wrser;
+		reindexer::JsonBuilder jsonBuilder(wrser);
+		jsonBuilder.Put("id", i);
+		jsonBuilder.Put("sparse_field", rand() % 1000);
+		jsonBuilder.Put("superID", i * 2);
+		jsonBuilder.Put("superName", RandString());
+		{
+			auto priceArray = jsonBuilder.Array("superPrices");
+			for (auto price : RandIntVector(10, 10, 1000)) priceArray.Put(0, price);
+		}
+		{
+			reindexer::JsonBuilder objectBuilder = jsonBuilder.Object("nested1");
+			generateObject(objectBuilder, "nested1", this);
+			addObjectsArray(objectBuilder, true, this);
+		}
+		jsonBuilder.Put("superBonus", RuRandString());
+		addObjectsArray(jsonBuilder, false, this);
+		jsonBuilder.End();
+
+		Item item = NewItem(default_namespace);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+		Error err = item.FromJSON(wrser.Slice());
+		ASSERT_TRUE(err.ok()) << err.what();
+		Upsert(default_namespace, item);
+
+		reindexer::WrSerializer wrSer2;
+		err = item.GetMsgPack(wrSer2);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		err = item.GetMsgPack(wrSer1);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		size_t offset = 0;
+		Item item2 = NewItem(default_namespace);
+		err = item2.FromMsgPack(reindexer::string_view(reinterpret_cast<const char *>(wrSer2.Buf()), wrSer2.Len()), offset);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		string json1(item.GetJSON());
+		string json2(item2.GetJSON());
+		ASSERT_TRUE(json1 == json2);
+		items.emplace_back(json2);
+	}
+
+	QueryResults qr;
+
+	int i = 0;
+	size_t length = wrSer1.Len();
+	size_t offset = 0;
+	while (offset < length) {
+		Item item = NewItem(default_namespace);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+		Error err = item.FromMsgPack(reindexer::string_view(reinterpret_cast<const char *>(wrSer1.Buf()), wrSer1.Len()), offset);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		err = rt.reindexer->Update(default_namespace, item);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		string json(item.GetJSON());
+		ASSERT_TRUE(json == items[i++]);
+
+		qr.AddItem(item, true, false);
+	}
+
+	qr.lockResults();
+
+	reindexer::WrSerializer wrSer3;
+	for (size_t i = 0; i < qr.Count(); ++i) {
+		qr[i].GetMsgPack(wrSer3, false);
+	}
+
+	i = 0;
+	offset = 0;
+	while (offset < length) {
+		Item item = NewItem(default_namespace);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+		Error err = item.FromMsgPack(reindexer::string_view(reinterpret_cast<const char *>(wrSer3.Buf()), wrSer3.Len()), offset);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		string json(item.GetJSON());
+		ASSERT_TRUE(json == items[i++]);
+	}
+}
+
+TEST_F(NsApi, MsgPackFromJson) {
+	DefineDefaultNamespace();
+	const std::string json = R"xxx({
+				"total_us": 100,
+				"prepare_us": 12,
+				"indexes_us": 48,
+				"postprocess_us": 6,
+				"loop_us": 32,
+				"general_sort_us": 0,
+				"sort_index": "-",
+				"sort_by_uncommitted_index": false,
+				"selectors": [
+					{
+						"field": "search",
+						"keys": 1,
+						"comparators": 0,
+						"cost": 18446744073709552000,
+						"matched": 90,
+						"method": "index",
+						"type": "Unsorted"
+					}
+				]
+			})xxx";
+	reindexer::WrSerializer msgpackSer;
+	reindexer::MsgPackBuilder msgpackBuilder(msgpackSer, ObjType::TypeObject, 1);
+	msgpackBuilder.Json("my_json", json);
+	msgpackBuilder.End();
+
+	reindexer::WrSerializer jsonSer;
+	reindexer::JsonBuilder jsonBuilder(jsonSer);
+	jsonBuilder.Json("my_json", json);
+	jsonBuilder.End();
+
+	Item item1 = NewItem(default_namespace);
+	ASSERT_TRUE(item1.Status().ok()) << item1.Status().what();
+
+	size_t offset = 0;
+	Error err = item1.FromMsgPack(msgpackSer.Slice(), offset);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	Item item2 = NewItem(default_namespace);
+	ASSERT_TRUE(item2.Status().ok()) << item2.Status().what();
+
+	err = item2.FromJSON(jsonSer.Slice());
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	string json1(item1.GetJSON());
+	string json2(item2.GetJSON());
+	ASSERT_TRUE(json1 == json2);
 }

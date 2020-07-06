@@ -4,6 +4,7 @@
 #include "client/item.h"
 #include "client/queryresults.h"
 #include "client/reindexerconfig.h"
+#include "client/transaction.h"
 #include "core/namespacedef.h"
 #include "core/query/query.h"
 
@@ -84,6 +85,10 @@ public:
 	/// @param nsName - Name of namespace
 	/// @param index - index name
 	Error DropIndex(string_view nsName, const IndexDef &index);
+	/// Set fields schema for namespace
+	/// @param nsName - Name of namespace
+	/// @param schema - JSON in JsonSchema format
+	Error SetSchema(string_view nsName, string_view schema);
 	/// Get list of all available namespaces
 	/// @param defs - std::vector of NamespaceDef of available namespaves
 	/// @param opts - Enumerartion options
@@ -163,6 +168,15 @@ public:
 	Error GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string> &suggestions);
 	/// Get curret connection status
 	Error Status();
+	/// Allocate new transaction for namespace
+	/// @param nsName - Name of namespace
+	Transaction NewTransaction(string_view nsName);
+	/// Commit transaction - transaction will be deleted after commit
+	/// @param tr - transaction to commit
+	Error CommitTransaction(Transaction &tr);
+	/// RollBack transaction - transaction will be deleted after rollback
+	/// @param tr - transaction to rollback
+	Error RollBackTransaction(Transaction &tr);
 
 	/// Add cancelable context
 	/// @param cancelCtx - context pointer
@@ -180,7 +194,6 @@ public:
 
 private:
 	Reindexer(RPCClient *impl, InternalRdxContext &&ctx) : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}
-
 	RPCClient *impl_;
 	bool owner_;
 	InternalRdxContext ctx_;

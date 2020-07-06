@@ -68,6 +68,14 @@ int Context::JSON(int code, chunk &&chunk) {
 	return 0;
 }
 
+int Context::MSGPACK(int code, chunk &&chunk) {
+	writer->SetContentLength(chunk.len_);
+	writer->SetRespCode(code);
+	writer->SetHeader(http::Header{"Content-Type"_sv, "application/x-msgpack; charset=utf-8"_sv});
+	writer->Write(std::move(chunk));
+	return 0;
+}
+
 int Context::String(int code, string_view slice) {
 	writer->SetContentLength(slice.size());
 	writer->SetRespCode(code);

@@ -62,6 +62,8 @@ public:
 	Error UpdateIndex(cproto::Context &ctx, p_string ns, p_string indexDef);
 	Error DropIndex(cproto::Context &ctx, p_string ns, p_string index);
 
+	Error SetSchema(cproto::Context &ctx, p_string ns, p_string schema);
+
 	Error Commit(cproto::Context &ctx, p_string ns);
 
 	Error ModifyItem(cproto::Context &ctx, p_string nsName, int format, p_string itemData, int mode, p_string percepsPack, int stateToken,
@@ -73,12 +75,11 @@ public:
 	Error DeleteQueryTx(cproto::Context &ctx, p_string query, int64_t txID);
 	Error UpdateQueryTx(cproto::Context &ctx, p_string query, int64_t txID);
 
-	Error CommitTx(cproto::Context &ctx, int64_t txId);
-
+	Error CommitTx(cproto::Context &ctx, int64_t txId, cproto::optional<int> flags);
 	Error RollbackTx(cproto::Context &ctx, int64_t txId);
 
-	Error DeleteQuery(cproto::Context &ctx, p_string query);
-	Error UpdateQuery(cproto::Context &ctx, p_string query);
+	Error DeleteQuery(cproto::Context &ctx, p_string query, cproto::optional<int> flags);
+	Error UpdateQuery(cproto::Context &ctx, p_string query, cproto::optional<int> flags);
 
 	Error Select(cproto::Context &ctx, p_string query, int flags, int limit, p_string ptVersions);
 	Error SelectSQL(cproto::Context &ctx, p_string query, int flags, int limit, p_string ptVersions);

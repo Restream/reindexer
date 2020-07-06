@@ -7,9 +7,9 @@ namespace reindexer {
 class CJsonModifier {
 public:
 	CJsonModifier(TagsMatcher &tagsMatcher, PayloadType pt);
-	Error SetFieldValue(string_view tuple, const TagsPath &path, const VariantArray &v, WrSerializer &ser);
-	Error SetObject(string_view tuple, const TagsPath &path, const VariantArray &v, WrSerializer &ser, const Payload *pl);
-	Error RemoveField(string_view tuple, const TagsPath &fieldPath, WrSerializer &wrser);
+	Error SetFieldValue(string_view tuple, TagsPath path, const VariantArray &v, WrSerializer &ser);
+	Error SetObject(string_view tuple, TagsPath path, const VariantArray &v, WrSerializer &ser, const Payload *pl);
+	Error RemoveField(string_view tuple, TagsPath fieldPath, WrSerializer &wrser);
 
 protected:
 	struct Context;

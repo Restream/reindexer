@@ -5,10 +5,7 @@ set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(REINDEXER_SOURCE_PATH ${PROJECT_SOURCE_DIR}/cpp_src)
 add_subdirectory(cpp_src)
-option (WITH_PYTHON "Enable build python connector" ON)
 option (ENABLE_AUTOREPAIR_TEST "Enable autorepair server test" OFF)
-
-add_subdirectory(connectors)
 
 find_program (BASH_CMD bash)
 if (BASH_CMD)

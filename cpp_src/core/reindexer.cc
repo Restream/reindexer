@@ -45,6 +45,8 @@ Error Reindexer::Select(const Query& q, QueryResults& result) { return impl_->Se
 Error Reindexer::Update(const Query& query, QueryResults& result) { return impl_->Update(query, result, ctx_); }
 Error Reindexer::Commit(string_view nsName) { return impl_->Commit(nsName); }
 Error Reindexer::AddIndex(string_view nsName, const IndexDef& idx) { return impl_->AddIndex(nsName, idx, ctx_); }
+Error Reindexer::SetSchema(string_view nsName, string_view schema) { return impl_->SetSchema(nsName, schema, ctx_); }
+Error Reindexer::GetSchema(string_view nsName, string& schema) { return impl_->GetSchema(nsName, schema, ctx_); }
 Error Reindexer::UpdateIndex(string_view nsName, const IndexDef& idx) { return impl_->UpdateIndex(nsName, idx, ctx_); }
 Error Reindexer::DropIndex(string_view nsName, const IndexDef& index) { return impl_->DropIndex(nsName, index, ctx_); }
 Error Reindexer::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOpts opts) { return impl_->EnumNamespaces(defs, opts, ctx_); }

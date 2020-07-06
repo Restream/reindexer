@@ -755,13 +755,12 @@ string SQLParser::parseJoinedFieldName(tokenizer &parser, string &name) {
 	if (tok.type != TokenName && tok.type != TokenString) {
 		throw Error(errParseSQL, "Expected name, but found %s, %s", tok.text(), parser.where());
 	}
-	parser.next_token();
 
-	if (parser.peek_token().text() != "."_sv) {
+	auto dotPos = tok.text().find('.');
+	if (dotPos == string_view::npos) {
 		return string(tok.text());
 	}
-	parser.next_token();
-	name = string(tok.text());
+	name = string(tok.text().substr(0, dotPos));
 
 	tok = peekSqlToken(parser, FieldNameSqlToken);
 	if (tok.type != TokenName && tok.type != TokenString) {
@@ -769,7 +768,7 @@ string SQLParser::parseJoinedFieldName(tokenizer &parser, string &name) {
 	}
 	parser.next_token();
 	ctx_.updateLinkedNs(name);
-	return string(tok.text());
+	return string(tok.text().substr(dotPos + 1));
 }
 
 void SQLParser::parseJoinEntries(tokenizer &parser, const string &mainNs, JoinedQuery &jquery) {

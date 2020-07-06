@@ -29,6 +29,8 @@ public:
 	void AddIndex(const IndexDef &indexDef, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::AddIndex)(indexDef, ctx); }
 	void UpdateIndex(const IndexDef &indexDef, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::UpdateIndex)(indexDef, ctx); }
 	void DropIndex(const IndexDef &indexDef, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::DropIndex)(indexDef, ctx); }
+	void SetSchema(string_view schema, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::SetSchema)(schema, ctx); }
+	void GetSchema(string &schema, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::GetSchema)(schema, ctx); }
 	void Insert(Item &item, const NsContext &ctx) { handleInvalidation(NamespaceImpl::Insert)(item, ctx); }
 	void Update(Item &item, const NsContext &ctx) {
 		nsFuncWrapper<void (NamespaceImpl::*)(Item &, const NsContext &), &NamespaceImpl::Update>(item, ctx);
@@ -84,7 +86,7 @@ public:
 	void FillResult(QueryResults &result, IdSet::Ptr ids) const { handleInvalidation(NamespaceImpl::FillResult)(result, ids); }
 	void EnablePerfCounters(bool enable = true) { handleInvalidation(NamespaceImpl::EnablePerfCounters)(enable); }
 	ReplicationState GetReplState(const RdxContext &ctx) const { return handleInvalidation(NamespaceImpl::GetReplState)(ctx); }
-	void SetSlaveLSN(int64_t slaveLSN, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::SetSlaveLSN)(slaveLSN, ctx); }
+	void SetReplLSNs(LSNPair LSNs, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::SetReplLSNs)(LSNs, ctx); }
 	void SetSlaveReplStatus(ReplicationState::Status status, const Error &error, const RdxContext &ctx) {
 		handleInvalidation(NamespaceImpl::SetSlaveReplStatus)(status, error, ctx);
 	}
@@ -114,14 +116,13 @@ public:
 		txSizeToAlwaysCopy_.store(configData.txSizeToAlwaysCopy, std::memory_order_relaxed);
 		handleInvalidation(NamespaceImpl::OnConfigUpdated)(configProvider, ctx);
 	}
-	void SetStorageOpts(StorageOpts opts, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::SetStorageOpts)(opts, ctx); }
 	StorageOpts GetStorageOpts(const RdxContext &ctx) { return handleInvalidation(NamespaceImpl::GetStorageOpts)(ctx); }
 	void Refill(vector<Item> &items, const NsContext &ctx) { handleInvalidation(NamespaceImpl::Refill)(items, ctx); }
 
 protected:
 	friend class ReindexerImpl;
 	void updateSelectTime() const { handleInvalidation(NamespaceImpl::updateSelectTime)(); }
-
+	void setSlaveMode(const RdxContext &ctx) { handleInvalidation(NamespaceImpl::setSlaveMode)(ctx); }
 	NamespaceImpl::Ptr getMainNs() const { return atomicLoadMainNs(); }
 	NamespaceImpl::Ptr awaitMainNs(const RdxContext &ctx) const {
 		if (hasCopy_.load(std::memory_order_acquire)) {

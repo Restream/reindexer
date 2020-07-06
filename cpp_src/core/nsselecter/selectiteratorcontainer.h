@@ -12,7 +12,7 @@ class JoinedSelector;
 
 class SelectIteratorContainer : public ExpressionTree<OpType, Bracket, 2, SelectIterator> {
 public:
-	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx *ctx = nullptr) : pt_(pt), ctx_(ctx){};
+	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx *ctx = nullptr) : pt_(pt), ctx_(ctx) {}
 
 	void ForEachIterator(const std::function<void(const SelectIterator &)> &func) const { ExecuteAppropriateForEach(func); }
 	void ForEachIterator(const std::function<void(SelectIterator &)> &func) { ExecuteAppropriateForEach(func); }
@@ -62,7 +62,7 @@ private:
 	static IdType getNextItemId(const_iterator begin, const_iterator end, IdType from);
 	static bool isIdset(const_iterator it, const_iterator end);
 
-	SelectKeyResults processQueryEntry(const QueryEntry &qe, const NamespaceImpl &ns);
+	SelectKeyResults processQueryEntry(const QueryEntry &qe, const NamespaceImpl &ns, StrictMode strictMode);
 	SelectKeyResults processQueryEntry(const QueryEntry &qe, bool enableSortIndexOptimize, const NamespaceImpl &ns, unsigned sortId,
 									   bool isQueryFt, SelectFunction::Ptr selectFnc, bool &isIndexFt, bool &isIndexSparse, FtCtx::Ptr &,
 									   const RdxContext &);

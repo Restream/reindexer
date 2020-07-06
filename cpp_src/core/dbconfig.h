@@ -34,6 +34,7 @@ struct NamespaceConfigData {
 	int noQueryIdleThreshold = 0;
 	LogLevel logLevel = LogNone;
 	CacheMode cacheMode = CacheModeOff;
+	StrictMode strictMode = StrictModeNames;
 	int startCopyPolicyTxSize = 10000;
 	int copyPolicyMultiplier = 5;
 	int txSizeToAlwaysCopy = 100000;
@@ -41,7 +42,7 @@ struct NamespaceConfigData {
 	int optimizationSortWorkers = 4;
 };
 
-enum ReplicationRole { ReplicationNone, ReplicationMaster, ReplicationSlave };
+enum ReplicationRole { ReplicationNone, ReplicationMaster, ReplicationSlave, ReplicationReadOnly };
 
 struct ReplicationConfigData {
 	Error FromYML(const string &yml);
@@ -62,6 +63,7 @@ struct ReplicationConfigData {
 	bool forceSyncOnWrongDataHash = false;
 	fast_hash_set<string, nocase_hash_str, nocase_equal_str> namespaces;
 	bool enableCompression = true;
+	int serverId = 0;
 
 	bool operator==(const ReplicationConfigData &rdata) const noexcept {
 		return (role == rdata.role) && (connPoolSize == rdata.connPoolSize) && (workerThreads == rdata.workerThreads) &&
@@ -69,7 +71,7 @@ struct ReplicationConfigData {
 			   (forceSyncOnWrongDataHash == rdata.forceSyncOnWrongDataHash) && (masterDSN == rdata.masterDSN) &&
 			   (retrySyncIntervalSec == rdata.retrySyncIntervalSec) && (onlineReplErrorsThreshold == rdata.onlineReplErrorsThreshold) &&
 			   (timeoutSec == rdata.timeoutSec) && (namespaces == rdata.namespaces) && (enableCompression == rdata.enableCompression) &&
-			   (appName == rdata.appName);
+			   (serverId == rdata.serverId) && (appName == rdata.appName);
 	}
 	bool operator!=(const ReplicationConfigData &rdata) const noexcept { return !operator==(rdata); }
 

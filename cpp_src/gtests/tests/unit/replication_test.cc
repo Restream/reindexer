@@ -92,7 +92,7 @@ TEST_F(ReplicationLoadApi, SingleSlaveTest) {
 }
 
 TEST_F(ReplicationLoadApi, ConfigSync) {
-	ReplicationConfig config("slave", true, false, "cproto://127.0.0.1:6534/0", "slave_1");
+	ReplicationConfigTest config("slave", true, false, 0, "cproto://127.0.0.1:6534/0", "slave_1");
 	const size_t kTestSlaveID = 2;
 	RestartWithConfigFile(kTestSlaveID,
 						  "role: slave\n"
@@ -103,10 +103,10 @@ TEST_F(ReplicationLoadApi, ConfigSync) {
 						  "force_sync_on_wrong_data_hash: false\n"
 						  "namespaces: []");
 	CheckSlaveConfigFile(kTestSlaveID, config);
-	config = ReplicationConfig("slave", false, true, "cproto://127.0.0.1:6534/12345", "slave_1", {"ns1", "ns2"});
+	config = ReplicationConfigTest("slave", false, true, 0, "cproto://127.0.0.1:6534/12345", "slave_1", {"ns1", "ns2"});
 	SetServerConfig(kTestSlaveID, config);
 	CheckSlaveConfigFile(kTestSlaveID, config);
-	config = ReplicationConfig("slave", true, false, "cproto://127.0.0.1:6534/999", "slave_1");
+	config = ReplicationConfigTest("slave", true, false, 0, "cproto://127.0.0.1:6534/999", "slave_1");
 	SetServerConfig(kTestSlaveID, config);
 	CheckSlaveConfigFile(kTestSlaveID, config);
 	std::this_thread::sleep_for(std::chrono::seconds(2));  // In case if OS doesn't have nanosecods in stat result
@@ -122,7 +122,7 @@ TEST_F(ReplicationLoadApi, ConfigSync) {
 			"namespaces:\n"
 			"  - ns1\n"
 			"  - ns3\n");
-	config = ReplicationConfig("slave", false, true, "cproto://127.0.0.1:6534/somensname", "slave_1", {"ns1", "ns3"});
+	config = ReplicationConfigTest("slave", false, true, 0, "cproto://127.0.0.1:6534/somensname", "slave_1", {"ns1", "ns3"});
 	CheckSlaveConfigNamespace(kTestSlaveID, config, std::chrono::seconds(3));
 }
 

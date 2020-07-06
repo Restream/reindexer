@@ -174,7 +174,7 @@ public:
 					assert(joinedIt.ItemsCount() == 1);
 					auto joinedItem = joinedIt.GetItem(0, qr.getPayloadType(i.fieldIdx + 1), qr.getTagsMatcher(i.fieldIdx + 1));
 					Variant value;
-					if (i.index == IndexValueType::SetByJsonPath) {
+					if (i.index == IndexValueType::SetByJsonPath || i.index == IndexValueType::NotSet) {
 						const auto values = joinedItem.GetValueByJSONPath(i.column);
 						assert(values.size() == 1);
 						value = values[0];
@@ -287,9 +287,17 @@ public:
 			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
 				const reindexer::SortingEntry& sortingEntry(query.sortingEntries_[j]);
 				const auto sortExpr = reindexer::SortExpression::Parse(sortingEntry.expression, joinedSelectors);
+
 				Variant sortedValue;
 				if (sortExpr.ByIndexField()) {
 					sortedValue = itemr[sortingEntry.expression];
+				} else if (sortExpr.ByJoinedIndexField()) {
+					auto jItemIt = (qr.begin() + i).GetJoined();
+					EXPECT_EQ(jItemIt.getJoinedFieldsCount(), 1);
+					EXPECT_EQ(jItemIt.getJoinedItemsCount(), 1);
+					reindexer::ItemImpl joinItem(jItemIt.begin().GetItem(0, qr.getPayloadType(1), qr.getTagsMatcher(1)));
+					auto fieldName = sortingEntry.expression.substr(sortingEntry.expression.find_first_of('.'));
+					sortedValue = joinItem.GetValueByJSONPath(fieldName)[0];
 				} else {
 					sortedValue = Variant{CalculateSortExpression(sortExpr.cbegin(), sortExpr.cend(), itemr, qr)};
 				}
@@ -320,8 +328,8 @@ public:
 						}
 						bool sortOrderSatisfied =
 							(sortingEntry.desc && cmpRes[j] >= 0) || (!sortingEntry.desc && cmpRes[j] <= 0) || (cmpRes[j] == 0);
-						EXPECT_TRUE(sortOrderSatisfied) << "\nSort order is incorrect for column: " << sortingEntry.expression;
 						if (!sortOrderSatisfied) {
+							EXPECT_TRUE(sortOrderSatisfied) << "\nSort order is incorrect for column: " << sortingEntry.expression;
 							TEST_COUT << query.GetSQL() << std::endl;
 							PrintFailedSortOrder(query, qr, i);
 						}
@@ -389,6 +397,7 @@ protected:
 			bool iterationResult = true;
 			if (it->IsLeaf()) {
 				if (it->Value().distinct) continue;
+				if (it->Value().joinIndex != QueryEntry::kNoJoins) continue;
 				iterationResult = checkCondition(item, it->Value());
 			} else {
 				iterationResult = checkConditions(item, it.cbegin(), it.cend());
@@ -639,15 +648,15 @@ protected:
 	}
 
 	void FillTestJoinNamespace() {
-		for (int i = 0; i < 1000; ++i) {
+		for (int i = 0; i < 200; ++i) {
 			Item item = NewItem(joinNs);
 			item[kFieldNameId] = i;
-			item[kFieldNameYear] = rand() % 50 + 2000;
+			item[kFieldNameYear] = 1900 + i;
 			item[kFieldNameName] = RandString().c_str();
 			item[kFieldNameGenre] = rand() % 50;
 			Upsert(joinNs, item);
 			string pkString = getPkString(item, joinNs);
-			insertedItems[joinNs].emplace(pkString, std::move(item));
+			insertedItems[joinNs].emplace(std::move(pkString), std::move(item));
 		}
 		Commit(testSimpleNs);
 	}
@@ -1279,7 +1288,7 @@ protected:
 															.InnerJoin(kFieldNameYear, kFieldNameYear, CondEq, joinQuery)
 															.Distinct(distinct)
 															.Sort(joinNs + '.' + kFieldNameId + " * " + joinNs + '.' + kFieldNameGenre +
-																	  (sortIdx.empty() ? "" : (" + " + sortIdx)),
+																	  (sortIdx.empty() || (sortIdx == "name") ? "" : (" + " + sortIdx)),
 																  sortOrder));
 				}
 			}

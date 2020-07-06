@@ -16,7 +16,7 @@ class ItemImpl;
 /// Item is the interface for data manipulating. It holds and control one database document (record)<br>
 /// *Lifetime*: Item is uses Copy-On-Write semantics, and have independent lifetime and state - e.g., aquired from Reindexer Item will not
 /// changed externally, even in case, when data in database was changed, or deleted.
-/// *Thread safety*: Item is thread safe againist Reindexer, but not thread safe itself.
+/// *Thread safety*: Item is thread safe against Reindexer, but not thread safe itself.
 /// Usage of single Item from different threads will race
 
 class Item {
@@ -51,6 +51,14 @@ public:
 	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next operation
 	/// with Item
 	string_view GetJSON();
+	/// Packs data in msgpack format
+	/// @return data slice with MsgPack. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next
+	/// operation with Item
+	string_view GetMsgPack();
+	/// Builds item from msgpack::object.
+	/// @param sbuf - msgpack encoded data buffer.
+	/// @param offset - position to start from.
+	Error FromMsgPack(const string_view &slice, size_t &offset);
 	/// Get status of item
 	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next operation
 	/// with Item
@@ -63,7 +71,7 @@ public:
 	int NumFields();
 	/// Set additional percepts for modify operation
 	/// @param precepts - strings in format "fieldName=Func()"
-	void SetPrecepts(const vector<string> &precepts);
+	void SetPrecepts(const vector<std::string> &precepts);
 	/// Check was names tags updated while modify operation
 	/// @return true: tags was updated.
 	bool IsTagsUpdated();
@@ -90,7 +98,9 @@ private:
 	friend class Namespace;
 	friend class QueryResults;
 	friend class RPCClient;
+	friend class RPCClientMock;
 	friend class reindexer::Replicator;
+	friend class Transaction;
 };
 }  // namespace client
 }  // namespace reindexer

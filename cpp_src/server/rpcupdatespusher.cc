@@ -8,7 +8,7 @@ namespace cproto {
 
 RPCUpdatesPusher::RPCUpdatesPusher() : writer_(nullptr), seq_(0) {}
 
-void RPCUpdatesPusher::OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &walRec) {
+void RPCUpdatesPusher::OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &walRec) {
 	SharedWALRecord pwalRec;
 	if (filter_) {
 		WALRecord rec = walRec;
@@ -16,15 +16,15 @@ void RPCUpdatesPusher::OnWALUpdate(int64_t lsn, string_view nsName, const WALRec
 		if (filter_(rec)) {
 			return;
 		}
-		pwalRec = rec.GetShared(lsn, nsName);
+		pwalRec = rec.GetShared(int64_t(LSNs.upstreamLSN_), int64_t(LSNs.originLSN_), nsName);
 	} else {
-		pwalRec = walRec.GetShared(lsn, nsName);
+		pwalRec = walRec.GetShared(int64_t(LSNs.upstreamLSN_), int64_t(LSNs.originLSN_), nsName);
 	}
 
 	writer_->CallRPC({[](IRPCCall *self, CmdCode &cmd, Args &args) {
 						  auto unpacked = SharedWALRecord(self->data_).Unpack();
 						  cmd = kCmdUpdates;
-						  args = {Arg(unpacked.lsn), Arg(unpacked.nsName), Arg(unpacked.pwalRec)};
+						  args = {Arg(unpacked.upstreamLSN), Arg(unpacked.nsName), Arg(unpacked.pwalRec), Arg(unpacked.originLSN)};
 					  },
 					  pwalRec.packed_
 

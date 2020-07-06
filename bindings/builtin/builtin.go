@@ -364,6 +364,23 @@ func (binding *Builtin) AddIndex(ctx context.Context, namespace string, indexDef
 	return err2go(C.reindexer_add_index(binding.rx, str2c(namespace), str2c(sIndexDef), ctxInfo.cCtx))
 }
 
+func (binding *Builtin) SetSchema(ctx context.Context, namespace string, schema bindings.SchemaDef) error {
+	schemaJSON, err := json.Marshal(schema)
+	if err != nil {
+		return err
+	}
+
+	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	if err != nil {
+		return err
+	}
+	defer binding.ctxWatcher.StopWatchOnCtx(ctxInfo)
+
+	sSchemaJSON := string(schemaJSON)
+
+	return err2go(C.reindexer_set_schema(binding.rx, str2c(namespace), str2c(sSchemaJSON), ctxInfo.cCtx))
+}
+
 func (binding *Builtin) UpdateIndex(ctx context.Context, namespace string, indexDef bindings.IndexDef) error {
 	bIndexDef, err := json.Marshal(indexDef)
 	if err != nil {

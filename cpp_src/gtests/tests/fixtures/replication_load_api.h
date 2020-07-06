@@ -58,18 +58,18 @@ public:
 			auto item1 = new typename BaseApi::ItemType(api.NewItem("some1"));
 			// clang-format off
 
-			err = item1->FromJSON(
-				"{\n"
-				"\"id\":" +
-				std::to_string(counter_) +
-				",\n"
-				"\"int\":" +
-				std::to_string(rand()) +
-				",\n"
-				"\"string\":\"" +
-				api.RandString() +
-				"\"\n" 
-				"}");
+						err = item1->FromJSON(
+							"{\n"
+							"\"id\":" +
+							std::to_string(counter_) +
+							",\n"
+							"\"int\":" +
+							std::to_string(rand()) +
+							",\n"
+							"\"string\":\"" +
+							api.RandString() +
+							"\"\n"
+							"}");
 			// clang-format on
 
 			counter_++;
@@ -79,7 +79,7 @@ public:
 				delete item1;
 			});
 		}
-		while (completed < count * 2) {  // -V776
+		while (completed < count * 2) {	 // -V776
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
 		api.Commit("some");
@@ -112,7 +112,7 @@ public:
 		StopServer(num);
 		StartServer(num);
 	}
-	void SetServerConfig(size_t num, const ReplicationConfig &config) {
+	void SetServerConfig(size_t num, const ReplicationConfigTest &config) {
 		auto srv = GetSrv(num);
 		if (num) {
 			srv->MakeSlave(0, config);
@@ -120,13 +120,13 @@ public:
 			srv->MakeMaster(config);
 		}
 	}
-	void CheckSlaveConfigFile(size_t num, const ReplicationConfig &config) {
+	void CheckSlaveConfigFile(size_t num, const ReplicationConfigTest &config) {
 		assert(num);
 		auto srv = GetSrv(num);
 		auto curConfig = srv->GetServerConfig(ServerControl::ConfigType::File);
 		EXPECT_TRUE(config == curConfig);
 	}
-	void CheckSlaveConfigNamespace(size_t num, const ReplicationConfig &config, std::chrono::seconds awaitTime) {
+	void CheckSlaveConfigNamespace(size_t num, const ReplicationConfigTest &config, std::chrono::seconds awaitTime) {
 		assert(num);
 		auto srv = GetSrv(num);
 		for (int i = 0; i < awaitTime.count(); ++i) {

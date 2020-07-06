@@ -216,8 +216,8 @@ func (dbw *ReindexerWrapper) WaitForSyncWithMaster() {
 	complete := true
 
 	var nameBad string
-	var masterBadLsn int64
-	var slaveBadLsn int64
+	var masterBadLsn reindexer.LsnT
+	var slaveBadLsn reindexer.LsnT
 
 	for i := 0; i < 600*5; i++ {
 
@@ -232,35 +232,44 @@ func (dbw *ReindexerWrapper) WaitForSyncWithMaster() {
 			panic(err)
 		}
 
-		slaveLsnMap := make(map[string]int64)
+		slaveLsnMap := make(map[string]reindexer.NamespaceMemStat)
 		for _, st := range slaveStats {
-			slaveLsnMap[st.Name] = st.Replication.LastLSN
+			slaveLsnMap[st.Name] = *st
 		}
 
-		for _, st := range stats {
+		for _, st := range stats { // loop master namespaces stats
+
 			if len(st.Name) == 0 || st.Name[0] == '#' {
 				continue
 			}
 
 			if slaveLsn, ok := slaveLsnMap[st.Name]; ok {
-				if slaveLsn != st.Replication.LastLSN {
+				if slaveLsn.Replication.LastUpstreamLSN != st.Replication.LastLSN { //slave != master
 					complete = false
 					nameBad = st.Name
 					masterBadLsn = st.Replication.LastLSN
-					slaveBadLsn = slaveLsn
+					slaveBadLsn = slaveLsn.Replication.LastUpstreamLSN
 					time.Sleep(100 * time.Millisecond)
 					break
 				}
 			} else {
 				complete = false
 				nameBad = st.Name
-				masterBadLsn = 0
-				slaveBadLsn = 0
+				masterBadLsn.ServerId = 0
+				masterBadLsn.Counter = 0
+				slaveBadLsn.ServerId = 0
+				slaveBadLsn.Counter = 0
 				time.Sleep(100 * time.Millisecond)
 				break
 			}
 		}
 		if complete {
+			for _, st := range stats {
+				slaveLsn, _ := slaveLsnMap[st.Name]
+				if slaveLsn.Replication.DataHash != st.Replication.DataHash {
+					panic(fmt.Sprintf("Can't sync slave ns with master: ns \"%s\" slave dataHash: %d , master dataHash %d", st.Name, slaveLsn.Replication.DataHash, st.Replication.DataHash))
+				}
+			}
 			dbw.setSynced()
 			return
 		}

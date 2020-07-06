@@ -18,34 +18,36 @@ using std::chrono::seconds;
 using std::chrono::milliseconds;
 
 class Namespace;
-using NSArray = h_vector<Namespace *, 1>;
+using NSArray = h_vector<Namespace*, 1>;
 
 class QueryResults {
 public:
-	typedef std::function<void(const Error &err)> Completion;
+	typedef std::function<void(const Error& err)> Completion;
 	QueryResults(int fetchFlags = 0);
-	QueryResults(const QueryResults &) = delete;
-	QueryResults(QueryResults &&) noexcept;
+	QueryResults(const QueryResults&) = delete;
+	QueryResults(QueryResults&&) noexcept;
 	~QueryResults();
-	QueryResults &operator=(const QueryResults &) = delete;
-	QueryResults &operator=(QueryResults &&obj) noexcept;
+	QueryResults& operator=(const QueryResults&) = delete;
+	QueryResults& operator=(QueryResults&& obj) noexcept;
 
 	class Iterator {
 	public:
-		Error GetJSON(WrSerializer &wrser, bool withHdrLen = true);
-		Error GetCJSON(WrSerializer &wrser, bool withHdrLen = true);
+		Error GetJSON(WrSerializer& wrser, bool withHdrLen = true);
+		Error GetCJSON(WrSerializer& wrser, bool withHdrLen = true);
+		Error GetMsgPack(WrSerializer& wrser, bool withHdrLen = true);
 		Item GetItem();
 		int64_t GetLSN();
 		bool IsRaw();
 		string_view GetRaw();
-		Iterator &operator++();
+		Iterator& operator++();
 		Error Status() { return qr_->status_; }
-		bool operator!=(const Iterator &) const;
-		bool operator==(const Iterator &) const;
-		Iterator &operator*() { return *this; }
+		bool operator!=(const Iterator&) const;
+		bool operator==(const Iterator&) const;
+		Iterator& operator*() { return *this; }
 		void readNext();
+		void getJSONFromCJSON(string_view cjson, WrSerializer& wrser, bool withHdrLen = true);
 
-		const QueryResults *qr_;
+		const QueryResults* qr_;
 		int idx_, pos_, nextPos_;
 		ResultSerializer::ItemParams itemParams_;
 	};
@@ -57,8 +59,8 @@ public:
 	int TotalCount() const { return queryParams_.totalcount; }
 	bool HaveRank() const { return queryParams_.flags & kResultsWithRank; }
 	bool NeedOutputRank() const { return queryParams_.flags & kResultsNeedOutputRank; }
-	const string &GetExplainResults() const { return queryParams_.explainResults; }
-	const vector<AggregationResult> &GetAggregationResults() const { return queryParams_.aggResults; }
+	const string& GetExplainResults() const { return queryParams_.explainResults; }
+	const vector<AggregationResult>& GetAggregationResults() const { return queryParams_.aggResults; }
 	Error Status() { return status_; }
 	h_vector<string_view, 1> GetNamespaces() const;
 	bool IsCacheEnabled() const { return queryParams_.flags & kResultsWithItemID; }
@@ -67,19 +69,20 @@ public:
 
 private:
 	friend class RPCClient;
-	QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, int fetchFlags, int fetchAmount, seconds timeout);
-	QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, string_view rawResult, int queryID,
+	friend class RPCClientMock;
+	QueryResults(net::cproto::ClientConnection* conn, NSArray&& nsArray, Completion cmpl, int fetchFlags, int fetchAmount, seconds timeout);
+	QueryResults(net::cproto::ClientConnection* conn, NSArray&& nsArray, Completion cmpl, string_view rawResult, int queryID,
 				 int fetchFlags, int fetchAmount, seconds timeout);
 	void Bind(string_view rawResult, int queryID);
 	void fetchNextResults();
-	void completion(const Error &err) {
+	void completion(const Error& err) {
 		if (cmpl_) {
 			auto cmpl = std::move(cmpl_);
 			cmpl(err);
 		}
 	}
 
-	net::cproto::ClientConnection *conn_;
+	net::cproto::ClientConnection* conn_;
 
 	NSArray nsArray_;
 	h_vector<char, 0x100> rawResult_;

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <string>
 #include <vector>
@@ -44,6 +44,8 @@ public:
 	string name;
 	StorageOpts storage;
 	vector<IndexDef> indexes;
+	bool isTemporary = false;
+	string schemaJson = "{}";
 };
 
 enum EnumNamespacesOpt {

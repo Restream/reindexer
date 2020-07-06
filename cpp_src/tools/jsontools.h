@@ -1,8 +1,6 @@
 #pragma once
 
-#include <tools/errors.h>
 #include <string>
-#include <vector>
 #include "gason/gason.h"
 #include "tools/serializer.h"
 

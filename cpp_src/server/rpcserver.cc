@@ -8,9 +8,10 @@
 #include "net/cproto/serverconnection.h"
 #include "net/listener.h"
 #include "reindexer_version.h"
+#include "vendor/msgpack/msgpack.h"
 
 namespace reindexer_server {
-const reindexer::SemVersion kMinTxReplSupportRxVersion("2.6.0");
+const reindexer::SemVersion kMinUnknownReplSupportRxVersion("2.6.0");
 
 RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper logger, IClientsStats *clientsStats, bool allocDebug, IStatsWatcher *statsCollector)
 	: dbMgr_(dbMgr),
@@ -58,9 +59,9 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 	} else {
 		clientData->rxVersion = SemVersion();
 	}
-	if (clientData->rxVersion < kMinTxReplSupportRxVersion) {
+	if (clientData->rxVersion < kMinUnknownReplSupportRxVersion) {
 		clientData->pusher.SetFilter([](WALRecord &rec) {
-			if (rec.type == WalCommitTransaction || rec.type == WalInitTransaction) {
+			if (rec.type == WalCommitTransaction || rec.type == WalInitTransaction || rec.type == WalSetSchema) {
 				return true;
 			}
 			rec.inTransaction = false;
@@ -285,6 +286,10 @@ Error RPCServer::DropIndex(cproto::Context &ctx, p_string ns, p_string index) {
 	return getDB(ctx, kRoleDBAdmin).DropIndex(ns, idef);
 }
 
+Error RPCServer::SetSchema(cproto::Context &ctx, p_string ns, p_string schema) {
+	return getDB(ctx, kRoleDBAdmin).SetSchema(ns, string_view(schema));
+}
+
 Error RPCServer::StartTransaction(cproto::Context &ctx, p_string nsName) {
 	auto db = getDB(ctx, kRoleDataWrite);
 	auto tr = db.NewTransaction(nsName);
@@ -360,7 +365,7 @@ Error RPCServer::UpdateQueryTx(cproto::Context &ctx, p_string queryBin, int64_t 
 	return errOK;
 }
 
-Error RPCServer::CommitTx(cproto::Context &ctx, int64_t txId) {
+Error RPCServer::CommitTx(cproto::Context &ctx, int64_t txId, cproto::optional<int> flagsOpts) {
 	auto db = getDB(ctx, kRoleDataWrite);
 
 	Transaction &tr = getTx(ctx, txId);
@@ -369,12 +374,18 @@ Error RPCServer::CommitTx(cproto::Context &ctx, int64_t txId) {
 	if (err.ok()) {
 		int32_t ptVers = -1;
 		ResultFetchOpts opts;
-		if (tr.IsTagsUpdated()) {
-			opts = ResultFetchOpts{kResultsWithItemID | kResultsWithPayloadTypes, span<int32_t>(&ptVers, 1), 0, INT_MAX};
+		int flags;
+		if (flagsOpts.hasValue()) {
+			flags = flagsOpts.value();
 		} else {
-			opts = ResultFetchOpts{kResultsWithItemID, {}, 0, INT_MAX};
+			flags = kResultsWithItemID;
+			if (tr.IsTagsUpdated()) flags |= kResultsWithPayloadTypes;
 		}
-
+		if (tr.IsTagsUpdated()) {
+			opts = ResultFetchOpts{flags, span<int32_t>(&ptVers, 1), 0, INT_MAX};
+		} else {
+			opts = ResultFetchOpts{flags, {}, 0, INT_MAX};
+		}
 		err = sendResults(ctx, qres, -1, opts);
 	}
 	clearTx(ctx, txId);
@@ -424,6 +435,11 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 				err = item.Unsafe().FromCJSON(itemData, mode == ModeDelete);
 			}
 			break;
+		case FormatMsgPack: {
+			size_t offset = 0;
+			err = item.FromMsgPack(itemData, offset);
+			break;
+		}
 		default:
 			err = Error(-1, "Invalid source item format %d", format);
 	}
@@ -469,12 +485,18 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 	} else {
 		opts = ResultFetchOpts{kResultsWithItemID, {}, 0, INT_MAX};
 	}
-	if (sendItemBack) opts.flags |= kResultsCJson;
+	if (sendItemBack) {
+		if (format == FormatMsgPack) {
+			opts.flags |= kResultsMsgPack;
+		} else {
+			opts.flags |= kResultsCJson;
+		}
+	}
 
 	return sendResults(ctx, qres, -1, opts);
 }
 
-Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin) {
+Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin, cproto::optional<int> flagsOpts) {
 	Query query;
 	Serializer ser(queryBin.data(), queryBin.size());
 	query.Deserialize(ser);
@@ -485,11 +507,15 @@ Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin) {
 	if (!err.ok()) {
 		return err;
 	}
-	ResultFetchOpts opts{kResultsWithItemID, {}, 0, INT_MAX};
+	int flags = kResultsWithItemID;
+	if (flagsOpts.hasValue()) {
+		flags = flagsOpts.value();
+	}
+	ResultFetchOpts opts{flags, {}, 0, INT_MAX};
 	return sendResults(ctx, qres, -1, opts);
 }
 
-Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin) {
+Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin, cproto::optional<int> flagsOpts) {
 	Query query;
 	Serializer ser(queryBin.data(), queryBin.size());
 	query.Deserialize(ser);
@@ -502,7 +528,9 @@ Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin) {
 	}
 
 	int32_t ptVersion = -1;
-	ResultFetchOpts opts{kResultsWithItemID | kResultsCJson | kResultsWithPayloadTypes, {&ptVersion, 1}, 0, INT_MAX};
+	int flags = kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson;
+	if (flagsOpts.hasValue()) flags = flagsOpts.value();
+	ResultFetchOpts opts{flags, {&ptVersion, 1}, 0, INT_MAX};
 	return sendResults(ctx, qres, -1, opts);
 }
 
@@ -528,14 +556,11 @@ Reindexer RPCServer::getDB(cproto::Context &ctx, UserRole role) {
 
 Error RPCServer::sendResults(cproto::Context &ctx, QueryResults &qres, int reqId, const ResultFetchOpts &opts) {
 	WrResultSerializer rser(opts);
-
 	bool doClose = rser.PutResults(&qres);
-
 	if (doClose && reqId >= 0) {
 		freeQueryResults(ctx, reqId);
 		reqId = -1;
 	}
-
 	string_view resSlice = rser.Slice();
 	ctx.Return({cproto::Arg(p_string(&resSlice)), cproto::Arg(int(reqId))});
 	return errOK;
@@ -552,6 +577,10 @@ Error RPCServer::processTxItem(DataFormat format, string_view itemData, Item &it
 			} else {
 				return item.FromCJSON(itemData, mode == ModeDelete);
 			}
+		case FormatMsgPack: {
+			size_t offset = 0;
+			return item.FromMsgPack(itemData, offset);
+		}
 		default:
 			return Error(-1, "Invalid source item format %d", format);
 	}
@@ -749,18 +778,19 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop, bool enableSta
 	dispatcher_.Register(cproto::kCmdAddIndex, this, &RPCServer::AddIndex);
 	dispatcher_.Register(cproto::kCmdUpdateIndex, this, &RPCServer::UpdateIndex);
 	dispatcher_.Register(cproto::kCmdDropIndex, this, &RPCServer::DropIndex);
+	dispatcher_.Register(cproto::kCmdSetSchema, this, &RPCServer::SetSchema);
 	dispatcher_.Register(cproto::kCmdCommit, this, &RPCServer::Commit);
 
 	dispatcher_.Register(cproto::kCmdStartTransaction, this, &RPCServer::StartTransaction);
 	dispatcher_.Register(cproto::kCmdAddTxItem, this, &RPCServer::AddTxItem);
 	dispatcher_.Register(cproto::kCmdDeleteQueryTx, this, &RPCServer::DeleteQueryTx);
 	dispatcher_.Register(cproto::kCmdUpdateQueryTx, this, &RPCServer::UpdateQueryTx);
-	dispatcher_.Register(cproto::kCmdCommitTx, this, &RPCServer::CommitTx);
+	dispatcher_.Register(cproto::kCmdCommitTx, this, &RPCServer::CommitTx, true);
 	dispatcher_.Register(cproto::kCmdRollbackTx, this, &RPCServer::RollbackTx);
 
 	dispatcher_.Register(cproto::kCmdModifyItem, this, &RPCServer::ModifyItem);
-	dispatcher_.Register(cproto::kCmdDeleteQuery, this, &RPCServer::DeleteQuery);
-	dispatcher_.Register(cproto::kCmdUpdateQuery, this, &RPCServer::UpdateQuery);
+	dispatcher_.Register(cproto::kCmdDeleteQuery, this, &RPCServer::DeleteQuery, true);
+	dispatcher_.Register(cproto::kCmdUpdateQuery, this, &RPCServer::UpdateQuery, true);
 
 	dispatcher_.Register(cproto::kCmdSelect, this, &RPCServer::Select);
 	dispatcher_.Register(cproto::kCmdSelectSQL, this, &RPCServer::SelectSQL);

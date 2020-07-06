@@ -4,16 +4,16 @@ namespace reindexer {
 
 CJsonBuilder::CJsonBuilder(WrSerializer &ser, ObjType type, TagsMatcher *tm, int tagName) : tm_(tm), ser_(&ser), type_(type) {
 	switch (type_) {
-		case TypeArray:
-		case TypeObjectArray:
+		case ObjType::TypeArray:
+		case ObjType::TypeObjectArray:
 			ser_->PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
 			savePos_ = ser_->Len();
 			ser_->PutUInt32(0);
 			break;
-		case TypeObject:
+		case ObjType::TypeObject:
 			ser_->PutVarUint(static_cast<int>(ctag(TAG_OBJECT, tagName)));
 			break;
-		case TypePlain:
+		case ObjType::TypePlain:
 			break;
 	}
 }
@@ -21,31 +21,31 @@ CJsonBuilder::CJsonBuilder(WrSerializer &ser, ObjType type, TagsMatcher *tm, int
 CJsonBuilder::~CJsonBuilder() { End(); }
 CJsonBuilder &CJsonBuilder::End() {
 	switch (type_) {
-		case TypeArray:
+		case ObjType::TypeArray:
 			*(reinterpret_cast<int *>(ser_->Buf() + savePos_)) = static_cast<int>(carraytag(count_, itemType_));
 			break;
-		case TypeObjectArray:
+		case ObjType::TypeObjectArray:
 			*(reinterpret_cast<int *>(ser_->Buf() + savePos_)) = static_cast<int>(carraytag(count_, TAG_OBJECT));
 			break;
-		case TypeObject:
+		case ObjType::TypeObject:
 			ser_->PutVarUint(static_cast<int>(ctag(TAG_END)));
 			break;
-		case TypePlain:
+		case ObjType::TypePlain:
 			break;
 	}
-	type_ = TypePlain;
+	type_ = ObjType::TypePlain;
 	return *this;
 }
 
 void CJsonBuilder::SetTagsMatcher(const TagsMatcher *tm) { tm_ = const_cast<TagsMatcher *>(tm); }
 
 CJsonBuilder CJsonBuilder::Object(int tagName) {
-	++count_;
-	return CJsonBuilder(*ser_, TypeObject, tm_, tagName);
+	count_++;
+	return CJsonBuilder(*ser_, ObjType::TypeObject, tm_, tagName);
 }
 
 CJsonBuilder CJsonBuilder::Array(int tagName, ObjType type) {
-	assert((type_ != TypeArray) && (type_ != TypeObjectArray));
+	assert((type_ != ObjType::TypeArray) && (type_ != ObjType::TypeObjectArray));
 	++count_;
 	return CJsonBuilder(*ser_, type, tm_, tagName);
 }

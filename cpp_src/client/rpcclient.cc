@@ -375,7 +375,7 @@ Error RPCClient::Delete(const Query& query, QueryResults& result, const Internal
 		}
 	};
 
-	auto ret = conn->Call({cproto::kCmdDeleteQuery, config_.RequestTimeout, ctx.execTimeout()}, ser.Slice());
+	auto ret = conn->Call({cproto::kCmdDeleteQuery, config_.RequestTimeout, ctx.execTimeout()}, ser.Slice(), kResultsWithItemID);
 	icompl(ret, conn);
 	return ret.Status();
 }
@@ -402,7 +402,8 @@ Error RPCClient::Update(const Query& query, QueryResults& result, const Internal
 		}
 	};
 
-	auto ret = conn->Call({cproto::kCmdUpdateQuery, config_.RequestTimeout, ctx.execTimeout()}, ser.Slice());
+	auto ret = conn->Call({cproto::kCmdUpdateQuery, config_.RequestTimeout, ctx.execTimeout()}, ser.Slice(),
+						  kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
 	icompl(ret, conn);
 	return ret.Status();
 }
@@ -441,12 +442,13 @@ Error RPCClient::selectImpl(string_view query, QueryResults& result, cproto::Cli
 	};
 
 	if (!ctx.cmpl()) {
-		auto ret =
-			conn->Call({cproto::kCmdSelectSQL, netTimeout, ctx.execTimeout(), ctx.getCancelCtx()}, query, flags, INT_MAX, pser.Slice());
+		auto ret = conn->Call({cproto::kCmdSelectSQL, netTimeout, ctx.execTimeout(), ctx.getCancelCtx()}, query, flags, config_.FetchAmount,
+							  pser.Slice());
 		icompl(ret, conn);
 		return ret.Status();
 	} else {
-		conn->Call(icompl, {cproto::kCmdSelectSQL, netTimeout, ctx.execTimeout(), ctx.getCancelCtx()}, query, flags, INT_MAX, pser.Slice());
+		conn->Call(icompl, {cproto::kCmdSelectSQL, netTimeout, ctx.execTimeout(), ctx.getCancelCtx()}, query, flags, config_.FetchAmount,
+				   pser.Slice());
 		return errOK;
 	}
 }
@@ -526,6 +528,10 @@ Error RPCClient::DropIndex(string_view nsName, const IndexDef& idx, const Intern
 	return getConn()->Call({cproto::kCmdDropIndex, config_.RequestTimeout, ctx.execTimeout()}, nsName, idx.name_).Status();
 }
 
+Error RPCClient::SetSchema(string_view nsName, string_view schema, const InternalRdxContext& ctx) {
+	return getConn()->Call({cproto::kCmdSetSchema, config_.RequestTimeout, ctx.execTimeout()}, nsName, schema).Status();
+}
+
 Error RPCClient::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const InternalRdxContext& ctx) {
 	try {
 		auto ret = getConn()->Call({cproto::kCmdEnumNamespaces, config_.RequestTimeout, ctx.execTimeout()}, int(opts.options_),
@@ -538,7 +544,7 @@ Error RPCClient::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOpts o
 			for (auto& nselem : root["items"]) {
 				NamespaceDef def;
 				def.FromJSON(nselem);
-				defs.push_back(def);
+				defs.emplace_back(std::move(def));
 			}
 		}
 		return ret.Status();
@@ -677,9 +683,11 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 		return;
 	}
 
-	int64_t lsn(args[0]);
+	lsn_t lsn{int64_t(args[0])};
 	string_view nsName(args[1]);
 	string_view pwalRec(args[2]);
+	lsn_t originLSN;
+	if (args.size() >= 4) originLSN = lsn_t(args[3].As<int64_t>());
 	WALRecord wrec(pwalRec);
 
 	if (wrec.type == WalItemModify) {
@@ -730,7 +738,7 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 		}
 	}
 
-	observers_.OnWALUpdate(lsn, nsName, wrec);
+	observers_.OnWALUpdate(LSNPair(lsn, originLSN), nsName, wrec);
 }
 
 bool RPCClient::onConnectionFail(int failedDsnIndex) {
@@ -744,6 +752,35 @@ bool RPCClient::onConnectionFail(int failedDsnIndex) {
 		connections_[i]->Reconnect();
 	}
 	return true;
+}
+
+Transaction RPCClient::NewTransaction(string_view nsName, const InternalRdxContext& ctx) {
+	net::cproto::ClientConnection* conn = getConn();
+	auto res = conn->Call({cproto::kCmdStartTransaction, config_.RequestTimeout, ctx.execTimeout()}, nsName);
+	auto err = res.Status();
+	auto args = res.GetArgs(1);
+	if (err.ok()) {
+		return Transaction(this, conn, int64_t(args[0]), config_.RequestTimeout, ctx.execTimeout(),
+						   std::string(nsName.data(), nsName.size()));
+	}
+	return Transaction();
+}
+
+Error RPCClient::CommitTransaction(Transaction& tr, const InternalRdxContext& ctx) {
+	if (tr.conn_) {
+		auto ret = tr.conn_->Call({cproto::kCmdCommitTx, config_.RequestTimeout, ctx.execTimeout()}, tr.txId_).Status();
+		tr.clear();
+		return ret;
+	}
+	return Error(errLogic, "connection is nullptr");
+}
+Error RPCClient::RollBackTransaction(Transaction& tr, const InternalRdxContext& ctx) {
+	if (tr.conn_) {
+		auto ret = tr.conn_->Call({cproto::kCmdRollbackTx, config_.RequestTimeout, ctx.execTimeout()}, tr.txId_).Status();
+		tr.clear();
+		return ret;
+	}
+	return Error(errLogic, "connection is nullptr");
 }
 
 }  // namespace client

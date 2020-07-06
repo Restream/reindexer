@@ -9,7 +9,7 @@ namespace reindexer {
 size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, size_t srcBegin, size_t srcEnd) {
 	assert(dst <= srcBegin);
 	int iidx[maxIndexes];
-	for (int &i : iidx) i = -1;
+	std::fill(iidx, iidx + maxIndexes, -1);
 	size_t merged = 0;
 	for (size_t src = srcBegin, nextSrc; src < srcEnd; src = nextSrc) {
 		nextSrc = Next(src);
@@ -134,9 +134,22 @@ void QueryPreprocessor::convertWhereValues(QueryEntry *qe) const {
 	KeyValueType keyType = isIndexField ? ns_.indexes_[qe->idxNo]->SelectKeyType() : detectQueryEntryIndexType(*qe);
 	const FieldsSet *fields = isIndexField ? &ns_.indexes_[qe->idxNo]->Fields() : nullptr;
 
+	if (strictMode_ == StrictModeIndexes && !isIndexField && qe->joinIndex == QueryEntry::kNoJoins) {
+		throw Error(errParams,
+					"Current query strict mode allows filtering by indexes only. There are no indexes with name '%s' in namespace '%s'",
+					qe->index, ns_.name_);
+	}
+
 	if (keyType != KeyValueUndefined) {
 		for (auto &key : qe->values) {
 			key.convert(keyType, &ns_.payloadType_, fields);
+		}
+	} else if (!isIndexField && qe->joinIndex == QueryEntry::kNoJoins) {
+		if (strictMode_ == StrictModeNames && ns_.tagsMatcher_.path2tag(qe->index).empty()) {
+			throw Error(
+				errParams,
+				"Current query strict mode allows filtering by existing fields only. There are no fields with name '%s' in namespace '%s'",
+				qe->index, ns_.name_);
 		}
 	}
 }

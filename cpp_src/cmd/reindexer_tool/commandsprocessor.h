@@ -82,7 +82,7 @@ protected:
 	Error commandSubscribe(const string& command);
 	Error commandProcessDatabases(const string& command);
 
-	void OnWALUpdate(int64_t lsn, string_view nsName, const reindexer::WALRecord& wrec) override final;
+	void OnWALUpdate(reindexer::LSNPair LSNs, string_view nsName, const reindexer::WALRecord& wrec) override final;
 	void OnConnectionState(const Error& err) override;
 
 	struct commandDefinition {

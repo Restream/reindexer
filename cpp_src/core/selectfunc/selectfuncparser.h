@@ -34,8 +34,8 @@ public:
 	SelectFuncParser() {}
 	~SelectFuncParser() {}
 
-	SelectFuncStruct &Parse(string query);
-	SelectFuncStruct &ParseFunction(tokenizer &parser, bool partOfExpression = false);
+	SelectFuncStruct &Parse(const std::string &query);
+	SelectFuncStruct &ParseFunction(tokenizer &parser, bool partOfExpression, token tok = token());
 
 	static bool IsFunction(const string_view &val);
 	static bool IsFunction(const VariantArray &val);

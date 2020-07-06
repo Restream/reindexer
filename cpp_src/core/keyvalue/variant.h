@@ -25,7 +25,7 @@ public:
 	explicit Variant(double v) : type_(KeyValueDouble), value_double(v) {}
 	explicit Variant(const char *v);
 	explicit Variant(p_string v, bool enableHold = true);
-	explicit Variant(const string &v);
+	explicit Variant(const std::string &v);
 	explicit Variant(const key_string &v);
 	explicit Variant(const PayloadValue &v);
 	Variant(const VariantArray &values);

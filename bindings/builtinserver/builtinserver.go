@@ -164,6 +164,10 @@ func (server *BuiltinServer) AddIndex(ctx context.Context, namespace string, ind
 	return server.builtin.AddIndex(ctx, namespace, indexDef)
 }
 
+func (server *BuiltinServer) SetSchema(ctx context.Context, namespace string, schema bindings.SchemaDef) error {
+	return server.builtin.SetSchema(ctx, namespace, schema)
+}
+
 func (server *BuiltinServer) UpdateIndex(ctx context.Context, namespace string, indexDef bindings.IndexDef) error {
 	return server.builtin.UpdateIndex(ctx, namespace, indexDef)
 }

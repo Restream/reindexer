@@ -1,6 +1,7 @@
 
 #include "sqlsuggester.h"
 #include "core/namespacedef.h"
+#include "core/schema.h"
 #include "sqltokentype.h"
 
 #include <set>
@@ -12,10 +13,11 @@ bool checkIfTokenStartsWith(const string_view &src, const string_view &pattern) 
 	return checkIfStartsWith(src, pattern) && src.length() < pattern.length();
 }
 
-vector<string> SQLSuggester::GetSuggestions(string_view q, size_t pos, EnumNamespacesF enumNamespaces) {
+vector<string> SQLSuggester::GetSuggestions(string_view q, size_t pos, EnumNamespacesF enumNamespaces, GetSchemaF getSchema) {
 	ctx_.suggestionsPos = pos;
 	ctx_.autocompleteMode = true;
-	enumNamespaces_ = enumNamespaces;
+	enumNamespaces_ = std::move(enumNamespaces);
+	getSchema_ = std::move(getSchema);
 
 	try {
 		Parse(q);
@@ -76,13 +78,32 @@ void SQLSuggester::getMatchingNamespacesNames(const string &token, vector<string
 	}
 }
 
-void SQLSuggester::getMatchingIndexesNames(const string &token, vector<string> &variants) {
+void SQLSuggester::getMatchingFieldsNames(const string &token, vector<string> &variants) {
 	auto namespaces = enumNamespaces_(EnumNamespacesOpts().WithFilter(ctx_.suggestionLinkedNs));
 
 	if (namespaces.empty()) return;
+	auto dotPos = token.find('.');
 	for (auto &idx : namespaces[0].indexes) {
 		if (idx.name_ == "#pk" || idx.name_ == "-tuple") continue;
-		if (isBlank(token) || checkIfStartsWith(token, idx.name_)) variants.push_back(idx.name_);
+		if (isBlank(token) || checkIfStartsWith(token, idx.name_, dotPos != string::npos)) {
+			if (dotPos == string::npos) {
+				variants.push_back(idx.name_);
+			} else {
+				variants.push_back(idx.name_.substr(dotPos));
+			}
+		}
+	}
+
+	if (getSchema_) {
+		auto schema = getSchema_(namespaces[0].name);
+		if (schema) {
+			auto fieldsSuggestions = schema->GetSuggestions(token);
+			for (auto &suggestion : fieldsSuggestions) {
+				if (std::find(variants.begin(), variants.end(), suggestion) == variants.end()) {
+					variants.emplace_back(std::move(suggestion));
+				}
+			}
+		}
 	}
 }
 
@@ -111,12 +132,12 @@ void SQLSuggester::getSuggestionsForToken(SqlParsingCtx::SuggestionData &ctx) {
 		case SingleSelectFieldSqlToken:
 			getMatchingTokens(AllFieldsToken, ctx.token, ctx.variants);
 			getMatchingTokens(AggregationSqlToken, ctx.token, ctx.variants);
-			getMatchingIndexesNames(ctx.token, ctx.variants);
+			getMatchingFieldsNames(ctx.token, ctx.variants);
 			break;
 		case SelectFieldsListSqlToken:
 			getMatchingTokens(FromSqlToken, ctx.token, ctx.variants);
 			getMatchingTokens(AggregationSqlToken, ctx.token, ctx.variants);
-			getMatchingIndexesNames(ctx.token, ctx.variants);
+			getMatchingFieldsNames(ctx.token, ctx.variants);
 			break;
 		case NamespaceSqlToken:
 			getMatchingNamespacesNames(ctx.token, ctx.variants);
@@ -124,10 +145,10 @@ void SQLSuggester::getSuggestionsForToken(SqlParsingCtx::SuggestionData &ctx) {
 		case AndSqlToken:
 		case WhereFieldSqlToken:
 			getMatchingTokens(NotSqlToken, ctx.token, ctx.variants);
-			getMatchingIndexesNames(ctx.token, ctx.variants);
+			getMatchingFieldsNames(ctx.token, ctx.variants);
 			break;
 		case FieldNameSqlToken:
-			getMatchingIndexesNames(ctx.token, ctx.variants);
+			getMatchingFieldsNames(ctx.token, ctx.variants);
 			break;
 		case SortDirectionSqlToken:
 			getMatchingTokens(SortDirectionSqlToken, ctx.token, ctx.variants);
@@ -135,7 +156,7 @@ void SQLSuggester::getSuggestionsForToken(SqlParsingCtx::SuggestionData &ctx) {
 			break;
 		case JoinedFieldNameSqlToken:
 			getMatchingNamespacesNames(ctx.token, ctx.variants);
-			getMatchingIndexesNames(ctx.token, ctx.variants);
+			getMatchingFieldsNames(ctx.token, ctx.variants);
 			break;
 		default:
 			break;
@@ -147,12 +168,19 @@ bool SQLSuggester::findInPossibleTokens(int type, const string &v) {
 	return (values.find(v) != values.end());
 }
 
-bool SQLSuggester::findInPossibleIndexes(const string &tok) {
+bool SQLSuggester::findInPossibleFields(const string &tok) {
 	auto namespaces = enumNamespaces_(EnumNamespacesOpts().WithFilter(ctx_.suggestionLinkedNs));
 
 	if (namespaces.empty()) return false;
-	return std::find_if(namespaces[0].indexes.begin(), namespaces[0].indexes.end(),
-						[&](const IndexDef &lhs) { return lhs.name_ == tok; }) != namespaces[0].indexes.end();
+	if (std::find_if(namespaces[0].indexes.begin(), namespaces[0].indexes.end(), [&](const IndexDef &lhs) { return lhs.name_ == tok; }) !=
+		namespaces[0].indexes.end()) {
+		return true;
+	}
+	if (getSchema_) {
+		auto schema = getSchema_(namespaces[0].name);
+		return schema && schema->HasPath(tok);
+	}
+	return false;
 }
 
 bool SQLSuggester::findInPossibleNamespaces(const string &tok) {
@@ -174,7 +202,7 @@ void SQLSuggester::checkForTokenSuggestions(SqlParsingCtx::SuggestionData &data)
 			}
 			if (data.token == "*") break;
 			bool isIndex = false, isAggregationFunction = false;
-			isIndex = findInPossibleIndexes(data.token);
+			isIndex = findInPossibleFields(data.token);
 			if (!isIndex) isAggregationFunction = findInPossibleTokens(AggregationSqlToken, data.token);
 			if (!isIndex && !isAggregationFunction) {
 				getSuggestionsForToken(data);
@@ -199,7 +227,7 @@ void SQLSuggester::checkForTokenSuggestions(SqlParsingCtx::SuggestionData &data)
 				}
 			}
 
-			if (!fromKeywordReached && !findInPossibleIndexes(data.token)) {
+			if (!fromKeywordReached && !findInPossibleFields(data.token)) {
 				getSuggestionsForToken(data);
 			}
 		} break;
@@ -225,7 +253,7 @@ void SQLSuggester::checkForTokenSuggestions(SqlParsingCtx::SuggestionData &data)
 				break;
 			}
 			if (iequals(data.token, "not")) break;
-			if (!findInPossibleIndexes(data.token)) {
+			if (!findInPossibleFields(data.token)) {
 				getSuggestionsForToken(data);
 			}
 			break;
@@ -290,11 +318,11 @@ void SQLSuggester::checkForTokenSuggestions(SqlParsingCtx::SuggestionData &data)
 				getSuggestionsForToken(data);
 				break;
 			}
-			if (findInPossibleIndexes(data.token)) break;
+			if (findInPossibleFields(data.token)) break;
 			getSuggestionsForToken(data);
 			break;
 		case FieldNameSqlToken:
-			if (isBlank(data.token) || !findInPossibleIndexes(data.token)) {
+			if (isBlank(data.token) || !findInPossibleFields(data.token)) {
 				getSuggestionsForToken(data);
 			}
 			break;
@@ -314,7 +342,7 @@ void SQLSuggester::checkForTokenSuggestions(SqlParsingCtx::SuggestionData &data)
 			}
 			break;
 		case JoinedFieldNameSqlToken:
-			if (isBlank(data.token) || !findInPossibleIndexes(data.token) || !findInPossibleNamespaces(data.token)) {
+			if (isBlank(data.token) || !findInPossibleFields(data.token) || !findInPossibleNamespaces(data.token)) {
 				getSuggestionsForToken(data);
 				break;
 			}

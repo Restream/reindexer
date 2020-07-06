@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/restream/reindexer/bindings/builtinserver/config"
+	"github.com/restream/reindexer/jsonschema"
 )
 
 type IndexDef struct {
@@ -22,6 +23,14 @@ type IndexDef struct {
 	ExpireAfter int         `json:"expire_after"`
 	Config      interface{} `json:"config"`
 }
+
+type FieldDef struct {
+	JSONPath string `json:"json_path"`
+	Type     string `json:"type"`
+	IsArray  bool   `json:"is_array"`
+}
+
+type SchemaDef jsonschema.Schema
 
 type StorageOpts struct {
 	EnableStorage     bool `json:"enabled"`
@@ -165,6 +174,7 @@ type RawBinding interface {
 	RenameNamespace(ctx context.Context, srcNs string, dstNs string) error
 	EnableStorage(ctx context.Context, namespace string) error
 	AddIndex(ctx context.Context, namespace string, indexDef IndexDef) error
+	SetSchema(ctx context.Context, namespace string, schema SchemaDef) error
 	UpdateIndex(ctx context.Context, namespace string, indexDef IndexDef) error
 	DropIndex(ctx context.Context, namespace, index string) error
 	BeginTx(ctx context.Context, namespace string) (TxCtx, error)

@@ -28,10 +28,10 @@ struct CJsonModifier::Context {
 
 CJsonModifier::CJsonModifier(TagsMatcher &tagsMatcher, PayloadType pt) : pt_(pt), tagsMatcher_(tagsMatcher) {}
 
-Error CJsonModifier::SetFieldValue(string_view tuple, const TagsPath &path, const VariantArray &val, WrSerializer &ser) {
+Error CJsonModifier::SetFieldValue(string_view tuple, TagsPath path, const VariantArray &val, WrSerializer &ser) {
 	if (path.empty()) return Error(errLogic, kWrongFieldsAmountMsg);
 	try {
-		fieldPath_ = path;
+		fieldPath_ = std::move(path);
 		tagsPath_.clear();
 		Context ctx(val, ser, tuple, FieldModeSet, nullptr);
 		buildTuple(ctx);
@@ -41,10 +41,10 @@ Error CJsonModifier::SetFieldValue(string_view tuple, const TagsPath &path, cons
 	return errOK;
 }
 
-Error CJsonModifier::SetObject(string_view tuple, const TagsPath &path, const VariantArray &val, WrSerializer &ser, const Payload *pl) {
+Error CJsonModifier::SetObject(string_view tuple, TagsPath path, const VariantArray &val, WrSerializer &ser, const Payload *pl) {
 	if (path.empty()) return Error(errLogic, kWrongFieldsAmountMsg);
 	try {
-		fieldPath_ = path;
+		fieldPath_ = std::move(path);
 		tagsPath_.clear();
 		Context ctx(val, ser, tuple, FieldModeSetJson, pl);
 		buildCJSON(ctx);
@@ -54,9 +54,9 @@ Error CJsonModifier::SetObject(string_view tuple, const TagsPath &path, const Va
 	return errOK;
 }
 
-Error CJsonModifier::RemoveField(string_view tuple, const TagsPath &fieldPath, WrSerializer &wrser) {
+Error CJsonModifier::RemoveField(string_view tuple, TagsPath fieldPath, WrSerializer &wrser) {
 	try {
-		fieldPath_ = fieldPath;
+		fieldPath_ = std::move(fieldPath);
 		tagsPath_.clear();
 		Context ctx({}, wrser, tuple, FieldModeDrop);
 		buildTuple(ctx);
@@ -81,14 +81,14 @@ void CJsonModifier::copyValue(int type, int field, Context &ctx, size_t idx) {
 void CJsonModifier::updateObject(Context &ctx, int tagName) {
 	JsonDecoder jsonDecoder(tagsMatcher_);
 	if (ctx.value.IsArrayValue()) {
-		CJsonBuilder cjsonBuilder(ctx.wrser, CJsonBuilder::TypeArray, &tagsMatcher_, tagName);
+		CJsonBuilder cjsonBuilder(ctx.wrser, ObjType::TypeArray, &tagsMatcher_, tagName);
 		for (size_t i = 0; i < ctx.value.size(); ++i) {
 			CJsonBuilder objBuilder = cjsonBuilder.Object(nullptr);
 			jsonDecoder.Decode(string_view(ctx.value[i]), objBuilder, fieldPath_);
 		}
 	} else {
 		assert(ctx.value.size() == 1);
-		CJsonBuilder cjsonBuilder(ctx.wrser, CJsonBuilder::TypeObject, &tagsMatcher_, tagName);
+		CJsonBuilder cjsonBuilder(ctx.wrser, ObjType::TypeObject, &tagsMatcher_, tagName);
 		jsonDecoder.Decode(string_view(ctx.value.front()), cjsonBuilder, fieldPath_);
 	}
 }

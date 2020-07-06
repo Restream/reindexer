@@ -2,17 +2,19 @@
 
 #include <core/keyvalue/variant.h>
 #include <vector>
+#include "core/lsn.h"
 #include "core/storage/idatastorage.h"
 #include "tools/errors.h"
 #include "walrecord.h"
 
 namespace reindexer {
 
-static const int kDefaultWALSize = 1000000;
+static const int kDefaultWALSize = 4000000;
 
 /// WAL trakcer
 class WALTracker {
 public:
+	WALTracker();
 	/// Initialize WAL tracker.
 	/// @param maxLSN - Current LSN counter value
 	/// @param storage - Storage object for store WAL records
@@ -21,7 +23,7 @@ public:
 	/// @param rec - Record to be added
 	/// @param oldLsn - Optional, previous LSN value of changed object
 	/// @return LSN value of record
-	int64_t Add(const WALRecord &rec, int64_t oldLsn = -1);
+	int64_t Add(const WALRecord &rec, lsn_t oldLsn = lsn_t());
 	/// Set record in WAL tracker
 	/// @param rec - Record to be added
 	/// @param lsn - LSN value

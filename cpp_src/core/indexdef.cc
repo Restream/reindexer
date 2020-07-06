@@ -118,6 +118,10 @@ Error IndexDef::FromJSON(span<char> json) {
 
 void IndexDef::FromJSON(const gason::JsonNode &root) {
 	name_ = root["name"].As<string>();
+	jsonPaths_.clear();
+	for (auto &subElem : root["json_paths"]) {
+		jsonPaths_.push_back(subElem.As<string>());
+	}
 	fieldType_ = root["field_type"].As<string>();
 	indexType_ = root["index_type"].As<string>();
 	expireAfter_ = root["expire_after"].As<int64_t>();
@@ -126,10 +130,6 @@ void IndexDef::FromJSON(const gason::JsonNode &root) {
 	opts_.Dense(root["is_dense"].As<bool>());
 	opts_.Sparse(root["is_sparse"].As<bool>());
 	opts_.SetConfig(stringifyJson(root["config"]));
-	jsonPaths_.clear();
-	for (auto &subElem : root["json_paths"]) {
-		jsonPaths_.push_back(subElem.As<string>());
-	}
 
 	auto collateStr = root["collate_mode"].As<string_view>();
 	if (!collateStr.empty()) {

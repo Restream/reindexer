@@ -14,6 +14,16 @@ import (
 	"github.com/restream/reindexer/cjson"
 )
 
+// Srict modes for queries
+type QueryStrictMode int
+
+const (
+	queryStrictModeNotSet  QueryStrictMode = bindings.QueryStrictModeNotSet
+	QueryStrictModeNone                    = bindings.QueryStrictModeNone    // Allows any fields in coditions, but doesn't check actual values for non-existing names
+	QueryStrictModeNames                   = bindings.QueryStrictModeNames   // Allows only valid fields and indexes in conditions. Otherwise query will return error
+	QueryStrictModeIndexes                 = bindings.QueryStrictModeIndexes // Allows only indexes in conditions. Otherwise query will return error
+)
+
 // Constants for query serialization
 const (
 	queryCondition         = bindings.QueryCondition
@@ -39,6 +49,7 @@ const (
 	queryDropField         = bindings.QueryDropField
 	queryUpdateObject      = bindings.QueryUpdateObject
 	queryWithRank          = bindings.QueryWithRank
+	queryStrictMode        = bindings.QueryStrictMode
 )
 
 // Constants for calc total
@@ -558,6 +569,12 @@ func (q *Query) Offset(startOffset int) *Query {
 // Debug - Set debug level
 func (q *Query) Debug(level int) *Query {
 	q.ser.PutVarCUInt(queryDebugLevel).PutVarCUInt(level)
+	return q
+}
+
+// Strict - Set query strict mode
+func (q *Query) Strict(mode QueryStrictMode) *Query {
+	q.ser.PutVarCUInt(queryStrictMode).PutVarCUInt(int(mode))
 	return q
 }
 

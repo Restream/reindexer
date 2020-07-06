@@ -79,9 +79,11 @@ int64_t stoll(string_view sl);
 
 bool validateObjectName(string_view name);
 LogLevel logLevelFromString(const string& strLogLevel);
+StrictMode strictModeFromString(const std::string& strStrictMode);
+string_view strictModeToString(StrictMode mode);
 
 bool iequals(string_view lhs, string_view rhs);
-bool checkIfStartsWith(string_view src, string_view pattern);
+bool checkIfStartsWith(string_view src, string_view pattern, bool casesensitive = false);
 bool isPrintable(string_view str);
 bool isBlank(string_view token);
 

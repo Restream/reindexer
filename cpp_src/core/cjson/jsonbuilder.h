@@ -1,23 +1,19 @@
 #pragma once
 
 #include "estl/span.h"
+#include "objtype.h"
+#include "tagslengths.h"
 #include "tagsmatcher.h"
 
 namespace reindexer {
 class JsonBuilder {
 public:
-	enum ObjType {
-		TypeObject,
-		TypeArray,
-		TypePlain,
-	};
-
-	JsonBuilder() : ser_(nullptr), tm_(nullptr){};
-	JsonBuilder(WrSerializer &ser, ObjType type = TypeObject, const TagsMatcher *tm = nullptr);
+	JsonBuilder() : ser_(nullptr), tm_(nullptr) {}
+	JsonBuilder(WrSerializer &ser, ObjType type = ObjType::TypeObject, const TagsMatcher *tm = nullptr);
 	~JsonBuilder();
 	JsonBuilder(const JsonBuilder &) = delete;
 	JsonBuilder(JsonBuilder &&other) : ser_(other.ser_), tm_(other.tm_), type_(other.type_), count_(other.count_) {
-		other.type_ = TypePlain;
+		other.type_ = ObjType::TypePlain;
 	}
 	JsonBuilder &operator=(const JsonBuilder &) = delete;
 	JsonBuilder &operator=(JsonBuilder &&) = delete;
@@ -25,11 +21,11 @@ public:
 	void SetTagsMatcher(const TagsMatcher *tm);
 
 	/// Start new object
-	JsonBuilder Object(string_view name = {});
-	JsonBuilder Object(int tagName) { return Object(getNameByTag(tagName)); }
+	JsonBuilder Object(string_view name = {}, int size = KUnknownFieldSize);
+	JsonBuilder Object(int tagName, int size = KUnknownFieldSize) { return Object(getNameByTag(tagName), size); }
 
-	JsonBuilder Array(string_view name);
-	JsonBuilder Array(int tagName) { return Array(getNameByTag(tagName)); }
+	JsonBuilder Array(string_view name, int size = KUnknownFieldSize);
+	JsonBuilder Array(int tagName, int size = KUnknownFieldSize) { return Array(getNameByTag(tagName), size); }
 
 	template <typename T>
 	void Array(int tagName, span<T> data) {
@@ -63,6 +59,7 @@ public:
 
 	JsonBuilder &Raw(int tagName, string_view arg) { return Raw(getNameByTag(tagName), arg); }
 	JsonBuilder &Raw(string_view name, string_view arg);
+	JsonBuilder &Json(string_view name, string_view arg) { return Raw(name, arg); }
 
 	JsonBuilder &Null(int tagName) { return Null(getNameByTag(tagName)); }
 	JsonBuilder &Null(string_view name);
@@ -75,7 +72,7 @@ protected:
 
 	WrSerializer *ser_;
 	const TagsMatcher *tm_;
-	ObjType type_ = TypePlain;
+	ObjType type_ = ObjType::TypePlain;
 	int count_ = 0;
 };
 

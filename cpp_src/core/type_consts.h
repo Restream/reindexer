@@ -63,6 +63,7 @@ typedef enum QueryItemType {
 	QueryDropField,
 	QueryUpdateObject,
 	QueryWithRank,
+	QueryStrictMode,
 } QueryItemType;
 
 typedef enum QuerySerializeMode {
@@ -112,6 +113,7 @@ enum ErrorCode {
 	errTagsMissmatch = 21,
 	errReplParams = 22,
 	errNamespaceInvalidated = 23,
+	errParseMsgPack = 24,
 };
 
 enum QueryType { QuerySelect, QueryDelete, QueryUpdate, QueryTruncate };
@@ -126,11 +128,13 @@ enum JoinType { LeftJoin, InnerJoin, OrInnerJoin, Merge };
 
 enum CalcTotalMode { ModeNoTotal, ModeCachedTotal, ModeAccurateTotal };
 
-enum DataFormat { FormatJson, FormatCJson };
+enum DataFormat { FormatJson, FormatCJson, FormatMsgPack };
 
 enum QueryResultItemType { QueryResultEnd, QueryResultAggregation, QueryResultExplain };
 
 enum CacheMode { CacheModeOn = 0, CacheModeAggressive = 1, CacheModeOff = 2 };
+
+enum StrictMode { StrictModeNotSet = 0, StrictModeNone, StrictModeNames, StrictModeIndexes };
 
 typedef int IdType;
 typedef unsigned SortType;
@@ -146,6 +150,7 @@ enum {
 	kResultsPtrs = 0x1,
 	kResultsCJson = 0x2,
 	kResultsJson = 0x3,
+	kResultsMsgPack = 0x4,
 
 	kResultsWithPayloadTypes = 0x10,
 	kResultsWithItemID = 0x20,
@@ -156,7 +161,12 @@ enum {
 	kResultsNeedOutputRank = 0x400,
 };
 
-typedef enum IndexOpt { kIndexOptPK = 1 << 7, kIndexOptArray = 1 << 6, kIndexOptDense = 1 << 5, kIndexOptSparse = 1 << 3 } IndexOpt;
+typedef enum IndexOpt {
+	kIndexOptPK = 1 << 7,
+	kIndexOptArray = 1 << 6,
+	kIndexOptDense = 1 << 5,
+	kIndexOptSparse = 1 << 3,
+} IndexOpt;
 
 typedef enum StotageOpt {
 	kStorageOptEnabled = 1 << 0,
@@ -167,7 +177,6 @@ typedef enum StotageOpt {
 	kStorageOptSync = 1 << 5,
 	kStorageOptLazyLoad = 1 << 6,
 	kStorageOptSlaveMode = 1 << 7,
-	kStorageOptTemporary = 1 << 8,
 	kStorageOptAutorepair = 1 << 9,
 } StorageOpt;
 
@@ -193,7 +202,6 @@ typedef struct StorageOpts {
 	bool IsSync() const { return options & kStorageOptSync; }
 	bool IsLazyLoad() const { return options & kStorageOptLazyLoad; }
 	bool IsSlaveMode() const { return options & kStorageOptSlaveMode; }
-	bool IsTemporary() const { return options & kStorageOptTemporary; }
 	bool IsAutorepair() const { return options & kStorageOptAutorepair; }
 
 	StorageOpts& Enabled(bool value = true) {
@@ -233,11 +241,6 @@ typedef struct StorageOpts {
 
 	StorageOpts& SlaveMode(bool value = true) {
 		options = value ? options | kStorageOptSlaveMode : options & ~(kStorageOptSlaveMode);
-		return *this;
-	}
-
-	StorageOpts& Temporary(bool value = true) {
-		options = value ? options | kStorageOptTemporary : options & ~(kStorageOptTemporary);
 		return *this;
 	}
 

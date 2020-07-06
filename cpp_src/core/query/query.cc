@@ -24,6 +24,7 @@ bool Query::operator==(const Query &obj) const {
 	if (start != obj.start) return false;
 	if (count != obj.count) return false;
 	if (debugLevel != obj.debugLevel) return false;
+	if (strictMode != obj.strictMode) return false;
 	if (forcedSortOrder_ != obj.forcedSortOrder_) return false;
 
 	if (selectFilter_ != obj.selectFilter_) return false;
@@ -149,6 +150,9 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 				break;
 			case QueryDebugLevel:
 				debugLevel = ser.GetVarUint();
+				break;
+			case QueryStrictMode:
+				strictMode = StrictMode(ser.GetVarUint());
 				break;
 			case QueryLimit:
 				count = ser.GetVarUint();
@@ -279,6 +283,11 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 	ser.PutVarUint(QueryDebugLevel);
 	ser.PutVarUint(debugLevel);
 
+	if (strictMode != StrictModeNotSet) {
+		ser.PutVarUint(QueryStrictMode);
+		ser.PutVarUint(int(strictMode));
+	}
+
 	if (!(mode & SkipLimitOffset)) {
 		if (HasLimit()) {
 			ser.PutVarUint(QueryLimit);
@@ -354,6 +363,7 @@ void Query::Deserialize(Serializer &ser) {
 		q1.joinType = joinType;
 		q1.deserialize(ser, hasJoinConditions);
 		q1.debugLevel = debugLevel;
+		q1.strictMode = strictMode;
 		if (joinType == JoinType::Merge) {
 			mergeQueries_.emplace_back(std::move(q1));
 			nested = true;

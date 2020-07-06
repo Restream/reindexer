@@ -150,16 +150,33 @@ void SelectIteratorContainer::SetExpectMaxIterations(int expectedIterations) {
 	}
 }
 
-SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe, const NamespaceImpl &ns) {
+SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe, const NamespaceImpl &ns, StrictMode strictMode) {
+	SelectKeyResults selectResults;
+
 	FieldsSet fields;
 	TagsPath tagsPath = ns.tagsMatcher_.path2tag(qe.index);
-	fields.push_back(tagsPath);
+	if (!tagsPath.empty()) {
+		SelectKeyResult comparisonResult;
+		fields.push_back(tagsPath);
+		comparisonResult.comparators_.push_back(
+			Comparator(qe.condition, KeyValueUndefined, qe.values, false, qe.distinct, ns.payloadType_, fields, nullptr, CollateOpts()));
+		selectResults.emplace_back(std::move(comparisonResult));
+	} else if (strictMode == StrictModeNone) {
+		SelectKeyResult res;
+		// Ignore non-index/non-existing fields
+		if (qe.condition == CondEmpty) {
+			res.emplace_back(SingleSelectKeyResult(IdType(0), IdType(ns.items_.size())));
+		} else {
+			res.emplace_back(SingleSelectKeyResult(IdType(0), IdType(0)));
+		}
+		selectResults.emplace_back(std::move(res));
+	} else {
+		throw Error(
+			errParams,
+			"Current query strict mode allows filtering by existing fields only. There are no fields with name '%s' in namespace '%s'",
+			qe.index, ns.name_);
+	}
 
-	SelectKeyResults selectResults;
-	SelectKeyResult comparisonResult;
-	comparisonResult.comparators_.push_back(
-		Comparator(qe.condition, KeyValueUndefined, qe.values, false, qe.distinct, ns.payloadType_, fields, nullptr, CollateOpts()));
-	selectResults.push_back(comparisonResult);
 	return selectResults;
 }
 
@@ -309,7 +326,11 @@ void SelectIteratorContainer::PrepareIteratorsForSelectLoop(const QueryEntries &
 				bool nonIndexField = (qe.idxNo == IndexValueType::SetByJsonPath);
 
 				if (nonIndexField) {
-					selectResults = processQueryEntry(qe, ns);
+					auto strictMode = ns.config_.strictMode;
+					if (ctx_ && ctx_->query.strictMode != StrictModeNotSet) {
+						strictMode = ctx_->query.strictMode;
+					}
+					selectResults = processQueryEntry(qe, ns, strictMode);
 				} else {
 					bool enableSortIndexOptimize =
 						!this->Size() && (op != OpNot) && !qe.distinct && (next == end || queries.GetOperation(next) != OpOr);

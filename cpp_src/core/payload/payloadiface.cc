@@ -81,9 +81,11 @@ VariantArray PayloadIface<T>::GetByJsonPath(const TagsPath &jsonPath, VariantArr
 	FieldsSet filter({jsonPath});
 	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
 	krefs.resize(0);
-	FieldsExtractor extractor(&krefs, expectedType, jsonPath.size());
+	if (!jsonPath.empty()) {
+		FieldsExtractor extractor(&krefs, expectedType, jsonPath.size());
 
-	encoder.Encode(&pl, extractor);
+		encoder.Encode(&pl, extractor);
+	}
 	return krefs;
 }
 

@@ -4,7 +4,12 @@
 namespace reindexer {
 
 RdxContext::RdxContext(RdxContext&& other)
-	: holdStatus_(other.holdStatus_), activityPtr_(nullptr), cancelCtx_(other.cancelCtx_), cmpl_(other.cmpl_) {
+	: fromReplication_(other.fromReplication_),
+	  LSNs_(other.LSNs_),
+	  holdStatus_(other.holdStatus_),
+	  activityPtr_(nullptr),
+	  cancelCtx_(other.cancelCtx_),
+	  cmpl_(other.cmpl_) {
 	if (holdStatus_ == kHold) {
 		new (&activityCtx_) RdxActivityContext(std::move(other.activityCtx_));
 	} else if (holdStatus_ == kPtr) {

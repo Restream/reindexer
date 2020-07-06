@@ -1,3 +1,17 @@
+# Version 2.10.0 (05.07.2020)
+
+# Core
+- [fea] Cascade replication
+- [fea] MsgPack format support for query and updates
+- [fea] Initial JsonSchema v4 support. 
+- [fea] Query strict mode support - Check indexes or fields names before query execution
+
+# Reindexer server
+- [fea] MsgPack format support for http and cproto
+
+# Python connector
+- [fea] Moved to separate repository
+
 
 # Version 2.9.2 (24.06.2020)
 - [fix] Optimize indexes after ns load

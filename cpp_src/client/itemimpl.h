@@ -41,9 +41,13 @@ public:
 	string_view GetCJSON();
 	Error FromCJSON(const string_view &slice);
 
+	string_view GetMsgPack();
+	Error FromMsgPack(const string_view &slice, size_t &offset);
+
 	PayloadType Type() { return payloadType_; }
 	PayloadValue &Value() { return payloadValue_; }
 	Payload GetPayload() { return Payload(payloadType_, payloadValue_); }
+	ConstPayload GetConstPayload() { return ConstPayload(payloadType_, payloadValue_); }
 
 	TagsMatcher &tagsMatcher() { return tagsMatcher_; }
 

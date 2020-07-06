@@ -118,7 +118,7 @@ void Comparator::ExcludeDistinct(const PayloadValue &data, int rowId) {
 		// Exclude field by CJSON path (slow path)
 		VariantArray rhs;
 		ConstPayload(payloadType_, data).GetByJsonPath(fields_.getTagsPath(0), rhs, type_);
-		for (const auto& v: rhs) excludeDistinct(v);
+		for (const auto &v : rhs) excludeDistinct(v);
 	} else {
 		// Exclude field from payload by offset (fast path)
 

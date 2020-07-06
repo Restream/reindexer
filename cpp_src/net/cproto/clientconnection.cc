@@ -431,6 +431,7 @@ void ClientConnection::call(Completion cmpl, const CommandParams &opts, const Ar
 								cmpl(RPCAnswer(Error(errTimeout, "Connection deadline exceeded")), this);
 								return;
 							}
+							completion = &completions_[seq % completions_.size()];
 						}
 						if (state_ == ConnFailed) {
 							auto err = lastError_;

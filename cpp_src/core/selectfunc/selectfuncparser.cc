@@ -12,19 +12,25 @@ using std::vector;
 
 namespace reindexer {
 
-SelectFuncStruct &SelectFuncParser::Parse(string query) {
+SelectFuncStruct &SelectFuncParser::Parse(const string &query) {
 	tokenizer parser(query);
 
 	token tok = parser.next_token(false);
 
 	selectFuncStruct_.field = string(tok.text());
 
-	tok = parser.next_token(false);
-	if (tok.text() != "=" && tok.text() != ".") {
-		throw Error(errParams, "`=` or '.' is expected, but found `%s`", tok.text());
+	auto dotPos = tok.text().find('.');
+	if (dotPos == string_view::npos) {
+		tok = parser.next_token(false);
+		if (tok.text() != "=") {
+			throw Error(errParams, "`=` is expected, but found `%s`", tok.text());
+		}
+		ParseFunction(parser, false);
+	} else {
+		token ftok(TokenName);
+		ftok.text_.assign(tok.text_.begin() + dotPos + 1, tok.text_.end());
+		ParseFunction(parser, false, std::move(ftok));
 	}
-
-	ParseFunction(parser, false);
 
 	if (!selectFuncStruct_.isFunction) {
 		size_t equalPos = query.find('=');
@@ -34,8 +40,10 @@ SelectFuncStruct &SelectFuncParser::Parse(string query) {
 	return selectFuncStruct_;
 }
 
-SelectFuncStruct &SelectFuncParser::ParseFunction(tokenizer &parser, bool partOfExpression) {
-	token tok = parser.next_token(true);
+SelectFuncStruct &SelectFuncParser::ParseFunction(tokenizer &parser, bool partOfExpression, token tok) {
+	if (tok.text().empty()) {
+		tok = parser.next_token(true);
+	}
 	if (tok.text() == "snippet") {
 		selectFuncStruct_.type = SelectFuncStruct::kSelectFuncSnippet;
 	} else if (tok.text() == "highlight") {

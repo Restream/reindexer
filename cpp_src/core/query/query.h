@@ -310,6 +310,14 @@ public:
 		return *this;
 	}
 
+	/// Changes strict mode.
+	/// @param mode - strict mode.
+	/// @return Query object.
+	Query &Strict(StrictMode mode) {
+		strictMode = mode;
+		return *this;
+	}
+
 	/// Performs sorting by certain column. Analog to sql ORDER BY.
 	/// @param sort - sorting column name.
 	/// @param desc - is sorting direction descending or ascending.
@@ -473,20 +481,21 @@ protected:
 	void deserialize(Serializer &ser, bool &hasJoinConditions);
 
 public:
-	string _namespace;						/// Name of the namespace.
-	unsigned start = 0;						/// First row index from result set.
-	unsigned count = UINT_MAX;				/// Number of rows from result set.
-	int debugLevel = 0;						/// Debug level.
-	bool explain_ = false;					/// Explain query if true
-	CalcTotalMode calcTotal = ModeNoTotal;	/// Calculation mode.
-	QueryType type_ = QuerySelect;			/// Query type
-	OpType nextOp_ = OpAnd;					/// Next operation constant.
-	SortingEntries sortingEntries_;			/// Sorting data.
-	h_vector<Variant, 0> forcedSortOrder_;	/// Keys that always go first - before any ordered values.
-	vector<JoinedQuery> joinQueries_;		/// List of queries for join.
-	vector<JoinedQuery> mergeQueries_;		/// List of merge queries.
-	h_vector<string, 1> selectFilter_;		/// List of columns in a final result set.
-	h_vector<string, 0> selectFunctions_;	/// List of sql functions
+	string _namespace;						   /// Name of the namespace.
+	unsigned start = 0;						   /// First row index from result set.
+	unsigned count = UINT_MAX;				   /// Number of rows from result set.
+	int debugLevel = 0;						   /// Debug level.
+	StrictMode strictMode = StrictModeNotSet;  /// Strict mode.
+	bool explain_ = false;					   /// Explain query if true
+	CalcTotalMode calcTotal = ModeNoTotal;	   /// Calculation mode.
+	QueryType type_ = QuerySelect;			   /// Query type
+	OpType nextOp_ = OpAnd;					   /// Next operation constant.
+	SortingEntries sortingEntries_;			   /// Sorting data.
+	h_vector<Variant, 0> forcedSortOrder_;	   /// Keys that always go first - before any ordered values.
+	vector<JoinedQuery> joinQueries_;		   /// List of queries for join.
+	vector<JoinedQuery> mergeQueries_;		   /// List of merge queries.
+	h_vector<string, 1> selectFilter_;		   /// List of columns in a final result set.
+	h_vector<string, 0> selectFunctions_;	   /// List of sql functions
 
 	std::multimap<unsigned, EqualPosition> equalPositions_;	 /// List of same position fields for queries with arrays
 	QueryEntries entries;

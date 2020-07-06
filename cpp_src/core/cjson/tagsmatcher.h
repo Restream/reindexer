@@ -24,6 +24,11 @@ public:
 	int tags2field(const int16_t* path, size_t pathLen) const { return impl_->tags2field(path, pathLen); }
 	const string& tag2name(int tag) const { return impl_->tag2name(tag); }
 	TagsPath path2tag(string_view jsonPath) const { return impl_->path2tag(jsonPath); }
+	TagsPath path2tag(string_view jsonPath, bool canAdd) {
+		auto res = path2tag(jsonPath);
+		if (jsonPath.empty()) return TagsPath();
+		return res.empty() && canAdd ? impl_.clone()->path2tag(jsonPath, canAdd, updated_) : res;
+	}
 	int version() const { return impl_->version(); }
 	size_t size() const { return impl_->size(); }
 	bool isUpdated() const { return updated_; }
@@ -49,27 +54,6 @@ public:
 		impl_ = tmp;
 		updated_ = true;
 		return true;
-	}
-
-	TagsPath path2tag(string_view jsonPath, bool& updated) {
-		updated = false;
-		TagsPath tagsPath;
-		for (size_t pos = 0, lastPos = 0; pos != jsonPath.length(); lastPos = pos + 1) {
-			pos = jsonPath.find(".", lastPos);
-			if (pos == string::npos) {
-				pos = jsonPath.length();
-			}
-			if (pos != lastPos) {
-				string_view field = jsonPath.substr(lastPos, pos - lastPos);
-				int fieldTag = name2tag(field);
-				if (fieldTag == 0) {
-					fieldTag = name2tag(field, true);
-					updated = true;
-				}
-				tagsPath.push_back(static_cast<int16_t>(fieldTag));
-			}
-		}
-		return tagsPath;
 	}
 
 	void UpdatePayloadType(PayloadType payloadType, bool incVersion = true) {

@@ -2,6 +2,7 @@
 
 #include <deque>
 #include <vector>
+
 #include "core/cjson/tagsmatcher.h"
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/variant.h"
@@ -69,11 +70,14 @@ public:
 	string_view GetCJSON(bool withTagsMatcher = false);
 	string_view GetCJSON(WrSerializer &ser, bool withTagsMatcher = false);
 	Error FromCJSON(const string_view &slice, bool pkOnly = false);
+	Error FromMsgPack(string_view sbuf, size_t &offset);
+	Error GetMsgPack(WrSerializer &wrser);
 
 	PayloadType Type() { return payloadType_; }
 	PayloadValue &Value() { return payloadValue_; }
 	PayloadValue &RealValue() { return realValue_; }
 	Payload GetPayload() { return Payload(payloadType_, payloadValue_); }
+	ConstPayload GetConstPayload() { return ConstPayload(payloadType_, payloadValue_); }
 
 	TagsMatcher &tagsMatcher() { return tagsMatcher_; }
 

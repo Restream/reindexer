@@ -13,6 +13,7 @@
 #include "core/payload/payloadiface.h"
 #include "core/perfstatcounter.h"
 #include "core/querycache.h"
+#include "core/schema.h"
 #include "core/storage/idatastorage.h"
 #include "core/storage/storagetype.h"
 #include "core/transactionimpl.h"
@@ -54,10 +55,6 @@ struct NsContext {
 		noLock = true;
 		return *this;
 	}
-	NsContext &Lsn(int64_t lsn_) {
-		lsn = lsn_;
-		return *this;
-	}
 	NsContext &InTransaction() {
 		inTransaction = true;
 		return *this;
@@ -65,7 +62,6 @@ struct NsContext {
 
 	const RdxContext &rdxContext;
 	bool noLock = false;
-	int64_t lsn = -1;
 	bool inTransaction = false;
 };
 
@@ -157,6 +153,8 @@ public:
 	void AddIndex(const IndexDef &indexDef, const RdxContext &ctx);
 	void UpdateIndex(const IndexDef &indexDef, const RdxContext &ctx);
 	void DropIndex(const IndexDef &indexDef, const RdxContext &ctx);
+	void SetSchema(string_view schema, const RdxContext &ctx);
+	void GetSchema(string &schema, const RdxContext &ctx);
 
 	void Insert(Item &item, const NsContext &ctx);
 	void Update(Item &item, const NsContext &ctx);
@@ -198,21 +196,23 @@ public:
 
 	// Replication slave mode functions
 	ReplicationState GetReplState(const RdxContext &) const;
-	void SetSlaveLSN(int64_t slaveLSN, const RdxContext &);
+	void SetReplLSNs(LSNPair LSNs, const RdxContext &ctx);
+
 	void SetSlaveReplStatus(ReplicationState::Status, const Error &, const RdxContext &);
 	void SetSlaveReplMasterState(MasterState state, const RdxContext &);
 
 	void ReplaceTagsMatcher(const TagsMatcher &tm, const RdxContext &);
 
 	void OnConfigUpdated(DBConfigProvider &configProvider, const RdxContext &ctx);
-	void SetStorageOpts(StorageOpts opts, const RdxContext &ctx);
 	StorageOpts GetStorageOpts(const RdxContext &);
+	std::shared_ptr<const Schema> GetSchemaPtr(const RdxContext &ctx);
 
 protected:
 	struct SysRecordsVersions {
 		uint64_t idxVersion{0};
 		uint64_t tagsVersion{0};
 		uint64_t replVersion{0};
+		uint64_t schemaVersion{0};
 	};
 
 	class Locker {
@@ -248,6 +248,7 @@ protected:
 	std::string sysRecordName(string_view sysTag, uint64_t version);
 	void writeSysRecToStorage(string_view data, string_view sysTag, uint64_t &version, bool direct);
 	void saveIndexesToStorage();
+	void saveSchemaToStorage();
 	Error loadLatestSysRecord(string_view baseSysTag, uint64_t &version, string &content);
 	bool loadIndexesFromStorage();
 	void saveReplStateToStorage();
@@ -274,7 +275,8 @@ protected:
 	void verifyUpdateCompositeIndex(const IndexDef &indexDef) const;
 	void updateIndex(const IndexDef &indexDef);
 	void dropIndex(const IndexDef &index);
-	void addToWAL(const IndexDef &indexDef, WALRecType type);
+	void addToWAL(const IndexDef &indexDef, WALRecType type, const RdxContext &ctx);
+	void addToWAL(string_view json, WALRecType type, const RdxContext &ctx);
 	VariantArray preprocessUpdateFieldValues(const UpdateEntry &updateEntry, IdType itemId);
 	void removeExpiredItems(RdxActivityContext *);
 
@@ -285,7 +287,7 @@ protected:
 
 	string getMeta(const string &key);
 	void flushStorage(const RdxContext &);
-	void putMeta(const string &key, const string_view &data);
+	void putMeta(const string &key, const string_view &data, const RdxContext &ctx);
 
 	pair<IdType, bool> findByPK(ItemImpl *ritem, const RdxContext &);
 	int getSortedIdxCount() const;
@@ -346,7 +348,13 @@ private:
 	bool isSystem() const { return !name_.empty() && name_[0] == '#'; }
 	IdType createItem(size_t realSize);
 	void deleteStorage();
-	void checkApplySlaveUpdate(int64_t lsn);
+	void checkApplySlaveUpdate(bool v);
+
+	void processWalRecord(const WALRecord &wrec, const RdxContext &ctx, lsn_t itemLsn = lsn_t(), Item *item = nullptr);
+
+	void setReplLSNs(LSNPair LSNs);
+	void setTemporary() { repl_.temporary = true; }
+	void setSlaveMode(const RdxContext &ctx);
 
 	JoinCache::Ptr joinCache_;
 
@@ -370,7 +378,11 @@ private:
 	std::atomic<uint32_t> itemsCapacity_ = {0};
 	bool nsIsLoading_;
 
+	int serverId_ = 0;
+	std::atomic<bool> serverIdChanged_;
 	size_t itemsDataSize_ = 0;
+
+	std::shared_ptr<Schema> schema_;
 };
 
 }  // namespace reindexer

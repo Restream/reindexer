@@ -36,14 +36,14 @@ public:
 	/// @param path - path to storage.
 	/// @param opts - options.
 	/// @return Error object with an appropriate error code.
-	virtual Error Open(const string& path, const StorageOpts& opts) = 0;
+	virtual Error Open(const std::string& path, const StorageOpts& opts) = 0;
 
 	/// Reads data from a storage.
 	/// @param opts - read options.
 	/// @param key - key value.
 	/// @param value - value data.
 	/// @return Error code or ok.
-	virtual Error Read(const StorageOpts& opts, const string_view& key, string& value) = 0;
+	virtual Error Read(const StorageOpts& opts, const string_view& key, std::string& value) = 0;
 
 	/// Writes data directly to a Storage.
 	/// @param opts - write options.
@@ -95,11 +95,11 @@ public:
 
 	/// Destroy the storage.
 	/// @param path - path to Storage.
-	virtual void Destroy(const string& path) = 0;
+	virtual void Destroy(const std::string& path) = 0;
 
 	/// Repair the storage
 	/// @param path - path to Storage.
-	virtual Error Repair(const string& path) = 0;
+	virtual Error Repair(const std::string& path) = 0;
 
 	/// Get storage type
 	virtual StorageType Type() const noexcept = 0;

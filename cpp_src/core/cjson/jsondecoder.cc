@@ -14,7 +14,7 @@ JsonDecoder::JsonDecoder(TagsMatcher &tagsMatcher, const FieldsSet *filter) : ta
 Error JsonDecoder::Decode(Payload *pl, WrSerializer &wrser, const gason::JsonValue &v) {
 	try {
 		tagsPath_.clear();
-		CJsonBuilder builder(wrser, CJsonBuilder::TypePlain, &tagsMatcher_);
+		CJsonBuilder builder(wrser, ObjType::TypePlain, &tagsMatcher_);
 		decodeJson(pl, builder, v, 0, true);
 	}
 
@@ -97,11 +97,11 @@ void JsonDecoder::decodeJson(Payload *pl, CJsonBuilder &builder, const gason::Js
 			builder.Null(tagName);
 			break;
 		case gason::JSON_ARRAY: {
-			CJsonBuilder::ObjType type;
+			ObjType type;
 			if (gason::isHomogeneousArray(v)) {
-				type = CJsonBuilder::TypeArray;
+				type = ObjType::TypeArray;
 			} else {
-				type = CJsonBuilder::TypeObjectArray;
+				type = ObjType::TypeObjectArray;
 			}
 			auto arrNode = builder.Array(tagName, type);
 			for (auto elem : v) {

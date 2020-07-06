@@ -2,6 +2,7 @@
 
 #include <mutex>
 #include <vector>
+#include "core/lsn.h"
 #include "estl/shared_mutex.h"
 #include "estl/string_view.h"
 #include "replicator/walrecord.h"
@@ -13,7 +14,7 @@ struct IndexDef;
 class IUpdatesObserver {
 public:
 	virtual ~IUpdatesObserver();
-	virtual void OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &rec) = 0;
+	virtual void OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &rec) = 0;
 	virtual void OnConnectionState(const Error &err) = 0;
 };
 
@@ -22,9 +23,9 @@ public:
 	Error Add(IUpdatesObserver *observer);
 	Error Delete(IUpdatesObserver *observer);
 
-	void OnModifyItem(int64_t lsn, string_view nsName, ItemImpl *item, int modifyMode, bool inTransaction);
+	void OnModifyItem(LSNPair LSNs, string_view nsName, ItemImpl *item, int modifyMode, bool inTransaction);
 
-	void OnWALUpdate(int64_t lsn, string_view nsName, const WALRecord &rec);
+	void OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &rec);
 
 	void OnConnectionState(const Error &err);
 	bool empty() {

@@ -10,7 +10,7 @@ enum class StorageType : uint8_t { LevelDB = 0, RocksDB = 1 };
 const char kLevelDBName[] = "leveldb";
 const char kRocksDBName[] = "rocksdb";
 
-inline string StorageTypeToString(StorageType type) {
+inline std::string StorageTypeToString(StorageType type) {
 	if (StorageType::RocksDB == type) {
 		return kRocksDBName;
 	}

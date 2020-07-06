@@ -19,6 +19,7 @@ type reindexerNamespace struct {
 	cacheLock     sync.RWMutex
 	joined        map[string][]int
 	indexes       []bindings.IndexDef
+	schema        bindings.SchemaDef
 	rtype         reflect.Type
 	deepCopyIface bool
 	name          string
@@ -135,6 +136,17 @@ func (db *reindexerImpl) openNamespace(ctx context.Context, namespace string, op
 			}
 		}
 
+		if err == nil {
+			if err = db.binding.SetSchema(ctx, namespace, ns.schema); err != nil {
+				if rerr, ok := err.(bindings.Error); ok && rerr.Code() == bindings.ErrParams {
+					// Ignore error from old server which doesn't support SetSchema
+					err = nil
+				} else {
+					break
+				}
+			}
+		}
+
 		if err != nil {
 			rerr, ok := err.(bindings.Error)
 			if ok && rerr.Code() == bindings.ErrConflict && opts.dropOnIndexesConflict {
@@ -208,8 +220,11 @@ func (db *reindexerImpl) registerNamespaceImpl(namespace string, opts *Namespace
 	if err = validator.Validate(s); err != nil {
 		return err
 	}
-	if ns.indexes, err = parseIndex(namespace, ns.rtype, &ns.joined); err != nil {
+	if ns.indexes, err = parseIndexes(namespace, ns.rtype, &ns.joined); err != nil {
 		return err
+	}
+	if schema := parseSchema(namespace, ns.rtype); schema != nil {
+		ns.schema = *schema
 	}
 
 	db.nsHashCounter++

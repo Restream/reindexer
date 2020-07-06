@@ -34,6 +34,7 @@ using std::defer_lock;
 
 #define kStorageItemPrefix "I"
 #define kStorageIndexesPrefix "indexes"
+#define kStorageSchemaPrefix "schema"
 #define kStorageReplStatePrefix "repl"
 #define kStorageTagsPrefix "tags"
 #define kStorageMetaPrefix "meta"
@@ -59,7 +60,7 @@ void NamespaceImpl::IndexesStorage::MoveBase(IndexesStorage &&src) { Base::opera
 // private implementation and NOT THREADSAFE of copy CTOR
 // use 'NamespaceImpl::Clone(NamespaceImpl& ns)'
 NamespaceImpl::NamespaceImpl(const NamespaceImpl &src)
-	: indexes_(*this), observers_(src.observers_), lastSelectTime_(0), cancelCommit_(false), nsIsLoading_(false) {
+	: indexes_(*this), wal_(), observers_(src.observers_), lastSelectTime_(0), cancelCommit_(false), nsIsLoading_(false) {
 	copyContentsFrom(src);
 }
 
@@ -77,7 +78,8 @@ NamespaceImpl::NamespaceImpl(const string &name, UpdatesObservers &observers)
 	  lastSelectTime_(0),
 	  cancelCommit_(false),
 	  lastUpdateTime_(0),
-	  nsIsLoading_(false) {
+	  nsIsLoading_(false),
+	  serverIdChanged_(false) {
 	logPrintf(LogTrace, "NamespaceImpl::NamespaceImpl (%s)", name_);
 	FlagGuardT nsLoadingGuard(nsIsLoading_);
 	items_.reserve(10000);
@@ -116,9 +118,10 @@ void NamespaceImpl::copyContentsFrom(const NamespaceImpl &src) {
 	sparseIndexesCount_ = src.sparseIndexesCount_;
 	krefs = src.krefs;
 	skrefs = src.skrefs;
-
+	serverId_ = src.serverId_;
 	storageOpts_ = src.storageOpts_;
 	for (auto &idxIt : src.indexes_) indexes_.push_back(unique_ptr<Index>(idxIt->Clone()));
+
 	logPrintf(LogTrace, "Namespace::CopyContentsFrom (%s)", name_);
 }
 
@@ -144,33 +147,53 @@ void NamespaceImpl::OnConfigUpdated(DBConfigProvider &configProvider, const RdxC
 
 	if (isSystem()) return;
 
-	// try to turn on/off replication
-
-	// CASE1: Replication state same in config and state
-	if (repl_.slaveMode == bool(replicationConf.role == ReplicationSlave)) return;
-
-	if (repl_.slaveMode && replicationConf.role != ReplicationSlave) {
-		// CASE2: Replication enabled in state, but disabled in config
-		// switch slave -> master
-		repl_.slaveMode = false;
-		initWAL(repl_.lastLsn);
-		logPrintf(LogInfo, "Disable slave mode for namespace '%s'", name_);
-	} else if (!repl_.slaveMode && replicationConf.role == ReplicationSlave) {
-		// CASE3: Replication enabled in config, but disabled in state
-		// switch master -> slave
-		if (storageOpts_.IsSlaveMode()) {
+	if (serverId_ != replicationConf.serverId) {
+		if (itemsCount_ != 0) {
+			serverIdChanged_ = true;
 			repl_.slaveMode = true;
-			logPrintf(LogInfo, "Enable slave mode for namespace '%s'", name_);
-			repl_.incarnationCounter++;
+			repl_.replicatorEnabled = false;
+			logPrintf(LogWarning, "Change serverId on non empty ns [%s]. Set read only mode.", name_);
 		}
-		if (storageOpts_.IsTemporary()) {
-			repl_.temporary = true;
-			logPrintf(LogInfo, "Marking namespace '%s' as temporary", name_);
-			repl_.incarnationCounter++;
-		}
+		serverId_ = replicationConf.serverId;
+		logPrintf(LogWarning, "[repl:%s]:%d Change serverId", name_, serverId_);
+	}
+
+	ReplicationRole curRole;
+	if (repl_.slaveMode && !repl_.replicatorEnabled) {	// read only
+		curRole = ReplicationReadOnly;
+	} else if (repl_.slaveMode && repl_.replicatorEnabled)
+		curRole = ReplicationSlave;
+	else if (!repl_.slaveMode && !repl_.replicatorEnabled)
+		curRole = ReplicationMaster;
+	else
+		curRole = ReplicationNone;
+
+	if (replicationConf.role == curRole) return;
+	if (replicationConf.role == ReplicationNone && curRole == ReplicationMaster) return;
+
+	if (curRole == ReplicationReadOnly && serverIdChanged_) return;
+
+	// switch slave  -> master
+	// switch master -> slave
+
+	if (curRole == ReplicationSlave && replicationConf.role == ReplicationMaster) {
+		repl_.slaveMode = false;
+		repl_.replicatorEnabled = false;
+		repl_.lastUpstreamLSN = lsn_t();
+		repl_.originLSN = lsn_t(wal_.LSNCounter() - 1, serverId_);
+		logPrintf(LogInfo, "[repl:%s]:%d Switch from slave to master '%s'", name_, serverId_, name_);
+	} else if (curRole == ReplicationMaster && replicationConf.role == ReplicationSlave) {
+		// real transition ns to slave in OpenNamespace
+	} else if (curRole == ReplicationReadOnly) {
+		repl_.slaveMode = false;
+		repl_.replicatorEnabled = false;
+		repl_.lastUpstreamLSN = lsn_t();
+		repl_.originLSN = lsn_t(wal_.LSNCounter() - 1, serverId_);
+		logPrintf(LogInfo, "[repl:%s]:%d Switch from read only to slave/master '%s'", name_, serverId_, name_);
 	}
 
 	unflushedCount_.fetch_add(1, std::memory_order_release);
+
 	logPrintf(LogInfo, "Replication role changed '%s' %d", name_, replicationConf.role);
 }
 
@@ -264,33 +287,58 @@ void NamespaceImpl::updateItems(PayloadType oldPlType, const FieldsSet &changedF
 	}
 }
 
-void NamespaceImpl::addToWAL(const IndexDef &indexDef, WALRecType type) {
+void NamespaceImpl::addToWAL(const IndexDef &indexDef, WALRecType type, const RdxContext &ctx) {
 	WrSerializer ser;
 	indexDef.GetJSON(ser);
 	WALRecord wrec(type, ser.Slice());
-	int64_t lsn = repl_.slaveMode ? -1 : wal_.Add(wrec);
-	observers_->OnWALUpdate(lsn, name_, wrec);
+	processWalRecord(wrec, ctx);
+}
+
+void NamespaceImpl::addToWAL(string_view json, WALRecType type, const RdxContext &ctx) {
+	WALRecord wrec(type, json);
+	processWalRecord(wrec, ctx);
 }
 
 void NamespaceImpl::AddIndex(const IndexDef &indexDef, const RdxContext &ctx) {
 	auto wlck = wLock(ctx);
 	addIndex(indexDef);
 	saveIndexesToStorage();
-	addToWAL(indexDef, WalIndexAdd);
+	addToWAL(indexDef, WalIndexAdd, ctx);
 }
 
 void NamespaceImpl::UpdateIndex(const IndexDef &indexDef, const RdxContext &ctx) {
 	auto wlck = wLock(ctx);
 	updateIndex(indexDef);
 	saveIndexesToStorage();
-	addToWAL(indexDef, WalIndexUpdate);
+	addToWAL(indexDef, WalIndexUpdate, ctx);
 }
 
 void NamespaceImpl::DropIndex(const IndexDef &indexDef, const RdxContext &ctx) {
 	auto wlck = wLock(ctx);
 	dropIndex(indexDef);
 	saveIndexesToStorage();
-	addToWAL(indexDef, WalIndexDrop);
+	addToWAL(indexDef, WalIndexDrop, ctx);
+}
+
+void NamespaceImpl::SetSchema(string_view schema, const RdxContext &ctx) {
+	auto wlck = wLock(ctx);
+	schema_ = make_shared<Schema>(schema);
+	auto fields = schema_->GetPaths();
+	for (auto &field : fields) {
+		tagsMatcher_.path2tag(field, true);
+	}
+	saveSchemaToStorage();
+	addToWAL(schema, WalSetSchema, ctx);
+}
+
+void NamespaceImpl::GetSchema(std::string &schema, const RdxContext &ctx) {
+	schema.clear();
+	auto rlck = rLock(ctx);
+	if (schema_) {
+		WrSerializer ser;
+		schema_->GetJSON(ser);
+		schema = string(ser.Slice());
+	}
 }
 
 void NamespaceImpl::dropIndex(const IndexDef &index) {
@@ -453,8 +501,7 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef) {
 	FieldsSet fields;
 	if (opts.IsSparse()) {
 		for (const string &jsonPath : jsonPaths) {
-			bool updated = false;
-			TagsPath tagsPath = tagsMatcher_.path2tag(jsonPath, updated);
+			TagsPath tagsPath = tagsMatcher_.path2tag(jsonPath, true);
 			assert(tagsPath.size() > 0);
 
 			fields.push_back(jsonPath);
@@ -533,8 +580,7 @@ void NamespaceImpl::addCompositeIndex(const IndexDef &indexDef) {
 	for (auto &jsonPathOrSubIdx : indexDef.jsonPaths_) {
 		auto idxNameIt = indexesNames_.find(jsonPathOrSubIdx);
 		if (idxNameIt == indexesNames_.end()) {
-			bool updated = false;
-			TagsPath tagsPath = tagsMatcher_.path2tag(jsonPathOrSubIdx, updated);
+			TagsPath tagsPath = tagsMatcher_.path2tag(jsonPathOrSubIdx, true);
 			if (tagsPath.empty()) {
 				throw Error(errParams, "Subindex '%s' for composite index '%s' does not exist", jsonPathOrSubIdx, indexName);
 			}
@@ -611,7 +657,7 @@ void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsCon
 	}
 	calc.LockHit();
 
-	checkApplySlaveUpdate(ctx.lsn);
+	checkApplySlaveUpdate(ctx.rdxContext.fromReplication_);	 // throw exception if false
 
 	NsSelecter selecter(this);
 	SelectCtx selCtx(query);
@@ -630,7 +676,9 @@ void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsCon
 		if (withExpressions && withJsonUpdates) break;
 	}
 
-	if (repl_.slaveMode && withExpressions) throw Error(errLogic, "Can't apply update query with expression to slave ns '%s'", name_);
+	if (ctx.rdxContext.fromReplication_ && withExpressions)
+		throw Error(errLogic, "Can't apply update query with expression to slave ns '%s'", name_);
+
 	ThrowOnCancel(ctx.rdxContext);
 
 	// If update statement is expression and contains function calls then we use
@@ -651,18 +699,14 @@ void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsCon
 		WrSerializer ser;
 		const_cast<Query &>(query).type_ = QueryUpdate;
 		WALRecord wrec(WalUpdateQuery, query.GetSQL(ser).Slice(), ctx.inTransaction);
-		int64_t lsn = ctx.lsn;
-		if (repl_.slaveMode) {
-			if (repl_.lastLsn >= lsn) {
-				logPrintf(LogError, "[repl:%s] Namespace::modifyItem lsn = %ld lastLsn = %ld ", name_, lsn, repl_.lastLsn);
-			}
-		} else {
-			lsn = wal_.Add(wrec);
-		}
+		lsn_t lsn(wal_.Add(wrec), serverId_);
+		if (!ctx.rdxContext.fromReplication_) repl_.lastSelfLSN = lsn;
 		for (ItemRef &item : result.Items()) {
-			item.Value().SetLSN(lsn);
+			item.Value().SetLSN(int64_t(lsn));
 		}
-		observers_->OnWALUpdate(lsn, name_, wrec);
+		if (!repl_.temporary)
+			observers_->OnWALUpdate(LSNPair(lsn, ctx.rdxContext.fromReplication_ ? ctx.rdxContext.LSNs_.originLSN_ : lsn), name_, wrec);
+		if (!ctx.rdxContext.fromReplication_) setReplLSNs(LSNPair(lsn_t(), lsn));
 	}
 
 	if (query.debugLevel >= LogInfo) {
@@ -687,7 +731,7 @@ void NamespaceImpl::Delete(Item &item, const NsContext &ctx) {
 	}
 	calc.LockHit();
 
-	checkApplySlaveUpdate(item.GetLSN());
+	checkApplySlaveUpdate(ctx.rdxContext.fromReplication_);
 
 	updateTagsMatcherFromItem(ritem);
 
@@ -703,16 +747,8 @@ void NamespaceImpl::Delete(Item &item, const NsContext &ctx) {
 	WALRecord wrec{WalItemModify, ritem->GetCJSON(), ritem->tagsMatcher().version(), ModeDelete, ctx.inTransaction};
 	doDelete(id);
 
-	int64_t lsn = item.GetLSN();
-	if (repl_.slaveMode) {
-		if (repl_.lastLsn >= lsn) {
-			logPrintf(LogError, "[repl:%s] Namespace::Delete lsn = %ld lastLsn = %ld ", name_, lsn, repl_.lastLsn);
-		}
-	} else {
-		lsn = wal_.Add(wrec);
-		item.setLSN(lsn);
-	}
-	observers_->OnWALUpdate(lsn, name_, wrec);
+	lsn_t itemLsn(item.GetLSN());
+	processWalRecord(wrec, ctx.rdxContext, itemLsn, &item);
 }
 
 void NamespaceImpl::doDelete(IdType id) {
@@ -725,7 +761,7 @@ void NamespaceImpl::doDelete(IdType id) {
 	pl.SerializeFields(pk, pkFields());
 
 	repl_.dataHash ^= pl.GetHash();
-	if (!repl_.slaveMode) wal_.Set(WALRecord(), items_[id].GetLSN());
+	wal_.Set(WALRecord(), lsn_t(items_[id].GetLSN()).Counter());
 
 	if (storage_) {
 		try {
@@ -796,7 +832,7 @@ void NamespaceImpl::Delete(const Query &q, QueryResults &result, const NsContext
 	}
 	calc.LockHit();
 
-	checkApplySlaveUpdate(ctx.lsn);
+	checkApplySlaveUpdate(ctx.rdxContext.fromReplication_);	 // throw exception if false
 
 	NsSelecter selecter(this);
 	SelectCtx selCtx(q);
@@ -815,17 +851,14 @@ void NamespaceImpl::Delete(const Query &q, QueryResults &result, const NsContext
 		WrSerializer ser;
 		const_cast<Query &>(q).type_ = QueryDelete;
 		WALRecord wrec(WalUpdateQuery, q.GetSQL(ser).Slice(), ctx.inTransaction);
-		int64_t lsn = ctx.lsn;
-		if (!repl_.slaveMode) lsn = wal_.Add(wrec);
-		observers_->OnWALUpdate(lsn, name_, wrec);
+		processWalRecord(wrec, ctx.rdxContext);
 	} else if (result.Count() > 0) {
 		for (auto it : result) {
 			WrSerializer cjson;
 			it.GetCJSON(cjson, false);
 			const int id = it.GetItemRef().Id();
 			const WALRecord wrec{WalItemModify, cjson.Slice(), tagsMatcher_.version(), ModeDelete, ctx.inTransaction};
-			const int64_t lsn = wal_.Add(wrec, items_[id].GetLSN());
-			observers_->OnWALUpdate(lsn, name_, wrec);
+			processWalRecord(wrec, ctx.rdxContext, lsn_t(items_[id].GetLSN()));
 		}
 	}
 	if (q.debugLevel >= LogInfo) {
@@ -845,7 +878,7 @@ void NamespaceImpl::Truncate(const NsContext &ctx) {
 	}
 	calc.LockHit();
 
-	checkApplySlaveUpdate(ctx.lsn);
+	checkApplySlaveUpdate(ctx.rdxContext.fromReplication_);	 // throw exception if false
 
 	if (storage_) {
 		for (PayloadValue &pv : items_) {
@@ -878,10 +911,13 @@ void NamespaceImpl::Truncate(const NsContext &ctx) {
 
 	WrSerializer ser;
 	WALRecord wrec(WalUpdateQuery, (ser << "TRUNCATE " << name_).Slice());
-	int64_t lsn = ctx.lsn;
-	if (!repl_.slaveMode) lsn = wal_.Add(wrec);
+
+	lsn_t lsn(wal_.Add(wrec), serverId_);
+	if (!ctx.rdxContext.fromReplication_) repl_.lastSelfLSN = lsn;
 	markUpdated();
-	observers_->OnWALUpdate(lsn, name_, wrec);
+	if (!repl_.temporary)
+		observers_->OnWALUpdate(LSNPair(lsn, ctx.rdxContext.fromReplication_ ? ctx.rdxContext.LSNs_.originLSN_ : lsn), name_, wrec);
+	if (!ctx.rdxContext.fromReplication_) setReplLSNs(LSNPair(lsn_t(), lsn));
 }
 
 void NamespaceImpl::Refill(vector<Item> &items, const NsContext &ctx) {
@@ -899,23 +935,39 @@ ReplicationState NamespaceImpl::GetReplState(const RdxContext &ctx) const {
 	return getReplState();
 }
 
-void NamespaceImpl::SetSlaveLSN(int64_t slaveLsn, const RdxContext &ctx) {
+void NamespaceImpl::SetReplLSNs(LSNPair LSNs, const RdxContext &ctx) {
 	auto wlck = wLock(ctx);
-	assert(repl_.slaveMode);
-	/*if (slaveLsn > repl_.lastLsn)*/ repl_.lastLsn = slaveLsn;
+	setReplLSNs(LSNs);
 	unflushedCount_.fetch_add(1, std::memory_order_release);
+}
+
+void NamespaceImpl::setReplLSNs(LSNPair LSNs) {
+	repl_.originLSN = LSNs.originLSN_;
+	repl_.lastUpstreamLSN = LSNs.upstreamLSN_;
+	logPrintf(LogTrace, "[repl:%s:%s]:%d setReplLSNs originLSN = %s upstreamLSN=%s", name_, dbpath_, serverId_, LSNs.originLSN_,
+			  LSNs.upstreamLSN_);
+}
+
+void NamespaceImpl::setSlaveMode(const RdxContext &ctx) {
+	{
+		auto wlck = wLock(ctx);
+		repl_.slaveMode = true;
+		repl_.replicatorEnabled = true;
+		repl_.incarnationCounter++;
+	}
+	logPrintf(LogInfo, "Enable slave mode for namespace '%s'", name_);
 }
 
 ReplicationState NamespaceImpl::getReplState() const {
 	ReplicationState ret = repl_;
 	ret.dataCount = items_.size() - free_.size();
-	if (!repl_.slaveMode) ret.lastLsn = wal_.LSNCounter() - 1;
+	ret.lastLsn = lsn_t(wal_.LSNCounter() - 1, serverId_);
 	return ret;
 }
 
 void NamespaceImpl::SetSlaveReplStatus(ReplicationState::Status status, const Error &err, const RdxContext &ctx) {
 	auto wlck = wLock(ctx);
-	assert(repl_.slaveMode);
+	assert(repl_.replicatorEnabled);
 	if (status == ReplicationState::Status::Idle || status == ReplicationState::Status::Syncing) {
 		assert(err.code() == errOK);
 	} else {
@@ -928,7 +980,7 @@ void NamespaceImpl::SetSlaveReplStatus(ReplicationState::Status status, const Er
 
 void NamespaceImpl::SetSlaveReplMasterState(MasterState state, const RdxContext &ctx) {
 	auto wlck = wLock(ctx);
-	assert(repl_.slaveMode);
+	assert(repl_.replicatorEnabled);
 	repl_.masterState = state;
 	unflushedCount_.fetch_add(1, std::memory_order_release);
 }
@@ -939,6 +991,7 @@ Transaction NamespaceImpl::NewTransaction(const RdxContext &ctx) {
 }
 
 void NamespaceImpl::CommitTransaction(Transaction &tx, QueryResults &result, const NsContext &ctx) {
+	logPrintf(LogTrace, "[repl:%s]:%d CommitTransaction start", name_, serverId_);
 	Locker::WLockT wlck;
 	if (!ctx.noLock) {
 		PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
@@ -951,10 +1004,11 @@ void NamespaceImpl::CommitTransaction(Transaction &tx, QueryResults &result, con
 	NsContext nsCtx{ctx};
 	nsCtx.NoLock().InTransaction();
 
-	uint64_t lsn = -1;
 	WALRecord initWrec(WalInitTransaction, 0, true);
-	if (!repl_.slaveMode) lsn = wal_.Add(initWrec);
-	observers_->OnWALUpdate(lsn, name_, initWrec);
+	lsn_t lsn(wal_.Add(initWrec), serverId_);
+	if (!ctx.rdxContext.fromReplication_) repl_.lastSelfLSN = lsn;
+	if (!repl_.temporary)
+		observers_->OnWALUpdate(LSNPair(lsn, ctx.rdxContext.fromReplication_ ? ctx.rdxContext.LSNs_.originLSN_ : lsn), name_, initWrec);
 
 	for (auto &step : tx.GetSteps()) {
 		if (step.query_) {
@@ -976,8 +1030,8 @@ void NamespaceImpl::CommitTransaction(Transaction &tx, QueryResults &result, con
 	}
 
 	WALRecord commitWrec(WalCommitTransaction, 0, true);
-	if (!repl_.slaveMode) lsn = wal_.Add(commitWrec);
-	observers_->OnWALUpdate(lsn, name_, commitWrec);
+	processWalRecord(commitWrec, ctx.rdxContext);
+	logPrintf(LogTrace, "[repl:%s]:%d CommitTransaction end", name_, serverId_);
 }
 
 void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
@@ -1065,7 +1119,7 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 }
 
 void NamespaceImpl::ReplaceTagsMatcher(const TagsMatcher &tm, const RdxContext &ctx) {
-	assert(!items_.size() && repl_.slaveMode);
+	assert(!items_.size() && repl_.replicatorEnabled);
 	cancelCommit_ = true;
 	auto wlck = wLock(ctx);
 	cancelCommit_ = false;	// -V519
@@ -1204,11 +1258,15 @@ void NamespaceImpl::updateItemFields(IdType itemId, const Query &q, bool rowBase
 	}
 
 	if (rowBasedReplication) {
-		const int64_t lsn = wal_.Add(WALRecord(WalItemUpdate, itemId, ctx.inTransaction), items_[itemId].GetLSN());
-		pv.SetLSN(lsn);
+		lsn_t lsn(wal_.Add(WALRecord(WalItemUpdate, itemId, ctx.inTransaction), lsn_t(items_[itemId].GetLSN())), serverId_);
+		if (!ctx.rdxContext.fromReplication_) repl_.lastSelfLSN = lsn;
+		pv.SetLSN(int64_t(lsn));
 		ItemImpl item(payloadType_, pv, tagsMatcher_);
 		string_view cjson = item.GetCJSON(false);
-		observers_->OnWALUpdate(lsn, name_, WALRecord(WalItemModify, cjson, tagsMatcher_.version(), ModeUpdate, ctx.inTransaction));
+		if (!repl_.temporary)
+			observers_->OnWALUpdate(LSNPair(lsn, ctx.rdxContext.fromReplication_ ? ctx.rdxContext.LSNs_.originLSN_ : lsn), name_,
+									WALRecord(WalItemModify, cjson, tagsMatcher_.version(), ModeUpdate, ctx.inTransaction));
+		if (!ctx.rdxContext.fromReplication_) setReplLSNs(LSNPair(lsn_t(), lsn));
 	}
 
 	repl_.dataHash ^= oldPlHash;
@@ -1229,7 +1287,7 @@ void NamespaceImpl::updateItemFields(IdType itemId, const Query &q, bool rowBase
 		WrSerializer data;
 		pk << kStorageItemPrefix;
 		pl.SerializeFields(pk, pkFields());
-		data.PutUInt64(pv.GetLSN());
+		data.PutUInt64(lsn_t(pv.GetLSN()).Counter());
 		ItemImpl item(payloadType_, pv, tagsMatcher_);
 		item.GetCJSON(data);
 		writeToStorage(pk.Slice(), data.Slice());
@@ -1243,8 +1301,7 @@ void NamespaceImpl::updateItemFromQuery(IdType itemId, const Query &q, bool rowB
 	for (const UpdateEntry &updateField : q.UpdateFields()) {
 		int fieldIdx = 0;
 		if (!getIndexByName(updateField.column, fieldIdx)) {
-			bool updated = false;
-			tagsMatcher_.path2tag(updateField.column, updated);
+			tagsMatcher_.path2tag(updateField.column, true);
 		}
 	}
 	if (withJsonUpdates) {
@@ -1255,7 +1312,7 @@ void NamespaceImpl::updateItemFromQuery(IdType itemId, const Query &q, bool rowB
 }
 
 void NamespaceImpl::modifyItem(Item &item, const NsContext &ctx, int mode) {
-	checkApplySlaveUpdate(item.GetLSN());
+	checkApplySlaveUpdate(ctx.rdxContext.fromReplication_);
 
 	// Item to doUpsert
 	ItemImpl *itemImpl = item.impl_;
@@ -1283,17 +1340,10 @@ void NamespaceImpl::modifyItem(Item &item, const NsContext &ctx, int mode) {
 
 	IdType id = exists ? realItem.first : createItem(newPl.RealSize());
 
-	int64_t lsn;
-	if (repl_.slaveMode) {
-		lsn = item.GetLSN();
-		if (repl_.lastLsn >= lsn) {
-			logPrintf(LogError, "[repl:%s] Namespace::modifyItem lsn = %ld lastLsn = %ld ", name_, lsn, repl_.lastLsn);
-		}
-	} else {
-		lsn = wal_.Add(WALRecord(WalItemUpdate, id, ctx.inTransaction), exists ? items_[id].GetLSN() : -1);
-	}
+	lsn_t lsn(wal_.Add(WALRecord(WalItemUpdate, id, ctx.inTransaction), exists ? lsn_t(items_[id].GetLSN()) : lsn_t()), serverId_);
+	if (!ctx.rdxContext.fromReplication_) repl_.lastSelfLSN = lsn;
 
-	item.setLSN(lsn);
+	item.setLSN(int64_t(lsn));
 	item.setID(id);
 	doUpsert(itemImpl, id, exists);
 
@@ -1310,13 +1360,16 @@ void NamespaceImpl::modifyItem(Item &item, const NsContext &ctx, int mode) {
 		WrSerializer pk, data;
 		pk << kStorageItemPrefix;
 		newPl.SerializeFields(pk, pkFields());
-		data.PutUInt64(lsn);
+		data.PutUInt64(lsn.Counter());
 		itemImpl->GetCJSON(data);
 		writeToStorage(pk.Slice(), data.Slice());
 	}
 
-	observers_->OnModifyItem(lsn, name_, item.impl_, mode, ctx.inTransaction);
-
+	if (!repl_.temporary) {
+		observers_->OnModifyItem(LSNPair(lsn, ctx.rdxContext.fromReplication_ ? ctx.rdxContext.LSNs_.originLSN_ : lsn), name_, item.impl_,
+								 mode, ctx.inTransaction);
+	}
+	if (!ctx.rdxContext.fromReplication_) setReplLSNs(LSNPair(lsn_t(), lsn));
 	markUpdated();
 }  // namespace reindexer
 
@@ -1469,6 +1522,12 @@ NamespaceDef NamespaceImpl::getDefinition() const {
 	for (size_t i = 1; i < indexes_.size(); ++i) {
 		nsDef.AddIndex(getIndexDefinition(i));
 	}
+	nsDef.isTemporary = repl_.temporary;
+	if (schema_) {
+		WrSerializer ser;
+		schema_->GetJSON(ser);
+		nsDef.schemaJson = string(ser.Slice());
+	}
 	return nsDef;
 }
 
@@ -1507,6 +1566,13 @@ NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext &ctx) {
 	ret.storageOK = storage_ != nullptr;
 	ret.storagePath = dbpath_;
 	ret.optimizationCompleted = sortOrdersBuilt_;
+
+	logPrintf(LogTrace,
+			  "[GetMemStat:%s]:%d replication (dataHash=%ld  dataCount=%d  lastLsn=%s) replication.masterState (dataHash=%ld dataCount=%d "
+			  "lastUpstreamLSN=%s",
+			  ret.name, serverId_, ret.replication.dataHash, ret.replication.dataCount, ret.replication.lastLsn,
+			  ret.replication.masterState.dataHash, ret.replication.masterState.dataCount, ret.replication.lastUpstreamLSN);
+
 	return ret;
 }
 
@@ -1594,10 +1660,27 @@ bool NamespaceImpl::loadIndexesFromStorage() {
 	}
 
 	def.clear();
+	status = loadLatestSysRecord(kStorageSchemaPrefix, sysRecordsVersions_.schemaVersion, def);
+	if (!status.ok() && status.code() != errNotFound) {
+		throw status;
+	}
+	if (def.size()) {
+		schema_ = make_shared<Schema>();
+		Serializer ser(def.data(), def.size());
+		status = schema_->FromJSON(giftStr(ser.GetSlice()));
+		if (!status.ok()) {
+			throw status;
+		}
+		logPrintf(LogTrace, "Loaded schema(version: %lld) of namespace %s",
+				  sysRecordsVersions_.schemaVersion ? sysRecordsVersions_.schemaVersion - 1 : 0, name_);
+	}
+
+	def.clear();
 	status = loadLatestSysRecord(kStorageIndexesPrefix, sysRecordsVersions_.idxVersion, def);
 	if (!status.ok() && status.code() != errNotFound) {
 		throw status;
 	}
+
 	if (def.size()) {
 		Serializer ser(def.data(), def.size());
 		const uint32_t dbMagic = ser.GetUInt32();
@@ -1636,9 +1719,15 @@ void NamespaceImpl::loadReplStateFromStorage() {
 	}
 
 	if (json.size()) {
-		logPrintf(LogTrace, "Loading replication state(version %lld) of namespace %s: %s",
+		logPrintf(LogTrace, "[load_repl:%s]:%d Loading replication state(version %lld) of namespace %s: %s", name_, serverId_,
 				  sysRecordsVersions_.replVersion ? sysRecordsVersions_.replVersion - 1 : 0, name_, json);
 		repl_.FromJSON(giftStr(json));
+	}
+	{
+		WrSerializer ser_log;
+		JsonBuilder builder_log(ser_log, ObjType::TypePlain);
+		repl_.GetJSON(builder_log);
+		logPrintf(LogTrace, "[load_repl:%s]:%d Loading replication state %s", name_, serverId_, ser_log.c_str());
 	}
 }
 
@@ -1669,6 +1758,25 @@ void NamespaceImpl::saveIndexesToStorage() {
 	saveReplStateToStorage();
 }
 
+void NamespaceImpl::saveSchemaToStorage() {
+	if (!storage_) return;
+
+	logPrintf(LogTrace, "Namespace::saveSchemaToStorage (%s)", name_);
+
+	if (!schema_) return;
+
+	WrSerializer ser;
+	ser.PutUInt64(sysRecordsVersions_.schemaVersion);
+	{
+		auto sliceHelper = ser.StartSlice();
+		schema_->GetJSON(ser);
+	}
+
+	writeSysRecToStorage(ser.Slice(), kStorageSchemaPrefix, sysRecordsVersions_.schemaVersion, true);
+
+	saveReplStateToStorage();
+}
+
 void NamespaceImpl::saveReplStateToStorage() {
 	if (!storage_) return;
 
@@ -1677,7 +1785,8 @@ void NamespaceImpl::saveReplStateToStorage() {
 	WrSerializer ser;
 	ser.PutUInt64(sysRecordsVersions_.replVersion);
 	JsonBuilder builder(ser);
-	getReplState().GetJSON(builder);
+	ReplicationState st = getReplState();
+	st.GetJSON(builder);
 	builder.End();
 	writeSysRecToStorage(ser.Slice(), kStorageReplStatePrefix, sysRecordsVersions_.replVersion, true);
 }
@@ -1727,18 +1836,14 @@ void NamespaceImpl::EnableStorage(const string &path, StorageOpts opts, StorageT
 	dbpath_ = dbpath;
 }
 
-void NamespaceImpl::SetStorageOpts(StorageOpts opts, const RdxContext &ctx) {
-	auto wlck = wLock(ctx);
-	if (opts.IsSlaveMode()) {
-		storageOpts_.SlaveMode();
-		repl_.slaveMode = true;
-		logPrintf(LogInfo, "Enable slave mode for namespace '%s'", name_);
-	}
-}
-
 StorageOpts NamespaceImpl::GetStorageOpts(const RdxContext &ctx) {
 	auto rlck = rLock(ctx);
 	return storageOpts_;
+}
+
+std::shared_ptr<const Schema> NamespaceImpl::GetSchemaPtr(const RdxContext &ctx) {
+	auto rlck = rLock(ctx);
+	return schema_;
 }
 
 void NamespaceImpl::LoadFromStorage(const RdxContext &ctx) {
@@ -1776,7 +1881,16 @@ void NamespaceImpl::LoadFromStorage(const RdxContext &ctx) {
 			// Read LSN
 			int64_t lsn = *reinterpret_cast<const int64_t *>(dataSlice.data());
 			assert(lsn >= 0);
-			maxLSN = std::max(maxLSN, lsn);
+			lsn_t l(lsn);
+			if (!isSystem()) {
+				if (l.Server() != serverId_) {
+					l.SetServer(serverId_);
+				}
+			} else {
+				l.SetServer(0);
+			}
+
+			maxLSN = std::max(maxLSN, l.Counter());
 			dataSlice = dataSlice.substr(sizeof(lsn));
 
 			auto err = item.FromCJSON(dataSlice);
@@ -1789,15 +1903,20 @@ void NamespaceImpl::LoadFromStorage(const RdxContext &ctx) {
 
 			IdType id = items_.size();
 			items_.emplace_back(PayloadValue(item.GetPayload().RealSize()));
-			item.Value().SetLSN(lsn);
+			item.Value().SetLSN(int64_t(l));
 
 			doUpsert(&item, id, false);
 			ldcount += dataSlice.size();
 		}
 	}
-	if (!repl_.slaveMode) initWAL(maxLSN);
 
-	logPrintf(LogInfo, "[%s] Done loading storage. %d items loaded (%d errors %s), lsn #%ld%s, total size=%dM, dataHash=%ld", name_,
+	initWAL(maxLSN);
+	if (!isSystem()) {
+		repl_.lastLsn.SetServer(serverId_);
+		repl_.lastSelfLSN.SetServer(serverId_);
+	}
+
+	logPrintf(LogInfo, "[%s] Done loading storage. %d items loaded (%d errors %s), lsn #%s%s, total size=%dM, dataHash=%ld", name_,
 			  items_.size(), errCount, lastErr.what(), repl_.lastLsn, repl_.slaveMode ? " (slave)" : "", ldcount / (1024 * 1024),
 			  repl_.dataHash);
 	if (dataHash != repl_.dataHash) {
@@ -1815,11 +1934,11 @@ void NamespaceImpl::initWAL(int64_t maxLSN) {
 	// Fill existing records
 	for (IdType rowId = 0; rowId < IdType(items_.size()); rowId++) {
 		if (!items_[rowId].IsFree()) {
-			wal_.Set(WALRecord(WalItemUpdate, rowId), items_[rowId].GetLSN());
+			wal_.Set(WALRecord(WalItemUpdate, rowId), lsn_t(items_[rowId].GetLSN()).Counter());
 		}
 	}
-	repl_.lastLsn = wal_.LSNCounter() - 1;
-	logPrintf(LogInfo, "[%s] WAL initalized lsn #%ld", name_, repl_.lastLsn);
+	repl_.lastLsn = lsn_t(wal_.LSNCounter() - 1, serverId_);
+	logPrintf(LogInfo, "[%s] WAL initalized lsn #%s", name_, repl_.lastLsn);
 }
 
 void NamespaceImpl::removeExpiredItems(RdxActivityContext *ctx) {
@@ -1942,12 +2061,12 @@ string NamespaceImpl::getMeta(const string &key) {
 // Put meta data to storage by key
 void NamespaceImpl::PutMeta(const string &key, const string_view &data, const NsContext &ctx) {
 	auto wlck = wLock(ctx.rdxContext);
-	checkApplySlaveUpdate(ctx.lsn);
-	putMeta(key, data);
+	checkApplySlaveUpdate(ctx.rdxContext.fromReplication_);	 // throw exception if false
+	putMeta(key, data, ctx.rdxContext);
 }
 
 // Put meta data to storage by key
-void NamespaceImpl::putMeta(const string &key, const string_view &data) {
+void NamespaceImpl::putMeta(const string &key, const string_view &data, const RdxContext &ctx) {
 	meta_[key] = string(data);
 
 	if (storage_) {
@@ -1955,9 +2074,7 @@ void NamespaceImpl::putMeta(const string &key, const string_view &data) {
 	}
 
 	WALRecord wrec(WalPutMeta, key, data);
-
-	int64_t lsn = repl_.slaveMode ? -1 : wal_.Add(wrec);
-	observers_->OnWALUpdate(lsn, name_, wrec);
+	processWalRecord(wrec, ctx);
 }
 
 vector<string> NamespaceImpl::EnumMeta(const RdxContext &ctx) {
@@ -2023,12 +2140,25 @@ void NamespaceImpl::deleteStorage() {
 	}
 }
 
-void NamespaceImpl::checkApplySlaveUpdate(int64_t lsn) {
-	if (repl_.slaveMode) {
-		if (lsn == -1) {
+void NamespaceImpl::checkApplySlaveUpdate(bool fromReplication) {
+	if (repl_.slaveMode && !repl_.replicatorEnabled)  // readOnly
+	{
+		throw Error(errLogic, "Can't modify read only ns '%s'", name_);
+	} else if (repl_.slaveMode && repl_.replicatorEnabled)	// slave
+	{
+		if (!fromReplication) {
+			logPrintf(LogTrace, "[repl:%s]:%d Can't modify slave ns '%s' repl_.slaveMode=%d repl_.replicatorenabled=%d fromReplication=%d",
+					  name_, serverId_, name_, repl_.slaveMode, repl_.replicatorEnabled, fromReplication);
 			throw Error(errLogic, "Can't modify slave ns '%s'", name_);
 		} else if (repl_.status == ReplicationState::Status::Fatal) {
 			throw Error(errLogic, "Can't modify slave ns '%s', ns has fatal replication error: %s", name_, repl_.replError.what());
+		}
+	} else if (!repl_.slaveMode && !repl_.replicatorEnabled)  // master
+	{
+		if (fromReplication) {
+			throw Error(errLogic, "Can't modify master ns '%s' from replicator", name_);
+		} else if (repl_.status == ReplicationState::Status::Fatal) {
+			throw Error(errLogic, "Can't modify ns '%s', ns has fatal replication error: %s", name_, repl_.replError.what());
 		}
 	}
 }
@@ -2062,7 +2192,7 @@ int64_t NamespaceImpl::GetSerial(const string &field) {
 	}
 
 	string s = to_string(counter);
-	putMeta("_SERIAL_" + field, string_view(s));
+	putMeta("_SERIAL_" + field, string_view(s), RdxContext());
 
 	return counter;
 }
@@ -2135,6 +2265,14 @@ void NamespaceImpl::writeToStorage(const string_view &key, const string_view &da
 			throw;
 		}
 	}
+}
+
+void NamespaceImpl::processWalRecord(const WALRecord &wrec, const RdxContext &ctx, lsn_t itemLsn, Item *item) {
+	lsn_t lsn(wal_.Add(wrec, itemLsn), serverId_);
+	if (!ctx.fromReplication_) repl_.lastSelfLSN = lsn;
+	if (item) item->setLSN(int64_t(lsn));
+	if (!repl_.temporary) observers_->OnWALUpdate(LSNPair(lsn, ctx.fromReplication_ ? ctx.LSNs_.originLSN_ : lsn), name_, wrec);
+	if (!ctx.fromReplication_) setReplLSNs(LSNPair(lsn_t(), lsn));
 }
 
 }  // namespace reindexer

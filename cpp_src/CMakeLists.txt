@@ -21,7 +21,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "2.9.2")
+set (REINDEXER_VERSION_DEFAULT "2.10.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -91,10 +91,12 @@ file (
 include_directories(${REINDEXER_SOURCE_PATH})
 include_directories(${REINDEXER_SOURCE_PATH}/vendor)
 
+set (MSGPACK_INCLUDE_PATH ${REINDEXER_SOURCE_PATH}/vendor/msgpack)
+include_directories(${MSGPACK_INCLUDE_PATH})
+
 list(APPEND REINDEXER_LIBRARIES reindexer)
 add_library(${TARGET} STATIC ${HDRS} ${SRCS} ${VENDORS})
 add_definitions(-DREINDEX_CORE_BUILD=1)
-
 
 # add_definitions(-DREINDEX_FT_EXTRA_DEBUG=1)
 
@@ -129,7 +131,7 @@ find_package(Snappy)
 if (SNAPPY_FOUND)
   include_directories(SYSTEM ${SNAPPY_INCLUDE_DIR})
   list(APPEND REINDEXER_LIBRARIES ${SNAPPY_LIBRARIES})
-else ()
+ else ()
   message (STATUS "Snappy not found. Will download it")
   ExternalProject_Add(
     snappy_lib
@@ -329,6 +331,7 @@ include_directories(${PROJECT_BINARY_DIR})
 
 string ( REGEX REPLACE "(.*)([0-9]+)\\.([0-9]+)\\.([0-9]+)(.*)" "\\2.\\3.\\4" REINDEXER_VERSION ${REINDEXER_VERSION_FULL})
 string ( REGEX REPLACE ".*-([0-9]+)-(.*)" "\\1.\\2" REINDEXER_RELEASE ${REINDEXER_VERSION_FULL})
+set (REINDEXER_VERSION_REDUCED ${REINDEXER_VERSION})
 if (CMAKE_MATCH_1)
   set (REINDEXER_VERSION ${REINDEXER_VERSION}.${REINDEXER_RELEASE})
 endif()
@@ -503,12 +506,12 @@ if (NOT WIN32)
     "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" "core/transaction.h"
     "core/query/query.h" "core/query/queryentry.h" "core/queryresults/queryresults.h" "core/indexdef.h" "core/queryresults/aggregationresult.h"
     "core/queryresults/itemref.h"
-    "core/expressiontree.h"
+    "core/expressiontree.h" "core/lsn.h"
     "estl/h_vector.h" "estl/string_view.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/span.h"
     "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h"
-    "client/internalrdxcontext.h"
+    "client/internalrdxcontext.h" "client/transaction.h"
     "debug/backtrace.h" "debug/allocdebug.h" "debug/resolver.h"
-    "vendor/mpark/variant.h"
+    "vendor/mpark/variant.h" "vendor/gason/gason.h"
   )
 
   foreach ( file ${DIST_INCLUDE_FILES} )
@@ -532,6 +535,18 @@ if (NOT WIN32)
     @ONLY
   )
 
+  configure_file (
+    "${PROJECT_SOURCE_DIR}/reindexer-config.cmake.in"
+    "${PROJECT_BINARY_DIR}/pkgconfig/reindexer-config.cmake"
+    @ONLY
+  )
+
+  configure_file (
+    "${PROJECT_SOURCE_DIR}/reindexer-config-version.cmake.in"
+    "${PROJECT_BINARY_DIR}/pkgconfig/reindexer-config-version.cmake"
+    @ONLY
+  )
+
   unset (VERSION)
   unset (prefix)
   unset (exec_prefix)
@@ -546,6 +561,8 @@ if (NOT WIN32)
       COMPONENT dev
   )
   install(DIRECTORY ${PROJECT_BINARY_DIR}/pkgconfig DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT dev)
+  install(FILES ${PROJECT_BINARY_DIR}/pkgconfig/reindexer-config.cmake DESTINATION ${CMAKE_INSTALL_LIBDIR}/reindexer COMPONENT dev)
+  install(FILES ${PROJECT_BINARY_DIR}/pkgconfig/reindexer-config-version.cmake DESTINATION ${CMAKE_INSTALL_LIBDIR}/reindexer COMPONENT dev)
 endif ()
 
 add_subdirectory(server)

@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-tokenizer::tokenizer(const string_view &query) : q_(query), cur_(query.begin()) {}
+tokenizer::tokenizer(string_view query) : q_(query), cur_(query.begin()) {}
 
 bool tokenizer::end() const { return cur_ == q_.end(); }
 
@@ -38,7 +38,7 @@ token tokenizer::next_token(bool to_lower, bool treatSignAsToken) {
 		do {
 			res.text_.push_back(to_lower ? tolower(*cur_++) : *cur_++);
 			++pos_;
-		} while (cur_ != q_.end() && (isalpha(*cur_) || isdigit(*cur_) || *cur_ == '_' || *cur_ == '#'));
+		} while (cur_ != q_.end() && (isalpha(*cur_) || isdigit(*cur_) || *cur_ == '_' || *cur_ == '#' || *cur_ == '.'));
 	} else if (isdigit(*cur_) || (!treatSignAsToken && (*cur_ == '-' || *cur_ == '+'))) {
 		res.type = TokenNumber;
 		do {

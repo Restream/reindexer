@@ -43,6 +43,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 				data.lazyLoad = nsNode["lazyload"].As<bool>();
 				data.noQueryIdleThreshold = nsNode["unload_idle_threshold"].As<int>();
 				data.logLevel = logLevelFromString(nsNode["log_level"].As<string>("none"));
+				data.strictMode = strictModeFromString(nsNode["strict_mode"].As<string>("names"));
 				data.cacheMode = str2cacheMode(nsNode["join_cache_mode"].As<string>("off"));
 				data.startCopyPolicyTxSize = nsNode["start_copy_policy_tx_size"].As<int>(data.startCopyPolicyTxSize);
 				data.copyPolicyMultiplier = nsNode["copy_policy_multiplier"].As<int>(data.copyPolicyMultiplier);
@@ -116,7 +117,7 @@ Error ReplicationConfigData::FromYML(const string &yaml) {
 		retrySyncIntervalSec = root["retry_sync_interval_sec"].As<int>(retrySyncIntervalSec);
 		onlineReplErrorsThreshold = root["online_repl_errors_threshold"].As<int>(onlineReplErrorsThreshold);
 		enableCompression = root["enable_compression"].As<bool>(enableCompression);
-
+		serverId = root["server_id"].As<int>(serverId);
 		auto &node = root["namespaces"];
 		namespaces.clear();
 		for (unsigned i = 0; i < node.Size(); i++) {
@@ -144,7 +145,7 @@ Error ReplicationConfigData::FromJSON(const gason::JsonNode &root) {
 		retrySyncIntervalSec = root["retry_sync_interval_sec"].As<int>(retrySyncIntervalSec);
 		onlineReplErrorsThreshold = root["online_repl_errors_threshold"].As<int>(onlineReplErrorsThreshold);
 		enableCompression = root["enable_compression"].As<bool>(enableCompression);
-
+		serverId = root["server_id"].As<int>(serverId);
 		namespaces.clear();
 		for (auto &objNode : root["namespaces"]) {
 			namespaces.insert(objNode.As<string>());
@@ -189,6 +190,7 @@ void ReplicationConfigData::GetJSON(JsonBuilder &jb) const {
 	jb.Put("force_sync_on_wrong_data_hash", forceSyncOnWrongDataHash);
 	jb.Put("retry_sync_interval_sec", retrySyncIntervalSec);
 	jb.Put("online_repl_errors_threshold", onlineReplErrorsThreshold);
+	jb.Put("server_id", serverId);
 	{
 		auto arrNode = jb.Array("namespaces");
 		for (const auto &ns : namespaces) arrNode.Put(nullptr, ns);
@@ -214,6 +216,7 @@ void ReplicationConfigData::GetYAML(WrSerializer &ser) const {
 			"# none - replication is disabled\n"
 			"# slave - replication as slave\n"
 			"# master - replication as master\n"
+			"# master_master - replication as master master\n"
 			"role: " + role2str(role) + "\n"
 			"\n"
 			"# DSN to master. Only cproto schema is supported\n"
@@ -224,6 +227,10 @@ void ReplicationConfigData::GetYAML(WrSerializer &ser) const {
 			"\n"
 			"# Cluser ID - must be same for client and for master\n"
 			"cluster_id: " + std::to_string(clusterID) + "\n"
+			"\n"
+			"# Server Id - must be unique for all nodes\n"
+			"server_id: " + std::to_string(serverId) + "\n"
+			"\n"
 			"# Force resync on logic error conditions\n"
 			"force_sync_on_logic_error: " + (forceSyncOnLogicError ? "true" : "false") + "\n"
 			"\n"

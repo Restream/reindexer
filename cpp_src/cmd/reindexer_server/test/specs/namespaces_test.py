@@ -238,3 +238,40 @@ class NamespacesTest(BaseTest):
             self.assertEqual(True, x['key'] == 'key' + indexes[i], x)
             self.assertEqual(True, x['value'] == 'value' + indexes[i], x)
             i += 1
+
+    def test_put_and_get_namespaces_schema(self):
+        """Should be able to put and get namespace schema"""
+
+        status, body = self.api_create_namespace(self.current_db, self.test_ns)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        schema = {
+            'required': ['Countries','nested'],
+            'properties': {
+                'Countries': {
+                    'items': {
+                        'type': 'string'
+                    },
+                    'type': 'array'
+                },
+                'nested': {
+                    'required': ['Name'],
+                    'properties': {
+                        'Name': {
+                            'type': 'string'
+                        },
+                    },
+                    'additionalProperties': False,
+                    'type': 'object'
+                }
+            },
+            'additionalProperties': False,
+            'type': 'object'
+        }
+        status, body = self.api_put_namespace_schema(self.current_db, self.test_ns, schema)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        status, body = self.api_get_namespace_schema(self.current_db, self.test_ns)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+        self.assertEqual(True, body == schema, body)
+

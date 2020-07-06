@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.9.2"
+  version: "2.10.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -537,6 +537,14 @@ paths:
         required: false
         items:
           type: "string"
+      - name: "format"
+        in: "query"
+        type: "string"
+        description: "encoding data format"
+        required: false
+        enum:
+          - json
+          - msgpack
       responses:
         200:
           description: "successful operation"
@@ -587,6 +595,14 @@ paths:
         required: false
         items:
           type: "string"
+      - name: "format"
+        in: "query"
+        type: "string"
+        description: "encoding data format"
+        required: false
+        enum:
+          - json
+          - msgpack
       responses:
         200:
           description: "successful operation"
@@ -645,6 +661,14 @@ paths:
         in: "query"
         type: "string"
         description: "Comma-separated list of returned fields"
+      - name: "format"
+        in: "query"
+        type: "string"
+        description: "encoding data format"
+        required: false
+        enum:
+          - json
+          - msgpack
       responses:
         200:
           description: "successful operation"
@@ -801,6 +825,73 @@ paths:
         500:
           $ref: "#/responses/UnexpectedError"
 
+  /db/{database}/namespaces/{name}/schema:
+    put:
+      tags:
+      - "schema"
+      summary: "Set namespace schema"
+      operationId: "putSchema"
+      description: |
+        This operation will set namespace schema (information about available fields and field types)
+      parameters:
+      - in: "body"
+        name: "body"
+        description: This operation will put new schema for specified database and namespace
+        schema:
+          $ref: "#/definitions/SchemaDef"
+        required: true
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "name"
+        in: "path"
+        type: "string"
+        description: "Namespace name"
+        required: true
+      responses:
+        200:
+          $ref: "#/responses/OK"
+        400:
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
+    get:
+      tags:
+      - "schema"
+      summary: "Get namespace schema"
+      description: This operation will return current schema from specified database and namespace
+      operationId: "getSchema"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "name"
+        in: "path"
+        type: "string"
+        description: "Namespace name"
+        required: true
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/SchemaDef"
+        400:
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
+
   /db/{database}/query:
     get:
       tags:
@@ -840,6 +931,14 @@ paths:
         type: "integer"
         description: "Total width in rows of view for table format output"
         required: false
+      - name: "format"
+        in: "query"
+        type: "string"
+        description: "encoding data format"
+        required: false
+        enum:
+          - json
+          - msgpack
       responses:
         200:
           description: "successful operation"
@@ -881,6 +980,11 @@ paths:
         in: "query"
         type: "integer"
         description: "Total width in rows of view for table format output"
+        required: false
+      - name: "format"
+        in: "query"
+        type: "string"
+        description: "format of encoding data: json or msgpack"
         required: false
       responses:
         200:
@@ -1461,6 +1565,10 @@ definitions:
         description: "Value of index may not present in the document, and threfore, reduce data size but decreases speed operations on index"
         type: "boolean"
         default: false
+      is_simple_tag:
+        description: "Use simple tag instead of actual index, which will notice rx about possible field name for strict policies"
+        type: "boolean"
+        default: false
       collate_mode:
         type: "string"
         description: "String collate mode"
@@ -1476,6 +1584,39 @@ definitions:
         default: ""
       config:
         $ref: "#/definitions/FulltextConfig"
+
+  JsonObjectDef:
+    type: "object"
+    properties:
+      required:
+        description: "Array of required fieldsl. Allowed for objects only"
+        type: "array"
+        items:
+          type: "string"
+      properties:
+        type: "object"
+        properties:
+          field1:
+            $ref: "#/definitions/JsonObjectDef"
+          field2:
+            $ref: "#/definitions/JsonObjectDef"
+      items:
+        $ref: "#/definitions/JsonObjectDef"
+      additionalProperties:
+        description: "Allow additional fields in this schema level. Allowed for objects only"
+        type: "boolean"
+        default: false
+      type:
+        description: "Entity type"
+        type: "string"
+        enum:
+        - "object"
+        - "string"
+        - "number"
+        - "array"
+
+  SchemaDef:
+    $ref: "#/definitions/JsonObjectDef"
 
   Query:
     type: "object"
@@ -1543,6 +1684,14 @@ definitions:
         description: "Output fulltext rank in QueryResult. Allowed only with fulltext query"
         type: "boolean"
         default: false
+      strict_mode:
+        description: "Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existance in sorting and filtering conditions"
+        type: "string"
+        enum:
+          - "none"
+          - "names"
+          - "indexes"
+        default: "names"
 
   FilterDef:
     description: "If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not contains 'filters' then 'field' and 'cond' are required."

@@ -16,6 +16,7 @@ using std::chrono::milliseconds;
 class ReindexerImpl;
 class IUpdatesObserver;
 class IClientsStats;
+
 /// The main Reindexer interface. Holds database object<br>
 /// *Thread safety*: All methods of Reindexer are thread safe. <br>
 /// *Resources lifetime*: All resources aquired from Reindexer, e.g Item or QueryResults are uses Copy-On-Write
@@ -87,6 +88,14 @@ public:
 	/// @param nsName - Name of namespace
 	/// @param index - index name
 	Error DropIndex(string_view nsName, const IndexDef &index);
+	/// Set fields schema for namespace
+	/// @param nsName - Name of namespace
+	/// @param schema - JSON in JsonSchema format
+	Error SetSchema(string_view nsName, string_view schema);
+	/// Get fields schema for namespace
+	/// @param nsName - Name of namespace
+	/// @param schema - result JSON in JsonSchema format
+	Error GetSchema(string_view nsName, string &schema);
 	/// Get list of all available namespaces
 	/// @param defs - std::vector of NamespaceDef of available namespaves
 	/// @param opts - Enumeration options

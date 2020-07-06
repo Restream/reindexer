@@ -11,6 +11,7 @@
 #include "client/namespace.h"
 #include "client/queryresults.h"
 #include "client/reindexerconfig.h"
+#include "client/transaction.h"
 #include "core/keyvalue/p_string.h"
 #include "core/namespacedef.h"
 #include "core/query/query.h"
@@ -55,6 +56,7 @@ public:
 	Error AddIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error UpdateIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error DropIndex(string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
+	Error SetSchema(string_view nsName, string_view schema, const InternalRdxContext &ctx);
 	Error EnumNamespaces(vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx);
 	Error EnumDatabases(vector<string> &dbList, const InternalRdxContext &ctx);
 	Error Insert(string_view nsName, client::Item &item, const InternalRdxContext &ctx);
@@ -78,7 +80,11 @@ public:
 	Error GetSqlSuggestions(string_view query, int pos, std::vector<std::string> &suggests);
 	Error Status();
 
-private:
+	Transaction NewTransaction(string_view nsName, const InternalRdxContext &ctx);
+	Error CommitTransaction(Transaction &tr, const InternalRdxContext &ctx);
+	Error RollBackTransaction(Transaction &tr, const InternalRdxContext &ctx);
+
+protected:
 	struct worker {
 		worker() : running(false) {}
 		ev::dynamic_loop loop_;
@@ -117,6 +123,8 @@ private:
 	vector<net::cproto::RPCAnswer> delayedUpdates_;
 	cproto::ClientConnection::ConnectData connectData_;
 };
+
+void vec2pack(const h_vector<int32_t, 4> &vec, WrSerializer &ser);
 
 }  // namespace client
 }  // namespace reindexer

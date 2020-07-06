@@ -64,6 +64,8 @@ public:
 	int GetIndexes(http::Context &ctx);
 	int PostIndex(http::Context &ctx);
 	int PutIndex(http::Context &ctx);
+	int PutSchema(http::Context &ctx);
+	int GetSchema(http::Context &ctx);
 	int GetMetaList(http::Context &ctx);
 	int GetMetaByKey(http::Context &ctx);
 	int PutMetaByKey(http::Context &ctx);
@@ -73,10 +75,22 @@ public:
 	void OnResponse(http::Context &ctx);
 
 protected:
-	int modifyItem(http::Context &ctx, int mode);
+	Error modifyItem(Reindexer &db, string &nsName, Item &item, int mode);
+	int modifyItems(http::Context &ctx, int mode);
+	int modifyItemsMsgPack(http::Context &ctx, string &nsName, const vector<string> &precepts, int mode);
+	int modifyItemsJSON(http::Context &ctx, string &nsName, const vector<string> &precepts, int mode);
 	int queryResults(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults = false, unsigned limit = kDefaultLimit,
 					 unsigned offset = kDefaultOffset);
+	int queryResultsMsgPack(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
+							bool withColumns, int width = 0);
+	int queryResultsJSON(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
+						 bool withColumns, int width = 0);
+	template <typename Builder>
+	void queryResultParams(Builder &builder, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, bool withColumns,
+						   int width);
+	int status(http::Context &ctx, Error status);
 	int jsonStatus(http::Context &ctx, http::HttpStatus status = http::HttpStatus());
+	int msgpackStatus(http::Context &ctx, Error status);
 	unsigned prepareLimit(const string_view &limitParam, int limitDefault = kDefaultLimit);
 	unsigned prepareOffset(const string_view &offsetParam, int offsetDefault = kDefaultOffset);
 

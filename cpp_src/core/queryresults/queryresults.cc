@@ -1,5 +1,7 @@
 #include "core/queryresults/queryresults.h"
+#include "core/cbinding/resultserializer.h"
 #include "core/cjson/baseencoder.h"
+#include "core/cjson/msgpackbuilder.h"
 #include "core/itemimpl.h"
 #include "joinresults.h"
 #include "tools/logger.h"
@@ -234,7 +236,7 @@ void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 	}
 	ConstPayload pl(ctx.type_, itemRef.Value());
 	JsonEncoder encoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
-	JsonBuilder builder(ser, JsonBuilder::TypePlain);
+	JsonBuilder builder(ser, ObjType::TypePlain);
 
 	if (!joined_.empty()) {
 		joins::ItemIterator itemIt = (begin() + idx).GetJoined();
@@ -259,6 +261,29 @@ void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 }
 
 joins::ItemIterator QueryResults::Iterator::GetJoined() { return reindexer::joins::ItemIterator::CreateFrom(*this); }
+
+Error QueryResults::Iterator::GetMsgPack(WrSerializer &wrser, bool withHdrLen) {
+	auto &itemRef = qr_->items_[idx_];
+	assert(qr_->ctxs.size() > itemRef.Nsid());
+	auto &ctx = qr_->ctxs[itemRef.Nsid()];
+
+	if (itemRef.Value().IsFree()) {
+		return Error(errNotFound, "Item not found");
+	}
+
+	int startTag = 0;
+	ConstPayload pl(ctx.type_, itemRef.Value());
+	MsgPackEncoder msgpackEncoder(&ctx.tagsMatcher_);
+	const TagsLengths &tagsLengths = msgpackEncoder.GetTagsMeasures(&pl);
+	MsgPackBuilder msgpackBuilder(wrser, &tagsLengths, &startTag, ObjType::TypePlain, const_cast<TagsMatcher *>(&ctx.tagsMatcher_));
+	if (withHdrLen) {
+		auto slicePosSaver = wrser.StartSlice();
+		msgpackEncoder.Encode(&pl, msgpackBuilder);
+	} else {
+		msgpackEncoder.Encode(&pl, msgpackBuilder);
+	}
+	return errOK;
+}
 
 Error QueryResults::Iterator::GetJSON(WrSerializer &ser, bool withHdrLen) {
 	try {
@@ -286,7 +311,7 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer &ser, bool withHdrLen) {
 		}
 
 		ConstPayload pl(ctx.type_, itemRef.Value());
-		CJsonBuilder builder(ser, CJsonBuilder::TypePlain);
+		CJsonBuilder builder(ser, ObjType::TypePlain);
 		CJsonEncoder cjsonEncoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
 
 		if (withHdrLen) {
@@ -341,12 +366,12 @@ QueryResults::Iterator &QueryResults::Iterator::operator+(int val) {
 bool QueryResults::Iterator::operator!=(const Iterator &other) const { return idx_ != other.idx_; }
 bool QueryResults::Iterator::operator==(const Iterator &other) const { return idx_ == other.idx_; }
 
-void QueryResults::AddItem(Item &item, bool withData) {
+void QueryResults::AddItem(Item &item, bool withData, bool singleValue) {
 	auto ritem = item.impl_;
 	if (item.GetID() != -1) {
 		if (ctxs.empty()) ctxs.push_back(Context(ritem->Type(), ritem->tagsMatcher(), FieldsSet()));
 		Add(ItemRef(item.GetID(), withData ? ritem->RealValue() : PayloadValue()));
-		if (withData) {
+		if (withData && singleValue) {
 			lockResults();
 		}
 	}

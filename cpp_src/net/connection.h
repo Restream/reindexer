@@ -61,7 +61,7 @@ protected:
 
 	chain_buf<Mutex> wrBuf_;
 	cbuf<char> rdBuf_;
-	string clientAddr_;
+	std::string clientAddr_;
 
 	std::shared_ptr<ConnectionStat> stat_;
 };

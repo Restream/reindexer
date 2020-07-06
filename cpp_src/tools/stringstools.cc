@@ -242,11 +242,17 @@ bool iequals(string_view lhs, string_view rhs) {
 	return true;
 }
 
-bool checkIfStartsWith(string_view src, string_view pattern) {
+bool checkIfStartsWith(string_view src, string_view pattern, bool casesensitive) {
 	if (src.empty() || pattern.empty()) return false;
 	if (src.length() > pattern.length()) return false;
-	for (size_t i = 0; i < src.length(); ++i) {
-		if (tolower(src[i]) != tolower(pattern[i])) return false;
+	if (casesensitive) {
+		for (size_t i = 0; i < src.length(); ++i) {
+			if (src[i] != pattern[i]) return false;
+		}
+	} else {
+		for (size_t i = 0; i < src.length(); ++i) {
+			if (tolower(src[i]) != tolower(pattern[i])) return false;
+		}
 	}
 	return true;
 }
@@ -425,6 +431,27 @@ LogLevel logLevelFromString(const string &strLogLevel) {
 		return configLevelIt->second;
 	}
 	return LogNone;
+}
+
+static std::unordered_map<string, StrictMode> strictModes = {
+	{"", StrictModeNotSet}, {"none", StrictModeNone}, {"names", StrictModeNames}, {"indexes", StrictModeIndexes}};
+
+StrictMode strictModeFromString(const string &strStrictMode) {
+	auto configModeIt = strictModes.find(strStrictMode);
+	if (configModeIt != strictModes.end()) {
+		return configModeIt->second;
+	}
+	return StrictModeNotSet;
+}
+
+string_view strictModeToString(StrictMode mode) {
+	for (auto &it : strictModes) {
+		if (it.second == mode) {
+			return it.first;
+		}
+	}
+	static string_view empty = ""_sv;
+	return empty;
 }
 
 bool isPrintable(string_view str) {

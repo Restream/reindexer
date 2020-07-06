@@ -23,7 +23,7 @@ type TestJoinItem struct {
 	Location string `reindex:"location"`
 	Device   string `reindex:"device"`
 	Amount   int    `reindex:"amount,tree"`
-	Price    int
+	Price    int    `json:"price"`
 }
 
 func (item *TestItem) Join(field string, subitems []interface{}, context interface{}) {
@@ -74,6 +74,7 @@ func FillTestJoinItems(start int, count int, ns string) {
 			Location: randLocation(),
 			Device:   randDevice(),
 			Amount:   rand.Int() % 10,
+			Price:    rand.Int() % 1000,
 		}); err != nil {
 			panic(err)
 		}

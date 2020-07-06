@@ -135,31 +135,49 @@ private:
 	double rank_;
 };
 
+void QueryResults::Iterator::getJSONFromCJSON(string_view cjson, WrSerializer &wrser, bool withHdrLen) {
+	auto tm = qr_->getTagsMatcher(itemParams_.nsid);
+	JsonEncoder enc(&tm);
+	JsonBuilder builder(wrser, ObjType::TypePlain);
+	if (qr_->NeedOutputRank()) {
+		AdditionalRank additionalRank(itemParams_.proc);
+		if (withHdrLen) {
+			auto slicePosSaver = wrser.StartSlice();
+			enc.Encode(cjson, builder, &additionalRank);
+		} else {
+			enc.Encode(cjson, builder, &additionalRank);
+		}
+	} else {
+		if (withHdrLen) {
+			auto slicePosSaver = wrser.StartSlice();
+			enc.Encode(cjson, builder, nullptr);
+		} else {
+			enc.Encode(cjson, builder, nullptr);
+		}
+	}
+}
+
+Error QueryResults::Iterator::GetMsgPack(WrSerializer &wrser, bool withHdrLen) {
+	readNext();
+	int type = qr_->queryParams_.flags & kResultsFormatMask;
+	if (type == kResultsMsgPack) {
+		if (withHdrLen) {
+			wrser.PutSlice(itemParams_.data);
+		} else {
+			wrser.Write(itemParams_.data);
+		}
+	} else {
+		return Error(errParseBin, "Impossible to get data in MsgPack because of a different format: %d", type);
+	}
+	return errOK;
+}
+
 Error QueryResults::Iterator::GetJSON(WrSerializer &wrser, bool withHdrLen) {
 	readNext();
 	try {
 		switch (qr_->queryParams_.flags & kResultsFormatMask) {
 			case kResultsCJson: {
-				auto tm = qr_->getTagsMatcher(itemParams_.nsid);
-				JsonEncoder enc(&tm);
-				JsonBuilder builder(wrser, JsonBuilder::TypePlain);
-
-				if (qr_->NeedOutputRank()) {
-					AdditionalRank ar(itemParams_.proc);
-					if (withHdrLen) {
-						auto slicePosSaver = wrser.StartSlice();
-						enc.Encode(itemParams_.data, builder, &ar);
-					} else {
-						enc.Encode(itemParams_.data, builder, &ar);
-					}
-				} else {
-					if (withHdrLen) {
-						auto slicePosSaver = wrser.StartSlice();
-						enc.Encode(itemParams_.data, builder, nullptr);
-					} else {
-						enc.Encode(itemParams_.data, builder, nullptr);
-					}
-				}
+				getJSONFromCJSON(itemParams_.data, wrser, withHdrLen);
 				break;
 			}
 			case kResultsJson:
@@ -189,6 +207,7 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer &wrser, bool withHdrLen) {
 					wrser.Write(itemParams_.data);
 				}
 				break;
+			case kResultsMsgPack:
 			case kResultsJson:
 				return Error(errParseBin, "Server returned data in json format, can't process");
 			default:
@@ -201,9 +220,38 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer &wrser, bool withHdrLen) {
 }
 
 Item QueryResults::Iterator::GetItem() {
-	// TODO: implement
-	abort();
-	// return Item();
+	readNext();
+	try {
+		Error err;
+		Item item;
+		{
+			shared_lock<shared_timed_mutex> lck(qr_->nsArray_[itemParams_.nsid]->lck_);
+			item = qr_->nsArray_[itemParams_.nsid]->NewItem();
+		}
+		switch (qr_->queryParams_.flags & kResultsFormatMask) {
+			case kResultsMsgPack: {
+				size_t offset = 0;
+				err = item.FromMsgPack(itemParams_.data, offset);
+				break;
+			}
+			case kResultsCJson: {
+				err = item.FromCJSON(itemParams_.data);
+				break;
+			}
+			case kResultsJson: {
+				char *endp = nullptr;
+				err = item.FromJSON(itemParams_.data, &endp);
+				break;
+			}
+			default:
+				return Item();
+		}
+		if (err.ok()) {
+			return item;
+		}
+	} catch (const Error &) {
+	}
+	return Item();
 }
 
 int64_t QueryResults::Iterator::GetLSN() {

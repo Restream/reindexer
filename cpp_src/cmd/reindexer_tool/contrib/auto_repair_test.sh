@@ -15,7 +15,7 @@ rm -f "${test_db}/test/items/000007.sst"
 > "${test_db}/test/items/.rdx_shutdown"
 ${build_dir}/cpp_src/cmd/reindexer_server/reindexer_server --db "${test_db}" --autorepair &
 server_pid=$!
-sleep 2
+sleep 4
 kill ${server_pid} || true
 wait ${server_pid}
 echo "Autorepair test done"

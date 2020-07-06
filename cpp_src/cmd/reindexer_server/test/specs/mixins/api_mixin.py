@@ -5,6 +5,11 @@ from urllib.parse import quote
 
 
 class ApiMixin(object):
+    class EncodingType:
+        Json = 1
+        PlainText = 2
+        MsgPack = 3
+
     API_STATUS = {
         'success': 200,
         'moved_permanently': 301,
@@ -20,45 +25,53 @@ class ApiMixin(object):
         'asc': 1
     }
 
-    def _server_request(self, method, url, body=None, headers={}, as_json=True):
+    def _server_request(self, method, url, body=None, headers={}, encodingType=EncodingType.Json):
         self.api = http.client.HTTPConnection('127.0.0.1', 9088)
 
-        if body is not None and as_json:
+        if body is not None and encodingType is self.EncodingType.Json:
             body = json.dumps(body)
 
         self.api.request(method, url, body, headers)
 
         response = self.api.getresponse()
         content = response.read()
-
-        content = content.decode()
-
         res_status = response.status
 
-        try:
-            res_body = json.loads(content)
-        except:
+        if encodingType is not self.EncodingType.MsgPack:
+            content = content.decode()
+            try:
+                res_body = json.loads(content)
+            except:
+                res_body = {'message': content}
+        else:
             res_body = {'message': content}
 
         self.api.close()
 
         return res_status, res_body
 
-    def _api_call(self, method, url, body=None, headers={}, as_json=True, with_basic_auth=True):
+    def _api_call(self, method, url, body=None, headers={}, encodingType=EncodingType.Json, with_basic_auth=True):
         api_base = self.SWAGGER['basePath']
 
-        content_type = 'application/json' if as_json else 'text/plain'
+        content_type = None
+        if encodingType is self.EncodingType.Json:
+            content_type = 'application/json'
+        elif encodingType is self.EncodingType.PlainText:
+            content_type = 'text/plain'
+        elif encodingType is self.EncodingType.MsgPack:
+            content_type = 'application/x-msgpack'
+
         def_headers = {
             'Content-type': content_type,
         }
 
         if with_basic_auth:
             def_headers['Authorization'] = 'Basic ' + \
-                self.role_token(self.role)
+                                           self.role_token(self.role)
 
         req_headers = {**def_headers, **headers}
 
-        return self._server_request(method, api_base + url, body, req_headers, as_json)
+        return self._server_request(method, api_base + url, body, req_headers, encodingType)
 
     def _web_call(self, url, with_basic_auth=True):
         headers = {}
@@ -130,9 +143,8 @@ class ApiMixin(object):
     def api_truncate_namespace(self, dbname, nsname):
         return self._api_call('DELETE', '/db/' + dbname + '/namespaces/' + nsname + '/truncate')
 
-    def api_rename_namespace(self, dbname, srcnsname,dstnsname):
+    def api_rename_namespace(self, dbname, srcnsname, dstnsname):
         return self._api_call('GET', '/db/' + dbname + '/namespaces/' + srcnsname + '/rename/' + dstnsname)
-
 
     def api_get_sorted_namespaces(self, dbname, dir=''):
         order = '?sort_order=' + dir
@@ -145,7 +157,8 @@ class ApiMixin(object):
     def api_get_namespace_meta(self, dbname, nsname, key):
         return self._api_call('GET', '/db/' + dbname + '/namespaces/' + nsname + '/metabykey/' + key)
 
-    def api_get_namespace_meta_list(self, dbname, nsname, sort = SORT_ORDER['no_sort'], with_values = False, offset = 0, limit = 0):
+    def api_get_namespace_meta_list(self, dbname, nsname, sort=SORT_ORDER['no_sort'], with_values=False, offset=0,
+                                    limit=0):
         query = ''
         separator = '?'
         if sort == self.SORT_ORDER['asc']:
@@ -185,13 +198,25 @@ class ApiMixin(object):
     def api_delete_index(self, dbname, nsname, index_name):
         return self._api_call('DELETE', '/db/' + dbname + '/namespaces/' + nsname + '/indexes/' + index_name)
 
-    def api_get_items(self, dbname, nsname):
-        return self._api_call('GET', '/db/' + dbname + '/namespaces/' + nsname + '/items')
+    def api_put_namespace_schema(self, dbname, nsname, body):
+        return self._api_call('PUT', '/db/' + dbname + '/namespaces/' + nsname + '/schema', body)
 
-    def api_create_item(self, dbname, nsname, item_body):
-        return self._api_call('POST', '/db/' + dbname + '/namespaces/' + nsname + '/items', item_body)
+    def api_get_namespace_schema(self, dbname, nsname):
+        return self._api_call('GET', '/db/' + dbname + '/namespaces/' + nsname + '/schema')
 
-    def api_update_item(self, dbname, nsname, item_body, precepts=[]):
+    def api_get_items(self, dbname, nsname, encType=EncodingType.Json):
+        url = '/db/' + dbname + '/namespaces/' + nsname + '/items'
+        if encType == self.EncodingType.MsgPack:
+            url = url + '?' + urlencode({'format': 'msgpack'})
+        return self._api_call('GET', url, body=None, headers={}, encodingType=encType)
+
+    def api_create_item(self, dbname, nsname, item_body, encType=EncodingType.Json):
+        url = '/db/' + dbname + '/namespaces/' + nsname + '/items'
+        if encType == self.EncodingType.MsgPack:
+            url = url + '?' + urlencode({'format': 'msgpack'})
+        return self._api_call('POST', url, item_body, headers={}, encodingType=encType)
+
+    def api_update_item(self, dbname, nsname, item_body, precepts=[], encType=EncodingType.Json):
         query = ''
         separator = '?'
         for precept in precepts:
@@ -199,10 +224,16 @@ class ApiMixin(object):
             query += 'precepts='
             query += quote(precept)
             separator = '&'
-        return self._api_call('PUT', '/db/' + dbname + '/namespaces/' + nsname + '/items' + query, item_body)
+        url = '/db/' + dbname + '/namespaces/' + nsname + '/items' + query
+        if encType == self.EncodingType.MsgPack:
+            url = url + separator + urlencode({'format': 'msgpack'})
+        return self._api_call('PUT', url, item_body, headers={}, encodingType=encType)
 
-    def api_delete_item(self, dbname, nsname, item_body):
-        return self._api_call('DELETE', '/db/' + dbname + '/namespaces/' + nsname + '/items', item_body)
+    def api_delete_item(self, dbname, nsname, item_body, encType=EncodingType.Json):
+        url = '/db/' + dbname + '/namespaces/' + nsname + '/items'
+        if encType == self.EncodingType.MsgPack:
+            url = url + '?' + urlencode({'format': 'msgpack'})
+        return self._api_call('DELETE', url, item_body, headers={}, encodingType=encType)
 
     def api_get_paginated_items(self, dbname, nsname, limit=10, offset=0):
         return self._api_call('GET', '/db/' + dbname + '/namespaces/' + nsname + '/items?'
@@ -212,14 +243,21 @@ class ApiMixin(object):
         return self._api_call('GET', '/db/' + dbname + '/namespaces/' + nsname + '/items?'
                               + urlencode({'sort_field': field, 'sort_order': direction}))
 
-    def api_sql_exec(self, dbname, sql_query=''):
-        return self._api_call('GET', '/db/' + dbname + '/query?' + urlencode({'q': sql_query}))
+    def api_sql_exec(self, dbname, sql_query='', encType=EncodingType.Json):
+        url = '/db/' + dbname + '/query?' + urlencode({'q': sql_query})
+        if encType == self.EncodingType.MsgPack:
+            url = url + '&' + urlencode({'format': 'msgpack'})
+        return self._api_call('GET', url, headers={}, encodingType=encType)
 
-    def api_sql_exec_with_columns(self, dbname, sql_query=''):
-        return self._api_call('GET', '/db/' + dbname + '/query?' + urlencode({'q': sql_query, 'with_columns': 1, 'width': 100}))
+    def api_sql_exec_with_columns(self, dbname, sql_query='', encType=EncodingType.Json):
+        url = urlencode(
+            {'q': sql_query, 'with_columns': 1, 'width': 100})
+        if encType == self.EncodingType.MsgPack:
+            url = url + '&' + urlencode({'format': 'msgpack'})
+        return self._api_call('GET', '/db/' + dbname + '/query?' + url, headers={}, encodingType=encType)
 
-    def api_sql_post(self, dbname, body):
-        return self._api_call('POST', '/db/' + dbname + '/sqlquery', body, headers={'Content-type': 'text/plain'}, as_json=False)
+    def api_sql_post(self, dbname, body, enctype):
+        return self._api_call('POST', '/db/' + dbname + '/sqlquery', body, headers={}, encodingType=enctype)
 
     def api_query_dsl(self, dbname, body):
         return self._api_call('POST', '/db/' + dbname + '/query', body)

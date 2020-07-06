@@ -27,6 +27,8 @@ ServerConnection::ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &d
 	callback(io_, ev::READ);
 }
 
+ServerConnection::~ServerConnection() { closeConn(); }
+
 bool ServerConnection::Restart(int fd) {
 	restart(fd);
 	timeout_.start(kCProtoTimeoutSec);

@@ -14,6 +14,7 @@ using std::string;
 class TagsMatcher;
 class PayloadType;
 class WrSerializer;
+struct ResultFetchOpts;
 
 namespace joins {
 class NamespaceResults;
@@ -37,7 +38,7 @@ public:
 	QueryResults &operator=(QueryResults &&obj) noexcept;
 	void Add(const ItemRef &i);
 	void Add(const ItemRef &itemref, const PayloadType &pt);
-	void AddItem(Item &item, bool withData = false);
+	void AddItem(Item &item, bool withData = false, bool singleValue = true);
 	void Dump() const;
 	void Erase(ItemRefVector::iterator begin, ItemRefVector::iterator end);
 	size_t Count() const { return items_.size(); }
@@ -52,6 +53,7 @@ public:
 	public:
 		Error GetJSON(WrSerializer &wrser, bool withHdrLen = true);
 		Error GetCJSON(WrSerializer &wrser, bool withHdrLen = true);
+		Error GetMsgPack(WrSerializer &wrser, bool withHdrLen = true);
 		Item GetItem();
 		joins::ItemIterator GetJoined();
 		const ItemRef &GetItemRef() const { return qr_->items_[idx_]; }

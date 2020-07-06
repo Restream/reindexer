@@ -77,6 +77,7 @@ public:
 		return calculate(cbegin(), cend(), rowId, pv, results, js, proc, tagsMatcher);
 	}
 	bool ByIndexField() const;
+	bool ByJoinedIndexField() const;
 
 	std::string Dump() const;
 

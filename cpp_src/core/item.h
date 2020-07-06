@@ -5,7 +5,6 @@
 #include "tools/errors.h"
 
 namespace reindexer {
-
 using std::vector;
 
 namespace client {
@@ -18,10 +17,9 @@ class FieldRefImpl;
 class Replicator;
 
 /// Item is the interface for data manipulating. It holds and control one database document (record)<br>
-/// *Lifetime*: Item is uses Copy-On-Write semantics, and have independent lifetime and state - e.g., aquired from Reindexer Item will not
-/// changed externally, even in case, when data in database was changed, or deleted.
-/// *Thread safety*: Item is thread safe againist Reindexer, but not thread safe itself.
-/// Usage of single Item from different threads will race
+/// *Lifetime*: Item is uses Copy-On-Write semantics, and have independent lifetime and state - e.g., aquired from Reindexer Item will
+/// not changed externally, even in case, when data in database was changed, or deleted. *Thread safety*: Item is thread safe against
+/// Reindexer, but not thread safe itself. Usage of single Item from different threads will race
 
 class Item {
 public:
@@ -83,7 +81,7 @@ public:
 		/// If Item is in Unsafe Mode, then Item will not store str, but just keep pointer to str,
 		/// application *MUST* hold str until end of life of Item
 		/// @param str - std::string, which will be setted to field
-		FieldRef &operator=(const string &str);
+		FieldRef &operator=(const std::string &str);
 
 		/// Get field index name
 		string_view Name() const;
@@ -125,18 +123,27 @@ public:
 	/// @param pkOnly - if TRUE, that mean a JSON string will be parse only primary key fields
 	Error FromCJSON(const string_view &slice, bool pkOnly = false);
 
+	/// Builds item from msgpack::object.
+	/// @param sbuf - msgpack encoded data buffer.
+	/// @param offset - position to start from.
+	Error FromMsgPack(string_view buf, size_t &offset);
+
+	/// Packs data in msgpack format
+	/// @param wrser - buffer to serialize data to
+	Error GetMsgPack(WrSerializer &wrser);
+
 	/// Serialize item to CJSON.<br>
-	/// If Item is in *Unfafe Mode*, then returned slice is allocated in temporary buffer, and can be invalidated by any next operation with
-	/// Item
+	/// If Item is in *Unfafe Mode*, then returned slice is allocated in temporary buffer, and can be invalidated by any next operation
+	/// with Item
 	/// @return data slice with CJSON
 	string_view GetCJSON();
 	/// Serialize item to JSON.<br>
-	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next operation
-	/// with Item
+	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next
+	/// operation with Item
 	string_view GetJSON();
 	/// Get status of item
-	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next operation
-	/// with Item
+	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next
+	/// operation with Item
 	Error Status() { return status_; }
 	/// Get internal ID of item
 	/// @return ID of item
@@ -159,7 +166,7 @@ public:
 	FieldsSet PkFields() const;
 	/// Set additional percepts for modify operation
 	/// @param precepts - strings in format "fieldName=Func()"
-	void SetPrecepts(const vector<string> &precepts);
+	void SetPrecepts(const vector<std::string> &precepts);
 	/// Check was names tags updated while modify operation
 	/// @return true: tags was updated.
 	bool IsTagsUpdated();

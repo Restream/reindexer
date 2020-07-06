@@ -10,6 +10,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 	FillCompositeIndexesNamespace(0, 1000);
 	FillTestSimpleNamespace();
 	FillComparatorsNamespace();
+	FillTestJoinNamespace();
 
 	CheckStandartQueries();
 	CheckAggregationQueries();
@@ -169,5 +170,38 @@ TEST_F(QueriesApi, ForcedSortOffsetTest) {
 							 .Offset(offset)
 							 .Limit(limit),
 						 kFieldNameColumnHash, expectedResultsMult.first, kFieldNameColumnTree, expectedResultsMult.second);
+	}
+}
+
+TEST_F(QueriesApi, StrictModeTest) {
+	FillTestSimpleNamespace();
+
+	const string kNotExistingField = "some_random_name123";
+	QueryResults qr;
+	{
+		Query query = Query(testSimpleNs).Where(kNotExistingField, CondEmpty, 0);
+		Error err = rt.reindexer->Select(query.Strict(StrictModeNames), qr);
+		EXPECT_EQ(err.code(), errParams);
+		qr.Clear();
+		err = rt.reindexer->Select(query.Strict(StrictModeIndexes), qr);
+		EXPECT_EQ(err.code(), errParams);
+		qr.Clear();
+		err = rt.reindexer->Select(query.Strict(StrictModeNone), qr);
+		EXPECT_TRUE(err.ok()) << err.what();
+		Verify(testSimpleNs, qr, Query(testSimpleNs));
+		qr.Clear();
+	}
+
+	{
+		Query query = Query(testSimpleNs).Where(kNotExistingField, CondEq, 0);
+		Error err = rt.reindexer->Select(query.Strict(StrictModeNames), qr);
+		EXPECT_EQ(err.code(), errParams);
+		qr.Clear();
+		err = rt.reindexer->Select(query.Strict(StrictModeIndexes), qr);
+		EXPECT_EQ(err.code(), errParams);
+		qr.Clear();
+		err = rt.reindexer->Select(query.Strict(StrictModeNone), qr);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(qr.Count(), 0);
 	}
 }

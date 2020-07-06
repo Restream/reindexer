@@ -397,4 +397,9 @@ void WrSerializer::Write(string_view slice) {
 	len_ += slice.size();
 }
 
+int msgpack_wrserializer_write(void *data, const char *buf, size_t len) {
+	reinterpret_cast<reindexer::WrSerializer *>(data)->Write(reindexer::string_view(buf, len));
+	return 0;
+}
+
 }  // namespace reindexer

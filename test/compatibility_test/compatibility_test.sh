@@ -63,6 +63,7 @@ test_outdated_instance() {
     wait $slave_pid
     kill $master_pid
     wait $master_pid
+    sed -i -E "s/(\\NAMESPACES ADD.*)(\"schema\":\"\{.*\}\")/\1\"schema\":\"\{\}\"/" "${master_dump}"
     ${script_dir}/compare_dumps.sh "${master_dump}" "${slave_dump}"
 }
 
