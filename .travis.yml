@@ -39,6 +39,7 @@ git:
     - go get gopkg.in/yaml.v2
     - go get github.com/golang/snappy
     - go get github.com/stretchr/testify/assert
+    - go get github.com/iancoleman/orderedmap
   script:
     - cd ${BUILD_DIR} && cmake ${CMAKE_OPTS} ${TRAVIS_BUILD_DIR} && make -j4
     - ctest --verbose
