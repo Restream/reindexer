@@ -239,6 +239,7 @@ TEST_F(NsApi, QueryperfstatsNsDummyTest) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	struct QueryPerformance {
+		string query;
 		double latencyStddev = 0;
 		int64_t minLatencyUs = 0;
 		int64_t maxLatencyUs = 0;
@@ -249,10 +250,8 @@ TEST_F(NsApi, QueryperfstatsNsDummyTest) {
 		}
 	};
 
-	Query testQuery(default_namespace);
-	reindexer::WrSerializer querySerializer;
-	testQuery.GetSQL(querySerializer, true);
-	const string querySql(querySerializer.Slice());
+	Query testQuery = Query(default_namespace, 0, 0, ModeAccurateTotal);
+	const string querySql(testQuery.GetSQL(true));
 
 	auto performSimpleQuery = [&]() {
 		QueryResults qr;
@@ -282,6 +281,8 @@ TEST_F(NsApi, QueryperfstatsNsDummyTest) {
 		performanceRes.minLatencyUs = val.As<int64_t>();
 		val = item["max_latency_us"];
 		performanceRes.maxLatencyUs = val.As<int64_t>();
+		val = item["query"];
+		performanceRes.query = val.As<string>();
 	};
 
 	sleep(1);
@@ -300,6 +301,7 @@ TEST_F(NsApi, QueryperfstatsNsDummyTest) {
 			ASSERT_TRUE(qperf.minLatencyUs <= prevQperf.minLatencyUs);
 			ASSERT_TRUE(qperf.maxLatencyUs >= prevQperf.maxLatencyUs);
 		}
+		ASSERT_TRUE(qperf.query == "SELECT COUNT(*) FROM test_namespace") << qperf.query;
 		prevQperf = qperf;
 	}
 }

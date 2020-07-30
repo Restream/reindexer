@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <thread>
 #include "client/reindexer.h"
+#include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
 #include "core/keyvalue/p_string.h"
 #include "server/server.h"
@@ -345,7 +346,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveSlaveReload) {
 	}
 
 	for (size_t i = 1; i < results.size(); ++i) {
-		EXPECT_TRUE((results[0] == results[i]));
+		EXPECT_TRUE((results[0] == results[i])) << i << "; size[0]: " << results[0].size() << "; size[i]: " << results[i].size();
 	}
 }
 

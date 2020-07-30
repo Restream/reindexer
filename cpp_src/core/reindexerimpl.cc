@@ -676,9 +676,9 @@ struct ItemRefLess {
 
 Error ReindexerImpl::Select(const Query& q, QueryResults& result, const InternalRdxContext& ctx) {
 	try {
-		WrSerializer normolizedSQL, nonNormolizedSQL;
-		if (ctx.NeedTraceActivity()) q.GetSQL(nonNormolizedSQL, false);
-		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? nonNormolizedSQL.Slice() : "", activities_, result);
+		WrSerializer normalizedSQL, nonNormalizedSQL;
+		if (ctx.NeedTraceActivity()) q.GetSQL(nonNormalizedSQL, false);
+		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? nonNormalizedSQL.Slice() : "", activities_, result);
 		NsLocker<const RdxContext> locks(rdxCtx);
 
 		auto mainNsWrp = getNamespace(q._namespace, rdxCtx);
@@ -688,10 +688,10 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 		PerfStatCalculatorMT calc(mainNs->selectPerfCounter_, mainNs->enablePerfCounters_);	 // todo more accurate detect joined queries
 		auto& tracker = queriesStatTracker_;
 		if (profilingCfg.queriesPerfStats) {
-			q.GetSQL(normolizedSQL, true);
-			if (!ctx.NeedTraceActivity()) q.GetSQL(nonNormolizedSQL, false);
+			q.GetSQL(normalizedSQL, true);
+			if (!ctx.NeedTraceActivity()) q.GetSQL(nonNormalizedSQL, false);
 		}
-		const QueriesStatTracer::QuerySQL sql{normolizedSQL.Slice(), nonNormolizedSQL.Slice()};
+		const QueriesStatTracer::QuerySQL sql{normalizedSQL.Slice(), nonNormalizedSQL.Slice()};
 		QueryStatCalculator statCalculator(
 			[&sql, &tracker](bool lockHit, std::chrono::microseconds time) {
 				if (lockHit)
@@ -1200,7 +1200,7 @@ std::vector<string> defDBConfig = {
 				"start_copy_policy_tx_size":10000
 				"copy_policy_multiplier":5
 				"tx_size_to_always_copy":100000,
-				"optimization_timeout_ms":800
+				"optimization_timeout_ms":800,
 			}
     	]
 	})json",

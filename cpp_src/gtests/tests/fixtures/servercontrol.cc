@@ -187,7 +187,7 @@ ServerControl::Interface::Ptr ServerControl::Get(bool wait) {
 			assert(counter / 1000 < kMaxServerStartTimeSec);
 
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		};
+		}
 	}
 	return interface;
 }

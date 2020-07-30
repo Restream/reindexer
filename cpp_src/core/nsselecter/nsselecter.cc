@@ -63,8 +63,8 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	// DO NOT use deducted sort order in the following cases:
 	// - query contains explicity specified sort order
 	// - query contains FullText query.
-	bool disableOptimizeSortOrder = !ctx.query.sortingEntries_.empty() || ctx.preResult;
-	SortingEntries sortBy = (isFt || disableOptimizeSortOrder) ? ctx.query.sortingEntries_ : qPreproc.DetectOptimalSortOrder();
+	const bool disableOptimizeSortOrder = isFt || !ctx.query.sortingEntries_.empty() || ctx.preResult;
+	SortingEntries sortBy = disableOptimizeSortOrder ? ctx.query.sortingEntries_ : qPreproc.DetectOptimalSortOrder();
 
 	if (ctx.preResult) {
 		if (ctx.preResult->executionMode == JoinPreResult::ModeBuild) {

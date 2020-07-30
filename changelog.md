@@ -1,3 +1,12 @@
+# Version 2.11.0 (29.07.2020)
+
+# Core
+- [fix] Crash with SEGV or assert on ordered queries after copying tx
+- [fix] Correct normalization of SELECT COUNT(*) SQL queries
+- [fea] More efficient replication startup on active master updates
+- [fix] Namespace indexes optimization after load was not started
+- [fix] Centos 7 build fixed
+
 # Version 2.10.0 (05.07.2020)
 
 # Core

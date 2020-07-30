@@ -120,7 +120,6 @@ will return JSON object with status of namespace `media_items `replication
 - `wal_count` - number of records in WAL
 - `wal_size` - WAL size
 
-
 ### Access namespace's WAL with reindexer_tool
 
 To view offline WAL contents from reindexer_tool `SELECT` statement with special condition to `#lsn` index is used:

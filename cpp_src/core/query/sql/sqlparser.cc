@@ -251,6 +251,9 @@ int SQLParser::parseOrderBy(tokenizer &parser, SortingEntries &sortingEntries, h
 			throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
 		SortingEntry sortingEntry;
 		sortingEntry.expression = string(tok.text());
+		if (sortingEntry.expression.empty()) {
+			throw Error(errParseSQL, "Order by expression should not be empty, %s", parser.where());
+		}
 		tok = peekSqlToken(parser, SortDirectionSqlToken);
 		if (tok.text() == "("_sv && nameWithCase.text() == "field"_sv) {
 			parser.next_token();

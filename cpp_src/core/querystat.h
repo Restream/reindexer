@@ -21,8 +21,8 @@ struct QueryPerfStat {
 class QueriesStatTracer {
 public:
 	struct QuerySQL {
-		string_view normolized;
-		string_view nonNormolized;
+		string_view normalized;
+		string_view nonNormalized;
 	};
 
 	void Hit(const QuerySQL& sql, std::chrono::microseconds time) { hit<&PerfStatCounterST::Hit>(sql, time); }

@@ -134,7 +134,15 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 					assert(query_.aggregations_[0].fields_.size() == 1);
 					distinctIndex = query_.aggregations_[0].fields_[0];
 				}
-				if (!query_.selectFilter_.empty()) {
+				if (query_.selectFilter_.empty()) {
+					if (query_.count != 0) {
+						if (needComma) ser << ", ";
+						ser << '*';
+						if (query_.calcTotal != ModeNoTotal) {
+							needComma = true;
+						}
+					}
+				} else {
 					for (const auto &filter : query_.selectFilter_) {
 						if (filter == distinctIndex) continue;
 						if (needComma) {
@@ -144,13 +152,13 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 						}
 						ser << filter;
 					}
-				} else {
-					if (needComma) ser << ", ";
-					ser << '*';
 				}
 			}
-			if (query_.calcTotal == ModeAccurateTotal) ser << ", COUNT(*)";
-			if (query_.calcTotal == ModeCachedTotal) ser << ", COUNT_CACHED(*)";
+			if (query_.calcTotal != ModeNoTotal) {
+				if (needComma) ser << ", ";
+				if (query_.calcTotal == ModeAccurateTotal) ser << "COUNT(*)";
+				if (query_.calcTotal == ModeCachedTotal) ser << "COUNT_CACHED(*)";
+			}
 			ser << " FROM " << query_._namespace;
 		} break;
 		case QueryDelete:

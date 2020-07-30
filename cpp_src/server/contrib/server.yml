@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.10.0"
+  version: "2.11.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -2748,6 +2748,9 @@ definitions:
       optimization_sort_workers:
         type: "integer"
         description: "Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations"
+      wal_size:
+        type: "integer"
+        description: "Maximum WAL size for this namespace (maximum count of WAL records)"
 
   ReplicationConfig:
     type: "object"

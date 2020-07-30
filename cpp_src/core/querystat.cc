@@ -9,14 +9,14 @@ namespace reindexer {
 template <void (PerfStatCounterST::*hitFunc)(std::chrono::microseconds)>
 void QueriesStatTracer::hit(const QuerySQL &sql, std::chrono::microseconds time) {
 	std::unique_lock<std::mutex> lck(mtx_);
-	const auto it = stat_.find(sql.normolized);
+	const auto it = stat_.find(sql.normalized);
 	if (it == stat_.end()) {
-		(stat_.emplace(string(sql.normolized), Stat(sql.nonNormolized)).first->second.*hitFunc)(time);
+		(stat_.emplace(string(sql.normalized), Stat(sql.nonNormalized)).first->second.*hitFunc)(time);
 	} else {
 		const auto maxTime = it->second.MaxTime();
 		(it->second.*hitFunc)(time);
 		if (it->second.MaxTime() > maxTime) {
-			it->second.longestQuery = string(sql.nonNormolized);
+			it->second.longestQuery = string(sql.nonNormalized);
 		}
 	}
 }

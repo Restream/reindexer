@@ -1,6 +1,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "replication_load_api.h"
+#include "replicator/walrecord.h"
 
 TEST_F(ReplicationLoadApi, Base) {
 	InitNs();
@@ -129,9 +130,9 @@ TEST_F(ReplicationLoadApi, ConfigSync) {
 TEST_F(ReplicationLoadApi, DynamicRoleSwitch) {
 	InitNs();
 	for (size_t i = 1; i < 8; i++) {
-		FillData(1000);
+		FillData(2000);
 		WaitSync("some");
 		WaitSync("some1");
-		SwitchMaster(i % 4);
+		SwitchMaster(i % kDefaultServerCount);
 	}
 }

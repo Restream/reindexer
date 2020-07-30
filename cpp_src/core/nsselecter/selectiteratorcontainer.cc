@@ -194,7 +194,7 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 		opts.forceComparator = 1;
 	}
 	if (ctx_->sortingContext.isOptimizationEnabled()) {
-		if (ctx_->sortingContext.uncommitedIndex == qe.idxNo && enableSortIndexOptimize) {
+		if (enableSortIndexOptimize) {
 			opts.unbuiltSortOrders = 1;
 		} else {
 			opts.forceComparator = 1;
@@ -310,6 +310,7 @@ void SelectIteratorContainer::PrepareIteratorsForSelectLoop(const QueryEntries &
 															bool isQueryFt, const NamespaceImpl &ns, SelectFunction::Ptr selectFnc,
 															FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
 	size_t next = 0;
+	bool sortIndexCreated = false;
 	for (size_t i = begin; i < end; i = queries.Next(i)) {
 		next = queries.Next(i);
 		auto op = queries.GetOperation(i);
@@ -332,12 +333,13 @@ void SelectIteratorContainer::PrepareIteratorsForSelectLoop(const QueryEntries &
 					}
 					selectResults = processQueryEntry(qe, ns, strictMode);
 				} else {
-					bool enableSortIndexOptimize =
-						!this->Size() && (op != OpNot) && !qe.distinct && (next == end || queries.GetOperation(next) != OpOr);
+					const bool enableSortIndexOptimize = !sortIndexCreated && (op == OpAnd) && !qe.distinct && (begin == 0) &&
+														 (ctx_->sortingContext.uncommitedIndex == qe.idxNo) &&
+														 (next == end || queries.GetOperation(next) != OpOr);
 					selectResults = processQueryEntry(qe, enableSortIndexOptimize, ns, sortId, isQueryFt, selectFnc, isIndexFt,
 													  isIndexSparse, ftCtx, rdxCtx);
+					if (enableSortIndexOptimize) sortIndexCreated = true;
 				}
-
 				processQueryEntryResults(selectResults, op, ns, qe, isIndexFt, isIndexSparse, nonIndexField);
 			} else {
 				processJoinEntry(qe, op);

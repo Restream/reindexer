@@ -43,6 +43,8 @@ protected:
 
 	void run();
 	void stop();
+	// Sync single namespace
+	Error syncNamespace(const NamespaceDef &ns, string_view forceSyncReason);
 	// Sync database
 	Error syncDatabase();
 	// Read and apply WAL from master
@@ -69,7 +71,7 @@ protected:
 	void OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &walRec) override final;
 	void OnConnectionState(const Error &err) override final;
 
-	bool canApplyUpdate(lsn_t upstreamLSN, string_view nsName);
+	bool canApplyUpdate(LSNPair LSNs, string_view nsName, const WALRecord &wrec);
 	bool isSyncEnabled(string_view nsName);
 	bool retryIfNetworkError(const Error &err);
 
@@ -88,9 +90,10 @@ protected:
 	enum State { StateInit, StateSyncing, StateIdle };
 	std::atomic<State> state_;
 
-	// 1. if the table name is in the list, then synchronization state
-	// 2. if lsn is not empty, then an entry has arrived in onWalUpdate and the LSN of the last such operation is written to this list
-	fast_hash_map<string, lsn_t, nocase_hash_str, nocase_equal_str> maxUpstreamLsns_;
+	using UpdatesContainer = std::vector<std::pair<LSNPair, PackedWALRecord>>;
+	fast_hash_map<string, UpdatesContainer, nocase_hash_str, nocase_equal_str> pendedUpdates_;
+	tsl::hopscotch_set<string, nocase_hash_str, nocase_equal_str> syncedNamespaces_;
+	std::string currentSyncNs_;
 
 	std::mutex syncMtx_;
 	std::mutex masterMtx_;

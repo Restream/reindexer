@@ -45,7 +45,6 @@ public:
 	void ForceSync();
 	// Switch master
 	void SwitchMaster(size_t id);
-	//
 
 	size_t masterId_ = 0;
 

@@ -39,11 +39,12 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 		lsn_t fromLSN = lsn_t(std::min(lsnEntry.values[0].As<int64_t>(), std::numeric_limits<int64_t>::max() - 1));
 		if (fromLSN.Server() != ns_->serverId_)
 			throw Error(errOutdatedWAL, "Query to WAL with incorrect LSN %ld, LSN counter %ld", int64_t(fromLSN), ns_->wal_.LSNCounter());
-		if (ns_->wal_.is_outdated(fromLSN.Counter()) && count)
+		if (ns_->wal_.is_outdated(fromLSN.Counter() + 1) && count)
 			throw Error(errOutdatedWAL, "Query to WAL with outdated LSN %ld, LSN counter %ld", int64_t(fromLSN), ns_->wal_.LSNCounter());
 
 		auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.entries[versionIdx].values[0].As<string>());
-		for (auto it = ns_->wal_.upper_bound(fromLSN.Counter()); count && it != ns_->wal_.end(); ++it) {
+		const auto walEnd = ns_->wal_.end();
+		for (auto it = ns_->wal_.upper_bound(fromLSN.Counter()); count && it != walEnd; ++it) {
 			WALRecord rec = *it;
 			switch (rec.type) {
 				case WalItemUpdate:

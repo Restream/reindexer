@@ -102,7 +102,7 @@ void NamespaceImpl::copyContentsFrom(const NamespaceImpl &src) {
 	storage_ = src.storage_;
 	updates_ = src.updates_;
 	unflushedCount_.store(src.unflushedCount_.load(std::memory_order_acquire), std::memory_order_release);	// 0
-	sortOrdersBuilt_ = src.sortOrdersBuilt_.load();															// false
+	sortOrdersBuilt_ = false;
 	meta_ = src.meta_;
 	dbpath_ = src.dbpath_;
 	queryCache_ = src.queryCache_;
@@ -121,7 +121,7 @@ void NamespaceImpl::copyContentsFrom(const NamespaceImpl &src) {
 	serverId_ = src.serverId_;
 	storageOpts_ = src.storageOpts_;
 	for (auto &idxIt : src.indexes_) indexes_.push_back(unique_ptr<Index>(idxIt->Clone()));
-
+	markUpdated();
 	logPrintf(LogTrace, "Namespace::CopyContentsFrom (%s)", name_);
 }
 

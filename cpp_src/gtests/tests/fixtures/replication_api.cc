@@ -63,7 +63,7 @@ void ReplicationApi::WaitSync(const std::string& ns) {
 	ReplicationStateApi state{lsn_t(), lsn_t(), 0, 0, false};
 	while (state.lsn.isEmpty()) {
 		counter++;
-		EXPECT_TRUE(counter / 100 < kMaxSyncTimeSec);
+		ASSERT_TRUE(counter / 100 < kMaxSyncTimeSec);
 		ReplicationStateApi xstate = GetSrv(masterId_)->GetState(ns);  // get an reference state and then compare all with it
 		for (size_t i = 0; i < svc_.size(); i++) {
 			if (i != masterId_) {
@@ -94,7 +94,7 @@ void ReplicationApi::SwitchMaster(size_t id) {
 	GetSrv(masterId_)->MakeMaster(config);
 	for (size_t i = 0; i < svc_.size(); i++) {
 		std::string masterDsn = "cproto://127.0.0.1:" + std::to_string(kDefaultRpcPort + masterId_) + "/node" + std::to_string(masterId_);
-		ReplicationConfigTest config("slave", false, true, i, masterDsn);
+		ReplicationConfigTest config("slave", false, true, i, masterDsn, "server_" + std::to_string(i));
 		if (i != masterId_) GetSrv(i)->MakeSlave(masterId_, config);
 	}
 }

@@ -60,8 +60,8 @@ struct lsn_t {
 	int64_t Counter() const {
 		int64_t server = payload_ / digitCountLSNMult;
 		return payload_ - server * digitCountLSNMult;
-	};
-	short Server() const { return payload_ / digitCountLSNMult; };
+	}
+	short Server() const { return payload_ / digitCountLSNMult; }
 	bool isEmpty() const { return Counter() == digitCountLSNMult - 1ll; }
 
 	int compare(lsn_t o) {

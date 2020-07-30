@@ -29,9 +29,9 @@ while ((1==1)); do
 done
 
 if [ -z "$1" ]; then
-  python3 .
+  pytest . --alluredir=/builds/itv-backend/reindexer/allure-results
 else
-  python3 . "$1"
+  pytest . -k "$1" --alluredir=/builds/itv-backend/reindexer/allure-results
 fi
 test_exit_code=$?
 

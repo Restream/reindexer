@@ -74,7 +74,7 @@ protected:
 	void TearDown() {}
 
 	void AddServer(const string& addr = kDefaultRPCServerAddr, const RPCServerConfig& conf = RPCServerConfig()) {
-		servers_.emplace(addr, new TestServer(conf));
+		servers_.emplace(addr, std::unique_ptr<TestServer>(new TestServer(conf)));
 	}
 	void StartServer(const string& addr = kDefaultRPCServerAddr, Error errOnLogin = Error()) {
 		auto it = servers_.find(addr);
