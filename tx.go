@@ -19,6 +19,7 @@ const retriesOnInvalidStateCnt = 1
 type Tx struct {
 	namespace    string
 	started      bool
+	finalized    bool
 	db           *reindexerImpl
 	ns           *reindexerNamespace
 	asyncRspCnt  uint32
@@ -47,6 +48,10 @@ func (tx *Tx) startTx() (err error) {
 }
 
 func (tx *Tx) startTxCtx(ctx context.Context) (err error) {
+	err = tx.checkFinalization()
+	if err != nil {
+		return
+	}
 	if tx.started {
 		return nil
 	}
@@ -62,60 +67,76 @@ func (tx *Tx) startTxCtx(ctx context.Context) (err error) {
 	return nil
 }
 
-func (tx *Tx) startAsyncRoutines() (err error) {
+func (tx *Tx) startAsyncRoutines() error {
 	if tx.cmplCh == nil {
 		tx.cmplCh = make(chan modifyInfo, asyncResponseQueueSize)
 		tx.cmplCond = sync.NewCond(&tx.lock)
 		go tx.cmplHandlingRoutine(tx.cmplCh)
 	}
 
-	tx.checkReqCount()
-
-	tx.asyncErrLock.RLock()
-	err = tx.asyncErr
-	tx.asyncErrLock.RUnlock()
-	return
+	return tx.checkReqCount()
 }
 
 func (tx *Tx) Insert(item interface{}, precepts ...string) error {
-	tx.startTx()
+	err := tx.startTx()
+	if err != nil {
+		return err
+	}
 	return tx.modifyInternal(item, nil, modeInsert, precepts...)
 }
 
 func (tx *Tx) Update(item interface{}, precepts ...string) error {
-	tx.startTx()
+	err := tx.startTx()
+	if err != nil {
+		return err
+	}
 	return tx.modifyInternal(item, nil, modeUpdate, precepts...)
 }
 
 // Upsert (Insert or Update) item to namespace
 func (tx *Tx) Upsert(item interface{}, precepts ...string) error {
-	tx.startTx()
+	err := tx.startTx()
+	if err != nil {
+		return err
+	}
 	return tx.modifyInternal(item, nil, modeUpsert, precepts...)
 }
 
 // UpsertJSON (Insert or Update) item to namespace
 func (tx *Tx) UpsertJSON(json []byte, precepts ...string) error {
-	tx.startTx()
+	err := tx.startTx()
+	if err != nil {
+		return err
+	}
 	return tx.modifyInternal(nil, json, modeUpsert, precepts...)
 }
 
 // Delete - remove item by id from namespace
 func (tx *Tx) Delete(item interface{}, precepts ...string) error {
-	tx.startTx()
+	err := tx.startTx()
+	if err != nil {
+		return err
+	}
 	return tx.modifyInternal(item, nil, modeDelete, precepts...)
 
 }
 
 // DeleteJSON - remove item by id from namespace
 func (tx *Tx) DeleteJSON(json []byte, precepts ...string) error {
-	tx.startTx()
+	err := tx.startTx()
+	if err != nil {
+		return err
+	}
 	return tx.modifyInternal(nil, json, modeDelete, precepts...)
 }
 
 // UpdateAsync Insert item to namespace. Calls completion on result
 func (tx *Tx) InsertAsync(item interface{}, cmpl bindings.Completion, precepts ...string) error {
-	tx.startTx()
-	if err := tx.startAsyncRoutines(); err != nil {
+	err := tx.startTx()
+	if err != nil {
+		return err
+	}
+	if err = tx.startAsyncRoutines(); err != nil {
 		return err
 	}
 	return tx.modifyInternalAsync(item, nil, modeInsert, cmpl, retriesOnInvalidStateCnt, precepts...)
@@ -123,8 +144,11 @@ func (tx *Tx) InsertAsync(item interface{}, cmpl bindings.Completion, precepts .
 
 // UpdateAsync Update item to namespace. Calls completion on result
 func (tx *Tx) UpdateAsync(item interface{}, cmpl bindings.Completion, precepts ...string) error {
-	tx.startTx()
-	if err := tx.startAsyncRoutines(); err != nil {
+	err := tx.startTx()
+	if err != nil {
+		return err
+	}
+	if err = tx.startAsyncRoutines(); err != nil {
 		return err
 	}
 	return tx.modifyInternalAsync(item, nil, modeUpdate, cmpl, retriesOnInvalidStateCnt, precepts...)
@@ -132,8 +156,11 @@ func (tx *Tx) UpdateAsync(item interface{}, cmpl bindings.Completion, precepts .
 
 // UpsertAsync (Insert or Update) item to namespace. Calls completion on result
 func (tx *Tx) UpsertAsync(item interface{}, cmpl bindings.Completion, precepts ...string) error {
-	tx.startTx()
-	if err := tx.startAsyncRoutines(); err != nil {
+	err := tx.startTx()
+	if err != nil {
+		return err
+	}
+	if err = tx.startAsyncRoutines(); err != nil {
 		return err
 	}
 	return tx.modifyInternalAsync(item, nil, modeUpsert, cmpl, retriesOnInvalidStateCnt, precepts...)
@@ -141,8 +168,11 @@ func (tx *Tx) UpsertAsync(item interface{}, cmpl bindings.Completion, precepts .
 
 // UpsertJSONAsync (Insert or Update) item to index. Calls completion on result
 func (tx *Tx) UpsertJSONAsync(json []byte, cmpl bindings.Completion, precepts ...string) error {
-	tx.startTx()
-	if err := tx.startAsyncRoutines(); err != nil {
+	err := tx.startTx()
+	if err != nil {
+		return err
+	}
+	if err = tx.startAsyncRoutines(); err != nil {
 		return err
 	}
 	return tx.modifyInternalAsync(nil, json, modeUpsert, cmpl, retriesOnInvalidStateCnt, precepts...)
@@ -150,8 +180,11 @@ func (tx *Tx) UpsertJSONAsync(json []byte, cmpl bindings.Completion, precepts ..
 
 // DeleteAsync - remove item by id from namespace. Calls completion on result
 func (tx *Tx) DeleteAsync(item interface{}, cmpl bindings.Completion, precepts ...string) error {
-	tx.startTx()
-	if err := tx.startAsyncRoutines(); err != nil {
+	err := tx.startTx()
+	if err != nil {
+		return err
+	}
+	if err = tx.startAsyncRoutines(); err != nil {
 		return err
 	}
 	return tx.modifyInternalAsync(item, nil, modeDelete, cmpl, retriesOnInvalidStateCnt, precepts...)
@@ -160,11 +193,21 @@ func (tx *Tx) DeleteAsync(item interface{}, cmpl bindings.Completion, precepts .
 
 // DeleteJSONAsync - remove item by id from namespace. Calls completion on result
 func (tx *Tx) DeleteJSONAsync(json []byte, cmpl bindings.Completion, precepts ...string) error {
-	tx.startTx()
-	if err := tx.startAsyncRoutines(); err != nil {
+	err := tx.startTx()
+	if err != nil {
+		return err
+	}
+	if err = tx.startAsyncRoutines(); err != nil {
 		return err
 	}
 	return tx.modifyInternalAsync(nil, json, modeDelete, cmpl, retriesOnInvalidStateCnt, precepts...)
+}
+
+func (tx *Tx) checkFinalization() error {
+	if tx.finalized {
+		return bindings.NewError("Tx is already finalized", bindings.ErrLogic)
+	}
+	return nil
 }
 
 // CommitWithCount apply changes, and return count of changed items
@@ -227,6 +270,7 @@ func (tx *Tx) finalize() {
 		tx.ctx.Result.Free()
 		tx.ctx.Result = nil
 	}
+	tx.finalized = true
 }
 
 func (tx *Tx) modifyInternal(item interface{}, json []byte, mode int, precepts ...string) (err error) {
@@ -324,6 +368,7 @@ func (tx *Tx) modifyInternalAsync(item interface{}, json []byte, mode int, cmpl 
 	stateToken := 0
 
 	if format, stateToken, err = packItem(tx.ns, item, json, ser); err != nil {
+		internalCmpl(nil, err)
 		return err
 	}
 
@@ -332,12 +377,21 @@ func (tx *Tx) modifyInternalAsync(item interface{}, json []byte, mode int, cmpl 
 	return nil
 }
 
-func (tx *Tx) checkReqCount() {
+func (tx *Tx) checkReqCount() error {
 	for {
 		asyncRspCnt := atomic.LoadUint32(&tx.asyncRspCnt)
 		if asyncRspCnt < maxAsyncRequests {
 			if atomic.CompareAndSwapUint32(&tx.asyncRspCnt, asyncRspCnt, asyncRspCnt+1) {
-				return
+				tx.asyncErrLock.RLock()
+				err := tx.asyncErr
+				tx.asyncErrLock.RUnlock()
+				if err != nil {
+					tx.cmplCond.L.Lock()
+					atomic.AddUint32(&tx.asyncRspCnt, ^uint32(0))
+					tx.cmplCond.Broadcast()
+					tx.cmplCond.L.Unlock()
+				}
+				return err
 			}
 		} else {
 			tx.cmplCond.L.Lock()
@@ -352,6 +406,10 @@ func (tx *Tx) checkReqCount() {
 // Commit apply changes
 func (tx *Tx) commitInternal() (count int, err error) {
 	count = 0
+	err = tx.checkFinalization()
+	if err != nil {
+		return
+	}
 
 	tx.AwaitResults()
 	defer tx.finalize()
@@ -395,7 +453,6 @@ func (tx *Tx) commitInternal() (count int, err error) {
 
 // Rollback transaction.
 // It is safe to call Rollback after Commit
-
 func (tx *Tx) Rollback() error {
 	tx.AwaitResults()
 	tx.asyncErr = nil

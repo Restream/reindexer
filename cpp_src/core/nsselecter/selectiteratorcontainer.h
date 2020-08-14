@@ -11,16 +11,14 @@ class RdxContext;
 class JoinedSelector;
 
 class SelectIteratorContainer : public ExpressionTree<OpType, Bracket, 2, SelectIterator> {
+	using Base = ExpressionTree<OpType, Bracket, 2, SelectIterator>;
+
 public:
 	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx *ctx = nullptr) : pt_(pt), ctx_(ctx) {}
 
 	void ForEachIterator(const std::function<void(const SelectIterator &)> &func) const { ExecuteAppropriateForEach(func); }
 	void ForEachIterator(const std::function<void(SelectIterator &)> &func) { ExecuteAppropriateForEach(func); }
 	const SelectIterator &operator[](size_t i) const {
-		assert(i < container_.size());
-		return container_[i].Value();
-	}
-	SelectIterator &operator[](size_t i) {
 		assert(i < container_.size());
 		return container_[i].Value();
 	}
@@ -41,6 +39,8 @@ public:
 	void ExplainJSON(int iters, JsonBuilder &builder, const vector<JoinedSelector> *js) const {
 		explainJSON(cbegin(), cend(), iters, builder, js);
 	}
+
+	void Clear() { clear(); }
 
 private:
 	void sortByCost(span<unsigned> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations);

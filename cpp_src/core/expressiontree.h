@@ -36,32 +36,64 @@ private:
 /// A tree contained in vector
 template <typename OperationType, typename SubTree, int holdSize, typename... Ts>
 class ExpressionTree {
+	template <typename T>
+	class Ref {
+	public:
+		explicit Ref(T& v) : ptr_{&v} {}
+		operator T&() noexcept { return *ptr_; }
+		operator const T&() const noexcept { return *ptr_; }
+		bool operator==(const Ref& other) const noexcept(noexcept(std::declval<T>() == std::declval<T>())) { return *ptr_ == *other.ptr_; }
+
+	private:
+		T* ptr_;
+	};
+
+	template <typename T>
+	struct MakeTransparentRef {
+		using type = Ref<T>;
+	};
+	template <typename T>
+	using TransparentRef = typename MakeTransparentRef<T>::type;
+	template <typename T>
+	struct MakeTransparentRef<T const> {
+		using type = TransparentRef<T> const;
+	};
+	template <typename T>
+	struct MakeTransparentRef<T&> {
+		using type = TransparentRef<T>&;
+	};
+	template <typename T>
+	struct MakeTransparentRef<T&&> {
+		using type = TransparentRef<T>&&;
+	};
+
 	template <typename R, typename Arg, typename... Args>
 	class Visitor : public Visitor<R, Args...> {
 	public:
 		Visitor(const std::function<R(Arg)>& f, const std::function<R(Args)>&... funcs) : Visitor<R, Args...>{funcs...}, functor_(f) {}
 		using Visitor<R, Args...>::operator();
 		R operator()(Arg arg) const { return functor_(arg); }
+		R operator()(TransparentRef<Arg> arg) const { return functor_(arg); }
 
 	private:
 		const std::function<R(Arg)>& functor_;
 	};
-
 	template <typename R, typename Arg>
 	class Visitor<R, Arg> {
 	public:
 		Visitor(const std::function<R(Arg)>& f) : functor_(f) {}
 		R operator()(Arg arg) const { return functor_(arg); }
+		R operator()(TransparentRef<Arg> arg) const { return functor_(arg); }
 
 	private:
 		const std::function<R(Arg)>& functor_;
 	};
-
 	template <typename Arg>
 	class Visitor<void, Arg> {
 	public:
 		Visitor(const std::function<void(Arg)>& f) : functor_(f) {}
 		void operator()(Arg arg) const { functor_(arg); }
+		void operator()(TransparentRef<Arg> arg) const { return functor_(arg); }
 		template <typename T>
 		void operator()(T) const {}
 
@@ -69,16 +101,18 @@ class ExpressionTree {
 		const std::function<void(Arg)>& functor_;
 	};
 
+	template <typename T, typename...>
+	struct Head_t {
+		using type = T;
+	};
+	template <typename... Args>
+	using Head = typename Head_t<Args...>::type;
+
 	/// @class Node
 	class Node {
 		friend ExpressionTree;
 
-		template <typename T, typename...>
-		struct Head_t {
-			using type = T;
-		};
-		template <typename... Args>
-		using Head = typename Head_t<Args...>::type;
+		using Storage = mpark::variant<SubTree, Ts..., Ref<Ts>...>;
 
 		struct SizeVisitor {
 			template <typename T>
@@ -86,6 +120,88 @@ class ExpressionTree {
 				return 1;
 			}
 			size_t operator()(const SubTree& subTree) const noexcept { return subTree.Size(); }
+		};
+
+		template <typename T>
+		struct GetVisitor {
+			T& operator()(T& v) const noexcept { return v; }
+			T& operator()(Ref<T>& r) const noexcept { return r; }
+			template <typename U>
+			T& operator()(U&) const noexcept {
+				assert(0);
+				abort();
+			}
+		};
+		template <typename T>
+		struct GetVisitor<T const> {
+			const T& operator()(const T& v) const noexcept { return v; }
+			const T& operator()(const Ref<T>& r) const noexcept { return r; }
+			template <typename U>
+			const T& operator()(const U&) const noexcept {
+				assert(0);
+				abort();
+			}
+		};
+		struct EqVisitor {
+			template <typename T>
+			bool operator()(const T& lhs, const T& rhs) const noexcept(noexcept(lhs == rhs)) {
+				return lhs == rhs;
+			}
+			template <typename T>
+			bool operator()(const Ref<T>& lhs, const T& rhs) const noexcept(noexcept(rhs == rhs)) {
+				return static_cast<const T&>(lhs) == rhs;
+			}
+			template <typename T>
+			bool operator()(const T& lhs, const Ref<T>& rhs) const noexcept(noexcept(lhs == lhs)) {
+				return lhs == static_cast<const T&>(rhs);
+			}
+			template <typename T, typename U>
+			bool operator()(const T&, const U&) const noexcept {
+				return false;
+			}
+		};
+		struct LazyCopyVisitor {
+			Storage operator()(SubTree& st) const noexcept { return st; }
+			template <typename T>
+			Storage operator()(Ref<T>& r) const {
+				return r;
+			}
+			template <typename T>
+			Storage operator()(T& v) const {
+				return Ref<T>{v};
+			}
+		};
+		struct DeepCopyVisitor {
+			Storage operator()(const SubTree& st) const noexcept { return st; }
+			template <typename T>
+			Storage operator()(const Ref<T>& r) const {
+				return static_cast<const T&>(r);
+			}
+			template <typename T>
+			Storage operator()(const T& v) const {
+				return v;
+			}
+		};
+		struct DeepRValueCopyVisitor {
+			Storage operator()(SubTree&& st) const noexcept { return std::move(st); }
+			template <typename T>
+			Storage operator()(Ref<T>&& r) const {
+				return static_cast<const T&>(r);
+			}
+			template <typename T>
+			Storage operator()(T&& v) const {
+				return std::move(v);
+			}
+		};
+		struct IsRefVisitor {
+			template <typename T>
+			bool operator()(const T&) const noexcept {
+				return false;
+			}
+			template <typename T>
+			bool operator()(const Ref<T>&) const noexcept {
+				return true;
+			}
 		};
 
 	public:
@@ -107,16 +223,21 @@ class ExpressionTree {
 			operation = std::move(other.operation);
 			return *this;
 		}
-		bool operator==(const Node& other) const { return operation == other.operation && storage_ == other.storage_; }
+		bool operator==(const Node& other) const {
+			static const EqVisitor visitor;
+			return operation == other.operation && mpark::visit(visitor, storage_, other.storage_);
+		}
 		bool operator!=(const Node& other) const { return !operator==(other); }
 
 		template <typename T = Head<Ts...>>
 		T& Value() {
-			return mpark::get<T>(storage_);
+			const static GetVisitor<T> visitor;
+			return mpark::visit(visitor, storage_);
 		}
 		template <typename T = Head<Ts...>>
 		const T& Value() const {
-			return mpark::get<T>(storage_);
+			const static GetVisitor<const T> visitor;
+			return mpark::visit(visitor, storage_);
 		}
 		size_t Size() const noexcept {
 			static constexpr SizeVisitor sizeVisitor;
@@ -146,8 +267,29 @@ class ExpressionTree {
 			return mpark::visit(Visitor<R, const SubTree&, const Ts&...>{f, funcs...}, storage_);
 		}
 
+		Node MakeLazyCopy() & {
+			static const LazyCopyVisitor visitor;
+			return {operation, mpark::visit(visitor, storage_)};
+		}
+		Node MakeDeepCopy() const& {
+			static const DeepCopyVisitor visitor;
+			return {operation, mpark::visit(visitor, storage_)};
+		}
+		Node MakeDeepCopy() && {
+			static const DeepRValueCopyVisitor visitor;
+			return {operation, mpark::visit(visitor, std::move(storage_))};
+		}
+		bool IsRef() const {
+			static const IsRefVisitor visitor;
+			return mpark::visit(visitor, storage_);
+		}
+		template <typename T>
+		void SetValue(T&& v) {
+			storage_ = std::forward<T>(v);
+		}
+
 	private:
-		mpark::variant<SubTree, Ts...> storage_;
+		Storage storage_;
 
 	public:
 		OperationType operation;
@@ -158,10 +300,20 @@ protected:
 
 public:
 	ExpressionTree() = default;
-	ExpressionTree(const ExpressionTree&) = default;
 	ExpressionTree(ExpressionTree&&) = default;
-	ExpressionTree& operator=(const ExpressionTree&) = delete;
-	ExpressionTree& operator=(ExpressionTree&&) = delete;
+	ExpressionTree& operator=(ExpressionTree&&) = default;
+	ExpressionTree(const ExpressionTree& other) : activeBrackets_{other.activeBrackets_} {
+		container_.reserve(other.container_.size());
+		for (const Node& n : other.container_) container_.emplace_back(n.MakeDeepCopy());
+	}
+	ExpressionTree& operator=(const ExpressionTree& other) {
+		if (this == &other) return *this;
+		container_.clear();
+		container_.reserve(other.container_.size());
+		for (const Node& n : other.container_) container_.emplace_back(n.MakeDeepCopy());
+		activeBrackets_ = other.activeBrackets_;
+		return *this;
+	}
 	bool operator==(const ExpressionTree& other) const {
 		if (container_.size() != other.container_.size()) return false;
 		for (size_t i = 0; i < container_.size(); ++i) {
@@ -192,17 +344,15 @@ public:
 	class const_iterator;
 	/// Appends all nodes from the interval to the last openned subtree
 	void Append(const_iterator begin, const_iterator end) {
-		for (; begin != end; ++begin) {
-			if (begin->IsLeaf()) {
-				Append(begin->operation, begin->Value());
-			} else {
-				OpenBracket(begin->operation);
-				mpark::get<SubTree>(container_.back().storage_).CopyPayloadFrom(mpark::get<SubTree>(begin->storage_));
-				Append(begin.cbegin(), begin.cend());
-				CloseBracket();
-			}
-		}
+		container_.reserve(container_.size() + (end.PlainIterator() - begin.PlainIterator()));
+		append(begin, end);
 	}
+	class iterator;
+	void LazyAppend(iterator begin, iterator end) {
+		container_.reserve(container_.size() + (end.PlainIterator() - begin.PlainIterator()));
+		lazyAppend(begin, end);
+	}
+
 	/// Appends value as first child of the root
 	template <typename T>
 	void AppendFront(OperationType op, T&& v) {
@@ -366,7 +516,7 @@ public:
 	/// @return iterator points to the node after the last child of root
 	const_iterator cend() const { return {container_.end()}; }
 	/// @return iterator to first entry of current bracket
-	const_iterator begin_this_bracket() {
+	const_iterator begin_of_current_bracket() {
 		if (activeBrackets_.empty()) return container_.begin();
 		return container_.begin() + activeBrackets_.back() + 1;
 	}
@@ -375,6 +525,10 @@ protected:
 	Container container_;
 	/// stack of openned brackets (beginnigs of subtrees)
 	h_vector<unsigned, 2> activeBrackets_;
+	void clear() {
+		container_.clear();
+		activeBrackets_.clear();
+	}
 
 	/// @return the last appended leaf or last closed subtree or last openned subtree if it is empty
 	size_t lastAppendedElement() const {
@@ -386,6 +540,40 @@ protected:
 		}
 		while (Next(start) != container_.size()) start = Next(start);
 		return start;
+	}
+
+	void append(const_iterator begin, const_iterator end) {
+		for (; begin != end; ++begin) {
+			if (begin->IsLeaf()) {
+				Append(begin->operation, begin->Value());
+			} else {
+				OpenBracket(begin->operation);
+				mpark::get<SubTree>(container_.back().storage_).CopyPayloadFrom(mpark::get<SubTree>(begin->storage_));
+				append(begin.cbegin(), begin.cend());
+				CloseBracket();
+			}
+		}
+	}
+
+	void lazyAppend(iterator begin, iterator end) {
+		for (; begin != end; ++begin) {
+			if (begin->IsLeaf()) {
+				Append(begin->operation, Ref<Head<Ts...>>{begin->Value()});
+			} else {
+				OpenBracket(begin->operation);
+				mpark::get<SubTree>(container_.back().storage_).CopyPayloadFrom(mpark::get<SubTree>(begin->storage_));
+				lazyAppend(begin.begin(), begin.end());
+				CloseBracket();
+			}
+		}
+	}
+
+	ExpressionTree makeLazyCopy() & {
+		ExpressionTree result;
+		result.container_.reserve(container_.size());
+		for (Node& n : container_) result.container_.emplace_back(n.MakeLazyCopy());
+		result.activeBrackets_ = activeBrackets_;
+		return result;
 	}
 };
 

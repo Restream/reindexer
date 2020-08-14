@@ -367,7 +367,7 @@ void parseSingleJoinQuery(JsonValue& join, Query& query) {
 				break;
 		}
 	}
-	query.joinQueries_.emplace_back(qjoin);
+	query.joinQueries_.emplace_back(std::move(qjoin));
 }
 
 void parseMergeQueries(JsonValue& mergeQueries, Query& query) {
@@ -376,7 +376,7 @@ void parseMergeQueries(JsonValue& mergeQueries, Query& query) {
 		checkJsonValueType(merged, "Merged", JSON_OBJECT);
 		JoinedQuery qmerged;
 		parse(merged, qmerged);
-		query.mergeQueries_.emplace_back(qmerged);
+		query.mergeQueries_.emplace_back(std::move(qmerged));
 	}
 }
 

@@ -17,6 +17,13 @@ public:
 	void Bind(PayloadType type, int field);
 	void BindEqualPosition(int field, const VariantArray &val, CondType cond);
 	void BindEqualPosition(const TagsPath &tagsPath, const VariantArray &val, CondType cond);
+	void ClearDistinct() {
+		cmpInt.ClearDistinct();
+		cmpBool.ClearDistinct();
+		cmpInt64.ClearDistinct();
+		cmpDouble.ClearDistinct();
+		cmpString.ClearDistinct();
+	}
 
 protected:
 	bool compare(const Variant &kr) {

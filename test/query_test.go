@@ -170,8 +170,12 @@ func renameTestNamespace(namespace string, dstName string) {
 }
 
 func newTestTx(db *ReindexerWrapper, namespace string) *txTest {
+	return newTestTxCtx(context.Background(), db, namespace)
+}
+
+func newTestTxCtx(ctx context.Context, db *ReindexerWrapper, namespace string) *txTest {
 	tx := &txTest{namespace: namespace, db: db, ns: testNamespaces[namespace]}
-	tx.tx = db.MustBeginTx(namespace)
+	tx.tx = db.WithContext(ctx).MustBeginTx(namespace)
 	return tx
 }
 
@@ -209,22 +213,22 @@ func (tx *txTest) Delete(s interface{}) error {
 	return tx.tx.Delete(s)
 }
 
-func (tx *txTest) InsertAsync(s interface{}, cmpl bindings.Completion) {
+func (tx *txTest) InsertAsync(s interface{}, cmpl bindings.Completion) error {
 	val := reflect.Indirect(reflect.ValueOf(s))
 	tx.ns.items[getPK(tx.ns, val)] = s
-	tx.tx.InsertAsync(s, cmpl)
+	return tx.tx.InsertAsync(s, cmpl)
 }
 
-func (tx *txTest) UpdateAsync(s interface{}, cmpl bindings.Completion) {
+func (tx *txTest) UpdateAsync(s interface{}, cmpl bindings.Completion) error {
 	val := reflect.Indirect(reflect.ValueOf(s))
 	tx.ns.items[getPK(tx.ns, val)] = s
-	tx.tx.UpdateAsync(s, cmpl)
+	return tx.tx.UpdateAsync(s, cmpl)
 }
 
-func (tx *txTest) UpsertAsnc(s interface{}, cmpl bindings.Completion) {
+func (tx *txTest) UpsertAsync(s interface{}, cmpl bindings.Completion) error {
 	val := reflect.Indirect(reflect.ValueOf(s))
 	tx.ns.items[getPK(tx.ns, val)] = s
-	tx.tx.UpsertAsync(s, cmpl)
+	return tx.tx.UpsertAsync(s, cmpl)
 }
 
 func (tx *txTest) Commit() (int, error) {

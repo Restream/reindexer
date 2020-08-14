@@ -1,3 +1,21 @@
+# Version 2.12.0 (14.08.2020)
+
+# Core
+- [fix] Increased performance of queries with custom sort order
+- [fix] Fixed behavior of SQL UPDATE statement with true/false/null values
+- [fix] Do not reset expire_after value of ttl indexes after copying tx
+- [fix] Error loading of system records (indexes/tags/replState) after copying tx
+- [fea] Return error for queries with EqualPosition to fields with IS NULL condition
+- [fix] To config added default value of `optimization_sort_workers` 
+- [fix] Windows specific error with IN () condition executed by comparator
+
+# Reindexer server
+- [fea] Removed default limit=10 in GET :db/namespaces/:ns/items method
+- [fea] Added `REINDEXER_NOREUSEIDLE` env var for disable server connection reuse
+
+# Go connector
+- [fix] Fixed async tx goroutines leak
+
 # Version 2.11.0 (29.07.2020)
 
 # Core

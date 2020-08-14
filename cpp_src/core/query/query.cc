@@ -378,13 +378,13 @@ void Query::Deserialize(Serializer &ser) {
 	}
 }
 
-Query &Query::Join(JoinType joinType, const string &index, const string &joinIndex, CondType cond, OpType op, Query &qr) {
+Query &Query::Join(JoinType joinType, const string &index, const string &joinIndex, CondType cond, OpType op, const Query &qr) {
 	QueryJoinEntry joinEntry;
 	joinEntry.op_ = op;
 	joinEntry.condition_ = cond;
 	joinEntry.index_ = index;
 	joinEntry.joinIndex_ = joinIndex;
-	joinQueries_.emplace_back(JoinedQuery(qr));
+	joinQueries_.emplace_back(qr);
 	joinQueries_.back().joinType = joinType;
 	joinQueries_.back().joinEntries_.push_back(joinEntry);
 	if (joinType != JoinType::LeftJoin) {
@@ -403,9 +403,9 @@ void Query::WalkNested(bool withSelf, bool withMerged, std::function<void(const 
 }
 
 bool Query::IsWALQuery() const noexcept {
-	if (entries.Size() == 1 && entries.IsEntry(0) && kLsnIndexName == entries[0].index) {
+	if (entries.Size() == 1 && entries.IsValue(0) && kLsnIndexName == entries[0].index) {
 		return true;
-	} else if (entries.Size() == 2 && entries.IsEntry(0) && entries.IsEntry(1)) {
+	} else if (entries.Size() == 2 && entries.IsValue(0) && entries.IsValue(1)) {
 		if ((kLsnIndexName == entries[0].index && kSlaveVersionIndexName == entries[1].index) ||
 			(kLsnIndexName == entries[1].index && kSlaveVersionIndexName == entries[0].index)) {
 			return true;

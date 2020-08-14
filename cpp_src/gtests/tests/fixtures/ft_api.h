@@ -138,7 +138,7 @@ public:
 	}
 
 	QueryResults SimpleSelect(string word) {
-		Query qr = Query("nm1").Where("ft3", CondEq, word);
+		Query qr = std::move(Query("nm1").Where("ft3", CondEq, word));
 		QueryResults res;
 		qr.AddFunction("ft3 = highlight(!,!)");
 		auto err = rt.reindexer->Select(qr, res);
@@ -154,12 +154,12 @@ public:
 		this->rt.reindexer->Delete("nm1", item);
 	}
 	QueryResults SimpleCompositeSelect(string word) {
-		Query qr = Query("nm1").Where("ft3", CondEq, word);
+		Query qr = std::move(Query("nm1").Where("ft3", CondEq, word));
 		QueryResults res;
-		Query mqr = Query("nm2").Where("ft3", CondEq, word);
+		Query mqr = std::move(Query("nm2").Where("ft3", CondEq, word));
 		mqr.AddFunction("ft1 = snippet(<b>,\"\"</b>,3,2,,d)");
 
-		qr.mergeQueries_.push_back(mqr);
+		qr.mergeQueries_.emplace_back(std::move(mqr));
 		qr.AddFunction("ft3 = highlight(<b>,</b>)");
 		auto err = rt.reindexer->Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -168,12 +168,12 @@ public:
 	}
 	QueryResults CompositeSelectField(const string& field, string word) {
 		word = '@' + field + ' ' + word;
-		Query qr = Query("nm1").Where("ft3", CondEq, word);
+		Query qr = std::move(Query("nm1").Where("ft3", CondEq, word));
 		QueryResults res;
-		Query mqr = Query("nm2").Where("ft3", CondEq, word);
+		Query mqr = std::move(Query("nm2").Where("ft3", CondEq, word));
 		mqr.AddFunction(field + " = snippet(<b>,\"\"</b>,3,2,,d)");
 
-		qr.mergeQueries_.push_back(mqr);
+		qr.mergeQueries_.push_back(std::move(mqr));
 		qr.AddFunction(field + " = highlight(<b>,</b>)");
 		auto err = rt.reindexer->Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -181,7 +181,7 @@ public:
 		return res;
 	}
 	QueryResults StressSelect(string word) {
-		Query qr = Query("nm1").Where("ft3", CondEq, word);
+		Query qr = std::move(Query("nm1").Where("ft3", CondEq, word));
 		QueryResults res;
 		auto err = rt.reindexer->Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();

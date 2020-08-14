@@ -449,7 +449,7 @@ type Client struct {
 clientData := updateClientData(clientId)
 db.Query("clients").Where("id", reindexer.EQ, 100).SetObject("client_data", clientData).Update()
 ```
-Map in golang should always has string as a key. ```map[string]interface{}``` is a perfect choice. 
+Map in golang should always has string as a key. ```map[string]interface{}``` is a perfect choice.
 
 Updating of object field by Sql statement
 ```sql
@@ -473,7 +473,7 @@ Reindexer supports transactions. Transaction are performs atomic namespace updat
 ```go
 
 	// Create new transaction object
-	tx, err := db.BeginTx("items"); 
+	tx, err := db.BeginTx("items");
 	if err != nil {
 		panic(err)
 	}
@@ -488,11 +488,11 @@ Reindexer supports transactions. Transaction are performs atomic namespace updat
 
 ```
 #### Async batch mode
-For speed up insertion of bulk records async mode can be used. 
+For speed up insertion of bulk records async mode can be used.
 ```go
 
 	// Create new transaction object
-	tx, err := db.BeginTx("items"); 
+	tx, err := db.BeginTx("items");
 	if err != nil {
 		panic(err)
 	}
@@ -504,7 +504,7 @@ For speed up insertion of bulk records async mode can be used.
 		panic(err)
 	}
 ```
-The second argument of `UpsertAsync` is completion function, which will be called after receiving server response. Also, if any error occurred during prepare process, then `tx.Commit` should 
+The second argument of `UpsertAsync` is completion function, which will be called after receiving server response. Also, if any error occurred during prepare process, then `tx.Commit` should
 return an error.
 So it is enough, to check error returned by `tx.Commit` - to be sure, that all data has been successfully committed or not.
 
@@ -518,7 +518,7 @@ Data amount for choosing Commit strategy can be choose in namespaces config. pls
 
 #### Implementation notes
 
-1. Transaction object is not thread safe and can't be used from different goroutines. 
+1. Transaction object is not thread safe and can't be used from different goroutines.
 2. Transaction object holds Reindexer's resources, therefore application should explicitly call Rollback or Commit, otherwise resources will leak
 3. It is safe to call Rollback after Commit
 4. It is possible ro call  Query from transaction  by call `tx.Query("ns").Exec() ...`. Only read-committed isolation is available. Changes made in active transaction is invisible to current and another transactions.
@@ -1063,13 +1063,17 @@ A list of connectors for work with Reindexer via other program languages (TBC la
 
 ### Pyreindexer
 
-1. [Pyreindexer](connectors/py_reindexer) for Python (version >=3.6 is required). For setup run:
+1. Pyreindexer for Python (version >=3.6 is required).
+
+Before installation reindexer-dev (version >= 2.10) should be installed. See [installation instructions](cpp_src/readme.md#Installation) for details.
+For install run:
 
 
 ```bash
-pip3 install git+https://github.com/Restream/reindexer.git
-
+pip3 install pyreindexer
 ```
+https://github.com/Restream/reindexer-py
+https://pypi.org/project/pyreindexer/
 
 ### HTTP REST API
 

@@ -84,6 +84,9 @@ public:
 	}
 
 	void ExcludeDistinct(T value) { distS_->emplace(value); }
+	void ClearDistinct() {
+		if (distS_) distS_->clear();
+	}
 
 	h_vector<T, 1> values_;
 	intrusive_ptr<intrusive_atomic_rc_wrapper<fast_hash_set<T>>> valuesS_, distS_;
@@ -99,7 +102,7 @@ private:
 
 	void addValue(CondType cond, T value) {
 		if (cond == CondSet) {
-			valuesS_->emplace(value);
+			valuesS_->insert(value);
 		} else {
 			values_.push_back(value);
 		}
@@ -160,6 +163,9 @@ public:
 	}
 
 	void ExcludeDistinct(p_string value) { distS_->emplace(value.getOrMakeKeyString()); }
+	void ClearDistinct() {
+		if (distS_) distS_->clear();
+	}
 
 	h_vector<key_string, 1> values_;
 	string_view cachedValueSV_;

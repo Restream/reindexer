@@ -13,8 +13,9 @@ namespace reindexer {
 
 void ExplainCalc::LogDump(int logLevel) {
 	if (logLevel >= LogInfo) {
-		logPrintf(LogInfo, "Got %d items in %d µs [prepare %d µs, select %d µs, postprocess %d µs loop %d µs, general sort %d µs], sortindex %s", count_,
-				  to_us(total_), to_us(prepare_), to_us(select_), to_us(postprocess_), to_us(loop_), to_us(sort_), sortIndex_);
+		logPrintf(LogInfo,
+				  "Got %d items in %d µs [prepare %d µs, select %d µs, postprocess %d µs loop %d µs, general sort %d µs], sortindex %s",
+				  count_, To_us(total_), To_us(prepare_), To_us(select_), To_us(postprocess_), To_us(loop_), To_us(sort_), sortIndex_);
 	}
 
 	if (logLevel >= LogTrace) {
@@ -57,6 +58,8 @@ static void addToJSON(JsonBuilder &builder, const JoinedSelector &js) {
 	auto jsonSel = builder.Object();
 	jsonSel.Put("field", joinTypeName(js.Type()) + js.RightNsName());
 	jsonSel.Put("matched", js.Matched());
+	jsonSel.Put("selects_count", js.Called());
+	jsonSel.Put("join_select_total", ExplainCalc::To_us(js.PreResult()->selectTime));
 	switch (js.Type()) {
 		case JoinType::InnerJoin:
 		case JoinType::OrInnerJoin:
@@ -94,12 +97,12 @@ string ExplainCalc::GetJSON() {
 	WrSerializer ser;
 	{
 		JsonBuilder json(ser);
-		json.Put("total_us", to_us(total_));
-		json.Put("prepare_us", to_us(prepare_));
-		json.Put("indexes_us", to_us(select_));
-		json.Put("postprocess_us", to_us(postprocess_));
-		json.Put("loop_us", to_us(loop_));
-		json.Put("general_sort_us", to_us(sort_));
+		json.Put("total_us", To_us(total_));
+		json.Put("prepare_us", To_us(prepare_));
+		json.Put("indexes_us", To_us(select_));
+		json.Put("postprocess_us", To_us(postprocess_));
+		json.Put("loop_us", To_us(loop_));
+		json.Put("general_sort_us", To_us(sort_));
 		json.Put("sort_index", sortIndex_);
 		json.Put("sort_by_uncommitted_index", sortOptimization_);
 
@@ -165,14 +168,14 @@ void SelectIteratorContainer::explainJSON(const_iterator it, const_iterator end,
 	}
 }
 
-ExplainCalc::duration ExplainCalc::lap() {
-	auto now = clock::now();
-	duration d = now - last_point_;
+ExplainCalc::Duration ExplainCalc::lap() {
+	auto now = Clock::now();
+	Duration d = now - last_point_;
 	last_point_ = now;
 	return d;
 }
 
-int ExplainCalc::to_us(const ExplainCalc::duration &d) { return duration_cast<microseconds>(d).count(); }
+int ExplainCalc::To_us(const ExplainCalc::Duration &d) { return duration_cast<microseconds>(d).count(); }
 
 void reindexer::ExplainCalc::StartTiming() {
 	if (enabled_) lap();
@@ -182,31 +185,31 @@ void reindexer::ExplainCalc::StopTiming() {
 	if (enabled_) total_ = prepare_ + select_ + postprocess_ + loop_;
 }
 
-void reindexer::ExplainCalc::SetPrepareTime() {
-	if (enabled_) prepare_ = lap();
+void reindexer::ExplainCalc::AddPrepareTime() {
+	if (enabled_) prepare_ += lap();
 }
 
-void reindexer::ExplainCalc::SetSelectTime() {
-	if (enabled_) select_ = lap();
+void reindexer::ExplainCalc::AddSelectTime() {
+	if (enabled_) select_ += lap();
 }
 
-void reindexer::ExplainCalc::SetPostprocessTime() {
-	if (enabled_) postprocess_ = lap();
+void reindexer::ExplainCalc::AddPostprocessTime() {
+	if (enabled_) postprocess_ += lap();
 }
 
-void reindexer::ExplainCalc::SetLoopTime() {
-	if (enabled_) loop_ = lap();
+void reindexer::ExplainCalc::AddLoopTime() {
+	if (enabled_) loop_ += lap();
 }
 
 void reindexer::ExplainCalc::StartSort() {
-	if (enabled_) sort_start_point_ = clock::now();
+	if (enabled_) sort_start_point_ = Clock::now();
 }
 
 void reindexer::ExplainCalc::StopSort() {
-	if (enabled_) sort_ = clock::now() - sort_start_point_;
+	if (enabled_) sort_ = Clock::now() - sort_start_point_;
 }
 
-void reindexer::ExplainCalc::SetIterations(int iters) { iters_ = iters; }
+void reindexer::ExplainCalc::AddIterations(int iters) { iters_ += iters; }
 void reindexer::ExplainCalc::PutSortIndex(string_view index) { sortIndex_ = index; }
 void ExplainCalc::PutSelectors(SelectIteratorContainer *qres) { selectors_ = qres; }
 void ExplainCalc::PutJoinedSelectors(JoinedSelectors *jselectors) { jselectors_ = jselectors; }

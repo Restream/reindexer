@@ -186,7 +186,7 @@ int Variant::As<int>() const {
 			case KeyValueDouble:
 				return int(value_double);
 			case KeyValueString: {
-				return stoi(operator p_string());
+				return std::stoi(operator p_string().data());
 			}
 			case KeyValueComposite:
 			case KeyValueTuple:

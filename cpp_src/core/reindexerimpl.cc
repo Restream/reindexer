@@ -703,7 +703,7 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 
 		if (q._namespace.size() && q._namespace[0] == '#') {
 			string filterNsName;
-			if (q.entries.Size() == 1 && q.entries.IsEntry(0) && q.entries[0].condition == CondEq && q.entries[0].values.size() == 1)
+			if (q.entries.Size() == 1 && q.entries.IsValue(0) && q.entries[0].condition == CondEq && q.entries[0].values.size() == 1)
 				filterNsName = q.entries[0].values[0].As<string>();
 
 			syncSystemNamespaces(q._namespace, filterNsName, rdxCtx);
@@ -711,7 +711,7 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 		// Lookup and lock namespaces_
 		mainNs->updateSelectTime();
 		locks.Add(mainNs);
-		q.WalkNested(false, true, [this, &locks, &rdxCtx](const Query q) {
+		q.WalkNested(false, true, [this, &locks, &rdxCtx](const Query& q) {
 			auto nsWrp = getNamespace(q._namespace, rdxCtx);
 			auto ns = q.IsWALQuery() ? nsWrp->awaitMainNs(rdxCtx) : nsWrp->getMainNs();
 			ns->updateSelectTime();
@@ -869,7 +869,7 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& 
 		selCtx.contextCollectingMode = true;
 		selCtx.functions = &func;
 		selCtx.nsid = 0;
-		selCtx.isForceAll = !q.mergeQueries_.empty() || !q.forcedSortOrder_.empty();
+		selCtx.isForceAll = !q.mergeQueries_.empty();
 		ns->Select(result, selCtx, ctx);
 	}
 
@@ -1201,6 +1201,7 @@ std::vector<string> defDBConfig = {
 				"copy_policy_multiplier":5
 				"tx_size_to_always_copy":100000,
 				"optimization_timeout_ms":800,
+				"optimization_sort_workers":4
 			}
     	]
 	})json",

@@ -34,7 +34,8 @@ protected:
 	}
 
 	void SortByName(QueryResults& qr) {
-		Query query = Query(default_namespace).Sort(kFieldName, false);
+		Query query{default_namespace};
+		query.Sort(kFieldName, false);
 		Error err = rt.reindexer->Select(query, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}

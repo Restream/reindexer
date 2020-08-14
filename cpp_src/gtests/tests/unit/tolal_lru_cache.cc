@@ -91,8 +91,7 @@ TEST(LruCache, StressTest) {
 				auto cached = cache.Get(ckey);
 
 				if (cached.valid) {
-					Query k(qs[idx]);
-					ASSERT_TRUE(EqQueryCacheKey()(k, ckey)) << "queries are not EQUAL!\n";
+					ASSERT_TRUE(EqQueryCacheKey()(qs[idx], ckey)) << "queries are not EQUAL!\n";
 				} else {
 					size_t total = static_cast<size_t>(rand() % 1000);
 					cache.Put(ckey, QueryCacheVal{total});

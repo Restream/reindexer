@@ -63,7 +63,7 @@ TEST_F(EqualPositionApi, SelectGt) {
 	QueryResults qr;
 	const Variant key1(static_cast<int>(1050));
 	const Variant key2(static_cast<int>(2100));
-	Query q = Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGt, key1).Where(kFieldA2, CondGt, key2);
+	Query q = std::move(Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGt, key1).Where(kFieldA2, CondGt, key2));
 	q.AddEqualPosition({kFieldA1, kFieldA2});
 	Error err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -74,7 +74,7 @@ TEST_F(EqualPositionApi, SelectGt2) {
 	QueryResults qr;
 	const Variant key1(static_cast<int>(1120));
 	const Variant key2(static_cast<int>(2240));
-	Query q = Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGt, key1).Where(kFieldA2, CondGt, key2);
+	Query q = std::move(Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGt, key1).Where(kFieldA2, CondGt, key2));
 	q.AddEqualPosition({kFieldA1, kFieldA2});
 	Error err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -85,7 +85,7 @@ TEST_F(EqualPositionApi, SelectGe) {
 	QueryResults qr;
 	const Variant key1(static_cast<int>(1120));
 	const Variant key2(static_cast<int>(2240));
-	Query q = Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGe, key1).Where(kFieldA2, CondGe, key2);
+	Query q = std::move(Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGe, key1).Where(kFieldA2, CondGe, key2));
 	q.AddEqualPosition({kFieldA1, kFieldA2});
 	Error err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -96,7 +96,7 @@ TEST_F(EqualPositionApi, SelectGe2) {
 	QueryResults qr;
 	const Variant key1(static_cast<int>(0));
 	const Variant key2(static_cast<int>(0));
-	Query q = Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGe, key1).Where(kFieldA2, CondGe, key2);
+	Query q = std::move(Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGe, key1).Where(kFieldA2, CondGe, key2));
 	q.AddEqualPosition({kFieldA1, kFieldA2});
 	Error err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -107,7 +107,7 @@ TEST_F(EqualPositionApi, SelectLt) {
 	QueryResults qr;
 	const Variant key1(static_cast<int>(400));
 	const Variant key2(static_cast<int>(800));
-	Query q = Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondLt, key1).Where(kFieldA2, CondLt, key2);
+	Query q = std::move(Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondLt, key1).Where(kFieldA2, CondLt, key2));
 	q.AddEqualPosition({kFieldA1, kFieldA2});
 	Error err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -119,8 +119,8 @@ TEST_F(EqualPositionApi, SelectEq) {
 	const Variant key1(static_cast<int>(900));
 	const Variant key2(static_cast<int>(1800));
 	const Variant key3(static_cast<int>(2700));
-	Query q =
-		Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondEq, key1).Where(kFieldA2, CondEq, key2).Where(kFieldA3, CondEq, key3);
+	Query q = std::move(
+		Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondEq, key1).Where(kFieldA2, CondEq, key2).Where(kFieldA3, CondEq, key3));
 	q.AddEqualPosition({kFieldA1, kFieldA2, kFieldA3});
 	Error err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -162,7 +162,7 @@ TEST_F(EqualPositionApi, SelectNonIndexedArrays) {
 	QueryResults qr;
 	const Variant key1(static_cast<int64_t>(3));
 	const Variant key2(static_cast<int64_t>(4));
-	Query q = Query(ns).Debug(LogTrace).Where("nested.a2", CondGe, key1).Where("nested.a3", CondGe, key2);
+	Query q = std::move(Query(ns).Debug(LogTrace).Where("nested.a2", CondGe, key1).Where("nested.a3", CondGe, key2));
 	q.AddEqualPosition({"nested.a2", "nested.a3"});
 	err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -207,7 +207,7 @@ TEST_F(EqualPositionApi, SelectMixedArrays) {
 	QueryResults qr;
 	const Variant key1(static_cast<int64_t>(4));
 	const Variant key2(static_cast<int64_t>(5));
-	Query q = Query(ns).Debug(LogTrace).Where("a1", CondGe, key1).Where("nested.a2", CondGe, key2);
+	Query q = std::move(Query(ns).Debug(LogTrace).Where("a1", CondGe, key1).Where("nested.a2", CondGe, key2));
 	q.AddEqualPosition({"a1", "nested.a2"});
 	err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();

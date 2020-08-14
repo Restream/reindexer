@@ -318,7 +318,8 @@ TEST_F(NsApi, TestUpdateIndexedField) {
 	FillDefaultNamespace();
 
 	QueryResults qrUpdate;
-	Query updateQuery = Query(default_namespace).Where(intField, CondGe, Variant(static_cast<int>(500))).Set(stringField, "bingo!");
+	Query updateQuery =
+		std::move(Query(default_namespace).Where(intField, CondGe, Variant(static_cast<int>(500))).Set(stringField, "bingo!"));
 	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
 
@@ -340,7 +341,8 @@ TEST_F(NsApi, TestUpdateNonindexedField) {
 	AddUnindexedData();
 
 	QueryResults qrUpdate;
-	Query updateQuery = Query(default_namespace).Where("id", CondGe, Variant("1500")).Set("nested.bonus", static_cast<int>(100500));
+	Query updateQuery =
+		std::move(Query(default_namespace).Where("id", CondGe, Variant("1500")).Set("nested.bonus", static_cast<int>(100500)));
 	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qrUpdate.Count() == 500) << qrUpdate.Count();
@@ -364,7 +366,8 @@ TEST_F(NsApi, TestUpdateSparseField) {
 	AddUnindexedData();
 
 	QueryResults qrUpdate;
-	Query updateQuery = Query(default_namespace).Where("id", CondGe, Variant("1500")).Set("sparse_field", static_cast<int>(100500));
+	Query updateQuery =
+		std::move(Query(default_namespace).Where("id", CondGe, Variant("1500")).Set("sparse_field", static_cast<int>(100500)));
 	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qrUpdate.Count() == 500) << qrUpdate.Count();
@@ -386,7 +389,7 @@ TEST_F(NsApi, TestUpdateSparseField) {
 void updateArrayField(std::shared_ptr<reindexer::Reindexer> reindexer, const string &ns, const string &updateFieldPath,
 					  const VariantArray &values) {
 	QueryResults qrUpdate;
-	Query updateQuery = Query(ns).Where("id", CondGe, Variant("500")).Set(updateFieldPath, values);
+	Query updateQuery = std::move(Query(ns).Where("id", CondGe, Variant("500")).Set(updateFieldPath, values));
 	Error err = reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qrUpdate.Count() > 0) << qrUpdate.Count();
@@ -482,7 +485,7 @@ TEST_F(NsApi, TestUpdateIndexedArrayField2) {
 	VariantArray value;
 	value.emplace_back(static_cast<int>(77));
 	value.MarkArray();
-	Query q = Query(default_namespace).Where(idIdxName, CondEq, static_cast<int>(1000)).Set(indexedArrayField, std::move(value));
+	Query q = std::move(Query(default_namespace).Where(idIdxName, CondEq, static_cast<int>(1000)).Set(indexedArrayField, std::move(value)));
 	Error err = rt.reindexer->Update(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
@@ -495,7 +498,7 @@ TEST_F(NsApi, TestUpdateIndexedArrayField2) {
 
 void addAndSetNonindexedField(std::shared_ptr<reindexer::Reindexer> reindexer, const string &ns, const string &updateFieldPath) {
 	QueryResults qrUpdate;
-	Query updateQuery = Query(ns).Where("nested.bonus", CondGe, Variant(500)).Set(updateFieldPath, static_cast<int64_t>(777));
+	Query updateQuery = std::move(Query(ns).Where("nested.bonus", CondGe, Variant(500)).Set(updateFieldPath, static_cast<int64_t>(777)));
 	Error err = reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
 
@@ -532,7 +535,7 @@ TEST_F(NsApi, TestAddAndSetNonindexedField3) {
 
 void checkFieldConversion(std::shared_ptr<reindexer::Reindexer> reindexer, const string &ns, const string &updateFieldPath,
 						  const VariantArray &newValue, const VariantArray &updatedValue, KeyValueType sourceType, bool expectFail) {
-	const Query selectQuery = Query(ns).Where("id", CondGe, Variant("500"));
+	const Query selectQuery = std::move(Query(ns).Where("id", CondGe, Variant("500")));
 	QueryResults qrUpdate;
 	Query updateQuery = selectQuery;
 	updateQuery.Set(updateFieldPath, newValue);
@@ -583,8 +586,7 @@ TEST_F(NsApi, TestIntIndexedFieldConversion) {
 	checkFieldConversion(rt.reindexer, default_namespace, intField, {Variant(string("100500"))}, {Variant(static_cast<int>(100500))},
 						 KeyValueInt, false);
 
-	checkFieldConversion(rt.reindexer, default_namespace, intField, {Variant(string("Jesus Christ"))}, {Variant(static_cast<int>(0))},
-						 KeyValueInt, false);
+	checkFieldConversion(rt.reindexer, default_namespace, intField, {Variant(string("Jesus Christ"))}, {Variant()}, KeyValueInt, true);
 }
 
 TEST_F(NsApi, TestDoubleIndexedFieldConversion) {

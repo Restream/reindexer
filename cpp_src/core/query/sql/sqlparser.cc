@@ -372,10 +372,15 @@ static Variant token2kv(const token &currTok, tokenizer &parser, bool allowCompo
 		}
 	}
 
-	if (currTok.type != TokenNumber && currTok.type != TokenString)
-		throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", currTok.text(), parser.where());
-
 	string_view value = currTok.text();
+	if ((currTok.type == TokenName) && (iequals(currTok.text(), "true"_sv) || iequals(currTok.text(), "false"_sv))) {
+		return Variant(iequals(value, "true"_sv));
+	}
+
+	if (currTok.type != TokenNumber && currTok.type != TokenString) {
+		throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", currTok.text(), parser.where());
+	}
+
 	switch (detectValueType(currTok)) {
 		case KeyValueInt64:
 			return Variant(int64_t(stoll(value)));
@@ -665,7 +670,7 @@ void SQLParser::parseEqualPositions(tokenizer &parser) {
 			throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
 		}
 		bool validField = false;
-		for (auto it = query_.entries.begin_this_bracket(); it != query_.entries.end(); ++it) {
+		for (auto it = query_.entries.begin_of_current_bracket(); it != query_.entries.end(); ++it) {
 			if (it->IsLeaf()) {
 				if (nameWithCase.text() == it->Value().index) {
 					validField = true;

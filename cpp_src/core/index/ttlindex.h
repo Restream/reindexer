@@ -11,7 +11,9 @@ template <typename T>
 class TtlIndex : public IndexOrdered<T> {
 public:
 	TtlIndex(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields);
+	TtlIndex(const TtlIndex<T> &other);
 	int64_t GetTTLValue() const override;
+	Index *Clone() override;
 
 private:
 	/// Expiration value in seconds.

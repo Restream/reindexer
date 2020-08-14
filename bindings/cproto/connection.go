@@ -152,7 +152,7 @@ func seqNumIsValid(seqNum uint32) bool {
 func (c *connection) deadlineTicker() {
 	timeout := time.Second * time.Duration(deadlineCheckPeriodSec)
 	ticker := time.NewTicker(timeout)
-	atomic.StoreUint32(&c.now, 0)
+	atomic.StoreUint32(&c.now, 1) // Starts from 1, so timeout value < 1s will not transform into 0 value deadline
 	for range ticker.C {
 		select {
 		case <-c.errCh:
@@ -168,21 +168,20 @@ func (c *connection) deadlineTicker() {
 				continue
 			}
 			deadline := atomic.LoadUint32(&c.requests[i].deadline)
-			if deadline != 0 && now >= deadline && atomic.CompareAndSwapUint32(&c.requests[i].deadline, deadline, 0) {
-				if atomic.LoadInt32(&c.requests[i].isAsync) != 0 {
-					c.requests[i].cmplLock.Lock()
-					if c.requests[i].cmpl != nil && deadline == atomic.LoadUint32(&c.requests[i].deadline) {
-						cmpl := c.requests[i].cmpl
-						c.requests[i].cmpl = nil
-						seqNum = atomic.LoadUint32(&c.requests[i].seqNum)
-						atomic.StoreUint32(&c.requests[i].seqNum, maxSeqNum)
-						atomic.StoreInt32(&c.requests[i].isAsync, 0)
-						c.requests[i].cmplLock.Unlock()
-						c.seqs <- nextSeqNum(seqNum)
-						cmpl(nil, context.DeadlineExceeded)
-					} else {
-						c.requests[i].cmplLock.Unlock()
-					}
+			if deadline != 0 && now >= deadline && atomic.LoadInt32(&c.requests[i].isAsync) != 0 {
+				c.requests[i].cmplLock.Lock()
+				if c.requests[i].cmpl != nil && atomic.CompareAndSwapUint32(&c.requests[i].deadline, deadline, 0) {
+					cmpl := c.requests[i].cmpl
+					c.requests[i].cmpl = nil
+					seqNum = atomic.LoadUint32(&c.requests[i].seqNum)
+					atomic.StoreUint32(&c.requests[i].seqNum, maxSeqNum)
+					atomic.StoreInt32(&c.requests[i].isAsync, 0)
+					c.requests[i].cmplLock.Unlock()
+					c.seqs <- nextSeqNum(seqNum)
+					fmt.Println("Canceling on deadline: ", deadline, ", id: ", seqNum)
+					cmpl(nil, context.DeadlineExceeded)
+				} else {
+					c.requests[i].cmplLock.Unlock()
 				}
 			}
 		}
@@ -385,7 +384,13 @@ func (c *connection) packRPC(cmd int, seq uint32, execTimeout int, args ...inter
 	in.ser.Close()
 }
 
-func (c *connection) awaitSeqNum(ctx context.Context) (seq uint32, remainingTimeout int, err error) {
+func (c *connection) awaitSeqNum(ctx context.Context) (seq uint32, remainingTimeout time.Duration, err error) {
+	select {
+	case <-ctx.Done():
+		err = ctx.Err()
+	default:
+	}
+
 	select {
 	case seq = <-c.seqs:
 		if err = ctx.Err(); err != nil {
@@ -393,7 +398,7 @@ func (c *connection) awaitSeqNum(ctx context.Context) (seq uint32, remainingTime
 			return
 		}
 		if execDeadline, ok := ctx.Deadline(); ok {
-			remainingTimeout = int(execDeadline.Sub(time.Now()) / time.Millisecond)
+			remainingTimeout = execDeadline.Sub(time.Now())
 			if remainingTimeout <= 0 {
 				c.seqs <- seq
 				err = context.DeadlineExceeded
@@ -431,15 +436,16 @@ func (c *connection) rpcCallAsync(ctx context.Context, cmd int, netTimeout uint3
 	reqID := seq % queueSize
 	c.requests[reqID].cmplLock.Lock()
 	c.requests[reqID].cmpl = cmpl
+	if timeout == 0 {
+		atomic.StoreUint32(&c.requests[reqID].deadline, 0)
+	} else {
+		atomic.StoreUint32(&c.requests[reqID].deadline, atomic.LoadUint32(&c.now)+uint32(timeout.Seconds()))
+	}
 	atomic.StoreInt32(&c.requests[reqID].isAsync, 1)
 	atomic.StoreUint32(&c.requests[reqID].seqNum, seq)
 	c.requests[reqID].cmplLock.Unlock()
 
-	if timeout != 0 {
-		atomic.StoreUint32(&c.requests[reqID].deadline, atomic.LoadUint32(&c.now)+uint32(timeout))
-	}
-
-	c.packRPC(cmd, seq, timeout, args...)
+	c.packRPC(cmd, seq, int(timeout.Milliseconds()), args...)
 
 	return
 }
@@ -458,7 +464,7 @@ func (c *connection) rpcCall(ctx context.Context, cmd int, netTimeout uint32, ar
 	reply := c.requests[reqID].repl
 
 	atomic.StoreUint32(&c.requests[reqID].seqNum, seq)
-	c.packRPC(cmd, seq, timeout, args...)
+	c.packRPC(cmd, seq, int(timeout.Milliseconds()), args...)
 
 for_loop:
 	for {

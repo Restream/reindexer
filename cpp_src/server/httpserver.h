@@ -116,7 +116,6 @@ protected:
 
 	static const int kDefaultLimit = INT_MAX;
 	static const int kDefaultOffset = 0;
-	static const int kDefaultItemsLimit = 10;
 };
 
 }  // namespace reindexer_server

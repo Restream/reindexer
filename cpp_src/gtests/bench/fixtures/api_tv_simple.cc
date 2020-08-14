@@ -469,7 +469,8 @@ void ApiTvSimple::Query0CondInnerJoinPreResultStoreValues(benchmark::State& stat
 		threads.reserve(leftNs.size());
 		for (size_t i = 0; i < leftNs.size(); ++i) {
 			threads.emplace_back([this, i, &state]() {
-				Query q = Query(leftNs[i]).InnerJoin(data, data, CondEq, Query(rightNs).Where(data, CondEq, rand() % maxDataValue));
+				Query q{leftNs[i]};
+				q.InnerJoin(data, data, CondEq, Query(rightNs).Where(data, CondEq, rand() % maxDataValue));
 				QueryResults qres;
 				Error err = db_->Select(q, qres);
 				if (!err.ok()) state.SkipWithError(err.what().c_str());

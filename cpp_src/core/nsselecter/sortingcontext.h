@@ -7,7 +7,6 @@
 namespace reindexer {
 
 class Index;
-class Query;
 struct SortingEntry;
 
 struct SortingContext {
@@ -36,7 +35,7 @@ struct SortingContext {
 };
 
 struct SortingOptions {
-	SortingOptions(const Query &q, const SortingContext &sortingContext);
+	SortingOptions(const SortingContext &sortingContext);
 	bool postLoopSortingRequired() const;
 
 	bool byBtreeIndex = false;

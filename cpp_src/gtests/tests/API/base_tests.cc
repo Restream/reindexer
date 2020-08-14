@@ -452,7 +452,7 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 	const size_t limit = 61;
 
 	QueryResults qr;
-	Query query = Query(default_namespace, offset, limit).Sort("column1", true).Sort("column2", false).Sort("column3", false);
+	Query query = std::move(Query(default_namespace, offset, limit).Sort("column1", true).Sort("column2", false).Sort("column3", false));
 	err = rt.reindexer->Select(query, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_TRUE(qr.Count() == limit) << qr.Count();
@@ -535,7 +535,7 @@ TEST_F(ReindexerApi, SortByMultipleColumnsWithLimits) {
 	const size_t limit = 3;
 
 	QueryResults qr;
-	Query query = Query(default_namespace, offset, limit).Sort("f1", false).Sort("f2", false);
+	Query query = std::move(Query(default_namespace, offset, limit).Sort("f1", false).Sort("f2", false));
 	err = rt.reindexer->Select(query, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_TRUE(qr.Count() == limit) << qr.Count();
@@ -612,7 +612,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 	const unsigned limit = 30;
 
 	QueryResults sortByIntQr;
-	Query sortByIntQuery = Query(default_namespace, offset, limit).Sort("valueInt", descending);
+	Query sortByIntQuery = std::move(Query(default_namespace, offset, limit).Sort("valueInt", descending));
 	err = rt.reindexer->Select(sortByIntQuery, sortByIntQr);
 	EXPECT_TRUE(err.ok()) << err.what();
 
@@ -626,10 +626,10 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 	EXPECT_TRUE(std::equal(allIntValues.begin() + offset, allIntValues.begin() + offset + limit, selectedIntValues.begin()));
 
 	QueryResults sortByStrQr, sortByASCIIStrQr, sortByNumericStrQr, sortByUTF8StrQr;
-	Query sortByStrQuery = Query(default_namespace).Sort("valueString", !descending);
-	Query sortByASSCIIStrQuery = Query(default_namespace).Sort("valueStringASCII", !descending);
-	Query sortByNumericStrQuery = Query(default_namespace).Sort("valueStringNumeric", !descending);
-	Query sortByUTF8StrQuery = Query(default_namespace).Sort("valueStringUTF8", !descending);
+	Query sortByStrQuery = std::move(Query(default_namespace).Sort("valueString", !descending));				// -V547
+	Query sortByASSCIIStrQuery = std::move(Query(default_namespace).Sort("valueStringASCII", !descending));		// -V547
+	Query sortByNumericStrQuery = std::move(Query(default_namespace).Sort("valueStringNumeric", !descending));	// -V547
+	Query sortByUTF8StrQuery = std::move(Query(default_namespace).Sort("valueStringUTF8", !descending));		// -V547
 
 	err = rt.reindexer->Select(sortByStrQuery, sortByStrQr);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -735,8 +735,8 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 	const unsigned limit = 40;
 
 	Query querySecondNamespace = Query(secondNamespace);
-	Query sortQuery = Query(default_namespace, offset, limit).Sort("id", descending);
-	Query joinQuery = sortQuery.InnerJoin("fk", "pk", CondEq, querySecondNamespace);
+	Query joinQuery = std::move(Query(default_namespace, offset, limit).Sort("id", descending));
+	joinQuery.InnerJoin("fk", "pk", CondEq, querySecondNamespace);
 
 	QueryResults queryResult;
 	err = rt.reindexer->Select(joinQuery, queryResult);
@@ -915,7 +915,7 @@ TEST_F(ReindexerApi, DistinctQueriesEncodingTest) {
 	q2.FromJSON(dsl);
 	EXPECT_TRUE(q1 == q2);
 
-	Query q3 = Query(default_namespace).Distinct("name").Distinct("city").Where("id", CondGt, static_cast<int64_t>(10));
+	Query q3 = std::move(Query(default_namespace).Distinct("name").Distinct("city").Where("id", CondGt, static_cast<int64_t>(10)));
 	string sql2 = q3.GetSQL();
 
 	Query q4;
@@ -1025,6 +1025,24 @@ TEST_F(ReindexerApi, JoinConditionsSqlParserTest) {
 	const string sql = "SELECT * FROM ns WHERE a > 0 AND  INNER JOIN (SELECT * FROM ns2 WHERE b > 10 AND c = 1) ON ns2.id = ns.fk_id";
 	query.FromSQL(sql);
 	ASSERT_TRUE(query.GetSQL() == sql);
+}
+
+TEST_F(ReindexerApi, UpdateWithBoolParserTest) {
+	Query query;
+	const string sql = "UPDATE ns SET flag1 = true,flag2 = false WHERE id > 100";
+	query.FromSQL(sql);
+	ASSERT_TRUE(query.UpdateFields().size() == 2);
+	ASSERT_TRUE(query.UpdateFields().front().column == "flag1");
+	ASSERT_TRUE(query.UpdateFields().front().mode == FieldModeSet);
+	ASSERT_TRUE(query.UpdateFields().front().values.size() == 1);
+	ASSERT_TRUE(query.UpdateFields().front().values.front().Type() == KeyValueBool &&
+				query.UpdateFields().front().values.front().As<bool>() == true);
+	ASSERT_TRUE(query.UpdateFields().back().column == "flag2");
+	ASSERT_TRUE(query.UpdateFields().back().mode == FieldModeSet);
+	ASSERT_TRUE(query.UpdateFields().back().values.size() == 1);
+	ASSERT_TRUE(query.UpdateFields().back().values.front().Type() == KeyValueBool &&
+				query.UpdateFields().back().values.front().As<bool>() == false);
+	ASSERT_TRUE(query.GetSQL() == sql) << query.GetSQL();
 }
 
 TEST_F(ReindexerApi, EqualPositionsSqlParserTest) {

@@ -29,6 +29,8 @@
   * [Update index in namespace](#update-index-in-namespace)
   * [Add new index to namespace](#add-new-index-to-namespace)
   * [Drop index from namespace](#drop-index-from-namespace)
+  * [Get namespace schema](#get-namespace-schema)
+  * [Set namespace schema](#set-namespace-schema)
   * [Query documents from namespace](#query-documents-from-namespace)
   * [Query documents from namespace](#query-documents-from-namespace-1)
   * [Delete documents from namespace](#delete-documents-from-namespace-1)
@@ -66,6 +68,7 @@
   * [ItemsUpdateResponse](#itemsupdateresponse)
   * [JoinCacheMemStats](#joincachememstats)
   * [JoinedDef](#joineddef)
+  * [JsonObjectDef](#jsonobjectdef)
   * [MetaByKeyResponse](#metabykeyresponse)
   * [MetaInfo](#metainfo)
   * [MetaListResponse](#metalistresponse)
@@ -84,6 +87,7 @@
   * [QueryPerfStats](#queryperfstats)
   * [ReplicationConfig](#replicationconfig)
   * [ReplicationStats](#replicationstats)
+  * [SchemaDef](#schemadef)
   * [SelectPerfStats](#selectperfstats)
   * [SortDef](#sortdef)
   * [StatusResponse](#statusresponse)
@@ -104,7 +108,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 2.11.0
+*Version* : 2.11.1
 
 
 ### License information
@@ -162,6 +166,9 @@ This operation will output list of all available databases
 |---|---|---|
 |**200**|successful operation|[Databases](#databases)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -191,8 +198,11 @@ This operation will create new database. If database is already exists, then err
 
 |HTTP Code|Description|Schema|
 |---|---|---|
-|**200**|successful operation|[StatusResponse](#statusresponse)|
-|**400**|Invalid parameters|[StatusResponse](#statusresponse)|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -224,8 +234,11 @@ Can not be undone. USE WITH CAUTION.
 
 |HTTP Code|Description|Schema|
 |---|---|---|
-|**200**|successful operation|[StatusResponse](#statusresponse)|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -259,6 +272,9 @@ If database is not exists, then error will be returned.
 |---|---|---|
 |**200**|successful operation|[Namespaces](#namespaces)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -290,8 +306,11 @@ If namespace is already exists, then operation do not nothing.
 
 |HTTP Code|Description|Schema|
 |---|---|---|
-|**200**|successful operation|[StatusResponse](#statusresponse)|
-|**400**|Invalid parameters|[StatusResponse](#statusresponse)|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -324,6 +343,9 @@ This operation will return specified namespace description, including options of
 |---|---|---|
 |**200**|successful operation|[Namespace](#namespace)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -356,8 +378,11 @@ Can not be undone. USE WITH CAUTION.
 
 |HTTP Code|Description|Schema|
 |---|---|---|
-|**200**|successful operation|[StatusResponse](#statusresponse)|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -388,8 +413,11 @@ This operation will delete all items from namespace.
 
 |HTTP Code|Description|Schema|
 |---|---|---|
-|**200**|successful operation|[StatusResponse](#statusresponse)|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -421,8 +449,11 @@ This operation will rename namespace.
 
 |HTTP Code|Description|Schema|
 |---|---|---|
-|**200**|successful operation|[StatusResponse](#statusresponse)|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -459,6 +490,9 @@ This operation will return list of keys of all meta of specified namespace
 |---|---|---|
 |**200**|successful operation|[MetaListResponse](#metalistresponse)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -492,6 +526,9 @@ This operation will return value of namespace's meta with specified key
 |---|---|---|
 |**200**|Successful operation|[MetaByKeyResponse](#metabykeyresponse)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -525,6 +562,9 @@ This operation will set namespace's meta with specified key and value
 |---|---|---|
 |**200**|successful operation|[UpdateResponse](#updateresponse)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -551,6 +591,7 @@ This operation will select documents from namespace with specified filters, and 
 |**Path**|**name**  <br>*required*|Namespace name|string|
 |**Query**|**fields**  <br>*optional*|Comma-separated list of returned fields|string|
 |**Query**|**filter**  <br>*optional*|Filter with SQL syntax, e.g: field1 = 'v1' AND field2 > 'v2'|string|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
 |**Query**|**limit**  <br>*optional*|Maximum count of returned items|integer|
 |**Query**|**offset**  <br>*optional*|Offset of first returned item|integer|
 |**Query**|**sort_field**  <br>*optional*|Sort Field|string|
@@ -563,6 +604,9 @@ This operation will select documents from namespace with specified filters, and 
 |---|---|---|
 |**200**|successful operation|[Items](#items)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -593,6 +637,7 @@ Each document should be in request body as separate JSON object, e.g.
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
 |**Path**|**name**  <br>*required*|Namespace name|string|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
 |**Query**|**precepts**  <br>*optional*|Precepts to be done|< string > array(multi)|
 |**Body**|**body**  <br>*required*||object|
 
@@ -602,7 +647,10 @@ Each document should be in request body as separate JSON object, e.g.
 |HTTP Code|Description|Schema|
 |---|---|---|
 |**200**|successful operation|[ItemsUpdateResponse](#itemsupdateresponse)|
-|**400**|Invalid status value|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -633,6 +681,7 @@ Each document should be in request body as separate JSON object, e.g.
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
 |**Path**|**name**  <br>*required*|Namespace name|string|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
 |**Query**|**precepts**  <br>*optional*|Precepts to be done|< string > array(multi)|
 |**Body**|**body**  <br>*required*||object|
 
@@ -642,7 +691,10 @@ Each document should be in request body as separate JSON object, e.g.
 |HTTP Code|Description|Schema|
 |---|---|---|
 |**200**|successful operation|[ItemsUpdateResponse](#itemsupdateresponse)|
-|**400**|Invalid status value|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -682,7 +734,10 @@ Each document should be in request body as separate JSON object, e.g.
 |HTTP Code|Description|Schema|
 |---|---|---|
 |**200**|successful operation|[ItemsUpdateResponse](#itemsupdateresponse)|
-|**400**|Invalid status value|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -715,6 +770,9 @@ This operation will return list of available indexes, from specified database an
 |---|---|---|
 |**200**|successful operation|[Indexes](#indexes)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -747,8 +805,11 @@ Operation  is synchronious, so it can take long time, if namespace contains bunc
 
 |HTTP Code|Description|Schema|
 |---|---|---|
-|**200**|successful operation|[StatusResponse](#statusresponse)|
-|**400**|Invalid status value|[StatusResponse](#statusresponse)|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -781,8 +842,11 @@ Operation is synchronious, so it can take long time, if namespace contains bunch
 
 |HTTP Code|Description|Schema|
 |---|---|---|
-|**200**|successful operation|[StatusResponse](#statusresponse)|
-|**400**|Invalid status value|[StatusResponse](#statusresponse)|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -815,13 +879,87 @@ Operation  is synchronious, so it can take long time, if namespace contains bunc
 
 |HTTP Code|Description|Schema|
 |---|---|---|
-|**200**|successful operation|[StatusResponse](#statusresponse)|
-|**400**|Invalid status value|[StatusResponse](#statusresponse)|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
 
 * indexes
+
+
+
+### Get namespace schema
+```
+GET /db/{database}/namespaces/{name}/schema
+```
+
+
+#### Description
+This operation will return current schema from specified database and namespace
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Path**|**name**  <br>*required*|Namespace name|string|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|successful operation|[SchemaDef](#schemadef)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* schema
+
+
+
+### Set namespace schema
+```
+PUT /db/{database}/namespaces/{name}/schema
+```
+
+
+#### Description
+This operation will set namespace schema (information about available fields and field types)
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Path**|**name**  <br>*required*|Namespace name|string|
+|**Body**|**body**  <br>*required*|This operation will put new schema for specified database and namespace|[SchemaDef](#schemadef)|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* schema
 
 
 
@@ -842,6 +980,7 @@ then `limit` and `offset` from http request.
 |Type|Name|Description|Schema|
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
 |**Query**|**limit**  <br>*optional*|Maximum count of returned items|integer|
 |**Query**|**offset**  <br>*optional*|Offset of first returned item|integer|
 |**Query**|**q**  <br>*required*|SQL query|string|
@@ -854,7 +993,10 @@ then `limit` and `offset` from http request.
 |HTTP Code|Description|Schema|
 |---|---|---|
 |**200**|successful operation|[QueryItems](#queryitems)|
-|**400**|Invalid status value|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -878,6 +1020,7 @@ This opertaion queries documents from namespace by DSL query.
 |Type|Name|Description|Schema|
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
+|**Query**|**format**  <br>*optional*|format of encoding data: json or msgpack|string|
 |**Query**|**width**  <br>*optional*|Total width in rows of view for table format output|integer|
 |**Query**|**with_columns**  <br>*optional*|Return columns names and widths for table format output|boolean|
 |**Body**|**body**  <br>*required*|DSL query|[Query](#query)|
@@ -888,7 +1031,10 @@ This opertaion queries documents from namespace by DSL query.
 |HTTP Code|Description|Schema|
 |---|---|---|
 |**200**|successful operation|[QueryItems](#queryitems)|
-|**400**|Invalid status value|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -919,8 +1065,11 @@ This opertaion removes documents from namespace by DSL query.
 
 |HTTP Code|Description|Schema|
 |---|---|---|
-|**200**|successful operation|No Content|
-|**400**|Invalid status value|[StatusResponse](#statusresponse)|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -954,7 +1103,10 @@ This operation pareses SQL query, and suggests autocompletion variants
 |HTTP Code|Description|Schema|
 |---|---|---|
 |**200**|successful operation|[SuggestItems](#suggestitems)|
-|**400**|Invalid status value|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -988,7 +1140,10 @@ This opertaion queries documents from namespace by SQL query. Query can be prece
 |HTTP Code|Description|Schema|
 |---|---|---|
 |**200**|successful operation|[QueryItems](#queryitems)|
-|**400**|Invalid status value|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -1013,6 +1168,9 @@ This operation will return system informatiom about server version, uptime, and 
 |---|---|---|
 |**200**|successful operation|[SysInfo](#sysinfo)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -1044,6 +1202,9 @@ This operation will return detailed informatiom about current activity of all co
 |---|---|---|
 |**200**|successful operation|[ActivityStats](#activitystats)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -1075,6 +1236,9 @@ This operation will return detailed informatiom about all connections on the ser
 |---|---|---|
 |**200**|successful operation|[ClientsStats](#clientsstats)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -1106,6 +1270,9 @@ This operation will return detailed informatiom about database memory consumptio
 |---|---|---|
 |**200**|successful operation|[DatabaseMemStats](#databasememstats)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -1137,6 +1304,9 @@ This operation will return detailed informatiom about database performance timin
 |---|---|---|
 |**200**|successful operation|[DatabasePerfStats](#databaseperfstats)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -1168,6 +1338,9 @@ This operation will return detailed informatiom about database memory consumptio
 |---|---|---|
 |**200**|successful operation|[QueriesPerfStats](#queriesperfstats)|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -1201,7 +1374,10 @@ This operation will update system configuration:
 |HTTP Code|Description|Schema|
 |---|---|---|
 |**200**|successful operation|[UpdateResponse](#updateresponse)|
-|**400**|Invalid status value|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
 #### Tags
@@ -1311,6 +1487,7 @@ Specifies facet aggregations results sorting order
 
 |Name|Description|Schema|
 |---|---|---|
+|**app_name**  <br>*required*|Client's aplication name|string|
 |**client_version**  <br>*required*|Client version string|string|
 |**connection_id**  <br>*required*|Connection identifier|integer|
 |**current_activity**  <br>*required*|Current activity|string|
@@ -1381,11 +1558,13 @@ Query execution explainings
 
 |Name|Description|Schema|
 |---|---|---|
+|**general_sort_us**  <br>*optional*|Result sort time|integer|
 |**indexes_us**  <br>*optional*|Indexes keys selection time|integer|
 |**loop_us**  <br>*optional*|Intersection loop time|integer|
 |**postprocess_us**  <br>*optional*|Query post process time|integer|
 |**prepare_us**  <br>*optional*|Query prepare and optimize time|integer|
 |**selectors**  <br>*optional*|Filter selectos, used to proccess query conditions|< [selectors](#explaindef-selectors) > array|
+|**sort_by_uncommitted_index**  <br>*optional*|Optimization of sort by uncompleted index has been performed|boolean|
 |**sort_index**  <br>*optional*|Index, which used for sort results|string|
 |**total_us**  <br>*optional*|Total query execution time|integer|
 
@@ -1396,6 +1575,8 @@ Query execution explainings
 |---|---|---|
 |**comparators**  <br>*optional*|Count of comparators used, for this selector|integer|
 |**cost**  <br>*optional*|Cost expectation of this selector|integer|
+|**explain_preselect**  <br>*optional*|Preselect in joined namespace execution explainings|[ExplainDef](#explaindef)|
+|**explain_select**  <br>*optional*|One of selects in joined namespace execution explainings|[ExplainDef](#explaindef)|
 |**field**  <br>*optional*|Field or index name|string|
 |**items**  <br>*optional*|Count of scanned documents by this selector|integer|
 |**keys**  <br>*optional*|Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching|integer|
@@ -1426,7 +1607,7 @@ Fulltext Index configuration
 |Name|Description|Schema|
 |---|---|---|
 |**bm25_boost**  <br>*optional*|Boost of bm25 ranking  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
-|**bm25_weight**  <br>*optional*|Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to finl rank in 0 - 100% range  <br>**Default** : `0.5`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
+|**bm25_weight**  <br>*optional*|Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to finl rank in 0 - 100% range  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**distance_boost**  <br>*optional*|Boost of search query term distance in found document  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**distance_weght**  <br>*optional*|Weight of search query terms distance in found document in final rank 0: distance will not change final rank. 1: distance will affect to final rank in 0 - 100% range  <br>**Default** : `0.5`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**enable_kb_layout**  <br>*optional*|Enable wrong keyboard layout variants processing. e.g. term 'keynbr' will match word 'лунтик'  <br>**Default** : `true`|boolean|
@@ -1441,6 +1622,8 @@ Fulltext Index configuration
 |**max_typos_in_word**  <br>*optional*|Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 1 possible typo -It will seriously increase RAM usage, and decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `2`|integer|
 |**merge_limit**  <br>*optional*|Maximum documents count which will be processed in merge query results.  Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `65535`|integer|
 |**min_relevancy**  <br>*optional*|Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned  <br>**Default** : `0.05`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
+|**position_boost**  <br>*optional*|Boost of search query term position  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
+|**position_weght**  <br>*optional*|Weight of search query term position in final rank. 0: term position will not change final rank. 1: term position will affect to final rank in 0 - 100% range  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**stemmers**  <br>*optional*|List of stemmers to use|< string > array|
 |**stop_words**  <br>*optional*|List of stop words. Words from this list will be ignored in documents and queries|< string > array|
 |**synonyms**  <br>*optional*|List of synonyms for replacement|< [FulltextSynonym](#fulltextsynonym) > array|
@@ -1471,6 +1654,7 @@ Fulltext synonym definition
 |**is_array**  <br>*optional*|Specifies, that index is array. Array indexes can work with array fields, or work with multiple fields  <br>**Default** : `false`|boolean|
 |**is_dense**  <br>*optional*|Reduces the index size. For hash and tree it will save ~8 bytes per unique key value. Useful for indexes with high selectivity, but for tree and hash indexes with low selectivity can seriously decrease update performance;  <br>**Default** : `false`|boolean|
 |**is_pk**  <br>*optional*|Specifies, that index is primary key. The update opertations will checks, that PK field is unique. The namespace MUST have only 1 PK index|boolean|
+|**is_simple_tag**  <br>*optional*|Use simple tag instead of actual index, which will notice rx about possible field name for strict policies  <br>**Default** : `false`|boolean|
 |**is_sparse**  <br>*optional*|Value of index may not present in the document, and threfore, reduce data size but decreases speed operations on index  <br>**Default** : `false`|boolean|
 |**json_paths**  <br>*required*|Fields path in json object, e.g 'id' or 'subobject.field'. If index is 'composite' or 'is_array', than multiple json_paths can be specified, and index will get values from all specified fields.|< string > array|
 |**name**  <br>*required*|Name of index, can contains letters, digits and underscores  <br>**Default** : `"id"`  <br>**Pattern** : `"^[A-Za-z0-9_\\-]*$"`|string|
@@ -1561,6 +1745,26 @@ Join cache stats. Stores results of selects to right table by ON condition
 |**sort**  <br>*optional*||[SortDef](#sortdef)|
 |**on**  <br>*optional*|Join ON statement|< [OnDef](#ondef) > array|
 |**type**  <br>*required*|Join type|enum (LEFT, INNER, ORINNER)|
+
+
+
+### JsonObjectDef
+
+|Name|Description|Schema|
+|---|---|---|
+|**additionalProperties**  <br>*optional*|Allow additional fields in this schema level. Allowed for objects only  <br>**Default** : `false`|boolean|
+|**items**  <br>*optional*||[JsonObjectDef](#jsonobjectdef)|
+|**properties**  <br>*optional*||[properties](#jsonobjectdef-properties)|
+|**required**  <br>*optional*|Array of required fieldsl. Allowed for objects only|< string > array|
+|**type**  <br>*optional*|Entity type|enum (object, string, number, array)|
+
+
+**properties**
+
+|Name|Schema|
+|---|---|
+|**field1**  <br>*optional*|[JsonObjectDef](#jsonobjectdef)|
+|**field2**  <br>*optional*|[JsonObjectDef](#jsonobjectdef)|
 
 
 
@@ -1684,7 +1888,6 @@ List of meta info of the specified namespace
 |Name|Description|Schema|
 |---|---|---|
 |**name**  <br>*optional*|Name of namespace|string|
-|**storage_enabled**  <br>*optional*|If true, then documents will be stored to disc storage, else all data will be lost on server shutdown|boolean|
 
 
 
@@ -1702,6 +1905,7 @@ List of meta info of the specified namespace
 |**start_copy_policy_tx_size**  <br>*optional*|Enable namespace copying for transaction with steps count greater than this value (if copy_politics_multiplier also allows this)|integer|
 |**tx_size_to_always_copy**  <br>*optional*|Force namespace copying for transaction with steps count greater than this value|integer|
 |**unload_idle_threshold**  <br>*optional*|Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded|integer|
+|**wal_size**  <br>*optional*|Maximum WAL size for this namespace (maximum count of WAL records)|integer|
 
 
 
@@ -1752,7 +1956,9 @@ List of meta info of the specified namespace
 |**req_total**  <br>*optional*|Ask query to calculate total documents, match condition  <br>**Default** : `"disabled"`|enum (disabled, enabled, cached)|
 |**select_filter**  <br>*optional*|Filter fields of returned document. Can be dot separated, e.g 'subobject.field'|< string > array|
 |**select_functions**  <br>*optional*|Add extra select functions to query|< string > array|
+|**select_with_rank**  <br>*optional*|Output fulltext rank in QueryResult. Allowed only with fulltext query  <br>**Default** : `false`|boolean|
 |**sort**  <br>*optional*|Specifies results sorting order|< [SortDef](#sortdef) > array|
+|**strict_mode**  <br>*optional*|Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existance in sorting and filtering conditions  <br>**Default** : `"names"`|enum (none, names, indexes)|
 
 
 
@@ -1825,6 +2031,7 @@ Performance statistics per each query
 
 |Name|Description|Schema|
 |---|---|---|
+|**app_name**  <br>*optional*|Application name, used by replicator as a login tag|string|
 |**cluster_id**  <br>*optional*|Cluser ID - must be same for client and for master|integer|
 |**enable_compression**  <br>*optional*|Enable network traffic compression|boolean|
 |**force_sync_on_logic_error**  <br>*optional*|force resync on logic error conditions|boolean|
@@ -1865,6 +2072,26 @@ State of namespace replication
 |**data_hash**  <br>*optional*|Hashsum of all records in namespace|integer|
 |**last_lsn**  <br>*optional*|Last Log Sequence Number (LSN) of applied namespace modification|integer|
 |**updated_unix_nano**  <br>*optional*|Last update time|integer|
+
+
+
+### SchemaDef
+
+|Name|Description|Schema|
+|---|---|---|
+|**additionalProperties**  <br>*optional*|Allow additional fields in this schema level. Allowed for objects only  <br>**Default** : `false`|boolean|
+|**items**  <br>*optional*||[JsonObjectDef](#jsonobjectdef)|
+|**properties**  <br>*optional*||[properties](#schemadef-properties)|
+|**required**  <br>*optional*|Array of required fieldsl. Allowed for objects only|< string > array|
+|**type**  <br>*optional*|Entity type|enum (object, string, number, array)|
+
+
+**properties**
+
+|Name|Schema|
+|---|---|
+|**field1**  <br>*optional*|[JsonObjectDef](#jsonobjectdef)|
+|**field2**  <br>*optional*|[JsonObjectDef](#jsonobjectdef)|
 
 
 

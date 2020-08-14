@@ -1,6 +1,7 @@
 #pragma once
 #include "core/joincache.h"
-#include "core/nsselecter/selectiteratorcontainer.h"
+#include "explaincalc.h"
+#include "selectiteratorcontainer.h"
 
 namespace reindexer {
 
@@ -48,6 +49,7 @@ struct JoinPreResult {
 	bool btreeIndexOptimizationEnabled = true;
 	bool enableStoredValues = false;
 	string explainPreSelect, explainOneSelect;
+	ExplainCalc::Duration selectTime = ExplainCalc::Duration::zero();
 };
 
 struct SortExpressionJoinedIndex;
@@ -90,7 +92,7 @@ public:
 	void AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer &, int *maxIterations, unsigned sortId, SelectFunction::Ptr,
 											 const RdxContext &);
 	static constexpr int MaxIterationsForPreResultStoreValuesOptimization() { return 200; }
-	JoinPreResult::CPtr PreResult() const {return preResult_;}
+	JoinPreResult::CPtr PreResult() const { return preResult_; }
 
 private:
 	template <bool byJsonPath>

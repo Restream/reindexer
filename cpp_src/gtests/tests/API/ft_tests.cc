@@ -86,7 +86,7 @@ TEST_F(FTApi, CompositeRankWithSynonyms) {
 	Add("world", "world");
 
 	// rank of synonym is higher
-	Query qr2 = Query("nm1").Where("ft3", CondEq, "@ft1^0.5, ft2^2 word~").Sort("rank()", true);
+	Query qr2 = std::move(Query("nm1").Where("ft3", CondEq, "@ft1^0.5, ft2^2 word~").Sort("rank()", true));
 	QueryResults res2;
 	auto err = rt.reindexer->Select(qr2, res2);
 	ASSERT_TRUE(err.ok()) << err.what();

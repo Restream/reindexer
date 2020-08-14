@@ -248,6 +248,11 @@ func (binding *Builtin) ModifyItem(ctx context.Context, nsHash int, namespace st
 }
 
 func (binding *Builtin) ModifyItemTx(txCtx *bindings.TxCtx, format int, data []byte, mode int, precepts []string, stateToken int) error {
+	select {
+	case <-txCtx.UserCtx.Done():
+		return txCtx.UserCtx.Err()
+	default:
+	}
 
 	ser1 := cjson.NewPoolSerializer()
 	defer ser1.Close()
@@ -265,11 +270,20 @@ func (binding *Builtin) ModifyItemTx(txCtx *bindings.TxCtx, format int, data []b
 }
 
 func (binding *Builtin) DeleteQueryTx(txCtx *bindings.TxCtx, rawQuery []byte) error {
-	return err2go(C.reindexer_delete_query_tx(binding.rx, C.uintptr_t(txCtx.Id), buf2c(rawQuery)))
+	select {
+	case <-txCtx.UserCtx.Done():
+		return txCtx.UserCtx.Err()
+	default:
+		return err2go(C.reindexer_delete_query_tx(binding.rx, C.uintptr_t(txCtx.Id), buf2c(rawQuery)))
+	}
 }
 func (binding *Builtin) UpdateQueryTx(txCtx *bindings.TxCtx, rawQuery []byte) error {
-
-	return err2go(C.reindexer_update_query_tx(binding.rx, C.uintptr_t(txCtx.Id), buf2c(rawQuery)))
+	select {
+	case <-txCtx.UserCtx.Done():
+		return txCtx.UserCtx.Err()
+	default:
+		return err2go(C.reindexer_update_query_tx(binding.rx, C.uintptr_t(txCtx.Id), buf2c(rawQuery)))
+	}
 }
 
 // ModifyItemTxAsync is not implemented for builtin binding

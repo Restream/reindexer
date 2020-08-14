@@ -265,7 +265,7 @@ public:
 	/// @param op - operation type (and, or, not).
 	/// @param qr - query of the namespace that is going to be joined with this one.
 	/// @return Query object ready to be executed.
-	Query &Join(JoinType joinType, const string &index, const string &joinIndex, CondType cond, OpType op, Query &qr);
+	Query &Join(JoinType joinType, const string &index, const string &joinIndex, CondType cond, OpType op, const Query &qr);
 
 	/// @public
 	/// Inner Join of this namespace with another one.
@@ -274,7 +274,7 @@ public:
 	/// @param cond - condition type (Eq, Leq, Geq, etc).
 	/// @param qr - query of the namespace that is going to be joined with this one.
 	/// @return Query object ready to be executed.
-	Query &InnerJoin(const string &index, const string &joinIndex, CondType cond, Query &qr) {
+	Query &InnerJoin(const string &index, const string &joinIndex, CondType cond, const Query &qr) {
 		return Join(JoinType::InnerJoin, index, joinIndex, cond, OpAnd, qr);
 	}
 
@@ -284,7 +284,7 @@ public:
 	/// @param cond - condition type (Eq, Leq, Geq, etc).
 	/// @param qr - query of the namespace that is going to be joined with this one.
 	/// @return Query object ready to be executed.
-	Query &LeftJoin(const string &index, const string &joinIndex, CondType cond, Query &qr) {
+	Query &LeftJoin(const string &index, const string &joinIndex, CondType cond, const Query &qr) {
 		return Join(JoinType::LeftJoin, index, joinIndex, cond, OpAnd, qr);
 	}
 
@@ -293,13 +293,9 @@ public:
 	/// @param joinIndex - name of the field in the namespace of qr Query object.
 	/// @param cond - condition type (Eq, Leq, Geq, etc).
 	/// @param qr - query of the namespace that is going to be joined with this one.
-	/// @return Not a reference to a query object ready to be executed.
-	Query OrInnerJoin(const string &index, const string &joinIndex, CondType cond, Query &qr) {
-		Query &joinQr = Join(JoinType::OrInnerJoin, index, joinIndex, cond, OpAnd, qr);
-		joinQr.nextOp_ = OpOr;
-		Query innerJoinQr(joinQr);
-		joinQr.nextOp_ = OpAnd;
-		return innerJoinQr;
+	/// @return a reference to a query object ready to be executed.
+	Query &OrInnerJoin(const string &index, const string &joinIndex, CondType cond, const Query &qr) {
+		return Join(JoinType::OrInnerJoin, index, joinIndex, cond, OpAnd, qr);
 	}
 
 	/// Changes debug level.
@@ -505,7 +501,6 @@ public:
 private:
 	h_vector<UpdateEntry, 0> updateFields_;	 /// List of fields (and values) for update.
 	bool withRank_ = false;
-
 	friend class SQLParser;
 };
 
@@ -513,6 +508,7 @@ class JoinedQuery : public Query {
 public:
 	JoinedQuery() = default;
 	JoinedQuery(const Query &q) : Query(q) {}
+	JoinedQuery(Query &&q) : Query(std::move(q)) {}
 	using Query::Query;
 	bool operator==(const JoinedQuery &obj) const;
 

@@ -14,9 +14,12 @@ class JoinedSelector;
 typedef std::vector<JoinedSelector> JoinedSelectors;
 
 class ExplainCalc {
-	typedef std::chrono::high_resolution_clock clock;
-	typedef clock::duration duration;
-	typedef clock::time_point time_point;
+public:
+	typedef std::chrono::high_resolution_clock Clock;
+	typedef Clock::duration Duration;
+
+private:
+	typedef Clock::time_point time_point;
 
 public:
 	ExplainCalc(bool enable) : enabled_(enable) {}
@@ -24,11 +27,11 @@ public:
 	void StartTiming();
 	void StopTiming();
 
-	void SetPrepareTime();
-	void SetSelectTime();
-	void SetPostprocessTime();
-	void SetLoopTime();
-	void SetIterations(int iters);
+	void AddPrepareTime();
+	void AddSelectTime();
+	void AddPostprocessTime();
+	void AddLoopTime();
+	void AddIterations(int iters);
 	void StartSort();
 	void StopSort();
 
@@ -36,19 +39,25 @@ public:
 	void PutSortIndex(string_view index);
 	void PutSelectors(SelectIteratorContainer *qres);
 	void PutJoinedSelectors(JoinedSelectors *jselectors);
-	void SetSortOptimization(bool enable) {sortOptimization_ = enable;}
+	void SetSortOptimization(bool enable) { sortOptimization_ = enable; }
 
 	void LogDump(int logLevel);
 	std::string GetJSON();
+	Duration Total() const noexcept { return total_; }
+	size_t Iterations() const noexcept { return iters_; }
+	static int To_us(const Duration &d);
 
 protected:
-	duration lap();
-	static int to_us(const duration &d);
+	Duration lap();
 	static const char *JoinTypeName(JoinType jtype);
 
 protected:
 	time_point last_point_, sort_start_point_;
-	duration total_, prepare_, select_, postprocess_, loop_, sort_ = duration::zero();
+	Duration total_, prepare_ = Duration::zero();
+	Duration select_ = Duration::zero();
+	Duration postprocess_ = Duration::zero();
+	Duration loop_ = Duration::zero();
+	Duration sort_ = Duration::zero();
 
 	string_view sortIndex_;
 	SelectIteratorContainer *selectors_ = nullptr;

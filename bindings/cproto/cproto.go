@@ -178,7 +178,7 @@ func (binding *NetCProto) RollbackTx(txCtx *bindings.TxCtx) error {
 	if txCtx.Result == nil {
 		return nil
 	}
-	return txCtx.Result.(*NetBuffer).conn.rpcCallNoResults(txCtx.UserCtx, cmdRollbackTx, uint32(binding.timeouts.RequestTimeout/time.Second), int64(txCtx.Id))
+	return txCtx.Result.(*NetBuffer).conn.rpcCallNoResults(context.TODO(), cmdRollbackTx, uint32(binding.timeouts.RequestTimeout/time.Second), int64(txCtx.Id))
 }
 
 func (binding *NetCProto) ModifyItemTx(txCtx *bindings.TxCtx, format int, data []byte, mode int, precepts []string, stateToken int) error {

@@ -10,8 +10,8 @@ using std::min;
 using std::max;
 
 SelectIterator::SelectIterator() {}
-SelectIterator::SelectIterator(const SelectKeyResult &res, bool dist, const string &n, bool forcedFirst)
-	: SelectKeyResult(res), distinct(dist), name(n), forcedFirst_(forcedFirst), type_(Forward) {}
+SelectIterator::SelectIterator(const SelectKeyResult &res, bool dist, string n, bool forcedFirst)
+	: SelectKeyResult(res), distinct(dist), name(std::move(n)), forcedFirst_(forcedFirst), type_(Forward) {}
 
 void SelectIterator::Bind(PayloadType type, int field) {
 	for (Comparator &cmp : comparators_) cmp.Bind(type, field);
@@ -74,6 +74,7 @@ void SelectIterator::Start(bool reverse) {
 		type_ = OnlyComparator;
 		lastVal_ = isReverse_ ? INT_MIN : INT_MAX;
 	}
+	ClearDistinct();
 }
 
 // Generic next implementation
@@ -251,17 +252,21 @@ void SelectIterator::ExcludeLastSet(const PayloadValue &value, IdType rowId, IdT
 }
 
 void SelectIterator::Append(SelectKeyResult &other) {
-	for (auto &r : other) push_back(std::move(r));
+	reserve(size() + other.size());
+	for (auto &r : other) emplace_back(std::move(r));
+	comparators_.reserve(comparators_.size() + other.comparators_.size());
 	for (auto &c : other.comparators_) {
-		comparators_.push_back(std::move(c));
+		comparators_.emplace_back(std::move(c));
 	}
 }
 
 void SelectIterator::AppendAndBind(SelectKeyResult &other, PayloadType type, int field) {
-	for (auto &r : other) push_back(std::move(r));
+	reserve(size() + other.size());
+	for (auto &r : other) emplace_back(std::move(r));
+	comparators_.reserve(comparators_.size() + other.comparators_.size());
 	for (auto &c : other.comparators_) {
 		c.Bind(type, field);
-		comparators_.push_back(std::move(c));
+		comparators_.emplace_back(std::move(c));
 	}
 }
 

@@ -120,6 +120,7 @@ void NamespaceImpl::copyContentsFrom(const NamespaceImpl &src) {
 	skrefs = src.skrefs;
 	serverId_ = src.serverId_;
 	storageOpts_ = src.storageOpts_;
+	sysRecordsVersions_ = src.sysRecordsVersions_;
 	for (auto &idxIt : src.indexes_) indexes_.push_back(unique_ptr<Index>(idxIt->Clone()));
 	markUpdated();
 	logPrintf(LogTrace, "Namespace::CopyContentsFrom (%s)", name_);
@@ -1211,6 +1212,10 @@ void NamespaceImpl::updateSingleField(const UpdateEntry &updateField, const IdTy
 
 	assert(!index.Opts().IsSparse() || (index.Opts().IsSparse() && index.Fields().getTagsPathsLength() > 0));
 	VariantArray values = preprocessUpdateFieldValues(updateField, itemId);
+
+	if (isIndexedField && !index.Opts().IsArray() && values.IsArrayValue()) {
+		throw Error(errLogic, "It's not possible to Update single index fields with arrays!");
+	}
 
 	if (index.Opts().IsSparse()) {
 		pl.GetByJsonPath(index.Fields().getTagsPath(0), skrefs, index.KeyType());

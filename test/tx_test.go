@@ -1,12 +1,15 @@
 package reindexer
 
 import (
+	"context"
 	"math/rand"
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/restream/reindexer"
+	"github.com/restream/reindexer/bindings"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -24,12 +27,14 @@ type UntaggedTxItem struct {
 
 const testTxItemNs = "test_tx_item"
 const testTxAsyncItemNs = "test_tx_async_item"
+const testTxAsyncTimeoutItemNs = "test_tx_async_timeout_item"
 const testTxQueryItemNs = "test_tx_queries_item"
 const testTxConcurrentTagsItemNs = "test_tx_concurrent_tags_item"
 
 func init() {
 	tnamespaces[testTxItemNs] = TextTxItem{}
 	tnamespaces[testTxAsyncItemNs] = TextTxItem{}
+	tnamespaces[testTxAsyncTimeoutItemNs] = TextTxItem{}
 	tnamespaces[testTxQueryItemNs] = TextTxItem{}
 	tnamespaces[testTxConcurrentTagsItemNs] = UntaggedTxItem{}
 }
@@ -159,4 +164,43 @@ func TestConcurrentTagsTx(t *testing.T) {
 	items, err := DB.Query(testTxConcurrentTagsItemNs).MustExec().FetchAll()
 	assert.NoError(t, err)
 	assert.NotEqual(t, len(items), 0, "Empty items array")
+}
+
+func TestAsyncTxTimeout(t *testing.T) {
+	tx1 := newTestTx(DB, testTxAsyncTimeoutItemNs)
+	count1 := 1000
+	FillTextTxItemAsync1Tx(t, count1, tx1)
+	CheckTYx(t, testTxAsyncTimeoutItemNs, count1)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+	defer cancel()
+	tx2 := newTestTxCtx(ctx, DB, testTxAsyncTimeoutItemNs)
+	hadSucceedRollback := false
+	count2 := 2000
+	for i := 0; i < count2/10; i++ {
+		for j := 0; j < 100; j++ {
+			errAsync := tx2.UpsertAsync(&TextTxItem{
+				ID:   i + (j+1)*1000,
+				Name: strconv.Itoa(i + (j+1)*1000),
+			}, func(err error) {
+			})
+			if errAsync != nil {
+				if !hadSucceedRollback {
+					assert.Equal(t, errAsync, ctx.Err())
+				}
+				if tx2.Rollback() == nil {
+					hadSucceedRollback = true
+				}
+			}
+		}
+		time.Sleep(time.Millisecond * 50)
+	}
+	_, err := tx2.Commit()
+	assert.True(t, hadSucceedRollback)
+	rerr, ok := err.(bindings.Error)
+	assert.True(t, ok)
+	assert.Equal(t, rerr.Code(), reindexer.ErrCodeLogic)
+
+	// Check, that there are no changes in namespace
+	CheckTYx(t, testTxAsyncTimeoutItemNs, count1)
 }

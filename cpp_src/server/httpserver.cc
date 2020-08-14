@@ -444,9 +444,6 @@ int HTTPServer::GetItems(http::Context &ctx) {
 		fields = "*";
 	}
 
-	unsigned limit = prepareLimit(limitParam, kDefaultItemsLimit);
-	unsigned offset = prepareOffset(offsetParam);
-
 	reindexer::WrSerializer querySer;
 	querySer << "SELECT " << fields << " FROM " << nsName;
 	if (filterParam.length()) {
@@ -461,7 +458,12 @@ int HTTPServer::GetItems(http::Context &ctx) {
 			return status(ctx, Error(http::StatusBadRequest, "Invalid `sort_order` parameter"));
 		}
 	}
-	querySer << " LIMIT " << limit << " OFFSET " << offset;
+	if (limitParam.length()) {
+		querySer << " LIMIT " << prepareLimit(limitParam);
+	}
+	if (offsetParam.length()) {
+		querySer << " OFFSET " << prepareOffset(offsetParam);
+	}
 
 	reindexer::Query q;
 

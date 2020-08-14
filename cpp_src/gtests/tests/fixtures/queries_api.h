@@ -142,8 +142,8 @@ public:
 		EXPECT_TRUE(err.ok()) << err.what();
 		if (err.ok()) {
 			Verify(ns, qr, query);
+			Verify(qr, args...);
 		}
-		Verify(qr, args...);
 		return err.ok();
 	}
 
@@ -1363,57 +1363,57 @@ protected:
 		constexpr size_t facetLimit = 10;
 		constexpr size_t facetOffset = 10;
 
-		const Query wrongQuery1 = Query(default_namespace).Aggregate(AggAvg, {});
+		const Query wrongQuery1 = std::move(Query(default_namespace).Aggregate(AggAvg, {}));
 		reindexer::QueryResults wrongQr1;
 		Error err = rt.reindexer->Select(wrongQuery1, wrongQr1);
 		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "Empty set of fields for aggregation avg");
 
-		const Query wrongQuery2 = Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear, kFieldNameName});
+		const Query wrongQuery2 = std::move(Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear, kFieldNameName}));
 		reindexer::QueryResults wrongQr2;
 		err = rt.reindexer->Select(wrongQuery2, wrongQr2);
 		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "For aggregation avg is available exactly one field");
 
-		const Query wrongQuery3 = Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear}, {{kFieldNameYear, true}});
+		const Query wrongQuery3 = std::move(Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear}, {{kFieldNameYear, true}}));
 		reindexer::QueryResults wrongQr3;
 		err = rt.reindexer->Select(wrongQuery3, wrongQr3);
 		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "Sort is not available for aggregation avg");
 
-		const Query wrongQuery4 = Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear}, {}, 10);
+		const Query wrongQuery4 = std::move(Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear}, {}, 10));
 		reindexer::QueryResults wrongQr4;
 		err = rt.reindexer->Select(wrongQuery4, wrongQr4);
 		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "Limit or offset are not available for aggregation avg");
 
-		const Query wrongQuery5 = Query(default_namespace).Aggregate(AggFacet, {kFieldNameYear}, {{kFieldNameName, true}});
+		const Query wrongQuery5 = std::move(Query(default_namespace).Aggregate(AggFacet, {kFieldNameYear}, {{kFieldNameName, true}}));
 		reindexer::QueryResults wrongQr5;
 		err = rt.reindexer->Select(wrongQuery5, wrongQr5);
 		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "The aggregation facet cannot provide sort by 'name'");
 
-		const Query wrongQuery6 = Query(default_namespace).Aggregate(AggFacet, {kFieldNameCountries, kFieldNameYear});
+		const Query wrongQuery6 = std::move(Query(default_namespace).Aggregate(AggFacet, {kFieldNameCountries, kFieldNameYear}));
 		reindexer::QueryResults wrongQr6;
 		err = rt.reindexer->Select(wrongQuery6, wrongQr6);
 		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "Multifield facet cannot contain an array field");
 
 		InitNSObj();
-		const Query wrongQuery7 = Query(nsWithObject).Distinct(kFieldNameObjectField);
+		const Query wrongQuery7 = std::move(Query(nsWithObject).Distinct(kFieldNameObjectField));
 		reindexer::QueryResults wrongQr7;
 		err = rt.reindexer->Select(wrongQuery7, wrongQr7);
 		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "Cannot aggregate object field");
 
-		Query testQuery = Query(default_namespace)
-							  .Aggregate(AggAvg, {kFieldNameYear})
-							  .Aggregate(AggSum, {kFieldNameYear})
-							  .Aggregate(AggMin, {kFieldNamePackages})
-							  .Aggregate(AggFacet, {kFieldNameName}, {{"Count", false}}, facetLimit, facetOffset)
-							  .Aggregate(AggFacet, {kFieldNamePackages}, {}, facetLimit, facetOffset)
-							  .Aggregate(AggFacet, {kFieldNameName, kFieldNameYear}, {{kFieldNameYear, true}, {kFieldNameName, false}},
-										 facetLimit, facetOffset);
+		Query testQuery = std::move(Query(default_namespace)
+										.Aggregate(AggAvg, {kFieldNameYear})
+										.Aggregate(AggSum, {kFieldNameYear})
+										.Aggregate(AggMin, {kFieldNamePackages})
+										.Aggregate(AggFacet, {kFieldNameName}, {{"Count", false}}, facetLimit, facetOffset)
+										.Aggregate(AggFacet, {kFieldNamePackages}, {}, facetLimit, facetOffset)
+										.Aggregate(AggFacet, {kFieldNameName, kFieldNameYear},
+												   {{kFieldNameYear, true}, {kFieldNameName, false}}, facetLimit, facetOffset));
 		Query checkQuery = Query(default_namespace);
 
 		reindexer::QueryResults testQr;
@@ -1508,7 +1508,8 @@ protected:
 
 	void CheckSqlQueries() {
 		string sqlQuery = "SELECT ID, Year, Genre FROM test_namespace WHERE year > '2016' ORDER BY year DESC LIMIT 10000000";
-		const Query checkQuery1 = Query(default_namespace, 0, 10000000).Where(kFieldNameYear, CondGt, 2016).Sort(kFieldNameYear, true);
+		const Query checkQuery1 =
+			std::move(Query(default_namespace, 0, 10000000).Where(kFieldNameYear, CondGt, 2016).Sort(kFieldNameYear, true));
 
 		QueryResults sqlQr;
 		Error err = rt.reindexer->Select(sqlQuery, sqlQr);
@@ -1523,7 +1524,7 @@ protected:
 
 		sqlQuery = "SELECT ID, Year, Genre FROM test_namespace WHERE genre IN ('1',2,'3') ORDER BY year DESC LIMIT 10000000";
 		const Query checkQuery2 =
-			Query(default_namespace, 0, 10000000).Where(kFieldNameGenre, CondSet, {1, 2, 3}).Sort(kFieldNameYear, true);
+			std::move(Query(default_namespace, 0, 10000000).Where(kFieldNameGenre, CondSet, {1, 2, 3}).Sort(kFieldNameYear, true));
 
 		QueryResults sqlQr2;
 		err = rt.reindexer->Select(sqlQuery, sqlQr2);
@@ -1539,7 +1540,7 @@ protected:
 		const string likePattern = RandLikePattern();
 		sqlQuery = "SELECT ID, Year, Genre FROM test_namespace WHERE name LIKE '" + likePattern + "' ORDER BY year DESC LIMIT 10000000";
 		const Query checkQuery3 =
-			Query(default_namespace, 0, 10000000).Where(kFieldNameName, CondLike, likePattern).Sort(kFieldNameYear, true);
+			std::move(Query(default_namespace, 0, 10000000).Where(kFieldNameName, CondLike, likePattern).Sort(kFieldNameYear, true));
 
 		QueryResults sqlQr3;
 		err = rt.reindexer->Select(sqlQuery, sqlQr3);
@@ -1554,8 +1555,8 @@ protected:
 
 		sqlQuery = "SELECT ID, FACET(ID, Year ORDER BY ID DESC ORDER BY Year ASC LIMIT 20 OFFSET 1) FROM test_namespace LIMIT 10000000";
 		const Query checkQuery4 =
-			Query(default_namespace, 0, 10000000)
-				.Aggregate(AggFacet, {kFieldNameId, kFieldNameYear}, {{kFieldNameId, true}, {kFieldNameYear, false}}, 20, 1);
+			std::move(Query(default_namespace, 0, 10000000)
+						  .Aggregate(AggFacet, {kFieldNameId, kFieldNameYear}, {{kFieldNameId, true}, {kFieldNameYear, false}}, 20, 1));
 
 		QueryResults sqlQr4;
 		err = rt.reindexer->Select(sqlQuery, sqlQr4);
@@ -1570,14 +1571,14 @@ protected:
 
 		sqlQuery = "SELECT ID FROM test_namespace WHERE name LIKE '" + likePattern +
 				   "' AND (genre IN ('1', '2', '3') AND year > '2016' ) OR age IN ('1', '2', '3', '4') LIMIT 10000000";
-		const Query checkQuery5 = Query(default_namespace, 0, 10000000)
-									  .Where(kFieldNameName, CondLike, likePattern)
-									  .OpenBracket()
-									  .Where(kFieldNameGenre, CondSet, {1, 2, 3})
-									  .Where(kFieldNameYear, CondGt, 2016)
-									  .CloseBracket()
-									  .Or()
-									  .Where(kFieldNameAge, CondSet, {1, 2, 3, 4});
+		const Query checkQuery5 = std::move(Query(default_namespace, 0, 10000000)
+												.Where(kFieldNameName, CondLike, likePattern)
+												.OpenBracket()
+												.Where(kFieldNameGenre, CondSet, {1, 2, 3})
+												.Where(kFieldNameYear, CondGt, 2016)
+												.CloseBracket()
+												.Or()
+												.Where(kFieldNameAge, CondSet, {1, 2, 3, 4}));
 
 		QueryResults sqlQr5;
 		err = rt.reindexer->Select(sqlQuery, sqlQr5);
@@ -1592,7 +1593,7 @@ protected:
 
 		sqlQuery = string("SELECT ID FROM test_namespace ORDER BY '") + kFieldNameYear + " + " + kFieldNameId + " * 5' DESC LIMIT 10000000";
 		const Query checkQuery6 =
-			Query(default_namespace, 0, 10000000).Sort(kFieldNameYear + std::string(" + ") + kFieldNameId + " * 5", true);
+			std::move(Query(default_namespace, 0, 10000000).Sort(kFieldNameYear + std::string(" + ") + kFieldNameId + " * 5", true));
 
 		QueryResults sqlQr6;
 		err = rt.reindexer->Select(sqlQuery, sqlQr6);
@@ -1607,9 +1608,9 @@ protected:
 
 		sqlQuery = string("SELECT ID FROM test_namespace ORDER BY '") + kFieldNameYear + " + " + kFieldNameId +
 				   " * 5' DESC ORDER BY '2 * " + kFieldNameGenre + " / (1 + " + kFieldNameIsDeleted + ")' ASC LIMIT 10000000";
-		const Query checkQuery7 = Query(default_namespace, 0, 10000000)
-									  .Sort(kFieldNameYear + string(" + ") + kFieldNameId + " * 5", true)
-									  .Sort(string("2 * ") + kFieldNameGenre + " / (1 + " + kFieldNameIsDeleted + ')', false);
+		const Query checkQuery7 = std::move(Query(default_namespace, 0, 10000000)
+												.Sort(kFieldNameYear + string(" + ") + kFieldNameId + " * 5", true)
+												.Sort(string("2 * ") + kFieldNameGenre + " / (1 + " + kFieldNameIsDeleted + ')', false));
 
 		QueryResults sqlQr7;
 		err = rt.reindexer->Select(sqlQuery, sqlQr7);

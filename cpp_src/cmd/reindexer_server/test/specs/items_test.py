@@ -11,7 +11,8 @@ class ItemsTest(BaseTest):
         self.assertEqual(True, data['success'] == True, data)
         if updatedItems > 0:
             self.assertEqual(True, 'items' in data, data)
-            self.assertEqual(True, len(data['items']) == updatedItems, data['items'])
+            self.assertEqual(
+                True, len(data['items']) == updatedItems, data['items'])
 
     def setUp(self):
         super().setUp()
@@ -90,7 +91,8 @@ class ItemsTest(BaseTest):
             item_body['index'] = i
             items.append(item_body)
 
-        status, body = self.api_get_items(self.current_db, self.current_ns, self.EncodingType.MsgPack)
+        status, body = self.api_get_items(
+            self.current_db, self.current_ns, self.EncodingType.MsgPack)
         self.assertEqual(True, status == self.API_STATUS['success'], body)
         self.assertEqual(True, 'message' in body, body)
         data = msgpack.loads(body.get('message'))
@@ -101,10 +103,10 @@ class ItemsTest(BaseTest):
         packer = msgpack.Packer(use_bin_type=True, autoreset=False)
         for i in range(0, len(items)):
             packer.pack(items[i])
-        
+
         last_index = 'test_' + str(count)
         precepts = [last_index + '=serial()']
-        
+
         new_items_body = packer.getbuffer()
         status, body = self.api_update_item(
             self.current_db, self.current_ns, new_items_body, precepts, self.EncodingType.MsgPack)
@@ -112,7 +114,6 @@ class ItemsTest(BaseTest):
         self.assertEqual(True, 'message' in body, body)
         data = msgpack.loads(body.get('message'))
         self.check_update_msgpack_response(data, 10, 10)
-
 
     def test_update_item(self):
         """Should be able to update item"""

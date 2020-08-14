@@ -92,12 +92,18 @@ void Listener::io_accept(ev::io & /*watcher*/, int revents) {
 
 void Listener::timeout_cb(ev::periodic &, int) {
 	std::unique_lock<std::mutex> lck(shared_->lck_);
+	bool enableReuseIdle = !std::getenv("REINDEXER_NOREUSEIDLE");
 
 	// Move finished connections to idle connections pool
 	for (unsigned i = 0; i < connections_.size();) {
 		if (connections_[i]->IsFinished()) {
 			connections_[i]->Detach();
-			shared_->idle_.push_back(std::move(connections_[i]));
+			if (enableReuseIdle) {
+				shared_->idle_.push_back(std::move(connections_[i]));
+			} else {
+				connections_[i].reset();
+			}
+
 			if (i != connections_.size() - 1) connections_[i] = std::move(connections_.back());
 			connections_.pop_back();
 			shared_->ts_ = std::chrono::steady_clock::now();
