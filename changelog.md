@@ -1,4 +1,4 @@
-# Version 2.12.0 (14.08.2020)
+# Version 2.11.1 (14.08.2020)
 
 # Core
 - [fix] Increased performance of queries with custom sort order
