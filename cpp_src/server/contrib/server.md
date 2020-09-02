@@ -34,6 +34,14 @@
   * [Query documents from namespace](#query-documents-from-namespace)
   * [Query documents from namespace](#query-documents-from-namespace-1)
   * [Delete documents from namespace](#delete-documents-from-namespace-1)
+  * [Begin transaction to namespace](#begin-transaction-to-namespace)
+  * [Commit transaction](#commit-transaction)
+  * [Rollback transaction](#rollback-transaction)
+  * [Update documents in namespace via transaction](#update-documents-in-namespace-via-transaction)
+  * [Insert documents to namespace via transaction](#insert-documents-to-namespace-via-transaction)
+  * [Delete documents from namespace via transaction](#delete-documents-from-namespace-via-transaction)
+  * [Delete/update queries for transactions](#deleteupdate-queries-for-transactions)
+  * [Delete documents from namespace (transactions)](#delete-documents-from-namespace-transactions)
   * [Suggest for autocompletion of SQL query](#suggest-for-autocompletion-of-sql-query)
   * [Query documents from namespace](#query-documents-from-namespace-2)
   * [Get system information](#get-system-information)
@@ -49,6 +57,7 @@
   * [AggregationResDef](#aggregationresdef)
   * [AggregationsDef](#aggregationsdef)
   * [AggregationsSortDef](#aggregationssortdef)
+  * [BeginTransactionResponse](#begintransactionresponse)
   * [CacheMemStats](#cachememstats)
   * [ClientsStats](#clientsstats)
   * [CommonPerfStats](#commonperfstats)
@@ -56,6 +65,7 @@
   * [DatabaseMemStats](#databasememstats)
   * [DatabasePerfStats](#databaseperfstats)
   * [Databases](#databases)
+  * [EqualPositionDef](#equalpositiondef)
   * [ExplainDef](#explaindef)
   * [FilterDef](#filterdef)
   * [FulltextConfig](#fulltextconfig)
@@ -108,7 +118,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 2.11.1
+*Version* : 2.12.0
 
 
 ### License information
@@ -1078,6 +1088,313 @@ This opertaion removes documents from namespace by DSL query.
 
 
 
+### Begin transaction to namespace
+```
+POST /db/{database}/namespaces/{name}/transactions/begin
+```
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Path**|**name**  <br>*required*|Namespace name|string|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|successful operation|[BeginTransactionResponse](#begintransactionresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* transactions
+
+
+
+### Commit transaction
+```
+POST /db/{database}/transactions/{tx_id}/commit
+```
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Path**|**tx_id**  <br>*required*|transaction id|string|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* transactions
+
+
+
+### Rollback transaction
+```
+POST /db/{database}/transactions/{tx_id}/rollback
+```
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Path**|**tx_id**  <br>*required*|transaction id|string|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* transactions
+
+
+
+### Update documents in namespace via transaction
+```
+PUT /db/{database}/transactions/{tx_id}/items
+```
+
+
+#### Description
+This will add UPDATE operation into transaction.
+It UPDATEs documents in namespace, by their primary keys.
+Each document should be in request body as separate JSON object, e.g.
+```
+{"id":100, "name": "Pet"}
+{"id":101, "name": "Dog"}
+...
+```
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Path**|**tx_id**  <br>*required*|transaction id|string|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
+|**Query**|**precepts**  <br>*optional*|Precepts to be done|< string > array(multi)|
+|**Body**|**body**  <br>*required*||object|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* transactions
+
+
+
+### Insert documents to namespace via transaction
+```
+POST /db/{database}/transactions/{tx_id}/items
+```
+
+
+#### Description
+This will add INSERT operation into transaction.
+It INSERTs documents to namespace, by their primary keys.
+Each document should be in request body as separate JSON object, e.g.
+```
+{"id":100, "name": "Pet"}
+{"id":101, "name": "Dog"}
+...
+```
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Path**|**tx_id**  <br>*required*|transaction id|string|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
+|**Query**|**precepts**  <br>*optional*|Precepts to be done|< string > array(multi)|
+|**Body**|**body**  <br>*required*||object|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* transactions
+
+
+
+### Delete documents from namespace via transaction
+```
+DELETE /db/{database}/transactions/{tx_id}/items
+```
+
+
+#### Description
+This will add DELETE operation into transaction.
+It DELETEs documents from namespace, by their primary keys.
+Each document should be in request body as separate JSON object, e.g.
+```
+{"id":100}
+{"id":101}
+...
+```
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Path**|**tx_id**  <br>*required*|transaction id|string|
+|**Query**|**precepts**  <br>*optional*|Precepts to be done|< string > array(multi)|
+|**Body**|**body**  <br>*required*||object|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* transactions
+
+
+
+### Delete/update queries for transactions
+```
+GET /db/{database}/transactions/{tx_id}/query
+```
+
+
+#### Description
+This will add DELETE/UPDATE SQL query into transaction.
+This query UPDATEs/DELETEs documents from namespace
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Path**|**tx_id**  <br>*required*|transaction id|string|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
+|**Query**|**q**  <br>*required*|SQL query|string|
+|**Query**|**width**  <br>*optional*|Total width in rows of view for table format output|integer|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* transactions
+
+
+
+### Delete documents from namespace (transactions)
+```
+DELETE /db/{database}/transactions/{tx_id}/query
+```
+
+
+#### Description
+This will add DELETE query into transaction.
+DELETE query removes documents from namespace by DSL query.
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Path**|**tx_id**  <br>*required*|transaction id|string|
+|**Query**|**tx_id**  <br>*optional*|transaction id|string|
+|**Body**|**body**  <br>*required*|DSL query|[Query](#query)|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* transactions
+
+
+
 ### Suggest for autocompletion of SQL query
 ```
 GET /db/{database}/suggest
@@ -1464,6 +1781,14 @@ Specifies facet aggregations results sorting order
 
 
 
+### BeginTransactionResponse
+
+|Name|Description|Schema|
+|---|---|---|
+|**tx_id**  <br>*optional*|Unique transaction id|string|
+
+
+
 ### CacheMemStats
 
 |Name|Description|Schema|
@@ -1496,6 +1821,7 @@ Specifies facet aggregations results sorting order
 |**recv_bytes**  <br>*required*|Receive byte|integer|
 |**sent_bytes**  <br>*required*|Send byte|integer|
 |**start_time**  <br>*required*|Server start time in unix timestamp|integer|
+|**tx_count**  <br>*required*|Count of currently opened transactions for this client|integer|
 |**user_name**  <br>*required*|User name|string|
 |**user_rights**  <br>*required*|User right|string|
 
@@ -1549,6 +1875,16 @@ Specifies facet aggregations results sorting order
 |---|---|---|
 |**items**  <br>*optional*||< string > array|
 |**total_items**  <br>*optional*|Total count of databases|integer|
+
+
+
+### EqualPositionDef
+Array fields to be searched with equal array indexes
+
+
+|Name|Schema|
+|---|---|
+|**positions**  <br>*optional*|< string > array|
 
 
 
@@ -1742,7 +2078,7 @@ Join cache stats. Stores results of selects to right table by ON condition
 |**limit**  <br>*optional*|Maximum count of returned items|integer|
 |**namespace**  <br>*required*|Namespace name|string|
 |**offset**  <br>*optional*|Offset of first returned item|integer|
-|**sort**  <br>*optional*||[SortDef](#sortdef)|
+|**sort**  <br>*optional*||< [SortDef](#sortdef) > array|
 |**on**  <br>*optional*|Join ON statement|< [OnDef](#ondef) > array|
 |**type**  <br>*required*|Join type|enum (LEFT, INNER, ORINNER)|
 
@@ -1946,7 +2282,7 @@ List of meta info of the specified namespace
 |Name|Description|Schema|
 |---|---|---|
 |**aggregations**  <br>*optional*|Ask query calculate aggregation|< [AggregationsDef](#aggregationsdef) > array|
-|**equal_positions**  <br>*optional*|Array fields to be searched with equal array indexes|< string > array|
+|**equal_positions**  <br>*optional*|Array of array fields to be searched with equal array indexes|< [EqualPositionDef](#equalpositiondef) > array|
 |**explain**  <br>*optional*|Add query execution explain information  <br>**Default** : `false`|boolean|
 |**filters**  <br>*optional*|Filter for results documents|< [FilterDef](#filterdef) > array|
 |**limit**  <br>*optional*|Maximum count of returned items|integer|

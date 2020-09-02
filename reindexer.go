@@ -210,11 +210,16 @@ type NamespaceOptions struct {
 	dropOnFileFormatError bool
 	// Disable object cache
 	disableObjCache bool
+	// Object cache size in bytes
+	objCacheSize uint64
 }
 
-// DefaultNamespaceOptions return defailt namespace options
+// DefaultNamespaceOptions return default namespace options
 func DefaultNamespaceOptions() *NamespaceOptions {
-	return &NamespaceOptions{enableStorage: true}
+	return &NamespaceOptions{
+		enableStorage: true,
+		objCacheSize:  256 * 1024 * 1024,
+	}
 }
 
 func (opts *NamespaceOptions) NoStorage() *NamespaceOptions {
@@ -234,6 +239,12 @@ func (opts *NamespaceOptions) DropOnFileFormatError() *NamespaceOptions {
 
 func (opts *NamespaceOptions) DisableObjCache() *NamespaceOptions {
 	opts.disableObjCache = true
+	return opts
+}
+
+// Set maximum size of Object Cache in Megabytes. Default is 256 MB
+func (opts *NamespaceOptions) ObjCacheSize(size int) *NamespaceOptions {
+	opts.objCacheSize = uint64(size * 1024 * 1024)
 	return opts
 }
 

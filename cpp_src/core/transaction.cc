@@ -8,8 +8,8 @@ Transaction::Transaction(const string &nsName, const PayloadType &pt, const Tags
 Transaction::Transaction(const Error &err) : status_(err) {}
 
 Transaction::~Transaction() = default;
-Transaction::Transaction(Transaction &&) = default;
-Transaction &Transaction::operator=(Transaction &&) = default;
+Transaction::Transaction(Transaction &&) noexcept = default;
+Transaction &Transaction::operator=(Transaction &&) noexcept = default;
 
 const string &Transaction::GetName() {
 	static std::string empty;

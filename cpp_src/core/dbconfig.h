@@ -40,6 +40,7 @@ struct NamespaceConfigData {
 	int txSizeToAlwaysCopy = 100000;
 	int optimizationTimeout = 800;
 	int optimizationSortWorkers = 4;
+	int64_t walSize = 4000000;
 };
 
 enum ReplicationRole { ReplicationNone, ReplicationMaster, ReplicationSlave, ReplicationReadOnly };

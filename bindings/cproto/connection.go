@@ -103,9 +103,8 @@ type connection struct {
 	now    uint32
 	termCh chan struct{}
 
-	requests        [queueSize]requestInfo
-	enableSnappy    int32
-	isServerChanged bool
+	requests     [queueSize]requestInfo
+	enableSnappy int32
 }
 
 func newConnection(ctx context.Context, owner *NetCProto) (c *connection, err error) {
@@ -178,7 +177,6 @@ func (c *connection) deadlineTicker() {
 					atomic.StoreInt32(&c.requests[i].isAsync, 0)
 					c.requests[i].cmplLock.Unlock()
 					c.seqs <- nextSeqNum(seqNum)
-					fmt.Println("Canceling on deadline: ", deadline, ", id: ", seqNum)
 					cmpl(nil, context.DeadlineExceeded)
 				} else {
 					c.requests[i].cmplLock.Unlock()
@@ -224,7 +222,7 @@ func (c *connection) login(ctx context.Context, owner *NetCProto) (err error) {
 		serverStartTS := buf.args[1].(int64)
 		old := atomic.SwapInt64(&owner.serverStartTime, serverStartTS)
 		if old != 0 && old != serverStartTS {
-			c.isServerChanged = true
+			atomic.StoreInt32(&c.owner.isServerChanged, 1)
 		}
 	}
 	return

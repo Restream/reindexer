@@ -12,6 +12,7 @@
 
 namespace reindexer_server {
 const reindexer::SemVersion kMinUnknownReplSupportRxVersion("2.6.0");
+const size_t kMaxTxCount = 1024;
 
 RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper logger, IClientsStats *clientsStats, bool allocDebug, IStatsWatcher *statsCollector)
 	: dbMgr_(dbMgr),
@@ -43,6 +44,7 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 	clientData->pusher.SetWriter(ctx.writer);
 	clientData->subscribed = false;
 	clientData->auth = AuthContext(login.toString(), password.toString());
+	clientData->txStats = std::make_shared<reindexer::TxStats>();
 
 	auto dbName = db.toString();
 	if (checkClusterID.hasValue() && checkClusterID.value()) {
@@ -69,11 +71,17 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 		});
 	}
 
-	std::shared_ptr<ConnectionStat> connetcionStat = ctx.writer->GetConnectionStat();
 	if (clientsStats_) {
-		clientsStats_->AddConnection(connetcionStat, clientData->connID, ctx.clientAddr.data(), clientData->auth.Login(),
-									 clientData->auth.DBName(), UserRoleName(clientData->auth.UserRights()),
-									 clientData->rxVersion.StrippedString(), appName.hasValue() ? appName.value().toString() : string());
+		reindexer::ClientConnectionStat conn;
+		conn.connectionStat = ctx.writer->GetConnectionStat();
+		conn.ip = string(ctx.clientAddr);
+		conn.userName = clientData->auth.Login();
+		conn.dbName = clientData->auth.DBName();
+		conn.userRights = string(UserRoleName(clientData->auth.UserRights()));
+		conn.clientVersion = clientData->rxVersion.StrippedString();
+		conn.appName = appName.hasValue() ? appName.value().toString() : string();
+		conn.txStats = clientData->txStats;
+		clientsStats_->AddConnection(clientData->connID, std::move(conn));
 	}
 
 	ctx.SetClientData(std::move(clientData));
@@ -291,14 +299,12 @@ Error RPCServer::SetSchema(cproto::Context &ctx, p_string ns, p_string schema) {
 }
 
 Error RPCServer::StartTransaction(cproto::Context &ctx, p_string nsName) {
-	auto db = getDB(ctx, kRoleDataWrite);
-	auto tr = db.NewTransaction(nsName);
-	if (!tr.Status().ok()) {
-		return tr.Status();
+	int64_t id = -1;
+	try {
+		id = addTx(ctx, nsName);
+	} catch (reindexer::Error &e) {
+		return e;
 	}
-
-	auto id = addTx(ctx, std::move(tr));
-
 	ctx.Return({cproto::Arg(id)});
 	return errOK;
 }
@@ -328,11 +334,11 @@ Error RPCServer::AddTxItem(cproto::Context &ctx, int format, p_string itemData, 
 
 	if (perceptsPack.length()) {
 		Serializer ser(perceptsPack);
-		unsigned preceptsCount = ser.GetVarUint();
+		uint64_t preceptsCount = ser.GetVarUint();
 		vector<string> precepts;
+		precepts.reserve(preceptsCount);
 		for (unsigned prIndex = 0; prIndex < preceptsCount; prIndex++) {
-			string precept(ser.GetVString());
-			precepts.push_back(precept);
+			precepts.emplace_back(ser.GetVString());
 		}
 		item.SetPrecepts(precepts);
 	}
@@ -617,13 +623,29 @@ Transaction &RPCServer::getTx(cproto::Context &ctx, int64_t id) {
 	return data->txs[id];
 }
 
-int64_t RPCServer::addTx(cproto::Context &ctx, Transaction &&tr) {
+int64_t RPCServer::addTx(cproto::Context &ctx, string_view nsName) {
+	auto db = getDB(ctx, kRoleDataWrite);
+	int64_t id = -1;
 	auto data = getClientDataSafe(ctx);
 	for (size_t i = 0; i < data->txs.size(); ++i) {
 		if (data->txs[i].IsFree()) {
-			data->txs[i] = std::move(tr);
-			return i;
+			id = i;
+			break;
 		}
+	}
+	if (data->txs.size() >= kMaxTxCount && id < 0) {
+		throw Error(errForbidden, "Too many active transactions");
+	}
+
+	auto tr = db.NewTransaction(nsName);
+	if (!tr.Status().ok()) {
+		throw tr.Status();
+	}
+	assert(data->txStats);
+	data->txStats->txCount += 1;
+	if (id >= 0) {
+		data->txs[id] = std::move(tr);
+		return id;
 	}
 	data->txs.emplace_back(std::move(tr));
 	return int64_t(data->txs.size() - 1);
@@ -633,6 +655,8 @@ void RPCServer::clearTx(cproto::Context &ctx, uint64_t txId) {
 	if (txId >= data->txs.size()) {
 		throw Error(errLogic, "Invalid tx id %d", txId);
 	}
+	assert(data->txStats);
+	data->txStats->txCount -= 1;
 	data->txs[txId] = Transaction();
 }
 
@@ -753,10 +777,27 @@ Error RPCServer::EnumMeta(cproto::Context &ctx, p_string ns) {
 	return errOK;
 }
 
-Error RPCServer::SubscribeUpdates(cproto::Context &ctx, int flag) {
+Error RPCServer::SubscribeUpdates(cproto::Context &ctx, int flag, cproto::optional<p_string> filterJson, cproto::optional<int> options) {
+	UpdatesFilters filters;
+	Error ret;
+	if (filterJson.hasValue()) {
+		filters.FromJSON(giftStr(filterJson.value()));
+		if (!ret.ok()) {
+			return ret;
+		}
+	}
+	SubscriptionOpts opts;
+	if (options.hasValue()) {
+		opts.options = options.value();
+	}
+
 	auto db = getDB(ctx, kRoleDataRead);
 	auto clientData = getClientDataSafe(ctx);
-	auto ret = db.SubscribeUpdates(&clientData->pusher, flag);
+	if (flag) {
+		ret = db.SubscribeUpdates(&clientData->pusher, filters, opts);
+	} else {
+		ret = db.UnsubscribeUpdates(&clientData->pusher);
+	}
 	if (ret.ok()) clientData->subscribed = bool(flag);
 	return ret;
 }
@@ -802,7 +843,7 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop, bool enableSta
 	dispatcher_.Register(cproto::kCmdGetMeta, this, &RPCServer::GetMeta);
 	dispatcher_.Register(cproto::kCmdPutMeta, this, &RPCServer::PutMeta);
 	dispatcher_.Register(cproto::kCmdEnumMeta, this, &RPCServer::EnumMeta);
-	dispatcher_.Register(cproto::kCmdSubscribeUpdates, this, &RPCServer::SubscribeUpdates);
+	dispatcher_.Register(cproto::kCmdSubscribeUpdates, this, &RPCServer::SubscribeUpdates, true);
 	dispatcher_.Middleware(this, &RPCServer::CheckAuth);
 	dispatcher_.OnClose(this, &RPCServer::OnClose);
 	dispatcher_.OnResponse(this, &RPCServer::OnResponse);
@@ -819,7 +860,7 @@ RPCClientData::~RPCClientData() {
 	Reindexer *db = nullptr;
 	auth.GetDB(kRoleNone, &db);
 	if (subscribed && db) {
-		db->SubscribeUpdates(&pusher, false);
+		db->UnsubscribeUpdates(&pusher);
 	}
 }
 

@@ -213,3 +213,61 @@ TEST_F(EqualPositionApi, SelectMixedArrays) {
 	EXPECT_TRUE(err.ok()) << err.what();
 	VerifyQueryResult(qr, {"a1", "nested.a2"}, {key1, key2}, {CondGe, CondGe});
 }
+
+TEST_F(EqualPositionApi, EmptyCompOpErr) {
+	const char* ns = "ns2";
+	Error err = rt.reindexer->OpenNamespace(ns, StorageOpts().Enabled(false));
+	EXPECT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(ns, {"id", "hash", "int", IndexOpts().PK()});
+	EXPECT_TRUE(err.ok()) << err.what();
+	const char jsonPattern[] = R"xxx({"id": %d, "a1": [10, 20, 30], "a2": [20, 30, 40]}})xxx";
+	for (int i = 0; i < 10; ++i) {
+		Item item = rt.reindexer->NewItem(ns);
+		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
+
+		char json[1024];
+		string pk("pk" + std::to_string(i));
+
+		sprintf(json, jsonPattern, i);
+
+		err = item.FromJSON(json);
+		EXPECT_TRUE(err.ok()) << err.what();
+
+		err = rt.reindexer->Upsert(ns, item);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+	{
+		QueryResults qr;
+		Query q;
+		q.FromSQL("SELECT * FROM ns2 WHERE a1=10 AND a2=20 equal_position(a1, a2)");
+		err = rt.reindexer->Select(q, qr);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+	{
+		QueryResults qr;
+		Query q;
+		q.FromSQL("SELECT * FROM ns2 WHERE a1 IS NULL AND a2=20 equal_position(a1, a2)");
+		err = rt.reindexer->Select(q, qr);
+		EXPECT_TRUE(err.what() == "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!")
+			<< err.what();
+		EXPECT_FALSE(err.ok());
+	}
+	{
+		QueryResults qr;
+		Query q;
+		q.FromSQL("SELECT * FROM ns2 WHERE a1 =10 AND a2 IS EMPTY equal_position(a1, a2)");
+		err = rt.reindexer->Select(q, qr);
+		EXPECT_TRUE(err.what() == "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!")
+			<< err.what();
+		EXPECT_FALSE(err.ok());
+	}
+	{
+		QueryResults qr;
+		Query q;
+		q.FromSQL("SELECT * FROM ns2 WHERE a1 IN () AND a2 IS EMPTY equal_position(a1, a2)");
+		err = rt.reindexer->Select(q, qr);
+		EXPECT_TRUE(err.what() == "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!")
+			<< err.what();
+		EXPECT_FALSE(err.ok());
+	}
+}

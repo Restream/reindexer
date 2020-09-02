@@ -36,6 +36,7 @@ public:
 	const std::string kAppName = "test_app_name";
 
 	std::string GetConnectionString();
+	uint32_t StatsTxCount(reindexer::client::Reindexer& rx);
 
 private:
 	void ClientSelectLoop();

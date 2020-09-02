@@ -46,6 +46,9 @@ const reindexer::string_view kParamUpdated = "updated";
 const reindexer::string_view kParamLsn = "lsn";
 const reindexer::string_view kParamItem = "item";
 const reindexer::string_view kParamQueryTotalItems = "query_total_items";
+const reindexer::string_view kTxId = "tx_id";
+constexpr size_t kTxIdLen = 20;
+constexpr auto kTxDeadlineCheckPeriod = std::chrono::seconds(1);
 
 namespace reindexer_server {
 
@@ -57,9 +60,8 @@ HTTPServer::HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper lo
 	  logger_(logger),
 	  allocDebug_(config.allocDebug),
 	  enablePprof_(config.enablePprof),
-	  startTs_(std::chrono::system_clock::now()) {}
-
-enum { ModeUpdate, ModeInsert, ModeUpsert, ModeDelete };
+	  startTs_(std::chrono::system_clock::now()),
+	  txIdleTimeout_(config.txIdleTimeout) {}
 
 int HTTPServer::GetSQLQuery(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDataRead);
@@ -73,14 +75,12 @@ int HTTPServer::GetSQLQuery(http::Context &ctx) {
 	unsigned offset = prepareOffset(offsetParam);
 
 	if (sqlQuery.empty()) {
-		return status(ctx, Error(http::StatusBadRequest, "Missed `q` parameter"));
+		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Missed `q` parameter"));
 	}
-
 	auto ret = db.Select(sqlQuery, res);
 	if (!ret.ok()) {
-		return status(ctx, Error(http::StatusInternalServerError, ret.what()));
+		return status(ctx, http::HttpStatus(http::StatusInternalServerError, ret.what()));
 	}
-
 	return queryResults(ctx, res, true, limit, offset);
 }
 
@@ -129,12 +129,12 @@ int HTTPServer::PostSQLQuery(http::Context &ctx) {
 
 	string sqlQuery = ctx.body->Read();
 	if (!sqlQuery.length()) {
-		return status(ctx, Error(http::StatusBadRequest, "Query is empty"));
+		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Query is empty"));
 	}
 
 	auto ret = db.Select(sqlQuery, res);
 	if (!ret.ok()) {
-		return status(ctx, Error(http::StatusBadRequest, ret.what()));
+		return status(ctx, http::HttpStatus(http::StatusBadRequest, ret.what()));
 	}
 	return queryResults(ctx, res, true);
 }
@@ -147,19 +147,18 @@ int HTTPServer::PostQuery(http::Context &ctx) {
 	reindexer::Query q;
 	auto err = q.FromJSON(dsl);
 	if (!err.ok()) {
-		return status(ctx, err);
+		return jsonStatus(ctx, http::HttpStatus(err));
 	}
 
 	err = db.Select(q, res);
 	if (!err.ok()) {
-		return status(ctx, err);
+		return jsonStatus(ctx, http::HttpStatus(err));
 	}
 	return queryResults(ctx, res, true);
 }
 
 int HTTPServer::DeleteQuery(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDataWrite);
-	reindexer::QueryResults res;
 	string dsl = ctx.body->Read();
 
 	reindexer::Query q;
@@ -168,6 +167,7 @@ int HTTPServer::DeleteQuery(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
 
+	reindexer::QueryResults res;
 	status = db.Delete(q, res);
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
@@ -182,7 +182,6 @@ int HTTPServer::DeleteQuery(http::Context &ctx) {
 
 int HTTPServer::UpdateQuery(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDataWrite);
-	reindexer::QueryResults res;
 	string dsl = ctx.body->Read();
 
 	reindexer::Query q;
@@ -191,6 +190,7 @@ int HTTPServer::UpdateQuery(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
 
+	reindexer::QueryResults res;
 	status = db.Update(q, res);
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
@@ -438,7 +438,7 @@ int HTTPServer::GetItems(http::Context &ctx) {
 	string fields = urldecode2(ctx.request->params.Get("fields"));
 
 	if (nsName.empty()) {
-		return status(ctx, Error(http::StatusBadRequest, "Namespace is not specified"));
+		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
 	if (fields.empty()) {
 		fields = "*";
@@ -455,7 +455,7 @@ int HTTPServer::GetItems(http::Context &ctx) {
 		if (sortOrder == "desc") {
 			querySer << " DESC";
 		} else if ((sortOrder.size() > 0) && (sortOrder != "asc")) {
-			return status(ctx, Error(http::StatusBadRequest, "Invalid `sort_order` parameter"));
+			return status(ctx, http::HttpStatus(http::StatusBadRequest, "Invalid `sort_order` parameter"));
 		}
 	}
 	if (limitParam.length()) {
@@ -473,7 +473,7 @@ int HTTPServer::GetItems(http::Context &ctx) {
 	reindexer::QueryResults res;
 	auto ret = db.Select(q, res);
 	if (!ret.ok()) {
-		return status(ctx, Error(http::StatusInternalServerError, ret.what()));
+		return status(ctx, http::HttpStatus(http::StatusInternalServerError, ret.what()));
 	}
 
 	return queryResults(ctx, res);
@@ -853,6 +853,7 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	router_.POST<HTTPServer, &HTTPServer::PostQuery>("/api/v1/db/:db/query", this);
 	router_.POST<HTTPServer, &HTTPServer::PostSQLQuery>("/api/v1/db/:db/sqlquery", this);
 	router_.DELETE<HTTPServer, &HTTPServer::DeleteQuery>("/api/v1/db/:db/query", this);
+	// router_.PUT<HTTPServer, &HTTPServer::UpdateQuery>("/api/v1/db/:db/query", this); TODO: implement dsl parsing
 	router_.GET<HTTPServer, &HTTPServer::GetSQLSuggest>("/api/v1/db/:db/suggest", this);
 
 	router_.GET<HTTPServer, &HTTPServer::GetDatabases>("/api/v1/db", this);
@@ -882,6 +883,15 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	router_.GET<HTTPServer, &HTTPServer::GetMetaByKey>("/api/v1/db/:db/namespaces/:ns/metabykey/:key", this);
 	router_.PUT<HTTPServer, &HTTPServer::PutMetaByKey>("/api/v1/db/:db/namespaces/:ns/metabykey", this);
 
+	router_.POST<HTTPServer, &HTTPServer::BeginTx>("/api/v1/db/:db/namespaces/:ns/transactions/begin", this);
+	router_.POST<HTTPServer, &HTTPServer::CommitTx>("/api/v1/db/:db/transactions/:tx/commit", this);
+	router_.POST<HTTPServer, &HTTPServer::RollbackTx>("/api/v1/db/:db/transactions/:tx/rollback", this);
+	router_.PUT<HTTPServer, &HTTPServer::PutItemsTx>("/api/v1/db/:db/transactions/:tx/items", this);
+	router_.POST<HTTPServer, &HTTPServer::PostItemsTx>("/api/v1/db/:db/transactions/:tx/items", this);
+	router_.DELETE<HTTPServer, &HTTPServer::DeleteItemsTx>("/api/v1/db/:db/transactions/:tx/items", this);
+	router_.GET<HTTPServer, &HTTPServer::GetSQLQueryTx>("/api/v1/db/:db/transactions/:tx/query", this);
+	router_.DELETE<HTTPServer, &HTTPServer::DeleteQueryTx>("/api/v1/db/:db/transactions/:tx/query", this);
+
 	router_.OnResponse(this, &HTTPServer::OnResponse);
 	router_.Middleware<HTTPServer, &HTTPServer::CheckAuth>(this);
 
@@ -896,11 +906,15 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 		prometheus_->Attach(router_);
 	}
 	listener_.reset(new Listener(loop, http::ServerConnection::NewFactory(router_)));
+	deadlineChecker_.set<HTTPServer, &HTTPServer::deadlineTimerCb>(this);
+	deadlineChecker_.set(loop);
+	deadlineChecker_.start(std::chrono::duration_cast<std::chrono::seconds>(kTxDeadlineCheckPeriod).count(),
+						   std::chrono::duration_cast<std::chrono::seconds>(kTxDeadlineCheckPeriod).count());
 
 	return listener_->Bind(addr);
 }
 
-Error HTTPServer::modifyItem(Reindexer &db, string &nsName, Item &item, int mode) {
+Error HTTPServer::modifyItem(Reindexer &db, string &nsName, Item &item, ItemModifyMode mode) {
 	Error status;
 	switch (mode) {
 		case ModeUpsert:
@@ -919,7 +933,7 @@ Error HTTPServer::modifyItem(Reindexer &db, string &nsName, Item &item, int mode
 	return status;
 }
 
-int HTTPServer::modifyItemsJSON(http::Context &ctx, string &nsName, const vector<string> &precepts, int mode) {
+int HTTPServer::modifyItemsJSON(http::Context &ctx, string &nsName, const vector<string> &precepts, ItemModifyMode mode) {
 	auto db = getDB(ctx, kRoleDataWrite);
 	string itemJson = ctx.body->Read();
 
@@ -934,8 +948,7 @@ int HTTPServer::modifyItemsJSON(http::Context &ctx, string &nsName, const vector
 
 			return jsonStatus(ctx, httpStatus);
 		}
-		char *prevPtr = 0;
-
+		char *prevPtr = jsonPtr;
 		auto status = item.Unsafe().FromJSON(string_view(jsonPtr, jsonLeft), &jsonPtr, mode == ModeDelete);
 		jsonLeft -= (jsonPtr - prevPtr);
 
@@ -973,7 +986,7 @@ int HTTPServer::modifyItemsJSON(http::Context &ctx, string &nsName, const vector
 	return ctx.JSON(http::StatusOK, ser.DetachChunk());
 }
 
-int HTTPServer::modifyItemsMsgPack(http::Context &ctx, string &nsName, const vector<string> &precepts, int mode) {
+int HTTPServer::modifyItemsMsgPack(http::Context &ctx, string &nsName, const vector<string> &precepts, ItemModifyMode mode) {
 	QueryResults qr;
 	int totalItems = 0;
 
@@ -982,16 +995,17 @@ int HTTPServer::modifyItemsMsgPack(http::Context &ctx, string &nsName, const vec
 
 	size_t length = sbuffer.size();
 	size_t offset = 0;
+
 	while (offset < length) {
 		Item item = db.NewItem(nsName);
-		if (!item.Status().ok()) return msgpackStatus(ctx, item.Status());
+		if (!item.Status().ok()) return msgpackStatus(ctx, http::HttpStatus(item.Status()));
 
 		Error status = item.FromMsgPack(string_view(sbuffer.data(), sbuffer.size()), offset);
-		if (!status.ok()) return msgpackStatus(ctx, status);
+		if (!status.ok()) return msgpackStatus(ctx, http::HttpStatus(status));
 
 		item.SetPrecepts(precepts);
 		status = modifyItem(db, nsName, item, mode);
-		if (!status.ok()) return msgpackStatus(ctx, status);
+		if (!status.ok()) return msgpackStatus(ctx, http::HttpStatus(status));
 
 		if (item.GetID() != -1) {
 			if (!precepts.empty()) qr.AddItem(item, true, false);
@@ -1016,7 +1030,52 @@ int HTTPServer::modifyItemsMsgPack(http::Context &ctx, string &nsName, const vec
 	return ctx.MSGPACK(http::StatusOK, wrSer.DetachChunk());
 }
 
-int HTTPServer::modifyItems(http::Context &ctx, int mode) {
+int HTTPServer::modifyItemsTxJSON(http::Context &ctx, Transaction &tx, const vector<string> &precepts, ItemModifyMode mode) {
+	string itemJson = ctx.body->Read();
+	char *jsonPtr = &itemJson[0];
+	size_t jsonLeft = itemJson.size();
+	while (jsonPtr && *jsonPtr) {
+		Item item = tx.NewItem();
+		if (!item.Status().ok()) {
+			http::HttpStatus httpStatus(item.Status());
+			return jsonStatus(ctx, httpStatus);
+		}
+		char *prevPtr = jsonPtr;
+		auto status = item.FromJSON(string_view(jsonPtr, jsonLeft), &jsonPtr, mode == ModeDelete);
+		jsonLeft -= (jsonPtr - prevPtr);
+
+		if (!status.ok()) {
+			http::HttpStatus httpStatus(status);
+			return jsonStatus(ctx, httpStatus);
+		}
+
+		item.SetPrecepts(precepts);
+		tx.Modify(std::move(item), mode);
+	}
+
+	return jsonStatus(ctx);
+}
+
+int HTTPServer::modifyItemsTxMsgPack(http::Context &ctx, Transaction &tx, const vector<string> &precepts, ItemModifyMode mode) {
+	string sbuffer = ctx.body->Read();
+	size_t length = sbuffer.size();
+	size_t offset = 0;
+
+	while (offset < length) {
+		Item item = tx.NewItem();
+		if (!item.Status().ok()) return msgpackStatus(ctx, http::HttpStatus(item.Status()));
+
+		Error status = item.FromMsgPack(string_view(sbuffer.data(), sbuffer.size()), offset);
+		if (!status.ok()) return msgpackStatus(ctx, http::HttpStatus(status));
+
+		item.SetPrecepts(precepts);
+		tx.Modify(std::move(item), mode);
+	}
+
+	return msgpackStatus(ctx);
+}
+
+int HTTPServer::modifyItems(http::Context &ctx, ItemModifyMode mode) {
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (nsName.empty()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
@@ -1024,16 +1083,33 @@ int HTTPServer::modifyItems(http::Context &ctx, int mode) {
 
 	vector<string> precepts;
 	for (auto &p : ctx.request->params) {
-		if ((p.name == "precepts") || (p.name == "precepts[]")) {
+		if ((p.name == "precepts"_sv) || (p.name == "precepts[]"_sv)) {
 			precepts.push_back(urldecode2(p.val));
 		}
 	}
 
-	if (ctx.request->params.Get("format") == "msgpack"_sv) {
-		return modifyItemsMsgPack(ctx, nsName, precepts, mode);
-	} else {
-		return modifyItemsJSON(ctx, nsName, precepts, mode);
+	auto format = ctx.request->params.Get("format"_sv);
+	return format == "msgpack"_sv ? modifyItemsMsgPack(ctx, nsName, precepts, mode) : modifyItemsJSON(ctx, nsName, precepts, mode);
+}
+
+int HTTPServer::modifyItemsTx(http::Context &ctx, ItemModifyMode mode) {
+	std::string dbName;
+	auto db = getDB(ctx, kRoleDataWrite, &dbName);
+	string txId = urldecode2(ctx.request->urlParams[1]);
+	if (txId.empty()) {
+		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Tx ID is not specified"));
 	}
+
+	vector<string> precepts;
+	for (auto &p : ctx.request->params) {
+		if ((p.name == "precepts"_sv) || (p.name == "precepts[]"_sv)) {
+			precepts.push_back(urldecode2(p.val));
+		}
+	}
+
+	auto format = ctx.request->params.Get("format"_sv);
+	auto tx = getTx(dbName, txId);
+	return format == "msgpack"_sv ? modifyItemsTxMsgPack(ctx, *tx, precepts, mode) : modifyItemsTxJSON(ctx, *tx, precepts, mode);
 }
 
 int HTTPServer::queryResultsJSON(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
@@ -1162,38 +1238,38 @@ void HTTPServer::queryResultParams(Builder &builder, reindexer::QueryResults &re
 }
 
 int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset) {
-	string_view widthParam = ctx.request->params.Get("width");
+	string_view widthParam = ctx.request->params.Get("width"_sv);
 	int width = stoi(widthParam);
 
-	string_view withColumnsParam = ctx.request->params.Get("with_columns");
+	string_view withColumnsParam = ctx.request->params.Get("with_columns"_sv);
 	bool withColumns = ((withColumnsParam == "1") && (width > 0)) ? true : false;
 
-	if (ctx.request->params.Get("format") == "msgpack"_sv) {
+	if (ctx.request->params.Get("format"_sv) == "msgpack"_sv) {
 		return queryResultsMsgPack(ctx, res, isQueryResults, limit, offset, withColumns, width);
 	} else {
 		return queryResultsJSON(ctx, res, isQueryResults, limit, offset, withColumns, width);
 	}
 }
 
-int HTTPServer::status(http::Context &ctx, Error status) {
-	if (ctx.request->params.Get("format") == "msgpack"_sv) {
+int HTTPServer::status(http::Context &ctx, const http::HttpStatus &status) {
+	if (ctx.request->params.Get("format"_sv) == "msgpack"_sv) {
 		return msgpackStatus(ctx, status);
 	} else {
-		return jsonStatus(ctx, http::HttpStatus(static_cast<HttpStatusCode>(status.code()), status.what()));
+		return jsonStatus(ctx, status);
 	}
 }
 
-int HTTPServer::msgpackStatus(http::Context &ctx, Error status) {
+int HTTPServer::msgpackStatus(http::Context &ctx, const http::HttpStatus &status) {
 	WrSerializer wrSer(ctx.writer->GetChunk());
 	MsgPackBuilder msgpackBuilder(wrSer, ObjType::TypeObject, 3);
-	msgpackBuilder.Put(kParamSuccess, status.code() == http::StatusOK);
-	msgpackBuilder.Put(kParamResponseCode, status.code());
-	msgpackBuilder.Put(kParamDescription, status.what());
+	msgpackBuilder.Put(kParamSuccess, status.code == http::StatusOK);
+	msgpackBuilder.Put(kParamResponseCode, status.code);
+	msgpackBuilder.Put(kParamDescription, status.what);
 	msgpackBuilder.End();
-	return ctx.MSGPACK(status.code(), wrSer.DetachChunk());
+	return ctx.MSGPACK(status.code, wrSer.DetachChunk());
 }
 
-int HTTPServer::jsonStatus(http::Context &ctx, http::HttpStatus status) {
+int HTTPServer::jsonStatus(http::Context &ctx, const http::HttpStatus &status) {
 	WrSerializer ser(ctx.writer->GetChunk());
 	JsonBuilder builder(ser);
 	builder.Put(kParamSuccess, status.code == http::StatusOK);
@@ -1225,7 +1301,20 @@ unsigned HTTPServer::prepareOffset(const string_view &offsetParam, int offsetDef
 	return static_cast<unsigned>(offset);
 }
 
-Reindexer HTTPServer::getDB(http::Context &ctx, UserRole role) {
+int HTTPServer::modifyQueryTxImpl(http::Context &ctx, const std::string &dbName, string_view txId, Query &q) {
+	reindexer::QueryResults res;
+	auto tx = getTx(dbName, txId);
+	if (!q.mergeQueries_.empty()) {
+		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Merged subqueries are not allowed inside TX"));
+	}
+	if (!q.joinQueries_.empty()) {
+		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Joined subqueries are not allowed inside TX"));
+	}
+	tx->Modify(std::move(q));
+	return status(ctx);
+}
+
+Reindexer HTTPServer::getDB(http::Context &ctx, UserRole role, string *dbNameOut) {
 	(void)ctx;
 	Reindexer *db = nullptr;
 
@@ -1244,6 +1333,9 @@ Reindexer HTTPServer::getDB(http::Context &ctx, UserRole role) {
 	if (!status.ok()) {
 		throw http::HttpStatus(status);
 	}
+	if (dbNameOut) {
+		*dbNameOut = std::move(dbName);
+	}
 
 	status = actx->GetDB(role, &db);
 	if (!status.ok()) {
@@ -1260,6 +1352,65 @@ string HTTPServer::getNameFromJson(string_view json) {
 		return root["name"].As<string>();
 	} catch (const gason::Exception &ex) {
 		throw Error(errParseJson, "getNameFromJson: %s", ex.what());
+	}
+}
+
+std::shared_ptr<Transaction> HTTPServer::getTx(const string &dbName, string_view txId) {
+	std::lock_guard<std::mutex> lck(txMtx_);
+	auto found = txMap_.find(txId);
+	if (found == txMap_.end()) {
+		throw http::HttpStatus(Error(errNotFound, "Invalid tx id"_sv));
+	}
+	if (!iequals(found.value().dbName, dbName)) {
+		throw http::HttpStatus(Error(errLogic, "Unexpected database name for this tx"_sv));
+	}
+	found.value().txDeadline = TxDeadlineClock::now() + txIdleTimeout_;
+	return found.value().tx;
+}
+
+std::string HTTPServer::addTx(std::string dbName, Transaction &&tx) {
+	auto ts = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch());
+	std::string txId = randStringAlph(kTxIdLen) + "_" + std::to_string(ts.count());
+	TxInfo txInfo;
+	txInfo.tx = std::make_shared<Transaction>(std::move(tx));
+	txInfo.dbName = std::move(dbName);
+	txInfo.txDeadline = TxDeadlineClock::now() + txIdleTimeout_;
+	std::lock_guard<std::mutex> lck(txMtx_);
+	auto result = txMap_.try_emplace(txId, std::move(txInfo));
+	if (!result.second) {
+		throw Error(errLogic, "Tx id conflict");
+	}
+	return txId;
+}
+
+void HTTPServer::removeTx(const string &dbName, string_view txId) {
+	std::lock_guard<std::mutex> lck(txMtx_);
+	auto found = txMap_.find(txId);
+	if (found == txMap_.end() || !iequals(found.value().dbName, dbName)) {
+		throw Error(errNotFound, "Invalid tx id");
+	}
+	txMap_.erase(found);
+}
+
+void HTTPServer::removeExpiredTx() {
+	auto now = TxDeadlineClock::now();
+	std::lock_guard<std::mutex> lck(txMtx_);
+	for (auto it = txMap_.begin(); it != txMap_.end();) {
+		if (it->second.txDeadline <= now) {
+			auto ctx = MakeSystemAuthContext();
+			auto status = dbMgr_.OpenDatabase(it->second.dbName, ctx, false);
+			if (status.ok()) {
+				reindexer::Reindexer *db = nullptr;
+				status = ctx.GetDB(kRoleSystem, &db);
+				if (db) {
+					logger_.info("Rollback tx {} on idle deadline", it->first);
+					db->RollBackTransaction(*it->second.tx);
+				}
+			}
+			it = txMap_.erase(it);
+		} else {
+			++it;
+		}
 	}
 }
 
@@ -1295,6 +1446,124 @@ int HTTPServer::CheckAuth(http::Context &ctx) {
 	clientData->auth = auth;
 	ctx.clientData = std::move(clientData);
 	return 0;
+}
+
+int HTTPServer::BeginTx(http::Context &ctx) {
+	string nsName = urldecode2(ctx.request->urlParams[1]);
+	if (nsName.empty()) {
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
+	}
+
+	std::string dbName;
+	auto db = getDB(ctx, kRoleDataWrite, &dbName);
+	auto tx = db.NewTransaction(nsName);
+	if (!tx.Status().ok()) {
+		return status(ctx, http::HttpStatus(tx.Status()));
+	}
+	auto txId = addTx(std::move(dbName), std::move(tx));
+
+	WrSerializer ser;
+	if (ctx.request->params.Get("format"_sv) == "msgpack"_sv) {
+		MsgPackBuilder builder(ser, ObjType::TypeObject, 1);
+		builder.Put(kTxId, txId);
+		builder.End();
+		return ctx.MSGPACK(http::StatusOK, ser.DetachChunk());
+	} else {
+		JsonBuilder builder(ser);
+		builder.Put(kTxId, txId);
+		builder.End();
+		return ctx.JSON(http::StatusOK, ser.DetachChunk());
+	}
+}
+
+int HTTPServer::CommitTx(http::Context &ctx) {
+	string txId = urldecode2(ctx.request->urlParams[1]);
+	if (txId.empty()) {
+		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Tx ID is not specified"));
+	}
+
+	string dbName;
+	auto db = getDB(ctx, kRoleDataWrite, &dbName);
+	auto tx = getTx(dbName, txId);
+	QueryResults qr;
+	auto ret = db.CommitTransaction(*tx, qr);
+	if (!ret.ok()) {
+		return status(ctx, http::HttpStatus(http::StatusInternalServerError, ret.what()));
+	}
+	removeTx(dbName, txId);
+	return queryResults(ctx, qr);
+}
+
+int HTTPServer::RollbackTx(http::Context &ctx) {
+	string txId = urldecode2(ctx.request->urlParams[1]);
+	if (txId.empty()) {
+		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Tx ID is not specified"));
+	}
+
+	string dbName;
+	auto db = getDB(ctx, kRoleDataWrite, &dbName);
+	auto tx = getTx(dbName, txId);
+	QueryResults qr;
+	auto ret = db.RollBackTransaction(*tx);
+	removeTx(dbName, txId);
+	if (!ret.ok()) {
+		return status(ctx, http::HttpStatus(ret));
+	}
+	return status(ctx);
+}
+
+int HTTPServer::PostItemsTx(http::Context &ctx) { return modifyItemsTx(ctx, ModeInsert); }
+
+int HTTPServer::PutItemsTx(http::Context &ctx) { return modifyItemsTx(ctx, ModeUpdate); }
+
+int HTTPServer::DeleteItemsTx(http::Context &ctx) { return modifyItemsTx(ctx, ModeDelete); }
+
+int HTTPServer::GetSQLQueryTx(http::Context &ctx) {
+	string dbName;
+	auto db = getDB(ctx, kRoleDataRead, &dbName);
+	string txId = urldecode2(ctx.request->urlParams[1]);
+	if (txId.empty()) {
+		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Tx ID is not specified"));
+	}
+	reindexer::QueryResults res;
+	string sqlQuery = urldecode2(ctx.request->params.Get("q"));
+	if (sqlQuery.empty()) {
+		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Missed `q` parameter"));
+	}
+
+	try {
+		Query q;
+		q.FromSQL(sqlQuery);
+		switch (q.type_) {
+			case QueryDelete:
+			case QueryUpdate:
+				return modifyQueryTxImpl(ctx, dbName, txId, q);
+			default:
+				return status(ctx, http::HttpStatus(http::StatusInternalServerError, "Transactions support update/delete queries only"));
+		}
+	} catch (const Error &e) {
+		return status(ctx, http::HttpStatus(e));
+	}
+}
+
+int HTTPServer::DeleteQueryTx(http::Context &ctx) {
+	string dbName;
+	auto db = getDB(ctx, kRoleDataWrite, &dbName);
+	string dsl = ctx.body->Read();
+
+	reindexer::Query q;
+	auto ret = q.FromJSON(dsl);
+	if (!ret.ok()) {
+		return jsonStatus(ctx, http::HttpStatus(ret));
+	}
+	reindexer::QueryResults res;
+	string txId = urldecode2(ctx.request->urlParams[1]);
+	if (txId.empty()) {
+		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Tx ID is not specified"));
+	}
+
+	q.type_ = QueryDelete;
+	return modifyQueryTxImpl(ctx, dbName, txId, q);
 }
 
 void HTTPServer::Logger(http::Context &ctx) {

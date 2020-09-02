@@ -82,6 +82,7 @@ void ServerConnection::onRead() {
 
 	while (!closeConn_) {
 		Context ctx{clientAddr_, nullptr, this, {{}, {}}, false};
+		std::string uncompressed;
 
 		auto len = rdBuf_.peek(reinterpret_cast<char *>(&hdr), sizeof(hdr));
 		if (len < sizeof(hdr)) return;
@@ -135,7 +136,6 @@ void ServerConnection::onRead() {
 			ctx.call->cmd = CmdCode(hdr.cmd);
 			ctx.call->seq = hdr.seq;
 			Serializer ser(it.data(), hdr.len);
-			std::string uncompressed;
 			if (hdr.compressed) {
 				if (!snappy::Uncompress(it.data(), hdr.len, &uncompressed)) {
 					throw Error(errParseBin, "Can't decompress data from peer");

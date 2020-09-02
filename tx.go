@@ -438,15 +438,11 @@ func (tx *Tx) commitInternal() (count int, err error) {
 		return
 	}
 
-	tx.ns.cacheLock.Lock()
-
 	for i := 0; i < rawQueryParams.count; i++ {
 		count++
 		item := rdSer.readRawtItemParams()
-		delete(tx.ns.cacheItems, item.id)
+		tx.ns.cacheItems.Remove(item.id)
 	}
-
-	tx.ns.cacheLock.Unlock()
 
 	return
 }

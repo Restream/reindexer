@@ -1201,7 +1201,8 @@ std::vector<string> defDBConfig = {
 				"copy_policy_multiplier":5
 				"tx_size_to_always_copy":100000,
 				"optimization_timeout_ms":800,
-				"optimization_sort_workers":4
+				"optimization_sort_workers":4,
+				"wal_size":4000000,
 			}
     	]
 	})json",
@@ -1485,13 +1486,11 @@ void ReindexerImpl::onProfiligConfigLoad() {
 	Delete(Query(kPerfStatsNamespace), qr1);
 }
 
-Error ReindexerImpl::SubscribeUpdates(IUpdatesObserver* observer, bool subscribe) {
-	if (subscribe) {
-		return observers_.Add(observer);
-	} else {
-		return observers_.Delete(observer);
-	}
+Error ReindexerImpl::SubscribeUpdates(IUpdatesObserver* observer, const UpdatesFilters& filters, SubscriptionOpts opts) {
+	return observers_.Add(observer, filters, opts);
 }
+
+Error ReindexerImpl::UnsubscribeUpdates(IUpdatesObserver* observer) { return observers_.Delete(observer); }
 
 Error ReindexerImpl::GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string>& suggestions, const InternalRdxContext& ctx) {
 	Query query;

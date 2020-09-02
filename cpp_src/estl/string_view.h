@@ -108,7 +108,7 @@ public:
 	 * @param pos position since we start searching.
 	 */
 	size_t find(string_view v, size_t pos = 0) const {
-		for (; pos + v.size() < size_; ++pos) {
+		for (; pos + v.size() <= size_; ++pos) {
 			if (!memcmp(v.data(), data() + pos, v.size())) return pos;
 		}
 		return npos;

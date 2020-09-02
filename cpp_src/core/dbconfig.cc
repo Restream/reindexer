@@ -50,6 +50,10 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 				data.txSizeToAlwaysCopy = nsNode["tx_size_to_always_copy"].As<int>(data.txSizeToAlwaysCopy);
 				data.optimizationTimeout = nsNode["optimization_timeout_ms"].As<int>(data.optimizationTimeout);
 				data.optimizationSortWorkers = nsNode["optimization_sort_workers"].As<int>(data.optimizationSortWorkers);
+				int64_t walSize = nsNode["wal_size"].As<int64_t>(0);
+				if (walSize > 0) {
+					data.walSize = walSize;
+				}
 				namespacesData_.emplace(nsNode["namespace"].As<string>(), std::move(data));
 			}
 			auto it = handlers_.find(NamespaceDataConf);

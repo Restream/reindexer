@@ -168,24 +168,38 @@ Error ItemImpl::FromCJSON(const string_view &slice, bool pkOnly) {
 	return err;
 }
 
-Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool pkOnly) {
+Error ItemImpl::FromJSON(string_view slice, char **endp, bool pkOnly) {
 	string_view data = slice;
 	cjson_ = string_view();
 
-	if (!unsafe_ && endp == nullptr) {
-		sourceData_.reset(new char[slice.size()]);
-		std::copy(data.begin(), data.end(), sourceData_.get());
-		data = string_view(sourceData_.get(), data.size());
+	if (!unsafe_) {
+		if (endp) {
+			size_t len = 0;
+			try {
+				gason::JsonParser parser;
+				parser.Parse(data, &len);
+				*endp = const_cast<char *>(data.data()) + len;
+				sourceData_.reset(new char[len]);
+				std::copy(data.begin(), data.begin() + len, sourceData_.get());
+				data = string_view(sourceData_.get(), len);
+			} catch (const gason::Exception &e) {
+				return Error(errParseJson, "Error parsing json: '%s'", e.what());
+			}
+		} else {
+			sourceData_.reset(new char[slice.size()]);
+			std::copy(data.begin(), data.end(), sourceData_.get());
+			data = string_view(sourceData_.get(), data.size());
+		}
 	}
 
 	payloadValue_.Clone();
-	char *endptr = nullptr;
 	gason::JsonValue value;
 	gason::JsonAllocator allocator;
-	int status = jsonParse(giftStr(data), &endptr, &value, allocator);
+	char *endptr = nullptr;
+	int status = jsonParse(data, &endptr, &value, allocator);
 	if (status != gason::JSON_OK) return Error(errParseJson, "Error parsing json: '%s'", gason::jsonStrError(status));
 	if (value.getTag() != gason::JSON_OBJECT) return Error(errParseJson, "Expected json object");
-	if (endp) {
+	if (unsafe_ && endp) {
 		*endp = endptr;
 	}
 

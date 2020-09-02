@@ -28,6 +28,7 @@ public:
 	}
 
 	const string &Name() const { return name_; }
+	void SetName(const string &name) { name_ = name; }
 	int NumFields() const { return fields_.size(); }
 	void Add(PayloadFieldType f);
 	bool Drop(string_view field);
@@ -61,6 +62,7 @@ public:
 	const PayloadFieldType &Field(int field) const { return get()->Field(field); }
 
 	const string &Name() const { return get()->Name(); }
+	void SetName(const string &name) { clone()->SetName(name); }
 	int NumFields() const { return get()->NumFields(); }
 	void Add(PayloadFieldType f) { clone()->Add(f); }
 	bool Drop(string_view field) { return clone()->Drop(field); }

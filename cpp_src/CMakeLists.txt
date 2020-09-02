@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(CMakeToolsHelpers OPTIONAL)
 include(ExternalProject)
 include(ProcessorCount)
+
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 
 option (WITH_ASAN "Enable AddressSanitized build" OFF)
@@ -21,7 +22,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "2.11.1")
+set (REINDEXER_VERSION_DEFAULT "2.12.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -98,7 +99,11 @@ list(APPEND REINDEXER_LIBRARIES reindexer)
 add_library(${TARGET} STATIC ${HDRS} ${SRCS} ${VENDORS})
 add_definitions(-DREINDEX_CORE_BUILD=1)
 
+
+
 # add_definitions(-DREINDEX_FT_EXTRA_DEBUG=1)
+
+add_subdirectory(server/contrib)
 
 ## Dependencies
 

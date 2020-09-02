@@ -60,11 +60,13 @@ void encodeJoins(const Query& query, JsonBuilder& builder) {
 
 void encodeEqualPositions(const Query& query, JsonBuilder& builder) {
 	if (query.equalPositions_.empty()) return;
+	auto epNodePositions = builder.Array("equal_positions");
 	for (auto it = query.equalPositions_.begin(); it != query.equalPositions_.end(); ++it) {
-		auto epNode = builder.Array("equal_position");
+		auto epNodePosition = epNodePositions.Object(string_view());
+		auto epNodePositionArr = epNodePosition.Array("positions");
 		for (auto it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
 			assert(query.entries.IsValue(*it2));
-			epNode.Put(nullptr, query.entries[*it2].index);
+			epNodePositionArr.Put(nullptr, query.entries[*it2].index);
 		}
 	}
 }

@@ -37,6 +37,7 @@ void ServerConfig::Reset() {
 	DebugAllocs = false;
 	Autorepair = false;
 	EnableConnectionsStats = true;
+	TxIdleTimeout = std::chrono::seconds(600);
 }
 
 reindexer::Error ServerConfig::ParseYaml(const std::string &yaml) {
@@ -95,6 +96,8 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::ValueFlag<string> rpcAddrF(netGroup, "RPORT", "RPC listen host:port", {'r', "rpcaddr"}, RPCAddr, args::Options::Single);
 	args::ValueFlag<string> webRootF(netGroup, "PATH", "web root", {'w', "webroot"}, WebRoot, args::Options::Single);
 	args::Flag pprofF(netGroup, "", "Enable pprof http handler", {'f', "pprof"});
+	args::ValueFlag<int> txIdleTimeoutF(dbGroup, "", "http transactions idle timeout (s)", {"tx-idle-timeout"}, TxIdleTimeout.count(),
+										args::Options::Single);
 
 	args::Group metricsGroup(parser, "Metrics options");
 	args::Flag prometheusF(metricsGroup, "", "Enable prometheus handler", {"prometheus"});
@@ -165,6 +168,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (prometheusPeriodF) PrometheusCollectPeriod = std::chrono::milliseconds(args::get(prometheusPeriodF));
 	if (clientsConnectionsStatF) EnableConnectionsStats = args::get(clientsConnectionsStatF);
 	if (logAllocsF) DebugAllocs = args::get(logAllocsF);
+	if (txIdleTimeoutF) TxIdleTimeout = std::chrono::seconds(args::get(txIdleTimeoutF));
 
 	return 0;
 }
@@ -184,6 +188,7 @@ reindexer::Error ServerConfig::fromYaml(Yaml::Node &root) {
 		RPCAddr = root["net"]["rpcaddr"].As<std::string>(RPCAddr);
 		WebRoot = root["net"]["webroot"].As<std::string>(WebRoot);
 		EnableSecurity = root["net"]["security"].As<bool>(EnableSecurity);
+		TxIdleTimeout = std::chrono::seconds(root["net"]["tx_idle_timeout"].As<int>(TxIdleTimeout.count()));
 		EnablePrometheus = root["metrics"]["prometheus"].As<bool>(EnablePrometheus);
 		PrometheusCollectPeriod = std::chrono::milliseconds(root["metrics"]["collect_period"].As<int>(PrometheusCollectPeriod.count()));
 		EnableConnectionsStats = root["metrics"]["clientsstats"].As<bool>(EnableConnectionsStats);

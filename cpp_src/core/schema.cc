@@ -200,21 +200,26 @@ void Schema::GetJSON(WrSerializer& ser) const {
 
 void Schema::parseJsonNode(const gason::JsonNode& node, PrefixTree::PathT& splittedPath, bool isRequired) {
 	bool isArray = false;
-	if (!splittedPath.empty()) {
-		FieldProps field;
-		field.type = node["type"].As<std::string>();
-		if (string_view(field.type) == "array"_sv) {
-			field.type = node["items"]["type"].As<std::string>();
-			field.isArray = true;
-			isArray = true;
-		}
+
+	FieldProps field;
+	field.type = node["type"].As<std::string>();
+	if (string_view(field.type) == "array"_sv) {
+		field.type = node["items"]["type"].As<std::string>();
+		field.allowAdditionalProps = node["items"]["additionalProperties"].As<bool>(false);
+		field.isArray = true;
+		isArray = true;
+	} else {
 		field.allowAdditionalProps = node["additionalProperties"].As<bool>(false);
-		field.isRequired = isRequired;
-		paths_.AddPath(std::move(field), splittedPath);
 	}
+	field.isRequired = isRequired;
+	if (!splittedPath.empty()) {
+		paths_.AddPath(std::move(field), splittedPath);
+	} else
+		paths_.root_.props_ = std::move(field);
 
 	std::unordered_set<string_view> required;
-	for (auto& subnode : node["required"]) {
+	auto requiredList = isArray ? node["items"]["required"] : node["required"];
+	for (auto& subnode : requiredList) {
 		required.emplace(subnode.As<string_view>());
 	}
 

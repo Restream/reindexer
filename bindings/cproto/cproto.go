@@ -39,6 +39,7 @@ type Logger interface {
 type NetCProto struct {
 	dsn              dsn
 	pool             pool
+	isServerChanged  int32
 	onChangeCallback func()
 	serverStartTime  int64
 	retryAttempts    bindings.OptionRetryAttempts
@@ -456,7 +457,8 @@ func (binding *NetCProto) getConn(ctx context.Context) (conn *connection, err er
 				if err != nil {
 					return nil, err
 				}
-				if conn.isServerChanged {
+
+				if atomic.CompareAndSwapInt32(&binding.isServerChanged, 1, 0) {
 					binding.onChangeCallback()
 				}
 				return conn, nil

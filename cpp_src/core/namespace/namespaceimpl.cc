@@ -60,7 +60,7 @@ void NamespaceImpl::IndexesStorage::MoveBase(IndexesStorage &&src) { Base::opera
 // private implementation and NOT THREADSAFE of copy CTOR
 // use 'NamespaceImpl::Clone(NamespaceImpl& ns)'
 NamespaceImpl::NamespaceImpl(const NamespaceImpl &src)
-	: indexes_(*this), wal_(), observers_(src.observers_), lastSelectTime_(0), cancelCommit_(false), nsIsLoading_(false) {
+	: indexes_(*this), wal_(config_.walSize), observers_(src.observers_), lastSelectTime_(0), cancelCommit_(false), nsIsLoading_(false) {
 	copyContentsFrom(src);
 }
 
@@ -74,6 +74,7 @@ NamespaceImpl::NamespaceImpl(const string &name, UpdatesObservers &observers)
 	  queryCache_(make_shared<QueryCache>()),
 	  joinCache_(make_shared<JoinCache>()),
 	  enablePerfCounters_(false),
+	  wal_(config_.walSize),
 	  observers_(&observers),
 	  lastSelectTime_(0),
 	  cancelCommit_(false),
@@ -145,6 +146,10 @@ void NamespaceImpl::OnConfigUpdated(DBConfigProvider &configProvider, const RdxC
 	storageOpts_.noQueryIdleThresholdSec = configData.noQueryIdleThreshold;
 
 	updateSortedIdxCount();
+
+	if (wal_.Resize(config_.walSize)) {
+		logPrintf(LogInfo, "[%s] WAL has been resized lsn #%s, max size %ld", name_, repl_.lastLsn, wal_.Capacity());
+	}
 
 	if (isSystem()) return;
 
@@ -1550,7 +1555,7 @@ NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext &ctx) {
 
 	ret.itemsCount = items_.size() - free_.size();
 	*(static_cast<ReplicationState *>(&ret.replication)) = getReplState();
-	ret.replication.walCount = wal_.size();
+	ret.replication.walCount = size_t(wal_.size());
 	ret.replication.walSize = wal_.heap_size();
 
 	ret.emptyItemsCount = free_.size();
@@ -1864,6 +1869,7 @@ void NamespaceImpl::LoadFromStorage(const RdxContext &ctx) {
 	item.Unsafe(true);
 	int errCount = 0;
 	int64_t maxLSN = -1;
+	int64_t minLSN = std::numeric_limits<int64_t>::max();
 	Error lastErr = errOK;
 
 	uint64_t dataHash = repl_.dataHash;
@@ -1896,6 +1902,7 @@ void NamespaceImpl::LoadFromStorage(const RdxContext &ctx) {
 			}
 
 			maxLSN = std::max(maxLSN, l.Counter());
+			minLSN = std::min(minLSN, l.Counter());
 			dataSlice = dataSlice.substr(sizeof(lsn));
 
 			auto err = item.FromCJSON(dataSlice);
@@ -1915,7 +1922,7 @@ void NamespaceImpl::LoadFromStorage(const RdxContext &ctx) {
 		}
 	}
 
-	initWAL(maxLSN);
+	initWAL(minLSN, maxLSN);
 	if (!isSystem()) {
 		repl_.lastLsn.SetServer(serverId_);
 		repl_.lastSelfLSN.SetServer(serverId_);
@@ -1932,10 +1939,8 @@ void NamespaceImpl::LoadFromStorage(const RdxContext &ctx) {
 	markUpdated();
 }
 
-void NamespaceImpl::initWAL(int64_t maxLSN) {
-	// Fill wall
-	wal_.Init(maxLSN, storage_);
-
+void NamespaceImpl::initWAL(int64_t minLSN, int64_t maxLSN) {
+	wal_.Init(config_.walSize, minLSN, maxLSN, storage_);
 	// Fill existing records
 	for (IdType rowId = 0; rowId < IdType(items_.size()); rowId++) {
 		if (!items_[rowId].IsFree()) {
@@ -1943,7 +1948,7 @@ void NamespaceImpl::initWAL(int64_t maxLSN) {
 		}
 	}
 	repl_.lastLsn = lsn_t(wal_.LSNCounter() - 1, serverId_);
-	logPrintf(LogInfo, "[%s] WAL initalized lsn #%s", name_, repl_.lastLsn);
+	logPrintf(LogInfo, "[%s] WAL has been initalized lsn #%s, max size %ld", name_, repl_.lastLsn, wal_.Capacity());
 }
 
 void NamespaceImpl::removeExpiredItems(RdxActivityContext *ctx) {

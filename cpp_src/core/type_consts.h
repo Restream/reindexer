@@ -314,3 +314,20 @@ typedef struct ConnectOpts {
 } ConnectOpts;
 
 enum IndexValueType { NotSet = -1, SetByJsonPath = -2 };
+
+enum SubscriptionOpt {
+	kSubscriptionOptIncrementSubscription = 1 << 0,
+};
+
+typedef struct SubscriptionOpts {
+#ifdef __cplusplus
+	SubscriptionOpts() : options(0) {}
+
+	bool IsIncrementSubscription() const { return options & kSubscriptionOptIncrementSubscription; }
+	SubscriptionOpts& IncrementSubscription(bool value = true) {
+		options = value ? options | kSubscriptionOptIncrementSubscription : options & ~(kSubscriptionOptIncrementSubscription);
+		return *this;
+	}
+#endif
+	uint16_t options;
+} SubscriptionOpts;

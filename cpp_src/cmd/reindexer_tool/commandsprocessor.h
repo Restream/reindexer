@@ -170,9 +170,12 @@ protected:
 	Syntax:
 		\bench <time>
 		)help"},
-        {"\\subscribe",	"Subscribe to upstream updates",&CommandsProcessor::commandSubscribe,R"help(
+		{"\\subscribe",	"Subscribe to upstream updates",&CommandsProcessor::commandSubscribe,R"help(
 	Syntax:
 		\subscribe <on|off>
+		Subscribe/unsubscribe to any updates
+		\subscribe <namespace>[ <namespace>[ ...]]
+		Subscribe to specific namespaces updates
 		)help"},
         {"\\quit",		"Exit from tool",&CommandsProcessor::commandQuit,""},
         {"\\help",		"Show help",&CommandsProcessor::commandHelp,""},

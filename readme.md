@@ -48,6 +48,7 @@ The core is written in C++ and the application level API is in Go.
 	- [Using object cache](#using-object-cache)
 		- [DeepCopy interface](#deepcopy-interface)
 		- [Get shared objects from object cache (USE WITH CAUTION)](#get-shared-objects-from-object-cache-use-with-caution)
+		- [Limit size of object cache](#limit-size-of-object-cache)
 - [Logging, debug and profiling](#logging-debug-and-profiling)
 	- [Turn on logger](#turn-on-logger)
 	- [Debug queries](#debug-queries)
@@ -155,11 +156,13 @@ func main() {
 
 	// OR - Init a database instance and choose the binding (connect to server)
 	// Database should be created explicitly via reindexer_tool or via WithCreateDBIfMissing option:
-	// db := reindexer.NewReindex("cproto://127.0.0.1:6534/testdb", reindexer.WithCreateDBIfMissing())
+	// If server security mode is enabled, then username and password are mandatory
+	// db := reindexer.NewReindex("cproto://user:pass@127.0.0.1:6534/testdb", reindexer.WithCreateDBIfMissing())
 
 	// OR - Init a database instance and choose the binding (builtin, with bundled server)
 	// serverConfig := config.DefaultServerConfig ()
-	// db := reindexer.NewReindex("builtinserver://testdb",reindexer.WithServerConfig(100*time.Second, serverConfig))
+	// If server security mode is enabled, then username and password are mandatory
+	// db := reindexer.NewReindex("builtinserver://user:pass@testdb",reindexer.WithServerConfig(100*time.Second, serverConfig))
 
 	// Create new namespace with name 'items', which will store structs of type 'Item'
 	db.OpenNamespace("items", reindexer.DefaultNamespaceOptions(), Item{})
@@ -468,6 +471,7 @@ db.Query("items").Where("id", reindexer.EQ, 40).Drop("field1").Update()
 ### Transactions and batch update
 
 Reindexer supports transactions. Transaction are performs atomic namespace update. There are synchronous and async transaction available. To start transaction method `db.BeginTx()` is used. This method creates transaction object, which provides usual Update/Upsert/Insert/Delete interface for application.
+For RPC clients there is transactions count limitation - each connection can't has more than 1024 opened transactions at the same time.
 
 #### Synchronous mode
 ```go
@@ -774,6 +778,7 @@ With complex expressions (expressions with brackets) equal_position() works only
 ```sql
 SELECT * FROM Namespace WHERE (f1 >= 5 AND f2 = 100 EQUAL_POSITION(f1,f2)) OR (f3 = 3 AND f4 < 4 EQUAL_POSITION(f3,f4));
 ```
+equal_position doesn't work with the following conditions: IS NULL, IS EMPTY and IN(with empty parameter list).
 
 ### Atomic on update functions
 
@@ -913,6 +918,17 @@ WARNING: when used `AllowUnsafe(true)` queries returns shared pointers to struct
 		item.Name = "new name"
 	}
 ```
+
+#### Limit size of object cache
+
+By default maximum size of object cache is 256MB for each namespace. To change maximim size use `ObjCacheSize` method of `NameapaceOptions`, passed
+to OpenNamespace. e.g.
+
+```go
+	// Set object cache limit to 4096 megabytes 
+	db.OpenNamespace("items_with_huge_cache", reindexer.DefaultNamespaceOptions().ObjCacheSize(4096), Item{})
+```
+
 ## Logging, debug and profiling
 
 ### Turn on logger

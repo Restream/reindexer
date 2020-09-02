@@ -26,6 +26,7 @@ func TestSetDefaultQueryDebug(t *testing.T) {
 			TxSizeToAlwaysCopy:      rand.Int(),
 			OptimizationTimeout:     rand.Int(),
 			OptimizationSortWorkers: rand.Int(),
+			WALSize:                 200000 + rand.Int63n(1000000),
 		}
 		dbCfg := item.(*reindexer.DBConfigItem)
 		*dbCfg.Namespaces = append(*dbCfg.Namespaces, ncCfgExp)

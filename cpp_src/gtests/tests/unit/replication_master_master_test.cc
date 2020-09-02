@@ -22,9 +22,10 @@ public:
 	ReplicationSlaveSlaveApi() {}
 	void WaitSync(ServerControl& s1, ServerControl& s2, const std::string& nsName) {
 		int count = 0;
+		ReplicationStateApi state1, state2;
 		while (count < 1000) {
-			ReplicationStateApi state1 = s1.Get()->GetState(nsName);
-			ReplicationStateApi state2 = s2.Get()->GetState(nsName);
+			state1 = s1.Get()->GetState(nsName);
+			state2 = s2.Get()->GetState(nsName);
 			if (state1.lsn == state2.lsn) {
 				return;
 			}
@@ -32,7 +33,7 @@ public:
 			count++;
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		}
-		EXPECT_TRUE(false) << "Wait sync is too long.";
+		EXPECT_TRUE(false) << "Wait sync is too long. s1 lsn: " << state1.lsn << "; s2 lsn: " << state2.lsn;
 	}
 
 	void CreateConfiguration(vector<ServerControl>& nodes, const std::vector<int>& slaveConfiguration, int basePort, int baseServerId,
@@ -133,6 +134,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveSyncByWalAddRow) {
 
 	TestNamespace1 ns1(nodes[0]);
 
+	nodes[0].Get()->SetWALSize(100000, "ns1");
 	int n1 = 1000;
 	ns1.AddRows(nodes[0], 0, n1);
 
@@ -154,7 +156,10 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveSyncByWalAddRow) {
 	const int startId = 10000;
 	const unsigned int n2 = 2000;
 	ServerControl& master = nodes[0];
-	auto ThreadAdd = [&master, &ns1]() { ns1.AddRow1msSleep(master, startId, n2, ns1.nsName_); };
+	auto ThreadAdd = [&master, &ns1]() {
+		master.Get()->SetWALSize(50000, "ns1");
+		ns1.AddRow1msSleep(master, startId, n2, ns1.nsName_);
+	};
 
 	std::thread insertThread(ThreadAdd);
 
@@ -185,17 +190,19 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveStart) {
 	CreateConfiguration(nodes, slaveConfiguration, port, 10, dbPathMaster);
 
 	//вставляем 100 строк
-	TestNamespace1 ns1(nodes[0]);
+	std::string nsName("ns1");
+	TestNamespace1 ns1(nodes[0], nsName);
 
 	unsigned int n1 = 100;
 	ns1.AddRows(nodes[0], 0, n1);
+	nodes[0].Get()->SetWALSize(1000, "ns1");
 	//синхронизируемся
 
-	WaitSync(nodes[0], nodes[1], "ns1");
+	WaitSync(nodes[0], nodes[1], nsName);
 	// restart Slave
 	RestartServer(1, nodes, port, dbPathMaster);
 	//проверяем, что они синхронны
-	WaitSync(nodes[0], nodes[1], "ns1");
+	WaitSync(nodes[0], nodes[1], nsName);
 
 	//останавливаем Slave
 	//выключаем Slave
@@ -216,7 +223,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveStart) {
 	//запускаем Slave
 	nodes[1].InitServer(1, port + 1, port + 1000 + 1, dbPathMaster + std::to_string(1), "db");
 	//проверяем, что они синхронны
-	WaitSync(nodes[0], nodes[1], "ns1");
+	WaitSync(nodes[0], nodes[1], nsName);
 
 	std::vector<int> ids0;
 	ns1.GetData(nodes[0], ids0);
@@ -375,17 +382,17 @@ TEST_F(ReplicationSlaveSlaveApi, TransactionTest) {
 	CreateConfiguration(nodes, slaveConfiguration, port, serverId, dbPathMaster);
 
 	size_t kRows = 100;
+	string nsName("ns1");
 
 	ServerControl& master = nodes[0];
-	TestNamespace1 ns1(master);
+	TestNamespace1 ns1(master, nsName);
 
 	ns1.AddRows(master, 0, kRows);
 
 	for (size_t i = 1; i < nodes.size(); i++) {
-		WaitSync(nodes[0], nodes[i], "ns1");
+		WaitSync(nodes[0], nodes[i], nsName);
 	}
 
-	string nsName = "ns1";
 	reindexer::client::Transaction tr = master.Get()->api.reindexer->NewTransaction(nsName);
 	for (unsigned int i = 0; i < kRows; i++) {
 		reindexer::client::Item item = tr.NewItem();
@@ -395,7 +402,7 @@ TEST_F(ReplicationSlaveSlaveApi, TransactionTest) {
 	master.Get()->api.reindexer->CommitTransaction(tr);
 
 	for (size_t i = 1; i < nodes.size(); i++) {
-		WaitSync(nodes[0], nodes[i], "ns1");
+		WaitSync(nodes[0], nodes[i], nsName);
 	}
 
 	std::vector<std::vector<int>> results;
@@ -511,13 +518,18 @@ TEST_F(ReplicationSlaveSlaveApi, NodeWithMasterAndSlaveNs1) {
 }
 
 TEST_F(ReplicationSlaveSlaveApi, NodeWithMasterAndSlaveNs2) {
+	const unsigned int cm1 = 11;
+	const unsigned int cm2 = 999;
+	const unsigned int cm3 = 1999;
+	const unsigned int nm = 113;
+
 	reindexer::fs::RmDirAll("/tmp/testNsMasterSlave");
 	ServerControl master;
 	master.InitServer(0, 7770, 7880, "/tmp/testNsMasterSlave/master", "db");
 	TestNamespace1 testns1(master, "ns1");
-	testns1.AddRows(master, 11, 113);
+	testns1.AddRows(master, cm1, nm);
 	TestNamespace1 testns2(master, "ns2");
-	testns2.AddRows(master, 11, 113);
+	testns2.AddRows(master, cm2, nm);
 	master.Get()->MakeMaster();
 
 	const unsigned int c1 = 5001;
@@ -534,6 +546,11 @@ TEST_F(ReplicationSlaveSlaveApi, NodeWithMasterAndSlaveNs2) {
 	ReplicationConfigTest configSlave("slave", false, true, 0, upDsn, "slave", nsSet);
 	slave.Get()->MakeSlave(0, configSlave);
 	testns3.AddRows(slave, c2, n);
+
+	WaitSync(master, slave, "ns1");
+
+	testns1.AddRows(master, cm3, nm);
+	testns2.AddRows(master, cm2, nm);
 
 	WaitSync(master, slave, "ns1");
 

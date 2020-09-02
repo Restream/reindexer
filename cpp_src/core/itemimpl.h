@@ -64,7 +64,7 @@ public:
 	VariantArray GetValueByJSONPath(string_view jsonPath);
 
 	string_view GetJSON();
-	Error FromJSON(const string_view &slice, char **endp = nullptr, bool pkOnly = false);
+	Error FromJSON(string_view slice, char **endp = nullptr, bool pkOnly = false);
 	Error FromCJSON(ItemImpl *other);
 
 	string_view GetCJSON(bool withTagsMatcher = false);

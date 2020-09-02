@@ -40,6 +40,7 @@ git:
     - go get github.com/golang/snappy
     - go get github.com/stretchr/testify/assert
     - go get github.com/iancoleman/orderedmap
+    - go get github.com/hashicorp/golang-lru
   script:
     - cd ${BUILD_DIR} && cmake ${CMAKE_OPTS} ${TRAVIS_BUILD_DIR} && make -j4
     - ctest --verbose

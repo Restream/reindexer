@@ -17,7 +17,6 @@ void Transaction::Modify(Query&& query) {
 	}
 	throw Error(errLogic, "Connection pointer in transaction is nullptr.");
 }
-bool Transaction::IsFree() { return (conn_ == nullptr); }
 
 void Transaction::addTxItem(Item&& item, ItemModifyMode mode) {
 	auto itData = item.GetJSON();

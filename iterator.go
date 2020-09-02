@@ -359,7 +359,7 @@ func (it *Iterator) FetchAll() (items []interface{}, err error) {
 			break
 		}
 	}
-	return
+	return items, it.err
 }
 
 // FetchOne returns first element and closes the iterator.

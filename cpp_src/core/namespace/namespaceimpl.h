@@ -254,7 +254,8 @@ protected:
 	void saveReplStateToStorage();
 	void loadReplStateFromStorage();
 
-	void initWAL(int64_t maxLSN);
+	void fillWAL();
+	void initWAL(int64_t minLSN, int64_t maxLSN);
 
 	void markUpdated();
 	void doUpsert(ItemImpl *ritem, IdType id, bool doUpdate);

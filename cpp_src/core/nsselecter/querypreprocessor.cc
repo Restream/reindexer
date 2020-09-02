@@ -46,7 +46,7 @@ size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, size_t srcBegin, size_t
 		if (!IsValue(src)) {
 			if (dst != src) container_[dst] = std::move(container_[src]);
 			const size_t mergedInBracket = lookupQueryIndexes(dst + 1, src + 1, nextSrc);
-			container_[dst].Value<Bracket>().ReduceBy(mergedInBracket);
+			container_[dst].Value<Bracket>().Erase(mergedInBracket);
 			merged += mergedInBracket;
 		} else {
 			QueryEntry &entry = container_[src].Value();

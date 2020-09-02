@@ -13,6 +13,10 @@
 #include "statscollect/istatswatcher.h"
 #include "tools/semversion.h"
 
+namespace reindexer {
+struct TxStats;
+}
+
 namespace reindexer_server {
 
 using std::string;
@@ -24,6 +28,7 @@ struct RPCClientData : public cproto::ClientData {
 	~RPCClientData();
 	h_vector<pair<QueryResults, bool>, 1> results;
 	vector<Transaction> txs;
+	std::shared_ptr<TxStats> txStats;
 
 	AuthContext auth;
 	cproto::RPCUpdatesPusher pusher;
@@ -90,7 +95,7 @@ public:
 	Error GetMeta(cproto::Context &ctx, p_string ns, p_string key);
 	Error PutMeta(cproto::Context &ctx, p_string ns, p_string key, p_string data);
 	Error EnumMeta(cproto::Context &ctx, p_string ns);
-	Error SubscribeUpdates(cproto::Context &ctx, int subscribe);
+	Error SubscribeUpdates(cproto::Context &ctx, int subscribe, cproto::optional<p_string> filterJson, cproto::optional<int> options);
 
 	Error CheckAuth(cproto::Context &ctx);
 	void Logger(cproto::Context &ctx, const Error &err, const cproto::Args &ret);
@@ -105,7 +110,7 @@ protected:
 	void freeQueryResults(cproto::Context &ctx, int id);
 	QueryResults &getQueryResults(cproto::Context &ctx, int &id);
 	Transaction &getTx(cproto::Context &ctx, int64_t id);
-	int64_t addTx(cproto::Context &ctx, Transaction &&tr);
+	int64_t addTx(cproto::Context &ctx, string_view nsName);
 	void clearTx(cproto::Context &ctx, uint64_t txId);
 
 	Reindexer getDB(cproto::Context &ctx, UserRole role);

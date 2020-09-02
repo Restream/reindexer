@@ -91,6 +91,30 @@ void ServerControl::Interface::WriteServerConfig(const std::string& configYaml) 
 	file.flush();
 }
 
+void ServerControl::Interface::SetWALSize(int64_t size, string_view nsName) {
+	reindexer::WrSerializer ser;
+	reindexer::JsonBuilder jb(ser);
+
+	jb.Put("type", "namespaces");
+	auto nsArray = jb.Array("namespaces");
+	auto ns = nsArray.Object();
+	ns.Put("namespace", nsName);
+	ns.Put("wal_size", size);
+	ns.End();
+	nsArray.End();
+	jb.End();
+
+	auto item = api.NewItem(kConfigNs);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+	auto err = item.FromJSON(ser.Slice());
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	api.Upsert(kConfigNs, item);
+	err = api.Commit(kConfigNs);
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+
 ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const std::string& ReplicationConfigFilename,
 									const std::string& StoragePath, unsigned short httpPort, unsigned short rpcPort,
 									const std::string& dbName)

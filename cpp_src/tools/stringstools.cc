@@ -205,7 +205,7 @@ std::pair<int, int> Word2PosHelper::convert(int wordPos, int endPos) {
 	ret.first += lastOffset_;
 	ret.second += lastOffset_;
 	lastOffset_ = ret.first;
-	lastWordPos_ += wordPos;
+	lastWordPos_ = wordPos;
 	return ret;
 }
 

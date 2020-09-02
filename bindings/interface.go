@@ -279,6 +279,12 @@ type Status struct {
 	Err     error
 	CProto  StatusCProto
 	Builtin StatusBuiltin
+	Cache   StatusCache
+}
+
+type StatusCache struct {
+	CurSize int64
+	MaxSize int64
 }
 
 type StatusCProto struct {

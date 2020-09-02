@@ -331,6 +331,8 @@ type DBNamespacesConfig struct {
 	OptimizationTimeout int `json:"optimization_timeout_ms"`
 	// Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations
 	OptimizationSortWorkers int `json:"optimization_sort_workers"`
+	// Maximum WAL size for this namespace (maximum count of WAL records)
+	WALSize int64 `json:"wal_size"`
 }
 
 // DBReplicationConfig is part of reindexer configuration contains replication options

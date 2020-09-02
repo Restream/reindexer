@@ -65,7 +65,7 @@ typedef string_view UrlParam;
 
 struct HttpStatus {
 	HttpStatus() { code = StatusOK; }
-	HttpStatus(HttpStatusCode httpcode, const string &httpwhat) : code(httpcode), what(httpwhat) {}
+	HttpStatus(HttpStatusCode httpcode, string httpwhat) : code(httpcode), what(std::move(httpwhat)) {}
 	explicit HttpStatus(const Error &err) : what(err.what()) { code = errCodeToHttpStatus(err.code()); }
 
 	HttpStatusCode code;

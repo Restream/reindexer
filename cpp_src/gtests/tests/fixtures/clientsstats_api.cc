@@ -84,6 +84,26 @@ void ClientsStatsApi::ClientLoopReconnect() {
 	}
 }
 
+uint32_t ClientsStatsApi::StatsTxCount(reindexer::client::Reindexer& rx) {
+	reindexer::client::QueryResults resultCs;
+	auto err = rx.Select("SELECT * FROM #clientsstats", resultCs);
+	EXPECT_TRUE(err.ok()) << err.what();
+	EXPECT_EQ(resultCs.Count(), 1);
+	auto it = resultCs.begin();
+	reindexer::WrSerializer wrser;
+	err = it.GetJSON(wrser, false);
+	EXPECT_TRUE(err.ok()) << err.what();
+	try {
+		gason::JsonParser parser;
+		gason::JsonNode clientsStats = parser.Parse(wrser.Slice());
+		return clientsStats["tx_count"].As<uint32_t>();
+	} catch (...) {
+		assert(false);
+	}
+	EXPECT_TRUE(false);
+	return 0;
+}
+
 void ClientsStatsApi::ClientSelectLoop() {
 	while (!stop_) {
 		reindexer::client::QueryResults result;

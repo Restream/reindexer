@@ -1,9 +1,47 @@
 #pragma once
 
 #include "replication_api.h"
+#include "replicator/updatesobserver.h"
+#include "vendor/hopscotch/hopscotch_map.h"
 
 class ReplicationLoadApi : public ReplicationApi {
 public:
+	class UpdatesReciever : public IUpdatesObserver {
+	public:
+		void OnWALUpdate(LSNPair, string_view nsName, const WALRecord &) override final {
+			std::lock_guard<std::mutex> lck(mtx_);
+			auto found = updatesCounters_.find(nsName);
+			if (found != updatesCounters_.end()) {
+				++(found.value());
+			} else {
+				updatesCounters_.emplace(string(nsName), 1);
+			}
+		}
+		void OnConnectionState(const Error &) override final {}
+
+		using map = tsl::hopscotch_map<std::string, size_t, nocase_hash_str, nocase_equal_str>;
+
+		map Counters() const {
+			std::lock_guard<std::mutex> lck(mtx_);
+			return updatesCounters_;
+		}
+		void Reset() {
+			std::lock_guard<std::mutex> lck(mtx_);
+			updatesCounters_.clear();
+		}
+		void Dump() const {
+			std::cerr << "Reciever dump: " << std::endl;
+			auto counters = Counters();
+			for (auto &it : counters) {
+				std::cerr << it.first << ": " << it.second << std::endl;
+			}
+		}
+
+	private:
+		map updatesCounters_;
+		mutable std::mutex mtx_;
+	};
+
 	void InitNs() {
 		counter_ = 0;
 		auto opt = StorageOpts().Enabled(true).LazyLoad(true);

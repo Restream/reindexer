@@ -148,6 +148,65 @@ func TestMultipleDSN(t *testing.T) {
 
 		db.Close()
 	})
+
+	t.Run("should reset cache after restart server and reconnect", func(t *testing.T) {
+		t.Parallel()
+
+		srv := helpers.TestServer{T: t, RpcPort: "6683", HttpPort: "9983", DbName: "reindex_test_multi_dsn"}
+		dsn := []string{
+			fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv.RpcPort, srv.DbName, srv.RpcPort),
+		}
+		err := srv.Run()
+		require.NoError(t, err)
+		db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
+		require.NotNil(t, db)
+
+		err = db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), NamespaceCacheItem{})
+		require.NoError(t, err)
+
+		// fill cache
+		itemExp := NamespaceCacheItem{IntCjon: 111, Float32Cjon: 1, SliceInt: []int{1, 2, 3}}
+		err = db.Upsert(ns, itemExp)
+		require.NoError(t, err)
+
+		itemExp = NamespaceCacheItem{IntCjon: 222, Float32Cjon: 1, SliceInt: []int{1, 2, 3}}
+		err = db.Upsert(ns, itemExp)
+		require.NoError(t, err)
+
+		_, err = db.Query(ns).Exec().FetchAll()
+		require.NoError(t, err)
+
+		status := db.Status()
+		assert.True(t, status.Cache.MaxSize > 0)
+		assert.Equal(t, int64(332), status.Cache.CurSize)
+
+		// restart
+		err = srv.Stop()
+		require.NoError(t, err)
+		err = srv.Run()
+		require.NoError(t, err)
+
+		// check after reset
+		it := db.Query(ns).Exec()
+
+		status = db.Status()
+		assert.True(t, status.Cache.MaxSize > 0)
+		assert.Equal(t, int64(0), status.Cache.CurSize)
+
+		it.Next()
+		status = db.Status()
+		assert.True(t, status.Cache.MaxSize > 0)
+		assert.Equal(t, int64(166), status.Cache.CurSize)
+
+		it.Next()
+		status = db.Status()
+		assert.True(t, status.Cache.MaxSize > 0)
+		assert.Equal(t, int64(332), status.Cache.CurSize)
+
+		require.NoError(t, it.Error())
+		it.Close()
+		db.Close()
+	})
 }
 
 func TestRaceConditionsMultiDSN(t *testing.T) {

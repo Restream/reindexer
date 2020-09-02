@@ -12,6 +12,8 @@ net:
   webroot: ${REINDEXER_INSTALL_PREFIX}/share/reindexer/web
   # Enables authorization via login/password (requires users.yml file in db directory)
   security: false
+  # Idle timeout for http transactions
+  tx_idle_timeout: 600
 
 # Logger configuration
 logger:

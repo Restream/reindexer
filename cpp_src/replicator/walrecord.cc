@@ -104,7 +104,7 @@ WALRecord::WALRecord(span<uint8_t> packed) {
 	}
 }
 
-string_view wrecType2Str(WALRecType t) {
+static string_view wrecType2Str(WALRecType t) {
 	switch (t) {
 		case WalEmpty:
 			return "<WalEmpty>"_sv;
@@ -129,7 +129,7 @@ string_view wrecType2Str(WALRecType t) {
 		case WalNamespaceRename:
 			return "WalNamespaceRename"_sv;
 		case WalItemModify:
-			return "WalItemMofify"_sv;
+			return "WalItemModify"_sv;
 		case WalInitTransaction:
 			return "WalInitTransaction"_sv;
 		case WalCommitTransaction:

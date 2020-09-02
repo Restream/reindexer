@@ -90,7 +90,7 @@ void DataProcessor::Process(bool multithread) {
 
 	logPrintf(LogInfo,
 			  "DataProcessor::Process elapsed %d ms total [ build words %d ms, build typos %d ms | build suffixarry %d ms | sort "
-			  "idrelsets %d ms]\n",
+			  "idrelsets %d ms]",
 			  duration_cast<milliseconds>(tm5 - tm0).count(), duration_cast<milliseconds>(tm2 - tm0).count(),
 			  duration_cast<milliseconds>(tm5 - tm4).count(), duration_cast<milliseconds>(tm3 - tm2).count(),
 			  duration_cast<milliseconds>(tm4 - tm2).count());

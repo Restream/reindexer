@@ -197,6 +197,13 @@ func (binding *Builtin) Init(u []url.URL, options ...interface{}) error {
 	return err2go(C.reindexer_connect(binding.rx, str2c(u[0].Path), opts, str2c(bindings.ReindexerVersion)))
 }
 
+func (binding *Builtin) StartWatchOnCtx(ctx context.Context) (CCtxWrapper, error) {
+	if binding.ctxWatcher != nil {
+		return binding.ctxWatcher.StartWatchOnCtx(ctx)
+	}
+	return CCtxWrapper{}, bindings.NewError("rq: builtin binding is not initialized properly", bindings.ErrNotValid)
+}
+
 func (binding *Builtin) Clone() bindings.RawBinding {
 	return &Builtin{}
 }
@@ -238,7 +245,7 @@ func (binding *Builtin) ModifyItem(ctx context.Context, nsHash int, namespace st
 	}
 	packedArgs := ser1.Bytes()
 
-	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +306,7 @@ func (binding *Builtin) OpenNamespace(ctx context.Context, namespace string, ena
 		options: C.uint16_t(storageOptions),
 	}
 
-	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
 	if err != nil {
 		return err
 	}
@@ -308,7 +315,7 @@ func (binding *Builtin) OpenNamespace(ctx context.Context, namespace string, ena
 	return err2go(C.reindexer_open_namespace(binding.rx, str2c(namespace), opts, ctxInfo.cCtx))
 }
 func (binding *Builtin) CloseNamespace(ctx context.Context, namespace string) error {
-	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
 	if err != nil {
 		return err
 	}
@@ -318,7 +325,7 @@ func (binding *Builtin) CloseNamespace(ctx context.Context, namespace string) er
 }
 
 func (binding *Builtin) DropNamespace(ctx context.Context, namespace string) error {
-	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
 	if err != nil {
 		return err
 	}
@@ -328,7 +335,7 @@ func (binding *Builtin) DropNamespace(ctx context.Context, namespace string) err
 }
 
 func (binding *Builtin) TruncateNamespace(ctx context.Context, namespace string) error {
-	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
 	if err != nil {
 		return err
 	}
@@ -338,7 +345,7 @@ func (binding *Builtin) TruncateNamespace(ctx context.Context, namespace string)
 }
 
 func (binding *Builtin) RenameNamespace(ctx context.Context, srcNs string, dstNs string) error {
-	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
 	if err != nil {
 		return err
 	}
@@ -353,7 +360,7 @@ func (binding *Builtin) EnableStorage(ctx context.Context, path string) error {
 		path += "/"
 	}
 
-	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
 	if err != nil {
 		return err
 	}
@@ -368,7 +375,7 @@ func (binding *Builtin) AddIndex(ctx context.Context, namespace string, indexDef
 		return err
 	}
 
-	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
 	if err != nil {
 		return err
 	}
@@ -384,7 +391,7 @@ func (binding *Builtin) SetSchema(ctx context.Context, namespace string, schema 
 		return err
 	}
 
-	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
 	if err != nil {
 		return err
 	}
@@ -401,7 +408,7 @@ func (binding *Builtin) UpdateIndex(ctx context.Context, namespace string, index
 		return err
 	}
 
-	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
 	if err != nil {
 		return err
 	}
@@ -412,7 +419,7 @@ func (binding *Builtin) UpdateIndex(ctx context.Context, namespace string, index
 }
 
 func (binding *Builtin) DropIndex(ctx context.Context, namespace, index string) error {
-	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
 	if err != nil {
 		return err
 	}
@@ -422,7 +429,7 @@ func (binding *Builtin) DropIndex(ctx context.Context, namespace, index string) 
 }
 
 func (binding *Builtin) PutMeta(ctx context.Context, namespace, key, data string) error {
-	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
 	if err != nil {
 		return err
 	}
@@ -432,7 +439,7 @@ func (binding *Builtin) PutMeta(ctx context.Context, namespace, key, data string
 }
 
 func (binding *Builtin) GetMeta(ctx context.Context, namespace, key string) (bindings.RawBuffer, error) {
-	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -448,7 +455,7 @@ func (binding *Builtin) Select(ctx context.Context, query string, asJson bool, p
 		defer func() { <-binding.cgoLimiter }()
 	}
 
-	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -479,7 +486,7 @@ func (binding *Builtin) CommitTx(txCtx *bindings.TxCtx) (bindings.RawBuffer, err
 		defer func() { <-binding.cgoLimiter }()
 	}
 
-	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(txCtx.UserCtx)
+	ctxInfo, err := binding.StartWatchOnCtx(txCtx.UserCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -502,7 +509,7 @@ func (binding *Builtin) SelectQuery(ctx context.Context, data []byte, asJson boo
 		defer func() { <-binding.cgoLimiter }()
 	}
 
-	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -518,7 +525,7 @@ func (binding *Builtin) DeleteQuery(ctx context.Context, nsHash int, data []byte
 		defer func() { <-binding.cgoLimiter }()
 	}
 
-	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -534,7 +541,7 @@ func (binding *Builtin) UpdateQuery(ctx context.Context, nsHash int, data []byte
 		defer func() { <-binding.cgoLimiter }()
 	}
 
-	ctxInfo, err := binding.ctxWatcher.StartWatchOnCtx(ctx)
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
 	if err != nil {
 		return nil, err
 	}

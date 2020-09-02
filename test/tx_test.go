@@ -176,6 +176,7 @@ func TestAsyncTxTimeout(t *testing.T) {
 	defer cancel()
 	tx2 := newTestTxCtx(ctx, DB, testTxAsyncTimeoutItemNs)
 	hadSucceedRollback := false
+	hadError := false
 	count2 := 2000
 	for i := 0; i < count2/10; i++ {
 		for j := 0; j < 100; j++ {
@@ -185,17 +186,25 @@ func TestAsyncTxTimeout(t *testing.T) {
 			}, func(err error) {
 			})
 			if errAsync != nil {
+				hadError = true
 				if !hadSucceedRollback {
-					assert.Equal(t, errAsync, ctx.Err())
+					if ctx.Err() == nil {
+						assert.Equal(t, errAsync, context.DeadlineExceeded)
+					} else {
+						assert.Equal(t, errAsync, ctx.Err())
+					}
 				}
 				if tx2.Rollback() == nil {
 					hadSucceedRollback = true
 				}
+			} else {
+				assert.False(t, hadError)
 			}
 		}
 		time.Sleep(time.Millisecond * 50)
 	}
 	_, err := tx2.Commit()
+	assert.NotNil(t, ctx.Err())
 	assert.True(t, hadSucceedRollback)
 	rerr, ok := err.(bindings.Error)
 	assert.True(t, ok)

@@ -94,6 +94,8 @@ public:
 		ReplicationConfigTest GetServerConfig(ConfigType type);
 		// write server config to file
 		void WriteServerConfig(const std::string& configYaml);
+		// set server's WAL size
+		void SetWALSize(int64_t size, reindexer::string_view nsName);
 
 		reindexer_server::Server srv;
 		BaseApi api;

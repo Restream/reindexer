@@ -555,9 +555,49 @@ Error CommandsProcessor<DBInterface>::commandSubscribe(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
 
-	bool on = !iequals(parser.NextToken(), "off");
+	reindexer::UpdatesFilters filters;
+	auto token = parser.NextToken();
+	if (iequals(token, "off")) {
+		return db_.UnsubscribeUpdates(this);
+	} else if (token.empty() || iequals(token, "on")) {
+		return db_.SubscribeUpdates(this, filters);
+	}
+	std::vector<std::string> nsInSubscription;
+	while (!token.empty()) {
+		filters.AddFilter(token, reindexer::UpdatesFilters::Filter());
+		nsInSubscription.emplace_back(token);
+		token = parser.NextToken();
+	}
 
-	return db_.SubscribeUpdates(this, on);
+	auto err = db_.SubscribeUpdates(this, filters);
+	if (!err.ok()) {
+		return err;
+	}
+	vector<NamespaceDef> allNsDefs;
+	err = db_.EnumNamespaces(allNsDefs, reindexer::EnumNamespacesOpts().WithClosed());
+	if (!err.ok()) {
+		return err;
+	}
+	for (auto& ns : allNsDefs) {
+		for (auto it = nsInSubscription.begin(); it != nsInSubscription.end();) {
+			if (*it == ns.name) {
+				it = nsInSubscription.erase(it);
+			} else {
+				++it;
+			}
+		}
+	}
+	if (!nsInSubscription.empty()) {
+		std::cout << "WARNING: You have subscribed for non-existing namespace updates: ";
+		for (auto it = nsInSubscription.begin(); it != nsInSubscription.end(); ++it) {
+			if (it != nsInSubscription.begin()) {
+				std::cout << ", ";
+			}
+			std::cout << *it;
+		}
+		std::cout << std::endl;
+	}
+	return errOK;
 }
 
 template <typename DBInterface>
@@ -683,6 +723,7 @@ void CommandsProcessor<DBInterface>::addCommandsSuggestions(std::string const& c
 		}
 	} else if (token == "\\subscribe") {
 		checkForCommandNameMatch(parser.NextToken(), {"on", "off"}, suggestions);
+		checkForNsNameMatch(parser.NextToken(), suggestions);
 	} else if (token == "\\databases") {
 		token = parser.NextToken();
 		if (token == "use") {

@@ -120,6 +120,16 @@ will return JSON object with status of namespace `media_items `replication
 - `wal_count` - number of records in WAL
 - `wal_size` - WAL size
 
+### Maximum WAL size configuration
+
+WAL size (maximum number of WAL records) may be configured via `#config` namespace. For example to set `first_namespace`'s WAL size to 4000000 and `second_namespace`'s to 100000 this command may be used:
+
+```SQL
+Reindexer> \upsert #config { "type": "namespaces", "namespaces": [ { "namespace":"first_namespace", "wal_size": 4000000 }, { "namespace":"second_namespace", "wal_size": 100000 } ] }
+```
+
+Default WAL size is 4000000
+
 ### Access namespace's WAL with reindexer_tool
 
 To view offline WAL contents from reindexer_tool `SELECT` statement with special condition to `#lsn` index is used:

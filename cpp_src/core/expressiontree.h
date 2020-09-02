@@ -22,10 +22,6 @@ public:
 	}
 	void CopyPayloadFrom(const Bracket&) const noexcept {}
 	bool operator==(const Bracket& other) const noexcept { return size_ == other.size_; }
-	void ReduceBy(size_t count) noexcept {
-		assert(count < size_);
-		size_ -= count;
-	}
 
 private:
 	/// size of all children + 1
@@ -34,12 +30,13 @@ private:
 
 /// @class ExpressionTree
 /// A tree contained in vector
+/// For detailed documentation see expressiontree.md
 template <typename OperationType, typename SubTree, int holdSize, typename... Ts>
 class ExpressionTree {
 	template <typename T>
 	class Ref {
 	public:
-		explicit Ref(T& v) : ptr_{&v} {}
+		explicit Ref(T& v) noexcept : ptr_{&v} {}
 		operator T&() noexcept { return *ptr_; }
 		operator const T&() const noexcept { return *ptr_; }
 		bool operator==(const Ref& other) const noexcept(noexcept(std::declval<T>() == std::declval<T>())) { return *ptr_ == *other.ptr_; }
@@ -271,7 +268,7 @@ class ExpressionTree {
 			static const LazyCopyVisitor visitor;
 			return {operation, mpark::visit(visitor, storage_)};
 		}
-		Node MakeDeepCopy() const& {
+		Node MakeDeepCopy() const & {
 			static const DeepCopyVisitor visitor;
 			return {operation, mpark::visit(visitor, storage_)};
 		}
@@ -404,17 +401,23 @@ public:
 	void Erase(size_t from, size_t to) {
 		size_t count = to - from;
 		for (size_t i = 0; i < from; ++i) {
-			if (container_[i].IsSubTree() && Next(i) >= to) container_[i].Erase(count);
+			if (container_[i].IsSubTree()) {
+				if (Next(i) >= to) {
+					container_[i].Erase(count);
+				} else {
+					assert(Next(i) <= from);
+				}
+			}
 		}
 		container_.erase(container_.begin() + from, container_.begin() + to);
 	}
-	/// Execute appropriate functor depending on content type for each, skip if no appropriate functor
+	/// Execute appropriate functor depending on content type for each node, skip if no appropriate functor
 	template <typename... Args>
 	void ExecuteAppropriateForEach(const std::function<void(const Args&)>&... funcs) const {
 		const Visitor<void, const Args&...> visitor{funcs...};
 		for (const Node& node : container_) mpark::visit(visitor, node.storage_);
 	}
-	/// Execute appropriate functor depending on content type for each, skip if no appropriate functor
+	/// Execute appropriate functor depending on content type for each node, skip if no appropriate functor
 	template <typename... Args>
 	void ExecuteAppropriateForEach(const std::function<void(Args&)>&... funcs) {
 		const Visitor<void, Args&...> visitor{funcs...};
@@ -433,15 +436,6 @@ public:
 		const_iterator& operator++() {
 			it_ += it_->Size();
 			return *this;
-		}
-		const_iterator& operator+=(size_t shift) {
-			while (shift--) operator++();
-			return *this;
-		}
-		const_iterator operator+(size_t shift) const {
-			const_iterator result(it_);
-			result += shift;
-			return result;
 		}
 		const_iterator cbegin() const {
 			assert(it_->IsSubTree());
@@ -471,20 +465,6 @@ public:
 		iterator& operator++() {
 			it_ += it_->Size();
 			return *this;
-		}
-		iterator& operator+=(size_t shift) {
-			while (shift--) operator++();
-			return *this;
-		}
-		iterator operator+(size_t shift) const {
-			iterator result(it_);
-			result += shift;
-			return result;
-		}
-		size_t DistanceTo(iterator to) const {
-			size_t result = 0;
-			for (iterator tmp(it_); tmp != to; ++tmp) ++result;
-			return result;
 		}
 		operator const_iterator() const { return const_iterator(it_); }
 		iterator begin() const {
@@ -516,9 +496,9 @@ public:
 	/// @return iterator points to the node after the last child of root
 	const_iterator cend() const { return {container_.end()}; }
 	/// @return iterator to first entry of current bracket
-	const_iterator begin_of_current_bracket() {
-		if (activeBrackets_.empty()) return container_.begin();
-		return container_.begin() + activeBrackets_.back() + 1;
+	const_iterator begin_of_current_bracket() const {
+		if (activeBrackets_.empty()) return container_.cbegin();
+		return container_.cbegin() + activeBrackets_.back() + 1;
 	}
 
 protected:

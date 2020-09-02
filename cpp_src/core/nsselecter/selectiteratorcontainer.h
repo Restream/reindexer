@@ -78,8 +78,8 @@ private:
 		typename Container::iterator it = this->container_.begin(), end = this->container_.end();
 		if (!this->activeBrackets_.empty()) it += (this->activeBrackets_.back() + 1);
 		if (it == end) return this->end();
-		iterator i = it, e = end;
-		while (i + 1 != e) ++i;
+		iterator i = it, i2 = it, e = end;
+		while (++i2 != e) i = i2;
 		return i;
 	}
 

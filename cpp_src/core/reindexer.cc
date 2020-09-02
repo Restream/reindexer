@@ -51,7 +51,10 @@ Error Reindexer::UpdateIndex(string_view nsName, const IndexDef& idx) { return i
 Error Reindexer::DropIndex(string_view nsName, const IndexDef& index) { return impl_->DropIndex(nsName, index, ctx_); }
 Error Reindexer::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOpts opts) { return impl_->EnumNamespaces(defs, opts, ctx_); }
 Error Reindexer::InitSystemNamespaces() { return impl_->InitSystemNamespaces(); }
-Error Reindexer::SubscribeUpdates(IUpdatesObserver* observer, bool subscribe) { return impl_->SubscribeUpdates(observer, subscribe); }
+Error Reindexer::SubscribeUpdates(IUpdatesObserver* observer, const UpdatesFilters& filters, SubscriptionOpts opts) {
+	return impl_->SubscribeUpdates(observer, filters, opts);
+}
+Error Reindexer::UnsubscribeUpdates(IUpdatesObserver* observer) { return impl_->UnsubscribeUpdates(observer); }
 Error Reindexer::GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string>& suggestions) {
 	return impl_->GetSqlSuggestions(sqlQuery, pos, suggestions, ctx_);
 }

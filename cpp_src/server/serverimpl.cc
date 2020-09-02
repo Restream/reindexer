@@ -267,7 +267,8 @@ int ServerImpl::run() {
 		}
 
 		HTTPServer httpServer(*dbMgr_, config_.WebRoot, httpLogger,
-							  HTTPServer::OptionalConfig{config_.DebugAllocs, config_.DebugPprof, prometheus.get(), statsCollector.get()});
+							  HTTPServer::OptionalConfig{config_.DebugAllocs, config_.DebugPprof, config_.TxIdleTimeout, prometheus.get(),
+														 statsCollector.get()});
 		if (!httpServer.Start(config_.HTTPAddr, loop_)) {
 			logger_.error("Can't listen HTTP on '{0}'", config_.HTTPAddr);
 			return EXIT_FAILURE;

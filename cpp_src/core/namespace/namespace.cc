@@ -120,13 +120,17 @@ void Namespace::doRename(Namespace::Ptr dst, const std::string& newName, const s
 			throw Error(errParams, "Unable to rename '%s' to '%s'", srcNs.dbpath_, dbpath);
 		}
 	}
+
 	if (dst) {
+		logPrintf(LogInfo, "Rename namespace '%s' to '%s'", srcNs.name_, dstNs->name_);
 		srcNs.name_ = dstNs->name_;
 		assert(dstMtx);
 		dstMtx->unlock();
 	} else {
+		logPrintf(LogInfo, "Rename namespace '%s' to '%s'", srcNs.name_, newName);
 		srcNs.name_ = newName;
 	}
+	srcNs.payloadType_.SetName(srcNs.name_);
 
 	if (hadStorage) {
 		logPrintf(LogTrace, "Storage was moved from %s to %s", srcNs.dbpath_, dbpath);

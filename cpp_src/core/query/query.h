@@ -37,7 +37,6 @@ public:
 
 	/// Parses pure sql select query and initializes Query object data members as a result.
 	/// @param q - sql query.
-	/// @return always returns 0.
 	void FromSQL(const string_view &q);
 
 	/// Logs query in 'Select field1, ... field N from namespace ...' format.

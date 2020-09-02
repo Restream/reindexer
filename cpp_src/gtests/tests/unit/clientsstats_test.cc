@@ -65,6 +65,15 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 	opts.CreateDBIfMissing();
 	auto err = reindexer.Connect(GetConnectionString(), opts);
 	ASSERT_TRUE(err.ok()) << err.what();
+
+	std::string nsName("ns1");
+	err = reindexer.OpenNamespace(nsName);
+	ASSERT_TRUE(err.ok()) << err.what();
+	auto tx1 = reindexer.NewTransaction(nsName);
+	ASSERT_FALSE(tx1.IsFree());
+	auto tx2 = reindexer.NewTransaction(nsName);
+	ASSERT_FALSE(tx2.IsFree());
+
 	reindexer::client::QueryResults resultNs;
 	err = reindexer.Select(reindexer::Query("#namespaces"), resultNs);
 	SetProfilingFlag(true, "profiling.activitystats", &reindexer);
@@ -80,8 +89,6 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	try {
 		gason::JsonParser parser;
-		const char* selectData = wrser.c_str();
-		(void)selectData;
 		gason::JsonNode clientsStats = parser.Parse(wrser.Slice());
 		std::string curActivity = clientsStats["current_activity"].As<std::string>();
 		ASSERT_TRUE(curActivity == selectClientsStats) << "curActivity = [" << curActivity << "]";
@@ -101,7 +108,72 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 		ASSERT_TRUE(userRights == "owner") << "userRights =[" << userRights << "]";
 		std::string clientVersion = clientsStats["client_version"].As<std::string>();
 		ASSERT_TRUE(clientVersion == reindexer::SemVersion(REINDEX_VERSION).StrippedString()) << "clientVersion =[" << clientVersion << "]";
+		uint32_t txCount = clientsStats["tx_count"].As<uint32_t>();
+		ASSERT_TRUE(txCount == 2) << "tx_count =[" << txCount << "]";
 	} catch (...) {
 		assert(false);
 	}
+
+	err = reindexer.CommitTransaction(tx1);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = reindexer.CommitTransaction(tx2);
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+
+TEST_F(ClientsStatsApi, TxCountLimitation) {
+	const size_t kMaxTxCount = 1024;
+	RunServerInThrerad(true);
+	reindexer::client::ReindexerConfig config;
+	config.ConnPoolSize = 1;
+	config.WorkerThreads = 1;
+	reindexer::client::Reindexer reindexer(config);
+	reindexer::client::ConnectOpts opts;
+	opts.CreateDBIfMissing();
+	auto err = reindexer.Connect(GetConnectionString(), opts);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	std::string nsName("ns1");
+	err = reindexer.OpenNamespace(nsName);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	std::vector<reindexer::client::Transaction> txs;
+	txs.reserve(kMaxTxCount);
+	for (size_t i = 0; i < 2 * kMaxTxCount; ++i) {
+		auto tx = reindexer.NewTransaction(nsName);
+		if (tx.Status().ok()) {
+			ASSERT_FALSE(tx.IsFree());
+			txs.emplace_back(std::move(tx));
+		}
+	}
+
+	ASSERT_EQ(txs.size(), kMaxTxCount);
+	ASSERT_EQ(StatsTxCount(reindexer), kMaxTxCount);
+
+	for (size_t i = 0; i < kMaxTxCount / 2; ++i) {
+		if (i % 2) {
+			err = reindexer.CommitTransaction(txs[i]);
+		} else {
+			err = reindexer.RollBackTransaction(txs[i]);
+		}
+		ASSERT_TRUE(err.ok()) << err.what() << "; i = " << i;
+	}
+
+	for (size_t i = 0; i < kMaxTxCount / 4; ++i) {
+		auto tx = reindexer.NewTransaction(nsName);
+		ASSERT_FALSE(tx.IsFree());
+		ASSERT_TRUE(tx.Status().ok());
+		txs[i] = std::move(tx);
+	}
+	ASSERT_EQ(StatsTxCount(reindexer), kMaxTxCount / 2 + kMaxTxCount / 4);
+	for (size_t i = 0; i < txs.size(); ++i) {
+		if (!txs[i].IsFree() && txs[i].Status().ok()) {
+			if (i % 2) {
+				err = reindexer.CommitTransaction(txs[i]);
+			} else {
+				err = reindexer.RollBackTransaction(txs[i]);
+			}
+			ASSERT_TRUE(err.ok()) << err.what() << "; i = " << i;
+		}
+	}
+	ASSERT_EQ(StatsTxCount(reindexer), 0);
 }

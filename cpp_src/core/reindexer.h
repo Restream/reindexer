@@ -16,6 +16,7 @@ using std::chrono::milliseconds;
 class ReindexerImpl;
 class IUpdatesObserver;
 class IClientsStats;
+class UpdatesFilters;
 
 /// The main Reindexer interface. Holds database object<br>
 /// *Thread safety*: All methods of Reindexer are thread safe. <br>
@@ -190,8 +191,13 @@ public:
 	/// Subscribe to updates of database
 	/// Cancelation context doesn't affect this call
 	/// @param observer - Observer interface, which will receive updates
-	/// @param subscribe - true: subscribe, false: unsubscribe
-	Error SubscribeUpdates(IUpdatesObserver *observer, bool subscribe);
+	/// @param filters - Subscription filters set
+	/// @param opts - Subscription options (allows to either add new filters or reset them)
+	Error SubscribeUpdates(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts = SubscriptionOpts());
+	/// Unsubscribe from updates of database
+	/// Cancelation context doesn't affect this call
+	/// @param observer - Observer interface, which will be unsubscribed updates
+	Error UnsubscribeUpdates(IUpdatesObserver *observer);
 
 	/// Add cancelable context
 	/// @param ctx - context pointer

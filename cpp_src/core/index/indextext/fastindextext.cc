@@ -176,7 +176,7 @@ void FastIndexText<T>::commitFulltext() {
 	}
 	auto tm2 = high_resolution_clock::now();
 
-	logPrintf(LogInfo, "FastIndexText::Commit elapsed %d ms total [ build vdocs %d ms,  process data %d ms ]\n",
+	logPrintf(LogInfo, "FastIndexText::Commit elapsed %d ms total [ build vdocs %d ms,  process data %d ms ]",
 			  duration_cast<milliseconds>(tm2 - tm0).count(), duration_cast<milliseconds>(tm1 - tm0).count(),
 			  duration_cast<milliseconds>(tm2 - tm1).count());
 }

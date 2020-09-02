@@ -1,10 +1,12 @@
 #include "dslparser.h"
+#include "core/cjson/jschemachecker.h"
 #include "core/query/query.h"
 #include "estl/fast_hash_map.h"
 #include "gason/gason.h"
 #include "tools/errors.h"
 #include "tools/json2kv.h"
 #include "tools/stringstools.h"
+
 
 namespace reindexer {
 using namespace gason;
@@ -23,7 +25,7 @@ enum class Root {
 	ReqTotal,
 	Aggregations,
 	Explain,
-	EqualPosition,
+	EqualPositions,
 	WithRank,
 	StrictMode,
 };
@@ -33,6 +35,7 @@ enum class JoinRoot { Type, On, Namespace, Filters, Sort, Limit, Offset };
 enum class JoinEntry { LeftField, RightField, Cond, Op };
 enum class Filter { Cond, Op, Field, Value, Filters, JoinQuery };
 enum class Aggregation { Fields, Type, Sort, Limit, Offset };
+enum class EqualPosition { Positions };
 
 // additional for parse root DSL fields
 template <typename T>
@@ -49,7 +52,7 @@ static const fast_str_map<Root> root_map = {{"namespace", Root::Namespace},
 											{"req_total", Root::ReqTotal},
 											{"aggregations", Root::Aggregations},
 											{"explain", Root::Explain},
-											{"equal_position", Root::EqualPosition},
+											{"equal_positions", Root::EqualPositions},
 											{"select_with_rank", Root::WithRank},
 											{"strict_mode", Root::StrictMode}};
 
@@ -98,6 +101,9 @@ static const fast_str_map<Aggregation> aggregation_map = {{"fields", Aggregation
 static const fast_str_map<AggType> aggregation_types = {{"sum", AggSum}, {"avg", AggAvg},	  {"max", AggMax},
 														{"min", AggMin}, {"facet", AggFacet}, {"distinct", AggDistinct}};
 
+// additionalfor parse field 'equation_positions'
+static const fast_str_map<EqualPosition> equationPosition_map = {{"positions", EqualPosition::Positions}};
+
 bool checkTag(JsonValue& val, JsonTag tag) { return val.getTag() == tag; }
 
 template <typename... Tags>
@@ -111,9 +117,10 @@ void checkJsonValueType(JsonValue& val, string_view name, JsonTags... possibleTa
 }
 
 template <typename T>
-T get(fast_str_map<T> const& m, string_view name) {
+T get(fast_str_map<T> const& m, string_view name, string_view mapName) {
 	auto it = m.find(name);
-	return it != m.end() ? it->second : T(-1);
+	if (it == m.end()) throw Error(errParseDSL, "Element [%s] not allowed in object of type [%s]", name, mapName);
+	return it->second;
 }
 
 template <typename T, int holdSize>
@@ -140,6 +147,7 @@ void parseValues(JsonValue& values, Array& kvs) {
 		kvs.push_back(jsonValue2Variant(values, KeyValueUndefined));
 	}
 }
+
 void parse(JsonValue& root, Query& q);
 
 void parseSortEntry(JsonValue& entry, Query& q) {
@@ -148,7 +156,7 @@ void parseSortEntry(JsonValue& entry, Query& q) {
 	for (auto subelement : entry) {
 		auto& v = subelement->value;
 		string_view name = subelement->key;
-		switch (get(sort_map, name)) {
+		switch (get(sort_map, name, "sort"_sv)) {
 			case Sort::Desc:
 				if ((v.getTag() != JSON_TRUE) && (v.getTag() != JSON_FALSE)) throw Error(errParseJson, "Wrong type of field '%s'", name);
 				sortingEntry.desc = (v.getTag() == JSON_TRUE);
@@ -175,7 +183,7 @@ void parseSortEntry(JsonValue& entry, AggregateEntry& agg) {
 	for (auto subelement : entry) {
 		auto& v = subelement->value;
 		string_view name = subelement->key;
-		switch (get(sort_map, name)) {
+		switch (get(sort_map, name, "sort"_sv)) {
 			case Sort::Desc:
 				if ((v.getTag() != JSON_TRUE) && (v.getTag() != JSON_FALSE)) throw Error(errParseJson, "Wrong type of field '%s'", name);
 				sortingEntry.desc = (v.getTag() == JSON_TRUE);
@@ -217,15 +225,15 @@ void parseFilter(JsonValue& filter, Query& q) {
 	for (auto elem : filter) {
 		auto& v = elem->value;
 		auto name = elem->key;
-		switch (get(filter_map, name)) {
+		switch (get(filter_map, name, "filter"_sv)) {
 			case Filter::Cond:
 				checkJsonValueType(v, name, JSON_STRING);
-				qe.condition = get(cond_map, v.toString());
+				qe.condition = get(cond_map, v.toString(), "condition enum"_sv);
 				break;
 
 			case Filter::Op:
 				checkJsonValueType(v, name, JSON_STRING);
-				op = get(op_map, v.toString());
+				op = get(op_map, v.toString(), "operation enum"_sv);
 				break;
 
 			case Filter::Value:
@@ -310,7 +318,7 @@ void parseJoinedEntries(JsonValue& joinEntries, JoinedQuery& qjoin) {
 		for (auto subelement : joinEntry) {
 			auto& value = subelement->value;
 			string_view name = subelement->key;
-			switch (get(joined_entry_map, name)) {
+			switch (get(joined_entry_map, name, "join_query.on"_sv)) {
 				case JoinEntry::LeftField:
 					checkJsonValueType(value, name, JSON_STRING);
 					qjoinEntry.index_ = string(value.toString());
@@ -321,11 +329,11 @@ void parseJoinedEntries(JsonValue& joinEntries, JoinedQuery& qjoin) {
 					break;
 				case JoinEntry::Cond:
 					checkJsonValueType(value, name, JSON_STRING);
-					qjoinEntry.condition_ = get(cond_map, value.toString());
+					qjoinEntry.condition_ = get(cond_map, value.toString(), "condition enum"_sv);
 					break;
 				case JoinEntry::Op:
 					checkJsonValueType(value, name, JSON_STRING);
-					qjoinEntry.op_ = get(op_map, value.toString());
+					qjoinEntry.op_ = get(op_map, value.toString(), "operation enum"_sv);
 					break;
 			}
 		}
@@ -338,10 +346,10 @@ void parseSingleJoinQuery(JsonValue& join, Query& query) {
 	for (auto subelement : join) {
 		auto& value = subelement->value;
 		string_view name = subelement->key;
-		switch (get(joins_map, name)) {
+		switch (get(joins_map, name, "join_query"_sv)) {
 			case JoinRoot::Type:
 				checkJsonValueType(value, name, JSON_STRING);
-				qjoin.joinType = get(join_types, value.toString());
+				qjoin.joinType = get(join_types, value.toString(), "join_types enum"_sv);
 				break;
 			case JoinRoot::Namespace:
 				checkJsonValueType(value, name, JSON_STRING);
@@ -386,7 +394,7 @@ void parseAggregation(JsonValue& aggregation, Query& query) {
 	for (auto element : aggregation) {
 		auto& value = element->value;
 		string_view name = element->key;
-		switch (get(aggregation_map, name)) {
+		switch (get(aggregation_map, name, "aggregations"_sv)) {
 			case Aggregation::Fields:
 				checkJsonValueType(value, name, JSON_ARRAY);
 				for (auto subElem : value) {
@@ -396,7 +404,7 @@ void parseAggregation(JsonValue& aggregation, Query& query) {
 				break;
 			case Aggregation::Type:
 				checkJsonValueType(value, name, JSON_STRING);
-				aggEntry.type_ = get(aggregation_types, value.toString());
+				aggEntry.type_ = get(aggregation_types, value.toString(), "aggregation type enum"_sv);
 				break;
 			case Aggregation::Sort:
 				parseSort(value, aggEntry);
@@ -414,6 +422,30 @@ void parseAggregation(JsonValue& aggregation, Query& query) {
 	query.aggregations_.push_back(aggEntry);
 }
 
+void parseEqualPositions(JsonValue& egualPositions, Query& query) {
+	for (auto ar : egualPositions) {
+		auto subArray = ar->value;
+		checkJsonValueType(subArray, ar->key, JSON_OBJECT);
+		for (auto element : subArray) {
+			auto& value = element->value;
+			string_view name = element->key;
+			switch (get(equationPosition_map, name, "equal_positions"_sv)) {
+				case EqualPosition::Positions: {
+					h_vector<string, 4> ep;
+					for (auto f : value) {
+						checkJsonValueType(f->value, f->key, JSON_STRING);
+						ep.emplace_back(f->value.toString());
+					}
+					if (ep.size() < 2)
+						throw Error(errLogic, "equal_position() is supposed to have at least 2 arguments. Arguments: [%s]",
+									ep.size() == 1 ? ep[0] : "");
+					query.equalPositions_.emplace(query.entries.DetermineEqualPositionIndexes(ep));
+				}
+			}
+		}
+	}
+}
+
 void parse(JsonValue& root, Query& q) {
 	if (root.getTag() != JSON_OBJECT) {
 		throw Error(errParseJson, "Json is malformed: %d", root.getTag());
@@ -422,7 +454,7 @@ void parse(JsonValue& root, Query& q) {
 	for (auto elem : root) {
 		auto& v = elem->value;
 		auto name = elem->key;
-		switch (get(root_map, name)) {
+		switch (get(root_map, name, "root"_sv)) {
 			case Root::Namespace:
 				checkJsonValueType(v, name, JSON_STRING);
 				q._namespace = string(v.toString());
@@ -460,7 +492,7 @@ void parse(JsonValue& root, Query& q) {
 				break;
 			case Root::ReqTotal:
 				checkJsonValueType(v, name, JSON_STRING);
-				q.calcTotal = get(reqtotal_values, v.toString());
+				q.calcTotal = get(reqtotal_values, v.toString(), "req_total enum"_sv);
 				break;
 			case Root::Aggregations:
 				checkJsonValueType(v, name, JSON_ARRAY);
@@ -481,25 +513,23 @@ void parse(JsonValue& root, Query& q) {
 					throw Error(errParseDSL, "Unexpected strict mode value: %s", v.toString());
 				}
 				break;
-			case Root::EqualPosition: {
+			case Root::EqualPositions: {
 				checkJsonValueType(v, name, JSON_ARRAY);
-				vector<string> ep;
-				for (auto f : v) {
-					checkJsonValueType(f->value, f->key, JSON_STRING);
-					ep.emplace_back(f->value.toString());
-				}
-				if (ep.size() < 2) throw Error(errLogic, "equal_position() is supposed to have at least 2 arguments");
-				q.equalPositions_.emplace(q.entries.DetermineEqualPositionIndexes(ep));
+				parseEqualPositions(v, q);
 			} break;
 		}
 	}
 }
 
+#include "query.json.h"
+
 Error Parse(const string& str, Query& q) {
+	static JsonSchemaChecker schemaChecker(kQueryJson, "query");
 	try {
 		gason::JsonParser parser;
-
 		auto root = parser.Parse(giftStr(str));
+		Error err = schemaChecker.Check(root);
+		if (!err.ok()) return err;
 		dsl::parse(root.value, q);
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "Query: %s", ex.what());

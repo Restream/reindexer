@@ -9,16 +9,15 @@
 
 namespace reindexer {
 
-static const int kDefaultWALSize = 4000000;
-
 /// WAL trakcer
 class WALTracker {
 public:
-	WALTracker();
+	WALTracker(int64_t sz);
 	/// Initialize WAL tracker.
+	/// @param sz - Max WAL size
 	/// @param maxLSN - Current LSN counter value
 	/// @param storage - Storage object for store WAL records
-	void Init(int64_t maxLSN, shared_ptr<datastorage::IDataStorage> storage);
+	void Init(int64_t sz, int64_t minLSN, int64_t maxLSN, shared_ptr<datastorage::IDataStorage> storage);
 	/// Add new record to WAL tracker
 	/// @param rec - Record to be added
 	/// @param oldLsn - Optional, previous LSN value of changed object
@@ -32,6 +31,13 @@ public:
 	/// Get current LSN counter value
 	/// @return current LSN counter value
 	int64_t LSNCounter() const { return lsnCounter_; }
+	/// Set max WAL size
+	/// @param sz - New WAL size
+	/// @return true - if WAL max size was changed
+	bool Resize(int64_t sz);
+	/// Get current WAL capacity
+	/// @return Max WAL size
+	int64_t Capacity() const { return walSize_; }
 
 	/// Iterator for WAL records
 	class iterator {
@@ -50,9 +56,6 @@ public:
 		const WALTracker *wt_;
 	};
 
-	/// Get begin iterator
-	/// @return iterator pointing to begin of WAL
-	iterator begin() const { return {lsnCounter_ > walSize_ ? lsnCounter_ - walSize_ : 0, this}; }
 	/// Get end iterator
 	/// @return iterator pointing to end of WAL
 	iterator end() const { return {lsnCounter_, this}; }
@@ -63,11 +66,21 @@ public:
 	/// Check is LSN outdated, and complete log is not available
 	/// @param lsn LSN of record
 	/// @return true if LSN is outdated
-	bool is_outdated(int64_t lsn) const { return bool(lsnCounter_ - lsn >= walSize_); }
+	bool is_outdated(int64_t lsn) const { return !available(lsn); }
 
 	/// Get WAL size
 	/// @return count of actual records in WAL
-	size_t size() const { return lsnCounter_ > walSize_ ? walSize_ : lsnCounter_; }
+	int64_t size() const {
+		auto walEnd = lsnCounter_ % walSize_;
+		if (!lsnCounter_) {
+			return 0;
+		} else if (walOffset_ == walEnd) {
+			return walSize_;
+		} else if (walOffset_ < walEnd) {
+			return walEnd - walOffset_;
+		}
+		return walEnd + (int64_t(records_.size()) - walOffset_);
+	}
 	/// Get WAL heap size
 	/// @return WAL memory consumption
 	size_t heap_size() const { return heapSize_ + records_.capacity() * sizeof(PackedWALRecord); }
@@ -78,19 +91,22 @@ protected:
 	/// @param rec - Record to be added
 	void put(int64_t lsn, const WALRecord &rec);
 	/// check if lsn is available. e.g. in range of ring buffer
-	bool available(int64_t lsn) const { return lsn < lsnCounter_ && lsnCounter_ - lsn < walSize_; }
+	bool available(int64_t lsn) const { return lsn < lsnCounter_ && lsnCounter_ - lsn <= size(); }
 	/// flushes lsn value to storage
 	/// @param lsn - lsn value
 	void writeToStorage(int64_t lsn);
 	std::vector<std::pair<int64_t, std::string>> readFromStorage(int64_t &maxLsn);
+	void initPositions(int64_t sz, int64_t minLSN, int64_t maxLSN);
 
 	/// Ring buffer of WAL records
 	std::vector<PackedWALRecord> records_;
 	/// LSN counter value. Contains LSN of next record
 	int64_t lsnCounter_ = 0;
 	/// Size of ring buffer
-	int64_t walSize_ = kDefaultWALSize;
-
+	int64_t walSize_ = 0;
+	/// Current start position in buffer
+	int64_t walOffset_ = 0;
+	/// Cached heap size of WAL object
 	size_t heapSize_ = 0;
 
 	std::weak_ptr<datastorage::IDataStorage> storage_;

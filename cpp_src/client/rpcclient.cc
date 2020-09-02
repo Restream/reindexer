@@ -311,6 +311,30 @@ Error RPCClient::modifyItemAsync(string_view nsName, Item* item, int mode, cprot
 	return errOK;
 }
 
+Error RPCClient::subscribeImpl(bool subscribe) {
+	Error err;
+	auto updatesConn = updatesConn_.load();
+	if (subscribe) {
+		UpdatesFilters filter = observers_.GetMergedFilter();
+		WrSerializer ser;
+		filter.GetJSON(ser);
+		if (updatesConn) {
+			err = updatesConn->Call({cproto::kCmdSubscribeUpdates, config_.RequestTimeout, milliseconds(0)}, 1, ser.Slice()).Status();
+		} else {
+			auto conn = getConn();
+			err = conn->Call({cproto::kCmdSubscribeUpdates, config_.RequestTimeout, milliseconds(0)}, 1, ser.Slice()).Status();
+			if (err.ok()) {
+				updatesConn_ = conn;
+			}
+			conn->SetUpdatesHandler([this](RPCAnswer&& ans, cproto::ClientConnection* conn) { onUpdates(ans, conn); });
+		}
+	} else if (updatesConn) {
+		err = updatesConn->Call({cproto::kCmdSubscribeUpdates, config_.RequestTimeout, milliseconds(0)}, 0).Status();
+		updatesConn_ = nullptr;
+	}
+	return err;
+}
+
 Item RPCClient::NewItem(string_view nsName) {
 	try {
 		auto ns = getNamespace(nsName);
@@ -574,27 +598,14 @@ Error RPCClient::EnumDatabases(vector<string>& dbList, const InternalRdxContext&
 	}
 }
 
-Error RPCClient::SubscribeUpdates(IUpdatesObserver* observer, bool subscribe) {
-	if (subscribe) {
-		observers_.Add(observer);
-	} else {
-		observers_.Delete(observer);
-	}
-	subscribe = !observers_.empty();
-	Error err;
-	auto updatesConn = updatesConn_.load();
-	if (subscribe && !updatesConn) {
-		auto conn = getConn();
-		err = conn->Call({cproto::kCmdSubscribeUpdates, config_.RequestTimeout, milliseconds(0)}, 1).Status();
-		if (err.ok()) {
-			updatesConn_ = conn;
-		}
-		conn->SetUpdatesHandler([this](RPCAnswer&& ans, cproto::ClientConnection* conn) { onUpdates(ans, conn); });
-	} else if (!subscribe && updatesConn) {
-		err = updatesConn->Call({cproto::kCmdSubscribeUpdates, config_.RequestTimeout, milliseconds(0)}, 0).Status();
-		updatesConn_ = nullptr;
-	}
-	return err;
+Error RPCClient::SubscribeUpdates(IUpdatesObserver* observer, const UpdatesFilters& filters, SubscriptionOpts opts) {
+	observers_.Add(observer, filters, opts);
+	return subscribeImpl(true);
+}
+
+Error RPCClient::UnsubscribeUpdates(IUpdatesObserver* observer) {
+	observers_.Delete(observer);
+	return subscribeImpl(!observers_.empty());
 }
 
 Error RPCClient::GetSqlSuggestions(string_view query, int pos, std::vector<std::string>& suggests) {
@@ -758,12 +769,12 @@ Transaction RPCClient::NewTransaction(string_view nsName, const InternalRdxConte
 	net::cproto::ClientConnection* conn = getConn();
 	auto res = conn->Call({cproto::kCmdStartTransaction, config_.RequestTimeout, ctx.execTimeout()}, nsName);
 	auto err = res.Status();
-	auto args = res.GetArgs(1);
 	if (err.ok()) {
+		auto args = res.GetArgs(1);
 		return Transaction(this, conn, int64_t(args[0]), config_.RequestTimeout, ctx.execTimeout(),
 						   std::string(nsName.data(), nsName.size()));
 	}
-	return Transaction();
+	return Transaction(std::move(err));
 }
 
 Error RPCClient::CommitTransaction(Transaction& tr, const InternalRdxContext& ctx) {

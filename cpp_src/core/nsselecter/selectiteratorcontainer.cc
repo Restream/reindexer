@@ -292,6 +292,10 @@ void SelectIteratorContainer::processEqualPositions(const std::multimap<unsigned
 	for (auto it = eqPoses.first; it != eqPoses.second; ++it) {
 		assert(!it->second.empty());
 		const QueryEntry &firstQe(queries[it->second[0]]);
+		if (firstQe.condition == CondEmpty || (firstQe.condition == CondSet && firstQe.values.empty())) {
+			throw Error(errLogic, "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
+		}
+
 		KeyValueType type = firstQe.values.size() ? firstQe.values[0].Type() : KeyValueNull;
 		Comparator cmp(firstQe.condition, type, firstQe.values, true, firstQe.distinct, ns.payloadType_, FieldsSet({firstQe.idxNo}));
 
@@ -300,6 +304,9 @@ void SelectIteratorContainer::processEqualPositions(const std::multimap<unsigned
 				(queries.Next(*qeIdxIt) < end && queries.GetOperation(queries.Next(*qeIdxIt)) == OpOr))
 				throw Error(errLogic, "Only AND operation allowed for equal position!");
 			const QueryEntry &qe = queries[*qeIdxIt];
+			if (qe.condition == CondEmpty || (qe.condition == CondSet && qe.values.empty())) {
+				throw Error(errLogic, "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
+			}
 			if (qe.idxNo == IndexValueType::SetByJsonPath) {
 				cmp.BindEqualPosition(ns.tagsMatcher_.path2tag(qe.index), qe.values, qe.condition);
 			} else if (ns.indexes_[qe.idxNo]->Opts().IsSparse()) {
@@ -482,7 +489,8 @@ IdType SelectIteratorContainer::getNextItemId(const_iterator begin, const_iterat
 
 template <bool reverse, bool hasComparators>
 bool SelectIteratorContainer::Process(PayloadValue &pv, bool *finish, IdType *rowId, IdType properRowId, bool match) {
-	if (checkIfSatisfyAllConditions<reverse, hasComparators>(begin() + 1, end(), pv, finish, *rowId, properRowId, match)) {
+	auto it = begin();
+	if (checkIfSatisfyAllConditions<reverse, hasComparators>(++it, end(), pv, finish, *rowId, properRowId, match)) {
 		return true;
 	} else {
 		*rowId = getNextItemId<reverse>(cbegin(), cend(), *rowId);

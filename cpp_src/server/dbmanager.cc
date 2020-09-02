@@ -343,24 +343,24 @@ UserRole DBManager::userRoleFromString(string_view strRole) {
 	throw Error(errParams, "Role \'%s\' is invalid", strRole);
 }
 
-const char *UserRoleName(UserRole role) noexcept {
+string_view UserRoleName(UserRole role) noexcept {
 	switch (role) {
 		case kUnauthorized:
-			return "unauthoried";
+			return "unauthoried"_sv;
 		case kRoleNone:
-			return "none";
+			return "none"_sv;
 		case kRoleDataRead:
-			return "data_read";
+			return "data_read"_sv;
 		case kRoleDataWrite:
-			return "data_write";
+			return "data_write"_sv;
 		case kRoleDBAdmin:
-			return "db_admin";
+			return "db_admin"_sv;
 		case kRoleOwner:
-			return "owner";
+			return "owner"_sv;
 		case kRoleSystem:
-			return "system";
+			return "system"_sv;
 	}
-	return "";
+	return ""_sv;
 }
 
 }  // namespace reindexer_server

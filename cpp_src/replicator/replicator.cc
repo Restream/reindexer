@@ -96,19 +96,25 @@ void Replicator::run() {
 	stop_.start();
 	logPrintf(LogInfo, "[repl] Replicator with %s started", config_.masterDSN);
 
+	if (config_.namespaces.empty()) {
+		master_->SubscribeUpdates(this, UpdatesFilters());
+	} else {
+		// Just to get any subscription for add/delete updates
+		UpdatesFilters filters;
+		filters.AddFilter(*config_.namespaces.begin(), UpdatesFilters::Filter());
+		master_->SubscribeUpdates(this, filters, SubscriptionOpts().IncrementSubscription());
+	}
 	{
 		std::lock_guard<std::mutex> lck(syncMtx_);
 		state_.store(StateInit, std::memory_order_release);
 	}
-
-	master_->SubscribeUpdates(this, true);
 
 	resync_.set([this](ev::async &) { syncDatabase(); });
 	resync_.start();
 	resyncTimer_.set([this](ev::timer &, int) { syncDatabase(); });
 	walForcesyncAsync_.set([this](ev::async &) {
 		NamespaceDef nsDef;
-		while (forcesyncQuery_.Pop(nsDef)) syncNamespaceForced(nsDef, "Upstrem node call force sync.");
+		while (forcesyncQuery_.Pop(nsDef)) syncNamespaceForced(nsDef, "Upstream node call force sync.");
 	});
 	walForcesyncAsync_.start();
 
@@ -122,6 +128,7 @@ void Replicator::run() {
 	stop_.stop();
 	resyncTimer_.stop();
 	walForcesyncAsync_.stop();
+	master_->UnsubscribeUpdates(this);
 
 	logPrintf(LogInfo, "[repl] Replicator with %s stopped", config_.masterDSN);
 }
@@ -171,7 +178,7 @@ Error Replicator::syncNamespace(const NamespaceDef &ns, string_view forceSyncRea
 			SyncStat stat;
 			auto replState = slaveNs->GetReplState(dummyCtx_);
 			LSNPair lastLsn;
-			while (err.ok()) {
+			while (err.ok() && !terminate_) {
 				{
 					std::unique_lock<std::mutex> lck(syncMtx_);
 					auto updatesIt = pendedUpdates_.find(ns.name);
@@ -198,6 +205,11 @@ Error Replicator::syncNamespace(const NamespaceDef &ns, string_view forceSyncRea
 											  ? replState.lastUpstreamLSN.isEmpty() ||
 													rec.first.upstreamLSN_.Counter() > replState.lastUpstreamLSN.Counter()
 											  : false;
+						if (terminate_) {
+							logPrintf(LogTrace, "[repl:%s:%s]:%d Terminationg updates applying cycle due to termination flag", ns.name,
+									  slave_->storagePath_, config_.serverId);
+							break;
+						}
 						if (forceApply || rec.first.upstreamLSN_.Counter() > lastLsn.upstreamLSN_.Counter()) {
 							WALRecord wrec(span<uint8_t>(rec.second));
 							err = applyWALRecord(rec.first, ns.name, slaveNs, wrec, stat);
@@ -238,6 +250,15 @@ Error Replicator::syncDatabase() {
 	logPrintf(LogInfo, "[repl:%s]:%d Starting sync from '%s' state=%d", slave_->storagePath_, config_.serverId, config_.masterDSN,
 			  state_.load());
 
+	{
+		std::lock_guard<std::mutex> lck(syncMtx_);
+		state_.store(StateSyncing, std::memory_order_release);
+		transactions_.clear();
+		syncedNamespaces_.clear();
+		currentSyncNs_.clear();
+		pendedUpdates_.clear();
+	}
+
 	Error err = master_->EnumNamespaces(nses, EnumNamespacesOpts());
 	if (!err.ok()) {
 		logPrintf(LogError, "[repl:%s] EnumNamespaces error: %s%s", slave_->storagePath_, err.what(),
@@ -248,16 +269,8 @@ Error Replicator::syncDatabase() {
 			retryIfNetworkError(err);
 		}
 		logPrintf(LogTrace, "[repl:%s] return error", slave_->storagePath_);
+		state_.store(StateInit, std::memory_order_release);
 		return err;
-	}
-
-	{
-		std::lock_guard<std::mutex> lck(syncMtx_);
-		state_.store(StateSyncing, std::memory_order_release);
-		transactions_.clear();
-		syncedNamespaces_.clear();
-		currentSyncNs_.clear();
-		pendedUpdates_.clear();
 	}
 
 	resyncTimer_.stop();
@@ -270,6 +283,12 @@ Error Replicator::syncDatabase() {
 		// skip temporary namespaces (namespace from upstream slave node)
 		if (ns.isTemporary) continue;
 		if (terminate_) break;
+
+		if (config_.namespaces.find(ns.name) != config_.namespaces.end()) {
+			UpdatesFilters filters;
+			filters.AddFilter(ns.name, UpdatesFilters::Filter());
+			master_->SubscribeUpdates(this, filters, SubscriptionOpts().IncrementSubscription());
+		}
 
 		{
 			std::lock_guard<std::mutex> lck(syncMtx_);
@@ -734,7 +753,7 @@ Error Replicator::syncMetaForced(Namespace::Ptr slaveNs, string_view nsName) {
 
 // Callback from WAL updates pusher
 void Replicator::OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &wrec) {
-	uint8_t sId = LSNs.originLSN_.Server();
+	auto sId = LSNs.originLSN_.Server();
 	if (sId != 0) {	 // sId = 0 for configurations without specifying a server id
 		if (sId == config_.serverId) {
 			logPrintf(LogTrace, "[repl:%s]:%d OnWALUpdate equal serverId=%d originLSN=%lX serverIdFromLSN=%d", nsName, config_.serverId,
@@ -844,6 +863,11 @@ bool Replicator::canApplyUpdate(LSNPair LSNs, string_view nsName, const WALRecor
 		} else {
 			logPrintf(LogTrace, "[repl:%s]:%d Skipping update - namespace was not synced yet, upstreamLSN %s", nsName, config_.serverId,
 					  LSNs.upstreamLSN_);
+			if (wrec.type == WalNamespaceAdd || wrec.type == WalNamespaceDrop || wrec.type == WalNamespaceRename) {
+				logPrintf(LogInfo, "[repl:%s]:%d Scheduling resync due to concurrent ns add/delete: %d", nsName, config_.serverId,
+						  int(wrec.type));
+				resync_.send();
+			}
 			return false;
 		}
 	}
@@ -869,7 +893,9 @@ bool Replicator::isSyncEnabled(string_view nsName) {
 	if (nsName.size() && nsName[0] == '#') return false;
 
 	// skip non enabled namespaces
-	if (config_.namespaces.size() && config_.namespaces.find(nsName) == config_.namespaces.end()) return false;
+	if (config_.namespaces.size() && config_.namespaces.find(nsName) == config_.namespaces.end()) {
+		return false;
+	}
 	return true;
 }
 

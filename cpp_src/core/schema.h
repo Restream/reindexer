@@ -32,6 +32,8 @@ struct FieldProps {
 	bool allowAdditionalProps = false;
 };
 
+class Schema;
+
 class PrefixTree {
 public:
 	using PathT = h_vector<std::string, 10>;
@@ -43,18 +45,18 @@ public:
 	std::vector<std::string> GetPaths() const;
 	bool HasPath(string_view path, bool allowAdditionalFields) const noexcept;
 
-private:
-	static std::string pathToStr(const PathT&);
-
 	struct PrefixTreeNode;
 	using map = tsl::hopscotch_map<std::string, std::unique_ptr<PrefixTreeNode>, hash_str, equal_str>;
-
 	struct PrefixTreeNode {
 		void GetPaths(std::string&& basePath, std::vector<std::string>& pathsList) const;
 
 		FieldProps props_;
 		map children_;
 	};
+
+private:
+	friend Schema;
+	static std::string pathToStr(const PathT&);
 
 	PrefixTreeNode* findNode(string_view path, bool* maybeAdditionalField = nullptr) const noexcept;
 
@@ -75,6 +77,8 @@ public:
 	Error FromJSON(span<char> json);
 	Error FromJSON(string_view json);
 	void GetJSON(WrSerializer&) const;
+
+	const PrefixTree::PrefixTreeNode* GetRoot() const { return &paths_.root_; }
 
 private:
 	void parseJsonNode(const gason::JsonNode& node, PrefixTree::PathT& splittedPath, bool isRequired);

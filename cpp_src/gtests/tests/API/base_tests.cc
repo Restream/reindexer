@@ -755,145 +755,183 @@ void TestDSLParseCorrectness(const string& testDsl) {
 }
 
 TEST_F(ReindexerApi, DslFieldsTest) {
-	TestDSLParseCorrectness(R"xxx({"join_queries": [{
-                                    "type": "inner",
-                                    "op": "AND",
-                                    "namespace": "test1",
-                                    "filters": [{
-                                        "Op": "",
-                                        "Field": "id",
-                                        "Cond": "SET",
-                                        "Value": [81204872, 101326571, 101326882]
-                                    }],
-                                    "sort": {
-                                        "field": "test1",
-                                        "desc": true
-                                    },
-                                    "limit": 3,
-                                    "offset": 0,
-                                    "on": [{
-                                            "left_field": "joined",
-                                            "right_field": "joined",
-                                            "cond": "lt",
-                                            "op": "OR"
-                                        },
-                                        {
-                                            "left_field": "joined2",
-                                            "right_field": "joined2",
-                                            "cond": "gt",
-                                            "op": "AND"
-                                        }
-                                    ]
-                                },
-                                {
-                                    "type": "left",
-                                    "op": "OR",
-                                    "namespace": "test2",
-                                    "filters": [{
-                                        "filters": [{
-                                                "Op": "And",
-                                                "Filters": [{
-                                                        "Op": "Not",
-                                                        "Field": "id2",
-                                                        "Cond": "SET",
-                                                        "Value": [81204872, 101326571, 101326882]
-                                                    },
-                                                    {
-                                                        "Op": "Or",
-                                                        "Field": "id2",
-                                                        "Cond": "SET",
-                                                        "Value": [81204872, 101326571, 101326882]
-                                                    },
-                                                    {
-                                                        "Op": "And",
-                                                        "filters": [{
-                                                                "Op": "Not",
-                                                                "Field": "id2",
-                                                                "Cond": "SET",
-                                                                "Value": [81204872, 101326571, 101326882]
-                                                            },
-                                                            {
-                                                                "Op": "Or",
-                                                                "Field": "id2",
-                                                                "Cond": "SET",
-                                                                "Value": [81204872, 101326571, 101326882]
-                                                            }
-                                                        ]
-                                                    }
-                                                ]
-                                            },
-                                            {
-                                                "Op": "Not",
-                                                "Field": "id2",
-                                                "Cond": "SET",
-                                                "Value": [81204872, 101326571, 101326882]
-                                            }
-                                        ]
-                                    }],
-                                    "sort": {
-                                        "field": "test2",
-                                        "desc": true
-                                    },
-                                    "limit": 4,
-                                    "offset": 5,
-                                    "on": [{
-                                            "left_field": "joined1",
-                                            "right_field": "joined1",
-                                            "cond": "le",
-                                            "op": "AND"
-                                        },
-                                        {
-                                            "left_field": "joined2",
-                                            "right_field": "joined2",
-                                            "cond": "ge",
-                                            "op": "OR"
-                                        }
-                                    ]
-                                }
-                            ]
-                        })xxx");
+	TestDSLParseCorrectness(R"xxx({
+		"namespace": "test_ns"
+		"filters": [
+			{
+				"op": "AND",
+				"join_query": {
+					"type": "inner",
+					"namespace": "test1",
+					"filters": [
+						{
+							"Op": "OR",
+							"Field": "id",
+							"Cond": "EMPTY"
+						}
+					],
+					"sort": {
+						"field": "test1",
+						"desc": true
+					},
+					"limit": 3,
+					"offset": 0,
+					"on": [
+						{
+							"left_field": "joined",
+							"right_field": "joined",
+							"cond": "lt",
+							"op": "OR"
+						},
+						{
+							"left_field": "joined2",
+							"right_field": "joined2",
+							"cond": "gt",
+							"op": "AND"
+						}
+					]
+				}
+			},
+		   {
+			"op": "OR",
+			"join_query": {
+				"type": "left",
+				"namespace": "test2",
+				"filters": [
+					{
+						"filters": [
+							{
+								"Op": "And",
+								"Filters": [
+									{
+										"Op": "Not",
+										"Field": "id2",
+										"Cond": "SET",
+										"Value": [
+											81204872,
+											101326571,
+											101326882
+										]
+									},
+									{
+										"Op": "Or",
+										"Field": "id2",
+										"Cond": "SET",
+										"Value": [
+											81204872,
+											101326571,
+											101326882
+										]
+									},
+									{
+										"Op": "And",
+										"filters": [
+											{
+												"Op": "Not",
+												"Field": "id2",
+												"Cond": "SET",
+												"Value": [
+													81204872,
+													101326571,
+													101326882
+												]
+											},
+											{
+												"Op": "Or",
+												"Field": "id2",
+												"Cond": "SET",
+												"Value": [
+													81204872,
+													101326571,
+													101326882
+												]
+											}
+										]
+									}
+								]
+							},
+							{
+								"Op": "Not",
+								"Field": "id2",
+								"Cond": "SET",
+								"Value": [
+									81204872,
+									101326571,
+									101326882
+								]
+							}
+						]
+					}
+				],
+				"sort": {
+					"field": "test2",
+					"desc": true
+				},
+				"limit": 4,
+				"offset": 5,
+				"on": [
+					{
+						"left_field": "joined1",
+						"right_field": "joined1",
+						"cond": "le",
+						"op": "AND"
+					},
+					{
+						"left_field": "joined2",
+						"right_field": "joined2",
+						"cond": "ge",
+						"op": "OR"
+					}
+				]
+				}
+			}
 
-	TestDSLParseCorrectness(R"xxx({"merge_queries": [{
-                                    "namespace": "services",
-                                    "offset": 0,
-                                    "limit": 3,
-                                    "distinct": [],
-                                    "sort": {
-                                        "field": "",
-                                        "desc": true
-                                    },
-                                    "filters": [{
-                                        "Op": "",
-                                        "Field": "id",
-                                        "Cond": "SET",
-                                        "Value": [81204872, 101326571, 101326882]
-                                    }]
-                                },
-                                {
-                                    "namespace": "services",
-                                    "offset": 1,
-                                    "limit": 5,
-                                    "distinct": [],
-                                    "sort": {
-                                        "field": "field1",
-                                        "desc": false
-                                    },
-                                    "filters": [{
-                                        "Op": "not",
-                                        "Field": "id",
-                                        "Cond": "ge",
-                                        "Value": 81204872
-                                    }]
-                                }
-                            ]
-                        })xxx");
-	TestDSLParseCorrectness(R"xxx({"select_filter": ["f1", "f2", "f3", "f4", "f5"]})xxx");
-	TestDSLParseCorrectness(R"xxx({"select_functions": ["f1()", "f2()", "f3()", "f4()", "f5()"]})xxx");
-	TestDSLParseCorrectness(R"xxx({"req_total":"cached"})xxx");
-	TestDSLParseCorrectness(R"xxx({"req_total":"enabled"})xxx");
-	TestDSLParseCorrectness(R"xxx({"req_total":"disabled"})xxx");
-	TestDSLParseCorrectness(R"xxx({"aggregations":[{"field":"field1", "type":"sum"}, {"field":"field2", "type":"avg"}]})xxx");
-	TestDSLParseCorrectness(R"xxx({"strict_mode":"indexes"})xxx");
+		]
+	})xxx");
+
+	TestDSLParseCorrectness(R"xxx({
+										"namespace": "test_ns",
+										"merge_queries": [{
+											"namespace": "services",
+											"offset": 0,
+											"limit": 3,
+											"sort": {
+												"field": "",
+												"desc": true
+											},
+											"filters": [{
+												"Op": "or",
+												"Field": "id",
+												"Cond": "SET",
+												"Value": [81204872, 101326571, 101326882]
+											}]
+										},
+										{
+											"namespace": "services",
+											"offset": 1,
+											"limit": 5,
+											"sort": {
+												"field": "field1",
+												"desc": false
+											},
+											"filters": [{
+												"Op": "not",
+												"Field": "id",
+												"Cond": "ge",
+												"Value": 81204872
+											}]
+										}
+									]
+								})xxx");
+
+	TestDSLParseCorrectness(R"xxx({"namespace": "test1","select_filter": ["f1", "f2", "f3", "f4", "f5"]})xxx");
+	TestDSLParseCorrectness(R"xxx({"namespace": "test1","select_functions": ["f1()", "f2()", "f3()", "f4()", "f5()"]})xxx");
+	TestDSLParseCorrectness(R"xxx({"namespace": "test1","req_total":"cached"})xxx");
+	TestDSLParseCorrectness(R"xxx({"namespace": "test1","req_total":"enabled"})xxx");
+	TestDSLParseCorrectness(R"xxx({"namespace": "test1","req_total":"disabled"})xxx");
+	TestDSLParseCorrectness(
+		R"xxx({"namespace": "test1","aggregations":[{"fields":["field1"], "type":"sum"}, {"fields":["field2"], "type":"avg"}]})xxx");
+	TestDSLParseCorrectness(R"xxx({"namespace": "test1", "strict_mode":"indexes"})xxx");
 }
 
 TEST_F(ReindexerApi, DistinctQueriesEncodingTest) {

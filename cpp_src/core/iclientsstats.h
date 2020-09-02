@@ -21,15 +21,31 @@ struct ClientStat {
 	std::string userRights;
 	std::string clientVersion;
 	std::string appName;
+	uint32_t txCount = 0;
+};
+
+struct TxStats {
+	std::atomic<uint32_t> txCount = {0};
+};
+
+struct ClientConnectionStat {
+	std::shared_ptr<reindexer::net::ConnectionStat> connectionStat;
+	std::shared_ptr<reindexer::TxStats> txStats;
+	std::string ip;
+	std::string userName;
+	std::string dbName;
+	std::string userRights;
+	std::string clientVersion;
+	std::string appName;
 };
 
 class IClientsStats {
 public:
 	virtual void GetClientInfo(std::vector<ClientStat>& datas) = 0;
-	virtual void AddConnection(std::shared_ptr<reindexer::net::ConnectionStat> connStat, int connectionId, std::string ip,
-							   std::string userName, std::string dbName, std::string userRights, std::string clientVersion,
-							   std::string appName) = 0;
+	virtual void AddConnection(int64_t connectionId, ClientConnectionStat&& conn) = 0;
 	virtual void DeleteConnection(int64_t id) = 0;
+
+	virtual ~IClientsStats() = default;
 };
 
 }  // namespace reindexer

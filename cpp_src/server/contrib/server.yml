@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.11.1"
+  version: "2.12.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -39,7 +39,7 @@ paths:
         This operation will create new database. If database is already exists, then error will be returned.
       operationId: "createDatabase"
       parameters:
-      - in: "body"
+      - in: body
         name: "body"
         description: "Database definintion"
         required: true
@@ -66,8 +66,8 @@ paths:
       operationId: "describeDatabases"
       parameters:
       - name: "sort_order"
-        in: "query"
-        type: "string"
+        in: query
+        type: string
         description: "Sort Order"
         enum:
         - "asc"
@@ -98,8 +98,8 @@ paths:
       operationId: "dropDatabase"
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       responses:
@@ -124,15 +124,15 @@ paths:
         If namespace is already exists, then operation do not nothing.
       operationId: "openNamespace"
       parameters:
-      - in: "body"
+      - in: body
         name: "body"
         description: "Namespace definintion"
         required: true
         schema:
           $ref: "#/definitions/Namespace"
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       responses:
@@ -156,13 +156,13 @@ paths:
       operationId: "describeNamespaces"
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "sort_order"
-        in: "query"
-        type: "string"
+        in: query
+        type: string
         description: "Sort Order"
         enum:
         - "asc"
@@ -191,13 +191,13 @@ paths:
       operationId: "describeCurrNamespace"
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "name"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Namespace name"
         required: true
       responses:
@@ -224,13 +224,13 @@ paths:
       operationId: "dropNamespace"
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "name"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Namespace name"
         required: true
       responses:
@@ -255,13 +255,13 @@ paths:
       operationId: "truncateNamespace"
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "name"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Namespace name"
         required: true
       responses:
@@ -286,18 +286,18 @@ paths:
       operationId: "renameNamespace"
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "name"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Namespace name"
         required: true
       - name: "newname"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Namespace new name"
         required: true
 
@@ -324,38 +324,38 @@ paths:
       operationId: "getNamespaceMetalist"
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "name"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Namespace name"
         required: true
       - name: "sort_order"
-        in: "query"
+        in: query
         required: false
         description: "Sort Order"
-        type: "string"
+        type: string
         enum:
         - "asc"
         - "desc"
       - name: "with_values"
-        in: "query"
+        in: query
         required: false
         description: "Includ values in response"
-        type: "boolean"
+        type: boolean
         default: false
       - name: "offset"
-        in: "query"
+        in: query
         required: false
-        type: "integer"
+        type: integer
         default: 0
       - name: "limit"
-        in: "query"
+        in: query
         required: false
-        type: "integer"
+        type: integer
         description: "If 0 - no limit"
         default: 0
       responses:
@@ -382,20 +382,20 @@ paths:
       operationId: "getNamespaceMetaByKey"
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "name"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Namespace name"
         required: true
       - name: "key"
-        in: "path"
+        in: path
         required: true
         description: "Meta key"
-        type: "string"
+        type: string
       responses:
         200:
           description: "Successful operation"
@@ -420,17 +420,17 @@ paths:
       operationId: "putNamespaceMetaByKey"
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "name"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Namespace name"
         required: true
       - name: "meta_info"
-        in: "body"
+        in: body
         required: true
         description: "Meta info"
         schema:
@@ -464,29 +464,29 @@ paths:
         ...
         ```
       parameters:
-      - in: "body"
+      - in: body
         name: "body"
         schema:
-          type: "object"
+          type: object
         required: true
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "name"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Namespace name"
         required: true
       - name: "precepts"
-        in: "query"
-        type: "array"
+        in: query
+        type: array
         collectionFormat: "multi"
         description: "Precepts to be done"
         required: false
         items:
-          type: "string"
+          type: string
       responses:
         200:
           description: "successful operation"
@@ -514,32 +514,32 @@ paths:
         ...
         ```
       parameters:
-      - in: "body"
+      - in: body
         name: "body"
         schema:
-          type: "object"
+          type: object
         required: true
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "name"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Namespace name"
         required: true
       - name: "precepts"
-        in: "query"
-        type: "array"
+        in: query
+        type: array
         collectionFormat: "multi"
         description: "Precepts to be done"
         required: false
         items:
-          type: "string"
+          type: string
       - name: "format"
-        in: "query"
-        type: "string"
+        in: query
+        type: string
         description: "encoding data format"
         required: false
         enum:
@@ -572,32 +572,32 @@ paths:
         ...
         ```
       parameters:
-      - in: "body"
+      - in: body
         name: "body"
         schema:
-          type: "object"
+          type: object
         required: true
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "name"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Namespace name"
         required: true
       - name: "precepts"
-        in: "query"
-        type: "array"
+        in: query
+        type: array
         collectionFormat: "multi"
         description: "Precepts to be done"
         required: false
         items:
-          type: "string"
+          type: string
       - name: "format"
-        in: "query"
-        type: "string"
+        in: query
+        type: string
         description: "encoding data format"
         required: false
         enum:
@@ -625,45 +625,45 @@ paths:
         This operation will select documents from namespace with specified filters, and sort them by specified sort order. Paging with limit and offset are supported.
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "name"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Namespace name"
         required: true
       - name: "limit"
-        in: "query"
-        type: "integer"
+        in: query
+        type: integer
         description: "Maximum count of returned items"
       - name: "offset"
-        in: "query"
-        type: "integer"
+        in: query
+        type: integer
         description: "Offset of first returned item"
       - name: "sort_field"
-        in: "query"
-        type: "string"
+        in: query
+        type: string
         description: "Sort Field"
       - name: "sort_order"
-        in: "query"
-        type: "string"
+        in: query
+        type: string
         description: "Sort Order"
         enum:
         - "asc"
         - "desc"
       - name: "filter"
-        in: "query"
-        type: "string"
+        in: query
+        type: string
         description: "Filter with SQL syntax, e.g: field1 = 'v1' AND field2 > 'v2'"
       - name: "fields"
-        in: "query"
-        type: "string"
+        in: query
+        type: string
         description: "Comma-separated list of returned fields"
       - name: "format"
-        in: "query"
-        type: "string"
+        in: query
+        type: string
         description: "encoding data format"
         required: false
         enum:
@@ -693,13 +693,13 @@ paths:
       operationId: "describeIndexes"
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "name"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Namespace name"
         required: true
       responses:
@@ -724,20 +724,20 @@ paths:
         This operation will create new index. If index is already exists with the different parameters, then error will be returned.
         Operation is synchronious, so it can take long time, if namespace contains bunch of documents.
       parameters:
-      - in: "body"
+      - in: body
         name: "body"
         description: "Index definition"
         schema:
           $ref: "#/definitions/Index"
         required: true
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "name"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Namespace name"
         required: true
       responses:
@@ -760,20 +760,20 @@ paths:
         This operation will update index parameters. E.g. type of field or type of index.
         Operation  is synchronious, so it can take long time, if namespace contains bunch of documents
       parameters:
-      - in: "body"
+      - in: body
         name: "body"
         description: "Index definition"
         schema:
           $ref: "#/definitions/Index"
         required: true
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "name"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Namespace name"
         required: true
       responses:
@@ -799,18 +799,18 @@ paths:
         Operation  is synchronious, so it can take long time, if namespace contains bunch of documents.
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "name"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Namespace name"
         required: true
       - name: "indexname"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Index name"
         required: true
       responses:
@@ -834,20 +834,20 @@ paths:
       description: |
         This operation will set namespace schema (information about available fields and field types)
       parameters:
-      - in: "body"
+      - in: body
         name: "body"
         description: This operation will put new schema for specified database and namespace
         schema:
           $ref: "#/definitions/SchemaDef"
         required: true
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "name"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Namespace name"
         required: true
       responses:
@@ -869,13 +869,13 @@ paths:
       operationId: "getSchema"
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "name"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Namespace name"
         required: true
       responses:
@@ -904,36 +904,36 @@ paths:
         then `limit` and `offset` from http request.
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "q"
-        in: "query"
-        type: "string"
+        in: query
+        type: string
         description: "SQL query"
         required: true
       - name: "limit"
-        in: "query"
-        type: "integer"
+        in: query
+        type: integer
         description: "Maximum count of returned items"
       - name: "offset"
-        in: "query"
-        type: "integer"
+        in: query
+        type: integer
         description: "Offset of first returned item"
       - name: with_columns
-        in: "query"
-        type: "boolean"
+        in: query
+        type: boolean
         description: "Return columns names and widths for table format output"
         required: false
       - name: width
-        in: "query"
-        type: "integer"
+        in: query
+        type: integer
         description: "Total width in rows of view for table format output"
         required: false
       - name: "format"
-        in: "query"
-        type: "string"
+        in: query
+        type: string
         description: "encoding data format"
         required: false
         enum:
@@ -961,29 +961,29 @@ paths:
         This opertaion queries documents from namespace by DSL query.
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
-      - in: "body"
+      - in: body
         name: "body"
         description: "DSL query"
         required: true
         schema:
           $ref: "#/definitions/Query"
       - name: with_columns
-        in: "query"
-        type: "boolean"
+        in: query
+        type: boolean
         description: "Return columns names and widths for table format output"
         required: false
       - name: width
-        in: "query"
-        type: "integer"
+        in: query
+        type: integer
         description: "Total width in rows of view for table format output"
         required: false
       - name: "format"
-        in: "query"
-        type: "string"
+        in: query
+        type: string
         description: "format of encoding data: json or msgpack"
         required: false
       responses:
@@ -1008,9 +1008,373 @@ paths:
         This opertaion removes documents from namespace by DSL query.
       parameters:
       - name: "database"
+        in: path
+        type: string
+        description: "Database name"
+        required: true
+      - in: body
+        name: "body"
+        description: "DSL query"
+        required: true
+        schema:
+          $ref: "#/definitions/Query"
+      responses:
+        200:
+          $ref: "#/responses/OK"
+        400:
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
+
+  /db/{database}/namespaces/{name}/transactions/begin:
+    post:
+      tags:
+      - "transactions"
+      summary: "Begin transaction to namespace"
+      operationId: "beginTx"
+      parameters:
+      - name: "database"
         in: "path"
         type: "string"
         description: "Database name"
+        required: true
+      - name: "name"
+        in: "path"
+        type: "string"
+        description: "Namespace name"
+        required: true
+      - name: "format"
+        in: "query"
+        type: "string"
+        description: "encoding data format"
+        required: false
+        enum:
+          - json
+          - msgpack
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/BeginTransactionResponse"
+        400:
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
+
+  /db/{database}/transactions/{tx_id}/commit:
+    post:
+      tags:
+      - "transactions"
+      summary: "Commit transaction"
+      operationId: "commitTx"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "tx_id"
+        in: "path"
+        type: "string"
+        description: "transaction id"
+        required: true
+      - name: "format"
+        in: "query"
+        type: "string"
+        description: "encoding data format"
+        required: false
+        enum:
+          - json
+          - msgpack
+      responses:
+        200:
+          $ref: "#/responses/OK"
+        400:
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
+
+  /db/{database}/transactions/{tx_id}/rollback:
+    post:
+      tags:
+      - "transactions"
+      summary: "Rollback transaction"
+      operationId: "rollbackTx"
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "tx_id"
+        in: "path"
+        type: "string"
+        description: "transaction id"
+        required: true
+      - name: "format"
+        in: "query"
+        type: "string"
+        description: "encoding data format"
+        required: false
+        enum:
+          - json
+          - msgpack
+      responses:
+        200:
+          $ref: "#/responses/OK"
+        400:
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
+
+  /db/{database}/transactions/{tx_id}/items:
+    delete:
+      tags:
+      - "transactions"
+      summary: "Delete documents from namespace via transaction"
+      operationId: "deleteItemsTx"
+      description: |
+        This will add DELETE operation into transaction.
+        It DELETEs documents from namespace, by their primary keys.
+        Each document should be in request body as separate JSON object, e.g.
+        ```
+        {"id":100}
+        {"id":101}
+        ...
+        ```
+      parameters:
+      - in: "body"
+        name: "body"
+        schema:
+          type: "object"
+        required: true
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "precepts"
+        in: "query"
+        type: "array"
+        collectionFormat: "multi"
+        description: "Precepts to be done"
+        required: false
+        items:
+          type: "string"
+      - name: "tx_id"
+        in: "path"
+        type: "string"
+        description: "transaction id"
+        required: true
+      responses:
+        200:
+          $ref: "#/responses/OK"
+        400:
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
+    post:
+      tags:
+      - "transactions"
+      summary: "Insert documents to namespace via transaction"
+      operationId: "postItemsTx"
+      description: |
+        This will add INSERT operation into transaction.
+        It INSERTs documents to namespace, by their primary keys.
+        Each document should be in request body as separate JSON object, e.g.
+        ```
+        {"id":100, "name": "Pet"}
+        {"id":101, "name": "Dog"}
+        ...
+        ```
+      parameters:
+      - in: "body"
+        name: "body"
+        schema:
+          type: "object"
+        required: true
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "tx_id"
+        in: "path"
+        type: "string"
+        description: "transaction id"
+        required: true
+      - name: "precepts"
+        in: "query"
+        type: "array"
+        collectionFormat: "multi"
+        description: "Precepts to be done"
+        required: false
+        items:
+          type: "string"
+      - name: "format"
+        in: "query"
+        type: "string"
+        description: "encoding data format"
+        required: false
+        enum:
+          - json
+          - msgpack
+      responses:
+        200:
+          $ref: "#/responses/OK"
+        400:
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
+    put:
+      tags:
+      - "transactions"
+      summary: "Update documents in namespace via transaction"
+      operationId: "putItemsTx"
+      description: |
+        This will add UPDATE operation into transaction.
+        It UPDATEs documents in namespace, by their primary keys.
+        Each document should be in request body as separate JSON object, e.g.
+        ```
+        {"id":100, "name": "Pet"}
+        {"id":101, "name": "Dog"}
+        ...
+        ```
+      parameters:
+      - in: "body"
+        name: "body"
+        schema:
+          type: "object"
+        required: true
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "tx_id"
+        in: "path"
+        type: "string"
+        description: "transaction id"
+        required: true
+      - name: "precepts"
+        in: "query"
+        type: "array"
+        collectionFormat: "multi"
+        description: "Precepts to be done"
+        required: false
+        items:
+          type: "string"
+      - name: "format"
+        in: "query"
+        type: "string"
+        description: "encoding data format"
+        required: false
+        enum:
+          - json
+          - msgpack
+      responses:
+        200:
+          $ref: "#/responses/OK"
+        400:
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
+
+  /db/{database}/transactions/{tx_id}/query:
+    get:
+      tags:
+      - "transactions"
+      summary: "Delete/update queries for transactions"
+      operationId: "getQueryTx"
+      description: |
+        This will add DELETE/UPDATE SQL query into transaction.
+        This query UPDATEs/DELETEs documents from namespace
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "tx_id"
+        in: "path"
+        type: "string"
+        description: "transaction id"
+        required: true
+      - name: "q"
+        in: "query"
+        type: "string"
+        description: "SQL query"
+        required: true
+      - name: width
+        in: "query"
+        type: "integer"
+        description: "Total width in rows of view for table format output"
+        required: false
+      - name: "format"
+        in: "query"
+        type: "string"
+        description: "encoding data format"
+        required: false
+        enum:
+          - json
+          - msgpack
+      responses:
+        200:
+          $ref: "#/responses/OK"
+        400:
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
+    delete:
+      tags:
+      - "transactions"
+      summary: "Delete documents from namespace (transactions)"
+      operationId: "deleteQueryTx"
+      description: |
+        This will add DELETE query into transaction.
+        DELETE query removes documents from namespace by DSL query.
+      parameters:
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "tx_id"
+        in: "path"
+        type: "string"
+        description: "transaction id"
         required: true
       - in: "body"
         name: "body"
@@ -1018,6 +1382,11 @@ paths:
         required: true
         schema:
           $ref: "#/definitions/Query"
+      - name: "tx_id"
+        in: "query"
+        type: "string"
+        description: "transaction id"
+        required: false
       responses:
         200:
           $ref: "#/responses/OK"
@@ -1040,23 +1409,23 @@ paths:
         This operation pareses SQL query, and suggests autocompletion variants
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "q"
-        in: "query"
-        type: "string"
+        in: query
+        type: string
         description: "SQL query"
         required: true
       - name: "pos"
-        in: "query"
-        type: "integer"
+        in: query
+        type: integer
         description: "Cursor position for suggest"
         required: true
       - name: "line"
-        in: "query"
-        type: "integer"
+        in: query
+        type: integer
         description: "Cursor line for suggest"
         required: false
       responses:
@@ -1083,24 +1452,24 @@ paths:
         This opertaion queries documents from namespace by SQL query. Query can be preced by `EXPLAIN` statement, then query execution plan will be returned with query results. 
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       - name: "q"
-        in: "body"
+        in: body
         schema:
-          type: "string"
+          type: string
         description: "SQL query"
         required: true
       - name: with_columns
-        in: "query"
-        type: "boolean"
+        in: query
+        type: boolean
         description: "Return columns names and widths for table format output"
         required: false
       - name: width
-        in: "query"
-        type: "integer"
+        in: query
+        type: integer
         description: "Total width in rows of view for table format output"
         required: false
       responses:
@@ -1147,8 +1516,8 @@ paths:
       operationId: "getActivityStats"
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       responses:
@@ -1174,8 +1543,8 @@ paths:
       operationId: "getClientsStats"
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       responses:
@@ -1201,8 +1570,8 @@ paths:
       operationId: "getMemStats"
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       responses:
@@ -1228,8 +1597,8 @@ paths:
       operationId: "getPerfStats"
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       responses:
@@ -1255,8 +1624,8 @@ paths:
       operationId: "getQueriesPerfStats"
       parameters:
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       responses:
@@ -1284,14 +1653,14 @@ paths:
         - profiling configuration. It is used to enable recording of queries and overal performance;
         - log queries configurating.
       parameters:
-      - in: "body"
+      - in: body
         name: "body"
         schema:
           $ref: "#/definitions/SystemConfigItem"
         required: true
       - name: "database"
-        in: "path"
-        type: "string"
+        in: path
+        type: string
         description: "Database name"
         required: true
       responses:
@@ -1332,40 +1701,40 @@ responses:
 
 definitions:
   SysInfo:
-    type: "object"
+    type: object
     properties:
       version:
-        type: "string"
+        type: string
         description: "Server version"
       uptime:
-        type: "integer"
+        type: integer
         description: "Server uptime in seconds"
       start_time:
-        type: "integer"
+        type: integer
         description: "Server start time in unix timestamp"
       heap_size:
-        type: "integer"
+        type: integer
         description: "Current heap size in bytes"
       current_allocated_bytes:
-        type: "integer"
+        type: integer
         description: "Current inuse allocated memory size in bytes"
       pageheap_free:
-        type: "integer"
+        type: integer
         description: "Heap free size in bytes"
       pageheap_unmapped:
-        type: "integer"
+        type: integer
         description: "Unmapped free heap size in bytes"
 
   ActivityStats:
-    type: "object"
+    type: object
     properties:
       total_items:
         description: "Total count of documents, matched specified filters"
-        type: "integer"
+        type: integer
       items:
-        type: "array"
+        type: array
         items:
-          type: "object"
+          type: object
           required:
             - client
             - query
@@ -1374,22 +1743,22 @@ definitions:
             - state
           properties:
             client:
-              type: "string"
+              type: string
               description: "Client identifier"
             user:
-              type: "string"
+              type: string
               description: "User name"
             query:
-              type: "string"
+              type: string
               description: "Query text"
             query_id:
               type: integer
               description: "Query identifier"
             query_start:
-              type: "string"
+              type: string
               description: "Query start time"
             state:
-              type: "string"
+              type: string
               description: "Current operation state"
               enum:
               - "in_progress" 
@@ -1399,18 +1768,18 @@ definitions:
               - "bool"
               - "select_loop"
             lock_description:
-              type: "string"
+              type: string
 
   ClientsStats:
-    type: "object"
+    type: object
     properties:
       total_items:
         description: "Count of connected clients"
-        type: "integer"
+        type: integer
       items:
-        type: "array"
+        type: array
         items:
-          type: "object"
+          type: object
           required:
             - connection_id
             - ip
@@ -1423,33 +1792,34 @@ definitions:
             - sent_bytes
             - client_version
             - app_name
+            - tx_count
           properties:
             connection_id:
-              type: "integer"
+              type: integer
               description: "Connection identifier"
             ip:
-              type: "string"
+              type: string
               description: "Ip"
             user_name:
-              type: "string"
+              type: string
               description: "User name"
             user_rights:
               type: string
               description: "User right"
             db_name:
-              type: "string"
+              type: string
               description: "Database name"
             current_activity:
-              type: "string"
+              type: string
               description: "Current activity"
             start_time:
-              type: "integer"
+              type: integer
               description: "Server start time in unix timestamp"
             recv_bytes:
-              type: "integer"
+              type: integer
               description: "Receive byte"
             sent_bytes:
-              type: "integer"
+              type: integer
               description: "Send byte"
             client_version:
               type: string
@@ -1457,62 +1827,65 @@ definitions:
             app_name:
               type: string
               description: "Client's aplication name"
+            tx_count:
+              type: integer
+              description: "Count of currently opened transactions for this client"
 
   Databases:
-    type: "object"
+    type: object
     properties:
       total_items:
-         type: "integer"
+         type: integer
          description: "Total count of databases"
       items:
-         type: "array"
+         type: array
          items:
            description: "Name of database"
-           type: "string"
+           type: string
 
   Database:
-    type: "object"
+    type: object
     properties:
       name:
-        type: "string"
+        type: string
         pattern: "^[A-Za-z0-9_\\-]*$"
         description: "Name of database"
 
   Namespaces:
-    type: "object"
+    type: object
     properties:
       items:
-        type: "array"
+        type: array
         items:
-          type: "object"
+          type: object
           properties:
             name:
-              type: "string"
+              type: string
               description: "Name of namespace"
       total_items:
-        type: "integer"
+        type: integer
         description: "Total count of namespaces"
 
   Namespace:
-    type: "object"
+    type: object
     properties:
       name:
-        type: "string"
+        type: string
         description: "Name of namespace"
         pattern: "^[A-Za-z0-9_\\-]*$"
       storage:
-        type: "object"
+        type: object
         properties:
           enabled:
-            type: "boolean"
+            type: boolean
             description: "If true, then documents will be stored to disc storage, else all data will be lost on server shutdown"
       indexes:
-        type: "array"
+        type: array
         items: 
           $ref: "#/definitions/Index"
 
   Index:
-    type: "object"
+    type: object
     required:
       - name
       - json_paths
@@ -1521,18 +1894,18 @@ definitions:
     properties:
       name: 
         description: "Name of index, can contains letters, digits and underscores"
-        type: "string"
+        type: string
         pattern: "^[A-Za-z0-9_\\-]*$"
         default: "id"
       json_paths:
         description: "Fields path in json object, e.g 'id' or 'subobject.field'. If index is 'composite' or 'is_array', than multiple json_paths can be specified, and index will get values from all specified fields."
-        type: "array"
+        type: array
         items:
-          type: "string"
+          type: string
           default: "id"
         minItems: 1
       field_type:
-        type: "string"
+        type: string
         description: "Field data type"
         enum:
         - "int"
@@ -1542,7 +1915,7 @@ definitions:
         - "bool"
         - "composite"
       index_type:
-        type: "string"
+        type: string
         description: "Index structure type"
         default: "hash"
         enum:
@@ -1552,25 +1925,25 @@ definitions:
         - "-"
       is_pk:
         description: "Specifies, that index is primary key. The update opertations will checks, that PK field is unique. The namespace MUST have only 1 PK index"
-        type: "boolean"
+        type: boolean
       is_array:
         description: "Specifies, that index is array. Array indexes can work with array fields, or work with multiple fields"
-        type: "boolean"
+        type: boolean
         default: false
       is_dense:
         description: "Reduces the index size. For hash and tree it will save ~8 bytes per unique key value. Useful for indexes with high selectivity, but for tree and hash indexes with low selectivity can seriously decrease update performance;"
-        type: "boolean"
+        type: boolean
         default: false
       is_sparse:
         description: "Value of index may not present in the document, and threfore, reduce data size but decreases speed operations on index"
-        type: "boolean"
+        type: boolean
         default: false
       is_simple_tag:
         description: "Use simple tag instead of actual index, which will notice rx about possible field name for strict policies"
-        type: "boolean"
+        type: boolean
         default: false
       collate_mode:
-        type: "string"
+        type: string
         description: "String collate mode"
         default: "none"
         enum:
@@ -1579,22 +1952,22 @@ definitions:
         - "utf8"
         - "numeric"
       sort_order_letters:
-        type: "string"
+        type: string
         description: "Sort order letters"
         default: ""
       config:
         $ref: "#/definitions/FulltextConfig"
 
   JsonObjectDef:
-    type: "object"
+    type: object
     properties:
       required:
         description: "Array of required fieldsl. Allowed for objects only"
-        type: "array"
+        type: array
         items:
-          type: "string"
+          type: string
       properties:
-        type: "object"
+        type: object
         properties:
           field1:
             $ref: "#/definitions/JsonObjectDef"
@@ -1604,11 +1977,11 @@ definitions:
         $ref: "#/definitions/JsonObjectDef"
       additionalProperties:
         description: "Allow additional fields in this schema level. Allowed for objects only"
-        type: "boolean"
+        type: boolean
         default: false
       type:
         description: "Entity type"
-        type: "string"
+        type: string
         enum:
         - "object"
         - "string"
@@ -1619,89 +1992,98 @@ definitions:
     $ref: "#/definitions/JsonObjectDef"
 
   Query:
-    type: "object"
+    type: object
     required:
       - namespace
     properties:
       namespace:
-        type: "string"
+        type: string
         description: "Namespace name"
       limit:
         description: "Maximum count of returned items"
-        type: "integer"
+        type: integer
       offset:
         description: "Offset of first returned item"
-        type: "integer"
+        type: integer
       req_total:
         description: "Ask query to calculate total documents, match condition"
-        type: "string"
+        type: string
         enum:
           - "disabled"
           - "enabled"
           - "cached"
         default: "disabled"
       filters:
-        type: "array"
+        type: array
         description: "Filter for results documents"
         items: 
           $ref: "#/definitions/FilterDef"
       sort:
         description: "Specifies results sorting order"
-        type: "array"
+        type: array
         items:
           $ref: "#/definitions/SortDef"
       merge_queries:
         description: "Merged queries to be merged with main query"
-        type: "array"
+        type: array
         items:
           $ref: "#/definitions/Query"
       select_filter:
         description: "Filter fields of returned document. Can be dot separated, e.g 'subobject.field'"
-        type: "array"
+        type: array
         items:
-          type: "string"
+          type: string
           default: "id"
       select_functions:
         description: "Add extra select functions to query"
-        type: "array"
+        type: array
         items:
-          type: "string"
+          type: string
       aggregations:
         description: "Ask query calculate aggregation"
-        type: "array"
+        type: array
         items:
           $ref: "#/definitions/AggregationsDef"
       equal_positions:
-        type: "array"
-        description: "Array fields to be searched with equal array indexes"
+        type: array
+        description: "Array of array fields to be searched with equal array indexes"
         items:
-          type: "string"
+          $ref: "#/definitions/EqualPositionDef"
       explain:
         description: "Add query execution explain information"
-        type: "boolean"
+        type: boolean
         default: false
       select_with_rank:
         description: "Output fulltext rank in QueryResult. Allowed only with fulltext query"
-        type: "boolean"
+        type: boolean
         default: false
       strict_mode:
         description: "Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existance in sorting and filtering conditions"
-        type: "string"
+        type: string
         enum:
           - "none"
           - "names"
           - "indexes"
         default: "names"
 
+  EqualPositionDef:
+    description: "Array fields to be searched with equal array indexes"
+    type: "object"
+    properties:
+      positions:
+        type: "array"
+        items:
+          type: "string"
+
   FilterDef:
     description: "If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not contains 'filters' then 'field' and 'cond' are required."
-    type: "object"
+    type: object
     properties:
       field:
         description: "Field json path or index name for filter"
-        type: "string"
+        type: string
       cond:
-        type: "string"
+        type: string
         description: "Condition operator"
         enum:
         - "EQ"
@@ -1713,7 +2095,7 @@ definitions:
         - "SET"
         - "EMPTY"
       op:
-        type: "string"
+        type: string
         description: "Logic operator"
         enum:
         - "AND"
@@ -1721,9 +2103,9 @@ definitions:
         - "NOT"
       value:
         description: "Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, or variable len array for SET condition"
-        type: "object"
+        type: object
       filters:
-        type: "array"
+        type: array
         description: "Filter for results documents"
         items: 
           $ref: "#/definitions/FilterDef"
@@ -1732,60 +2114,62 @@ definitions:
 
   SortDef:
     description: "Specifies results sorting order"
-    type: "object"
+    type: object
     required:
       - field
     properties:
       field:
-        type: "string"
+        type: string
         description: "Field or index name for sorting"
       values:
-        type: "array"
+        type: array
         description: "Optional: Documents with this values of field will be returned first"
         items:
-          type: "object"
+          type: object
       desc:
         description: "Descent or ascent sorting direction"
-        type: "boolean"
+        type: boolean
 
   JoinedDef:
-    type: "object"
+    type: object
     required:
       - namespace
       - on
       - type
     properties:
       namespace:
-        type: "string"
+        type: string
         description: "Namespace name"
       type:
-        type: "string"
+        type: string
         description: "Join type"
         enum:
         - "LEFT"
         - "INNER"
         - "ORINNER"
       filters:
-        type: "array"
+        type: array
         description: "Filter for results documents"
         items: 
           $ref: "#/definitions/FilterDef"
       sort:
-        $ref: "#/definitions/SortDef"
+        type: "array"
+        items:
+          $ref: "#/definitions/SortDef"
       limit:
-        type: "integer"
+        type: integer
         description: "Maximum count of returned items"
       offset:
-        type: "integer"
+        type: integer
         description: "Offset of first returned item"
       on:
-        type: "array"
+        type: array
         description: "Join ON statement"
         items: 
           $ref: "#/definitions/OnDef"
 
   OnDef:
-    type: "object"
+    type: object
     required:
       - left_field
       - right_field
@@ -1793,12 +2177,12 @@ definitions:
     properties:
       left_field:
         description: "Field from left namespace (main query namespace)"
-        type: "string"
+        type: string
       right_field:
         description: "Field from right namespace (joined query namespace)"
-        type: "string"
+        type: string
       cond:
-        type: "string"
+        type: string
         description: "Condition operator"
         enum:
         - "EQ"
@@ -1810,7 +2194,7 @@ definitions:
         - "SET"
         - "EMPTY"
       op:
-        type: "string"
+        type: string
         description: "Logic operator"
         enum:
         - "AND"
@@ -1818,18 +2202,18 @@ definitions:
         - "NOT"
 
   AggregationsDef:
-    type: "object"
+    type: object
     required:
       - fields
       - type
     properties:
       fields:
-        type: "array"
+        type: array
         description: "Fields or indexes names for aggregation function"
         items:
-          type: "string"
+          type: string
       type:
-        type: "string"
+        type: string
         description: "Aggregation function"
         enum:
         - "SUM"
@@ -1840,287 +2224,287 @@ definitions:
         - "DISTINCT"
       sort:
         description: "Specifies results sorting order. Allowed only for FACET"
-        type: "array"
+        type: array
         items:
           $ref: "#/definitions/AggregationsSortDef"
       limit:
-        type: "integer"
+        type: integer
         default: UINT_MAX
         minimum: 0
         description: "Number of rows to get from result set. Allowed only for FACET"
       offset:
-        type: "integer"
+        type: integer
         default: 0
         minimum: 0
         description: "Index of the first row to get from result set. Allowed only for FACET"
 
   AggregationsSortDef:
     description: "Specifies facet aggregations results sorting order"
-    type: "object"
+    type: object
     required:
       - field
     properties:
       field:
-        type: "string"
+        type: string
         description: "Field or index name for sorting"
       desc:
         description: "Descent or ascent sorting direction"
-        type: "boolean"
+        type: boolean
 
   FulltextConfig:
-    type: "object"
+    type: object
     description: "Fulltext Index configuration"
     properties:
       enable_translit:
-        type: "boolean"
+        type: boolean
         default: true
         description: "Enable russian translit variants processing. e.g. term 'luntik' will match word 'лунтик'"
       enable_numbers_search:
-        type: "boolean"
+        type: boolean
         default: false
         description: "Enable number variants processing. e.g. term '100' will match words one hundred"
       enable_kb_layout:
-        type: "boolean"
+        type: boolean
         default: true
         description: "Enable wrong keyboard layout variants processing. e.g. term 'keynbr' will match word 'лунтик'"
       log_level:
-        type: "integer"
+        type: integer
         default: 0
         minimum: 0
         maximum: 4
         description: "Log level of full text search engine"
       merge_limit:
-        type: "integer"
+        type: integer
         default: 20000
         minimum: 0
         maximum: 65535
         description: "Maximum documents count which will be processed in merge query results.  Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed"
       extra_word_symbols:
-        type: "string"
+        type: string
         default: "-/+"
         description: "List of symbols, which will be threated as word part, all other symbols will be thrated as wors separators"
       stop_words:
-        type: "array"
+        type: array
         description: "List of stop words. Words from this list will be ignored in documents and queries"
         items:
-          type: "string"
+          type: string
       stemmers:
-        type: "array"
+        type: array
         default: ["en","ru"]
         description: "List of stemmers to use"
         items:
-          type: "string"
+          type: string
       synonyms:
-        type: "array"
+        type: array
         description: "List of synonyms for replacement"
         items:
           $ref: "#/definitions/FulltextSynonym"
       bm25_boost:
-        type: "number"
+        type: number
         format: "float"
         default: 1.0
         minimum: 0.0
         maximum: 10.0
         description: "Boost of bm25 ranking"
       bm25_weight:
-        type: "number"
+        type: number
         format: "float"
         default: 0.1
         minimum: 0.0
         maximum: 1.0
         description: "Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to finl rank in 0 - 100% range"
       distance_boost:
-        type: "number"
+        type: number
         format: "float"
         default: 1.0
         minimum: 0.0
         maximum: 10.0
         description: "Boost of search query term distance in found document"
       distance_weght:
-        type: "number"
+        type: number
         format: "float"
         default: 0.5
         minimum: 0.0
         maximum: 1.0
         description: "Weight of search query terms distance in found document in final rank 0: distance will not change final rank. 1: distance will affect to final rank in 0 - 100% range"
       term_len_boost:
-        type: "number"
+        type: number
         format: "float"
         default: 1.0
         minimum: 0.0
         maximum: 10.0
         description: "Boost of search query term length"
       term_len_weght:
-        type: "number"
+        type: number
         format: "float"
         default: 0.3
         minimum: 0.0
         maximum: 1.0
         description: "Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range"
       position_boost:
-        type: "number"
+        type: number
         format: "float"
         default: 1.0
         minimum: 0.0
         maximum: 10.0
         description: "Boost of search query term position"
       position_weght:
-        type: "number"
+        type: number
         format: "float"
         default: 0.1
         minimum: 0.0
         maximum: 1.0
         description: "Weight of search query term position in final rank. 0: term position will not change final rank. 1: term position will affect to final rank in 0 - 100% range"
       full_match_boost:
-        type: "number"
+        type: number
         format: "float"
         default: 1.1
         minimum: 0.0
         maximum: 10.0
         description: "Boost of full match of search phrase with doc"
       min_relevancy:
-        type: "number"
+        type: number
         format: "float"
         default: 0.05
         minimum: 0.0
         maximum: 1.0
         description: "Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned "
       max_typos_in_word:
-        type: "integer"
+        type: integer
         default: 1
         minimum: 0
         maximum: 2
         description: "Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 1 possible typo -It will seriously increase RAM usage, and decrease search speed"
       max_typo_len:
-        type: "integer"
+        type: integer
         description: "Maximum word length for building and matching variants with typos."
         default: 15
         minimum: 0
         maximum: 100
       max_rebuild_steps:
-        type: "integer"
+        type: integer
         description: "Maximum steps without full rebuild of ft - more steps faster commit slower select - optimal about 15."
         default: 50
         minimum: 0
         maximum: 500
       max_step_size:
-        type: "integer"
+        type: integer
         description: "Maximum unique words to step"
         default: 4000
         minimum: 5
         maximum: 1000000000
 
   FulltextSynonym:
-    type: "object"
+    type: object
     description: "Fulltext synonym definition"
     properties:
       tokens:
-        type: "array"
+        type: array
         description: "List source tokens in query, which will be replaced with alternatives"
         items:
-          type: "string"
+          type: string
       alternatives:
-        type: "array"
+        type: array
         description: "List of alternatives, which will be used for search documents"
         items:
-          type: "string"
+          type: string
   MetaInfo:
-    type: "object"
+    type: object
     required:
       - key
       - value
     description: "Meta info to be set"
     properties:
       key:
-        type: "string"
+        type: string
       value:
-        type: "string"
+        type: string
 
   MetaListResponse:
-    type: "object"
+    type: object
     required:
       - meta
       - total_items
     description: "List of meta info of the specified namespace"
     properties:
       total_items:
-        type: "integer"
+        type: integer
         description: "Total count of meta info in the namespace"
       meta:
-        type: "array"
+        type: array
         items:
-          type: "object"
+          type: object
           required:
             - key
           properties:
             key:
-              type: "string"
+              type: string
             value:
               description: "Optional: Provided if 'with_values' = true"
-              type: "string"
+              type: string
 
   MetaByKeyResponse:
-    type: "object"
+    type: object
     required:
       - key
       - value
     description: "Meta info of the specified namespace"
     properties:
       key:
-        type: "string"
+        type: string
       value:
-        type: "string"
+        type: string
 
   Items:
-    type: "object"
+    type: object
     properties:
       total_items:
         description: "Total count of documents, matched specified filters"
-        type: "integer"
+        type: integer
       items:
-        type: "array"
+        type: array
         description: "Documents, matched specified filters"
         items:
-          type: "object"
+          type: object
   SuggestItems:
-    type: "object"
+    type: object
     properties:
       suggests:
-        type: "array"
+        type: array
         description: "Suggested query autocompletion variants"
         items:
-          type: "string"
+          type: string
   QueryItems:
-    type: "object"
+    type: object
     properties:
       items:
-        type: "array"
+        type: array
         description: "Documents, matched query"
         items:
-          type: "object"
+          type: object
       namespaces:
-        type: "array"
+        type: array
         description: "Namespaces, used in query"
         items:
-          type: "string"
+          type: string
       cache_enabled:
         description: "Enables to client cache returned items. If false, then returned items has been modified  by reindexer, e.g. by select filter, or by functions, and can't be cached"
-        type: "boolean"
+        type: boolean
       query_total_items:
         description: "Total count of documents, matched query"
-        type: "integer"
+        type: integer
       aggregations:
-        type: "array"
+        type: array
         description: "Aggregation functions results"
         items:
           $ref: "#/definitions/AggregationResDef"
       equal_position:
-        type: "array"
+        type: array
         description: "Array fields to be searched with equal array indexes"
         items:
-          type: "string"
+          type: string
       columns:
-        type: "array"
+        type: array
         description: "Columns for table output"
         items:
           $ref: "#/definitions/QueryColumnDef"
@@ -2128,52 +2512,52 @@ definitions:
         $ref: "#/definitions/ExplainDef"
 
   Indexes:
-    type: "object"
+    type: object
     properties:
       items:
-        type: "array"
+        type: array
         items:
           $ref: "#/definitions/Index"
       total_items:
-        type: "integer"
+        type: integer
         description: "Total count of indexes"
 
   ExplainDef:
-    type: "object"
+    type: object
     description: "Query execution explainings"
     properties:
       total_us:
-        type: "integer"
+        type: integer
         description: "Total query execution time"
       loop_us:
-        type: "integer"
+        type: integer
         description: "Intersection loop time"
       indexes_us:
-        type: "integer"
+        type: integer
         description: "Indexes keys selection time"
       postprocess_us:
-        type: "integer"
+        type: integer
         description: "Query post process time"
       prepare_us:
-        type: "integer"
+        type: integer
         description: "Query prepare and optimize time"
       general_sort_us:
-        type: "integer"
+        type: integer
         description: "Result sort time"
       sort_index: 
-        type: "string"
+        type: string
         description: "Index, which used for sort results"
       sort_by_uncommitted_index:
-        type: "boolean"
+        type: boolean
         description: "Optimization of sort by uncompleted index has been performed"
       selectors:
-        type: "array"
+        type: array
         description: "Filter selectos, used to proccess query conditions"
         items:
-          type: "object"
+          type: object
           properties:
             method:
-              type: "string"
+              type: string
               description: "Method, used to process condition"
               enum:
               - "scan"
@@ -2181,22 +2565,22 @@ definitions:
               - "inner_join"
               - "left_join"
             field:
-              type: "string"
+              type: string
               description: "Field or index name"
             items:
-              type: "integer"
+              type: integer
               description: "Count of scanned documents by this selector"
             matched:
-              type: "integer"
+              type: integer
               description: "Count of processed documents, matched this selector"
             comparators:
-              type: "integer"
+              type: integer
               description: "Count of comparators used, for this selector"
             cost:
-              type: "integer"
+              type: integer
               description: "Cost expectation of this selector"
             keys:
-              type: "integer"
+              type: integer
               description: "Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching"
             explain_preselect:
               description: "Preselect in joined namespace execution explainings"
@@ -2206,18 +2590,18 @@ definitions:
               $ref: "#/definitions/ExplainDef"
 
   AggregationResDef:
-    type: "object"
+    type: object
     required:
       - fields
       - type
     properties:
       fields:
-        type: "array"
+        type: array
         description: "Fields or indexes names for aggregation function"
         items:
-          type: "string"
+          type: string
       type:
-        type: "string"
+        type: string
         description: "Aggregation function"
         enum:
         - "SUM"
@@ -2227,56 +2611,56 @@ definitions:
         - "FACET"
         - "DISTINCT"
       value:
-        type: "number"
+        type: number
         description: "Value, calculated by aggregator"
       facets:
-        type: "array"
+        type: array
         description: "Facets, calculated by aggregator"
         items:
-          type: "object"
+          type: object
           required:
             - values
             - count
           properties:
             values:
-              type: "array"
+              type: array
               description: "Facet fields values"
               items:
-                type: "string"
+                type: string
             count: 
-              type: "integer"
+              type: integer
               description: "Count of elemens these fields values"
       distincts:
-        type: "array"
+        type: array
         description: "List of distinct values of the field"
         items:
-          type: "string"
+          type: string
 
   QueryColumnDef:
-    type: "object"
+    type: object
     description: "Query columns for table outputs"
     properties:
       name:
-        type: "string"
+        type: string
         description: "Column name"
       width_percents:
-        type: "number"
+        type: number
         description: "Column width in percents of total width"
       width_chars:
-        type: "number"
+        type: number
         description: "Column width in chars"
       max_chars:
-        type: "number"
+        type: number
         description: "Maximum count of chars in column"
 
   StatusResponse:
-    type: "object"
+    type: object
     properties:
       success:
-        type: "boolean"
+        type: boolean
         description: "Status of operation"
       response_code:
-        type: "integer"
+        type: integer
         enum: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
         description: >
           Error code:
@@ -2301,76 +2685,76 @@ definitions:
            * 18 - errDataHashMismatch
 
       description:
-        type: "string"
+        type: string
         description: "Text description of error details"
 
   ItemsUpdateResponse:
-    type: "object"
+    type: object
     properties:
       updated:
         description: "Count of updated items"
-        type: "integer"
+        type: integer
       items:
         description: "Updated documents. Contains only if precepts were provided"
-        type: "array"
+        type: array
         items:
-          type: "object"
+          type: object
 
   UpdateResponse:
-    type: "object"
+    type: object
     properties:
       updated:
         description: "Count of updated items"
-        type: "integer"
+        type: integer
 
   DatabaseMemStats:
-    type: "object"
+    type: object
     properties:
       total_items:
         description: "Total count of documents, matched specified filters"
-        type: "integer"
+        type: integer
       items:
-        type: "array"
+        type: array
         description: "Documents, matched specified filters"
         items:
           $ref: "#/definitions/NamespaceMemStats"
 
   NamespaceMemStats:
-    type: "object"
+    type: object
     properties:
       name:
-        type: "string"
+        type: string
         description: "Name of namespace" 
       items_count:
-        type: "integer"
+        type: integer
         description: "Total count of documents in namespace"
       data_size:
-        type: "integer"
+        type: integer
         description: "Raw size of documents, stored in the namespace, except string fields"
       updated_unix_nano:
-        type: "integer"
+        type: integer
         description: "[[deperecated]]. do not use"
       storage_ok:
-        type: "boolean"
+        type: boolean
         description: "Status of disk storage"
       storage_path:
-        type: "string"
+        type: string
         description: "Filesystem path to namespace storage"
       optimization_completed:
-        type: "boolean"
+        type: boolean
         description: "Background indexes optimization has been completed"
       total:
-        type: "object"
+        type: object
         description: "Summary of total namespace memory consumption"
         properties:
           data_size:
-            type: "integer"
+            type: integer
             description: "Total memory size of stored documents, including system structures"
           indexes_size:
-            type: "integer"
+            type: integer
             description: "Total memory consumption of namespace's indexes"
           cache_size:
-            type: "integer"
+            type: integer
             description: "Total memory consumption of namespace's caches. e.g. idset and join caches"
       join_cache:
         $ref: "#/definitions/JoinCacheMemStats"
@@ -2379,36 +2763,36 @@ definitions:
       replication:
         $ref: "#/definitions/ReplicationStats"
       indexes:
-        type: "array"
+        type: array
         description: "Memory consumption of each namespace index"
         items:
           $ref: "#/definitions/IndexMemStat"
 
   IndexMemStat:
-    type: "object"
+    type: object
     properties:
       name:
-        type: "string"
+        type: string
         description: "Name of index. There are special index with name `-tuple`. It's stores original document's json structure with non indexe fields"
       unique_keys_count:
-        type: "integer"
+        type: integer
         description: "Count of unique keys values stored in index"
       idset_btree_size:
-        type: "integer"
+        type: integer
         description: "Total memory consumption of reverse index b-tree structures. For `dense` and `store` indexes always 0"
       idset_plain_size:
-        type: "integer"
+        type: integer
         description: "Total memory consumption of reverse index vectors. For `store` ndexes always 0"
       sort_orders_size:
-        type: "integer"
+        type: integer
         description: "Total memory consumption of SORT statement and `GT`, `LT` conditions optimized structures. Applicabe only to `tree` indexes"
       idset_cache:
         $ref: "#/definitions/IndexCacheMemStats"
       fulltext_size:
-        type: "integer"
+        type: integer
         description: "Total memory consumption of fulltext search structures"
       data_size:
-        type: "integer"
+        type: integer
         description: "Total memory consumption of documents's data, holded by index"
 
   JoinCacheMemStats:
@@ -2427,42 +2811,42 @@ definitions:
       - $ref: "#/definitions/CacheMemStats"
 
   CacheMemStats:
-    type: "object"
+    type: object
     properties:
       total_size:
-        type: "integer"
+        type: integer
         description: "Total memory consumption by this cache"
       items_count:
-        type: "integer"
+        type: integer
         description: "Count of used elements stored in this cache"
       empty_count:
-        type: "integer"
+        type: integer
         description: "Count of empty elements slots in this cache"
       hit_count_limit:
-        type: "integer"
+        type: integer
         description: "Number of hits of queries, to store results in cache"
 
   ReplicationStats:
     description: "State of namespace replication"
-    type: "object"
+    type: object
     properties:
       last_lsn:
-        type: "integer"
+        type: integer
         description: "Last Log Sequence Number (LSN) of applied namespace modification"
       cluster_id:
-        type: "integer"
+        type: integer
         description: "Cluster ID - must be same for client and for master"
       slave_mode:
-        type: "boolean"
+        type: boolean
         description: "If true, then namespace is in slave mode"
       error_code:
-        type: "integer"
+        type: integer
         description: "Error code of last replication"
       error_message:
-        type: "string"
+        type: string
         description: "Error message of last replication"
       status:
-        type: "string"
+        type: string
         enum:
           - idle
           - error
@@ -2471,57 +2855,57 @@ definitions:
           - none
         description: "Current replication status for this namespace"
       master_state:
-        type: "object"
+        type: object
         description: "State of current master namespace"
         properties:
            data_hash:
-             type: "integer"
+             type: integer
              description: "Hashsum of all records in namespace"
            last_lsn:
-             type: "integer"
+             type: integer
              description: "Last Log Sequence Number (LSN) of applied namespace modification"
            updated_unix_nano:
-             type: "integer"
+             type: integer
              description: "Last update time"
            data_count:
-             type: "integer"
+             type: integer
              description: "Items count in master namespace"
       incarnation_counter:
-        type: "integer"
+        type: integer
         description: "Number of storage's master <-> slave switches"
       data_hash:
-        type: "integer"
+        type: integer
         description: "Hashsum of all records in namespace"
       wal_count:
-        type: "integer"
+        type: integer
         description: "Write Ahead Log (WAL) records count"
       wal_size:
-        type: "integer"
+        type: integer
         description: "Total memory consumption of Write Ahead Log (WAL)"
       updated_unix_nano:
-        type: "integer"
+        type: integer
         description: "Last update time"
       data_count:
-        type: "integer"
+        type: integer
         description: "Items count in namespace"
 
   DatabasePerfStats:
-    type: "object"
+    type: object
     properties:
       total_items:
         description: "Total count of documents, matched specified filters"
-        type: "integer"
+        type: integer
       items:
-        type: "array"
+        type: array
         description: "Documents, matched specified filters"
         items:
           $ref: "#/definitions/NamespacePerfStats"
 
   NamespacePerfStats:
-    type: "object"
+    type: object
     properties:
       name:
-        type: "string"
+        type: string
         description: "Name of namespace" 
       updates:
         $ref: "#/definitions/UpdatePerfStats"
@@ -2530,13 +2914,13 @@ definitions:
       transactions:
         $ref: "#/definitions/TransactionsPerfStats"
       indexes:
-        type: "array"
+        type: array
         description: "Memory consumption of each namespace index"
         items:
-          type: "object"
+          type: object
           properties:
             name:
-              type: "string"
+              type: string
               description: "Name of index"
             updates:
               $ref: "#/definitions/UpdatePerfStats"
@@ -2544,34 +2928,34 @@ definitions:
               $ref: "#/definitions/SelectPerfStats"
   
   CommonPerfStats:
-    type: "object"
+    type: object
     properties:
       total_queries_count:
-        type: "integer"
+        type: integer
         description: "Total count of queries to this object"
       total_avg_latency_us:
-        type: "integer"
+        type: integer
         description: "Average latency (execution time) for queries to this object"
       total_avg_lock_time_us:
-        type: "integer"
+        type: integer
         description: "Average waiting time for acquiring lock to this object"
       last_sec_qps:
-        type: "integer"
+        type: integer
         description: "Count of queries to this object, requested at last second"
       last_sec_avg_latency_us:
-        type: "integer"
+        type: integer
         description: "Average latency (execution time) for queries to this object at last second"
       last_sec_avg_lock_time_us:
-        type: "integer"
+        type: integer
         description: "Average waiting time for acquiring lock to this object at last second"
       latency_stddev:
-        type: "number"
+        type: number
         description: "Standard deviation of latency values"
       min_latency_us:
-        type: "integer"
+        type: integer
         description: "Minimal latency value"
       max_latency_us:
-        type: "integer"
+        type: integer
         description: "Maximum latency value"
 
   UpdatePerfStats:
@@ -2586,7 +2970,7 @@ definitions:
 
   TransactionsPerfStats:
     description: "Performance statistics for transactions"
-    type: "object"
+    type: object
     properties:
       total_count:
         type: integer
@@ -2632,13 +3016,13 @@ definitions:
         description: "Minimum namespace copy time usec"
 
   QueriesPerfStats:
-    type: "object"
+    type: object
     properties:
       total_items:
         description: "Total count of documents, matched specified filters"
-        type: "integer"
+        type: integer
       items:
-        type: "array"
+        type: array
         description: "Documents, matched specified filters"
         items:
           $ref: "#/definitions/QueryPerfStats"
@@ -2647,22 +3031,22 @@ definitions:
     description: "Performance statistics per each query"
     allOf: 
       - $ref: "#/definitions/CommonPerfStats"
-      - type: "object"
+      - type: object
         properties:
           query:
-            type: "string"
+            type: string
             description: "normalized SQL representation of query"
           longest_query:
-            type: "string"
+            type: string
             description: "not normalized SQL representation of longest query"
 
   SystemConfigItem:
-    type: "object"
+    type: object
     required:
       - type
     properties:
       type: 
-        type: "string"
+        type: string
         enum:
         - profiling
         - namespaces
@@ -2672,7 +3056,7 @@ definitions:
       profiling:
         $ref: "#/definitions/ProfilingConfig"
       namespaces:
-        type: "array"
+        type: array
         items:
           $ref: "#/definitions/NamespacesConfig"
       replication:
@@ -2682,37 +3066,37 @@ definitions:
     discriminator: "type"
 
   ProfilingConfig:
-    type: "object"
+    type: object
     properties:
       activitystats:
-        type: "boolean"
+        type: boolean
         description: "Enables tracking activity statistics"
         default: false
       memstats:
-        type: "boolean"
+        type: boolean
         description: "Enables tracking memory statistics"
         default: true
       perfstats:
-        type: "boolean"
+        type: boolean
         description: "Enables tracking overal perofrmance statistics"
         default: false
       queriesperfstats:
-        type: "boolean"
+        type: boolean
         description: "Enables record queries perofrmance statistics"
         default: false
       queries_threshold_us:
-        type: "integer"
+        type: integer
         description: "Minimum query execution time to be recoreded in #queriesperfstats namespace"
         default: 10
 
   NamespacesConfig:
-    type: "object"
+    type: object
     properties:  
       namespace:
-        type: "string"
+        type: string
         description: "Name of namespace, or `*` for setting to all namespaces"
       log_level:
-        type: "string"
+        type: string
         description: "Log level of queries core logger"
         enum:
           - none
@@ -2721,79 +3105,87 @@ definitions:
           - info
           - trace
       join_cache_mode:
-        type: "string"
+        type: string
         description: "Join cache mode"
         enum:
           - on
           - off
           - aggressive
       lazyload:
-        type: "boolean"
+        type: boolean
         description: "Enable namespace lazy load (namespace shoud be loaded from disk on first call, not at reindexer startup)" 
       unload_idle_threshold:
-        type: "integer"
+        type: integer
         description: "Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded"
       start_copy_policy_tx_size:
-        type: "integer"
+        type: integer
         description: "Enable namespace copying for transaction with steps count greater than this value (if copy_politics_multiplier also allows this)"
       copy_policy_multiplier:
-        type: "integer"
+        type: integer
         description: "Disables copy policy if namespace size is greater than copy_policy_multiplier * start_copy_policy_tx_size"
       tx_size_to_always_copy:
-        type: "integer"
+        type: integer
         description: "Force namespace copying for transaction with steps count greater than this value"
       optimization_timeout_ms:
-        type: "integer"
+        type: integer
         description: "Timeout before background indexes optimization start after last update. 0 - disable optimizations"
       optimization_sort_workers:
-        type: "integer"
+        type: integer
         description: "Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations"
       wal_size:
-        type: "integer"
+        type: integer
         description: "Maximum WAL size for this namespace (maximum count of WAL records)"
 
   ReplicationConfig:
-    type: "object"
+    type: object
     properties:  
       role:
-        type: "string"
+        type: string
         description: "Replication role"
         enum:
           - none
           - slave
           - master
       master_dsn:
-        type: "string"
+        type: string
         description: "DSN to master. Only cproto schema is supported"
       app_name:
-        type: "string"
+        type: string
         description: "Application name, used by replicator as a login tag"
       timeout_sec:
-        type: "integer"
+        type: integer
         description: "Network timeout for communication with master, in seconds"
       enable_compression:
-        type: "boolean"
+        type: boolean
         description: "Enable network traffic compression"
       cluster_id:
-        type: "integer"
+        type: integer
         description: "Cluser ID - must be same for client and for master"
       force_sync_on_logic_error:
-        type: "boolean"
+        type: boolean
         description: "force resync on logic error conditions"
       force_sync_on_wrong_data_hash:
-        type: "boolean"
+        type: boolean
         description: "force resync on wrong data hash conditions"
       namespaces:
-        type: "array"
+        type: array
         description: "List of namespaces for replication. If emply, all namespaces. All replicated namespaces will become read only for slave"
         items:
           type: string
 
   ActionCommand:
-    type: "object"
+    type: object
     properties:  
       command:
-        type: "string"
+        type: string
         description: "Command to execute"
         enum:
           - restart_replication
+
+  BeginTransactionResponse:
+    type: "object"
+    properties:
+      tx_id:
+        type: "string"
+        description: "Unique transaction id"
+

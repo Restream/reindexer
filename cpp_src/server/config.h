@@ -52,6 +52,7 @@ struct ServerConfig {
 	bool EnableConnectionsStats;
 	std::chrono::milliseconds PrometheusCollectPeriod;
 	bool DebugAllocs;
+	std::chrono::seconds TxIdleTimeout;
 
 protected:
 	Error fromYaml(Yaml::Node& root);

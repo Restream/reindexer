@@ -33,7 +33,7 @@ enum UserRole {
 	kRoleSystem,	 /// Special role for internal usage
 };
 
-const char *UserRoleName(UserRole role) noexcept;
+string_view UserRoleName(UserRole role) noexcept;
 
 /// Record about user credentials
 struct UserRecord {

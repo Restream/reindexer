@@ -99,6 +99,8 @@ void ReplicationApi::SwitchMaster(size_t id) {
 	}
 }
 
+void ReplicationApi::SetWALSize(size_t id, int64_t size, string_view nsName) { GetSrv(id)->SetWALSize(size, nsName); }
+
 ServerControl::Interface::Ptr ReplicationApi::GetSrv(size_t id) {
 	std::lock_guard<std::mutex> lock(m_);
 	assert(id < svc_.size());

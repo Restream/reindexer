@@ -691,7 +691,8 @@ void SQLParser::parseEqualPositions(tokenizer &parser) {
 		}
 	}
 	if (fields.size() < 2) {
-		throw Error(errLogic, "equal_position() is supposed to have at least 2 arguments");
+		throw Error(errLogic, "equal_position() is supposed to have at least 2 arguments. Arguments: [%s]",
+					fields.size() ? fields[0] : "");  // -V547
 	}
 	query_.equalPositions_.emplace(query_.entries.DetermineEqualPositionIndexes(fields));
 }

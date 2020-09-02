@@ -77,7 +77,8 @@ public:
 	Error PutMeta(string_view nsName, const string &key, string_view data, const InternalRdxContext &ctx = InternalRdxContext());
 	Error EnumMeta(string_view nsName, vector<string> &keys, const InternalRdxContext &ctx = InternalRdxContext());
 	Error InitSystemNamespaces();
-	Error SubscribeUpdates(IUpdatesObserver *observer, bool subscribe);
+	Error SubscribeUpdates(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts);
+	Error UnsubscribeUpdates(IUpdatesObserver *observer);
 	Error GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string> &suggestions,
 							const InternalRdxContext &ctx = InternalRdxContext());
 	Error Status();

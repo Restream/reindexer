@@ -25,12 +25,13 @@ public:
 	void Modify(Item&& item, ItemModifyMode mode) { addTxItem(std::move(item), mode); }
 
 	void Modify(Query&& query);
-	bool IsFree();
+	bool IsFree() const { return (conn_ == nullptr) || !status_.ok(); }
 	Item NewItem();
+	Error Status() const { return status_; }
 
 private:
 	friend class RPCClient;
-	Transaction() {}
+	Transaction(Error status) : status_(std::move(status)) {}
 	Transaction(RPCClient* rpcClient, net::cproto::ClientConnection* conn, int64_t txId, std::chrono::seconds RequestTimeout,
 				std::chrono::milliseconds execTimeout, std::string nsName)
 		: txId_(txId),
@@ -45,6 +46,7 @@ private:
 		txId_ = -1;
 		rpcClient_ = nullptr;
 		conn_ = nullptr;
+		status_ = errOK;
 	}
 
 	int64_t txId_ = -1;
@@ -53,6 +55,7 @@ private:
 	std::chrono::seconds RequestTimeout_;
 	std::chrono::milliseconds execTimeout_;
 	std::string nsName_;
+	Error status_;
 };
 
 }  // namespace client

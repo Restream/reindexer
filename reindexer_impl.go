@@ -8,6 +8,9 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
+
+	"github.com/hashicorp/golang-lru"
 
 	"github.com/restream/reindexer/bindings"
 	"github.com/restream/reindexer/cjson"
@@ -15,7 +18,7 @@ import (
 )
 
 type reindexerNamespace struct {
-	cacheItems    map[int]cacheItem
+	cacheItems    *cacheItems
 	cacheLock     sync.RWMutex
 	joined        map[string][]int
 	indexes       []bindings.IndexDef
@@ -40,10 +43,80 @@ type reindexerImpl struct {
 	status        error
 }
 
+type cacheItems struct {
+	// total size in bytes of all items
+	size uint64
+	// max count of bytes can cached
+	maxSize uint64
+	// cached items
+	items *lru.Cache
+}
+
+func (ci *cacheItems) Reset(maxSize uint64) {
+	ci.items.Purge()
+	atomic.StoreUint64(&ci.size, 0)
+	atomic.StoreUint64(&ci.maxSize, maxSize)
+}
+
+func (ci *cacheItems) Remove(key int) bool {
+	item, ok := ci.items.Get(key)
+	if ok {
+		ci.items.Remove(key)
+		atomic.AddUint64(&ci.size, -item.(*cacheItem).size)
+		return true
+	}
+	return false
+}
+
+func (ci *cacheItems) RemoveOldest() bool {
+	key, item, ok := ci.items.GetOldest()
+	if ok {
+		ci.items.Remove(key)
+		atomic.AddUint64(&ci.size, -item.(*cacheItem).size)
+		return true
+	}
+	return false
+}
+
+func (ci *cacheItems) Add(key int, item *cacheItem) {
+	ci.items.Add(key, item)
+	atomic.AddUint64(&ci.size, item.size)
+
+	for atomic.LoadUint64(&ci.size) > ci.maxSize {
+		ok := ci.RemoveOldest()
+		if !ok {
+			break
+		}
+	}
+}
+
+func (ci *cacheItems) Get(key int) (*cacheItem, bool) {
+	item, ok := ci.items.Get(key)
+	if ok {
+		return item.(*cacheItem), ok
+	}
+	return nil, false
+}
+
 type cacheItem struct {
+	// cached data
 	item interface{}
-	// version of item, for cachins
+	// version of item
 	version int
+	// data size in bytes
+	size uint64
+}
+
+func newCacheItems(maxSize uint64) (*cacheItems, error) {
+	cache, err := lru.New(100)
+	if err != nil {
+		return nil, err
+	}
+	return &cacheItems{
+		size:    0,
+		maxSize: maxSize,
+		items:   cache,
+	}, nil
 }
 
 // NewReindexImpl Create new instanse of Reindexer DB
@@ -83,6 +156,19 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 func (db *reindexerImpl) getStatus(ctx context.Context) bindings.Status {
 	status := db.binding.Status(ctx)
 	status.Err = db.status
+
+	db.lock.RLock()
+	nsArray := make([]*reindexerNamespace, 0, len(db.ns))
+	for _, ns := range db.ns {
+		nsArray = append(nsArray, ns)
+	}
+	db.lock.RUnlock()
+
+	for _, ns := range nsArray {
+		status.Cache.CurSize += int64(atomic.LoadUint64(&ns.cacheItems.size))
+		status.Cache.MaxSize += int64(atomic.LoadUint64(&ns.cacheItems.maxSize))
+	}
+
 	return status
 }
 
@@ -203,8 +289,13 @@ func (db *reindexerImpl) registerNamespaceImpl(namespace string, opts *Namespace
 		}
 	}
 
+	cacheItems, err := newCacheItems(opts.objCacheSize)
+	if err != nil {
+		return err
+	}
+
 	ns := &reindexerNamespace{
-		cacheItems:    make(map[int]cacheItem, 100),
+		cacheItems:    cacheItems,
 		rtype:         t,
 		name:          namespace,
 		joined:        make(map[string][]int),

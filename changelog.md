@@ -1,3 +1,28 @@
+# Version 2.12.0 (02.09.2020)
+
+## Core
+- [fea] WAL size settings via #config namespace
+- [fea] WAL updates filtering
+- [fea] Return error for queries with EqualPosition to fields with IS NULL condition
+
+# Reindexer server
+- [fea] Transactions HTTP API
+- [fea] Add RPC-transactions limit for each connection
+- [fea] More advanced JSON DSL validation for queries
+
+# Go connector
+- [fea] Items cache size limits setting
+- [fix] Fix SEGFAULT on unauthorized builtin server
+
+# Version 2.11.2 (25.08.2020)
+
+# Core
+- [fix] Fulltext snippet location in text
+- [fix] Unneeded force replication fixed
+
+# Go connector
+- [fix] Reset state on reconnect to different server
+
 # Version 2.11.1 (14.08.2020)
 
 # Core
@@ -5,7 +30,6 @@
 - [fix] Fixed behavior of SQL UPDATE statement with true/false/null values
 - [fix] Do not reset expire_after value of ttl indexes after copying tx
 - [fix] Error loading of system records (indexes/tags/replState) after copying tx
-- [fea] Return error for queries with EqualPosition to fields with IS NULL condition
 - [fix] To config added default value of `optimization_sort_workers` 
 - [fix] Windows specific error with IN () condition executed by comparator
 
