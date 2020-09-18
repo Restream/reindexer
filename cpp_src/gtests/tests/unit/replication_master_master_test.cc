@@ -40,7 +40,7 @@ public:
 							 const std::string& dbPathMaster) {
 		for (size_t i = 0; i < slaveConfiguration.size(); i++) {
 			nodes.push_back(ServerControl());
-			nodes.back().InitServer(i, basePort + i, basePort + 1000 + i, dbPathMaster + std::to_string(i), "db");
+			nodes.back().InitServer(i, basePort + i, basePort + 1000 + i, dbPathMaster + std::to_string(i), "db", true);
 			if (i == 0) {
 				ReplicationConfigTest config("master");
 				nodes.back().Get()->MakeMaster(config);
@@ -66,7 +66,7 @@ public:
 				std::this_thread::sleep_for(std::chrono::milliseconds(10));
 			}
 		}
-		nodes[id].InitServer(id, port + id, port + 1000 + id, dbPathMaster + std::to_string(id), "db");
+		nodes[id].InitServer(id, port + id, port + 1000 + id, dbPathMaster + std::to_string(id), "db", true);
 	}
 
 private:
@@ -165,7 +165,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveSyncByWalAddRow) {
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
-	nodes[1].InitServer(1, port + 1, port + 1000 + 1, dbPathMaster + std::to_string(1), "db");
+	nodes[1].InitServer(1, port + 1, port + 1000 + 1, dbPathMaster + std::to_string(1), "db", true);
 
 	insertThread.join();
 
@@ -221,7 +221,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveStart) {
 	ns1.AddRows(nodes[0], n1 + 1, n1);
 
 	//запускаем Slave
-	nodes[1].InitServer(1, port + 1, port + 1000 + 1, dbPathMaster + std::to_string(1), "db");
+	nodes[1].InitServer(1, port + 1, port + 1000 + 1, dbPathMaster + std::to_string(1), "db", true);
 	//проверяем, что они синхронны
 	WaitSync(nodes[0], nodes[1], nsName);
 
@@ -419,26 +419,26 @@ TEST_F(ReplicationSlaveSlaveApi, TransactionTest) {
 TEST_F(ReplicationSlaveSlaveApi, ForceSync3Node) {
 	reindexer::fs::RmDirAll("/tmp/testForceSync");
 	ServerControl master;
-	master.InitServer(0, 7770, 7880, "/tmp/testForceSync/master", "db");
+	master.InitServer(0, 7770, 7880, "/tmp/testForceSync/master", "db", true);
 	TestNamespace1 testns(master);
 	testns.AddRows(master, 10, 1000);
 
 	master.Get()->MakeMaster();
 
 	ServerControl slave1;
-	slave1.InitServer(0, 7771, 7881, "/tmp/testForceSync/slave1", "db");
+	slave1.InitServer(0, 7771, 7881, "/tmp/testForceSync/slave1", "db", true);
 	std::string upDsn1 = "cproto://127.0.0.1:7770/db";
 	ReplicationConfigTest configSlave1("slave", false, true, 0, upDsn1);
 	slave1.Get()->MakeMaster();
 
 	ServerControl slave2;
-	slave2.InitServer(0, 7772, 7882, "/tmp/testForceSync/slave2", "db");
+	slave2.InitServer(0, 7772, 7882, "/tmp/testForceSync/slave2", "db", true);
 	std::string upDsn2 = "cproto://127.0.0.1:7771/db";
 	ReplicationConfigTest configSlave2("slave", false, true, 0, upDsn2);
 	slave2.Get()->MakeSlave(0, configSlave2);
 
 	ServerControl slave3;
-	slave3.InitServer(0, 7773, 7883, "/tmp/testForceSync/slave3", "db");
+	slave3.InitServer(0, 7773, 7883, "/tmp/testForceSync/slave3", "db", true);
 	std::string upDsn3 = "cproto://127.0.0.1:7772/db";
 	ReplicationConfigTest configSlave3("slave", false, true, 0, upDsn3);
 	slave3.Get()->MakeSlave(0, configSlave3);
@@ -469,7 +469,7 @@ TEST_F(ReplicationSlaveSlaveApi, ForceSync3Node) {
 TEST_F(ReplicationSlaveSlaveApi, NodeWithMasterAndSlaveNs1) {
 	reindexer::fs::RmDirAll("/tmp/testNsMasterSlave");
 	ServerControl master;
-	master.InitServer(0, 7770, 7880, "/tmp/testNsMasterSlave/master", "db");
+	master.InitServer(0, 7770, 7880, "/tmp/testNsMasterSlave/master", "db", true);
 	TestNamespace1 testns1(master, "ns1");
 	testns1.AddRows(master, 11, 113);
 	TestNamespace1 testns2(master, "ns2");
@@ -480,7 +480,7 @@ TEST_F(ReplicationSlaveSlaveApi, NodeWithMasterAndSlaveNs1) {
 	const unsigned int c2 = 6013;
 	const unsigned int n = 121;
 	ServerControl slave;
-	slave.InitServer(0, 7771, 7881, "/tmp/testNsMasterSlave/slave", "db");
+	slave.InitServer(0, 7771, 7881, "/tmp/testNsMasterSlave/slave", "db", true);
 	TestNamespace1 testns3(slave, "ns3");
 	testns3.AddRows(slave, c1, n);
 	std::string upDsn = "cproto://127.0.0.1:7770/db";
@@ -525,7 +525,7 @@ TEST_F(ReplicationSlaveSlaveApi, NodeWithMasterAndSlaveNs2) {
 
 	reindexer::fs::RmDirAll("/tmp/testNsMasterSlave");
 	ServerControl master;
-	master.InitServer(0, 7770, 7880, "/tmp/testNsMasterSlave/master", "db");
+	master.InitServer(0, 7770, 7880, "/tmp/testNsMasterSlave/master", "db", true);
 	TestNamespace1 testns1(master, "ns1");
 	testns1.AddRows(master, cm1, nm);
 	TestNamespace1 testns2(master, "ns2");
@@ -536,7 +536,7 @@ TEST_F(ReplicationSlaveSlaveApi, NodeWithMasterAndSlaveNs2) {
 	const unsigned int c2 = 6007;
 	const unsigned int n = 101;
 	ServerControl slave;
-	slave.InitServer(0, 7771, 7881, "/tmp/testNsMasterSlave/slave", "db");
+	slave.InitServer(0, 7771, 7881, "/tmp/testNsMasterSlave/slave", "db", true);
 	TestNamespace1 testns3(slave, "ns3");
 	testns3.AddRows(slave, c1, n);
 	TestNamespace1 testns4(slave, "ns1");
@@ -579,7 +579,7 @@ TEST_F(ReplicationSlaveSlaveApi, NodeWithMasterAndSlaveNs3) {
 	const unsigned int c2 = 6001;
 	const unsigned int n = 101;
 	ServerControl master;
-	master.InitServer(0, 7770, 7880, "/tmp/testNsMasterSlave/master", "db");
+	master.InitServer(0, 7770, 7880, "/tmp/testNsMasterSlave/master", "db", true);
 	TestNamespace1 testns1(master, "ns1");
 	testns1.AddRows(master, 11, n);
 	TestNamespace1 testns2(master, "ns2");
@@ -587,7 +587,7 @@ TEST_F(ReplicationSlaveSlaveApi, NodeWithMasterAndSlaveNs3) {
 	master.Get()->MakeMaster();
 
 	ServerControl slave;
-	slave.InitServer(0, 7771, 7881, "/tmp/testNsMasterSlave/slave", "db");
+	slave.InitServer(0, 7771, 7881, "/tmp/testNsMasterSlave/slave", "db", true);
 	TestNamespace1 testns3(slave, "ns3");
 	testns3.AddRows(slave, c1, n);
 	TestNamespace1 testns4(slave, "ns1");

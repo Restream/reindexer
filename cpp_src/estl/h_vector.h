@@ -169,7 +169,7 @@ public:
 	void reserve(size_type sz) {
 		if (sz > capacity()) {
 			assert(sz > holdSize);
-			pointer new_data = static_cast<pointer>(operator new(sz * sizeof(T)));  // ?? dynamic
+			pointer new_data = static_cast<pointer>(operator new(sz * sizeof(T)));	// ?? dynamic
 			pointer oold_data = ptr();
 			pointer old_data = ptr();
 			for (size_type i = 0; i < size_; i++) {
@@ -306,9 +306,6 @@ protected:
 };
 #endif
 
-}  // namespace reindexer
-
-namespace std {
 template <typename C, int H>
 inline static std::ostream& operator<<(std::ostream& o, const reindexer::h_vector<C, H>& vec) {
 	o << "[";
@@ -320,4 +317,4 @@ inline static std::ostream& operator<<(std::ostream& o, const reindexer::h_vecto
 	return o;
 }
 
-}  // namespace std
+}  // namespace reindexer

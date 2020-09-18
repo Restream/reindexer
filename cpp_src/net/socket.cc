@@ -155,13 +155,18 @@ std::string socket::addr() const {
 	struct sockaddr_storage saddr;
 	struct sockaddr *paddr = reinterpret_cast<sockaddr *>(&saddr);
 	socklen_t len = sizeof(saddr);
-	if (::getpeername(fd_, paddr, &len) != 0) {
+	if (::getpeername(fd_, paddr, &len) == 0) {
+		char buf[INET_ADDRSTRLEN] = {};
+		auto port = ntohs(reinterpret_cast<sockaddr_in *>(paddr)->sin_port);
+		if (getnameinfo(paddr, len, buf, INET_ADDRSTRLEN, NULL, 0, NI_NUMERICHOST) == 0) {
+			return std::string(buf) + ":" + std::to_string(port);
+		} else {
+			perror("getnameinfo");
+		}
+	} else {
 		perror("getpeername");
-		return {};
 	}
-	char buf[INET_ADDRSTRLEN] = {};
-	getnameinfo(paddr, len, buf, INET_ADDRSTRLEN, NULL, 0, NI_NUMERICHOST);
-	return buf;
+	return std::string();
 }
 
 socket socket::accept() {

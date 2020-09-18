@@ -26,7 +26,7 @@ const (
 )
 
 var logger Logger
-var logMtx sync.Mutex
+var logMtx sync.RWMutex
 
 func init() {
 	bindings.RegisterBinding("cproto", new(NetCProto))
@@ -439,6 +439,14 @@ func (binding *NetCProto) getAllConns() []*connection {
 	return binding.pool.conns
 }
 
+func (binding *NetCProto) logMsg(level int, fmt string, msg ...interface{}) {
+	logMtx.RLock()
+	defer logMtx.RUnlock()
+	if logger != nil {
+		logger.Printf(level, fmt, msg)
+	}
+}
+
 func (binding *NetCProto) getConn(ctx context.Context) (conn *connection, err error) {
 	for {
 		binding.lock.RLock()
@@ -449,9 +457,7 @@ func (binding *NetCProto) getConn(ctx context.Context) (conn *connection, err er
 		if conn.hasError() {
 			binding.lock.Lock()
 			if currVersion == binding.dsn.connVersion {
-				if logger != nil {
-					logger.Printf(3, "rq: reconnecting after err: %s \n", conn.curError().Error())
-				}
+				binding.logMsg(3, "rq: reconnecting after err: %s \n", conn.curError().Error())
 				conn, err = binding.reconnect(ctx)
 				binding.lock.Unlock()
 				if err != nil {

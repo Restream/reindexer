@@ -130,7 +130,7 @@ protected:
 		// key_string h_value_string;
 	};
 	int relaxCompareWithString(string_view) const;
-};	// namespace reindexer
+};
 
 class VariantArray : public h_vector<Variant, 2> {
 public:

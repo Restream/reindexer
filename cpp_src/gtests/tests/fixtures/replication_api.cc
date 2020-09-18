@@ -34,7 +34,7 @@ bool ReplicationApi::StartServer(size_t id) {
 	assert(id < svc_.size());
 	if (svc_[id].IsRunning()) return false;
 	svc_[id].InitServer(id, kDefaultRpcPort + id, kDefaultHttpPort + id, kStoragePath + "node/" + std::to_string(id),
-						"node" + std::to_string(id));
+						"node" + std::to_string(id), true);
 	return true;
 }
 void ReplicationApi::RestartServer(size_t id) {
@@ -54,7 +54,7 @@ void ReplicationApi::RestartServer(size_t id) {
 		}
 	}
 	svc_[id].InitServer(id, kDefaultRpcPort + id, kDefaultHttpPort + id, kStoragePath + "node/" + std::to_string(id),
-						"node" + std::to_string(id));
+						"node" + std::to_string(id), true);
 }
 
 void ReplicationApi::WaitSync(const std::string& ns) {
@@ -116,7 +116,7 @@ void ReplicationApi::SetUp() {
 	for (size_t i = 0; i < kDefaultServerCount; i++) {
 		svc_.push_back(ServerControl());
 		svc_.back().InitServer(i, kDefaultRpcPort + i, kDefaultHttpPort + i, kStoragePath + "node/" + std::to_string(i),
-							   "node" + std::to_string(i));
+							   "node" + std::to_string(i), true);
 		if (i == 0) {
 			svc_.back().Get()->MakeMaster();
 		} else {

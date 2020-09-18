@@ -1459,8 +1459,9 @@ void ReindexerImpl::syncSystemNamespaces(string_view sysNsName, string_view filt
 	}
 	if (sysNsName == kClientsStatsNamespace) {
 		if (clientsStats_) {
-			std::vector<reindexer::ClientStat> clientInf;
+			std::vector<ClientStat> clientInf;
 			clientsStats_->GetClientInfo(clientInf);
+			auto observers = observers_.Get();
 			auto clientsNs = getNamespace(kClientsStatsNamespace, ctx);
 			std::vector<Item> items;
 			items.reserve(clientInf.size());
@@ -1469,6 +1470,14 @@ void ReindexerImpl::syncSystemNamespaces(string_view sysNsName, string_view filt
 				Activity activ;
 				bool isExist = activities_.ActivityForIpConnection(i.connectionId, activ);
 				if (isExist) i.currentActivity = activ.query;
+				for (auto obsIt = observers.begin(); obsIt != observers.end(); ++obsIt) {
+					if (obsIt->ptr == i.updatesPusher) {
+						i.isSubscribed = true;
+						i.updatesFilters = std::move(obsIt->filters);
+						observers.erase(obsIt);
+						break;
+					}
+				}
 				i.GetJSON(ser);
 				items.emplace_back(clientsNs->NewItem(ctx));
 				auto err = items.back().FromJSON(ser.Slice());

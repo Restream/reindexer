@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include <algorithm>
+#include <functional>
 #include <iostream>
 #include <string>
 #include "tools/customhash.h"
@@ -192,16 +193,14 @@ public:
 
 constexpr string_view operator"" _sv(const char *str, size_t len) noexcept { return string_view(str, len); }
 
-}  // namespace reindexer
-
-#include <functional>
-
-namespace std {
 inline static std::ostream &operator<<(std::ostream &o, const reindexer::string_view &sv) {
 	o.write(sv.data(), sv.length());
 	return o;
 }
 
+}  // namespace reindexer
+
+namespace std {
 template <>
 struct hash<reindexer::string_view> {
 public:

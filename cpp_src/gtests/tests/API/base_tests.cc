@@ -205,6 +205,117 @@ TEST_F(ReindexerApi, DistinctDiffType) {
 	ASSERT_TRUE(bool(BaseVals == Vals));
 }
 
+TEST_F(ReindexerApi, DistinctCompositeIndex) {
+	Error err = rt.reindexer->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	reindexer::IndexDef indexDeclr;
+	indexDeclr.name_ = "v1+v2";
+	indexDeclr.indexType_ = "hash";
+	indexDeclr.fieldType_ = "composite";
+	indexDeclr.opts_ = IndexOpts();
+	indexDeclr.jsonPaths_ = reindexer::JsonPaths({"v1", "v2"});
+	err = rt.reindexer->AddIndex(default_namespace, indexDeclr);
+	EXPECT_TRUE(err.ok()) << err.what();
+
+	{
+		Item item = NewItem(default_namespace);
+		item["id"] = 1;
+		item["v1"] = 2;
+		item["v2"] = 3;
+		err = rt.reindexer->Upsert(default_namespace, item);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+	{
+		Item item = NewItem(default_namespace);
+		item["id"] = 2;
+		item["v1"] = 2;
+		item["v2"] = 3;
+		err = rt.reindexer->Upsert(default_namespace, item);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+
+	Query q;
+	q._namespace = default_namespace;
+	q.Distinct("v1+v2");
+	{
+		QueryResults qr;
+		err = rt.reindexer->Select(q, qr);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(qr.Count(), 1);
+	}
+
+	{
+		Item item = NewItem(default_namespace);
+		item["id"] = 3;
+		item["v1"] = 3;
+		item["v2"] = 2;
+		err = rt.reindexer->Upsert(default_namespace, item);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+	{
+		QueryResults qr;
+		err = rt.reindexer->Select(q, qr);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(qr.Count(), 2);
+	}
+	{
+		Item item = NewItem(default_namespace);
+		item["id"] = 4;
+		err = rt.reindexer->Upsert(default_namespace, item);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+
+	{
+		Item item = NewItem(default_namespace);
+		item["id"] = 5;
+		err = rt.reindexer->Upsert(default_namespace, item);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+	{
+		QueryResults qr;
+		err = rt.reindexer->Select(q, qr);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(qr.Count(), 3);
+	}
+	{
+		Item item = NewItem(default_namespace);
+		item["id"] = 6;
+		item["v1"] = 3;
+		err = rt.reindexer->Upsert(default_namespace, item);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+	{
+		Item item = NewItem(default_namespace);
+		item["id"] = 7;
+		item["v1"] = 3;
+		err = rt.reindexer->Upsert(default_namespace, item);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+	{
+		QueryResults qr;
+		err = rt.reindexer->Select(q, qr);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(qr.Count(), 4);
+	}
+	{
+		Item item = NewItem(default_namespace);
+		item["id"] = 8;
+		item["v1"] = 4;
+		err = rt.reindexer->Upsert(default_namespace, item);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+	{
+		QueryResults qr;
+		err = rt.reindexer->Select(q, qr);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(qr.Count(), 5);
+	}
+}
+
 TEST_F(ReindexerApi, AddIndex_CaseInsensitive) {
 	Error err = rt.reindexer->OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -1209,5 +1320,44 @@ TEST_F(ReindexerApi, SchemaSuggestions) {
 		err = rt.reindexer->GetSqlSuggestions(query, query.size() - 1, suggestions);
 		ASSERT_TRUE(err.ok()) << err.what();
 		validateSuggestions(suggestions, expected);
+	}
+}
+
+TEST_F(ReindexerApi, IntToStringIndexUpdate) {
+	const string kFieldId = "id";
+	const string kFieldNumeric = "numeric";
+
+	Error err = rt.reindexer->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {kFieldId, "hash", "int", IndexOpts().PK()});
+	EXPECT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {kFieldNumeric, "tree", "int", IndexOpts()});
+	EXPECT_TRUE(err.ok()) << err.what();
+
+	for (int i = 0; i < 100; ++i) {
+		Item item(rt.reindexer->NewItem(default_namespace));
+		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
+
+		item[kFieldId] = i;
+		item[kFieldNumeric] = i * 2;
+
+		err = rt.reindexer->Upsert(default_namespace, item);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+
+	err = rt.reindexer->UpdateIndex(default_namespace, {kFieldNumeric, "tree", "string", IndexOpts()});
+	EXPECT_FALSE(err.ok());
+	EXPECT_TRUE(err.what() == "Cannot convert key from type int to string") << err.what();
+
+	QueryResults qr;
+	err = rt.reindexer->Select(Query(default_namespace), qr);
+	EXPECT_TRUE(err.ok()) << err.what();
+
+	for (auto it : qr) {
+		Item item = it.GetItem();
+		Variant v = item[kFieldNumeric];
+		EXPECT_TRUE(v.Type() == KeyValueInt) << v.Type();
 	}
 }

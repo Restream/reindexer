@@ -1,12 +1,13 @@
 #include "dslparser.h"
 #include "core/cjson/jschemachecker.h"
+#include "core/cjson/jsonbuilder.h"
 #include "core/query/query.h"
 #include "estl/fast_hash_map.h"
 #include "gason/gason.h"
 #include "tools/errors.h"
 #include "tools/json2kv.h"
+#include "tools/jsontools.h"
 #include "tools/stringstools.h"
-
 
 namespace reindexer {
 using namespace gason;
@@ -28,6 +29,9 @@ enum class Root {
 	EqualPositions,
 	WithRank,
 	StrictMode,
+	QueryType,
+	DropFields,
+	UpdateFields,
 };
 
 enum class Sort { Desc, Field, Values };
@@ -36,25 +40,32 @@ enum class JoinEntry { LeftField, RightField, Cond, Op };
 enum class Filter { Cond, Op, Field, Value, Filters, JoinQuery };
 enum class Aggregation { Fields, Type, Sort, Limit, Offset };
 enum class EqualPosition { Positions };
+enum class UpdateField { Name, Type, Values };
+enum class UpdateFieldType { Object, Expression, Value };
 
 // additional for parse root DSL fields
 template <typename T>
 using fast_str_map = fast_hash_map<string, T, nocase_hash_str, nocase_equal_str>;
 
-static const fast_str_map<Root> root_map = {{"namespace", Root::Namespace},
-											{"limit", Root::Limit},
-											{"offset", Root::Offset},
-											{"filters", Root::Filters},
-											{"sort", Root::Sort},
-											{"merge_queries", Root::Merged},
-											{"select_filter", Root::SelectFilter},
-											{"select_functions", Root::SelectFunctions},
-											{"req_total", Root::ReqTotal},
-											{"aggregations", Root::Aggregations},
-											{"explain", Root::Explain},
-											{"equal_positions", Root::EqualPositions},
-											{"select_with_rank", Root::WithRank},
-											{"strict_mode", Root::StrictMode}};
+static const fast_str_map<Root> root_map = {
+	{"namespace", Root::Namespace},
+	{"limit", Root::Limit},
+	{"offset", Root::Offset},
+	{"filters", Root::Filters},
+	{"sort", Root::Sort},
+	{"merge_queries", Root::Merged},
+	{"select_filter", Root::SelectFilter},
+	{"select_functions", Root::SelectFunctions},
+	{"req_total", Root::ReqTotal},
+	{"aggregations", Root::Aggregations},
+	{"explain", Root::Explain},
+	{"equal_positions", Root::EqualPositions},
+	{"select_with_rank", Root::WithRank},
+	{"strict_mode", Root::StrictMode},
+	{"type", Root::QueryType},
+	{"drop_fields", Root::DropFields},
+	{"update_fields", Root::UpdateFields},
+};
 
 // additional for parse field 'sort'
 
@@ -104,6 +115,28 @@ static const fast_str_map<AggType> aggregation_types = {{"sum", AggSum}, {"avg",
 // additionalfor parse field 'equation_positions'
 static const fast_str_map<EqualPosition> equationPosition_map = {{"positions", EqualPosition::Positions}};
 
+// additional for 'Root::QueryType' field
+static const fast_str_map<QueryType> query_types = {
+	{"select", QuerySelect},
+	{"update", QueryUpdate},
+	{"delete", QueryDelete},
+	{"truncate", QueryTruncate},
+};
+
+// additional for 'Root::UpdateField' field
+static const fast_str_map<UpdateField> update_field_map = {
+	{"name", UpdateField::Name},
+	{"type", UpdateField::Type},
+	{"values", UpdateField::Values},
+};
+
+// additional for 'Root::UpdateFieldType' field
+static const fast_str_map<UpdateFieldType> update_field_type_map = {
+	{"object", UpdateFieldType::Object},
+	{"expression", UpdateFieldType::Expression},
+	{"value", UpdateFieldType::Value},
+};
+
 bool checkTag(JsonValue& val, JsonTag tag) { return val.getTag() == tag; }
 
 template <typename... Tags>
@@ -137,14 +170,19 @@ void parseValues(JsonValue& values, Array& kvs) {
 	if (values.getTag() == JSON_ARRAY) {
 		for (auto elem : values) {
 			Variant kv;
-			if (elem->value.getTag() != JSON_NULL) {
+			if (elem->value.getTag() == JSON_OBJECT) {
+                kv = Variant(stringifyJson(*elem));
+			} else if (elem->value.getTag() != JSON_NULL) {
 				kv = jsonValue2Variant(elem->value, KeyValueUndefined);
+				kv.EnsureHold();
 			}
 			if (kvs.size() > 1 && kvs.back().Type() != kv.Type()) throw Error(errParseJson, "Array of filter values must be homogeneous.");
 			kvs.push_back(std::move(kv));
 		}
 	} else if (values.getTag() != JSON_NULL) {
-		kvs.push_back(jsonValue2Variant(values, KeyValueUndefined));
+		Variant kv(jsonValue2Variant(values, KeyValueUndefined));
+		kv.EnsureHold();
+		kvs.push_back(std::move(kv));
 	}
 }
 
@@ -446,6 +484,50 @@ void parseEqualPositions(JsonValue& egualPositions, Query& query) {
 	}
 }
 
+void parseUpdateFields(JsonValue& updateFields, Query& query) {
+	for (auto item : updateFields) {
+		auto& field = item->value;
+		checkJsonValueType(field, item->key, JSON_OBJECT);
+		string fieldName;
+		bool isObject = false, isExpression = false;
+		VariantArray values;
+		for (auto v : field) {
+			auto& value = v->value;
+			string_view name = v->key;
+			switch (get(update_field_map, name, "update_fields"_sv)) {
+				case UpdateField::Name:
+					checkJsonValueType(value, name, JSON_STRING);
+					fieldName.assign(value.sval.data(), value.sval.size());
+					break;
+				case UpdateField::Type: {
+					checkJsonValueType(value, name, JSON_STRING);
+					switch (get(update_field_type_map, value.toString(), "update_fields_type"_sv)) {
+						case UpdateFieldType::Object:
+							isObject = true;
+							break;
+						case UpdateFieldType::Expression:
+							isExpression = true;
+							break;
+						case UpdateFieldType::Value:
+							isObject = isExpression = false;
+							break;
+					}
+					break;
+				}
+				case UpdateField::Values:
+					checkJsonValueType(value, name, JSON_ARRAY);
+					parseValues(value, values);
+					break;
+			}
+		}
+		if (isObject) {
+			query.SetObject(fieldName, values);
+		} else {
+			query.Set(fieldName, values, isExpression);
+		}
+	}
+}
+
 void parse(JsonValue& root, Query& q) {
 	if (root.getTag() != JSON_OBJECT) {
 		throw Error(errParseJson, "Json is malformed: %d", root.getTag());
@@ -517,6 +599,24 @@ void parse(JsonValue& root, Query& q) {
 				checkJsonValueType(v, name, JSON_ARRAY);
 				parseEqualPositions(v, q);
 			} break;
+			case Root::QueryType:
+				checkJsonValueType(v, name, JSON_STRING);
+				q.type_ = get(query_types, v.toString(), "query_type"_sv);
+				break;
+			case Root::DropFields:
+				checkJsonValueType(v, name, JSON_ARRAY);
+				for (auto element : v) {
+					auto& value = element->value;
+					checkJsonValueType(value, "string array item", JSON_STRING);
+					q.Drop(string(value.toString()));
+				}
+				break;
+			case Root::UpdateFields:
+				checkJsonValueType(v, name, JSON_ARRAY);
+				parseUpdateFields(v, q);
+				break;
+			default:
+				throw Error(errParseDSL, "incorrect tag '%'", name);
 		}
 	}
 }

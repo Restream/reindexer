@@ -472,6 +472,8 @@ public:
 	bool IsWALQuery() const noexcept;
 	const h_vector<UpdateEntry, 0> &UpdateFields() const noexcept { return updateFields_; }
 
+	QueryType Type() const { return type_; }
+
 protected:
 	void deserialize(Serializer &ser, bool &hasJoinConditions);
 

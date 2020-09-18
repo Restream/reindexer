@@ -10,7 +10,10 @@ import (
 
 func init() {
 	tnamespaces["test_namespace_cache_items"] = NamespaceCacheItem{}
+	tnamespaces["test_namespace_no_limit_cache_items"] = NamespaceCacheItem{}
 }
+
+const CacheSize = 1
 
 type NamespaceCacheItem struct {
 	IntCjon         int               `json:"int_cjson" reindex:"int_cjson,,pk"`
@@ -53,8 +56,8 @@ func (item *NamespaceCacheItem) DeepCopy() interface{} {
 	return &NamespaceCacheItem{}
 }
 
-func TestNamespaceCacheItemsWithObjCacheSize(t *testing.T) {
-	ns := "test_namespace_cache_items"
+func ImplTest(t *testing.T, namespaceName string, opts *reindexer.NamespaceOptions) {
+	ns := namespaceName
 	slice1 := []int{1, 2}
 	slice2 := []int{1}
 	item := NamespaceCacheItem{
@@ -69,11 +72,13 @@ func TestNamespaceCacheItemsWithObjCacheSize(t *testing.T) {
 		MapStr:          map[string]string{"a": "qwe1", "b": "1"},
 		MapInt:          map[string]int{"c": 1},
 	}
-	err := DBD.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().ObjCacheSize(1), NamespaceCacheItem{})
+	DBD.CloseNamespace(ns)
+	err := DBD.OpenNamespace(ns, opts, NamespaceCacheItem{})
+	//err := DBD.OpenNamespace(ns, opts, NamespaceCacheItem{})
 	require.NoError(t, err)
 
 	// fill obj cache > 1MB
-	for i := 0; i < 2900; i++ {
+	for i := 0; i < 3900; i++ {
 		itemIns := item
 		itemIns.IntCjon = i + 2
 		n, err := DBD.Insert(ns, itemIns)
@@ -83,5 +88,19 @@ func TestNamespaceCacheItemsWithObjCacheSize(t *testing.T) {
 
 	items, err := DBD.Query(ns).Exec().FetchAll()
 	require.NoError(t, err)
-	require.Equal(t, 2900, len(items))
+	require.Equal(t, 3900, len(items))
+}
+
+func TestNamespaceCacheItemsWithObjCacheSize(t *testing.T) {
+	opts := reindexer.DefaultNamespaceOptions().ObjCacheSize(CacheSize)
+	ImplTest(t, "test_namespace_cache_items", opts)
+	curSize := DBD.Status().Cache.CurSize
+	require.LessOrEqual(t, curSize, int64(CacheSize*1024*1024))
+}
+
+func TestNamespaceCacheItemsWithoutObjCacheSize(t *testing.T) {
+	opts := reindexer.DefaultNamespaceOptions()
+	ImplTest(t, "test_namespace_no_limit_cache_items", opts)
+	curSize := DBD.Status().Cache.CurSize
+	require.Greater(t, curSize, int64(CacheSize*1024*1024))
 }

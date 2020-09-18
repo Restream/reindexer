@@ -151,6 +151,11 @@ Error UpdatesObservers::Delete(IUpdatesObserver *observer) {
 	return errOK;
 }
 
+std::vector<UpdatesObservers::ObserverInfo> UpdatesObservers::Get() const {
+	shared_lock<shared_timed_mutex> lck(mtx_);
+	return observers_;
+}
+
 void UpdatesObservers::OnModifyItem(LSNPair LSNs, string_view nsName, ItemImpl *impl, int modifyMode, bool inTransaction) {
 	WrSerializer ser;
 	WALRecord walRec(WalItemModify, impl->tagsMatcher().isUpdated() ? impl->GetCJSON(ser, true) : impl->GetCJSON(),
@@ -193,6 +198,13 @@ UpdatesFilters UpdatesObservers::GetMergedFilter() const {
 		filter.Merge(observer.filters);
 	}
 	return filter;
+}
+
+std::ostream &operator<<(std::ostream &o, const reindexer::UpdatesFilters &filters) {
+	reindexer::WrSerializer ser;
+	filters.GetJSON(ser);
+	o << ser.Slice();
+	return o;
 }
 
 }  // namespace reindexer

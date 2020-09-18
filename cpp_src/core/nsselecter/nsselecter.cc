@@ -762,6 +762,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) const {
 	h_vector<size_t, 4> distinctIndexes;
 
 	for (auto &ag : q.aggregations_) {
+		bool compositeIndexFields = false;
 		if (ag.fields_.empty()) {
 			throw Error(errQueryExec, "Empty set of fields for aggregation %s", AggregationResult::aggTypeToStr(ag.type_));
 		}
@@ -795,7 +796,12 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) const {
 					fields.push_back(ns_->indexes_[idx]->Fields().getTagsPath(0));
 				} else if (ag.type_ == AggFacet && ag.fields_.size() > 1 && ns_->indexes_[idx]->Opts().IsArray()) {
 					throw Error(errQueryExec, "Multifield facet cannot contain an array field");
-				} else {
+				} else if (ag.type_ == AggDistinct && isComposite(ns_->indexes_[idx]->Type())) {
+					fields = ns_->indexes_[idx]->Fields();
+					compositeIndexFields = true;
+				}
+
+				else {
 					fields.push_back(idx);
 				}
 			} else {
@@ -809,7 +815,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) const {
 			}
 		}
 		if (ag.type_ == AggDistinct) distinctIndexes.push_back(ret.size());
-		ret.emplace_back(ns_->payloadType_, fields, ag.type_, ag.fields_, sortingEntries, ag.limit_, ag.offset_);
+		ret.emplace_back(ns_->payloadType_, fields, ag.type_, ag.fields_, sortingEntries, ag.limit_, ag.offset_, compositeIndexFields);
 	}
 
 	if (distinctIndexes.size() <= 1) return ret;

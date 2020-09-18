@@ -5,7 +5,9 @@
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/msgpackdecoder.h"
 #include "core/itemimpl.h"
+#include "estl/span.h"
 #include "ns_api.h"
+#include "tools/jsontools.h"
 #include "tools/serializer.h"
 #include "vendor/gason/gason.h"
 #include "vendor/msgpack/msgpack.h"
@@ -851,22 +853,76 @@ TEST_F(NsApi, TestUpdateFieldWithExpressions) {
 	}
 }
 
-TEST_F(NsApi, TestUpdateQuerySqlEncoder) {
-	const string sqlUpdate = "UPDATE ns SET field1 = 5,field2 = field2+1 WHERE a > 0 AND b = 77";
+void checkQueryDsl(const Query &src) {
+	Query dst;
+	const string dsl = src.GetJSON();
+	Error err = dst.FromJSON(dsl);
+	EXPECT_TRUE(err.ok()) << err.what();
+	bool objectValues = false;
+	if (src.UpdateFields().size() > 0) {
+		EXPECT_TRUE(src.UpdateFields().size() == dst.UpdateFields().size());
+		for (size_t i = 0; i < src.UpdateFields().size(); ++i) {
+			if (src.UpdateFields()[i].mode == FieldModeSetJson) {
+				ASSERT_TRUE(src.UpdateFields()[i].values.size() == 1);
+				ASSERT_TRUE(src.UpdateFields()[i].values.front().Type() == KeyValueString);
+				ASSERT_TRUE(dst.UpdateFields()[i].values.size() == 1);
+				ASSERT_TRUE(dst.UpdateFields()[i].values.front().Type() == KeyValueString);
+				reindexer::WrSerializer wrser1;
+				reindexer::prettyPrintJSON(reindexer::giftStr(reindexer::string_view(src.UpdateFields()[i].values.front())), wrser1);
+				reindexer::WrSerializer wrser2;
+				reindexer::prettyPrintJSON(reindexer::giftStr(reindexer::string_view(dst.UpdateFields()[i].values.front())), wrser2);
+				EXPECT_TRUE(wrser1.Slice() == wrser2.Slice());
+				objectValues = true;
+			}
+		}
+	}
+	if (objectValues) {
+		EXPECT_TRUE(src.entries == dst.entries);
+		EXPECT_TRUE(src.aggregations_ == dst.aggregations_);
+		EXPECT_TRUE(src._namespace == dst._namespace);
+		EXPECT_TRUE(src.sortingEntries_ == dst.sortingEntries_);
+		EXPECT_TRUE(src.calcTotal == dst.calcTotal);
+		EXPECT_TRUE(src.start == dst.start);
+		EXPECT_TRUE(src.count == dst.count);
+		EXPECT_TRUE(src.debugLevel == dst.debugLevel);
+		EXPECT_TRUE(src.strictMode == dst.strictMode);
+		EXPECT_TRUE(src.forcedSortOrder_ == dst.forcedSortOrder_);
+		EXPECT_TRUE(src.selectFilter_ == dst.selectFilter_);
+		EXPECT_TRUE(src.selectFunctions_ == dst.selectFunctions_);
+		EXPECT_TRUE(src.joinQueries_ == dst.joinQueries_);
+		EXPECT_TRUE(src.mergeQueries_ == dst.mergeQueries_);
+	} else {
+		EXPECT_TRUE(dst == src);
+	}
+}
+
+TEST_F(NsApi, TestModifyQueriesSqlEncoder) {
+	const string sqlUpdate =
+		"UPDATE ns SET field1 = 'mrf',field2 = field2+1,field3 = ['one','two','three','four','five'] WHERE a = true AND location = "
+		"'msk'";
 	Query q1;
 	q1.FromSQL(sqlUpdate);
 	EXPECT_TRUE(q1.GetSQL() == sqlUpdate) << q1.GetSQL();
+	checkQueryDsl(q1);
 
-	const string sqlDrop = "UPDATE ns DROP field1,field2 WHERE a > 0 AND b = 77";
+	const string sqlDrop = "UPDATE ns DROP field1,field2 WHERE a = true AND location = 'msk'";
 	Query q2;
 	q2.FromSQL(sqlDrop);
 	EXPECT_TRUE(q2.GetSQL() == sqlDrop) << q2.GetSQL();
+	checkQueryDsl(q2);
 
 	const string sqlUpdateWithObject =
-		R"(UPDATE ns SET field = {"id":0,"name":"apple","price":1000,"nested":{"n_id":1,"desription":"good"},"bonus":7} WHERE a > 0 AND b = 77)";
+		R"(UPDATE ns SET field = {"id":0,"name":"apple","price":1000,"nested":{"n_id":1,"desription":"good","array":[{"id":1,"description":"first"},{"id":2,"description":"second"},{"id":3,"description":"third"}]},"bonus":7} WHERE a = true AND location = 'msk')";
 	Query q3;
 	q3.FromSQL(sqlUpdateWithObject);
 	EXPECT_TRUE(q3.GetSQL() == sqlUpdateWithObject) << q3.GetSQL();
+	checkQueryDsl(q3);
+
+	const string sqlTruncate = R"(TRUNCATE ns)";
+	Query q4;
+	q4.FromSQL(sqlTruncate);
+	EXPECT_TRUE(q4.GetSQL() == sqlTruncate) << q4.GetSQL();
+	checkQueryDsl(q4);
 }
 
 void generateObject(reindexer::JsonBuilder &builder, const string &prefix, ReindexerApi *rtapi) {

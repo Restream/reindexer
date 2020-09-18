@@ -65,8 +65,14 @@ public:
 
 class UpdatesObservers {
 public:
+	struct ObserverInfo {
+		IUpdatesObserver *ptr;
+		UpdatesFilters filters;
+	};
+
 	Error Add(IUpdatesObserver *observer, const UpdatesFilters &filter, SubscriptionOpts opts);
 	Error Delete(IUpdatesObserver *observer);
+	std::vector<ObserverInfo> Get() const;
 
 	void OnModifyItem(LSNPair LSNs, string_view nsName, ItemImpl *item, int modifyMode, bool inTransaction);
 
@@ -80,13 +86,10 @@ public:
 	UpdatesFilters GetMergedFilter() const;
 
 protected:
-	struct ObserverInfo {
-		IUpdatesObserver *ptr;
-		UpdatesFilters filters;
-	};
-
 	std::vector<ObserverInfo> observers_;
 	mutable shared_timed_mutex mtx_;
 };
+
+std::ostream &operator<<(std::ostream &o, const reindexer::UpdatesFilters &sv);
 
 }  // namespace reindexer

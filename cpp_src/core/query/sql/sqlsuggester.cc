@@ -45,8 +45,9 @@ std::unordered_map<int, std::set<string>> sqlTokenMatchings = {
 	{WhereFieldValueSqlToken, {"null", "empty", "not"}},
 	{WhereFieldNegateValueSqlToken, {"null", "empty"}},
 	{OpSqlToken, {"and", "or"}},
-	{WhereOpSqlToken, {"and", "or", "order"}},
+	{WhereOpSqlToken, {"and", "or", "order", "equal_position"}},
 	{SortDirectionSqlToken, {"asc", "desc"}},
+	{JoinTypesSqlToken, {"join", "left", "inner"}},
 	{LeftSqlToken, {"join"}},
 	{InnerSqlToken, {"join"}},
 	{SelectSqlToken, {"select"}},
@@ -60,6 +61,7 @@ std::unordered_map<int, std::set<string>> sqlTokenMatchings = {
 	{AllFieldsToken, {"*"}},
 	{DeleteConditionsStart, {"where", "limit", "offset", "order"}},
 	{UpdateOptionsSqlToken, {"set", "drop"}},
+	{EqualPositionSqlToken, {"equal_position"}},
 };
 
 static void getMatchingTokens(int tokenType, const string &token, vector<string> &variants) {
@@ -146,6 +148,8 @@ void SQLSuggester::getSuggestionsForToken(SqlParsingCtx::SuggestionData &ctx) {
 		case WhereFieldSqlToken:
 			getMatchingTokens(NotSqlToken, ctx.token, ctx.variants);
 			getMatchingFieldsNames(ctx.token, ctx.variants);
+			getMatchingTokens(EqualPositionSqlToken, ctx.token, ctx.variants);
+			getMatchingTokens(JoinTypesSqlToken, ctx.token, ctx.variants);
 			break;
 		case FieldNameSqlToken:
 			getMatchingFieldsNames(ctx.token, ctx.variants);
@@ -307,7 +311,8 @@ void SQLSuggester::checkForTokenSuggestions(SqlParsingCtx::SuggestionData &data)
 			}
 			if ((data.tokenType == WhereOpSqlToken) && (ctx_.tokens.size() > 1)) {
 				int prevTokenType = ctx_.tokens.back();
-				if ((prevTokenType != WhereSqlToken) && checkIfTokenStartsWith(data.token, "order")) {
+				if ((prevTokenType != WhereSqlToken) &&
+					(checkIfTokenStartsWith(data.token, "order") || checkIfTokenStartsWith(data.token, "equal_position"))) {
 					getSuggestionsForToken(data);
 					break;
 				}

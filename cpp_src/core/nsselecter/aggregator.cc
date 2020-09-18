@@ -194,8 +194,14 @@ Aggregator::Aggregator(Aggregator &&) = default;
 Aggregator::~Aggregator() = default;
 
 Aggregator::Aggregator(const PayloadType &payloadType, const FieldsSet &fields, AggType aggType, const h_vector<string, 1> &names,
-					   const h_vector<SortingEntry, 1> &sort, size_t limit, size_t offset)
-	: payloadType_(payloadType), fields_(fields), aggType_(aggType), names_(names), limit_(limit), offset_(offset) {
+					   const h_vector<SortingEntry, 1> &sort, size_t limit, size_t offset, bool compositeIndexFields)
+	: payloadType_(payloadType),
+	  fields_(fields),
+	  aggType_(aggType),
+	  names_(names),
+	  limit_(limit),
+	  offset_(offset),
+	  compositeIndexFields_(compositeIndexFields) {
 	switch (aggType_) {
 		case AggFacet:
 			if (fields_.size() == 1) {
@@ -205,7 +211,7 @@ Aggregator::Aggregator(const PayloadType &payloadType, const FieldsSet &fields, 
 			}
 			break;
 		case AggDistinct:
-			distincts_.reset(new HashSetVariantRelax);
+			distincts_.reset(new HashSetVariantRelax(16, DistinctHasher(payloadType, fields), RelaxVariantCompare(payloadType, fields)));
 			break;
 		case AggMin:
 			result_ = std::numeric_limits<double>::max();
@@ -267,7 +273,7 @@ AggregationResult Aggregator::GetResult() const {
 		case AggDistinct:
 			assert(distincts_);
 			for (const Variant &value : *distincts_) {
-				ret.distincts.push_back(value.As<string>());
+				ret.distincts.push_back(value.As<string>(payloadType_, fields_));
 			}
 			break;
 		default:
@@ -281,6 +287,11 @@ void Aggregator::Aggregate(const PayloadValue &data) {
 		++(*multifieldFacets_)[data];
 		return;
 	}
+	if (aggType_ == AggDistinct && compositeIndexFields_) {
+		aggregate(Variant(data));
+		return;
+	}
+
 	assert(fields_.size() == 1);
 	if (fields_[0] == IndexValueType::SetByJsonPath) {
 		ConstPayload pl(payloadType_, data);

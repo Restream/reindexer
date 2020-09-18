@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.12.0"
+  version: "2.13.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -1793,6 +1793,8 @@ definitions:
             - client_version
             - app_name
             - tx_count
+            - is_subscribed
+            - updates_filter
           properties:
             connection_id:
               type: integer
@@ -1830,6 +1832,44 @@ definitions:
             tx_count:
               type: integer
               description: "Count of currently opened transactions for this client"
+            send_buf_bytes:
+              type: integer
+              description: "Send buffer size"
+            pended_updates:
+              type: integer
+              description: "Pended updates count"
+            last_send_ts:
+              type: integer
+              description: "Timestamp of last send operation (ms)"
+            last_recv_ts:
+              type: integer
+              description: "Timestamp of last recv operation (ms)"
+            send_rate:
+              type: integer
+              description: "Current send rate (bytes/s)"
+            recv_rate:
+              type: integer
+              description: "Current recv rate (bytes/s)"
+            is_subscribed:
+              type: bool
+              description: "Status of updates subscription"
+            updates_filter:
+              type: object
+              descriptin: "Updates filter for this client"
+              properties:
+                namespaces:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        description: "Namespace name"
+                      filters:
+                        type: array
+                        description: "Filtering conditions set"
+                        items:
+                          type: object
 
   Databases:
     type: object
@@ -1991,6 +2031,30 @@ definitions:
   SchemaDef:
     $ref: "#/definitions/JsonObjectDef"
 
+  UpdateField:
+    type: "object"
+    required:
+      - name
+      - is_expression
+      - is_object
+      - values
+    properties:
+      name:
+        type: "string"
+        description: "field name"
+      type:
+        type: "string"
+        description: "update entry type"
+        enum:
+          - "object"
+          - "expression"
+          - "value"
+      values:
+        type: "array"
+        items: 
+          type: "object"
+        description: "Values to update field with"
+
   Query:
     type: object
     required:
@@ -1999,6 +2063,14 @@ definitions:
       namespace:
         type: string
         description: "Namespace name"
+      type:
+        type: "string"
+        description: "Type of query"
+        enum:
+          - "select"
+          - "update"
+          - "delete"
+          - "truncate"
       limit:
         description: "Maximum count of returned items"
         type: integer
@@ -2038,7 +2110,17 @@ definitions:
         description: "Add extra select functions to query"
         type: array
         items:
-          type: string
+          type: "string"
+      drop_fields:
+        description: "List of fields to be dropped"
+        type: "array"
+        items:
+          type: "string"
+      update_fields:
+        description: "Fields to be updated"
+        type: "array"
+        items:
+          $ref: "#/definitions/UpdateField"
       aggregations:
         description: "Ask query calculate aggregation"
         type: array

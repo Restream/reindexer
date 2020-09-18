@@ -161,25 +161,102 @@ void encodeFilter(const Query& parentQuery, const QueryEntry& qentry, JsonBuilde
 	}
 }
 
-void toDsl(const Query& query, JsonBuilder& builder) {
-	builder.Put("namespace", query._namespace);
-	builder.Put("limit", query.count);
-	builder.Put("offset", query.start);
-	builder.Put("req_total", get(reqtotal_values, query.calcTotal));
-	builder.Put("explain", query.explain_);
-	auto strictMode = strictModeToString(query.strictMode);
-	if (!strictMode.empty()) {
-		builder.Put("strict_mode", strictMode);
+void encodeDropFields(const Query& query, JsonBuilder& builder) {
+	auto dropFields = builder.Array("drop_fields");
+	for (const UpdateEntry& updateEntry : query.UpdateFields()) {
+		if (updateEntry.mode == FieldModeDrop) {
+			dropFields.Put(0, updateEntry.column);
+		}
 	}
-	builder.Put("select_with_rank", query.IsWithRank());
+}
 
-	encodeSelectFilter(query, builder);
-	encodeSelectFunctions(query, builder);
-	encodeSorting(query.sortingEntries_, builder);
-	encodeFilters(query, builder);
-	encodeMergedQueries(query, builder);
-	encodeAggregationFunctions(query, builder);
-	encodeEqualPositions(query, builder);
+void encodeUpdateFields(const Query& query, JsonBuilder& builder) {
+	auto updateFields = builder.Array("update_fields");
+	for (const UpdateEntry& updateEntry : query.UpdateFields()) {
+		if (updateEntry.mode == FieldModeSet || updateEntry.mode == FieldModeSetJson) {
+			bool isObject = (updateEntry.mode == FieldModeSetJson);
+			auto field = updateFields.Object(0);
+			if (isObject) {
+				field.Put("type", "object");
+			} else if (updateEntry.isExpression) {
+				field.Put("type", "expression");
+			} else {
+				field.Put("type", "value");
+			}
+			field.Put("name", updateEntry.column);
+			auto values = field.Array("values");
+			for (const Variant& v : updateEntry.values) {
+				if (isObject) {
+					values.Json(nullptr, p_string(v));
+				} else {
+					values.Put(0, v);
+				}
+			}
+		}
+	}
+}
+
+void toDsl(const Query& query, JsonBuilder& builder) {
+	switch (query.Type()) {
+		case QueryType::QuerySelect: {
+			builder.Put("namespace", query._namespace);
+			builder.Put("limit", query.count);
+			builder.Put("offset", query.start);
+			builder.Put("req_total", get(reqtotal_values, query.calcTotal));
+			builder.Put("explain", query.explain_);
+			builder.Put("type", "select");
+			auto strictMode = strictModeToString(query.strictMode);
+			if (!strictMode.empty()) {
+				builder.Put("strict_mode", strictMode);
+			}
+			builder.Put("select_with_rank", query.IsWithRank());
+
+			encodeSelectFilter(query, builder);
+			encodeSelectFunctions(query, builder);
+			encodeSorting(query.sortingEntries_, builder);
+			encodeFilters(query, builder);
+			encodeMergedQueries(query, builder);
+			encodeAggregationFunctions(query, builder);
+			encodeEqualPositions(query, builder);
+			break;
+		}
+		case QueryType::QueryUpdate: {
+			builder.Put("namespace", query._namespace);
+			builder.Put("explain", query.explain_);
+			builder.Put("type", "update");
+			encodeFilters(query, builder);
+			bool withDropEntries = false, withUpdateEntries = false;
+			for (const UpdateEntry& updateEntry : query.UpdateFields()) {
+				if (updateEntry.mode == FieldModeDrop) {
+					if (!withDropEntries) withDropEntries = true;
+				}
+				if (updateEntry.mode == FieldModeSet || updateEntry.mode == FieldModeSetJson) {
+					if (!withUpdateEntries) withUpdateEntries = true;
+				}
+			}
+			if (withDropEntries) {
+				encodeDropFields(query, builder);
+			}
+			if (withUpdateEntries) {
+				encodeUpdateFields(query, builder);
+			}
+			break;
+		}
+		case QueryType::QueryDelete: {
+			builder.Put("namespace", query._namespace);
+			builder.Put("explain", query.explain_);
+			builder.Put("type", "delete");
+			encodeFilters(query, builder);
+			break;
+		}
+		case QueryType::QueryTruncate: {
+			builder.Put("namespace", query._namespace);
+			builder.Put("type", "truncate");
+			break;
+		}
+		default:
+			break;
+	}
 }
 
 std::string toDsl(const Query& query) {

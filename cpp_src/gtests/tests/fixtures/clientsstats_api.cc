@@ -2,7 +2,7 @@
 
 void ClientsStatsApi::SetUp() {}
 
-void ClientsStatsApi::RunServerInThrerad(bool statEnable) {
+void ClientsStatsApi::RunServerInThread(bool statEnable) {
 	reindexer::fs::RmDirAll(kdbPath);
 	// clang-format off
 	std::string yaml =

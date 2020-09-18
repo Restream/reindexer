@@ -67,6 +67,9 @@ void ServerConnection::onClose() {
 	clientData_.reset();
 	std::unique_lock<std::mutex> lck(updates_mtx_);
 	updates_.clear();
+	if (stat_) {
+		stat_->pendedUpdates.store(0, std::memory_order_relaxed);
+	}
 }
 
 void ServerConnection::handleRPC(Context &ctx) {
@@ -221,6 +224,9 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 	auto &&chunk = packRPC(wrBuf_.get_chunk(), ctx, status, args, enableSnappy_);
 	auto len = chunk.len_;
 	wrBuf_.write(std::move(chunk));
+	if (stat_) {
+		stat_->sendBufBytes.store(wrBuf_.data_size(), std::memory_order_relaxed);
+	}
 
 	if (dispatcher_.onResponse_) {
 		ctx.stat.sizeStat.respSizeBytes = len;
@@ -240,6 +246,10 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 void ServerConnection::CallRPC(const IRPCCall &call) {
 	std::unique_lock<std::mutex> lck(updates_mtx_);
 	updates_.emplace_back(call);
+	auto stat = stat_;
+	if (stat) {
+		stat->pendedUpdates.store(updates_.size(), std::memory_order_relaxed);
+	}
 }
 
 void ServerConnection::sendUpdates() {
@@ -267,10 +277,19 @@ void ServerConnection::sendUpdates() {
 	if (cnt != updates.size()) {
 		std::unique_lock<std::mutex> lck(updates_mtx_);
 		updates_.insert(updates_.begin(), updates.begin() + cnt, updates.end());
+		if (stat_) {
+			stat_->pendedUpdates.store(updates_.size(), std::memory_order_relaxed);
+		}
+	} else if (stat_) {
+		std::unique_lock<std::mutex> lck(updates_mtx_);
+		stat_->pendedUpdates.store(updates_.size(), std::memory_order_relaxed);
 	}
 
 	len = ser.Len();
 	wrBuf_.write(ser.DetachChunk());
+	if (stat_) {
+		stat_->sendBufBytes.store(wrBuf_.data_size(), std::memory_order_relaxed);
+	}
 
 	if (dispatcher_.onResponse_) {
 		ctx.stat.sizeStat.respSizeBytes = len;

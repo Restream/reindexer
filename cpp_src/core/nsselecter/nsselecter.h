@@ -59,7 +59,6 @@ private:
 						 QueryResults &result);
 
 	h_vector<Aggregator, 4> getAggregators(const Query &) const;
-	int getCompositeIndex(const FieldsSet &fieldsmask);
 	void setLimitAndOffset(ItemRefVector &result, size_t offset, size_t limit);
 	void prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, bool isFt, bool availableSelectBySortIndex);
 	void getSortIndexValue(const SortingContext &sortCtx, IdType rowId, VariantArray &value, uint8_t proc, joins::NamespaceResults &,

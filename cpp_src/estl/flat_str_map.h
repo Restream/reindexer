@@ -18,16 +18,16 @@ protected:
 
 	class holder_t : public base_holder_t {
 	public:
-		string_view_t get(int pos) const {
+		string_view_t get(size_t pos) const {
 			auto ptr = reinterpret_cast<const uint8_t *>(base_holder_t::data() + pos);
 			auto l = scan_varint(10, ptr);
 			size_t len = parse_uint32(l, ptr);
 			return string_view(reinterpret_cast<const char *>(ptr + l), len);
 		}
-		int put(string_view_t str) {
-			int pos = base_holder_t::size();
+		size_t put(string_view_t str) {
+			size_t pos = base_holder_t::size();
 			base_holder_t::resize(str.size() + 8 + pos);
-			int l = string_pack(str.data(), str.size(), reinterpret_cast<uint8_t *>(base_holder_t::data()) + pos);
+			size_t l = string_pack(str.data(), str.size(), reinterpret_cast<uint8_t *>(base_holder_t::data()) + pos);
 			base_holder_t::resize(pos + l);
 			return pos;
 		}
@@ -36,9 +36,9 @@ protected:
 	struct equal_flat_str_map {
 		using is_transparent = void;
 		equal_flat_str_map(const holder_t *buf) : buf_(buf) {}
-		bool operator()(int lhs, int rhs) const { return buf_->get(lhs) == buf_->get(rhs); }
-		bool operator()(string_view_t lhs, int rhs) const { return lhs == buf_->get(rhs); }
-		bool operator()(int lhs, string_view_t rhs) const { return rhs == buf_->get(lhs); }
+		bool operator()(size_t lhs, size_t rhs) const { return buf_->get(lhs) == buf_->get(rhs); }
+		bool operator()(string_view_t lhs, size_t rhs) const { return lhs == buf_->get(rhs); }
+		bool operator()(size_t lhs, string_view_t rhs) const { return rhs == buf_->get(lhs); }
 
 	protected:
 		const holder_t *buf_ = nullptr;
@@ -48,12 +48,12 @@ protected:
 		using is_transparent = void;
 		hash_flat_str_map(const holder_t *buf) : buf_(buf) {}
 		size_t operator()(string_view_t hs) const { return _Hash_bytes(hs.data(), hs.length()); }
-		size_t operator()(int hs) const { return operator()(buf_->get(hs)); }
+		size_t operator()(size_t hs) const { return operator()(buf_->get(hs)); }
 
 	protected:
 		const holder_t *buf_ = nullptr;
 	};
-	using hash_map = tsl::hopscotch_map<int, V, hash_flat_str_map, equal_flat_str_map, std::allocator<std::pair<int, V>>, 30, false,
+	using hash_map = tsl::hopscotch_map<size_t, V, hash_flat_str_map, equal_flat_str_map, std::allocator<std::pair<size_t, V>>, 30, false,
 										tsl::mod_growth_policy<std::ratio<3, 2>>>;
 
 public:
@@ -181,7 +181,7 @@ public:
 	}
 
 	std::pair<iterator, bool> insert(string_view_t str, const V &v) {
-		int pos = holder_->put(str);
+		size_t pos = holder_->put(str);
 		auto res = map_->emplace(pos, v);
 		int multi_pos = -1;
 		if (!res.second) {

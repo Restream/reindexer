@@ -46,6 +46,11 @@ struct JsonString {
 	const char *ptr;
 };
 
+inline static std::ostream &operator<<(std::ostream &o, const gason::JsonString &sv) {
+	o.write(sv.data(), sv.length());
+	return o;
+}
+
 union JsonValue {
 	JsonValue(double x) : fval(x) { u.tag = JSON_DOUBLE; }
 	JsonValue(int64_t x) : ival(x) { u.tag = JSON_NUMBER; }

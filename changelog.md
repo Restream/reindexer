@@ -1,3 +1,28 @@
+# Version 2.13.0 (18.09.2020)
+
+# Core
+- [fea] Added extra parameter to clients stats
+- [fea] Added update, delete, truncate statement in DSL
+- [fix] Added support for equal_positions in sql suggester
+- [fix] Crash on distinct whith composite index
+- [fix] Crash on query whith incorrect index type after index conversion
+
+# Reindexer tool 
+- [fix] Crash on upsert array object as first json tag
+
+# Version 2.12.2 (15.09.2020)
+
+# Go connector
+- [fix] Cproto connection freezes if timeout occurs while reading from socket
+
+# Version 2.12.1 (10.09.2020)
+
+- [fix] Crash on fulltext build, if typos map exceed 2GB
+- [fix] Crash on DSL query with IN (string,...) conditions
+
+# Go connector
+- [fix] Cproto connection freezes on async transaction timeout
+
 # Version 2.12.0 (02.09.2020)
 
 ## Core

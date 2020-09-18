@@ -117,7 +117,7 @@ void ServerControl::Interface::SetWALSize(int64_t size, string_view nsName) {
 
 ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const std::string& ReplicationConfigFilename,
 									const std::string& StoragePath, unsigned short httpPort, unsigned short rpcPort,
-									const std::string& dbName)
+									const std::string& dbName, bool enableStats)
 	: id_(id),
 	  stopped_(stopped),
 	  kReplicationConfigFilename(ReplicationConfigFilename),
@@ -131,6 +131,8 @@ ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const 
     string yaml =
         "storage:\n"
 		"    path: " + kStoragePath + "\n"
+		"metrics:\n"
+		"   clientsstats: " + (enableStats ? "true" : "false") + "\n"
         "logger:\n"
 		"   loglevel: none\n"
         "   rpclog: \n"
@@ -217,10 +219,10 @@ ServerControl::Interface::Ptr ServerControl::Get(bool wait) {
 }
 
 void ServerControl::InitServer(size_t id, unsigned short rpcPort, unsigned short httpPort, const std::string& storagePath,
-							   const std::string& dbName) {
+							   const std::string& dbName, bool enableStats) {
 	WLock lock(mtx_);
-	auto srvInterface =
-		std::make_shared<ServerControl::Interface>(id, *stopped_, kReplicationConfigFilename, storagePath, httpPort, rpcPort, dbName);
+	auto srvInterface = std::make_shared<ServerControl::Interface>(id, *stopped_, kReplicationConfigFilename, storagePath, httpPort,
+																   rpcPort, dbName, enableStats);
 
 	interface = srvInterface;
 }

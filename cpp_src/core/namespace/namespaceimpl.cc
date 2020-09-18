@@ -404,6 +404,9 @@ void NamespaceImpl::dropIndex(const IndexDef &index) {
 }
 
 static void verifyConvertTypes(KeyValueType from, KeyValueType to, const PayloadType &payloadType, const FieldsSet &fields) {
+	if ((from == KeyValueString || to == KeyValueString) && (from != to)) {
+		throw Error(errParams, "Cannot convert key from type %s to %s", Variant::TypeName(from), Variant::TypeName(to));
+	}
 	static const std::string defaultStringValue;
 	Variant value;
 	switch (from) {

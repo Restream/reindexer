@@ -398,7 +398,7 @@ inline bool ConsumeFirstCharacter(char ch, const char* str, bool case_insensibil
 const int kMaxSignificantDigits = 772;
 
 static const char kWhitespaceTable7[] = {32, 13, 10, 9, 11, 12};
-static const int kWhitespaceTable7Length = ARRAY_SIZE(kWhitespaceTable7);
+static const int kWhitespaceTable7Length = ARRAY_SIZE(kWhitespaceTable7); // -V1063
 
 static const uc16 kWhitespaceTable16[] = {160,  8232, 8233, 5760, 6158, 8192, 8193, 8194, 8195,  8196,
                                           8197, 8198, 8199, 8200, 8201, 8202, 8239, 8287, 12288, 65279};

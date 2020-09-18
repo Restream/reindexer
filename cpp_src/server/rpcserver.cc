@@ -81,6 +81,7 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 		conn.clientVersion = clientData->rxVersion.StrippedString();
 		conn.appName = appName.hasValue() ? appName.value().toString() : string();
 		conn.txStats = clientData->txStats;
+		conn.updatesPusher = &clientData->pusher;
 		clientsStats_->AddConnection(clientData->connID, std::move(conn));
 	}
 

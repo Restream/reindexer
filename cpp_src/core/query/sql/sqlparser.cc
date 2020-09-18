@@ -539,7 +539,8 @@ int SQLParser::parseWhere(tokenizer &parser) {
 
 	int openBracketCount = 0;
 	while (!parser.end()) {
-		tok = parser.next_token(false);
+		tok = peekSqlToken(parser, WhereFieldSqlToken, false);
+		parser.next_token(false);
 		if (tok.text() == "("_sv) {
 			query_.entries.OpenBracket(nextOp);
 			++openBracketCount;

@@ -1,4 +1,5 @@
 #include "jsonbuilder.h"
+#include "tools/json2kv.h"
 
 namespace reindexer {
 
@@ -66,6 +67,7 @@ JsonBuilder &JsonBuilder::Raw(string_view name, string_view arg) {
 	(*ser_) << arg;
 	return *this;
 }
+
 JsonBuilder &JsonBuilder::Null(string_view name) {
 	putName(name);
 	(*ser_) << "null";

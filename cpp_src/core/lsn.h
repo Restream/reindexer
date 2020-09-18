@@ -89,11 +89,8 @@ struct LSNPair {
 	lsn_t originLSN_;
 };
 
-}  // namespace reindexer
-
-namespace std {
 inline static std::ostream &operator<<(std::ostream &o, const reindexer::lsn_t &sv) {
 	o << sv.Server() << ":" << sv.Counter();
 	return o;
 }
-}  // namespace std
+}  // namespace reindexer

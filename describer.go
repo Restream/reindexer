@@ -259,7 +259,6 @@ type NamespacePerfStat struct {
 
 // ClientConnectionStat is information about client connection
 type ClientConnectionStat struct {
-
 	// Connection identifier
 	ConnectionId int64 `json:"connection_id"`
 	// client ip address
@@ -280,6 +279,33 @@ type ClientConnectionStat struct {
 	SentBytes int64 `json:"sent_bytes"`
 	// Client version string
 	ClientVersion string `json:"client_version"`
+	// Send buffer size
+	SendBufBytes int64 `json:"send_buf_bytes"`
+	// Pended updates count
+	PendedUpdates int64 `json:"pended_updates"`
+	// Timestamp of last send operation (ms)
+	LastSendTs int64 `json:"last_send_ts"`
+	// Timestamp of last recv operation (ms)
+	LastRecvTs int64 `json:"last_recv_ts"`
+	// Current send rate (bytes/s)
+	SendRate int `json:"send_rate"`
+	// Current recv rate (bytes/s)
+	RecvRate int `json:"recv_rate"`
+	// Active transactions count
+	TxCount int `json:"tx_count"`
+	// Status of updates subscription
+	IsSubscribed bool `json:"is_subscribed"`
+	// Updates filter for this client
+	UpdatesFilter struct {
+		Namespaces []struct {
+			// Namespace name
+			Name string `json:"name"`
+			// Filtering conditions set
+			Filters []struct {
+				// Empty
+			} `json:"filters"`
+		} `json:"namespaces"`
+	} `json:"updates_filter"`
 }
 
 // QueryPerfStat is information about query's performance statistics

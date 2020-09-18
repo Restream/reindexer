@@ -105,11 +105,13 @@
   * [SysInfo](#sysinfo)
   * [SystemConfigItem](#systemconfigitem)
   * [TransactionsPerfStats](#transactionsperfstats)
+  * [UpdateField](#updatefield)
   * [UpdatePerfStats](#updateperfstats)
   * [UpdateResponse](#updateresponse)
 
 <!-- tocstop -->
 
+>
 ## Overview
 **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
 Reindexer's goal is to provide fast search with complex queries.
@@ -118,7 +120,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 2.12.0
+*Version* : 2.13.0
 
 
 ### License information
@@ -1818,12 +1820,34 @@ Specifies facet aggregations results sorting order
 |**current_activity**  <br>*required*|Current activity|string|
 |**db_name**  <br>*required*|Database name|string|
 |**ip**  <br>*required*|Ip|string|
+|**last_recv_ts**  <br>*optional*|Timestamp of last recv operation (ms)|integer|
+|**last_send_ts**  <br>*optional*|Timestamp of last send operation (ms)|integer|
+|**pended_updates**  <br>*optional*|Pended updates count|integer|
 |**recv_bytes**  <br>*required*|Receive byte|integer|
+|**recv_rate**  <br>*optional*|Current recv rate (bytes/s)|integer|
+|**send_buf_bytes**  <br>*optional*|Send buffer size|integer|
+|**send_rate**  <br>*optional*|Current send rate (bytes/s)|integer|
 |**sent_bytes**  <br>*required*|Send byte|integer|
 |**start_time**  <br>*required*|Server start time in unix timestamp|integer|
 |**tx_count**  <br>*required*|Count of currently opened transactions for this client|integer|
+|**updates_filter**  <br>*required*||[updates_filter](#clientsstats-updates_filter)|
 |**user_name**  <br>*required*|User name|string|
 |**user_rights**  <br>*required*|User right|string|
+
+
+**updates_filter**
+
+|Name|Schema|
+|---|---|
+|**namespaces**  <br>*optional*|< [namespaces](#clientsstats-updates_filter-namespaces) > array|
+
+
+**namespaces**
+
+|Name|Description|Schema|
+|---|---|---|
+|**filters**  <br>*optional*|Filtering conditions set|< object > array|
+|**name**  <br>*optional*|Namespace name|string|
 
 
 
@@ -2282,6 +2306,7 @@ List of meta info of the specified namespace
 |Name|Description|Schema|
 |---|---|---|
 |**aggregations**  <br>*optional*|Ask query calculate aggregation|< [AggregationsDef](#aggregationsdef) > array|
+|**drop_fields**  <br>*optional*|List of fields to be dropped|< string > array|
 |**equal_positions**  <br>*optional*|Array of array fields to be searched with equal array indexes|< [EqualPositionDef](#equalpositiondef) > array|
 |**explain**  <br>*optional*|Add query execution explain information  <br>**Default** : `false`|boolean|
 |**filters**  <br>*optional*|Filter for results documents|< [FilterDef](#filterdef) > array|
@@ -2295,6 +2320,8 @@ List of meta info of the specified namespace
 |**select_with_rank**  <br>*optional*|Output fulltext rank in QueryResult. Allowed only with fulltext query  <br>**Default** : `false`|boolean|
 |**sort**  <br>*optional*|Specifies results sorting order|< [SortDef](#sortdef) > array|
 |**strict_mode**  <br>*optional*|Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existance in sorting and filtering conditions  <br>**Default** : `"names"`|enum (none, names, indexes)|
+|**type**  <br>*optional*|Type of query|enum (select, update, delete, truncate)|
+|**update_fields**  <br>*optional*|Fields to be updated|< [UpdateField](#updatefield) > array|
 
 
 
@@ -2527,6 +2554,16 @@ Performance statistics for transactions
 |**min_steps_count**  <br>*optional*|Minimum steps count in transactions for this namespace|integer|
 |**total_copy_count**  <br>*optional*|Total namespace copy operations|integer|
 |**total_count**  <br>*optional*|Total transactions count for this namespace|integer|
+
+
+
+### UpdateField
+
+|Name|Description|Schema|
+|---|---|---|
+|**name**  <br>*required*|field name|string|
+|**type**  <br>*optional*|update entry type|enum (object, expression, value)|
+|**values**  <br>*required*|Values to update field with|< object > array|
 
 
 

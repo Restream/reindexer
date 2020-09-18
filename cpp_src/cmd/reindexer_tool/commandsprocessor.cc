@@ -262,6 +262,11 @@ Error CommandsProcessor<DBInterface>::commandUpsert(const string& command) {
 		return status;
 	}
 
+	if (!parser.CurPtr().empty() && (parser.CurPtr())[0] == '[') {
+		delete item;
+		return Error(errParams, "Impossible to update entire item with array - only objects are allowed");
+	}
+
 	return db_.WithCompletion([item](const Error& /*err*/) { delete item; }).Upsert(nsName, *item);
 }
 

@@ -119,7 +119,7 @@ func newConnection(ctx context.Context, owner *NetCProto) (c *connection, err er
 	}
 	for i := 0; i < queueSize; i++ {
 		c.seqs <- uint32(i)
-		c.requests[i].repl = make(sig)
+		c.requests[i].repl = make(sig, 1)
 	}
 
 	go c.deadlineTicker()
@@ -176,7 +176,15 @@ func (c *connection) deadlineTicker() {
 					atomic.StoreUint32(&c.requests[i].seqNum, maxSeqNum)
 					atomic.StoreInt32(&c.requests[i].isAsync, 0)
 					c.requests[i].cmplLock.Unlock()
+					select {
+					case bufPtr := <-c.requests[i].repl:
+						bufPtr.buf.Free()
+					default:
+					}
 					c.seqs <- nextSeqNum(seqNum)
+					if c.owner != nil {
+						c.owner.logMsg(1, "rq: async deadline exceeded. Seq number: %v\n", seqNum)
+					}
 					cmpl(nil, context.DeadlineExceeded)
 				} else {
 					c.requests[i].cmplLock.Unlock()
@@ -292,6 +300,7 @@ func (c *connection) readReply(hdr []byte) (err error) {
 		if c.requests[reqID].cmpl != nil && atomic.LoadUint32(&c.requests[reqID].seqNum) == rseq {
 			cmpl := c.requests[reqID].cmpl
 			c.requests[reqID].cmpl = nil
+			atomic.StoreUint32(&c.requests[reqID].deadline, 0)
 			atomic.StoreUint32(&c.requests[reqID].seqNum, maxSeqNum)
 			atomic.StoreInt32(&c.requests[reqID].isAsync, 0)
 			c.requests[reqID].cmplLock.Unlock()
@@ -299,10 +308,12 @@ func (c *connection) readReply(hdr []byte) (err error) {
 			cmpl(answ, answ.parseArgs())
 		} else {
 			c.requests[reqID].cmplLock.Unlock()
+			answ.Free()
 		}
 	} else if repCh != nil {
 		repCh <- bufPtr{rseq, answ}
 	} else {
+		defer answ.Free()
 		return fmt.Errorf("unexpected answer: %v", answ)
 	}
 	return
@@ -384,12 +395,6 @@ func (c *connection) packRPC(cmd int, seq uint32, execTimeout int, args ...inter
 
 func (c *connection) awaitSeqNum(ctx context.Context) (seq uint32, remainingTimeout time.Duration, err error) {
 	select {
-	case <-ctx.Done():
-		err = ctx.Err()
-	default:
-	}
-
-	select {
 	case seq = <-c.seqs:
 		if err = ctx.Err(); err != nil {
 			c.seqs <- seq
@@ -441,6 +446,12 @@ func (c *connection) rpcCallAsync(ctx context.Context, cmd int, netTimeout uint3
 	}
 	atomic.StoreInt32(&c.requests[reqID].isAsync, 1)
 	atomic.StoreUint32(&c.requests[reqID].seqNum, seq)
+
+	select {
+	case bufPtr := <-c.requests[reqID].repl:
+		bufPtr.buf.Free()
+	default:
+	}
 	c.requests[reqID].cmplLock.Unlock()
 
 	c.packRPC(cmd, seq, int(timeout.Milliseconds()), args...)
@@ -530,6 +541,7 @@ func (c *connection) onError(err error) {
 				if c.requests[i].cmpl != nil {
 					cmpl := c.requests[i].cmpl
 					c.requests[i].cmpl = nil
+					atomic.StoreUint32(&c.requests[i].deadline, 0)
 					seqNum := atomic.LoadUint32(&c.requests[i].seqNum)
 					atomic.StoreUint32(&c.requests[i].seqNum, maxSeqNum)
 					atomic.StoreInt32(&c.requests[i].isAsync, 0)

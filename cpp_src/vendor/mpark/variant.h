@@ -2769,7 +2769,7 @@ namespace mpark {
 
 }  // namespace mpark
 
-namespace std {
+namespace std { // -V1061
 
   template <typename... Ts>
   struct hash<mpark::detail::enabled_type<
