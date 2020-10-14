@@ -275,7 +275,7 @@ double SelectIterator::Cost(int expectedIterations) const {
 	if (forcedFirst_) return -GetMaxIterations();
 	double result = joinIndexes.size() * static_cast<double>(std::numeric_limits<float>::max());
 	if (!comparators_.empty()) {
-		result += expectedIterations + 1;
+		result += (double)expectedIterations + 1;
 	} else if (empty()) {
 		result += GetMaxIterations();
 	}
