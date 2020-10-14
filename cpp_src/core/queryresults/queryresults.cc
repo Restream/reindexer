@@ -18,7 +18,7 @@ struct QueryResults::Context {
 	FieldsSet fieldsFilter_;
 };
 
-static_assert(sizeof(QueryResults::Context) < QueryResults::kSizeofContext,
+static_assert(sizeof(QueryResults::Context) <= QueryResults::kSizeofContext,
 			  "QueryResults::kSizeofContext should >=  sizeof(QueryResults::Context)");
 
 QueryResults::QueryResults(std::initializer_list<ItemRef> l) : items_(l), holdActivity_(false), noActivity_(0) {}

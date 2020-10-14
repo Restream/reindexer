@@ -273,7 +273,7 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 		}
 	}
 
-	for (const std::pair<unsigned, EqualPosition> &equalPoses : equalPositions_) {
+	for (const std::pair<const unsigned int, EqualPosition> &equalPoses : equalPositions_) {
 		ser.PutVarUint(QueryEqualPosition);
 		ser.PutVarUint(equalPoses.first);
 		ser.PutVarUint(equalPoses.second.size());

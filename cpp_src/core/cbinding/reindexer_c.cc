@@ -30,7 +30,13 @@ static Error err_too_many_queries(errLogic, "Too many parallel queries");
 static reindexer_error error2c(const Error& err_) {
 	reindexer_error err;
 	err.code = err_.code();
+
+#ifdef _WIN32
+	err.what = err_.what().length() ? _strdup(err_.what().c_str()) : nullptr;
+#else
 	err.what = err_.what().length() ? strdup(err_.what().c_str()) : nullptr;
+#endif
+
 	return err;
 }
 
@@ -39,7 +45,13 @@ static reindexer_ret ret2c(const Error& err_, const reindexer_resbuffer& out) {
 	ret.err_code = err_.code();
 	if (ret.err_code) {
 		ret.out.results_ptr = 0;
+        
+#ifdef _WIN32
+		ret.out.data = uintptr_t(err_.what().length() ? _strdup(err_.what().c_str()) : nullptr);
+#else
 		ret.out.data = uintptr_t(err_.what().length() ? strdup(err_.what().c_str()) : nullptr);
+#endif
+
 	} else {
 		ret.out = out;
 	}
