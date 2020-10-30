@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include <time.h>
+#include <cctype>
 #include <string>
 #include <vector>
 #include "core/indexopts.h"
