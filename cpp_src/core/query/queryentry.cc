@@ -62,8 +62,26 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer 
 				if (entry.distinct) continue;
 				ser.PutVarUint(it->operation);
 				ser.PutVarUint(entry.condition);
-				ser.PutVarUint(entry.values.size());
-				for (auto &kv : entry.values) ser.PutVariant(kv);
+				if (entry.condition == CondDWithin) {
+					if (entry.values.size() != 2) {
+						throw Error(errLogic, "Condition DWithin must have exact 2 value, but %d values was provided", entry.values.size());
+					}
+					ser.PutVarUint(3);
+					if (entry.values[0].Type() == KeyValueTuple) {
+						const Point point = static_cast<Point>(entry.values[0]);
+						ser.PutDouble(point.x);
+						ser.PutDouble(point.y);
+						ser.PutVariant(entry.values[1]);
+					} else {
+						const Point point = static_cast<Point>(entry.values[1]);
+						ser.PutDouble(point.x);
+						ser.PutDouble(point.y);
+						ser.PutVariant(entry.values[0]);
+					}
+				} else {
+					ser.PutVarUint(entry.values.size());
+					for (auto &kv : entry.values) ser.PutVariant(kv);
+				}
 			} else {
 				ser.PutVarUint(QueryJoinCondition);
 				ser.PutVarUint((it->operation == OpAnd) ? JoinType::InnerJoin : JoinType::OrInnerJoin);
@@ -239,6 +257,20 @@ bool QueryEntries::checkIfSatisfyCondition(const QueryEntry &qEntry, const Const
 				if (matchLikePattern(string_view(v), string_view(qEntry.values[0]))) return true;
 			}
 			return false;
+		case CondType::CondDWithin:
+			if (qEntry.values.size() != 2) {
+				throw Error(errLogic, "Condition DWithin must have exact 2 value, but %d values was provided", qEntry.values.size());
+			}
+			Point point;
+			double distance;
+			if (qEntry.values[0].Type() == KeyValueTuple) {
+				point = qEntry.values[0].As<Point>();
+				distance = qEntry.values[1].As<double>();
+			} else {
+				point = qEntry.values[1].As<Point>();
+				distance = qEntry.values[0].As<double>();
+			}
+			return DWithin(static_cast<Point>(values), point, distance);
 		default:
 			assert(0);
 	}

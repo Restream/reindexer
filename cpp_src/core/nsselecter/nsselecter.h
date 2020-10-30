@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-typedef vector<JoinedSelector> JoinedSelectors;
+using JoinedSelectors = vector<JoinedSelector>;
 struct SelectCtx {
 	explicit SelectCtx(const Query &query_) : query(query_) {}
 	const Query &query;

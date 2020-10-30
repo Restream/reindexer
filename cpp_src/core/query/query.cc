@@ -77,8 +77,21 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 				OpType op = OpType(ser.GetVarUint());
 				qe.condition = CondType(ser.GetVarUint());
 				int cnt = ser.GetVarUint();
-				qe.values.reserve(cnt);
-				while (cnt--) qe.values.push_back(ser.GetVariant().EnsureHold());
+				if (qe.condition == CondDWithin) {
+					if (cnt != 3) {
+						throw Error(errParseBin, "Expected point and distance for DWithin");
+					}
+					VariantArray point;
+					point.reserve(2);
+					point.emplace_back(ser.GetVariant().EnsureHold());
+					point.emplace_back(ser.GetVariant().EnsureHold());
+					qe.values.reserve(2);
+					qe.values.emplace_back(std::move(point));
+					qe.values.emplace_back(ser.GetVariant().EnsureHold());
+				} else {
+					qe.values.reserve(cnt);
+					while (cnt--) qe.values.emplace_back(ser.GetVariant().EnsureHold());
+				}
 				entries.Append(op, std::move(qe));
 				break;
 			}
@@ -189,12 +202,14 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 			case QueryUpdateField: {
 				VariantArray val;
 				string field(ser.GetVString());
+				bool isArray = ser.GetVarUint();
 				int numValues = ser.GetVarUint();
 				bool hasExpressions = false;
 				while (numValues--) {
 					hasExpressions = ser.GetVarUint();
 					val.emplace_back(ser.GetVariant().EnsureHold());
 				}
+				if (isArray) val.MarkArray();
 				Set(std::move(field), std::move(val), hasExpressions);
 				break;
 			}
@@ -321,6 +336,7 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 		if (field.mode == FieldModeSet) {
 			ser.PutVarUint(QueryUpdateField);
 			ser.PutVString(field.column);
+			ser.PutVarUint(field.values.IsArrayValue());
 			ser.PutVarUint(field.values.size());
 			for (const Variant &val : field.values) {
 				ser.PutVarUint(field.isExpression);

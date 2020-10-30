@@ -404,8 +404,13 @@ void updateArrayField(std::shared_ptr<reindexer::Reindexer> reindexer, const str
 	for (auto it : qrAll) {
 		Item item = it.GetItem();
 		VariantArray val = item[updateFieldPath.c_str()];
-		ASSERT_TRUE(val.size() == values.size()) << val.size() << ":" << values.size();
-		ASSERT_TRUE(val == values);
+		if (values.empty()) {
+			ASSERT_TRUE(val.size() == 1) << val.size();
+			ASSERT_TRUE(val.IsNullValue()) << val.ArrayType();
+		} else {
+			ASSERT_TRUE(val.size() == values.size()) << val.size() << ":" << values.size();
+			ASSERT_TRUE(val == values);
+		}
 		checkIfItemJSONValid(it);
 	}
 }
@@ -413,6 +418,7 @@ void updateArrayField(std::shared_ptr<reindexer::Reindexer> reindexer, const str
 TEST_F(NsApi, TestUpdateNonindexedArrayField) {
 	DefineDefaultNamespace();
 	AddUnindexedData();
+	updateArrayField(rt.reindexer, default_namespace, "array_field", {});
 	updateArrayField(rt.reindexer, default_namespace, "array_field",
 					 {Variant(static_cast<int64_t>(3)), Variant(static_cast<int64_t>(4)), Variant(static_cast<int64_t>(5)),
 					  Variant(static_cast<int64_t>(6))});
@@ -470,6 +476,15 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField4) {
 	reindexer::string_view json = item.GetJSON();
 	size_t pos = json.find(R"("nested":{"bonus":[0]})");
 	ASSERT_TRUE(pos != std::string::npos) << "'nested.bonus' was not updated properly" << json;
+}
+
+TEST_F(NsApi, TestUpdateNonindexedArrayField5) {
+	DefineDefaultNamespace();
+	AddUnindexedData();
+	updateArrayField(rt.reindexer, default_namespace, "string_array", {});
+	updateArrayField(rt.reindexer, default_namespace, "string_array",
+					 {Variant(string("one")), Variant(string("two")), Variant(string("three")), Variant(string("four"))});
+	updateArrayField(rt.reindexer, default_namespace, "string_array", {Variant(string("single one"))});
 }
 
 TEST_F(NsApi, TestUpdateIndexedArrayField) {

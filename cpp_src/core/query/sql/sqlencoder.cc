@@ -1,4 +1,5 @@
 #include "core/query/sql/sqlencoder.h"
+#include "core/keyvalue/geometry.h"
 #include "core/nsselecter/sortexpression.h"
 #include "core/queryresults/aggregationresult.h"
 #include "tools/serializer.h"
@@ -183,7 +184,8 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 				}
 				if (isUpdate) {
 					ser << " = ";
-					if (field.values.size() != 1) ser << '[';
+					bool isArray = (field.values.IsArrayValue() || field.values.size() > 1);
+					if (isArray) ser << '[';
 					for (const Variant &v : field.values) {
 						if (&v != &*field.values.begin()) ser << ',';
 						if ((v.Type() == KeyValueString) && !field.isExpression && (mode != FieldModeSetJson)) {
@@ -192,7 +194,7 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 							ser << v.As<string>();
 						}
 					}
-					ser << ((field.values.size() != 1) ? "]" : "");
+					if (isArray) ser << "]";
 				}
 			}
 			break;
@@ -216,6 +218,14 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 
 extern const char *condNames[];
 const char *opNames[] = {"-", "OR", "AND", "AND NOT"};
+
+static void indexToSql(const std::string &index, WrSerializer &ser) {
+	if (index.find('.') == string::npos && index.find('+') == string::npos) {
+		ser << index;
+	} else {
+		ser << '\'' << index << '\'';
+	}
+}
 
 void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntries::const_iterator to, WrSerializer &ser,
 								  bool stripArgs) const {
@@ -242,26 +252,31 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 		} else {
 			const QueryEntry &entry = it->Value();
 			if (entry.joinIndex == QueryEntry::kNoJoins) {
-				if (entry.index.find('.') == string::npos && entry.index.find('+') == string::npos)
-					ser << entry.index << ' ';
-				else
-					ser << '\'' << entry.index << "\' ";
-
-				ser << condNames[entry.condition] << ' ';
-				if (entry.condition == CondEmpty || entry.condition == CondAny) {
-				} else if (stripArgs) {
-					ser << '?';
+				if (entry.condition == CondDWithin) {
+					ser << "ST_DWithin(";
+					indexToSql(entry.index, ser);
+					assert(entry.values.size() == 2);
+					const Point point{static_cast<Point>(entry.values[0])};
+					ser << ", ST_GeomFromText('POINT(" << point.x << ' ' << point.y << ")'), " << entry.values[1].As<double>() << ')';
 				} else {
-					if (entry.values.size() != 1) ser << '(';
-					for (auto &v : entry.values) {
-						if (&v != &entry.values[0]) ser << ',';
-						if (v.Type() == KeyValueString) {
-							ser << '\'' << v.As<string>() << '\'';
-						} else {
-							ser << v.As<string>();
+					indexToSql(entry.index, ser);
+
+					ser << ' ' << condNames[entry.condition] << ' ';
+					if (entry.condition == CondEmpty || entry.condition == CondAny) {
+					} else if (stripArgs) {
+						ser << '?';
+					} else {
+						if (entry.values.size() != 1) ser << '(';
+						for (auto &v : entry.values) {
+							if (&v != &entry.values[0]) ser << ',';
+							if (v.Type() == KeyValueString) {
+								ser << '\'' << v.As<string>() << '\'';
+							} else {
+								ser << v.As<string>();
+							}
 						}
+						ser << ((entry.values.size() != 1) ? ")" : "");
 					}
-					ser << ((entry.values.size() != 1) ? ")" : "");
 				}
 			} else {
 				SQLEncoder(query_).DumpSingleJoinQuery(entry.joinIndex, ser, stripArgs);

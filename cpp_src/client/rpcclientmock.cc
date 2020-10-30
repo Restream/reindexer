@@ -58,7 +58,7 @@ Error RPCClientMock::Delete(const Query& query, QueryResults& result, const Inte
 
 	int flags = kResultsWithItemID;
 	if (outputFormat == FormatMsgPack) flags |= kResultsMsgPack;
-	auto ret = conn->Call({cproto::kCmdDeleteQuery, config_.RequestTimeout, ctx.execTimeout()}, ser.Slice(), flags);
+	auto ret = conn->Call(mkCommand(cproto::kCmdDeleteQuery, &ctx), ser.Slice(), flags);
 	icompl(ret, conn);
 	return ret.Status();
 }
@@ -95,7 +95,7 @@ Error RPCClientMock::Update(const Query& query, QueryResults& result, const Inte
 		flags |= kResultsCJson;
 		flags |= kResultsWithPayloadTypes;
 	}
-	auto ret = conn->Call({cproto::kCmdUpdateQuery, config_.RequestTimeout, ctx.execTimeout()}, ser.Slice(), flags);
+	auto ret = conn->Call(mkCommand(cproto::kCmdUpdateQuery, &ctx), ser.Slice(), flags);
 	icompl(ret, conn);
 	return ret.Status();
 }
@@ -131,7 +131,7 @@ Error RPCClientMock::modifyItem(string_view nsName, Item& item, int mode, second
 			default:
 				return Error(errParams, "ModifyItem: Unknow data format [%d]", format);
 		}
-		auto ret = conn->Call({cproto::kCmdModifyItem, netTimeout, ctx.execTimeout()}, nsName, format, data, mode, ser.Slice(),
+		auto ret = conn->Call(mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), nsName, format, data, mode, ser.Slice(),
 							  item.GetStateToken(), 0);
 		if (!ret.Status().ok()) {
 			if (ret.Status().code() != errStateInvalidated || tryCount > 2) return ret.Status();
@@ -233,7 +233,7 @@ Error RPCClientMock::modifyItemAsync(string_view nsName, Item* item, int mode, c
 					ctx.cmpl()(err);
 				}
 		},
-		{cproto::kCmdModifyItem, netTimeout, ctx.execTimeout()}, ns, format, data, mode, ser.Slice(), item->GetStateToken(), 0);
+		mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), ns, format, data, mode, ser.Slice(), item->GetStateToken(), 0);
 	return errOK;
 }
 
@@ -271,12 +271,11 @@ Error RPCClientMock::selectImpl(string_view query, QueryResults& result, cproto:
 	};
 
 	if (!ctx.cmpl()) {
-		auto ret =
-			conn->Call({cproto::kCmdSelectSQL, netTimeout, ctx.execTimeout(), ctx.getCancelCtx()}, query, flags, INT_MAX, pser.Slice());
+		auto ret = conn->Call(mkCommand(cproto::kCmdSelectSQL, netTimeout, &ctx), query, flags, INT_MAX, pser.Slice());
 		icompl(ret, conn);
 		return ret.Status();
 	} else {
-		conn->Call(icompl, {cproto::kCmdSelectSQL, netTimeout, ctx.execTimeout(), ctx.getCancelCtx()}, query, flags, INT_MAX, pser.Slice());
+		conn->Call(icompl, mkCommand(cproto::kCmdSelectSQL, netTimeout, &ctx), query, flags, INT_MAX, pser.Slice());
 		return errOK;
 	}
 }
@@ -337,13 +336,11 @@ Error RPCClientMock::selectImpl(const Query& query, QueryResults& result, cproto
 	};
 
 	if (!ctx.cmpl()) {
-		auto ret = conn->Call({cproto::kCmdSelect, netTimeout, ctx.execTimeout(), ctx.getCancelCtx()}, qser.Slice(), flags,
-							  config_.FetchAmount, pser.Slice());
+		auto ret = conn->Call(mkCommand(cproto::kCmdSelect, netTimeout, &ctx), qser.Slice(), flags, config_.FetchAmount, pser.Slice());
 		icompl(ret, conn);
 		return ret.Status();
 	} else {
-		conn->Call(icompl, {cproto::kCmdSelect, netTimeout, ctx.execTimeout(), ctx.getCancelCtx()}, qser.Slice(), flags,
-				   config_.FetchAmount, pser.Slice());
+		conn->Call(icompl, mkCommand(cproto::kCmdSelect, netTimeout, &ctx), qser.Slice(), flags, config_.FetchAmount, pser.Slice());
 		return errOK;
 	}
 }

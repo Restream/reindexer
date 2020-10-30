@@ -40,7 +40,7 @@ public:
 		std::chrono::seconds txIdleTimeout;
 	};
 
-	HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper logger, OptionalConfig config = OptionalConfig());
+	HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper &logger, OptionalConfig config = OptionalConfig());
 
 	bool Start(const string &addr, ev::dynamic_loop &loop);
 	void Stop() { listener_->Stop(); }
@@ -65,6 +65,7 @@ public:
 	int RenameNamespace(http::Context &ctx);
 	int GetItems(http::Context &ctx);
 	int PostItems(http::Context &ctx);
+	int PatchItems(http::Context &ctx);
 	int PutItems(http::Context &ctx);
 	int DeleteItems(http::Context &ctx);
 	int GetIndexes(http::Context &ctx);
@@ -72,6 +73,7 @@ public:
 	int PutIndex(http::Context &ctx);
 	int PutSchema(http::Context &ctx);
 	int GetSchema(http::Context &ctx);
+	int GetProtobufSchema(http::Context &ctx);
 	int GetMetaList(http::Context &ctx);
 	int GetMetaByKey(http::Context &ctx);
 	int PutMetaByKey(http::Context &ctx);
@@ -82,6 +84,7 @@ public:
 	int RollbackTx(http::Context &ctx);
 	int PostItemsTx(http::Context &ctx);
 	int PutItemsTx(http::Context &ctx);
+	int PatchItemsTx(http::Context &ctx);
 	int DeleteItemsTx(http::Context &ctx);
 	int GetSQLQueryTx(http::Context &ctx);
 	int DeleteQueryTx(http::Context &ctx);
@@ -92,6 +95,7 @@ protected:
 	Error modifyItem(Reindexer &db, string &nsName, Item &item, ItemModifyMode mode);
 	int modifyItems(http::Context &ctx, ItemModifyMode mode);
 	int modifyItemsTx(http::Context &ctx, ItemModifyMode mode);
+	int modifyItemsProtobuf(http::Context &ctx, string &nsName, const vector<string> &precepts, ItemModifyMode mode);
 	int modifyItemsMsgPack(http::Context &ctx, string &nsName, const vector<string> &precepts, ItemModifyMode mode);
 	int modifyItemsJSON(http::Context &ctx, string &nsName, const vector<string> &precepts, ItemModifyMode mode);
 	int modifyItemsTxMsgPack(http::Context &ctx, Transaction &tx, const vector<string> &precepts, ItemModifyMode mode);
@@ -100,6 +104,8 @@ protected:
 					 unsigned offset = kDefaultOffset);
 	int queryResultsMsgPack(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
 							bool withColumns, int width = 0);
+	int queryResultsProtobuf(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
+							 bool withColumns, int width = 0);
 	int queryResultsJSON(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
 						 bool withColumns, int width = 0);
 	template <typename Builder>
@@ -108,6 +114,7 @@ protected:
 	int status(http::Context &ctx, const http::HttpStatus &status = http::HttpStatus());
 	int jsonStatus(http::Context &ctx, const http::HttpStatus &status = http::HttpStatus());
 	int msgpackStatus(http::Context &ctx, const http::HttpStatus &status = http::HttpStatus());
+	int protobufStatus(http::Context &ctx, const http::HttpStatus &status = http::HttpStatus());
 	unsigned prepareLimit(const string_view &limitParam, int limitDefault = kDefaultLimit);
 	unsigned prepareOffset(const string_view &offsetParam, int offsetDefault = kDefaultOffset);
 	int modifyQueryTxImpl(http::Context &ctx, const std::string &dbName, string_view txId, Query &q);

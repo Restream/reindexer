@@ -148,18 +148,12 @@ TEST_F(JoinSelectsApi, GeneralDSLTest) {
 
 	reindexer::AggregateEntry aggEntry;
 	aggEntry.fields_ = {bookid};
-	aggEntry.type_ = AggAvg;
+	aggEntry.type_ = AggDistinct;
 	testDslQuery.aggregations_.push_back(aggEntry);
-	aggEntry.fields_ = {genreid, title};
-	aggEntry.type_ = AggFacet;
-	aggEntry.sortingEntries_.push_back({genreid, false});
-	aggEntry.limit_ = 100;
-	aggEntry.offset_ = 10;
-	testDslQuery.aggregations_.push_back(aggEntry);
-	const string dsl1 = testDslQuery.GetJSON();
 
 	Query testLoadDslQuery;
+	const string dsl1 = testDslQuery.GetJSON();
 	Error err = testLoadDslQuery.FromJSON(dsl1);
-	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(testDslQuery == testLoadDslQuery);
+	EXPECT_TRUE(err.ok()) << err.what();
+	EXPECT_TRUE(testDslQuery == testLoadDslQuery);
 }

@@ -29,6 +29,7 @@ void WALRecord::Pack(WrSerializer &ser) const {
 		case WalReplState:
 		case WalNamespaceRename:
 		case WalForceSync:
+		case WalWALSync:
 		case WalSetSchema:
 			ser.PutVString(data);
 			break;
@@ -80,6 +81,7 @@ WALRecord::WALRecord(span<uint8_t> packed) {
 		case WalReplState:
 		case WalNamespaceRename:
 		case WalForceSync:
+		case WalWALSync:
 		case WalSetSchema:
 			data = ser.GetVString();
 			break;
@@ -136,6 +138,8 @@ static string_view wrecType2Str(WALRecType t) {
 			return "WalCommitTransaction"_sv;
 		case WalForceSync:
 			return "WalForceSync"_sv;
+		case WalWALSync:
+			return "WalWALSync"_sv;
 		case WalSetSchema:
 			return "WalSetSchema"_sv;
 		default:
@@ -163,6 +167,7 @@ WrSerializer &WALRecord::Dump(WrSerializer &ser, std::function<string(string_vie
 		case WalIndexUpdate:
 		case WalReplState:
 		case WalForceSync:
+		case WalWALSync:
 		case WalSetSchema:
 			return ser << ' ' << data;
 		case WalPutMeta:
@@ -197,6 +202,7 @@ void WALRecord::GetJSON(JsonBuilder &jb, std::function<string(string_view)> cjso
 			jb.Put("dst_ns_name", data);
 			return;
 		case WalForceSync:
+		case WalWALSync:
 			jb.Put("ns_def", data);
 			return;
 		case WalIndexAdd:

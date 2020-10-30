@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/keyvalue/geometry.h"
 #include "core/keyvalue/variant.h"
 #include "estl/span.h"
 #include "tools/errors.h"
@@ -15,6 +16,7 @@ class Namespace;
 class ItemImpl;
 class FieldRefImpl;
 class Replicator;
+class Schema;
 
 /// Item is the interface for data manipulating. It holds and control one database document (record)<br>
 /// *Lifetime*: Item is uses Copy-On-Write semantics, and have independent lifetime and state - e.g., aquired from Reindexer Item will
@@ -60,6 +62,13 @@ public:
 		FieldRef &operator=(const T &val) {
 			return operator=(Variant(val));
 		}
+		/// Set single point type value
+		/// @param val - value, which will be setted to field
+		FieldRef &operator=(Point p) {
+			const double arr[]{p.x, p.y};
+			return operator=(span<double>(arr, 2));
+		}
+
 		/// Set array of values to field
 		/// @tparam T - type. Must be one of: int, int64_t, double
 		/// @param arr - std::vector of T values, which will be setted to field
@@ -94,10 +103,10 @@ public:
 		/// @return VariantArray with field values
 		operator VariantArray() const;
 		/// Set field value
-		/// @param kr - key reference object, which will be setted to field
+		/// @param kr - key reference object, which will be set to field
 		FieldRef &operator=(Variant kr);
 		/// Set field value
-		/// @param krs - key reference object, which will be setted to field
+		/// @param krs - key reference object, which will be set to field
 		FieldRef &operator=(const VariantArray &krs);
 
 	private:
@@ -128,9 +137,17 @@ public:
 	/// @param offset - position to start from.
 	Error FromMsgPack(string_view buf, size_t &offset);
 
+	/// Builds item from Protobuf
+	/// @param sbuf - Protobuf encoded data
+	Error FromProtobuf(string_view sbuf);
+
 	/// Packs data in msgpack format
 	/// @param wrser - buffer to serialize data to
 	Error GetMsgPack(WrSerializer &wrser);
+
+	/// Packs item data to Protobuf
+	/// @param wrser - buffer to serialize data to
+	Error GetProtobuf(WrSerializer &wrser);
 
 	/// Serialize item to CJSON.<br>
 	/// If Item is in *Unfafe Mode*, then returned slice is allocated in temporary buffer, and can be invalidated by any next operation
@@ -162,6 +179,10 @@ public:
 	/// @param name - name of field
 	/// @return FieldRef which contains reference to indexed field
 	FieldRef operator[](string_view name) const;
+	/// Get field's name tag
+	/// @param name - field name
+	/// @return name's numeric tag value
+	int GetFieldTag(string_view name) const;
 	/// Get PK fields
 	FieldsSet PkFields() const;
 	/// Set additional percepts for modify operation

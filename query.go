@@ -434,6 +434,20 @@ func (q *Query) WhereDouble(index string, condition int, keys ...float64) *Query
 	return q
 }
 
+// DWithin - Add DWithin condition to DB query
+func (q *Query) DWithin(index string, point [2]float64, distance float64) *Query {
+
+	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(DWITHIN)
+	q.nextOp = opAND
+	q.queriesCount++
+
+	q.ser.PutVarCUInt(3)
+	q.ser.PutVarCUInt(valueDouble).PutDouble(point[0])
+	q.ser.PutVarCUInt(valueDouble).PutDouble(point[1])
+	q.ser.PutVarCUInt(valueDouble).PutDouble(distance)
+	return q
+}
+
 func (q *Query) AggregateSum(field string) {
 	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggSum).PutVarCUInt(1).PutVString(field)
 }
@@ -776,8 +790,10 @@ func (q *Query) Set(field string, values interface{}) *Query {
 	q.ser.PutVString(field)
 
 	if values == nil {
-		q.ser.PutVarUInt(0)
+		q.ser.PutVarUInt(0) // is array
+		q.ser.PutVarUInt(0) // size
 	} else if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+		q.ser.PutVarUInt(1) // is array
 		q.ser.PutVarCUInt(v.Len())
 		for i := 0; i < v.Len(); i++ {
 			// function/value flag
@@ -785,7 +801,8 @@ func (q *Query) Set(field string, values interface{}) *Query {
 			q.putValue(v.Index(i))
 		}
 	} else {
-		q.ser.PutVarCUInt(1)
+		q.ser.PutVarUInt(0)  // is array
+		q.ser.PutVarCUInt(1) // size
 		// function/value flag
 		q.ser.PutVarUInt(0)
 		q.putValue(v)
@@ -805,8 +822,9 @@ func (q *Query) SetExpression(field string, value string) *Query {
 	q.ser.PutVarCUInt(queryUpdateField)
 	q.ser.PutVString(field)
 
-	q.ser.PutVarCUInt(1)
-	q.ser.PutVarUInt(1)
+	q.ser.PutVarUInt(0)  // is array
+	q.ser.PutVarCUInt(1) // size
+	q.ser.PutVarUInt(1)  // is expression
 	q.putValue(reflect.ValueOf(value))
 
 	return q

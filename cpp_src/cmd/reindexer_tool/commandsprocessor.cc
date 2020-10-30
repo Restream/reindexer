@@ -95,10 +95,15 @@ Error CommandsProcessor<DBInterface>::Process(string command) {
 
 	if (!token.length() || token.substr(0, 2) == "--") return errOK;
 
-	cancelCtx_.Reset();
+	Error ret;
 	for (auto& c : cmds_) {
 		if (iequals(token, c.command)) {
-			return (this->*(c.handler))(command);
+			ret = (this->*(c.handler))(command);
+			if (cancelCtx_.IsCancelled()) {
+				ret = Error(errCanceled, "Canceled");
+			}
+			cancelCtx_.Reset();
+			return ret;
 		}
 	}
 	return Error(errParams, "Unknown command '%s'. Type '\\help' to list of available commands", token);
@@ -293,7 +298,7 @@ Error CommandsProcessor<DBInterface>::commandDump(const string& command) {
 
 	vector<NamespaceDef> allNsDefs, doNsDefs;
 
-	auto err = db_.EnumNamespaces(allNsDefs, reindexer::EnumNamespacesOpts());
+	auto err = db_.WithContext(&cancelCtx_).EnumNamespaces(allNsDefs, reindexer::EnumNamespacesOpts());
 	if (err) return err;
 
 	if (!parser.End()) {
@@ -328,25 +333,32 @@ Error CommandsProcessor<DBInterface>::commandDump(const string& command) {
 		wrser << '\n';
 
 		vector<string> meta;
-		err = db_.EnumMeta(nsDef.name, meta);
-		if (err) return err;
+		err = db_.WithContext(&cancelCtx_).EnumMeta(nsDef.name, meta);
+		if (err) {
+			return err;
+		}
 
 		for (auto& mkey : meta) {
 			string mdata;
-			err = db_.GetMeta(nsDef.name, mkey, mdata);
-			if (err) return err;
+			err = db_.WithContext(&cancelCtx_).GetMeta(nsDef.name, mkey, mdata);
+			if (err) {
+				return err;
+			}
 
 			wrser << "\\META PUT " << reindexer::escapeString(nsDef.name) << " " << reindexer::escapeString(mkey) << " "
 				  << reindexer::escapeString(mdata) << '\n';
 		}
 
 		typename DBInterface::QueryResultsT itemResults;
-		err = db_.Select(Query(nsDef.name), itemResults);
+		err = db_.WithContext(&cancelCtx_).Select(Query(nsDef.name), itemResults);
 
 		if (!err.ok()) return err;
 
 		for (auto it : itemResults) {
 			if (!it.Status().ok()) return it.Status();
+			if (cancelCtx_.IsCancelled()) {
+				return Error(errCanceled, "Canceled");
+			}
 			wrser << "\\UPSERT " << reindexer::escapeString(nsDef.name) << ' ';
 			it.GetJSON(wrser, false);
 			wrser << '\n';
@@ -872,7 +884,7 @@ bool CommandsProcessor<DBInterface>::FromFile(std::istream& infile) {
 		Error err = Process(line);
 		if (!err.ok()) {
 			std::cerr << "ERROR: " << err.what() << std::endl;
-			if (!wasError && !db_.Status().ok()) {
+			if (!wasError && (err.code() == errCanceled || !db_.Status().ok())) {
 				return false;
 			}
 			wasError = true;
@@ -989,7 +1001,7 @@ Error CommandsProcessor<reindexer::Reindexer>::commandProcessDatabases(const str
 
 template class CommandsProcessor<reindexer::client::Reindexer>;
 template class CommandsProcessor<reindexer::Reindexer>;
-template Error CommandsProcessor<reindexer::Reindexer>::Connect(const string& dsn);
+template Error CommandsProcessor<reindexer::Reindexer>::Connect(const string& dsn, ConnectOpts opts);
 template Error CommandsProcessor<reindexer::client::Reindexer>::Connect(const string& dsn);
 template Error CommandsProcessor<reindexer::client::Reindexer>::Connect(const string& dsn, reindexer::client::ConnectOpts opts);
 

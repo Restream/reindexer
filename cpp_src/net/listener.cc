@@ -13,7 +13,7 @@ namespace reindexer {
 
 namespace net {
 
-static atomic<int> counter_;
+static std::atomic_uint_fast64_t counter_;
 
 Listener::Listener(ev::dynamic_loop &loop, std::shared_ptr<Shared> shared) : loop_(loop), shared_(shared), id_(counter_++) {
 	io_.set<Listener, &Listener::io_accept>(this);

@@ -2,7 +2,7 @@
 
 namespace reindexer {
 
-CJsonBuilder::CJsonBuilder(WrSerializer &ser, ObjType type, TagsMatcher *tm, int tagName) : tm_(tm), ser_(&ser), type_(type) {
+CJsonBuilder::CJsonBuilder(WrSerializer &ser, ObjType type, const TagsMatcher *tm, int tagName) : tm_(tm), ser_(&ser), type_(type) {
 	switch (type_) {
 		case ObjType::TypeArray:
 		case ObjType::TypeObjectArray:
@@ -36,8 +36,6 @@ CJsonBuilder &CJsonBuilder::End() {
 	type_ = ObjType::TypePlain;
 	return *this;
 }
-
-void CJsonBuilder::SetTagsMatcher(const TagsMatcher *tm) { tm_ = const_cast<TagsMatcher *>(tm); }
 
 CJsonBuilder CJsonBuilder::Object(int tagName) {
 	count_++;

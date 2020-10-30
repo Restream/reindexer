@@ -63,6 +63,7 @@ type Type struct {
 	OneOf                []*Type                `json:"oneOf,omitempty"`                // section 5.24
 	Not                  *Type                  `json:"not,omitempty"`                  // section 5.25
 	Definitions          Definitions            `json:"definitions,omitempty"`          // section 5.26
+	XGoType              string                 `json:"x-go-type,omitempty"`
 	// RFC draft-wright-json-schema-validation-00, section 6, 7
 	Title       string        `json:"title,omitempty"`       // section 6.1
 	Description string        `json:"description,omitempty"` // section 6.1
@@ -145,6 +146,7 @@ func (r *Reflector) ReflectFromType(t reflect.Type) *Schema {
 			Type:                 "object",
 			Properties:           orderedmap.New(),
 			AdditionalProperties: []byte("false"),
+			XGoType:              t.Name(),
 		}
 		if r.AllowAdditionalProperties {
 			st.AdditionalProperties = []byte("true")
@@ -220,9 +222,9 @@ func (r *Reflector) reflectTypeToSchema(definitions Definitions, parentTypes Def
 
 		switch t {
 		case timeType: // date-time RFC section 7.3.1
-			return &Type{Type: "string", Format: "date-time"}
+			return &Type{Type: "string", Format: "date-time", XGoType: t.Name()}
 		case uriType: // uri RFC section 7.3.6
-			return &Type{Type: "string", Format: "uri"}
+			return &Type{Type: "string", Format: "uri", XGoType: t.Name()}
 		default:
 			parentTypesInternal := Definitions{}
 			for key, value := range parentTypes {
@@ -233,7 +235,8 @@ func (r *Reflector) reflectTypeToSchema(definitions Definitions, parentTypes Def
 
 	case reflect.Map:
 		rt := &Type{
-			Type: "object",
+			Type:    "object",
+			XGoType: "map",
 			PatternProperties: map[string]*Type{
 				".*": r.reflectTypeToSchema(definitions, parentTypes, t.Elem()),
 			},
@@ -261,14 +264,15 @@ func (r *Reflector) reflectTypeToSchema(definitions Definitions, parentTypes Def
 	case reflect.Interface:
 		return &Type{
 			AdditionalProperties: []byte("true"),
+			XGoType:              t.Name(),
 		}
 
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return &Type{Type: "integer"}
+		return &Type{Type: "integer", XGoType: t.Name()}
 
 	case reflect.Float32, reflect.Float64:
-		return &Type{Type: "number"}
+		return &Type{Type: "number", XGoType: t.Name()}
 
 	case reflect.Bool:
 		return &Type{Type: "boolean"}
@@ -282,12 +286,13 @@ func (r *Reflector) reflectTypeToSchema(definitions Definitions, parentTypes Def
 	panic("unsupported type " + t.String())
 }
 
-// Refects a struct to a JSON Schema type.
+// Reflects a struct to a JSON Schema type.
 func (r *Reflector) reflectStruct(definitions Definitions, parentTypes Definitions, t reflect.Type) *Type {
 
 	if _, ok := parentTypes[r.typeName(t)]; ok {
 		return &Type{
 			AdditionalProperties: []byte("true"),
+			XGoType:              t.Name(),
 		}
 	}
 
@@ -295,6 +300,7 @@ func (r *Reflector) reflectStruct(definitions Definitions, parentTypes Definitio
 		if reflect.TypeOf(ignored) == t {
 			st := &Type{
 				Type:                 "object",
+				XGoType:              t.Name(),
 				Properties:           orderedmap.New(),
 				AdditionalProperties: []byte("true"),
 			}
@@ -315,6 +321,7 @@ func (r *Reflector) reflectStruct(definitions Definitions, parentTypes Definitio
 		Type:                 "object",
 		Properties:           orderedmap.New(),
 		AdditionalProperties: []byte("false"),
+		XGoType:              t.Name(),
 	}
 	if r.AllowAdditionalProperties {
 		st.AdditionalProperties = []byte("true")

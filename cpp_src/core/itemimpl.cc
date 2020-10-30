@@ -6,7 +6,10 @@
 #include "core/cjson/jsondecoder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/msgpackdecoder.h"
+#include "core/cjson/protobufbuilder.h"
+#include "core/cjson/protobufdecoder.h"
 #include "core/keyvalue/p_string.h"
+#include "core/namespace/namespace.h"
 #include "tools/logger.h"
 
 using std::move;
@@ -113,6 +116,21 @@ Error ItemImpl::FromMsgPack(string_view buf, size_t &offset) {
 	return err;
 }
 
+Error ItemImpl::FromProtobuf(string_view buf) {
+	assert(ns_);
+	Payload pl = GetPayload();
+	ProtobufDecoder decoder(tagsMatcher_, schema_);
+
+	ser_.Reset();
+	ser_.PutUInt32(0);
+	Error err = decoder.Decode(buf, &pl, ser_);
+	if (err.ok()) {
+		tupleData_ = ser_.DetachBuf();
+		pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
+	}
+	return err;
+}
+
 Error ItemImpl::GetMsgPack(WrSerializer &wrser) {
 	int startTag = 0;
 	ConstPayload pl = GetConstPayload();
@@ -122,6 +140,15 @@ Error ItemImpl::GetMsgPack(WrSerializer &wrser) {
 
 	MsgPackBuilder msgpackBuilder(wrser, &tagsLengths, &startTag, ObjType::TypePlain, &tagsMatcher_);
 	msgpackEncoder.Encode(&pl, msgpackBuilder);
+	return errOK;
+}
+
+Error ItemImpl::GetProtobuf(WrSerializer &wrser) {
+	assert(ns_);
+	ConstPayload pl = GetConstPayload();
+	ProtobufBuilder protobufBuilder(&wrser, ObjType::TypePlain, schema_.get(), &tagsMatcher_);
+	ProtobufEncoder protobufEncoder(&tagsMatcher_);
+	protobufEncoder.Encode(&pl, protobufBuilder);
 	return errOK;
 }
 

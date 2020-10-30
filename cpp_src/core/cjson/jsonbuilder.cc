@@ -36,8 +36,6 @@ JsonBuilder &JsonBuilder::End() {
 	return *this;
 }
 
-void JsonBuilder::SetTagsMatcher(const TagsMatcher *tm) { tm_ = tm; }
-
 JsonBuilder JsonBuilder::Object(string_view name, int /*size*/) {
 	putName(name);
 	return JsonBuilder(*ser_, ObjType::TypeObject, tm_);

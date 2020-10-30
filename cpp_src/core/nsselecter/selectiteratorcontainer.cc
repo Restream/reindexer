@@ -191,7 +191,7 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 
 	Index::SelectOpts opts;
 	opts.itemsCountInNamespace = ns.items_.size() - ns.free_.size();
-	if (!ns.sortOrdersBuilt_) opts.disableIdSetCache = 1;
+	if (!ns.SortOrdersBuilt()) opts.disableIdSetCache = 1;
 	if (isQueryFt) {
 		opts.forceComparator = 1;
 	}

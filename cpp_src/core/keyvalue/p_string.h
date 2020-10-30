@@ -37,9 +37,9 @@ struct p_string {
 	constexpr static uint64_t tagVstr = 0x3ULL;
 	// ptr points to slice object
 	constexpr static uint64_t tagSlice = 0x4ULL;
-	// pyr points to key_string payload atomic_rc_wrapper<base_key_string>
+	// ptr points to key_string payload atomic_rc_wrapper<base_key_string>
 	constexpr static uint64_t tagKeyString = 0x5ULL;
-	// pyr points to json_string
+	// ptr points to json_string
 	constexpr static uint64_t tagJsonStr = 0x6ULL;
 	// offset of tag in pointer
 	constexpr static uint64_t tagShift = 59ULL;

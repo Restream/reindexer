@@ -72,14 +72,16 @@ class NamespacesTest(BaseTest):
 
         items = self.helper_item_array_construct(items_count)
         for item_body in items:
-            status, body = self.api_create_item(self.current_db, self.test_ns, item_body)
+            status, body = self.api_create_item(
+                self.current_db, self.test_ns, item_body)
             self.assertEqual(True, status == self.API_STATUS['success'], body)
 
         status, body = self.api_get_items(self.current_db, self.test_ns)
         self.assertEqual(True, status == self.API_STATUS['success'], body)
         self.assertEqual(True, len(body['items']) == items_count, body)
 
-        status, body = self.api_truncate_namespace(self.current_db, self.test_ns)
+        status, body = self.api_truncate_namespace(
+            self.current_db, self.test_ns)
         self.assertEqual(True, status == self.API_STATUS['success'], body)
 
         status, body = self.api_get_items(self.current_db, self.test_ns)
@@ -95,7 +97,8 @@ class NamespacesTest(BaseTest):
         self.assertEqual(True, status == self.API_STATUS['success'], body)
 
         ren_ns = "rename_namespace"
-        status, body = self.api_rename_namespace(self.current_db, self.test_ns, ren_ns)
+        status, body = self.api_rename_namespace(
+            self.current_db, self.test_ns, ren_ns)
         self.assertEqual(True, status == self.API_STATUS['success'], body)
 
         status, body = self.api_get_namespace(self.current_db, ren_ns)
@@ -193,21 +196,27 @@ class NamespacesTest(BaseTest):
         status, body = self.api_create_namespace(self.current_db, self.test_ns)
         self.assertEqual(True, status == self.API_STATUS['success'], body)
 
-        meta = self.helper_meta_construct('key1', 'value1');
-        status, body = self.api_put_namespace_meta(self.current_db, self.test_ns, meta)
+        meta = self.helper_meta_construct('key1', 'value1')
+        status, body = self.api_put_namespace_meta(
+            self.current_db, self.test_ns, meta)
         self.assertEqual(True, status == self.API_STATUS['success'], body)
 
-        meta = self.helper_meta_construct('key2', 'value2');
-        status, body = self.api_put_namespace_meta(self.current_db, self.test_ns, meta)
+        meta = self.helper_meta_construct('key2', 'value2')
+        status, body = self.api_put_namespace_meta(
+            self.current_db, self.test_ns, meta)
         self.assertEqual(True, status == self.API_STATUS['success'], body)
 
-        status, body = self.api_get_namespace_meta(self.current_db, self.test_ns, 'key1')
+        status, body = self.api_get_namespace_meta(
+            self.current_db, self.test_ns, 'key1')
         self.assertEqual(True, status == self.API_STATUS['success'], body)
-        self.assertEqual(True, body == self.helper_meta_construct('key1', 'value1'), body)
+        self.assertEqual(True, body == self.helper_meta_construct(
+            'key1', 'value1'), body)
 
-        status, body = self.api_get_namespace_meta(self.current_db, self.test_ns, 'key2')
+        status, body = self.api_get_namespace_meta(
+            self.current_db, self.test_ns, 'key2')
         self.assertEqual(True, status == self.API_STATUS['success'], body)
-        self.assertEqual(True, body == self.helper_meta_construct('key2', 'value2'), body)
+        self.assertEqual(True, body == self.helper_meta_construct(
+            'key2', 'value2'), body)
 
     def test_get_namespaces_meta_info_list(self):
         """Should be able to get namespace meta info list"""
@@ -216,16 +225,19 @@ class NamespacesTest(BaseTest):
         self.assertEqual(True, status == self.API_STATUS['success'], body)
 
         for x in range(100):
-            meta = self.helper_meta_construct('key' + str(x), 'value' + str(x));
-            status, body = self.api_put_namespace_meta(self.current_db, self.test_ns, meta)
+            meta = self.helper_meta_construct('key' + str(x), 'value' + str(x))
+            status, body = self.api_put_namespace_meta(
+                self.current_db, self.test_ns, meta)
             self.assertEqual(True, status == self.API_STATUS['success'], body)
 
-        status, body = self.api_get_namespace_meta_list(self.current_db, self.test_ns)
+        status, body = self.api_get_namespace_meta_list(
+            self.current_db, self.test_ns)
         self.assertEqual(True, status == self.API_STATUS['success'], body)
         self.assertEqual(True, body['total_items'] == 100, body)
         self.assertEqual(True, len(body['meta']) == 100, body)
 
-        status, body = self.api_get_namespace_meta_list(self.current_db, self.test_ns, sort = self.SORT_ORDER['asc'], with_values = True, offset = 10, limit = 30);
+        status, body = self.api_get_namespace_meta_list(
+            self.current_db, self.test_ns, sort=self.SORT_ORDER['asc'], with_values=True, offset=10, limit=30)
         self.assertEqual(True, status == self.API_STATUS['success'], body)
         self.assertEqual(True, body['total_items'] == 100, body)
         self.assertEqual(True, len(body['meta']) == 30, body)
@@ -242,11 +254,8 @@ class NamespacesTest(BaseTest):
     def test_put_and_get_namespaces_schema(self):
         """Should be able to put and get namespace schema"""
 
-        status, body = self.api_create_namespace(self.current_db, self.test_ns)
-        self.assertEqual(True, status == self.API_STATUS['success'], body)
-
         schema = {
-            'required': ['Countries','nested'],
+            'required': ['Countries', 'nested'],
             'properties': {
                 'Countries': {
                     'items': {
@@ -262,16 +271,23 @@ class NamespacesTest(BaseTest):
                         },
                     },
                     'additionalProperties': False,
-                    'type': 'object'
+                    'type': 'object',
+                    'x-go-type': 'Nested'
                 }
             },
             'additionalProperties': False,
-            'type': 'object'
+            'type': 'object',
+            'x-protobuf-ns-number': 100
         }
-        status, body = self.api_put_namespace_schema(self.current_db, self.test_ns, schema)
+
+        status, body = self.api_create_namespace(self.current_db, self.test_ns)
         self.assertEqual(True, status == self.API_STATUS['success'], body)
 
-        status, body = self.api_get_namespace_schema(self.current_db, self.test_ns)
+        status, body = self.api_put_namespace_schema(
+            self.current_db, self.test_ns, schema)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        status, body = self.api_get_namespace_schema(
+            self.current_db, self.test_ns)
         self.assertEqual(True, status == self.API_STATUS['success'], body)
         self.assertEqual(True, body == schema, body)
-

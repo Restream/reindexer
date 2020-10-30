@@ -4,6 +4,7 @@ namespace reindexer {
 
 class NamespaceImpl;
 class QueryResults;
+class RdxContext;
 struct SelectCtx;
 class WALSelecter {
 public:

@@ -232,8 +232,12 @@ bool CJsonModifier::buildTuple(Context &ctx) {
 			}
 		} else {
 			if (tagMatched) {
-				if (!ctx.dropThisTag(tagMatched) && ctx.value.empty()) throw Error(errLogic, "Update value cannot be empty");
-				updateField(ctx, 0);
+				if (!ctx.dropThisTag(tagMatched) && ctx.value.empty() && tagType != TAG_NULL) {
+					throw Error(errLogic, "Update value for field [%s] cannot be empty", tagsMatcher_.tag2name(tagName));
+				}
+				if (tagType != TAG_NULL) {
+					updateField(ctx, 0);
+				}
 				skipCjsonTag(tag, ctx.rdser);
 				ctx.fieldUpdated = true;
 			} else {

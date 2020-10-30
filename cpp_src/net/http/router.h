@@ -58,6 +58,7 @@ enum HttpMethod : int {
 	kMethodHEAD,
 	kMethodPUT,
 	kMethodDELETE,
+	kMethodPATCH,
 	kMaxMethod,
 };
 
@@ -71,8 +72,7 @@ struct HttpStatus {
 	HttpStatusCode code;
 	string what;
 
-private:
-	HttpStatusCode errCodeToHttpStatus(int errCode);
+	static HttpStatusCode errCodeToHttpStatus(int errCode);
 };
 
 struct Header {
@@ -148,6 +148,7 @@ struct Context {
 	int JSON(int code, string_view slice);
 	int JSON(int code, chunk &&chunk);
 	int MSGPACK(int code, chunk &&chunk);
+	int Protobuf(int code, chunk &&chunk);
 	int String(int code, string_view slice);
 	int String(int code, chunk &&chunk);
 	int File(int code, string_view path, string_view data = string_view());
@@ -207,6 +208,14 @@ public:
 	template <class K, int (K::*func)(Context &)>
 	void PUT(const char *path, K *object) {
 		addRoute<K, func>(kMethodPUT, path, object);
+	}
+	/// Add handler for http PATCH method.
+	/// @param path - URI pattern
+	/// @param object - handler class object
+	/// @tparam func - handler
+	template <class K, int (K::*func)(Context &)>
+	void PATCH(const char *path, K *object) {
+		addRoute<K, func>(kMethodPATCH, path, object);
 	}
 	/// Add handler for http HEAD method.
 	/// @param path - URI pattern

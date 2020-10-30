@@ -35,6 +35,35 @@ TEST_F(RPCClientTestApi, RequestTimeout) {
 	StopServer();
 }
 
+TEST_F(RPCClientTestApi, RequestCancels) {
+	AddServer();
+	StartServer();
+	client_.reset(new reindexer::client::Reindexer);
+	auto res = client_->Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db");
+	EXPECT_TRUE(res.ok());
+
+	{
+		CancelRdxContext ctx;
+		ctx.Cancel();
+		res = client_->WithContext(&ctx).AddNamespace(reindexer::NamespaceDef("MyNamespace"));
+		EXPECT_EQ(res.code(), errCanceled);
+	}
+
+	{
+		CancelRdxContext ctx;
+		std::thread thr([this, &ctx] {
+			auto res = client_->WithContext(&ctx).AddNamespace(reindexer::NamespaceDef("MyNamespace"));
+			EXPECT_EQ(res.code(), errCanceled);
+		});
+
+		std::this_thread::sleep_for(std::chrono::seconds(1));
+		ctx.Cancel();
+		thr.join();
+	}
+
+	StopServer();
+}
+
 TEST_F(RPCClientTestApi, SuccessfullRequestWithTimeout) {
 	AddServer();
 	StartServer();

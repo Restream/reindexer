@@ -40,7 +40,7 @@ enum class JoinEntry { LeftField, RightField, Cond, Op };
 enum class Filter { Cond, Op, Field, Value, Filters, JoinQuery };
 enum class Aggregation { Fields, Type, Sort, Limit, Offset };
 enum class EqualPosition { Positions };
-enum class UpdateField { Name, Type, Values };
+enum class UpdateField { Name, Type, Values, IsArray };
 enum class UpdateFieldType { Object, Expression, Value };
 
 // additional for parse root DSL fields
@@ -91,8 +91,9 @@ static const fast_str_map<Filter> filter_map = {{"cond", Filter::Cond},	  {"op",
 // additional for 'filter::cond' field
 
 static const fast_str_map<CondType> cond_map = {
-	{"any", CondAny},	  {"eq", CondEq},	{"lt", CondLt},			{"le", CondLe},		  {"gt", CondGt},	 {"ge", CondGe},
-	{"range", CondRange}, {"set", CondSet}, {"allset", CondAllSet}, {"empty", CondEmpty}, {"match", CondEq}, {"like", CondLike},
+	{"any", CondAny},  {"eq", CondEq},		 {"lt", CondLt},		   {"le", CondLe},		   {"gt", CondGt},
+	{"ge", CondGe},	   {"range", CondRange}, {"set", CondSet},		   {"allset", CondAllSet}, {"empty", CondEmpty},
+	{"match", CondEq}, {"like", CondLike},	 {"dwithin", CondDWithin},
 };
 
 static const fast_str_map<OpType> op_map = {{"or", OpOr}, {"and", OpAnd}, {"not", OpNot}};
@@ -128,6 +129,7 @@ static const fast_str_map<UpdateField> update_field_map = {
 	{"name", UpdateField::Name},
 	{"type", UpdateField::Type},
 	{"values", UpdateField::Values},
+	{"is_array", UpdateField::IsArray},
 };
 
 // additional for 'Root::UpdateFieldType' field
@@ -171,18 +173,25 @@ void parseValues(JsonValue& values, Array& kvs) {
 		for (auto elem : values) {
 			Variant kv;
 			if (elem->value.getTag() == JSON_OBJECT) {
-                kv = Variant(stringifyJson(*elem));
+				kv = Variant(stringifyJson(*elem));
 			} else if (elem->value.getTag() != JSON_NULL) {
 				kv = jsonValue2Variant(elem->value, KeyValueUndefined);
 				kv.EnsureHold();
 			}
-			if (kvs.size() > 1 && kvs.back().Type() != kv.Type()) throw Error(errParseJson, "Array of filter values must be homogeneous.");
-			kvs.push_back(std::move(kv));
+			if (!kvs.empty() && kvs.back().Type() != kv.Type()) {
+				if (kvs.size() != 1 || !((kvs[0].Type() == KeyValueTuple &&
+										  (kv.Type() == KeyValueDouble || kv.Type() == KeyValueInt || kv.Type() == KeyValueInt64)) ||
+										 (kv.Type() == KeyValueTuple && (kvs[0].Type() == KeyValueDouble || kvs[0].Type() == KeyValueInt ||
+																		 kvs[0].Type() == KeyValueInt64)))) {
+					throw Error(errParseJson, "Array of filter values must be homogeneous.");
+				}
+			}
+			kvs.emplace_back(std::move(kv));
 		}
 	} else if (values.getTag() != JSON_NULL) {
 		Variant kv(jsonValue2Variant(values, KeyValueUndefined));
 		kv.EnsureHold();
-		kvs.push_back(std::move(kv));
+		kvs.emplace_back(std::move(kv));
 	}
 }
 
@@ -443,6 +452,9 @@ void parseAggregation(JsonValue& aggregation, Query& query) {
 			case Aggregation::Type:
 				checkJsonValueType(value, name, JSON_STRING);
 				aggEntry.type_ = get(aggregation_types, value.toString(), "aggregation type enum"_sv);
+				if (!query.CanAddAggregation(aggEntry.type_)) {
+					throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
+				}
 				break;
 			case Aggregation::Sort:
 				parseSort(value, aggEntry);
@@ -514,6 +526,10 @@ void parseUpdateFields(JsonValue& updateFields, Query& query) {
 					}
 					break;
 				}
+				case UpdateField::IsArray:
+					checkJsonValueType(value, name, JSON_TRUE, JSON_FALSE);
+					if (value.getTag() == JSON_TRUE) values.MarkArray();
+					break;
 				case UpdateField::Values:
 					checkJsonValueType(value, name, JSON_ARRAY);
 					parseValues(value, values);
@@ -564,10 +580,14 @@ void parse(JsonValue& root, Query& q) {
 				checkJsonValueType(v, name, JSON_ARRAY);
 				parseMergeQueries(v, q);
 				break;
-			case Root::SelectFilter:
+			case Root::SelectFilter: {
+				if (!q.CanAddSelectFilter()) {
+					throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
+				}
 				checkJsonValueType(v, name, JSON_ARRAY);
 				parseStringArray(v, q.selectFilter_);
 				break;
+			}
 			case Root::SelectFunctions:
 				checkJsonValueType(v, name, JSON_ARRAY);
 				parseStringArray(v, q.selectFunctions_);

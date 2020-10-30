@@ -2,6 +2,7 @@
 
 #include <memory.h>
 #include "core/index/payload_map.h"
+#include "core/keyvalue/geometry.h"
 #include "core/keyvalue/p_string.h"
 #include "core/payload/fieldsset.h"
 #include "estl/fast_hash_set.h"
@@ -241,6 +242,42 @@ private:
 			values_.push_back(pv);
 		}
 	}
+};
+
+template <>
+class ComparatorImpl<Point> {
+public:
+	ComparatorImpl(bool distinct = false)
+		: distS_(distinct ? new intrusive_atomic_rc_wrapper<fast_hash_set<Point>> : nullptr), rhs_{}, distance_{} {}
+
+	void SetValues(const VariantArray &values) {
+		if (values.size() != 2) throw Error(errQueryExec, "CondDWithin expects two arguments");
+		if (values[0].Type() == KeyValueTuple) {
+			rhs_ = values[0].As<Point>();
+			distance_ = values[1].As<double>();
+		} else {
+			rhs_ = values[1].As<Point>();
+			distance_ = values[0].As<double>();
+		}
+	}
+
+	bool inline Compare2(Point lhs) const noexcept { return DWithin(lhs, rhs_, distance_); }
+	bool Compare(Point lhs) {
+		bool ret = Compare2(lhs);
+		if (!ret || !distS_) return ret;
+		return distS_->find(lhs) == distS_->end();
+	}
+
+	void ExcludeDistinct(Point value) { distS_->emplace(value); }
+	void ClearDistinct() {
+		if (distS_) distS_->clear();
+	}
+
+	intrusive_ptr<intrusive_atomic_rc_wrapper<fast_hash_set<Point>>> distS_;
+
+private:
+	Point rhs_;
+	double distance_;
 };
 
 }  // namespace reindexer

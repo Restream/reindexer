@@ -284,7 +284,6 @@ type Status struct {
 
 type StatusCache struct {
 	CurSize int64
-	MaxSize int64
 }
 
 type StatusCProto struct {

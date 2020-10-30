@@ -21,7 +21,7 @@ Replicator::Replicator(ReindexerImpl *slave)
 	stop_.set(loop_);
 	resync_.set(loop_);
 	resyncTimer_.set(loop_);
-	walForcesyncAsync_.set(loop_);
+	walSyncAsync_.set(loop_);
 }
 
 Replicator::~Replicator() { Stop(); }
@@ -50,6 +50,7 @@ Error Replicator::Start() {
 			terminate_ = true;
 			stop_.send();
 			thread_.join();
+			terminate_ = false;
 		}
 		thread_ = std::thread([this]() { this->run(); });
 	}
@@ -112,11 +113,17 @@ void Replicator::run() {
 	resync_.set([this](ev::async &) { syncDatabase(); });
 	resync_.start();
 	resyncTimer_.set([this](ev::timer &, int) { syncDatabase(); });
-	walForcesyncAsync_.set([this](ev::async &) {
+	walSyncAsync_.set([this](ev::async &) {
 		NamespaceDef nsDef;
-		while (forcesyncQuery_.Pop(nsDef)) syncNamespaceForced(nsDef, "Upstream node call force sync.");
+		bool forced;
+		while (syncQuery_.Pop(nsDef, forced)) {
+			if (forced)
+				syncNamespaceForced(nsDef, "Upstream node call force sync.");
+			else
+				syncNamespaceByWAL(nsDef);
+		}
 	});
-	walForcesyncAsync_.start();
+	walSyncAsync_.start();
 
 	syncDatabase();
 
@@ -127,7 +134,7 @@ void Replicator::run() {
 	resync_.stop();
 	stop_.stop();
 	resyncTimer_.stop();
-	walForcesyncAsync_.stop();
+	walSyncAsync_.stop();
 	master_->UnsubscribeUpdates(this);
 
 	logPrintf(LogInfo, "[repl] Replicator with %s stopped", config_.masterDSN);
@@ -350,8 +357,11 @@ Error Replicator::syncNamespaceByWAL(const NamespaceDef &nsDef) {
 		case errOutdatedWAL:
 			// Check if WAL has been outdated, if yes, then force resync
 			return syncNamespaceForced(nsDef, err.what());
-		case errOK:
-			return applyWAL(slaveNs, qr);
+		case errOK: {
+			auto err = applyWAL(slaveNs, qr);
+			if (err.ok()) slave_->syncDownstream(nsDef.name, false);
+			return err;
+		}
 		case errNoWAL:
 			terminate_ = true;
 			return err;
@@ -404,7 +414,7 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, string_view reason
 	}
 	if (err.ok()) {
 		err = slave_->RenameNamespace(tmpNsDef.name, ns.name);
-		slave_->forceSyncDownstream(ns.name);
+		slave_->syncDownstream(ns.name, true);
 	}
 
 	if (!err.ok()) {
@@ -545,6 +555,14 @@ Error Replicator::applyWALRecord(LSNPair LSNs, string_view nsName, Namespace::Pt
 		return applyTxWALRecord(LSNs, nsName, slaveNs, rec);
 	}
 	RdxContext rdxContext(true, LSNs);
+
+	auto sendSyncAsync = [this](const WALRecord &rec, bool forced) {
+		NamespaceDef nsDef;
+		nsDef.FromJSON(giftStr(rec.data));
+		syncQuery_.Push(nsDef.name, nsDef, forced);
+		walSyncAsync_.send();
+	};
+
 	switch (rec.type) {
 		// Modify item
 		case WalItemModify:
@@ -612,15 +630,13 @@ Error Replicator::applyWALRecord(LSNPair LSNs, string_view nsName, Namespace::Pt
 			err = slave_->RenameNamespace(nsName, string(rec.data));
 			break;
 		// force sync namespace
-		case WalForceSync: {
-			{
-				NamespaceDef nsDef;
-				nsDef.FromJSON(giftStr(rec.data));
-				forcesyncQuery_.Push(nsDef.name, nsDef);
-				walForcesyncAsync_.send();
-				break;
-			}
-		}
+		case WalForceSync:
+			sendSyncAsync(rec, true);
+			break;
+		case WalWALSync:
+			sendSyncAsync(rec, false);
+			break;
+
 		// Replication state
 		case WalReplState: {  // last record in query
 			stat.processed--;
@@ -899,15 +915,16 @@ bool Replicator::isSyncEnabled(string_view nsName) {
 	return true;
 }
 
-void Replicator::ForceSyncQuery::Push(std::string &nsName, NamespaceDef &nsDef) {
+void Replicator::SyncQuery::Push(std::string &nsName, NamespaceDef &nsDef, bool forced) {
 	std::unique_lock<std::mutex> lock(mtx_);
-	query_[nsName] = nsDef;
+	query_[nsName] = {nsDef, forced};
 }
-bool Replicator::ForceSyncQuery::Pop(NamespaceDef &def) {
+bool Replicator::SyncQuery::Pop(NamespaceDef &def, bool &forced) {
 	std::unique_lock<std::mutex> lock(mtx_);
 	if (!query_.empty()) {
 		auto it = query_.begin();
-		def = it->second;
+		def = it->second.def;
+		forced = it->second.forced;
 		query_.erase(it);
 		return true;
 	}

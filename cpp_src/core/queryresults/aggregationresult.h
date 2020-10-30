@@ -11,14 +11,34 @@ struct msgpack_object;
 
 namespace reindexer {
 class WrSerializer;
+class ProtobufSchemaBuilder;
 
-const string_view kParamValue = "value";
-const string_view kParamType = "type";
-const string_view kParamFacets = "facets";
-const string_view kParamCount = "count";
-const string_view kParamValues = "values";
-const string_view kParamDistincts = "distincts";
-const string_view kParamFields = "fields";
+struct Parameters {
+	static string_view Value() noexcept;
+	static string_view Type() noexcept;
+	static string_view Facets() noexcept;
+	static string_view Count() noexcept;
+	static string_view Values() noexcept;
+	static string_view Distincts() noexcept;
+	static string_view Fields() noexcept;
+};
+
+template <typename T, typename K>
+class ParametersFields {
+public:
+	explicit ParametersFields(const T &fieldsStorage) : fieldsStorage_(fieldsStorage) {}
+
+	K Value() const { return fieldsStorage_.at(Parameters::Value()); }
+	K Type() const { return fieldsStorage_.at(Parameters::Type()); }
+	K Facets() const { return fieldsStorage_.at(Parameters::Facets()); }
+	K Count() const { return fieldsStorage_.at(Parameters::Count()); }
+	K Values() const { return fieldsStorage_.at(Parameters::Values()); }
+	K Distincts() const { return fieldsStorage_.at(Parameters::Distincts()); }
+	K Fields() const { return fieldsStorage_.at(Parameters::Fields()); }
+
+private:
+	const T &fieldsStorage_;
+};
 
 struct FacetResult {
 	FacetResult(const h_vector<std::string, 1> &v, int c) : values(v), count(c) {}
@@ -30,6 +50,7 @@ struct FacetResult {
 struct AggregationResult {
 	void GetJSON(WrSerializer &ser) const;
 	void GetMsgPack(WrSerializer &wrser) const;
+	void GetProtobuf(WrSerializer &wrser) const;
 	Error FromJSON(span<char> json);
 	Error FromMsgPack(span<char> msgpack);
 	AggType type = AggSum;
@@ -40,51 +61,52 @@ struct AggregationResult {
 
 	static AggType strToAggType(string_view type);
 	static string_view aggTypeToStr(AggType type);
+	static void GetProtobufSchema(ProtobufSchemaBuilder &);
 
 	template <typename Node>
 	void from(Node root) {
-		value = root[kParamValue].template As<double>();
-		type = strToAggType(root[kParamType].template As<std::string>());
+		value = root[Parameters::Value()].template As<double>();
+		type = strToAggType(root[Parameters::Type()].template As<std::string>());
 
-		for (auto subElem : root[kParamFields]) {
+		for (auto subElem : root[Parameters::Fields()]) {
 			fields.push_back(subElem.template As<std::string>());
 		}
 
-		for (auto facetNode : root[kParamFacets]) {
+		for (auto facetNode : root[Parameters::Facets()]) {
 			FacetResult facet;
-			facet.count = facetNode[kParamCount].template As<int>();
-			for (auto subElem : facetNode[kParamValues]) {
+			facet.count = facetNode[Parameters::Count()].template As<int>();
+			for (auto subElem : facetNode[Parameters::Values()]) {
 				facet.values.push_back(subElem.template As<std::string>());
 			}
 			facets.push_back(facet);
 		}
 
-		for (auto distinctNode : root[kParamDistincts]) {
+		for (auto distinctNode : root[Parameters::Distincts()]) {
 			distincts.emplace_back(distinctNode.template As<std::string>());
 		}
 	}
 
-	template <typename Builder>
-	void get(Builder &builder) const {
-		if (value != 0) builder.Put(kParamValue, value);
-		builder.Put(kParamType, aggTypeToStr(type));
+	template <typename Builder, typename Fields>
+	void get(Builder &builder, const Fields &parametersFields) const {
+		if (value != 0) builder.Put(parametersFields.Value(), value);
+		builder.Put(parametersFields.Type(), aggTypeToStr(type));
 		if (!facets.empty()) {
-			auto facetsArray = builder.Array(kParamFacets, facets.size());
+			auto facetsArray = builder.Array(parametersFields.Facets(), facets.size());
 			for (auto &facet : facets) {
-				auto facetObj = facetsArray.Object(nullptr, 2);
-				facetObj.Put(kParamCount, facet.count);
-				auto valuesArray = facetObj.Array(kParamValues, facet.values.size());
-				for (const auto &v : facet.values) valuesArray.Put(nullptr, v);
+				auto facetObj = facetsArray.Object(0, 2);
+				facetObj.Put(parametersFields.Count(), facet.count);
+				auto valuesArray = facetObj.Array(parametersFields.Values(), facet.values.size());
+				for (const auto &v : facet.values) valuesArray.Put(0, v);
 			}
 		}
 
 		if (!distincts.empty()) {
-			auto distinctsArray = builder.Array(kParamDistincts, distincts.size());
-			for (const std::string &v : distincts) distinctsArray.Put(nullptr, v);
+			auto distinctsArray = builder.Array(parametersFields.Distincts(), distincts.size());
+			for (const std::string &v : distincts) distinctsArray.Put(0, v);
 		}
 
-		auto fieldsArray = builder.Array(kParamFields, fields.size());
-		for (auto &v : fields) fieldsArray.Put(nullptr, v);
+		auto fieldsArray = builder.Array(parametersFields.Fields(), fields.size());
+		for (auto &v : fields) fieldsArray.Put(0, v);
 		fieldsArray.End();
 	}
 };

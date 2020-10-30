@@ -96,7 +96,7 @@ void ClientConnection::connectInternal() noexcept {
 		keep_alive_.start(kKeepAliveInterval, kKeepAliveInterval);
 		deadlineTimer_.start(kDeadlineCheckInterval, kDeadlineCheckInterval);
 
-		call(completion, {kCmdLogin, connectEntry.opts.loginTimeout, milliseconds(0)},
+		call(completion, {kCmdLogin, connectEntry.opts.loginTimeout, milliseconds(0), nullptr},
 			 {Arg{p_string(&userName)}, Arg{p_string(&password)}, Arg{p_string(&dbName)}, Arg{connectEntry.opts.createDB},
 			  Arg{connectEntry.opts.hasExpectedClusterID}, Arg{connectEntry.opts.expectedClusterID}, Arg{p_string(REINDEX_VERSION)},
 			  Arg{p_string(&connectEntry.opts.appName)}});
@@ -154,7 +154,7 @@ void ClientConnection::keep_alive_cb(ev::periodic &, int) {
 				closeConn();
 			}
 		},
-		{kCmdPing, connectData_->entries[connectData_->validEntryIdx].opts.keepAliveTimeout, milliseconds(0)}, {});
+		{kCmdPing, connectData_->entries[connectData_->validEntryIdx].opts.keepAliveTimeout, milliseconds(0), nullptr}, {});
 	callback(io_, ev::WRITE);
 }
 
@@ -347,7 +347,12 @@ void ClientConnection::onRead() {
 				} else {
 					completion->used = false;
 				}
-				io_.loop.break_loop();
+
+				if (terminate_.load(std::memory_order_acquire) && !PendingCompletions()) {
+					closeConn();
+				} else {
+					io_.loop.break_loop();
+				}
 				break;
 			}
 			if (!completion) {
@@ -400,6 +405,19 @@ chunk ClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args, con
 }
 
 void ClientConnection::call(Completion cmpl, const CommandParams &opts, const Args &args) {
+	if (opts.cancelCtx) {
+		switch (opts.cancelCtx->GetCancelType()) {
+			case CancelType::Explicit:
+				cmpl(RPCAnswer(Error(errCanceled, "Canceled by context")), this);
+				return;
+			case CancelType::Timeout:
+				cmpl(RPCAnswer(Error(errTimeout, "Canceled by timeout")), this);
+				return;
+			default:
+				break;
+		}
+	}
+
 	uint32_t seq = seq_++;
 	chunk data = packRPC(opts.cmd, seq, args, Args{Arg{int64_t(opts.execTimeout.count())}});
 	bool inLoopThread = loopThreadID_ == std::this_thread::get_id();
@@ -452,7 +470,16 @@ void ClientConnection::call(Completion cmpl, const CommandParams &opts, const Ar
 			}
 			if (completion->used) {
 				bufWait_++;
-				bufCond_.wait(lck, [&completion]() { return !completion->used.load(); });
+				struct {
+					uint32_t seq;
+					RPCCompletion *cmpl;
+				} arg = {seq, completion};
+
+				bufCond_.wait(lck, [this, &arg]() {
+					arg.cmpl = &completions_[arg.seq % completions_.size()];
+					return !arg.cmpl->used.load();
+				});
+				completion = arg.cmpl;
 				bufWait_--;
 			}
 		}
@@ -482,7 +509,14 @@ void ClientConnection::call(Completion cmpl, const CommandParams &opts, const Ar
 
 	wrBuf_.write(std::move(data));
 	lck.unlock();
-	if (!inLoopThread) async_.send();
+
+	if (inLoopThread) {
+		if (state_ == ConnConnected) {
+			callback(io_, ev::WRITE);
+		}
+	} else {
+		async_.send();
+	}
 }
 
 }  // namespace cproto

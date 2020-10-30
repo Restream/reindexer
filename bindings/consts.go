@@ -2,21 +2,22 @@ package bindings
 
 const CInt32Max = int(^uint32(0) >> 1)
 
-const ReindexerVersion = "v2.13.0"
+const ReindexerVersion = "v2.14.0"
 
 // public go consts from type_consts.h and reindexer_ctypes.h
 const (
-	ANY    = 0
-	EQ     = 1
-	LT     = 2
-	LE     = 3
-	GT     = 4
-	GE     = 5
-	RANGE  = 6
-	SET    = 7
-	ALLSET = 8
-	EMPTY  = 9
-	LIKE   = 10
+	ANY     = 0
+	EQ      = 1
+	LT      = 2
+	LE      = 3
+	GT      = 4
+	GE      = 5
+	RANGE   = 6
+	SET     = 7
+	ALLSET  = 8
+	EMPTY   = 9
+	LIKE    = 10
+	DWITHIN = 11
 
 	ERROR   = 1
 	WARNING = 2

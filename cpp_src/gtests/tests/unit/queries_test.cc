@@ -11,13 +11,16 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 	FillTestSimpleNamespace();
 	FillComparatorsNamespace();
 	FillTestJoinNamespace();
+	FillGeomNamespace();
 
 	CheckStandartQueries();
 	CheckAggregationQueries();
 	CheckSqlQueries();
+	CheckDslQueries();
 	CheckCompositeIndexesQueries();
 	CheckComparatorsQueries();
 	CheckDistinctQueries();
+	CheckGeomQueries();
 
 	int itemsCount = 0;
 	InsertedItemsByPk& items = insertedItems[default_namespace];
@@ -70,13 +73,16 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 	FillDefaultNamespace(1000, 500, 00);
 	FillCompositeIndexesNamespace(1000, 1000);
 	FillComparatorsNamespace();
+	FillGeomNamespace();
 
 	CheckStandartQueries();
 	CheckAggregationQueries();
 	CheckSqlQueries();
+	CheckDslQueries();
 	CheckCompositeIndexesQueries();
 	CheckComparatorsQueries();
 	CheckDistinctQueries();
+	CheckGeomQueries();
 }
 #endif
 
@@ -127,6 +133,28 @@ TEST_F(QueriesApi, QueriesSqlGenerate) {
 	check(
 		"SELECT * FROM test_namespace WHERE  INNER JOIN join_ns ON join_ns.id = test_namespace.id ORDER BY 'year + join_ns.year * (5 - "
 		"rand())'");
+
+	// Checks parsing and generation of SQL query with DWithin
+	check(std::string("SELECT * FROM ") + geomNs + " WHERE ST_DWithin(" + kFieldNamePointNonIndex +
+		  ", ST_GeomFromText('POINT(1.25 -7.25)'), 0.5)");
+}
+
+TEST_F(QueriesApi, QueriesDslGenerate) {
+	const auto check = [](string dsl) {
+		const string expected = dsl;
+		dsl += " ";
+		dsl.resize(dsl.size() - 1); // HACK DUE TO Query::FromJSON(const std::string& str) BREAK str
+		Query q;
+		Error err = q.FromJSON(dsl);
+		ASSERT_TRUE(err.ok()) << err.what();
+		const std::string result = q.GetJSON();
+		EXPECT_EQ(expected, result);
+	};
+	// Checks parsing and generation of DSL query with DWithin
+	check(
+		std::string(R"({"namespace":")") + geomNs +
+		R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":")" +
+		kFieldNamePointLinearRTree + R"(","value":[[-9.2,-0.145],0.581]}],"merge_queries":[],"aggregations":[]})");
 }
 
 std::vector<int> generateForcedSortOrder(int maxValue, size_t size) {

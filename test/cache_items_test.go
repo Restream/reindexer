@@ -11,76 +11,30 @@ import (
 func init() {
 	tnamespaces["test_namespace_cache_items"] = NamespaceCacheItem{}
 	tnamespaces["test_namespace_no_limit_cache_items"] = NamespaceCacheItem{}
+	tnamespaces["test_namespace_disabled_obj_cache"] = NamespaceCacheItem{}
 }
 
-const CacheSize = 1
+const CacheSize = 200
 
 type NamespaceCacheItem struct {
-	IntCjon         int               `json:"int_cjson" reindex:"int_cjson,,pk"`
-	Int             int               `json:"int"`
-	Int8Cjon        int8              `json:"int8_cjson" reindex:"int8_cjson"`
-	Int8            int8              `json:"int8"`
-	Int16Cjon       int16             `json:"int16_cjson" reindex:"int16_cjson"`
-	Int16           int16             `json:"int16"`
-	Int32Cjon       int32             `json:"int32_cjson" reindex:"int32_cjson"`
-	Int32           int32             `json:"int32"`
-	Int64Cjon       int64             `json:"int64_cjson" reindex:"int64_cjson"`
-	Int64           int64             `json:"int64"`
-	Float32Cjon     float32           `json:"float32_cjson" reindex:"float32_cjson"`
-	Float32         float32           `json:"float32"`
-	Float64Cjon     float64           `json:"float64_cjson" reindex:"float64_cjson"`
-	Float64         float64           `json:"float64"`
-	UIntCjon        uint              `json:"uint_cjson" reindex:"uint_cjson"`
-	UInt            uint              `json:"uint"`
-	UInt8Cjon       uint8             `json:"uint8_cjson" reindex:"uint8_cjson"`
-	UInt8           uint8             `json:"uint8"`
-	UInt16Cjon      uint16            `json:"uint16_cjson" reindex:"uint16_cjson"`
-	UInt16          uint16            `json:"uint16"`
-	UInt32Cjon      uint32            `json:"uint32_cjson" reindex:"uint32_cjson"`
-	UInt32          uint32            `json:"uint32"`
-	UInt64Cjon      uint64            `json:"uint64_cjson" reindex:"uint64_cjson"`
-	UInt64          uint64            `json:"uint64"`
-	BoolCjon        bool              `json:"bool_cjson" reindex:"bool_cjson"`
-	Bool            bool              `json:"bool64"`
-	SliceStrCjon    []string          `json:"slice_str_cjson" reindex:"slice_str_cjson"`
-	SliceStr        []string          `json:"slice_str"`
-	SliceIntCjon    []int             `json:"slice_int_cjson" reindex:"slice_int_cjson"`
-	SliceInt        []int             `json:"slice_int"`
-	SliceIntPtrCjon *[]int            `json:"slice_int_ptr_cjson" reindex:"slice_int_ptr_cjson"`
-	SliceIntPtr     *[]int            `json:"slice_int_ptr"`
-	MapStr          map[string]string `json:"map_str"`
-	MapInt          map[string]int    `json:"map_int"`
+	ID int `json:"id" reindex:"id,,pk"`
 }
 
 func (item *NamespaceCacheItem) DeepCopy() interface{} {
 	return &NamespaceCacheItem{}
 }
 
-func ImplTest(t *testing.T, namespaceName string, opts *reindexer.NamespaceOptions) {
+func prepareCacheItems(t *testing.T, namespaceName string, opts *reindexer.NamespaceOptions) {
 	ns := namespaceName
-	slice1 := []int{1, 2}
-	slice2 := []int{1}
-	item := NamespaceCacheItem{
-		IntCjon:         1,
-		Int:             2,
-		SliceStrCjon:    []string{"a"},
-		SliceStr:        []string{"a"},
-		SliceIntCjon:    []int{1, 2},
-		SliceInt:        []int{2},
-		SliceIntPtrCjon: &slice1,
-		SliceIntPtr:     &slice2,
-		MapStr:          map[string]string{"a": "qwe1", "b": "1"},
-		MapInt:          map[string]int{"c": 1},
-	}
+	item := NamespaceCacheItem{}
 	DBD.CloseNamespace(ns)
 	err := DBD.OpenNamespace(ns, opts, NamespaceCacheItem{})
-	//err := DBD.OpenNamespace(ns, opts, NamespaceCacheItem{})
 	require.NoError(t, err)
 
-	// fill obj cache > 1MB
-	for i := 0; i < 3900; i++ {
+	// fill obj cache > max count
+	for i := 0; i < CacheSize+1000; i++ {
 		itemIns := item
-		itemIns.IntCjon = i + 2
+		itemIns.ID = i + 2
 		n, err := DBD.Insert(ns, itemIns)
 		require.NoError(t, err)
 		require.Equal(t, 1, n)
@@ -88,19 +42,27 @@ func ImplTest(t *testing.T, namespaceName string, opts *reindexer.NamespaceOptio
 
 	items, err := DBD.Query(ns).Exec().FetchAll()
 	require.NoError(t, err)
-	require.Equal(t, 3900, len(items))
+	require.Equal(t, 1200, len(items))
 }
 
 func TestNamespaceCacheItemsWithObjCacheSize(t *testing.T) {
 	opts := reindexer.DefaultNamespaceOptions().ObjCacheSize(CacheSize)
-	ImplTest(t, "test_namespace_cache_items", opts)
-	curSize := DBD.Status().Cache.CurSize
-	require.LessOrEqual(t, curSize, int64(CacheSize*1024*1024))
+	prepareCacheItems(t, "test_namespace_cache_items", opts)
+	require.Equal(t, int64(CacheSize), DBD.Status().Cache.CurSize)
+	DBD.ResetCaches()
+	require.Equal(t, int64(0), DBD.Status().Cache.CurSize)
 }
 
 func TestNamespaceCacheItemsWithoutObjCacheSize(t *testing.T) {
 	opts := reindexer.DefaultNamespaceOptions()
-	ImplTest(t, "test_namespace_no_limit_cache_items", opts)
-	curSize := DBD.Status().Cache.CurSize
-	require.Greater(t, curSize, int64(CacheSize*1024*1024))
+	prepareCacheItems(t, "test_namespace_no_limit_cache_items", opts)
+	require.Equal(t, int64(CacheSize+1000), DBD.Status().Cache.CurSize)
+	DBD.ResetCaches()
+	require.Equal(t, int64(0), DBD.Status().Cache.CurSize)
+}
+
+func TestNamespaceCacheItemsWithConfDisableObjCache(t *testing.T) {
+	opts := reindexer.DefaultNamespaceOptions().DisableObjCache()
+	prepareCacheItems(t, "test_namespace_disabled_obj_cache", opts)
+	require.Equal(t, int64(0), DBD.Status().Cache.CurSize)
 }

@@ -28,9 +28,14 @@ Variant jsonValue2Variant(gason::JsonValue &v, KeyValueType t, string_view field
 		case gason::JSON_DOUBLE:
 			switch (t) {
 				case KeyValueUndefined:
-					return Variant(int64_t(v.toDouble()));
 				case KeyValueDouble:
 					return Variant(v.toDouble());
+				case KeyValueInt:
+					return Variant(static_cast<int>(v.toDouble()));
+				case KeyValueInt64:
+					return Variant(static_cast<int64_t>(v.toDouble()));
+				case KeyValueBool:
+					return Variant(static_cast<bool>(v.toDouble()));
 				default:
 					throw Error(errLogic, "Error parsing json field '%s' - got number, expected %s", fieldName, Variant::TypeName(t));
 			}

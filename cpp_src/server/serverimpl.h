@@ -24,7 +24,7 @@ struct IDBManagerStatsCollector;
 struct IRPCServerStatsCollector;
 
 class ServerImpl {
-	using SinkMap = std::unordered_map<string, std::shared_ptr<spdlog::sinks::simple_file_sink_mt>>;
+	using SinkMap = std::unordered_map<string, std::shared_ptr<spdlog::sinks::fast_file_sink>>;
 
 public:
 	ServerImpl();
@@ -68,5 +68,5 @@ private:
 	bool enableHandleSignals_ = false;
 	ev::async async_;
 	ev::dynamic_loop loop_;
-};	// class server
+};
 }  // namespace reindexer_server

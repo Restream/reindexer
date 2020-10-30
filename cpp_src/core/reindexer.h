@@ -16,6 +16,7 @@ using std::chrono::milliseconds;
 class ReindexerImpl;
 class IUpdatesObserver;
 class IClientsStats;
+class ProtobufSchema;
 class UpdatesFilters;
 
 /// The main Reindexer interface. Holds database object<br>
@@ -95,8 +96,9 @@ public:
 	Error SetSchema(string_view nsName, string_view schema);
 	/// Get fields schema for namespace
 	/// @param nsName - Name of namespace
-	/// @param schema - result JSON in JsonSchema format
-	Error GetSchema(string_view nsName, string &schema);
+	/// @param format - type of Schema: JSON or Protobuf
+	/// @param schema - text representation of schema
+	Error GetSchema(string_view nsName, int format, std::string &schema);
 	/// Get list of all available namespaces
 	/// @param defs - std::vector of NamespaceDef of available namespaves
 	/// @param opts - Enumeration options

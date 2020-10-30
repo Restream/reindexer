@@ -20,13 +20,15 @@ Item TransactionImpl::NewItem() {
 }
 Item TransactionImpl::GetItem(TransactionStep &&st) {
 	std::unique_lock<std::mutex> lock(mtx_);
-	return Item(new ItemImpl(payloadType_, tagsMatcher_, pkFields_, std::move(st.itemData_)));
+	return Item(new ItemImpl(payloadType_, tagsMatcher_, pkFields_, schema_, std::move(st.itemData_)));
 }
 
-TransactionImpl::TransactionImpl(const string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf)
+TransactionImpl::TransactionImpl(const string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
+								 std::shared_ptr<const Schema> schema)
 	: payloadType_(pt),
 	  tagsMatcher_(tm),
 	  pkFields_(pf),
+	  schema_(std::move(schema)),
 	  nsName_(nsName),
 	  tagsUpdated_(false),
 	  startTime_(std::chrono::high_resolution_clock::now()) {}

@@ -101,6 +101,9 @@ protected:
 	/// Parse equal_positions
 	void parseEqualPositions(tokenizer &parser);
 
+	Point parseGeomFromText(tokenizer &parser) const;
+	void parseDWithin(tokenizer &parser, OpType nextOp);
+
 	/// Parse update field entries
 	UpdateEntry parseUpdateField(tokenizer &parser);
 

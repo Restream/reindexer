@@ -607,9 +607,9 @@ reindexer_error reindexer_commit(uintptr_t rx, reindexer_string nsName) {
 	return error2c(!db ? err_not_init : db->Commit(str2cv(nsName)));
 }
 
-void reindexer_enable_logger(void (*logWriter)(int, char*)) { logInstallWriter(logWriter); }
+void reindexer_enable_logger(void (*logWriter)(int, char*)) { logInstallWriter(logWriter, false); }
 
-void reindexer_disable_logger() { logInstallWriter(nullptr); }
+void reindexer_disable_logger() { logInstallWriter(nullptr, false); }
 
 reindexer_error reindexer_free_buffer(reindexer_resbuffer in) {
 	put_results_to_pool(reinterpret_cast<QueryResultsWrapper*>(in.results_ptr));

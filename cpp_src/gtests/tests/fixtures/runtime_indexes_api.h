@@ -14,6 +14,8 @@ public:
 			 IndexDeclaration{title, "text", "string", IndexOpts(), 0}, IndexDeclaration{pages, "hash", "int", IndexOpts(), 0},
 			 IndexDeclaration{price, "hash", "int", IndexOpts(), 0}, IndexDeclaration{name, "text", "string", IndexOpts(), 0},
 			 IndexDeclaration{string(title + string("+") + price).c_str(), "hash", "composite", IndexOpts(), 0},
+			 IndexDeclaration{qpoints, "rtree", "point", IndexOpts().RTreeQuadratic(), 0},
+			 IndexDeclaration{lpoints, "rtree", "point", IndexOpts().RTreeLinear(), 0},
 			 IndexDeclaration{"bookid+bookid2", "hash", "composite", IndexOpts().PK(), 0}});
 	}
 
@@ -27,6 +29,8 @@ protected:
 			item[pages] = rand() % 10000;
 			item[price] = rand() % 1000;
 			item[name] = name + RandString();
+			item[qpoints] = RandPoint();
+			item[lpoints] = RandPoint();
 			Upsert(default_namespace, item);
 			Commit(default_namespace);
 		}
@@ -103,6 +107,58 @@ protected:
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
+	void AddRuntimeQPointIndex(int indexNumber) {
+		string indexName = getRuntimeQPointIndexName(indexNumber);
+		Error err = rt.reindexer->AddIndex(default_namespace, {indexName, "rtree", "point", IndexOpts().RTreeQuadratic()});
+		EXPECT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->Commit(default_namespace);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+
+	void AddRuntimeLPointIndex(int indexNumber) {
+		string indexName = getRuntimeLPointIndexName(indexNumber);
+		Error err = rt.reindexer->AddIndex(default_namespace, {indexName, "rtree", "point", IndexOpts().RTreeLinear()});
+		EXPECT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->Commit(default_namespace);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+
+	void AddDataForRuntimeQPointIndex(int indexNumber) {
+		string indexName = getRuntimeQPointIndexName(indexNumber);
+		for (size_t i = 0; i < 10; ++i) {
+			Item item = NewItem(default_namespace);
+			item[indexName] = RandPoint();
+			Upsert(default_namespace, item);
+		}
+		Commit(default_namespace);
+	}
+
+	void AddDataForRuntimeLPointIndex(int indexNumber) {
+		string indexName = getRuntimeLPointIndexName(indexNumber);
+		for (size_t i = 0; i < 10; ++i) {
+			Item item = NewItem(default_namespace);
+			item[indexName] = RandPoint();
+			Upsert(default_namespace, item);
+		}
+		Commit(default_namespace);
+	}
+
+	void DropRuntimeQPointIndex(int indexNumber) {
+		reindexer::IndexDef idef(getRuntimeQPointIndexName(indexNumber));
+		Error err = rt.reindexer->DropIndex(default_namespace, idef);
+		EXPECT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->Commit(default_namespace);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+
+	void DropRuntimeLPointIndex(int indexNumber) {
+		reindexer::IndexDef idef(getRuntimeLPointIndexName(indexNumber));
+		Error err = rt.reindexer->DropIndex(default_namespace, idef);
+		EXPECT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->Commit(default_namespace);
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+
 	void CheckSelectValidity(const Query& query) {
 		QueryResults qr;
 		Error err = rt.reindexer->Select(query, qr);
@@ -129,6 +185,8 @@ protected:
 
 	string getRuntimeIntIndexName(int indexNumber) { return runtime_int + std::to_string(indexNumber); }
 	string getRuntimeStringIndexName(int indexNumber) { return runtime_string + std::to_string(indexNumber); }
+	string getRuntimeQPointIndexName(int indexNumber) { return runtime_qpoint + std::to_string(indexNumber); }
+	string getRuntimeLPointIndexName(int indexNumber) { return runtime_lpoint + std::to_string(indexNumber); }
 
 private:
 	const char* bookid = "bookid";
@@ -136,9 +194,13 @@ private:
 	const char* title = "title";
 	const char* pages = "pages";
 	const char* price = "price";
+	const char* qpoints = "qpoints";
+	const char* lpoints = "lpoints";
 	const char* name = "name";
 	const char* runtime_int = "runtime_int_";
 	const char* runtime_string = "runtime_string_";
+	const char* runtime_qpoint = "runtime_qpoint_";
+	const char* runtime_lpoint = "runtime_lpoint_";
 
 	static const int max_runtime_indexes = 10;
 };

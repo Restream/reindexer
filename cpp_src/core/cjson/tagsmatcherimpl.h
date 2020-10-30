@@ -14,6 +14,22 @@ namespace reindexer {
 using std::string;
 using TagsPath = h_vector<int16_t, 6>;
 
+class TagScope {
+public:
+	TagScope(TagsPath &tagsPath, int tagName) : tagsPath_(tagsPath), tagName_(tagName) {
+		if (tagName_) tagsPath_.push_back(tagName);
+	}
+	~TagScope() {
+		if (tagName_) tagsPath_.pop_back();
+	}
+	TagScope(const TagScope &) = delete;
+	TagScope &operator=(const TagScope &) = delete;
+
+private:
+	TagsPath &tagsPath_;
+	int tagName_;
+};
+
 class TagsMatcherImpl {
 public:
 	TagsMatcherImpl() : version_(0), stateToken_(rand()) {}
@@ -193,3 +209,13 @@ protected:
 	TagsPathCache pathCache_;
 };
 }  // namespace reindexer
+
+namespace std {
+template <>
+struct hash<reindexer::TagsPath> {
+public:
+	size_t operator()(const reindexer::TagsPath &v) const {
+		return reindexer::_Hash_bytes(v.data(), v.size() * sizeof(typename reindexer::TagsPath::value_type));
+	}
+};
+}  // namespace std

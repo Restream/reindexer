@@ -52,7 +52,7 @@ Variant Serializer::GetRawVariant(KeyValueType type) {
 
 inline static void checkbound(int pos, int need, int len) {
 	if (pos + need > len) {
-		throw Error(errParseBin, "Binary buffer underflow. Need more %d bytes, pos=%d,len=%d", need, pos, len);
+		throw Error(errParseBin, "Binary buffer underflow. Need more %d bytes, pos=%d,len=%d", (pos + need) - len, pos, len);
 	}
 }
 
@@ -206,12 +206,71 @@ WrSerializer::SliceHelper WrSerializer::StartSlice() {
 	return SliceHelper(this, savePos);
 }
 
+WrSerializer::VStringHelper WrSerializer::StartVString() {
+	size_t savePos = len_;
+	return VStringHelper(this, savePos);
+}
+
 WrSerializer::SliceHelper::~SliceHelper() {
 	if (ser_) {
 		uint32_t sliceSize = ser_->len_ - pos_ - sizeof(uint32_t);
 		memcpy(&ser_->buf_[pos_], &sliceSize, sizeof(sliceSize));
 	}
+	ser_ = nullptr;
 }
+
+WrSerializer::VStringHelper &WrSerializer::VStringHelper::operator=(WrSerializer::VStringHelper &&other) noexcept {
+	if (this != &other) {
+		ser_ = other.ser_;
+		pos_ = other.pos_;
+		other.ser_ = nullptr;
+	}
+	return *this;
+}
+
+static int uint32ByteSize(uint32_t value) {
+	int bytes = 1;
+	if (value >= 0x80) {
+		++bytes;
+		value >>= 7;
+		if (value >= 0x80) {
+			++bytes;
+			value >>= 7;
+			if (value >= 0x80) {
+				++bytes;
+				value >>= 7;
+				if (value >= 0x80) {
+					++bytes;
+					value >>= 7;
+				}
+			}
+		}
+	}
+	return bytes;
+}
+
+void WrSerializer::VStringHelper::End() {
+	if (ser_) {
+		int size = ser_->len_ - pos_;
+		if (size < 0) {
+			throw Error(errParseBin, "Size of object is unexpedetly negative: %d", size);
+		}
+		if (size == 0) {
+			ser_->grow(1);
+			uint32_pack(0, ser_->buf_ + pos_);
+			ser_->len_++;
+		} else {
+			int bytesToGrow = uint32ByteSize(size);
+			ser_->grow(bytesToGrow);
+			ser_->len_ += bytesToGrow;
+			memmove(&ser_->buf_[0] + pos_ + bytesToGrow, &ser_->buf_[0] + pos_, size);
+			uint32_pack(size, ser_->buf_ + pos_);
+		}
+	}
+	ser_ = nullptr;
+}
+
+WrSerializer::VStringHelper::~VStringHelper() { End(); }
 
 void WrSerializer::PutUInt32(uint32_t v) {
 	grow(sizeof v);
@@ -252,7 +311,7 @@ void WrSerializer::grow(size_t sz) {
 
 void WrSerializer::Reserve(size_t cap) {
 	if (cap > cap_) {
-		cap_ = std::max(cap, cap_);
+		cap_ = cap;
 		uint8_t *b = new uint8_t[cap_];
 		memcpy(b, buf_, len_);
 		if (buf_ != inBuf_) delete[] buf_;

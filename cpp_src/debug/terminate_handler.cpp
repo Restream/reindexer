@@ -1,33 +1,49 @@
 #include "terminate_handler.h"
 #include <sstream>
 
+#ifndef _WIN32
+#include <cxxabi.h>
+#endif
 #include "debug/backtrace.h"
 #include "debug/resolver.h"
-#include "tools/fsops.h"
-
-#if REINDEX_WITH_LIBUNWIND
-#define UNW_LOCAL_ONLY
-#include <libunwind.h>
-#endif
+#include "tools/errors.h"
 
 namespace reindexer {
+namespace debug {
+
+extern std::function<void(string_view out)> g_writer;
 
 void terminate_handler() {
 	std::ostringstream sout;
-	debug::getBackTraceString(sout, nullptr, -1);
-	std::string traceString(sout.str());
-	FILE* fp = fopen(fs::JoinPath(fs::GetTempDir(), "crash_reindexer.log").c_str(), "wb");
-	if (fp) {
-		fwrite(traceString.c_str(), 1, traceString.size(), fp);
-		fclose(fp);
+	std::exception_ptr exptr = std::current_exception();
+	if (exptr) {
+#ifndef _WIN32
+		const char *type = abi::__cxa_current_exception_type()->name();
+		int status;
+		const char *demangled = abi::__cxa_demangle(type, NULL, NULL, &status);
+		sout << "Terminating with uncaught exception of type " << (demangled ? demangled : type);
+#else
+		sout << "Terminating with uncaught exception ";
+#endif
+		try {
+			std::rethrow_exception(exptr);
+		} catch (std::exception &ex) {
+			sout << ": " << ex.what() << std::endl;
+		} catch (Error &err) {
+			sout << ": " << err.what() << std::endl;
+		} catch (...) {
+			sout << std::endl;
+		}
 	}
-	std::cerr << traceString << std::endl;
-	std::abort();
+
+	print_backtrace(sout, nullptr, -1);
+	print_crash_query(sout);
+	g_writer(sout.str());
+	exit(-1);
 }
 
-SetTerminateHandler::SetTerminateHandler() {
-	//
-	std::set_terminate(&terminate_handler);
-}
+void terminate_handler_init() { std::set_terminate(&terminate_handler); }
+
+}  // namespace debug
 
 }  // namespace reindexer

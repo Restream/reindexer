@@ -13,6 +13,7 @@ namespace reindexer {
 class TagsMatcher;
 class JsonBuilder;
 class MsgPackBuilder;
+class ProtobufBuilder;
 
 class IEncoderDatasourceWithJoins {
 public:
@@ -62,5 +63,6 @@ protected:
 using JsonEncoder = BaseEncoder<JsonBuilder>;
 using CJsonEncoder = BaseEncoder<CJsonBuilder>;
 using MsgPackEncoder = BaseEncoder<MsgPackBuilder>;
+using ProtobufEncoder = BaseEncoder<ProtobufBuilder>;
 
 }  // namespace reindexer

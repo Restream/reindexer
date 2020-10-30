@@ -209,7 +209,7 @@ protected:
 			auto itemIt = rowIt.GetJoined();
 			auto joinedFieldIt = itemIt.begin();
 			QueryResults jres = joinedFieldIt.ToQueryResults();
-			jres.addNSContext(qr.getPayloadType(1), qr.getTagsMatcher(1), qr.getFieldsFilter(1));
+			jres.addNSContext(qr.getPayloadType(1), qr.getTagsMatcher(1), qr.getFieldsFilter(1), qr.getSchema(1));
 			for (auto it : jres) {
 				Item joinedItem = it.GetItem();
 				FillQueryResultFromItem(joinedItem, resultRow);

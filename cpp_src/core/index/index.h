@@ -38,7 +38,9 @@ public:
 	Index& operator=(const Index&) = delete;
 	virtual ~Index();
 	virtual Variant Upsert(const Variant& key, IdType id) = 0;
+	virtual void Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool needUpsertEmptyValue) = 0;
 	virtual void Delete(const Variant& key, IdType id) = 0;
+	virtual void Delete(const VariantArray& keys, IdType id) = 0;
 
 	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, SelectOpts opts,
 									   BaseFunctionCtx::Ptr ctx, const RdxContext&) = 0;

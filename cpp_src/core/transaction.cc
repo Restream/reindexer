@@ -2,8 +2,9 @@
 #include "transactionimpl.h"
 namespace reindexer {
 
-Transaction::Transaction(const string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf)
-	: impl_(new TransactionImpl(nsName, pt, tm, pf)) {}
+Transaction::Transaction(const string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
+						 std::shared_ptr<const Schema> schema)
+	: impl_(new TransactionImpl(nsName, pt, tm, pf, schema)) {}
 
 Transaction::Transaction(const Error &err) : status_(err) {}
 

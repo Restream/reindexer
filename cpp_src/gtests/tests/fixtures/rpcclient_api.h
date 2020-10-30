@@ -18,6 +18,18 @@ public:
 	virtual ~RPCClientTestApi() { StopAllServers(); }
 
 protected:
+	class CancelRdxContext : public reindexer::IRdxCancelContext {
+	public:
+		reindexer::CancelType GetCancelType() const noexcept override {
+			return canceld_.load() ? reindexer::CancelType::Explicit : reindexer::CancelType::None;
+		}
+		bool IsCancelable() const noexcept override { return true; }
+		void Cancel() { canceld_ = true; }
+
+	private:
+		std::atomic<bool> canceld_ = {false};
+	};
+
 	class TestServer {
 	public:
 		TestServer(const RPCServerConfig& conf) : terminate_(false), serverIsReady_(false), conf_(conf) {}

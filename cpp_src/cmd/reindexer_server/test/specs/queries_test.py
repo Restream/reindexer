@@ -51,7 +51,6 @@ class QueriesTest(BaseTest):
             self.assertEqual(True, 'width_percents' in columnData, columnData)
             self.assertEqual(True, 'name' in columnData, columnData)
 
-
     def test_aggregation_sql_query_msgpack(self):
         """Should be able to execute sql query with aggregate functions and get response in msgpack format"""
 
@@ -78,6 +77,80 @@ class QueriesTest(BaseTest):
         self.assertEqual(True, len(aggregation['fields']) == 1, aggregation)
         self.assertEqual(
             True, aggregation['fields'][0] == 'test_1', aggregation)
+
+    def test_query_sql_protobuf(self):
+        """Should be able to execute sql query and get response in protobuf format"""
+
+        status, body = self.api_put_namespace_schema(
+            self.current_db, self.test_ns, super().schema)
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+
+        if super().prepare_protobuf_schemas() is False:
+            print("Protobuf is not installed")
+            return
+
+        sql_query = 'explain SELECT COUNT(*),* FROM ' + self.test_ns
+        status, body = self.api_sql_exec_with_columns(
+            self.current_db, sql_query, self.EncodingType.Protobuf)
+
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+        self.assertEqual(True, 'message' in body, body)
+
+        queryresults = super().instantiate_pb_object('QueryResults')
+        queryresults.ParseFromString(body.get('message'))
+
+        self.assertEqual(True, len(queryresults.namespaces)
+                         == 1, queryresults.namespaces)
+        self.assertEqual(
+            True, str(queryresults.namespaces[0]).startswith('test_ns_'), queryresults.namespaces)
+        self.assertEqual(True, str(queryresults.explain).startswith('{"total_us":'),
+                         queryresults.explain)
+        self.assertEqual(True, queryresults.cache_enabled == 1,
+                         queryresults.cache_enabled)
+        self.assertEqual(True, len(queryresults.items)
+                         == 10, queryresults.items)
+
+        i = 0
+        for it in queryresults.items:
+            item = getattr(it, it.WhichOneof('item'))
+            constVal = 10 * i
+            self.assertEqual(True, item.test_1 == constVal + 1, item.test_1)
+            self.assertEqual(True, item.test_2 == constVal + 2, item.test_2)
+            self.assertEqual(True, item.test_3 == constVal + 3, item.test_3)
+            self.assertEqual(True, item.test_4 == constVal + 4, item.test_4)
+            self.assertEqual(True, item.test_5 == constVal + 5, item.test_5)
+            i = i + 1
+
+        self.assertEqual(True, len(queryresults.columns)
+                         == 5, queryresults.columns)
+        for column in queryresults.columns:
+            self.assertEqual(True, column.max_chars == 6 and column.width_chars == 6 and str(
+                column.name).startswith('test_') and column.width_percents != 0, column)
+
+    def test_aggregation_sql_query_protobuf(self):
+        """Should be able to execute sql query with aggregate functions and get response in protobuf format"""
+
+        if super().prepare_protobuf_schemas() is False:
+            print("Protobuf is not installed")
+            return
+
+        sql_query = 'SELECT avg(test_1) FROM ' + self.current_ns
+        status, body = self.api_sql_exec(
+            self.current_db, sql_query, self.EncodingType.Protobuf)
+
+        self.assertEqual(True, status == self.API_STATUS['success'], body)
+        self.assertEqual(True, 'message' in body, body)
+
+        queryresults = super().instantiate_pb_object('QueryResults')
+        queryresults.ParseFromString(body.get('message'))
+
+        aggregations = queryresults.aggregations
+        self.assertEqual(True, len(aggregations) == 1, aggregations)
+        aggregation = aggregations[0]
+        self.assertEqual(True, aggregation.type == 'avg', aggregation)
+        self.assertEqual(True, aggregation.value == 46.0, aggregation)
+        self.assertEqual(True, len(aggregation.fields) == 1, aggregation)
+        self.assertEqual(True, aggregation.fields[0] == 'test_1', aggregation)
 
     def test_query_sql_post(self):
         """Should be able to post an sql query"""

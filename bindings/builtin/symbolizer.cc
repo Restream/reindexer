@@ -1,5 +1,7 @@
 
 
+#include <signal.h>
+#include <sstream>
 #include "debug/backtrace.h"
 #include "debug/resolver.h"
 
@@ -31,6 +33,29 @@ extern "C" void cgoSymbolizer(cgoSymbolizerArg* arg) {
 		arg->func = te->funcName_.data();
 		arg->lineno = te->srcLine_;
 	}
+}
+
+static struct sigaction oldsa[32];
+
+static void cgoSighandler(int sig, siginfo_t*, void*) {
+	// reindexer::debug::print_backtrace(std::cout, ctx, sig);
+	reindexer::debug::print_crash_query(std::cout);
+	if (sig < 32) {
+		sigaction(sig, &oldsa[sig], nullptr);
+		raise(sig);
+	} else {
+		std::exit(-1);
+	}
+}
+
+extern "C" void cgoSignalsInit() {
+	struct sigaction sa;
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_sigaction = cgoSighandler;
+	sa.sa_flags = SA_ONSTACK | SA_RESTART | SA_SIGINFO;
+	sigaction(SIGSEGV, &sa, &oldsa[SIGSEGV]);
+	sigaction(SIGABRT, &sa, &oldsa[SIGABRT]);
+	sigaction(SIGBUS, &sa, &oldsa[SIGBUS]);
 }
 
 extern "C" void cgoTraceback(cgoTracebackArg* arg) {

@@ -23,7 +23,7 @@ const unordered_map<JoinType, string, EnumClassHash> join_types = {{InnerJoin, "
 
 const unordered_map<CondType, string, EnumClassHash> cond_map = {
 	{CondAny, "any"},	  {CondEq, "eq"},	{CondLt, "lt"},			{CondLe, "le"},		  {CondGt, "gt"},	  {CondGe, "ge"},
-	{CondRange, "range"}, {CondSet, "set"}, {CondAllSet, "allset"}, {CondEmpty, "empty"}, {CondLike, "like"},
+	{CondRange, "range"}, {CondSet, "set"}, {CondAllSet, "allset"}, {CondEmpty, "empty"}, {CondLike, "like"}, {CondDWithin, "dwithin"},
 };
 
 const unordered_map<OpType, string, EnumClassHash> op_map = {{OpOr, "or"}, {OpAnd, "and"}, {OpNot, "not"}};
@@ -184,6 +184,7 @@ void encodeUpdateFields(const Query& query, JsonBuilder& builder) {
 				field.Put("type", "value");
 			}
 			field.Put("name", updateEntry.column);
+			field.Put("is_array", updateEntry.values.IsArrayValue());
 			auto values = field.Array("values");
 			for (const Variant& v : updateEntry.values) {
 				if (isObject) {

@@ -40,6 +40,7 @@ public:
         _force_flush = force_flush;
     }
     void reopen () {
+        std::lock_guard<Mutex> lock(base_sink<Mutex>::_mutex);
         _file_helper.reopen(false);
     }
 
@@ -59,6 +60,58 @@ protected:
 private:
     details::file_helper _file_helper;
     bool _force_flush;
+};
+
+/*
+ * Implementation of file sink, that performs
+ * reopen() only before writing (if _reopen
+ * flag was set to true). log() and flush()
+ * cannot work in parallel - only useful (and
+ * more efficient than simple_file_sink) when
+ * there is synchronization on a higher level.
+ */
+class fast_file_sink SPDLOG_FINAL : public sink
+{
+public:
+    explicit fast_file_sink(const filename_t &filename, bool truncate = false):_force_flush(false), _reopen(false)
+    {
+        _file_helper.open(filename, truncate);
+    }
+
+    fast_file_sink(const fast_file_sink&) = delete;
+    fast_file_sink& operator=(const fast_file_sink&) = delete;
+
+    void log(const details::log_msg& msg) SPDLOG_FINAL override
+    {
+        if (_reopen) {
+            _file_helper.reopen(false);
+            _reopen = false;
+        }
+        _file_helper.write(msg);
+        if(_force_flush) {
+            flush();
+        }
+    }
+
+    void flush() SPDLOG_FINAL override
+    {
+        _file_helper.flush();
+    }
+
+    void reopen ()
+    {
+        _reopen = true;
+    }
+
+    void set_force_flush(bool force_flush)
+    {
+        _force_flush = force_flush;
+    }
+
+private:
+    details::file_helper _file_helper;
+    std::atomic<bool> _force_flush;
+    std::atomic<bool> _reopen;
 };
 
 using simple_file_sink_mt = simple_file_sink<std::mutex>;
@@ -199,9 +252,9 @@ class daily_file_sink SPDLOG_FINAL :public base_sink < Mutex >
 public:
     //create daily file sink which rotates on given time
     daily_file_sink(
-        filename_t base_filename,
-        int rotation_hour,
-        int rotation_minute) :
+            filename_t base_filename,
+            int rotation_hour,
+            int rotation_minute) :
         _base_filename(std::move(base_filename)),
         _rotation_h(rotation_hour),
         _rotation_m(rotation_minute)

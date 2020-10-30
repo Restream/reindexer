@@ -12,7 +12,7 @@ void Transaction::Modify(Query&& query) {
 	if (conn_) {
 		WrSerializer ser;
 		query.Serialize(ser);
-		auto ret = conn_->Call({cproto::kCmdUpdateQueryTx, RequestTimeout_, execTimeout_}, ser.Slice(), txId_).Status();
+		auto ret = conn_->Call({cproto::kCmdUpdateQueryTx, RequestTimeout_, execTimeout_, nullptr}, ser.Slice(), txId_).Status();
 		if (!ret.ok()) throw ret;
 	}
 	throw Error(errLogic, "Connection pointer in transaction is nullptr.");
@@ -23,7 +23,8 @@ void Transaction::addTxItem(Item&& item, ItemModifyMode mode) {
 	p_string itemData(&itData);
 	if (conn_) {
 		for (int tryCount = 0;; tryCount++) {
-			auto ret = conn_->Call({net::cproto::kCmdAddTxItem, RequestTimeout_, execTimeout_}, FormatJson, itemData, mode, "", 0, txId_);
+			auto ret =
+				conn_->Call({net::cproto::kCmdAddTxItem, RequestTimeout_, execTimeout_, nullptr}, FormatJson, itemData, mode, "", 0, txId_);
 
 			if (!ret.Status().ok()) {
 				if (ret.Status().code() != errStateInvalidated || tryCount > 2) throw ret.Status();

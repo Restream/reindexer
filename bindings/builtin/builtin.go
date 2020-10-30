@@ -31,7 +31,7 @@ type Logger interface {
 }
 
 var logger Logger
-var logMtx sync.Mutex
+var logMtx sync.RWMutex
 
 var bufPool sync.Pool
 
@@ -557,8 +557,8 @@ func (binding *Builtin) Commit(ctx context.Context, namespace string) error {
 // CGoLogger logger function for C
 //export CGoLogger
 func CGoLogger(level int, msg string) {
-	logMtx.Lock()
-	defer logMtx.Unlock()
+	logMtx.RLock()
+	defer logMtx.RUnlock()
 	if logger != nil {
 		logger.Printf(level, "%s", msg)
 	}

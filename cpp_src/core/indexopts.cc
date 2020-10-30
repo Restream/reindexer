@@ -13,34 +13,40 @@ bool IndexOpts::IsEqual(const IndexOpts& other, bool skipConfig) const {
 		   collateOpts_.sortOrderTable.GetSortOrderCharacters() == other.collateOpts_.sortOrderTable.GetSortOrderCharacters();
 }
 
-bool IndexOpts::IsPK() const { return options & kIndexOptPK; }
-bool IndexOpts::IsArray() const { return options & kIndexOptArray; }
-bool IndexOpts::IsDense() const { return options & kIndexOptDense; }
-bool IndexOpts::IsSparse() const { return options & kIndexOptSparse; }
-bool IndexOpts::hasConfig() const { return !config.empty(); }
-CollateMode IndexOpts::GetCollateMode() const { return static_cast<CollateMode>(collateOpts_.mode); }
+bool IndexOpts::IsPK() const noexcept { return options & kIndexOptPK; }
+bool IndexOpts::IsArray() const noexcept { return options & kIndexOptArray; }
+bool IndexOpts::IsDense() const noexcept { return options & kIndexOptDense; }
+bool IndexOpts::IsSparse() const noexcept { return options & kIndexOptSparse; }
+bool IndexOpts::IsRTreeLinear() const noexcept { return options & kIndexOptRTreeLinear; }
+bool IndexOpts::hasConfig() const noexcept { return !config.empty(); }
+CollateMode IndexOpts::GetCollateMode() const noexcept { return static_cast<CollateMode>(collateOpts_.mode); }
 
-IndexOpts& IndexOpts::PK(bool value) {
+IndexOpts& IndexOpts::PK(bool value) noexcept {
 	options = value ? options | kIndexOptPK : options & ~(kIndexOptPK);
 	return *this;
 }
 
-IndexOpts& IndexOpts::Array(bool value) {
+IndexOpts& IndexOpts::Array(bool value) noexcept {
 	options = value ? options | kIndexOptArray : options & ~(kIndexOptArray);
 	return *this;
 }
 
-IndexOpts& IndexOpts::Dense(bool value) {
+IndexOpts& IndexOpts::Dense(bool value) noexcept {
 	options = value ? options | kIndexOptDense : options & ~(kIndexOptDense);
 	return *this;
 }
 
-IndexOpts& IndexOpts::Sparse(bool value) {
+IndexOpts& IndexOpts::Sparse(bool value) noexcept {
 	options = value ? options | kIndexOptSparse : options & ~(kIndexOptSparse);
 	return *this;
 }
 
-IndexOpts& IndexOpts::SetCollateMode(CollateMode mode) {
+IndexOpts& IndexOpts::RTreeLinear(bool value) noexcept {
+	options = value ? options | kIndexOptRTreeLinear : options & ~(kIndexOptRTreeLinear);
+	return *this;
+}
+
+IndexOpts& IndexOpts::SetCollateMode(CollateMode mode) noexcept {
 	collateOpts_.mode = mode;
 	return *this;
 }

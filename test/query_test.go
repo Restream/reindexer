@@ -31,16 +31,17 @@ const (
 type EqualPositions [][]string
 
 var queryNames = map[int]string{
-	reindexer.EQ:    "==",
-	reindexer.GT:    ">",
-	reindexer.LT:    "<",
-	reindexer.GE:    ">=",
-	reindexer.LE:    "<=",
-	reindexer.SET:   "SET",
-	reindexer.RANGE: "RANGE",
-	reindexer.ANY:   "ANY",
-	reindexer.EMPTY: "EMPTY",
-	reindexer.LIKE:  "LIKE",
+	reindexer.EQ:      "==",
+	reindexer.GT:      ">",
+	reindexer.LT:      "<",
+	reindexer.GE:      ">=",
+	reindexer.LE:      "<=",
+	reindexer.SET:     "SET",
+	reindexer.RANGE:   "RANGE",
+	reindexer.ANY:     "ANY",
+	reindexer.EMPTY:   "EMPTY",
+	reindexer.LIKE:    "LIKE",
+	reindexer.DWITHIN: "DWITHIN",
 }
 
 const (
@@ -377,6 +378,21 @@ func (qt *queryTest) Where(index string, condition int, keys interface{}) *query
 	} else {
 		qte.keys = append(qte.keys, reflect.ValueOf(keys))
 	}
+	qte.fieldIdx, _ = qt.ns.getField(index)
+	qt.entries.addEntry(qte, qt.nextOp)
+	qt.nextOp = opAND
+
+	return qt
+}
+
+// DWithin - Add DWithin condition to DB query
+func (qt *queryTest) DWithin(index string, point [2]float64, distance float64) *queryTest {
+	keys := make([]reflect.Value, 0)
+	keys = append(keys, reflect.ValueOf(point[0]), reflect.ValueOf(point[1]), reflect.ValueOf(distance))
+	qte := queryTestEntry{index: index, condition: reindexer.DWITHIN, ikeys: keys}
+	qt.q.DWithin(index, point, distance)
+
+	qte.keys = keys
 	qte.fieldIdx, _ = qt.ns.getField(index)
 	qt.entries.addEntry(qte, qt.nextOp)
 	qt.nextOp = opAND
@@ -937,7 +953,7 @@ func (qt *queryTest) Verify(t *testing.T, items []interface{}, aggResults []rein
 				panic(fmt.Errorf("found item not equal to original \n%#v\n%#v", item, qt.ns.items[pk]))
 			}
 		}
-		if !qt.entries.verifyConditions(qt.ns, item) {
+		if !qt.entries.verifyConditions(t, qt.ns, item) {
 			json1, _ := json.Marshal(item)
 			log.Fatalf("Found item id=%s, not match condition '%s'\n%+v\n", pk, qt.toString(), string(json1))
 		} else {
@@ -1036,7 +1052,7 @@ func (qt *queryTest) Verify(t *testing.T, items []interface{}, aggResults []rein
 	// Check all non found items for non match query conditions
 	for pk, item := range qt.ns.items {
 		if _, ok := foundIds[pk]; !ok {
-			if qt.entries.verifyConditions(qt.ns, item) {
+			if qt.entries.verifyConditions(t, qt.ns, item) {
 				// If request with limit or offset - do not check not found items
 				if qt.startOffset == 0 && (qt.limitItems == 0 || len(qt.distinctIndexes) <= 1 && len(items) < qt.limitItems) {
 					itemJson, _ := json.Marshal(item)
@@ -1321,7 +1337,13 @@ func checkCompositeCondition(vals []reflect.Value, cond *queryTestEntry, item in
 	return result
 }
 
-func checkCondition(ns *testNamespace, cond *queryTestEntry, item interface{}) bool {
+func checkDWithin(point1 [2]float64, point2 [2]float64, distance float64) bool {
+	diffX := point1[0] - point2[0]
+	diffY := point1[1] - point2[1]
+	return (diffX * diffX + diffY * diffY) <= (distance * distance)
+}
+
+func checkCondition(t *testing.T, ns *testNamespace, cond *queryTestEntry, item interface{}) bool {
 	vals := getValues(item, cond.fieldIdx)
 
 	switch cond.condition {
@@ -1329,6 +1351,9 @@ func checkCondition(ns *testNamespace, cond *queryTestEntry, item interface{}) b
 		return len(vals) == 0
 	case reindexer.ANY:
 		return len(vals) > 0
+	case reindexer.DWITHIN:
+		require.Equal(t, 2, len(vals), "Expected point %#v in item %#v", vals, item)
+		return checkDWithin([2]float64{vals[0].Float(), vals[1].Float()}, [2]float64{cond.keys[0].Float(), cond.keys[1].Float()}, cond.keys[2].Float())
 	}
 
 	found := false
@@ -1367,15 +1392,15 @@ func checkCondition(ns *testNamespace, cond *queryTestEntry, item interface{}) b
 	return found
 }
 
-func (qt *queryTestEntryTree) verifyConditions(ns *testNamespace, item interface{}) bool {
+func (qt *queryTestEntryTree) verifyConditions(t *testing.T, ns *testNamespace, item interface{}) bool {
 	found := true
 	for _, cond := range qt.data {
 		var curFound bool
 		if cond.dataType == leaf {
-			curFound = checkCondition(ns, cond.data.(*queryTestEntry), item)
+			curFound = checkCondition(t, ns, cond.data.(*queryTestEntry), item)
 		} else {
-			t := cond.data.(*queryTestEntryTree)
-			curFound = t.verifyConditions(ns, item)
+			tree := cond.data.(*queryTestEntryTree)
+			curFound = tree.verifyConditions(t, ns, item)
 		}
 		switch cond.op {
 		case opNOT:

@@ -1,12 +1,66 @@
 #include "schema.h"
 #include <unordered_set>
+#include "core/cjson/protobufschemabuilder.h"
+#include "core/cjson/tagsmatcher.h"
 #include "gason/gason.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
 
+string_view kvTypeToJsonSchemaType(KeyValueType type) {
+	switch (type) {
+		case KeyValueInt:
+		case KeyValueInt64:
+			return "integer";
+		case KeyValueDouble:
+			return "number";
+		case KeyValueBool:
+			return "boolean";
+		case KeyValueString:
+			return "string";
+		case KeyValueNull:
+			return "null";
+		case KeyValueTuple:
+			return "object";
+		default:
+			throw Error(errParams, "Impossible to convert type [%d] to json schema type", type);
+	}
+}
+
+void SchemaFieldsTypes::AddObject(string_view objectType) {
+	types_[tagsPath_] = {KeyValueComposite, false};
+	auto it = objectTypes_.find(string(objectType));
+	if (it == objectTypes_.end()) {
+		objectTypes_.emplace(std::string(objectType), tagsPath_.size());
+	} else {
+		int depth = int(tagsPath_.size());
+		if (depth < it->second) {
+			it->second = depth;
+		}
+	}
+}
+
+void SchemaFieldsTypes::AddField(KeyValueType type, bool isArray) { types_[tagsPath_] = {type, isArray}; }
+
+bool SchemaFieldsTypes::NeedToEmbedType(string objectType) const {
+	auto it = objectTypes_.find(objectType);
+	if (it == objectTypes_.end()) return false;
+	return it->second < int(tagsPath_.size());
+}
+
+KeyValueType SchemaFieldsTypes::GetField(const TagsPath& fieldPath, bool& isArray) const {
+	auto it = types_.find(fieldPath);
+	if (it == types_.end()) return KeyValueUndefined;
+	isArray = it->second.isArray_;
+	return it->second.type_;
+}
+
+string SchemaFieldsTypes::GenerateObjectName() { return "GeneratedType" + std::to_string(++generatedObjectsNames); }
+
 PrefixTree::PrefixTree() { root_.props_.type = "object"; }
+
+void PrefixTree::SetXGoType(string_view type) { root_.props_.xGoType.assign(type.data(), type.size()); }
 
 Error PrefixTree::AddPath(FieldProps props, const PathT& splittedPath) noexcept {
 	if (splittedPath.empty()) {
@@ -154,34 +208,76 @@ void PrefixTree::PrefixTreeNode::GetPaths(std::string&& basePath, vector<string>
 	}
 }
 
-Schema::Schema(string_view json) {
+Error PrefixTree::BuildProtobufSchema(WrSerializer& schema, TagsMatcher& tm, PayloadType& pt) noexcept {
+	if (root_.children_.empty()) {
+		return Error(errLogic, "Schema is not initialized either just empty");
+	}
+
+	fieldsTypes_ = SchemaFieldsTypes();
+	const string& objName = root_.props_.xGoType.empty() ? pt.Name() : root_.props_.xGoType;
+	ProtobufSchemaBuilder builder(&schema, &fieldsTypes_, ObjType::TypeObject, objName, &pt, &tm);
+	return buildProtobufSchema(builder, root_, "", tm);
+}
+
+Error PrefixTree::buildProtobufSchema(ProtobufSchemaBuilder& builder, const PrefixTreeNode& root, const std::string& basePath,
+									  TagsMatcher& tm) noexcept {
+	try {
+		for (auto& child : root.children_) {
+			const std::string& name = child.first;
+			const std::unique_ptr<PrefixTreeNode>& node = child.second;
+
+			string path = basePath;
+			if (path.size() > 0) path += ".";
+			path += name;
+
+			int fieldNumber = tm.name2tag(name, true);
+			if (node->props_.type == "object") {
+				if (node->props_.xGoType.empty()) {
+					node->props_.xGoType = fieldsTypes_.GenerateObjectName();
+				}
+				if (node->props_.xGoType == name) {
+					node->props_.xGoType = "type" + node->props_.xGoType;
+				}
+				bool buildTypesOnly = fieldsTypes_.NeedToEmbedType(node->props_.xGoType);
+				ProtobufSchemaBuilder object = builder.Object(fieldNumber, node->props_.xGoType, buildTypesOnly);
+				buildProtobufSchema(object, *node, path, tm);
+			}
+			builder.Field(name, fieldNumber, node->props_);
+		}
+	} catch (const Error& err) {
+		return err;
+	}
+	return errOK;
+}
+
+Schema::Schema(string_view json) : paths_(), originalJson_() {
 	auto err = FromJSON(json);
 	if (!err.ok()) {
 		throw err;
 	}
 }
 
-Error Schema::FromJSON(span<char> json) {
-	Error err = errOK;
-	try {
-		PrefixTree::PathT path;
-		std::string originalJson(json.data(), json.size());
-		parseJsonNode(gason::JsonParser().Parse(json), path, true);
-		originalJson_ = std::move(originalJson);
-	} catch (const gason::Exception& ex) {
-		return Error(errParseJson, "Schema: %s\n", ex.what(), originalJson_);
-	} catch (const Error& err) {
-		return err;
-	}
-	return err;
-}
-
 Error Schema::FromJSON(string_view json) {
+	static std::atomic<int> counter;
 	Error err = errOK;
 	try {
 		PrefixTree::PathT path;
-		parseJsonNode(gason::JsonParser().Parse(json), path, true);
+		gason::JsonParser parser;
+		auto node = parser.Parse(json);
+		parseJsonNode(node, path, true);
 		originalJson_.assign(json.data(), json.size());
+		protobufNsNumber_ = node["x-protobuf-ns-number"].As<int>(-1);
+		if (protobufNsNumber_ == -1 && originalJson_ != "{}") {
+			protobufNsNumber_ = counter++;
+
+			// TODO: fix it
+			auto pos = originalJson_.find_last_of("}");
+			if (pos != std::string::npos) {
+				originalJson_ = originalJson_.erase(pos);
+				originalJson_ += ",\"x-protobuf-ns-number\":" + std::to_string(protobufNsNumber_) + "}";
+			}
+		}
+
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "Schema: %s\nJson: %s", ex.what(), originalJson_);
 	} catch (const Error& err) {
@@ -198,6 +294,22 @@ void Schema::GetJSON(WrSerializer& ser) const {
 	}
 }
 
+KeyValueType Schema::GetFieldType(const TagsPath& fieldPath, bool& isArray) const {
+	return paths_.fieldsTypes_.GetField(fieldPath, isArray);
+}
+
+Error Schema::BuildProtobufSchema(TagsMatcher& tm, PayloadType& pt) {
+	WrSerializer ser;
+	protobufSchemaStatus_ = paths_.BuildProtobufSchema(ser, tm, pt);
+	protobufSchema_ = string(ser.Slice());
+	return protobufSchemaStatus_;
+}
+
+Error Schema::GetProtobufSchema(WrSerializer& schema) const {
+	schema.Write(protobufSchema_);
+	return protobufSchemaStatus_;
+}
+
 void Schema::parseJsonNode(const gason::JsonNode& node, PrefixTree::PathT& splittedPath, bool isRequired) {
 	bool isArray = false;
 
@@ -206,16 +318,20 @@ void Schema::parseJsonNode(const gason::JsonNode& node, PrefixTree::PathT& split
 	if (string_view(field.type) == "array"_sv) {
 		field.type = node["items"]["type"].As<std::string>();
 		field.allowAdditionalProps = node["items"]["additionalProperties"].As<bool>(false);
+		field.xGoType = node["items"]["x-go-type"].As<std::string>();
 		field.isArray = true;
 		isArray = true;
 	} else {
 		field.allowAdditionalProps = node["additionalProperties"].As<bool>(false);
+		field.xGoType = node["x-go-type"].As<std::string>();
 	}
 	field.isRequired = isRequired;
 	if (!splittedPath.empty()) {
 		paths_.AddPath(std::move(field), splittedPath);
-	} else
+	} else {
 		paths_.root_.props_ = std::move(field);
+		paths_.SetXGoType(node["x-go-type"].As<string_view>());
+	}
 
 	std::unordered_set<string_view> required;
 	auto requiredList = isArray ? node["items"]["required"] : node["required"];

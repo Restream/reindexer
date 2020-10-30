@@ -76,6 +76,14 @@ int Context::MSGPACK(int code, chunk &&chunk) {
 	return 0;
 }
 
+int Context::Protobuf(int code, chunk &&chunk) {
+	writer->SetContentLength(chunk.len_);
+	writer->SetRespCode(code);
+	writer->SetHeader(http::Header{"Content-Type"_sv, "application/protobuf; charset=utf-8"_sv});
+	writer->Write(std::move(chunk));
+	return 0;
+}
+
 int Context::String(int code, string_view slice) {
 	writer->SetContentLength(slice.size());
 	writer->SetRespCode(code);
@@ -132,7 +140,7 @@ int Context::File(int code, string_view path, string_view data) {
 	return 0;
 }
 
-std::vector<string_view> methodNames = {"GET"_sv, "POST"_sv, "OPTIONS"_sv, "HEAD"_sv, "PUT"_sv, "DELETE"_sv};
+std::vector<string_view> methodNames = {"GET"_sv, "POST"_sv, "OPTIONS"_sv, "HEAD"_sv, "PUT"_sv, "DELETE"_sv, "PATCH"_sv};
 
 HttpMethod lookupMethod(string_view method) {
 	for (auto &cm : methodNames)

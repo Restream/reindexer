@@ -398,10 +398,12 @@ func (binding *NetCProto) Status(ctx context.Context) bindings.Status {
 	var totalQueueSize, totalQueueUsage, connUsage int
 	var remoteAddr string
 	conns := binding.getAllConns()
+	activeConns := 0
 	for _, conn := range conns {
 		if conn.hasError() {
 			continue
 		}
+		activeConns++
 		totalQueueSize += cap(conn.seqs)
 		queueUsage := cap(conn.seqs) - len(conn.seqs)
 		totalQueueUsage += queueUsage
@@ -409,6 +411,11 @@ func (binding *NetCProto) Status(ctx context.Context) bindings.Status {
 			connUsage++
 		}
 		remoteAddr = conn.conn.RemoteAddr().String()
+	}
+
+	var err error
+	if activeConns == 0 {
+		_, err = binding.getConn(ctx)
 	}
 
 	return bindings.Status{
@@ -419,6 +426,7 @@ func (binding *NetCProto) Status(ctx context.Context) bindings.Status {
 			ConnQueueUsage: totalQueueUsage,
 			ConnAddr:       remoteAddr,
 		},
+		Err: err,
 	}
 }
 
@@ -464,7 +472,7 @@ func (binding *NetCProto) getConn(ctx context.Context) (conn *connection, err er
 					return nil, err
 				}
 
-				if atomic.CompareAndSwapInt32(&binding.isServerChanged, 1, 0) {
+				if atomic.CompareAndSwapInt32(&binding.isServerChanged, 1, 0) && binding.onChangeCallback != nil {
 					binding.onChangeCallback()
 				}
 				return conn, nil

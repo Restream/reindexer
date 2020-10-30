@@ -112,7 +112,23 @@ public:
 		size_t pos_;
 	};
 
+	struct VStringHelper {
+		VStringHelper() : ser_(nullptr), pos_(0) {}
+		VStringHelper(WrSerializer *ser, size_t pos) : ser_(ser), pos_(pos) {}
+		VStringHelper(const VStringHelper &) = delete;
+		VStringHelper operator=(const VStringHelper &) = delete;
+		VStringHelper(VStringHelper &&other) noexcept : ser_(other.ser_), pos_(other.pos_) { other.ser_ = nullptr; }
+		VStringHelper &operator=(VStringHelper &&other) noexcept;
+		~VStringHelper();
+
+		void End();
+
+		WrSerializer *ser_;
+		size_t pos_;
+	};
+
 	SliceHelper StartSlice();
+	VStringHelper StartVString();
 
 	// Put raw data
 	void PutUInt32(uint32_t);

@@ -16,18 +16,19 @@ const (
 
 // Map from cond name to index type
 var queryTypes = map[string]int{
-	"EQ":     EQ,
-	"GT":     GT,
-	"LT":     LT,
-	"GE":     GE,
-	"LE":     LE,
-	"SET":    SET,
-	"RANGE":  RANGE,
-	"ANY":    ANY,
-	"EMPTY":  EMPTY,
-	"ALLSET": ALLSET,
-	"MATCH":  EQ,
-	"LIKE":   LIKE,
+	"EQ":      EQ,
+	"GT":      GT,
+	"LT":      LT,
+	"GE":      GE,
+	"LE":      LE,
+	"SET":     SET,
+	"RANGE":   RANGE,
+	"ANY":     ANY,
+	"EMPTY":   EMPTY,
+	"ALLSET":  ALLSET,
+	"MATCH":   EQ,
+	"LIKE":    LIKE,
+	"DWITHIN": DWITHIN,
 }
 
 func GetCondType(name string) (int, error) {
@@ -41,16 +42,17 @@ func GetCondType(name string) (int, error) {
 
 // Map from index type to cond name
 var queryNames = map[int]string{
-	EQ:    "EQ",
-	GT:    "GT",
-	LT:    "LT",
-	GE:    "GE",
-	LE:    "LE",
-	SET:   "SET",
-	RANGE: "RANGE",
-	ANY:   "ANY",
-	EMPTY: "EMPTY",
-	LIKE:  "LIKE",
+	EQ:      "EQ",
+	GT:      "GT",
+	LT:      "LT",
+	GE:      "GE",
+	LE:      "LE",
+	SET:     "SET",
+	RANGE:   "RANGE",
+	ANY:     "ANY",
+	EMPTY:   "EMPTY",
+	LIKE:    "LIKE",
+	DWITHIN: "DWITHIN",
 }
 
 type IndexDescription struct {

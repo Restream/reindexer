@@ -24,6 +24,12 @@ static inline bool isalpha(char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' 
 static inline bool isdigit(char c) { return (c >= '0' && c <= '9'); }
 static inline char tolower(char c) { return (c >= 'A' && c <= 'Z') ? c + 'a' - 'A' : c; }
 string toLower(string_view src);
+inline string_view skipSpace(string_view str) {
+	size_t i = 0;
+	for (; i < str.size() && std::isspace(str[i]); ++i)
+		;
+	return str.substr(i);
+}
 
 template <typename Container>
 Container& split(const typename Container::value_type& str, const string& delimiters, bool trimEmpty, Container& tokens) {

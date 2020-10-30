@@ -4,10 +4,12 @@
 #include <limits>
 #include <map>
 #include <mutex>
+#include <random>
 #include <regex>
 #include <unordered_map>
 #include <unordered_set>
 #include "core/cjson/jsonbuilder.h"
+#include "core/keyvalue/geometry.h"
 #include "core/nsselecter/joinedselectormock.h"
 #include "core/nsselecter/sortexpression.h"
 #include "core/queryresults/joinresults.h"
@@ -46,6 +48,8 @@ public:
 			{kFieldNameNumeric, IndexOpts().SetCollateMode(CollateUTF8)},
 			{string(kFieldNameId + compositePlus + kFieldNameTemp), IndexOpts().PK()},
 			{string(kFieldNameAge + compositePlus + kFieldNameGenre), IndexOpts()},
+			{kFieldNamePointQuadraticRTree, IndexOpts().RTreeQuadratic()},
+			{kFieldNamePointLinearRTree, IndexOpts().RTreeLinear()},
 		};
 
 		Error err = rt.reindexer->OpenNamespace(default_namespace);
@@ -132,6 +136,14 @@ public:
 													IndexDeclaration{kFieldNameColumnHash, "hash", "int", IndexOpts(), 0},
 													IndexDeclaration{kFieldNameColumnTree, "tree", "int", IndexOpts(), 0}});
 		forcedSortOffsetNsPks.push_back(kFieldNameId);
+
+		err = rt.reindexer->OpenNamespace(geomNs);
+		ASSERT_TRUE(err.ok()) << err.what();
+		DefineNamespaceDataset(
+			geomNs, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
+					 IndexDeclaration{kFieldNamePointQuadraticRTree, "rtree", "point", indexesOptions[kFieldNamePointQuadraticRTree], 0},
+					 IndexDeclaration{kFieldNamePointLinearRTree, "rtree", "point", indexesOptions[kFieldNamePointLinearRTree], 0}});
+		geomNsPks.push_back(kFieldNameId);
 	}
 
 	template <typename... T>
@@ -379,6 +391,7 @@ protected:
 		if (ns == compositeIndexesNs) return compositeIndexesNsPks;
 		if (ns == comparatorsNs) return comparatorsNsPks;
 		if (ns == forcedSortOffsetNs) return forcedSortOffsetNsPks;
+		if (ns == geomNs) return geomNsPks;
 		std::abort();
 	}
 
@@ -544,8 +557,31 @@ protected:
 		return result;
 	}
 
+	static bool isGeomConditions(const QueryEntry& qe) { return qe.condition == CondType::CondDWithin; }
+
+	bool checkGeomConditions(const Item& item, const QueryEntry& qentry) const {
+		assert(qentry.values.size() == 2);
+		const VariantArray idVariants = item[kFieldNameId];
+		assert(idVariants.size() == 1);
+		const size_t id = idVariants[0].As<int>();
+		const auto valueMapIt = insertedGeomObjects.find(id);
+		assert(valueMapIt != insertedGeomObjects.end());
+		const auto valueIt = valueMapIt->second.find(qentry.index);
+		assert(valueIt != valueMapIt->second.end());
+		switch (qentry.condition) {
+			case CondDWithin:
+				return DWithin(valueIt->second, qentry.values[0].As<reindexer::Point>(), qentry.values[1].As<double>());
+			default:
+				assert(0);
+				abort();
+		}
+	}
+
 	bool checkCondition(Item& item, const QueryEntry& qentry) {
 		EXPECT_TRUE(item.NumFields() > 0);
+		if (isGeomConditions(qentry)) {
+			return checkGeomConditions(item, qentry);
+		}
 
 		bool result = false;
 		IndexOpts& opts = indexesOptions[qentry.index];
@@ -681,6 +717,45 @@ protected:
 		insertedItems[testSimpleNs].emplace(pkString, std::move(item2));
 
 		Commit(testSimpleNs);
+	}
+
+	void FillGeomNamespace() {
+		static size_t lastId = 0;
+		reindexer::WrSerializer ser;
+		for (size_t i = 0; i < geomNsSize; ++i) {
+			ser.Reset();
+			{
+				reindexer::JsonBuilder bld(ser);
+
+				const size_t id = i + lastId;
+				bld.Put(kFieldNameId, id);
+
+				reindexer::Point point{RandPoint()};
+				insertedGeomObjects[id][kFieldNamePointQuadraticRTree] = point;
+				double arr[]{point.x, point.y};
+				bld.Array(kFieldNamePointQuadraticRTree, reindexer::span<double>{arr, 2});
+
+				point = RandPoint();
+				insertedGeomObjects[id][kFieldNamePointLinearRTree] = point;
+				arr[0] = point.x;
+				arr[1] = point.y;
+				bld.Array(kFieldNamePointLinearRTree, reindexer::span<double>{arr, 2});
+
+				point = RandPoint();
+				insertedGeomObjects[id][kFieldNamePointNonIndex] = point;
+				arr[0] = point.x;
+				arr[1] = point.y;
+				bld.Array(kFieldNamePointNonIndex, reindexer::span<double>{arr, 2});
+			}
+			auto item = NewItem(geomNs);
+			item.FromJSON(ser.Slice());
+			Upsert(geomNs, item);
+
+			string pkString = getPkString(item, geomNs);
+			insertedItems[geomNs][pkString] = std::move(item);
+		}
+		Commit(geomNs);
+		lastId += geomNsSize;
 	}
 
 	enum Column { First, Second };
@@ -858,6 +933,15 @@ protected:
 		item[kFieldNameBtreeIdsets] = GetcurrBtreeIdsetsValue(idValue);
 
 		return item;
+	}
+
+	void CheckGeomQueries() {
+		for (size_t i = 0; i < 30; ++i) {
+			// Checks that DWithin works and verifies the result
+			ExecuteAndVerify(geomNs, Query(geomNs).DWithin(kFieldNamePointQuadraticRTree, RandPoint(), RandDouble(0.0, 1.0, 1000)));
+			ExecuteAndVerify(geomNs, Query(geomNs).DWithin(kFieldNamePointLinearRTree, RandPoint(), RandDouble(0.0, 1.0, 1000)));
+			ExecuteAndVerify(geomNs, Query(geomNs).DWithin(kFieldNamePointNonIndex, RandPoint(), RandDouble(0.0, 1.0, 1000)));
+		}
 	}
 
 	void CheckDistinctQueries() {
@@ -1506,21 +1590,70 @@ protected:
 		}
 	}
 
+	void checkDslQuery(const std::string& ns, const std::string& dslQuery, const Query& checkQuery) {
+		Query parsedQuery;
+		Error err = parsedQuery.FromJSON(dslQuery);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		QueryResults dslQr;
+		err = rt.reindexer->Select(parsedQuery, dslQr);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		QueryResults checkQr;
+		err = rt.reindexer->Select(checkQuery, checkQr);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		CompareQueryResults(dslQr, checkQr);
+		Verify(ns, checkQr, checkQuery);
+	}
+
+	double randDouble(long long min, long long max) {
+		assert(min < max);
+		const unsigned long long divider = (1ull << (rand() % 10));
+		min *= divider;
+		max *= divider;
+		return static_cast<double>((rand() % (max - min)) + min) / static_cast<double>(divider);
+	}
+	// Checks that DSL queries with DWithin works and compares the result with the result of corresponding C++ query
+	void CheckDslQueries() {
+		// ----------
+		reindexer::Point point{randDouble(-10, 10), randDouble(-10, 10)};
+		double distance = randDouble(0, 1);
+		std::string dslQuery =
+			std::string(R"({"namespace":")") + geomNs +
+			R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":")" +
+			kFieldNamePointLinearRTree + R"(","value":[[)" + std::to_string(point.x) + ',' + std::to_string(point.y) + "]," +
+			std::to_string(distance) + R"(]}],"merge_queries":[],"aggregations":[]})";
+		const Query checkQuery1 = std::move(Query(geomNs).DWithin(kFieldNamePointLinearRTree, point, distance));
+		checkDslQuery(geomNs, dslQuery, checkQuery1);
+
+		// ----------
+		point = {randDouble(-10, 10), randDouble(-10, 10)};
+		distance = randDouble(0, 1);
+		dslQuery =
+			std::string(R"({"namespace":")") + geomNs +
+			R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":")" +
+			kFieldNamePointLinearRTree + R"(","value":[)" + std::to_string(distance) + ",[" + std::to_string(point.x) + ',' +
+			std::to_string(point.y) + R"(]]}],"merge_queries":[],"aggregations":[]})";
+		const Query checkQuery2 = std::move(Query(geomNs).DWithin(kFieldNamePointLinearRTree, point, distance));
+		checkDslQuery(geomNs, dslQuery, checkQuery2);
+	}
+
 	void CheckSqlQueries() {
 		string sqlQuery = "SELECT ID, Year, Genre FROM test_namespace WHERE year > '2016' ORDER BY year DESC LIMIT 10000000";
 		const Query checkQuery1 =
 			std::move(Query(default_namespace, 0, 10000000).Where(kFieldNameYear, CondGt, 2016).Sort(kFieldNameYear, true));
 
-		QueryResults sqlQr;
-		Error err = rt.reindexer->Select(sqlQuery, sqlQr);
+		QueryResults sqlQr1;
+		Error err = rt.reindexer->Select(sqlQuery, sqlQr1);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		QueryResults checkQr;
-		err = rt.reindexer->Select(checkQuery1, checkQr);
+		QueryResults checkQr1;
+		err = rt.reindexer->Select(checkQuery1, checkQr1);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		CompareQueryResults(sqlQr, checkQr);
-		Verify(default_namespace, checkQr, checkQuery1);
+		CompareQueryResults(sqlQr1, checkQr1);
+		Verify(default_namespace, checkQr1, checkQuery1);
 
 		sqlQuery = "SELECT ID, Year, Genre FROM test_namespace WHERE genre IN ('1',2,'3') ORDER BY year DESC LIMIT 10000000";
 		const Query checkQuery2 =
@@ -1553,7 +1686,7 @@ protected:
 		CompareQueryResults(sqlQr3, checkQr3);
 		Verify(default_namespace, checkQr3, checkQuery3);
 
-		sqlQuery = "SELECT ID, FACET(ID, Year ORDER BY ID DESC ORDER BY Year ASC LIMIT 20 OFFSET 1) FROM test_namespace LIMIT 10000000";
+		sqlQuery = "SELECT FACET(ID, Year ORDER BY ID DESC ORDER BY Year ASC LIMIT 20 OFFSET 1) FROM test_namespace LIMIT 10000000";
 		const Query checkQuery4 =
 			std::move(Query(default_namespace, 0, 10000000)
 						  .Aggregate(AggFacet, {kFieldNameId, kFieldNameYear}, {{kFieldNameId, true}, {kFieldNameYear, false}}, 20, 1));
@@ -1622,6 +1755,41 @@ protected:
 
 		CompareQueryResults(sqlQr7, checkQr7);
 		Verify(default_namespace, checkQr7, checkQuery7);
+
+		// Checks that SQL queries with DWithin works and compares the result with the result of corresponding C++ query
+		reindexer::Point point = RandPoint();
+		double distance = RandDouble(0.0, 1.0, 1000);
+		sqlQuery = string("SELECT * FROM ") + geomNs + " WHERE ST_DWithin(" + kFieldNamePointNonIndex + ", ST_GeomFromText('point(" +
+				   std::to_string(point.x) + ' ' + std::to_string(point.y) + ")'), " + std::to_string(distance) + ");";
+		const Query checkQuery8 = std::move(Query(geomNs).DWithin(kFieldNamePointNonIndex, point, distance));
+
+		QueryResults sqlQr8;
+		err = rt.reindexer->Select(sqlQuery, sqlQr8);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		QueryResults checkQr8;
+		err = rt.reindexer->Select(checkQuery8, checkQr8);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		CompareQueryResults(sqlQr8, checkQr8);
+		Verify(geomNs, checkQr8, checkQuery8);
+
+		point = RandPoint();
+		distance = RandDouble(0.0, 1.0, 1000);
+		sqlQuery = string("SELECT * FROM ") + geomNs + " WHERE ST_DWithin(ST_GeomFromText('point(" + std::to_string(point.x) + ' ' +
+				   std::to_string(point.y) + ")'), " + kFieldNamePointNonIndex + ", " + std::to_string(distance) + ");";
+		const Query checkQuery9 = std::move(Query(geomNs).DWithin(kFieldNamePointNonIndex, point, distance));
+
+		QueryResults sqlQr9;
+		err = rt.reindexer->Select(sqlQuery, sqlQr9);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		QueryResults checkQr9;
+		err = rt.reindexer->Select(checkQuery9, checkQr9);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		CompareQueryResults(sqlQr9, checkQr9);
+		Verify(geomNs, checkQr9, checkQuery9);
 	}
 
 	void CheckCompositeIndexesQueries() {
@@ -1807,6 +1975,9 @@ protected:
 	const char* kFieldNamePages = "pages";
 	const char* kFieldNamePrice = "price";
 	const char* kFieldNameBtreeIdsets = "btree_idsets";
+	const char* kFieldNamePointQuadraticRTree = "point_quadratic_rtree";
+	const char* kFieldNamePointLinearRTree = "point_linear_rtree";
+	const char* kFieldNamePointNonIndex = "point_field_non_index";
 
 	const char* kFieldNameColumnInt = "columnInt";
 	const char* kFieldNameColumnInt64 = "columnInt64";
@@ -1826,6 +1997,7 @@ protected:
 	const string comparatorsNs = "comparators_namespace";
 	const string forcedSortOffsetNs = "forced_sort_offset_namespace";
 	const string nsWithObject = "namespace_with_object";
+	const string geomNs = "geom_namespace";
 
 	const string kCompositeFieldPricePages = kFieldNamePrice + compositePlus + kFieldNamePages;
 	const string kCompositeFieldTitleName = kFieldNameTitle + compositePlus + kFieldNameName;
@@ -1836,10 +2008,14 @@ protected:
 	vector<string> compositeIndexesNsPks;
 	vector<string> comparatorsNsPks;
 	vector<string> forcedSortOffsetNsPks;
+	vector<string> geomNsPks;
 	std::mutex m_;
 
 	int currBtreeIdsetsValue = rand() % 10000;
 	static constexpr size_t forcedSortOffsetNsSize = 1000;
 	static constexpr int forcedSortOffsetMaxValue = 1000;
+	static constexpr size_t geomNsSize = 10000;
 	vector<pair<int, int>> forcedSortOffsetValues;
+
+	std::unordered_map<size_t, std::map<std::string, reindexer::Point>> insertedGeomObjects;
 };

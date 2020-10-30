@@ -3,6 +3,7 @@
 #include "indexordered.h"
 #include "indextext/fastindextext.h"
 #include "indextext/fuzzyindextext.h"
+#include "rtree/indexrtree.h"
 #include "tools/logger.h"
 #include "ttlindex.h"
 
@@ -55,6 +56,8 @@ Index* Index::New(const IndexDef& idef, const PayloadType payloadType, const Fie
 			return FuzzyIndexText_New(idef, payloadType, fields);
 		case IndexTtl:
 			return TtlIndex_New(idef, payloadType, fields);
+		case ::IndexRTree:
+			return IndexRTree_New(idef, payloadType, fields);
 		default:
 			throw Error(errParams, "Ivalid index type %d for index '%s'", idef.Type(), idef.name_);
 	}

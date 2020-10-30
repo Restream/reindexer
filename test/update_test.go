@@ -160,6 +160,8 @@ func TestUpdateFields(t *testing.T) {
 	CheckFieldsDrop(t)
 	CheckIndexedFieldUpdate(t)
 	CheckNonIndexedFieldUpdate(t)
+	CheckNonIndexedEmptyArrayFieldUpdate(t)
+	CheckNonIndexedArrayWithSingleElementFieldUpdate(t)
 	CheckNonIndexedArrayFieldUpdate(t)
 	CheckIndexedArrayFieldUpdate(t)
 	CheckUpdateObject(t)
@@ -396,6 +398,45 @@ func CheckNonIndexedFieldUpdate(t *testing.T) {
 func CheckNonIndexedArrayFieldUpdate(t *testing.T) {
 	newAnimals := make([]string, 0, 20)
 	for i := 0; i < 20; i++ {
+		newAnimals = append(newAnimals, randString())
+	}
+	results := UpdateField(t, "animals", newAnimals)
+	for i := 0; i < len(results); i++ {
+		animals := results[i].(*TestItemComplexObject).Animals
+		equal := (len(newAnimals) == len(animals))
+		if equal {
+			for i := 0; i < len(animals); i++ {
+				if strings.Compare(newAnimals[i], animals[i]) != 0 {
+					equal = false
+					break
+				}
+			}
+		}
+		require.True(t, equal, "Update of field 'animals' has shown wrong results")
+	}
+}
+
+func CheckNonIndexedEmptyArrayFieldUpdate(t *testing.T) {
+	newAnimals := make([]string, 0)
+	results := UpdateField(t, "animals", newAnimals)
+	for i := 0; i < len(results); i++ {
+		animals := results[i].(*TestItemComplexObject).Animals
+		equal := (len(newAnimals) == len(animals))
+		if equal {
+			for i := 0; i < len(animals); i++ {
+				if strings.Compare(newAnimals[i], animals[i]) != 0 {
+					equal = false
+					break
+				}
+			}
+		}
+		require.True(t, equal, "Update of field 'animals' has shown wrong results")
+	}
+}
+
+func CheckNonIndexedArrayWithSingleElementFieldUpdate(t *testing.T) {
+	newAnimals := make([]string, 0, 1)
+	for i := 0; i < 1; i++ {
 		newAnimals = append(newAnimals, randString())
 	}
 	results := UpdateField(t, "animals", newAnimals)

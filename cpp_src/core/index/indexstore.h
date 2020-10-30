@@ -10,12 +10,13 @@ class IndexStore : public Index {
 public:
 	IndexStore(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields) : Index(idef, payloadType, fields) {
 		static T a;
-		keyType_ = Variant(a).Type();
-		selectKeyType_ = Variant(a).Type();
+		keyType_ = selectKeyType_ = Variant(a).Type();
 	}
 
 	Variant Upsert(const Variant &key, IdType id) override;
+	void Upsert(VariantArray &result, const VariantArray &keys, IdType id, bool needUpsertEmptyValue) override;
 	void Delete(const Variant &key, IdType id) override;
+	void Delete(const VariantArray &keys, IdType id) override;
 	SelectKeyResults SelectKey(const VariantArray &keys, CondType condition, SortType stype, Index::SelectOpts res_type,
 							   BaseFunctionCtx::Ptr ctx, const RdxContext &) override;
 	void Commit() override;
@@ -29,6 +30,9 @@ protected:
 
 	IndexMemStat memStat_;
 };
+
+template <>
+IndexStore<Point>::IndexStore(const IndexDef &, const PayloadType, const FieldsSet &);
 
 Index *IndexStore_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields_);
 

@@ -4,6 +4,8 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include "core/namespacedef.h"
+#include "estl/fast_hash_map.h"
 #include "istatswatcher.h"
 #include "tools/stringstools.h"
 
@@ -16,7 +18,7 @@ class StatsCollector : public IStatsWatcher {
 public:
 	StatsCollector(Prometheus* prometheus, std::chrono::milliseconds collectPeriod)
 		: prometheus_(prometheus), terminate_(false), enabled_(false), collectPeriod_(collectPeriod) {}
-	~StatsCollector() { Stop(); }
+	~StatsCollector() override { Stop(); }
 	void Start(DBManager& dbMngr);
 	void Stop();
 
@@ -26,6 +28,7 @@ public:
 	void OnClientDisconnected(const std::string& db, string_view source) noexcept override final;
 
 private:
+	using NSMap = reindexer::fast_hash_map<std::string, std::vector<reindexer::NamespaceDef>>;
 	struct DBCounters {
 		size_t clients{0};
 		uint64_t inputTraffic{0};
@@ -34,8 +37,8 @@ private:
 	using CountersByDB = std::unordered_map<std::string, DBCounters, reindexer::nocase_hash_str, reindexer::nocase_equal_str>;
 	using Counters = std::vector<std::pair<std::string, CountersByDB>>;
 
-	void collectStats(DBManager& dbMngr) noexcept;
-	DBCounters& getCounters(const std::string& db, string_view source) noexcept;
+	void collectStats(DBManager& dbMngr);
+	DBCounters& getCounters(const std::string& db, string_view source);
 
 	Prometheus* prometheus_;
 	std::thread statsCollectingThread_;

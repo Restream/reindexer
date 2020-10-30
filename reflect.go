@@ -34,6 +34,7 @@ type indexOptions struct {
 	isDense     bool
 	isPk        bool
 	isSparse    bool
+	isLinear    bool
 }
 
 func parseRxTags(field reflect.StructField) (idxName string, idxType string, expireAfter string, idxSettings []string) {
@@ -128,6 +129,11 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 			return fmt.Errorf("No index name is specified for primary key in field %s", st.Field(i).Name)
 		}
 
+		if idxType == "rtree" {
+			if t.Kind() != reflect.Array || t.Len() != 2 || t.Elem().Kind() != reflect.Float64 {
+				return fmt.Errorf("'rtree' index allowed only for [2]float64 field type")
+			}
+		}
 		if parseByKeyWord(&idxSettings, "composite") {
 			if t.Kind() != reflect.Struct || t.NumField() != 0 {
 				return fmt.Errorf("'composite' tag allowed only on empty on structs: Invalid tags %v on field %s", strings.SplitN(st.Field(i).Tag.Get("reindex"), ",", 3), st.Field(i).Name)
@@ -152,7 +158,9 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 		} else if len(idxName) > 0 {
 			collateMode, sortOrderLetters := parseCollate(&idxSettings)
 			var fieldType string
-			if fieldType, err = getFieldType(t); err != nil {
+			if idxType == "rtree" {
+				fieldType = "point"
+			} else if fieldType, err = getFieldType(t); err != nil {
 				return err
 			}
 			indexDef := makeIndexDef(reindexPath, []string{jsonPath}, idxType, fieldType, opts, collateMode, sortOrderLetters, parseExpireAfter(expireAfter))
@@ -216,6 +224,10 @@ func parseOpts(idxSettingsBuf *[]string) indexOptions {
 			opts.isSparse = true
 		case "appendable":
 			opts.isAppenable = true
+		case "linear":
+			opts.isLinear = true
+		case "quadratic":
+			opts.isLinear = false
 		default:
 			newIdxSettingsBuf = append(newIdxSettingsBuf, idxSetting)
 		}

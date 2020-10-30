@@ -15,6 +15,6 @@ void logPrintf(int level, const char *fmt, const Args &... args) {
 	logPrint(level, &str[0]);
 }
 
-void logInstallWriter(LogWriter writer);
+void logInstallWriter(LogWriter writer, bool multithreaded = true);
 
 }  // namespace reindexer

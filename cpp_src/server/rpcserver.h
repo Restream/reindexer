@@ -39,7 +39,7 @@ struct RPCClientData : public cproto::ClientData {
 
 class RPCServer {
 public:
-	RPCServer(DBManager &dbMgr, LoggerWrapper logger, IClientsStats *clientsStats, bool allocDebug = false,
+	RPCServer(DBManager &dbMgr, LoggerWrapper &logger, IClientsStats *clientsStats, bool allocDebug = false,
 			  IStatsWatcher *statsCollector = nullptr);
 	~RPCServer();
 

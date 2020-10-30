@@ -15,7 +15,8 @@ int socket::bind(string_view addr) {
 	struct addrinfo *results = nullptr;
 	int ret = create(addr, &results);
 	if (!ret) {
-		if (::bind(fd_, results->ai_addr, results->ai_addrlen) != 0) {
+		assert(results != nullptr);
+		if (::bind(fd_, results->ai_addr, results->ai_addrlen) != 0) {	// -V595
 			perror("bind error");
 			close();
 		}
@@ -30,7 +31,8 @@ int socket::connect(string_view addr) {
 	struct addrinfo *results = nullptr;
 	int ret = create(addr, &results);
 	if (!ret) {
-		if (::connect(fd_, results->ai_addr, results->ai_addrlen) != 0) {
+		assert(results != nullptr);
+		if (::connect(fd_, results->ai_addr, results->ai_addrlen) != 0) {  // -V595
 			if (!would_block(last_error())) {
 				perror("connect error");
 				close();

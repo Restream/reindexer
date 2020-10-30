@@ -169,7 +169,7 @@ bool WrResultSerializer::PutResults(const QueryResults* result) {
 					if (it.ItemsCount() == 0) continue;
 					QueryResults qr = it.ToQueryResults();
 					qr.addNSContext(result->getPayloadType(joinedField), result->getTagsMatcher(joinedField),
-									result->getFieldsFilter(joinedField));
+									result->getFieldsFilter(joinedField), result->getSchema(joinedField));
 					for (size_t idx = 0; idx < qr.Count(); idx++) putItemParams(&qr, idx, false);
 				}
 			}

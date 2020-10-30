@@ -22,7 +22,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "2.13.0")
+set (REINDEXER_VERSION_DEFAULT "2.14.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -281,7 +281,7 @@ if (ENABLE_LIBUNWIND)
   endif()
 endif ()
 
-if(NOT LIBUNWIND AND NOT SYSUNWIND)
+if(APPLE OR (NOT LIBUNWIND AND NOT SYSUNWIND))
   # Try execinfo
   find_path(EXECINFO_INCLUDE_PATH execinfo.h)
   if (EXECINFO_INCLUDE_PATH)
@@ -506,7 +506,7 @@ if (NOT WIN32)
   SET(DIST_INCLUDE_FILES
     "tools/errors.h" "tools/serializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h"
     "core/reindexer.h" "core/type_consts.h" "core/item.h" "core/payload/payloadvalue.h" "core/payload/payloadiface.h" "core/indexopts.h"
-    "core/namespacedef.h" "core/keyvalue/variant.h" "core/sortingprioritiestable.h"
+    "core/namespacedef.h" "core/keyvalue/variant.h" "core/keyvalue/geometry.h" "core/sortingprioritiestable.h"
     "core/rdxcontext.h" "core/activity_context.h"
     "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" "core/transaction.h"
     "core/query/query.h" "core/query/queryentry.h" "core/queryresults/queryresults.h" "core/indexdef.h" "core/queryresults/aggregationresult.h"

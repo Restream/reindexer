@@ -64,6 +64,15 @@ protected:
 	friend class ClientConnection;
 };
 
+struct CommandParams {
+	CommandParams(CmdCode c, seconds n, milliseconds e, const IRdxCancelContext *ctx)
+		: cmd(c), netTimeout(n), execTimeout(e), cancelCtx(ctx) {}
+	CmdCode cmd;
+	seconds netTimeout;
+	milliseconds execTimeout;
+	const IRdxCancelContext *cancelCtx;
+};
+
 class ClientConnection : public ConnectionMT {
 public:
 	typedef std::function<void(RPCAnswer &&ans, ClientConnection *conn)> Completion;
@@ -114,15 +123,6 @@ public:
 	ClientConnection(ev::dynamic_loop &loop, ConnectData *connectData,
 					 ConnectionFailCallback connectionFailCallback = ConnectionFailCallback());
 	~ClientConnection();
-
-	struct CommandParams {
-		CommandParams(CmdCode c, seconds n, milliseconds e, const IRdxCancelContext *ctx = nullptr)
-			: cmd(c), netTimeout(n), execTimeout(e), cancelCtx(ctx) {}
-		CmdCode cmd;
-		seconds netTimeout;
-		milliseconds execTimeout;
-		const IRdxCancelContext *cancelCtx;
-	};
 
 	template <typename... Argss>
 	void Call(const Completion &cmpl, const CommandParams &opts, Argss... argss) {

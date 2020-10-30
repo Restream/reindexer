@@ -68,8 +68,6 @@ public:
 		}
 		nodes[id].InitServer(id, port + id, port + 1000 + id, dbPathMaster + std::to_string(id), "db", true);
 	}
-
-private:
 };
 
 class TestNamespace1 {
@@ -607,4 +605,61 @@ TEST_F(ReplicationSlaveSlaveApi, NodeWithMasterAndSlaveNs3) {
 		testns4.GetData(slave, results_m);
 		EXPECT_TRUE(results_m.size() == n * 2);
 	}
+}
+
+TEST_F(ReplicationSlaveSlaveApi, Node3ApplyWal) {
+	// Node configuration:
+	//			master
+	//			  |
+	//			slave1
+	//            |
+	//          slave2
+	// Checks applying syncNamespaceByWAL on slave1 and slave2 node.
+
+	reindexer::fs::RmDirAll("/tmp/Node3ApplyWal");
+	std::string upDsn1 = "cproto://127.0.0.1:7770/db";
+	std::string upDsn2 = "cproto://127.0.0.1:7771/db";
+	const unsigned int n = 2000;  // 11;
+	{
+		ServerControl master;
+		master.InitServer(0, 7770, 7880, "/tmp/testNsMasterSlave/master", "db", true);
+		master.Get()->MakeMaster();
+		TestNamespace1 testns1(master, "ns1");
+		testns1.AddRows(master, 3000, n);
+		// start init of slave
+		{
+			ServerControl slave1;
+			slave1.InitServer(1, 7771, 7881, "/tmp/testNsMasterSlave/slave1", "db", true);
+			ServerControl slave2;
+			slave2.InitServer(2, 7772, 7882, "/tmp/testNsMasterSlave/slave2", "db", true);
+			ReplicationConfigTest configSlave1("slave", false, true, 1, upDsn1, "slave1");
+			slave1.Get()->MakeSlave(0, configSlave1);
+			ReplicationConfigTest configSlave2("slave", false, true, 1, upDsn2, "slave2");
+			slave2.Get()->MakeSlave(0, configSlave2);
+			WaitSync(master, slave1, "ns1");
+			WaitSync(master, slave2, "ns1");
+		}
+	}
+
+	{
+		ServerControl master;
+		master.InitServer(0, 7770, 7880, "/tmp/testNsMasterSlave/master", "db", true);
+		master.Get()->MakeMaster();
+		TestNamespace1 testns1(master, "ns1");
+		testns1.AddRows(master, 30000, n);
+	}
+	ServerControl slave1;
+	slave1.InitServer(1, 7771, 7881, "/tmp/testNsMasterSlave/slave1", "db", true);
+
+	ServerControl slave2;
+	slave2.InitServer(2, 7772, 7882, "/tmp/testNsMasterSlave/slave2", "db", true);
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+	ServerControl master;
+	master.InitServer(0, 7770, 7880, "/tmp/testNsMasterSlave/master", "db", true);
+	master.Get()->MakeMaster();
+
+	WaitSync(master, slave1, "ns1");
+	WaitSync(master, slave2, "ns1");
 }

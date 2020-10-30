@@ -6,8 +6,12 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/msgpackdecoder.h"
+#include "core/cjson/protobufbuilder.h"
+#include "core/cjson/protobufschemabuilder.h"
 #include "core/itemimpl.h"
+#include "core/namespace/namespace.h"
 #include "core/queryresults/tableviewbuilder.h"
+#include "core/schema.h"
 #include "core/type_consts.h"
 #include "gason/gason.h"
 #include "loggerwrapper.h"
@@ -28,31 +32,39 @@
 using std::string;
 using std::stringstream;
 
-const reindexer::string_view kParamNamespace = "namespaces";
-const reindexer::string_view kParamItems = "items";
-const reindexer::string_view kParamCacheEnabled = "cache_enabled";
-const reindexer::string_view kParamAggregations = "aggregations";
-const reindexer::string_view kParamExplain = "explain";
-const reindexer::string_view kParamTotalItems = "total_items";
-const reindexer::string_view kParamColumns = "columns";
-const reindexer::string_view kParamName = "name";
-const reindexer::string_view kParamWidthPercents = "width_percents";
-const reindexer::string_view kParamMaxChars = "max_chars";
-const reindexer::string_view kParamWidthChars = "width_chars";
-const reindexer::string_view kParamSuccess = "success";
-const reindexer::string_view kParamResponseCode = "response_code";
-const reindexer::string_view kParamDescription = "description";
-const reindexer::string_view kParamUpdated = "updated";
-const reindexer::string_view kParamLsn = "lsn";
-const reindexer::string_view kParamItem = "item";
-const reindexer::string_view kParamQueryTotalItems = "query_total_items";
-const reindexer::string_view kTxId = "tx_id";
+namespace reindexer_server {
+
+const string_view kParamNamespaces = "namespaces";
+const string_view kParamItems = "items";
+const string_view kParamCacheEnabled = "cache_enabled";
+const string_view kParamAggregations = "aggregations";
+const string_view kParamExplain = "explain";
+const string_view kParamTotalItems = "total_items";
+const string_view kParamColumns = "columns";
+const string_view kParamName = "name";
+const string_view kParamWidthPercents = "width_percents";
+const string_view kParamMaxChars = "max_chars";
+const string_view kParamWidthChars = "width_chars";
+const string_view kParamSuccess = "success";
+const string_view kParamResponseCode = "response_code";
+const string_view kParamDescription = "description";
+const string_view kParamUpdated = "updated";
+const string_view kParamLsn = "lsn";
+const string_view kParamItem = "item";
+const string_view kParamQueryTotalItems = "query_total_items";
+const string_view kTxId = "tx_id";
 constexpr size_t kTxIdLen = 20;
 constexpr auto kTxDeadlineCheckPeriod = std::chrono::seconds(1);
 
-namespace reindexer_server {
+std::unordered_map<string_view, int> kProtoQueryResultsFields = {{kParamItems, 1},	 {kParamNamespaces, 2},	 {kParamCacheEnabled, 3},
+																 {kParamExplain, 4}, {kParamTotalItems, 5},	 {kParamQueryTotalItems, 6},
+																 {kParamColumns, 7}, {kParamAggregations, 8}};
+std::unordered_map<string_view, int> kProtoColumnsFields = {
+	{kParamName, 1}, {kParamWidthPercents, 2}, {kParamMaxChars, 3}, {kParamWidthChars, 4}};
+std::unordered_map<string_view, int> kProtoModifyResultsFields = {{kParamItems, 1}, {kParamUpdated, 2}, {kParamSuccess, 3}};
+std::unordered_map<string_view, int> kProtoErrorResultsFields = {{kParamSuccess, 1}, {kParamResponseCode, 2}, {kParamDescription, 3}};
 
-HTTPServer::HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper logger, OptionalConfig config)
+HTTPServer::HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper &logger, OptionalConfig config)
 	: dbMgr_(dbMgr),
 	  prometheus_(config.prometheus),
 	  statsWatcher_(config.statsWatcher),
@@ -483,6 +495,7 @@ int HTTPServer::DeleteItems(http::Context &ctx) { return modifyItems(ctx, ModeDe
 
 int HTTPServer::PutItems(http::Context &ctx) { return modifyItems(ctx, ModeUpdate); }
 int HTTPServer::PostItems(http::Context &ctx) { return modifyItems(ctx, ModeInsert); }
+int HTTPServer::PatchItems(http::Context &ctx) { return modifyItems(ctx, ModeUpsert); }
 
 int HTTPServer::GetMetaList(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDataRead);
@@ -690,7 +703,7 @@ int HTTPServer::PutSchema(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDBAdmin);
 
 	string nsName = urldecode2(ctx.request->urlParams[1]);
-	if (!nsName.length()) {
+	if (nsName.empty()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
 
@@ -706,17 +719,120 @@ int HTTPServer::GetSchema(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDBAdmin);
 
 	string nsName = urldecode2(ctx.request->urlParams[1]);
-	if (!nsName.length()) {
+	if (nsName.empty()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
 
-	string schema;
-	auto status = db.GetSchema(nsName, schema);
+	std::string schema;
+	auto status = db.GetSchema(nsName, JsonSchemaType, schema);
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
 
-	return ctx.JSON(http::StatusOK, schema.empty() ? "{}"_sv : schema);
+	return ctx.JSON(http::StatusOK, schema.length() ? schema : "{}"_sv);
+}
+
+int HTTPServer::GetProtobufSchema(http::Context &ctx) {
+	Reindexer db = getDB(ctx, kRoleDBAdmin);
+
+	struct nsinfo {
+		std::string nsName, objName;
+		int nsNumber;
+	};
+	std::vector<nsinfo> nses;
+
+	for (auto &p : ctx.request->params) {
+		if (p.name == "ns"_sv || p.name == "ns[]"_sv) {
+			nses.push_back({urldecode2(p.val), "", 0});
+		}
+	}
+
+	WrSerializer ser;
+	ser << "// Autogenerated by reindexer server - do not edit!\n";
+	SchemaFieldsTypes fieldsTypes;
+	ProtobufSchemaBuilder schemaBuilder(&ser, &fieldsTypes, ObjType::TypePlain);
+
+	for (auto &ns : nses) {
+		std::string nsProtobufSchema;
+		Error status = db.GetSchema(ns.nsName, ProtobufSchemaType, nsProtobufSchema);
+		if (!status.ok()) {
+			return jsonStatus(ctx, http::HttpStatus(status));
+		}
+		ser << "// Message with document schema from namespace " << ns.nsName << "\n";
+		ser << nsProtobufSchema;
+		string_view objName = nsProtobufSchema;
+		auto pos1 = objName.find("message"_sv);
+		if (pos1 != string_view::npos) {
+			objName = objName.substr(pos1 + 8);
+			auto pos2 = objName.find(' ');
+			if (pos2 != string_view::npos) {
+				objName = objName.substr(0, pos2);
+			}
+		} else {
+			objName = ns.nsName;
+		}
+		ns.objName = std::string(objName);
+		QueryResults qr;
+		status = db.Select(Query(ns.nsName).Limit(0), qr);
+		if (!status.ok()) {
+			return jsonStatus(ctx, http::HttpStatus(status));
+		}
+		ns.nsNumber = qr.getNsNumber(0) + 1;
+	}
+
+	ser << "// Possible item schema variants in QueryResults or in ModifyResults\n";
+	schemaBuilder.Object(0, "ItemsUnion", false, [&](ProtobufSchemaBuilder &obj) {
+		ser << "oneof item {\n";
+		for (auto &ns : nses) {
+			obj.Field(ns.nsName, ns.nsNumber, FieldProps{KeyValueTuple, false, false, false, ns.objName});
+		};
+		ser << "}\n";
+	});
+
+	ser << "// The QueryResults message is schema of http API methods response:\n";
+	ser << "// - GET api/v1/db/:db/namespaces/:ns/items\n";
+	ser << "// - GET/POST api/v1/db/:db/query\n";
+	ser << "// - GET/POST api/v1/db/:db/sqlquery\n";
+	schemaBuilder.Object(0, "QueryResults", false, [](ProtobufSchemaBuilder &obj) {
+		obj.Field(kParamItems, kProtoQueryResultsFields[kParamItems], FieldProps{KeyValueTuple, true, false, false, "ItemsUnion"});
+		obj.Field(kParamNamespaces, kProtoQueryResultsFields[kParamNamespaces], FieldProps{KeyValueString, true});
+		obj.Field(kParamCacheEnabled, kProtoQueryResultsFields[kParamCacheEnabled], FieldProps{KeyValueBool});
+		obj.Field(kParamExplain, kProtoQueryResultsFields[kParamExplain], FieldProps{KeyValueString});
+		obj.Field(kParamTotalItems, kProtoQueryResultsFields[kParamTotalItems], FieldProps{KeyValueInt});
+		obj.Field(kParamQueryTotalItems, kProtoQueryResultsFields[kParamQueryTotalItems], FieldProps{KeyValueInt});
+
+		obj.Object(kProtoQueryResultsFields[kParamColumns], "Columns", false, [](ProtobufSchemaBuilder &obj) {
+			obj.Field(kParamName, kProtoColumnsFields[kParamName], FieldProps{KeyValueString});
+			obj.Field(kParamWidthPercents, kProtoColumnsFields[kParamWidthPercents], FieldProps{KeyValueDouble});
+			obj.Field(kParamMaxChars, kProtoColumnsFields[kParamMaxChars], FieldProps{KeyValueInt});
+			obj.Field(kParamWidthChars, kProtoColumnsFields[kParamWidthChars], FieldProps{KeyValueInt});
+		});
+
+		obj.Field(kParamColumns, kProtoQueryResultsFields[kParamColumns], FieldProps{KeyValueTuple, true, false, false, "Columns"});
+
+		AggregationResult::GetProtobufSchema(obj);
+		obj.Field(kParamAggregations, kProtoQueryResultsFields[kParamAggregations],
+				  FieldProps{KeyValueTuple, true, false, false, "AggregationResults"});
+	});
+
+	ser << "// The ModifyResults message is schema of http API methods response:\n";
+	ser << "// - PUT/POST/DELETE api/v1/db/:db/namespaces/:ns/items\n";
+	schemaBuilder.Object(0, "ModifyResults", false, [](ProtobufSchemaBuilder &obj) {
+		obj.Field(kParamItems, kProtoModifyResultsFields[kParamItems], FieldProps{KeyValueTuple, true, false, false, "ItemsUnion"});
+		obj.Field(kParamUpdated, kProtoModifyResultsFields[kParamUpdated], FieldProps{KeyValueInt});
+		obj.Field(kParamSuccess, kProtoModifyResultsFields[kParamSuccess], FieldProps{KeyValueBool});
+	});
+
+	ser << "// The ErrorResponse message is schema of http API methods response on error condition \n";
+	ser << "// With non 200 http status code\n";
+	schemaBuilder.Object(0, "ErrorResponse", false, [](ProtobufSchemaBuilder &obj) {
+		obj.Field(kParamSuccess, kProtoErrorResultsFields[kParamSuccess], FieldProps{KeyValueBool});
+		obj.Field(kParamResponseCode, kProtoErrorResultsFields[kParamResponseCode], FieldProps{KeyValueInt});
+		obj.Field(kParamDescription, kProtoErrorResultsFields[kParamDescription], FieldProps{KeyValueString});
+	});
+	schemaBuilder.End();
+
+	return ctx.String(http::StatusOK, ser.Slice());
 }
 
 int HTTPServer::DeleteIndex(http::Context &ctx) {
@@ -852,10 +968,12 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	router_.GET<HTTPServer, &HTTPServer::GetSQLQuery>("/api/v1/db/:db/query", this);
 	router_.POST<HTTPServer, &HTTPServer::PostQuery>("/api/v1/db/:db/query", this);
 	router_.POST<HTTPServer, &HTTPServer::PostSQLQuery>("/api/v1/db/:db/sqlquery", this);
-    router_.POST<HTTPServer, &HTTPServer::UpdateQuery>("/api/v1/db/:db/dslquery", this);
+	router_.POST<HTTPServer, &HTTPServer::UpdateQuery>("/api/v1/db/:db/dslquery", this);
 	router_.DELETE<HTTPServer, &HTTPServer::DeleteQuery>("/api/v1/db/:db/query", this);
 	// router_.PUT<HTTPServer, &HTTPServer::UpdateQuery>("/api/v1/db/:db/query", this); TODO: implement dsl parsing
 	router_.GET<HTTPServer, &HTTPServer::GetSQLSuggest>("/api/v1/db/:db/suggest", this);
+
+	router_.GET<HTTPServer, &HTTPServer::GetProtobufSchema>("/api/v1/db/:db/protobuf_schema", this);
 
 	router_.GET<HTTPServer, &HTTPServer::GetDatabases>("/api/v1/db", this);
 	router_.POST<HTTPServer, &HTTPServer::PostDatabase>("/api/v1/db", this);
@@ -871,6 +989,7 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	router_.GET<HTTPServer, &HTTPServer::GetItems>("/api/v1/db/:db/namespaces/:ns/items", this);
 	router_.PUT<HTTPServer, &HTTPServer::PutItems>("/api/v1/db/:db/namespaces/:ns/items", this);
 	router_.POST<HTTPServer, &HTTPServer::PostItems>("/api/v1/db/:db/namespaces/:ns/items", this);
+	router_.PATCH<HTTPServer, &HTTPServer::PatchItems>("/api/v1/db/:db/namespaces/:ns/items", this);
 	router_.DELETE<HTTPServer, &HTTPServer::DeleteItems>("/api/v1/db/:db/namespaces/:ns/items", this);
 
 	router_.GET<HTTPServer, &HTTPServer::GetIndexes>("/api/v1/db/:db/namespaces/:ns/indexes", this);
@@ -889,6 +1008,7 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	router_.POST<HTTPServer, &HTTPServer::RollbackTx>("/api/v1/db/:db/transactions/:tx/rollback", this);
 	router_.PUT<HTTPServer, &HTTPServer::PutItemsTx>("/api/v1/db/:db/transactions/:tx/items", this);
 	router_.POST<HTTPServer, &HTTPServer::PostItemsTx>("/api/v1/db/:db/transactions/:tx/items", this);
+	router_.PATCH<HTTPServer, &HTTPServer::PatchItemsTx>("/api/v1/db/:db/transactions/:tx/items", this);
 	router_.DELETE<HTTPServer, &HTTPServer::DeleteItemsTx>("/api/v1/db/:db/transactions/:tx/items", this);
 	router_.GET<HTTPServer, &HTTPServer::GetSQLQueryTx>("/api/v1/db/:db/transactions/:tx/query", this);
 	router_.DELETE<HTTPServer, &HTTPServer::DeleteQueryTx>("/api/v1/db/:db/transactions/:tx/query", this);
@@ -1031,6 +1151,46 @@ int HTTPServer::modifyItemsMsgPack(http::Context &ctx, string &nsName, const vec
 	return ctx.MSGPACK(http::StatusOK, wrSer.DetachChunk());
 }
 
+int HTTPServer::modifyItemsProtobuf(http::Context &ctx, string &nsName, const vector<string> &precepts, ItemModifyMode mode) {
+	WrSerializer wrSer(ctx.writer->GetChunk());
+	ProtobufBuilder builder(&wrSer);
+
+	auto sendResponse = [&](int items, const Error &err) {
+		if (err.ok()) {
+			builder.Put(kProtoModifyResultsFields[kParamUpdated], int(items));
+			builder.Put(kProtoModifyResultsFields[kParamSuccess], err.ok());
+		} else {
+			builder.Put(kProtoErrorResultsFields[kParamDescription], err.what());
+			builder.Put(kProtoErrorResultsFields[kParamResponseCode], err.code());
+		}
+		return ctx.Protobuf(reindexer::net::http::HttpStatus::errCodeToHttpStatus(err.code()), wrSer.DetachChunk());
+	};
+
+	auto db = getDB(ctx, kRoleDataWrite);
+	Item item = db.NewItem(nsName);
+	if (!item.Status().ok()) return sendResponse(0, item.Status());
+
+	string sbuffer = ctx.body->Read();
+	Error status = item.FromProtobuf(string_view(sbuffer.data(), sbuffer.size()));
+	if (!status.ok()) return sendResponse(0, status);
+
+	item.SetPrecepts(precepts);
+	status = modifyItem(db, nsName, item, mode);
+	if (!status.ok()) return sendResponse(0, item.Status());
+
+	int totalItems = 0;
+	if (item.GetID() != -1) {
+		if (!precepts.empty()) {
+			auto object = builder.Object(kProtoModifyResultsFields[kParamItems]);
+			status = item.GetProtobuf(wrSer);
+			object.End();
+		}
+		++totalItems;
+	}
+
+	return sendResponse(totalItems, item.Status());
+}
+
 int HTTPServer::modifyItemsTxJSON(http::Context &ctx, Transaction &tx, const vector<string> &precepts, ItemModifyMode mode) {
 	string itemJson = ctx.body->Read();
 	char *jsonPtr = &itemJson[0];
@@ -1089,8 +1249,14 @@ int HTTPServer::modifyItems(http::Context &ctx, ItemModifyMode mode) {
 		}
 	}
 
-	auto format = ctx.request->params.Get("format"_sv);
-	return format == "msgpack"_sv ? modifyItemsMsgPack(ctx, nsName, precepts, mode) : modifyItemsJSON(ctx, nsName, precepts, mode);
+	auto format = ctx.request->params.Get("format");
+	if (format == "msgpack"_sv) {
+		return modifyItemsMsgPack(ctx, nsName, precepts, mode);
+	} else if (format == "protobuf"_sv) {
+		return modifyItemsProtobuf(ctx, nsName, precepts, mode);
+	} else {
+		return modifyItemsJSON(ctx, nsName, precepts, mode);
+	}
 }
 
 int HTTPServer::modifyItemsTx(http::Context &ctx, ItemModifyMode mode) {
@@ -1194,11 +1360,77 @@ int HTTPServer::queryResultsMsgPack(http::Context &ctx, reindexer::QueryResults 
 	return ctx.MSGPACK(http::StatusOK, wrSer.DetachChunk());
 }
 
+int HTTPServer::queryResultsProtobuf(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
+									 bool withColumns, int width) {
+	WrSerializer wrSer(ctx.writer->GetChunk());
+	ProtobufBuilder protobufBuilder(&wrSer);
+
+	int itemsField = kProtoQueryResultsFields[kParamItems];
+	for (size_t i = offset; i < res.Count() && i < offset + limit; i++) {
+		auto item = protobufBuilder.Object(itemsField);
+		auto it = res[i];
+		auto i1 = item.Object(res.getNsNumber(it.GetItemRef().Nsid()) + 1);
+		it.GetProtobuf(wrSer, false);
+		i1.End();
+		item.End();
+	}
+
+	int aggregationField = kProtoQueryResultsFields[kParamAggregations];
+	for (unsigned i = 0; i < res.aggregationResults.size(); i++) {
+		auto aggregation = protobufBuilder.Object(aggregationField);
+		res.aggregationResults[i].GetProtobuf(wrSer);
+		aggregation.End();
+	}
+
+	int nsField = kProtoQueryResultsFields[kParamNamespaces];
+	h_vector<string_view, 1> namespaces(res.GetNamespaces());
+	for (auto ns : namespaces) {
+		protobufBuilder.Put(nsField, ns);
+	}
+
+	bool isWALQuery = res.Count() && res[0].IsRaw();
+	protobufBuilder.Put(kProtoQueryResultsFields[kParamCacheEnabled], res.IsCacheEnabled() && !isWALQuery);
+
+	if (!res.GetExplainResults().empty()) {
+		protobufBuilder.Put(kProtoQueryResultsFields[kParamExplain], res.GetExplainResults());
+	}
+
+	if (!isQueryResults || limit != kDefaultLimit) {
+		protobufBuilder.Put(kProtoQueryResultsFields[kParamTotalItems],
+							isQueryResults ? static_cast<int64_t>(res.Count()) : static_cast<int64_t>(res.totalCount));
+	}
+
+	if (isQueryResults && res.totalCount) {
+		protobufBuilder.Put(kProtoQueryResultsFields[kParamQueryTotalItems], res.totalCount);
+		if (limit == kDefaultLimit) {
+			protobufBuilder.Put(kProtoQueryResultsFields[kParamTotalItems], res.totalCount);
+		}
+	}
+
+	if (withColumns) {
+		reindexer::TableCalculator<reindexer::QueryResults> tableCalculator(res, width, limit);
+		auto &header = tableCalculator.GetHeader();
+		auto &columnsSettings = tableCalculator.GetColumnsSettings();
+		for (auto it = header.begin(); it != header.end(); ++it) {
+			ColumnData &data = columnsSettings[*it];
+			auto parameteresObj = protobufBuilder.Object(kProtoQueryResultsFields[kParamColumns]);
+			parameteresObj.Put(kProtoColumnsFields[kParamName], *it);
+			parameteresObj.Put(kProtoColumnsFields[kParamWidthPercents], data.widthTerminalPercentage);
+			parameteresObj.Put(kProtoColumnsFields[kParamMaxChars], data.maxWidthCh);
+			parameteresObj.Put(kProtoColumnsFields[kParamWidthChars], data.widthCh);
+			parameteresObj.End();
+		}
+	}
+
+	protobufBuilder.End();
+	return ctx.Protobuf(http::StatusOK, wrSer.DetachChunk());
+}
+
 template <typename Builder>
 void HTTPServer::queryResultParams(Builder &builder, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, bool withColumns,
 								   int width) {
 	h_vector<string_view, 1> namespaces(res.GetNamespaces());
-	auto namespacesArray = builder.Array(kParamNamespace, namespaces.size());
+	auto namespacesArray = builder.Array(kParamNamespaces, namespaces.size());
 	for (auto ns : namespaces) {
 		namespacesArray.Put(nullptr, ns);
 	}
@@ -1242,19 +1474,25 @@ int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, b
 	string_view widthParam = ctx.request->params.Get("width"_sv);
 	int width = stoi(widthParam);
 
-	string_view withColumnsParam = ctx.request->params.Get("with_columns"_sv);
+	string_view format = ctx.request->params.Get("format");
+	string_view withColumnsParam = ctx.request->params.Get("with_columns");
 	bool withColumns = ((withColumnsParam == "1") && (width > 0)) ? true : false;
 
-	if (ctx.request->params.Get("format"_sv) == "msgpack"_sv) {
+	if (format == "msgpack"_sv) {
 		return queryResultsMsgPack(ctx, res, isQueryResults, limit, offset, withColumns, width);
+	} else if (format == "protobuf"_sv) {
+		return queryResultsProtobuf(ctx, res, isQueryResults, limit, offset, withColumns, width);
 	} else {
 		return queryResultsJSON(ctx, res, isQueryResults, limit, offset, withColumns, width);
 	}
 }
 
 int HTTPServer::status(http::Context &ctx, const http::HttpStatus &status) {
-	if (ctx.request->params.Get("format"_sv) == "msgpack"_sv) {
+	string_view format = ctx.request->params.Get("format"_sv);
+	if (format == "msgpack"_sv) {
 		return msgpackStatus(ctx, status);
+	} else if (format == "protobuf") {
+		return protobufStatus(ctx, status);
 	} else {
 		return jsonStatus(ctx, status);
 	}
@@ -1278,6 +1516,16 @@ int HTTPServer::jsonStatus(http::Context &ctx, const http::HttpStatus &status) {
 	builder.Put(kParamDescription, status.what);
 	builder.End();
 	return ctx.JSON(status.code, ser.DetachChunk());
+}
+
+int HTTPServer::protobufStatus(http::Context &ctx, const http::HttpStatus &status) {
+	WrSerializer ser(ctx.writer->GetChunk());
+	ProtobufBuilder builder(&ser);
+	builder.Put(kProtoErrorResultsFields[kParamSuccess], status.code == http::StatusOK);
+	builder.Put(kProtoErrorResultsFields[kParamResponseCode], int(status.code));
+	builder.Put(kProtoErrorResultsFields[kParamDescription], status.what);
+	builder.End();
+	return ctx.Protobuf(status.code, ser.DetachChunk());
 }
 
 unsigned HTTPServer::prepareLimit(const string_view &limitParam, int limitDefault) {
@@ -1516,6 +1764,8 @@ int HTTPServer::RollbackTx(http::Context &ctx) {
 int HTTPServer::PostItemsTx(http::Context &ctx) { return modifyItemsTx(ctx, ModeInsert); }
 
 int HTTPServer::PutItemsTx(http::Context &ctx) { return modifyItemsTx(ctx, ModeUpdate); }
+
+int HTTPServer::PatchItemsTx(http::Context &ctx) { return modifyItemsTx(ctx, ModeUpsert); }
 
 int HTTPServer::DeleteItemsTx(http::Context &ctx) { return modifyItemsTx(ctx, ModeDelete); }
 

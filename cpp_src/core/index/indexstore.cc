@@ -6,6 +6,13 @@
 
 namespace reindexer {
 
+template <>
+IndexStore<Point>::IndexStore(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields)
+	: Index(idef, payloadType, fields) {
+	keyType_ = selectKeyType_ = KeyValueDouble;
+	opts_.Array(true);
+}
+
 struct StrDeepClean {
 	void operator()(unordered_str_map<int>::value_type &v) const { v.first = key_string(); }
 };
@@ -26,6 +33,20 @@ void IndexStore<key_string>::Delete(const Variant &key, IdType id) {
 }
 template <typename T>
 void IndexStore<T>::Delete(const Variant & /*key*/, IdType /* id */) {}
+
+template <typename T>
+void IndexStore<T>::Delete(const VariantArray &keys, IdType id) {
+	if (keys.empty()) {
+		Delete(Variant{}, id);
+	} else {
+		for (const auto &key : keys) Delete(key, id);
+	}
+}
+
+template <>
+void IndexStore<Point>::Delete(const VariantArray & /*keys*/, IdType /*id*/) {
+	assert(0);
+}
 
 template <>
 Variant IndexStore<key_string>::Upsert(const Variant &key, IdType /*id*/) {
@@ -53,6 +74,23 @@ Variant IndexStore<T>::Upsert(const Variant &key, IdType id) {
 		idx_data[id] = static_cast<T>(key);
 	}
 	return Variant(key);
+}
+
+template <typename T>
+void IndexStore<T>::Upsert(VariantArray &result, const VariantArray &keys, IdType id, bool needUpsertEmptyValue) {
+	if (keys.empty()) {
+		if (needUpsertEmptyValue) {
+			Upsert(Variant{}, id);
+		}
+	} else {
+		result.reserve(keys.size());
+		for (const auto &key : keys) result.emplace_back(Upsert(key, id));
+	}
+}
+
+template <>
+void IndexStore<Point>::Upsert(VariantArray & /*result*/, const VariantArray & /*keys*/, IdType /*id*/, bool /*needUpsertEmptyValue*/) {
+	assert(0);
 }
 
 template <typename T>
@@ -108,5 +146,6 @@ Index *IndexStore_New(const IndexDef &idef, const PayloadType payloadType, const
 }
 
 template class IndexStore<PayloadValue>;
+template class IndexStore<Point>;
 
 }  // namespace reindexer

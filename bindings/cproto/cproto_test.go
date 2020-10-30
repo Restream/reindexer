@@ -89,7 +89,32 @@ func TestCprotoPool(t *testing.T) {
 			t.Fatalf("getConn not rotate conn")
 		}
 	})
+}
 
+func TestCprotoStatus(t *testing.T) {
+	t.Run("check error status", func(t *testing.T) {
+		srv := helpers.TestServer{T: t, RpcPort: "6661", HttpPort: "9961", DbName: "cproto"}
+		dsn := fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv.RpcPort, srv.DbName, srv.RpcPort)
+
+		err := srv.Run()
+		assert.NoError(t, err)
+		defer srv.Stop()
+
+		u, err := url.Parse(dsn)
+		assert.NoError(t, err)
+		c := new(NetCProto)
+		err = c.Init([]url.URL{*u})
+		assert.NoError(t, err)
+
+		status := c.Status(context.Background())
+		assert.NoError(t, status.Err)
+		srv.Stop()
+		status = c.Status(context.Background())
+		assert.Error(t, status.Err)
+		err = srv.Run()
+		status = c.Status(context.Background())
+		assert.NoError(t, status.Err)
+	})
 }
 
 func runTestServer() (s *testServer, addr *url.URL, err error) {

@@ -1,3 +1,25 @@
+# Version 2.14.0 (30.10.2020)
+
+## Core
+- [fea] Add geometry indexes support
+- [fea] Add logs for current query in case of crash
+- [fix] Fix secondary slave replication after main master restart
+- [fix] Fix set and update methods for non-indexed array fields
+- [fix] Fix select filters for aggregation functions
+
+## Reindexer server
+- [fea] Add protobuf schema generating and protobuf data handling
+- [fea] Add upsert command to http-api
+- [fix] Fix outdated namespace removing from prometheus stats
+
+# Reindexer tool
+- [fix] Fix command execution iterrupts on SIGINT
+- [fix] Disable replicator for reindexer_tool
+
+# Go connector
+- [fix] Fix objects cache size setting
+- [fix] Fix Status()-call for cproto-connector
+
 # Version 2.13.0 (18.09.2020)
 
 # Core

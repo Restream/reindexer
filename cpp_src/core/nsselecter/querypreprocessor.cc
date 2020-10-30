@@ -173,8 +173,10 @@ void QueryPreprocessor::convertWhereValues(QueryEntry *qe) const {
 	}
 
 	if (keyType != KeyValueUndefined) {
-		for (auto &key : qe->values) {
-			key.convert(keyType, &ns_.payloadType_, fields);
+		if (qe->condition != CondDWithin) {
+			for (auto &key : qe->values) {
+				key.convert(keyType, &ns_.payloadType_, fields);
+			}
 		}
 	} else if (!isIndexField && qe->joinIndex == QueryEntry::kNoJoins) {
 		if (strictMode_ == StrictModeNames && ns_.tagsMatcher_.path2tag(qe->index).empty()) {

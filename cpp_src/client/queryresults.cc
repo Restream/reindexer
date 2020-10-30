@@ -93,8 +93,8 @@ void QueryResults::Bind(string_view rawResult, int queryID) {
 void QueryResults::fetchNextResults() {
 	using std::chrono::seconds;
 	int flags = fetchFlags_ ? (fetchFlags_ & ~kResultsWithPayloadTypes) : kResultsCJson;
-	auto ret = conn_->Call({cproto::kCmdFetchResults, requestTimeout_, milliseconds(0)}, queryID_, flags, queryParams_.count + fetchOffset_,
-						   fetchAmount_);
+	auto ret = conn_->Call({cproto::kCmdFetchResults, requestTimeout_, milliseconds(0), nullptr}, queryID_, flags,
+						   queryParams_.count + fetchOffset_, fetchAmount_);
 	if (!ret.Status().ok()) {
 		throw ret.Status();
 	}

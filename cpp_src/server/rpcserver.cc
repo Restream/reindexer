@@ -14,7 +14,7 @@ namespace reindexer_server {
 const reindexer::SemVersion kMinUnknownReplSupportRxVersion("2.6.0");
 const size_t kMaxTxCount = 1024;
 
-RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper logger, IClientsStats *clientsStats, bool allocDebug, IStatsWatcher *statsCollector)
+RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper &logger, IClientsStats *clientsStats, bool allocDebug, IStatsWatcher *statsCollector)
 	: dbMgr_(dbMgr),
 	  logger_(logger),
 	  allocDebug_(allocDebug),

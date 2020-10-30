@@ -5,6 +5,7 @@
 #include "core/keyvalue/p_string.h"
 #include "jsonbuilder.h"
 #include "msgpackbuilder.h"
+#include "protobufbuilder.h"
 #include "tagsmatcher.h"
 #include "tools/serializer.h"
 
@@ -17,6 +18,7 @@ template <typename Builder>
 void BaseEncoder<Builder>::Encode(string_view tuple, Builder& builder, IAdditionalDatasource<Builder>* ds) {
 	Serializer rdser(tuple);
 	builder.SetTagsMatcher(tagsMatcher_);
+	builder.SetTagsPath(&curTagsPath_);
 
 	ctag begTag = rdser.GetVarUint();
 	(void)begTag;
@@ -39,6 +41,7 @@ void BaseEncoder<Builder>::Encode(ConstPayload* pl, Builder& builder, IAdditiona
 
 	for (int i = 0; i < pl->NumFields(); ++i) fieldsoutcnt_[i] = 0;
 	builder.SetTagsMatcher(tagsMatcher_);
+	builder.SetTagsPath(&curTagsPath_);
 	ctag begTag = rdser.GetVarUint();
 	(void)begTag;
 	assert(begTag.Type() == TAG_OBJECT);
@@ -120,9 +123,11 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 		return false;
 	}
 
-	if (tag.Name() && filter_) {
+	if (tag.Name()) {
 		curTagsPath_.push_back(tag.Name());
-		visible = visible && filter_->match(curTagsPath_);
+		if (filter_) {
+			visible = visible && filter_->match(curTagsPath_);
+		}
 	}
 
 	int tagField = tag.Field();
@@ -196,7 +201,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 			}
 		}
 	}
-	if (tag.Name() && filter_) curTagsPath_.pop_back();
+	if (tag.Name()) curTagsPath_.pop_back();
 
 	return true;
 }
@@ -282,6 +287,7 @@ string_view BaseEncoder<Builder>::getPlTuple(ConstPayload* pl) {
 template class BaseEncoder<JsonBuilder>;
 template class BaseEncoder<CJsonBuilder>;
 template class BaseEncoder<MsgPackBuilder>;
+template class BaseEncoder<ProtobufBuilder>;
 template class BaseEncoder<FieldsExtractor>;
 
 }  // namespace reindexer

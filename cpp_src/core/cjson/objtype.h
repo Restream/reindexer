@@ -3,6 +3,6 @@
 enum class ObjType {
 	TypeObject,
 	TypeArray,
-    TypeObjectArray,
+	TypeObjectArray,
 	TypePlain,
 };

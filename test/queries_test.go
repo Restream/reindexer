@@ -136,6 +136,13 @@ type TestItemSimple struct {
 	Phone string
 }
 
+type TestItemGeom struct {
+	ID                  int        `reindex:"id,,pk"`
+	PointRTreeLinear    [2]float64 `reindex:"point_rtree_linear,rtree,linear"`
+	PointRTreeQuadratic [2]float64 `reindex:"point_rtree_quadratic,rtree,quadratic"`
+	PointNonIndex       [2]float64 `json:"point_non_index"`
+}
+
 type TestItemCustom struct {
 	Actor             Actor `reindex:"actor"`
 	Genre             int64
@@ -199,6 +206,7 @@ func init() {
 	tnamespaces["test_items_with_sparse"] = TestItemWithSparse{}
 
 	tnamespaces["test_items_simple"] = TestItemSimple{}
+	tnamespaces["test_items_geom"] = TestItemGeom{}
 	tnamespaces["test_items_simple_cmplx_pk"] = TestItemSimpleCmplxPK{}
 	tnamespaces["test_items_not"] = TestItemSimple{}
 	tnamespaces["test_items_delete_query"] = TestItem{}
@@ -254,6 +262,15 @@ func newTestItem(id int, pkgsCount int) interface{} {
 		Actor: Actor{
 			Name: randString(),
 		},
+	}
+}
+
+func newTestItemGeom(id int, pkgsCount int) interface{} {
+	return &TestItemGeom{
+		ID:                  mkID(id),
+		PointRTreeLinear:    randPoint(),
+		PointRTreeQuadratic: randPoint(),
+		PointNonIndex:       randPoint(),
 	}
 }
 
@@ -407,6 +424,8 @@ func TestQueries(t *testing.T) {
 
 		FillTestItemsWithFunc("test_items", 0, 2500, 20, newTestItem)
 		FillTestItemsWithFunc("test_items", 2500, 2500, 0, newTestItem)
+		FillTestItemsWithFunc("test_items_geom", 0, 2500, 0, newTestItemGeom)
+		CheckTestItemsGeomQueries(t)
 
 		FillTestItemsForNot()
 		CheckNotQueries(t)
@@ -459,6 +478,8 @@ func TestQueries(t *testing.T) {
 
 		FillTestItems("test_items", 3000, 1000, 0)
 		FillTestItems("test_items", 4000, 500, 20)
+		FillTestItemsWithFunc("test_items_geom", 2500, 5000, 0, newTestItemGeom)
+		CheckTestItemsGeomQueries(t)
 		CheckTestItemsQueries(t, testCaseWithCommonIndexes)
 		CheckTestItemsSQLQueries(t)
 		CheckTestItemsDSLQueries(t)
@@ -1101,6 +1122,13 @@ func CheckTestItemsQueries(t *testing.T, testCase IndexesTestCase) {
 			}
 		}
 	}
+}
+
+func CheckTestItemsGeomQueries(t *testing.T) {
+	// Checks that DWithin works and verifies the result
+	newTestQuery(DB, "test_items_geom").DWithin("point_non_index", randPoint(), randFloat(0, 2, 6)).ExecAndVerify(t)
+	newTestQuery(DB, "test_items_geom").DWithin("point_rtree_linear", randPoint(), randFloat(0, 2, 6)).ExecAndVerify(t)
+	newTestQuery(DB, "test_items_geom").DWithin("point_rtree_quadratic", randPoint(), randFloat(0, 2, 6)).ExecAndVerify(t)
 }
 
 func CheckTestItemsSQLQueries(t *testing.T) {

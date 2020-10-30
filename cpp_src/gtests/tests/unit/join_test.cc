@@ -521,7 +521,7 @@ TEST_F(JoinSelectsApi, JoinWithSelectFilter) {
 
 		for (auto fieldIt = joinIt.begin(); fieldIt != joinIt.end(); ++fieldIt) {
 			QueryResults jqr = fieldIt.ToQueryResults();
-			jqr.addNSContext(qr.getPayloadType(1), qr.getTagsMatcher(1), qr.getFieldsFilter(1));
+			jqr.addNSContext(qr.getPayloadType(1), qr.getTagsMatcher(1), qr.getFieldsFilter(1), qr.getSchema(1));
 			for (auto jit : jqr) {
 				wrser.Reset();
 				jit.GetJSON(wrser, false);

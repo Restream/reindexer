@@ -1,5 +1,6 @@
 
 #include "sqlparser.h"
+#include "core/keyvalue/geometry.h"
 #include "core/keyvalue/key_string.h"
 #include "core/query/query.h"
 #include "core/queryresults/aggregationresult.h"
@@ -89,6 +90,9 @@ int SQLParser::selectParse(tokenizer &parser) {
 			tok = peekSqlToken(parser, SingleSelectFieldSqlToken);
 			AggType agg = AggregationResult::strToAggType(name.text());
 			if (agg != AggUnknown) {
+				if (!query_.CanAddAggregation(agg) || (wasSelectFilter && agg != AggDistinct)) {
+					throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
+				}
 				AggregateEntry entry{agg, {string(tok.text())}, UINT_MAX, 0};
 				tok = parser.next_token();
 				for (tok = parser.peek_token(); tok.text() == ","_sv; tok = parser.peek_token()) {
@@ -145,10 +149,16 @@ int SQLParser::selectParse(tokenizer &parser) {
 			tok = peekSqlToken(parser, SelectFieldsListSqlToken);
 
 		} else if (name.text() != "*"_sv) {
+			if (!query_.CanAddSelectFilter()) {
+				throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
+			}
 			query_.selectFilter_.push_back(string(nameWithCase.text()));
 			query_.count = UINT_MAX;
 			wasSelectFilter = true;
 		} else if (name.text() == "*"_sv) {
+			if (!query_.CanAddSelectFilter()) {
+				throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
+			}
 			query_.count = UINT_MAX;
 			wasSelectFilter = true;
 			query_.selectFilter_.clear();
@@ -570,6 +580,9 @@ int SQLParser::parseWhere(tokenizer &parser) {
 				auto jtype = nextOp == OpOr ? JoinType::OrInnerJoin : JoinType::InnerJoin;
 				query_.nextOp_ = OpAnd;
 				parseJoin(jtype, parser);
+			} else if (iequals(tok.text(), "st_dwithin"_sv)) {
+				parseDWithin(parser, nextOp);
+				nextOp = OpAnd;
 			} else {
 				QueryEntry entry;
 				// Index name
@@ -696,6 +709,125 @@ void SQLParser::parseEqualPositions(tokenizer &parser) {
 					fields.size() ? fields[0] : "");  // -V547
 	}
 	query_.equalPositions_.emplace(query_.entries.DetermineEqualPositionIndexes(fields));
+}
+
+Point SQLParser::parseGeomFromText(tokenizer &parser) const {
+	auto tok = parser.next_token();
+	if (tok.text() != "("_sv) {
+		throw Error(errParseSQL, "Expected '(', but found %s, %s", tok.text(), parser.where());
+	}
+	tok = parser.next_token();
+	if (tok.type != TokenString) {
+		throw Error(errParseSQL, "Expected text, but found %s, %s", tok.text(), parser.where());
+	}
+	string_view tokenText = tok.text();
+	string_view str = skipSpace(tokenText);
+	if (!checkIfStartsWith("point"_sv, str)) {
+		throw Error(errParseSQL, "Expected geometry object, but found %s, %s", tok.text(), parser.where());
+	}
+	str = skipSpace(str.substr(5));
+	if (str.empty() || str[0] != '(') {
+		throw Error(errParseSQL, "Expected '(' after '%s', but found '%s' in %s, %s", tokenText.substr(0, tokenText.size() - str.size()),
+					str, tok.text(), parser.where());
+	}
+	str = skipSpace(str.substr(1));
+	size_t pos;
+	double x, y;
+	try {
+		x = std::stod(std::string(str), &pos);
+	} catch (...) {
+		throw Error(errParseSQL, "Expected first number argument after '%s', but found '%s' in %s, %s",
+					tokenText.substr(0, tokenText.size() - str.size()), str, tok.text(), parser.where());
+	}
+	if (pos >= str.size()) {
+		throw Error(errParseSQL, "Expected space after '%s', but found nothing in %s, %s", tokenText, tok.text(), parser.where());
+	}
+	str = skipSpace(str.substr(pos));
+	try {
+		y = std::stod(std::string(str), &pos);
+	} catch (...) {
+		throw Error(errParseSQL, "Expected second number argument after '%s', but found '%s' in %s, %s",
+					tokenText.substr(0, tokenText.size() - str.size()), str, tok.text(), parser.where());
+	}
+	if (pos >= str.size()) {
+		throw Error(errParseSQL, "Expected ')' after '%s', but found nothing in %s, %s", tokenText, tok.text(), parser.where());
+	}
+	str = skipSpace(str.substr(pos));
+	if (str.empty() || str[0] != ')') {
+		throw Error(errParseSQL, "Expected ')' after '%s', but found '%s' in %s, %s", tokenText.substr(0, tokenText.size() - str.size()),
+					str, tok.text(), parser.where());
+	}
+	str = skipSpace(str.substr(1));
+	if (!str.empty()) {
+		throw Error(errParseSQL, "Expected nothing after '%s', but found '%s' in %s, %s",
+					tokenText.substr(0, tokenText.size() - str.size()), str, tok.text(), parser.where());
+	}
+
+	tok = parser.next_token();
+	if (tok.text() != ")"_sv) {
+		throw Error(errParseSQL, "Expected ')', but found %s, %s", tok.text(), parser.where());
+	}
+	return {x, y};
+}
+
+void SQLParser::parseDWithin(tokenizer &parser, OpType nextOp) {
+	Point point;
+	std::string field;
+
+	auto tok = parser.next_token();
+	if (tok.text() != "("_sv) {
+		throw Error(errParseSQL, "Expected '(', but found %s, %s", tok.text(), parser.where());
+	}
+
+	peekSqlToken(parser, GeomFieldSqlToken);
+	tok = parser.next_token();
+	if (iequals(tok.text(), "st_geomfromtext"_sv)) {
+		point = parseGeomFromText(parser);
+	} else {
+		field = std::string(tok.text());
+	}
+
+	tok = parser.next_token();
+	if (tok.text() != ","_sv) {
+		throw Error(errParseSQL, "Expected ',', but found %s, %s", tok.text(), parser.where());
+	}
+
+	peekSqlToken(parser, GeomFieldSqlToken);
+	tok = parser.next_token();
+	if (iequals(tok.text(), "st_geomfromtext"_sv)) {
+		if (field.empty()) {
+			throw Error(errParseSQL, "Expected field name, but found %s, %s", tok.text(), parser.where());
+		}
+		point = parseGeomFromText(parser);
+	} else {
+		if (!field.empty()) {
+			throw Error(errParseSQL, "Expected geometry object, but found %s, %s", tok.text(), parser.where());
+		}
+		field = std::string(tok.text());
+	}
+
+	tok = parser.next_token();
+	if (tok.text() != ","_sv) {
+		throw Error(errParseSQL, "Expected ',', but found %s, %s", tok.text(), parser.where());
+	}
+
+	tok = parser.next_token();
+	const auto distance = token2kv(tok, parser, false);
+	if (distance.Type() != KeyValueInt64 && distance.Type() != KeyValueDouble) {
+		throw Error(errParseSQL, "Expected number, but found %s, %s", tok.text(), parser.where());
+	}
+
+	tok = parser.next_token();
+	if (tok.text() != ")"_sv) {
+		throw Error(errParseSQL, "Expected ')', but found %s, %s", tok.text(), parser.where());
+	}
+
+	if (nextOp == OpOr) {
+		query_.Or();
+	} else if (nextOp == OpNot) {
+		query_.Not();
+	}
+	query_.DWithin(field, point, distance.As<double>());
 }
 
 void SQLParser::parseJoin(JoinType type, tokenizer &parser) {

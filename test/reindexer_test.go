@@ -3,6 +3,7 @@ package reindexer
 import (
 	"flag"
 	"log"
+	"math"
 	"math/rand"
 	"net/url"
 	"os"
@@ -102,6 +103,15 @@ func randPostalCode() int {
 
 func randLocation() string {
 	return locations[rand.Int()%len(locations)]
+}
+
+func randFloat(min float64, max float64, digits int) float64 {
+	mult := math.Pow10(digits)
+	return math.Round((rand.Float64() * (max - min) + min) * mult) / mult
+}
+
+func randPoint() [2]float64 {
+	return [2]float64{randFloat(-10, 10, 4), randFloat(-10, 10, 4)}
 }
 
 func randIntArr(cnt int, start int, rng int) (arr []int) {

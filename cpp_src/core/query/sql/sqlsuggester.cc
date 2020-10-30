@@ -62,6 +62,8 @@ std::unordered_map<int, std::set<string>> sqlTokenMatchings = {
 	{DeleteConditionsStart, {"where", "limit", "offset", "order"}},
 	{UpdateOptionsSqlToken, {"set", "drop"}},
 	{EqualPositionSqlToken, {"equal_position"}},
+	{ST_DWithinSqlToken, {"ST_DWithin"}},
+	{ST_GeomFromTextSqlToken, {"ST_GeomFromText"}},
 };
 
 static void getMatchingTokens(int tokenType, const string &token, vector<string> &variants) {
@@ -147,9 +149,14 @@ void SQLSuggester::getSuggestionsForToken(SqlParsingCtx::SuggestionData &ctx) {
 		case AndSqlToken:
 		case WhereFieldSqlToken:
 			getMatchingTokens(NotSqlToken, ctx.token, ctx.variants);
+			getMatchingTokens(ST_DWithinSqlToken, ctx.token, ctx.variants);
 			getMatchingFieldsNames(ctx.token, ctx.variants);
 			getMatchingTokens(EqualPositionSqlToken, ctx.token, ctx.variants);
 			getMatchingTokens(JoinTypesSqlToken, ctx.token, ctx.variants);
+			break;
+		case GeomFieldSqlToken:
+			getMatchingTokens(ST_GeomFromTextSqlToken, ctx.token, ctx.variants);
+			getMatchingFieldsNames(ctx.token, ctx.variants);
 			break;
 		case FieldNameSqlToken:
 			getMatchingFieldsNames(ctx.token, ctx.variants);
@@ -251,6 +258,7 @@ void SQLSuggester::checkForTokenSuggestions(SqlParsingCtx::SuggestionData &data)
 				getSuggestionsForToken(data);
 			}
 			break;
+		case GeomFieldSqlToken:
 		case WhereFieldSqlToken:
 			if (isBlank(data.token)) {
 				getSuggestionsForToken(data);

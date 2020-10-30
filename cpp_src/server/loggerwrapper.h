@@ -14,37 +14,49 @@ public:
 	operator bool() { return logger_ != nullptr; }
 
 	template <typename... Args>
-	void error(const Args &... args) {
-		if (logger_) logger_->error(args...);
+	void error(Args &&... args) {
+		if (logger_) {
+			logger_->error(std::forward<Args>(args)...);
+		}
 	}
 
 	template <typename... Args>
-	void warn(const Args &... args) {
-		if (logger_) logger_->warn(args...);
+	void warn(Args &&... args) {
+		if (logger_) {
+			logger_->warn(std::forward<Args>(args)...);
+		}
 	}
 
 	template <typename... Args>
-	void info(const Args &... args) {
-		if (logger_) logger_->info(args...);
+	void info(Args &&... args) {
+		if (logger_) {
+			logger_->info(std::forward<Args>(args)...);
+		}
 	}
 
 	template <typename... Args>
-	void trace(const Args &... args) {
-		if (logger_) logger_->trace(args...);
+	void trace(Args &&... args) {
+		if (logger_) {
+			logger_->trace(std::forward<Args>(args)...);
+		}
 	}
 
 	template <typename... Args>
-	void critical(const Args &... args) {
-		if (logger_) logger_->critical(args...);
+	void critical(Args &&... args) {
+		if (logger_) {
+			logger_->critical(std::forward<Args>(args)...);
+		}
 	}
 
 	template <typename... Args>
-	void debug(const Args &... args) {
-		if (logger_) logger_->debug(args...);
+	void debug(Args &&... args) {
+		if (logger_) {
+			logger_->debug(std::forward<Args>(args)...);
+		}
 	}
 
 private:
-	shared_ptr<spdlog::logger> logger_;
+	std::shared_ptr<spdlog::logger> logger_;
 };
 
 }  // namespace reindexer_server

@@ -15,7 +15,8 @@ class Transaction {
 public:
 	using time_point = std::chrono::time_point<std::chrono::high_resolution_clock>;
 
-	Transaction(const string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf);
+	Transaction(const string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
+				std::shared_ptr<const Schema> schema);
 	Transaction(const Error &err);
 	~Transaction();
 	Transaction() = default;

@@ -2,6 +2,7 @@
 #include <functional>
 
 #include "core/payload/payloadiface.h"
+#include "geometry.h"
 #include "key_string.h"
 #include "p_string.h"
 #include "tools/serializer.h"
@@ -40,6 +41,8 @@ Variant::Variant(const VariantArray &values) {
 	hold_ = true;
 }
 
+Variant::Variant(Point p) : Variant{VariantArray{p}} {}
+
 inline static void assertKeyType(KeyValueType got, KeyValueType exp) {
 	(void)got, (void)exp;
 	assertf(exp == got, "Expected value '%s', but got '%s'", Variant::TypeName(exp), Variant::TypeName(got));
@@ -63,6 +66,13 @@ Variant::operator int64_t() const {
 Variant::operator double() const {
 	assertKeyType(type_, KeyValueDouble);
 	return value_double;
+}
+
+Variant::operator Point() const { return static_cast<Point>(getCompositeValues()); }
+template <>
+Point Variant::As<Point>() const {
+	if (type_ != KeyValueTuple) throw Error(errParams, "Can't convert %d to Point", type_);
+	return static_cast<Point>(getCompositeValues());
 }
 
 void Variant::free() {
@@ -536,6 +546,9 @@ void Variant::Dump(WrSerializer &wrser) const {
 		case KeyValueDouble:
 			wrser << operator double();
 			break;
+		case KeyValueTuple:
+			getCompositeValues().Dump(wrser);
+			break;
 		default:
 			wrser << "??";
 			break;
@@ -553,6 +566,16 @@ void VariantArray::Dump(WrSerializer &wrser) const {
 		arg.Dump(wrser);
 	}
 	wrser << '}';
+}
+
+VariantArray::VariantArray(Point p) noexcept {
+	emplace_back(p.x);
+	emplace_back(p.y);
+}
+
+VariantArray::operator Point() const {
+	if (size() != 2) throw Error(errParams, "Can't convert array of %d elements to Point", size());
+	return {(*this)[0].As<double>(), (*this)[1].As<double>()};
 }
 
 }  // namespace reindexer

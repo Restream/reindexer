@@ -127,6 +127,13 @@ ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const 
 	  dbName_(dbName) {
 	// Init server in thread
 	stopped_ = false;
+	string testSetName = ::testing::UnitTest::GetInstance()->current_test_info()->test_case_name();
+	auto getLogName = [&testSetName, &id](const string& log, bool core = false) {
+		string name("logs/" + testSetName + "/" + log + "_");
+		if (!core) name += std::to_string(id);
+		name += ".log";
+		return name;
+	};
 	// clang-format off
     string yaml =
         "storage:\n"
@@ -134,13 +141,13 @@ ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const 
 		"metrics:\n"
 		"   clientsstats: " + (enableStats ? "true" : "false") + "\n"
         "logger:\n"
-		"   loglevel: none\n"
-        "   rpclog: \n"
-		"   serverlog: \n"
-		"   corelog: \n"
+        "   loglevel: trace\n"
+        "   rpclog: " + getLogName("rpc") + "\n"
+        "   serverlog: " + getLogName("server") + "\n"
+        "   corelog: " + getLogName("core", true) + "\n"
         "net:\n"
-		"   httpaddr: 0.0.0.0:" + std::to_string(kHttpPort) + "\n"
-		"   rpcaddr: 0.0.0.0:" + std::to_string(kRpcPort);
+        "   httpaddr: 0.0.0.0:" + std::to_string(kHttpPort) + "\n"
+        "   rpcaddr: 0.0.0.0:" + std::to_string(kRpcPort);
 	// clang-format on
 
 	auto err = srv.InitFromYAML(yaml);
@@ -148,7 +155,9 @@ ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const 
 
 	tr = std::unique_ptr<std::thread>(new std::thread([this]() {
 		auto res = this->srv.Start();
-		(void)res;
+		if (res != EXIT_SUCCESS) {
+			std::cerr << "Exit code: " << res << std::endl;
+		}
 		assert(res == EXIT_SUCCESS);
 	}));
 	while (!srv.IsReady()) {
@@ -158,6 +167,9 @@ ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const 
 	string dsn = "cproto://127.0.0.1:" + std::to_string(kRpcPort) + "/" + dbName_;
 	err = api.reindexer->Connect(dsn, client::ConnectOpts().CreateDBIfMissing());
 	EXPECT_TRUE(err.ok()) << err.what();
+	while (!api.reindexer->Status().ok()) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
 }
 
 void ServerControl::Interface::MakeMaster(const ReplicationConfigTest& config) {
@@ -223,7 +235,6 @@ void ServerControl::InitServer(size_t id, unsigned short rpcPort, unsigned short
 	WLock lock(mtx_);
 	auto srvInterface = std::make_shared<ServerControl::Interface>(id, *stopped_, kReplicationConfigFilename, storagePath, httpPort,
 																   rpcPort, dbName, enableStats);
-
 	interface = srvInterface;
 }
 void ServerControl::Drop() {

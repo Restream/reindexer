@@ -25,12 +25,14 @@
   * [Update documents in namespace](#update-documents-in-namespace)
   * [Insert documents to namespace](#insert-documents-to-namespace)
   * [Delete documents from namespace](#delete-documents-from-namespace)
+  * [Upsert documents in namespace](#upsert-documents-in-namespace)
   * [List available indexes](#list-available-indexes)
   * [Update index in namespace](#update-index-in-namespace)
   * [Add new index to namespace](#add-new-index-to-namespace)
   * [Drop index from namespace](#drop-index-from-namespace)
   * [Get namespace schema](#get-namespace-schema)
   * [Set namespace schema](#set-namespace-schema)
+  * [Get protobuf communication parameters schema](#get-protobuf-communication-parameters-schema)
   * [Query documents from namespace](#query-documents-from-namespace)
   * [Query documents from namespace](#query-documents-from-namespace-1)
   * [Delete documents from namespace](#delete-documents-from-namespace-1)
@@ -40,6 +42,7 @@
   * [Update documents in namespace via transaction](#update-documents-in-namespace-via-transaction)
   * [Insert documents to namespace via transaction](#insert-documents-to-namespace-via-transaction)
   * [Delete documents from namespace via transaction](#delete-documents-from-namespace-via-transaction)
+  * [Upsert documents in namespace via transaction](#upsert-documents-in-namespace-via-transaction)
   * [Delete/update queries for transactions](#deleteupdate-queries-for-transactions)
   * [Delete documents from namespace (transactions)](#delete-documents-from-namespace-transactions)
   * [Suggest for autocompletion of SQL query](#suggest-for-autocompletion-of-sql-query)
@@ -111,7 +114,6 @@
 
 <!-- tocstop -->
 
->
 ## Overview
 **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
 Reindexer's goal is to provide fast search with complex queries.
@@ -120,7 +122,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 2.13.0
+*Version* : 2.14.0
 
 
 ### License information
@@ -603,7 +605,7 @@ This operation will select documents from namespace with specified filters, and 
 |**Path**|**name**  <br>*required*|Namespace name|string|
 |**Query**|**fields**  <br>*optional*|Comma-separated list of returned fields|string|
 |**Query**|**filter**  <br>*optional*|Filter with SQL syntax, e.g: field1 = 'v1' AND field2 > 'v2'|string|
-|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf)|
 |**Query**|**limit**  <br>*optional*|Maximum count of returned items|integer|
 |**Query**|**offset**  <br>*optional*|Offset of first returned item|integer|
 |**Query**|**sort_field**  <br>*optional*|Sort Field|string|
@@ -649,7 +651,7 @@ Each document should be in request body as separate JSON object, e.g.
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
 |**Path**|**name**  <br>*required*|Namespace name|string|
-|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf)|
 |**Query**|**precepts**  <br>*optional*|Precepts to be done|< string > array(multi)|
 |**Body**|**body**  <br>*required*||object|
 
@@ -693,7 +695,7 @@ Each document should be in request body as separate JSON object, e.g.
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
 |**Path**|**name**  <br>*required*|Namespace name|string|
-|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf)|
 |**Query**|**precepts**  <br>*optional*|Precepts to be done|< string > array(multi)|
 |**Body**|**body**  <br>*required*||object|
 
@@ -737,6 +739,50 @@ Each document should be in request body as separate JSON object, e.g.
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
 |**Path**|**name**  <br>*required*|Namespace name|string|
+|**Query**|**precepts**  <br>*optional*|Precepts to be done|< string > array(multi)|
+|**Body**|**body**  <br>*required*||object|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|successful operation|[ItemsUpdateResponse](#itemsupdateresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* items
+
+
+
+### Upsert documents in namespace
+```
+PATCH /db/{database}/namespaces/{name}/items
+```
+
+
+#### Description
+This operation will UPSERT documents in namespace, by their primary keys.
+Each document should be in request body as separate JSON object, e.g.
+```
+{"id":100, "name": "Pet"}
+{"id":101, "name": "Dog"}
+...
+```
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Path**|**name**  <br>*required*|Namespace name|string|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf)|
 |**Query**|**precepts**  <br>*optional*|Precepts to be done|< string > array(multi)|
 |**Body**|**body**  <br>*required*||object|
 
@@ -975,6 +1021,46 @@ This operation will set namespace schema (information about available fields and
 
 
 
+### Get protobuf communication parameters schema
+```
+GET /db/{database}/protobuf_schema
+```
+
+
+#### Description
+This operation allows to get client/server communication parameters as google protobuf schema (content of .proto file)
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Query**|**ns**  <br>*required*|Namespace name|< string > array(multi)|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|successful operation|No Content|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
+
+
+#### Produces
+
+* `text/plain`
+
+
+#### Tags
+
+* schema
+
+
+
 ### Query documents from namespace
 ```
 GET /db/{database}/query
@@ -992,7 +1078,7 @@ then `limit` and `offset` from http request.
 |Type|Name|Description|Schema|
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
-|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf)|
 |**Query**|**limit**  <br>*optional*|Maximum count of returned items|integer|
 |**Query**|**offset**  <br>*optional*|Offset of first returned item|integer|
 |**Query**|**q**  <br>*required*|SQL query|string|
@@ -1032,7 +1118,7 @@ This opertaion queries documents from namespace by DSL query.
 |Type|Name|Description|Schema|
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
-|**Query**|**format**  <br>*optional*|format of encoding data: json or msgpack|string|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf)|
 |**Query**|**width**  <br>*optional*|Total width in rows of view for table format output|integer|
 |**Query**|**with_columns**  <br>*optional*|Return columns names and widths for table format output|boolean|
 |**Body**|**body**  <br>*required*|DSL query|[Query](#query)|
@@ -1102,7 +1188,7 @@ POST /db/{database}/namespaces/{name}/transactions/begin
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
 |**Path**|**name**  <br>*required*|Namespace name|string|
-|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf)|
 
 
 #### Responses
@@ -1134,7 +1220,6 @@ POST /db/{database}/transactions/{tx_id}/commit
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
 |**Path**|**tx_id**  <br>*required*|transaction id|string|
-|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
 
 
 #### Responses
@@ -1166,7 +1251,6 @@ POST /db/{database}/transactions/{tx_id}/rollback
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
 |**Path**|**tx_id**  <br>*required*|transaction id|string|
-|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
 
 
 #### Responses
@@ -1209,7 +1293,7 @@ Each document should be in request body as separate JSON object, e.g.
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
 |**Path**|**tx_id**  <br>*required*|transaction id|string|
-|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf)|
 |**Query**|**precepts**  <br>*optional*|Precepts to be done|< string > array(multi)|
 |**Body**|**body**  <br>*required*||object|
 
@@ -1254,7 +1338,7 @@ Each document should be in request body as separate JSON object, e.g.
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
 |**Path**|**tx_id**  <br>*required*|transaction id|string|
-|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf)|
 |**Query**|**precepts**  <br>*optional*|Precepts to be done|< string > array(multi)|
 |**Body**|**body**  <br>*required*||object|
 
@@ -1320,6 +1404,51 @@ Each document should be in request body as separate JSON object, e.g.
 
 
 
+### Upsert documents in namespace via transaction
+```
+PATCH /db/{database}/transactions/{tx_id}/items
+```
+
+
+#### Description
+This will add UPSERT operation into transaction.
+It UPDATEs documents in namespace, by their primary keys.
+Each document should be in request body as separate JSON object, e.g.
+```
+{"id":100, "name": "Pet"}
+{"id":101, "name": "Dog"}
+...
+```
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Path**|**tx_id**  <br>*required*|transaction id|string|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf)|
+|**Query**|**precepts**  <br>*optional*|Precepts to be done|< string > array(multi)|
+|**Body**|**body**  <br>*required*||object|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* transactions
+
+
+
 ### Delete/update queries for transactions
 ```
 GET /db/{database}/transactions/{tx_id}/query
@@ -1337,7 +1466,7 @@ This query UPDATEs/DELETEs documents from namespace
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
 |**Path**|**tx_id**  <br>*required*|transaction id|string|
-|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack)|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf)|
 |**Query**|**q**  <br>*required*|SQL query|string|
 |**Query**|**width**  <br>*optional*|Total width in rows of view for table format output|integer|
 
@@ -1820,6 +1949,7 @@ Specifies facet aggregations results sorting order
 |**current_activity**  <br>*required*|Current activity|string|
 |**db_name**  <br>*required*|Database name|string|
 |**ip**  <br>*required*|Ip|string|
+|**is_subscribed**  <br>*required*|Status of updates subscription|boolean|
 |**last_recv_ts**  <br>*optional*|Timestamp of last recv operation (ms)|integer|
 |**last_send_ts**  <br>*optional*|Timestamp of last send operation (ms)|integer|
 |**pended_updates**  <br>*optional*|Pended updates count|integer|
@@ -1830,7 +1960,7 @@ Specifies facet aggregations results sorting order
 |**sent_bytes**  <br>*required*|Send byte|integer|
 |**start_time**  <br>*required*|Server start time in unix timestamp|integer|
 |**tx_count**  <br>*required*|Count of currently opened transactions for this client|integer|
-|**updates_filter**  <br>*required*||[updates_filter](#clientsstats-updates_filter)|
+|**updates_filter**  <br>*required*|Updates filter for this client|[updates_filter](#clientsstats-updates_filter)|
 |**user_name**  <br>*required*|User name|string|
 |**user_rights**  <br>*required*|User right|string|
 
@@ -2009,10 +2139,11 @@ Fulltext synonym definition
 |---|---|---|
 |**collate_mode**  <br>*optional*|String collate mode  <br>**Default** : `"none"`|enum (none, ascii, utf8, numeric)|
 |**config**  <br>*optional*||[FulltextConfig](#fulltextconfig)|
-|**field_type**  <br>*required*|Field data type|enum (int, int64, double, string, bool, composite)|
-|**index_type**  <br>*required*|Index structure type  <br>**Default** : `"hash"`|enum (hash, tree, text, -)|
+|**field_type**  <br>*required*|Field data type|enum (int, int64, double, string, bool, composite, point)|
+|**index_type**  <br>*required*|Index structure type  <br>**Default** : `"hash"`|enum (hash, tree, text, rtree, -)|
 |**is_array**  <br>*optional*|Specifies, that index is array. Array indexes can work with array fields, or work with multiple fields  <br>**Default** : `false`|boolean|
 |**is_dense**  <br>*optional*|Reduces the index size. For hash and tree it will save ~8 bytes per unique key value. Useful for indexes with high selectivity, but for tree and hash indexes with low selectivity can seriously decrease update performance;  <br>**Default** : `false`|boolean|
+|**is_linear**  <br>*optional*|Use linear algorithm to construct RTree index. Quadratic algorithm will be used otherwise  <br>**Default** : `false`|boolean|
 |**is_pk**  <br>*optional*|Specifies, that index is primary key. The update opertations will checks, that PK field is unique. The namespace MUST have only 1 PK index|boolean|
 |**is_simple_tag**  <br>*optional*|Use simple tag instead of actual index, which will notice rx about possible field name for strict policies  <br>**Default** : `false`|boolean|
 |**is_sparse**  <br>*optional*|Value of index may not present in the document, and threfore, reduce data size but decreases speed operations on index  <br>**Default** : `false`|boolean|
@@ -2561,6 +2692,7 @@ Performance statistics for transactions
 
 |Name|Description|Schema|
 |---|---|---|
+|**is_array**  <br>*optional*|is updated value an array|boolean|
 |**name**  <br>*required*|field name|string|
 |**type**  <br>*optional*|update entry type|enum (object, expression, value)|
 |**values**  <br>*required*|Values to update field with|< object > array|

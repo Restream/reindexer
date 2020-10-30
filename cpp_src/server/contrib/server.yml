@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.13.0"
+  version: "2.14.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -545,6 +545,7 @@ paths:
         enum:
           - json
           - msgpack
+          - protobuf
       responses:
         200:
           description: "successful operation"
@@ -603,6 +604,67 @@ paths:
         enum:
           - json
           - msgpack
+          - protobuf
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/ItemsUpdateResponse"
+        400:
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
+
+    patch:
+      tags:
+      - "items"
+      summary: "Upsert documents in namespace"
+      operationId: "patchItems"
+      description: |
+        This operation will UPSERT documents in namespace, by their primary keys.
+        Each document should be in request body as separate JSON object, e.g.
+        ```
+        {"id":100, "name": "Pet"}
+        {"id":101, "name": "Dog"}
+        ...
+        ```
+      parameters:
+      - in: body
+        name: "body"
+        schema:
+          type: object
+        required: true
+      - name: "database"
+        in: path
+        type: string
+        description: "Database name"
+        required: true
+      - name: "name"
+        in: path
+        type: string
+        description: "Namespace name"
+        required: true
+      - name: "precepts"
+        in: query
+        type: array
+        collectionFormat: "multi"
+        description: "Precepts to be done"
+        required: false
+        items:
+          type: string
+      - name: "format"
+        in: query
+        type: string
+        description: "encoding data format"
+        required: false
+        enum:
+          - json
+          - msgpack
+          - protobuf
       responses:
         200:
           description: "successful operation"
@@ -669,6 +731,7 @@ paths:
         enum:
           - json
           - msgpack
+          - protobuf
       responses:
         200:
           description: "successful operation"
@@ -892,6 +955,42 @@ paths:
         500:
           $ref: "#/responses/UnexpectedError"
 
+  /db/{database}/protobuf_schema:
+    get:
+      produces:
+      - "text/plain"
+      tags:
+      - "schema"
+      summary: "Get protobuf communication parameters schema"
+      operationId: "getNsParamsSchema"
+      description: |
+        This operation allows to get client/server communication parameters as google protobuf schema (content of .proto file) 
+      parameters:
+      - name: "database"
+        in: path
+        type: string
+        description: "Database name"
+        required: true
+      - name: "ns"
+        in: "query"
+        type: "array"
+        collectionFormat: "multi"
+        description: "Namespace name"
+        items:
+          type: "string"
+        required: true
+      responses:
+        200:
+          description: "successful operation"
+        400:
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
+
   /db/{database}/query:
     get:
       tags:
@@ -939,6 +1038,7 @@ paths:
         enum:
           - json
           - msgpack
+          - protobuf
       responses:
         200:
           description: "successful operation"
@@ -984,8 +1084,12 @@ paths:
       - name: "format"
         in: query
         type: string
-        description: "format of encoding data: json or msgpack"
+        description: "encoding data format"
         required: false
+        enum:
+          - json
+          - msgpack
+          - protobuf
       responses:
         200:
           description: "successful operation"
@@ -1055,6 +1159,7 @@ paths:
         enum:
           - json
           - msgpack
+          - protobuf
       responses:
         200:
           description: "successful operation"
@@ -1086,14 +1191,6 @@ paths:
         type: "string"
         description: "transaction id"
         required: true
-      - name: "format"
-        in: "query"
-        type: "string"
-        description: "encoding data format"
-        required: false
-        enum:
-          - json
-          - msgpack
       responses:
         200:
           $ref: "#/responses/OK"
@@ -1123,14 +1220,6 @@ paths:
         type: "string"
         description: "transaction id"
         required: true
-      - name: "format"
-        in: "query"
-        type: "string"
-        description: "encoding data format"
-        required: false
-        enum:
-          - json
-          - msgpack
       responses:
         200:
           $ref: "#/responses/OK"
@@ -1239,6 +1328,7 @@ paths:
         enum:
           - json
           - msgpack
+          - protobuf
       responses:
         200:
           $ref: "#/responses/OK"
@@ -1296,6 +1386,65 @@ paths:
         enum:
           - json
           - msgpack
+          - protobuf
+      responses:
+        200:
+          $ref: "#/responses/OK"
+        400:
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
+    patch:
+      tags:
+      - "transactions"
+      summary: "Upsert documents in namespace via transaction"
+      operationId: "patchItemsTx"
+      description: |
+        This will add UPSERT operation into transaction.
+        It UPDATEs documents in namespace, by their primary keys.
+        Each document should be in request body as separate JSON object, e.g.
+        ```
+        {"id":100, "name": "Pet"}
+        {"id":101, "name": "Dog"}
+        ...
+        ```
+      parameters:
+      - in: "body"
+        name: "body"
+        schema:
+          type: "object"
+        required: true
+      - name: "database"
+        in: "path"
+        type: "string"
+        description: "Database name"
+        required: true
+      - name: "tx_id"
+        in: "path"
+        type: "string"
+        description: "transaction id"
+        required: true
+      - name: "precepts"
+        in: "query"
+        type: "array"
+        collectionFormat: "multi"
+        description: "Precepts to be done"
+        required: false
+        items:
+          type: "string"
+      - name: "format"
+        in: "query"
+        type: "string"
+        description: "encoding data format"
+        required: false
+        enum:
+          - json
+          - msgpack
+          - protobuf
       responses:
         200:
           $ref: "#/responses/OK"
@@ -1346,6 +1495,7 @@ paths:
         enum:
           - json
           - msgpack
+          - protobuf
       responses:
         200:
           $ref: "#/responses/OK"
@@ -1851,11 +2001,11 @@ definitions:
               type: integer
               description: "Current recv rate (bytes/s)"
             is_subscribed:
-              type: bool
+              type: boolean
               description: "Status of updates subscription"
             updates_filter:
               type: object
-              descriptin: "Updates filter for this client"
+              description: "Updates filter for this client"
               properties:
                 namespaces:
                   type: array
@@ -1954,6 +2104,7 @@ definitions:
         - "string"
         - "bool"
         - "composite"
+        - "point"
       index_type:
         type: string
         description: "Index structure type"
@@ -1962,6 +2113,7 @@ definitions:
         - "hash"
         - "tree"
         - "text"
+        - "rtree"
         - "-"
       is_pk:
         description: "Specifies, that index is primary key. The update opertations will checks, that PK field is unique. The namespace MUST have only 1 PK index"
@@ -1976,6 +2128,10 @@ definitions:
         default: false
       is_sparse:
         description: "Value of index may not present in the document, and threfore, reduce data size but decreases speed operations on index"
+        type: boolean
+        default: false
+      is_linear:
+        description: "Use linear algorithm to construct RTree index. Quadratic algorithm will be used otherwise"
         type: boolean
         default: false
       is_simple_tag:
@@ -2049,6 +2205,9 @@ definitions:
           - "object"
           - "expression"
           - "value"
+      is_array:
+        type: "boolean"
+        description: "is updated value an array"
       values:
         type: "array"
         items: 
@@ -2592,6 +2751,7 @@ definitions:
           $ref: "#/definitions/QueryColumnDef"
       explain:
         $ref: "#/definitions/ExplainDef"
+
 
   Indexes:
     type: object
