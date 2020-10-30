@@ -591,20 +591,19 @@ class RMapValue {
 public:
 	const Key& first;
 	T second;
-	RMapValue() noexcept(noexcept(Key{}) && noexcept(T{})) : first_{}, first{first_}, second{} {}
-	RMapValue(Key&& k, T&& v) noexcept(noexcept(Key{std::move(k)}) && noexcept(T{std::move(v)}))
+	RMapValue() : first_{}, first{first_}, second{} {}
+	RMapValue(Key&& k, T&& v)
 		: first_{std::move(k)}, first{first_}, second{std::move(v)} {}
-	RMapValue(Key&& k, const T& v) noexcept(noexcept(Key{std::move(k)}) && noexcept(T{v}))
+	RMapValue(Key&& k, const T& v)
 		: first_{std::move(k)}, first{first_}, second{v} {}
-	RMapValue(const Key& k, T&& v) noexcept(noexcept(Key{k}) && noexcept(T{std::move(v)}))
+	RMapValue(const Key& k, T&& v)
 		: first_{k}, first{first_}, second{std::move(v)} {}
-	RMapValue(const Key& k, const T& v) noexcept(noexcept(Key{k}) && noexcept(T{v})) : first_{k}, first{first_}, second{v} {}
-	RMapValue(RMapValue&& other) noexcept(noexcept(Key{std::move(other.first_)}) && noexcept(T{std::move(other.second)}))
+	RMapValue(const Key& k, const T& v) : first_{k}, first{first_}, second{v} {}
+	RMapValue(RMapValue&& other)
 		: first_{std::move(other.first_)}, first{first_}, second{std::move(other.second)} {}
-	RMapValue(const RMapValue& other) noexcept(noexcept(Key{other.first_}) && noexcept(T{other.second}))
+	RMapValue(const RMapValue& other)
 		: first_{other.first_}, first{first_}, second{other.second} {}
-	RMapValue& operator=(RMapValue&& other) noexcept(noexcept(first_ = std::move(other.first_)) &&
-													 noexcept(second = std::move(other.second))) {
+	RMapValue& operator=(RMapValue&& other) {
 		first_ = std::move(other.first_);
 		second = std::move(other.second);
 		return *this;
