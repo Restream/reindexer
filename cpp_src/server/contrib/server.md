@@ -122,7 +122,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 2.14.0
+*Version* : 2.14.1
 
 
 ### License information

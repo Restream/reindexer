@@ -14,7 +14,7 @@ import (
 	"github.com/restream/reindexer/cjson"
 )
 
-// Srict modes for queries
+// Strict modes for queries
 type QueryStrictMode int
 
 const (
@@ -50,6 +50,7 @@ const (
 	queryUpdateObject      = bindings.QueryUpdateObject
 	queryWithRank          = bindings.QueryWithRank
 	queryStrictMode        = bindings.QueryStrictMode
+	queryUpdateFieldV2     = bindings.QueryUpdateFieldV2
 )
 
 // Constants for calc total
@@ -786,14 +787,26 @@ func (q *Query) Set(field string, values interface{}) *Query {
 		return q.SetObject(field, values)
 	}
 	v := reflect.ValueOf(values)
-	q.ser.PutVarCUInt(queryUpdateField)
+
+	cmd := queryUpdateField
+	if (t.Kind() == reflect.Slice || t.Kind() == reflect.Array) && v.Len() <= 1 {
+		// If field is slice, with size eq 0 or 1, then old
+		// queryUpdateField command cant encode it properly
+		cmd = queryUpdateFieldV2
+	}
+
+	q.ser.PutVarCUInt(cmd)
 	q.ser.PutVString(field)
 
 	if values == nil {
-		q.ser.PutVarUInt(0) // is array
+		if cmd == queryUpdateFieldV2 {
+			q.ser.PutVarUInt(0) // is array
+		}
 		q.ser.PutVarUInt(0) // size
 	} else if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
-		q.ser.PutVarUInt(1) // is array
+		if cmd == queryUpdateFieldV2 {
+			q.ser.PutVarUInt(1) // is array
+		}
 		q.ser.PutVarCUInt(v.Len())
 		for i := 0; i < v.Len(); i++ {
 			// function/value flag
@@ -801,7 +814,9 @@ func (q *Query) Set(field string, values interface{}) *Query {
 			q.putValue(v.Index(i))
 		}
 	} else {
-		q.ser.PutVarUInt(0)  // is array
+		if cmd == queryUpdateFieldV2 {
+			q.ser.PutVarUInt(0) // is array
+		}
 		q.ser.PutVarCUInt(1) // size
 		// function/value flag
 		q.ser.PutVarUInt(0)
@@ -822,7 +837,6 @@ func (q *Query) SetExpression(field string, value string) *Query {
 	q.ser.PutVarCUInt(queryUpdateField)
 	q.ser.PutVString(field)
 
-	q.ser.PutVarUInt(0)  // is array
 	q.ser.PutVarCUInt(1) // size
 	q.ser.PutVarUInt(1)  // is expression
 	q.putValue(reflect.ValueOf(value))

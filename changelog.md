@@ -1,3 +1,9 @@
+# Version 2.14.1 (02.11.2020)
+
+## Core
+- [fix] Binary incompatibility of UpdateQuery with pre v2.14.0 fixed, except case with Update array with single element
+- [fix] Binary incompatibility of SetSchema WAL Record with pre v2.14.0 fixed. 
+
 # Version 2.14.0 (30.10.2020)
 
 ## Core
@@ -12,29 +18,29 @@
 - [fea] Add upsert command to http-api
 - [fix] Fix outdated namespace removing from prometheus stats
 
-# Reindexer tool
+## Reindexer tool
 - [fix] Fix command execution iterrupts on SIGINT
 - [fix] Disable replicator for reindexer_tool
 
-# Go connector
+## Go connector
 - [fix] Fix objects cache size setting
 - [fix] Fix Status()-call for cproto-connector
 
 # Version 2.13.0 (18.09.2020)
 
-# Core
+## Core
 - [fea] Added extra parameter to clients stats
 - [fea] Added update, delete, truncate statement in DSL
 - [fix] Added support for equal_positions in sql suggester
 - [fix] Crash on distinct whith composite index
 - [fix] Crash on query whith incorrect index type after index conversion
 
-# Reindexer tool 
+## Reindexer tool 
 - [fix] Crash on upsert array object as first json tag
 
-# Version 2.12.2 (15.09.2020)
+## Version 2.12.2 (15.09.2020)
 
-# Go connector
+## Go connector
 - [fix] Cproto connection freezes if timeout occurs while reading from socket
 
 # Version 2.12.1 (10.09.2020)
@@ -42,7 +48,7 @@
 - [fix] Crash on fulltext build, if typos map exceed 2GB
 - [fix] Crash on DSL query with IN (string,...) conditions
 
-# Go connector
+## Go connector
 - [fix] Cproto connection freezes on async transaction timeout
 
 # Version 2.12.0 (02.09.2020)
