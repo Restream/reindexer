@@ -208,7 +208,7 @@ public:
 
 	void OnConfigUpdated(DBConfigProvider &configProvider, const RdxContext &ctx);
 	StorageOpts GetStorageOpts(const RdxContext &);
-	std::shared_ptr<const Schema> GetSchemaPtr(const NsContext &ctx) const;
+	std::shared_ptr<const Schema> GetSchemaPtr(const RdxContext &ctx) const;
 	int getNsNumber() const { return schema_ ? schema_->GetProtobufNsNumber() : 0; }
 
 protected:

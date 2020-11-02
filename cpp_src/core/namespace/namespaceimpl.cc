@@ -1858,11 +1858,8 @@ StorageOpts NamespaceImpl::GetStorageOpts(const RdxContext &ctx) {
 	return storageOpts_;
 }
 
-std::shared_ptr<const Schema> NamespaceImpl::GetSchemaPtr(const NsContext &ctx) const {
-	Locker::RLockT rlck;
-	if (!ctx.noLock) {
-		rlck = rLock(ctx.rdxContext);
-	}
+std::shared_ptr<const Schema> NamespaceImpl::GetSchemaPtr(const RdxContext &ctx) const {
+	auto rlck = rLock(ctx);
 	return schema_;
 }
 
