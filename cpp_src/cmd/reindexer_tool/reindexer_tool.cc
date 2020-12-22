@@ -1,7 +1,7 @@
 #include <csignal>
 #include <limits>
 #include "args/args.hpp"
-#include "client/reindexer.h"
+#include "client/cororeindexer.h"
 #include "commandsprocessor.h"
 #include "core/reindexer.h"
 #include "debug/backtrace.h"
@@ -14,9 +14,9 @@ namespace reindexer_tool {
 
 using args::Options;
 
-int llevel;
+static int llevel;
 
-void InstallLogLevel(const vector<string>& args) {
+static void InstallLogLevel(const vector<string>& args) {
 	try {
 		llevel = stoi(args.back());
 		if ((llevel < 1) || (llevel > 5)) {
@@ -54,10 +54,8 @@ int main(int argc, char* argv[]) {
 									Options::Single | Options::Global);
 	args::ValueFlag<string> outFileName(progOptions, "FILENAME", "send query results to file", {'o', "output"}, "",
 										Options::Single | Options::Global);
-	args::ValueFlag<int> connPoolSize(progOptions, "INT", "Number of simulatenous connections to db", {'C', "connections"}, 1,
-									  Options::Single | Options::Global);
 
-	args::ValueFlag<int> connThreads(progOptions, "INT", "Number of threads used by db connector", {'t', "threads"}, 1,
+	args::ValueFlag<int> connThreads(progOptions, "INT", "Number of threads(connections) used by db connector", {'t', "threads"}, 1,
 									 Options::Single | Options::Global);
 
 	args::Flag createDBF(progOptions, "", "Enable created database if missed", {"createdb"});
@@ -122,22 +120,19 @@ int main(int argc, char* argv[]) {
 		std::cout << "Reindexer command line tool version " << REINDEX_VERSION << std::endl;
 	}
 
-	reindexer::client::ReindexerConfig config;
-	config.ConnPoolSize = args::get(connPoolSize);
-	config.WorkerThreads = 1;  // args::get(connThreads);
-	config.EnableCompression = true;
-	config.AppName = args::get(appName);
 	if (dsn.compare(0, 9, "cproto://") == 0) {
-		CommandsProcessor<reindexer::client::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName), args::get(command),
-																		  config.ConnPoolSize, args::get(connThreads), config);
+		reindexer::client::ReindexerConfig config;
+		config.EnableCompression = true;
+		config.AppName = args::get(appName);
+		CommandsProcessor<reindexer::client::CoroReindexer> commandsProcessor(args::get(outFileName), args::get(fileName),
+																			  args::get(connThreads), config);
 		err = commandsProcessor.Connect(dsn, reindexer::client::ConnectOpts().CreateDBIfMissing(createDBF && args::get(createDBF)));
-		if (err.ok()) ok = commandsProcessor.Run();
+		if (err.ok()) ok = commandsProcessor.Run(args::get(command));
 	} else if (dsn.compare(0, 10, "builtin://") == 0) {
 		reindexer::Reindexer db;
-		CommandsProcessor<reindexer::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName), args::get(command),
-																  config.ConnPoolSize, args::get(connThreads));
+		CommandsProcessor<reindexer::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName), args::get(connThreads));
 		err = commandsProcessor.Connect(dsn, ConnectOpts().DisableReplication());
-		if (err.ok()) ok = commandsProcessor.Run();
+		if (err.ok()) ok = commandsProcessor.Run(args::get(command));
 	} else {
 		std::cerr << "Invalid DSN format: " << dsn << " Must begin from cproto:// or builtin://" << std::endl;
 	}

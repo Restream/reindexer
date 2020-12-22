@@ -1,15 +1,19 @@
 #include "indexrtree.h"
 
 #include "core/rdxcontext.h"
+#include "greenesplitter.h"
 #include "linearsplitter.h"
 #include "quadraticsplitter.h"
+#include "rstarsplitter.h"
 
 namespace reindexer {
 
-template <typename KeyEntryT, template <typename, typename, typename, typename, size_t> class Splitter>
-SelectKeyResults IndexRTree<KeyEntryT, Splitter>::SelectKey(const VariantArray &keys, CondType condition, SortType sortId,
-															Index::SelectOpts opts, BaseFunctionCtx::Ptr funcCtx,
-															const RdxContext &rdxCtx) {
+template <typename KeyEntryT, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
+		  size_t MinEntries>
+SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::SelectKey(const VariantArray &keys, CondType condition,
+																					SortType sortId, Index::SelectOpts opts,
+																					BaseFunctionCtx::Ptr funcCtx,
+																					const RdxContext &rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 	if (opts.forceComparator) {
 		return IndexStore<typename Map::key_type>::SelectKey(keys, condition, sortId, opts, funcCtx, rdxCtx);
@@ -55,8 +59,10 @@ SelectKeyResults IndexRTree<KeyEntryT, Splitter>::SelectKey(const VariantArray &
 	return SelectKeyResults(std::move(res));
 }
 
-template <typename KeyEntryT, template <typename, typename, typename, typename, size_t> class Splitter>
-void IndexRTree<KeyEntryT, Splitter>::Upsert(VariantArray &result, const VariantArray &keys, IdType id, bool needUpsertEmptyValue) {
+template <typename KeyEntryT, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
+		  size_t MinEntries>
+void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArray &result, const VariantArray &keys, IdType id,
+																	 bool needUpsertEmptyValue) {
 	if (keys.empty()) {
 		if (needUpsertEmptyValue) {
 			Upsert(Variant{}, id);
@@ -68,7 +74,7 @@ void IndexRTree<KeyEntryT, Splitter>::Upsert(VariantArray &result, const Variant
 	const Point point = static_cast<Point>(keys);
 	typename Map::iterator keyIt = this->idx_map.find(point);
 	if (keyIt == this->idx_map.end()) {
-		keyIt = this->idx_map.insert({point, typename Map::mapped_type()}).first;
+		keyIt = this->idx_map.insert_without_test({point, typename Map::mapped_type()});
 	} else {
 		this->delMemStat(keyIt);
 	}
@@ -81,8 +87,9 @@ void IndexRTree<KeyEntryT, Splitter>::Upsert(VariantArray &result, const Variant
 	result = VariantArray{keyIt->first};
 }
 
-template <typename KeyEntryT, template <typename, typename, typename, typename, size_t> class Splitter>
-void IndexRTree<KeyEntryT, Splitter>::Delete(const VariantArray &keys, IdType id) {
+template <typename KeyEntryT, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
+		  size_t MinEntries>
+void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const VariantArray &keys, IdType id) {
 	if (keys.empty()) {
 		return Delete(Variant{}, id);
 	}
@@ -110,24 +117,44 @@ void IndexRTree<KeyEntryT, Splitter>::Delete(const VariantArray &keys, IdType id
 }
 
 Index *IndexRTree_New(const IndexDef &idef, const PayloadType &payloadType, const FieldsSet &fields) {
-	if (idef.opts_.IsRTreeLinear()) {
-		if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
-			return new IndexRTree<Index::KeyEntryPlain, LinearSplitter>(idef, payloadType, fields);
-		} else {
-			return new IndexRTree<Index::KeyEntry, LinearSplitter>(idef, payloadType, fields);
-		}
-	} else {
-		if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
-			return new IndexRTree<Index::KeyEntryPlain, QuadraticSplitter>(idef, payloadType, fields);
-		} else {
-			return new IndexRTree<Index::KeyEntry, QuadraticSplitter>(idef, payloadType, fields);
-		}
+	switch (idef.opts_.RTreeType()) {
+		case IndexOpts::Linear:
+			if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
+				return new IndexRTree<Index::KeyEntryPlain, LinearSplitter, 32, 4>(idef, payloadType, fields);
+			} else {
+				return new IndexRTree<Index::KeyEntry, LinearSplitter, 32, 4>(idef, payloadType, fields);
+			}
+		case IndexOpts::Quadratic:
+			if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
+				return new IndexRTree<Index::KeyEntryPlain, QuadraticSplitter, 32, 4>(idef, payloadType, fields);
+			} else {
+				return new IndexRTree<Index::KeyEntry, QuadraticSplitter, 32, 4>(idef, payloadType, fields);
+			}
+		case IndexOpts::Greene:
+			if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
+				return new IndexRTree<Index::KeyEntryPlain, GreeneSplitter, 16, 4>(idef, payloadType, fields);
+			} else {
+				return new IndexRTree<Index::KeyEntry, GreeneSplitter, 16, 4>(idef, payloadType, fields);
+			}
+		case IndexOpts::RStar:
+			if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
+				return new IndexRTree<Index::KeyEntryPlain, RStarSplitter, 32, 4>(idef, payloadType, fields);
+			} else {
+				return new IndexRTree<Index::KeyEntry, RStarSplitter, 32, 4>(idef, payloadType, fields);
+			}
+		default:
+			assert(0);
+			abort();
 	}
 }
 
-template class IndexRTree<Index::KeyEntry, QuadraticSplitter>;
-template class IndexRTree<Index::KeyEntryPlain, QuadraticSplitter>;
-template class IndexRTree<Index::KeyEntry, LinearSplitter>;
-template class IndexRTree<Index::KeyEntryPlain, LinearSplitter>;
+template class IndexRTree<Index::KeyEntry, LinearSplitter, 32, 4>;
+template class IndexRTree<Index::KeyEntryPlain, LinearSplitter, 32, 4>;
+template class IndexRTree<Index::KeyEntry, QuadraticSplitter, 32, 4>;
+template class IndexRTree<Index::KeyEntryPlain, QuadraticSplitter, 32, 4>;
+template class IndexRTree<Index::KeyEntry, GreeneSplitter, 16, 4>;
+template class IndexRTree<Index::KeyEntryPlain, GreeneSplitter, 16, 4>;
+template class IndexRTree<Index::KeyEntry, RStarSplitter, 32, 4>;
+template class IndexRTree<Index::KeyEntryPlain, RStarSplitter, 32, 4>;
 
 }  // namespace reindexer

@@ -27,7 +27,7 @@ int socket::bind(string_view addr) {
 	return ret;
 }
 
-int socket::connect(string_view addr) {
+int socket::connect(string_view addr) noexcept {
 	struct addrinfo *results = nullptr;
 	int ret = create(addr, &results);
 	if (!ret) {
@@ -37,6 +37,7 @@ int socket::connect(string_view addr) {
 				perror("connect error");
 				close();
 			}
+			ret = -1;
 		}
 	}
 	if (results) {

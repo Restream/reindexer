@@ -39,7 +39,7 @@ struct TxStats {
 };
 
 struct ClientConnectionStat {
-	std::shared_ptr<reindexer::net::ConnectionStat> connectionStat;
+	std::shared_ptr<reindexer::net::connection_stat> connectionStat;
 	std::shared_ptr<reindexer::TxStats> txStats;
 	std::string ip;
 	std::string userName;

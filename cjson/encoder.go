@@ -198,94 +198,130 @@ func (enc *Encoder) encodeSlice(v reflect.Value, rdser *Serializer, f fieldInfo,
 
 		rdser.PutUInt32(mkcarraytag(l, subTag))
 
-		var ptr unsafe.Pointer
 		if f.kind == reflect.Slice {
-			ptr = unsafe.Pointer(v.Pointer())
-		} else {
-			ptr = unsafe.Pointer(v.Index(0).Addr().Pointer())
-		}
+			ptr := unsafe.Pointer(v.Pointer())
 
-		switch f.elemKind {
-		case reflect.Int:
-			sl := (*[1 << 28]int)(ptr)[:l:l]
-			for _, v := range sl {
-				rdser.PutVarInt(int64(v))
-			}
-		case reflect.Uint:
-			sl := (*[1 << 28]uint)(ptr)[:l:l]
-			for _, v := range sl {
-				rdser.PutVarInt(int64(v))
-			}
-		case reflect.Int32:
-			sl := (*[1 << 28]int32)(ptr)[:l:l]
-			for _, v := range sl {
-				rdser.PutVarInt(int64(v))
-			}
-		case reflect.Uint32:
-			sl := (*[1 << 28]uint32)(ptr)[:l:l]
-			for _, v := range sl {
-				rdser.PutVarInt(int64(v))
-			}
-		case reflect.Int16:
-			sl := (*[1 << 29]int16)(ptr)[:l:l]
-			for _, v := range sl {
-				rdser.PutVarInt(int64(v))
-			}
-		case reflect.Uint16:
-			sl := (*[1 << 29]uint16)(ptr)[:l:l]
-			for _, v := range sl {
-				rdser.PutVarInt(int64(v))
-			}
-		case reflect.Int64:
-			sl := (*[1 << 27]int64)(ptr)[:l:l]
-			for _, v := range sl {
-				rdser.PutVarInt(int64(v))
-			}
-		case reflect.Uint64:
-			sl := (*[1 << 27]uint64)(ptr)[:l:l]
-			for _, v := range sl {
-				rdser.PutVarInt(int64(v))
-			}
-		case reflect.Int8:
-			sl := (*[1 << 30]int8)(ptr)[:l:l]
-			for _, v := range sl {
-				rdser.PutVarInt(int64(v))
-			}
-		case reflect.Float32:
-			sl := (*[1 << 28]float32)(ptr)[:l:l]
-			for _, v := range sl {
-				rdser.PutDouble(float64(v))
-			}
-		case reflect.Float64:
-			sl := (*[1 << 27]float64)(ptr)[:l:l]
-			for _, v := range sl {
-				rdser.PutDouble(v)
-			}
-		case reflect.String:
-			sl := (*[1 << 27]string)(ptr)[:l:l]
-			for _, v := range sl {
-				rdser.PutVString(v)
-			}
-		case reflect.Bool:
-			sl := (*[1 << 30]bool)(ptr)[:l:l]
-			for _, v := range sl {
-				var vv uint64
-				if v {
-					vv = 1
+			switch f.elemKind {
+			case reflect.Int:
+				sl := (*[1 << 28]int)(ptr)[:l:l]
+				for _, v := range sl {
+					rdser.PutVarInt(int64(v))
 				}
-				rdser.PutVarUInt(vv)
-			}
-		default:
-			if subTag != TAG_OBJECT {
-				panic(fmt.Errorf("Internal error can't serialize array of type %s", f.elemKind.String()))
-			}
-			for i := 0; i < l; i++ {
-				vv := v.Index(i)
-				if i == 0 {
-					f = mkFieldInfo(vv, 0, false)
-					f.isOmitEmpty = false
+			case reflect.Uint:
+				sl := (*[1 << 28]uint)(ptr)[:l:l]
+				for _, v := range sl {
+					rdser.PutVarInt(int64(v))
 				}
-				enc.encodeValue(vv, rdser, f, idx)
+			case reflect.Int32:
+				sl := (*[1 << 28]int32)(ptr)[:l:l]
+				for _, v := range sl {
+					rdser.PutVarInt(int64(v))
+				}
+			case reflect.Uint32:
+				sl := (*[1 << 28]uint32)(ptr)[:l:l]
+				for _, v := range sl {
+					rdser.PutVarInt(int64(v))
+				}
+			case reflect.Int16:
+				sl := (*[1 << 29]int16)(ptr)[:l:l]
+				for _, v := range sl {
+					rdser.PutVarInt(int64(v))
+				}
+			case reflect.Uint16:
+				sl := (*[1 << 29]uint16)(ptr)[:l:l]
+				for _, v := range sl {
+					rdser.PutVarInt(int64(v))
+				}
+			case reflect.Int64:
+				sl := (*[1 << 27]int64)(ptr)[:l:l]
+				for _, v := range sl {
+					rdser.PutVarInt(int64(v))
+				}
+			case reflect.Uint64:
+				sl := (*[1 << 27]uint64)(ptr)[:l:l]
+				for _, v := range sl {
+					rdser.PutVarInt(int64(v))
+				}
+			case reflect.Int8:
+				sl := (*[1 << 30]int8)(ptr)[:l:l]
+				for _, v := range sl {
+					rdser.PutVarInt(int64(v))
+				}
+			case reflect.Float32:
+				sl := (*[1 << 28]float32)(ptr)[:l:l]
+				for _, v := range sl {
+					rdser.PutDouble(float64(v))
+				}
+			case reflect.Float64:
+				sl := (*[1 << 27]float64)(ptr)[:l:l]
+				for _, v := range sl {
+					rdser.PutDouble(v)
+				}
+			case reflect.String:
+				sl := (*[1 << 27]string)(ptr)[:l:l]
+				for _, v := range sl {
+					rdser.PutVString(v)
+				}
+			case reflect.Bool:
+				sl := (*[1 << 30]bool)(ptr)[:l:l]
+				for _, v := range sl {
+					var vv uint64
+					if v {
+						vv = 1
+					}
+					rdser.PutVarUInt(vv)
+				}
+			default:
+				if subTag != TAG_OBJECT {
+					panic(fmt.Errorf("Internal error can't serialize array of type %s", f.elemKind.String()))
+				}
+				for i := 0; i < l; i++ {
+					vv := v.Index(i)
+					if i == 0 {
+						f = mkFieldInfo(vv, 0, false)
+						f.isOmitEmpty = false
+					}
+					enc.encodeValue(vv, rdser, f, idx)
+				}
+			}
+		} else {
+			switch f.elemKind {
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				for i := 0; i < l; i++ {
+					rdser.PutVarInt(v.Index(i).Int())
+				}
+			case reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+				for i := 0; i < l; i++ {
+					rdser.PutVarUInt(v.Index(i).Uint())
+				}
+			case reflect.Float32, reflect.Float64:
+				for i := 0; i < l; i++ {
+					rdser.PutDouble(v.Index(i).Float())
+				}
+			case reflect.String:
+				for i := 0; i < l; i++ {
+					rdser.PutVString(v.Index(i).String())
+				}
+			case reflect.Bool:
+				for i := 0; i < l; i++ {
+					var vv uint64
+					if v.Index(i).Bool() {
+						vv = 1
+					}
+					rdser.PutVarUInt(vv)
+				}
+			default:
+				if subTag != TAG_OBJECT {
+					panic(fmt.Errorf("Internal error can't serialize array of type %s", f.elemKind.String()))
+				}
+				for i := 0; i < l; i++ {
+					vv := v.Index(i)
+					if i == 0 {
+						f = mkFieldInfo(vv, 0, false)
+						f.isOmitEmpty = false
+					}
+					enc.encodeValue(vv, rdser, f, idx)
+				}
 			}
 		}
 	}

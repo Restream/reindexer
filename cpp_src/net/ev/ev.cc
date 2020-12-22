@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
-#include "estl/fast_hash_map.h"
 #include "tools/oscompat.h"
 
 #ifdef HAVE_SELECT_LOOP
@@ -379,13 +378,47 @@ dynamic_loop::dynamic_loop() : async_sent_(false) {
 	backend_.init(this);
 }
 
-dynamic_loop::~dynamic_loop() {}
+dynamic_loop::~dynamic_loop() {
+	if (!running_tasks_.empty() || !new_tasks_.empty()) {
+		run();
+	}
+	remove_coro_cb();
+}
 
 void dynamic_loop::run() {
+	if (coroTid_ != std::thread::id() && coroTid_ != std::this_thread::get_id()) {
+		// Loop has coroutines from another thread
+		assert(false);
+	}
+
 	break_ = false;
 	auto now = std::chrono::steady_clock::now();
 	int count = 0;
+
+	set_coro_cb();
+	bool has_coro_tasks = false;
 	while (!break_) {
+		while (new_tasks_.size()) {
+			has_coro_tasks = true;
+			running_tasks_.reserve(running_tasks_.size() + new_tasks_.size());
+			for (auto id : new_tasks_) {
+				running_tasks_.emplace_back(id);
+			}
+			tasks_container new_tasks;
+			std::swap(new_tasks_, new_tasks);
+			for (auto id : new_tasks) {
+				int res = coroutine::resume(id);
+				assert(res == 0);
+				if (res != 0) {
+					running_tasks_.pop_back();
+				}
+			}
+		}
+
+		if (has_coro_tasks && running_tasks_.empty()) {
+			break;
+		}
+
 		int tv = gEnableBusyLoop ? 0 : -1;
 
 		if (!gEnableBusyLoop && timers_.size()) {
@@ -393,6 +426,7 @@ void dynamic_loop::run() {
 			if (tv < 0) tv = 0;
 		}
 		int ret = backend_.runonce(tv);
+
 		if (sigs_.size()) {
 			int pendingSignalsMask = signalsMask.exchange(0);
 			if (pendingSignalsMask) {
@@ -404,7 +438,7 @@ void dynamic_loop::run() {
 				}
 			}
 			if (pendingSignalsMask) {
-				printf("Unexpected signals %08X", pendingSignalsMask);
+				fprintf(stderr, "Unexpected signals %08X", pendingSignalsMask);
 			}
 		}
 		if (ret >= 0 && timers_.size()) {
@@ -418,9 +452,8 @@ void dynamic_loop::run() {
 			}
 		}
 	}
+	remove_coro_cb();
 }
-
-void dynamic_loop::break_loop() { break_ = true; }
 
 void dynamic_loop::set(int fd, io *watcher, int events) {
 	if (fd < 0) {
@@ -532,6 +565,10 @@ void dynamic_loop::send(async *watcher) {
 	}
 }
 
+bool dynamic_loop::is_active(const timer *watcher) const noexcept {
+	return std::find(timers_.begin(), timers_.end(), watcher) != timers_.end();
+}
+
 void dynamic_loop::io_callback(int fd, int events) {
 	if ((fd < 0) || (fd > int(fds_.size()))) {
 		return;
@@ -551,6 +588,28 @@ void dynamic_loop::async_callback() {
 			async = asyncs_.begin();
 		} else
 			async++;
+	}
+}
+
+void dynamic_loop::set_coro_cb() {
+	remove_coro_cb();
+	cmpl_cb_id_ = coroutine::add_completion_callback([this](coroutine::routine_t id) {
+		auto found = std::find(running_tasks_.begin(), running_tasks_.end(), id);
+		assert(found != running_tasks_.end());
+		running_tasks_.erase(found);
+		if (new_tasks_.empty() && running_tasks_.empty()) {
+			coroTid_ = std::thread::id();
+			break_loop();
+		}
+	});
+}
+
+void dynamic_loop::remove_coro_cb() {
+	if (cmpl_cb_id_) {
+		int res = coroutine::remove_completion_callback(cmpl_cb_id_);
+		assert(res == 0);
+		(void)res;
+		cmpl_cb_id_ = 0;
 	}
 }
 

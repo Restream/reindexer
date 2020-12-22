@@ -48,8 +48,10 @@ public:
 			{kFieldNameNumeric, IndexOpts().SetCollateMode(CollateUTF8)},
 			{string(kFieldNameId + compositePlus + kFieldNameTemp), IndexOpts().PK()},
 			{string(kFieldNameAge + compositePlus + kFieldNameGenre), IndexOpts()},
-			{kFieldNamePointQuadraticRTree, IndexOpts().RTreeQuadratic()},
-			{kFieldNamePointLinearRTree, IndexOpts().RTreeLinear()},
+			{kFieldNamePointQuadraticRTree, IndexOpts().RTreeType(IndexOpts::Quadratic)},
+			{kFieldNamePointLinearRTree, IndexOpts().RTreeType(IndexOpts::Linear)},
+			{kFieldNamePointGreeneRTree, IndexOpts().RTreeType(IndexOpts::Greene)},
+			{kFieldNamePointRStarRTree, IndexOpts().RTreeType(IndexOpts::RStar)},
 		};
 
 		Error err = rt.reindexer->OpenNamespace(default_namespace);
@@ -142,7 +144,9 @@ public:
 		DefineNamespaceDataset(
 			geomNs, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
 					 IndexDeclaration{kFieldNamePointQuadraticRTree, "rtree", "point", indexesOptions[kFieldNamePointQuadraticRTree], 0},
-					 IndexDeclaration{kFieldNamePointLinearRTree, "rtree", "point", indexesOptions[kFieldNamePointLinearRTree], 0}});
+					 IndexDeclaration{kFieldNamePointLinearRTree, "rtree", "point", indexesOptions[kFieldNamePointLinearRTree], 0},
+					 IndexDeclaration{kFieldNamePointGreeneRTree, "rtree", "point", indexesOptions[kFieldNamePointGreeneRTree], 0},
+					 IndexDeclaration{kFieldNamePointRStarRTree, "rtree", "point", indexesOptions[kFieldNamePointRStarRTree], 0}});
 		geomNsPks.push_back(kFieldNameId);
 	}
 
@@ -168,6 +172,24 @@ public:
 		return false;
 	}
 
+	static inline double distance(reindexer::Point p1, reindexer::Point p2) noexcept {
+		return std::sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
+	}
+
+	static VariantArray getJoinedField(int id, const QueryResults& qr, size_t nsIdx, int index, reindexer::string_view column) noexcept {
+		const reindexer::joins::ItemIterator itemIt{&qr.joined_[0], id};
+		const auto joinedIt = itemIt.at(nsIdx);
+		assert(joinedIt.ItemsCount() == 1);
+		auto joinedItem = joinedIt.GetItem(0, qr.getPayloadType(nsIdx + 1), qr.getTagsMatcher(nsIdx + 1));
+		VariantArray values;
+		if (index == IndexValueType::SetByJsonPath || index == IndexValueType::NotSet) {
+			values = joinedItem.GetValueByJSONPath(column);
+		} else {
+			joinedItem.GetField(index, values);
+		}
+		return values;
+	}
+
 	static double CalculateSortExpression(reindexer::SortExpression::const_iterator begin, reindexer::SortExpression::const_iterator end,
 										  Item& item, const QueryResults& qr) {
 		double result = 0.0;
@@ -178,24 +200,40 @@ public:
 				[&it, &item, &qr](const reindexer::SortExpressionBracket&) {
 					return CalculateSortExpression(it.cbegin(), it.cend(), item, qr);
 				},
-				[](const reindexer::SortExpressionValue& v) { return v.value; },
-				[&item](const reindexer::SortExpressionIndex& i) { return item[i.column].As<double>(); },
-				[&item, &qr](const reindexer::SortExpressionJoinedIndex& i) {
-					const reindexer::joins::ItemIterator itemIt{&qr.joined_[0], item.GetID()};
-					const auto joinedIt = itemIt.at(i.fieldIdx);
-					assert(joinedIt.ItemsCount() == 1);
-					auto joinedItem = joinedIt.GetItem(0, qr.getPayloadType(i.fieldIdx + 1), qr.getTagsMatcher(i.fieldIdx + 1));
-					Variant value;
-					if (i.index == IndexValueType::SetByJsonPath || i.index == IndexValueType::NotSet) {
-						const auto values = joinedItem.GetValueByJSONPath(i.column);
-						assert(values.size() == 1);
-						value = values[0];
-					} else {
-						value = joinedItem.GetField(i.index);
-					}
-					return value.As<double>();
+				[](const reindexer::SortExprFuncs::Value& v) { return v.value; },
+				[&item](const reindexer::SortExprFuncs::Index& i) { return item[i.column].As<double>(); },
+				[&item, &qr](const reindexer::SortExprFuncs::JoinedIndex& i) {
+					const auto values = getJoinedField(item.GetID(), qr, i.nsIdx, i.index, i.column);
+					assert(values.size() == 1);
+					return values[0].As<double>();
 				},
-				[](const reindexer::SortExpressionFuncRank&) -> double { abort(); });
+				[](const reindexer::SortExprFuncs::Rank&) -> double { abort(); },
+				[&item](const reindexer::SortExprFuncs::DistanceFromPoint& i) {
+					return distance(static_cast<reindexer::Point>(static_cast<reindexer::VariantArray>(item[i.column])), i.point);
+				},
+				[&item, &qr](const reindexer::SortExprFuncs::DistanceJoinedIndexFromPoint& i) {
+					const auto values = getJoinedField(item.GetID(), qr, i.nsIdx, i.index, i.column);
+					return distance(static_cast<reindexer::Point>(values), i.point);
+				},
+				[&item](const reindexer::SortExprFuncs::DistanceBetweenIndexes& i) {
+					return distance(static_cast<reindexer::Point>(static_cast<reindexer::VariantArray>(item[i.column1])),
+									static_cast<reindexer::Point>(static_cast<reindexer::VariantArray>(item[i.column2])));
+				},
+				[&item, &qr](const reindexer::SortExprFuncs::DistanceBetweenIndexAndJoinedIndex& i) {
+					const auto jValues = getJoinedField(item.GetID(), qr, i.jNsIdx, i.jIndex, i.jColumn);
+					return distance(static_cast<reindexer::Point>(static_cast<reindexer::VariantArray>(item[i.column])),
+									static_cast<reindexer::Point>(jValues));
+				},
+				[&item, &qr](const reindexer::SortExprFuncs::DistanceBetweenJoinedIndexes& i) {
+					const auto values1 = getJoinedField(item.GetID(), qr, i.nsIdx1, i.index1, i.column1);
+					const auto values2 = getJoinedField(item.GetID(), qr, i.nsIdx2, i.index2, i.column2);
+					return distance(static_cast<reindexer::Point>(values1), static_cast<reindexer::Point>(values2));
+				},
+				[&item, &qr](const reindexer::SortExprFuncs::DistanceBetweenJoinedIndexesSameNs& i) {
+					const auto values1 = getJoinedField(item.GetID(), qr, i.nsIdx, i.index1, i.column1);
+					const auto values2 = getJoinedField(item.GetID(), qr, i.nsIdx, i.index2, i.column2);
+					return distance(static_cast<reindexer::Point>(values1), static_cast<reindexer::Point>(values2));
+				});
 			if (it->operation.negative) value = -value;
 			switch (it->operation.op) {
 				case OpPlus:
@@ -257,6 +295,20 @@ public:
 	void Verify(const string& ns, const QueryResults& qr, const Query& query) {
 		unordered_set<string> pks;
 		unordered_map<string, unordered_set<string>> distincts;
+
+		struct QueryWatcher {
+			~QueryWatcher() {
+				if (::testing::Test::HasFailure()) {
+					reindexer::WrSerializer ser;
+					q.GetSQL(ser);
+					TEST_COUT << "Failed query dest: " << ser.Slice() << std::endl;
+					assert(false);
+				}
+			}
+
+			const Query& q;
+		};
+		QueryWatcher watcher{query};
 
 		VariantArray lastSortedColumnValues;
 		lastSortedColumnValues.resize(query.sortingEntries_.size());
@@ -372,14 +424,18 @@ public:
 		}
 
 		const auto& aggResults = qr.GetAggregationResults();
-		ASSERT_EQ(aggResults.size(), query.aggregations_.size());
-		for (size_t i = 0; i < aggResults.size(); ++i) {
-			EXPECT_EQ(aggResults[i].type, query.aggregations_[i].type_) << "i = " << i;
-			ASSERT_EQ(aggResults[i].fields.size(), query.aggregations_[i].fields_.size()) << "i = " << i;
-			for (size_t j = 0; j < aggResults[i].fields.size(); ++j) {
-				EXPECT_EQ(aggResults[i].fields[j], query.aggregations_[i].fields_[j]) << "i = " << i << ", j = " << j;
+		EXPECT_EQ(aggResults.size(), query.aggregations_.size());
+		if (aggResults.size() == query.aggregations_.size()) {
+			for (size_t i = 0; i < aggResults.size(); ++i) {
+				EXPECT_EQ(aggResults[i].type, query.aggregations_[i].type_) << "i = " << i;
+				EXPECT_EQ(aggResults[i].fields.size(), query.aggregations_[i].fields_.size()) << "i = " << i;
+				if (aggResults[i].fields.size() == query.aggregations_[i].fields_.size()) {
+					for (size_t j = 0; j < aggResults[i].fields.size(); ++j) {
+						EXPECT_EQ(aggResults[i].fields[j], query.aggregations_[i].fields_[j]) << "i = " << i << ", j = " << j;
+					}
+				}
+				EXPECT_LE(aggResults[i].facets.size(), query.aggregations_[i].limit_) << "i = " << i;
 			}
-			EXPECT_LE(aggResults[i].facets.size(), query.aggregations_[i].limit_) << "i = " << i;
 		}
 	}
 
@@ -742,6 +798,18 @@ protected:
 				bld.Array(kFieldNamePointLinearRTree, reindexer::span<double>{arr, 2});
 
 				point = RandPoint();
+				insertedGeomObjects[id][kFieldNamePointGreeneRTree] = point;
+				arr[0] = point.x;
+				arr[1] = point.y;
+				bld.Array(kFieldNamePointGreeneRTree, reindexer::span<double>{arr, 2});
+
+				point = RandPoint();
+				insertedGeomObjects[id][kFieldNamePointRStarRTree] = point;
+				arr[0] = point.x;
+				arr[1] = point.y;
+				bld.Array(kFieldNamePointRStarRTree, reindexer::span<double>{arr, 2});
+
+				point = RandPoint();
 				insertedGeomObjects[id][kFieldNamePointNonIndex] = point;
 				arr[0] = point.x;
 				arr[1] = point.y;
@@ -935,12 +1003,32 @@ protected:
 		return item;
 	}
 
+	static std::string pointToSQL(reindexer::Point point) {
+		return "ST_GeomFromText(\"point(" + std::to_string(point.x) + ' ' + std::to_string(point.y) + ")\")";
+	}
+
 	void CheckGeomQueries() {
-		for (size_t i = 0; i < 30; ++i) {
-			// Checks that DWithin works and verifies the result
+		for (size_t i = 0; i < 10; ++i) {
+			// Checks that DWithin and sort by Distance work and verifies the result
 			ExecuteAndVerify(geomNs, Query(geomNs).DWithin(kFieldNamePointQuadraticRTree, RandPoint(), RandDouble(0.0, 1.0, 1000)));
 			ExecuteAndVerify(geomNs, Query(geomNs).DWithin(kFieldNamePointLinearRTree, RandPoint(), RandDouble(0.0, 1.0, 1000)));
+			ExecuteAndVerify(geomNs, Query(geomNs).DWithin(kFieldNamePointGreeneRTree, RandPoint(), RandDouble(0.0, 1.0, 1000)));
+			ExecuteAndVerify(geomNs, Query(geomNs).DWithin(kFieldNamePointRStarRTree, RandPoint(), RandDouble(0.0, 1.0, 1000)));
 			ExecuteAndVerify(geomNs, Query(geomNs).DWithin(kFieldNamePointNonIndex, RandPoint(), RandDouble(0.0, 1.0, 1000)));
+			ExecuteAndVerify(
+				geomNs, Query(geomNs)
+							.DWithin(kFieldNamePointLinearRTree, RandPoint(), RandDouble(0.0, 1.0, 1000))
+							.Sort(std::string("ST_Distance(") + kFieldNamePointNonIndex + ", " + pointToSQL(RandPoint()) + ')', false)
+							.Sort(std::string("ST_Distance(") + pointToSQL(RandPoint()) + ", " + kFieldNamePointGreeneRTree + ')', false));
+			ExecuteAndVerify(geomNs,
+							 Query(geomNs)
+								 .DWithin(kFieldNamePointQuadraticRTree, RandPoint(), RandDouble(0.0, 1.0, 1000))
+								 .Or()
+								 .DWithin(kFieldNamePointRStarRTree, RandPoint(), RandDouble(0.0, 1.0, 1000))
+								 .Sort(std::string("ST_Distance(") + pointToSQL(RandPoint()) + ", " + kFieldNamePointQuadraticRTree +
+										   ") + 3 * ST_Distance(" + kFieldNamePointLinearRTree + ", " + kFieldNamePointNonIndex +
+										   ") + ST_Distance(" + kFieldNamePointRStarRTree + ", " + kFieldNamePointGreeneRTree + ')',
+									   false));
 		}
 	}
 
@@ -1550,60 +1638,76 @@ protected:
 		checkFacet(testQr.aggregationResults[5].facets, multifieldFacet, "Multifield");
 	}
 
-	void CompareQueryResults(const QueryResults& lhs, const QueryResults& rhs) {
-		ASSERT_EQ(lhs.Count(), rhs.Count());
-		for (size_t i = 0; i < rhs.Count(); ++i) {
-			Item ritem1(rhs[i].GetItem());
-			Item ritem2(lhs[i].GetItem());
-			EXPECT_EQ(ritem1.NumFields(), ritem2.NumFields());
-			if (ritem1.NumFields() == ritem2.NumFields()) {
-				for (int idx = 1; idx < ritem1.NumFields(); ++idx) {
-					const VariantArray& v1 = ritem1[idx];
-					const VariantArray& v2 = ritem2[idx];
+	void CompareQueryResults(const std::string& serializedQuery, const QueryResults& lhs, const QueryResults& rhs) {
+		EXPECT_EQ(lhs.Count(), rhs.Count());
+		if (lhs.Count() == rhs.Count()) {
+			for (size_t i = 0; i < lhs.Count(); ++i) {
+				Item ritem1(rhs[i].GetItem());
+				Item ritem2(lhs[i].GetItem());
+				EXPECT_EQ(ritem1.NumFields(), ritem2.NumFields());
+				if (ritem1.NumFields() == ritem2.NumFields()) {
+					for (int idx = 1; idx < ritem1.NumFields(); ++idx) {
+						const VariantArray& v1 = ritem1[idx];
+						const VariantArray& v2 = ritem2[idx];
 
-					ASSERT_EQ(v1.size(), v2.size());
-					for (size_t j = 0; j < v1.size(); ++j) {
-						EXPECT_EQ(v1[j].Compare(v2[j]), 0);
+						EXPECT_EQ(v1.size(), v2.size());
+						if (v1.size() == v2.size()) {
+							for (size_t j = 0; j < v1.size(); ++j) {
+								EXPECT_EQ(v1[j].Compare(v2[j]), 0);
+							}
+						}
+					}
+				}
+			}
+
+			EXPECT_EQ(lhs.aggregationResults.size(), rhs.aggregationResults.size());
+			if (lhs.aggregationResults.size() == rhs.aggregationResults.size()) {
+				for (size_t i = 0; i < rhs.aggregationResults.size(); ++i) {
+					const auto& aggRes1 = rhs.aggregationResults[i];
+					const auto& aggRes2 = lhs.aggregationResults[i];
+					EXPECT_EQ(aggRes1.type, aggRes2.type);
+					EXPECT_DOUBLE_EQ(aggRes1.value, aggRes2.value);
+					EXPECT_EQ(aggRes1.fields.size(), aggRes2.fields.size());
+					if (aggRes1.fields.size() == aggRes2.fields.size()) {
+						for (size_t j = 0; j < aggRes1.fields.size(); ++j) {
+							EXPECT_EQ(aggRes1.fields[j], aggRes2.fields[j]);
+						}
+					}
+					EXPECT_EQ(aggRes1.facets.size(), aggRes2.facets.size());
+					if (aggRes1.facets.size() == aggRes2.facets.size()) {
+						for (size_t j = 0; j < aggRes1.facets.size(); ++j) {
+							EXPECT_EQ(aggRes1.facets[j].count, aggRes2.facets[j].count);
+							EXPECT_EQ(aggRes1.facets[j].values.size(), aggRes2.facets[j].values.size());
+							if (aggRes1.facets[j].values.size() == aggRes2.facets[j].values.size()) {
+								for (size_t k = 0; k < aggRes1.facets[j].values.size(); ++k) {
+									EXPECT_EQ(aggRes1.facets[j].values[k], aggRes2.facets[j].values[k]) << aggRes1.facets[j].values[0];
+								}
+							}
+						}
 					}
 				}
 			}
 		}
-
-		ASSERT_EQ(lhs.aggregationResults.size(), rhs.aggregationResults.size());
-		for (size_t i = 0; i < rhs.aggregationResults.size(); ++i) {
-			const auto& aggRes1 = rhs.aggregationResults[i];
-			const auto& aggRes2 = lhs.aggregationResults[i];
-			EXPECT_EQ(aggRes1.type, aggRes2.type);
-			EXPECT_DOUBLE_EQ(aggRes1.value, aggRes2.value);
-			ASSERT_EQ(aggRes1.fields.size(), aggRes2.fields.size());
-			for (size_t j = 0; j < aggRes1.fields.size(); ++j) {
-				EXPECT_EQ(aggRes1.fields[j], aggRes2.fields[j]);
-			}
-			ASSERT_EQ(aggRes1.facets.size(), aggRes2.facets.size());
-			for (size_t j = 0; j < aggRes1.facets.size(); ++j) {
-				EXPECT_EQ(aggRes1.facets[j].count, aggRes2.facets[j].count);
-				ASSERT_EQ(aggRes1.facets[j].values.size(), aggRes2.facets[j].values.size());
-				for (size_t k = 0; k < aggRes1.facets[j].values.size(); ++k) {
-					EXPECT_EQ(aggRes1.facets[j].values[k], aggRes2.facets[j].values[k]) << aggRes1.facets[j].values[0];
-				}
-			}
+		if (::testing::Test::HasFailure()) {
+			FAIL() << "Failed query: " << serializedQuery;
+			assert(false);
 		}
 	}
 
 	void checkDslQuery(const std::string& ns, const std::string& dslQuery, const Query& checkQuery) {
 		Query parsedQuery;
 		Error err = parsedQuery.FromJSON(dslQuery);
-		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(err.ok()) << "Query: " << dslQuery << "; err: " << err.what();
 
 		QueryResults dslQr;
 		err = rt.reindexer->Select(parsedQuery, dslQr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(err.ok()) << "Query: " << dslQuery << "; err: " << err.what();
 
 		QueryResults checkQr;
 		err = rt.reindexer->Select(checkQuery, checkQr);
-		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(err.ok()) << "Query: " << dslQuery << "; err: " << err.what();
 
-		CompareQueryResults(dslQr, checkQr);
+		CompareQueryResults(dslQuery, dslQr, checkQr);
 		Verify(ns, checkQr, checkQuery);
 	}
 
@@ -1652,7 +1756,7 @@ protected:
 		err = rt.reindexer->Select(checkQuery1, checkQr1);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		CompareQueryResults(sqlQr1, checkQr1);
+		CompareQueryResults(sqlQuery, sqlQr1, checkQr1);
 		Verify(default_namespace, checkQr1, checkQuery1);
 
 		sqlQuery = "SELECT ID, Year, Genre FROM test_namespace WHERE genre IN ('1',2,'3') ORDER BY year DESC LIMIT 10000000";
@@ -1667,7 +1771,7 @@ protected:
 		err = rt.reindexer->Select(checkQuery2, checkQr2);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		CompareQueryResults(sqlQr2, checkQr2);
+		CompareQueryResults(sqlQuery, sqlQr2, checkQr2);
 		Verify(default_namespace, checkQr2, checkQuery2);
 
 		const string likePattern = RandLikePattern();
@@ -1683,7 +1787,7 @@ protected:
 		err = rt.reindexer->Select(checkQuery3, checkQr3);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		CompareQueryResults(sqlQr3, checkQr3);
+		CompareQueryResults(sqlQuery, sqlQr3, checkQr3);
 		Verify(default_namespace, checkQr3, checkQuery3);
 
 		sqlQuery = "SELECT FACET(ID, Year ORDER BY ID DESC ORDER BY Year ASC LIMIT 20 OFFSET 1) FROM test_namespace LIMIT 10000000";
@@ -1699,7 +1803,7 @@ protected:
 		err = rt.reindexer->Select(checkQuery4, checkQr4);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		CompareQueryResults(sqlQr4, checkQr4);
+		CompareQueryResults(sqlQuery, sqlQr4, checkQr4);
 		Verify(default_namespace, checkQr4, checkQuery4);
 
 		sqlQuery = "SELECT ID FROM test_namespace WHERE name LIKE '" + likePattern +
@@ -1721,7 +1825,7 @@ protected:
 		err = rt.reindexer->Select(checkQuery5, checkQr5);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		CompareQueryResults(sqlQr5, checkQr5);
+		CompareQueryResults(sqlQuery, sqlQr5, checkQr5);
 		Verify(default_namespace, checkQr5, checkQuery5);
 
 		sqlQuery = string("SELECT ID FROM test_namespace ORDER BY '") + kFieldNameYear + " + " + kFieldNameId + " * 5' DESC LIMIT 10000000";
@@ -1736,7 +1840,7 @@ protected:
 		err = rt.reindexer->Select(checkQuery6, checkQr6);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		CompareQueryResults(sqlQr6, checkQr6);
+		CompareQueryResults(sqlQuery, sqlQr6, checkQr6);
 		Verify(default_namespace, checkQr6, checkQuery6);
 
 		sqlQuery = string("SELECT ID FROM test_namespace ORDER BY '") + kFieldNameYear + " + " + kFieldNameId +
@@ -1753,14 +1857,14 @@ protected:
 		err = rt.reindexer->Select(checkQuery7, checkQr7);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		CompareQueryResults(sqlQr7, checkQr7);
+		CompareQueryResults(sqlQuery, sqlQr7, checkQr7);
 		Verify(default_namespace, checkQr7, checkQuery7);
 
-		// Checks that SQL queries with DWithin works and compares the result with the result of corresponding C++ query
+		// Checks that SQL queries with DWithin and sort by Distance work and compares the result with the result of corresponding C++ query
 		reindexer::Point point = RandPoint();
 		double distance = RandDouble(0.0, 1.0, 1000);
-		sqlQuery = string("SELECT * FROM ") + geomNs + " WHERE ST_DWithin(" + kFieldNamePointNonIndex + ", ST_GeomFromText('point(" +
-				   std::to_string(point.x) + ' ' + std::to_string(point.y) + ")'), " + std::to_string(distance) + ");";
+		sqlQuery = string("SELECT * FROM ") + geomNs + " WHERE ST_DWithin(" + kFieldNamePointNonIndex + ", " + pointToSQL(point) + ", " +
+				   std::to_string(distance) + ");";
 		const Query checkQuery8 = std::move(Query(geomNs).DWithin(kFieldNamePointNonIndex, point, distance));
 
 		QueryResults sqlQr8;
@@ -1771,14 +1875,17 @@ protected:
 		err = rt.reindexer->Select(checkQuery8, checkQr8);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		CompareQueryResults(sqlQr8, checkQr8);
+		CompareQueryResults(sqlQuery, sqlQr8, checkQr8);
 		Verify(geomNs, checkQr8, checkQuery8);
 
 		point = RandPoint();
 		distance = RandDouble(0.0, 1.0, 1000);
-		sqlQuery = string("SELECT * FROM ") + geomNs + " WHERE ST_DWithin(ST_GeomFromText('point(" + std::to_string(point.x) + ' ' +
-				   std::to_string(point.y) + ")'), " + kFieldNamePointNonIndex + ", " + std::to_string(distance) + ");";
-		const Query checkQuery9 = std::move(Query(geomNs).DWithin(kFieldNamePointNonIndex, point, distance));
+		sqlQuery = string("SELECT * FROM ") + geomNs + " WHERE ST_DWithin(" + pointToSQL(point) + ", " + kFieldNamePointNonIndex + ", " +
+				   std::to_string(distance) + ") ORDER BY 'ST_Distance(" + kFieldNamePointLinearRTree + ", " + pointToSQL(point) + ")';";
+		const Query checkQuery9 =
+			std::move(Query(geomNs)
+						  .DWithin(kFieldNamePointNonIndex, point, distance)
+						  .Sort(std::string("ST_Distance(") + kFieldNamePointLinearRTree + ", " + pointToSQL(point) + ')', false));
 
 		QueryResults sqlQr9;
 		err = rt.reindexer->Select(sqlQuery, sqlQr9);
@@ -1788,7 +1895,7 @@ protected:
 		err = rt.reindexer->Select(checkQuery9, checkQr9);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		CompareQueryResults(sqlQr9, checkQr9);
+		CompareQueryResults(sqlQuery, sqlQr9, checkQr9);
 		Verify(geomNs, checkQr9, checkQuery9);
 	}
 
@@ -1977,6 +2084,8 @@ protected:
 	const char* kFieldNameBtreeIdsets = "btree_idsets";
 	const char* kFieldNamePointQuadraticRTree = "point_quadratic_rtree";
 	const char* kFieldNamePointLinearRTree = "point_linear_rtree";
+	const char* kFieldNamePointGreeneRTree = "point_greene_rtree";
+	const char* kFieldNamePointRStarRTree = "point_rstar_rtree";
 	const char* kFieldNamePointNonIndex = "point_field_non_index";
 
 	const char* kFieldNameColumnInt = "columnInt";

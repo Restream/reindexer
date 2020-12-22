@@ -160,7 +160,7 @@ ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const 
 		}
 		assert(res == EXIT_SUCCESS);
 	}));
-	while (!srv.IsReady()) {
+	while (!srv.IsRunning() || !srv.IsReady()) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
 	// init client

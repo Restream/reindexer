@@ -13,9 +13,14 @@ void StatsCollector::Start(DBManager& dbMngr) {
 	}
 	if (prometheus_) {
 		statsCollectingThread_ = std::thread([this, &dbMngr]() {
+			const auto kSleepTime = std::chrono::milliseconds(100);
+			std::chrono::milliseconds now{0};
 			while (!terminate_.load(std::memory_order_acquire)) {
-				std::this_thread::sleep_for(collectPeriod_);
-				this->collectStats(dbMngr);
+				std::this_thread::sleep_for(kSleepTime);
+				now += kSleepTime;
+				if (now.count() % collectPeriod_.count() == 0) {
+					this->collectStats(dbMngr);
+				}
 			}
 		});
 		enabled_.store(true, std::memory_order_release);

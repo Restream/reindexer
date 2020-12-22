@@ -4,20 +4,23 @@ CollateOpts::CollateOpts(uint8_t mode) : mode(mode) {}
 
 CollateOpts::CollateOpts(const std::string& sortOrderUTF8) : mode(CollateCustom), sortOrderTable(sortOrderUTF8) {}
 
-IndexOpts::IndexOpts(uint8_t flags, CollateMode mode) : options(flags), collateOpts_(mode) {}
+IndexOpts::IndexOpts(uint8_t flags, CollateMode mode, RTreeIndexType rtreeType)
+	: options(flags), collateOpts_(mode), rtreeType_(rtreeType) {}
 
-IndexOpts::IndexOpts(const std::string& sortOrderUTF8, uint8_t flags) : options(flags), collateOpts_(sortOrderUTF8) {}
+IndexOpts::IndexOpts(const std::string& sortOrderUTF8, uint8_t flags, RTreeIndexType rtreeType)
+	: options(flags), collateOpts_(sortOrderUTF8), rtreeType_(rtreeType) {}
 
 bool IndexOpts::IsEqual(const IndexOpts& other, bool skipConfig) const {
 	return options == other.options && (skipConfig || config == other.config) && collateOpts_.mode == other.collateOpts_.mode &&
-		   collateOpts_.sortOrderTable.GetSortOrderCharacters() == other.collateOpts_.sortOrderTable.GetSortOrderCharacters();
+		   collateOpts_.sortOrderTable.GetSortOrderCharacters() == other.collateOpts_.sortOrderTable.GetSortOrderCharacters() &&
+		   rtreeType_ == other.rtreeType_;
 }
 
 bool IndexOpts::IsPK() const noexcept { return options & kIndexOptPK; }
 bool IndexOpts::IsArray() const noexcept { return options & kIndexOptArray; }
 bool IndexOpts::IsDense() const noexcept { return options & kIndexOptDense; }
 bool IndexOpts::IsSparse() const noexcept { return options & kIndexOptSparse; }
-bool IndexOpts::IsRTreeLinear() const noexcept { return options & kIndexOptRTreeLinear; }
+IndexOpts::RTreeIndexType IndexOpts::RTreeType() const noexcept { return rtreeType_; }
 bool IndexOpts::hasConfig() const noexcept { return !config.empty(); }
 CollateMode IndexOpts::GetCollateMode() const noexcept { return static_cast<CollateMode>(collateOpts_.mode); }
 
@@ -41,8 +44,8 @@ IndexOpts& IndexOpts::Sparse(bool value) noexcept {
 	return *this;
 }
 
-IndexOpts& IndexOpts::RTreeLinear(bool value) noexcept {
-	options = value ? options | kIndexOptRTreeLinear : options & ~(kIndexOptRTreeLinear);
+IndexOpts& IndexOpts::RTreeType(RTreeIndexType value) noexcept {
+	rtreeType_ = value;
 	return *this;
 }
 

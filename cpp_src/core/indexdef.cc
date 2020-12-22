@@ -124,6 +124,11 @@ Error IndexDef::FromJSON(span<char> json) {
 	return errOK;
 }
 
+const char *const kRTreeLinear = "linear";
+const char *const kRTreeQuadratic = "quadratic";
+const char *const kRTreeGreene = "greene";
+const char *const kRTreeRStar = "rstar";
+
 void IndexDef::FromJSON(const gason::JsonNode &root) {
 	name_ = root["name"].As<string>();
 	jsonPaths_.clear();
@@ -137,8 +142,25 @@ void IndexDef::FromJSON(const gason::JsonNode &root) {
 	opts_.Array(root["is_array"].As<bool>());
 	opts_.Dense(root["is_dense"].As<bool>());
 	opts_.Sparse(root["is_sparse"].As<bool>());
-	opts_.RTreeLinear(root["is_linear"].As<bool>());
 	opts_.SetConfig(stringifyJson(root["config"]));
+	const std::string rtreeType = root["rtree_type"].As<std::string>();
+	if (rtreeType.empty()) {
+		if (indexType_ == "rtree" || fieldType_ == "point") {
+			throw Error(errParams, "RTree type does not set");
+		}
+	} else {
+		if (rtreeType == kRTreeLinear) {
+			opts_.RTreeType(IndexOpts::Linear);
+		} else if (rtreeType == kRTreeQuadratic) {
+			opts_.RTreeType(IndexOpts::Quadratic);
+		} else if (rtreeType == kRTreeGreene) {
+			opts_.RTreeType(IndexOpts::Greene);
+		} else if (rtreeType == kRTreeRStar) {
+			opts_.RTreeType(IndexOpts::RStar);
+		} else {
+			throw Error(errParams, "Unknown RTree type %s", rtreeType);
+		}
+	}
 
 	auto collateStr = root["collate_mode"].As<string_view>();
 	if (!collateStr.empty()) {
@@ -164,7 +186,23 @@ void IndexDef::GetJSON(WrSerializer &ser, int formatFlags) const {
 		.Put("is_dense", opts_.IsDense())
 		.Put("is_sparse", opts_.IsSparse());
 	if (indexType_ == "rtree" || fieldType_ == "point") {
-		builder.Put("is_linear", opts_.IsRTreeLinear());
+		switch (opts_.RTreeType()) {
+			case IndexOpts::Linear:
+				builder.Put("rtree_type", kRTreeLinear);
+				break;
+			case IndexOpts::Quadratic:
+				builder.Put("rtree_type", kRTreeQuadratic);
+				break;
+			case IndexOpts::Greene:
+				builder.Put("rtree_type", kRTreeGreene);
+				break;
+			case IndexOpts::RStar:
+				builder.Put("rtree_type", kRTreeRStar);
+				break;
+			default:
+				assert(0);
+				abort();
+		}
 	}
 	builder.Put("collate_mode", getCollateMode())
 		.Put("sort_order_letters", opts_.collateOpts_.sortOrderTable.GetSortOrderCharacters())

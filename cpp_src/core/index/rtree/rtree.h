@@ -12,8 +12,8 @@ struct DefaultRTreeTraits {
 	static Point GetPoint(Point v) noexcept { return v; }
 };
 
-template <typename T, template <typename, typename, typename, typename, size_t> class Splitter, typename Traits = DefaultRTreeTraits,
-		  size_t MaxEntries = 8, size_t MinEntries = MaxEntries / 2>
+template <typename T, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
+		  size_t MinEntries, typename Traits = DefaultRTreeTraits>
 class RectangleTree {
 	static_assert(1 < MinEntries && MinEntries <= MaxEntries / 2, "");
 
@@ -147,11 +147,7 @@ private:
 	};
 
 	class Leaf : public NodeBase {
-		using SplitterT = Splitter<T, Leaf, Traits, iterator, MinEntries>;
-		friend SplitterT;
-		friend typename SplitterT::Base;
-		friend iterator;
-		friend const_iterator;
+		using SplitterT = Splitter<T, Leaf, Traits, iterator, MaxEntries, MinEntries>;
 		friend Node;
 
 	public:
@@ -181,7 +177,6 @@ private:
 		}
 
 		std::pair<std::unique_ptr<NodeBase>, std::unique_ptr<NodeBase>> insert(T&& v, iterator& insertedIt, bool splitAvailable) override {
-			std::pair<std::unique_ptr<NodeBase>, std::unique_ptr<NodeBase>> result;
 			if (data_.size() < MaxEntries) {
 				if (data_.empty()) {
 					this->SetBoundRect(boundRect(Traits::GetPoint(v)));
@@ -190,15 +185,13 @@ private:
 				}
 				data_.emplace_back(std::move(v));
 				insertedIt = iterator{this, data_.begin() + (data_.size() - 1)};
+				return {};
 			} else {
 				assert(splitAvailable);
 				(void)splitAvailable;
 				SplitterT splitter{std::move(v), *this, &insertedIt};
-				auto splittedNodes{splitter.Split()};
-				result.first = std::move(splittedNodes.first);
-				result.second = std::move(splittedNodes.second);
+				return splitter.Split();
 			}
-			return result;
 		}
 
 		bool DWithin(Point p, double distance, RectangleTree::Visitor& visitor) const noexcept override {
@@ -267,7 +260,10 @@ private:
 
 	private:
 		void adjustBoundRect() {
-			assert(!data_.empty());
+			if (data_.empty()) {
+				this->SetBoundRect({});
+				return;
+			}
 			reindexer::Rectangle newBoundRect{boundRect(Traits::GetPoint(data_[0]))};
 			for (size_t i = 1; i < data_.size(); ++i) {
 				newBoundRect = boundRect(newBoundRect, Traits::GetPoint(data_[i]));
@@ -275,13 +271,13 @@ private:
 			this->SetBoundRect(newBoundRect);
 		}
 
+	public:
 		Container data_;
 	};
 
 	class Node : public NodeBase {
-		using SplitterT = Splitter<std::unique_ptr<NodeBase>, Node, Traits, void, MinEntries>;
-		friend SplitterT;
-		friend typename SplitterT::Base;
+		using SplitterT = Splitter<std::unique_ptr<NodeBase>, Node, Traits, void, MaxEntries, MinEntries>;
+		friend Leaf;
 		friend RectangleTree;
 
 	public:
@@ -358,29 +354,15 @@ private:
 
 		std::pair<std::unique_ptr<NodeBase>, std::unique_ptr<NodeBase>> insert(T&& v, iterator& insertedIt, bool splitAvailable) override {
 			const reindexer::Rectangle boundRectOfObject = boundRect(Traits::GetPoint(v));
-			size_t i = 0;
 			const bool splitOfChildAvailable = splitAvailable || data_.size() < MaxEntries;
-			if (!splitOfChildAvailable) {
-				while (i < data_.size() && data_[i]->IsFull()) ++i;
-			}
-			assert(i < data_.size());
-			auto minAreaIncrease = data_[i]->AreaIncrease(boundRectOfObject);
-			size_t nodeToInsert = i;
-			for (; i < data_.size(); ++i) {
-				if (!splitOfChildAvailable && data_[i]->IsFull()) continue;
-				const auto currAreaIncrease = data_[i]->AreaIncrease(boundRectOfObject);
-				if (currAreaIncrease < minAreaIncrease) {
-					minAreaIncrease = currAreaIncrease;
-					nodeToInsert = i;
-				}
-			}
+			const size_t nodeToInsert = SplitterT::ChooseSubtree(boundRectOfObject, data_, splitOfChildAvailable);
 
 			auto splittedChildren = data_[nodeToInsert]->insert(std::move(v), insertedIt, splitOfChildAvailable);
 			if (splittedChildren.first) {
 				data_[nodeToInsert] = std::move(splittedChildren.first);
-				data_[nodeToInsert]->SetParent(this);
 				auto splittedNodes = insert(std::move(splittedChildren.second));
 				if (splittedNodes.first) return splittedNodes;
+				data_[nodeToInsert]->SetParent(this);
 			}
 			if (data_.size() == 1) {
 				this->SetBoundRect(data_[0]->BoundRect());
@@ -435,9 +417,9 @@ private:
 			const reindexer::Rectangle thisBoundRect{this->BoundRect()};
 			reindexer::Rectangle boundRectOfAllChildren = data_[0]->BoundRect();
 			for (const auto& n : data_) {
+				if (!n->Check(this)) return false;
 				boundRectOfAllChildren = boundRect(boundRectOfAllChildren, n->BoundRect());
 				if (!thisBoundRect.Contain(n->BoundRect())) return false;
-				if (!n->Check(this)) return false;
 			}
 			if (this->BoundRect() != boundRectOfAllChildren) return false;
 			return true;
@@ -446,8 +428,8 @@ private:
 	private:
 		std::pair<std::unique_ptr<NodeBase>, std::unique_ptr<NodeBase>> insert(std::unique_ptr<NodeBase>&& ptr) {
 			if (data_.size() < MaxEntries) {
-				this->SetBoundRect(boundRect(this->BoundRect(), ptr->BoundRect()));
 				data_.emplace_back(std::move(ptr));
+				this->SetBoundRect(boundRect(this->BoundRect(), data_.back()->BoundRect()));
 				data_.back()->SetParent(this);
 				return {};
 			} else {
@@ -474,7 +456,12 @@ private:
 
 		void condenseTree(size_t deletingNode) {
 			assert(deletingNode < data_.size());
-			if (!this->Parent() && data_.size() == 1) return;
+			if (!this->Parent() && data_.size() == 1) {
+				assert(data_[0]->IsLeaf());
+				static_cast<Leaf*>(data_[0].get())->adjustBoundRect();
+				this->SetBoundRect(data_[0]->BoundRect());
+				return;
+			}
 			if (data_[deletingNode]->IsLeaf()) {
 				const std::unique_ptr<Leaf> delLeaf{static_cast<Leaf*>(data_[deletingNode].release())};
 				data_.erase(data_.begin() + deletingNode);
@@ -498,21 +485,7 @@ private:
 						data_.back()->SetParent(this);
 					}
 				} else {
-					size_t nodeToMove = 0;
-					if (deletingNode == 0) {
-						nodeToMove = 1;
-						assert(data_.size() > 1);
-					}
-					auto minAreaIncrease = n->AreaIncrease(data_[nodeToMove]->BoundRect());
-					for (size_t i = nodeToMove + 1; i < data_.size(); ++i) {
-						if (i == deletingNode) continue;
-						const auto currAreaIncrease = n->AreaIncrease(data_[i]->BoundRect());
-						if (currAreaIncrease < minAreaIncrease) {
-							minAreaIncrease = currAreaIncrease;
-							nodeToMove = i;
-						}
-					}
-
+					const size_t nodeToMove = SplitterT::ChooseNode(*n, data_, deletingNode);
 					d.emplace_back(std::move(data_[nodeToMove]));
 					d.back()->SetParent(n);
 					n->adjustBoundRect();
@@ -532,6 +505,7 @@ private:
 			this->SetBoundRect(newBoundRect);
 		}
 
+	public:
 		Container data_;
 	};
 
@@ -543,7 +517,13 @@ public:
 	size_t size() const noexcept { return root_.Size(); }
 	std::pair<iterator, bool> insert(T&& v) {
 		const auto findRes = root_.find(Traits::GetPoint(v));
-		if (findRes.second) return {findRes.first, false};
+		if (findRes.second) {
+			return {findRes.first, false};
+		} else {
+			return {insert_without_test(std::move(v)), true};
+		}
+	}
+	iterator insert_without_test(T&& v) {
 		iterator inserted = begin();
 		auto splittedNodes = root_.insert(std::move(v), inserted, true);
 		if (splittedNodes.first) {
@@ -554,7 +534,7 @@ public:
 			root_.data_.back()->SetParent(&root_);
 			root_.SetBoundRect(boundRect(root_.data_[0]->BoundRect(), root_.data_[1]->BoundRect()));
 		}
-		return {inserted, true};
+		return inserted;
 	}
 	bool DeleteOneIf(Visitor& visitor) { return root_.DeleteOneIf(visitor).first; }
 	void erase(iterator it) { it.leaf_->erase(it.it_); }
@@ -592,17 +572,12 @@ public:
 	const Key& first;
 	T second;
 	RMapValue() : first_{}, first{first_}, second{} {}
-	RMapValue(Key&& k, T&& v)
-		: first_{std::move(k)}, first{first_}, second{std::move(v)} {}
-	RMapValue(Key&& k, const T& v)
-		: first_{std::move(k)}, first{first_}, second{v} {}
-	RMapValue(const Key& k, T&& v)
-		: first_{k}, first{first_}, second{std::move(v)} {}
+	RMapValue(Key&& k, T&& v) : first_{std::move(k)}, first{first_}, second{std::move(v)} {}
+	RMapValue(Key&& k, const T& v) : first_{std::move(k)}, first{first_}, second{v} {}
+	RMapValue(const Key& k, T&& v) : first_{k}, first{first_}, second{std::move(v)} {}
 	RMapValue(const Key& k, const T& v) : first_{k}, first{first_}, second{v} {}
-	RMapValue(RMapValue&& other)
-		: first_{std::move(other.first_)}, first{first_}, second{std::move(other.second)} {}
-	RMapValue(const RMapValue& other)
-		: first_{other.first_}, first{first_}, second{other.second} {}
+	RMapValue(RMapValue&& other) : first_{std::move(other.first_)}, first{first_}, second{std::move(other.second)} {}
+	RMapValue(const RMapValue& other) : first_{other.first_}, first{first_}, second{other.second} {}
 	RMapValue& operator=(RMapValue&& other) {
 		first_ = std::move(other.first_);
 		second = std::move(other.second);
@@ -615,25 +590,21 @@ struct DefaultRMapTraits {
 	static Point GetPoint(const RMapValue<Point, T>& p) noexcept { return p.first; }
 };
 
-template <typename T, template <typename, typename, typename, typename, size_t> class Splitter, typename Traits = DefaultRMapTraits<T>,
-		  size_t MaxEntries = 8, size_t MinEntries = MaxEntries / 2>
-class RTreeMap : public RectangleTree<RMapValue<Point, T>, Splitter, Traits, MaxEntries, MinEntries> {
+template <typename T, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
+		  size_t MinEntries, typename Traits = DefaultRMapTraits<T>>
+class RTreeMap : public RectangleTree<RMapValue<Point, T>, Splitter, MaxEntries, MinEntries, Traits> {
 public:
 	using key_type = Point;
 	using mapped_type = T;
 };
 
-template <typename T>
-struct GeometryMapTraits {
-	static Point GetPoint(const RMapValue<Point, T>& p) noexcept { return p.first; }
-};
-
 class PayloadType;
 class FieldsSet;
 
-template <typename KeyEntryT, template <typename, typename, typename, typename, size_t> class Splitter>
-class GeometryMap : public RTreeMap<KeyEntryT, Splitter, GeometryMapTraits<KeyEntryT>> {
-	using Base = RTreeMap<KeyEntryT, Splitter, GeometryMapTraits<KeyEntryT>>;
+template <typename KeyEntryT, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
+		  size_t MinEntries>
+class GeometryMap : public RTreeMap<KeyEntryT, Splitter, MaxEntries, MinEntries> {
+	using Base = RTreeMap<KeyEntryT, Splitter, MaxEntries, MinEntries>;
 
 public:
 	GeometryMap(const PayloadType&, const FieldsSet&, const CollateOpts&) {}

@@ -32,7 +32,7 @@ git:
     - curl https://raw.githubusercontent.com/travis-ci/gimme/master/gimme > ~/gimme && chmod +x ~/gimme && eval "$(~/gimme 1.13.1)"
   before_script:
     - git clone https://github.com/google/googletest.git /tmp/dep_googletest && cd /tmp/dep_googletest && cmake -DBUILD_GMOCK=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-std=c++11" . && make -j4 && sudo make install
-    - git clone https://github.com/google/benchmark.git /tmp/dep_googlebench && cd /tmp/dep_googlebench && git checkout tags/v1.4.0 -b v.1.4.0 && cmake -DBENCHMARK_ENABLE_TESTING=Off -DCMAKE_BUILD_TYPE=Release . && make -j4 && sudo make install
+    - git clone https://github.com/google/benchmark.git /tmp/dep_googlebench && cd /tmp/dep_googlebench && cmake -DBENCHMARK_ENABLE_TESTING=Off -DCMAKE_BUILD_TYPE=Release . && make -j4 && sudo make install
     - if [[ ${WITH_DOXYGEN} -eq 1 ]]; then git clone https://github.com/doxygen/doxygen.git /tmp/dep_doxygen && cd /tmp/dep_doxygen && cmake -DCMAKE_BUILD_TYPE=Release . && make -j4 && sudo make install; fi
     - if [[ ${WITH_DOXYGEN} -eq 1 ]]; then git clone https://github.com/mosra/m.css.git /tmp/dep_mcss && sudo ln -s /tmp/dep_mcss/doxygen/dox2html5.py /usr/local/bin; fi
     - go get github.com/cheggaaa/deepcopy

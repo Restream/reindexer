@@ -22,6 +22,7 @@ type IndexDef struct {
 	SortOrder   string      `json:"sort_order_letters"`
 	ExpireAfter int         `json:"expire_after"`
 	Config      interface{} `json:"config"`
+	RTreeType   string      `json:"rtree_type"`
 }
 
 type FieldDef struct {

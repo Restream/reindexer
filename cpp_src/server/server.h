@@ -25,6 +25,7 @@ public:
 	void EnableHandleSignals(bool enable = true);
 	DBManager& GetDBManager();
 	bool IsReady();
+	bool IsRunning();
 	void ReopenLogFiles();
 
 protected:

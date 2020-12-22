@@ -1,4 +1,11 @@
 #include "clientsstats_api.h"
+#include "coroutine/waitgroup.h"
+
+using reindexer::net::ev::dynamic_loop;
+using reindexer::client::CoroReindexer;
+using reindexer::client::CoroQueryResults;
+using reindexer::coroutine::wait_group;
+using reindexer::coroutine::wait_group_guard;
 
 void ClientsStatsApi::SetUp() {}
 
@@ -27,13 +34,13 @@ void ClientsStatsApi::RunServerInThread(bool statEnable) {
 		(void)res;
 		assert(res == EXIT_SUCCESS);
 	}));
-	while (!server_.IsReady()) {
+	while (!server_.IsRunning()) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
 }
 
 void ClientsStatsApi::TearDown() {
-	if (server_.IsReady()) {
+	if (server_.IsRunning()) {
 		server_.Stop();
 		serverThread_->join();
 	}
@@ -44,48 +51,43 @@ std::string ClientsStatsApi::GetConnectionString() {
 	return ret;
 }
 
-void ClientsStatsApi::SetProfilingFlag(bool val, const std::string& column, reindexer::client::Reindexer* c) {
+void ClientsStatsApi::SetProfilingFlag(bool val, const std::string& column, CoroReindexer& c) {
 	reindexer::Query qup = std::move(reindexer::Query("#config").Where("type", CondEq, "profiling").Set(column, val));
-	reindexer::client::QueryResults result;
-	auto err = c->Update(qup, result);
+	CoroQueryResults result;
+	auto err = c.Update(qup, result);
 	ASSERT_TRUE(err.ok()) << err.what();
-}
-
-void ClientsStatsApi::RunClient(int connPoolSize, int workerThreads) {
-	reindexer::client::ReindexerConfig config;
-	config.ConnPoolSize = connPoolSize;
-	config.WorkerThreads = workerThreads;
-	client_.reset(new reindexer::client::Reindexer(config));
-	reindexer::client::ConnectOpts opts;
-	opts.CreateDBIfMissing();
-	auto err = client_->Connect(GetConnectionString(), opts);
-	ASSERT_TRUE(err.ok()) << err.what();
-	SetProfilingFlag(true, "profiling.activitystats", client_.get());
 }
 
 void ClientsStatsApi::ClientLoopReconnect() {
-	while (!stop_) {
-		int dt = rand() % 100;
-		std::this_thread::sleep_for(std::chrono::milliseconds(dt));
-		reindexer::client::Reindexer client;
-		auto err = client.Connect(GetConnectionString());
-		ASSERT_TRUE(err.ok()) << err.what();
-		reindexer::client::QueryResults result;
-		err = client.Select(reindexer::Query("#namespaces"), result);
-		ASSERT_TRUE(err.ok()) << err.what();
-		std::string resString;
-		for (auto it = result.begin(); it != result.end(); ++it) {
-			reindexer::WrSerializer sr;
-			err = it.GetJSON(sr, false);
+	dynamic_loop loop;
+	bool finished = false;
+	loop.spawn([this, &finished, &loop] {
+		while (!stop_) {
+			int dt = rand() % 100;
+			loop.sleep(std::chrono::milliseconds(dt));
+			CoroReindexer rx;
+			auto err = rx.Connect(GetConnectionString(), loop);
 			ASSERT_TRUE(err.ok()) << err.what();
-			reindexer::string_view sv = sr.Slice();
-			resString += std::string(sv.data(), sv.size());
+			CoroQueryResults result;
+			err = rx.Select(reindexer::Query("#namespaces"), result);
+			ASSERT_TRUE(err.ok()) << err.what();
+			std::string resString;
+			for (auto it = result.begin(); it != result.end(); ++it) {
+				reindexer::WrSerializer sr;
+				err = it.GetJSON(sr, false);
+				ASSERT_TRUE(err.ok()) << err.what();
+				reindexer::string_view sv = sr.Slice();
+				resString += std::string(sv.data(), sv.size());
+			}
 		}
-	}
+		finished = true;
+	});
+	loop.run();
+	ASSERT_TRUE(finished);
 }
 
-uint32_t ClientsStatsApi::StatsTxCount(reindexer::client::Reindexer& rx) {
-	reindexer::client::QueryResults resultCs;
+uint32_t ClientsStatsApi::StatsTxCount(CoroReindexer& rx) {
+	CoroQueryResults resultCs;
 	auto err = rx.Select("SELECT * FROM #clientsstats", resultCs);
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_EQ(resultCs.Count(), 1);
@@ -104,31 +106,49 @@ uint32_t ClientsStatsApi::StatsTxCount(reindexer::client::Reindexer& rx) {
 	return 0;
 }
 
-void ClientsStatsApi::ClientSelectLoop() {
-	while (!stop_) {
-		reindexer::client::QueryResults result;
-		auto err = client_->Select(reindexer::Query("#clientsstats"), result);
+void ClientsStatsApi::ClientSelectLoop(size_t coroutines) {
+	dynamic_loop loop;
+	bool finished = false;
+	loop.spawn([this, &loop, &finished, coroutines] {
+		CoroReindexer rx;
+		auto err = rx.Connect(GetConnectionString(), loop);
 		ASSERT_TRUE(err.ok()) << err.what();
-		std::string resString;
-		for (auto it = result.begin(); it != result.end(); ++it) {
-			reindexer::WrSerializer sr;
-			err = it.GetJSON(sr, false);
-			ASSERT_TRUE(err.ok()) << err.what();
-			reindexer::string_view sv = sr.Slice();
-			resString += std::string(sv.data(), sv.size());
+		wait_group wg;
+		wg.add(coroutines);
+		for (size_t i = 0; i < coroutines; ++i) {
+			loop.spawn([this, &rx, &wg] {
+				wait_group_guard wgg(wg);
+				while (!stop_) {
+					reindexer::client::CoroQueryResults result;
+					auto err = rx.Select(reindexer::Query("#clientsstats"), result);
+					ASSERT_TRUE(err.ok()) << err.what();
+					std::string resString;
+					for (auto it = result.begin(); it != result.end(); ++it) {
+						reindexer::WrSerializer sr;
+						err = it.GetJSON(sr, false);
+						ASSERT_TRUE(err.ok()) << err.what();
+						reindexer::string_view sv = sr.Slice();
+						resString += std::string(sv.data(), sv.size());
+					}
+				}
+			});
 		}
-	}
+		wg.wait();
+		finished = true;
+	});
+	loop.run();
+	ASSERT_TRUE(finished);
 }
 
-void ClientsStatsApi::RunNSelectThread(int N) {
-	for (int i = 0; i < N; i++) {
-		auto thread_ = std::unique_ptr<std::thread>(new std::thread([this]() { this->ClientSelectLoop(); }));
+void ClientsStatsApi::RunNSelectThread(size_t threads, size_t coroutines) {
+	for (size_t i = 0; i < threads; i++) {
+		auto thread_ = std::unique_ptr<std::thread>(new std::thread([this, coroutines]() { this->ClientSelectLoop(coroutines); }));
 		clientThreads_.push_back(std::move(thread_));
 	}
 }
 
-void ClientsStatsApi::RunNReconnectThread(int N) {
-	for (int i = 0; i < N; i++) {
+void ClientsStatsApi::RunNReconnectThread(size_t N) {
+	for (size_t i = 0; i < N; i++) {
 		auto thread_ = std::unique_ptr<std::thread>(new std::thread([this]() { this->ClientLoopReconnect(); }));
 		reconnectThreads_.push_back(std::move(thread_));
 	}

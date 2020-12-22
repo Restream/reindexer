@@ -140,6 +140,8 @@ type TestItemGeom struct {
 	ID                  int        `reindex:"id,,pk"`
 	PointRTreeLinear    [2]float64 `reindex:"point_rtree_linear,rtree,linear"`
 	PointRTreeQuadratic [2]float64 `reindex:"point_rtree_quadratic,rtree,quadratic"`
+	PointRTreeGreene    [2]float64 `reindex:"point_rtree_greene,rtree,greene"`
+	PointRTreeRStar     [2]float64 `reindex:"point_rtree_rstar,rtree,rstar"`
 	PointNonIndex       [2]float64 `json:"point_non_index"`
 }
 
@@ -270,6 +272,8 @@ func newTestItemGeom(id int, pkgsCount int) interface{} {
 		ID:                  mkID(id),
 		PointRTreeLinear:    randPoint(),
 		PointRTreeQuadratic: randPoint(),
+		PointRTreeGreene:    randPoint(),
+		PointRTreeRStar:     randPoint(),
 		PointNonIndex:       randPoint(),
 	}
 }
@@ -559,6 +563,7 @@ func CheckAggregateQueries() {
 	if it.Error() != nil {
 		panic(it.Error())
 	}
+	defer it.Close()
 
 	qcheck := DB.Query("test_items")
 	res, err := qcheck.Exec().FetchAll()
@@ -1129,6 +1134,8 @@ func CheckTestItemsGeomQueries(t *testing.T) {
 	newTestQuery(DB, "test_items_geom").DWithin("point_non_index", randPoint(), randFloat(0, 2, 6)).ExecAndVerify(t)
 	newTestQuery(DB, "test_items_geom").DWithin("point_rtree_linear", randPoint(), randFloat(0, 2, 6)).ExecAndVerify(t)
 	newTestQuery(DB, "test_items_geom").DWithin("point_rtree_quadratic", randPoint(), randFloat(0, 2, 6)).ExecAndVerify(t)
+	newTestQuery(DB, "test_items_geom").DWithin("point_rtree_greene", randPoint(), randFloat(0, 2, 6)).ExecAndVerify(t)
+	newTestQuery(DB, "test_items_geom").DWithin("point_rtree_rstar", randPoint(), randFloat(0, 2, 6)).ExecAndVerify(t)
 }
 
 func CheckTestItemsSQLQueries(t *testing.T) {
@@ -1486,6 +1493,7 @@ func TestEqualPosition(t *testing.T) {
 	for it.Next() {
 		assert.True(t, expectedIds[it.Object().(*TestItemEqualPosition).ID])
 	}
+	it.Close()
 
 	expectedIds = map[string]bool{
 		"5":  true,
@@ -1498,6 +1506,7 @@ func TestEqualPosition(t *testing.T) {
 		WhereBool("test_flag", reindexer.EQ, false).
 		EqualPosition("items_array.space_id", "items_array.value").
 		MustExec()
+	it.Close()
 	assert.Equal(t, len(expectedIds), it.Count())
 	for it.Next() {
 		assert.True(t, expectedIds[it.Object().(*TestItemEqualPosition).ID])
@@ -1514,10 +1523,13 @@ func TestStrictMode(t *testing.T) {
 		{
 			itNames := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNames).Where("nested.Name", reindexer.ANY, 0).Sort("nested.Name", false).MustExec()
 			assert.Equal(t, itNames.Count(), 0)
+			itNames.Close()
 			itNone := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNone).Where("nested.Name", reindexer.ANY, 0).Sort("nested.Name", false).MustExec()
 			assert.Equal(t, itNone.Count(), 0)
+			itNone.Close()
 			itIndexes := DBD.Query(namespace).Strict(reindexer.QueryStrictModeIndexes).Where("nested.Name", reindexer.ANY, 0).Sort("nested.Name", false).Exec()
 			assert.Error(t, itIndexes.Error())
+			itIndexes.Close()
 		}
 	})
 
@@ -1577,7 +1589,14 @@ func TestStrictMode(t *testing.T) {
 			assert.Equal(t, itIndexes.JSON(), itNone.JSON())
 			assert.Equal(t, itNone2.JSON(), itNone.JSON())
 		}
-		assert.NoError(t, itNone1.Error())
+		itNone.Close()
+		itNone1.Close()
+		itNone2.Close()
+		itNames.Close()
+		itIndexes.Close()
+		itIndexes1.Close()
+		itIndexes2.Close()
+
 	})
 
 	t.Run("Strict filtering with non-index field", func(t *testing.T) {
@@ -1598,6 +1617,13 @@ func TestStrictMode(t *testing.T) {
 		itIndexes1 := DBD.Query(namespace).Distinct("real_new_field").Sort("year", true).
 			Sort("name", false).Strict(reindexer.QueryStrictModeIndexes).Exec()
 		assert.Error(t, itIndexes1.Error())
+
+		itNone.Close()
+		itNone1.Close()
+		itNames.Close()
+		itIndexes.Close()
+		itIndexes1.Close()
+		itNames1.Close()
 	})
 
 	t.Run("Strict filtering with non-existing field", func(t *testing.T) {
@@ -1605,9 +1631,11 @@ func TestStrictMode(t *testing.T) {
 			itNames := DBD.Query(namespace).Where("unknown_field", reindexer.EQ, true).Sort("year", true).
 				Sort("name", false).Strict(reindexer.QueryStrictModeNames).Exec()
 			assert.Error(t, itNames.Error())
+			itNames.Close()
 			itNone := DBD.Query(namespace).Where("unknown_field", reindexer.EQ, true).Sort("year", true).
 				Sort("name", false).Strict(reindexer.QueryStrictModeNone).MustExec()
 			assert.Equal(t, itNone.Count(), 0)
+			itNone.Close()
 			itIndexes := DBD.Query(namespace).Where("unknown_field", reindexer.EQ, true).Sort("year", true).
 				Sort("name", false).Strict(reindexer.QueryStrictModeIndexes).Exec()
 			assert.Error(t, itIndexes.Error())
@@ -1615,30 +1643,38 @@ func TestStrictMode(t *testing.T) {
 			itNames1 := DBD.Query(namespace).Distinct("unknown_field").Sort("year", true).
 				Sort("name", false).Strict(reindexer.QueryStrictModeNames).Exec()
 			assert.Error(t, itNames1.Error())
+			itNames1.Close()
 			itNone1 := DBD.Query(namespace).Distinct("unknown_field").Sort("year", true).
 				Sort("name", false).Strict(reindexer.QueryStrictModeNone).MustExec()
 			assert.Equal(t, itNone1.Count(), 0)
+			itNone1.Close()
 			itIndexes1 := DBD.Query(namespace).Distinct("unknown_field").Sort("year", true).
 				Sort("name", false).Strict(reindexer.QueryStrictModeIndexes).Exec()
 			assert.Error(t, itIndexes1.Error())
+			itIndexes1.Close()
 
 			itNone3 := DBD.Query(namespace).Where("unknown_field", reindexer.EMPTY, 0).Sort("year", true).
 				Sort("name", false).Strict(reindexer.QueryStrictModeNone).MustExec()
 			assert.Equal(t, itNone3.Count(), itemsCount)
+			itNone3.Close()
 		}
 
 		{
 			itNames := DBD.Query(namespace).Where("unknown_field", reindexer.EMPTY, 0).Sort("year", true).
 				Sort("name", false).Strict(reindexer.QueryStrictModeNames).Exec()
 			assert.Error(t, itNames.Error())
+			itNames.Close()
 			itNone := DBD.Query(namespace).Where("unknown_field", reindexer.EMPTY, 0).Sort("year", true).
 				Sort("name", false).Strict(reindexer.QueryStrictModeNone).MustExec()
+			itNone.Close()
 			itAll := DBD.Query(namespace).Sort("year", true).
 				Sort("name", false).Strict(reindexer.QueryStrictModeNone).MustExec()
 			assert.Equal(t, itNone.Count(), itAll.Count())
+			itAll.Close()
 			itIndexes := DBD.Query(namespace).Where("unknown_field", reindexer.EMPTY, 0).Sort("year", true).
 				Sort("name", false).Strict(reindexer.QueryStrictModeIndexes).Exec()
 			assert.Error(t, itIndexes.Error())
+			itIndexes.Close()
 		}
 	})
 
@@ -1650,6 +1686,9 @@ func TestStrictMode(t *testing.T) {
 			assert.Equal(t, itNames.Count(), itNone.Count())
 			itIndexes := DBD.Query(namespace).Strict(reindexer.QueryStrictModeIndexes).InnerJoin(DBD.Query(namespaceJoined), "prices").On("year", reindexer.EQ, "id").Where("price", reindexer.LE, priceVal).Sort("price", false).Exec()
 			assert.Error(t, itIndexes.Error())
+			itNames.Close()
+			itNone.Close()
+			itIndexes.Close()
 		}
 		{
 			itNames := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNames).Sort(namespaceJoined+".price", false).InnerJoin(DBD.Query(namespaceJoined), "prices").On("year", reindexer.EQ, "id").MustExec()
@@ -1657,6 +1696,10 @@ func TestStrictMode(t *testing.T) {
 			assert.Equal(t, itNames.Count(), itNone.Count())
 			itIndexes := DBD.Query(namespace).Strict(reindexer.QueryStrictModeIndexes).Sort(namespaceJoined+".price", false).InnerJoin(DBD.Query(namespaceJoined), "prices").On("year", reindexer.EQ, "id").Exec()
 			assert.Error(t, itIndexes.Error())
+			itNames.Close()
+			itNone.Close()
+			itIndexes.Close()
+
 		}
 		{
 			itNames := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNames).Sort(namespaceJoined+".amount", false).InnerJoin(DBD.Query(namespaceJoined), "prices").On("year", reindexer.EQ, "id").MustExec()
@@ -1664,6 +1707,10 @@ func TestStrictMode(t *testing.T) {
 			assert.Equal(t, itNames.Count(), itNone.Count())
 			itIndexes := DBD.Query(namespace).Strict(reindexer.QueryStrictModeIndexes).Sort(namespaceJoined+".amount", false).InnerJoin(DBD.Query(namespaceJoined), "prices").On("year", reindexer.EQ, "id").MustExec()
 			assert.Equal(t, itIndexes.Count(), itNone.Count())
+			itNames.Close()
+			itNone.Close()
+			itIndexes.Close()
+
 		}
 	})
 

@@ -201,6 +201,11 @@ public:
 	/// @param observer - Observer interface, which will be unsubscribed updates
 	Error UnsubscribeUpdates(IUpdatesObserver *observer);
 
+	/// Builds Protobuf schema in ser.
+	/// @param ser - schema output buffer
+	/// @param namespaces - list of namespaces to be embedded in .proto
+	Error GetProtobufSchema(WrSerializer &ser, vector<string> &namespaces);
+
 	/// Add cancelable context
 	/// @param ctx - context pointer
 	Reindexer WithContext(const IRdxCancelContext *ctx) const { return Reindexer(impl_, ctx_.WithCancelParent(ctx)); }
@@ -224,7 +229,6 @@ public:
 	/// Set activityTracer to current DB
 	/// @param activityTracer - name of activity tracer
 	/// @param user - user identifying information
-	/// @param connectionId - unique identifier for the connection
 	void SetActivityTracer(string_view activityTracer, string_view user) { ctx_.SetActivityTracer(activityTracer, user); }
 	void SetActivityTracer(string_view activityTracer, string_view user, int connectionId) {
 		ctx_.SetActivityTracer(activityTracer, user, connectionId);

@@ -42,6 +42,7 @@ ItemImpl &ItemImpl::operator=(ItemImpl &&other) noexcept {
 		unsafe_ = other.unsafe_;
 		cjson_ = std::move(other.cjson_);
 		ns_ = std::move(other.ns_);
+		msgPackDecoder_ = std::move(other.msgPackDecoder_);
 	}
 	return *this;
 }
@@ -101,14 +102,17 @@ void ItemImpl::ModifyField(string_view jsonPath, const VariantArray &keys, Field
 void ItemImpl::SetField(string_view jsonPath, const VariantArray &keys) { ModifyField(jsonPath, keys, FieldModeSet); }
 void ItemImpl::DropField(string_view jsonPath) { ModifyField(jsonPath, {}, FieldModeDrop); }
 Variant ItemImpl::GetField(int field) { return GetPayload().Get(field, 0); }
+void ItemImpl::GetField(int field, VariantArray &values) { GetPayload().Get(field, values); }
 
 Error ItemImpl::FromMsgPack(string_view buf, size_t &offset) {
 	Payload pl = GetPayload();
-	MsgPackDecoder decoder(&tagsMatcher_);
+	if (!msgPackDecoder_) {
+		msgPackDecoder_.reset(new MsgPackDecoder(&tagsMatcher_));
+	}
 
 	ser_.Reset();
 	ser_.PutUInt32(0);
-	Error err = decoder.Decode(buf, &pl, ser_, offset);
+	Error err = msgPackDecoder_->Decode(buf, &pl, ser_, offset);
 	if (err.ok()) {
 		tupleData_ = ser_.DetachBuf();
 		pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});

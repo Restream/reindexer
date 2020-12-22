@@ -31,6 +31,7 @@ public:
 	}
 
 	Error Status() const { return errState_ ? Error(errLogic, "%s", strerror(errState_)) : 0; }
+	bool IsCout() const { return isCout_; }
 
 private:
 	ofstream f_;

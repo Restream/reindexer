@@ -13,6 +13,7 @@ void ServerConfig::Reset() {
 	StorageEngine = "leveldb";
 	HTTPAddr = "0.0.0.0:9088";
 	RPCAddr = "0.0.0.0:6534";
+	GRPCAddr = "0.0.0.0:16534";
 	LogLevel = "info";
 	ServerLog = "stdout";
 	CoreLog = "stdout";
@@ -38,6 +39,7 @@ void ServerConfig::Reset() {
 	Autorepair = false;
 	EnableConnectionsStats = true;
 	TxIdleTimeout = std::chrono::seconds(600);
+	EnableGRPC = false;
 }
 
 reindexer::Error ServerConfig::ParseYaml(const std::string &yaml) {
@@ -94,6 +96,10 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::Group netGroup(parser, "Network options");
 	args::ValueFlag<string> httpAddrF(netGroup, "PORT", "http listen host:port", {'p', "httpaddr"}, HTTPAddr, args::Options::Single);
 	args::ValueFlag<string> rpcAddrF(netGroup, "RPORT", "RPC listen host:port", {'r', "rpcaddr"}, RPCAddr, args::Options::Single);
+#ifdef WITH_GRPC
+	args::ValueFlag<string> grpcAddrF(netGroup, "GPORT", "GRPC listen host:port", {'g', "grpcaddr"}, RPCAddr, args::Options::Single);
+	args::Flag grpcF(netGroup, "", "Enable gRpc service", {"grpc"});
+#endif
 	args::ValueFlag<string> webRootF(netGroup, "PATH", "web root", {'w', "webroot"}, WebRoot, args::Options::Single);
 	args::Flag pprofF(netGroup, "", "Enable pprof http handler", {'f', "pprof"});
 	args::ValueFlag<int> txIdleTimeoutF(dbGroup, "", "http transactions idle timeout (s)", {"tx-idle-timeout"}, TxIdleTimeout.count(),
@@ -159,6 +165,10 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 
 #endif
 	if (securityF) EnableSecurity = args::get(securityF);
+#ifdef WITH_GRPC
+	if (grpcF) EnableGRPC = args::get(grpcF);
+	if (grpcAddrF) GRPCAddr = args::get(grpcAddrF);
+#endif
 	if (serverLogF) ServerLog = args::get(serverLogF);
 	if (coreLogF) CoreLog = args::get(coreLogF);
 	if (httpLogF) HttpLog = args::get(httpLogF);
@@ -188,6 +198,8 @@ reindexer::Error ServerConfig::fromYaml(Yaml::Node &root) {
 		RPCAddr = root["net"]["rpcaddr"].As<std::string>(RPCAddr);
 		WebRoot = root["net"]["webroot"].As<std::string>(WebRoot);
 		EnableSecurity = root["net"]["security"].As<bool>(EnableSecurity);
+		EnableGRPC = root["net"]["grpc"].As<bool>(EnableGRPC);
+		GRPCAddr = root["net"]["grpcaddr"].As<std::string>(GRPCAddr);
 		TxIdleTimeout = std::chrono::seconds(root["net"]["tx_idle_timeout"].As<int>(TxIdleTimeout.count()));
 		EnablePrometheus = root["metrics"]["prometheus"].As<bool>(EnablePrometheus);
 		PrometheusCollectPeriod = std::chrono::milliseconds(root["metrics"]["collect_period"].As<int>(PrometheusCollectPeriod.count()));

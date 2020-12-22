@@ -482,6 +482,7 @@ func TestExplainJoin(t *testing.T) {
 	q.LeftJoin(qjoin3, "left_joined").On("id", reindexer.EQ, "id")
 
 	iter := q.MustExec()
+	defer iter.Close()
 	explainRes, err := iter.GetExplainResults()
 	assert.NoError(t, err)
 	assert.NotNil(t, explainRes)

@@ -195,7 +195,16 @@ Error Replicator::syncNamespace(const NamespaceDef &ns, string_view forceSyncRea
 					logPrintf(LogTrace, "[repl:%s]: %d new updates", ns.name, walUpdates.size());
 					if (walUpdates.empty()) {
 						pendedUpdates_.erase(ns.name);
-						slaveNs->SetSlaveReplStatus(ReplicationState::Status::Idle, errOK, dummyCtx_);
+						if (replState.replicatorEnabled)
+							slaveNs->SetSlaveReplStatus(ReplicationState::Status::Idle, errOK, dummyCtx_);
+						else {
+							logPrintf(
+								LogError,
+								"[repl:%s:%s]:%d Sync namespace logical error. Set status Idle. Replication not allowed for namespace.",
+								ns.name, slave_->storagePath_, config_.serverId);
+							err = Error(errLogic, "Replication not allowed for namespace.");
+							break;
+						}
 						syncedNamespaces_.emplace(std::move(currentSyncNs_));
 						currentSyncNs_.clear();
 						lck.unlock();
@@ -307,7 +316,15 @@ Error Replicator::syncDatabase() {
 		auto slaveNs = slave_->getNamespaceNoThrow(ns.name, dummyCtx_);
 		if (err.ok() && slaveNs) {
 			replState = slaveNs->GetReplState(dummyCtx_);
-			slaveNs->SetSlaveReplStatus(ReplicationState::Status::Syncing, errOK, dummyCtx_);
+			if (replState.replicatorEnabled)
+				slaveNs->SetSlaveReplStatus(ReplicationState::Status::Syncing, errOK, dummyCtx_);
+			else {
+				logPrintf(LogError,
+						  "[repl:%s:%s]:%d Sync namespace logical error. Set status Syncing. Replication not allowed for namespace.",
+						  ns.name, slave_->storagePath_, config_.serverId);
+				return Error(errLogic, "Replication not allowed for namespace.");
+			}
+
 		} else if (retryIfNetworkError(err)) {
 			logPrintf(LogTrace, "[repl:%s] return error", slave_->storagePath_);
 			return err;
@@ -325,8 +342,15 @@ Error Replicator::syncDatabase() {
 		if (!err.ok()) {
 			slaveNs = slave_->getNamespaceNoThrow(ns.name, dummyCtx_);
 			if (slaveNs) {
-				slaveNs->SetSlaveReplStatus(errorIsFatal(err) ? ReplicationState::Status::Fatal : ReplicationState::Status::Error, err,
-											dummyCtx_);
+				replState = slaveNs->GetReplState(dummyCtx_);
+				if (replState.replicatorEnabled)
+					slaveNs->SetSlaveReplStatus(errorIsFatal(err) ? ReplicationState::Status::Fatal : ReplicationState::Status::Error, err,
+												dummyCtx_);
+				else
+					logPrintf(
+						LogError,
+						"[repl:%s:%s]:%d Sync namespace logical error. Set status Fatal. Replication not allowed for namespace. Err= %s",
+						ns.name, slave_->storagePath_, config_.serverId, err.what());
 			}
 			if (retryIfNetworkError(err)) return err;
 		}
@@ -396,7 +420,14 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, string_view reason
 		logPrintf(LogWarning, "Unable to get temporary namespace %s for the force sync:", tmpNsDef.name);
 		return Error(errNotFound, "Namespace %s not found", tmpNsDef.name);
 	}
-	tmpNs->SetSlaveReplStatus(ReplicationState::Status::Syncing, errOK, dummyCtx_);
+	auto replState = tmpNs->GetReplState(dummyCtx_);
+	if (replState.replicatorEnabled)
+		tmpNs->SetSlaveReplStatus(ReplicationState::Status::Syncing, errOK, dummyCtx_);
+	else {
+		logPrintf(LogError, "[repl:%s:%s] Sync namespace logical error. Set status Syncing tmpNs. Replication not allowed for namespace.",
+				  ns.name, slave_->storagePath_);
+		return Error(errLogic, "Replication not allowed for namespace.");
+	}
 	err = syncIndexesForced(tmpNs, ns);
 	if (err.ok()) err = syncMetaForced(tmpNs, ns.name);
 	if (err.ok()) err = syncSchemaForced(tmpNs, ns.name);
@@ -413,7 +444,7 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, string_view reason
 		}
 	}
 	if (err.ok()) {
-		err = slave_->RenameNamespace(tmpNsDef.name, ns.name);
+		err = slave_->renameNamespace(tmpNsDef.name, ns.name, true);
 		slave_->syncDownstream(ns.name, true);
 	}
 
@@ -627,7 +658,7 @@ Error Replicator::applyWALRecord(LSNPair LSNs, string_view nsName, Namespace::Pt
 			break;
 		// Rename namespace
 		case WalNamespaceRename:
-			err = slave_->RenameNamespace(nsName, string(rec.data));
+			err = slave_->renameNamespace(nsName, string(rec.data), true);
 			break;
 		// force sync namespace
 		case WalForceSync:
@@ -810,8 +841,13 @@ void Replicator::OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &
 		}
 	} else {
 		if (slaveNs) {
-			if (slaveNs->GetReplState(dummyCtx_).status != ReplicationState::Status::Fatal) {
-				slaveNs->SetSlaveReplStatus(ReplicationState::Status::Fatal, err, dummyCtx_);
+			auto replState = slaveNs->GetReplState(dummyCtx_);
+			if (replState.status != ReplicationState::Status::Fatal) {
+				if (replState.replicatorEnabled)
+					slaveNs->SetSlaveReplStatus(ReplicationState::Status::Fatal, err, dummyCtx_);
+				else
+					logPrintf(LogError, "[repl:%s:%s]:%d OnWALUpdate logical error. Replication not allowed for nanespace. Err = %s",
+							  nsName, slave_->storagePath_, config_.serverId, err.what());
 			}
 		}
 		auto lastErrIt = lastNsErrMsg_.find(nsName);

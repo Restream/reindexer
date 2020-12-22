@@ -1,5 +1,6 @@
 #include "prometheus.h"
 #include "prometheus/gauge.h"
+#include "reindexer_version.h"
 
 namespace reindexer_server {
 
@@ -19,6 +20,8 @@ void Prometheus::Attach(http::Router& router) {
 	inputTraffic_ = &BuildGauge().Name("reindexer_input_traffic_total_bytes").Help("Total RPC input traffic in bytes").Register(registry_);
 	outputTraffic_ =
 		&BuildGauge().Name("reindexer_output_traffic_total_bytes").Help("Total RPC output traffic in bytes").Register(registry_);
+	rxInfo_ = &BuildGauge().Name("reindexer_info").Help("Generic reindexer info").Register(registry_);
+	fillRxInfo();
 
 	router.GET<Prometheus, &Prometheus::collect>("/metrics", this);
 }
@@ -38,8 +41,7 @@ void Prometheus::setMetricValue(PFamily<Prometheus::PGauge>* metricFamily, doubl
 		if (!queryType.empty()) {
 			labels.emplace("query", std::string(queryType));
 		}
-		auto& metric = metricFamily->Add(std::move(labels), epoch);
-		metric.Set(value);
+		metricFamily->Add(std::move(labels), epoch).Set(value);
 	}
 }
 
@@ -52,9 +54,13 @@ void Prometheus::setMetricValue(PFamily<PGauge>* metricFamily, double value, int
 		if (!type.empty()) {
 			labels.emplace("type", std::string(type));
 		}
-		auto& metric = metricFamily->Add(std::move(labels), epoch);
-		metric.Set(value);
+		metricFamily->Add(std::move(labels), epoch).Set(value);
 	}
+}
+
+void Prometheus::fillRxInfo() {
+	assert(rxInfo_);
+	rxInfo_->Add({{"vesion", REINDEX_VERSION}}, prometheus::kNoEpoch).Set(1.0);
 }
 
 int Prometheus::collect(http::Context& ctx) { return ctx.String(http::StatusOK, PTextSerializer().Serialize(registry_.Collect())); }

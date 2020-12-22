@@ -91,14 +91,24 @@ service start reindexer
 ## HTTP REST API
 
 The simplest way to use reindexer with any program language - is using REST API. The
-[complete REST API documentation is here](cpp_src/server/contrib/server.md).  
+[complete REST API documentation is here](server/contrib/server.md).  
 [Or explore interactive version of Reindexer's swagger documentation](https://editor.swagger.io/?url=https://raw.githubusercontent.com/Restream/reindexer/master/cpp_src/server/contrib/server.yml)
+
+## GRPC API
+[GPRC](https://grpc.io) is popular RPC framework, developed and maintained by google. GRPC is more efficient, than HTTP. From version 3.0 reindexer supports GRPC API. 
+
+Reindexer's GRPC API is defined in [reindexer.proto](cpp_src/server/proto/reindexer.proto) file. 
+To operate with reindexer via GRPC, 
+1. Build reindexer_server with -DENABLE_GRPC cmake option,
+2. Run reindexer_server with --grpc flag
+3. Build GRPC client from [reindexer.proto](cpp_src/server/proto/reindexer.proto) for your language https://grpc.io/docs/languages/
+4. Connect client to reindexer server listened at 127.0.0.1:16534 
 
 ## Monitoring
 
 ### Prometheus
 
-Reindexer has a banch prometheus metrics available via http-URL `/metrics`. This metrics may be enabled by passing `--prometheus` as reindexer_server command line argument or by setting `metrics:prometheus` flag in server yaml-config file. Some of the metrics also require `perfstats` to be enabled in `profiling`-config
+Reindexer has a banch of prometheus metrics available via http-URL `/metrics` (i.e. `http://localhost:9088/metrics`). This metrics may be enabled by passing `--prometheus` as reindexer_server command line argument or by setting `metrics:prometheus` flag in server yaml-config file. Some of the metrics also require `perfstats` to be enabled in `profiling`-config
 
 `reindexer_qps_total` - total queries per second for each database, namespace and query type  
 `reindexer_avg_latency` - average queryies latency for each database, namespace and query type  
@@ -107,6 +117,7 @@ Reindexer has a banch prometheus metrics available via http-URL `/metrics`. This
 `reindexer_memory_allocated_bytes` - current amount of dynamicly allocated memory according to tcmalloc/jemalloc  
 `reindexer_rpc_clients_count` - current number of RPC clients for each database  
 `reindexer_input_traffic_total_bytes`, `reindexer_output_traffic_total_bytes` - total input/output RPC/http traffic for each database  
+`reindexer_info` - generic reindexer server info (currently it's just a version number)
 
 ## Maintenance
 
@@ -122,7 +133,7 @@ or application with `builtinserver` mode, and open http://server-ip:9088/face in
 
 ### Command line tool
 
-To work with database from command line you can use reindexer [command line tool](cpp_src/cmd/reindexer_tool/readme.md)
+To work with database from command line you can use reindexer [command line tool](cmd/reindexer_tool/readme.md)
 Command line tool have the following functions
 
 - Backup whole database into text file or console.
@@ -205,11 +216,11 @@ Protocol buffers are one of the output data formats for Reindexer's HTTP REST AP
 
 To start to work with Protobuf in Reindexer you need to perform the following steps:
 
-1.  [Set JSON Schema](cpp_src/server/contrib/server.md#set-namespace-schema) for all the Namespaces that you are going to use during the session.
-2.  [Get text representation of Protobuf Schema](cpp_src/server/contrib/server.md#get-protobuf-communication-parameters-schema) (\*.proto file) that contains all the communication parameters and descriptions of the Namespaces (set in the previous step). The best practise is to enumerate all the required Namespaces at once (not to regenerate Schema one more time).
+1.  [Set JSON Schema](server/contrib/server.md#set-namespace-schema) for all the Namespaces that you are going to use during the session.
+2.  [Get text representation of Protobuf Schema](server/contrib/server.md#get-protobuf-communication-parameters-schema) (\*.proto file) that contains all the communication parameters and descriptions of the Namespaces (set in the previous step). The best practise is to enumerate all the required Namespaces at once (not to regenerate Schema one more time).
 3.  Use Protobuf Schema (.proto file text representation) to generate source files to work with communication parameters in your code. In this case you usually need to write Schema data to .proto file and use `protoc` utility to generate source code files (https://developers.google.com/protocol-buffers/docs/cpptutorial#compiling-your-protocol-buffers).
 
-To work with Protobuf as output data format you need to set `format` parameter to `protobuf` value. List of commands that support Protobuf encoding can be found in [Server documentation](cpp_src/server/contrib/server.md).
+To work with Protobuf as output data format you need to set `format` parameter to `protobuf` value. List of commands that support Protobuf encoding can be found in [Server documentation](server/contrib/server.md).
 
 Example of .proto file generated by Reindexer:
 

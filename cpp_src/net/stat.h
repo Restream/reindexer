@@ -12,7 +12,6 @@ public:
 	using ClockT = std::chrono::high_resolution_clock;
 
 	HandlerStat();
-	~HandlerStat();
 
 	HandlerStat operator-(const HandlerStat& other) const;
 

@@ -493,7 +493,11 @@ int stoi(string_view sl) {
 
 int64_t stoll(string_view sl) {
 	bool valid;
-	return jsteemann::atoi<int64_t>(sl.begin(), sl.end(), valid);
+	auto ret = jsteemann::atoi<int64_t>(sl.begin(), sl.end(), valid);
+	if (!valid) {
+		throw Error(errParams, "Can't convert %s to number", sl);
+	}
+	return ret;
 }
 
 std::string randStringAlph(size_t len) {

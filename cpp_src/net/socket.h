@@ -15,7 +15,7 @@ public:
 	socket(int fd = -1) : fd_(fd) {}
 
 	int bind(string_view addr);
-	int connect(string_view addr);
+	int connect(string_view addr) noexcept;
 	socket accept();
 	int listen(int backlog);
 	ssize_t recv(span<char> buf);

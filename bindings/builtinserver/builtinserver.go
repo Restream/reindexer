@@ -81,6 +81,8 @@ func (server *BuiltinServer) Init(u []url.URL, options ...interface{}) error {
 	for _, option := range options {
 		switch v := option.(type) {
 		case bindings.OptionCgoLimit:
+		case bindings.OptionBuiltintCtxWatch:
+		case bindings.ConnectOptions:
 		case bindings.OptionBuiltinWithServer:
 			if v.StartupTimeout != 0 {
 				startupTimeout = v.StartupTimeout
@@ -92,7 +94,7 @@ func (server *BuiltinServer) Init(u []url.URL, options ...interface{}) error {
 				server.shutdownTimeout = v.ShutdownTimeout
 			}
 		default:
-			fmt.Printf("Unknown builtinserver option: %v\n", option)
+			fmt.Printf("Unknown builtinserver option: %#v\n", option)
 		}
 	}
 

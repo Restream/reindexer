@@ -3,7 +3,7 @@
 #include <wchar.h>
 #include <iomanip>
 
-#include "client/reindexer.h"
+#include "client/cororeindexer.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/reindexer.h"
 #include "tools/jsontools.h"
@@ -306,9 +306,9 @@ void TableViewBuilder<QueryResultsT>::ensureFieldWidthIsOk(std::string& str, int
 }
 
 template class TableCalculator<reindexer::QueryResults>;
-template class TableCalculator<reindexer::client::QueryResults>;
+template class TableCalculator<reindexer::client::CoroQueryResults>;
 
 template class TableViewBuilder<reindexer::QueryResults>;
-template class TableViewBuilder<reindexer::client::QueryResults>;
+template class TableViewBuilder<reindexer::client::CoroQueryResults>;
 
 }  // namespace reindexer

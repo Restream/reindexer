@@ -603,9 +603,15 @@ func (qt *queryTest) ExecAndVerifyCtx(t *testing.T, ctx context.Context) *reinde
 	it := qt.ManualClose().ExecCtx(ctx)
 	qt.totalCount = it.TotalCount()
 	aggregations := it.AggResults()
-	items, err := it.AllowUnsafe(true).FetchAll()
-	if err != nil {
-		panic(err)
+	it.AllowUnsafe(true)
+	defer it.Close()
+	items := make([]interface{}, 0, it.Count())
+	for it.Next() {
+		items = append(items, it.Object())
+	}
+
+	if it.Error() != nil {
+		panic(it.Error())
 	}
 	qt.Verify(t, items, aggregations, true)
 	//	logger.Printf(reindexer.INFO, "%s -> %d\n", qt.toString(), len(items))
@@ -1340,7 +1346,7 @@ func checkCompositeCondition(vals []reflect.Value, cond *queryTestEntry, item in
 func checkDWithin(point1 [2]float64, point2 [2]float64, distance float64) bool {
 	diffX := point1[0] - point2[0]
 	diffY := point1[1] - point2[1]
-	return (diffX * diffX + diffY * diffY) <= (distance * distance)
+	return (diffX*diffX + diffY*diffY) <= (distance * distance)
 }
 
 func checkCondition(t *testing.T, ns *testNamespace, cond *queryTestEntry, item interface{}) bool {

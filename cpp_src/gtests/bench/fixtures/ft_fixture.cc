@@ -18,8 +18,6 @@ using reindexer::QueryResults;
 using reindexer::utf8_to_utf16;
 using reindexer::utf16_to_utf8;
 
-#define DATA_PATH "dict.txt"
-
 uint8_t printFlags = AllocsTracker::kPrintAllocs | AllocsTracker::kPrintHold;
 
 FullText::FullText(Reindexer* db, const string& name, size_t maxItems) : BaseFixture(db, name, maxItems, 1, false) {
@@ -36,7 +34,7 @@ reindexer::Error FullText::Initialize() {
 	if (!err.ok()) return err;
 
 	ifstream file;
-	file.open(DATA_PATH);
+	file.open(RX_BENCH_DICT_PATH);
 
 	if (!file) return Error(errNotValid, "%s", strerror(errno));
 	words_.reserve(140000);

@@ -79,7 +79,7 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 			}
 
 			for (const char* additionalSearchField : {kFieldId, kFieldTree1, kFieldTree2, kFieldHash}) {
-				for (const Query query :
+				for (const Query& query :
 					 {Query(btreeNs).Explain().Where(additionalSearchField, CondEq, RandInt()).Where(searchField, cond, RandInt()),
 					  Query(btreeNs).Explain().Where(searchField, cond, RandInt()).Where(additionalSearchField, CondEq, RandInt())}) {
 					reindexer::QueryResults qr;
@@ -148,16 +148,16 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 					}
 
 					for (const char* additionalSearchField : {kFieldId, kFieldTree1, kFieldTree2, kFieldHash}) {
-						for (const Query query : {Query(btreeNs)
-													  .Explain()
-													  .Where(additionalSearchField, CondEq, RandInt())
-													  .Where(searchField, cond, RandInt())
-													  .Sort(sortField, desc),
-												  Query(btreeNs)
-													  .Explain()
-													  .Where(searchField, cond, RandInt())
-													  .Where(additionalSearchField, CondEq, RandInt())
-													  .Sort(sortField, desc)}) {
+						for (const Query& query : {Query(btreeNs)
+													   .Explain()
+													   .Where(additionalSearchField, CondEq, RandInt())
+													   .Where(searchField, cond, RandInt())
+													   .Sort(sortField, desc),
+												   Query(btreeNs)
+													   .Explain()
+													   .Where(searchField, cond, RandInt())
+													   .Where(additionalSearchField, CondEq, RandInt())
+													   .Sort(sortField, desc)}) {
 							reindexer::QueryResults qr;
 							Error err = rt.reindexer->Select(query, qr);
 							ASSERT_TRUE(err.ok()) << err.what();
@@ -226,7 +226,7 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 			}
 
 			for (const char* additionalSearchField : {kFieldId, kFieldTree1, kFieldTree2, kFieldHash}) {
-				for (const Query query :
+				for (const Query& query :
 					 {Query(unbuiltBtreeNs).Explain().Where(additionalSearchField, CondEq, RandInt()).Where(searchField, cond, RandInt()),
 					  Query(unbuiltBtreeNs)
 						  .Explain()
@@ -329,16 +329,16 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 					}
 
 					for (const char* additionalSearchField : {kFieldId, kFieldTree1, kFieldTree2, kFieldHash}) {
-						for (const Query query : {Query(unbuiltBtreeNs)
-													  .Explain()
-													  .Where(additionalSearchField, CondEq, RandInt())
-													  .Where(searchField, cond, RandInt())
-													  .Sort(sortField, desc),
-												  Query(unbuiltBtreeNs)
-													  .Explain()
-													  .Where(searchField, cond, RandInt())
-													  .Where(additionalSearchField, CondEq, RandInt())
-													  .Sort(sortField, desc)}) {
+						for (const Query& query : {Query(unbuiltBtreeNs)
+													   .Explain()
+													   .Where(additionalSearchField, CondEq, RandInt())
+													   .Where(searchField, cond, RandInt())
+													   .Sort(sortField, desc),
+												   Query(unbuiltBtreeNs)
+													   .Explain()
+													   .Where(searchField, cond, RandInt())
+													   .Where(additionalSearchField, CondEq, RandInt())
+													   .Sort(sortField, desc)}) {
 							reindexer::QueryResults qr;
 							Error err = rt.reindexer->Select(query, qr);
 							ASSERT_TRUE(err.ok()) << err.what();

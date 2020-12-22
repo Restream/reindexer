@@ -34,7 +34,7 @@ type indexOptions struct {
 	isDense     bool
 	isPk        bool
 	isSparse    bool
-	isLinear    bool
+	rtreeType   string
 }
 
 func parseRxTags(field reflect.StructField) (idxName string, idxType string, expireAfter string, idxSettings []string) {
@@ -213,6 +213,7 @@ func parseOpts(idxSettingsBuf *[]string) indexOptions {
 	newIdxSettingsBuf := make([]string, 0)
 
 	var opts indexOptions
+	opts.rtreeType = "rstar"
 
 	for _, idxSetting := range *idxSettingsBuf {
 		switch idxSetting {
@@ -224,10 +225,8 @@ func parseOpts(idxSettingsBuf *[]string) indexOptions {
 			opts.isSparse = true
 		case "appendable":
 			opts.isAppenable = true
-		case "linear":
-			opts.isLinear = true
-		case "quadratic":
-			opts.isLinear = false
+		case "linear", "quadratic", "greene", "rstar":
+			opts.rtreeType = idxSetting
 		default:
 			newIdxSettingsBuf = append(newIdxSettingsBuf, idxSetting)
 		}
@@ -383,6 +382,7 @@ func makeIndexDef(index string, jsonPaths []string, indexType, fieldType string,
 		CollateMode: cm,
 		SortOrder:   sortOrder,
 		ExpireAfter: expireAfter,
+		RTreeType:   opts.rtreeType,
 	}
 }
 

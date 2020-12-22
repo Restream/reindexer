@@ -1,5 +1,5 @@
 #include "tableviewscroller.h"
-#include "client/reindexer.h"
+#include "client/cororeindexer.h"
 #include "core/reindexer.h"
 #include "iotools.h"
 #include "tools/oscompat.h"
@@ -101,5 +101,5 @@ void TableViewScroller<QueryResultsT>::Scroll(Output& output, const std::functio
 }
 
 template class TableViewScroller<reindexer::QueryResults>;
-template class TableViewScroller<reindexer::client::QueryResults>;
+template class TableViewScroller<reindexer::client::CoroQueryResults>;
 }  // namespace reindexer_tool

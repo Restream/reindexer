@@ -1,21 +1,13 @@
-
-
 #include "connection.h"
 #include <errno.h>
 
 namespace reindexer {
 namespace net {
 
-constexpr double kStatsUpdatePeriod = 1.0;
-
 template <typename Mutex>
 Connection<Mutex>::Connection(int fd, ev::dynamic_loop &loop, bool enableStat, size_t readBufSize, size_t writeBufSize)
-	: sock_(fd), curEvents_(0), wrBuf_(writeBufSize), rdBuf_(readBufSize) {
+	: sock_(fd), curEvents_(0), wrBuf_(writeBufSize), rdBuf_(readBufSize), stats_(enableStat ? new connection_stats_collector : nullptr) {
 	attach(loop);
-	if (enableStat) {
-		stat_ = std::make_shared<ConnectionStat>();
-		statsUpdater_.start(kStatsUpdatePeriod, kStatsUpdatePeriod);
-	}
 }
 
 template <typename Mutex>
@@ -34,12 +26,7 @@ void Connection<Mutex>::restart(int fd) {
 	rdBuf_.clear();
 	curEvents_ = 0;
 	closeConn_ = false;
-	if (stat_) {
-		stat_.reset(new ConnectionStat());
-		prevSecSentBytes_ = 0;
-		prevSecRecvBytes_ = 0;
-		statsUpdater_.start(kStatsUpdatePeriod, kStatsUpdatePeriod);
-	}
+	if (stats_) stats_->restart();
 }
 
 template <typename Mutex>
@@ -55,8 +42,7 @@ void Connection<Mutex>::attach(ev::dynamic_loop &loop) {
 	timeout_.set(loop);
 	async_.set<Connection, &Connection::async_cb>(this);
 	async_.set(loop);
-	statsUpdater_.set<Connection, &Connection::stats_check_cb>(this);
-	statsUpdater_.set(loop);
+	if (stats_) stats_->attach(loop);
 	attached_ = true;
 }
 
@@ -69,8 +55,7 @@ void Connection<Mutex>::detach() {
 	timeout_.reset();
 	async_.stop();
 	async_.reset();
-	statsUpdater_.stop();
-	statsUpdater_.reset();
+	if (stats_) stats_->detach();
 	attached_ = false;
 }
 
@@ -83,7 +68,7 @@ void Connection<Mutex>::closeConn() {
 	}
 	timeout_.stop();
 	async_.stop();
-	statsUpdater_.stop();
+	if (stats_) stats_->stop();
 	onClose();
 	closeConn_ = false;
 }
@@ -136,12 +121,7 @@ void Connection<Mutex>::write_cb() {
 		for (auto &chunk : chunks) toWrite += chunk.size();
 		wrBuf_.erase(written);
 
-		if (stat_) {
-			stat_->sentBytes.fetch_add(written, std::memory_order_relaxed);
-			auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
-			stat_->lastSendTs.store(now.count(), std::memory_order_relaxed);
-			stat_->sendBufBytes.store(wrBuf_.data_size(), std::memory_order_relaxed);
-		}
+		if (stats_) stats_->update_write_stats(written, wrBuf_.data_size());
 
 		if (written < toWrite) return;
 	}
@@ -164,11 +144,7 @@ void Connection<Mutex>::read_cb() {
 			closeConn();
 			return;
 		} else if (nread > 0) {
-			if (stat_) {
-				stat_->recvBytes.fetch_add(nread, std::memory_order_relaxed);
-				auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
-				stat_->lastRecvTs.store(now.count(), std::memory_order_relaxed);
-			}
+			if (stats_) stats_->update_read_stats(nread);
 			rdBuf_.advance_head(nread);
 			if (!closeConn_) onRead();
 		}
@@ -182,23 +158,6 @@ void Connection<Mutex>::timeout_cb(ev::periodic & /*watcher*/, int /*time*/) {
 template <typename Mutex>
 void Connection<Mutex>::async_cb(ev::async &) {
 	callback(io_, ev::WRITE);
-}
-template <typename Mutex>
-void Connection<Mutex>::stats_check_cb(ev::periodic & /*watcher*/, int /*time*/) {
-	assert(stat_);
-	const uint64_t kAvgPeriod = 10;
-
-	auto curRecvBytes = stat_->recvBytes.load(std::memory_order_relaxed);
-	auto recvRate =
-		prevSecRecvBytes_ == 0 ? uint32_t(curRecvBytes) : (stat_->recvRate.load(std::memory_order_relaxed) / kAvgPeriod) * (kAvgPeriod - 1);
-	stat_->recvRate.store(recvRate + (curRecvBytes - prevSecRecvBytes_) / kAvgPeriod, std::memory_order_relaxed);
-	prevSecRecvBytes_ = curRecvBytes;
-
-	auto curSentBytes = stat_->sentBytes.load(std::memory_order_relaxed);
-	auto sendRate =
-		prevSecSentBytes_ == 0 ? uint32_t(curSentBytes) : (stat_->sendRate.load(std::memory_order_relaxed) / kAvgPeriod) * (kAvgPeriod - 1);
-	stat_->sendRate.store(sendRate + (curSentBytes - prevSecSentBytes_) / kAvgPeriod, std::memory_order_relaxed);
-	prevSecSentBytes_ = curSentBytes;
 }
 
 template class Connection<std::mutex>;

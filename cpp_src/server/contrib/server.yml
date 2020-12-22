@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "2.14.1"
+  version: "3.0.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -2130,10 +2130,15 @@ definitions:
         description: "Value of index may not present in the document, and threfore, reduce data size but decreases speed operations on index"
         type: boolean
         default: false
-      is_linear:
-        description: "Use linear algorithm to construct RTree index. Quadratic algorithm will be used otherwise"
-        type: boolean
-        default: false
+      rtree_type:
+        type: string
+        description: "Algorithm to construct RTree index"
+        enum:
+        - "linear"
+        - "quadratic"
+        - "greene"
+        - "rstar"
+        default: "rstar"
       is_simple_tag:
         description: "Use simple tag instead of actual index, which will notice rx about possible field name for strict policies"
         type: boolean

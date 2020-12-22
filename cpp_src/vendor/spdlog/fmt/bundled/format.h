@@ -2421,7 +2421,7 @@ public:
 	*/
 	SystemError(int error_code, CStringRef message) { init(error_code, message, ArgList()); }
 	FMT_DEFAULTED_COPY_CTOR(SystemError)
-	FMT_VARIADIC_CTOR(SystemError, init, int, CStringRef)
+	FMT_VARIADIC_CTOR(SystemError, init, int, CStringRef) // -V1067
 
 	FMT_API ~SystemError() FMT_DTOR_NOEXCEPT FMT_OVERRIDE;
 

@@ -16,13 +16,19 @@ option (ENABLE_LIBUNWIND "Enable libunwind" ON)
 option (ENABLE_TCMALLOC "Enable tcmalloc extensions" ON)
 option (ENABLE_JEMALLOC "Enable jemalloc extensions" ON)
 option (ENABLE_ROCKSDB "Enable rocksdb storage" ON)
+option (ENABLE_GRPC "Enable GRPC service" OFF)
+
+if (NOT GRPC_PACKAGE_PROVIDER)
+   set (GRPC_PACKAGE_PROVIDER "CONFIG")
+endif ()
+
 if (WIN32)
   option (LINK_RESOURCES "Link web resources as binary data" OFF)
 else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "2.14.1")
+set (REINDEXER_VERSION_DEFAULT "3.0.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -49,6 +55,7 @@ endif ()
 if (MSVC)
   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -MP")
   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -wd4244 -wd4267 -wd4996 -wd4717 -wd4800 -wd4396 -wd4503 -MP")
+  set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -SAFESEH:NO")
 else()
   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror")
   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wextra -Werror -Wold-style-cast")
@@ -79,15 +86,111 @@ set(REINDEXER_SOURCE_PATH ${PROJECT_SOURCE_DIR})
 file (
   GLOB_RECURSE 
   SRCS 
-    ${REINDEXER_SOURCE_PATH}/client/*
-    ${REINDEXER_SOURCE_PATH}/core/*
-    ${REINDEXER_SOURCE_PATH}/estl/*
-    ${REINDEXER_SOURCE_PATH}/tools/*
-    ${REINDEXER_SOURCE_PATH}/vendor/*
-    ${REINDEXER_SOURCE_PATH}/debug/*
-    ${REINDEXER_SOURCE_PATH}/net/*
-    ${REINDEXER_SOURCE_PATH}/replicator/*
+  ${REINDEXER_SOURCE_PATH}/client/*
+  ${REINDEXER_SOURCE_PATH}/core/*
+  ${REINDEXER_SOURCE_PATH}/estl/*
+  ${REINDEXER_SOURCE_PATH}/tools/*
+  ${REINDEXER_SOURCE_PATH}/vendor/*
+  ${REINDEXER_SOURCE_PATH}/debug/*
+  ${REINDEXER_SOURCE_PATH}/net/*
+  ${REINDEXER_SOURCE_PATH}/replicator/*
+  ${REINDEXER_SOURCE_PATH}/coroutine/*
 )
+
+set (CONTEXT_ASM_DIR "${REINDEXER_SOURCE_PATH}/coroutine/context/asm")
+list(FILTER SRCS EXCLUDE REGEX "${CONTEXT_ASM_DIR}/*")
+
+include (TargetArch)
+target_architecture(COMPILER_TARGET_ARCH)
+
+if ( UNIX )
+  enable_language(ASM)
+  if (APPLE)
+    if ( ${COMPILER_TARGET_ARCH} STREQUAL "arm" )
+      list (APPEND CONTEXT_ASM_SRCS
+            ${CONTEXT_ASM_DIR}/jump_arm_aapcs_macho_gas.S
+            ${CONTEXT_ASM_DIR}/make_arm_aapcs_macho_gas.S
+            )
+    elseif  ( ${COMPILER_TARGET_ARCH} STREQUAL "arm64" OR ${COMPILER_TARGET_ARCH} STREQUAL "aarch64" )
+      list (APPEND CONTEXT_ASM_SRCS
+            ${CONTEXT_ASM_DIR}/jump_arm64_aapcs_macho_gas.S
+            ${CONTEXT_ASM_DIR}/make_arm64_aapcs_macho_gas.S
+            )
+    elseif  ( ${COMPILER_TARGET_ARCH} STREQUAL "x86_64")
+      list (APPEND CONTEXT_ASM_SRCS
+            ${CONTEXT_ASM_DIR}/jump_x86_64_sysv_macho_gas.S
+            ${CONTEXT_ASM_DIR}/make_x86_64_sysv_macho_gas.S
+            )
+    elseif ( ${COMPILER_TARGET_ARCH} STREQUAL "i386")
+      list (APPEND CONTEXT_ASM_SRCS
+            ${CONTEXT_ASM_DIR}/jump_i386_sysv_macho_gas.S
+            ${CONTEXT_ASM_DIR}/make_i386_sysv_macho_gas.S
+            )
+    else ()
+        message (FATAL_ERROR "Unsupported APPLE-platform architecture: ${COMPILER_TARGET_ARCH}. Unable to chose context sources")
+    endif ()
+  else ()
+    if ( ${COMPILER_TARGET_ARCH} STREQUAL "arm" )
+      list (APPEND CONTEXT_ASM_SRCS
+            ${CONTEXT_ASM_DIR}/jump_arm_aapcs_elf_gas.S
+            ${CONTEXT_ASM_DIR}/make_arm_aapcs_elf_gas.S
+            )
+    elseif  ( ${COMPILER_TARGET_ARCH} STREQUAL "arm64" OR ${COMPILER_TARGET_ARCH} STREQUAL "aarch64" )
+      list (APPEND CONTEXT_ASM_SRCS
+            ${CONTEXT_ASM_DIR}/jump_arm64_aapcs_elf_gas.S
+            ${CONTEXT_ASM_DIR}/make_arm64_aapcs_elf_gas.S
+            )
+    elseif  ( ${COMPILER_TARGET_ARCH} STREQUAL "x86_64")
+      list (APPEND CONTEXT_ASM_SRCS
+            ${CONTEXT_ASM_DIR}/jump_x86_64_sysv_elf_gas.S
+            ${CONTEXT_ASM_DIR}/make_x86_64_sysv_elf_gas.S
+            )
+    elseif ( ${COMPILER_TARGET_ARCH} STREQUAL "i386")
+      list (APPEND CONTEXT_ASM_SRCS
+            ${CONTEXT_ASM_DIR}/jump_i386_sysv_elf_gas.S
+            ${CONTEXT_ASM_DIR}/make_i386_sysv_elf_gas.S
+            )
+    else ()
+        message (FATAL_ERROR "Unsupported Linux-platform architecture: ${COMPILER_TARGET_ARCH}. Unable to chose context sources")
+    endif ()
+  endif ()
+elseif (WIN32)
+  if (MINGW)
+    enable_language(ASM)
+    if ( ${COMPILER_TARGET_ARCH} STREQUAL "x86_64")
+      list (APPEND CONTEXT_ASM_SRCS
+          ${CONTEXT_ASM_DIR}/jump_x86_64_ms_pe_clang_gas.S
+          ${CONTEXT_ASM_DIR}/make_x86_64_ms_pe_clang_gas.S
+           )
+    elseif ( ${COMPILER_TARGET_ARCH} STREQUAL "i386")
+      list (APPEND CONTEXT_ASM_SRCS
+          ${CONTEXT_ASM_DIR}/jump_i386_ms_pe_clang_gas.S
+          ${CONTEXT_ASM_DIR}/make_i386_ms_pe_clang_gas.S
+            )
+    else ()
+        message (FATAL_ERROR "Unsupported WIN-platform architecture: ${COMPILER_TARGET_ARCH}. Unable to chose context sources")
+    endif ()
+  else ()
+    enable_language(ASM_MASM)
+    if ( ${COMPILER_TARGET_ARCH} STREQUAL "x86_64")
+      list (APPEND CONTEXT_ASM_SRCS
+           ${CONTEXT_ASM_DIR}/jump_x86_64_ms_pe_masm.asm
+           ${CONTEXT_ASM_DIR}/make_x86_64_ms_pe_masm.asm
+           )
+    elseif ( ${COMPILER_TARGET_ARCH} STREQUAL "i386")
+      list (APPEND CONTEXT_ASM_SRCS
+            ${CONTEXT_ASM_DIR}/jump_i386_ms_pe_masm.asm
+            ${CONTEXT_ASM_DIR}/make_i386_ms_pe_masm.asm
+            )
+    else ()
+        message (FATAL_ERROR "Unsupported WIN-platform architecture: ${COMPILER_TARGET_ARCH}. Unable to chose context sources")
+    endif ()
+  endif ()
+else ()
+    message (FATAL_ERROR "Unsupported platform. Unable to chose context sources")
+endif ()
+list(APPEND SRCS ${CONTEXT_ASM_SRCS})
+
 
 include_directories(${REINDEXER_SOURCE_PATH})
 include_directories(${REINDEXER_SOURCE_PATH}/vendor)
@@ -141,7 +244,7 @@ if (SNAPPY_FOUND)
   ExternalProject_Add(
     snappy_lib
     GIT_REPOSITORY "https://github.com/google/snappy.git"
-    GIT_TAG "master"
+    GIT_TAG "1.1.8"
     CMAKE_ARGS -DSNAPPY_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
     -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}
     )
@@ -515,6 +618,8 @@ if (NOT WIN32)
     "estl/h_vector.h" "estl/string_view.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/span.h"
     "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h"
     "client/internalrdxcontext.h" "client/transaction.h"
+    "client/cororeindexer.h" "client/coroqueryresults.h" "client/corotransaction.h"
+    "net/ev/ev.h" "coroutine/coroutine.h" "coroutine/channel.h" "coroutine/waitgroup.h" "coroutine/context/fcontext.hpp"
     "debug/backtrace.h" "debug/allocdebug.h" "debug/resolver.h"
     "vendor/mpark/variant.h" "vendor/gason/gason.h"
   )

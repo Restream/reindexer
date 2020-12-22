@@ -206,7 +206,7 @@ void CGOCtxPoolApi::multiThreadTest(size_t threadsCount, MultiThreadTestMode mod
 		}));
 	}
 
-	while (awaitCount.load(std::memory_order_acquire) < threadsCount) {
+	while (awaitCount.load(std::memory_order_relaxed) < threadsCount) {
 		std::this_thread::yield();
 	}
 	std::unique_lock<std::mutex> lck(mtx);

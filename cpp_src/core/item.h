@@ -63,7 +63,7 @@ public:
 			return operator=(Variant(val));
 		}
 		/// Set single point type value
-		/// @param val - value, which will be setted to field
+		/// @param p - point value, which will be setted to field
 		FieldRef &operator=(Point p) {
 			const double arr[]{p.x, p.y};
 			return operator=(span<double>(arr, 2));
@@ -133,7 +133,7 @@ public:
 	Error FromCJSON(string_view slice, bool pkOnly = false);
 
 	/// Builds item from msgpack::object.
-	/// @param sbuf - msgpack encoded data buffer.
+	/// @param buf - msgpack encoded data buffer.
 	/// @param offset - position to start from.
 	Error FromMsgPack(string_view buf, size_t &offset);
 

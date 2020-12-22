@@ -15,6 +15,7 @@ public:
 	WALTracker(int64_t sz);
 	/// Initialize WAL tracker.
 	/// @param sz - Max WAL size
+	/// @param minLSN - Min available LSN number
 	/// @param maxLSN - Current LSN counter value
 	/// @param storage - Storage object for store WAL records
 	void Init(int64_t sz, int64_t minLSN, int64_t maxLSN, shared_ptr<datastorage::IDataStorage> storage);

@@ -52,11 +52,15 @@ struct JoinPreResult {
 	ExplainCalc::Duration selectTime = ExplainCalc::Duration::zero();
 };
 
-struct SortExpressionJoinedIndex;
+class SortExpression;
+namespace SortExprFuncs {
+struct DistanceBetweenJoinedIndexesSameNs;
+}  // namespace SortExprFuncs
 class NsSelecter;
 
 class JoinedSelector {
-	friend SortExpressionJoinedIndex;
+	friend SortExpression;
+	friend SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
 	friend NsSelecter;
 
 public:

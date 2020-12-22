@@ -36,7 +36,6 @@ public:
 	/// @param slice - data slice with Json.
 	/// @param endp - pounter to end of parsed part of slice
 	Error FromJSON(const string_view &slice, char **endp = nullptr, bool = false);
-
 	/// Build item from JSON<br>
 	/// If Item is in *Unsafe Mode*, then Item will not store slice, but just keep pointer to data in slice,
 	/// application *MUST* hold slice until end of life of Item
@@ -56,7 +55,7 @@ public:
 	/// operation with Item
 	string_view GetMsgPack();
 	/// Builds item from msgpack::object.
-	/// @param sbuf - msgpack encoded data buffer.
+	/// @param slice - msgpack encoded data buffer.
 	/// @param offset - position to start from.
 	Error FromMsgPack(const string_view &slice, size_t &offset);
 	/// Get status of item
@@ -98,9 +97,11 @@ private:
 	friend class Namespace;
 	friend class QueryResults;
 	friend class RPCClient;
+	friend class CoroRPCClient;
 	friend class RPCClientMock;
 	friend class reindexer::Replicator;
 	friend class Transaction;
+	friend class CoroTransaction;
 };
 }  // namespace client
 }  // namespace reindexer

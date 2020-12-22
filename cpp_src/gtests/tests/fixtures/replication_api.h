@@ -1,7 +1,6 @@
 ﻿#pragma once
 
 #include <mutex>
-#include "client/reindexer.h"
 #include "debug/backtrace.h"
 #include "estl/fast_hash_set.h"
 #include "reindexer_api.h"

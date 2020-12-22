@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 #include <cstdio>
 #include <thread>
-#include "client/reindexer.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
 #include "core/keyvalue/p_string.h"
@@ -607,6 +606,78 @@ TEST_F(ReplicationSlaveSlaveApi, NodeWithMasterAndSlaveNs3) {
 	}
 }
 
+TEST_F(ReplicationSlaveSlaveApi, RenameSlaveNs) {
+	// create on master ns1 and ns2
+	// create on slave  ns1 and ns3 ,ns1 sync whith master
+	// 1. check on slave rename ns3 to ns3Rename ok
+	// 2. check on slave rename ns1 to ns1RenameSlave fail
+	// create on master temporary ns (tmpNsName)
+	// 3. check on master rename tmpNsName to tmpNsNameRename fail
+	reindexer::fs::RmDirAll("/tmp/testRenameSlave");
+	ServerControl master;
+	master.InitServer(0, 7770, 7880, "/tmp/testRenameSlave/master", "db", true);
+	TestNamespace1 testns1(master, "ns1");
+	const unsigned int n = 101;
+	testns1.AddRows(master, 11, n);
+	master.Get()->MakeMaster();
+	TestNamespace1 testns2(master, "ns2");
+	testns1.AddRows(master, 10015, n);
+	Error err = master.Get()->api.reindexer->RenameNamespace("ns2", "ns2Rename");
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	ServerControl slave;
+	slave.InitServer(0, 7771, 7881, "/tmp/testRenameSlave/slave", "db", true);
+	TestNamespace1 testns3(slave, "ns3");
+	unsigned int n3 = 1234;
+	testns3.AddRows(slave, 5015, n3);
+	TestNamespace1 testns4(slave, "ns1");
+	std::string upDsn = "cproto://127.0.0.1:7770/db";
+	ReplicationConfigTest::NsSet nsSet = {"ns1"};
+	ReplicationConfigTest configSlave("slave", false, true, 0, upDsn, "slave", nsSet);
+	slave.Get()->MakeSlave(0, configSlave);
+
+	WaitSync(master, slave, "ns1");
+
+	err = slave.Get()->api.reindexer->RenameNamespace("ns3", "ns3Rename");
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	Query qr = Query("ns3Rename").Sort("id", false);
+	client::QueryResults res;
+	err = slave.Get()->api.reindexer->Select(qr, res);
+	EXPECT_TRUE(err.ok()) << err.what();
+	std::vector<int> results_m;
+	for (auto it : res) {
+		WrSerializer ser;
+		auto err = it.GetJSON(ser, false);
+		EXPECT_TRUE(err.ok()) << err.what();
+		gason::JsonParser parser;
+		auto root = parser.Parse(ser.Slice());
+		results_m.push_back(root["id"].As<int>());
+	}
+	ASSERT_TRUE(results_m.size() == n3);
+
+	err = slave.Get()->api.reindexer->RenameNamespace("ns1", "ns1RenameSlave");
+	ASSERT_FALSE(err.ok());
+
+	std::string tmpNsName("tmpNsName");
+	NamespaceDef tmpNsDef = NamespaceDef(tmpNsName, StorageOpts().Enabled().CreateIfMissing());
+	tmpNsDef.AddIndex("id", "hash", "int", IndexOpts().PK());
+	tmpNsDef.isTemporary = true;
+	err = master.Get()->api.reindexer->AddNamespace(tmpNsDef);
+	ASSERT_TRUE(err.ok()) << err.what();
+	reindexer::client::Item item = master.Get()->api.NewItem(tmpNsName);
+	err = item.FromJSON("{\"id\":" + std::to_string(10) + "}");
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = master.Get()->api.reindexer->Upsert(tmpNsName, item);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = master.Get()->api.reindexer->RenameNamespace(tmpNsName, tmpNsName + "Rename");
+	ASSERT_FALSE(err.ok());
+
+	reindexer::client::QueryResults r1;
+	err = master.Get()->api.reindexer->Select("Select * from " + tmpNsName, r1);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(r1.Count() == 1);
+}
 TEST_F(ReplicationSlaveSlaveApi, Node3ApplyWal) {
 	// Node configuration:
 	//			master

@@ -2205,7 +2205,7 @@ int64_t NamespaceImpl::GetSerial(const string &field) {
 
 	string ser = getMeta("_SERIAL_" + field);
 	if (ser != "") {
-		counter = stoi(ser) + 1;
+		counter = reindexer::stoll(ser) + 1;
 	}
 
 	string s = to_string(counter);

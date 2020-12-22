@@ -53,6 +53,8 @@ struct ServerConfig {
 	std::chrono::milliseconds PrometheusCollectPeriod;
 	bool DebugAllocs;
 	std::chrono::seconds TxIdleTimeout;
+	bool EnableGRPC;
+	string GRPCAddr;
 
 protected:
 	Error fromYaml(Yaml::Node& root);

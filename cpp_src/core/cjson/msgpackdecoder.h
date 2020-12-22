@@ -3,6 +3,7 @@
 #include "core/cjson/cjsonbuilder.h"
 #include "core/payload/payloadiface.h"
 #include "tools/errors.h"
+#include "vendor/msgpack/msgpackparser.h"
 
 struct msgpack_object;
 
@@ -25,6 +26,7 @@ private:
 
 	TagsMatcher* tm_;
 	TagsPath tagsPath_;
+	MsgPackParser parser_;
 };
 
 }  // namespace reindexer

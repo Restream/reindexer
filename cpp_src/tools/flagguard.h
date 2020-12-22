@@ -7,10 +7,7 @@ namespace reindexer {
 template <bool GuardValue>
 class FlagGuard {
 public:
-	FlagGuard(bool& flag) : flag_(flag) {
-		assert(flag_ != GuardValue);
-		flag_ = GuardValue;
-	}
+	FlagGuard(bool& flag) : flag_(flag) { flag_ = GuardValue; }
 
 	~FlagGuard() {
 		assert(flag_ == GuardValue);

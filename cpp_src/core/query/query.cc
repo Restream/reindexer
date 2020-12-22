@@ -261,7 +261,7 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 	ser.PutVString(_namespace);
 	entries.Serialize(ser);
 
-	for (auto &agg : aggregations_) {
+	for (const auto &agg : aggregations_) {
 		ser.PutVarUint(QueryAggregation);
 		ser.PutVarUint(agg.type_);
 		ser.PutVarUint(agg.fields_.size());
@@ -283,7 +283,7 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 		}
 	}
 
-	for (const SortingEntry &sortginEntry : sortingEntries_) {
+	for (const auto &sortginEntry : sortingEntries_) {
 		ser.PutVarUint(QuerySortIndex);
 		ser.PutVString(sortginEntry.expression);
 		ser.PutVarUint(sortginEntry.desc);
@@ -293,7 +293,7 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 	}
 
 	if (mode & WithJoinEntries) {
-		for (auto &qje : reinterpret_cast<const JoinedQuery *>(this)->joinEntries_) {
+		for (const auto &qje : reinterpret_cast<const JoinedQuery *>(this)->joinEntries_) {
 			ser.PutVarUint(QueryJoinOn);
 			ser.PutVarUint(qje.op_);
 			ser.PutVarUint(qje.condition_);
@@ -302,7 +302,7 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 		}
 	}
 
-	for (const std::pair<unsigned, EqualPosition> &equalPoses : equalPositions_) {
+	for (const auto &equalPoses : equalPositions_) {
 		ser.PutVarUint(QueryEqualPosition);
 		ser.PutVarUint(equalPoses.first);
 		ser.PutVarUint(equalPoses.second.size());
@@ -333,7 +333,7 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 		ser.PutVarUint(calcTotal);
 	}
 
-	for (auto &sf : selectFilter_) {
+	for (const auto &sf : selectFilter_) {
 		ser.PutVarUint(QuerySelectFilter);
 		ser.PutVString(sf);
 	}
@@ -346,7 +346,7 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 		ser.PutVarUint(QueryWithRank);
 	}
 
-	for (const UpdateEntry &field : updateFields_) {
+	for (const auto &field : updateFields_) {
 		if (field.mode == FieldModeSet) {
 			ser.PutVarUint(QueryUpdateFieldV2);
 			ser.PutVString(field.column);
@@ -367,14 +367,14 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 	ser.PutVarUint(QueryEnd);  // finita la commedia... of root query
 
 	if (!(mode & SkipJoinQueries)) {
-		for (auto &jq : joinQueries_) {
+		for (const auto &jq : joinQueries_) {
 			ser.PutVarUint(static_cast<int>(jq.joinType));
 			jq.Serialize(ser, WithJoinEntries);
 		}
 	}
 
 	if (!(mode & SkipMergeQueries)) {
-		for (auto &mq : mergeQueries_) {
+		for (const auto &mq : mergeQueries_) {
 			ser.PutVarUint(static_cast<int>(mq.joinType));
 			mq.Serialize(ser, mode | WithJoinEntries);
 		}

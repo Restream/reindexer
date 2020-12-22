@@ -79,7 +79,7 @@ public:
 	void OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &rec);
 
 	void OnConnectionState(const Error &err);
-	bool empty() {
+	bool Empty() {
 		shared_lock<shared_timed_mutex> lck(mtx_);
 		return observers_.empty();
 	}

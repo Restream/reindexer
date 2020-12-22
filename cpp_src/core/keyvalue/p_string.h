@@ -21,6 +21,11 @@ struct v_string_hdr {
 	uint8_t data[1];
 };
 
+struct l_msgpack_hdr {
+	uint32_t size;
+	const char *ptr;
+};
+
 struct json_string_ftr {
 	const char *data;
 };
@@ -41,12 +46,15 @@ struct p_string {
 	constexpr static uint64_t tagKeyString = 0x5ULL;
 	// ptr points to json_string
 	constexpr static uint64_t tagJsonStr = 0x6ULL;
+	// ptr points to msgpack string
+	constexpr static uint64_t tagMsgPackStr = 0x7ULL;
 	// offset of tag in pointer
 	constexpr static uint64_t tagShift = 59ULL;
 	constexpr static uint64_t tagMask = 0x7ULL << tagShift;
 
 	explicit p_string(const l_string_hdr *lstr) : v((uintptr_t(lstr) & ~tagMask) | (tagLstr << tagShift)) {}
 	explicit p_string(const v_string_hdr *vstr) : v((uintptr_t(vstr) & ~tagMask) | (tagVstr << tagShift)) {}
+	explicit p_string(const l_msgpack_hdr *mstr) : v((uintptr_t(mstr) & ~tagMask) | (tagMsgPackStr << tagShift)) {}
 	explicit p_string(const char *cstr) : v((uintptr_t(cstr) & ~tagMask) | (tagCstr << tagShift)) {}
 	explicit p_string(const json_string_ftr jstr) : v((uintptr_t(jstr.data) & ~tagMask) | (tagJsonStr << tagShift)) {}
 	explicit p_string(const string *str) : v((uintptr_t(str) & ~tagMask) | (tagCxxstr << tagShift)) {}
@@ -59,6 +67,10 @@ struct p_string {
 			case tagCstr: {
 				auto str = reinterpret_cast<const char *>(ptr());
 				return string_view(str, strlen(str));
+			}
+			case tagMsgPackStr: {
+				const auto &str = *reinterpret_cast<const l_msgpack_hdr *>(ptr());
+				return string_view(str.ptr, str.size);
 			}
 			case tagCxxstr:
 			case tagKeyString:
@@ -90,6 +102,8 @@ struct p_string {
 			case tagCxxstr:
 			case tagKeyString:
 				return (reinterpret_cast<const string *>(ptr()))->data();
+			case tagMsgPackStr:
+				return (reinterpret_cast<const l_msgpack_hdr *>(ptr()))->ptr;
 			case tagSlice:
 				return (reinterpret_cast<const string_view *>(ptr()))->data();
 			case tagLstr:
@@ -120,6 +134,8 @@ struct p_string {
 					return (reinterpret_cast<const string_view *>(ptr()))->size();
 				case tagLstr:
 					return (reinterpret_cast<const l_string_hdr *>(ptr()))->length;
+				case tagMsgPackStr:
+					return (reinterpret_cast<const l_msgpack_hdr *>(ptr()))->size;
 				case tagVstr: {
 					auto p = reinterpret_cast<const uint8_t *>(ptr());
 					auto l = scan_varint(10, p);

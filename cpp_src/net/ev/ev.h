@@ -1,12 +1,14 @@
 #pragma once
 
-#include <assert.h>
 #include <atomic>
+#include <cassert>
 #include <chrono>
 #include <csignal>
-#include <functional>
 #include <memory>
+#include <thread>
 #include <vector>
+
+#include "coroutine/coroutine.h"
 
 // Thank's to windows.h include
 #ifdef ERROR
@@ -136,7 +138,22 @@ public:
 	dynamic_loop();
 	~dynamic_loop();
 	void run();
-	void break_loop();
+	void break_loop() noexcept { break_ = true; }
+	void spawn(std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit) {
+		auto tid = std::this_thread::get_id();
+		if (coroTid_ != std::thread::id() && coroTid_ != tid) {
+			// Every coroutine has to be spawned from the same thread
+			assert(false);
+		} else {
+			coroTid_ = tid;
+		}
+		auto id = coroutine::create(std::move(func), stack_size);
+		new_tasks_.emplace_back(id);
+	}
+	template <typename Rep, typename Period>
+	void sleep(std::chrono::duration<Rep, Period> dur);
+	template <typename Rep1, typename Period1, typename Rep2, typename Period2>
+	void granular_sleep(std::chrono::duration<Rep1, Period1> dur, std::chrono::duration<Rep2, Period2> granularity, bool &terminate);
 
 protected:
 	void set(int fd, io *watcher, int events);
@@ -148,9 +165,13 @@ protected:
 	void stop(async *watcher);
 	void stop(sig *watcher);
 	void send(async *watcher);
+	bool is_active(const timer *watcher) const noexcept;
 
 	void io_callback(int fd, int events);
 	void async_callback();
+
+	void set_coro_cb();
+	void remove_coro_cb();
 
 	struct fd_handler {
 		int emask_ = 0;
@@ -164,6 +185,12 @@ protected:
 	std::vector<sig *> sigs_;
 	bool break_ = false;
 	std::atomic<int> async_sent_;
+
+	using tasks_container = h_vector<coroutine::routine_t, 64>;
+	tasks_container new_tasks_;
+	tasks_container running_tasks_;
+	int64_t cmpl_cb_id_ = 0;
+	std::thread::id coroTid_;
 
 #ifdef HAVE_EPOLL_LOOP
 	loop_epoll_backend backend_;
@@ -185,7 +212,7 @@ class loop_ref {
 	friend class async;
 
 public:
-	void break_loop() {
+	void break_loop() noexcept {
 		if (loop_) loop_->break_loop();
 	}
 	void run() {
@@ -208,6 +235,11 @@ protected:
 	void send(Args... args) {
 		if (loop_) loop_->send(args...);
 	}
+	template <typename... Args>
+	bool is_active(Args... args) const noexcept {
+		if (loop_) return loop_->is_active(args...);
+		return false;
+	}
 	dynamic_loop *loop_ = nullptr;
 };
 
@@ -215,11 +247,11 @@ class io {
 	friend class dynamic_loop;
 
 public:
-	io(){};
+	io() = default;
 	io(const io &) = delete;
 	~io() { stop(); }
 
-	void set(dynamic_loop &loop_) { loop.loop_ = &loop_; }
+	void set(dynamic_loop &loop_) noexcept { loop.loop_ = &loop_; }
 	void set(int events) { loop.set(fd, this, events); }
 	void start(int _fd, int events) {
 		fd = _fd;
@@ -229,13 +261,13 @@ public:
 		loop.stop(fd);
 		fd = -1;
 	}
-	void reset() { loop.loop_ = nullptr; }
+	void reset() noexcept { loop.loop_ = nullptr; }
 
 	template <typename K, void (K::*func)(io &, int events)>
 	void set(K *object) {
 		func_ = [object](io &watcher, int events) { (static_cast<K *>(object)->*func)(watcher, events); };
 	}
-	void set(std::function<void(io &watcher, int events)> func) { func_ = func; }
+	void set(std::function<void(io &watcher, int events)> func) noexcept { func_ = std::move(func); }
 
 	int fd = -1;
 	loop_ref loop;
@@ -251,63 +283,105 @@ class timer {
 	friend class dynamic_loop;
 
 public:
-	timer(){};
+	timer() = default;
 	timer(const timer &) = delete;
+	timer(timer &&) = default;
+	timer &operator=(timer &&) = default;
 	~timer() { stop(); }
 
-	void set(dynamic_loop &loop_) { loop.loop_ = &loop_; }
+	void set(dynamic_loop &loop_) noexcept { loop.loop_ = &loop_; }
 	void start(double t, double p = 0) {
 		period_ = p;
 		loop.set(this, t);
 	}
 	void stop() { loop.stop(this); }
-	void reset() { loop.loop_ = nullptr; }
+	void reset() noexcept { loop.loop_ = nullptr; }
 
 	template <typename K, void (K::*func)(timer &, int t)>
 	void set(K *object) {
 		func_ = [object](timer &watcher, int t) { (static_cast<K *>(object)->*func)(watcher, t); };
 	}
-	void set(std::function<void(timer &, int)> func) { func_ = func; }
+	void set(std::function<void(timer &, int)> func) noexcept { func_ = std::move(func); }
+
+	bool is_active() const noexcept { return loop.is_active(this); }
 
 	loop_ref loop;
 	std::chrono::time_point<std::chrono::steady_clock> deadline_;
 
 protected:
+	struct coro_t {};
+	timer(coro_t) noexcept : in_coro_storage_(true) {}
+
 	void callback(int tv) {
 		assert(func_ != nullptr);
-		func_(*this, tv);
-		if (period_ > 0.00000001) {
-			loop.set(this, period_);
+		if (in_coro_storage_) {
+			auto func = std::move(func_);
+			func(*this, tv);  // Timer is deallocated after this call
+		} else {
+			func_(*this, tv);
+			if (period_ > 0.00000001) {
+				loop.set(this, period_);
+			}
 		}
 	}
 
 	std::function<void(timer &watcher, int t)> func_ = nullptr;
 	double period_ = 0;
+	bool in_coro_storage_ = false;
 };
 
 using periodic = timer;
+
+template <typename Rep, typename Period>
+void dynamic_loop::sleep(std::chrono::duration<Rep, Period> dur) {
+	auto id = coroutine::current();
+	if (id) {
+		timer tm(timer::coro_t{});
+		tm.set([id](timer &, int) { coroutine::resume(id); });
+		tm.set(*this);
+		double awaitTime = std::chrono::duration_cast<std::chrono::microseconds>(dur).count();
+		tm.start(awaitTime / 1e6);
+		do {
+			coroutine::suspend();
+		} while (tm.is_active());
+		tm.reset();
+	} else {
+		std::this_thread::sleep_for(dur);
+	}
+}
+
+template <typename Rep1, typename Period1, typename Rep2, typename Period2>
+void dynamic_loop::granular_sleep(std::chrono::duration<Rep1, Period1> dur, std::chrono::duration<Rep2, Period2> granularity,
+								  bool &terminate) {
+	for (std::chrono::nanoseconds t = dur; t.count() > 0; t -= granularity) {
+		if (terminate) {
+			return;
+		}
+		sleep(std::min(t, std::chrono::duration_cast<std::chrono::nanoseconds>(granularity)));
+	}
+}
 
 class sig {
 	friend class dynamic_loop;
 
 public:
-	sig(){};
+	sig() = default;  // -V730
 	sig(const sig &) = delete;
 	~sig() { stop(); }
 
-	void set(dynamic_loop &loop_) { loop.loop_ = &loop_; }
+	void set(dynamic_loop &loop_) noexcept { loop.loop_ = &loop_; }
 	void start(int signum) {
 		signum_ = signum;
 		loop.set(this);
 	}
 	void stop() { loop.stop(this); }
-	void reset() { loop.loop_ = nullptr; }
+	void reset() noexcept { loop.loop_ = nullptr; }
 
 	template <typename K, void (K::*func)(sig &)>
 	void set(K *object) {
 		func_ = [object](sig &watcher) { (static_cast<K *>(object)->*func)(watcher); };
 	}
-	void set(std::function<void(sig &)> func) { func_ = func; }
+	void set(std::function<void(sig &)> func) noexcept { func_ = std::move(func); }
 
 	loop_ref loop;
 
@@ -323,7 +397,7 @@ protected:
 #else
 	void (*old_handler_)(int);
 #endif
-	int signum_;
+	int signum_ = 0;
 };
 
 class async {
@@ -340,14 +414,14 @@ public:
 	}
 	void start() { loop.set(this); }
 	void stop() { loop.stop(this); }
-	void reset() { loop.loop_ = nullptr; }
+	void reset() noexcept { loop.loop_ = nullptr; }
 	void send() { loop.send(this); }
 
 	template <typename K, void (K::*func)(async &)>
 	void set(K *object) {
 		func_ = [object](async &watcher) { (static_cast<K *>(object)->*func)(watcher); };
 	}
-	void set(std::function<void(async &)> func) { func_ = func; }
+	void set(std::function<void(async &)> func) noexcept { func_ = std::move(func); }
 
 	loop_ref loop;
 

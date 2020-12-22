@@ -19,7 +19,6 @@
 #include "tools/fsops.h"
 #include "tools/stringstools.h"
 #include "yaml/yaml.h"
-
 #ifdef _WIN32
 #include "winservice.h"
 #endif
@@ -28,6 +27,11 @@
 void init_resources() { CMRC_INIT(reindexer_server_resources); }
 #else
 void init_resources() {}
+#endif
+
+#ifdef WITH_GRPC
+#include <grpcpp/grpcpp.h>
+#include "reindexerservice.h"
 #endif
 
 namespace reindexer_server {
@@ -280,6 +284,20 @@ int ServerImpl::run() {
 			logger_.error("Can't listen RPC on '{0}'", config_.RPCAddr);
 			return EXIT_FAILURE;
 		}
+#ifdef WITH_GRPC
+		reindexer::grpc::ReindexerService service(*dbMgr_, config_.TxIdleTimeout, loop_);
+		std::thread grpcServiceThread;
+		std::unique_ptr<::grpc::Server> grpcServer;
+		if (config_.EnableGRPC) {
+			const std::string address(config_.GRPCAddr);
+			::grpc::ServerBuilder builder;
+			builder.AddListeningPort(address, ::grpc::InsecureServerCredentials());
+			builder.RegisterService(&service);
+			grpcServer = builder.BuildAndStart();
+			logger_.info("Listening gRpc service on {0}", address);
+			grpcServiceThread = std::thread([&grpcServer]() { grpcServer->Wait(); });
+		}
+#endif
 		auto sigCallback = [&](ev::sig &sig) {
 			logger_.info("Signal received. Terminating...");
 			running_ = false;
@@ -320,6 +338,12 @@ int ServerImpl::run() {
 		if (statsCollector) statsCollector->Stop();
 		rpcServer.Stop();
 		httpServer.Stop();
+#ifdef WITH_GRPC
+		if (config_.EnableGRPC) {
+			grpcServer->Shutdown();
+			if (grpcServiceThread.joinable()) grpcServiceThread.join();
+		}
+#endif
 	} catch (const Error &err) {
 		logger_.error("Unhandled exception occured: {0}", err.what());
 	}
@@ -337,7 +361,7 @@ Error ServerImpl::daemonize() {
 			setsid();
 			if (chdir("/")) {
 				return Error(errLogic, "Could not change working directory. Reason: %s", strerror(errno));
-			};
+			}
 
 			close(STDIN_FILENO);
 			close(STDOUT_FILENO);

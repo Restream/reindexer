@@ -51,3 +51,7 @@ endif()
 if (WITH_TSAN)
   set_tests_properties( gtests PROPERTIES ENVIRONMENT TSAN_OPTIONS=suppressions=${REINDEXER_SOURCE_PATH}/gtests/tsan.suppressions )
 endif ()
+
+if (ENABLE_GRPC)
+    add_definitions(-DWITH_GRPC)
+endif()

@@ -4,7 +4,8 @@ project(reindexer_server)
 
 set(TARGET reindexer_server)
 
-add_executable(${TARGET} "main.cc")
+file (GLOB_RECURSE SRCS "main.cc")
+add_executable(${TARGET} ${SRCS})
 list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer ${REINDEXER_LIBRARIES})
 include_directories(${PROJECT_SOURCE_DIR})
 add_dependencies(${TARGET} reindexer_server_library)

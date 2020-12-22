@@ -33,7 +33,9 @@ public:
 	void CallRPC(const IRPCCall &call) override final;
 	void SetClientData(std::unique_ptr<ClientData> data) override final { clientData_ = std::move(data); }
 	ClientData *GetClientData() override final { return clientData_.get(); }
-	std::shared_ptr<ConnectionStat> GetConnectionStat() override final { return stat_; }
+	std::shared_ptr<connection_stat> GetConnectionStat() override final {
+		return ConnectionST::stats_ ? ConnectionST::stats_->get_stat() : std::shared_ptr<connection_stat>();
+	}
 
 protected:
 	void onRead() override;

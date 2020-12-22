@@ -1,7 +1,9 @@
 #include "core/index/rtree/rtree.h"
 #include <random>
+#include "core/index/rtree/greenesplitter.h"
 #include "core/index/rtree/linearsplitter.h"
 #include "core/index/rtree/quadraticsplitter.h"
+#include "core/index/rtree/rstarsplitter.h"
 #include "gtest/gtest.h"
 
 namespace {
@@ -70,9 +72,9 @@ private:
 }  // namespace
 
 // Checks of inserting of points to RectangleTree and verifies of its structure after each insertion
-template <template <typename, typename, typename, typename, size_t> class Splitter>
+template <template <typename, typename, typename, typename, size_t, size_t> class Splitter>
 static void TestInsert() {
-	reindexer::RectangleTree<reindexer::Point, Splitter> tree;
+	reindexer::RectangleTree<reindexer::Point, Splitter, 16, 8> tree;
 	ASSERT_TRUE(tree.Check());
 
 	size_t insertedCount = 0;
@@ -89,13 +91,14 @@ static void TestInsert() {
 }
 
 TEST(RTree, QuadraticInsert) { TestInsert<reindexer::QuadraticSplitter>(); }
-
 TEST(RTree, LinearInsert) { TestInsert<reindexer::LinearSplitter>(); }
+TEST(RTree, GreeneInsert) { TestInsert<reindexer::GreeneSplitter>(); }
+TEST(RTree, RStarInsert) { TestInsert<reindexer::RStarSplitter>(); }
 
 // Checks that iterators could iterate over whole RectangleTree after multiple modifications of the tree
-template <template <typename, typename, typename, typename, size_t> class Splitter>
+template <template <typename, typename, typename, typename, size_t, size_t> class Splitter>
 static void TestIterators() {
-	reindexer::RectangleTree<reindexer::Point, Splitter> tree;
+	reindexer::RectangleTree<reindexer::Point, Splitter, 16, 8> tree;
 	ASSERT_TRUE(tree.Check());
 	ASSERT_TRUE(tree.begin() == tree.end());
 	ASSERT_FALSE(tree.begin() != tree.end());
@@ -123,13 +126,14 @@ static void TestIterators() {
 }
 
 TEST(RTree, QuadraticIterators) { TestIterators<reindexer::QuadraticSplitter>(); }
-
 TEST(RTree, LinearIterators) { TestIterators<reindexer::LinearSplitter>(); }
+TEST(RTree, GreeneIterators) { TestIterators<reindexer::GreeneSplitter>(); }
+TEST(RTree, RStarIterators) { TestIterators<reindexer::RStarSplitter>(); }
 
 // Verifies of searching of points in RectangleTree by DWithin
-template <template <typename, typename, typename, typename, size_t> class Splitter>
+template <template <typename, typename, typename, typename, size_t, size_t> class Splitter>
 static void TestSearch() {
-	using RTree = reindexer::RectangleTree<reindexer::Point, Splitter>;
+	using RTree = reindexer::RectangleTree<reindexer::Point, Splitter, 16, 8>;
 	constexpr size_t kCount = 100000;
 
 	RTree tree;
@@ -157,13 +161,14 @@ static void TestSearch() {
 }
 
 TEST(RTree, QuadraticSearch) { TestSearch<reindexer::QuadraticSplitter>(); }
-
 TEST(RTree, LinearSearch) { TestSearch<reindexer::LinearSplitter>(); }
+TEST(RTree, GreeneSearch) { TestSearch<reindexer::GreeneSplitter>(); }
+TEST(RTree, RStarSearch) { TestSearch<reindexer::RStarSplitter>(); }
 
 // Checks of deleting of points from RectangleTree and verifies of its structure after each deletion
-template <template <typename, typename, typename, typename, size_t> class Splitter>
+template <template <typename, typename, typename, typename, size_t, size_t> class Splitter>
 static void TestDelete() {
-	using RTree = reindexer::RectangleTree<reindexer::Point, Splitter>;
+	using RTree = reindexer::RectangleTree<reindexer::Point, Splitter, 16, 8>;
 	constexpr size_t kCount = 10000;
 
 	RTree tree;
@@ -185,13 +190,14 @@ static void TestDelete() {
 }
 
 TEST(RTree, QuadraticDelete) { TestDelete<reindexer::QuadraticSplitter>(); }
-
 TEST(RTree, LinearDelete) { TestDelete<reindexer::LinearSplitter>(); }
+TEST(RTree, GreeneDelete) { TestDelete<reindexer::GreeneSplitter>(); }
+TEST(RTree, RStarDelete) { TestDelete<reindexer::RStarSplitter>(); }
 
 // Checks of deleting of points iterators point to from RectangleTree and verifies of its structure after each deletion
-template <template <typename, typename, typename, typename, size_t> class Splitter>
+template <template <typename, typename, typename, typename, size_t, size_t> class Splitter>
 static void TestErase() {
-	using RTree = reindexer::RectangleTree<reindexer::Point, Splitter>;
+	using RTree = reindexer::RectangleTree<reindexer::Point, Splitter, 16, 8>;
 	constexpr size_t kCount = 10000;
 
 	RTree tree;
@@ -213,13 +219,14 @@ static void TestErase() {
 }
 
 TEST(RTree, QuadraticErase) { TestErase<reindexer::QuadraticSplitter>(); }
-
 TEST(RTree, LinearErase) { TestErase<reindexer::LinearSplitter>(); }
+TEST(RTree, GreeneErase) { TestErase<reindexer::GreeneSplitter>(); }
+TEST(RTree, RStarErase) { TestErase<reindexer::RStarSplitter>(); }
 
 // Checks of inserting, deleting search of points in RectangleTree and verifies of its structure after each its modidfication
-template <template <typename, typename, typename, typename, size_t> class Splitter>
+template <template <typename, typename, typename, typename, size_t, size_t> class Splitter>
 static void TestMap() {
-	using Map = reindexer::RTreeMap<size_t, Splitter>;
+	using Map = reindexer::RTreeMap<size_t, Splitter, 16, 8>;
 	constexpr size_t kCount = 10000;
 
 	Map map;
@@ -255,5 +262,6 @@ static void TestMap() {
 }
 
 TEST(RTree, QuadraticMap) { TestMap<reindexer::QuadraticSplitter>(); }
-
 TEST(RTree, LinearMap) { TestMap<reindexer::LinearSplitter>(); }
+TEST(RTree, GreeneMap) { TestMap<reindexer::GreeneSplitter>(); }
+TEST(RTree, RStarMap) { TestMap<reindexer::RStarSplitter>(); }

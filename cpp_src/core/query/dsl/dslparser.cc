@@ -647,7 +647,7 @@ Error Parse(const string& str, Query& q) {
 	static JsonSchemaChecker schemaChecker(kQueryJson, "query");
 	try {
 		gason::JsonParser parser;
-		auto root = parser.Parse(giftStr(str));
+		auto root = parser.Parse(string_view(str));
 		Error err = schemaChecker.Check(root);
 		if (!err.ok()) return err;
 		dsl::parse(root.value, q);

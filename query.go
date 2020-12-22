@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"unsafe"
@@ -95,8 +97,15 @@ type nsArrayEntry struct {
 	localCjsonState cjson.State
 }
 
+type noCopy struct{}
+
+// Lock is a no-op used by -copylocks checker from `go vet`.
+func (*noCopy) Lock()   {}
+func (*noCopy) Unlock() {}
+
 // Query to DB object
 type Query struct {
+	noCopy          noCopy
 	Namespace       string
 	db              *reindexerImpl
 	nextOp          int
@@ -123,9 +132,25 @@ type Query struct {
 	queriesCount    int
 	opennedBrackets []int
 	tx              *Tx
+	traceNew        []byte
+	traceClose      []byte
 }
 
 var queryPool sync.Pool
+var enableDebug bool
+
+func init() {
+	enableDebug = os.Getenv("REINDEXER_GODEBUG") != ""
+}
+
+func mktrace(buf *[]byte) {
+	if enableDebug {
+		if *buf == nil {
+			*buf = make([]byte, 0x4000)
+		}
+		*buf = (*buf)[0:runtime.Stack((*buf)[0:cap((*buf))], false)]
+	}
+}
 
 // Create new DB query
 func newQuery(db *reindexerImpl, namespace string, tx *Tx) *Query {
@@ -156,6 +181,7 @@ func newQuery(db *reindexerImpl, namespace string, tx *Tx) *Query {
 		q.queriesCount = 0
 		q.opennedBrackets = q.opennedBrackets[:0]
 	}
+	mktrace(&q.traceNew)
 
 	q.Namespace = namespace
 	q.db = db
@@ -182,6 +208,7 @@ func (q *Query) makeCopy(db *reindexerImpl, root *Query) *Query {
 	if qC == nil {
 		qC = &Query{}
 	}
+	mktrace(&qC.traceNew)
 
 	qC.ser = cjson.NewSerializer(qC.initBuf[:0])
 
@@ -627,10 +654,10 @@ func (q *Query) ExecCtx(ctx context.Context) *Iterator {
 		q = q.root
 	}
 	if q.closed {
-		panic(errors.New("Exec call on already closed query. You shoud create new Query"))
+		q.panicTrace("Exec call on already closed query. You should create new Query")
 	}
 	if q.executed {
-		panic(errors.New("Exec call on already executed query. You shoud create new Query"))
+		q.panicTrace("Exec call on already executed query. You should create new Query")
 	}
 	// if q.tx != nil {
 	// 	panic(errors.New("For tx query only Update or Delete operations are supported"))
@@ -652,10 +679,10 @@ func (q *Query) ExecToJsonCtx(ctx context.Context, jsonRoots ...string) *JSONIte
 		q = q.root
 	}
 	if q.closed {
-		panic(errors.New("Exec call on already closed query. You shoud create new Query"))
+		q.panicTrace("Exec call on already closed query. You should create new Query")
 	}
 	if q.executed {
-		panic(errors.New("Exec call on already executed query. You shoud create new Query"))
+		q.panicTrace("Exec call on already executed query. You should create new Query")
 	}
 	// if q.tx != nil {
 	// 	panic(errors.New("For tx query only Update or Delete operations are supported"))
@@ -675,17 +702,20 @@ func (q *Query) close() {
 		q = q.root
 	}
 	if q.closed {
-		panic(errors.New("Close call on already closed query"))
+		q.panicTrace("Close call on already closed query")
 	}
+	mktrace(&q.traceClose)
 
 	for i, jq := range q.joinQueries {
 		jq.closed = true
+		mktrace(&jq.traceClose)
 		queryPool.Put(jq)
 		q.joinQueries[i] = nil
 	}
 
 	for i, mq := range q.mergedQueries {
 		mq.closed = true
+		mktrace(&mq.traceClose)
 		queryPool.Put(mq)
 		q.mergedQueries[i] = nil
 	}
@@ -697,6 +727,15 @@ func (q *Query) close() {
 	q.closed = true
 	q.tx = nil
 	queryPool.Put(q)
+}
+
+func (q *Query) panicTrace(msg string) {
+	if !enableDebug {
+		fmt.Println("To see query allocation/close traces set REINDEXER_GODEBUG=1 environment variable!")
+	} else {
+		fmt.Printf("Query allocation trace: %s\n\nQuery close trace %s\n\n", string(q.traceNew), string(q.traceClose))
+	}
+	panic(errors.New(msg))
 }
 
 // Delete will execute query, and delete items, matches query
@@ -712,7 +751,7 @@ func (q *Query) DeleteCtx(ctx context.Context) (int, error) {
 		return 0, errors.New("Delete does not support joined queries")
 	}
 	if q.closed {
-		panic(errors.New("Delete call on already closed query. You shoud create new Query"))
+		q.panicTrace("Delete call on already closed query. You should create new Query")
 	}
 
 	defer q.close()
@@ -857,7 +896,7 @@ func (q *Query) UpdateCtx(ctx context.Context) *Iterator {
 		return errIterator(errors.New("Update does not support joined queries"))
 	}
 	if q.closed {
-		panic(errors.New("Update call on already closed query. You shoud create new Query"))
+		q.panicTrace("Update call on already closed query. You shoud create new Query")
 	}
 	q.executed = true
 	if q.tx != nil {
@@ -921,7 +960,7 @@ func (q *Query) join(q2 *Query, field string, joinType int) *Query {
 		q = q.root
 	}
 	if q2.root != nil {
-		panic(errors.New("query.Join call on already joined query. You shoud create new Query"))
+		panic(errors.New("query.Join call on already joined query. You should create new Query"))
 	}
 	if joinType != leftJoin {
 		q.ser.PutVarCUInt(queryJoinCondition)
@@ -1003,7 +1042,7 @@ func (q *Query) Merge(q2 *Query) *Query {
 // `joinIndex` parameter specifies which field from namespace for the latest join query issued on `q` should be used during join
 func (q *Query) On(index string, condition int, joinIndex string) *Query {
 	if q.closed {
-		panic(errors.New("query.On call on already closed query. You shoud create new Query"))
+		q.panicTrace("query.On call on already closed query. You should create new Query")
 	}
 	if q.root == nil {
 		panic(fmt.Errorf("Can't join on root query"))

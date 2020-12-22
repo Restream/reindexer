@@ -189,9 +189,9 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 		}
 		bool was = false;
 		for (SelectKeyResult &res : leftIndex->SelectKey(values, CondSet, sortId, {}, ctx, rdxCtx)) {
+			if (!res.comparators_.empty()) continue;
 			SelectIterator selIter{res, false, joinEntry.index_, false};
 			selIter.Bind(leftNs_->payloadType_, joinEntry.idxNo);
-			assert(selIter.comparators_.empty());
 			const int curIterations = selIter.GetMaxIterations();
 			if (curIterations && curIterations < *maxIterations) *maxIterations = curIterations;
 			iterators.Append(OpAnd, std::move(selIter));

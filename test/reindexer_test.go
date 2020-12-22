@@ -36,10 +36,14 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
+	opts := []interface{}{}
 	if udsn.Scheme == "builtin" {
 		os.RemoveAll("/tmp/reindex_test/")
+	} else if udsn.Scheme == "cproto" {
+		opts = []interface{}{reindexer.WithCreateDBIfMissing(), reindexer.WithNetCompression(), reindexer.WithAppName("RxTestInstance")}
 	}
-	DB = NewReindexWrapper(*dsn, reindexer.WithCreateDBIfMissing(), reindexer.WithNetCompression(), reindexer.WithAppName("RxTestInstance"))
+
+	DB = NewReindexWrapper(*dsn, opts...)
 	DBD = &DB.Reindexer
 	if err = DB.Status().Err; err != nil {
 		panic(err)
@@ -107,7 +111,7 @@ func randLocation() string {
 
 func randFloat(min float64, max float64, digits int) float64 {
 	mult := math.Pow10(digits)
-	return math.Round((rand.Float64() * (max - min) + min) * mult) / mult
+	return math.Round((rand.Float64()*(max-min)+min)*mult) / mult
 }
 
 func randPoint() [2]float64 {

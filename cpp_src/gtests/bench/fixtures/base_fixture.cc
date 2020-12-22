@@ -33,8 +33,7 @@ void BaseFixture::Insert(State& state) {
 		auto err = db_->Insert(nsdef_.name, item);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 
-		//      deprecated. need to use user's counters
-		//		state.SetItemsProcessed(state.items_processed() + 1);
+		state.SetItemsProcessed(state.items_processed() + 1);
 	}
 
 	auto err = db_->Commit(nsdef_.name);
@@ -55,8 +54,7 @@ void BaseFixture::Update(benchmark::State& state) {
 			auto e = Error(errConflict, "Item not exists [id = '%d']", item["id"].As<int>());
 			state.SkipWithError(e.what().c_str());
 		}
-		//      deprecated. need to use user's counters
-		//		state.SetItemsProcessed(state.items_processed() + 1);
+		state.SetItemsProcessed(state.items_processed() + 1);
 	}
 	auto err = db_->Commit(nsdef_.name);
 	if (!err.ok()) state.SkipWithError(err.what().c_str());

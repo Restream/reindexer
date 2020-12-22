@@ -94,6 +94,7 @@ protected:
 					abort();
 			}
 			assert(type_);
+			return 0;
 		}
 
 	private:

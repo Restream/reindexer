@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"reflect"
 	"runtime"
 	"sync"
@@ -32,6 +33,7 @@ type Logger interface {
 
 var logger Logger
 var logMtx sync.RWMutex
+var enableDebug bool
 
 var bufPool sync.Pool
 
@@ -45,12 +47,18 @@ type Builtin struct {
 type RawCBuffer struct {
 	cbuf         C.reindexer_resbuffer
 	hasFinalizer bool
+	trace        []byte
 }
 
 func (buf *RawCBuffer) FreeFinalized() {
 	buf.hasFinalizer = false
 	if buf.cbuf.results_ptr != 0 {
-		CGoLogger(bindings.WARNING, "FreeFinalized called. Iterator.Close() was not called")
+		trace := string(buf.trace)
+		if trace == "" {
+			trace = "To see iterator allocation trace set REINDEXER_GODEBUG=1 environment variable!"
+		}
+
+		CGoLogger(bindings.WARNING, "FreeFinalized called. Iterator.Close() was not called:\n"+trace)
 	}
 	buf.Free()
 }
@@ -63,16 +71,26 @@ func (buf *RawCBuffer) GetBuf() []byte {
 	return buf2go(buf.cbuf)
 }
 
-func newRawCBuffer() *RawCBuffer {
+func newRawCBuffer() (ret *RawCBuffer) {
 	obj := bufPool.Get()
+
 	if obj != nil {
-		return obj.(*RawCBuffer)
+		ret = obj.(*RawCBuffer)
+	} else {
+		ret = &RawCBuffer{}
 	}
-	return &RawCBuffer{}
+	if enableDebug {
+		if ret.trace == nil {
+			ret.trace = make([]byte, 0x4000)
+		}
+		ret.trace = ret.trace[0:runtime.Stack(ret.trace[0:cap(ret.trace)], false)]
+	}
+	return ret
 }
 
 func init() {
 	bindings.RegisterBinding("builtin", &Builtin{})
+	enableDebug = os.Getenv("REINDEXER_GODEBUG") != ""
 }
 
 func str2c(str string) C.reindexer_string {
@@ -158,6 +176,8 @@ func (binding *Builtin) Init(u []url.URL, options ...interface{}) error {
 	connectOptions.Opts |= bindings.ConnectOptWarnVersion
 	for _, option := range options {
 		switch v := option.(type) {
+		case bindings.OptionBuiltinWithServer:
+			// nothing
 		case bindings.OptionCgoLimit:
 			cgoLimit = v.CgoLimit
 		case bindings.OptionReindexerInstance:
@@ -172,7 +192,7 @@ func (binding *Builtin) Init(u []url.URL, options ...interface{}) error {
 		case bindings.ConnectOptions:
 			connectOptions = v
 		default:
-			fmt.Printf("Unknown builtin option: %v\n", option)
+			fmt.Printf("Unknown builtin option: %#v\n", option)
 		}
 	}
 

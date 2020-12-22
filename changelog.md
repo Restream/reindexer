@@ -1,3 +1,24 @@
+# Version 3.0 (22.12.2020)
+## Core
+- [fea] Sort by distance
+- [fea] Geo indexes performance improved
+- [fix] Disable rename ns on slave
+- [fix] Disable fulltext log in case loglevel is set to 0
+- [fix] Overlap and possible assert on serial int32 overflow
+
+## Reindexer server
+- [fea] Added GRPC support. [reindexer.proto](cpp_src/server/proto/reindexer.proto)
+- [fea] Added reindexer version to prometheus metrics
+- [fix] Decreased time of shutdown reindexer server with enabled prometheus
+## Reindexer tool
+- [fea] Completely rewritten network cproto client
+- [fix] reindexer.SetDefaultQueryDebug behavior fixed in case missed default namespace config 
+## Face
+- [fea] Completely redesigned
+
+## Go connector 
+- [fea] Added debug traces for Query and Iterator misuse. To enable tracer set REINDEXER_GODEBUG env
+
 # Version 2.14.1 (02.11.2020)
 
 ## Core

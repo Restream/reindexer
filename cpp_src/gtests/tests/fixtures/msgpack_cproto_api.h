@@ -21,7 +21,7 @@ public:
 		// clang-format off
         const string yaml =
                 "storage:\n"
-                "    path:" + kDbPath +"\n"
+                "    path: /tmp/reindex/" + kDbPath +"\n"
                 "logger:\n"
                 "   loglevel: none\n"
                 "   rpclog: \n"
@@ -38,7 +38,7 @@ public:
 			ASSERT_TRUE(status == EXIT_SUCCESS) << status;
 		}));
 
-		while (!server_.IsReady()) {
+		while (!server_.IsReady() || !server_.IsRunning()) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 
@@ -82,7 +82,7 @@ public:
 	}
 
 	void TearDown() {
-		if (server_.IsReady()) {
+		if (server_.IsRunning()) {
 			server_.Stop();
 			if (serverThread_->joinable()) {
 				serverThread_->join();

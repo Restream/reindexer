@@ -171,7 +171,6 @@ typedef enum IndexOpt {
 	kIndexOptPK = 1 << 7,
 	kIndexOptArray = 1 << 6,
 	kIndexOptDense = 1 << 5,
-	kIndexOptRTreeLinear = 1 << 4,
 	kIndexOptSparse = 1 << 3,
 } IndexOpt;
 

@@ -8,13 +8,6 @@
 
 #include "helpers.h"
 
-double randDouble(int min, int max, int digits) noexcept {
-	assert(digits > 0);
-	return random<int>(min * digits, max * digits) / static_cast<double>(digits);
-}
-
-reindexer::Point randPoint() noexcept { return {randDouble(-10, 10, 100), randDouble(-10, 10, 100)}; }
-
 using std::bind;
 using std::placeholders::_1;
 
@@ -35,10 +28,6 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("GetLikeString", &ApiTvSimple::GetLikeString, this);
 	Register("GetByRangeIDAndSortByHash", &ApiTvSimple::GetByRangeIDAndSortByHash, this);
 	Register("GetByRangeIDAndSortByTree", &ApiTvSimple::GetByRangeIDAndSortByTree, this);
-	Register("GetRangeTreeDouble", &ApiTvSimple::GetRangeTreeDouble, this);
-	Register("GetDWithinQuadraticRTreePoint", &ApiTvSimple::GetDWithinQuadraticRTreePoint, this);
-	Register("GetDWithinLinearRTreePoint", &ApiTvSimple::GetDWithinLinearRTreePoint, this);
-	Register("GetDWithinPointNonIndex", &ApiTvSimple::GetDWithinPointNonIndex, this);
 
 	Register("Query1Cond", &ApiTvSimple::Query1Cond, this);
 	Register("Query1CondTotal", &ApiTvSimple::Query1CondTotal, this);
@@ -110,32 +99,16 @@ reindexer::Item ApiTvSimple::MakeItem() {
 
 	auto startTime = random<int>(0, 50000);
 
-	wrSer_.Reset();
-	reindexer::JsonBuilder bld(wrSer_);
-	bld.Put("id", id_seq_->Next());
-	bld.Put("genre", random<int64_t>(0, 49));
-	bld.Put("year", random<int>(2000, 2049));
-	bld.Array("packages", reindexer::span<int>(packages_.at(random<size_t>(0, packages_.size() - 1))));
-	bld.Put("countries", countries_.at(random<size_t>(0, countries_.size() - 1)));
-	bld.Put("age", random<int>(0, 4));
-	bld.Array("price_id", reindexer::span<int>(priceIDs_.at(random<size_t>(0, priceIDs_.size() - 1))));
-	bld.Put("location", locations_.at(random<size_t>(0, locations_.size() - 1)));
-	bld.Put("start_time", start_times_.at(random<size_t>(0, start_times_.size() - 1)));
-	bld.Put("end_time", startTime + random<int>(1, 5) * 1000);
-	bld.Put("double", randDouble(-1000, 1000, 100000));
-	reindexer::Point point = randPoint();
-	double coords[]{point.x, point.y};
-	bld.Array("point_quadratic", reindexer::span<double>(coords, 2));
-	point = randPoint();
-	coords[0] = point.x;
-	coords[1] = point.y;
-	bld.Array("point_linear", reindexer::span<double>(coords, 2));
-	point = randPoint();
-	coords[0] = point.x;
-	coords[1] = point.y;
-	bld.Array("point_non_index", reindexer::span<double>(coords, 2));
-	bld.End();
-	item.FromJSON(wrSer_.Slice());
+	item["id"] = id_seq_->Next();
+	item["genre"] = random<int64_t>(0, 49);
+	item["year"] = random<int>(2000, 2049);
+	item["packages"] = packages_.at(random<size_t>(0, packages_.size() - 1));
+	item["countries"] = countries_.at(random<size_t>(0, countries_.size() - 1));
+	item["age"] = random<int>(0, 4);
+	item["price_id"] = priceIDs_.at(random<size_t>(0, priceIDs_.size() - 1));
+	item["location"] = locations_.at(random<size_t>(0, locations_.size() - 1));
+	item["start_time"] = start_times_.at(random<size_t>(0, start_times_.size() - 1));
+	item["end_time"] = startTime + random<int>(1, 5) * 1000;
 
 	return item;
 }
@@ -264,51 +237,6 @@ void ApiTvSimple::GetByRangeIDAndSortByTree(benchmark::State& state) {
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 
 		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
-	}
-}
-
-void ApiTvSimple::GetRangeTreeDouble(benchmark::State& state) {
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
-		Query q(nsdef_.name);
-		const double min = randDouble(-1000, 1000, 100000);
-		q.Where("double", CondRange, {min, min + randDouble(0, 1, 10000)});
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
-	}
-}
-
-void ApiTvSimple::GetDWithinQuadraticRTreePoint(benchmark::State& state) {
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
-		Query q(nsdef_.name);
-		q.DWithin("point_quadratic", randPoint(), randDouble(0, 1, 100));
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
-	}
-}
-
-void ApiTvSimple::GetDWithinLinearRTreePoint(benchmark::State& state) {
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
-		Query q(nsdef_.name);
-		q.DWithin("point_linear", randPoint(), randDouble(0, 1, 100));
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
-	}
-}
-
-void ApiTvSimple::GetDWithinPointNonIndex(benchmark::State& state) {
-	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
-		Query q(nsdef_.name);
-		q.DWithin("point_non_index", randPoint(), randDouble(0, 1, 100));
-		QueryResults qres;
-		auto err = db_->Select(q, qres);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
 	}
 }
 

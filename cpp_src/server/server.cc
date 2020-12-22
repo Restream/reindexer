@@ -13,6 +13,7 @@ void Server::Stop() { return impl_->Stop(); }
 void Server::EnableHandleSignals(bool enable) { impl_->EnableHandleSignals(enable); }
 DBManager &Server::GetDBManager() { return impl_->GetDBManager(); }
 bool Server::IsReady() { return impl_->IsReady(); }
+bool Server::IsRunning() { return impl_->IsRunning(); }
 void Server::ReopenLogFiles() { impl_->ReopenLogFiles(); }
 
 }  // namespace reindexer_server

@@ -89,8 +89,10 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 		if (!cache_ft.val.ids->size() || (ftctx->NeedArea() && !cache_ft.val.ctx->need_area_)) {
 			need_put = true;
 		} else {
-			logPrintf(LogInfo, "Get search results for '%s' in '%s' from cache", keys[0].As<string>(),
-					  this->payloadType_ ? this->payloadType_->Name() : "");
+			if (cfg_->logLevel >= LogInfo) {
+				logPrintf(LogInfo, "Get search results for '%s' in '%s' from cache", keys[0].As<string>(),
+						  this->payloadType_ ? this->payloadType_->Name() : "");
+			}
 			res.push_back(SingleSelectKeyResult(cache_ft.val.ids));
 			SelectKeyResults r(std::move(res));
 			assert(cache_ft.val.ctx);

@@ -46,6 +46,7 @@ private:
 	static void setMetricValue(PFamily<PGauge> *metricFamily, double value, int64_t epoch, const string &db = "", const string &ns = "",
 							   string_view queryType = "");
 	static void setMetricValue(PFamily<PGauge> *metricFamily, double value, int64_t epoch, const string &db, string_view type);
+	void fillRxInfo();
 	int collect(http::Context &ctx);
 
 	PRegistry registry_;
@@ -60,6 +61,7 @@ private:
 	PFamily<PGauge> *inputTraffic_{nullptr};
 	PFamily<PGauge> *outputTraffic_{nullptr};
 	PFamily<PGauge> *itemsCount_{nullptr};
+	PFamily<PGauge> *rxInfo_{nullptr};
 };
 
 }  // namespace reindexer_server

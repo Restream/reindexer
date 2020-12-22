@@ -47,7 +47,10 @@ class SelectIteratorContainer;
 class RdxContext;
 class RdxActivityContext;
 class ItemComparator;
-struct SortExpressionJoinedIndex;
+class SortExpression;
+namespace SortExprFuncs {
+struct DistanceBetweenJoinedIndexesSameNs;
+}  // namespace SortExprFuncs
 class ProtobufSchema;
 
 struct NsContext {
@@ -76,7 +79,8 @@ protected:
 	friend class SelectIteratorContainer;
 	friend class ItemComparator;
 	friend class Namespace;
-	friend struct SortExpressionJoinedIndex;
+	friend SortExpression;
+	friend SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
 	friend class ReindexerImpl;
 
 	class NSUpdateSortedContext : public UpdateSortedContext {

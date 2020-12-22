@@ -5,6 +5,8 @@
 #include "api_tv_composite.h"
 #include "api_tv_simple.h"
 #include "join_items.h"
+#include "geometry.h"
+#include "tools/reporter.h"
 
 #include "tools/fsops.h"
 
@@ -35,6 +37,7 @@ int main(int argc, char** argv) {
 	JoinItems joinItems(DB.get(), 500);
 	ApiTvSimple apiTvSimple(DB.get(), "ApiTvSimple", kItemsInBenchDataset);
 	ApiTvComposite apiTvComposite(DB.get(), "ApiTvComposite", kItemsInBenchDataset);
+	Geometry geometry(DB.get(), "Geometry", kItemsInBenchDataset);
 
 	auto err = apiTvSimple.Initialize();
 	if (!err.ok()) return err.code();
@@ -45,12 +48,16 @@ int main(int argc, char** argv) {
 	err = apiTvComposite.Initialize();
 	if (!err.ok()) return err.code();
 
+	err = geometry.Initialize();
+	if (!err.ok()) return err.code();
+
 	::benchmark::Initialize(&argc, argv);
 	if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
 
 	joinItems.RegisterAllCases();
 	apiTvSimple.RegisterAllCases();
 	apiTvComposite.RegisterAllCases();
+	geometry.RegisterAllCases();
 
 	::benchmark::RunSpecifiedBenchmarks();
 }

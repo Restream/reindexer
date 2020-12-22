@@ -2,7 +2,7 @@
 
 #include <gtest/gtest.h>
 #include <string>
-#include "client/reindexer.h"
+#include "client/cororeindexer.h"
 #include "core/queryresults/queryresults.h"
 #include "replicator/updatesobserver.h"
 #include "server/dbmanager.h"
@@ -18,15 +18,12 @@ public:
 
 	void RunServerInThread(bool statEnable);
 
-	void RunNSelectThread(int N);
-	void RunNReconnectThread(int N);
-	void RunNStartStopStatsThread(int N);
-
-	void RunClient(int connPoolSize, int workerThreads);
+	void RunNSelectThread(size_t threads, size_t coroutines);
+	void RunNReconnectThread(size_t N);
 
 	void StopThreads();
 
-	void SetProfilingFlag(bool val, const std::string& column, reindexer::client::Reindexer* c);
+	void SetProfilingFlag(bool val, const std::string& column, reindexer::client::CoroReindexer& c);
 
 	const std::string kdbPath = "/tmp/testdb/";
 	const std::string kdbName = "test";
@@ -38,7 +35,7 @@ public:
 	const std::string kAppName = "test_app_name";
 
 	std::string GetConnectionString();
-	uint32_t StatsTxCount(reindexer::client::Reindexer& rx);
+	uint32_t StatsTxCount(reindexer::client::CoroReindexer& rx);
 
 protected:
 	class TestObserver : public reindexer::IUpdatesObserver {
@@ -48,12 +45,11 @@ protected:
 	};
 
 private:
-	void ClientSelectLoop();
+	void ClientSelectLoop(size_t coroutines);
 	void ClientLoopReconnect();
 	void StartStopCliensStatisticsLoop();
 	reindexer_server::Server server_;
 	std::unique_ptr<std::thread> serverThread_;
-	std::unique_ptr<reindexer::client::Reindexer> client_;
 	std::vector<std::unique_ptr<std::thread>> clientThreads_;
 	std::atomic_bool stop_;
 	std::vector<std::unique_ptr<std::thread>> reconnectThreads_;

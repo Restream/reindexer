@@ -2,7 +2,6 @@
 #include "core/cjson/objtype.h"
 #include "core/cjson/tagsmatcher.h"
 #include "vendor/msgpack/msgpack.h"
-#include "vendor/msgpack/msgpackparser.h"
 
 namespace reindexer {
 
@@ -46,7 +45,7 @@ void MsgPackDecoder::decode(Payload* pl, CJsonBuilder& builder, const msgpack_ob
 			setValue(pl, builder, double(obj.via.f64), tagName);
 			break;
 		case MSGPACK_OBJECT_STR:
-			setValue(pl, builder, string(obj.via.str.ptr, obj.via.str.size), tagName);
+			setValue(pl, builder, p_string(reinterpret_cast<const l_msgpack_hdr*>(&obj.via.str)), tagName);
 			break;
 		case MSGPACK_OBJECT_ARRAY: {
 			int count = 0;
@@ -95,8 +94,7 @@ void MsgPackDecoder::decode(Payload* pl, CJsonBuilder& builder, const msgpack_ob
 Error MsgPackDecoder::Decode(string_view buf, Payload* pl, WrSerializer& wrser, size_t& offset) {
 	try {
 		tagsPath_.clear();
-		MsgPackParser parser;
-		MsgPackValue data = parser.Parse(buf, offset);
+		MsgPackValue data = parser_.Parse(buf, offset);
 		if (!data.p) return Error(errLogic, "Error unpacking msgpack data");
 		CJsonBuilder cjsonBuilder(wrser, ObjType::TypePlain, tm_, 0);
 		decode(pl, cjsonBuilder, *(data.p), 0);

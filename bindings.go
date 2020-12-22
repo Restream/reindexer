@@ -462,15 +462,15 @@ func (db *reindexerImpl) resetCaches() {
 }
 
 func WithCgoLimit(cgoLimit int) interface{} {
-	return bindings.OptionCgoLimit{cgoLimit}
+	return bindings.OptionCgoLimit{CgoLimit: cgoLimit}
 }
 
 func WithConnPoolSize(connPoolSize int) interface{} {
-	return bindings.OptionConnPoolSize{connPoolSize}
+	return bindings.OptionConnPoolSize{ConnPoolSize: connPoolSize}
 }
 
 func WithRetryAttempts(read int, write int) interface{} {
-	return bindings.OptionRetryAttempts{read, write}
+	return bindings.OptionRetryAttempts{Read: read, Write: write}
 }
 
 func WithServerConfig(startupTimeout time.Duration, serverConfig *config.ServerConfig) interface{} {
@@ -478,7 +478,7 @@ func WithServerConfig(startupTimeout time.Duration, serverConfig *config.ServerC
 }
 
 func WithTimeouts(loginTimeout time.Duration, requestTimeout time.Duration) interface{} {
-	return bindings.OptionTimeouts{loginTimeout, requestTimeout}
+	return bindings.OptionTimeouts{LoginTimeout: loginTimeout, RequestTimeout: requestTimeout}
 }
 
 func WithCreateDBIfMissing() interface{} {

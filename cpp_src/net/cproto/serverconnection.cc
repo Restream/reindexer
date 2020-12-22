@@ -67,9 +67,7 @@ void ServerConnection::onClose() {
 	clientData_.reset();
 	std::unique_lock<std::mutex> lck(updates_mtx_);
 	updates_.clear();
-	if (stat_) {
-		stat_->pendedUpdates.store(0, std::memory_order_relaxed);
-	}
+	if (ConnectionST::stats_) ConnectionST::stats_->update_pended_updates(0);
 }
 
 void ServerConnection::handleRPC(Context &ctx) {
@@ -224,9 +222,7 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 	auto &&chunk = packRPC(wrBuf_.get_chunk(), ctx, status, args, enableSnappy_);
 	auto len = chunk.len_;
 	wrBuf_.write(std::move(chunk));
-	if (stat_) {
-		stat_->sendBufBytes.store(wrBuf_.data_size(), std::memory_order_relaxed);
-	}
+	if (ConnectionST::stats_) ConnectionST::stats_->update_send_buf_size(wrBuf_.data_size());
 
 	if (dispatcher_.onResponse_) {
 		ctx.stat.sizeStat.respSizeBytes = len;
@@ -234,9 +230,9 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 	}
 
 	ctx.respSent = true;
-	// if (canWrite_) {
-	// 	write_cb();
-	// }
+	//	if (canWrite_) {
+	//		write_cb();
+	//	}
 
 	if (dispatcher_.logger_ != nullptr) {
 		dispatcher_.logger_(ctx, status, args);
@@ -246,9 +242,11 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 void ServerConnection::CallRPC(const IRPCCall &call) {
 	std::unique_lock<std::mutex> lck(updates_mtx_);
 	updates_.emplace_back(call);
-	auto stat = stat_;
-	if (stat) {
-		stat->pendedUpdates.store(updates_.size(), std::memory_order_relaxed);
+	if (ConnectionST::stats_) {
+		auto stat = ConnectionST::stats_->get_stat();
+		if (stat) {
+			stat->pended_updates.store(updates_.size(), std::memory_order_relaxed);
+		}
 	}
 }
 
@@ -277,19 +275,18 @@ void ServerConnection::sendUpdates() {
 	if (cnt != updates.size()) {
 		std::unique_lock<std::mutex> lck(updates_mtx_);
 		updates_.insert(updates_.begin(), updates.begin() + cnt, updates.end());
-		if (stat_) {
-			stat_->pendedUpdates.store(updates_.size(), std::memory_order_relaxed);
+		if (ConnectionST::stats_) stats_->update_pended_updates(updates.size());
+	} else if (ConnectionST::stats_) {
+		auto stat = ConnectionST::stats_->get_stat();
+		if (stat) {
+			std::unique_lock<std::mutex> lck(updates_mtx_);
+			stat->pended_updates.store(updates_.size(), std::memory_order_relaxed);
 		}
-	} else if (stat_) {
-		std::unique_lock<std::mutex> lck(updates_mtx_);
-		stat_->pendedUpdates.store(updates_.size(), std::memory_order_relaxed);
 	}
 
 	len = ser.Len();
 	wrBuf_.write(ser.DetachChunk());
-	if (stat_) {
-		stat_->sendBufBytes.store(wrBuf_.data_size(), std::memory_order_relaxed);
-	}
+	if (ConnectionST::stats_) ConnectionST::stats_->update_send_buf_size(wrBuf_.data_size());
 
 	if (dispatcher_.onResponse_) {
 		ctx.stat.sizeStat.respSizeBytes = len;

@@ -574,7 +574,9 @@ VariantArray::VariantArray(Point p) noexcept {
 }
 
 VariantArray::operator Point() const {
-	if (size() != 2) throw Error(errParams, "Can't convert array of %d elements to Point", size());
+	if (size() != 2) {
+		throw Error(errParams, "Can't convert array of %d elements to Point", size());
+	}
 	return {(*this)[0].As<double>(), (*this)[1].As<double>()};
 }
 

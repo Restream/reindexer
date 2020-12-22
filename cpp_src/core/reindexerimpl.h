@@ -82,6 +82,7 @@ public:
 	Error UnsubscribeUpdates(IUpdatesObserver *observer);
 	Error GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string> &suggestions,
 							const InternalRdxContext &ctx = InternalRdxContext());
+	Error GetProtobufSchema(WrSerializer &ser, vector<string> &namespaces);
 	Error Status();
 
 	bool NeedTraceActivity() { return configProvider_.GetProfilingConfig().activityStats; }
@@ -169,6 +170,8 @@ protected:
 
 	std::vector<std::pair<string, Namespace::Ptr>> getNamespaces(const RdxContext &ctx);
 	std::vector<string> getNamespacesNames(const RdxContext &ctx);
+	Error renameNamespace(string_view srcNsName, const std::string &dstNsName, bool fromReplication = false,
+						  const InternalRdxContext &ctx = InternalRdxContext());
 
 	fast_hash_map<string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
 

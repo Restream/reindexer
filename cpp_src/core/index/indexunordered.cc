@@ -4,8 +4,10 @@
 #include "core/index/string_map.h"
 #include "core/indexdef.h"
 #include "core/rdxcontext.h"
+#include "rtree/greenesplitter.h"
 #include "rtree/linearsplitter.h"
 #include "rtree/quadraticsplitter.h"
+#include "rtree/rstarsplitter.h"
 #include "rtree/rtree.h"
 #include "tools/errors.h"
 #include "tools/logger.h"
@@ -334,9 +336,13 @@ template class IndexUnordered<str_map<Index::KeyEntry>>;
 template class IndexUnordered<payload_map<Index::KeyEntry, true>>;
 template class IndexUnordered<unordered_str_map<FtKeyEntry>>;
 template class IndexUnordered<unordered_payload_map<FtKeyEntry, true>>;
-template class IndexUnordered<GeometryMap<Index::KeyEntry, QuadraticSplitter>>;
-template class IndexUnordered<GeometryMap<Index::KeyEntryPlain, QuadraticSplitter>>;
-template class IndexUnordered<GeometryMap<Index::KeyEntry, LinearSplitter>>;
-template class IndexUnordered<GeometryMap<Index::KeyEntryPlain, LinearSplitter>>;
+template class IndexUnordered<GeometryMap<Index::KeyEntry, LinearSplitter, 32, 4>>;
+template class IndexUnordered<GeometryMap<Index::KeyEntryPlain, LinearSplitter, 32, 4>>;
+template class IndexUnordered<GeometryMap<Index::KeyEntry, QuadraticSplitter, 32, 4>>;
+template class IndexUnordered<GeometryMap<Index::KeyEntryPlain, QuadraticSplitter, 32, 4>>;
+template class IndexUnordered<GeometryMap<Index::KeyEntry, GreeneSplitter, 16, 4>>;
+template class IndexUnordered<GeometryMap<Index::KeyEntryPlain, GreeneSplitter, 16, 4>>;
+template class IndexUnordered<GeometryMap<Index::KeyEntry, RStarSplitter, 32, 4>>;
+template class IndexUnordered<GeometryMap<Index::KeyEntryPlain, RStarSplitter, 32, 4>>;
 
 }  // namespace reindexer

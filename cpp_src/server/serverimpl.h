@@ -37,7 +37,8 @@ public:
 	void Stop();
 	void EnableHandleSignals(bool enable = true) { enableHandleSignals_ = enable; }
 	DBManager& GetDBManager() { return *dbMgr_; }
-	bool IsReady() { return storageLoaded_.load(); }
+	bool IsReady() const { return storageLoaded_.load(); }
+	bool IsRunning() const { return running_.load(); }
 	void ReopenLogFiles();
 
 protected:

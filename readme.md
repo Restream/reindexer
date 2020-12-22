@@ -57,7 +57,6 @@ about reindexer server and HTTP API refer to
   - [Turn on logger](#turn-on-logger)
   - [Debug queries](#debug-queries)
   - [Profiling](#profiling)
-  - [Prometheus](#prometheus)
 - [Integration with other program languages](#integration-with-other-program-languages)
   - [Pyreindexer](#pyreindexer)
 - [Limitations and known issues](#limitations-and-known-issues)
@@ -301,7 +300,7 @@ Queries are possible only on the indexed fields, marked with `reindex` tag. The 
   - `collate_ascii` - create case-insensitive string index works with ASCII. The field type must be a string.
   - `collate_utf8` - create case-insensitive string index works with UTF8. The field type must be a string.
   - `collate_custom=<ORDER>` - create custom order string index. The field type must be a string. `<ORDER>` is sequence of letters, which defines sort order.
-  - `linear` or `quadratic` - specify algorithm for construction of `rtree` index. For details see [geometry subsection](#geometry).
+  - `linear`, `quadratic`, `greene` or `rstar` - specify algorithm for construction of `rtree` index (by default `rstar`). For details see [geometry subsection](#geometry).
 
 Fields with regular indexes are not nullable. Condition `is NULL` is supported only by `sparse` and `array` indexes.
 
@@ -331,11 +330,16 @@ type ComplexItem struct {
 
 Reindexer can sort documents by fields (including nested and fields of joined `namespaces`) or by expressions in ascending or descending order.
 
-Sort expressions can contain fields names (including nested and fields of joined `namespaces`) of int, float or bool type, numbers, functions rank() and abs(), parenthesis and arithmetic operations: +, - (unary and binary), \* and /.
+Sort expressions can contain fields names (including nested and fields of joined `namespaces`) of int, float or bool type, numbers, functions rank(), abs() and ST_Distance(), parenthesis and arithmetic operations: +, - (unary and binary), \* and /.
 If field name followed by '+' they must be separated by space (to distinguish composite index name).
 Fields of joined namespaces writes in form `joined_namespace.field`.
+
 Abs() means absolute value of an argument.
+
 Rank() means fulltext rank of match and is applicable only in fulltext query.
+
+ST_Distance() means distance between geometry points (see [geometry subsection](#geometry)). The points could be columns in current or joined namespaces or fixed point in format `ST_GeomFromText("point(1 -3)")`
+
 In SQL query sort expression must be quoted.
 
 ```go
@@ -345,16 +349,18 @@ type Person struct {
 }
 
 type City struct {
-	Id                 int `reindex:"id"`
-	NumberOfPopulation int `reindex:"population"`
+	Id                 int        `reindex:"id"`
+	NumberOfPopulation int        `reindex:"population"`
+	Center             [2]float64 `reindex:"center,rtree,linear"`
 }
 
 type Actor struct {
-	ID          int    `reindex:"id"`
-	PersonData  Person `reindex:"person"`
-	Price       int    `reindex:"price"`
-	Description string `reindex:"description,text"`
-	BirthPlace  int    `reindex:"birth_place_id"`
+	ID          int        `reindex:"id"`
+	PersonData  Person     `reindex:"person"`
+	Price       int        `reindex:"price"`
+	Description string     `reindex:"description,text"`
+	BirthPlace  int        `reindex:"birth_place_id"`
+	Location    [2]float64 `reindex:"location,rtree,greene"`
 }
 ....
 
@@ -373,10 +379,18 @@ query = db.Query("actors").Sort("person.age / -10 + price / 1000 * (id - 5)", tr
 query = db.Query("actors").Where("description", reindexer.EQ, "ququ").
     Sort("rank() + id / 100", true)   // Sort with fulltext rank
 ....
+// Sort by geometry distance
+query = db.Query("actors").
+    Join(db.Query("cities")).On("birth_place_id", reindexer.EQ, "id").
+    Sort("ST_Distance(cities.center, ST_GeomFromText(\"point(1 -3)\"))", true).
+    Sort("ST_Distance(location, cities.center)", true)
+....
 // In SQL query:
 iterator := db.ExecSQL ("SELECT * FROM actors ORDER BY person.name ASC")
 ....
 iterator := db.ExecSQL ("SELECT * FROM actors WHERE description = 'ququ' ORDER BY 'rank() + id / 100' DESC")
+....
+iterator := db.ExecSQL ("SELECT * FROM actors ORDER BY 'ST_Distance(location, ST_GeomFromText(\"point(1 -3)\"))' ASC")
 ```
 
 It is also possible to set a custom sort order like this
@@ -990,7 +1004,7 @@ The only supported request for geometry field is to find all points within a dis
 
 Corresponding SQL function is `ST_DWithin(field_name, point, distance)`.
 
-RTree index can be created for points. To do so, `rtree` and `linear` or `quadratic` tags should be declared. `linear` or `quadratic` means which algorithm of RTree construction would be used.
+RTree index can be created for points. To do so, `rtree` and `linear`, `quadratic`, `greene` or `rstar` tags should be declared. `linear`, `quadratic`, `greene` or `rstar` means which algorithm of RTree construction would be used. Here algorithms are listed in order from optimized for insertion to optimized for search. But it depends on data. Test which is more appropriate for you. Default algorithm is `rstar`.
 
 ```go
 type Item struct {

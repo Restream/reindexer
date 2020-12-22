@@ -20,6 +20,7 @@ public:
 	/// @param q - query to parse.
 	/// @param pos - pos of cursor in query.
 	/// @param enumNamespaces - functor which enums namespaces to be checked for existing fields.
+	/// @param getSchemaSuggestions - functor which get pointer to namespace's schema
 	std::vector<string> GetSuggestions(string_view q, size_t pos, EnumNamespacesF enumNamespaces, GetSchemaF getSchemaSuggestions);
 
 protected:

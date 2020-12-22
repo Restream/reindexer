@@ -165,7 +165,7 @@ func TestStorageChangeFormat(t *testing.T) {
 	assert.Equal(t, iterator.Count(), 1, "Expecting 1 item, found %d ", iterator.Count())
 	iterator.Next()
 	assert.Error(t, iterator.Error(), "expecting iterator error on wrong type cast, but it's ok")
-
+	iterator.Close()
 	// Test6
 	assert.NoError(t, DB.CloseNamespace("test_items_storage"))
 	assert.NoError(t, DB.OpenNamespace("test_items_storage", reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), TestItemV6{}))

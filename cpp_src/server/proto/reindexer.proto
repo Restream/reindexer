@@ -1,0 +1,418 @@
+syntax = "proto3";
+
+package reindexer.grpc;
+
+// Reindexer service definition.
+service Reindexer {
+	rpc Connect(ConnectRequest) returns(ErrorResponse) {}
+	rpc CreateDatabase(CreateDatabaseRequest) returns(ErrorResponse) {}
+	rpc OpenNamespace(OpenNamespaceRequest) returns(ErrorResponse) {}
+	rpc AddNamespace(AddNamespaceRequest) returns(ErrorResponse) {}
+	rpc CloseNamespace(CloseNamespaceRequest) returns(ErrorResponse) {}
+	rpc DropNamespace(DropNamespaceRequest) returns(ErrorResponse) {}
+	rpc TruncateNamespace(TruncateNamespaceRequest) returns(ErrorResponse) {}
+	rpc AddIndex(AddIndexRequest) returns(ErrorResponse) {}
+	rpc UpdateIndex(UpdateIndexRequest) returns(ErrorResponse) {}
+	rpc DropIndex(DropIndexRequest) returns(ErrorResponse) {}
+	rpc SetSchema(SetSchemaRequest) returns(ErrorResponse) {}
+	rpc EnumNamespaces(EnumNamespacesRequest) returns(EnumNamespacesResponse) {}
+	rpc EnumDatabases(EnumDatabasesRequest) returns(EnumDatabasesResponse) {}
+	rpc ModifyItem(stream ModifyItemRequest) returns(stream ErrorResponse) {}
+	rpc SelectSql(SelectSqlRequest) returns(stream QueryResultsResponse) {}
+	rpc Select(SelectRequest) returns(stream QueryResultsResponse) {}
+	rpc Update(UpdateRequest) returns(stream QueryResultsResponse) {}
+	rpc Delete(DeleteRequest) returns(stream QueryResultsResponse) {}
+	rpc GetMeta(GetMetaRequest) returns(MetadataResponse) {}
+	rpc PutMeta(PutMetaRequest) returns(ErrorResponse) {}
+	rpc EnumMeta(EnumMetaRequest) returns(MetadataKeysResponse) {}
+	rpc GetProtobufSchema(GetProtobufSchemaRequest) returns(ProtobufSchemaResponse) {}
+
+	rpc BeginTransaction(BeginTransactionRequest) returns(TransactionIdResponse) {}
+	rpc AddTxItem(stream AddTxItemRequest) returns(stream ErrorResponse) {}
+	rpc CommitTransaction(CommitTransactionRequest) returns(ErrorResponse) {}
+	rpc RollbackTransaction(RollbackTransactionRequest) returns(ErrorResponse) {}
+}
+
+// Modify mode
+enum ModifyMode { UPSERT = 0; INSERT = 1; UPDATE = 2; DELETE = 3; }
+
+// Error message, including code
+// and description
+message ErrorResponse {
+	enum ErrorCode {
+		errCodeOK = 0;	//
+		errCodeParseSQL = 1;
+		errCodeQueryExec = 2;
+		errCodeParams = 3;
+		errCodeLogic = 4;
+		errCodeParseJson = 5;
+		errCodeParseDSL = 6;
+		errCodeConflict = 7;
+		errCodeParseBin = 8;
+		errCodeForbidden = 9;
+		errCodeWasRelock = 10;
+		errCodeNotValid = 11;
+		errCodeNetwork = 12;
+		errCodeNotFound = 13;
+		errCodeStateInvalidated = 14;
+		errCodeBadTransaction = 15;
+		errCodeOutdatedWAL = 16;
+		errCodeNoWAL = 17;
+		errCodeDataHashMismatch = 18;
+		errCodeTimeout = 19;
+		errCodeCanceled = 20;
+		errCodeTagsMissmatch = 21;
+		errCodeReplParams = 22;
+		errCodeNamespaceInvalidated = 23;
+		errCodeParseMsgPack = 24;
+		errCodeParseProtobuf = 25;
+	};
+	ErrorCode code = 1;
+	string what = 2;
+}
+
+message CreateDatabaseRequest { string dbName = 1; }
+
+message CloseNamespaceRequest {
+	string dbName = 1;
+	string nsName = 2;
+}
+
+message DropNamespaceRequest {
+	string dbName = 1;
+	string nsName = 2;
+}
+
+message TruncateNamespaceRequest {
+	string dbName = 1;
+	string nsName = 2;
+}
+
+// Index options
+message IndexOptions {
+	bool isPk = 1;
+	bool isArray = 2;
+	bool isDense = 3;
+	bool isSparse = 4;
+	enum RTreeType { Linear = 0; Quadratic = 1; Greene = 2; RStar = 3; };
+	RTreeType rtreeType = 5;
+	// Collate mode for Index
+	enum CollateMode { CollateNoneMode = 0; CollateASCIIMode = 1; CollateUTF8Mode = 2; CollateNumericMode = 3; CollateCustomMode = 4; };
+	CollateMode collateMode = 6;
+	string sortOrdersTable = 7;
+	string config = 8;
+}
+
+// Index definition.
+message Index {
+	string name = 1;
+	repeated string jsonPaths = 2;
+	string indexType = 3;
+	string fieldType = 4;
+	IndexOptions options = 5;
+	int64 expireAfter = 6;	// TTL (in seconds)
+}
+
+message AddIndexRequest {
+	string dbName = 1;
+	string nsName = 2;
+	Index definition = 3;
+}
+
+message UpdateIndexRequest {
+	string dbName = 1;
+	string nsName = 2;
+	Index definition = 3;
+}
+
+message DropIndexRequest {
+	string dbName = 1;
+	string nsName = 2;
+	Index definition = 3;
+}
+
+// JSON Schema definition.
+message SchemaDefinition {
+	string nsName = 1;
+	string jsonData = 2;
+}
+
+message SetSchemaRequest {
+	string dbName = 1;
+	SchemaDefinition schemaDefinitionRequest = 2;
+}
+
+// Data encoding types.
+enum EncodingType { JSON = 0; CJSON = 1; MSGPACK = 2; PROTOBUF = 3; }
+
+// Item definition.
+message ModifyItemRequest {
+	string dbName = 1;
+	string nsName = 2;
+	ModifyMode mode = 3;
+	// Data in message should be encoded in one of the following formats:
+	// 1.JSON
+	// 2.CJSON
+	// 3.MSGPACK
+	// 4.PROTOBUF
+	EncodingType encodingType = 4;
+	bytes data = 5;
+}
+
+// Query definition. Represents query
+// as a binary serialized buffer.
+message Query {
+	// Query can be encoded as following:
+	// 1. JSON
+	// 2. MSGPACK
+	EncodingType encdoingType = 1;
+	bytes data = 2;
+}
+
+// Options for QueryResults output stream
+message OutputFlags {
+	// Results encoding can be one of the following:
+	// 1.JSON
+	// 2.CJSON
+	// 3.MSGPACK
+	// 4.PROTOBUF
+	// Note that protobuf doesn't support joined items yet
+	EncodingType encodingType = 1;
+	// include rowId to item's cjson
+	bool withItemID = 2;
+	// include namespace Id to cson
+	bool withNsID = 3;
+	// include full-text search rank() value to cjson
+	bool withRank = 4;
+	// include all the joined documents to cjson
+	bool withJoinedItems = 5;
+}
+
+// SQL Query message
+message SelectSqlRequest {
+	string dbName = 1;
+	string sql = 2;
+	OutputFlags flags = 3;
+}
+
+message SelectRequest {
+	string dbName = 1;
+	Query query = 2;
+	OutputFlags flags = 3;
+}
+
+message DeleteRequest {
+	string dbName = 1;
+	Query query = 2;
+	OutputFlags flags = 3;
+}
+
+message UpdateRequest {
+	string dbName = 1;
+	Query query = 2;
+	OutputFlags flags = 3;
+}
+
+// Query execution results set
+message QueryResultsResponse {
+	// Bytes stream.
+	bytes data = 1;
+	// Options for returned buffer.
+	message QueryResultsOptions {
+		int64 totalItems = 1;
+		int64 queryTotalItems = 2;
+		bool cacheEnabled = 3;
+		string explain = 4;
+	}
+	// contains options only for the first item in a stream
+	QueryResultsOptions options = 2;
+	// status
+	ErrorResponse errorResponse = 3;
+}
+
+// Storage type
+enum StorageType { StorageTypeLevelDB = 0; StorageTypeRocksDB = 1; };
+
+// message Connection options
+message ConnectOptions {
+	int64 expectedClusterID = 1;
+	bool openNamespaces = 2;
+	bool allowNamespaceErrors = 3;
+	bool autorepair = 4;
+	bool disableReplication = 5;
+	StorageType storageType = 6;
+}
+
+// Connection options.
+message ConnectRequest {
+	// uri looks like `cproto://127.0.0.1:6534/var/lib/reindexer/dbname`
+	// and consists of:
+	string url = 1;
+	string dbName = 2;
+	string login = 3;
+	string password = 4;
+	ConnectOptions connectOpts = 5;
+}
+
+// Storage options for a namespace.
+message StorageOptions {
+	// Ns name.
+	string nsName = 1;
+	// To work with physical storage or not.
+	bool enabled = 2;
+	// In case of problems with storage it fails, otherwise
+	// the error will be skipped and Reindexer won't work with it.
+	bool dropOnFileFormatError = 3;
+	// Creates database if it doesn't exist yet.
+	bool createIfMissing = 4;
+	// If true, all data read from storage will be
+	// verified against corresponding checksums.
+	bool verifyChecksums = 5;
+	// Should the data read for this iteration be cached in memory?
+	// Callers may wish to set this field to false for bulk scans.
+	bool fillCache = 6;
+	// If true, the write will be flushed from the operating system
+	// buffer cache before the write is considered complete. If this
+	// flag is true, writes will be slower.
+	// If false and the machine crashes, some recent writes may be lost.
+	// Note that if it is just the process that crashes (i.e., the machine
+	// does not reboot), no writes will be lost even if sync==false.
+	bool sync = 7;
+	// To work with namespace in slave mode.
+	bool slaveMode = 8;
+	// To allow LevelDB or RocksDB to repair storage file
+	// in case it is malfunctioned.
+	bool autorepair = 9;
+}
+
+message OpenNamespaceRequest {
+	string dbName = 1;
+	StorageOptions storageOptions = 2;
+}
+
+// Namespace options for EnumNamespace call.
+message EnumNamespacesOptions {
+	// Filter for names.
+	string filter = 1;
+	// To enumerate closed namespaces data also.
+	bool withClosed = 2;
+	// To provide only namespaces' names, no other information.
+	bool onlyNames = 3;
+	// Not to enumerate systems namespaces.
+	bool hideSystems = 4;
+}
+
+message EnumNamespacesRequest {
+	string dbName = 1;
+	EnumNamespacesOptions options = 2;
+}
+
+message EnumDatabasesRequest {}
+
+// Namespaces definition.
+message Namespace {
+	string dbName = 1;
+	string name = 2;
+	StorageOptions storageOptions = 3;
+	repeated Index indexesDefinitions = 4;
+	bool isTemporary = 5;
+}
+
+message AddNamespaceRequest {
+	string dbName = 1;
+	Namespace namespace = 2;
+}
+
+message EnumNamespacesResponse {
+	repeated Namespace namespacesDefinitions = 1;
+	ErrorResponse errorResponse = 2;
+}
+
+// List of databases names
+message EnumDatabasesResponse {
+	repeated string names = 1;
+	ErrorResponse errorResponse = 2;
+}
+
+// Metadata string
+message MetadataResponse {
+	string metadata = 1;
+	ErrorResponse errorResponse = 2;
+}
+
+// Metadata for Namespace.
+message Metadata {
+	// namespace name
+	string nsName = 1;
+	// metadata key
+	string key = 2;
+	// metadata, for Get operation this field is supposed to be empty
+	string value = 3;
+}
+
+// Gets metadata by key,
+// field 'value' should be empty.
+message GetMetaRequest {
+	string dbName = 1;
+	Metadata metadata = 2;
+}
+
+// Sets metadata by key,
+// field 'value' should contain metadata value.
+message PutMetaRequest {
+	string dbName = 1;
+	Metadata metadata = 2;
+}
+
+// Gets list of all metadata key for certain Namespace.
+message EnumMetaRequest {
+	string dbName = 1;
+	string nsName = 2;
+}
+
+// Metadata keys
+message MetadataKeysResponse {
+	repeated string keys = 1;
+	ErrorResponse errorResponse = 2;
+}
+
+message CommitTransactionRequest { int64 id = 1; }
+message RollbackTransactionRequest { int64 id = 1; }
+
+// Transaction data.
+message TransactionIdResponse {
+	// Operation status
+	ErrorResponse status = 1;
+	// unique transaction ID
+	int64 id = 2;
+}
+
+// Transaction Item message
+message AddTxItemRequest {
+	int64 id = 1;
+	// mode
+	ModifyMode mode = 2;
+	// encoding type
+	EncodingType encodingType = 3;
+	// data buffer
+	bytes data = 4;
+}
+
+message BeginTransactionRequest {
+	string dbName = 1;
+	string nsName = 2;
+}
+
+message GetProtobufSchemaRequest {
+	// DB name
+	string dbName = 1;
+	// List of namespaces to be included in final .proto file
+	repeated string namespaces = 2;
+}
+
+message ProtobufSchemaResponse {
+	// text representation of .proto file
+	string proto = 1;
+	// error code
+	ErrorResponse errorResponse = 2;
+}

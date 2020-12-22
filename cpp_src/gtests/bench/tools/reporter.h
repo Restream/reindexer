@@ -12,10 +12,15 @@ namespace benchmark {
 class Reporter : public ConsoleReporter {
 protected:
 	void PrintHeader(const Run& run) {
+		using reindexer::string_view;
 		std::string str = FormatString("%-*s %13s %13s", static_cast<int>(name_field_width_), "Benchmark", "Time", "RPS");
 		if (!run.counters.empty()) {
 			if (output_options_ & OO_Tabular) {
 				for (auto const& c : run.counters) {
+					if (string_view(c.first) == string_view("bytes_per_second") ||
+						string_view(c.first) == string_view("items_per_second")) {
+						continue;
+					}
 					str += FormatString(" %10s", c.first.c_str());
 				}
 			} else {
@@ -28,6 +33,7 @@ protected:
 	}
 
 	void PrintRunData(const Run& result) {
+		using reindexer::string_view;
 		auto& Out = GetOutputStream();
 
 		// CHECK ERROR
@@ -37,7 +43,7 @@ protected:
 		}
 
 		// print benchmark name
-		IgnoreColorPrint(Out, "%-*s", name_field_width_, result.benchmark_name.c_str());
+		IgnoreColorPrint(Out, "%-*s", name_field_width_, result.benchmark_name().c_str());
 
 		// print REAL time and time unit
 		const double real_time = result.GetAdjustedRealTime();
@@ -50,6 +56,9 @@ protected:
 
 		// print user-defined counters
 		for (auto& c : result.counters) {
+			if (string_view(c.first) == string_view("bytes_per_second") || string_view(c.first) == string_view("items_per_second")) {
+				continue;
+			}
 			const std::size_t cNameLen = std::max(std::string::size_type(10), c.first.length());
 			auto const& s = HumanReadableNumber(c.second.value, true);
 			if (output_options_ & OO_Tabular) {
@@ -66,14 +75,14 @@ protected:
 
 		// print rates, items/s and label
 		std::string rate;
-		if (result.bytes_per_second > 0) {
-			rate = " " + HumanReadableNumber(result.bytes_per_second, false) + "B/s";
+		if (result.counters.find("bytes_per_second") != result.counters.end()) {
+			rate = " " + HumanReadableNumber(static_cast<int64_t>(result.counters.at("bytes_per_second")), false) + " B/s";
 		}
 
 		// Format items per second
 		std::string items;
-		if (result.items_per_second > 0) {
-			items = " " + HumanReadableNumber(result.items_per_second, true) + " items/s";
+		if (result.counters.find("items_per_second") != result.counters.end()) {
+			items = " " + HumanReadableNumber(static_cast<int64_t>(result.counters.at("items_per_second")), false) + " items/s";
 		}
 
 		if (!rate.empty()) {

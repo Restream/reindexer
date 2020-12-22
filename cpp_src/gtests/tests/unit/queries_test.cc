@@ -142,8 +142,6 @@ TEST_F(QueriesApi, QueriesSqlGenerate) {
 TEST_F(QueriesApi, QueriesDslGenerate) {
 	const auto check = [](string dsl) {
 		const string expected = dsl;
-		dsl += " ";
-		dsl.resize(dsl.size() - 1); // HACK DUE TO Query::FromJSON(const std::string& str) BREAK str
 		Query q;
 		Error err = q.FromJSON(dsl);
 		ASSERT_TRUE(err.ok()) << err.what();

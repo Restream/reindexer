@@ -35,7 +35,7 @@ osx_deps="gperftools leveldb snappy cmake git"
 centos8_debs="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
 fedora_debs=" gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
 centos7_debs="centos-release-scl devtoolset-9-gcc devtoolset-9-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
-centos6_debs="centos-release-scl devtoolset-9-gcc devtoolset-9-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build git"
+centos6_debs="devtoolset-9-gcc devtoolset-9-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build git"
 debian_debs="build-essential g++ libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git"
 alpine_apks="g++ snappy-dev leveldb-dev libexecinfo-dev make curl cmake unzip git"
 
@@ -95,8 +95,7 @@ install_osx() {
 install_centos8() {
     yum install -y epel-release >/dev/null 2>&1 || true
     yum install -y http://rpms.remirepo.net/enterprise/remi-release-8.rpm >/dev/null 2>&1 || true
-    yum install -y dnf-plugins-core 2>&1 || true
-    yum config-manager --set-enabled PowerTools 2>&1 || true
+    sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/CentOS-Linux-PowerTools.repo || true
     for pkg in ${centos8_debs}
     do
         if rpm -qa | grep -qw ${pkg} ; then

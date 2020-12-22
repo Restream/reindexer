@@ -13,7 +13,6 @@ class QueryResults;
 class PayloadType;
 class TagsMatcher;
 class FieldsSet;
-struct SortExpressionJoinedIndex;
 
 namespace joins {
 
@@ -57,7 +56,6 @@ public:
 private:
 	friend class ItemIterator;
 	friend class JoinedFieldIterator;
-	friend SortExpressionJoinedIndex;
 	/// Offsets in 'result' for every item
 	fast_hash_map<IdType, ItemOffsets> offsets_;
 	/// Items for all the joined fields

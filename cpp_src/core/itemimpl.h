@@ -3,6 +3,7 @@
 #include <deque>
 #include <vector>
 
+#include "core/cjson/msgpackdecoder.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/variant.h"
@@ -67,6 +68,7 @@ public:
 	void SetField(string_view jsonPath, const VariantArray &keys);
 	void DropField(string_view jsonPath);
 	Variant GetField(int field);
+	void GetField(int field, VariantArray &);
 	FieldsSet PkFields() const { return pkFields_; }
 	int NameTag(string_view name) const { return tagsMatcher_.name2tag(name); }
 
@@ -131,6 +133,7 @@ protected:
 	bool unsafe_ = false;
 	string_view cjson_;
 	std::shared_ptr<Namespace> ns_;
+	std::unique_ptr<MsgPackDecoder> msgPackDecoder_;
 };
 
 }  // namespace reindexer

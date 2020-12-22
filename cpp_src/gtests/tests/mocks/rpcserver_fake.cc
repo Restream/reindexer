@@ -67,6 +67,10 @@ Error RPCServerFake::Select(cproto::Context & /*ctx*/, p_string /*query*/, int /
 }
 
 bool RPCServerFake::Start(const string &addr, ev::dynamic_loop &loop, Error loginError) {
+#ifndef _WIN32
+	signal(SIGPIPE, SIG_IGN);
+#endif
+
 	dsn_ = addr;
 	loginError_ = loginError;
 	dispatcher_.Register(cproto::kCmdPing, this, &RPCServerFake::Ping);

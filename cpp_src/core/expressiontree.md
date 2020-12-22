@@ -249,7 +249,8 @@ For example, for expression `A + B - (C - D + (E - F) - G)`
 ## 7. Methods
 
 - Copy constructor and copy assignment operator make deep copy for all copying nodes.
-- ```c++
+-
+```c++
 iterator ExpressionTree::begin();
 const_iterator ExpressionTree::begin() const;
 const_iterator ExpressionTree::cbegin() const;
@@ -260,23 +261,27 @@ const_iterator ExpressionTree::cend() const;
 return iterators those point to the first or next after the last cell of the expression.
 
 - `const_iterator ExpressionTree::begin_of_current_bracket() const` returns iterator that points to the first cell of current active subexpression (last subexpression for which `OpenBracket()` was called and `CloseBracket()` was not) and returns `begin()` if no active subexpression.
-- ```c++
+-
+```c++
 void ExpressionTree::Append<T>(OperationType, const T&);
 void ExpressionTree::Append<T>(OperationType, T&&);
 void ExpressionTree::AppendFront<T>(OperationType, T&&);
 ```
 append an operand to the end or to the beginning of the expression. `T` must be one of `Ts...` types.
-- ```c++
+-
+```c++
 void ExpressionTree::Append(const_iterator begin, const_iterator end);
 void ExpressionTree::LazyAppend(iterator begin, iterator end);
 ```
 append deep or lazy copy of a part of another expression. !Warning! lazy copy should not live over the original expression.
-- ```c++
+-
+```c++
 void ExpressionTree::OpenBracket<Args...>(OperationType, Args... args);
 void ExpressionTree::CloseBracket();
 ```
 call these methods at the beginning and at the end of subexpression. `args...` are forwarded to constructor of `SutTree`.
-- ```c++
+-
+```c++
 OperationType ExpressionTree::GetOperation(size_t i) const ;
 void ExpressionTree::SetOperation(OperationType op, size_t i);
 ```
@@ -288,16 +293,16 @@ get or set operation of node in cell number `i`.
 - `bool ExpressionTree::IsValue(size_t i) const` tests the cell `i` is not head of a subexpression.
 - `void ExpressionTree::Erase(size_t from, size_t to)` remove nodes with indexes from `from` to `to - 1`.
 - `size_t ExpressionTree::Next(size_t i) const` returns index of cell after the last cell of subexpression if cell `i` is head of the subexpression or `i + 1` otherwise. For example, for expression `A + B - (C - D + (E - F) - G)`
-
 	|  0   |  1   |  2   |  3   |  4   |  5   |  6   |  7   |  8   |
 	|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|
 	| +, A | +, B | -, 7 | +, C | -, D | +, 3 | +, E | -, F | -, G |
 
-	- `Next(1)` returns `2`.
-	- `Next(2)` returns `9`.
-	- `Next(3)` returns `4`.
-	- `Next(5)` returns `8`.
-- ```c++
+	-# `Next(1)` returns `2`.
+	-# `Next(2)` returns `9`.
+	-# `Next(3)` returns `4`.
+	-# `Next(5)` returns `8`.
+-
+```c++
 template <typename... Args>
 void ExpressionTree::ExecuteAppropriateForEach(const std::function<void(const Args&)>&... funcs) const;
 template <typename... Args>

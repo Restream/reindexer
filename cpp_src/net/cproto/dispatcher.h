@@ -44,7 +44,7 @@ public:
 	virtual void CallRPC(const IRPCCall &call) = 0;
 	virtual void SetClientData(std::unique_ptr<ClientData> data) = 0;
 	virtual ClientData *GetClientData() = 0;
-	virtual std::shared_ptr<reindexer::net::ConnectionStat> GetConnectionStat() = 0;
+	virtual std::shared_ptr<reindexer::net::connection_stat> GetConnectionStat() = 0;
 };
 
 struct Context {

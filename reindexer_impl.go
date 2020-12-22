@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/hashicorp/golang-lru"
+	lru "github.com/hashicorp/golang-lru"
 
 	"github.com/restream/reindexer/bindings"
 	"github.com/restream/reindexer/cjson"
@@ -450,7 +450,15 @@ func (db *reindexerImpl) setDefaultQueryDebug(ctx context.Context, namespace str
 	}
 
 	citem = item.(*DBConfigItem)
-	defaultCfg := DBNamespacesConfig{}
+	defaultCfg := DBNamespacesConfig{
+		JoinCacheMode:           "off",
+		StartCopyPolicyTxSize:   10000,
+		CopyPolicyMultiplier:    5,
+		TxSizeToAlwaysCopy:      100000,
+		OptimizationTimeout:     800,
+		OptimizationSortWorkers: 4,
+		WALSize:                 4000000,
+	}
 	found := false
 
 	if citem.Namespaces == nil {

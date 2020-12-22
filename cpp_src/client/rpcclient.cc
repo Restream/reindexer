@@ -433,14 +433,6 @@ Error RPCClient::Update(const Query& query, QueryResults& result, const Internal
 	return ret.Status();
 }
 
-void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
-	// Get array of payload Type Versions
-
-	ser.PutVarUint(vec.size());
-	for (auto v : vec) ser.PutVarUint(v);
-	return;
-}
-
 Error RPCClient::selectImpl(string_view query, QueryResults& result, cproto::ClientConnection* conn, seconds netTimeout,
 							const InternalRdxContext& ctx) {
 	int flags = result.fetchFlags_ ? (result.fetchFlags_ & ~kResultsFormatMask) | kResultsJson : kResultsJson;
@@ -599,7 +591,7 @@ Error RPCClient::SubscribeUpdates(IUpdatesObserver* observer, const UpdatesFilte
 
 Error RPCClient::UnsubscribeUpdates(IUpdatesObserver* observer) {
 	observers_.Delete(observer);
-	return subscribeImpl(!observers_.empty());
+	return subscribeImpl(!observers_.Empty());
 }
 
 Error RPCClient::GetSqlSuggestions(string_view query, int pos, std::vector<std::string>& suggests) {
@@ -621,7 +613,7 @@ Error RPCClient::GetSqlSuggestions(string_view query, int pos, std::vector<std::
 Error RPCClient::Status() { return getConn()->CheckConnection(); }
 
 void RPCClient::checkSubscribes() {
-	bool subscribe = !observers_.empty();
+	bool subscribe = !observers_.Empty();
 
 	auto updatesConn = updatesConn_.load();
 	if (subscribe && !updatesConn_) {

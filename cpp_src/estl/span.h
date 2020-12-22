@@ -67,6 +67,10 @@ public:
 		assert(offset + count <= size_);
 		return span(data_ + offset, count);
 	}
+	span subspan(size_type offset) const noexcept {
+		assert(offset <= size_);
+		return span(data_ + offset, size_ - offset);
+	}
 	bool operator==(const span& other) const noexcept {
 		if (&other != this) {
 			if (size() != other.size()) return false;
