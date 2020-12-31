@@ -985,7 +985,7 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 
 	size_t costNormal = ns_->items_.size() - ns_->free_.size();
 
-	qentries.ForEachEntry([this, &ctx, &rdxCtx, &costNormal](const QueryEntry &qe) {
+	qentries.ForEachEntry([this, &ctx, &rdxCtx, &costNormal, &qentries](const QueryEntry &qe) {
 		if (qe.idxNo < 0 || qe.idxNo == ctx.sortingContext.uncommitedIndex) return;
 		if (costNormal == 0) return;
 
@@ -995,6 +995,7 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 		Index::SelectOpts opts;
 		opts.disableIdSetCache = 1;
 		opts.itemsCountInNamespace = ns_->items_.size() - ns_->free_.size();
+		opts.conditionInQuery = qentries.Size();
 
 		try {
 			SelectKeyResults reslts = index->SelectKey(qe.values, qe.condition, 0, opts, nullptr, rdxCtx);
@@ -1011,11 +1012,12 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 	costNormal *= 2;
 	if (costNormal < costOptimized) {
 		costOptimized = costNormal + 1;
-		qentries.ForEachEntry([this, &ctx, &rdxCtx, &costOptimized](const QueryEntry &qe) {
+		qentries.ForEachEntry([this, &ctx, &rdxCtx, &costOptimized, &qentries](const QueryEntry &qe) {
 			if (qe.idxNo < 0 || qe.idxNo != ctx.sortingContext.uncommitedIndex) return;
 
 			Index::SelectOpts opts;
 			opts.itemsCountInNamespace = ns_->items_.size() - ns_->free_.size();
+			opts.conditionInQuery = qentries.Size();
 			opts.disableIdSetCache = 1;
 			opts.unbuiltSortOrders = 1;
 

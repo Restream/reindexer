@@ -13,7 +13,7 @@ void CompositeArrayComparator::BindField(int field, const VariantArray &values, 
 	ctx.cmpBool.SetValues(condType, values);
 	ctx.cmpInt.SetValues(condType, values);
 	ctx.cmpInt64.SetValues(condType, values);
-	ctx.cmpString.SetValues(condType, values);
+	ctx.cmpString.SetValues(condType, values, CollateOpts());
 	ctx.cmpDouble.SetValues(condType, values);
 
 	assert(ctx_.size() == fields_.size());
@@ -28,7 +28,7 @@ void CompositeArrayComparator::BindField(const TagsPath &tagsPath, const Variant
 	ctx.cmpBool.SetValues(condType, values);
 	ctx.cmpInt.SetValues(condType, values);
 	ctx.cmpInt64.SetValues(condType, values);
-	ctx.cmpString.SetValues(condType, values);
+	ctx.cmpString.SetValues(condType, values, CollateOpts());
 	ctx.cmpDouble.SetValues(condType, values);
 }
 

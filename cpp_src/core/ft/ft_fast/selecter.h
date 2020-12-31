@@ -51,6 +51,8 @@ public:
 	public:
 		int idsCnt_ = 0;
 		FtDSLEntry term;
+		std::vector<size_t> synonyms;
+		std::vector<size_t> synonymsGroups;
 	};
 
 	MergeData Process(FtDSLQuery& dsl);
@@ -60,13 +62,14 @@ public:
 		typename DataHolder::FondWordsType foundWords;
 		vector<TextSearchResults> rawResults;
 	};
-	MergeData mergeResults(vector<TextSearchResults>& rawResults);
-	void mergeItaration(TextSearchResults& rawRes, index_t rawResIndex, fast_hash_map<VDocIdType, index_t>& added,
+	MergeData mergeResults(vector<TextSearchResults>& rawResults, const std::vector<size_t>& synonymsBounds);
+	void mergeItaration(const TextSearchResults& rawRes, index_t rawResIndex, fast_hash_map<VDocIdType, index_t>& added,
 						vector<MergeInfo>& merged, vector<MergedIdRel>& merged_rd, h_vector<int16_t>& idoffsets, vector<bool>& curExists);
 
 	void debugMergeStep(const char* msg, int vid, float normBm25, float normDist, int finalRank, int prevRank);
 	void processVariants(FtSelectContext&);
-	void prepareVariants(FtSelectContext&, const FtDSLEntry&, const std::vector<string>& langs, FtDSLQuery&, bool needVariants);
+	void prepareVariants(std::vector<FtVariantEntry>&, size_t termIdx, const std::vector<string>& langs, const FtDSLQuery&,
+						 std::vector<SynonymsDsl>*);
 	void processStepVariants(FtSelectContext& ctx, DataHolder::CommitStep& step, const FtVariantEntry& variant, TextSearchResults& res);
 
 	void processTypos(FtSelectContext&, const FtDSLEntry&);

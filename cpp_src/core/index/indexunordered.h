@@ -46,6 +46,8 @@ protected:
 };
 
 constexpr inline unsigned maxSelectivityPercentForIdset() noexcept { return 20u; }
+constexpr inline unsigned minQueryConditionsForIdset() noexcept { return 5u; }
+
 Index *IndexUnordered_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields);
 
 }  // namespace reindexer

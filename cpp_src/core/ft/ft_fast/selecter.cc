@@ -20,13 +20,14 @@ const int kTypoStepProc = 15;
 // Decrease procent of relevancy if pattern found by word stem
 const int kStemProcDecrease = 15;
 
-void Selecter::prepareVariants(FtSelectContext &ctx, const FtDSLEntry &term, const std::vector<string> &langs, FtDSLQuery &dsl,
-							   bool needVariants) {
-	ctx.variants.clear();
+void Selecter::prepareVariants(std::vector<FtVariantEntry> &variants, size_t termIdx, const std::vector<string> &langs,
+							   const FtDSLQuery &dsl, std::vector<SynonymsDsl> *synonymsDsl) {
+	const FtDSLEntry &term = dsl[termIdx];
+	variants.clear();
 
 	vector<pair<std::wstring, int>> variantsUtf16{{term.pattern, kFullMatchProc}};
 
-	if (needVariants && (!holder_.cfg_->enableNumbersSearch || !term.opts.number)) {
+	if (synonymsDsl && (!holder_.cfg_->enableNumbersSearch || !term.opts.number)) {
 		// Make translit and kblayout variants
 		if (holder_.cfg_->enableTranslit && !term.opts.exact) {
 			holder_.translit_->GetVariants(term.pattern, variantsUtf16);
@@ -37,7 +38,7 @@ void Selecter::prepareVariants(FtSelectContext &ctx, const FtDSLEntry &term, con
 		// Synonyms
 		if (term.opts.op != OpNot) {
 			holder_.synonyms_->GetVariants(term.pattern, variantsUtf16);
-			holder_.synonyms_->PostProcess(term, dsl);
+			holder_.synonyms_->PostProcess(term, dsl, termIdx, *synonymsDsl);
 		}
 	}
 
@@ -45,7 +46,7 @@ void Selecter::prepareVariants(FtSelectContext &ctx, const FtDSLEntry &term, con
 	string tmpstr, stemstr;
 	for (auto &v : variantsUtf16) {
 		utf16_to_utf8(v.first, tmpstr);
-		ctx.variants.push_back({tmpstr, term.opts, v.second});
+		variants.push_back({tmpstr, term.opts, v.second});
 		if (!term.opts.exact) {
 			for (auto &lang : langs) {
 				auto stemIt = holder_.stemmers_.find(lang);
@@ -59,7 +60,7 @@ void Selecter::prepareVariants(FtSelectContext &ctx, const FtDSLEntry &term, con
 
 					if (&v != &variantsUtf16[0]) opts.suff = false;
 
-					ctx.variants.push_back({stemstr, opts, v.second - kStemProcDecrease});
+					variants.push_back({stemstr, opts, v.second - kStemProcDecrease});
 				}
 			}
 		}
@@ -68,16 +69,17 @@ void Selecter::prepareVariants(FtSelectContext &ctx, const FtDSLEntry &term, con
 
 Selecter::MergeData Selecter::Process(FtDSLQuery &dsl) {
 	FtSelectContext ctx;
+	ctx.rawResults.reserve(dsl.size());
 	// STEP 2: Search dsl terms for each variant
-	const size_t originalDslSize = dsl.size();
-	holder_.synonyms_->PreProcess(dsl);
+	std::vector<SynonymsDsl> synonymsDsl;
+	holder_.synonyms_->PreProcess(dsl, synonymsDsl);
 	for (size_t i = 0; i < dsl.size(); ++i) {
-		ctx.rawResults.push_back(TextSearchResults());
+		ctx.rawResults.emplace_back();
 		TextSearchResults &res = ctx.rawResults.back();
 		res.term = dsl[i];
 
 		// Prepare term variants (original + translit + stemmed + kblayout + synonym)
-		this->prepareVariants(ctx, res.term, holder_.cfg_->stemmers, dsl, i < originalDslSize);
+		this->prepareVariants(ctx.variants, i, holder_.cfg_->stemmers, dsl, &synonymsDsl);
 
 		if (holder_.cfg_->logLevel >= LogInfo) {
 			WrSerializer wrSer;
@@ -101,8 +103,55 @@ Selecter::MergeData Selecter::Process(FtDSLQuery &dsl) {
 			processTypos(ctx, res.term);
 		}
 	}
+	for (auto &rawRes : ctx.rawResults) {
+		switch (rawRes.term.opts.op) {
+			case OpNot:
+				continue;
+			case OpAnd:
+				rawRes.term.opts.op = OpOr;
+				break;
+			case OpOr:
+				break;
+		}
+		break;
+	}
 
-	return mergeResults(ctx.rawResults);
+	std::vector<TextSearchResults> results;
+	size_t reserveSize = ctx.rawResults.size();
+	for (const SynonymsDsl &synDsl : synonymsDsl) reserveSize += synDsl.dsl.size();
+	results.reserve(reserveSize);
+	vector<size_t> synonymsBounds;
+	synonymsBounds.reserve(synonymsDsl.size());
+	for (const SynonymsDsl &synDsl : synonymsDsl) {
+		FtSelectContext synCtx;
+		synCtx.rawResults.reserve(synDsl.dsl.size());
+		for (size_t i = 0; i < synDsl.dsl.size(); ++i) {
+			synCtx.rawResults.emplace_back();
+			synCtx.rawResults.back().term = synDsl.dsl[i];
+			prepareVariants(synCtx.variants, i, holder_.cfg_->stemmers, synDsl.dsl, nullptr);
+			if (holder_.cfg_->logLevel >= LogInfo) {
+				WrSerializer wrSer;
+				for (auto &variant : synCtx.variants) {
+					if (&variant != &*synCtx.variants.begin()) wrSer << ", ";
+					wrSer << variant.pattern;
+				}
+				logPrintf(LogInfo, "Multiword synonyms variants: [%s]", wrSer.Slice());
+			}
+			processVariants(synCtx);
+		}
+		for (size_t idx : synDsl.termsIdx) {
+			assert(idx < ctx.rawResults.size());
+			ctx.rawResults[idx].synonyms.push_back(results.size());
+			ctx.rawResults[idx].synonymsGroups.push_back(synonymsBounds.size());
+		}
+		for (auto &res : synCtx.rawResults) {
+			results.emplace_back(std::move(res));
+		}
+		synonymsBounds.push_back(results.size());
+	}
+
+	for (auto &res : ctx.rawResults) results.emplace_back(std::move(res));
+	return mergeResults(results, synonymsBounds);
 }
 
 void Selecter::processStepVariants(FtSelectContext &ctx, DataHolder::CommitStep &step, const FtVariantEntry &variant,
@@ -240,7 +289,7 @@ static double pos2rank(int pos) {
 	return 0.5;
 }
 
-void Selecter::mergeItaration(TextSearchResults &rawRes, index_t rawResIndex, fast_hash_map<VDocIdType, index_t> &statuses,
+void Selecter::mergeItaration(const TextSearchResults &rawRes, index_t rawResIndex, fast_hash_map<VDocIdType, index_t> &statuses,
 							  vector<MergeInfo> &merged, vector<MergedIdRel> &merged_rd, h_vector<int16_t> &idoffsets,
 							  vector<bool> &curExists) {
 	auto &vdocs = holder_.vdocs_;
@@ -396,7 +445,7 @@ void Selecter::mergeItaration(TextSearchResults &rawRes, index_t rawResIndex, fa
 	}
 }
 
-Selecter::MergeData Selecter::mergeResults(vector<TextSearchResults> &rawResults) {
+Selecter::MergeData Selecter::mergeResults(vector<TextSearchResults> &rawResults, const std::vector<size_t> &synonymsBounds) {
 	auto &vdocs = holder_.vdocs_;
 	MergeData merged;
 
@@ -414,7 +463,7 @@ Selecter::MergeData Selecter::mergeResults(vector<TextSearchResults> &rawResults
 	for (auto &rawRes : rawResults) {
 		boost::sort::pdqsort(rawRes.begin(), rawRes.end(),
 							 [](const TextSearchResult &lhs, const TextSearchResult &rhs) { return lhs.proc_ > rhs.proc_; });
-		if (rawRes.term.opts.op == OpOr || !idsMaxCnt) idsMaxCnt += rawRes.idsCnt_;
+		if (rawRes.term.opts.op == OpOr) idsMaxCnt += rawRes.idsCnt_;
 	}
 
 	merged.reserve(std::min(holder_.cfg_->mergeLimit, idsMaxCnt));
@@ -423,37 +472,41 @@ Selecter::MergeData Selecter::mergeResults(vector<TextSearchResults> &rawResults
 		idoffsets.resize(vdocs.size());
 		merged_rd.reserve(std::min(holder_.cfg_->mergeLimit, idsMaxCnt));
 	}
-	for (auto &rawRes : rawResults) {
-		switch (rawRes.term.opts.op) {
-			case OpNot:
-				continue;
-			case OpAnd:
-				rawRes.term.opts.op = OpOr;
-				break;
-			case OpOr:
-				break;
+	std::vector<std::vector<bool>> exists(synonymsBounds.size() + 1);
+	size_t curExists = 0;
+	auto nextSynonymsBound = synonymsBounds.cbegin();
+	std::vector<vector<bool>> synonymsExists;
+	for (index_t i = 0, lastGroupStart = 0; i < rawResults.size(); ++i) {
+		if (nextSynonymsBound != synonymsBounds.cend() && *nextSynonymsBound == i) {
+			++curExists;
+			++nextSynonymsBound;
+			lastGroupStart = (nextSynonymsBound == synonymsBounds.cend() ? 0 : i);
 		}
-		break;
-	}
-	vector<bool> curExists;
-	for (index_t i = 0, lastNotAnd = 0; i < rawResults.size(); ++i) {
-		mergeItaration(rawResults[i], i, statuses, merged, merged_rd, idoffsets, curExists);
+		const auto &res = rawResults[i];
+		mergeItaration(res, i, statuses, merged, merged_rd, idoffsets, exists[curExists]);
 
-		if (rawResults[i].term.opts.op == OpAnd) {
+		if (res.term.opts.op == OpAnd) {
 			for (auto &info : merged) {
 				auto vid = info.id;
-				if (!curExists[vid]) {
+				if (!exists[curExists][vid]) {
+					bool matchSyn = false;
+					for (size_t synGrpIdx : res.synonymsGroups) {
+						assert(synGrpIdx < curExists);
+						if (exists[synGrpIdx][vid]) {
+							matchSyn = true;
+							break;
+						}
+					}
+					if (matchSyn) continue;
 					index_t &vidStatus = statuses[vid];
-					if (vidStatus != kExcluded && vidStatus > lastNotAnd) {
+					if (vidStatus != kExcluded && vidStatus > lastGroupStart) {
 						info.proc = 0;
 						vidStatus = 0;
 					}
 				}
 			}
-		} else {
-			lastNotAnd = i;
 		}
-		if (rawResults[i].term.opts.op != OpNot) merged.mergeCnt++;
+		if (res.term.opts.op != OpNot) merged.mergeCnt++;
 	}
 	if (holder_.cfg_->logLevel >= LogInfo) logPrintf(LogInfo, "Complex merge (%d patterns): out %d vids", rawResults.size(), merged.size());
 

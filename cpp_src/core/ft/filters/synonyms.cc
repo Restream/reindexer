@@ -20,11 +20,15 @@ void Synonyms::GetVariants(const wstring& data, std::vector<std::pair<std::wstri
 	}
 }
 
-void Synonyms::addDslEntries(FtDSLQuery& dsl, const MultipleAlternativesCont& multiAlternatives, const FtDslOpts& opts) {
+void Synonyms::addDslEntries(std::vector<SynonymsDsl>& synonymsDsl, const MultipleAlternativesCont& multiAlternatives,
+							 const FtDslOpts& opts, const std::vector<size_t>& termsIdx, const FtDSLQuery& dsl) {
 	for (const auto& alternatives : multiAlternatives) {
+		assert(!alternatives.empty());
+		synonymsDsl.emplace_back(dsl.CopyCtx(), termsIdx);
+
 		for (auto it = alternatives.cbegin(); it != alternatives.cend(); ++it) {
-			dsl.push_back({*it, opts});
-			if (it == alternatives.cbegin()) dsl.back().opts.op = OpOr;
+			synonymsDsl.back().dsl.emplace_back(*it, opts);
+			if (it == alternatives.cbegin()) synonymsDsl.back().dsl.back().opts.op = OpOr;
 		}
 	}
 }
@@ -60,7 +64,7 @@ static void divOptsForAlternatives(FtDslOpts& opts, size_t size) {
 	opts.qpos /= size;
 }
 
-void Synonyms::PostProcess(const FtDSLEntry& term, FtDSLQuery& dsl) const {
+void Synonyms::PostProcess(const FtDSLEntry& term, const FtDSLQuery& dsl, size_t termIdx, std::vector<SynonymsDsl>& synonymsDsl) const {
 	auto it = one2many_.find(term.pattern);
 	if (it == one2many_.end()) {
 		return;
@@ -69,17 +73,19 @@ void Synonyms::PostProcess(const FtDSLEntry& term, FtDSLQuery& dsl) const {
 	const auto opts = makeOptsForAlternatives(term.opts);
 
 	assert(it->second);
-	addDslEntries(dsl, *it->second, opts);
+	addDslEntries(synonymsDsl, *it->second, opts, {termIdx}, dsl);
 }
 
-void Synonyms::PreProcess(FtDSLQuery& dsl) const {
+void Synonyms::PreProcess(const FtDSLQuery& dsl, std::vector<SynonymsDsl>& synonymsDsl) const {
 	for (const auto& multiSynonyms : many2any_) {
 		bool match = !multiSynonyms.first.empty();
 		FtDslOpts opts;
+		std::vector<size_t> termsIdx;
 		for (auto termIt = multiSynonyms.first.cbegin(); termIt != multiSynonyms.first.cend(); ++termIt) {
-			const auto dslIt = std::find_if(dsl.cbegin(), dsl.cend(), [&termIt](const FtDSLEntry& dslEntry) {
+			const auto isAppropriateEntry = [&termIt](const FtDSLEntry& dslEntry) {
 				return dslEntry.opts.op != OpNot && dslEntry.pattern == *termIt;
-			});
+			};
+			const auto dslIt = std::find_if(dsl.cbegin(), dsl.cend(), isAppropriateEntry);
 			if (dslIt == dsl.cend()) {
 				match = false;
 				break;
@@ -89,12 +95,19 @@ void Synonyms::PreProcess(FtDSLQuery& dsl) const {
 				} else {
 					addOptsForAlternatives(opts, dslIt->opts);
 				}
+				size_t idx = dslIt - dsl.cbegin();
+				termsIdx.push_back(idx);
+				for (++idx; idx < dsl.size(); ++idx) {
+					if (isAppropriateEntry(dsl[idx])) {
+						termsIdx.push_back(idx);
+					}
+				}
 			}
 		}
 		if (match) {
 			divOptsForAlternatives(opts, multiSynonyms.first.size());
 			assert(multiSynonyms.second);
-			addDslEntries(dsl, *multiSynonyms.second, opts);
+			addDslEntries(synonymsDsl, *multiSynonyms.second, opts, termsIdx, dsl);
 		}
 	}
 }

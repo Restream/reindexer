@@ -1072,7 +1072,7 @@ func (q *Query) FetchCount(n int) *Query {
 	return q
 }
 
-// Select add optional select functions (e.g highlight or snippet ) to fields of result's objects
+// Functions add optional select functions (e.g highlight or snippet ) to fields of result's objects
 func (q *Query) Functions(fields ...string) *Query {
 	for _, field := range fields {
 		q.ser.PutVarCUInt(querySelectFunction).PutVString(field)

@@ -193,7 +193,8 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 					}
 					if (!ctx.opts.itemsCountInNamespace) return false;
 					// Check selectivity
-					return res.size() > 1u && (100u * idsCount / ctx.opts.itemsCountInNamespace > maxSelectivityPercentForIdset());
+					return ctx.opts.conditionInQuery > minQueryConditionsForIdset() && res.size() > 1u &&
+						   (100u * idsCount / ctx.opts.itemsCountInNamespace > maxSelectivityPercentForIdset());
 				};
 
 				bool scanWin = false;

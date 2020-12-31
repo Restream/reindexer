@@ -1,3 +1,12 @@
+# Version 3.0,1 (31.12.2020)
+
+## Core
+- [fix] Search by multi word synonyms is fixed
+- [fix] Comparator performance issue of condition IN (many strings) 
+
+## Face
+- [fix] List view performance issues
+- [fix] Enable edit items in query results page
 # Version 3.0 (22.12.2020)
 ## Core
 - [fea] Sort by distance

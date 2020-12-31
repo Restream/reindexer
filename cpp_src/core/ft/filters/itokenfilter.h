@@ -4,19 +4,26 @@
 #include <string>
 #include <vector>
 
+#include "core/ft/ftdsl.h"
+
 namespace reindexer {
 
 class BaseFTConfig;
-class FtDSLQuery;
-struct FtDSLEntry;
+
+struct SynonymsDsl {
+	SynonymsDsl(FtDSLQuery&& dsl_, const std::vector<size_t>& termsIdx_) : dsl{std::move(dsl_)}, termsIdx{termsIdx_} {}
+	FtDSLQuery dsl;
+	std::vector<size_t> termsIdx;
+};
+
 class ITokenFilter {
 public:
 	using Ptr = std::unique_ptr<ITokenFilter>;
 
 	virtual void GetVariants(const std::wstring& data, std::vector<std::pair<std::wstring, int>>& result) = 0;
 	virtual void SetConfig(BaseFTConfig*) {}
-	virtual void PreProcess(FtDSLQuery&) const {}
-	virtual void PostProcess(const FtDSLEntry&, FtDSLQuery&) const {}
+	virtual void PreProcess(const FtDSLQuery&, std::vector<SynonymsDsl>&) const {}
+	virtual void PostProcess(const FtDSLEntry&, const FtDSLQuery&, size_t /*termIdx*/, std::vector<SynonymsDsl>&) const {}
 	virtual ~ITokenFilter() {}
 };
 

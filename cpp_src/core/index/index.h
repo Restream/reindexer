@@ -23,8 +23,10 @@ class RdxContext;
 class Index {
 public:
 	struct SelectOpts {
-		SelectOpts() : itemsCountInNamespace(0), distinct(0), disableIdSetCache(0), forceComparator(0), unbuiltSortOrders(0) {}
+		SelectOpts()
+			: itemsCountInNamespace(0), conditionInQuery(0), distinct(0), disableIdSetCache(0), forceComparator(0), unbuiltSortOrders(0) {}
 		unsigned itemsCountInNamespace;
+		unsigned conditionInQuery : 16;
 		unsigned distinct : 1;
 		unsigned disableIdSetCache : 1;
 		unsigned forceComparator : 1;

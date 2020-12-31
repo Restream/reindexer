@@ -38,6 +38,7 @@ centos7_debs="centos-release-scl devtoolset-9-gcc devtoolset-9-gcc-c++ make snap
 centos6_debs="devtoolset-9-gcc devtoolset-9-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build git"
 debian_debs="build-essential g++ libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git"
 alpine_apks="g++ snappy-dev leveldb-dev libexecinfo-dev make curl cmake unzip git"
+arch_pkgs="gcc snappy leveldb make curl cmake unzip git"
 
 cmake_installed () {
     info_msg "Check for installed cmake ..... "
@@ -198,6 +199,28 @@ install_debian() {
     return $?
 }
 
+install_arch() {
+    info_msg "Updating packages....."
+    pacman -Sy >/dev/null 2>&1
+    for pkg in ${arch_pkgs}
+    do
+        pacman -Q ${pkg} >/dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            info_msg "Package '$pkg' already installed. Skip ....."
+        else
+            info_msg "Installing '$pkg' package ....."
+            pacman -S --noconfirm ${pkg} >/dev/null 2>&1
+            if [ $? -eq 0 ]; then
+                success_msg "Package '$pkg' was installed successfully."
+            else
+                error_msg "Could not install '$pkg' package. Try 'apt-get update && apt-get install $pkg'" && return 1
+            fi
+        fi
+    done
+    return $?
+}
+
+
 install_alpine() {
     info_msg "Updating packages....."
     apk update >/dev/null 2>&1
@@ -238,7 +261,9 @@ detect_installer() {
             return
         elif [ "$OS" = "alpine" ]; then
             OS_TYPE="alpine" && return
-        else
+        elif [ "$OS" = "arch" ]; then
+            OS_TYPE="arch" && return
+        else 
             return 1
         fi
     elif [ -f /etc/centos-release ]; then

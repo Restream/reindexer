@@ -30,7 +30,7 @@ void Comparator::setValues(const VariantArray &values) {
 		cmpBool.SetValues(cond_, values);
 		cmpInt64.SetValues(cond_, values);
 		cmpDouble.SetValues(cond_, values);
-		cmpString.SetValues(cond_, values);
+		cmpString.SetValues(cond_, values, collateOpts_);
 	} else {
 		switch (type_) {
 			case KeyValueBool:
@@ -46,7 +46,7 @@ void Comparator::setValues(const VariantArray &values) {
 				cmpDouble.SetValues(cond_, values);
 				break;
 			case KeyValueString:
-				cmpString.SetValues(cond_, values);
+				cmpString.SetValues(cond_, values, collateOpts_);
 				break;
 			case KeyValueComposite:
 				cmpComposite.SetValues(cond_, values, *this);

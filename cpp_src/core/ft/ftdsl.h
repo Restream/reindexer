@@ -31,6 +31,8 @@ struct FtDslOpts {
 };
 
 struct FtDSLEntry {
+	FtDSLEntry() = default;
+	FtDSLEntry(const std::wstring &p, const FtDslOpts &o) : pattern{p}, opts{o} {}
 	std::wstring pattern;
 	FtDslOpts opts;
 };
@@ -38,10 +40,11 @@ struct FtDSLEntry {
 class FtDSLQuery : public h_vector<FtDSLEntry> {
 public:
 	FtDSLQuery(const fast_hash_map<string, int> &fields, const fast_hash_set<string, hash_str, equal_str> &stopWords,
-			   const string &extraWordSymbols)
+			   const string &extraWordSymbols) noexcept
 		: fields_(fields), stopWords_(stopWords), extraWordSymbols_(extraWordSymbols) {}
 	void parse(wstring &utf16str);
 	void parse(const string &q);
+	FtDSLQuery CopyCtx() const noexcept { return {fields_, stopWords_, extraWordSymbols_}; }
 
 protected:
 	void parseFields(wstring &utf16str, wstring::iterator &it, h_vector<float, 8> &fieldsBoost);

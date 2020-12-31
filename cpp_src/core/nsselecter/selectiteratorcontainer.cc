@@ -182,9 +182,10 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 	return selectResults;
 }
 
-SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe, bool enableSortIndexOptimize, const NamespaceImpl &ns,
-															unsigned sortId, bool isQueryFt, SelectFunction::Ptr selectFnc, bool &isIndexFt,
-															bool &isIndexSparse, FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
+SelectKeyResults SelectIteratorContainer::processQueryEntry(unsigned entriesSize, const QueryEntry &qe, bool enableSortIndexOptimize,
+															const NamespaceImpl &ns, unsigned sortId, bool isQueryFt,
+															SelectFunction::Ptr selectFnc, bool &isIndexFt, bool &isIndexSparse,
+															FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
 	auto &index = ns.indexes_[qe.idxNo];
 	isIndexFt = isFullText(index->Type());
 	isIndexSparse = index->Opts().IsSparse();
@@ -205,6 +206,7 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 	if (qe.distinct) {
 		opts.distinct = 1;
 	}
+	opts.conditionInQuery = entriesSize;
 
 	auto ctx = selectFnc ? selectFnc->CreateCtx(qe.idxNo) : BaseFunctionCtx::Ptr{};
 	if (ctx && ctx->type == BaseFunctionCtx::kFtCtx) ftCtx = reindexer::reinterpret_pointer_cast<FtCtx>(ctx);
@@ -355,8 +357,8 @@ void SelectIteratorContainer::PrepareIteratorsForSelectLoop(const QueryEntries &
 					const bool enableSortIndexOptimize = !sortIndexCreated && (op == OpAnd) && !qe.distinct && (begin == 0) &&
 														 (ctx_->sortingContext.uncommitedIndex == qe.idxNo) &&
 														 (next == end || queries.GetOperation(next) != OpOr);
-					selectResults = processQueryEntry(qe, enableSortIndexOptimize, ns, sortId, isQueryFt, selectFnc, isIndexFt,
-													  isIndexSparse, ftCtx, rdxCtx);
+					selectResults = processQueryEntry(queries.Size(), qe, enableSortIndexOptimize, ns, sortId, isQueryFt, selectFnc,
+													  isIndexFt, isIndexSparse, ftCtx, rdxCtx);
 					if (enableSortIndexOptimize) sortIndexCreated = true;
 				}
 				processQueryEntryResults(selectResults, op, ns, qe, isIndexFt, isIndexSparse, nonIndexField);

@@ -2,6 +2,7 @@
 
 #include <memory.h>
 #include "core/index/payload_map.h"
+#include "core/index/string_map.h"
 #include "core/keyvalue/geometry.h"
 #include "core/keyvalue/p_string.h"
 #include "core/payload/fieldsset.h"
@@ -115,8 +116,8 @@ class ComparatorImpl<key_string> {
 public:
 	ComparatorImpl(bool distinct = false) : distS_(distinct ? new intrusive_atomic_rc_wrapper<fast_hash_set<key_string>> : nullptr) {}
 
-	void SetValues(CondType cond, const VariantArray &values) {
-		if (cond == CondSet) valuesS_.reset(new intrusive_atomic_rc_wrapper<fast_hash_set<key_string>>());
+	void SetValues(CondType cond, const VariantArray &values, const CollateOpts &collateOpts_) {
+		if (cond == CondSet) valuesS_.reset(new intrusive_atomic_rc_wrapper<key_string_set>(collateOpts_));
 
 		for (Variant key : values) {
 			key.convert(KeyValueString);
@@ -141,11 +142,7 @@ public:
 				return collateCompare(string_view(lhs), rhs, collateOpts) >= 0 &&
 					   collateCompare(string_view(lhs), string_view(*values_[1]), collateOpts) <= 0;
 			case CondSet:
-				// if (collateOpts.mode == CollateNone) return valuesS_->find(lhs) != valuesS_->end();
-				for (auto it : *valuesS_) {
-					if (!collateCompare(string_view(lhs), string_view(*it), collateOpts)) return true;
-				}
-				return false;
+				return valuesS_->find(string_view(lhs)) != valuesS_->end();
 			case CondAny:
 				return true;
 			case CondEmpty:
@@ -170,7 +167,16 @@ public:
 
 	h_vector<key_string, 1> values_;
 	string_view cachedValueSV_;
-	intrusive_ptr<intrusive_atomic_rc_wrapper<fast_hash_set<key_string>>> valuesS_, distS_;
+
+	class key_string_set : public fast_hash_set<key_string, hash_key_string, equal_key_string> {
+	public:
+		key_string_set(const CollateOpts &opts)
+			: fast_hash_set<key_string, hash_key_string, equal_key_string>(1000, hash_key_string(CollateMode(opts.mode)),
+																		   equal_key_string(opts)) {}
+	};
+
+	intrusive_ptr<intrusive_atomic_rc_wrapper<key_string_set>> valuesS_;
+	intrusive_ptr<intrusive_atomic_rc_wrapper<fast_hash_set<key_string>>> distS_;
 
 private:
 	void addValue(CondType cond, const key_string &value) {

@@ -1,9 +1,11 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.0)
 
 project(tests)
 
 SET(TARGET tests)
 list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer ${REINDEXER_LIBRARIES})
+
+option(XML_REPORT "Enable XML xUnit report" OFF)
 
 include_directories(fixtures mocks)
 include_directories(${GTEST_INCLUDE_DIRS})
@@ -43,7 +45,11 @@ target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES} ${GTEST_LIBRARY})
 
 find_program (GTEST_PARALLEL "gtest-parallel")
 if (GTEST_PARALLEL)
-  add_test (NAME gtests COMMAND gtest-parallel --serialize_test_cases --print_test_times "./${TARGET}" )
+    if(XML_REPORT)
+        add_test (NAME gtests COMMAND gtest-parallel --gtest_color=no --serialize_test_cases --print_test_times --gtest_output=xml:${REINDEXER_SOURCE_PATH}/testReport.xml "./${TARGET}" )
+    else()
+        add_test (NAME gtests COMMAND gtest-parallel --serialize_test_cases --print_test_times "./${TARGET}" )
+    endif()
 else()
   add_test (NAME gtests COMMAND ${TARGET} --gtest_color=yes )
 endif()

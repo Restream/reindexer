@@ -63,9 +63,9 @@ private:
 	static bool isIdset(const_iterator it, const_iterator end);
 
 	SelectKeyResults processQueryEntry(const QueryEntry &qe, const NamespaceImpl &ns, StrictMode strictMode);
-	SelectKeyResults processQueryEntry(const QueryEntry &qe, bool enableSortIndexOptimize, const NamespaceImpl &ns, unsigned sortId,
-									   bool isQueryFt, SelectFunction::Ptr selectFnc, bool &isIndexFt, bool &isIndexSparse, FtCtx::Ptr &,
-									   const RdxContext &);
+	SelectKeyResults processQueryEntry(unsigned entriesSize, const QueryEntry &qe, bool enableSortIndexOptimize, const NamespaceImpl &ns,
+									   unsigned sortId, bool isQueryFt, SelectFunction::Ptr selectFnc, bool &isIndexFt, bool &isIndexSparse,
+									   FtCtx::Ptr &, const RdxContext &);
 	void processJoinEntry(const QueryEntry &qe, OpType op);
 	void processQueryEntryResults(SelectKeyResults &selectResults, OpType, const NamespaceImpl &ns, const QueryEntry &qe, bool isIndexFt,
 								  bool isIndexSparse, bool nonIndexField);

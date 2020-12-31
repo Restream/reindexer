@@ -87,7 +87,7 @@ public:
 		data_.clear();
 		size_ = 0;
 	}
-	bool empty() { return size_ == 0; }
+	bool empty() const noexcept { return size_ == 0; }
 
 protected:
 	store_container data_;

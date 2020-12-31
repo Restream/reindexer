@@ -583,7 +583,7 @@ TEST_F(FTApi, SelectMultiwordSynonyms) {
 					  {"!генеральная! прегенеральная !ассамблея!", "!организации объединенных! свободных !наций!"},
 					  {"!UN!", "!UN!"}});
 
-	qr = SimpleSelect("United Nations");
+	qr = SimpleSelect("United +Nations");
 	CheckResults(qr, {{"!целый мир!", "test"},
 					  {"!целый!", "!мир!"},
 					  {"!планета!", "test"},
@@ -601,8 +601,8 @@ TEST_F(FTApi, SelectMultiwordSynonyms) {
 	qr = SimpleSelect("word");
 	CheckResults(qr, {{"!word!", "test"},
 					  {"test", "!word!"},
-					  {"!word!", "!слово!"},
-					  {"!word!", "!одно!"},
+					  {"!word!", "слово"},
+					  {"!word!", "одно"},
 					  {"!слово! всего лишь !одно!", "test"},
 					  {"!слово!", "!одно!"},
 					  {"!слово одно!", "test"},
@@ -632,6 +632,52 @@ TEST_F(FTApi, SelectWithMinusWithSynonyms) {
 	// Don't use synonyms
 	qr = SimpleSelect("test -several lexems");
 	CheckResults(qr, {{"word", "!test!"}, {"слово", "!test!"}, {"сколькото лексем", "!test!"}});
+}
+
+// issue #627
+TEST_F(FTApi, SelectMultiwordSynonymsWithExtraWords) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.synonyms = {
+		{{"бронестекло", "защитное стекло", "бронированное стекло"}, {"бронестекло", "защитное стекло", "бронированное стекло"}}};
+	Init(ftCfg);
+
+	Add("nm1", "защитное стекло для экрана samsung galaxy", "test");
+	Add("nm1", "защитное стекло для экрана iphone", "test");
+	Add("nm1", "бронированное стекло для samsung galaxy", "test");
+	Add("nm1", "бронированное стекло для экрана iphone", "test");
+	Add("nm1", "бронестекло для экрана samsung galaxy", "test");
+	Add("nm1", "бронестекло для экрана iphone", "test");
+
+	auto qr = SimpleSelect("бронестекло");
+	CheckResults(qr, {{"!защитное стекло! для экрана samsung galaxy", "test"},
+					  {"!защитное стекло! для экрана iphone", "test"},
+					  {"!бронированное стекло! для samsung galaxy", "test"},
+					  {"!бронированное стекло! для экрана iphone", "test"},
+					  {"!бронестекло! для экрана samsung galaxy", "test"},
+					  {"!бронестекло! для экрана iphone", "test"}});
+
+	qr = SimpleSelect("+бронестекло +iphone");
+	CheckResults(qr, {{"!защитное стекло! для экрана !iphone!", "test"},
+					  {"!бронированное стекло! для экрана !iphone!", "test"},
+					  {"!бронестекло! для экрана !iphone!", "test"}});
+
+	qr = SimpleSelect("+galaxy +бронестекло +samsung");
+	CheckResults(qr, {{"!защитное стекло! для экрана !samsung galaxy!", "test"},
+					  {"!бронированное стекло! для !samsung galaxy!", "test"},
+					  {"!бронестекло! для экрана !samsung galaxy!", "test"}});
+
+	qr = SimpleSelect("+galaxy +бронестекло экрана +samsung");
+	CheckResults(qr, {{"!защитное стекло! для !экрана samsung galaxy!", "test"},
+					  {"!бронированное стекло! для !samsung galaxy!", "test"},
+					  {"!бронестекло! для !экрана samsung galaxy!", "test"}});
+
+	qr = SimpleSelect("+galaxy +бронестекло какоетослово +samsung");
+	CheckResults(qr, {{"!защитное стекло! для экрана !samsung galaxy!", "test"},
+					  {"!бронированное стекло! для !samsung galaxy!", "test"},
+					  {"!бронестекло! для экрана !samsung galaxy!", "test"}});
+
+	qr = SimpleSelect("+бронестекло +iphone +samsung");
+	CheckResults(qr, {});
 }
 
 TEST_F(FTApi, ChangeSynonymsCfg) {

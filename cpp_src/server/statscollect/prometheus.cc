@@ -60,7 +60,7 @@ void Prometheus::setMetricValue(PFamily<PGauge>* metricFamily, double value, int
 
 void Prometheus::fillRxInfo() {
 	assert(rxInfo_);
-	rxInfo_->Add({{"vesion", REINDEX_VERSION}}, prometheus::kNoEpoch).Set(1.0);
+	rxInfo_->Add({{"version", REINDEX_VERSION}}, prometheus::kNoEpoch).Set(1.0);
 }
 
 int Prometheus::collect(http::Context& ctx) { return ctx.String(http::StatusOK, PTextSerializer().Serialize(registry_.Collect())); }
