@@ -45,6 +45,10 @@ string_view AggregationResult::aggTypeToStr(AggType type) {
 			return "avg"_sv;
 		case AggDistinct:
 			return "distinct"_sv;
+		case AggCount:
+			return "count"_sv;
+		case AggCountCached:
+			return "count_cached"_sv;
 		default:
 			return "?"_sv;
 	}
@@ -63,6 +67,10 @@ AggType AggregationResult::strToAggType(string_view type) {
 		return AggMax;
 	} else if (type == "distinct"_sv) {
 		return AggDistinct;
+	} else if (type == "count"_sv) {
+		return AggCount;
+	} else if (type == "count_cached"_sv) {
+		return AggCountCached;
 	}
 	return AggUnknown;
 }

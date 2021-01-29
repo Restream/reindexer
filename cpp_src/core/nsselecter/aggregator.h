@@ -1,9 +1,9 @@
 #pragma once
 
 #include <climits>
+#include <unordered_set>
 #include "core/payload/payloadiface.h"
 #include "core/type_consts.h"
-#include "estl/fast_hash_set.h"
 #include "vendor/cpp-btree/btree_map.h"
 
 namespace reindexer {
@@ -102,7 +102,7 @@ protected:
 		FieldsSet fields_;
 	};
 
-	typedef fast_hash_set<Variant, DistinctHasher, RelaxVariantCompare> HashSetVariantRelax;
+	typedef std::unordered_set<Variant, DistinctHasher, RelaxVariantCompare> HashSetVariantRelax;
 	std::unique_ptr<HashSetVariantRelax> distincts_;
 	bool compositeIndexFields_;
 };

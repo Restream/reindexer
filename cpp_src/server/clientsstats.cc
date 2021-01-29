@@ -20,6 +20,7 @@ void ClientsStats::GetClientInfo(std::vector<reindexer::ClientStat>& datas) {
 			d.lastSendTs = c.second.connectionStat->last_send_ts.load(std::memory_order_relaxed);
 			d.lastRecvTs = c.second.connectionStat->last_recv_ts.load(std::memory_order_relaxed);
 			d.startTime = c.second.connectionStat->start_time;
+			d.updatesLost = c.second.connectionStat->updates_lost.load(std::memory_order_relaxed);
 		}
 		if (c.second.txStats) {
 			d.txCount = c.second.txStats->txCount.load();

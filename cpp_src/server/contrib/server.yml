@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.0.1"
+  version: "3.0.2"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -2020,7 +2020,9 @@ definitions:
                         description: "Filtering conditions set"
                         items:
                           type: object
-
+            updates_lost:
+              type: integer
+              description: "Updates lost call count"
   Databases:
     type: object
     properties:
@@ -2608,6 +2610,12 @@ definitions:
         minimum: 0.0
         maximum: 10.0
         description: "Boost of full match of search phrase with doc"
+      partial_match_decrease:
+        type: integer
+        default: 15
+        minimum: 0
+        maximum: 100
+        description: "Decrease of relevancy in case of partial match by value: partial_match_decrease * (non matched symbols) / (matched symbols)"
       min_relevancy:
         type: number
         format: "float"
@@ -2639,6 +2647,61 @@ definitions:
         default: 4000
         minimum: 5
         maximum: 1000000000
+      fields:
+        type: array
+        description: "Configuration for certian field if it differ from whole index configuration"
+        items:
+          $ref: "#/definitions/FulltextFieldConfig"
+
+  FulltextFieldConfig:
+    type: object
+    description: "Configuration for certian field if it differ from whole index configuration"
+    properties:
+      field_name:
+        type: string
+        description: "Field name"
+      bm25_boost:
+        type: number
+        format: "float"
+        default: 1.0
+        minimum: 0.0
+        maximum: 10.0
+        description: "Boost of bm25 ranking"
+      bm25_weight:
+        type: number
+        format: "float"
+        default: 0.1
+        minimum: 0.0
+        maximum: 1.0
+        description: "Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to finl rank in 0 - 100% range"
+      term_len_boost:
+        type: number
+        format: "float"
+        default: 1.0
+        minimum: 0.0
+        maximum: 10.0
+        description: "Boost of search query term length"
+      term_len_weght:
+        type: number
+        format: "float"
+        default: 0.3
+        minimum: 0.0
+        maximum: 1.0
+        description: "Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range"
+      position_boost:
+        type: number
+        format: "float"
+        default: 1.0
+        minimum: 0.0
+        maximum: 10.0
+        description: "Boost of search query term position"
+      position_weght:
+        type: number
+        format: "float"
+        default: 0.1
+        minimum: 0.0
+        maximum: 1.0
+        description: "Weight of search query term position in final rank. 0: term position will not change final rank. 1: term position will affect to final rank in 0 - 100% range"
 
   FulltextSynonym:
     type: object

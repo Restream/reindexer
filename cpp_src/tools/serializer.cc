@@ -433,11 +433,14 @@ chunk WrSerializer::DetachChunk() {
 	len_ = 0;
 	return ch;
 }
+std::unique_ptr<uint8_t[]> WrSerializer::DetachLStr() {
+	reinterpret_cast<l_string_hdr *>(buf_)->length = len_ - sizeof(uint32_t);
+	return DetachBuf();
+}
 
 std::unique_ptr<uint8_t[]> WrSerializer::DetachBuf() {
 	std::unique_ptr<uint8_t[]> ret;
 
-	reinterpret_cast<l_string_hdr *>(buf_)->length = len_ - sizeof(uint32_t);
 	if (buf_ == inBuf_) {
 		ret.reset(new uint8_t[len_]);
 		memcpy(ret.get(), buf_, len_);

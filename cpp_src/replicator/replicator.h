@@ -69,11 +69,13 @@ protected:
 	static Error unpackItem(Item &, lsn_t, string_view cjson, const TagsMatcher &tm);
 
 	void OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &walRec) override final;
+	void OnUpdatesLost(string_view nsName) override final;
 	void OnConnectionState(const Error &err) override final;
 
 	bool canApplyUpdate(LSNPair LSNs, string_view nsName, const WALRecord &wrec);
 	bool isSyncEnabled(string_view nsName);
 	bool retryIfNetworkError(const Error &err);
+	void subscribeUpdatesIfRequired(const std::string &nsName);
 
 	std::unique_ptr<client::Reindexer> master_;
 	ReindexerImpl *slave_;
@@ -84,6 +86,8 @@ protected:
 	net::ev::async resync_;
 	net::ev::timer resyncTimer_;
 	net::ev::async walSyncAsync_;
+	net::ev::async resyncUpdatesLostAsync_;
+	std::atomic_bool resyncUpdatesLostFlag_;
 
 	ReplicationConfigData config_;
 
@@ -92,7 +96,12 @@ protected:
 	std::atomic<State> state_;
 
 	using UpdatesContainer = std::vector<std::pair<LSNPair, PackedWALRecord>>;
-	fast_hash_map<string, UpdatesContainer, nocase_hash_str, nocase_equal_str> pendedUpdates_;
+	struct UpdatesData {
+		UpdatesContainer container;
+		bool UpdatesLost = false;
+	};
+
+	fast_hash_map<string, UpdatesData, nocase_hash_str, nocase_equal_str> pendedUpdates_;
 	tsl::hopscotch_set<string, nocase_hash_str, nocase_equal_str> syncedNamespaces_;
 	std::string currentSyncNs_;
 
@@ -107,13 +116,16 @@ protected:
 	class SyncQuery {
 	public:
 		SyncQuery() {}
-		void Push(std::string &nsName, NamespaceDef &nsDef, bool force);
+		void Push(const std::string &nsName, NamespaceDef &&nsDef, bool force);
 		bool Pop(NamespaceDef &def, bool &force);
 
 	private:
 		struct recordData {
+			recordData() = default;
+			recordData(NamespaceDef &&_def, bool _forced) : def(std::move(_def)), forced(_forced) {}
+
 			NamespaceDef def;
-			bool forced;
+			bool forced = false;
 		};
 		std::unordered_map<std::string, recordData> query_;
 		std::mutex mtx_;

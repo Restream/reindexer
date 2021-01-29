@@ -43,7 +43,7 @@ public:
 			  IStatsWatcher *statsCollector = nullptr);
 	~RPCServer();
 
-	bool Start(const string &addr, ev::dynamic_loop &loop, bool enableStat);
+	bool Start(const string &addr, ev::dynamic_loop &loop, bool enableStat, size_t maxUpdatesSize);
 	void Stop() { listener_->Stop(); }
 
 	Error Ping(cproto::Context &ctx);

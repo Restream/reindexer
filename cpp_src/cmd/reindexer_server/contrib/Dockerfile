@@ -2,10 +2,11 @@ FROM alpine:latest AS build
 
 RUN cd /tmp && \
     apk update && \
-    apk add git curl autoconf automake libtool linux-headers g++ make libunwind-dev grpc-dev && \ 
+    apk add git curl autoconf automake libtool linux-headers g++ make libunwind-dev grpc-dev grpc protobuf-dev c-ares-dev && \ 
     git clone https://github.com/gperftools/gperftools.git && \
     cd gperftools && \
     echo "noinst_PROGRAMS =" >> Makefile.am && \
+    sed -i s/_sigev_un\._tid/sigev_notify_thread_id/ src/profile-handler.cc && \
     ./autogen.sh &&  ./configure && make -j8 && make install && \
     cd .. 
 ADD . /src
@@ -14,7 +15,7 @@ WORKDIR /src
 RUN ./dependencies.sh && \
     mkdir build && \
     cd build && \
-    cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo .. -DENABLE_GRPC=On -DGRPC_PACKAGE_PROVIDER="MODULE" && \
+    cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo .. -DENABLE_GRPC=On -DGRPC_PACKAGE_PROVIDER="" && \
     make -j8 reindexer_server reindexer_tool && \
     make install -C cpp_src/cmd/reindexer_server && \
     make install -C cpp_src/cmd/reindexer_tool && \
@@ -26,10 +27,7 @@ FROM alpine:latest
 
 COPY --from=build /usr/local /usr/local
 COPY --from=build /entrypoint.sh /entrypoint.sh
-COPY --from=build /usr/lib/libprotobuf.so* /usr/lib/
-COPY --from=build /usr/lib/libgrpc*.so* /usr/lib/
-COPY --from=build /usr/lib/libcares*.so* /usr/lib/
-RUN apk update && apk add libstdc++ libunwind snappy libexecinfo leveldb && rm -rf /var/cache/apk/*
+RUN apk update && apk add libstdc++ libunwind snappy libexecinfo leveldb c-ares libprotobuf xz-libs && rm -rf /var/cache/apk/*
 
 ENV RX_DATABASE /db
 ENV RX_CORELOG stdout

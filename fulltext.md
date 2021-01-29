@@ -2,6 +2,7 @@
 
 Reindexer has builtin full text search engine. This document describes usage of full text search.
 
+- [LIKE](#like)
 - [Define full text index fields](#define-full-text-index-fields)
 - [Query to full text index](#query-to-full-text-index)
 - [Text query format](#text-query-format)
@@ -15,6 +16,25 @@ Reindexer has builtin full text search engine. This document describes usage of 
 - [Performance and memory usage](#performance-and-memory-usage)
 - [Configuration](#configuration)
 	- [Limitations and know issues](#limitations-and-know-issues)
+
+
+## LIKE
+
+For simple search in text can be used operator `LIKE`. It search strings which match a pattern. In the pattern `_` means any char and `%` means any sequence of chars.
+
+```
+	In Go:
+	query := db.Query("items").
+		Where("field", reindexer.LIKE, "pattern")
+
+	In SQL:
+	SELECT * FROM items WHERE fields LIKE 'pattern'
+```
+
+```
+	'me_t' corresponds to 'meet', 'meat', 'melt' and so on
+	'%tion' corresponds to 'tion', 'condition', 'creation' and so on
+```
 
 
 ## Define full text index fields
@@ -91,7 +111,7 @@ The format of query is:
 
 ### Escape character
 `\` character allows to include any special character (`+`,`-`,`@`,`*`,`^`,`~`) to a word to be searched:
-`\*crisis` means to search literally `*crisis` and not all words that end with 'crisis'. 
+`\*crisis` means to search literally `*crisis` and not all words that end with 'crisis'.
 
 ## Examples of text queris
 
@@ -207,25 +227,30 @@ Several parameters of full text search engine can be configured from application
 Here is list of available parameters:
 
 
-|   | Parameter name |   Type   |                                                                                                                        Description                                                                                                                        | Default value |
-|---|:--------------:|:--------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|:-------------:|
-|   | Bm25Boost      |   float  | Boost of bm25 ranking                                                                                                                                                                                                                                     |       1       |
-|   | Bm25Weight     |   float  | Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to finl rank in 0 - 100% range.                                                                                                                                 | 0.5           |
-|   | DistanceBoost  |   float  | Boost of search query term distance in found document.                                                                                                                                                                                                    |       1       |
-|   | DistanceWeight |   float  | Weight of search query terms distance in found document in final rank 0: distance will not change final rank. 1: distance will affect to final rank in 0 - 100% range.                                                                                    |      0.5      |
-|   | TermLenBoost   |   float  | Boost of search query term length                                                                                                                                                                                                                         |       1       |
-|   | TermLenWeight  |   float  | Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range                                                                                                   |      0.3      |
-|   | MinRelevancy   |   float  | Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned                                                                                                                        |      0.05     |
-|   | MaxTyposInWord |    int   | Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 1 possible typo -It will seriously increase RAM usage, and decrease search speed |       1       |
-|   | MaxTypoLen     |    int   | Maximum word length for building and matching variants with typos.                                                                                                                                                                                        |       15      |
-|   | MaxRebuildSteps |    int   | Maximum steps withou full rebuild of ft - more steps faster commit slower select - optimal about 15.                                                                                                                                                   |       50       |
-|   | MaxStepSize |    int   | Maximum unique words to step                                                                                                                                                                                                                                 |       4000       |
-|   | MergeLimit     |    int   | Maximum documents count which will be processed in merge query results.  Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed                                                                    |     20000     |
-|   | Stemmers       | []string | List of stemmers to use                                                                                                                                                                                                                                   | "en","ru"     |
-|   | EnableTranslit |   bool   | Enable russian translit variants processing. e.g. term "luntik" will match word "лунтик"                                                                                                                                                                  |      true     |
-|   | EnableKbLayout |   bool   | Enable wrong keyboard layout variants processing. e.g. term "keynbr" will match word "лунтик"                                                                                                                                                             |      true     |
-|   | StopWords      | []string | List of stop words. Words from this list will be ignored in documents and queries                                                                                                                                                                         |               |
-|   | LogLevel       |    int   | Log level of full text search engine                                                                                                                                                                                                                      |       0       |
+|   |    Parameter name    |   Type   |                                                                                                                        Description                                                                                                                        | Default value |
+|---|:--------------------:|:--------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|:-------------:|
+|   | Bm25Boost            |   float  | Boost of bm25 ranking                                                                                                                                                                                                                                     |       1       |
+|   | Bm25Weight           |   float  | Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to finl rank in 0 - 100% range.                                                                                                                                 |      0.5      |
+|   | DistanceBoost        |   float  | Boost of search query term distance in found document.                                                                                                                                                                                                    |       1       |
+|   | DistanceWeight       |   float  | Weight of search query terms distance in found document in final rank 0: distance will not change final rank. 1: distance will affect to final rank in 0 - 100% range.                                                                                    |      0.5      |
+|   | TermLenBoost         |   float  | Boost of search query term length                                                                                                                                                                                                                         |       1       |
+|   | TermLenWeight        |   float  | Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range                                                                                                   |      0.3      |
+|   | PositionBoost        |   float  | Boost of search query term position                                                                                                                                                                                                                       |      1.0      |
+|   | PositionWeight       |   float  | Weight of search query term position in final rank. 0: term position will not change final rank. 1: term position will affect to final rank in 0 - 100% range                                                                                             |      0.1      |
+|   | FullMatchBoost       |   float  | Boost of full match of search phrase with doc                                                                                                                                                                                                             |      1.1      |
+|   | PartialMatchDecrease |    int   | Decrease of relevancy in case of partial match by value: partial_match_decrease * (non matched symbols) / (matched symbols)                                                                                                                               |       15      |
+|   | MinRelevancy         |   float  | Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned                                                                                                                        |      0.05     |
+|   | MaxTyposInWord       |    int   | Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 1 possible typo -It will seriously increase RAM usage, and decrease search speed |       1       |
+|   | MaxTypoLen           |    int   | Maximum word length for building and matching variants with typos.                                                                                                                                                                                        |       15      |
+|   | MaxRebuildSteps      |    int   | Maximum steps withou full rebuild of ft - more steps faster commit slower select - optimal about 15.                                                                                                                                                      |       50      |
+|   | MaxStepSize          |    int   | Maximum unique words to step                                                                                                                                                                                                                              |      4000     |
+|   | MergeLimit           |    int   | Maximum documents count which will be processed in merge query results.  Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed                                                                    |     20000     |
+|   | Stemmers             | []string | List of stemmers to use                                                                                                                                                                                                                                   |    "en","ru"  |
+|   | EnableTranslit       |   bool   | Enable russian translit variants processing. e.g. term "luntik" will match word "лунтик"                                                                                                                                                                  |      true     |
+|   | EnableKbLayout       |   bool   | Enable wrong keyboard layout variants processing. e.g. term "keynbr" will match word "лунтик"                                                                                                                                                             |      true     |
+|   | StopWords            | []string | List of stop words. Words from this list will be ignored in documents and queries                                                                                                                                                                         |               |
+|   | LogLevel             |    int   | Log level of full text search engine                                                                                                                                                                                                                      |       0       |
+|   | FieldsCfg            | []struct | Configs for certain fields. Overlaps parameters from main config. Contains parameters: FieldName, Bm25Boost, Bm25Weight, TermLenBoost, TermLenWeight, PositionBoost, PositionWeight.                                                                         |     empty     |
 
 ### Limitations and know issues
 

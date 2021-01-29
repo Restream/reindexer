@@ -117,7 +117,7 @@ void ServerControl::Interface::SetWALSize(int64_t size, string_view nsName) {
 
 ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const std::string& ReplicationConfigFilename,
 									const std::string& StoragePath, unsigned short httpPort, unsigned short rpcPort,
-									const std::string& dbName, bool enableStats)
+									const std::string& dbName, bool enableStats, size_t maxUpdatesSize)
 	: id_(id),
 	  stopped_(stopped),
 	  kReplicationConfigFilename(ReplicationConfigFilename),
@@ -147,7 +147,9 @@ ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const 
         "   corelog: " + getLogName("core", true) + "\n"
         "net:\n"
         "   httpaddr: 0.0.0.0:" + std::to_string(kHttpPort) + "\n"
-        "   rpcaddr: 0.0.0.0:" + std::to_string(kRpcPort);
+		"   rpcaddr: 0.0.0.0:" + std::to_string(kRpcPort) + "\n" +
+		(maxUpdatesSize?
+		"   maxupdatessize:" + std::to_string(maxUpdatesSize)+"\n" : "");
 	// clang-format on
 
 	auto err = srv.InitFromYAML(yaml);
@@ -231,10 +233,10 @@ ServerControl::Interface::Ptr ServerControl::Get(bool wait) {
 }
 
 void ServerControl::InitServer(size_t id, unsigned short rpcPort, unsigned short httpPort, const std::string& storagePath,
-							   const std::string& dbName, bool enableStats) {
+							   const std::string& dbName, bool enableStats, size_t maxUpdatesSize) {
 	WLock lock(mtx_);
 	auto srvInterface = std::make_shared<ServerControl::Interface>(id, *stopped_, kReplicationConfigFilename, storagePath, httpPort,
-																   rpcPort, dbName, enableStats);
+																   rpcPort, dbName, enableStats, maxUpdatesSize);
 	interface = srvInterface;
 }
 void ServerControl::Drop() {

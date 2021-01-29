@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cmath>
 #include <functional>
+#include <limits>
 
 namespace reindexer {
 

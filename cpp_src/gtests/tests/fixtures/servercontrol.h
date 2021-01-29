@@ -77,7 +77,7 @@ public:
 	struct Interface {
 		typedef std::shared_ptr<Interface> Ptr;
 		Interface(size_t id, std::atomic_bool& stopped, const std::string& ReplicationConfigFilename, const std::string& StoragePath,
-				  unsigned short httpPort, unsigned short rpcPort, const std::string& dbName, bool enableStats);
+				  unsigned short httpPort, unsigned short rpcPort, const std::string& dbName, bool enableStats, size_t maxUpdatesSize = 0);
 		~Interface();
 		// Stop server
 		void Stop();
@@ -117,7 +117,7 @@ public:
 	// Get server - wait means wait until server starts if no server
 	Interface::Ptr Get(bool wait = true);
 	void InitServer(size_t id, unsigned short rpcPort, unsigned short httpPort, const std::string& storagePath, const std::string& dbName,
-					bool enableStats);
+					bool enableStats, size_t maxUpdatesSize = 0);
 	void Drop();
 	bool IsRunning();
 

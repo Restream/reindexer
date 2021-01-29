@@ -98,7 +98,7 @@ public:
 		/// Get Variant with field value
 		/// If field is array, and contains not exact 1 element, then throws reindexer::Error
 		/// @return Variant object with field value
-		operator Variant();
+		operator Variant() const;
 		/// Get VariantArray with field values. If field is not array, then 1 elemnt will be returned
 		/// @return VariantArray with field values
 		operator VariantArray() const;

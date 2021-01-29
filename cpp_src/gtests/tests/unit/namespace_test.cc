@@ -182,7 +182,7 @@ TEST_F(NsApi, UpdateIndex) {
 	ASSERT_FALSE(err.ok());
 	EXPECT_EQ(err.what(), "Unsupported combination of field 'id' type 'double' and index type 'hash'");
 
-	auto newIdx = reindexer::IndexDef(idIdxName, "-", "int64", IndexOpts().PK().Dense());
+	auto newIdx = reindexer::IndexDef(idIdxName, "tree", "int64", IndexOpts().PK().Dense());
 	err = rt.reindexer->UpdateIndex(default_namespace, newIdx);
 	ASSERT_TRUE(err.ok()) << err.what();
 

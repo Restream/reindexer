@@ -104,13 +104,21 @@ void IndexDef::FromType(IndexType type) {
 }
 
 const vector<string> &IndexDef::Conditions() const { return availableIndexes.find(Type())->second.conditions; }
-bool isComposite(IndexType type) {
+
+bool isComposite(IndexType type) noexcept {
 	return type == IndexCompositeBTree || type == IndexCompositeFastFT || type == IndexCompositeFuzzyFT || type == IndexCompositeHash;
 }
-bool isFullText(IndexType type) {
+
+bool isFullText(IndexType type) noexcept {
 	return type == IndexFastFT || type == IndexFuzzyFT || type == IndexCompositeFastFT || type == IndexCompositeFuzzyFT;
 }
+
 bool isSortable(IndexType type) { return availableIndexes.at(type).caps & CapSortable; }
+
+bool isStore(IndexType type) noexcept {
+	return type == IndexIntStore || type == IndexInt64Store || type == IndexStrStore || type == IndexDoubleStore || type == IndexBool;
+}
+
 string IndexDef::getCollateMode() const { return availableCollates.at(opts_.GetCollateMode()); }
 
 Error IndexDef::FromJSON(span<char> json) {
@@ -224,6 +232,20 @@ void IndexDef::GetJSON(WrSerializer &ser, int formatFlags) const {
 	for (auto &jsonPath : jsonPaths_) {
 		arrNode.Put(nullptr, jsonPath);
 	}
+}
+
+bool validateIndexName(string_view name, IndexType type) noexcept {
+	if (!name.length()) {
+		return false;
+	}
+	for (auto c : name) {
+		if (!(std::isalpha(c) || std::isdigit(c) || c == '.' || c == '_' || c == '-')) {
+			if (!(c == '+' && isComposite(type))) {
+				return false;
+			}
+		}
+	}
+	return true;
 }
 
 }  // namespace reindexer

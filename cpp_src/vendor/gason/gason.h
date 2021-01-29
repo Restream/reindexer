@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <limits>
 #include <stdexcept>
 #include <type_traits>
 #include "estl/span.h"

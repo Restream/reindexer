@@ -22,6 +22,7 @@ struct connection_stat {
 	std::atomic<uint32_t> send_rate{0};
 	std::atomic<uint32_t> recv_rate{0};
 	int64_t start_time{0};
+	std::atomic_int_fast64_t updates_lost{0};
 };
 
 class connection_stats_collector {

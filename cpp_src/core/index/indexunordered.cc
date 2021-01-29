@@ -192,9 +192,13 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 						}
 					}
 					if (!ctx.opts.itemsCountInNamespace) return false;
-					// Check selectivity
-					return ctx.opts.conditionInQuery > minQueryConditionsForIdset() && res.size() > 1u &&
-						   (100u * idsCount / ctx.opts.itemsCountInNamespace > maxSelectivityPercentForIdset());
+					// if (ctx.opts.indexesNotOptimized) idsCount *= 2;
+					// Check selectivity:
+					// if ids count too much (more than 20% of namespace),
+					// and index not optimized, or we have >4 other conditions
+
+					return res.size() > 1u && ((int(idsCount * 2) > ctx.opts.maxIterations) ||
+											   (100u * idsCount / ctx.opts.itemsCountInNamespace > maxSelectivityPercentForIdset()));
 				};
 
 				bool scanWin = false;

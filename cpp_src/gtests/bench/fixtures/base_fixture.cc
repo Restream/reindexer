@@ -18,7 +18,7 @@ Error BaseFixture::Initialize() {
 }
 
 void BaseFixture::RegisterAllCases() {
-	Register("Insert", &BaseFixture::Insert, this)->Iterations(id_seq_->Count());
+	Register("Insert" + std::to_string(id_seq_->Count()), &BaseFixture::Insert, this)->Iterations(1);
 	Register("Update", &BaseFixture::Update, this)->Iterations(id_seq_->Count());
 }
 
@@ -27,13 +27,14 @@ void BaseFixture::RegisterAllCases() {
 void BaseFixture::Insert(State& state) {
 	benchmark::AllocsTracker allocsTracker(state);
 	for (auto _ : state) {
-		auto item = MakeItem();
-		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+		for (int i = 0; i < id_seq_->Count(); ++i) {
+			auto item = MakeItem();
+			if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
 
-		auto err = db_->Insert(nsdef_.name, item);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
-
-		state.SetItemsProcessed(state.items_processed() + 1);
+			auto err = db_->Insert(nsdef_.name, item);
+			if (!err.ok()) state.SkipWithError(err.what().c_str());
+			state.SetItemsProcessed(state.items_processed() + 1);
+		}
 	}
 
 	auto err = db_->Commit(nsdef_.name);

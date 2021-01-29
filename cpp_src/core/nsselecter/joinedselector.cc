@@ -188,7 +188,11 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 			for (auto &key : values) key.EnsureUTF8();
 		}
 		bool was = false;
-		for (SelectKeyResult &res : leftIndex->SelectKey(values, CondSet, sortId, {}, ctx, rdxCtx)) {
+		Index::SelectOpts opts;
+		opts.maxIterations = iterators.GetMaxIterations();
+		opts.indexesNotOptimized = !leftNs_->SortOrdersBuilt();
+
+		for (SelectKeyResult &res : leftIndex->SelectKey(values, CondSet, sortId, opts, ctx, rdxCtx)) {
 			if (!res.comparators_.empty()) continue;
 			SelectIterator selIter{res, false, joinEntry.index_, false};
 			selIter.Bind(leftNs_->payloadType_, joinEntry.idxNo);

@@ -51,8 +51,10 @@ public:
 	int64_t expireAfter_ = 0;
 };
 
-bool isComposite(IndexType type);
-bool isFullText(IndexType type);
+bool isComposite(IndexType type) noexcept;
+bool isFullText(IndexType type) noexcept;
 bool isSortable(IndexType type);
+bool isStore(IndexType type) noexcept;
+bool validateIndexName(string_view name, IndexType type) noexcept;
 
 }  // namespace reindexer

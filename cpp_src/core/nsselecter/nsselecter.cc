@@ -13,15 +13,6 @@ constexpr int kMaxIterationsForIdsetPreresult = 10000;
 
 namespace reindexer {
 
-static int GetMaxIterations(const SelectIteratorContainer &iterators, bool withZero = false) {
-	int maxIterations = std::numeric_limits<int>::max();
-	iterators.ForEachIterator([&maxIterations, withZero](const SelectIterator &it) {
-		int cur = it.GetMaxIterations();
-		if (it.comparators_.empty() && (cur || withZero) && cur < maxIterations) maxIterations = cur;
-	});
-	return maxIterations;
-}
-
 void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxContext &rdxCtx) {
 	const size_t resultInitSize = result.Count();
 	ctx.sortingContext.enableSortOrders = ns_->SortOrdersBuilt();
@@ -161,14 +152,14 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 
 		explain.AddSelectTime();
 
-		int maxIterations = GetMaxIterations(qres);
+		int maxIterations = qres.GetMaxIterations();
 		if (ctx.preResult) {
 			if (ctx.preResult->executionMode == JoinPreResult::ModeBuild) {
 				// Building pre result for next joins
 
 				static_assert(kMaxIterationsForIdsetPreresult > JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization(), "");
 				if (ctx.preResult->enableStoredValues &&
-					GetMaxIterations(qres, true) <= JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization()) {
+					qres.GetMaxIterations(true) <= JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization()) {
 					ctx.preResult->dataMode = JoinPreResult::ModeValues;
 					ctx.preResult->values.tagsMatcher = ns_->tagsMatcher_;
 					ctx.preResult->values.payloadType = ns_->payloadType_;
@@ -284,6 +275,14 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	}
 	for (auto &aggregator : aggregators) {
 		result.aggregationResults.push_back(aggregator.GetResult());
+	}
+	//	Put count/count_cached to aggretions
+	if (ctx.query.calcTotal != ModeNoTotal) {
+		AggregationResult ret;
+		ret.fields = {"*"};
+		ret.type = ctx.query.calcTotal == ModeAccurateTotal ? AggCount : AggCountCached;
+		ret.value = result.totalCount;
+		result.aggregationResults.push_back(ret);
 	}
 
 	explain.StopTiming();
@@ -985,7 +984,7 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 
 	size_t costNormal = ns_->items_.size() - ns_->free_.size();
 
-	qentries.ForEachEntry([this, &ctx, &rdxCtx, &costNormal, &qentries](const QueryEntry &qe) {
+	qentries.ForEachEntry([this, &ctx, &rdxCtx, &costNormal](const QueryEntry &qe) {
 		if (qe.idxNo < 0 || qe.idxNo == ctx.sortingContext.uncommitedIndex) return;
 		if (costNormal == 0) return;
 
@@ -995,7 +994,7 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 		Index::SelectOpts opts;
 		opts.disableIdSetCache = 1;
 		opts.itemsCountInNamespace = ns_->items_.size() - ns_->free_.size();
-		opts.conditionInQuery = qentries.Size();
+		opts.indexesNotOptimized = !ctx.sortingContext.enableSortOrders;
 
 		try {
 			SelectKeyResults reslts = index->SelectKey(qe.values, qe.condition, 0, opts, nullptr, rdxCtx);
@@ -1012,14 +1011,14 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 	costNormal *= 2;
 	if (costNormal < costOptimized) {
 		costOptimized = costNormal + 1;
-		qentries.ForEachEntry([this, &ctx, &rdxCtx, &costOptimized, &qentries](const QueryEntry &qe) {
+		qentries.ForEachEntry([this, &ctx, &rdxCtx, &costOptimized](const QueryEntry &qe) {
 			if (qe.idxNo < 0 || qe.idxNo != ctx.sortingContext.uncommitedIndex) return;
 
 			Index::SelectOpts opts;
 			opts.itemsCountInNamespace = ns_->items_.size() - ns_->free_.size();
-			opts.conditionInQuery = qentries.Size();
 			opts.disableIdSetCache = 1;
 			opts.unbuiltSortOrders = 1;
+			opts.indexesNotOptimized = !ctx.sortingContext.enableSortOrders;
 
 			try {
 				SelectKeyResults reslts = ns_->indexes_[qe.idxNo]->SelectKey(qe.values, qe.condition, 0, opts, nullptr, rdxCtx);

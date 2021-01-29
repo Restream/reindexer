@@ -123,3 +123,18 @@ TEST_F(TransactionApi, ConcurrencyTest) {
 		ASSERT_TRUE(idIsCorrect);
 	}
 }
+
+TEST_F(TransactionApi, IndexesOptimizeTest) {
+	// Add 15000 items to ns. With default settings this should call
+	// transaction with ns copy & atomic change
+	AddDataToNsTx(0, 15000, "data");
+	// Fetch optimization state
+	reindexer::QueryResults qr;
+	Error err = rt.reindexer->Select(Query("#memstats").Where("name", CondEq, default_namespace), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(1, qr.Count());
+
+	// Ensure, that ns indexes is in optimized state immediately after tx done
+	bool optimization_completed = qr[0].GetItem()["optimization_completed"].Get<bool>();
+	ASSERT_EQ(true, optimization_completed);
+}

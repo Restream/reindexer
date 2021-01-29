@@ -25,7 +25,7 @@ Item &Item::operator=(Item &&other) noexcept {
 
 string_view Item::FieldRef::Name() const { return field_ >= 0 ? itemImpl_->Type().Field(field_).Name() : jsonPath_; }
 
-Item::FieldRef::operator Variant() {
+Item::FieldRef::operator Variant() const {
 	VariantArray kr;
 	if (field_ >= 0)
 		itemImpl_->GetPayload().Get(field_, kr);

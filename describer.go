@@ -308,6 +308,9 @@ type ClientConnectionStat struct {
 			} `json:"filters"`
 		} `json:"namespaces"`
 	} `json:"updates_filter"`
+	// Updates lost call count
+	UpdatesLost int `json:"updates_lost"`
+
 }
 
 // QueryPerfStat is information about query's performance statistics

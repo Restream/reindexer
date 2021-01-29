@@ -6,6 +6,7 @@
 #include <mutex>
 
 #include "cgocancelcontextpool.h"
+#include "core/cjson/baseencoder.h"
 #include "core/selectfunc/selectfuncparser.h"
 #include "core/transactionimpl.h"
 #include "debug/allocdebug.h"
@@ -571,6 +572,27 @@ reindexer_error reindexer_update_query_tx(uintptr_t rx, uintptr_t tr, reindexer_
 
 	return error2c(errOK);
 }
+
+reindexer_buffer reindexer_cptr2cjson(uintptr_t results_ptr, uintptr_t cptr, int ns_id) {
+	QueryResults* qr = reinterpret_cast<QueryResults*>(results_ptr);
+	cptr -= sizeof(PayloadValue::dataHeader);
+
+	PayloadValue* pv = reinterpret_cast<PayloadValue*>(&cptr);
+	auto& tagsMatcher = qr->getTagsMatcher(ns_id);
+	auto& payloadType = qr->getPayloadType(ns_id);
+
+	WrSerializer ser;
+	ConstPayload pl(payloadType, *pv);
+	CJsonBuilder builder(ser, ObjType::TypePlain);
+	CJsonEncoder cjsonEncoder(&tagsMatcher);
+
+	cjsonEncoder.Encode(&pl, builder);
+	int n = ser.Len();
+	uint8_t* p = ser.DetachBuf().release();
+	return reindexer_buffer{p, n};
+}
+
+void reindexer_free_cjson(reindexer_buffer b) { delete[] b.data; }
 
 reindexer_error reindexer_put_meta(uintptr_t rx, reindexer_string ns, reindexer_string key, reindexer_string data,
 								   reindexer_ctx_info ctx_info) {

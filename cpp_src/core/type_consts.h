@@ -118,6 +118,7 @@ enum ErrorCode {
 	errNamespaceInvalidated = 23,
 	errParseMsgPack = 24,
 	errParseProtobuf = 25,
+	errUpdatesLost = 26,
 };
 
 enum SchemaType { JsonSchemaType, ProtobufSchemaType };
@@ -128,7 +129,7 @@ enum OpType { OpOr = 1, OpAnd = 2, OpNot = 3 };
 
 enum ArithmeticOpType { OpPlus = 0, OpMinus = 1, OpMult = 2, OpDiv = 3 };
 
-enum AggType { AggSum, AggAvg, AggFacet, AggMin, AggMax, AggDistinct, AggUnknown = -1 };
+enum AggType { AggSum, AggAvg, AggFacet, AggMin, AggMax, AggDistinct, AggCount, AggCountCached, AggUnknown = -1 };
 
 enum JoinType { LeftJoin, InnerJoin, OrInnerJoin, Merge };
 

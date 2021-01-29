@@ -31,6 +31,8 @@ void RPCUpdatesPusher::OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRe
 	});
 }
 
+void RPCUpdatesPusher::OnUpdatesLost(string_view) {}
+
 void RPCUpdatesPusher::OnConnectionState(const Error &) {}
 
 }  // namespace cproto

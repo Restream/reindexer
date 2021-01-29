@@ -14,8 +14,8 @@ using std::unique_ptr;
 using std::atomic;
 using std::thread;
 
-const std::string kDefaultRPCPort = "25673";
-const std::string kDefaultRPCServerAddr = "127.0.0.1:" + kDefaultRPCPort;
+const std::string kDefaultRPCPort = "25673";							   // -V1043
+const std::string kDefaultRPCServerAddr = "127.0.0.1:" + kDefaultRPCPort;  // -V1043
 constexpr uint16_t kDefaultHttpPort = 33333;
 
 class RPCClientTestApi : public ::testing::Test {
@@ -61,6 +61,7 @@ protected:
 
 		void OnWALUpdate(LSNPair, string_view nsName, const WALRecord&) override final;
 		void OnConnectionState(const Error&) override final {}
+		void OnUpdatesLost(string_view) override final {}
 
 		using map = tsl::hopscotch_map<std::string, size_t, nocase_hash_str, nocase_equal_str>;
 		// using map = std::unordered_map<std::string, size_t>;

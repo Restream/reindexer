@@ -3,6 +3,7 @@
 #ifndef WIN32
 #include <signal.h>
 #include <unistd.h>
+#include <limits>
 #include "estl/span.h"
 #include "resolver.h"
 

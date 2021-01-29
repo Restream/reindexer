@@ -1,13 +1,12 @@
-
-
 #include "ftfuzzyconfig.h"
 #include <string.h>
 #include "core/ft/stopwords/stop.h"
 #include "tools/errors.h"
 #include "tools/jsontools.h"
+
 namespace reindexer {
 
-void FtFuzzyConfig::parse(string_view json) {
+void FtFuzzyConfig::parse(string_view json, const fast_hash_map<string, int> &) {
 	if (json.empty()) return;
 
 	try {

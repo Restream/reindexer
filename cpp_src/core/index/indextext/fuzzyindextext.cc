@@ -68,7 +68,7 @@ void FuzzyIndexText<T>::CreateConfig(const FtFuzzyConfig* cfg) {
 		return;
 	}
 	this->cfg_.reset(new FtFuzzyConfig());
-	this->cfg_->parse(this->opts_.config);
+	this->cfg_->parse(this->opts_.config, this->ftFields_);
 }
 
 Index* FuzzyIndexText_New(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields) {

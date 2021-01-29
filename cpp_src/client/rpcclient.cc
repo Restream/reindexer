@@ -681,15 +681,22 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 		delayedUpdates_.emplace_back(std::move(ans));
 		return;
 	}
-
 	cproto::Args args;
 	try {
-		args = ans.GetArgs(3);
+		args = ans.GetArgs();
 	} catch (const Error& err) {
 		logPrintf(LogError, "Parsing updates error: %s", err.what());
 		return;
 	}
-
+	if (args.size() == 1) {
+		string_view nsName(args[0]);
+		observers_.OnUpdatesLost(nsName);
+		return;
+	}
+	if (args.size() < 3) {
+		logPrintf(LogError, "Parsing updates error: args count %d", args.size());
+		return;
+	}
 	lsn_t lsn{int64_t(args[0])};
 	string_view nsName(args[1]);
 	string_view pwalRec(args[2]);
@@ -744,7 +751,6 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 			}
 		}
 	}
-
 	observers_.OnWALUpdate(LSNPair(lsn, originLSN), nsName, wrec);
 }
 

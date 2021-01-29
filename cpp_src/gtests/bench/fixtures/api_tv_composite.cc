@@ -53,7 +53,7 @@ reindexer::Item ApiTvComposite::MakeItem() {
 void ApiTvComposite::RegisterAllCases() {
 	// Skip BaseFixture::Update
 
-	Register("Insert", &ApiTvComposite::Insert, this)->Iterations(id_seq_->Count());
+	Register("Insert" + std::to_string(id_seq_->Count()), &ApiTvComposite::Insert, this)->Iterations(1);
 	Register("WarmUpIndexes", &ApiTvComposite::WarmUpIndexes, this)->Iterations(1);
 	Register("GetByCompositePK", &ApiTvComposite::GetByCompositePK, this);
 

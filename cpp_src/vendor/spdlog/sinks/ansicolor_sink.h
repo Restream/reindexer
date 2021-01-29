@@ -40,7 +40,7 @@ public:
 
     ~ansicolor_sink() override
     {
-        _flush();
+        ansicolor_sink::_flush();
     }
 
     void set_color(level::level_enum color_level, const std::string& color)

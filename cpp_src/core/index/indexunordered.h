@@ -45,8 +45,7 @@ protected:
 	UpdateTracker<T> tracker_;
 };
 
-constexpr inline unsigned maxSelectivityPercentForIdset() noexcept { return 20u; }
-constexpr inline unsigned minQueryConditionsForIdset() noexcept { return 5u; }
+constexpr inline unsigned maxSelectivityPercentForIdset() noexcept { return 25u; }
 
 Index *IndexUnordered_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields);
 

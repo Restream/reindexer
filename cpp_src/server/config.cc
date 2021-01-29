@@ -39,6 +39,7 @@ void ServerConfig::Reset() {
 	Autorepair = false;
 	EnableConnectionsStats = true;
 	TxIdleTimeout = std::chrono::seconds(600);
+	MaxUpdatesSize = 1024 * 1024 * 1024;
 	EnableGRPC = false;
 }
 
@@ -101,6 +102,8 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::Flag grpcF(netGroup, "", "Enable gRpc service", {"grpc"});
 #endif
 	args::ValueFlag<string> webRootF(netGroup, "PATH", "web root", {'w', "webroot"}, WebRoot, args::Options::Single);
+	args::ValueFlag<size_t> maxUpdatesSizeF(netGroup, "", "Maximum cached updates size", {"updatessize"}, MaxUpdatesSize,
+											args::Options::Single);
 	args::Flag pprofF(netGroup, "", "Enable pprof http handler", {'f', "pprof"});
 	args::ValueFlag<int> txIdleTimeoutF(dbGroup, "", "http transactions idle timeout (s)", {"tx-idle-timeout"}, TxIdleTimeout.count(),
 										args::Options::Single);
@@ -179,6 +182,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (clientsConnectionsStatF) EnableConnectionsStats = args::get(clientsConnectionsStatF);
 	if (logAllocsF) DebugAllocs = args::get(logAllocsF);
 	if (txIdleTimeoutF) TxIdleTimeout = std::chrono::seconds(args::get(txIdleTimeoutF));
+	if (maxUpdatesSizeF) MaxUpdatesSize = args::get(maxUpdatesSizeF);
 
 	return 0;
 }
@@ -197,6 +201,7 @@ reindexer::Error ServerConfig::fromYaml(Yaml::Node &root) {
 		HTTPAddr = root["net"]["httpaddr"].As<std::string>(HTTPAddr);
 		RPCAddr = root["net"]["rpcaddr"].As<std::string>(RPCAddr);
 		WebRoot = root["net"]["webroot"].As<std::string>(WebRoot);
+		MaxUpdatesSize = root["net"]["maxupdatessize"].As<size_t>(MaxUpdatesSize);
 		EnableSecurity = root["net"]["security"].As<bool>(EnableSecurity);
 		EnableGRPC = root["net"]["grpc"].As<bool>(EnableGRPC);
 		GRPCAddr = root["net"]["grpcaddr"].As<std::string>(GRPCAddr);

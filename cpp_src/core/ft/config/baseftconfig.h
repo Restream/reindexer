@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
 #include "estl/string_view.h"
 #include "tools/stringstools.h"
@@ -26,7 +27,7 @@ public:
 	BaseFTConfig();
 	virtual ~BaseFTConfig() = default;
 
-	virtual void parse(string_view sv) = 0;
+	virtual void parse(string_view sv, const fast_hash_map<string, int>& fields) = 0;
 
 	int mergeLimit = 20000;
 	vector<string> stemmers = {"en", "ru"};

@@ -95,7 +95,7 @@ void ItemImpl::ModifyField(string_view jsonPath, const VariantArray &keys, Field
 	}
 	if (!err.ok()) throw Error(errLogic, "Error modifying field value: '%s'", err.what());
 
-	tupleData_ = ser_.DetachBuf();
+	tupleData_ = ser_.DetachLStr();
 	pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
 }
 
@@ -114,7 +114,7 @@ Error ItemImpl::FromMsgPack(string_view buf, size_t &offset) {
 	ser_.PutUInt32(0);
 	Error err = msgPackDecoder_->Decode(buf, &pl, ser_, offset);
 	if (err.ok()) {
-		tupleData_ = ser_.DetachBuf();
+		tupleData_ = ser_.DetachLStr();
 		pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
 	}
 	return err;
@@ -129,7 +129,7 @@ Error ItemImpl::FromProtobuf(string_view buf) {
 	ser_.PutUInt32(0);
 	Error err = decoder.Decode(buf, &pl, ser_);
 	if (err.ok()) {
-		tupleData_ = ser_.DetachBuf();
+		tupleData_ = ser_.DetachLStr();
 		pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
 	}
 	return err;
@@ -194,7 +194,7 @@ Error ItemImpl::FromCJSON(const string_view &slice, bool pkOnly) {
 
 	if (err.ok() && !rdser.Eof()) return Error(errParseJson, "Internal error - left unparsed data %d", rdser.Pos());
 
-	tupleData_ = ser_.DetachBuf();
+	tupleData_ = ser_.DetachLStr();
 	pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
 	return err;
 }
@@ -243,7 +243,7 @@ Error ItemImpl::FromJSON(string_view slice, char **endp, bool pkOnly) {
 	auto err = decoder.Decode(&pl, ser_, value);
 
 	// Put tuple to field[0]
-	tupleData_ = ser_.DetachBuf();
+	tupleData_ = ser_.DetachLStr();
 	pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
 	return err;
 }

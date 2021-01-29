@@ -101,6 +101,7 @@ protected:
 
 	void OnWALUpdate(reindexer::LSNPair LSNs, string_view nsName, const reindexer::WALRecord& wrec) override final;
 	void OnConnectionState(const Error& err) override;
+	void OnUpdatesLost(string_view nsName) override final;
 
 	DBInterface db() { return db_.WithContext(&cancelCtx_); }
 
@@ -210,7 +211,7 @@ protected:
          Creates new database.
          )help"}
     };
-    // clang-format on
+	// clang-format on
 
 	reindexer::net::ev::dynamic_loop loop_;
 	CancelContext cancelCtx_;

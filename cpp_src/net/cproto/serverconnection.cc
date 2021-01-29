@@ -3,6 +3,7 @@
 #include "serverconnection.h"
 #include <errno.h>
 #include <snappy.h>
+#include "tools/logger.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -13,8 +14,8 @@ const auto kCProtoTimeoutSec = 300.;
 const auto kUpdatesResendTimeout = 0.1;
 const auto kMaxUpdatesBufSize = 1024 * 1024 * 8;
 
-ServerConnection::ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher, bool enableStat)
-	: net::ConnectionST(fd, loop, enableStat), dispatcher_(dispatcher) {
+ServerConnection::ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher, bool enableStat, size_t maxUpdatesSize)
+	: net::ConnectionST(fd, loop, enableStat), dispatcher_(dispatcher), maxUpdatesSize_(maxUpdatesSize) {
 	timeout_.start(kCProtoTimeoutSec);
 	updates_async_.set<ServerConnection, &ServerConnection::async_cb>(this);
 	updates_timeout_.set<ServerConnection, &ServerConnection::timeout_cb>(this);
@@ -23,6 +24,8 @@ ServerConnection::ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &d
 
 	updates_timeout_.start(kUpdatesResendTimeout, kUpdatesResendTimeout);
 	updates_async_.start();
+
+	updatesSize_ = 0;
 
 	callback(io_, ev::READ);
 }
@@ -67,6 +70,7 @@ void ServerConnection::onClose() {
 	clientData_.reset();
 	std::unique_lock<std::mutex> lck(updates_mtx_);
 	updates_.clear();
+	updatesSize_ = 0;
 	if (ConnectionST::stats_) ConnectionST::stats_->update_pended_updates(0);
 }
 
@@ -241,7 +245,42 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 
 void ServerConnection::CallRPC(const IRPCCall &call) {
 	std::unique_lock<std::mutex> lck(updates_mtx_);
+	size_t updatesSizeVal = updatesSize_;
+	if (updatesSizeVal > maxUpdatesSize_) {
+		updates_.clear();
+		Args args;
+		IRPCCall curCall = call;
+		CmdCode cmd;
+		curCall.Get(&curCall, cmd, args);
+		if (args.size() >= 3) {
+			string_view nsName(args[1]);
+			WrSerializer ser;
+			ser.PutVString(nsName);
+			intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> data;
+			data.reset(new intrusive_atomic_rc_wrapper<chunk>(ser.DetachChunk()));
+			IRPCCall callLost = {[](IRPCCall *callLost, CmdCode &cmd, Args &args) {
+									 Serializer ser(callLost->data_->data(), callLost->data_->size());
+									 auto nsName = ser.GetVString();
+									 cmd = kCmdUpdates;
+									 args = {Arg(std::string(nsName.data(), nsName.size()))};
+								 },
+								 data};
+			logPrintf(LogWarning, "Call updates lost");
+
+			updates_.emplace_back(callLost);
+		}
+
+		updatesSize_ = 0;
+		if (ConnectionST::stats_) {
+			auto stat = ConnectionST::stats_->get_stat();
+			if (stat) {
+				stat->updates_lost++;
+			}
+		}
+	}
 	updates_.emplace_back(call);
+	updatesSize_ += call.data_->size();
+
 	if (ConnectionST::stats_) {
 		auto stat = ConnectionST::stats_->get_stat();
 		if (stat) {
@@ -256,18 +295,22 @@ void ServerConnection::sendUpdates() {
 	}
 
 	std::vector<IRPCCall> updates;
+	size_t updatesSize;
 	updates_mtx_.lock();
 	updates.swap(updates_);
+	updatesSize = updatesSize_;
+	updatesSize_ = 0;
 	updates_mtx_.unlock();
-	RPCCall call{kCmdUpdates, 0, {}, milliseconds(0)};
-	cproto::Context ctx{"", &call, this, {{}, {}}, false};
+	RPCCall callUpdate{kCmdUpdates, 0, {}, milliseconds(0)};
+	cproto::Context ctx{"", &callUpdate, this, {{}, {}}, false};
 	size_t len = 0;
 	Args args;
 	CmdCode cmd;
-
 	WrSerializer ser(wrBuf_.get_chunk());
 	size_t cnt = 0;
+	int64_t sendCount = 0;
 	for (cnt = 0; cnt < updates.size() && ser.Len() < kMaxUpdatesBufSize; ++cnt) {
+		if (updates[cnt].data_) sendCount += updates[cnt].data_->size();
 		updates[cnt].Get(&updates[cnt], cmd, args);
 		packRPC(ser, ctx, Error(), args, enableSnappy_);
 	}
@@ -275,6 +318,7 @@ void ServerConnection::sendUpdates() {
 	if (cnt != updates.size()) {
 		std::unique_lock<std::mutex> lck(updates_mtx_);
 		updates_.insert(updates_.begin(), updates.begin() + cnt, updates.end());
+		updatesSize_ = updatesSize - sendCount;
 		if (ConnectionST::stats_) stats_->update_pended_updates(updates.size());
 	} else if (ConnectionST::stats_) {
 		auto stat = ConnectionST::stats_->get_stat();

@@ -94,7 +94,8 @@ public:
 	void Register(CmdCode cmd, K *object, Error (K::*func)(Context &, Args... args), bool hasOptionalArgs = false) {
 		if (!hasOptionalArgs) {
 			auto wrapper = [func](void *obj, Context &ctx) {
-				if (sizeof...(Args) > ctx.call->args.size())
+				auto reqArgs = sizeof...(Args);
+				if (reqArgs > ctx.call->args.size())
 					return Error(errParams, "Invalid args of %s call expected %d, got %d", CmdName(ctx.call->cmd), int(sizeof...(Args)),
 								 int(ctx.call->args.size()));
 				return func_wrapper(obj, func, ctx);

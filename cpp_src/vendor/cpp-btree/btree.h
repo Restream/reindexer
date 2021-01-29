@@ -100,6 +100,11 @@
 #ifndef UTIL_BTREE_BTREE_H__
 #define UTIL_BTREE_BTREE_H__
 
+#ifndef _MSC_VER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
+
 #include <assert.h>
 #include <stddef.h>
 #include <string.h>
@@ -2237,4 +2242,8 @@ int btree<P>::internal_verify(const node_type *node, const key_type *lo, const k
 
 }  // namespace btree
 
-#endif  // UTIL_BTREE_BTREE_H__
+#ifndef _MSC_VER
+#pragma GCC diagnostic pop
+#endif
+
+#endif	// UTIL_BTREE_BTREE_H__

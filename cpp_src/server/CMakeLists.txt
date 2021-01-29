@@ -56,7 +56,7 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
 	\"${PROJECT_BINARY_DIR}/face.zip\"
      )
      execute_process(
-	 COMMAND \"${CMAKE_COMMAND}\" -E remove_directory \"${PROJECT_BINARY_DIR}/face\"
+	 COMMAND \"${CMAKE_COMMAND}\" -E remove_directory \"${PROJECT_BINARY_DIR}/facestaging\"
 	 RESULT_VARIABLE ret
      )
      execute_process(

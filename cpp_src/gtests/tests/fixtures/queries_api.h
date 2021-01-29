@@ -423,8 +423,15 @@ public:
 											  << "explain: " << qr.GetExplainResults() << std::endl;
 		}
 
-		const auto& aggResults = qr.GetAggregationResults();
+		auto aggResults = qr.GetAggregationResults();
+		if (query.calcTotal != ModeNoTotal) {
+			// calcTotal from version 3.0.2  also return total count in aggregations, so we have remove it from here for
+			// clean compare aggresults with aggregations
+			aggResults.pop_back();
+		}
+
 		EXPECT_EQ(aggResults.size(), query.aggregations_.size());
+
 		if (aggResults.size() == query.aggregations_.size()) {
 			for (size_t i = 0; i < aggResults.size(); ++i) {
 				EXPECT_EQ(aggResults[i].type, query.aggregations_[i].type_) << "i = " << i;

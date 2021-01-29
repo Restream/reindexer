@@ -1,5 +1,27 @@
 package reindexer
 
+type FtFastFieldConfig struct {
+	FieldName string `json:"field_name"`
+	// boost of bm25 ranking. default value 1.
+	Bm25Boost float64 `json:"bm25_boost"`
+	// weight of bm25 rank in final rank.
+	// 0: bm25 will not change final rank.
+	// 1: bm25 will affect to final rank in 0 - 100% range
+	Bm25Weight float64 `json:"bm25_weight"`
+	// boost of search query term length. default value 1
+	TermLenBoost float64 `json:"term_len_boost"`
+	// weight of search query term length in final rank.
+	// 0: term length will not change final rank.
+	// 1: term length will affect to final rank in 0 - 100% range
+	TermLenWeight float64 `json:"term_len_weight"`
+	// boost of search query term position. default value 1
+	PositionBoost float64 `json:"position_boost"`
+	// weight of search query term position in final rank.
+	// 0: term position will not change final rank.
+	// 1: term position will affect to final rank in 0 - 100% range
+	PositionWeight float64 `json:"position_weight"`
+}
+
 // FtFastConfig configurarion of FullText search index
 type FtFastConfig struct {
 	// boost of bm25 ranking. default value 1.
@@ -28,6 +50,9 @@ type FtFastConfig struct {
 	PositionWeight float64 `json:"position_weight"`
 	// Boost of full match of search phrase with doc
 	FullMatchBoost float64 `json:"full_match_boost"`
+	// Relevancy step of partial match: relevancy = kFullMatchProc - partialMatchDecrease * (non matched symbols) / (matched symbols)
+	// For example: partialMatchDecrease: 15, word in index 'terminator', pattern 'termin'. matched: 6 symbols, unmatched: 4. relevancy = 100 - (15*4)/6 = 80
+	PartialMatchDecrease int `json:"partial_match_decrease"`
 	// Minimum rank of found documents
 	MinRelevancy float64 `json:"min_relevancy"`
 	// Maximum possible typos in word.
@@ -66,29 +91,44 @@ type FtFastConfig struct {
 	EnableNumbersSearch bool `json:"enable_numbers_search"`
 	// Extra symbols, which will be threated as parts of word to addition to letters and digits
 	ExtraWordSymbols string `json:"extra_word_symbols"`
+	// Configuration for certain field
+	FieldsCfg []FtFastFieldConfig `json:"fields,omitempty"`
 }
 
 func DefaultFtFastConfig() FtFastConfig {
 	return FtFastConfig{
-		Bm25Boost:        1.0,
-		Bm25Weight:       0.1,
-		DistanceBoost:    1.0,
-		DistanceWeight:   0.5,
-		TermLenBoost:     1.0,
-		TermLenWeight:    0.3,
-		PositionBoost:    1.0,
-		PositionWeight:   0.1,
-		FullMatchBoost:   1.1,
-		MinRelevancy:     0.05,
-		MaxTyposInWord:   1,
-		MaxTypoLen:       15,
-		MaxRebuildSteps:  50,
-		MaxStepSize:      4000,
-		MergeLimit:       20000,
-		Stemmers:         []string{"en", "ru"},
-		EnableTranslit:   true,
-		EnableKbLayout:   true,
-		LogLevel:         0,
-		ExtraWordSymbols: "/-+",
+		Bm25Boost:            1.0,
+		Bm25Weight:           0.1,
+		DistanceBoost:        1.0,
+		DistanceWeight:       0.5,
+		TermLenBoost:         1.0,
+		TermLenWeight:        0.3,
+		PositionBoost:        1.0,
+		PositionWeight:       0.1,
+		FullMatchBoost:       1.1,
+		PartialMatchDecrease: 15,
+		MinRelevancy:         0.05,
+		MaxTyposInWord:       1,
+		MaxTypoLen:           15,
+		MaxRebuildSteps:      50,
+		MaxStepSize:          4000,
+		MergeLimit:           20000,
+		Stemmers:             []string{"en", "ru"},
+		EnableTranslit:       true,
+		EnableKbLayout:       true,
+		LogLevel:             0,
+		ExtraWordSymbols:     "/-+",
+	}
+}
+
+func DefaultFtFastFieldConfig(fieldName string) FtFastFieldConfig {
+	return FtFastFieldConfig{
+		FieldName:      fieldName,
+		Bm25Boost:      1.0,
+		Bm25Weight:     0.1,
+		TermLenBoost:   1.0,
+		TermLenWeight:  0.3,
+		PositionBoost:  1.0,
+		PositionWeight: 0.1,
 	}
 }

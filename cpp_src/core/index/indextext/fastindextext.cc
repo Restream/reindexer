@@ -254,8 +254,8 @@ void FastIndexText<T>::CreateConfig(const FtFastConfig *cfg) {
 		this->holder_.synonyms_->SetConfig(this->cfg_.get());
 		return;
 	}
-	this->cfg_.reset(new FtFastConfig());
-	this->cfg_->parse(this->opts_.config);
+	this->cfg_.reset(new FtFastConfig(this->ftFields_.size()));
+	this->cfg_->parse(this->opts_.config, this->ftFields_);
 	this->holder_.SetConfig(static_cast<FtFastConfig *>(this->cfg_.get()));
 	this->holder_.synonyms_->SetConfig(this->cfg_.get());
 }

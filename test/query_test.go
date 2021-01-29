@@ -982,6 +982,14 @@ func (qt *queryTest) Verify(t *testing.T, items []interface{}, aggResults []rein
 			distinctsByItems[valStr] = 0
 		}
 	}
+
+	if qt.reqTotalCount {
+		// calcTotal from version 3.0.2  also return total count in aggregations, so we have remove it from here for
+		// clean compare aggresults with aggregations
+		require.Equal(t, len(aggResults), 1+len(qt.distinctIndexes))
+		aggResults = aggResults[0 : len(aggResults)-1]
+	}
+
 	require.Equal(t, len(aggResults), len(qt.distinctIndexes))
 	for i, agg := range aggResults {
 		require.Equal(t, agg.Type, "distinct")

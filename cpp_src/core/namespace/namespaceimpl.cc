@@ -167,28 +167,32 @@ void NamespaceImpl::OnConfigUpdated(DBConfigProvider &configProvider, const RdxC
 	ReplicationRole curRole;
 	if (repl_.slaveMode && !repl_.replicatorEnabled) {	// read only
 		curRole = ReplicationReadOnly;
-	} else if (repl_.slaveMode && repl_.replicatorEnabled)
+	} else if (repl_.slaveMode && repl_.replicatorEnabled) {
 		curRole = ReplicationSlave;
-	else if (!repl_.slaveMode && !repl_.replicatorEnabled)
+	} else if (!repl_.slaveMode && !repl_.replicatorEnabled) {
 		curRole = ReplicationMaster;
-	else
+	} else {
 		curRole = ReplicationNone;
+	}
 
-	if (replicationConf.role == curRole) return;
-	if (replicationConf.role == ReplicationNone && curRole == ReplicationMaster) return;
-
+	auto newRole = replicationConf.role;
+	if (!replicationConf.namespaces.empty() && replicationConf.namespaces.find(name_) == replicationConf.namespaces.end()) {
+		newRole = ReplicationMaster;
+	}
+	if (newRole == curRole) return;
+	if (newRole == ReplicationNone && curRole == ReplicationMaster) return;
 	if (curRole == ReplicationReadOnly && serverIdChanged_) return;
 
 	// switch slave  -> master
 	// switch master -> slave
 
-	if (curRole == ReplicationSlave && replicationConf.role == ReplicationMaster) {
+	if (curRole == ReplicationSlave && newRole == ReplicationMaster) {
 		repl_.slaveMode = false;
 		repl_.replicatorEnabled = false;
 		repl_.lastUpstreamLSN = lsn_t();
 		repl_.originLSN = lsn_t(wal_.LSNCounter() - 1, serverId_);
 		logPrintf(LogInfo, "[repl:%s]:%d Switch from slave to master '%s'", name_, serverId_, name_);
-	} else if (curRole == ReplicationMaster && replicationConf.role == ReplicationSlave) {
+	} else if (curRole == ReplicationMaster && newRole == ReplicationSlave) {
 		// real transition ns to slave in OpenNamespace
 	} else if (curRole == ReplicationReadOnly) {
 		repl_.slaveMode = false;
@@ -458,6 +462,9 @@ void NamespaceImpl::verifyUpdateIndex(const IndexDef &indexDef) const {
 	if (indexDef.opts_.IsPK() && indexDef.opts_.IsArray()) {
 		throw Error(errParams, "Can't update index '%s' in namespace '%s'. PK field can't be array", indexDef.name_, name_);
 	}
+	if (indexDef.opts_.IsPK() && isStore(indexDef.Type())) {
+		throw Error(errParams, "Can't add index '%s' in namespace '%s'. PK field can't have '-' type", indexDef.name_, name_);
+	}
 
 	if (isComposite(indexDef.Type())) {
 		verifyUpdateCompositeIndex(indexDef);
@@ -498,6 +505,13 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef) {
 		}
 	}
 
+	if (!validateIndexName(indexName, indexDef.Type())) {
+		throw Error(errParams,
+					"Can't add index '%s' in namespace '%s'. Index name contains invalid characters. Only alphas, digits, '+' (for "
+					"composite indexes only), '.', '_' "
+					"and '-' are allowed",
+					indexName, name_);
+	}
 	// New index case. Just add
 	if (currentPKIndex != indexesNames_.end() && opts.IsPK()) {
 		throw Error(errConflict, "Can't add PK index '%s.%s'. Already exists another PK index - '%s'", name_, indexName,
@@ -505,6 +519,9 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef) {
 	}
 	if (opts.IsPK() && opts.IsArray()) {
 		throw Error(errParams, "Can't add index '%s' in namespace '%s'. PK field can't be array", indexName, name_);
+	}
+	if (opts.IsPK() && isStore(indexDef.Type())) {
+		throw Error(errParams, "Can't add index '%s' in namespace '%s'. PK field can't have '-' type", indexName, name_);
 	}
 
 	if (isComposite(indexDef.Type())) {
@@ -1323,8 +1340,6 @@ void NamespaceImpl::updateItemFromQuery(IdType itemId, const Query &q, bool rowB
 }
 
 void NamespaceImpl::modifyItem(Item &item, const NsContext &ctx, int mode) {
-	checkApplySlaveUpdate(ctx.rdxContext.fromReplication_);
-
 	// Item to doUpsert
 	ItemImpl *itemImpl = item.impl_;
 	Locker::WLockT wlck;
@@ -1336,6 +1351,8 @@ void NamespaceImpl::modifyItem(Item &item, const NsContext &ctx, int mode) {
 		cancelCommit_ = false;	// -V519
 	}
 	calc.LockHit();
+
+	checkApplySlaveUpdate(ctx.rdxContext.fromReplication_);
 
 	setFieldsBasedOnPrecepts(itemImpl);
 	updateTagsMatcherFromItem(itemImpl);
@@ -1413,7 +1430,7 @@ pair<IdType, bool> NamespaceImpl::findByPK(ItemImpl *ritem, const RdxContext &ct
 	return {-1, false};
 }
 
-void NamespaceImpl::optimizeIndexes(const RdxContext &ctx) {
+void NamespaceImpl::optimizeIndexes(const NsContext &ctx) {
 	// This is read lock only atomics based implementation of rebuild indexes
 	// If optimizationState_ == OptimizationCompleted is true, then indexes are completely built.
 	// In this case reset optimizationState_ and/or any idset's and sort orders builds are allowed only protected by write lock
@@ -1421,7 +1438,11 @@ void NamespaceImpl::optimizeIndexes(const RdxContext &ctx) {
 	int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 	auto lastUpdateTime = lastUpdateTime_.load(std::memory_order_acquire);
 
-	auto rlck = rLock(ctx);
+	Locker::RLockT rlck;
+	if (!ctx.noLock) {
+		rlck = rLock(ctx.rdxContext);
+	}
+
 	if (isSystem()) return;
 	if (!lastUpdateTime || !config_.optimizationTimeout || now - lastUpdateTime < config_.optimizationTimeout) {
 		return;
@@ -1976,7 +1997,7 @@ void NamespaceImpl::removeExpiredItems(RdxActivityContext *ctx) {
 
 void NamespaceImpl::BackgroundRoutine(RdxActivityContext *ctx) {
 	flushStorage(ctx);
-	optimizeIndexes(ctx);
+	optimizeIndexes(NsContext(ctx));
 	removeExpiredItems(ctx);
 }
 

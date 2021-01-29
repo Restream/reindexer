@@ -53,6 +53,7 @@ struct ServerConfig {
 	std::chrono::milliseconds PrometheusCollectPeriod;
 	bool DebugAllocs;
 	std::chrono::seconds TxIdleTimeout;
+	size_t MaxUpdatesSize;
 	bool EnableGRPC;
 	string GRPCAddr;
 

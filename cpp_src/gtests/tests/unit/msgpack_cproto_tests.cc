@@ -1,3 +1,4 @@
+#include <unordered_set>
 #include "msgpack_cproto_api.h"
 
 TEST_F(MsgPackCprotoApi, SelectTest) {
@@ -22,8 +23,14 @@ TEST_F(MsgPackCprotoApi, AggregationSelectTest) {
 	ASSERT_TRUE(distinct.distincts.size() == 1000);
 	ASSERT_TRUE(distinct.fields.size() == 1);
 	ASSERT_TRUE(distinct.fields[0] == kFieldId);
+	std::unordered_set<int> found;
 	for (size_t i = 0; i < distinct.distincts.size(); ++i) {
-		ASSERT_TRUE(reindexer::stoi(distinct.distincts[i]) == int(i));
+		found.insert(reindexer::stoi(distinct.distincts[i]));
+	}
+	ASSERT_EQ(distinct.distincts.size(), found.size());
+
+	for (size_t i = 0; i < distinct.distincts.size(); ++i) {
+		ASSERT_TRUE(found.find(i) != found.end());
 	}
 
 	const reindexer::AggregationResult& facet = qr.GetAggregationResults()[1];

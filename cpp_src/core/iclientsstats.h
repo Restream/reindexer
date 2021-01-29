@@ -25,6 +25,7 @@ struct ClientStat {
 	uint32_t recvRate = 0;
 	int64_t lastSendTs = 0;
 	int64_t lastRecvTs = 0;
+	int64_t updatesLost = 0;
 	std::string userRights;
 	std::string clientVersion;
 	std::string appName;

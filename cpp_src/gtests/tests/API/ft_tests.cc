@@ -835,7 +835,7 @@ TEST_F(FTApi, SelectWithFieldsListWithSynonyms) {
 
 TEST_F(FTApi, RankWithPosition) {
 	auto ftCfg = GetDefaultConfig();
-	ftCfg.positionWeight = 1.0;
+	ftCfg.fieldsCfg[0].positionWeight = 1.0;
 	Init(ftCfg);
 
 	Add("nm1", "one two three word", "");
@@ -861,6 +861,88 @@ TEST_F(FTApi, RankWithPosition) {
 	for (auto resIt = qr.begin(); resIt != qr.end(); ++resIt, ++expIt) {
 		Item item(resIt.GetItem());
 		EXPECT_EQ(item["ft1"].As<string>(), *expIt);
+	}
+}
+
+TEST_F(FTApi, DifferentFieldRankPosition) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.fieldsCfg[0].positionWeight = 1.0;
+	ftCfg.fieldsCfg[0].positionBoost = 10.0;
+	Init(ftCfg);
+
+	Add("nm1", "one two three word", "one word");
+	Add("nm1", "one two three four five six word", "one two word");
+	Add("nm1", "one two three four word", "one two three four five word");
+	Add("nm1", "one word", "one two three four five six word");
+	Add("nm1", "one two three four five word", "one two three word");
+	Add("nm1", "word", "one two three four word");
+	Add("nm1", "one two word", "word");
+
+	auto qr1 = SimpleSelect("word");
+	const char* expected[]{"!word!",
+						   "one !word!",
+						   "one two !word!",
+						   "one two three !word!",
+						   "one two three four !word!",
+						   "one two three four five !word!",
+						   "one two three four five six !word!"};
+
+	ASSERT_TRUE(qr1.Count() == (sizeof(expected) / sizeof(const char*)));
+
+	const char** expIt = expected;
+	for (auto resIt = qr1.begin(); resIt != qr1.end(); ++resIt, ++expIt) {
+		Item item(resIt.GetItem());
+		EXPECT_EQ(item["ft1"].As<string>(), *expIt);
+	}
+
+	ftCfg.fieldsCfg[0].positionWeight = 0.1;
+	ftCfg.fieldsCfg[0].positionBoost = 1.0;
+	ftCfg.fieldsCfg[1].positionWeight = 1.0;
+	ftCfg.fieldsCfg[1].positionBoost = 10.0;
+	SetFTConfig(ftCfg, "nm1", "ft3");
+
+	auto qr2 = SimpleSelect("word");
+
+	ASSERT_TRUE(qr2.Count() == (sizeof(expected) / sizeof(const char*)));
+
+	expIt = expected;
+	for (auto resIt = qr2.begin(); resIt != qr2.end(); ++resIt, ++expIt) {
+		Item item(resIt.GetItem());
+		EXPECT_EQ(item["ft2"].As<string>(), *expIt);
+	}
+}
+
+TEST_F(FTApi, PartialMatchRank) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.partialMatchDecrease = 0;
+	Init(ftCfg);
+
+	Add("nm1", "ТНТ4", "");
+	Add("nm1", "", "ТНТ");
+
+	auto qr1 = SimpleSelect("@ft1^1.1,ft2^1 ТНТ*");
+	const char* expected1[2][2]{{"!ТНТ4!", ""}, {"", "!ТНТ!"}};
+
+	ASSERT_EQ(qr1.Count(), (sizeof(expected1) / sizeof(const char* [2])));
+	const char*(*expIt)[2] = expected1;
+	for (auto resIt = qr1.begin(); resIt != qr1.end(); ++resIt, ++expIt) {
+		Item item(resIt.GetItem());
+		EXPECT_EQ(item["ft1"].As<string>(), (*expIt)[0]);
+		EXPECT_EQ(item["ft2"].As<string>(), (*expIt)[1]);
+	}
+
+	ftCfg.partialMatchDecrease = 100;
+	SetFTConfig(ftCfg, "nm1", "ft3");
+
+	auto qr2 = SimpleSelect("@ft1^1.1,ft2^1 ТНТ*");
+	const char* expected2[2][2]{{"", "!ТНТ!"}, {"!ТНТ4!", ""}};
+
+	ASSERT_EQ(qr2.Count(), (sizeof(expected2) / sizeof(const char* [2])));
+	expIt = expected2;
+	for (auto resIt = qr2.begin(); resIt != qr2.end(); ++resIt, ++expIt) {
+		Item item(resIt.GetItem());
+		EXPECT_EQ(item["ft1"].As<string>(), (*expIt)[0]);
+		EXPECT_EQ(item["ft2"].As<string>(), (*expIt)[1]);
 	}
 }
 

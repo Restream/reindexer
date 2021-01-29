@@ -12,7 +12,7 @@ CKMSQuantiles::Quantile::Quantile(double quantile, double error)
 
 CKMSQuantiles::Item::Item(double value, int lower_delta, int delta) : value(value), g(lower_delta), delta(delta) {}
 
-CKMSQuantiles::CKMSQuantiles(const std::vector<Quantile>& quantiles) : quantiles_(quantiles), count_(0), buffer_count_(0) {}
+CKMSQuantiles::CKMSQuantiles(const std::vector<Quantile>& quantiles) : quantiles_(quantiles), count_(0), buffer_(), buffer_count_(0) {}
 
 void CKMSQuantiles::insert(double value) {
 	buffer_[buffer_count_] = value;

@@ -803,7 +803,7 @@ Error RPCServer::SubscribeUpdates(cproto::Context &ctx, int flag, cproto::option
 	return ret;
 }
 
-bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop, bool enableStat) {
+bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop, bool enableStat, size_t maxUpdatesSize) {
 	dispatcher_.Register(cproto::kCmdPing, this, &RPCServer::Ping);
 	dispatcher_.Register(cproto::kCmdLogin, this, &RPCServer::Login, true);
 	dispatcher_.Register(cproto::kCmdOpenDatabase, this, &RPCServer::OpenDatabase, true);
@@ -853,7 +853,7 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop, bool enableSta
 		dispatcher_.Logger(this, &RPCServer::Logger);
 	}
 
-	listener_.reset(new Listener(loop, cproto::ServerConnection::NewFactory(dispatcher_, enableStat)));
+	listener_.reset(new Listener(loop, cproto::ServerConnection::NewFactory(dispatcher_, enableStat, maxUpdatesSize)));
 	return listener_->Bind(addr);
 }
 

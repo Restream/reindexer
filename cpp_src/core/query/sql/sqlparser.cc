@@ -88,55 +88,57 @@ int SQLParser::selectParse(tokenizer &parser) {
 		if (tok.text() == "("_sv) {
 			parser.next_token();
 			tok = peekSqlToken(parser, SingleSelectFieldSqlToken);
-			AggType agg = AggregationResult::strToAggType(name.text());
-			if (agg != AggUnknown) {
-				if (!query_.CanAddAggregation(agg) || (wasSelectFilter && agg != AggDistinct)) {
-					throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
-				}
-				AggregateEntry entry{agg, {string(tok.text())}, UINT_MAX, 0};
+			if (name.text() == "count"_sv) {
+				query_.calcTotal = ModeAccurateTotal;
+				if (!wasSelectFilter) query_.count = 0;
 				tok = parser.next_token();
-				for (tok = parser.peek_token(); tok.text() == ","_sv; tok = parser.peek_token()) {
-					parser.next_token();
-					tok = peekSqlToken(parser, SingleSelectFieldSqlToken);
-					entry.fields_.push_back(string(tok.text()));
-					tok = parser.next_token();
-				}
-				for (tok = parser.peek_token(); tok.text() != ")"_sv; tok = parser.peek_token()) {
-					if (tok.text() == "order"_sv) {
-						parser.next_token();
-						h_vector<Variant, 0> orders;
-						parseOrderBy(parser, entry.sortingEntries_, orders);
-						if (!orders.empty()) {
-							throw Error(errParseSQL, "Forced sort order is not available in aggregation sort");
-						}
-					} else if (tok.text() == "limit"_sv) {
-						parser.next_token();
-						tok = parser.next_token();
-						if (tok.type != TokenNumber)
-							throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text(), parser.where());
-						entry.limit_ = stoi(tok.text());
-					} else if (tok.text() == "offset"_sv) {
-						parser.next_token();
-						tok = parser.next_token();
-						if (tok.type != TokenNumber)
-							throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text(), parser.where());
-						entry.offset_ = stoi(tok.text());
-					} else {
-						break;
-					}
-				}
-				query_.aggregations_.push_back(std::move(entry));
+				if (tok.text() != "*") throw Error(errParseSQL, "Expected '*', but found '%s' in query, %s", tok.text(), parser.where());
+			} else if (name.text() == "count_cached"_sv) {
+				query_.calcTotal = ModeCachedTotal;
+				if (!wasSelectFilter) query_.count = 0;
+				tok = parser.next_token();
+				if (tok.text() != "*") throw Error(errParseSQL, "Expected '*', but found '%s' in query, %s", tok.text(), parser.where());
+			} else if (name.text() == "rank"_sv) {
+				query_.WithRank();
 			} else {
-				if (name.text() == "count"_sv) {
-					query_.calcTotal = ModeAccurateTotal;
-					if (!wasSelectFilter) query_.count = 0;
+				AggType agg = AggregationResult::strToAggType(name.text());
+				if (agg != AggUnknown) {
+					if (!query_.CanAddAggregation(agg) || (wasSelectFilter && agg != AggDistinct)) {
+						throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
+					}
+					AggregateEntry entry{agg, {string(tok.text())}, UINT_MAX, 0};
 					tok = parser.next_token();
-				} else if (name.text() == "count_cached"_sv) {
-					query_.calcTotal = ModeCachedTotal;
-					if (!wasSelectFilter) query_.count = 0;
-					tok = parser.next_token();
-				} else if (name.text() == "rank"_sv) {
-					query_.WithRank();
+					for (tok = parser.peek_token(); tok.text() == ","_sv; tok = parser.peek_token()) {
+						parser.next_token();
+						tok = peekSqlToken(parser, SingleSelectFieldSqlToken);
+						entry.fields_.push_back(string(tok.text()));
+						tok = parser.next_token();
+					}
+					for (tok = parser.peek_token(); tok.text() != ")"_sv; tok = parser.peek_token()) {
+						if (tok.text() == "order"_sv) {
+							parser.next_token();
+							h_vector<Variant, 0> orders;
+							parseOrderBy(parser, entry.sortingEntries_, orders);
+							if (!orders.empty()) {
+								throw Error(errParseSQL, "Forced sort order is not available in aggregation sort");
+							}
+						} else if (tok.text() == "limit"_sv) {
+							parser.next_token();
+							tok = parser.next_token();
+							if (tok.type != TokenNumber)
+								throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text(), parser.where());
+							entry.limit_ = stoi(tok.text());
+						} else if (tok.text() == "offset"_sv) {
+							parser.next_token();
+							tok = parser.next_token();
+							if (tok.type != TokenNumber)
+								throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text(), parser.where());
+							entry.offset_ = stoi(tok.text());
+						} else {
+							break;
+						}
+					}
+					query_.aggregations_.push_back(std::move(entry));
 				} else {
 					throw Error(errParams, "Unknown function name SQL - %s, %s", name.text(), parser.where());
 				}
@@ -374,7 +376,7 @@ static Variant token2kv(const token &currTok, tokenizer &parser, bool allowCompo
 			compositeValues.push_back(token2kv(tok, parser, false));
 			tok = parser.next_token();
 			if (tok.text() == "}"_sv) {
-				return compositeValues;
+				return Variant(compositeValues);
 			}
 			if (tok.text() != ","_sv) {
 				throw Error(errParseSQL, "Expected ',', but found '%s' in query, %s", tok.text(), parser.where());

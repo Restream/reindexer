@@ -28,7 +28,7 @@ public:
 	}
 
 	reindexer::FtFastConfig GetDefaultConfig() {
-		reindexer::FtFastConfig cfg;
+		reindexer::FtFastConfig cfg(2);
 		cfg.enableNumbersSearch = true;
 		cfg.logLevel = 5;
 		cfg.mergeLimit = 20000;
@@ -37,6 +37,7 @@ public:
 	}
 
 	void SetFTConfig(const reindexer::FtFastConfig& ftCfg, const string& ns, const string& index) {
+		assert(ftCfg.fieldsCfg.size() == 2);
 		reindexer::WrSerializer wrser;
 		reindexer::JsonBuilder cfgBuilder(wrser);
 		cfgBuilder.Put("enable_translit", ftCfg.enableTranslit);
@@ -47,8 +48,15 @@ public:
 		cfgBuilder.Put("max_step_size", ftCfg.maxStepSize);
 		cfgBuilder.Put("full_match_boost", ftCfg.fullMatchBoost);
 		cfgBuilder.Put("extra_word_symbols", ftCfg.extraWordSymbols);
-		cfgBuilder.Put("position_boost", ftCfg.positionBoost);
-		cfgBuilder.Put("position_weight", ftCfg.positionWeight);
+		cfgBuilder.Put("partial_match_decrease", ftCfg.partialMatchDecrease);
+		const bool defaultPositionBoost = ftCfg.fieldsCfg[0].positionBoost == ftCfg.fieldsCfg[1].positionBoost;
+		if (defaultPositionBoost) {
+			cfgBuilder.Put("position_boost", ftCfg.fieldsCfg[0].positionBoost);
+		}
+		const bool defaultPositionWeight = ftCfg.fieldsCfg[0].positionWeight == ftCfg.fieldsCfg[1].positionWeight;
+		if (defaultPositionWeight) {
+			cfgBuilder.Put("position_weight", ftCfg.fieldsCfg[0].positionWeight);
+		}
 		{
 			auto synonymsNode = cfgBuilder.Array("synonyms");
 			for (auto& synonym : ftCfg.synonyms) {
@@ -60,6 +68,29 @@ public:
 				{
 					auto alternativesNode = synonymObj.Array("alternatives");
 					for (auto& token : synonym.alternatives) alternativesNode.Put(nullptr, token);
+				}
+			}
+		}
+		if (!defaultPositionWeight || !defaultPositionBoost) {
+			auto fieldsNode = cfgBuilder.Array("fields");
+			{
+				auto field1Node = fieldsNode.Object();
+				field1Node.Put("field_name", "ft1");
+				if (!defaultPositionBoost) {
+					field1Node.Put("position_boost", ftCfg.fieldsCfg[0].positionBoost);
+				}
+				if (!defaultPositionWeight) {
+					field1Node.Put("position_weight", ftCfg.fieldsCfg[0].positionWeight);
+				}
+			}
+			{
+				auto field2Node = fieldsNode.Object();
+				field2Node.Put("field_name", "ft2");
+				if (!defaultPositionBoost) {
+					field2Node.Put("position_boost", ftCfg.fieldsCfg[1].positionBoost);
+				}
+				if (!defaultPositionWeight) {
+					field2Node.Put("position_weight", ftCfg.fieldsCfg[1].positionWeight);
 				}
 			}
 		}

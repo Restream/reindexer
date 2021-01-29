@@ -247,6 +247,7 @@ int ServerImpl::run() {
 	}
 
 	initCoreLogger();
+	logger_.info("Initializing databases...");
 	std::unique_ptr<ClientsStats> clientsStats;
 	if (config_.EnableConnectionsStats) clientsStats.reset(new ClientsStats());
 	try {
@@ -280,7 +281,7 @@ int ServerImpl::run() {
 
 		LoggerWrapper rpcLogger("rpc");
 		RPCServer rpcServer(*dbMgr_, rpcLogger, clientsStats.get(), config_.DebugAllocs, statsCollector.get());
-		if (!rpcServer.Start(config_.RPCAddr, loop_, config_.EnableConnectionsStats)) {
+		if (!rpcServer.Start(config_.RPCAddr, loop_, config_.EnableConnectionsStats, config_.MaxUpdatesSize)) {
 			logger_.error("Can't listen RPC on '{0}'", config_.RPCAddr);
 			return EXIT_FAILURE;
 		}
@@ -442,8 +443,10 @@ void ServerImpl::initCoreLogger() {
 ServerImpl::~ServerImpl() {
 	logger_.info("Reindexer server shutdown completed.");
 	dbMgr_.reset();
-
 	async_.reset();
+	logger_.info("Reindexer databases shutdown completed.");
+
+	spdlog::apply_all([](std::shared_ptr<spdlog::logger> logger) { logger->flush(); });
 	if (coreLogLevel_) reindexer::logInstallWriter(nullptr);
 	spdlog::drop_all();
 }

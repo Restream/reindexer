@@ -34,6 +34,7 @@
 #include <functional>
 #include <initializer_list>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <ratio>
 #include <stdexcept>
@@ -147,8 +148,8 @@ namespace detail_hopscotch_hash {
 
 static constexpr const std::array<std::size_t, 38> PRIMES = {
 	{17ul,		 29ul,		  37ul,		   53ul,		67ul,		 79ul,		   97ul,		 131ul,		  193ul,	  257ul,
-	 389ul,		 521ul,		  769ul,	   1031ul,		1543ul,		 2053ul,	   3079ul,		 6151ul,	  12289ul,	24593ul,
-	 49157ul,	98317ul,	 196613ul,	393241ul,	786433ul,	1572869ul,	3145739ul,	6291469ul,   12582917ul, 25165843ul,
+	 389ul,		 521ul,		  769ul,	   1031ul,		1543ul,		 2053ul,	   3079ul,		 6151ul,	  12289ul,	  24593ul,
+	 49157ul,	 98317ul,	  196613ul,	   393241ul,	786433ul,	 1572869ul,	   3145739ul,	 6291469ul,	  12582917ul, 25165843ul,
 	 50331653ul, 100663319ul, 201326611ul, 402653189ul, 805306457ul, 1610612741ul, 3221225473ul, 4294967291ul}};
 
 template <unsigned int IPrime>
@@ -159,7 +160,7 @@ static std::size_t mod(std::size_t hash) {
 // MOD_PRIME[iprime](hash) returns hash % PRIMES[iprime]. This table allows for faster modulo as the
 // compiler can optimize the modulo code better with a constant known at the compilation.
 static constexpr const std::array<std::size_t (*)(std::size_t), 38> MOD_PRIME = {
-	{&mod<0>,  &mod<1>,  &mod<2>,  &mod<3>,  &mod<4>,  &mod<5>,  &mod<6>,  &mod<7>,  &mod<8>,  &mod<9>,  &mod<10>, &mod<11>, &mod<12>,
+	{&mod<0>,  &mod<1>,	 &mod<2>,  &mod<3>,	 &mod<4>,  &mod<5>,	 &mod<6>,  &mod<7>,	 &mod<8>,  &mod<9>,	 &mod<10>, &mod<11>, &mod<12>,
 	 &mod<13>, &mod<14>, &mod<15>, &mod<16>, &mod<17>, &mod<18>, &mod<19>, &mod<20>, &mod<21>, &mod<22>, &mod<23>, &mod<24>, &mod<25>,
 	 &mod<26>, &mod<27>, &mod<28>, &mod<29>, &mod<30>, &mod<31>, &mod<32>, &mod<33>, &mod<34>, &mod<35>, &mod<36>, &mod<37>}};
 
@@ -1548,7 +1549,7 @@ private:
 
 	template <class K>
 	const_iterator_buckets find_in_buckets(const K& key, std::size_t hash, const_iterator_buckets it_bucket) const {
-		(void)hash;  // Avoid warning of unused variable when StoreHash is false;
+		(void)hash;	 // Avoid warning of unused variable when StoreHash is false;
 
 		// TODO Try to optimize the function.
 		// I tried to use ffs and  __builtin_ffs functions but I could not reduce the time the function

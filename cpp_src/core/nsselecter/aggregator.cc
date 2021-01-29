@@ -343,6 +343,8 @@ void Aggregator::aggregate(const Variant &v) {
 			distincts_->insert(v);
 			break;
 		case AggUnknown:
+		case AggCount:
+		case AggCountCached:
 			break;
 	};
 }

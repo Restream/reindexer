@@ -32,6 +32,10 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 				nsCopy_.reset(new NamespaceImpl(*ns));
 				nsCopyCalc.HitManualy();
 				nsCopy_->CommitTransaction(tx, result, NsContext(ctx).NoLock());
+				if (nsCopy_->lastUpdateTime_) {
+					nsCopy_->lastUpdateTime_ -= nsCopy_->config_.optimizationTimeout * 2;
+					nsCopy_->optimizeIndexes(NsContext(ctx).NoLock());
+				}
 				calc.SetCounter(nsCopy_->updatePerfCounter_);
 				ns->markReadOnly();
 				atomicStoreMainNs(nsCopy_.release());

@@ -59,10 +59,10 @@ void IndexText<T>::SetOpts(const IndexOpts &opts) {
 
 	if (oldCfg != opts.config) {
 		try {
-			cfg_->parse(this->opts_.config);
+			cfg_->parse(this->opts_.config, ftFields_);
 		} catch (...) {
 			this->opts_.config = oldCfg;
-			cfg_->parse(this->opts_.config);
+			cfg_->parse(this->opts_.config, ftFields_);
 			throw;
 		}
 	}

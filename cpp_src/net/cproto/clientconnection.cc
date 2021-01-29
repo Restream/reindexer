@@ -262,8 +262,8 @@ void ClientConnection::onRead() {
 
 	while (!closeConn_) {
 		auto len = rdBuf_.peek(reinterpret_cast<char *>(&hdr), sizeof(hdr));
-
 		if (len < sizeof(hdr)) return;
+
 		if (hdr.magic != kCprotoMagic) {
 			failInternal(Error(errNetwork, "Invalid cproto magic=%08x", hdr.magic));
 			return;
@@ -313,7 +313,6 @@ void ClientConnection::onRead() {
 			failInternal(err);
 			return;
 		}
-
 		if (hdr.cmd == kCmdUpdates) {
 			auto handler = updatesHandler_.release(std::memory_order_acq_rel);
 			if (handler) {

@@ -276,7 +276,7 @@ protected:
 	void updateTagsMatcherFromItem(ItemImpl *ritem);
 	void updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields);
 	void doDelete(IdType id);
-	void optimizeIndexes(const RdxContext &);
+	void optimizeIndexes(const NsContext &);
 	void insertIndex(Index *newIndex, int idxNo, const string &realName);
 	void addIndex(const IndexDef &indexDef);
 	void addCompositeIndex(const IndexDef &indexDef);

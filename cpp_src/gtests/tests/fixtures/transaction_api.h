@@ -13,7 +13,9 @@ public:
 	};
 
 	void SetUp() override {
-		Error err = rt.reindexer->OpenNamespace(default_namespace);
+		Error err = rt.reindexer->InitSystemNamespaces();
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0},
 												   IndexDeclaration{kFieldData, "text", "string", IndexOpts(), 0}});

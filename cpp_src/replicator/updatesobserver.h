@@ -60,6 +60,7 @@ class IUpdatesObserver {
 public:
 	virtual ~IUpdatesObserver() = default;
 	virtual void OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &rec) = 0;
+	virtual void OnUpdatesLost(string_view nsName) = 0;
 	virtual void OnConnectionState(const Error &err) = 0;
 };
 
@@ -77,6 +78,8 @@ public:
 	void OnModifyItem(LSNPair LSNs, string_view nsName, ItemImpl *item, int modifyMode, bool inTransaction);
 
 	void OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &rec);
+
+	void OnUpdatesLost(string_view nsName);
 
 	void OnConnectionState(const Error &err);
 	bool Empty() {

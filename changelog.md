@@ -1,4 +1,19 @@
-# Version 3.0,1 (31.12.2020)
+# Version 3.0.2 (29.01.2021)
+## Core
+- [fea] Extra parameters added to fulltext config
+- [fea] Validate PK index to be not scan, strict index names validation
+- [fea] COUNT and COUNT_CACHED results added to aggregations results
+- [fix] DISTINCT with 800k+ unique value execution time on Linux improved
+- [fix] SQL representation of JOIN queries
+- [fea] Optimize indexes before atomic transactions ns exchange
+- [fea] Choose IN condition execution plan depend on another condition selectivity
+
+## Reindexer server
+- [fea] Added configurable size limit of online replication updates buffer
+- [fix] Cascade replication fixes
+- [fix] Shutdown time reduced
+
+# Version 3.0.1 (31.12.2020)
 
 ## Core
 - [fix] Search by multi word synonyms is fixed

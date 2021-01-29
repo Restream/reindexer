@@ -30,6 +30,7 @@ void ClientStat::GetJSON(WrSerializer& ser) const {
 		updatesFilters.GetJSON(serFilters);
 		builder.Raw("updates_filter", serFilters.Slice());
 	}
+	builder.Put("updates_lost", updatesLost);
 	builder.End();
 }
 

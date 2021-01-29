@@ -1,12 +1,12 @@
 #pragma once
 
 #include <memory.h>
+#include <unordered_set>
 #include "core/index/payload_map.h"
 #include "core/index/string_map.h"
 #include "core/keyvalue/geometry.h"
 #include "core/keyvalue/p_string.h"
 #include "core/payload/fieldsset.h"
-#include "estl/fast_hash_set.h"
 #include "estl/intrusive_ptr.h"
 #include "tools/string_regexp_functions.h"
 
@@ -38,10 +38,10 @@ struct ComparatorVars {
 template <class T>
 class ComparatorImpl {
 public:
-	ComparatorImpl(bool distinct = false) : distS_(distinct ? new intrusive_atomic_rc_wrapper<fast_hash_set<T>> : nullptr) {}
+	ComparatorImpl(bool distinct = false) : distS_(distinct ? new intrusive_atomic_rc_wrapper<std::unordered_set<T>> : nullptr) {}
 
 	void SetValues(CondType cond, const VariantArray &values) {
-		if (cond == CondSet) valuesS_.reset(new intrusive_atomic_rc_wrapper<fast_hash_set<T>>());
+		if (cond == CondSet) valuesS_.reset(new intrusive_atomic_rc_wrapper<std::unordered_set<T>>());
 
 		for (Variant key : values) {
 			if (key.Type() == KeyValueString && !is_number(static_cast<p_string>(key))) {
@@ -91,7 +91,7 @@ public:
 	}
 
 	h_vector<T, 1> values_;
-	intrusive_ptr<intrusive_atomic_rc_wrapper<fast_hash_set<T>>> valuesS_, distS_;
+	intrusive_ptr<intrusive_atomic_rc_wrapper<std::unordered_set<T>>> valuesS_, distS_;
 
 private:
 	KeyValueType type() {
@@ -114,7 +114,7 @@ private:
 template <>
 class ComparatorImpl<key_string> {
 public:
-	ComparatorImpl(bool distinct = false) : distS_(distinct ? new intrusive_atomic_rc_wrapper<fast_hash_set<key_string>> : nullptr) {}
+	ComparatorImpl(bool distinct = false) : distS_(distinct ? new intrusive_atomic_rc_wrapper<std::unordered_set<key_string>> : nullptr) {}
 
 	void SetValues(CondType cond, const VariantArray &values, const CollateOpts &collateOpts_) {
 		if (cond == CondSet) valuesS_.reset(new intrusive_atomic_rc_wrapper<key_string_set>(collateOpts_));
@@ -176,7 +176,7 @@ public:
 	};
 
 	intrusive_ptr<intrusive_atomic_rc_wrapper<key_string_set>> valuesS_;
-	intrusive_ptr<intrusive_atomic_rc_wrapper<fast_hash_set<key_string>>> distS_;
+	intrusive_ptr<intrusive_atomic_rc_wrapper<std::unordered_set<key_string>>> distS_;
 
 private:
 	void addValue(CondType cond, const key_string &value) {
@@ -254,7 +254,7 @@ template <>
 class ComparatorImpl<Point> {
 public:
 	ComparatorImpl(bool distinct = false)
-		: distS_(distinct ? new intrusive_atomic_rc_wrapper<fast_hash_set<Point>> : nullptr), rhs_{}, distance_{} {}
+		: distS_(distinct ? new intrusive_atomic_rc_wrapper<std::unordered_set<Point>> : nullptr), rhs_{}, distance_{} {}
 
 	void SetValues(const VariantArray &values) {
 		if (values.size() != 2) throw Error(errQueryExec, "CondDWithin expects two arguments");
@@ -279,7 +279,7 @@ public:
 		if (distS_) distS_->clear();
 	}
 
-	intrusive_ptr<intrusive_atomic_rc_wrapper<fast_hash_set<Point>>> distS_;
+	intrusive_ptr<intrusive_atomic_rc_wrapper<std::unordered_set<Point>>> distS_;
 
 private:
 	Point rhs_;

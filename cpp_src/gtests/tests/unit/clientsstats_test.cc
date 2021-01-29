@@ -171,6 +171,8 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 		EXPECT_TRUE(sendBufBytes == 0) << "sendBufBytes = [" << sendBufBytes << "]";
 		int64_t pendedUpdates = clientsStats["pended_updates"].As<int64_t>(-1);
 		EXPECT_TRUE(pendedUpdates == 0) << "pendedUpdates = [" << pendedUpdates << "]";
+		int64_t updatesLost = clientsStats["updates_lost"].As<int64_t>(-1);
+		EXPECT_TRUE(updatesLost == 0) << "updatesLost = [" << updatesLost << "]";
 		int64_t sendRate = clientsStats["send_rate"].As<int64_t>();
 		EXPECT_TRUE(sendRate > 0) << "sendRate = [" << sendRate << "]";
 		int64_t recvRate = clientsStats["recv_rate"].As<int64_t>();

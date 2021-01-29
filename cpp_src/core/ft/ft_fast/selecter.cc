@@ -10,9 +10,6 @@ const int kFullMatchProc = 100;
 // Mininum relevancy procent of prefix word match.
 const int kPrefixMinProc = 50;
 const int kSuffixMinProc = 10;
-// Relevancy step of prefix match: relevancy = kFullMatchProc - (non matched symbols) * kPrefixStepProc / (matched symbols/3)
-// For example: word in index 'terminator', pattern 'termin'. matched: 6 symbols, unmatched: 4. relevancy = 100 - (4*10)/(6/3) = 80
-const int kPrefixStepProc = 5;
 // Maximum relevancy procent of typo match
 const int kTypoProc = 85;
 // Relevancy step of typo match
@@ -180,14 +177,15 @@ void Selecter::processStepVariants(FtSelectContext &ctx, DataHolder::CommitStep 
 		int16_t wordLength = suffixes.word_len_at(suffixWordId);
 
 		ptrdiff_t suffixLen = keyIt->first - word;
-		int matchLen = tmpstr.length();
+		const int matchLen = tmpstr.length();
+		assert(matchLen);
 
 		if (!withSuffixes && suffixLen) continue;
 		if (!withPrefixes && wordLength != matchLen + suffixLen) break;
 
 		int matchDif = std::abs(long(wordLength - matchLen + suffixLen));
 		int proc =
-			std::max(variant.proc - matchDif * kPrefixStepProc / std::max(matchLen / 3, 1), suffixLen ? kSuffixMinProc : kPrefixMinProc);
+			std::max(variant.proc - holder_.cfg_->partialMatchDecrease * matchDif / std::max(matchLen, 3), suffixLen ? kSuffixMinProc : kPrefixMinProc);
 
 		auto it = ctx.foundWords.find(glbwordId);
 		if (it == ctx.foundWords.end() || it->second.first != ctx.rawResults.size() - 1) {
@@ -312,10 +310,6 @@ void Selecter::mergeItaration(const TextSearchResults &rawRes, index_t rawResInd
 
 	for (auto &r : rawRes) {
 		auto idf = IDF(totalDocsCount, r.vids_->size());
-		auto termLenBoost = bound(rawRes.term.opts.termLenBoost, holder_.cfg_->termLenWeight, holder_.cfg_->termLenBoost);
-		if (holder_.cfg_->logLevel >= LogTrace) {
-			logPrintf(LogInfo, "Pattern %s, idf %f, termLenBoost %f", r.pattern, idf, termLenBoost);
-		}
 
 		for (auto &relid : *r.vids_) {
 			int vid = relid.Id();
@@ -335,7 +329,8 @@ void Selecter::mergeItaration(const TextSearchResults &rawRes, index_t rawResInd
 			// Find field with max rank
 			int field = 0;
 			double normBm25 = 0.0, termRank = 0.0;
-			for (uint64_t fieldsMask = relid.UsedFieldsMask(), f = 0; fieldsMask;) {
+			auto termLenBoost = rawRes.term.opts.termLenBoost;
+			for (uint64_t fieldsMask = relid.UsedFieldsMask(), f = 0; fieldsMask; ++f, fieldsMask >>= 1) {
 				while ((fieldsMask & 1) == 0) {
 					++f;
 					fieldsMask >>= 1;
@@ -344,17 +339,22 @@ void Selecter::mergeItaration(const TextSearchResults &rawRes, index_t rawResInd
 				assert(f < rawRes.term.opts.fieldsBoost.size());
 				auto fboost = rawRes.term.opts.fieldsBoost[f];
 				if (fboost) {
+					assert(f < holder_.cfg_->fieldsCfg.size());
+					const auto &fldCfg = holder_.cfg_->fieldsCfg[f];
 					// raw bm25
 					const double bm25 = idf * bm25score(relid.WordsInField(f), vdocs[vid].mostFreqWordCount[f], vdocs[vid].wordsCount[f],
 														holder_.avgWordsCount_[f]);
 
 					// normalized bm25
-					const double normBm25Tmp = bound(bm25, holder_.cfg_->bm25Weight, holder_.cfg_->bm25Boost);
+					const double normBm25Tmp = bound(bm25, fldCfg.bm25Weight, fldCfg.bm25Boost);
 
-					assert(!relid.Pos().empty());
-					const double positionRank =
-						bound(pos2rank(relid.Pos().front().pos()), holder_.cfg_->positionWeight, holder_.cfg_->positionBoost);
+					const auto posIt = std::find_if(relid.Pos().cbegin(), relid.Pos().cend(), [f](const IdRelType::PosType &pos) {
+						return static_cast<unsigned>(pos.field()) == f;
+					});	 // TODO find more effective way. Issue #682
+					assert(posIt != relid.Pos().cend());
+					const double positionRank = bound(pos2rank(posIt->pos()), fldCfg.positionWeight, fldCfg.positionBoost);
 
+					termLenBoost = bound(rawRes.term.opts.termLenBoost, fldCfg.termLenWeight, fldCfg.termLenBoost);
 					// final term rank calculation
 					const double termRankTmp = fboost * r.proc_ * normBm25Tmp * rawRes.term.opts.boost * termLenBoost * positionRank;
 					if (termRankTmp > termRank) {
@@ -363,10 +363,11 @@ void Selecter::mergeItaration(const TextSearchResults &rawRes, index_t rawResInd
 						termRank = termRankTmp;
 					}
 				}
-				++f;
-				fieldsMask >>= 1;
 			}
 			if (!termRank) continue;
+			if (holder_.cfg_->logLevel >= LogTrace) {
+				logPrintf(LogInfo, "Pattern %s, idf %f, termLenBoost %f", r.pattern, idf, termLenBoost);
+			}
 
 			// match of 2-rd, and next terms
 			if (!simple && vidStatus) {

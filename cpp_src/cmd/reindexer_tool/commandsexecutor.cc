@@ -1102,6 +1102,11 @@ void CommandsExecutor<DBInterface>::OnConnectionState(const Error& err) {
 		output_() << "[OnConnectionState] closed, reason: " << err.what() << std::endl;
 }
 
+template <typename DBInterface>
+void CommandsExecutor<DBInterface>::OnUpdatesLost(string_view nsName) {
+	output_() << "[OnUpdatesLost] " << nsName << std::endl;
+}
+
 template class CommandsExecutor<reindexer::client::CoroReindexer>;
 template class CommandsExecutor<reindexer::Reindexer>;
 template Error CommandsExecutor<reindexer::Reindexer>::Run(const string& dsn, const ConnectOpts& opts);

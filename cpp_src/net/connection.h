@@ -15,6 +15,21 @@ namespace net {
 constexpr ssize_t kConnReadbufSize = 0x8000;
 constexpr ssize_t kConnWriteBufSize = 0x800;
 
+struct ConnectionStat {
+	ConnectionStat() {
+		startTime = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	}
+	std::atomic_int_fast64_t recvBytes{0};
+	std::atomic_int_fast64_t lastRecvTs{0};
+	std::atomic_int_fast64_t sentBytes{0};
+	std::atomic_int_fast64_t lastSendTs{0};
+	std::atomic_int_fast64_t sendBufBytes{0};
+	std::atomic_int_fast64_t pendedUpdates{0};
+	std::atomic_int_fast64_t updatesLost{0};
+	std::atomic<uint32_t> sendRate{0};
+	std::atomic<uint32_t> recvRate{0};
+	int64_t startTime{0};
+};
 using reindexer::cbuf;
 
 template <typename Mutex>

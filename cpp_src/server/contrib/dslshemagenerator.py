@@ -125,7 +125,7 @@ def Generate():
                 for c in jsonstr:
                     v = hex(c)
                     json_h_file.write(v+',')
-                json_h_file.write('};')
+                json_h_file.write('}; // -V1043')
         except yaml.YAMLError as exc:
             print(exc)
 

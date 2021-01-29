@@ -352,6 +352,77 @@ TEST_F(ReindexerApi, AddExistingIndex) {
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
+TEST_F(ReindexerApi, AddUnacceptablePKIndex) {
+	const string kIdxName = "id";
+	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// Try to add an array as a PK
+	err = rt.reindexer->AddIndex(default_namespace, {kIdxName, "hash", "int", IndexOpts().PK().Array()});
+	ASSERT_EQ(err.code(), errParams) << err.what();
+
+	// Try to add a store indexes of few types as a PKs
+	err = rt.reindexer->AddIndex(default_namespace, {kIdxName, "-", "int", IndexOpts().PK()});
+	ASSERT_EQ(err.code(), errParams) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {kIdxName, "-", "bool", IndexOpts().PK()});
+	ASSERT_EQ(err.code(), errParams) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {kIdxName, "-", "int64", IndexOpts().PK()});
+	ASSERT_EQ(err.code(), errParams) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {kIdxName, "-", "double", IndexOpts().PK()});
+	ASSERT_EQ(err.code(), errParams) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {kIdxName, "-", "string", IndexOpts().PK()});
+	ASSERT_EQ(err.code(), errParams) << err.what();
+
+	// Add valid index with the same name
+	err = rt.reindexer->AddIndex(default_namespace, {kIdxName, "hash", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+
+TEST_F(ReindexerApi, UpdateToUnacceptablePKIndex) {
+	const string kIdxName = "id";
+	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(default_namespace, {kIdxName, "hash", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// Try to update to an array as a PK
+	err = rt.reindexer->UpdateIndex(default_namespace, {kIdxName, "tree", "int", IndexOpts().PK().Array()});
+	ASSERT_EQ(err.code(), errParams) << err.what();
+
+	// Try to update to a store indexes of few types as a PKs
+	const std::vector<std::string> kTypes = {"int", "bool", "int64", "double", "string"};
+	for (auto& type : kTypes) {
+		err = rt.reindexer->UpdateIndex(default_namespace, {kIdxName, "-", type, IndexOpts().PK()});
+		ASSERT_EQ(err.code(), errParams) << err.what();
+	}
+
+	// Update to a valid index with the same name
+	err = rt.reindexer->UpdateIndex(default_namespace, {kIdxName, "tree", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+
+TEST_F(ReindexerApi, IndexNameValidation) {
+	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	ASSERT_TRUE(err.ok()) << err.what();
+	// Index names with cirillic characters are not allowed
+	err = rt.reindexer->AddIndex(default_namespace, {"индекс", "hash", "int", IndexOpts().PK()});
+	ASSERT_EQ(err.code(), errParams) << err.what();
+	err = rt.reindexer->AddIndex(default_namespace, {"idд", "hash", "int", IndexOpts().PK()});
+	ASSERT_EQ(err.code(), errParams) << err.what();
+	// Index names with special characters are not allowed
+	const string_view kForbiddenChars = "?#№/@!$%^*)+";
+	for (auto c : kForbiddenChars) {
+		auto idxName = std::string("id");
+		idxName += c;
+		err = rt.reindexer->AddIndex(default_namespace, {idxName, "hash", "int", IndexOpts().PK()});
+		ASSERT_EQ(err.code(), errParams) << err.what() << "; IdxName: " << idxName;
+	}
+}
+
 TEST_F(ReindexerApi, AddExistingIndexWithDiffType) {
 	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -360,7 +431,7 @@ TEST_F(ReindexerApi, AddExistingIndexWithDiffType) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int64", IndexOpts().PK()});
-	ASSERT_FALSE(err.ok());
+	ASSERT_EQ(err.code(), errConflict) << err.what();
 }
 
 TEST_F(ReindexerApi, CloseNamespace) {
@@ -1171,10 +1242,15 @@ TEST_F(ReindexerApi, ContextCancelingTest) {
 }
 
 TEST_F(ReindexerApi, JoinConditionsSqlParserTest) {
-	Query query;
-	const string sql = "SELECT * FROM ns WHERE a > 0 AND  INNER JOIN (SELECT * FROM ns2 WHERE b > 10 AND c = 1) ON ns2.id = ns.fk_id";
-	query.FromSQL(sql);
-	ASSERT_TRUE(query.GetSQL() == sql);
+	Query q1, q2;
+	const string sql1 = "SELECT * FROM ns WHERE a > 0 AND  INNER JOIN (SELECT * FROM ns2 WHERE b > 10 AND c = 1) ON ns2.id = ns.fk_id";
+	q1.FromSQL(sql1);
+	ASSERT_TRUE(q1.GetSQL() == sql1);
+
+	const string sql2 =
+		"SELECT * FROM ns WHERE a > 0 AND  INNER JOIN (SELECT * FROM ns2 WHERE b > 10 AND c = 1 LIMIT 0) ON ns2.id = ns.fk_id";
+	q2.FromSQL(sql2);
+	ASSERT_EQ(q2.GetSQL(), sql2);
 }
 
 TEST_F(ReindexerApi, UpdateWithBoolParserTest) {

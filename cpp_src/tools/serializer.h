@@ -211,6 +211,7 @@ public:
 	void Write(string_view buf);
 	uint8_t *Buf() const;
 	std::unique_ptr<uint8_t[]> DetachBuf();
+	std::unique_ptr<uint8_t[]> DetachLStr();
 	chunk DetachChunk();
 	void Reset(size_t len = 0) { len_ = len; }
 	size_t Len() const { return len_; }

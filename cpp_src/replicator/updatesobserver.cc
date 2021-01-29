@@ -184,6 +184,13 @@ void UpdatesObservers::OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRe
 	}
 }
 
+void UpdatesObservers::OnUpdatesLost(string_view nsName) {
+	shared_lock<shared_timed_mutex> lck(mtx_);
+	for (auto observer : observers_) {
+		observer.ptr->OnUpdatesLost(nsName);
+	}
+}
+
 void UpdatesObservers::OnConnectionState(const Error &err) {
 	shared_lock<shared_timed_mutex> lck(mtx_);
 	for (auto &observer : observers_) {

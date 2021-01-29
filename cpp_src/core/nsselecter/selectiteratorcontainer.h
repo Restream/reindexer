@@ -1,4 +1,5 @@
 #pragma once
+#include <limits>
 #include "core/expressiontree.h"
 #include "core/nsselecter/selectiterator.h"
 #include "core/selectfunc/ctx/ftctx.h"
@@ -14,7 +15,8 @@ class SelectIteratorContainer : public ExpressionTree<OpType, Bracket, 2, Select
 	using Base = ExpressionTree<OpType, Bracket, 2, SelectIterator>;
 
 public:
-	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx *ctx = nullptr) : pt_(pt), ctx_(ctx) {}
+	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx *ctx = nullptr)
+		: pt_(pt), ctx_(ctx), maxIterations_(std::numeric_limits<int>::max()), wasZeroIterations_(false) {}
 
 	void ForEachIterator(const std::function<void(const SelectIterator &)> &func) const { ExecuteAppropriateForEach(func); }
 	void ForEachIterator(const std::function<void(SelectIterator &)> &func) { ExecuteAppropriateForEach(func); }
@@ -40,7 +42,12 @@ public:
 		explainJSON(cbegin(), cend(), iters, builder, js);
 	}
 
-	void Clear() { clear(); }
+	void Clear() {
+		clear();
+		maxIterations_ = std::numeric_limits<int>::max();
+		wasZeroIterations_ = false;
+	}
+	int GetMaxIterations(bool withZero = false) { return (withZero && wasZeroIterations_) ? 0 : maxIterations_; }
 
 private:
 	void sortByCost(span<unsigned> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations);
@@ -63,9 +70,9 @@ private:
 	static bool isIdset(const_iterator it, const_iterator end);
 
 	SelectKeyResults processQueryEntry(const QueryEntry &qe, const NamespaceImpl &ns, StrictMode strictMode);
-	SelectKeyResults processQueryEntry(unsigned entriesSize, const QueryEntry &qe, bool enableSortIndexOptimize, const NamespaceImpl &ns,
-									   unsigned sortId, bool isQueryFt, SelectFunction::Ptr selectFnc, bool &isIndexFt, bool &isIndexSparse,
-									   FtCtx::Ptr &, const RdxContext &);
+	SelectKeyResults processQueryEntry(const QueryEntry &qe, bool enableSortIndexOptimize, const NamespaceImpl &ns, unsigned sortId,
+									   bool isQueryFt, SelectFunction::Ptr selectFnc, bool &isIndexFt, bool &isIndexSparse, FtCtx::Ptr &,
+									   const RdxContext &);
 	void processJoinEntry(const QueryEntry &qe, OpType op);
 	void processQueryEntryResults(SelectKeyResults &selectResults, OpType, const NamespaceImpl &ns, const QueryEntry &qe, bool isIndexFt,
 								  bool isIndexSparse, bool nonIndexField);
@@ -85,6 +92,8 @@ private:
 
 	PayloadType pt_;
 	SelectCtx *ctx_;
+	int maxIterations_;
+	bool wasZeroIterations_;
 };
 
 }  // namespace reindexer

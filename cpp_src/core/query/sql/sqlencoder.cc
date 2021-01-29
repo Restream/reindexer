@@ -136,7 +136,7 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 					distinctIndex = query_.aggregations_[0].fields_[0];
 				}
 				if (query_.selectFilter_.empty()) {
-					if (query_.count != 0) {
+					if (query_.count != 0 || query_.calcTotal == ModeNoTotal) {
 						if (needComma) ser << ", ";
 						ser << '*';
 						if (query_.calcTotal != ModeNoTotal) {

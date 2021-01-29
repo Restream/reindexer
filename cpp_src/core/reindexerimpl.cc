@@ -498,7 +498,7 @@ Error ReindexerImpl::Insert(string_view nsName, Item& item, const InternalRdxCon
 
 static void printPkValue(const Item::FieldRef& f, WrSerializer& ser) {
 	ser << f.Name() << " = ";
-	Variant(f).Dump(ser);
+	f.operator Variant().Dump(ser);
 }
 
 static WrSerializer& printPkFields(const Item& item, WrSerializer& ser) {

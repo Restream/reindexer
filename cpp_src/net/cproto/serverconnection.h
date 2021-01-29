@@ -15,12 +15,14 @@ using reindexer::h_vector;
 
 class ServerConnection : public ConnectionST, public IServerConnection, public Writer {
 public:
-	ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher, bool enableStat);
+	ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher, bool enableStat, size_t maxUpdatesSize);
 	~ServerConnection();
 
 	// IServerConnection interface implementation
-	static ConnectionFactory NewFactory(Dispatcher &dispatcher, bool enableStat) {
-		return [&dispatcher, enableStat](ev::dynamic_loop &loop, int fd) { return new ServerConnection(fd, loop, dispatcher, enableStat); };
+	static ConnectionFactory NewFactory(Dispatcher &dispatcher, bool enableStat, size_t maxUpdatesSize) {
+		return [&dispatcher, enableStat, maxUpdatesSize](ev::dynamic_loop &loop, int fd) {
+			return new ServerConnection(fd, loop, dispatcher, enableStat, maxUpdatesSize);
+		};
 	}
 
 	bool IsFinished() override final { return !sock_.valid(); }
@@ -50,8 +52,12 @@ protected:
 	std::unique_ptr<ClientData> clientData_;
 	// keep here to prevent allocs
 	RPCCall call_;
+
 	std::vector<IRPCCall> updates_;
+	size_t updatesSize_;
+	const size_t maxUpdatesSize_;
 	std::mutex updates_mtx_;
+
 	ev::periodic updates_timeout_;
 	ev::async updates_async_;
 	bool enableSnappy_;
