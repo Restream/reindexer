@@ -251,7 +251,6 @@ protected:
 		std::atomic<bool> readonly_ = {false};
 	};
 
-	void copyContentsFrom(const NamespaceImpl &);
 	ReplicationState getReplState() const;
 	std::string sysRecordName(string_view sysTag, uint64_t version);
 	void writeSysRecToStorage(string_view data, string_view sysTag, uint64_t &version, bool direct);
@@ -294,7 +293,7 @@ protected:
 	IndexDef getIndexDefinition(const string &indexName) const;
 	IndexDef getIndexDefinition(size_t) const;
 
-	string getMeta(const string &key);
+	string getMeta(const string &key) const;
 	void flushStorage(const RdxContext &);
 	void putMeta(const string &key, const string_view &data, const RdxContext &ctx);
 
@@ -311,6 +310,8 @@ protected:
 	const FieldsSet &pkFields();
 	void writeToStorage(const string_view &key, const string_view &data);
 	void doFlushStorage();
+
+	vector<string> enumMeta() const;
 
 	void updateSelectTime();
 	int64_t getLastSelectTime() const;

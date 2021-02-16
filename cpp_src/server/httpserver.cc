@@ -812,18 +812,19 @@ int HTTPServer::DocHandler(http::Context &ctx) {
 	web web(webRoot_);
 
 	auto stat = web.stat(path);
-	if (stat == fs::StatFile) {
-		return web.file(ctx, http::StatusOK, path);
+	if (stat.fstatus == fs::StatFile) {
+		return web.file(ctx, http::StatusOK, path, stat.isGzip);
 	}
 
-	if (stat == fs::StatDir && !endsWithSlash) {
+	if (stat.fstatus == fs::StatDir && !endsWithSlash) {
 		return ctx.Redirect(path + "/");
 	}
 
 	for (; path.length() > 0;) {
 		string file = fs::JoinPath(path, "index.html");
-		if (web.stat(file) == fs::StatFile) {
-			return web.file(ctx, http::StatusOK, file);
+		auto pathStatus = web.stat(file);
+		if (web.stat(file).fstatus == fs::StatFile) {
+			return web.file(ctx, http::StatusOK, file, pathStatus.isGzip);
 		}
 
 		auto pos = path.find_last_of('/');

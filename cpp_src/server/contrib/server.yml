@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.0.2"
+  version: "3.0.3"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -2568,7 +2568,7 @@ definitions:
         minimum: 0.0
         maximum: 10.0
         description: "Boost of search query term distance in found document"
-      distance_weght:
+      distance_weight:
         type: number
         format: "float"
         default: 0.5
@@ -2582,7 +2582,7 @@ definitions:
         minimum: 0.0
         maximum: 10.0
         description: "Boost of search query term length"
-      term_len_weght:
+      term_len_weight:
         type: number
         format: "float"
         default: 0.3
@@ -2596,7 +2596,7 @@ definitions:
         minimum: 0.0
         maximum: 10.0
         description: "Boost of search query term position"
-      position_weght:
+      position_weight:
         type: number
         format: "float"
         default: 0.1
@@ -2681,7 +2681,7 @@ definitions:
         minimum: 0.0
         maximum: 10.0
         description: "Boost of search query term length"
-      term_len_weght:
+      term_len_weight:
         type: number
         format: "float"
         default: 0.3
@@ -2695,7 +2695,7 @@ definitions:
         minimum: 0.0
         maximum: 10.0
         description: "Boost of search query term position"
-      position_weght:
+      position_weight:
         type: number
         format: "float"
         default: 0.1

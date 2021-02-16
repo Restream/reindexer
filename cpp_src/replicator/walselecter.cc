@@ -35,15 +35,16 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 			throw Error(errLogic, "Unexpected index in WAL select query: %s", q.entries[i].index);
 		}
 	}
+	auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.entries[versionIdx].values[0].As<string>());
 	auto &lsnEntry = q.entries[lsnIdx];
 	if (lsnEntry.values.size() == 1 && lsnEntry.condition == CondGt) {
 		lsn_t fromLSN = lsn_t(std::min(lsnEntry.values[0].As<int64_t>(), std::numeric_limits<int64_t>::max() - 1));
 		if (fromLSN.Server() != ns_->serverId_)
 			throw Error(errOutdatedWAL, "Query to WAL with incorrect LSN %ld, LSN counter %ld", int64_t(fromLSN), ns_->wal_.LSNCounter());
 		if (ns_->wal_.LSNCounter() != (fromLSN.Counter() + 1) && ns_->wal_.is_outdated(fromLSN.Counter() + 1) && count)
-			throw Error(errOutdatedWAL, "Query to WAL with outdated LSN %ld, LSN counter %ld", int64_t(fromLSN), ns_->wal_.LSNCounter());
+			throw Error(errOutdatedWAL, "Query to WAL with outdated LSN %ld, LSN counter %ld walSize = %d count = %d", int64_t(fromLSN),
+						ns_->wal_.LSNCounter(), ns_->wal_.size(), count);
 
-		auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.entries[versionIdx].values[0].As<string>());
 		const auto walEnd = ns_->wal_.end();
 		for (auto it = ns_->wal_.upper_bound(fromLSN.Counter()); count && it != walEnd; ++it) {
 			WALRecord rec = *it;
@@ -99,6 +100,34 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 			}
 		}
 	} else if (lsnEntry.condition == CondAny) {
+		if (start == 0 && !(slaveVersion < kMinUnknownReplSupportRxVersion)) {
+			auto addSpRecord = [&result](const WALRecord &wrec) {
+				PackedWALRecord wr;
+				wr.Pack(wrec);
+				PayloadValue val(wr.size(), wr.data());
+				val.SetLSN(-1);
+				result.Add(ItemRef(-1, val, 0, 0, true));
+			};
+			for (unsigned int i = 1; i < ns_->indexes_.size(); i++) {
+				auto indexDef = ns_->getIndexDefinition(i);
+				WrSerializer ser;
+				indexDef.GetJSON(ser);
+				WALRecord wrec(WalIndexAdd, ser.Slice());
+				addSpRecord(wrec);
+			}
+			std::vector<string> metaKeys = ns_->enumMeta();
+			for (const auto &key : metaKeys) {
+				auto metaVal = ns_->getMeta(key);
+				WALRecord wrec(WalPutMeta, key, metaVal);
+				addSpRecord(wrec);
+			}
+			if (ns_->schema_) {
+				WrSerializer ser;
+				ns_->schema_->GetJSON(ser);
+				WALRecord wrec(WalSetSchema, ser.Slice());
+				addSpRecord(wrec);
+			}
+		}
 		for (size_t id = 0; count && id < ns_->items_.size(); ++id) {
 			if (ns_->items_[id].IsFree()) continue;
 			if (start) {

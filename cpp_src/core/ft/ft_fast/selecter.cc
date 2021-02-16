@@ -43,6 +43,7 @@ void Selecter::prepareVariants(std::vector<FtVariantEntry> &variants, size_t ter
 	string tmpstr, stemstr;
 	for (auto &v : variantsUtf16) {
 		utf16_to_utf8(v.first, tmpstr);
+		if (tmpstr.empty()) continue;
 		variants.push_back({tmpstr, term.opts, v.second});
 		if (!term.opts.exact) {
 			for (auto &lang : langs) {
@@ -51,7 +52,7 @@ void Selecter::prepareVariants(std::vector<FtVariantEntry> &variants, size_t ter
 					throw Error(errParams, "Stemmer for language %s is not available", lang);
 				}
 				stemIt->second.stem(tmpstr, stemstr);
-				if (tmpstr != stemstr) {
+				if (tmpstr != stemstr && !stemstr.empty()) {
 					FtDslOpts opts = term.opts;
 					opts.pref = true;
 
@@ -178,14 +179,13 @@ void Selecter::processStepVariants(FtSelectContext &ctx, DataHolder::CommitStep 
 
 		ptrdiff_t suffixLen = keyIt->first - word;
 		const int matchLen = tmpstr.length();
-		assert(matchLen);
 
 		if (!withSuffixes && suffixLen) continue;
 		if (!withPrefixes && wordLength != matchLen + suffixLen) break;
 
 		int matchDif = std::abs(long(wordLength - matchLen + suffixLen));
-		int proc =
-			std::max(variant.proc - holder_.cfg_->partialMatchDecrease * matchDif / std::max(matchLen, 3), suffixLen ? kSuffixMinProc : kPrefixMinProc);
+		int proc = std::max(variant.proc - holder_.cfg_->partialMatchDecrease * matchDif / std::max(matchLen, 3),
+							suffixLen ? kSuffixMinProc : kPrefixMinProc);
 
 		auto it = ctx.foundWords.find(glbwordId);
 		if (it == ctx.foundWords.end() || it->second.first != ctx.rawResults.size() - 1) {
@@ -348,11 +348,7 @@ void Selecter::mergeItaration(const TextSearchResults &rawRes, index_t rawResInd
 					// normalized bm25
 					const double normBm25Tmp = bound(bm25, fldCfg.bm25Weight, fldCfg.bm25Boost);
 
-					const auto posIt = std::find_if(relid.Pos().cbegin(), relid.Pos().cend(), [f](const IdRelType::PosType &pos) {
-						return static_cast<unsigned>(pos.field()) == f;
-					});	 // TODO find more effective way. Issue #682
-					assert(posIt != relid.Pos().cend());
-					const double positionRank = bound(pos2rank(posIt->pos()), fldCfg.positionWeight, fldCfg.positionBoost);
+					const double positionRank = bound(pos2rank(relid.MinPositionInField(f)), fldCfg.positionWeight, fldCfg.positionBoost);
 
 					termLenBoost = bound(rawRes.term.opts.termLenBoost, fldCfg.termLenWeight, fldCfg.termLenBoost);
 					// final term rank calculation

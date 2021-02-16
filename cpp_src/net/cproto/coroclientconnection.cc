@@ -129,7 +129,7 @@ CoroRPCAnswer CoroClientConnection::call(const CommandParams &opts, const Args &
 		return Error(errLogic, "Client is not running");
 	}
 
-	auto deadline = opts.netTimeout.count() ? Now() + opts.netTimeout : seconds(0);
+	auto deadline = opts.netTimeout.count() ? Now() + opts.netTimeout + kDeadlineCheckInterval : seconds(0);
 	auto seqp = seqNums_.pop();
 	if (!seqp.second) {
 		CoroRPCAnswer(Error(errLogic, "Unable to get seq num"));

@@ -92,7 +92,7 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
 )
 endif ()
 if (LINK_RESOURCES)
-	include(CMakeRC)
+  include(CMakeRC)
   message ("-- Downloading swagger html assets...") 
 	execute_process(
 	    COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_BINARY_DIR}/make_swagger.cmake"
@@ -100,7 +100,7 @@ if (LINK_RESOURCES)
 	    ERROR_VARIABLE err
 	)
 	if (NOT "${ret}" STREQUAL "0")
-	    message(FATAL_ERROR "Could not prepare 'face' and 'swagger' files. Reason: ${err}")
+            message(FATAL_ERROR "Could not prepare 'swagger' files. Reason: ${err}")
 	endif()
   message ("-- Downloading face html assets...") 
 	execute_process(
@@ -109,9 +109,9 @@ if (LINK_RESOURCES)
 	    ERROR_VARIABLE err
 	)
 	if (NOT "${ret}" STREQUAL "0")
-	    message(FATAL_ERROR "Could not prepare 'face' and 'swagger' files. Reason: ${err}")
-	endif()
-
+            message(FATAL_ERROR "Could not prepare 'face' files. Reason: ${err}")
+  endif()
+  
 	file(GLOB_RECURSE FACE_FILES ${PROJECT_BINARY_DIR}/face*/*)
 	file(GLOB_RECURSE SWAGGER_FILES ${PROJECT_BINARY_DIR}/swagger/*)
 	cmrc_add_resource_library(reindexer_server_resources WHENCE ${PROJECT_BINARY_DIR} ${FACE_FILES})

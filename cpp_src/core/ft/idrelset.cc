@@ -59,14 +59,18 @@ int IdRelType::Distance(const IdRelType& other, int max) const {
 	}
 	return max;
 }
-int IdRelType::WordsInField(int field) {
-	unsigned i = 0;
-	int wcount = 0;
-	// TODO: optiminize here, binary search or precalculate
-	while (i < pos_.size() && pos_[i].field() < field) i++;
-	while (i < pos_.size() && pos_[i].field() == field) i++, wcount++;
-
-	return wcount;
+int IdRelType::WordsInField(int field) const noexcept {
+	const auto lower = std::lower_bound(pos_.cbegin(), pos_.cend(), field, [](PosType p, int f){return p.field() < f;});
+	return std::upper_bound(lower, pos_.cend(), field, [](int f, PosType p){return f < p.field();}) - lower;
+}
+int IdRelType::MinPositionInField(int field) const noexcept {
+	auto lower = std::lower_bound(pos_.cbegin(), pos_.cend(), field, [](PosType p, int f){return p.field() < f;});
+	assert(lower != pos_.cend() && lower->field() == field);
+	int res = lower->pos();
+	while (++lower != pos_.cend() && lower->field() == field) {
+		if (lower->pos() < res) res = lower->pos();
+	}
+	return res;
 }
 
 int IdRelSet::Add(VDocIdType id, int pos, int field) {

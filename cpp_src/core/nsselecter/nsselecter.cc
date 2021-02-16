@@ -10,6 +10,7 @@
 
 constexpr int kMinIterationsForInnerJoinOptimization = 100;
 constexpr int kMaxIterationsForIdsetPreresult = 10000;
+constexpr int kCancelCheckFrequency = 1000;
 
 namespace reindexer {
 
@@ -266,9 +267,10 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		}
 		explain.AddLoopTime();
 		explain.AddIterations(maxIterations);
+		ThrowOnCancel(rdxCtx);
 	} while (qPreproc.NeedNextEvaluation(lctx.start, lctx.count, ctx.matchedAtLeastOnce));
 
-	processLeftJoins(result, ctx, resultInitSize);
+	processLeftJoins(result, ctx, resultInitSize, rdxCtx);
 	for (size_t i = resultInitSize; i < result.Items().size(); ++i) {
 		auto &iref = result.Items()[i];
 		if (!iref.ValueInitialized()) iref.SetValue(ns_->items_[iref.Id()]);
@@ -497,13 +499,15 @@ void NsSelecter::setLimitAndOffset(ItemRefVector &queryResult, size_t offset, si
 	}
 }
 
-void NsSelecter::processLeftJoins(QueryResults &qr, SelectCtx &sctx, size_t startPos) {
+void NsSelecter::processLeftJoins(QueryResults &qr, SelectCtx &sctx, size_t startPos, const RdxContext& rdxCtx) {
 	if (!checkIfThereAreLeftJoins(sctx)) return;
 	for (size_t i = startPos; i < qr.Count(); ++i) {
 		IdType rowid = qr[i].GetItemRef().Id();
 		ConstPayload pl(ns_->payloadType_, ns_->items_[rowid]);
-		for (auto &joinedSelector : *sctx.joinedSelectors)
+		for (auto &joinedSelector : *sctx.joinedSelectors) {
 			if (joinedSelector.Type() == JoinType::LeftJoin) joinedSelector.Process(rowid, sctx.nsid, pl, true);
+		}
+		if (i % kCancelCheckFrequency == 0) ThrowOnCancel(rdxCtx);
 	}
 }
 
@@ -598,6 +602,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 	SelectIterator &firstIterator = qres.begin()->Value();
 	IdType rowId = firstIterator.Val();
 	while (firstIterator.Next(rowId) && !finish) {
+		if (rowId % kCancelCheckFrequency == 0) ThrowOnCancel(rdxCtx);
 		rowId = firstIterator.Val();
 		IdType properRowId = rowId;
 

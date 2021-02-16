@@ -1,9 +1,12 @@
-
-
+#include <iostream>
+#ifndef _WIN32
 #include <signal.h>
+#endif // _WIN32
+
 #include <sstream>
 #include "debug/backtrace.h"
 #include "debug/resolver.h"
+#include "estl/string_view.h"
 
 static std::unique_ptr<reindexer::debug::TraceResolver> resolver{nullptr};
 
@@ -35,10 +38,12 @@ extern "C" void cgoSymbolizer(cgoSymbolizerArg* arg) {
 	}
 }
 
+#ifdef _WIN32
+extern "C" void cgoSignalsInit() {}
+#else // !_WIN32
 static struct sigaction oldsa[32];
 
 static void cgoSighandler(int sig, siginfo_t*, void*) {
-	// reindexer::debug::print_backtrace(std::cout, ctx, sig);
 	reindexer::debug::print_crash_query(std::cout);
 	if (sig < 32) {
 		sigaction(sig, &oldsa[sig], nullptr);
@@ -57,6 +62,7 @@ extern "C" void cgoSignalsInit() {
 	sigaction(SIGABRT, &sa, &oldsa[SIGABRT]);
 	sigaction(SIGBUS, &sa, &oldsa[SIGBUS]);
 }
+#endif // _WIN32
 
 extern "C" void cgoTraceback(cgoTracebackArg* arg) {
 	reindexer::string_view method;

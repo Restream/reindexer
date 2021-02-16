@@ -35,7 +35,7 @@ struct QueryCacheKey {
 		buf.reserve(ser.Len());
 		buf.assign(ser.Buf(), ser.Buf() + ser.Len());
 	}
-	size_t Size() const { return sizeof(QueryCacheKey) + buf.size(); }
+	size_t Size() const { return sizeof(QueryCacheKey) + (buf.is_hdata() ? 0 : buf.size()); }
 
 	QueryCacheKey(WrSerializer& ser) : buf(ser.Buf(), ser.Buf() + ser.Len()) {}
 	h_vector<uint8_t, 256> buf;

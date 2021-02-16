@@ -12,52 +12,51 @@ Reindexer is fast. Up to 5x times faster, than mongodb, and 10x times than elast
 
 The simplest way to get reindexer, is pulling & run docker image from [dockerhub](https://hub.docker.com/r/reindexer/reindexer/)
 
-````bash
+```bash
 docker run -p9088:9088 -p6534:6534 -it reindexer/reindexer
-````
+```
 
 ## OSX brew
 
-````bash
+```bash
 brew tap restream/reindexer
 brew install reindexer
-````
+```
 
 ## Linux
 
 ## RHEL/Centos/Fefora
-````bash
+
+```bash
 yum install -y epel-release yum-utils
 rpm --import http://repo.reindexer.org/RX-KEY.GPG
 yum-config-manager --add-repo  http://repo.reindexer.org/<distro>/x86_64/
 yum update
 yum install reindexer-server
-````
+```
 
 Available distros: `centos-6`,`centos-7`,`centos-8`,`fedora-30`,`fedora-31`,
 
-
 ## Ubuntu/Debian
 
-````bash
+```bash
 curl http://repo.reindexer.org/RX-KEY.GPG | apt-key add
 echo "deb http://repo.reindexer.org/<distro> /" >> /etc/apt/sources.list
 apt update
 apt install reindexer-server
-````
+```
 
 Available distros: `debian-buster`, `debian-stretch`, `ubuntu-bionic`, `ubuntu-xenial`, `ubuntu-focal`
 
-
 ## Windows
 
-Download and install [64 bit](http://www.reindexer.org/dist/reindexer_server-win64.exe) or [32 bit](http://www.reindexer.org/dist/reindexer_server-win32.exe) 
+Download and install [64 bit](http://www.reindexer.org/dist/reindexer_server-win64.exe) or [32 bit](http://www.reindexer.org/dist/reindexer_server-win32.exe)
 
 ## Installing from sources
 
 ### Dependencies
 
-Reindexer's core is written in C++11 and uses LevelDB as the storage backend, so the Cmake, C++11 toolchain and LevelDB must be installed before installing Reindexer.  To build Reindexer, g++ 4.8+, clang 3.3+ or MSVC 2015+ is required.  
+Reindexer's core is written in C++11 and uses LevelDB as the storage backend, so the Cmake, C++11 toolchain and LevelDB must be installed before installing Reindexer. To build Reindexer, g++ 4.8+, clang 3.3+ or MSVC 2015+ is required.  
 Dependencies can be installed automatically by this script:
 
 ```bash
@@ -68,7 +67,7 @@ curl -L https://github.com/Restream/reindexer/raw/master/dependencies.sh | bash 
 
 The typical steps for building and configuring the reindexer looks like this
 
-````bash
+```bash
 git clone https://github.com/Restream/reindexer
 cd reindexer
 mkdir -p build && cd build
@@ -76,15 +75,17 @@ cmake ..
 make -j4
 # install to system
 sudo make install
-````
+```
 
 ## Using reindexer server
 
 - Start server
+
 ```
 service start reindexer
 ```
-- open in web browser http://127.0.0.1:9088/swagger  to see reindexer REST API interactive documentation
+
+- open in web browser http://127.0.0.1:9088/swagger to see reindexer REST API interactive documentation
 
 - open in web browser http://127.0.0.1:9088/face to see reindexer web interface
 
@@ -95,14 +96,30 @@ The simplest way to use reindexer with any program language - is using REST API.
 [Or explore interactive version of Reindexer's swagger documentation](https://editor.swagger.io/?url=https://raw.githubusercontent.com/Restream/reindexer/master/cpp_src/server/contrib/server.yml)
 
 ## GRPC API
-[GPRC](https://grpc.io) is popular RPC framework, developed and maintained by google. GRPC is more efficient, than HTTP. From version 3.0 reindexer supports GRPC API. 
 
-Reindexer's GRPC API is defined in [reindexer.proto](cpp_src/server/proto/reindexer.proto) file. 
-To operate with reindexer via GRPC, 
-1. Build reindexer_server with -DENABLE_GRPC cmake option,
+[GPRC](https://grpc.io) is a modern open-source high-performance RPC framework developed at Google that can run in any environment. It can efficiently connect services in and across data centers with pluggable support for load balancing, tracing, health checking and authentication. It uses HTTP/2 for transport, Protocol Buffers as the interface description language and it is more efficient (and also easier) to use than HTTP API. Reindexer supports GRPC API since version 3.0.
+
+Reindexer's GRPC API is defined in [reindexer.proto](server/proto/reindexer.proto) file.
+
+To operate with reindexer via GRPC:
+
+1. Build reindexer_server with -DENABLE_GRPC cmake option
 2. Run reindexer_server with --grpc flag
-3. Build GRPC client from [reindexer.proto](cpp_src/server/proto/reindexer.proto) for your language https://grpc.io/docs/languages/
-4. Connect client to reindexer server listened at 127.0.0.1:16534 
+3. Build GRPC client from [reindexer.proto](server/proto/reindexer.proto) for your language https://grpc.io/docs/languages/
+4. Connect your GRPC client to reindexer server running on port 16534
+
+Pay attention to methods, that have `stream` parameters:
+
+```protobuf
+ rpc ModifyItem(stream ModifyItemRequest) returns(stream ErrorResponse) {}
+ rpc SelectSql(SelectSqlRequest) returns(stream QueryResultsResponse) {}
+ rpc Select(SelectRequest) returns(stream QueryResultsResponse) {}
+ rpc Update(UpdateRequest) returns(stream QueryResultsResponse) {}
+ rpc Delete(DeleteRequest) returns(stream QueryResultsResponse) {}
+ rpc AddTxItem(stream AddTxItemRequest) returns(stream ErrorResponse) {}
+```
+
+The concept of streaming is described [here](https://grpc.io/docs/what-is-grpc/core-concepts/#server-streaming-rpc). The best example is a bulk insert operation, which is implemented via `Modify` method with mode = `INSERT`. In HTTP server it is implemented like a raw JSON document, containing all the items together, with GRPC streaming you send every item separately one by one. The second approach seems more convenient, safe, efficient and fast.
 
 ## Monitoring
 
@@ -212,9 +229,9 @@ Reindexer supports the following data formats to communicate with other applicat
 
 Protocol buffers are language-neutral, platform-neutral, extensible mechanism for serializing structured data. You define how you want your data to be structured once, then you can use special generated source code to easily write and read your structured data to and from a variety of data streams and using a variety of languages (https://developers.google.com/protocol-buffers).
 
-Protocol buffers are one of the output data formats for Reindexer's HTTP REST API.
+Protocol buffers is one of the output data formats for Reindexer's HTTP REST API.
 
-To start to work with Protobuf in Reindexer you need to perform the following steps:
+To start working with Protobuf in Reindexer you need to perform the following steps:
 
 1.  [Set JSON Schema](server/contrib/server.md#set-namespace-schema) for all the Namespaces that you are going to use during the session.
 2.  [Get text representation of Protobuf Schema](server/contrib/server.md#get-protobuf-communication-parameters-schema) (\*.proto file) that contains all the communication parameters and descriptions of the Namespaces (set in the previous step). The best practise is to enumerate all the required Namespaces at once (not to regenerate Schema one more time).
@@ -314,7 +331,7 @@ Field `items` in `QueryResults`
 repeated ItemsUnion items = 1;
 ```
 
-contains Query execution result set. To get results of an appropriate type (type of requested Namespace) you need to deal with `oneof` message, documentation for your language can be found here (https://developers.google.com/protocol-buffers/docs/proto#oneof). In case of Python it looks like this:
+contains Query execution result set. To get results of an appropriate type (type of requested Namespace) you need to work with `oneof` message, documentation for your language can be found here (https://developers.google.com/protocol-buffers/docs/proto#oneof). In case of Python it looks like this:
 
 ```python
 for it in queryresults.items:

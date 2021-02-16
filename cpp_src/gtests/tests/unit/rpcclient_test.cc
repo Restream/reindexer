@@ -283,20 +283,23 @@ TEST_F(RPCClientTestApi, RenameNamespace) {
 
 TEST_F(RPCClientTestApi, CoroRequestTimeout) {
 	// Should return error on request timeout
-	AddFakeServer();
+	RPCServerConfig conf;
+	conf.loginDelay = std::chrono::seconds(0);
+	conf.openNsDelay = std::chrono::seconds(4);
+	AddFakeServer(kDefaultRPCServerAddr, conf);
 	StartServer();
 	ev::dynamic_loop loop;
 	bool finished = false;
 	loop.spawn([&loop, &finished] {
 		reindexer::client::ReindexerConfig config;
-		config.ConnectTimeout = seconds(3);
-		config.RequestTimeout = seconds(3);
+		config.RequestTimeout = seconds(1);
 		reindexer::client::CoroReindexer rx(config);
 		auto err = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
 		EXPECT_TRUE(err.ok()) << err.what();
 		const string kNamespaceName = "MyNamespace";
 		err = rx.AddNamespace(reindexer::NamespaceDef(kNamespaceName));
 		EXPECT_EQ(err.code(), errTimeout);
+		loop.sleep(std::chrono::seconds(4));
 		err = rx.DropNamespace(kNamespaceName);
 		EXPECT_TRUE(err.ok()) << err.what();
 		finished = true;

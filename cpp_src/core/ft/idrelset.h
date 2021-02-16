@@ -21,7 +21,8 @@ public:
 
 	int Distance(const IdRelType& other, int max) const;
 
-	int WordsInField(int field);
+	int WordsInField(int field) const noexcept;
+	int MinPositionInField(int field) const noexcept;
 	// packed_vector callbacks
 	size_t pack(uint8_t* buf) const;
 	size_t unpack(const uint8_t* buf, unsigned len);

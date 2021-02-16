@@ -285,8 +285,8 @@ public:
 			return capacity() * sizeof(T);
 	}
 
-protected:
 	bool is_hdata() const noexcept { return is_hdata_; }
+protected:
 	pointer ptr() noexcept { return is_hdata() ? reinterpret_cast<pointer>(hdata_) : e_.data_; }
 	const_pointer ptr() const noexcept { return is_hdata() ? reinterpret_cast<const_pointer>(hdata_) : e_.data_; }
 

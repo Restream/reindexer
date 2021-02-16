@@ -58,10 +58,44 @@ NamespaceImpl::IndexesStorage::IndexesStorage(const NamespaceImpl &ns) : ns_(ns)
 void NamespaceImpl::IndexesStorage::MoveBase(IndexesStorage &&src) { Base::operator=(move(src)); }
 
 // private implementation and NOT THREADSAFE of copy CTOR
-// use 'NamespaceImpl::Clone(NamespaceImpl& ns)'
 NamespaceImpl::NamespaceImpl(const NamespaceImpl &src)
-	: indexes_(*this), wal_(config_.walSize), observers_(src.observers_), lastSelectTime_(0), cancelCommit_(false), nsIsLoading_(false) {
-	copyContentsFrom(src);
+	: indexes_{*this},
+	  indexesNames_{src.indexesNames_},
+	  items_{src.items_},
+	  free_{src.free_},
+	  name_{src.name_},
+	  payloadType_{src.payloadType_},
+	  tagsMatcher_{src.tagsMatcher_},
+	  storage_{src.storage_},
+	  updates_{src.updates_},
+	  unflushedCount_{src.unflushedCount_.load(std::memory_order_acquire)},	// 0
+	  meta_{src.meta_},
+	  dbpath_{src.dbpath_},
+	  queryCache_{make_shared<QueryCache>()},
+	  sparseIndexesCount_{src.sparseIndexesCount_},
+	  krefs{src.krefs},
+	  skrefs{src.skrefs},
+	  sysRecordsVersions_{src.sysRecordsVersions_},
+	  joinCache_{make_shared<JoinCache>()},
+	  enablePerfCounters_{src.enablePerfCounters_.load()},
+	  config_{src.config_},
+	  wal_{src.wal_},
+	  repl_{src.repl_},
+	  observers_{src.observers_},
+	  storageOpts_{src.storageOpts_},
+	  lastSelectTime_{0},
+	  cancelCommit_{false},
+	  lastUpdateTime_{src.lastUpdateTime_.load(std::memory_order_acquire)},
+	  itemsCount_{static_cast<uint32_t>(items_.size())},
+	  itemsCapacity_{static_cast<uint32_t>(items_.capacity())},
+	  nsIsLoading_{false},
+	  serverId_{src.serverId_},
+	  itemsDataSize_{src.itemsDataSize_},
+	  optimizationState_{NotOptimized} {
+	for (auto &idxIt : src.indexes_) indexes_.push_back(unique_ptr<Index>(idxIt->Clone()));
+
+	markUpdated();
+	logPrintf(LogTrace, "Namespace::CopyContentsFrom (%s)", name_);
 }
 
 NamespaceImpl::NamespaceImpl(const string &name, UpdatesObservers &observers)
@@ -90,41 +124,6 @@ NamespaceImpl::NamespaceImpl(const string &name, UpdatesObservers &observers)
 	IndexDef tupleIndexDef(kTupleName, {}, IndexStrStore, IndexOpts());
 	addIndex(tupleIndexDef);
 	updateSelectTime();
-}
-
-void NamespaceImpl::copyContentsFrom(const NamespaceImpl &src) {
-	indexesNames_ = src.indexesNames_;
-	items_ = src.items_;
-	itemsDataSize_ = src.itemsDataSize_;
-	free_ = src.free_;
-	name_ = src.name_;
-	payloadType_ = src.payloadType_;
-	tagsMatcher_ = src.tagsMatcher_;
-	storage_ = src.storage_;
-	updates_ = src.updates_;
-	unflushedCount_.store(src.unflushedCount_.load(std::memory_order_acquire), std::memory_order_release);	// 0
-	optimizationState_.store(NotOptimized);
-	meta_ = src.meta_;
-	dbpath_ = src.dbpath_;
-	queryCache_ = src.queryCache_;
-	joinCache_ = src.joinCache_;
-	enablePerfCounters_ = src.enablePerfCounters_.load();
-	config_ = src.config_;
-	wal_ = src.wal_;
-	repl_ = src.repl_;
-	lastUpdateTime_.store(src.lastUpdateTime_.load(std::memory_order_acquire), std::memory_order_release);
-	itemsCount_ = items_.size();
-	itemsCapacity_ = items_.capacity();
-	sparseIndexesCount_ = src.sparseIndexesCount_;
-	krefs = src.krefs;
-	skrefs = src.skrefs;
-	serverId_ = src.serverId_;
-	storageOpts_ = src.storageOpts_;
-	sysRecordsVersions_ = src.sysRecordsVersions_;
-	for (auto &idxIt : src.indexes_) indexes_.push_back(unique_ptr<Index>(idxIt->Clone()));
-
-	markUpdated();
-	logPrintf(LogTrace, "Namespace::CopyContentsFrom (%s)", name_);
 }
 
 NamespaceImpl::~NamespaceImpl() {
@@ -2079,7 +2078,7 @@ string NamespaceImpl::GetMeta(const string &key, const RdxContext &ctx) {
 	return getMeta(key);
 }
 
-string NamespaceImpl::getMeta(const string &key) {
+string NamespaceImpl::getMeta(const string &key) const {
 	auto it = meta_.find(key);
 	if (it != meta_.end()) {
 		return it->second;
@@ -2116,9 +2115,13 @@ void NamespaceImpl::putMeta(const string &key, const string_view &data, const Rd
 }
 
 vector<string> NamespaceImpl::EnumMeta(const RdxContext &ctx) {
-	vector<string> ret;
-
 	auto rlck = rLock(ctx);
+	return enumMeta();
+}
+
+vector<string> NamespaceImpl::enumMeta() const {
+	vector<string> ret;
+	ret.reserve(meta_.size());
 	for (auto &m : meta_) {
 		ret.push_back(m.first);
 	}

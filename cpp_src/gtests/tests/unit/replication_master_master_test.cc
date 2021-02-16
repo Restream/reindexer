@@ -435,6 +435,7 @@ TEST_F(ReplicationSlaveSlaveApi, ForceSync3Node) {
 			|
 			3
 	*/
+
 	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "ForceSync3Node"));
 	ServerControl master;
 	master.InitServer(0, 7770, 7880, kBaseDbPath + "/master", "db", true);
@@ -450,7 +451,7 @@ TEST_F(ReplicationSlaveSlaveApi, ForceSync3Node) {
 	slave1.Get()->MakeMaster();
 
 	ServerControl slave2;
-	slave2.InitServer(0, 7772, 7882, "/tmp/testForceSync/slave2", "db", true);
+	slave2.InitServer(0, 7772, 7882, kBaseDbPath + "/slave2", "db", true);
 	std::string upDsn2 = "cproto://127.0.0.1:7771/db";
 	ReplicationConfigTest configSlave2("slave", false, true, 0, upDsn2);
 	slave2.Get()->MakeSlave(0, configSlave2);

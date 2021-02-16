@@ -28,7 +28,7 @@ class Query {
 public:
 	/// Creates an object for certain namespace with appropriate settings.
 	/// @param nsName - name of the namespace the data to be selected from.
-	/// @param start - number of the first row to get from selected set. Analog to sql LIMIT Offset.
+	/// @param start - number of the first row to get from selected set. Analog to sql OFFSET Offset.
 	/// @param count - number of rows to get from result set. Analog to sql LIMIT RowsCount.
 	/// @param calcTotal - calculation mode.
 	explicit Query(const string &nsName, unsigned start = 0, unsigned count = UINT_MAX, CalcTotalMode calcTotal = ModeNoTotal);

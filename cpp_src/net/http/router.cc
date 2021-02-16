@@ -122,11 +122,11 @@ static string_view lookupContentType(string_view path) {
 	return "application/octet-stream"_sv;
 }
 
-int Context::File(int code, string_view path, string_view data) {
+int Context::File(int code, string_view path, string_view data, bool isGzip) {
 	std::string content;
 
 	if (data.length() == 0) {
-		if (fs::ReadFile(string(path), content) < 0) {
+		if (fs::ReadFile(isGzip ? string(path) + kGzSuffix : string(path), content) < 0) {
 			return String(http::StatusNotFound, "File not found");
 		}
 	} else {
@@ -136,6 +136,9 @@ int Context::File(int code, string_view path, string_view data) {
 	writer->SetContentLength(content.size());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"_sv, lookupContentType(path)});
+	if (isGzip) {
+		writer->SetHeader(http::Header{"Content-Encoding"_sv, "gzip"_sv});
+	}
 	writer->Write(content);
 	return 0;
 }

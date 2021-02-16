@@ -144,6 +144,8 @@ struct ClientData {
 	virtual ~ClientData() = default;
 };
 
+static const std::string kGzSuffix(".gz");
+
 struct Context {
 	int JSON(int code, string_view slice);
 	int JSON(int code, chunk &&chunk);
@@ -151,7 +153,7 @@ struct Context {
 	int Protobuf(int code, chunk &&chunk);
 	int String(int code, string_view slice);
 	int String(int code, chunk &&chunk);
-	int File(int code, string_view path, string_view data = string_view());
+	int File(int code, string_view path, string_view data, bool isGzip);
 	int Redirect(string_view url);
 
 	Request *request;

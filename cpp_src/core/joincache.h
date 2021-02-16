@@ -28,7 +28,7 @@ struct JoinCacheKey {
 		buf_.reserve(buf_.size() + ser.Len());
 		buf_.insert(buf_.end(), ser.Buf(), ser.Buf() + ser.Len());
 	}
-	size_t Size() const { return sizeof(JoinCacheKey) + buf_.size(); }
+	size_t Size() const { return sizeof(JoinCacheKey) + (buf_.is_hdata() ? 0 : buf_.size()); }
 
 	h_vector<uint8_t, 256> buf_;
 };

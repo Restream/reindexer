@@ -1,3 +1,25 @@
+# Version 3.0.3 (15.02.2021)
+## Core
+- [fix] Crash on full text query with empty variants
+- [fix] Race namespace caches on transactions with atomic ns change
+- [fix] Race on force sync replication
+- [fea] Improved position search in fulltext
+- [fea] Improved timeouts handling in select operations
+
+## Reindexer server
+- [fea] Added support for Content-Encoding: gzip in http server
+
+## Go connector
+- [fix] Build builtin/builtinserver on mingw
+
+## Face
+- [fea] Added tooltips to longest query
+- [fix] Fixed the query view on the Query -> SQL page
+- [fix] Added checking for unsaved data during the window closing 
+- [fix] Bug with the pagination in the List mode
+- [fea] Added validation for the Server ID field 
+- [fea] Added validation for the positive value of the Cluster ID field
+
 # Version 3.0.2 (29.01.2021)
 ## Core
 - [fea] Extra parameters added to fulltext config

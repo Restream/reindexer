@@ -34,7 +34,7 @@ TEST_F(ReplicationLoadApi, Base) {
 	stop = true;
 	destroyer.join();
 
-	ForceSync();
+	ForceSync();  // restart_replicator call syncDatabase (syncByWal or forceSync)
 	WaitSync("some");
 	WaitSync("some1");
 }
