@@ -21,7 +21,7 @@ for i in {0..30}; do
 	new_total_count=$(echo $all_runs | jq '.total_count')
 	echo $new_total_count
 	if [[ $new_total_count != $total_count ]]; then
-		run_id=$(echo $all_runs | jq '.workflow_runs.max_by(.run_number).id')
+		run_id=$(echo $all_runs | jq '.workflow_runs[] | max_by(.run_number).id')
 		echo $run_id
 		break
 	fi
