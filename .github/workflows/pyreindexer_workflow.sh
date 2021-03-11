@@ -47,7 +47,7 @@ while true; do
 			exit 1
 		fi
 	else
-		echo "\n$run_status"
+		echo "$run_status"
 	fi
 done
 
