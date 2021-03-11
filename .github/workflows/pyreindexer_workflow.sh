@@ -40,10 +40,10 @@ while true; do
 	echo $run
 	run_status="$(echo $run | jq '.status')"
 	echo $run_status
-	if [[ $run_status == 'completed' ]]; then
+	if [[ "$run_status" == "completed" ]]; then
 		run_conclusion="$(echo $run | jq '.conclusion')"
 		echo $run_conclusion
-		if [[ $run_conclusion == 'success' ]]; then
+		if [[ "$run_conclusion" == "success" ]]; then
 			echo "Success"
 			exit 0
 		else
@@ -51,7 +51,7 @@ while true; do
 			exit 1
 		fi
 	else
-		echo "$run_status"
+		echo $run_status
 	fi
 done
 
