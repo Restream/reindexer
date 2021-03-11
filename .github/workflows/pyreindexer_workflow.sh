@@ -16,17 +16,16 @@ curl \
 
 
 # find out workflow run id
-for i in {0..10}; do
+for i in {0..30}; do
 	all_runs="$(curl -s -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/workflows/test-specified-rx.yml/runs)"
 	new_total_count=$(echo $all_runs | jq '.total_count')
 	echo $new_total_count
-	if [[ $new_total_count == $total_count ]]; then
-		sleep 1
-	else
+	if [[ $new_total_count != $total_count ]]; then
 		run_id=$(echo $all_runs | jq '.workflow_runs[-1].id')
 		echo $run_id
 		break
 	fi
+	sleep 1
 done
 
 if [[ -z "$run_id" ]]; then
@@ -40,6 +39,7 @@ while true; do
 	run="$(curl -s -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/runs/$run_id)"
 	echo $run
 	run_status="$(echo $run | jq '.status')"
+	echo $run_status
 	if [[ $run_status -eq 'completed' ]]; then
 		run_conclusion="$(echo $run | jq '.conclusion')"
 		if [[ $run_conclusion -eq 'success' ]]; then
