@@ -25,6 +25,7 @@ for i in {0..10}; do
 	else
 		run_id=$(echo $all_runs | jq '.workflow_runs[-1].id')
 		echo $run_id
+		break
 	fi
 done
 
