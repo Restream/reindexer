@@ -42,6 +42,7 @@ while true; do
 	echo $run_status
 	if [[ $run_status == 'completed' ]]; then
 		run_conclusion="$(echo $run | jq '.conclusion')"
+		echo $run_conclusion
 		if [[ $run_conclusion == 'success' ]]; then
 			echo "Success"
 			exit 0
