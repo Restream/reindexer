@@ -46,8 +46,6 @@ while true; do
 		else
 			exit 1
 		fi
-	elif [ $run_status == '"in_progress"' ]; then
-		echo -n "."
 	else
 		echo "\n$run_status"
 	fi
