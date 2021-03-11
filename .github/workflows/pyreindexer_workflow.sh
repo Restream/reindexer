@@ -17,12 +17,11 @@ curl \
 
 # find out workflow run id
 for i in {0..30}; do
-	all_runs="$(curl -s -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/workflows/test-specified-rx.yml/runs)"
+	all_runs=$(curl -s -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/workflows/test-specified-rx.yml/runs)
 	new_total_count=$(echo $all_runs | jq '.total_count')
-	echo $new_total_count
 	if [[ $new_total_count != $total_count ]]; then
 		run_id=$(echo $all_runs | jq '.workflow_runs | max_by(.run_number).id')
-		echo $run_id
+		echo Workflow run $run_id monitoring starting
 		break
 	fi
 	sleep 1
@@ -36,22 +35,18 @@ fi
 # workflow monitoring
 while true; do
   sleep ${CHECK_TIMEOUT}
-	run="$(curl -s -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/runs/$run_id)"
-	echo $run
+	run=$(curl -s -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/runs/$run_id)
 	run_status=$(echo $run | jq '.status')
-	echo 1 $run_status "$run_status" "completed"
-	if [ "$run_status" == '"completed"' ]; then
-		run_conclusion="$(echo $run | jq '.conclusion')"
-		echo 2 $run_conclusion
-		if [ "$run_conclusion" == '"success"' ]; then
-			echo "Success"
+	if [ $run_status == '"completed"' ]; then
+		run_conclusion=$(echo $run | jq '.conclusion')
+		if [ $run_conclusion == '"success"' ]; then
+			echo Success
 			exit 0
 		else
-			echo 3 $run_conclusion
 			exit 1
 		fi
 	else
-		echo 4 $run_status
+		echo $run_status
 	fi
 done
 
