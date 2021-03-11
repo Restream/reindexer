@@ -1,0 +1,12 @@
+on: push
+jobs:
+  test-pyreindexer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Test PyReindexer
+        env:
+          PYRX_GH_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
+        run: .github/workflows/pyreindexer_workflows.sh
+        shell: bash
+
