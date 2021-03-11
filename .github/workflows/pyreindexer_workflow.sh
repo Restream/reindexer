@@ -21,7 +21,8 @@ for i in {0..30}; do
 	new_total_count=$(echo $all_runs | jq '.total_count')
 	if [[ $new_total_count != $total_count ]]; then
 		run_id=$(echo $all_runs | jq '.workflow_runs | max_by(.run_number).id')
-		echo Workflow run $run_id monitoring starting
+		run_url=$(echo $all_runs | jq '.workflow_runs | max_by(.run_number).url')
+		echo Workflow run monitoring starting "$run_url"
 		break
 	fi
 	sleep 1
@@ -45,8 +46,10 @@ while true; do
 		else
 			exit 1
 		fi
+	elif [ $run_status == '"in_progress"' ]; then
+		echo -n "."
 	else
-		echo $run_status
+		echo "\n$run_status"
 	fi
 done
 
