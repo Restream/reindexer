@@ -39,19 +39,19 @@ while true; do
 	run="$(curl -s -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/runs/$run_id)"
 	echo $run
 	run_status="$(echo $run | jq '.status')"
-	echo $run_status
+	echo 1 $run_status
 	if [[ "$run_status" == "completed" ]]; then
 		run_conclusion="$(echo $run | jq '.conclusion')"
-		echo $run_conclusion
+		echo 2 $run_conclusion
 		if [[ "$run_conclusion" == "success" ]]; then
 			echo "Success"
 			exit 0
 		else
-			echo "$run_conclusion"
+			echo 3 $run_conclusion
 			exit 1
 		fi
 	else
-		echo $run_status
+		echo 4 $run_status
 	fi
 done
 
