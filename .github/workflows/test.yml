@@ -7,6 +7,6 @@ jobs:
       - name: Test PyReindexer
         env:
           PYRX_GH_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
-        run: .github/workflows/pyreindexer_workflows.sh
+        run: .github/workflows/pyreindexer_workflow.sh
         shell: bash
 
