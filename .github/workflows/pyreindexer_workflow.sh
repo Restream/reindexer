@@ -37,17 +37,17 @@ fi
 while true; do
   sleep ${CHECK_TIMEOUT}
 	run=$(curl -s -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/runs/$run_id)
-	run_status=$(echo $run | jq '.status' | sed '/"\([^"]*\)"/s//\1/')
+	run_status=$(echo $run | jq '.status' | sed '/"\(.*\)"/s//\1/')
 	if [ $run_status == "completed" ]; then
-		run_conclusion=$(echo $run | jq '.conclusion')
-		if [ $run_conclusion == '"success"' ]; then
-			echo Success
+		run_conclusion=$(echo $run | jq '.conclusion' | sed '/"\(.*\)"/s//\1/')
+		echo $run_conclusion
+		if [ $run_conclusion == "success" ]; then
 			exit 0
 		else
 			exit 1
 		fi
 	else
-		echo "$run_status"
+		echo $run_status
 	fi
 done
 
