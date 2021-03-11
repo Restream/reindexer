@@ -4,7 +4,7 @@ REPO=restream/reindexer-py
 USERNAME=reindexer-bot
 CHECK_TIMEOUT=10
 
-total_count=$(curl -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/workflows/test-specified-rx.yml/runs | jq '.total_count')
+total_count=$(curl -s -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/workflows/test-specified-rx.yml/runs | jq '.total_count')
 
 # workflow triggering
 curl \
@@ -17,7 +17,7 @@ curl \
 
 # find out workflow run id
 for i in {0..10}; do
-	all_runs=$(curl -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/workflows/test-specified-rx.yml/runs)
+	all_runs="$(curl -s -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/workflows/test-specified-rx.yml/runs)"
 	new_total_count=$(echo $all_runs | jq '.total_count')
 	echo $new_total_count
 	if [[ $new_total_count == $total_count ]]; then
@@ -37,12 +37,12 @@ fi
 # workflow monitoring
 while true; do
   sleep ${CHECK_TIMEOUT}
-	run=$(curl -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/runs/$run_id)
+	run="$(curl -s -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/runs/$run_id)"
 	echo $run
-	run_status=$(echo $run | jq '.status')
-	if [[ $run_status -eq "completed" ]]; then
-		run_conclusion=$(echo $run | jq '.conclusion')
-		if [[ $run_conclusion -eq "success" ]]; then
+	run_status="$(echo $run | jq '.status')"
+	if [[ $run_status -eq 'completed' ]]; then
+		run_conclusion="$(echo $run | jq '.conclusion')"
+		if [[ $run_conclusion -eq 'success' ]]; then
 			echo "Success"
 			exit 0
 		else
