@@ -16,10 +16,10 @@ curl \
 
 
 # find out workflow run id
-for i in [0..10]; do
+for i in {0..10}; do
 	all_runs=$(curl -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/workflows/test-specified-rx.yml/runs)
 	new_total_count=$(echo $all_runs | jq '.total_count')
-	echo $all_runs
+	echo $new_total_count
 	if [[ $new_total_count == $total_count ]]; then
 		sleep 1
 	else
