@@ -15,4 +15,4 @@ sleep $CHECK_TIMEOUT
 
 curl \
   -H "Accept: application/vnd.github.v3+json" \
-  https://api.github.com/repos/$REPO/actions/workflows/test-specified-rx.yml
+  https://api.github.com/repos/$REPO/actions/workflows/test-specified-rx.yml/runs
