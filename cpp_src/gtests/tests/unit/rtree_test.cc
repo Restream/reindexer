@@ -5,20 +5,11 @@
 #include "core/index/rtree/quadraticsplitter.h"
 #include "core/index/rtree/rstarsplitter.h"
 #include "gtest/gtest.h"
+#include "tools/random.h"
 
 namespace {
-static double randDouble(double min, double max) {
-	using dist_type = std::uniform_real_distribution<double>;
-	thread_local static std::mt19937 gen(std::random_device{}());
-	thread_local static dist_type dist;
 
-	return dist(gen, dist_type::param_type{min, max});
-}
-
-static reindexer::Point randPoint() {
-	static constexpr double range = 1000.0;
-	return {randDouble(-range, range), randDouble(-range, range)};
-}
+static constexpr long long kRange = 1000ll;
 
 template <typename T>
 struct Compare;
@@ -79,7 +70,7 @@ static void TestInsert() {
 
 	size_t insertedCount = 0;
 	for (size_t i = 0; i < 10000; ++i) {
-		const auto p = randPoint();
+		const auto p = randPoint(kRange);
 		const auto insertRes{tree.insert(reindexer::Point{p})};
 		if (insertRes.second) {
 			++insertedCount;
@@ -105,12 +96,14 @@ static void TestIterators() {
 	ASSERT_TRUE(tree.cbegin() == tree.cend());
 	ASSERT_FALSE(tree.cbegin() != tree.cend());
 
-	for (size_t i = 0; i < 10000; ++i) {
-		tree.insert(randPoint());
+	size_t dublicates = 0;
+	for (size_t i = 0; i < 10000 + dublicates; ++i) {
+		const auto res = tree.insert(randPoint(kRange));
+		if (!res.second) ++dublicates;
 		ASSERT_TRUE(tree.Check());
 		auto it = tree.begin(), end = tree.end();
 		auto cit = tree.cbegin(), cend = tree.cend();
-		for (size_t j = 0; j <= i; ++j) {
+		for (size_t j = 0; j <= i - dublicates; ++j) {
 			ASSERT_FALSE(it == end);
 			ASSERT_TRUE(it != end);
 			ASSERT_FALSE(cit == cend);
@@ -138,18 +131,22 @@ static void TestSearch() {
 
 	RTree tree;
 	std::vector<reindexer::Point> data;
-	for (size_t i = 0; i < kCount; ++i) {
-		auto p{randPoint()};
-		data.push_back(p);
-		tree.insert(std::move(p));
+	size_t dublicates = 0;
+	for (size_t i = 0; i < kCount + dublicates; ++i) {
+		const auto res = tree.insert(randPoint(kRange));
+		if (res.second) {
+			data.push_back(*res.first);
+		} else {
+			++dublicates;
+		}
 	}
 	ASSERT_TRUE(tree.Check());
 	ASSERT_EQ(tree.size(), kCount);
 
 	for (size_t i = 0; i < 1000; ++i) {
 		SearchVisitor<RTree> DWithinVisitor;
-		const reindexer::Point point{randPoint()};
-		const double distance = randDouble(0.0, 100.0);
+		const reindexer::Point point{randPoint(kRange)};
+		const double distance = randBinDouble(0, 100);
 		for (const auto& r : data) {
 			if (reindexer::DWithin(point, r, distance)) DWithinVisitor.Add(r);
 		}
@@ -173,14 +170,14 @@ static void TestDelete() {
 
 	RTree tree;
 	for (size_t i = 0; i < kCount;) {
-		i += tree.insert(randPoint()).second;
+		i += tree.insert(randPoint(kRange)).second;
 	}
 	ASSERT_TRUE(tree.Check());
 	ASSERT_EQ(tree.size(), kCount);
 
 	size_t deletedCount = 0;
 	for (size_t i = 0; i < 1000; ++i) {
-		DeleteVisitor<RTree> visitor{{randPoint(), randPoint()}};
+		DeleteVisitor<RTree> visitor{{randPoint(kRange), randPoint(kRange)}};
 		if (tree.DeleteOneIf(visitor)) {
 			++deletedCount;
 		}
@@ -202,7 +199,7 @@ static void TestErase() {
 
 	RTree tree;
 	for (size_t i = 0; i < kCount;) {
-		i += tree.insert(randPoint()).second;
+		i += tree.insert(randPoint(kRange)).second;
 	}
 	ASSERT_TRUE(tree.Check());
 	ASSERT_EQ(tree.size(), kCount);
@@ -231,17 +228,21 @@ static void TestMap() {
 
 	Map map;
 	std::vector<typename Map::value_type> data;
-	for (size_t i = 0; i < kCount; ++i) {
-		auto p = randPoint();
-		data.emplace_back(p, i);
-		map.insert({std::move(p), i});
+	size_t dublicates = 0;
+	for (size_t i = 0; i < kCount + dublicates; ++i) {
+		const auto res = map.insert({randPoint(kRange), i});
+		if (res.second) {
+			data.emplace_back(res.first->first, i);
+		} else {
+			++dublicates;
+		}
 	}
 	ASSERT_TRUE(map.Check());
 
 	for (size_t i = 0; i < 1000; ++i) {
 		SearchVisitor<Map> visitor;
-		const reindexer::Point point{randPoint()};
-		const double distance = randDouble(0.0, 100.0);
+		const reindexer::Point point{randPoint(kRange)};
+		const double distance = randBinDouble(0, 100);
 		for (const auto& r : data) {
 			if (reindexer::DWithin(point, r.first, distance)) visitor.Add(r);
 		}
@@ -252,7 +253,7 @@ static void TestMap() {
 
 	size_t deletedCount = 0;
 	for (size_t i = 0; i < 1000; ++i) {
-		DeleteVisitor<Map> visitor{{randPoint(), randPoint()}};
+		DeleteVisitor<Map> visitor{{randPoint(kRange), randPoint(kRange)}};
 		ASSERT_TRUE(map.Check());
 		if (map.DeleteOneIf(visitor)) {
 			++deletedCount;

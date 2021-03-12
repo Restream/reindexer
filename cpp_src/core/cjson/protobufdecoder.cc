@@ -104,7 +104,7 @@ Error ProtobufDecoder::decodeArray(Payload* pl, CJsonBuilder& builder, const Pro
 }
 
 Error ProtobufDecoder::decode(Payload* pl, CJsonBuilder& builder, const ProtobufValue& item) {
-	TagScope tagScope(tagsPath_, item.tagName);
+	TagsPathScope<TagsPath> tagScope(tagsPath_, item.tagName);
 	Error status;
 	switch (item.value.Type()) {
 		case KeyValueInt:

@@ -123,11 +123,10 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 		return false;
 	}
 
-	if (tag.Name()) {
-		curTagsPath_.push_back(tag.Name());
-		if (filter_) {
-			visible = visible && filter_->match(curTagsPath_);
-		}
+	TagsPathScope<TagsPath> pathScope(curTagsPath_, tag.Name());
+	TagsPathScope<IndexedTagsPath> indexedPathScope(indexedTagsPath_, tag.Name());
+	if (tag.Name() && filter_) {
+		visible = visible && filter_->match(indexedTagsPath_);
 	}
 
 	int tagField = tag.Field();
@@ -144,19 +143,19 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 				if (visible) {
 					switch (pl->Type().Field(tagField).Type()) {
 						case KeyValueBool:
-							builder.Array(tag.Name(), pl->GetArray<bool>(tagField).subspan((*cnt), count));
+							builder.Array(tag.Name(), pl->GetArray<bool>(tagField).subspan((*cnt), count), *cnt);
 							break;
 						case KeyValueInt:
-							builder.Array(tag.Name(), pl->GetArray<int>(tagField).subspan((*cnt), count));
+							builder.Array(tag.Name(), pl->GetArray<int>(tagField).subspan((*cnt), count), *cnt);
 							break;
 						case KeyValueInt64:
-							builder.Array(tag.Name(), pl->GetArray<int64_t>(tagField).subspan((*cnt), count));
+							builder.Array(tag.Name(), pl->GetArray<int64_t>(tagField).subspan((*cnt), count), *cnt);
 							break;
 						case KeyValueDouble:
-							builder.Array(tag.Name(), pl->GetArray<double>(tagField).subspan((*cnt), count));
+							builder.Array(tag.Name(), pl->GetArray<double>(tagField).subspan((*cnt), count), *cnt);
 							break;
 						case KeyValueString:
-							builder.Array(tag.Name(), pl->GetArray<p_string>(tagField).subspan((*cnt), count));
+							builder.Array(tag.Name(), pl->GetArray<p_string>(tagField).subspan((*cnt), count), *cnt);
 							break;
 						default:
 							std::abort();
@@ -180,6 +179,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 				if (atag.Tag() == TAG_OBJECT) {
 					auto arrNode = visible ? builder.Array(tag.Name()) : Builder();
 					for (int i = 0; i < atag.Count(); i++) {
+						indexedTagsPath_.back().SetIndex(i);
 						encode(pl, rdser, arrNode, visible);
 					}
 				} else if (visible) {
@@ -201,7 +201,6 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 			}
 		}
 	}
-	if (tag.Name()) curTagsPath_.pop_back();
 
 	return true;
 }

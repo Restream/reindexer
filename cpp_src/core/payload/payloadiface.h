@@ -74,6 +74,8 @@ public:
 	// Get element(s) by json path
 	VariantArray GetByJsonPath(string_view jsonPath, TagsMatcher &tagsMatcher, VariantArray &, KeyValueType expectedType) const;
 	VariantArray GetByJsonPath(const TagsPath &jsonPath, VariantArray &, KeyValueType expectedType) const;
+	VariantArray GetByJsonPath(const IndexedTagsPath &jsonPath, VariantArray &, KeyValueType expectedType) const;
+	VariantArray GetIndexedArrayData(const IndexedTagsPath &jsonPath, int &offset, int &size) const;
 
 	// Get fields count
 	int NumFields() const { return t_.NumFields(); }

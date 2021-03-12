@@ -20,6 +20,7 @@ ServerControl::~ServerControl() {
 	interface.reset();
 	delete stopped_;
 }
+void ServerControl::Stop() { interface->Stop(); }
 
 ServerControl::ServerControl(ServerControl&& rhs) {
 	WLock lock(rhs.mtx_);
@@ -163,7 +164,7 @@ ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const 
 		assert(res == EXIT_SUCCESS);
 	}));
 	while (!srv.IsRunning() || !srv.IsReady()) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
 	// init client
 	string dsn = "cproto://127.0.0.1:" + std::to_string(kRpcPort) + "/" + dbName_;

@@ -16,6 +16,9 @@ public:
 		err = rt.reindexer->OpenNamespace("nm2");
 		ASSERT_TRUE(err.ok()) << err.what();
 
+		err = rt.reindexer->OpenNamespace("nm3");
+		ASSERT_TRUE(err.ok()) << err.what();
+
 		DefineNamespaceDataset(
 			"nm1", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
 					IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
@@ -24,11 +27,13 @@ public:
 			"nm2", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
 					IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
 					IndexDeclaration{"ft1+ft2=ft3", "text", "composite", IndexOpts(), 0}});
+		DefineNamespaceDataset(
+			"nm3", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft", "text", "string", IndexOpts(), 0}});
 		SetFTConfig(ftCfg, "nm1", "ft3");
 	}
 
-	reindexer::FtFastConfig GetDefaultConfig() {
-		reindexer::FtFastConfig cfg(2);
+	reindexer::FtFastConfig GetDefaultConfig(size_t fieldsCount = 2) {
+		reindexer::FtFastConfig cfg(fieldsCount);
 		cfg.enableNumbersSearch = true;
 		cfg.logLevel = 5;
 		cfg.mergeLimit = 20000;
@@ -37,7 +42,13 @@ public:
 	}
 
 	void SetFTConfig(const reindexer::FtFastConfig& ftCfg, const string& ns, const string& index) {
-		assert(ftCfg.fieldsCfg.size() == 2);
+		const auto err = SetFTConfig(ftCfg, ns, index, {"ft1", "ft2"});
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+
+	Error SetFTConfig(const reindexer::FtFastConfig& ftCfg, const string& ns, const string& index, const std::vector<std::string>& fields) {
+		assert(!ftCfg.fieldsCfg.empty());
+		assert(ftCfg.fieldsCfg.size() >= fields.size());
 		reindexer::WrSerializer wrser;
 		reindexer::JsonBuilder cfgBuilder(wrser);
 		cfgBuilder.Put("enable_translit", ftCfg.enableTranslit);
@@ -49,11 +60,15 @@ public:
 		cfgBuilder.Put("full_match_boost", ftCfg.fullMatchBoost);
 		cfgBuilder.Put("extra_word_symbols", ftCfg.extraWordSymbols);
 		cfgBuilder.Put("partial_match_decrease", ftCfg.partialMatchDecrease);
-		const bool defaultPositionBoost = ftCfg.fieldsCfg[0].positionBoost == ftCfg.fieldsCfg[1].positionBoost;
+		bool defaultPositionBoost{true};
+		bool defaultPositionWeight{true};
+		for (size_t i = 1; i < ftCfg.fieldsCfg.size(); ++i) {
+			if (ftCfg.fieldsCfg[0].positionBoost != ftCfg.fieldsCfg[i].positionBoost) defaultPositionBoost = false;
+			if (ftCfg.fieldsCfg[0].positionWeight != ftCfg.fieldsCfg[i].positionWeight) defaultPositionWeight = false;
+		}
 		if (defaultPositionBoost) {
 			cfgBuilder.Put("position_boost", ftCfg.fieldsCfg[0].positionBoost);
 		}
-		const bool defaultPositionWeight = ftCfg.fieldsCfg[0].positionWeight == ftCfg.fieldsCfg[1].positionWeight;
 		if (defaultPositionWeight) {
 			cfgBuilder.Put("position_weight", ftCfg.fieldsCfg[0].positionWeight);
 		}
@@ -73,24 +88,14 @@ public:
 		}
 		if (!defaultPositionWeight || !defaultPositionBoost) {
 			auto fieldsNode = cfgBuilder.Array("fields");
-			{
-				auto field1Node = fieldsNode.Object();
-				field1Node.Put("field_name", "ft1");
+			for (size_t i = 0; i < fields.size(); ++i) {
+				auto fldNode = fieldsNode.Object();
+				fldNode.Put("field_name", fields[i]);
 				if (!defaultPositionBoost) {
-					field1Node.Put("position_boost", ftCfg.fieldsCfg[0].positionBoost);
+					fldNode.Put("position_boost", ftCfg.fieldsCfg[i].positionBoost);
 				}
 				if (!defaultPositionWeight) {
-					field1Node.Put("position_weight", ftCfg.fieldsCfg[0].positionWeight);
-				}
-			}
-			{
-				auto field2Node = fieldsNode.Object();
-				field2Node.Put("field_name", "ft2");
-				if (!defaultPositionBoost) {
-					field2Node.Put("position_boost", ftCfg.fieldsCfg[1].positionBoost);
-				}
-				if (!defaultPositionWeight) {
-					field2Node.Put("position_weight", ftCfg.fieldsCfg[1].positionWeight);
+					fldNode.Put("position_weight", ftCfg.fieldsCfg[i].positionWeight);
 				}
 			}
 		}
@@ -101,8 +106,7 @@ public:
 							   [&index](const reindexer::IndexDef& idef) { return idef.name_ == index; });
 		it->opts_.SetConfig(wrser.c_str());
 
-		auto err = rt.reindexer->UpdateIndex(ns, *it);
-		EXPECT_TRUE(err.ok()) << err.what();
+		return rt.reindexer->UpdateIndex(ns, *it);
 	}
 
 	void FillData(int64_t count) {
@@ -219,20 +223,60 @@ public:
 
 		return res;
 	}
-	void CheckResults(const QueryResults& qr, std::unordered_multimap<std::string, std::string> expectedResults) {
-		EXPECT_EQ(qr.Count(), expectedResults.size());
+	std::vector<std::string> CreateAllPermutatedQueries(const std::string& queryStart, std::vector<std::string> words,
+														const std::string& queryEnd, const std::string& sep = " ") {
+		std::vector<std::pair<size_t, std::string>> indexedWords;
+		indexedWords.reserve(words.size());
+		for (std::string& w : words) {
+			indexedWords.emplace_back(indexedWords.size(), std::move(w));
+		}
+		std::vector<std::string> result;
+		do {
+			result.push_back(queryStart);
+			std::string& query = result.back();
+			for (auto it = indexedWords.cbegin(); it != indexedWords.cend(); ++it) {
+				if (it != indexedWords.cbegin()) query += sep;
+				query += it->second;
+			}
+			query += queryEnd;
+		} while (std::next_permutation(
+			indexedWords.begin(), indexedWords.end(),
+			[](const std::pair<size_t, std::string>& a, const std::pair<size_t, std::string>& b) { return a.first < b.first; }));
+		return result;
+	}
+	void CheckAllPermutations(const std::string& queryStart, std::vector<std::string> words, const std::string& queryEnd,
+							  const std::vector<std::pair<std::string, std::string>>& expectedResults, bool withOrder = false,
+							  const std::string& sep = " ") {
+		for (const auto& query : CreateAllPermutatedQueries(queryStart, words, queryEnd, sep)) {
+			CheckResults(query, expectedResults, withOrder);
+		}
+	}
+
+	void CheckResults(const std::string& query, std::vector<std::pair<std::string, std::string>> expectedResults, bool withOrder) {
+		const auto qr = SimpleSelect(query);
+		EXPECT_EQ(qr.Count(), expectedResults.size()) << "Query: " << query;
 		for (auto itRes : qr) {
 			const auto item = itRes.GetItem();
-			const auto range = expectedResults.equal_range(item["ft1"].As<string>());
-			const auto it = std::find_if(range.first, range.second, [&item](const std::pair<std::string, std::string>& p) {
-				return p.second == item["ft2"].As<string>();
-			});
-			EXPECT_TRUE(it != range.second && it != expectedResults.end())
-				<< "Found not expected: \"" << item["ft1"].As<string>() << "\" \"" << item["ft2"].As<string>() << '"';
-			if (it != range.second && it != expectedResults.end()) expectedResults.erase(it);
+			const auto it =
+				std::find_if(expectedResults.begin(), expectedResults.end(), [&item](const std::pair<std::string, std::string>& p) {
+					return p.first == item["ft1"].As<string>() && p.second == item["ft2"].As<string>();
+				});
+			if (it == expectedResults.end()) {
+				ADD_FAILURE() << "Found not expected: \"" << item["ft1"].As<string>() << "\" \"" << item["ft2"].As<string>()
+							  << "\"\nQuery: " << query;
+			} else {
+				if (withOrder) {
+					EXPECT_EQ(it, expectedResults.begin()) << "Found not in order: \"" << item["ft1"].As<string>() << "\" \""
+														   << item["ft2"].As<string>() << "\"\nQuery: " << query;
+				}
+				expectedResults.erase(it);
+			}
 		}
 		for (const auto& expected : expectedResults) {
-			ADD_FAILURE() << "Not found: \"" << expected.first << "\" \"" << expected.second << '"';
+			ADD_FAILURE() << "Not found: \"" << expected.first << "\" \"" << expected.second << "\"\nQuery: " << query;
+		}
+		if (!expectedResults.empty()) {
+			ADD_FAILURE() << "Query: " << query;
 		}
 	}
 	FTApi() {}

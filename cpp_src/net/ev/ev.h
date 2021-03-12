@@ -22,6 +22,7 @@
 #define HAVE_SELECT_LOOP 1
 #ifdef __linux__
 #define HAVE_EPOLL_LOOP 1
+#define HAVE_EVENT_FD 1
 #elif defined(__APPLE__) || (defined __unix__)
 #define HAVE_POLL_LOOP 1
 #endif
@@ -38,6 +39,21 @@ const int ERROR = 0x08;
 class dynamic_loop;
 
 #ifdef HAVE_POSIX_LOOP
+#ifdef HAVE_EVENT_FD
+class loop_posix_base {
+public:
+	void enable_asyncs();
+	void send_async();
+
+protected:
+	loop_posix_base();
+	~loop_posix_base();
+	bool check_async(int fd);
+
+	int async_fd_ = -1;
+	dynamic_loop *owner_ = nullptr;
+};
+#else	// HAVE_EVENT_FD
 class loop_posix_base {
 public:
 	void enable_asyncs();
@@ -51,6 +67,7 @@ protected:
 	int async_fds_[2] = {-1, -1};
 	dynamic_loop *owner_ = nullptr;
 };
+#endif	// HAVE_EVENT_FD
 
 class loop_poll_backend_private;
 class loop_poll_backend : public loop_posix_base {
@@ -81,8 +98,7 @@ public:
 protected:
 	std::unique_ptr<loop_select_backend_private> private_;
 };
-
-#endif
+#endif	// HAVE_POSIX_LOOP
 
 #ifdef HAVE_EPOLL_LOOP
 class loop_epoll_backend_private;

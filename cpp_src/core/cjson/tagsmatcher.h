@@ -29,6 +29,16 @@ public:
 		if (jsonPath.empty()) return TagsPath();
 		return res.empty() && canAdd ? impl_.clone()->path2tag(jsonPath, canAdd, updated_) : res;
 	}
+	IndexedTagsPath path2indexedtag(string_view jsonPath, IndexExpressionEvaluator ev) const {
+		IndexedTagsPath tagsPath = impl_->path2indexedtag(jsonPath, ev);
+		assert(!updated_);
+		return tagsPath;
+	}
+	IndexedTagsPath path2indexedtag(string_view jsonPath, IndexExpressionEvaluator ev, bool canAdd) {
+		auto res = impl_->path2indexedtag(jsonPath, ev);
+		if (jsonPath.empty()) return IndexedTagsPath();
+		return res.empty() && canAdd ? impl_.clone()->path2indexedtag(jsonPath, ev, canAdd, updated_) : res;
+	}
 	int version() const { return impl_->version(); }
 	size_t size() const { return impl_->size(); }
 	bool isUpdated() const { return updated_; }

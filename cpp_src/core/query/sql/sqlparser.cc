@@ -361,7 +361,7 @@ static KeyValueType detectValueType(const token &currTok) {
 	return KeyValueString;
 }
 
-static Variant token2kv(const token &currTok, tokenizer &parser, bool allowComposite) {
+Variant token2kv(const token &currTok, tokenizer &parser, bool allowComposite) {
 	if (currTok.text() == "true"_sv) return Variant(true);
 	if (currTok.text() == "false"_sv) return Variant(false);
 
@@ -412,9 +412,9 @@ static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry 
 	if (currTok.type == TokenString) {
 		updateField.values.push_back(token2kv(currTok, parser, false));
 	} else {
-		if ((currTok.type == TokenName) && (currTok.text() == "null"_sv)) {
+		if (currTok.text() == "null"_sv) {
 			updateField.values.push_back(Variant());
-		} else if ((currTok.type == TokenSymbol) && (currTok.text() == "{"_sv)) {
+		} else if (currTok.text() == "{"_sv) {
 			try {
 				size_t jsonPos = parser.getPos() - 1;
 				string json(parser.begin() + jsonPos, parser.length() - jsonPos);
@@ -428,14 +428,19 @@ static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry 
 				throw Error(errParseSQL, "%s, in query %s", e.what(), parser.where());
 			}
 		} else {
-			auto eof = [](tokenizer &parser) -> bool {
+			auto eof = [](tokenizer &parser, bool &inArray) -> bool {
 				if (parser.end()) return true;
 				token nextTok = parser.peek_token();
-				return ((nextTok.text() == "where"_sv) || (nextTok.text() == "]"_sv) || (nextTok.text() == ","_sv));
+				bool result =
+					(nextTok.text() == "where"_sv) || (!inArray && nextTok.text() == "]"_sv) || (!inArray && nextTok.text() == ","_sv);
+				if (nextTok.text() == "[" && !inArray) inArray = true;
+				if (nextTok.text() == "]" && inArray) inArray = false;
+				return result;
 			};
 			int count = 0;
 			string expression(currTok.text());
-			while (!eof(parser)) {
+			bool inArray = false;
+			while (!eof(parser, inArray)) {
 				expression += string(parser.next_token(false).text());
 				++count;
 			}
@@ -456,15 +461,19 @@ static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry 
 }
 
 UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
-	UpdateEntry updateField;
 	token tok = peekSqlToken(parser, FieldNameSqlToken, false);
-	if (tok.type != TokenName && tok.type != TokenString)
-		throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
-	updateField.column = string(tok.text());
-	parser.next_token();
+	if (tok.type != TokenName && tok.type != TokenString) {
+		throw Error(errParseSQL, "Expected field name but found '%s' in query %s", tok.text(), parser.where());
+	}
+	UpdateEntry updateField;
+	updateField.column.append(tok.text().data(), tok.text().length());
 
+	parser.next_token();
 	tok = parser.next_token();
 	if (tok.text() != "="_sv) throw Error(errParams, "Expected '=' but found '%s' in query, '%s'", tok.text(), parser.where());
+
+	size_t startPos = parser.getPos();
+	bool withArrayExpressions = false;
 
 	tok = parser.next_token(false);
 	if (tok.text() == "["_sv) {
@@ -484,6 +493,24 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
 	} else {
 		addUpdateValue(tok, parser, updateField);
 	}
+
+	tok = parser.peek_token(false);
+	while (tok.text() == "|"_sv) {
+		parser.next_token();
+		tok = parser.next_token();
+		if (tok.text() != "|") throw Error(errLogic, "Expected '|', not %s", tok.text());
+		tok = parser.next_token();
+		if (tok.type != TokenName && tok.type != TokenString)
+			throw Error(errParseSQL, "Expected field name, but found %s in query, %s", tok.text(), parser.where());
+		tok = parser.peek_token();
+		withArrayExpressions = true;
+	}
+
+	if (withArrayExpressions) {
+		updateField.isExpression = true;
+		updateField.values = {Variant(string(parser.begin() + startPos, parser.getPos() - startPos))};
+	}
+
 	return updateField;
 }
 
@@ -500,7 +527,6 @@ int SQLParser::updateParse(tokenizer &parser) {
 		parser.next_token();
 		while (!parser.end()) {
 			query_.updateFields_.emplace_back(parseUpdateField(parser));
-
 			tok = parser.peek_token();
 			if (tok.text() != ","_sv) break;
 			parser.next_token();
@@ -509,8 +535,9 @@ int SQLParser::updateParse(tokenizer &parser) {
 		while (!parser.end()) {
 			parser.next_token();
 			tok = peekSqlToken(parser, FieldNameSqlToken, false);
-			if (tok.type != TokenName && tok.type != TokenString)
-				throw Error(errParseSQL, "Expected field name, but found '%s' in query, %s", tok.text(), parser.where());
+			if (tok.type != TokenName && tok.type != TokenString) {
+				throw Error(errParseSQL, "Expected field name but found '%s' in query %s", tok.text(), parser.where());
+			}
 			query_.Drop(string(tok.text()));
 			parser.next_token();
 			tok = parser.peek_token();

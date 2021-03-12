@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include "config.h"
 #include "core/reindexer.h"
 #include "dbmanager.h"
 #include "estl/fast_hash_map.h"
@@ -26,21 +27,36 @@ class HTTPServer {
 public:
 	class OptionalConfig {
 	public:
-		OptionalConfig(bool allocDebugI = false, bool enablePprofI = false, std::chrono::seconds txIdleTimeoutI = std::chrono::seconds(600),
-					   Prometheus *prometheusI = nullptr, IStatsWatcher *statsWatcherI = nullptr)
-			: allocDebug(allocDebugI),
-			  enablePprof(enablePprofI),
+		OptionalConfig(const ServerConfig &serverConfig, Prometheus *prometheusI = nullptr, IStatsWatcher *statsWatcherI = nullptr)
+			: allocDebug(serverConfig.DebugAllocs),
+			  enablePprof(serverConfig.DebugPprof),
 			  prometheus(prometheusI),
 			  statsWatcher(statsWatcherI),
-			  txIdleTimeout(txIdleTimeoutI) {}
+			  txIdleTimeout(serverConfig.TxIdleTimeout),
+			  rpcAddress(serverConfig.RPCAddr),
+			  httpAddress(serverConfig.HTTPAddr),
+			  storagePath(serverConfig.StoragePath),
+			  rpcLog(serverConfig.RpcLog),
+			  httpLog(serverConfig.HttpLog),
+			  logLevel(serverConfig.LogLevel),
+			  coreLog(serverConfig.CoreLog),
+			  serverLog(serverConfig.ServerLog) {}
 		bool allocDebug;
 		bool enablePprof;
 		Prometheus *prometheus;
 		IStatsWatcher *statsWatcher;
 		std::chrono::seconds txIdleTimeout;
+		string rpcAddress;
+		string httpAddress;
+		string storagePath;
+		string rpcLog;
+		string httpLog;
+		string logLevel;
+		string coreLog;
+		string serverLog;
 	};
 
-	HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper &logger, OptionalConfig config = OptionalConfig());
+	HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper &logger, OptionalConfig config);
 
 	bool Start(const string &addr, ev::dynamic_loop &loop);
 	void Stop() { listener_->Stop(); }
@@ -158,6 +174,15 @@ protected:
 
 	static const int kDefaultLimit = INT_MAX;
 	static const int kDefaultOffset = 0;
+
+	const string rpcAddress_;
+	const string httpAddress_;
+	const string storagePath_;
+	const string rpcLog_;
+	const string httpLog_;
+	const string logLevel_;
+	const string coreLog_;
+	const string serverLog_;
 };
 
 }  // namespace reindexer_server

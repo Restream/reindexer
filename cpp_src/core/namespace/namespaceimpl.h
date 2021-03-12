@@ -78,6 +78,7 @@ protected:
 	friend class QueryPreprocessor;
 	friend class SelectIteratorContainer;
 	friend class ItemComparator;
+	friend class ItemModifier;
 	friend class Namespace;
 	friend SortExpression;
 	friend SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
@@ -267,11 +268,6 @@ protected:
 	void markUpdated();
 	void doUpsert(ItemImpl *ritem, IdType id, bool doUpdate);
 	void modifyItem(Item &item, const NsContext &, int mode = ModeUpsert);
-	void updateItemFromCJSON(IdType id, const Query &q, const NsContext &);
-	void updateFieldIndex(IdType id, int field, VariantArray v, Payload &pl);
-	void updateSingleField(const UpdateEntry &updateField, const IdType &itemId, Payload &pl);
-	void updateItemFields(IdType itemId, const Query &q, bool rowBasedReplication, const NsContext &);
-	void updateItemFromQuery(IdType itemId, const Query &q, bool rowBasedReplication, const NsContext &, bool withJsonUpdates);
 	void updateTagsMatcherFromItem(ItemImpl *ritem);
 	void updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields);
 	void doDelete(IdType id);
@@ -285,8 +281,8 @@ protected:
 	void dropIndex(const IndexDef &index);
 	void addToWAL(const IndexDef &indexDef, WALRecType type, const RdxContext &ctx);
 	void addToWAL(string_view json, WALRecType type, const RdxContext &ctx);
-	VariantArray preprocessUpdateFieldValues(const UpdateEntry &updateEntry, IdType itemId);
 	void removeExpiredItems(RdxActivityContext *);
+	void replicateItem(IdType itemId, const NsContext &ctx, bool statementReplication, uint64_t oldPlHash, size_t oldItemCapacity);
 
 	void recreateCompositeIndexes(int startIdx, int endIdx);
 	NamespaceDef getDefinition() const;

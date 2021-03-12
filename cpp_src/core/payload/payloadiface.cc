@@ -69,9 +69,15 @@ VariantArray PayloadIface<T>::GetByJsonPath(string_view jsonPath, TagsMatcher &t
 			kvs.clear();
 			return kvs;
 		};
+		if (t_.Field(fieldIdx).IsArray()) {
+			IndexedTagsPath tagsPath = tagsMatcher.path2indexedtag(jsonPath, nullptr, false);
+			if (tagsPath.back().IsWithIndex()) {
+				return {Get(fieldIdx, tagsPath.back().Index())};
+			}
+		}
 		return Get(fieldIdx, kvs);
 	}
-	VariantArray values = GetByJsonPath(tagsMatcher.path2tag(jsonPath), kvs, expectedType);
+	VariantArray values = GetByJsonPath(tagsMatcher.path2indexedtag(jsonPath, nullptr, false), kvs, expectedType);
 	return values;
 }
 
@@ -83,10 +89,38 @@ VariantArray PayloadIface<T>::GetByJsonPath(const TagsPath &jsonPath, VariantArr
 	krefs.resize(0);
 	if (!jsonPath.empty()) {
 		FieldsExtractor extractor(&krefs, expectedType, jsonPath.size());
-
 		encoder.Encode(&pl, extractor);
 	}
 	return krefs;
+}
+
+template <typename T>
+VariantArray PayloadIface<T>::GetByJsonPath(const IndexedTagsPath &tagsPath, VariantArray &krefs, KeyValueType expectedType) const {
+	ConstPayload pl(t_, *v_);
+	FieldsSet filter({tagsPath});
+	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
+	krefs.resize(0);
+	if (!tagsPath.empty()) {
+		FieldsExtractor extractor(&krefs, expectedType, tagsPath.size(), &filter);
+		encoder.Encode(&pl, extractor);
+	}
+	return krefs;
+}
+
+template <typename T>
+VariantArray PayloadIface<T>::GetIndexedArrayData(const IndexedTagsPath &tagsPath, int &offset, int &size) const {
+	if (tagsPath.empty()) {
+		throw Error(errParams, "GetIndexedArrayData(): tagsPath shouldn't be empty!");
+	}
+
+	VariantArray values;
+	FieldsSet filter({tagsPath});
+	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
+	FieldsExtractor extractor(&values, KeyValueUndefined, tagsPath.size(), &filter, &offset, &size);
+
+	ConstPayload pl(t_, *v_);
+	encoder.Encode(&pl, extractor);
+	return values;
 }
 
 // Set element or array by field index

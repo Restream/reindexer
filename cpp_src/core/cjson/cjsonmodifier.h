@@ -7,23 +7,25 @@ namespace reindexer {
 class CJsonModifier {
 public:
 	CJsonModifier(TagsMatcher &tagsMatcher, PayloadType pt);
-	Error SetFieldValue(string_view tuple, TagsPath path, const VariantArray &v, WrSerializer &ser);
-	Error SetObject(string_view tuple, TagsPath path, const VariantArray &v, WrSerializer &ser, const Payload *pl);
-	Error RemoveField(string_view tuple, TagsPath fieldPath, WrSerializer &wrser);
+	Error SetFieldValue(string_view tuple, IndexedTagsPath path, const VariantArray &v, WrSerializer &ser);
+	Error SetObject(string_view tuple, IndexedTagsPath path, const VariantArray &v, WrSerializer &ser, const Payload *pl);
+	Error RemoveField(string_view tuple, IndexedTagsPath fieldPath, WrSerializer &wrser);
 
 protected:
 	struct Context;
-	bool buildTuple(Context &ctx);
+	bool updateFieldInTuple(Context &ctx);
+	bool dropFieldInTuple(Context &ctx);
 	bool buildCJSON(Context &ctx);
-	void putNewField(Context &ctx);
+	bool needToInsertField(Context &ctx);
+	void insertField(Context &ctx);
+	void embedFieldValue(int type, int field, Context &ctx, size_t idx);
 	void updateObject(Context &ctx, int tagName);
 	void updateField(Context &ctx, size_t idx);
-	void copyValue(int type, int field, Context &ctx, size_t idx);
-	bool checkIfPathCorrect(Context &ctx);
-	int determineUpdateTagType(const Context &ctx, int field = -1);
+	int determineUpdateTagType(const Context &ctx, int field = IndexValueType::NotSet);
+	bool checkIfFoundTag(Context &ctx, bool isLastItem = false);
 
 	PayloadType pt_;
-	TagsPath fieldPath_, tagsPath_;
+	IndexedTagsPath fieldPath_, tagsPath_;
 	TagsMatcher &tagsMatcher_;
 };
 }  // namespace reindexer

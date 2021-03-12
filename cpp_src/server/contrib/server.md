@@ -72,6 +72,7 @@
   * [ExplainDef](#explaindef)
   * [FilterDef](#filterdef)
   * [FulltextConfig](#fulltextconfig)
+  * [FulltextFieldConfig](#fulltextfieldconfig)
   * [FulltextSynonym](#fulltextsynonym)
   * [Index](#index)
   * [IndexCacheMemStats](#indexcachememstats)
@@ -122,7 +123,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 3.0.3
+*Version* : 3.1.0
 
 
 ### License information
@@ -1961,6 +1962,7 @@ Specifies facet aggregations results sorting order
 |**start_time**  <br>*required*|Server start time in unix timestamp|integer|
 |**tx_count**  <br>*required*|Count of currently opened transactions for this client|integer|
 |**updates_filter**  <br>*required*|Updates filter for this client|[updates_filter](#clientsstats-updates_filter)|
+|**updates_lost**  <br>*optional*|Updates lost call count|integer|
 |**user_name**  <br>*required*|User name|string|
 |**user_rights**  <br>*required*|User right|string|
 
@@ -2099,11 +2101,12 @@ Fulltext Index configuration
 |**bm25_boost**  <br>*optional*|Boost of bm25 ranking  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**bm25_weight**  <br>*optional*|Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to finl rank in 0 - 100% range  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**distance_boost**  <br>*optional*|Boost of search query term distance in found document  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
-|**distance_weght**  <br>*optional*|Weight of search query terms distance in found document in final rank 0: distance will not change final rank. 1: distance will affect to final rank in 0 - 100% range  <br>**Default** : `0.5`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
+|**distance_weight**  <br>*optional*|Weight of search query terms distance in found document in final rank 0: distance will not change final rank. 1: distance will affect to final rank in 0 - 100% range  <br>**Default** : `0.5`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**enable_kb_layout**  <br>*optional*|Enable wrong keyboard layout variants processing. e.g. term 'keynbr' will match word 'лунтик'  <br>**Default** : `true`|boolean|
 |**enable_numbers_search**  <br>*optional*|Enable number variants processing. e.g. term '100' will match words one hundred  <br>**Default** : `false`|boolean|
 |**enable_translit**  <br>*optional*|Enable russian translit variants processing. e.g. term 'luntik' will match word 'лунтик'  <br>**Default** : `true`|boolean|
 |**extra_word_symbols**  <br>*optional*|List of symbols, which will be threated as word part, all other symbols will be thrated as wors separators  <br>**Default** : `"-/+"`|string|
+|**fields**  <br>*optional*|Configuration for certian field if it differ from whole index configuration|< [FulltextFieldConfig](#fulltextfieldconfig) > array|
 |**full_match_boost**  <br>*optional*|Boost of full match of search phrase with doc  <br>**Default** : `1.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**log_level**  <br>*optional*|Log level of full text search engine  <br>**Minimum value** : `0`  <br>**Maximum value** : `4`|integer|
 |**max_rebuild_steps**  <br>*optional*|Maximum steps without full rebuild of ft - more steps faster commit slower select - optimal about 15.  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
@@ -2112,13 +2115,30 @@ Fulltext Index configuration
 |**max_typos_in_word**  <br>*optional*|Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 1 possible typo -It will seriously increase RAM usage, and decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `2`|integer|
 |**merge_limit**  <br>*optional*|Maximum documents count which will be processed in merge query results.  Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `65535`|integer|
 |**min_relevancy**  <br>*optional*|Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned  <br>**Default** : `0.05`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
+|**partial_match_decrease**  <br>*optional*|Decrease of relevancy in case of partial match by value: partial_match_decrease * (non matched symbols) / (matched symbols)  <br>**Minimum value** : `0`  <br>**Maximum value** : `100`|integer|
 |**position_boost**  <br>*optional*|Boost of search query term position  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
-|**position_weght**  <br>*optional*|Weight of search query term position in final rank. 0: term position will not change final rank. 1: term position will affect to final rank in 0 - 100% range  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
+|**position_weight**  <br>*optional*|Weight of search query term position in final rank. 0: term position will not change final rank. 1: term position will affect to final rank in 0 - 100% range  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**stemmers**  <br>*optional*|List of stemmers to use|< string > array|
 |**stop_words**  <br>*optional*|List of stop words. Words from this list will be ignored in documents and queries|< string > array|
 |**synonyms**  <br>*optional*|List of synonyms for replacement|< [FulltextSynonym](#fulltextsynonym) > array|
 |**term_len_boost**  <br>*optional*|Boost of search query term length  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
-|**term_len_weght**  <br>*optional*|Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range  <br>**Default** : `0.3`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
+|**term_len_weight**  <br>*optional*|Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range  <br>**Default** : `0.3`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
+
+
+
+### FulltextFieldConfig
+Configuration for certian field if it differ from whole index configuration
+
+
+|Name|Description|Schema|
+|---|---|---|
+|**bm25_boost**  <br>*optional*|Boost of bm25 ranking  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
+|**bm25_weight**  <br>*optional*|Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to finl rank in 0 - 100% range  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
+|**field_name**  <br>*optional*|Field name|string|
+|**position_boost**  <br>*optional*|Boost of search query term position  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
+|**position_weight**  <br>*optional*|Weight of search query term position in final rank. 0: term position will not change final rank. 1: term position will affect to final rank in 0 - 100% range  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
+|**term_len_boost**  <br>*optional*|Boost of search query term length  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
+|**term_len_weight**  <br>*optional*|Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range  <br>**Default** : `0.3`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 
 
 
@@ -2143,12 +2163,12 @@ Fulltext synonym definition
 |**index_type**  <br>*required*|Index structure type  <br>**Default** : `"hash"`|enum (hash, tree, text, rtree, -)|
 |**is_array**  <br>*optional*|Specifies, that index is array. Array indexes can work with array fields, or work with multiple fields  <br>**Default** : `false`|boolean|
 |**is_dense**  <br>*optional*|Reduces the index size. For hash and tree it will save ~8 bytes per unique key value. Useful for indexes with high selectivity, but for tree and hash indexes with low selectivity can seriously decrease update performance;  <br>**Default** : `false`|boolean|
-|**is_linear**  <br>*optional*|Use linear algorithm to construct RTree index. Quadratic algorithm will be used otherwise  <br>**Default** : `false`|boolean|
 |**is_pk**  <br>*optional*|Specifies, that index is primary key. The update opertations will checks, that PK field is unique. The namespace MUST have only 1 PK index|boolean|
 |**is_simple_tag**  <br>*optional*|Use simple tag instead of actual index, which will notice rx about possible field name for strict policies  <br>**Default** : `false`|boolean|
 |**is_sparse**  <br>*optional*|Value of index may not present in the document, and threfore, reduce data size but decreases speed operations on index  <br>**Default** : `false`|boolean|
 |**json_paths**  <br>*required*|Fields path in json object, e.g 'id' or 'subobject.field'. If index is 'composite' or 'is_array', than multiple json_paths can be specified, and index will get values from all specified fields.|< string > array|
 |**name**  <br>*required*|Name of index, can contains letters, digits and underscores  <br>**Default** : `"id"`  <br>**Pattern** : `"^[A-Za-z0-9_\\-]*$"`|string|
+|**rtree_type**  <br>*optional*|Algorithm to construct RTree index  <br>**Default** : `"rstar"`|enum (linear, quadratic, greene, rstar)|
 |**sort_order_letters**  <br>*optional*|Sort order letters  <br>**Default** : `""`|string|
 
 
@@ -2643,11 +2663,19 @@ Specifies results sorting order
 
 |Name|Description|Schema|
 |---|---|---|
+|**core_log**  <br>*optional*|Reindexer core log path|string|
 |**current_allocated_bytes**  <br>*optional*|Current inuse allocated memory size in bytes|integer|
 |**heap_size**  <br>*optional*|Current heap size in bytes|integer|
+|**http_address**  <br>*optional*|HTTP server address|string|
+|**http_log**  <br>*optional*|HTTP server log path|string|
+|**log_level**  <br>*optional*|Log level, should be one of these: trace, debug, info, warning, error, critical|string|
 |**pageheap_free**  <br>*optional*|Heap free size in bytes|integer|
 |**pageheap_unmapped**  <br>*optional*|Unmapped free heap size in bytes|integer|
+|**rpc_address**  <br>*optional*|RPC server address|string|
+|**rpc_log**  <br>*optional*|RPC server log path|string|
+|**server_log**  <br>*optional*|Reindexer server log path|string|
 |**start_time**  <br>*optional*|Server start time in unix timestamp|integer|
+|**storage_path**  <br>*optional*|Path to storage|string|
 |**uptime**  <br>*optional*|Server uptime in seconds|integer|
 |**version**  <br>*optional*|Server version|string|
 

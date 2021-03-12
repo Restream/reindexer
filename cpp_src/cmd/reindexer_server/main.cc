@@ -1,6 +1,7 @@
 #include <iostream>
 #include "debug/backtrace.h"
 #include "server/server.h"
+#include "spdlog/spdlog.h"
 
 int main(int argc, char* argv[]) {
 	reindexer::debug::backtrace_init();
@@ -11,5 +12,7 @@ int main(int argc, char* argv[]) {
 		return EXIT_FAILURE;
 	}
 	svc.EnableHandleSignals();
-	return svc.Start();
+	int ret = svc.Start();
+	spdlog::drop_all();
+	return ret;
 }

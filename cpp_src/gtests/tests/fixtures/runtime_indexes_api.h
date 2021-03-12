@@ -1,6 +1,7 @@
 #pragma once
 
 #include "reindexer_api.h"
+#include "tools/random.h"
 
 class RuntimeIndexesApi : public ReindexerApi {
 public:
@@ -42,10 +43,10 @@ protected:
 
 			Item geoItem = NewItem(geom_namespace);
 			geoItem[this->id] = id + 500;
-			geoItem[qpoints] = RandPoint();
-			geoItem[lpoints] = RandPoint();
-			geoItem[gpoints] = RandPoint();
-			geoItem[spoints] = RandPoint();
+			geoItem[qpoints] = randPoint(10);
+			geoItem[lpoints] = randPoint(10);
+			geoItem[gpoints] = randPoint(10);
+			geoItem[spoints] = randPoint(10);
 			Upsert(geom_namespace, geoItem);
 			Commit(geom_namespace);
 		}
@@ -158,7 +159,7 @@ protected:
 		string indexName = getRuntimeQPointIndexName(indexNumber);
 		for (size_t i = 0; i < 10; ++i) {
 			Item item = NewItem(geom_namespace);
-			item[indexName] = RandPoint();
+			item[indexName] = randPoint(10);
 			Upsert(geom_namespace, item);
 		}
 		Commit(geom_namespace);
@@ -168,7 +169,7 @@ protected:
 		string indexName = getRuntimeLPointIndexName(indexNumber);
 		for (size_t i = 0; i < 10; ++i) {
 			Item item = NewItem(geom_namespace);
-			item[indexName] = RandPoint();
+			item[indexName] = randPoint(10);
 			Upsert(geom_namespace, item);
 		}
 		Commit(geom_namespace);
@@ -178,7 +179,7 @@ protected:
 		string indexName = getRuntimeGPointIndexName(indexNumber);
 		for (size_t i = 0; i < 10; ++i) {
 			Item item = NewItem(geom_namespace);
-			item[indexName] = RandPoint();
+			item[indexName] = randPoint(10);
 			Upsert(geom_namespace, item);
 		}
 		Commit(geom_namespace);
@@ -188,7 +189,7 @@ protected:
 		string indexName = getRuntimeSPointIndexName(indexNumber);
 		for (size_t i = 0; i < 10; ++i) {
 			Item item = NewItem(geom_namespace);
-			item[indexName] = RandPoint();
+			item[indexName] = randPoint(10);
 			Upsert(geom_namespace, item);
 		}
 		Commit(geom_namespace);

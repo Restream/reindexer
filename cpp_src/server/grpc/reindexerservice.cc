@@ -1,15 +1,12 @@
 #include "reindexerservice.h"
 
-#ifdef WITH_GRPC
-#include "../build/generated/grpc/reindexer.grpc.pb.h"
-
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/protobufbuilder.h"
 #include "core/queryresults/joinresults.h"
 #include "core/reindexer.h"
 #include "core/type_consts.h"
-#include "dbmanager.h"
+#include "server/dbmanager.h"
 
 #include <grpcpp/grpcpp.h>
 
@@ -923,4 +920,25 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 }  // namespace grpc
 }  // namespace reindexer
 
-#endif
+struct grpc_data {
+	std::unique_ptr<reindexer::grpc::ReindexerService> service_;
+	std::unique_ptr<::grpc::Server> grpcServer_;
+};
+
+extern "C" void* start_reindexer_grpc(reindexer_server::DBManager& dbMgr, std::chrono::seconds txIdleTimeout,
+									  reindexer::net::ev::dynamic_loop& loop, const string& address) {
+	auto data = new grpc_data();
+
+	data->service_.reset(new reindexer::grpc::ReindexerService(dbMgr, txIdleTimeout, loop));
+	::grpc::ServerBuilder builder;
+	builder.AddListeningPort(address, ::grpc::InsecureServerCredentials());
+	builder.RegisterService(data->service_.get());
+	data->grpcServer_ = builder.BuildAndStart();
+	return data;
+}
+
+extern "C" void stop_reindexer_grpc(void* pdata) {
+	auto data = reinterpret_cast<grpc_data*>(pdata);
+	data->grpcServer_->Shutdown();
+	delete data;
+}

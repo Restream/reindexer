@@ -48,7 +48,15 @@ HTTPServer::HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper &l
 	  allocDebug_(config.allocDebug),
 	  enablePprof_(config.enablePprof),
 	  startTs_(std::chrono::system_clock::now()),
-	  txIdleTimeout_(config.txIdleTimeout) {}
+	  txIdleTimeout_(config.txIdleTimeout),
+	  rpcAddress_(config.rpcAddress),
+	  httpAddress_(config.httpAddress),
+	  storagePath_(config.storagePath),
+	  rpcLog_(config.rpcLog),
+	  httpLog_(config.httpLog),
+	  logLevel_(config.logLevel),
+	  coreLog_(config.coreLog),
+	  serverLog_(config.serverLog) {}
 
 int HTTPServer::GetSQLQuery(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDataRead);
@@ -756,6 +764,14 @@ int HTTPServer::Check(http::Context &ctx) {
 		size_t uptime = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - startTs_).count();
 		builder.Put("start_time", startTs);
 		builder.Put("uptime", uptime);
+		builder.Put("rpc_address", rpcAddress_);
+		builder.Put("http_address", httpAddress_);
+		builder.Put("storage_path", storagePath_);
+		builder.Put("rpc_log", rpcLog_);
+		builder.Put("http_log", httpLog_);
+		builder.Put("log_level", logLevel_);
+		builder.Put("core_log", coreLog_);
+		builder.Put("server_log", serverLog_);
 
 #if REINDEX_WITH_JEMALLOC
 		if (alloc_ext::JEMallocIsAvailable()) {

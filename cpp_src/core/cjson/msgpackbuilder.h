@@ -35,7 +35,7 @@ public:
 	void SetTagsPath(const TagsPath *) {}
 
 	template <typename N, typename T>
-	void Array(N tagName, span<T> data) {
+	void Array(N tagName, span<T> data, int /*offset*/ = 0) {
 		checkIfCorrectArray(tagName);
 		skipTag();
 		packKeyName(tagName);
@@ -44,7 +44,7 @@ public:
 	}
 
 	template <typename T>
-	void Array(T tagName, span<p_string> data) {
+	void Array(T tagName, span<p_string> data, int /*offset*/ = 0) {
 		checkIfCorrectArray(tagName);
 		skipTag();
 		packKeyName(tagName);

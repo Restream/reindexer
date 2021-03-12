@@ -43,11 +43,15 @@ extern "C" void cgoSignalsInit() {}
 #else // !_WIN32
 static struct sigaction oldsa[32];
 
-static void cgoSighandler(int sig, siginfo_t*, void*) {
+static void cgoSighandler(int sig, siginfo_t* info, void* ucontext) {
 	reindexer::debug::print_crash_query(std::cout);
 	if (sig < 32) {
-		sigaction(sig, &oldsa[sig], nullptr);
-		raise(sig);
+        struct sigaction &old = oldsa[sig];
+        if (old.sa_flags & SA_SIGINFO) {
+            (old.sa_sigaction)(sig, info, ucontext);
+        } else {
+            (old.sa_handler)(sig);
+        }
 	} else {
 		std::exit(-1);
 	}

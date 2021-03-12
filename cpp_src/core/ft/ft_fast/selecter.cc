@@ -101,24 +101,12 @@ Selecter::MergeData Selecter::Process(FtDSLQuery &dsl) {
 			processTypos(ctx, res.term);
 		}
 	}
-	for (auto &rawRes : ctx.rawResults) {
-		switch (rawRes.term.opts.op) {
-			case OpNot:
-				continue;
-			case OpAnd:
-				rawRes.term.opts.op = OpOr;
-				break;
-			case OpOr:
-				break;
-		}
-		break;
-	}
 
 	std::vector<TextSearchResults> results;
 	size_t reserveSize = ctx.rawResults.size();
 	for (const SynonymsDsl &synDsl : synonymsDsl) reserveSize += synDsl.dsl.size();
 	results.reserve(reserveSize);
-	vector<size_t> synonymsBounds;
+	std::vector<size_t> synonymsBounds;
 	synonymsBounds.reserve(synonymsDsl.size());
 	for (const SynonymsDsl &synDsl : synonymsDsl) {
 		FtSelectContext synCtx;
@@ -289,7 +277,7 @@ static double pos2rank(int pos) {
 
 void Selecter::mergeItaration(const TextSearchResults &rawRes, index_t rawResIndex, fast_hash_map<VDocIdType, index_t> &statuses,
 							  vector<MergeInfo> &merged, vector<MergedIdRel> &merged_rd, h_vector<int16_t> &idoffsets,
-							  vector<bool> &curExists) {
+							  vector<bool> &curExists, const bool hasBeenAnd) {
 	auto &vdocs = holder_.vdocs_;
 
 	int totalDocsCount = vdocs.size();
@@ -316,7 +304,7 @@ void Selecter::mergeItaration(const TextSearchResults &rawRes, index_t rawResInd
 			index_t &vidStatus = statuses[vid];
 
 			// Do not calc anithing if
-			if (vidStatus == kExcluded || (op == OpAnd && !vidStatus)) {
+			if (vidStatus == kExcluded || (hasBeenAnd && !vidStatus)) {
 				continue;
 			}
 			if (op == OpNot) {
@@ -407,7 +395,7 @@ void Selecter::mergeItaration(const TextSearchResults &rawRes, index_t rawResInd
 					debugMergeStep("skiped ", vid, normBm25, normDist, finalRank, merged_rd[moffset].rank);
 				}
 			}
-			if (int(merged.size()) < holder_.cfg_->mergeLimit && op == OpOr) {
+			if (int(merged.size()) < holder_.cfg_->mergeLimit && !hasBeenAnd) {
 				const bool currentlyAddedLessRankedMerge =
 					!curExists.empty() && curExists[vid] && merged[idoffsets[vid]].proc < static_cast<int16_t>(termRank);
 				if (!(simple && currentlyAddedLessRankedMerge) && vidStatus) continue;
@@ -473,34 +461,38 @@ Selecter::MergeData Selecter::mergeResults(vector<TextSearchResults> &rawResults
 	size_t curExists = 0;
 	auto nextSynonymsBound = synonymsBounds.cbegin();
 	std::vector<vector<bool>> synonymsExists;
+	bool hasBeenAnd = false;
 	for (index_t i = 0, lastGroupStart = 0; i < rawResults.size(); ++i) {
 		if (nextSynonymsBound != synonymsBounds.cend() && *nextSynonymsBound == i) {
+			hasBeenAnd = false;
 			++curExists;
 			++nextSynonymsBound;
-			lastGroupStart = (nextSynonymsBound == synonymsBounds.cend() ? 0 : i);
+			if (nextSynonymsBound == synonymsBounds.cend()) {
+				lastGroupStart = 0;
+			} else {
+				lastGroupStart = i;
+			}
 		}
 		const auto &res = rawResults[i];
-		mergeItaration(res, i, statuses, merged, merged_rd, idoffsets, exists[curExists]);
+		mergeItaration(res, i, statuses, merged, merged_rd, idoffsets, exists[curExists], hasBeenAnd);
 
 		if (res.term.opts.op == OpAnd) {
+			hasBeenAnd = true;
 			for (auto &info : merged) {
-				auto vid = info.id;
-				if (!exists[curExists][vid]) {
-					bool matchSyn = false;
-					for (size_t synGrpIdx : res.synonymsGroups) {
-						assert(synGrpIdx < curExists);
-						if (exists[synGrpIdx][vid]) {
-							matchSyn = true;
-							break;
-						}
-					}
-					if (matchSyn) continue;
-					index_t &vidStatus = statuses[vid];
-					if (vidStatus != kExcluded && vidStatus > lastGroupStart) {
-						info.proc = 0;
-						vidStatus = 0;
+				const auto vid = info.id;
+				index_t &vidStatus = statuses[vid];
+				if (exists[curExists][vid] || vidStatus == kExcluded || vidStatus <= lastGroupStart || info.proc == 0) continue;
+				bool matchSyn = false;
+				for (size_t synGrpIdx : res.synonymsGroups) {
+					assert(synGrpIdx < curExists);
+					if (exists[synGrpIdx][vid]) {
+						matchSyn = true;
+						break;
 					}
 				}
+				if (matchSyn) continue;
+				info.proc = 0;
+				vidStatus = 0;
 			}
 		}
 		if (res.term.opts.op != OpNot) merged.mergeCnt++;

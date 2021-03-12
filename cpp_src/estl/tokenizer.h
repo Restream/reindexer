@@ -3,6 +3,7 @@
 #pragma once
 
 #include <string>
+#include "core/keyvalue/variant.h"
 #include "estl/h_vector.h"
 #include "estl/string_view.h"
 
@@ -56,5 +57,7 @@ protected:
 	const char *cur_;
 	size_t pos_ = 0;
 };
+
+Variant token2kv(const token &currTok, tokenizer &parser, bool allowComposite);
 
 }  // namespace reindexer

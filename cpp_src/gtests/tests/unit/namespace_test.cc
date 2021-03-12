@@ -435,7 +435,7 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField2) {
 
 	Item item = qr[0].GetItem();
 	reindexer::string_view json = item.GetJSON();
-	size_t pos = json.find(R"("nested":{"bonus":[{"first":1,"second":2,"third":3}]})");
+	size_t pos = json.find(R"("nested":{"bonus":[{"first":1,"second":2,"third":3}])");
 	ASSERT_TRUE(pos != std::string::npos) << "'nested.bonus' was not updated properly" << json;
 }
 
@@ -459,7 +459,7 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField3) {
 	ASSERT_NO_THROW(jsonParser.Parse(json, &length));
 	ASSERT_TRUE(length > 0);
 
-	size_t pos = json.find(R"("nested":{"bonus":[{"id":1},{"id":2},{"id":3},{"id":4}]})");
+	size_t pos = json.find(R"("nested":{"bonus":[{"id":1},{"id":2},{"id":3},{"id":4}])");
 	ASSERT_TRUE(pos != std::string::npos) << "'nested.bonus' was not updated properly" << json;
 }
 
@@ -474,7 +474,7 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField4) {
 
 	Item item = qr[0].GetItem();
 	reindexer::string_view json = item.GetJSON();
-	size_t pos = json.find(R"("nested":{"bonus":[0]})");
+	size_t pos = json.find(R"("nested":{"bonus":[0])");
 	ASSERT_TRUE(pos != std::string::npos) << "'nested.bonus' was not updated properly" << json;
 }
 
@@ -548,6 +548,527 @@ TEST_F(NsApi, TestAddAndSetNonindexedField3) {
 	DefineDefaultNamespace();
 	AddUnindexedData();
 	addAndSetNonindexedField(rt.reindexer, default_namespace, "nested3.nested4.extrabonus");
+}
+
+void setAndCheckArrayItem(std::shared_ptr<reindexer::Reindexer> reindexer, const string &ns, const string &fullItemPath,
+						  const string &jsonPath, int i = IndexValueType::NotSet, int j = IndexValueType::NotSet) {
+	// Set array item to 777
+	QueryResults qrUpdate;
+	Query updateQuery = std::move(Query(ns).Where("nested.bonus", CondGe, Variant(500)).Set(fullItemPath, static_cast<int64_t>(777)));
+	Error err = reindexer->Update(updateQuery, qrUpdate);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// Get all items for the same query
+	QueryResults qrAll;
+	err = reindexer->Select(Query(ns).Where("nested.bonus", CondGe, Variant(500)), qrAll);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	const int kPricesSize = 3;
+
+	// Check if array item with appropriate index equals to 777 and
+	// is a type of Int64.
+	auto checkItem = [](const VariantArray &values, size_t index) {
+		ASSERT_TRUE(index < values.size());
+		ASSERT_TRUE(values[index].Type() == KeyValueInt64);
+		ASSERT_TRUE(values[index].As<int64_t>() == 777);
+	};
+
+	// Check every item according to it's index, where i is the index of parent's array
+	// and j is the index of a nested array:
+	// 1) objects[1].prices[0]: i = 1, j = 0
+	// 2) objects[2].prices[*]: i = 2, j = IndexValueType::NotSet
+	// etc.
+	for (auto it : qrAll) {
+		Item item = it.GetItem();
+		checkIfItemJSONValid(it);
+		VariantArray values = item[jsonPath.c_str()];
+		if (i == j && i == IndexValueType::NotSet) {
+			for (size_t i = 0; i < values.size(); ++i) {
+				checkItem(values, i);
+			}
+		} else if (i == IndexValueType::NotSet) {
+			for (int k = 0; k < kPricesSize; ++k) {
+				checkItem(values, k * kPricesSize + j);
+			}
+		} else if (j == IndexValueType::NotSet) {
+			for (int k = 0; k < kPricesSize; ++k) {
+				checkItem(values, i * kPricesSize + k);
+			}
+		} else {
+			checkItem(values, i * kPricesSize + j);
+		}
+	}
+}
+
+TEST_F(NsApi, TestAddAndSetArrayField) {
+	// 1. Define NS
+	// 2. Fill NS
+	// 3. Set array item(s) value to 777 and check if it was set properly
+	DefineDefaultNamespace();
+	AddUnindexedData();
+	setAndCheckArrayItem(rt.reindexer, default_namespace, "nested.nested_array[0].prices[2]", "nested.nested_array.prices", 0, 2);
+	setAndCheckArrayItem(rt.reindexer, default_namespace, "nested.nested_array[2].nested.array[1]", "nested.nested_array.nested.array", 0,
+						 1);
+	setAndCheckArrayItem(rt.reindexer, default_namespace, "nested.nested_array[2].nested.array[*]", "nested.nested_array.nested.array", 0);
+	setAndCheckArrayItem(rt.reindexer, default_namespace, "nested.nested_array[1].prices[*]", "nested.nested_array.prices", 1);
+}
+
+TEST_F(NsApi, TestAddAndSetArrayField2) {
+	// 1. Define NS
+	// 2. Fill NS
+	// 3. Set array item(s) value to 777 and check if it was set properly
+	DefineDefaultNamespace();
+	AddUnindexedData();
+	setAndCheckArrayItem(rt.reindexer, default_namespace, "nested.nested_array[*].prices[0]", "nested.nested_array.prices",
+						 IndexValueType::NotSet, 0);
+	setAndCheckArrayItem(rt.reindexer, default_namespace, "nested.nested_array[*].name", "nested.nested_array.name");
+}
+
+TEST_F(NsApi, TestAddAndSetArrayField3) {
+	// 1. Define NS
+	// 2. Fill NS
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	// 3. Set array item(s) value to 777 and check if it was set properly
+	QueryResults qrUpdate;
+	Query updateQuery = std::move(
+		Query(default_namespace).Where("nested.bonus", CondGe, Variant(500)).Set("indexed_array_field[0]", static_cast<int>(777)));
+	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// 4. Make sure each item's indexed_array_field[0] is of type Int and equal to 777
+	for (auto it : qrUpdate) {
+		Item item = it.GetItem();
+		checkIfItemJSONValid(it);
+		VariantArray values = item[indexedArrayField];
+		ASSERT_TRUE(values[0].Type() == KeyValueInt);
+		ASSERT_TRUE(values[0].As<int>() == 777);
+	}
+}
+
+TEST_F(NsApi, TestAddAndSetArrayField4) {
+	// 1. Define NS
+	// 2. Fill NS
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	// 3. Set array item(s) value to 777 and check if it was set properly
+	QueryResults qrUpdate;
+	Query updateQuery = std::move(
+		Query(default_namespace).Where("nested.bonus", CondGe, Variant(500)).Set("indexed_array_field[*]", static_cast<int>(777)));
+	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// 4. Make sure all items of indexed_array_field are of type Int and set to 777
+	for (auto it : qrUpdate) {
+		Item item = it.GetItem();
+		checkIfItemJSONValid(it);
+		VariantArray values = item[indexedArrayField];
+		ASSERT_TRUE(values.size() == 9);
+		for (size_t i = 0; i < values.size(); ++i) {
+			ASSERT_TRUE(values[i].Type() == KeyValueInt);
+			ASSERT_TRUE(values[i].As<int>() == 777);
+		}
+	}
+}
+
+void DropArrayItem(std::shared_ptr<reindexer::Reindexer> reindexer, const string &ns, const string &fullItemPath, const string &jsonPath,
+				   int i = IndexValueType::NotSet, int j = IndexValueType::NotSet) {
+	// Drop item(s) with name = fullItemPath
+	QueryResults qrUpdate;
+	Query updateQuery = std::move(Query(ns).Where("nested.bonus", CondGe, Variant(500)).Drop(fullItemPath));
+	Error err = reindexer->Update(updateQuery, qrUpdate);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// Get all items of the same query
+	QueryResults qrAll;
+	err = reindexer->Select(Query(ns).Where("nested.bonus", CondGe, Variant(500)), qrAll);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	const int kPricesSize = 3;
+
+	// Check every item according to it's index, where i is the index of parent's array
+	// and j is the index of a nested array:
+	// 1) objects[1].prices[0]: i = 1, j = 0
+	// 2) objects[2].prices[*]: i = 2, j = IndexValueType::NotSet
+	// etc.
+	// Approach is to check array size (because after removing some of it's items
+	// it should decrease).
+	for (auto it : qrAll) {
+		checkIfItemJSONValid(it);
+		Item item = it.GetItem();
+		VariantArray values = item[jsonPath.c_str()];
+		if (i == IndexValueType::NotSet && j == IndexValueType::NotSet) {
+			ASSERT_TRUE(values.size() == 0) << values.size();
+		} else if (i == IndexValueType::NotSet || j == IndexValueType::NotSet) {
+			ASSERT_TRUE(int(values.size()) == kPricesSize * 2) << values.size();
+		} else {
+			ASSERT_TRUE(int(values.size()) == kPricesSize * 3 - 1) << values.size();
+		}
+	}
+}
+
+TEST_F(NsApi, DropArrayField1) {
+	// 1. Define NS
+	// 2. Fill NS
+	// 3. Drop array item(s) and check it was properly removed
+	DefineDefaultNamespace();
+	AddUnindexedData();
+	DropArrayItem(rt.reindexer, default_namespace, "nested.nested_array[0].prices[0]", "nested.nested_array.prices", 0, 0);
+}
+
+TEST_F(NsApi, DropArrayField2) {
+	// 1. Define NS
+	// 2. Fill NS
+	// 3. Drop array item(s) and check it was properly removed
+	DefineDefaultNamespace();
+	AddUnindexedData();
+	DropArrayItem(rt.reindexer, default_namespace, "nested.nested_array[1].prices[*]", "nested.nested_array.prices", 1);
+}
+
+TEST_F(NsApi, DropArrayField3) {
+	// 1. Define NS
+	// 2. Fill NS
+	// 3. Drop array item(s) and check it was properly removed
+	DefineDefaultNamespace();
+	AddUnindexedData();
+	DropArrayItem(rt.reindexer, default_namespace, "nested.nested_array[*].prices[*]", "nested.nested_array.prices");
+}
+
+TEST_F(NsApi, DropArrayField4) {
+	// 1. Define NS
+	// 2. Fill NS
+	// 3. Drop array item(s) and check it was properly removed
+	DefineDefaultNamespace();
+	AddUnindexedData();
+	DropArrayItem(rt.reindexer, default_namespace, "nested.nested_array[0].prices[((2+4)*2)/6]", "nested.nested_array.prices", 0,
+				  ((2 + 4) * 2) / 6);
+}
+
+TEST_F(NsApi, SetArrayFieldWithSql) {
+	// 1. Define NS
+	// 2. Fill NS
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	// 3. Set all items of array to 777
+	Query updateQuery;
+	updateQuery.FromSQL("update test_namespace set nested.nested_array[1].prices[*] = 777");
+	QueryResults qrUpdate;
+	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	const int kElements = 3;
+
+	// 4. Make sure all items of array nested.nested_array.prices are equal to 777 and of type Int
+	for (auto it : qrUpdate) {
+		Item item = it.GetItem();
+		VariantArray values = item["nested.nested_array.prices"];
+		for (int i = 0; i < kElements; ++i) {
+			ASSERT_TRUE(values[kElements + i].As<int>() == 777);
+		}
+		checkIfItemJSONValid(it);
+	}
+}
+
+TEST_F(NsApi, DropArrayFieldWithSql) {
+	// 1. Define NS
+	// 2. Fill NS
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	// 3. Drop all items of array nested.nested_array[1].prices
+	Query updateQuery;
+	updateQuery.FromSQL("update test_namespace drop nested.nested_array[1].prices[*]");
+	QueryResults qrUpdate;
+	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	const int kElements = 3;
+
+	// 4. Check if items were really removed
+	for (auto it : qrUpdate) {
+		Item item = it.GetItem();
+		VariantArray values = item["nested.nested_array.prices"];
+		ASSERT_TRUE(values.size() == kElements * 2);
+		checkIfItemJSONValid(it);
+	}
+}
+
+TEST_F(NsApi, ExtendArrayFromTopWithSql) {
+	// 1. Define NS
+	// 2. Fill NS
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	// Append the following items: [88, 88, 88] to the top of the array array_field
+	Query updateQuery;
+	updateQuery.FromSQL("update test_namespace set array_field = [88,88,88] || array_field");
+	QueryResults qrUpdate;
+	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	const int kElements = 3;
+
+	// Check if these items were really added to array_field
+	for (auto it : qrUpdate) {
+		Item item = it.GetItem();
+		checkIfItemJSONValid(it);
+		VariantArray values = item["array_field"];
+		ASSERT_TRUE(values.size() == kElements * 2);
+		for (int i = 0; i < kElements; ++i) {
+			ASSERT_TRUE(values[i].As<int>() == 88);
+		}
+	}
+}
+
+TEST_F(NsApi, AppendToArrayWithSql) {
+	// 1. Define NS
+	// 2. Fill NS
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	// 3. Extend array_field with expression substantially
+	Query updateQuery;
+	updateQuery.FromSQL("update test_namespace set array_field = array_field || objects.more[1].array[4] || [22,22,22] || [11]");
+	QueryResults qrUpdate;
+	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	const int kElements = 3;
+
+	// 4. Make sure all items of array have proper values
+	for (auto it : qrUpdate) {
+		Item item = it.GetItem();
+		checkIfItemJSONValid(it);
+		VariantArray values = item["array_field"];
+		int i = 0;
+		ASSERT_TRUE(values.size() == kElements * 2 + 1 + 1);
+		for (; i < kElements; ++i) {
+			ASSERT_TRUE(values[i].As<int>() == i + 1);
+		}
+		ASSERT_TRUE(values[i++].As<int>() == 0);
+		for (; i < 7; ++i) {
+			ASSERT_TRUE(values[i].As<int>() == 22);
+		}
+		ASSERT_TRUE(values[i].As<int>() == 11);
+	}
+}
+
+TEST_F(NsApi, ExtendArrayWithExpressions) {
+	// 1. Define NS
+	// 2. Fill NS
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	// 3. Extend array_field with expression via Query builder
+	Query updateQuery = Query(default_namespace);
+	updateQuery.Set("array_field",
+					Variant(string("[88,88,88] || array_field || [99, 99, 99] || indexed_array_field || objects.more[1].array[4]")), true);
+	QueryResults qrUpdate;
+	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	const int kElements = 3;
+
+	// Check if array_field was modified properly
+	for (auto it : qrUpdate) {
+		Item item = it.GetItem();
+		checkIfItemJSONValid(it);
+		VariantArray values = item["array_field"];
+		ASSERT_TRUE(values.size() == kElements * 3 + 9 + 1);
+		int i = 0;
+		for (; i < kElements; ++i) {
+			ASSERT_TRUE(values[i].As<int>() == 88);
+		}
+		ASSERT_TRUE(values[i++].As<int>() == 1);
+		ASSERT_TRUE(values[i++].As<int>() == 2);
+		ASSERT_TRUE(values[i++].As<int>() == 3);
+		for (; i < 9; ++i) {
+			ASSERT_TRUE(values[i].As<int>() == 99);
+		}
+		for (int k = 1; k < 10; ++i, ++k) {
+			ASSERT_TRUE(values[i].As<int>() == k * 11) << k << "; " << i << "; " << values[i].As<int>();
+		}
+		ASSERT_TRUE(values[i++].As<int>() == 0);
+	}
+}
+
+TEST_F(NsApi, UpdateObjectsArray) {
+	// 1. Define NS
+	// 2. Fill NS
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	// 3. Update object array and change one of it's items
+	Query updateQuery;
+	updateQuery.FromSQL(R"(update test_namespace set nested.nested_array[1] = {"id":1,"name":"modified", "prices":[4,5,6]})");
+	QueryResults qrUpdate;
+	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// 4. Make sure nested.nested_array[1] is set to a new value properly
+	for (auto it : qrUpdate) {
+		Item item = it.GetItem();
+		checkIfItemJSONValid(it);
+		ASSERT_TRUE(item.GetJSON().find(R"({"id":1,"name":"modified","prices":[4,5,6]})") != string::npos);
+	}
+}
+
+TEST_F(NsApi, UpdateObjectsArray2) {
+	// 1. Define NS
+	// 2. Fill NS
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	// 3. Set all items of the object array to a new value
+	Query updateQuery;
+	updateQuery.FromSQL(R"(update test_namespace set nested.nested_array[*] = {"ein":1,"zwei":2, "drei":3})");
+	QueryResults qrUpdate;
+	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// 4. Make sure all items of nested.nested_array are set to a new value correctly
+	for (auto it : qrUpdate) {
+		Item item = it.GetItem();
+		checkIfItemJSONValid(it);
+		ASSERT_TRUE(item.GetJSON().find(
+						R"("nested_array":[{"ein":1,"zwei":2,"drei":3},{"ein":1,"zwei":2,"drei":3},{"ein":1,"zwei":2,"drei":3}]})") !=
+					string::npos);
+	}
+}
+
+TEST_F(NsApi, UpdateObjectsArray3) {
+	// 1. Define NS
+	// 2. Fill NS
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	// 3. Set all items of the object array to a new value via Query builder
+	Query updateQuery = Query(default_namespace);
+	updateQuery.SetObject("nested.nested_array[*]", Variant(string(R"({"ein":1,"zwei":2, "drei":3})")), false);
+	QueryResults qrUpdate;
+	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// 4. Make sure all items of nested.nested_array are set to a new value correctly
+	for (auto it : qrUpdate) {
+		Item item = it.GetItem();
+		checkIfItemJSONValid(it);
+		ASSERT_TRUE(item.GetJSON().find(
+						R"("nested_array":[{"ein":1,"zwei":2,"drei":3},{"ein":1,"zwei":2,"drei":3},{"ein":1,"zwei":2,"drei":3}]})") !=
+					string::npos);
+	}
+}
+
+TEST_F(NsApi, AccessForIndexedArrayItem) {
+	// 1. Define NS
+	// 2. Fill NS
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	// 3. Set indexed_array_field[0] to 777
+	QueryResults qr;
+	Error err = rt.reindexer->Update(Query(default_namespace).Set("indexed_array_field[0]", Variant(int(777))), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// 4. Try to access elements of different arrays with Item object functionality
+	// to make sure if GetValueByJSONPath() works properly.
+	for (auto it : qr) {
+		checkIfItemJSONValid(it);
+
+		reindexer::Item item = it.GetItem();
+
+		Variant value1 = item["indexed_array_field[0]"];
+		ASSERT_TRUE(value1.Type() == KeyValueInt);
+		ASSERT_TRUE(static_cast<int>(value1) == 777);
+
+		Variant value2 = item["objects[0].more[0].array[0]"];
+		ASSERT_TRUE(value2.Type() == KeyValueInt64);
+		ASSERT_TRUE(static_cast<int64_t>(value2) == 9);
+
+		Variant value3 = item["objects[0].more[0].array[1]"];
+		ASSERT_TRUE(value3.Type() == KeyValueInt64);
+		ASSERT_TRUE(static_cast<int64_t>(value3) == 8);
+
+		Variant value4 = item["objects[0].more[0].array[2]"];
+		ASSERT_TRUE(value4.Type() == KeyValueInt64);
+		ASSERT_TRUE(static_cast<int64_t>(value4) == 7);
+
+		Variant value5 = item["objects[0].more[0].array[3]"];
+		ASSERT_TRUE(value5.Type() == KeyValueInt64);
+		ASSERT_TRUE(static_cast<int64_t>(value5) == 6);
+
+		Variant value6 = item["objects[0].more[0].array[4]"];
+		ASSERT_TRUE(value6.Type() == KeyValueInt64);
+		ASSERT_TRUE(static_cast<int64_t>(value6) == 5);
+
+		Variant value7 = item["nested.nested_array[1].prices[1]"];
+		ASSERT_TRUE(value7.Type() == KeyValueInt64);
+		ASSERT_TRUE(static_cast<int64_t>(value7) == 5);
+	}
+}
+
+TEST_F(NsApi, UpdateComplexArrayItem) {
+	// 1. Define NS
+	// 2. Fill NS
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	// 3. Set objects[0].more[1].array[1] to 777
+	QueryResults qr;
+	Error err = rt.reindexer->Update(
+		Query(default_namespace).Where(idIdxName, CondEq, Variant(1000)).Set("objects[0].more[1].array[1]", Variant(int64_t(777))), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// 4. Make sure the value of objects[0].more[1].array[1] which was updated above,
+	// can be accesses correctly with no problems.
+	for (auto it : qr) {
+		checkIfItemJSONValid(it);
+
+		reindexer::Item item = it.GetItem();
+
+		Variant value = item["objects[0].more[1].array[1]"];
+		ASSERT_TRUE(value.Type() == KeyValueInt64);
+		ASSERT_TRUE(static_cast<int64_t>(value) == 777);
+
+		Variant value2 = item["objects[0].more[1].array[2]"];
+		ASSERT_TRUE(value2.Type() == KeyValueInt64);
+		ASSERT_TRUE(static_cast<int64_t>(value2) == 2);
+	}
+}
+
+TEST_F(NsApi, CheckIndexedArrayItem) {
+	// 1. Define NS
+	// 2. Fill NS
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	// 3. Select all items of the namespace
+	QueryResults qr;
+	Error err = rt.reindexer->Select(Query(default_namespace), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// 4. Check if the value of indexed array objects[0].more[1].array[1]
+	// can be accessed easily.
+	for (auto it : qr) {
+		checkIfItemJSONValid(it);
+
+		reindexer::Item item = it.GetItem();
+
+		Variant value = item["objects[0].more[1].array[1]"];
+		ASSERT_TRUE(value.Type() == KeyValueInt64);
+		ASSERT_TRUE(static_cast<int64_t>(value) == 3);
+
+		Variant value1 = item["objects[0].more[1].array[3]"];
+		ASSERT_TRUE(value1.Type() == KeyValueInt64);
+		ASSERT_TRUE(static_cast<int64_t>(value1) == 1);
+
+		Variant value2 = item["objects[0].more[0].array[4]"];
+		ASSERT_TRUE(value2.Type() == KeyValueInt64);
+		ASSERT_TRUE(static_cast<int64_t>(value2) == 5);
+	}
 }
 
 void checkFieldConversion(std::shared_ptr<reindexer::Reindexer> reindexer, const string &ns, const string &updateFieldPath,
@@ -778,6 +1299,40 @@ TEST_F(NsApi, TestUpdateEmptyArrayField) {
 	ASSERT_TRUE(arrayFieldVal.empty());
 }
 
+TEST_F(NsApi, DISABLED_TestUpdateEmptyIndexedField) {
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	QueryResults qr;
+	Query q = Query(default_namespace)
+				  .Where("id", CondEq, Variant(1001))
+				  .Set(emptyField, Variant("NEW GENERATION"))
+				  .Set(indexedArrayField, {Variant(static_cast<int>(4)), Variant(static_cast<int>(5)), Variant(static_cast<int>(6))});
+	Error err = rt.reindexer->Update(q, qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qr.Count() == 1);
+
+	QueryResults qr2;
+	err = rt.reindexer->Select("select * from test_namespace where id = 1001;", qr2);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qr2.Count() == 1);
+	for (auto it : qr2) {
+		Item item = it.GetItem();
+
+		Variant val = item[emptyField];
+		ASSERT_TRUE(val.As<string>() == "NEW GENERATION");
+
+		string_view json = item.GetJSON();
+		ASSERT_TRUE(json.find_first_of("\"empty_field\":\"NEW GENERATION\"") != std::string::npos);
+
+		VariantArray arrayVals = item[indexedArrayField];
+		ASSERT_TRUE(arrayVals.size() == 3);
+		ASSERT_TRUE(arrayVals[0].As<int>() == 4);
+		ASSERT_TRUE(arrayVals[1].As<int>() == 5);
+		ASSERT_TRUE(arrayVals[2].As<int>() == 6);
+	}
+}
+
 TEST_F(NsApi, TestDropField) {
 	DefineDefaultNamespace();
 	AddUnindexedData();
@@ -938,6 +1493,18 @@ TEST_F(NsApi, TestModifyQueriesSqlEncoder) {
 	q4.FromSQL(sqlTruncate);
 	EXPECT_TRUE(q4.GetSQL() == sqlTruncate) << q4.GetSQL();
 	checkQueryDsl(q4);
+
+	const string sqlArrayAppend = R"(UPDATE ns SET array = array||[1,2,3]||array2||objects[0].nested.prices[0])";
+	Query q5;
+	q5.FromSQL(sqlArrayAppend);
+	EXPECT_TRUE(q5.GetSQL() == sqlArrayAppend) << q5.GetSQL();
+	checkQueryDsl(q5);
+
+	const string sqlIndexUpdate = R"(UPDATE ns SET 'objects[0].nested.prices[*]' = 'NE DOROGO!')";
+	Query q6;
+	q6.FromSQL(sqlIndexUpdate);
+	EXPECT_TRUE(q6.GetSQL() == sqlIndexUpdate) << q6.GetSQL();
+	checkQueryDsl(q6);
 }
 
 void generateObject(reindexer::JsonBuilder &builder, const string &prefix, ReindexerApi *rtapi) {

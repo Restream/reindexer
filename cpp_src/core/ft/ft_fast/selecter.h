@@ -6,7 +6,6 @@
 #include "dataholder.h"
 
 namespace reindexer {
-using std::vector;
 
 class Selecter {
 	using index_t = uint32_t;
@@ -64,7 +63,8 @@ public:
 	};
 	MergeData mergeResults(vector<TextSearchResults>& rawResults, const std::vector<size_t>& synonymsBounds);
 	void mergeItaration(const TextSearchResults& rawRes, index_t rawResIndex, fast_hash_map<VDocIdType, index_t>& added,
-						vector<MergeInfo>& merged, vector<MergedIdRel>& merged_rd, h_vector<int16_t>& idoffsets, vector<bool>& curExists);
+						vector<MergeInfo>& merged, vector<MergedIdRel>& merged_rd, h_vector<int16_t>& idoffsets, vector<bool>& curExists,
+						bool hasBeenAnd);
 
 	void debugMergeStep(const char* msg, int vid, float normBm25, float normDist, int finalRank, int prevRank);
 	void processVariants(FtSelectContext&);

@@ -161,6 +161,17 @@ private:
 	bool isObjectValue = false;
 };
 
+template <>
+int Variant::As<int>() const;
+template <>
+int64_t Variant::As<int64_t>() const;
+template <>
+double Variant::As<double>() const;
+template <>
+bool Variant::As<bool>() const;
+template <>
+std::string Variant::As<std::string>() const;
+
 }  // namespace reindexer
 namespace std {
 template <>

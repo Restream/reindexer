@@ -1,8 +1,9 @@
 #pragma once
 
-#include <stdlib.h>
+#include <cstdlib>
 #include <string>
 
+#include "core/keyvalue/key_string.h"
 #include "core/payload/payloadtype.h"
 #include "ctag.h"
 #include "tagspathcache.h"
@@ -14,16 +15,110 @@ namespace reindexer {
 using std::string;
 using TagsPath = h_vector<int16_t, 6>;
 
-class TagScope {
+struct IndexedPathNode {
+	IndexedPathNode() = default;
+	IndexedPathNode(int16_t _nameTag) : nameTag_(_nameTag) {}
+	IndexedPathNode(int16_t _nameTag, int32_t _index) : nameTag_(_nameTag), index_(_index) {}
+	bool operator==(const IndexedPathNode &obj) const noexcept {
+		if (nameTag_ != obj.nameTag_) return false;
+		if (IsForAllItems() || obj.IsForAllItems()) return true;
+		if (index_ != IndexValueType::NotSet && obj.index_ != IndexValueType::NotSet) {
+			if (index_ != obj.index_) return false;
+		}
+		return true;
+	}
+	bool operator!=(const IndexedPathNode &obj) const noexcept { return !(operator==(obj)); }
+	bool operator==(int16_t _nameTag) const noexcept { return _nameTag == nameTag_; }
+	bool operator!=(int16_t _nameTag) const noexcept { return _nameTag != nameTag_; }
+	explicit operator int() const noexcept { return nameTag_; }
+
+	int NameTag() const noexcept { return nameTag_; }
+	int Index() const noexcept { return index_; }
+	string_view Expression() const {
+		if (expression_ && expression_->length() > 0) {
+			return string_view(expression_->c_str(), expression_->length());
+		}
+		return string_view();
+	}
+
+	bool IsArrayNode() const noexcept { return (IsForAllItems() || index_ != IndexValueType::NotSet); }
+	bool IsWithIndex() const noexcept { return index_ != ForAllItems && index_ != IndexValueType::NotSet; }
+	bool IsWithExpression() const { return expression_ && !expression_->empty(); }
+	bool IsForAllItems() const { return index_ == ForAllItems; }
+
+	void MarkAllItems(bool enable) {
+		if (enable) {
+			index_ = ForAllItems;
+		} else if (index_ == ForAllItems) {
+			index_ = IndexValueType::NotSet;
+		}
+	}
+
+	void SetExpression(string_view v) {
+		if (expression_) {
+			expression_->assign(v.data(), v.length());
+		} else {
+			expression_ = make_key_string(v.data(), v.length());
+		}
+	}
+
+	void SetIndex(int32_t index) { index_ = index; }
+	void SetNameTag(int16_t nameTag) { nameTag_ = nameTag; }
+
+private:
+	enum : int32_t { ForAllItems = -2 };
+	int16_t nameTag_ = 0;
+	int32_t index_ = IndexValueType::NotSet;
+	key_string expression_;
+};
+
+class IndexedTagsPath : public h_vector<IndexedPathNode, 6> {
 public:
-	TagScope(TagsPath &tagsPath, int tagName) : tagsPath_(tagsPath), tagName_(tagName) {
-		if (tagName_) tagsPath_.push_back(tagName);
+	using Base = h_vector<IndexedPathNode, 6>;
+	using Base::Base;
+	bool Compare(const IndexedTagsPath &obj) const {
+		const size_t ourSize = size();
+		if (obj.size() != ourSize) return false;
+		if (back().IsArrayNode() != obj.back().IsArrayNode()) return false;
+		for (size_t i = 0; i < ourSize; ++i) {
+			const IndexedPathNode &ourNode = operator[](i);
+			if (i == ourSize - 1) {
+				if (ourNode.IsArrayNode()) {
+					if (ourNode.NameTag() != obj[i].NameTag()) return false;
+					if (ourNode.IsForAllItems() || obj[i].IsForAllItems()) break;
+					return (ourNode.Index() == obj[i].Index());
+				} else {
+					return (ourNode.NameTag() == obj[i].NameTag());
+				}
+			} else {
+				if (ourNode != obj[i]) return false;
+			}
+		}
+		return true;
+	};
+	bool Compare(const TagsPath &obj) const {
+		if (obj.size() != size()) return false;
+		for (size_t i = 0; i < size(); ++i) {
+			if (operator[](i).NameTag() != obj[i]) return false;
+		}
+		return true;
 	}
-	~TagScope() {
-		if (tagName_) tagsPath_.pop_back();
+};
+
+using IndexExpressionEvaluator = std::function<VariantArray(string_view)>;
+
+template <typename TagsPath>
+class TagsPathScope {
+public:
+	template <typename Node>
+	TagsPathScope(TagsPath &tagsPath, Node &&node) : tagsPath_(tagsPath), tagName_(static_cast<int>(node)) {
+		if (tagName_) tagsPath_.emplace_back(std::move(node));
 	}
-	TagScope(const TagScope &) = delete;
-	TagScope &operator=(const TagScope &) = delete;
+	~TagsPathScope() {
+		if (tagName_ && !tagsPath_.empty()) tagsPath_.pop_back();
+	}
+	TagsPathScope(const TagsPathScope &) = delete;
+	TagsPathScope &operator=(const TagsPathScope &) = delete;
 
 private:
 	TagsPath &tagsPath_;
@@ -56,6 +151,65 @@ public:
 					return fieldTags;
 				}
 				fieldTags.push_back(static_cast<int16_t>(fieldTag));
+			}
+		}
+		return fieldTags;
+	}
+
+	IndexedTagsPath path2indexedtag(string_view jsonPath, IndexExpressionEvaluator ev) const {
+		bool updated = false;
+		return const_cast<TagsMatcherImpl *>(this)->path2indexedtag(jsonPath, ev, false, updated);
+	}
+
+	IndexedTagsPath path2indexedtag(string_view jsonPath, IndexExpressionEvaluator ev, bool canAdd, bool &updated) {
+		IndexedTagsPath fieldTags;
+		for (size_t pos = 0, lastPos = 0; pos != jsonPath.length(); lastPos = pos + 1) {
+			pos = jsonPath.find('.', lastPos);
+			if (pos == string_view::npos) {
+				pos = jsonPath.length();
+			}
+			if (pos != lastPos) {
+				IndexedPathNode node;
+				string_view field = jsonPath.substr(lastPos, pos - lastPos);
+				size_t openBracketPos = field.find('[');
+				if (openBracketPos != string_view::npos) {
+					size_t closeBracketPos = field.find(']', openBracketPos);
+					if (closeBracketPos == string_view::npos) {
+						throw Error(errParams, "No closing bracket for index in jsonpath");
+					}
+					string_view content = field.substr(openBracketPos + 1, closeBracketPos - openBracketPos - 1);
+					if (content.empty()) {
+						throw Error(errParams, "Index value in brackets cannot be empty");
+					}
+					if (content == "*"_sv) {
+						node.MarkAllItems(true);
+					} else {
+						int index = stoi(content);
+						if (index == 0 && content != "0" && ev) {
+							VariantArray values = ev(content);
+							if (values.size() != 1) {
+								throw Error(errParams, "Index expression_ has wrong syntax: '%s'", content);
+							}
+							if (values.front().Type() != KeyValueDouble && values.front().Type() != KeyValueInt &&
+								values.front().Type() != KeyValueInt64) {
+								throw Error(errParams, "Wrong type of index: '%s'", content);
+							}
+							node.SetExpression(content);
+							index = values.front().As<int>();
+						}
+						if (index < 0) {
+							throw Error(errLogic, "Array index value cannot be negative");
+						}
+						node.SetIndex(index);
+					}
+					field = field.substr(0, openBracketPos);
+				}
+				node.SetNameTag(name2tag(field, canAdd, updated));
+				if (!node.NameTag()) {
+					fieldTags.clear();
+					return fieldTags;
+				}
+				fieldTags.emplace_back(std::move(node));
 			}
 		}
 		return fieldTags;

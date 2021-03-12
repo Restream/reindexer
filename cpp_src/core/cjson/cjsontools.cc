@@ -59,6 +59,15 @@ void copyCJsonValue(int tagType, const Variant &value, WrSerializer &wrser) {
 	}
 }
 
+void putCJsonRef(int tagType, int tagName, int tagField, const VariantArray &values, WrSerializer &wrser) {
+	if (values.IsArrayValue()) {
+		wrser.PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName, tagField)));
+		wrser.PutVarUint(values.size());
+	} else if (values.size() == 1) {
+		wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName, tagField)));
+	}
+}
+
 void putCJsonValue(int tagType, int tagName, const VariantArray &values, WrSerializer &wrser) {
 	if (values.IsArrayValue()) {
 		int elemType = kvType2Tag(values.ArrayType());

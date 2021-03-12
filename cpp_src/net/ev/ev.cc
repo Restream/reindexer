@@ -5,6 +5,9 @@
 #include <algorithm>
 #include "tools/oscompat.h"
 
+#ifdef HAVE_EVENT_FD
+#include <sys/eventfd.h>
+#endif
 #ifdef HAVE_SELECT_LOOP
 #include <sys/select.h>
 #endif
@@ -20,6 +23,40 @@ namespace net {
 namespace ev {
 
 #ifdef HAVE_POSIX_LOOP
+#ifdef HAVE_EVENT_FD
+loop_posix_base::loop_posix_base() {}
+loop_posix_base::~loop_posix_base() {
+	if (async_fd_ >= 0) {
+		close(async_fd_);
+	}
+}
+
+void loop_posix_base::enable_asyncs() {
+	if (async_fd_ < 0) {
+		async_fd_ = eventfd(0, EFD_NONBLOCK);
+		if (async_fd_ < 0) {
+			perror("eventfd:");
+		}
+		owner_->set(async_fd_, nullptr, READ);
+	}
+}
+
+void loop_posix_base::send_async() {
+	int res = eventfd_write(async_fd_, 1);
+	(void)res;
+}
+
+bool loop_posix_base::check_async(int fd) {
+	if (fd == async_fd_) {
+		eventfd_t val;
+		int res = eventfd_read(fd, &val);
+		(void)res;
+		owner_->async_callback();
+		return true;
+	}
+	return false;
+}
+#else	// HAVE_EVENT_FD
 loop_posix_base::loop_posix_base() {}
 loop_posix_base::~loop_posix_base() {
 	if (async_fds_[0] >= 0) {
@@ -54,7 +91,8 @@ bool loop_posix_base::check_async(int fd) {
 	}
 	return false;
 }
-#endif
+#endif	// HAVE_EVENT_FD
+#endif	// HAVE_POSIX_LOOP
 
 #ifdef HAVE_SELECT_LOOP
 class loop_select_backend_private {

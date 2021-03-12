@@ -1,3 +1,28 @@
+# Version 3.1.0 (12.03.2021)
+## Core
+- [fix] Start of reindexer with DB containing indexes with invalid names fixed
+- [fix] Mandatory terms with multiword synonyms in fulltext queries fixed
+- [fea] Verification of EQUAL_POSITION by the same field added
+- [fea] Added new syntax for update of array's elements
+- [fea] Impoved verification of fulltext index configuration
+
+## Reindexer server
+- [fea] api/v1/check returns more information
+- [fea] GRPC module moved to dynamic library
+
+## Go connector
+- [fea] Call of Go signal handler improved
+
+## Face
+- [fix] Fixed the tables sorting
+- [fix] Limited the modal window width
+- [fix] Fixed the Statistics -> Queries view
+- [fix] Fixed the horizontal scroll for /statistics-memory_stats and /statistics-perfstats
+- [fix] Fixed the memory issue for big data
+- [fea] Changes for the full-text config
+- [fea] Added new fields to the Clientstats
+- [fea] Added the ability to save column set for tables
+
 # Version 3.0.3 (15.02.2021)
 ## Core
 - [fix] Crash on full text query with empty variants

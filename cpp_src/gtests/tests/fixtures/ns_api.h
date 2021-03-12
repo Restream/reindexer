@@ -16,7 +16,8 @@ protected:
 												   IndexDeclaration{sparseField.c_str(), "hash", "int", IndexOpts().Sparse(), 0},
 												   IndexDeclaration{indexedArrayField.c_str(), "hash", "int", IndexOpts().Array(), 0},
 												   IndexDeclaration{doubleField.c_str(), "tree", "double", IndexOpts(), 0},
-												   IndexDeclaration{boolField.c_str(), "-", "bool", IndexOpts(), 0}});
+												   IndexDeclaration{boolField.c_str(), "-", "bool", IndexOpts(), 0},
+												   IndexDeclaration{emptyField.c_str(), "hash", "string", IndexOpts(), 0}});
 	}
 
 	void FillDefaultNamespace() {
@@ -39,9 +40,13 @@ protected:
 	}
 
 	void AddUnindexedData() {
+		Error err = rt.reindexer->AddIndex(default_namespace, reindexer::IndexDef("objects.more.array", {"objects.more.array"}, "hash",
+																				  "int64", IndexOpts().Array(), 100000000000));
+		ASSERT_TRUE(err.ok()) << err.what();
+
 		char sourceJson[1024];
 		const char jsonPattern[] =
-			R"json({"id": %s, "":{"empty_obj_field":"not empty"}, "array_field": [1,2,3], "string_array":["first", "second", "third"], "extra" : "%s", "sparse_field": %ld, "nested":{"bonus":%ld}, "nested2":{"bonus2":%ld}})json";
+			R"json({"id": %s, "indexed_array_field": [11,22,33,44,55,66,77,88,99], "objects":[{"more":[{"array":[9,8,7,6,5]},{"array":[4,3,2,1,0]}]}], "":{"empty_obj_field":"not empty"}, "array_field": [1,2,3], "string_array":["first", "second", "third"], "extra" : "%s", "sparse_field": %ld, "nested":{"bonus":%ld, "nested_array":[{"id":1,"name":"first", "prices":[1,2,3]},{"id":2,"name":"second", "prices":[4,5,6]},{"id":3,"name":"third", "nested":{"array":[0,0,0]}, "prices":[7,8,9]}]}, "nested2":{"bonus2":%ld}})json";
 		for (size_t i = 1000; i < 2000; ++i) {
 			Item item = NewItem(default_namespace);
 			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
@@ -139,6 +144,7 @@ protected:
 	const string sparseField = "sparse_field";
 	const string stringField = "string_field";
 	const string indexedArrayField = "indexed_array_field";
+	const string emptyField = "empty_field";
 	const int idNum = 1;
 	const uint8_t upsertTimes = 3;
 };
