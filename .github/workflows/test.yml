@@ -1,4 +1,4 @@
-on: push
+on: [push, create, pull_request]
 jobs:
   test-pyreindexer:
     runs-on: ubuntu-latest
