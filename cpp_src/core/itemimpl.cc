@@ -66,7 +66,12 @@ void ItemImpl::SetField(int field, const VariantArray &krs) {
 	}
 }
 
-void ItemImpl::ModifyField(string_view jsonPath, const VariantArray &keys, FieldModifyMode mode) {
+void ItemImpl::ModifyField(string_view jsonPath, const VariantArray &keys, std::function<VariantArray(string_view)> ev,
+						   FieldModifyMode mode) {
+	return ModifyField(tagsMatcher_.path2indexedtag(jsonPath, ev, mode != FieldModeDrop), keys, mode);
+}
+
+void ItemImpl::ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &keys, FieldModifyMode mode) {
 	Payload pl = GetPayload();
 
 	ser_.Reset();
@@ -82,16 +87,16 @@ void ItemImpl::ModifyField(string_view jsonPath, const VariantArray &keys, Field
 	CJsonModifier cjsonModifier(tagsMatcher_, payloadType_);
 	switch (mode) {
 		case FieldModeSet:
-			err = cjsonModifier.SetFieldValue(cjson, tagsMatcher_.path2tag(jsonPath, true), keys, ser_);
+			err = cjsonModifier.SetFieldValue(cjson, tagsPath, keys, ser_);
 			break;
 		case FieldModeSetJson:
-			err = cjsonModifier.SetObject(cjson, tagsMatcher_.path2tag(jsonPath, true), keys, ser_, &pl);
+			err = cjsonModifier.SetObject(cjson, tagsPath, keys, ser_, &pl);
 			break;
 		case FieldModeDrop:
-			err = cjsonModifier.RemoveField(cjson, tagsMatcher_.path2tag(jsonPath), ser_);
+			err = cjsonModifier.RemoveField(cjson, tagsPath, ser_);
 			break;
 		default:
-			std::abort();
+			throw Error(errLogic, "Update mode is not supported: %d", mode);
 	}
 	if (!err.ok()) throw Error(errLogic, "Error modifying field value: '%s'", err.what());
 
@@ -99,8 +104,10 @@ void ItemImpl::ModifyField(string_view jsonPath, const VariantArray &keys, Field
 	pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
 }
 
-void ItemImpl::SetField(string_view jsonPath, const VariantArray &keys) { ModifyField(jsonPath, keys, FieldModeSet); }
-void ItemImpl::DropField(string_view jsonPath) { ModifyField(jsonPath, {}, FieldModeDrop); }
+void ItemImpl::SetField(string_view jsonPath, const VariantArray &keys, IndexExpressionEvaluator ev) {
+	ModifyField(jsonPath, keys, ev, FieldModeSet);
+}
+void ItemImpl::DropField(string_view jsonPath, IndexExpressionEvaluator ev) { ModifyField(jsonPath, {}, ev, FieldModeDrop); }
 Variant ItemImpl::GetField(int field) { return GetPayload().Get(field, 0); }
 void ItemImpl::GetField(int field, VariantArray &values) { GetPayload().Get(field, values); }
 

@@ -6,7 +6,6 @@
 #include <vector>
 #include "core/indexdef.h"
 #include "core/indexopts.h"
-#include "core/keyvalue/geometry.h"
 #include "gtests/tests/gtest_cout.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
@@ -145,17 +144,6 @@ public:
 		return vec;
 	}
 	std::shared_ptr<DB> reindexer;
-
-	double RandDouble(double min, double max, int points) noexcept {
-		assert(points > 0);
-		return min + (max - min) * (rand() % points) / static_cast<double>(points);
-	}
-
-	reindexer::Point RandPoint() noexcept {
-		static constexpr int points = 100;
-		static constexpr double range = 10.0;
-		return {RandDouble(-range, range, points), RandDouble(-range, range, points)};
-	}
 
 private:
 	const std::string letters = "abcdefghijklmnopqrstuvwxyz";

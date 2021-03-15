@@ -51,7 +51,7 @@ Item::FieldRef &Item::FieldRef::operator=(Variant kr) {
 	if (field_ >= 0) {
 		itemImpl_->SetField(field_, VariantArray{kr});
 	} else {
-		itemImpl_->SetField(jsonPath_, VariantArray{kr});
+		itemImpl_->SetField(jsonPath_, VariantArray{kr}, nullptr);
 	}
 
 	return *this;

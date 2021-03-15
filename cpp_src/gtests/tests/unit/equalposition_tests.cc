@@ -271,3 +271,24 @@ TEST_F(EqualPositionApi, EmptyCompOpErr) {
 		EXPECT_FALSE(err.ok());
 	}
 }
+
+// Make sure equal_position() works only with unique fields
+TEST_F(EqualPositionApi, SamePosition) {
+	QueryResults qr;
+	const Variant key(static_cast<int>(1050));
+	// Build query that contains conditions for field 'a1'
+	Query q = std::move(Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGt, key).Where(kFieldA1, CondGt, key));
+	// Make sure attempt to equal_position(a1,a1) throws an Exception of type reindexer::Error
+	EXPECT_THROW(q.AddEqualPosition({kFieldA1, kFieldA1}), reindexer::Error);
+}
+
+// Make sure equal_position() works only with unique fields
+// when it set by SQL query
+TEST_F(EqualPositionApi, SamePositionFromSql) {
+	QueryResults qr;
+	// SQL query contains equal_position() for field 'a1' twice
+	const reindexer::string_view sql = "select * from test_namespace where a1 > 0 and a1 < 10 equal_position(a1, a1)";
+	Query q;
+	// Make sure processing this query leads to throwing an Exception of type reindexer::Error
+	EXPECT_THROW(q.FromSQL(sql), reindexer::Error);
+}

@@ -1,11 +1,11 @@
 #ifdef WITH_PROTOBUF
 
-#include "../build/generated/proto/conversion.pb.h"
-#include "../build/generated/proto/easyarrays.pb.h"
-#include "../build/generated/proto/schema.pb.h"
+#include "conversion.pb.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/protobufbuilder.h"
+#include "easyarrays.pb.h"
 #include "reindexer_api.h"
+#include "schema.pb.h"
 
 using reindexer::string_view;
 

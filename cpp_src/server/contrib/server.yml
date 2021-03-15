@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.0.3"
+  version: "3.1.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -1874,6 +1874,30 @@ definitions:
       pageheap_unmapped:
         type: integer
         description: "Unmapped free heap size in bytes"
+      rpc_address:
+        type: string
+        description: "RPC server address"
+      http_address:
+        type: string
+        description: "HTTP server address"
+      storage_path:
+        type: string
+        description: "Path to storage"
+      rpc_log:
+        type: string
+        description: "RPC server log path"
+      http_log:
+        type: string
+        description: "HTTP server log path"
+      core_log:
+        type: string
+        description: "Reindexer core log path"
+      server_log:
+        type: string
+        description: "Reindexer server log path"
+      log_level:
+        type: string
+        description: "Log level, should be one of these: trace, debug, info, warning, error, critical"
 
   ActivityStats:
     type: object

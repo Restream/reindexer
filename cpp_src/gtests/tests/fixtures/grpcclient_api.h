@@ -1,7 +1,7 @@
 #pragma once
 
 #ifdef WITH_GRPC
-#include "../build/generated/grpc/reindexer.grpc.pb.h"
+#include "reindexer.grpc.pb.h"
 
 #include <grpcpp/grpcpp.h>
 #include <gtest/gtest.h>
@@ -11,6 +11,7 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/payload/payloadiface.h"
 #include "reindexer_api.h"
+#include "tools/fsops.h"
 
 class GrpcClientApi : public ReindexerApi {
 public:
@@ -18,17 +19,20 @@ public:
 		// clang-format off
         string yaml =
             "storage:\n"
+            "storage:\n"
+            "   path: " + kStoragePath + "\n" +
             "logger:\n"
             "   loglevel: none\n"
             "   rpclog: \n"
             "   serverlog: \n"
             "   corelog: \n"
             "net:\n"
-            "   httpaddr: 0.0.0.0:5555\n"
-            "   rpcaddr: 0.0.0.0:4444\n"
+            "   httpaddr: 0.0.0.0:5554\n"
+            "   rpcaddr: 0.0.0.0:4443\n"
             "   grpc: true";
 		// clang-format on
 
+		reindexer::fs::RmDirAll(kStoragePath);
 		auto err = srv_.InitFromYAML(yaml);
 		EXPECT_TRUE(err.ok()) << err.what();
 
@@ -40,11 +44,17 @@ public:
 			assert(res == EXIT_SUCCESS);
 		});
 		while (!srv_.IsReady()) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			std::this_thread::sleep_for(std::chrono::milliseconds(20));
 		}
 
-		auto channel = grpc::CreateChannel("127.0.0.1:16534", grpc::InsecureChannelCredentials());
-		rx_ = reindexer::grpc::Reindexer::NewStub(channel);
+		for (int i = 0; i < 5; i++) {
+			auto channel = grpc::CreateChannel("127.0.0.1:16534", grpc::InsecureChannelCredentials());
+			if (channel->WaitForConnected(std::chrono::system_clock::now() + std::chrono::seconds(1))) {
+				rx_ = reindexer::grpc::Reindexer::NewStub(channel);
+				break;
+			}
+		}
+
 		ASSERT_TRUE(rx_);
 
 		grpc::ClientContext createDbCtx;
@@ -345,6 +355,8 @@ protected:
 	const string kPriceField = "price";
 	std::unique_ptr<reindexer::grpc::Reindexer::Stub> rx_;
 	uint64_t lastLsn_ = 0, lastRowId_ = INT_MAX;
+
+	const std::string kStoragePath = "/tmp/reindex_grpc_test/";
 };
 
 #endif

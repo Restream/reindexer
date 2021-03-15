@@ -44,9 +44,11 @@ var checkInsertUpdateNonExistsData = []*TestItemSimple{
 }
 
 type testInnerObject struct {
-	First  int    `reindex:"first" json:"first"`
-	Second string `reindex:"second" json:"second"`
-	Extra  string `json:"extra,omitempty"`
+	First  int      `reindex:"first" json:"first"`
+	Second string   `reindex:"second" json:"second"`
+	Third  []int    `reindex:"third" json:"third"`
+	Fourth []string `json:"fourth"`
+	Extra  string   `json:"extra,omitempty"`
 }
 
 type testDummyObject struct {
@@ -80,12 +82,21 @@ type TestItemComplexObject struct {
 }
 
 func randInnerObject() []testInnerObject {
+	arraySize := 10
+	third := make([]int, 0, arraySize)
+	fourth := make([]string, 0, arraySize)
+	for i := 0; i < arraySize; i++ {
+		third = append(third, i)
+		fourth = append(fourth, "ALMOST EMPTY")
+	}
 	innerObjectsCnt := rand.Int()%20 + 1
 	innerObjects := make([]testInnerObject, 0, innerObjectsCnt)
 	for i := 0; i < innerObjectsCnt; i++ {
 		innerObjects = append(innerObjects, testInnerObject{
 			First:  rand.Int() % 1000,
 			Second: randString(),
+			Third:  third,
+			Fourth: fourth,
 		})
 	}
 	return innerObjects
@@ -157,6 +168,14 @@ func TestUpdateFields(t *testing.T) {
 
 	RemoveDummyItems(t)
 
+	CheckIndexedArrayItemUpdate1(t)
+	CheckIndexedArrayItemUpdate2(t)
+	CheckNonIndexedArrayItemUpdate1(t)
+	CheckNonIndexedArrayItemUpdate2(t)
+	CheckNonIndexedArrayItemUpdate3(t)
+	CheckNonIndexedArrayAppend1(t)
+	CheckNonIndexedArrayAppend2(t)
+	CheckUpdateArrayObject(t)
 	CheckFieldsDrop(t)
 	CheckIndexedFieldUpdate(t)
 	CheckNonIndexedFieldUpdate(t)
@@ -290,6 +309,16 @@ func CheckFieldsDrop(t *testing.T) {
 	require.False(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), "main_obj.main.extra"), errorMessage, "main_obj.main.extra")
 
 	checkExtraFieldForEquality(t, results3, "")
+
+	results4 := DropField(t, "objects[0].nested[0].fourth[0]")
+	for i := 0; i < len(results4); i++ {
+		require.False(t, len(results[i].(*TestItemComplexObject).Objects[0].Nested[0].Fourth) == 9)
+	}
+
+	results5 := DropField(t, "objects[0].nested[0].fourth[*]")
+	for i := 0; i < len(results5); i++ {
+		require.False(t, len(results[i].(*TestItemComplexObject).Objects[0].Nested[0].Fourth) == 0)
+	}
 }
 
 func CheckUpdateObject(t *testing.T) {
@@ -326,6 +355,48 @@ func CheckUpdateObject2(t *testing.T) {
 	objJson, err := json.Marshal(obj)
 	require.NoError(t, err)
 	UpdateObject(t, "main_obj", objJson)
+	require.True(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), string(objJson)))
+}
+
+// Update 1 element of array objects.nested and make
+// sure it stores correct values after update
+func CheckUpdateArrayObject(t *testing.T) {
+	// Generate new instance of testInnerObject
+	arraySize := 10
+	third := make([]int, 0, arraySize)
+	fourth := make([]string, 0, arraySize)
+	for i := 0; i < arraySize; i++ {
+		third = append(third, i)
+		fourth = append(fourth, "not empty")
+	}
+	obj := testInnerObject{
+		First:  7777,
+		Second: "updated",
+		Third:  third,
+		Fourth: fourth,
+	}
+
+	// Update objects[0].nested[0] witn new value (set as JSON)
+	objJson, err := json.Marshal(obj)
+	require.NoError(t, err)
+	results := UpdateObject(t, "objects[0].nested[0]", objJson)
+
+	for i := 0; i < len(results); i++ {
+		objects := results[i].(*TestItemComplexObject).Objects
+		for j := 0; j < len(objects); j++ {
+			for k := 0; k < len(objects[j].Nested); k++ {
+				// Make sure first values of objects.nested are updated,
+				// whereas the rest remains the same
+				if k == 0 && j == 0 {
+					require.Equal(t, objects[j].Nested[k].First, 7777)
+					require.Equal(t, objects[j].Nested[k].Second, "updated")
+				} else {
+					require.Equal(t, objects[j].Nested[k].First != 7777, true)
+					require.Equal(t, objects[j].Nested[k].Second != "updated", true)
+				}
+			}
+		}
+	}
 	require.True(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), string(objJson)))
 }
 
@@ -473,6 +544,213 @@ func CheckIndexedArrayFieldUpdate(t *testing.T) {
 			}
 		}
 		require.True(t, equal, "Update of field 'employees' has shown wrong results")
+	}
+}
+
+// Update all items of array objects.nested.third
+// and make sure it has correct value
+func CheckIndexedArrayItemUpdate1(t *testing.T) {
+	// Update array and set all items to 8888
+	results := UpdateField(t, "objects[*].nested[*].third[*]", 8888)
+	for i := 0; i < len(results); i++ {
+		array := results[i].(*TestItemComplexObject).Objects
+		for j := 0; j < len(array); j++ {
+			for k := 0; k < len(array[j].Nested); k++ {
+				// check if array size remains the same
+				equal := (len(array[j].Nested[k].Third) == 10)
+				if equal {
+					for l := 0; l < len(array[j].Nested[k].Third); l++ {
+						// make sure each element is equal to 8888
+						equal = (array[j].Nested[k].Third[l] == 8888)
+						if !equal {
+							fmt.Printf("%+v\n", array[j].Nested[k].Third)
+							break
+						}
+					}
+				}
+				require.True(t, equal, "Update of field 'objects[*].nested[*].third[*]' has shown wrong results")
+			}
+		}
+	}
+}
+
+// Update one item of array objects.nested.third
+// and make sure it has correct value
+func CheckIndexedArrayItemUpdate2(t *testing.T) {
+	// Set objects[0].nested[0].third[1] to 1111
+	results := UpdateField(t, "objects[0].nested[0].third[1]", 1111)
+	for i := 0; i < len(results); i++ {
+		array := results[i].(*TestItemComplexObject).Objects
+		// Make sure array has correct size
+		equal := (len(array[0].Nested[0].Third) == 10)
+		if equal {
+			for j := 0; j < len(array[0].Nested[0].Third); j++ {
+				value := array[0].Nested[0].Third[j]
+				// thrid[1] should be equal to 1111, other items
+				// should remain the same value
+				if j == 1 {
+					equal = (value == 1111)
+				} else {
+					equal = (value == 8888)
+				}
+				if !equal {
+					fmt.Printf("%+v; i = %d\n", value, j)
+					break
+				}
+			}
+			require.True(t, equal, "Update of field 'objects[0].nested[0].third[1]' has shown wrong results")
+		}
+	}
+}
+
+// Update one item of string array objects.nested.fourth
+// and make sure it has correct value
+func CheckNonIndexedArrayItemUpdate1(t *testing.T) {
+	// Set objects[*].nested[*].fourth[1] to a new value
+	results := UpdateField(t, "objects[*].nested[*].fourth[1]", "best item of array")
+	for i := 0; i < len(results); i++ {
+		array := results[i].(*TestItemComplexObject).Objects
+		for j := 0; j < len(array); j++ {
+			for k := 0; k < len(array[j].Nested); k++ {
+				equal := (len(array[j].Nested[k].Fourth) == 10)
+				if equal {
+					// fourth[i] should be set to a new value, all other
+					// elements should remain the same value
+					for l := 0; l < len(array[j].Nested[k].Fourth); l++ {
+						value := array[j].Nested[k].Fourth[l]
+						if l == 1 {
+							equal = (value == "best item of array")
+						} else {
+							equal = (value == "ALMOST EMPTY")
+						}
+						if !equal {
+							fmt.Printf("%+v; i = %d\n", value, l)
+							break
+						}
+					}
+				}
+				require.True(t, equal, "Update of field 'objects[*].nested[*].fourth[1]' has shown wrong results")
+			}
+		}
+	}
+}
+
+// Update all items of string array objects.nested.fourth
+// and make sure it has correct value
+func CheckNonIndexedArrayItemUpdate2(t *testing.T) {
+	// Set all items objects.nested.fourth to a new value
+	results := UpdateField(t, "objects[*].nested[*].fourth[*]", "we are equal")
+	for i := 0; i < len(results); i++ {
+		array := results[i].(*TestItemComplexObject).Objects
+		for j := 0; j < len(array); j++ {
+			for k := 0; k < len(array[j].Nested); k++ {
+				// Make sure it's size is correect
+				equal := (len(array[j].Nested[k].Fourth) == 10)
+				if equal {
+					for l := 0; l < len(array[j].Nested[k].Fourth); l++ {
+						// Make sure each item is equal to "we are equal"
+						equal = (array[j].Nested[k].Fourth[l] == "we are equal")
+						if !equal {
+							break
+						}
+					}
+				}
+				require.True(t, equal, "Update of field 'objects[*].nested[*].fourth[*]' has shown wrong results")
+			}
+		}
+	}
+}
+
+// Update one item of string array objects.nested.fourth
+// and make sure it has correct value
+func CheckNonIndexedArrayItemUpdate3(t *testing.T) {
+	// Set "objects[0].nested[0].fourth[0]" to a new value "FIRST ELEMENT"
+	results := UpdateField(t, "objects[0].nested[0].fourth[0]", "FIRST ELEMENT")
+	for i := 0; i < len(results); i++ {
+		array := results[i].(*TestItemComplexObject).Objects
+		equal := (len(array[0].Nested[0].Fourth) == 10)
+		if equal {
+			for j := 0; j < len(array[0].Nested[0].Fourth); j++ {
+				// First element of array 'fourth' should be equal to "FIRST ELEMENT",
+				// the rest should remain old values
+				value := array[0].Nested[0].Fourth[j]
+				if j == 0 {
+					equal = (value == "FIRST ELEMENT")
+				} else {
+					equal = (value == "we are equal")
+				}
+				if !equal {
+					fmt.Printf("%+v; i = %d\n", value, j)
+					break
+				}
+			}
+		}
+		require.True(t, equal, "Update of field 'objects[0].nested[0].fourth[0]' has shown wrong results")
+
+	}
+}
+
+// Extend array, add new items to the end
+// and make sure after update it stores correct values
+func CheckNonIndexedArrayAppend1(t *testing.T) {
+	// Add 3 new items to array 'numbers'
+	res1, err := DB.Query(fieldsUpdateNs).SetExpression("numbers", "numbers || [11,22,33]").Update().AllowUnsafe(true).FetchAll()
+	require.NoError(t, err)
+	require.NotEqual(t, len(res1), 0, "No items updated")
+
+	// Make sure results container is not empty
+	results, err := DB.Query(fieldsUpdateNs).Exec().AllowUnsafe(true).FetchAll()
+	require.NoError(t, err)
+	require.NotEqual(t, len(results), 0, "No results found")
+
+	for i := 0; i < len(results); i++ {
+		ok := true
+		numbers := results[i].(*TestItemComplexObject).Numbers
+		newSize := len(numbers)
+		first := newSize - 3
+		item := 1
+		// Make sure last 3 values of array are equal to [11,22,33]
+		for j := first; j < newSize; j++ {
+			ok = (numbers[j] == 11*item)
+			if !ok {
+				fmt.Printf("%+v, %d\n", numbers, j)
+				break
+			}
+			item++
+		}
+		require.True(t, ok, "Extending of array field 'numbers' has shown wrong results")
+
+	}
+}
+
+// Extend array by adding 3 new values to the top
+// and make sure it stores correct values after update
+func CheckNonIndexedArrayAppend2(t *testing.T) {
+	// Add 3 items to the top of 'numbers' array
+	res1, err := DB.Query(fieldsUpdateNs).SetExpression("numbers", "[111,222,333] || numbers").Update().AllowUnsafe(true).FetchAll()
+	require.NoError(t, err)
+	require.NotEqual(t, len(res1), 0, "No items updated")
+
+	// Make sure results container is not empty
+	results, err := DB.Query(fieldsUpdateNs).Exec().AllowUnsafe(true).FetchAll()
+	require.NoError(t, err)
+	require.NotEqual(t, len(results), 0, "No results found")
+
+	for i := 0; i < len(results); i++ {
+		ok := true
+		item := 1
+		numbers := results[i].(*TestItemComplexObject).Numbers
+		// Make sure first 3 items of array are [111,222,333]
+		for j := 0; j < 3; j++ {
+			ok = (numbers[j] == 111*item)
+			if !ok {
+				fmt.Printf("%+v, %d\n", numbers, j)
+				break
+			}
+			item++
+		}
+		require.True(t, ok, "Extending of array field 'numbers' has shown wrong results")
+
 	}
 }
 

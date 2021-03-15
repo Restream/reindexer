@@ -188,7 +188,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 						auto keyIt = ctx.i_map->find(static_cast<ref_type>(key));
 						if (keyIt != ctx.i_map->end()) {
 							res.emplace_back(keyIt->second, ctx.sortId);
-							idsCount += keyIt->second.Unsorted().size();
+							idsCount += keyIt->second.Unsorted().Size();
 						}
 					}
 					if (!ctx.opts.itemsCountInNamespace) return false;

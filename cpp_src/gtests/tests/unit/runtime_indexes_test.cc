@@ -195,10 +195,10 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesRemoveAndSelect) {
 			.WhereComposite(getRuntimeCompositeIndexName(false).c_str(), CondGt, {{Variant(rand()), Variant(RandString())}}));
 
 	CheckSelectValidity(Query(geom_namespace)
-							.DWithin(getRuntimeQPointIndexName(2), RandPoint(), RandDouble(0.0, 1.0, 1000))
+							.DWithin(getRuntimeQPointIndexName(2), randPoint(10), randBinDouble(0, 1))
 							.Or()
-							.DWithin(getRuntimeLPointIndexName(2), RandPoint(), RandDouble(0.0, 1.0, 1000))
-							.DWithin(getRuntimeGPointIndexName(2), RandPoint(), RandDouble(0.0, 1.0, 1000))
+							.DWithin(getRuntimeLPointIndexName(2), randPoint(10), randBinDouble(0, 1))
+							.DWithin(getRuntimeGPointIndexName(2), randPoint(10), randBinDouble(0, 1))
 							.Or()
-							.DWithin(getRuntimeSPointIndexName(2), RandPoint(), RandDouble(0.0, 1.0, 1000)));
+							.DWithin(getRuntimeSPointIndexName(2), randPoint(10), randBinDouble(0, 1)));
 }

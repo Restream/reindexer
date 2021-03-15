@@ -26,9 +26,8 @@ void Synonyms::addDslEntries(std::vector<SynonymsDsl>& synonymsDsl, const Multip
 		assert(!alternatives.empty());
 		synonymsDsl.emplace_back(dsl.CopyCtx(), termsIdx);
 
-		for (auto it = alternatives.cbegin(); it != alternatives.cend(); ++it) {
-			synonymsDsl.back().dsl.emplace_back(*it, opts);
-			if (it == alternatives.cbegin()) synonymsDsl.back().dsl.back().opts.op = OpOr;
+		for (const auto& alt : alternatives) {
+			synonymsDsl.back().dsl.emplace_back(alt, opts);
 		}
 	}
 }

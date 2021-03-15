@@ -8,9 +8,9 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/index/index.h"
 #include "core/itemimpl.h"
+#include "core/itemmodifier.h"
 #include "core/nsselecter/nsselecter.h"
 #include "core/payload/payloadiface.h"
-#include "core/query/expressionevaluator.h"
 #include "core/rdxcontext.h"
 #include "core/selectfunc/functionexecutor.h"
 #include "core/storage/storagefactory.h"
@@ -68,7 +68,7 @@ NamespaceImpl::NamespaceImpl(const NamespaceImpl &src)
 	  tagsMatcher_{src.tagsMatcher_},
 	  storage_{src.storage_},
 	  updates_{src.updates_},
-	  unflushedCount_{src.unflushedCount_.load(std::memory_order_acquire)},	// 0
+	  unflushedCount_{src.unflushedCount_.load(std::memory_order_acquire)},	 // 0
 	  meta_{src.meta_},
 	  dbpath_{src.dbpath_},
 	  queryCache_{make_shared<QueryCache>()},
@@ -699,12 +699,12 @@ void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsCon
 
 	auto tmStart = high_resolution_clock::now();
 
-	bool withJsonUpdates = false;
+	bool updateWithJson = false;
 	bool withExpressions = false;
 	for (const UpdateEntry &ue : query.UpdateFields()) {
 		if (!withExpressions && ue.isExpression) withExpressions = true;
-		if (!withJsonUpdates && ue.mode == FieldModeSetJson) withJsonUpdates = true;
-		if (withExpressions && withJsonUpdates) break;
+		if (!updateWithJson && ue.mode == FieldModeSetJson) updateWithJson = true;
+		if (withExpressions && updateWithJson) break;
 	}
 
 	if (ctx.rdxContext.fromReplication_ && withExpressions)
@@ -716,17 +716,27 @@ void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsCon
 	// row-based replication (to preserve data consistense), otherwise we update
 	// it via 'WalUpdateQuery' (statement-based replication). If Update statement
 	// contains update of entire object (via JSON) then statement replication is not possible.
-	bool enableStatementRepl = (!withJsonUpdates && !withExpressions && !query.HasLimit() && !query.HasOffset() &&
-								(result.Count() >= kWALStatementItemsThreshold));
+	bool statementReplication =
+		(!updateWithJson && !withExpressions && !query.HasLimit() && !query.HasOffset() && (result.Count() >= kWALStatementItemsThreshold));
 
+	ItemModifier itemModifier(query.UpdateFields(), *this);
 	for (ItemRef &item : result.Items()) {
-		updateItemFromQuery(item.Id(), query, !enableStatementRepl, ctx, withJsonUpdates);
+		assert(items_.exists(item.Id()));
+		PayloadValue &pv(items_[item.Id()]);
+		Payload pl(payloadType_, pv);
+		uint64_t oldPlHash = pl.GetHash();
+		size_t oldItemCapacity = pv.GetCapacity();
+		pv.Clone(pl.RealSize());
+		itemModifier.Modify(item.Id(), ctx, updateWithJson);
+		if (!updateWithJson) {
+			replicateItem(item.Id(), ctx, statementReplication, oldPlHash, oldItemCapacity);
+		}
 		item.Value() = items_[item.Id()];
 	}
 	result.getTagsMatcher(0) = tagsMatcher_;
 	result.lockResults();
 
-	if (enableStatementRepl) {
+	if (statementReplication) {
 		WrSerializer ser;
 		const_cast<Query &>(query).type_ = QueryUpdate;
 		WALRecord wrec(WalUpdateQuery, query.GetSQL(ser).Slice(), ctx.inTransaction);
@@ -743,6 +753,49 @@ void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsCon
 	if (query.debugLevel >= LogInfo) {
 		logPrintf(LogInfo, "Updated %d items in %d µs", result.Count(),
 				  duration_cast<microseconds>(high_resolution_clock::now() - tmStart).count());
+	}
+}
+
+void NamespaceImpl::replicateItem(IdType itemId, const NsContext &ctx, bool statementReplication, uint64_t oldPlHash,
+								  size_t oldItemCapacity) {
+	PayloadValue &pv(items_[itemId]);
+	Payload pl(payloadType_, pv);
+
+	if (!statementReplication) {
+		lsn_t lsn(wal_.Add(WALRecord(WalItemUpdate, itemId, ctx.inTransaction), lsn_t(items_[itemId].GetLSN())), serverId_);
+		if (!ctx.rdxContext.fromReplication_) repl_.lastSelfLSN = lsn;
+		pv.SetLSN(int64_t(lsn));
+		ItemImpl item(payloadType_, pv, tagsMatcher_);
+		string_view cjson = item.GetCJSON(false);
+		if (!repl_.temporary)
+			observers_->OnWALUpdate(LSNPair(lsn, ctx.rdxContext.fromReplication_ ? ctx.rdxContext.LSNs_.originLSN_ : lsn), name_,
+
+									WALRecord(WalItemModify, cjson, tagsMatcher_.version(), ModeUpdate, ctx.inTransaction));
+		if (!ctx.rdxContext.fromReplication_) setReplLSNs(LSNPair(lsn_t(), lsn));
+	}
+
+	repl_.dataHash ^= oldPlHash;
+	repl_.dataHash ^= pl.GetHash();
+	itemsDataSize_ -= oldItemCapacity;
+	itemsDataSize_ += pl.Value()->GetCapacity();
+	if (storage_) {
+		if (tagsMatcher_.isUpdated()) {
+			WrSerializer ser;
+			ser.PutUInt64(sysRecordsVersions_.tagsVersion);
+			tagsMatcher_.serialize(ser);
+			tagsMatcher_.clearUpdated();
+			writeSysRecToStorage(ser.Slice(), "tags", sysRecordsVersions_.tagsVersion, false);
+			logPrintf(LogTrace, "Saving tags of namespace %s:\n%s", name_, tagsMatcher_.dump());
+		}
+
+		WrSerializer pk;
+		WrSerializer data;
+		pk << "I";
+		pl.SerializeFields(pk, pkFields());
+		data.PutUInt64(lsn_t(pv.GetLSN()).Counter());
+		ItemImpl item(payloadType_, pv, tagsMatcher_);
+		item.GetCJSON(data);
+		writeToStorage(pk.Slice(), data.Slice());
 	}
 }
 
@@ -1180,164 +1233,6 @@ void NamespaceImpl::updateTagsMatcherFromItem(ItemImpl *ritem) {
 	}
 }
 
-VariantArray NamespaceImpl::preprocessUpdateFieldValues(const UpdateEntry &updateEntry, IdType itemId) {
-	if (!updateEntry.isExpression) return updateEntry.values;
-	assert(updateEntry.values.size() > 0);
-	FunctionExecutor funcExecutor(*this);
-	ExpressionEvaluator expressionEvaluator(payloadType_, tagsMatcher_, funcExecutor, updateEntry.column);
-	return {expressionEvaluator.Evaluate(static_cast<string_view>(updateEntry.values.front()), items_[itemId])};
-}
-
-void NamespaceImpl::updateItemFromCJSON(IdType itemId, const Query &q, const NsContext &ctx) {
-	PayloadValue pv = items_[itemId];
-	Payload pl(payloadType_, pv);
-	pv.Clone(pl.RealSize());
-	ItemImpl itemimpl(payloadType_, pv, tagsMatcher_);
-	for (const UpdateEntry &updateField : q.UpdateFields()) {
-		VariantArray values = preprocessUpdateFieldValues(updateField, itemId);
-		itemimpl.ModifyField(updateField.column, values, updateField.mode);
-	}
-	NsContext nsCtx{ctx.rdxContext};
-	nsCtx.NoLock();
-
-	Item item = NewItem(nsCtx);
-	Error err = item.FromCJSON(itemimpl.GetCJSON(true));
-	if (!err.ok()) throw err;
-	Update(item, nsCtx);
-}
-
-void NamespaceImpl::updateFieldIndex(IdType itemId, int field, VariantArray values, Payload &pl) {
-	Index &index = *indexes_[field];
-	if (values.IsNullValue() && !index.Opts().IsArray()) {
-		throw Error(errParams, "Non-array index fields cannot be set to null!");
-	}
-	index.Delete(skrefs, itemId);
-	krefs.resize(0);
-	krefs.reserve(values.size());
-	for (Variant &key : values) {
-		key.convert(index.KeyType());
-	}
-	index.Upsert(krefs, values, itemId, true);
-	if (!index.Opts().IsSparse()) {
-		pl.Set(field, krefs);
-	}
-}
-
-void NamespaceImpl::updateSingleField(const UpdateEntry &updateField, const IdType &itemId, Payload &pl) {
-	int fieldIdx = 0;
-	bool isIndexedField = getIndexByName(updateField.column, fieldIdx);
-
-	Index &index = *indexes_[fieldIdx];
-	if (isIndexedField && !index.Opts().IsSparse() && (updateField.mode == FieldModeDrop)) {
-		throw Error(errLogic, "It's only possible to drop sparse or non-index fields via UPDATE statement!");
-	}
-
-	assert(!index.Opts().IsSparse() || (index.Opts().IsSparse() && index.Fields().getTagsPathsLength() > 0));
-	VariantArray values = preprocessUpdateFieldValues(updateField, itemId);
-
-	if (isIndexedField && !index.Opts().IsArray() && values.IsArrayValue()) {
-		throw Error(errLogic, "It's not possible to Update single index fields with arrays!");
-	}
-
-	if (index.Opts().IsSparse()) {
-		pl.GetByJsonPath(index.Fields().getTagsPath(0), skrefs, index.KeyType());
-	} else {
-		pl.Get(fieldIdx, skrefs, index.Opts().IsArray());
-	}
-
-	if (index.Opts().GetCollateMode() == CollateUTF8) {
-		for (const Variant &key : values) key.EnsureUTF8();
-	}
-
-	if (isIndexedField) {
-		updateFieldIndex(itemId, fieldIdx, values, pl);
-	}
-
-	if (index.Opts().IsSparse() || !isIndexedField || index.Opts().IsArray()) {
-		ItemImpl item(payloadType_, *(pl.Value()), tagsMatcher_);
-		Variant oldTupleValue = item.GetField(0);
-		oldTupleValue.EnsureHold();
-		indexes_[0]->Delete(oldTupleValue, itemId);
-		item.ModifyField(updateField.column, values, updateField.mode);
-		Variant tupleValue = indexes_[0]->Upsert(item.GetField(0), itemId);
-		pl.Set(0, {tupleValue});
-		tagsMatcher_.try_merge(item.tagsMatcher());
-	}
-}
-
-void NamespaceImpl::updateItemFields(IdType itemId, const Query &q, bool rowBasedReplication, const NsContext &ctx) {
-	PayloadValue &pv = items_[itemId];
-	Payload pl(payloadType_, pv);
-	uint64_t oldPlHash = pl.GetHash();
-	auto oldItemCapacity = pv.GetCapacity();
-	pv.Clone(pl.RealSize());
-
-	for (int field = indexes_.firstCompositePos(); field < indexes_.totalSize(); ++field) {
-		indexes_[field]->Delete(Variant(pv), itemId);
-	}
-
-	for (const UpdateEntry &updateField : q.UpdateFields()) {
-		updateSingleField(updateField, itemId, pl);
-	}
-
-	for (int field = indexes_.firstCompositePos(); field < indexes_.totalSize(); ++field) {
-		indexes_[field]->Upsert(Variant(pv), itemId);
-	}
-
-	if (rowBasedReplication) {
-		lsn_t lsn(wal_.Add(WALRecord(WalItemUpdate, itemId, ctx.inTransaction), lsn_t(items_[itemId].GetLSN())), serverId_);
-		if (!ctx.rdxContext.fromReplication_) repl_.lastSelfLSN = lsn;
-		pv.SetLSN(int64_t(lsn));
-		ItemImpl item(payloadType_, pv, tagsMatcher_);
-		string_view cjson = item.GetCJSON(false);
-		if (!repl_.temporary)
-			observers_->OnWALUpdate(LSNPair(lsn, ctx.rdxContext.fromReplication_ ? ctx.rdxContext.LSNs_.originLSN_ : lsn), name_,
-									WALRecord(WalItemModify, cjson, tagsMatcher_.version(), ModeUpdate, ctx.inTransaction));
-		if (!ctx.rdxContext.fromReplication_) setReplLSNs(LSNPair(lsn_t(), lsn));
-	}
-
-	repl_.dataHash ^= oldPlHash;
-	repl_.dataHash ^= pl.GetHash();
-	itemsDataSize_ -= oldItemCapacity;
-	itemsDataSize_ += pl.Value()->GetCapacity();
-	if (storage_) {
-		if (tagsMatcher_.isUpdated()) {
-			WrSerializer ser;
-			ser.PutUInt64(sysRecordsVersions_.tagsVersion);
-			tagsMatcher_.serialize(ser);
-			tagsMatcher_.clearUpdated();
-			writeSysRecToStorage(ser.Slice(), kStorageTagsPrefix, sysRecordsVersions_.tagsVersion, false);
-			logPrintf(LogTrace, "Saving tags of namespace %s:\n%s", name_, tagsMatcher_.dump());
-		}
-
-		WrSerializer pk;
-		WrSerializer data;
-		pk << kStorageItemPrefix;
-		pl.SerializeFields(pk, pkFields());
-		data.PutUInt64(lsn_t(pv.GetLSN()).Counter());
-		ItemImpl item(payloadType_, pv, tagsMatcher_);
-		item.GetCJSON(data);
-		writeToStorage(pk.Slice(), data.Slice());
-	}
-	markUpdated();
-}
-
-void NamespaceImpl::updateItemFromQuery(IdType itemId, const Query &q, bool rowBasedReplication, const NsContext &ctx,
-										bool withJsonUpdates) {
-	assert(items_.exists(itemId));
-	for (const UpdateEntry &updateField : q.UpdateFields()) {
-		int fieldIdx = 0;
-		if (!getIndexByName(updateField.column, fieldIdx)) {
-			tagsMatcher_.path2tag(updateField.column, true);
-		}
-	}
-	if (withJsonUpdates) {
-		updateItemFromCJSON(itemId, q, ctx);
-	} else {
-		updateItemFields(itemId, q, rowBasedReplication, ctx);
-	}
-}
-
 void NamespaceImpl::modifyItem(Item &item, const NsContext &ctx, int mode) {
 	// Item to doUpsert
 	ItemImpl *itemImpl = item.impl_;
@@ -1734,9 +1629,16 @@ bool NamespaceImpl::loadIndexesFromStorage() {
 			IndexDef indexDef;
 			string_view indexData = ser.GetVString();
 			Error err = indexDef.FromJSON(giftStr(indexData));
-			if (!err.ok()) throw err;
-
-			addIndex(indexDef);
+			if (err.ok()) {
+				try {
+					addIndex(indexDef);
+				} catch (const Error &e) {
+					err = e;
+				}
+			}
+			if (!err.ok()) {
+				logPrintf(LogError, "Error adding index '%s': %s", indexDef.name_, err.what());
+			}
 		}
 	}
 

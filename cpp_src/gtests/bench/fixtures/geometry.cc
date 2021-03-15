@@ -1,10 +1,10 @@
 #include "geometry.h"
 #include "core/cjson/jsonbuilder.h"
+#include "tools/random.h"
 
 namespace {
 
-double kRange = 100.0;
-static reindexer::Point randPoint() noexcept { return {random<double>(-kRange, kRange), random<double>(-kRange, kRange)}; }
+constexpr double kRange = 100.0;
 
 }  // namespace
 
@@ -30,7 +30,7 @@ void Geometry::GetDWithin(benchmark::State& state) {
 	benchmark::AllocsTracker allocsTracker(state);
 	for (auto _ : state) {
 		reindexer::Query q(nsdef_.name);
-		q.DWithin("point", randPoint(), kRange / N);
+		q.DWithin("point", randPoint(kRange), kRange / N);
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
@@ -95,7 +95,7 @@ reindexer::Item Geometry::MakeItem() {
 	wrSer_.Reset();
 	reindexer::JsonBuilder bld(wrSer_);
 	bld.Put("id", id_++);
-	const reindexer::Point point = randPoint();
+	const reindexer::Point point = randPoint(kRange);
 	double coords[]{point.x, point.y};
 	bld.Array("point", reindexer::span<double>(coords, 2));
 	bld.End();

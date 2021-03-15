@@ -28,7 +28,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "3.0.3") 
+set (REINDEXER_VERSION_DEFAULT "3.1.0") 
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -77,11 +77,12 @@ endif ()
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${EXTRA_FLAGS}")
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${EXTRA_FLAGS}")
 
-
 # Build project
 set(TARGET reindexer)
 
 set(REINDEXER_SOURCE_PATH ${PROJECT_SOURCE_DIR})
+set(REINDEXER_BINARY_PATH ${PROJECT_BINARY_DIR})
+
 
 file (
   GLOB_RECURSE 

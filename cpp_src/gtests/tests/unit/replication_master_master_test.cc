@@ -109,7 +109,7 @@ public:
 			ASSERT_TRUE(err.ok()) << err.what();
 			master->api.Upsert(nsName, item);
 			ASSERT_TRUE(err.ok()) << err.what();
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			// std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 	};
 
@@ -269,6 +269,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveSlave2) {
 		for (size_t i = 1; i < results.size(); ++i) {
 			EXPECT_TRUE((results[0] == results[i]));
 		}
+		for (auto& node : nodes) node.Stop();
 	};
 
 	const int port = 9999;
@@ -361,6 +362,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveSlaveReload) {
 	for (size_t i = 1; i < results.size(); ++i) {
 		EXPECT_TRUE((results[0] == results[i])) << i << "; size[0]: " << results[0].size() << "; size[i]: " << results[i].size();
 	}
+	for (auto& node : nodes) node.Stop();
 }
 
 #endif
@@ -422,6 +424,7 @@ TEST_F(ReplicationSlaveSlaveApi, TransactionTest) {
 	for (size_t i = 1; i < results.size(); ++i) {
 		EXPECT_TRUE((results[0] == results[i]));
 	}
+	for (auto& node : nodes) node.Stop();
 }
 
 TEST_F(ReplicationSlaveSlaveApi, ForceSync3Node) {
@@ -718,15 +721,15 @@ TEST_F(ReplicationSlaveSlaveApi, Node3ApplyWal) {
 	const unsigned int n = 2000;  // 11;
 	{
 		ServerControl master;
+		ServerControl slave1;
+		ServerControl slave2;
 		master.InitServer(0, 7770, 7880, kBaseDbPath + "/master", "db", true);
 		master.Get()->MakeMaster();
 		TestNamespace1 testns1(master, "ns1");
 		testns1.AddRows(master, 3000, n);
 		// start init of slave
 		{
-			ServerControl slave1;
 			slave1.InitServer(1, 7771, 7881, kBaseDbPath + "/slave1", "db", true);
-			ServerControl slave2;
 			slave2.InitServer(2, 7772, 7882, kBaseDbPath + "/slave2", "db", true);
 			ReplicationConfigTest configSlave1("slave", false, true, 1, upDsn1, "slave1");
 			slave1.Get()->MakeSlave(0, configSlave1);
@@ -735,6 +738,9 @@ TEST_F(ReplicationSlaveSlaveApi, Node3ApplyWal) {
 			WaitSync(master, slave1, "ns1");
 			WaitSync(master, slave2, "ns1");
 		}
+		master.Stop();
+		slave1.Stop();
+		slave2.Stop();
 	}
 
 	{
@@ -744,20 +750,23 @@ TEST_F(ReplicationSlaveSlaveApi, Node3ApplyWal) {
 		TestNamespace1 testns1(master, "ns1");
 		testns1.AddRows(master, 30000, n);
 	}
+	ServerControl master;
+	master.InitServer(0, 7770, 7880, kBaseDbPath + "/master", "db", true);
+	master.Get()->MakeMaster();
+
 	ServerControl slave1;
 	slave1.InitServer(1, 7771, 7881, kBaseDbPath + "/slave1", "db", true);
 
 	ServerControl slave2;
 	slave2.InitServer(2, 7772, 7882, kBaseDbPath + "/slave2", "db", true);
 
-	std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-
-	ServerControl master;
-	master.InitServer(0, 7770, 7880, kBaseDbPath + "/master", "db", true);
-	master.Get()->MakeMaster();
+	// std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
 	WaitSync(master, slave1, "ns1");
 	WaitSync(master, slave2, "ns1");
+	master.Stop();
+	slave1.Stop();
+	slave2.Stop();
 }
 
 TEST_F(ReplicationSlaveSlaveApi, RestrictUpdates) {
@@ -888,6 +897,7 @@ TEST_F(ReplicationSlaveSlaveApi, ConcurrentForceSync) {
 			EXPECT_EQ(nsDefs.size(), kNsSyncCount);
 		}
 	}
+	for (auto& node : nodes) node.Stop();
 }
 
 TEST_F(ReplicationSlaveSlaveApi, WriteIntoSlaveNsAfterReconfiguration) {
@@ -987,4 +997,5 @@ TEST_F(ReplicationSlaveSlaveApi, WriteIntoSlaveNsAfterReconfiguration) {
 	validateItemsCount(nodes[0], kNs2, 3 * n);
 	validateItemsCount(nodes[1], kNs1, 3 * n);
 	validateItemsCount(nodes[1], kNs2, 3 * n);
+	for (auto& node : nodes) node.Stop();
 }

@@ -14,32 +14,34 @@ TEST_F(FTApi, CompositeSelect) {
 	Add("In law, a legal entity is|", "|an entity that is capable of something bearing legal rights");
 	Add("In politics, entity is used as|", "| term for entity territorial divisions of some countries");
 
-	auto res = SimpleCompositeSelect("*entity somethin*");
-	std::unordered_set<string> data{"An <b>entity</b> is <b>something</b>|",
-									"| that in exists <b>entity</b> as itself",
-									"An <b>entity</b> is <b>something</b>|d",
-									"| that in exists entity as itself",
-									"In law, a legal <b>entity</b> is|",
-									"|an <b>entity</b> that is capable of <b>something</b> bearing legal rights",
-									"al <b>entity</b> id",
-									"|an entity that is capable of something bearing legal rights",
-									"In politics, <b>entity</b> is used as|",
-									"| term for <b>entity</b> territorial divisions of some countries",
-									"s, <b>entity</b> id",
-									"| term for entity territorial divisions of some countries"};
+	for (const auto& query : CreateAllPermutatedQueries("", {"*entity", "somethin*"}, "")) {
+		auto res = SimpleCompositeSelect(query);
+		std::unordered_set<string> data{"An <b>entity</b> is <b>something</b>|",
+										"| that in exists <b>entity</b> as itself",
+										"An <b>entity</b> is <b>something</b>|d",
+										"| that in exists entity as itself",
+										"In law, a legal <b>entity</b> is|",
+										"|an <b>entity</b> that is capable of <b>something</b> bearing legal rights",
+										"al <b>entity</b> id",
+										"|an entity that is capable of something bearing legal rights",
+										"In politics, <b>entity</b> is used as|",
+										"| term for <b>entity</b> territorial divisions of some countries",
+										"s, <b>entity</b> id",
+										"| term for entity territorial divisions of some countries"};
 
-	PrintQueryResults("nm1", res);
-	for (auto it : res) {
-		Item ritem(it.GetItem());
-		for (auto idx = 1; idx < ritem.NumFields(); idx++) {
-			auto field = ritem[idx].Name();
-			if (field == "id") continue;
-			auto it = data.find(ritem[field].As<string>());
-			ASSERT_TRUE(it != data.end());
-			data.erase(it);
+		PrintQueryResults("nm1", res);
+		for (auto it : res) {
+			Item ritem(it.GetItem());
+			for (auto idx = 1; idx < ritem.NumFields(); idx++) {
+				auto field = ritem[idx].Name();
+				if (field == "id") continue;
+				auto it = data.find(ritem[field].As<string>());
+				ASSERT_TRUE(it != data.end());
+				data.erase(it);
+			}
 		}
+		EXPECT_TRUE(data.empty());
 	}
-	EXPECT_TRUE(data.empty());
 }
 
 TEST_F(FTApi, CompositeSelectWithFields) {
@@ -48,33 +50,35 @@ TEST_F(FTApi, CompositeSelectWithFields) {
 	AddInBothFields("In law, a legal entity is|", "|an entity that is capable of something bearing legal rights");
 	AddInBothFields("In politics, entity is used as|", "| term for entity territorial divisions of some countries");
 
-	for (const char* field : {"ft1", "ft2"}) {
-		auto res = CompositeSelectField(field, "*entity somethin*");
-		std::unordered_set<string> data{"An <b>entity</b> is <b>something</b>|",
-										"An <b>entity</b> is <b>something</b>|d",
-										"| that in exists <b>entity</b> as itself",
-										"In law, a legal <b>entity</b> is|",
-										"|an <b>entity</b> that is capable of <b>something</b> bearing legal rights",
-										"an <b>entity</b> tdof <b>something</b> bd",
-										"al <b>entity</b> id",
-										"In politics, <b>entity</b> is used as|",
-										"| term for <b>entity</b> territorial divisions of some countries",
-										"ts <b>entity</b> ad",
-										"s, <b>entity</b> id",
-										"or <b>entity</b> td"};
+	for (const auto& query : CreateAllPermutatedQueries("", {"*entity", "somethin*"}, "")) {
+		for (const char* field : {"ft1", "ft2"}) {
+			auto res = CompositeSelectField(field, query);
+			std::unordered_set<string> data{"An <b>entity</b> is <b>something</b>|",
+											"An <b>entity</b> is <b>something</b>|d",
+											"| that in exists <b>entity</b> as itself",
+											"In law, a legal <b>entity</b> is|",
+											"|an <b>entity</b> that is capable of <b>something</b> bearing legal rights",
+											"an <b>entity</b> tdof <b>something</b> bd",
+											"al <b>entity</b> id",
+											"In politics, <b>entity</b> is used as|",
+											"| term for <b>entity</b> territorial divisions of some countries",
+											"ts <b>entity</b> ad",
+											"s, <b>entity</b> id",
+											"or <b>entity</b> td"};
 
-		PrintQueryResults("nm1", res);
-		for (auto it : res) {
-			Item ritem(it.GetItem());
-			for (auto idx = 1; idx < ritem.NumFields(); idx++) {
-				auto curField = ritem[idx].Name();
-				if (curField != field) continue;
-				auto it = data.find(ritem[curField].As<string>());
-				ASSERT_TRUE(it != data.end());
-				data.erase(it);
+			PrintQueryResults("nm1", res);
+			for (auto it : res) {
+				Item ritem(it.GetItem());
+				for (auto idx = 1; idx < ritem.NumFields(); idx++) {
+					auto curField = ritem[idx].Name();
+					if (curField != field) continue;
+					auto it = data.find(ritem[curField].As<string>());
+					ASSERT_TRUE(it != data.end());
+					data.erase(it);
+				}
 			}
+			EXPECT_TRUE(data.empty());
 		}
-		EXPECT_TRUE(data.empty());
 	}
 }
 
@@ -86,19 +90,7 @@ TEST_F(FTApi, CompositeRankWithSynonyms) {
 	Add("world", "world");
 
 	// rank of synonym is higher
-	Query qr2 = std::move(Query("nm1").Where("ft3", CondEq, "@ft1^0.5, ft2^2 word~").Sort("rank()", true));
-	QueryResults res2;
-	auto err = rt.reindexer->Select(qr2, res2);
-	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(res2.Count() == 2);
-
-	auto it = res2.begin();
-	string val = it.GetItem()["ft1"].As<string>();
-	EXPECT_EQ(val, "word");
-
-	++it;
-	val = it.GetItem()["ft1"].As<string>();
-	EXPECT_EQ(val, "world");
+	CheckAllPermutations("@", {"ft1^0.5", "ft2^2"}, " word~", {{"word", "!слово!"}, {"!world!", "!world!"}}, true, ", ");
 }
 
 TEST_F(FTApi, SelectWithEscaping) {
@@ -140,17 +132,8 @@ TEST_F(FTApi, SelectWithMinus) {
 	Add("including me, excluding you");
 	Add("including all of them");
 
-	auto res = SimpleSelect("+including -excluding");
-	CheckResults(res, {{"!including! all of them", ""}});
-
-	res = SimpleSelect("including -excluding");
-	CheckResults(res, {{"!including! all of them", ""}});
-
-	res = SimpleSelect("-excluding +including");
-	CheckResults(res, {{"!including! all of them", ""}});
-
-	res = SimpleSelect("-excluding including");
-	CheckResults(res, {{"!including! all of them", ""}});
+	CheckAllPermutations("", {"+including", "-excluding"}, "", {{"!including! all of them", ""}});
+	CheckAllPermutations("", {"including", "-excluding"}, "", {{"!including! all of them", ""}});
 }
 
 TEST_F(FTApi, SelectWithFieldsList) {
@@ -159,14 +142,7 @@ TEST_F(FTApi, SelectWithFieldsList) {
 	Add("nm1", "Never watch their games", "Because nothing can be worse than Spartak Moscow");
 	Add("nm1", "Spartak Moscow is the worst team right now", "Yes, for sure");
 
-	auto res = SimpleSelect("@ft1 Spartak Moscow");
-	EXPECT_TRUE(res.Count() == 1);
-
-	for (size_t i = 0; i < res.Count(); ++i) {
-		Item ritem = res[i].GetItem();
-		string val = ritem["ft1"].As<string>();
-		EXPECT_TRUE(val == "!Spartak Moscow! is the worst team right now");
-	}
+	CheckAllPermutations("@ft1 ", {"Spartak", "Moscow"}, "", {{"!Spartak Moscow! is the worst team right now", "Yes, for sure"}});
 }
 
 TEST_F(FTApi, SelectWithRelevanceBoost) {
@@ -176,16 +152,11 @@ TEST_F(FTApi, SelectWithRelevanceBoost) {
 	Add("All the naughty kids go to hell, not to heaven");
 	Add("I've never seen a man as cruel as him");
 
-	auto res = SimpleSelect("@ft1 girl^2 kids cruel^3");
-	EXPECT_TRUE(res.Count() == 3);
-
-	const char* results[] = {"I've never seen a man as !cruel! as him", "She was a very bad !girl!",
-							 "All the naughty !kids! go to hell, not to heaven"};
-	for (size_t i = 0; i < res.Count(); ++i) {
-		Item ritem = res[i].GetItem();
-		string val = ritem["ft1"].As<string>();
-		EXPECT_TRUE(val == results[i]);
-	}
+	CheckAllPermutations("@ft1 ", {"girl^2", "kids", "cruel^3"}, "",
+						 {{"I've never seen a man as !cruel! as him", ""},
+						  {"She was a very bad !girl!", ""},
+						  {"All the naughty !kids! go to hell, not to heaven", ""}},
+						 true);
 }
 
 TEST_F(FTApi, SelectWithDistance) {
@@ -344,16 +315,7 @@ TEST_F(FTApi, NumberToWordsSelect) {
 	Init(GetDefaultConfig());
 	Add("оценка 5 майкл джордан 23", "");
 
-	auto res = SimpleSelect("пять +двадцать +три");
-	EXPECT_TRUE(res.Count() == 1);
-
-	const string result = "оценка !5! майкл джордан !23!";
-
-	for (auto it : res) {
-		Item ritem(it.GetItem());
-		string val = ritem["ft1"].As<string>();
-		EXPECT_TRUE(result == val);
-	}
+	CheckAllPermutations("", {"пять", "+двадцать", "+три"}, "", {{"оценка !5! майкл джордан !23!", ""}});
 }
 
 TEST_F(FTApi, DeleteTest) {
@@ -486,16 +448,8 @@ TEST_F(FTApi, SelectSynonyms) {
 	Add("nm1", "test", "no looove");
 	Add("nm1", "test", "no match");
 
-	auto qr = SimpleSelect("лыв");
-	EXPECT_EQ(qr.Count(), 1);
-	auto item = qr[0].GetItem();
-	EXPECT_EQ(item["ft2"].As<string>(), "!love! rex");
-	qr = SimpleSelect("hate");
-	EXPECT_EQ(qr.Count(), 2);
-	std::vector<std::string> res{qr[0].GetItem()["ft2"].As<string>(), qr[1].GetItem()["ft2"].As<string>()};
-	std::sort(res.begin(), res.end());
-	EXPECT_EQ(res[0], "love !rex!");
-	EXPECT_EQ(res[1], "no !looove!");
+	CheckAllPermutations("", {"лыв"}, "", {{"test", "!love! rex"}});
+	CheckAllPermutations("", {"hate"}, "", {{"test", "love !rex!"}, {"test", "no !looove!"}});
 }
 
 TEST_F(FTApi, SelectTranslitWithComma) {
@@ -557,56 +511,99 @@ TEST_F(FTApi, SelectMultiwordSynonyms) {
 	Add("nm1", "слово одно", "test");
 	Add("nm1", "одно слово", "word");
 
-	auto qr = SimpleSelect("world");
-	CheckResults(qr, {{"whole !world!", "test"}, {"!world! whole", "test"}, {"whole", "!world!"}, {"!world!", "test"}});
+	CheckAllPermutations("", {"world"}, "",
+						 {{"whole !world!", "test"}, {"!world! whole", "test"}, {"whole", "!world!"}, {"!world!", "test"}});
 
-	qr = SimpleSelect("whole world");
-	CheckResults(qr, {{"!whole world!", "test"},
-					  {"!world whole!", "test"},
-					  {"!whole!", "!world!"},
-					  {"!world!", "test"},
-					  {"!whole!", "test"},
-					  {"!целый мир!", "test"},
-					  {"!целый!", "!мир!"},
-					  {"!планета!", "test"},
-					  {"!генеральная ассамблея организации объединенных наций!", "test"},
-					  {"!ассамблея генеральная наций объединенных организации!", "test"},
-					  {"!генеральная! прегенеральная !ассамблея!", "!организации объединенных! свободных !наций!"},
-					  {"!UN!", "!UN!"}});
+	CheckAllPermutations("", {"whole", "world"}, "",
+						 {{"!whole world!", "test"},
+						  {"!world whole!", "test"},
+						  {"!whole!", "!world!"},
+						  {"!world!", "test"},
+						  {"!whole!", "test"},
+						  {"!целый мир!", "test"},
+						  {"!целый!", "!мир!"},
+						  {"!планета!", "test"},
+						  {"!генеральная ассамблея организации объединенных наций!", "test"},
+						  {"!ассамблея генеральная наций объединенных организации!", "test"},
+						  {"!генеральная! прегенеральная !ассамблея!", "!организации объединенных! свободных !наций!"},
+						  {"!UN!", "!UN!"}});
 
-	qr = SimpleSelect("UN");
-	CheckResults(qr, {{"!целый мир!", "test"},
-					  {"!целый!", "!мир!"},
-					  {"!планета!", "test"},
-					  {"!генеральная ассамблея организации объединенных наций!", "test"},
-					  {"!ассамблея генеральная наций объединенных организации!", "test"},
-					  {"!генеральная! прегенеральная !ассамблея!", "!организации объединенных! свободных !наций!"},
-					  {"!UN!", "!UN!"}});
+	CheckAllPermutations("", {"UN"}, "",
+						 {{"!целый мир!", "test"},
+						  {"!целый!", "!мир!"},
+						  {"!планета!", "test"},
+						  {"!генеральная ассамблея организации объединенных наций!", "test"},
+						  {"!ассамблея генеральная наций объединенных организации!", "test"},
+						  {"!генеральная! прегенеральная !ассамблея!", "!организации объединенных! свободных !наций!"},
+						  {"!UN!", "!UN!"}});
 
-	qr = SimpleSelect("United +Nations");
-	CheckResults(qr, {{"!целый мир!", "test"},
-					  {"!целый!", "!мир!"},
-					  {"!планета!", "test"},
-					  {"!генеральная ассамблея организации объединенных наций!", "test"},
-					  {"!ассамблея генеральная наций объединенных организации!", "test"},
-					  {"!генеральная! прегенеральная !ассамблея!", "!организации объединенных! свободных !наций!"},
-					  {"!UN!", "!UN!"}});
+	CheckAllPermutations("", {"United", "+Nations"}, "",
+						 {{"!целый мир!", "test"},
+						  {"!целый!", "!мир!"},
+						  {"!планета!", "test"},
+						  {"!генеральная ассамблея организации объединенных наций!", "test"},
+						  {"!ассамблея генеральная наций объединенных организации!", "test"},
+						  {"!генеральная! прегенеральная !ассамблея!", "!организации объединенных! свободных !наций!"},
+						  {"!UN!", "!UN!"}});
 
-	qr = SimpleSelect("целый мир");
-	CheckResults(qr, {{"!целый мир!", "test"}, {"!целый!", "test"}, {"!мир!", "test"}, {"!целый!", "!мир!"}});
+	CheckAllPermutations("", {"целый", "мир"}, "", {{"!целый мир!", "test"}, {"!целый!", "test"}, {"!мир!", "test"}, {"!целый!", "!мир!"}});
 
-	qr = SimpleSelect("ООН");
-	CheckResults(qr, {});
+	CheckAllPermutations("", {"ООН"}, "", {});
 
-	qr = SimpleSelect("word");
-	CheckResults(qr, {{"!word!", "test"},
-					  {"test", "!word!"},
-					  {"!word!", "слово"},
-					  {"!word!", "одно"},
-					  {"!слово! всего лишь !одно!", "test"},
-					  {"!слово!", "!одно!"},
-					  {"!слово одно!", "test"},
-					  {"!одно слово!", "!word!"}});
+	CheckAllPermutations("", {"word"}, "",
+						 {{"!word!", "test"},
+						  {"test", "!word!"},
+						  {"!word!", "слово"},
+						  {"!word!", "одно"},
+						  {"!слово! всего лишь !одно!", "test"},
+						  {"!слово!", "!одно!"},
+						  {"!слово одно!", "test"},
+						  {"!одно слово!", "!word!"}});
+}
+
+// issue #715
+TEST_F(FTApi, SelectMultiwordSynonyms2) {
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.synonyms = {{{"черный"}, {"серый космос"}}};
+	Init(ftCfg);
+
+	Add("nm1", "Смартфон SAMSUNG Galaxy S20 черный", "SAMSUNG");
+	Add("nm1", "Смартфон SAMSUNG Galaxy S20 серый", "SAMSUNG");
+	Add("nm1", "Смартфон SAMSUNG Galaxy S20 красный", "SAMSUNG");
+	Add("nm1", "Смартфон SAMSUNG Galaxy S20 серый космос", "SAMSUNG");
+
+	// Check all combinations of "+samsung" and "+galaxy" in request
+	CheckAllPermutations("@ft1 ", {"+samsung", "+galaxy"}, "",
+						 {{"Смартфон !SAMSUNG Galaxy! S20 черный", "!SAMSUNG!"},
+						  {"Смартфон !SAMSUNG Galaxy! S20 серый", "!SAMSUNG!"},
+						  {"Смартфон !SAMSUNG Galaxy! S20 красный", "!SAMSUNG!"},
+						  {"Смартфон !SAMSUNG Galaxy! S20 серый космос", "!SAMSUNG!"}});
+
+	// Check all combinations of "+samsung", "+galaxy" and "+серый" in request
+	CheckAllPermutations(
+		"@ft1 ", {"+samsung", "+galaxy", "+серый"}, "",
+		{{"Смартфон !SAMSUNG Galaxy! S20 !серый!", "!SAMSUNG!"}, {"Смартфон !SAMSUNG Galaxy! S20 !серый! космос", "!SAMSUNG!"}});
+
+	// Check all combinations of "+samsung", "+galaxy", "+серый" and "+космос" in request
+	CheckAllPermutations("@ft1 ", {"+samsung", "+galaxy", "+серый", "+космос"}, "",
+						 {{"Смартфон !SAMSUNG Galaxy! S20 !серый космос!", "!SAMSUNG!"}});
+
+	// Check all combinations of "+samsung", "+galaxy" and "+черный" in request
+	CheckAllPermutations(
+		"@ft1 ", {"+samsung", "+galaxy", "+черный"}, "",
+		{{"Смартфон !SAMSUNG Galaxy! S20 !черный!", "!SAMSUNG!"}, {"Смартфон !SAMSUNG Galaxy! S20 !серый космос!", "!SAMSUNG!"}});
+
+	// Check all combinations of "+samsung", "+galaxy", "+серый" and "+серый" in request
+	CheckAllPermutations("@ft1 ", {"+samsung", "+galaxy", "+черный", "+серый"}, "",
+						 {{"Смартфон !SAMSUNG Galaxy! S20 !серый космос!", "!SAMSUNG!"}});
+
+	// Check all combinations of "+samsung", "+galaxy", "+черный" and "+космос" in request
+	CheckAllPermutations("@ft1 ", {"+samsung", "+galaxy", "+черный", "+космос"}, "",
+						 {{"Смартфон !SAMSUNG Galaxy! S20 !серый космос!", "!SAMSUNG!"}});
+
+	// Check all combinations of "+samsung", "+galaxy", "+черный" and "+somthing" in request
+	CheckAllPermutations("@ft1 ", {"+samsung", "+galaxy", "+черный", "+something"}, "", {});
+	CheckAllPermutations("@ft1 ", {"+samsung", "+galaxy", "+черный", "+черный", "+черный", "+something"}, "", {});
 }
 
 TEST_F(FTApi, SelectWithMinusWithSynonyms) {
@@ -619,19 +616,16 @@ TEST_F(FTApi, SelectWithMinusWithSynonyms) {
 	Add("nm1", "слово", "test");
 	Add("nm1", "сколькото лексем", "test");
 
-	auto qr = SimpleSelect("test word");
-	CheckResults(qr, {{"!word!", "!test!"}, {"several lexems", "!test!"}, {"!слово!", "!test!"}, {"!сколькото лексем!", "!test!"}});
+	CheckAllPermutations("", {"test", "word"}, "",
+						 {{"!word!", "!test!"}, {"several lexems", "!test!"}, {"!слово!", "!test!"}, {"!сколькото лексем!", "!test!"}});
 	// Don't use synonyms
-	qr = SimpleSelect("test -word");
-	CheckResults(qr, {{"several lexems", "!test!"}, {"слово", "!test!"}, {"сколькото лексем", "!test!"}});
-	qr = SimpleSelect("test several lexems");
-	CheckResults(qr, {{"word", "!test!"}, {"!several lexems!", "!test!"}, {"!слово!", "!test!"}, {"!сколькото лексем!", "!test!"}});
+	CheckAllPermutations("", {"test", "-word"}, "", {{"several lexems", "!test!"}, {"слово", "!test!"}, {"сколькото лексем", "!test!"}});
+	CheckAllPermutations("", {"test", "several", "lexems"}, "",
+						 {{"word", "!test!"}, {"!several lexems!", "!test!"}, {"!слово!", "!test!"}, {"!сколькото лексем!", "!test!"}});
 	// Don't use synonyms
-	qr = SimpleSelect("test several -lexems");
-	CheckResults(qr, {{"word", "!test!"}, {"слово", "!test!"}, {"сколькото лексем", "!test!"}});
+	CheckAllPermutations("", {"test", "several", "-lexems"}, "", {{"word", "!test!"}, {"слово", "!test!"}, {"сколькото лексем", "!test!"}});
 	// Don't use synonyms
-	qr = SimpleSelect("test -several lexems");
-	CheckResults(qr, {{"word", "!test!"}, {"слово", "!test!"}, {"сколькото лексем", "!test!"}});
+	CheckAllPermutations("", {"test", "-several", "lexems"}, "", {{"word", "!test!"}, {"слово", "!test!"}, {"сколькото лексем", "!test!"}});
 }
 
 // issue #627
@@ -648,36 +642,35 @@ TEST_F(FTApi, SelectMultiwordSynonymsWithExtraWords) {
 	Add("nm1", "бронестекло для экрана samsung galaxy", "test");
 	Add("nm1", "бронестекло для экрана iphone", "test");
 
-	auto qr = SimpleSelect("бронестекло");
-	CheckResults(qr, {{"!защитное стекло! для экрана samsung galaxy", "test"},
-					  {"!защитное стекло! для экрана iphone", "test"},
-					  {"!бронированное стекло! для samsung galaxy", "test"},
-					  {"!бронированное стекло! для экрана iphone", "test"},
-					  {"!бронестекло! для экрана samsung galaxy", "test"},
-					  {"!бронестекло! для экрана iphone", "test"}});
+	CheckAllPermutations("", {"бронестекло"}, "",
+						 {{"!защитное стекло! для экрана samsung galaxy", "test"},
+						  {"!защитное стекло! для экрана iphone", "test"},
+						  {"!бронированное стекло! для samsung galaxy", "test"},
+						  {"!бронированное стекло! для экрана iphone", "test"},
+						  {"!бронестекло! для экрана samsung galaxy", "test"},
+						  {"!бронестекло! для экрана iphone", "test"}});
 
-	qr = SimpleSelect("+бронестекло +iphone");
-	CheckResults(qr, {{"!защитное стекло! для экрана !iphone!", "test"},
-					  {"!бронированное стекло! для экрана !iphone!", "test"},
-					  {"!бронестекло! для экрана !iphone!", "test"}});
+	CheckAllPermutations("", {"+бронестекло", "+iphone"}, "",
+						 {{"!защитное стекло! для экрана !iphone!", "test"},
+						  {"!бронированное стекло! для экрана !iphone!", "test"},
+						  {"!бронестекло! для экрана !iphone!", "test"}});
 
-	qr = SimpleSelect("+galaxy +бронестекло +samsung");
-	CheckResults(qr, {{"!защитное стекло! для экрана !samsung galaxy!", "test"},
-					  {"!бронированное стекло! для !samsung galaxy!", "test"},
-					  {"!бронестекло! для экрана !samsung galaxy!", "test"}});
+	CheckAllPermutations("", {"+galaxy", "+бронестекло", "+samsung"}, "",
+						 {{"!защитное стекло! для экрана !samsung galaxy!", "test"},
+						  {"!бронированное стекло! для !samsung galaxy!", "test"},
+						  {"!бронестекло! для экрана !samsung galaxy!", "test"}});
 
-	qr = SimpleSelect("+galaxy +бронестекло экрана +samsung");
-	CheckResults(qr, {{"!защитное стекло! для !экрана samsung galaxy!", "test"},
-					  {"!бронированное стекло! для !samsung galaxy!", "test"},
-					  {"!бронестекло! для !экрана samsung galaxy!", "test"}});
+	CheckAllPermutations("", {"+galaxy", "+бронестекло", "экрана", "+samsung"}, "",
+						 {{"!защитное стекло! для !экрана samsung galaxy!", "test"},
+						  {"!бронированное стекло! для !samsung galaxy!", "test"},
+						  {"!бронестекло! для !экрана samsung galaxy!", "test"}});
 
-	qr = SimpleSelect("+galaxy +бронестекло какоетослово +samsung");
-	CheckResults(qr, {{"!защитное стекло! для экрана !samsung galaxy!", "test"},
-					  {"!бронированное стекло! для !samsung galaxy!", "test"},
-					  {"!бронестекло! для экрана !samsung galaxy!", "test"}});
+	CheckAllPermutations("", {"+galaxy", "+бронестекло", "какоетослово", "+samsung"}, "",
+						 {{"!защитное стекло! для экрана !samsung galaxy!", "test"},
+						  {"!бронированное стекло! для !samsung galaxy!", "test"},
+						  {"!бронестекло! для экрана !samsung galaxy!", "test"}});
 
-	qr = SimpleSelect("+бронестекло +iphone +samsung");
-	CheckResults(qr, {});
+	CheckAllPermutations("", {"+бронестекло", "+iphone", "+samsung"}, "", {});
 }
 
 TEST_F(FTApi, ChangeSynonymsCfg) {
@@ -694,53 +687,39 @@ TEST_F(FTApi, ChangeSynonymsCfg) {
 	Add("nm1", "слово", "test");
 	Add("nm1", "сколькото лексем", "test");
 
-	auto qr = SimpleSelect("UN");
-	CheckResults(qr, {{"!UN!", "test"}});
-	qr = SimpleSelect("United Nations");
-	CheckResults(qr, {{"!United Nations!", "test"}});
-	qr = SimpleSelect("word");
-	CheckResults(qr, {{"!word!", "test"}});
-	qr = SimpleSelect("several lexems");
-	CheckResults(qr, {{"!several lexems!", "test"}});
+	CheckAllPermutations("", {"UN"}, "", {{"!UN!", "test"}});
+	CheckAllPermutations("", {"United", "Nations"}, "", {{"!United Nations!", "test"}});
+	CheckAllPermutations("", {"word"}, "", {{"!word!", "test"}});
+	CheckAllPermutations("", {"several", "lexems"}, "", {{"!several lexems!", "test"}});
 
 	// Add synonyms
 	ftCfg.synonyms = {{{"UN", "United Nations"}, {"ООН", "организация объединенных наций"}}};
 	SetFTConfig(ftCfg, "nm1", "ft3");
 
-	qr = SimpleSelect("UN");
-	CheckResults(qr, {{"!UN!", "test"}, {"!ООН!", "test"}, {"!организация объединенных наций!", "test"}});
-	qr = SimpleSelect("United Nations");
-	CheckResults(qr, {{"!United Nations!", "test"}, {"!ООН!", "test"}, {"!организация объединенных наций!", "test"}});
-	qr = SimpleSelect("word");
-	CheckResults(qr, {{"!word!", "test"}});
-	qr = SimpleSelect("several lexems");
-	CheckResults(qr, {{"!several lexems!", "test"}});
+	CheckAllPermutations("", {"UN"}, "", {{"!UN!", "test"}, {"!ООН!", "test"}, {"!организация объединенных наций!", "test"}});
+	CheckAllPermutations("", {"United", "Nations"}, "",
+						 {{"!United Nations!", "test"}, {"!ООН!", "test"}, {"!организация объединенных наций!", "test"}});
+	CheckAllPermutations("", {"word"}, "", {{"!word!", "test"}});
+	CheckAllPermutations("", {"several", "lexems"}, "", {{"!several lexems!", "test"}});
 
 	// Change synonyms
 	ftCfg.synonyms = {{{"word", "several lexems"}, {"слово", "сколькото лексем"}}};
 	SetFTConfig(ftCfg, "nm1", "ft3");
 
-	qr = SimpleSelect("UN");
-	CheckResults(qr, {{"!UN!", "test"}});
-	qr = SimpleSelect("United Nations");
-	CheckResults(qr, {{"!United Nations!", "test"}});
-	qr = SimpleSelect("word");
-	CheckResults(qr, {{"!word!", "test"}, {"!слово!", "test"}, {"!сколькото лексем!", "test"}});
-	qr = SimpleSelect("several lexems");
-	CheckResults(qr, {{"!several lexems!", "test"}, {"!слово!", "test"}, {"!сколькото лексем!", "test"}});
+	CheckAllPermutations("", {"UN"}, "", {{"!UN!", "test"}});
+	CheckAllPermutations("", {"United", "Nations"}, "", {{"!United Nations!", "test"}});
+	CheckAllPermutations("", {"word"}, "", {{"!word!", "test"}, {"!слово!", "test"}, {"!сколькото лексем!", "test"}});
+	CheckAllPermutations("", {"several", "lexems"}, "",
+						 {{"!several lexems!", "test"}, {"!слово!", "test"}, {"!сколькото лексем!", "test"}});
 
 	// Remove synonyms
 	ftCfg.synonyms.clear();
 	SetFTConfig(ftCfg, "nm1", "ft3");
 
-	qr = SimpleSelect("UN");
-	CheckResults(qr, {{"!UN!", "test"}});
-	qr = SimpleSelect("United Nations");
-	CheckResults(qr, {{"!United Nations!", "test"}});
-	qr = SimpleSelect("word");
-	CheckResults(qr, {{"!word!", "test"}});
-	qr = SimpleSelect("several lexems");
-	CheckResults(qr, {{"!several lexems!", "test"}});
+	CheckAllPermutations("", {"UN"}, "", {{"!UN!", "test"}});
+	CheckAllPermutations("", {"United", "Nations"}, "", {{"!United Nations!", "test"}});
+	CheckAllPermutations("", {"word"}, "", {{"!word!", "test"}});
+	CheckAllPermutations("", {"several", "lexems"}, "", {{"!several lexems!", "test"}});
 }
 
 TEST_F(FTApi, SelectWithRelevanceBoostWithSynonyms) {
@@ -751,27 +730,8 @@ TEST_F(FTApi, SelectWithRelevanceBoostWithSynonyms) {
 	Add("nm1", "одно слово", "");
 	Add("nm1", "", "ООН");
 
-	auto res = SimpleSelect("word^2 United^0.5 Nations");
-	ASSERT_EQ(res.Count(), 2);
-
-	Item ritem = res[0].GetItem();
-	string val = ritem["ft1"].As<string>();
-	EXPECT_EQ(val, "!одно слово!");
-
-	ritem = res[1].GetItem();
-	val = ritem["ft2"].As<string>();
-	EXPECT_EQ(val, "!ООН!");
-
-	res = SimpleSelect("word^0.5 United^2 Nations^0.5");
-	ASSERT_EQ(res.Count(), 2);
-
-	ritem = res[0].GetItem();
-	val = ritem["ft2"].As<string>();
-	EXPECT_EQ(val, "!ООН!");
-
-	ritem = res[1].GetItem();
-	val = ritem["ft1"].As<string>();
-	EXPECT_EQ(val, "!одно слово!");
+	CheckAllPermutations("", {"word^2", "United^0.5", "Nations"}, "", {{"!одно слово!", ""}, {"", "!ООН!"}}, true);
+	CheckAllPermutations("", {"word^0.5", "United^2", "Nations^0.5"}, "", {{"", "!ООН!"}, {"!одно слово!", ""}}, true);
 }
 
 TEST_F(FTApi, SelectWithFieldsBoostWithSynonyms) {
@@ -783,35 +743,10 @@ TEST_F(FTApi, SelectWithFieldsBoostWithSynonyms) {
 	Add("nm1", "одно", "слово");
 	Add("nm1", "", "одно слово");
 
-	auto res = SimpleSelect("@ft1^2, ft2^0.5 word");
-	ASSERT_EQ(res.Count(), 3);
-
-	Item ritem = res[0].GetItem();
-	string val = ritem["ft1"].As<string>();
-	EXPECT_EQ(val, "!одно слово!");
-
-	ritem = res[1].GetItem();
-	val = ritem["ft1"].As<string>();
-	EXPECT_EQ(val, "!одно!");
-
-	ritem = res[2].GetItem();
-	val = ritem["ft2"].As<string>();
-	EXPECT_EQ(val, "!одно слово!");
-
-	res = SimpleSelect("@ft1^0.5, ft2^2 word");
-	ASSERT_EQ(res.Count(), 3);
-
-	ritem = res[0].GetItem();
-	val = ritem["ft2"].As<string>();
-	EXPECT_EQ(val, "!одно слово!");
-
-	ritem = res[1].GetItem();
-	val = ritem["ft1"].As<string>();
-	EXPECT_EQ(val, "!одно!");
-
-	ritem = res[2].GetItem();
-	val = ritem["ft1"].As<string>();
-	EXPECT_EQ(val, "!одно слово!");
+	CheckAllPermutations("@", {"ft1^2", "ft2^0.5"}, " word", {{"!одно слово!", ""}, {"!одно!", "!слово!"}, {"", "!одно слово!"}}, true,
+						 ", ");
+	CheckAllPermutations("@", {"ft1^0.5", "ft2^2"}, " word", {{"", "!одно слово!"}, {"!одно!", "!слово!"}, {"!одно слово!", ""}}, true,
+						 ", ");
 }
 
 TEST_F(FTApi, SelectWithFieldsListWithSynonyms) {
@@ -823,14 +758,9 @@ TEST_F(FTApi, SelectWithFieldsListWithSynonyms) {
 	Add("nm1", "одно", "слово");
 	Add("nm1", "", "одно слово");
 
-	auto qr = SimpleSelect("word");
-	CheckResults(qr, {{"!одно слово!", ""}, {"!одно!", "!слово!"}, {"", "!одно слово!"}});
-
-	qr = SimpleSelect("@ft1 word");
-	CheckResults(qr, {{"!одно слово!", ""}});
-
-	qr = SimpleSelect("@ft2 word");
-	CheckResults(qr, {{"", "!одно слово!"}});
+	CheckAllPermutations("", {"word"}, "", {{"!одно слово!", ""}, {"!одно!", "!слово!"}, {"", "!одно слово!"}});
+	CheckAllPermutations("@ft1 ", {"word"}, "", {{"!одно слово!", ""}});
+	CheckAllPermutations("@ft2 ", {"word"}, "", {{"", "!одно слово!"}});
 }
 
 TEST_F(FTApi, RankWithPosition) {
@@ -846,22 +776,15 @@ TEST_F(FTApi, RankWithPosition) {
 	Add("nm1", "word", "");
 	Add("nm1", "one two word", "");
 
-	auto qr = SimpleSelect("word");
-	const char* expected[]{"!word!",
-						   "one !word!",
-						   "one two !word!",
-						   "one two three !word!",
-						   "one two three four !word!",
-						   "one two three four five !word!",
-						   "one two three four five six !word!"};
-
-	ASSERT_TRUE(qr.Count() == (sizeof(expected) / sizeof(const char*)));
-
-	const char** expIt = expected;
-	for (auto resIt = qr.begin(); resIt != qr.end(); ++resIt, ++expIt) {
-		Item item(resIt.GetItem());
-		EXPECT_EQ(item["ft1"].As<string>(), *expIt);
-	}
+	CheckAllPermutations("", {"word"}, "",
+						 {{"!word!", ""},
+						  {"one !word!", ""},
+						  {"one two !word!", ""},
+						  {"one two three !word!", ""},
+						  {"one two three four !word!", ""},
+						  {"one two three four five !word!", ""},
+						  {"one two three four five six !word!", ""}},
+						 true);
 }
 
 TEST_F(FTApi, DifferentFieldRankPosition) {
@@ -878,22 +801,15 @@ TEST_F(FTApi, DifferentFieldRankPosition) {
 	Add("nm1", "word", "one two three four word");
 	Add("nm1", "one two word", "word");
 
-	auto qr1 = SimpleSelect("word");
-	const char* expected[]{"!word!",
-						   "one !word!",
-						   "one two !word!",
-						   "one two three !word!",
-						   "one two three four !word!",
-						   "one two three four five !word!",
-						   "one two three four five six !word!"};
-
-	ASSERT_TRUE(qr1.Count() == (sizeof(expected) / sizeof(const char*)));
-
-	const char** expIt = expected;
-	for (auto resIt = qr1.begin(); resIt != qr1.end(); ++resIt, ++expIt) {
-		Item item(resIt.GetItem());
-		EXPECT_EQ(item["ft1"].As<string>(), *expIt);
-	}
+	CheckAllPermutations("", {"word"}, "",
+						 {{"!word!", "one two three four !word!"},
+						  {"one !word!", "one two three four five six !word!"},
+						  {"one two !word!", "!word!"},
+						  {"one two three !word!", "one !word!"},
+						  {"one two three four !word!", "one two three four five !word!"},
+						  {"one two three four five !word!", "one two three !word!"},
+						  {"one two three four five six !word!", "one two !word!"}},
+						 true);
 
 	ftCfg.fieldsCfg[0].positionWeight = 0.1;
 	ftCfg.fieldsCfg[0].positionBoost = 1.0;
@@ -901,15 +817,15 @@ TEST_F(FTApi, DifferentFieldRankPosition) {
 	ftCfg.fieldsCfg[1].positionBoost = 10.0;
 	SetFTConfig(ftCfg, "nm1", "ft3");
 
-	auto qr2 = SimpleSelect("word");
-
-	ASSERT_TRUE(qr2.Count() == (sizeof(expected) / sizeof(const char*)));
-
-	expIt = expected;
-	for (auto resIt = qr2.begin(); resIt != qr2.end(); ++resIt, ++expIt) {
-		Item item(resIt.GetItem());
-		EXPECT_EQ(item["ft2"].As<string>(), *expIt);
-	}
+	CheckAllPermutations("", {"word"}, "",
+						 {{"one two !word!", "!word!"},
+						  {"one two three !word!", "one !word!"},
+						  {"one two three four five six !word!", "one two !word!"},
+						  {"one two three four five !word!", "one two three !word!"},
+						  {"!word!", "one two three four !word!"},
+						  {"one two three four !word!", "one two three four five !word!"},
+						  {"one !word!", "one two three four five six !word!"}},
+						 true);
 }
 
 TEST_F(FTApi, PartialMatchRank) {
@@ -920,30 +836,12 @@ TEST_F(FTApi, PartialMatchRank) {
 	Add("nm1", "ТНТ4", "");
 	Add("nm1", "", "ТНТ");
 
-	auto qr1 = SimpleSelect("@ft1^1.1,ft2^1 ТНТ*");
-	const char* expected1[2][2]{{"!ТНТ4!", ""}, {"", "!ТНТ!"}};
-
-	ASSERT_EQ(qr1.Count(), (sizeof(expected1) / sizeof(const char* [2])));
-	const char*(*expIt)[2] = expected1;
-	for (auto resIt = qr1.begin(); resIt != qr1.end(); ++resIt, ++expIt) {
-		Item item(resIt.GetItem());
-		EXPECT_EQ(item["ft1"].As<string>(), (*expIt)[0]);
-		EXPECT_EQ(item["ft2"].As<string>(), (*expIt)[1]);
-	}
+	CheckAllPermutations("@", {"ft1^1.1", "ft2^1"}, " ТНТ*", {{"!ТНТ4!", ""}, {"", "!ТНТ!"}}, true, ", ");
 
 	ftCfg.partialMatchDecrease = 100;
 	SetFTConfig(ftCfg, "nm1", "ft3");
 
-	auto qr2 = SimpleSelect("@ft1^1.1,ft2^1 ТНТ*");
-	const char* expected2[2][2]{{"", "!ТНТ!"}, {"!ТНТ4!", ""}};
-
-	ASSERT_EQ(qr2.Count(), (sizeof(expected2) / sizeof(const char* [2])));
-	expIt = expected2;
-	for (auto resIt = qr2.begin(); resIt != qr2.end(); ++resIt, ++expIt) {
-		Item item(resIt.GetItem());
-		EXPECT_EQ(item["ft1"].As<string>(), (*expIt)[0]);
-		EXPECT_EQ(item["ft2"].As<string>(), (*expIt)[1]);
-	}
+	CheckAllPermutations("@", {"ft1^1.1", "ft2^1"}, " ТНТ*", {{"", "!ТНТ!"}, {"!ТНТ4!", ""}}, true, ", ");
 }
 
 TEST_F(FTApi, SelectFullMatch) {
@@ -954,15 +852,33 @@ TEST_F(FTApi, SelectFullMatch) {
 	Add("nm1", "test", "love");
 	Add("nm1", "test", "love second");
 
-	auto qr = SimpleSelect("love");
-	EXPECT_EQ(qr.Count(), 2);
-	auto item = qr[0].GetItem();
-	EXPECT_EQ(item["ft2"].As<string>(), "!love! second");
+	CheckAllPermutations("", {"love"}, "", {{"test", "!love! second"}, {"test", "!love!"}}, true);
 
 	ftCfg.fullMatchBoost = 1.1;
 	SetFTConfig(ftCfg, "nm1", "ft3");
-	qr = SimpleSelect("love");
-	EXPECT_EQ(qr.Count(), 2);
-	item = qr[0].GetItem();
-	EXPECT_EQ(item["ft2"].As<string>(), "!love!");
+	CheckAllPermutations("", {"love"}, "", {{"test", "!love!"}, {"test", "!love! second"}}, true);
+}
+
+TEST_F(FTApi, SetFtFieldsCfgErrors) {
+	auto cfg = GetDefaultConfig(2);
+	Init(cfg);
+	cfg.fieldsCfg[0].positionWeight = 0.1;
+	cfg.fieldsCfg[1].positionWeight = 0.2;
+	// Задаем уникальный конфиг для поля ft, которого нет в индексе ft3
+	auto err = SetFTConfig(cfg, "nm1", "ft3", {"ft", "ft2"});
+	// Получаем ошибку
+	EXPECT_FALSE(err.ok());
+	EXPECT_EQ(err.what(), "Field 'ft' is not included to full text index");
+
+	// Задаем уникальный конфиг дважды для одного поля ft1
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft1"});
+	// Получаем ошибку
+	EXPECT_FALSE(err.ok());
+	EXPECT_EQ(err.what(), "Field 'ft1' is dublicated in fulltext configuration");
+
+	// Задаем уникальный конфиг для единственного поля ft в индексе ft
+	err = SetFTConfig(cfg, "nm3", "ft", {"ft"});
+	// Получаем ошибку
+	EXPECT_FALSE(err.ok());
+	EXPECT_EQ(err.what(), "Configuration for single field fulltext index cannot contain field specifications");
 }

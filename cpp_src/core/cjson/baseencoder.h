@@ -57,6 +57,7 @@ protected:
 	const FieldsSet *filter_;
 	WrSerializer tmpPlTuple_;
 	TagsPath curTagsPath_;
+	IndexedTagsPath indexedTagsPath_;
 	TagsLengths tagsLengths_;
 };
 

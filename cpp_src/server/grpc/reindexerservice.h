@@ -1,7 +1,7 @@
 #pragma once
 
 #ifdef WITH_GRPC
-#include "../build/generated/grpc/reindexer.grpc.pb.h"
+#include "reindexer.grpc.pb.h"
 
 #include <unordered_map>
 #include "core/transaction.h"

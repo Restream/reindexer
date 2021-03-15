@@ -1,6 +1,7 @@
 #include "ftfastconfig.h"
 #include <string.h>
 #include <limits>
+#include <set>
 #include "core/ft/stopwords/stop.h"
 #include "tools/errors.h"
 #include "tools/jsontools.h"
@@ -21,7 +22,7 @@ void FtFastConfig::parse(string_view json, const fast_hash_map<string, int>& fie
 		distanceBoost = root["distance_boost"].As<>(distanceBoost, 0.0, 10.0);
 		distanceWeight = root["distance_weight"].As<>(distanceWeight, 0.0, 1.0);
 		fullMatchBoost = root["full_match_boost"].As<>(fullMatchBoost, 0.0, 10.0);
-		partialMatchDecrease = root["partial_match_decrease"].As<>(partialMatchDecrease, 0, 100);  // TODO which max value?
+		partialMatchDecrease = root["partial_match_decrease"].As<>(partialMatchDecrease, 0, 100);
 		minRelevancy = root["min_relevancy"].As<>(minRelevancy, 0.0, 1.0);
 		maxTyposInWord = root["max_typos_in_word"].As<>(maxTyposInWord, 0, 2);
 		maxTypoLen = root["max_typo_len"].As<>(maxTypoLen, 0, 100);
@@ -40,13 +41,21 @@ void FtFastConfig::parse(string_view json, const fast_hash_map<string, int>& fie
 
 		const auto& fieldsCfgNode = root["fields"];
 		if (!fieldsCfgNode.empty()) {
+			if (fields.empty()) {
+				throw Error(errParseDSL, "Configuration for single field fulltext index cannot contain field specifications");
+			}
+			std::set<size_t> modifiedFields;
 			for (const auto fldCfg : fieldsCfgNode.value) {
 				const std::string fieldName = (*fldCfg)["field_name"].As<std::string>();
 				const auto fldIt = fields.find(fieldName);
 				if (fldIt == fields.end()) {
-					throw Error(errParseDSL, "Field '%s',is not included to full text index", fieldName);
+					throw Error(errParseDSL, "Field '%s' is not included to full text index", fieldName);
 				}
 				assert(fldIt->second < static_cast<int>(fieldsCfg.size()));
+				if (modifiedFields.count(fldIt->second) != 0) {
+					throw Error(errParseDSL, "Field '%s' is dublicated in fulltext configuration", fieldName);
+				}
+				modifiedFields.insert(fldIt->second);
 				FtFastFieldConfig& curFieldCfg = fieldsCfg[fldIt->second];
 				curFieldCfg.bm25Boost = (*fldCfg)["bm25_boost"].As<>(defaultFieldCfg.bm25Boost);
 				curFieldCfg.bm25Weight = (*fldCfg)["bm25_weight"].As<>(defaultFieldCfg.bm25Weight);

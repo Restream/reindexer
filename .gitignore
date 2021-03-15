@@ -1,0 +1,21 @@
+.idea/
+.vscode/ipch
+reindexer.cbp
+reindexer.iml
+.DS_Store
+build*/
+logs
+
+# ignore user's files
+*.user
+
+# do not allow to commit binary and docs
+
+cpp_src/doc/Doxyfile-mcss
+
+__pycache__
+*.pyc
+*.egg-info/
+*.so
+.pytest_cache/
+qa_tests/logs/

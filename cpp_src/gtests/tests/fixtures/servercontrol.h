@@ -73,6 +73,7 @@ public:
 	ServerControl& operator=(ServerControl& rhs) = delete;
 	ServerControl();
 	~ServerControl();
+	void Stop ();
 
 	struct Interface {
 		typedef std::shared_ptr<Interface> Ptr;

@@ -189,7 +189,7 @@ Reindexer supports master slave replication. To create slave DB the following co
 reindexer_tool --dsn cproto://127.0.0.1:6534/slavedb --command '\upsert #config {"type":"replication","replication":{"role":"slave","master_dsn":"cproto://127.0.0.1:6534/masterdb","cluster_id":2}}'
 ```
 
-More details about replication is [here](replication.md)
+More details about replication is [here](../replication.md)
 
 ## Security
 

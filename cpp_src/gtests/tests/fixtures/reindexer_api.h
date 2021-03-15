@@ -51,8 +51,6 @@ public:
 	std::string RandLikePattern() { return rt.RandLikePattern(); }
 	std::string RuRandString() { return rt.RuRandString(); }
 	vector<int> RandIntVector(size_t size, int start, int range) { return rt.RandIntVector(size, start, range); }
-	double RandDouble(double min, double max, int points) noexcept { return rt.RandDouble(min, max, points); }
-	reindexer::Point RandPoint() noexcept { return rt.RandPoint(); }
 
 public:
 	const string default_namespace = "test_namespace";

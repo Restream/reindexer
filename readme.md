@@ -14,7 +14,7 @@ This document describes Go connector and it's API. To get information
 about reindexer server and HTTP API refer to
 [reindexer documentation](cpp_src/readme.md)
 
-# Table of contents:
+# Table of contents: 
 
 - [Features](#features)
   - [Performance](#performance)
@@ -415,7 +415,7 @@ The very first character in this list has the highest priority, priority of the 
 
 ### Update queries
 
-UPDATE queries are used to modify the existing records in a namespace.
+UPDATE queries are used to modify existing items of a namespace.
 There are several kinds of update queries: updating existing fields, adding new fields and dropping existing non-indexed fields.
 
 UPDATE Sql-Syntax
@@ -432,19 +432,21 @@ It is also possible to use arithmetic expressions with +, -, /, \* and brackets
 UPDATE NS SET field1 = field2+field3-(field4+5)/2
 ```
 
-make an array-field empty
+including functions like `now()`, `sec()` and `serial()`. To use expressions from Golang code `SetExpression()` method needs to be called instead of `Set()`.
+
+To make an array-field empty
 
 ```sql
 UPDATE NS SET arrayfield = [] where id = 100
 ```
 
-and set field to null
+and set it to null
 
 ```sql
 UPDATE NS SET field = null where id > 100
 ```
 
-In case of non-indexed fields setting it's value to a value of a different type will replace it completely, in case of indexed fields it is only possible to convert it from adjacent type (integral types and bool), convert numeric strings (like "123456") to integral types and back. Setting indexed field to null resets it to a default value.
+In case of non-indexed fields, setting it's value to a value of a different type will replace it completely; in case of indexed fields, it is only possible to convert it from adjacent type (integral types and bool), numeric strings (like "123456") to integral types and back. Setting indexed field to null resets it to a default value.
 
 It is possible to add new fields to existing items
 
@@ -460,13 +462,13 @@ UPDATE Ns set nested.nested2.nested3.nested4.newField = 'new nested field!' wher
 
 will create the following nested objects: nested, nested2, nested3, nested4 and newField as a member of object nested4.
 
-Example of using Update queries in golang code
+Example of using Update queries in golang code:
 
 ```go
 db.Query("items").Where("id", reindexer.EQ, 40).Set("field1", values).Update()
 ```
 
-Reindexer allows to update and add object fields. Object can be set by either a struct, a map or a byte array (that is a JSON version of object representation).
+Reindexer enables to update and add object fields. Object can be set by either a struct, a map or a byte array (that is a JSON version of object representation).
 
 ```go
 type ClientData struct {
@@ -486,15 +488,15 @@ clientData := updateClientData(clientId)
 db.Query("clients").Where("id", reindexer.EQ, 100).SetObject("client_data", clientData).Update()
 ```
 
-Map in golang should always has string as a key. `map[string]interface{}` is a perfect choice.
+In this case, `Map` in golang can only work with string as a key. `map[string]interface{}` is a perfect choice.
 
-Updating of object field by Sql statement
+Updating of object field by Sql statement:
 
 ```sql
 UPDATE clients SET client_data = {"Name":"John Doe","Age":40,"Address":"Fifth Avenue, Manhattan","Occupation":"Bank Manager","TaxYear":1999,"TaxConsultant":"Jane Smith"} where id = 100;
 ```
 
-UPDATE Sql-Syntax of queries that drop existing non-indexed fields
+UPDATE Sql-Syntax of queries that drop existing non-indexed fields:
 
 ```sql
 UPDATE nsName
@@ -504,6 +506,56 @@ WHERE condition;
 
 ```go
 db.Query("items").Where("id", reindexer.EQ, 40).Drop("field1").Update()
+```
+
+Reindexer update mechanism enables to modify array fields: to modify a certain item of an existing array or even to replace an entire field.
+
+To update an item subscription operator syntax is used:
+
+```sql
+update ns set array[*].prices[0] = 9999 where id = 5
+```
+
+where `*` means all items.
+
+To update entire array the following is used:
+
+```sql
+update ns set prices = [999, 1999, 2999] where id = 9
+```
+
+any non-indexed field can be easily converted to array using this syntax.
+
+Reindexer also allows to update items of object arrays:
+
+```sql
+update ns set extra.objects[0] = {"Id":0,"Description":"Updated!"} where id = 9
+```
+
+also like this
+
+```golang
+db.Query("clients").Where("id", reindexer.EQ, 100).SetObject("extra.objects[0]", updatedValue).Update()
+```
+
+To add items to an existing array the following syntax is supported:
+
+```sql
+update ns set integer_array = integer_array || [5,6,7,8]
+```
+
+and
+
+```sql
+update ns set integer_array = [1,2,3,4,5] || integer_array
+```
+
+The first one adds elements to the end of `integer_array`, the second one adds 5 items to the front of it. To make this code work in Golang `SetExpression()` should be used instead of `Set()`.
+
+To remove and item you should do the following:
+
+```sql
+update ns drop array[5]
 ```
 
 ### Transactions and batch update
@@ -1076,7 +1128,6 @@ go func() {
 pprof -symbolize remote http://localhost:6060/debug/cgo/pprof/heap
 ```
 
-
 ## Integration with other program languages
 
 A list of connectors for work with Reindexer via other program languages (TBC later):
@@ -1094,7 +1145,6 @@ pip3 install pyreindexer
 
 https://github.com/Restream/reindexer-py
 https://pypi.org/project/pyreindexer/
-
 
 ## Limitations and known issues
 

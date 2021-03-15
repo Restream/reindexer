@@ -1131,11 +1131,11 @@ func CheckTestItemsQueries(t *testing.T, testCase IndexesTestCase) {
 
 func CheckTestItemsGeomQueries(t *testing.T) {
 	// Checks that DWithin works and verifies the result
-	newTestQuery(DB, "test_items_geom").DWithin("point_non_index", randPoint(), randFloat(0, 2, 6)).ExecAndVerify(t)
-	newTestQuery(DB, "test_items_geom").DWithin("point_rtree_linear", randPoint(), randFloat(0, 2, 6)).ExecAndVerify(t)
-	newTestQuery(DB, "test_items_geom").DWithin("point_rtree_quadratic", randPoint(), randFloat(0, 2, 6)).ExecAndVerify(t)
-	newTestQuery(DB, "test_items_geom").DWithin("point_rtree_greene", randPoint(), randFloat(0, 2, 6)).ExecAndVerify(t)
-	newTestQuery(DB, "test_items_geom").DWithin("point_rtree_rstar", randPoint(), randFloat(0, 2, 6)).ExecAndVerify(t)
+	newTestQuery(DB, "test_items_geom").DWithin("point_non_index", randPoint(), randFloat(0, 2)).ExecAndVerify(t)
+	newTestQuery(DB, "test_items_geom").DWithin("point_rtree_linear", randPoint(), randFloat(0, 2)).ExecAndVerify(t)
+	newTestQuery(DB, "test_items_geom").DWithin("point_rtree_quadratic", randPoint(), randFloat(0, 2)).ExecAndVerify(t)
+	newTestQuery(DB, "test_items_geom").DWithin("point_rtree_greene", randPoint(), randFloat(0, 2)).ExecAndVerify(t)
+	newTestQuery(DB, "test_items_geom").DWithin("point_rtree_rstar", randPoint(), randFloat(0, 2)).ExecAndVerify(t)
 }
 
 func CheckTestItemsSQLQueries(t *testing.T) {

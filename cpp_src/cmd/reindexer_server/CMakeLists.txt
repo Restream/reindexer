@@ -10,6 +10,12 @@ list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer ${REINDEXER_L
 include_directories(${PROJECT_SOURCE_DIR})
 add_dependencies(${TARGET} reindexer_server_library)
 
+if (APPLE)
+  set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath,@loader_path")
+elseif (NOT WIN32)
+  set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath,\$ORIGIN")
+endif ()
+
 target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES})
 
 install(TARGETS ${TARGET}

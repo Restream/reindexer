@@ -73,7 +73,7 @@ void ProtobufSchemaBuilder::End() {
 }
 
 void ProtobufSchemaBuilder::Field(string_view name, int tagName, const FieldProps& props) {
-	TagScope tagScope(fieldsTypes_->tagsPath_, tagName);
+	TagsPathScope<TagsPath> tagScope(fieldsTypes_->tagsPath_, tagName);
 	KeyValueType type;
 	string_view typeName = jsonSchemaTypeToProtobufType(props, type);
 	if (type == KeyValueUndefined || typeName.empty()) {

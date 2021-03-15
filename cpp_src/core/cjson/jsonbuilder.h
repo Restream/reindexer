@@ -30,12 +30,12 @@ public:
 	JsonBuilder Array(int tagName, int size = KUnknownFieldSize) { return Array(getNameByTag(tagName), size); }
 
 	template <typename T>
-	void Array(int tagName, span<T> data) {
+	void Array(int tagName, span<T> data, int /*offset*/ = 0) {
 		JsonBuilder node = Array(tagName);
 		for (auto d : data) node.Put({}, d);
 	}
 	template <typename T>
-	void Array(string_view n, span<T> data) {
+	void Array(string_view n, span<T> data, int /*offset*/ = 0) {
 		JsonBuilder node = Array(n);
 		for (auto d : data) node.Put({}, d);
 	}

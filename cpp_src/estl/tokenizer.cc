@@ -36,9 +36,11 @@ token tokenizer::next_token(bool to_lower, bool treatSignAsToken) {
 	if (isalpha(*cur_) || *cur_ == '_' || *cur_ == '#') {
 		res.type = TokenName;
 		do {
+			if (*cur_ == '*' && *(cur_ - 1) != '[') break;
 			res.text_.push_back(to_lower ? tolower(*cur_++) : *cur_++);
 			++pos_;
-		} while (cur_ != q_.end() && (isalpha(*cur_) || isdigit(*cur_) || *cur_ == '_' || *cur_ == '#' || *cur_ == '.'));
+		} while (cur_ != q_.end() && (isalpha(*cur_) || isdigit(*cur_) || *cur_ == '_' || *cur_ == '#' || *cur_ == '.' || *cur_ == '*' ||
+									  *cur_ == '[' || *cur_ == ']'));
 	} else if (isdigit(*cur_) || (!treatSignAsToken && (*cur_ == '-' || *cur_ == '+'))) {
 		res.type = TokenNumber;
 		do {

@@ -54,7 +54,6 @@ private:
 	vector<string> args_;
 	ServerConfig config_;
 	LoggerWrapper logger_;
-	LoggerWrapper coreLogger_;
 	int coreLogLevel_;
 
 #ifndef _WIN32

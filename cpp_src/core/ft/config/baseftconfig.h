@@ -13,9 +13,6 @@ struct JsonNode;
 
 namespace reindexer {
 
-using std::vector;
-using std::string;
-
 class BaseFTConfig {
 public:
 	struct Synonym {

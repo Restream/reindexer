@@ -39,7 +39,7 @@ public:
 
 	enum EditMode {
 		Ordered,   // Keep idset ordered, and ready to select (insert is slow O(logN)+O(N))
-		Auto,	  // Prepare idset for fast ordering by commit (insert is fast O(logN))
+		Auto,	   // Prepare idset for fast ordering by commit (insert is fast O(logN))
 		Unordered  // Just add id, commit and erase is impossible
 	};
 
@@ -63,6 +63,7 @@ public:
 	void Commit();
 	bool IsCommited() const { return true; }
 	bool IsEmpty() const { return empty(); }
+	size_t Size() const { return size(); }
 	size_t BTreeSize() const { return 0; }
 	const base_idsetset *BTree() const { return nullptr; }
 	void ReserveForSorted(int sortedIdxCount) { reserve(size() * (sortedIdxCount + 1)); }
@@ -158,6 +159,7 @@ public:
 	void Commit();
 	bool IsCommited() const { return !usingBtree_; }
 	bool IsEmpty() const { return empty() && (!set_ || set_->empty()); }
+	size_t Size() const { return usingBtree_.load(std::memory_order_relaxed) ? set_->size() : size(); }
 	size_t BTreeSize() const { return set_ ? sizeof(*set_.get()) + set_->size() * sizeof(int) : 0; }
 	const base_idsetset *BTree() const { return set_.get(); }
 	void ReserveForSorted(int sortedIdxCount) { reserve(((set_ ? set_->size() : size())) * (sortedIdxCount + 1)); }

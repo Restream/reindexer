@@ -63,10 +63,11 @@ public:
 	ItemImpl &operator=(const ItemImpl &) = delete;
 	ItemImpl &operator=(ItemImpl &&) noexcept;
 
-	void ModifyField(string_view jsonPath, const VariantArray &keys, FieldModifyMode mode);
+	void ModifyField(string_view jsonPath, const VariantArray &keys, IndexExpressionEvaluator ev, FieldModifyMode mode);
+	void ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &keys, FieldModifyMode mode);
 	void SetField(int field, const VariantArray &krs);
-	void SetField(string_view jsonPath, const VariantArray &keys);
-	void DropField(string_view jsonPath);
+	void SetField(string_view jsonPath, const VariantArray &keys, IndexExpressionEvaluator ev);
+	void DropField(string_view jsonPath, IndexExpressionEvaluator ev);
 	Variant GetField(int field);
 	void GetField(int field, VariantArray &);
 	FieldsSet PkFields() const { return pkFields_; }
