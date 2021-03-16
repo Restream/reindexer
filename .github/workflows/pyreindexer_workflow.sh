@@ -47,6 +47,8 @@ while true; do
 		else
 			exit 1
 		fi
+	elif [ $run_status == "null" ]; then
+		echo $run
 	else
 		echo $run_status
 	fi
