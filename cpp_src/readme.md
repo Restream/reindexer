@@ -25,7 +25,7 @@ brew install reindexer
 
 ## Linux
 
-## RHEL/Centos/Fefora
+## RHEL/Centos/Fedora
 
 ```bash
 yum install -y epel-release yum-utils
