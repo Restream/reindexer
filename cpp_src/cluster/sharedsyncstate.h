@@ -41,6 +41,9 @@ public:
 		requireSynchronization_ = std::move(requireSynchronization);
 		synchronized_.clear();
 		enabled_ = enabled;
+		terminated_ = false;
+		leaderId_ = -1;
+		next_ = current_ = RaftInfo();
 	}
 	template <typename ContextT>
 	void AwaitSynchronization(string_view name, const ContextT& ctx) const {
@@ -48,6 +51,9 @@ public:
 		std::size_t hash = h(name);
 		shared_lock<MtxT> lck(mtx_);
 		while (!isSynchronized(name, hash)) {
+			if (terminated_) {
+				throw Error(errTerminated, "Cluster was terimated");
+			}
 			cond_.wait(lck, ctx);
 		}
 	}
@@ -73,12 +79,12 @@ public:
 		shared_lock<MtxT> lck(mtx_);
 		if (allowTransitState) {
 			cond_.wait(
-				lck, [this] { return !isRunning_ || next_ == current_; }, ctx);
+				lck, [this] { return !isRunning() || next_ == current_; }, ctx);
 		} else {
 			cond_.wait(
 				lck,
 				[this] {
-					return !isRunning_ ||
+					return !isRunning() ||
 						   (next_ == current_ && (current_.role == RaftInfo::Role::Leader || current_.role == RaftInfo::Role::Follower));
 				},
 				ctx);
@@ -97,11 +103,10 @@ public:
 		shared_lock<MtxT> lck(mtx_);
 		return current_;
 	}
-	void SetRunning(bool running) {
+	void SetTerminated() {
 		std::lock_guard<MtxT> lck(mtx_);
-		//нужно сбрасывать в None состояние на false???
-		// if (!running) role_ = RaftInfo::Role::None;
-		isRunning_ = running;
+		terminated_ = true;
+		next_ = current_ = RaftInfo();
 		cond_.notify_all();
 	}
 
@@ -112,6 +117,7 @@ private:
 	bool isRequireSync(string_view name, size_t hash) const noexcept {
 		return enabled_ && (requireSynchronization_.empty() || requireSynchronization_.count(name, hash));
 	}
+	bool isRunning() const noexcept { return enabled_ && !terminated_; }
 
 	mutable MtxT mtx_;
 	mutable contexted_cond_var cond_;
@@ -121,7 +127,7 @@ private:
 	int leaderId_ = -1;
 	RaftInfo current_;
 	RaftInfo next_;
-	bool isRunning_ = false;
+	bool terminated_ = false;
 };
 }  // namespace cluster
 }  // namespace reindexer

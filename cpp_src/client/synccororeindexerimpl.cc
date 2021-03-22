@@ -137,7 +137,7 @@ SyncCoroTransaction SyncCoroReindexerImpl::NewTransaction(string_view nsName, co
 	std::unique_ptr<CoroTransaction> trPtr =
 		sendCoomand<std::unique_ptr<CoroTransaction>, string_view, const InternalRdxContext &>(cmdNameNewTransaction, nsName, ctx);
 	if (trPtr->Status().ok()) {
-		return SyncCoroTransaction(*this, *trPtr.get());
+		return SyncCoroTransaction(*this, std::move(*trPtr.get()));
 	}
 	return SyncCoroTransaction(trPtr->Status(), *this);
 }
@@ -368,7 +368,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 							v.first.get());
 					if (cd != nullptr) {
 						CoroTransaction coroTrans = rx.NewTransaction(cd->p1_, cd->p2_);
-						std::unique_ptr<CoroTransaction> r(new CoroTransaction(coroTrans));
+						std::unique_ptr<CoroTransaction> r(new CoroTransaction(std::move(coroTrans)));
 						cd->ret->set_value(std::move(r));
 					} else {
 						assert(false);
@@ -430,7 +430,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 				case cmdNameModifyTx: {
 					commandData<Error, CoroTransaction &, Query &, lsn_t> *cd =
 						dynamic_cast<commandData<Error, CoroTransaction &, Query &, lsn_t> *>(v.first.get());
-					CoroTransaction tr = cd->p1_;
+					CoroTransaction &tr = cd->p1_;
 					Error err(errLogic, "Connection pointer in transaction is nullptr.");
 					if (tr.conn_) {
 						WrSerializer ser;

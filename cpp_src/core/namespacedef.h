@@ -54,9 +54,9 @@ public:
 
 enum EnumNamespacesOpt {
 	kEnumNamespacesWithClosed = 1,
-	kEnumNamespacesOnlyNames = 2,
-	kEnumNamespacesHideSystem = 4,
-	kEnumNamespacesHideTemporary = 5,
+	kEnumNamespacesOnlyNames = 1 << 1,
+	kEnumNamespacesHideSystem = 1 << 2,
+	kEnumNamespacesHideTemporary = 1 << 3,
 };
 
 struct EnumNamespacesOpts {

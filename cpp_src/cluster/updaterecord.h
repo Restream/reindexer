@@ -44,12 +44,18 @@ struct UpdateRecord {
 		ItemUpsert,
 		ItemDelete,
 		ItemInsert,
+		ItemUpdateTx,
+		ItemUpsertTx,
+		ItemDeleteTx,
+		ItemInsertTx,
 		IndexAdd,
 		IndexDrop,
 		IndexUpdate,
 		PutMeta,
 		UpdateQuery,
 		DeleteQuery,
+		UpdateQueryTx,
+		DeleteQueryTx,
 		SetSchema,
 		Truncate,
 		BeginTx,
@@ -67,7 +73,7 @@ struct UpdateRecord {
 	UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, int _emmiterServerId, NamespaceDef _q);
 	UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, int _emmiterServerId, std::string _k, std::string _v);
 
-	string_view GetNsName() const noexcept { return nsName; }
+	const std::string& GetNsName() const noexcept { return nsName; }
 
 	Type type = Type::None;
 	std::string nsName;

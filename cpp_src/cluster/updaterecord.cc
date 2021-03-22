@@ -23,6 +23,10 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, int _emm
 		case Type::ItemUpsert:
 		case Type::ItemDelete:
 		case Type::ItemInsert:
+		case Type::ItemUpdateTx:
+		case Type::ItemUpsertTx:
+		case Type::ItemDeleteTx:
+		case Type::ItemInsertTx:
 			data.emplace<std::unique_ptr<ItemReplicationRecord>>(new ItemReplicationRecord{std::move(_data)});
 			break;
 		case Type::RenameNamespace:
@@ -61,6 +65,8 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, int _emm
 	switch (type) {
 		case Type::UpdateQuery:
 		case Type::DeleteQuery:
+		case Type::UpdateQueryTx:
+		case Type::DeleteQueryTx:
 			break;
 		default:
 			assert(false);

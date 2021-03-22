@@ -64,9 +64,9 @@ ReindexerImpl::ReindexerImpl(IClientsStats* clientsStats)
 
 ReindexerImpl::~ReindexerImpl() {
 	stopBackgroundThread_ = true;
+	clusterizator_->Stop();
 	backgroundThread_.join();
 	replicator_->Stop();
-	clusterizator_->Stop();
 }
 
 Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlaceholderCheck, const InternalRdxContext& ctx) {
@@ -515,8 +515,9 @@ Error ReindexerImpl::renameNamespace(string_view srcNsName, const std::string& d
 		}
 
 		WrSerializer ser;
-		const auto rdxCtx = ctx.CreateRdxContext(
-			ctx.NeedTraceActivity() ? (ser << "RENAME " << srcNsName << " to " << dstNsName).Slice() : ""_sv, activities_);
+		auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "RENAME " << srcNsName << " to " << dstNsName).Slice() : ""_sv,
+										   activities_);
+		rdxCtx.WithNoWaitSync(fromReplication);
 
 		ULock lock(mtx_, &rdxCtx);
 		auto srcIt = namespaces_.find(srcNsName);

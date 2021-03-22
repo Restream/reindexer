@@ -13,6 +13,7 @@ void Transaction::Modify(Query&& query) {
 		query.Serialize(ser);
 		auto ret = conn_->Call({cproto::kCmdUpdateQueryTx, RequestTimeout_, execTimeout_, nullptr}, ser.Slice(), txId_).Status();
 		if (!ret.ok()) throw ret;
+		return;
 	}
 	throw Error(errLogic, "Connection pointer in transaction is nullptr.");
 }

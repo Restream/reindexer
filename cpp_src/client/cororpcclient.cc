@@ -586,20 +586,24 @@ CoroTransaction CoroRPCClient::NewTransaction(string_view nsName, const Internal
 }
 
 Error CoroRPCClient::CommitTransaction(CoroTransaction& tr, const InternalRdxContext& ctx) {
+	Error ret;
 	if (tr.conn_) {
-		auto ret = tr.conn_->Call(mkCommand(cproto::kCmdCommitTx, &ctx), tr.txId_).Status();
-		tr.clear();
-		return ret;
+		ret = tr.conn_->Call(mkCommand(cproto::kCmdCommitTx, &ctx), tr.txId_).Status();
+	} else {
+		ret = Error(errLogic, "connection is nullptr");
 	}
-	return Error(errLogic, "connection is nullptr");
+	tr.clear();
+	return ret;
 }
 Error CoroRPCClient::RollBackTransaction(CoroTransaction& tr, const InternalRdxContext& ctx) {
+	Error ret;
 	if (tr.conn_) {
-		auto ret = tr.conn_->Call(mkCommand(cproto::kCmdRollbackTx, &ctx), tr.txId_).Status();
-		tr.clear();
-		return ret;
+		ret = tr.conn_->Call(mkCommand(cproto::kCmdRollbackTx, &ctx), tr.txId_).Status();
+	} else {
+		ret = Error(errLogic, "connection is nullptr");
 	}
-	return Error(errLogic, "connection is nullptr");
+	tr.clear();
+	return ret;
 }
 
 Error CoroRPCClient::GetReplState(string_view nsName, ReplicationStateV2& state, const InternalRdxContext& ctx) {

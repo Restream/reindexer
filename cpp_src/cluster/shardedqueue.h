@@ -1,8 +1,8 @@
 #pragma once
 
+#include <unordered_map>
 #include "core/rdxcontext.h"
 #include "estl/contexted_cond_var.h"
-#include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
 #include "estl/h_vector.h"
 #include "estl/mutex.h"
@@ -184,17 +184,17 @@ public:
 		storage_.resize(shards);
 	}
 
-	std::pair<std::shared_ptr<Shard>, TokenType> GetShard(string_view token) {
-		HashT h;
-		std::size_t hash = h(token);
+	std::pair<std::shared_ptr<Shard>, TokenType> GetShard(const std::string &token) {
+		// HashT h;
+		// std::size_t hash = h(token);
 		{
 			shared_lock<MtxT> lck(mtx_);
-			auto type = getTokenType(token, hash);
+			auto type = getTokenType(token);  //, hash);
 			if (type == TokenType::None) {
 				return std::make_pair(std::shared_ptr<Shard>(), type);
 			}
 			{
-				auto found = shards_.find(token, hash);
+				auto found = shards_.find(token);  //, hash);
 				if (found != shards_.end()) {
 					return std::make_pair(*(found->second), type);
 				}
@@ -202,7 +202,7 @@ public:
 		}
 
 		std::lock_guard<MtxT> lck(mtx_);
-		auto type = getTokenType(token, hash);
+		auto type = getTokenType(token);  //, hash);
 		if (type == TokenType::None) {
 			return std::make_pair(std::shared_ptr<Shard>(), type);
 		}
@@ -279,26 +279,32 @@ public:
 
 private:
 	using TokensHashSetT = fast_hash_set<std::string, HashT, CompareT>;
+
 	template <typename TokenT>
 	std::shared_ptr<Shard> doEmplaceToken(TokenT &&token) {
-		auto res = shards_.try_emplace(std::string(std::forward<TokenT>(token)), nullptr);
+		// auto res = shards_.try_emplace(std::string(std::forward<TokenT>(token)), nullptr);
+		auto res = shards_.emplace(std::string(std::forward<TokenT>(token)), nullptr);
 		std::shared_ptr<Shard> *shard = res.first->second;
 		if (res.second) {
-			shard = &storage_[num_];
-			res.first->second = &storage_[num_++];
+			size_t id = num_++ % storage_.size();
+			shard = &storage_[id];
+			res.first->second = &storage_[id];
 			(*shard)->addToken(string_view(res.first->first));
 		}
 		return *shard;
 	}
-	TokenType getTokenType(string_view token, std::size_t hash) const noexcept {
+
+	TokenType getTokenType(string_view token /*, std::size_t hash*/) const noexcept {
 		if (syncWhiteList_) {
-			auto found = syncWhiteList_->find(token, hash);
+			// auto found = syncWhiteList_->find(token, hash);
+			auto found = syncWhiteList_->find(token);
 			if (found != syncWhiteList_->end() || syncWhiteList_->empty()) {
 				return TokenType::Sync;
 			}
 		}
 		if (asyncWhiteList_) {
-			auto found = asyncWhiteList_->find(token, hash);
+			// auto found = asyncWhiteList_->find(token, hash);
+			auto found = asyncWhiteList_->find(token);
 			if (found != asyncWhiteList_->end() || asyncWhiteList_->empty()) {
 				return TokenType::Async;
 			}
@@ -309,7 +315,8 @@ private:
 	MtxT mtx_;
 	std::vector<std::shared_ptr<Shard>> storage_;
 	size_t num_ = 0;
-	fast_hash_map<std::string, std::shared_ptr<Shard> *, HashT, CompareT> shards_;
+	std::unordered_map<std::string, std::shared_ptr<Shard> *, HashT, CompareT>
+		shards_;									 // Container should not invalidate refernces to keys
 	std::unique_ptr<TokensHashSetT> syncWhiteList_;	 // TODO: Switch to optional
 	std::unique_ptr<TokensHashSetT> asyncWhiteList_;
 };

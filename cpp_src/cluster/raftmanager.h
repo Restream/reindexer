@@ -17,12 +17,14 @@ constexpr auto kGranularSleepInterval = std::chrono::milliseconds(50);
 
 class RaftManager {
 public:
+	using ClockT = std::chrono::steady_clock;
+
 	RaftManager(net::ev::dynamic_loop &loop);
 
 	void SetTerminateFlag(bool val) noexcept { terminate_ = val; }
 	void Configure(int serverId, const ClusterConfigData &config);
 	RaftInfo::Role Elections();
-	bool LeaderIsAvailable();
+	bool LeaderIsAvailable(ClockT::time_point now);
 	bool FollowersAreAvailable();
 	int32_t GetLeaderId() const { return getLeaderId(voteData_.load()); }
 	RaftInfo::Role GetRole() const { return getRole(voteData_.load()); }
@@ -32,7 +34,6 @@ public:
 	void AwaitTermination();
 
 private:
-	using ClockT = std::chrono::high_resolution_clock;
 	struct RaftNode {
 		RaftNode(const client::CoroReindexerConfig &config, std::string _dsn) : client(config), dsn(std::move(_dsn)) {}
 

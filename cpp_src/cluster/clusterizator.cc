@@ -45,7 +45,7 @@ bool Clusterizator::Configure(ClusterConfigData clusterConfig, ReplicationConfig
 		}
 	}
 
-	return !controlThread_.joinable() || !replicatorThread_.joinable();
+	return !controlThread_.joinable() && !replicatorThread_.joinable();
 }
 
 void Clusterizator::Stop() noexcept {
@@ -117,7 +117,7 @@ void Clusterizator::clusterControlRoutine() {
 			condPredicat = [this] { return raftManager_.FollowersAreAvailable(); };
 		} else if (raftInfo.role == RaftInfo::Role::Follower) {
 			logPrintf(LogInfo, "[cluster] Became follower");
-			condPredicat = [this] { return raftManager_.LeaderIsAvailable(); };
+			condPredicat = [this] { return raftManager_.LeaderIsAvailable(RaftManager::ClockT::now()); };
 		} else {
 			assert(false);
 		}
@@ -178,7 +178,11 @@ Error Clusterizator::validateConfig() const noexcept {
 		return Error(errParams, "Server ID is not set");
 	}
 	std::unordered_set<int> ids;
-	bool serverIsInCluster = clusterConfig_.nodes.empty();
+	bool serverIsInCluster =
+		clusterConfig_.nodes.empty();  // In case if we're using setup with async replication only, there is no need in this check
+	if (clusterConfig_.nodes.size() && clusterConfig_.nodes.size() < 3) {
+		return Error(errParams, "Minimal cluster size is 3, but only %d nodes were in config", clusterConfig_.nodes.size());
+	}
 	for (auto& node : clusterConfig_.nodes) {
 		if (ids.count(node.serverId)) {
 			return Error(errParams, "Duplicated server id in cluster config: %d", node.serverId);

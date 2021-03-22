@@ -29,6 +29,7 @@ public:
 	void Delete(Item &&item, lsn_t lsn = lsn_t());
 	void Modify(Item &&item, ItemModifyMode mode, lsn_t lsn = lsn_t());
 	void Modify(Query &&query, lsn_t lsn = lsn_t());
+	void Nop(lsn_t lsn);
 	bool IsFree() const noexcept { return impl_ == nullptr; }
 	Item NewItem();
 	Item GetItem(TransactionStep &&st);

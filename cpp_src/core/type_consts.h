@@ -121,7 +121,8 @@ enum ErrorCode {
 	errUpdatesLost = 26,
 	errWrongReplicationData = 27,
 	errUpdateReplication = 28,
-	errClusterConsensus = 29
+	errClusterConsensus = 29,
+	errTerminated = 30
 };
 
 enum SchemaType { JsonSchemaType, ProtobufSchemaType };

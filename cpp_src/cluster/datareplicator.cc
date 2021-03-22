@@ -71,7 +71,7 @@ void DataReplicator::Run(int serverId, ClusterConfigData config) {
 	// TODO: Add async namespaces from replication config
 	// TODO: updatesQueue_ must contain cluster + replication namespaces and syncState_ must contain cluster namespaces only
 	updatesQueue_.RebuildShards(syncThreads_.size(), nsNames, std::move(clusterNsList), std::unique_ptr<NsNamesHashSetT>());
-	leaderSyncState_.Reset(std::move(nsNames), config_.nodes.size() < 2);
+	sharedSyncState_.Reset(std::move(nsNames), config_.nodes.size());
 
 	for (size_t i = 0; i < syncThreads_.size(); ++i) {
 		syncThreads_[i].roleSwitchAsync.set(syncThreads_[i].loop);
@@ -81,7 +81,7 @@ void DataReplicator::Run(int serverId, ClusterConfigData config) {
 				if (terminate_) {
 					nextRoleCh.close();
 				} else {
-					auto newState = leaderSyncState_.CurrentRole();
+					auto newState = sharedSyncState_.CurrentRole();
 					if (!nextRoleCh.empty()) {
 						nextRoleCh.pop();
 					}
@@ -98,14 +98,10 @@ void DataReplicator::Run(int serverId, ClusterConfigData config) {
 		syncThreads_[i].th = std::thread([this, i] { dataReplicationThread(i, config_); });
 	}
 
-	leaderSyncState_.SetRunning(true);
-
 	terminateAsync_.start();
 	roleSwitchAsync_.start();
 
 	loop_.run();
-
-	leaderSyncState_.SetRunning(false);
 
 	terminateAsync_.stop();
 	roleSwitchAsync_.stop();
@@ -119,12 +115,12 @@ void DataReplicator::OnRoleChanged(RaftInfo::Role to, int leaderId) {
 	RaftInfo info;
 	info.role = to;
 	info.leaderId = leaderId;
-	leaderSyncState_.SetRole(info);
+	sharedSyncState_.SetRole(info);
 	roleSwitchAsync_.send();
 }
 
 RaftInfo DataReplicator::GetRaftInfo(bool allowTransitState, const RdxContext& ctx) const {
-	return leaderSyncState_.AwaitRole(allowTransitState, ctx);
+	return sharedSyncState_.AwaitRole(allowTransitState, ctx);
 }
 
 void DataReplicator::dataReplicationThread(size_t shardId, const ClusterConfigData& config) {
@@ -222,10 +218,12 @@ void DataReplicator::nodeReplicationRoutine(size_t nodeId, DataReplicator::SyncT
 void DataReplicator::nsReplicationRoutine(size_t nodeId, string_view nsName, DataReplicator::SyncThread& threadLocal, bool newNs) {
 	auto& node = threadLocal.nodes[nodeId];
 	while (!terminate_) {
+		assert(node.namespaceData[nsName].tx.IsFree());
+
 		if (node.type == ReplicatorNode::Type::Cluster) {
 			threadLocal.leadershipAwaitCh.pop();
 			if (terminate_) {
-				return;
+				break;
 			}
 		}
 
@@ -270,6 +268,10 @@ void DataReplicator::nsReplicationRoutine(size_t nodeId, string_view nsName, Dat
 			newNs = false;
 		}
 		// Wait before next sync retry
+		auto& tx = node.namespaceData[nsName].tx;
+		if (!tx.IsFree()) {
+			node.client.RollBackTransaction(tx);
+		}
 		if (!terminate_) {
 			std::cerr << serverId_ << ":" << nsName << ":" << nodeId << "; resync was scheduled due to error: " << err.what() << std::endl;
 		}
@@ -304,12 +306,12 @@ void DataReplicator::updatesReadingRoutine(size_t shardId) {
 			std::string nameStr(it->data.nsName);
 			auto& updatesData = threadLocal.nsUpdatesData[nameStr];
 			if (startUpdateRoutineForNewNs(nameStr, shard, threadLocal)) {
-				leaderSyncState_.MarkSynchronized(std::move(nameStr),
+				sharedSyncState_.MarkSynchronized(std::move(nameStr),
 												  true);  // If we've got first update for NS, it has to be synchronized (?)
 			}
 
 			if (it->RequireResult() && !isLeader(threadLocal)) {
-				auto roles = leaderSyncState_.GetRolesPair();
+				auto roles = sharedSyncState_.GetRolesPair();
 				if (roles.second.role != RaftInfo::Role::Leader) {
 					auto tmpIt = it;  // OnResult call will erase actual 'it'
 					++it;
@@ -424,7 +426,7 @@ void DataReplicator::initialLeadersSync(size_t shardId) {
 			coroutine::wait_group_guard wgg(leaderSyncWg);
 			auto err = syncLatestNamespaceToLeader(nsListener.first, threadLocal);
 			if (err.ok()) {
-				leaderSyncState_.MarkSynchronized(nsListener.first, true);
+				sharedSyncState_.MarkSynchronized(nsListener.first, true);
 			} else {
 				lastErr = std::move(err);
 			}
@@ -703,7 +705,7 @@ Error DataReplicator::syncNamespace(size_t nodeId, string_view nsName, const Rep
 					  << ": { snapshot: { lsn: " << snapshot.LastLSN() << ", dataHash: " << snapshot.ExpectedDatahash()
 					  << " }, remote: { lsn: " << replState.lastLsn << ", dataHash: " << replState.dataHash << " } }" << std::endl;
 
-			threadLocal.nodes[nodeId].latestLsn[nsName] = replState.lastLsn;
+			threadLocal.nodes[nodeId].namespaceData[nsName].latestLsn = replState.lastLsn;
 
 			bool dataMissmatch = !snapshot.LastLSN().isEmpty() && snapshot.LastLSN() != replState.lastLsn;
 			if (dataMissmatch || snapshot.ExpectedDatahash() != replState.dataHash) {
@@ -730,12 +732,12 @@ Error DataReplicator::nsUpdatesHandlingLoop(size_t nodeId, string_view nsName, D
 	}
 	assert(updatesNotifier);
 	auto& node = threadLocal.nodes[nodeId];
-	auto& latestLsn = threadLocal.nodes[nodeId].latestLsn[nsName];
-	auto found = threadLocal.nsUpdatesData.find(nsName);
+	auto& namespaceData = threadLocal.nodes[nodeId].namespaceData[nsName];
+	auto found = threadLocal.nsUpdatesData.find(std::string(nsName));
 	assert(found != threadLocal.nsUpdatesData.end());
 	auto& updatesList = found->second.updates;
-	std::cerr << serverId_ << ": Start updates handling loop: " << nodeId << ":" << nsName << "; lates known lsn is " << latestLsn
-			  << std::endl;
+	std::cerr << serverId_ << ": Start updates handling loop: " << nodeId << ":" << nsName << "; lates known lsn is "
+			  << threadLocal.nodes[nodeId].namespaceData[nsName].latestLsn << std::endl;
 	bool requestElectionsOnNextError = true;
 
 	while (!terminate_) {
@@ -750,18 +752,18 @@ Error DataReplicator::nsUpdatesHandlingLoop(size_t nodeId, string_view nsName, D
 				assert(it->data.emmiterServerId != serverId_);
 
 				if (err.ok()) {
-					if (latestLsn.isEmpty() || it->data.lsn.Counter() > latestLsn.Counter()) {
+					if (namespaceData.latestLsn.isEmpty() || it->data.lsn.Counter() > namespaceData.latestLsn.Counter()) {
 						std::cerr << serverId_ << ":" << nodeId << ":" << nsName << ": Applying update with type: " << int(it->data.type)
-								  << "; lsn: " << it->data.lsn << "; last synced lsn: " << latestLsn << std::endl;
-						err = applyUpdate(it->data, node);
+								  << "; lsn: " << it->data.lsn << "; last synced lsn: " << namespaceData.latestLsn << std::endl;
+						err = applyUpdate(it->data, node, namespaceData);
 						if (err.ok() && it->data.type != UpdateRecord::Type::AddNamespace &&
 							it->data.type != UpdateRecord::Type::RenameNamespace && it->data.type != UpdateRecord::Type::DropNamespace) {
 							// Updates with *Namespace types have fake lsn. Those updates should not be count in latestLsn
-							latestLsn = it->data.lsn;
+							namespaceData.latestLsn = it->data.lsn;
 						}
 					} else {
 						std::cerr << serverId_ << ":" << nodeId << ":" << nsName << ": Skipping update with type: " << int(it->data.type)
-								  << "; lsn: " << it->data.lsn << "; last synced lsn: " << latestLsn << std::endl;
+								  << "; lsn: " << it->data.lsn << "; last synced lsn: " << namespaceData.latestLsn << std::endl;
 					}
 				}
 				if (isEmmiter) {
@@ -778,7 +780,8 @@ Error DataReplicator::nsUpdatesHandlingLoop(size_t nodeId, string_view nsName, D
 					}
 				} else {
 					if (node.type == ReplicatorNode::Type::Cluster && ++it->errors == consensusCnt_) {
-						it->OnResult(Error(errUpdateReplication, "Unable to sent update to enough amount of replicas"));
+						it->OnResult(
+							Error(errUpdateReplication, "Unable to send update to enough amount of replicas. Last error: %s", err.what()));
 						if (requestElectionsOnNextError) {
 							std::cerr << serverId_ << ":" << nodeId << ":" << nsName << ":Requesting for electon:" << err.what()
 									  << ";errors: " << it->errors << ";consensus:" << consensusCnt_ << ";lsn" << it->data.lsn << std::endl;
@@ -826,7 +829,7 @@ void DataReplicator::handleUpdatesWithError(size_t nodeId, string_view nsName, D
 	if (updatesNotifier->empty() || !updatesNotifier->opened()) {
 		return;
 	}
-	auto found = threadLocal.nsUpdatesData.find(nsName);
+	auto found = threadLocal.nsUpdatesData.find(std::string(nsName));
 	assert(found != threadLocal.nsUpdatesData.end());
 	auto& updatesList = found->second.updates;
 	auto updP = updatesNotifier->pop();
@@ -836,7 +839,7 @@ void DataReplicator::handleUpdatesWithError(size_t nodeId, string_view nsName, D
 	bool requestElectionsOnNextError = true;
 	while (it != updatesList.end()) {
 		if (node.type == ReplicatorNode::Type::Cluster && ++it->errors == consensusCnt_) {
-			it->OnResult(Error(errUpdateReplication, "Unable to sent update to enough amount of replicas"));
+			it->OnResult(Error(errUpdateReplication, "Unable to send update to enough amount of replicas. Last error: %s", err.what()));
 			if (requestElectionsOnNextError) {
 				requestElectionsOnNextError = false;
 				requestElectionsRestartCb_();
@@ -860,11 +863,12 @@ void DataReplicator::onTerminateAsync(net::ev::async& watcher) noexcept {
 		th.roleSwitchAsync.send();	// This will close channels
 		th.updatesAsync.send();		// This will close channels
 	}
+	sharedSyncState_.SetTerminated();
 	watcher.loop.break_loop();
 }
 
 void DataReplicator::onRoleSwitchAsync(net::ev::async&) {
-	auto rolesPair = leaderSyncState_.GetRolesPair();
+	auto rolesPair = sharedSyncState_.GetRolesPair();
 	auto& newState = rolesPair.second;
 	auto& curState = rolesPair.first;
 	bool notify = newState != curState;
@@ -874,15 +878,16 @@ void DataReplicator::onRoleSwitchAsync(net::ev::async&) {
 		auto nsNames = config_.namespaces;
 		if (nsNames.empty()) {
 			std::vector<NamespaceDef> nsDefs;
-			thisNode_.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideTemporary().HideSystem().WithClosed());
+			thisNode_.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideTemporary().HideSystem());
 			nsNames.reserve(nsDefs.size());
 			for (auto& ns : nsDefs) {
 				nsNames.emplace(std::move(ns.name));
 			}
 		}
+		RdxContext ctx;
+		ctx.WithNoWaitSync(true);
 		for (auto& nsName : nsNames) {
 			// 0) Mark local namespaces with new leader data
-			RdxContext ctx;
 			auto nsPtr = thisNode_.getNamespaceNoThrow(nsName, ctx);
 			NsClusterizationStatus status;
 			switch (newState.role) {
@@ -904,7 +909,7 @@ void DataReplicator::onRoleSwitchAsync(net::ev::async&) {
 			nsPtr->SetClusterizationStatus(std::move(status), ctx);
 		}
 		curState = newState;
-		newState = leaderSyncState_.TryTransitRole(newState);
+		newState = sharedSyncState_.TryTransitRole(newState);
 	}
 
 	if (notify) {
@@ -914,45 +919,33 @@ void DataReplicator::onRoleSwitchAsync(net::ev::async&) {
 	}
 }
 
-Error DataReplicator::applyUpdate(const UpdateRecord& rec, DataReplicator::ReplicatorNode& node) noexcept {
+Error DataReplicator::applyUpdate(const UpdateRecord& rec, DataReplicator::ReplicatorNode& node,
+								  DataReplicator::NamespaceData& nsData) noexcept {
 	auto lsn = rec.lsn;
 	string_view nsName = rec.GetNsName();
 	auto& client = node.client;
 	try {
 		switch (rec.type) {
-			case UpdateRecord::Type::ItemUpdate: {
-				auto& data = mpark::get<std::unique_ptr<ItemReplicationRecord>>(rec.data);
-				client::Item item = client.NewItem(nsName);
-				auto err = item.FromJSON(string_view(data->cjson));
-				if (err.ok()) {
-					return client.WithLSN(lsn).Update(nsName, item);
-				}
-				return err;
-			}
-			case UpdateRecord::Type::ItemUpsert: {
-				auto& data = mpark::get<std::unique_ptr<ItemReplicationRecord>>(rec.data);
-				client::Item item = client.NewItem(nsName);
-				auto err = item.FromJSON(string_view(data->cjson));
-				if (err.ok()) {
-					return client.WithLSN(lsn).Upsert(nsName, item);
-				}
-				return err;
-			}
-			case UpdateRecord::Type::ItemDelete: {
-				auto& data = mpark::get<std::unique_ptr<ItemReplicationRecord>>(rec.data);
-				client::Item item = client.NewItem(nsName);
-				auto err = item.FromJSON(string_view(data->cjson));
-				if (err.ok()) {
-					return client.WithLSN(lsn).Delete(nsName, item);
-				}
-				return err;
-			}
+			case UpdateRecord::Type::ItemUpdate:
+			case UpdateRecord::Type::ItemUpsert:
+			case UpdateRecord::Type::ItemDelete:
 			case UpdateRecord::Type::ItemInsert: {
 				auto& data = mpark::get<std::unique_ptr<ItemReplicationRecord>>(rec.data);
 				client::Item item = client.NewItem(nsName);
 				auto err = item.FromJSON(string_view(data->cjson));
 				if (err.ok()) {
-					return client.WithLSN(lsn).Insert(nsName, item);
+					switch (rec.type) {
+						case UpdateRecord::Type::ItemUpdate:
+							return client.WithLSN(lsn).Update(nsName, item);
+						case UpdateRecord::Type::ItemUpsert:
+							return client.WithLSN(lsn).Upsert(nsName, item);
+						case UpdateRecord::Type::ItemDelete:
+							return client.WithLSN(lsn).Delete(nsName, item);
+						case UpdateRecord::Type::ItemInsert:
+							return client.WithLSN(lsn).Insert(nsName, item);
+						default:
+							assert(false);
+					}
 				}
 				return err;
 			}
@@ -990,12 +983,43 @@ Error DataReplicator::applyUpdate(const UpdateRecord& rec, DataReplicator::Repli
 				return client.WithLSN(lsn).TruncateNamespace(nsName);
 			}
 			case UpdateRecord::Type::BeginTx: {
-				// TODO: Track tx for each node
-				return errOK;
+				assert(nsData.tx.IsFree());
+				nsData.tx = node.client.WithLSN(lsn).NewTransaction(nsName);
+				return nsData.tx.Status();
 			}
 			case UpdateRecord::Type::CommitTx: {
-				// TODO: Track tx for each node
-				return errOK;
+				assert(!nsData.tx.IsFree());
+				return node.client.WithLSN(lsn).CommitTransaction(nsData.tx);
+			}
+			case UpdateRecord::Type::ItemUpdateTx:
+			case UpdateRecord::Type::ItemUpsertTx:
+			case UpdateRecord::Type::ItemDeleteTx:
+			case UpdateRecord::Type::ItemInsertTx: {
+				assert(!nsData.tx.IsFree());  // TODO: Maybe we should remove this assert and handle this error somehow
+				auto& data = mpark::get<std::unique_ptr<ItemReplicationRecord>>(rec.data);
+				client::Item item = nsData.tx.NewItem();
+				auto err = item.FromJSON(string_view(data->cjson));
+				if (err.ok()) {
+					switch (rec.type) {
+						case UpdateRecord::Type::ItemUpdateTx:
+							return nsData.tx.Update(std::move(item), lsn);
+						case UpdateRecord::Type::ItemUpsertTx:
+							return nsData.tx.Upsert(std::move(item), lsn);
+						case UpdateRecord::Type::ItemDeleteTx:
+							return nsData.tx.Delete(std::move(item), lsn);
+						case UpdateRecord::Type::ItemInsertTx:
+							return nsData.tx.Insert(std::move(item), lsn);
+						default:
+							assert(false);
+					}
+				}
+				return err;
+			}
+			case UpdateRecord::Type::UpdateQueryTx:
+			case UpdateRecord::Type::DeleteQueryTx: {
+				assert(!nsData.tx.IsFree());
+				auto& data = mpark::get<std::unique_ptr<QueryReplicationRecord>>(rec.data);
+				return nsData.tx.Modify(Query(data->q), lsn);
 			}
 			case UpdateRecord::Type::AddNamespace: {
 				auto& data = mpark::get<std::unique_ptr<AddNamespaceReplicationRecord>>(rec.data);

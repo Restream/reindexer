@@ -9,14 +9,15 @@ Error ClusterProxy::funRWCall(const InternalRdxContext &_ctx, Args... args) {
 	Error err;
 	unsigned short sId = impl_.configProvider_.GetReplicationConfig().serverId;
 	do {
-		cluster::RaftInfo info;
-		err = impl_.GetRaftInfo(false, info, _ctx);
-		if (!err.ok()) continue;
-		if (info.role == cluster::RaftInfo::Role::None) {
-			err = (impl_.*fn)(std::forward<Args>(args)..., _ctx);
-			continue;
-		}
 		if (_ctx.LSN().isEmpty()) {
+			cluster::RaftInfo info;
+			err = impl_.GetRaftInfo(false, info, _ctx);
+			if (!err.ok()) continue;
+			if (info.role == cluster::RaftInfo::Role::None) {
+				err = (impl_.*fn)(std::forward<Args>(args)..., _ctx);
+				continue;
+			}
+
 			if (info.role == cluster::RaftInfo::Role::Follower) {
 				std::shared_ptr<client::SyncCoroReindexer> leader = getLeader(_ctx);
 				if (leader) {
@@ -41,14 +42,15 @@ Error ClusterProxy::funRWCall(string_view nsName, Item &item, const InternalRdxC
 	Error err;
 	unsigned short sId = impl_.configProvider_.GetReplicationConfig().serverId;
 	do {
-		cluster::RaftInfo info;
-		err = impl_.GetRaftInfo(false, info, ctx);
-		if (!err.ok()) continue;
-		if (info.role == cluster::RaftInfo::Role::None) {
-			err = (impl_.*fn)(nsName, item, ctx);
-			continue;
-		}
 		if (ctx.LSN().isEmpty()) {
+			cluster::RaftInfo info;
+			err = impl_.GetRaftInfo(false, info, ctx);
+			if (!err.ok()) continue;
+			if (info.role == cluster::RaftInfo::Role::None) {
+				err = (impl_.*fn)(nsName, item, ctx);
+				continue;
+			}
+
 			if (info.role == cluster::RaftInfo::Role::Follower) {
 				std::shared_ptr<client::SyncCoroReindexer> leader = getLeader(ctx);
 				if (leader) {
@@ -83,14 +85,15 @@ Error ClusterProxy::funRWCall(const Query &query, QueryResults &result, const In
 	Error err;
 	unsigned short sId = impl_.configProvider_.GetReplicationConfig().serverId;
 	do {
-		cluster::RaftInfo info;
-		err = impl_.GetRaftInfo(false, info, ctx);
-		if (!err.ok()) continue;
-		if (info.role == cluster::RaftInfo::Role::None) {
-			err = (impl_.*fn)(query, result, ctx);
-			continue;
-		}
 		if (ctx.LSN().isEmpty()) {
+			cluster::RaftInfo info;
+			err = impl_.GetRaftInfo(false, info, ctx);
+			if (!err.ok()) continue;
+			if (info.role == cluster::RaftInfo::Role::None) {
+				err = (impl_.*fn)(query, result, ctx);
+				continue;
+			}
+
 			if (info.role == cluster::RaftInfo::Role::Follower) {
 				std::shared_ptr<client::SyncCoroReindexer> leader = getLeader(ctx);
 				if (leader) {
@@ -280,15 +283,16 @@ Error ClusterProxy::Select(string_view query, QueryResults &result, const Intern
 		return e;
 	} else {
 		do {
-			cluster::RaftInfo info;
-			err = impl_.GetRaftInfo(false, info, ctx);
-			if (!err.ok()) return err;
-			if (info.role == cluster::RaftInfo::Role::None) {
-				err = impl_.Select(query, result, ctx);
-				continue;
-			}
-			unsigned short sId = impl_.configProvider_.GetReplicationConfig().serverId;
 			if (ctx.LSN().isEmpty()) {
+				cluster::RaftInfo info;
+				err = impl_.GetRaftInfo(false, info, ctx);
+				if (!err.ok()) return err;
+				if (info.role == cluster::RaftInfo::Role::None) {
+					err = impl_.Select(query, result, ctx);
+					continue;
+				}
+				unsigned short sId = impl_.configProvider_.GetReplicationConfig().serverId;
+
 				if (info.role == cluster::RaftInfo::Role::Follower) {
 					std::shared_ptr<client::SyncCoroReindexer> leader = getLeader(ctx);
 					if (leader) {

@@ -265,8 +265,8 @@ protected:
 				if (lck.owns_lock()) {
 					lck.unlock();
 				}
-				// TODO: Don't check synchronization for locks from replicator
-				if (clusterizator_ && !ctx.NoWaitSync()) {
+				bool requireSync = clusterizator_ && !ctx.NoWaitSync() && ctx.originLsn_.isEmpty() && !owner_.IsSystem(ctx);
+				if (requireSync) {
 					// This is required in case of rename during sync wait
 					auto name = owner_.GetName(ctx);
 					clusterizator_->AwaitSynchronization(name, ctx);
@@ -276,7 +276,7 @@ protected:
 				if (readonly_.load(std::memory_order_acquire)) {
 					throw Error(errNamespaceInvalidated, "NS invalidated"_sv);
 				}
-				synchronized = !clusterizator_ || ctx.NoWaitSync() || clusterizator_->IsSynchronized(owner_.name_);
+				synchronized = !requireSync || clusterizator_->IsSynchronized(owner_.name_);
 			}
 			return lck;
 		}
@@ -368,12 +368,14 @@ protected:
 	vector<string> enumMeta() const;
 
 	void updateSelectTime();
-	int64_t getLastSelectTime() const;
+	int64_t getLastSelectTime() const noexcept { return lastSelectTime_; }
 	void markReadOnly() { locker_.MarkReadOnly(); }
 	Locker::WLockT wLock(const RdxContext &ctx) const { return locker_.WLock(ctx); }
 	Locker::RLockT rLock(const RdxContext &ctx) const { return locker_.RLock(ctx); }
-	void checkClusterRole(const RdxContext &ctx) const;
-	void checkClusterStatus(const RdxContext &ctx) const;
+	void checkClusterRole(const RdxContext &ctx) const { checkClusterRole(ctx.originLsn_); }
+	void checkClusterRole(lsn_t originLsn) const;
+	void checkClusterStatus(const RdxContext &ctx) const { checkClusterStatus(ctx.originLsn_); }
+	void checkClusterStatus(lsn_t originLsn) const;
 
 	bool SortOrdersBuilt() const { return optimizationState_ == OptimizationState::OptimizationCompleted; }
 

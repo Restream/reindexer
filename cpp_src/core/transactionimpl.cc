@@ -87,4 +87,9 @@ void TransactionImpl::Modify(Query &&query, lsn_t lsn) {
 	steps_.emplace_back(TransactionStep(std::move(query), lsn));
 }
 
+void TransactionImpl::Nop(lsn_t lsn) {
+	std::unique_lock<std::mutex> lock(mtx_);
+	steps_.emplace_back(TransactionStep{lsn});
+}
+
 }  // namespace reindexer

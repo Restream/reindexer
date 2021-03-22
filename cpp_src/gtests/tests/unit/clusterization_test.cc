@@ -61,24 +61,51 @@ TEST_F(ClusterizationApi, DISABLED_t1) {
 	// std::this_thread::sleep_for(std::chrono::seconds(1000));
 }
 
+TEST_F(ClusterizationApi, AddNamespaces) {
+	const size_t kClusterSize = 5;
+	net::ev::dynamic_loop loop;
+	loop.spawn([&loop] {
+		try {
+			Cluster cluster(loop, 0, kClusterSize);
+			auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
+			const int followerId = (leaderId + 1) % kClusterSize;
+			for (int i = 0; i < 25; i++) {
+				const std::string kNsName = "ns" + std::to_string(i);
+				Error err = cluster.GetServerControl(followerId)->api.reindexer->OpenNamespace(kNsName);
+				ASSERT_TRUE(err.ok()) << err.what();
+				err = cluster.GetServerControl(followerId)->api.reindexer->AddIndex(kNsName, {"id", "hash", "int", IndexOpts().PK()});
+				ASSERT_TRUE(err.ok()) << err.what();
+			}
+		} catch (Error& e) {
+			ASSERT_TRUE(false) << e.what();
+		} catch (std::exception& e) {
+			ASSERT_TRUE(false) << e.what();
+		} catch (...) {
+			ASSERT_TRUE(false) << "Unknown exception";
+		}
+	});
+
+	loop.run();
+}
+
 TEST_F(ClusterizationApi, ApiTestSelect) {
 	const size_t kClusterSize = 4;
 	net::ev::dynamic_loop loop;
 	loop.spawn([&loop] {
 		try {
-			const std::string nsName = "ns";
+			const std::string kNsName = "ns";
 			Cluster cluster(loop, 0, kClusterSize);
 			auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 			int followerId = (leaderId + 1) % kClusterSize;
-			reindexer::NamespaceDef nsdef(nsName);
+			reindexer::NamespaceDef nsdef(kNsName);
 			nsdef.AddIndex("id", "hash", "int", IndexOpts().PK());	//.AddIndex("name", "tree", "string", IndexOpts());
 
 			Error err = cluster.GetServerControl(followerId)->api.reindexer->AddNamespace(nsdef);
 
-			auto item = cluster.GetServerControl(followerId)->api.reindexer->NewItem(nsName);
+			auto item = cluster.GetServerControl(followerId)->api.reindexer->NewItem(kNsName);
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-			int pk = 11;
-			std::string itemJson =
+			const int pk = 11;
+			const std::string itemJson =
 				"{"
 				"\"id\":" +
 				std::to_string(pk) +
@@ -90,14 +117,14 @@ TEST_F(ClusterizationApi, ApiTestSelect) {
 
 			err = item.FromJSON(itemJson);
 			ASSERT_TRUE(err.ok()) << err.what();
-			err = cluster.GetServerControl(followerId)->api.reindexer->Insert(nsName, item);
+			err = cluster.GetServerControl(followerId)->api.reindexer->Insert(kNsName, item);
 			ASSERT_TRUE(err.ok()) << err.what();
 			{
 				reindexer::client::QueryResults qresSelectTmp;
 				// reindexer::Query q1;
 				// q1.FromSQL("select * from " + nsName);
 				// err = cluster.GetServerControl(followerId)->api.reindexer->Select(q1, qresSelectTmp);
-				err = cluster.GetServerControl(followerId)->api.reindexer->Select("select * from " + nsName, qresSelectTmp);
+				err = cluster.GetServerControl(followerId)->api.reindexer->Select("select * from " + kNsName, qresSelectTmp);
 				ASSERT_TRUE(err.ok()) << err.what();
 				ASSERT_TRUE(qresSelectTmp.Count() == 1) << "select count = " << qresSelectTmp.Count();
 				auto it = qresSelectTmp.begin();
@@ -106,8 +133,6 @@ TEST_F(ClusterizationApi, ApiTestSelect) {
 				ASSERT_TRUE(err.ok()) << err.what();
 				std::cout << "+++++++++++++ !!! it=" << wrser.c_str() << std::endl;
 			}
-
-			cluster.StopClients();
 		} catch (Error& e) {
 			ASSERT_TRUE(false) << e.what();
 		} catch (std::exception& e) {
@@ -364,8 +389,6 @@ TEST_F(ClusterizationApi, ApiTest) {
 				sel0(followerId);
 				sel0(leaderId);
 			}
-
-			cluster.StopClients();
 		} catch (Error& e) {
 			ASSERT_TRUE(false) << e.what();
 		} catch (std::exception& e) {
@@ -437,7 +460,6 @@ TEST_F(ClusterizationApi, DeleteSelect) {
 			}
 
 			followerNode.reset();
-			cluster.StopClients();
 		} catch (Error& e) {
 			ASSERT_TRUE(false) << e.what();
 		} catch (std::exception& e) {
@@ -537,9 +559,6 @@ TEST_F(ClusterizationApi, SimpleRWTest) {
 			std::cout << it.GetItem().GetJSON() << std::endl;
 		}
 		followerNode.reset();
-
-		//		std::this_thread::sleep_for(std::chrono::seconds(1000));
-		cluster.StopClients();
 	});
 
 	loop.run();
@@ -596,7 +615,6 @@ TEST_F(ClusterizationApi, LeaderElections) {
 		loop.sleep(std::chrono::seconds(5));
 		leaderId = cluster.AwaitLeader(kMaxElectionsTime, true);
 		ASSERT_EQ(leaderId, -1);
-		cluster.StopClients();
 	});
 
 	loop.run();
@@ -629,13 +647,12 @@ TEST_F(ClusterizationApi, OnlineUpdates) {
 			leadrId = cluster.AwaitLeader(kMaxElectionsTime);
 			ASSERT_NE(leadrId, -1);
 			std::cerr << "Fill data" << std::endl;
-			cluster.FillData(leadrId, kNsSome, (i + 1) * kDataPortion, kDataPortion);
+			cluster.FillData(leadrId, kNsSome, (i + 1) * kDataPortion, kDataPortion / 2);
+			cluster.FillDataTx(leadrId, kNsSome, (i + 1) * kDataPortion + kDataPortion / 2, kDataPortion / 2);
 			std::cerr << "Wait sync" << std::endl;
 			cluster.WaitSync(kNsSome);
 		}
 		std::cerr << "Done" << std::endl;
-
-		cluster.StopClients();
 	});
 
 	loop.run();
@@ -700,12 +717,11 @@ TEST_F(ClusterizationApi, ForceAndWalSync) {
 			std::cerr << "Starting " << i << std::endl;
 			ASSERT_TRUE(cluster.StartServer(i));
 			std::cerr << "Fill more" << std::endl;
-			cluster.FillData(leadrId, kNsSome, (i + 2) * kDataPortion, kDataPortion);
+			cluster.FillData(leadrId, kNsSome, (i + 2) * kDataPortion, kDataPortion / 2);
+			cluster.FillDataTx(leadrId, kNsSome, (i + 2) * kDataPortion + kDataPortion / 2, kDataPortion / 2);
 		}
 		std::cerr << "Wait sync 2" << std::endl;
 		cluster.WaitSync(kNsSome);
-
-		cluster.StopClients();
 	});
 
 	loop.run();
@@ -770,6 +786,7 @@ TEST_F(ClusterizationApi, InitialLeaderSync) {
 
 		// Fill additional data for second group
 		std::cerr << "Fill data 2" << std::endl;
+		cluster.FillDataTx(leadrId, kNsSome, 150, kDataPortion);
 		cluster.FillData(leadrId, kNsSome, 50, kDataPortion);
 
 		// Stop cluster
@@ -792,9 +809,7 @@ TEST_F(ClusterizationApi, InitialLeaderSync) {
 		cluster.WaitSync(kNsSome);
 
 		state = cluster.GetNode(0)->GetState(std::string(kNsSome));
-		ASSERT_EQ(state.lsn.Counter(), 202);
-
-		cluster.StopClients();
+		ASSERT_EQ(state.lsn.Counter(), 3 * kDataPortion + 2 + 2);  // Data + indexes + tx records
 	});
 
 	loop.run();
@@ -830,6 +845,42 @@ TEST_F(ClusterizationApi, MultithreadSyncTest) {
 					std::this_thread::sleep_for(std::chrono::milliseconds(20));
 				}
 				std::this_thread::sleep_for(std::chrono::milliseconds(50));
+			}
+		});
+		auto txF = ([&cluster, &terminate, leadrId](const std::string& ns) {
+			try {
+				while (!terminate) {
+					auto node = cluster.GetNode(leadrId);
+					auto tx = node->api.reindexer->NewTransaction(ns);
+					ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
+
+					constexpr size_t kDataPart = kDataPortion / 5;
+					for (size_t i = 0; i < kDataPart; ++i) {
+						auto idx = rand() % kMaxDataId;
+						auto item = tx.NewItem();
+						cluster.FillItem(node->api, item, idx);
+						tx.Upsert(std::move(item));
+					}
+					for (size_t i = 0; i < 2; ++i) {
+						int minIdx = rand() % kMaxDataId;
+						int maxIdx = minIdx + 100;
+						Query q =
+							Query(ns).Where(kIdField, CondGe, minIdx).Where(kIdField, CondLe, maxIdx).Set(kStringField, randStringAlph(25));
+						tx.Modify(std::move(q));
+					}
+					for (size_t i = 0; i < 2; ++i) {
+						int minIdx = rand() % kMaxDataId;
+						int maxIdx = minIdx + 100;
+						Query q = Query(ns).Where(kIdField, CondGe, minIdx).Where(kIdField, CondLe, maxIdx);
+						tx.Modify(std::move(q));
+					}
+					auto err = node->api.reindexer->CommitTransaction(tx);
+					ASSERT_TRUE(err.ok()) << err.what();
+
+					std::this_thread::sleep_for(std::chrono::milliseconds(50));
+				}
+			} catch (Error& e) {
+				ASSERT_TRUE(false) << e.what();
 			}
 		});
 		auto selectF = ([&cluster, &terminate](const std::string& ns) {
@@ -872,12 +923,10 @@ TEST_F(ClusterizationApi, MultithreadSyncTest) {
 
 			threads.emplace_back(dataFillF, std::ref(ns));
 			threads.emplace_back(dataFillF, std::ref(ns));
-			// threads.emplace_back(updateF, std::ref(ns));
-			(void)updateF;
+			threads.emplace_back(txF, std::ref(ns));
+			threads.emplace_back(updateF, std::ref(ns));
 			threads.emplace_back(deleteF, std::ref(ns));
-			(void)deleteF;
 			threads.emplace_back(selectF, std::ref(ns));
-			(void)selectF;
 		}
 
 		// Restart followers
@@ -886,6 +935,7 @@ TEST_F(ClusterizationApi, MultithreadSyncTest) {
 			int i = 0;
 			while (stopped.size() < kClusterSize / 2) {
 				if (i != leadrId) {
+					std::this_thread::sleep_for(std::chrono::milliseconds(1500));
 					ASSERT_TRUE(cluster.StopServer(i));
 					stopped.emplace_back(i);
 				}
@@ -893,6 +943,7 @@ TEST_F(ClusterizationApi, MultithreadSyncTest) {
 			}
 		}
 		for (auto i : stopped) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(1500));
 			ASSERT_TRUE(cluster.StartServer(i));
 		}
 
@@ -906,8 +957,6 @@ TEST_F(ClusterizationApi, MultithreadSyncTest) {
 			std::cerr << "Wait sync for " << ns << std::endl;
 			cluster.WaitSync(ns);
 		}
-
-		cluster.StopClients();
 	});
 
 	loop.run();

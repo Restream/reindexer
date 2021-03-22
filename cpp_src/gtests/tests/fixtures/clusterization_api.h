@@ -46,6 +46,7 @@ public:
 
 		void InitNs(size_t id, string_view nsName);
 		void FillData(size_t id, string_view nsName, size_t from, size_t count);
+		void FillDataTx(size_t id, string_view nsName, size_t from, size_t count);
 		void AddRow(size_t id, string_view nsName, int pk);
 		size_t InitServer(size_t id, const std::string& clusterYml, const std::string& replYml);
 		bool StartServer(size_t id);
@@ -64,6 +65,7 @@ public:
 		}
 
 		ServerControl::Interface::Ptr GetNode(size_t id);
+		void FillItem(BaseApi& api, BaseApi::ItemType& item, size_t id);
 
 	private:
 		std::vector<ServerControl> svc_;

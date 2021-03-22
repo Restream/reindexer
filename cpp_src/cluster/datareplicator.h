@@ -29,8 +29,8 @@ class DataReplicator {
 public:
 	DataReplicator(ReindexerImpl &, std::function<void()> requestElectionsRestartCb);
 
-	void AwaitSynchronization(string_view nsName, const RdxContext &ctx) const { leaderSyncState_.AwaitSynchronization(nsName, ctx); }
-	bool IsSynchronized(string_view name) const { return leaderSyncState_.IsSynchronized(name); }
+	void AwaitSynchronization(string_view nsName, const RdxContext &ctx) const { sharedSyncState_.AwaitSynchronization(nsName, ctx); }
+	bool IsSynchronized(string_view name) const { return sharedSyncState_.IsSynchronized(name); }
 	Error Replicate(UpdateRecord &&rec, std::function<void()> beforeWaitF, const RdxContext &ctx);
 	Error Replicate(UpdatesContainer &&recs, std::function<void()> beforeWaitF, const RdxContext &ctx);
 	void Run(int serverId, ClusterConfigData config);
@@ -109,6 +109,11 @@ private:
 		std::list<Update> updates;	// TODO: maybe we need more efficient container?
 	};
 
+	struct NamespaceData {
+		lsn_t latestLsn;
+		client::CoroTransaction tx;
+	};
+
 	struct ReplicatorNode {
 		enum class Type { Async, Cluster };
 
@@ -119,7 +124,8 @@ private:
 		int serverId;
 		client::CoroReindexer client;
 		std::deque<NamedChannel> updateNotifiers;
-		fast_hash_map<string_view, lsn_t, nocase_hash_str, nocase_equal_str> latestLsn;
+		std::unordered_map<string_view, NamespaceData, nocase_hash_str, nocase_equal_str>
+			namespaceData;	// This map should not invalidate references
 		coroutine::wait_group wg;
 	};
 	struct SyncThread {
@@ -149,7 +155,8 @@ private:
 		std::thread th;
 		std::deque<ReplicatorNode> nodes;  // TODO: Async node has to be in a separated container with own connections
 		net::ev::dynamic_loop loop;
-		fast_hash_map<std::string, UpdatesData, nocase_hash_str, nocase_equal_str> nsUpdatesData;
+		std::unordered_map<std::string, UpdatesData, nocase_hash_str, nocase_equal_str>
+			nsUpdatesData;	// This map should not invalidate references
 		coroutine::channel<bool> leadershipAwaitCh;
 		coroutine::channel<RaftInfo::Role> nextRoleCh;
 		net::ev::async roleSwitchAsync;
@@ -176,7 +183,7 @@ private:
 	bool isLeader(const DataReplicator::SyncThread &threadLocal) const noexcept { return !threadLocal.leadershipAwaitCh.opened(); }
 	void dropSyncUpdates(SyncThread &threadLocal);
 
-	Error applyUpdate(const UpdateRecord &rec, ReplicatorNode &node) noexcept;
+	Error applyUpdate(const UpdateRecord &rec, ReplicatorNode &node, NamespaceData &nsData) noexcept;
 	static bool isNetworkError(const Error &err) noexcept;
 	static bool isLeaderChangedError(const Error &err) noexcept;
 
@@ -189,7 +196,7 @@ private:
 	net::ev::async roleSwitchAsync_;
 	size_t consensusCnt_ = 0;
 	int serverId_ = -1;
-	SharedSyncState<> leaderSyncState_;
+	SharedSyncState<> sharedSyncState_;
 	ClusterConfigData config_;
 	RdxContext dummyCtx_;
 	std::function<void()> requestElectionsRestartCb_;

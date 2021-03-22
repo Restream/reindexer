@@ -21,11 +21,11 @@ public:
 	Error(int code, const char *fmt, const Args &... args) : Error(code, fmt::sprintf(fmt, args...)) {}
 #endif	// REINDEX_CORE_BUILD
 
-	const std::string &what() const;
-	int code() const;
-	bool ok() const { return !ptr_; }
+	const std::string &what() const noexcept;
+	int code() const noexcept;
+	bool ok() const noexcept { return !ptr_; }
 
-	explicit operator bool() { return !ok(); }
+	explicit operator bool() const noexcept { return !ok(); }
 
 protected:
 	struct payload {

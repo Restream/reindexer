@@ -281,6 +281,10 @@ void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, const RdxContext& rd
 				tx.Modify(std::move(item), ModeUpsert, lsn);
 				break;
 			}
+			case WalEmpty: {
+				tx.Nop(lsn);
+				break;
+			}
 			default:
 				throw Error(errLogic, "Unexpected tx WAL rec type %d\n", wrec.type);
 		}

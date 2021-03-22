@@ -35,9 +35,11 @@ void Transaction::Delete(Item &&item, lsn_t lsn) {
 void Transaction::Modify(Item &&item, ItemModifyMode mode, lsn_t lsn) {
 	if (impl_) impl_->Modify(move(item), mode, lsn);
 }
-
 void Transaction::Modify(Query &&query, lsn_t lsn) {
 	if (impl_) impl_->Modify(move(query), lsn);
+}
+void Transaction::Nop(lsn_t lsn) {
+	if (impl_) impl_->Nop(lsn);
 }
 
 Item Transaction::NewItem() { return impl_->NewItem(); }

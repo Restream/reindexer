@@ -32,9 +32,13 @@ public:
 	Error Replicate(UpdateRecord &&rec, std::function<void()> beforeWaitF, const RdxContext &ctx) override final;
 	Error Replicate(UpdatesContainer &&recs, std::function<void()> beforeWaitF, const RdxContext &ctx) override final;
 	void AwaitSynchronization(string_view nsName, const RdxContext &ctx) const override final {
-		replicator_.AwaitSynchronization(nsName, ctx);
+		if (enabled_.load(std::memory_order_acquire)) {
+			replicator_.AwaitSynchronization(nsName, ctx);
+		}
 	}
-	bool IsSynchronized(string_view name) const override final { return replicator_.IsSynchronized(name); }
+	bool IsSynchronized(string_view name) const override final {
+		return !enabled_.load(std::memory_order_acquire) || replicator_.IsSynchronized(name);
+	}
 
 private:
 	void run();

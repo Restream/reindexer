@@ -69,6 +69,7 @@ ClusterizationApi::Cluster::Cluster(net::ev::dynamic_loop& loop, size_t initialS
 
 ClusterizationApi::Cluster::~Cluster()
 {
+	StopClients();
 	for (size_t i = 0; i < svc_.size(); ++i) {
 		if (svc_[i].IsRunning()) {
 			StopServer(i);
@@ -102,19 +103,27 @@ void ClusterizationApi::Cluster::FillData(size_t id, string_view nsName, size_t 
 
 	for (size_t i = from; i < from + count; ++i) {
 		auto item = api.NewItem(nsName);
-		// clang-format off
-		Error err = item.FromJSON(
-						"{\n"
-						"\"id\":" + std::to_string(i)+",\n"
-						"\"int\":" + std::to_string(rand())+",\n"
-						"\"string\":\"" + api.RandString()+"\"\n"
-						"}");
-		// clang-format on
-		ASSERT_TRUE(err.ok()) << err.what();
-
+		FillItem(api, item, i);
 		api.Upsert(nsName, item);
 	}
 	api.Commit(nsName);
+}
+
+void ClusterizationApi::Cluster::FillDataTx(size_t id, string_view nsName, size_t from, size_t count) {
+	// until we use shared ptr it will be not destroyed
+	assert(id < svc_.size());
+	auto srv = svc_[id].Get();
+	auto& api = srv->api;
+
+	auto tx = api.reindexer->NewTransaction(nsName);
+	ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
+	for (size_t i = from; i < from + count; ++i) {
+		auto item = tx.NewItem();
+		FillItem(api, item, i);
+		tx.Upsert(std::move(item));
+	}
+	auto err = api.reindexer->CommitTransaction(tx);
+	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 void ClusterizationApi::Cluster::AddRow(size_t id, string_view nsName, int pk) {
@@ -260,4 +269,16 @@ void ClusterizationApi::Cluster::StopClients() {
 ServerControl::Interface::Ptr ClusterizationApi::Cluster::GetNode(size_t id) {
 	assert(id < svc_.size());
 	return svc_[id].Get(false);
+}
+
+void ClusterizationApi::Cluster::FillItem(BaseApi& api, BaseApi::ItemType& item, size_t id) {
+	// clang-format off
+	Error err = item.FromJSON(
+					"{\n"
+					"\"id\":" + std::to_string(id)+",\n"
+					"\"int\":" + std::to_string(rand())+",\n"
+					"\"string\":\"" + api.RandString()+"\"\n"
+					"}");
+	// clang-format on
+	ASSERT_TRUE(err.ok()) << err.what();
 }

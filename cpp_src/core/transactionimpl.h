@@ -12,6 +12,7 @@ public:
 		delete item.impl_;
 		item.impl_ = nullptr;
 	}
+	TransactionStep(lsn_t lsn) : modifyMode_(ModeUpdate), query_(nullptr), lsn_(lsn) {}
 	TransactionStep(Query &&query, lsn_t lsn) : modifyMode_(ModeUpdate), query_(new Query(std::move(query))), lsn_(lsn) {}
 
 	TransactionStep(const TransactionStep &) = delete;
@@ -36,6 +37,7 @@ public:
 	void Delete(Item &&item, lsn_t lsn);
 	void Modify(Item &&item, ItemModifyMode mode, lsn_t lsn);
 	void Modify(Query &&item, lsn_t lsn);
+	void Nop(lsn_t lsn);
 
 	void UpdateTagsMatcherFromItem(ItemImpl *ritem);
 	Item NewItem();

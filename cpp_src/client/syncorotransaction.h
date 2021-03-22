@@ -26,7 +26,7 @@ public:
 private:
 	friend class SyncCoroReindexerImpl;
 	SyncCoroTransaction(Error status, SyncCoroReindexerImpl& rx) : tr_(status), rx_(rx), status_(status), isFree(true) {}
-	SyncCoroTransaction(SyncCoroReindexerImpl& rx, CoroTransaction& tr) : tr_(tr), rx_(rx) {}
+	SyncCoroTransaction(SyncCoroReindexerImpl& rx, CoroTransaction&& tr) : tr_(std::move(tr)), rx_(rx) {}
 
 	CoroTransaction tr_;
 	SyncCoroReindexerImpl& rx_;

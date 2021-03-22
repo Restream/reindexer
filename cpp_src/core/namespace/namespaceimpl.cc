@@ -976,10 +976,9 @@ void NamespaceImpl::CommitTransaction(Transaction &tx, QueryResults &result, con
 	}
 
 	checkApplySlaveUpdate(ctx.rdxContext.fromReplication_);	 // throw exception if false
-	if (ctx.IsWalSyncItem()) {
-		checkClusterRole(ctx.rdxContext);  // throw exception if false
-	} else {
-		checkClusterStatus(ctx.rdxContext);	 // throw exception if false
+	checkClusterRole(ctx.rdxContext);						 // Check request source. Throw exception if false
+	if (!ctx.IsWalSyncItem()) {
+		checkClusterStatus(tx.GetLSN());  // Check tx itself. Throw exception if false
 	}
 
 	logPrintf(LogTrace, "[repl:%s]:%d CommitTransaction start", name_, serverId_);
@@ -1002,6 +1001,9 @@ void NamespaceImpl::CommitTransaction(Transaction &tx, QueryResults &result, con
 			} else {
 				doUpdate(*step.query_, qr, pendedRepl, NsContext(ctx).InTransaction(step.lsn_));
 			}
+		} else if (step.itemData_.payloadValue_.IsFree()) {	 // Nop tx step
+			assert(ctx.inSnapshot);
+			wal_.Add(WALRecord(WalEmpty), step.lsn_);
 		} else {
 			Item item = tx.GetItem(std::move(step));
 			if (step.modifyMode_ == ModeDelete) {
@@ -1016,7 +1018,9 @@ void NamespaceImpl::CommitTransaction(Transaction &tx, QueryResults &result, con
 	processWalRecord(WALRecord(WalCommitTransaction, 0, true), ctx);
 	pendedRepl.emplace_back(cluster::UpdateRecord{UpdateRecord::Type::CommitTx, name_, wal_.LastLSN(), ctx.rdxContext.emmiterServerId_});
 	logPrintf(LogTrace, "[repl:%s]:%d CommitTransaction end", name_, serverId_);
-	replicate(std::move(pendedRepl), std::move(wlck), ctx);
+	if (!ctx.inSnapshot) {
+		replicate(std::move(pendedRepl), std::move(wlck), ctx);
+	}
 }
 
 void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
@@ -1171,8 +1175,8 @@ void NamespaceImpl::deleteItem(Item &item, UpdatesContainer &pendedRepl, const N
 
 		lsn_t itemLsn(item.GetLSN());
 		processWalRecord(std::move(wrec), ctx, itemLsn, &item);
-		pendedRepl.emplace_back(
-			UpdateRecord{UpdateRecord::Type::ItemDelete, name_, wal_.LastLSN(), ctx.rdxContext.emmiterServerId_, string(ritem->GetJSON())});
+		pendedRepl.emplace_back(UpdateRecord{ctx.inTransaction ? UpdateRecord::Type::ItemDeleteTx : UpdateRecord::Type::ItemDelete, name_,
+											 wal_.LastLSN(), ctx.rdxContext.emmiterServerId_, string(ritem->GetJSON())});
 	}
 }
 
@@ -1233,20 +1237,20 @@ void NamespaceImpl::doModifyItem(Item &item, int mode, UpdatesContainer &pendedR
 	auto cjson = item.impl_->GetJSON();
 	switch (mode) {
 		case ModeUpdate:
-			pendedRepl.emplace_back(
-				UpdateRecord{UpdateRecord::Type::ItemUpdate, name_, lsn, ctx.rdxContext.emmiterServerId_, std::string(cjson)});
+			pendedRepl.emplace_back(UpdateRecord{ctx.inTransaction ? UpdateRecord::Type::ItemUpdateTx : UpdateRecord::Type::ItemUpdate,
+												 name_, lsn, ctx.rdxContext.emmiterServerId_, std::string(cjson)});
 			break;
 		case ModeInsert:
-			pendedRepl.emplace_back(
-				UpdateRecord{UpdateRecord::Type::ItemInsert, name_, lsn, ctx.rdxContext.emmiterServerId_, std::string(cjson)});
+			pendedRepl.emplace_back(UpdateRecord{ctx.inTransaction ? UpdateRecord::Type::ItemInsertTx : UpdateRecord::Type::ItemInsert,
+												 name_, lsn, ctx.rdxContext.emmiterServerId_, std::string(cjson)});
 			break;
 		case ModeUpsert:
-			pendedRepl.emplace_back(
-				UpdateRecord{UpdateRecord::Type::ItemUpsert, name_, lsn, ctx.rdxContext.emmiterServerId_, std::string(cjson)});
+			pendedRepl.emplace_back(UpdateRecord{ctx.inTransaction ? UpdateRecord::Type::ItemUpsertTx : UpdateRecord::Type::ItemUpsert,
+												 name_, lsn, ctx.rdxContext.emmiterServerId_, std::string(cjson)});
 			break;
 		case ModeDelete:
-			pendedRepl.emplace_back(
-				UpdateRecord{UpdateRecord::Type::ItemDelete, name_, lsn, ctx.rdxContext.emmiterServerId_, std::string(cjson)});
+			pendedRepl.emplace_back(UpdateRecord{ctx.inTransaction ? UpdateRecord::Type::ItemDeleteTx : UpdateRecord::Type::ItemDelete,
+												 name_, lsn, ctx.rdxContext.emmiterServerId_, std::string(cjson)});
 			break;
 	}
 }
@@ -1467,8 +1471,8 @@ void NamespaceImpl::replicateItem(IdType itemId, const NsContext &ctx, bool stat
 			observers_->OnWALUpdate(LSNPair(lsn, ctx.rdxContext.fromReplication_ ? ctx.rdxContext.LSNs_.originLSN_ : lsn), name_,
 
 									WALRecord(WalItemModify, cjson, tagsMatcher_.version(), ModeUpdate, ctx.inTransaction));
-		pendedRepl.emplace_back(
-			UpdateRecord{UpdateRecord::Type::ItemUpdate, name_, lsn, ctx.rdxContext.emmiterServerId_, std::string(item.GetJSON())});
+		pendedRepl.emplace_back(UpdateRecord{ctx.inTransaction ? UpdateRecord::Type::ItemUpdateTx : UpdateRecord::Type::ItemUpdate, name_,
+											 lsn, ctx.rdxContext.emmiterServerId_, std::string(item.GetJSON())});
 		if (!ctx.rdxContext.fromReplication_ && !ctx.IsForceSyncItem()) setReplLSNs(LSNPair(lsn_t(), lsn));
 	}
 
@@ -1515,7 +1519,8 @@ void NamespaceImpl::doDelete(const Query &q, QueryResults &result, UpdatesContai
 		WrSerializer ser;
 		const_cast<Query &>(q).type_ = QueryDelete;
 		processWalRecord(WALRecord(WalUpdateQuery, q.GetSQL(ser).Slice(), ctx.inTransaction), ctx);
-		pendedRepl.emplace_back(UpdateRecord{UpdateRecord::Type::DeleteQuery, name_, wal_.LastLSN(), ctx.rdxContext.emmiterServerId_, q});
+		pendedRepl.emplace_back(UpdateRecord{ctx.inTransaction ? UpdateRecord::Type::DeleteQueryTx : UpdateRecord::Type::DeleteQuery, name_,
+											 wal_.LastLSN(), ctx.rdxContext.emmiterServerId_, q});
 	} else if (result.Count() > 0) {
 		for (auto it : result) {
 			WrSerializer cjson;
@@ -1526,8 +1531,8 @@ void NamespaceImpl::doDelete(const Query &q, QueryResults &result, UpdatesContai
 			cjson.Reset();
 
 			it.GetJSON(cjson, false);  // TODO: Remove this
-			pendedRepl.emplace_back(UpdateRecord{UpdateRecord::Type::ItemDelete, name_, wal_.LastLSN(), ctx.rdxContext.emmiterServerId_,
-												 std::string(cjson.Slice())});
+			pendedRepl.emplace_back(UpdateRecord{ctx.inTransaction ? UpdateRecord::Type::ItemDeleteTx : UpdateRecord::Type::ItemDelete,
+												 name_, wal_.LastLSN(), ctx.rdxContext.emmiterServerId_, std::string(cjson.Slice())});
 		}
 	}
 	if (q.debugLevel >= LogInfo) {
@@ -1540,35 +1545,33 @@ void NamespaceImpl::updateSelectTime() {
 	lastSelectTime_ = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
-int64_t NamespaceImpl::getLastSelectTime() const { return lastSelectTime_; }
-
-void NamespaceImpl::checkClusterRole(const RdxContext &ctx) const {
+void NamespaceImpl::checkClusterRole(lsn_t originLsn) const {
 	switch (clusterStatus_.role) {
 		case NsClusterizationStatus::Role::None:
-			if (!ctx.originLsn_.isEmpty()) {
+			if (!originLsn.isEmpty()) {
 				throw Error(errWrongReplicationData, "Can't modify ns '%s' with 'None' replication status from node %d", name_,
-							ctx.originLsn_.Server());
+							originLsn.Server());
 			}
 			break;
 		case NsClusterizationStatus::Role::SimpleReplica:
-			if (ctx.originLsn_.isEmpty()) {
-				throw Error(errWrongReplicationData, "Can't modify replica's ns '%s' without origin LSN", name_, ctx.originLsn_.Server());
+			if (originLsn.isEmpty()) {
+				throw Error(errWrongReplicationData, "Can't modify replica's ns '%s' without origin LSN", name_, originLsn.Server());
 			}
 			break;
 		case NsClusterizationStatus::Role::ClusterReplica:
-			if (ctx.originLsn_.isEmpty() || ctx.originLsn_.Server() != clusterStatus_.leaderId) {
+			if (originLsn.isEmpty() || originLsn.Server() != clusterStatus_.leaderId) {
 				throw Error(errWrongReplicationData, "Can't modify cluster ns '%s' with incorrect origin LSN: (%d) (s1:%d s2:%d)", name_,
-							ctx.originLsn_, ctx.originLsn_.Server(), clusterStatus_.leaderId);
+							originLsn, originLsn.Server(), clusterStatus_.leaderId);
 			}
 			break;
 	}
 }
 
-void NamespaceImpl::checkClusterStatus(const RdxContext &ctx) const {
-	checkClusterRole(ctx);
-	if (!ctx.originLsn_.isEmpty() && wal_.LSNCounter() != ctx.originLsn_.Counter()) {
+void NamespaceImpl::checkClusterStatus(lsn_t originLsn) const {
+	checkClusterRole(originLsn);
+	if (!originLsn.isEmpty() && wal_.LSNCounter() != originLsn.Counter()) {
 		throw Error(errWrongReplicationData, "Can't modify cluster ns '%s' with incorrect origin LSN: (%d). Expected counter value: (%d)",
-					name_, ctx.originLsn_, wal_.LSNCounter());
+					name_, originLsn, wal_.LSNCounter());
 	}
 }
 
