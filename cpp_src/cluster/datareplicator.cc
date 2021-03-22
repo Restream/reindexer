@@ -838,6 +838,10 @@ void DataReplicator::handleUpdatesWithError(size_t nodeId, string_view nsName, D
 	auto it = updP.first;
 	bool requestElectionsOnNextError = true;
 	while (it != updatesList.end()) {
+		assert(it->data.emmiterServerId != serverId_);
+		if (it->data.emmiterServerId == node.serverId) {
+			it->data.emmiterServerId = -1;
+		}
 		if (node.type == ReplicatorNode::Type::Cluster && ++it->errors == consensusCnt_) {
 			it->OnResult(Error(errUpdateReplication, "Unable to send update to enough amount of replicas. Last error: %s", err.what()));
 			if (requestElectionsOnNextError) {
