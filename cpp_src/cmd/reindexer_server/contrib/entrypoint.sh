@@ -1,6 +1,6 @@
 #!/bin/sh
 
-RX_ARGS="--db $RX_DATABASE --httpaddr 0:9088 --rpcaddr 0:6534 --webroot /usr/local/share/reindexer/web --corelog $RX_CORELOG --serverlog $RX_SERVERLOG --httplog $RX_HTTPLOG --rpclog $RX_RPCLOG --loglevel $RX_LOGLEVEL"
+RX_ARGS="--db $RX_DATABASE --httpaddr 0:9088 --rpcaddr 0:6534 --webroot /usr/local/share/reindexer/web --corelog $RX_CORELOG --serverlog $RX_SERVERLOG --httplog $RX_HTTPLOG --rpclog $RX_RPCLOG --loglevel $RX_LOGLEVEL --grpc"
 
 mkdir -p $RX_DATABASE
 

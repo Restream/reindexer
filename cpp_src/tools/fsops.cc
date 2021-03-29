@@ -34,8 +34,8 @@ int MkDirAll(const string &path) {
 
 int RmDirAll(const string &path) {
 #ifndef _WIN32
-	return nftw(path.c_str(), [](const char *fpath, const struct stat *, int, struct FTW *) { return ::remove(fpath); }, 64,
-				FTW_DEPTH | FTW_PHYS);
+	return nftw(
+		path.c_str(), [](const char *fpath, const struct stat *, int, struct FTW *) { return ::remove(fpath); }, 64, FTW_DEPTH | FTW_PHYS);
 #else
 	(void)path;
 	return 0;
@@ -43,7 +43,7 @@ int RmDirAll(const string &path) {
 }
 
 int ReadFile(const string &path, string &content) {
-	FILE *f = fopen(path.c_str(), "r");
+	FILE *f = fopen(path.c_str(), "rb");
 	if (!f) {
 		return -1;
 	}
@@ -174,9 +174,9 @@ TimeStats StatTime(const std::string &path) {
 #else
 		return {int64_t(st.st_atime) * 1000000000 + st.st_atimensec, int64_t(st.st_ctime) * 1000000000 + st.st_ctimensec,
 				int64_t(st.st_mtime) * 1000000000 + st.st_mtimensec};
-#endif  // defined(__APPLE__)
+#endif	// defined(__APPLE__)
 	}
-#endif  // _WIN32
+#endif	// _WIN32
 	return {-1, -1, -1};
 }
 

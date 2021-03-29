@@ -214,6 +214,7 @@ private:
 	int id_ = -1;
 	friend class NamespaceImpl;
 	friend class TransactionImpl;
+	friend class ItemModifier;
 
 	friend class QueryResults;
 	friend class ReindexerImpl;

@@ -476,7 +476,7 @@ Selecter::MergeData Selecter::mergeResults(vector<TextSearchResults> &rawResults
 		const auto &res = rawResults[i];
 		mergeItaration(res, i, statuses, merged, merged_rd, idoffsets, exists[curExists], hasBeenAnd);
 
-		if (res.term.opts.op == OpAnd) {
+		if (res.term.opts.op == OpAnd && !exists[curExists].empty()) {
 			hasBeenAnd = true;
 			for (auto &info : merged) {
 				const auto vid = info.id;

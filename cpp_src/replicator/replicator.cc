@@ -210,7 +210,8 @@ Error Replicator::syncNamespace(const NamespaceDef &ns, string_view forceSyncRea
 					if (updatesIt != pendedUpdates_.end()) {
 						if (updatesIt.value().UpdatesLost) {
 							err = Error(errUpdatesLost, "Updates Lost %s", ns.name);
-							logPrintf(LogTrace, "[repl:%s]: Updates Lost", ns.name);
+							logPrintf(LogWarning, "[repl:%s]: Updates Lost", ns.name);
+							pendedUpdates_.erase(ns.name);
 							break;
 						}
 						std::swap(walUpdates, updatesIt.value().container);

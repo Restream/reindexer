@@ -531,3 +531,57 @@ TEST_F(JoinSelectsApi, JoinWithSelectFilter) {
 		}
 	}
 }
+
+// Execute a query that is merged with another one:
+// both queries should contain join queries,
+// joined NS for the 1st query should be the same
+// as the main NS of the merged query.
+TEST_F(JoinSelectsApi, TestMergeWithJoins) {
+	// Build the 1st query with 'authors_namespace' as join.
+	Query queryBooks = Query(books_namespace);
+	queryBooks.InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace));
+
+	// Build the 2nd query (with join) with 'authors_namespace' as the main NS.
+	Query queryAuthors = Query(authors_namespace);
+	queryAuthors.LeftJoin(locationid_fk, locationid, CondEq, Query(location_namespace));
+	queryBooks.mergeQueries_.emplace_back(queryAuthors);
+
+	// Execute it
+	QueryResults qr;
+	Error err = rt.reindexer->Select(queryBooks, qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	VerifyResJSON(qr);
+
+	// Make sure results are correct:
+	// values of main and joined namespaces match
+	// in both parts of the query.
+	size_t rowId = 0;
+	for (auto it : qr) {
+		Item item = it.GetItem();
+		auto joined = it.GetJoined();
+		ASSERT_TRUE(joined.getJoinedFieldsCount() == 1);
+
+		bool booksItem = (rowId <= 10000);
+		QueryResults jqr = joined.begin().ToQueryResults();
+		int joinedNs = booksItem ? 2 : 3;
+		jqr.addNSContext(qr.getPayloadType(joinedNs), qr.getTagsMatcher(joinedNs), qr.getFieldsFilter(joinedNs), qr.getSchema(joinedNs));
+
+		if (booksItem) {
+			Variant fkValue = item[authorid_fk];
+			for (auto jit : jqr) {
+				Item jItem = jit.GetItem();
+				Variant value = jItem[authorid];
+				ASSERT_TRUE(value == fkValue);
+			}
+		} else {
+			Variant fkValue = item[locationid_fk];
+			for (auto jit : jqr) {
+				Item jItem = jit.GetItem();
+				Variant value = jItem[locationid];
+				ASSERT_TRUE(value == fkValue);
+			}
+		}
+
+		++rowId;
+	}
+}

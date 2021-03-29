@@ -115,15 +115,19 @@ TEST_F(FTApi, SelectWithPlus) {
 	Add("added three words");
 	Add("added something else");
 
-	auto res = SimpleSelect("+added");
-	EXPECT_TRUE(res.Count() == 2);
+	CheckAllPermutations("", {"+added"}, "", {{"!added! something else", ""}, {"!added! three words", ""}});
+}
 
-	const char* results[] = {"!added! something else", "!added! three words"};
-	for (size_t i = 0; i < res.Count(); ++i) {
-		Item ritem = res[i].GetItem();
-		string val = ritem["ft1"].As<string>();
-		EXPECT_TRUE(val == results[i]);
-	}
+TEST_F(FTApi, SelectWithPlusWithSingleAlternative) {
+	auto cfg = GetDefaultConfig();
+	cfg.enableKbLayout = false;
+	cfg.enableTranslit = false;
+	Init(cfg);
+
+	Add("мониторы");
+
+	// FT search by single mandatory word with single alternative
+	CheckAllPermutations("", {"+монитор*"}, "", {{"!мониторы!", ""}});
 }
 
 TEST_F(FTApi, SelectWithMinus) {

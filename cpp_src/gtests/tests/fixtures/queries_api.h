@@ -576,43 +576,33 @@ protected:
 				return indexesValues.size() == 0;
 			case CondAny:
 				return indexesValues.size() > 0;
-			default:
-				break;
-		}
-
-		bool result = false;
-		switch (qentry.condition) {
 			case CondEq:
-				result = (compareCompositeValues(indexesValues, keyValues[0], opts) == 0);
-				break;
+				return compareCompositeValues(indexesValues, keyValues[0], opts) == 0;
 			case CondGe:
-				result = (compareCompositeValues(indexesValues, keyValues[0], opts) >= 0);
-				break;
+				return compareCompositeValues(indexesValues, keyValues[0], opts) >= 0;
 			case CondGt:
-				result = (compareCompositeValues(indexesValues, keyValues[0], opts) > 0);
-				break;
+				return compareCompositeValues(indexesValues, keyValues[0], opts) > 0;
 			case CondLt:
-				result = (compareCompositeValues(indexesValues, keyValues[0], opts) < 0);
-				break;
+				return compareCompositeValues(indexesValues, keyValues[0], opts) < 0;
 			case CondLe:
-				result = (compareCompositeValues(indexesValues, keyValues[0], opts) <= 0);
-				break;
+				return compareCompositeValues(indexesValues, keyValues[0], opts) <= 0;
 			case CondRange:
 				EXPECT_TRUE(keyValues.size() == 2);
-				result = (compareCompositeValues(indexesValues, keyValues[0], opts) >= 0) &&
-						 (compareCompositeValues(indexesValues, keyValues[1], opts) <= 0);
-				break;
+				return (compareCompositeValues(indexesValues, keyValues[0], opts) >= 0) &&
+					   (compareCompositeValues(indexesValues, keyValues[1], opts) <= 0);
 			case CondSet:
 				for (const Variant& kv : keyValues) {
-					result = (compareCompositeValues(indexesValues, kv, opts) == 0);
-					if (result) break;
+					if (compareCompositeValues(indexesValues, kv, opts) == 0) return true;
 				}
-				break;
+				return false;
+			case CondAllSet:
+				for (const Variant& kv : indexesValues) {
+					if (compareCompositeValues(indexesValues, kv, opts) != 0) return false;
+				}
+				return true;
 			default:
 				std::abort();
 		}
-
-		return result;
 	}
 
 	static bool isGeomConditions(const QueryEntry& qe) { return qe.condition == CondType::CondDWithin; }
@@ -653,6 +643,11 @@ protected:
 					return fieldValues.size() == 0;
 				case CondAny:
 					return fieldValues.size() > 0;
+				case CondAllSet:
+					for (const auto& qvalue : qentry.values) {
+						if (!compareValues(CondSet, qvalue, fieldValues, opts.collateOpts_)) return false;
+					}
+					return true;
 				default:
 					break;
 			}
@@ -1006,7 +1001,10 @@ protected:
 	}
 
 	static std::string pointToSQL(reindexer::Point point) {
-		return "ST_GeomFromText(\"point(" + std::to_string(point.x) + ' ' + std::to_string(point.y) + ")\")";
+		std::ostringstream res;
+		res.precision(std::numeric_limits<double>::digits10 + 1);
+		res << "ST_GeomFromText(\"point(" << point.x << ' ' << point.y << ")\")";
+		return res.str();
 	}
 
 	void CheckGeomQueries() {
@@ -1195,6 +1193,16 @@ protected:
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder));
 
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNamePackages, CondAllSet, RandIntVector(2, 10000, 50))
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNamePackages, CondAllSet, 10000 + rand() % 50)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
+
 					// check substituteCompositIndexes
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.Where(kFieldNameAge, CondEq, randomAge)
@@ -1204,6 +1212,12 @@ protected:
 
 					ExecuteAndVerify(default_namespace, Query(default_namespace)
 															.Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 50))
+															.Where(kFieldNameGenre, CondEq, randomGenre)
+															.Distinct(distinct.c_str())
+															.Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.Where(kFieldNameAge, CondAllSet, RandIntVector(1, 0, 50))
 															.Where(kFieldNameGenre, CondEq, randomGenre)
 															.Distinct(distinct.c_str())
 															.Sort(sortIdx, sortOrder));
@@ -1714,6 +1728,12 @@ protected:
 		Verify(ns, checkQr, checkQuery);
 	}
 
+	static std::string toString(double v) {
+		std::ostringstream res;
+		res.precision(std::numeric_limits<double>::digits10 + 1);
+		res << v;
+		return res.str();
+	}
 	// Checks that DSL queries with DWithin works and compares the result with the result of corresponding C++ query
 	void CheckDslQueries() {
 		// ----------
@@ -1722,8 +1742,8 @@ protected:
 		std::string dslQuery =
 			std::string(R"({"namespace":")") + geomNs +
 			R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":")" +
-			kFieldNamePointLinearRTree + R"(","value":[[)" + std::to_string(point.x) + ',' + std::to_string(point.y) + "]," +
-			std::to_string(distance) + R"(]}],"merge_queries":[],"aggregations":[]})";
+			kFieldNamePointLinearRTree + R"(","value":[[)" + toString(point.x) + ',' + toString(point.y) + "]," + toString(distance) +
+			R"(]}],"merge_queries":[],"aggregations":[]})";
 		const Query checkQuery1 = std::move(Query(geomNs).DWithin(kFieldNamePointLinearRTree, point, distance));
 		checkDslQuery(geomNs, dslQuery, checkQuery1);
 
@@ -1733,8 +1753,8 @@ protected:
 		dslQuery =
 			std::string(R"({"namespace":")") + geomNs +
 			R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":")" +
-			kFieldNamePointLinearRTree + R"(","value":[)" + std::to_string(distance) + ",[" + std::to_string(point.x) + ',' +
-			std::to_string(point.y) + R"(]]}],"merge_queries":[],"aggregations":[]})";
+			kFieldNamePointLinearRTree + R"(","value":[)" + toString(distance) + ",[" + toString(point.x) + ',' + toString(point.y) +
+			R"(]]}],"merge_queries":[],"aggregations":[]})";
 		const Query checkQuery2 = std::move(Query(geomNs).DWithin(kFieldNamePointLinearRTree, point, distance));
 		checkDslQuery(geomNs, dslQuery, checkQuery2);
 	}
@@ -1860,7 +1880,7 @@ protected:
 		reindexer::Point point = randPoint(10);
 		double distance = randBinDouble(0, 1);
 		sqlQuery = string("SELECT * FROM ") + geomNs + " WHERE ST_DWithin(" + kFieldNamePointNonIndex + ", " + pointToSQL(point) + ", " +
-				   std::to_string(distance) + ");";
+				   toString(distance) + ");";
 		const Query checkQuery8 = std::move(Query(geomNs).DWithin(kFieldNamePointNonIndex, point, distance));
 
 		QueryResults sqlQr8;
@@ -1877,7 +1897,7 @@ protected:
 		point = randPoint(10);
 		distance = randBinDouble(0, 1);
 		sqlQuery = string("SELECT * FROM ") + geomNs + " WHERE ST_DWithin(" + pointToSQL(point) + ", " + kFieldNamePointNonIndex + ", " +
-				   std::to_string(distance) + ") ORDER BY 'ST_Distance(" + kFieldNamePointLinearRTree + ", " + pointToSQL(point) + ")';";
+				   toString(distance) + ") ORDER BY 'ST_Distance(" + kFieldNamePointLinearRTree + ", " + pointToSQL(point) + ")';";
 		const Query checkQuery9 =
 			std::move(Query(geomNs)
 						  .DWithin(kFieldNamePointNonIndex, point, distance)
@@ -1962,6 +1982,11 @@ protected:
 			doubleSet.emplace_back(static_cast<double>(rand()) / RAND_MAX);
 		}
 		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnDouble", CondSet, doubleSet));
+		doubleSet.clear();
+		for (size_t i = 0; i < 2; i++) {
+			doubleSet.emplace_back(static_cast<double>(rand()) / RAND_MAX);
+		}
+		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnDouble", CondAllSet, doubleSet));
 		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnString", CondGe, string("test_string1")));
 		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnString", CondLe, string("test_string2")));
 		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnString", CondEq, string("test_string3")));
@@ -1971,6 +1996,12 @@ protected:
 			stringSet.emplace_back(RandString());
 		}
 		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnString", CondSet, stringSet));
+
+		stringSet.clear();
+		for (size_t i = 0; i < 2; i++) {
+			stringSet.emplace_back(RandString());
+		}
+		ExecuteAndVerify(comparatorsNs, Query(comparatorsNs).Where("columnString", CondAllSet, stringSet));
 
 		stringSet.clear();
 		for (size_t i = 0; i < 100; i++) {

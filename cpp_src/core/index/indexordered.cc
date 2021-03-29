@@ -42,7 +42,8 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 	SelectKeyResult res;
 
 	// Get set of keys or single key
-	if (condition == CondSet || condition == CondEq || condition == CondAny || condition == CondEmpty || condition == CondLike)
+	if (condition == CondSet || condition == CondAllSet || condition == CondEq || condition == CondAny || condition == CondEmpty ||
+		condition == CondLike)
 		return IndexUnordered<T>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
 
 	if (keys.size() < 1) throw Error(errParams, "For condition required at least 1 argument, but provided 0");
