@@ -1,3 +1,8 @@
+# Version 3.1.2 (9.04.2021)
+## Face
+- [fix] Fixed hot-key S for SQL query on tablets
+- [fix] Fixed scroll issue for tables
+
 # Version 3.1.1 (29.03.2021)
 ## Core
 - [fix] Bug in full text query with single mandatory word fixed
