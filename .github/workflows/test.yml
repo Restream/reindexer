@@ -7,7 +7,7 @@ jobs:
       - name: Prepare Environment
         run: |
           ./dependencies.sh
-          #brew install protobuf
+          brew install protobuf
           mkdir build
         shell: bash
       - name: Build Reindexer
@@ -29,7 +29,7 @@ jobs:
       - name: Prepare Environment
         run: |
           sudo ./dependencies.sh
-          #sudo apt-get install  libprotobuf-dev
+          sudo apt-get install  libprotobuf-dev
           mkdir build
         shell: bash
       - name: Build Reindexer
@@ -51,7 +51,7 @@ jobs:
       - name: Prepare Environment
         run: |
           sudo ./dependencies.sh
-          #sudo apt-get install  libprotobuf-dev
+          sudo apt-get install  libprotobuf-dev
           mkdir build
         shell: bash
       - name: Build Reindexer
@@ -73,7 +73,7 @@ jobs:
       - name: Prepare Environment
         run: |
           sudo ./dependencies.sh
-          #sudo apt-get install  libprotobuf-dev
+          sudo apt-get install  libprotobuf-dev
           mkdir build
         shell: bash
       - name: Build Reindexer
@@ -93,7 +93,7 @@ jobs:
       - name: Prepare Environment
         run: |
           sudo ./dependencies.sh
-          #sudo apt-get install  libprotobuf-dev
+          sudo apt-get install  libprotobuf-dev
           mkdir build
         shell: bash
       - name: Build Reindexer
