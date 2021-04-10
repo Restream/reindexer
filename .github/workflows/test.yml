@@ -12,7 +12,7 @@ jobs:
       - name: Build Reindexer
         run: |
           cd build
-          cmake -DENABLE_GRPC=ON ..
+          cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
           make -j4
           make doc
           STRIP=/bin/true cpack
@@ -33,7 +33,7 @@ jobs:
       - name: Build Reindexer
         run: |
           cd build
-          cmake -DENABLE_GRPC=ON ..
+          cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
           make -j4
           make doc
           STRIP=/bin/true cpack
@@ -54,7 +54,7 @@ jobs:
       - name: Build Reindexer
         run: |
           cd build
-          cmake -DENABLE_GRPC=ON ..
+          cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
           make -j4
           make doc
           STRIP=/bin/true cpack
@@ -75,7 +75,7 @@ jobs:
       - name: Build Reindexer
         run: |
           cd build
-          cmake -DWITH_ASAN=On -DENABLE_GRPC=ON  ..
+          cmake -DWITH_ASAN=On -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
           make -j4
         shell: bash
       - name: CXX Tests
@@ -94,7 +94,7 @@ jobs:
       - name: Build Reindexer
         run: |
           cd build
-          cmake -DWITH_TSAN=On -DENABLE_GRPC=ON  ..
+          cmake -DWITH_TSAN=On -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
           make -j4
           make doc
           STRIP=/bin/true cpack
