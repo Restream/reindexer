@@ -6,7 +6,6 @@ jobs:
       - uses: actions/checkout@v2
       - name: Prepare Environment
         run:
-          ./dependencies.sh
           mkdir build && cd build
         shell: bash
       - name: Build Reindexer
@@ -26,7 +25,6 @@ jobs:
       - uses: actions/checkout@v2
       - name: Prepare Environment
         run:
-          ./dependencies.sh
           mkdir build && cd build
         shell: bash
       - name: Build Reindexer
@@ -46,7 +44,6 @@ jobs:
       - uses: actions/checkout@v2
       - name: Prepare Environment
         run:
-          ./dependencies.sh
           mkdir build && cd build
         shell: bash
       - name: Build Reindexer
@@ -66,7 +63,6 @@ jobs:
       - uses: actions/checkout@v2
       - name: Prepare Environment
         run:
-          ./dependencies.sh
           mkdir build && cd build
         shell: bash
       - name: Build Reindexer
@@ -84,7 +80,6 @@ jobs:
       - uses: actions/checkout@v2
       - name: Prepare Environment
         run:
-          ./dependencies.sh
           mkdir build && cd build
         shell: bash
       - name: Build Reindexer
