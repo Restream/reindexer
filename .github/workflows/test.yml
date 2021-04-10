@@ -13,8 +13,7 @@ jobs:
       - name: Build Reindexer
         run: |
           cd build
-          #cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
-          cmake -G "Visual Studio 16 2019" ..
+          cmake -G "Visual Studio 16 2019" -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
           cmake --build . --config Release
           cmake --build . --config Release --target face
           cmake --build . --config Release --target swagger
