@@ -4,9 +4,13 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v2
+      - name: Prepare Environment
+        run: |
+          ./dependencies.sh
+          mkdir build && cd build
+        shell: bash
       - name: Build Reindexer
         run: |
-          mkdir build && cd build
           cmake -DENABLE_GRPC=ON ..
           make -j4
           make doc
@@ -20,9 +24,13 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
+      - name: Prepare Environment
+        run: |
+          ./dependencies.sh
+          mkdir build && cd build
+        shell: bash
       - name: Build Reindexer
         run: |
-          mkdir build && cd build
           cmake -DENABLE_GRPC=ON ..
           make -j4
           make doc
@@ -36,9 +44,13 @@ jobs:
     runs-on: ubuntu-18.04
     steps:
       - uses: actions/checkout@v2
+      - name: Prepare Environment
+        run: |
+          ./dependencies.sh
+          mkdir build && cd build
+        shell: bash
       - name: Build Reindexer
         run: |
-          mkdir build && cd build
           cmake -DENABLE_GRPC=ON ..
           make -j4
           make doc
@@ -52,9 +64,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+      - name: Prepare Environment
+        run: |
+          ./dependencies.sh
+          mkdir build && cd build
+        shell: bash
       - name: Build Reindexer
         run: |
-          mkdir build && cd build
           cmake -DWITH_ASAN=On -DENABLE_GRPC=ON  ..
           make -j4
         shell: bash
@@ -66,23 +82,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+      - name: Prepare Environment
+        run: |
+          ./dependencies.sh
+          mkdir build && cd build
+        shell: bash
       - name: Build Reindexer
         run: |
-          mkdir build && cd build
           cmake -DWITH_TSAN=On -DENABLE_GRPC=ON  ..
           make -j4
+          make doc
+          STRIP=/bin/true cpack
         shell: bash
       - name: CXX Tests
         run: ctest
         shell: bash
 
-  test-pyreindexer:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Test PyReindexer
-        env:
-          PYRX_GH_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
-        run: .github/workflows/pyreindexer_workflow.sh
-        shell: bash
+# test-pyreindexer:
+#   runs-on: ubuntu-latest
+#   steps:
+#     - uses: actions/checkout@v2
+#     - name: Test PyReindexer
+#       env:
+#         PYRX_GH_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
+#       run: .github/workflows/pyreindexer_workflow.sh
+#       shell: bash
 
