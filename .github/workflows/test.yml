@@ -5,11 +5,10 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Prepare Environment
-        run:
-          mkdir build && cd build
+        run: mkdir build && cd build
         shell: bash
       - name: Build Reindexer
-        run:
+        run: |
           cmake -DENABLE_GRPC=ON ..
           make -j4
           make doc
@@ -24,11 +23,10 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Prepare Environment
-        run:
-          mkdir build && cd build
+        run: mkdir build && cd build
         shell: bash
       - name: Build Reindexer
-        run:
+        run: |
           cmake -DENABLE_GRPC=ON ..
           make -j4
           make doc
@@ -43,11 +41,10 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Prepare Environment
-        run:
-          mkdir build && cd build
+        run: mkdir build && cd build
         shell: bash
       - name: Build Reindexer
-        run:
+        run: |
           cmake -DENABLE_GRPC=ON ..
           make -j4
           make doc
@@ -62,11 +59,10 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Prepare Environment
-        run:
-          mkdir build && cd build
+        run: mkdir build && cd build
         shell: bash
       - name: Build Reindexer
-        run:
+        run: |
           cmake -DWITH_ASAN=On -DENABLE_GRPC=ON  ..
           make -j4
         shell: bash
@@ -79,15 +75,12 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Prepare Environment
-        run:
-          mkdir build && cd build
+        run: mkdir build && cd build
         shell: bash
       - name: Build Reindexer
-        run:
+        run: |
           cmake -DWITH_TSAN=On -DENABLE_GRPC=ON  ..
           make -j4
-          make doc
-          STRIP=/bin/true cpack
         shell: bash
       - name: CXX Tests
         run: ctest
