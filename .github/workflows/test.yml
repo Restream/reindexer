@@ -1,5 +1,25 @@
 on: [push, create, pull_request]
 jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Prepare Environment
+        run: |
+          ./dependencies.sh
+          #brew install protobuf
+          #./.github/workflows/install_grpc.sh
+          mkdir build
+        shell: bash
+      - name: Build Reindexer
+        run: |
+          cd build
+          cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
+          make -j4
+          make doc
+          STRIP=/bin/true cpack
+        shell: bash
+
   build-macos:
     runs-on: macos-latest
     steps:
@@ -9,8 +29,6 @@ jobs:
           ./dependencies.sh
           brew install protobuf
           ./.github/workflows/install_grpc.sh
-          pwd
-          cd reindexer
           mkdir build
         shell: bash
       - name: Build Reindexer
@@ -34,8 +52,6 @@ jobs:
           sudo ./dependencies.sh
           sudo apt-get install  libprotobuf-dev
           ./.github/workflows/install_grpc.sh
-          pwd
-          cd reindexer
           mkdir build
         shell: bash
       - name: Build Reindexer
@@ -59,8 +75,6 @@ jobs:
           sudo ./dependencies.sh
           sudo apt-get install  libprotobuf-dev
           ./.github/workflows/install_grpc.sh
-          pwd
-          cd reindexer
           mkdir build
         shell: bash
       - name: Build Reindexer
@@ -84,8 +98,6 @@ jobs:
           sudo ./dependencies.sh
           sudo apt-get install  libprotobuf-dev
           ./.github/workflows/install_grpc.sh
-          pwd
-          cd reindexer
           mkdir build
         shell: bash
       - name: Build Reindexer
@@ -107,8 +119,6 @@ jobs:
           sudo ./dependencies.sh
           sudo apt-get install  libprotobuf-dev
           ./.github/workflows/install_grpc.sh
-          pwd
-          cd reindexer
           mkdir build
         shell: bash
       - name: Build Reindexer
