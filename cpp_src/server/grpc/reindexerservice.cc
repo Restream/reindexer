@@ -461,25 +461,40 @@ Error ReindexerService::packCJSONItem(WrSerializer& wrser, reindexer::QueryResul
 	return it.GetCJSON(wrser);
 }
 
-Error ReindexerService::buildQrItems(WrSerializer& wrser, const reindexer::QueryResults& qr, const OutputFlags& opts) {
+Error ReindexerService::buildItems(WrSerializer& wrser, const reindexer::QueryResults& qr, const OutputFlags& opts) {
 	Error status;
 	switch (opts.encodingtype()) {
 		case EncodingType::JSON: {
 			JsonBuilder builder(wrser, ObjType::TypeObject);
-			JsonBuilder array = builder.Array("items");
-			for (auto& item : qr) {
-				array.Raw(nullptr, "");
-				status = item.GetJSON(wrser, false);
-				if (!status.ok()) break;
+			if (qr.Count() > 0) {
+				JsonBuilder array = builder.Array("items");
+				for (auto& item : qr) {
+					array.Raw(nullptr, "");
+					status = item.GetJSON(wrser, false);
+					if (!status.ok()) break;
+				}
+			}
+			if (qr.GetAggregationResults().size() > 0) {
+				buildAggregation(builder, wrser, qr, opts);
 			}
 			break;
 		}
 		case EncodingType::MSGPACK: {
-			MsgPackBuilder builder(wrser, ObjType::TypeObject, 1);
-			MsgPackBuilder array = builder.Array("items", qr.Count());
-			for (auto& item : qr) {
-				status = item.GetMsgPack(wrser, false);
-				if (!status.ok()) break;
+			int fields = 0;
+			bool withItems = (qr.Count() > 0);
+			if (withItems) ++fields;
+			bool withAggregation = (qr.GetAggregationResults().size() > 0);
+			if (withAggregation) ++fields;
+			MsgPackBuilder builder(wrser, ObjType::TypeObject, fields);
+			if (withItems) {
+				MsgPackBuilder array = builder.Array("items", qr.Count());
+				for (auto& item : qr) {
+					status = item.GetMsgPack(wrser, false);
+					if (!status.ok()) break;
+				}
+			}
+			if (withAggregation) {
+				buildAggregation(builder, wrser, qr, opts);
 			}
 			break;
 		}
@@ -493,7 +508,9 @@ Error ReindexerService::buildQrItems(WrSerializer& wrser, const reindexer::Query
 			break;
 		}
 		case EncodingType::CJSON: {
-			packPayloadTypes(wrser, qr);
+			if (qr.Count() > 0) {
+				packPayloadTypes(wrser, qr);
+			}
 			for (auto& item : qr) {
 				status = packCJSONItem(wrser, item, opts);
 				if (!status.ok()) break;
@@ -525,11 +542,12 @@ Error ReindexerService::buildQrItems(WrSerializer& wrser, const reindexer::Query
 	return status;
 }
 
-Error ReindexerService::buildAggregation(WrSerializer& wrser, const reindexer::QueryResults& qr, const OutputFlags& opts) {
+template <typename Builder>
+Error ReindexerService::buildAggregation(Builder& builder, WrSerializer& wrser, const reindexer::QueryResults& qr,
+										 const OutputFlags& opts) {
 	switch (opts.encodingtype()) {
 		case EncodingType::JSON: {
-			JsonBuilder builder(wrser, ObjType::TypeObject);
-			JsonBuilder array = builder.Array("aggregations");
+			auto array = builder.Array("aggregations");
 			for (size_t i = 0; i < qr.GetAggregationResults().size(); ++i) {
 				array.Raw(nullptr, "");
 				(qr.GetAggregationResults())[i].GetJSON(wrser);
@@ -537,8 +555,7 @@ Error ReindexerService::buildAggregation(WrSerializer& wrser, const reindexer::Q
 			break;
 		}
 		case EncodingType::MSGPACK: {
-			MsgPackBuilder builder(wrser, ObjType::TypeObject, 1);
-			MsgPackBuilder array = builder.Array("aggregations", qr.Count());
+			auto array = builder.Array("aggregations", qr.Count());
 			for (size_t i = 0; i < qr.GetAggregationResults().size(); ++i) {
 				(qr.GetAggregationResults())[i].GetMsgPack(wrser);
 			}
@@ -552,15 +569,9 @@ Error ReindexerService::buildAggregation(WrSerializer& wrser, const reindexer::Q
 
 ::grpc::Status ReindexerService::buildQueryResults(const reindexer::QueryResults& qr, ::grpc::ServerWriter<QueryResultsResponse>* writer,
 												   const OutputFlags& flags) {
-	Error status;
 	WrSerializer wrser;
 	QueryResultsResponse response;
-	if (qr.GetAggregationResults().empty()) {
-		status = buildQrItems(wrser, qr, flags);
-	} else {
-		status = buildAggregation(wrser, qr, flags);
-	}
-
+	Error status = buildItems(wrser, qr, flags);
 	if (status.ok()) {
 		response.set_data(string(wrser.Slice().data(), wrser.Slice().length()));
 		QueryResultsResponse::QueryResultsOptions* opts = response.options().New();
@@ -573,7 +584,6 @@ Error ReindexerService::buildAggregation(WrSerializer& wrser, const reindexer::Q
 		opts->set_querytotalitems(qr.TotalCount());
 		response.set_allocated_options(opts);
 	}
-
 	ErrorResponse* responseCode = response.errorresponse().New();
 	responseCode->set_code(ErrorResponse::ErrorCode(status.code()));
 	responseCode->set_what(status.what());

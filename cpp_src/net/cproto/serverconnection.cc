@@ -15,7 +15,11 @@ const auto kUpdatesResendTimeout = 0.1;
 const auto kMaxUpdatesBufSize = 1024 * 1024 * 8;
 
 ServerConnection::ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher, bool enableStat, size_t maxUpdatesSize)
-	: net::ConnectionST(fd, loop, enableStat), dispatcher_(dispatcher), maxUpdatesSize_(maxUpdatesSize) {
+	: net::ConnectionST(fd, loop, enableStat),
+	  dispatcher_(dispatcher),
+	  updatesSize_(0),
+	  updateLostFlag_(false),
+	  maxUpdatesSize_(maxUpdatesSize) {
 	timeout_.start(kCProtoTimeoutSec);
 	updates_async_.set<ServerConnection, &ServerConnection::async_cb>(this);
 	updates_timeout_.set<ServerConnection, &ServerConnection::timeout_cb>(this);
@@ -24,8 +28,6 @@ ServerConnection::ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &d
 
 	updates_timeout_.start(kUpdatesResendTimeout, kUpdatesResendTimeout);
 	updates_async_.start();
-
-	updatesSize_ = 0;
 
 	callback(io_, ev::READ);
 }
@@ -245,8 +247,7 @@ void ServerConnection::responceRPC(Context &ctx, const Error &status, const Args
 
 void ServerConnection::CallRPC(const IRPCCall &call) {
 	std::unique_lock<std::mutex> lck(updates_mtx_);
-	size_t updatesSizeVal = updatesSize_;
-	if (updatesSizeVal > maxUpdatesSize_) {
+	if (updatesSize_ > maxUpdatesSize_) {
 		updates_.clear();
 		Args args;
 		IRPCCall curCall = call;
@@ -265,12 +266,15 @@ void ServerConnection::CallRPC(const IRPCCall &call) {
 									 args = {Arg(std::string(nsName.data(), nsName.size()))};
 								 },
 								 data};
-			logPrintf(LogWarning, "Call updates lost");
+			logPrintf(LogWarning, "Call updates lost clientAddr = %s updatesSize = %d", clientAddr_, updatesSize_);
 
 			updates_.emplace_back(callLost);
 		}
 
+		// order is important
+		updateLostFlag_ = true;
 		updatesSize_ = 0;
+
 		if (ConnectionST::stats_) {
 			auto stat = ConnectionST::stats_->get_stat();
 			if (stat) {
@@ -295,11 +299,9 @@ void ServerConnection::sendUpdates() {
 	}
 
 	std::vector<IRPCCall> updates;
-	size_t updatesSize;
 	updates_mtx_.lock();
 	updates.swap(updates_);
-	updatesSize = updatesSize_;
-	updatesSize_ = 0;
+	updateLostFlag_ = false;
 	updates_mtx_.unlock();
 	RPCCall callUpdate{kCmdUpdates, 0, {}, milliseconds(0)};
 	cproto::Context ctx{"", &callUpdate, this, {{}, {}}, false};
@@ -308,17 +310,22 @@ void ServerConnection::sendUpdates() {
 	CmdCode cmd;
 	WrSerializer ser(wrBuf_.get_chunk());
 	size_t cnt = 0;
-	int64_t sendCount = 0;
 	for (cnt = 0; cnt < updates.size() && ser.Len() < kMaxUpdatesBufSize; ++cnt) {
-		if (updates[cnt].data_) sendCount += updates[cnt].data_->size();
+		if (updates[cnt].data_) {
+			if (!updateLostFlag_) {
+				updatesSize_ -= updates[cnt].data_->size();
+			}
+		}
 		updates[cnt].Get(&updates[cnt], cmd, args);
 		packRPC(ser, ctx, Error(), args, enableSnappy_);
 	}
 
 	if (cnt != updates.size()) {
 		std::unique_lock<std::mutex> lck(updates_mtx_);
-		updates_.insert(updates_.begin(), updates.begin() + cnt, updates.end());
-		updatesSize_ = updatesSize - sendCount;
+		if (!updateLostFlag_) {
+			updates_.insert(updates_.begin(), updates.begin() + cnt, updates.end());
+		}
+
 		if (ConnectionST::stats_) stats_->update_pended_updates(updates.size());
 	} else if (ConnectionST::stats_) {
 		auto stat = ConnectionST::stats_->get_stat();

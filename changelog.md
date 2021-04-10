@@ -1,3 +1,30 @@
+# Version 3.1.2 (9.04.2021)
+## Face
+- [fix] Fixed hot-key S for SQL query on tablets
+- [fix] Fixed scroll issue for tables
+
+# Version 3.1.1 (29.03.2021)
+## Core
+- [fix] Bug in full text query with single mandatory word fixed
+- [fix] Bug in query with condition ALLSET by nonindexed field fixed
+- [fix] Bug in query with merge and join by the same namespace fixed
+- [fix] Simultaneous update of field and whole object fixed
+- [fix] Build on aarch64 architecture fixed
+- [fix] Fixed replication updates limit trackig, and possible inifity full namespace sync
+- [fix] Fixed web face page corruption on Windows builds
+
+## Reindexer server
+- [fea] GRPC module included in docker container and enabled by default
+- [fix] Select with DISTINCT by GRPC fixed
+
+## Face
+- [fix] Fix for removing a single database
+- [fix] Increased the edit label width of the index row
+- [fea] Added the server configs to the homepage
+- [fea] Added relevance between "Fields specific config" and "JSON paths" fields
+- [fix] Upgraded Lo-Dash to the last version.
+- [fix] Changed the font style of the "Create new database" menu.
+
 # Version 3.1.0 (12.03.2021)
 ## Core
 - [fix] Start of reindexer with DB containing indexes with invalid names fixed

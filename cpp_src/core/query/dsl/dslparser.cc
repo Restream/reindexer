@@ -330,12 +330,12 @@ void parseFilter(JsonValue& filter, Query& q) {
 			}
 			break;
 		case CondSet:
+		case CondAllSet:
 			if (qe.values.size() < 1) {
 				throw Error(errLogic, "Condition SET must have at least 1 value, but %d values was provided", qe.values.size());
 			}
 			break;
 		case CondAny:
-		case CondAllSet:
 			if (qe.values.size() != 0) {
 				throw Error(errLogic, "Condition ANY must have 0 values, but %d values was provided", qe.values.size());
 			}

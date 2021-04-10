@@ -388,6 +388,45 @@ TEST_F(NsApi, TestUpdateSparseField) {
 	}
 }
 
+// Test of the currious case: https://github.com/restream/reindexer/-/issues/697
+// Updating entire object field and some indexed field at once.
+TEST_F(NsApi, TestUpdateTwoFields) {
+	// Set and fill Database
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	// Try to update 2 fields at once: indexed field 'stringField'
+	// + adding and setting a new object-field called 'very_nested'
+	QueryResults qrUpdate;
+	Query updateQuery = Query(default_namespace)
+							.Where(idIdxName, CondEq, 1)
+							.Set(stringField, "Bingo!")
+							.SetObject("very_nested", R"({"id":111, "name":"successfully updated!"})");
+	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
+
+	// Make sure query worked well
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(qrUpdate.Count() == 1) << qrUpdate.Count();
+
+	// Make sure:
+	// 1. JSON of the item is correct
+	// 2. every new set&updated field has a correct value
+	for (auto it : qrUpdate) {
+		checkIfItemJSONValid(it);
+
+		Item item = it.GetItem();
+		Variant strField = item[stringField];
+		EXPECT_TRUE(strField.Type() == KeyValueString);
+		EXPECT_TRUE(strField.As<string>() == "Bingo!");
+
+		Variant nestedId = item["very_nested.id"];
+		EXPECT_TRUE(nestedId.As<int>() == 111);
+
+		Variant nestedName = item["very_nested.name"];
+		EXPECT_TRUE(nestedName.As<string>() == "successfully updated!");
+	}
+}
+
 void updateArrayField(std::shared_ptr<reindexer::Reindexer> reindexer, const string &ns, const string &updateFieldPath,
 					  const VariantArray &values) {
 	QueryResults qrUpdate;

@@ -35,12 +35,20 @@ protected:
 		err = rt.reindexer->OpenNamespace(genres_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 
+		err = rt.reindexer->OpenNamespace(location_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		DefineNamespaceDataset(location_namespace, {IndexDeclaration{locationid, "hash", "int", IndexOpts().PK(), 0},
+													IndexDeclaration{code, "hash", "int", IndexOpts(), 0},
+													IndexDeclaration{city, "hash", "string", IndexOpts(), 0}});
+
 		DefineNamespaceDataset(genres_namespace, {IndexDeclaration{genreid, "hash", "int", IndexOpts().PK(), 0},
 												  IndexDeclaration{genrename, "hash", "string", IndexOpts(), 0}});
 
-		DefineNamespaceDataset(authors_namespace, {IndexDeclaration{authorid, "hash", "int", IndexOpts().PK(), 0},
-												   IndexDeclaration{name, "hash", "string", IndexOpts(), 0},
-												   IndexDeclaration{age, "tree", "int", IndexOpts(), 0}});
+		DefineNamespaceDataset(
+			authors_namespace,
+			{IndexDeclaration{authorid, "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{name, "hash", "string", IndexOpts(), 0},
+			 IndexDeclaration{age, "tree", "int", IndexOpts(), 0}, IndexDeclaration{locationid_fk, "tree", "int", IndexOpts(), 0}});
 
 		DefineNamespaceDataset(
 			books_namespace,
@@ -49,10 +57,21 @@ protected:
 			 IndexDeclaration{genreId_fk, "hash", "int", IndexOpts(), 0}, IndexDeclaration{authorid_fk, "hash", "int", IndexOpts(), 0},
 			 IndexDeclaration{string(pages + string("+") + bookid).c_str(), "hash", "composite", IndexOpts(), 0}});
 
+		FillLocationsNamespace();
 		FillGenresNamespace();
 		FillAuthorsNamespace(500);
 		FillBooksNamespace(0, 10000);
 		FillAuthorsNamespace(10);
+	}
+
+	void FillLocationsNamespace() {
+		for (size_t i = 0; i < locations.size(); ++i) {
+			Item item = NewItem(location_namespace);
+			item[locationid] = int(i);
+			item[code] = rand() % 65536;
+			item[city] = locations[i];
+			Upsert(location_namespace, item);
+		}
 	}
 
 	void FillAuthorsNamespace(int32_t count) {
@@ -69,6 +88,7 @@ protected:
 			item[authorid] = ++authorIdValue;
 			item[name] = name + underscore + RandString();
 			item[age] = rand() % 80 + 20;
+			item[locationid_fk] = int(rand() % locations.size());
 
 			Upsert(authors_namespace, item);
 			Commit(authors_namespace);
@@ -386,6 +406,10 @@ protected:
 	const char* genreId_fk = "genreid_fk";
 	const char* genrename = "genre_name";
 	const char* rating = "rating";
+	const char* city = "city";
+	const char* code = "code";
+	const char* locationid = "locationid";
+	const char* locationid_fk = "locationid_fk";
 
 	const int DostoevskyAuthorId = 111777;
 
@@ -393,10 +417,33 @@ protected:
 	const std::string books_namespace = "books_namespace";
 	const std::string authors_namespace = "authors_namespace";
 	const std::string genres_namespace = "genres_namespace";
+	const std::string location_namespace = "location_namespace";
 	const std::string config_namespace = "#config";
 
 	std::vector<int> authorsIds;
 	std::vector<int> genresIds;
+
+	// clang-format off
+	const std::vector<string> locations = {
+		"Москва",
+		"Тамбов",
+		"Казань",
+		"Ульяновск",
+		"Краснодар",
+		"Урюпинск",
+		"Минск",
+		"Киев",
+		"Бердянск",
+		"Армянск",
+		"Грозный",
+		"Amsterdam",
+		"Paris",
+		"Berlin",
+		"New York",
+		"Rotterdam",
+		"Киевской шоссе 22"
+	};
+	// clang-format on
 
 	reindexer::shared_timed_mutex authorsMutex;
 };

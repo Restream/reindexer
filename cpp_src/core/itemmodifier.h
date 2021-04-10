@@ -8,6 +8,7 @@ namespace reindexer {
 
 struct NsContext;
 class NamespaceImpl;
+class ExpressionEvaluator;
 
 class ItemModifier {
 public:
@@ -17,7 +18,7 @@ public:
 	ItemModifier(ItemModifier &&) = delete;
 	ItemModifier &operator=(ItemModifier &&) = delete;
 
-	void Modify(IdType itemId, const NsContext &ctx, bool updateWithJson);
+	void Modify(IdType itemId, const NsContext &ctx);
 
 private:
 	struct FieldData {
@@ -40,9 +41,8 @@ private:
 		bool isIndex_;
 	};
 
-	void modify(IdType itemId);
-	void modifyCJSON(IdType itemId, const NsContext &ctx);
-	void modifyField(IdType itemId, FieldData &field, Payload &pl);
+	void modifyField(IdType itemId, FieldData &field, Payload &pl, VariantArray &values);
+	void modifyCJSON(PayloadValue &pv, FieldData &field, VariantArray &values, const NsContext &ctx);
 	void modifyIndexValues(IdType itemId, const FieldData &field, VariantArray &values, Payload &pl);
 
 	NamespaceImpl &ns_;

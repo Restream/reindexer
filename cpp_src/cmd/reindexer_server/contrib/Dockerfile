@@ -23,6 +23,8 @@ RUN ./dependencies.sh && \
     rm -rf /usr/local/lib/*.a /usr/local/include /usr/local/lib/libtcmalloc_debug* /usr/local/lib/libtcmalloc_minimal* \
     /usr/local/lib/libprofiler* /usr/local/lib/libtcmalloc.* /usr/local/share/doc /usr/local/share/man /usr/local/share/perl5  /usr/local/bin/pprof*
 
+RUN cd build && make install -C cpp_src/server/grpc
+
 FROM alpine:latest
 
 COPY --from=build /usr/local /usr/local

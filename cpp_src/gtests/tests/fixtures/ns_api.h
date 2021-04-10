@@ -31,6 +31,7 @@ protected:
 			item[doubleField] = static_cast<double>(rand() % 100) + 3.33333;
 			item[stringField] = std::to_string(i);
 			item[indexedArrayField] = RandIntVector(10, 0, 100);
+			item[sparseField] = i * 3;
 
 			Upsert(default_namespace, item);
 

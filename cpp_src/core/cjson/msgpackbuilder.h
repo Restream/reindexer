@@ -33,6 +33,7 @@ public:
 
 	void SetTagsMatcher(const TagsMatcher *tm) { tm_ = tm; }
 	void SetTagsPath(const TagsPath *) {}
+	MsgPackBuilder Raw(string_view, string_view) { return MsgPackBuilder(); }
 
 	template <typename N, typename T>
 	void Array(N tagName, span<T> data, int /*offset*/ = 0) {

@@ -14,7 +14,7 @@ This document describes Go connector and it's API. To get information
 about reindexer server and HTTP API refer to
 [reindexer documentation](cpp_src/readme.md)
 
-# Table of contents: 
+# Table of contents:
 
 - [Features](#features)
   - [Performance](#performance)
@@ -33,6 +33,7 @@ about reindexer server and HTTP API refer to
   - [Index Types and Their Capabilites](#index-types-and-their-capabilites)
   - [Nested Structs](#nested-structs)
   - [Sort](#sort)
+  - [Text pattern search with LIKE condition](#text-pattern-search-with-like-condition)
   - [Join](#join)
     - [Joinable interface](#joinable-interface)
     - [Update queries](#update-queries)
@@ -58,7 +59,12 @@ about reindexer server and HTTP API refer to
   - [Debug queries](#debug-queries)
   - [Profiling](#profiling)
 - [Integration with other program languages](#integration-with-other-program-languages)
-  - [Pyreindexer](#pyreindexer)
+  - [Reindexer-for-python](#reindexer-for-python)
+  - [Reindexer-for-java](#reindexer-for-java)
+  - [3rd party open source connectors](#3rd-party-open-source-connectors)
+    - [PHP](#php)
+    - [Rust](#rust)
+    - [.NET](#.net)
 - [Limitations and known issues](#limitations-and-known-issues)
 - [Getting help](#getting-help)
 
@@ -412,6 +418,27 @@ type SortModeCustomItem struct {
 ```
 
 The very first character in this list has the highest priority, priority of the last character is the smallest one. It means that sorting algorithm will put items that start with the first character before others. If some characters are skipped their priorities would have their usual values (according to characters in the list).
+
+## Text pattern search with LIKE condition
+
+For simple searching text pattern in string fields condition `LIKE` can be used. It search strings which match a pattern. In the pattern `_` means any char and `%` means any sequence of chars.
+
+Go example:
+```go
+	query := db.Query("items").
+		Where("field", reindexer.LIKE, "pattern")
+
+SQL example:
+```sql
+	SELECT * FROM items WHERE fields LIKE 'pattern'
+```
+
+'me_t' corresponds to 'meet', 'meat', 'melt' and so on
+'%tion' corresponds to 'tion', 'condition', 'creation' and so on
+
+*CAUTION*: condition LIKE uses scan method. It can be used for debug purposes or within queries with another good selective conditions.
+
+Generally for full text search with reasonable speed we recommend to use fulltext index.
 
 ### Update queries
 
@@ -767,10 +794,10 @@ type Item struct {
 }
 
 ...
-	// Sort query resuls by rating first, then by year
+	// Sort query results by rating first, then by year
 	query := db.Query("items").Sort("rating+year", true)
 
-	// Sort query resuls by rating first, then by year, and put item where rating == 5 and year == 2010 first
+	// Sort query results by rating first, then by year, and put item where rating == 5 and year == 2010 first
 	query := db.Query("items").Sort("rating+year", true,[]interface{}{5,2010})
 ```
 
@@ -783,12 +810,12 @@ For make query to the composite index, pass []interface{} to `.WhereComposite` f
 
 ### Aggregations
 
-Reindexer allows to retrive aggregated results. Currently Average, Sum, Minimum, Maximum Facet and Distinct aggregations are supported.
+Reindexer allows to retrieve aggregated results. Currently Average, Sum, Minimum, Maximum Facet and Distinct aggregations are supported.
 
 - `AggregateMax` - get maximum field value
-- `AggregateMin` - get manimum field value
+- `AggregateMin` - get minimum field value
 - `AggregateSum` - get sum field value
-- `AggregateAvg` - get averatge field value
+- `AggregateAvg` - get average field value
 - `AggregateFacet` - get fields facet value
 - `Distinct` - get list of unique values of the field
 
@@ -843,7 +870,7 @@ Example code for aggregate `items` by `price` and `name`
 
 ### Searching in array fields with matching array indexes
 
-Reindexer allows to search data in array fields when matching values have same indixes positions.
+Reindexer allows to search data in array fields when matching values have same indexes positions.
 For instance, we've got an array of structures:
 
 ```go
@@ -890,10 +917,10 @@ equal_position doesn't work with the following conditions: IS NULL, IS EMPTY and
 
 ### Atomic on update functions
 
-There are atomic functions, which executes under namespace lock, and therefore guarantes data consistency:
+There are atomic functions, which executes under namespace lock, and therefore guarantees data consistency:
 
 - serial - sequence of integer, useful for uniq ID generation
-- timestamp - current time stamp of operation, useful for data syncronisation
+- timestamp - current time stamp of operation, useful for data synchronization
 
 These functions can be passed to Upsert/Insert/Update in 3-rd and next arguments.
 
@@ -917,7 +944,7 @@ Data expiration is useful for some classes of information, including machine gen
 
 Reindexer makes it possible to set TTL (time to live) for Namespace items. Adding TtlIndex to Namespace automatically removes items after a specified number of seconds.
 
-Ttl indexes work only with int64 fields and store UNIX timestamp data. Items containig ttl index expire after `expire_after` seconds. Example of decalring TtlIndex in Golang:
+Ttl indexes work only with int64 fields and store UNIX timestamp data. Items containing ttl index expire after `expire_after` seconds. Example of declaring TtlIndex in Golang:
 
 ```go
             type NamespaceExample struct {
@@ -945,7 +972,7 @@ Upsert or Delete functions can process JSON just by passing []byte argument with
 	db.Upsert  ("items",json)
 ```
 
-It is just faster equalent of:
+It is just faster equivalent of:
 
 ```go
 	item := &Item{}
@@ -960,7 +987,7 @@ In case of requiment to serialize results of Query in JSON format, then it is po
 ```go
 ...
 	iterator := db.Query("items").
-		Select ("id","name").        // Filter output JSON: Select only "id" and "name" fields of items, another fields will be ommited
+		Select ("id","name").        // Filter output JSON: Select only "id" and "name" fields of items, another fields will be omitted
 		Limit (1).
 		ExecToJson ("root_object")   // Name of root object of output JSON
 
@@ -982,7 +1009,7 @@ This code will print something like:
 ### Using object cache
 
 To avoid race conditions, by default object cache is turned off and all objects are allocated and deserialized from reindexer internal format (called `CJSON`) per each query.
-The deserialization is uses reflection, so it's speed is not optimal (in fact `CJSON` deserialization is ~3-10x faster than `JSON`, and ~1.2x faster than `GOB`), but perfrormance is still seriously limited by reflection overhead.
+The deserialization is uses reflection, so it's speed is not optimal (in fact `CJSON` deserialization is ~3-10x faster than `JSON`, and ~1.2x faster than `GOB`), but performance is still seriously limited by reflection overhead.
 
 There are 2 ways to enable object cache:
 
@@ -991,7 +1018,7 @@ There are 2 ways to enable object cache:
 
 #### DeepCopy interface
 
-If object is implements DeepCopy intreface, then reindexer will turn on object cache and use DeepCopy interface to copy objects from cache to query results. The DeepCopy interface is responsible to
+If object is implements DeepCopy interface, then reindexer will turn on object cache and use DeepCopy interface to copy objects from cache to query results. The DeepCopy interface is responsible to
 make deep copy of source object.
 
 Here is sample of DeepCopy interface implementation
@@ -1009,11 +1036,11 @@ func (item *Item) DeepCopy () interface {} {
 }
 ```
 
-There are availbale code generation tool [gencopy](../gencopy), which can automatically generate DeepCopy interface for structs.
+There are available code generation tool [gencopy](../gencopy), which can automatically generate DeepCopy interface for structs.
 
 #### Get shared objects from object cache (USE WITH CAUTION)
 
-To speed up queries and do not allocate new objects per each query it is possible ask query return objects directly from object cache. For enable this behaviour, call `AllowUnsafe(true)` on `Iterator`.
+To speed up queries and do not allocate new objects per each query it is possible ask query return objects directly from object cache. For enable this behavior, call `AllowUnsafe(true)` on `Iterator`.
 
 WARNING: when used `AllowUnsafe(true)` queries returns shared pointers to structs in object cache. Therefore application MUST NOT modify returned objects.
 
@@ -1037,7 +1064,7 @@ WARNING: when used `AllowUnsafe(true)` queries returns shared pointers to struct
 
 #### Limit size of object cache
 
-By default maximum size of object cache is 256000 items for each namespace. To change maximim size use `ObjCacheSize` method of `NameapaceOptions`, passed
+By default maximum size of object cache is 256000 items for each namespace. To change maximum size use `ObjCacheSize` method of `NameapaceOptions`, passed
 to OpenNamespace. e.g.
 
 ```go
@@ -1121,7 +1148,7 @@ go func() {
 }()
 ```
 
-3. Run application with envirnoment variable `HEAPPROFILE=/tmp/pprof`
+3. Run application with environment variable `HEAPPROFILE=/tmp/pprof`
 4. Then use the pprof tool to look at the heap profile:
 
 ```bash
@@ -1132,11 +1159,15 @@ pprof -symbolize remote http://localhost:6060/debug/cgo/pprof/heap
 
 A list of connectors for work with Reindexer via other program languages (TBC later):
 
-### Pyreindexer
+### Pyreindexer for Python 
 
-1. Pyreindexer for Python (version >=3.6 is required).
-
+Pyreindexer is official connector, and maintained by Reindexer's team. It supports both builtin and standalone modes.
 Before installation reindexer-dev (version >= 2.10) should be installed. See [installation instructions](cpp_src/readme.md#Installation) for details.
+
+- *Support modes*: standalone, builtin 
+- *API Used:* binary ABI, cproto
+- *Dependency on reindexer library (reindexer-dev package):* yes
+
 For install run:
 
 ```bash
@@ -1144,7 +1175,45 @@ pip3 install pyreindexer
 ```
 
 https://github.com/Restream/reindexer-py
-https://pypi.org/project/pyreindexer/
+https://pypi.org/project/pyreindexer/   
+Python version >=3.6 is required).
+
+### Reindexer for Java
+
+- *Support modes*: standalone, builtin, builtinserver
+- *API Used*: binary ABI, cproto
+- *Dependency on reindexer library (reindexer-dev package):* yes, for builtin & builtinserver
+
+Reindexer for java is official connector, and maintained by Reindexer's team. It supports both builtin and standalone modes.
+For enable builtin mode support reindexer-dev (version >= 3.1.0) should be installed. See [installation instructions](cpp_src/readme.md#Installation) for details.
+
+For install reindexer to Java or Kotlin project add the following lines to maven project file
+````
+<dependency>
+    <groupId>com.github.restream</groupId>
+    <artifactId>rx-connector</artifactId>
+    <version>[LATEST_VERSION]</version>
+</dependency>
+````
+https://github.com/Restream/reindexer-java   
+Note: Java version >= 1.8 is required.
+
+### 3rd party open source connectors
+#### PHP
+https://github.com/Smolevich/reindexer-client 
+- *Support modes:* standalone only 
+- *API Used:* HTTP REST API
+- *Dependency on reindexer library (reindexer-dev package):* no
+#### Rust
+https://github.com/coinrust/reindexer-rs
+- *Support modes:* standalone, builtin
+- *API Used:* binary ABI, cproto
+- *Dependency on reindexer library (reindexer-dev package):* yes
+#### .NET
+https://github.com/oruchreis/ReindexerNet
+- *Support modes:* builtin
+- *API Used:* binary ABI
+- *Dependency on reindexer library (reindexer-dev package):* yes
 
 ## Limitations and known issues
 

@@ -104,12 +104,13 @@ void QueryResults::lockResults(bool lock) {
 	if (!lock && !lockedResults_) return;
 	if (lock) assert(!lockedResults_);
 	for (size_t i = 0; i < items_.size(); ++i) {
-		lockItem(items_[i], items_[i].Nsid(), lock);
+		uint16_t mainNsID = items_[i].Nsid();
+		lockItem(items_[i], mainNsID, lock);
 		if (joined_.empty()) continue;
 		Iterator itemIt{this, int(i), errOK};
 		auto joinIt = itemIt.GetJoined();
 		if (joinIt.getJoinedItemsCount() == 0) continue;
-		size_t joinedNs = joined_.size();
+		size_t joinedNs = GetJoinedNsCtxIndex(mainNsID);
 		for (auto fieldIt = joinIt.begin(); fieldIt != joinIt.end(); ++fieldIt, ++joinedNs) {
 			for (int j = 0; j < fieldIt.ItemsCount(); ++j) lockItem(fieldIt[j], joinedNs, lock);
 		}
