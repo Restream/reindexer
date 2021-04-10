@@ -6,7 +6,8 @@ jobs:
       - uses: actions/checkout@v2
       - name: Prepare Environment
         run: |
-          brew install protobuf
+          ./dependencies.sh
+          #brew install protobuf
           mkdir build
         shell: bash
       - name: Build Reindexer
@@ -27,7 +28,8 @@ jobs:
       - uses: actions/checkout@v2
       - name: Prepare Environment
         run: |
-          sudo apt-get install  libprotobuf-dev
+          ./dependencies.sh
+          #sudo apt-get install  libprotobuf-dev
           mkdir build
         shell: bash
       - name: Build Reindexer
@@ -48,7 +50,8 @@ jobs:
       - uses: actions/checkout@v2
       - name: Prepare Environment
         run: |
-          sudo apt-get install  libprotobuf-dev
+          ./dependencies.sh
+          #sudo apt-get install  libprotobuf-dev
           mkdir build
         shell: bash
       - name: Build Reindexer
@@ -69,7 +72,8 @@ jobs:
       - uses: actions/checkout@v2
       - name: Prepare Environment
         run: |
-          sudo apt-get install  libprotobuf-dev
+          ./dependencies.sh
+          #sudo apt-get install  libprotobuf-dev
           mkdir build
         shell: bash
       - name: Build Reindexer
@@ -88,7 +92,8 @@ jobs:
       - uses: actions/checkout@v2
       - name: Prepare Environment
         run: |
-          sudo apt-get install  libprotobuf-dev
+          ./dependencies.sh
+          #sudo apt-get install  libprotobuf-dev
           mkdir build
         shell: bash
       - name: Build Reindexer
