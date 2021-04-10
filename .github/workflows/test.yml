@@ -14,7 +14,7 @@ jobs:
         run: |
           cd build
           #cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
-          cmake -G "Visual Studio 16 2019 Win64" ..
+          cmake -G "Visual Studio 16 2019" ..
           make -j4
           make doc
           STRIP=/bin/true cpack
