@@ -1,6 +1,20 @@
 on: [push, create, pull_request]
 jobs:
-  build-windows:
+  build-windows-msvc:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build Reindexer
+        run: |
+          mkdir build && cd build
+          cmake -G "Visual Studio 16 2019" ..
+          cmake --build . --config Release
+          cmake --build . --config Release --target face
+          cmake --build . --config Release --target swagger
+          cpack
+        shell: bash
+
+  build-windows-mingw:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v2
@@ -12,7 +26,7 @@ jobs:
       - name: Build Reindexer
         run: |
           mkdir build && cd build
-          cmake -G "Visual Studio 16 2019" ..
+          cmake -G "MinGW Makefiles" ..
           cmake --build . --config Release
           cmake --build . --config Release --target face
           cmake --build . --config Release --target swagger
