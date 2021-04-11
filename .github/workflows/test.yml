@@ -14,7 +14,7 @@ jobs:
           mkdir build && cd build
           cmake -G "Visual Studio 16 2019" ..
           cmake --build . --config Release
-          #cmake --build . --config Release --target face
+          cmake --build . --config Release --target face
           #cmake --build . --config Release --target swagger
           #cmake --build . --config Release --target doc
           #cpack
@@ -32,6 +32,7 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
+          export CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH:grpc/third_party/abseil-cpp/absl
           mkdir build && cd build
           cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
           make -j4
@@ -54,6 +55,7 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
+          export CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH:grpc/third_party/abseil-cpp/absl
           mkdir build && cd build
           cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
           make -j4
@@ -76,6 +78,7 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
+          export CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH:grpc/third_party/abseil-cpp/absl
           mkdir build && cd build
           cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
           make -j4
@@ -98,6 +101,7 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
+          export CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH:grpc/third_party/abseil-cpp/absl
           mkdir build && cd build
           cmake -DWITH_ASAN=On -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
           make -j4
@@ -118,6 +122,7 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
+          export CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH:grpc/third_party/abseil-cpp/absl
           mkdir build && cd build
           cmake -DWITH_TSAN=On -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
           make -j4
