@@ -16,7 +16,7 @@ jobs:
           cmake --build . --config Release
           cmake --build . --config Release --target face
           cmake --build . --config Release --target swagger
-          #cmake --build . --config Release --target doc
+          cmake --build . --config Release --target doc
           #cpack
         shell: bash
 
@@ -32,8 +32,11 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
+          pwd
           find grpc/third_party/abseil-cpp -name absl
+          echo $CPLUS_INCLUDE_PATH
           export CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH:grpc/third_party/abseil-cpp
+          echo $CPLUS_INCLUDE_PATH
           mkdir build && cd build
           cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
           make -j4
