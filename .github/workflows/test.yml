@@ -26,8 +26,8 @@ jobs:
       - name: Build Reindexer
         run: |
           dir "C:\\"
-          dir "C:\\Program\ Files"
-          dir "C:\\Program\ Files\\mingw-w64"
+          dir "C:\\Program Files"
+          dir "C:\\Program Files\\mingw-w64"
           mkdir build && cd build
           cmake -G "MinGW Makefiles" ..
           cmake --build . --config Release
@@ -48,15 +48,9 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
-          pwd
-          find grpc/third_party/abseil-cpp -name absl
-          echo $CPLUS_INCLUDE_PATH
-          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
-          echo $CPLUS_INCLUDE_PATH
           mkdir build && cd build
           cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
           make -I$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp -j4
-          make doc
           STRIP=/bin/true cpack
         shell: bash
       - name: CXX Tests
@@ -75,12 +69,9 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
-          find grpc/third_party/abseil-cpp -name absl
-          export CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH:grpc/third_party/abseil-cpp
           mkdir build && cd build
           cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
-          make -j4
-          make doc
+          make -I$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp -j4
           STRIP=/bin/true cpack
         shell: bash
       - name: CXX Tests
@@ -99,12 +90,9 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
-          find grpc/third_party/abseil-cpp -name absl
-          export CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH:grpc/third_party/abseil-cpp
           mkdir build && cd build
           cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
-          make -j4
-          make doc
+          make -I$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp -j4
           STRIP=/bin/true cpack
         shell: bash
       - name: CXX Tests
@@ -123,11 +111,9 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
-          find grpc/third_party/abseil-cpp -name absl
-          export CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH:grpc/third_party/abseil-cpp
           mkdir build && cd build
           cmake -DWITH_ASAN=On -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
-          make -j4
+          make -I$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp -j4
         shell: bash
       - name: CXX Tests
         run: ctest
@@ -145,12 +131,9 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
-          find grpc/third_party/abseil-cpp -name absl
-          export CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH:grpc/third_party/abseil-cpp
           mkdir build && cd build
           cmake -DWITH_TSAN=On -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
-          make -j4
-          make doc
+          make -I$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp -j4
           STRIP=/bin/true cpack
         shell: bash
       - name: CXX Tests
