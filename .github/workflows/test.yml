@@ -30,7 +30,7 @@ jobs:
           cmake --build . --config Release
           cmake --build . --config Release --target face
           cmake --build . --config Release --target swagger
-          cpack
+          STRIP=/bin/true cpack
         shell: bash
 
   build-macos:
@@ -48,11 +48,11 @@ jobs:
           pwd
           find grpc/third_party/abseil-cpp -name absl
           echo $CPLUS_INCLUDE_PATH
-          export CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH:grpc/third_party/abseil-cpp
+          export CPLUS_INCLUDE_PATH=$GITHUB_REPOSITORY/grpc/third_party/abseil-cpp
           echo $CPLUS_INCLUDE_PATH
           mkdir build && cd build
           cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
-          make -Igrpc/third_party/abseil-cpp -j4
+          make -I$GITHUB_REPOSITORY/grpc/third_party/abseil-cpp -j4
           make doc
           STRIP=/bin/true cpack
         shell: bash
