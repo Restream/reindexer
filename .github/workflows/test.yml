@@ -41,7 +41,7 @@ jobs:
         run: |
           export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
-          cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
+          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
           make -j4
           STRIP=/bin/true cpack
         shell: bash
@@ -65,7 +65,7 @@ jobs:
         run: |
           export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
-          cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
+          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
           make -j4
           STRIP=/bin/true cpack
         shell: bash
@@ -89,7 +89,7 @@ jobs:
         run: |
           export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
-          cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
+          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
           make -j4
           STRIP=/bin/true cpack
         shell: bash
@@ -113,7 +113,7 @@ jobs:
         run: |
           export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
-          cmake -DWITH_ASAN=On -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
+          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_ASAN=On -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
           make -j4
         shell: bash
       - name: CXX Tests
@@ -136,7 +136,7 @@ jobs:
         run: |
           export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
-          cmake -DWITH_TSAN=On -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
+          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_TSAN=On -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
           make -j4
           STRIP=/bin/true cpack
         shell: bash
