@@ -5,6 +5,6 @@ cd grpc
 git submodule update --init
 mkdir -p cmake/build
 cd cmake/build
-cmake -DCMAKE_BUILD_TYPE=Release -DgRPC_INSTALL=ON ../..
+cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DgRPC_INSTALL=ON ../..
 make -j4
 sudo make install
