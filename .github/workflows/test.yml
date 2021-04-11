@@ -25,8 +25,8 @@ jobs:
           #shell: bash
       - name: Build Reindexer
         run: |
-          dir "C:"
-          dir "C:\mingw-w64"
+          dir "C:\\"
+          dir "C:\\mingw-w64"
           mkdir build && cd build
           cmake -G "MinGW Makefiles" ..
           cmake --build . --config Release
