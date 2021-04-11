@@ -46,7 +46,9 @@ jobs:
           STRIP=/bin/true cpack
         shell: bash
       - name: CXX Tests
-        run: ctest
+        run: |
+          cd build
+          ctest
         shell: bash
 
   build-ubuntu20:
@@ -68,7 +70,9 @@ jobs:
           STRIP=/bin/true cpack
         shell: bash
       - name: CXX Tests
-        run: ctest
+        run: |
+          cd build
+          ctest
         shell: bash
 
   build-ubuntu18:
@@ -90,7 +94,9 @@ jobs:
           STRIP=/bin/true cpack
         shell: bash
       - name: CXX Tests
-        run: ctest
+        run: |
+          cd build
+          ctest
         shell: bash
 
   build-asan:
@@ -111,7 +117,9 @@ jobs:
           make -j4
         shell: bash
       - name: CXX Tests
-        run: ctest
+        run: |
+          cd build
+          ctest
         shell: bash
 
   build-tsan:
@@ -133,7 +141,9 @@ jobs:
           STRIP=/bin/true cpack
         shell: bash
       - name: CXX Tests
-        run: ctest
+        run: |
+          cd build
+          ctest
         shell: bash
 
 # test-pyreindexer:
