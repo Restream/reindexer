@@ -25,6 +25,7 @@ jobs:
           #shell: bash
       - name: Build Reindexer
         run: |
+          where make
           dir "C:\\"
           dir "C:\\tools"
           dir "C:\\Program Files"
