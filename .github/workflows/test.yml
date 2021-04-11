@@ -18,25 +18,13 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v2
-        #- name: Prepare Environment
-        #run: |
-          #brew install protobuf
-          #./.github/workflows/install_grpc.sh
-          #shell: bash
       - name: Build Reindexer
         run: |
-          where make
-          dir "C:\\"
-          dir "C:\\tools"
-          dir "C:\\Program Files"
-          dir "C:\\Program Files\\CMake"
-          dir "C:\\Program Files\\mingw-w64"
           mkdir build && cd build
           cmake -G "MinGW Makefiles" ..
           cmake --build . --config Release
           cmake --build . --config Release --target face
           cmake --build . --config Release --target swagger
-          STRIP=/bin/true cpack
         shell: bash
 
   build-macos:
@@ -51,9 +39,10 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
+          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
           cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
-          make -I$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp -j4
+          make -j4
           STRIP=/bin/true cpack
         shell: bash
       - name: CXX Tests
@@ -72,9 +61,10 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
+          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
           cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
-          make -I$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp -j4
+          make -j4
           STRIP=/bin/true cpack
         shell: bash
       - name: CXX Tests
@@ -93,9 +83,10 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
+          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
           cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
-          make -I$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp -j4
+          make -j4
           STRIP=/bin/true cpack
         shell: bash
       - name: CXX Tests
@@ -114,9 +105,10 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
+          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
           cmake -DWITH_ASAN=On -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
-          make -I$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp -j4
+          make -j4
         shell: bash
       - name: CXX Tests
         run: ctest
@@ -134,9 +126,10 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
+          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
           cmake -DWITH_TSAN=On -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
-          make -I$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp -j4
+          make -j4
           STRIP=/bin/true cpack
         shell: bash
       - name: CXX Tests
