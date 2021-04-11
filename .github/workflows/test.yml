@@ -16,8 +16,7 @@ jobs:
           cmake --build . --config Release
           cmake --build . --config Release --target face
           cmake --build . --config Release --target swagger
-          cmake --build . --config Release --target doc
-          #cpack
+          cpack
         shell: bash
 
   build-macos:
@@ -39,7 +38,7 @@ jobs:
           echo $CPLUS_INCLUDE_PATH
           mkdir build && cd build
           cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
-          make -j4
+          make -Igrpc/third_party/abseil-cpp -j4
           make doc
           STRIP=/bin/true cpack
         shell: bash
