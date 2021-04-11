@@ -25,6 +25,8 @@ jobs:
           #shell: bash
       - name: Build Reindexer
         run: |
+          dir C:\
+          dir C:\mingw-w64
           mkdir build && cd build
           cmake -G "MinGW Makefiles" ..
           cmake --build . --config Release
@@ -48,11 +50,11 @@ jobs:
           pwd
           find grpc/third_party/abseil-cpp -name absl
           echo $CPLUS_INCLUDE_PATH
-          export CPLUS_INCLUDE_PATH=$GITHUB_REPOSITORY/grpc/third_party/abseil-cpp
+          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           echo $CPLUS_INCLUDE_PATH
           mkdir build && cd build
           cmake -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
-          make -I$GITHUB_REPOSITORY/grpc/third_party/abseil-cpp -j4
+          make -I$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp -j4
           make doc
           STRIP=/bin/true cpack
         shell: bash
