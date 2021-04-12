@@ -34,7 +34,8 @@ jobs:
       - name: Prepare Environment
         run: |
           ./dependencies.sh
-          #brew install protobuf googletest
+          brew install googletest
+          #brew install protobuf
           #./.github/workflows/install_grpc.sh
         shell: bash
       - name: Build Reindexer
@@ -60,7 +61,8 @@ jobs:
       - name: Prepare Environment
         run: |
           sudo ./dependencies.sh
-          #sudo apt-get install libprotobuf-dev libgtest-dev
+          sudo apt-get install libgtest-dev
+          #sudo apt-get install libprotobuf-dev
           #./.github/workflows/install_grpc.sh
         shell: bash
       - name: Build Reindexer
@@ -86,7 +88,8 @@ jobs:
       - name: Prepare Environment
         run: |
           sudo ./dependencies.sh
-          #sudo apt-get install libprotobuf-dev libgtest-dev
+          sudo apt-get install libgtest-dev
+          #sudo apt-get install libprotobuf-dev
           #./.github/workflows/install_grpc.sh
         shell: bash
       - name: Build Reindexer
@@ -112,7 +115,8 @@ jobs:
       - name: Prepare Environment
         run: |
           sudo ./dependencies.sh
-          #sudo apt-get install libprotobuf-dev libgtest-dev
+          sudo apt-get install libgtest-dev
+          #sudo apt-get install libprotobuf-dev
           #./.github/workflows/install_grpc.sh
         shell: bash
       - name: Build Reindexer
@@ -136,7 +140,8 @@ jobs:
       - name: Prepare Environment
         run: |
           sudo ./dependencies.sh
-          #sudo apt-get install libprotobuf-dev libgtest-dev
+          sudo apt-get install libgtest-dev
+          #sudo apt-get install libprotobuf-dev
           #./.github/workflows/install_grpc.sh
         shell: bash
       - name: Build Reindexer
