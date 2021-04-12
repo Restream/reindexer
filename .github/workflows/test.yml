@@ -96,6 +96,7 @@ jobs:
           #sudo apt-get install libprotobuf-dev
           #./.github/workflows/install_grpc.sh
           sudo apt-get install libgtest-dev
+          ./.github/workflows/install_gtest.sh
         shell: bash
       - name: Build Reindexer
         run: |
