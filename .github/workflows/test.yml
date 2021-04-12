@@ -90,13 +90,12 @@ jobs:
       - name: Prepare Environment
         run: |
           #sudo apt-get install googletest
-          sudo apt-get install libgtest-dev
+          #sudo apt-get install libgtest-dev
+          ./.github/workflows/install_gtest.sh
           ./.github/workflows/install_gbench.sh
           sudo ./dependencies.sh
           #sudo apt-get install libprotobuf-dev
           #./.github/workflows/install_grpc.sh
-          sudo apt-get install libgtest-dev
-          ./.github/workflows/install_gtest.sh
         shell: bash
       - name: Build Reindexer
         run: |
