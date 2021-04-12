@@ -89,6 +89,8 @@ jobs:
       - uses: actions/checkout@v2
       - name: Prepare Environment
         run: |
+          sudo apt-get install googletest
+          sudo apt-get install googletest-tools
           sudo apt-get install libgtest-dev
           ./.github/workflows/install_gbench.sh
           sudo ./dependencies.sh
