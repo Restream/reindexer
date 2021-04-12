@@ -34,15 +34,16 @@ jobs:
       - name: Prepare Environment
         run: |
           ./dependencies.sh
-          brew install protobuf googletest
-          ./.github/workflows/install_grpc.sh
+          #brew install protobuf googletest
+          #./.github/workflows/install_grpc.sh
         shell: bash
       - name: Build Reindexer
         run: |
           #find / -name libgtest*
-          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+          #export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
-          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
+          #cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
+          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
           make -j4
           STRIP=/bin/true cpack
         shell: bash
@@ -59,15 +60,16 @@ jobs:
       - name: Prepare Environment
         run: |
           sudo ./dependencies.sh
-          sudo apt-get install libprotobuf-dev libgtest-dev
-          ./.github/workflows/install_grpc.sh
+          #sudo apt-get install libprotobuf-dev libgtest-dev
+          #./.github/workflows/install_grpc.sh
         shell: bash
       - name: Build Reindexer
         run: |
           #find / -name libgtest*
-          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+          #export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
-          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
+          #cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
+          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
           make -j4
           STRIP=/bin/true cpack
         shell: bash
@@ -84,15 +86,16 @@ jobs:
       - name: Prepare Environment
         run: |
           sudo ./dependencies.sh
-          sudo apt-get install libprotobuf-dev libgtest-dev
-          ./.github/workflows/install_grpc.sh
+          #sudo apt-get install libprotobuf-dev libgtest-dev
+          #./.github/workflows/install_grpc.sh
         shell: bash
       - name: Build Reindexer
         run: |
           #find / -name libgtest*
-          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+          #export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
-          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
+          #cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
+          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
           make -j4
           STRIP=/bin/true cpack
         shell: bash
@@ -109,14 +112,15 @@ jobs:
       - name: Prepare Environment
         run: |
           sudo ./dependencies.sh
-          sudo apt-get install libprotobuf-dev libgtest-dev
-          ./.github/workflows/install_grpc.sh
+          #sudo apt-get install libprotobuf-dev libgtest-dev
+          #./.github/workflows/install_grpc.sh
         shell: bash
       - name: Build Reindexer
         run: |
-          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+          #export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
-          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_ASAN=On -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
+          #cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_ASAN=On -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
+          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_ASAN=On ..
           make -j4
         shell: bash
       - name: CXX Tests
@@ -132,14 +136,15 @@ jobs:
       - name: Prepare Environment
         run: |
           sudo ./dependencies.sh
-          sudo apt-get install libprotobuf-dev libgtest-dev
-          ./.github/workflows/install_grpc.sh
+          #sudo apt-get install libprotobuf-dev libgtest-dev
+          #./.github/workflows/install_grpc.sh
         shell: bash
       - name: Build Reindexer
         run: |
-          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+          #export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
-          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_TSAN=On -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
+          #cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_TSAN=On -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
+          cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_TSAN=On ..
           make -j4
           STRIP=/bin/true cpack
         shell: bash
