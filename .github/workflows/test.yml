@@ -39,7 +39,7 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
-          find / -name libgtest*
+          #find / -name libgtest*
           export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
           cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
@@ -64,7 +64,7 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
-          find / -name libgtest*
+          #find / -name libgtest*
           export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
           cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
@@ -89,7 +89,7 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
-          find / -name libgtest*
+          #find / -name libgtest*
           export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
           cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_GRPC=ON -DGRPC_PACKAGE_PROVIDER="MODULE" ..
