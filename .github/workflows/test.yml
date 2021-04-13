@@ -41,7 +41,7 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
-          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+          #export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
           cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_GRPC=ON ..
           make -j4
@@ -67,7 +67,7 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
-          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+          #export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
           cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_GRPC=ON ..
           make -j4
@@ -93,7 +93,7 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
-          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+          #export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
           cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_GRPC=ON ..
           make -j4
@@ -119,7 +119,7 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
-          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+          #export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
           cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_ASAN=On -DENABLE_GRPC=ON ..
           make -j4
@@ -144,7 +144,7 @@ jobs:
         shell: bash
       - name: Build Reindexer
         run: |
-          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+          #export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
           cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWITH_TSAN=On -DENABLE_GRPC=ON ..
           make -j4
