@@ -20,6 +20,13 @@ if(PROTOBUF_FOUND)
 
     SET(PROTOBUF_PROTOC_EXECUTABLE protoc)
 
+    find_package(gRPC ${GRPC_PACKAGE_PROVIDER} REQUIRED)
+    find_program(GRPC_CPP_PLUGIN grpc_cpp_plugin)
+    set(_GRPC_GRPCPP_UNSECURE gRPC::grpc++)
+    set(_REFLECTION gRPC::grpc++_reflection)
+    list(APPEND GRPC_LIBRARIES ${_REFLECTION} ${_GRPC_GRPCPP_UNSECURE})
+    message(STATUS "Using gRPC ${gRPC_VERSION}")
+
     foreach(CUR_PROTO_FILE ${PROTOBUF_SOURCE_FILES})
         get_filename_component(PROTOBUF_INPUT_DIRECTORY "${CUR_PROTO_FILE}" DIRECTORY)
         get_filename_component(PROTOBUF_INPUT_DIRECTORY "${PROTOBUF_INPUT_DIRECTORY}" ABSOLUTE)
