@@ -5,7 +5,7 @@ cd grpc
 git submodule update --init
 mkdir -p cmake/build
 cd cmake/build
-cmake -D CMAKE_CXX_FLAGS="-lrt" -DCMAKE_BUILD_TYPE=Release DgRPC_INSTALL=ON ../..
+cmake -DCMAKE_BUILD_TYPE=Release DgRPC_INSTALL=ON ../..
 make -j4
 sudo make install
 cd ../../..

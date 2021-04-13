@@ -3,10 +3,7 @@ cmake_minimum_required(VERSION 3.0)
 project(tests)
 
 SET(TARGET tests)
-list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer ${REINDEXER_LIBRARIES} ${GTEST_LIBRARIES})
-if(GRPC_FOUND)
-    list(APPEND REINDEXER_LIBRARIES ${GRPC_LIBRARIES})
-endif()
+list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer ${REINDEXER_LIBRARIES})
 
 option(XML_REPORT "Enable XML xUnit report" OFF)
 
@@ -42,10 +39,12 @@ file (GLOB_RECURSE SRCS *.cc *.h ${GENERATED_PROTO_DIR}/*.cc)
 
 add_executable(${TARGET} ${SRCS})
 
-target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES} ${GTEST_LIBRARY})
+target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES} ${GTEST_LIBRARIES})
+message("GTEST LIBRARIES XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
 if (ENABLE_GRPC)
     add_definitions(-DWITH_GRPC)
-    target_link_libraries(${TARGET} reindexer_grpc_library)
+    target_link_libraries(${TARGET} reindexer_grpc_library ${GRPC_LIBRARIES})
+	message("GRPC LIBRARIES XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
 endif()
 
 find_program (GTEST_PARALLEL "gtest-parallel")
