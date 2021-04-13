@@ -42,7 +42,7 @@ add_executable(${TARGET} ${SRCS})
 target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES} ${GTEST_LIBRARIES})
 if (ENABLE_GRPC)
     add_definitions(-DWITH_GRPC)
-    target_link_libraries(${TARGET} reindexer_grpc_library ${GRPC_LIBRARIES})
+    target_link_libraries(${TARGET} reindexer_grpc_library)
 endif()
 
 find_program (GTEST_PARALLEL "gtest-parallel")
