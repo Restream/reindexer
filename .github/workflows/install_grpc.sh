@@ -8,4 +8,5 @@ cd cmake/build
 cmake -DCMAKE_BUILD_TYPE=Release DgRPC_INSTALL=ON ../..
 make -j4
 sudo make install
+sudo ldconfig
 cd ../../..

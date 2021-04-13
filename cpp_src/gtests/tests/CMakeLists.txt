@@ -44,7 +44,7 @@ message("GTEST LIBRARIES XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
 if (ENABLE_GRPC)
     add_definitions(-DWITH_GRPC)
     target_link_libraries(${TARGET} reindexer_grpc_library ${GRPC_LIBRARIES})
-	message("GRPC LIBRARIES XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+    message("GRPC LIBRARIES XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
 endif()
 
 find_program (GTEST_PARALLEL "gtest-parallel")
