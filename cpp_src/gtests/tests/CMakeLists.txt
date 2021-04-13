@@ -20,13 +20,6 @@ if(PROTOBUF_FOUND)
 
     SET(PROTOBUF_PROTOC_EXECUTABLE protoc)
 
-    find_package(gRPC ${GRPC_PACKAGE_PROVIDER} REQUIRED)
-    find_program(GRPC_CPP_PLUGIN grpc_cpp_plugin)
-    set(_GRPC_GRPCPP_UNSECURE gRPC::grpc++)
-    set(_REFLECTION gRPC::grpc++_reflection)
-    list(APPEND GRPC_LIBRARIES ${_REFLECTION} ${_GRPC_GRPCPP_UNSECURE})
-    message(STATUS "Using gRPC ${gRPC_VERSION}")
-
     foreach(CUR_PROTO_FILE ${PROTOBUF_SOURCE_FILES})
         get_filename_component(PROTOBUF_INPUT_DIRECTORY "${CUR_PROTO_FILE}" DIRECTORY)
         get_filename_component(PROTOBUF_INPUT_DIRECTORY "${PROTOBUF_INPUT_DIRECTORY}" ABSOLUTE)
@@ -47,11 +40,9 @@ file (GLOB_RECURSE SRCS *.cc *.h ${GENERATED_PROTO_DIR}/*.cc)
 add_executable(${TARGET} ${SRCS})
 
 target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES} ${GTEST_LIBRARIES})
-message("GTEST LIBRARIES XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
 if (ENABLE_GRPC)
     add_definitions(-DWITH_GRPC)
     target_link_libraries(${TARGET} reindexer_grpc_library ${GRPC_LIBRARIES})
-    message("GRPC LIBRARIES XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
 endif()
 
 find_program (GTEST_PARALLEL "gtest-parallel")
