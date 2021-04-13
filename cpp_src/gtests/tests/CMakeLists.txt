@@ -3,7 +3,10 @@ cmake_minimum_required(VERSION 3.0)
 project(tests)
 
 SET(TARGET tests)
-list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer ${REINDEXER_LIBRARIES} ${GTEST_LIBRARIES} ${GRPC_LIBRARIES})
+list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer ${REINDEXER_LIBRARIES} ${GTEST_LIBRARIES})
+if(GRPC_FOUND)
+    list(APPEND REINDEXER_LIBRARIES ${GRPC_LIBRARIES})
+endif()
 
 option(XML_REPORT "Enable XML xUnit report" OFF)
 
