@@ -160,9 +160,9 @@ jobs:
   test-pyreindexer:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
       - name: Test PyReindexer
-        uses: ginxo/github-action-build-chain@master
+        id: build-chain
+        uses: ginxo/github-action-build-chain@v2.1
         env:
           GITHUB_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
         with:
