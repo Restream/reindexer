@@ -10,6 +10,6 @@ default:
     current: echo 'default build'
 
 build:
-  - project: kiegroup/kie-wb-common
+  - project: Restream/reindexer
     build-command:
       current: echo 'build build'
