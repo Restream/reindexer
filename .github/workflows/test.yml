@@ -165,4 +165,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
         inputs:
-          definition-file: ./.github/workflow/definition-file.yml
+          definition-file: './.github/workflow/definition-file.yml'
