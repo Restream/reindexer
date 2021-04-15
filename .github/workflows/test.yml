@@ -168,4 +168,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
         with:
           definition-file: './.github/definition-file.yaml'
-          flow-type: fdb
+          flow-type: fd
