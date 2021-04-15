@@ -164,5 +164,5 @@ jobs:
         uses: ginxo/github-action-build-chain@BXMSPROD-1025
         env:
           GITHUB_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
-        inputs:
+        with:
           definition-file: './.github/workflow/definition-file.yml'
