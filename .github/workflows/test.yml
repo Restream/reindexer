@@ -162,7 +162,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Test PyReindexer
-        id: build-chain
+        id: fdb
         uses: kiegroup/github-action-build-chain@v2.5.4
         env:
           GITHUB_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
