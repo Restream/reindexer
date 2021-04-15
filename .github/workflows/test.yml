@@ -157,13 +157,10 @@ jobs:
           ctest --verbose
         shell: bash
 
-# test-pyreindexer:
-#   runs-on: ubuntu-latest
-#   steps:
-#     - uses: actions/checkout@v2
-#     - name: Test PyReindexer
-#       env:
-#         PYRX_GH_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
-#       run: .github/workflows/pyreindexer_workflow.sh
-#       shell: bash
-
+  test-pyreindexer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test PyReindexer
+        uses: ginxo/github-action-build-chain@BXMSPROD-1025
+        env:
+          PYRX_GH_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
