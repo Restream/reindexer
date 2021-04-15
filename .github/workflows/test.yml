@@ -162,7 +162,7 @@ jobs:
     steps:
       - name: Test PyReindexer
         id: build-chain
-        uses: ginxo/github-action-build-chain@master
+        uses: kiegroup/github-action-build-chain@v2.5.4
         env:
           GITHUB_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
         with:
