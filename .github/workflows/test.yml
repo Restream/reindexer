@@ -162,10 +162,10 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Test PyReindexer
-        id: fd
+        id: build-chain
         uses: kiegroup/github-action-build-chain@v2.5.4
         env:
           GITHUB_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
         with:
           definition-file: './.github/definition-file.yaml'
-          flow-type: pull-request
+          flow-type: fdb
