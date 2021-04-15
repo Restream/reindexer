@@ -161,7 +161,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Test PyReindexer
-        uses: ginxo/github-action-build-chain
+        uses: ginxo/github-action-build-chain@master
         env:
           GITHUB_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
         with:
