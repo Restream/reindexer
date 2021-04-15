@@ -4,3 +4,12 @@ dependencies:
   - project: Restream/reindexer-py
     dependencies:
       - project: Restream/reindexer
+
+default:
+  build-command:
+    current: echo 'default build'
+
+build:
+  - project: kiegroup/kie-wb-common
+    build-command:
+      current: echo 'build build'
