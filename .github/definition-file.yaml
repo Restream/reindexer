@@ -1,4 +1,4 @@
-version: '2.0'
+version: "2.0"
 dependencies:
   - project: Restream/reindexer
   - project: Restream/reindexer-py
