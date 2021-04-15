@@ -12,4 +12,7 @@ default:
 build:
   - project: Restream/reindexer
     build-command:
-      current: echo 'build build'
+      current: echo 'build build rx'
+  - project: Restream/reindexer-py
+    build-command:
+      current: echo 'build build pyrx'
