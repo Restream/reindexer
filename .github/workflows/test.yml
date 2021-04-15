@@ -166,5 +166,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
         with:
-          definition-file: './.github/workflow/definition-file.yaml'
+          definition-file: './.github/definition-file.yaml'
           flow-type: single
