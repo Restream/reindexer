@@ -163,4 +163,4 @@ jobs:
       - name: Test PyReindexer
         uses: ginxo/github-action-build-chain@BXMSPROD-1025
         env:
-          PYRX_GH_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
