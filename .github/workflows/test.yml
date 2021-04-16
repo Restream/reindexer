@@ -179,6 +179,8 @@ jobs:
         run: |
           pwd
           ls -al
+          chmod a+x dependencies.sh
+          ls -al
           sudo ./dependencies.sh
         shell: bash
       - name: Install Reindexer
