@@ -14,6 +14,7 @@ build:
     build-command:
       current: |
         sudo ./dependencies.sh
+        ls
         cd build
         ls
         cmake ..
