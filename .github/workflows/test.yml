@@ -77,8 +77,7 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: ubuntu20-deb
-          path: |
-            reindexer*.deb
+          path: build/reindexer*.deb
 #     - name: CXX Tests
 #       run: |
 #         cd build
