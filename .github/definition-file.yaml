@@ -16,4 +16,6 @@ build:
         python3 setup.py build
         sudo python3 setup.py install
         ls -a
+        cd pyreindexer
+        ls -a
         ./.github/workflows/test.sh
