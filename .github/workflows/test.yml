@@ -169,12 +169,12 @@ jobs:
     runs-on: ubuntu-20.04
     needs: build-ubuntu20
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
       - name: Download Ubuntu 20 Deb Artifacts
         uses: actions/download-artifact@v2
         with:
           name: ubuntu20-deb
-      - name: Checkout repository
-        uses: actions/checkout@v2
       - name: Install Reindexer
         env:
           RX_DIR: $GITHUB_WORKSPACE/ubuntu20-deb
