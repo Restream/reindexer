@@ -178,7 +178,7 @@ jobs:
       - name: Prepare Environment
         run: |
           pwd
-          ls -a
+          ls -al
           sudo ./dependencies.sh
         shell: bash
       - name: Install Reindexer
