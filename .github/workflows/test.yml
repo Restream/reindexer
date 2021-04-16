@@ -66,13 +66,15 @@ jobs:
           sudo ./dependencies.sh
 #         ./.github/workflows/install_gtest.sh
 #         ./.github/workflows/install_gbench.sh
+#         sudo ./dependencies.sh
 #         sudo apt-get install libprotobuf-dev
 #         ./.github/workflows/install_grpc.sh
         shell: bash
       - name: Build Reindexer
         run: |
-#         export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
+#         export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+#         mkdir build && cd build
 #         cmake -DENABLE_GRPC=ON ..
           cmake ..
           make -j4
