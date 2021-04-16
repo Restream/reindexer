@@ -7,9 +7,12 @@ dependencies:
 
 default:
   build-command:
-    current: echo 'default build'
+    current: echo 'nothing to do'
 
 build:
   - project: Restream/reindexer-py
     build-command:
-      current: echo 'build build pyrx'
+      current: |
+        python3 setup.py build
+        sudo python3 setup.py install
+        ./.github/workflows/test.sh
