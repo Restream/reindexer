@@ -10,14 +10,6 @@ default:
     current: echo 'default build'
 
 build:
-  - project: Restream/reindexer
-    build-command:
-      current: |
-        sudo ./dependencies.sh
-        cmake .
-        make -j4
-      after:
-        current: STRIP=/bin/true cpack
   - project: Restream/reindexer-py
     build-command:
       current: echo 'build build pyrx'
