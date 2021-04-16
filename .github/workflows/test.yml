@@ -176,7 +176,9 @@ jobs:
       - name: Install Reindexer
         env:
           RX_DIR: $GITHUB_WORKSPACE/ubuntu20-deb
-        run: .github/workflows/install_reindexer.sh
+        run: |
+          ls
+          ./.github/workflows/install_reindexer.sh
         shell: bash
       - name: Checkout repository
         uses: actions/checkout@v2
