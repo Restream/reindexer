@@ -12,7 +12,7 @@ default:
 build:
   - project: Restream/reindexer
     build-command:
-      current:
+      current: |
         ./dependencies.sh
         mkdir build && cd build
         cmake ..
