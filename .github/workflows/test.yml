@@ -171,6 +171,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
+      - name: Prepare Environment
+        run: sudo ./dependencies.sh
+        shell: bash
       - name: Download Ubuntu 20 Deb Artifacts
         uses: actions/download-artifact@v2
         with:
@@ -180,7 +183,7 @@ jobs:
           RX_DIR: $GITHUB_WORKSPACE/ubuntu20-deb
         run: |
           pwd
-          ls
+          ls -a
           ./.github/workflows/install_reindexer.sh
         shell: bash
       - name: Test PyReindexer
