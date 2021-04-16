@@ -14,12 +14,7 @@ build:
     build-command:
       current: |
         sudo ./dependencies.sh
-        ls
-        mkdir build
-        ls
-        cd build
-        ls
-        cmake ..
+        cmake .
         make -j4
         STRIP=/bin/true cpack
   - project: Restream/reindexer-py
