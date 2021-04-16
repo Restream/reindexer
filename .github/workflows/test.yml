@@ -191,9 +191,14 @@ jobs:
           sudo dpkg -i reindexer-server*.deb
           sudo apt-get install -f
         shell: bash
+      - name: Clone PyReindexer
+        run: |
+          git clone https://github.com/restream/reindexer-py.git
+        shell: bash
       - name: Install PyReindexer
         run: |
           pwd
+          cd reindexer-py
           python3 setup.py build
           sudo python3 setup.py install
         shell: bash
@@ -201,7 +206,7 @@ jobs:
         run: |
           pwd
           ls -a
-          cd pyreindexer
+          cd reindexer-py
           ls -a
           ./.github/workflows/test.sh
         shell: bash
