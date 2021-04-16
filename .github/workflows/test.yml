@@ -76,12 +76,13 @@ jobs:
           cmake -DENABLE_GRPC=ON ..
           make -j4
           STRIP=/bin/true cpack
+          ls
         shell: bash
-      - name: Archive artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          name: ubuntu20-deb
-          path: *.deb
+#     - name: Archive artifacts
+#       uses: actions/upload-artifact@v2
+#       with:
+#         name: ubuntu20-deb
+#         path: *.deb
 #     - name: CXX Tests
 #       run: |
 #         cd build
