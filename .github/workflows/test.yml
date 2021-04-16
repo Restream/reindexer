@@ -3,7 +3,8 @@ jobs:
 # build-windows-msvc:
 #   runs-on: windows-latest
 #   steps:
-#     - uses: actions/checkout@v2
+#     - name: Checkout repository
+#       uses: actions/checkout@v2
 #     - name: Build Reindexer
 #       run: |
 #         mkdir build && cd build
@@ -17,7 +18,8 @@ jobs:
 # build-windows-mingw:
 #   runs-on: windows-latest
 #   steps:
-#     - uses: actions/checkout@v2
+#     - name: Checkout repository
+#       uses: actions/checkout@v2
 #     - name: Build Reindexer
 #       run: |
 #         mkdir build && cd build
@@ -30,7 +32,8 @@ jobs:
 # build-macos:
 #   runs-on: macos-latest
 #   steps:
-#     - uses: actions/checkout@v2
+#     - name: Checkout repository
+#       uses: actions/checkout@v2
 #     - name: Prepare Environment
 #       run: |
 #         ./.github/workflows/install_gtest.sh
@@ -53,26 +56,32 @@ jobs:
 #         ctest --verbose
 #       shell: bash
 
-# build-ubuntu20:
-#   runs-on: ubuntu-20.04
-#   steps:
-#     - uses: actions/checkout@v2
-#     - name: Prepare Environment
-#       run: |
-#         ./.github/workflows/install_gtest.sh
-#         ./.github/workflows/install_gbench.sh
-#         sudo ./dependencies.sh
-#         sudo apt-get install libprotobuf-dev
-#         ./.github/workflows/install_grpc.sh
-#       shell: bash
-#     - name: Build Reindexer
-#       run: |
-#         export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
-#         mkdir build && cd build
-#         cmake -DENABLE_GRPC=ON ..
-#         make -j4
-#         STRIP=/bin/true cpack
-#       shell: bash
+  build-ubuntu20:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Prepare Environment
+        run: |
+          ./.github/workflows/install_gtest.sh
+          ./.github/workflows/install_gbench.sh
+          sudo ./dependencies.sh
+          sudo apt-get install libprotobuf-dev
+          ./.github/workflows/install_grpc.sh
+        shell: bash
+      - name: Build Reindexer
+        run: |
+          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+          mkdir build && cd build
+          cmake -DENABLE_GRPC=ON ..
+          make -j4
+          STRIP=/bin/true cpack
+        shell: bash
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ubuntu20-deb
+          path: *.deb
 #     - name: CXX Tests
 #       run: |
 #         cd build
@@ -82,7 +91,8 @@ jobs:
 # build-ubuntu18:
 #   runs-on: ubuntu-18.04
 #   steps:
-#     - uses: actions/checkout@v2
+#     - name: Checkout repository
+#       uses: actions/checkout@v2
 #     - name: Prepare Environment
 #       run: |
 #         ./.github/workflows/install_gtest.sh
@@ -108,7 +118,8 @@ jobs:
 # build-asan:
 #   runs-on: ubuntu-latest
 #   steps:
-#     - uses: actions/checkout@v2
+#     - name: Checkout repository
+#       uses: actions/checkout@v2
 #     - name: Prepare Environment
 #       run: |
 #         ./.github/workflows/install_gtest.sh
@@ -134,7 +145,8 @@ jobs:
 # build-tsan:
 #   runs-on: ubuntu-latest
 #   steps:
-#     - uses: actions/checkout@v2
+#     - name: Checkout repository
+#       uses: actions/checkout@v2
 #     - name: Prepare Environment
 #       run: |
 #         ./.github/workflows/install_gtest.sh
@@ -158,9 +170,11 @@ jobs:
 #       shell: bash
 
   test-pyreindexer:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
+    needs: build-ubuntu20
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v2
       - name: Test PyReindexer
         id: build-chain
         uses: kiegroup/github-action-build-chain@v2.5.4
