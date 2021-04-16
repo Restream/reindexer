@@ -14,7 +14,8 @@ build:
     build-command:
       current: |
         sudo ./dependencies.sh
-        cd build && ls
+        cd build
+        ls
         cmake ..
         make -j4
         STRIP=/bin/true cpack
