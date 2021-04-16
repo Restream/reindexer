@@ -13,7 +13,7 @@ build:
   - project: Restream/reindexer
     build-command:
       current: |
-        ./dependencies.sh
+        sudo ./dependencies.sh
         mkdir build && cd build
         cmake ..
         make -j4
