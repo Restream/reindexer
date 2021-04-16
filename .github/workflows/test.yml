@@ -185,6 +185,7 @@ jobs:
         shell: bash
       - name: Install Reindexer
         run: |
+          cd build
           sudo dpkg -i reindexer-dev*.deb
           sudo apt-get install -f
           sudo dpkg -i reindexer-server*.deb
@@ -192,6 +193,7 @@ jobs:
         shell: bash
       - name: Install PyReindexer
         run: |
+          pwd
           python3 setup.py build
           sudo python3 setup.py install
         shell: bash
