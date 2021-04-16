@@ -177,6 +177,7 @@ jobs:
         env:
           RX_DIR: $GITHUB_WORKSPACE/ubuntu20-deb
         run: |
+          pwd
           ls
           ./.github/workflows/install_reindexer.sh
         shell: bash
