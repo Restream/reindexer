@@ -12,7 +12,12 @@ default:
 build:
   - project: Restream/reindexer
     build-command:
-      current: echo 'build build rx'
+      current:
+        ./dependencies.sh
+        mkdir build && cd build
+        cmake ..
+        make -j4
+        STRIP=/bin/true cpack
   - project: Restream/reindexer-py
     build-command:
       current: echo 'build build pyrx'
