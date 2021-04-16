@@ -15,4 +15,5 @@ build:
       current: |
         python3 setup.py build
         sudo python3 setup.py install
+        ls -a
         ./.github/workflows/test.sh
