@@ -206,7 +206,7 @@ jobs:
         run: |
           pwd
           ls -a
-          cd reindexer-py
+          cd reindexer-py/pyreindexer
           ls -a
           ./.github/workflows/test.sh
         shell: bash
