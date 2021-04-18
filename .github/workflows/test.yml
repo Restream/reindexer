@@ -160,7 +160,7 @@ jobs:
         os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
       fail-fast: false
     runs-on: ${{matrix.os}}
-    needs: [build-ubuntu18, build-ubuntu20, macos-latest]
+    needs: [build-ubuntu18, build-ubuntu20, build-macos]
     steps:
       - name: Download ${{matrix.os}} Artifacts
         uses: actions/download-artifact@v2
