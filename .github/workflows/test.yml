@@ -15,21 +15,6 @@ jobs:
           cmake --build . --config Release
           cmake --build . --config Release --target face
           cmake --build . --config Release --target swagger
-          cpack
-        shell: bash
-
-  build-windows-mingw:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-      - name: Build Reindexer
-        run: |
-          mkdir build && cd build
-          cmake -G "MinGW Makefiles" ..
-          cmake --build . --config Release
-          cmake --build . --config Release --target face
-          cmake --build . --config Release --target swagger
         shell: bash
 
   build-macos:
