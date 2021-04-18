@@ -202,7 +202,7 @@ jobs:
         version: [18, 20]
       fail-fast: false
     runs-on: ubuntu-${{matrix.version}}.04
-    needs: "build-ubuntu${{matrix.version}}"
+    needs: [build-ubuntu18, build-ubuntu20]
     steps:
       - name: Download Ubuntu ${{matrix.version}} Deb Artifacts
         uses: actions/download-artifact@v2
