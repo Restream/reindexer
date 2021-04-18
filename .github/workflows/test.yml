@@ -161,6 +161,7 @@ jobs:
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: [build-ubuntu18, build-ubuntu20, build-macos]
+    if: always()
     steps:
       - name: Download ${{matrix.os}} Artifacts
         uses: actions/download-artifact@v2
