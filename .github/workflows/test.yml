@@ -278,6 +278,7 @@ jobs:
         run: |
           chmod a+x dependencies.sh
           sudo ./dependencies.sh
+          python3 -m pip install setuptools
         shell: bash
       - name: Install Reindexer
         run: |
