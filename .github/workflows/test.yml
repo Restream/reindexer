@@ -11,7 +11,7 @@ jobs:
       - name: Build Reindexer
         run: |
           mkdir build && cd build
-          cmake -G ${{ matrix.compiler }} ..
+          cmake -G "${{ matrix.compiler }}" ..
           cmake --build . --config Release
           cmake --build . --config Release --target face
           cmake --build . --config Release --target swagger
