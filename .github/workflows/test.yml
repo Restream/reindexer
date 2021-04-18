@@ -42,7 +42,7 @@ jobs:
       - name: Archive artifacts
         uses: actions/upload-artifact@v2
         with:
-          name: macos-gz
+          name: macos-latest
           path: |
             dependencies.sh
             build/reindexer*.tar.gz
@@ -77,7 +77,7 @@ jobs:
       - name: Archive artifacts
         uses: actions/upload-artifact@v2
         with:
-          name: ubuntu20-deb
+          name: ubuntu20.04
           path: |
             dependencies.sh
             build/reindexer*.deb
@@ -112,7 +112,7 @@ jobs:
       - name: Archive artifacts
         uses: actions/upload-artifact@v2
         with:
-          name: ubuntu18-deb
+          name: ubuntu18.04
           path: |
             dependencies.sh
             build/reindexer*.deb
@@ -154,20 +154,35 @@ jobs:
           ctest --verbose
         shell: bash
 
-  test-pyreindexer-macos:
-    runs-on: macos-latest
-    needs: build-macos
+  test-pyreindexer-1:
+    strategy:
+      matrix:
+        os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
+      fail-fast: false
+    runs-on: ${{matrix.os}}
+    needs: [build-ubuntu18, build-ubuntu20, macos-latest]
     steps:
-      - name: Download Macos Artifacts
+      - name: Download ${{matrix.os}} Artifacts
         uses: actions/download-artifact@v2
         with:
-          name: macos-gz
+          name: ${{matrix.os}}
       - name: Prepare Environment
         run: |
           chmod a+x dependencies.sh
-          ./dependencies.sh
+          sudo ./dependencies.sh
+          python3 -m pip install setuptools
         shell: bash
       - name: Install Reindexer
+        if: startsWith(${{matrix.os}}, ubuntu)
+        run: |
+          cd build
+          sudo dpkg -i reindexer-dev*.deb
+          sudo apt-get install -f
+          sudo dpkg -i reindexer-server*.deb
+          sudo apt-get install -f
+        shell: bash
+      - name: Install Reindexer
+        if: startsWith(${{matrix.os}}, macos)
         run: |
           cd build
           for f in reindexer-*.tar.gz; do tar -xvzf "$f"; done
@@ -196,48 +211,7 @@ jobs:
           ../.github/workflows/test.sh
         shell: bash
 
-  test-pyreindexer-ubuntu:
-    strategy:
-      matrix:
-        version: [18, 20]
-      fail-fast: false
-    runs-on: ubuntu-${{matrix.version}}.04
-    needs: [build-ubuntu18, build-ubuntu20]
-    steps:
-      - name: Download Ubuntu ${{matrix.version}} Deb Artifacts
-        uses: actions/download-artifact@v2
-        with:
-          name: ubuntu${{matrix.version}}-deb
-      - name: Prepare Environment
-        run: |
-          chmod a+x dependencies.sh
-          sudo ./dependencies.sh
-          python3 -m pip install setuptools
-        shell: bash
-      - name: Install Reindexer
-        run: |
-          cd build
-          sudo dpkg -i reindexer-dev*.deb
-          sudo apt-get install -f
-          sudo dpkg -i reindexer-server*.deb
-          sudo apt-get install -f
-        shell: bash
-      - name: Clone PyReindexer
-        run: git clone https://github.com/restream/reindexer-py.git
-        shell: bash
-      - name: Install PyReindexer
-        run: |
-          cd reindexer-py
-          python3 setup.py build
-          sudo python3 setup.py install
-        shell: bash
-      - name: Test PyReindexer
-        run: |
-          cd reindexer-py/pyreindexer
-          ../.github/workflows/test.sh
-        shell: bash
-
-  test-pyreindexer:
+  test-pyreindexer-2:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
