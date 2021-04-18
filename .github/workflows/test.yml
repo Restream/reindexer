@@ -5,13 +5,14 @@ jobs:
     strategy:
       matrix:
         compiler: ["Visual Studio 16 2019", "MinGW Makefiles"]
+      fail-fast: false
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
       - name: Build Reindexer
         run: |
           mkdir build && cd build
-          cmake -G "${{ matrix.compiler }}" ..
+          cmake -G "${{matrix.compiler}}" ..
           cmake --build . --config Release
           cmake --build . --config Release --target face
           cmake --build . --config Release --target swagger
@@ -126,6 +127,7 @@ jobs:
     strategy:
       matrix:
         sanitizer: [TSAN, ASAN]
+      fail-fast: false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -276,4 +278,3 @@ jobs:
           PYRX_GH_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
         run: .github/workflows/pyreindexer_workflow.sh
         shell: bash
-
