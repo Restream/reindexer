@@ -1,60 +1,68 @@
-on: [push, create, pull_request]
+on: push
 jobs:
-# build-windows-msvc:
-#   runs-on: windows-latest
-#   steps:
-#     - name: Checkout repository
-#       uses: actions/checkout@v2
-#     - name: Build Reindexer
-#       run: |
-#         mkdir build && cd build
-#         cmake -G "Visual Studio 16 2019" ..
-#         cmake --build . --config Release
-#         cmake --build . --config Release --target face
-#         cmake --build . --config Release --target swagger
-#         cpack
-#       shell: bash
+  build-windows-msvc:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Build Reindexer
+        run: |
+          mkdir build && cd build
+          cmake -G "Visual Studio 16 2019" ..
+          cmake --build . --config Release
+          cmake --build . --config Release --target face
+          cmake --build . --config Release --target swagger
+          cpack
+        shell: bash
 
-# build-windows-mingw:
-#   runs-on: windows-latest
-#   steps:
-#     - name: Checkout repository
-#       uses: actions/checkout@v2
-#     - name: Build Reindexer
-#       run: |
-#         mkdir build && cd build
-#         cmake -G "MinGW Makefiles" ..
-#         cmake --build . --config Release
-#         cmake --build . --config Release --target face
-#         cmake --build . --config Release --target swagger
-#       shell: bash
+  build-windows-mingw:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Build Reindexer
+        run: |
+          mkdir build && cd build
+          cmake -G "MinGW Makefiles" ..
+          cmake --build . --config Release
+          cmake --build . --config Release --target face
+          cmake --build . --config Release --target swagger
+        shell: bash
 
-# build-macos:
-#   runs-on: macos-latest
-#   steps:
-#     - name: Checkout repository
-#       uses: actions/checkout@v2
-#     - name: Prepare Environment
-#       run: |
-#         ./.github/workflows/install_gtest.sh
-#         ./.github/workflows/install_gbench.sh
-#         ./dependencies.sh
-#         brew install protobuf
-#         ./.github/workflows/install_grpc.sh
-#       shell: bash
-#     - name: Build Reindexer
-#       run: |
-#         export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
-#         mkdir build && cd build
-#         cmake -DENABLE_GRPC=ON ..
-#         make -j4
-#         STRIP=/bin/true cpack
-#       shell: bash
-#     - name: CXX Tests
-#       run: |
-#         cd build
-#         ctest --verbose
-#       shell: bash
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Prepare Environment
+        run: |
+          ./.github/workflows/install_gtest.sh
+          ./.github/workflows/install_gbench.sh
+          ./dependencies.sh
+          brew install protobuf
+          ./.github/workflows/install_grpc.sh
+        shell: bash
+      - name: Build Reindexer
+        run: |
+          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+          mkdir build && cd build
+          cmake -DENABLE_GRPC=ON ..
+          make -j4
+          STRIP=/bin/true cpack
+        shell: bash
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: macos-gz
+          path: |
+            dependencies.sh
+            build/reindexer*.tar.gz
+          if-no-files-found: error
+      - name: CXX Tests
+        run: |
+          cd build
+          ctest --verbose
+        shell: bash
 
   build-ubuntu20:
     runs-on: ubuntu-20.04
@@ -63,12 +71,17 @@ jobs:
         uses: actions/checkout@v2
       - name: Prepare Environment
         run: |
+          ./.github/workflows/install_gtest.sh
+          ./.github/workflows/install_gbench.sh
           sudo ./dependencies.sh
+          sudo apt-get install libprotobuf-dev
+          ./.github/workflows/install_grpc.sh
         shell: bash
       - name: Build Reindexer
         run: |
+          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
-          cmake ..
+          cmake -DENABLE_GRPC=ON ..
           make -j4
           STRIP=/bin/true cpack
         shell: bash
@@ -80,94 +93,144 @@ jobs:
             dependencies.sh
             build/reindexer*.deb
           if-no-files-found: error
-#     - name: CXX Tests
-#       run: |
-#         cd build
-#         ctest --verbose
-#       shell: bash
+      - name: CXX Tests
+        run: |
+          cd build
+          ctest --verbose
+        shell: bash
 
-# build-ubuntu18:
-#   runs-on: ubuntu-18.04
-#   steps:
-#     - name: Checkout repository
-#       uses: actions/checkout@v2
-#     - name: Prepare Environment
-#       run: |
-#         ./.github/workflows/install_gtest.sh
-#         ./.github/workflows/install_gbench.sh
-#         sudo ./dependencies.sh
-#         sudo apt-get install libprotobuf-dev
-#         ./.github/workflows/install_grpc.sh
-#       shell: bash
-#     - name: Build Reindexer
-#       run: |
-#         export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
-#         mkdir build && cd build
-#         cmake -DENABLE_GRPC=ON ..
-#         make -j4
-#         STRIP=/bin/true cpack
-#       shell: bash
-#     - name: CXX Tests
-#       run: |
-#         cd build
-#         ctest --verbose
-#       shell: bash
+  build-ubuntu18:
+    runs-on: ubuntu-18.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Prepare Environment
+        run: |
+          ./.github/workflows/install_gtest.sh
+          ./.github/workflows/install_gbench.sh
+          sudo ./dependencies.sh
+          sudo apt-get install libprotobuf-dev
+          ./.github/workflows/install_grpc.sh
+        shell: bash
+      - name: Build Reindexer
+        run: |
+          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+          mkdir build && cd build
+          cmake -DENABLE_GRPC=ON ..
+          make -j4
+          STRIP=/bin/true cpack
+        shell: bash
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ubuntu18-deb
+          path: |
+            dependencies.sh
+            build/reindexer*.deb
+          if-no-files-found: error
+      - name: CXX Tests
+        run: |
+          cd build
+          ctest --verbose
+        shell: bash
 
-# build-asan:
-#   runs-on: ubuntu-latest
-#   steps:
-#     - name: Checkout repository
-#       uses: actions/checkout@v2
-#     - name: Prepare Environment
-#       run: |
-#         ./.github/workflows/install_gtest.sh
-#         ./.github/workflows/install_gbench.sh
-#         sudo ./dependencies.sh
-#         sudo apt-get install libprotobuf-dev
-#         ./.github/workflows/install_grpc.sh
-#       shell: bash
-#     - name: Build Reindexer
-#       run: |
-#         export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
-#         mkdir build && cd build
-#         cmake -DWITH_ASAN=On -DENABLE_GRPC=ON ..
-#         make -j4
-#         STRIP=/bin/true cpack
-#       shell: bash
-#     - name: CXX Tests
-#       run: |
-#         cd build
-#         ctest --verbose
-#       shell: bash
+  build-asan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Prepare Environment
+        run: |
+          ./.github/workflows/install_gtest.sh
+          ./.github/workflows/install_gbench.sh
+          sudo ./dependencies.sh
+          sudo apt-get install libprotobuf-dev
+          ./.github/workflows/install_grpc.sh
+        shell: bash
+      - name: Build Reindexer
+        run: |
+          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+          mkdir build && cd build
+          cmake -DWITH_ASAN=On -DENABLE_GRPC=ON ..
+          make -j4
+          STRIP=/bin/true cpack
+        shell: bash
+      - name: CXX Tests
+        run: |
+          cd build
+          ctest --verbose
+        shell: bash
 
-# build-tsan:
-#   runs-on: ubuntu-latest
-#   steps:
-#     - name: Checkout repository
-#       uses: actions/checkout@v2
-#     - name: Prepare Environment
-#       run: |
-#         ./.github/workflows/install_gtest.sh
-#         ./.github/workflows/install_gbench.sh
-#         sudo ./dependencies.sh
-#         sudo apt-get install libprotobuf-dev
-#         ./.github/workflows/install_grpc.sh
-#       shell: bash
-#     - name: Build Reindexer
-#       run: |
-#         export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
-#         mkdir build && cd build
-#         cmake -DWITH_TSAN=On -DENABLE_GRPC=ON ..
-#         make -j4
-#         STRIP=/bin/true cpack
-#       shell: bash
-#     - name: CXX Tests
-#       run: |
-#         cd build
-#         ctest --verbose
-#       shell: bash
+  build-tsan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Prepare Environment
+        run: |
+          ./.github/workflows/install_gtest.sh
+          ./.github/workflows/install_gbench.sh
+          sudo ./dependencies.sh
+          sudo apt-get install libprotobuf-dev
+          ./.github/workflows/install_grpc.sh
+        shell: bash
+      - name: Build Reindexer
+        run: |
+          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+          mkdir build && cd build
+          cmake -DWITH_TSAN=On -DENABLE_GRPC=ON ..
+          make -j4
+          STRIP=/bin/true cpack
+        shell: bash
+      - name: CXX Tests
+        run: |
+          cd build
+          ctest --verbose
+        shell: bash
 
-  test-pyreindexer:
+  test-pyreindexer-macos:
+    runs-on: macos-latest
+    needs: build-macos
+    steps:
+      - name: Download Macos Artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: macos-gz
+      - name: Prepare Environment
+        run: |
+          chmod a+x dependencies.sh
+          ./dependencies.sh
+        shell: bash
+      - name: Install Reindexer
+        run: |
+          cd build
+          for f in reindexer-*.tar.gz; do tar -xvzf "$f"; done
+          cp -R ./usr/local/include/reindexer /usr/local/include/reindexer
+          cp -R ./usr/local/lib/reindexer /usr/local/lib/reindexer
+          cp ./usr/local/lib/libreindexer.a /usr/local/lib/libreindexer.a
+          cp ./usr/local/lib/libreindexer_server_library.a /usr/local/lib/libreindexer_server_library.a
+          cp ./usr/local/lib/libreindexer_server_resources.a /usr/local/lib/libreindexer_server_resources.a
+          cp ./usr/local/lib/pkgconfig/libreindexer.pc /usr/local/lib/pkgconfig/libreindexer.pc
+          cp ./usr/local/lib/pkgconfig/libreindexer_server.pc /usr/local/lib/pkgconfig/libreindexer_server.pc
+          cp ./usr/local/bin/reindexer_server /usr/local/bin/reindexer_server
+          cp ./usr/local/etc/reindexer.conf.pkg /usr/local/etc/reindexer.conf.pkg
+        shell: bash
+      - name: Clone PyReindexer
+        run: git clone https://github.com/restream/reindexer-py.git
+        shell: bash
+      - name: Install PyReindexer
+        run: |
+          cd reindexer-py
+          python3 setup.py build
+          sudo python3 setup.py install
+        shell: bash
+      - name: Test PyReindexer
+        run: |
+          cd reindexer-py/pyreindexer
+          ../.github/workflows/test.sh
+        shell: bash
+
+  test-pyreindexer-ubuntu20:
     runs-on: ubuntu-20.04
     needs: build-ubuntu20
     steps:
@@ -177,10 +240,7 @@ jobs:
           name: ubuntu20-deb
       - name: Prepare Environment
         run: |
-          pwd
-          ls -al
           chmod a+x dependencies.sh
-          ls -al
           sudo ./dependencies.sh
         shell: bash
       - name: Install Reindexer
@@ -192,23 +252,52 @@ jobs:
           sudo apt-get install -f
         shell: bash
       - name: Clone PyReindexer
-        run: |
-          git clone https://github.com/restream/reindexer-py.git
+        run: git clone https://github.com/restream/reindexer-py.git
         shell: bash
       - name: Install PyReindexer
         run: |
-          pwd
           cd reindexer-py
           python3 setup.py build
           sudo python3 setup.py install
         shell: bash
       - name: Test PyReindexer
         run: |
-          pwd
-          ls -a
+          cd reindexer-py/pyreindexer
+          ../.github/workflows/test.sh
+        shell: bash
+
+  test-pyreindexer-ubuntu18:
+    runs-on: ubuntu-18.04
+    needs: build-ubuntu18
+    steps:
+      - name: Download Ubuntu 18 Deb Artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: ubuntu18-deb
+      - name: Prepare Environment
+        run: |
+          chmod a+x dependencies.sh
+          sudo ./dependencies.sh
+        shell: bash
+      - name: Install Reindexer
+        run: |
+          cd build
+          sudo dpkg -i reindexer-dev*.deb
+          sudo apt-get install -f
+          sudo dpkg -i reindexer-server*.deb
+          sudo apt-get install -f
+        shell: bash
+      - name: Clone PyReindexer
+        run: git clone https://github.com/restream/reindexer-py.git
+        shell: bash
+      - name: Install PyReindexer
+        run: |
           cd reindexer-py
-          ls -a
-          cd pyreindexer
-          ls -a
+          python3 setup.py build
+          sudo python3 setup.py install
+        shell: bash
+      - name: Test PyReindexer
+        run: |
+          cd reindexer-py/pyreindexer
           ../.github/workflows/test.sh
         shell: bash
