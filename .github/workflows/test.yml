@@ -122,7 +122,10 @@ jobs:
           ctest --verbose
         shell: bash
 
-  build-asan:
+  build-sanitizers:
+    strategy:
+      matrix:
+        sanitizer: [TSAN, ASAN]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -139,34 +142,7 @@ jobs:
         run: |
           export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
-          cmake -DWITH_ASAN=On -DENABLE_GRPC=ON ..
-          make -j4
-          STRIP=/bin/true cpack
-        shell: bash
-      - name: CXX Tests
-        run: |
-          cd build
-          ctest --verbose
-        shell: bash
-
-  build-tsan:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-      - name: Prepare Environment
-        run: |
-          ./.github/workflows/install_gtest.sh
-          ./.github/workflows/install_gbench.sh
-          sudo ./dependencies.sh
-          sudo apt-get install libprotobuf-dev
-          ./.github/workflows/install_grpc.sh
-        shell: bash
-      - name: Build Reindexer
-        run: |
-          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
-          mkdir build && cd build
-          cmake -DWITH_TSAN=On -DENABLE_GRPC=ON ..
+          cmake -DWITH_${{matrix.sanitizer}}=On -DENABLE_GRPC=ON ..
           make -j4
           STRIP=/bin/true cpack
         shell: bash
