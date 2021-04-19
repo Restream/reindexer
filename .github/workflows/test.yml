@@ -21,15 +21,20 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
+        os: [ubuntu-18.04, ubuntu-20.04, ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            sanitizer: ASAN
+          - os: ubuntu-latest
+            sanitizer: TSAN
       fail-fast: false
     runs-on: ${{matrix.os}}
+    env:
+      OS: ${{matrix.os}}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
       - name: Prepare Environment
-        env:
-          OS: ${{matrix.os}}
         run: |
           ./.github/workflows/install_gtest.sh
           ./.github/workflows/install_gbench.sh
@@ -47,12 +52,17 @@ jobs:
         run: |
           export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
-          cmake -DENABLE_GRPC=ON ..
+          if [[ $OS == ubuntu-latest ]];
+          then
+            cmake -DENABLE_GRPC=ON -DWITH_${{matrix.sanitizer}}=On ..
+          else
+            cmake -DENABLE_GRPC=ON ..
+          fi
           make -j4
           STRIP=/bin/true cpack
-          ls
         shell: bash
       - name: Archive artifacts
+        if: ${{ $OS != ubuntu-latest }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ matrix.os }}
@@ -61,42 +71,11 @@ jobs:
             build/reindexer*-dev*
             build/reindexer*-server*
           if-no-files-found: error
-      - name: CXX Tests
-        run: |
-          cd build
-          ctest --verbose
-        shell: bash
-
-  build-sanitizers:
-    strategy:
-      matrix:
-        sanitizer: [TSAN, ASAN]
-      fail-fast: false
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-      - name: Prepare Environment
-        run: |
-          ./.github/workflows/install_gtest.sh
-          ./.github/workflows/install_gbench.sh
-          sudo ./dependencies.sh
-          sudo apt-get install libprotobuf-dev
-          ./.github/workflows/install_grpc.sh
-        shell: bash
-      - name: Build Reindexer
-        run: |
-          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
-          mkdir build && cd build
-          cmake -DWITH_${{matrix.sanitizer}}=On -DENABLE_GRPC=ON ..
-          make -j4
-          STRIP=/bin/true cpack
-        shell: bash
-      - name: CXX Tests
-        run: |
-          cd build
-          ctest --verbose
-        shell: bash
+#     - name: CXX Tests
+#       run: |
+#         cd build
+#         ctest --verbose
+#       shell: bash
 
   test-pyreindexer-1:
     strategy:
