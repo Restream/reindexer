@@ -62,7 +62,7 @@ jobs:
           STRIP=/bin/true cpack
         shell: bash
       - name: Archive artifacts
-        if: ${{ $OS != ubuntu-latest }}
+        if: $OS != ubuntu-latest
         uses: actions/upload-artifact@v2
         with:
           name: ${{ matrix.os }}
