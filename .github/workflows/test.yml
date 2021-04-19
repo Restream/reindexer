@@ -174,7 +174,7 @@ jobs:
           python3 -m pip install setuptools
         shell: bash
       - name: Install Reindexer
-        if: ${{ startsWith(${{matrix.os}}, 'ubuntu') }}
+        if: startsWith('${{matrix.os}}', 'ubuntu')
         run: |
           cd build
           sudo dpkg -i reindexer-dev*.deb
@@ -183,7 +183,7 @@ jobs:
           sudo apt-get install -f
         shell: bash
       - name: Install Reindexer
-        if: ${{ startsWith(${{matrix.os}}, 'macos') }}
+        if: startsWith('${{matrix.os}}', 'macos')
         run: |
           cd build
           for f in reindexer-*.tar.gz; do tar -xvzf "$f"; done
