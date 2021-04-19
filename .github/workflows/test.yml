@@ -37,8 +37,7 @@ jobs:
         run: |
           ./.github/workflows/install_gtest.sh
           ./.github/workflows/install_gbench.sh
-          if [[ $OS == ubuntu* ]];
-          then
+          if [[ $OS == ubuntu* ]]; then
             sudo ./dependencies.sh
             sudo apt-get install libprotobuf-dev
           else
@@ -50,8 +49,7 @@ jobs:
         run: |
           export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
-          if [[ $OS == ubuntu-latest ]];
-          then
+          if [[ $OS == ubuntu-latest ]]; then
             cmake -DENABLE_GRPC=ON -DWITH_${{matrix.sanitizer}}=On ..
           else
             cmake -DENABLE_GRPC=ON ..
@@ -102,12 +100,9 @@ jobs:
         env:
           OS: ${{matrix.os}}
         run: |
-          pwd
-          ls -al
-          mkdir -p /usr/local/go/src/git.itv.restr.im/itv-backend/
-          ln -s `pwd` /usr/local/go/src/git.itv.restr.im/itv-backend/reindexer
-          if [[ $OS == ubuntu* ]];
-          then
+          mkdir -p /home/runner/go/src/github.com/restream/
+          ln -s `pwd` /home/runner/go/src/github.com/restream/reindexer
+          if [[ $OS == ubuntu* ]]; then
             sudo ./dependencies.sh
           else
             ./dependencies.sh
@@ -117,8 +112,7 @@ jobs:
         env:
           TEST: ${{matrix.test}}
         run: |
-          if [[ $TEST == cxx ]];
-          then
+          if [[ $TEST == cxx ]]; then
             cd build
             ctest --verbose
           else
@@ -144,8 +138,7 @@ jobs:
         run: tar -xvf artifacts.tar
       - name: Prepare Environment
         run: |
-          if [[ $OS == ubuntu* ]];
-          then
+          if [[ $OS == ubuntu* ]]; then
             sudo ./dependencies.sh
             python3 -m pip install setuptools
           else
@@ -154,8 +147,7 @@ jobs:
       - name: Install Reindexer
         run: |
           cd build
-          if [[ $OS == ubuntu* ]];
-          then
+          if [[ $OS == ubuntu* ]]; then
             sudo dpkg -i reindexer-dev*.deb
             sudo apt-get install -f
             sudo dpkg -i reindexer-server*.deb
