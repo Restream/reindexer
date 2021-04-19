@@ -129,7 +129,7 @@ jobs:
         os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
       fail-fast: false
     runs-on: ${{matrix.os}}
-    needs: [build-ubuntu18, build-ubuntu20, build-macos]
+    needs: [build-ubuntu, build-macos]
     if: always()
     env:
       OS: ${{matrix.os}}
