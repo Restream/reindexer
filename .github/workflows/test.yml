@@ -53,8 +53,12 @@ jobs:
           ctest --verbose
         shell: bash
 
-  build-ubuntu20:
-    runs-on: ubuntu-20.04
+  build-ubuntu:
+    strategy:
+      matrix:
+        os: [ubuntu-18.04, ubuntu-20.04]
+      fail-fast: false
+    runs-on: ${{matrix.os}}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -77,42 +81,7 @@ jobs:
       - name: Archive artifacts
         uses: actions/upload-artifact@v2
         with:
-          name: ubuntu-20.04
-          path: |
-            dependencies.sh
-            build/reindexer*.deb
-          if-no-files-found: error
-      - name: CXX Tests
-        run: |
-          cd build
-          ctest --verbose
-        shell: bash
-
-  build-ubuntu18:
-    runs-on: ubuntu-18.04
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-      - name: Prepare Environment
-        run: |
-          ./.github/workflows/install_gtest.sh
-          ./.github/workflows/install_gbench.sh
-          sudo ./dependencies.sh
-          sudo apt-get install libprotobuf-dev
-          ./.github/workflows/install_grpc.sh
-        shell: bash
-      - name: Build Reindexer
-        run: |
-          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
-          mkdir build && cd build
-          cmake -DENABLE_GRPC=ON ..
-          make -j4
-          STRIP=/bin/true cpack
-        shell: bash
-      - name: Archive artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          name: ubuntu-18.04
+          name: ${{ matrix.os }}
           path: |
             dependencies.sh
             build/reindexer*.deb
@@ -162,6 +131,8 @@ jobs:
     runs-on: ${{matrix.os}}
     needs: [build-ubuntu18, build-ubuntu20, build-macos]
     if: always()
+    env:
+      OS: ${{matrix.os}}
     steps:
       - name: Download ${{matrix.os}} Artifacts
         uses: actions/download-artifact@v2
@@ -170,13 +141,15 @@ jobs:
       - name: Prepare Environment
         run: |
           chmod a+x dependencies.sh
-          sudo ./dependencies.sh
-          python3 -m pip install setuptools
+          if [[ $OS == ubuntu* ]];
+          then
+            sudo ./dependencies.sh
+            python3 -m pip install setuptools
+          else
+            ./dependencies.sh
+          fi
         shell: bash
       - name: Install Reindexer
-        env:
-          OS: ${{matrix.os}}
-        if: startsWith('${{matrix.os}}', 'ubuntu')
         run: |
           cd build
           if [[ $OS == ubuntu* ]];
