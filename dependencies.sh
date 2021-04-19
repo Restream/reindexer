@@ -79,7 +79,8 @@ install_osx() {
             info_msg "Package $pkg already installed. Skip ....."
         else
             info_msg "Installing $pkg package ....."
-            brew install ${pkg} 2>&1 | grep -i -E "error|warning" | tr '[:upper:]' '[:lower:]' >/tmp/.status
+            # TODO before merge change "error" to "error|warning"
+            brew install ${pkg} 2>&1 | grep -i -E "error" | tr '[:upper:]' '[:lower:]' >/tmp/.status
             IFS=":" read STATUS MESSAGE < /tmp/.status
             if [ -n "$STATUS" ]; then
                 print_result="${STATUS}_msg \"$MESSAGE\""
