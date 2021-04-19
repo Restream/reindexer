@@ -59,7 +59,7 @@ jobs:
           make -j4
           STRIP=/bin/true cpack
       - name: 'Tar Artifacts'
-        run: tar -cvf artifacts.tar build/ dependencies.sh
+        run: tar -cvf artifacts.tar build/ bindings/builtin/builtin_posix.go bindings/builtinserver/builtinserver_posix.go dependencies.sh
       - name: Archive Artifacts
         uses: actions/upload-artifact@v2
         with:
@@ -67,15 +67,18 @@ jobs:
           path: artifacts.tar
           if-no-files-found: error
 
-  test-cxx:
+  test:
     strategy:
       matrix:
         os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
+        test: [cxx, go]
         include:
           - os: ubuntu-latest
             sanitizer: ASAN
+            test: [cxx, go]
           - os: ubuntu-latest
             sanitizer: TSAN
+            test: [cxx, go]
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: build
@@ -88,10 +91,7 @@ jobs:
         with:
           name: ${{matrix.os}}${{matrix.sanitizer}}
       - name: 'Untar Artifacts'
-        run: |
-          ls -la
-          tar -xvf artifacts.tar
-          ls -la
+        run: tar -xvf artifacts.tar
       - name: Prepare Environment
         env:
           OS: ${{matrix.os}}
@@ -99,14 +99,20 @@ jobs:
           if [[ $OS == ubuntu* ]];
           then
             sudo ./dependencies.sh
-            python3 -m pip install setuptools
           else
             ./dependencies.sh
+            brew install protobuf
           fi
-      - name: CXX Tests
+      - name: Tests
+        env:
+          TEST: ${{matrix.test}}
         run: |
-          cd build
-          ctest --verbose
+          if [[ $TEST == cxx ]];
+            cd build
+            ctest --verbose
+          else
+            go test ./test/...  -bench . -benchmem -benchtime 100ms -seedcount 50000
+          fi
 
   test-pyreindexer-1:
     strategy:
@@ -124,10 +130,7 @@ jobs:
         with:
           name: ${{matrix.os}}
       - name: 'Untar Artifacts'
-        run: |
-          ls -la
-          tar -xvf artifacts.tar
-          ls -la
+        run: tar -xvf artifacts.tar
       - name: Prepare Environment
         run: |
           if [[ $OS == ubuntu* ]];
