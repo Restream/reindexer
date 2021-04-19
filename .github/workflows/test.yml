@@ -21,13 +21,7 @@ jobs:
   build:
     strategy:
       matrix:
-        include:
-          - os: ubuntu-18.04
-            ext: deb
-          - os: ubuntu-20.04
-            ext: deb
-          - os: macos-latest
-            ext: tar.gz
+        os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
       fail-fast: false
     runs-on: ${{matrix.os}}
     steps:
@@ -56,6 +50,7 @@ jobs:
           cmake -DENABLE_GRPC=ON ..
           make -j4
           STRIP=/bin/true cpack
+          ls
         shell: bash
       - name: Archive artifacts
         uses: actions/upload-artifact@v2
@@ -63,7 +58,8 @@ jobs:
           name: ${{ matrix.os }}
           path: |
             dependencies.sh
-            build/reindexer*.${{matrix.ext}}
+            build/reindexer-dev*
+            build/reindexer-server*
           if-no-files-found: error
       - name: CXX Tests
         run: |

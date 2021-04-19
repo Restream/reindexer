@@ -7,13 +7,13 @@ CHECK_TIMEOUT=10
 total_count=$(curl -u "$USERNAME:$PYRX_GH_TOKEN" -s -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/$REPO/actions/workflows/test-specified-rx.yml/runs | jq '.total_count')
 
 # workflow triggering
-# TODO change gh_actions to master before merge
+# TODO change fix_mac_rx_link to master before merge
 curl \
   -u "$USERNAME:$PYRX_GH_TOKEN" \
   -X POST \
   -H "Accept: application/vnd.github.v3+json" \
   https://api.github.com/repos/$REPO/actions/workflows/test-specified-rx.yml/dispatches \
-  -d "{\"ref\":\"master\", \"inputs\":{\"rx_commit\":\"$GITHUB_SHA\"}}"
+  -d "{\"ref\":\"fix_mac_rx_link\", \"inputs\":{\"rx_commit\":\"$GITHUB_SHA\"}}"
 
 
 # find out workflow run id
