@@ -18,56 +18,35 @@ jobs:
           cmake --build . --config Release --target swagger
         shell: bash
 
-  build-macos:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-      - name: Prepare Environment
-        run: |
-          ./.github/workflows/install_gtest.sh
-          ./.github/workflows/install_gbench.sh
-          ./dependencies.sh
-          brew install protobuf
-          ./.github/workflows/install_grpc.sh
-        shell: bash
-      - name: Build Reindexer
-        run: |
-          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
-          mkdir build && cd build
-          cmake -DENABLE_GRPC=ON ..
-          make -j4
-          STRIP=/bin/true cpack
-        shell: bash
-      - name: Archive artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          name: macos-latest
-          path: |
-            dependencies.sh
-            build/reindexer*.tar.gz
-          if-no-files-found: error
-      - name: CXX Tests
-        run: |
-          cd build
-          ctest --verbose
-        shell: bash
-
-  build-ubuntu:
+  build:
     strategy:
       matrix:
-        os: [ubuntu-18.04, ubuntu-20.04]
+        include:
+          - os: ubuntu-18.04
+            ext: deb
+          - os: ubuntu-20.04
+            ext: deb
+          - os: macos-latest
+            ext: tar.gz
       fail-fast: false
     runs-on: ${{matrix.os}}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
       - name: Prepare Environment
+        env:
+          OS: ${{matrix.os}}
         run: |
           ./.github/workflows/install_gtest.sh
           ./.github/workflows/install_gbench.sh
-          sudo ./dependencies.sh
-          sudo apt-get install libprotobuf-dev
+          if [[ $OS == ubuntu* ]];
+          then
+            sudo ./dependencies.sh
+            sudo apt-get install libprotobuf-dev
+          else
+            ./dependencies.sh
+            brew install protobuf
+          fi
           ./.github/workflows/install_grpc.sh
         shell: bash
       - name: Build Reindexer
@@ -84,7 +63,7 @@ jobs:
           name: ${{ matrix.os }}
           path: |
             dependencies.sh
-            build/reindexer*.deb
+            build/reindexer*.${{matrix.ext}}
           if-no-files-found: error
       - name: CXX Tests
         run: |
@@ -129,7 +108,7 @@ jobs:
         os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
       fail-fast: false
     runs-on: ${{matrix.os}}
-    needs: [build-ubuntu, build-macos]
+    needs: build
     if: always()
     env:
       OS: ${{matrix.os}}
