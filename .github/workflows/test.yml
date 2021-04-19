@@ -147,7 +147,8 @@ jobs:
           fi
         shell: bash
       - name: Clone PyReindexer
-        run: git clone https://github.com/restream/reindexer-py.git
+        # TODO before merge remove specified branch fix_mac_rx_link
+        run: git clone -b fix_mac_rx_link https://github.com/restream/reindexer-py.git
         shell: bash
       - name: Install PyReindexer
         run: |
