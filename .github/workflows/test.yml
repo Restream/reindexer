@@ -65,17 +65,48 @@ jobs:
         if: ${{matrix.os}} != ubuntu-latest
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ matrix.os }}
+          name: ${{matrix.os}}${{matrix.sanitizer}}
           path: |
             dependencies.sh
-            build/reindexer*-dev*
-            build/reindexer*-server*
+            build/*
           if-no-files-found: error
-#     - name: CXX Tests
-#       run: |
-#         cd build
-#         ctest --verbose
-#       shell: bash
+
+  test-cxx:
+    strategy:
+      matrix:
+        os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
+        include:
+          - os: ubuntu-latest
+            sanitizer: ASAN
+          - os: ubuntu-latest
+            sanitizer: TSAN
+      fail-fast: false
+    runs-on: ${{matrix.os}}
+    needs: build
+    if: always()
+    env:
+      OS: ${{matrix.os}}
+    steps:
+      - name: Download ${{matrix.os}} Artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: ${{matrix.os}}${{matrix.sanitizer}}
+      - name: Prepare Environment
+        run: |
+          chmod a+x dependencies.sh
+          if [[ $OS == ubuntu* ]];
+          then
+            sudo ./dependencies.sh
+            python3 -m pip install setuptools
+          else
+            ./dependencies.sh
+          fi
+        shell: bash
+      - name: CXX Tests
+        run: |
+          cd build
+          ctest --verbose
+        shell: bash
 
   test-pyreindexer-1:
     strategy:
