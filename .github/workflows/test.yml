@@ -174,28 +174,29 @@ jobs:
           python3 -m pip install setuptools
         shell: bash
       - name: Install Reindexer
+        env:
+          OS: ${{matrix.os}}
         if: startsWith('${{matrix.os}}', 'ubuntu')
         run: |
           cd build
-          sudo dpkg -i reindexer-dev*.deb
-          sudo apt-get install -f
-          sudo dpkg -i reindexer-server*.deb
-          sudo apt-get install -f
-        shell: bash
-      - name: Install Reindexer
-        if: startsWith('${{matrix.os}}', 'macos')
-        run: |
-          cd build
-          for f in reindexer-*.tar.gz; do tar -xvzf "$f"; done
-          cp -R ./usr/local/include/reindexer /usr/local/include/reindexer
-          cp -R ./usr/local/lib/reindexer /usr/local/lib/reindexer
-          cp ./usr/local/lib/libreindexer.a /usr/local/lib/libreindexer.a
-          cp ./usr/local/lib/libreindexer_server_library.a /usr/local/lib/libreindexer_server_library.a
-          cp ./usr/local/lib/libreindexer_server_resources.a /usr/local/lib/libreindexer_server_resources.a
-          cp ./usr/local/lib/pkgconfig/libreindexer.pc /usr/local/lib/pkgconfig/libreindexer.pc
-          cp ./usr/local/lib/pkgconfig/libreindexer_server.pc /usr/local/lib/pkgconfig/libreindexer_server.pc
-          cp ./usr/local/bin/reindexer_server /usr/local/bin/reindexer_server
-          cp ./usr/local/etc/reindexer.conf.pkg /usr/local/etc/reindexer.conf.pkg
+          if [[ $OS == ubuntu* ]];
+          then
+            sudo dpkg -i reindexer-dev*.deb
+            sudo apt-get install -f
+            sudo dpkg -i reindexer-server*.deb
+            sudo apt-get install -f
+          else
+            for f in reindexer-*.tar.gz; do tar -xvzf "$f"; done
+            cp -R ./usr/local/include/reindexer /usr/local/include/reindexer
+            cp -R ./usr/local/lib/reindexer /usr/local/lib/reindexer
+            cp ./usr/local/lib/libreindexer.a /usr/local/lib/libreindexer.a
+            cp ./usr/local/lib/libreindexer_server_library.a /usr/local/lib/libreindexer_server_library.a
+            cp ./usr/local/lib/libreindexer_server_resources.a /usr/local/lib/libreindexer_server_resources.a
+            cp ./usr/local/lib/pkgconfig/libreindexer.pc /usr/local/lib/pkgconfig/libreindexer.pc
+            cp ./usr/local/lib/pkgconfig/libreindexer_server.pc /usr/local/lib/pkgconfig/libreindexer_server.pc
+            cp ./usr/local/bin/reindexer_server /usr/local/bin/reindexer_server
+            cp ./usr/local/etc/reindexer.conf.pkg /usr/local/etc/reindexer.conf.pkg
+          fi
         shell: bash
       - name: Clone PyReindexer
         run: git clone https://github.com/restream/reindexer-py.git
