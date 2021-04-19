@@ -75,10 +75,16 @@ jobs:
         include:
           - os: ubuntu-latest
             sanitizer: ASAN
-            test: [cxx, go]
+            test: cxx
+          - os: ubuntu-latest
+            sanitizer: ASAN
+            test: go
           - os: ubuntu-latest
             sanitizer: TSAN
-            test: [cxx, go]
+            test: cxx
+          - os: ubuntu-latest
+            sanitizer: TSAN
+            test: go
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: build
@@ -96,6 +102,10 @@ jobs:
         env:
           OS: ${{matrix.os}}
         run: |
+          pwd
+          ls -al
+          mkdir -p /usr/local/go/src/git.itv.restr.im/itv-backend/
+          ln -s `pwd` /usr/local/go/src/git.itv.restr.im/itv-backend/reindexer
           if [[ $OS == ubuntu* ]];
           then
             sudo ./dependencies.sh
