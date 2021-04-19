@@ -87,9 +87,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: ${{matrix.os}}${{matrix.sanitizer}}
-          path: artifacts.tar
       - name: 'Untar Artifacts'
         run: |
+          ls -la
           tar -xvf artifacts.tar
           ls -la
       - name: Prepare Environment
@@ -123,9 +123,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           name: ${{matrix.os}}
-          path: artifacts.tar
       - name: 'Untar Artifacts'
         run: |
+          ls -la
           tar -xvf artifacts.tar
           ls -la
       - name: Prepare Environment
