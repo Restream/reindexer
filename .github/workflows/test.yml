@@ -48,24 +48,22 @@ jobs:
           if [[ $OS == ubuntu* ]];
           then
             sudo ./dependencies.sh
-#           sudo apt-get install libprotobuf-dev
+            sudo apt-get install libprotobuf-dev
           else
             ./dependencies.sh
-#           brew install protobuf
+            brew install protobuf
           fi
-#         ./.github/workflows/install_grpc.sh
+          ./.github/workflows/install_grpc.sh
         shell: bash
       - name: Build Reindexer
         run: |
-#         export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
           if [[ $OS == ubuntu-latest ]];
           then
-#           cmake -DENABLE_GRPC=ON -DWITH_${{matrix.sanitizer}}=On ..
-            cmake -DWITH_${{matrix.sanitizer}}=On ..
+            cmake -DENABLE_GRPC=ON -DWITH_${{matrix.sanitizer}}=On ..
           else
-#           cmake -DENABLE_GRPC=ON ..
-            cmake ..
+            cmake -DENABLE_GRPC=ON ..
           fi
           make -j4
           STRIP=/bin/true cpack
