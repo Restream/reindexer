@@ -108,6 +108,7 @@ jobs:
           TEST: ${{matrix.test}}
         run: |
           if [[ $TEST == cxx ]];
+          then
             cd build
             ctest --verbose
           else
