@@ -21,12 +21,19 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
         include:
+          - os: ubuntu-18.04
+            artifacts: Ubuntu18
+          - os: ubuntu-20.04
+            artifacts: Ubuntu20
+          - os: macos-latest
+            artifacts: MacOS
           - os: ubuntu-latest
             sanitizer: ASAN
+            artifacts: UbuntuASAN
           - os: ubuntu-latest
             sanitizer: TSAN
+            artifacts: UbuntuTSAN
       fail-fast: false
     runs-on: ${{matrix.os}}
     env:
@@ -41,31 +48,32 @@ jobs:
           if [[ $OS == ubuntu* ]];
           then
             sudo ./dependencies.sh
-            sudo apt-get install libprotobuf-dev
+#           sudo apt-get install libprotobuf-dev
           else
             ./dependencies.sh
-            brew install protobuf
+#           brew install protobuf
           fi
-          ./.github/workflows/install_grpc.sh
+#         ./.github/workflows/install_grpc.sh
         shell: bash
       - name: Build Reindexer
         run: |
-          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+#         export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
           if [[ $OS == ubuntu-latest ]];
           then
-            cmake -DENABLE_GRPC=ON -DWITH_${{matrix.sanitizer}}=On ..
+#           cmake -DENABLE_GRPC=ON -DWITH_${{matrix.sanitizer}}=On ..
+            cmake -DWITH_${{matrix.sanitizer}}=On ..
           else
-            cmake -DENABLE_GRPC=ON ..
+#           cmake -DENABLE_GRPC=ON ..
+            cmake ..
           fi
           make -j4
           STRIP=/bin/true cpack
         shell: bash
       - name: Archive artifacts
-        if: ${{matrix.os}} != ubuntu-latest
         uses: actions/upload-artifact@v2
         with:
-          name: ${{matrix.os}}${{matrix.sanitizer}}
+          name: ${{matrix.artifacts}}
           path: |
             dependencies.sh
             build/*
@@ -74,24 +82,33 @@ jobs:
   test-cxx:
     strategy:
       matrix:
-        os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
         include:
+          - os: ubuntu-18.04
+            artifacts: Ubuntu18
+          - os: ubuntu-20.04
+            artifacts: Ubuntu20
+          - os: macos-latest
+            artifacts: MacOS
           - os: ubuntu-latest
             sanitizer: ASAN
+            artifacts: UbuntuASAN
           - os: ubuntu-latest
             sanitizer: TSAN
+            artifacts: UbuntuTSAN
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: build
     if: always()
-    env:
-      OS: ${{matrix.os}}
     steps:
-      - name: Download ${{matrix.os}} Artifacts
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Download ${{matrix.artifacts}} Artifacts
         uses: actions/download-artifact@v2
         with:
-          name: ${{matrix.os}}${{matrix.sanitizer}}
+          name: ${{matrix.artifacts}}
       - name: Prepare Environment
+        env:
+          OS: ${{matrix.os}}
         run: |
           chmod a+x dependencies.sh
           if [[ $OS == ubuntu* ]];
@@ -111,7 +128,13 @@ jobs:
   test-pyreindexer-1:
     strategy:
       matrix:
-        os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
+        include:
+          - os: ubuntu-18.04
+            artifacts: Ubuntu18
+          - os: ubuntu-20.04
+            artifacts: Ubuntu20
+          - os: macos-latest
+            artifacts: MacOS
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: build
@@ -119,10 +142,10 @@ jobs:
     env:
       OS: ${{matrix.os}}
     steps:
-      - name: Download ${{matrix.os}} Artifacts
+      - name: Download ${{matrix.artifacts}} Artifacts
         uses: actions/download-artifact@v2
         with:
-          name: ${{matrix.os}}
+          name: ${{matrix.artifacts}}
       - name: Prepare Environment
         run: |
           chmod a+x dependencies.sh
@@ -180,4 +203,70 @@ jobs:
         env:
           PYRX_GH_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
         run: .github/workflows/pyreindexer_workflow.sh
+        shell: bash
+
+  test-java-reindexer:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-18.04
+            artifacts: Ubuntu18
+          - os: ubuntu-20.04
+            artifacts: Ubuntu20
+          - os: macos-latest
+            artifacts: MacOS
+      fail-fast: false
+    runs-on: ${{matrix.os}}
+    needs: build
+    if: always()
+    env:
+      OS: ${{matrix.os}}
+    steps:
+      - name: Set up JDK 1.8
+        uses: actions/setup-java@v1
+        with:
+          java-version: 1.8
+      - name: Download ${{matrix.artifacts}} Artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: ${{matrix.artifacts}}
+      - name: Prepare Environment
+        run: |
+          chmod a+x dependencies.sh
+          if [[ $OS == ubuntu* ]];
+          then
+            sudo ./dependencies.sh
+          else
+            ./dependencies.sh
+          fi
+        shell: bash
+      - name: Install Reindexer
+        run: |
+          cd build
+          if [[ $OS == ubuntu* ]];
+          then
+            sudo dpkg -i reindexer-dev*.deb
+            sudo apt-get install -f
+            sudo dpkg -i reindexer-server*.deb
+            sudo apt-get install -f
+          else
+            for f in reindexer-*.tar.gz; do tar -xvzf "$f"; done
+            cp -R ./usr/local/include/reindexer /usr/local/include/reindexer
+            cp -R ./usr/local/lib/reindexer /usr/local/lib/reindexer
+            cp ./usr/local/lib/libreindexer.a /usr/local/lib/libreindexer.a
+            cp ./usr/local/lib/libreindexer_server_library.a /usr/local/lib/libreindexer_server_library.a
+            cp ./usr/local/lib/libreindexer_server_resources.a /usr/local/lib/libreindexer_server_resources.a
+            cp ./usr/local/lib/pkgconfig/libreindexer.pc /usr/local/lib/pkgconfig/libreindexer.pc
+            cp ./usr/local/lib/pkgconfig/libreindexer_server.pc /usr/local/lib/pkgconfig/libreindexer_server.pc
+            cp ./usr/local/bin/reindexer_server /usr/local/bin/reindexer_server
+            cp ./usr/local/etc/reindexer.conf.pkg /usr/local/etc/reindexer.conf.pkg
+          fi
+        shell: bash
+      - name: Clone Java Reindexer
+        run: git clone https://github.com/restream/reindexer-java.git
+        shell: bash
+      - name: Build with Maven
+        run: |
+          cd reindexer-java
+          mvn --batch-mode --update-snapshots verify
         shell: bash
