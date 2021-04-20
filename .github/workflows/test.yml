@@ -87,6 +87,8 @@ jobs:
     runs-on: ${{matrix.os}}
     needs: build
     if: always()
+    env:
+      TEST: ${{matrix.test}}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -100,17 +102,18 @@ jobs:
         env:
           OS: ${{matrix.os}}
         run: |
-          mkdir -p /home/runner/go/src/github.com/restream/
-          ln -s `pwd` /home/runner/go/src/github.com/restream/reindexer
           if [[ $OS == ubuntu* ]]; then
             sudo ./dependencies.sh
           else
             ./dependencies.sh
             brew install protobuf
           fi
+          if [[ $TEST == go ]]; then
+            mkdir -p /home/runner/go/src/github.com/restream/
+            ln -s `pwd` /home/runner/go/src/github.com/restream/reindexer
+            go mod download
+          fi
       - name: Tests
-        env:
-          TEST: ${{matrix.test}}
         run: |
           if [[ $TEST == cxx ]]; then
             cd build
