@@ -111,7 +111,7 @@ jobs:
           if [[ $TEST == go ]]; then
             mkdir -p /home/runner/go/src/github.com/restream/
             ln -s `pwd` /home/runner/go/src/github.com/restream/reindexer
-            go mod download
+            go mod init github.com/restream/reindexer
           fi
       - name: Tests
         run: |
