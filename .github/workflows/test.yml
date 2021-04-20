@@ -117,9 +117,6 @@ jobs:
               ln -s `pwd` /Users/runner/go/src/github.com/restream/reindexer
             fi
             go mod init github.com/restream/reindexer
-            cat go.mod
-            go mod tidy
-            cat go.mod
             echo "replace github.com/restream/reindexer => `pwd`" >> go.mod
             cat go.mod
           fi
