@@ -117,14 +117,11 @@ jobs:
               ln -s `pwd` /Users/runner/go/src/github.com/restream/reindexer
             fi
             go mod init github.com/restream/reindexer
-            echo "replace github.com/restream/reindexer => `pwd`" >> go.mod
-            cat go.mod
           fi
       - name: Tests
         run: |
           if [[ $TEST == 'GO' ]]; then
             go test ./test/...  -bench . -benchmem -benchtime 100ms -seedcount 50000
-            cat go.mod
           else
             cd build
             ctest --verbose
