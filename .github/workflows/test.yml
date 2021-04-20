@@ -118,6 +118,8 @@ jobs:
             fi
             go mod init github.com/restream/reindexer
             cat go.mod
+            go mod tidy
+            cat go.mod
             echo "replace github.com/restream/reindexer => `pwd`" >> go.mod
             cat go.mod
           fi
@@ -125,6 +127,7 @@ jobs:
         run: |
           if [[ $TEST == 'GO' ]]; then
             go test ./test/...  -bench . -benchmem -benchtime 100ms -seedcount 50000
+            cat go.mod
           else
             cd build
             ctest --verbose
