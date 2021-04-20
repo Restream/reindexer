@@ -69,20 +69,20 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
-        test: [cxx, go]
+        test: ['C++', 'GO']
         include:
           - os: ubuntu-latest
             sanitizer: ASAN
-            test: cxx
+            test: 'C++'
           - os: ubuntu-latest
             sanitizer: ASAN
-            test: go
+            test: 'GO'
           - os: ubuntu-latest
             sanitizer: TSAN
-            test: cxx
+            test: 'C++'
           - os: ubuntu-latest
             sanitizer: TSAN
-            test: go
+            test: 'GO'
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: build
@@ -108,18 +108,24 @@ jobs:
             ./dependencies.sh
             brew install protobuf
           fi
-          if [[ $TEST == go ]]; then
+          if [[ $TEST == 'GO' ]]; then
             mkdir -p /home/runner/go/src/github.com/restream/
             ln -s `pwd` /home/runner/go/src/github.com/restream/reindexer
             go mod init github.com/restream/reindexer
+            cat go.mod
+            go mod download
+            cat go.mod
+            echo `pwd` >> go.mod
+            echo "replace github.com/restream/reindexer => `pwd`" >> go.mod
+            cat go.mod
           fi
       - name: Tests
         run: |
-          if [[ $TEST == cxx ]]; then
+          if [[ $TEST == 'GO' ]]; then
+            go test ./test/...  -bench . -benchmem -benchtime 100ms -seedcount 50000
+          else
             cd build
             ctest --verbose
-          else
-            go test ./test/...  -bench . -benchmem -benchtime 100ms -seedcount 50000
           fi
 
   test-pyreindexer-1:
