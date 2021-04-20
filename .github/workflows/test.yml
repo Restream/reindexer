@@ -115,7 +115,6 @@ jobs:
             cat go.mod
             go mod download
             cat go.mod
-            echo `pwd` >> go.mod
             echo "replace github.com/restream/reindexer => `pwd`" >> go.mod
             cat go.mod
           fi
