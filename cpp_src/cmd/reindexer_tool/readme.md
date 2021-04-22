@@ -13,7 +13,7 @@ Reindexer command line tool is an client utility to work with database.
 - Backup whole database into text file or console.
 - Make queries to database
 - Modify documents and DB metadata
-- Both standalone and embeded(builtin) modes are supported
+- Both standalone and embedded(builtin) modes are supported
 
 ## Usage
 

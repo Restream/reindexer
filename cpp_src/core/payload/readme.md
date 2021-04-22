@@ -8,9 +8,9 @@ Internally reindexer is processing documents in special objects, called `Payload
 
 # Motivation
 
-Main goal of documents splitting technick - get the best features from SQL, no-SQL and column databases.
+Main goal of documents splitting technique - get the best features from SQL, no-SQL and column databases.
 The untyped tuple is gives applications capability to store any JSON objects as reindexer documents without data schema migration.
-The fixed-type struct of indexed fields allows application and reindexer maintains consistent indexes and primary keys. Furthermore it helps to achive best performance for full-scan and join queries - their
+The fixed-type struct of indexed fields allows application and reindexer maintains consistent indexes and primary keys. Furthermore it helps to achieve best performance for full-scan and join queries - their
 performance are strongly depends on fields access time. 
 
 Also there are optional column's storage is present. They are binded to full-scan indexes, and can speed up full-scan queries.
@@ -108,7 +108,7 @@ struct
 
 ## Lifetime and ownership
 
-`PayloadValue` behaviour is similar to `std::shared_ptr`. `PayloadValue` increments refcounter on copy, decrements refcounter in destructor and deletes holding structure, if refcounter is 0.
+`PayloadValue` behavior is similar to `std::shared_ptr`. `PayloadValue` increments refcounter on copy, decrements refcounter in destructor and deletes holding structure, if refcounter is 0.
 refcounter of `PayloadValue` is thread safe.
 
 `PayloadValue` can be in 3 states:
@@ -117,7 +117,7 @@ refcounter of `PayloadValue` is thread safe.
 - *Shared*: data struct is shared with other `PayloadValue`
 
 `PayloadValue` does not allow modifications in shared state. Before any modification, code MUST create copy by calling `PayloadValue::Clone ()`.  
-`Clone` will check state and if neccesary allocates new struct or creates exclusive copy.
+`Clone` will check state and if necessary allocates new struct or creates exclusive copy.
 
 `PayloadValue` does not owning it's strings by default. To control ownership of strings there are 2 methods `PayloadIface::AddRefStrings ()` and `PayloadIface::ReleaseStrings ()`. 
 

@@ -30,12 +30,12 @@ Each field of CJSON is encoded to `ctag` - varuint, which encodes type and name 
 
 Arrays can be stored in 2 different ways:
 
-- homogenius array, with all elements of same type
+- homogeneous array, with all elements of same type
 - mixed array, with elements of various types
 
 ### Atag - array tag format
 
-Atag is 4 byte int, which encodes type and count elemnts in array
+Atag is 4 byte int, which encodes type and count elements in array
 
 | Bits | Field | Description |
 |------|-------------|-------------------------------------------------------------------------|

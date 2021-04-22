@@ -13,7 +13,7 @@ type Item struct {
 }
 ```
 
-The `ID` field is the primary key. Each document in data set has an uniq `ID` in the range from 0 to documents count. `Name` and `Year` fields are filled with some random data, `Description` field is contains random text generated from 100k english words vocabulary.
+The `ID` field is the primary key. Each document in data set has an unique `ID` in the range from 0 to documents count. `Name` and `Year` fields are filled with some random data, `Description` field is contains random text generated from 100k english words vocabulary.
 
 ## Results with Go 1.9.3 and clang-802.0.42 on a 2.7 GHz Intel Core i7 (MacBook Pro Retina 15-inch, Mid 2016):
 
@@ -50,7 +50,7 @@ BenchmarkElasticGetByID             2000            521843 ns/op           92979
 
 ## Get document by primary key (id). Object cache is enabled
 
-Reindexer have an deserialized objects cache. The following benchmark exposes how it influences to performace.
+Reindexer have an deserialized objects cache. The following benchmark exposes how it influences to performance.
 For other databases unmarshaler was not called after fetching documents from DB, and so there are no objects was returned.
 
 ```
@@ -85,7 +85,7 @@ BenchmarkElastic1Cond               1000           1187006 ns/op          129663
 
 ## Query documents with 1 condition. Object cache is enabled
 
-The following benchmark exposes how object cache is influences to perormace.
+The following benchmark exposes how object cache is influences to performance.
 For other databases unmarshaler was not called after fetching documents from DB, and so there are no objects was returned.
 
 ```
@@ -120,7 +120,7 @@ BenchmarkElastic2Cond               1000           1247815 ns/op          133573
 ```
 ## Query documents with 2 conditions. Object cache is enabled
 
-The following benchmark exposes how object cache is influences to perormace.
+The following benchmark exposes how object cache is influences to performance.
 For other databases unmarshaler was not called after fetching documents from DB, and so there are no objects was returned.
 ```
 benchmark                           iter               time/iter          bytes alloc               allocs
@@ -138,7 +138,7 @@ BenchmarkRethink2CondNoObject       2000            822206 ns/op           21627
 
 ### Exact match test
 
-Request database with full text query, which matches documents which contains at least 1 exast word from query with 2 random words. 
+Request database with full text query, which matches documents which contains at least 1 exact word from query with 2 random words. 
 
 ```
 benchmark                           iter               time/iter          bytes alloc               allocs
@@ -174,7 +174,7 @@ For measurements with wrk tool is used with [this shell script](run_benches.sh) 
 
 
 Reindexer tested in 2 modes:
-- embeded: reindexer core library is compiled into application server
+- embedded: reindexer core library is compiled into application server
 - standalone server: reindexer is running as standalone server, application is working with reindexer via network
 
 ## Results with Ubuntu 16.04 in docker container, running on a 2.7 GHz Intel Core i7 (MacBook Pro Retina 15-inch, Mid 2016)

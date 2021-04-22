@@ -25,7 +25,7 @@ brew install reindexer
 
 ## Linux
 
-## RHEL/Centos/Fefora
+## RHEL/Centos/Fedora
 
 ```bash
 yum install -y epel-release yum-utils
@@ -125,7 +125,7 @@ The concept of streaming is described [here](https://grpc.io/docs/what-is-grpc/c
 
 ### Prometheus
 
-Reindexer has a banch of prometheus metrics available via http-URL `/metrics` (i.e. `http://localhost:9088/metrics`). This metrics may be enabled by passing `--prometheus` as reindexer_server command line argument or by setting `metrics:prometheus` flag in server yaml-config file. Some of the metrics also require `perfstats` to be enabled in `profiling`-config
+Reindexer has a bunch of prometheus metrics available via http-URL `/metrics` (i.e. `http://localhost:9088/metrics`). This metrics may be enabled by passing `--prometheus` as reindexer_server command line argument or by setting `metrics:prometheus` flag in server yaml-config file. Some of the metrics also require `perfstats` to be enabled in `profiling`-config
 
 `reindexer_qps_total` - total queries per second for each database, namespace and query type  
 `reindexer_avg_latency` - average queryies latency for each database, namespace and query type  
@@ -195,7 +195,7 @@ More details about replication is [here](../replication.md)
 
 Reindexer server supports login/password authorization for http/rpc client with different access levels for each user/database. To enable this feature `security` flag should be set in server.yml.
 If security option is active reindexer will try to load users list from `users.yml` or `users.json`(deprecate) found in database path. If users-file was not found the default one
-will be created automaticly (default login/password are `reindexer`/`reindexer`)
+will be created automatically (default login/password are `reindexer`/`reindexer`)
 
 ## Alternative storages
 
@@ -218,7 +218,7 @@ To configure storage type for Go bindings either `bindings.ConnectOptions` (for 
 
 ### RocksDB
 
-Reindexer will try to autodetect RocksDB library and it's dependencies at compile time if CMake flag `ENABLE_ROCKSDB` was passed (enabled by default).
+Reindexer will try to autodetect RocksDB library and its dependencies at compile time if CMake flag `ENABLE_ROCKSDB` was passed (enabled by default).
 If reindexer library was built with rocksdb, it requires Go build tag `rocksdb` in order to link with go-applications and go-bindinds.
 
 ### Data transport formats
@@ -234,7 +234,7 @@ Protocol buffers is one of the output data formats for Reindexer's HTTP REST API
 To start working with Protobuf in Reindexer you need to perform the following steps:
 
 1.  [Set JSON Schema](server/contrib/server.md#set-namespace-schema) for all the Namespaces that you are going to use during the session.
-2.  [Get text representation of Protobuf Schema](server/contrib/server.md#get-protobuf-communication-parameters-schema) (\*.proto file) that contains all the communication parameters and descriptions of the Namespaces (set in the previous step). The best practise is to enumerate all the required Namespaces at once (not to regenerate Schema one more time).
+2.  [Get text representation of Protobuf Schema](server/contrib/server.md#get-protobuf-communication-parameters-schema) (\*.proto file) that contains all the communication parameters and descriptions of the Namespaces (set in the previous step). The best practice is to enumerate all the required Namespaces at once (not to regenerate Schema one more time).
 3.  Use Protobuf Schema (.proto file text representation) to generate source files to work with communication parameters in your code. In this case you usually need to write Schema data to .proto file and use `protoc` utility to generate source code files (https://developers.google.com/protocol-buffers/docs/cpptutorial#compiling-your-protocol-buffers).
 
 To work with Protobuf as output data format you need to set `format` parameter to `protobuf` value. List of commands that support Protobuf encoding can be found in [Server documentation](server/contrib/server.md).

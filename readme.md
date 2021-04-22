@@ -10,7 +10,7 @@ Reindexer's goal is to provide fast search with complex queries. We at Restream 
 
 The core is written in C++ and the application level API is in Go.
 
-This document describes Go connector and it's API. To get information
+This document describes Go connector and its API. To get information
 about reindexer server and HTTP API refer to
 [reindexer documentation](cpp_src/readme.md)
 
@@ -26,7 +26,7 @@ about reindexer server and HTTP API refer to
 - [Installation](#installation)
   - [Installation for server mode](#installation-for-server-mode)
     - [Official docker image](#official-docker-image)
-  - [Installation for embeded mode](#installation-for-embeded-mode)
+  - [Installation for embedded mode](#installation-for-embedded-mode)
     - [Prerequirements](#prerequirements)
     - [Get Reindexer](#get-reindexer)
 - [Advanced Usage](#advanced-usage)
@@ -108,7 +108,7 @@ To achieve that, several optimizations are employed, both on the C++ and Go leve
 - There is an object cache on the Go level for deserialized documents produced after query execution. Future queries use pre-deserialized documents, which cuts repeated deserialization and allocation costs
 
 - The Query interface uses `sync.Pool` for reusing internal structures and buffers.
-  Combining of these techings let's Reindexer execute most of queries without any allocations.
+  Combining of these techings lets Reindexer execute most of queries without any allocations.
 
 ### Full text search
 
@@ -236,8 +236,8 @@ Please note, that Query builder interface is preferable way: It have more featur
 
 Reindexer can run in 3 different modes:
 
-- `embeded (builtin)` Reindexer is embeded into application as static library, and does not reuqire separate server proccess.
-- `embeded with server (builtinserver)` Reindexer is embeded into application as static library, and start server. In this mode other
+- `embedded (builtin)` Reindexer is embedded into application as static library, and does not reuqire separate server proccess.
+- `embedded with server (builtinserver)` Reindexer is embedded into application as static library, and start server. In this mode other
   clients can connect to application via cproto or http.
 - `standalone` Reindexer run as standalone server, application connects to Reindexer via network
 
@@ -256,7 +256,7 @@ docker run -p9088:9088 -p6534:6534 -it reindexer/reindexer
 
 [Dockerfile](cpp_src/cmd/reindexer_server/contrib/Dockerfile)
 
-### Installation for embeded mode
+### Installation for embedded mode
 
 #### Prerequirements
 
@@ -277,7 +277,7 @@ go generate github.com/restream/reindexer/bindings/builtinserver
 
 ## Advanced Usage
 
-### Index Types and Their Capabilites
+### Index Types and Their Capabilities
 
 Internally, structs are split into two parts:
 
@@ -290,7 +290,7 @@ Queries are possible only on the indexed fields, marked with `reindex` tag. The 
 
 - `name` – index name.
 - `type` – index type:
-  - `hash` – fast select by EQ and SET match. Used by default. Allows _slow_ and ineffecient sorting by field.
+  - `hash` – fast select by EQ and SET match. Used by default. Allows _slow_ and inefficient sorting by field.
   - `tree` – fast select by RANGE, GT, and LT matches. A bit slower for EQ and SET matches than `hash` index. Allows fast sorting results by field.
   - `text` – full text search index. Usage details of full text search is described [here](fulltext.md)
   - `-` – column index. Can't perform fast select because it's implemented with full-scan technic. Has the smallest memory overhead.
@@ -473,7 +473,7 @@ and set it to null
 UPDATE NS SET field = null where id > 100
 ```
 
-In case of non-indexed fields, setting it's value to a value of a different type will replace it completely; in case of indexed fields, it is only possible to convert it from adjacent type (integral types and bool), numeric strings (like "123456") to integral types and back. Setting indexed field to null resets it to a default value.
+In case of non-indexed fields, setting its value to a value of a different type will replace it completely; in case of indexed fields, it is only possible to convert it from adjacent type (integral types and bool), numeric strings (like "123456") to integral types and back. Setting indexed field to null resets it to a default value.
 
 It is possible to add new fields to existing items
 
@@ -982,7 +982,7 @@ It is just faster equivalent of:
 
 #### Get Query results in JSON format
 
-In case of requiment to serialize results of Query in JSON format, then it is possible to improve performance by directly obtaining results in JSON format from reindexer. JSON serialization will be done by C++ code, without extra allocs/serialization in Go code.
+In case of requirement to serialize results of Query in JSON format, then it is possible to improve performance by directly obtaining results in JSON format from reindexer. JSON serialization will be done by C++ code, without extra allocs/serialization in Go code.
 
 ```go
 ...
@@ -1009,7 +1009,7 @@ This code will print something like:
 ### Using object cache
 
 To avoid race conditions, by default object cache is turned off and all objects are allocated and deserialized from reindexer internal format (called `CJSON`) per each query.
-The deserialization is uses reflection, so it's speed is not optimal (in fact `CJSON` deserialization is ~3-10x faster than `JSON`, and ~1.2x faster than `GOB`), but performance is still seriously limited by reflection overhead.
+The deserialization is uses reflection, so its speed is not optimal (in fact `CJSON` deserialization is ~3-10x faster than `JSON`, and ~1.2x faster than `GOB`), but performance is still seriously limited by reflection overhead.
 
 There are 2 ways to enable object cache:
 
