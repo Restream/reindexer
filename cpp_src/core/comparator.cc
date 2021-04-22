@@ -17,6 +17,7 @@ Comparator::Comparator(CondType cond, KeyValueType type, const VariantArray &val
 	  cmpGeom(distinct) {
 	if (type == KeyValueComposite) assert(fields_.size() > 0);
 	if (cond_ == CondEq && values.size() != 1) cond_ = CondSet;
+	if (cond_ == CondAllSet && values.size() == 1) cond_ = CondEq;
 	if (cond_ == CondDWithin) {
 		cmpGeom.SetValues(values);
 	} else {
@@ -84,16 +85,25 @@ bool Comparator::Compare(const PayloadValue &data, int rowId) {
 		VariantArray rhs;
 		ConstPayload(payloadType_, data).GetByJsonPath(fields_.getTagsPath(0), rhs, type_);
 
-		if (cond_ == CondEmpty) return rhs.empty() || rhs[0].Type() == KeyValueNull;
-
-		if ((cond_ == CondAny) && (rhs.empty() || rhs[0].Type() == KeyValueNull)) return false;
-
-		if (cond_ == CondDWithin) return cmpGeom.Compare(static_cast<Point>(rhs));
-
+		switch (cond_) {
+			case CondEmpty:
+				return rhs.empty() || rhs[0].Type() == KeyValueNull;
+			case CondDWithin:
+				return cmpGeom.Compare(static_cast<Point>(rhs));
+			case CondAllSet:
+				clearAllSetValues();
+				break;
+			case CondAny:
+				if (rhs.empty() || rhs[0].Type() == KeyValueNull) return false;
+				break;
+			default:
+				break;
+		}
 		for (const Variant &kr : rhs) {
 			if (compare(kr)) return true;
 		}
 	} else {
+		if (cond_ == CondAllSet) clearIndividualAllSetValues();
 		// Comparing field from payload by offset (fast path)
 
 		// Special case: compare by composite condition. Pass pointer to PayloadValue
@@ -107,8 +117,15 @@ bool Comparator::Compare(const PayloadValue &data, int rowId) {
 
 		PayloadFieldValue::Array *arr = reinterpret_cast<PayloadFieldValue::Array *>(data.Ptr() + offset_);
 
-		if (cond_ == CondEmpty) return arr->len == 0;
-		if (cond_ == CondAny && arr->len == 0) return false;
+		switch (cond_) {
+			case CondEmpty:
+				return arr->len == 0;
+			case CondAny:
+				if (arr->len == 0) return false;
+				break;
+			default:
+				break;
+		}
 
 		uint8_t *ptr = data.Ptr() + arr->offset;
 		if (cond_ == CondDWithin) {

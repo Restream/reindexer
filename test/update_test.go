@@ -400,6 +400,43 @@ func CheckUpdateArrayObject(t *testing.T) {
 	require.True(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), string(objJson)))
 }
 
+// Check of simultaneous update of 2 fields: object field + indexed field
+func CheckSimultaniousUpdateOfFields(t *testing.T) {
+	// Generate new value for the object field
+	obj := randTestItemObject()
+	objJson, err := json.Marshal(obj)
+	require.NoError(t, err)
+
+	// Set this object value + new value of object field
+	q := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).SetObject("main_obj", objJson).Set("code", 999)
+
+	// Make sure Update query went well
+	res, err := q.Update().AllowUnsafe(true).FetchAll()
+	require.NoError(t, err)
+	require.NotEqual(t, len(res), 0, "No items updated")
+
+	// Fetch data for the same query
+	results, err := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Exec().AllowUnsafe(true).FetchAll()
+	require.NoError(t, err)
+	require.Equal(t, len(results), len(res), "Different count of items")
+
+	// Make sure object field 'mainObj' and indexed field 'Code' 
+	// both have correct values
+	for i := 0; i < len(results); i++ {
+		mainObj := results[i].(*TestItemComplexObject).MainObj
+
+		retObjJSON, err := json.Marshal(mainObj)
+		require.NoError(t, err)
+
+		currObj := testItemObject{}
+		json.Unmarshal(retObjJSON, &currObj)
+		require.Equal(t, currObj, obj)
+
+		code := results[i].(*TestItemComplexObject).Code
+		require.Equal(t, code, 999)
+	}
+}
+
 func CheckUpdateArrayOfObjects(t *testing.T, length int) {
 	objects := make([]testItemObject, length)
 	for i := 0; i < len(objects); i++ {

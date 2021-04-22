@@ -37,11 +37,19 @@ struct ComparatorVars {
 
 template <class T>
 class ComparatorImpl {
+	using ValuesSet = intrusive_atomic_rc_wrapper<std::unordered_set<T>>;
+	using AllSetValuesSet = intrusive_atomic_rc_wrapper<std::unordered_set<const T *>>;
+
 public:
 	ComparatorImpl(bool distinct = false) : distS_(distinct ? new intrusive_atomic_rc_wrapper<std::unordered_set<T>> : nullptr) {}
 
 	void SetValues(CondType cond, const VariantArray &values) {
-		if (cond == CondSet) valuesS_.reset(new intrusive_atomic_rc_wrapper<std::unordered_set<T>>());
+		if (cond == CondSet) {
+			valuesS_.reset(new ValuesSet{});
+		} else if (cond == CondAllSet) {
+			valuesS_.reset(new ValuesSet{});
+			allSetValuesS_.reset(new AllSetValuesSet{});
+		}
 
 		for (Variant key : values) {
 			if (key.Type() == KeyValueString && !is_number(static_cast<p_string>(key))) {
@@ -70,6 +78,12 @@ public:
 				return lhs >= rhs && lhs <= values_[1];
 			case CondSet:
 				return valuesS_->find(lhs) != valuesS_->end();
+			case CondAllSet: {
+				const auto it = valuesS_->find(lhs);
+				if (it == valuesS_->end()) return false;
+				allSetValuesS_->insert(&*it);
+				return allSetValuesS_->size() == valuesS_->size();
+			}
 			case CondAny:
 				return true;
 			case CondEmpty:
@@ -89,9 +103,14 @@ public:
 	void ClearDistinct() {
 		if (distS_) distS_->clear();
 	}
+	void ClearAllSetValues() {
+		assert(allSetValuesS_);
+		allSetValuesS_->clear();
+	}
 
 	h_vector<T, 1> values_;
-	intrusive_ptr<intrusive_atomic_rc_wrapper<std::unordered_set<T>>> valuesS_, distS_;
+	intrusive_ptr<ValuesSet> valuesS_, distS_;
+	intrusive_ptr<AllSetValuesSet> allSetValuesS_;
 
 private:
 	KeyValueType type() {
@@ -103,7 +122,7 @@ private:
 	}
 
 	void addValue(CondType cond, T value) {
-		if (cond == CondSet) {
+		if (cond == CondSet || cond == CondAllSet) {
 			valuesS_->insert(value);
 		} else {
 			values_.push_back(value);
@@ -117,7 +136,12 @@ public:
 	ComparatorImpl(bool distinct = false) : distS_(distinct ? new intrusive_atomic_rc_wrapper<std::unordered_set<key_string>> : nullptr) {}
 
 	void SetValues(CondType cond, const VariantArray &values, const CollateOpts &collateOpts_) {
-		if (cond == CondSet) valuesS_.reset(new intrusive_atomic_rc_wrapper<key_string_set>(collateOpts_));
+		if (cond == CondSet) {
+			valuesS_.reset(new intrusive_atomic_rc_wrapper<key_string_set>(collateOpts_));
+		} else if (cond == CondAllSet) {
+			valuesS_.reset(new intrusive_atomic_rc_wrapper<key_string_set>(collateOpts_));
+			allSetValuesS_.reset(new intrusive_atomic_rc_wrapper<std::unordered_set<const key_string *>>{});
+		}
 
 		for (Variant key : values) {
 			key.convert(KeyValueString);
@@ -143,6 +167,12 @@ public:
 					   collateCompare(string_view(lhs), string_view(*values_[1]), collateOpts) <= 0;
 			case CondSet:
 				return valuesS_->find(string_view(lhs)) != valuesS_->end();
+			case CondAllSet: {
+				auto it = valuesS_->find(lhs);
+				if (it == valuesS_->end()) return false;
+				allSetValuesS_->insert(&*it);
+				return allSetValuesS_->size() == valuesS_->size();
+			}
 			case CondAny:
 				return true;
 			case CondEmpty:
@@ -164,6 +194,10 @@ public:
 	void ClearDistinct() {
 		if (distS_) distS_->clear();
 	}
+	void ClearAllSetValues() {
+		assert(allSetValuesS_);
+		allSetValuesS_->clear();
+	}
 
 	h_vector<key_string, 1> values_;
 	string_view cachedValueSV_;
@@ -177,10 +211,11 @@ public:
 
 	intrusive_ptr<intrusive_atomic_rc_wrapper<key_string_set>> valuesS_;
 	intrusive_ptr<intrusive_atomic_rc_wrapper<std::unordered_set<key_string>>> distS_;
+	intrusive_ptr<intrusive_atomic_rc_wrapper<std::unordered_set<const key_string *>>> allSetValuesS_;
 
 private:
 	void addValue(CondType cond, const key_string &value) {
-		if (cond == CondSet) {
+		if (cond == CondSet || cond == CondAllSet) {
 			valuesS_->emplace(value);
 		} else {
 			values_.push_back(value);
@@ -197,9 +232,14 @@ public:
 	ComparatorImpl() {}
 
 	void SetValues(CondType cond, const VariantArray &values, const ComparatorVars &vars) {
-		if (cond == CondSet)
+		if (cond == CondSet) {
 			valuesSet_.reset(new intrusive_atomic_rc_wrapper<unordered_payload_set>(0, hash_composite(vars.payloadType_, vars.fields_),
 																					equal_composite(vars.payloadType_, vars.fields_)));
+		} else if (cond == CondAllSet) {
+			valuesSet_.reset(new intrusive_atomic_rc_wrapper<unordered_payload_set>(0, hash_composite(vars.payloadType_, vars.fields_),
+																					equal_composite(vars.payloadType_, vars.fields_)));
+			allSetValuesSet_.reset(new intrusive_atomic_rc_wrapper<std::unordered_set<const PayloadValue *>>{});
+		}
 
 		for (const Variant &kv : values) {
 			addValue(cond, static_cast<const PayloadValue &>(kv));
@@ -227,6 +267,12 @@ public:
 					   (lhs.Compare(values_[1], vars.fields_, vars.collateOpts_) <= 0);
 			case CondSet:
 				return valuesSet_->find(leftValue) != valuesSet_->end();
+			case CondAllSet: {
+				auto it = valuesSet_->find(leftValue);
+				if (it == valuesSet_->end()) return false;
+				allSetValuesSet_->insert(&*it);
+				return allSetValuesSet_->size() == valuesSet_->size();
+			}
 			case CondAny:
 				return true;
 			case CondEmpty:
@@ -236,13 +282,18 @@ public:
 				abort();
 		}
 	}
+	void ClearAllSetValues() {
+		assert(allSetValuesSet_);
+		allSetValuesSet_->clear();
+	}
 
 	h_vector<PayloadValue, 1> values_;
 	intrusive_ptr<intrusive_atomic_rc_wrapper<unordered_payload_set>> valuesSet_;
+	intrusive_ptr<intrusive_atomic_rc_wrapper<std::unordered_set<const PayloadValue *>>> allSetValuesSet_;
 
 private:
 	void addValue(CondType cond, const PayloadValue &pv) {
-		if (cond == CondSet) {
+		if (cond == CondSet || cond == CondAllSet) {
 			valuesSet_->emplace(pv);
 		} else {
 			values_.push_back(pv);

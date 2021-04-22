@@ -74,8 +74,10 @@ private:
 
 	static ::grpc::Status buildQueryResults(const reindexer::QueryResults& qr, ::grpc::ServerWriter<QueryResultsResponse>* writer,
 											const OutputFlags& opts);
-	static Error buildQrItems(WrSerializer& wrser, const reindexer::QueryResults& qr, const OutputFlags& opts);
-	static Error buildAggregation(WrSerializer& wrser, const reindexer::QueryResults& qr, const OutputFlags& opts);
+	static Error buildItems(WrSerializer& wrser, const reindexer::QueryResults& qr, const OutputFlags& opts);
+
+	template <typename Builder>
+	static Error buildAggregation(Builder& builder, WrSerializer& wrser, const reindexer::QueryResults& qr, const OutputFlags& opts);
 
 	Error getDB(const std::string& dbName, int userRole, reindexer::Reindexer** rx);
 	void removeExpiredTxCb(reindexer::net::ev::periodic&, int);

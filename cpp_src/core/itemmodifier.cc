@@ -32,7 +32,7 @@ void ItemModifier::FieldData::updateTagsPath(TagsMatcher &tm, const IndexExpress
 			IndexedPathNode &node = tagsPath_[i];
 			VariantArray vals = ev(node.Expression());
 			if (vals.size() != 1) {
-				throw Error(errParams, "Index expression_ has wrong syntax: '%s'", node.Expression());
+				throw Error(errParams, "Index expression has wrong syntax: '%s'", node.Expression());
 			}
 			if (vals.front().Type() != KeyValueDouble && vals.front().Type() != KeyValueInt && vals.front().Type() != KeyValueInt64) {
 				throw Error(errParams, "Wrong type of index: '%s'", node.Expression());
@@ -52,36 +52,39 @@ ItemModifier::ItemModifier(const h_vector<UpdateEntry, 0> &updateEntries, Namesp
 	}
 }
 
-void ItemModifier::Modify(IdType itemId, const NsContext &ctx, bool updateWithJson) {
-	if (updateWithJson) {
-		modifyCJSON(itemId, ctx);
-	} else {
-		modify(itemId);
-	}
-}
-
-void ItemModifier::modifyCJSON(IdType itemId, const NsContext &ctx) {
-	PayloadValue pv = ns_.items_[itemId];
+void ItemModifier::Modify(IdType itemId, const NsContext &ctx) {
+	PayloadValue &pv = ns_.items_[itemId];
 	Payload pl(ns_.payloadType_, pv);
 	pv.Clone(pl.RealSize());
 
 	FunctionExecutor funcExecutor(ns_);
-	ExpressionEvaluator expressionEvaluator(ns_.payloadType_, ns_.tagsMatcher_, funcExecutor);
-	ItemImpl itemimpl(ns_.payloadType_, pv, ns_.tagsMatcher_);
+	ExpressionEvaluator ev(ns_.payloadType_, ns_.tagsMatcher_, funcExecutor);
+
 	for (FieldData &field : fieldsToModify_) {
 		VariantArray values;
 		if (field.details().isExpression) {
 			assert(field.details().values.size() > 0);
-			values =
-				expressionEvaluator.Evaluate(static_cast<string_view>(field.details().values.front()), ns_.items_[itemId], field.name());
+			values = ev.Evaluate(static_cast<string_view>(field.details().values.front()), pv, field.name());
 		} else {
 			values = field.details().values;
 		}
-		field.updateTagsPath(ns_.tagsMatcher_, [&expressionEvaluator, &pv, &field](string_view expression) {
-			return expressionEvaluator.Evaluate(expression, pv, field.name());
-		});
-		itemimpl.ModifyField(field.tagspath(), values, field.details().mode);
+
+		field.updateTagsPath(ns_.tagsMatcher_,
+							 [&ev, &pv, &field](string_view expression) { return ev.Evaluate(expression, pv, field.name()); });
+
+		if (field.details().mode == FieldModeSetJson) {
+			modifyCJSON(pv, field, values, ctx);
+		} else {
+			modifyField(itemId, field, pl, values);
+		}
 	}
+
+	ns_.markUpdated();
+}
+
+void ItemModifier::modifyCJSON(PayloadValue &pv, FieldData &field, VariantArray &values, const NsContext &ctx) {
+	ItemImpl itemimpl(ns_.payloadType_, pv, ns_.tagsMatcher_);
+	itemimpl.ModifyField(field.tagspath(), values, field.details().mode);
 
 	NsContext nsCtx{ctx.rdxContext};
 	nsCtx.NoLock();
@@ -89,55 +92,89 @@ void ItemModifier::modifyCJSON(IdType itemId, const NsContext &ctx) {
 	Item item = ns_.NewItem(nsCtx);
 	Error err = item.FromCJSON(itemimpl.GetCJSON(true));
 	if (!err.ok()) throw err;
-	ns_.Update(item, nsCtx);
-}
 
-void ItemModifier::modify(IdType itemId) {
-	PayloadValue &pv = ns_.items_[itemId];
-	Payload pl(ns_.payloadType_, pv);
-	pv.Clone(pl.RealSize());
+	ItemImpl *impl = item.impl_;
+	ns_.setFieldsBasedOnPrecepts(impl);
+	ns_.updateTagsMatcherFromItem(impl);
 
-	for (int field = ns_.indexes_.firstCompositePos(); field < ns_.indexes_.totalSize(); ++field) {
-		ns_.indexes_[field]->Delete(Variant(pv), itemId);
+	auto originalItem = ns_.findByPK(impl, ctx.rdxContext);
+	if (!originalItem.second) {
+		item.setID(-1);
+		return;
+	}
+	IdType id = originalItem.first;
+	item.setID(id);
+
+	auto &plData = ns_.items_[id];
+	Payload pl(ns_.payloadType_, plData);
+	Payload plNew = impl->GetPayload();
+	plData.Clone(pl.RealSize());
+
+	for (int i = ns_.indexes_.firstCompositePos(); i < ns_.indexes_.totalSize(); ++i) {
+		ns_.indexes_[i]->Delete(Variant(plData), id);
 	}
 
-	for (size_t i = 0; i < fieldsToModify_.size(); ++i) {
-		modifyField(itemId, fieldsToModify_[i], pl);
-	}
+	assert(ns_.indexes_.firstCompositePos() != 0);
+	const int borderIdx = ns_.indexes_.totalSize() > 1 ? 1 : 0;
+	int fieldIdx = borderIdx;
+	do {
+		fieldIdx %= ns_.indexes_.firstCompositePos();
+		Index &index = *(ns_.indexes_[fieldIdx]);
+		bool isIndexSparse = index.Opts().IsSparse();
+		assert(!isIndexSparse || (isIndexSparse && index.Fields().getTagsPathsLength() > 0));
 
-	for (int field = ns_.indexes_.firstCompositePos(); field < ns_.indexes_.totalSize(); ++field) {
-		ns_.indexes_[field]->Upsert(Variant(pv), itemId);
+		if (isIndexSparse) {
+			assert(index.Fields().getTagsPathsLength() > 0);
+			try {
+				plNew.GetByJsonPath(index.Fields().getTagsPath(0), ns_.skrefs, index.KeyType());
+			} catch (const Error &) {
+				ns_.skrefs.resize(0);
+			}
+		} else {
+			plNew.Get(fieldIdx, ns_.skrefs);
+		}
+
+		if (index.Opts().GetCollateMode() == CollateUTF8) {
+			for (auto &key : ns_.skrefs) key.EnsureUTF8();
+		}
+
+		if (isIndexSparse) {
+			try {
+				pl.GetByJsonPath(index.Fields().getTagsPath(0), ns_.krefs, index.KeyType());
+			} catch (const Error &) {
+				ns_.krefs.resize(0);
+			}
+		} else {
+			pl.Get(fieldIdx, ns_.krefs, index.Opts().IsArray());
+		}
+		index.Delete(ns_.krefs, id);
+
+		ns_.krefs.resize(0);
+		index.Upsert(ns_.krefs, ns_.skrefs, id, !isIndexSparse);
+
+		if (!isIndexSparse) {
+			pl.Set(fieldIdx, ns_.krefs);
+		}
+	} while (++fieldIdx != borderIdx);
+
+	for (int i = ns_.indexes_.firstCompositePos(); i < ns_.indexes_.totalSize(); ++i) {
+		ns_.indexes_[i]->Upsert(Variant(plData), id);
 	}
+	impl->RealValue() = pv;
 
 	ns_.markUpdated();
 }
 
-void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl) {
+void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, VariantArray &values) {
 	Index &index = *(ns_.indexes_[field.index()]);
 	if (field.isIndex() && !index.Opts().IsSparse() && (field.details().mode == FieldModeDrop)) {
 		throw Error(errLogic, "It's only possible to drop sparse or non-index fields via UPDATE statement!");
 	}
 
 	assert(!index.Opts().IsSparse() || (index.Opts().IsSparse() && index.Fields().getTagsPathsLength() > 0));
-
-	VariantArray values;
-	FunctionExecutor funcExecutor(ns_);
-	ExpressionEvaluator expressionEvaluator(ns_.payloadType_, ns_.tagsMatcher_, funcExecutor);
-	if (field.details().isExpression) {
-		assert(field.details().values.size() > 0);
-		values = expressionEvaluator.Evaluate(static_cast<string_view>(field.details().values.front()), ns_.items_[itemId], field.name());
-	} else {
-		values = field.details().values;
-	}
-
 	if (field.isIndex() && !index.Opts().IsArray() && values.IsArrayValue()) {
 		throw Error(errLogic, "It's not possible to Update single index fields with arrays!");
 	}
-
-	const PayloadValue &pv = ns_.items_[itemId];
-	field.updateTagsPath(ns_.tagsMatcher_, [&expressionEvaluator, &pv, &field](string_view expression) {
-		return expressionEvaluator.Evaluate(expression, pv, field.name());
-	});
 
 	if (index.Opts().IsSparse()) {
 		pl.GetByJsonPath(index.Fields().getTagsPath(0), ns_.skrefs, index.KeyType());
@@ -149,8 +186,16 @@ void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl) {
 		for (const Variant &key : values) key.EnsureUTF8();
 	}
 
+	for (int i = ns_.indexes_.firstCompositePos(); i < ns_.indexes_.totalSize(); ++i) {
+		ns_.indexes_[i]->Delete(Variant(ns_.items_[itemId]), itemId);
+	}
+
 	if (field.isIndex()) {
 		modifyIndexValues(itemId, field, values, pl);
+	}
+
+	for (int i = ns_.indexes_.firstCompositePos(); i < ns_.indexes_.totalSize(); ++i) {
+		ns_.indexes_[i]->Upsert(Variant(ns_.items_[itemId]), itemId);
 	}
 
 	if (index.Opts().IsSparse() || index.Opts().IsArray() || !field.isIndex()) {

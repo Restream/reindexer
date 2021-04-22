@@ -713,7 +713,7 @@ void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsCon
 	ThrowOnCancel(ctx.rdxContext);
 
 	// If update statement is expression and contains function calls then we use
-	// row-based replication (to preserve data consistense), otherwise we update
+	// row-based replication (to preserve data inconsistency), otherwise we update
 	// it via 'WalUpdateQuery' (statement-based replication). If Update statement
 	// contains update of entire object (via JSON) then statement replication is not possible.
 	bool statementReplication =
@@ -727,10 +727,8 @@ void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsCon
 		uint64_t oldPlHash = pl.GetHash();
 		size_t oldItemCapacity = pv.GetCapacity();
 		pv.Clone(pl.RealSize());
-		itemModifier.Modify(item.Id(), ctx, updateWithJson);
-		if (!updateWithJson) {
-			replicateItem(item.Id(), ctx, statementReplication, oldPlHash, oldItemCapacity);
-		}
+		itemModifier.Modify(item.Id(), ctx);
+		replicateItem(item.Id(), ctx, statementReplication, oldPlHash, oldItemCapacity);
 		item.Value() = items_[item.Id()];
 	}
 	result.getTagsMatcher(0) = tagsMatcher_;
@@ -1295,7 +1293,7 @@ void NamespaceImpl::modifyItem(Item &item, const NsContext &ctx, int mode) {
 	}
 	if (!ctx.rdxContext.fromReplication_) setReplLSNs(LSNPair(lsn_t(), lsn));
 	markUpdated();
-}  // namespace reindexer
+}
 
 // find id by PK. NOT THREAD SAFE!
 pair<IdType, bool> NamespaceImpl::findByPK(ItemImpl *ritem, const RdxContext &ctx) {

@@ -111,6 +111,39 @@ protected:
 
 	void setValues(const VariantArray &values);
 
+	void clearAllSetValues() {
+		cmpInt.ClearAllSetValues();
+		cmpBool.ClearAllSetValues();
+		cmpInt64.ClearAllSetValues();
+		cmpDouble.ClearAllSetValues();
+		cmpString.ClearAllSetValues();
+		cmpComposite.ClearAllSetValues();
+	}
+
+	void clearIndividualAllSetValues() {
+		switch (type_) {
+			case KeyValueBool:
+				cmpBool.ClearAllSetValues();
+				break;
+			case KeyValueInt:
+				cmpInt.ClearAllSetValues();
+				break;
+			case KeyValueInt64:
+				cmpInt64.ClearAllSetValues();
+				break;
+			case KeyValueDouble:
+				cmpDouble.ClearAllSetValues();
+				break;
+			case KeyValueString:
+				cmpString.ClearAllSetValues();
+				break;
+			case KeyValueComposite:
+				cmpComposite.ClearAllSetValues();
+				break;
+			default:
+				break;
+		}
+	}
 	ComparatorImpl<bool> cmpBool;
 	ComparatorImpl<int> cmpInt;
 	ComparatorImpl<int64_t> cmpInt64;
