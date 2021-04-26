@@ -8,7 +8,7 @@ class ReplicationLoadApi : public ReplicationApi {
 public:
 	class UpdatesReciever : public IUpdatesObserver {
 	public:
-		void OnWALUpdate(LSNPair, string_view nsName, const WALRecord &) override final {
+		void OnWALUpdate(LSNPair, std::string_view nsName, const WALRecord &) override final {
 			std::lock_guard<std::mutex> lck(mtx_);
 			auto found = updatesCounters_.find(nsName);
 			if (found != updatesCounters_.end()) {
@@ -18,7 +18,7 @@ public:
 			}
 		}
 		void OnConnectionState(const Error &) override final {}
-		void OnUpdatesLost(string_view) override final {}
+		void OnUpdatesLost(std::string_view) override final {}
 
 		using map = tsl::hopscotch_map<std::string, size_t, nocase_hash_str, nocase_equal_str>;
 

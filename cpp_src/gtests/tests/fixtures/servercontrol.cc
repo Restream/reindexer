@@ -92,7 +92,7 @@ void ServerControl::Interface::WriteServerConfig(const std::string& configYaml) 
 	file.flush();
 }
 
-void ServerControl::Interface::SetWALSize(int64_t size, string_view nsName) {
+void ServerControl::Interface::SetWALSize(int64_t size, std::string_view nsName) {
 	reindexer::WrSerializer ser;
 	reindexer::JsonBuilder jb(ser);
 

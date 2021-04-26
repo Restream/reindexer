@@ -14,7 +14,6 @@ using std::istream;
 using std::string;
 using std::stringstream;
 using std::numeric_limits;
-using reindexer::string_view;
 using reindexer::Error;
 using reindexer::WrSerializer;
 
@@ -42,18 +41,18 @@ private:
 class LineParser {
 public:
 	LineParser(const string& line) : line_(line), cur_(line.data()) {}
-	string_view NextToken() {
+	std::string_view NextToken() {
 		while (*cur_ == ' ' || *cur_ == '\t') cur_++;
 
 		const char* next = cur_;
 		while (*next != ' ' && *next != '\t' && *next) next++;
-		string_view ret(cur_, next - cur_);
+		std::string_view ret(cur_, next - cur_);
 		cur_ = next;
 		while (*cur_ == ' ' || *cur_ == '\t') cur_++;
 		return ret;
 	}
 	bool End() { return *cur_ == 0; }
-	string_view CurPtr() { return string_view(cur_, line_.size() - (cur_ - line_.data())); }
+	std::string_view CurPtr() { return std::string_view(cur_, line_.size() - (cur_ - line_.data())); }
 
 protected:
 	const string& line_;

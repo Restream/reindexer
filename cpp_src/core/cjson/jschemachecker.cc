@@ -10,23 +10,21 @@
 
 namespace reindexer {
 
-
-JsonSchemaChecker::JsonSchemaChecker(const std::string& json,std::string rootTypeName):rootTypeName_(rootTypeName) {
+JsonSchemaChecker::JsonSchemaChecker(const std::string& json, std::string rootTypeName) : rootTypeName_(rootTypeName) {
 	Error err = createTypeTable(json);
 	if (!err.ok()) throw err;
-	isInit=true;
+	isInit = true;
 }
 
 Error JsonSchemaChecker::Init(const std::string& json, std::string rootTypeName) {
-
-	if(isInit)
-		return Error(errLogic ,"JsonSchemaChecker already initialized.");
+	if (isInit) return Error(errLogic, "JsonSchemaChecker already initialized.");
 	rootTypeName_ = std::move(rootTypeName);
 	return createTypeTable(json);
 }
 
-bool JsonSchemaChecker::isSimpleType(string_view tp) {
-	return tp == "string"_sv || tp == "number"_sv || tp == "integer"_sv || tp == "boolean"_sv;
+bool JsonSchemaChecker::isSimpleType(std::string_view tp) {
+	using namespace std::string_view_literals;
+	return tp == "string"sv || tp == "number"sv || tp == "integer"sv || tp == "boolean"sv;
 }
 
 std::string JsonSchemaChecker::createType(const PrefixTree::PrefixTreeNode* node, const std::string& typeName) {
@@ -75,7 +73,7 @@ void JsonSchemaChecker::addSimpleType(std::string tpName) {
 }
 
 Error JsonSchemaChecker::createTypeTable(const std::string& json) {
-	auto err = schema_.FromJSON(string_view(json));
+	auto err = schema_.FromJSON(std::string_view(json));
 	if (!err.ok()) return err;
 	auto root = schema_.GetRoot();
 
@@ -133,7 +131,7 @@ Error JsonSchemaChecker::checkScheme(const gason::JsonNode& node, int typeIndex,
 	h_vector<ValAppearance, 16> mmVals(valAppearance_[typeIndex].begin(), valAppearance_[typeIndex].end());
 	Error err;
 	for (const auto& elem : node) {
-		auto subElemIndex = descr.subElementsIndex.find(string_view(elem.key));
+		auto subElemIndex = descr.subElementsIndex.find(std::string_view(elem.key));
 		if (subElemIndex == descr.subElementsIndex.end()) {
 			if (!descr.allowAdditionalProps)
 				return Error(errParseJson, "Key [%s] not allowed in [%s] object.", elem.key, path);
@@ -167,7 +165,7 @@ Error JsonSchemaChecker::checkScheme(const gason::JsonNode& node, int typeIndex,
 	return err;
 }
 
-Error JsonSchemaChecker::checkExists(string_view name, ValAppearance* element, const std::string& path) {
+Error JsonSchemaChecker::checkExists(std::string_view name, ValAppearance* element, const std::string& path) {
 	if (!element->notExist) {
 		return Error(errParseJson, "Key [%s] can occur only once in [%s] object.", std::string(name), path);
 	}

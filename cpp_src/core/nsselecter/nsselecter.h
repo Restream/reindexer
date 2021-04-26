@@ -61,8 +61,8 @@ private:
 	h_vector<Aggregator, 4> getAggregators(const Query &) const;
 	void setLimitAndOffset(ItemRefVector &result, size_t offset, size_t limit);
 	void prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, bool isFt, bool availableSelectBySortIndex);
-	void prepareSortIndex(string_view column, int &index, bool &skipSortingEntry, StrictMode);
-	static void prepareSortJoinedIndex(size_t nsIdx, string_view column, int &index, const std::vector<JoinedSelector> &,
+	void prepareSortIndex(std::string_view column, int &index, bool &skipSortingEntry, StrictMode);
+	static void prepareSortJoinedIndex(size_t nsIdx, std::string_view column, int &index, const std::vector<JoinedSelector> &,
 									   bool &skipSortingEntry, StrictMode);
 	void getSortIndexValue(const SortingContext &sortCtx, IdType rowId, VariantArray &value, uint8_t proc, const joins::NamespaceResults &,
 						   const JoinedSelectors &);
@@ -72,7 +72,7 @@ private:
 	void sortResults(LoopCtx &sctx, It begin, It end, const SortingOptions &sortingOptions);
 
 	bool isSortOptimizatonEffective(const QueryEntries &qe, SelectCtx &ctx, const RdxContext &rdxCtx);
-	static bool validateField(StrictMode strictMode, string_view name, const std::string &nsName, const TagsMatcher &tagsMatcher);
+	static bool validateField(StrictMode strictMode, std::string_view name, const std::string &nsName, const TagsMatcher &tagsMatcher);
 
 	NamespaceImpl *ns_;
 	SelectFunction::Ptr fnc_;

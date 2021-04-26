@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.0)
 
 # Configure cmake options
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(CMakeToolsHelpers OPTIONAL)
 include(ExternalProject)
@@ -28,7 +28,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "3.1.2") 
+set (REINDEXER_VERSION_DEFAULT "3.1.3")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -58,7 +58,7 @@ if (MSVC)
   set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -SAFESEH:NO")
 else()
   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror")
-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -Wall -Wextra -Werror -Wold-style-cast")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wall -Wextra -Werror -Wold-style-cast")
 endif ()
 
 set (EXTRA_FLAGS "")
@@ -616,13 +616,12 @@ if (NOT WIN32)
     "core/query/query.h" "core/query/queryentry.h" "core/queryresults/queryresults.h" "core/indexdef.h" "core/queryresults/aggregationresult.h"
     "core/queryresults/itemref.h"
     "core/expressiontree.h" "core/lsn.h"
-    "estl/h_vector.h" "estl/string_view.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/span.h"
+    "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/span.h"
     "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h"
     "client/internalrdxcontext.h" "client/transaction.h"
     "client/cororeindexer.h" "client/coroqueryresults.h" "client/corotransaction.h"
     "net/ev/ev.h" "coroutine/coroutine.h" "coroutine/channel.h" "coroutine/waitgroup.h" "coroutine/context/fcontext.hpp"
-    "debug/backtrace.h" "debug/allocdebug.h" "debug/resolver.h"
-    "vendor/mpark/variant.h" "vendor/gason/gason.h"
+    "debug/backtrace.h" "debug/allocdebug.h" "debug/resolver.h" "vendor/gason/gason.h"
   )
 
   foreach ( file ${DIST_INCLUDE_FILES} )

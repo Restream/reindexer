@@ -64,13 +64,13 @@ void ItemModifier::Modify(IdType itemId, const NsContext &ctx) {
 		VariantArray values;
 		if (field.details().isExpression) {
 			assert(field.details().values.size() > 0);
-			values = ev.Evaluate(static_cast<string_view>(field.details().values.front()), pv, field.name());
+			values = ev.Evaluate(static_cast<std::string_view>(field.details().values.front()), pv, field.name());
 		} else {
 			values = field.details().values;
 		}
 
 		field.updateTagsPath(ns_.tagsMatcher_,
-							 [&ev, &pv, &field](string_view expression) { return ev.Evaluate(expression, pv, field.name()); });
+							 [&ev, &pv, &field](std::string_view expression) { return ev.Evaluate(expression, pv, field.name()); });
 
 		if (field.details().mode == FieldModeSetJson) {
 			modifyCJSON(pv, field, values, ctx);

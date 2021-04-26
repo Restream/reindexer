@@ -77,7 +77,7 @@ void MsgPackDecoder::decode(Payload* pl, CJsonBuilder& builder, const msgpack_ob
 			auto object = builder.Object(tagName);
 			for (const msgpack_object_kv* p = begin; p != end; ++p) {
 				assert(p && p->key.type == MSGPACK_OBJECT_STR);
-				int tag = tm_->name2tag(string_view(p->key.via.str.ptr, p->key.via.str.size), true);
+				int tag = tm_->name2tag(std::string_view(p->key.via.str.ptr, p->key.via.str.size), true);
 				decode(pl, object, p->val, tag);
 			}
 			break;
@@ -91,7 +91,7 @@ void MsgPackDecoder::decode(Payload* pl, CJsonBuilder& builder, const msgpack_ob
 	if (tagName) tagsPath_.pop_back();
 }
 
-Error MsgPackDecoder::Decode(string_view buf, Payload* pl, WrSerializer& wrser, size_t& offset) {
+Error MsgPackDecoder::Decode(std::string_view buf, Payload* pl, WrSerializer& wrser, size_t& offset) {
 	try {
 		tagsPath_.clear();
 		MsgPackValue data = parser_.Parse(buf, offset);

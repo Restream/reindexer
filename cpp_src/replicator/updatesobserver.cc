@@ -5,6 +5,8 @@
 #include "core/itemimpl.h"
 #include "core/keyvalue/p_string.h"
 
+using namespace std::string_view_literals;
+
 namespace reindexer {
 
 void UpdatesFilters::Merge(const UpdatesFilters &rhs) {
@@ -31,7 +33,7 @@ void UpdatesFilters::Merge(const UpdatesFilters &rhs) {
 	}
 }
 
-void UpdatesFilters::AddFilter(string_view ns, UpdatesFilters::Filter filter) {
+void UpdatesFilters::AddFilter(std::string_view ns, UpdatesFilters::Filter filter) {
 	auto foundNs = filters_.find(ns);
 	if (foundNs == filters_.end()) {
 		FiltersList lst;
@@ -46,7 +48,7 @@ void UpdatesFilters::AddFilter(string_view ns, UpdatesFilters::Filter filter) {
 	}
 }
 
-bool UpdatesFilters::Check(string_view ns) const {
+bool UpdatesFilters::Check(std::string_view ns) const {
 	if (filters_.empty()) {
 		return true;
 	}
@@ -76,9 +78,9 @@ Error UpdatesFilters::FromJSON(span<char> json) {
 }
 
 void UpdatesFilters::FromJSON(const gason::JsonNode &root) {
-	for (const auto &ns : root["namespaces"_sv]) {
-		auto name = ns["name"_sv].As<string_view>();
-		for (const auto &f : ns["filters"_sv]) {
+	for (const auto &ns : root["namespaces"sv]) {
+		auto name = ns["name"sv].As<std::string_view>();
+		for (const auto &f : ns["filters"sv]) {
 			Filter filter;
 			filter.FromJSON(f);
 			AddFilter(name, std::move(filter));
@@ -89,11 +91,11 @@ void UpdatesFilters::FromJSON(const gason::JsonNode &root) {
 void UpdatesFilters::GetJSON(WrSerializer &ser) const {
 	JsonBuilder builder(ser);
 	{
-		auto arr = builder.Array("namespaces"_sv);
+		auto arr = builder.Array("namespaces"sv);
 		for (const auto &nsFilters : filters_) {
 			auto obj = arr.Object();
-			obj.Put("name"_sv, nsFilters.first);
-			auto arrFilters = obj.Array("filters"_sv);
+			obj.Put("name"sv, nsFilters.first);
+			auto arrFilters = obj.Array("filters"sv);
 			for (const auto &filter : nsFilters.second) {
 				auto filtersObj = arrFilters.Object();
 				filter.GetJSON(filtersObj);
@@ -156,7 +158,7 @@ std::vector<UpdatesObservers::ObserverInfo> UpdatesObservers::Get() const {
 	return observers_;
 }
 
-void UpdatesObservers::OnModifyItem(LSNPair LSNs, string_view nsName, ItemImpl *impl, int modifyMode, bool inTransaction) {
+void UpdatesObservers::OnModifyItem(LSNPair LSNs, std::string_view nsName, ItemImpl *impl, int modifyMode, bool inTransaction) {
 	WrSerializer ser;
 	WALRecord walRec(WalItemModify, impl->tagsMatcher().isUpdated() ? impl->GetCJSON(ser, true) : impl->GetCJSON(),
 					 impl->tagsMatcher().version(), modifyMode, inTransaction);
@@ -164,7 +166,7 @@ void UpdatesObservers::OnModifyItem(LSNPair LSNs, string_view nsName, ItemImpl *
 	OnWALUpdate(LSNs, nsName, walRec);
 }
 
-void UpdatesObservers::OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &walRec) {
+void UpdatesObservers::OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &walRec) {
 	// Disable updates of system namespaces (it may cause recursive lock)
 	if (nsName.size() && nsName[0] == '#') return;
 
@@ -184,7 +186,7 @@ void UpdatesObservers::OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRe
 	}
 }
 
-void UpdatesObservers::OnUpdatesLost(string_view nsName) {
+void UpdatesObservers::OnUpdatesLost(std::string_view nsName) {
 	shared_lock<shared_timed_mutex> lck(mtx_);
 	for (auto observer : observers_) {
 		observer.ptr->OnUpdatesLost(nsName);

@@ -76,7 +76,10 @@ Error CommandsExecutor<DBInterface>::Process(const string& command) {
 template <typename DBInterface>
 Error CommandsExecutor<DBInterface>::FromFile(std::istream& in) {
 	GenericCommand cmd([this, &in] { return fromFileImpl(in); });
-	return execCommand(cmd);
+	fromFile_ = true;
+	Error status = execCommand(cmd);
+	fromFile_ = false;
+	return status;
 }
 
 template <typename DBInterface>
@@ -280,7 +283,7 @@ Error CommandsExecutor<DBInterface>::queryResultsToJson(ostream& o, const typena
 		if (isWALQuery) ser << '#' << it.GetLSN() << ' ';
 		if (it.IsRaw()) {
 			reindexer::WALRecord rec(it.GetRaw());
-			rec.Dump(ser, [this, &r](string_view cjson) {
+			rec.Dump(ser, [this, &r](std::string_view cjson) {
 				auto item = db().NewItem(r.GetNamespaces()[0]);
 				item.FromCJSON(cjson);
 				return string(item.GetJSON());
@@ -325,7 +328,7 @@ Error CommandsExecutor<reindexer::Reindexer>::getAvailableDatabases(vector<strin
 template <typename DBInterface>
 void CommandsExecutor<DBInterface>::addCommandsSuggestions(std::string const& cmd, std::vector<string>& suggestions) {
 	LineParser parser(cmd);
-	string_view token = parser.NextToken();
+	std::string_view token = parser.NextToken();
 
 	if ((token == "\\upsert") || (token == "\\delete")) {
 		token = parser.NextToken();
@@ -384,7 +387,7 @@ void CommandsExecutor<DBInterface>::addCommandsSuggestions(std::string const& cm
 }
 
 template <typename DBInterface>
-void CommandsExecutor<DBInterface>::checkForNsNameMatch(string_view str, std::vector<string>& suggestions) {
+void CommandsExecutor<DBInterface>::checkForNsNameMatch(std::string_view str, std::vector<string>& suggestions) {
 	vector<NamespaceDef> allNsDefs;
 	Error err = db().EnumNamespaces(allNsDefs, reindexer::EnumNamespacesOpts().WithClosed());
 	if (!err.ok()) return;
@@ -396,9 +399,9 @@ void CommandsExecutor<DBInterface>::checkForNsNameMatch(string_view str, std::ve
 }
 
 template <typename DBInterface>
-void CommandsExecutor<DBInterface>::checkForCommandNameMatch(string_view str, std::initializer_list<string_view> cmds,
+void CommandsExecutor<DBInterface>::checkForCommandNameMatch(std::string_view str, std::initializer_list<std::string_view> cmds,
 															 std::vector<string>& suggestions) {
-	for (string_view cmd : cmds) {
+	for (std::string_view cmd : cmds) {
 		if (str.empty() || reindexer::isBlank(str) || ((str.length() < cmd.length()) && reindexer::checkIfStartsWith(str, cmd))) {
 			suggestions.emplace_back(cmd);
 		}
@@ -575,7 +578,11 @@ Error CommandsExecutor<DBInterface>::commandUpsert(const string& command) {
 		return Error(errParams, "Impossible to update entire item with array - only objects are allowed");
 	}
 
-	return db().Upsert(nsName, item);
+	status = db().Upsert(nsName, item);
+	if (!fromFile_ && status.ok()) {
+		output_() << "Upserted successfuly: 1 items" << std::endl;
+	}
+	return status;
 }
 
 template <typename DBInterface>
@@ -716,7 +723,7 @@ Error CommandsExecutor<DBInterface>::commandNamespaces(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
 
-	string_view subCommand = parser.NextToken();
+	std::string_view subCommand = parser.NextToken();
 
 	if (iequals(subCommand, "add")) {
 		auto nsName = reindexer::unescapeString(parser.NextToken());
@@ -773,7 +780,7 @@ template <typename DBInterface>
 Error CommandsExecutor<DBInterface>::commandMeta(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
-	string_view subCommand = parser.NextToken();
+	std::string_view subCommand = parser.NextToken();
 
 	if (iequals(subCommand, "put")) {
 		string nsName = reindexer::unescapeString(parser.NextToken());
@@ -798,7 +805,7 @@ template <typename DBInterface>
 Error CommandsExecutor<DBInterface>::commandHelp(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
-	string_view subCommand = parser.NextToken();
+	std::string_view subCommand = parser.NextToken();
 
 	if (!subCommand.length()) {
 		output_() << "Available commands:\n\n";
@@ -829,8 +836,8 @@ Error CommandsExecutor<DBInterface>::commandSet(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
 
-	string_view variableName = parser.NextToken();
-	string_view variableValue = parser.NextToken();
+	std::string_view variableName = parser.NextToken();
+	std::string_view variableValue = parser.NextToken();
 
 	variables_[string(variableName)] = string(variableValue);
 
@@ -850,7 +857,7 @@ Error CommandsExecutor<DBInterface>::commandBench(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
 
-	int benchTime = stoi(parser.NextToken());
+	int benchTime = reindexer::stoi(parser.NextToken());
 	if (benchTime == 0) benchTime = kBenchDefaultTime;
 
 	db().DropNamespace(kBenchNamespace);
@@ -938,7 +945,7 @@ template <>
 Error CommandsExecutor<reindexer::client::CoroReindexer>::commandProcessDatabases(const string& command) {
 	LineParser parser(command);
 	parser.NextToken();
-	string_view subCommand = parser.NextToken();
+	std::string_view subCommand = parser.NextToken();
 	assert(uri_.scheme() == "cproto");
 	if (subCommand == "list") {
 		vector<string> dbList;
@@ -1083,10 +1090,10 @@ std::function<void(std::chrono::system_clock::time_point)> CommandsExecutor<rein
 }
 
 template <typename DBInterface>
-void CommandsExecutor<DBInterface>::OnWALUpdate(reindexer::LSNPair LSNs, string_view nsName, const reindexer::WALRecord& wrec) {
+void CommandsExecutor<DBInterface>::OnWALUpdate(reindexer::LSNPair LSNs, std::string_view nsName, const reindexer::WALRecord& wrec) {
 	WrSerializer ser;
 	ser << "# LSN " << int64_t(LSNs.upstreamLSN_) << " originLSN " << int64_t(LSNs.originLSN_) << nsName << " ";
-	wrec.Dump(ser, [this, nsName](string_view cjson) {
+	wrec.Dump(ser, [this, nsName](std::string_view cjson) {
 		auto item = db().NewItem(nsName);
 		item.FromCJSON(cjson);
 		return string(item.GetJSON());
@@ -1103,7 +1110,7 @@ void CommandsExecutor<DBInterface>::OnConnectionState(const Error& err) {
 }
 
 template <typename DBInterface>
-void CommandsExecutor<DBInterface>::OnUpdatesLost(string_view nsName) {
+void CommandsExecutor<DBInterface>::OnUpdatesLost(std::string_view nsName) {
 	output_() << "[OnUpdatesLost] " << nsName << std::endl;
 }
 

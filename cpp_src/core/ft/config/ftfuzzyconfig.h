@@ -4,11 +4,8 @@
 
 namespace reindexer {
 
-using std::vector;
-using std::string;
-
 struct FtFuzzyConfig : public BaseFTConfig {
-	void parse(string_view json, const fast_hash_map<string, int> &fields) final;
+	void parse(std::string_view json, const fast_hash_map<std::string, int> &fields) final;
 
 	double maxSrcProc = 78;
 	double maxDstProc = 22;

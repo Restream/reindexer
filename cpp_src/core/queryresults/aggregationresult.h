@@ -1,10 +1,10 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
 #include "estl/span.h"
-#include "estl/string_view.h"
 #include "tools/errors.h"
 
 struct msgpack_object;
@@ -14,13 +14,13 @@ class WrSerializer;
 class ProtobufSchemaBuilder;
 
 struct Parameters {
-	static string_view Value() noexcept;
-	static string_view Type() noexcept;
-	static string_view Facets() noexcept;
-	static string_view Count() noexcept;
-	static string_view Values() noexcept;
-	static string_view Distincts() noexcept;
-	static string_view Fields() noexcept;
+	static std::string_view Value() noexcept;
+	static std::string_view Type() noexcept;
+	static std::string_view Facets() noexcept;
+	static std::string_view Count() noexcept;
+	static std::string_view Values() noexcept;
+	static std::string_view Distincts() noexcept;
+	static std::string_view Fields() noexcept;
 };
 
 template <typename T, typename K>
@@ -59,8 +59,8 @@ struct AggregationResult {
 	std::vector<FacetResult> facets;
 	std::vector<std::string> distincts;
 
-	static AggType strToAggType(string_view type);
-	static string_view aggTypeToStr(AggType type);
+	static AggType strToAggType(std::string_view type);
+	static std::string_view aggTypeToStr(AggType type);
 	static void GetProtobufSchema(ProtobufSchemaBuilder &);
 
 	template <typename Node>

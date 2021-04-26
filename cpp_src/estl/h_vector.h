@@ -114,7 +114,7 @@ public:
 
 	void clear() {
 		resize(0);
-		if (!is_hdata()) operator delete(static_cast<void*>(e_.data_));
+		if (!is_hdata()) operator delete(e_.data_);
 		is_hdata_ = 1;
 	}
 
@@ -177,7 +177,7 @@ public:
 				if (!std::is_trivially_destructible<T>::value) old_data->~T();
 				old_data++;
 			}
-			if (!is_hdata()) operator delete(static_cast<void*>(oold_data));
+			if (!is_hdata()) operator delete(oold_data);
 			e_.data_ = new_data;
 			e_.cap_ = sz;
 			is_hdata_ = 0;

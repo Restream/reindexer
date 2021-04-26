@@ -8,10 +8,6 @@
 #include "core/idset.h"
 #include "dataholder/basebuildedholder.h"
 
-namespace reindexer {
-class string_view;
-}
-
 namespace search_engine {
 
 using std::shared_ptr;
@@ -30,7 +26,7 @@ public:
 
 	SearchResult Search(const FtDSLQuery &dsl);
 	void Rebuild();
-	void AddData(const reindexer::string_view &src_data, const IdType id, int field, const string &extraWordSymbols);
+	void AddData(std::string_view src_data, const IdType id, int field, const string &extraWordSymbols);
 	void Commit();
 
 private:

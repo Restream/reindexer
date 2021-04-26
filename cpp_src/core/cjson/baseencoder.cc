@@ -15,7 +15,7 @@ template <typename Builder>
 BaseEncoder<Builder>::BaseEncoder(const TagsMatcher* tagsMatcher, const FieldsSet* filter) : tagsMatcher_(tagsMatcher), filter_(filter) {}
 
 template <typename Builder>
-void BaseEncoder<Builder>::Encode(string_view tuple, Builder& builder, IAdditionalDatasource<Builder>* ds) {
+void BaseEncoder<Builder>::Encode(std::string_view tuple, Builder& builder, IAdditionalDatasource<Builder>* ds) {
 	Serializer rdser(tuple);
 	builder.SetTagsMatcher(tagsMatcher_);
 	builder.SetTagsPath(&curTagsPath_);
@@ -268,7 +268,7 @@ bool BaseEncoder<Builder>::collectTagsSizes(ConstPayload* pl, Serializer& rdser)
 }
 
 template <typename Builder>
-string_view BaseEncoder<Builder>::getPlTuple(ConstPayload* pl) {
+std::string_view BaseEncoder<Builder>::getPlTuple(ConstPayload* pl) {
 	VariantArray kref;
 	pl->Get(0, kref);
 
@@ -280,7 +280,7 @@ string_view BaseEncoder<Builder>::getPlTuple(ConstPayload* pl) {
 		return tmpPlTuple_.Slice();
 	}
 
-	return string_view(tuple);
+	return std::string_view(tuple);
 }
 
 template class BaseEncoder<JsonBuilder>;

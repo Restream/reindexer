@@ -63,27 +63,27 @@ public:
 	ItemImpl &operator=(const ItemImpl &) = delete;
 	ItemImpl &operator=(ItemImpl &&) noexcept;
 
-	void ModifyField(string_view jsonPath, const VariantArray &keys, IndexExpressionEvaluator ev, FieldModifyMode mode);
+	void ModifyField(std::string_view jsonPath, const VariantArray &keys, IndexExpressionEvaluator ev, FieldModifyMode mode);
 	void ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &keys, FieldModifyMode mode);
 	void SetField(int field, const VariantArray &krs);
-	void SetField(string_view jsonPath, const VariantArray &keys, IndexExpressionEvaluator ev);
-	void DropField(string_view jsonPath, IndexExpressionEvaluator ev);
+	void SetField(std::string_view jsonPath, const VariantArray &keys, IndexExpressionEvaluator ev);
+	void DropField(std::string_view jsonPath, IndexExpressionEvaluator ev);
 	Variant GetField(int field);
 	void GetField(int field, VariantArray &);
 	FieldsSet PkFields() const { return pkFields_; }
-	int NameTag(string_view name) const { return tagsMatcher_.name2tag(name); }
+	int NameTag(std::string_view name) const { return tagsMatcher_.name2tag(name); }
 
-	VariantArray GetValueByJSONPath(string_view jsonPath);
+	VariantArray GetValueByJSONPath(std::string_view jsonPath);
 
-	string_view GetJSON();
-	Error FromJSON(string_view slice, char **endp = nullptr, bool pkOnly = false);
+	std::string_view GetJSON();
+	Error FromJSON(std::string_view slice, char **endp = nullptr, bool pkOnly = false);
 	Error FromCJSON(ItemImpl *other);
 
-	string_view GetCJSON(bool withTagsMatcher = false);
-	string_view GetCJSON(WrSerializer &ser, bool withTagsMatcher = false);
-	Error FromCJSON(const string_view &slice, bool pkOnly = false);
-	Error FromMsgPack(string_view sbuf, size_t &offset);
-	Error FromProtobuf(string_view sbuf);
+	std::string_view GetCJSON(bool withTagsMatcher = false);
+	std::string_view GetCJSON(WrSerializer &ser, bool withTagsMatcher = false);
+	Error FromCJSON(std::string_view slice, bool pkOnly = false);
+	Error FromMsgPack(std::string_view sbuf, size_t &offset);
+	Error FromProtobuf(std::string_view sbuf);
 	Error GetMsgPack(WrSerializer &wrser);
 	Error GetProtobuf(WrSerializer &wrser);
 
@@ -98,14 +98,14 @@ public:
 
 	void SetPrecepts(const vector<string> &precepts) {
 		precepts_ = precepts;
-		cjson_ = string_view();
+		cjson_ = std::string_view();
 	}
 	const vector<string> &GetPrecepts() { return precepts_; }
 	void Unsafe(bool enable) { unsafe_ = enable; }
 	void Clear() {
 		tagsMatcher_ = TagsMatcher();
 		precepts_.clear();
-		cjson_ = string_view();
+		cjson_ = std::string_view();
 		holder_.reset();
 		sourceData_.reset();
 		tupleData_.reset();
@@ -132,7 +132,7 @@ protected:
 	WrSerializer ser_;
 
 	bool unsafe_ = false;
-	string_view cjson_;
+	std::string_view cjson_;
 	std::shared_ptr<Namespace> ns_;
 	std::unique_ptr<MsgPackDecoder> msgPackDecoder_;
 };

@@ -14,8 +14,8 @@ class RPCUpdatesPusher : public reindexer::IUpdatesObserver {
 public:
 	RPCUpdatesPusher();
 	void SetWriter(Writer *writer) { writer_ = writer; }
-	void OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &walRec) override final;
-	void OnUpdatesLost(string_view nsName) override final;
+	void OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &walRec) override final;
+	void OnUpdatesLost(std::string_view nsName) override final;
 	void OnConnectionState(const Error &err) override final;
 	void SetFilter(std::function<bool(WALRecord &)> filter) { filter_ = std::move(filter); }
 

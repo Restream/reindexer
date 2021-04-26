@@ -13,6 +13,7 @@
 namespace reindexer {
 
 using namespace net;
+using namespace std::string_view_literals;
 
 static constexpr size_t kTmpNsPostfixLen = 20;
 
@@ -185,7 +186,7 @@ static bool shouldUpdateLsn(const WALRecord &wrec) {
 	return wrec.type != WalNamespaceDrop && (!wrec.inTransaction || wrec.type == WalCommitTransaction);
 }
 
-Error Replicator::syncNamespace(const NamespaceDef &ns, string_view forceSyncReason) {
+Error Replicator::syncNamespace(const NamespaceDef &ns, std::string_view forceSyncReason) {
 	Error err = errOK;
 	logPrintf(LogTrace, "[repl:%s:%s] ===Starting WAL synchronization.====", ns.name, slave_->storagePath_);
 	do {
@@ -194,7 +195,7 @@ Error Replicator::syncNamespace(const NamespaceDef &ns, string_view forceSyncRea
 			err = syncNamespaceByWAL(ns);
 		} else {
 			err = syncNamespaceForced(ns, forceSyncReason);
-			forceSyncReason = string_view();
+			forceSyncReason = std::string_view();
 		}
 		auto slaveNs = slave_->getNamespaceNoThrow(ns.name, dummyCtx_);
 		if (err.ok() && slaveNs) {
@@ -303,7 +304,7 @@ Error Replicator::syncDatabase() {
 	Error err = master_->EnumNamespaces(nses, EnumNamespacesOpts());
 	if (!err.ok()) {
 		logPrintf(LogError, "[repl:%s] EnumNamespaces error: %s%s", slave_->storagePath_, err.what(),
-				  terminate_ ? ", terminating replication"_sv : ""_sv);
+				  terminate_ ? ", terminating replication"sv : ""sv);
 		if (err.code() == errForbidden || err.code() == errReplParams) {
 			terminate_ = true;
 		} else {
@@ -355,9 +356,9 @@ Error Replicator::syncDatabase() {
 
 		// If there are open error or fatal error in state, then force full sync
 		bool forceSync = !err.ok() || (config_.forceSyncOnLogicError && replState.status == ReplicationState::Status::Fatal);
-		string_view forceSyncReason;
+		std::string_view forceSyncReason;
 		if (forceSync) {
-			forceSyncReason = !replState.replError.ok() ? replState.replError.what() : "Namespace doesn't exists"_sv;
+			forceSyncReason = !replState.replError.ok() ? replState.replError.what() : "Namespace doesn't exists"sv;
 		}
 
 		do {
@@ -420,7 +421,7 @@ Error Replicator::syncNamespaceByWAL(const NamespaceDef &nsDef) {
 // Forced namespace sync
 // This will completely drop slave namespace
 // read all indexes and data from master, then apply to slave
-Error Replicator::syncNamespaceForced(const NamespaceDef &ns, string_view reason) {
+Error Replicator::syncNamespaceForced(const NamespaceDef &ns, std::string_view reason) {
 	logPrintf(LogWarning, "[repl:%s:%s] Start FORCED sync: %s", ns.name, slave_->storagePath_, reason);
 
 	// Create temporary namespace
@@ -544,7 +545,7 @@ Error Replicator::applyWAL(Namespace::Ptr slaveNs, client::QueryResults &qr) {
 	return stat.lastError;
 }
 
-Error Replicator::applyTxWALRecord(LSNPair LSNs, string_view nsName, Namespace::Ptr slaveNs, const WALRecord &rec) {
+Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr slaveNs, const WALRecord &rec) {
 	switch (rec.type) {
 		// Modify item
 		case WalItemModify: {
@@ -588,7 +589,7 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, string_view nsName, Namespace::
 	return {};
 }
 
-void Replicator::checkNoOpenedTransaction(string_view nsName, Namespace::Ptr slaveNs) {
+void Replicator::checkNoOpenedTransaction(std::string_view nsName, Namespace::Ptr slaveNs) {
 	std::lock_guard<std::mutex> lck(syncMtx_);
 	Transaction &tx = transactions_[slaveNs.get()];
 	if (!tx.IsFree()) {
@@ -597,7 +598,7 @@ void Replicator::checkNoOpenedTransaction(string_view nsName, Namespace::Ptr sla
 	}
 }
 
-Error Replicator::applyWALRecord(LSNPair LSNs, string_view nsName, Namespace::Ptr slaveNs, const WALRecord &rec, SyncStat &stat) {
+Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr slaveNs, const WALRecord &rec, SyncStat &stat) {
 	Error err;
 	IndexDef iDef;
 
@@ -713,7 +714,7 @@ Error Replicator::applyWALRecord(LSNPair LSNs, string_view nsName, Namespace::Pt
 	return err;
 }
 
-Error Replicator::unpackItem(Item &item, lsn_t lsn, string_view cjson, const TagsMatcher &tm) {
+Error Replicator::unpackItem(Item &item, lsn_t lsn, std::string_view cjson, const TagsMatcher &tm) {
 	if (item.impl_->tagsMatcher().size() < tm.size()) {
 		const bool res = item.impl_->tagsMatcher().try_merge(tm);
 		if (!res) {
@@ -724,7 +725,7 @@ Error Replicator::unpackItem(Item &item, lsn_t lsn, string_view cjson, const Tag
 	return item.FromCJSON(cjson);
 }
 
-Error Replicator::modifyItem(LSNPair LSNs, Namespace::Ptr slaveNs, string_view cjson, int modifyMode, const TagsMatcher &tm,
+Error Replicator::modifyItem(LSNPair LSNs, Namespace::Ptr slaveNs, std::string_view cjson, int modifyMode, const TagsMatcher &tm,
 							 SyncStat &stat) {
 	Item item = slaveNs->NewItem(dummyCtx_);
 	Error err = unpackItem(item, LSNs.upstreamLSN_, cjson, tm);
@@ -801,7 +802,7 @@ Error Replicator::syncSchemaForced(Namespace::Ptr slaveNs, const NamespaceDef &m
 	return err;
 }
 
-Error Replicator::syncMetaForced(Namespace::Ptr slaveNs, string_view nsName) {
+Error Replicator::syncMetaForced(Namespace::Ptr slaveNs, std::string_view nsName) {
 	vector<string> keys;
 	auto err = master_->EnumMeta(nsName, keys);
 
@@ -822,7 +823,7 @@ Error Replicator::syncMetaForced(Namespace::Ptr slaveNs, string_view nsName) {
 }
 
 // Callback from WAL updates pusher
-void Replicator::OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &wrec) {
+void Replicator::OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &wrec) {
 	auto sId = LSNs.originLSN_.Server();
 	if (sId != 0) {	 // sId = 0 for configurations without specifying a server id
 		if (sId == config_.serverId) {
@@ -899,7 +900,7 @@ void Replicator::OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &
 	}
 }
 
-void Replicator::OnUpdatesLost(string_view nsName) {
+void Replicator::OnUpdatesLost(std::string_view nsName) {
 	std::unique_lock<std::mutex> lck(syncMtx_);
 	auto updatesIt = pendedUpdates_.find(nsName);
 	if (updatesIt == pendedUpdates_.end()) {
@@ -927,7 +928,7 @@ void Replicator::OnConnectionState(const Error &err) {
 	resync_.send();
 }
 
-bool Replicator::canApplyUpdate(LSNPair LSNs, string_view nsName, const WALRecord &wrec) {
+bool Replicator::canApplyUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &wrec) {
 	if (!isSyncEnabled(nsName)) return false;
 
 	if (terminate_.load(std::memory_order_acquire)) {
@@ -974,7 +975,7 @@ bool Replicator::canApplyUpdate(LSNPair LSNs, string_view nsName, const WALRecor
 		return true;
 	}
 
-	if (string_view(currentSyncNs_) != nsName) {
+	if (std::string_view(currentSyncNs_) != nsName) {
 		if (syncedNamespaces_.find(nsName) != syncedNamespaces_.end()) {
 			logPrintf(LogTrace, "[repl:%s]:%d applying update for synced ns  %s", nsName, config_.serverId, LSNs.upstreamLSN_);
 			return true;
@@ -1005,7 +1006,7 @@ bool Replicator::canApplyUpdate(LSNPair LSNs, string_view nsName, const WALRecor
 	return false;
 }
 
-bool Replicator::isSyncEnabled(string_view nsName) {
+bool Replicator::isSyncEnabled(std::string_view nsName) {
 	// SKip system ns
 	if (nsName.size() && nsName[0] == '#') return false;
 

@@ -138,7 +138,7 @@ void JsonDecoder::decodeJsonObject(const gason::JsonValue &root, CJsonBuilder &b
 	}
 }
 
-void JsonDecoder::Decode(string_view json, CJsonBuilder &builder, const TagsPath &fieldPath) {
+void JsonDecoder::Decode(std::string_view json, CJsonBuilder &builder, const TagsPath &fieldPath) {
 	tagsPath_ = fieldPath;
 	gason::JsonParser jsonParser;
 	gason::JsonNode root = jsonParser.Parse(json);

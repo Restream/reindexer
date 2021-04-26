@@ -240,13 +240,13 @@ size_t DataProcessor::buildWordsMap(words_map &words_um) {
 		}
 		logPrintf(LogInfo, "Potential stop words: %s", out.Slice());
 	}
-	vector<h_vector<pair<string_view, uint32_t>, 8>>().swap(holder_.vdocsTexts);
+	vector<h_vector<pair<std::string_view, uint32_t>, 8>>().swap(holder_.vdocsTexts);
 
 	vector<unique_ptr<string>>().swap(holder_.bufStrs_);
 	return szCnt;
 }
 
-void DataProcessor::buildVirtualWord(string_view word, words_map &words_um, VDocIdType docType, int rfield, size_t insertPos,
+void DataProcessor::buildVirtualWord(std::string_view word, words_map &words_um, VDocIdType docType, int rfield, size_t insertPos,
 									 std::vector<string> &output) {
 	auto &vdocs = holder_.vdocs_;
 
@@ -284,7 +284,7 @@ void DataProcessor::buildTyposMap(uint32_t startPos, const vector<WordIdType> &f
 
 		auto wordId = holder_.BuildWordId(startPos);
 		mktypos(tctx, holder_.GetSuffix().word_at(holder_.GetSuffixWordId(wordId)), holder_.cfg_->maxTyposInWord, holder_.cfg_->maxTypoLen,
-				[&typos, wordId](string_view typo, int) { typos.emplace(typo, wordId); });
+				[&typos, wordId](std::string_view typo, int) { typos.emplace(typo, wordId); });
 		startPos++;
 	}
 

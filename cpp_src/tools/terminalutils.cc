@@ -66,7 +66,7 @@ TerminalSize getTerminalSize() {
 	return size;
 }
 
-int getStringTerminalWidth(string_view str) {
+int getStringTerminalWidth(std::string_view str) {
 	int sz = 0;
 	int width = 0;
 	try {

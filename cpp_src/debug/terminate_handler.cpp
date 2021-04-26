@@ -11,7 +11,7 @@
 namespace reindexer {
 namespace debug {
 
-extern std::function<void(string_view out)> g_writer;
+extern std::function<void(std::string_view out)> g_writer;
 
 void terminate_handler() {
 	std::ostringstream sout;

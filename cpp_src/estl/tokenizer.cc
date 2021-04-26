@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-tokenizer::tokenizer(string_view query) : q_(query), cur_(query.begin()) {}
+tokenizer::tokenizer(std::string_view query) : q_(query), cur_(query.begin()) {}
 
 bool tokenizer::end() const { return cur_ == q_.end(); }
 
@@ -67,12 +67,33 @@ token tokenizer::next_token(bool to_lower, bool treatSignAsToken) {
 				++pos_;
 				break;
 			}
-			if (*cur_ == '\\') {
+			auto c = *cur_;
+			if (c == '\\') {
 				++pos_;
 				if (++cur_ == q_.end()) break;
+				c = *cur_;
+				switch (c) {
+					case 'n':
+						c = '\n';
+						break;
+					case 'r':
+						c = '\r';
+						break;
+					case 't':
+						c = '\t';
+						break;
+					case 'b':
+						c = '\b';
+						break;
+					case 'f':
+						c = '\f';
+						break;
+					default:
+						break;
+				}
 			}
-			res.text_.push_back(*cur_++);
-			++pos_;
+			res.text_.push_back(c);
+			++pos_, ++cur_;
 		};
 	} else {
 		res.text_.push_back(*cur_++);
@@ -116,6 +137,6 @@ void tokenizer::setPos(size_t pos) {
 size_t tokenizer::getPos() const { return pos_; }
 
 size_t tokenizer::length() const { return q_.length(); }
-const char *tokenizer::begin() const { return q_.begin(); }
+const char *tokenizer::begin() const { return q_.data(); }
 
 }  // namespace reindexer

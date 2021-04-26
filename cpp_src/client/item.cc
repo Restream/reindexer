@@ -25,12 +25,12 @@ Item::~Item() {}
 
 Item::operator bool() const { return impl_ != nullptr; }
 
-Error Item::FromJSON(const string_view &slice, char **endp, bool pkOnly) { return impl_->FromJSON(slice, endp, pkOnly); }
-Error Item::FromCJSON(const string_view &slice) { return impl_->FromCJSON(slice); }
-Error Item::FromMsgPack(const string_view &slice, size_t &offset) { return impl_->FromMsgPack(slice, offset); }
-string_view Item::GetCJSON() { return impl_->GetCJSON(); }
-string_view Item::GetJSON() { return impl_->GetJSON(); }
-string_view Item::GetMsgPack() { return impl_->GetMsgPack(); }
+Error Item::FromJSON(std::string_view slice, char **endp, bool pkOnly) { return impl_->FromJSON(slice, endp, pkOnly); }
+Error Item::FromCJSON(std::string_view slice) { return impl_->FromCJSON(slice); }
+Error Item::FromMsgPack(std::string_view slice, size_t &offset) { return impl_->FromMsgPack(slice, offset); }
+std::string_view Item::GetCJSON() { return impl_->GetCJSON(); }
+std::string_view Item::GetJSON() { return impl_->GetJSON(); }
+std::string_view Item::GetMsgPack() { return impl_->GetMsgPack(); }
 void Item::SetPrecepts(const vector<string> &precepts) { impl_->SetPrecepts(precepts); }
 bool Item::IsTagsUpdated() { return impl_->tagsMatcher().isUpdated(); }
 int Item::GetStateToken() { return impl_->tagsMatcher().stateToken(); }

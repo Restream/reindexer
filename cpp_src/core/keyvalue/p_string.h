@@ -2,8 +2,8 @@
 
 #include <assert.h>
 #include <string>
+#include <string_view>
 #include <vector>
-#include "estl/string_view.h"
 #include "key_string.h"
 #include "tools/customhash.h"
 #include "tools/varint.h"
@@ -59,37 +59,37 @@ struct p_string {
 	explicit p_string(const json_string_ftr jstr) : v((uintptr_t(jstr.data) & ~tagMask) | (tagJsonStr << tagShift)) {}
 	explicit p_string(const string *str) : v((uintptr_t(str) & ~tagMask) | (tagCxxstr << tagShift)) {}
 	explicit p_string(const key_string &str) : v((uintptr_t(str.get()) & ~tagMask) | (tagKeyString << tagShift)) {}
-	explicit p_string(const string_view *ptr) : v((uintptr_t(ptr) & ~tagMask) | (tagSlice << tagShift)) {}
+	explicit p_string(const std::string_view *ptr) : v((uintptr_t(ptr) & ~tagMask) | (tagSlice << tagShift)) {}
 	p_string() : v(0) {}
 
-	operator string_view() const {
+	operator std::string_view() const {
 		switch (type()) {
 			case tagCstr: {
 				auto str = reinterpret_cast<const char *>(ptr());
-				return string_view(str, strlen(str));
+				return std::string_view(str, strlen(str));
 			}
 			case tagMsgPackStr: {
 				const auto &str = *reinterpret_cast<const l_msgpack_hdr *>(ptr());
-				return string_view(str.ptr, str.size);
+				return std::string_view(str.ptr, str.size);
 			}
 			case tagCxxstr:
 			case tagKeyString:
-				return string_view(*reinterpret_cast<const string *>(ptr()));
+				return std::string_view(*reinterpret_cast<const string *>(ptr()));
 			case tagSlice:
-				return *reinterpret_cast<const string_view *>(ptr());
+				return *reinterpret_cast<const std::string_view *>(ptr());
 			case tagLstr: {
 				const auto &str = *reinterpret_cast<const l_string_hdr *>(ptr());
-				return string_view(&str.data[0], str.length);
+				return std::string_view(&str.data[0], str.length);
 			}
 			case tagVstr: {
 				auto p = reinterpret_cast<const uint8_t *>(ptr());
 				auto l = scan_varint(10, p);
-				return string_view(reinterpret_cast<const char *>(p) + l, parse_uint32(l, p));
+				return std::string_view(reinterpret_cast<const char *>(p) + l, parse_uint32(l, p));
 			}
 			case tagJsonStr: {
 				auto p = reinterpret_cast<const uint8_t *>(ptr());
 				auto len = p[0] | (p[1] << 8) | (p[2] << 16);
-				return string_view(reinterpret_cast<const char *>(p) - len, len);
+				return std::string_view(reinterpret_cast<const char *>(p) - len, len);
 			}
 			default:
 				abort();
@@ -105,7 +105,7 @@ struct p_string {
 			case tagMsgPackStr:
 				return (reinterpret_cast<const l_msgpack_hdr *>(ptr()))->ptr;
 			case tagSlice:
-				return (reinterpret_cast<const string_view *>(ptr()))->data();
+				return (reinterpret_cast<const std::string_view *>(ptr()))->data();
 			case tagLstr:
 				return &(reinterpret_cast<const l_string_hdr *>(ptr()))->data[0];
 			case tagVstr: {
@@ -131,7 +131,7 @@ struct p_string {
 				case tagKeyString:
 					return (reinterpret_cast<const string *>(ptr()))->length();
 				case tagSlice:
-					return (reinterpret_cast<const string_view *>(ptr()))->size();
+					return (reinterpret_cast<const std::string_view *>(ptr()))->size();
 				case tagLstr:
 					return (reinterpret_cast<const l_string_hdr *>(ptr()))->length;
 				case tagMsgPackStr:
@@ -177,7 +177,7 @@ struct p_string {
 		if (type() == tagKeyString) {
 			return getKeyString();
 		} else {
-			const auto sv = operator string_view();
+			const auto sv = operator std::string_view();
 			return make_key_string(sv.data(), sv.size());
 		}
 	}

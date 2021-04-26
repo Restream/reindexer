@@ -24,23 +24,23 @@ struct Value {
 };
 
 struct Index {
-	Index(string_view c) : column{c}, index{IndexValueType::NotSet} {}
+	Index(std::string_view c) : column{c}, index{IndexValueType::NotSet} {}
 	double GetValue(ConstPayload, TagsMatcher&) const;
 	bool operator==(const Index& other) const noexcept { return column == other.column && index == other.index; }
 
-	string_view column;
+	std::string_view column;
 	int index = IndexValueType::NotSet;
 };
 
 struct JoinedIndex {
-	JoinedIndex(size_t nsInd, string_view c) : nsIdx{nsInd}, column{c}, index{IndexValueType::NotSet} {}
+	JoinedIndex(size_t nsInd, std::string_view c) : nsIdx{nsInd}, column{c}, index{IndexValueType::NotSet} {}
 	double GetValue(IdType rowId, const joins::NamespaceResults&, const std::vector<JoinedSelector>&) const;
 	bool operator==(const JoinedIndex& other) const noexcept {
 		return nsIdx == other.nsIdx && column == other.column && index == other.index;
 	}
 
 	size_t nsIdx;
-	string_view column;
+	std::string_view column;
 	int index = IndexValueType::NotSet;
 };
 
@@ -50,46 +50,47 @@ struct Rank {
 };
 
 struct DistanceFromPoint {
-	DistanceFromPoint(string_view c, Point p) : column{c}, index{IndexValueType::NotSet}, point{p} {}
+	DistanceFromPoint(std::string_view c, Point p) : column{c}, index{IndexValueType::NotSet}, point{p} {}
 	double GetValue(ConstPayload, TagsMatcher&) const;
 	bool operator==(const DistanceFromPoint& other) const noexcept {
 		return column == other.column && index == other.index && point == other.point;
 	}
 
-	string_view column;
+	std::string_view column;
 	int index = IndexValueType::NotSet;
 	Point point;
 };
 
 struct DistanceJoinedIndexFromPoint {
-	DistanceJoinedIndexFromPoint(size_t nsInd, string_view c, Point p) : nsIdx{nsInd}, column{c}, index{IndexValueType::NotSet}, point{p} {}
+	DistanceJoinedIndexFromPoint(size_t nsInd, std::string_view c, Point p)
+		: nsIdx{nsInd}, column{c}, index{IndexValueType::NotSet}, point{p} {}
 	double GetValue(IdType rowId, const joins::NamespaceResults&, const std::vector<JoinedSelector>&) const;
 	bool operator==(const DistanceJoinedIndexFromPoint& other) const noexcept {
 		return nsIdx == other.nsIdx && column == other.column && index == other.index && point == other.point;
 	}
 
 	size_t nsIdx;
-	string_view column;
+	std::string_view column;
 	int index = IndexValueType::NotSet;
 	Point point;
 };
 
 struct DistanceBetweenIndexes {
-	DistanceBetweenIndexes(string_view c1, string_view c2)
+	DistanceBetweenIndexes(std::string_view c1, std::string_view c2)
 		: column1{c1}, index1{IndexValueType::NotSet}, column2{c2}, index2{IndexValueType::NotSet} {}
 	double GetValue(ConstPayload, TagsMatcher&) const;
 	bool operator==(const DistanceBetweenIndexes& other) const noexcept {
 		return column1 == other.column1 && index1 == other.index1 && column2 == other.column2 && index2 == other.index2;
 	}
 
-	string_view column1;
+	std::string_view column1;
 	int index1 = IndexValueType::NotSet;
-	string_view column2;
+	std::string_view column2;
 	int index2 = IndexValueType::NotSet;
 };
 
 struct DistanceBetweenIndexAndJoinedIndex {
-	DistanceBetweenIndexAndJoinedIndex(string_view c, size_t jNsInd, string_view jc)
+	DistanceBetweenIndexAndJoinedIndex(std::string_view c, size_t jNsInd, std::string_view jc)
 		: column{c}, index{IndexValueType::NotSet}, jNsIdx{jNsInd}, jColumn{jc}, jIndex{IndexValueType::NotSet} {}
 	double GetValue(ConstPayload, TagsMatcher&, IdType rowId, const joins::NamespaceResults&, const std::vector<JoinedSelector>&) const;
 	bool operator==(const DistanceBetweenIndexAndJoinedIndex& other) const noexcept {
@@ -97,15 +98,15 @@ struct DistanceBetweenIndexAndJoinedIndex {
 			   jIndex == other.jIndex;
 	}
 
-	string_view column;
+	std::string_view column;
 	int index = IndexValueType::NotSet;
 	size_t jNsIdx;
-	string_view jColumn;
+	std::string_view jColumn;
 	int jIndex = IndexValueType::NotSet;
 };
 
 struct DistanceBetweenJoinedIndexes {
-	DistanceBetweenJoinedIndexes(size_t nsInd1, string_view c1, size_t nsInd2, string_view c2)
+	DistanceBetweenJoinedIndexes(size_t nsInd1, std::string_view c1, size_t nsInd2, std::string_view c2)
 		: nsIdx1{nsInd1}, column1{c1}, index1{IndexValueType::NotSet}, nsIdx2{nsInd2}, column2{c2}, index2{IndexValueType::NotSet} {}
 	double GetValue(IdType rowId, const joins::NamespaceResults&, const std::vector<JoinedSelector>&) const;
 	bool operator==(const DistanceBetweenJoinedIndexes& other) const noexcept {
@@ -114,15 +115,15 @@ struct DistanceBetweenJoinedIndexes {
 	}
 
 	size_t nsIdx1;
-	string_view column1;
+	std::string_view column1;
 	int index1 = IndexValueType::NotSet;
 	size_t nsIdx2;
-	string_view column2;
+	std::string_view column2;
 	int index2 = IndexValueType::NotSet;
 };
 
 struct DistanceBetweenJoinedIndexesSameNs {
-	DistanceBetweenJoinedIndexesSameNs(size_t nsInd, string_view c1, string_view c2)
+	DistanceBetweenJoinedIndexesSameNs(size_t nsInd, std::string_view c1, std::string_view c2)
 		: nsIdx{nsInd}, column1{c1}, index1{IndexValueType::NotSet}, column2{c2}, index2{IndexValueType::NotSet} {}
 	double GetValue(IdType rowId, const joins::NamespaceResults&, const std::vector<JoinedSelector>&) const;
 	bool operator==(const DistanceBetweenJoinedIndexesSameNs& other) const noexcept {
@@ -131,9 +132,9 @@ struct DistanceBetweenJoinedIndexesSameNs {
 	}
 
 	size_t nsIdx;
-	string_view column1;
+	std::string_view column1;
 	int index1 = IndexValueType::NotSet;
-	string_view column2;
+	std::string_view column2;
 	int index2 = IndexValueType::NotSet;
 };
 
@@ -168,7 +169,7 @@ class SortExpression : public ExpressionTree<SortExpressionOperation, SortExpres
 											 SortExprFuncs::DistanceBetweenJoinedIndexesSameNs> {
 public:
 	template <typename T>
-	static SortExpression Parse(string_view, const std::vector<T>& joinedSelectors);
+	static SortExpression Parse(std::string_view, const std::vector<T>& joinedSelectors);
 	double Calculate(IdType rowId, ConstPayload pv, const joins::NamespaceResults& results, const std::vector<JoinedSelector>& js,
 					 uint8_t proc, TagsMatcher& tagsMatcher) const {
 		return calculate(cbegin(), cend(), rowId, pv, results, js, proc, tagsMatcher);
@@ -185,11 +186,9 @@ private:
 	friend SortExprFuncs::DistanceBetweenJoinedIndexes;
 	friend SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
 	template <typename T>
-	string_view::iterator parse(string_view::iterator begin, string_view::iterator end, bool* containIndexOrFunction, string_view fullExpr,
-								const std::vector<T>& joinedSelectors);
+	std::string_view parse(std::string_view expr, bool* containIndexOrFunction, std::string_view fullExpr, const std::vector<T>& joinedSelectors);
 	template <typename T, typename SkipSW>
-	void parseDistance(string_view::iterator& it, string_view::iterator end, const std::vector<T>& joinedSelectors, string_view fullExpr,
-					   ArithmeticOpType, bool negative, const SkipSW& skipSpaces);
+	void parseDistance(std::string_view& expr, const std::vector<T>& joinedSelectors, std::string_view fullExpr, ArithmeticOpType, bool negative, const SkipSW& skipSpaces);
 	static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload, const joins::NamespaceResults&,
 							const std::vector<JoinedSelector>&, uint8_t proc, TagsMatcher&);
 
@@ -198,7 +197,7 @@ private:
 	static ItemImpl getJoinedItem(IdType rowId, const joins::NamespaceResults& joinResults, const std::vector<JoinedSelector>&,
 								  size_t nsIdx);
 	static VariantArray getJoinedFieldValues(IdType rowId, const joins::NamespaceResults& joinResults, const std::vector<JoinedSelector>&,
-											 size_t nsIdx, string_view column, int index);
+											 size_t nsIdx, std::string_view column, int index);
 };
 std::ostream& operator<<(std::ostream&, const SortExpression&);
 

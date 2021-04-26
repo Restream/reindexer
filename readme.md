@@ -260,9 +260,9 @@ docker run -p9088:9088 -p6534:6534 -it reindexer/reindexer
 
 #### Prerequirements
 
-Reindexer's core is written in C++11 and uses LevelDB as the storage backend, so the Cmake, C++11 toolchain and LevelDB must be installed before installing Reindexer.
+Reindexer's core is written in C++17 and uses LevelDB as the storage backend, so the Cmake, C++17 toolchain and LevelDB must be installed before installing Reindexer.
 
-To build Reindexer, g++ 4.8+, clang 3.3+ or [mingw64](https://sourceforge.net/projects/mingw-w64/) is required.
+To build Reindexer, g++ 8+, clang 7+ or [mingw64](https://sourceforge.net/projects/mingw-w64/) is required.
 
 #### Get Reindexer
 
@@ -1227,3 +1227,4 @@ You can get help in several ways:
 
 1. Join Reindexer [Telegram group](https://t.me/reindexer)
 2. Write [an issue](https://github.com/restream/reindexer/issues/new)
+

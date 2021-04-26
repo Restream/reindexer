@@ -1,8 +1,7 @@
 #pragma once
 
 #include <stdint.h>
-
-#include "estl/string_view.h"
+#include <string_view>
 
 namespace reindexer {
 namespace net {
@@ -55,7 +54,7 @@ enum CmdCode : uint16_t {
 	kCmdCodeMax = 128
 };
 
-string_view CmdName(uint16_t code);
+std::string_view CmdName(uint16_t code);
 
 // Maximum number of active queries per client
 const uint32_t kMaxConcurentQueries = 256;

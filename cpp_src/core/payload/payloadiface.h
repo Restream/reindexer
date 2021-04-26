@@ -57,7 +57,7 @@ public:
 
 	// Set element or array by field index
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
-	void Set(string_view field, const VariantArray &keys, bool append = false);
+	void Set(std::string_view field, const VariantArray &keys, bool append = false);
 
 	// Set element or array by field index and element index
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
@@ -69,10 +69,10 @@ public:
 	T CopyTo(PayloadType t, bool newFields = true);
 
 	// Get element(s) by field index
-	VariantArray &Get(string_view field, VariantArray &, bool enableHold = false) const;
+	VariantArray &Get(std::string_view field, VariantArray &, bool enableHold = false) const;
 
 	// Get element(s) by json path
-	VariantArray GetByJsonPath(string_view jsonPath, TagsMatcher &tagsMatcher, VariantArray &, KeyValueType expectedType) const;
+	VariantArray GetByJsonPath(std::string_view jsonPath, TagsMatcher &tagsMatcher, VariantArray &, KeyValueType expectedType) const;
 	VariantArray GetByJsonPath(const TagsPath &jsonPath, VariantArray &, KeyValueType expectedType) const;
 	VariantArray GetByJsonPath(const IndexedTagsPath &jsonPath, VariantArray &, KeyValueType expectedType) const;
 	VariantArray GetIndexedArrayData(const IndexedTagsPath &jsonPath, int &offset, int &size) const;

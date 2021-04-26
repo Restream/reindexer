@@ -43,11 +43,11 @@ int web::file(Context& ctx, HttpStatusCode code, const std::string& target, bool
 
 	if (it == table.end()) {
 		return webRoot_.empty() ? ctx.String(net::http::StatusNotFound, "File not found")
-								: ctx.File(code, webRoot_ + target, string_view(), isGzip);
+								: ctx.File(code, webRoot_ + target, std::string_view(), isGzip);
 	}
 
 	auto file_entry = cmrc::open(isGzip ? target + net::http::kGzSuffix : target);
-	string_view slice(file_entry.begin(), std::distance(file_entry.begin(), file_entry.end()));
+	std::string_view slice(file_entry.begin(), std::distance(file_entry.begin(), file_entry.end()));
 	return ctx.File(code, target, slice, isGzip);
 }
 
@@ -55,7 +55,7 @@ int web::file(Context& ctx, HttpStatusCode code, const std::string& target, bool
 
 DocumentStatus web::stat(const std::string &target) { return fsStatus(target); }
 int web::file(Context &ctx, HttpStatusCode code, const std::string &target, bool isGzip) {
-	return ctx.File(code, webRoot_ + target, string_view(), isGzip);
+	return ctx.File(code, webRoot_ + target, std::string_view(), isGzip);
 }
 
 #endif

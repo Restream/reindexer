@@ -91,7 +91,7 @@ TEST_F(ReindexerApi, RenameNamespace) {
 		for (auto it = result.begin(); it != result.end(); ++it) {
 			reindexer::WrSerializer sr;
 			it.GetJSON(sr, false);
-			reindexer::string_view sv = sr.Slice();
+			std::string_view sv = sr.Slice();
 			resStrings.emplace_back(sv.data(), sv.size());
 		}
 	};
@@ -414,7 +414,7 @@ TEST_F(ReindexerApi, IndexNameValidation) {
 	err = rt.reindexer->AddIndex(default_namespace, {"idд", "hash", "int", IndexOpts().PK()});
 	ASSERT_EQ(err.code(), errParams) << err.what();
 	// Index names with special characters are not allowed
-	const string_view kForbiddenChars = "?#№/@!$%^*)+";
+	const std::string_view kForbiddenChars = "?#№/@!$%^*)+";
 	for (auto c : kForbiddenChars) {
 		auto idxName = std::string("id");
 		idxName += c;
@@ -580,10 +580,10 @@ TEST_F(ReindexerApi, WithTimeoutInterface) {
 template <int collateMode>
 struct CollateComparer {
 	bool operator()(const string& lhs, const string& rhs) const {
-		reindexer::string_view sl1(lhs.c_str(), lhs.length());
-		reindexer::string_view sl2(rhs.c_str(), rhs.length());
+		std::string_view sl1(lhs.c_str(), lhs.length());
+		std::string_view sl2(rhs.c_str(), rhs.length());
 		CollateOpts opts(collateMode);
-		return collateCompare(sl1, sl2, opts) < 0;
+		return reindexer::collateCompare(sl1, sl2, opts) < 0;
 	}
 };
 
@@ -1366,7 +1366,7 @@ TEST_F(ReindexerApi, SchemaSuggestions) {
 	{
 		std::unordered_set<std::string> expected = {"Nest_fake", "nested"};
 		std::vector<std::string> suggestions;
-		reindexer::string_view query = "select * from test_namespace where ne";
+		std::string_view query = "select * from test_namespace where ne";
 		err = rt.reindexer->GetSqlSuggestions(query, query.size() - 1, suggestions);
 		ASSERT_TRUE(err.ok()) << err.what();
 		validateSuggestions(suggestions, expected);
@@ -1375,7 +1375,7 @@ TEST_F(ReindexerApi, SchemaSuggestions) {
 	{
 		std::unordered_set<std::string> expected;
 		std::vector<std::string> suggestions;
-		reindexer::string_view query = "select * from test_namespace where nested";
+		std::string_view query = "select * from test_namespace where nested";
 		err = rt.reindexer->GetSqlSuggestions(query, query.size() - 1, suggestions);
 		ASSERT_TRUE(err.ok()) << err.what();
 		validateSuggestions(suggestions, expected);
@@ -1384,7 +1384,7 @@ TEST_F(ReindexerApi, SchemaSuggestions) {
 	{
 		std::unordered_set<std::string> expected = {".Name", ".Naame", ".Age"};
 		std::vector<std::string> suggestions;
-		reindexer::string_view query = "select * from test_namespace where nested.";
+		std::string_view query = "select * from test_namespace where nested.";
 		err = rt.reindexer->GetSqlSuggestions(query, query.size() - 1, suggestions);
 		ASSERT_TRUE(err.ok()) << err.what();
 		validateSuggestions(suggestions, expected);
@@ -1393,7 +1393,7 @@ TEST_F(ReindexerApi, SchemaSuggestions) {
 	{
 		std::unordered_set<std::string> expected = {".Name", ".Naame"};
 		std::vector<std::string> suggestions;
-		reindexer::string_view query = "select * from test_namespace where nested.Na";
+		std::string_view query = "select * from test_namespace where nested.Na";
 		err = rt.reindexer->GetSqlSuggestions(query, query.size() - 1, suggestions);
 		ASSERT_TRUE(err.ok()) << err.what();
 		validateSuggestions(suggestions, expected);

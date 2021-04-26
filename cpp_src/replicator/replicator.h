@@ -12,7 +12,6 @@
 #include "updatesobserver.h"
 
 namespace reindexer {
-using std::string;
 namespace client {
 class Reindexer;
 class QueryResults;
@@ -44,7 +43,7 @@ protected:
 	void run();
 	void stop();
 	// Sync single namespace
-	Error syncNamespace(const NamespaceDef &ns, string_view forceSyncReason);
+	Error syncNamespace(const NamespaceDef &ns, std::string_view forceSyncReason);
 	// Sync database
 	Error syncDatabase();
 	// Read and apply WAL from master
@@ -56,24 +55,24 @@ protected:
 	// Sync namespace schema
 	Error syncSchemaForced(Namespace::Ptr slaveNs, const NamespaceDef &masterNsDef);
 	// Forced sync of namespace
-	Error syncNamespaceForced(const NamespaceDef &ns, string_view reason);
+	Error syncNamespaceForced(const NamespaceDef &ns, std::string_view reason);
 	// Sync meta data
-	Error syncMetaForced(reindexer::Namespace::Ptr slaveNs, string_view nsName);
+	Error syncMetaForced(reindexer::Namespace::Ptr slaveNs, std::string_view nsName);
 	// Apply single WAL record
-	Error applyWALRecord(LSNPair LSNs, string_view nsName, Namespace::Ptr ns, const WALRecord &wrec, SyncStat &stat);
+	Error applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr ns, const WALRecord &wrec, SyncStat &stat);
 	// Apply single transaction WAL record
-	Error applyTxWALRecord(LSNPair LSNs, string_view nsName, Namespace::Ptr ns, const WALRecord &wrec);
-	void checkNoOpenedTransaction(string_view nsName, Namespace::Ptr slaveNs);
+	Error applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr ns, const WALRecord &wrec);
+	void checkNoOpenedTransaction(std::string_view nsName, Namespace::Ptr slaveNs);
 	// Apply single cjson item
-	Error modifyItem(LSNPair LSNs, Namespace::Ptr ns, string_view cjson, int modifyMode, const TagsMatcher &tm, SyncStat &stat);
-	static Error unpackItem(Item &, lsn_t, string_view cjson, const TagsMatcher &tm);
+	Error modifyItem(LSNPair LSNs, Namespace::Ptr ns, std::string_view cjson, int modifyMode, const TagsMatcher &tm, SyncStat &stat);
+	static Error unpackItem(Item &, lsn_t, std::string_view cjson, const TagsMatcher &tm);
 
-	void OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &walRec) override final;
-	void OnUpdatesLost(string_view nsName) override final;
+	void OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &walRec) override final;
+	void OnUpdatesLost(std::string_view nsName) override final;
 	void OnConnectionState(const Error &err) override final;
 
-	bool canApplyUpdate(LSNPair LSNs, string_view nsName, const WALRecord &wrec);
-	bool isSyncEnabled(string_view nsName);
+	bool canApplyUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &wrec);
+	bool isSyncEnabled(std::string_view nsName);
 	bool retryIfNetworkError(const Error &err);
 	void subscribeUpdatesIfRequired(const std::string &nsName);
 

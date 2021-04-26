@@ -5,10 +5,10 @@
 #include <chrono>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 #include "estl/mutex.h"
-#include "estl/string_view.h"
 
 namespace reindexer {
 
@@ -22,9 +22,9 @@ struct Activity {
 	int connectionId;
 	std::chrono::system_clock::time_point startTime;
 	enum State : unsigned { InProgress = 0, WaitLock, Sending, IndexesLookup, SelectLoop } state;
-	string_view description;
+	std::string_view description;
 	void GetJSON(WrSerializer&) const;
-	static string_view DescribeState(State);
+	static std::string_view DescribeState(State);
 };
 
 class RdxActivityContext;
@@ -89,8 +89,8 @@ class RdxActivityContext {
 	};
 
 public:
-	RdxActivityContext(string_view activityTracer, string_view user, string_view query, ActivityContainer&, int ipConnectionId,
-					   bool clientState = false);
+	RdxActivityContext(std::string_view activityTracer, std::string_view user, std::string_view query, ActivityContainer&,
+					   int ipConnectionId, bool clientState = false);
 	RdxActivityContext(RdxActivityContext&&);
 	~RdxActivityContext() {
 		if (parent_) parent_->Unregister(this);
@@ -113,7 +113,7 @@ public:
 private:
 	static unsigned serializeState(MutexMark);
 	static unsigned serializeState(Activity::State);
-	static std::pair<Activity::State, string_view> deserializeState(unsigned state);
+	static std::pair<Activity::State, std::string_view> deserializeState(unsigned state);
 	static unsigned nextId() noexcept;
 
 	const Activity data_;

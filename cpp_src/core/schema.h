@@ -20,7 +20,7 @@ class PayloadType;
 class WrSerializer;
 class ProtobufSchemaBuilder;
 
-string_view kvTypeToJsonSchemaType(KeyValueType type);
+std::string_view kvTypeToJsonSchemaType(KeyValueType type);
 
 class FieldProps {
 public:
@@ -62,7 +62,7 @@ struct SchemaFieldType {
 
 class SchemaFieldsTypes {
 public:
-	void AddObject(string_view objectType);
+	void AddObject(std::string_view objectType);
 	void AddField(KeyValueType type, bool isArray);
 	KeyValueType GetField(const TagsPath& fieldPath, bool& isArray) const;
 	string GenerateObjectName();
@@ -84,12 +84,12 @@ public:
 
 	PrefixTree();
 
-	void SetXGoType(string_view type);
+	void SetXGoType(std::string_view type);
 
 	Error AddPath(FieldProps props, const PathT& splittedPath) noexcept;
-	std::vector<std::string> GetSuggestions(string_view path) const;
+	std::vector<std::string> GetSuggestions(std::string_view path) const;
 	std::vector<std::string> GetPaths() const;
-	bool HasPath(string_view path, bool allowAdditionalFields) const noexcept;
+	bool HasPath(std::string_view path, bool allowAdditionalFields) const noexcept;
 	Error BuildProtobufSchema(WrSerializer& schema, TagsMatcher& tm, PayloadType& pt) noexcept;
 
 	struct PrefixTreeNode;
@@ -104,7 +104,7 @@ public:
 private:
 	friend Schema;
 	static std::string pathToStr(const PathT&);
-	PrefixTreeNode* findNode(string_view path, bool* maybeAdditionalField = nullptr) const noexcept;
+	PrefixTreeNode* findNode(std::string_view path, bool* maybeAdditionalField = nullptr) const noexcept;
 	Error buildProtobufSchema(ProtobufSchemaBuilder& builder, const PrefixTreeNode& node, const std::string& basePath,
 							  TagsMatcher& tm) noexcept;
 
@@ -115,17 +115,17 @@ private:
 class Schema {
 public:
 	Schema() = default;
-	explicit Schema(string_view json);
+	explicit Schema(std::string_view json);
 
-	std::vector<string> GetSuggestions(string_view path) const { return paths_.GetSuggestions(path); }
+	std::vector<string> GetSuggestions(std::string_view path) const { return paths_.GetSuggestions(path); }
 	std::vector<std::string> GetPaths() const noexcept { return paths_.GetPaths(); }
 	KeyValueType GetFieldType(const TagsPath& fieldPath, bool& isArray) const;
 
-	bool HasPath(string_view path, bool allowAdditionalFields = false) const noexcept {
+	bool HasPath(std::string_view path, bool allowAdditionalFields = false) const noexcept {
 		return paths_.HasPath(path, allowAdditionalFields);
 	}
 
-	Error FromJSON(string_view json);
+	Error FromJSON(std::string_view json);
 	void GetJSON(WrSerializer&) const;
 	Error BuildProtobufSchema(TagsMatcher& tm, PayloadType& pt);
 	Error GetProtobufSchema(WrSerializer& schema) const;

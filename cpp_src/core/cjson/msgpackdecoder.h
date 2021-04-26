@@ -15,7 +15,7 @@ class WrSerializer;
 class MsgPackDecoder {
 public:
 	explicit MsgPackDecoder(TagsMatcher* tagsMatcher);
-	Error Decode(string_view buf, Payload* pl, WrSerializer& wrser, size_t& offset);
+	Error Decode(std::string_view buf, Payload* pl, WrSerializer& wrser, size_t& offset);
 
 private:
 	void decode(Payload* pl, CJsonBuilder& builder, const msgpack_object& obj, int tagName);

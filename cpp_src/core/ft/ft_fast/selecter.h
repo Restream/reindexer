@@ -16,7 +16,7 @@ public:
 
 	struct TextSearchResult {
 		const PackedIdRelSet* vids_;
-		string_view pattern;
+		std::string_view pattern;
 		int proc_;
 		int16_t wordLen_;
 	};

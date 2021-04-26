@@ -345,12 +345,12 @@ JsonNode *JsonNode::toNode() const {
 	return value.toNode();
 }
 
-const JsonNode &JsonNode::operator[](string_view key) const {
+const JsonNode &JsonNode::operator[](std::string_view key) const {
 	if (value.getTag() != JSON_OBJECT && value.getTag() != JSON_NULL) {
 		throw Exception(std::string("Can't obtain json field '") + std::string(key) + "' from non-object json node");
 	}
 	for (auto &v : (*this))
-		if (string_view(v.key) == key) return v;
+		if (std::string_view(v.key) == key) return v;
 	static JsonNode empty_node{{JsonTag(JSON_EMPTY)}, nullptr, {}};
 	return empty_node;
 }
@@ -370,7 +370,7 @@ JsonNode JsonParser::Parse(span<char> str, size_t *length) {
 	return val;
 }
 
-JsonNode JsonParser::Parse(string_view str, size_t *length) {
+JsonNode JsonParser::Parse(std::string_view str, size_t *length) {
 	tmp_.reserve(str.size());
 	tmp_.assign(str.begin(), str.end());
 	return Parse(span<char>(&tmp_[0], tmp_.size()), length);

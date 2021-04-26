@@ -6,8 +6,10 @@ namespace reindexer {
 
 namespace datastorage {
 
+using namespace std::string_view_literals;
+
 const std::string kShutdownPlaceholderName = ".rdx_shutdown";
-constexpr auto kLostDirName = "lost"_sv;
+constexpr auto kLostDirName = "lost"sv;
 
 BaseStorage::~BaseStorage() {
 	std::lock_guard<std::mutex> lck(mtx_);

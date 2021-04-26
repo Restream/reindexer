@@ -11,13 +11,16 @@
 #include "vendor/msgpack/msgpack.h"
 
 namespace reindexer_server {
+using namespace std::string_view_literals;
+
 const reindexer::SemVersion kMinUnknownReplSupportRxVersion("2.6.0");
 const size_t kMaxTxCount = 1024;
 
-RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper &logger, IClientsStats *clientsStats, bool allocDebug, IStatsWatcher *statsCollector)
+RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper &logger, IClientsStats *clientsStats, const ServerConfig &scfg,
+					 IStatsWatcher *statsCollector)
 	: dbMgr_(dbMgr),
+	  serverConfig_(scfg),
 	  logger_(logger),
-	  allocDebug_(allocDebug),
 	  statsWatcher_(statsCollector),
 	  clientsStats_(clientsStats),
 	  startTs_(std::chrono::system_clock::now()) {}
@@ -57,7 +60,7 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 	}
 
 	if (clientRxVersion.hasValue()) {
-		clientData->rxVersion = SemVersion(string_view(clientRxVersion.value()));
+		clientData->rxVersion = SemVersion(std::string_view(clientRxVersion.value()));
 	} else {
 		clientData->rxVersion = SemVersion();
 	}
@@ -90,7 +93,7 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 		statsWatcher_->OnClientConnected(dbName, statsSourceName());
 	}
 	int64_t startTs = std::chrono::duration_cast<std::chrono::seconds>(startTs_.time_since_epoch()).count();
-	static string_view version = REINDEX_VERSION;
+	static std::string_view version = REINDEX_VERSION;
 
 	status = db.length() ? OpenDatabase(ctx, db, createDBIfMissing) : errOK;
 	if (status.ok()) {
@@ -179,29 +182,29 @@ void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Arg
 	WrSerializer ser;
 
 	if (clientData) {
-		ser << "c='"_sv << clientData->connID << "' db='"_sv << clientData->auth.Login() << "@"_sv << clientData->auth.DBName() << "' "_sv;
+		ser << "c='"sv << clientData->connID << "' db='"sv << clientData->auth.Login() << "@"sv << clientData->auth.DBName() << "' "sv;
 	} else {
-		ser << "- - "_sv;
+		ser << "- - "sv;
 	}
 
 	if (ctx.call) {
-		ser << cproto::CmdName(ctx.call->cmd) << " "_sv;
+		ser << cproto::CmdName(ctx.call->cmd) << " "sv;
 		ctx.call->args.Dump(ser);
 	} else {
 		ser << '-';
 	}
 
-	ser << " -> "_sv << (err.ok() ? "OK"_sv : err.what());
+	ser << " -> "sv << (err.ok() ? "OK"sv : err.what());
 	if (ret.size()) {
 		ser << ' ';
 		ret.Dump(ser);
 	}
 
 	HandlerStat statDiff = HandlerStat() - ctx.stat.allocStat;
-	ser << ' ' << statDiff.GetTimeElapsed() << "us"_sv;
+	ser << ' ' << statDiff.GetTimeElapsed() << "us"sv;
 
-	if (allocDebug_) {
-		ser << " |  allocs: "_sv << statDiff.GetAllocsCnt() << ", allocated: " << statDiff.GetAllocsBytes() << " byte(s)";
+	if (serverConfig_.DebugAllocs) {
+		ser << " |  allocs: "sv << statDiff.GetAllocsCnt() << ", allocated: " << statDiff.GetAllocsBytes() << " byte(s)";
 	}
 
 	logger_.info("{}", ser.Slice());
@@ -264,7 +267,7 @@ Error RPCServer::EnumDatabases(cproto::Context &ctx) {
 	WrSerializer ser;
 	JsonBuilder jb(ser);
 	span<string> array(&dbList[0], dbList.size());
-	jb.Array("databases"_sv, array);
+	jb.Array("databases"sv, array);
 	jb.End();
 
 	auto resSlice = ser.Slice();
@@ -296,7 +299,7 @@ Error RPCServer::DropIndex(cproto::Context &ctx, p_string ns, p_string index) {
 }
 
 Error RPCServer::SetSchema(cproto::Context &ctx, p_string ns, p_string schema) {
-	return getDB(ctx, kRoleDBAdmin).SetSchema(ns, string_view(schema));
+	return getDB(ctx, kRoleDBAdmin).SetSchema(ns, std::string_view(schema));
 }
 
 Error RPCServer::StartTransaction(cproto::Context &ctx, p_string nsName) {
@@ -568,12 +571,13 @@ Error RPCServer::sendResults(cproto::Context &ctx, QueryResults &qres, int reqId
 		freeQueryResults(ctx, reqId);
 		reqId = -1;
 	}
-	string_view resSlice = rser.Slice();
+	std::string_view resSlice = rser.Slice();
 	ctx.Return({cproto::Arg(p_string(&resSlice)), cproto::Arg(int(reqId))});
 	return errOK;
 }
 
-Error RPCServer::processTxItem(DataFormat format, string_view itemData, Item &item, ItemModifyMode mode, int stateToken) const noexcept {
+Error RPCServer::processTxItem(DataFormat format, std::string_view itemData, Item &item, ItemModifyMode mode,
+							   int stateToken) const noexcept {
 	switch (format) {
 		case FormatJson:
 			return item.FromJSON(itemData, nullptr, mode == ModeDelete);
@@ -624,7 +628,7 @@ Transaction &RPCServer::getTx(cproto::Context &ctx, int64_t id) {
 	return data->txs[id];
 }
 
-int64_t RPCServer::addTx(cproto::Context &ctx, string_view nsName) {
+int64_t RPCServer::addTx(cproto::Context &ctx, std::string_view nsName) {
 	auto db = getDB(ctx, kRoleDataWrite);
 	int64_t id = -1;
 	auto data = getClientDataSafe(ctx);
@@ -685,7 +689,7 @@ Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int 
 
 	if (query.IsWALQuery()) {
 		auto data = getClientDataSafe(ctx);
-		query.Where(string("#slave_version"_sv), CondEq, data->rxVersion.StrippedString());
+		query.Where(string("#slave_version"sv), CondEq, data->rxVersion.StrippedString());
 	}
 
 	int id = -1;
@@ -803,7 +807,7 @@ Error RPCServer::SubscribeUpdates(cproto::Context &ctx, int flag, cproto::option
 	return ret;
 }
 
-bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop, bool enableStat, size_t maxUpdatesSize) {
+bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	dispatcher_.Register(cproto::kCmdPing, this, &RPCServer::Ping);
 	dispatcher_.Register(cproto::kCmdLogin, this, &RPCServer::Login, true);
 	dispatcher_.Register(cproto::kCmdOpenDatabase, this, &RPCServer::OpenDatabase, true);
@@ -853,7 +857,13 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop, bool enableSta
 		dispatcher_.Logger(this, &RPCServer::Logger);
 	}
 
-	listener_.reset(new Listener(loop, cproto::ServerConnection::NewFactory(dispatcher_, enableStat, maxUpdatesSize)));
+	auto factory = cproto::ServerConnection::NewFactory(dispatcher_, serverConfig_.EnableConnectionsStats, serverConfig_.MaxUpdatesSize);
+	if (serverConfig_.ThreadingMode == ServerConfig::kDedicatedThreading) {
+		listener_.reset(new ForkedListener(loop, factory));
+	} else {
+		listener_.reset(new Listener(loop, factory));
+	}
+
 	return listener_->Bind(addr);
 }
 

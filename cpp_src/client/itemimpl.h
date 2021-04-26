@@ -34,15 +34,15 @@ public:
 	void SetField(int field, const VariantArray &krs);
 	Variant GetField(int field);
 
-	string_view GetJSON();
-	Error FromJSON(const string_view &slice, char **endp = nullptr, bool pkOnly = false);
+	std::string_view GetJSON();
+	Error FromJSON(std::string_view slice, char **endp = nullptr, bool pkOnly = false);
 	Error FromCJSON(ItemImpl *other);
 
-	string_view GetCJSON();
-	Error FromCJSON(const string_view &slice);
+	std::string_view GetCJSON();
+	Error FromCJSON(std::string_view slice);
 
-	string_view GetMsgPack();
-	Error FromMsgPack(const string_view &slice, size_t &offset);
+	std::string_view GetMsgPack();
+	Error FromMsgPack(std::string_view slice, size_t &offset);
 
 	PayloadType Type() { return payloadType_; }
 	PayloadValue &Value() { return payloadValue_; }

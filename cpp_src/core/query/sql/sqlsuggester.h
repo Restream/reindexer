@@ -13,7 +13,7 @@ struct EnumNamespacesOpts;
 class SQLSuggester : public SQLParser {
 public:
 	using EnumNamespacesF = std::function<std::vector<NamespaceDef>(EnumNamespacesOpts opts)>;
-	using GetSchemaF = std::function<std::shared_ptr<const Schema>(string_view ns)>;
+	using GetSchemaF = std::function<std::shared_ptr<const Schema>(std::string_view ns)>;
 
 	using SQLParser::SQLParser;
 	/// Gets suggestions for autocomplte
@@ -21,7 +21,7 @@ public:
 	/// @param pos - pos of cursor in query.
 	/// @param enumNamespaces - functor which enums namespaces to be checked for existing fields.
 	/// @param getSchemaSuggestions - functor which get pointer to namespace's schema
-	std::vector<string> GetSuggestions(string_view q, size_t pos, EnumNamespacesF enumNamespaces, GetSchemaF getSchemaSuggestions);
+	std::vector<string> GetSuggestions(std::string_view q, size_t pos, EnumNamespacesF enumNamespaces, GetSchemaF getSchemaSuggestions);
 
 protected:
 	/// Finds suggestions for token

@@ -5,7 +5,7 @@ set -e
 
 [ -z "$1" ] && echo "Expect reindexer version as an argument" && exit -1
 
-rpm_url="http://repo.itv.restr.im/itv-api-ng/6/x86_64/reindexer-server-$1-1.x86_64.rpm"
+rpm_url="http://repo.itv.restr.im/itv-api-ng/7/x86_64/reindexer-server-$1-1.x86_64.rpm"
 master_db_path="/tmp/reindex_test_master"
 slave_db_path="/tmp/reindex_test_slave"
 master_dsn="cproto://127.0.0.1:6534"

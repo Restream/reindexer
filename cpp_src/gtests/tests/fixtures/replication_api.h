@@ -46,7 +46,7 @@ public:
 	// Switch master
 	void SwitchMaster(size_t id);
 	// Set WAL size
-	void SetWALSize(size_t id, int64_t size, string_view nsName);
+	void SetWALSize(size_t id, int64_t size, std::string_view nsName);
 	//
 
 	size_t masterId_ = 0;

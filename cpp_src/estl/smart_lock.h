@@ -20,10 +20,11 @@ public:
 	template <typename Context>
 	smart_lock(Mutex& mtx, Context& context, bool unique = false, milliseconds chkTimeout = kDefaultCondChkTime)
 		: mtx_(&mtx), unique_(unique), locked_(false) {
+		using namespace std::string_view_literals;
 		const auto lockWard = context.BeforeLock(Mutex::mark);
 		if (chkTimeout.count() > 0 && context.isCancelable()) {
 			do {
-				ThrowOnCancel(context, "Lock was canceled on condition"_sv);
+				ThrowOnCancel(context, "Lock was canceled on condition"sv);
 			} while (unique_ ? (!mtx_->try_lock_for(chkTimeout)) : (!mtx_->try_lock_shared_for(chkTimeout)));
 		} else {
 			if (unique_) {

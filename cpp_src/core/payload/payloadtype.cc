@@ -47,7 +47,7 @@ void PayloadTypeImpl::Add(PayloadFieldType f) {
 	}
 }
 
-bool PayloadTypeImpl::Drop(string_view field) {
+bool PayloadTypeImpl::Drop(std::string_view field) {
 	auto it = fieldsByName_.find(field);
 	if (it == fieldsByName_.end()) return false;
 
@@ -88,22 +88,22 @@ bool PayloadTypeImpl::Drop(string_view field) {
 	return true;
 }
 
-bool PayloadTypeImpl::Contains(string_view field) const { return fieldsByName_.find(field) != fieldsByName_.end(); }
+bool PayloadTypeImpl::Contains(std::string_view field) const { return fieldsByName_.find(field) != fieldsByName_.end(); }
 
-int PayloadTypeImpl::FieldByName(string_view field) const {
+int PayloadTypeImpl::FieldByName(std::string_view field) const {
 	auto it = fieldsByName_.find(field);
 	if (it == fieldsByName_.end()) throw Error(errLogic, "Field '%s' not found in namespace '%s'", field, Name());
 	return it->second;
 }
 
-bool PayloadTypeImpl::FieldByName(string_view name, int &field) const {
+bool PayloadTypeImpl::FieldByName(std::string_view name, int &field) const {
 	auto it = fieldsByName_.find(name);
 	if (it == fieldsByName_.end()) return false;
 	field = it->second;
 	return true;
 }
 
-int PayloadTypeImpl::FieldByJsonPath(string_view jsonPath) const {
+int PayloadTypeImpl::FieldByJsonPath(std::string_view jsonPath) const {
 	auto it = fieldsByJsonPath_.find(jsonPath);
 	if (it == fieldsByJsonPath_.end()) return -1;
 	return it->second;

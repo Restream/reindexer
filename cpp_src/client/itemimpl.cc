@@ -25,9 +25,9 @@ ItemImpl &ItemImpl::operator=(ItemImpl &&other) noexcept {
 }
 
 // Construct item from compressed json
-Error ItemImpl::FromCJSON(const string_view &slice) {
+Error ItemImpl::FromCJSON(std::string_view slice) {
 	GetPayload().Reset();
-	string_view data = slice;
+	std::string_view data = slice;
 	if (!unsafe_) {
 		holder_.push_back(string(slice));
 		data = holder_.back();
@@ -59,8 +59,8 @@ Error ItemImpl::FromCJSON(const string_view &slice) {
 	return err;
 }
 
-Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool /*pkOnly*/) {
-	string_view data = slice;
+Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*/) {
+	std::string_view data = slice;
 	if (!unsafe_ && endp == nullptr) {
 		holder_.emplace_back(slice);
 		data = holder_.back();
@@ -93,7 +93,7 @@ Error ItemImpl::FromJSON(const string_view &slice, char **endp, bool /*pkOnly*/)
 	return err;
 }
 
-Error ItemImpl::FromMsgPack(const string_view &buf, size_t &offset) {
+Error ItemImpl::FromMsgPack(std::string_view buf, size_t &offset) {
 	Payload pl = GetPayload();
 	MsgPackDecoder decoder(&tagsMatcher_);
 
@@ -113,7 +113,7 @@ Error ItemImpl::FromCJSON(ItemImpl *other) {
 	return err;
 }
 
-string_view ItemImpl::GetMsgPack() {
+std::string_view ItemImpl::GetMsgPack() {
 	int startTag = 0;
 	ConstPayload pl = GetConstPayload();
 
@@ -127,7 +127,7 @@ string_view ItemImpl::GetMsgPack() {
 	return ser_.Slice();
 }
 
-string_view ItemImpl::GetJSON() {
+std::string_view ItemImpl::GetJSON() {
 	ConstPayload pl(payloadType_, payloadValue_);
 	JsonBuilder builder(ser_, ObjType::TypePlain);
 	JsonEncoder encoder(&tagsMatcher_);
@@ -138,7 +138,7 @@ string_view ItemImpl::GetJSON() {
 	return ser_.Slice();
 }
 
-string_view ItemImpl::GetCJSON() {
+std::string_view ItemImpl::GetCJSON() {
 	ConstPayload pl(payloadType_, payloadValue_);
 	CJsonBuilder builder(ser_, ObjType::TypePlain);
 	CJsonEncoder encoder(&tagsMatcher_);

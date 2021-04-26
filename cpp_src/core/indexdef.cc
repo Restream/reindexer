@@ -170,7 +170,7 @@ void IndexDef::FromJSON(const gason::JsonNode &root) {
 		}
 	}
 
-	auto collateStr = root["collate_mode"].As<string_view>();
+	auto collateStr = root["collate_mode"].As<std::string_view>();
 	if (!collateStr.empty()) {
 		auto collateIt = find_if(begin(availableCollates), end(availableCollates),
 								 [&collateStr](const pair<CollateMode, string> &p) { return collateStr == p.second; });
@@ -234,7 +234,7 @@ void IndexDef::GetJSON(WrSerializer &ser, int formatFlags) const {
 	}
 }
 
-bool validateIndexName(string_view name, IndexType type) noexcept {
+bool validateIndexName(std::string_view name, IndexType type) noexcept {
 	if (!name.length()) {
 		return false;
 	}

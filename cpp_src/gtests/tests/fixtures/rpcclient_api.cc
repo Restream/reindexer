@@ -5,7 +5,7 @@
 
 void RPCClientTestApi::TestServer::Start(const std::string& addr, Error errOnLogin) {
 	dsn_ = addr;
-	serverThread_.reset(new thread([this, addr, errOnLogin]() {
+	serverThread_.reset(new std::thread([this, addr, errOnLogin]() {
 		server_.reset(new RPCServerFake(conf_));
 		stop_.set(loop_);
 		stop_.set([&](ev::async& sig) { sig.loop.break_loop(); });
@@ -147,7 +147,7 @@ void RPCClientTestApi::StopAllServers() {
 	}
 }
 
-client::Item RPCClientTestApi::CreateItem(client::Reindexer& rx, string_view nsName, int id) {
+client::Item RPCClientTestApi::CreateItem(client::Reindexer& rx, std::string_view nsName, int id) {
 	reindexer::WrSerializer wrser;
 	reindexer::JsonBuilder jb(wrser);
 	jb.Put("id", id);
@@ -159,7 +159,7 @@ client::Item RPCClientTestApi::CreateItem(client::Reindexer& rx, string_view nsN
 	return item;
 }
 
-client::Item RPCClientTestApi::CreateItem(client::CoroReindexer& rx, string_view nsName, int id) {
+client::Item RPCClientTestApi::CreateItem(client::CoroReindexer& rx, std::string_view nsName, int id) {
 	reindexer::WrSerializer wrser;
 	reindexer::JsonBuilder jb(wrser);
 	jb.Put("id", id);
@@ -171,21 +171,21 @@ client::Item RPCClientTestApi::CreateItem(client::CoroReindexer& rx, string_view
 	return item;
 }
 
-void RPCClientTestApi::CreateNamespace(reindexer::client::Reindexer& rx, string_view nsName) {
+void RPCClientTestApi::CreateNamespace(reindexer::client::Reindexer& rx, std::string_view nsName) {
 	auto err = rx.OpenNamespace(nsName);
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = rx.AddIndex(nsName, {"id", "hash", "int", IndexOpts().PK()});
 	EXPECT_TRUE(err.ok()) << err.what();
 }
 
-void RPCClientTestApi::CreateNamespace(client::CoroReindexer& rx, string_view nsName) {
+void RPCClientTestApi::CreateNamespace(client::CoroReindexer& rx, std::string_view nsName) {
 	auto err = rx.OpenNamespace(nsName);
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = rx.AddIndex(nsName, {"id", "hash", "int", IndexOpts().PK()});
 	EXPECT_TRUE(err.ok()) << err.what();
 }
 
-void RPCClientTestApi::FillData(client::Reindexer& rx, string_view nsName, int from, int count) {
+void RPCClientTestApi::FillData(client::Reindexer& rx, std::string_view nsName, int from, int count) {
 	int to = from + count;
 	for (int id = from; id < to; ++id) {
 		auto item = CreateItem(rx, nsName, id);
@@ -194,7 +194,7 @@ void RPCClientTestApi::FillData(client::Reindexer& rx, string_view nsName, int f
 	}
 }
 
-void RPCClientTestApi::FillData(client::CoroReindexer& rx, string_view nsName, int from, int count) {
+void RPCClientTestApi::FillData(client::CoroReindexer& rx, std::string_view nsName, int from, int count) {
 	int to = from + count;
 	for (int id = from; id < to; ++id) {
 		auto item = CreateItem(rx, nsName, id);
@@ -203,7 +203,7 @@ void RPCClientTestApi::FillData(client::CoroReindexer& rx, string_view nsName, i
 	}
 }
 
-void RPCClientTestApi::UpdatesReciever::OnWALUpdate(LSNPair, string_view nsName, const WALRecord&) {
+void RPCClientTestApi::UpdatesReciever::OnWALUpdate(LSNPair, std::string_view nsName, const WALRecord&) {
 	auto found = updatesCounters_.find(nsName);
 	if (found != updatesCounters_.end()) {
 		++(found->second);
@@ -237,7 +237,7 @@ bool RPCClientTestApi::UpdatesReciever::AwaitNamespaces(size_t count) {
 	return true;
 }
 
-bool RPCClientTestApi::UpdatesReciever::AwaitItems(string_view ns, size_t count) {
+bool RPCClientTestApi::UpdatesReciever::AwaitItems(std::string_view ns, size_t count) {
 	std::chrono::milliseconds time{0};
 	auto cycleTime = std::chrono::milliseconds(50);
 	do {

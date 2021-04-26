@@ -192,7 +192,7 @@ void ServerImpl::ReopenLogFiles() {
 int ServerImpl::run() {
 	loggerConfigure();
 
-	reindexer::debug::backtrace_set_writer([](string_view out) {
+	reindexer::debug::backtrace_set_writer([](std::string_view out) {
 		auto logger = spdlog::get("server");
 		if (logger) {
 			logger->info("{}", out);
@@ -275,16 +275,15 @@ int ServerImpl::run() {
 		}
 
 		LoggerWrapper httpLogger("http");
-		HTTPServer httpServer(*dbMgr_, config_.WebRoot, httpLogger,
-							  HTTPServer::OptionalConfig{config_, prometheus.get(), statsCollector.get()});
+		HTTPServer httpServer(*dbMgr_, httpLogger, config_, prometheus.get(), statsCollector.get());
 		if (!httpServer.Start(config_.HTTPAddr, loop_)) {
 			logger_.error("Can't listen HTTP on '{0}'", config_.HTTPAddr);
 			return EXIT_FAILURE;
 		}
 
 		LoggerWrapper rpcLogger("rpc");
-		RPCServer rpcServer(*dbMgr_, rpcLogger, clientsStats.get(), config_.DebugAllocs, statsCollector.get());
-		if (!rpcServer.Start(config_.RPCAddr, loop_, config_.EnableConnectionsStats, config_.MaxUpdatesSize)) {
+		RPCServer rpcServer(*dbMgr_, rpcLogger, clientsStats.get(), config_, statsCollector.get());
+		if (!rpcServer.Start(config_.RPCAddr, loop_)) {
 			logger_.error("Can't listen RPC on '{0}'", config_.RPCAddr);
 			return EXIT_FAILURE;
 		}

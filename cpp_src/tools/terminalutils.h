@@ -1,6 +1,6 @@
 #pragma once
 
-#include "estl/string_view.h"
+#include <string_view>
 
 namespace reindexer {
 
@@ -9,7 +9,7 @@ struct TerminalSize {
 	int height = 0;
 };
 TerminalSize getTerminalSize();
-int getStringTerminalWidth(string_view str);
+int getStringTerminalWidth(std::string_view str);
 bool isStdoutRedirected();
 bool isStdinRedirected();
 }  // namespace reindexer

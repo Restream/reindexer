@@ -3,7 +3,7 @@
 
 namespace reindexer {
 
-Error::Error(int code, string_view what) {
+Error::Error(int code, std::string_view what) {
 	if (code != errOK) {
 		ptr_ = make_intrusive<intrusive_atomic_rc_wrapper<payload>>(code, std::string(what));
 	}

@@ -9,11 +9,11 @@
 
 namespace reindexer {
 
-bool checkIfTokenStartsWith(const string_view &src, const string_view &pattern) {
+bool checkIfTokenStartsWith(std::string_view src, std::string_view pattern) {
 	return checkIfStartsWith(src, pattern) && src.length() < pattern.length();
 }
 
-vector<string> SQLSuggester::GetSuggestions(string_view q, size_t pos, EnumNamespacesF enumNamespaces, GetSchemaF getSchema) {
+vector<string> SQLSuggester::GetSuggestions(std::string_view q, size_t pos, EnumNamespacesF enumNamespaces, GetSchemaF getSchema) {
 	ctx_.suggestionsPos = pos;
 	ctx_.autocompleteMode = true;
 	enumNamespaces_ = std::move(enumNamespaces);

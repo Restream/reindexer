@@ -33,38 +33,30 @@
 
 using std::string;
 using std::stringstream;
+using namespace std::string_view_literals;
 
 namespace reindexer_server {
 
 constexpr size_t kTxIdLen = 20;
 constexpr auto kTxDeadlineCheckPeriod = std::chrono::seconds(1);
 
-HTTPServer::HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper &logger, OptionalConfig config)
+HTTPServer::HTTPServer(DBManager &dbMgr, LoggerWrapper &logger, const ServerConfig &serverConfig, Prometheus *prometheus,
+					   IStatsWatcher *statsWatcher)
 	: dbMgr_(dbMgr),
-	  prometheus_(config.prometheus),
-	  statsWatcher_(config.statsWatcher),
-	  webRoot_(reindexer::fs::JoinPath(webRoot, "")),
+	  serverConfig_(serverConfig),
+	  prometheus_(prometheus),
+	  statsWatcher_(statsWatcher),
+	  webRoot_(reindexer::fs::JoinPath(serverConfig.WebRoot, "")),
 	  logger_(logger),
-	  allocDebug_(config.allocDebug),
-	  enablePprof_(config.enablePprof),
-	  startTs_(std::chrono::system_clock::now()),
-	  txIdleTimeout_(config.txIdleTimeout),
-	  rpcAddress_(config.rpcAddress),
-	  httpAddress_(config.httpAddress),
-	  storagePath_(config.storagePath),
-	  rpcLog_(config.rpcLog),
-	  httpLog_(config.httpLog),
-	  logLevel_(config.logLevel),
-	  coreLog_(config.coreLog),
-	  serverLog_(config.serverLog) {}
+	  startTs_(std::chrono::system_clock::now()) {}
 
 int HTTPServer::GetSQLQuery(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDataRead);
 	reindexer::QueryResults res;
 	string sqlQuery = urldecode2(ctx.request->params.Get("q"));
 
-	string_view limitParam = ctx.request->params.Get("limit");
-	string_view offsetParam = ctx.request->params.Get("offset");
+	std::string_view limitParam = ctx.request->params.Get("limit");
+	std::string_view offsetParam = ctx.request->params.Get("offset");
 
 	unsigned limit = prepareLimit(limitParam);
 	unsigned offset = prepareOffset(offsetParam);
@@ -85,8 +77,8 @@ int HTTPServer::GetSQLSuggest(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Missed `q` parameter"));
 	}
 
-	string_view posParam = ctx.request->params.Get("pos");
-	string_view lineParam = ctx.request->params.Get("line");
+	std::string_view posParam = ctx.request->params.Get("pos");
+	std::string_view lineParam = ctx.request->params.Get("line");
 	int pos = stoi(posParam);
 	if (pos < 0) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "`pos` parameter should be >= 0"));
@@ -199,7 +191,7 @@ int HTTPServer::UpdateQuery(http::Context &ctx) {
 }
 
 int HTTPServer::GetDatabases(http::Context &ctx) {
-	string_view sortOrder = ctx.request->params.Get("sort_order");
+	std::string_view sortOrder = ctx.request->params.Get("sort_order");
 
 	auto dbs = dbMgr_.EnumDatabases();
 
@@ -285,7 +277,7 @@ int HTTPServer::DeleteDatabase(http::Context &ctx) {
 int HTTPServer::GetNamespaces(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDataRead);
 
-	string_view sortOrder = ctx.request->params.Get("sort_order");
+	std::string_view sortOrder = ctx.request->params.Get("sort_order");
 
 	vector<reindexer::NamespaceDef> nsDefs;
 	db.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames());
@@ -424,10 +416,10 @@ int HTTPServer::GetItems(http::Context &ctx) {
 
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 
-	string_view limitParam = ctx.request->params.Get("limit");
-	string_view offsetParam = ctx.request->params.Get("offset");
-	string_view sortField = ctx.request->params.Get("sort_field");
-	string_view sortOrder = ctx.request->params.Get("sort_order");
+	std::string_view limitParam = ctx.request->params.Get("limit");
+	std::string_view offsetParam = ctx.request->params.Get("offset");
+	std::string_view sortField = ctx.request->params.Get("sort_field");
+	std::string_view sortOrder = ctx.request->params.Get("sort_order");
 
 	string filterParam = urldecode2(ctx.request->params.Get("filter"));
 	string fields = urldecode2(ctx.request->params.Get("fields"));
@@ -490,7 +482,7 @@ int HTTPServer::GetMetaList(http::Context &ctx) {
 	enum SortOrder { Desc = -1, NoSort = 0, Asc = 1 } sortDirection = NoSort;
 	bool withValues = false;
 
-	string_view sortOrder = ctx.request->params.Get("sort_order");
+	std::string_view sortOrder = ctx.request->params.Get("sort_order");
 	if (sortOrder == "asc") {
 		sortDirection = Asc;
 	} else if (sortOrder == "desc") {
@@ -499,7 +491,7 @@ int HTTPServer::GetMetaList(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Invalid `sort_order` parameter"));
 	}
 
-	string_view withValParam = ctx.request->params.Get("with_values");
+	std::string_view withValParam = ctx.request->params.Get("with_values");
 	if (withValParam == "true") {
 		withValues = true;
 	} else if (withValParam == "false") {
@@ -507,8 +499,8 @@ int HTTPServer::GetMetaList(http::Context &ctx) {
 	} else if (withValParam.length()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Invalid `with_values` parameter"));
 	}
-	string_view limitParam = ctx.request->params.Get("limit");
-	string_view offsetParam = ctx.request->params.Get("offset");
+	std::string_view limitParam = ctx.request->params.Get("limit");
+	std::string_view offsetParam = ctx.request->params.Get("offset");
 	unsigned limit = prepareLimit(limitParam, 0);
 	unsigned offset = prepareOffset(offsetParam, 0);
 
@@ -712,7 +704,7 @@ int HTTPServer::GetSchema(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
 
-	return ctx.JSON(http::StatusOK, schema.length() ? schema : "{}"_sv);
+	return ctx.JSON(http::StatusOK, schema.length() ? schema : "{}"sv);
 }
 
 int HTTPServer::GetProtobufSchema(http::Context &ctx) {
@@ -720,7 +712,7 @@ int HTTPServer::GetProtobufSchema(http::Context &ctx) {
 
 	std::vector<string> nses;
 	for (auto &p : ctx.request->params) {
-		if (p.name == "ns"_sv || p.name == "ns[]"_sv) {
+		if (p.name == "ns"sv || p.name == "ns[]"sv) {
 			nses.emplace_back(urldecode2(p.val));
 		}
 	}
@@ -764,14 +756,14 @@ int HTTPServer::Check(http::Context &ctx) {
 		size_t uptime = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - startTs_).count();
 		builder.Put("start_time", startTs);
 		builder.Put("uptime", uptime);
-		builder.Put("rpc_address", rpcAddress_);
-		builder.Put("http_address", httpAddress_);
-		builder.Put("storage_path", storagePath_);
-		builder.Put("rpc_log", rpcLog_);
-		builder.Put("http_log", httpLog_);
-		builder.Put("log_level", logLevel_);
-		builder.Put("core_log", coreLog_);
-		builder.Put("server_log", serverLog_);
+		builder.Put("rpc_address", serverConfig_.RPCAddr);
+		builder.Put("http_address", serverConfig_.HTTPAddr);
+		builder.Put("storage_path", serverConfig_.StoragePath);
+		builder.Put("rpc_log", serverConfig_.RpcLog);
+		builder.Put("http_log", serverConfig_.HttpLog);
+		builder.Put("log_level", serverConfig_.LogLevel);
+		builder.Put("core_log", serverConfig_.CoreLog);
+		builder.Put("server_log", serverConfig_.ServerLog);
 
 #if REINDEX_WITH_JEMALLOC
 		if (alloc_ext::JEMallocIsAvailable()) {
@@ -926,13 +918,17 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 		router_.Logger<HTTPServer, &HTTPServer::Logger>(this);
 	}
 
-	if (enablePprof_) {
+	if (serverConfig_.DebugPprof) {
 		pprof_.Attach(router_);
 	}
 	if (prometheus_) {
 		prometheus_->Attach(router_);
 	}
-	listener_.reset(new Listener(loop, http::ServerConnection::NewFactory(router_)));
+
+	if (serverConfig_.ThreadingMode == ServerConfig::kDedicatedThreading)
+		listener_.reset(new ForkedListener(loop, http::ServerConnection::NewFactory(router_)));
+	else
+		listener_.reset(new Listener(loop, http::ServerConnection::NewFactory(router_)));
 	deadlineChecker_.set<HTTPServer, &HTTPServer::deadlineTimerCb>(this);
 	deadlineChecker_.set(loop);
 	deadlineChecker_.start(std::chrono::duration_cast<std::chrono::seconds>(kTxDeadlineCheckPeriod).count(),
@@ -976,7 +972,7 @@ int HTTPServer::modifyItemsJSON(http::Context &ctx, string &nsName, const vector
 			return jsonStatus(ctx, httpStatus);
 		}
 		char *prevPtr = jsonPtr;
-		auto status = item.Unsafe().FromJSON(string_view(jsonPtr, jsonLeft), &jsonPtr, mode == ModeDelete);
+		auto status = item.Unsafe().FromJSON(std::string_view(jsonPtr, jsonLeft), &jsonPtr, mode == ModeDelete);
 		jsonLeft -= (jsonPtr - prevPtr);
 
 		if (!status.ok()) {
@@ -1027,7 +1023,7 @@ int HTTPServer::modifyItemsMsgPack(http::Context &ctx, string &nsName, const vec
 		Item item = db.NewItem(nsName);
 		if (!item.Status().ok()) return msgpackStatus(ctx, http::HttpStatus(item.Status()));
 
-		Error status = item.FromMsgPack(string_view(sbuffer.data(), sbuffer.size()), offset);
+		Error status = item.FromMsgPack(std::string_view(sbuffer.data(), sbuffer.size()), offset);
 		if (!status.ok()) return msgpackStatus(ctx, http::HttpStatus(status));
 
 		item.SetPrecepts(precepts);
@@ -1077,7 +1073,7 @@ int HTTPServer::modifyItemsProtobuf(http::Context &ctx, string &nsName, const ve
 	if (!item.Status().ok()) return sendResponse(0, item.Status());
 
 	string sbuffer = ctx.body->Read();
-	Error status = item.FromProtobuf(string_view(sbuffer.data(), sbuffer.size()));
+	Error status = item.FromProtobuf(std::string_view(sbuffer.data(), sbuffer.size()));
 	if (!status.ok()) return sendResponse(0, status);
 
 	item.SetPrecepts(precepts);
@@ -1108,7 +1104,7 @@ int HTTPServer::modifyItemsTxJSON(http::Context &ctx, Transaction &tx, const vec
 			return jsonStatus(ctx, httpStatus);
 		}
 		char *prevPtr = jsonPtr;
-		auto status = item.FromJSON(string_view(jsonPtr, jsonLeft), &jsonPtr, mode == ModeDelete);
+		auto status = item.FromJSON(std::string_view(jsonPtr, jsonLeft), &jsonPtr, mode == ModeDelete);
 		jsonLeft -= (jsonPtr - prevPtr);
 
 		if (!status.ok()) {
@@ -1132,7 +1128,7 @@ int HTTPServer::modifyItemsTxMsgPack(http::Context &ctx, Transaction &tx, const 
 		Item item = tx.NewItem();
 		if (!item.Status().ok()) return msgpackStatus(ctx, http::HttpStatus(item.Status()));
 
-		Error status = item.FromMsgPack(string_view(sbuffer.data(), sbuffer.size()), offset);
+		Error status = item.FromMsgPack(std::string_view(sbuffer.data(), sbuffer.size()), offset);
 		if (!status.ok()) return msgpackStatus(ctx, http::HttpStatus(status));
 
 		item.SetPrecepts(precepts);
@@ -1150,15 +1146,15 @@ int HTTPServer::modifyItems(http::Context &ctx, ItemModifyMode mode) {
 
 	vector<string> precepts;
 	for (auto &p : ctx.request->params) {
-		if ((p.name == "precepts"_sv) || (p.name == "precepts[]"_sv)) {
+		if ((p.name == "precepts"sv) || (p.name == "precepts[]"sv)) {
 			precepts.push_back(urldecode2(p.val));
 		}
 	}
 
 	auto format = ctx.request->params.Get("format");
-	if (format == "msgpack"_sv) {
+	if (format == "msgpack"sv) {
 		return modifyItemsMsgPack(ctx, nsName, precepts, mode);
-	} else if (format == "protobuf"_sv) {
+	} else if (format == "protobuf"sv) {
 		return modifyItemsProtobuf(ctx, nsName, precepts, mode);
 	} else {
 		return modifyItemsJSON(ctx, nsName, precepts, mode);
@@ -1175,14 +1171,14 @@ int HTTPServer::modifyItemsTx(http::Context &ctx, ItemModifyMode mode) {
 
 	vector<string> precepts;
 	for (auto &p : ctx.request->params) {
-		if ((p.name == "precepts"_sv) || (p.name == "precepts[]"_sv)) {
+		if ((p.name == "precepts"sv) || (p.name == "precepts[]"sv)) {
 			precepts.push_back(urldecode2(p.val));
 		}
 	}
 
-	auto format = ctx.request->params.Get("format"_sv);
+	auto format = ctx.request->params.Get("format"sv);
 	auto tx = getTx(dbName, txId);
-	return format == "msgpack"_sv ? modifyItemsTxMsgPack(ctx, *tx, precepts, mode) : modifyItemsTxJSON(ctx, *tx, precepts, mode);
+	return format == "msgpack"sv ? modifyItemsTxMsgPack(ctx, *tx, precepts, mode) : modifyItemsTxJSON(ctx, *tx, precepts, mode);
 }
 
 int HTTPServer::queryResultsJSON(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
@@ -1205,7 +1201,7 @@ int HTTPServer::queryResultsJSON(http::Context &ctx, reindexer::QueryResults &re
 				res[i].GetJSON(wrSer, false);
 			} else {
 				reindexer::WALRecord rec(res[i].GetRaw());
-				rec.GetJSON(obj, [this, &res, &ctx](string_view cjson) {
+				rec.GetJSON(obj, [this, &res, &ctx](std::string_view cjson) {
 					auto item = getDB(ctx, kRoleDataRead).NewItem(res.GetNamespaces()[0]);
 					item.FromCJSON(cjson);
 					return string(item.GetJSON());
@@ -1289,7 +1285,7 @@ int HTTPServer::queryResultsProtobuf(http::Context &ctx, reindexer::QueryResults
 	}
 
 	int nsField = kProtoQueryResultsFields.at(kParamNamespaces);
-	h_vector<string_view, 1> namespaces(res.GetNamespaces());
+	h_vector<std::string_view, 1> namespaces(res.GetNamespaces());
 	for (auto ns : namespaces) {
 		protobufBuilder.Put(nsField, ns);
 	}
@@ -1335,7 +1331,7 @@ int HTTPServer::queryResultsProtobuf(http::Context &ctx, reindexer::QueryResults
 template <typename Builder>
 void HTTPServer::queryResultParams(Builder &builder, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, bool withColumns,
 								   int width) {
-	h_vector<string_view, 1> namespaces(res.GetNamespaces());
+	h_vector<std::string_view, 1> namespaces(res.GetNamespaces());
 	auto namespacesArray = builder.Array(kParamNamespaces, namespaces.size());
 	for (auto ns : namespaces) {
 		namespacesArray.Put(nullptr, ns);
@@ -1377,16 +1373,16 @@ void HTTPServer::queryResultParams(Builder &builder, reindexer::QueryResults &re
 }
 
 int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset) {
-	string_view widthParam = ctx.request->params.Get("width"_sv);
+	std::string_view widthParam = ctx.request->params.Get("width"sv);
 	int width = stoi(widthParam);
 
-	string_view format = ctx.request->params.Get("format");
-	string_view withColumnsParam = ctx.request->params.Get("with_columns");
+	std::string_view format = ctx.request->params.Get("format");
+	std::string_view withColumnsParam = ctx.request->params.Get("with_columns");
 	bool withColumns = ((withColumnsParam == "1") && (width > 0)) ? true : false;
 
-	if (format == "msgpack"_sv) {
+	if (format == "msgpack"sv) {
 		return queryResultsMsgPack(ctx, res, isQueryResults, limit, offset, withColumns, width);
-	} else if (format == "protobuf"_sv) {
+	} else if (format == "protobuf"sv) {
 		return queryResultsProtobuf(ctx, res, isQueryResults, limit, offset, withColumns, width);
 	} else {
 		return queryResultsJSON(ctx, res, isQueryResults, limit, offset, withColumns, width);
@@ -1394,8 +1390,8 @@ int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, b
 }
 
 int HTTPServer::status(http::Context &ctx, const http::HttpStatus &status) {
-	string_view format = ctx.request->params.Get("format"_sv);
-	if (format == "msgpack"_sv) {
+	std::string_view format = ctx.request->params.Get("format"sv);
+	if (format == "msgpack"sv) {
 		return msgpackStatus(ctx, status);
 	} else if (format == "protobuf") {
 		return protobufStatus(ctx, status);
@@ -1434,7 +1430,7 @@ int HTTPServer::protobufStatus(http::Context &ctx, const http::HttpStatus &statu
 	return ctx.Protobuf(status.code, ser.DetachChunk());
 }
 
-unsigned HTTPServer::prepareLimit(const string_view &limitParam, int limitDefault) {
+unsigned HTTPServer::prepareLimit(std::string_view limitParam, int limitDefault) {
 	int limit = limitDefault;
 
 	if (limitParam.length()) {
@@ -1445,7 +1441,7 @@ unsigned HTTPServer::prepareLimit(const string_view &limitParam, int limitDefaul
 	return static_cast<unsigned>(limit);
 }
 
-unsigned HTTPServer::prepareOffset(const string_view &offsetParam, int offsetDefault) {
+unsigned HTTPServer::prepareOffset(std::string_view offsetParam, int offsetDefault) {
 	int offset = offsetDefault;
 
 	if (offsetParam.length()) {
@@ -1456,7 +1452,7 @@ unsigned HTTPServer::prepareOffset(const string_view &offsetParam, int offsetDef
 	return static_cast<unsigned>(offset);
 }
 
-int HTTPServer::modifyQueryTxImpl(http::Context &ctx, const std::string &dbName, string_view txId, Query &q) {
+int HTTPServer::modifyQueryTxImpl(http::Context &ctx, const std::string &dbName, std::string_view txId, Query &q) {
 	reindexer::QueryResults res;
 	auto tx = getTx(dbName, txId);
 	if (!q.mergeQueries_.empty()) {
@@ -1500,7 +1496,7 @@ Reindexer HTTPServer::getDB(http::Context &ctx, UserRole role, string *dbNameOut
 	return db->NeedTraceActivity() ? db->WithActivityTracer(ctx.request->clientAddr, ctx.request->headers.Get("User-Agent")) : *db;
 }
 
-string HTTPServer::getNameFromJson(string_view json) {
+string HTTPServer::getNameFromJson(std::string_view json) {
 	try {
 		gason::JsonParser parser;
 		auto root = parser.Parse(json);
@@ -1510,16 +1506,16 @@ string HTTPServer::getNameFromJson(string_view json) {
 	}
 }
 
-std::shared_ptr<Transaction> HTTPServer::getTx(const string &dbName, string_view txId) {
+std::shared_ptr<Transaction> HTTPServer::getTx(const string &dbName, std::string_view txId) {
 	std::lock_guard<std::mutex> lck(txMtx_);
 	auto found = txMap_.find(txId);
 	if (found == txMap_.end()) {
-		throw http::HttpStatus(Error(errNotFound, "Invalid tx id"_sv));
+		throw http::HttpStatus(Error(errNotFound, "Invalid tx id"sv));
 	}
 	if (!iequals(found.value().dbName, dbName)) {
-		throw http::HttpStatus(Error(errLogic, "Unexpected database name for this tx"_sv));
+		throw http::HttpStatus(Error(errLogic, "Unexpected database name for this tx"sv));
 	}
-	found.value().txDeadline = TxDeadlineClock::now() + txIdleTimeout_;
+	found.value().txDeadline = TxDeadlineClock::now() + serverConfig_.TxIdleTimeout;
 	return found.value().tx;
 }
 
@@ -1529,7 +1525,7 @@ std::string HTTPServer::addTx(std::string dbName, Transaction &&tx) {
 	TxInfo txInfo;
 	txInfo.tx = std::make_shared<Transaction>(std::move(tx));
 	txInfo.dbName = std::move(dbName);
-	txInfo.txDeadline = TxDeadlineClock::now() + txIdleTimeout_;
+	txInfo.txDeadline = TxDeadlineClock::now() + serverConfig_.TxIdleTimeout;
 	std::lock_guard<std::mutex> lck(txMtx_);
 	auto result = txMap_.try_emplace(txId, std::move(txInfo));
 	if (!result.second) {
@@ -1538,7 +1534,7 @@ std::string HTTPServer::addTx(std::string dbName, Transaction &&tx) {
 	return txId;
 }
 
-void HTTPServer::removeTx(const string &dbName, string_view txId) {
+void HTTPServer::removeTx(const string &dbName, std::string_view txId) {
 	std::lock_guard<std::mutex> lck(txMtx_);
 	auto found = txMap_.find(txId);
 	if (found == txMap_.end() || !iequals(found.value().dbName, dbName)) {
@@ -1575,11 +1571,11 @@ int HTTPServer::CheckAuth(http::Context &ctx) {
 		return 0;
 	}
 
-	string_view authHeader = ctx.request->headers.Get("authorization");
+	std::string_view authHeader = ctx.request->headers.Get("authorization");
 
 	if (authHeader.length() < 6) {
-		ctx.writer->SetHeader({"WWW-Authenticate"_sv, "Basic realm=\"reindexer\""_sv});
-		ctx.String(http::StatusUnauthorized, "Forbidden"_sv);
+		ctx.writer->SetHeader({"WWW-Authenticate"sv, "Basic realm=\"reindexer\""sv});
+		ctx.String(http::StatusUnauthorized, "Forbidden"sv);
 		return -1;
 	}
 
@@ -1592,7 +1588,7 @@ int HTTPServer::CheckAuth(http::Context &ctx) {
 	AuthContext auth(credBuf, password ? password : "");
 	auto status = dbMgr_.Login("", auth);
 	if (!status.ok()) {
-		ctx.writer->SetHeader({"WWW-Authenticate"_sv, "Basic realm=\"reindexer\""_sv});
+		ctx.writer->SetHeader({"WWW-Authenticate"sv, "Basic realm=\"reindexer\""sv});
 		ctx.String(http::StatusUnauthorized, status.what());
 		return -1;
 	}
@@ -1618,7 +1614,7 @@ int HTTPServer::BeginTx(http::Context &ctx) {
 	auto txId = addTx(std::move(dbName), std::move(tx));
 
 	WrSerializer ser;
-	if (ctx.request->params.Get("format"_sv) == "msgpack"_sv) {
+	if (ctx.request->params.Get("format"sv) == "msgpack"sv) {
 		MsgPackBuilder builder(ser, ObjType::TypeObject, 1);
 		builder.Put(kTxId, txId);
 		builder.End();
@@ -1726,7 +1722,7 @@ int HTTPServer::DeleteQueryTx(http::Context &ctx) {
 void HTTPServer::Logger(http::Context &ctx) {
 	HandlerStat statDiff = HandlerStat() - ctx.stat.allocStat;
 	auto clientData = reinterpret_cast<HTTPClientData *>(ctx.clientData.get());
-	if (allocDebug_) {
+	if (serverConfig_.DebugAllocs) {
 		logger_.info("{} - {} {} {} {} {} {}us | allocs: {}, allocated: {} byte(s)", ctx.request->clientAddr,
 					 clientData ? clientData->auth.Login() : "", ctx.request->method, ctx.request->uri, ctx.writer->RespCode(),
 					 ctx.writer->Written(), statDiff.GetTimeElapsed(), statDiff.GetAllocsCnt(), statDiff.GetAllocsBytes());
@@ -1739,7 +1735,7 @@ void HTTPServer::Logger(http::Context &ctx) {
 void HTTPServer::OnResponse(http::Context &ctx) {
 	if (statsWatcher_) {
 		std::string dbName = "<unknown>";
-		if (nullptr != ctx.request && !ctx.request->urlParams.empty() && 0 == ctx.request->path.find("/api/v1/db/"_sv)) {
+		if (nullptr != ctx.request && !ctx.request->urlParams.empty() && 0 == ctx.request->path.find("/api/v1/db/"sv)) {
 			dbName = urldecode2(ctx.request->urlParams[0]);
 		}
 		statsWatcher_->OnInputTraffic(dbName, statsSourceName(), ctx.stat.sizeStat.reqSizeBytes);

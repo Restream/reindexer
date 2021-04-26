@@ -255,7 +255,7 @@ TEST_F(RPCClientTestApi, RenameNamespace) {
 			for (auto it = result.begin(); it != result.end(); ++it) {
 				reindexer::WrSerializer sr;
 				it.GetJSON(sr, false);
-				reindexer::string_view sv = sr.Slice();
+				std::string_view sv = sr.Slice();
 				resStrings.emplace_back(sv.data(), sv.size());
 			}
 		};
@@ -538,16 +538,17 @@ TEST_F(RPCClientTestApi, CoroUpdatesFilteringByNs) {
 	bool finished = false;
 
 	auto mainRoutine = [this, &loop, &finished] {
+		using namespace std::string_view_literals;
 		reindexer::client::CoroReindexer rx;
 		const string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 		auto err = rx.Connect(dsn, loop, reindexer::client::ConnectOpts().CreateDBIfMissing());
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		constexpr auto kNs1Name = "ns1"_sv;
-		constexpr auto kNs2Name = "ns2"_sv;
-		constexpr auto kNs3Name = "ns3"_sv;
-		constexpr auto kNs4Name = "ns4"_sv;
-		constexpr auto kNs5Name = "ns5"_sv;
+		constexpr auto kNs1Name = "ns1"sv;
+		constexpr auto kNs2Name = "ns2"sv;
+		constexpr auto kNs3Name = "ns3"sv;
+		constexpr auto kNs4Name = "ns4"sv;
+		constexpr auto kNs5Name = "ns5"sv;
 
 		CreateNamespace(rx, kNs4Name);
 		CreateNamespace(rx, kNs5Name);

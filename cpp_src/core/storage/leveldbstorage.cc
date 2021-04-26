@@ -17,13 +17,15 @@ void toReadOptions(const StorageOpts& opts, leveldb::ReadOptions& ropts) {
 namespace reindexer {
 namespace datastorage {
 
-constexpr auto kStorageNotInitialized = "Storage is not initialized"_sv;
+using namespace std::string_view_literals;
+
+constexpr auto kStorageNotInitialized = "Storage is not initialized"sv;
 
 LevelDbStorage::LevelDbStorage() {}
 
 LevelDbStorage::~LevelDbStorage() {}
 
-Error LevelDbStorage::Read(const StorageOpts& opts, const string_view& key, string& value) {
+Error LevelDbStorage::Read(const StorageOpts& opts, std::string_view key, string& value) {
 	if (!db_) throw Error(errParams, kStorageNotInitialized);
 
 	leveldb::ReadOptions options;
@@ -33,7 +35,7 @@ Error LevelDbStorage::Read(const StorageOpts& opts, const string_view& key, stri
 	return Error(status.IsNotFound() ? errNotFound : errLogic, status.ToString());
 }
 
-Error LevelDbStorage::Write(const StorageOpts& opts, const string_view& key, const string_view& value) {
+Error LevelDbStorage::Write(const StorageOpts& opts, std::string_view key, std::string_view value) {
 	if (!db_) throw Error(errParams, kStorageNotInitialized);
 
 	leveldb::WriteOptions options;
@@ -54,7 +56,7 @@ Error LevelDbStorage::Write(const StorageOpts& opts, UpdatesCollection& buffer) 
 	return Error(status.IsNotFound() ? errNotFound : errLogic, status.ToString());
 }
 
-Error LevelDbStorage::Delete(const StorageOpts& opts, const string_view& key) {
+Error LevelDbStorage::Delete(const StorageOpts& opts, std::string_view key) {
 	if (!db_) throw Error(errParams, kStorageNotInitialized);
 
 	leveldb::WriteOptions options;
@@ -141,11 +143,11 @@ LevelDbBatchBuffer::LevelDbBatchBuffer() {}
 
 LevelDbBatchBuffer::~LevelDbBatchBuffer() {}
 
-void LevelDbBatchBuffer::Put(const string_view& key, const string_view& value) {
+void LevelDbBatchBuffer::Put(std::string_view key, std::string_view value) {
 	batchWrite_.Put(leveldb::Slice(key.data(), key.size()), leveldb::Slice(value.data(), value.size()));
 }
 
-void LevelDbBatchBuffer::Remove(const string_view& key) { batchWrite_.Delete(leveldb::Slice(key.data(), key.size())); }
+void LevelDbBatchBuffer::Remove(std::string_view key) { batchWrite_.Delete(leveldb::Slice(key.data(), key.size())); }
 
 void LevelDbBatchBuffer::Clear() { batchWrite_.Clear(); }
 
@@ -159,25 +161,25 @@ void LevelDbIterator::SeekToFirst() { return iterator_->SeekToFirst(); }
 
 void LevelDbIterator::SeekToLast() { return iterator_->SeekToLast(); }
 
-void LevelDbIterator::Seek(const string_view& target) { return iterator_->Seek(leveldb::Slice(target.data(), target.size())); }
+void LevelDbIterator::Seek(std::string_view target) { return iterator_->Seek(leveldb::Slice(target.data(), target.size())); }
 
 void LevelDbIterator::Next() { return iterator_->Next(); }
 
 void LevelDbIterator::Prev() { return iterator_->Prev(); }
 
-string_view LevelDbIterator::Key() const {
+std::string_view LevelDbIterator::Key() const {
 	leveldb::Slice key = iterator_->key();
-	return string_view(key.data(), key.size());
+	return std::string_view(key.data(), key.size());
 }
 
-string_view LevelDbIterator::Value() const {
+std::string_view LevelDbIterator::Value() const {
 	leveldb::Slice key = iterator_->value();
-	return string_view(key.data(), key.size());
+	return std::string_view(key.data(), key.size());
 }
 
 Comparator& LevelDbIterator::GetComparator() { return comparator_; }
 
-int LevelDbComparator::Compare(const string_view& a, const string_view& b) const {
+int LevelDbComparator::Compare(std::string_view a, std::string_view b) const {
 	leveldb::Options options;
 	return options.comparator->Compare(leveldb::Slice(a.data(), a.size()), leveldb::Slice(b.data(), b.size()));
 }
@@ -188,4 +190,4 @@ LevelDbSnapshot::~LevelDbSnapshot() { snapshot_ = nullptr; }
 }  // namespace datastorage
 }  // namespace reindexer
 
-#endif  // REINDEX_WITH_LEVELDB
+#endif	// REINDEX_WITH_LEVELDB

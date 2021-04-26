@@ -11,9 +11,6 @@
 
 namespace reindexer_tool {
 
-using std::vector;
-using std::unordered_map;
-
 struct IExecutorsCommand;
 
 class CancelContext : public reindexer::IRdxCancelContext {
@@ -75,8 +72,8 @@ protected:
 	Error getAvailableDatabases(vector<string>&);
 
 	void addCommandsSuggestions(std::string const& input, std::vector<string>& suggestions);
-	void checkForNsNameMatch(string_view str, std::vector<string>& suggestions);
-	void checkForCommandNameMatch(string_view str, std::initializer_list<string_view> cmds, std::vector<string>& suggestions);
+	void checkForNsNameMatch(std::string_view str, std::vector<string>& suggestions);
+	void checkForCommandNameMatch(std::string_view str, std::initializer_list<std::string_view> cmds, std::vector<string>& suggestions);
 
 	Error processImpl(const std::string& command);
 	Error stop(bool terminate);
@@ -99,9 +96,9 @@ protected:
 	Error seedBenchItems();
 	std::function<void(std::chrono::system_clock::time_point)> getBenchWorkerFn(std::atomic<int>& count, std::atomic<int>& errCount);
 
-	void OnWALUpdate(reindexer::LSNPair LSNs, string_view nsName, const reindexer::WALRecord& wrec) override final;
+	void OnWALUpdate(reindexer::LSNPair LSNs, std::string_view nsName, const reindexer::WALRecord& wrec) override final;
 	void OnConnectionState(const Error& err) override;
-	void OnUpdatesLost(string_view nsName) override final;
+	void OnUpdatesLost(std::string_view nsName) override final;
 
 	DBInterface db() { return db_.WithContext(&cancelCtx_); }
 
@@ -218,7 +215,7 @@ protected:
 	DBInterface db_;
 	Output output_;
 	int numThreads_;
-	unordered_map<string, string> variables_;
+	std::unordered_map<string, string> variables_;
 	httpparser::UrlParser uri_;
 	reindexer::net::ev::async cmdAsync_;
 	std::mutex mtx_;
@@ -227,6 +224,7 @@ protected:
 	IExecutorsCommand* curCmd_ = nullptr;
 	reindexer::coroutine::channel<bool> stopCh_;
 	std::thread executorThr_;
+	bool fromFile_ = {false};
 };
 
 }  // namespace reindexer_tool

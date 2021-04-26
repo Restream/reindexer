@@ -55,39 +55,39 @@ public:
 	/// StorageOpts::Enabled() - Enable storage. If storage is disabled, then namespace will be completely in-memory<br>
 	/// StorageOpts::CreateIfMissing () - Storage will be created, if missing
 	/// @return errOK - On success
-	Error OpenNamespace(string_view nsName, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing());
+	Error OpenNamespace(std::string_view nsName, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing());
 	/// Create new namespace. Will fail, if namespace already exists
 	/// @param nsDef - NamespaceDef with namespace initial parameters
 	Error AddNamespace(const NamespaceDef &nsDef);
 	/// Close namespace. Will free all memory resorces, associated with namespace. Forces sync changes to disk
 	/// @param nsName - Name of namespace
-	Error CloseNamespace(string_view nsName);
+	Error CloseNamespace(std::string_view nsName);
 	/// Drop namespace. Will free all memory resorces, associated with namespace and erase all files from disk
 	/// @param nsName - Name of namespace
-	Error DropNamespace(string_view nsName);
+	Error DropNamespace(std::string_view nsName);
 	/// Delete all items in namespace
 	/// @param nsName - Name of namespace
-	Error TruncateNamespace(string_view nsName);
+	Error TruncateNamespace(std::string_view nsName);
 	/// Rename namespace. If namespace with dstNsName exists, then it is replaced.
 	/// @param srcNsName  - Name of namespace
 	/// @param dstNsName  - desired name of namespace
-	Error RenameNamespace(string_view srcNsName, const std::string &dstNsName);
+	Error RenameNamespace(std::string_view srcNsName, const std::string &dstNsName);
 	/// Add index to namespace
 	/// @param nsName - Name of namespace
 	/// @param index - IndexDef with index name and parameters
-	Error AddIndex(string_view nsName, const IndexDef &index);
+	Error AddIndex(std::string_view nsName, const IndexDef &index);
 	/// Update index in namespace
 	/// @param nsName - Name of namespace
 	/// @param index - IndexDef with index name and parameters
-	Error UpdateIndex(string_view nsName, const IndexDef &index);
+	Error UpdateIndex(std::string_view nsName, const IndexDef &index);
 	/// Drop index from namespace
 	/// @param nsName - Name of namespace
 	/// @param index - index name
-	Error DropIndex(string_view nsName, const IndexDef &index);
+	Error DropIndex(std::string_view nsName, const IndexDef &index);
 	/// Set fields schema for namespace
 	/// @param nsName - Name of namespace
 	/// @param schema - JSON in JsonSchema format
-	Error SetSchema(string_view nsName, string_view schema);
+	Error SetSchema(std::string_view nsName, std::string_view schema);
 	/// Get list of all available namespaces
 	/// @param defs - std::vector of NamespaceDef of available namespaves
 	/// @param opts - Enumerartion options
@@ -100,18 +100,18 @@ public:
 	/// May be used with completion
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
-	Error Insert(string_view nsName, Item &item);
+	Error Insert(std::string_view nsName, Item &item);
 	/// Update Item in namespace. If item with same PK is not exists, when item.GetID will
 	/// return -1, on success item.GetID() will return internal Item ID
 	/// May be used with completion
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
-	Error Update(string_view nsName, Item &item);
+	Error Update(std::string_view nsName, Item &item);
 	/// Update or Insert Item in namespace. On success item.GetID() will return internal Item ID
 	/// May be used with completion
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
-	Error Upsert(string_view nsName, Item &item);
+	Error Upsert(std::string_view nsName, Item &item);
 	/// Updates all items in namespace, that satisfy provided query.
 	/// @param query - Query to define items set for update.
 	/// @param result - QueryResults with IDs of deleted items.
@@ -120,7 +120,7 @@ public:
 	/// May be used with completion
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
-	Error Delete(string_view nsName, Item &item);
+	Error Delete(std::string_view nsName, Item &item);
 	/// Delete all items froms namespace, which matches provided Query
 	/// @param query - Query with conditions
 	/// @param result - QueryResults with IDs of deleted items
@@ -129,7 +129,7 @@ public:
 	/// May be used with completion
 	/// @param query - SQL query. Only "SELECT" semantic is supported
 	/// @param result - QueryResults with found items
-	Error Select(string_view query, CoroQueryResults &result);
+	Error Select(std::string_view query, CoroQueryResults &result);
 	/// Execute Query and return results
 	/// May be used with completion
 	/// @param query - Query object with query attributes
@@ -137,25 +137,25 @@ public:
 	Error Select(const Query &query, CoroQueryResults &result);
 	/// Flush changes to storage
 	/// @param nsName - Name of namespace
-	Error Commit(string_view nsName);
+	Error Commit(std::string_view nsName);
 	/// Allocate new item for namespace
 	/// @param nsName - Name of namespace
 	/// @return Item ready for filling and futher Upsert/Insert/Delete/Update call
-	Item NewItem(string_view nsName);
+	Item NewItem(std::string_view nsName);
 	/// Get meta data from storage by key
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
 	/// @param data - output string with meta data
-	Error GetMeta(string_view nsName, const string &key, string &data);
+	Error GetMeta(std::string_view nsName, const string &key, string &data);
 	/// Put meta data to storage by key
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
 	/// @param data - string with meta data
-	Error PutMeta(string_view nsName, const string &key, const string_view &data);
+	Error PutMeta(std::string_view nsName, const string &key, std::string_view data);
 	/// Get list of all meta data keys
 	/// @param nsName - Name of namespace
 	/// @param keys - std::vector filled with meta keys
-	Error EnumMeta(string_view nsName, vector<string> &keys);
+	Error EnumMeta(std::string_view nsName, vector<string> &keys);
 	/// Subscribe to updates of database
 	/// @param observer - Observer interface, which will receive updates
 	/// @param filters - Subscription filters set
@@ -169,12 +169,12 @@ public:
 	/// @param sqlQuery - sql query.
 	/// @param pos - position in sql query for suggestions.
 	/// @param suggestions - all the suggestions for 'pos' position in query.
-	Error GetSqlSuggestions(const string_view sqlQuery, int pos, vector<string> &suggestions);
+	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, vector<string> &suggestions);
 	/// Get curret connection status
 	Error Status();
 	/// Allocate new transaction for namespace
 	/// @param nsName - Name of namespace
-	CoroTransaction NewTransaction(string_view nsName);
+	CoroTransaction NewTransaction(std::string_view nsName);
 	/// Commit transaction - transaction will be deleted after commit
 	/// @param tr - transaction to commit
 	Error CommitTransaction(CoroTransaction &tr);

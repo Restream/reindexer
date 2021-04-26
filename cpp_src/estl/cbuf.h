@@ -4,6 +4,7 @@
 #include <climits>
 #include <memory>
 #include "span.h"
+#include "tools/errors.h"
 
 namespace reindexer {
 
@@ -82,7 +83,8 @@ public:
 	}
 
 	size_t erase(size_t s_erase) noexcept {
-		assert(s_erase <= size());
+		assertf(s_erase <= size(), "s_erase=%d, size()=%d, tail=%d,head=%d,full=%d", int(s_erase), int(size()), int(tail_), int(head_),
+				int(full_));
 
 		tail_ = (tail_ + s_erase) % buf_size_;
 		full_ = full_ && (s_erase == 0);

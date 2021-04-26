@@ -75,7 +75,7 @@ TEST(Coroutines, StressTest) {
 	size_t finishedCoroutines = 0;
 	auto cbId =
 		reindexer::coroutine::add_completion_callback([&finishedCoroutines](reindexer::coroutine::routine_t) { ++finishedCoroutines; });
-	for (size_t i = 0; i < 25; ++i) {
+	for (size_t i = 0; i < 50; ++i) {
 		loop.spawn([&loop, &counter, &vec] {
 			for (size_t i = 0; i < 100; ++i) {
 				constexpr size_t kCnt = 5;
@@ -103,7 +103,7 @@ TEST(Coroutines, StressTest) {
 		});
 	}
 	loop.run();
-	constexpr size_t kExpectedTotal = 15025;
+	constexpr size_t kExpectedTotal = 30050;
 	ASSERT_EQ(counter, kExpectedTotal);
 	ASSERT_EQ(finishedCoroutines, kExpectedTotal);
 	auto res = reindexer::coroutine::remove_completion_callback(cbId);

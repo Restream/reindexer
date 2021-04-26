@@ -57,7 +57,7 @@ TEST_F(GrpcClientApi, SelectJSON) {
 	// Read answer and make sure output JSON has a correct format
 	reindexer::grpc::QueryResultsResponse response;
 	while (reader->Read(&response)) {
-		string_view json(response.data().c_str(), response.data().length());
+		std::string_view json(response.data().c_str(), response.data().length());
 		gason::JsonNode root;
 		gason::JsonParser parser;
 		size_t len = 0;
@@ -66,14 +66,14 @@ TEST_F(GrpcClientApi, SelectJSON) {
 
 		for (auto elem : root) {
 			gason::JsonValue& v(elem.value);
-			string_view name(elem.key);
+			std::string_view name(elem.key);
 			if (name == "items") {
 				ASSERT_TRUE(v.getTag() == gason::JSON_ARRAY);
 				for (auto element : v) {
 					auto& object = element->value;
 					ASSERT_TRUE(object.getTag() == gason::JSON_OBJECT);
 					for (auto field : object) {
-						name = string_view(field->key);
+						name = std::string_view(field->key);
 						gason::JsonValue& fieldValue(field->value);
 						if (name == "id") {
 							ASSERT_TRUE(fieldValue.getTag() == gason::JSON_NUMBER);
@@ -82,7 +82,7 @@ TEST_F(GrpcClientApi, SelectJSON) {
 							for (auto item : fieldValue) {
 								ASSERT_TRUE(item->value.getTag() == gason::JSON_OBJECT);
 								for (auto joinedField : item->value) {
-									name = string_view(joinedField->key);
+									name = std::string_view(joinedField->key);
 									gason::JsonValue& joinedFieldValue(joinedField->value);
 									if (name == "id") {
 										ASSERT_TRUE(joinedFieldValue.getTag() == gason::JSON_NUMBER);
@@ -104,7 +104,7 @@ TEST_F(GrpcClientApi, SelectJSON) {
 					auto& object = element->value;
 					ASSERT_TRUE(object.getTag() == gason::JSON_OBJECT);
 					for (auto field : object) {
-						name = string_view(field->key);
+						name = std::string_view(field->key);
 						gason::JsonValue& fieldValue(field->value);
 						if (name == "type") {
 							ASSERT_TRUE(fieldValue.getTag() == gason::JSON_STRING);

@@ -1,11 +1,11 @@
 #pragma once
 
 #include <mutex>
+#include <string_view>
 #include <vector>
 #include "core/lsn.h"
 #include "estl/h_vector.h"
 #include "estl/shared_mutex.h"
-#include "estl/string_view.h"
 #include "replicator/walrecord.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
@@ -38,11 +38,11 @@ public:
 	/// Add new filter for specified namespace. Doesn't merge filters, just concatenates it into disjunction sequence
 	/// @param ns - Namespace
 	/// @param filter - Filter to add
-	void AddFilter(string_view ns, Filter filter);
+	void AddFilter(std::string_view ns, Filter filter);
 	/// Check if filters set allows this namespace
 	/// @param ns - Namespace
 	/// @return 'true' if filter's conditions are satisfied
-	bool Check(string_view ns) const;
+	bool Check(std::string_view ns) const;
 
 	Error FromJSON(span<char> json);
 	void FromJSON(const gason::JsonNode &root);
@@ -59,8 +59,8 @@ private:
 class IUpdatesObserver {
 public:
 	virtual ~IUpdatesObserver() = default;
-	virtual void OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &rec) = 0;
-	virtual void OnUpdatesLost(string_view nsName) = 0;
+	virtual void OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &rec) = 0;
+	virtual void OnUpdatesLost(std::string_view nsName) = 0;
 	virtual void OnConnectionState(const Error &err) = 0;
 };
 
@@ -75,11 +75,11 @@ public:
 	Error Delete(IUpdatesObserver *observer);
 	std::vector<ObserverInfo> Get() const;
 
-	void OnModifyItem(LSNPair LSNs, string_view nsName, ItemImpl *item, int modifyMode, bool inTransaction);
+	void OnModifyItem(LSNPair LSNs, std::string_view nsName, ItemImpl *item, int modifyMode, bool inTransaction);
 
-	void OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &rec);
+	void OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &rec);
 
-	void OnUpdatesLost(string_view nsName);
+	void OnUpdatesLost(std::string_view nsName);
 
 	void OnConnectionState(const Error &err);
 	bool Empty() {

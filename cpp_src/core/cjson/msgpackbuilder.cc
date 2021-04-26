@@ -39,7 +39,7 @@ void MsgPackBuilder::Array(int tagName, Serializer &ser, int tagType, int count)
 	while (count--) packCJsonValue(tagType, ser);
 }
 
-MsgPackBuilder &MsgPackBuilder::Json(string_view name, string_view arg) {
+MsgPackBuilder &MsgPackBuilder::Json(std::string_view name, std::string_view arg) {
 	gason::JsonParser parser;
 	auto root = parser.Parse(arg);
 	appendJsonObject(name, root);
@@ -101,11 +101,11 @@ void MsgPackBuilder::packCJsonValue(int tagType, Serializer &rdser) {
 	}
 }
 
-void MsgPackBuilder::appendJsonObject(string_view name, const gason::JsonNode &obj) {
+void MsgPackBuilder::appendJsonObject(std::string_view name, const gason::JsonNode &obj) {
 	auto type = obj.value.getTag();
 	switch (type) {
 		case gason::JSON_STRING: {
-			Put(name, obj.As<string_view>());
+			Put(name, obj.As<std::string_view>());
 			break;
 		}
 		case gason::JSON_NUMBER: {
@@ -126,26 +126,26 @@ void MsgPackBuilder::appendJsonObject(string_view name, const gason::JsonNode &o
 			if (type == gason::JSON_OBJECT) {
 				auto pack = Object(name, size);
 				for (const auto &node : obj) {
-					pack.appendJsonObject(string_view(node.key), node);
+					pack.appendJsonObject(std::string_view(node.key), node);
 				}
 			} else {
 				auto pack = Array(name, size);
 				for (const auto &node : obj) {
-					pack.appendJsonObject(string_view(), node);
+					pack.appendJsonObject(std::string_view(), node);
 				}
 			}
 			break;
 		}
 		case gason::JSON_TRUE: {
-			Put(string_view(obj.key), true);
+			Put(std::string_view(obj.key), true);
 			break;
 		}
 		case gason::JSON_FALSE: {
-			Put(string_view(obj.key), false);
+			Put(std::string_view(obj.key), false);
 			break;
 		}
 		case gason::JSON_NULL: {
-			Null(string_view(obj.key));
+			Null(std::string_view(obj.key));
 			break;
 		}
 		default:

@@ -40,7 +40,7 @@ class BaseEncoder {
 public:
 	BaseEncoder(const TagsMatcher *tagsMatcher, const FieldsSet *filter = nullptr);
 	void Encode(ConstPayload *pl, Builder &builder, IAdditionalDatasource<Builder> * = nullptr);
-	void Encode(string_view tuple, Builder &wrSer, IAdditionalDatasource<Builder> *);
+	void Encode(std::string_view tuple, Builder &wrSer, IAdditionalDatasource<Builder> *);
 
 	const TagsLengths &GetTagsMeasures(ConstPayload *pl, IEncoderDatasourceWithJoins *ds = nullptr);
 
@@ -50,7 +50,7 @@ protected:
 	bool collectTagsSizes(ConstPayload *pl, Serializer &rdser);
 	void collectJoinedItemsTagsSizes(IEncoderDatasourceWithJoins *ds, size_t rowid);
 
-	string_view getPlTuple(ConstPayload *pl);
+	std::string_view getPlTuple(ConstPayload *pl);
 
 	const TagsMatcher *tagsMatcher_;
 	int fieldsoutcnt_[maxIndexes];

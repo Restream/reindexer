@@ -4,11 +4,11 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include "core/keyvalue/p_string.h"
 #include "estl/chunk_buf.h"
 #include "estl/h_vector.h"
 #include "estl/span.h"
-#include "estl/string_view.h"
 
 namespace reindexer {
 
@@ -43,7 +43,7 @@ struct SharedWALRecord {
 		p_string nsName, pwalRec;
 	};
 	SharedWALRecord(intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> packed = nullptr) : packed_(packed) {}
-	SharedWALRecord(int64_t upstreamLSN, int64_t originLSN, string_view nsName, const WALRecord &rec);
+	SharedWALRecord(int64_t upstreamLSN, int64_t originLSN, std::string_view nsName, const WALRecord &rec);
 	Unpacked Unpack();
 
 	intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> packed_;
@@ -51,29 +51,29 @@ struct SharedWALRecord {
 
 struct WALRecord {
 	explicit WALRecord(span<uint8_t>);
-	explicit WALRecord(string_view sv);
+	explicit WALRecord(std::string_view sv);
 	explicit WALRecord(WALRecType _type = WalEmpty, IdType _id = 0, bool inTx = false) : type(_type), id(_id), inTransaction(inTx) {}
-	explicit WALRecord(WALRecType _type, string_view _data, bool inTx = false) : type(_type), data(_data), inTransaction(inTx) {}
-	explicit WALRecord(WALRecType _type, string_view key, string_view value) : type(_type), putMeta{key, value} {}
-	explicit WALRecord(WALRecType _type, string_view cjson, int tmVersion, int modifyMode, bool inTx = false)
+	explicit WALRecord(WALRecType _type, std::string_view _data, bool inTx = false) : type(_type), data(_data), inTransaction(inTx) {}
+	explicit WALRecord(WALRecType _type, std::string_view key, std::string_view value) : type(_type), putMeta{key, value} {}
+	explicit WALRecord(WALRecType _type, std::string_view cjson, int tmVersion, int modifyMode, bool inTx = false)
 		: type(_type), itemModify{cjson, tmVersion, modifyMode}, inTransaction(inTx) {}
-	WrSerializer &Dump(WrSerializer &ser, std::function<std::string(string_view)> cjsonViewer) const;
-	void GetJSON(JsonBuilder &jb, std::function<string(string_view)> cjsonViewer) const;
+	WrSerializer &Dump(WrSerializer &ser, std::function<std::string(std::string_view)> cjsonViewer) const;
+	void GetJSON(JsonBuilder &jb, std::function<string(std::string_view)> cjsonViewer) const;
 	void Pack(WrSerializer &ser) const;
-	SharedWALRecord GetShared(int64_t lsn, int64_t upstreamLSN, string_view nsName) const;
+	SharedWALRecord GetShared(int64_t lsn, int64_t upstreamLSN, std::string_view nsName) const;
 
 	WALRecType type;
 	union {
 		IdType id;
-		string_view data;
+		std::string_view data;
 		struct {
-			string_view itemCJson;
+			std::string_view itemCJson;
 			int tmVersion;
 			int modifyMode;
 		} itemModify;
 		struct {
-			string_view key;
-			string_view value;
+			std::string_view key;
+			std::string_view value;
 		} putMeta;
 	};
 	bool inTransaction = false;

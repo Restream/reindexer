@@ -17,7 +17,7 @@ inline std::string StorageTypeToString(StorageType type) {
 	return kLevelDBName;
 }
 
-inline StorageType StorageTypeFromString(string_view str) {
+inline StorageType StorageTypeFromString(std::string_view str) {
 	if (str.empty()) {
 		return StorageType::LevelDB;
 	}

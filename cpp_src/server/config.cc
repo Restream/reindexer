@@ -14,6 +14,7 @@ void ServerConfig::Reset() {
 	HTTPAddr = "0.0.0.0:9088";
 	RPCAddr = "0.0.0.0:6534";
 	GRPCAddr = "0.0.0.0:16534";
+	ThreadingMode = kSharedThreading;
 	LogLevel = "info";
 	ServerLog = "stdout";
 	CoreLog = "stdout";
@@ -42,6 +43,10 @@ void ServerConfig::Reset() {
 	MaxUpdatesSize = 1024 * 1024 * 1024;
 	EnableGRPC = false;
 }
+
+const string ServerConfig::kDedicatedThreading = "dedicated";
+const string ServerConfig::kSharedThreading = "shared";
+const string ServerConfig::kPoolThreading = "pool";
 
 reindexer::Error ServerConfig::ParseYaml(const std::string &yaml) {
 	Error err;
@@ -97,6 +102,8 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::Group netGroup(parser, "Network options");
 	args::ValueFlag<string> httpAddrF(netGroup, "PORT", "http listen host:port", {'p', "httpaddr"}, HTTPAddr, args::Options::Single);
 	args::ValueFlag<string> rpcAddrF(netGroup, "RPORT", "RPC listen host:port", {'r', "rpcaddr"}, RPCAddr, args::Options::Single);
+	args::ValueFlag<string> threadingModeF(netGroup, "THREADING", "Connections threading mode: shared or dedicated", {'X', "threading"},
+										   ThreadingMode, args::Options::Single);
 #ifdef WITH_GRPC
 	args::ValueFlag<string> grpcAddrF(netGroup, "GPORT", "GRPC listen host:port", {'g', "grpcaddr"}, RPCAddr, args::Options::Single);
 	args::Flag grpcF(netGroup, "", "Enable gRpc service", {"grpc"});
@@ -156,6 +163,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (logLevelF) LogLevel = args::get(logLevelF);
 	if (httpAddrF) HTTPAddr = args::get(httpAddrF);
 	if (rpcAddrF) RPCAddr = args::get(rpcAddrF);
+	if (threadingModeF) ThreadingMode = args::get(threadingModeF);
 	if (webRootF) WebRoot = args::get(webRootF);
 #ifndef _WIN32
 	if (userF) UserName = args::get(userF);
@@ -200,6 +208,7 @@ reindexer::Error ServerConfig::fromYaml(Yaml::Node &root) {
 		RpcLog = root["logger"]["rpclog"].As<std::string>(RpcLog);
 		HTTPAddr = root["net"]["httpaddr"].As<std::string>(HTTPAddr);
 		RPCAddr = root["net"]["rpcaddr"].As<std::string>(RPCAddr);
+		ThreadingMode = root["net"]["threading"].As<std::string>(ThreadingMode);
 		WebRoot = root["net"]["webroot"].As<std::string>(WebRoot);
 		MaxUpdatesSize = root["net"]["maxupdatessize"].As<size_t>(MaxUpdatesSize);
 		EnableSecurity = root["net"]["security"].As<bool>(EnableSecurity);

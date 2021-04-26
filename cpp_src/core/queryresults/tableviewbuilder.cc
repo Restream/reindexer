@@ -172,7 +172,7 @@ void TableViewBuilder<QueryResultsT>::BuildHeader(std::ostream& o, TableCalculat
 }
 
 template <typename QueryResultsT>
-bool TableViewBuilder<QueryResultsT>::isValueMultiline(string_view value, bool breakingTheLine, const ColumnData& columnData,
+bool TableViewBuilder<QueryResultsT>::isValueMultiline(std::string_view value, bool breakingTheLine, const ColumnData& columnData,
 													   int symbolsTillTheEOFLine) {
 	return (breakingTheLine && columnData.PossibleToBreakTheLine() &&
 			((symbolsTillTheEOFLine >= 4) || (symbolsTillTheEOFLine >= 2 && columnData.IsBoolean())) &&
@@ -271,7 +271,7 @@ void TableViewBuilder<QueryResultsT>::BuildTable(std::ostream& o, TableCalculato
 }
 
 template <typename QueryResultsT>
-int TableViewBuilder<QueryResultsT>::computeFieldWidth(string_view str, int maxWidth) {
+int TableViewBuilder<QueryResultsT>::computeFieldWidth(std::string_view str, int maxWidth) {
 	int terminalWidth = getStringTerminalWidth(str) + (maxWidth - str.length());
 	int delta = maxWidth - terminalWidth;
 	if (delta > 0) {

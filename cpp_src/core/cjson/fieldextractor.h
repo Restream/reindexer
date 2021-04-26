@@ -27,10 +27,13 @@ public:
 
 	FieldsExtractor Object(int) { return FieldsExtractor(values_, expectedType_, expectedPathDepth_ - 1, filter_, index_, length_); }
 	FieldsExtractor Array(int) { return FieldsExtractor(values_, expectedType_, expectedPathDepth_ - 1, filter_, index_, length_); }
-	FieldsExtractor Object(string_view) {
+	FieldsExtractor Object(std::string_view) {
 		return FieldsExtractor(values_, expectedType_, expectedPathDepth_ - 1, filter_, index_, length_);
 	}
-	FieldsExtractor Array(string_view) { return FieldsExtractor(values_, expectedType_, expectedPathDepth_ - 1, filter_, index_, length_); }
+	FieldsExtractor Object(std::nullptr_t) { return Object(std::string_view{}); }
+	FieldsExtractor Array(std::string_view) {
+		return FieldsExtractor(values_, expectedType_, expectedPathDepth_ - 1, filter_, index_, length_);
+	}
 
 	template <typename T>
 	void Array(int, span<T> data, int offset) {

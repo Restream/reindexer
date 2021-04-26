@@ -19,7 +19,7 @@ public:
 	/// Parses pure sql select query and initializes Query object data members as a result.
 	/// @param q - sql query.
 	/// @return always returns 0.
-	int Parse(const string_view &q);
+	int Parse(std::string_view q);
 
 protected:
 	/// Sql parser context
@@ -113,7 +113,7 @@ protected:
 	/// Parse merge entries
 	void parseMerge(tokenizer &parser);
 
-	static CondType getCondType(string_view cond);
+	static CondType getCondType(std::string_view cond);
 	SqlParsingCtx ctx_;
 	Query &query_;
 };

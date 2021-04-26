@@ -74,7 +74,7 @@ public:
 	ProtobufDecoder& operator=(const ProtobufDecoder&) = delete;
 	ProtobufDecoder& operator=(ProtobufDecoder&&) = delete;
 
-	Error Decode(string_view buf, Payload* pl, WrSerializer& wrser);
+	Error Decode(std::string_view buf, Payload* pl, WrSerializer& wrser);
 
 private:
 	void setValue(Payload* pl, CJsonBuilder& builder, const ProtobufValue& item);

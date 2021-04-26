@@ -7,8 +7,6 @@
 #include "reindexer_api.h"
 #include "schema.pb.h"
 
-using reindexer::string_view;
-
 const int64_t KIdValue = 13;
 const string kNameValue = "John White Snow";
 const int64_t kAgeValue = 21;
@@ -43,7 +41,7 @@ TEST_F(ReindexerApi, ProtobufConvesrionTest) {
                           })z";
 	// clang-format on
 
-	const string_view nsName = "conversion_namespace";
+	const std::string_view nsName = "conversion_namespace";
 	Error err = rt.reindexer->OpenNamespace(nsName);
 	ASSERT_TRUE(err.ok()) << err.what();
 

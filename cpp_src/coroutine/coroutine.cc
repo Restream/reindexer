@@ -3,6 +3,10 @@
 #include <chrono>
 #include <thread>
 
+#ifdef REINDEX_WITH_TSAN_FIBERS
+#include <sanitizer/tsan_interface.h>
+#endif	// REINDEX_WITH_TSAN_FIBERS
+
 namespace reindexer {
 namespace coroutine {
 
@@ -49,6 +53,11 @@ int ordinator::resume(routine_t id) {
 			owner = &routines_[current_ - 1];
 		}
 		current_ = id;
+
+#ifdef REINDEX_WITH_TSAN_FIBERS
+		__tsan_switch_to_fiber(routine.tsan_fiber_, 0);
+#endif	// REINDEX_WITH_TSAN_FIBERS
+
 		from = jump_fcontext(routine.ctx_, owner);	// Switch context
 													// It's unsafe to use routine reference after jump
 	}
@@ -161,6 +170,14 @@ void ordinator::entry(transfer_t from) {
 	jump_to_parent(nullptr);
 }
 
+#ifdef REINDEX_WITH_TSAN_FIBERS
+ordinator::routine::~routine() {
+	if (tsan_fiber_) {
+		__tsan_destroy_fiber(tsan_fiber_);
+	}
+}
+#endif	// REINDEX_WITH_TSAN_FIBERS
+
 void ordinator::routine::finalize() noexcept {
 	assert(!is_finialized());
 	finalized_ = true;
@@ -168,6 +185,12 @@ void ordinator::routine::finalize() noexcept {
 
 void ordinator::routine::clear() noexcept {
 	assert(is_finialized());
+#ifdef REINDEX_WITH_TSAN_FIBERS
+	if (tsan_fiber_) {
+		__tsan_destroy_fiber(tsan_fiber_);
+		tsan_fiber_ = nullptr;
+	}
+#endif	// REINDEX_WITH_TSAN_FIBERS
 	std::vector<char> v;
 	v.swap(stack_);	 // Trying to deallocate
 }
@@ -176,6 +199,11 @@ void ordinator::routine::create_ctx() {
 	assert(is_empty());
 	stack_.resize(stack_size_);
 	ctx_ = make_fcontext(stack_.data() + stack_size_, stack_size_, static_entry);
+
+#ifdef REINDEX_WITH_TSAN_FIBERS
+	assert(!tsan_fiber_);
+	tsan_fiber_ = __tsan_create_fiber(0);
+#endif	// REINDEX_WITH_TSAN_FIBERS
 }
 
 bool ordinator::routine::validate_stack() const noexcept {
@@ -184,7 +212,11 @@ bool ordinator::routine::validate_stack() const noexcept {
 	return size_t(stack_top - &stack_bottom) <= stack_size_;
 }
 
-ordinator::ordinator() noexcept : current_(0) {}
+ordinator::ordinator() noexcept : current_(0) {
+#ifdef REINDEX_WITH_TSAN_FIBERS
+	tsan_fiber_ = __tsan_get_current_fiber();
+#endif	// REINDEX_WITH_TSAN_FIBERS
+}
 
 void ordinator::push_to_call_stack(routine_t id) {
 	if (id) {
@@ -226,6 +258,11 @@ transfer_t ordinator::jump_to_parent(void *from_rt) noexcept {
 	if (current_ > 0) {
 		owner = &routines_[current_ - 1];
 	}
+
+#ifdef REINDEX_WITH_TSAN_FIBERS
+	__tsan_switch_to_fiber(owner->tsan_fiber_, 0);
+#endif	// REINDEX_WITH_TSAN_FIBERS
+
 	return jump_fcontext(owner->ctx_, from_rt);
 }
 

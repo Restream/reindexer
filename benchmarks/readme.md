@@ -138,7 +138,7 @@ BenchmarkRethink2CondNoObject       2000            822206 ns/op           21627
 
 ### Exact match test
 
-Request database with full text query, which matches documents which contains at least 1 exact word from query with 2 random words. 
+Request database with full text query, which matches documents which contains at least 1 exact word from query with 2 random words.
 
 ```
 benchmark                           iter               time/iter          bytes alloc               allocs

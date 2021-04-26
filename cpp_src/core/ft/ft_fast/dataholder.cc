@@ -8,7 +8,7 @@ suffix_map<char, WordIdType>& DataHolder::GetSuffix() { return steps.back().suff
 
 flat_str_multimap<char, WordIdType>& DataHolder::GetTypos() { return steps.back().typos_; }
 
-WordIdType DataHolder::findWord(string_view word) {
+WordIdType DataHolder::findWord(std::string_view word) {
 	WordIdType id;
 	id.setEmpty();
 	if (steps.size() <= 1) return id;

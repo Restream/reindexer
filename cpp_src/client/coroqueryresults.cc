@@ -23,13 +23,13 @@ CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection *conn, NSAr
 	  fetchAmount_(fetchAmount),
 	  requestTimeout_(timeout) {}
 
-CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection *conn, NSArray &&nsArray, string_view rawResult, int queryID,
+CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection *conn, NSArray &&nsArray, std::string_view rawResult, int queryID,
 								   int fetchFlags, int fetchAmount, seconds timeout)
 	: CoroQueryResults(conn, std::move(nsArray), fetchFlags, fetchAmount, timeout) {
 	Bind(rawResult, queryID);
 }
 
-void CoroQueryResults::Bind(string_view rawResult, int queryID) {
+void CoroQueryResults::Bind(std::string_view rawResult, int queryID) {
 	queryID_ = queryID;
 	ResultSerializer ser(rawResult);
 
@@ -71,7 +71,7 @@ void CoroQueryResults::fetchNextResults() {
 
 	fetchOffset_ += queryParams_.count;
 
-	string_view rawResult = p_string(args[0]);
+	std::string_view rawResult = p_string(args[0]);
 	ResultSerializer ser(rawResult);
 
 	ser.GetRawQueryParams(queryParams_, nullptr);
@@ -79,8 +79,8 @@ void CoroQueryResults::fetchNextResults() {
 	rawResult_.assign(rawResult.begin() + ser.Pos(), rawResult.end());
 }
 
-h_vector<string_view, 1> CoroQueryResults::GetNamespaces() const {
-	h_vector<string_view, 1> ret;
+h_vector<std::string_view, 1> CoroQueryResults::GetNamespaces() const {
+	h_vector<std::string_view, 1> ret;
 	ret.reserve(nsArray_.size());
 	for (auto &ns : nsArray_) ret.push_back(ns->name_);
 	return ret;
@@ -98,7 +98,7 @@ private:
 	double rank_;
 };
 
-void CoroQueryResults::Iterator::getJSONFromCJSON(string_view cjson, WrSerializer &wrser, bool withHdrLen) {
+void CoroQueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSerializer &wrser, bool withHdrLen) {
 	auto tm = qr_->getTagsMatcher(itemParams_.nsid);
 	JsonEncoder enc(&tm);
 	JsonBuilder builder(wrser, ObjType::TypePlain);
@@ -224,7 +224,7 @@ bool CoroQueryResults::Iterator::IsRaw() {
 	return itemParams_.raw;
 }
 
-string_view CoroQueryResults::Iterator::GetRaw() {
+std::string_view CoroQueryResults::Iterator::GetRaw() {
 	readNext();
 	assert(itemParams_.raw);
 	return itemParams_.data;
@@ -233,7 +233,7 @@ string_view CoroQueryResults::Iterator::GetRaw() {
 void CoroQueryResults::Iterator::readNext() {
 	if (nextPos_ != 0) return;
 
-	string_view rawResult(qr_->rawResult_.data(), qr_->rawResult_.size());
+	std::string_view rawResult(qr_->rawResult_.data(), qr_->rawResult_.size());
 
 	ResultSerializer ser(rawResult.substr(pos_));
 

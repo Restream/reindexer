@@ -15,26 +15,26 @@ public:
 	TagsMatcher(PayloadType payloadType)
 		: impl_(make_intrusive<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>(payloadType)), updated_(false) {}
 
-	int name2tag(string_view name) const { return impl_->name2tag(name); }
-	int name2tag(string_view name, bool canAdd) {
-		if (!name.data()) return 0;
+	int name2tag(std::string_view name) const { return impl_->name2tag(name); }
+	int name2tag(std::string_view name, bool canAdd) {
+		if (!name.data()) return 0;	 // -V547
 		int res = impl_->name2tag(name);
 		return res ? res : impl_.clone()->name2tag(name, canAdd, updated_);
 	}
 	int tags2field(const int16_t* path, size_t pathLen) const { return impl_->tags2field(path, pathLen); }
 	const string& tag2name(int tag) const { return impl_->tag2name(tag); }
-	TagsPath path2tag(string_view jsonPath) const { return impl_->path2tag(jsonPath); }
-	TagsPath path2tag(string_view jsonPath, bool canAdd) {
+	TagsPath path2tag(std::string_view jsonPath) const { return impl_->path2tag(jsonPath); }
+	TagsPath path2tag(std::string_view jsonPath, bool canAdd) {
 		auto res = path2tag(jsonPath);
 		if (jsonPath.empty()) return TagsPath();
 		return res.empty() && canAdd ? impl_.clone()->path2tag(jsonPath, canAdd, updated_) : res;
 	}
-	IndexedTagsPath path2indexedtag(string_view jsonPath, IndexExpressionEvaluator ev) const {
+	IndexedTagsPath path2indexedtag(std::string_view jsonPath, IndexExpressionEvaluator ev) const {
 		IndexedTagsPath tagsPath = impl_->path2indexedtag(jsonPath, ev);
 		assert(!updated_);
 		return tagsPath;
 	}
-	IndexedTagsPath path2indexedtag(string_view jsonPath, IndexExpressionEvaluator ev, bool canAdd) {
+	IndexedTagsPath path2indexedtag(std::string_view jsonPath, IndexExpressionEvaluator ev, bool canAdd) {
 		auto res = impl_->path2indexedtag(jsonPath, ev);
 		if (jsonPath.empty()) return IndexedTagsPath();
 		return res.empty() && canAdd ? impl_.clone()->path2indexedtag(jsonPath, ev, canAdd, updated_) : res;

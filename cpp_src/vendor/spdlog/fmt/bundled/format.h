@@ -2341,15 +2341,15 @@ inline uint64_t make_type(FMT_GEN15(FMT_ARG_TYPE_DEFAULT)) {
 	}
 
 // Emulates a variadic function returning void on a pre-C++11 compiler.
-#define FMT_VARIADIC_VOID(func, arg_type)                                                                               \
-	inline void func(arg_type arg) { func(arg, fmt::ArgList()); }                                                       \
-	FMT_WRAP1(func, arg_type, 1)                                                                                        \
-	FMT_WRAP1(func, arg_type, 2)                                                                                        \
-	FMT_WRAP1(func, arg_type, 3)                                                                                        \
-	FMT_WRAP1(func, arg_type, 4)                                                                                        \
-	FMT_WRAP1(func, arg_type, 5)                                                                                        \
-	FMT_WRAP1(func, arg_type, 6) FMT_WRAP1(func, arg_type, 7) FMT_WRAP1(func, arg_type, 8) FMT_WRAP1(func, arg_type, 9) \
-		FMT_WRAP1(func, arg_type, 10)
+#define FMT_VARIADIC_VOID(func, arg_type)                         \
+	inline void func(arg_type arg) { func(arg, fmt::ArgList()); } \
+	FMT_WRAP1(func, arg_type, 1)                                  \
+	FMT_WRAP1(func, arg_type, 2)                                  \
+	FMT_WRAP1(func, arg_type, 3)                                  \
+	FMT_WRAP1(func, arg_type, 4)                                  \
+	FMT_WRAP1(func, arg_type, 5)                                  \
+	FMT_WRAP1(func, arg_type, 6)                                  \
+	FMT_WRAP1(func, arg_type, 7) FMT_WRAP1(func, arg_type, 8) FMT_WRAP1(func, arg_type, 9) FMT_WRAP1(func, arg_type, 10)
 
 #define FMT_CTOR(ctor, func, arg0_type, arg1_type, n)                                               \
 	template <FMT_GEN(n, FMT_MAKE_TEMPLATE_ARG)>                                                    \
@@ -2421,7 +2421,7 @@ public:
 	*/
 	SystemError(int error_code, CStringRef message) { init(error_code, message, ArgList()); }
 	FMT_DEFAULTED_COPY_CTOR(SystemError)
-	FMT_VARIADIC_CTOR(SystemError, init, int, CStringRef) // -V1067
+	FMT_VARIADIC_CTOR(SystemError, init, int, CStringRef)  // -V1067
 
 	FMT_API ~SystemError() FMT_DTOR_NOEXCEPT FMT_OVERRIDE;
 
@@ -2742,6 +2742,17 @@ typename BasicWriter<Char>::CharPtr BasicWriter<Char>::write_str(const StrChar *
 }
 
 template <typename Char>
+constexpr const Char *EmptyStr() noexcept;
+template <>
+constexpr const char *EmptyStr<char>() noexcept {
+	return "";
+}
+template <>
+constexpr const wchar_t *EmptyStr<wchar_t>() noexcept {
+	return L"";
+}
+
+template <typename Char>
 template <typename StrChar, typename Spec>
 void BasicWriter<Char>::write_str(const internal::Arg::StringValue<StrChar> &s, const Spec &spec) {
 	// Check if StrChar is convertible to Char.
@@ -2749,10 +2760,8 @@ void BasicWriter<Char>::write_str(const internal::Arg::StringValue<StrChar> &s, 
 	if (spec.type_ && spec.type_ != 's') internal::report_unknown_type(spec.type_, "string");
 	const StrChar *str_value = s.value;
 	std::size_t str_size = s.size;
-	if (str_size == 0) {
-		if (!str_value) {
-			FMT_THROW(FormatError("string pointer is null"));
-		}
+	if (!str_value && str_size == 0) {
+		str_value = EmptyStr<StrChar>();
 	}
 	std::size_t precision = static_cast<std::size_t>(spec.precision_);
 	if (spec.precision_ >= 0 && precision < str_size) str_size = precision;

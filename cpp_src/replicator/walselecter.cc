@@ -13,6 +13,7 @@ const SemVersion kMinUnknownReplSupportRxVersion("2.6.0");
 WALSelecter::WALSelecter(const NamespaceImpl *ns) : ns_(ns) {}
 
 void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
+	using namespace std::string_view_literals;
 	const Query &q = params.query;
 	int count = q.count;
 	int start = q.start;
@@ -27,9 +28,9 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 	int lsnIdx = -1;
 	int versionIdx = -1;
 	for (size_t i = 0; i < q.entries.Size(); ++i) {
-		if ("#lsn"_sv == q.entries[i].index) {
+		if ("#lsn"sv == q.entries[i].index) {
 			lsnIdx = i;
-		} else if ("#slave_version"_sv == q.entries[i].index) {
+		} else if ("#slave_version"sv == q.entries[i].index) {
 			versionIdx = i;
 		} else {
 			throw Error(errLogic, "Unexpected index in WAL select query: %s", q.entries[i].index);

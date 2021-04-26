@@ -48,7 +48,7 @@ ItemImpl &ItemImpl::operator=(ItemImpl &&other) noexcept {
 }
 
 void ItemImpl::SetField(int field, const VariantArray &krs) {
-	cjson_ = string_view();
+	cjson_ = std::string_view();
 	payloadValue_.Clone();
 	if (!unsafe_ && !krs.empty() && krs[0].Type() == KeyValueString) {
 		VariantArray krsCopy;
@@ -66,7 +66,7 @@ void ItemImpl::SetField(int field, const VariantArray &krs) {
 	}
 }
 
-void ItemImpl::ModifyField(string_view jsonPath, const VariantArray &keys, std::function<VariantArray(string_view)> ev,
+void ItemImpl::ModifyField(std::string_view jsonPath, const VariantArray &keys, std::function<VariantArray(std::string_view)> ev,
 						   FieldModifyMode mode) {
 	return ModifyField(tagsMatcher_.path2indexedtag(jsonPath, ev, mode != FieldModeDrop), keys, mode);
 }
@@ -77,7 +77,7 @@ void ItemImpl::ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &
 	ser_.Reset();
 	ser_.PutUInt32(0);
 	WrSerializer generatedCjson;
-	string_view cjson(pl.Get(0, 0));
+	std::string_view cjson(pl.Get(0, 0));
 	if (cjson.empty()) {
 		buildPayloadTuple(&pl, &tagsMatcher_, generatedCjson);
 		cjson = generatedCjson.Slice();
@@ -104,14 +104,14 @@ void ItemImpl::ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &
 	pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
 }
 
-void ItemImpl::SetField(string_view jsonPath, const VariantArray &keys, IndexExpressionEvaluator ev) {
+void ItemImpl::SetField(std::string_view jsonPath, const VariantArray &keys, IndexExpressionEvaluator ev) {
 	ModifyField(jsonPath, keys, ev, FieldModeSet);
 }
-void ItemImpl::DropField(string_view jsonPath, IndexExpressionEvaluator ev) { ModifyField(jsonPath, {}, ev, FieldModeDrop); }
+void ItemImpl::DropField(std::string_view jsonPath, IndexExpressionEvaluator ev) { ModifyField(jsonPath, {}, ev, FieldModeDrop); }
 Variant ItemImpl::GetField(int field) { return GetPayload().Get(field, 0); }
 void ItemImpl::GetField(int field, VariantArray &values) { GetPayload().Get(field, values); }
 
-Error ItemImpl::FromMsgPack(string_view buf, size_t &offset) {
+Error ItemImpl::FromMsgPack(std::string_view buf, size_t &offset) {
 	Payload pl = GetPayload();
 	if (!msgPackDecoder_) {
 		msgPackDecoder_.reset(new MsgPackDecoder(&tagsMatcher_));
@@ -127,7 +127,7 @@ Error ItemImpl::FromMsgPack(string_view buf, size_t &offset) {
 	return err;
 }
 
-Error ItemImpl::FromProtobuf(string_view buf) {
+Error ItemImpl::FromProtobuf(std::string_view buf) {
 	assert(ns_);
 	Payload pl = GetPayload();
 	ProtobufDecoder decoder(tagsMatcher_, schema_);
@@ -164,13 +164,13 @@ Error ItemImpl::GetProtobuf(WrSerializer &wrser) {
 }
 
 // Construct item from compressed json
-Error ItemImpl::FromCJSON(const string_view &slice, bool pkOnly) {
+Error ItemImpl::FromCJSON(std::string_view slice, bool pkOnly) {
 	GetPayload().Reset();
-	string_view data = slice;
+	std::string_view data = slice;
 	if (!unsafe_) {
 		sourceData_.reset(new char[slice.size()]);
 		std::copy(data.begin(), data.end(), sourceData_.get());
-		data = string_view(sourceData_.get(), data.size());
+		data = std::string_view(sourceData_.get(), data.size());
 	}
 
 	// check tags matcher update
@@ -206,9 +206,9 @@ Error ItemImpl::FromCJSON(const string_view &slice, bool pkOnly) {
 	return err;
 }
 
-Error ItemImpl::FromJSON(string_view slice, char **endp, bool pkOnly) {
-	string_view data = slice;
-	cjson_ = string_view();
+Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
+	std::string_view data = slice;
+	cjson_ = std::string_view();
 
 	if (!unsafe_) {
 		if (endp) {
@@ -219,14 +219,14 @@ Error ItemImpl::FromJSON(string_view slice, char **endp, bool pkOnly) {
 				*endp = const_cast<char *>(data.data()) + len;
 				sourceData_.reset(new char[len]);
 				std::copy(data.begin(), data.begin() + len, sourceData_.get());
-				data = string_view(sourceData_.get(), len);
+				data = std::string_view(sourceData_.get(), len);
 			} catch (const gason::Exception &e) {
 				return Error(errParseJson, "Error parsing json: '%s'", e.what());
 			}
 		} else {
 			sourceData_.reset(new char[slice.size()]);
 			std::copy(data.begin(), data.end(), sourceData_.get());
-			data = string_view(sourceData_.get(), data.size());
+			data = std::string_view(sourceData_.get(), data.size());
 		}
 	}
 
@@ -257,11 +257,11 @@ Error ItemImpl::FromJSON(string_view slice, char **endp, bool pkOnly) {
 
 Error ItemImpl::FromCJSON(ItemImpl *other) {
 	auto ret = FromCJSON(other->GetCJSON());
-	cjson_ = string_view();
+	cjson_ = std::string_view();
 	return ret;
 }
 
-string_view ItemImpl::GetJSON() {
+std::string_view ItemImpl::GetJSON() {
 	ConstPayload pl(payloadType_, payloadValue_);
 
 	JsonEncoder encoder(&tagsMatcher_);
@@ -273,7 +273,7 @@ string_view ItemImpl::GetJSON() {
 	return ser_.Slice();
 }
 
-string_view ItemImpl::GetCJSON(bool withTagsMatcher) {
+std::string_view ItemImpl::GetCJSON(bool withTagsMatcher) {
 	withTagsMatcher = withTagsMatcher && tagsMatcher_.isUpdated();
 
 	if (cjson_.size() && !withTagsMatcher) return cjson_;
@@ -281,7 +281,7 @@ string_view ItemImpl::GetCJSON(bool withTagsMatcher) {
 	return GetCJSON(ser_, withTagsMatcher);
 }
 
-string_view ItemImpl::GetCJSON(WrSerializer &ser, bool withTagsMatcher) {
+std::string_view ItemImpl::GetCJSON(WrSerializer &ser, bool withTagsMatcher) {
 	withTagsMatcher = withTagsMatcher && tagsMatcher_.isUpdated();
 
 	if (cjson_.size() && !withTagsMatcher) {
@@ -309,7 +309,7 @@ string_view ItemImpl::GetCJSON(WrSerializer &ser, bool withTagsMatcher) {
 	return ser.Slice();
 }
 
-VariantArray ItemImpl::GetValueByJSONPath(string_view jsonPath) {
+VariantArray ItemImpl::GetValueByJSONPath(std::string_view jsonPath) {
 	ConstPayload pl(payloadType_, payloadValue_);
 	VariantArray krefs;
 	return pl.GetByJsonPath(jsonPath, tagsMatcher_, krefs, KeyValueUndefined);

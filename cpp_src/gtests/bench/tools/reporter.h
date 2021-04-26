@@ -12,13 +12,12 @@ namespace benchmark {
 class Reporter : public ConsoleReporter {
 protected:
 	void PrintHeader(const Run& run) {
-		using reindexer::string_view;
 		std::string str = FormatString("%-*s %13s %13s", static_cast<int>(name_field_width_), "Benchmark", "Time", "RPS");
 		if (!run.counters.empty()) {
 			if (output_options_ & OO_Tabular) {
 				for (auto const& c : run.counters) {
-					if (string_view(c.first) == string_view("bytes_per_second") ||
-						string_view(c.first) == string_view("items_per_second")) {
+					if (std::string_view(c.first) == std::string_view("bytes_per_second") ||
+						std::string_view(c.first) == std::string_view("items_per_second")) {
 						continue;
 					}
 					str += FormatString(" %10s", c.first.c_str());
@@ -33,7 +32,6 @@ protected:
 	}
 
 	void PrintRunData(const Run& result) {
-		using reindexer::string_view;
 		auto& Out = GetOutputStream();
 
 		// CHECK ERROR
@@ -56,7 +54,8 @@ protected:
 
 		// print user-defined counters
 		for (auto& c : result.counters) {
-			if (string_view(c.first) == string_view("bytes_per_second") || string_view(c.first) == string_view("items_per_second")) {
+			if (std::string_view(c.first) == std::string_view("bytes_per_second") ||
+				std::string_view(c.first) == std::string_view("items_per_second")) {
 				continue;
 			}
 			const std::size_t cNameLen = std::max(std::string::size_type(10), c.first.length());

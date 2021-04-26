@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <memory>
-#include "estl/string_view.h"
+#include <string_view>
 
 namespace reindexer {
 
@@ -20,15 +20,15 @@ public:
 	TraceEntry(const TraceEntry &) = delete;
 	TraceEntry &operator=(const TraceEntry &) = delete;
 	std::ostream &Dump(std::ostream &os) const;
-	string_view FuncName() { return funcName_; }
+	std::string_view FuncName() { return funcName_; }
 
 	// protected:
 	/// Demangled function(symbol) name
-	string_view funcName_;
+	std::string_view funcName_;
 	/// Object file name
-	string_view objFile_;
+	std::string_view objFile_;
 	/// Source file name
-	string_view srcFile_;
+	std::string_view srcFile_;
 	/// Source file line number
 	int srcLine_ = 0;
 	/// Offset from symbol address to

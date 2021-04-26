@@ -1,7 +1,7 @@
 #pragma once
 
+#include <string_view>
 #include <vector>
-#include "estl/string_view.h"
 #include "libdivsufsort/divsufsort.h"
 
 namespace reindexer {
@@ -76,7 +76,7 @@ public:
 	iterator begin() const { return iterator(0, this); }
 	iterator end() const { return iterator(sa_.size(), this); }
 
-	std::pair<iterator, iterator> match_range(string_view str) const {
+	std::pair<iterator, iterator> match_range(std::string_view str) const {
 		iterator start = lower_bound(str);
 		if (start == end()) return {end(), end()};
 		int idx_ = start.idx_ + 1;
@@ -84,7 +84,7 @@ public:
 		return {start, iterator(idx_, this)};
 	}
 
-	iterator lower_bound(string_view str) const {
+	iterator lower_bound(std::string_view str) const {
 		if (!built_) {
 			throw std::logic_error("Should call suffix_map::build before search");
 		}
@@ -127,7 +127,7 @@ public:
 		return end();
 	}
 
-	int insert(string_view word, const V &val, int virtual_len = -1) {
+	int insert(std::string_view word, const V &val, int virtual_len = -1) {
 		if (virtual_len == -1) virtual_len = word.length();
 		int wpos = text_.size();
 		size_t real_len = word.length();
@@ -204,6 +204,6 @@ protected:
 	vector<V> mapped_;
 	vector<CharT> text_;
 	bool built_ = false;
-};  // namespace reindexer
+};	// namespace reindexer
 
 }  // namespace reindexer

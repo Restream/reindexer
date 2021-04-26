@@ -20,14 +20,14 @@ using std::make_pair;
 
 namespace reindexer {
 
-string toLower(string_view src) {
+string toLower(std::string_view src) {
 	string ret;
 	ret.reserve(src.size());
 	for (char ch : src) ret.push_back(tolower(ch));
 	return ret;
 }
 
-string escapeString(string_view str) {
+string escapeString(std::string_view str) {
 	string dst = "";
 	dst.reserve(str.length());
 	for (auto it = str.begin(); it != str.end(); it++) {
@@ -41,7 +41,7 @@ string escapeString(string_view str) {
 	return dst;
 }
 
-string unescapeString(string_view str) {
+string unescapeString(std::string_view str) {
 	string dst = "";
 	dst.reserve(str.length());
 	for (auto it = str.begin(); it != str.end(); it++) {
@@ -57,7 +57,7 @@ string unescapeString(string_view str) {
 	return dst;
 }
 
-wstring &utf8_to_utf16(string_view src, wstring &dst) {
+wstring &utf8_to_utf16(std::string_view src, wstring &dst) {
 	dst.resize(src.length());
 	auto end = utf8::unchecked::utf8to32(src.begin(), src.end(), dst.begin());
 	dst.resize(std::distance(dst.begin(), end));
@@ -71,7 +71,7 @@ string &utf16_to_utf8(const wstring &src, string &dst) {
 	return dst;
 }
 
-wstring utf8_to_utf16(string_view src) {
+wstring utf8_to_utf16(std::string_view src) {
 	wstring dst;
 	return utf8_to_utf16(src, dst);
 }
@@ -106,13 +106,13 @@ void check_for_replacement(uint32_t &ch) {
 	}
 }
 
-bool is_number(string_view str) {
+bool is_number(std::string_view str) {
 	uint16_t i = 0;
 	while ((i < str.length() && IsDigit(str[i]))) i++;
 	return (i && i == str.length());
 }
 
-void split(string_view str, string &buf, vector<const char *> &words, const string &extraWordSymbols) {
+void split(std::string_view str, string &buf, vector<const char *> &words, const string &extraWordSymbols) {
 	buf.resize(str.length());
 	words.resize(0);
 	auto bufIt = buf.begin();
@@ -145,7 +145,7 @@ void split(string_view str, string &buf, vector<const char *> &words, const stri
 	}
 }
 
-std::pair<int, int> word2Pos(string_view str, int wordPos, int endPos, const string &extraWordSymbols) {
+std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPos, const string &extraWordSymbols) {
 	auto wordStartIt = str.begin();
 	auto wordEndIt = str.begin();
 	auto it = str.begin();
@@ -192,7 +192,7 @@ std::pair<int, int> word2Pos(string_view str, int wordPos, int endPos, const str
 	return {int(std::distance(str.begin(), wordStartIt)), int(std::distance(str.begin(), wordEndIt))};
 }
 
-Word2PosHelper::Word2PosHelper(string_view data, const string &extraWordSymbols)
+Word2PosHelper::Word2PosHelper(std::string_view data, const string &extraWordSymbols)
 	: data_(data), lastWordPos_(0), lastOffset_(0), extraWordSymbols_(extraWordSymbols) {}
 
 std::pair<int, int> Word2PosHelper::convert(int wordPos, int endPos) {
@@ -209,7 +209,7 @@ std::pair<int, int> Word2PosHelper::convert(int wordPos, int endPos) {
 	return ret;
 }
 
-void split(string_view utf8Str, wstring &utf16str, vector<std::wstring> &words, const string &extraWordSymbols) {
+void split(std::string_view utf8Str, wstring &utf16str, vector<std::wstring> &words, const string &extraWordSymbols) {
 	utf8_to_utf16(utf8Str, utf16str);
 	words.resize(0);
 	size_t outSz = 0;
@@ -234,7 +234,7 @@ string lower(string s) {
 	return s;
 }
 
-bool iequals(string_view lhs, string_view rhs) {
+bool iequals(std::string_view lhs, std::string_view rhs) {
 	if (lhs.size() != rhs.size()) return false;
 	for (auto itl = lhs.begin(), itr = rhs.begin(); itl != lhs.end() && itr != rhs.end();) {
 		if (tolower(*itl++) != tolower(*itr++)) return false;
@@ -242,7 +242,7 @@ bool iequals(string_view lhs, string_view rhs) {
 	return true;
 }
 
-bool checkIfStartsWith(string_view src, string_view pattern, bool casesensitive) {
+bool checkIfStartsWith(std::string_view src, std::string_view pattern, bool casesensitive) {
 	if (src.empty() || pattern.empty()) return false;
 	if (src.length() > pattern.length()) return false;
 	if (casesensitive) {
@@ -257,7 +257,7 @@ bool checkIfStartsWith(string_view src, string_view pattern, bool casesensitive)
 	return true;
 }
 
-int collateCompare(string_view lhs, string_view rhs, const CollateOpts &collateOpts) {
+int collateCompare(std::string_view lhs, std::string_view rhs, const CollateOpts &collateOpts) {
 	if (collateOpts.mode == CollateASCII) {
 		auto itl = lhs.begin();
 		auto itr = rhs.begin();
@@ -341,7 +341,7 @@ int collateCompare(string_view lhs, string_view rhs, const CollateOpts &collateO
 	return res ? res : ((l1 < l2) ? -1 : (l1 > l2) ? 1 : 0);
 }
 
-static string_view urldecode2(char *buf, string_view str) {
+static std::string_view urldecode2(char *buf, std::string_view str) {
 	char a, b;
 	const char *src = str.data();
 	char *dst = buf;
@@ -369,12 +369,12 @@ static string_view urldecode2(char *buf, string_view str) {
 		}
 	}
 	*dst = '\0';
-	return string_view(buf, dst - buf);
+	return std::string_view(buf, dst - buf);
 }
 
-string urldecode2(const string_view str) {
+string urldecode2(const std::string_view str) {
 	string ret(str.length(), ' ');
-	string_view sret = urldecode2(&ret[0], str);
+	std::string_view sret = urldecode2(&ret[0], str);
 	ret.resize(sret.size());
 	return ret;
 }
@@ -410,7 +410,7 @@ int fast_strftime(char *buf, const tm *tm) {
 	return d - buf;
 }
 
-bool validateObjectName(string_view name) {
+bool validateObjectName(std::string_view name) {
 	if (!name.length()) {
 		return false;
 	}
@@ -444,17 +444,17 @@ StrictMode strictModeFromString(const string &strStrictMode) {
 	return StrictModeNotSet;
 }
 
-string_view strictModeToString(StrictMode mode) {
+std::string_view strictModeToString(StrictMode mode) {
 	for (auto &it : strictModes) {
 		if (it.second == mode) {
 			return it.first;
 		}
 	}
-	static string_view empty = ""_sv;
+	static std::string_view empty{""};
 	return empty;
 }
 
-bool isPrintable(string_view str) {
+bool isPrintable(std::string_view str) {
 	if (str.length() > 256) {
 		return false;
 	}
@@ -467,14 +467,14 @@ bool isPrintable(string_view str) {
 	return true;
 }
 
-bool isBlank(string_view str) {
+bool isBlank(std::string_view str) {
 	if (str.empty()) return true;
 	for (size_t i = 0; i < str.length(); ++i)
 		if (!isspace(str[i])) return false;
 	return true;
 }
 
-int getUTF8StringCharactersCount(string_view str) {
+int getUTF8StringCharactersCount(std::string_view str) {
 	int len = 0;
 	try {
 		for (auto it = str.begin(); it != str.end(); ++len) {
@@ -486,14 +486,14 @@ int getUTF8StringCharactersCount(string_view str) {
 	return len;
 }
 
-int stoi(string_view sl) {
+int stoi(std::string_view sl) {
 	bool valid;
-	return jsteemann::atoi<int>(sl.begin(), sl.end(), valid);
+	return jsteemann::atoi<int>(sl.data(), sl.data() + sl.size(), valid);
 }
 
-int64_t stoll(string_view sl) {
+int64_t stoll(std::string_view sl) {
 	bool valid;
-	auto ret = jsteemann::atoi<int64_t>(sl.begin(), sl.end(), valid);
+	auto ret = jsteemann::atoi<int64_t>(sl.data(), sl.data() + sl.size(), valid);
 	if (!valid) {
 		throw Error(errParams, "Can't convert %s to number", sl);
 	}
@@ -512,7 +512,7 @@ std::string randStringAlph(size_t len) {
 }
 
 template <bool isUtf8>
-void toNextCh(string_view::iterator &it, const string_view &str) {
+void toNextCh(std::string_view::iterator &it, std::string_view str) {
 	if (isUtf8) {
 		utf8::next(it, str.end());
 	} else {
@@ -521,7 +521,7 @@ void toNextCh(string_view::iterator &it, const string_view &str) {
 }
 
 template <bool isUtf8>
-void toPrevCh(string_view::iterator &it, const string_view &str) {
+void toPrevCh(std::string_view::iterator &it, std::string_view str) {
 	if (isUtf8) {
 		utf8::previous(it, str.begin());
 	} else {
@@ -530,7 +530,7 @@ void toPrevCh(string_view::iterator &it, const string_view &str) {
 }
 
 template <bool isUtf8>
-Error getBytePosInMultilineString(string_view str, const size_t line, const size_t charPos, size_t &bytePos) {
+Error getBytePosInMultilineString(std::string_view str, const size_t line, const size_t charPos, size_t &bytePos) {
 	auto it = str.begin();
 	size_t currLine = 0, currCharPos = 0;
 	for (size_t i = 0; it != str.end() && ((currLine != line) || (currCharPos != charPos)); toNextCh<isUtf8>(it, str), ++i) {
@@ -547,7 +547,7 @@ Error getBytePosInMultilineString(string_view str, const size_t line, const size
 	return Error(errNotValid, "Wrong cursor position: line=%d, pos=%d", line, charPos);
 }
 
-Error cursosPosToBytePos(string_view str, size_t line, size_t charPos, size_t &bytePos) {
+Error cursosPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t &bytePos) {
 	try {
 		return getBytePosInMultilineString<true>(str, line, charPos, bytePos);
 	} catch (const utf8::exception &) {

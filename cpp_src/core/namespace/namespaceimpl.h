@@ -161,7 +161,7 @@ public:
 	void AddIndex(const IndexDef &indexDef, const RdxContext &ctx);
 	void UpdateIndex(const IndexDef &indexDef, const RdxContext &ctx);
 	void DropIndex(const IndexDef &indexDef, const RdxContext &ctx);
-	void SetSchema(string_view schema, const RdxContext &ctx);
+	void SetSchema(std::string_view schema, const RdxContext &ctx);
 	std::string GetSchema(int format, const RdxContext &ctx);
 
 	void Insert(Item &item, const NsContext &ctx);
@@ -192,7 +192,7 @@ public:
 	// Get meta data from storage by key
 	string GetMeta(const string &key, const RdxContext &ctx);
 	// Put meta data to storage by key
-	void PutMeta(const string &key, const string_view &data, const NsContext &);
+	void PutMeta(const string &key, std::string_view data, const NsContext &);
 	int64_t GetSerial(const string &field);
 
 	int getIndexByName(const string &index) const;
@@ -231,16 +231,18 @@ protected:
 
 		RLockT RLock(const RdxContext &ctx) const { return RLockT(mtx_, &ctx); }
 		WLockT WLock(const RdxContext &ctx) const {
+			using namespace std::string_view_literals;
 			WLockT lck(mtx_, &ctx);
 			if (readonly_.load(std::memory_order_acquire)) {
-				throw Error(errNamespaceInvalidated, "NS invalidated"_sv);
+				throw Error(errNamespaceInvalidated, "NS invalidated"sv);
 			}
 			return lck;
 		}
 		unique_lock<std::mutex> StorageLock() const {
+			using namespace std::string_view_literals;
 			unique_lock<std::mutex> lck(storage_mtx_);
 			if (readonly_.load(std::memory_order_acquire)) {
-				throw Error(errNamespaceInvalidated, "NS invalidated"_sv);
+				throw Error(errNamespaceInvalidated, "NS invalidated"sv);
 			}
 			return lck;
 		}
@@ -253,11 +255,11 @@ protected:
 	};
 
 	ReplicationState getReplState() const;
-	std::string sysRecordName(string_view sysTag, uint64_t version);
-	void writeSysRecToStorage(string_view data, string_view sysTag, uint64_t &version, bool direct);
+	std::string sysRecordName(std::string_view sysTag, uint64_t version);
+	void writeSysRecToStorage(std::string_view data, std::string_view sysTag, uint64_t &version, bool direct);
 	void saveIndexesToStorage();
 	void saveSchemaToStorage();
-	Error loadLatestSysRecord(string_view baseSysTag, uint64_t &version, string &content);
+	Error loadLatestSysRecord(std::string_view baseSysTag, uint64_t &version, string &content);
 	bool loadIndexesFromStorage();
 	void saveReplStateToStorage();
 	void loadReplStateFromStorage();
@@ -280,7 +282,7 @@ protected:
 	void updateIndex(const IndexDef &indexDef);
 	void dropIndex(const IndexDef &index);
 	void addToWAL(const IndexDef &indexDef, WALRecType type, const RdxContext &ctx);
-	void addToWAL(string_view json, WALRecType type, const RdxContext &ctx);
+	void addToWAL(std::string_view json, WALRecType type, const RdxContext &ctx);
 	void removeExpiredItems(RdxActivityContext *);
 	void replicateItem(IdType itemId, const NsContext &ctx, bool statementReplication, uint64_t oldPlHash, size_t oldItemCapacity);
 
@@ -291,7 +293,7 @@ protected:
 
 	string getMeta(const string &key) const;
 	void flushStorage(const RdxContext &);
-	void putMeta(const string &key, const string_view &data, const RdxContext &ctx);
+	void putMeta(const string &key, std::string_view data, const RdxContext &ctx);
 
 	pair<IdType, bool> findByPK(ItemImpl *ritem, const RdxContext &);
 	int getSortedIdxCount() const;
@@ -304,7 +306,7 @@ protected:
 	void getIndsideFromJoinCache(JoinCacheRes &ctx) const;
 
 	const FieldsSet &pkFields();
-	void writeToStorage(const string_view &key, const string_view &data);
+	void writeToStorage(std::string_view key, std::string_view data);
 	void doFlushStorage();
 
 	vector<string> enumMeta() const;

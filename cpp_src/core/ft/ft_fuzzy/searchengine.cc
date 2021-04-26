@@ -2,9 +2,9 @@
 #include <tools/stringstools.h>
 #include <locale>
 #include <string>
+#include <string_view>
 #include "core/ft/filters/kblayout.h"
 #include "core/ft/filters/translit.h"
-#include "estl/string_view.h"
 
 namespace search_engine {
 using namespace reindexer;
@@ -20,7 +20,7 @@ SearchEngine::SearchEngine() {
 void SearchEngine::SetConfig(const unique_ptr<FtFuzzyConfig>& cfg) { holder_->SetConfig(cfg); }
 
 void SearchEngine::Rebuild() { holder_.reset(new BaseHolder); }
-void SearchEngine::AddData(const reindexer::string_view& src_data, const IdType id, int field, const string& extraWordSymbols) {
+void SearchEngine::AddData(std::string_view src_data, const IdType id, int field, const string& extraWordSymbols) {
 	if (commited_) {
 		commited_ = false;
 		holder_->Clear();

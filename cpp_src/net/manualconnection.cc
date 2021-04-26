@@ -54,7 +54,7 @@ void manual_connection::restart(int fd) {
 	if (stats_) stats_->restart();
 }
 
-int manual_connection::async_connect(string_view addr) noexcept {
+int manual_connection::async_connect(std::string_view addr) noexcept {
 	if (state_ == conn_state::connected || state_ == conn_state::connecting) {
 		close_conn(k_sock_closed_err);
 	}

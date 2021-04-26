@@ -179,7 +179,7 @@ protected:
 	void disconnect();
 
 	template <typename... Argss>
-	inline void call(const Completion &cmpl, const CommandParams &opts, Args &args, const string_view &val, Argss... argss) {
+	inline void call(const Completion &cmpl, const CommandParams &opts, Args &args, const std::string_view &val, Argss... argss) {
 		args.push_back(Variant(p_string(&val)));
 		return call(cmpl, opts, args, argss...);
 	}

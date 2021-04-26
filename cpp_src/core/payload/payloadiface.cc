@@ -53,16 +53,16 @@ Variant PayloadIface<T>::Get(int field, int idx, bool enableHold) const {
 
 // Get element(s) by field index
 template <typename T>
-VariantArray &PayloadIface<T>::Get(string_view field, VariantArray &kvs, bool enableHold) const {
+VariantArray &PayloadIface<T>::Get(std::string_view field, VariantArray &kvs, bool enableHold) const {
 	return Get(t_.FieldByName(field), kvs, enableHold);
 }
 
 template <typename T>
-VariantArray PayloadIface<T>::GetByJsonPath(string_view jsonPath, TagsMatcher &tagsMatcher, VariantArray &kvs,
+VariantArray PayloadIface<T>::GetByJsonPath(std::string_view jsonPath, TagsMatcher &tagsMatcher, VariantArray &kvs,
 											KeyValueType expectedType) const {
 	VariantArray krefs;
 	Get(0, krefs);
-	string_view tuple(krefs[0]);
+	std::string_view tuple(krefs[0]);
 	if (tuple.length() == 0) {
 		int fieldIdx = t_.FieldByJsonPath(jsonPath);
 		if (fieldIdx == -1) {
@@ -126,7 +126,7 @@ VariantArray PayloadIface<T>::GetIndexedArrayData(const IndexedTagsPath &tagsPat
 // Set element or array by field index
 template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
-void PayloadIface<T>::Set(string_view field, const VariantArray &keys, bool append) {
+void PayloadIface<T>::Set(std::string_view field, const VariantArray &keys, bool append) {
 	return Set(t_.FieldByName(field), keys, append);
 }
 
@@ -531,7 +531,7 @@ template class PayloadIface<const PayloadValue>;
 #pragma warning(disable : 5037)
 #endif
 
-template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(string_view, VariantArray const &, bool);
+template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(std::string_view, VariantArray const &, bool);
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(int, VariantArray const &, bool);
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(int, int, const Variant &);
 

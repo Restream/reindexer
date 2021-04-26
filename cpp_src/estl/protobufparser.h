@@ -6,7 +6,6 @@
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/variant.h"
 #include "tools/serializer.h"
-#include "vendor/mpark/variant.h"
 
 namespace reindexer {
 
@@ -34,8 +33,8 @@ struct ProtobufValue {
 		return v;
 	}
 
-	template <typename T, typename std::enable_if<std::is_same<std::string, T>::value ||
-												  std::is_same<reindexer::string_view, T>::value>::type* = nullptr>
+	template <typename T,
+			  typename std::enable_if<std::is_same<std::string, T>::value || std::is_same<std::string_view, T>::value>::type* = nullptr>
 	T As() const {
 		if (value.Type() != KeyValueString) {
 			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%s] to string", Variant::TypeName(value.Type()));
@@ -64,7 +63,7 @@ struct ProtobufValue {
 class ProtobufParser;
 
 struct ProtobufObject {
-	ProtobufObject(string_view _buf, const Schema& _schema, TagsPath& tagsPath, TagsMatcher& tm)
+	ProtobufObject(std::string_view _buf, const Schema& _schema, TagsPath& tagsPath, TagsMatcher& tm)
 		: ser(_buf), schema(_schema), tagsPath(tagsPath), tm(tm) {}
 	ProtobufObject(const ProtobufObject&) = delete;
 	ProtobufObject(ProtobufObject&&) = delete;

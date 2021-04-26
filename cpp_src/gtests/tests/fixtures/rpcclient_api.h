@@ -10,10 +10,6 @@
 
 #include "client/cororeindexer.h"
 
-using std::unique_ptr;
-using std::atomic;
-using std::thread;
-
 const std::string kDefaultRPCPort = "25673";							   // -V1043
 const std::string kDefaultRPCServerAddr = "127.0.0.1:" + kDefaultRPCPort;  // -V1043
 constexpr uint16_t kDefaultHttpPort = 33333;
@@ -46,7 +42,7 @@ protected:
 
 	private:
 		unique_ptr<RPCServerFake> server_;
-		unique_ptr<thread> serverThread_;
+		unique_ptr<std::thread> serverThread_;
 		net::ev::dynamic_loop loop_;
 		net::ev::async stop_;
 		atomic<bool> terminate_;
@@ -59,9 +55,9 @@ protected:
 	public:
 		UpdatesReciever(ev::dynamic_loop& loop) : loop_(loop) {}
 
-		void OnWALUpdate(LSNPair, string_view nsName, const WALRecord&) override final;
+		void OnWALUpdate(LSNPair, std::string_view nsName, const WALRecord&) override final;
 		void OnConnectionState(const Error&) override final {}
-		void OnUpdatesLost(string_view) override final {}
+		void OnUpdatesLost(std::string_view) override final {}
 
 		using map = tsl::hopscotch_map<std::string, size_t, nocase_hash_str, nocase_equal_str>;
 		// using map = std::unordered_map<std::string, size_t>;
@@ -70,7 +66,7 @@ protected:
 		void Reset();
 		void Dump() const;
 		bool AwaitNamespaces(size_t count);
-		bool AwaitItems(string_view ns, size_t count);
+		bool AwaitItems(std::string_view ns, size_t count);
 
 	private:
 		map updatesCounters_;
@@ -87,14 +83,14 @@ protected:
 	void StopServer(const string& addr = kDefaultRPCServerAddr);
 	bool CheckIfFakeServerConnected(const string& addr = kDefaultRPCServerAddr);
 	void StopAllServers();
-	client::Item CreateItem(reindexer::client::Reindexer& rx, string_view nsName, int id);
-	client::Item CreateItem(reindexer::client::CoroReindexer& rx, string_view nsName, int id);
-	void CreateNamespace(reindexer::client::Reindexer& rx, string_view nsName);
-	void CreateNamespace(reindexer::client::CoroReindexer& rx, string_view nsName);
-	void FillData(reindexer::client::Reindexer& rx, string_view nsName, int from, int count);
-	void FillData(reindexer::client::CoroReindexer& rx, string_view nsName, int from, int count);
+	client::Item CreateItem(reindexer::client::Reindexer& rx, std::string_view nsName, int id);
+	client::Item CreateItem(reindexer::client::CoroReindexer& rx, std::string_view nsName, int id);
+	void CreateNamespace(reindexer::client::Reindexer& rx, std::string_view nsName);
+	void CreateNamespace(reindexer::client::CoroReindexer& rx, std::string_view nsName);
+	void FillData(reindexer::client::Reindexer& rx, std::string_view nsName, int from, int count);
+	void FillData(reindexer::client::CoroReindexer& rx, std::string_view nsName, int from, int count);
 
-	const string_view kDbPrefix = "/tmp/reindex/rpc_client_test"_sv;
+	const std::string_view kDbPrefix{"/tmp/reindex/rpc_client_test"};
 
 private:
 	struct ServerData {

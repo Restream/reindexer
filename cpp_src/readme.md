@@ -35,7 +35,7 @@ yum update
 yum install reindexer-server
 ```
 
-Available distros: `centos-6`,`centos-7`,`centos-8`,`fedora-30`,`fedora-31`,
+Available distros: `centos-7`,`centos-8`,`fedora-30`,`fedora-31`,
 
 ## Ubuntu/Debian
 
@@ -46,7 +46,7 @@ apt update
 apt install reindexer-server
 ```
 
-Available distros: `debian-buster`, `debian-stretch`, `ubuntu-bionic`, `ubuntu-xenial`, `ubuntu-focal`
+Available distros: `debian-buster`, `ubuntu-bionic`, `ubuntu-focal`
 
 ## Windows
 
@@ -190,6 +190,22 @@ reindexer_tool --dsn cproto://127.0.0.1:6534/slavedb --command '\upsert #config 
 ```
 
 More details about replication is [here](../replication.md)
+
+### Requests handling modes
+
+Reindexer server supports 2 requests handling modes (those modes affect both RPC and HTTP servers):
+- "shared" (default);
+- "dedicated".
+
+Mode may be set via command line options on server startup:
+
+```sh
+reindexer_server --db /tmp/rx --threading dedicated
+```
+
+In shared mode server creates fixed number of threads to handle connections (one thread per physical CPU core) and all of the connection will be distributed between those threads. In this mode requests from different connections may be forced to be executed sequentially.
+
+In dedicated mode server creates one thread per connection. This approach may be inefficient in case of frequent reconnects or large amount of database clients (due to thread creation overhead), however it allows to reach maximum level of concurrency for requests.
 
 ## Security
 

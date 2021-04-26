@@ -46,9 +46,9 @@ private:
 	Error checkScheme(const gason::JsonNode& node, int typeIndex, std::string& path, const std::string& elementName);
 	std::string createType(const PrefixTree::PrefixTreeNode* node, const std::string& typeName = "");
 	Error createTypeTable(const std::string& json);
-	static bool isSimpleType(string_view tp);
+	static bool isSimpleType(std::string_view tp);
 	void addSimpleType(std::string tpName);
-	Error checkExists(string_view name, ValAppearance* element, const std::string& path);
+	Error checkExists(std::string_view name, ValAppearance* element, const std::string& path);
 	Error checkRequired(const h_vector<ValAppearance, 16>& elementAppearances, int typeNum, const std::string& path);
 
 	Schema schema_;
@@ -57,7 +57,7 @@ private:
 	std::vector<std::vector<ValAppearance>> valAppearance_;
 	int typeIndex_ = 0;
 	std::string rootTypeName_;
-	bool isInit=false;
+	bool isInit = false;
 };
 
 }  // namespace reindexer

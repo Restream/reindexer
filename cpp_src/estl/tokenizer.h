@@ -5,7 +5,6 @@
 #include <string>
 #include "core/keyvalue/variant.h"
 #include "estl/h_vector.h"
-#include "estl/string_view.h"
 
 namespace reindexer {
 
@@ -33,7 +32,7 @@ public:
 		return *this;
 	}
 
-	string_view text() const { return string_view(text_.data(), text_.size()); }
+	std::string_view text() const { return std::string_view(text_.data(), text_.size()); }
 
 	token_type type;
 	h_vector<char, 20> text_;
@@ -41,7 +40,7 @@ public:
 
 class tokenizer {
 public:
-	tokenizer(string_view query);
+	tokenizer(std::string_view query);
 	token next_token(bool to_lower = true, bool treatSignAsToken = false);
 	token peek_token(bool to_lower = true, bool treatSignAsToken = false);
 	void skip_space();
@@ -53,8 +52,8 @@ public:
 	const char *begin() const;
 
 protected:
-	string_view q_;
-	const char *cur_;
+	std::string_view q_;
+	std::string_view::const_iterator cur_;
 	size_t pos_ = 0;
 };
 

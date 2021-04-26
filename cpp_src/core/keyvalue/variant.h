@@ -72,7 +72,7 @@ public:
 	explicit operator double() const;
 
 	explicit operator p_string() const;
-	explicit operator string_view() const;
+	explicit operator std::string_view() const;
 	explicit operator const PayloadValue &() const;
 	explicit operator key_string() const;
 	explicit operator Point() const;
@@ -132,7 +132,7 @@ protected:
 		// PayloadValue value_composite;
 		// key_string h_value_string;
 	};
-	int relaxCompareWithString(string_view) const;
+	int relaxCompareWithString(std::string_view) const;
 };
 
 class VariantArray : public h_vector<Variant, 2> {

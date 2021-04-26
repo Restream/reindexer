@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include "activity_context.h"
 #include "lsn.h"
 #include "tools/errors.h"
@@ -18,7 +19,7 @@ struct IRdxCancelContext {
 };
 
 template <typename Context>
-void ThrowOnCancel(const Context& ctx, string_view errMsg = string_view()) {
+void ThrowOnCancel(const Context& ctx, std::string_view errMsg = std::string_view()) {	// TODO may be ""sv
 	if (!ctx.isCancelable()) return;
 
 	auto cancel = ctx.checkCancel();
@@ -77,8 +78,8 @@ public:
 
 	RdxContext(const IRdxCancelContext* cancelCtx, Completion cmpl)
 		: fromReplication_(false), holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(cancelCtx), cmpl_(cmpl) {}
-	RdxContext(string_view activityTracer, string_view user, string_view query, ActivityContainer& container, int connectionId,
-			   const IRdxCancelContext* cancelCtx, Completion cmpl)
+	RdxContext(std::string_view activityTracer, std::string_view user, std::string_view query, ActivityContainer& container,
+			   int connectionId, const IRdxCancelContext* cancelCtx, Completion cmpl)
 		: fromReplication_(false),
 		  holdStatus_(kHold),
 		  activityCtx_(activityTracer, user, query, container, connectionId),
@@ -131,7 +132,7 @@ class QueryResults;
 class InternalRdxContext {
 public:
 	InternalRdxContext() noexcept : cmpl_(nullptr) {}
-	InternalRdxContext(RdxContext::Completion cmpl, const RdxDeadlineContext ctx, string_view activityTracer, string_view user,
+	InternalRdxContext(RdxContext::Completion cmpl, const RdxDeadlineContext ctx, std::string_view activityTracer, std::string_view user,
 					   int connectionId) noexcept
 		: cmpl_(cmpl), deadlineCtx_(std::move(ctx)), activityTracer_(activityTracer), user_(user), connectionId_(connectionId) {}
 
@@ -144,20 +145,22 @@ public:
 	InternalRdxContext WithCancelParent(const IRdxCancelContext* parent) const noexcept {
 		return InternalRdxContext(cmpl_, RdxDeadlineContext(deadlineCtx_.deadline(), parent), activityTracer_, user_, connectionId_);
 	}
-	InternalRdxContext WithActivityTracer(string_view activityTracer, string_view user, int connectionId = kNoConnectionId) const {
-		return activityTracer.empty() ? *this
-									  : InternalRdxContext(cmpl_, deadlineCtx_,
-														   (activityTracer_.empty() ? "" : activityTracer_ + "/") + std::string(activityTracer),
-														   user, connectionId);
+	InternalRdxContext WithActivityTracer(std::string_view activityTracer, std::string_view user,
+										  int connectionId = kNoConnectionId) const {
+		return activityTracer.empty()
+				   ? *this
+				   : InternalRdxContext(cmpl_, deadlineCtx_,
+										(activityTracer_.empty() ? "" : activityTracer_ + "/") + std::string(activityTracer), user,
+										connectionId);
 	}
-	void SetActivityTracer(string_view activityTracer, string_view user, int connectionId = kNoConnectionId) {
+	void SetActivityTracer(std::string_view activityTracer, std::string_view user, int connectionId = kNoConnectionId) {
 		activityTracer_ = std::string(activityTracer);
 		user_ = std::string(user);
 		connectionId_ = connectionId;
 	}
 
-	RdxContext CreateRdxContext(string_view query, ActivityContainer&) const;
-	RdxContext CreateRdxContext(string_view query, ActivityContainer&, QueryResults&) const;
+	RdxContext CreateRdxContext(std::string_view query, ActivityContainer&) const;
+	RdxContext CreateRdxContext(std::string_view query, ActivityContainer&, QueryResults&) const;
 	RdxContext::Completion Compl() const { return cmpl_; }
 	bool NeedTraceActivity() const { return !activityTracer_.empty(); }
 

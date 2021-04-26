@@ -15,6 +15,8 @@
 
 namespace reindexer_server {
 
+using namespace std::string_view_literals;
+
 const std::string kUsersYAMLFilename = "users.yml";
 const std::string kUsersJSONFilename = "users.json";
 
@@ -287,7 +289,7 @@ Error DBManager::readUsersJSON() noexcept {
 			for (auto &roleNode : userNode["roles"]) {
 				string db(roleNode.key);
 				try {
-					UserRole role = userRoleFromString(roleNode.As<string_view>());
+					UserRole role = userRoleFromString(roleNode.As<std::string_view>());
 					urec.roles.emplace(db, role);
 				} catch (const Error &err) {
 					logPrintf(LogWarning, "Skipping user '%s' for db '%s': ", urec.login, db, err.what());
@@ -330,37 +332,37 @@ Error DBManager::createDefaultUsersYAML() noexcept {
 	return errOK;
 }
 
-UserRole DBManager::userRoleFromString(string_view strRole) {
-	if (strRole == "data_read"_sv) {
+UserRole DBManager::userRoleFromString(std::string_view strRole) {
+	if (strRole == "data_read"sv) {
 		return kRoleDataRead;
-	} else if (strRole == "data_write"_sv) {
+	} else if (strRole == "data_write"sv) {
 		return kRoleDataWrite;
-	} else if (strRole == "db_admin"_sv) {
+	} else if (strRole == "db_admin"sv) {
 		return kRoleDBAdmin;
-	} else if (strRole == "owner"_sv) {
+	} else if (strRole == "owner"sv) {
 		return kRoleOwner;
 	}
 	throw Error(errParams, "Role \'%s\' is invalid", strRole);
 }
 
-string_view UserRoleName(UserRole role) noexcept {
+std::string_view UserRoleName(UserRole role) noexcept {
 	switch (role) {
 		case kUnauthorized:
-			return "unauthoried"_sv;
+			return "unauthoried"sv;
 		case kRoleNone:
-			return "none"_sv;
+			return "none"sv;
 		case kRoleDataRead:
-			return "data_read"_sv;
+			return "data_read"sv;
 		case kRoleDataWrite:
-			return "data_write"_sv;
+			return "data_write"sv;
 		case kRoleDBAdmin:
-			return "db_admin"_sv;
+			return "db_admin"sv;
 		case kRoleOwner:
-			return "owner"_sv;
+			return "owner"sv;
 		case kRoleSystem:
-			return "system"_sv;
+			return "system"sv;
 	}
-	return ""_sv;
+	return ""sv;
 }
 
 }  // namespace reindexer_server

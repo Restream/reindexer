@@ -12,8 +12,10 @@ namespace reindexer {
 namespace net {
 namespace http {
 
-static const string_view kStrEOL = "\r\n"_sv;
-extern std::unordered_map<int, string_view> kHTTPCodes;
+using namespace std::string_view_literals;
+
+static const std::string_view kStrEOL = "\r\n"sv;
+extern std::unordered_map<int, std::string_view> kHTTPCodes;
 
 ServerConnection::ServerConnection(int fd, ev::dynamic_loop &loop, Router &router) : ConnectionST(fd, loop, false), router_(router) {
 	callback(io_, ev::READ);
@@ -70,7 +72,7 @@ void ServerConnection::handleRequest(Request &req) {
 	}
 	router_.log(ctx);
 
-	ctx.writer->Write(string_view());
+	ctx.writer->Write(std::string_view());
 	ctx.stat.sizeStat.respSizeBytes = ctx.writer->Written();
 	if (router_.onResponse_) {
 		router_.onResponse_(ctx);
@@ -95,7 +97,7 @@ void ServerConnection::badRequest(int code, const char *msg) {
 	}
 }
 
-void ServerConnection::parseParams(const string_view &str) {
+void ServerConnection::parseParams(std::string_view str) {
 	const char *p = str.data();
 
 	const char *name = nullptr, *value = nullptr;
@@ -106,7 +108,7 @@ void ServerConnection::parseParams(const string_view &str) {
 			case '&':
 				if (!value) namelen = p - name;
 				if (name) {
-					request_.params.push_back(Param{string_view(name, namelen), string_view(value, value ? p - value : 0)});
+					request_.params.push_back(Param{std::string_view(name, namelen), std::string_view(value, value ? p - value : 0)});
 					name = value = nullptr;
 				}
 				break;
@@ -121,14 +123,14 @@ void ServerConnection::parseParams(const string_view &str) {
 	}
 	if (name) {
 		if (!value) namelen = p - name;
-		request_.params.push_back(Param{string_view(name, namelen), string_view(value, value ? p - value : 0)});
+		request_.params.push_back(Param{std::string_view(name, namelen), std::string_view(value, value ? p - value : 0)});
 	}
 }
 
 void ServerConnection::writeHttpResponse(int code) {
 	WrSerializer ser(wrBuf_.get_chunk());
 
-	ser << "HTTP/1.1 "_sv << code << ' ';
+	ser << "HTTP/1.1 "sv << code << ' ';
 
 	auto it = kHTTPCodes.find(code);
 	if (it != kHTTPCodes.end()) ser << it->second;
@@ -168,34 +170,35 @@ void ServerConnection::onRead() {
 
 			enableHttp11_ = (minor_version >= 1);
 			request_.clientAddr = clientAddr_;
-			request_.method = string_view(method, method_len);
-			request_.uri = string_view(uri, path_len);
+			request_.method = std::string_view(method, method_len);
+			request_.uri = std::string_view(uri, path_len);
 			request_.headers.clear();
 			request_.params.clear();
 			request_.size = size_t(res);
 
 			auto p = request_.uri.find('?');
-			if (p != string_view::npos) {
+			if (p != std::string_view::npos) {
 				parseParams(request_.uri.substr(p + 1));
 			}
 			request_.path = request_.uri.substr(0, p);
 
 			formData_ = false;
 			for (int i = 0; i < int(num_headers); i++) {
-				Header hdr{string_view(headers[i].name, headers[i].name_len), string_view(headers[i].value, headers[i].value_len)};
+				Header hdr{std::string_view(headers[i].name, headers[i].name_len),
+						   std::string_view(headers[i].value, headers[i].value_len)};
 
-				if (iequals(hdr.name, "content-length"_sv)) {
+				if (iequals(hdr.name, "content-length"sv)) {
 					bodyLeft_ = stoi(hdr.val);
-				} else if (iequals(hdr.name, "transfer-encoding"_sv) && iequals(hdr.val, "chunked"_sv)) {
+				} else if (iequals(hdr.name, "transfer-encoding"sv) && iequals(hdr.val, "chunked"sv)) {
 					bodyLeft_ = -1;
 					memset(&chunked_decoder_, 0, sizeof(chunked_decoder_));
 					badRequest(http::StatusInternalServerError, "Sorry, chunked encoded body not implemented");
 					return;
-				} else if (iequals(hdr.name, "content-type"_sv) && iequals(hdr.val, "application/x-www-form-urlencoded"_sv)) {
+				} else if (iequals(hdr.name, "content-type"sv) && iequals(hdr.val, "application/x-www-form-urlencoded"sv)) {
 					formData_ = true;
-				} else if (iequals(hdr.name, "connection"_sv) && iequals(hdr.val, "close"_sv)) {
+				} else if (iequals(hdr.name, "connection"sv) && iequals(hdr.val, "close"sv)) {
 					enableHttp11_ = false;
-				} else if (iequals(hdr.name, "expect"_sv) && iequals(hdr.val, "100-continue"_sv)) {
+				} else if (iequals(hdr.name, "expect"sv) && iequals(hdr.val, "100-continue"sv)) {
 					expectContinue_ = true;
 				}
 				request_.headers.push_back(hdr);
@@ -231,7 +234,7 @@ void ServerConnection::onRead() {
 					chunk = rdBuf_.tail();
 				}
 				assert(chunk.size() >= size_t(bodyLeft_));
-				parseParams(string_view(chunk.data(), bodyLeft_));
+				parseParams(std::string_view(chunk.data(), bodyLeft_));
 			}
 
 			request_.size += size_t(bodyLeft_);
@@ -247,7 +250,7 @@ void ServerConnection::onRead() {
 
 bool ServerConnection::ResponseWriter::SetHeader(const Header &hdr) {
 	if (respSend_) return false;
-	headers_ << hdr.name << ": "_sv << hdr.val << kStrEOL;
+	headers_ << hdr.name << ": "sv << hdr.val << kStrEOL;
 	return true;
 }
 bool ServerConnection::ResponseWriter::SetRespCode(int code) {
@@ -268,21 +271,21 @@ ssize_t ServerConnection::ResponseWriter::Write(chunk &&chunk) {
 		conn_->writeHttpResponse(code_);
 
 		if (conn_->enableHttp11_ && !conn_->closeConn_) {
-			SetHeader(Header{"ServerConnection"_sv, "keep-alive"_sv});
+			SetHeader(Header{"ServerConnection"sv, "keep-alive"sv});
 		}
 		if (!isChunkedResponse()) {
 			size_t l = u64toa(contentLength_, szBuf) - szBuf;
-			SetHeader(Header{"Content-Length"_sv, {szBuf, l}});
+			SetHeader(Header{"Content-Length"sv, {szBuf, l}});
 		} else {
-			SetHeader(Header{"Transfer-Encoding"_sv, "chunked"_sv});
+			SetHeader(Header{"Transfer-Encoding"sv, "chunked"sv});
 		}
 
 		std::tm tm;
 		std::time_t t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 		fast_gmtime_r(&t, &tm);				   // gmtime_r(&t, &tm);
 		size_t l = fast_strftime(dtBuf, &tm);  // strftime(tmpBuf, sizeof(tmpBuf), "%a %c", &tm);
-		SetHeader(Header{"Date"_sv, {dtBuf, l}});
-		SetHeader(Header{"Server"_sv, "reindex"_sv});
+		SetHeader(Header{"Date"sv, {dtBuf, l}});
+		SetHeader(Header{"Server"sv, "reindex"sv});
 
 		headers_ << kStrEOL;
 		conn_->wrBuf_.write(headers_.DetachChunk());
@@ -307,7 +310,7 @@ ssize_t ServerConnection::ResponseWriter::Write(chunk &&chunk) {
 	}
 	return len;
 }
-ssize_t ServerConnection::ResponseWriter::Write(string_view data) {
+ssize_t ServerConnection::ResponseWriter::Write(std::string_view data) {
 	WrSerializer ser(conn_->wrBuf_.get_chunk());
 	ser << data;
 	return Write(ser.DetachChunk());

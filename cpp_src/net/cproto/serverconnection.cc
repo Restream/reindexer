@@ -194,7 +194,7 @@ static void packRPC(WrSerializer &ser, Context &ctx, const Error &status, const 
 	}
 
 	size_t savePos = ser.Len();
-	ser.Write(string_view(reinterpret_cast<char *>(&hdr), sizeof(hdr)));
+	ser.Write(std::string_view(reinterpret_cast<char *>(&hdr), sizeof(hdr)));
 
 	ser.PutVarUint(status.code());
 	ser.PutVString(status.what());
@@ -254,7 +254,7 @@ void ServerConnection::CallRPC(const IRPCCall &call) {
 		CmdCode cmd;
 		curCall.Get(&curCall, cmd, args);
 		if (args.size() >= 3) {
-			string_view nsName(args[1]);
+			std::string_view nsName(args[1]);
 			WrSerializer ser;
 			ser.PutVString(nsName);
 			intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> data;

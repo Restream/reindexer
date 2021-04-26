@@ -8,6 +8,8 @@
 #include "sortexpression.h"
 #include "tools/logger.h"
 
+using namespace std::string_view_literals;
+
 constexpr int kMinIterationsForInnerJoinOptimization = 100;
 constexpr int kMaxIterationsForIdsetPreresult = 10000;
 constexpr int kCancelCheckFrequency = 1000;
@@ -210,7 +212,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 			if (it.comparators_.size()) hasComparators = true;
 		});
 
-		if (!isFt && !qres.HasIdsets()) {
+		if (!qres.HasIdsets()) {
 			SelectKeyResult scan;
 			if (ctx.sortingContext.isOptimizationEnabled()) {
 				auto it = ns_->indexes_[ctx.sortingContext.uncommitedIndex]->CreateIterator();
@@ -289,7 +291,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 
 	explain.StopTiming();
 	explain.SetSortOptimization(ctx.sortingContext.isOptimizationEnabled());
-	explain.PutSortIndex(ctx.sortingContext.sortIndex() ? ctx.sortingContext.sortIndex()->Name() : "-"_sv);
+	explain.PutSortIndex(ctx.sortingContext.sortIndex() ? ctx.sortingContext.sortIndex()->Name() : "-"sv);
 	explain.PutCount((ctx.preResult && ctx.preResult->executionMode == JoinPreResult::ModeBuild)
 						 ? (ctx.preResult->dataMode == JoinPreResult::ModeIdSet ? ctx.preResult->ids.size() : ctx.preResult->values.size())
 						 : result.Count());
@@ -499,7 +501,7 @@ void NsSelecter::setLimitAndOffset(ItemRefVector &queryResult, size_t offset, si
 	}
 }
 
-void NsSelecter::processLeftJoins(QueryResults &qr, SelectCtx &sctx, size_t startPos, const RdxContext& rdxCtx) {
+void NsSelecter::processLeftJoins(QueryResults &qr, SelectCtx &sctx, size_t startPos, const RdxContext &rdxCtx) {
 	if (!checkIfThereAreLeftJoins(sctx)) return;
 	for (size_t i = startPos; i < qr.Count(); ++i) {
 		IdType rowid = qr[i].GetItemRef().Id();
@@ -788,7 +790,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) const {
 		FieldsSet fields;
 		h_vector<Aggregator::SortingEntry, 1> sortingEntries(ag.sortingEntries_.size());
 		for (size_t i = 0; i < sortingEntries.size(); ++i) {
-			sortingEntries[i] = {(iequals("count"_sv, ag.sortingEntries_[i].expression) ? Aggregator::SortingEntry::Count : NotFilled),
+			sortingEntries[i] = {(iequals("count"sv, ag.sortingEntries_[i].expression) ? Aggregator::SortingEntry::Count : NotFilled),
 								 ag.sortingEntries_[i].desc};
 		}
 		int idx = -1;
@@ -839,7 +841,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) const {
 	return ret;
 }
 
-void NsSelecter::prepareSortIndex(string_view column, int &index, bool &skipSortingEntry, StrictMode strictMode) {
+void NsSelecter::prepareSortIndex(std::string_view column, int &index, bool &skipSortingEntry, StrictMode strictMode) {
 	assert(!column.empty());
 	index = IndexValueType::SetByJsonPath;
 	if (ns_->getIndexByName(string{column}, index) && ns_->indexes_[index]->Opts().IsSparse()) {
@@ -850,8 +852,8 @@ void NsSelecter::prepareSortIndex(string_view column, int &index, bool &skipSort
 	}
 }
 
-void NsSelecter::prepareSortJoinedIndex(size_t nsIdx, string_view column, int &index, const std::vector<JoinedSelector> &joinedSelectors,
-										bool &skipSortingEntry, StrictMode strictMode) {
+void NsSelecter::prepareSortJoinedIndex(size_t nsIdx, std::string_view column, int &index,
+										const std::vector<JoinedSelector> &joinedSelectors, bool &skipSortingEntry, StrictMode strictMode) {
 	assert(!column.empty());
 	index = IndexValueType::SetByJsonPath;
 	const auto &js = joinedSelectors[nsIdx];
@@ -864,7 +866,7 @@ void NsSelecter::prepareSortJoinedIndex(size_t nsIdx, string_view column, int &i
 	}
 }
 
-bool NsSelecter::validateField(StrictMode strictMode, string_view name, const std::string &nsName, const TagsMatcher &tagsMatcher) {
+bool NsSelecter::validateField(StrictMode strictMode, std::string_view name, const std::string &nsName, const TagsMatcher &tagsMatcher) {
 	if (strictMode == StrictModeIndexes) {
 		throw Error(errParams,
 					"Current query strict mode allows sort by index fields only. There are no indexes with name '%s' in namespace '%s'",

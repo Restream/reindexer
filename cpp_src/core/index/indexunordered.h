@@ -13,7 +13,7 @@ template <typename T>
 class IndexUnordered : public IndexStore<typename T::key_type> {
 public:
 	using ref_type =
-		typename std::conditional<std::is_same<typename T::key_type, key_string>::value, string_view, typename T::key_type>::type;
+		typename std::conditional<std::is_same<typename T::key_type, key_string>::value, std::string_view, typename T::key_type>::type;
 
 	IndexUnordered(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields);
 	IndexUnordered(const IndexUnordered &other);

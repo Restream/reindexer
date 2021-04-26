@@ -6,80 +6,81 @@ namespace reindexer {
 namespace net {
 namespace cproto {
 
-string_view CmdName(uint16_t cmd) {
+std::string_view CmdName(uint16_t cmd) {
+	using namespace std::string_view_literals;
 	switch (cmd) {
 		case kCmdPing:
-			return "Ping"_sv;
+			return "Ping"sv;
 		case kCmdLogin:
-			return "Login"_sv;
+			return "Login"sv;
 		case kCmdOpenDatabase:
-			return "OpenDatabase"_sv;
+			return "OpenDatabase"sv;
 		case kCmdCloseDatabase:
-			return "CloseDatabase"_sv;
+			return "CloseDatabase"sv;
 		case kCmdDropDatabase:
-			return "DropDatabase"_sv;
+			return "DropDatabase"sv;
 		case kCmdOpenNamespace:
-			return "OpenNamespace"_sv;
+			return "OpenNamespace"sv;
 		case kCmdCloseNamespace:
-			return "CloseNamespace"_sv;
+			return "CloseNamespace"sv;
 		case kCmdDropNamespace:
-			return "DropNamespace"_sv;
+			return "DropNamespace"sv;
 		case kCmdTruncateNamespace:
-			return "TruncateNamespace"_sv;
+			return "TruncateNamespace"sv;
 		case kCmdRenameNamespace:
-			return "RenameNamespace"_sv;
+			return "RenameNamespace"sv;
 		case kCmdAddIndex:
-			return "AddIndex"_sv;
+			return "AddIndex"sv;
 		case kCmdEnumNamespaces:
-			return "EnumNamespaces"_sv;
+			return "EnumNamespaces"sv;
 		case kCmdEnumDatabases:
-			return "EnumDatabases"_sv;
+			return "EnumDatabases"sv;
 		case kCmdDropIndex:
-			return "DropIndex"_sv;
+			return "DropIndex"sv;
 		case kCmdUpdateIndex:
-			return "UpdateIndex"_sv;
+			return "UpdateIndex"sv;
 		case kCmdAddTxItem:
-			return "AddTxItem"_sv;
+			return "AddTxItem"sv;
 		case kCmdCommitTx:
-			return "CommitTx"_sv;
+			return "CommitTx"sv;
 		case kCmdRollbackTx:
-			return "RollbackTx"_sv;
+			return "RollbackTx"sv;
 		case kCmdStartTransaction:
-			return "StartTransaction"_sv;
+			return "StartTransaction"sv;
 		case kCmdDeleteQueryTx:
-			return "DeleteQueryTx"_sv;
+			return "DeleteQueryTx"sv;
 		case kCmdUpdateQueryTx:
-			return "UpdateQueryTx"_sv;
+			return "UpdateQueryTx"sv;
 		case kCmdCommit:
-			return "Commit"_sv;
+			return "Commit"sv;
 		case kCmdModifyItem:
-			return "ModifyItem"_sv;
+			return "ModifyItem"sv;
 		case kCmdDeleteQuery:
-			return "DeleteQuery"_sv;
+			return "DeleteQuery"sv;
 		case kCmdUpdateQuery:
-			return "UpdateQuery"_sv;
+			return "UpdateQuery"sv;
 		case kCmdSelect:
-			return "Select"_sv;
+			return "Select"sv;
 		case kCmdSelectSQL:
-			return "SelectSQL"_sv;
+			return "SelectSQL"sv;
 		case kCmdFetchResults:
-			return "FetchResults"_sv;
+			return "FetchResults"sv;
 		case kCmdCloseResults:
-			return "CloseResults"_sv;
+			return "CloseResults"sv;
 		case kCmdGetMeta:
-			return "GetMeta"_sv;
+			return "GetMeta"sv;
 		case kCmdPutMeta:
-			return "PutMeta"_sv;
+			return "PutMeta"sv;
 		case kCmdEnumMeta:
-			return "EnumMeta"_sv;
+			return "EnumMeta"sv;
 		case kCmdSubscribeUpdates:
-			return "SubscribeUpdates"_sv;
+			return "SubscribeUpdates"sv;
 		case kCmdUpdates:
-			return "Updates"_sv;
+			return "Updates"sv;
 		case kCmdGetSQLSuggestions:
-			return "GetSQLSuggestions"_sv;
+			return "GetSQLSuggestions"sv;
 		default:
-			return "Unknown"_sv;
+			return "Unknown"sv;
 	}
 }
 

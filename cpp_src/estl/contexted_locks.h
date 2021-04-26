@@ -65,12 +65,13 @@ public:
 	}
 
 	void lock() {
+		using namespace std::string_view_literals;
 		_M_lockable();
 		assert(_M_context);
 		const auto lockWard = _M_context->BeforeLock(_Mutex::mark);
 		if (_M_chkTimeout.count() > 0 && _M_context->isCancelable()) {
 			do {
-				ThrowOnCancel(*_M_context, "Lock was canceled on condition"_sv);
+				ThrowOnCancel(*_M_context, "Lock was canceled on condition"sv);
 			} while (!_M_mtx->try_lock_for(_M_chkTimeout));
 		} else {
 			_M_mtx->lock();
@@ -158,12 +159,13 @@ public:
 	}
 
 	void lock() {
+		using namespace std::string_view_literals;
 		_M_lockable();
 		assert(_M_context);
 		const auto lockWard = _M_context->BeforeLock(_Mutex::mark);
 		if (_M_chkTimeout.count() > 0 && _M_context->isCancelable()) {
 			do {
-				ThrowOnCancel(*_M_context, "Lock was canceled on condition"_sv);
+				ThrowOnCancel(*_M_context, "Lock was canceled on condition"sv);
 			} while (!_M_mtx->try_lock_shared_for(_M_chkTimeout));
 		} else {
 			_M_mtx->lock_shared();

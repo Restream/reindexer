@@ -35,7 +35,6 @@ osx_deps="gperftools leveldb snappy cmake git"
 centos8_debs="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
 fedora_debs=" gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
 centos7_debs="centos-release-scl devtoolset-9-gcc devtoolset-9-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
-centos6_debs="devtoolset-9-gcc devtoolset-9-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build git"
 debian_debs="build-essential g++ libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git"
 alpine_apks="g++ snappy-dev leveldb-dev libexecinfo-dev make curl cmake unzip git"
 arch_pkgs="gcc snappy leveldb make curl cmake unzip git"
@@ -156,26 +155,6 @@ install_fedora() {
     return $?
 }
 
-install_centos6() {
-    yum install -y epel-release >/dev/null 2>&1 || true
-    for pkg in ${centos6_debs}
-    do
-        if rpm -qa | grep -qw ${pkg}; then
-            info_msg "Package '$pkg' already installed. Skip ....."
-        else
-            info_msg "Installing '$pkg' package ....."
-            yum install -y ${pkg}  >/dev/null 2>&1
-            if [ $? -eq 0 ]; then
-                success_msg "Package '$pkg' was installed successfully."
-            else
-                error_msg "Could not install '$pkg' package. Try 'yum update && yum install $pkg'" && return 1
-            fi
-        fi
-    done
-    source scl_source enable devtoolset-9
-    cmake_installed || install_cmake_linux
-    return $?
-}
 
 install_debian() {
     info_msg "Updating packages....."
@@ -267,11 +246,7 @@ detect_installer() {
             return 1
         fi
     elif [ -f /etc/centos-release ]; then
-        if [ $(cat /etc/centos-release | cut -d" " -f3 | cut -d "." -f1) -eq 6 ]; then
-            OS_TYPE="centos6" && return
-        else
             return 1
-        fi
     elif [ "$(uname)" == "Darwin" ]; then
         OS_TYPE="osx" && return
     else

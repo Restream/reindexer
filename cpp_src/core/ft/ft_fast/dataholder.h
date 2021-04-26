@@ -70,7 +70,7 @@ public:
 
 	flat_str_multimap<char, WordIdType>& GetTypos();
 	// returns id and found or not found
-	WordIdType findWord(string_view word);
+	WordIdType findWord(std::string_view word);
 	WordIdType BuildWordId(uint32_t id);
 	PackedWordEntry& getWordById(WordIdType id);
 	string Dump();
@@ -96,7 +96,7 @@ public:
 
 	// Virtual documents, merged. Addresable by VDocIdType
 	// Temp data for build
-	vector<h_vector<pair<string_view, uint32_t>, 8>> vdocsTexts;
+	vector<h_vector<pair<std::string_view, uint32_t>, 8>> vdocsTexts;
 	size_t vodcsOffset_;
 	size_t szCnt;
 	unordered_map<string, stemmer> stemmers_;

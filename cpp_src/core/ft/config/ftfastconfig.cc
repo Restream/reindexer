@@ -8,7 +8,7 @@
 
 namespace reindexer {
 
-void FtFastConfig::parse(string_view json, const fast_hash_map<string, int>& fields) {
+void FtFastConfig::parse(std::string_view json, const fast_hash_map<std::string, int>& fields) {
 	fieldsCfg.clear();
 	if (json.empty()) {
 		fieldsCfg.resize(fields.size() ? fields.size() : 1);
@@ -40,7 +40,7 @@ void FtFastConfig::parse(string_view json, const fast_hash_map<string, int>& fie
 		fieldsCfg.insert(fieldsCfg.end(), fields.size() ? fields.size() : 1, defaultFieldCfg);
 
 		const auto& fieldsCfgNode = root["fields"];
-		if (!fieldsCfgNode.empty()) {
+		if (!fieldsCfgNode.empty() && begin(fieldsCfgNode.value) != end(fieldsCfgNode.value)) {
 			if (fields.empty()) {
 				throw Error(errParseDSL, "Configuration for single field fulltext index cannot contain field specifications");
 			}

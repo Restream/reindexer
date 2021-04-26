@@ -15,19 +15,19 @@ using reindexer::net::cproto::RPCAnswer;
 
 RPCClientMock::RPCClientMock(const ReindexerConfig& config) : RPCClient(config) {}
 
-Error RPCClientMock::Insert(string_view nsName, Item& item, const InternalRdxContext& ctx, int outputFormat) {
+Error RPCClientMock::Insert(std::string_view nsName, Item& item, const InternalRdxContext& ctx, int outputFormat) {
 	return modifyItem(nsName, item, ModeInsert, config_.RequestTimeout, ctx, outputFormat);
 }
 
-Error RPCClientMock::Update(string_view nsName, Item& item, const InternalRdxContext& ctx, int outputFormat) {
+Error RPCClientMock::Update(std::string_view nsName, Item& item, const InternalRdxContext& ctx, int outputFormat) {
 	return modifyItem(nsName, item, ModeUpdate, config_.RequestTimeout, ctx, outputFormat);
 }
 
-Error RPCClientMock::Upsert(string_view nsName, Item& item, const InternalRdxContext& ctx, int outputFormat) {
+Error RPCClientMock::Upsert(std::string_view nsName, Item& item, const InternalRdxContext& ctx, int outputFormat) {
 	return modifyItem(nsName, item, ModeUpsert, config_.RequestTimeout, ctx, outputFormat);
 }
 
-Error RPCClientMock::Delete(string_view nsName, Item& item, const InternalRdxContext& ctx, int outputFormat) {
+Error RPCClientMock::Delete(std::string_view nsName, Item& item, const InternalRdxContext& ctx, int outputFormat) {
 	return modifyItem(nsName, item, ModeDelete, config_.RequestTimeout, ctx, outputFormat);
 }
 
@@ -100,7 +100,8 @@ Error RPCClientMock::Update(const Query& query, QueryResults& result, const Inte
 	return ret.Status();
 }
 
-Error RPCClientMock::modifyItem(string_view nsName, Item& item, int mode, seconds netTimeout, const InternalRdxContext& ctx, int format) {
+Error RPCClientMock::modifyItem(std::string_view nsName, Item& item, int mode, seconds netTimeout, const InternalRdxContext& ctx,
+								int format) {
 	if (ctx.cmpl()) {
 		return modifyItemAsync(nsName, &item, mode, nullptr, netTimeout, ctx, format);
 	}
@@ -117,7 +118,7 @@ Error RPCClientMock::modifyItem(string_view nsName, Item& item, int mode, second
 	for (int tryCount = 0;; tryCount++) {
 		auto conn = getConn();
 		auto netDeadline = conn->Now() + netTimeout;
-		string_view data;
+		std::string_view data;
 		switch (format) {
 			case FormatJson:
 				data = item.GetJSON();
@@ -167,7 +168,7 @@ Error RPCClientMock::modifyItem(string_view nsName, Item& item, int mode, second
 	}
 }
 
-Error RPCClientMock::modifyItemAsync(string_view nsName, Item* item, int mode, cproto::ClientConnection* conn, seconds netTimeout,
+Error RPCClientMock::modifyItemAsync(std::string_view nsName, Item* item, int mode, cproto::ClientConnection* conn, seconds netTimeout,
 									 const InternalRdxContext& ctx, int format) {
 	WrSerializer ser;
 	if (item->impl_->GetPrecepts().size()) {
@@ -178,7 +179,7 @@ Error RPCClientMock::modifyItemAsync(string_view nsName, Item* item, int mode, c
 	}
 	if (!conn) conn = getConn();
 
-	string_view data;
+	std::string_view data;
 	switch (format) {
 		case FormatJson:
 			data = item->GetJSON();
@@ -237,7 +238,7 @@ Error RPCClientMock::modifyItemAsync(string_view nsName, Item* item, int mode, c
 	return errOK;
 }
 
-Error RPCClientMock::selectImpl(string_view query, QueryResults& result, cproto::ClientConnection* conn, seconds netTimeout,
+Error RPCClientMock::selectImpl(std::string_view query, QueryResults& result, cproto::ClientConnection* conn, seconds netTimeout,
 								const InternalRdxContext& ctx, int outputFormat) {
 	int flags = 0;
 	if (outputFormat == FormatMsgPack) {

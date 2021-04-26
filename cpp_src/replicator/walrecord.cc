@@ -106,48 +106,49 @@ WALRecord::WALRecord(span<uint8_t> packed) {
 	}
 }
 
-static string_view wrecType2Str(WALRecType t) {
+static std::string_view wrecType2Str(WALRecType t) {
+	using namespace std::string_view_literals;
 	switch (t) {
 		case WalEmpty:
-			return "<WalEmpty>"_sv;
+			return "<WalEmpty>"sv;
 		case WalItemUpdate:
-			return "WalItemUpdate"_sv;
+			return "WalItemUpdate"sv;
 		case WalUpdateQuery:
-			return "WalUpdateQuery"_sv;
+			return "WalUpdateQuery"sv;
 		case WalIndexAdd:
-			return "WalIndexAdd"_sv;
+			return "WalIndexAdd"sv;
 		case WalIndexDrop:
-			return "WalIndexDrop"_sv;
+			return "WalIndexDrop"sv;
 		case WalIndexUpdate:
-			return "WalIndexUpdate"_sv;
+			return "WalIndexUpdate"sv;
 		case WalReplState:
-			return "WalReplState"_sv;
+			return "WalReplState"sv;
 		case WalPutMeta:
-			return "WalPutMeta"_sv;
+			return "WalPutMeta"sv;
 		case WalNamespaceAdd:
-			return "WalNamespaceAdd"_sv;
+			return "WalNamespaceAdd"sv;
 		case WalNamespaceDrop:
-			return "WalNamespaceDrop"_sv;
+			return "WalNamespaceDrop"sv;
 		case WalNamespaceRename:
-			return "WalNamespaceRename"_sv;
+			return "WalNamespaceRename"sv;
 		case WalItemModify:
-			return "WalItemModify"_sv;
+			return "WalItemModify"sv;
 		case WalInitTransaction:
-			return "WalInitTransaction"_sv;
+			return "WalInitTransaction"sv;
 		case WalCommitTransaction:
-			return "WalCommitTransaction"_sv;
+			return "WalCommitTransaction"sv;
 		case WalForceSync:
-			return "WalForceSync"_sv;
+			return "WalForceSync"sv;
 		case WalWALSync:
-			return "WalWALSync"_sv;
+			return "WalWALSync"sv;
 		case WalSetSchema:
-			return "WalSetSchema"_sv;
+			return "WalSetSchema"sv;
 		default:
-			return "<Unknown>"_sv;
+			return "<Unknown>"sv;
 	}
 }
 
-WrSerializer &WALRecord::Dump(WrSerializer &ser, std::function<string(string_view)> cjsonViewer) const {
+WrSerializer &WALRecord::Dump(WrSerializer &ser, std::function<string(std::string_view)> cjsonViewer) const {
 	ser << wrecType2Str(type);
 	if (inTransaction) ser << " InTransaction";
 	switch (type) {
@@ -181,7 +182,7 @@ WrSerializer &WALRecord::Dump(WrSerializer &ser, std::function<string(string_vie
 	return ser;
 }
 
-void WALRecord::GetJSON(JsonBuilder &jb, std::function<string(string_view)> cjsonViewer) const {
+void WALRecord::GetJSON(JsonBuilder &jb, std::function<string(std::string_view)> cjsonViewer) const {
 	jb.Put("type", wrecType2Str(type));
 	jb.Put("in_transaction", inTransaction);
 
@@ -231,15 +232,15 @@ void WALRecord::GetJSON(JsonBuilder &jb, std::function<string(string_view)> cjso
 	return;
 }
 
-WALRecord::WALRecord(string_view data) : WALRecord(span<uint8_t>(reinterpret_cast<const uint8_t *>(data.data()), data.size())) {}
+WALRecord::WALRecord(std::string_view data) : WALRecord(span<uint8_t>(reinterpret_cast<const uint8_t *>(data.data()), data.size())) {}
 
-SharedWALRecord WALRecord::GetShared(int64_t lsn, int64_t upstreamLSN, string_view nsName) const {
+SharedWALRecord WALRecord::GetShared(int64_t lsn, int64_t upstreamLSN, std::string_view nsName) const {
 	if (!shared_.packed_) {
 		shared_ = SharedWALRecord(lsn, upstreamLSN, nsName, *this);
 	}
 	return shared_;
 }
-SharedWALRecord::SharedWALRecord(int64_t lsn, int64_t originLSN, string_view nsName, const WALRecord &rec) {
+SharedWALRecord::SharedWALRecord(int64_t lsn, int64_t originLSN, std::string_view nsName, const WALRecord &rec) {
 	WrSerializer ser;
 	ser.PutVarint(lsn);
 	ser.PutVarint(originLSN);

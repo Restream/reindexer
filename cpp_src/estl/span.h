@@ -2,7 +2,7 @@
 
 #include <assert.h>
 #include <stdint.h>
-#include "string_view.h"
+#include <string_view>
 #include "trivial_reverse_iterator.h"
 
 namespace reindexer {
@@ -88,6 +88,6 @@ protected:
 	size_type size_;
 };
 
-inline static span<char> giftStr(string_view sv) { return span<char>(const_cast<char*>(sv.data()), sv.size()); }
+inline static span<char> giftStr(std::string_view sv) { return span<char>(const_cast<char*>(sv.data()), sv.size()); }
 
 }  // namespace reindexer

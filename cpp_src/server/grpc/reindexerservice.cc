@@ -272,7 +272,7 @@ static IndexDef toIndexDef(const Index& src) {
 		assert(rx);
 		status = rx->GetProtobufSchema(ser, nses);
 		if (status.ok()) {
-			string_view proto = ser.Slice();
+			std::string_view proto = ser.Slice();
 			response->set_proto(proto.data(), proto.length());
 		}
 	}
@@ -356,7 +356,7 @@ static IndexDef toIndexDef(const Index& src) {
 	ErrorResponse response;
 	ModifyItemRequest itemRequest;
 	while (stream->Read(&itemRequest)) {
-		string_view data(itemRequest.data().data(), itemRequest.data().length());
+		std::string_view data(itemRequest.data().data(), itemRequest.data().length());
 		if (data.empty()) {
 			status = Error(errParams, "Item could not be empty");
 			break;

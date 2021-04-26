@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <iostream>
 #include <list>
 #include <string>
@@ -66,9 +67,9 @@ public:
 	void BuildRow(std::ostream& o, int idx, TableCalculator<QueryResultsT>& tableCalculator);
 
 private:
-	static int computeFieldWidth(string_view str, int maxWidth);
+	static int computeFieldWidth(std::string_view str, int maxWidth);
 	static void ensureFieldWidthIsOk(std::string& str, int maxWidth);
-	static bool isValueMultiline(string_view, bool breakingTheLine, const ColumnData&, int symbolsTillTheEOFLine);
+	static bool isValueMultiline(std::string_view, bool breakingTheLine, const ColumnData&, int symbolsTillTheEOFLine);
 	static void startLine(std::ostream& o, const int& currLineWidth);
 
 private:

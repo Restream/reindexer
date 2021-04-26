@@ -7,6 +7,7 @@
 namespace reindexer {
 
 void jsonValueToString(gason::JsonValue o, WrSerializer &ser, int shift, int indent, bool escapeStrings) {
+	using namespace std::string_view_literals;
 	bool enableEol = (shift != 0) || (indent != 0);
 	switch (o.getTag()) {
 		case gason::JSON_NUMBER:
@@ -65,7 +66,7 @@ void jsonValueToString(gason::JsonValue o, WrSerializer &ser, int shift, int ind
 			ser << false;
 			break;
 		case gason::JSON_NULL:
-			ser << "null"_sv;
+			ser << "null"sv;
 			break;
 	}
 }

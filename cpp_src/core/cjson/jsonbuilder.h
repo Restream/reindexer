@@ -23,10 +23,11 @@ public:
 	void SetTagsPath(const TagsPath *) {}
 
 	/// Start new object
-	JsonBuilder Object(string_view name = {}, int size = KUnknownFieldSize);
+	JsonBuilder Object(std::string_view name = {}, int size = KUnknownFieldSize);
+	JsonBuilder Object(std::nullptr_t, int size = KUnknownFieldSize) { return Object(std::string_view{}, size); }
 	JsonBuilder Object(int tagName, int size = KUnknownFieldSize) { return Object(getNameByTag(tagName), size); }
 
-	JsonBuilder Array(string_view name, int size = KUnknownFieldSize);
+	JsonBuilder Array(std::string_view name, int size = KUnknownFieldSize);
 	JsonBuilder Array(int tagName, int size = KUnknownFieldSize) { return Array(getNameByTag(tagName), size); }
 
 	template <typename T>
@@ -35,7 +36,7 @@ public:
 		for (auto d : data) node.Put({}, d);
 	}
 	template <typename T>
-	void Array(string_view n, span<T> data, int /*offset*/ = 0) {
+	void Array(std::string_view n, span<T> data, int /*offset*/ = 0) {
 		JsonBuilder node = Array(n);
 		for (auto d : data) node.Put({}, d);
 	}
@@ -45,11 +46,13 @@ public:
 		while (count--) node.Put({}, ser.GetRawVariant(KeyValueType(tagType)));
 	}
 
-	JsonBuilder &Put(string_view name, const Variant &arg);
-	JsonBuilder &Put(string_view name, string_view arg);
-	JsonBuilder &Put(string_view name, const char *arg) { return Put(name, string_view(arg)); }
+	JsonBuilder &Put(std::string_view name, const Variant &arg);
+	JsonBuilder &Put(std::nullptr_t, const Variant &arg) { return Put(std::string_view{}, arg); }
+	JsonBuilder &Put(std::string_view name, std::string_view arg);
+	JsonBuilder &Put(std::nullptr_t, std::string_view arg) { return Put(std::string_view{}, arg); }
+	JsonBuilder &Put(std::string_view name, const char *arg) { return Put(name, std::string_view(arg)); }
 	template <typename T, typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value>::type * = nullptr>
-	JsonBuilder &Put(string_view name, T arg) {
+	JsonBuilder &Put(std::string_view name, T arg) {
 		putName(name);
 		(*ser_) << arg;
 		return *this;
@@ -59,18 +62,20 @@ public:
 		return Put(getNameByTag(tagName), arg);
 	}
 
-	JsonBuilder &Raw(int tagName, string_view arg) { return Raw(getNameByTag(tagName), arg); }
-	JsonBuilder &Raw(string_view name, string_view arg);
-	JsonBuilder &Json(string_view name, string_view arg) { return Raw(name, arg); }
+	JsonBuilder &Raw(int tagName, std::string_view arg) { return Raw(getNameByTag(tagName), arg); }
+	JsonBuilder &Raw(std::string_view name, std::string_view arg);
+	JsonBuilder &Raw(std::nullptr_t, std::string_view arg) { return Raw(std::string_view{}, arg); }
+	JsonBuilder &Json(std::string_view name, std::string_view arg) { return Raw(name, arg); }
+	JsonBuilder &Json(std::nullptr_t, std::string_view arg) { return Raw(std::string_view{}, arg); }
 
 	JsonBuilder &Null(int tagName) { return Null(getNameByTag(tagName)); }
-	JsonBuilder &Null(string_view name);
+	JsonBuilder &Null(std::string_view name);
 
 	JsonBuilder &End();
 
 protected:
-	void putName(string_view name);
-	string_view getNameByTag(int tagName);
+	void putName(std::string_view name);
+	std::string_view getNameByTag(int tagName);
 
 	WrSerializer *ser_;
 	const TagsMatcher *tm_;

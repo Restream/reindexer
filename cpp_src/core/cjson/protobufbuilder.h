@@ -1,11 +1,11 @@
 #pragma once
 
+#include <string_view>
 #include "core/cjson/objtype.h"
 #include "core/cjson/tagslengths.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/keyvalue/p_string.h"
 #include "estl/span.h"
-#include "estl/string_view.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -58,7 +58,7 @@ public:
 	}
 
 	template <typename T>
-	ProtobufBuilder& Put(string_view tagName, const T& val) {
+	ProtobufBuilder& Put(std::string_view tagName, const T& val) {
 		put(tm_->name2tag(tagName), val);
 		return *this;
 	}
@@ -81,7 +81,7 @@ public:
 	void Array(int fieldIdx, span<T> data, int /*offset*/ = 0) {
 		auto array = ArrayNotPacked(fieldIdx);
 		for (const T& item : data) {
-			array.put(fieldIdx, string_view(item));
+			array.put(fieldIdx, std::string_view(item));
 		}
 	}
 
@@ -95,7 +95,7 @@ public:
 		return ProtobufBuilder(ser_, ObjType::TypeArray, schema_, tm_, tagsPath_, fieldIdx);
 	}
 
-	ProtobufBuilder Array(string_view tagName, int size = KUnknownFieldSize) { return Array(tm_->name2tag(tagName), size); }
+	ProtobufBuilder Array(std::string_view tagName, int size = KUnknownFieldSize) { return Array(tm_->name2tag(tagName), size); }
 	ProtobufBuilder Array(int fieldIdx, int = KUnknownFieldSize) { return ArrayNotPacked(fieldIdx); }
 
 	void Array(int fieldIdx, Serializer& rdser, int tagType, int count) {
@@ -109,7 +109,8 @@ public:
 	}
 
 	ProtobufBuilder Object(int fieldIdx, int = KUnknownFieldSize);
-	ProtobufBuilder Object(string_view tagName, int size = KUnknownFieldSize) { return Object(tm_->name2tag(tagName), size); }
+	ProtobufBuilder Object(std::string_view tagName, int size = KUnknownFieldSize) { return Object(tm_->name2tag(tagName), size); }
+	ProtobufBuilder Object(std::nullptr_t) { return Object(std::string_view{}); }
 
 	void End();
 
@@ -120,7 +121,7 @@ private:
 	void put(int fieldIdx, int val);
 	void put(int fieldIdx, int64_t val);
 	void put(int fieldIdx, double val);
-	void put(int fieldIdx, string_view val);
+	void put(int fieldIdx, std::string_view val);
 	void put(int fieldIdx, const Variant& val);
 
 	ObjType type_;

@@ -25,8 +25,8 @@ environment:
     - BUILD_TYPE: Release
       COMPILER: MinGW
       PLATFORM: Win32
-      TOOLCHAIN: i686-6.3.0-posix-dwarf-rt_v5-rev1
-      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+      TOOLCHAIN: i686-8.1.0-posix-dwarf-rt_v6-rev0
+      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
 
 build_script:
   - git describe --tags
@@ -36,8 +36,8 @@ build_script:
   - if [%COMPILER%]==[MSVC17] if [%PLATFORM%]==[x64] cmake -G "Visual Studio 15 2017 Win64" ..
   - if [%COMPILER%]==[MinGW] set PATH=C:\MinGW-w64\%TOOLCHAIN%\mingw32\bin;%PATH:C:\Program Files\Git\usr\bin;=%
   - if [%COMPILER%]==[MinGW-w64] set PATH=C:\MinGW-w64\%TOOLCHAIN%\mingw64\bin;%PATH:C:\Program Files\Git\usr\bin;=%
-  - if [%COMPILER%]==[MinGW] cmake -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH=C:\mingw-w64\%TOOLCHAIN% -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ..
-  - if [%COMPILER%]==[MinGW-w64] cmake -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH=C:\mingw-w64\%TOOLCHAIN% -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ..
+  - if [%COMPILER%]==[MinGW] cmake -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH=C:\mingw-w64\%TOOLCHAIN% -DCMAKE_CXX_STANDARD=17 -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ..
+  - if [%COMPILER%]==[MinGW-w64] cmake -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH=C:\mingw-w64\%TOOLCHAIN% -DCMAKE_CXX_STANDARD=17 -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ..
 
   - cmake --build . --config %BUILD_TYPE%
   - cmake --build . --config %BUILD_TYPE% --target face

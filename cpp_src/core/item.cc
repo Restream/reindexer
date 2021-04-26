@@ -8,7 +8,7 @@
 namespace reindexer {
 
 Item::FieldRef::FieldRef(int field, ItemImpl *itemImpl) : itemImpl_(itemImpl), field_(field) {}
-Item::FieldRef::FieldRef(string_view jsonPath, ItemImpl *itemImpl) : itemImpl_(itemImpl), jsonPath_(jsonPath), field_(-1) {}
+Item::FieldRef::FieldRef(std::string_view jsonPath, ItemImpl *itemImpl) : itemImpl_(itemImpl), jsonPath_(jsonPath), field_(-1) {}
 
 Item::Item(Item &&other) noexcept : impl_(other.impl_), status_(std::move(other.status_)), id_(other.id_) { other.impl_ = nullptr; }
 
@@ -23,7 +23,7 @@ Item &Item::operator=(Item &&other) noexcept {
 	return *this;
 }
 
-string_view Item::FieldRef::Name() const { return field_ >= 0 ? itemImpl_->Type().Field(field_).Name() : jsonPath_; }
+std::string_view Item::FieldRef::Name() const { return field_ >= 0 ? itemImpl_->Type().Field(field_).Name() : jsonPath_; }
 
 Item::FieldRef::operator Variant() const {
 	VariantArray kr;
@@ -95,12 +95,12 @@ Item::~Item() {
 	delete impl_;
 }
 
-Error Item::FromJSON(string_view slice, char **endp, bool pkOnly) { return impl_->FromJSON(slice, endp, pkOnly); }
-Error Item::FromCJSON(string_view slice, bool pkOnly) { return impl_->FromCJSON(slice, pkOnly); }
-string_view Item::GetCJSON() { return impl_->GetCJSON(); }
-string_view Item::GetJSON() { return impl_->GetJSON(); }
-Error Item::FromMsgPack(string_view buf, size_t &offset) { return impl_->FromMsgPack(buf, offset); }
-Error Item::FromProtobuf(string_view sbuf) { return impl_->FromProtobuf(sbuf); }
+Error Item::FromJSON(std::string_view slice, char **endp, bool pkOnly) { return impl_->FromJSON(slice, endp, pkOnly); }
+Error Item::FromCJSON(std::string_view slice, bool pkOnly) { return impl_->FromCJSON(slice, pkOnly); }
+std::string_view Item::GetCJSON() { return impl_->GetCJSON(); }
+std::string_view Item::GetJSON() { return impl_->GetJSON(); }
+Error Item::FromMsgPack(std::string_view buf, size_t &offset) { return impl_->FromMsgPack(buf, offset); }
+Error Item::FromProtobuf(std::string_view sbuf) { return impl_->FromProtobuf(sbuf); }
 Error Item::GetMsgPack(WrSerializer &wrser) { return impl_->GetMsgPack(wrser); }
 Error Item::GetProtobuf(WrSerializer &wrser) { return impl_->GetProtobuf(wrser); }
 
@@ -110,7 +110,7 @@ Item::FieldRef Item::operator[](int field) const {
 	return FieldRef(field, impl_);
 }
 
-Item::FieldRef Item::operator[](string_view name) const {
+Item::FieldRef Item::operator[](std::string_view name) const {
 	int field = 0;
 	if (impl_->Type().FieldByName(name, field)) {
 		return FieldRef(field, impl_);
@@ -119,7 +119,7 @@ Item::FieldRef Item::operator[](string_view name) const {
 	}
 }
 
-int Item::GetFieldTag(string_view name) const { return impl_->NameTag(name); }
+int Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name); }
 FieldsSet Item::PkFields() const { return impl_->PkFields(); }
 void Item::SetPrecepts(const vector<string> &precepts) { impl_->SetPrecepts(precepts); }
 bool Item::IsTagsUpdated() { return impl_->tagsMatcher().isUpdated(); }

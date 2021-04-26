@@ -1,9 +1,9 @@
 ﻿#pragma once
 
 #include <string>
+#include <string_view>
 #include <vector>
 #include "core/indexdef.h"
-#include "estl/string_view.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
 
@@ -12,7 +12,6 @@ namespace reindexer {
 using std::string;
 using std::vector;
 
-class string_view;
 class WrSerializer;
 
 struct NamespaceDef {
@@ -60,7 +59,7 @@ struct EnumNamespacesOpts {
 	bool IsWithClosed() { return options_ & kEnumNamespacesWithClosed; }
 	bool IsOnlyNames() { return options_ & kEnumNamespacesOnlyNames; }
 	bool IsHideSystem() { return options_ & kEnumNamespacesHideSystem; }
-	bool MatchFilter(string_view nsName) {
+	bool MatchFilter(std::string_view nsName) {
 		return (filter_.empty() || iequals(filter_, nsName)) && (!IsHideSystem() || (!nsName.empty() && nsName[0] != '#'));
 	}
 
@@ -82,11 +81,11 @@ struct EnumNamespacesOpts {
 		return *this;
 	}
 	// Add name filter
-	EnumNamespacesOpts &WithFilter(string_view flt) {
+	EnumNamespacesOpts &WithFilter(std::string_view flt) {
 		filter_ = flt;
 		return *this;
 	}
-	string_view filter_;
+	std::string_view filter_;
 	uint16_t options_;
 };
 

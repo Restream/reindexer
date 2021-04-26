@@ -14,8 +14,8 @@ struct less_key_string {
 
 	less_key_string(const CollateOpts& collateOpts = CollateOpts()) : collateOpts_(collateOpts) {}
 	bool operator()(const key_string& lhs, const key_string& rhs) const { return collateCompare(*lhs, *rhs, collateOpts_) < 0; }
-	bool operator()(string_view lhs, const key_string& rhs) const { return collateCompare(lhs, *rhs, collateOpts_) < 0; }
-	bool operator()(const key_string& lhs, string_view rhs) const { return collateCompare(*lhs, rhs, collateOpts_) < 0; }
+	bool operator()(std::string_view lhs, const key_string& rhs) const { return collateCompare(lhs, *rhs, collateOpts_) < 0; }
+	bool operator()(const key_string& lhs, std::string_view rhs) const { return collateCompare(*lhs, rhs, collateOpts_) < 0; }
 	CollateOpts collateOpts_;
 };
 
@@ -24,8 +24,8 @@ struct equal_key_string {
 
 	equal_key_string(const CollateOpts& collateOpts = CollateOpts()) : collateOpts_(collateOpts) {}
 	bool operator()(const key_string& lhs, const key_string& rhs) const { return collateCompare(*lhs, *rhs, collateOpts_) == 0; }
-	bool operator()(string_view lhs, const key_string& rhs) const { return collateCompare(lhs, *rhs, collateOpts_) == 0; }
-	bool operator()(const key_string& lhs, string_view rhs) const { return collateCompare(*lhs, rhs, collateOpts_) == 0; }
+	bool operator()(std::string_view lhs, const key_string& rhs) const { return collateCompare(lhs, *rhs, collateOpts_) == 0; }
+	bool operator()(const key_string& lhs, std::string_view rhs) const { return collateCompare(*lhs, rhs, collateOpts_) == 0; }
 	CollateOpts collateOpts_;
 };
 struct hash_key_string {
@@ -33,7 +33,7 @@ struct hash_key_string {
 
 	hash_key_string(CollateMode collateMode = CollateNone) : collateMode_(collateMode) {}
 	size_t operator()(const key_string& s) const { return collateHash(*s, collateMode_); }
-	size_t operator()(string_view s) const { return collateHash(s, collateMode_); }
+	size_t operator()(std::string_view s) const { return collateHash(s, collateMode_); }
 	CollateMode collateMode_;
 };
 

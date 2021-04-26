@@ -67,7 +67,7 @@ void ProtobufDecoder::setValue(Payload* pl, CJsonBuilder& builder, const Protobu
 }
 
 Error ProtobufDecoder::decodeArray(Payload* pl, CJsonBuilder& builder, const ProtobufValue& item) {
-	ProtobufObject object(item.As<string_view>(), *schema_, tagsPath_, tm_);
+	ProtobufObject object(item.As<std::string_view>(), *schema_, tagsPath_, tm_);
 	ProtobufParser parser(object);
 	bool packed = item.IsOfPrimitiveType();
 	int field = tm_.tags2field(tagsPath_.data(), tagsPath_.size());
@@ -123,7 +123,7 @@ Error ProtobufDecoder::decode(Payload* pl, CJsonBuilder& builder, const Protobuf
 						break;
 					case KeyValueComposite: {
 						CJsonProtobufObjectBuilder objBuilder(builder, item.tagName, arraysStorage_);
-						ProtobufObject object(item.As<string_view>(), *schema_, tagsPath_, tm_);
+						ProtobufObject object(item.As<std::string_view>(), *schema_, tagsPath_, tm_);
 						status = decodeObject(pl, objBuilder, object);
 						break;
 					}
@@ -149,7 +149,7 @@ Error ProtobufDecoder::decodeObject(Payload* pl, CJsonBuilder& builder, Protobuf
 	return status;
 }
 
-Error ProtobufDecoder::Decode(string_view buf, Payload* pl, WrSerializer& wrser) {
+Error ProtobufDecoder::Decode(std::string_view buf, Payload* pl, WrSerializer& wrser) {
 	try {
 		tagsPath_.clear();
 		CJsonProtobufObjectBuilder cjsonBuilder(arraysStorage_, wrser, &tm_, 0);

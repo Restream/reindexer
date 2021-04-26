@@ -14,39 +14,37 @@ struct JsonNode;
 
 namespace reindexer {
 
-using std::string;
-using std::vector;
-
 class WrSerializer;
 
-using JsonPaths = h_vector<string, 0>;
+using JsonPaths = h_vector<std::string, 0>;
 
 static const int kIndexJSONWithDescribe = 0x1;
 
 struct IndexDef {
 	IndexDef();
-	IndexDef(const string &name);
-	IndexDef(const string &name, const JsonPaths &jsonPaths, const string &indexType, const string &fieldType, const IndexOpts opts);
-	IndexDef(const string &name, const JsonPaths &jsonPaths, const string &indexType, const string &fieldType, const IndexOpts opts,
-			 int64_t expireAfter);
-	IndexDef(const string &name, const string &indexType, const string &fieldType, const IndexOpts opts);
-	IndexDef(const string &name, const JsonPaths &jsonPaths, const IndexType type, const IndexOpts opts);
+	IndexDef(const std::string &name);
+	IndexDef(const std::string &name, const JsonPaths &jsonPaths, const std::string &indexType, const std::string &fieldType,
+			 const IndexOpts opts);
+	IndexDef(const std::string &name, const JsonPaths &jsonPaths, const std::string &indexType, const std::string &fieldType,
+			 const IndexOpts opts, int64_t expireAfter);
+	IndexDef(const std::string &name, const std::string &indexType, const std::string &fieldType, const IndexOpts opts);
+	IndexDef(const std::string &name, const JsonPaths &jsonPaths, const IndexType type, const IndexOpts opts);
 	bool operator==(const IndexDef &other) const { return IsEqual(other, false); }
 	bool operator!=(const IndexDef &other) const { return !IsEqual(other, false); }
 	bool IsEqual(const IndexDef &other, bool skipConfig) const;
 	IndexType Type() const;
-	string getCollateMode() const;
-	const vector<string> &Conditions() const;
+	std::string getCollateMode() const;
+	const std::vector<std::string> &Conditions() const;
 	void FromType(IndexType type);
 	Error FromJSON(span<char> json);
 	void FromJSON(const gason::JsonNode &jvalue);
 	void GetJSON(WrSerializer &ser, int formatFlags = 0) const;
 
 public:
-	string name_;
+	std::string name_;
 	JsonPaths jsonPaths_;
-	string indexType_;
-	string fieldType_;
+	std::string indexType_;
+	std::string fieldType_;
 	IndexOpts opts_;
 	int64_t expireAfter_ = 0;
 };
@@ -55,6 +53,6 @@ bool isComposite(IndexType type) noexcept;
 bool isFullText(IndexType type) noexcept;
 bool isSortable(IndexType type);
 bool isStore(IndexType type) noexcept;
-bool validateIndexName(string_view name, IndexType type) noexcept;
+bool validateIndexName(std::string_view name, IndexType type) noexcept;
 
 }  // namespace reindexer

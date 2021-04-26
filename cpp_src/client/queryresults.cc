@@ -54,13 +54,13 @@ QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArra
 	  requestTimeout_(timeout),
 	  cmpl_(std::move(cmpl)) {}
 
-QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, string_view rawResult, int queryID,
+QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, std::string_view rawResult, int queryID,
 						   int fetchFlags, int fetchAmount, seconds timeout)
 	: QueryResults(conn, std::move(nsArray), cmpl, fetchFlags, fetchAmount, timeout) {
 	Bind(rawResult, queryID);
 }
 
-void QueryResults::Bind(string_view rawResult, int queryID) {
+void QueryResults::Bind(std::string_view rawResult, int queryID) {
 	queryID_ = queryID;
 	ResultSerializer ser(rawResult);
 
@@ -103,7 +103,7 @@ void QueryResults::fetchNextResults() {
 
 	fetchOffset_ += queryParams_.count;
 
-	string_view rawResult = p_string(args[0]);
+	std::string_view rawResult = p_string(args[0]);
 	ResultSerializer ser(rawResult);
 
 	ser.GetRawQueryParams(queryParams_, nullptr);
@@ -113,8 +113,8 @@ void QueryResults::fetchNextResults() {
 
 QueryResults::~QueryResults() {}
 
-h_vector<string_view, 1> QueryResults::GetNamespaces() const {
-	h_vector<string_view, 1> ret;
+h_vector<std::string_view, 1> QueryResults::GetNamespaces() const {
+	h_vector<std::string_view, 1> ret;
 	ret.reserve(nsArray_.size());
 	for (auto &ns : nsArray_) ret.push_back(ns->name_);
 	return ret;
@@ -135,7 +135,7 @@ private:
 	double rank_;
 };
 
-void QueryResults::Iterator::getJSONFromCJSON(string_view cjson, WrSerializer &wrser, bool withHdrLen) {
+void QueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSerializer &wrser, bool withHdrLen) {
 	auto tm = qr_->getTagsMatcher(itemParams_.nsid);
 	JsonEncoder enc(&tm);
 	JsonBuilder builder(wrser, ObjType::TypePlain);
@@ -264,7 +264,7 @@ bool QueryResults::Iterator::IsRaw() {
 	return itemParams_.raw;
 }
 
-string_view QueryResults::Iterator::GetRaw() {
+std::string_view QueryResults::Iterator::GetRaw() {
 	readNext();
 	assert(itemParams_.raw);
 	return itemParams_.data;
@@ -273,7 +273,7 @@ string_view QueryResults::Iterator::GetRaw() {
 void QueryResults::Iterator::readNext() {
 	if (nextPos_ != 0) return;
 
-	string_view rawResult(qr_->rawResult_.data(), qr_->rawResult_.size());
+	std::string_view rawResult(qr_->rawResult_.data(), qr_->rawResult_.size());
 
 	ResultSerializer ser(rawResult.substr(pos_));
 

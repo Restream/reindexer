@@ -21,6 +21,47 @@ const char *SQLEncoder::JoinTypeName(JoinType type) {
 	}
 }
 
+static void indexToSql(const std::string &index, WrSerializer &ser) {
+	if (index.find_first_of(".+") == string::npos) {
+		ser << index;
+	} else {
+		ser << '\'' << index << '\'';
+	}
+}
+
+static WrSerializer &stringToSql(const std::string &str, WrSerializer &ser) {
+	ser << '\'';
+	for (auto c : str) {
+		switch (c) {
+			case '\'':
+				ser << "\\'";
+				break;
+			case '\"':
+				ser << "\\\"";
+				break;
+			case '\n':
+				ser << "\\n";
+				break;
+			case '\r':
+				ser << "\\r";
+				break;
+			case '\b':
+				ser << "\\b";
+				break;
+			case '\t':
+				ser << "\\t";
+				break;
+			case '\f':
+				ser << "\\f";
+				break;
+			default:
+				ser << c;
+		}
+	}
+	ser << '\'';
+	return ser;
+}
+
 SQLEncoder::SQLEncoder(const Query &q) : query_(q) {}
 
 extern const char *condNames[];
@@ -189,7 +230,7 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 					for (const Variant &v : field.values) {
 						if (&v != &*field.values.begin()) ser << ',';
 						if ((v.Type() == KeyValueString) && !field.isExpression && (mode != FieldModeSetJson)) {
-							ser << '\'' << v.As<string>() << '\'';
+							stringToSql(v.As<string>(), ser);
 						} else {
 							ser << v.As<string>();
 						}
@@ -218,14 +259,6 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 
 extern const char *condNames[];
 const char *opNames[] = {"-", "OR", "AND", "AND NOT"};
-
-static void indexToSql(const std::string &index, WrSerializer &ser) {
-	if (index.find('.') == string::npos && index.find('+') == string::npos) {
-		ser << index;
-	} else {
-		ser << '\'' << index << '\'';
-	}
-}
 
 void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntries::const_iterator to, WrSerializer &ser,
 								  bool stripArgs) const {
@@ -274,7 +307,7 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 						for (auto &v : entry.values) {
 							if (&v != &entry.values[0]) ser << ',';
 							if (v.Type() == KeyValueString) {
-								ser << '\'' << v.As<string>() << '\'';
+								stringToSql(v.As<string>(), ser);
 							} else {
 								ser << v.As<string>();
 							}

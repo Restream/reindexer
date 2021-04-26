@@ -162,8 +162,8 @@ void QueryResults::Dump() const {
 	logPrintf(LogInfo, "Query returned: [%s]; total=%d", buf, this->totalCount);
 }
 
-h_vector<string_view, 1> QueryResults::GetNamespaces() const {
-	h_vector<string_view, 1> ret;
+h_vector<std::string_view, 1> QueryResults::GetNamespaces() const {
+	h_vector<std::string_view, 1> ret;
 	ret.reserve(ctxs.size());
 	for (auto &ctx : ctxs) ret.push_back(ctx.type_.Name());
 	return ret;
@@ -357,10 +357,10 @@ bool QueryResults::Iterator::IsRaw() const {
 	auto &itemRef = qr_->items_[idx_];
 	return itemRef.Raw();
 }
-string_view QueryResults::Iterator::GetRaw() const {
+std::string_view QueryResults::Iterator::GetRaw() const {
 	auto &itemRef = qr_->items_[idx_];
 	assert(itemRef.Raw());
-	return string_view(reinterpret_cast<char *>(itemRef.Value().Ptr()), itemRef.Value().GetCapacity());
+	return std::string_view(reinterpret_cast<char *>(itemRef.Value().Ptr()), itemRef.Value().GetCapacity());
 }
 
 Item QueryResults::Iterator::GetItem() {

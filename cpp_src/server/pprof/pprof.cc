@@ -40,7 +40,7 @@ void Pprof::Attach(http::Router &router) {
 int Pprof::Profile(http::Context &ctx) {
 #if REINDEX_WITH_GPERFTOOLS
 	long long seconds = 30;
-	string_view secondsParam;
+	std::string_view secondsParam;
 	string filePath = fs::JoinPath(fs::GetTempDir(), kProfileNamePrefix + ".profile");
 
 	for (auto p : ctx.request->params) {
@@ -115,6 +115,7 @@ int Pprof::Growth(http::Context &ctx) {
 int Pprof::CmdLine(http::Context &ctx) { return ctx.String(http::StatusOK, "reindexer_server"); }
 
 int Pprof::Symbol(http::Context &ctx) {
+	using namespace std::string_view_literals;
 	WrSerializer ser;
 
 	string req;
@@ -126,7 +127,7 @@ int Pprof::Symbol(http::Context &ctx) {
 	} else if (ctx.request->params.size()) {
 		req = urldecode2(ctx.request->params[0].name);
 	} else {
-		ser << "num_symbols: 1\n"_sv;
+		ser << "num_symbols: 1\n"sv;
 		return ctx.String(http::StatusOK, ser.DetachChunk());
 	}
 
@@ -135,7 +136,7 @@ int Pprof::Symbol(http::Context &ctx) {
 		pos = req.find_first_not_of(" +", pos);
 		if (pos == string::npos) break;
 		uintptr_t addr = strtoull(&req[pos], &endp, 16);
-		ser << string_view(&req[pos], endp - &req[pos]) << '\t';
+		ser << std::string_view(&req[pos], endp - &req[pos]) << '\t';
 		resolveSymbol(addr, ser);
 		ser << '\n';
 	}
@@ -145,7 +146,7 @@ int Pprof::Symbol(http::Context &ctx) {
 
 void Pprof::resolveSymbol(uintptr_t ptr, WrSerializer &out) {
 	auto te = debug::TraceEntry(ptr);
-	string_view symbol = te.FuncName();
+	std::string_view symbol = te.FuncName();
 
 	if (symbol.length() > 20 && symbol.substr(0, 3) == "_ZN") {
 		out << symbol.substr(0, 20) << "...";

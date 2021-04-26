@@ -38,14 +38,14 @@ public:
 		Item GetItem();
 		int64_t GetLSN();
 		bool IsRaw();
-		string_view GetRaw();
+		std::string_view GetRaw();
 		Iterator& operator++();
 		Error Status() { return qr_->status_; }
 		bool operator!=(const Iterator&) const;
 		bool operator==(const Iterator&) const;
 		Iterator& operator*() { return *this; }
 		void readNext();
-		void getJSONFromCJSON(string_view cjson, WrSerializer& wrser, bool withHdrLen = true);
+		void getJSONFromCJSON(std::string_view cjson, WrSerializer& wrser, bool withHdrLen = true);
 
 		const QueryResults* qr_;
 		int idx_, pos_, nextPos_;
@@ -62,7 +62,7 @@ public:
 	const string& GetExplainResults() const { return queryParams_.explainResults; }
 	const vector<AggregationResult>& GetAggregationResults() const { return queryParams_.aggResults; }
 	Error Status() { return status_; }
-	h_vector<string_view, 1> GetNamespaces() const;
+	h_vector<std::string_view, 1> GetNamespaces() const;
 	bool IsCacheEnabled() const { return queryParams_.flags & kResultsWithItemID; }
 
 	TagsMatcher getTagsMatcher(int nsid) const;
@@ -71,9 +71,9 @@ private:
 	friend class RPCClient;
 	friend class RPCClientMock;
 	QueryResults(net::cproto::ClientConnection* conn, NSArray&& nsArray, Completion cmpl, int fetchFlags, int fetchAmount, seconds timeout);
-	QueryResults(net::cproto::ClientConnection* conn, NSArray&& nsArray, Completion cmpl, string_view rawResult, int queryID,
+	QueryResults(net::cproto::ClientConnection* conn, NSArray&& nsArray, Completion cmpl, std::string_view rawResult, int queryID,
 				 int fetchFlags, int fetchAmount, seconds timeout);
-	void Bind(string_view rawResult, int queryID);
+	void Bind(std::string_view rawResult, int queryID);
 	void fetchNextResults();
 	void completion(const Error& err) {
 		if (cmpl_) {

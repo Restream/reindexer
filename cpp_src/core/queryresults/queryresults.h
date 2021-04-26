@@ -48,7 +48,7 @@ public:
 	const string &GetExplainResults() const { return explainResults; }
 	const vector<AggregationResult> &GetAggregationResults() const { return aggregationResults; }
 	void Clear();
-	h_vector<string_view, 1> GetNamespaces() const;
+	h_vector<std::string_view, 1> GetNamespaces() const;
 	bool IsCacheEnabled() const { return !nonCacheableData; }
 
 	class Iterator {
@@ -62,7 +62,7 @@ public:
 		const ItemRef &GetItemRef() const { return qr_->items_[idx_]; }
 		int64_t GetLSN() const { return qr_->items_[idx_].Value().GetLSN(); }
 		bool IsRaw() const;
-		string_view GetRaw() const;
+		std::string_view GetRaw() const;
 		Iterator &operator++();
 		Iterator &operator+(int delta);
 		Error Status() { return err_; }

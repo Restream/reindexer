@@ -30,7 +30,7 @@ public:
 	CJsonBuilder Object(int tagName);
 	CJsonBuilder Array(int tagName, ObjType type = ObjType::TypeObjectArray);
 
-	CJsonBuilder Array(string_view name, ObjType type = ObjType::TypeObjectArray) {
+	CJsonBuilder Array(std::string_view name, ObjType type = ObjType::TypeObjectArray) {
 		throw Error(errLogic, "CJSON builder doesn't work with string tags [%s, %d]!", name.data(), int(type));
 	}
 	CJsonBuilder Object(std::nullptr_t) { return Object(0); }
@@ -71,7 +71,7 @@ public:
 		return Put(0, arg);
 	}
 
-	void Write(string_view data) { ser_->Write(data); }
+	void Write(std::string_view data) { ser_->Write(data); }
 
 	CJsonBuilder &Null(std::nullptr_t) { return Null(0); }
 	CJsonBuilder &Ref(std::nullptr_t, int type, int field) { return Ref(0, type, field); }
@@ -80,13 +80,13 @@ public:
 	CJsonBuilder &Put(int tagName, int arg);
 	CJsonBuilder &Put(int tagName, int64_t arg);
 	CJsonBuilder &Put(int tagName, double arg);
-	CJsonBuilder &Put(int tagName, const string_view &arg);
+	CJsonBuilder &Put(int tagName, std::string_view arg);
 	CJsonBuilder &Ref(int tagName, int type, int field);
 	CJsonBuilder &Ref(int tagName, const Variant &v, int field);
 	CJsonBuilder &ArrayRef(int tagName, int field, int count);
 	CJsonBuilder &Null(int tagName);
 	CJsonBuilder &Put(int tagName, const Variant &kv);
-	CJsonBuilder &Put(int tagName, const char *arg) { return Put(tagName, string_view(arg)); };
+	CJsonBuilder &Put(int tagName, const char *arg) { return Put(tagName, std::string_view(arg)); };
 	CJsonBuilder &End();
 
 	ObjType Type() const { return type_; }

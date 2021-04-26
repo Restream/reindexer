@@ -300,7 +300,7 @@ void NamespaceImpl::addToWAL(const IndexDef &indexDef, WALRecType type, const Rd
 	processWalRecord(wrec, ctx);
 }
 
-void NamespaceImpl::addToWAL(string_view json, WALRecType type, const RdxContext &ctx) {
+void NamespaceImpl::addToWAL(std::string_view json, WALRecType type, const RdxContext &ctx) {
 	WALRecord wrec(type, json);
 	processWalRecord(wrec, ctx);
 }
@@ -326,7 +326,7 @@ void NamespaceImpl::DropIndex(const IndexDef &indexDef, const RdxContext &ctx) {
 	addToWAL(indexDef, WalIndexDrop, ctx);
 }
 
-void NamespaceImpl::SetSchema(string_view schema, const RdxContext &ctx) {
+void NamespaceImpl::SetSchema(std::string_view schema, const RdxContext &ctx) {
 	auto wlck = wLock(ctx);
 	schema_ = make_shared<Schema>(schema);
 	auto fields = schema_->GetPaths();
@@ -764,7 +764,7 @@ void NamespaceImpl::replicateItem(IdType itemId, const NsContext &ctx, bool stat
 		if (!ctx.rdxContext.fromReplication_) repl_.lastSelfLSN = lsn;
 		pv.SetLSN(int64_t(lsn));
 		ItemImpl item(payloadType_, pv, tagsMatcher_);
-		string_view cjson = item.GetCJSON(false);
+		std::string_view cjson = item.GetCJSON(false);
 		if (!repl_.temporary)
 			observers_->OnWALUpdate(LSNPair(lsn, ctx.rdxContext.fromReplication_ ? ctx.rdxContext.LSNs_.originLSN_ : lsn), name_,
 
@@ -1390,6 +1390,7 @@ void NamespaceImpl::optimizeIndexes(const NsContext &ctx) {
 }
 
 void NamespaceImpl::markUpdated() {
+	using namespace std::string_view_literals;
 	itemsCount_.store(items_.size(), std::memory_order_relaxed);
 	itemsCapacity_.store(items_.capacity(), std::memory_order_relaxed);
 	optimizationState_.store(NotOptimized);
@@ -1399,7 +1400,7 @@ void NamespaceImpl::markUpdated() {
 		std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),
 		std::memory_order_release);
 	if (!nsIsLoading_) {
-		repl_.updatedUnixNano = getTimeNow("nsec"_sv);
+		repl_.updatedUnixNano = getTimeNow("nsec"sv);
 	}
 }
 
@@ -1524,14 +1525,14 @@ void NamespaceImpl::ResetPerfStat(const RdxContext &ctx) {
 	for (auto &i : indexes_) i->ResetIndexPerfStat();
 }
 
-Error NamespaceImpl::loadLatestSysRecord(string_view baseSysTag, uint64_t &version, string &content) {
+Error NamespaceImpl::loadLatestSysRecord(std::string_view baseSysTag, uint64_t &version, string &content) {
 	std::string key(baseSysTag);
 	key.append(".");
 	std::string latestContent;
 	version = 0;
 	Error err = errOK;
 	for (int i = 0; i < kSysRecordsBackupCount; ++i) {
-		Error status = storage_->Read(StorageOpts().FillCache(), string_view(key + std::to_string(i)), content);
+		Error status = storage_->Read(StorageOpts().FillCache(), std::string_view(key + std::to_string(i)), content);
 		if (!status.ok() && status.code() != errNotFound) {
 			logPrintf(LogTrace, "Error on namespace service info(tag: %s, id: %u) load '%s': %s", baseSysTag, i, name_, status.what());
 			err = Error(errNotValid, "Error load namespace from storage '%s': %s", name_, status.what());
@@ -1554,7 +1555,7 @@ Error NamespaceImpl::loadLatestSysRecord(string_view baseSysTag, uint64_t &versi
 			logPrintf(LogTrace, "Converting %s for %s to new format", baseSysTag, name_);
 			WrSerializer ser;
 			ser.PutUInt64(version);
-			ser.Write(string_view(content));
+			ser.Write(std::string_view(content));
 			writeSysRecToStorage(ser.Slice(), baseSysTag, version, true);
 		}
 		if (!status.ok() && status.code() != errNotFound) {
@@ -1625,7 +1626,7 @@ bool NamespaceImpl::loadIndexesFromStorage() {
 		int count = ser.GetVarUint();
 		while (count--) {
 			IndexDef indexDef;
-			string_view indexData = ser.GetVString();
+			std::string_view indexData = ser.GetVString();
 			Error err = indexDef.FromJSON(giftStr(indexData));
 			if (err.ok()) {
 				try {
@@ -1803,8 +1804,9 @@ void NamespaceImpl::LoadFromStorage(const RdxContext &ctx) {
 	repl_.dataHash = 0;
 	itemsDataSize_ = 0;
 	for (dbIter->Seek(kStorageItemPrefix);
-		 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), string_view(kStorageItemPrefix "\xFF")) < 0; dbIter->Next()) {
-		string_view dataSlice = dbIter->Value();
+		 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kStorageItemPrefix "\xFF")) < 0;
+		 dbIter->Next()) {
+		std::string_view dataSlice = dbIter->Value();
 		if (dataSlice.size() > 0) {
 			if (!pkFields().size()) {
 				throw Error(errLogic, "Can't load data storage of '%s' - there are no PK fields in ns", name_);
@@ -1936,7 +1938,7 @@ void NamespaceImpl::CloseStorage(const RdxContext &ctx) {
 	storage_.reset();
 }
 
-std::string NamespaceImpl::sysRecordName(string_view sysTag, uint64_t version) {
+std::string NamespaceImpl::sysRecordName(std::string_view sysTag, uint64_t version) {
 	std::string backupRecord(sysTag);
 	static_assert(kSysRecordsBackupCount && ((kSysRecordsBackupCount & (kSysRecordsBackupCount - 1)) == 0),
 				  "kBackupsCount has to be power of 2");
@@ -1944,7 +1946,7 @@ std::string NamespaceImpl::sysRecordName(string_view sysTag, uint64_t version) {
 	return backupRecord;
 }
 
-void NamespaceImpl::writeSysRecToStorage(string_view data, string_view sysTag, uint64_t &version, bool direct) {
+void NamespaceImpl::writeSysRecToStorage(std::string_view data, std::string_view sysTag, uint64_t &version, bool direct) {
 	size_t iterCount = (version > 0) ? 1 : kSysRecordsFirstWriteCopies;
 	for (size_t i = 0; i < iterCount; ++i, ++version) {
 		*(reinterpret_cast<uint64_t *>(const_cast<char *>(data.data()))) = version;
@@ -1986,7 +1988,7 @@ string NamespaceImpl::getMeta(const string &key) const {
 
 	if (storage_) {
 		string data;
-		Error status = storage_->Read(StorageOpts().FillCache(), string_view(kStorageMetaPrefix + key), data);
+		Error status = storage_->Read(StorageOpts().FillCache(), std::string_view(kStorageMetaPrefix + key), data);
 		if (status.ok()) {
 			return data;
 		}
@@ -1996,14 +1998,14 @@ string NamespaceImpl::getMeta(const string &key) const {
 }
 
 // Put meta data to storage by key
-void NamespaceImpl::PutMeta(const string &key, const string_view &data, const NsContext &ctx) {
+void NamespaceImpl::PutMeta(const string &key, std::string_view data, const NsContext &ctx) {
 	auto wlck = wLock(ctx.rdxContext);
 	checkApplySlaveUpdate(ctx.rdxContext.fromReplication_);	 // throw exception if false
 	putMeta(key, data, ctx.rdxContext);
 }
 
 // Put meta data to storage by key
-void NamespaceImpl::putMeta(const string &key, const string_view &data, const RdxContext &ctx) {
+void NamespaceImpl::putMeta(const string &key, std::string_view data, const RdxContext &ctx) {
 	meta_[key] = string(data);
 
 	if (storage_) {
@@ -2032,9 +2034,10 @@ vector<string> NamespaceImpl::enumMeta() const {
 	unique_ptr<datastorage::Cursor> dbIter(storage_->GetCursor(opts));
 	size_t prefixLen = strlen(kStorageMetaPrefix);
 
-	for (dbIter->Seek(string_view(kStorageMetaPrefix));
-		 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), string_view(kStorageMetaPrefix "\xFF")) < 0; dbIter->Next()) {
-		string_view keySlice = dbIter->Key();
+	for (dbIter->Seek(std::string_view(kStorageMetaPrefix));
+		 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kStorageMetaPrefix "\xFF")) < 0;
+		 dbIter->Next()) {
+		std::string_view keySlice = dbIter->Key();
 		if (keySlice.size() > prefixLen) {
 			string key(keySlice.substr(prefixLen));
 			if (meta_.find(key) == meta_.end()) {
@@ -2133,7 +2136,7 @@ int64_t NamespaceImpl::GetSerial(const string &field) {
 	}
 
 	string s = to_string(counter);
-	putMeta("_SERIAL_" + field, string_view(s), RdxContext());
+	putMeta("_SERIAL_" + field, std::string_view(s), RdxContext());
 
 	return counter;
 }
@@ -2196,7 +2199,7 @@ const FieldsSet &NamespaceImpl::pkFields() {
 	return ret;
 }
 
-void NamespaceImpl::writeToStorage(const string_view &key, const string_view &data) {
+void NamespaceImpl::writeToStorage(std::string_view key, std::string_view data) {
 	try {
 		unique_lock<std::mutex> lck(locker_.StorageLock());
 		updates_->Put(key, data);

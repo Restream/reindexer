@@ -14,7 +14,7 @@ public:
 	explicit JsonDecoder(TagsMatcher &tagsMatcher);
 	JsonDecoder(TagsMatcher &tagsMatcher, const FieldsSet *filter);
 	Error Decode(Payload *pl, WrSerializer &wrSer, const gason::JsonValue &v);
-	void Decode(string_view json, CJsonBuilder &builder, const TagsPath &fieldPath);
+	void Decode(std::string_view json, CJsonBuilder &builder, const TagsPath &fieldPath);
 
 protected:
 	void decodeJsonObject(const gason::JsonValue &root, CJsonBuilder &builder);

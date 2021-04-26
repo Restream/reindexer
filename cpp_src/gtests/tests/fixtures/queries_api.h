@@ -171,7 +171,7 @@ public:
 		return std::sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
 	}
 
-	static VariantArray getJoinedField(int id, const QueryResults& qr, size_t nsIdx, int index, reindexer::string_view column) noexcept {
+	static VariantArray getJoinedField(int id, const QueryResults& qr, size_t nsIdx, int index, std::string_view column) noexcept {
 		const reindexer::joins::ItemIterator itemIt{&qr.joined_[0], id};
 		const auto joinedIt = itemIt.at(nsIdx);
 		assert(joinedIt.ItemsCount() == 1);
@@ -495,7 +495,7 @@ protected:
 		return (qentry.values[0].Type() == KeyValueComposite || qentry.values[0].Type() == KeyValueTuple);
 	}
 
-	bool isLikeSqlPattern(reindexer::string_view str, reindexer::string_view pattern) {
+	bool isLikeSqlPattern(std::string_view str, std::string_view pattern) {
 		return std::regex_match(string(str), std::regex{reindexer::sqlLikePattern2ECMAScript(string(pattern))});
 	}
 
@@ -1629,9 +1629,8 @@ protected:
 		for (auto it : checkQr) {
 			Item item(it.GetItem());
 			yearSum += item[kFieldNameYear].Get<int>();
-			++multifieldFacet[MultifieldFacetItem{string(item[kFieldNameName].Get<reindexer::string_view>()),
-												  item[kFieldNameYear].Get<int>()}];
-			++singlefieldFacetMap[string(item[kFieldNameName].Get<reindexer::string_view>())];
+			++multifieldFacet[MultifieldFacetItem{string(item[kFieldNameName].Get<std::string_view>()), item[kFieldNameYear].Get<int>()}];
+			++singlefieldFacetMap[string(item[kFieldNameName].Get<std::string_view>())];
 			for (const Variant& pack : static_cast<reindexer::VariantArray>(item[kFieldNamePackages])) {
 				const int value = pack.As<int>();
 				packagesMin = std::min(value, packagesMin);
@@ -1968,6 +1967,14 @@ protected:
 
 		ExecuteAndVerify(compositeIndexesNs, Query(compositeIndexesNs)
 												 .Where(kFieldNameName, CondEq, nameValue)
+												 .WhereComposite(kCompositeFieldTitleName.c_str(), CondEq,
+																 {{Variant(string(titleValue)), Variant(string(nameValue))}}));
+
+		// Fulltext query is inside brackets
+		ExecuteAndVerify(compositeIndexesNs, Query(compositeIndexesNs)
+												 .OpenBracket()
+												 .Where(kFieldNameName, CondEq, nameValue)
+												 .CloseBracket()
 												 .WhereComposite(kCompositeFieldTitleName.c_str(), CondEq,
 																 {{Variant(string(titleValue)), Variant(string(nameValue))}}));
 

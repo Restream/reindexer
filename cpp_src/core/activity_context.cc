@@ -5,6 +5,8 @@
 
 namespace reindexer {
 
+using namespace std::string_view_literals;
+
 void ActivityContainer::Register(const RdxActivityContext* context) {
 	std::unique_lock<std::mutex> lck(mtx_);
 	const auto res = cont_.insert(context);
@@ -51,7 +53,7 @@ bool ActivityContainer::ActivityForIpConnection(int id, Activity& act) {
 	return false;
 }
 
-string_view Activity::DescribeState(State st) {
+std::string_view Activity::DescribeState(State st) {
 	switch (st) {
 		case InProgress:
 			return "in_progress";
@@ -86,10 +88,10 @@ void Activity::GetJSON(WrSerializer& ser) const {
 	builder.End();
 }
 
-RdxActivityContext::RdxActivityContext(string_view activityTracer, string_view user, string_view query, ActivityContainer& parent,
-									   int ipConnectionId, bool clientState)
+RdxActivityContext::RdxActivityContext(std::string_view activityTracer, std::string_view user, std::string_view query,
+									   ActivityContainer& parent, int ipConnectionId, bool clientState)
 	: data_{nextId(),		string(activityTracer),			  string(user),			string(query),
-			ipConnectionId, std::chrono::system_clock::now(), Activity::InProgress, ""_sv},
+			ipConnectionId, std::chrono::system_clock::now(), Activity::InProgress, ""sv},
 	  state_(serializeState(clientState ? Activity::Sending : Activity::InProgress)),
 	  parent_(&parent)
 #ifndef NDEBUG
@@ -124,7 +126,7 @@ RdxActivityContext::operator Activity() const {
 unsigned RdxActivityContext::serializeState(MutexMark mark) { return Activity::WaitLock | (static_cast<unsigned>(mark) << kStateShift); }
 unsigned RdxActivityContext::serializeState(Activity::State state) { return static_cast<unsigned>(state); }
 
-std::pair<Activity::State, string_view> RdxActivityContext::deserializeState(unsigned state) {
+std::pair<Activity::State, std::string_view> RdxActivityContext::deserializeState(unsigned state) {
 	const Activity::State decodedState = static_cast<Activity::State>(state & kStateMask);
 	if (decodedState == Activity::WaitLock) {
 		return {decodedState, DescribeMutexMark(static_cast<MutexMark>(state >> kStateShift))};

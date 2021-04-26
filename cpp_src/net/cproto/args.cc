@@ -32,7 +32,7 @@ void Args::Dump(WrSerializer &wrser) const {
 			case KeyValueString: {
 				p_string str(arg);
 				if (isPrintable(str)) {
-					wrser << '\'' << string_view(str) << '\'';
+					wrser << '\'' << std::string_view(str) << '\'';
 				} else {
 					wrser << "slice{len:" << str.length() << "}";
 				}

@@ -34,11 +34,11 @@ struct IndexedPathNode {
 
 	int NameTag() const noexcept { return nameTag_; }
 	int Index() const noexcept { return index_; }
-	string_view Expression() const {
+	std::string_view Expression() const {
 		if (expression_ && expression_->length() > 0) {
-			return string_view(expression_->c_str(), expression_->length());
+			return std::string_view(expression_->c_str(), expression_->length());
 		}
-		return string_view();
+		return std::string_view();
 	}
 
 	bool IsArrayNode() const noexcept { return (IsForAllItems() || index_ != IndexValueType::NotSet); }
@@ -54,7 +54,7 @@ struct IndexedPathNode {
 		}
 	}
 
-	void SetExpression(string_view v) {
+	void SetExpression(std::string_view v) {
 		if (expression_) {
 			expression_->assign(v.data(), v.length());
 		} else {
@@ -105,7 +105,7 @@ public:
 	}
 };
 
-using IndexExpressionEvaluator = std::function<VariantArray(string_view)>;
+using IndexExpressionEvaluator = std::function<VariantArray(std::string_view)>;
 
 template <typename TagsPath>
 class TagsPathScope {
@@ -131,20 +131,20 @@ public:
 	TagsMatcherImpl(PayloadType payloadType) : payloadType_(payloadType), version_(0), stateToken_(rand()) {}
 	~TagsMatcherImpl() {}
 
-	TagsPath path2tag(string_view jsonPath) const {
+	TagsPath path2tag(std::string_view jsonPath) const {
 		bool updated = false;
 		return const_cast<TagsMatcherImpl *>(this)->path2tag(jsonPath, false, updated);
 	}
 
-	TagsPath path2tag(string_view jsonPath, bool canAdd, bool &updated) {
+	TagsPath path2tag(std::string_view jsonPath, bool canAdd, bool &updated) {
 		TagsPath fieldTags;
 		for (size_t pos = 0, lastPos = 0; pos != jsonPath.length(); lastPos = pos + 1) {
 			pos = jsonPath.find('.', lastPos);
-			if (pos == string_view::npos) {
+			if (pos == std::string_view::npos) {
 				pos = jsonPath.length();
 			}
 			if (pos != lastPos) {
-				string_view field = jsonPath.substr(lastPos, pos - lastPos);
+				std::string_view field = jsonPath.substr(lastPos, pos - lastPos);
 				int fieldTag = name2tag(field, canAdd, updated);
 				if (!fieldTag) {
 					fieldTags.clear();
@@ -156,32 +156,33 @@ public:
 		return fieldTags;
 	}
 
-	IndexedTagsPath path2indexedtag(string_view jsonPath, IndexExpressionEvaluator ev) const {
+	IndexedTagsPath path2indexedtag(std::string_view jsonPath, IndexExpressionEvaluator ev) const {
 		bool updated = false;
 		return const_cast<TagsMatcherImpl *>(this)->path2indexedtag(jsonPath, ev, false, updated);
 	}
 
-	IndexedTagsPath path2indexedtag(string_view jsonPath, IndexExpressionEvaluator ev, bool canAdd, bool &updated) {
+	IndexedTagsPath path2indexedtag(std::string_view jsonPath, IndexExpressionEvaluator ev, bool canAdd, bool &updated) {
+		using namespace std::string_view_literals;
 		IndexedTagsPath fieldTags;
 		for (size_t pos = 0, lastPos = 0; pos != jsonPath.length(); lastPos = pos + 1) {
 			pos = jsonPath.find('.', lastPos);
-			if (pos == string_view::npos) {
+			if (pos == std::string_view::npos) {
 				pos = jsonPath.length();
 			}
 			if (pos != lastPos) {
 				IndexedPathNode node;
-				string_view field = jsonPath.substr(lastPos, pos - lastPos);
+				std::string_view field = jsonPath.substr(lastPos, pos - lastPos);
 				size_t openBracketPos = field.find('[');
-				if (openBracketPos != string_view::npos) {
+				if (openBracketPos != std::string_view::npos) {
 					size_t closeBracketPos = field.find(']', openBracketPos);
-					if (closeBracketPos == string_view::npos) {
+					if (closeBracketPos == std::string_view::npos) {
 						throw Error(errParams, "No closing bracket for index in jsonpath");
 					}
-					string_view content = field.substr(openBracketPos + 1, closeBracketPos - openBracketPos - 1);
+					std::string_view content = field.substr(openBracketPos + 1, closeBracketPos - openBracketPos - 1);
 					if (content.empty()) {
 						throw Error(errParams, "Index value in brackets cannot be empty");
 					}
-					if (content == "*"_sv) {
+					if (content == "*"sv) {
 						node.MarkAllItems(true);
 					} else {
 						int index = stoi(content);
@@ -215,12 +216,12 @@ public:
 		return fieldTags;
 	}
 
-	int name2tag(string_view name) const {
+	int name2tag(std::string_view name) const {
 		auto res = names2tags_.find(name);
 		return (res == names2tags_.end()) ? 0 : res->second + 1;
 	}
 
-	int name2tag(string_view n, bool canAdd, bool &updated) {
+	int name2tag(std::string_view n, bool canAdd, bool &updated) {
 		int tag = name2tag(n);
 		if (tag || !canAdd) return tag;
 

@@ -17,7 +17,7 @@ public:
 		int16_t nsid = 0;
 		int16_t proc = 0;
 		int64_t lsn = 0;
-		string_view data;
+		std::string_view data;
 		bool raw = false;
 	};
 

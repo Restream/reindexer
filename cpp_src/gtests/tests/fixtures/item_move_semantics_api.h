@@ -8,7 +8,6 @@
 
 using reindexer::Item;
 using reindexer::ItemImpl;
-using reindexer::string_view;
 
 class ItemMoveSemanticsApi : public ReindexerApi {
 protected:
@@ -70,13 +69,13 @@ protected:
 
 		for (auto it : qres) {
 			Item item(it.GetItem());
-			string_view jsonRead(item.GetJSON());
+			std::string_view jsonRead(item.GetJSON());
 
 			int itemId = item[pkField].Get<int>();
 			auto originalItem = getItemById(itemId);
 			ASSERT_TRUE(!!originalItem) << "No item for this id: " << itemId;
 
-			string_view originalJson = originalItem.GetJSON();
+			std::string_view originalJson = originalItem.GetJSON();
 			ASSERT_TRUE(originalJson == jsonRead) << "Inserted and selected items' jsons are different."
 												  << "\nExpected: " << jsonRead << "\nGot:" << originalJson;
 		}

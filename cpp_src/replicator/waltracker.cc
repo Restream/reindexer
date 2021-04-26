@@ -72,7 +72,7 @@ void WALTracker::Init(int64_t sz, int64_t minLSN, int64_t maxLSN, shared_ptr<dat
 	initPositions(sz, minLSN, maxLSN);
 	// Fill records from storage
 	for (auto &rec : data) {
-		Set(WALRecord(string_view(rec.second)), rec.first);
+		Set(WALRecord(std::string_view(rec.second)), rec.first);
 	}
 }
 
@@ -94,7 +94,7 @@ void WALTracker::writeToStorage(int64_t lsn) {
 	key << kStorageWALPrefix;
 	key.PutUInt32(pos);
 	data.PutUInt64(lsn);
-	data.Write(string_view(reinterpret_cast<char *>(records_[pos].data()), records_[pos].size()));
+	data.Write(std::string_view(reinterpret_cast<char *>(records_[pos].data()), records_[pos].size()));
 	auto storage = storage_.lock();
 	if (storage) storage->Write(StorageOpts(), key.Slice(), data.Slice());
 }
@@ -111,8 +111,9 @@ std::vector<std::pair<int64_t, std::string>> WALTracker::readFromStorage(int64_t
 	std::unique_ptr<datastorage::Cursor> dbIter(storage->GetCursor(opts));
 
 	for (dbIter->Seek(kStorageWALPrefix);
-		 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), string_view(kStorageWALPrefix "\xFF")) < 0; dbIter->Next()) {
-		string_view dataSlice = dbIter->Value();
+		 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kStorageWALPrefix "\xFF")) < 0;
+		 dbIter->Next()) {
+		std::string_view dataSlice = dbIter->Value();
 		if (dataSlice.size() >= sizeof(int64_t)) {
 			// Read LSN
 			int64_t lsn = *reinterpret_cast<const int64_t *>(dataSlice.data());

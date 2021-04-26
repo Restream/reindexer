@@ -33,7 +33,8 @@ public:
 
 	void SetTagsMatcher(const TagsMatcher *tm) { tm_ = tm; }
 	void SetTagsPath(const TagsPath *) {}
-	MsgPackBuilder Raw(string_view, string_view) { return MsgPackBuilder(); }
+	MsgPackBuilder Raw(std::string_view, std::string_view) { return MsgPackBuilder(); }
+	MsgPackBuilder Raw(std::nullptr_t, std::string_view arg) { return Raw(std::string_view{}, arg); }
 
 	template <typename N, typename T>
 	void Array(N tagName, span<T> data, int /*offset*/ = 0) {
@@ -50,7 +51,7 @@ public:
 		skipTag();
 		packKeyName(tagName);
 		packArray(data.size());
-		for (const p_string &v : data) packValue(string_view(v));
+		for (const p_string &v : data) packValue(std::string_view(v));
 	}
 
 	template <typename T>
@@ -134,7 +135,7 @@ public:
 		return *this;
 	}
 
-	MsgPackBuilder &Json(string_view name, string_view arg);
+	MsgPackBuilder &Json(std::string_view name, std::string_view arg);
 
 	MsgPackBuilder &End();
 
@@ -153,7 +154,7 @@ protected:
 		msgpack_pack_str(&packer_, arg.size());
 		msgpack_pack_str_body(&packer_, arg.data(), arg.length());
 	}
-	void packValue(string_view arg) {
+	void packValue(std::string_view arg) {
 		msgpack_pack_str(&packer_, arg.size());
 		msgpack_pack_str_body(&packer_, arg.data(), arg.length());
 	}
@@ -167,13 +168,14 @@ protected:
 
 	bool isArray() const { return type_ == ObjType::TypeArray || type_ == ObjType::TypeObjectArray; }
 
-	void checkIfCorrectArray(string_view) const {}
+	void checkIfCorrectArray(std::string_view) const {}
 
 	void checkIfCorrectArray(int tagName) const {
 		if (tagName == 0) throw Error(errLogic, "Arrays of arrays are not supported in cjson");
 	}
 
-	void packKeyName(string_view name) {
+	void packKeyName(std::nullptr_t) {}
+	void packKeyName(std::string_view name) {
 		if (!name.empty() && !isArray()) packValue(name);
 	}
 	void packKeyName(int tagName) {
@@ -192,7 +194,7 @@ protected:
 		}
 	}
 
-	void appendJsonObject(string_view name, const gason::JsonNode &obj);
+	void appendJsonObject(std::string_view name, const gason::JsonNode &obj);
 
 	const TagsMatcher *tm_;
 	msgpack_packer packer_;

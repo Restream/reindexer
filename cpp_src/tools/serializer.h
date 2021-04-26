@@ -1,8 +1,8 @@
 #pragma once
 
 #include <functional>
+#include <string_view>
 #include "core/keyvalue/variant.h"
-#include "estl/string_view.h"
 #include "tools/varint.h"
 
 char *i32toa(int32_t value, char *buffer);
@@ -19,18 +19,18 @@ class chunk;
 class Serializer {
 public:
 	Serializer(const void *_buf, int _len);
-	Serializer(const string_view &buf);
+	Serializer(std::string_view buf);
 	bool Eof();
 	Variant GetVariant();
 	Variant GetRawVariant(KeyValueType type);
-	string_view GetSlice();
+	std::string_view GetSlice();
 	uint32_t GetUInt32();
 	uint64_t GetUInt64();
 	double GetDouble();
 
 	int64_t GetVarint();
 	uint64_t GetVarUint();
-	string_view GetVString();
+	std::string_view GetVString();
 	p_string GetPVString();
 	p_string GetPSlice();
 	bool GetBool();
@@ -91,7 +91,7 @@ public:
 	void PutRawVariant(const Variant &kv);
 
 	// Put slice with 4 bytes len header
-	void PutSlice(const string_view &slice);
+	void PutSlice(std::string_view slice);
 
 	struct SliceHelper {
 		SliceHelper(WrSerializer *ser, size_t pos) : ser_(ser), pos_(pos) {}
@@ -155,22 +155,23 @@ public:
 		buf_[len_++] = c;
 		return *this;
 	}
-	WrSerializer &operator<<(string_view sv) {
+	WrSerializer &operator<<(std::string_view sv) {
 		Write(sv);
 		return *this;
 	}
 	WrSerializer &operator<<(const char *sv) {
-		Write(string_view(sv));
+		Write(std::string_view(sv));
 		return *this;
 	}
 	WrSerializer &operator<<(bool v) {
-		Write(v ? "true"_sv : "false"_sv);
+		using namespace std::string_view_literals;
+		Write(v ? "true"sv : "false"sv);
 		return *this;
 	}
 	WrSerializer &operator<<(double v);
 
-	void PrintJsonString(string_view str);
-	void PrintHexDump(string_view str);
+	void PrintJsonString(std::string_view str);
+	void PrintHexDump(std::string_view str);
 	void Fill(char c, size_t count);
 
 	template <typename T, typename std::enable_if<sizeof(T) == 8 && std::is_integral<T>::value>::type * = nullptr>
@@ -205,10 +206,10 @@ public:
 	}
 
 	void PutBool(bool v);
-	void PutVString(string_view str);
+	void PutVString(std::string_view str);
 
 	// Buffer manipulation functions
-	void Write(string_view buf);
+	void Write(std::string_view buf);
 	uint8_t *Buf() const;
 	std::unique_ptr<uint8_t[]> DetachBuf();
 	std::unique_ptr<uint8_t[]> DetachLStr();
@@ -217,7 +218,7 @@ public:
 	size_t Len() const { return len_; }
 	size_t Cap() const { return cap_; }
 	void Reserve(size_t cap);
-	string_view Slice() const { return string_view(reinterpret_cast<const char *>(buf_), len_); }
+	std::string_view Slice() const { return std::string_view(reinterpret_cast<const char *>(buf_), len_); }
 	const char *c_str() {
 		grow(1);
 		buf_[len_] = 0;

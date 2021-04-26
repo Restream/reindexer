@@ -35,28 +35,28 @@ void StatsCollector::Stop() {
 	enabled_.store(false, std::memory_order_release);
 }
 
-void StatsCollector::OnInputTraffic(const std::string& db, string_view source, size_t bytes) noexcept {
+void StatsCollector::OnInputTraffic(const std::string& db, std::string_view source, size_t bytes) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
 		std::lock_guard<std::mutex> lck(mtx_);
 		getCounters(db, source).inputTraffic += bytes;
 	}
 }
 
-void StatsCollector::OnOutputTraffic(const std::string& db, string_view source, size_t bytes) noexcept {
+void StatsCollector::OnOutputTraffic(const std::string& db, std::string_view source, size_t bytes) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
 		std::lock_guard<std::mutex> lck(mtx_);
 		getCounters(db, source).outputTraffic += bytes;
 	}
 }
 
-void StatsCollector::OnClientConnected(const std::string& db, string_view source) noexcept {
+void StatsCollector::OnClientConnected(const std::string& db, std::string_view source) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
 		std::lock_guard<std::mutex> lck(mtx_);
 		++(getCounters(db, source).clients);
 	}
 }
 
-void StatsCollector::OnClientDisconnected(const std::string& db, string_view source) noexcept {
+void StatsCollector::OnClientDisconnected(const std::string& db, std::string_view source) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
 		std::lock_guard<std::mutex> lck(mtx_);
 		--(getCounters(db, source).clients);
@@ -64,6 +64,7 @@ void StatsCollector::OnClientDisconnected(const std::string& db, string_view sou
 }
 
 void StatsCollector::collectStats(DBManager& dbMngr) {
+	using namespace std::string_view_literals;
 	auto dbNames = dbMngr.EnumDatabases();
 	NSMap collectedDBs;
 	for (auto& dbName : dbNames) {
@@ -89,16 +90,16 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 			collectedDBs.emplace(dbName, std::move(nsDefs));
 		}
 
-		constexpr static auto kPerfstatsNs = "#perfstats"_sv;
-		constexpr static auto kMemstatsNs = "#memstats"_sv;
+		constexpr static auto kPerfstatsNs = "#perfstats"sv;
+		constexpr static auto kMemstatsNs = "#memstats"sv;
 		QueryResults qr;
 		status = db->Select(Query(string(kPerfstatsNs)), qr);
 		if (status.ok() && qr.Count()) {
 			for (auto it = qr.begin(); it != qr.end(); ++it) {
 				auto item = it.GetItem();
 				std::string nsName = item["name"].As<std::string>();
-				constexpr auto kSelectQueryType = "select"_sv;
-				constexpr auto kUpdateQueryType = "update"_sv;
+				constexpr auto kSelectQueryType = "select"sv;
+				constexpr auto kUpdateQueryType = "update"sv;
 				prometheus_->RegisterQPS(dbName, nsName, kSelectQueryType, item["selects.last_sec_qps"].As<int64_t>());
 				prometheus_->RegisterQPS(dbName, nsName, kUpdateQueryType, item["updates.last_sec_qps"].As<int64_t>());
 				prometheus_->RegisterLatency(dbName, nsName, kSelectQueryType, item["selects.last_sec_avg_latency_us"].As<int64_t>());
@@ -138,7 +139,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 		std::lock_guard<std::mutex> lck(mtx_);
 		for (const auto& dbCounters : counters_) {
 			for (const auto& counter : dbCounters.second) {
-				if (string_view(dbCounters.first) == "rpc"_sv) {
+				if (std::string_view(dbCounters.first) == "rpc"sv) {
 					prometheus_->RegisterRPCClients(counter.first, counter.second.clients);
 				}
 				prometheus_->RegisterInputTraffic(counter.first, dbCounters.first, counter.second.inputTraffic);
@@ -150,9 +151,9 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 	prometheus_->NextEpoch();
 }
 
-StatsCollector::DBCounters& StatsCollector::getCounters(const std::string& db, string_view source) {
+StatsCollector::DBCounters& StatsCollector::getCounters(const std::string& db, std::string_view source) {
 	for (auto& el : counters_) {
-		if (string_view(el.first) == source) {
+		if (std::string_view(el.first) == source) {
 			return el.second[db];
 		}
 	}

@@ -18,7 +18,7 @@ class JoinedQuery;
 using std::initializer_list;
 using std::pair;
 
-const string_view kAggregationWithSelectFieldsMsgError =
+const std::string_view kAggregationWithSelectFieldsMsgError =
 	"Not allowed to combine aggregation functions and fields' filter in a single query";
 
 /// @class Query
@@ -41,7 +41,7 @@ public:
 
 	/// Parses pure sql select query and initializes Query object data members as a result.
 	/// @param q - sql query.
-	void FromSQL(const string_view &q);
+	void FromSQL(std::string_view q);
 
 	/// Logs query in 'Select field1, ... field N from namespace ...' format.
 	/// @param ser - serializer to store SQL string

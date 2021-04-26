@@ -1,10 +1,12 @@
 #pragma once
 
-#include <stdlib.h>
+#include <algorithm>
+#include <cstring>
 #include <mutex>
+#include <stdlib.h>
+#include <string_view>
 #include <vector>
 #include "span.h"
-#include "string_view.h"
 
 namespace reindexer {
 
@@ -38,7 +40,7 @@ public:
 		}
 		return *this;
 	}
-	void append(string_view data) {
+	void append(std::string_view data) {
 		if (!data_ || len_ + data.size() > cap_) {
 			cap_ = std::max(size_t(0x1000), size_t(len_ + data.size()));
 			uint8_t *newdata = new uint8_t[cap_];
@@ -73,7 +75,7 @@ public:
 			assert(head_ != tail_);
 		}
 	}
-	void write(string_view sv) {
+	void write(std::string_view sv) {
 		chunk chunk = get_chunk();
 		chunk.append(sv);
 		write(std::move(chunk));

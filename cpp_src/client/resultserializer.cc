@@ -27,7 +27,7 @@ void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, std
 	for (;;) {
 		int tag = GetVarUint();
 		if (tag == QueryResultEnd) break;
-		string_view data = GetSlice();
+		std::string_view data = GetSlice();
 		switch (tag) {
 			case QueryResultAggregation:
 				ret.aggResults.push_back({});

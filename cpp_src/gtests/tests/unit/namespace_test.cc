@@ -473,7 +473,7 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField2) {
 	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
 
 	Item item = qr[0].GetItem();
-	reindexer::string_view json = item.GetJSON();
+	std::string_view json = item.GetJSON();
 	size_t pos = json.find(R"("nested":{"bonus":[{"first":1,"second":2,"third":3}])");
 	ASSERT_TRUE(pos != std::string::npos) << "'nested.bonus' was not updated properly" << json;
 }
@@ -493,7 +493,7 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField3) {
 	ASSERT_TRUE(val.size() == 4);
 
 	size_t length = 0;
-	reindexer::string_view json = item.GetJSON();
+	std::string_view json = item.GetJSON();
 	gason::JsonParser jsonParser;
 	ASSERT_NO_THROW(jsonParser.Parse(json, &length));
 	ASSERT_TRUE(length > 0);
@@ -512,7 +512,7 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField4) {
 	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
 
 	Item item = qr[0].GetItem();
-	reindexer::string_view json = item.GetJSON();
+	std::string_view json = item.GetJSON();
 	size_t pos = json.find(R"("nested":{"bonus":[0])");
 	ASSERT_TRUE(pos != std::string::npos) << "'nested.bonus' was not updated properly" << json;
 }
@@ -547,7 +547,7 @@ TEST_F(NsApi, TestUpdateIndexedArrayField2) {
 	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
 
 	Item item = qr[0].GetItem();
-	reindexer::string_view json = item.GetJSON();
+	std::string_view json = item.GetJSON();
 	size_t pos = json.find(R"("indexed_array_field":[77])");
 	ASSERT_TRUE(pos != std::string::npos) << "'indexed_array_field' was not updated properly" << json;
 }
@@ -1361,7 +1361,7 @@ TEST_F(NsApi, DISABLED_TestUpdateEmptyIndexedField) {
 		Variant val = item[emptyField];
 		ASSERT_TRUE(val.As<string>() == "NEW GENERATION");
 
-		string_view json = item.GetJSON();
+		std::string_view json = item.GetJSON();
 		ASSERT_TRUE(json.find_first_of("\"empty_field\":\"NEW GENERATION\"") != std::string::npos);
 
 		VariantArray arrayVals = item[indexedArrayField];
@@ -1477,9 +1477,9 @@ void checkQueryDsl(const Query &src) {
 				ASSERT_TRUE(dst.UpdateFields()[i].values.size() == 1);
 				ASSERT_TRUE(dst.UpdateFields()[i].values.front().Type() == KeyValueString);
 				reindexer::WrSerializer wrser1;
-				reindexer::prettyPrintJSON(reindexer::giftStr(reindexer::string_view(src.UpdateFields()[i].values.front())), wrser1);
+				reindexer::prettyPrintJSON(reindexer::giftStr(std::string_view(src.UpdateFields()[i].values.front())), wrser1);
 				reindexer::WrSerializer wrser2;
-				reindexer::prettyPrintJSON(reindexer::giftStr(reindexer::string_view(dst.UpdateFields()[i].values.front())), wrser2);
+				reindexer::prettyPrintJSON(reindexer::giftStr(std::string_view(dst.UpdateFields()[i].values.front())), wrser2);
 				EXPECT_TRUE(wrser1.Slice() == wrser2.Slice());
 				objectValues = true;
 			}
@@ -1544,6 +1544,12 @@ TEST_F(NsApi, TestModifyQueriesSqlEncoder) {
 	q6.FromSQL(sqlIndexUpdate);
 	EXPECT_TRUE(q6.GetSQL() == sqlIndexUpdate) << q6.GetSQL();
 	checkQueryDsl(q6);
+
+	const string sqlSpeccharsUpdate = R"(UPDATE ns SET f1 = 'HELLO\n\r\b\f',f2 = '\t',f3 = '\"')";
+	Query q7;
+	q7.FromSQL(sqlSpeccharsUpdate);
+	EXPECT_TRUE(q7.GetSQL() == sqlSpeccharsUpdate) << q7.GetSQL();
+	checkQueryDsl(q7);
 }
 
 void generateObject(reindexer::JsonBuilder &builder, const string &prefix, ReindexerApi *rtapi) {
@@ -1628,7 +1634,7 @@ TEST_F(NsApi, MsgPackEncodingTest) {
 
 		size_t offset = 0;
 		Item item2 = NewItem(default_namespace);
-		err = item2.FromMsgPack(reindexer::string_view(reinterpret_cast<const char *>(wrSer2.Buf()), wrSer2.Len()), offset);
+		err = item2.FromMsgPack(std::string_view(reinterpret_cast<const char *>(wrSer2.Buf()), wrSer2.Len()), offset);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		string json1(item.GetJSON());
@@ -1646,7 +1652,7 @@ TEST_F(NsApi, MsgPackEncodingTest) {
 		Item item = NewItem(default_namespace);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
-		Error err = item.FromMsgPack(reindexer::string_view(reinterpret_cast<const char *>(wrSer1.Buf()), wrSer1.Len()), offset);
+		Error err = item.FromMsgPack(std::string_view(reinterpret_cast<const char *>(wrSer1.Buf()), wrSer1.Len()), offset);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		err = rt.reindexer->Update(default_namespace, item);
@@ -1671,7 +1677,7 @@ TEST_F(NsApi, MsgPackEncodingTest) {
 		Item item = NewItem(default_namespace);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
-		Error err = item.FromMsgPack(reindexer::string_view(reinterpret_cast<const char *>(wrSer3.Buf()), wrSer3.Len()), offset);
+		Error err = item.FromMsgPack(std::string_view(reinterpret_cast<const char *>(wrSer3.Buf()), wrSer3.Len()), offset);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		string json(item.GetJSON());

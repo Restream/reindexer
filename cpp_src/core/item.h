@@ -93,7 +93,7 @@ public:
 		FieldRef &operator=(const std::string &str);
 
 		/// Get field index name
-		string_view Name() const;
+		std::string_view Name() const;
 
 		/// Get Variant with field value
 		/// If field is array, and contains not exact 1 element, then throws reindexer::Error
@@ -111,9 +111,9 @@ public:
 
 	private:
 		FieldRef(int field, ItemImpl *itemImpl);
-		FieldRef(string_view jsonPath, ItemImpl *itemImpl);
+		FieldRef(std::string_view jsonPath, ItemImpl *itemImpl);
 		ItemImpl *itemImpl_;
-		string_view jsonPath_;
+		std::string_view jsonPath_;
 		int field_;
 	};
 
@@ -123,23 +123,23 @@ public:
 	/// @param slice - data slice with Json.
 	/// @param endp - pointer to end of parsed part of slice
 	/// @param pkOnly - if TRUE, that mean a JSON string will be parse only primary key fields
-	Error FromJSON(string_view slice, char **endp = nullptr, bool pkOnly = false);
+	Error FromJSON(std::string_view slice, char **endp = nullptr, bool pkOnly = false);
 
 	/// Build item from JSON<br>
 	/// If Item is in *Unsafe Mode*, then Item will not store slice, but just keep pointer to data in slice,
 	/// application *MUST* hold slice until end of life of Item
 	/// @param slice - data slice with CJson
 	/// @param pkOnly - if TRUE, that mean a JSON string will be parse only primary key fields
-	Error FromCJSON(string_view slice, bool pkOnly = false);
+	Error FromCJSON(std::string_view slice, bool pkOnly = false);
 
 	/// Builds item from msgpack::object.
 	/// @param buf - msgpack encoded data buffer.
 	/// @param offset - position to start from.
-	Error FromMsgPack(string_view buf, size_t &offset);
+	Error FromMsgPack(std::string_view buf, size_t &offset);
 
 	/// Builds item from Protobuf
 	/// @param sbuf - Protobuf encoded data
-	Error FromProtobuf(string_view sbuf);
+	Error FromProtobuf(std::string_view sbuf);
 
 	/// Packs data in msgpack format
 	/// @param wrser - buffer to serialize data to
@@ -153,11 +153,11 @@ public:
 	/// If Item is in *Unfafe Mode*, then returned slice is allocated in temporary buffer, and can be invalidated by any next operation
 	/// with Item
 	/// @return data slice with CJSON
-	string_view GetCJSON();
+	std::string_view GetCJSON();
 	/// Serialize item to JSON.<br>
 	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next
 	/// operation with Item
-	string_view GetJSON();
+	std::string_view GetJSON();
 	/// Get status of item
 	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next
 	/// operation with Item
@@ -178,11 +178,11 @@ public:
 	/// Get field by name
 	/// @param name - name of field
 	/// @return FieldRef which contains reference to indexed field
-	FieldRef operator[](string_view name) const;
+	FieldRef operator[](std::string_view name) const;
 	/// Get field's name tag
 	/// @param name - field name
 	/// @return name's numeric tag value
-	int GetFieldTag(string_view name) const;
+	int GetFieldTag(std::string_view name) const;
 	/// Get PK fields
 	FieldsSet PkFields() const;
 	/// Set additional percepts for modify operation

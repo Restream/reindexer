@@ -69,24 +69,24 @@ Error CoroRPCClient::AddNamespace(const NamespaceDef& nsDef, const InternalRdxCo
 	return errOK;
 }
 
-Error CoroRPCClient::OpenNamespace(string_view nsName, const InternalRdxContext& ctx, const StorageOpts& sopts) {
+Error CoroRPCClient::OpenNamespace(std::string_view nsName, const InternalRdxContext& ctx, const StorageOpts& sopts) {
 	NamespaceDef nsDef(string(nsName), sopts);
 	return AddNamespace(nsDef, ctx);
 }
 
-Error CoroRPCClient::CloseNamespace(string_view nsName, const InternalRdxContext& ctx) {
+Error CoroRPCClient::CloseNamespace(std::string_view nsName, const InternalRdxContext& ctx) {
 	return conn_.Call(mkCommand(cproto::kCmdCloseNamespace, &ctx), nsName).Status();
 }
 
-Error CoroRPCClient::DropNamespace(string_view nsName, const InternalRdxContext& ctx) {
+Error CoroRPCClient::DropNamespace(std::string_view nsName, const InternalRdxContext& ctx) {
 	return conn_.Call(mkCommand(cproto::kCmdDropNamespace, &ctx), nsName).Status();
 }
 
-Error CoroRPCClient::TruncateNamespace(string_view nsName, const InternalRdxContext& ctx) {
+Error CoroRPCClient::TruncateNamespace(std::string_view nsName, const InternalRdxContext& ctx) {
 	return conn_.Call(mkCommand(cproto::kCmdTruncateNamespace, &ctx), nsName).Status();
 }
 
-Error CoroRPCClient::RenameNamespace(string_view srcNsName, const std::string& dstNsName, const InternalRdxContext& ctx) {
+Error CoroRPCClient::RenameNamespace(std::string_view srcNsName, const std::string& dstNsName, const InternalRdxContext& ctx) {
 	auto status = conn_.Call(mkCommand(cproto::kCmdRenameNamespace, &ctx), srcNsName, dstNsName).Status();
 
 	if (!status.ok()) return status;
@@ -108,23 +108,23 @@ Error CoroRPCClient::RenameNamespace(string_view srcNsName, const std::string& d
 	return errOK;
 }
 
-Error CoroRPCClient::Insert(string_view nsName, Item& item, const InternalRdxContext& ctx) {
+Error CoroRPCClient::Insert(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {
 	return modifyItem(nsName, item, ModeInsert, config_.RequestTimeout, ctx);
 }
 
-Error CoroRPCClient::Update(string_view nsName, Item& item, const InternalRdxContext& ctx) {
+Error CoroRPCClient::Update(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {
 	return modifyItem(nsName, item, ModeUpdate, config_.RequestTimeout, ctx);
 }
 
-Error CoroRPCClient::Upsert(string_view nsName, Item& item, const InternalRdxContext& ctx) {
+Error CoroRPCClient::Upsert(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {
 	return modifyItem(nsName, item, ModeUpsert, config_.RequestTimeout, ctx);
 }
 
-Error CoroRPCClient::Delete(string_view nsName, Item& item, const InternalRdxContext& ctx) {
+Error CoroRPCClient::Delete(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {
 	return modifyItem(nsName, item, ModeDelete, config_.RequestTimeout, ctx);
 }
 
-Error CoroRPCClient::modifyItem(string_view nsName, Item& item, int mode, seconds netTimeout, const InternalRdxContext& ctx) {
+Error CoroRPCClient::modifyItem(std::string_view nsName, Item& item, int mode, seconds netTimeout, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	if (item.impl_->GetPrecepts().size()) {
 		ser.PutVarUint(item.impl_->GetPrecepts().size());
@@ -191,7 +191,7 @@ Error CoroRPCClient::subscribeImpl(bool subscribe) {
 	return err;
 }
 
-Item CoroRPCClient::NewItem(string_view nsName) {
+Item CoroRPCClient::NewItem(std::string_view nsName) {
 	try {
 		auto ns = getNamespace(nsName);
 		return ns->NewItem();
@@ -200,7 +200,7 @@ Item CoroRPCClient::NewItem(string_view nsName) {
 	}
 }
 
-Error CoroRPCClient::GetMeta(string_view nsName, const string& key, string& data, const InternalRdxContext& ctx) {
+Error CoroRPCClient::GetMeta(std::string_view nsName, const string& key, string& data, const InternalRdxContext& ctx) {
 	try {
 		auto ret = conn_.Call(mkCommand(cproto::kCmdGetMeta, &ctx), nsName, key);
 		if (ret.Status().ok()) {
@@ -212,11 +212,11 @@ Error CoroRPCClient::GetMeta(string_view nsName, const string& key, string& data
 	}
 }
 
-Error CoroRPCClient::PutMeta(string_view nsName, const string& key, const string_view& data, const InternalRdxContext& ctx) {
+Error CoroRPCClient::PutMeta(std::string_view nsName, const string& key, std::string_view data, const InternalRdxContext& ctx) {
 	return conn_.Call(mkCommand(cproto::kCmdPutMeta, &ctx), nsName, key, data).Status();
 }
 
-Error CoroRPCClient::EnumMeta(string_view nsName, vector<string>& keys, const InternalRdxContext& ctx) {
+Error CoroRPCClient::EnumMeta(std::string_view nsName, vector<string>& keys, const InternalRdxContext& ctx) {
 	try {
 		auto ret = conn_.Call(mkCommand(cproto::kCmdEnumMeta, &ctx), nsName);
 		if (ret.Status().ok()) {
@@ -284,7 +284,7 @@ void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
 	return;
 }
 
-Error CoroRPCClient::selectImpl(string_view query, CoroQueryResults& result, seconds netTimeout, const InternalRdxContext& ctx) {
+Error CoroRPCClient::selectImpl(std::string_view query, CoroQueryResults& result, seconds netTimeout, const InternalRdxContext& ctx) {
 	int flags = result.fetchFlags_ ? (result.fetchFlags_ & ~kResultsFormatMask) | kResultsJson : kResultsJson;
 
 	WrSerializer pser;
@@ -344,25 +344,25 @@ Error CoroRPCClient::selectImpl(const Query& query, CoroQueryResults& result, se
 	return ret.Status();
 }
 
-Error CoroRPCClient::Commit(string_view nsName) { return conn_.Call(mkCommand(cproto::kCmdCommit), nsName).Status(); }
+Error CoroRPCClient::Commit(std::string_view nsName) { return conn_.Call(mkCommand(cproto::kCmdCommit), nsName).Status(); }
 
-Error CoroRPCClient::AddIndex(string_view nsName, const IndexDef& iDef, const InternalRdxContext& ctx) {
+Error CoroRPCClient::AddIndex(std::string_view nsName, const IndexDef& iDef, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	iDef.GetJSON(ser);
 	return conn_.Call(mkCommand(cproto::kCmdAddIndex, &ctx), nsName, ser.Slice()).Status();
 }
 
-Error CoroRPCClient::UpdateIndex(string_view nsName, const IndexDef& iDef, const InternalRdxContext& ctx) {
+Error CoroRPCClient::UpdateIndex(std::string_view nsName, const IndexDef& iDef, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	iDef.GetJSON(ser);
 	return conn_.Call(mkCommand(cproto::kCmdUpdateIndex, &ctx), nsName, ser.Slice()).Status();
 }
 
-Error CoroRPCClient::DropIndex(string_view nsName, const IndexDef& idx, const InternalRdxContext& ctx) {
+Error CoroRPCClient::DropIndex(std::string_view nsName, const IndexDef& idx, const InternalRdxContext& ctx) {
 	return conn_.Call(mkCommand(cproto::kCmdDropIndex, &ctx), nsName, idx.name_).Status();
 }
 
-Error CoroRPCClient::SetSchema(string_view nsName, string_view schema, const InternalRdxContext& ctx) {
+Error CoroRPCClient::SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext& ctx) {
 	return conn_.Call(mkCommand(cproto::kCmdSetSchema, &ctx), nsName, schema).Status();
 }
 
@@ -417,7 +417,7 @@ Error CoroRPCClient::UnsubscribeUpdates(IUpdatesObserver* observer) {
 	return subscribeImpl(!observers_.Empty());
 }
 
-Error CoroRPCClient::GetSqlSuggestions(string_view query, int pos, std::vector<std::string>& suggests) {
+Error CoroRPCClient::GetSqlSuggestions(std::string_view query, int pos, std::vector<std::string>& suggests) {
 	try {
 		auto ret = conn_.Call(mkCommand(cproto::kCmdGetSQLSuggestions), query, pos);
 		if (ret.Status().ok()) {
@@ -437,7 +437,7 @@ Error CoroRPCClient::Status(const InternalRdxContext& ctx) {
 	return conn_.Status(config_.RequestTimeout, ctx.execTimeout(), ctx.getCancelCtx());
 }
 
-Namespace* CoroRPCClient::getNamespace(string_view nsName) {
+Namespace* CoroRPCClient::getNamespace(std::string_view nsName) {
 	auto nsIt = namespaces_.find(nsName);
 	if (nsIt == namespaces_.end()) {
 		string nsNames(nsName);
@@ -474,8 +474,8 @@ void CoroRPCClient::onUpdates(const cproto::CoroRPCAnswer& ans) {
 	}
 
 	lsn_t lsn{int64_t(args[0])};
-	string_view nsName(args[1]);
-	string_view pwalRec(args[2]);
+	std::string_view nsName(args[1]);
+	std::string_view pwalRec(args[2]);
 	lsn_t originLSN;
 	if (args.size() >= 4) originLSN = lsn_t(args[3].As<int64_t>());
 	WALRecord wrec(pwalRec);
@@ -546,7 +546,7 @@ void CoroRPCClient::resubRoutine() {
 	}
 }
 
-CoroTransaction CoroRPCClient::NewTransaction(string_view nsName, const InternalRdxContext& ctx) {
+CoroTransaction CoroRPCClient::NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) {
 	auto ret = conn_.Call(mkCommand(cproto::kCmdStartTransaction, &ctx), nsName);
 	auto err = ret.Status();
 	if (err.ok()) {

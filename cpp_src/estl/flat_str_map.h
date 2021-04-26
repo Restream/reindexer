@@ -1,7 +1,7 @@
 #pragma once
 #include <memory>
+#include <string_view>
 #include <vector>
-#include "estl/string_view.h"
 #include "hopscotch/hopscotch_map.h"
 #include "tools/customhash.h"
 #include "tools/varint.h"
@@ -14,7 +14,7 @@ template <typename CharT, typename V, bool Multi = false>
 class flat_str_map {
 protected:
 	using base_holder_t = std::vector<CharT>;
-	using string_view_t = string_view;
+	using string_view_t = std::string_view;
 
 	class holder_t : public base_holder_t {
 	public:
@@ -22,7 +22,7 @@ protected:
 			auto ptr = reinterpret_cast<const uint8_t *>(base_holder_t::data() + pos);
 			auto l = scan_varint(10, ptr);
 			size_t len = parse_uint32(l, ptr);
-			return string_view(reinterpret_cast<const char *>(ptr + l), len);
+			return std::string_view(reinterpret_cast<const char *>(ptr + l), len);
 		}
 		size_t put(string_view_t str) {
 			size_t pos = base_holder_t::size();

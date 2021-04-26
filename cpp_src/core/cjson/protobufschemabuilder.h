@@ -1,7 +1,6 @@
 #pragma once
 
 #include "core/cjson/tagsmatcherimpl.h"
-#include "estl/string_view.h"
 #include "objtype.h"
 
 namespace reindexer {
@@ -15,7 +14,7 @@ class WrSerializer;
 class ProtobufSchemaBuilder {
 public:
 	ProtobufSchemaBuilder();
-	ProtobufSchemaBuilder(WrSerializer* ser, SchemaFieldsTypes* fieldsTypes, ObjType type, string_view name = string_view(),
+	ProtobufSchemaBuilder(WrSerializer* ser, SchemaFieldsTypes* fieldsTypes, ObjType type, std::string_view name = std::string_view(),
 						  PayloadType* pt = nullptr, TagsMatcher* tm = nullptr);
 	ProtobufSchemaBuilder(ProtobufSchemaBuilder&&);
 	ProtobufSchemaBuilder(const ProtobufSchemaBuilder&) = delete;
@@ -23,15 +22,15 @@ public:
 	ProtobufSchemaBuilder& operator=(const ProtobufSchemaBuilder&) = delete;
 	~ProtobufSchemaBuilder();
 
-	void Field(string_view name, int tagName, const FieldProps& props);
-	ProtobufSchemaBuilder Object(int tagName, string_view name, bool buildTypesOnly = false,
+	void Field(std::string_view name, int tagName, const FieldProps& props);
+	ProtobufSchemaBuilder Object(int tagName, std::string_view name, bool buildTypesOnly = false,
 								 std::function<void(ProtobufSchemaBuilder& self)> = nullptr);
 
 	void End();
 
 private:
-	void writeField(string_view name, string_view type, int number);
-	string_view jsonSchemaTypeToProtobufType(const FieldProps& props, KeyValueType& type);
+	void writeField(std::string_view name, std::string_view type, int number);
+	std::string_view jsonSchemaTypeToProtobufType(const FieldProps& props, KeyValueType& type);
 
 	WrSerializer* ser_;
 	SchemaFieldsTypes* fieldsTypes_;

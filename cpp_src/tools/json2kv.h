@@ -6,6 +6,6 @@
 
 namespace reindexer {
 
-Variant jsonValue2Variant(gason::JsonValue &v, KeyValueType t, string_view fieldName = string_view());
+Variant jsonValue2Variant(gason::JsonValue &v, KeyValueType t, std::string_view fieldName = std::string_view());  // TODO may be ""sv
 
 }  // namespace reindexer

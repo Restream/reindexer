@@ -6,8 +6,8 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include "estl/h_vector.h"
-#include "estl/string_view.h"
 #include "net/stat.h"
 #include "tools/errors.h"
 #include "tools/ssize_t.h"
@@ -62,7 +62,7 @@ enum HttpMethod : int {
 	kMaxMethod,
 };
 
-typedef string_view UrlParam;
+typedef std::string_view UrlParam;
 
 struct HttpStatus {
 	HttpStatus() { code = StatusOK; }
@@ -76,38 +76,38 @@ struct HttpStatus {
 };
 
 struct Header {
-	string_view name;
-	string_view val;
+	std::string_view name;
+	std::string_view val;
 };
 
 struct Param {
-	string_view name;
-	string_view val;
+	std::string_view name;
+	std::string_view val;
 };
 
 class Headers : public h_vector<Header, 16> {
 public:
 	using h_vector::h_vector;
-	string_view Get(string_view name) {
+	std::string_view Get(std::string_view name) {
 		auto it = std::find_if(begin(), end(), [=](const Header &hdr) { return iequals(name, hdr.name); });
-		return it != end() ? it->val : string_view();
+		return it != end() ? it->val : std::string_view();
 	}
 };
 
 class Params : public h_vector<Param, 8> {
 public:
 	using h_vector::h_vector;
-	string_view Get(const string_view name) {
+	std::string_view Get(const std::string_view name) {
 		auto it = std::find_if(begin(), end(), [=](const Param &param) { return name == param.name; });
-		return it != end() ? it->val : string_view();
+		return it != end() ? it->val : std::string_view();
 	}
 };
 
 struct Request {
-	string_view clientAddr;
-	string_view uri;
-	string_view path;
-	string_view method;
+	std::string clientAddr;
+	std::string_view uri;
+	std::string_view path;
+	std::string_view method;
 
 	Headers headers;
 	Params params;
@@ -119,7 +119,7 @@ struct Request {
 class Writer {
 public:
 	virtual ssize_t Write(chunk &&ch) = 0;
-	virtual ssize_t Write(string_view data) = 0;
+	virtual ssize_t Write(std::string_view data) = 0;
 	virtual chunk GetChunk() = 0;
 
 	virtual bool SetHeader(const Header &hdr) = 0;
@@ -147,14 +147,14 @@ struct ClientData {
 static const std::string kGzSuffix(".gz");
 
 struct Context {
-	int JSON(int code, string_view slice);
+	int JSON(int code, std::string_view slice);
 	int JSON(int code, chunk &&chunk);
 	int MSGPACK(int code, chunk &&chunk);
 	int Protobuf(int code, chunk &&chunk);
-	int String(int code, string_view slice);
+	int String(int code, std::string_view slice);
 	int String(int code, chunk &&chunk);
-	int File(int code, string_view path, string_view data, bool isGzip);
-	int Redirect(string_view url);
+	int File(int code, std::string_view path, std::string_view data, bool isGzip);
+	int Redirect(std::string_view url);
 
 	Request *request;
 	Writer *writer;

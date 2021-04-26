@@ -21,8 +21,8 @@ struct QueryPerfStat {
 class QueriesStatTracer {
 public:
 	struct QuerySQL {
-		string_view normalized;
-		string_view nonNormalized;
+		std::string_view normalized;
+		std::string_view nonNormalized;
 	};
 
 	void Hit(const QuerySQL& sql, std::chrono::microseconds time) { hit<&PerfStatCounterST::Hit>(sql, time); }
@@ -35,7 +35,7 @@ public:
 
 protected:
 	struct Stat : public PerfStatCounterST {
-		Stat(string_view q) : longestQuery(q) {}
+		Stat(std::string_view q) : longestQuery(q) {}
 		std::string longestQuery;
 	};
 

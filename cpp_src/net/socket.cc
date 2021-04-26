@@ -5,13 +5,14 @@
 #include <memory.h>
 #include <stdio.h>
 #include <memory>
+#include <string>
 #include "estl/h_vector.h"
 #include "tools/oscompat.h"
 
 namespace reindexer {
 namespace net {
 
-int socket::bind(string_view addr) {
+int socket::bind(std::string_view addr) {
 	struct addrinfo *results = nullptr;
 	int ret = create(addr, &results);
 	if (!ret) {
@@ -27,7 +28,7 @@ int socket::bind(string_view addr) {
 	return ret;
 }
 
-int socket::connect(string_view addr) noexcept {
+int socket::connect(std::string_view addr) noexcept {
 	struct addrinfo *results = nullptr;
 	int ret = create(addr, &results);
 	if (!ret) {
@@ -106,7 +107,7 @@ int socket::close() {
 #endif
 }
 
-int socket::create(string_view addr, struct addrinfo **presults) {
+int socket::create(std::string_view addr, struct addrinfo **presults) {
 	assert(!valid());
 
 	struct addrinfo hints, *results = nullptr;

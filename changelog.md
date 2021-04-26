@@ -1,3 +1,33 @@
+# Version 3.1.3 (26.04.2021)
+## Build
+- [fea] C++17 is now required to build reindexer from sources
+
+## Core
+- [fix] Fixed segfault in fulltext query with brackets
+- [fix] Fixed deadlock in selecter in case of concurrent namespace removing
+- [fix] Fixed true/false tokens parsing inside query to composite index
+
+## Reindexer server
+- [fea] Optional dedicated threads mode for RPC and HTTP server
+- [fix] Fixed heap use after free in concurrent requests to HTTP server
+- [fix] Fixed stack use after free on RPC client disconnect and server shutdown
+
+## Face
+- [fix] Fixed bug on Statistics -> Performance -> Selects/Updates 
+- [fix] Fixed default config for join_cache_mode
+- [fix] Centered table data 
+- [fea] Design changes on Performance statistics
+- [fix] Limited responsive layout by 1280px
+- [fea] Design changes for DB creation 
+- [fea] Added DB name to DB removing UI 
+- [fea] Added extra actions to Reset to default config and Save changes buttons
+- [fea] Added samples to namespace search panel 
+- [fix] Replaced color for rtree tips on Indexes
+- [fix] Changed font to Hack for code in popups
+- [fix] Removed sorting from Query table
+- [fix] Fixed Load more error on Query -> SQL
+- [fix] Fixed zero value displaying in Grid view
+
 # Version 3.1.2 (9.04.2021)
 ## Face
 - [fix] Fixed hot-key S for SQL query on tablets

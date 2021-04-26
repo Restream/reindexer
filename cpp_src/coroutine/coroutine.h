@@ -8,6 +8,16 @@
 #include "context/fcontext.hpp"
 #include "estl/h_vector.h"
 
+#if defined(REINDEX_WITH_TSAN)
+#if defined(__GNUC__) && !defined(__clang__) && !defined(__INTEL_COMPILER) && __GNUC__ >= 10
+// Enable tsan fiber annotation for GCC >= 10.0
+#define REINDEX_WITH_TSAN_FIBERS
+#elif defined(__clang__) && defined(__clang_major__) && __clang_major__ >= 10
+// Enable tsan fiber annotation for Clang >= 10.0
+#define REINDEX_WITH_TSAN_FIBERS
+#endif
+#endif	// defined(REINDEX_WITH_TSAN)
+
 namespace reindexer {
 namespace coroutine {
 
@@ -18,6 +28,25 @@ constexpr size_t k_default_stack_limit = 128 * 1024;
 /// @class Base class for coroutine and ordinator, which holds current execution context
 struct ctx_owner {
 	fcontext_t ctx_{nullptr};
+
+#ifdef REINDEX_WITH_TSAN_FIBERS
+	void *tsan_fiber_{nullptr};
+#endif	// REINDEX_WITH_TSAN_FIBERS
+
+	ctx_owner() = default;
+	virtual ~ctx_owner() = default;
+
+#ifdef REINDEX_WITH_TSAN_FIBERS
+	ctx_owner(ctx_owner &&o) : ctx_(o.ctx_), tsan_fiber_(o.tsan_fiber_) { o.tsan_fiber_ = nullptr; }
+	ctx_owner &operator=(ctx_owner &&o) {
+		if (this != &o) {
+			ctx_ = o.ctx_;
+			tsan_fiber_ = o.tsan_fiber_;
+			o.tsan_fiber_ = nullptr;
+		}
+		return *this;
+	}
+#endif	// REINDEX_WITH_TSAN_FIBERS
 };
 
 /// @class Some kind of a coroutines scheduler. Exists as a singletone with thread_local storage duration.
@@ -66,6 +95,9 @@ private:
 	class routine : public ctx_owner {
 	public:
 		routine() noexcept = default;
+#ifdef REINDEX_WITH_TSAN_FIBERS
+		~routine();
+#endif	// REINDEX_WITH_TSAN_FIBERS
 		routine(std::function<void()> f, size_t stack_size) noexcept : func(std::move(f)), stack_size_(stack_size) { assert(stack_size_); }
 		routine(const routine &) = delete;
 		routine(routine &&) = default;

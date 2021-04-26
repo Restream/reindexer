@@ -40,8 +40,8 @@ public:
 protected:
 	class TestObserver : public reindexer::IUpdatesObserver {
 	public:
-		void OnWALUpdate(reindexer::LSNPair, reindexer::string_view, const reindexer::WALRecord&) override {}
-		void OnUpdatesLost(reindexer::string_view) override {}
+		void OnWALUpdate(reindexer::LSNPair, std::string_view, const reindexer::WALRecord&) override {}
+		void OnUpdatesLost(std::string_view) override {}
 		void OnConnectionState(const reindexer::Error&) override {}
 	};
 

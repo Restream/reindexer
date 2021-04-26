@@ -1,13 +1,13 @@
 #pragma once
 
-#include "estl/string_view.h"
+#include <string_view>
 
 class JoinedSelectorMock {
 public:
 	JoinedSelectorMock(const char* ns) : ns_{ns} {}
-	JoinedSelectorMock(reindexer::string_view ns) : ns_{ns} {}
-	reindexer::string_view RightNsName() const { return ns_; }
+	JoinedSelectorMock(std::string_view ns) : ns_{ns} {}
+	std::string_view RightNsName() const { return ns_; }
 
 private:
-	reindexer::string_view ns_;
+	std::string_view ns_;
 };

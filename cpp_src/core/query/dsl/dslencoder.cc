@@ -62,7 +62,7 @@ void encodeEqualPositions(const Query& query, JsonBuilder& builder) {
 	if (query.equalPositions_.empty()) return;
 	auto epNodePositions = builder.Array("equal_positions");
 	for (auto it = query.equalPositions_.begin(); it != query.equalPositions_.end(); ++it) {
-		auto epNodePosition = epNodePositions.Object(string_view());
+		auto epNodePosition = epNodePositions.Object(std::string_view());
 		auto epNodePositionArr = epNodePosition.Array("positions");
 		for (auto it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
 			assert(query.entries.IsValue(*it2));
@@ -122,7 +122,8 @@ void encodeJoinEntry(const QueryJoinEntry& joinEntry, JsonBuilder& builder) {
 }
 
 void encodeSingleJoinQuery(const JoinedQuery& joinQuery, JsonBuilder& builder) {
-	auto node = builder.Object("join_query"_sv);
+	using namespace std::string_view_literals;
+	auto node = builder.Object("join_query"sv);
 
 	node.Put("type", get(join_types, joinQuery.joinType));
 	node.Put("namespace", joinQuery._namespace);

@@ -45,7 +45,7 @@ protected:
 		virtual bool SetContentLength(size_t len) override final;
 		virtual bool SetConnectionClose() override final;
 		ssize_t Write(chunk &&chunk) override final;
-		ssize_t Write(string_view data) override final;
+		ssize_t Write(std::string_view data) override final;
 		virtual chunk GetChunk() override final;
 
 		bool IsRespSent() { return respSend_; }
@@ -68,7 +68,7 @@ protected:
 	void onRead() override;
 	void onClose() override;
 
-	void parseParams(const string_view &str);
+	void parseParams(std::string_view str);
 	void writeHttpResponse(int code);
 	void setJsonStatus(Context &ctx, bool success, int responseCode, const string &status);
 

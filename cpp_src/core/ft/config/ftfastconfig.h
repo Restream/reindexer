@@ -16,7 +16,7 @@ struct FtFastFieldConfig {
 
 struct FtFastConfig : public BaseFTConfig {
 	FtFastConfig(size_t fieldsCount) : fieldsCfg(fieldsCount ? fieldsCount : 1) {}
-	void parse(string_view json, const fast_hash_map<string, int> &fields) final;
+	void parse(std::string_view json, const fast_hash_map<std::string, int> &fields) final;
 
 	double distanceBoost = 1.0;
 	double distanceWeight = 0.5;

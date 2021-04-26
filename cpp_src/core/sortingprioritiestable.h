@@ -7,7 +7,6 @@
 #include "type_consts.h"
 
 namespace reindexer {
-class string_view;
 
 /// Sorting priorities table for CollateCustom
 /// sorting mode. Input string looks like: "А-ЯA-Z0-9..."

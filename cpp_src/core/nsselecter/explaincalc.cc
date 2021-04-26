@@ -212,7 +212,7 @@ void reindexer::ExplainCalc::StopSort() {
 }
 
 void reindexer::ExplainCalc::AddIterations(int iters) { iters_ += iters; }
-void reindexer::ExplainCalc::PutSortIndex(string_view index) { sortIndex_ = index; }
+void reindexer::ExplainCalc::PutSortIndex(std::string_view index) { sortIndex_ = index; }
 void ExplainCalc::PutSelectors(SelectIteratorContainer *qres) { selectors_ = qres; }
 void ExplainCalc::PutJoinedSelectors(JoinedSelectors *jselectors) { jselectors_ = jselectors; }
 

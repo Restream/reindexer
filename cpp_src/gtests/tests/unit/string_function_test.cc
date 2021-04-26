@@ -5,9 +5,6 @@
 #include "tools/stringstools.h"
 
 namespace {
-// using reindexer::operator""_sv;
-// gcc 4.8 can't use using
-constexpr reindexer::string_view operator"" _sv(const char* str, size_t len) noexcept { return reindexer::string_view(str, len); }
 
 static const std::wstring symbols =
 	L" 	,-_!abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZабвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ";
@@ -55,38 +52,39 @@ static bool isLikePattern(const std::string& str, const std::string& pattern) {
 }  //  namespace
 
 TEST(StringFunctions, IsLikeSqlPattern) {
+	using namespace std::string_view_literals;
 	srand(std::time(0));
 	struct {
 		int caseNumber;
-		reindexer::string_view str;
-		reindexer::string_view pattern;
+		std::string_view str;
+		std::string_view pattern;
 		bool expected;
 	} testCases[]{
-		{0, ""_sv, ""_sv, true},
-		{1, ""_sv, "%"_sv, true},
-		{2, ""_sv, "%%"_sv, true},
-		{3, ""_sv, "q"_sv, false},
-		{4, "q"_sv, "q"_sv, true},
-		{5, "q"_sv, "qq"_sv, false},
-		{6, "qq"_sv, "q"_sv, false},
-		{7, "qq"_sv, "qq"_sv, true},
-		{8, "qq"_sv, "q_"_sv, true},
-		{9, "qq"_sv, "q%"_sv, true},
-		{10, "qq"_sv, "%q"_sv, true},
-		{11, "qq"_sv, "qQ%"_sv, true},
-		{12, "qq"_sv, "%Qq"_sv, true},
-		{13, "qq"_sv, "Q%q"_sv, true},
-		{14, "qq"_sv, "%"_sv, true},
-		{15, "qq"_sv, "%%"_sv, true},
-		{16, "qq"_sv, "%_%"_sv, true},
-		{17, "qq"_sv, "%__%"_sv, true},
-		{18, "qq"_sv, "%___%"_sv, false},
-		{19, "qwerASDFфываЯЧСМ"_sv, "%_E_a%Ф_%аяЧсм"_sv, true},
-		{20, "riend"_sv, "_%_e_%_%d"_sv, false},
-		{21, "аБВ  Гдеж"_sv, "%%%аБв%%%гДе%%%"_sv, true},
+		{0, ""sv, ""sv, true},
+		{1, ""sv, "%"sv, true},
+		{2, ""sv, "%%"sv, true},
+		{3, ""sv, "q"sv, false},
+		{4, "q"sv, "q"sv, true},
+		{5, "q"sv, "qq"sv, false},
+		{6, "qq"sv, "q"sv, false},
+		{7, "qq"sv, "qq"sv, true},
+		{8, "qq"sv, "q_"sv, true},
+		{9, "qq"sv, "q%"sv, true},
+		{10, "qq"sv, "%q"sv, true},
+		{11, "qq"sv, "qQ%"sv, true},
+		{12, "qq"sv, "%Qq"sv, true},
+		{13, "qq"sv, "Q%q"sv, true},
+		{14, "qq"sv, "%"sv, true},
+		{15, "qq"sv, "%%"sv, true},
+		{16, "qq"sv, "%_%"sv, true},
+		{17, "qq"sv, "%__%"sv, true},
+		{18, "qq"sv, "%___%"sv, false},
+		{19, "qwerASDFфываЯЧСМ"sv, "%_E_a%Ф_%аяЧсм"sv, true},
+		{20, "riend"sv, "_%_e_%_%d"sv, false},
+		{21, "аБВ  Гдеж"sv, "%%%аБв%%%гДе%%%"sv, true},
 	};
 	for (const auto& testCase : testCases) {
-		const bool result = matchLikePattern(testCase.str, testCase.pattern);
+		const bool result = reindexer::matchLikePattern(testCase.str, testCase.pattern);
 		EXPECT_EQ(result, testCase.expected) << "Test case number " << testCase.caseNumber;
 	}
 

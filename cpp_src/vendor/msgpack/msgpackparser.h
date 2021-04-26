@@ -1,11 +1,9 @@
 #pragma once
 
+#include <string_view>
 #include <type_traits>
-#include "estl/string_view.h"
 #include "msgpack.h"
 #include "tools/errors.h"
-
-using reindexer::string_view;
 
 enum MsgPackTag : int {
 	MSGPACK_NULL = 0x0,
@@ -22,7 +20,7 @@ enum MsgPackTag : int {
 
 struct MsgPackValue {
 	explicit MsgPackValue(const msgpack_object* p = nullptr);
-	MsgPackValue operator[](string_view key);
+	MsgPackValue operator[](std::string_view key);
 
 	template <typename T, typename std::enable_if<(std::is_integral<T>::value || std::is_floating_point<T>::value) &&
 												  !std::is_same<T, bool>::value>::type* = nullptr>
@@ -47,8 +45,8 @@ struct MsgPackValue {
 		if (v < minv || v > maxv) throw reindexer::Error(errParams, "Value is out of bounds: [%d,%d]", minv, maxv);
 		return v;
 	}
-	template <typename T, typename std::enable_if<std::is_same<std::string, T>::value ||
-												  std::is_same<reindexer::string_view, T>::value>::type* = nullptr>
+	template <typename T,
+			  typename std::enable_if<std::is_same<std::string, T>::value || std::is_same<std::string_view, T>::value>::type* = nullptr>
 	T As(T defval = T()) const {
 		if (!isValid()) return defval;
 		MsgPackTag tag = getTag();

@@ -7,10 +7,10 @@
 
 namespace reindexer {
 
-const string_view kWrongFieldsAmountMsg = "Number of fields for update should be > 0";
+const std::string_view kWrongFieldsAmountMsg = "Number of fields for update should be > 0";
 
 struct CJsonModifier::Context {
-	Context(const IndexedTagsPath &fieldPath, const VariantArray &v, WrSerializer &ser, string_view tuple, FieldModifyMode m,
+	Context(const IndexedTagsPath &fieldPath, const VariantArray &v, WrSerializer &ser, std::string_view tuple, FieldModifyMode m,
 			const Payload *pl = nullptr)
 		: value(v), wrser(ser), rdser(tuple), mode(m), payload(pl) {
 		for (const IndexedPathNode &node : fieldPath) {
@@ -32,7 +32,7 @@ struct CJsonModifier::Context {
 
 CJsonModifier::CJsonModifier(TagsMatcher &tagsMatcher, PayloadType pt) : pt_(pt), tagsMatcher_(tagsMatcher) {}
 
-Error CJsonModifier::SetFieldValue(string_view tuple, IndexedTagsPath fieldPath, const VariantArray &val, WrSerializer &ser) {
+Error CJsonModifier::SetFieldValue(std::string_view tuple, IndexedTagsPath fieldPath, const VariantArray &val, WrSerializer &ser) {
 	if (fieldPath.empty()) {
 		return Error(errLogic, kWrongFieldsAmountMsg);
 	}
@@ -47,7 +47,7 @@ Error CJsonModifier::SetFieldValue(string_view tuple, IndexedTagsPath fieldPath,
 	return errOK;
 }
 
-Error CJsonModifier::SetObject(string_view tuple, IndexedTagsPath fieldPath, const VariantArray &val, WrSerializer &ser,
+Error CJsonModifier::SetObject(std::string_view tuple, IndexedTagsPath fieldPath, const VariantArray &val, WrSerializer &ser,
 							   const Payload *pl) {
 	if (fieldPath.empty()) {
 		return Error(errLogic, kWrongFieldsAmountMsg);
@@ -63,7 +63,7 @@ Error CJsonModifier::SetObject(string_view tuple, IndexedTagsPath fieldPath, con
 	return errOK;
 }
 
-Error CJsonModifier::RemoveField(string_view tuple, IndexedTagsPath fieldPath, WrSerializer &wrser) {
+Error CJsonModifier::RemoveField(std::string_view tuple, IndexedTagsPath fieldPath, WrSerializer &wrser) {
 	if (fieldPath.empty()) {
 		return Error(errLogic, kWrongFieldsAmountMsg);
 	}
@@ -84,12 +84,12 @@ void CJsonModifier::updateObject(Context &ctx, int tagName) {
 		CJsonBuilder cjsonBuilder(ctx.wrser, ObjType::TypeArray, &tagsMatcher_, tagName);
 		for (size_t i = 0; i < ctx.value.size(); ++i) {
 			CJsonBuilder objBuilder = cjsonBuilder.Object(nullptr);
-			jsonDecoder.Decode(string_view(ctx.value[i]), objBuilder, ctx.jsonPath);
+			jsonDecoder.Decode(std::string_view(ctx.value[i]), objBuilder, ctx.jsonPath);
 		}
 	} else {
 		assert(ctx.value.size() == 1);
 		CJsonBuilder cjsonBuilder(ctx.wrser, ObjType::TypeObject, &tagsMatcher_, tagName);
-		jsonDecoder.Decode(string_view(ctx.value.front()), cjsonBuilder, ctx.jsonPath);
+		jsonDecoder.Decode(std::string_view(ctx.value.front()), cjsonBuilder, ctx.jsonPath);
 	}
 	ctx.fieldUpdated = true;
 }

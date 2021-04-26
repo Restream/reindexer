@@ -304,7 +304,7 @@ void ClientConnection::onRead() {
 			}
 
 			errCode = ser.GetVarUint();
-			string_view errMsg = ser.GetVString();
+			std::string_view errMsg = ser.GetVString();
 			if (errCode != errOK) {
 				ans.status_ = Error(errCode, errMsg);
 			}
@@ -313,6 +313,7 @@ void ClientConnection::onRead() {
 			failInternal(err);
 			return;
 		}
+		rdBuf_.erase(hdr.len);
 		if (hdr.cmd == kCmdUpdates) {
 			auto handler = updatesHandler_.release(std::memory_order_acq_rel);
 			if (handler) {
@@ -359,7 +360,6 @@ void ClientConnection::onRead() {
 				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%d(%.*s)\n", int(hdr.seq), hdr.cmd, int(cmdSv.size()), cmdSv.data());
 			}
 		}
-		rdBuf_.erase(hdr.len);
 	}
 }
 
@@ -387,7 +387,7 @@ chunk ClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args, con
 
 	WrSerializer ser(wrBuf_.get_chunk());
 
-	ser.Write(string_view(reinterpret_cast<char *>(&hdr), sizeof(hdr)));
+	ser.Write(std::string_view(reinterpret_cast<char *>(&hdr), sizeof(hdr)));
 	args.Pack(ser);
 	ctxArgs.Pack(ser);
 	if (hdr.compressed) {

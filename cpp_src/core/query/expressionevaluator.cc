@@ -7,6 +7,8 @@
 
 namespace reindexer {
 
+using namespace std::string_view_literals;
+
 const char* kWrongFieldTypeError = "Only integral type non-array fields are supported in arithmetical expressions: %s";
 
 ExpressionEvaluator::ExpressionEvaluator(const PayloadType& type, TagsMatcher& tagsMatcher, FunctionExecutor& func)
@@ -16,25 +18,25 @@ void ExpressionEvaluator::captureArrayContent(tokenizer& parser) {
 	token tok = parser.next_token(false);
 	for (;;) {
 		tok = parser.next_token(false);
-		if (tok.text() == "]"_sv) {
+		if (tok.text() == "]"sv) {
 			if (arrayValues_.empty()) break;
 			throw Error(errParseSQL, "Expected field value, but found ']' in query, %s", parser.where());
 		}
 		arrayValues_.emplace_back(token2kv(tok, parser, false));
 		tok = parser.next_token();
-		if (tok.text() == "]"_sv) break;
-		if (tok.text() != ","_sv) throw Error(errParseSQL, "Expected ']' or ',', but found '%s' in query, %s", tok.text(), parser.where());
+		if (tok.text() == "]"sv) break;
+		if (tok.text() != ","sv) throw Error(errParseSQL, "Expected ']' or ',', but found '%s' in query, %s", tok.text(), parser.where());
 	};
 }
 
 double ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValue& v) {
 	token tok = parser.peek_token(true, true);
-	if (tok.text() == "("_sv) {
+	if (tok.text() == "("sv) {
 		parser.next_token();
 		double val = performSumAndSubtracting(parser, v);
-		if (parser.next_token().text() != ")"_sv) throw Error(errLogic, "')' expected in arithmetical expression");
+		if (parser.next_token().text() != ")"sv) throw Error(errLogic, "')' expected in arithmetical expression");
 		return val;
-	} else if (tok.text() == "["_sv) {
+	} else if (tok.text() == "["sv) {
 		captureArrayContent(parser);
 	} else if (tok.type == TokenNumber) {
 		char* p = nullptr;
@@ -100,7 +102,7 @@ double ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValu
 double ExpressionEvaluator::performArrayConcatenation(tokenizer& parser, const PayloadValue& v, token& tok) {
 	double left = getPrimaryToken(parser, v);
 	tok = parser.peek_token();
-	while (tok.text() == "|"_sv) {
+	while (tok.text() == "|"sv) {
 		parser.next_token();
 		tok = parser.next_token();
 		if (tok.text() != "|") throw Error(errLogic, "Expected '|', not %s", tok.text());
@@ -114,12 +116,12 @@ double ExpressionEvaluator::performArrayConcatenation(tokenizer& parser, const P
 double ExpressionEvaluator::performMultiplicationAndDivision(tokenizer& parser, const PayloadValue& v, token& tok) {
 	double left = performArrayConcatenation(parser, v, tok);
 	tok = parser.peek_token(true, true);
-	while (tok.text() == "*"_sv || tok.text() == "/"_sv) {
+	while (tok.text() == "*"sv || tok.text() == "/"sv) {
 		state_ = StateMultiplyAndDivide;
-		if (tok.text() == "*"_sv) {
+		if (tok.text() == "*"sv) {
 			parser.next_token();
 			left *= performMultiplicationAndDivision(parser, v, tok);
-		} else if (tok.text() == "/"_sv) {
+		} else if (tok.text() == "/"sv) {
 			parser.next_token();
 			double val = performMultiplicationAndDivision(parser, v, tok);
 			if (val == 0) throw Error(errLogic, "Division by zero!");
@@ -133,12 +135,12 @@ double ExpressionEvaluator::performSumAndSubtracting(tokenizer& parser, const Pa
 	token tok;
 	double left = performMultiplicationAndDivision(parser, v, tok);
 	tok = parser.peek_token(true, true);
-	while (tok.text() == "+"_sv || tok.text() == "-"_sv) {
+	while (tok.text() == "+"sv || tok.text() == "-"sv) {
 		state_ = StateSumAndSubtract;
-		if (tok.text() == "+"_sv) {
+		if (tok.text() == "+"sv) {
 			parser.next_token(true, true);
 			left += performMultiplicationAndDivision(parser, v, tok);
-		} else if (tok.text() == "-"_sv) {
+		} else if (tok.text() == "-"sv) {
 			parser.next_token(true, true);
 			left -= performMultiplicationAndDivision(parser, v, tok);
 		}
@@ -146,7 +148,7 @@ double ExpressionEvaluator::performSumAndSubtracting(tokenizer& parser, const Pa
 	return left;
 }
 
-VariantArray ExpressionEvaluator::Evaluate(tokenizer& parser, const PayloadValue& v, string_view forField) {
+VariantArray ExpressionEvaluator::Evaluate(tokenizer& parser, const PayloadValue& v, std::string_view forField) {
 	forField_ = string(forField);
 	double expressionValue = performSumAndSubtracting(parser, v);
 	if (arrayValues_.empty()) {
@@ -157,7 +159,7 @@ VariantArray ExpressionEvaluator::Evaluate(tokenizer& parser, const PayloadValue
 	}
 }
 
-VariantArray ExpressionEvaluator::Evaluate(const string_view& expr, const PayloadValue& v, string_view forField) {
+VariantArray ExpressionEvaluator::Evaluate(std::string_view expr, const PayloadValue& v, std::string_view forField) {
 	arrayValues_.clear();
 	tokenizer parser(expr);
 	return Evaluate(parser, v, forField);

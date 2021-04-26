@@ -48,7 +48,7 @@ static reindexer_ret ret2c(const Error& err_, const reindexer_resbuffer& out) {
 }
 
 static string str2c(reindexer_string gs) { return string(reinterpret_cast<const char*>(gs.p), gs.n); }
-static string_view str2cv(reindexer_string gs) { return string_view(reinterpret_cast<const char*>(gs.p), gs.n); }
+static std::string_view str2cv(reindexer_string gs) { return std::string_view(reinterpret_cast<const char*>(gs.p), gs.n); }
 
 struct QueryResultsWrapper : QueryResults {
 	WrResultSerializer ser;
@@ -114,14 +114,14 @@ static void procces_packed_item(Item& item, int mode, int state_token, reindexer
 	if (item.Status().ok()) {
 		switch (format) {
 			case FormatJson:
-				err = item.FromJSON(string_view(reinterpret_cast<const char*>(data.data), data.len), 0, mode == ModeDelete);
+				err = item.FromJSON(std::string_view(reinterpret_cast<const char*>(data.data), data.len), 0, mode == ModeDelete);
 				break;
 			case FormatCJson:
 				if (item.GetStateToken() != state_token) {
 					err = Error(errStateInvalidated, "stateToken mismatch:  %08X, need %08X. Can't process item", state_token,
 								item.GetStateToken());
 				} else {
-					err = item.FromCJSON(string_view(reinterpret_cast<const char*>(data.data), data.len), mode == ModeDelete);
+					err = item.FromCJSON(std::string_view(reinterpret_cast<const char*>(data.data), data.len), mode == ModeDelete);
 				}
 				break;
 			default:
@@ -173,7 +173,7 @@ reindexer_error reindexer_modify_item_packed_tx(uintptr_t rx, uintptr_t tr, rein
 
 reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, reindexer_buffer data, reindexer_ctx_info ctx_info) {
 	Serializer ser(args.data, args.len);
-	string_view ns = ser.GetVString();
+	std::string_view ns = ser.GetVString();
 	int format = ser.GetVarUint();
 	int mode = ser.GetVarUint();
 	int state_token = ser.GetVarUint();

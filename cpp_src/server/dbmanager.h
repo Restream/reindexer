@@ -33,7 +33,7 @@ enum UserRole {
 	kRoleSystem,	 /// Special role for internal usage
 };
 
-string_view UserRoleName(UserRole role) noexcept;
+std::string_view UserRoleName(UserRole role) noexcept;
 
 /// Record about user credentials
 struct UserRecord {
@@ -153,7 +153,7 @@ private:
 	Error readUsersYAML() noexcept;
 	Error readUsersJSON() noexcept;
 	Error createDefaultUsersYAML() noexcept;
-	static UserRole userRoleFromString(string_view strRole);
+	static UserRole userRoleFromString(std::string_view strRole);
 	Error loadOrCreateDatabase(const string &name, bool allowDBErrors, bool withAutorepair, const AuthContext &auth = AuthContext());
 
 	unordered_map<string, unique_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_;

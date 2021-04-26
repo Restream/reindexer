@@ -1,7 +1,7 @@
 #include "customhash.h"
 #include <string.h>
+#include <string_view>
 #include "customlocal.h"
-#include "estl/string_view.h"
 #include "utf8cpp/utf8.h"
 
 namespace reindexer {
@@ -124,7 +124,7 @@ uint32_t _Hash_bytes_collate_utf8(const void* ptr, uint32_t len) {
 }
 
 uint32_t Hash(const wstring& s) noexcept { return _Hash_bytes(s.data(), s.length() * sizeof(wchar_t)); }
-uint32_t collateHash(const string_view& s, CollateMode collateMode) noexcept {
+uint32_t collateHash(std::string_view s, CollateMode collateMode) noexcept {
 	switch (collateMode) {
 		case CollateASCII:
 			return _Hash_bytes_collate_ascii(s.data(), s.length());

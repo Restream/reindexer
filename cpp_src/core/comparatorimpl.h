@@ -153,20 +153,20 @@ public:
 		auto rhs = cachedValueSV_;
 		switch (cond) {
 			case CondEq:
-				return collateCompare(string_view(lhs), rhs, collateOpts) == 0;
+				return collateCompare(std::string_view(lhs), rhs, collateOpts) == 0;
 			case CondGe:
-				return collateCompare(string_view(lhs), rhs, collateOpts) >= 0;
+				return collateCompare(std::string_view(lhs), rhs, collateOpts) >= 0;
 			case CondLe:
-				return collateCompare(string_view(lhs), rhs, collateOpts) <= 0;
+				return collateCompare(std::string_view(lhs), rhs, collateOpts) <= 0;
 			case CondLt:
-				return collateCompare(string_view(lhs), rhs, collateOpts) < 0;
+				return collateCompare(std::string_view(lhs), rhs, collateOpts) < 0;
 			case CondGt:
-				return collateCompare(string_view(lhs), rhs, collateOpts) > 0;
+				return collateCompare(std::string_view(lhs), rhs, collateOpts) > 0;
 			case CondRange:
-				return collateCompare(string_view(lhs), rhs, collateOpts) >= 0 &&
-					   collateCompare(string_view(lhs), string_view(*values_[1]), collateOpts) <= 0;
+				return collateCompare(std::string_view(lhs), rhs, collateOpts) >= 0 &&
+					   collateCompare(std::string_view(lhs), std::string_view(*values_[1]), collateOpts) <= 0;
 			case CondSet:
-				return valuesS_->find(string_view(lhs)) != valuesS_->end();
+				return valuesS_->find(std::string_view(lhs)) != valuesS_->end();
 			case CondAllSet: {
 				auto it = valuesS_->find(lhs);
 				if (it == valuesS_->end()) return false;
@@ -178,7 +178,7 @@ public:
 			case CondEmpty:
 				return false;
 			case CondLike: {
-				return matchLikePattern(string_view(lhs), rhs);
+				return matchLikePattern(std::string_view(lhs), rhs);
 			}
 			default:
 				abort();
@@ -200,7 +200,7 @@ public:
 	}
 
 	h_vector<key_string, 1> values_;
-	string_view cachedValueSV_;
+	std::string_view cachedValueSV_;
 
 	class key_string_set : public fast_hash_set<key_string, hash_key_string, equal_key_string> {
 	public:
@@ -220,7 +220,7 @@ private:
 		} else {
 			values_.push_back(value);
 			if (values_.size() == 1) {
-				cachedValueSV_ = string_view(*values_[0]);
+				cachedValueSV_ = std::string_view(*values_[0]);
 			}
 		}
 	}

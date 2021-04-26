@@ -1,12 +1,12 @@
+#include <cstring>
 #include <iostream>
 #ifndef _WIN32
 #include <signal.h>
 #endif // _WIN32
-
 #include <sstream>
+#include <string_view>
 #include "debug/backtrace.h"
 #include "debug/resolver.h"
-#include "estl/string_view.h"
 
 static std::unique_ptr<reindexer::debug::TraceResolver> resolver{nullptr};
 
@@ -69,7 +69,7 @@ extern "C" void cgoSignalsInit() {
 #endif // _WIN32
 
 extern "C" void cgoTraceback(cgoTracebackArg* arg) {
-	reindexer::string_view method;
+	std::string_view method;
 	void* addrlist[64] = {};
 
 	if (arg->context != 0) {

@@ -93,7 +93,7 @@ CJsonBuilder &CJsonBuilder::Put(int tagName, double arg) {
 	++count_;
 	return *this;
 }
-CJsonBuilder &CJsonBuilder::Put(int tagName, const string_view &arg) {
+CJsonBuilder &CJsonBuilder::Put(int tagName, std::string_view arg) {
 	if (type_ == ObjType::TypeArray) {
 		itemType_ = TAG_STRING;
 	} else {
@@ -154,7 +154,7 @@ CJsonBuilder &CJsonBuilder::Put(int tagName, const Variant &kv) {
 		case KeyValueDouble:
 			return Put(tagName, double(kv));
 		case KeyValueString:
-			return Put(tagName, string_view(kv));
+			return Put(tagName, std::string_view(kv));
 		case KeyValueNull:
 			return Null(tagName);
 		case KeyValueBool:

@@ -2,14 +2,11 @@
 #include <cctype>
 #include "core/namespace/namespaceimpl.h"
 #include "core/storage/storagefactory.h"
-#include "estl/string_view.h"
 #include "iotools.h"
 #include "replicator/updatesobserver.h"
 #include "tools/fsops.h"
 
 namespace reindexer_tool {
-
-using reindexer::string_view;
 
 const char kStoragePlaceholderFilename[] = ".reindexer.storage";
 

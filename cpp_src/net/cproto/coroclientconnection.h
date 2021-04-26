@@ -45,7 +45,7 @@ public:
 	CoroRPCAnswer &operator=(const CoroRPCAnswer &other) = delete;
 
 	void EnsureHold(chunk &&ch) {
-		ch.append(string_view(reinterpret_cast<char *>(data_.data()), data_.size()));
+		ch.append(std::string_view(reinterpret_cast<char *>(data_.data()), data_.size()));
 		storage_ = std::move(ch);
 		data_ = {storage_.data(), storage_.size()};
 	}
@@ -139,7 +139,7 @@ private:
 	};
 
 	template <typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const string_view &val, const Argss &... argss) {
+	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const std::string_view &val, const Argss &... argss) {
 		args.push_back(Variant(p_string(&val)));
 		return call(opts, args, argss...);
 	}

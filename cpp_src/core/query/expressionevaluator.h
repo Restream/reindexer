@@ -13,8 +13,8 @@ class ExpressionEvaluator {
 public:
 	ExpressionEvaluator(const PayloadType& type, TagsMatcher& tagsMatcher, FunctionExecutor& func);
 
-	VariantArray Evaluate(tokenizer& parser, const PayloadValue& v, string_view forField);
-	VariantArray Evaluate(const string_view& expr, const PayloadValue& v, string_view forField);
+	VariantArray Evaluate(tokenizer& parser, const PayloadValue& v, std::string_view forField);
+	VariantArray Evaluate(std::string_view expr, const PayloadValue& v, std::string_view forField);
 
 private:
 	double getPrimaryToken(tokenizer& parser, const PayloadValue& v);

@@ -31,18 +31,19 @@ ActiveQueryScope::~ActiveQueryScope() {
 	}
 }
 
-static string_view nsOptimizationStateName(int state) {
+static std::string_view nsOptimizationStateName(int state) {
+	using namespace std::string_view_literals;
 	switch (state) {
 		case NamespaceImpl::NotOptimized:
-			return "Not optimized"_sv;
+			return "Not optimized"sv;
 		case NamespaceImpl::OptimizingIndexes:
-			return "Optimizing indexes"_sv;
+			return "Optimizing indexes"sv;
 		case NamespaceImpl::OptimizingSortOrders:
-			return "Optimizing sort orders"_sv;
+			return "Optimizing sort orders"sv;
 		case NamespaceImpl::OptimizationCompleted:
-			return "Optimization completed"_sv;
+			return "Optimization completed"sv;
 		default:
-			return "<Unknown>"_sv;
+			return "<Unknown>"sv;
 	}
 }
 

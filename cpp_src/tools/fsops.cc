@@ -56,7 +56,7 @@ int ReadFile(const string &path, string &content) {
 	return nread;
 }
 
-int64_t WriteFile(const std::string &path, string_view content) {
+int64_t WriteFile(const std::string &path, std::string_view content) {
 	FILE *f = fopen(path.c_str(), "w");
 	if (!f) {
 		return -1;

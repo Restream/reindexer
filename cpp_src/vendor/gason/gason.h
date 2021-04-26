@@ -1,17 +1,17 @@
 #pragma once
 
 #include <assert.h>
-#include <stddef.h>
-#include <stdint.h>
+#include <iostream>
 #include <limits>
+#include <stddef.h>
 #include <stdexcept>
+#include <stdint.h>
+#include <string_view>
 #include <type_traits>
 #include "estl/span.h"
-#include "estl/string_view.h"
 
 namespace gason {
 
-using reindexer::string_view;
 using reindexer::span;
 
 enum JsonTag : int { JSON_STRING = 0, JSON_NUMBER, JSON_DOUBLE, JSON_ARRAY, JSON_OBJECT, JSON_TRUE, JSON_FALSE, JSON_NULL = 0xF };
@@ -42,7 +42,7 @@ struct JsonString {
 	size_t size() const { return length(); }
 	const char *data() const { return ptr - length(); }
 	explicit operator std::string() const { return std::string(data(), length()); }
-	operator string_view() const { return string_view(data(), length()); }
+	operator std::string_view() const { return std::string_view(data(), length()); }
 
 	const char *ptr;
 };
@@ -73,7 +73,7 @@ union JsonValue {
 		if (getTag() == JSON_DOUBLE) return fval;
 		return ival;
 	}
-	string_view toString() const {
+	std::string_view toString() const {
 		assert(getTag() == JSON_STRING);
 		return sval;
 	}
@@ -115,7 +115,7 @@ struct JsonNode {
 		return v;
 	}
 	template <typename T,
-			  typename std::enable_if<std::is_same<std::string, T>::value || std::is_same<string_view, T>::value>::type * = nullptr>
+			  typename std::enable_if<std::is_same<std::string, T>::value || std::is_same<std::string_view, T>::value>::type * = nullptr>
 	T As(T defval = T()) const {
 		if (empty()) return defval;
 		if (value.getTag() != JSON_STRING) throw Exception(std::string("Can't convert json field '") + std::string(key) + "' to string");
@@ -134,7 +134,7 @@ struct JsonNode {
 		}
 	}
 
-	const JsonNode &operator[](string_view sv) const;
+	const JsonNode &operator[](std::string_view sv) const;
 	bool empty() const;
 	JsonNode *toNode() const;
 };
@@ -217,7 +217,7 @@ public:
 	// Inplace parse. Buffer pointed by str will be changed
 	JsonNode Parse(span<char> str, size_t *length = nullptr);
 	// Copy str. Buffer pointed by str will be copied
-	JsonNode Parse(string_view str, size_t *length = nullptr);
+	JsonNode Parse(std::string_view str, size_t *length = nullptr);
 
 private:
 	JsonAllocator alloc_;

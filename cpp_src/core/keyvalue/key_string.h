@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include "estl/intrusive_ptr.h"
-#include "estl/string_view.h"
 
 namespace reindexer {
 
@@ -14,7 +14,7 @@ typedef const string const_string;
 
 class base_key_string : public string {
 public:
-	base_key_string(string_view str) : string(str.data(), str.length()) { bind(); }
+	base_key_string(std::string_view str) : string(str.data(), str.length()) { bind(); }
 	template <typename... Args>
 	base_key_string(Args &&... args) : string(args...) {
 		bind();

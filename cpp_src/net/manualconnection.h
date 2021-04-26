@@ -70,7 +70,7 @@ public:
 			},
 			send_now);
 	}
-	int async_connect(string_view addr) noexcept;
+	int async_connect(std::string_view addr) noexcept;
 	conn_state state() const noexcept { return state_; }
 
 private:

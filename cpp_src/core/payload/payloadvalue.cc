@@ -36,7 +36,7 @@ uint8_t *PayloadValue::alloc(size_t cap) {
 void PayloadValue::release() {
 	if (p_ && header()->refcount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
 		header()->~dataHeader();
-		delete p_;
+		operator delete(p_);
 	}
 	p_ = nullptr;
 }

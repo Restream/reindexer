@@ -104,7 +104,7 @@ Error ParseMd5CryptString(const std::string &input, std::string &outHash, std::s
 		if (hashParts.size() != 4) {
 			return Error(errParams, "Unexpected hash format. Expectig '$type$salt$hash");
 		}
-		if (string_view(hashParts[1]) != kMD5CryptMagic) {
+		if (std::string_view(hashParts[1]) != kMD5CryptMagic) {
 			return Error(errParams, "Unsupported hash magic: %s", hashParts[1].c_str());
 		}
 		outHash = std::move(hashParts[3]);

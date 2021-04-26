@@ -1,4 +1,6 @@
 #include "backtrace.h"
+#include <cstring>
+#include <iostream>
 #include <sstream>
 #ifndef WIN32
 #include <signal.h>
@@ -49,7 +51,7 @@ namespace reindexer {
 namespace debug {
 
 std::function<void(std::ostream &sout)> g_crash_query_reporter = [](std::ostream &) {};
-std::function<void(string_view out)> g_writer = [](string_view sv) { std::cerr << sv; };
+std::function<void(std::string_view out)> g_writer = [](std::string_view sv) { std::cerr << sv; };
 
 #if REINDEX_WITH_UNWIND
 class Unwinder {
@@ -91,7 +93,8 @@ private:
 };
 #endif
 
-int backtrace_internal(void **addrlist, size_t size, void *ctx, string_view &method) {
+int backtrace_internal(void **addrlist, size_t size, void *ctx, std::string_view &method) {
+	using namespace std::string_view_literals;
 	(void)ctx;
 	size_t addrlen = 0;
 	(void)size;
@@ -99,7 +102,7 @@ int backtrace_internal(void **addrlist, size_t size, void *ctx, string_view &met
 	(void)addrlist;
 
 #if REINDEX_WITH_LIBUNWIND
-	method = "libunwind"_sv;
+	method = "libunwind"sv;
 	unw_cursor_t cursor;
 	unw_context_t uc;
 
@@ -119,14 +122,14 @@ int backtrace_internal(void **addrlist, size_t size, void *ctx, string_view &met
 #endif
 #if REINDEX_WITH_UNWIND
 	Unwinder unw;
-	if (addrlen < 3) {
-		method = "unwind"_sv;
+	if (addrlen < 3) {	// -V547
+		method = "unwind"sv;
 		addrlen = unw(span<void *>(addrlist, size));
 	}
 #endif
 #if REINDEX_WITH_EXECINFO
-	if (addrlen < 3) {
-		method = "execinfo"_sv;
+	if (addrlen < 3) {	// -V547
+		method = "execinfo"sv;
 		addrlen = ::backtrace(addrlist, size);
 	}
 #endif
@@ -139,7 +142,7 @@ void inline print_backtrace(std::ostream &sout, void *ctx, int sig) {
 #else
 	void *addrlist[64] = {};
 	auto resolver = TraceResolver::New();
-	string_view method;
+	std::string_view method;
 	int addrlen = backtrace_internal(addrlist, sizeof(addrlist) / sizeof(addrlist[0]), ctx, method);
 
 	if (sig >= 0) sout << "Signal " << sig << " ";
@@ -175,7 +178,7 @@ void backtrace_init() {
 	sigaction(SIGBUS, &sa, nullptr);
 }
 
-void backtrace_set_writer(std::function<void(string_view out)> writer) { g_writer = writer; }
+void backtrace_set_writer(std::function<void(std::string_view out)> writer) { g_writer = writer; }
 void backtrace_set_crash_query_reporter(std::function<void(std::ostream &sout)> reporter) { g_crash_query_reporter = reporter; }
 
 }  // namespace debug
@@ -185,11 +188,11 @@ void backtrace_set_crash_query_reporter(std::function<void(std::ostream &sout)> 
 namespace reindexer {
 namespace debug {
 std::function<void(std::ostream &sout)> g_crash_query_reporter = [](std::ostream &) {};
-std::function<void(string_view out)> g_writer = [](string_view sv) { std::cerr << sv; };
+std::function<void(std::string_view out)> g_writer = [](std::string_view sv) { std::cerr << sv; };
 
 void backtrace_init() {}
-void backtrace_set_writer(std::function<void(string_view out)>) {}
-int backtrace_internal(void **, size_t, void *, string_view &) { return 0; }
+void backtrace_set_writer(std::function<void(std::string_view out)>) {}
+int backtrace_internal(void **, size_t, void *, std::string_view &) { return 0; }
 void backtrace_set_crash_query_reporter(std::function<void(std::ostream &sout)> reporter) { g_crash_query_reporter = reporter; }
 void print_backtrace(std::ostream &, void *, int) {}
 void print_crash_query(std::ostream &sout) {

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <memory>
+#include <string_view>
 #include <vector>
-#include "estl/string_view.h"
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -35,29 +35,29 @@ public:
 	/// application *MUST* hold slice until end of life of Item
 	/// @param slice - data slice with Json.
 	/// @param endp - pounter to end of parsed part of slice
-	Error FromJSON(const string_view &slice, char **endp = nullptr, bool = false);
+	Error FromJSON(std::string_view slice, char **endp = nullptr, bool = false);
 	/// Build item from JSON<br>
 	/// If Item is in *Unsafe Mode*, then Item will not store slice, but just keep pointer to data in slice,
 	/// application *MUST* hold slice until end of life of Item
 	/// @param slice - data slice with CJson
-	Error FromCJSON(const string_view &slice);
+	Error FromCJSON(std::string_view slice);
 	/// Serialize item to CJSON.<br>
 	/// If Item is in *Unfafe Mode*, then returned slice is allocated in temporary buffer, and can be invalidated by any next operation with
 	/// Item
 	/// @return data slice with CJSON
-	string_view GetCJSON();
+	std::string_view GetCJSON();
 	/// Serialize item to JSON.<br>
 	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next operation
 	/// with Item
-	string_view GetJSON();
+	std::string_view GetJSON();
 	/// Packs data in msgpack format
 	/// @return data slice with MsgPack. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next
 	/// operation with Item
-	string_view GetMsgPack();
+	std::string_view GetMsgPack();
 	/// Builds item from msgpack::object.
 	/// @param slice - msgpack encoded data buffer.
 	/// @param offset - position to start from.
-	Error FromMsgPack(const string_view &slice, size_t &offset);
+	Error FromMsgPack(std::string_view slice, size_t &offset);
 	/// Get status of item
 	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next operation
 	/// with Item

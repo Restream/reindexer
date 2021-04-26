@@ -2,7 +2,6 @@
 
 #include "atoi/atoi.h"
 #include "estl/h_vector.h"
-// #include "estl/string_view.h"
 #include "stringstools.h"
 
 namespace reindexer {
@@ -11,7 +10,7 @@ constexpr size_t kVersionDigitsCount = 3;
 class SemVersion {
 public:
 	SemVersion() = default;
-	SemVersion(string_view version) { parse(version); }
+	SemVersion(std::string_view version) { parse(version); }
 
 	bool operator<(const SemVersion &rVersion) const {
 		return std::lexicographical_compare(versionDigits_.begin(), versionDigits_.end(), rVersion.versionDigits_.begin(),
@@ -23,12 +22,12 @@ public:
 	const std::string &StrippedString() const { return versionStr_; }
 
 private:
-	void parse(string_view input) {
-		h_vector<string_view, kVersionDigitsCount> splitted;
+	void parse(std::string_view input) {
+		h_vector<std::string_view, kVersionDigitsCount> splitted;
 		h_vector<int16_t, kVersionDigitsCount> result;
 		versionDigits_ = {0, 0, 0};
 		versionStr_.assign("0.0.0");
-		string_view version = input;
+		std::string_view version = input;
 		if (input.size() && input.data()[0] == 'v') {
 			version = input.substr(1);
 		}
@@ -40,7 +39,7 @@ private:
 		split(version, ".", false, splitted);
 		for (auto &it : splitted) {
 			bool valid = true;
-			int res = jsteemann::atoi<int>(it.begin(), it.end(), valid);
+			int res = jsteemann::atoi<int>(it.data(), it.data() + it.size(), valid);
 			if (!valid) {
 				return;
 			}

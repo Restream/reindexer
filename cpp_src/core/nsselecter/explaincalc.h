@@ -1,11 +1,11 @@
 #pragma once
 
 #include <chrono>
+#include <string_view>
 #include <vector>
 
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
-#include "estl/string_view.h"
 
 namespace reindexer {
 
@@ -36,7 +36,7 @@ public:
 	void StopSort();
 
 	void PutCount(int cnt) { count_ = cnt; }
-	void PutSortIndex(string_view index);
+	void PutSortIndex(std::string_view index);
 	void PutSelectors(SelectIteratorContainer *qres);
 	void PutJoinedSelectors(JoinedSelectors *jselectors);
 	void SetSortOptimization(bool enable) { sortOptimization_ = enable; }
@@ -59,7 +59,7 @@ protected:
 	Duration loop_ = Duration::zero();
 	Duration sort_ = Duration::zero();
 
-	string_view sortIndex_;
+	std::string_view sortIndex_;
 	SelectIteratorContainer *selectors_ = nullptr;
 	JoinedSelectors *jselectors_ = nullptr;
 	bool sortOptimization_ = false;

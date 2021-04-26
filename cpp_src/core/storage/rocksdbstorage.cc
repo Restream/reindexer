@@ -17,13 +17,15 @@ void toReadOptions(const StorageOpts& opts, rocksdb::ReadOptions& ropts) {
 namespace reindexer {
 namespace datastorage {
 
-constexpr auto kStorageNotInitialized = "Storage is not initialized"_sv;
+using namespace std::string_view_literals;
+
+constexpr auto kStorageNotInitialized = "Storage is not initialized"sv;
 
 RocksDbStorage::RocksDbStorage() {}
 
 RocksDbStorage::~RocksDbStorage() {}
 
-Error RocksDbStorage::Read(const StorageOpts& opts, const string_view& key, string& value) {
+Error RocksDbStorage::Read(const StorageOpts& opts, std::string_view key, string& value) {
 	if (!db_) throw Error(errParams, kStorageNotInitialized);
 
 	rocksdb::ReadOptions options;
@@ -33,7 +35,7 @@ Error RocksDbStorage::Read(const StorageOpts& opts, const string_view& key, stri
 	return Error(status.IsNotFound() ? errNotFound : errLogic, status.ToString());
 }
 
-Error RocksDbStorage::Write(const StorageOpts& opts, const string_view& key, const string_view& value) {
+Error RocksDbStorage::Write(const StorageOpts& opts, std::string_view key, std::string_view value) {
 	if (!db_) throw Error(errParams, kStorageNotInitialized);
 
 	rocksdb::WriteOptions options;
@@ -54,7 +56,7 @@ Error RocksDbStorage::Write(const StorageOpts& opts, UpdatesCollection& buffer) 
 	return Error(status.IsNotFound() ? errNotFound : errLogic, status.ToString());
 }
 
-Error RocksDbStorage::Delete(const StorageOpts& opts, const string_view& key) {
+Error RocksDbStorage::Delete(const StorageOpts& opts, std::string_view key) {
 	if (!db_) throw Error(errParams, kStorageNotInitialized);
 
 	rocksdb::WriteOptions options;
@@ -141,11 +143,11 @@ RocksDbBatchBuffer::RocksDbBatchBuffer() {}
 
 RocksDbBatchBuffer::~RocksDbBatchBuffer() {}
 
-void RocksDbBatchBuffer::Put(const string_view& key, const string_view& value) {
+void RocksDbBatchBuffer::Put(std::string_view key, std::string_view value) {
 	batchWrite_.Put(rocksdb::Slice(key.data(), key.size()), rocksdb::Slice(value.data(), value.size()));
 }
 
-void RocksDbBatchBuffer::Remove(const string_view& key) { batchWrite_.Delete(rocksdb::Slice(key.data(), key.size())); }
+void RocksDbBatchBuffer::Remove(std::string_view key) { batchWrite_.Delete(rocksdb::Slice(key.data(), key.size())); }
 
 void RocksDbBatchBuffer::Clear() { batchWrite_.Clear(); }
 
@@ -159,25 +161,25 @@ void RocksDbIterator::SeekToFirst() { return iterator_->SeekToFirst(); }
 
 void RocksDbIterator::SeekToLast() { return iterator_->SeekToLast(); }
 
-void RocksDbIterator::Seek(const string_view& target) { return iterator_->Seek(rocksdb::Slice(target.data(), target.size())); }
+void RocksDbIterator::Seek(std::string_view target) { return iterator_->Seek(rocksdb::Slice(target.data(), target.size())); }
 
 void RocksDbIterator::Next() { return iterator_->Next(); }
 
 void RocksDbIterator::Prev() { return iterator_->Prev(); }
 
-string_view RocksDbIterator::Key() const {
+std::string_view RocksDbIterator::Key() const {
 	rocksdb::Slice key = iterator_->key();
-	return string_view(key.data(), key.size());
+	return std::string_view(key.data(), key.size());
 }
 
-string_view RocksDbIterator::Value() const {
+std::string_view RocksDbIterator::Value() const {
 	rocksdb::Slice key = iterator_->value();
-	return string_view(key.data(), key.size());
+	return std::string_view(key.data(), key.size());
 }
 
 Comparator& RocksDbIterator::GetComparator() { return comparator_; }
 
-int RocksDbComparator::Compare(const string_view& a, const string_view& b) const {
+int RocksDbComparator::Compare(std::string_view a, std::string_view b) const {
 	rocksdb::Options options;
 	return options.comparator->Compare(rocksdb::Slice(a.data(), a.size()), rocksdb::Slice(b.data(), b.size()));
 }
@@ -191,4 +193,4 @@ RocksDbSnapshot::~RocksDbSnapshot() { snapshot_ = nullptr; }
 // suppress clang warngig
 int ___rocksdbsrorage_dummy_suppress_warning;
 
-#endif  // REINDEX_WITH_ROCKSDB
+#endif	// REINDEX_WITH_ROCKSDB

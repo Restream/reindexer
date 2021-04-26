@@ -76,7 +76,7 @@ void ClientsStatsApi::ClientLoopReconnect() {
 				reindexer::WrSerializer sr;
 				err = it.GetJSON(sr, false);
 				ASSERT_TRUE(err.ok()) << err.what();
-				reindexer::string_view sv = sr.Slice();
+				std::string_view sv = sr.Slice();
 				resString += std::string(sv.data(), sv.size());
 			}
 		}
@@ -127,7 +127,7 @@ void ClientsStatsApi::ClientSelectLoop(size_t coroutines) {
 						reindexer::WrSerializer sr;
 						err = it.GetJSON(sr, false);
 						ASSERT_TRUE(err.ok()) << err.what();
-						reindexer::string_view sv = sr.Slice();
+						std::string_view sv = sr.Slice();
 						resString += std::string(sv.data(), sv.size());
 					}
 				}

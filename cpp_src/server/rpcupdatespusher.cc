@@ -8,7 +8,7 @@ namespace cproto {
 
 RPCUpdatesPusher::RPCUpdatesPusher() : writer_(nullptr), seq_(0) {}
 
-void RPCUpdatesPusher::OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRecord &walRec) {
+void RPCUpdatesPusher::OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &walRec) {
 	SharedWALRecord pwalRec;
 	if (filter_) {
 		WALRecord rec = walRec;
@@ -31,7 +31,7 @@ void RPCUpdatesPusher::OnWALUpdate(LSNPair LSNs, string_view nsName, const WALRe
 	});
 }
 
-void RPCUpdatesPusher::OnUpdatesLost(string_view) {}
+void RPCUpdatesPusher::OnUpdatesLost(std::string_view) {}
 
 void RPCUpdatesPusher::OnConnectionState(const Error &) {}
 

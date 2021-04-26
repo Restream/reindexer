@@ -222,7 +222,7 @@ bool Variant::As<bool>() const {
 			case KeyValueDouble:
 				return bool(value_double);
 			case KeyValueString:
-				return string_view(operator p_string()) == "true";
+				return std::string_view(operator p_string()) == "true";
 			case KeyValueComposite:
 			case KeyValueTuple:
 				return 0;
@@ -311,7 +311,7 @@ int Variant::Compare(const Variant &other, const CollateOpts &collateOpts) const
 	}
 }
 
-int Variant::relaxCompareWithString(string_view str) const {
+int Variant::relaxCompareWithString(std::string_view str) const {
 	switch (Type()) {
 		case KeyValueInt: {
 			bool valid = true;
@@ -436,7 +436,7 @@ void Variant::convertToComposite(const PayloadType *payloadType, const FieldsSet
 	char *data = reinterpret_cast<char *>(pv.Ptr() + payloadType->TotalSize());
 	memcpy(data, val->data(), val->size());
 
-	Serializer ser(string_view(data, val->size()));
+	Serializer ser(std::string_view(data, val->size()));
 
 	size_t count = ser.GetVarUint();
 	if (count != fields->size()) {
@@ -511,9 +511,9 @@ Variant::operator p_string() const {
 	return hold_ ? p_string(*cast<key_string>()) : *cast<p_string>();
 }
 
-Variant::operator string_view() const {
+Variant::operator std::string_view() const {
 	assertKeyType(type_, KeyValueString);
-	return hold_ ? string_view(**cast<key_string>()) : *cast<p_string>();
+	return hold_ ? std::string_view(**cast<key_string>()) : *cast<p_string>();
 }
 Variant::operator const PayloadValue &() const {
 	assertKeyType(type_, KeyValueComposite);
@@ -528,7 +528,7 @@ void Variant::Dump(WrSerializer &wrser) const {
 		case KeyValueString: {
 			p_string str(*this);
 			if (isPrintable(str)) {
-				wrser << '\'' << string_view(str) << '\'';
+				wrser << '\'' << std::string_view(str) << '\'';
 			} else {
 				wrser << "slice{len:" << str.length() << "}";
 			}

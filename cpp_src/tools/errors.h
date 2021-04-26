@@ -1,9 +1,10 @@
 #pragma once
 
+#include <iostream>
 #include <string>
+#include <string_view>
 #include "core/type_consts.h"
 #include "estl/intrusive_ptr.h"
-#include "estl/string_view.h"
 
 #ifdef REINDEX_CORE_BUILD
 #include "spdlog/fmt/bundled/printf.h"
@@ -15,7 +16,7 @@ namespace reindexer {
 class Error {
 public:
 	Error(int code = errOK);
-	Error(int code, string_view what);
+	Error(int code, std::string_view what);
 #ifdef REINDEX_CORE_BUILD
 	template <typename... Args>
 	Error(int code, const char *fmt, const Args &... args) : Error(code, fmt::sprintf(fmt, args...)) {}

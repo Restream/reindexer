@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <unordered_map>
+#include "config.h"
 #include "core/cbinding/resultserializer.h"
 #include "core/keyvalue/variant.h"
 #include "core/reindexer.h"
@@ -39,11 +40,11 @@ struct RPCClientData : public cproto::ClientData {
 
 class RPCServer {
 public:
-	RPCServer(DBManager &dbMgr, LoggerWrapper &logger, IClientsStats *clientsStats, bool allocDebug = false,
+	RPCServer(DBManager &dbMgr, LoggerWrapper &logger, IClientsStats *clientsStats, const ServerConfig &serverConfig,
 			  IStatsWatcher *statsCollector = nullptr);
 	~RPCServer();
 
-	bool Start(const string &addr, ev::dynamic_loop &loop, bool enableStat, size_t maxUpdatesSize);
+	bool Start(const string &addr, ev::dynamic_loop &loop);
 	void Stop() { listener_->Stop(); }
 
 	Error Ping(cproto::Context &ctx);
@@ -104,24 +105,24 @@ public:
 
 protected:
 	Error sendResults(cproto::Context &ctx, QueryResults &qr, int reqId, const ResultFetchOpts &opts);
-	Error processTxItem(DataFormat format, string_view itemData, Item &item, ItemModifyMode mode, int stateToken) const noexcept;
+	Error processTxItem(DataFormat format, std::string_view itemData, Item &item, ItemModifyMode mode, int stateToken) const noexcept;
 
 	Error fetchResults(cproto::Context &ctx, int reqId, const ResultFetchOpts &opts);
 	void freeQueryResults(cproto::Context &ctx, int id);
 	QueryResults &getQueryResults(cproto::Context &ctx, int &id);
 	Transaction &getTx(cproto::Context &ctx, int64_t id);
-	int64_t addTx(cproto::Context &ctx, string_view nsName);
+	int64_t addTx(cproto::Context &ctx, std::string_view nsName);
 	void clearTx(cproto::Context &ctx, uint64_t txId);
 
 	Reindexer getDB(cproto::Context &ctx, UserRole role);
-	constexpr static string_view statsSourceName() { return "rpc"_sv; }
+	constexpr static std::string_view statsSourceName() { return std::string_view{"rpc"}; }
 
 	DBManager &dbMgr_;
 	cproto::Dispatcher dispatcher_;
-	std::unique_ptr<Listener> listener_;
+	std::unique_ptr<IListener> listener_;
+	const ServerConfig &serverConfig_;
 
 	LoggerWrapper logger_;
-	bool allocDebug_;
 	IStatsWatcher *statsWatcher_;
 
 	IClientsStats *clientsStats_;

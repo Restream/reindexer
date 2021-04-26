@@ -8,10 +8,6 @@
 #include <string>
 #include <vector>
 
-namespace reindexer {
-class string_view;
-}
-
 namespace search_engine {
 using std::vector;
 using std::wstring;
@@ -21,8 +17,7 @@ using reindexer::ITokenFilter;
 class BaseSearcher {
 public:
 	void AddSeacher(ITokenFilter::Ptr &&seacher);
-	void AddIndex(BaseHolder::Ptr holder, const reindexer::string_view &src_data, const IdType id, int field,
-				  const string &extraWordSymbols);
+	void AddIndex(BaseHolder::Ptr holder, std::string_view src_data, const IdType id, int field, const string &extraWordSymbols);
 	SearchResult Compare(BaseHolder::Ptr holder, const reindexer::FtDSLQuery &dsl);
 
 	void Commit(BaseHolder::Ptr holder);

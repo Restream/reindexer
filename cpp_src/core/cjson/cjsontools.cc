@@ -50,7 +50,7 @@ void copyCJsonValue(int tagType, const Variant &value, WrSerializer &wrser) {
 			wrser.PutBool(static_cast<bool>(value.convert(KeyValueBool)));
 			break;
 		case TAG_STRING:
-			wrser.PutVString(static_cast<string_view>(value.convert(KeyValueString)));
+			wrser.PutVString(static_cast<std::string_view>(value.convert(KeyValueString)));
 			break;
 		case TAG_NULL:
 			break;

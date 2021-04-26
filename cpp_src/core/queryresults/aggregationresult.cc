@@ -14,62 +14,64 @@
 
 namespace reindexer {
 
-string_view Parameters::Value() noexcept { return "value"; }
-string_view Parameters::Type() noexcept { return "type"; }
-string_view Parameters::Facets() noexcept { return "facets"; }
-string_view Parameters::Count() noexcept { return "count"; }
-string_view Parameters::Values() noexcept { return "values"; }
-string_view Parameters::Distincts() noexcept { return "distincts"; }
-string_view Parameters::Fields() noexcept { return "fields"; }
+using namespace std::string_view_literals;
 
-using ParametersFieldsNumbers = const std::unordered_map<string_view, int>;
+std::string_view Parameters::Value() noexcept { return "value"; }
+std::string_view Parameters::Type() noexcept { return "type"; }
+std::string_view Parameters::Facets() noexcept { return "facets"; }
+std::string_view Parameters::Count() noexcept { return "count"; }
+std::string_view Parameters::Values() noexcept { return "values"; }
+std::string_view Parameters::Distincts() noexcept { return "distincts"; }
+std::string_view Parameters::Fields() noexcept { return "fields"; }
+
+using ParametersFieldsNumbers = const std::unordered_map<std::string_view, int>;
 ParametersFieldsNumbers kParametersFieldNumbers = {{Parameters::Value(), 1},  {Parameters::Type(), 2},	 {Parameters::Count(), 1},
 												   {Parameters::Values(), 2}, {Parameters::Facets(), 3}, {Parameters::Distincts(), 4},
 												   {Parameters::Fields(), 5}};
 
 struct ParameterFieldGetter {
-	string_view at(string_view field) const { return field; }
+	std::string_view at(std::string_view field) const { return field; }
 };
 
-string_view AggregationResult::aggTypeToStr(AggType type) {
+std::string_view AggregationResult::aggTypeToStr(AggType type) {
 	switch (type) {
 		case AggMax:
-			return "max"_sv;
+			return "max"sv;
 		case AggMin:
-			return "min"_sv;
+			return "min"sv;
 		case AggSum:
-			return "sum"_sv;
+			return "sum"sv;
 		case AggFacet:
-			return "facet"_sv;
+			return "facet"sv;
 		case AggAvg:
-			return "avg"_sv;
+			return "avg"sv;
 		case AggDistinct:
-			return "distinct"_sv;
+			return "distinct"sv;
 		case AggCount:
-			return "count"_sv;
+			return "count"sv;
 		case AggCountCached:
-			return "count_cached"_sv;
+			return "count_cached"sv;
 		default:
-			return "?"_sv;
+			return "?"sv;
 	}
 }
 
-AggType AggregationResult::strToAggType(string_view type) {
-	if (type == "avg"_sv) {
+AggType AggregationResult::strToAggType(std::string_view type) {
+	if (type == "avg"sv) {
 		return AggAvg;
-	} else if (type == "facet"_sv) {
+	} else if (type == "facet"sv) {
 		return AggFacet;
-	} else if (type == "sum"_sv) {
+	} else if (type == "sum"sv) {
 		return AggSum;
-	} else if (type == "min"_sv) {
+	} else if (type == "min"sv) {
 		return AggMin;
-	} else if (type == "max"_sv) {
+	} else if (type == "max"sv) {
 		return AggMax;
-	} else if (type == "distinct"_sv) {
+	} else if (type == "distinct"sv) {
 		return AggDistinct;
-	} else if (type == "count"_sv) {
+	} else if (type == "count"sv) {
 		return AggCount;
-	} else if (type == "count_cached"_sv) {
+	} else if (type == "count_cached"sv) {
 		return AggCountCached;
 	}
 	return AggUnknown;
@@ -78,7 +80,7 @@ AggType AggregationResult::strToAggType(string_view type) {
 void AggregationResult::GetJSON(WrSerializer &ser) const {
 	JsonBuilder builder(ser);
 	ParameterFieldGetter fieldsGetter;
-	get(builder, ParametersFields<ParameterFieldGetter, string_view>(fieldsGetter));
+	get(builder, ParametersFields<ParameterFieldGetter, std::string_view>(fieldsGetter));
 }
 
 void AggregationResult::GetMsgPack(WrSerializer &wrser) const {
@@ -88,7 +90,7 @@ void AggregationResult::GetMsgPack(WrSerializer &wrser) const {
 	if (!distincts.empty()) ++elements;
 	MsgPackBuilder msgpackBuilder(wrser, ObjType::TypeObject, elements);
 	ParameterFieldGetter fieldsGetter;
-	get(msgpackBuilder, ParametersFields<ParameterFieldGetter, string_view>(fieldsGetter));
+	get(msgpackBuilder, ParametersFields<ParameterFieldGetter, std::string_view>(fieldsGetter));
 }
 
 void AggregationResult::GetProtobuf(WrSerializer &wrser) const {

@@ -15,6 +15,8 @@ namespace net {
 
 static std::atomic_uint_fast64_t counter_;
 
+constexpr int kListenCount = 500;
+
 Listener::Listener(ev::dynamic_loop &loop, std::shared_ptr<Shared> shared) : loop_(loop), shared_(shared), id_(counter_++) {
 	io_.set<Listener, &Listener::io_accept>(this);
 	io_.set(loop);
@@ -44,7 +46,7 @@ bool Listener::Bind(string addr) {
 		return false;
 	}
 
-	if (shared_->sock_.listen(500) < 0) {
+	if (shared_->sock_.listen(kListenCount) < 0) {
 		perror("listen error");
 		return false;
 	}
@@ -63,6 +65,12 @@ void Listener::io_accept(ev::io & /*watcher*/, int revents) {
 	auto client = shared_->sock_.accept();
 
 	if (!client.valid()) {
+		return;
+	}
+
+	if (shared_->terminating_) {
+		client.close();
+		logPrintf(LogWarning, "Can't accept connection. Listener is terminating!");
 		return;
 	}
 
@@ -209,6 +217,107 @@ Listener::Shared::Shared(ConnectionFactory connFactory, int maxListeners)
 	: maxListeners_(maxListeners), count_(1), connFactory_(connFactory), terminating_(false) {}
 
 Listener::Shared::~Shared() { sock_.close(); }
+
+ForkedListener::ForkedListener(ev::dynamic_loop &loop, ConnectionFactory connFactory) : connFactory_(connFactory), loop_(loop) {
+	io_.set<ForkedListener, &ForkedListener::io_accept>(this);
+	io_.set(loop);
+	async_.set<ForkedListener, &ForkedListener::async_cb>(this);
+	async_.set(loop);
+	async_.start();
+}
+
+ForkedListener::~ForkedListener() { io_.stop(); }
+
+bool ForkedListener::Bind(string addr) {
+	if (sock_.valid()) {
+		return false;
+	}
+
+	addr_ = addr;
+
+	if (sock_.bind(addr) < 0) {
+		return false;
+	}
+
+	if (sock_.listen(kListenCount) < 0) {
+		perror("listen error");
+		return false;
+	}
+
+	io_.start(sock_.fd(), ev::READ);
+	return true;
+}
+
+void ForkedListener::io_accept(ev::io & /*watcher*/, int revents) {
+	if (ev::ERROR & revents) {
+		perror("got invalid event");
+		return;
+	}
+
+	auto client = sock_.accept();
+
+	if (!client.valid()) {
+		return;
+	}
+
+	if (terminating_) {
+		client.close();
+		logPrintf(LogWarning, "Can't accept connection. Listener is terminating!");
+		return;
+	}
+
+	std::thread th([this, client] {
+
+#if REINDEX_WITH_GPERFTOOLS
+		if (alloc_ext::TCMallocIsAvailable()) {
+			reindexer_server::pprof::ProfilerRegisterThread();
+		}
+#endif
+		ev::dynamic_loop loop;
+		ev::async async;
+		async.set([](ev::async &a) { a.loop.break_loop(); });
+		async.set(loop);
+		async.start();
+
+		Worker w(std::unique_ptr<IServerConnection>(connFactory_(loop, client.fd())), async);
+		auto pc = w.conn.get();
+		std::unique_lock<std::mutex> lck(lck_);
+		workers_.push_back(std::move(w));
+		lck.unlock();
+		while (!terminating_) {
+			loop.run();
+			if (pc->IsFinished()) {
+				pc->Detach();
+				break;
+			}
+		}
+		lck.lock();
+		auto it = std::find_if(workers_.begin(), workers_.end(), [&pc](const Worker &cw) { return cw.conn.get() == pc; });
+		assert(it != workers_.end());
+		workers_.erase(it);
+		logPrintf(LogInfo, "Listener (%s) dedicated thread finished. %d left", addr_, workers_.size());
+	});
+	th.detach();
+}
+
+void ForkedListener::async_cb(ev::async &watcher) {
+	logPrintf(LogInfo, "Listener(%s) async received", addr_);
+	watcher.loop.break_loop();
+}
+
+void ForkedListener::Stop() {
+	std::lock_guard<std::mutex> lck(lck_);
+	terminating_ = true;
+	async_.send();
+	for (auto &worker : workers_) {
+		worker.async->send();
+	}
+	while (!workers_.empty()) {
+		lck_.unlock();
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		lck_.lock();
+	}
+}
 
 }  // namespace net
 }  // namespace reindexer

@@ -20,7 +20,7 @@ SelectFuncStruct &SelectFuncParser::Parse(const string &query) {
 	selectFuncStruct_.field = string(tok.text());
 
 	auto dotPos = tok.text().find('.');
-	if (dotPos == string_view::npos) {
+	if (dotPos == std::string_view::npos) {
 		tok = parser.next_token(false);
 		if (tok.text() != "=") {
 			throw Error(errParams, "`=` is expected, but found `%s`", tok.text());
@@ -81,7 +81,7 @@ SelectFuncStruct &SelectFuncParser::ParseFunction(tokenizer &parser, bool partOf
 	return selectFuncStruct_;
 }
 
-bool SelectFuncParser::IsFunction(const string_view &val) {
+bool SelectFuncParser::IsFunction(std::string_view val) {
 	if (val.length() < 3) return false;
 
 	size_t i = 0;
@@ -118,7 +118,7 @@ bool SelectFuncParser::IsFunction(const string_view &val) {
 bool SelectFuncParser::IsFunction(const VariantArray &val) {
 	if (val.size() != 1) return false;
 	if (val.front().Type() != KeyValueString) return false;
-	return IsFunction(static_cast<string_view>(val.front()));
+	return IsFunction(static_cast<std::string_view>(val.front()));
 }
 
 }  // namespace reindexer

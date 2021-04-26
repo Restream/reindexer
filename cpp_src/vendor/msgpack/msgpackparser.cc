@@ -7,7 +7,7 @@ MsgPackTag MsgPackValue::getTag() const {
 	return MsgPackTag(p->type);
 }
 
-MsgPackValue MsgPackValue::operator[](reindexer::string_view key) {
+MsgPackValue MsgPackValue::operator[](std::string_view key) {
 	if (getTag() != MSGPACK_MAP) {
 		throw reindexer::Error(errParseMsgPack, "Can't convert msgpack field '%s' to object or array", key.data());
 	}
@@ -15,7 +15,7 @@ MsgPackValue MsgPackValue::operator[](reindexer::string_view key) {
 		throw reindexer::Error(errParseMsgPack, "Maps with string keys are only allowed for MsgPack!");
 	}
 	for (msgpack_object_kv* it = p->via.map.ptr; it != p->via.map.ptr + p->via.map.size; ++it) {
-		if (string_view(it->key.via.str.ptr, it->key.via.str.size) == key) {
+		if (std::string_view(it->key.via.str.ptr, it->key.via.str.size) == key) {
 			return MsgPackValue(&it->val);
 		}
 	}

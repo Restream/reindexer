@@ -264,7 +264,7 @@ bool QueryEntries::checkIfSatisfyCondition(const QueryEntry &qEntry, const Const
 				if (v.Type() != KeyValueString) {
 					throw Error(errLogic, "Condition LIKE must be applied to data of string type, but %d was provided", v.Type());
 				}
-				if (matchLikePattern(string_view(v), string_view(qEntry.values[0]))) return true;
+				if (matchLikePattern(std::string_view(v), std::string_view(qEntry.values[0]))) return true;
 			}
 			return false;
 		case CondType::CondDWithin:

@@ -25,38 +25,8 @@ struct HTTPClientData : public http::ClientData {
 
 class HTTPServer {
 public:
-	class OptionalConfig {
-	public:
-		OptionalConfig(const ServerConfig &serverConfig, Prometheus *prometheusI = nullptr, IStatsWatcher *statsWatcherI = nullptr)
-			: allocDebug(serverConfig.DebugAllocs),
-			  enablePprof(serverConfig.DebugPprof),
-			  prometheus(prometheusI),
-			  statsWatcher(statsWatcherI),
-			  txIdleTimeout(serverConfig.TxIdleTimeout),
-			  rpcAddress(serverConfig.RPCAddr),
-			  httpAddress(serverConfig.HTTPAddr),
-			  storagePath(serverConfig.StoragePath),
-			  rpcLog(serverConfig.RpcLog),
-			  httpLog(serverConfig.HttpLog),
-			  logLevel(serverConfig.LogLevel),
-			  coreLog(serverConfig.CoreLog),
-			  serverLog(serverConfig.ServerLog) {}
-		bool allocDebug;
-		bool enablePprof;
-		Prometheus *prometheus;
-		IStatsWatcher *statsWatcher;
-		std::chrono::seconds txIdleTimeout;
-		string rpcAddress;
-		string httpAddress;
-		string storagePath;
-		string rpcLog;
-		string httpLog;
-		string logLevel;
-		string coreLog;
-		string serverLog;
-	};
-
-	HTTPServer(DBManager &dbMgr, const string &webRoot, LoggerWrapper &logger, OptionalConfig config);
+	HTTPServer(DBManager &dbMgr, LoggerWrapper &logger, const ServerConfig &serverConfig, Prometheus *prometheusI = nullptr,
+			   IStatsWatcher *statsWatcherI = nullptr);
 
 	bool Start(const string &addr, ev::dynamic_loop &loop);
 	void Stop() { listener_->Stop(); }
@@ -131,33 +101,31 @@ protected:
 	int jsonStatus(http::Context &ctx, const http::HttpStatus &status = http::HttpStatus());
 	int msgpackStatus(http::Context &ctx, const http::HttpStatus &status = http::HttpStatus());
 	int protobufStatus(http::Context &ctx, const http::HttpStatus &status = http::HttpStatus());
-	unsigned prepareLimit(const string_view &limitParam, int limitDefault = kDefaultLimit);
-	unsigned prepareOffset(const string_view &offsetParam, int offsetDefault = kDefaultOffset);
-	int modifyQueryTxImpl(http::Context &ctx, const std::string &dbName, string_view txId, Query &q);
+	unsigned prepareLimit(std::string_view limitParam, int limitDefault = kDefaultLimit);
+	unsigned prepareOffset(std::string_view offsetParam, int offsetDefault = kDefaultOffset);
+	int modifyQueryTxImpl(http::Context &ctx, const std::string &dbName, std::string_view txId, Query &q);
 
 	Reindexer getDB(http::Context &ctx, UserRole role, std::string *dbNameOut = nullptr);
-	string getNameFromJson(string_view json);
-	constexpr static string_view statsSourceName() { return "http"_sv; }
+	string getNameFromJson(std::string_view json);
+	constexpr static std::string_view statsSourceName() { return std::string_view{"http"}; }
 
-	std::shared_ptr<Transaction> getTx(const string &dbName, string_view txId);
+	std::shared_ptr<Transaction> getTx(const string &dbName, std::string_view txId);
 	string addTx(string dbName, Transaction &&tx);
-	void removeTx(const string &dbName, string_view txId);
+	void removeTx(const string &dbName, std::string_view txId);
 	void removeExpiredTx();
 	void deadlineTimerCb(ev::periodic &, int) { removeExpiredTx(); }
 
 	DBManager &dbMgr_;
 	Pprof pprof_;
+	const ServerConfig &serverConfig_;
 	Prometheus *prometheus_;
 	IStatsWatcher *statsWatcher_;
-
-	string webRoot_;
+	std::string webRoot_;
 
 	http::Router router_;
-	std::unique_ptr<Listener> listener_;
+	std::unique_ptr<IListener> listener_;
 
 	LoggerWrapper logger_;
-	bool allocDebug_;
-	bool enablePprof_;
 
 	std::chrono::system_clock::time_point startTs_;
 
@@ -169,20 +137,10 @@ protected:
 	};
 	fast_hash_map<string, TxInfo, nocase_hash_str, nocase_equal_str> txMap_;
 	std::mutex txMtx_;
-	std::chrono::seconds txIdleTimeout_;
 	ev::timer deadlineChecker_;
 
 	static const int kDefaultLimit = INT_MAX;
 	static const int kDefaultOffset = 0;
-
-	const string rpcAddress_;
-	const string httpAddress_;
-	const string storagePath_;
-	const string rpcLog_;
-	const string httpLog_;
-	const string logLevel_;
-	const string coreLog_;
-	const string serverLog_;
 };
 
 }  // namespace reindexer_server

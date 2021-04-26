@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string_view>
 #include "spdlog/spdlog.h"
 
 namespace reindexer_server {
@@ -61,10 +62,8 @@ private:
 
 }  // namespace reindexer_server
 
-#include "estl/string_view.h"
-
 namespace fmt {
-static inline void format_arg(fmt::BasicFormatter<char> &f, const char *&, reindexer::string_view s) {
+static inline void format_arg(fmt::BasicFormatter<char> &f, const char *&, std::string_view s) {
 	f.writer() << fmt::BasicStringRef<char>(s.data(), s.length());
 }
 }  // namespace fmt

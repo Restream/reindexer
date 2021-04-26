@@ -16,10 +16,10 @@ public:
 	RocksDbStorage();
 	~RocksDbStorage();
 
-	Error Read(const StorageOpts& opts, const string_view& key, string& value) override final;
-	Error Write(const StorageOpts& opts, const string_view& key, const string_view& value) override final;
+	Error Read(const StorageOpts& opts, std::string_view key, string& value) override final;
+	Error Write(const StorageOpts& opts, std::string_view key, std::string_view value) override final;
 	Error Write(const StorageOpts& opts, UpdatesCollection& buffer) override final;
-	Error Delete(const StorageOpts& opts, const string_view& key) override final;
+	Error Delete(const StorageOpts& opts, std::string_view key) override final;
 	Error Repair(const string& path) override final;
 
 	StorageType Type() const noexcept override final { return StorageType::RocksDB; }
@@ -46,8 +46,8 @@ public:
 	RocksDbBatchBuffer();
 	~RocksDbBatchBuffer();
 
-	void Put(const string_view& key, const string_view& value) override final;
-	void Remove(const string_view& key) override final;
+	void Put(std::string_view key, std::string_view value) override final;
+	void Remove(std::string_view key) override final;
 	void Clear() override final;
 
 private:
@@ -60,7 +60,7 @@ public:
 	RocksDbComparator() = default;
 	~RocksDbComparator() = default;
 
-	int Compare(const string_view& a, const string_view& b) const override final;
+	int Compare(std::string_view a, std::string_view b) const override final;
 };
 
 class RocksDbIterator : public Cursor {
@@ -71,12 +71,12 @@ public:
 	bool Valid() const override final;
 	void SeekToFirst() override final;
 	void SeekToLast() override final;
-	void Seek(const string_view& target) override final;
+	void Seek(std::string_view target) override final;
 	void Next() override final;
 	void Prev() override final;
 
-	string_view Key() const override final;
-	string_view Value() const override final;
+	std::string_view Key() const override final;
+	std::string_view Value() const override final;
 
 	Comparator& GetComparator() override final;
 
@@ -97,4 +97,4 @@ private:
 }  // namespace datastorage
 }  // namespace reindexer
 
-#endif  // REINDEX_WITH_ROCKSDB
+#endif	// REINDEX_WITH_ROCKSDB

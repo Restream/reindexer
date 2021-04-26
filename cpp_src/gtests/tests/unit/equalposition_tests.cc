@@ -287,7 +287,7 @@ TEST_F(EqualPositionApi, SamePosition) {
 TEST_F(EqualPositionApi, SamePositionFromSql) {
 	QueryResults qr;
 	// SQL query contains equal_position() for field 'a1' twice
-	const reindexer::string_view sql = "select * from test_namespace where a1 > 0 and a1 < 10 equal_position(a1, a1)";
+	const std::string_view sql = "select * from test_namespace where a1 > 0 and a1 < 10 equal_position(a1, a1)";
 	Query q;
 	// Make sure processing this query leads to throwing an Exception of type reindexer::Error
 	EXPECT_THROW(q.FromSQL(sql), reindexer::Error);

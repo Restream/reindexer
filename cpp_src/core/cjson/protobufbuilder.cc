@@ -144,7 +144,7 @@ void ProtobufBuilder::put(int fieldIdx, double val) {
 	ser_->PutDouble(val);
 }
 
-void ProtobufBuilder::put(int fieldIdx, string_view val) {
+void ProtobufBuilder::put(int fieldIdx, std::string_view val) {
 	KeyValueType expectedType;
 	if (getExpectedFieldType(expectedType)) {
 		if (expectedType != KeyValueString) {
@@ -169,7 +169,7 @@ void ProtobufBuilder::put(int fieldIdx, const Variant& val) {
 			put(fieldIdx, double(val));
 			break;
 		case KeyValueString:
-			put(fieldIdx, string_view(val));
+			put(fieldIdx, std::string_view(val));
 			break;
 		case KeyValueBool:
 			put(fieldIdx, bool(val));

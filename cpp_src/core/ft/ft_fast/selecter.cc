@@ -88,10 +88,11 @@ Selecter::MergeData Selecter::Process(FtDSLQuery &dsl) {
 			wrSer << "], typos: [";
 			typos_context tctx[kMaxTyposInWord];
 			if (res.term.opts.typos)
-				mktypos(tctx, res.term.pattern, holder_.cfg_->maxTyposInWord, holder_.cfg_->maxTypoLen, [&wrSer](string_view typo, int) {
-					wrSer << typo;
-					wrSer << ", ";
-				});
+				mktypos(tctx, res.term.pattern, holder_.cfg_->maxTyposInWord, holder_.cfg_->maxTypoLen,
+						[&wrSer](std::string_view typo, int) {
+							wrSer << typo;
+							wrSer << ", ";
+						});
 			logPrintf(LogInfo, "Variants: [%s]", wrSer.Slice());
 		}
 
@@ -216,7 +217,7 @@ void Selecter::processTypos(FtSelectContext &ctx, const FtDSLEntry &term) {
 		typos_context tctx[kMaxTyposInWord];
 		auto &typos = step.typos_;
 		int matched = 0, skiped = 0, vids = 0;
-		mktypos(tctx, term.pattern, holder_.cfg_->maxTyposInWord, holder_.cfg_->maxTypoLen, [&](string_view typo, int tcount) {
+		mktypos(tctx, term.pattern, holder_.cfg_->maxTyposInWord, holder_.cfg_->maxTypoLen, [&](std::string_view typo, int tcount) {
 			auto typoRng = typos.equal_range(typo);
 			tcount = holder_.cfg_->maxTyposInWord - tcount;
 			for (auto typoIt = typoRng.first; typoIt != typoRng.second; typoIt++) {

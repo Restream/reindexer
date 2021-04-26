@@ -2,11 +2,10 @@
 
 #include <atomic>
 #include <cassert>
+#include <string_view>
 #include <thread>
 
 namespace reindexer {
-
-class string_view;
 
 class dummy_mutex {
 public:
@@ -15,7 +14,7 @@ public:
 };
 
 enum class MutexMark : unsigned { DbManager = 1u, IndexText, Namespace, Reindexer, ReindexerStorage };
-string_view DescribeMutexMark(MutexMark);
+std::string_view DescribeMutexMark(MutexMark);
 
 template <typename Mutex, MutexMark m>
 class MarkedMutex : public Mutex {

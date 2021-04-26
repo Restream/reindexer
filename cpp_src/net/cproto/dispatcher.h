@@ -4,11 +4,11 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 #include "args.h"
 #include "core/keyvalue/p_string.h"
 #include "cproto.h"
-#include "estl/string_view.h"
 #include "net/connection.h"
 #include "net/stat.h"
 #include "tools/errors.h"
@@ -52,7 +52,7 @@ struct Context {
 	void SetClientData(std::unique_ptr<ClientData> data) { writer->SetClientData(std::move(data)); }
 	ClientData *GetClientData() { return writer->GetClientData(); }
 
-	string_view clientAddr;
+	std::string_view clientAddr;
 	RPCCall *call;
 	Writer *writer;
 	Stat stat;

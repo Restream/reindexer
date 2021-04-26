@@ -8,8 +8,10 @@
 
 namespace reindexer {
 
-const string_view kLsnIndexName = "#lsn"_sv;
-const string_view kSlaveVersionIndexName = "#slave_version"_sv;
+using namespace std::string_view_literals;
+
+const std::string_view kLsnIndexName = "#lsn"sv;
+const std::string_view kSlaveVersionIndexName = "#slave_version"sv;
 
 Query::Query(const string &__namespace, unsigned _start, unsigned _count, CalcTotalMode _calcTotal)
 	: _namespace(__namespace), start(_start), count(_count), calcTotal(_calcTotal) {}
@@ -41,7 +43,7 @@ bool JoinedQuery::operator==(const JoinedQuery &obj) const {
 	if (joinType != obj.joinType) return false;
 	return Query::operator==(obj);
 }
-void Query::FromSQL(const string_view &q) { SQLParser(*this).Parse(q); }
+void Query::FromSQL(std::string_view q) { SQLParser(*this).Parse(q); }
 
 Error Query::FromJSON(const string &dsl) { return dsl::Parse(dsl, *this); }
 

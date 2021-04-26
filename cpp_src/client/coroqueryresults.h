@@ -36,14 +36,14 @@ public:
 		Item GetItem();
 		int64_t GetLSN();
 		bool IsRaw();
-		string_view GetRaw();
+		std::string_view GetRaw();
 		Iterator& operator++();
 		Error Status() const noexcept{ return qr_->status_; }
 		bool operator!=(const Iterator&other) const noexcept { return idx_ != other.idx_; }
 		bool operator==(const Iterator&other) const noexcept { return idx_ == other.idx_; };
 		Iterator& operator*() { return *this; }
 		void readNext();
-		void getJSONFromCJSON(string_view cjson, WrSerializer& wrser, bool withHdrLen = true);
+		void getJSONFromCJSON(std::string_view cjson, WrSerializer& wrser, bool withHdrLen = true);
 
 		const CoroQueryResults* qr_;
 		int idx_, pos_, nextPos_;
@@ -60,7 +60,7 @@ public:
 	const string& GetExplainResults() const { return queryParams_.explainResults; }
 	const vector<AggregationResult>& GetAggregationResults() const { return queryParams_.aggResults; }
 	Error Status() { return status_; }
-	h_vector<string_view, 1> GetNamespaces() const;
+	h_vector<std::string_view, 1> GetNamespaces() const;
 	bool IsCacheEnabled() const { return queryParams_.flags & kResultsWithItemID; }
 
 	TagsMatcher getTagsMatcher(int nsid) const;
@@ -70,9 +70,9 @@ private:
 	friend class CoroRPCClient;
 	friend class RPCClientMock;
 	CoroQueryResults(net::cproto::CoroClientConnection* conn, NSArray&& nsArray, int fetchFlags, int fetchAmount, seconds timeout);
-	CoroQueryResults(net::cproto::CoroClientConnection* conn, NSArray&& nsArray, string_view rawResult, int queryID,
+	CoroQueryResults(net::cproto::CoroClientConnection* conn, NSArray&& nsArray, std::string_view rawResult, int queryID,
 				 int fetchFlags, int fetchAmount, seconds timeout);
-	void Bind(string_view rawResult, int queryID);
+	void Bind(std::string_view rawResult, int queryID);
 	void fetchNextResults();
 
 	net::cproto::CoroClientConnection* conn_;

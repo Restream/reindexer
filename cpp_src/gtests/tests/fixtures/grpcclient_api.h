@@ -264,7 +264,7 @@ public:
 		std::cout << std::endl;
 	}
 
-	void checkCJSON(const NsType& nsTypes, reindexer::string_view& cjson) {
+	void checkCJSON(const NsType& nsTypes, std::string_view& cjson) {
 		reindexer::PayloadValue value;
 		reindexer::Payload pl(nsTypes.second, value);
 
@@ -311,7 +311,7 @@ public:
 		if (print && (flags->withnsid() || flags->withitemid() || flags->withrank())) {
 			std::cout << std::endl;
 		}
-		reindexer::string_view cjson = rser.GetSlice();
+		std::string_view cjson = rser.GetSlice();
 		checkCJSON(nsTypes.at(nsId), cjson);
 	}
 

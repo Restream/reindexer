@@ -1,8 +1,8 @@
 #pragma once
 #include <memory>
+#include <string_view>
 #include "dataholder.h"
 #include "estl/fast_hash_map.h"
-#include "estl/string_view.h"
 
 namespace reindexer {
 
@@ -18,7 +18,7 @@ public:
 private:
 	size_t buildWordsMap(words_map& m);
 
-	void buildVirtualWord(string_view word, words_map& words_um, VDocIdType docType, int rfield, size_t insertPos,
+	void buildVirtualWord(std::string_view word, words_map& words_um, VDocIdType docType, int rfield, size_t insertPos,
 						  std::vector<string>& output);
 
 	void buildTyposMap(uint32_t startPos, const vector<WordIdType>& found);

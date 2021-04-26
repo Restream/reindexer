@@ -174,7 +174,7 @@ CoroClientConnection::MarkedChunk CoroClientConnection::packRPC(CmdCode cmd, uin
 	chunk ch = getChunk();
 	WrSerializer ser(std::move(ch));
 
-	ser.Write(string_view(reinterpret_cast<char *>(&hdr), sizeof(hdr)));
+	ser.Write(std::string_view(reinterpret_cast<char *>(&hdr), sizeof(hdr)));
 	args.Pack(ser);
 	ctxArgs.Pack(ser);
 	if (hdr.compressed) {
@@ -381,7 +381,7 @@ void CoroClientConnection::readerRoutine() {
 			}
 
 			errCode = ser.GetVarUint();
-			string_view errMsg = ser.GetVString();
+			std::string_view errMsg = ser.GetVString();
 			if (errCode != errOK) {
 				ans.status_ = Error(errCode, errMsg);
 			}

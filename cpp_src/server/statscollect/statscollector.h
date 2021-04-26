@@ -22,10 +22,10 @@ public:
 	void Start(DBManager& dbMngr);
 	void Stop();
 
-	void OnInputTraffic(const std::string& db, string_view source, size_t bytes) noexcept override final;
-	void OnOutputTraffic(const std::string& db, string_view source, size_t bytes) noexcept override final;
-	void OnClientConnected(const std::string& db, string_view source) noexcept override final;
-	void OnClientDisconnected(const std::string& db, string_view source) noexcept override final;
+	void OnInputTraffic(const std::string& db, std::string_view source, size_t bytes) noexcept override final;
+	void OnOutputTraffic(const std::string& db, std::string_view source, size_t bytes) noexcept override final;
+	void OnClientConnected(const std::string& db, std::string_view source) noexcept override final;
+	void OnClientDisconnected(const std::string& db, std::string_view source) noexcept override final;
 
 private:
 	using NSMap = reindexer::fast_hash_map<std::string, std::vector<reindexer::NamespaceDef>>;
@@ -38,7 +38,7 @@ private:
 	using Counters = std::vector<std::pair<std::string, CountersByDB>>;
 
 	void collectStats(DBManager& dbMngr);
-	DBCounters& getCounters(const std::string& db, string_view source);
+	DBCounters& getCounters(const std::string& db, std::string_view source);
 
 	Prometheus* prometheus_;
 	std::thread statsCollectingThread_;

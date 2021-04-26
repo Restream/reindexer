@@ -8,7 +8,7 @@ namespace reindexer {
 ProtobufSchemaBuilder::ProtobufSchemaBuilder()
 	: ser_(nullptr), fieldsTypes_(nullptr), pt_(nullptr), tm_(nullptr), type_(ObjType::TypePlain) {}
 
-ProtobufSchemaBuilder::ProtobufSchemaBuilder(WrSerializer* ser, SchemaFieldsTypes* fieldsTypes, ObjType type, string_view name,
+ProtobufSchemaBuilder::ProtobufSchemaBuilder(WrSerializer* ser, SchemaFieldsTypes* fieldsTypes, ObjType type, std::string_view name,
 											 PayloadType* pt, TagsMatcher* tm)
 	: ser_(ser), fieldsTypes_(fieldsTypes), pt_(pt), tm_(tm), type_(type) {
 	switch (type_) {
@@ -31,10 +31,11 @@ ProtobufSchemaBuilder::ProtobufSchemaBuilder(ProtobufSchemaBuilder&& obj)
 }
 ProtobufSchemaBuilder::~ProtobufSchemaBuilder() { End(); }
 
-string_view ProtobufSchemaBuilder::jsonSchemaTypeToProtobufType(const FieldProps& props, KeyValueType& type) {
+std::string_view ProtobufSchemaBuilder::jsonSchemaTypeToProtobufType(const FieldProps& props, KeyValueType& type) {
+	using namespace std::string_view_literals;
 	if (props.type == "string") {
 		type = KeyValueString;
-		return "string"_sv;
+		return "string"sv;
 	} else if (props.type == "integer") {
 		type = KeyValueInt64;
 		if (tm_ && pt_) {
@@ -44,22 +45,22 @@ string_view ProtobufSchemaBuilder::jsonSchemaTypeToProtobufType(const FieldProps
 				type = KeyValueInt;
 			}
 		}
-		return "int64"_sv;
+		return "int64"sv;
 	} else if (props.type == "number") {
 		type = KeyValueDouble;
-		return "double"_sv;
+		return "double"sv;
 	} else if (props.type == "boolean") {
 		type = KeyValueBool;
-		return "bool"_sv;
+		return "bool"sv;
 	} else if (props.type == "object") {
 		type = KeyValueComposite;
 		return props.xGoType;
 	} else if (props.type == "null") {
 		type = KeyValueNull;
-		return string_view();
+		return std::string_view();
 	}
 	type = KeyValueUndefined;
-	return string_view();
+	return std::string_view();
 }
 
 void ProtobufSchemaBuilder::End() {
@@ -72,10 +73,10 @@ void ProtobufSchemaBuilder::End() {
 	type_ = ObjType::TypePlain;
 }
 
-void ProtobufSchemaBuilder::Field(string_view name, int tagName, const FieldProps& props) {
+void ProtobufSchemaBuilder::Field(std::string_view name, int tagName, const FieldProps& props) {
 	TagsPathScope<TagsPath> tagScope(fieldsTypes_->tagsPath_, tagName);
 	KeyValueType type;
-	string_view typeName = jsonSchemaTypeToProtobufType(props, type);
+	std::string_view typeName = jsonSchemaTypeToProtobufType(props, type);
 	if (type == KeyValueUndefined || typeName.empty()) {
 		throw Error(errLogic, "Can't get protobuf schema - field [%s] is of unsupported type [%s] (%s)", name, props.type, props.xGoType);
 	}
@@ -93,7 +94,7 @@ void ProtobufSchemaBuilder::Field(string_view name, int tagName, const FieldProp
 	if (ser_) ser_->Write(";\n");
 }
 
-ProtobufSchemaBuilder ProtobufSchemaBuilder::Object(int tagName, string_view name, bool buildTypesOnly,
+ProtobufSchemaBuilder ProtobufSchemaBuilder::Object(int tagName, std::string_view name, bool buildTypesOnly,
 													std::function<void(ProtobufSchemaBuilder& self)> filler) {
 	fieldsTypes_->tagsPath_.push_back(tagName);
 	fieldsTypes_->AddObject(name);
@@ -105,7 +106,7 @@ ProtobufSchemaBuilder ProtobufSchemaBuilder::Object(int tagName, string_view nam
 	return obj;
 }
 
-void ProtobufSchemaBuilder::writeField(string_view name, string_view type, int number) {
+void ProtobufSchemaBuilder::writeField(std::string_view name, std::string_view type, int number) {
 	if (ser_) {
 		ser_->Write(type);
 		ser_->Write(" ");

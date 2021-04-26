@@ -10,7 +10,7 @@
 namespace reindexer {
 
 Serializer::Serializer(const void *_buf, int _len) : buf(static_cast<const uint8_t *>(_buf)), len(_len), pos(0) {}
-Serializer::Serializer(const string_view &buf) : buf(reinterpret_cast<const uint8_t *>(buf.data())), len(buf.length()), pos(0) {}
+Serializer::Serializer(std::string_view buf) : buf(reinterpret_cast<const uint8_t *>(buf.data())), len(buf.length()), pos(0) {}
 
 bool Serializer::Eof() { return pos >= len; }
 
@@ -56,9 +56,9 @@ inline static void checkbound(int pos, int need, int len) {
 	}
 }
 
-string_view Serializer::GetSlice() {
+std::string_view Serializer::GetSlice() {
 	uint32_t l = GetUInt32();
-	string_view b(reinterpret_cast<const char *>(buf + pos), l);
+	std::string_view b(reinterpret_cast<const char *>(buf + pos), l);
 	checkbound(pos, b.size(), len);
 	pos += b.size();
 	return b;
@@ -109,11 +109,11 @@ uint64_t Serializer::GetVarUint() {
 	return parse_uint64(l, buf + pos - l);
 }
 
-string_view Serializer::GetVString() {
+std::string_view Serializer::GetVString() {
 	int l = GetVarUint();
 	checkbound(pos, l, len);
 	pos += l;
-	return string_view(reinterpret_cast<const char *>(buf + pos - l), l);
+	return std::string_view(reinterpret_cast<const char *>(buf + pos - l), l);
 }
 
 p_string Serializer::GetPVString() {
@@ -183,7 +183,7 @@ void WrSerializer::PutRawVariant(const Variant &kv) {
 			PutDouble(double(kv));
 			break;
 		case KeyValueString:
-			PutVString(string_view(kv));
+			PutVString(std::string_view(kv));
 			break;
 		case KeyValueNull:
 			break;
@@ -193,7 +193,7 @@ void WrSerializer::PutRawVariant(const Variant &kv) {
 	}
 }
 
-void WrSerializer::PutSlice(const string_view &slice) {
+void WrSerializer::PutSlice(std::string_view slice) {
 	PutUInt32(slice.size());
 	grow(slice.size());
 	memcpy(&buf_[len_], slice.data(), slice.size());
@@ -330,12 +330,12 @@ void WrSerializer::PutBool(bool v) {
 	len_ += boolean_pack(v, buf_ + len_);
 }
 
-void WrSerializer::PutVString(string_view str) {
+void WrSerializer::PutVString(std::string_view str) {
 	grow(str.size() + 10);
 	len_ += string_pack(str.data(), str.size(), buf_ + len_);
 }
 
-void WrSerializer::PrintJsonString(string_view str) {
+void WrSerializer::PrintJsonString(std::string_view str) {
 	const char *s = str.data();
 	size_t l = str.size();
 	grow(l * 6 + 3);
@@ -389,7 +389,7 @@ void WrSerializer::PrintJsonString(string_view str) {
 
 const int kHexDumpBytesInRow = 16;
 
-void WrSerializer::PrintHexDump(string_view str) {
+void WrSerializer::PrintHexDump(std::string_view str) {
 	grow((kHexDumpBytesInRow * 4 + 12) * (1 + (str.size() / kHexDumpBytesInRow)));
 
 	char *d = reinterpret_cast<char *>(buf_ + len_);
@@ -453,14 +453,14 @@ std::unique_ptr<uint8_t[]> WrSerializer::DetachBuf() {
 	return ret;
 }
 
-void WrSerializer::Write(string_view slice) {
+void WrSerializer::Write(std::string_view slice) {
 	grow(slice.size());
 	memcpy(&buf_[len_], slice.data(), slice.size());
 	len_ += slice.size();
 }
 
 int msgpack_wrserializer_write(void *data, const char *buf, size_t len) {
-	reinterpret_cast<reindexer::WrSerializer *>(data)->Write(reindexer::string_view(buf, len));
+	reinterpret_cast<reindexer::WrSerializer *>(data)->Write(std::string_view(buf, len));
 	return 0;
 }
 

@@ -29,6 +29,7 @@ struct ServerConfig {
 	string StorageEngine;
 	string HTTPAddr;
 	string RPCAddr;
+	string ThreadingMode;
 	string LogLevel;
 	string ServerLog;
 	string CoreLog;
@@ -56,6 +57,10 @@ struct ServerConfig {
 	size_t MaxUpdatesSize;
 	bool EnableGRPC;
 	string GRPCAddr;
+
+	static const string kDedicatedThreading;
+	static const string kSharedThreading;
+	static const string kPoolThreading;
 
 protected:
 	Error fromYaml(Yaml::Node& root);

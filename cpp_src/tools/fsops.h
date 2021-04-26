@@ -30,7 +30,7 @@ struct TimeStats {
 int MkDirAll(const string &path);
 int RmDirAll(const string &path);
 int ReadFile(const string &path, string &content);
-int64_t WriteFile(const string &path, string_view content);
+int64_t WriteFile(const string &path, std::string_view content);
 int ReadDir(const string &path, vector<DirEntry> &content);
 bool DirectoryExists(const string &directory);
 FileStatus Stat(const string &path);

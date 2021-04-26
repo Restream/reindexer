@@ -15,9 +15,9 @@ using std::pair;
 
 const string units[] = {"", "один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять"};
 const string unitsNominat[] = {"", "одна", "две"};
-const string tens[] = {"",			 "одиннадцать", "двенадцать", "тринадцать",   "четырнадцать",
+const string tens[] = {"",			 "одиннадцать", "двенадцать", "тринадцать",	  "четырнадцать",
 					   "пятнадцать", "шестнадцать", "семнадцать", "восемнадцать", "девятнадцать"};
-const string decades[] = {"",		   "десять",	 "двадцать",  "тридцать",	"сорок",
+const string decades[] = {"",		   "десять",	 "двадцать",  "тридцать",	 "сорок",
 						  "пятьдесят", "шестьдесят", "семьдесят", "восемьдесят", "девяносто"};
 const string hundreads[] = {"", "сто", "двести", "триста", "четыреста", "пятьсот", "шестьсот", "семьсот", "восемьсот", "девятьсот"};
 const string thousands[] = {"тысяча", "тысячи", "тысяч"};
@@ -40,7 +40,7 @@ const string& getNumorder(int numorder, int i) {
 
 int ansiCharacterToDigit(char ch) { return static_cast<int>(ch - 48); }
 
-vector<string> getOrders(string_view str) {
+vector<string> getOrders(std::string_view str) {
 	string numStr(str);
 	std::reverse(numStr.begin(), numStr.end());
 	int numChars = numStr.length();
@@ -126,7 +126,7 @@ vector<string> formTextString(const string& str, int i) {
 	return words;
 }
 
-vector<string>& NumToText::convert(string_view str, std::vector<std::string>& output) {
+vector<string>& NumToText::convert(std::string_view str, std::vector<std::string>& output) {
 	output.clear();
 	if ((str.length() == 1) && (str[0] == '0')) {
 		output = {"ноль"};

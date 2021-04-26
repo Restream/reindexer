@@ -10,9 +10,9 @@
 
 namespace {
 
-static void throwParseError(reindexer::string_view sortExpr, reindexer::string_view::iterator pos, reindexer::string_view message) {
+static void throwParseError(const std::string_view sortExpr, char const * const pos, const std::string_view message) {
 	throw reindexer::Error(errParams, "'%s' is not valid sort expression. Parser failed at position %d.%s%s", sortExpr,
-						   pos - sortExpr.begin(), message.empty() ? "" : " ", message);
+						   pos - sortExpr.data(), message.empty() ? "" : " ", message);
 }
 
 static inline double distance(reindexer::Point p1, reindexer::Point p2) noexcept {
@@ -20,7 +20,7 @@ static inline double distance(reindexer::Point p1, reindexer::Point p2) noexcept
 }
 
 static reindexer::VariantArray getFieldValues(reindexer::ConstPayload pv, reindexer::TagsMatcher& tagsMatcher, int index,
-											  reindexer::string_view column) {
+											  std::string_view column) {
 	reindexer::VariantArray values;
 	if (index == IndexValueType::SetByJsonPath) {
 		pv.GetByJsonPath(column, tagsMatcher, values, KeyValueUndefined);
@@ -59,7 +59,7 @@ ItemImpl SortExpression::getJoinedItem(IdType rowId, const joins::NamespaceResul
 }
 
 VariantArray SortExpression::getJoinedFieldValues(IdType rowId, const joins::NamespaceResults& joinResults,
-												  const std::vector<JoinedSelector>& joinedSelectors, size_t nsIdx, string_view column,
+												  const std::vector<JoinedSelector>& joinedSelectors, size_t nsIdx, std::string_view column,
 												  int index) {
 	const auto& js = joinedSelectors[nsIdx];
 	const PayloadType& pt =
@@ -176,102 +176,102 @@ void SortExpression::openBracketBeforeLastAppended() {
 template <typename T>
 struct ParseIndexNameResult {
 	typename std::vector<T>::const_iterator joinedSelectorIt;
-	string_view name;
+	std::string_view name;
 };
 
 template <typename T>
-static ParseIndexNameResult<T> parseIndexName(string_view::iterator& it, const string_view::iterator end,
-											  const std::vector<T>& joinedSelectors, const string_view fullExpr) {
+static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std::vector<T>& joinedSelectors, const std::string_view fullExpr) {
 	static const std::set<char> allowedSymbolsInIndexName{
 		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
 		'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
 		'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '.', '+'};
 
-	auto start = it;
+	auto pos = expr.data();
+	const auto end = expr.data() + expr.size();
 	auto joinedSelectorIt = joinedSelectors.cend();
-	while (it != end && *it != '.' && allowedSymbolsInIndexName.find(*it) != allowedSymbolsInIndexName.end()) ++it;
-	if (it != end && *it == '.') {
-		const string_view namespaceName = {start, static_cast<size_t>(it - start)};
-		++it;
+	while (pos != end && *pos != '.' && allowedSymbolsInIndexName.find(*pos) != allowedSymbolsInIndexName.end()) ++pos;
+	if (pos != end && *pos == '.') {
+		const std::string_view namespaceName = {expr.data(), static_cast<size_t>(pos - expr.data())};
+		++pos;
 		joinedSelectorIt = std::find_if(joinedSelectors.cbegin(), joinedSelectors.cend(),
 										[namespaceName](const T& js) { return namespaceName == js.RightNsName(); });
 		if (joinedSelectorIt != joinedSelectors.cend()) {
 			if (std::find_if(joinedSelectorIt + 1, joinedSelectors.cend(),
 							 [namespaceName](const T& js) { return namespaceName == js.RightNsName(); }) != joinedSelectors.cend()) {
-				throwParseError(fullExpr, it,
+				throwParseError(fullExpr, pos,
 								"Sorting by namespace which has been joined more than once: '" + string(namespaceName) + "'.");
 			}
-			start = it;
+			expr.remove_prefix(pos - expr.data());
 		}
 	}
-	while (it != end && allowedSymbolsInIndexName.find(*it) != allowedSymbolsInIndexName.end()) ++it;
-	const string_view name{start, static_cast<size_t>(it - start)};
+	while (pos != end && allowedSymbolsInIndexName.find(*pos) != allowedSymbolsInIndexName.end()) ++pos;
+	const std::string_view name{expr.data(), static_cast<size_t>(pos - expr.data())};
 	if (name.empty()) {
-		throwParseError(fullExpr, it, "Expected index or function name.");
+		throwParseError(fullExpr, pos, "Expected index or function name.");
 	}
+	expr.remove_prefix(pos - expr.data());
 	return {joinedSelectorIt, name};
 }
 
 template <typename SkipWS>
-static Point parsePoint(string_view::iterator& it, string_view::iterator end, string_view funcName, string_view fullExpr,
-						const SkipWS& skipSpaces) {
+static Point parsePoint(std::string_view& expr, std::string_view funcName, const std::string_view fullExpr, const SkipWS& skipSpaces) {
 	using namespace double_conversion;
+	using namespace std::string_view_literals;
 	static const StringToDoubleConverter converter{StringToDoubleConverter::ALLOW_TRAILING_JUNK |
 													   StringToDoubleConverter::ALLOW_TRAILING_SPACES |
 													   StringToDoubleConverter::ALLOW_SPACES_AFTER_SIGN,
 												   0.0, 0.0, nullptr, nullptr};
 	if (funcName != "st_geomfromtext") {
-		throwParseError(fullExpr, it, "Unsupported function inside ST_Distance() : '" + std::string(funcName) + "'.");
+		throwParseError(fullExpr, expr.data(), "Unsupported function inside ST_Distance() : '" + std::string(funcName) + "'.");
 	}
-	++it;
+	expr.remove_prefix(1);
 	skipSpaces();
-	if (it == end || (*it != '\'' && *it != '"')) throwParseError(fullExpr, it, "Expected \" or '.");
-	const char openQuote = *it;
-	++it;
+	if (expr.empty() || (expr[0] != '\'' && expr[0] != '"')) throwParseError(fullExpr, expr.data(), "Expected \" or '.");
+	const char openQuote = expr[0];
+	expr.remove_prefix(1);
 	skipSpaces();
-	if (!checkIfStartsWith("point"_sv, {it, static_cast<size_t>(end - it)})) throwParseError(fullExpr, it, "Expected 'point'.");
-	it += 5;
+	if (!checkIfStartsWith("point"sv, expr)) throwParseError(fullExpr, expr.data(), "Expected 'point'.");
+	expr.remove_prefix(5);
 	skipSpaces();
-	if (it == end || *it != '(') throwParseError(fullExpr, it, "Expected '('.");
-	++it;
+	if (expr.empty() || expr[0] != '(') throwParseError(fullExpr, expr.data(), "Expected '('.");
+	expr.remove_prefix(1);
 	skipSpaces();
 	int countOfCharsParsedAsDouble = 0;
-	const double x = converter.StringToDouble(it, end - it, &countOfCharsParsedAsDouble);
-	if (countOfCharsParsedAsDouble == 0) throwParseError(fullExpr, it, "Expected number.");
-	it += countOfCharsParsedAsDouble;
+	const double x = converter.StringToDouble(expr.data(), expr.size(), &countOfCharsParsedAsDouble);
+	if (countOfCharsParsedAsDouble == 0) throwParseError(fullExpr, expr.data(), "Expected number.");
+	expr.remove_prefix(countOfCharsParsedAsDouble);
 	skipSpaces();
 	countOfCharsParsedAsDouble = 0;
-	const double y = converter.StringToDouble(it, end - it, &countOfCharsParsedAsDouble);
-	if (countOfCharsParsedAsDouble == 0) throwParseError(fullExpr, it, "Expected number.");
-	it += countOfCharsParsedAsDouble;
+	const double y = converter.StringToDouble(expr.data(), expr.size(), &countOfCharsParsedAsDouble);
+	if (countOfCharsParsedAsDouble == 0) throwParseError(fullExpr, expr.data(), "Expected number.");
+	expr.remove_prefix(countOfCharsParsedAsDouble);
 	skipSpaces();
-	if (it == end || *it != ')') throwParseError(fullExpr, it, "Expected ')'.");
-	++it;
+	if (expr.empty() || expr[0] != ')') throwParseError(fullExpr, expr.data(), "Expected ')'.");
+	expr.remove_prefix(1);
 	skipSpaces();
-	if (it == end || *it != openQuote) throwParseError(fullExpr, it, std::string("Expected ") + openQuote + '.');
-	++it;
+	if (expr.empty() || expr[0] != openQuote) throwParseError(fullExpr, expr.data(), std::string("Expected ") + openQuote + '.');
+	expr.remove_prefix(1);
 	skipSpaces();
-	if (it == end || *it != ')') throwParseError(fullExpr, it, "Expected ')'.");
-	++it;
+	if (expr.empty() || expr[0] != ')') throwParseError(fullExpr, expr.data(), "Expected ')'.");
+	expr.remove_prefix(1);
 	return {x, y};
 }
 
 template <typename T, typename SkipSW>
-void SortExpression::parseDistance(string_view::iterator& it, string_view::iterator end, const std::vector<T>& joinedSelectors,
-								   string_view fullExpr, const ArithmeticOpType op, const bool negative, const SkipSW& skipSpaces) {
+void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>& joinedSelectors, std::string_view const fullExpr, const ArithmeticOpType op, const bool negative, const SkipSW& skipSpaces) {
 	skipSpaces();
-	const auto parsedIndexName1 = parseIndexName(it, end, joinedSelectors, fullExpr);
+	const auto parsedIndexName1 = parseIndexName(expr, joinedSelectors, fullExpr);
 	skipSpaces();
 	if (parsedIndexName1.joinedSelectorIt != joinedSelectors.cend()) {
-		if (it == end || *it != ',') throwParseError(fullExpr, it, "Expected ','.");
-		++it;
+		if (expr.empty() || expr[0] != ',') throwParseError(fullExpr, expr.data(), "Expected ','.");
+		expr.remove_prefix(1);
 		skipSpaces();
 		const size_t jNsIdx1 = static_cast<size_t>(parsedIndexName1.joinedSelectorIt - joinedSelectors.cbegin());
-		const auto parsedIndexName2 = parseIndexName(it, end, joinedSelectors, fullExpr);
+		const auto parsedIndexName2 = parseIndexName(expr, joinedSelectors, fullExpr);
 		if (parsedIndexName2.joinedSelectorIt != joinedSelectors.cend()) {
 			if (parsedIndexName1.joinedSelectorIt == parsedIndexName2.joinedSelectorIt) {
 				if (toLower(parsedIndexName1.name) == toLower(parsedIndexName2.name))
-					throwParseError(fullExpr, it, "Distance between two same indexes");
+					throwParseError(fullExpr, expr.data(), "Distance between two same indexes");
 				Append({op, negative}, DistanceBetweenJoinedIndexesSameNs{jNsIdx1, parsedIndexName1.name, parsedIndexName2.name});
 			} else {
 				Append({op, negative},
@@ -281,22 +281,22 @@ void SortExpression::parseDistance(string_view::iterator& it, string_view::itera
 			}
 		} else {
 			skipSpaces();
-			if (it != end && *it == '(') {
-				const auto point = parsePoint(it, end, toLower(parsedIndexName2.name), fullExpr, skipSpaces);
+			if (!expr.empty() && expr[0] == '(') {
+				const auto point = parsePoint(expr, toLower(parsedIndexName2.name), fullExpr, skipSpaces);
 				Append({op, negative}, DistanceJoinedIndexFromPoint{jNsIdx1, parsedIndexName1.name, point});
 			} else {
 				Append({op, negative}, DistanceBetweenIndexAndJoinedIndex{parsedIndexName2.name, jNsIdx1, parsedIndexName1.name});
 			}
 		}
-	} else if (it != end && *it == '(') {
-		const auto point = parsePoint(it, end, toLower(parsedIndexName1.name), fullExpr, skipSpaces);
+	} else if (!expr.empty() && expr[0] == '(') {
+		const auto point = parsePoint(expr, toLower(parsedIndexName1.name), fullExpr, skipSpaces);
 		skipSpaces();
-		if (it == end || *it != ',') throwParseError(fullExpr, it, "Expected ','.");
-		++it;
+		if (expr.empty() || expr[0] != ',') throwParseError(fullExpr, expr.data(), "Expected ','.");
+		expr.remove_prefix(1);
 		skipSpaces();
-		const auto parsedIndexName2 = parseIndexName(it, end, joinedSelectors, fullExpr);
+		const auto parsedIndexName2 = parseIndexName(expr, joinedSelectors, fullExpr);
 		skipSpaces();
-		if (it != end && *it == '(') throwParseError(fullExpr, it, "Allowed only one function inside ST_Geometry");
+		if (!expr.empty() && expr[0] == '(') throwParseError(fullExpr, expr.data(), "Allowed only one function inside ST_Geometry");
 		if (parsedIndexName2.joinedSelectorIt != joinedSelectors.cend()) {
 			Append({op, negative},
 				   DistanceJoinedIndexFromPoint{static_cast<size_t>(parsedIndexName2.joinedSelectorIt - joinedSelectors.cbegin()),
@@ -305,10 +305,10 @@ void SortExpression::parseDistance(string_view::iterator& it, string_view::itera
 			Append({op, negative}, DistanceFromPoint{parsedIndexName2.name, point});
 		}
 	} else {
-		if (it == end || *it != ',') throwParseError(fullExpr, it, "Expected ','.");
-		++it;
+		if (expr.empty() || expr[0] != ',') throwParseError(fullExpr, expr.data(), "Expected ','.");
+		expr.remove_prefix(1);
 		skipSpaces();
-		const auto parsedIndexName2 = parseIndexName(it, end, joinedSelectors, fullExpr);
+		const auto parsedIndexName2 = parseIndexName(expr, joinedSelectors, fullExpr);
 		if (parsedIndexName2.joinedSelectorIt != joinedSelectors.cend()) {
 			Append({op, negative},
 				   DistanceBetweenIndexAndJoinedIndex{parsedIndexName1.name,
@@ -316,12 +316,12 @@ void SortExpression::parseDistance(string_view::iterator& it, string_view::itera
 													  parsedIndexName2.name});
 		} else {
 			skipSpaces();
-			if (it != end && *it == '(') {
-				const auto point = parsePoint(it, end, toLower(parsedIndexName2.name), fullExpr, skipSpaces);
+			if (!expr.empty() && expr[0] == '(') {
+				const auto point = parsePoint(expr, toLower(parsedIndexName2.name), fullExpr, skipSpaces);
 				Append({op, negative}, DistanceFromPoint{parsedIndexName1.name, point});
 			} else {
 				if (toLower(parsedIndexName1.name) == toLower(parsedIndexName2.name))
-					throwParseError(fullExpr, it, "Distance between two same indexes");
+					throwParseError(fullExpr, expr.data(), "Distance between two same indexes");
 				Append({op, negative}, DistanceBetweenIndexes{parsedIndexName1.name, parsedIndexName2.name});
 			}
 		}
@@ -330,8 +330,7 @@ void SortExpression::parseDistance(string_view::iterator& it, string_view::itera
 }
 
 template <typename T>
-string_view::iterator SortExpression::parse(string_view::iterator it, const string_view::iterator end, bool* containIndexOrFunction,
-											string_view fullExpr, const std::vector<T>& joinedSelectors) {
+std::string_view SortExpression::parse(std::string_view expr, bool* containIndexOrFunction, std::string_view const fullExpr, const std::vector<T>& joinedSelectors) {
 	using namespace double_conversion;
 	static const StringToDoubleConverter converter{StringToDoubleConverter::ALLOW_TRAILING_JUNK |
 													   StringToDoubleConverter::ALLOW_TRAILING_SPACES |
@@ -341,59 +340,59 @@ string_view::iterator SortExpression::parse(string_view::iterator it, const stri
 	bool needCloseBracket = false;
 	bool lastOperationPlusOrMinus = false;
 	ArithmeticOpType op = OpPlus;
-	const auto skipSpaces = [&it, end]() {
-		while (it != end && isspace(*it)) ++it;
+	const auto skipSpaces = [&expr]() {
+		while (!expr.empty() && isspace(expr[0])) expr.remove_prefix(1);
 	};
 	skipSpaces();
-	while (it < end) {
+	while (!expr.empty()) {
 		if (expectValue) {
 			bool negative = false;
-			while (*it == '-' || *it == '+') {
-				if (*it == '-') {
+			while (expr[0] == '-' || expr[0] == '+') {
+				if (expr[0] == '-') {
 					if (lastOperationPlusOrMinus) {
 						op = (op == OpPlus) ? OpMinus : OpPlus;
 					} else {
 						negative = !negative;
 					}
 				}
-				++it;
+				expr.remove_prefix(1);
 				skipSpaces();
-				if (it == end) throwParseError(fullExpr, it, "The expression unexpected ends after unary operator.");
+				if (expr.empty()) throwParseError(fullExpr, expr.data(), "The expression unexpected ends after unary operator.");
 			}
-			if (*it == '(') {
-				++it;
+			if (expr[0] == '(') {
+				expr.remove_prefix(1);
 				OpenBracket({op, negative});
-				it = parse(it, end, containIndexOrFunction, fullExpr, joinedSelectors);
-				if (it == end || *it != ')') throwParseError(fullExpr, it, "Expected ')'.");
-				++it;
+				expr = parse(expr, containIndexOrFunction, fullExpr, joinedSelectors);
+				if (expr.empty() || expr[0] != ')') throwParseError(fullExpr, expr.data(), "Expected ')'.");
+				expr.remove_prefix(1);
 				CloseBracket();
 			} else {
 				int countOfCharsParsedAsDouble = 0;
-				const double value = converter.StringToDouble(it, end - it, &countOfCharsParsedAsDouble);
+				const double value = converter.StringToDouble(expr.data(), expr.size(), &countOfCharsParsedAsDouble);
 				if (countOfCharsParsedAsDouble != 0) {
 					Append({op, false}, Value{negative ? -value : value});
-					it += countOfCharsParsedAsDouble;
+					expr.remove_prefix(countOfCharsParsedAsDouble);
 				} else {
-					const auto parsedIndexName = parseIndexName(it, end, joinedSelectors, fullExpr);
+					const auto parsedIndexName = parseIndexName(expr, joinedSelectors, fullExpr);
 					if (parsedIndexName.joinedSelectorIt == joinedSelectors.cend()) {
 						skipSpaces();
-						if (it != end && *it == '(') {
-							++it;
+						if (!expr.empty() && expr[0] == '(') {
+							expr.remove_prefix(1);
 							const auto funcName = toLower(parsedIndexName.name);
 							if (funcName == "rank") {
 								Append({op, negative}, Rank{});
 								skipSpaces();
 							} else if (funcName == "abs") {
 								OpenBracket({op, negative}, true);
-								it = parse(it, end, containIndexOrFunction, fullExpr, joinedSelectors);
+								expr = parse(expr, containIndexOrFunction, fullExpr, joinedSelectors);
 								CloseBracket();
 							} else if (funcName == "st_distance") {
-								parseDistance(it, end, joinedSelectors, fullExpr, op, negative, skipSpaces);
+								parseDistance(expr, joinedSelectors, fullExpr, op, negative, skipSpaces);
 							} else {
-								throwParseError(fullExpr, it, "Unsupported function name : '" + funcName + "'.");
+								throwParseError(fullExpr, expr.data(), "Unsupported function name : '" + funcName + "'.");
 							}
-							if (it == end || *it != ')') throwParseError(fullExpr, it, "Expected ')'.");
-							++it;
+							if (expr.empty() || expr[0] != ')') throwParseError(fullExpr, expr.data(), "Expected ')'.");
+							expr.remove_prefix(1);
 						} else {
 							Append({op, negative}, SortExprFuncs::Index{parsedIndexName.name});
 						}
@@ -406,13 +405,13 @@ string_view::iterator SortExpression::parse(string_view::iterator it, const stri
 			}
 			expectValue = false;
 		} else {
-			switch (*it) {
+			switch (expr[0]) {
 				case ')':
 					if (needCloseBracket) CloseBracket();
-					return it;
+					return expr;
 				case '+':
 				case '-':
-					op = (*it == '+') ? OpPlus : OpMinus;
+					op = (expr[0] == '+') ? OpPlus : OpMinus;
 					if (needCloseBracket) {
 						CloseBracket();
 						needCloseBracket = false;
@@ -421,7 +420,7 @@ string_view::iterator SortExpression::parse(string_view::iterator it, const stri
 					break;
 				case '*':
 				case '/':
-					op = (*it == '*') ? OpMult : OpDiv;
+					op = (expr[0] == '*') ? OpMult : OpDiv;
 					if (lastOperationPlusOrMinus) {
 						openBracketBeforeLastAppended();
 						needCloseBracket = true;
@@ -429,30 +428,30 @@ string_view::iterator SortExpression::parse(string_view::iterator it, const stri
 					}
 					break;
 				default:
-					throwParseError(fullExpr, it, string("Expected ')', '+', '-', '*' of '/', but obtained '") + *it + "'.");
+					throwParseError(fullExpr, expr.data(), string("Expected ')', '+', '-', '*' of '/', but obtained '") + expr[0] + "'.");
 			}
-			++it;
+			expr.remove_prefix(1);
 			expectValue = true;
 		}
 		skipSpaces();
 	}
-	if (expectValue) throwParseError(fullExpr, it, "Expected value.");
+	if (expectValue) throwParseError(fullExpr, expr.data(), "Expected value.");
 	if (needCloseBracket) CloseBracket();
-	return it;
+	return expr;
 }
 
 template <typename T>
-SortExpression SortExpression::Parse(string_view expression, const std::vector<T>& joinedSelector) {
+SortExpression SortExpression::Parse(const std::string_view expression, const std::vector<T>& joinedSelector) {
 	SortExpression result;
 	bool containIndexOrFunction = false;
-	const auto it = result.parse(expression.begin(), expression.end(), &containIndexOrFunction, expression, joinedSelector);
-	if (it != expression.end()) throwParseError(expression, it, "");
-	if (!containIndexOrFunction) throwParseError(expression, it, "Expression is undependent on namespace data.");
+	const auto expr = result.parse(expression, &containIndexOrFunction, expression, joinedSelector);
+	if (!expr.empty()) throwParseError(expression, expr.data(), "");
+	if (!containIndexOrFunction) throwParseError(expression, expr.data(), "Expression is undependent on namespace data.");
 	return result;
 }
 
-template SortExpression SortExpression::Parse(string_view, const std::vector<JoinedSelector>&);
-template SortExpression SortExpression::Parse(string_view, const std::vector<JoinedSelectorMock>&);
+template SortExpression SortExpression::Parse(std::string_view, const std::vector<JoinedSelector>&);
+template SortExpression SortExpression::Parse(std::string_view, const std::vector<JoinedSelectorMock>&);
 
 double SortExpression::calculate(const_iterator it, const_iterator end, IdType rowId, ConstPayload pv,
 								 const joins::NamespaceResults& joinedResults, const std::vector<JoinedSelector>& js, uint8_t proc,

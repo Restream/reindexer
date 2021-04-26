@@ -1,17 +1,17 @@
 #pragma once
 
 #include <algorithm>
+#include <variant>
 #include "core/cjson/tagsmatcher.h"
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
-#include "vendor/mpark/variant.h"
 
 namespace reindexer {
 
 static constexpr int maxIndexes = 64;
 
 using base_fields_set = h_vector<int8_t, 6>;
-using FieldsPath = mpark::variant<TagsPath, IndexedTagsPath>;
+using FieldsPath = std::variant<TagsPath, IndexedTagsPath>;
 
 class FieldsSet : protected base_fields_set {
 public:
@@ -80,9 +80,9 @@ public:
 	bool contains(const TagsPath &tagsPath) const {
 		for (const FieldsPath &path : tagsPaths_) {
 			if (path.index() == 0) {
-				if (mpark::get<TagsPath>(path) == tagsPath) return true;
+				if (std::get<TagsPath>(path) == tagsPath) return true;
 			} else {
-				if (mpark::get<IndexedTagsPath>(path).Compare(tagsPath)) return true;
+				if (std::get<IndexedTagsPath>(path).Compare(tagsPath)) return true;
 			}
 		}
 		return false;
@@ -90,9 +90,9 @@ public:
 	bool contains(const IndexedTagsPath &tagsPath) const {
 		for (const FieldsPath &path : tagsPaths_) {
 			if (path.index() == 1) {
-				if (mpark::get<IndexedTagsPath>(path) == tagsPath) return true;
+				if (std::get<IndexedTagsPath>(path) == tagsPath) return true;
 			} else {
-				if (tagsPath.Compare(mpark::get<TagsPath>(path))) return true;
+				if (tagsPath.Compare(std::get<TagsPath>(path))) return true;
 			}
 		}
 		return false;
@@ -101,9 +101,9 @@ public:
 		if (tagsPaths_.empty()) return true;
 		for (auto &flt : tagsPaths_) {
 			if (flt.index() == 0) {
-				if (comparePaths(tagsPath, mpark::get<TagsPath>(flt))) return true;
+				if (comparePaths(tagsPath, std::get<TagsPath>(flt))) return true;
 			} else {
-				if (comparePaths(mpark::get<IndexedTagsPath>(flt), tagsPath)) return true;
+				if (comparePaths(std::get<IndexedTagsPath>(flt), tagsPath)) return true;
 			}
 		}
 		return false;
@@ -112,9 +112,9 @@ public:
 		if (tagsPaths_.empty()) return true;
 		for (auto &flt : tagsPaths_) {
 			if (flt.index() == 1) {
-				if (comparePaths(tagsPath, mpark::get<IndexedTagsPath>(flt))) return true;
+				if (comparePaths(tagsPath, std::get<IndexedTagsPath>(flt))) return true;
 			} else {
-				if (comparePaths(tagsPath, mpark::get<TagsPath>(flt))) return true;
+				if (comparePaths(tagsPath, std::get<TagsPath>(flt))) return true;
 			}
 		}
 		return false;
@@ -133,8 +133,8 @@ public:
 		assert(idx < tagsPaths_.size());
 		return (tagsPaths_[idx].index() == 1);
 	}
-	const TagsPath &getTagsPath(size_t idx) const { return mpark::get<TagsPath>(tagsPaths_[idx]); }
-	const IndexedTagsPath &getIndexedTagsPath(size_t idx) const { return mpark::get<IndexedTagsPath>(tagsPaths_[idx]); }
+	const TagsPath &getTagsPath(size_t idx) const { return std::get<TagsPath>(tagsPaths_[idx]); }
+	const IndexedTagsPath &getIndexedTagsPath(size_t idx) const { return std::get<IndexedTagsPath>(tagsPaths_[idx]); }
 	const string &getJsonPath(size_t idx) const { return jsonPaths_[idx]; }
 
 	bool operator==(const FieldsSet &f) const { return (mask_ == f.mask_) && (tagsPaths_ == f.tagsPaths_); }

@@ -146,24 +146,24 @@ Error RPCClient::AddNamespace(const NamespaceDef& nsDef, const InternalRdxContex
 	return errOK;
 }
 
-Error RPCClient::OpenNamespace(string_view nsName, const InternalRdxContext& ctx, const StorageOpts& sopts) {
+Error RPCClient::OpenNamespace(std::string_view nsName, const InternalRdxContext& ctx, const StorageOpts& sopts) {
 	NamespaceDef nsDef(string(nsName), sopts);
 	return AddNamespace(nsDef, ctx);
 }
 
-Error RPCClient::CloseNamespace(string_view nsName, const InternalRdxContext& ctx) {
+Error RPCClient::CloseNamespace(std::string_view nsName, const InternalRdxContext& ctx) {
 	return getConn()->Call(mkCommand(cproto::kCmdCloseNamespace, &ctx), nsName).Status();
 }
 
-Error RPCClient::DropNamespace(string_view nsName, const InternalRdxContext& ctx) {
+Error RPCClient::DropNamespace(std::string_view nsName, const InternalRdxContext& ctx) {
 	return getConn()->Call(mkCommand(cproto::kCmdDropNamespace, &ctx), nsName).Status();
 }
 
-Error RPCClient::TruncateNamespace(string_view nsName, const InternalRdxContext& ctx) {
+Error RPCClient::TruncateNamespace(std::string_view nsName, const InternalRdxContext& ctx) {
 	return getConn()->Call(mkCommand(cproto::kCmdTruncateNamespace, &ctx), nsName).Status();
 }
 
-Error RPCClient::RenameNamespace(string_view srcNsName, const std::string& dstNsName, const InternalRdxContext& ctx) {
+Error RPCClient::RenameNamespace(std::string_view srcNsName, const std::string& dstNsName, const InternalRdxContext& ctx) {
 	auto status = getConn()->Call(mkCommand(cproto::kCmdRenameNamespace, &ctx), srcNsName, dstNsName).Status();
 
 	if (!status.ok()) return status;
@@ -187,23 +187,23 @@ Error RPCClient::RenameNamespace(string_view srcNsName, const std::string& dstNs
 	return errOK;
 }
 
-Error RPCClient::Insert(string_view nsName, Item& item, const InternalRdxContext& ctx) {
+Error RPCClient::Insert(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {
 	return modifyItem(nsName, item, ModeInsert, config_.RequestTimeout, ctx);
 }
 
-Error RPCClient::Update(string_view nsName, Item& item, const InternalRdxContext& ctx) {
+Error RPCClient::Update(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {
 	return modifyItem(nsName, item, ModeUpdate, config_.RequestTimeout, ctx);
 }
 
-Error RPCClient::Upsert(string_view nsName, Item& item, const InternalRdxContext& ctx) {
+Error RPCClient::Upsert(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {
 	return modifyItem(nsName, item, ModeUpsert, config_.RequestTimeout, ctx);
 }
 
-Error RPCClient::Delete(string_view nsName, Item& item, const InternalRdxContext& ctx) {
+Error RPCClient::Delete(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {
 	return modifyItem(nsName, item, ModeDelete, config_.RequestTimeout, ctx);
 }
 
-Error RPCClient::modifyItem(string_view nsName, Item& item, int mode, seconds netTimeout, const InternalRdxContext& ctx) {
+Error RPCClient::modifyItem(std::string_view nsName, Item& item, int mode, seconds netTimeout, const InternalRdxContext& ctx) {
 	if (ctx.cmpl()) {
 		return modifyItemAsync(nsName, &item, mode, nullptr, netTimeout, ctx);
 	}
@@ -256,7 +256,7 @@ Error RPCClient::modifyItem(string_view nsName, Item& item, int mode, seconds ne
 	}
 }
 
-Error RPCClient::modifyItemAsync(string_view nsName, Item* item, int mode, cproto::ClientConnection* conn, seconds netTimeout,
+Error RPCClient::modifyItemAsync(std::string_view nsName, Item* item, int mode, cproto::ClientConnection* conn, seconds netTimeout,
 								 const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	if (item->impl_->GetPrecepts().size()) {
@@ -336,7 +336,7 @@ Error RPCClient::subscribeImpl(bool subscribe) {
 	return err;
 }
 
-Item RPCClient::NewItem(string_view nsName) {
+Item RPCClient::NewItem(std::string_view nsName) {
 	try {
 		auto ns = getNamespace(nsName);
 		return ns->NewItem();
@@ -345,7 +345,7 @@ Item RPCClient::NewItem(string_view nsName) {
 	}
 }
 
-Error RPCClient::GetMeta(string_view nsName, const string& key, string& data, const InternalRdxContext& ctx) {
+Error RPCClient::GetMeta(std::string_view nsName, const string& key, string& data, const InternalRdxContext& ctx) {
 	try {
 		auto ret = getConn()->Call(mkCommand(cproto::kCmdGetMeta, &ctx), nsName, key);
 		if (ret.Status().ok()) {
@@ -357,11 +357,11 @@ Error RPCClient::GetMeta(string_view nsName, const string& key, string& data, co
 	}
 }
 
-Error RPCClient::PutMeta(string_view nsName, const string& key, const string_view& data, const InternalRdxContext& ctx) {
+Error RPCClient::PutMeta(std::string_view nsName, const string& key, std::string_view data, const InternalRdxContext& ctx) {
 	return getConn()->Call(mkCommand(cproto::kCmdPutMeta, &ctx), nsName, key, data).Status();
 }
 
-Error RPCClient::EnumMeta(string_view nsName, vector<string>& keys, const InternalRdxContext& ctx) {
+Error RPCClient::EnumMeta(std::string_view nsName, vector<string>& keys, const InternalRdxContext& ctx) {
 	try {
 		auto ret = getConn()->Call(mkCommand(cproto::kCmdEnumMeta, &ctx), nsName);
 		if (ret.Status().ok()) {
@@ -433,7 +433,7 @@ Error RPCClient::Update(const Query& query, QueryResults& result, const Internal
 	return ret.Status();
 }
 
-Error RPCClient::selectImpl(string_view query, QueryResults& result, cproto::ClientConnection* conn, seconds netTimeout,
+Error RPCClient::selectImpl(std::string_view query, QueryResults& result, cproto::ClientConnection* conn, seconds netTimeout,
 							const InternalRdxContext& ctx) {
 	int flags = result.fetchFlags_ ? (result.fetchFlags_ & ~kResultsFormatMask) | kResultsJson : kResultsJson;
 
@@ -521,25 +521,25 @@ Error RPCClient::selectImpl(const Query& query, QueryResults& result, cproto::Cl
 	}
 }
 
-Error RPCClient::Commit(string_view nsName) { return getConn()->Call(mkCommand(cproto::kCmdCommit), nsName).Status(); }
+Error RPCClient::Commit(std::string_view nsName) { return getConn()->Call(mkCommand(cproto::kCmdCommit), nsName).Status(); }
 
-Error RPCClient::AddIndex(string_view nsName, const IndexDef& iDef, const InternalRdxContext& ctx) {
+Error RPCClient::AddIndex(std::string_view nsName, const IndexDef& iDef, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	iDef.GetJSON(ser);
 	return getConn()->Call(mkCommand(cproto::kCmdAddIndex, &ctx), nsName, ser.Slice()).Status();
 }
 
-Error RPCClient::UpdateIndex(string_view nsName, const IndexDef& iDef, const InternalRdxContext& ctx) {
+Error RPCClient::UpdateIndex(std::string_view nsName, const IndexDef& iDef, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	iDef.GetJSON(ser);
 	return getConn()->Call(mkCommand(cproto::kCmdUpdateIndex, &ctx), nsName, ser.Slice()).Status();
 }
 
-Error RPCClient::DropIndex(string_view nsName, const IndexDef& idx, const InternalRdxContext& ctx) {
+Error RPCClient::DropIndex(std::string_view nsName, const IndexDef& idx, const InternalRdxContext& ctx) {
 	return getConn()->Call(mkCommand(cproto::kCmdDropIndex, &ctx), nsName, idx.name_).Status();
 }
 
-Error RPCClient::SetSchema(string_view nsName, string_view schema, const InternalRdxContext& ctx) {
+Error RPCClient::SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext& ctx) {
 	return getConn()->Call(mkCommand(cproto::kCmdSetSchema, &ctx), nsName, schema).Status();
 }
 
@@ -594,7 +594,7 @@ Error RPCClient::UnsubscribeUpdates(IUpdatesObserver* observer) {
 	return subscribeImpl(!observers_.Empty());
 }
 
-Error RPCClient::GetSqlSuggestions(string_view query, int pos, std::vector<std::string>& suggests) {
+Error RPCClient::GetSqlSuggestions(std::string_view query, int pos, std::vector<std::string>& suggests) {
 	try {
 		auto ret = getConn()->Call(mkCommand(cproto::kCmdGetSQLSuggestions), query, pos);
 		if (ret.Status().ok()) {
@@ -632,7 +632,7 @@ void RPCClient::checkSubscribes() {
 	}
 }
 
-Namespace* RPCClient::getNamespace(string_view nsName) {
+Namespace* RPCClient::getNamespace(std::string_view nsName) {
 	nsMutex_.lock_shared();
 	auto nsIt = namespaces_.find(nsName);
 	if (nsIt != namespaces_.end()) {
@@ -689,7 +689,7 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 		return;
 	}
 	if (args.size() == 1) {
-		string_view nsName(args[0]);
+		std::string_view nsName(args[0]);
 		observers_.OnUpdatesLost(nsName);
 		return;
 	}
@@ -698,8 +698,8 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 		return;
 	}
 	lsn_t lsn{int64_t(args[0])};
-	string_view nsName(args[1]);
-	string_view pwalRec(args[2]);
+	std::string_view nsName(args[1]);
+	std::string_view pwalRec(args[2]);
 	lsn_t originLSN;
 	if (args.size() >= 4) originLSN = lsn_t(args[3].As<int64_t>());
 	WALRecord wrec(pwalRec);
@@ -767,7 +767,7 @@ bool RPCClient::onConnectionFail(int failedDsnIndex) {
 	return true;
 }
 
-Transaction RPCClient::NewTransaction(string_view nsName, const InternalRdxContext& ctx) {
+Transaction RPCClient::NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) {
 	net::cproto::ClientConnection* conn = getConn();
 	auto res = conn->Call(mkCommand(cproto::kCmdStartTransaction, &ctx), nsName);
 	auto err = res.Status();

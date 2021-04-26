@@ -7,6 +7,8 @@
 
 namespace reindexer {
 
+using namespace std::string_view_literals;
+
 void NamespaceMemStat::GetJSON(WrSerializer &ser) {
 	JsonBuilder builder(ser);
 
@@ -158,30 +160,30 @@ void MasterState::FromJSON(const gason::JsonNode &root) {
 	}
 }
 
-static string_view replicationStatusToStr(ReplicationState::Status status) {
+static std::string_view replicationStatusToStr(ReplicationState::Status status) {
 	switch (status) {
 		case ReplicationState::Status::Idle:
-			return "idle"_sv;
+			return "idle"sv;
 		case ReplicationState::Status::Error:
-			return "error"_sv;
+			return "error"sv;
 		case ReplicationState::Status::Fatal:
-			return "fatal"_sv;
+			return "fatal"sv;
 		case ReplicationState::Status::Syncing:
-			return "syncing"_sv;
+			return "syncing"sv;
 		case ReplicationState::Status::None:
 		default:
-			return "none"_sv;
+			return "none"sv;
 	}
 }
 
-static ReplicationState::Status strToReplicationStatus(string_view status) {
-	if (status == "idle"_sv) {
+static ReplicationState::Status strToReplicationStatus(std::string_view status) {
+	if (status == "idle"sv) {
 		return ReplicationState::Status::Idle;
-	} else if (status == "error"_sv) {
+	} else if (status == "error"sv) {
 		return ReplicationState::Status::Error;
-	} else if (status == "fatal"_sv) {
+	} else if (status == "fatal"sv) {
 		return ReplicationState::Status::Fatal;
-	} else if (status == "syncing"_sv) {
+	} else if (status == "syncing"sv) {
 		return ReplicationState::Status::Syncing;
 	}
 	return ReplicationState::Status::None;
@@ -236,7 +238,7 @@ void ReplicationState::FromJSON(span<char> json) {
 		dataHash = root["data_hash"].As<uint64_t>();
 		dataCount = root["data_count"].As<int>();
 		updatedUnixNano = root["updated_unix_nano"].As<uint64_t>();
-		status = strToReplicationStatus(root["status"].As<string_view>());
+		status = strToReplicationStatus(root["status"].As<std::string_view>());
 		LoadLsn(originLSN, root["origin_lsn"]);
 		LoadLsn(lastSelfLSN, root["last_self_lsn"]);
 		LoadLsn(lastUpstreamLSN, root["last_upstream_lsn"]);

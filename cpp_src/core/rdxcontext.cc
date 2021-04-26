@@ -71,7 +71,7 @@ RdxActivityContext::Ward RdxContext::BeforeSelectLoop() const {
 	}
 }
 
-RdxContext InternalRdxContext::CreateRdxContext(string_view query, ActivityContainer& activityContainer) const {
+RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, ActivityContainer& activityContainer) const {
 	if (activityTracer_.empty() || query.empty()) {
 		return {(deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
 	} else {
@@ -85,7 +85,8 @@ RdxContext InternalRdxContext::CreateRdxContext(string_view query, ActivityConta
 	}
 }
 
-RdxContext InternalRdxContext::CreateRdxContext(string_view query, ActivityContainer& activityContainer, QueryResults& qresults) const {
+RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, ActivityContainer& activityContainer,
+												QueryResults& qresults) const {
 	if (activityTracer_.empty() || query.empty()) return {(deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
 	assert(!qresults.holdActivity_);
 	new (&qresults.activityCtx_) RdxActivityContext(activityTracer_, user_, query, activityContainer, connectionId_, true);

@@ -1,8 +1,9 @@
 #pragma once
 
+#include <functional>
+#include <variant>
 #include "estl/h_vector.h"
 #include "tools/errors.h"
-#include "vendor/mpark/variant.h"
 
 namespace reindexer {
 
@@ -109,7 +110,7 @@ class ExpressionTree {
 	class Node {
 		friend ExpressionTree;
 
-		using Storage = mpark::variant<SubTree, Ts..., Ref<Ts>...>;
+		using Storage = std::variant<SubTree, Ts..., Ref<Ts>...>;
 
 		struct SizeVisitor {
 			template <typename T>
@@ -222,63 +223,63 @@ class ExpressionTree {
 		}
 		bool operator==(const Node& other) const {
 			static const EqVisitor visitor;
-			return operation == other.operation && mpark::visit(visitor, storage_, other.storage_);
+			return operation == other.operation && std::visit(visitor, storage_, other.storage_);
 		}
 		bool operator!=(const Node& other) const { return !operator==(other); }
 
 		template <typename T = Head<Ts...>>
 		T& Value() {
 			const static GetVisitor<T> visitor;
-			return mpark::visit(visitor, storage_);
+			return std::visit(visitor, storage_);
 		}
 		template <typename T = Head<Ts...>>
 		const T& Value() const {
 			const static GetVisitor<const T> visitor;
-			return mpark::visit(visitor, storage_);
+			return std::visit(visitor, storage_);
 		}
 		size_t Size() const noexcept {
 			static constexpr SizeVisitor sizeVisitor;
-			return mpark::visit(sizeVisitor, storage_);
+			return std::visit(sizeVisitor, storage_);
 		}
 		bool IsSubTree() const noexcept { return storage_.index() == 0; }
 		bool IsLeaf() const noexcept { return !IsSubTree(); }
 		template <typename T>
 		bool Holds() const noexcept {
-			return mpark::holds_alternative<T>(storage_);
+			return std::holds_alternative<T>(storage_);
 		}
-		void Append() { mpark::get<SubTree>(storage_).Append(); }
-		void Erase(size_t length) { mpark::get<SubTree>(storage_).Erase(length); }
+		void Append() { std::get<SubTree>(storage_).Append(); }
+		void Erase(size_t length) { std::get<SubTree>(storage_).Erase(length); }
 		/// Execute appropriate functor depending on content type, skip if no appropriate functor
 		template <typename... Args>
 		void ExecuteAppropriate(const std::function<void(Args&)>&... funcs) {
-			mpark::visit(Visitor<void, Args&...>{funcs...}, storage_);
+			std::visit(Visitor<void, Args&...>{funcs...}, storage_);
 		}
 		/// Execute appropriate functor depending on content type, skip if no appropriate functor
 		template <typename... Args>
 		void ExecuteAppropriate(const std::function<void(const Args&)>&... funcs) const {
-			mpark::visit(Visitor<void, const Args&...>{funcs...}, storage_);
+			std::visit(Visitor<void, const Args&...>{funcs...}, storage_);
 		}
 		/// Execute appropriate functor depending on content type
 		template <typename R>
 		R CalculateAppropriate(const std::function<R(const SubTree&)>& f, const std::function<R(const Ts&)>&... funcs) const {
-			return mpark::visit(Visitor<R, const SubTree&, const Ts&...>{f, funcs...}, storage_);
+			return std::visit(Visitor<R, const SubTree&, const Ts&...>{f, funcs...}, storage_);
 		}
 
 		Node MakeLazyCopy() & {
 			static const LazyCopyVisitor visitor;
-			return {operation, mpark::visit(visitor, storage_)};
+			return {operation, std::visit(visitor, storage_)};
 		}
-		Node MakeDeepCopy() const & {
+		Node MakeDeepCopy() const& {
 			static const DeepCopyVisitor visitor;
-			return {operation, mpark::visit(visitor, storage_)};
+			return {operation, std::visit(visitor, storage_)};
 		}
 		Node MakeDeepCopy() && {
 			static const DeepRValueCopyVisitor visitor;
-			return {operation, mpark::visit(visitor, std::move(storage_))};
+			return {operation, std::visit(visitor, std::move(storage_))};
 		}
 		bool IsRef() const {
 			static const IsRefVisitor visitor;
-			return mpark::visit(visitor, storage_);
+			return std::visit(visitor, storage_);
 		}
 		template <typename T>
 		void SetValue(T&& v) {
@@ -415,13 +416,13 @@ public:
 	template <typename... Args>
 	void ExecuteAppropriateForEach(const std::function<void(const Args&)>&... funcs) const {
 		const Visitor<void, const Args&...> visitor{funcs...};
-		for (const Node& node : container_) mpark::visit(visitor, node.storage_);
+		for (const Node& node : container_) std::visit(visitor, node.storage_);
 	}
 	/// Execute appropriate functor depending on content type for each node, skip if no appropriate functor
 	template <typename... Args>
 	void ExecuteAppropriateForEach(const std::function<void(Args&)>&... funcs) {
 		const Visitor<void, Args&...> visitor{funcs...};
-		for (Node& node : container_) mpark::visit(visitor, node.storage_);
+		for (Node& node : container_) std::visit(visitor, node.storage_);
 	}
 
 	/// @class const_iterator
@@ -528,7 +529,7 @@ protected:
 				Append(begin->operation, begin->Value());
 			} else {
 				OpenBracket(begin->operation);
-				mpark::get<SubTree>(container_.back().storage_).CopyPayloadFrom(mpark::get<SubTree>(begin->storage_));
+				std::get<SubTree>(container_.back().storage_).CopyPayloadFrom(std::get<SubTree>(begin->storage_));
 				append(begin.cbegin(), begin.cend());
 				CloseBracket();
 			}
@@ -541,7 +542,7 @@ protected:
 				Append(begin->operation, Ref<Head<Ts...>>{begin->Value()});
 			} else {
 				OpenBracket(begin->operation);
-				mpark::get<SubTree>(container_.back().storage_).CopyPayloadFrom(mpark::get<SubTree>(begin->storage_));
+				std::get<SubTree>(container_.back().storage_).CopyPayloadFrom(std::get<SubTree>(begin->storage_));
 				lazyAppend(begin.begin(), begin.end());
 				CloseBracket();
 			}
