@@ -12,7 +12,7 @@
 ## Reindexer tool
 - [fix] Fixed sigabort in \bench
 
-#Face
+##Face
 - [fix] Fixed double requests during the sorting in the Performance table.
 - [fea] Changed the step of the Bm25 weight option 
 - [fea] Changed max_typos_in_word to max_typos 
