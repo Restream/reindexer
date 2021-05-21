@@ -58,8 +58,8 @@ type FtFastConfig struct {
 	// Maximum possible typos in word.
 	// 0: typos is disabled, words with typos will not match
 	// N: words with N possible typos will match
-	// It is not recommended to set more than 1 possible typo: It will serously increase RAM usage, and decrease search speed
-	MaxTyposInWord int `json:"max_typos_in_word"`
+	// It is not recommended to set more than 2 possible typo: It will serously increase RAM usage, and decrease search speed
+	MaxTypos int `json:"max_typos"`
 	// Maximum word length for building and matching variants with typos. Default value is 15
 	MaxTypoLen int `json:"max_typo_len"`
 	// Maximum commit steps - set it 1 for always full rebuild - it can be from 1 to 500
@@ -91,33 +91,36 @@ type FtFastConfig struct {
 	EnableNumbersSearch bool `json:"enable_numbers_search"`
 	// Extra symbols, which will be threated as parts of word to addition to letters and digits
 	ExtraWordSymbols string `json:"extra_word_symbols"`
+	// Ratio of summation of ranks of match one term in several fields
+	SumRanksByFieldsRatio float64 `json:"sum_ranks_by_fields_ratio"`
 	// Configuration for certain field
 	FieldsCfg []FtFastFieldConfig `json:"fields,omitempty"`
 }
 
 func DefaultFtFastConfig() FtFastConfig {
-	return FtFastConfig{
-		Bm25Boost:            1.0,
-		Bm25Weight:           0.1,
-		DistanceBoost:        1.0,
-		DistanceWeight:       0.5,
-		TermLenBoost:         1.0,
-		TermLenWeight:        0.3,
-		PositionBoost:        1.0,
-		PositionWeight:       0.1,
-		FullMatchBoost:       1.1,
-		PartialMatchDecrease: 15,
-		MinRelevancy:         0.05,
-		MaxTyposInWord:       1,
-		MaxTypoLen:           15,
-		MaxRebuildSteps:      50,
-		MaxStepSize:          4000,
-		MergeLimit:           20000,
-		Stemmers:             []string{"en", "ru"},
-		EnableTranslit:       true,
-		EnableKbLayout:       true,
-		LogLevel:             0,
-		ExtraWordSymbols:     "/-+",
+	return FtFastConfig {
+		Bm25Boost:             1.0,
+		Bm25Weight:            0.1,
+		DistanceBoost:         1.0,
+		DistanceWeight:        0.5,
+		TermLenBoost:          1.0,
+		TermLenWeight:         0.3,
+		PositionBoost:         1.0,
+		PositionWeight:        0.1,
+		FullMatchBoost:        1.1,
+		PartialMatchDecrease:  15,
+		MinRelevancy:          0.05,
+		MaxTypos:              2,
+		MaxTypoLen:            15,
+		MaxRebuildSteps:        50,
+		MaxStepSize:           4000,
+		MergeLimit:            20000,
+		Stemmers:              []string{"en", "ru"},
+		EnableTranslit:        true,
+		EnableKbLayout:        true,
+		LogLevel:              0,
+		ExtraWordSymbols:      "/-+",
+		SumRanksByFieldsRatio: 0.0,
 	}
 }
 

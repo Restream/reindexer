@@ -377,6 +377,12 @@ TEST_F(ReindexerApi, AddUnacceptablePKIndex) {
 	err = rt.reindexer->AddIndex(default_namespace, {kIdxName, "-", "string", IndexOpts().PK()});
 	ASSERT_EQ(err.code(), errParams) << err.what();
 
+	err = rt.reindexer->AddIndex(default_namespace, {kIdxName, "text", "string", IndexOpts().PK()});
+	ASSERT_EQ(err.code(), errParams) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {kIdxName, "fuzzytext", "string", IndexOpts().PK()});
+	ASSERT_EQ(err.code(), errParams) << err.what();
+
 	// Add valid index with the same name
 	err = rt.reindexer->AddIndex(default_namespace, {kIdxName, "hash", "int", IndexOpts().PK()});
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -1413,7 +1419,10 @@ TEST_F(ReindexerApi, LoggerWriteInterruptTest) {
 			spdlog::create("log", sinkPtr);
 			logger = reindexer_server::LoggerWrapper("log");
 		}
-		~Logger() { std::remove(logFile.c_str()); }
+		~Logger() {
+			spdlog::drop_all();
+			std::remove(logFile.c_str());
+		}
 		const string logFile = "/tmp/logtest.out";
 		reindexer_server::LoggerWrapper logger;
 		std::shared_ptr<spdlog::sinks::fast_file_sink> sinkPtr;

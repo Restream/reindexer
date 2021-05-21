@@ -542,9 +542,10 @@ Error ReindexerImpl::Update(const Query& q, QueryResults& result, const Internal
 		auto ns = getNamespace(q._namespace, rdxCtx);
 		ns->Update(q, result, rdxCtx);
 		if (ns->IsSystem(rdxCtx)) {
+			const std::string kNsName = ns->GetName(rdxCtx);
 			for (auto it = result.begin(); it != result.end(); ++it) {
 				auto item = it.GetItem();
-				updateToSystemNamespace(ns->GetName(), item, rdxCtx);
+				updateToSystemNamespace(kNsName, item, rdxCtx);
 			}
 		}
 	} catch (const Error& err) {

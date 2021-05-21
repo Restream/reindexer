@@ -1,3 +1,28 @@
+# Version 3.2.0 (21.05.2021)
+## Core
+- [fea] Added fields ranks summation syntax for fulltext queries
+- [fea] Changed typos handling config for fulltext (new max_typos option)
+- [fix] Fixed error handling for fulltext PK
+
+## Reindexer server
+- [fea] Added separate options for http and rpc threading modes
+- [fea] Added option for max http request size
+- [fix] Fixed dangling threads for http-connections in dedicated threading mode
+
+## Reindexer tool
+- [fix] Fixed sigabort in \bench
+
+#Face
+- [fix] Fixed double requests during the sorting in the Performance table.
+- [fea] Changed the step of the Bm25 weight option 
+- [fea] Changed max_typos_in_word to max_typos 
+- [fea] Added the sum_ranks_by_fields_ratio option
+- [fea] Changed data type to integer for max_typo_len and max_rebuild_steps
+
+# Version 3.1.4 (30.04.2021)
+## Reindexer server
+- [fix] Disable dedicated threads mode for HTTP-server
+
 # Version 3.1.3 (26.04.2021)
 ## Build
 - [fea] C++17 is now required to build reindexer from sources

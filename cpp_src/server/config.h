@@ -29,7 +29,8 @@ struct ServerConfig {
 	string StorageEngine;
 	string HTTPAddr;
 	string RPCAddr;
-	string ThreadingMode;
+	string RPCThreadingMode;
+	string HttpThreadingMode;
 	string LogLevel;
 	string ServerLog;
 	string CoreLog;
@@ -57,6 +58,7 @@ struct ServerConfig {
 	size_t MaxUpdatesSize;
 	bool EnableGRPC;
 	string GRPCAddr;
+	size_t MaxHttpReqSize;
 
 	static const string kDedicatedThreading;
 	static const string kSharedThreading;

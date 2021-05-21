@@ -6,30 +6,37 @@
 
 class FTApi : public ReindexerApi {
 public:
-	void Init(const reindexer::FtFastConfig& ftCfg) {
+	enum { NS1 = 1, NS2 = 2, NS3 = 4 };
+	void Init(const reindexer::FtFastConfig& ftCfg, unsigned nses = NS1) {
 		rt.reindexer.reset(new Reindexer);
-		Error err;
-
-		err = rt.reindexer->OpenNamespace("nm1");
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->OpenNamespace("nm2");
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		err = rt.reindexer->OpenNamespace("nm3");
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		DefineNamespaceDataset(
-			"nm1", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
-					IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
-					IndexDeclaration{"ft1+ft2=ft3", "text", "composite", IndexOpts(), 0}});
-		DefineNamespaceDataset(
-			"nm2", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
-					IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
-					IndexDeclaration{"ft1+ft2=ft3", "text", "composite", IndexOpts(), 0}});
-		DefineNamespaceDataset(
-			"nm3", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft", "text", "string", IndexOpts(), 0}});
-		SetFTConfig(ftCfg, "nm1", "ft3");
+		if (nses & NS1) {
+			const Error err = rt.reindexer->OpenNamespace("nm1");
+			ASSERT_TRUE(err.ok()) << err.what();
+			DefineNamespaceDataset("nm1", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
+										   IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
+										   IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
+										   IndexDeclaration{"ft1+ft2=ft3", "text", "composite", IndexOpts(), 0}});
+			SetFTConfig(ftCfg);
+		}
+		if (nses & NS2) {
+			const Error err = rt.reindexer->OpenNamespace("nm2");
+			ASSERT_TRUE(err.ok()) << err.what();
+			DefineNamespaceDataset("nm2", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
+										   IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
+										   IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
+										   IndexDeclaration{"ft1+ft2=ft3", "text", "composite", IndexOpts(), 0}});
+		}
+		if (nses & NS3) {
+			Error err = rt.reindexer->OpenNamespace("nm3");
+			ASSERT_TRUE(err.ok()) << err.what();
+			DefineNamespaceDataset(
+				"nm3",
+				{IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
+				 IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0}, IndexDeclaration{"ft3", "text", "string", IndexOpts(), 0},
+				 IndexDeclaration{"ft1+ft2+ft3=ft", "text", "composite", IndexOpts(), 0}});
+			err = SetFTConfig(ftCfg, "nm3", "ft", {"ft1", "ft2", "ft3"});
+			ASSERT_TRUE(err.ok()) << err.what();
+		}
 	}
 
 	reindexer::FtFastConfig GetDefaultConfig(size_t fieldsCount = 2) {
@@ -41,9 +48,9 @@ public:
 		return cfg;
 	}
 
-	void SetFTConfig(const reindexer::FtFastConfig& ftCfg, const string& ns, const string& index) {
-		const auto err = SetFTConfig(ftCfg, ns, index, {"ft1", "ft2"});
-		EXPECT_TRUE(err.ok()) << err.what();
+	void SetFTConfig(const reindexer::FtFastConfig& ftCfg) {
+		const Error err = SetFTConfig(ftCfg, "nm1", "ft3", {"ft1", "ft2"});
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	Error SetFTConfig(const reindexer::FtFastConfig& ftCfg, const string& ns, const string& index, const std::vector<std::string>& fields) {
@@ -60,6 +67,11 @@ public:
 		cfgBuilder.Put("full_match_boost", ftCfg.fullMatchBoost);
 		cfgBuilder.Put("extra_word_symbols", ftCfg.extraWordSymbols);
 		cfgBuilder.Put("partial_match_decrease", ftCfg.partialMatchDecrease);
+		cfgBuilder.Put("sum_ranks_by_fields_ratio", ftCfg.summationRanksByFieldsRatio);
+		cfgBuilder.Put("max_typos", ftCfg.maxTypos);
+		cfgBuilder.Array<std::string>("stemmers", ftCfg.stemmers);
+		const std::vector<std::string> stopWords{ftCfg.stopWords.cbegin(), ftCfg.stopWords.cend()};
+		cfgBuilder.Array<std::string>("stop_words", stopWords);
 		bool defaultPositionBoost{true};
 		bool defaultPositionWeight{true};
 		for (size_t i = 1; i < ftCfg.fieldsCfg.size(); ++i) {
@@ -123,50 +135,71 @@ public:
 			Commit(default_namespace);
 		}
 	}
-	void Add(const std::string& ft1, const std::string& ft2) {
-		Add("nm1", ft1, ft2);
-		Add("nm2", ft1, ft2);
+	void Add(std::string_view ft1, std::string_view ft2, unsigned nses = NS1) {
+		using namespace std::string_view_literals;
+		if (nses & NS1) {
+			Add("nm1"sv, ft1, ft2);
+		}
+		if (nses & NS2) {
+			Add("nm2"sv, ft1, ft2);
+		}
 	}
 
-	std::pair<string, int> Add(const std::string& ft1) {
+	std::pair<std::string_view, int> Add(std::string_view ft1) {
 		Item item = NewItem("nm1");
 		item["id"] = counter_;
 		counter_++;
-		item["ft1"] = ft1;
+		item["ft1"] = std::string{ft1};
 
 		Upsert("nm1", item);
 		Commit("nm1");
 		return make_pair(ft1, counter_ - 1);
 	}
-	void Add(const std::string& ns, const std::string& ft1, const std::string& ft2) {
+	void Add(std::string_view ns, std::string_view ft1, std::string_view ft2) {
 		Item item = NewItem(ns);
 		item["id"] = counter_;
 		++counter_;
-		item["ft1"] = ft1;
-		item["ft2"] = ft2;
+		item["ft1"] = std::string{ft1};
+		item["ft2"] = std::string{ft2};
+
+		Upsert(ns, item);
+		Commit(ns);
+	}
+	void Add(std::string_view ns, std::string_view ft1, std::string_view ft2, std::string_view ft3) {
+		Item item = NewItem(ns);
+		item["id"] = counter_;
+		++counter_;
+		item["ft1"] = std::string{ft1};
+		item["ft2"] = std::string{ft2};
+		item["ft3"] = std::string{ft3};
 
 		Upsert(ns, item);
 		Commit(ns);
 	}
 
-	void AddInBothFields(const std::string& w1, const std::string& w2) {
-		AddInBothFields("nm1", w1, w2);
-		AddInBothFields("nm2", w1, w2);
+	void AddInBothFields(std::string_view w1, std::string_view w2, unsigned nses = NS1) {
+		using namespace std::string_view_literals;
+		if (nses & NS1) {
+			AddInBothFields("nm1"sv, w1, w2);
+		}
+		if (nses & NS2) {
+			AddInBothFields("nm2"sv, w1, w2);
+		}
 	}
 
-	void AddInBothFields(const std::string& ns, const std::string& w1, const std::string& w2) {
+	void AddInBothFields(std::string_view ns, std::string_view w1, std::string_view w2) {
 		Item item = NewItem(ns);
 		item["id"] = counter_;
 		++counter_;
-		item["ft1"] = w1;
-		item["ft2"] = w1;
+		item["ft1"] = std::string{w1};
+		item["ft2"] = std::string{w1};
 		Upsert(ns, item);
 
 		item = NewItem(ns);
 		item["id"] = counter_;
 		++counter_;
-		item["ft1"] = w2;
-		item["ft2"] = w2;
+		item["ft1"] = std::string{w2};
+		item["ft2"] = std::string{w2};
 		Upsert(ns, item);
 
 		Commit(ns);
@@ -179,6 +212,15 @@ public:
 		auto err = rt.reindexer->Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
 
+		return res;
+	}
+
+	QueryResults SimpleSelect3(string word) {
+		Query qr = std::move(Query("nm3").Where("ft", CondEq, word));
+		QueryResults res;
+		qr.AddFunction("ft = highlight(!,!)");
+		auto err = rt.reindexer->Select(qr, res);
+		EXPECT_TRUE(err.ok()) << err.what();
 		return res;
 	}
 
@@ -245,35 +287,66 @@ public:
 		return result;
 	}
 	void CheckAllPermutations(const std::string& queryStart, std::vector<std::string> words, const std::string& queryEnd,
-							  const std::vector<std::pair<std::string, std::string>>& expectedResults, bool withOrder = false,
+							  const std::vector<std::tuple<std::string, std::string>>& expectedResults, bool withOrder = false,
 							  const std::string& sep = " ") {
 		for (const auto& query : CreateAllPermutatedQueries(queryStart, words, queryEnd, sep)) {
 			CheckResults(query, expectedResults, withOrder);
 		}
 	}
 
-	void CheckResults(const std::string& query, std::vector<std::pair<std::string, std::string>> expectedResults, bool withOrder) {
+	void CheckResults(const std::string& query, std::vector<std::tuple<std::string, std::string>> expectedResults, bool withOrder) {
 		const auto qr = SimpleSelect(query);
+		CheckResults(query, qr, expectedResults, withOrder);
+	}
+
+	void CheckResults(const std::string& query, const QueryResults& qr,
+					  std::vector<std::tuple<std::string, std::string, std::string>> expectedResults, bool withOrder) {
+		CheckResults<std::tuple<std::string, std::string, std::string>>(query, qr, expectedResults, withOrder);
+	}
+
+	template <typename ResType>
+	void CheckResults(const std::string& query, const QueryResults& qr, std::vector<ResType>& expectedResults, bool withOrder) {
+		constexpr bool kTreeFields = std::tuple_size<ResType>{} == 3;
 		EXPECT_EQ(qr.Count(), expectedResults.size()) << "Query: " << query;
 		for (auto itRes : qr) {
 			const auto item = itRes.GetItem();
-			const auto it =
-				std::find_if(expectedResults.begin(), expectedResults.end(), [&item](const std::pair<std::string, std::string>& p) {
-					return p.first == item["ft1"].As<string>() && p.second == item["ft2"].As<string>();
-				});
+			const auto it = std::find_if(expectedResults.begin(), expectedResults.end(), [&item](const ResType& p) {
+				if constexpr (kTreeFields) {
+					return std::get<0>(p) == item["ft1"].As<string>() && std::get<1>(p) == item["ft2"].As<string>() &&
+						   std::get<2>(p) == item["ft3"].As<string>();
+				} else {
+					return std::get<0>(p) == item["ft1"].As<string>() && std::get<1>(p) == item["ft2"].As<string>();
+				}
+			});
 			if (it == expectedResults.end()) {
-				ADD_FAILURE() << "Found not expected: \"" << item["ft1"].As<string>() << "\" \"" << item["ft2"].As<string>()
-							  << "\"\nQuery: " << query;
+				if constexpr (kTreeFields) {
+					ADD_FAILURE() << "Found not expected: \"" << item["ft1"].As<string>() << "\" \"" << item["ft2"].As<string>() << "\" \""
+								  << item["ft3"].As<string>() << "\"\nQuery: " << query;
+				} else {
+					ADD_FAILURE() << "Found not expected: \"" << item["ft1"].As<string>() << "\" \"" << item["ft2"].As<string>()
+								  << "\"\nQuery: " << query;
+				}
 			} else {
 				if (withOrder) {
-					EXPECT_EQ(it, expectedResults.begin()) << "Found not in order: \"" << item["ft1"].As<string>() << "\" \""
-														   << item["ft2"].As<string>() << "\"\nQuery: " << query;
+					if constexpr (kTreeFields) {
+						EXPECT_EQ(it, expectedResults.begin())
+							<< "Found not in order: \"" << item["ft1"].As<string>() << "\" \"" << item["ft2"].As<string>() << "\" \""
+							<< item["ft3"].As<string>() << "\"\nQuery: " << query;
+					} else {
+						EXPECT_EQ(it, expectedResults.begin()) << "Found not in order: \"" << item["ft1"].As<string>() << "\" \""
+															   << item["ft2"].As<string>() << "\"\nQuery: " << query;
+					}
 				}
 				expectedResults.erase(it);
 			}
 		}
 		for (const auto& expected : expectedResults) {
-			ADD_FAILURE() << "Not found: \"" << expected.first << "\" \"" << expected.second << "\"\nQuery: " << query;
+			if constexpr (kTreeFields) {
+				ADD_FAILURE() << "Not found: \"" << std::get<0>(expected) << "\" \"" << std::get<1>(expected) << "\" \""
+							  << std::get<2>(expected) << "\"\nQuery: " << query;
+			} else {
+				ADD_FAILURE() << "Not found: \"" << std::get<0>(expected) << "\" \"" << std::get<1>(expected) << "\"\nQuery: " << query;
+			}
 		}
 		if (!expectedResults.empty()) {
 			ADD_FAILURE() << "Query: " << query;

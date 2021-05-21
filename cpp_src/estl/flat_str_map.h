@@ -131,12 +131,12 @@ public:
 			return *this;
 		}
 		base_iterator operator++(int) {
-			iterator ret = *this;
+			base_iterator ret = *this;
 			++(*this);
 			return ret;
 		}
 		base_iterator operator--(int) {
-			iterator ret = *this;
+			base_iterator ret = *this;
 			--(*this);
 			return ret;
 		}
@@ -177,7 +177,7 @@ public:
 		auto it = map_->find(str);
 		auto it2 = it;
 		if (it2 != map_->end()) ++it2;
-		return {iterator(it, this), iterator(it2, this)};
+		return {const_iterator(it, this), const_iterator(it2, this)};
 	}
 
 	std::pair<iterator, bool> insert(string_view_t str, const V &v) {

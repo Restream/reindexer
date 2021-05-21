@@ -12,9 +12,10 @@
 
 namespace reindexer {
 
-using std::string;
-using std::wstring;
-using std::vector;
+struct FtDslFieldOpts {
+	float boost = 1.0;
+	bool needSumRank = false;
+};
 
 struct FtDslOpts {
 	bool suff = false;
@@ -26,7 +27,7 @@ struct FtDslOpts {
 	float boost = 1.0;
 	float termLenBoost = 1.0;
 	int distance = INT_MAX;
-	h_vector<float, 8> fieldsBoost;
+	h_vector<FtDslFieldOpts, 8> fieldsOpts;
 	int qpos = 0;
 };
 
@@ -47,7 +48,7 @@ public:
 	FtDSLQuery CopyCtx() const noexcept { return {fields_, stopWords_, extraWordSymbols_}; }
 
 protected:
-	void parseFields(wstring &utf16str, wstring::iterator &it, h_vector<float, 8> &fieldsBoost);
+	void parseFields(wstring &utf16str, wstring::iterator &it, h_vector<FtDslFieldOpts, 8> &fieldsOpts);
 
 	std::function<int(const string &)> resolver_;
 

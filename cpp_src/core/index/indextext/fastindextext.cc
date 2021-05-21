@@ -98,29 +98,31 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
 	fctx->GetData()->extraWordSymbols_ = this->GetConfig()->extraWordSymbols;
 	fctx->GetData()->isWordPositions_ = true;
 
-	auto merdeInfo = Selecter(this->holder_, this->fields_.size(), fctx->NeedArea()).Process(dsl);
+	auto mergeInfo = Selecter(this->holder_, this->fields_.size(), fctx->NeedArea()).Process(dsl);
 	// convert vids(uniq documents id) to ids (real ids)
 	IdSet::Ptr mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 	auto &holder = this->holder_;
 	auto &vdocs = holder.vdocs_;
 
-	if (merdeInfo.empty()) {
+	if (mergeInfo.empty()) {
 		return mergedIds;
 	}
 	int cnt = 0;
-	int minRelevancy = GetConfig()->minRelevancy * 100;
-	for (auto &vid : merdeInfo) {
+	const double scalingFactor = mergeInfo.maxRank > 255 ? 255.0 / mergeInfo.maxRank : 1.0;
+	int minRelevancy = GetConfig()->minRelevancy * 100 * scalingFactor;
+	for (auto &vid : mergeInfo) {
 		assert(vid.id < int(vdocs.size()));
 		if (!vdocs[vid.id].keyEntry) {
 			continue;
 		};
+		vid.proc *= scalingFactor;
 		if (vid.proc <= minRelevancy) break;
 		cnt += vdocs[vid.id].keyEntry->Sorted(0).size();
 	}
 
 	mergedIds->reserve(cnt);
 	fctx->Reserve(cnt);
-	for (auto &vid : merdeInfo) {
+	for (auto &vid : mergeInfo) {
 		auto id = vid.id;
 		assert(id < IdType(vdocs.size()));
 
@@ -129,8 +131,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
 		};
 		assert(!vdocs[id].keyEntry->Unsorted().empty());
 		if (vid.proc <= minRelevancy) break;
-		int proc = std::min(255, vid.proc / merdeInfo.mergeCnt);
-		fctx->Add(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), proc, std::move(vid.holder));
+		fctx->Add(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), vid.proc, std::move(vid.holder));
 		mergedIds->Append(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), IdSet::Unordered);
 	}
 	if (GetConfig()->logLevel >= LogInfo) {

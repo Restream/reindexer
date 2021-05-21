@@ -47,7 +47,7 @@ protected:
 
 		char sourceJson[1024];
 		const char jsonPattern[] =
-			R"json({"id": %s, "indexed_array_field": [11,22,33,44,55,66,77,88,99], "objects":[{"more":[{"array":[9,8,7,6,5]},{"array":[4,3,2,1,0]}]}], "":{"empty_obj_field":"not empty"}, "array_field": [1,2,3], "string_array":["first", "second", "third"], "extra" : "%s", "sparse_field": %ld, "nested":{"bonus":%ld, "nested_array":[{"id":1,"name":"first", "prices":[1,2,3]},{"id":2,"name":"second", "prices":[4,5,6]},{"id":3,"name":"third", "nested":{"array":[0,0,0]}, "prices":[7,8,9]}]}, "nested2":{"bonus2":%ld}})json";
+			R"json({"id": %s, "int_field":1, "indexed_array_field": [11,22,33,44,55,66,77,88,99], "objects":[{"more":[{"array":[9,8,7,6,5]},{"array":[4,3,2,1,0]}]}], "":{"empty_obj_field":"not empty"}, "array_field": [1,2,3], "string_array":["first", "second", "third"], "extra" : "%s", "sparse_field": %ld, "nested":{"bonus":%ld, "nested_array":[{"id":1,"name":"first", "prices":[1,2,3]},{"id":2,"name":"second", "prices":[4,5,6]},{"id":3,"name":"third", "nested":{"array":[0,0,0]}, "prices":[7,8,9]}]}, "nested2":{"bonus2":%ld}})json";
 		for (size_t i = 1000; i < 2000; ++i) {
 			Item item = NewItem(default_namespace);
 			EXPECT_TRUE(item.Status().ok()) << item.Status().what();

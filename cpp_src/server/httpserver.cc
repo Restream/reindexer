@@ -925,10 +925,11 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 		prometheus_->Attach(router_);
 	}
 
-	if (serverConfig_.ThreadingMode == ServerConfig::kDedicatedThreading)
-		listener_.reset(new ForkedListener(loop, http::ServerConnection::NewFactory(router_)));
-	else
-		listener_.reset(new Listener(loop, http::ServerConnection::NewFactory(router_)));
+	if (serverConfig_.HttpThreadingMode == ServerConfig::kDedicatedThreading) {
+		listener_.reset(new ForkedListener(loop, http::ServerConnection::NewFactory(router_, serverConfig_.MaxHttpReqSize)));
+	} else {
+		listener_.reset(new Listener(loop, http::ServerConnection::NewFactory(router_, serverConfig_.MaxHttpReqSize)));
+	}
 	deadlineChecker_.set<HTTPServer, &HTTPServer::deadlineTimerCb>(this);
 	deadlineChecker_.set(loop);
 	deadlineChecker_.start(std::chrono::duration_cast<std::chrono::seconds>(kTxDeadlineCheckPeriod).count(),

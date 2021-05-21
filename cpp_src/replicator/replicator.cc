@@ -484,12 +484,11 @@ Error Replicator::applyWAL(Namespace::Ptr slaveNs, client::QueryResults &qr) {
 	Error err;
 	SyncStat stat;
 	WrSerializer ser;
-	const auto &nsName = slaveNs->GetName();
+	const auto nsName = slaveNs->GetName(dummyCtx_);
 	// process WAL
-	lsn_t upstreamLSN = slaveNs->GetReplState(dummyCtx_).lastUpstreamLSN;
-	logPrintf(LogTrace, "[repl:%s:%s]:%d applyWAL  lastUpstreamLSN = %s walRecordCount = %d", nsName, slave_->storagePath_,
-			  config_.serverId, upstreamLSN, qr.Count());
 	auto replSt = slaveNs->GetReplState(dummyCtx_);
+	logPrintf(LogTrace, "[repl:%s:%s]:%d applyWAL  lastUpstreamLSN = %s walRecordCount = %d", nsName, slave_->storagePath_,
+			  config_.serverId, replSt.lastUpstreamLSN, qr.Count());
 	for (auto it : qr) {
 		if (terminate_) break;
 		if (qr.Status().ok()) {
@@ -816,7 +815,7 @@ Error Replicator::syncMetaForced(Namespace::Ptr slaveNs, std::string_view nsName
 		try {
 			slaveNs->PutMeta(key, data, NsContext(dummyCtx_));
 		} catch (const Error &e) {
-			logPrintf(LogError, "[repl:%s]:%d Error set meta '%s': %s", slaveNs->GetName(), config_.serverId, key, e.what());
+			logPrintf(LogError, "[repl:%s]:%d Error set meta '%s': %s", slaveNs->GetName(dummyCtx_), config_.serverId, key, e.what());
 		}
 	}
 	return errOK;

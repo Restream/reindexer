@@ -12,13 +12,12 @@ namespace net {
 namespace http {
 
 const ssize_t kHttpMaxHeaders = 128;
-const ssize_t kHttpMaxBodySize = 2 * 1024 * 1024LL;
 class ServerConnection : public IServerConnection, public ConnectionST {
 public:
-	ServerConnection(int fd, ev::dynamic_loop &loop, Router &router);
+	ServerConnection(int fd, ev::dynamic_loop &loop, Router &router, size_t maxRequestSize);
 
-	static ConnectionFactory NewFactory(Router &router) {
-		return [&router](ev::dynamic_loop &loop, int fd) { return new ServerConnection(fd, loop, router); };
+	static ConnectionFactory NewFactory(Router &router, size_t maxRequestSize) {
+		return [&router, maxRequestSize](ev::dynamic_loop &loop, int fd) { return new ServerConnection(fd, loop, router, maxRequestSize); };
 	}
 
 	bool IsFinished() override final { return !sock_.valid(); }
@@ -79,7 +78,7 @@ protected:
 	bool enableHttp11_ = false;
 	bool expectContinue_ = false;
 	phr_chunked_decoder chunked_decoder_{0, 0, 0, 0};
-	// cbuf<char> tmpBuf_;
+	const size_t maxRequestSize_ = 0;
 };
 }  // namespace http
 }  // namespace net

@@ -193,14 +193,14 @@ More details about replication is [here](../replication.md)
 
 ### Requests handling modes
 
-Reindexer server supports 2 requests handling modes (those modes affect both RPC and HTTP servers):
+Reindexer server supports 2 requests handling modes (those modes may be chosen independently for RPC and HTTP servers):
 - "shared" (default);
 - "dedicated".
 
 Mode may be set via command line options on server startup:
 
 ```sh
-reindexer_server --db /tmp/rx --threading dedicated
+reindexer_server --db /tmp/rx --rpc-threading dedicated --http-threading shared
 ```
 
 In shared mode server creates fixed number of threads to handle connections (one thread per physical CPU core) and all of the connection will be distributed between those threads. In this mode requests from different connections may be forced to be executed sequentially.

@@ -86,7 +86,8 @@ void DataProcessor::Process(bool multithread) {
 	auto tm5 = high_resolution_clock::now();
 
 	logPrintf(LogInfo, "FastIndexText[%d] built with [%d uniq words, %d typos, %dKB text size, %dKB suffixarray size, %dKB idrelsets size]",
-			  holder_.steps.size(), words_um.size(), holder_.GetTypos().size(), szCnt / 1024, suffixes.heap_size() / 1024, idsetcnt / 1024);
+			  holder_.steps.size(), words_um.size(), holder_.GetTyposHalf().size() + holder_.GetTyposMax().size(), szCnt / 1024,
+			  suffixes.heap_size() / 1024, idsetcnt / 1024);
 
 	logPrintf(LogInfo,
 			  "DataProcessor::Process elapsed %d ms total [ build words %d ms, build typos %d ms | build suffixarry %d ms | sort "
@@ -139,7 +140,7 @@ size_t DataProcessor::buildWordsMap(words_map &words_um) {
 		words_map words_um;
 		std::thread thread;
 	};
-	unique_ptr<context[]> ctxs(new context[maxIndexWorkers]);
+	std::unique_ptr<context[]> ctxs(new context[maxIndexWorkers]);
 
 	auto &cfg = holder_.cfg_;
 	auto &vdocsTexts = holder_.vdocsTexts;
@@ -242,7 +243,7 @@ size_t DataProcessor::buildWordsMap(words_map &words_um) {
 	}
 	vector<h_vector<pair<std::string_view, uint32_t>, 8>>().swap(holder_.vdocsTexts);
 
-	vector<unique_ptr<string>>().swap(holder_.bufStrs_);
+	vector<std::unique_ptr<string>>().swap(holder_.bufStrs_);
 	return szCnt;
 }
 
@@ -266,29 +267,52 @@ void DataProcessor::buildVirtualWord(std::string_view word, words_map &words_um,
 }
 
 void DataProcessor::buildTyposMap(uint32_t startPos, const vector<WordIdType> &found) {
-	if (!holder_.cfg_->maxTyposInWord) {
+	if (!holder_.cfg_->maxTypos) {
 		return;
 	}
 
 	typos_context tctx[kMaxTyposInWord];
-	auto &typos = holder_.GetTypos();
+	auto &typosHalf = holder_.GetTyposHalf();
+	auto &typosMax = holder_.GetTyposMax();
 	auto &words_ = holder_.GetWords();
 	size_t wordsSize = !found.empty() ? found.size() : words_.size() - startPos;
 
-	typos.reserve(wordsSize * (10 >> (holder_.cfg_->maxTyposInWord - 1)) / 2, wordsSize * 5 * (10 >> (holder_.cfg_->maxTyposInWord - 1)));
+	const auto maxTyposInWord = holder_.cfg_->MaxTyposInWord();
+	const auto halfMaxTypos = holder_.cfg_->maxTypos / 2;
+	if (maxTyposInWord == halfMaxTypos) {
+		assert(maxTyposInWord > 0);
+		const auto multiplicator = wordsSize * (10 << (maxTyposInWord - 1));
+		typosHalf.reserve(multiplicator / 2, multiplicator * 5);
+	} else {
+		assert(maxTyposInWord == halfMaxTypos + 1);
+		auto multiplicator = wordsSize * (10 << (halfMaxTypos > 1 ? (halfMaxTypos - 1) : 0));
+		typosHalf.reserve(multiplicator / 2, multiplicator * 5);
+		multiplicator = wordsSize * (10 << (maxTyposInWord - 1)) - multiplicator;
+		typosMax.reserve(multiplicator / 2, multiplicator * 5);
+	}
 
 	for (size_t i = 0; i < wordsSize; ++i) {
 		if (!found.empty() && !found[i].isEmpty()) {
 			continue;
 		}
 
-		auto wordId = holder_.BuildWordId(startPos);
-		mktypos(tctx, holder_.GetSuffix().word_at(holder_.GetSuffixWordId(wordId)), holder_.cfg_->maxTyposInWord, holder_.cfg_->maxTypoLen,
-				[&typos, wordId](std::string_view typo, int) { typos.emplace(typo, wordId); });
+		const auto wordId = holder_.BuildWordId(startPos);
+		const std::string_view word = holder_.GetSuffix().word_at(holder_.GetSuffixWordId(wordId));
+		mktypos(tctx, word, maxTyposInWord, holder_.cfg_->maxTypoLen,
+				maxTyposInWord == halfMaxTypos
+					? typos_context::CallBack{[&typosHalf, wordId](std::string_view typo, int) { typosHalf.emplace(typo, wordId); }}
+					: typos_context::CallBack{[&](std::string_view typo, int level) {
+						  if (level > 1 || typo.size() == word.size()) {
+							  typosHalf.emplace(typo, wordId);
+						  } else {
+							  typosMax.emplace(typo, wordId);
+						  }
+					  }});
 		startPos++;
 	}
 
-	typos.shrink_to_fit();
+	typosHalf.shrink_to_fit();
+	typosMax.shrink_to_fit();
 }
 
 }  // namespace reindexer

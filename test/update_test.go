@@ -408,7 +408,7 @@ func CheckSimultaniousUpdateOfFields(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set this object value + new value of object field
-	q := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).SetObject("main_obj", objJson).Set("code", 999)
+	q := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Set("code", 999).SetObject("main_obj", objJson)
 
 	// Make sure Update query went well
 	res, err := q.Update().AllowUnsafe(true).FetchAll()

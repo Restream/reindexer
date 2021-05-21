@@ -145,7 +145,10 @@ public:
 	NamespaceImpl &operator=(const NamespaceImpl &) = delete;
 	~NamespaceImpl();
 
-	const string &GetName() const { return name_; }
+	string GetName(const RdxContext &ctx) const {
+		auto rlck = rLock(ctx);
+		return name_;
+	}
 	bool IsSystem(const RdxContext &ctx) const {
 		auto rlck = rLock(ctx);
 		return isSystem();

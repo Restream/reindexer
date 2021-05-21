@@ -49,9 +49,9 @@ public:
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	ItemType NewItem(const std::string &ns) { return reindexer->NewItem(ns); }
-	reindexer::Error Commit(const std::string &ns) { return reindexer->Commit(ns); }
-	void Upsert(const std::string &ns, ItemType &item) {
+	ItemType NewItem(std::string_view ns) { return reindexer->NewItem(ns); }
+	reindexer::Error Commit(std::string_view ns) { return reindexer->Commit(ns); }
+	void Upsert(std::string_view ns, ItemType &item) {
 		assert(!!item);
 		auto err = reindexer->Upsert(ns, item);
 		ASSERT_TRUE(err.ok()) << err.what();

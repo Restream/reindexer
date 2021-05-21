@@ -1338,6 +1338,47 @@ TEST_F(NsApi, TestUpdateEmptyArrayField) {
 	ASSERT_TRUE(arrayFieldVal.empty());
 }
 
+// Update 2 fields with one query in this order: object field, ordinary field of type String
+// https://github.com/restream/reindexer/-/tree/issue_777
+TEST_F(NsApi, TestUpdateObjectFieldWithScalar) {
+	// Define namespace's schema and fill with data
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	// Prepare and execute Update query
+	QueryResults qr;
+	Query q = Query(default_namespace)
+				  .Set("int_field", 7)
+				  .Set("extra", 8)
+				  .SetObject("nested2", Variant(string(R"({"bonus2":13,"extra2":"new"})")));
+	Error err = rt.reindexer->Update(q, qr);
+	// Make sure it executed successfully
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// Check in the loop that all the updated fields have correct values
+	for (auto it : qr) {
+		reindexer::Item item = it.GetItem();
+
+		Variant intVal = item["int_field"];
+		ASSERT_TRUE(intVal.Type() == KeyValueInt);
+		ASSERT_TRUE(intVal.As<int>() == 7);
+		Variant extraVal = item["extra"];
+		ASSERT_TRUE(extraVal.Type() == KeyValueInt64);
+		ASSERT_TRUE(extraVal.As<int>() == 8);
+
+		std::string_view json = item.GetJSON();
+		std::string_view::size_type pos = json.find(R"("nested2":{"bonus2":13,"extra2":"new"})");
+		ASSERT_TRUE(pos != std::string_view::npos);
+
+		Variant bonus2Val = item["nested2.bonus2"];
+		ASSERT_TRUE(bonus2Val.Type() == KeyValueInt64);
+		ASSERT_TRUE(bonus2Val.As<int>() == 13);
+		Variant extra2Val = item["nested2.extra2"];
+		ASSERT_TRUE(extra2Val.Type() == KeyValueString);
+		ASSERT_TRUE(extra2Val.As<string>() == "new");
+	}
+}
+
 TEST_F(NsApi, DISABLED_TestUpdateEmptyIndexedField) {
 	DefineDefaultNamespace();
 	AddUnindexedData();

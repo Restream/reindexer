@@ -1175,7 +1175,7 @@ pip3 install pyreindexer
 ```
 
 https://github.com/Restream/reindexer-py
-https://pypi.org/project/pyreindexer/   
+https://pypi.org/project/pyreindexer/
 Python version >=3.6 is required).
 
 ### Reindexer for Java

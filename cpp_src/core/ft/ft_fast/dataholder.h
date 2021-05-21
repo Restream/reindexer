@@ -13,12 +13,6 @@
 
 namespace reindexer {
 
-using std::unique_ptr;
-using std::vector;
-using std::pair;
-using std::unordered_map;
-using std::vector;
-
 // #define REINDEX_FT_EXTRA_DEBUG 1
 
 struct VDocEntry {
@@ -55,20 +49,25 @@ public:
 
 		// Suffix map. suffix <-> original word id
 		suffix_map<char, WordIdType> suffixes_;
-		// Typos map. typo string <-> original word id
-		flat_str_multimap<char, WordIdType> typos_;
+		// Typos maps. typo string <-> original word id
+		// typosHalf_ contains words with <=maxTypos/2 typos
+		flat_str_multimap<char, WordIdType> typosHalf_;
+		// typosMax_ contains words with MaxTyposInWord() typos if MaxTyposInWord() != maxTypos/2
+		flat_str_multimap<char, WordIdType> typosMax_;
 		uint32_t wordOffset_;
 
 		void clear() {
 			suffixes_.clear();
-			typos_.clear();
+			typosHalf_.clear();
+			typosMax_.clear();
 		}
 	};
-	vector<PackedWordEntry>& GetWords();
-	suffix_map<char, WordIdType>& GetSuffix();
+	vector<PackedWordEntry>& GetWords() noexcept { return words_; }
+	suffix_map<char, WordIdType>& GetSuffix() noexcept { return steps.back().suffixes_; }
 	void SetConfig(FtFastConfig* cfg);
 
-	flat_str_multimap<char, WordIdType>& GetTypos();
+	flat_str_multimap<char, WordIdType>& GetTyposHalf() noexcept { return steps.back().typosHalf_; }
+	flat_str_multimap<char, WordIdType>& GetTyposMax() noexcept { return steps.back().typosMax_; }
 	// returns id and found or not found
 	WordIdType findWord(std::string_view word);
 	WordIdType BuildWordId(uint32_t id);
@@ -99,7 +98,7 @@ public:
 	vector<h_vector<pair<std::string_view, uint32_t>, 8>> vdocsTexts;
 	size_t vodcsOffset_;
 	size_t szCnt;
-	unordered_map<string, stemmer> stemmers_;
+	std::unordered_map<string, stemmer> stemmers_;
 	ProcessStatus status_;
 
 	ITokenFilter::Ptr translit_;
@@ -107,7 +106,7 @@ public:
 	ITokenFilter::Ptr synonyms_;
 
 	vector<VDocEntry> vdocs_;
-	vector<unique_ptr<string>> bufStrs_;
+	vector<std::unique_ptr<string>> bufStrs_;
 	size_t cur_vdoc_pos_ = 0;
 
 	FtFastConfig* cfg_;

@@ -32,8 +32,8 @@ void FtDSLQuery::parse(wstring &utf16str) {
 	int groupcnt = 0;
 	bool ingroup = false;
 	int maxPatternLen = 1;
-	h_vector<float, 8> fieldsBoost;
-	fieldsBoost.insert(fieldsBoost.end(), std::max(int(fields_.size()), 1), 1.0);
+	h_vector<FtDslFieldOpts, 8> fieldsOpts;
+	fieldsOpts.insert(fieldsOpts.end(), std::max(int(fields_.size()), 1), {1.0, false});
 
 	for (auto it = utf16str.begin(); it != utf16str.end();) {
 		if (!is_dslbegin(*it, extraWordSymbols_)) {
@@ -42,7 +42,7 @@ void FtDSLQuery::parse(wstring &utf16str) {
 		}
 
 		FtDSLEntry fte;
-		fte.opts.fieldsBoost = fieldsBoost;
+		fte.opts.fieldsOpts = fieldsOpts;
 
 		bool isSlash = (*it == '\\');
 		if (isSlash) {
@@ -50,7 +50,7 @@ void FtDSLQuery::parse(wstring &utf16str) {
 		} else {
 			if (*it == '@') {
 				it++;
-				parseFields(utf16str, it, fieldsBoost);
+				parseFields(utf16str, it, fieldsOpts);
 				continue;
 			}
 
@@ -155,16 +155,23 @@ void FtDSLQuery::parse(wstring &utf16str) {
 	}
 }
 
-void FtDSLQuery::parseFields(wstring &utf16str, wstring::iterator &it, h_vector<float, 8> &fieldsBoost) {
-	float defFieldBoost = 0.0;
-	for (auto &b : fieldsBoost) b = 0.0;
+void FtDSLQuery::parseFields(wstring &utf16str, wstring::iterator &it, h_vector<FtDslFieldOpts, 8> &fieldsOpts) {
+	FtDslFieldOpts defFieldOpts{0.0, false};
+	for (auto &fo : fieldsOpts) fo = defFieldOpts;
 
 	while (it != utf16str.end()) {
-		while (it != utf16str.end() && !(IsAlpha(*it) || IsDigit(*it) || *it == '*' || *it == '_')) it++;
+		while (it != utf16str.end() && !(IsAlpha(*it) || IsDigit(*it) || *it == '*' || *it == '_' || *it == '+')) ++it;
 		if (it == utf16str.end()) break;
 
+		bool needSumRank = false;
+		if (*it == '+') {
+			needSumRank = true;
+			if (++it == utf16str.end()) {
+				throw Error(errParseDSL, "Expected field name after '+' operator in search query DSL, but found nothing");
+			}
+		}
 		auto begIt = it;
-		while (it != utf16str.end() && (IsAlpha(*it) || IsDigit(*it) || *it == '*' || *it == '_' || *it == '.')) it++;
+		while (it != utf16str.end() && (IsAlpha(*it) || IsDigit(*it) || *it == '*' || *it == '_' || *it == '+' || *it == '.')) ++it;
 		auto endIt = it;
 
 		float boost = 1.0;
@@ -174,27 +181,28 @@ void FtDSLQuery::parseFields(wstring &utf16str, wstring::iterator &it, h_vector<
 				throw Error(errParseDSL, "Expected digit after '^' operator in search query DSL, but found nothing");
 			}
 			wchar_t *end = nullptr, *start = &*it;
-			boost = wcstod(start, &end);
-			it += end - start;
-			if (end == start)
+			boost = wcstof(start, &end);
+			if (end == start) {
 				throw Error(errParseDSL, "Expected digit after '^' operator in search query DSL, but found '%c' ", char(*start));
+			}
+			it += end - start;
 		}
 
-		if (*begIt == '*')
-			defFieldBoost = boost;
-		else {
+		if (*begIt == '*') {
+			defFieldOpts = {boost, needSumRank};
+		} else {
 			string fname = utf16_to_utf8(wstring(&*begIt, endIt - begIt));
 			auto f = fields_.find(fname);
 			if (f == fields_.end()) {
 				throw Error(errLogic, "Field '%s',is not included to full text index", fname);
 			}
-			assertf(f->second < int(fieldsBoost.size()), "f=%d,fieldsBoost.size()=%d", f->second, fieldsBoost.size());
-			fieldsBoost[f->second] = boost;
+			assertf(f->second < int(fieldsOpts.size()), "f=%d,fieldsOpts.size()=%d", f->second, fieldsOpts.size());
+			fieldsOpts[f->second] = {boost, needSumRank};
 		}
 		if (it == utf16str.end() || *it++ != ',') break;
 	}
-	for (auto &b : fieldsBoost)
-		if (b == 0.0) b = defFieldBoost;
+	for (auto &fo : fieldsOpts)
+		if (fo.boost == 0.0) fo = defFieldOpts;
 }
 
 }  // namespace reindexer

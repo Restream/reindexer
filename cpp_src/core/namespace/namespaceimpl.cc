@@ -133,7 +133,7 @@ NamespaceImpl::~NamespaceImpl() {
 
 void NamespaceImpl::OnConfigUpdated(DBConfigProvider &configProvider, const RdxContext &ctx) {
 	NamespaceConfigData configData;
-	configProvider.GetNamespaceConfig(GetName(), configData);
+	configProvider.GetNamespaceConfig(GetName(ctx), configData);
 	ReplicationConfigData replicationConf = configProvider.GetReplicationConfig();
 
 	enablePerfCounters_ = configProvider.GetProfilingConfig().perfStats;
@@ -306,7 +306,25 @@ void NamespaceImpl::addToWAL(std::string_view json, WALRecType type, const RdxCo
 }
 
 void NamespaceImpl::AddIndex(const IndexDef &indexDef, const RdxContext &ctx) {
+	if (!validateIndexName(indexDef.name_, indexDef.Type())) {
+		throw Error(errParams,
+					"Cannot add index '%s' in namespace '%s'. Index name contains invalid characters. Only alphas, digits, '+' (for "
+					"composite indexes only), '.', '_' "
+					"and '-' are allowed",
+					indexDef.name_, name_);
+	} else if (indexDef.opts_.IsPK()) {
+		if (indexDef.opts_.IsArray()) {
+			throw Error(errParams, "Cannot add index '%s' in namespace '%s'. PK field can't be array", indexDef.name_, GetName(ctx));
+		} else if (isStore(indexDef.Type())) {
+			throw Error(errParams, "Cannot add index '%s' in namespace '%s'. PK field can't have '-' type", indexDef.name_, GetName(ctx));
+		} else if (isFullText(indexDef.Type())) {
+			throw Error(errParams, "Cannot add index '%s' in namespace '%s'. PK field can't be fulltext index", indexDef.name_,
+						GetName(ctx));
+		}
+	}
+
 	auto wlck = wLock(ctx);
+
 	addIndex(indexDef);
 	saveIndexesToStorage();
 	addToWAL(indexDef, WalIndexAdd, ctx);
@@ -451,18 +469,18 @@ void NamespaceImpl::verifyUpdateIndex(const IndexDef &indexDef) const {
 	}
 	const auto &oldIndex = indexes_[idxNameIt->second];
 	if (indexDef.opts_.IsPK() && !oldIndex->Opts().IsPK() && currentPKIt != indexesNames_.end()) {
-		throw Error(errConflict, "Can't add PK index '%s.%s'. Already exists another PK index - '%s'", name_, indexDef.name_,
+		throw Error(errConflict, "Cannot add PK index '%s.%s'. Already exists another PK index - '%s'", name_, indexDef.name_,
 					indexes_[currentPKIt->second]->Name());
 	}
 	if (indexDef.opts_.IsArray() != oldIndex->Opts().IsArray()) {
-		throw Error(errParams, "Can't update index '%s' in namespace '%s'. Can't convert array index to not array and vice versa",
+		throw Error(errParams, "Cannot update index '%s' in namespace '%s'. Can't convert array index to not array and vice versa",
 					indexDef.name_, name_);
 	}
 	if (indexDef.opts_.IsPK() && indexDef.opts_.IsArray()) {
-		throw Error(errParams, "Can't update index '%s' in namespace '%s'. PK field can't be array", indexDef.name_, name_);
+		throw Error(errParams, "Cannot update index '%s' in namespace '%s'. PK field can't be array", indexDef.name_, name_);
 	}
 	if (indexDef.opts_.IsPK() && isStore(indexDef.Type())) {
-		throw Error(errParams, "Can't add index '%s' in namespace '%s'. PK field can't have '-' type", indexDef.name_, name_);
+		throw Error(errParams, "Cannot add index '%s' in namespace '%s'. PK field can't have '-' type", indexDef.name_, name_);
 	}
 
 	if (isComposite(indexDef.Type())) {
@@ -504,23 +522,10 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef) {
 		}
 	}
 
-	if (!validateIndexName(indexName, indexDef.Type())) {
-		throw Error(errParams,
-					"Can't add index '%s' in namespace '%s'. Index name contains invalid characters. Only alphas, digits, '+' (for "
-					"composite indexes only), '.', '_' "
-					"and '-' are allowed",
-					indexName, name_);
-	}
 	// New index case. Just add
 	if (currentPKIndex != indexesNames_.end() && opts.IsPK()) {
-		throw Error(errConflict, "Can't add PK index '%s.%s'. Already exists another PK index - '%s'", name_, indexName,
+		throw Error(errConflict, "Cannot add PK index '%s.%s'. Already exists another PK index - '%s'", name_, indexName,
 					indexes_[currentPKIndex->second]->Name());
-	}
-	if (opts.IsPK() && opts.IsArray()) {
-		throw Error(errParams, "Can't add index '%s' in namespace '%s'. PK field can't be array", indexName, name_);
-	}
-	if (opts.IsPK() && isStore(indexDef.Type())) {
-		throw Error(errParams, "Can't add index '%s' in namespace '%s'. PK field can't have '-' type", indexName, name_);
 	}
 
 	if (isComposite(indexDef.Type())) {
@@ -595,7 +600,7 @@ void NamespaceImpl::verifyUpdateCompositeIndex(const IndexDef &indexDef) const {
 		auto idxNameIt = indexesNames_.find(jsonPathOrSubIdx);
 		if (idxNameIt != indexesNames_.end() && !indexes_[idxNameIt->second]->Opts().IsSparse() &&
 			indexes_[idxNameIt->second]->Opts().IsArray() && (type == IndexCompositeBTree || type == IndexCompositeHash)) {
-			throw Error(errParams, "Can't add array subindex '%s' to composite index '%s'", jsonPathOrSubIdx, indexDef.name_);
+			throw Error(errParams, "Cannot add array subindex '%s' to composite index '%s'", jsonPathOrSubIdx, indexDef.name_);
 		}
 	}
 	const auto newIndex = std::unique_ptr<Index>(Index::New(indexDef, payloadType_, {}));
@@ -622,7 +627,7 @@ void NamespaceImpl::addCompositeIndex(const IndexDef &indexDef) {
 			fields.push_back(indexes_[idxNameIt->second]->Fields().getTagsPath(0));
 		} else {
 			if (indexes_[idxNameIt->second]->Opts().IsArray() && (type == IndexCompositeBTree || type == IndexCompositeHash)) {
-				throw Error(errParams, "Can't add array subindex '%s' to composite index '%s'", jsonPathOrSubIdx, indexName);
+				throw Error(errParams, "Cannot add array subindex '%s' to composite index '%s'", jsonPathOrSubIdx, indexName);
 			}
 			fields.push_back(idxNameIt->second);
 		}
@@ -1751,13 +1756,13 @@ void NamespaceImpl::EnableStorage(const string &path, StorageOpts opts, StorageT
 		if (!status.ok()) {
 			if (!opts.IsDropOnFileFormatError()) {
 				storage_.reset();
-				throw Error(errLogic, "Can't enable storage for namespace '%s' on path '%s' - %s", name_, path, status.what());
+				throw Error(errLogic, "Cannot enable storage for namespace '%s' on path '%s' - %s", name_, path, status.what());
 			}
 		} else {
 			success = loadIndexesFromStorage();
 			if (!success && !opts.IsDropOnFileFormatError()) {
 				storage_.reset();
-				throw Error(errLogic, "Can't enable storage for namespace '%s' on path '%s': format error", name_, dbpath);
+				throw Error(errLogic, "Cannot enable storage for namespace '%s' on path '%s': format error", name_, dbpath);
 			}
 			loadReplStateFromStorage();
 		}

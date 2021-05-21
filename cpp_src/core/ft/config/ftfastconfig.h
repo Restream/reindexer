@@ -27,13 +27,16 @@ struct FtFastConfig : public BaseFTConfig {
 	int partialMatchDecrease = 15;
 	double minRelevancy = 0.05;
 
-	int maxTyposInWord = 1;
+	int maxTypos = 2;
 	int maxTypoLen = 15;
 
 	int maxRebuildSteps = 50;
 	int maxStepSize = 4000;
 
+	double summationRanksByFieldsRatio = 0.0;
+
 	h_vector<FtFastFieldConfig, 8> fieldsCfg;
+	int MaxTyposInWord() const noexcept { return (maxTypos / 2) + (maxTypos % 2); }
 };
 
 }  // namespace reindexer

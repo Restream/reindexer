@@ -14,7 +14,8 @@ void ServerConfig::Reset() {
 	HTTPAddr = "0.0.0.0:9088";
 	RPCAddr = "0.0.0.0:6534";
 	GRPCAddr = "0.0.0.0:16534";
-	ThreadingMode = kSharedThreading;
+	RPCThreadingMode = kSharedThreading;
+	HttpThreadingMode = kSharedThreading;
 	LogLevel = "info";
 	ServerLog = "stdout";
 	CoreLog = "stdout";
@@ -42,6 +43,7 @@ void ServerConfig::Reset() {
 	TxIdleTimeout = std::chrono::seconds(600);
 	MaxUpdatesSize = 1024 * 1024 * 1024;
 	EnableGRPC = false;
+	MaxHttpReqSize = 2 * 1024 * 1024;
 }
 
 const string ServerConfig::kDedicatedThreading = "dedicated";
@@ -102,8 +104,13 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::Group netGroup(parser, "Network options");
 	args::ValueFlag<string> httpAddrF(netGroup, "PORT", "http listen host:port", {'p', "httpaddr"}, HTTPAddr, args::Options::Single);
 	args::ValueFlag<string> rpcAddrF(netGroup, "RPORT", "RPC listen host:port", {'r', "rpcaddr"}, RPCAddr, args::Options::Single);
-	args::ValueFlag<string> threadingModeF(netGroup, "THREADING", "Connections threading mode: shared or dedicated", {'X', "threading"},
-										   ThreadingMode, args::Options::Single);
+	args::ValueFlag<string> rpcThreadingModeF(netGroup, "RTHREADING", "RPC connections threading mode: shared or dedicated",
+											  {'X', "rpc-threading"}, RPCThreadingMode, args::Options::Single);
+	args::ValueFlag<string> httpThreadingModeF(netGroup, "HTHREADING", "HTTP connections threading mode: shared or dedicated",
+											   {"http-threading"}, HttpThreadingMode, args::Options::Single);
+	args::ValueFlag<size_t> MaxHttpReqSizeF(
+		netGroup, "", "Max HTTP request size in bytes. Default value is 2 MB. 0 is 'unlimited', hovewer, stream mode is not supported",
+		{"max-http-req"}, MaxHttpReqSize, args::Options::Single);
 #ifdef WITH_GRPC
 	args::ValueFlag<string> grpcAddrF(netGroup, "GPORT", "GRPC listen host:port", {'g', "grpcaddr"}, RPCAddr, args::Options::Single);
 	args::Flag grpcF(netGroup, "", "Enable gRpc service", {"grpc"});
@@ -163,8 +170,10 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (logLevelF) LogLevel = args::get(logLevelF);
 	if (httpAddrF) HTTPAddr = args::get(httpAddrF);
 	if (rpcAddrF) RPCAddr = args::get(rpcAddrF);
-	if (threadingModeF) ThreadingMode = args::get(threadingModeF);
+	if (rpcThreadingModeF) RPCThreadingMode = args::get(rpcThreadingModeF);
+	if (httpThreadingModeF) HttpThreadingMode = args::get(httpThreadingModeF);
 	if (webRootF) WebRoot = args::get(webRootF);
+	if (MaxHttpReqSizeF) MaxHttpReqSize = args::get(MaxHttpReqSizeF);
 #ifndef _WIN32
 	if (userF) UserName = args::get(userF);
 	if (daemonizeF) Daemonize = args::get(daemonizeF);
@@ -208,13 +217,15 @@ reindexer::Error ServerConfig::fromYaml(Yaml::Node &root) {
 		RpcLog = root["logger"]["rpclog"].As<std::string>(RpcLog);
 		HTTPAddr = root["net"]["httpaddr"].As<std::string>(HTTPAddr);
 		RPCAddr = root["net"]["rpcaddr"].As<std::string>(RPCAddr);
-		ThreadingMode = root["net"]["threading"].As<std::string>(ThreadingMode);
+		RPCThreadingMode = root["net"]["rpc_threading"].As<std::string>(RPCThreadingMode);
+		HttpThreadingMode = root["net"]["http_threading"].As<std::string>(HttpThreadingMode);
 		WebRoot = root["net"]["webroot"].As<std::string>(WebRoot);
 		MaxUpdatesSize = root["net"]["maxupdatessize"].As<size_t>(MaxUpdatesSize);
 		EnableSecurity = root["net"]["security"].As<bool>(EnableSecurity);
 		EnableGRPC = root["net"]["grpc"].As<bool>(EnableGRPC);
 		GRPCAddr = root["net"]["grpcaddr"].As<std::string>(GRPCAddr);
 		TxIdleTimeout = std::chrono::seconds(root["net"]["tx_idle_timeout"].As<int>(TxIdleTimeout.count()));
+		MaxHttpReqSize = root["net"]["max_http_body_size"].As<std::size_t>(MaxHttpReqSize);
 		EnablePrometheus = root["metrics"]["prometheus"].As<bool>(EnablePrometheus);
 		PrometheusCollectPeriod = std::chrono::milliseconds(root["metrics"]["collect_period"].As<int>(PrometheusCollectPeriod.count()));
 		EnableConnectionsStats = root["metrics"]["clientsstats"].As<bool>(EnableConnectionsStats);

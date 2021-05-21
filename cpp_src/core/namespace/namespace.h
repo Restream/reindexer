@@ -17,7 +17,7 @@ public:
 	typedef shared_ptr<Namespace> Ptr;
 
 	void CommitTransaction(Transaction &tx, QueryResults &result, const RdxContext &ctx);
-	const string &GetName() const { return handleInvalidation(NamespaceImpl::GetName)(); }
+	string GetName(const RdxContext &ctx) const { return handleInvalidation(NamespaceImpl::GetName)(ctx); }
 	bool IsSystem(const RdxContext &ctx) const { return handleInvalidation(NamespaceImpl::IsSystem)(ctx); }
 	bool IsTemporary(const RdxContext &ctx) const { return handleInvalidation(NamespaceImpl::IsTemporary)(ctx); }
 	void EnableStorage(const string &path, StorageOpts opts, StorageType storageType, const RdxContext &ctx) {
@@ -111,7 +111,7 @@ public:
 	}
 	void OnConfigUpdated(DBConfigProvider &configProvider, const RdxContext &ctx) {
 		NamespaceConfigData configData;
-		configProvider.GetNamespaceConfig(GetName(), configData);
+		configProvider.GetNamespaceConfig(GetName(ctx), configData);
 		startCopyPolicyTxSize_.store(configData.startCopyPolicyTxSize, std::memory_order_relaxed);
 		copyPolicyMultiplier_.store(configData.copyPolicyMultiplier, std::memory_order_relaxed);
 		txSizeToAlwaysCopy_.store(configData.txSizeToAlwaysCopy, std::memory_order_relaxed);

@@ -24,14 +24,14 @@ public:
 	// Final information about found document
 	struct MergeInfo {
 		IdType id;		 // Virual of merged document (index in vdocs)
-		int16_t proc;	 // Rank of document
+		int32_t proc;	 // Rank of document
 		int8_t matched;	 // Count of matched terms in document
 		int8_t field;	 // Field index, where was match
 		AreaHolder::UniquePtr holder;
 	};
 
 	struct MergeData : public vector<MergeInfo> {
-		int mergeCnt = 0;
+		int maxRank = 0;
 	};
 
 	// Intermediate information about found document in current merge step. Used only for queries with 2 or more terms

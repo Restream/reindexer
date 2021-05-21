@@ -39,10 +39,10 @@ public:
 	void DefineNamespaceDataset(const string &ns, std::initializer_list<const IndexDeclaration> fields) {
 		rt.DefineNamespaceDataset(ns, fields);
 	}
-	Item NewItem(const std::string &ns) { return rt.NewItem(ns); }
+	Item NewItem(std::string_view ns) { return rt.NewItem(ns); }
 
-	Error Commit(const std::string &ns) { return rt.Commit(ns); }
-	void Upsert(const std::string &ns, Item &item) { rt.Upsert(ns, item); }
+	Error Commit(std::string_view ns) { return rt.Commit(ns); }
+	void Upsert(std::string_view ns, Item &item) { rt.Upsert(ns, item); }
 
 	void PrintQueryResults(const std::string &ns, const QueryResults &res) { rt.PrintQueryResults(ns, res); }
 	string PrintItem(Item &item) { return rt.PrintItem(item); }

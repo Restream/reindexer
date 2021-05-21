@@ -30,7 +30,6 @@ const string kBenchIndex = "id";
 constexpr int kSingleThreadCoroCount = 200;
 constexpr int kBenchItemsCount = 10000;
 constexpr int kBenchDefaultTime = 5;
-constexpr size_t k64KStack = 64 * 1024;
 constexpr size_t k24KStack = 24 * 1024;
 constexpr size_t k8KStack = 8 * 1024;
 
@@ -135,7 +134,7 @@ Error CommandsExecutor<DBInterface>::fromFileImpl(std::istream& in) {
 	wait_group wg;
 	wg.add(kSingleThreadCoroCount);
 	for (size_t i = 0; i < kSingleThreadCoroCount; ++i) {
-		loop_.spawn(std::bind(workerFn, handleResultFn, std::ref(wg)), k64KStack);
+		loop_.spawn(std::bind(workerFn, handleResultFn, std::ref(wg)));
 	}
 
 	std::string line;
@@ -188,13 +187,11 @@ Error CommandsExecutor<DBInterface>::runImpl(const string& dsn, Args&&... args) 
 					auto cmd = curCmd_;
 					curCmd_ = nullptr;
 					lck.unlock();
-					loop_.spawn(
-						[this, cmd] {
-							cmd->Execute();
-							std::unique_lock<std::mutex> lck(mtx_);
-							condVar_.notify_all();
-						},
-						k64KStack);
+					loop_.spawn([this, cmd] {
+						cmd->Execute();
+						std::unique_lock<std::mutex> lck(mtx_);
+						condVar_.notify_all();
+					});
 				}
 			});
 		});
@@ -882,10 +879,9 @@ Error CommandsExecutor<DBInterface>::commandBench(const string& command) {
 	std::atomic<int> count(0), errCount(0);
 
 	auto worker = std::bind(getBenchWorkerFn(count, errCount), deadline);
-	auto threads = std::unique_ptr<std::thread[]>(new std::thread[numThreads_ - 1]);
-	for (int i = 0; i < numThreads_ - 1; i++) threads[i] = std::thread(worker);
-	worker();
-	for (int i = 0; i < numThreads_ - 1; i++) threads[i].join();
+	auto threads = std::unique_ptr<std::thread[]>(new std::thread[numThreads_]);
+	for (int i = 0; i < numThreads_; i++) threads[i] = std::thread(worker);
+	for (int i = 0; i < numThreads_; i++) threads[i].join();
 
 	output_() << "Done. Got " << count / benchTime << " QPS, " << errCount << " errors" << std::endl;
 	return err;
@@ -1092,7 +1088,7 @@ std::function<void(std::chrono::system_clock::time_point)> CommandsExecutor<rein
 template <typename DBInterface>
 void CommandsExecutor<DBInterface>::OnWALUpdate(reindexer::LSNPair LSNs, std::string_view nsName, const reindexer::WALRecord& wrec) {
 	WrSerializer ser;
-	ser << "# LSN " << int64_t(LSNs.upstreamLSN_) << " originLSN " << int64_t(LSNs.originLSN_) << nsName << " ";
+	ser << "# LSN " << int64_t(LSNs.upstreamLSN_) << " originLSN " << int64_t(LSNs.originLSN_) << " " << nsName << " ";
 	wrec.Dump(ser, [this, nsName](std::string_view cjson) {
 		auto item = db().NewItem(nsName);
 		item.FromCJSON(cjson);

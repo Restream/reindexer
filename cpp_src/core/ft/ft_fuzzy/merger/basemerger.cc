@@ -51,7 +51,7 @@ void MergedData::Add(const IDCtx& ctx) {
 
 		dst = (dst * max_dst_dist) / size;
 
-		double fboost = ctx.opts->fieldsBoost[ctx.data->at(i).field()];
+		double fboost = ctx.opts->fieldsOpts[ctx.data->at(i).field()].boost;
 		if (!fboost) fboost = 1;
 
 		src_dst = src_dst + dst;

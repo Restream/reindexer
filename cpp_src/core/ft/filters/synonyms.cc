@@ -37,7 +37,7 @@ static FtDslOpts makeOptsForAlternatives(const FtDslOpts& termOpts) {
 	result.op = OpAnd;
 	result.boost = termOpts.boost * kSynonymProc / 100.0;
 	result.termLenBoost = termOpts.termLenBoost;
-	result.fieldsBoost = termOpts.fieldsBoost;
+	result.fieldsOpts = termOpts.fieldsOpts;
 	result.qpos = termOpts.qpos;
 	return result;
 }
@@ -45,12 +45,10 @@ static FtDslOpts makeOptsForAlternatives(const FtDslOpts& termOpts) {
 static void addOptsForAlternatives(FtDslOpts& opts, const FtDslOpts& termOpts) {
 	opts.boost += termOpts.boost * kSynonymProc / 100.0;
 	opts.termLenBoost += termOpts.termLenBoost;
-	for (size_t i = 0, end = std::min(opts.fieldsBoost.size(), termOpts.fieldsBoost.size()); i != end; ++i) {
-		opts.fieldsBoost[i] += termOpts.fieldsBoost[i];
-	}
-	if (opts.fieldsBoost.size() < termOpts.fieldsBoost.size()) {
-		opts.fieldsBoost.insert(opts.fieldsBoost.end(), termOpts.fieldsBoost.cbegin() + opts.fieldsBoost.size(),
-								termOpts.fieldsBoost.cend());
+	assert(opts.fieldsOpts.size() == termOpts.fieldsOpts.size());
+	for (size_t i = 0, end = opts.fieldsOpts.size(); i != end; ++i) {
+		assert(opts.fieldsOpts[i].needSumRank == termOpts.fieldsOpts[i].needSumRank);
+		opts.fieldsOpts[i].boost += termOpts.fieldsOpts[i].boost;
 	}
 	opts.qpos += termOpts.qpos;
 }
@@ -59,7 +57,7 @@ static void divOptsForAlternatives(FtDslOpts& opts, size_t size) {
 	assert(size != 0);
 	opts.boost /= size;
 	opts.termLenBoost /= size;
-	for (float& fBoost : opts.fieldsBoost) fBoost /= size;
+	for (auto& fOpts : opts.fieldsOpts) fOpts.boost /= size;
 	opts.qpos /= size;
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "coroutine.h"
+#include "estl/h_vector.h"
 
 namespace reindexer {
 namespace coroutine {

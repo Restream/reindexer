@@ -420,7 +420,9 @@ dynamic_loop::~dynamic_loop() {
 	if (!running_tasks_.empty() || !new_tasks_.empty()) {
 		run();
 	}
-	remove_coro_cb();
+	if (coro_cb_is_set_) {
+		remove_coro_cb();
+	}
 }
 
 void dynamic_loop::run() {
@@ -630,8 +632,7 @@ void dynamic_loop::async_callback() {
 }
 
 void dynamic_loop::set_coro_cb() {
-	remove_coro_cb();
-	cmpl_cb_id_ = coroutine::add_completion_callback([this](coroutine::routine_t id) {
+	[[maybe_unused]] bool res = coroutine::set_loop_completion_callback([this](coroutine::routine_t id) {
 		auto found = std::find(running_tasks_.begin(), running_tasks_.end(), id);
 		assert(found != running_tasks_.end());
 		running_tasks_.erase(found);
@@ -640,15 +641,15 @@ void dynamic_loop::set_coro_cb() {
 			break_loop();
 		}
 	});
+	// if res is false, then callback was set before (probably by another loop)
+	assert(res);
+	coro_cb_is_set_ = true;
 }
 
 void dynamic_loop::remove_coro_cb() {
-	if (cmpl_cb_id_) {
-		int res = coroutine::remove_completion_callback(cmpl_cb_id_);
-		assert(res == 0);
-		(void)res;
-		cmpl_cb_id_ = 0;
-	}
+	[[maybe_unused]] bool res = coroutine::remove_loop_completion_callback();
+	assert(res);
+	coro_cb_is_set_ = false;
 }
 
 bool gEnableBusyLoop = false;

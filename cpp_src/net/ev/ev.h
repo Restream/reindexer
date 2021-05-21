@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "coroutine/coroutine.h"
+#include "estl/h_vector.h"
 
 // Thank's to windows.h include
 #ifdef ERROR
@@ -200,12 +201,12 @@ protected:
 	std::vector<async *> asyncs_;
 	std::vector<sig *> sigs_;
 	bool break_ = false;
+	bool coro_cb_is_set_ = false;
 	std::atomic<int> async_sent_;
 
 	using tasks_container = h_vector<coroutine::routine_t, 64>;
 	tasks_container new_tasks_;
 	tasks_container running_tasks_;
-	int64_t cmpl_cb_id_ = 0;
 	std::thread::id coroTid_;
 
 #ifdef HAVE_EPOLL_LOOP

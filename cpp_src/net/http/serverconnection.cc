@@ -17,7 +17,10 @@ using namespace std::string_view_literals;
 static const std::string_view kStrEOL = "\r\n"sv;
 extern std::unordered_map<int, std::string_view> kHTTPCodes;
 
-ServerConnection::ServerConnection(int fd, ev::dynamic_loop &loop, Router &router) : ConnectionST(fd, loop, false), router_(router) {
+ServerConnection::ServerConnection(int fd, ev::dynamic_loop &loop, Router &router, size_t maxRequestSize)
+	: ConnectionST(fd, loop, false, maxRequestSize < kConnReadbufSize ? maxRequestSize : kConnReadbufSize),
+	  router_(router),
+	  maxRequestSize_(maxRequestSize) {
 	callback(io_, ev::READ);
 }
 
@@ -160,7 +163,16 @@ void ServerConnection::onRead() {
 					continue;
 				}
 				if (rdBuf_.size() == rdBuf_.capacity()) {
-					rdBuf_.reserve(rdBuf_.capacity() * 2);
+					if (!maxRequestSize_ || rdBuf_.capacity() < maxRequestSize_) {
+						auto newCapacity = rdBuf_.capacity() * 2;
+						if (maxRequestSize_ && newCapacity > maxRequestSize_) {
+							newCapacity = maxRequestSize_;
+						}
+						rdBuf_.reserve(newCapacity);
+					} else {
+						badRequest(StatusRequestEntityTooLarge, "");
+						return;
+					}
 				}
 				return;
 			} else if (res < 0) {
@@ -203,12 +215,18 @@ void ServerConnection::onRead() {
 				}
 				request_.headers.push_back(hdr);
 			}
-			if (bodyLeft_ > 0 && unsigned(bodyLeft_ + res) > rdBuf_.capacity() && bodyLeft_ < kHttpMaxBodySize) {
-				// slow path: body is to big - need realloc
-				// save current buffer.
-				rdBuf_.reserve(bodyLeft_ + res + 0x1000);
-				bodyLeft_ = 0;
-				continue;
+			const bool requireRdRealloc = bodyLeft_ > 0 && unsigned(bodyLeft_ + res) > rdBuf_.capacity();
+			if (requireRdRealloc) {
+				if (!maxRequestSize_ || size_t(bodyLeft_) < maxRequestSize_) {
+					// slow path: body is to big - need realloc
+					// save current buffer.
+					rdBuf_.reserve(bodyLeft_ + res + 0x1000);
+					bodyLeft_ = 0;
+					continue;
+				} else {
+					badRequest(StatusRequestEntityTooLarge, "");
+					return;
+				}
 			} else {
 				rdBuf_.erase(res);
 			}

@@ -33,7 +33,7 @@ private:
 	routine_t waiter_ = 0;
 };
 
-/// @class Allows to call done() method for wait_group on giards destruction
+/// @class Allows to call done() method for wait_group on guards destruction
 class wait_group_guard {
 public:
 	wait_group_guard(wait_group& wg) noexcept : wg_(wg) {}

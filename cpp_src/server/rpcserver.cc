@@ -858,7 +858,7 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	}
 
 	auto factory = cproto::ServerConnection::NewFactory(dispatcher_, serverConfig_.EnableConnectionsStats, serverConfig_.MaxUpdatesSize);
-	if (serverConfig_.ThreadingMode == ServerConfig::kDedicatedThreading) {
+	if (serverConfig_.RPCThreadingMode == ServerConfig::kDedicatedThreading) {
 		listener_.reset(new ForkedListener(loop, factory));
 	} else {
 		listener_.reset(new Listener(loop, factory));

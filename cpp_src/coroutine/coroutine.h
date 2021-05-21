@@ -1,12 +1,12 @@
 #pragma once
 
+#include <assert.h>
 #include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <vector>
 
 #include "context/fcontext.hpp"
-#include "estl/h_vector.h"
 
 #if defined(REINDEX_WITH_TSAN)
 #if defined(__GNUC__) && !defined(__clang__) && !defined(__INTEL_COMPILER) && __GNUC__ >= 10
@@ -49,7 +49,7 @@ struct ctx_owner {
 #endif	// REINDEX_WITH_TSAN_FIBERS
 };
 
-/// @class Some kind of a coroutines scheduler. Exists as a singletone with thread_local storage duration.
+/// @class Some kind of a coroutines scheduler. Exists as a singleton with thread_local storage duration.
 class ordinator : public ctx_owner {
 public:
 	using cmpl_cb_t = std::function<void(routine_t)>;
@@ -77,11 +77,17 @@ public:
 	/// Get current couroutine id
 	/// @returns - current couroutine id
 	routine_t current() const noexcept { return current_; }
-	/// Add callback on coroutine complete
-	/// @return Callback's ID, which may be used to remove this callback
+	/// Add callback on coroutine completion for dynamic_loop object
+	/// @return true, if callback was not not set before and was successfully set now
+	bool set_loop_completion_callback(cmpl_cb_t) noexcept;
+	/// Add callback that will be called after coroutine finalization
+	/// @return callback unique ID that should to be used for its further removal
 	int64_t add_completion_callback(cmpl_cb_t);
-	/// Remove callback on coroutine complete
-	/// @param id Callback's ID
+	/// Remove dynamic_loop callback on coroutine complete
+	/// @return true if callback was set previously
+	bool remove_loop_completion_callback() noexcept;
+	/// Remove coroutine completion callback by id
+	/// @param id - callback's ID
 	/// @return 0 if callback was successfully removed
 	int remove_completion_callback(int64_t id) noexcept;
 	/// Shrink coroutines storage and free some occupied memory (remove unused coroutine objects)
@@ -105,7 +111,7 @@ private:
 
 		/// Check if coroutine is already finished it's execution and ready to be cleared
 		/// @returns true - if coroutine is finalized, false - if couroutine is still in progress
-		bool is_finialized() const noexcept { return finalized_; }
+		bool is_finalized() const noexcept { return finalized_; }
 		/// Mark routine as finilized
 		void finalize() noexcept;
 		/// Deallocate coroutines stack
@@ -119,7 +125,7 @@ private:
 		/// Reuse finalized coroutine with new func
 		/// @param _func - New coroutine's func
 		void reuse(std::function<void()> _func, size_t stack_size = 0) noexcept {
-			assert(is_finialized());
+			assert(is_finalized());
 			assert(is_empty());
 			func = std::move(_func);
 			if (stack_size) {
@@ -146,7 +152,7 @@ private:
 	};
 
 	/// Private constructor to create singletone object
-	ordinator() noexcept;
+	ordinator();
 
 	/// Add "parent" coroutine to coroutines call stack.
 	/// If new "parent" has id == 0, than the stack will be cleared, because main routine is unable to call suspend anyway
@@ -166,32 +172,32 @@ private:
 	transfer_t jump_to_parent(void *from_rt) noexcept;
 
 	routine_t current_;
-	h_vector<routine, 16> routines_;
+	std::vector<routine> routines_;
 	/// List of routines_ indexes, which are occupied by empty routine objects
-	h_vector<routine_t> indexes_;
+	std::vector<routine_t> indexes_;
 	/// Stack, which contains sequence of coroutines switches. Ordiantor pushes new id in this stack on each resume()-call
-	/// and pops top id on yeach suspend()-call.
+	/// and pops top id on each suspend()-call.
 	/// This stack allows to get coroutine's id to switch to after suspend or entry exit
-	h_vector<routine_t, 32> rt_call_stack_;
-	/// Vector with completion callbacks, which will be called on each coroutne's finalization
-	h_vector<cmpl_cb_data, 2> completion_callbacks_;
+	std::vector<routine_t> rt_call_stack_;
+	/// completion callback for dynamic_loop, which will be called after coroutine's finalization
+	cmpl_cb_t loop_completion_callback_;
+	/// completion callbacks, which will be called after coroutines finalization
+	std::vector<cmpl_cb_data> completion_callbacks_;
 };
 
-/// Wrapper for corresponding ordinator's method
+/// Wrappers for ordinator's public methods
 inline routine_t create(std::function<void()> f, size_t stack_size = k_default_stack_limit) {
 	return ordinator::instance().create(std::move(f), stack_size);
 }
-/// Wrapper for corresponding ordinator's method
 inline int resume(routine_t id) { return ordinator::instance().resume(id); }
-/// Wrapper for corresponding ordinator's method
 inline void suspend() { ordinator::instance().suspend(); }
-/// Wrapper for corresponding ordinator's method
 inline routine_t current() noexcept { return ordinator::instance().current(); }
-/// Wrapper for corresponding ordinator's method
+inline bool set_loop_completion_callback(ordinator::cmpl_cb_t cb) {
+	return ordinator::instance().set_loop_completion_callback(std::move(cb));
+}
 inline int64_t add_completion_callback(ordinator::cmpl_cb_t cb) { return ordinator::instance().add_completion_callback(std::move(cb)); }
-/// Wrapper for corresponding ordinator's method
-inline int remove_completion_callback(int64_t id) noexcept { return ordinator::instance().remove_completion_callback(id); }
-/// Wrapper for corresponding ordinator's method
+inline bool remove_loop_completion_callback() noexcept { return ordinator::instance().remove_loop_completion_callback(); }
+inline int remove_completion_callback(int64_t id) { return ordinator::instance().remove_completion_callback(id); }
 inline size_t shrink_storage() noexcept { return ordinator::instance().shrink_storage(); }
 
 }  // namespace coroutine

@@ -74,27 +74,34 @@ void Listener::io_accept(ev::io & /*watcher*/, int revents) {
 		return;
 	}
 
+	bool connIsActive = true;
+	std::unique_ptr<IServerConnection> conn;
 	std::unique_lock<std::mutex> lck(shared_->lck_);
 	if (shared_->idle_.size()) {
-		auto conn = std::move(shared_->idle_.back());
+		conn = std::move(shared_->idle_.back());
 		shared_->idle_.pop_back();
 		lck.unlock();
 		conn->Attach(loop_);
 		conn->Restart(client.fd());
-		lck.lock();
-		connections_.push_back(std::move(conn));
 	} else {
 		lck.unlock();
-		auto conn = std::unique_ptr<IServerConnection>(shared_->connFactory_(loop_, client.fd()));
-		lck.lock();
-		connections_.push_back(std::move(conn));
+		conn = std::unique_ptr<IServerConnection>(shared_->connFactory_(loop_, client.fd()));
+		connIsActive = !conn->IsFinished();
 	}
-	rebalance();
 
-	if (shared_->count_ < shared_->maxListeners_) {
-		shared_->count_++;
-		std::thread th(&Listener::clone, shared_);
-		th.detach();
+	if (connIsActive) {
+		lck.lock();
+		connections_.emplace_back(std::move(conn));
+		rebalance();
+	}
+
+	int count = shared_->count_.load();
+	while (count < shared_->maxListeners_) {
+		if (shared_->count_.compare_exchange_strong(count, count + 1)) {
+			std::thread th(&Listener::clone, shared_);
+			th.detach();
+			break;
+		}
 	}
 }
 
@@ -205,7 +212,7 @@ void Listener::clone(std::shared_ptr<Shared> shared) {
 		assert(it != shared->listeners_.end());
 		shared->listeners_.erase(it);
 	}
-	shared->count_--;
+	--shared->count_;
 }
 
 void Listener::reserveStack() {
@@ -281,21 +288,26 @@ void ForkedListener::io_accept(ev::io & /*watcher*/, int revents) {
 
 		Worker w(std::unique_ptr<IServerConnection>(connFactory_(loop, client.fd())), async);
 		auto pc = w.conn.get();
-		std::unique_lock<std::mutex> lck(lck_);
-		workers_.push_back(std::move(w));
-		lck.unlock();
-		while (!terminating_) {
-			loop.run();
-			if (pc->IsFinished()) {
-				pc->Detach();
-				break;
+		if (pc->IsFinished()) {	 // Connection may be closed inside Worker construction
+			pc->Detach();
+		} else {
+			std::unique_lock<std::mutex> lck(lck_);
+			logPrintf(LogTrace, "Listener (%s) dedicated thread started. %d total", addr_, workers_.size());
+			workers_.push_back(std::move(w));
+			lck.unlock();
+			while (!terminating_) {
+				loop.run();
+				if (pc->IsFinished()) {
+					pc->Detach();
+					break;
+				}
 			}
+			lck.lock();
+			auto it = std::find_if(workers_.begin(), workers_.end(), [&pc](const Worker &cw) { return cw.conn.get() == pc; });
+			assert(it != workers_.end());
+			workers_.erase(it);
+			logPrintf(LogTrace, "Listener (%s) dedicated thread finished. %d left", addr_, workers_.size());
 		}
-		lck.lock();
-		auto it = std::find_if(workers_.begin(), workers_.end(), [&pc](const Worker &cw) { return cw.conn.get() == pc; });
-		assert(it != workers_.end());
-		workers_.erase(it);
-		logPrintf(LogInfo, "Listener (%s) dedicated thread finished. %d left", addr_, workers_.size());
 	});
 	th.detach();
 }

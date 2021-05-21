@@ -24,10 +24,23 @@ void FtFastConfig::parse(std::string_view json, const fast_hash_map<std::string,
 		fullMatchBoost = root["full_match_boost"].As<>(fullMatchBoost, 0.0, 10.0);
 		partialMatchDecrease = root["partial_match_decrease"].As<>(partialMatchDecrease, 0, 100);
 		minRelevancy = root["min_relevancy"].As<>(minRelevancy, 0.0, 1.0);
-		maxTyposInWord = root["max_typos_in_word"].As<>(maxTyposInWord, 0, 2);
+		if (!root["max_typos_in_word"].empty()) {
+			if (!root["max_typos"].empty()) {
+				throw Error(errParseDSL,
+							"Fulltext configuration cannot contain 'max_typos' and 'max_typos_in_word' fields at the same time");
+			}
+			maxTypos = 2 * root["max_typos_in_word"].As<>(MaxTyposInWord(), 0, 2);
+		} else {
+			const auto& maxTyposNode = root["max_typos"];
+			if (!maxTyposNode.empty() && maxTyposNode.value.getTag() != gason::JSON_NUMBER) {
+				throw Error(errParseDSL, "Fulltext configuration field 'max_typos' should be integer");
+			}
+			maxTypos = maxTyposNode.As<>(maxTypos, 0, 4);
+		}
 		maxTypoLen = root["max_typo_len"].As<>(maxTypoLen, 0, 100);
 		maxRebuildSteps = root["max_rebuild_steps"].As<>(maxRebuildSteps, 1, 500);
 		maxStepSize = root["max_step_size"].As<>(maxStepSize, 5);
+		summationRanksByFieldsRatio = root["sum_ranks_by_fields_ratio"].As<>(summationRanksByFieldsRatio, 0.0, 1.0);
 
 		FtFastFieldConfig defaultFieldCfg;
 		defaultFieldCfg.bm25Boost = root["bm25_boost"].As<>(defaultFieldCfg.bm25Boost, 0.0, 10.0);

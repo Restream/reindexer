@@ -32,7 +32,7 @@ TEST(Coroutines, Timers) {
 	size_t counter = 0;
 	for (size_t i = 0; i < kCoroCount; ++i) {
 		loop.spawn([&loop, &counter, kSleepTime] {
-			std::vector<int> v = {1, 2, 3};	 // Check if destructor was called
+			std::vector<int> v = {1, 2, 3};  // Check if destructor was called
 			(void)v;
 			loop.sleep(kSleepTime);
 			++counter;
@@ -55,7 +55,7 @@ TEST(Coroutines, LoopDestructor) {
 		dynamic_loop loop;
 		for (size_t i = 0; i < kCoroCount; ++i) {
 			loop.spawn([&loop, &counter, kSleepTime] {
-				std::vector<int> v = {1, 2, 3};	 // Check if destructor was called
+				std::vector<int> v = {1, 2, 3};  // Check if destructor was called
 				(void)v;
 				loop.sleep(kSleepTime);
 				++counter;
@@ -73,7 +73,7 @@ TEST(Coroutines, StressTest) {
 	auto storage_size = reindexer::coroutine::shrink_storage();
 	ASSERT_EQ(storage_size, 0);
 	size_t finishedCoroutines = 0;
-	auto cbId =
+	int64_t userCallbackId =
 		reindexer::coroutine::add_completion_callback([&finishedCoroutines](reindexer::coroutine::routine_t) { ++finishedCoroutines; });
 	for (size_t i = 0; i < 50; ++i) {
 		loop.spawn([&loop, &counter, &vec] {
@@ -106,9 +106,10 @@ TEST(Coroutines, StressTest) {
 	constexpr size_t kExpectedTotal = 30050;
 	ASSERT_EQ(counter, kExpectedTotal);
 	ASSERT_EQ(finishedCoroutines, kExpectedTotal);
-	auto res = reindexer::coroutine::remove_completion_callback(cbId);
+
+	int res = reindexer::coroutine::remove_completion_callback(userCallbackId);
 	ASSERT_EQ(res, 0);
-	res = reindexer::coroutine::remove_completion_callback(cbId);
+	res = reindexer::coroutine::remove_completion_callback(userCallbackId);
 	ASSERT_NE(res, 0);
 }
 
@@ -180,8 +181,8 @@ TEST(Coroutines, SchedulingOrder) {
 	auto storage_size = reindexer::coroutine::shrink_storage();
 	ASSERT_EQ(storage_size, 0);
 	std::vector<routine_t> order;
-	const std::vector<routine_t> kExpectedOrder = {0, 0, 1, 1, 2, 1, 1, 3, 3, 4, 4,	 5,	 5, 6, 6, 7, 7, 8,	7, 6, 5, 4, 3, 8,
-												   3, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2,	 7,	 2, 9, 2, 3, 7, 3,	2, 8, 9, 8, 2, 4,
+	const std::vector<routine_t> kExpectedOrder = {0, 0, 1, 1, 2, 1, 1, 3, 3, 4, 4,  5,  5, 6, 6, 7, 7, 8,  7, 6, 5, 4, 3, 8,
+												   3, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2,  7,  2, 9, 2, 3, 7, 3,  2, 8, 9, 8, 2, 4,
 												   4, 2, 5, 5, 2, 6, 6, 2, 2, 2, 10, 10, 2, 2, 2, 2, 2, 10, 2, 2, 1, 1, 0};
 
 	auto testFn = [&order] {
@@ -250,7 +251,7 @@ TEST(Coroutines, SchedulingOrder) {
 			res = resume(wId);
 			ASSERT_EQ(res, 0);
 			order.emplace_back(current());
-			ch.close();	 // We will get an unhandled exception in writing routine
+			ch.close();  // We will get an unhandled exception in writing routine
 			// We will also get ASAN warning on exception, but this doesn't matter
 			order.emplace_back(current());
 			ASSERT_EQ(ch.size(), ch.capacity());

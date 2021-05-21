@@ -8,26 +8,28 @@
 #include "tools/logger.h"
 #include "tools/stringstools.h"
 
+using namespace std::string_view_literals;
+
 TEST_F(FTApi, CompositeSelect) {
-	Init(GetDefaultConfig());
-	Add("An entity is something|", "| that in exists entity as itself");
-	Add("In law, a legal entity is|", "|an entity that is capable of something bearing legal rights");
-	Add("In politics, entity is used as|", "| term for entity territorial divisions of some countries");
+	Init(GetDefaultConfig(), NS1 | NS2);
+	Add("An entity is something|"sv, "| that in exists entity as itself"sv, NS1 | NS2);
+	Add("In law, a legal entity is|"sv, "|an entity that is capable of something bearing legal rights"sv, NS1 | NS2);
+	Add("In politics, entity is used as|"sv, "| term for entity territorial divisions of some countries"sv, NS1 | NS2);
 
 	for (const auto& query : CreateAllPermutatedQueries("", {"*entity", "somethin*"}, "")) {
 		auto res = SimpleCompositeSelect(query);
-		std::unordered_set<string> data{"An <b>entity</b> is <b>something</b>|",
-										"| that in exists <b>entity</b> as itself",
-										"An <b>entity</b> is <b>something</b>|d",
-										"| that in exists entity as itself",
-										"In law, a legal <b>entity</b> is|",
-										"|an <b>entity</b> that is capable of <b>something</b> bearing legal rights",
-										"al <b>entity</b> id",
-										"|an entity that is capable of something bearing legal rights",
-										"In politics, <b>entity</b> is used as|",
-										"| term for <b>entity</b> territorial divisions of some countries",
-										"s, <b>entity</b> id",
-										"| term for entity territorial divisions of some countries"};
+		std::unordered_set<std::string_view> data{"An <b>entity</b> is <b>something</b>|"sv,
+												  "| that in exists <b>entity</b> as itself"sv,
+												  "An <b>entity</b> is <b>something</b>|d"sv,
+												  "| that in exists entity as itself"sv,
+												  "In law, a legal <b>entity</b> is|"sv,
+												  "|an <b>entity</b> that is capable of <b>something</b> bearing legal rights"sv,
+												  "al <b>entity</b> id"sv,
+												  "|an entity that is capable of something bearing legal rights"sv,
+												  "In politics, <b>entity</b> is used as|"sv,
+												  "| term for <b>entity</b> territorial divisions of some countries"sv,
+												  "s, <b>entity</b> id"sv,
+												  "| term for entity territorial divisions of some countries"sv};
 
 		PrintQueryResults("nm1", res);
 		for (auto it : res) {
@@ -45,26 +47,26 @@ TEST_F(FTApi, CompositeSelect) {
 }
 
 TEST_F(FTApi, CompositeSelectWithFields) {
-	Init(GetDefaultConfig());
-	AddInBothFields("An entity is something|", "| that in exists entity as itself");
-	AddInBothFields("In law, a legal entity is|", "|an entity that is capable of something bearing legal rights");
-	AddInBothFields("In politics, entity is used as|", "| term for entity territorial divisions of some countries");
+	Init(GetDefaultConfig(), NS1 | NS2);
+	AddInBothFields("An entity is something|"sv, "| that in exists entity as itself"sv, NS1 | NS2);
+	AddInBothFields("In law, a legal entity is|"sv, "|an entity that is capable of something bearing legal rights"sv, NS1 | NS2);
+	AddInBothFields("In politics, entity is used as|"sv, "| term for entity territorial divisions of some countries"sv, NS1 | NS2);
 
 	for (const auto& query : CreateAllPermutatedQueries("", {"*entity", "somethin*"}, "")) {
 		for (const char* field : {"ft1", "ft2"}) {
 			auto res = CompositeSelectField(field, query);
-			std::unordered_set<string> data{"An <b>entity</b> is <b>something</b>|",
-											"An <b>entity</b> is <b>something</b>|d",
-											"| that in exists <b>entity</b> as itself",
-											"In law, a legal <b>entity</b> is|",
-											"|an <b>entity</b> that is capable of <b>something</b> bearing legal rights",
-											"an <b>entity</b> tdof <b>something</b> bd",
-											"al <b>entity</b> id",
-											"In politics, <b>entity</b> is used as|",
-											"| term for <b>entity</b> territorial divisions of some countries",
-											"ts <b>entity</b> ad",
-											"s, <b>entity</b> id",
-											"or <b>entity</b> td"};
+			std::unordered_set<std::string_view> data{"An <b>entity</b> is <b>something</b>|"sv,
+													  "An <b>entity</b> is <b>something</b>|d"sv,
+													  "| that in exists <b>entity</b> as itself"sv,
+													  "In law, a legal <b>entity</b> is|"sv,
+													  "|an <b>entity</b> that is capable of <b>something</b> bearing legal rights"sv,
+													  "an <b>entity</b> tdof <b>something</b> bd"sv,
+													  "al <b>entity</b> id"sv,
+													  "In politics, <b>entity</b> is used as|"sv,
+													  "| term for <b>entity</b> territorial divisions of some countries"sv,
+													  "ts <b>entity</b> ad"sv,
+													  "s, <b>entity</b> id"sv,
+													  "or <b>entity</b> td"sv};
 
 			PrintQueryResults("nm1", res);
 			for (auto it : res) {
@@ -86,8 +88,8 @@ TEST_F(FTApi, CompositeRankWithSynonyms) {
 	auto cfg = GetDefaultConfig();
 	cfg.synonyms = {{{"word"}, {"слово"}}};
 	Init(cfg);
-	Add("word", "слово");
-	Add("world", "world");
+	Add("word"sv, "слово"sv);
+	Add("world"sv, "world"sv);
 
 	// rank of synonym is higher
 	CheckAllPermutations("@", {"ft1^0.5", "ft2^2"}, " word~", {{"word", "!слово!"}, {"!world!", "!world!"}}, true, ", ");
@@ -97,7 +99,7 @@ TEST_F(FTApi, SelectWithEscaping) {
 	reindexer::FtFastConfig ftCfg = GetDefaultConfig();
 	ftCfg.extraWordSymbols = "+-\\";
 	Init(ftCfg);
-	Add("Go to -hell+hell+hell!!");
+	Add("Go to -hell+hell+hell!!"sv);
 
 	auto res = SimpleSelect("\\-hell\\+hell\\+hell");
 	EXPECT_TRUE(res.Count() == 1);
@@ -112,8 +114,8 @@ TEST_F(FTApi, SelectWithEscaping) {
 TEST_F(FTApi, SelectWithPlus) {
 	Init(GetDefaultConfig());
 
-	Add("added three words");
-	Add("added something else");
+	Add("added three words"sv);
+	Add("added something else"sv);
 
 	CheckAllPermutations("", {"+added"}, "", {{"!added! something else", ""}, {"!added! three words", ""}});
 }
@@ -124,7 +126,7 @@ TEST_F(FTApi, SelectWithPlusWithSingleAlternative) {
 	cfg.enableTranslit = false;
 	Init(cfg);
 
-	Add("мониторы");
+	Add("мониторы"sv);
 
 	// FT search by single mandatory word with single alternative
 	CheckAllPermutations("", {"+монитор*"}, "", {{"!мониторы!", ""}});
@@ -133,8 +135,8 @@ TEST_F(FTApi, SelectWithPlusWithSingleAlternative) {
 TEST_F(FTApi, SelectWithMinus) {
 	Init(GetDefaultConfig());
 
-	Add("including me, excluding you");
-	Add("including all of them");
+	Add("including me, excluding you"sv);
+	Add("including all of them"sv);
 
 	CheckAllPermutations("", {"+including", "-excluding"}, "", {{"!including! all of them", ""}});
 	CheckAllPermutations("", {"including", "-excluding"}, "", {{"!including! all of them", ""}});
@@ -143,8 +145,8 @@ TEST_F(FTApi, SelectWithMinus) {
 TEST_F(FTApi, SelectWithFieldsList) {
 	Init(GetDefaultConfig());
 
-	Add("nm1", "Never watch their games", "Because nothing can be worse than Spartak Moscow");
-	Add("nm1", "Spartak Moscow is the worst team right now", "Yes, for sure");
+	Add("nm1"sv, "Never watch their games"sv, "Because nothing can be worse than Spartak Moscow"sv);
+	Add("nm1"sv, "Spartak Moscow is the worst team right now"sv, "Yes, for sure"sv);
 
 	CheckAllPermutations("@ft1 ", {"Spartak", "Moscow"}, "", {{"!Spartak Moscow! is the worst team right now", "Yes, for sure"}});
 }
@@ -152,9 +154,9 @@ TEST_F(FTApi, SelectWithFieldsList) {
 TEST_F(FTApi, SelectWithRelevanceBoost) {
 	Init(GetDefaultConfig());
 
-	Add("She was a very bad girl");
-	Add("All the naughty kids go to hell, not to heaven");
-	Add("I've never seen a man as cruel as him");
+	Add("She was a very bad girl"sv);
+	Add("All the naughty kids go to hell, not to heaven"sv);
+	Add("I've never seen a man as cruel as him"sv);
 
 	CheckAllPermutations("@ft1 ", {"girl^2", "kids", "cruel^3"}, "",
 						 {{"I've never seen a man as !cruel! as him", ""},
@@ -166,28 +168,151 @@ TEST_F(FTApi, SelectWithRelevanceBoost) {
 TEST_F(FTApi, SelectWithDistance) {
 	Init(GetDefaultConfig());
 
-	Add("Her nose was very very long");
-	Add("Her nose was exceptionally long");
-	Add("Her nose was long");
+	Add("Her nose was very very long"sv);
+	Add("Her nose was exceptionally long"sv);
+	Add("Her nose was long"sv);
 
-	auto res = SimpleSelect("'nose long'~3");
-	const char* results[] = {"Her !nose! was !long!", "Her !nose! was exceptionally !long!"};
-	EXPECT_TRUE(res.Count() == 2) << res.Count();
+	CheckAllPermutations("", {"'nose long'~3"}, "", {{"Her !nose! was !long!", ""}, {"Her !nose! was exceptionally !long!", ""}}, true);
+}
 
-	for (size_t i = 0; i < res.Count(); ++i) {
-		Item ritem = res[i].GetItem();
-		string val = ritem["ft1"].As<string>();
-		EXPECT_TRUE(val == results[i]);
-	}
+TEST_F(FTApi, SelectWithTypos) {
+	auto cfg = GetDefaultConfig();
+	cfg.stopWords.clear();
+	cfg.stemmers.clear();
+	cfg.enableKbLayout = false;
+	cfg.enableTranslit = false;
 
-	auto res2 = SimpleSelect("'nose long'~2");
-	EXPECT_TRUE(res2.Count() == 1) << res.Count();
+	cfg.maxTypos = 0;
+	Init(cfg);
+	Add("A");
+	Add("AB");
+	Add("ABC");
+	Add("ABCD");
+	// Only full match
+	CheckAllPermutations("", {"A~"}, "", {{"!A!", ""}});
+	CheckAllPermutations("", {"AB~"}, "", {{"!AB!", ""}});
+	CheckAllPermutations("", {"ABC~"}, "", {{"!ABC!", ""}});
+	CheckAllPermutations("", {"ABCDE~"}, "", {});
+	CheckAllPermutations("", {"XBCD~"}, "", {});
+	CheckAllPermutations("", {"ACBD~"}, "", {});
 
-	for (size_t i = 0; i < res2.Count(); ++i) {
-		Item ritem = res2[i].GetItem();
-		string val = ritem["ft1"].As<string>();
-		EXPECT_TRUE(val == "Her !nose! was !long!");
-	}
+	cfg.maxTypos = 1;
+	SetFTConfig(cfg);
+	Add("ABCDE");
+	// Full match
+	// Or one missed char in any word
+	CheckAllPermutations("", {"ABCD~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"ABCDE~"}, "", {{"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"BCD~"}, "", {{"!ABCD!", ""}});
+	CheckAllPermutations("", {"ABCDEF~"}, "", {{"!ABCDE!", ""}});
+	CheckAllPermutations("", {"XABCD~"}, "", {{"!ABCD!", ""}});
+	CheckAllPermutations("", {"ABXCD~"}, "", {{"!ABCD!", ""}});
+	CheckAllPermutations("", {"ABCDX~"}, "", {{"!ABCD!", ""}});
+	CheckAllPermutations("", {"XBCD~"}, "", {});
+	CheckAllPermutations("", {"ACBD~"}, "", {});
+	// Not less than 2
+	CheckAllPermutations("", {"AB~"}, "", {{"!AB!", ""}, {"!ABC!", ""}});
+	CheckAllPermutations("", {"AC~"}, "", {{"!ABC!", ""}});
+	CheckAllPermutations("", {"B~"}, "", {});
+	CheckAllPermutations("", {"AX~"}, "", {});
+
+	cfg.maxTypos = 2;
+	SetFTConfig(cfg);
+	Add("ABCDEF");
+	// Full match
+	// Or up to by one missed char in any or both words
+	// Or one typo
+	CheckAllPermutations("", {"ABCD~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"ABCDEF~"}, "", {{"!ABCDE!", ""}, {"!ABCDEF!", ""}});
+	CheckAllPermutations("", {"BCDEFX~"}, "", {{"!ABCDEF!", ""}});
+	CheckAllPermutations("", {"BCD~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}});
+	CheckAllPermutations("", {"XABCD~"}, "", {{"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"ABXCD~"}, "", {{"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"ABCDX~"}, "", {{"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"BXCD~"}, "", {{"!ABCD!", ""}});
+	CheckAllPermutations("", {"BXCX~"}, "", {});
+	CheckAllPermutations("", {"ACBD~"}, "", {{"!ABCD!", ""}});
+	// Not less than 2
+	CheckAllPermutations("", {"AB~"}, "", {{"!AB!", ""}, {"!ABC!", ""}});
+	CheckAllPermutations("", {"AC~"}, "", {{"!ABC!", ""}});
+	CheckAllPermutations("", {"B~"}, "", {});
+	CheckAllPermutations("", {"AX~"}, "", {});
+
+	cfg.maxTypos = 3;
+	SetFTConfig(cfg);
+	Add("ABCDEFG");
+	// Full match
+	// Or up to by one missed char in any or both words
+	// Or one missed char in one word and two missed chars in another one
+	// Or up to two typos
+	CheckAllPermutations("", {"ABCD~"}, "", {{"!AB!", ""}, {"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}, {"!ABCDEF!", ""}});
+	CheckAllPermutations("", {"ABCDEFG~"}, "", {{"!ABCDE!", ""}, {"!ABCDEF!", ""}, {"!ABCDEFG!", ""}});
+	CheckAllPermutations("", {"BCDEFX~"}, "", {{"!ABCDE!", ""}, {"!ABCDEF!", ""}, {"!ABCDEFG!", ""}});
+	CheckAllPermutations("", {"BCDXEFX~"}, "", {{"!ABCDEF!", ""}});
+	CheckAllPermutations("", {"BCD~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"XABCD~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}, {"!ABCDEF!", ""}});
+	CheckAllPermutations("", {"ABXCD~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}, {"!ABCDEF!", ""}});
+	CheckAllPermutations("", {"ABCDX~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}, {"!ABCDEF!", ""}});
+	CheckAllPermutations("", {"XABCDX~"}, "", {{"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"ABXXCD~"}, "", {{"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"ABCDXX~"}, "", {{"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"BXCD~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"ACBD~"}, "", {{"!AB!", ""}, {"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"BADC~"}, "", {{"!ABC!", ""}});
+	CheckAllPermutations("", {"BACDFE~"}, "", {{"!ABCDE!", ""}});
+	CheckAllPermutations("", {"XBCD~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"ABXD~"}, "", {{"!AB!", ""}, {"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"ABCX~"}, "", {{"!AB!", ""}, {"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"ABXX~"}, "", {{"!AB!", ""}, {"!ABC!", ""}});
+	CheckAllPermutations("", {"XBXD~"}, "", {});
+	CheckAllPermutations("", {"AXXD~"}, "", {});
+	CheckAllPermutations("", {"XBCX~"}, "", {{"!ABC!", ""}});
+	CheckAllPermutations("", {"XXCD~"}, "", {});
+	CheckAllPermutations("", {"XXABX~"}, "", {});
+	// Not less than 2
+	CheckAllPermutations("", {"AB~"}, "", {{"!AB!", ""}, {"!ABC!", ""}, {"!ABCD!", ""}});
+	CheckAllPermutations("", {"AC~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}});
+	CheckAllPermutations("", {"B~"}, "", {});
+	CheckAllPermutations("", {"AX~"}, "", {});
+	CheckAllPermutations("", {"AXX~"}, "", {});
+
+	cfg.maxTypos = 4;
+	SetFTConfig(cfg);
+	Add("ABCDEFGH");
+	// Full match
+	// Or up to by two missed chars in any or both words
+	// Or up to two typos
+	CheckAllPermutations("", {"ABCD~"}, "", {{"!AB!", ""}, {"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}, {"!ABCDEF!", ""}});
+	CheckAllPermutations("", {"ABCDEFGH~"}, "", {{"!ABCDEF!", ""}, {"!ABCDEFG!", ""}, {"!ABCDEFGH!", ""}});
+	CheckAllPermutations("", {"BCDEFX~"}, "", {{"!ABCDE!", ""}, {"!ABCDEF!", ""}, {"!ABCDEFG!", ""}});
+	CheckAllPermutations("", {"BCDXEFX~"}, "", {{"!ABCDEF!", ""}, {"!ABCDEFG!", ""}});
+	CheckAllPermutations("", {"BCD~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"XABCD~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}, {"!ABCDEF!", ""}});
+	CheckAllPermutations("", {"ABXCD~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}, {"!ABCDEF!", ""}});
+	CheckAllPermutations("", {"ABCDX~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}, {"!ABCDEF!", ""}});
+	CheckAllPermutations("", {"XABCDX~"}, "", {{"!ABCD!", ""}, {"!ABCDE!", ""}, {"!ABCDEF!", ""}});
+	CheckAllPermutations("", {"ABXXCD~"}, "", {{"!ABCD!", ""}, {"!ABCDE!", ""}, {"!ABCDEF!", ""}});
+	CheckAllPermutations("", {"ABCDXX~"}, "", {{"!ABCD!", ""}, {"!ABCDE!", ""}, {"!ABCDEF!", ""}});
+	CheckAllPermutations("", {"BXCD~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"ACBD~"}, "", {{"!AB!", ""}, {"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"BADC~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}});
+	CheckAllPermutations("", {"BACDFE~"}, "", {{"!ABCDE!", ""}, {"!ABCDEF!", ""}});
+	CheckAllPermutations("", {"BADCFE~"}, "", {});
+	CheckAllPermutations("", {"XBCD~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"ABXD~"}, "", {{"!AB!", ""}, {"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"ABCX~"}, "", {{"!AB!", ""}, {"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"ABXX~"}, "", {{"!AB!", ""}, {"!ABC!", ""}, {"!ABCD!", ""}});
+	CheckAllPermutations("", {"XBXD~"}, "", {{"!ABCD!", ""}});
+	CheckAllPermutations("", {"AXXD~"}, "", {{"!ABCD!", ""}});
+	CheckAllPermutations("", {"XBCX~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}});
+	CheckAllPermutations("", {"XXCD~"}, "", {{"!ABCD!", ""}});
+	CheckAllPermutations("", {"XXABX~"}, "", {});
+	// Not less than 2
+	CheckAllPermutations("", {"AB~"}, "", {{"!AB!", ""}, {"!ABC!", ""}, {"!ABCD!", ""}});
+	CheckAllPermutations("", {"AC~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}});
+	CheckAllPermutations("", {"B~"}, "", {});
+	CheckAllPermutations("", {"AX~"}, "", {});
+	CheckAllPermutations("", {"AXX~"}, "", {});
 }
 
 template <typename T>
@@ -220,17 +345,21 @@ TEST_F(FTApi, FTDslParserMisspellingTest) {
 	EXPECT_TRUE(ftdsl[1].pattern == L"white");
 }
 
-TEST_F(FTApi, FTDslParserRelevancyBoostTest) {
+TEST_F(FTApi, FTDslParserFieldsPartOfRequest) {
 	FTDSLQueryParams params;
 	params.fields = {{"name", 0}, {"title", 1}};
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-	ftdsl.parse("@name^1.5,title^0.5 rush");
-	EXPECT_TRUE(ftdsl.size() == 1);
-	EXPECT_TRUE(ftdsl[0].pattern == L"rush");
-	EXPECT_TRUE(AreFloatingValuesEqual(ftdsl[0].opts.fieldsBoost[0], 1.5f));
+	ftdsl.parse("@name^1.5,+title^0.5 rush");
+	EXPECT_EQ(ftdsl.size(), 1);
+	EXPECT_EQ(ftdsl[0].pattern, L"rush");
+	EXPECT_EQ(ftdsl[0].opts.fieldsOpts.size(), 2);
+	EXPECT_TRUE(AreFloatingValuesEqual(ftdsl[0].opts.fieldsOpts[0].boost, 1.5f));
+	EXPECT_FALSE(ftdsl[0].opts.fieldsOpts[0].needSumRank);
+	EXPECT_TRUE(AreFloatingValuesEqual(ftdsl[0].opts.fieldsOpts[1].boost, 0.5f));
+	EXPECT_TRUE(ftdsl[0].opts.fieldsOpts[1].needSumRank);
 }
 
-TEST_F(FTApi, FTDslParserRelevancyBoostTest2) {
+TEST_F(FTApi, FTDslParserTermRelevancyBoostTest) {
 	FTDSLQueryParams params;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
 	ftdsl.parse("+mongodb^0.5 +arangodb^0.25 +reindexer^2.5");
@@ -317,7 +446,7 @@ TEST_F(FTApi, FTDslParserExactMatchTest) {
 
 TEST_F(FTApi, NumberToWordsSelect) {
 	Init(GetDefaultConfig());
-	Add("оценка 5 майкл джордан 23", "");
+	Add("оценка 5 майкл джордан 23"sv, ""sv);
 
 	CheckAllPermutations("", {"пять", "+двадцать", "+три"}, "", {{"оценка !5! майкл джордан !23!", ""}});
 }
@@ -335,13 +464,13 @@ TEST_F(FTApi, DeleteTest) {
 	}
 	res = SimpleSelect("entity");
 
-	data.insert(Add("An entity is something that exists as itself"));
-	data.insert(Add("In law, a legal entity is an entity that is capable of bearing legal rights"));
-	data.insert(Add("In politics, entity is used as term for territorial divisions of some countries"));
-	data.insert(Add("Юридическое лицо — организация, которая имеет обособленное имущество"));
-	data.insert(Add("Aftermath - the consequences or aftereffects of a significant unpleasant event"));
-	data.insert(Add("Food prices soared in the aftermath of the drought"));
-	data.insert(Add("In the aftermath of the war ..."));
+	data.insert(Add("An entity is something that exists as itself"sv));
+	data.insert(Add("In law, a legal entity is an entity that is capable of bearing legal rights"sv));
+	data.insert(Add("In politics, entity is used as term for territorial divisions of some countries"sv));
+	data.insert(Add("Юридическое лицо — организация, которая имеет обособленное имущество"sv));
+	data.insert(Add("Aftermath - the consequences or aftereffects of a significant unpleasant event"sv));
+	data.insert(Add("Food prices soared in the aftermath of the drought"sv));
+	data.insert(Add("In the aftermath of the war ..."sv));
 
 	//  Delete(data[1].first);
 	// Delete(data[1].first);
@@ -443,14 +572,180 @@ TEST_F(FTApi, Unique) {
 	}
 }
 
+TEST_F(FTApi, SummationOfRanksInSeveralFields) {
+	auto ftCfg = GetDefaultConfig(3);
+	ftCfg.summationRanksByFieldsRatio = 0.0f;
+	Init(ftCfg, NS3);
+
+	Add("nm3"sv, "word"sv, "word"sv, "word"sv);
+	Add("nm3"sv, "word"sv, "test"sv, "test"sv);
+	Add("nm3"sv, "test"sv, "word"sv, "test"sv);
+	Add("nm3"sv, "test"sv, "test"sv, "word"sv);
+	uint16_t rank = 0;
+	// Do not sum ranks by fields, as it is not asked in request and sum ratio in config is zero
+	const auto queries = CreateAllPermutatedQueries("@", {"ft1", "ft2", "ft3"}, " word", ",");
+	for (size_t i = 0; i < queries.size(); ++i) {
+		const auto& q = queries[i];
+		const auto qr = SimpleSelect3(q);
+		CheckResults(q, qr,
+					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
+					 false);
+		auto it = qr.begin();
+		if (i == 0) {
+			rank = it.GetItemRef().Proc();
+		}
+		for (const auto end = qr.end(); it != end; ++it) {
+			EXPECT_EQ(rank, it.GetItemRef().Proc()) << q;
+		}
+	}
+
+	// Do not sum ranks by fields, inspite of it is asked in request, as sum ratio in config is zero
+	for (const auto& q : CreateAllPermutatedQueries("@", {"+ft1", "+ft2", "+ft3"}, " word", ",")) {
+		const auto qr = SimpleSelect3(q);
+		CheckResults(q, qr,
+					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
+					 false);
+		for (const auto& it : qr) {
+			EXPECT_EQ(rank, it.GetItemRef().Proc()) << q;
+		}
+	}
+
+	// Do not sum ranks by fields, inspite of it is asked in request, as sum ratio in config is zero
+	for (const auto& q : CreateAllPermutatedQueries("@", {"+*"}, " word", ",")) {
+		const auto qr = SimpleSelect3(q);
+		CheckResults(q, qr,
+					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
+					 false);
+		for (const auto& it : qr) {
+			EXPECT_EQ(rank, it.GetItemRef().Proc()) << q;
+		}
+	}
+
+	ftCfg.summationRanksByFieldsRatio = 1.0f;
+	Error err = SetFTConfig(ftCfg, "nm3", "ft", {"ft1", "ft2", "ft3"});
+	ASSERT_TRUE(err.ok()) << err.what();
+	Add("nm3"sv, "test"sv, "test"sv, "test"sv);
+	// Do not sum ranks by fields, inspite of sum ratio in config is not zero, as it is not asked in request
+	for (const auto& q : CreateAllPermutatedQueries("@", {"ft1", "ft2", "ft3"}, " word", ",")) {
+		const auto qr = SimpleSelect3(q);
+		CheckResults(q, qr,
+					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
+					 false);
+		for (const auto& it : qr) {
+			EXPECT_EQ(rank, it.GetItemRef().Proc()) << q;
+		}
+	}
+
+	// Do sum ranks by fields, as it is asked in request and sum ratio in config is not zero
+	for (const auto& q : CreateAllPermutatedQueries("@", {"+ft1", "+ft2", "+ft3"}, " word", ",")) {
+		const auto qr = SimpleSelect3(q);
+		CheckResults(q, qr,
+					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
+					 false);
+		auto it = qr.begin();
+		rank = it.GetItemRef().Proc() / 3;
+		++it;
+		for (const auto end = qr.end(); it != end; ++it) {
+			EXPECT_LE(it.GetItemRef().Proc(), rank + 1) << q;
+			EXPECT_GE(it.GetItemRef().Proc(), rank - 1) << q;
+		}
+	}
+
+	// Do sum ranks by fields, as it is asked in request and sum ratio in config is not zero
+	for (const auto& q : CreateAllPermutatedQueries("@", {"+*"}, " word", ",")) {
+		const auto qr = SimpleSelect3(q);
+		CheckResults(q, qr,
+					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
+					 false);
+		auto it = qr.begin();
+		rank = it.GetItemRef().Proc() / 3;
+		++it;
+		for (const auto end = qr.end(); it != end; ++it) {
+			EXPECT_LE(it.GetItemRef().Proc(), rank + 1) << q;
+			EXPECT_GE(it.GetItemRef().Proc(), rank - 1) << q;
+		}
+	}
+
+	// ft2 is skipped as is not marked with +
+	for (const auto& q : CreateAllPermutatedQueries("@", {"+ft1", "ft2", "+ft3"}, " word", ",")) {
+		const auto qr = SimpleSelect3(q);
+		CheckResults(q, qr,
+					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
+					 false);
+		auto it = qr.begin();
+		rank = it.GetItemRef().Proc() / 2;
+		++it;
+		for (const auto end = qr.end(); it != end; ++it) {
+			EXPECT_LE(it.GetItemRef().Proc(), rank + 1) << q;
+			EXPECT_GE(it.GetItemRef().Proc(), rank - 1) << q;
+		}
+	}
+
+	// ft2 is not skipped as it has max rank
+	for (const auto& q : CreateAllPermutatedQueries("@", {"+ft1", "ft2^2", "+ft3"}, " word", ",")) {
+		const auto qr = SimpleSelect3(q);
+		CheckResults(q, qr,
+					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
+					 false);
+		auto it = qr.begin();
+		rank = it.GetItemRef().Proc() / 4;
+		++it;
+		EXPECT_LE(it.GetItemRef().Proc(), (rank + 1) * 2) << q;
+		EXPECT_GE(it.GetItemRef().Proc(), (rank - 1) * 2) << q;
+		++it;
+		for (const auto end = qr.end(); it != end; ++it) {
+			EXPECT_LE(it.GetItemRef().Proc(), rank + 1) << q;
+			EXPECT_GE(it.GetItemRef().Proc(), rank - 1) << q;
+		}
+	}
+
+	// Ranks summated with ratio 0.5
+	ftCfg.summationRanksByFieldsRatio = 0.5f;
+	err = SetFTConfig(ftCfg, "nm3", "ft", {"ft1", "ft2", "ft3"});
+	ASSERT_TRUE(err.ok()) << err.what();
+	Add("nm3"sv, "test"sv, "test"sv, "test"sv);
+	for (const auto& q : CreateAllPermutatedQueries("@", {"+ft1", "+ft2", "+ft3"}, " word", ",")) {
+		const auto qr = SimpleSelect3(q);
+		CheckResults(q, qr,
+					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
+					 false);
+		auto it = qr.begin();
+		rank = it.GetItemRef().Proc() / (1.0 + 0.5 + 0.5 * 0.5);
+		++it;
+		for (const auto end = qr.end(); it != end; ++it) {
+			EXPECT_LE(it.GetItemRef().Proc(), rank + 1) << q;
+			EXPECT_GE(it.GetItemRef().Proc(), rank - 1) << q;
+		}
+	}
+
+	// Ranks summated with ratio 0.5
+	for (const auto& q : CreateAllPermutatedQueries("@", {"+ft1^1.5", "+ft2^1.3", "+ft3"}, " word", ",")) {
+		const auto qr = SimpleSelect3(q);
+		CheckResults(q, qr,
+					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
+					 true);
+		auto it = qr.begin();
+		rank = it.GetItemRef().Proc() / (1.5 + 0.5 * 1.3 + 0.5 * 0.5);
+		++it;
+		EXPECT_LE(it.GetItemRef().Proc(), (rank + 5) * 1.5) << q;
+		EXPECT_GE(it.GetItemRef().Proc(), (rank - 5) * 1.5) << q;
+		++it;
+		EXPECT_LE(it.GetItemRef().Proc(), (rank + 5) * 1.3) << q;
+		EXPECT_GE(it.GetItemRef().Proc(), (rank - 5) * 1.3) << q;
+		++it;
+		EXPECT_LE(it.GetItemRef().Proc(), rank + 5) << q;
+		EXPECT_GE(it.GetItemRef().Proc(), rank - 5) << q;
+	}
+}
+
 TEST_F(FTApi, SelectSynonyms) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.synonyms = {{{"лыв", "лав"}, {"love"}}, {{"лар", "hate"}, {"rex", "looove"}}};
 	Init(ftCfg);
 
-	Add("nm1", "test", "love rex");
-	Add("nm1", "test", "no looove");
-	Add("nm1", "test", "no match");
+	Add("nm1"sv, "test"sv, "love rex"sv);
+	Add("nm1"sv, "test"sv, "no looove"sv);
+	Add("nm1"sv, "test"sv, "no match"sv);
 
 	CheckAllPermutations("", {"лыв"}, "", {{"test", "!love! rex"}});
 	CheckAllPermutations("", {"hate"}, "", {{"test", "love !rex!"}, {"test", "no !looove!"}});
@@ -461,9 +756,9 @@ TEST_F(FTApi, SelectTranslitWithComma) {
 	ftCfg.logLevel = 5;
 	Init(ftCfg);
 
-	Add("nm1", "хлебопечка", "");
-	Add("nm1", "электрон", "");
-	Add("nm1", "матэ", "");
+	Add("nm1"sv, "хлебопечка"sv, ""sv);
+	Add("nm1"sv, "электрон"sv, ""sv);
+	Add("nm1"sv, "матэ"sv, ""sv);
 
 	auto qr = SimpleSelect("@ft1 [kt,jgtxrf");
 	EXPECT_EQ(qr.Count(), 1);
@@ -488,32 +783,32 @@ TEST_F(FTApi, SelectMultiwordSynonyms) {
 					  {{"word"}, {"одно слово"}}};
 	Init(ftCfg);
 
-	Add("nm1", "whole world", "test");
-	Add("nm1", "world whole", "test");
-	Add("nm1", "whole", "world");
-	Add("nm1", "world", "test");
-	Add("nm1", "whole", "test");
-	Add("nm1", "целый мир", "test");
-	Add("nm1", "целый", "мир");
-	Add("nm1", "целый", "test");
-	Add("nm1", "мир", "test");
-	Add("nm1", "планета", "test");
-	Add("nm1", "генеральная ассамблея организации объединенных наций", "test");
-	Add("nm1", "ассамблея генеральная наций объединенных организации", "test");
-	Add("nm1", "генеральная прегенеральная ассамблея", "организации объединенных свободных наций");
-	Add("nm1", "генеральная прегенеральная ", "организации объединенных свободных наций");
-	Add("nm1", "UN", "UN");
+	Add("nm1"sv, "whole world"sv, "test"sv);
+	Add("nm1"sv, "world whole"sv, "test"sv);
+	Add("nm1"sv, "whole"sv, "world"sv);
+	Add("nm1"sv, "world"sv, "test"sv);
+	Add("nm1"sv, "whole"sv, "test"sv);
+	Add("nm1"sv, "целый мир"sv, "test"sv);
+	Add("nm1"sv, "целый"sv, "мир"sv);
+	Add("nm1"sv, "целый"sv, "test"sv);
+	Add("nm1"sv, "мир"sv, "test"sv);
+	Add("nm1"sv, "планета"sv, "test"sv);
+	Add("nm1"sv, "генеральная ассамблея организации объединенных наций"sv, "test"sv);
+	Add("nm1"sv, "ассамблея генеральная наций объединенных организации"sv, "test"sv);
+	Add("nm1"sv, "генеральная прегенеральная ассамблея"sv, "организации объединенных свободных наций"sv);
+	Add("nm1"sv, "генеральная прегенеральная "sv, "организации объединенных свободных наций"sv);
+	Add("nm1"sv, "UN"sv, "UN"sv);
 
-	Add("nm1", "word", "test");
-	Add("nm1", "test", "word");
-	Add("nm1", "word", "слово");
-	Add("nm1", "word", "одно");
-	Add("nm1", "слово", "test");
-	Add("nm1", "слово всего лишь одно", "test");
-	Add("nm1", "одно", "test");
-	Add("nm1", "слово", "одно");
-	Add("nm1", "слово одно", "test");
-	Add("nm1", "одно слово", "word");
+	Add("nm1"sv, "word"sv, "test"sv);
+	Add("nm1"sv, "test"sv, "word"sv);
+	Add("nm1"sv, "word"sv, "слово"sv);
+	Add("nm1"sv, "word"sv, "одно"sv);
+	Add("nm1"sv, "слово"sv, "test"sv);
+	Add("nm1"sv, "слово всего лишь одно"sv, "test"sv);
+	Add("nm1"sv, "одно"sv, "test"sv);
+	Add("nm1"sv, "слово"sv, "одно"sv);
+	Add("nm1"sv, "слово одно"sv, "test"sv);
+	Add("nm1"sv, "одно слово"sv, "word"sv);
 
 	CheckAllPermutations("", {"world"}, "",
 						 {{"whole !world!", "test"}, {"!world! whole", "test"}, {"whole", "!world!"}, {"!world!", "test"}});
@@ -571,10 +866,10 @@ TEST_F(FTApi, SelectMultiwordSynonyms2) {
 	ftCfg.synonyms = {{{"черный"}, {"серый космос"}}};
 	Init(ftCfg);
 
-	Add("nm1", "Смартфон SAMSUNG Galaxy S20 черный", "SAMSUNG");
-	Add("nm1", "Смартфон SAMSUNG Galaxy S20 серый", "SAMSUNG");
-	Add("nm1", "Смартфон SAMSUNG Galaxy S20 красный", "SAMSUNG");
-	Add("nm1", "Смартфон SAMSUNG Galaxy S20 серый космос", "SAMSUNG");
+	Add("nm1"sv, "Смартфон SAMSUNG Galaxy S20 черный"sv, "SAMSUNG"sv);
+	Add("nm1"sv, "Смартфон SAMSUNG Galaxy S20 серый"sv, "SAMSUNG"sv);
+	Add("nm1"sv, "Смартфон SAMSUNG Galaxy S20 красный"sv, "SAMSUNG"sv);
+	Add("nm1"sv, "Смартфон SAMSUNG Galaxy S20 серый космос"sv, "SAMSUNG"sv);
 
 	// Check all combinations of "+samsung" and "+galaxy" in request
 	CheckAllPermutations("@ft1 ", {"+samsung", "+galaxy"}, "",
@@ -615,10 +910,10 @@ TEST_F(FTApi, SelectWithMinusWithSynonyms) {
 	ftCfg.synonyms = {{{"word", "several lexems"}, {"слово", "сколькото лексем"}}};
 	Init(ftCfg);
 
-	Add("nm1", "word", "test");
-	Add("nm1", "several lexems", "test");
-	Add("nm1", "слово", "test");
-	Add("nm1", "сколькото лексем", "test");
+	Add("nm1"sv, "word"sv, "test"sv);
+	Add("nm1"sv, "several lexems"sv, "test"sv);
+	Add("nm1"sv, "слово"sv, "test"sv);
+	Add("nm1"sv, "сколькото лексем"sv, "test"sv);
 
 	CheckAllPermutations("", {"test", "word"}, "",
 						 {{"!word!", "!test!"}, {"several lexems", "!test!"}, {"!слово!", "!test!"}, {"!сколькото лексем!", "!test!"}});
@@ -639,12 +934,12 @@ TEST_F(FTApi, SelectMultiwordSynonymsWithExtraWords) {
 		{{"бронестекло", "защитное стекло", "бронированное стекло"}, {"бронестекло", "защитное стекло", "бронированное стекло"}}};
 	Init(ftCfg);
 
-	Add("nm1", "защитное стекло для экрана samsung galaxy", "test");
-	Add("nm1", "защитное стекло для экрана iphone", "test");
-	Add("nm1", "бронированное стекло для samsung galaxy", "test");
-	Add("nm1", "бронированное стекло для экрана iphone", "test");
-	Add("nm1", "бронестекло для экрана samsung galaxy", "test");
-	Add("nm1", "бронестекло для экрана iphone", "test");
+	Add("nm1"sv, "защитное стекло для экрана samsung galaxy"sv, "test"sv);
+	Add("nm1"sv, "защитное стекло для экрана iphone"sv, "test"sv);
+	Add("nm1"sv, "бронированное стекло для samsung galaxy"sv, "test"sv);
+	Add("nm1"sv, "бронированное стекло для экрана iphone"sv, "test"sv);
+	Add("nm1"sv, "бронестекло для экрана samsung galaxy"sv, "test"sv);
+	Add("nm1"sv, "бронестекло для экрана iphone"sv, "test"sv);
 
 	CheckAllPermutations("", {"бронестекло"}, "",
 						 {{"!защитное стекло! для экрана samsung galaxy", "test"},
@@ -681,15 +976,15 @@ TEST_F(FTApi, ChangeSynonymsCfg) {
 	auto ftCfg = GetDefaultConfig();
 	Init(ftCfg);
 
-	Add("nm1", "UN", "test");
-	Add("nm1", "United Nations", "test");
-	Add("nm1", "ООН", "test");
-	Add("nm1", "организация объединенных наций", "test");
+	Add("nm1"sv, "UN"sv, "test"sv);
+	Add("nm1"sv, "United Nations"sv, "test"sv);
+	Add("nm1"sv, "ООН"sv, "test"sv);
+	Add("nm1"sv, "организация объединенных наций"sv, "test"sv);
 
-	Add("nm1", "word", "test");
-	Add("nm1", "several lexems", "test");
-	Add("nm1", "слово", "test");
-	Add("nm1", "сколькото лексем", "test");
+	Add("nm1"sv, "word"sv, "test"sv);
+	Add("nm1"sv, "several lexems"sv, "test"sv);
+	Add("nm1"sv, "слово"sv, "test"sv);
+	Add("nm1"sv, "сколькото лексем"sv, "test"sv);
 
 	CheckAllPermutations("", {"UN"}, "", {{"!UN!", "test"}});
 	CheckAllPermutations("", {"United", "Nations"}, "", {{"!United Nations!", "test"}});
@@ -698,7 +993,7 @@ TEST_F(FTApi, ChangeSynonymsCfg) {
 
 	// Add synonyms
 	ftCfg.synonyms = {{{"UN", "United Nations"}, {"ООН", "организация объединенных наций"}}};
-	SetFTConfig(ftCfg, "nm1", "ft3");
+	SetFTConfig(ftCfg);
 
 	CheckAllPermutations("", {"UN"}, "", {{"!UN!", "test"}, {"!ООН!", "test"}, {"!организация объединенных наций!", "test"}});
 	CheckAllPermutations("", {"United", "Nations"}, "",
@@ -708,7 +1003,7 @@ TEST_F(FTApi, ChangeSynonymsCfg) {
 
 	// Change synonyms
 	ftCfg.synonyms = {{{"word", "several lexems"}, {"слово", "сколькото лексем"}}};
-	SetFTConfig(ftCfg, "nm1", "ft3");
+	SetFTConfig(ftCfg);
 
 	CheckAllPermutations("", {"UN"}, "", {{"!UN!", "test"}});
 	CheckAllPermutations("", {"United", "Nations"}, "", {{"!United Nations!", "test"}});
@@ -718,7 +1013,7 @@ TEST_F(FTApi, ChangeSynonymsCfg) {
 
 	// Remove synonyms
 	ftCfg.synonyms.clear();
-	SetFTConfig(ftCfg, "nm1", "ft3");
+	SetFTConfig(ftCfg);
 
 	CheckAllPermutations("", {"UN"}, "", {{"!UN!", "test"}});
 	CheckAllPermutations("", {"United", "Nations"}, "", {{"!United Nations!", "test"}});
@@ -731,8 +1026,8 @@ TEST_F(FTApi, SelectWithRelevanceBoostWithSynonyms) {
 	ftCfg.synonyms = {{{"word"}, {"одно слово"}}, {{"United Nations"}, {"ООН"}}};
 	Init(ftCfg);
 
-	Add("nm1", "одно слово", "");
-	Add("nm1", "", "ООН");
+	Add("nm1"sv, "одно слово"sv, ""sv);
+	Add("nm1"sv, ""sv, "ООН"sv);
 
 	CheckAllPermutations("", {"word^2", "United^0.5", "Nations"}, "", {{"!одно слово!", ""}, {"", "!ООН!"}}, true);
 	CheckAllPermutations("", {"word^0.5", "United^2", "Nations^0.5"}, "", {{"", "!ООН!"}, {"!одно слово!", ""}}, true);
@@ -743,9 +1038,9 @@ TEST_F(FTApi, SelectWithFieldsBoostWithSynonyms) {
 	ftCfg.synonyms = {{{"word"}, {"одно слово"}}};
 	Init(ftCfg);
 
-	Add("nm1", "одно слово", "");
-	Add("nm1", "одно", "слово");
-	Add("nm1", "", "одно слово");
+	Add("nm1"sv, "одно слово"sv, ""sv);
+	Add("nm1"sv, "одно"sv, "слово"sv);
+	Add("nm1"sv, ""sv, "одно слово"sv);
 
 	CheckAllPermutations("@", {"ft1^2", "ft2^0.5"}, " word", {{"!одно слово!", ""}, {"!одно!", "!слово!"}, {"", "!одно слово!"}}, true,
 						 ", ");
@@ -758,9 +1053,9 @@ TEST_F(FTApi, SelectWithFieldsListWithSynonyms) {
 	ftCfg.synonyms = {{{"word"}, {"одно слово"}}};
 	Init(ftCfg);
 
-	Add("nm1", "одно слово", "");
-	Add("nm1", "одно", "слово");
-	Add("nm1", "", "одно слово");
+	Add("nm1"sv, "одно слово"sv, ""sv);
+	Add("nm1"sv, "одно"sv, "слово"sv);
+	Add("nm1"sv, ""sv, "одно слово"sv);
 
 	CheckAllPermutations("", {"word"}, "", {{"!одно слово!", ""}, {"!одно!", "!слово!"}, {"", "!одно слово!"}});
 	CheckAllPermutations("@ft1 ", {"word"}, "", {{"!одно слово!", ""}});
@@ -772,13 +1067,13 @@ TEST_F(FTApi, RankWithPosition) {
 	ftCfg.fieldsCfg[0].positionWeight = 1.0;
 	Init(ftCfg);
 
-	Add("nm1", "one two three word", "");
-	Add("nm1", "one two three four five six word", "");
-	Add("nm1", "one two three four word", "");
-	Add("nm1", "one word", "");
-	Add("nm1", "one two three four five word", "");
-	Add("nm1", "word", "");
-	Add("nm1", "one two word", "");
+	Add("nm1"sv, "one two three word"sv, ""sv);
+	Add("nm1"sv, "one two three four five six word"sv, ""sv);
+	Add("nm1"sv, "one two three four word"sv, ""sv);
+	Add("nm1"sv, "one word"sv, ""sv);
+	Add("nm1"sv, "one two three four five word"sv, ""sv);
+	Add("nm1"sv, "word"sv, ""sv);
+	Add("nm1"sv, "one two word"sv, ""sv);
 
 	CheckAllPermutations("", {"word"}, "",
 						 {{"!word!", ""},
@@ -797,13 +1092,13 @@ TEST_F(FTApi, DifferentFieldRankPosition) {
 	ftCfg.fieldsCfg[0].positionBoost = 10.0;
 	Init(ftCfg);
 
-	Add("nm1", "one two three word", "one word");
-	Add("nm1", "one two three four five six word", "one two word");
-	Add("nm1", "one two three four word", "one two three four five word");
-	Add("nm1", "one word", "one two three four five six word");
-	Add("nm1", "one two three four five word", "one two three word");
-	Add("nm1", "word", "one two three four word");
-	Add("nm1", "one two word", "word");
+	Add("nm1"sv, "one two three word"sv, "one word"sv);
+	Add("nm1"sv, "one two three four five six word"sv, "one two word"sv);
+	Add("nm1"sv, "one two three four word"sv, "one two three four five word"sv);
+	Add("nm1"sv, "one word"sv, "one two three four five six word"sv);
+	Add("nm1"sv, "one two three four five word"sv, "one two three word"sv);
+	Add("nm1"sv, "word"sv, "one two three four word"sv);
+	Add("nm1"sv, "one two word"sv, "word"sv);
 
 	CheckAllPermutations("", {"word"}, "",
 						 {{"!word!", "one two three four !word!"},
@@ -819,7 +1114,7 @@ TEST_F(FTApi, DifferentFieldRankPosition) {
 	ftCfg.fieldsCfg[0].positionBoost = 1.0;
 	ftCfg.fieldsCfg[1].positionWeight = 1.0;
 	ftCfg.fieldsCfg[1].positionBoost = 10.0;
-	SetFTConfig(ftCfg, "nm1", "ft3");
+	SetFTConfig(ftCfg);
 
 	CheckAllPermutations("", {"word"}, "",
 						 {{"one two !word!", "!word!"},
@@ -837,13 +1132,13 @@ TEST_F(FTApi, PartialMatchRank) {
 	ftCfg.partialMatchDecrease = 0;
 	Init(ftCfg);
 
-	Add("nm1", "ТНТ4", "");
-	Add("nm1", "", "ТНТ");
+	Add("nm1"sv, "ТНТ4"sv, ""sv);
+	Add("nm1"sv, ""sv, "ТНТ"sv);
 
 	CheckAllPermutations("@", {"ft1^1.1", "ft2^1"}, " ТНТ*", {{"!ТНТ4!", ""}, {"", "!ТНТ!"}}, true, ", ");
 
 	ftCfg.partialMatchDecrease = 100;
-	SetFTConfig(ftCfg, "nm1", "ft3");
+	SetFTConfig(ftCfg);
 
 	CheckAllPermutations("@", {"ft1^1.1", "ft2^1"}, " ТНТ*", {{"", "!ТНТ!"}, {"!ТНТ4!", ""}}, true, ", ");
 }
@@ -853,13 +1148,13 @@ TEST_F(FTApi, SelectFullMatch) {
 	ftCfg.fullMatchBoost = 0.9;
 	Init(ftCfg);
 
-	Add("nm1", "test", "love");
-	Add("nm1", "test", "love second");
+	Add("nm1"sv, "test"sv, "love"sv);
+	Add("nm1"sv, "test"sv, "love second"sv);
 
 	CheckAllPermutations("", {"love"}, "", {{"test", "!love! second"}, {"test", "!love!"}}, true);
 
 	ftCfg.fullMatchBoost = 1.1;
-	SetFTConfig(ftCfg, "nm1", "ft3");
+	SetFTConfig(ftCfg);
 	CheckAllPermutations("", {"love"}, "", {{"test", "!love!"}, {"test", "!love! second"}}, true);
 }
 
@@ -880,9 +1175,27 @@ TEST_F(FTApi, SetFtFieldsCfgErrors) {
 	EXPECT_FALSE(err.ok());
 	EXPECT_EQ(err.what(), "Field 'ft1' is dublicated in fulltext configuration");
 
+	err = rt.reindexer->OpenNamespace("nm3");
+	ASSERT_TRUE(err.ok()) << err.what();
+	DefineNamespaceDataset(
+		"nm3", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft", "text", "string", IndexOpts(), 0}});
 	// Задаем уникальный конфиг для единственного поля ft в индексе ft
 	err = SetFTConfig(cfg, "nm3", "ft", {"ft"});
 	// Получаем ошибку
 	EXPECT_FALSE(err.ok());
 	EXPECT_EQ(err.what(), "Configuration for single field fulltext index cannot contain field specifications");
+
+	// maxTypos < 0
+	cfg.maxTypos = -1;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	// Error
+	EXPECT_FALSE(err.ok());
+	EXPECT_EQ(err.what(), "FtFastConfig: Value of 'max_typos' - -1 is out of bounds: [0,4]");
+
+	// maxTypos > 4
+	cfg.maxTypos = 5;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	// Error
+	EXPECT_FALSE(err.ok());
+	EXPECT_EQ(err.what(), "FtFastConfig: Value of 'max_typos' - 5 is out of bounds: [0,4]");
 }

@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.1.3"
+  version: "3.2.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -2647,12 +2647,12 @@ definitions:
         minimum: 0.0
         maximum: 1.0
         description: "Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned "
-      max_typos_in_word:
+      max_typos:
         type: integer
-        default: 1
+        default: 2
         minimum: 0
-        maximum: 2
-        description: "Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 1 possible typo -It will seriously increase RAM usage, and decrease search speed"
+        maximum: 4
+        description: "Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 2 possible typo -It will seriously increase RAM usage, and decrease search speed"
       max_typo_len:
         type: integer
         description: "Maximum word length for building and matching variants with typos."
@@ -2671,6 +2671,13 @@ definitions:
         default: 4000
         minimum: 5
         maximum: 1000000000
+      sum_ranks_by_fields_ratio:
+        type: number
+        format: "float"
+        default: 0.0
+        minimum: 0.0
+        maximum: 1.0
+        description: "Ratio to summation of ranks of match one term in several fields. For example, if value of this ratio is K, request is '@+f1,+f2,+f3 word', ranks of match in fields are R1, R2, R3 and R2 < R1 < R3, final rank will be R = R2 + K*R1 + K*K*R3"
       fields:
         type: array
         description: "Configuration for certian field if it differ from whole index configuration"

@@ -3,11 +3,6 @@
 
 namespace reindexer {
 
-vector<PackedWordEntry>& DataHolder::GetWords() { return words_; }
-suffix_map<char, WordIdType>& DataHolder::GetSuffix() { return steps.back().suffixes_; }
-
-flat_str_multimap<char, WordIdType>& DataHolder::GetTypos() { return steps.back().typos_; }
-
 WordIdType DataHolder::findWord(std::string_view word) {
 	WordIdType id;
 	id.setEmpty();
@@ -26,7 +21,7 @@ WordIdType DataHolder::findWord(std::string_view word) {
 size_t DataHolder::GetMemStat() {
 	size_t res = 0;
 	for (auto& step : steps) {
-		res += step.typos_.heap_size() + step.suffixes_.heap_size();
+		res += step.typosHalf_.heap_size() + step.typosMax_.heap_size() + step.suffixes_.heap_size();
 	}
 	for (auto& w : words_) {
 		res += sizeof(w) + w.vids_.heap_size();

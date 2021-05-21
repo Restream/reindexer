@@ -28,7 +28,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "3.1.3")
+set (REINDEXER_VERSION_DEFAULT "3.2.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -696,7 +696,7 @@ endif()
 add_custom_target(collect_coverage
   WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
   COMMAND lcov --directory . --capture -o coverage.info
-  COMMAND lcov --remove coverage.info '/usr/*' '/Library/*' '${PROJECT_SOURCE_DIR}/vendor/*' -o coverage_filtered.info
+  COMMAND lcov --remove coverage.info '/opt/rh/devtoolset*' '/usr/*' '/Library/*' '${PROJECT_SOURCE_DIR}/vendor/*' '${PROJECT_BINARY_DIR}/gtests/tests/*' -o coverage_filtered.info
   COMMAND genhtml coverage_filtered.info -o coverage_output
   COMMENT "Collecting Reindexer coverage"
 )

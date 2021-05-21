@@ -1,6 +1,7 @@
 #include "coroutine.h"
 #include <cassert>
 #include <chrono>
+#include <cstdio>
 #include <thread>
 
 #ifdef REINDEX_WITH_TSAN_FIBERS
@@ -42,7 +43,7 @@ int ordinator::resume(routine_t id) {
 	{
 		routine &routine = routines_[id - 1];
 
-		if (routine.is_finialized()) return -2;
+		if (routine.is_finalized()) return -2;
 
 		if (routine.is_empty()) {
 			routine.create_ctx();
@@ -92,6 +93,12 @@ void ordinator::suspend() {
 	}
 }
 
+bool ordinator::set_loop_completion_callback(ordinator::cmpl_cb_t cb) noexcept {
+	if (loop_completion_callback_) return false;
+	loop_completion_callback_ = cb;
+	return true;
+}
+
 int64_t ordinator::add_completion_callback(ordinator::cmpl_cb_t cb) {
 	int64_t id = 0;
 	uint8_t cnt = 0;
@@ -112,6 +119,14 @@ int64_t ordinator::add_completion_callback(ordinator::cmpl_cb_t cb) {
 	return id;
 }
 
+bool ordinator::remove_loop_completion_callback() noexcept {
+	if (loop_completion_callback_) {
+		loop_completion_callback_ = nullptr;
+		return true;
+	}
+	return false;
+}
+
 int ordinator::remove_completion_callback(int64_t id) noexcept {
 	auto old_sz = completion_callbacks_.size();
 	completion_callbacks_.erase(
@@ -127,20 +142,20 @@ int ordinator::remove_completion_callback(int64_t id) noexcept {
 size_t ordinator::shrink_storage() noexcept {
 	size_t unused_cnt = 0;
 	for (auto rIt = routines_.rbegin(); rIt != routines_.rend(); ++rIt) {
-		if (rIt->is_empty() && rIt->is_finialized()) {
+		if (rIt->is_empty() && rIt->is_finalized()) {
 			++unused_cnt;
 		} else {
 			break;
 		}
 	}
-	h_vector<routine, 16> new_rt;
+	std::vector<routine> new_rt;
 	routines_.resize(routines_.size() - unused_cnt);
 	new_rt.reserve(routines_.size());
 	std::move(routines_.begin(), routines_.end(), std::back_inserter(new_rt));
 	std::swap(routines_, new_rt);
-	h_vector<routine_t> new_idx;
+	std::vector<routine_t> new_idx;
 	for (auto it = routines_.begin(); it != routines_.end(); ++it) {
-		if (it->is_empty() && it->is_finialized()) {
+		if (it->is_empty() && it->is_finalized()) {
 			new_idx.emplace_back(std::distance(routines_.begin(), it));
 		}
 	}
@@ -179,12 +194,12 @@ ordinator::routine::~routine() {
 #endif	// REINDEX_WITH_TSAN_FIBERS
 
 void ordinator::routine::finalize() noexcept {
-	assert(!is_finialized());
+	assert(!is_finalized());
 	finalized_ = true;
 }
 
 void ordinator::routine::clear() noexcept {
-	assert(is_finialized());
+	assert(is_finalized());
 #ifdef REINDEX_WITH_TSAN_FIBERS
 	if (tsan_fiber_) {
 		__tsan_destroy_fiber(tsan_fiber_);
@@ -212,7 +227,10 @@ bool ordinator::routine::validate_stack() const noexcept {
 	return size_t(stack_top - &stack_bottom) <= stack_size_;
 }
 
-ordinator::ordinator() noexcept : current_(0) {
+ordinator::ordinator() : current_(0), loop_completion_callback_{nullptr} {
+	routines_.reserve(16);
+	rt_call_stack_.reserve(32);
+	indexes_.reserve(8);
 #ifdef REINDEX_WITH_TSAN_FIBERS
 	tsan_fiber_ = __tsan_get_current_fiber();
 #endif	// REINDEX_WITH_TSAN_FIBERS
@@ -241,14 +259,20 @@ void ordinator::remove_from_call_stack(routine_t id) noexcept {
 
 void ordinator::clear_finalized() {
 	assert(indexes_.size());
-	auto id = indexes_.back();
-	auto &routine = routines_[id];
-	assert(routine.is_finialized());
+	auto idIndex = indexes_.back();
+	auto &routine = routines_[idIndex];
+	assert(routine.is_finalized());
 	routine.clear();
-	// Copy callbacks to allow main callback vector modification
-	auto tmp_cbs = completion_callbacks_;
-	for (auto &cb_data : tmp_cbs) {
-		cb_data.cb(id + 1);
+	if (loop_completion_callback_) {
+		// calling completion callback for dynamic_loop
+		loop_completion_callback_(idIndex + 1);
+	}
+	if (completion_callbacks_.size() > 0) {
+		// Copy callbacks to allow callbacks' vector modification
+		auto tmp_cbs = completion_callbacks_;
+		for (auto &cb_data : tmp_cbs) {
+			cb_data.cb(idIndex + 1);
+		}
 	}
 }
 

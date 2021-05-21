@@ -53,7 +53,7 @@ protected:
 		Shared(ConnectionFactory connFactory, int maxListeners);
 		~Shared();
 		socket sock_;
-		int maxListeners_;
+		const int maxListeners_;
 		std::atomic<int> count_;
 		vector<Listener *> listeners_;
 		std::mutex lck_;
@@ -81,7 +81,6 @@ public:
 	/// Constructs new listner object.
 	/// @param loop - ev::loop of caller's thread, listener's socket will be binded to that loop.
 	/// @param connFactory - Connection factory, will create objects with IServerConnection interface implementation.
-	/// @param maxListeners - Maximum number of threads, which listener will utilize. std::thread::hardware_concurrency() by default
 	ForkedListener(ev::dynamic_loop &loop, ConnectionFactory connFactory);
 	~ForkedListener();
 	/// Bind listener to specified host:port

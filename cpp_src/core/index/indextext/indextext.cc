@@ -74,11 +74,13 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 										 BaseFunctionCtx::Ptr ctx, const RdxContext &rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 	if (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
-		throw Error(errParams, "Full text index support only EQ or SET condition with 1 or 2 parameter");
+		throw Error(errParams, "Full text index (%s) support only EQ or SET condition with 1 or 2 parameter", Index::Name());
 	}
 
 	FtCtx::Ptr ftctx = reindexer::reinterpret_pointer_cast<FtCtx>(ctx);
-	assert(ftctx);
+	if (!ftctx) {
+		throw Error(errParams, "Full text index (%s) may not be used without context", Index::Name());
+	}
 	ftctx->PrepareAreas(ftFields_, this->name_);
 
 	bool need_put = false;
