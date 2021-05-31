@@ -22,7 +22,6 @@ jobs:
           ./.github/workflows/install_gbench.sh
           if [[ $OS == ubuntu* ]]; then
             sudo ./dependencies.sh
-            sudo apt-get install libprotobuf-dev
           else
             ./dependencies.sh
           fi
