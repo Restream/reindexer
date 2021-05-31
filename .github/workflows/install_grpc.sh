@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-git clone https://github.com/grpc/grpc -b v1.37.0
+git clone https://github.com/grpc/grpc
 cd grpc
 git submodule update --init
 mkdir -p cmake/build
