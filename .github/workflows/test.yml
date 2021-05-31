@@ -1,26 +1,9 @@
 on: push
 jobs:
-  build-windows:
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        compiler: ["Visual Studio 16 2019", "MinGW Makefiles"]
-      fail-fast: false
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-      - name: Build Reindexer
-        run: |
-          mkdir build && cd build
-          cmake -G "${{matrix.compiler}}" ..
-          cmake --build . --config Release
-          cmake --build . --config Release --target face
-          cmake --build . --config Release --target swagger
-
   build:
     strategy:
       matrix:
-        os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
+        os: [macos-latest]
         include:
           - os: ubuntu-latest
             sanitizer: ASAN
@@ -68,7 +51,7 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
+        os: [macos-latest]
         test: ['C++', 'GO']
         include:
           - os: ubuntu-latest
@@ -130,7 +113,7 @@ jobs:
   test-pyreindexer:
     strategy:
       matrix:
-        os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
+        os: [macos-latest]
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: build
