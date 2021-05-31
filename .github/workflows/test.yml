@@ -25,7 +25,6 @@ jobs:
           else
             ./dependencies.sh
           fi
-          ./.github/workflows/install_grpc.sh
       - name: Build Reindexer
         run: |
           export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
