@@ -127,7 +127,7 @@ jobs:
             ctest --verbose
           fi
 
-  test-pyreindexer-1:
+  test-pyreindexer:
     strategy:
       matrix:
         os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
@@ -184,12 +184,3 @@ jobs:
         run: |
           cd reindexer-py/pyreindexer
           ../.github/workflows/test.sh
-
-  test-pyreindexer-2:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Test PyReindexer
-        env:
-          PYRX_GH_TOKEN: ${{ secrets.PYRX_GH_TOKEN }}
-        run: .github/workflows/pyreindexer_workflow.sh
