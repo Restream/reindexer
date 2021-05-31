@@ -25,7 +25,6 @@ jobs:
             sudo apt-get install libprotobuf-dev
           else
             ./dependencies.sh
-            brew install protobuf
           fi
           ./.github/workflows/install_grpc.sh
       - name: Build Reindexer
