@@ -1,21 +1,21 @@
 on: push
 jobs:
-  build-windows:
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        compiler: ["Visual Studio 16 2019", "MinGW Makefiles"]
-      fail-fast: false
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-      - name: Build Reindexer
-        run: |
-          mkdir build && cd build
-          cmake -G "${{matrix.compiler}}" ..
-          cmake --build . --config Release
-          cmake --build . --config Release --target face
-          cmake --build . --config Release --target swagger
+# build-windows:
+#   runs-on: windows-latest
+#   strategy:
+#     matrix:
+#       compiler: ["Visual Studio 16 2019", "MinGW Makefiles"]
+#     fail-fast: false
+#   steps:
+#     - name: Checkout repository
+#       uses: actions/checkout@v2
+#     - name: Build Reindexer
+#       run: |
+#         mkdir build && cd build
+#         cmake -G "${{matrix.compiler}}" ..
+#         cmake --build . --config Release
+#         cmake --build . --config Release --target face
+#         cmake --build . --config Release --target swagger
 
   build:
     strategy:
@@ -39,10 +39,8 @@ jobs:
           ./.github/workflows/install_gbench.sh
           if [[ $OS == ubuntu* ]]; then
             sudo ./dependencies.sh
-            sudo apt-get install libprotobuf-dev
           else
             ./dependencies.sh
-            brew install protobuf
           fi
           ./.github/workflows/install_grpc.sh
       - name: Build Reindexer
@@ -106,7 +104,6 @@ jobs:
             sudo ./dependencies.sh
           else
             ./dependencies.sh
-            brew install protobuf
           fi
           if [[ $TEST == 'GO' ]]; then
             if [[ $OS == ubuntu* ]]; then
