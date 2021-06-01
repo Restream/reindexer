@@ -104,8 +104,8 @@ jobs:
           if [[ $OS == ubuntu* ]]; then
             sudo ./dependencies.sh
           else
+            ls -la /Users/runner/work/reindexer/reindexer/build/cpp_src/cmd/reindexer_server/
             ./dependencies.sh
-            ./.github/workflows/install_grpc.sh
           fi
           if [[ $TEST == 'GO' ]]; then
             if [[ $OS == ubuntu* ]]; then
