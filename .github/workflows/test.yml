@@ -104,6 +104,7 @@ jobs:
           if [[ $OS == ubuntu* ]]; then
             sudo ./dependencies.sh
           else
+            touch /Users/runner/work/reindexer/reindexer/build/cpp_src/cmd/reindexer_server/*
             ./dependencies.sh
           fi
           if [[ $TEST == 'GO' ]]; then
