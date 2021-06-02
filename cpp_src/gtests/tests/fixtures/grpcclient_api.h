@@ -111,7 +111,7 @@ public:
 		grpc::ClientContext addNsCtx;
 		status = rx_->AddNamespace(&addNsCtx, addNsRequest, &errResponse);
 		ASSERT_TRUE(status.ok()) << status.error_message();
-		ASSERT_TRUE(errResponse.code() == reindexer::grpc::ErrorResponse_ErrorCode_errCodeOK) << errResponse.what();
+		ASSERT_EQ(errResponse.code(), reindexer::grpc::ErrorResponse_ErrorCode_errCodeOK) << errResponse.what();
 
 		reindexer::grpc::AddNamespaceRequest addNsRequest2;
 		addNsRequest2.set_dbname(kDbName);
