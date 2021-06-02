@@ -105,8 +105,6 @@ jobs:
             sudo ./dependencies.sh
           else
             ./dependencies.sh
-            ls -la /Users/runner/work/reindexer/reindexer/build/cpp_src/cmd/reindexer_server/
-            ./.github/workflows/install_grpc.sh
           fi
           if [[ $TEST == 'GO' ]]; then
             if [[ $OS == ubuntu* ]]; then
@@ -114,7 +112,6 @@ jobs:
               ln -s `pwd` /home/runner/go/src/github.com/restream/reindexer
             else
               mkdir -p /Users/runner/go/src/github.com/restream/
-              ln -s `pwd` /Users/runner/go/src/github.com/restream/reindexer
             fi
             go mod init github.com/restream/reindexer
           fi
