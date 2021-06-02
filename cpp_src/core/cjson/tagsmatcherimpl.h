@@ -19,8 +19,8 @@ private:
 	struct AllItemsType{};
 
 public:
-	static constexpr AllItemsType AllItems;
-	IndexedPathNode() noexcept = default;
+	static constexpr AllItemsType AllItems{};
+	IndexedPathNode() = default;
 	IndexedPathNode(AllItemsType) noexcept : index_{ForAllItems} {}
 	IndexedPathNode(int16_t _nameTag) noexcept : nameTag_(_nameTag) {}
 	IndexedPathNode(int16_t _nameTag, int32_t _index) noexcept : nameTag_(_nameTag), index_(_index) {}
