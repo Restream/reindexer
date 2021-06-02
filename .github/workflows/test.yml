@@ -21,7 +21,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
+        #os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
         include:
           - os: ubuntu-latest
             sanitizer: ASAN
@@ -67,8 +67,8 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
-        test: ['C++', 'GO']
+        #os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
+        #test: ['C++', 'GO']
         include:
           - os: ubuntu-latest
             sanitizer: ASAN
@@ -121,7 +121,6 @@ jobs:
             go test ./test/...  -bench . -benchmem -benchtime 100ms -seedcount 50000
           else
             cd build
-            ls -la /Users/runner/work/reindexer/reindexer/build/cpp_src/cmd/reindexer_server/
             ctest --verbose
           fi
 
