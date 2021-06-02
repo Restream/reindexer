@@ -84,8 +84,7 @@ protected:
 				if (path.back().IsArrayNode()) return path.back();
 			}
 		}
-		static IndexedPathNode commonNode{};
-		commonNode.MarkAllItems(true);
+		static const IndexedPathNode commonNode{IndexedPathNode::AllItems};
 		return commonNode;
 	}
 
