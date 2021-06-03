@@ -65,7 +65,7 @@ TEST(Coroutines, LoopDestructor) {
 	ASSERT_EQ(counter, kCoroCount);
 }
 
-TEST(Coroutines, StressTest) {
+/*TEST(Coroutines, StressTest) {
 	// Any number of concurrent coroutines and channels should work properly with sanitizers
 	size_t counter = 0;
 	dynamic_loop loop;
@@ -111,7 +111,7 @@ TEST(Coroutines, StressTest) {
 	ASSERT_EQ(res, 0);
 	res = reindexer::coroutine::remove_completion_callback(userCallbackId);
 	ASSERT_NE(res, 0);
-}
+}*/
 
 TEST(Coroutines, ClosedChannelWriting) {
 	// Closed channel should throw exception on write
