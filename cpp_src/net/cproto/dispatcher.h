@@ -12,9 +12,7 @@
 #include "net/connection.h"
 #include "net/stat.h"
 #include "tools/errors.h"
-namespace reindexer_server {
-class RPCServer;
-}
+
 namespace reindexer {
 namespace net {
 namespace cproto {
@@ -83,7 +81,6 @@ private:
 /// Reindexer cproto RPC dispatcher implementation.
 class Dispatcher {
 	friend class ServerConnection;
-	friend reindexer_server::RPCServer;
 
 public:
 	Dispatcher() : handlers_(kCmdCodeMax, {nullptr, nullptr}) {}

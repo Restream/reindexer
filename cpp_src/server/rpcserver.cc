@@ -16,9 +16,6 @@ using namespace std::string_view_literals;
 const reindexer::SemVersion kMinUnknownReplSupportRxVersion("2.6.0");
 const size_t kMaxTxCount = 1024;
 
-ptrdiff_t offset(const void *ptr, const void *ptr2) {
-	return reinterpret_cast<const uint8_t *>(ptr) - reinterpret_cast<const uint8_t *>(ptr2);
-}
 RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper &logger, IClientsStats *clientsStats, const ServerConfig &scfg,
 					 IStatsWatcher *statsCollector)
 	: dbMgr_(dbMgr),
@@ -26,15 +23,7 @@ RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper &logger, IClientsStats *cli
 	  logger_(logger),
 	  statsWatcher_(statsCollector),
 	  clientsStats_(clientsStats),
-	  startTs_(std::chrono::system_clock::now()) {
-	std::cout << "dispatcher_: " << offset(this, &dispatcher_) << std::endl;
-	std::cout << "dispatcher_.handlers_: " << offset(this, &dispatcher_.handlers_) << std::endl;
-	std::cout << "dispatcher_.middlewares_: " << offset(this, &dispatcher_.middlewares_) << std::endl;
-	std::cout << "dispatcher_.logger_: " << offset(this, &dispatcher_.logger_) << std::endl;
-	std::cout << "dispatcher_.onClose_: " << offset(this, &dispatcher_.onClose_) << std::endl;
-	std::cout << "dispatcher_.onResponse_: " << offset(this, &dispatcher_.onResponse_) << std::endl;
-	std::cout << "listener_: " << offset(this, &listener_) << std::endl;
-}
+	  startTs_(std::chrono::system_clock::now()) {}
 
 RPCServer::~RPCServer() {}
 

@@ -65,8 +65,15 @@ TEST(Coroutines, LoopDestructor) {
 	ASSERT_EQ(counter, kCoroCount);
 }
 
-/*TEST(Coroutines, StressTest) {
-	// Any number of concurrent coroutines and channels should work properly with sanitizers
+TEST(Coroutines, StressTest) {
+#ifdef REINDEX_WITH_TSAN
+	constexpr size_t kOuterLoopCnt = 30;
+	constexpr size_t kMiddleLoopCnt = 50;
+#else
+	constexpr size_t kOuterLoopCnt = 50;
+	constexpr size_t kMiddleLoopCnt = 100;
+#endif
+	constexpr size_t kInnerLoopCnt = 5;
 	size_t counter = 0;
 	dynamic_loop loop;
 	std::vector<std::unique_ptr<channel<int>>> vec;
@@ -75,22 +82,21 @@ TEST(Coroutines, LoopDestructor) {
 	size_t finishedCoroutines = 0;
 	int64_t userCallbackId =
 		reindexer::coroutine::add_completion_callback([&finishedCoroutines](reindexer::coroutine::routine_t) { ++finishedCoroutines; });
-	for (size_t i = 0; i < 50; ++i) {
+	for (size_t i = 0; i < kOuterLoopCnt; ++i) {
 		loop.spawn([&loop, &counter, &vec] {
-			for (size_t i = 0; i < 100; ++i) {
-				constexpr size_t kCnt = 5;
-				auto chPtr = std::unique_ptr<channel<int>>(new channel<int>(kCnt));
+			for (size_t i = 0; i < kMiddleLoopCnt; ++i) {
+				auto chPtr = std::unique_ptr<channel<int>>(new channel<int>(kInnerLoopCnt));
 				auto& ch = *chPtr;
 				vec.emplace_back(std::move(chPtr));
 				loop.spawn([&ch, &counter] {
-					for (size_t i = 0; i < 2 * kCnt; ++i) {
+					for (size_t i = 0; i < 2 * kInnerLoopCnt; ++i) {
 						auto res = ch.pop();
 						ASSERT_TRUE(res.second);
 						(void)res;
 					}
 					++counter;
 				});
-				for (size_t i = 0; i < kCnt; ++i) {
+				for (size_t i = 0; i < kInnerLoopCnt; ++i) {
 					loop.spawn([&ch, &counter] {
 						for (size_t i = 0; i < 2; ++i) {
 							ch.push(int(i));
@@ -103,7 +109,7 @@ TEST(Coroutines, LoopDestructor) {
 		});
 	}
 	loop.run();
-	constexpr size_t kExpectedTotal = 30050;
+	constexpr size_t kExpectedTotal = kOuterLoopCnt * (kMiddleLoopCnt * (kInnerLoopCnt + 1) + 1);
 	ASSERT_EQ(counter, kExpectedTotal);
 	ASSERT_EQ(finishedCoroutines, kExpectedTotal);
 
@@ -111,7 +117,7 @@ TEST(Coroutines, LoopDestructor) {
 	ASSERT_EQ(res, 0);
 	res = reindexer::coroutine::remove_completion_callback(userCallbackId);
 	ASSERT_NE(res, 0);
-}*/
+}
 
 TEST(Coroutines, ClosedChannelWriting) {
 	// Closed channel should throw exception on write
