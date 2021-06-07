@@ -27,6 +27,8 @@ jobs:
             sanitizer: ASAN
           - os: ubuntu-latest
             sanitizer: TSAN
+            cc: gcc-10
+            cxx: g++-10
       fail-fast: false
     runs-on: ${{matrix.os}}
     env:
@@ -45,8 +47,8 @@ jobs:
           fi
           ./.github/workflows/install_grpc.sh
         env:
-          CC: gcc-10
-          CXX: g++-10
+          CC: ${{matrix.cc}}
+          CXX: ${{matrix.cxx}}
       - name: Build Reindexer
         run: |
           export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
