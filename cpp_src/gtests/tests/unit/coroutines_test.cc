@@ -66,13 +66,8 @@ TEST(Coroutines, LoopDestructor) {
 }
 
 TEST(Coroutines, StressTest) {
-#ifdef REINDEX_WITH_TSAN
-	constexpr size_t kOuterLoopCnt = 30;
-	constexpr size_t kMiddleLoopCnt = 50;
-#else
 	constexpr size_t kOuterLoopCnt = 50;
 	constexpr size_t kMiddleLoopCnt = 100;
-#endif
 	constexpr size_t kInnerLoopCnt = 5;
 	size_t counter = 0;
 	dynamic_loop loop;
