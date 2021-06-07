@@ -44,6 +44,8 @@ jobs:
             ./dependencies.sh
           fi
           ./.github/workflows/install_grpc.sh
+        env:
+          CXX: g++-10
       - name: Build Reindexer
         run: |
           export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
@@ -56,7 +58,7 @@ jobs:
           make -j4
           STRIP=/bin/true cpack
         env:
-          CXX: 10
+          CXX: g++-10
       - name: 'Tar Artifacts'
         run: tar -cvf artifacts.tar build/ bindings/builtin/builtin_posix.go bindings/builtinserver/builtinserver_posix.go dependencies.sh
       - name: Archive Artifacts
