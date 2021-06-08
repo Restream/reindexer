@@ -42,10 +42,12 @@ jobs:
           ./.github/workflows/install_gbench.sh
           if [[ $OS == ubuntu* ]]; then
             sudo ./dependencies.sh
+            if [[ ${{matrix.sanitizer}} == TSAN ]]; then
+              ./.github/workflows/install_grpc.sh
+            fi
           else
             ./dependencies.sh
           fi
-          ./.github/workflows/install_grpc.sh
         env:
           CC: ${{matrix.cc}}
           CXX: ${{matrix.cxx}}
@@ -54,7 +56,13 @@ jobs:
           export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
           if [[ $OS == ubuntu-latest ]]; then
-            cmake -DENABLE_GRPC=ON -DWITH_${{matrix.sanitizer}}=On ..
+            if [[ ${{matrix.sanitizer}} == TSAN ]]; then
+              cmake -DWITH_${{matrix.sanitizer}}=On ..
+            else
+              cmake -DENABLE_GRPC=ON -DWITH_${{matrix.sanitizer}}=On ..
+            fi
+          elif [[ $OS == macos-latest ]]; then
+            cmake ..
           else
             cmake -DENABLE_GRPC=ON ..
           fi
