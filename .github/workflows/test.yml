@@ -86,12 +86,12 @@ jobs:
           - os: ubuntu-latest
             sanitizer: ASAN
             test: 'GO'
-          - os: ubuntu-latest
-            sanitizer: TSAN
-            test: 'C++'
-          - os: ubuntu-latest
-            sanitizer: TSAN
-            test: 'GO'
+#         - os: ubuntu-latest
+#           sanitizer: TSAN
+#           test: 'C++'
+#         - os: ubuntu-latest
+#           sanitizer: TSAN
+#           test: 'GO'
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: build
