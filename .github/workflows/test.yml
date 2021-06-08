@@ -25,10 +25,10 @@ jobs:
         include:
           - os: ubuntu-latest
             sanitizer: ASAN
-          - os: ubuntu-latest
-            sanitizer: TSAN
-            cc: gcc-10
-            cxx: g++-10
+#         - os: ubuntu-latest
+#           sanitizer: TSAN
+#           cc: gcc-10
+#           cxx: g++-10
       fail-fast: false
     runs-on: ${{matrix.os}}
     env:
@@ -42,9 +42,7 @@ jobs:
           ./.github/workflows/install_gbench.sh
           if [[ $OS == ubuntu* ]]; then
             sudo ./dependencies.sh
-            if [[ ${{matrix.sanitizer}} == TSAN ]]; then
-              ./.github/workflows/install_grpc.sh
-            fi
+            ./.github/workflows/install_grpc.sh
           else
             ./dependencies.sh
           fi
@@ -56,11 +54,7 @@ jobs:
           export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
           mkdir build && cd build
           if [[ $OS == ubuntu-latest ]]; then
-            if [[ ${{matrix.sanitizer}} == TSAN ]]; then
-              cmake -DWITH_${{matrix.sanitizer}}=On ..
-            else
-              cmake -DENABLE_GRPC=ON -DWITH_${{matrix.sanitizer}}=On ..
-            fi
+            cmake -DENABLE_GRPC=ON -DWITH_${{matrix.sanitizer}}=On ..
           elif [[ $OS == macos-latest ]]; then
             cmake ..
           else
