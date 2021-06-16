@@ -18,7 +18,7 @@ using std::chrono::seconds;
 using std::chrono::milliseconds;
 
 class Namespace;
-using NSArray = h_vector<Namespace*, 1>;
+using NsArray = h_vector<Namespace*, 1>;
 
 class CoroQueryResults {
 public:
@@ -38,9 +38,9 @@ public:
 		bool IsRaw();
 		std::string_view GetRaw();
 		Iterator& operator++();
-		Error Status() const noexcept{ return qr_->status_; }
-		bool operator!=(const Iterator&other) const noexcept { return idx_ != other.idx_; }
-		bool operator==(const Iterator&other) const noexcept { return idx_ == other.idx_; };
+		Error Status() const noexcept { return qr_->status_; }
+		bool operator!=(const Iterator& other) const noexcept { return idx_ != other.idx_; }
+		bool operator==(const Iterator& other) const noexcept { return idx_ == other.idx_; };
 		Iterator& operator*() { return *this; }
 		void readNext();
 		void getJSONFromCJSON(std::string_view cjson, WrSerializer& wrser, bool withHdrLen = true);
@@ -66,18 +66,20 @@ public:
 	TagsMatcher getTagsMatcher(int nsid) const;
 
 private:
+	friend class SyncCoroQueryResults;
+	friend class SyncCoroReindexerImpl;
 	friend class RPCClient;
 	friend class CoroRPCClient;
 	friend class RPCClientMock;
-	CoroQueryResults(net::cproto::CoroClientConnection* conn, NSArray&& nsArray, int fetchFlags, int fetchAmount, seconds timeout);
-	CoroQueryResults(net::cproto::CoroClientConnection* conn, NSArray&& nsArray, std::string_view rawResult, int queryID,
-				 int fetchFlags, int fetchAmount, seconds timeout);
+	CoroQueryResults(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, int fetchFlags, int fetchAmount, seconds timeout);
+	CoroQueryResults(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, std::string_view rawResult, int queryID, int fetchFlags,
+					 int fetchAmount, seconds timeout);
 	void Bind(std::string_view rawResult, int queryID);
 	void fetchNextResults();
 
 	net::cproto::CoroClientConnection* conn_;
 
-	NSArray nsArray_;
+	NsArray nsArray_;
 	h_vector<char, 0x100> rawResult_;
 	int queryID_;
 	int fetchOffset_;

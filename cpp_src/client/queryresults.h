@@ -18,7 +18,7 @@ using std::chrono::seconds;
 using std::chrono::milliseconds;
 
 class Namespace;
-using NSArray = h_vector<Namespace*, 1>;
+using NsArray = h_vector<Namespace*, 1>;
 
 class QueryResults {
 public:
@@ -70,8 +70,8 @@ public:
 private:
 	friend class RPCClient;
 	friend class RPCClientMock;
-	QueryResults(net::cproto::ClientConnection* conn, NSArray&& nsArray, Completion cmpl, int fetchFlags, int fetchAmount, seconds timeout);
-	QueryResults(net::cproto::ClientConnection* conn, NSArray&& nsArray, Completion cmpl, std::string_view rawResult, int queryID,
+	QueryResults(net::cproto::ClientConnection* conn, NsArray&& nsArray, Completion cmpl, int fetchFlags, int fetchAmount, seconds timeout);
+	QueryResults(net::cproto::ClientConnection* conn, NsArray&& nsArray, Completion cmpl, std::string_view rawResult, int queryID,
 				 int fetchFlags, int fetchAmount, seconds timeout);
 	void Bind(std::string_view rawResult, int queryID);
 	void fetchNextResults();
@@ -84,7 +84,7 @@ private:
 
 	net::cproto::ClientConnection* conn_;
 
-	NSArray nsArray_;
+	NsArray nsArray_;
 	h_vector<char, 0x100> rawResult_;
 	int queryID_;
 	int fetchOffset_;

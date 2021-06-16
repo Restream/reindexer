@@ -46,13 +46,13 @@ TEST_F(ReplicationLoadApi, WALResizeStaticData) {
 	auto master = GetSrv(masterId_)->api.reindexer;
 	ASSERT_NO_FATAL_FAILURE(SetWALSize(masterId_, 1000, nsName));
 	{
-		client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(0)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), 3);
 	}
 	{
-		client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(2)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), 1);
@@ -60,24 +60,24 @@ TEST_F(ReplicationLoadApi, WALResizeStaticData) {
 
 	FillData(500);
 
-	client::QueryResults qrLast100_1(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-	client::QueryResults qrLast100_2(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-	client::QueryResults qrLast100_3(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+	BaseApi::QueryResultsType qrLast100_1(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+	BaseApi::QueryResultsType qrLast100_2(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+	BaseApi::QueryResultsType qrLast100_3(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 
 	{
-		client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(0)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), 503);
 	}
 	{
-		client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(502)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), 1);
 	}
 	{
-		client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(503)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
@@ -89,7 +89,7 @@ TEST_F(ReplicationLoadApi, WALResizeStaticData) {
 	}
 	ASSERT_NO_FATAL_FAILURE(SetWALSize(masterId_, 100, nsName));
 	{
-		client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(401)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 	}
@@ -99,20 +99,20 @@ TEST_F(ReplicationLoadApi, WALResizeStaticData) {
 		EXPECT_EQ(qrLast100_2.Count(), 101);
 	}
 	{
-		client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(502)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), 1);
 	}
 	{
-		client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(503)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
 	}
 	ASSERT_NO_FATAL_FAILURE(SetWALSize(masterId_, 2000, nsName));
 	{
-		client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(401)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
@@ -123,19 +123,19 @@ TEST_F(ReplicationLoadApi, WALResizeStaticData) {
 		EXPECT_EQ(qrLast100_3.Count(), 101);
 	}
 	{
-		client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(502)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), 1);
 	}
 	{
-		client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(503)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
 	}
 
-	auto qrToSet = [](const client::QueryResults& qr) {
+	auto qrToSet = [](const BaseApi::QueryResultsType& qr) {
 		std::unordered_set<string> items;
 		WrSerializer ser;
 		for (auto& item : qr) {
@@ -166,20 +166,16 @@ TEST_F(ReplicationLoadApi, WALResizeDynamicData) {
 	ASSERT_NO_FATAL_FAILURE(SetWALSize(masterId_, 1000, nsName));
 	FillData(500);
 
-	client::QueryResults qrLast100_1(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-	client::QueryResults qrLast100_2(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-	client::QueryResults qrLast100_3(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-
 	auto master = GetSrv(masterId_)->api.reindexer;
 	ASSERT_NO_FATAL_FAILURE(SetWALSize(masterId_, 100, nsName));
 	FillData(50);
 	{
-		client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(451)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 	}
 	{
-		client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(452)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), 101);
@@ -187,25 +183,25 @@ TEST_F(ReplicationLoadApi, WALResizeDynamicData) {
 	ASSERT_NO_FATAL_FAILURE(SetWALSize(masterId_, 200, nsName));
 	FillData(500);
 	{
-		client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(851)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
 	}
 	{
-		client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(852)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), 201);
 	}
 	{
-		client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(1052)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), 1);
 	}
 	{
-		client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(1053)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
@@ -308,12 +304,36 @@ TEST_F(ReplicationLoadApi, ConfigSync) {
 	CheckSlaveConfigNamespace(kTestSlaveID, config, std::chrono::seconds(3));
 }
 
+#if !defined(REINDEX_WITH_TSAN)
 TEST_F(ReplicationLoadApi, DynamicRoleSwitch) {
 	InitNs();
+	stop = false;
+
+	// Create #config changing threads
+	std::vector<std::thread> configUpdateThreads(GetServersCount());
+	for (size_t i = 0; i < configUpdateThreads.size(); ++i) {
+		configUpdateThreads[i] = std::thread(
+			[this](size_t id) {
+				while (!stop) {
+					std::this_thread::sleep_for(std::chrono::milliseconds(100));
+					size_t cnt = rand() % 5;
+					SetOptmizationSortWorkers(id, cnt, "*");
+				}
+			},
+			i);
+	}
+
+	// Switch master and await sync in each loop iteration
 	for (size_t i = 1; i < 8; i++) {
 		FillData(2000);
 		WaitSync("some");
 		WaitSync("some1");
-		SwitchMaster(i % kDefaultServerCount);
+		SwitchMaster(i % kDefaultServerCount, {"some", "some1"});
+	}
+
+	stop = true;
+	for (auto& th : configUpdateThreads) {
+		th.join();
 	}
 }
+#endif

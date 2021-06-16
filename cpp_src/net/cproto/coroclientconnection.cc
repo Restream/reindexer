@@ -297,7 +297,7 @@ void CoroClientConnection::writerRoutine() {
 			auto mch = wrCh_.pop();
 			if (!mch.second) {
 				// channels is closed
-				break;
+				return;
 			}
 			auto status = login(buf);
 			if (!status.ok()) {
@@ -306,7 +306,8 @@ void CoroClientConnection::writerRoutine() {
 				continue;
 			}
 			appendChunck(buf, std::move(mch.first.data));
-		} while (++cnt < kCntToSendNow && wrCh_.size());
+			++cnt;
+		} while (cnt < kCntToSendNow && wrCh_.size());
 		int err = 0;
 		bool sendNow = cnt == kCntToSendNow || buf.size() >= kDataToSendNow;
 		auto written = conn_.async_write(buf, err, sendNow);

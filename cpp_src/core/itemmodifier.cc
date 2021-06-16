@@ -150,7 +150,7 @@ void ItemModifier::modifyCJSON(PayloadValue &pv, FieldData &field, VariantArray 
 		index.Delete(ns_.krefs, id);
 
 		ns_.krefs.resize(0);
-		index.Upsert(ns_.krefs, ns_.skrefs, id, !isIndexSparse);
+		index.Upsert(ns_.krefs, ns_.skrefs, id);
 
 		if (!isIndexSparse) {
 			pl.Set(fieldIdx, ns_.krefs);
@@ -268,7 +268,7 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData &field, Vari
 		for (Variant &key : values) {
 			key.convert(index.KeyType());
 		}
-		index.Upsert(ns_.krefs, values, itemId, true);
+		index.Upsert(ns_.krefs, values, itemId);
 		if (!index.Opts().IsSparse()) {
 			pl.Set(field.index(), ns_.krefs);
 		}

@@ -48,13 +48,14 @@ public:
 	Index& operator=(const Index&) = delete;
 	virtual ~Index();
 	virtual Variant Upsert(const Variant& key, IdType id) = 0;
-	virtual void Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool needUpsertEmptyValue) = 0;
+	virtual void Upsert(VariantArray& result, const VariantArray& keys, IdType id) = 0;
 	virtual void Delete(const Variant& key, IdType id) = 0;
 	virtual void Delete(const VariantArray& keys, IdType id) = 0;
 
 	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, SelectOpts opts,
 									   BaseFunctionCtx::Ptr ctx, const RdxContext&) = 0;
 	virtual void Commit() = 0;
+	virtual void CommitFulltext() {}
 	virtual void MakeSortOrders(UpdateSortedContext&) {}
 
 	virtual void UpdateSortedIds(const UpdateSortedContext& ctx) = 0;
@@ -64,6 +65,7 @@ public:
 	virtual IndexMemStat GetMemStat() = 0;
 	virtual int64_t GetTTLValue() const { return 0; }
 	virtual IndexIterator::Ptr CreateIterator() const { return nullptr; }
+	virtual bool RequireWarmupOnNsCopy() const noexcept { return false; }
 
 	const PayloadType& GetPayloadType() const { return payloadType_; }
 	void UpdatePayloadType(const PayloadType payloadType) { payloadType_ = payloadType; }

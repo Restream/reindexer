@@ -39,7 +39,7 @@ IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) {
 }
 
 template <typename T>
-void FuzzyIndexText<T>::commitFulltext() {
+void FuzzyIndexText<T>::commitFulltextImpl() {
 	this->cache_ft_->Clear();
 	vector<unique_ptr<string>> bufStrs;
 	auto gt = this->Getter();
@@ -56,6 +56,7 @@ void FuzzyIndexText<T>::commitFulltext() {
 		}
 	}
 	engine_.Commit();
+	this->isBuilt_ = true;
 }
 template <typename T>
 FtFuzzyConfig* FuzzyIndexText<T>::GetConfig() const {

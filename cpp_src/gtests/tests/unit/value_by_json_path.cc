@@ -1,3 +1,4 @@
+#include "core/cjson/jsonbuilder.h"
 #include "reindexer_api.h"
 #include "tools/logger.h"
 
@@ -190,4 +191,98 @@ TEST_F(ReindexerApi, CompositeFTSelectByJsonPath) {
 		auto json = ritem.GetJSON();
 		EXPECT_TRUE(json == R"xxx({"id":"key2","locale":"ru","nested":{"name":"name2","count":2}})xxx");
 	}
+}
+
+TEST_F(ReindexerApi, NumericSearchForNonIndexedField) {
+	// Define namespace structure
+	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	reindexer::WrSerializer wrser;
+	reindexer::JsonBuilder item1Builder(wrser, ObjType::TypeObject);
+
+	// Insert one item with integer 'mac_address' value
+	Item item1 = rt.reindexer->NewItem(default_namespace);
+	ASSERT_TRUE(item1.Status().ok()) << item1.Status().what();
+	item1Builder.Put("id", int(1));
+	item1Builder.Put("mac_address", int64_t(2147483648));
+	item1Builder.End();
+	err = item1.FromJSON(wrser.Slice());
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->Upsert(default_namespace, item1);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	wrser.Reset();
+
+	// Insert another item with string 'mac_address' value
+	reindexer::JsonBuilder item2Builder(wrser, ObjType::TypeObject);
+	Item item2 = rt.reindexer->NewItem(default_namespace);
+	ASSERT_TRUE(item2.Status().ok()) << item2.Status().what();
+	item2Builder.Put("id", int(2));
+	item2Builder.Put("mac_address", Variant(string("2147483648")));
+	item2Builder.End();
+	err = item2.FromJSON(wrser.Slice());
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->Upsert(default_namespace, item2);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// Make sure while seeking for a string we only get a string value as a result
+	{
+		QueryResults qr;
+		err = rt.reindexer->Select("select * from test_namespace where mac_address = '2147483648'", qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(qr.Count() == 1) << qr.Count();
+		Item item = qr[0].GetItem();
+		Variant id = item["id"];
+		ASSERT_TRUE(static_cast<int>(id) == 2);
+		Variant value = item["mac_address"];
+		ASSERT_TRUE(value.Type() == KeyValueString) << Variant::TypeName(value.Type());
+	}
+
+	// Make sure while seeking for a number we only get an integer value as a result
+	{
+		QueryResults qr;
+		err = rt.reindexer->Select(Query(default_namespace).Where("mac_address", CondEq, Variant(int64_t(2147483648))), qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(qr.Count() == 1) << qr.Count();
+		Item item = qr[0].GetItem();
+		Variant id = item["id"];
+		ASSERT_TRUE(static_cast<int>(id) == 1);
+		Variant value = item["mac_address"];
+		ASSERT_TRUE(value.Type() == KeyValueInt64);
+	}
+}
+
+TEST_F(ReindexerApi, InsertWithSeveralJsonPaths) {
+	// Define namespace structure with an indexed field that has 3 json paths
+	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {"name", {"name", "text", "description"}, "hash", "string", IndexOpts(), 0});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// Build an item, which includes (and sets) all the json-paths for the field 'name'
+	reindexer::WrSerializer wrser;
+	reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+	jsonBuilder.Put("id", int(1));
+	jsonBuilder.Put("name", "first");
+	jsonBuilder.Put("text", "second");
+	jsonBuilder.Put("description", "third");
+	jsonBuilder.End();
+
+	// Insert the item
+	Item item = rt.reindexer->NewItem(default_namespace);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	err = item.FromJSON(wrser.Slice());
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->Insert(default_namespace, item);
+
+	// Make sure it returned an error of type 'errParams'
+	ASSERT_TRUE(!err.ok() && err.code() == errParams);
 }

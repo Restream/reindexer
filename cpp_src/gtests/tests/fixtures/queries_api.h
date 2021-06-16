@@ -290,26 +290,17 @@ public:
 	void Verify(const string& ns, const QueryResults& qr, const Query& query) {
 		std::unordered_set<string> pks;
 		std::unordered_map<string, std::unordered_set<string>> distincts;
-
-		struct QueryWatcher {
-			~QueryWatcher() {
-				if (::testing::Test::HasFailure()) {
-					reindexer::WrSerializer ser;
-					q.GetSQL(ser);
-					TEST_COUT << "Failed query dest: " << ser.Slice() << std::endl;
-					assert(false);
-				}
-			}
-
-			const Query& q;
-		};
 		QueryWatcher watcher{query};
 
 		VariantArray lastSortedColumnValues;
 		lastSortedColumnValues.resize(query.sortingEntries_.size());
 
 		size_t itemsCount = 0;
-		const auto joinedSelectors = getJoinedSelectors(query);
+		auto joinedSelectors = getJoinedSelectors(query);
+		for (auto& js : joinedSelectors) {
+			const Error err = rt.reindexer->Select(js.Query(), js.QueryResults());
+			ASSERT_TRUE(err.ok()) << err.what();
+		}
 		for (size_t i = 0; i < qr.Count(); ++i) {
 			Item itemr(qr[i].GetItem());
 
@@ -330,7 +321,7 @@ public:
 								<< "explain: " << qr.GetExplainResults();
 			}
 
-			bool conditionsSatisfied = checkConditions(itemr, query.entries.cbegin(), query.entries.cend());
+			bool conditionsSatisfied = checkConditions(itemr, query.entries.cbegin(), query.entries.cend(), joinedSelectors);
 			if (conditionsSatisfied) ++itemsCount;
 			EXPECT_TRUE(conditionsSatisfied) << "Item doesn't match conditions: " << itemr.GetJSON() << std::endl
 											 << "explain: " << qr.GetExplainResults();
@@ -410,7 +401,7 @@ public:
 
 		for (auto& insertedItem : insertedItems[ns]) {
 			if (pks.find(insertedItem.first) != pks.end()) continue;
-			bool conditionsSatisfied = checkConditions(insertedItem.second, query.entries.cbegin(), query.entries.cend());
+			bool conditionsSatisfied = checkConditions(insertedItem.second, query.entries.cbegin(), query.entries.cend(), joinedSelectors);
 
 			EXPECT_FALSE(conditionsSatisfied) << "Item match conditions (found " << qr.Count()
 											  << " items), but not found: " << insertedItem.second.GetJSON() << std::endl
@@ -462,16 +453,21 @@ protected:
 		return ret;
 	}
 
-	bool checkConditions(reindexer::Item& item, reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator to) {
+	bool checkConditions(reindexer::Item& item, reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator to,
+						 const std::vector<JoinedSelectorMock>& joinedSelectors) {
 		bool result = true;
 		for (; it != to; ++it) {
 			bool iterationResult = true;
 			if (it->IsLeaf()) {
 				if (it->Value().distinct) continue;
-				if (it->Value().joinIndex != QueryEntry::kNoJoins) continue;
-				iterationResult = checkCondition(item, it->Value());
+				if (it->Value().joinIndex == QueryEntry::kNoJoins) {
+					iterationResult = checkCondition(item, it->Value());
+				} else {
+					assert(static_cast<size_t>(it->Value().joinIndex) < joinedSelectors.size());
+					iterationResult = checkCondition(item, joinedSelectors[it->Value().joinIndex]);
+				}
 			} else {
-				iterationResult = checkConditions(item, it.cbegin(), it.cend());
+				iterationResult = checkConditions(item, it.cbegin(), it.cend(), joinedSelectors);
 			}
 			switch (it->operation) {
 				case OpNot:
@@ -625,6 +621,21 @@ protected:
 		}
 	}
 
+	bool checkCondition(Item& item, const JoinedSelectorMock& joinedSelector) {
+		bool result = false;
+		const IndexOpts& opts = indexesOptions[joinedSelector.LeftIndexName()];
+		const VariantArray fieldValues = item[joinedSelector.LeftIndexName()];
+		for (const Variant& fieldValue : fieldValues) {
+			for (auto it : joinedSelector.QueryResults()) {
+				result =
+					compareValues(joinedSelector.Condition(), fieldValue, it.GetItem()[joinedSelector.RightIndexName()], opts.collateOpts_);
+				if (result) break;
+			}
+			if (result) break;
+		}
+		return result;
+	}
+
 	bool checkCondition(Item& item, const QueryEntry& qentry) {
 		EXPECT_TRUE(item.NumFields() > 0);
 		if (isGeomConditions(qentry)) {
@@ -632,7 +643,7 @@ protected:
 		}
 
 		bool result = false;
-		IndexOpts& opts = indexesOptions[qentry.index];
+		const IndexOpts& opts = indexesOptions[qentry.index];
 
 		if (isIndexComposite(item, qentry)) {
 			return checkCompositeValues(item, qentry, opts.collateOpts_);
@@ -663,7 +674,13 @@ protected:
 	static std::vector<JoinedSelectorMock> getJoinedSelectors(const Query& query) {
 		std::vector<JoinedSelectorMock> result;
 		result.reserve(query.joinQueries_.size());
-		for (const auto& jq : query.joinQueries_) result.emplace_back(jq._namespace);
+		for (const auto& jq : query.joinQueries_) {
+			// TODO remove these restrictions in tests
+			assert(jq.joinType == JoinType::InnerJoin);
+			assert(jq.joinEntries_.size() == 1);
+			assert(jq.joinEntries_[0].op_ == OpAnd);
+			result.emplace_back(jq, jq.joinEntries_[0].index_, jq.joinEntries_[0].joinIndex_, jq.joinEntries_[0].condition_);
+		}
 		return result;
 	}
 
@@ -737,7 +754,7 @@ protected:
 	}
 
 	void FillTestJoinNamespace() {
-		for (int i = 0; i < 200; ++i) {
+		for (int i = 0; i < 300; ++i) {
 			Item item = NewItem(joinNs);
 			item[kFieldNameId] = i;
 			item[kFieldNameYear] = 1900 + i;
@@ -1080,7 +1097,18 @@ protected:
 		}
 	}
 
+	static std::vector<int> Range(int start, int end) {
+		const int step = start > end ? -1 : 1;
+		std::vector<int> result;
+		result.reserve(step * (end - start));
+		for (; start != end; start += step) {
+			result.push_back(start);
+		}
+		return result;
+	}
+
 	void CheckStandartQueries() {
+		using namespace std::string_literals;
 		static const vector<string> sortIdxs = {"",
 												kFieldNameName,
 												kFieldNameYear,
@@ -1479,6 +1507,21 @@ protected:
 															.Sort(joinNs + '.' + kFieldNameId + " * " + joinNs + '.' + kFieldNameGenre +
 																	  (sortIdx.empty() || (sortIdx == "name") ? "" : (" + " + sortIdx)),
 																  sortOrder));
+
+					ExecuteAndVerify(default_namespace, Query(default_namespace)
+															.InnerJoin(kFieldNameYear, kFieldNameYear, CondEq,
+																	   Query(joinNs)
+																		   .Where(kFieldNameId, CondEq, RandIntVector(20, 0, 100))
+																		   .Sort(kFieldNameId + " + "s + kFieldNameYear, sortOrder))
+															.Distinct(distinct));
+
+					ExecuteAndVerify(
+						default_namespace,
+						Query(default_namespace)
+							.InnerJoin(
+								kFieldNameYear, kFieldNameYear, CondEq,
+								Query(joinNs).Where(kFieldNameYear, CondGe, 1925).Sort(kFieldNameId + " + "s + kFieldNameYear, sortOrder))
+							.Distinct(distinct));
 				}
 			}
 		}

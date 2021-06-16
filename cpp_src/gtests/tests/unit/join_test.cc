@@ -28,6 +28,7 @@ TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest) {
 									 .Or().InnerJoin(authorid_fk, authorid, CondEq, queryAuthors2));
 	// clang-format on
 
+	QueryWatcher watcher{queryBooks};
 	reindexer::QueryResults qr;
 	Error err = rt.reindexer->Select(queryBooks, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -38,6 +39,7 @@ TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest) {
 TEST_F(JoinSelectsApi, JoinsLockWithCache_364) {
 	Query queryGenres = std::move(Query(genres_namespace).Where(genreid, CondEq, 1));
 	Query queryBooks = std::move(Query(books_namespace, 0, 50).InnerJoin(genreId_fk, genreid, CondEq, queryGenres));
+	QueryWatcher watcher{queryBooks};
 	TurnOnJoinCache(genres_namespace);
 
 	for (int i = 0; i < 10; ++i) {
@@ -60,6 +62,7 @@ TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest2) {
 
 	Query query;
 	query.FromSQL(sql);
+	QueryWatcher watcher{query};
 	reindexer::QueryResults qr;
 	Error err = rt.reindexer->Select(query, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -78,6 +81,7 @@ TEST_F(JoinSelectsApi, SqlPasringTest) {
 
 	Query srcQuery;
 	srcQuery.FromSQL(sql);
+	QueryWatcher watcher{srcQuery};
 
 	reindexer::WrSerializer wrser;
 	srcQuery.GetSQL(wrser);
@@ -99,6 +103,7 @@ TEST_F(JoinSelectsApi, InnerJoinTest) {
 	Query queryAuthors(authors_namespace);
 	Query queryBooks = std::move(Query(books_namespace, 0, 10).Where(price, CondGe, 600));
 	Query joinQuery = queryBooks.InnerJoin(authorid_fk, authorid, CondEq, queryAuthors);
+	QueryWatcher watcher{joinQuery};
 
 	reindexer::QueryResults joinQueryRes;
 	Error err = rt.reindexer->Select(joinQuery, joinQueryRes);
@@ -160,6 +165,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 		}
 	}
 
+	QueryWatcher watcher{joinQuery};
 	reindexer::QueryResults joinQueryRes;
 	err = rt.reindexer->Select(joinQuery, joinQueryRes);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -222,6 +228,7 @@ TEST_F(JoinSelectsApi, OrInnerJoinTest) {
 	Query queryBooks = std::move(Query(books_namespace, 0, 10).Where(price, CondGe, 500));
 	Query innerJoinQuery = std::move(queryBooks.InnerJoin(authorid_fk, authorid, CondEq, queryAuthors));
 	Query orInnerJoinQuery = std::move(innerJoinQuery.OrInnerJoin(genreId_fk, genreid, CondEq, queryGenres));
+	QueryWatcher watcher{orInnerJoinQuery};
 
 	const int authorsNsJoinIndex = 0;
 	const int genresNsJoinIndex = 1;
@@ -276,6 +283,7 @@ TEST_F(JoinSelectsApi, JoinTestSorting) {
 										.Sort(age, false)
 										.Limit(10));
 
+		QueryWatcher watcher{joinQuery};
 		reindexer::QueryResults joinQueryRes;
 		Error err = rt.reindexer->Select(joinQuery, joinQueryRes);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -325,6 +333,7 @@ TEST_F(JoinSelectsApi, TestSortingByJoinedNs) {
 	Query query2 =
 		std::move(Query(books_namespace).InnerJoin(authorid_fk, authorid, CondEq, joinedQuery2).Sort(authors_namespace + '.' + age, false));
 
+	QueryWatcher watcher{query2};
 	reindexer::QueryResults joinQueryRes2;
 	err = rt.reindexer->Select(query2, joinQueryRes2);
 	ASSERT_TRUE(err.ok()) << err.what();

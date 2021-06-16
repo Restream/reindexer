@@ -22,7 +22,6 @@ public:
 
 	Index* Clone() override;
 	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) override final;
-	void commitFulltext() override final;
 	Variant Upsert(const Variant& key, IdType id) override final {
 		this->isBuilt_ = false;
 		return IndexText<T>::Upsert(key, id);
@@ -33,13 +32,14 @@ public:
 	}
 
 protected:
+	void commitFulltextImpl() override final;
 	FtFuzzyConfig* GetConfig() const;
 	void CreateConfig(const FtFuzzyConfig* cfg = nullptr);
 
 	SearchEngine engine_;
 	vector<VDocEntry> vdocs_;
 
-};  // namespace reindexer
+};	// namespace reindexer
 
 Index* FuzzyIndexText_New(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields);
 

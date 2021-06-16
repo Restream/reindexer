@@ -14,7 +14,7 @@ public:
 	}
 
 	Variant Upsert(const Variant &key, IdType id) override;
-	void Upsert(VariantArray &result, const VariantArray &keys, IdType id, bool needUpsertEmptyValue) override;
+	void Upsert(VariantArray &result, const VariantArray &keys, IdType id) override;
 	void Delete(const Variant &key, IdType id) override;
 	void Delete(const VariantArray &keys, IdType id) override;
 	SelectKeyResults SelectKey(const VariantArray &keys, CondType condition, SortType stype, Index::SelectOpts res_type,

@@ -120,7 +120,7 @@ protected:
 	const ServerConfig &serverConfig_;
 	Prometheus *prometheus_;
 	IStatsWatcher *statsWatcher_;
-	std::string webRoot_;
+	const std::string webRoot_;
 
 	http::Router router_;
 	std::unique_ptr<IListener> listener_;

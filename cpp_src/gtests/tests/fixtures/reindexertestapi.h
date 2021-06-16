@@ -56,11 +56,6 @@ public:
 		auto err = reindexer->Upsert(ns, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
-	void Upsert(const std::string &ns, ItemType &item, std::function<void(const reindexer::Error &)> cmpl) {
-		assert(!!item);
-		auto err = reindexer->WithCompletion(cmpl).Upsert(ns, item);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
 	void PrintQueryResults(const std::string &ns, const QueryResultsType &res) {
 		if (!verbose) return;
 		{

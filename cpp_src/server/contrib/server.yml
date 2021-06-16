@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.2.0"
+  version: "3.2.1"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -2535,6 +2535,10 @@ definitions:
         type: boolean
         default: false
         description: "Enable number variants processing. e.g. term '100' will match words one hundred"
+      enable_warmup_on_ns_copy:
+        type: boolean
+        default: false
+        description: "Enable auto index warmup after atomic namespace copy on transaction"
       enable_kb_layout:
         type: boolean
         default: true

@@ -42,6 +42,7 @@ public:
 	reindexer::FtFastConfig GetDefaultConfig(size_t fieldsCount = 2) {
 		reindexer::FtFastConfig cfg(fieldsCount);
 		cfg.enableNumbersSearch = true;
+		cfg.enableWarmupOnNsCopy = true;
 		cfg.logLevel = 5;
 		cfg.mergeLimit = 20000;
 		cfg.maxStepSize = 100;
@@ -61,6 +62,7 @@ public:
 		cfgBuilder.Put("enable_translit", ftCfg.enableTranslit);
 		cfgBuilder.Put("enable_numbers_search", ftCfg.enableNumbersSearch);
 		cfgBuilder.Put("enable_kb_layout", ftCfg.enableKbLayout);
+		cfgBuilder.Put("enable_warmup_on_ns_copy", ftCfg.enableWarmupOnNsCopy);
 		cfgBuilder.Put("merge_limit", ftCfg.mergeLimit);
 		cfgBuilder.Put("log_level", ftCfg.logLevel);
 		cfgBuilder.Put("max_step_size", ftCfg.maxStepSize);

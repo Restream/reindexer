@@ -460,8 +460,8 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, std::string_view r
 	//  Make query to complete master's namespace data
 	client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 	if (err.ok()) err = master_->Select(Query(ns.name).Where("#lsn", CondAny, {}), qr);
+	if (err.ok()) err = tmpNs->ReplaceTagsMatcher(qr.getTagsMatcher(0), dummyCtx_);
 	if (err.ok()) {
-		tmpNs->ReplaceTagsMatcher(qr.getTagsMatcher(0), dummyCtx_);
 		err = applyWAL(tmpNs, qr);
 		if (err.code() == errDataHashMismatch) {
 			logPrintf(LogError, "[repl:%s] Internal error. dataHash mismatch while fullSync!", ns.name, err.what());
@@ -470,7 +470,7 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, std::string_view r
 	}
 	if (err.ok()) {
 		err = slave_->renameNamespace(tmpNsDef.name, ns.name, true);
-		slave_->syncDownstream(ns.name, true);
+		if (err.ok()) err = slave_->syncDownstream(ns.name, true);
 	} else {
 		logPrintf(LogError, "[repl:%s] FORCED sync error: %s", ns.name, err.what());
 		auto dropErr = slave_->closeNamespace(tmpNsDef.name, dummyCtx_, true, true);

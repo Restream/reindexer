@@ -56,7 +56,7 @@ Download and install [64 bit](http://www.reindexer.org/dist/reindexer_server-win
 
 ### Dependencies
 
-Reindexer's core is written in C++11 and uses LevelDB as the storage backend, so the Cmake, C++11 toolchain and LevelDB must be installed before installing Reindexer. To build Reindexer, g++ 4.8+, clang 3.3+ or MSVC 2015+ is required.  
+Reindexer's core is written in C++17 and uses LevelDB as the storage backend, so the Cmake, C++17 toolchain and LevelDB must be installed before installing Reindexer. To build Reindexer, g++ 8+, clang 3+ or MSVC 2017+ is required.  
 Dependencies can be installed automatically by this script:
 
 ```bash

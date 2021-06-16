@@ -212,7 +212,7 @@ public:
 	void SetSlaveReplStatus(ReplicationState::Status, const Error &, const RdxContext &);
 	void SetSlaveReplMasterState(MasterState state, const RdxContext &);
 
-	void ReplaceTagsMatcher(const TagsMatcher &tm, const RdxContext &);
+	Error ReplaceTagsMatcher(const TagsMatcher &tm, const RdxContext &);
 
 	void OnConfigUpdated(DBConfigProvider &configProvider, const RdxContext &ctx);
 	StorageOpts GetStorageOpts(const RdxContext &);
@@ -314,6 +314,7 @@ protected:
 
 	vector<string> enumMeta() const;
 
+	void warmupFtIndexes();
 	void updateSelectTime();
 	int64_t getLastSelectTime() const;
 	void markReadOnly() { locker_.MarkReadOnly(); }

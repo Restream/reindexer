@@ -37,12 +37,17 @@ void manual_connection::close_conn(int err) {
 		io_.stop();
 		sock_.close();
 	}
-	if (!r_data_.empty()) {
+	const bool hadRData = !r_data_.empty();
+	const bool hadWData = !w_data_.empty();
+	if (hadRData) {
 		read_from_buf(r_data_.buf, r_data_.transfer, false);
+		buffered_data_.clear();
 		on_async_op_done(r_data_, err, ev::READ);
+	} else {
+		buffered_data_.clear();
 	}
-	buffered_data_.clear();
-	if (!w_data_.empty()) {
+
+	if (hadWData) {
 		on_async_op_done(w_data_, err, ev::WRITE);
 	}
 	if (stats_) stats_->stop();
@@ -184,7 +189,9 @@ void manual_connection::io_callback(ev::io &, int revents) {
 }
 
 void manual_connection::write_cb() {
-	if (state_ == conn_state::connecting) state_ = conn_state::connected;
+	if (state_ == conn_state::connecting && sock_.valid()) {
+		state_ = conn_state::connected;
+	}
 	if (w_data_.buf.size()) {
 		write(w_data_.buf, w_data_.transfer, nullptr);
 	} else {

@@ -26,6 +26,9 @@ Comparator::Comparator(CondType cond, KeyValueType type, const VariantArray &val
 }
 
 void Comparator::setValues(const VariantArray &values) {
+	if (values.size() > 0) {
+		valuesType_ = values.front().Type();
+	}
 	if (fields_.getTagsPathsLength() > 0) {
 		cmpInt.SetValues(cond_, values);
 		cmpBool.SetValues(cond_, values);
@@ -76,15 +79,23 @@ void Comparator::BindEqualPosition(const TagsPath &tagsPath, const VariantArray 
 	cmpEqualPosition.BindField(tagsPath, val, cond);
 }
 
+bool Comparator::isNumericComparison(const VariantArray &values) const {
+	if (valuesType_ == KeyValueUndefined || values.empty()) return false;
+	KeyValueType keyType = values.front().Type();
+	return ((valuesType_ != keyType) && (valuesType_ == KeyValueString || keyType == KeyValueString));
+}
+
 bool Comparator::Compare(const PayloadValue &data, int rowId) {
 	if (cmpEqualPosition.IsBinded()) {
 		return cmpEqualPosition.Compare(data, *this);
 	}
 	if (fields_.getTagsPathsLength() > 0) {
-		// Comparing field by CJSON path (slow path)
 		VariantArray rhs;
 		ConstPayload(payloadType_, data).GetByJsonPath(fields_.getTagsPath(0), rhs, type_);
-
+		if (isNumericComparison(rhs)) {
+			// Numeric comparison is not allowed
+			return false;
+		}
 		switch (cond_) {
 			case CondEmpty:
 				return rhs.empty() || rhs[0].Type() == KeyValueNull;

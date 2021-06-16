@@ -118,9 +118,8 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 		lck.unlock();
 		lck = smart_lock<Mutex>(mtx_, rdxCtx, true);
 		if (!isBuilt_) {
-			commitFulltext();
+			CommitFulltext();
 			need_put = false;
-			isBuilt_ = true;
 		}
 	}
 

@@ -52,6 +52,18 @@ public:
 	std::string RuRandString() { return rt.RuRandString(); }
 	vector<int> RandIntVector(size_t size, int start, int range) { return rt.RandIntVector(size, start, range); }
 
+	struct QueryWatcher {
+		~QueryWatcher() {
+			if (::testing::Test::HasFailure()) {
+				reindexer::WrSerializer ser;
+				q.GetSQL(ser);
+				TEST_COUT << "Failed query dest: " << ser.Slice() << std::endl;
+			}
+		}
+
+		const Query &q;
+	};
+
 public:
 	const string default_namespace = "test_namespace";
 	ReindexerTestApi<reindexer::Reindexer> rt;

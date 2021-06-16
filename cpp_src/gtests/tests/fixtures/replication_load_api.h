@@ -75,13 +75,12 @@ public:
 		auto &api = srv->api;
 
 		shared_lock<shared_timed_mutex> lk(restartMutex_);
-		std::atomic<size_t> completed(0);
 
 		for (size_t i = 0; i < count; ++i) {
-			auto item = new typename BaseApi::ItemType(api.NewItem("some"));
+			BaseApi::ItemType item = api.NewItem("some");
 			// clang-format off
 
-            Error err = item->FromJSON(
+			Error err = item.FromJSON(
                         "{\n"
                         "\"id\":" + std::to_string(counter_)+",\n"
                         "\"int\":" + std::to_string(rand())+",\n"
@@ -91,15 +90,12 @@ public:
 
 			counter_++;
 
-			api.Upsert("some", *item, [item, &completed](const reindexer::Error &) {
-				completed++;
-				delete item;
-			});
+			api.Upsert("some", item);
 
-			auto item1 = new typename BaseApi::ItemType(api.NewItem("some1"));
+			BaseApi::ItemType item1 = api.NewItem("some1");
 			// clang-format off
 
-						err = item1->FromJSON(
+						err = item1.FromJSON(
 							"{\n"
 							"\"id\":" +
 							std::to_string(counter_) +
@@ -115,34 +111,23 @@ public:
 
 			counter_++;
 
-			api.Upsert("some1", *item1, [item1, &completed](const reindexer::Error &) {
-				completed++;
-				delete item1;
-			});
+			api.Upsert("some1", item1);
 		}
-		while (completed < count * 2) {	 // -V776
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
-		}
-		api.Commit("some");
-		api.Commit("some1");
 	}
-	reindexer::client::QueryResults SimpleSelect(size_t num) {
+	BaseApi::QueryResultsType SimpleSelect(size_t num) {
 		Query qr = Query("some");
-		reindexer::client::QueryResults res;
 		auto srv = GetSrv(num);
 		auto &api = srv->api;
-
+		BaseApi::QueryResultsType res(api.reindexer.get());
 		auto err = api.reindexer->Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		return res;
 	}
-	reindexer::client::QueryResults DeleteFromMaster() {
-		reindexer::client::QueryResults res;
+	BaseApi::QueryResultsType DeleteFromMaster() {
 		auto srv = GetSrv(masterId_);
-
 		auto &api = srv->api;
-
+		BaseApi::QueryResultsType res(api.reindexer.get());
 		auto err = api.reindexer->Delete(Query("some"), res);
 		EXPECT_TRUE(err.ok()) << err.what();
 		return res;

@@ -51,7 +51,7 @@ private:
 	bool forcedStage() const noexcept { return evaluationsCount_ == (desc_ ? 1 : 0); }
 	size_t lookupQueryIndexes(size_t dst, size_t srcBegin, size_t srcEnd);
 	size_t substituteCompositeIndexes(size_t from, size_t to);
-	KeyValueType detectQueryEntryIndexType(const QueryEntry &) const;
+	KeyValueType detectQueryEntryFieldType(const QueryEntry &qentry) const;
 	bool mergeQueryEntries(size_t lhs, size_t rhs);
 	int getCompositeIndex(const FieldsSet &) const;
 	void convertWhereValues(QueryEntries::iterator begin, QueryEntries::iterator end) const;

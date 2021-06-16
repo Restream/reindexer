@@ -106,19 +106,28 @@ void ReplicationApi::ForceSync() {
 	awaitForceSync.join();
 }
 
-void ReplicationApi::SwitchMaster(size_t id) {
+void ReplicationApi::SwitchMaster(size_t id, ReplicationConfigTest::NsSet namespaces) {
 	if (id == masterId_) return;
 	masterId_ = id;
 	ReplicationConfigTest config("master", false, true, id);
 	GetSrv(masterId_)->MakeMaster(config);
 	for (size_t i = 0; i < svc_.size(); i++) {
 		std::string masterDsn = "cproto://127.0.0.1:" + std::to_string(kDefaultRpcPort + masterId_) + "/node" + std::to_string(masterId_);
-		ReplicationConfigTest config("slave", false, true, i, masterDsn, "server_" + std::to_string(i));
+		ReplicationConfigTest config("slave", false, true, i, masterDsn, "server_" + std::to_string(i), namespaces);
 		if (i != masterId_) GetSrv(i)->MakeSlave(masterId_, config);
 	}
 }
 
 void ReplicationApi::SetWALSize(size_t id, int64_t size, std::string_view nsName) { GetSrv(id)->SetWALSize(size, nsName); }
+
+size_t ReplicationApi::GetServersCount() const {
+	std::lock_guard<std::mutex> lock(m_);
+	return svc_.size();
+}
+
+void ReplicationApi::SetOptmizationSortWorkers(size_t id, size_t cnt, std::string_view nsName) {
+	GetSrv(id)->SetOptmizationSortWorkers(cnt, nsName);
+}
 
 ServerControl::Interface::Ptr ReplicationApi::GetSrv(size_t id) {
 	std::lock_guard<std::mutex> lock(m_);

@@ -163,6 +163,8 @@ void NamespaceImpl::OnConfigUpdated(DBConfigProvider &configProvider, const RdxC
 		logPrintf(LogWarning, "[repl:%s]:%d Change serverId", name_, serverId_);
 	}
 
+	if (repl_.temporary) return;
+
 	ReplicationRole curRole;
 	if (repl_.slaveMode && !repl_.replicatorEnabled) {	// read only
 		curRole = ReplicationReadOnly;
@@ -274,7 +276,7 @@ void NamespaceImpl::updateItems(PayloadType oldPlType, const FieldsSet &changedF
 			if ((fieldIdx == 0) || deltaFields >= 0) {
 				newItem.GetPayload().Get(fieldIdx, skrefsUps);
 				krefs.resize(0);
-				index.Upsert(krefs, skrefsUps, rowId, true);
+				index.Upsert(krefs, skrefsUps, rowId);
 				newValue.Set(fieldIdx, krefs);
 			}
 		}
@@ -1034,12 +1036,10 @@ void NamespaceImpl::setReplLSNs(LSNPair LSNs) {
 }
 
 void NamespaceImpl::setSlaveMode(const RdxContext &ctx) {
-	{
-		auto wlck = wLock(ctx);
-		repl_.slaveMode = true;
-		repl_.replicatorEnabled = true;
-		repl_.incarnationCounter++;
-	}
+	auto wlck = wLock(ctx);
+	repl_.slaveMode = true;
+	repl_.replicatorEnabled = true;
+	repl_.incarnationCounter++;
 	logPrintf(LogInfo, "Enable slave mode for namespace '%s'", name_);
 }
 
@@ -1182,7 +1182,7 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 		}
 		// Put value to index
 		krefs.resize(0);
-		index.Upsert(krefs, skrefs, id, !isIndexSparse);
+		index.Upsert(krefs, skrefs, id);
 
 		if (!isIndexSparse) {
 			// Put value to payload
@@ -1199,13 +1199,17 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 	ritem->RealValue() = plData;
 }
 
-void NamespaceImpl::ReplaceTagsMatcher(const TagsMatcher &tm, const RdxContext &ctx) {
-	assert(!items_.size() && repl_.replicatorEnabled);
+Error NamespaceImpl::ReplaceTagsMatcher(const TagsMatcher &tm, const RdxContext &ctx) {
 	cancelCommit_ = true;
 	auto wlck = wLock(ctx);
 	cancelCommit_ = false;	// -V519
+	if (items_.size() || !repl_.replicatorEnabled) {
+		return Error(errParams, "Unable to replace tags matcher for %s. Items count: %d, replication flag: %d", name_, items_.size(),
+					 repl_.replicatorEnabled);
+	}
 	tagsMatcher_ = tm;
 	tagsMatcher_.UpdatePayloadType(payloadType_);
+	return errOK;
 }
 
 void NamespaceImpl::updateTagsMatcherFromItem(ItemImpl *ritem) {
@@ -2051,6 +2055,32 @@ vector<string> NamespaceImpl::enumMeta() const {
 		}
 	}
 	return ret;
+}
+
+void NamespaceImpl::warmupFtIndexes() {
+	h_vector<std::thread, 8> warmupThreads;
+	h_vector<Index *, 8> warmupIndexes;
+	for (auto &idx : indexes_) {
+		if (idx->RequireWarmupOnNsCopy()) {
+			warmupIndexes.emplace_back(idx.get());
+		}
+	}
+	auto threadsCnt = config_.optimizationSortWorkers > 0 ? std::min(unsigned(config_.optimizationSortWorkers), warmupIndexes.size())
+														  : std::min(4u, warmupIndexes.size());
+	warmupThreads.resize(threadsCnt);
+	std::atomic<unsigned> next = {0};
+	for (unsigned i = 0; i < warmupThreads.size(); ++i) {
+		warmupThreads[i] = std::thread([&warmupIndexes, &next] {
+			unsigned num = next.fetch_add(1);
+			while (num < warmupIndexes.size()) {
+				warmupIndexes[num]->CommitFulltext();
+				num = next.fetch_add(1);
+			}
+		});
+	}
+	for (auto &th : warmupThreads) {
+		th.join();
+	}
 }
 
 int NamespaceImpl::getSortedIdxCount() const {

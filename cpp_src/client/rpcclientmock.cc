@@ -36,7 +36,7 @@ Error RPCClientMock::Delete(const Query& query, QueryResults& result, const Inte
 	query.Serialize(ser);
 	auto conn = getConn();
 
-	NSArray nsArray;
+	NsArray nsArray;
 	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
 
 	result = QueryResults(conn, std::move(nsArray), nullptr, 0, config_.FetchAmount, config_.RequestTimeout);
@@ -68,7 +68,7 @@ Error RPCClientMock::Update(const Query& query, QueryResults& result, const Inte
 	query.Serialize(ser);
 	auto conn = getConn();
 
-	NSArray nsArray;
+	NsArray nsArray;
 	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
 
 	result = QueryResults(conn, std::move(nsArray), nullptr, 0, config_.FetchAmount, config_.RequestTimeout);
@@ -158,7 +158,7 @@ Error RPCClientMock::modifyItem(std::string_view nsName, Item& item, int mode, s
 		}
 		try {
 			auto args = ret.GetArgs(2);
-			NSArray nsArray{getNamespace(nsName)};
+			NsArray nsArray{getNamespace(nsName)};
 			return QueryResults(conn, std::move(nsArray), nullptr, p_string(args[0]), int(args[1]), 0, config_.FetchAmount,
 								config_.RequestTimeout)
 				.Status();
@@ -307,7 +307,7 @@ Error RPCClientMock::selectImpl(const Query& query, QueryResults& result, cproto
 
 	WrSerializer qser, pser;
 
-	NSArray nsArray;
+	NsArray nsArray;
 	query.Serialize(qser);
 	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
 	h_vector<int32_t, 4> vers;

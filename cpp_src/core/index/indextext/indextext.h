@@ -31,11 +31,17 @@ public:
 	virtual IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) = 0;
 	void SetOpts(const IndexOpts& opts) override;
 	void Commit() override final;
-	virtual void commitFulltext() = 0;
-	void SetSortedIdxCount(int) override final{};
+	void CommitFulltext() override final {
+		commitFulltextImpl();
+		isBuilt_ = true;
+	}
+	void SetSortedIdxCount(int) override final {}
+	bool RequireWarmupOnNsCopy() const noexcept override final { return cfg_ && cfg_->enableWarmupOnNsCopy; }
 
 protected:
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::IndexText>;
+
+	virtual void commitFulltextImpl() = 0;
 
 	void initSearchers();
 	FieldsGetter Getter();

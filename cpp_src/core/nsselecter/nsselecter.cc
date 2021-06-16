@@ -273,9 +273,19 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	} while (qPreproc.NeedNextEvaluation(lctx.start, lctx.count, ctx.matchedAtLeastOnce));
 
 	processLeftJoins(result, ctx, resultInitSize, rdxCtx);
-	for (size_t i = resultInitSize; i < result.Items().size(); ++i) {
-		auto &iref = result.Items()[i];
-		if (!iref.ValueInitialized()) iref.SetValue(ns_->items_[iref.Id()]);
+	if (!ctx.sortingContext.expressions.empty()) {
+		if (ctx.preResult && ctx.preResult->executionMode == JoinPreResult::ModeBuild) {
+			if (ctx.preResult->dataMode == JoinPreResult::ModeValues) {
+				for (auto &iref : ctx.preResult->values) {
+					if (!iref.ValueInitialized()) iref.SetValue(ns_->items_[iref.Id()]);
+				}
+			}
+		} else {
+			for (size_t i = resultInitSize; i < result.Items().size(); ++i) {
+				auto &iref = result.Items()[i];
+				if (!iref.ValueInitialized()) iref.SetValue(ns_->items_[iref.Id()]);
+			}
+		}
 	}
 	for (auto &aggregator : aggregators) {
 		result.aggregationResults.push_back(aggregator.GetResult());
@@ -723,38 +733,46 @@ void NsSelecter::getSortIndexValue(const SortingContext &sortCtx, IdType rowId, 
 	}
 }
 
+void NsSelecter::calculateSortExpressions(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &sctx, const QueryResults &result) {
+	static const JoinedSelectors emptyJoinedSelectors;
+	const auto &exprs = sctx.sortingContext.expressions;
+	auto &exprResults = sctx.sortingContext.exprResults;
+	assert(exprs.size() == exprResults.size());
+	const ConstPayload pv(ns_->payloadType_, ns_->items_[properRowId]);
+	const auto &joinedSelectors = sctx.joinedSelectors ? *sctx.joinedSelectors : emptyJoinedSelectors;
+	for (size_t i = 0; i < exprs.size(); ++i) {
+		exprResults[i].push_back(exprs[i].Calculate(rowId, pv, result.joined_[sctx.nsid], joinedSelectors, proc, ns_->tagsMatcher_));
+	}
+}
+
 template <bool aggregationsOnly>
 void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &sctx, h_vector<Aggregator, 4> &aggregators,
 								 QueryResults &result) {
-	static const JoinedSelectors emptyJoinedSelectors;
 	for (auto &aggregator : aggregators) aggregator.Aggregate(ns_->items_[properRowId]);
-	if (aggregationsOnly) return;
+	if constexpr (aggregationsOnly) return;
 	if (sctx.preResult && sctx.preResult->executionMode == JoinPreResult::ModeBuild) {
 		switch (sctx.preResult->dataMode) {
 			case JoinPreResult::ModeIdSet:
 				sctx.preResult->ids.Add(rowId, IdSet::Unordered, 0);
 				break;
 			case JoinPreResult::ModeValues:
-				sctx.preResult->values.push_back({properRowId, ns_->items_[properRowId], proc, sctx.nsid});
+				if (!sctx.sortingContext.expressions.empty()) {
+					sctx.preResult->values.push_back({properRowId, sctx.sortingContext.exprResults[0].size(), proc, sctx.nsid});
+					calculateSortExpressions(proc, rowId, properRowId, sctx, result);
+				} else {
+					sctx.preResult->values.push_back({properRowId, ns_->items_[properRowId], proc, sctx.nsid});
+				}
 				break;
 			default:
-				assert(0);
+				abort();
 		}
 	} else {
-		unsigned exprResultIdx = 0u;
 		if (!sctx.sortingContext.expressions.empty()) {
-			const auto &exprs = sctx.sortingContext.expressions;
-			auto &exprResults = sctx.sortingContext.exprResults;
-			assert(exprs.size() == exprResults.size());
-			exprResultIdx = exprResults[0].size();
-			const ConstPayload pv(ns_->payloadType_, ns_->items_[properRowId]);
-			const auto &joinedSelectors = sctx.joinedSelectors ? *sctx.joinedSelectors : emptyJoinedSelectors;
-			for (size_t i = 0; i < exprs.size(); ++i) {
-				exprResults[i].push_back(
-					exprs[i].Calculate(rowId, pv, result.joined_[sctx.nsid], joinedSelectors, proc, ns_->tagsMatcher_));
-			}
+			result.Add({properRowId, sctx.sortingContext.exprResults[0].size(), proc, sctx.nsid}, ns_->payloadType_);
+			calculateSortExpressions(proc, rowId, properRowId, sctx, result);
+		} else {
+			result.Add({properRowId, ns_->items_[properRowId], proc, sctx.nsid}, ns_->payloadType_);
 		}
-		result.Add({properRowId, exprResultIdx, proc, sctx.nsid}, ns_->payloadType_);
 
 		const int kLimitItems = 10000000;
 		size_t sz = result.Count();
@@ -942,7 +960,9 @@ void NsSelecter::prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, b
 										   lCtx.strictMode);
 				},
 				[isFt](Rank &) {
-					if (!isFt) throw Error(errLogic, "Sort by rank() is available only for fulltext query");
+					if (!isFt) {
+						throw Error(errLogic, "Sorting by rank() is only available for full-text query");
+					}
 				},
 				[this, &lCtx](DistanceFromPoint &exprIndex) {
 					prepareSortIndex(exprIndex.column, exprIndex.index, lCtx.skipSortingEntry, lCtx.strictMode);

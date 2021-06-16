@@ -52,7 +52,7 @@ public:
 		}
 
 		for (Variant key : values) {
-			if (key.Type() == KeyValueString && !is_number(static_cast<p_string>(key))) {
+			if (key.Type() == KeyValueString) {
 				addValue(cond, T());
 			} else {
 				key.convert(type());

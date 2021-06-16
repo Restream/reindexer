@@ -237,7 +237,7 @@ Error CoroRPCClient::Delete(const Query& query, CoroQueryResults& result, const 
 	WrSerializer ser;
 	query.Serialize(ser);
 
-	NSArray nsArray;
+	NsArray nsArray;
 	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
 
 	result = CoroQueryResults(&conn_, std::move(nsArray), 0, config_.FetchAmount, config_.RequestTimeout);
@@ -258,7 +258,7 @@ Error CoroRPCClient::Update(const Query& query, CoroQueryResults& result, const 
 	WrSerializer ser;
 	query.Serialize(ser);
 
-	NSArray nsArray;
+	NsArray nsArray;
 	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
 
 	result = CoroQueryResults(&conn_, std::move(nsArray), 0, config_.FetchAmount, config_.RequestTimeout);
@@ -321,7 +321,7 @@ Error CoroRPCClient::selectImpl(const Query& query, CoroQueryResults& result, se
 		flags &= ~kResultsFormatMask;
 		flags |= kResultsJson;
 	}
-	NSArray nsArray;
+	NsArray nsArray;
 	query.Serialize(qser);
 	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
 	h_vector<int32_t, 4> vers;

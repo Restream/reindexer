@@ -115,7 +115,7 @@ public:
 
 	void GetData(ServerControl& node, std::vector<int>& ids) {
 		Query qr = Query(nsName_).Sort("id", false);
-		client::QueryResults res;
+		BaseApi::QueryResultsType res(node.Get()->api.reindexer.get());
 		auto err = node.Get()->api.reindexer->Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
 		for (auto it : res) {
@@ -403,7 +403,8 @@ TEST_F(ReplicationSlaveSlaveApi, TransactionTest) {
 		WaitSync(nodes[0], nodes[i], nsName);
 	}
 
-	reindexer::client::Transaction tr = master.Get()->api.reindexer->NewTransaction(nsName);
+	reindexer::client::SyncCoroTransaction tr = master.Get()->api.reindexer->NewTransaction(nsName);
+
 	for (unsigned int i = 0; i < kRows; i++) {
 		reindexer::client::Item item = tr.NewItem();
 		auto err = item.FromJSON("{\"id\":" + std::to_string(i + kRows * 10) + "}");
@@ -670,7 +671,7 @@ TEST_F(ReplicationSlaveSlaveApi, RenameSlaveNs) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	Query qr = Query("ns3Rename").Sort("id", false);
-	client::QueryResults res;
+	BaseApi::QueryResultsType res(slave.Get()->api.reindexer.get());
 	err = slave.Get()->api.reindexer->Select(qr, res);
 	EXPECT_TRUE(err.ok()) << err.what();
 	std::vector<int> results_m;
@@ -701,7 +702,7 @@ TEST_F(ReplicationSlaveSlaveApi, RenameSlaveNs) {
 	err = master.Get()->api.reindexer->RenameNamespace(tmpNsName, tmpNsName + "Rename");
 	ASSERT_FALSE(err.ok());
 
-	reindexer::client::QueryResults r1;
+	BaseApi::QueryResultsType r1(master.Get()->api.reindexer.get());
 	err = master.Get()->api.reindexer->Select("Select * from " + tmpNsName, r1);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(r1.Count() == 1);
@@ -810,6 +811,8 @@ TEST_F(ReplicationSlaveSlaveApi, RestrictUpdates) {
 	insertThread.join();
 	WaitSync(master, slave, "ns1");
 }
+
+#if !defined(REINDEX_WITH_TSAN)
 TEST_F(ReplicationSlaveSlaveApi, ConcurrentForceSync) {
 	/*
 	 * Check concurrent force sync and updates subscription on nodes 1, 2 and 3
@@ -899,6 +902,7 @@ TEST_F(ReplicationSlaveSlaveApi, ConcurrentForceSync) {
 	}
 	for (auto& node : nodes) node.Stop();
 }
+#endif
 
 TEST_F(ReplicationSlaveSlaveApi, WriteIntoSlaveNsAfterReconfiguration) {
 	// Check if it possible to write in slave's ns after removing this ns from replication ns list
@@ -963,7 +967,7 @@ TEST_F(ReplicationSlaveSlaveApi, WriteIntoSlaveNsAfterReconfiguration) {
 	ASSERT_EQ(err.code(), errLogic) << err.what();
 
 	auto validateItemsCount = [](ServerControl& node, const std::string& nsName, size_t expectedCnt) {
-		client::QueryResults qr;
+		BaseApi::QueryResultsType qr(node.Get()->api.reindexer.get());
 		auto err = node.Get()->api.reindexer->Select(Query(nsName), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), expectedCnt);

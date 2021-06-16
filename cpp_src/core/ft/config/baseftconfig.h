@@ -31,6 +31,7 @@ public:
 	bool enableTranslit = true;
 	bool enableKbLayout = true;
 	bool enableNumbersSearch = false;
+	bool enableWarmupOnNsCopy = false;
 	fast_hash_set<std::string, hash_str, equal_str> stopWords;
 	std::vector<Synonym> synonyms;
 	int logLevel = 0;

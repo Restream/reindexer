@@ -246,7 +246,7 @@ Error RPCClient::modifyItem(std::string_view nsName, Item& item, int mode, secon
 		}
 		try {
 			auto args = ret.GetArgs(2);
-			NSArray nsArray{getNamespace(nsName)};
+			NsArray nsArray{getNamespace(nsName)};
 			return QueryResults(conn, std::move(nsArray), nullptr, p_string(args[0]), int(args[1]), 0, config_.FetchAmount,
 								config_.RequestTimeout)
 				.Status();
@@ -383,7 +383,7 @@ Error RPCClient::Delete(const Query& query, QueryResults& result, const Internal
 	query.Serialize(ser);
 	auto conn = getConn();
 
-	NSArray nsArray;
+	NsArray nsArray;
 	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
 
 	result = QueryResults(conn, std::move(nsArray), nullptr, 0, config_.FetchAmount, config_.RequestTimeout);
@@ -410,7 +410,7 @@ Error RPCClient::Update(const Query& query, QueryResults& result, const Internal
 	query.Serialize(ser);
 	auto conn = getConn();
 
-	NSArray nsArray;
+	NsArray nsArray;
 	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
 
 	result = QueryResults(conn, std::move(nsArray), nullptr, 0, config_.FetchAmount, config_.RequestTimeout);
@@ -485,7 +485,7 @@ Error RPCClient::selectImpl(const Query& query, QueryResults& result, cproto::Cl
 		flags &= ~kResultsFormatMask;
 		flags |= kResultsJson;
 	}
-	NSArray nsArray;
+	NsArray nsArray;
 	query.Serialize(qser);
 	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
 	h_vector<int32_t, 4> vers;

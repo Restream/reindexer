@@ -4,7 +4,7 @@
 #include <memory>
 #include <thread>
 #include <unordered_set>
-#include "client/reindexer.h"
+#include "client/synccororeindexer.h"
 #include "core/dbconfig.h"
 #include "estl/shared_mutex.h"
 #include "reindexertestapi.h"
@@ -55,7 +55,7 @@ struct ReplicationStateApi {
 	bool slaveMode;
 };
 
-using BaseApi = ReindexerTestApi<reindexer::client::Reindexer>;
+using BaseApi = ReindexerTestApi<reindexer::client::SyncCoroReindexer>;
 
 class ServerControl {
 public:
@@ -73,7 +73,7 @@ public:
 	ServerControl& operator=(ServerControl& rhs) = delete;
 	ServerControl();
 	~ServerControl();
-	void Stop ();
+	void Stop();
 
 	struct Interface {
 		typedef std::shared_ptr<Interface> Ptr;
@@ -98,10 +98,14 @@ public:
 		// set server's WAL size
 		void SetWALSize(int64_t size, std::string_view nsName);
 
+		void SetOptmizationSortWorkers(size_t cnt, std::string_view nsName);
+
 		reindexer_server::Server srv;
 		BaseApi api;
 
 	private:
+		template <typename ValueT>
+		void setNamespaceConfigItem(std::string_view nsName, std::string_view paramName, ValueT&& value);
 		void setReplicationConfig(size_t masterId, const ReplicationConfigTest& config);
 
 		size_t id_;

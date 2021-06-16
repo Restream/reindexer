@@ -59,6 +59,7 @@ protected:
 	TagsPath curTagsPath_;
 	IndexedTagsPath indexedTagsPath_;
 	TagsLengths tagsLengths_;
+	uint64_t objectScalarIndexes_ = 0;
 };
 
 using JsonEncoder = BaseEncoder<JsonBuilder>;

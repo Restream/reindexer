@@ -17,7 +17,7 @@ public:
 	SelectKeyResults SelectKey(const VariantArray &keys, CondType, SortType, Index::SelectOpts, BaseFunctionCtx::Ptr,
 							   const RdxContext &) override;
 	using IndexUnordered<Map>::Upsert;
-	void Upsert(VariantArray &result, const VariantArray &keys, IdType id, bool needUpsertEmptyValue) override;
+	void Upsert(VariantArray &result, const VariantArray &keys, IdType id) override;
 	using IndexUnordered<Map>::Delete;
 	void Delete(const VariantArray &keys, IdType id) override;
 

@@ -94,8 +94,8 @@ public:
 	void SetSlaveReplMasterState(MasterState state, const RdxContext &ctx) {
 		handleInvalidation(NamespaceImpl::SetSlaveReplMasterState)(state, ctx);
 	}
-	void ReplaceTagsMatcher(const TagsMatcher &tm, const RdxContext &ctx) {
-		handleInvalidation(NamespaceImpl::ReplaceTagsMatcher)(tm, ctx);
+	Error ReplaceTagsMatcher(const TagsMatcher &tm, const RdxContext &ctx) {
+		return handleInvalidation(NamespaceImpl::ReplaceTagsMatcher)(tm, ctx);
 	}
 	void Rename(Namespace::Ptr dst, const std::string &storagePath, const RdxContext &ctx) {
 		if (this == dst.get() || dst == nullptr) {

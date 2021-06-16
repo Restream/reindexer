@@ -61,12 +61,9 @@ SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Select
 
 template <typename KeyEntryT, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
 		  size_t MinEntries>
-void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArray &result, const VariantArray &keys, IdType id,
-																	 bool needUpsertEmptyValue) {
-	if (keys.empty()) {
-		if (needUpsertEmptyValue) {
-			Upsert(Variant{}, id);
-		}
+void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArray &result, const VariantArray &keys, IdType id) {
+	if (keys.empty() || keys.IsNullValue()) {
+		Upsert(Variant{}, id);
 		return;
 	}
 	// reset cache
@@ -90,7 +87,7 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArra
 template <typename KeyEntryT, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
 		  size_t MinEntries>
 void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const VariantArray &keys, IdType id) {
-	if (keys.empty()) {
+	if (keys.empty() || keys.IsNullValue()) {
 		return Delete(Variant{}, id);
 	}
 	if (this->cache_) this->cache_.reset();

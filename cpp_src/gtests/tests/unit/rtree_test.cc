@@ -1,10 +1,12 @@
 #include "core/index/rtree/rtree.h"
 #include <random>
+#include "core/cjson/jsonbuilder.h"
 #include "core/index/rtree/greenesplitter.h"
 #include "core/index/rtree/linearsplitter.h"
 #include "core/index/rtree/quadraticsplitter.h"
 #include "core/index/rtree/rstarsplitter.h"
 #include "gtest/gtest.h"
+#include "reindexer_api.h"
 #include "tools/random.h"
 
 namespace {
@@ -266,3 +268,62 @@ TEST(RTree, QuadraticMap) { TestMap<reindexer::QuadraticSplitter>(); }
 TEST(RTree, LinearMap) { TestMap<reindexer::LinearSplitter>(); }
 TEST(RTree, GreeneMap) { TestMap<reindexer::GreeneSplitter>(); }
 TEST(RTree, RStarMap) { TestMap<reindexer::RStarSplitter>(); }
+
+// Make sure RTree indexes work with null values correctly
+TEST_F(ReindexerApi, EmptyRTreeSparseValues) {
+	// Create namespace and add 2 RTree indexes (of type Sparse)
+	Error err = rt.reindexer->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {"point1", "rtree", "point", IndexOpts().Sparse(true).RTreeType(IndexOpts::Linear)});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {"point2", "rtree", "point", IndexOpts().Sparse(true).RTreeType(IndexOpts::Linear)});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// Fill namespace with null values for RTree fields
+	reindexer::WrSerializer wrser;
+	for (int i = 0; i < 100; ++i) {
+		Item item = rt.reindexer->NewItem(default_namespace);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+		wrser.Reset();
+		reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+		jsonBuilder.Put("id", reindexer::Variant(i));
+		jsonBuilder.Null("point1");
+		jsonBuilder.Null("point2");
+		jsonBuilder.End();
+
+		err = item.FromJSON(wrser.Slice());
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		err = rt.reindexer->Insert(default_namespace, item);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
+	// Make sure we can select data normally and access newly added RTree null fields
+	{
+		QueryResults qr;
+		err = rt.reindexer->Select(Query(default_namespace).Where("id", CondEq, Variant(int(13))), qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(qr.Count() == 1);
+		Item item = qr[0].GetItem();
+		Variant idVal = item["id"];
+		ASSERT_TRUE(static_cast<int>(idVal) == 13);
+		Variant idPoint1 = item["point1"];
+		ASSERT_TRUE(idPoint1.IsNullValue());
+		Variant idPoint2 = item["point2"];
+		ASSERT_TRUE(idPoint2.IsNullValue());
+	}
+
+	// Make sure removal of items with null RTree items works as expected
+	{
+		QueryResults qr;
+		err = rt.reindexer->Delete(Query(default_namespace).Where("id", CondEq, Variant(int(13))), qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(qr.Count() == 1);
+	}
+}

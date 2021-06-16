@@ -162,16 +162,18 @@ size_t QueryPreprocessor::substituteCompositeIndexes(size_t from, size_t to) {
 }
 
 void QueryPreprocessor::convertWhereValues(QueryEntry *qe) const {
+	const FieldsSet *fields = nullptr;
+	KeyValueType keyType = KeyValueUndefined;
 	bool isIndexField = (qe->idxNo != IndexValueType::SetByJsonPath);
-	KeyValueType keyType = isIndexField ? ns_.indexes_[qe->idxNo]->SelectKeyType() : detectQueryEntryIndexType(*qe);
-	const FieldsSet *fields = isIndexField ? &ns_.indexes_[qe->idxNo]->Fields() : nullptr;
-
+	if (isIndexField) {
+		keyType = ns_.indexes_[qe->idxNo]->SelectKeyType();
+		fields = &ns_.indexes_[qe->idxNo]->Fields();
+	}
 	if (strictMode_ == StrictModeIndexes && !isIndexField && qe->joinIndex == QueryEntry::kNoJoins) {
 		throw Error(errParams,
 					"Current query strict mode allows filtering by indexes only. There are no indexes with name '%s' in namespace '%s'",
 					qe->index, ns_.name_);
 	}
-
 	if (keyType != KeyValueUndefined) {
 		if (qe->condition != CondDWithin) {
 			for (auto &key : qe->values) {
@@ -278,7 +280,7 @@ bool QueryPreprocessor::mergeQueryEntries(size_t lhs, size_t rhs) {
 	return false;
 }
 
-KeyValueType QueryPreprocessor::detectQueryEntryIndexType(const QueryEntry &qentry) const {
+KeyValueType QueryPreprocessor::detectQueryEntryFieldType(const QueryEntry &qentry) const {
 	KeyValueType keyType = KeyValueUndefined;
 	for (auto &item : ns_.items_) {
 		if (!item.IsFree()) {

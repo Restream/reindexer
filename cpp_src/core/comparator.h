@@ -110,6 +110,7 @@ protected:
 	}
 
 	void setValues(const VariantArray &values);
+	bool isNumericComparison(const VariantArray &values) const;
 
 	void clearAllSetValues() {
 		cmpInt.ClearAllSetValues();
@@ -152,6 +153,7 @@ protected:
 	ComparatorImpl<PayloadValue> cmpComposite;
 	ComparatorImpl<Point> cmpGeom;
 	CompositeArrayComparator cmpEqualPosition;
+	KeyValueType valuesType_ = KeyValueUndefined;
 };
 
 }  // namespace reindexer

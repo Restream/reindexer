@@ -531,6 +531,115 @@ TEST_F(RPCClientTestApi, CoroUpserts) {
 	ASSERT_TRUE(finished);
 }
 
+TEST_F(RPCClientTestApi, ServerRestart) {
+	// Client should handle error on server's restart
+	using namespace reindexer::client;
+	using namespace reindexer::net::ev;
+	using reindexer::coroutine::wait_group;
+	using reindexer::coroutine::wait_group_guard;
+
+	std::atomic<bool> terminate = false;
+	std::atomic<bool> ready = false;
+
+	// Startup server
+	StartDefaultRealServer();
+	enum class Step { Init, ShutdownInProgress, ShutdownDone, RestartInProgress, RestartDone };
+	std::atomic<Step> step = Step::Init;
+
+	// Create thread, performing upserts
+	std::thread upsertsTh([&terminate, &ready, &step] {
+		dynamic_loop loop;
+		bool finished = false;
+
+		loop.spawn([&loop, &finished, &terminate, &ready, &step] {
+			const std::string nsName = "ns1";
+			const string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+			reindexer::client::ConnectOpts opts;
+			opts.CreateDBIfMissing();
+			CoroReindexer rx;
+			auto err = rx.Connect(dsn, loop, opts);
+			ASSERT_TRUE(err.ok()) << err.what();
+
+			err = rx.OpenNamespace(nsName);
+			ASSERT_TRUE(err.ok()) << err.what();
+			err = rx.AddIndex(nsName, {"id", {"id"}, "hash", "int", IndexOpts().PK()});
+			ASSERT_TRUE(err.ok()) << err.what();
+
+			auto upsertFn = [&loop, &rx, &nsName, &terminate, &step](wait_group& wg, size_t begin, size_t cnt) {
+				wait_group_guard wgg(wg);
+				while (!terminate) {
+					for (size_t i = begin; i < begin + cnt; ++i) {
+						auto item = rx.NewItem(nsName);
+						ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+						reindexer::WrSerializer wrser;
+						reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+						jsonBuilder.Put("id", i);
+						jsonBuilder.End();
+						char* endp = nullptr;
+						auto err = item.Unsafe().FromJSON(wrser.Slice(), &endp);
+						ASSERT_TRUE(err.ok()) << err.what();
+						auto localStep = step.load();
+						err = rx.Upsert(nsName, item);
+						if (localStep == step.load()) {
+							switch (localStep) {
+								case Step::Init:
+									// If server is running, updates have to return OK
+									ASSERT_TRUE(err.ok()) << err.what();
+									break;
+								case Step::ShutdownDone:
+									// If server was shutdown, updates have to return error
+									ASSERT_TRUE(!err.ok());
+									break;
+								case Step::RestartDone:
+									// If server was restarted, updates have to return OK
+									ASSERT_TRUE(err.ok()) << err.what();
+									break;
+								default:;  // No additional checks in transition states
+							}
+						}
+					}
+					loop.sleep(std::chrono::milliseconds(50));
+				}
+			};
+
+			wait_group wg;
+			constexpr size_t kCnt = 100;
+			wg.add(3);
+			loop.spawn(std::bind(upsertFn, std::ref(wg), 0, kCnt));
+			loop.spawn(std::bind(upsertFn, std::ref(wg), kCnt, kCnt));
+			loop.spawn(std::bind(upsertFn, std::ref(wg), 2 * kCnt, kCnt));
+
+			ready = true;
+			wg.wait();
+
+			err = rx.Stop();
+			ASSERT_TRUE(err.ok()) << err.what();
+			finished = true;
+		});
+
+		loop.run();
+		ASSERT_TRUE(finished);
+	});
+	while (!ready) {  // -V776
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	}
+
+	// Shutdown server
+	step = Step::ShutdownInProgress;
+	StopServer();
+	step = Step::ShutdownDone;
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+	step = Step::RestartInProgress;
+	StartServer();
+	step = Step::RestartDone;
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+	terminate = true;
+	upsertsTh.join();
+}
+
 TEST_F(RPCClientTestApi, CoroUpdatesFilteringByNs) {
 	// Should be able to work with updates subscription and filtering
 	StartDefaultRealServer();

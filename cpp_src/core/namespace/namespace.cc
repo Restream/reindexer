@@ -35,6 +35,7 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 				if (nsCopy_->lastUpdateTime_) {
 					nsCopy_->lastUpdateTime_ -= nsCopy_->config_.optimizationTimeout * 2;
 					nsCopy_->optimizeIndexes(NsContext(ctx).NoLock());
+					nsCopy_->warmupFtIndexes();
 				}
 				calc.SetCounter(nsCopy_->updatePerfCounter_);
 				ns->markReadOnly();

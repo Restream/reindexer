@@ -102,6 +102,7 @@ private:
 	friend class reindexer::Replicator;
 	friend class Transaction;
 	friend class CoroTransaction;
+	friend class SyncCoroReindexerImpl;
 };
 }  // namespace client
 }  // namespace reindexer

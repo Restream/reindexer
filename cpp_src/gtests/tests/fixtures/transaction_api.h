@@ -17,8 +17,12 @@ public:
 		ASSERT_TRUE(err.ok()) << err.what();
 		err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
-		DefineNamespaceDataset(default_namespace, {IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0},
-												   IndexDeclaration{kFieldData, "text", "string", IndexOpts(), 0}});
+		DefineNamespaceDataset(
+			default_namespace,
+			{IndexDeclaration{kFieldId, "hash", "int", IndexOpts().PK(), 0},
+			 IndexDeclaration{kFieldData, "text", "string", IndexOpts().SetConfig(R"xxx({"enable_warmup_on_ns_copy":false})xxx"), 0},
+			 IndexDeclaration{kFieldData1, "text", "string", IndexOpts().SetConfig(R"xxx({"enable_warmup_on_ns_copy":true})xxx"), 0},
+			 IndexDeclaration{kFieldData2, "text", "string", IndexOpts().SetConfig(R"xxx({"enable_warmup_on_ns_copy":true})xxx"), 0}});
 	}
 
 	Item MakeItem(int id, const std::string& baseData) {
@@ -63,6 +67,8 @@ public:
 protected:
 	const char* kFieldId = "id";
 	const char* kFieldData = "data";
+	const char* kFieldData1 = "data1";
+	const char* kFieldData2 = "data2";
 };
 
 #endif	// TRANSACTION_H

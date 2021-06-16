@@ -44,15 +44,18 @@ public:
 	// force resync
 	void ForceSync();
 	// Switch master
-	void SwitchMaster(size_t id);
+	void SwitchMaster(size_t id, ReplicationConfigTest::NsSet namespaces);
 	// Set WAL size
 	void SetWALSize(size_t id, int64_t size, std::string_view nsName);
-	//
+	// Get servers count
+	size_t GetServersCount() const;
+	// Set optimiation sort workers on ns config
+	void SetOptmizationSortWorkers(size_t id, size_t cnt, std::string_view nsName);
 
 	size_t masterId_ = 0;
 	shared_timed_mutex restartMutex_;
 
 private:
 	vector<ServerControl> svc_;
-	std::mutex m_;
+	mutable std::mutex m_;
 };

@@ -114,7 +114,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
 		assert(vid.id < int(vdocs.size()));
 		if (!vdocs[vid.id].keyEntry) {
 			continue;
-		};
+		}
 		vid.proc *= scalingFactor;
 		if (vid.proc <= minRelevancy) break;
 		cnt += vdocs[vid.id].keyEntry->Sorted(0).size();
@@ -128,7 +128,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
 
 		if (!vdocs[id].keyEntry) {
 			continue;
-		};
+		}
 		assert(!vdocs[id].keyEntry->Unsorted().empty());
 		if (vid.proc <= minRelevancy) break;
 		fctx->Add(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), vid.proc, std::move(vid.holder));
@@ -158,7 +158,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
 	return mergedIds;
 }
 template <typename T>
-void FastIndexText<T>::commitFulltext() {
+void FastIndexText<T>::commitFulltextImpl() {
 	this->holder_.StartCommit(this->tracker_.isCompleteUpdated());
 
 	auto tm0 = high_resolution_clock::now();
@@ -182,18 +182,6 @@ void FastIndexText<T>::commitFulltext() {
 				  duration_cast<milliseconds>(tm2 - tm0).count(), duration_cast<milliseconds>(tm1 - tm0).count(),
 				  duration_cast<milliseconds>(tm2 - tm1).count());
 	}
-}
-
-// hack wothout c++14
-template <typename Map>
-typename Map::iterator get(Map & /*data*/, typename Map::iterator it) {
-	return it;
-}
-template <typename Map>
-typename Map::iterator get(Map &data, typename UpdateTracker<Map>::hash_map::iterator kt) {
-	auto it = data.find(*kt);
-	assert(it != data.end());
-	return it;
 }
 
 template <typename T>
@@ -222,8 +210,14 @@ void FastIndexText<T>::BuildVdocs(Container &data) {
 	}
 	this->holder_.vodcsOffset_ = vdocs.size();
 
-	for (auto it = data.begin(); it != data.end(); it++) {
-		auto doc = get(this->idx_map, it);
+	typename T::iterator doc;
+	for (auto it = data.begin(); it != data.end(); ++it) {
+		if constexpr (std::is_same<Container, typename UpdateTracker<T>::hash_map>()) {
+			doc = this->idx_map.find(*it);
+			assert(it != data.end());
+		} else {
+			doc = it;
+		}
 		doc->second.VDocID() = vdocs.size();
 		vdocsTexts.emplace_back(gt.getDocFields(doc->first, bufStrs));
 
@@ -274,7 +268,7 @@ void FastIndexText<T>::SetOpts(const IndexOpts &opts) {
 
 	if (!eq_c(oldCfg.stopWords, newCfg.stopWords) || oldCfg.stemmers != newCfg.stemmers || oldCfg.maxTypoLen != newCfg.maxTypoLen ||
 		oldCfg.enableNumbersSearch != newCfg.enableNumbersSearch || oldCfg.extraWordSymbols != newCfg.extraWordSymbols ||
-		oldCfg.synonyms != newCfg.synonyms) {
+		oldCfg.synonyms != newCfg.synonyms || oldCfg.maxTypos != newCfg.maxTypos) {
 		logPrintf(LogInfo, "FulltextIndex config changed, it will be rebuilt on next search");
 		this->isBuilt_ = false;
 		this->holder_.status_ = FullRebuild;

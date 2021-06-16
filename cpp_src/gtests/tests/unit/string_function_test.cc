@@ -1,5 +1,6 @@
 #include <regex>
 #include "gtest/gtest.h"
+#include "reindexer_api.h"
 #include "tools/customlocal.h"
 #include "tools/string_regexp_functions.h"
 #include "tools/stringstools.h"
@@ -102,4 +103,31 @@ TEST(StringFunctions, IsLikeSqlPattern) {
 		pattern = reindexer::makeLikePattern(str);
 		EXPECT_TRUE(reindexer::matchLikePattern(str, pattern)) << "String: '" << str << "'\nPattern: '" << pattern << "'";
 	}
+}
+
+// Make sure 'Like' operator does not work with FT indexes
+TEST_F(ReindexerApi, LikeWithFullTextIndex) {
+	// Define structure of the Namespace, where one of
+	// the indexes is of type 'text' (Full text)
+	Error err = rt.reindexer->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(default_namespace, {"id", {"id"}, "hash", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(default_namespace, {"name", {"name", "text"}, "text", "string", IndexOpts()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// Insert 100 items to newly created Namespace
+	vector<string> content;
+	for (int i = 0; i < 100; ++i) {
+		Item item = NewItem(default_namespace);
+		content.emplace_back(RandString());
+		item["id"] = i;
+		item["name"] = content.back();
+		Upsert(default_namespace, item);
+	}
+
+	// Make sure query with 'Like' operator to FT index leads to error
+	QueryResults qr;
+	err = rt.reindexer->Select(Query(default_namespace).Where("name", CondLike, "%" + content[rand() % content.size()]), qr);
+	ASSERT_TRUE(!err.ok());
 }

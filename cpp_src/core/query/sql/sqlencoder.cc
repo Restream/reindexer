@@ -292,8 +292,15 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 						ser << ", ?, ?)";
 					} else {
 						assert(entry.values.size() == 2);
-						const Point point{static_cast<Point>(entry.values[0])};
-						ser << ", ST_GeomFromText('POINT(" << point.x << ' ' << point.y << ")'), " << entry.values[1].As<double>() << ')';
+						if (entry.values[0].Type() == KeyValueTuple) {
+							const Point point{static_cast<Point>(entry.values[0])};
+							ser << ", ST_GeomFromText('POINT(" << point.x << ' ' << point.y << ")'), " << entry.values[1].As<double>()
+								<< ')';
+						} else {
+							const Point point{static_cast<Point>(entry.values[1])};
+							ser << ", ST_GeomFromText('POINT(" << point.x << ' ' << point.y << ")'), " << entry.values[0].As<double>()
+								<< ')';
+						}
 					}
 				} else {
 					indexToSql(entry.index, ser);

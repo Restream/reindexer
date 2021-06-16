@@ -4,7 +4,8 @@ cmake_minimum_required(VERSION 3.0)
 project(reindexer_server_library)
 
 set (SWAGGER_VERSION "2.x")
-set (FACE_BRANCH "master")
+set (GH_FACE_VERSION "3.2.1")
+set (GH_FACE_TAG "v${GH_FACE_VERSION}")
 set (TARGET reindexer_server_library)
 set (SERVER_LIB_DIR ${PROJECT_BINARY_DIR} PARENT_SCOPE)
 
@@ -73,7 +74,7 @@ else()
 
 file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
     "file(
-  DOWNLOAD \"https://codeload.github.com/restream/reindexer-face-dist/tar.gz/${FACE_BRANCH}\"
+  DOWNLOAD \"https://codeload.github.com/restream/reindexer-face-dist/tar.gz/${GH_FACE_TAG}\"
 	\"${PROJECT_BINARY_DIR}/face.tar.gz\"
      )
      execute_process(
@@ -87,7 +88,7 @@ file(WRITE ${PROJECT_BINARY_DIR}/make_face.cmake
      if (NOT \"\${ret}\" STREQUAL \"0\")
 	 message(FATAL_ERROR \"Could not untar 'face.tar.gz'\")
      endif()
-     file(RENAME \"${PROJECT_BINARY_DIR}/reindexer-face-dist-${FACE_BRANCH}\" \"${PROJECT_BINARY_DIR}/face\")
+     file(RENAME \"${PROJECT_BINARY_DIR}/reindexer-face-dist-${GH_FACE_VERSION}\" \"${PROJECT_BINARY_DIR}/face\")
      file(REMOVE \"${PROJECT_BINARY_DIR}/face.tar.gz\")"
 )
 endif ()
@@ -109,8 +110,8 @@ if (LINK_RESOURCES)
 	    ERROR_VARIABLE err
 	)
 	if (NOT "${ret}" STREQUAL "0")
-            message(FATAL_ERROR "Could not prepare 'face' files. Reason: ${err}")
-  endif()
+		message(FATAL_ERROR "Could not prepare 'face' files. Reason: ${err}")
+	endif()
   
 	file(GLOB_RECURSE FACE_FILES ${PROJECT_BINARY_DIR}/face*/*)
 	file(GLOB_RECURSE SWAGGER_FILES ${PROJECT_BINARY_DIR}/swagger/*)

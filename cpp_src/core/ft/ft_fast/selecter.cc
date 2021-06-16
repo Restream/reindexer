@@ -220,9 +220,9 @@ void Selecter::processTypos(FtSelectContext &ctx, const FtDSLEntry &term) {
 		const decltype(step.typosHalf_) *typoses[2]{&step.typosHalf_, &step.typosMax_};
 		int matched = 0, skiped = 0, vids = 0;
 		mktypos(tctx, term.pattern, maxTyposInWord, holder_.cfg_->maxTypoLen, [&](std::string_view typo, int level) {
+			const int tcount = maxTyposInWord - level;
 			for (const auto *typos : typoses) {
-				auto typoRng = typos->equal_range(typo);
-				const int tcount = maxTyposInWord - level;
+				const auto typoRng = typos->equal_range(typo);
 				for (auto typoIt = typoRng.first; typoIt != typoRng.second; typoIt++) {
 					WordIdType wordIdglb = typoIt->second;
 					auto &step = holder_.GetStep(wordIdglb);

@@ -43,7 +43,7 @@ QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	return *this;
 }
 
-QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, int fetchFlags, int fetchAmount,
+QueryResults::QueryResults(net::cproto::ClientConnection *conn, NsArray &&nsArray, Completion cmpl, int fetchFlags, int fetchAmount,
 						   seconds timeout)
 	: conn_(conn),
 	  nsArray_(std::move(nsArray)),
@@ -54,7 +54,7 @@ QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArra
 	  requestTimeout_(timeout),
 	  cmpl_(std::move(cmpl)) {}
 
-QueryResults::QueryResults(net::cproto::ClientConnection *conn, NSArray &&nsArray, Completion cmpl, std::string_view rawResult, int queryID,
+QueryResults::QueryResults(net::cproto::ClientConnection *conn, NsArray &&nsArray, Completion cmpl, std::string_view rawResult, int queryID,
 						   int fetchFlags, int fetchAmount, seconds timeout)
 	: QueryResults(conn, std::move(nsArray), cmpl, fetchFlags, fetchAmount, timeout) {
 	Bind(rawResult, queryID);

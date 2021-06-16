@@ -54,6 +54,7 @@ private:
 	template <typename It>
 	void applyGeneralSort(It itFirst, It itLast, It itEnd, const ItemComparator &, const SelectCtx &ctx);
 
+	void calculateSortExpressions(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &, const QueryResults &);
 	template <bool aggregationsOnly>
 	void addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &sctx, h_vector<Aggregator, 4> &aggregators,
 						 QueryResults &result);
@@ -66,7 +67,7 @@ private:
 									   bool &skipSortingEntry, StrictMode);
 	void getSortIndexValue(const SortingContext &sortCtx, IdType rowId, VariantArray &value, uint8_t proc, const joins::NamespaceResults &,
 						   const JoinedSelectors &);
-	void processLeftJoins(QueryResults &qr, SelectCtx &sctx, size_t startPos, const RdxContext&);
+	void processLeftJoins(QueryResults &qr, SelectCtx &sctx, size_t startPos, const RdxContext &);
 	bool checkIfThereAreLeftJoins(SelectCtx &sctx) const;
 	template <typename It>
 	void sortResults(LoopCtx &sctx, It begin, It end, const SortingOptions &sortingOptions);

@@ -9,18 +9,19 @@
 
 class ctag {
 public:
-	ctag(int tag) : tag_(tag) {}
-	ctag(int tagType, int tagName, int tagField = -1) : tag_(tagType | (tagName << typeBits) | ((tagField + 1) << (typeBits + nameBits))) {}
-	explicit operator int() const { return tag_; }
+	ctag(int tag) noexcept : tag_(tag) {}
+	ctag(int tagType, int tagName, int tagField = -1) noexcept
+		: tag_(tagType | (tagName << typeBits) | ((tagField + 1) << (typeBits + nameBits))) {}
+	explicit operator int() const noexcept { return tag_; }
 
-	int Type() const { return tag_ & ((1 << typeBits) - 1); }
-	int Name() const { return (tag_ >> typeBits) & ((1 << nameBits) - 1); }
-	int Field() const { return (tag_ >> (typeBits + nameBits)) - 1; }
+	int Type() const noexcept { return tag_ & ((1 << typeBits) - 1); }
+	int Name() const noexcept { return (tag_ >> typeBits) & ((1 << nameBits) - 1); }
+	int Field() const noexcept { return (tag_ >> (typeBits + nameBits)) - 1; }
 
 	static const int nameBits = 12;
 	static const int typeBits = 3;
 
-	const char *TypeName() {
+	const char *TypeName() const noexcept {
 		switch (Type()) {
 			case TAG_VARINT:
 				return "<varint>";

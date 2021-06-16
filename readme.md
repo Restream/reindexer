@@ -30,7 +30,7 @@ about reindexer server and HTTP API refer to
     - [Prerequirements](#prerequirements)
     - [Get Reindexer](#get-reindexer)
 - [Advanced Usage](#advanced-usage)
-  - [Index Types and Their Capabilites](#index-types-and-their-capabilites)
+  - [Index Types and Their Capabilities](#index-types-and-their-capabilities)
   - [Nested Structs](#nested-structs)
   - [Sort](#sort)
   - [Text pattern search with LIKE condition](#text-pattern-search-with-like-condition)
@@ -45,7 +45,7 @@ about reindexer server and HTTP API refer to
   - [Complex Primary Keys and Composite Indices](#complex-primary-keys-and-composite-indices)
   - [Atomic on update functions](#atomic-on-update-functions)
   - [Aggregations](#aggregations)
-  - [Expire Data from Namespace by Setting TTL](#ttl-indexes)
+  - [Expire Data from Namespace by Setting TTL](#expire-data-from-namespace-by-setting-ttl)
   - [Direct JSON operations](#direct-json-operations)
     - [Upsert data in JSON format](#upsert-data-in-json-format)
     - [Get Query results in JSON format](#get-query-results-in-json-format)
@@ -919,8 +919,8 @@ equal_position doesn't work with the following conditions: IS NULL, IS EMPTY and
 
 There are atomic functions, which executes under namespace lock, and therefore guarantees data consistency:
 
-- serial - sequence of integer, useful for uniq ID generation
-- timestamp - current time stamp of operation, useful for data synchronization
+- serial() - sequence of integer, useful for uniq ID generation.
+- now() - current time stamp, useful for data synchronization. It may have one of the following arguments:  msec, usec, nsec and sec. The “sec” argument is used by default.
 
 These functions can be passed to Upsert/Insert/Update in 3-rd and next arguments.
 

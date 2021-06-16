@@ -13,7 +13,7 @@ using namespace reindexer::net;
 CoroQueryResults::CoroQueryResults(int fetchFlags)
 	: conn_(nullptr), queryID_(0), fetchOffset_(0), fetchFlags_(fetchFlags), fetchAmount_(0), requestTimeout_(0) {}
 
-CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection *conn, NSArray &&nsArray, int fetchFlags, int fetchAmount,
+CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection *conn, NsArray &&nsArray, int fetchFlags, int fetchAmount,
 								   seconds timeout)
 	: conn_(conn),
 	  nsArray_(std::move(nsArray)),
@@ -23,7 +23,7 @@ CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection *conn, NSAr
 	  fetchAmount_(fetchAmount),
 	  requestTimeout_(timeout) {}
 
-CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection *conn, NSArray &&nsArray, std::string_view rawResult, int queryID,
+CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection *conn, NsArray &&nsArray, std::string_view rawResult, int queryID,
 								   int fetchFlags, int fetchAmount, seconds timeout)
 	: CoroQueryResults(conn, std::move(nsArray), fetchFlags, fetchAmount, timeout) {
 	Bind(rawResult, queryID);

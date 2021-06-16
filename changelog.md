@@ -1,3 +1,24 @@
+# Version 3.2.1 (16.06.2021)
+## Core
+- [fea] Added optional fulltext index warmup after atomic namespace copy (EnableWarmupOnNsCopy)
+- [fix] Fixed assertion on namespace reconfiguration, while force-sync is in progress
+- [fix] Fixed fulltext index rebuilding after max_typos config update
+- [fix] Fixed sort by expression in joined queries
+- [fix] Fixed numeric strings handling (for cases, when value is greater than "2147483648")
+- [fix] Fixed assertion in upsert with multiple jsonpaths (now it returns error instead)
+- [fix] Fixed indexing for null-value
+- [fea] Covered more text representation for huge numbers in fulltext search
+
+## Reindexer tool
+- [fix] Fixed sigabort on remote's server disconnect
+
+## Face
+- [fix] Collate mode became required for the 'string' field type only
+- [fea] Added enable_warmup_on_ns_copy option to the full text index
+- [fix] Fixed issue with the namespace config during database switching
+- [fix] Slight design changes in the top menu and left sidebar
+- [fix] Fixed type errors for Namespace -> Grid
+
 # Version 3.2.0 (21.05.2021)
 ## Core
 - [fea] Added fields ranks summation syntax for fulltext queries
@@ -12,7 +33,7 @@
 ## Reindexer tool
 - [fix] Fixed sigabort in \bench
 
-##Face
+## Face
 - [fix] Fixed double requests during the sorting in the Performance table.
 - [fea] Changed the step of the Bm25 weight option 
 - [fea] Changed max_typos_in_word to max_typos 

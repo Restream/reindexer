@@ -4,60 +4,64 @@
 #include <cmrc/cmrc.hpp>
 #endif
 
-namespace reindexer {
+namespace reindexer_server {
 
 DocumentStatus web::fsStatus(const std::string& target) {
 	if (webRoot_.empty()) return DocumentStatus{};
 	DocumentStatus status;
-	status.fstatus = fs::Stat(webRoot_ + target);
-	if (status.fstatus == fs::StatError) {
-		status.fstatus = fs::Stat(webRoot_ + target + net::http::kGzSuffix);
-		if (status.fstatus == fs::StatFile) {
+	status.fstatus = reindexer::fs::Stat(webRoot_ + target);
+	if (status.fstatus == reindexer::fs::StatError) {
+		using reindexer::net::http::kGzSuffix;
+		status.fstatus = reindexer::fs::Stat(webRoot_ + target + kGzSuffix);
+		if (status.fstatus == reindexer::fs::StatFile) {
 			status.isGzip = true;
 		}
 	}
 	return status;
 }
 
-#ifdef LINK_RESOURCES
 DocumentStatus web::stat(const std::string& target) {
-	auto& table = cmrc::detail::table_instance();
+	auto fsRes = fsStatus(target);
+#ifdef LINK_RESOURCES
+	if (fsRes.fstatus == reindexer::fs::StatError) {
+		using reindexer::net::http::kGzSuffix;
+		auto& table = cmrc::detail::table_instance();
 
-	if (table.find(target) != table.end()) {
-		return fs::StatFile;
-	} else if (table.find(target + net::http::kGzSuffix) != table.end()) {
-		return {fs::StatFile, true};
-	}
+		if (table.find(target) != table.end()) {
+			return reindexer::fs::StatFile;
+		} else if (table.find(target + kGzSuffix) != table.end()) {
+			return {reindexer::fs::StatFile, true};
+		}
 
-	for (auto it = table.begin(); it != table.end(); ++it) {
-		if (target.length() < it->first.length() && it->first.find(target) == 0 && it->first[target.length()] == '/') {
-			return fs::StatDir;
+		for (auto it = table.begin(); it != table.end(); ++it) {
+			if (target.length() < it->first.length() && it->first.find(target) == 0 && it->first[target.length()] == '/') {
+				return reindexer::fs::StatDir;
+			}
 		}
 	}
-	return fsStatus(target);
+#endif
+	return fsRes;
 }
 
 int web::file(Context& ctx, HttpStatusCode code, const std::string& target, bool isGzip) {
-	const auto& table = cmrc::detail::table_instance();
-	auto it = table.find(isGzip ? target + net::http::kGzSuffix : target);
+#ifdef LINK_RESOURCES
+	auto fsRes = fsStatus(target);
+	if (fsRes.fstatus == reindexer::fs::StatError) {
+		using reindexer::net::http::kGzSuffix;
 
-	if (it == table.end()) {
-		return webRoot_.empty() ? ctx.String(net::http::StatusNotFound, "File not found")
-								: ctx.File(code, webRoot_ + target, std::string_view(), isGzip);
+		const auto& table = cmrc::detail::table_instance();
+		auto it = table.find(isGzip ? target + kGzSuffix : target);
+
+		if (it == table.end()) {
+			return ctx.String(reindexer::net::http::StatusNotFound, "File not found");
+		}
+
+		auto file_entry = cmrc::open(isGzip ? target + kGzSuffix : target);
+		std::string_view slice(file_entry.begin(), std::distance(file_entry.begin(), file_entry.end()));
+		return ctx.File(code, target, slice, isGzip);
 	}
-
-	auto file_entry = cmrc::open(isGzip ? target + net::http::kGzSuffix : target);
-	std::string_view slice(file_entry.begin(), std::distance(file_entry.begin(), file_entry.end()));
-	return ctx.File(code, target, slice, isGzip);
-}
-
-#else
-
-DocumentStatus web::stat(const std::string &target) { return fsStatus(target); }
-int web::file(Context &ctx, HttpStatusCode code, const std::string &target, bool isGzip) {
+#endif
 	return ctx.File(code, webRoot_ + target, std::string_view(), isGzip);
 }
 
-#endif
-
-}  // namespace reindexer
+}  // namespace reindexer_server

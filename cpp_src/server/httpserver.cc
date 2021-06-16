@@ -830,8 +830,8 @@ int HTTPServer::DocHandler(http::Context &ctx) {
 
 	for (; path.length() > 0;) {
 		string file = fs::JoinPath(path, "index.html");
-		auto pathStatus = web.stat(file);
-		if (web.stat(file).fstatus == fs::StatFile) {
+		const auto pathStatus = web.stat(file);
+		if (pathStatus.fstatus == fs::StatFile) {
 			return web.file(ctx, http::StatusOK, file, pathStatus.isGzip);
 		}
 

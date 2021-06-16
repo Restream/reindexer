@@ -89,6 +89,8 @@ type FtFastConfig struct {
 	LogLevel int `json:"log_level"`
 	// Enable search by numbers as words and backwards
 	EnableNumbersSearch bool `json:"enable_numbers_search"`
+	// Enable auto index warmup after atomic namespace copy on transaction
+	EnableWarmupOnNsCopy bool `json:"enable_warmup_on_ns_copy"`
 	// Extra symbols, which will be threated as parts of word to addition to letters and digits
 	ExtraWordSymbols string `json:"extra_word_symbols"`
 	// Ratio of summation of ranks of match one term in several fields
@@ -98,7 +100,7 @@ type FtFastConfig struct {
 }
 
 func DefaultFtFastConfig() FtFastConfig {
-	return FtFastConfig {
+	return FtFastConfig{
 		Bm25Boost:             1.0,
 		Bm25Weight:            0.1,
 		DistanceBoost:         1.0,
@@ -112,7 +114,7 @@ func DefaultFtFastConfig() FtFastConfig {
 		MinRelevancy:          0.05,
 		MaxTypos:              2,
 		MaxTypoLen:            15,
-		MaxRebuildSteps:        50,
+		MaxRebuildSteps:       50,
 		MaxStepSize:           4000,
 		MergeLimit:            20000,
 		Stemmers:              []string{"en", "ru"},

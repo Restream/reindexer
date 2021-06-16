@@ -77,11 +77,9 @@ Variant IndexStore<T>::Upsert(const Variant &key, IdType id) {
 }
 
 template <typename T>
-void IndexStore<T>::Upsert(VariantArray &result, const VariantArray &keys, IdType id, bool needUpsertEmptyValue) {
+void IndexStore<T>::Upsert(VariantArray &result, const VariantArray &keys, IdType id) {
 	if (keys.empty()) {
-		if (needUpsertEmptyValue) {
-			Upsert(Variant{}, id);
-		}
+		Upsert(Variant{}, id);
 	} else {
 		result.reserve(keys.size());
 		for (const auto &key : keys) result.emplace_back(Upsert(key, id));
@@ -89,7 +87,7 @@ void IndexStore<T>::Upsert(VariantArray &result, const VariantArray &keys, IdTyp
 }
 
 template <>
-void IndexStore<Point>::Upsert(VariantArray & /*result*/, const VariantArray & /*keys*/, IdType /*id*/, bool /*needUpsertEmptyValue*/) {
+void IndexStore<Point>::Upsert(VariantArray & /*result*/, const VariantArray & /*keys*/, IdType /*id*/) {
 	assert(0);
 }
 

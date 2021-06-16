@@ -48,7 +48,7 @@ ReplicationConfigTest ServerControl::Interface::GetServerConfig(ConfigType type)
 			break;
 		}
 		case ConfigType::Namespace: {
-			reindexer::client::QueryResults results;
+			BaseApi::QueryResultsType results(api.reindexer.get());
 			auto err = api.reindexer->Select(Query(kConfigNs), results);
 			EXPECT_TRUE(err.ok()) << err.what();
 			EXPECT_TRUE(results.Status().ok()) << results.Status().what();
@@ -92,28 +92,10 @@ void ServerControl::Interface::WriteServerConfig(const std::string& configYaml) 
 	file.flush();
 }
 
-void ServerControl::Interface::SetWALSize(int64_t size, std::string_view nsName) {
-	reindexer::WrSerializer ser;
-	reindexer::JsonBuilder jb(ser);
+void ServerControl::Interface::SetWALSize(int64_t size, std::string_view nsName) { setNamespaceConfigItem(nsName, "wal_size", size); }
 
-	jb.Put("type", "namespaces");
-	auto nsArray = jb.Array("namespaces");
-	auto ns = nsArray.Object();
-	ns.Put("namespace", nsName);
-	ns.Put("wal_size", size);
-	ns.End();
-	nsArray.End();
-	jb.End();
-
-	auto item = api.NewItem(kConfigNs);
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-
-	auto err = item.FromJSON(ser.Slice());
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	api.Upsert(kConfigNs, item);
-	err = api.Commit(kConfigNs);
-	ASSERT_TRUE(err.ok()) << err.what();
+void ServerControl::Interface::SetOptmizationSortWorkers(size_t cnt, std::string_view nsName) {
+	setNamespaceConfigItem(nsName, "optimization_sort_workers", cnt);
 }
 
 ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const std::string& ReplicationConfigFilename,
@@ -185,6 +167,32 @@ void ServerControl::Interface::MakeSlave(size_t masterId, const ReplicationConfi
 	setReplicationConfig(masterId, config);
 }
 
+template <typename ValueT>
+void ServerControl::Interface::setNamespaceConfigItem(std::string_view nsName, std::string_view paramName, ValueT&& value) {
+	reindexer::WrSerializer ser;
+	reindexer::JsonBuilder jb(ser);
+
+	jb.Put("type", "namespaces");
+	auto nsArray = jb.Array("namespaces");
+	auto ns = nsArray.Object();
+	ns.Put("namespace", nsName);
+	ns.Put(paramName, value);
+
+	ns.End();
+	nsArray.End();
+	jb.End();
+
+	auto item = api.NewItem(kConfigNs);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+	auto err = item.FromJSON(ser.Slice());
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	api.Upsert(kConfigNs, item);
+	err = api.Commit(kConfigNs);
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+
 void ServerControl::Interface::setReplicationConfig(size_t masterId, const ReplicationConfigTest& config) {
 	(void)masterId;
 	auto item = api.NewItem(kConfigNs);
@@ -247,7 +255,7 @@ void ServerControl::Drop() {
 
 ReplicationStateApi ServerControl::Interface::GetState(const std::string& ns) {
 	Query qr = Query("#memstats").Where("name", CondEq, ns);
-	reindexer::client::QueryResults res;
+	BaseApi::QueryResultsType res(api.reindexer.get());
 	auto err = api.reindexer->Select(qr, res);
 	EXPECT_TRUE(err.ok()) << err.what();
 	ReplicationStateApi state{lsn_t(), lsn_t(), 0, 0, false};
@@ -278,7 +286,6 @@ ReplicationStateApi ServerControl::Interface::GetState(const std::string& ns) {
 }
 
 void ServerControl::Interface::ForceSync() {
-	reindexer::client::QueryResults res;
 	Error err;
 	auto item = api.NewItem("#config");
 	EXPECT_TRUE(item.Status().ok()) << item.Status().what();

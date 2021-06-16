@@ -11,8 +11,7 @@ Error CoroTransaction::Modify(Query&& query) {
 	if (conn_) {
 		WrSerializer ser;
 		query.Serialize(ser);
-		auto ret = conn_->Call({cproto::kCmdUpdateQueryTx, RequestTimeout_, execTimeout_, nullptr}, ser.Slice(), txId_).Status();
-		if (!ret.ok()) return ret;
+		return conn_->Call({cproto::kCmdUpdateQueryTx, RequestTimeout_, execTimeout_, nullptr}, ser.Slice(), txId_).Status();
 	}
 	return Error(errLogic, "Connection pointer in transaction is nullptr.");
 }

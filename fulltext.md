@@ -268,6 +268,7 @@ Here is list of available parameters:
 |   | SumRanksByFieldsRatio |   float  | Ratio of summation of ranks of match one term in several fields                                                                                                                                                                                           |      0.0      |
 |   | LogLevel              |    int   | Log level of full text search engine                                                                                                                                                                                                                      |       0       |
 |   | FieldsCfg             | []struct | Configs for certain fields. Overlaps parameters from main config. Contains parameters: FieldName, Bm25Boost, Bm25Weight, TermLenBoost, TermLenWeight, PositionBoost, PositionWeight.                                                                      |     empty     |
+|   | EnableWarmupOnNsCopy  |   bool   | Enable automatic index warmup after transaction, which has performed namespace copy                                                                                                                                                                       |     false     |
 
 ### Limitations and know issues
 

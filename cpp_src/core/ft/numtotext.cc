@@ -4,8 +4,8 @@
 #include <math.h>
 #include <stdlib.h>
 #include <algorithm>
-#include <iostream>
 #include <vector>
+#include "tools/errors.h"
 
 namespace reindexer {
 
@@ -23,8 +23,13 @@ const string hundreads[] = {"", "сто", "двести", "триста", "че�
 const string thousands[] = {"тысяча", "тысячи", "тысяч"};
 const string millions[] = {"миллион", "миллиона", "миллионов"};
 const string billions[] = {"миллиард", "миллиарда", "миллиардов"};
+const string trillions[] = {"триллион", "триллиона", "триллионов"};
+const string quadrillion[] = {"квадриллион", "квадриллиона", "квадриллионов"};
+const string quintillion[] = {"квинтиллион", "квинтиллиона", "квинтиллионов"};
+const string sextillion[] = {"секстиллион", "секстиллиона", "секстиллионов"};
+const string septillion[] = {"септиллион", "септиллиона", "септиллионов"};
 
-enum Numorders : int { Thousands, Millions, Billions };
+enum Numorders : int { Thousands, Millions, Billions, Trillions, Quadrillion, Quintillion, Sextillion, Septillion };
 
 const string& getNumorder(int numorder, int i) {
 	switch (numorder) {
@@ -34,8 +39,18 @@ const string& getNumorder(int numorder, int i) {
 			return millions[i];
 		case Billions:
 			return billions[i];
+		case Trillions:
+			return trillions[i];
+		case Quadrillion:
+			return quadrillion[i];
+		case Quintillion:
+			return quintillion[i];
+		case Sextillion:
+			return sextillion[i];
+		case Septillion:
+			return septillion[i];
 	}
-	std::abort();
+	throw Error(errParams, "Incorrect order [%s]: too big", numorder);
 }
 
 int ansiCharacterToDigit(char ch) { return static_cast<int>(ch - 48); }
@@ -130,6 +145,10 @@ vector<string>& NumToText::convert(std::string_view str, std::vector<std::string
 	output.clear();
 	if ((str.length() == 1) && (str[0] == '0')) {
 		output = {"ноль"};
+		return output;
+	}
+	// unreasonably big
+	if (str.length() > 27) {
 		return output;
 	}
 	vector<string> orders(getOrders(str));

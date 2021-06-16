@@ -188,23 +188,26 @@ TEST_F(FTApi, SelectWithTypos) {
 	Add("AB");
 	Add("ABC");
 	Add("ABCD");
+	Add("ABCDE");
+	Add("ABCDEF");
+	Add("ABCDEFG");
+	Add("ABCDEFGH");
 	// Only full match
 	CheckAllPermutations("", {"A~"}, "", {{"!A!", ""}});
 	CheckAllPermutations("", {"AB~"}, "", {{"!AB!", ""}});
 	CheckAllPermutations("", {"ABC~"}, "", {{"!ABC!", ""}});
-	CheckAllPermutations("", {"ABCDE~"}, "", {});
+	CheckAllPermutations("", {"ABCDEFGHI~"}, "", {});
 	CheckAllPermutations("", {"XBCD~"}, "", {});
 	CheckAllPermutations("", {"ACBD~"}, "", {});
 
 	cfg.maxTypos = 1;
 	SetFTConfig(cfg);
-	Add("ABCDE");
 	// Full match
 	// Or one missed char in any word
 	CheckAllPermutations("", {"ABCD~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}});
-	CheckAllPermutations("", {"ABCDE~"}, "", {{"!ABCD!", ""}, {"!ABCDE!", ""}});
+	CheckAllPermutations("", {"ABCDEFGH~"}, "", {{"!ABCDEFG!", ""}, {"!ABCDEFGH!", ""}});
 	CheckAllPermutations("", {"BCD~"}, "", {{"!ABCD!", ""}});
-	CheckAllPermutations("", {"ABCDEF~"}, "", {{"!ABCDE!", ""}});
+	CheckAllPermutations("", {"ABCDEFGHI~"}, "", {{"!ABCDEFGH!", ""}});
 	CheckAllPermutations("", {"XABCD~"}, "", {{"!ABCD!", ""}});
 	CheckAllPermutations("", {"ABXCD~"}, "", {{"!ABCD!", ""}});
 	CheckAllPermutations("", {"ABCDX~"}, "", {{"!ABCD!", ""}});
@@ -218,12 +221,11 @@ TEST_F(FTApi, SelectWithTypos) {
 
 	cfg.maxTypos = 2;
 	SetFTConfig(cfg);
-	Add("ABCDEF");
 	// Full match
 	// Or up to by one missed char in any or both words
 	// Or one typo
 	CheckAllPermutations("", {"ABCD~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}});
-	CheckAllPermutations("", {"ABCDEF~"}, "", {{"!ABCDE!", ""}, {"!ABCDEF!", ""}});
+	CheckAllPermutations("", {"ABCDEFGH~"}, "", {{"!ABCDEFG!", ""}, {"!ABCDEFGH!", ""}});
 	CheckAllPermutations("", {"BCDEFX~"}, "", {{"!ABCDEF!", ""}});
 	CheckAllPermutations("", {"BCD~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}});
 	CheckAllPermutations("", {"XABCD~"}, "", {{"!ABCD!", ""}, {"!ABCDE!", ""}});
@@ -240,13 +242,12 @@ TEST_F(FTApi, SelectWithTypos) {
 
 	cfg.maxTypos = 3;
 	SetFTConfig(cfg);
-	Add("ABCDEFG");
 	// Full match
 	// Or up to by one missed char in any or both words
 	// Or one missed char in one word and two missed chars in another one
 	// Or up to two typos
 	CheckAllPermutations("", {"ABCD~"}, "", {{"!AB!", ""}, {"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}, {"!ABCDEF!", ""}});
-	CheckAllPermutations("", {"ABCDEFG~"}, "", {{"!ABCDE!", ""}, {"!ABCDEF!", ""}, {"!ABCDEFG!", ""}});
+	CheckAllPermutations("", {"ABCDEFGH~"}, "", {{"!ABCDEF!", ""}, {"!ABCDEFG!", ""}, {"!ABCDEFGH!", ""}});
 	CheckAllPermutations("", {"BCDEFX~"}, "", {{"!ABCDE!", ""}, {"!ABCDEF!", ""}, {"!ABCDEFG!", ""}});
 	CheckAllPermutations("", {"BCDXEFX~"}, "", {{"!ABCDEF!", ""}});
 	CheckAllPermutations("", {"BCD~"}, "", {{"!ABC!", ""}, {"!ABCD!", ""}, {"!ABCDE!", ""}});
@@ -278,7 +279,6 @@ TEST_F(FTApi, SelectWithTypos) {
 
 	cfg.maxTypos = 4;
 	SetFTConfig(cfg);
-	Add("ABCDEFGH");
 	// Full match
 	// Or up to by two missed chars in any or both words
 	// Or up to two typos
@@ -449,6 +449,40 @@ TEST_F(FTApi, NumberToWordsSelect) {
 	Add("оценка 5 майкл джордан 23"sv, ""sv);
 
 	CheckAllPermutations("", {"пять", "+двадцать", "+три"}, "", {{"оценка !5! майкл джордан !23!", ""}});
+}
+
+// Make sure FT seeks by a huge number set by string in DSL
+TEST_F(FTApi, HugeNumberToWordsSelect) {
+	// Initialize namespace
+	Init(GetDefaultConfig());
+	// Add a record with a big number
+	Add("много 7343121521906522180408440 денег"sv, ""sv);
+	// Execute FT query, where search words are set as strings
+	QueryResults qr = SimpleSelect(
+		"+семь +септиллионов +триста +сорок +три +секстиллиона +сто +двадцать +один +квинтиллион +пятьсот +двадцать +один +квадриллион "
+		"+девятьсот +шесть +триллионов +пятьсот +двадцать +два +миллиарда +сто +восемьдесят +миллионов +четыреста +восемь +тысяч "
+		"+четыреста +сорок");
+	// Make sure it found this only string
+	ASSERT_TRUE(qr.Count() == 1);
+}
+
+// Make sure way too huge numbers are ignored in FT
+TEST_F(FTApi, HugeNumberToWordsSelect2) {
+	// Initialize namespace
+	Init(GetDefaultConfig());
+	// Add a record with a huge number
+	Add("1127343121521906522180408440"sv, ""sv);
+	// Execute FT query, where search words are set as strings
+	QueryResults qr;
+	const std::string searchWord =
+		"+один +октиллион +сто +двадцать +семь +септиллионов +триста +сорок +три +секстиллиона +сто +двадцать +один +квинтиллион +пятьсот "
+		"+двадцать +один +квадриллион +девятьсот +шесть +триллионов +пятьсот +двадцать +два +миллиарда +сто +восемьдесят +миллионов "
+		"+четыреста +восемь +тысяч +четыреста +сорок";
+	Query q = std::move(Query("nm1").Where("ft3", CondEq, searchWord));
+	Error err = rt.reindexer->Select(q, qr);
+	EXPECT_TRUE(err.ok()) << err.what();
+	// Make sure it has found absolutely nothing
+	ASSERT_TRUE(qr.Count() == 0);
 }
 
 TEST_F(FTApi, DeleteTest) {

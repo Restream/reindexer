@@ -5,3 +5,5 @@ race:~basic_string
 race:std::string::_M_replace_safe
 race:std::string::_Rep::_M_clone
 race:std::string::_Rep::_S_create
+# snappy
+race:snappy::RawUncompress

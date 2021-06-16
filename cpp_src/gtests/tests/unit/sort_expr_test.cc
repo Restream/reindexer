@@ -172,12 +172,12 @@ static SortExpression makeExpr(Args... args) {
 TEST(StringFunctions, SortExpressionParse) {
 	enum Result { SUCCESS, FAIL };
 	struct Case {
-		Case(const char* e, std::vector<JoinedSelectorMock> js, SortExpression se)
+		Case(const char* e, std::vector<JoinedNsNameMock> js, SortExpression se)
 			: expression{e}, joinedSelectors{std::move(js)}, expected{std::move(se)}, result{SUCCESS} {}
-		Case(const char* e, std::vector<JoinedSelectorMock> js, Result r)
+		Case(const char* e, std::vector<JoinedNsNameMock> js, Result r)
 			: expression{e}, joinedSelectors{std::move(js)}, expected{}, result{r} {}
 		const char* expression;
-		std::vector<JoinedSelectorMock> joinedSelectors;
+		std::vector<JoinedNsNameMock> joinedSelectors;
 		SortExpression expected;
 		Result result;
 	} testCases[]{
@@ -223,6 +223,8 @@ TEST(StringFunctions, SortExpressionParse) {
 		{"ST_Distance(point, ST_GeomFromText(\"point(1.25 -3.5)'))", {}, FAIL},
 		{"ST_Distance(point, ST_GeomFromText('point(1.25 -3.5)))", {}, FAIL},
 		{"ST_Distance(point, ST_GeomFromText('point(1.25 -3.5)')", {}, FAIL},
+		{"ST_Distance(point, ST_GeomFromText('point(1.25, -3.5)'))", {}, FAIL},
+		{"ST_Distance(ST_GeomFromText('point(0.5 5.5)'), ST_GeomFromText('point(1.25 -3.5)'))", {}, FAIL},
 		{"ST_Distance(point1, point2)", {}, makeExpr(Distance("point1", "point2"))},
 		{"ST_Distance(point1, ns.point2)", {"ns"}, makeExpr(Distance("point1", 0, "point2"))},
 		{"ST_Distance(ns.point1, point2)", {"ns"}, makeExpr(Distance("point2", 0, "point1"))},
