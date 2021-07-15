@@ -583,13 +583,13 @@ func (qt *queryTest) Select(filters ...string) *queryTest {
 }
 
 // Exec will execute query, and return slice of items
-func (qt *queryTest) Exec() *reindexer.Iterator {
-	return qt.MustExec()
+func (qt *queryTest) Exec(t *testing.T) *reindexer.Iterator {
+	return qt.MustExec(t)
 }
 
 // Exec will execute query with context, and return slice of items
-func (qt *queryTest) ExecCtx(ctx context.Context) *reindexer.Iterator {
-	return qt.MustExecCtx(ctx)
+func (qt *queryTest) ExecCtx(t *testing.T, ctx context.Context) *reindexer.Iterator {
+	return qt.MustExecCtx(t, ctx)
 }
 
 // Exec query, and full scan check items returned items
@@ -600,7 +600,7 @@ func (qt *queryTest) ExecAndVerify(t *testing.T) *reindexer.Iterator {
 // Exec query with context, and full scan check items returned items
 func (qt *queryTest) ExecAndVerifyCtx(t *testing.T, ctx context.Context) *reindexer.Iterator {
 	defer qt.close()
-	it := qt.ManualClose().ExecCtx(ctx)
+	it := qt.ManualClose().ExecCtx(t, ctx)
 	qt.totalCount = it.TotalCount()
 	aggregations := it.AggResults()
 	it.AllowUnsafe(true)
@@ -620,15 +620,15 @@ func (qt *queryTest) ExecAndVerifyCtx(t *testing.T, ctx context.Context) *reinde
 	return it
 }
 
-func (qt *queryTest) MustExec(handClose ...bool) *reindexer.Iterator {
-	return qt.MustExecCtx(context.Background(), handClose...)
+func (qt *queryTest) MustExec(t *testing.T, handClose ...bool) *reindexer.Iterator {
+	return qt.MustExecCtx(t, context.Background(), handClose...)
 }
 
-func (qt *queryTest) MustExecCtx(ctx context.Context, handClose ...bool) *reindexer.Iterator {
+func (qt *queryTest) MustExecCtx(t *testing.T, ctx context.Context, handClose ...bool) *reindexer.Iterator {
 	if !qt.handClose {
 		defer qt.close()
 	}
-	it := qt.db.execQueryCtx(ctx, qt)
+	it := qt.db.execQueryCtx(t, ctx, qt)
 	return it
 }
 

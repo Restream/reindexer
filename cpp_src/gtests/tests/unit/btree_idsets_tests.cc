@@ -121,11 +121,8 @@ TEST_F(BtreeIdsetsApi, JoinSimpleNs) {
 }
 
 TEST_F(ReindexerApi, BtreeUnbuiltIndexIteratorsTest) {
-	CollateOpts opts;
-	reindexer::PayloadType pt;
-	reindexer::FieldsSet fdset;
-	reindexer::number_map<int64_t, reindexer::Index::KeyEntry> m1(pt, fdset, opts);
-	reindexer::number_map<int64_t, reindexer::Index::KeyEntryPlain> m2(pt, fdset, opts);
+	reindexer::number_map<int64_t, reindexer::Index::KeyEntry> m1;
+	reindexer::number_map<int64_t, reindexer::Index::KeyEntryPlain> m2;
 
 	vector<IdType> ids1, ids2;
 	for (size_t i = 0; i < 10000; ++i) {

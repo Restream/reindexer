@@ -109,26 +109,54 @@ public:
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
 	Error Insert(std::string_view nsName, Item &item);
-	/// Update Item in namespace. If item with same PK is not exists, when item.GetID will
+	/// Insert new Item to namespace. If item with same PK is already exists, when item.GetID will
+	/// return -1, on success inserted item will be added to the result and item.GetID() will return internal Item ID
 	/// May be used with completion
+	/// @param nsName - Name of namespace
+	/// @param item - Item, obtained by call to NewItem of the same namespace
+	/// @param result - QueryResults with inserted item.
+	Error Insert(std::string_view nsName, Item &item, QueryResults &result);
+	/// Update Item in namespace. If item with same PK is not exists, when item.GetID will
 	/// return -1, on success item.GetID() will return internal Item ID
+	/// May be used with completion
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
 	Error Update(std::string_view nsName, Item &item);
+	/// Update Item in namespace. If item with same PK is not exists, when item.GetID will
+	/// return -1, on success updated item will be added to result and item.GetID() will return internal Item ID
+	/// May be used with completion
+	/// @param nsName - Name of namespace
+	/// @param item - Item, obtained by call to NewItem of the same namespace
+	/// @param result - QueryResults with updated item.
+	Error Update(std::string_view nsName, Item &item, QueryResults &result);
 	/// Updates all items in namespace, that satisfy provided query
 	/// @param query - Query to define items set for update.
-	/// @param result - QueryResults with IDs of deleted items.
+	/// @param result - QueryResults with IDs of updated items.
 	Error Update(const Query &query, QueryResults &result);
 	/// Update or Insert Item in namespace. On success item.GetID() will return internal Item ID
 	/// May be used with completion
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
 	Error Upsert(std::string_view nsName, Item &item);
+	/// Update or Insert Item in namespace.
+	/// On success upserted item will be added to result and item.GetID() will return internal Item ID
+	/// May be used with completion
+	/// @param nsName - Name of namespace
+	/// @param item - Item, obtained by call to NewItem of the same namespace
+	/// @param result - QueryResults with upserted item.
+	Error Upsert(std::string_view nsName, Item &item, QueryResults &result);
 	/// Delete Item from namespace. On success item.GetID() will return internal Item ID
 	/// May be used with completion
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
 	Error Delete(std::string_view nsName, Item &item);
+	/// Delete Item from namespace.
+	/// On success deleted item will be added to result and item.GetID() will return internal Item ID
+	/// May be used with completion
+	/// @param nsName - Name of namespace
+	/// @param item - Item, obtained by call to NewItem of the same namespace
+	/// @param result - QueryResults with deleted item.
+	Error Delete(std::string_view nsName, Item &item, QueryResults &result);
 	/// Delete all items froms namespace, which matches provided Query
 	/// @param query - Query with conditions
 	/// @param result - QueryResults with IDs of deleted items

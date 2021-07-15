@@ -120,6 +120,8 @@ type NamespaceMemStat struct {
 	EmptyItemsCount int64 `json:"empty_items_count"`
 	// Raw size of documents, stored in the namespace, except string fields
 	DataSize int64 `json:"data_size"`
+	// Size of strings deleted from namespace, but still used in queryResults
+	StringsWaitingToBeDeletedSize int64 `json:"strings_waiting_to_be_deleted_size"`
 	// Summary of total namespace memory consumption
 	Total struct {
 		// Total memory size of stored documents, including system structures

@@ -18,9 +18,6 @@
 #include "tools/filecontentwatcher.h"
 #include "transaction.h"
 
-using std::shared_ptr;
-using std::string;
-
 namespace reindexer {
 
 class Replicator;
@@ -36,6 +33,11 @@ class ReindexerImpl {
 		NamespaceImpl::Locker::RLockT nsLck;
 		unsigned count = 1;
 	};
+	template <bool needUpdateSystemNs, typename MakeCtxStrFn, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg,
+			  typename... Args>
+	Error applyNsFunction(std::string_view nsName, Arg arg, Args... args, const InternalRdxContext &ctx, const MakeCtxStrFn &makeCtxStr);
+	template <auto MemFn, typename MakeCtxStrFn, typename Arg, typename... Args>
+	Error applyNsFunction(std::string_view nsName, const InternalRdxContext &ctx, const MakeCtxStrFn &makeCtxStr, Arg &, Args...);
 
 public:
 	using Completion = std::function<void(const Error &err)>;
@@ -60,10 +62,14 @@ public:
 	Error DropIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx = InternalRdxContext());
 	Error EnumNamespaces(vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx = InternalRdxContext());
 	Error Insert(std::string_view nsName, Item &item, const InternalRdxContext &ctx = InternalRdxContext());
+	Error Insert(std::string_view nsName, Item &item, QueryResults &, const InternalRdxContext &ctx = InternalRdxContext());
 	Error Update(std::string_view nsName, Item &item, const InternalRdxContext &ctx = InternalRdxContext());
+	Error Update(std::string_view nsName, Item &item, QueryResults &, const InternalRdxContext &ctx = InternalRdxContext());
 	Error Update(const Query &query, QueryResults &result, const InternalRdxContext &ctx = InternalRdxContext());
 	Error Upsert(std::string_view nsName, Item &item, const InternalRdxContext &ctx = InternalRdxContext());
+	Error Upsert(std::string_view nsName, Item &item, QueryResults &, const InternalRdxContext &ctx = InternalRdxContext());
 	Error Delete(std::string_view nsName, Item &item, const InternalRdxContext &ctx = InternalRdxContext());
+	Error Delete(std::string_view nsName, Item &item, QueryResults &, const InternalRdxContext &ctx = InternalRdxContext());
 	Error Delete(const Query &query, QueryResults &result, const InternalRdxContext &ctx = InternalRdxContext());
 	Error Select(std::string_view query, QueryResults &result, const InternalRdxContext &ctx = InternalRdxContext());
 	Error Select(const Query &query, QueryResults &result, const InternalRdxContext &ctx = InternalRdxContext());
@@ -119,10 +125,10 @@ protected:
 				}
 			}
 
-			emplace_back(ns);
+			emplace_back(std::move(ns));
 			return;
 		}
-		void Delete(NamespaceImpl::Ptr ns) {
+		void Delete(const NamespaceImpl::Ptr &ns) {
 			for (auto it = begin(); it != end(); ++it) {
 				if (it->ns.get() == ns.get()) {
 					if (!--(it->count)) erase(it);
@@ -140,8 +146,9 @@ protected:
 		}
 
 		NamespaceImpl::Ptr Get(const string &name) {
-			for (auto it = begin(); it != end(); it++)
+			for (auto it = begin(); it != end(); it++) {
 				if (iequals(it->ns->name_, name)) return it->ns;
+			}
 			return nullptr;
 		}
 

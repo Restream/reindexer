@@ -43,7 +43,7 @@ func CheckSelectItemsQueries(t *testing.T) {
 
 	q1 := DB.Query("test_select_text_item").Where("name", reindexer.EQ, first).Functions("name.snippet(<b>,<b>,3,3)")
 
-	res, _, err := q1.MustExec().FetchAllWithRank()
+	res, _, err := q1.MustExec(t).FetchAllWithRank()
 	assert.NoError(t, err)
 
 	for _, item := range res {

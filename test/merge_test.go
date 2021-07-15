@@ -185,9 +185,9 @@ func CheckTestItemsMergeQueries(t *testing.T) {
 	q3 := DB.Query("test_full_text_item").Where("name", reindexer.EQ, third)
 	qm := q1.Merge(q2).Merge(q3).Debug(reindexer.TRACE)
 
-	merge, q1Procs, _ := qm.MustExec().FetchAllWithRank()
+	merge, q1Procs, _ := qm.MustExec(t).FetchAllWithRank()
 
-	lmerge, _ := qq1.Limit(2).MustExec().FetchAll()
+	lmerge, _ := qq1.Limit(2).MustExec(&testing.T{}).FetchAll()
 	assert.LessOrEqual(t, len(lmerge), 2, "LIMIT NOT WORKING")
 
 	//TEST SIMPLE SORT
@@ -207,11 +207,11 @@ func CheckTestItemsMergeQueries(t *testing.T) {
 		InnerJoin(DB.Query("merge_join_item2"), "joined").
 		On("join_id", reindexer.EQ, "id")
 	qs3 := DB.Query("test_full_text_item").Where("name", reindexer.EQ, strings.ToUpper(third))
-	r1, rr1, e1 := qs1.MustExec().FetchAllWithRank()
+	r1, rr1, e1 := qs1.MustExec(t).FetchAllWithRank()
 	assert.NoError(t, e1)
-	r2, rr2, e2 := qs2.MustExec().FetchAllWithRank()
+	r2, rr2, e2 := qs2.MustExec(t).FetchAllWithRank()
 	assert.NoError(t, e2)
-	r3, rr3, e3 := qs3.MustExec().FetchAllWithRank()
+	r3, rr3, e3 := qs3.MustExec(t).FetchAllWithRank()
 	assert.NoError(t, e3)
 	//TEST LEN
 	assert.Equal(t, len(r1)+len(r2)+len(r3), len(merge), "(%d+%d+%d) (%p, %p, %p)", len(r1), len(r2), len(r3), qs1, qs2, qs3)

@@ -220,7 +220,7 @@ func DropField(t *testing.T, fieldName string) (items []interface{}) {
 	require.NoError(t, err)
 	require.NotEqual(t, len(res1), 0, "No items updated")
 
-	results, err := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Exec().AllowUnsafe(true).FetchAll()
+	results, err := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Exec(t).AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.Equal(t, len(results), len(res1), "Different count of items")
 
@@ -239,7 +239,7 @@ func UpdateItemField(t *testing.T, fieldName string, values interface{}, objectF
 	require.NoError(t, err)
 	require.NotEqual(t, len(res1), 0, "No items updated")
 
-	results, err := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Exec().AllowUnsafe(true).FetchAll()
+	results, err := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Exec(t).AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.Equal(t, len(results), len(res1), "Different count of items")
 
@@ -259,7 +259,7 @@ func CheckUpdateWithExpressions1(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, len(res1), 0, "No items updated")
 
-	results, err := DB.Query(fieldsUpdateNs).Exec().AllowUnsafe(true).FetchAll()
+	results, err := DB.Query(fieldsUpdateNs).Exec(t).AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.NotEqual(t, len(results), 0, "No results found")
 
@@ -274,7 +274,7 @@ func CheckUpdateWithExpressions2(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, len(res1), 0, "No items updated")
 
-	results, err := DB.Query(fieldsUpdateNs).Exec().AllowUnsafe(true).FetchAll()
+	results, err := DB.Query(fieldsUpdateNs).Exec(t).AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.NotEqual(t, len(results), 0, "No results found")
 
@@ -416,11 +416,11 @@ func CheckSimultaniousUpdateOfFields(t *testing.T) {
 	require.NotEqual(t, len(res), 0, "No items updated")
 
 	// Fetch data for the same query
-	results, err := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Exec().AllowUnsafe(true).FetchAll()
+	results, err := DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Exec(t).AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.Equal(t, len(results), len(res), "Different count of items")
 
-	// Make sure object field 'mainObj' and indexed field 'Code' 
+	// Make sure object field 'mainObj' and indexed field 'Code'
 	// both have correct values
 	for i := 0; i < len(results); i++ {
 		mainObj := results[i].(*TestItemComplexObject).MainObj
@@ -736,7 +736,7 @@ func CheckNonIndexedArrayAppend1(t *testing.T) {
 	require.NotEqual(t, len(res1), 0, "No items updated")
 
 	// Make sure results container is not empty
-	results, err := DB.Query(fieldsUpdateNs).Exec().AllowUnsafe(true).FetchAll()
+	results, err := DB.Query(fieldsUpdateNs).Exec(t).AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.NotEqual(t, len(results), 0, "No results found")
 
@@ -769,7 +769,7 @@ func CheckNonIndexedArrayAppend2(t *testing.T) {
 	require.NotEqual(t, len(res1), 0, "No items updated")
 
 	// Make sure results container is not empty
-	results, err := DB.Query(fieldsUpdateNs).Exec().AllowUnsafe(true).FetchAll()
+	results, err := DB.Query(fieldsUpdateNs).Exec(t).AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.NotEqual(t, len(results), 0, "No results found")
 
@@ -941,7 +941,7 @@ func CheckTestItemsInsertUpdate(t *testing.T) {
 }
 
 func checkItemsCount(t *testing.T, nsName string, expectedCount int) {
-	results, err := DB.Query(nsName).Exec().AllowUnsafe(true).FetchAll()
+	results, err := DB.Query(nsName).Exec(t).AllowUnsafe(true).FetchAll()
 	require.NoError(t, err)
 	require.Equal(t, len(results), expectedCount, "Expected %d items, but got %d", expectedCount, len(results))
 }

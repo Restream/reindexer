@@ -157,21 +157,21 @@ void SelectFunctionsHolder::Process(QueryResults &res) {
 		auto &pl_type = res.getPayloadType(res.Items()[i].Nsid());
 		auto it = querys_->find(pl_type.Name());
 		if (it != querys_->end()) {
-			if (it->second->ProcessItem(res.Items()[i], pl_type)) changed = true;
+			if (it->second->ProcessItem(res.Items()[i], pl_type, res.stringsHolder_)) changed = true;
 		}
 	}
 	res.nonCacheableData = changed;
 }
-bool SelectFunction::ProcessItem(ItemRef &res, PayloadType &pl_type) {
+bool SelectFunction::ProcessItem(ItemRef &res, PayloadType &pl_type, std::vector<key_string> &stringsHolder) {
 	bool changed = false;
 	for (auto &func : functions_) {
 		if (!func.second.ctx) continue;
 		switch (func.second.type) {
 			case SelectFuncStruct::kSelectFuncSnippet:
-				if (Snippet::process(res, pl_type, func.second)) changed = true;
+				if (Snippet::process(res, pl_type, func.second, stringsHolder)) changed = true;
 				break;
 			case SelectFuncStruct::kSelectFuncHighlight:
-				if (Highlight::process(res, pl_type, func.second)) changed = true;
+				if (Highlight::process(res, pl_type, func.second, stringsHolder)) changed = true;
 				break;
 			case SelectFuncStruct::kSelectFuncNone:
 			case SelectFuncStruct::kSelectFuncProc:

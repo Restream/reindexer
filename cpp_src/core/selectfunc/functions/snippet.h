@@ -7,6 +7,6 @@ namespace reindexer {
 
 class Snippet {
 public:
-	static bool process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct &func);
+	static bool process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct &func, std::vector<key_string> &stringsHolder);
 };
 }  // namespace reindexer

@@ -17,10 +17,12 @@ using std::unique_ptr;
 
 template <typename T>
 class IndexText : public IndexUnordered<T> {
+	using Base = IndexUnordered<T>;
+
 public:
 	IndexText(const IndexText<T>& other);
-	IndexText(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields)
-		: IndexUnordered<T>(idef, payloadType, fields), cache_ft_(new FtIdSetCache), isBuilt_(false) {
+	IndexText(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields)
+		: IndexUnordered<T>(idef, std::move(payloadType), fields), cache_ft_(new FtIdSetCache), isBuilt_(false) {
 		this->selectKeyType_ = KeyValueString;
 		initSearchers();
 	}
@@ -37,6 +39,10 @@ public:
 	}
 	void SetSortedIdxCount(int) override final {}
 	bool RequireWarmupOnNsCopy() const noexcept override final { return cfg_ && cfg_->enableWarmupOnNsCopy; }
+	void ClearCache() override {
+		Base::ClearCache();
+		cache_ft_.reset();
+	}
 
 protected:
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::IndexText>;

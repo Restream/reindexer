@@ -7,26 +7,25 @@ namespace reindexer {
 template <typename T, size_t maxPoolSize, size_t maxAllocSize = std::numeric_limits<size_t>::max()>
 class sync_pool {
 public:
-	void put(T* obj) {
+	void put(std::unique_ptr<T> obj) {
 		std::unique_lock<std::mutex> lck(lck_);
-		if (pool_.size() < maxPoolSize)
-			pool_.push_back(std::unique_ptr<T>(obj));
-		else
-			delete obj;
-		alloced_--;
+		if (pool_.size() < maxPoolSize) {
+			pool_.emplace_back(std::move(obj));
+		}
+		alloced_.fetch_sub(1, std::memory_order_relaxed);
 	}
 
 	template <typename... Args>
-	T* get(Args&&... args) {
+	std::unique_ptr<T> get(int usedCount, Args&&... args) {
 		std::unique_lock<std::mutex> lck(lck_);
-		if (alloced_ > maxAllocSize) {
+		if (alloced_.load(std::memory_order_relaxed) > maxAllocSize + usedCount) {
 			return nullptr;
 		}
-		alloced_++;
+		alloced_.fetch_add(1, std::memory_order_relaxed);
 		if (pool_.empty()) {
-			return new T(std::forward<Args>(args)...);
+			return std::unique_ptr<T>{new T(std::forward<Args>(args)...)};
 		} else {
-			auto res = pool_.back().release();
+			auto res = std::move(pool_.back());
 			pool_.pop_back();
 			return res;
 		}
@@ -35,9 +34,10 @@ public:
 		std::unique_lock<std::mutex> lck(lck_);
 		pool_.clear();
 	}
+	size_t Alloced() const noexcept { return alloced_.load(std::memory_order_relaxed); }
 
 protected:
-	size_t alloced_ = 0;
+	std::atomic<size_t> alloced_ = 0;
 	std::vector<std::unique_ptr<T>> pool_;
 	std::mutex lck_;
 };

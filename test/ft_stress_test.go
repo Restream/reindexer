@@ -98,7 +98,7 @@ func FTStressTest(t *testing.T) {
 		defer wg.Done()
 	for_loop:
 		for {
-			DB.Query(ftStressNsName).Match("name", dictRandWord()).Sort("rank()", true).MustExec().Close()
+			DB.Query(ftStressNsName).Match("name", dictRandWord()).Sort("rank()", true).MustExec(t).Close()
 			select {
 			case <-endCh:
 				break for_loop
@@ -113,7 +113,7 @@ func FTStressTest(t *testing.T) {
 		defer wg.Done()
 	for_loop:
 		for {
-			DB.Query(ftStressNsName).Match("name", randFtString()).MustExec().Close()
+			DB.Query(ftStressNsName).Match("name", randFtString()).MustExec(t).Close()
 			select {
 			case <-endCh:
 				break for_loop
@@ -128,7 +128,7 @@ func FTStressTest(t *testing.T) {
 		defer wg.Done()
 	for_loop:
 		for {
-			DB.Query(ftStressNsName).Match("name", trueRandWord(rand.Intn(5)+1)).Sort("id", false).MustExec().Close()
+			DB.Query(ftStressNsName).Match("name", trueRandWord(rand.Intn(5)+1)).Sort("id", false).MustExec(t).Close()
 			select {
 			case <-endCh:
 				break for_loop

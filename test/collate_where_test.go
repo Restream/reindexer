@@ -106,10 +106,10 @@ func FillTestCollateWhereItems() {
 	}
 }
 
-func CollateEq() {
+func CollateEq(t *testing.T) {
 	// ASCII
 	keyWord := "apRICot"
-	results, err := DB.Query(testCollateWhereAscii).Where("COLLATE_WHERE_ASCII", reindexer.EQ, keyWord).Exec().FetchAll()
+	results, err := DB.Query(testCollateWhereAscii).Where("COLLATE_WHERE_ASCII", reindexer.EQ, keyWord).Exec(t).FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -140,7 +140,7 @@ func CollateEq() {
 
 	// UTF
 	keyWord = "ВИшнЯ"
-	results, err = DB.Query(testCollateWhereUtf).Where("COLLATE_WHERE_UTF", reindexer.EQ, keyWord).Exec().FetchAll()
+	results, err = DB.Query(testCollateWhereUtf).Where("COLLATE_WHERE_UTF", reindexer.EQ, keyWord).Exec(t).FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -171,7 +171,7 @@ func CollateEq() {
 
 	// Numeric
 	keyWord = "12cherry"
-	results, err = DB.Query(testCollateWhereNumeric).Where("COLLATE_WHERE_NUMERIC", reindexer.EQ, keyWord).Exec().FetchAll()
+	results, err = DB.Query(testCollateWhereNumeric).Where("COLLATE_WHERE_NUMERIC", reindexer.EQ, keyWord).Exec(t).FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -201,10 +201,10 @@ func CollateEq() {
 	}
 }
 
-func CollateLt() {
+func CollateLt(t *testing.T) {
 	// ASCII
 	keyWord := "aPRIcot"
-	results, err := DB.Query(testCollateWhereAscii).Where("collate_where_ascii", reindexer.LT, keyWord).Exec().FetchAll()
+	results, err := DB.Query(testCollateWhereAscii).Where("collate_where_ascii", reindexer.LT, keyWord).Exec(t).FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -215,7 +215,7 @@ func CollateLt() {
 
 	// UTF
 	keyWord = "АпельсиН"
-	results, err = DB.Query(testCollateWhereUtf).Where("collate_where_utf", reindexer.LT, keyWord).Exec().FetchAll()
+	results, err = DB.Query(testCollateWhereUtf).Where("collate_where_utf", reindexer.LT, keyWord).Exec(t).FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -227,7 +227,7 @@ func CollateLt() {
 
 	// Numeric
 	keyWord = "-5apple"
-	results, err = DB.Query(testCollateWhereNumeric).Where("collate_where_numeric", reindexer.LT, keyWord).Exec().FetchAll()
+	results, err = DB.Query(testCollateWhereNumeric).Where("collate_where_numeric", reindexer.LT, keyWord).Exec(t).FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -238,10 +238,10 @@ func CollateLt() {
 	}
 }
 
-func CollateLe() {
+func CollateLe(t *testing.T) {
 	// ASCII
 	keyWord := "aPRIcot"
-	results, err := DB.Query(testCollateWhereAscii).Where("collate_where_ascii", reindexer.LE, keyWord).Exec().FetchAll()
+	results, err := DB.Query(testCollateWhereAscii).Where("collate_where_ascii", reindexer.LE, keyWord).Exec(t).FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -253,7 +253,7 @@ func CollateLe() {
 
 	// UTF
 	keyWord = "АпельсиН"
-	results, err = DB.Query(testCollateWhereUtf).Where("collate_where_utf", reindexer.LE, keyWord).Exec().FetchAll()
+	results, err = DB.Query(testCollateWhereUtf).Where("collate_where_utf", reindexer.LE, keyWord).Exec(t).FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -265,7 +265,7 @@ func CollateLe() {
 
 	// Numeric
 	keyWord = "-5apple"
-	results, err = DB.Query(testCollateWhereNumeric).Where("collate_where_numeric", reindexer.LE, keyWord).Exec().FetchAll()
+	results, err = DB.Query(testCollateWhereNumeric).Where("collate_where_numeric", reindexer.LE, keyWord).Exec(t).FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -276,10 +276,10 @@ func CollateLe() {
 	}
 }
 
-func CollateGt() {
+func CollateGt(t *testing.T) {
 	// ASCII
 	keyWord := "coURgette"
-	results, err := DB.Query(testCollateWhereAscii).Where("collate_where_ascii", reindexer.GT, keyWord).Exec().FetchAll()
+	results, err := DB.Query(testCollateWhereAscii).Where("collate_where_ascii", reindexer.GT, keyWord).Exec(t).FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -291,7 +291,7 @@ func CollateGt() {
 
 	// UTF
 	keyWord = "вишня"
-	results, err = DB.Query(testCollateWhereUtf).Where("collate_where_utf", reindexer.GT, keyWord).Exec().FetchAll()
+	results, err = DB.Query(testCollateWhereUtf).Where("collate_where_utf", reindexer.GT, keyWord).Exec(t).FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -303,7 +303,7 @@ func CollateGt() {
 
 	// Numeric
 	keyWord = "52яблоко"
-	results, err = DB.Query(testCollateWhereNumeric).Where("collate_where_numeric", reindexer.GT, keyWord).Exec().FetchAll()
+	results, err = DB.Query(testCollateWhereNumeric).Where("collate_where_numeric", reindexer.GT, keyWord).Exec(t).FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -314,10 +314,10 @@ func CollateGt() {
 	}
 }
 
-func CollateGe() {
+func CollateGe(t *testing.T) {
 	// ASCII
 	keyWord := "coURgette"
-	results, err := DB.Query(testCollateWhereAscii).Where("collate_where_ascii", reindexer.GE, keyWord).Exec().FetchAll()
+	results, err := DB.Query(testCollateWhereAscii).Where("collate_where_ascii", reindexer.GE, keyWord).Exec(t).FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -329,7 +329,7 @@ func CollateGe() {
 
 	// UTF
 	keyWord = "вишня"
-	results, err = DB.Query(testCollateWhereUtf).Where("collate_where_utf", reindexer.GE, keyWord).Exec().FetchAll()
+	results, err = DB.Query(testCollateWhereUtf).Where("collate_where_utf", reindexer.GE, keyWord).Exec(t).FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -341,7 +341,7 @@ func CollateGe() {
 
 	// Numeric
 	keyWord = "52яблоко"
-	results, err = DB.Query(testCollateWhereNumeric).Where("collate_where_numeric", reindexer.GE, keyWord).Exec().FetchAll()
+	results, err = DB.Query(testCollateWhereNumeric).Where("collate_where_numeric", reindexer.GE, keyWord).Exec(t).FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -355,9 +355,9 @@ func CollateGe() {
 func TestCollateWhere(t *testing.T) {
 	FillTestCollateWhereItems()
 
-	CollateEq()
-	CollateLt()
-	CollateLe()
-	CollateGt()
-	CollateGe()
+	CollateEq(t)
+	CollateLt(t)
+	CollateLe(t)
+	CollateGt(t)
+	CollateGe(t)
 }

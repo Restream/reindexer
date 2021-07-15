@@ -16,10 +16,8 @@
 
 namespace reindexer {
 
-using std::string;
-using std::vector;
-
 class RdxContext;
+class StringsHolder;
 
 class Index {
 public:
@@ -43,14 +41,14 @@ public:
 	using KeyEntry = reindexer::KeyEntry<IdSet>;
 	using KeyEntryPlain = reindexer::KeyEntry<IdSetPlain>;
 
-	Index(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields);
+	Index(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields);
 	Index(const Index&);
 	Index& operator=(const Index&) = delete;
-	virtual ~Index();
+	virtual ~Index() = default;
 	virtual Variant Upsert(const Variant& key, IdType id) = 0;
 	virtual void Upsert(VariantArray& result, const VariantArray& keys, IdType id) = 0;
-	virtual void Delete(const Variant& key, IdType id) = 0;
-	virtual void Delete(const VariantArray& keys, IdType id) = 0;
+	virtual void Delete(const Variant& key, IdType id, StringsHolder&) = 0;
+	virtual void Delete(const VariantArray& keys, IdType id, StringsHolder&) = 0;
 
 	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, SelectOpts opts,
 									   BaseFunctionCtx::Ptr ctx, const RdxContext&) = 0;
@@ -60,7 +58,7 @@ public:
 
 	virtual void UpdateSortedIds(const UpdateSortedContext& ctx) = 0;
 	virtual size_t Size() const { return 0; }
-	virtual Index* Clone() = 0;
+	virtual std::unique_ptr<Index> Clone() = 0;
 	virtual bool IsOrdered() const { return false; }
 	virtual IndexMemStat GetMemStat() = 0;
 	virtual int64_t GetTTLValue() const { return 0; }
@@ -68,9 +66,9 @@ public:
 	virtual bool RequireWarmupOnNsCopy() const noexcept { return false; }
 
 	const PayloadType& GetPayloadType() const { return payloadType_; }
-	void UpdatePayloadType(const PayloadType payloadType) { payloadType_ = payloadType; }
+	void UpdatePayloadType(PayloadType payloadType) { payloadType_ = std::move(payloadType); }
 
-	static Index* New(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields_);
+	static std::unique_ptr<Index> New(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields_);
 
 	KeyValueType KeyType() const { return keyType_; }
 	KeyValueType SelectKeyType() const { return selectKeyType_; }
@@ -94,6 +92,8 @@ public:
 		selectPerfCounter_.Reset();
 		commitPerfCounter_.Reset();
 	}
+	virtual bool HoldsStrings() const noexcept = 0;
+	virtual void ClearCache() {}
 
 protected:
 	// Index type. Can be one of enum IndexType

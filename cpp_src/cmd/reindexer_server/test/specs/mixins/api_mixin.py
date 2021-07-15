@@ -51,7 +51,7 @@ class ApiMixin(object):
 
         return res_status, res_body
 
-    def _api_call(self, method, url, body=None, headers={}, encodingType=EncodingType.Json, with_basic_auth=True):
+    def _api_call(self, method, url, body=None, headers={}, encodingType=EncodingType.Json):
         api_base = self.SWAGGER['basePath']
 
         content_type = None
@@ -68,19 +68,12 @@ class ApiMixin(object):
             'Content-type': content_type,
         }
 
-        if with_basic_auth:
-            def_headers['Authorization'] = 'Basic ' + \
-                                           self.role_token(self.role)
-
         req_headers = {**def_headers, **headers}
 
         return self._server_request(method, api_base + url, body, req_headers, encodingType)
 
-    def _web_call(self, url, with_basic_auth=True):
+    def _web_call(self, url):
         headers = {}
-
-        if with_basic_auth:
-            headers['Authorization'] = 'Basic ' + self.role_token(self.role)
 
         return self._server_request('GET', url, headers=headers)
 

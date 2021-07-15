@@ -442,7 +442,7 @@ It NsSelecter::applyForcedSort(It begin, It end, const ItemComparator &compare, 
 		// implementation for composite indexes
 		FieldsSet fields = ns_->indexes_[idx]->Fields();
 
-		unordered_payload_map<ItemRefVector::difference_type, false> sortMap(0, payloadType, fields, CollateOpts{});
+		unordered_payload_map<ItemRefVector::difference_type, false> sortMap(0, payloadType, fields);
 
 		for (auto value : ctx.query.forcedSortOrder_) {
 			value.convert(fieldType, &payloadType, &fields);
@@ -768,10 +768,10 @@ void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId,
 		}
 	} else {
 		if (!sctx.sortingContext.expressions.empty()) {
-			result.Add({properRowId, sctx.sortingContext.exprResults[0].size(), proc, sctx.nsid}, ns_->payloadType_);
+			result.Add({properRowId, sctx.sortingContext.exprResults[0].size(), proc, sctx.nsid});
 			calculateSortExpressions(proc, rowId, properRowId, sctx, result);
 		} else {
-			result.Add({properRowId, ns_->items_[properRowId], proc, sctx.nsid}, ns_->payloadType_);
+			result.Add({properRowId, ns_->items_[properRowId], proc, sctx.nsid});
 		}
 
 		const int kLimitItems = 10000000;

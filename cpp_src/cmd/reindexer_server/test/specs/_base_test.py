@@ -4,13 +4,13 @@ import shutil
 import importlib
 
 
-from specs.utils import get_swagger, get_users
-from specs.mixins import ApiMixin, ValidateMixin, HelperMixin, RoleMixin
+from specs.utils import get_swagger
+from specs.mixins import ApiMixin, ValidateMixin, HelperMixin
 
 imported = {}
 
 
-class BaseTest(unittest.TestCase, ApiMixin, ValidateMixin, HelperMixin, RoleMixin):
+class BaseTest(unittest.TestCase, ApiMixin, ValidateMixin, HelperMixin):
     schema = {
         'required': ['test_1', 'test_2', 'test_3', 'test_4', 'test_5'],
         'properties': {
@@ -39,7 +39,6 @@ class BaseTest(unittest.TestCase, ApiMixin, ValidateMixin, HelperMixin, RoleMixi
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.SWAGGER = get_swagger()
-        self.USERS = get_users()
 
     def prepare_protobuf_schemas(self):
         """Should be able to get Protobuf parameters schemas"""
@@ -107,10 +106,6 @@ class BaseTest(unittest.TestCase, ApiMixin, ValidateMixin, HelperMixin, RoleMixi
         for aggregation in queryresults.aggregations:
             print(aggregation)
         print("\n")
-
-    @classmethod
-    def setUpClass(cls):
-        cls.role = cls.ROLE_DEFAULT
 
     def setUp(self):
         self.helper_update_timestamp()

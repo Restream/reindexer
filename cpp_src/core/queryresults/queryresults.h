@@ -2,6 +2,7 @@
 
 #include "aggregationresult.h"
 #include "core/item.h"
+#include "core/namespace/stringsholder.h"
 #include "core/payload/payloadvalue.h"
 #include "core/rdxcontext.h"
 #include "itemref.h"
@@ -9,14 +10,14 @@
 
 namespace reindexer {
 
-using std::string;
-
 class Schema;
 class TagsMatcher;
 class PayloadType;
 class WrSerializer;
 struct NsContext;
 struct ResultFetchOpts;
+class SelectFunctionsHolder;
+class NamespaceImpl;
 
 namespace joins {
 class NamespaceResults;
@@ -38,9 +39,8 @@ public:
 	~QueryResults();
 	QueryResults &operator=(const QueryResults &) = delete;
 	QueryResults &operator=(QueryResults &&obj) noexcept;
-	void Add(const ItemRef &i);
-	void Add(const ItemRef &itemref, const PayloadType &pt);
-	void AddItem(Item &item, bool withData = false, bool singleValue = true);
+	void Add(const ItemRef &);
+	void AddItem(Item &item, bool withData = false);
 	void Dump() const;
 	void Erase(ItemRefVector::iterator begin, ItemRefVector::iterator end);
 	size_t Count() const { return items_.size(); }
@@ -88,7 +88,7 @@ public:
 
 	struct Context;
 	// precalc context size
-	static constexpr int kSizeofContext = 144;	 // sizeof(void *) * 2 + sizeof(void *) * 3 + 32 + sizeof(void *) + sizeof(void *)*2;
+	static constexpr int kSizeofContext = 144;	// sizeof(void *) * 2 + sizeof(void *) * 3 + 32 + sizeof(void *) + sizeof(void *)*2;
 
 	// Order of storing contexts for namespaces:
 	// [0]      - main NS context
@@ -107,10 +107,15 @@ public:
 	std::shared_ptr<const Schema> getSchema(int nsid) const;
 	int getNsNumber(int nsid) const;
 	int getMergedNSCount() const;
-	void lockResults();
 	ItemRefVector &Items() { return items_; }
 	const ItemRefVector &Items() const { return items_; }
 	int GetJoinedNsCtxIndex(int nsid) const;
+	void AddNamespace(std::shared_ptr<NamespaceImpl>, const NsContext &);
+	void RemoveNamespace(const NamespaceImpl *ns);
+	bool IsNamespaceAdded(const NamespaceImpl *ns) const noexcept {
+		return std::find_if(nsData_.cbegin(), nsData_.cend(), [ns](const NsDataHolder &nsData) { return nsData.ns.get() == ns; }) !=
+			   nsData_.cend();
+	}
 
 	string explainResults;
 
@@ -119,11 +124,7 @@ protected:
 	class EncoderAdditionalDatasource;
 
 private:
-	void lockResults(bool lock);
-	void unlockResults();
-	void lockItem(ItemRef &itemref, size_t joinedNs, bool lock);
 	void encodeJSON(int idx, WrSerializer &ser) const;
-	bool lockedResults_ = false;
 	ItemRefVector items_;
 	bool holdActivity_ = false;
 	union {
@@ -131,6 +132,20 @@ private:
 		RdxActivityContext activityCtx_;
 	};
 	friend InternalRdxContext;
+	friend SelectFunctionsHolder;
+	struct NsDataHolder {
+		NsDataHolder(std::shared_ptr<NamespaceImpl> &&ns_, StringsHolderPtr &&strHldr) noexcept
+			: ns{std::move(ns_)}, strHolder{std::move(strHldr)} {}
+		NsDataHolder(const NsDataHolder &) = delete;
+		NsDataHolder(NsDataHolder &&) noexcept = default;
+		NsDataHolder &operator=(const NsDataHolder &) = delete;
+		NsDataHolder &operator=(NsDataHolder &&) = default;
+
+		std::shared_ptr<NamespaceImpl> ns;
+		StringsHolderPtr strHolder;
+	};
+	h_vector<NsDataHolder, 1> nsData_;
+	vector<key_string> stringsHolder_;
 };
 
 }  // namespace reindexer

@@ -72,7 +72,7 @@ func newSortOrderValues(query *queryTest) *SortOrderValues {
 }
 
 func (so *SortOrderValues) GetVerifyItems(t *testing.T) []interface{} {
-	items, err := so.q.Exec().FetchAll()
+	items, err := so.q.Exec(t).FetchAll()
 	assert.NoError(t, err)
 
 	begin, end := 0, 0
@@ -94,7 +94,7 @@ func execAndVerifyForceSortOrderQuery(t *testing.T, query *queryTest) {
 
 	defer query.close()
 
-	items, err := query.ManualClose().Exec().FetchAll()
+	items, err := query.ManualClose().Exec(t).FetchAll()
 	assert.NoError(t, err)
 
 	sortOrderValues := newSortOrderValues(query)

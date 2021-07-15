@@ -109,10 +109,10 @@ func randLocation() string {
 }
 
 func randFloat(min int, max int) float64 {
-	divider := (1 << rand.Intn(10));
-	min *= divider;
-	max *= divider;
-	return float64(rand.Intn(max - min) + min) / float64(divider);
+	divider := (1 << rand.Intn(10))
+	min *= divider
+	max *= divider
+	return float64(rand.Intn(max-min)+min) / float64(divider)
 }
 
 func randPoint() [2]float64 {

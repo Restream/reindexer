@@ -50,9 +50,32 @@ HTTPServer::HTTPServer(DBManager &dbMgr, LoggerWrapper &logger, const ServerConf
 	  logger_(logger),
 	  startTs_(std::chrono::system_clock::now()) {}
 
+Error HTTPServer::execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults &res, http::Context &ctx) {
+	reindexer::Query q;
+	q.FromSQL(sqlQuery);
+	switch (q.Type()) {
+		case QuerySelect: {
+			auto db = getDB(ctx, kRoleDataRead);
+			return db.Select(q, res);
+		}
+		case QueryDelete: {
+			auto db = getDB(ctx, kRoleDataWrite);
+			return db.Delete(q, res);
+		}
+		case QueryUpdate: {
+			auto db = getDB(ctx, kRoleDataWrite);
+			return db.Update(q, res);
+		}
+		case QueryTruncate: {
+			auto db = getDB(ctx, kRoleDBAdmin);
+			return db.TruncateNamespace(q._namespace);
+		}
+		default:
+			throw Error(errParams, "unknown query type %d", q.Type());
+	}
+}
+
 int HTTPServer::GetSQLQuery(http::Context &ctx) {
-	auto db = getDB(ctx, kRoleDataRead);
-	reindexer::QueryResults res;
 	string sqlQuery = urldecode2(ctx.request->params.Get("q"));
 
 	std::string_view limitParam = ctx.request->params.Get("limit");
@@ -64,7 +87,9 @@ int HTTPServer::GetSQLQuery(http::Context &ctx) {
 	if (sqlQuery.empty()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Missed `q` parameter"));
 	}
-	auto ret = db.Select(sqlQuery, res);
+	reindexer::QueryResults res;
+
+	auto ret = execSqlQueryByType(sqlQuery, res, ctx);
 	if (!ret.ok()) {
 		return status(ctx, http::HttpStatus(http::StatusInternalServerError, ret.what()));
 	}
@@ -111,17 +136,14 @@ int HTTPServer::GetSQLSuggest(http::Context &ctx) {
 }
 
 int HTTPServer::PostSQLQuery(http::Context &ctx) {
-	auto db = getDB(ctx, kRoleDataRead);
 	reindexer::QueryResults res;
-
 	string sqlQuery = ctx.body->Read();
 	if (!sqlQuery.length()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Query is empty"));
 	}
-
-	auto ret = db.Select(sqlQuery, res);
+	auto ret = execSqlQueryByType(sqlQuery, res, ctx);
 	if (!ret.ok()) {
-		return status(ctx, http::HttpStatus(http::StatusBadRequest, ret.what()));
+		return status(ctx, http::HttpStatus(http::StatusInternalServerError, ret.what()));
 	}
 	return queryResults(ctx, res, true);
 }
@@ -691,7 +713,7 @@ int HTTPServer::PutSchema(http::Context &ctx) {
 }
 
 int HTTPServer::GetSchema(http::Context &ctx) {
-	auto db = getDB(ctx, kRoleDBAdmin);
+	auto db = getDB(ctx, kRoleDataRead);
 
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (nsName.empty()) {
@@ -708,7 +730,7 @@ int HTTPServer::GetSchema(http::Context &ctx) {
 }
 
 int HTTPServer::GetProtobufSchema(http::Context &ctx) {
-	Reindexer db = getDB(ctx, kRoleDBAdmin);
+	Reindexer db = getDB(ctx, kRoleDataRead);
 
 	std::vector<string> nses;
 	for (auto &p : ctx.request->params) {
@@ -957,6 +979,25 @@ Error HTTPServer::modifyItem(Reindexer &db, string &nsName, Item &item, ItemModi
 	return status;
 }
 
+Error HTTPServer::modifyItem(Reindexer &db, string &nsName, Item &item, QueryResults &qr, ItemModifyMode mode) {
+	Error status;
+	switch (mode) {
+		case ModeUpsert:
+			status = db.Upsert(nsName, item, qr);
+			break;
+		case ModeDelete:
+			status = db.Delete(nsName, item, qr);
+			break;
+		case ModeInsert:
+			status = db.Insert(nsName, item, qr);
+			break;
+		case ModeUpdate:
+			status = db.Update(nsName, item, qr);
+			break;
+	}
+	return status;
+}
+
 int HTTPServer::modifyItemsJSON(http::Context &ctx, string &nsName, const vector<string> &precepts, ItemModifyMode mode) {
 	auto db = getDB(ctx, kRoleDataWrite);
 	string itemJson = ctx.body->Read();
@@ -1028,16 +1069,17 @@ int HTTPServer::modifyItemsMsgPack(http::Context &ctx, string &nsName, const vec
 		if (!status.ok()) return msgpackStatus(ctx, http::HttpStatus(status));
 
 		item.SetPrecepts(precepts);
-		status = modifyItem(db, nsName, item, mode);
+		if (!precepts.empty()) {
+			status = modifyItem(db, nsName, item, qr, mode);
+		} else {
+			status = modifyItem(db, nsName, item, mode);
+		}
 		if (!status.ok()) return msgpackStatus(ctx, http::HttpStatus(status));
 
 		if (item.GetID() != -1) {
-			if (!precepts.empty()) qr.AddItem(item, true, false);
 			++totalItems;
 		}
 	}
-
-	qr.lockResults();
 
 	WrSerializer wrSer(ctx.writer->GetChunk());
 	MsgPackBuilder msgpackBuilder(wrSer, ObjType::TypeObject, precepts.empty() ? 2 : 3);

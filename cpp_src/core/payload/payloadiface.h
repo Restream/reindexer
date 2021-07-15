@@ -14,6 +14,7 @@ namespace reindexer {
 
 class TagsMatcher;
 class WrSerializer;
+class StringsHolder;
 
 template <typename T>
 class PayloadIface {
@@ -111,6 +112,7 @@ public:
 	// Release strings
 	void ReleaseStrings();
 	void ReleaseStrings(int field);
+	void MoveStrings(int field, StringsHolder &dest);
 
 	// Item values' string for printing
 	std::string Dump() const;

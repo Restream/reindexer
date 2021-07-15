@@ -308,7 +308,8 @@ void Selecter::mergeItaration(const TextSearchResults &rawRes, index_t rawResInd
 		auto idf = IDF(totalDocsCount, r.vids_->size());
 
 		for (auto &relid : *r.vids_) {
-			int vid = relid.Id();
+			const int vid = relid.Id();
+			if (!vdocs[vid].keyEntry) continue;
 			index_t &vidStatus = statuses[vid];
 
 			// Do not calc anithing if

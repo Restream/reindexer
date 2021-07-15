@@ -179,8 +179,8 @@ void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext &ctx) {
 }
 
 template <typename T>
-Index *IndexOrdered<T>::Clone() {
-	return new IndexOrdered<T>(*this);
+std::unique_ptr<Index> IndexOrdered<T>::Clone() {
+	return std::unique_ptr<Index>{new IndexOrdered<T>(*this)};
 }
 
 template <typename T>
@@ -194,26 +194,26 @@ IndexIterator::Ptr IndexOrdered<T>::CreateIterator() const {
 }
 
 template <typename KeyEntryT>
-static Index *IndexOrdered_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields) {
+static std::unique_ptr<Index> IndexOrdered_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields) {
 	switch (idef.Type()) {
 		case IndexIntBTree:
-			return new IndexOrdered<number_map<int, KeyEntryT>>(idef, payloadType, fields);
+			return std::unique_ptr<Index>{new IndexOrdered<number_map<int, KeyEntryT>>(idef, std::move(payloadType), fields)};
 		case IndexInt64BTree:
-			return new IndexOrdered<number_map<int64_t, KeyEntryT>>(idef, payloadType, fields);
+			return std::unique_ptr<Index>{new IndexOrdered<number_map<int64_t, KeyEntryT>>(idef, std::move(payloadType), fields)};
 		case IndexStrBTree:
-			return new IndexOrdered<str_map<KeyEntryT>>(idef, payloadType, fields);
+			return std::unique_ptr<Index>{new IndexOrdered<str_map<KeyEntryT>>(idef, std::move(payloadType), fields)};
 		case IndexDoubleBTree:
-			return new IndexOrdered<number_map<double, KeyEntryT>>(idef, payloadType, fields);
+			return std::unique_ptr<Index>{new IndexOrdered<number_map<double, KeyEntryT>>(idef, std::move(payloadType), fields)};
 		case IndexCompositeBTree:
-			return new IndexOrdered<payload_map<KeyEntryT, true>>(idef, payloadType, fields);
+			return std::unique_ptr<Index>{new IndexOrdered<payload_map<KeyEntryT, true>>(idef, std::move(payloadType), fields)};
 		default:
 			abort();
 	}
 }
 
-Index *IndexOrdered_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields) {
-	return (idef.opts_.IsPK() || idef.opts_.IsDense()) ? IndexOrdered_New<Index::KeyEntryPlain>(idef, payloadType, fields)
-													   : IndexOrdered_New<Index::KeyEntry>(idef, payloadType, fields);
+std::unique_ptr<Index> IndexOrdered_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields) {
+	return (idef.opts_.IsPK() || idef.opts_.IsDense()) ? IndexOrdered_New<Index::KeyEntryPlain>(idef, std::move(payloadType), fields)
+													   : IndexOrdered_New<Index::KeyEntry>(idef, std::move(payloadType), fields);
 }
 
 }  // namespace reindexer

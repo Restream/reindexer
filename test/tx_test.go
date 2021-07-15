@@ -59,7 +59,7 @@ func FillTextTxFullItems(count int) {
 
 func CheckTYx(t *testing.T, ns string, count int) {
 	q1 := DB.Query(ns)
-	res, _ := q1.MustExec().FetchAll()
+	res, _ := q1.MustExec(t).FetchAll()
 	resMap := make(map[int]string)
 	for _, item := range res {
 		some := item.(*TextTxItem)
@@ -116,7 +116,7 @@ func TestTxQueries(t *testing.T) {
 	tx.Query().WhereInt("id", reindexer.EQ, 1000).Set("Data", "testdata").Update()
 	tx.MustCommit()
 
-	item, err := DB.Query(testTxQueryItemNs).WhereInt("id", reindexer.EQ, 1000).MustExec().FetchOne()
+	item, err := DB.Query(testTxQueryItemNs).WhereInt("id", reindexer.EQ, 1000).MustExec(t).FetchOne()
 	if err != nil {
 		panic(err)
 	}
@@ -161,7 +161,7 @@ func TestConcurrentTagsTx(t *testing.T) {
 	}
 	wg.Wait()
 	DB.SetSyncRequired()
-	items, err := DB.Query(testTxConcurrentTagsItemNs).MustExec().FetchAll()
+	items, err := DB.Query(testTxConcurrentTagsItemNs).MustExec(t).FetchAll()
 	assert.NoError(t, err)
 	assert.NotEqual(t, len(items), 0, "Empty items array")
 }

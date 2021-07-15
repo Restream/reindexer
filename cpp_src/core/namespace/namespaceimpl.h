@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <atomic>
+#include <deque>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -24,15 +25,9 @@
 #include "estl/syncpool.h"
 #include "replicator/updatesobserver.h"
 #include "replicator/waltracker.h"
+#include "stringsholder.h"
 
 namespace reindexer {
-
-using std::pair;
-using std::shared_ptr;
-using std::string;
-using std::unique_lock;
-using std::unique_ptr;
-using std::vector;
 
 using reindexer::datastorage::StorageType;
 
@@ -48,18 +43,19 @@ class RdxContext;
 class RdxActivityContext;
 class ItemComparator;
 class SortExpression;
+class ProtobufSchema;
+class QueryResults;
 namespace SortExprFuncs {
 struct DistanceBetweenJoinedIndexesSameNs;
 }  // namespace SortExprFuncs
-class ProtobufSchema;
 
 struct NsContext {
-	NsContext(const RdxContext &rdxCtx) : rdxContext(rdxCtx) {}
-	NsContext &NoLock() {
+	NsContext(const RdxContext &rdxCtx, bool noLock_ = false) noexcept : rdxContext{rdxCtx}, noLock{noLock_} {}
+	NsContext &NoLock() noexcept {
 		noLock = true;
 		return *this;
 	}
-	NsContext &InTransaction() {
+	NsContext &InTransaction() noexcept {
 		inTransaction = true;
 		return *this;
 	}
@@ -83,6 +79,7 @@ protected:
 	friend SortExpression;
 	friend SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
 	friend class ReindexerImpl;
+	friend QueryResults;
 
 	class NSUpdateSortedContext : public UpdateSortedContext {
 	public:
@@ -104,9 +101,9 @@ protected:
 		vector<SortType> ids2Sorts_;
 	};
 
-	class IndexesStorage : public vector<unique_ptr<Index>> {
+	class IndexesStorage : public std::vector<std::unique_ptr<Index>> {
 	public:
-		using Base = vector<unique_ptr<Index>>;
+		using Base = std::vector<std::unique_ptr<Index>>;
 
 		IndexesStorage(const NamespaceImpl &ns);
 
@@ -188,7 +185,7 @@ public:
 	void CloseStorage(const RdxContext &);
 
 	Transaction NewTransaction(const RdxContext &ctx);
-	void CommitTransaction(Transaction &tx, QueryResults &result, const NsContext &ctx);
+	void CommitTransaction(Transaction &tx, QueryResults &result, NsContext ctx);
 
 	Item NewItem(const NsContext &ctx);
 	void ToPool(ItemImpl *item);
@@ -241,9 +238,9 @@ protected:
 			}
 			return lck;
 		}
-		unique_lock<std::mutex> StorageLock() const {
+		std::unique_lock<std::mutex> StorageLock() const {
 			using namespace std::string_view_literals;
-			unique_lock<std::mutex> lck(storage_mtx_);
+			std::unique_lock<std::mutex> lck(storage_mtx_);
 			if (readonly_.load(std::memory_order_acquire)) {
 				throw Error(errNamespaceInvalidated, "NS invalidated"sv);
 			}
@@ -277,7 +274,7 @@ protected:
 	void updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields);
 	void doDelete(IdType id);
 	void optimizeIndexes(const NsContext &);
-	void insertIndex(Index *newIndex, int idxNo, const string &realName);
+	void insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const string &realName);
 	void addIndex(const IndexDef &indexDef);
 	void addCompositeIndex(const IndexDef &indexDef);
 	void verifyUpdateIndex(const IndexDef &indexDef) const;
@@ -286,8 +283,9 @@ protected:
 	void dropIndex(const IndexDef &index);
 	void addToWAL(const IndexDef &indexDef, WALRecType type, const RdxContext &ctx);
 	void addToWAL(std::string_view json, WALRecType type, const RdxContext &ctx);
-	void removeExpiredItems(RdxActivityContext *);
 	void replicateItem(IdType itemId, const NsContext &ctx, bool statementReplication, uint64_t oldPlHash, size_t oldItemCapacity);
+	void removeExpiredItems(RdxActivityContext *);
+	void removeExpiredStrings(RdxActivityContext *);
 
 	void recreateCompositeIndexes(int startIdx, int endIdx);
 	NamespaceDef getDefinition() const;
@@ -354,6 +352,8 @@ protected:
 	Locker locker_;
 	std::shared_ptr<Schema> schema_;
 
+	StringsHolderPtr StrHolder(const NsContext &);
+
 private:
 	NamespaceImpl(const NamespaceImpl &src);
 
@@ -367,6 +367,8 @@ private:
 	void setReplLSNs(LSNPair LSNs);
 	void setTemporary() { repl_.temporary = true; }
 	void setSlaveMode(const RdxContext &ctx);
+
+	void removeIndex(std::unique_ptr<Index> &);
 
 	JoinCache::Ptr joinCache_;
 
@@ -395,6 +397,8 @@ private:
 	size_t itemsDataSize_ = 0;
 
 	std::atomic<int> optimizationState_ = {OptimizationState::NotOptimized};
+	StringsHolderPtr strHolder_;
+	std::deque<StringsHolderPtr> strHoldersWaitingToBeDeleted_;
 };
 
 }  // namespace reindexer

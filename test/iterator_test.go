@@ -23,7 +23,7 @@ func TestQueryIter(t *testing.T) {
 
 	// check next
 	limit := 5
-	iter := DB.Query("test_items_iter").ReqTotal().Limit(limit).Exec()
+	iter := DB.Query("test_items_iter").ReqTotal().Limit(limit).Exec(t)
 	defer iter.Close()
 	i := 0
 	for iter.Next() {
@@ -34,12 +34,12 @@ func TestQueryIter(t *testing.T) {
 	assert.Equal(t, i, limit, "Unexpected result count: %d (want %d)", i, limit)
 
 	// check all
-	items, err := DB.Query("test_items_iter").Exec().FetchAll()
+	items, err := DB.Query("test_items_iter").Exec(t).FetchAll()
 	assert.NoError(t, err)
 	assert.Equal(t, len(items), total, "Unexpected result count: %d (want %d)", len(items), total)
 
 	// check one
-	item, err := DB.Query("test_items_iter").Exec().FetchOne()
+	item, err := DB.Query("test_items_iter").Exec(t).FetchOne()
 	assert.NoError(t, err)
 	assert.NotNil(t, item, "Iterator.FetchOne: item is nil")
 }
@@ -71,7 +71,7 @@ func TestNextObj(t *testing.T) {
 	t.Run("parse to custom and original structs", func(t *testing.T) {
 		it := DB.Query("test_items_iter_next_obj").
 			WhereInt("id", reindexer.SET, itemsExp[0].ID, itemsExp[1].ID, itemsExp[2].ID).
-			ExecCtx(ctx)
+			ExecCtx(t, ctx)
 		defer it.Close()
 
 		// use one original struct
@@ -102,7 +102,7 @@ func TestNextObj(t *testing.T) {
 	t.Run("parse to the same struct from separate packages", func(t *testing.T) {
 		it := DB.Query("test_items_iter_next_obj").
 			WhereInt("id", reindexer.SET, itemsExp[0].ID, itemsExp[1].ID).
-			ExecCtx(ctx)
+			ExecCtx(t, ctx)
 		defer it.Close()
 
 		// use another custom struct

@@ -108,14 +108,14 @@ func CheckJoinsAsWhereCondition(t *testing.T) {
 
 	rjcheck := make([]interface{}, 0, 1000)
 
-	jr, _ := DB.Query("test_join_items").Where("GENRE", reindexer.GE, 1).Limit(100).MustExec().FetchAll()
+	jr, _ := DB.Query("test_join_items").Where("GENRE", reindexer.GE, 1).Limit(100).MustExec(t).FetchAll()
 	for _, iitem := range jr {
 		item := iitem.(*TestItem)
 		rj1, _ := DB.Query("test_join_items").
 			Where("DEVICE", reindexer.EQ, "ottstb").
 			Where("ID", reindexer.SET, item.PricesIDs).
 			Sort("NAME", true).
-			MustExec().FetchAll()
+			MustExec(t).FetchAll()
 
 		if len(rj1) != 0 {
 			item.Prices = make([]*TestJoinItem, 0, len(rj1))
@@ -132,13 +132,13 @@ func CheckJoinsAsWhereCondition(t *testing.T) {
 					Where("LOCATION", reindexer.EQ, item.LocationID).
 					Sort("NAME", true).
 					Limit(30).
-					MustExec()
+					MustExec(t)
 
 				rj3 := DB.Query("test_join_items").
 					Where("DEVICE", reindexer.EQ, "iphone").
 					Where("ID", reindexer.SET, item.PricesIDs).Or().
 					Where("LOCATION", reindexer.LT, item.LocationID).
-					MustExec()
+					MustExec(t)
 
 				item.Pricesx = make([]*TestJoinItem, 0)
 				for rj2.Next() {
@@ -157,7 +157,7 @@ func CheckJoinsAsWhereCondition(t *testing.T) {
 		}
 	}
 
-	rjoin, _ := qjoin.MustExec().FetchAll()
+	rjoin, _ := qjoin.MustExec(t).FetchAll()
 	assert.Equal(t, len(rjcheck), len(rjoin))
 	for i := 0; i < len(rjcheck); i++ {
 		i1 := rjcheck[i].(*TestItem)
@@ -283,7 +283,7 @@ func CheckTestItemsJoinQueries(t *testing.T, left, inner, whereOrJoin bool, orIn
 	}
 	permutate(qjoin, andConditions, orConditions)
 
-	rjoin, _ := qjoin.MustExec().FetchAll()
+	rjoin, _ := qjoin.MustExec(t).FetchAll()
 
 	// for _, rr := range rjoin {
 	// 	item := rr.(*TestItem)
@@ -291,7 +291,7 @@ func CheckTestItemsJoinQueries(t *testing.T, left, inner, whereOrJoin bool, orIn
 	// }
 
 	// Verify join results with manual join
-	r1, _ := DB.Query("test_items_for_join").Where("genre", reindexer.EQ, 10).MustExec().FetchAll()
+	r1, _ := DB.Query("test_items_for_join").Where("genre", reindexer.EQ, 10).MustExec(t).FetchAll()
 	rjcheck := make([]interface{}, 0, 1000)
 
 	for _, iitem := range r1 {
@@ -302,7 +302,7 @@ func CheckTestItemsJoinQueries(t *testing.T, left, inner, whereOrJoin bool, orIn
 				Where("DEVICE", reindexer.EQ, "ottstb").
 				Where("ID", reindexer.SET, item.PricesIDs).
 				Sort("NAME", true).
-				MustExec().FetchAll()
+				MustExec(t).FetchAll()
 
 			if len(rj1) != 0 {
 				item.Prices = make([]*TestJoinItem, 0, len(rj1))
@@ -320,13 +320,13 @@ func CheckTestItemsJoinQueries(t *testing.T, left, inner, whereOrJoin bool, orIn
 				Where("LOCATION", reindexer.EQ, item.LocationID).
 				Sort("NAME", true).
 				Limit(30).
-				MustExec()
+				MustExec(t)
 
 			rj3 := DB.Query("test_join_items").
 				Where("DEVICE", reindexer.EQ, "iphone").
 				Where("ID", reindexer.SET, item.PricesIDs).Or().
 				Where("LOCATION", reindexer.LT, item.LocationID).
-				MustExec()
+				MustExec(t)
 
 			if whereOrJoin && orInner {
 				if rj2.Count() != 0 || rj3.Count() != 0 {
@@ -393,7 +393,7 @@ func TestJoinQueryResultsOnIterator(t *testing.T) {
 		return true
 	})
 
-	iter := qjoin.MustExec()
+	iter := qjoin.MustExec(t)
 	defer iter.Close()
 
 	for iter.Next() {
@@ -481,7 +481,7 @@ func TestExplainJoin(t *testing.T) {
 	q.Not().Where("data", reindexer.EQ, 4)
 	q.LeftJoin(qjoin3, "left_joined").On("id", reindexer.EQ, "id")
 
-	iter := q.MustExec()
+	iter := q.MustExec(t)
 	defer iter.Close()
 	explainRes, err := iter.GetExplainResults()
 	assert.NoError(t, err)

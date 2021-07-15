@@ -49,12 +49,17 @@ public:
 	static_assert(std::is_nothrow_move_constructible<std::pair<key_string, T1>>::value, "Nothrow movebale key and value required");
 	using typename base_hash_map::iterator;
 	unordered_str_map() : base_hash_map() {}
-	unordered_str_map(const PayloadType, const FieldsSet&, const CollateOpts& opts)
-		: base_hash_map(1000, hash_key_string(CollateMode(opts.mode)), equal_key_string(opts)) {}
+	unordered_str_map(const CollateOpts& opts) : base_hash_map(1000, hash_key_string(CollateMode(opts.mode)), equal_key_string(opts)) {}
 
 	template <typename deep_cleaner>
 	iterator erase(iterator pos) {
 		static const deep_cleaner deep_clean;
+		deep_clean(*pos);
+		return base_hash_map::erase(pos);
+	}
+
+	template <typename deep_cleaner>
+	iterator erase(iterator pos, const deep_cleaner& deep_clean) {
 		deep_clean(*pos);
 		return base_hash_map::erase(pos);
 	}
@@ -67,11 +72,16 @@ class str_map : public btree::btree_map<key_string, T1, less_key_string> {
 
 public:
 	using typename base_tree_map::iterator;
-	str_map(const PayloadType, const FieldsSet&, const CollateOpts& opts) : base_tree_map(less_key_string(opts)) {}
+	str_map(const CollateOpts& opts) : base_tree_map(less_key_string(opts)) {}
 
 	template <typename deep_cleaner>
 	iterator erase(const iterator& pos) {
 		static const deep_cleaner deep_clean;
+		deep_clean(*pos);
+		return base_tree_map::erase(pos);
+	}
+	template <typename deep_cleaner>
+	iterator erase(const iterator& pos, const deep_cleaner& deep_clean) {
 		deep_clean(*pos);
 		return base_tree_map::erase(pos);
 	}
@@ -102,7 +112,7 @@ class unordered_number_map
 
 public:
 	using typename base_hash_map::iterator;
-	unordered_number_map(const PayloadType, const FieldsSet&, const CollateOpts&) {}
+	unordered_number_map() = default;
 
 	template <typename deep_cleaner>
 	iterator erase(iterator pos) {
@@ -118,7 +128,7 @@ class number_map : public btree::btree_map<K, T1> {
 	using base_tree_map::erase;
 
 public:
-	number_map(const PayloadType, const FieldsSet&, const CollateOpts&) {}
+	number_map() = default;
 	using typename base_tree_map::iterator;
 
 	template <typename deep_cleaner>
@@ -128,5 +138,49 @@ public:
 		return base_tree_map::erase(pos);
 	}
 };
+
+template <bool deepClean>
+struct StringMapEntryCleaner {
+	StringMapEntryCleaner(StringsHolder& strHolder, bool needSaveExpiredStrings) noexcept
+		: strHolder_{strHolder}, needSaveExpiredStrings_{needSaveExpiredStrings} {}
+
+	template <typename T>
+	void operator()(T& v) const {
+		free_node(v.first);
+		free_node(v.second);
+	}
+
+	template <typename T>
+	void free_node(T& v) const {
+		if constexpr (deepClean && !std::is_const_v<T>) {
+			v = T{};
+		}
+	}
+
+	void free_node(const key_string& str) const {
+		if (needSaveExpiredStrings_) strHolder_.Add(str);
+	}
+
+	void free_node(key_string& str) const {
+		if (needSaveExpiredStrings_) {
+			strHolder_.Add(std::move(str));
+		} else if constexpr (deepClean) {
+			str = key_string{};
+		}
+	}
+
+private:
+	StringsHolder& strHolder_;
+	const bool needSaveExpiredStrings_;
+};
+
+template <typename>
+constexpr bool is_str_map_v = false;
+
+template <typename T>
+constexpr bool is_str_map_v<str_map<T>> = true;
+
+template <typename T>
+constexpr bool is_str_map_v<unordered_str_map<T>> = true;
 
 }  // namespace reindexer

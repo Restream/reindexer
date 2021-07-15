@@ -1685,7 +1685,6 @@ TEST_F(NsApi, MsgPackEncodingTest) {
 	}
 
 	QueryResults qr;
-
 	int i = 0;
 	size_t length = wrSer1.Len();
 	size_t offset = 0;
@@ -1696,16 +1695,12 @@ TEST_F(NsApi, MsgPackEncodingTest) {
 		Error err = item.FromMsgPack(std::string_view(reinterpret_cast<const char *>(wrSer1.Buf()), wrSer1.Len()), offset);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = rt.reindexer->Update(default_namespace, item);
+		err = rt.reindexer->Update(default_namespace, item, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		string json(item.GetJSON());
 		ASSERT_TRUE(json == items[i++]);
-
-		qr.AddItem(item, true, false);
 	}
-
-	qr.lockResults();
 
 	reindexer::WrSerializer wrSer3;
 	for (size_t i = 0; i < qr.Count(); ++i) {

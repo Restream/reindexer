@@ -27,7 +27,7 @@ func RunInMultiThread(t *testing.T, fn func(*testing.T, *sync.WaitGroup), thread
 	wg.Wait()
 }
 
-func PrepareJoinQueryResult(sort1 string, sort2 string) []interface{} {
+func PrepareJoinQueryResult(t *testing.T, sort1 string, sort2 string) []interface{} {
 	qj1 := DB.Query("test_join_items").Where("DEVICE", reindexer.EQ, "ottstb")
 	if sort1 != "" {
 		qj1.Sort(sort1, true)
@@ -39,16 +39,16 @@ func PrepareJoinQueryResult(sort1 string, sort2 string) []interface{} {
 	}
 
 	qjoin.LeftJoin(qj1, "PRICES").On("PRICE_ID", reindexer.SET, "ID")
-	rjoin, _ := qjoin.MustExec().FetchAll()
+	rjoin, _ := qjoin.MustExec(t).FetchAll()
 	return rjoin
 }
 
 func CheckTestCachedItemsJoinLeftQueries(t *testing.T, wg *sync.WaitGroup) {
 	defer wg.Done()
-	resultSort1 := PrepareJoinQueryResult("device", "name")
+	resultSort1 := PrepareJoinQueryResult(t, "device", "name")
 
 	for i := 0; i < 20; i++ {
-		assert.Equal(t, resultSort1, PrepareJoinQueryResult("device", "name"))
+		assert.Equal(t, resultSort1, PrepareJoinQueryResult(t, "device", "name"))
 	}
 }
 
@@ -66,7 +66,7 @@ func CheckTestCachedItemsJoinInnerQueries(t *testing.T, wg *sync.WaitGroup) {
 			On("location", reindexer.LT, "LOCATION").
 			Or().On("PRICE_ID", reindexer.SET, "id")
 
-		rjoin, _ := qjoin.MustExec().FetchAll()
+		rjoin, _ := qjoin.MustExec(t).FetchAll()
 		if i == 0 {
 			result_without_cahce = append([]interface{}(nil), rjoin...)
 		} else {
@@ -77,26 +77,26 @@ func CheckTestCachedItemsJoinInnerQueries(t *testing.T, wg *sync.WaitGroup) {
 
 func CheckTestCachedItemsJoinSortQueries(t *testing.T, wg *sync.WaitGroup) {
 	defer wg.Done()
-	resultSort := [][]interface{}{PrepareJoinQueryResult("device", "genre"),
-		PrepareJoinQueryResult("location", "name"),
-		PrepareJoinQueryResult("name", "name"),
-		PrepareJoinQueryResult("amount", "rate"),
-		PrepareJoinQueryResult("", ""),
+	resultSort := [][]interface{}{PrepareJoinQueryResult(t, "device", "genre"),
+		PrepareJoinQueryResult(t, "location", "name"),
+		PrepareJoinQueryResult(t, "name", "name"),
+		PrepareJoinQueryResult(t, "amount", "rate"),
+		PrepareJoinQueryResult(t, "", ""),
 	}
 
 	for i := 0; i < 100; i++ {
 		op := rand.Intn(5)
 		switch op {
 		case 0:
-			assert.Equal(t, resultSort[op], PrepareJoinQueryResult("device", "genre"))
+			assert.Equal(t, resultSort[op], PrepareJoinQueryResult(t, "device", "genre"))
 		case 1:
-			assert.Equal(t, resultSort[op], PrepareJoinQueryResult("location", "name"))
+			assert.Equal(t, resultSort[op], PrepareJoinQueryResult(t, "location", "name"))
 		case 2:
-			assert.Equal(t, resultSort[op], PrepareJoinQueryResult("name", "name"))
+			assert.Equal(t, resultSort[op], PrepareJoinQueryResult(t, "name", "name"))
 		case 3:
-			assert.Equal(t, resultSort[op], PrepareJoinQueryResult("amount", "rate"))
+			assert.Equal(t, resultSort[op], PrepareJoinQueryResult(t, "amount", "rate"))
 		case 4:
-			assert.Equal(t, resultSort[op], PrepareJoinQueryResult("", ""))
+			assert.Equal(t, resultSort[op], PrepareJoinQueryResult(t, "", ""))
 		}
 	}
 }

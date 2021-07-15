@@ -160,7 +160,7 @@ func TestStorageChangeFormat(t *testing.T) {
 	DB.CloseNamespace("test_items_storage")
 	assert.NoError(t, DB.OpenNamespace("test_items_storage", reindexer.DefaultNamespaceOptions(), TestItemV5{}))
 
-	iterator := DB.Query("test_items_storage").WhereInt("id", reindexer.EQ, 1).DeepReplEqual().Exec()
+	iterator := DB.Query("test_items_storage").WhereInt("id", reindexer.EQ, 1).DeepReplEqual().Exec(t)
 	assert.NoError(t, iterator.Error())
 	assert.Equal(t, iterator.Count(), 1, "Expecting 1 item, found %d ", iterator.Count())
 	iterator.Next()

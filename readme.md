@@ -919,7 +919,7 @@ equal_position doesn't work with the following conditions: IS NULL, IS EMPTY and
 
 There are atomic functions, which executes under namespace lock, and therefore guarantees data consistency:
 
-- serial() - sequence of integer, useful for uniq ID generation.
+- serial() - sequence of integer, useful for auto-increment keys
 - now() - current time stamp, useful for data synchronization. It may have one of the following arguments:  msec, usec, nsec and sec. The “sec” argument is used by default.
 
 These functions can be passed to Upsert/Insert/Update in 3-rd and next arguments.

@@ -1,7 +1,6 @@
 package reindexer
 
 import (
-	"fmt"
 	"os"
 	"strconv"
 	"testing"
@@ -9,78 +8,13 @@ import (
 
 	"github.com/restream/reindexer"
 	"github.com/restream/reindexer/bindings/builtinserver/config"
+	"github.com/restream/reindexer/test/helpers"
 	"github.com/stretchr/testify/assert"
 )
 
 type TestItemStorage struct {
 	ID   int    `reindex:"id,,pk"`
 	Name string `reindex:"name"`
-}
-
-func WaitForSyncWithMaster(master *reindexer.Reindexer, slave *reindexer.Reindexer) {
-	complete := true
-
-	var nameBad string
-	var masterBadLsn reindexer.LsnT
-	var slaveBadLsn reindexer.LsnT
-
-	for i := 0; i < 600*5; i++ {
-
-		complete = true
-
-		stats, err := master.GetNamespacesMemStat()
-		if err != nil {
-			panic(err)
-		}
-		slaveStats, err := slave.GetNamespacesMemStat()
-		if err != nil {
-			panic(err)
-		}
-
-		slaveLsnMap := make(map[string]reindexer.NamespaceMemStat)
-		for _, st := range slaveStats {
-			slaveLsnMap[st.Name] = *st
-		}
-
-		for _, st := range stats { // loop master namespaces stats
-
-			if len(st.Name) == 0 || st.Name[0] == '#' {
-				continue
-			}
-
-			if slaveLsn, ok := slaveLsnMap[st.Name]; ok {
-				if slaveLsn.Replication.LastUpstreamLSN != st.Replication.LastLSN { //slave != master
-					complete = false
-					nameBad = st.Name
-					masterBadLsn = st.Replication.LastLSN
-					slaveBadLsn = slaveLsn.Replication.LastUpstreamLSN
-					time.Sleep(100 * time.Millisecond)
-					break
-				}
-			} else {
-				complete = false
-				nameBad = st.Name
-				masterBadLsn.ServerId = 0
-				masterBadLsn.Counter = 0
-				slaveBadLsn.ServerId = 0
-				slaveBadLsn.Counter = 0
-				time.Sleep(100 * time.Millisecond)
-				break
-			}
-		}
-		if complete {
-			for _, st := range stats {
-				slaveLsn, _ := slaveLsnMap[st.Name]
-				if slaveLsn.Replication.DataHash != st.Replication.DataHash {
-					panic(fmt.Sprintf("Can't sync slave ns with master: ns \"%s\" slave dataHash: %d , master dataHash %d", st.Name, slaveLsn.Replication.DataHash, st.Replication.DataHash))
-				}
-			}
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	panic(fmt.Sprintf("Can't sync slave ns with master: ns \"%s\" masterlsn: %d , slavelsn %d", nameBad, masterBadLsn, slaveBadLsn))
 }
 
 func TestSlaveEmptyStorage(t *testing.T) {
@@ -151,7 +85,7 @@ namespaces: []`
 	defer itMaster.Close()
 	testDataMaster, errfm := itMaster.FetchAll()
 	assert.NoError(t, errfm)
-	WaitForSyncWithMaster(rxMaster, rxSlave)
+	helpers.WaitForSyncWithMaster(t, rxMaster, rxSlave)
 
 	qSlave := rxSlave.Query("items")
 	itSlave := qSlave.Exec()

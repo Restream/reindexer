@@ -10,8 +10,8 @@ using std::wstring;
 using search_engine::MergedData;
 
 template <typename T>
-Index* FuzzyIndexText<T>::Clone() {
-	return new FuzzyIndexText<T>(*this);
+std::unique_ptr<Index> FuzzyIndexText<T>::Clone() {
+	return std::unique_ptr<Index>{new FuzzyIndexText<T>(*this)};
 }
 
 template <typename T>
@@ -72,12 +72,13 @@ void FuzzyIndexText<T>::CreateConfig(const FtFuzzyConfig* cfg) {
 	this->cfg_->parse(this->opts_.config, this->ftFields_);
 }
 
-Index* FuzzyIndexText_New(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields) {
+std::unique_ptr<Index> FuzzyIndexText_New(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields) {
 	switch (idef.Type()) {
 		case IndexFuzzyFT:
-			return new FuzzyIndexText<unordered_str_map<FtKeyEntry>>(idef, payloadType, fields);
+			return std::unique_ptr<Index>{new FuzzyIndexText<unordered_str_map<FtKeyEntry>>(idef, std::move(payloadType), fields)};
 		case IndexCompositeFuzzyFT:
-			return new FuzzyIndexText<unordered_payload_map<FtKeyEntry, true>>(idef, payloadType, fields);
+			return std::unique_ptr<Index>{
+				new FuzzyIndexText<unordered_payload_map<FtKeyEntry, true>>(idef, std::move(payloadType), fields)};
 		default:
 			abort();
 	}

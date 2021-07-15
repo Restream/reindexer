@@ -27,12 +27,16 @@ static void OutputVector(const std::vector<T>& vec) {
 TEST(Coroutines, Timers) {
 	// Should be able to handle multiple timers in concurrent coroutines
 	constexpr auto kSleepTime = milliseconds(500);
-	constexpr auto kCoroCount = 1000;
+#ifdef REINDEX_WITH_TSAN
+	constexpr auto kCoroCount = 100;
+#else
+	constexpr auto kCoroCount = 500;
+#endif
 	dynamic_loop loop;
 	size_t counter = 0;
 	for (size_t i = 0; i < kCoroCount; ++i) {
 		loop.spawn([&loop, &counter, kSleepTime] {
-			std::vector<int> v = {1, 2, 3};  // Check if destructor was called
+			std::vector<int> v = {1, 2, 3};	 // Check if destructor was called
 			(void)v;
 			loop.sleep(kSleepTime);
 			++counter;
@@ -55,7 +59,7 @@ TEST(Coroutines, LoopDestructor) {
 		dynamic_loop loop;
 		for (size_t i = 0; i < kCoroCount; ++i) {
 			loop.spawn([&loop, &counter, kSleepTime] {
-				std::vector<int> v = {1, 2, 3};  // Check if destructor was called
+				std::vector<int> v = {1, 2, 3};	 // Check if destructor was called
 				(void)v;
 				loop.sleep(kSleepTime);
 				++counter;
@@ -181,8 +185,8 @@ TEST(Coroutines, SchedulingOrder) {
 	auto storage_size = reindexer::coroutine::shrink_storage();
 	ASSERT_EQ(storage_size, 0);
 	std::vector<routine_t> order;
-	const std::vector<routine_t> kExpectedOrder = {0, 0, 1, 1, 2, 1, 1, 3, 3, 4, 4,  5,  5, 6, 6, 7, 7, 8,  7, 6, 5, 4, 3, 8,
-												   3, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2,  7,  2, 9, 2, 3, 7, 3,  2, 8, 9, 8, 2, 4,
+	const std::vector<routine_t> kExpectedOrder = {0, 0, 1, 1, 2, 1, 1, 3, 3, 4, 4,	 5,	 5, 6, 6, 7, 7, 8,	7, 6, 5, 4, 3, 8,
+												   3, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2,	 7,	 2, 9, 2, 3, 7, 3,	2, 8, 9, 8, 2, 4,
 												   4, 2, 5, 5, 2, 6, 6, 2, 2, 2, 10, 10, 2, 2, 2, 2, 2, 10, 2, 2, 1, 1, 0};
 
 	auto testFn = [&order] {
@@ -251,7 +255,7 @@ TEST(Coroutines, SchedulingOrder) {
 			res = resume(wId);
 			ASSERT_EQ(res, 0);
 			order.emplace_back(current());
-			ch.close();  // We will get an unhandled exception in writing routine
+			ch.close();	 // We will get an unhandled exception in writing routine
 			// We will also get ASAN warning on exception, but this doesn't matter
 			order.emplace_back(current());
 			ASSERT_EQ(ch.size(), ch.capacity());

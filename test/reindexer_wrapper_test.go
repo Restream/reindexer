@@ -9,11 +9,11 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
-	"time"
+	"testing"
 
 	"github.com/restream/reindexer"
 	_ "github.com/restream/reindexer/bindings/cproto"
-	// _ "github.com/restream/reindexer/bindings/builtinserver"
+	"github.com/restream/reindexer/test/helpers"
 )
 
 type ReindexerWrapper struct {
@@ -124,11 +124,11 @@ func (dbw *ReindexerWrapper) GetBaseQuery(namespace string) *reindexer.Query {
 
 }
 
-func (dbw *ReindexerWrapper) execQuery(qt *queryTest) *reindexer.Iterator {
-	return dbw.execQueryCtx(context.Background(), qt)
+func (dbw *ReindexerWrapper) execQuery(t *testing.T, qt *queryTest) *reindexer.Iterator {
+	return dbw.execQueryCtx(t, context.Background(), qt)
 }
 
-func (dbw *ReindexerWrapper) execQueryCtx(ctx context.Context, qt *queryTest) *reindexer.Iterator {
+func (dbw *ReindexerWrapper) execQueryCtx(t *testing.T, ctx context.Context, qt *queryTest) *reindexer.Iterator {
 	if len(dbw.slaveList) == 0 || !qt.readOnly {
 		if !qt.readOnly {
 			dbw.SetSyncRequired()
@@ -139,7 +139,7 @@ func (dbw *ReindexerWrapper) execQueryCtx(ctx context.Context, qt *queryTest) *r
 		sdb := dbw.slaveList[rand.Intn(len(dbw.slaveList))]
 		if !dbw.IsSynced() {
 			dbw.syncMutex.Lock()
-			sdb.WaitForSyncWithMaster()
+			sdb.WaitForSyncWithMaster(t)
 			dbw.setSynced()
 			sdb.ResetCaches()
 			dbw.syncMutex.Unlock()
@@ -162,7 +162,7 @@ func (dbw *ReindexerWrapper) execQueryCtx(ctx context.Context, qt *queryTest) *r
 	if !dbw.IsSynced() {
 		dbw.syncMutex.Lock()
 		for _, db := range dbw.slaveList {
-			db.WaitForSyncWithMaster()
+			db.WaitForSyncWithMaster(t)
 		}
 		dbw.setSynced()
 		dbw.syncMutex.Unlock()
@@ -212,71 +212,11 @@ func (dbw *ReindexerWrapper) setSlaveConfig(slaveDb *ReindexerWrapper) {
 
 }
 
-func (dbw *ReindexerWrapper) WaitForSyncWithMaster() {
-	complete := true
+func (dbw *ReindexerWrapper) WaitForSyncWithMaster(t *testing.T) {
 
-	var nameBad string
-	var masterBadLsn reindexer.LsnT
-	var slaveBadLsn reindexer.LsnT
+	helpers.WaitForSyncWithMaster(t, &dbw.master.Reindexer, &dbw.Reindexer)
+	dbw.setSynced()
 
-	for i := 0; i < 600*5; i++ {
-
-		complete = true
-
-		stats, err := dbw.master.GetNamespacesMemStat()
-		if err != nil {
-			panic(err)
-		}
-		slaveStats, err := dbw.GetNamespacesMemStat()
-		if err != nil {
-			panic(err)
-		}
-
-		slaveLsnMap := make(map[string]reindexer.NamespaceMemStat)
-		for _, st := range slaveStats {
-			slaveLsnMap[st.Name] = *st
-		}
-
-		for _, st := range stats { // loop master namespaces stats
-
-			if len(st.Name) == 0 || st.Name[0] == '#' {
-				continue
-			}
-
-			if slaveLsn, ok := slaveLsnMap[st.Name]; ok {
-				if slaveLsn.Replication.LastUpstreamLSN != st.Replication.LastLSN { //slave != master
-					complete = false
-					nameBad = st.Name
-					masterBadLsn = st.Replication.LastLSN
-					slaveBadLsn = slaveLsn.Replication.LastUpstreamLSN
-					time.Sleep(100 * time.Millisecond)
-					break
-				}
-			} else {
-				complete = false
-				nameBad = st.Name
-				masterBadLsn.ServerId = 0
-				masterBadLsn.Counter = 0
-				slaveBadLsn.ServerId = 0
-				slaveBadLsn.Counter = 0
-				time.Sleep(100 * time.Millisecond)
-				break
-			}
-		}
-		if complete {
-			for _, st := range stats {
-				slaveLsn, _ := slaveLsnMap[st.Name]
-				if slaveLsn.Replication.DataHash != st.Replication.DataHash {
-					panic(fmt.Sprintf("Can't sync slave ns with master: ns \"%s\" slave dataHash: %d , master dataHash %d", st.Name, slaveLsn.Replication.DataHash, st.Replication.DataHash))
-				}
-			}
-			dbw.setSynced()
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	panic(fmt.Sprintf("Can't sync slave ns with master: ns \"%s\" masterlsn: %d , slavelsn %d", nameBad, masterBadLsn, slaveBadLsn))
 }
 
 func (dbw *ReindexerWrapper) TruncateNamespace(namespace string) error {
