@@ -123,7 +123,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 3.2.1
+*Version* : 3.2.2
 
 
 ### License information
@@ -2161,8 +2161,9 @@ Fulltext synonym definition
 |---|---|---|
 |**collate_mode**  <br>*optional*|String collate mode  <br>**Default** : `"none"`|enum (none, ascii, utf8, numeric)|
 |**config**  <br>*optional*||[FulltextConfig](#fulltextconfig)|
+|**expire_after**  <br>*optional*|Specify, time to live for ttl index, in seconds|integer|
 |**field_type**  <br>*required*|Field data type|enum (int, int64, double, string, bool, composite, point)|
-|**index_type**  <br>*required*|Index structure type  <br>**Default** : `"hash"`|enum (hash, tree, text, rtree, -)|
+|**index_type**  <br>*required*|Index structure type  <br>**Default** : `"hash"`|enum (hash, tree, text, rtree, ttl, -)|
 |**is_array**  <br>*optional*|Specifies, that index is array. Array indexes can work with array fields, or work with multiple fields  <br>**Default** : `false`|boolean|
 |**is_dense**  <br>*optional*|Reduces the index size. For hash and tree it will save ~8 bytes per unique key value. Useful for indexes with high selectivity, but for tree and hash indexes with low selectivity can seriously decrease update performance;  <br>**Default** : `false`|boolean|
 |**is_pk**  <br>*optional*|Specifies, that index is primary key. The update opertations will checks, that PK field is unique. The namespace MUST have only 1 PK index|boolean|
@@ -2353,6 +2354,7 @@ List of meta info of the specified namespace
 |**replication**  <br>*optional*||[ReplicationStats](#replicationstats)|
 |**storage_ok**  <br>*optional*|Status of disk storage|boolean|
 |**storage_path**  <br>*optional*|Filesystem path to namespace storage|string|
+|**strings_waiting_to_be_deleted_size**  <br>*optional*|Size of strings deleted from namespace, but still used in queryResults|integer|
 |**total**  <br>*optional*|Summary of total namespace memory consumption|[total](#namespacememstats-total)|
 |**updated_unix_nano**  <br>*optional*|[[deperecated]]. do not use|integer|
 

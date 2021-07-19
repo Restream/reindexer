@@ -7,7 +7,7 @@
 #include "tools/errors.h"
 namespace reindexer {
 
-bool Snippet::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct &func) {
+bool Snippet::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct &func, std::vector<key_string> &stringsHolder) {
 	if (!func.ctx) return false;
 	if (func.funcArgs.size() < 4) throw Error(errParams, "Invalid snippet params need minimum 4 - have %d", func.funcArgs.size());
 
@@ -109,13 +109,11 @@ bool Snippet::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 		}
 	}
 
-	key_string_release(const_cast<string *>(data));
-	auto str = make_key_string(result_string);
-	key_string_add_ref(str.get());
+	stringsHolder.emplace_back(make_key_string(result_string));
 	res.Value().Clone();
 
 	if (func.tagsPath.empty()) {
-		pl.Set(func.field, VariantArray{Variant{str}});
+		pl.Set(func.field, VariantArray{Variant{stringsHolder.back()}});
 	} else {
 		throw Error(errConflict, "SetByJsonPath is not implemented yet!");
 	}

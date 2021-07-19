@@ -79,6 +79,7 @@ public:
 
 protected:
 	Error modifyItem(Reindexer &db, string &nsName, Item &item, ItemModifyMode mode);
+	Error modifyItem(Reindexer &db, string &nsName, Item &item, QueryResults &, ItemModifyMode mode);
 	int modifyItems(http::Context &ctx, ItemModifyMode mode);
 	int modifyItemsTx(http::Context &ctx, ItemModifyMode mode);
 	int modifyItemsProtobuf(http::Context &ctx, string &nsName, const vector<string> &precepts, ItemModifyMode mode);
@@ -141,6 +142,9 @@ protected:
 
 	static const int kDefaultLimit = INT_MAX;
 	static const int kDefaultOffset = 0;
+
+private:
+	Error execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults &res, http::Context &ctx);
 };
 
 }  // namespace reindexer_server

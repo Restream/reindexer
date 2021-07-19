@@ -35,6 +35,7 @@ struct IndexMemStat {
 	size_t fulltextSize = 0;
 	size_t columnSize = 0;
 	LRUCacheMemStat idsetCache;
+	size_t GetIndexStructSize() const noexcept { return idsetPlainSize + idsetBTreeSize + sortOrdersSize + fulltextSize + columnSize; }
 };
 
 struct MasterState {
@@ -104,6 +105,7 @@ struct NamespaceMemStat {
 	size_t itemsCount = 0;
 	size_t emptyItemsCount = 0;
 	size_t dataSize = 0;
+	size_t stringsWaitingToBeDeletedSize = 0;
 	struct {
 		size_t dataSize = 0;
 		size_t indexesSize = 0;

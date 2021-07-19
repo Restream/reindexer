@@ -41,9 +41,9 @@ private:
 		bool isIndex_;
 	};
 
-	void modifyField(IdType itemId, FieldData &field, Payload &pl, VariantArray &values);
-	void modifyCJSON(PayloadValue &pv, FieldData &field, VariantArray &values, const NsContext &ctx);
-	void modifyIndexValues(IdType itemId, const FieldData &field, VariantArray &values, Payload &pl);
+	void modifyField(IdType itemId, FieldData &field, Payload &pl, VariantArray &values, const NsContext &);
+	void modifyCJSON(PayloadValue &pv, FieldData &field, VariantArray &values, const NsContext &);
+	void modifyIndexValues(IdType itemId, const FieldData &field, VariantArray &values, Payload &pl, const NsContext &);
 
 	NamespaceImpl &ns_;
 	const h_vector<UpdateEntry, 0> &updateEntries_;

@@ -311,7 +311,7 @@ public:
 		constexpr bool kTreeFields = std::tuple_size<ResType>{} == 3;
 		EXPECT_EQ(qr.Count(), expectedResults.size()) << "Query: " << query;
 		for (auto itRes : qr) {
-			const auto item = itRes.GetItem();
+			const auto item = itRes.GetItem(false);
 			const auto it = std::find_if(expectedResults.begin(), expectedResults.end(), [&item](const ResType& p) {
 				if constexpr (kTreeFields) {
 					return std::get<0>(p) == item["ft1"].As<string>() && std::get<1>(p) == item["ft2"].As<string>() &&

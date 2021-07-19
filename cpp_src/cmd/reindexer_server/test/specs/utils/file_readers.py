@@ -16,12 +16,3 @@ def get_swagger():
     return swagger
 
 
-def get_users():
-    users_file_path = os.path.dirname(
-        os.path.realpath(__file__)) + '/../../mocks/users.json'
-
-    with open(users_file_path) as f:
-        users = json.load(f)
-        f.close()
-
-    return users

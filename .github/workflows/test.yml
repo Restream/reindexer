@@ -1,0 +1,185 @@
+on: push
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        compiler: ["Visual Studio 16 2019", "MinGW Makefiles"]
+      fail-fast: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Build Reindexer
+        run: |
+          mkdir build && cd build
+          cmake -G "${{matrix.compiler}}" ..
+          cmake --build . --config Release
+          cmake --build . --config Release --target face
+          cmake --build . --config Release --target swagger
+
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
+        include:
+          - os: ubuntu-latest
+            sanitizer: ASAN
+#         - os: ubuntu-latest
+#           sanitizer: TSAN
+      fail-fast: false
+    runs-on: ${{matrix.os}}
+    env:
+      OS: ${{matrix.os}}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Prepare Environment
+        run: |
+          ./.github/workflows/install_gtest.sh
+          ./.github/workflows/install_gbench.sh
+          if [[ $OS == ubuntu* ]]; then
+            sudo ./dependencies.sh
+            ./.github/workflows/install_grpc.sh
+          else
+            ./dependencies.sh
+          fi
+      - name: Build Reindexer
+        run: |
+          export CPLUS_INCLUDE_PATH=$GITHUB_WORKSPACE/grpc/third_party/abseil-cpp
+          mkdir build && cd build
+          if [[ $OS == ubuntu-latest ]]; then
+            cmake -DENABLE_GRPC=ON -DWITH_${{matrix.sanitizer}}=On ..
+          elif [[ $OS == macos-latest ]]; then
+            cmake ..
+          else
+            cmake -DENABLE_GRPC=ON ..
+          fi
+          make -j4
+          STRIP=/bin/true cpack
+      - name: 'Tar Artifacts'
+        run: tar -cvf artifacts.tar build/ bindings/builtin/builtin_posix.go bindings/builtinserver/builtinserver_posix.go dependencies.sh
+      - name: Archive Artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{matrix.os}}${{matrix.sanitizer}}
+          path: artifacts.tar
+          if-no-files-found: error
+
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
+        test: ['C++', 'GO']
+        include:
+          - os: ubuntu-latest
+            sanitizer: ASAN
+            test: 'C++'
+          - os: ubuntu-latest
+            sanitizer: ASAN
+            test: 'GO'
+#         - os: ubuntu-latest
+#           sanitizer: TSAN
+#           test: 'C++'
+#         - os: ubuntu-latest
+#           sanitizer: TSAN
+#           test: 'GO'
+      fail-fast: false
+    runs-on: ${{matrix.os}}
+    needs: build
+    if: always()
+    env:
+      TEST: ${{matrix.test}}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Download ${{matrix.os}}${{matrix.sanitizer}} Artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: ${{matrix.os}}${{matrix.sanitizer}}
+      - name: 'Untar Artifacts'
+        run: tar -xvf artifacts.tar
+      - name: Prepare Environment
+        env:
+          OS: ${{matrix.os}}
+        run: |
+          if [[ $OS == ubuntu* ]]; then
+            sudo ./dependencies.sh
+          else
+            ./dependencies.sh
+          fi
+          if [[ $TEST == 'GO' ]]; then
+            if [[ $OS == ubuntu* ]]; then
+              mkdir -p /home/runner/go/src/github.com/restream/
+              ln -s `pwd` /home/runner/go/src/github.com/restream/reindexer
+            else
+              mkdir -p /Users/runner/go/src/github.com/restream/
+              ln -s `pwd` /Users/runner/go/src/github.com/restream/reindexer
+            fi
+            go mod init github.com/restream/reindexer
+          fi
+      - name: Tests
+        run: |
+          if [[ $TEST == 'GO' ]]; then
+            go test -timeuot 60m ./test/...  -bench . -benchmem -benchtime 100ms -seedcount 50000
+          else
+            cd build
+            ctest --verbose
+          fi
+
+  test-pyreindexer:
+    strategy:
+      matrix:
+        os: [ubuntu-18.04, ubuntu-20.04, macos-latest]
+      fail-fast: false
+    runs-on: ${{matrix.os}}
+    needs: build
+    if: always()
+    env:
+      OS: ${{matrix.os}}
+    steps:
+      - name: Download ${{matrix.os}} Artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: ${{matrix.os}}
+      - name: 'Untar Artifacts'
+        run: tar -xvf artifacts.tar
+      - name: Prepare Environment
+        run: |
+          if [[ $OS == ubuntu* ]]; then
+            sudo ./dependencies.sh
+            python3 -m pip install setuptools
+          else
+            ./dependencies.sh
+          fi
+      - name: Install Reindexer
+        run: |
+          cd build
+          if [[ $OS == ubuntu* ]]; then
+            sudo dpkg -i reindexer-dev*.deb
+            sudo apt-get install -f
+            sudo dpkg -i reindexer-server*.deb
+            sudo apt-get install -f
+          else
+            for f in reindexer-*.tar.gz; do tar -xvzf "$f"; done
+            cp -R ./usr/local/include/reindexer /usr/local/include/reindexer
+            cp -R ./usr/local/lib/reindexer /usr/local/lib/reindexer
+            cp ./usr/local/lib/libreindexer.a /usr/local/lib/libreindexer.a
+            cp ./usr/local/lib/libreindexer_server_library.a /usr/local/lib/libreindexer_server_library.a
+            cp ./usr/local/lib/libreindexer_server_resources.a /usr/local/lib/libreindexer_server_resources.a
+            cp ./usr/local/lib/pkgconfig/libreindexer.pc /usr/local/lib/pkgconfig/libreindexer.pc
+            cp ./usr/local/lib/pkgconfig/libreindexer_server.pc /usr/local/lib/pkgconfig/libreindexer_server.pc
+            cp ./usr/local/bin/reindexer_server /usr/local/bin/reindexer_server
+            cp ./usr/local/etc/reindexer.conf.pkg /usr/local/etc/reindexer.conf.pkg
+          fi
+      - name: Clone PyReindexer
+        uses: actions/checkout@v2
+        with:
+          repository: restream/reindexer-py
+      - name: Install PyReindexer
+        run: |
+          python3 setup.py build
+          sudo python3 setup.py install
+      - name: Test PyReindexer
+        run: |
+          cd pyreindexer
+          ../.github/workflows/test.sh

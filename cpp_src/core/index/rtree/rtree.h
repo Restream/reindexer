@@ -598,16 +598,13 @@ public:
 	using mapped_type = T;
 };
 
-class PayloadType;
-class FieldsSet;
-
 template <typename KeyEntryT, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
 		  size_t MinEntries>
 class GeometryMap : public RTreeMap<KeyEntryT, Splitter, MaxEntries, MinEntries> {
 	using Base = RTreeMap<KeyEntryT, Splitter, MaxEntries, MinEntries>;
 
 public:
-	GeometryMap(const PayloadType&, const FieldsSet&, const CollateOpts&) {}
+	GeometryMap() = default;
 	template <typename>
 	void erase(typename Base::iterator it) {
 		Base::erase(it);

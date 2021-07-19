@@ -26,7 +26,7 @@ void VerifyQueryResult(const QueryResults& qr, const std::vector<string>& fields
 	size_t totalFound = 0;
 	for (size_t i = 0; i < qr.Count(); ++i) {
 		size_t len = INT_MAX;
-		Item it = qr[i].GetItem();
+		Item it = qr[i].GetItem(false);
 
 		std::vector<VariantArray> vals(keys.size());
 		for (size_t j = 0; j < fields.size(); ++j) {

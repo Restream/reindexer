@@ -44,7 +44,7 @@ protected:
 		EXPECT_TRUE(qr.Count() == 100);
 
 		for (size_t i = 0; i < qr.Count(); ++i) {
-			Item ritem(qr[i].GetItem());
+			Item ritem(qr[i].GetItem(false));
 			std::string expectedName = "name" + std::to_string(i);
 			Variant nameVal = ritem[kFieldName];
 			EXPECT_TRUE(nameVal.Type() == KeyValueString);
@@ -62,7 +62,7 @@ protected:
 		Error err = rt.reindexer->Select(Query(default_namespace).Where(kFieldName, CondEq, Variant("name5")), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_TRUE(qr.Count() == 1);
-		Item ritem(qr[0].GetItem());
+		Item ritem(qr[0].GetItem(false));
 		Variant nameVal = ritem[kFieldName];
 		EXPECT_TRUE(nameVal.Type() == KeyValueString);
 		EXPECT_TRUE(nameVal.As<string>() == "name5");
@@ -73,7 +73,7 @@ protected:
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		for (auto it : qr2) {
-			Item ritem(it.GetItem());
+			Item ritem(it.GetItem(false));
 			Variant nameVal = ritem[kFieldName];
 			EXPECT_TRUE(nameVal.Type() == KeyValueString);
 			EXPECT_TRUE(nameVal.As<string>().compare(toCompare) < 0);
@@ -86,7 +86,7 @@ protected:
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_TRUE(qr.Count() == 50);
 		for (int64_t i = 0; i < static_cast<int64_t>(qr.Count()); ++i) {
-			Item ritem(qr[i].GetItem());
+			Item ritem(qr[i].GetItem(false));
 			Variant serialNumberVal = ritem[kFieldSerialNumber];
 			EXPECT_TRUE(serialNumberVal.Type() == KeyValueInt64);
 			EXPECT_TRUE(static_cast<int64_t>(serialNumberVal) == i);
@@ -98,7 +98,7 @@ protected:
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_TRUE(qr2.Count() == 1);
 
-		Item ritem(qr2[0].GetItem());
+		Item ritem(qr2[0].GetItem(false));
 		Variant serialNumberVal = ritem[kFieldSerialNumber];
 		EXPECT_TRUE(serialNumberVal.Type() == KeyValueInt64);
 		EXPECT_TRUE(static_cast<int64_t>(serialNumberVal) == expectedValue);

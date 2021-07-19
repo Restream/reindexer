@@ -119,13 +119,13 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 		Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondEq, {{Variant(priceValue), Variant(pagesValue)}}));
 	EXPECT_TRUE(qr.Count() == 1);
 
-	Item pricePageRow = qr.begin().GetItem();
+	Item pricePageRow = qr.begin().GetItem(false);
 	Variant selectedPrice = pricePageRow[kFieldNamePrice];
 	Variant selectedPages = pricePageRow[kFieldNamePages];
 	EXPECT_EQ(static_cast<int>(selectedPrice), priceValue);
 	EXPECT_EQ(static_cast<int>(selectedPages), pagesValue);
 
-	Item titleNameRow = qr.begin().GetItem();
+	Item titleNameRow = qr.begin().GetItem(false);
 	Variant selectedTitle = titleNameRow[kFieldNameTitle];
 	Variant selectedName = titleNameRow[kFieldNameName];
 	EXPECT_TRUE(static_cast<reindexer::key_string>(selectedTitle)->compare(string(titleValue)) == 0);

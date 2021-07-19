@@ -204,7 +204,7 @@ func TestSortDataIndexMode(t *testing.T) {
 	FillTestItemsWithInsensitiveIndex(t)
 
 	// Numeric
-	results, err := DB.Query(testSortDataNumeric).Sort("item_numeric", false).Exec().FetchAll()
+	results, err := DB.Query(testSortDataNumeric).Sort("item_numeric", false).Exec(t).FetchAll()
 	assert.NoError(t, err)
 
 	// Test: Numeric words are sorted
@@ -220,7 +220,7 @@ func TestSortDataIndexMode(t *testing.T) {
 	}
 
 	// ASCII
-	results, err = DB.Query(testSortDataAscii).Sort("item_ascii", false).Exec().FetchAll()
+	results, err = DB.Query(testSortDataAscii).Sort("item_ascii", false).Exec(t).FetchAll()
 	assert.NoError(t, err)
 
 	// Test: ASCII words are sorted
@@ -231,7 +231,7 @@ func TestSortDataIndexMode(t *testing.T) {
 	}
 
 	// UTF8
-	results, err = DB.Query(testSortDataUtf).Sort("item_utf", false).Exec().FetchAll()
+	results, err = DB.Query(testSortDataUtf).Sort("item_utf", false).Exec(t).FetchAll()
 	assert.NoError(t, err)
 
 	// Test: UTF8 words are sorted
@@ -244,7 +244,7 @@ func TestSortDataIndexMode(t *testing.T) {
 	}
 
 	// Custom
-	results, err = DB.Query(testSortDataCustom).Sort("item_custom", false).Exec().FetchAll()
+	results, err = DB.Query(testSortDataCustom).Sort("item_custom", false).Exec(t).FetchAll()
 	assert.NoError(t, err)
 
 	// Test: Custom mode words are sorted

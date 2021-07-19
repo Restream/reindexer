@@ -56,7 +56,7 @@ void JoinedSelector::selectFromPreResultValues(QueryResults &joinItemR, bool &fo
 		if (itemQuery_.entries.CheckIfSatisfyConditions({preResult_->values.payloadType, item.Value()}, preResult_->values.tagsMatcher)) {
 			if (++matched > itemQuery_.count) break;
 			found = true;
-			joinItemR.Add(item, preResult_->values.payloadType);
+			joinItemR.Add(item);
 		}
 	}
 	matchedAtLeastOnce = matched;

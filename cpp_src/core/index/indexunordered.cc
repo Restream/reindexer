@@ -17,12 +17,112 @@ namespace reindexer {
 constexpr int kMaxIdsForDistinct = 500;
 
 template <typename T>
-IndexUnordered<T>::IndexUnordered(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields)
-	: IndexStore<typename T::key_type>(idef, payloadType, fields), idx_map(payloadType, fields, idef.opts_.collateOpts_) {}
+IndexUnordered<T>::IndexUnordered(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields)
+	: IndexStore<typename T::key_type>(idef, std::move(payloadType), fields), idx_map() {
+	static_assert(!(is_str_map_v<T> || is_payload_map_v<T>));
+}
+
+template <>
+IndexUnordered<str_map<Index::KeyEntryPlain>>::IndexUnordered(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields)
+	: IndexStore<reindexer::str_map<Index::KeyEntryPlain>::key_type>(idef, std::move(payloadType), fields),
+	  idx_map(idef.opts_.collateOpts_) {}
+
+template <>
+IndexUnordered<str_map<Index::KeyEntry>>::IndexUnordered(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields)
+	: IndexStore<reindexer::str_map<Index::KeyEntry>::key_type>(idef, std::move(payloadType), fields), idx_map(idef.opts_.collateOpts_) {}
+
+template <>
+IndexUnordered<unordered_str_map<Index::KeyEntry>>::IndexUnordered(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields)
+	: IndexStore<unordered_str_map<Index::KeyEntry>::key_type>(idef, std::move(payloadType), fields), idx_map(idef.opts_.collateOpts_) {}
+
+template <>
+IndexUnordered<unordered_str_map<Index::KeyEntryPlain>>::IndexUnordered(const IndexDef &idef, PayloadType payloadType,
+																		const FieldsSet &fields)
+	: IndexStore<unordered_str_map<Index::KeyEntryPlain>::key_type>(idef, std::move(payloadType), fields),
+	  idx_map(idef.opts_.collateOpts_) {}
+
+template <>
+IndexUnordered<unordered_str_map<FtKeyEntry>>::IndexUnordered(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields)
+	: IndexStore<unordered_str_map<FtKeyEntry>::key_type>(idef, std::move(payloadType), fields), idx_map(idef.opts_.collateOpts_) {}
+
+template <>
+IndexUnordered<unordered_payload_map<FtKeyEntry, true>>::IndexUnordered(const IndexDef &idef, PayloadType payloadType,
+																		const FieldsSet &fields)
+	: IndexStore<unordered_payload_map<FtKeyEntry, true>::key_type>(idef, payloadType, fields), idx_map(std::move(payloadType), fields) {}
+
+template <>
+IndexUnordered<unordered_payload_map<Index::KeyEntry, true>>::IndexUnordered(const IndexDef &idef, PayloadType payloadType,
+																			 const FieldsSet &fields)
+	: IndexStore<unordered_payload_map<Index::KeyEntry, true>::key_type>(idef, payloadType, fields),
+	  idx_map(std::move(payloadType), fields) {}
+
+template <>
+IndexUnordered<unordered_payload_map<Index::KeyEntryPlain, true>>::IndexUnordered(const IndexDef &idef, PayloadType payloadType,
+																				  const FieldsSet &fields)
+	: IndexStore<unordered_payload_map<Index::KeyEntryPlain, true>::key_type>(idef, payloadType, fields),
+	  idx_map(std::move(payloadType), fields) {}
+
+template <>
+IndexUnordered<payload_map<Index::KeyEntry, true>>::IndexUnordered(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields)
+	: IndexStore<payload_map<Index::KeyEntry, true>::key_type>(idef, payloadType, fields), idx_map(std::move(payloadType), fields) {}
+
+template <>
+IndexUnordered<payload_map<Index::KeyEntryPlain, true>>::IndexUnordered(const IndexDef &idef, PayloadType payloadType,
+																		const FieldsSet &fields)
+	: IndexStore<payload_map<Index::KeyEntryPlain, true>::key_type>(idef, payloadType, fields), idx_map(std::move(payloadType), fields) {}
+
+template <typename T>
+bool IndexUnordered<T>::HoldsStrings() const noexcept {
+	if constexpr (is_payload_map_v<T>) {
+		return idx_map.have_str_fields();
+	} else {
+		return is_str_map_v<T>;
+	}
+}
 
 template <typename T>
 IndexUnordered<T>::IndexUnordered(const IndexUnordered &other)
 	: IndexStore<typename T::key_type>(other),
+	  idx_map(other.idx_map),
+	  cache_(nullptr),
+	  empty_ids_(other.empty_ids_),
+	  tracker_(other.tracker_) {}
+
+template <>
+IndexUnordered<payload_map<Index::KeyEntry, true>>::IndexUnordered(const IndexUnordered &other)
+	: IndexStore<payload_map<Index::KeyEntry, true>::key_type>(other),
+	  idx_map(other.idx_map),
+	  cache_(nullptr),
+	  empty_ids_(other.empty_ids_),
+	  tracker_(other.tracker_) {}
+
+template <>
+IndexUnordered<payload_map<Index::KeyEntryPlain, true>>::IndexUnordered(const IndexUnordered &other)
+	: IndexStore<payload_map<Index::KeyEntryPlain, true>::key_type>(other),
+	  idx_map(other.idx_map),
+	  cache_(nullptr),
+	  empty_ids_(other.empty_ids_),
+	  tracker_(other.tracker_) {}
+
+template <>
+IndexUnordered<unordered_payload_map<Index::KeyEntry, true>>::IndexUnordered(const IndexUnordered &other)
+	: IndexStore<unordered_payload_map<Index::KeyEntry, true>::key_type>(other),
+	  idx_map(other.idx_map),
+	  cache_(nullptr),
+	  empty_ids_(other.empty_ids_),
+	  tracker_(other.tracker_) {}
+
+template <>
+IndexUnordered<unordered_payload_map<Index::KeyEntryPlain, true>>::IndexUnordered(const IndexUnordered &other)
+	: IndexStore<unordered_payload_map<Index::KeyEntryPlain, true>::key_type>(other),
+	  idx_map(other.idx_map),
+	  cache_(nullptr),
+	  empty_ids_(other.empty_ids_),
+	  tracker_(other.tracker_) {}
+
+template <>
+IndexUnordered<unordered_payload_map<FtKeyEntry, true>>::IndexUnordered(const IndexUnordered &other)
+	: IndexStore<unordered_payload_map<FtKeyEntry, true>::key_type>(other),
 	  idx_map(other.idx_map),
 	  cache_(nullptr),
 	  empty_ids_(other.empty_ids_),
@@ -45,12 +145,11 @@ struct DeepClean {
 		free_node(v.second);
 	}
 
-	template <typename T, typename std::enable_if<std::is_const<T>::value>::type * = nullptr>
-	static void free_node(T &) {}
-
-	template <typename T, typename std::enable_if<!std::is_const<T>::value>::type * = nullptr>
-	static void free_node(T &v) {
-		v = T();
+	template <typename T>
+	void free_node(T &v) const {
+		if constexpr (!std::is_const_v<T>) {
+			v = T{};
+		}
 	}
 };
 
@@ -98,7 +197,7 @@ Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id) {
 }
 
 template <typename T>
-void IndexUnordered<T>::Delete(const Variant &key, IdType id) {
+void IndexUnordered<T>::Delete(const Variant &key, IdType id, StringsHolder &strHolder) {
 	if (cache_) cache_.reset();
 	int delcnt = 0;
 	if (key.Type() == KeyValueNull) {
@@ -119,14 +218,21 @@ void IndexUnordered<T>::Delete(const Variant &key, IdType id) {
 
 	if (keyIt->second.Unsorted().IsEmpty()) {
 		this->tracker_.markDeleted(keyIt);
-		idx_map.template erase<DeepClean>(keyIt);
+		if constexpr (is_str_map_v<T>) {
+			idx_map.template erase<StringMapEntryCleaner<true>>(
+				keyIt, {strHolder, this->KeyType() == KeyValueString && this->opts_.GetCollateMode() == CollateNone});
+		} else if constexpr (is_payload_map_v<T>) {
+			idx_map.template erase<DeepClean>(keyIt, strHolder);
+		} else {
+			idx_map.template erase<DeepClean>(keyIt);
+		}
 	} else {
 		addMemStat(keyIt);
 		this->tracker_.markUpdated(this->idx_map, keyIt);
 	}
 
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
-		IndexStore<typename T::key_type>::Delete(key, id);
+		IndexStore<typename T::key_type>::Delete(key, id, strHolder);
 	}
 }
 
@@ -288,8 +394,8 @@ void IndexUnordered<T>::UpdateSortedIds(const UpdateSortedContext &ctx) {
 }
 
 template <typename T>
-Index *IndexUnordered<T>::Clone() {
-	return new IndexUnordered<T>(*this);
+std::unique_ptr<Index> IndexUnordered<T>::Clone() {
+	return std::unique_ptr<Index>{new IndexUnordered<T>(*this)};
 }
 
 template <typename T>
@@ -309,24 +415,25 @@ IndexMemStat IndexUnordered<T>::GetMemStat() {
 }
 
 template <typename KeyEntryT>
-static Index *IndexUnordered_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields) {
+static std::unique_ptr<Index> IndexUnordered_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields) {
 	switch (idef.Type()) {
 		case IndexIntHash:
-			return new IndexUnordered<unordered_number_map<int, KeyEntryT>>(idef, payloadType, fields);
+			return std::unique_ptr<Index>{new IndexUnordered<unordered_number_map<int, KeyEntryT>>(idef, std::move(payloadType), fields)};
 		case IndexInt64Hash:
-			return new IndexUnordered<unordered_number_map<int64_t, KeyEntryT>>(idef, payloadType, fields);
+			return std::unique_ptr<Index>{
+				new IndexUnordered<unordered_number_map<int64_t, KeyEntryT>>(idef, std::move(payloadType), fields)};
 		case IndexStrHash:
-			return new IndexUnordered<unordered_str_map<KeyEntryT>>(idef, payloadType, fields);
+			return std::unique_ptr<Index>{new IndexUnordered<unordered_str_map<KeyEntryT>>(idef, std::move(payloadType), fields)};
 		case IndexCompositeHash:
-			return new IndexUnordered<unordered_payload_map<KeyEntryT, true>>(idef, payloadType, fields);
+			return std::unique_ptr<Index>{new IndexUnordered<unordered_payload_map<KeyEntryT, true>>(idef, std::move(payloadType), fields)};
 		default:
 			abort();
 	}
 }
 
-Index *IndexUnordered_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields) {
-	return (idef.opts_.IsPK() || idef.opts_.IsDense()) ? IndexUnordered_New<Index::KeyEntryPlain>(idef, payloadType, fields)
-													   : IndexUnordered_New<Index::KeyEntry>(idef, payloadType, fields);
+std::unique_ptr<Index> IndexUnordered_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields) {
+	return (idef.opts_.IsPK() || idef.opts_.IsDense()) ? IndexUnordered_New<Index::KeyEntryPlain>(idef, std::move(payloadType), fields)
+													   : IndexUnordered_New<Index::KeyEntry>(idef, std::move(payloadType), fields);
 }
 
 template class IndexUnordered<number_map<int, Index::KeyEntryPlain>>;

@@ -93,7 +93,7 @@ protected:
 		Error err = rt.reindexer->Select(Query(kMemstatsNamespace).Where(kMemstatsFieldName, CondEq, Variant(default_namespace)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_TRUE(qr.Count() > 0);
-		Item firstItem = qr[0].GetItem();
+		Item firstItem = qr[0].GetItem(false);
 		Variant itemsCountKv = firstItem[kMemstatsFieldItemsCount];
 		Variant storageLoadedKv = firstItem[kMemstatsFieldStorageLoaded];
 		storageLoaded = storageLoadedKv.As<bool>();

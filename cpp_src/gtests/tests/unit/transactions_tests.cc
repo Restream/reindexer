@@ -109,7 +109,7 @@ TEST_F(TransactionApi, ConcurrencyTest) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.Count(), ranges.back().till);
 	for (auto it : qr) {
-		auto item = it.GetItem();
+		auto item = it.GetItem(false);
 		int id = static_cast<size_t>(item[kFieldId].As<int>());
 		auto data = item[kFieldData].As<std::string>();
 		bool idIsCorrect = false;
@@ -135,6 +135,6 @@ TEST_F(TransactionApi, IndexesOptimizeTest) {
 	ASSERT_EQ(1, qr.Count());
 
 	// Ensure, that ns indexes is in optimized state immediately after tx done
-	bool optimization_completed = qr[0].GetItem()["optimization_completed"].Get<bool>();
+	bool optimization_completed = qr[0].GetItem(false)["optimization_completed"].Get<bool>();
 	ASSERT_EQ(true, optimization_completed);
 }

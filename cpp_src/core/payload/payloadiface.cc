@@ -4,6 +4,7 @@
 #include "core/cjson/cjsondecoder.h"
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/variant.h"
+#include "core/namespace/stringsholder.h"
 #include "itoa/itoa.h"
 #include "payloadiface.h"
 #include "payloadvalue.h"
@@ -453,6 +454,38 @@ void PayloadIface<T>::ReleaseStrings(int field) {
 			auto str = *reinterpret_cast<const p_string *>(v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
 			key_string_release(const_cast<string *>(str.getCxxstr()));
 		}
+	}
+}
+
+template <typename T>
+template <typename StrHolder>
+void PayloadIface<T>::copyOrMoveStrings(int field, StrHolder &dest, bool copy) {
+	auto &f = t_.Field(field);
+	assert(f.Type() == KeyValueString);
+
+	// direct payloadvalue manipulation for speed optimize
+	if (!f.IsArray()) {
+		auto str = *reinterpret_cast<p_string *>((v_->Ptr() + f.Offset()));
+		dest.emplace_back(reinterpret_cast<intrusive_atomic_rc_wrapper<base_key_string> *>(const_cast<string *>(str.getCxxstr())), copy);
+	} else {
+		auto arr = reinterpret_cast<PayloadFieldValue::Array *>(v_->Ptr() + f.Offset());
+		for (int i = 0; i < arr->len; i++) {
+			auto str = *reinterpret_cast<const p_string *>(v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
+			dest.emplace_back(reinterpret_cast<intrusive_atomic_rc_wrapper<base_key_string> *>(const_cast<string *>(str.getCxxstr())),
+							  copy);
+		}
+	}
+}
+
+template <typename T>
+void PayloadIface<T>::MoveStrings(int field, StringsHolder &dest) {
+	copyOrMoveStrings(field, dest, false);
+}
+
+template <typename T>
+void PayloadIface<T>::CopyStrings(std::vector<key_string> &dest) {
+	for (auto field : t_.StrFields()) {
+		copyOrMoveStrings(field, dest, true);
 	}
 }
 

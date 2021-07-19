@@ -7,28 +7,26 @@
 #include "indextext.h"
 
 namespace reindexer {
-using search_engine::SearchEngine;
-using std::pair;
-using std::unique_ptr;
 
 template <typename T>
 class FuzzyIndexText : public IndexText<T> {
 public:
 	FuzzyIndexText(const FuzzyIndexText<T>& other) : IndexText<T>(other) { CreateConfig(other.GetConfig()); }
 
-	FuzzyIndexText(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields) : IndexText<T>(idef, payloadType, fields) {
+	FuzzyIndexText(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields)
+		: IndexText<T>(idef, std::move(payloadType), fields) {
 		CreateConfig();
 	}
 
-	Index* Clone() override;
+	std::unique_ptr<Index> Clone() override;
 	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) override final;
 	Variant Upsert(const Variant& key, IdType id) override final {
 		this->isBuilt_ = false;
 		return IndexText<T>::Upsert(key, id);
 	}
-	void Delete(const Variant& key, IdType id) override final {
+	void Delete(const Variant& key, IdType id, StringsHolder& strHolder) override final {
 		this->isBuilt_ = false;
-		IndexText<T>::Delete(key, id);
+		IndexText<T>::Delete(key, id, strHolder);
 	}
 
 protected:
@@ -36,11 +34,10 @@ protected:
 	FtFuzzyConfig* GetConfig() const;
 	void CreateConfig(const FtFuzzyConfig* cfg = nullptr);
 
-	SearchEngine engine_;
+	search_engine::SearchEngine engine_;
 	vector<VDocEntry> vdocs_;
+};
 
-};	// namespace reindexer
-
-Index* FuzzyIndexText_New(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields);
+std::unique_ptr<Index> FuzzyIndexText_New(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields);
 
 }  // namespace reindexer

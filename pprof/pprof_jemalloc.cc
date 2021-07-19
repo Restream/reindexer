@@ -42,6 +42,3 @@ char* cgo_pprof_get_heapprofile() {
 }
 
 char* cgo_pprof_lookup_symbol(void* ptr) { return resolve_symbol(ptr); }
-
-int cgo_pprof_start_cpu_profile(char* fname) { return -1; }
-void cgo_pprof_stop_cpu_profile() {}

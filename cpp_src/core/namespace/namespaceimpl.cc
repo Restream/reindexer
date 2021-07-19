@@ -42,7 +42,7 @@ using std::defer_lock;
 #define kTupleName "-tuple"
 
 static const string kPKIndexName = "#pk";
-const int kWALStatementItemsThreshold = 5;
+constexpr int kWALStatementItemsThreshold = 5;
 
 #define kStorageMagic 0x1234FEDC
 #define kStorageVersion 0x8
@@ -52,6 +52,7 @@ namespace reindexer {
 constexpr int64_t kStorageSerialInitial = 1;
 constexpr uint8_t kSysRecordsBackupCount = 8;
 constexpr uint8_t kSysRecordsFirstWriteCopies = 3;
+constexpr size_t kMaxMemorySizeOfStringsHolder = 1ull << 24;
 
 NamespaceImpl::IndexesStorage::IndexesStorage(const NamespaceImpl &ns) : ns_(ns) {}
 
@@ -91,8 +92,9 @@ NamespaceImpl::NamespaceImpl(const NamespaceImpl &src)
 	  nsIsLoading_{false},
 	  serverId_{src.serverId_},
 	  itemsDataSize_{src.itemsDataSize_},
-	  optimizationState_{NotOptimized} {
-	for (auto &idxIt : src.indexes_) indexes_.push_back(unique_ptr<Index>(idxIt->Clone()));
+	  optimizationState_{NotOptimized},
+	  strHolder_{makeStringsHolder()} {
+	for (auto &idxIt : src.indexes_) indexes_.push_back(idxIt->Clone());
 
 	markUpdated();
 	logPrintf(LogTrace, "Namespace::CopyContentsFrom (%s)", name_);
@@ -113,7 +115,8 @@ NamespaceImpl::NamespaceImpl(const string &name, UpdatesObservers &observers)
 	  cancelCommit_(false),
 	  lastUpdateTime_(0),
 	  nsIsLoading_(false),
-	  serverIdChanged_(false) {
+	  serverIdChanged_(false),
+	  strHolder_{makeStringsHolder()} {
 	logPrintf(LogTrace, "NamespaceImpl::NamespaceImpl (%s)", name_);
 	FlagGuardT nsLoadingGuard(nsIsLoading_);
 	items_.reserve(10000);
@@ -128,6 +131,13 @@ NamespaceImpl::NamespaceImpl(const string &name, UpdatesObservers &observers)
 
 NamespaceImpl::~NamespaceImpl() {
 	flushStorage(RdxContext());
+#ifndef NDEBUG
+	for (const auto &strHldr : strHoldersWaitingToBeDeleted_) {
+		assert(strHldr.unique());
+		(void)strHldr;
+	}
+	assert(strHolder_.unique());
+#endif
 	logPrintf(LogTrace, "Namespace::~Namespace (%s), %d items", name_, items_.size());
 }
 
@@ -140,11 +150,14 @@ void NamespaceImpl::OnConfigUpdated(DBConfigProvider &configProvider, const RdxC
 
 	auto wlck = wLock(ctx);
 
+	const bool needReoptimizeIndexes = (config_.optimizationSortWorkers == 0) != (configData.optimizationSortWorkers == 0);
 	config_ = configData;
 	storageOpts_.LazyLoad(configData.lazyLoad);
 	storageOpts_.noQueryIdleThresholdSec = configData.noQueryIdleThreshold;
 
-	updateSortedIdxCount();
+	if (needReoptimizeIndexes) {
+		updateSortedIdxCount();
+	}
 
 	if (wal_.Resize(config_.walSize)) {
 		logPrintf(LogInfo, "[%s] WAL has been resized lsn #%s, max size %ld", name_, repl_.lastLsn, wal_.Capacity());
@@ -217,7 +230,11 @@ void NamespaceImpl::recreateCompositeIndexes(int startIdx, int endIdx) {
 			indexDef.opts_ = index->Opts();
 			indexDef.FromType(index->Type());
 
-			index.reset(Index::New(indexDef, payloadType_, index->Fields()));
+			auto newIndex{Index::New(indexDef, payloadType_, index->Fields())};
+			if (index->HoldsStrings()) {
+				strHolder_->Add(std::move(index));
+			}
+			std::swap(index, newIndex);
 		}
 	}
 }
@@ -270,7 +287,7 @@ void NamespaceImpl::updateItems(PayloadType oldPlType, const FieldsSet &changedF
 			auto &index = *indexes_[fieldIdx];
 			if ((fieldIdx == 0) || deltaFields <= 0) {
 				oldValue.Get(fieldIdx, skrefsDel, true);
-				index.Delete(skrefsDel, rowId);
+				index.Delete(skrefsDel, rowId, *strHolder_);
 			}
 
 			if ((fieldIdx == 0) || deltaFields >= 0) {
@@ -398,13 +415,13 @@ void NamespaceImpl::dropIndex(const IndexDef &index) {
 		}
 	}
 
-	const unique_ptr<Index> &indexToRemove = indexes_[fieldIdx];
+	std::unique_ptr<Index> &indexToRemove = indexes_[fieldIdx];
 	if (indexToRemove->Opts().IsPK()) {
 		indexesNames_.erase(kPKIndexName);
 	}
 
 	// Update indexes fields refs
-	for (const unique_ptr<Index> &idx : indexes_) {
+	for (const std::unique_ptr<Index> &idx : indexes_) {
 		FieldsSet fields = idx->Fields(), newFields;
 		int jsonPathIdx = 0;
 		for (auto field : fields) {
@@ -427,6 +444,7 @@ void NamespaceImpl::dropIndex(const IndexDef &index) {
 		updateItems(oldPlType, changedFields, -1);
 	}
 
+	removeIndex(indexToRemove);
 	indexes_.erase(indexes_.begin() + fieldIdx);
 	indexesNames_.erase(itIdxName);
 	updateSortedIdxCount();
@@ -490,7 +508,7 @@ void NamespaceImpl::verifyUpdateIndex(const IndexDef &indexDef) const {
 		return;
 	}
 
-	const auto newIndex = unique_ptr<Index>(Index::New(indexDef, PayloadType(), FieldsSet()));
+	const auto newIndex = std::unique_ptr<Index>(Index::New(indexDef, PayloadType(), FieldsSet()));
 	if (indexDef.opts_.IsSparse()) {
 		const auto newSparseIndex = std::unique_ptr<Index>(Index::New(indexDef, payloadType_, {}));
 	} else {
@@ -535,7 +553,7 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef) {
 		return;
 	}
 
-	auto newIndex = unique_ptr<Index>(Index::New(indexDef, PayloadType(), FieldsSet()));
+	std::unique_ptr<Index> newIndex = Index::New(indexDef, PayloadType(), FieldsSet());
 	FieldsSet fields;
 	if (opts.IsSparse()) {
 		for (const string &jsonPath : jsonPaths) {
@@ -557,7 +575,7 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef) {
 		newIndex->UpdatePayloadType(payloadType_);
 
 		FieldsSet changedFields{0, idxNo};
-		insertIndex(newIndex.release(), idxNo, indexName);
+		insertIndex(std::move(newIndex), idxNo, indexName);
 		updateItems(oldPlType, changedFields, 1);
 	}
 	updateSortedIdxCount();
@@ -649,8 +667,9 @@ void NamespaceImpl::addCompositeIndex(const IndexDef &indexDef) {
 	updateSortedIdxCount();
 }
 
-void NamespaceImpl::insertIndex(Index *newIndex, int idxNo, const string &realName) {
-	indexes_.insert(indexes_.begin() + idxNo, unique_ptr<Index>(newIndex));
+void NamespaceImpl::insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const string &realName) {
+	const bool isPK = newIndex->Opts().IsPK();
+	indexes_.insert(indexes_.begin() + idxNo, std::move(newIndex));
 
 	for (auto &n : indexesNames_) {
 		if (n.second >= idxNo) {
@@ -660,7 +679,7 @@ void NamespaceImpl::insertIndex(Index *newIndex, int idxNo, const string &realNa
 
 	indexesNames_.insert({realName, idxNo});
 
-	if (newIndex->Opts().IsPK()) {
+	if (isPK) {
 		indexesNames_.insert({kPKIndexName, idxNo});
 	}
 }
@@ -739,7 +758,7 @@ void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsCon
 		item.Value() = items_[item.Id()];
 	}
 	result.getTagsMatcher(0) = tagsMatcher_;
-	result.lockResults();
+	assert(result.IsNamespaceAdded(this));
 
 	if (statementReplication) {
 		WrSerializer ser;
@@ -834,6 +853,7 @@ void NamespaceImpl::Delete(Item &item, const NsContext &ctx) {
 	item.setID(id);
 
 	WALRecord wrec{WalItemModify, ritem->GetCJSON(), ritem->tagsMatcher().version(), ModeDelete, ctx.inTransaction};
+	ritem->RealValue() = items_[id];
 	doDelete(id);
 
 	lsn_t itemLsn(item.GetLSN());
@@ -854,7 +874,7 @@ void NamespaceImpl::doDelete(IdType id) {
 
 	if (storage_) {
 		try {
-			unique_lock<std::mutex> lck(locker_.StorageLock());
+			std::unique_lock<std::mutex> lck(locker_.StorageLock());
 			updates_->Remove(pk.Slice());
 			unflushedCount_.fetch_add(1, std::memory_order_release);
 		} catch (const Error &err) {
@@ -870,7 +890,7 @@ void NamespaceImpl::doDelete(IdType id) {
 
 	// erase from composite indexes
 	for (field = indexes_.firstCompositePos(); field < indexes_.totalSize(); ++field) {
-		indexes_[field]->Delete(Variant(items_[id]), id);
+		indexes_[field]->Delete(Variant(items_[id]), id, *strHolder_);
 	}
 
 	// Holder for tuple. It is required for sparse indexes will be valid
@@ -894,7 +914,7 @@ void NamespaceImpl::doDelete(IdType id) {
 			pl.Get(field, skrefs, index.Opts().IsArray());
 		}
 		// Delete value from index
-		index.Delete(skrefs, id);
+		index.Delete(skrefs, id, *strHolder_);
 	} while (++field != borderIdx);
 
 	// free PayloadValue
@@ -927,7 +947,7 @@ void NamespaceImpl::Delete(const Query &q, QueryResults &result, const NsContext
 	SelectFunctionsHolder func;
 	selCtx.functions = &func;
 	selecter(result, selCtx, ctx.rdxContext);
-	result.lockResults();
+	assert(result.IsNamespaceAdded(this));
 
 	auto tmStart = high_resolution_clock::now();
 	for (auto &r : result.Items()) {
@@ -954,6 +974,12 @@ void NamespaceImpl::Delete(const Query &q, QueryResults &result, const NsContext
 	}
 }
 
+void NamespaceImpl::removeIndex(std::unique_ptr<Index> &idx) {
+	if (idx->HoldsStrings() && !(strHoldersWaitingToBeDeleted_.empty() && strHolder_.unique())) {
+		strHolder_->Add(std::move(idx));
+	}
+}
+
 void NamespaceImpl::Truncate(const NsContext &ctx) {
 	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
 
@@ -975,7 +1001,7 @@ void NamespaceImpl::Truncate(const NsContext &ctx) {
 			pk << kStorageItemPrefix;
 			pl.SerializeFields(pk, pkFields());
 			try {
-				unique_lock<std::mutex> lck(locker_.StorageLock());
+				std::unique_lock<std::mutex> lck(locker_.StorageLock());
 				updates_->Remove(pk.Slice());
 				unflushedCount_.fetch_add(1, std::memory_order_release);
 			} catch (const Error &err) {
@@ -991,9 +1017,10 @@ void NamespaceImpl::Truncate(const NsContext &ctx) {
 	itemsDataSize_ = 0;
 	for (size_t i = 0; i < indexes_.size(); ++i) {
 		const IndexOpts opts = indexes_[i]->Opts();
-		unique_ptr<Index> newIdx{Index::New(getIndexDefinition(i), indexes_[i]->GetPayloadType(), indexes_[i]->Fields())};
+		std::unique_ptr<Index> newIdx{Index::New(getIndexDefinition(i), indexes_[i]->GetPayloadType(), indexes_[i]->Fields())};
 		newIdx->SetOpts(opts);
 		std::swap(indexes_[i], newIdx);
+		removeIndex(newIdx);
 	}
 
 	WrSerializer ser;
@@ -1075,7 +1102,7 @@ Transaction NamespaceImpl::NewTransaction(const RdxContext &ctx) {
 	return Transaction(name_, payloadType_, tagsMatcher_, pkFields(), schema_);
 }
 
-void NamespaceImpl::CommitTransaction(Transaction &tx, QueryResults &result, const NsContext &ctx) {
+void NamespaceImpl::CommitTransaction(Transaction &tx, QueryResults &result, NsContext ctx) {
 	logPrintf(LogTrace, "[repl:%s]:%d CommitTransaction start", name_, serverId_);
 	Locker::WLockT wlck;
 	if (!ctx.noLock) {
@@ -1086,8 +1113,7 @@ void NamespaceImpl::CommitTransaction(Transaction &tx, QueryResults &result, con
 		calc.LockHit();
 	}
 
-	NsContext nsCtx{ctx};
-	nsCtx.NoLock().InTransaction();
+	ctx.NoLock().InTransaction();
 
 	WALRecord initWrec(WalInitTransaction, 0, true);
 	lsn_t lsn(wal_.Add(initWrec), serverId_);
@@ -1098,17 +1124,18 @@ void NamespaceImpl::CommitTransaction(Transaction &tx, QueryResults &result, con
 	for (auto &step : tx.GetSteps()) {
 		if (step.query_) {
 			QueryResults qr;
+			qr.AddNamespace(std::shared_ptr<NamespaceImpl>{this, [](NamespaceImpl *) {}}, ctx);
 			if (step.query_->type_ == QueryDelete) {
-				Delete(*step.query_, qr, nsCtx);
+				Delete(*step.query_, qr, ctx);
 			} else {
-				Update(*step.query_, qr, nsCtx);
+				Update(*step.query_, qr, ctx);
 			}
 		} else {
 			Item item = tx.GetItem(std::move(step));
 			if (step.modifyMode_ == ModeDelete) {
-				Delete(item, nsCtx);
+				Delete(item, ctx);
 			} else {
-				modifyItem(item, nsCtx, step.modifyMode_);
+				modifyItem(item, ctx, step.modifyMode_);
 			}
 			result.AddItem(item);
 		}
@@ -1134,7 +1161,7 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 
 		// Delete from composite indexes first
 		for (int field = indexes_.firstCompositePos(); field < indexes_.totalSize(); ++field) {
-			indexes_[field]->Delete(Variant(plData), id);
+			indexes_[field]->Delete(Variant(plData), id, *strHolder_);
 		}
 	}
 
@@ -1178,7 +1205,7 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 			} else {
 				pl.Get(field, krefs, index.Opts().IsArray());
 			}
-			index.Delete(krefs, id);
+			index.Delete(krefs, id, *strHolder_);
 		}
 		// Put value to index
 		krefs.resize(0);
@@ -1376,7 +1403,7 @@ void NamespaceImpl::optimizeIndexes(const NsContext &ctx) {
 			NSUpdateSortedContext sortCtx(*this, i++);
 			idxIt->MakeSortOrders(sortCtx);
 			// Build in multiple threads
-			unique_ptr<thread[]> thrs(new thread[maxIndexWorkers]);
+			std::unique_ptr<thread[]> thrs(new thread[maxIndexWorkers]);
 			auto indexes = &this->indexes_;
 
 			for (int i = 0; i < maxIndexWorkers; i++) {
@@ -1496,7 +1523,7 @@ NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext &ctx) {
 		ret.indexes.emplace_back(idx->GetMemStat());
 		auto &istat = ret.indexes.back();
 		istat.sortOrdersSize = idx->IsOrdered() ? (items_.size() * sizeof(IdType)) : 0;
-		ret.Total.indexesSize += istat.idsetPlainSize + istat.idsetBTreeSize + istat.sortOrdersSize + istat.fulltextSize + istat.columnSize;
+		ret.Total.indexesSize += istat.GetIndexStructSize();
 		ret.Total.dataSize += istat.dataSize;
 		ret.Total.cacheSize += istat.idsetCache.totalSize;
 	}
@@ -1504,6 +1531,19 @@ NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext &ctx) {
 	ret.storageOK = storage_ != nullptr;
 	ret.storagePath = dbpath_;
 	ret.optimizationCompleted = (optimizationState_ == OptimizationCompleted);
+
+	ret.stringsWaitingToBeDeletedSize = strHolder_->MemStat();
+	for (const auto &idx : strHolder_->Indexes()) {
+		const auto &istat = idx->GetMemStat();
+		ret.stringsWaitingToBeDeletedSize += istat.GetIndexStructSize() + istat.dataSize;
+	}
+	for (const auto &strHldr : strHoldersWaitingToBeDeleted_) {
+		ret.stringsWaitingToBeDeletedSize += strHldr->MemStat();
+		for (const auto &idx : strHldr->Indexes()) {
+			const auto &istat = idx->GetMemStat();
+			ret.stringsWaitingToBeDeletedSize += istat.GetIndexStructSize() + istat.dataSize;
+		}
+	}
 
 	logPrintf(LogTrace,
 			  "[GetMemStat:%s]:%d replication (dataHash=%ld  dataCount=%d  lastLsn=%s) replication.masterState (dataHash=%ld dataCount=%d "
@@ -1801,7 +1841,7 @@ void NamespaceImpl::LoadFromStorage(const RdxContext &ctx) {
 	opts.FillCache(false);
 	size_t ldcount = 0;
 	logPrintf(LogTrace, "Loading items to '%s' from storage", name_);
-	unique_ptr<datastorage::Cursor> dbIter(storage_->GetCursor(opts));
+	std::unique_ptr<datastorage::Cursor> dbIter(storage_->GetCursor(opts));
 	ItemImpl item(payloadType_, tagsMatcher_);
 	item.Unsafe(true);
 	int errCount = 0;
@@ -1895,20 +1935,51 @@ void NamespaceImpl::removeExpiredItems(RdxActivityContext *ctx) {
 	if (repl_.slaveMode) {
 		return;
 	}
+	const NsContext nsCtx{rdxCtx, true};
 	for (const std::unique_ptr<Index> &index : indexes_) {
 		if ((index->Type() != IndexTtl) || (index->Size() == 0)) continue;
 		int64_t expirationthreshold =
 			std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count() -
 			index->GetTTLValue();
 		QueryResults qr;
+		qr.AddNamespace(std::shared_ptr<NamespaceImpl>{this, [](NamespaceImpl *) {}}, nsCtx);
 		Delete(Query(name_).Where(index->Name(), CondLt, expirationthreshold), qr, NsContext(rdxCtx).NoLock());
 	}
+}
+
+void NamespaceImpl::removeExpiredStrings(RdxActivityContext *ctx) {
+	const RdxContext rdxCtx{ctx};
+	auto wlck = wLock(rdxCtx);
+	while (!strHoldersWaitingToBeDeleted_.empty()) {
+		if (strHoldersWaitingToBeDeleted_.front().unique()) {
+			strHoldersWaitingToBeDeleted_.pop_front();
+		} else {
+			break;
+		}
+	}
+	if (strHoldersWaitingToBeDeleted_.empty() && strHolder_.unique()) {
+		strHolder_->Clear();
+	} else if (strHolder_->HoldsIndexes() || strHolder_->MemStat() > kMaxMemorySizeOfStringsHolder) {
+		strHoldersWaitingToBeDeleted_.push_back(std::move(strHolder_));
+		strHolder_ = makeStringsHolder();
+	}
+}
+
+StringsHolderPtr NamespaceImpl::StrHolder(const NsContext &ctx) {
+	assert(ctx.noLock);
+	Locker::RLockT rlck;
+	if (!ctx.noLock) {
+		rlck = rLock(ctx.rdxContext);
+	}
+	StringsHolderPtr ret{strHolder_};
+	return ret;
 }
 
 void NamespaceImpl::BackgroundRoutine(RdxActivityContext *ctx) {
 	flushStorage(ctx);
 	optimizeIndexes(NsContext(ctx));
 	removeExpiredItems(ctx);
+	removeExpiredStrings(ctx);
 }
 
 void NamespaceImpl::flushStorage(const RdxContext &ctx) {
@@ -1916,7 +1987,7 @@ void NamespaceImpl::flushStorage(const RdxContext &ctx) {
 	if (storage_) {
 		if (unflushedCount_.load(std::memory_order_acquire) > 0) {
 			try {
-				unique_lock<std::mutex> lck(locker_.StorageLock());
+				std::unique_lock<std::mutex> lck(locker_.StorageLock());
 				doFlushStorage();
 			} catch (const Error &err) {
 				if (err.code() != errNamespaceInvalidated) {
@@ -1972,15 +2043,15 @@ Item NamespaceImpl::NewItem(const NsContext &ctx) {
 	if (!ctx.noLock) {
 		rlck = rLock(ctx.rdxContext);
 	}
-	auto impl_ = pool_.get(ItemImpl(payloadType_, tagsMatcher_, pkFields(), schema_));
+	auto impl_ = pool_.get(0, payloadType_, tagsMatcher_, pkFields(), schema_);
 	impl_->tagsMatcher() = tagsMatcher_;
 	impl_->tagsMatcher().clearUpdated();
-	return Item(impl_);
+	return Item(impl_.release());
 }
 
 void NamespaceImpl::ToPool(ItemImpl *item) {
 	item->Clear();
-	pool_.put(item);
+	pool_.put(std::unique_ptr<ItemImpl>{item});
 }
 
 // Get meta data from storage by key
@@ -2040,7 +2111,7 @@ vector<string> NamespaceImpl::enumMeta() const {
 
 	StorageOpts opts;
 	opts.FillCache(false);
-	unique_ptr<datastorage::Cursor> dbIter(storage_->GetCursor(opts));
+	std::unique_ptr<datastorage::Cursor> dbIter(storage_->GetCursor(opts));
 	size_t prefixLen = strlen(kStorageMetaPrefix);
 
 	for (dbIter->Seek(std::string_view(kStorageMetaPrefix));
@@ -2094,6 +2165,7 @@ int NamespaceImpl::getSortedIdxCount() const {
 void NamespaceImpl::updateSortedIdxCount() {
 	int sortedIdxCount = getSortedIdxCount();
 	for (auto &idx : indexes_) idx->SetSortedIdxCount(sortedIdxCount);
+	markUpdated();
 }
 
 IdType NamespaceImpl::createItem(size_t realSize) {
@@ -2236,7 +2308,7 @@ const FieldsSet &NamespaceImpl::pkFields() {
 
 void NamespaceImpl::writeToStorage(std::string_view key, std::string_view data) {
 	try {
-		unique_lock<std::mutex> lck(locker_.StorageLock());
+		std::unique_lock<std::mutex> lck(locker_.StorageLock());
 		updates_->Put(key, data);
 		if (unflushedCount_.fetch_add(1, std::memory_order_release) > 20000) doFlushStorage();
 	} catch (const Error &err) {

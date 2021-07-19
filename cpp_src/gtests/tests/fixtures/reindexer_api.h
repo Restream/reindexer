@@ -67,6 +67,16 @@ public:
 public:
 	const string default_namespace = "test_namespace";
 	ReindexerTestApi<reindexer::Reindexer> rt;
+
+protected:
+	void initializeDefaultNs() {
+		auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled());
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->AddIndex(default_namespace, {"value", "text", "string", IndexOpts()});
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
 };
 
 class CanceledRdxContext : public reindexer::IRdxCancelContext {

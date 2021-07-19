@@ -10,16 +10,16 @@ namespace reindexer {
 template <typename T>
 class TtlIndex : public IndexOrdered<T> {
 public:
-	TtlIndex(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields);
+	TtlIndex(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields);
 	TtlIndex(const TtlIndex<T> &other);
 	int64_t GetTTLValue() const override;
-	Index *Clone() override;
+	std::unique_ptr<Index> Clone() override;
 
 private:
 	/// Expiration value in seconds.
 	int64_t expireAfter_ = 0;
 };
 
-Index *TtlIndex_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields);
+std::unique_ptr<Index> TtlIndex_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields);
 
 }  // namespace reindexer

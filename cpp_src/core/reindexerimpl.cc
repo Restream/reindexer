@@ -360,11 +360,8 @@ Error ReindexerImpl::closeNamespace(std::string_view nsName, const RdxContext& c
 		}
 
 	} catch (const Error& err) {
-		ns.reset();
 		return err;
 	}
-	// Here will called destructor
-	ns.reset();
 	return errOK;
 }
 
@@ -482,19 +479,70 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 	return errOK;
 }
 
-Error ReindexerImpl::Insert(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {
+template <bool needUpdateSystemNs, typename MakeCtxStrFn, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg, typename... Args>
+Error ReindexerImpl::applyNsFunction(std::string_view nsName, Arg arg, Args... args, const InternalRdxContext& ctx,
+									 const MakeCtxStrFn& makeCtxStr) {
 	Error err;
 	try {
 		WrSerializer ser;
-		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "INSERT INTO " << nsName).Slice() : ""sv, activities_);
+		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? makeCtxStr(ser).Slice() : ""sv, activities_);
 		auto ns = getNamespace(nsName, rdxCtx);
-		ns->Insert(item, rdxCtx);
-		updateToSystemNamespace(nsName, item, rdxCtx);
+		(*ns.*MemFn)(arg, args..., rdxCtx);
+		if constexpr (needUpdateSystemNs) {
+			updateToSystemNamespace(nsName, arg, rdxCtx);
+		}
 	} catch (const Error& e) {
 		err = e;
 	}
 	if (ctx.Compl()) ctx.Compl()(err);
 	return err;
+}
+
+template <typename>
+struct IsVoidReturn;
+
+template <typename R, typename... Args>
+struct IsVoidReturn<R (Namespace::*)(Args...)> : public std::false_type {};
+
+template <typename... Args>
+struct IsVoidReturn<void (Namespace::*)(Args...)> : public std::true_type {};
+
+template <auto MemFn, typename MakeCtxStrFn, typename Arg, typename... Args>
+Error ReindexerImpl::applyNsFunction(std::string_view nsName, const InternalRdxContext& ctx, const MakeCtxStrFn& makeCtxStr, Arg& arg,
+									 Args... args) {
+	Error err;
+	try {
+		WrSerializer ser;
+		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? makeCtxStr(ser).Slice() : ""sv, activities_);
+		auto ns = getNamespace(nsName, rdxCtx);
+		if constexpr (IsVoidReturn<decltype(MemFn)>::value) {
+			(*ns.*MemFn)(arg, args..., rdxCtx);
+		} else {
+			arg = (*ns.*MemFn)(args..., rdxCtx);
+		}
+	} catch (const Error& e) {
+		err = e;
+	}
+	if (ctx.Compl()) ctx.Compl()(err);
+	return err;
+}
+
+#define APPLY_NS_FUNCTION1(needUpdateSys, memFn, arg)                                                                                     \
+	return applyNsFunction<needUpdateSys, decltype(makeCtxStr), void(decltype(arg), const NsContext&), &Namespace::memFn, decltype(arg)>( \
+		nsName, arg, ctx, makeCtxStr);
+
+#define APPLY_NS_FUNCTION2(needUpdateSys, memFn, arg1, arg2)                                                                               \
+	return applyNsFunction<needUpdateSys, decltype(makeCtxStr), void(decltype(arg1), decltype(arg2), const NsContext&), &Namespace::memFn, \
+						   decltype(arg1), decltype(arg2)>(nsName, arg1, arg2, ctx, makeCtxStr);
+
+Error ReindexerImpl::Insert(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {
+	const auto makeCtxStr = [nsName](WrSerializer& ser) -> WrSerializer& { return ser << "INSERT INTO " << nsName; };
+	APPLY_NS_FUNCTION1(true, Insert, item);
+}
+
+Error ReindexerImpl::Insert(std::string_view nsName, Item& item, QueryResults& qr, const InternalRdxContext& ctx) {
+	const auto makeCtxStr = [nsName](WrSerializer& ser) -> WrSerializer& { return ser << "INSERT INTO " << nsName; };
+	APPLY_NS_FUNCTION2(true, Insert, item, qr);
 }
 
 static void printPkValue(const Item::FieldRef& f, WrSerializer& ser) {
@@ -519,20 +567,19 @@ static WrSerializer& printPkFields(const Item& item, WrSerializer& ser) {
 }
 
 Error ReindexerImpl::Update(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {
-	Error err;
-	try {
-		WrSerializer ser;
-		const auto rdxCtx = ctx.CreateRdxContext(
-			ctx.NeedTraceActivity() ? (ser << "UPDATE " << nsName << " WHERE ", printPkFields(item, ser)).Slice() : ""sv, activities_);
-		auto ns = getNamespace(nsName, rdxCtx);
+	const auto makeCtxStr = [nsName, &item](WrSerializer& ser) -> WrSerializer& {
+		ser << "UPDATE " << nsName << " WHERE ";
+		return printPkFields(item, ser);
+	};
+	APPLY_NS_FUNCTION1(true, Update, item);
+}
 
-		ns->Update(item, rdxCtx);
-		updateToSystemNamespace(nsName, item, rdxCtx);
-	} catch (const Error& e) {
-		err = e;
-	}
-	if (ctx.Compl()) ctx.Compl()(err);
-	return err;
+Error ReindexerImpl::Update(std::string_view nsName, Item& item, QueryResults& qr, const InternalRdxContext& ctx) {
+	const auto makeCtxStr = [nsName, &item](WrSerializer& ser) -> WrSerializer& {
+		ser << "UPDATE " << nsName << " WHERE ";
+		return printPkFields(item, ser);
+	};
+	APPLY_NS_FUNCTION2(true, Update, item, qr);
 }
 
 Error ReindexerImpl::Update(const Query& q, QueryResults& result, const InternalRdxContext& ctx) {
@@ -544,7 +591,7 @@ Error ReindexerImpl::Update(const Query& q, QueryResults& result, const Internal
 		if (ns->IsSystem(rdxCtx)) {
 			const std::string kNsName = ns->GetName(rdxCtx);
 			for (auto it = result.begin(); it != result.end(); ++it) {
-				auto item = it.GetItem();
+				auto item = it.GetItem(false);
 				updateToSystemNamespace(kNsName, item, rdxCtx);
 			}
 		}
@@ -555,19 +602,19 @@ Error ReindexerImpl::Update(const Query& q, QueryResults& result, const Internal
 }
 
 Error ReindexerImpl::Upsert(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {
-	Error err;
-	try {
-		WrSerializer ser;
-		const auto rdxCtx = ctx.CreateRdxContext(
-			ctx.NeedTraceActivity() ? (ser << "UPSERT INTO " << nsName << " WHERE ", printPkFields(item, ser)).Slice() : ""sv, activities_);
-		auto ns = getNamespace(nsName, rdxCtx);
-		ns->Upsert(item, rdxCtx);
-		updateToSystemNamespace(nsName, item, rdxCtx);
-	} catch (const Error& e) {
-		err = e;
-	}
-	if (ctx.Compl()) ctx.Compl()(err);
-	return err;
+	const auto makeCtxStr = [nsName, &item](WrSerializer& ser) -> WrSerializer& {
+		ser << "UPSERT INTO " << nsName << " WHERE ";
+		return printPkFields(item, ser);
+	};
+	APPLY_NS_FUNCTION1(true, Upsert, item);
+}
+
+Error ReindexerImpl::Upsert(std::string_view nsName, Item& item, QueryResults& qr, const InternalRdxContext& ctx) {
+	const auto makeCtxStr = [nsName, &item](WrSerializer& ser) -> WrSerializer& {
+		ser << "UPSERT INTO " << nsName << " WHERE ";
+		return printPkFields(item, ser);
+	};
+	APPLY_NS_FUNCTION2(true, Upsert, item, qr);
 }
 
 Item ReindexerImpl::NewItem(std::string_view nsName, const InternalRdxContext& ctx) {
@@ -613,68 +660,44 @@ Error ReindexerImpl::RollBackTransaction(Transaction& tr) {
 }
 
 Error ReindexerImpl::GetMeta(std::string_view nsName, const string& key, string& data, const InternalRdxContext& ctx) {
-	try {
-		WrSerializer ser;
-		const auto rdxCtx = ctx.CreateRdxContext(
-			ctx.NeedTraceActivity() ? (ser << "SELECT META FROM " << nsName << " WHERE KEY = '" << key << '\'').Slice() : ""sv,
-			activities_);
-		data = getNamespace(nsName, rdxCtx)->GetMeta(key, rdxCtx);
-	} catch (const Error& err) {
-		return err;
-	}
-	return errOK;
+	const auto makeCtxStr = [nsName, &key](WrSerializer& ser) -> WrSerializer& {
+		return ser << "SELECT META FROM " << nsName << " WHERE KEY = '" << key << '\'';
+	};
+	return applyNsFunction<&Namespace::GetMeta>(nsName, ctx, makeCtxStr, data, key);
 }
 
 Error ReindexerImpl::PutMeta(std::string_view nsName, const string& key, std::string_view data, const InternalRdxContext& ctx) {
-	try {
-		WrSerializer ser;
-		const auto rdxCtx = ctx.CreateRdxContext(
-			ctx.NeedTraceActivity() ? (ser << "UPDATE " << nsName << " SET META = '" << data << "' WHERE KEY = '" << key << '\'').Slice()
-									: ""sv,
-			activities_);
-		getNamespace(nsName, rdxCtx)->PutMeta(key, data, rdxCtx);
-	} catch (const Error& err) {
-		return err;
-	}
-	return errOK;
+	const auto makeCtxStr = [nsName, data, &key](WrSerializer& ser) -> WrSerializer& {
+		return ser << "UPDATE " << nsName << " SET META = '" << data << "' WHERE KEY = '" << key << '\'';
+	};
+	return applyNsFunction<&Namespace::PutMeta>(nsName, ctx, makeCtxStr, key, data);
 }
 
 Error ReindexerImpl::EnumMeta(std::string_view nsName, vector<string>& keys, const InternalRdxContext& ctx) {
-	try {
-		WrSerializer ser;
-		const auto rdxCtx =
-			ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "SELECT META FROM " << nsName).Slice() : ""sv, activities_);
-		keys = getNamespace(nsName, rdxCtx)->EnumMeta(rdxCtx);
-	} catch (const Error& err) {
-		return err;
-	}
-	return errOK;
+	const auto makeCtxStr = [nsName](WrSerializer& ser) -> WrSerializer& { return ser << "SELECT META FROM " << nsName; };
+	return applyNsFunction<&Namespace::EnumMeta>(nsName, ctx, makeCtxStr, keys);
 }
 
 Error ReindexerImpl::Delete(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {
-	Error err;
-	try {
-		WrSerializer ser;
-		const auto rdxCtx = ctx.CreateRdxContext(
-			ctx.NeedTraceActivity() ? (ser << "DELETE FROM " << nsName << " WHERE ", printPkFields(item, ser)).Slice() : ""sv, activities_);
-		auto ns = getNamespace(nsName, rdxCtx);
-		ns->Delete(item, rdxCtx);
-	} catch (const Error& e) {
-		err = e;
-	}
-	if (ctx.Compl()) ctx.Compl()(err);
-	return err;
+	const auto makeCtxStr = [nsName, &item](WrSerializer& ser) -> WrSerializer& {
+		ser << "DELETE FROM " << nsName << " WHERE ";
+		return printPkFields(item, ser);
+	};
+	APPLY_NS_FUNCTION1(false, Delete, item);
 }
+
+Error ReindexerImpl::Delete(std::string_view nsName, Item& item, QueryResults& qr, const InternalRdxContext& ctx) {
+	const auto makeCtxStr = [nsName, &item](WrSerializer& ser) -> WrSerializer& {
+		ser << "DELETE FROM " << nsName << " WHERE ";
+		return printPkFields(item, ser);
+	};
+	APPLY_NS_FUNCTION2(false, Delete, item, qr);
+}
+
 Error ReindexerImpl::Delete(const Query& q, QueryResults& result, const InternalRdxContext& ctx) {
-	try {
-		WrSerializer ser;
-		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? q.GetSQL(ser).Slice() : "", activities_, result);
-		auto ns = getNamespace(q._namespace, rdxCtx);
-		ns->Delete(q, result, rdxCtx);
-	} catch (const Error& err) {
-		return err;
-	}
-	return errOK;
+	const auto makeCtxStr = [&q](WrSerializer& ser) -> WrSerializer& { return q.GetSQL(ser); };
+	const std::string_view nsName = q._namespace;
+	APPLY_NS_FUNCTION2(false, Delete, q, result);
 }
 
 Error ReindexerImpl::Select(std::string_view query, QueryResults& result, const InternalRdxContext& ctx) {
@@ -883,6 +906,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 		queryResultsContexts.emplace_back(jns->payloadType_, jns->tagsMatcher_, FieldsSet(jns->tagsMatcher_, jq.selectFilter_),
 										  jns->schema_);
 
+		result.AddNamespace(jns, {rdxCtx, true});
 		if (preResult->dataMode == JoinPreResult::ModeValues) {
 			jItemQ.entries.ForEachEntry([&jns](QueryEntry& qe) {
 				if (jns->indexes_[qe.idxNo]->Opts().IsSparse()) qe.idxNo = IndexValueType::SetByJsonPath;
@@ -917,6 +941,7 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& 
 		selCtx.nsid = 0;
 		selCtx.isForceAll = !q.mergeQueries_.empty();
 		ns->Select(result, selCtx, ctx);
+		result.AddNamespace(ns, {ctx, true});
 	}
 
 	// should be destroyed after results.lockResults()
@@ -937,6 +962,7 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& 
 			mctx.joinedSelectors = mergeJoinedSelectors.back().size() ? &mergeJoinedSelectors.back() : nullptr;
 
 			mns->Select(result, mctx, ctx);
+			result.AddNamespace(mns, {ctx, true});
 		}
 
 		ItemRefVector& itemRefVec = result.Items();
@@ -968,7 +994,6 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& 
 	}
 	// Adding context to QueryResults
 	for (const auto& jctx : joinQueryResultsContexts) result.addNSContext(jctx.type_, jctx.tagsMatcher_, jctx.fieldsFilter_, jctx.schema_);
-	result.lockResults();
 }
 
 template void ReindexerImpl::doSelect(const Query&, QueryResults&, NsLocker<RdxContext>&, SelectFunctionsHolder&, const RdxContext&);
@@ -1003,66 +1028,34 @@ Namespace::Ptr ReindexerImpl::getNamespaceNoThrow(std::string_view nsName, const
 }
 
 Error ReindexerImpl::AddIndex(std::string_view nsName, const IndexDef& indexDef, const InternalRdxContext& ctx) {
-	try {
-		WrSerializer ser;
-		const auto rdxCtx = ctx.CreateRdxContext(
-			ctx.NeedTraceActivity() ? (ser << "CREATE INDEX " << indexDef.name_ << " ON " << nsName).Slice() : ""sv, activities_);
-		auto ns = getNamespace(nsName, rdxCtx);
-		ns->AddIndex(indexDef, rdxCtx);
-	} catch (const Error& err) {
-		return err;
-	}
-	return Error(errOK);
+	const auto makeCtxStr = [nsName, &indexDef](WrSerializer& ser) -> WrSerializer& {
+		return ser << "CREATE INDEX " << indexDef.name_ << " ON " << nsName;
+	};
+	return applyNsFunction<&Namespace::AddIndex>(nsName, ctx, makeCtxStr, indexDef);
 }
 
 Error ReindexerImpl::SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext& ctx) {
-	try {
-		WrSerializer ser;
-		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "SET SCHEMA ON " << nsName).Slice() : ""sv, activities_);
-		auto ns = getNamespace(nsName, rdxCtx);
-		ns->SetSchema(schema, rdxCtx);
-	} catch (const Error& err) {
-		return err;
-	}
-	return Error(errOK);
+	const auto makeCtxStr = [nsName](WrSerializer& ser) -> WrSerializer& { return ser << "SET SCHEMA ON " << nsName; };
+	return applyNsFunction<&Namespace::SetSchema>(nsName, ctx, makeCtxStr, schema);
 }
 
 Error ReindexerImpl::GetSchema(std::string_view nsName, int format, std::string& schema, const InternalRdxContext& ctx) {
-	try {
-		WrSerializer ser;
-		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "GET SCHEMA ON " << nsName).Slice() : ""sv, activities_);
-		auto ns = getNamespace(nsName, rdxCtx);
-		schema = ns->GetSchema(format, rdxCtx);
-	} catch (const Error& err) {
-		return err;
-	}
-	return Error(errOK);
+	const auto makeCtxStr = [nsName](WrSerializer& ser) -> WrSerializer& { return ser << "GET SCHEMA ON " << nsName; };
+	return applyNsFunction<&Namespace::GetSchema>(nsName, ctx, makeCtxStr, schema, format);
 }
 
 Error ReindexerImpl::UpdateIndex(std::string_view nsName, const IndexDef& indexDef, const InternalRdxContext& ctx) {
-	try {
-		WrSerializer ser;
-		const auto rdxCtx = ctx.CreateRdxContext(
-			ctx.NeedTraceActivity() ? (ser << "UPDATE INDEX " << indexDef.name_ << " ON " << nsName).Slice() : ""sv, activities_);
-		auto ns = getNamespace(nsName, rdxCtx);
-		ns->UpdateIndex(indexDef, rdxCtx);
-	} catch (const Error& err) {
-		return err;
-	}
-	return Error(errOK);
+	const auto makeCtxStr = [nsName, &indexDef](WrSerializer& ser) -> WrSerializer& {
+		return ser << "UPDATE INDEX " << indexDef.name_ << " ON " << nsName;
+	};
+	return applyNsFunction<&Namespace::UpdateIndex>(nsName, ctx, makeCtxStr, indexDef);
 }
 
 Error ReindexerImpl::DropIndex(std::string_view nsName, const IndexDef& indexDef, const InternalRdxContext& ctx) {
-	try {
-		WrSerializer ser;
-		const auto rdxCtx = ctx.CreateRdxContext(
-			ctx.NeedTraceActivity() ? (ser << "DROP INDEX " << indexDef.name_ << " ON " << nsName).Slice() : ""sv, activities_);
-		auto ns = getNamespace(nsName, rdxCtx);
-		ns->DropIndex(indexDef, rdxCtx);
-	} catch (const Error& err) {
-		return err;
-	}
-	return Error(errOK);
+	const auto makeCtxStr = [nsName, &indexDef](WrSerializer& ser) -> WrSerializer& {
+		return ser << "DROP INDEX " << indexDef.name_ << " ON " << nsName;
+	};
+	return applyNsFunction<&Namespace::DropIndex>(nsName, ctx, makeCtxStr, indexDef);
 }
 
 std::vector<std::pair<std::string, Namespace::Ptr>> ReindexerImpl::getNamespaces(const RdxContext& ctx) {
@@ -1109,7 +1102,7 @@ Error ReindexerImpl::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOp
 						SLock lock(mtx_, &rdxCtx);
 						if (namespaces_.find(d.name) != namespaces_.end()) continue;
 					}
-					unique_ptr<NamespaceImpl> tmpNs(new NamespaceImpl(d.name, observers_));
+					std::unique_ptr<NamespaceImpl> tmpNs{new NamespaceImpl(d.name, observers_)};
 					try {
 						tmpNs->EnableStorage(storagePath_, StorageOpts(), storageType_, rdxCtx);
 						defs.push_back(tmpNs->GetDefinition(rdxCtx));
@@ -1300,7 +1293,7 @@ Error ReindexerImpl::InitSystemNamespaces() {
 	} else {
 		// Load config from namespace #config
 		for (auto it : results) {
-			auto item = it.GetItem();
+			auto item = it.GetItem(false);
 			try {
 				gason::JsonParser parser;
 				gason::JsonNode configJson = parser.Parse(item.GetJSON());

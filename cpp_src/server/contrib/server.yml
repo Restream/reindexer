@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.2.1"
+  version: "3.2.2"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -2140,7 +2140,11 @@ definitions:
         - "tree"
         - "text"
         - "rtree"
+        - "ttl"
         - "-"
+      expire_after:
+        description: "Specify, time to live for ttl index, in seconds"
+        type: integer
       is_pk:
         description: "Specifies, that index is primary key. The update opertations will checks, that PK field is unique. The namespace MUST have only 1 PK index"
         type: boolean
@@ -3076,6 +3080,9 @@ definitions:
       data_size:
         type: integer
         description: "Raw size of documents, stored in the namespace, except string fields"
+      strings_waiting_to_be_deleted_size:
+        type: integer
+        description: "Size of strings deleted from namespace, but still used in queryResults"
       updated_unix_nano:
         type: integer
         description: "[[deperecated]]. do not use"

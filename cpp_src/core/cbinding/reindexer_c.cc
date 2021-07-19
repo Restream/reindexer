@@ -59,34 +59,48 @@ struct TransactionWrapper {
 	Transaction tr_;
 };
 
+static std::atomic<int> serializedResultsCount{0};
 static sync_pool<QueryResultsWrapper, kQueryResultsPoolSize, kMaxConcurentQueries> res_pool;
 static CGOCtxPool ctx_pool(kCtxArrSize);
 
-static void put_results_to_pool(QueryResultsWrapper* res) {
-	res->Clear();
-	if (res->ser.Cap() > kMaxPooledResultsCap) {
-		res->ser = WrResultSerializer();
-	} else {
-		res->ser.Reset();
+struct put_results_to_pool {
+	void operator()(QueryResultsWrapper* res) const {
+		std::unique_ptr<QueryResultsWrapper> results{res};
+		results->Clear();
+		if (results->ser.Cap() > kMaxPooledResultsCap) {
+			results->ser = WrResultSerializer();
+		} else {
+			results->ser.Reset();
+		}
+		res_pool.put(std::move(results));
 	}
-	res_pool.put(res);
-}
+};
 
-static QueryResultsWrapper* new_results() { return res_pool.get(); }
+struct query_results_ptr : public std::unique_ptr<QueryResultsWrapper, put_results_to_pool> {
+	query_results_ptr() noexcept = default;
+	query_results_ptr(std::unique_ptr<QueryResultsWrapper>&& ptr) noexcept
+		: std::unique_ptr<QueryResultsWrapper, put_results_to_pool>{ptr.release()} {}
+	operator std::unique_ptr<QueryResultsWrapper>() && noexcept { return std::unique_ptr<QueryResultsWrapper>{release()}; }
+};
 
-static void results2c(QueryResultsWrapper* result, struct reindexer_resbuffer* out, int as_json = 0, int32_t* pt_versions = nullptr,
-					  int pt_versions_count = 0) {
+static query_results_ptr new_results() { return res_pool.get(serializedResultsCount.load(std::memory_order_relaxed)); }
+
+static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reindexer_resbuffer* out, int as_json = 0,
+					  int32_t* pt_versions = nullptr, int pt_versions_count = 0) {
 	int flags = as_json ? kResultsJson : (kResultsPtrs | kResultsWithItemID);
 
 	flags |= (pt_versions && as_json == 0) ? kResultsWithPayloadTypes : 0;
 
 	result->ser.SetOpts({flags, span<int32_t>(pt_versions, pt_versions_count), 0, INT_MAX});
 
-	result->ser.PutResults(result);
+	result->ser.PutResults(result.get());
 
 	out->len = result->ser.Len();
 	out->data = uintptr_t(result->ser.Buf());
-	out->results_ptr = uintptr_t(result);
+	out->results_ptr = uintptr_t(result.release());
+	if (const auto count{serializedResultsCount.fetch_add(1, std::memory_order_relaxed)}; count > kMaxConcurentQueries) {
+		logPrintf(LogWarning, "Too many serialized results: count=%d, alloced=%d", count, res_pool.Alloced());
+	}
 }
 
 uintptr_t init_reindexer() {
@@ -192,32 +206,53 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 
 		procces_packed_item(item, mode, state_token, data, precepts, format, err);
 
+		const bool needSaveItemValueInQR = !precepts.empty();
+		query_results_ptr res;
 		if (err.ok()) {
-			switch (mode) {
-				case ModeUpsert:
-					err = rdxKeeper.db().Upsert(ns, item);
-					break;
-				case ModeInsert:
-					err = rdxKeeper.db().Insert(ns, item);
-					break;
-				case ModeUpdate:
-					err = rdxKeeper.db().Update(ns, item);
-					break;
-				case ModeDelete:
-					err = rdxKeeper.db().Delete(ns, item);
-					break;
+			res = new_results();
+			if (!res) {
+				return ret2c(err_too_many_queries, out);
+			}
+			if (needSaveItemValueInQR) {
+				switch (mode) {
+					case ModeUpsert:
+						err = rdxKeeper.db().Upsert(ns, item, *res);
+						break;
+					case ModeInsert:
+						err = rdxKeeper.db().Insert(ns, item, *res);
+						break;
+					case ModeUpdate:
+						err = rdxKeeper.db().Update(ns, item, *res);
+						break;
+					case ModeDelete:
+						err = rdxKeeper.db().Delete(ns, item, *res);
+						break;
+				}
+			} else {
+				switch (mode) {
+					case ModeUpsert:
+						err = rdxKeeper.db().Upsert(ns, item);
+						break;
+					case ModeInsert:
+						err = rdxKeeper.db().Insert(ns, item);
+						break;
+					case ModeUpdate:
+						err = rdxKeeper.db().Update(ns, item);
+						break;
+					case ModeDelete:
+						err = rdxKeeper.db().Delete(ns, item);
+						break;
+				}
+				if (err.ok()) {
+					res->AddItem(item);
+				}
 			}
 		}
 
 		if (err.ok()) {
-			QueryResultsWrapper* res = new_results();
-			if (!res) {
-				return ret2c(err_too_many_queries, out);
-			}
-			res->AddItem(item, !precepts.empty());
 			int32_t ptVers = -1;
 			bool tmUpdated = item.IsTagsUpdated();
-			results2c(res, &out, 0, tmUpdated ? &ptVers : nullptr, tmUpdated ? 1 : 0);
+			results2c(std::move(res), &out, 0, tmUpdated ? &ptVers : nullptr, tmUpdated ? 1 : 0);
 		}
 	}
 
@@ -265,7 +300,7 @@ reindexer_ret reindexer_commit_transaction(uintptr_t rx, uintptr_t tr, reindexer
 		return ret2c(errOK, out);
 	}
 
-	std::unique_ptr<QueryResultsWrapper> res(new_results());
+	auto res(new_results());
 	if (!res) {
 		return ret2c(err_too_many_queries, out);
 	}
@@ -276,7 +311,7 @@ reindexer_ret reindexer_commit_transaction(uintptr_t rx, uintptr_t tr, reindexer
 
 	if (err.ok()) {
 		int32_t ptVers = -1;
-		results2c(res.release(), &out, 0, trw->tr_.IsTagsUpdated() ? &ptVers : nullptr, trw->tr_.IsTagsUpdated() ? 1 : 0);
+		results2c(std::move(res), &out, 0, trw->tr_.IsTagsUpdated() ? &ptVers : nullptr, trw->tr_.IsTagsUpdated() ? 1 : 0);
 	}
 
 	return ret2c(err, out);
@@ -417,33 +452,31 @@ reindexer_error reindexer_init_system_namespaces(uintptr_t rx) {
 reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int as_json, int32_t* pt_versions, int pt_versions_count,
 							   reindexer_ctx_info ctx_info) {
 	reindexer_resbuffer out = {0, 0, 0};
-	Error res = err_not_init;
+	Error err = err_not_init;
 	if (rx) {
 		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
-		auto result = new_results();
+		auto result{new_results()};
 		if (!result) {
 			return ret2c(err_too_many_queries, out);
 		}
-		res = rdxKeeper.db().Select(str2cv(query), *result);
-		if (res.ok()) {
-			results2c(result, &out, as_json, pt_versions, pt_versions_count);
-			if (result->ser.Cap() >= kWarnLargeResultsLimit) {
-				logPrintf(LogWarning, "Query too large results: count=%d size=%d,cap=%d, q=%s", result->Count(), result->ser.Len(),
-						  result->ser.Cap(), str2cv(query));
+		err = rdxKeeper.db().Select(str2cv(query), *result);
+		if (err.ok()) {
+			const auto count = result->Count(), len = result->ser.Len(), cap = result->ser.Cap();
+			results2c(std::move(result), &out, as_json, pt_versions, pt_versions_count);
+			if (cap >= kWarnLargeResultsLimit) {
+				logPrintf(LogWarning, "Query too large results: count=%d size=%d,cap=%d, q=%s", count, len, cap, str2cv(query));
 			}
-		} else {
-			put_results_to_pool(result);
 		}
 	}
-	return ret2c(res, out);
+	return ret2c(err, out);
 }
 
 reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, int as_json, int32_t* pt_versions, int pt_versions_count,
 									 reindexer_ctx_info ctx_info) {
-	Error res = err_not_init;
+	Error err = err_not_init;
 	reindexer_resbuffer out = {0, 0, 0};
 	if (rx) {
-		res = Error(errOK);
+		err = Error(errOK);
 		Serializer ser(in.data, in.len);
 		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 
@@ -461,23 +494,22 @@ reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, i
 			}
 		}
 
-		QueryResultsWrapper* result = new_results();
+		auto result{new_results()};
 		if (!result) {
 			return ret2c(err_too_many_queries, out);
 		}
-		res = rdxKeeper.db().Select(q, *result);
-		if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
-		if (res.ok()) {
-			results2c(result, &out, as_json, pt_versions, pt_versions_count);
+		err = rdxKeeper.db().Select(q, *result);
+		if (q.debugLevel >= LogError && err.code() != errOK) logPrintf(LogError, "Query error %s", err.what());
+		if (err.ok()) {
+			results2c(std::move(result), &out, as_json, pt_versions, pt_versions_count);
 		} else {
 			if (result->ser.Cap() >= kWarnLargeResultsLimit) {
 				logPrintf(LogWarning, "Query too large results: count=%d size=%d,cap=%d, q=%s", result->Count(), result->ser.Len(),
 						  result->ser.Cap(), q.GetSQL());
 			}
-			put_results_to_pool(result);
 		}
 	}
-	return ret2c(res, out);
+	return ret2c(err, out);
 }
 
 reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in, reindexer_ctx_info ctx_info) {
@@ -491,16 +523,14 @@ reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in, reindexe
 		Query q;
 		q.type_ = QueryDelete;
 		q.Deserialize(ser);
-		QueryResultsWrapper* result = new_results();
+		auto result{new_results()};
 		if (!result) {
 			return ret2c(err_too_many_queries, out);
 		}
 		res = rdxKeeper.db().Delete(q, *result);
 		if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
 		if (res.ok()) {
-			results2c(result, &out);
-		} else {
-			put_results_to_pool(result);
+			results2c(std::move(result), &out);
 		}
 		ctx_pool.removeContext(ctx_info);
 	}
@@ -518,7 +548,7 @@ reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in, reindexe
 		Query q;
 		q.Deserialize(ser);
 		q.type_ = QueryUpdate;
-		QueryResultsWrapper* result = new_results();
+		auto result{new_results()};
 		if (!result) {
 			ctx_pool.removeContext(ctx_info);
 			return ret2c(err_too_many_queries, out);
@@ -527,9 +557,7 @@ reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in, reindexe
 		if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
 		if (res.ok()) {
 			int32_t ptVers = -1;
-			results2c(result, &out, 0, &ptVers, 1);
-		} else {
-			put_results_to_pool(result);
+			results2c(std::move(result), &out, 0, &ptVers, 1);
 		}
 	}
 	return ret2c(res, out);
@@ -609,7 +637,7 @@ reindexer_ret reindexer_get_meta(uintptr_t rx, reindexer_string ns, reindexer_st
 	Error res = err_not_init;
 	if (rx) {
 		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
-		QueryResultsWrapper* results = new_results();
+		auto results{new_results()};
 		if (!results) {
 			return ret2c(err_too_many_queries, out);
 		}
@@ -619,7 +647,10 @@ reindexer_ret reindexer_get_meta(uintptr_t rx, reindexer_string ns, reindexer_st
 		results->ser.Write(data);
 		out.len = results->ser.Len();
 		out.data = uintptr_t(results->ser.Buf());
-		out.results_ptr = uintptr_t(results);
+		out.results_ptr = uintptr_t(results.release());
+		if (const auto count{serializedResultsCount.fetch_add(1, std::memory_order_relaxed)}; count > kMaxConcurentQueries) {
+			logPrintf(LogWarning, "Too many serialized results: count=%d, alloced=%d", count, res_pool.Alloced());
+		}
 	}
 	return ret2c(res, out);
 }
@@ -634,7 +665,11 @@ void reindexer_enable_logger(void (*logWriter)(int, char*)) { logInstallWriter(l
 void reindexer_disable_logger() { logInstallWriter(nullptr, false); }
 
 reindexer_error reindexer_free_buffer(reindexer_resbuffer in) {
-	put_results_to_pool(reinterpret_cast<QueryResultsWrapper*>(in.results_ptr));
+	constexpr static put_results_to_pool putResultsToPool;
+	putResultsToPool(reinterpret_cast<QueryResultsWrapper*>(in.results_ptr));
+	if (const auto count{serializedResultsCount.fetch_sub(1, std::memory_order_relaxed)}; count < 1) {
+		logPrintf(LogWarning, "Too many deserialized results: count=%d, alloced=%d", count, res_pool.Alloced());
+	}
 	return error2c(Error(errOK));
 }
 

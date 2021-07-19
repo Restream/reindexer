@@ -8,8 +8,6 @@
 #include "indextext.h"
 
 namespace reindexer {
-using std::pair;
-using std::unique_ptr;
 
 template <typename T>
 class FastIndexText : public IndexText<T> {
@@ -20,14 +18,15 @@ public:
 		this->CommitFulltext();
 	}
 
-	FastIndexText(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields) : IndexText<T>(idef, payloadType, fields) {
+	FastIndexText(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields)
+		: IndexText<T>(idef, std::move(payloadType), fields) {
 		CreateConfig();
 	}
-	Index* Clone() override;
+	std::unique_ptr<Index> Clone() override;
 	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) override final;
 	IndexMemStat GetMemStat() override;
 	Variant Upsert(const Variant& key, IdType id) override final;
-	void Delete(const Variant& key, IdType id) override final;
+	void Delete(const Variant& key, IdType id, StringsHolder&) override final;
 	void SetOpts(const IndexOpts& opts) override final;
 
 protected:
@@ -39,6 +38,6 @@ protected:
 	void BuildVdocs(Data& data);
 };
 
-Index* FastIndexText_New(const IndexDef& idef, const PayloadType payloadType, const FieldsSet& fields);
+std::unique_ptr<Index> FastIndexText_New(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields);
 
 }  // namespace reindexer

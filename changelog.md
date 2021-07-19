@@ -1,3 +1,19 @@
+# Version 3.2.2 (16.07.2021)
+## Core
+- [fea] Optimize string refs counting for wide-range queries
+- [fix] Fix merge limit handling for deleted values in fultext index
+- [fix] Fix cascade replication for nodes without storage
+- [fix] Fix sorted indexes update
+
+## Reindexer server
+- [fix] Fix authorization for http update sql-queries and schema getters
+
+## Go connector
+- [fix] Fix pprof segfault during CPU profiling of builtin/builtinserver
+
+## Build
+- [fix] Fix special characters escaping in asm files regexp
+
 # Version 3.2.1 (16.06.2021)
 ## Core
 - [fea] Added optional fulltext index warmup after atomic namespace copy (EnableWarmupOnNsCopy)

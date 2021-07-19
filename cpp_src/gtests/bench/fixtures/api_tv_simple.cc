@@ -21,6 +21,7 @@ void ApiTvSimple::RegisterAllCases() {
 	BaseFixture::RegisterAllCases();
 	Register("WarmUpIndexes", &ApiTvSimple::WarmUpIndexes, this)->Iterations(1);  // Just 1 time!!!
 
+	Register("StringsSelect", &ApiTvSimple::StringsSelect, this);
 	Register("GetByID", &ApiTvSimple::GetByID, this);
 	Register("GetEqInt", &ApiTvSimple::GetEqInt, this);
 	Register("GetEqArrayInt", &ApiTvSimple::GetEqArrayInt, this);
@@ -89,7 +90,69 @@ Error ApiTvSimple::Initialize() {
 	start_times_.resize(20);
 	for (int i = 0; i < 20; i++) start_times_[i] = random<int>(0, 50000);
 
-	return 0;
+	NamespaceDef strNsDef{stringSelectNs_};
+	strNsDef.AddIndex("id", "hash", "int", IndexOpts().PK())
+		.AddIndex("str_hash_coll_none", "hash", "string", IndexOpts())
+		.AddIndex("str_hash_coll_ascii", "hash", "string", IndexOpts(0, CollateASCII))
+		.AddIndex("str_hash_coll_utf8", "hash", "string", IndexOpts(0, CollateUTF8))
+		.AddIndex("str_hash_coll_num", "hash", "string", IndexOpts(0, CollateNumeric))
+		.AddIndex("str_tree_coll_none", "tree", "string", IndexOpts())
+		.AddIndex("str_tree_coll_ascii", "tree", "string", IndexOpts(0, CollateASCII))
+		.AddIndex("str_tree_coll_utf8", "tree", "string", IndexOpts(0, CollateUTF8))
+		.AddIndex("str_tree_coll_num", "tree", "string", IndexOpts(0, CollateNumeric))
+		.AddIndex("str_ft_coll_none", "text", "string", IndexOpts())
+		.AddIndex("str_ft_coll_ascii", "text", "string", IndexOpts(0, CollateASCII))
+		.AddIndex("str_ft_coll_utf8", "text", "string", IndexOpts(0, CollateUTF8))
+		.AddIndex("str_ft_coll_num", "text", "string", IndexOpts(0, CollateNumeric))
+		.AddIndex("str_fuzzy_coll_none", "fuzzytext", "string", IndexOpts())
+		.AddIndex("str_fuzzy_coll_ascii", "fuzzytext", "string", IndexOpts(0, CollateASCII))
+		.AddIndex("str_fuzzy_coll_utf8", "fuzzytext", "string", IndexOpts(0, CollateUTF8))
+		.AddIndex("str_fuzzy_coll_num", "fuzzytext", "string", IndexOpts(0, CollateNumeric));
+
+	err = db_->AddNamespace(strNsDef);
+	if (!err.ok()) return err;
+
+	for (size_t i = 0; i < 100000; ++i) {
+		auto item = MakeStrItem();
+		if (!item.Status().ok()) return item.Status();
+		err = db_->Insert(stringSelectNs_, item);
+		if (!err.ok()) return err;
+	}
+	err = db_->Commit(stringSelectNs_);
+	return err;
+}
+
+reindexer::Item ApiTvSimple::MakeStrItem() {
+	static int id = 0;
+	Item item = db_->NewItem(stringSelectNs_);
+	if (item.Status().ok()) {
+		item.Unsafe();
+		wrSer_.Reset();
+		reindexer::JsonBuilder bld(wrSer_);
+		bld.Put("id", id++);
+		const std::string idStr = std::to_string(id);
+		bld.Put("str_hash_coll_none", "h" + idStr);
+		bld.Put("str_hash_coll_ascii", "ha" + idStr);
+		bld.Put("str_hash_coll_utf8", "hu" + idStr);
+		bld.Put("str_hash_coll_num", idStr + "hn");
+		bld.Put("str_tree_coll_none", "t" + idStr);
+		bld.Put("str_tree_coll_ascii", "ta" + idStr);
+		bld.Put("str_tree_coll_utf8", "tu" + idStr);
+		bld.Put("str_tree_coll_num", idStr + "tn");
+		bld.Put("str_ft_coll_none", "ft" + idStr);
+		bld.Put("str_ft_coll_ascii", "fta" + idStr);
+		bld.Put("str_ft_coll_utf8", "ftu" + idStr);
+		bld.Put("str_ft_coll_num", idStr + "ftn");
+		bld.Put("str_fuzzy_coll_none", "fu" + idStr);
+		bld.Put("str_fuzzy_coll_ascii", "fua" + idStr);
+		bld.Put("str_fuzzy_coll_utf8", "fuu" + idStr);
+		bld.Put("str_fuzzy_coll_num", idStr + "fun");
+		bld.Put("field_int", id);
+		bld.Put("field_str", "value_" + idStr);
+		bld.End();
+		item.FromJSON(wrSer_.Slice());
+	}
+	return item;
 }
 
 reindexer::Item ApiTvSimple::MakeItem() {
@@ -145,6 +208,17 @@ void ApiTvSimple::WarmUpIndexes(State& state) {
 			err = db_->Select(q, qres);
 			if (!err.ok()) state.SkipWithError(err.what().c_str());
 		}
+	}
+}
+
+void ApiTvSimple::StringsSelect(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {
+		Query q(stringSelectNs_);
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
 	}
 }
 

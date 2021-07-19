@@ -200,7 +200,7 @@ protected:
 
 	void PrintResultRows(QueryResults& qr) {
 		for (auto rowIt : qr) {
-			Item item(rowIt.GetItem());
+			Item item(rowIt.GetItem(false));
 			std::cout << "ROW: " << item.GetJSON() << std::endl;
 
 			int idx = 1;
@@ -220,7 +220,7 @@ protected:
 
 	void FillQueryResultRows(reindexer::QueryResults& qr, QueryResultRows& testRes) {
 		for (auto rowIt : qr) {
-			Item item(rowIt.GetItem());
+			Item item(rowIt.GetItem(false));
 
 			BookId bookId = item[bookid].Get<int>();
 			QueryResultRow& resultRow = testRes[bookId];
@@ -231,7 +231,7 @@ protected:
 			QueryResults jres = joinedFieldIt.ToQueryResults();
 			jres.addNSContext(qr.getPayloadType(1), qr.getTagsMatcher(1), qr.getFieldsFilter(1), qr.getSchema(1));
 			for (auto it : jres) {
-				Item joinedItem = it.GetItem();
+				Item joinedItem = it.GetItem(false);
 				FillQueryResultFromItem(joinedItem, resultRow);
 			}
 		}
@@ -328,7 +328,7 @@ protected:
 
 	void CheckJoinsInComplexWhereCondition(const QueryResults& qr) {
 		for (auto it : qr) {
-			Item item = it.GetItem();
+			Item item = it.GetItem(false);
 
 			Variant priceFieldValue = item[price];
 			const bool priceConditionResult = ((static_cast<int>(priceFieldValue) >= 9540) && (static_cast<int>(priceFieldValue) <= 9550));

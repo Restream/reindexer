@@ -43,7 +43,7 @@ protected:
 	void CompareResults(const QueryResults& qr, const vector<string>& sortedTable) {
 		ASSERT_TRUE(qr.Count() == sortedTable.size());
 		for (size_t i = 0; i < qr.Count(); ++i) {
-			Item item = (qr.begin() + i).GetItem();
+			Item item = (qr.begin() + i).GetItem(false);
 
 			string gotten = item["name"].As<string>();
 			size_t l1 = gotten.length();

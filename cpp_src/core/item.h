@@ -6,7 +6,6 @@
 #include "tools/errors.h"
 
 namespace reindexer {
-using std::vector;
 
 namespace client {
 class ReindexerImpl;
@@ -30,7 +29,7 @@ public:
 	/// Destroy Item
 	~Item();
 	Item(const Item &) = delete;
-	Item(Item &&) noexcept;
+	Item(Item &&other) noexcept : impl_(other.impl_), status_(std::move(other.status_)), id_(other.id_) { other.impl_ = nullptr; }
 	Item &operator=(const Item &) = delete;
 	Item &operator=(Item &&) noexcept;
 
@@ -164,7 +163,7 @@ public:
 	Error Status() { return status_; }
 	/// Get internal ID of item
 	/// @return ID of item
-	int GetID() { return id_; }
+	int GetID() const noexcept { return id_; }
 	/// Get internal version of item
 	/// @return version of item
 	int64_t GetLSN();
@@ -187,7 +186,7 @@ public:
 	FieldsSet PkFields() const;
 	/// Set additional percepts for modify operation
 	/// @param precepts - strings in format "fieldName=Func()"
-	void SetPrecepts(const vector<std::string> &precepts);
+	void SetPrecepts(const std::vector<std::string> &precepts);
 	/// Check was names tags updated while modify operation
 	/// @return true: tags was updated.
 	bool IsTagsUpdated();

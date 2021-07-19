@@ -15,19 +15,21 @@ public:
 	using ref_type =
 		typename std::conditional<std::is_same<typename T::key_type, key_string>::value, std::string_view, typename T::key_type>::type;
 
-	IndexUnordered(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields);
+	IndexUnordered(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields);
 	IndexUnordered(const IndexUnordered &other);
 
 	Variant Upsert(const Variant &key, IdType id) override;
-	void Delete(const Variant &key, IdType id) override;
+	void Delete(const Variant &key, IdType id, StringsHolder &) override;
 	SelectKeyResults SelectKey(const VariantArray &keys, CondType cond, SortType stype, Index::SelectOpts opts, BaseFunctionCtx::Ptr ctx,
 							   const RdxContext &) override;
 	void Commit() override;
 	void UpdateSortedIds(const UpdateSortedContext &) override;
-	Index *Clone() override;
+	std::unique_ptr<Index> Clone() override;
 	IndexMemStat GetMemStat() override;
 	size_t Size() const override final { return idx_map.size(); }
 	void SetSortedIdxCount(int sortedIdxCount) override;
+	bool HoldsStrings() const noexcept override;
+	void ClearCache() override { cache_.reset(); }
 
 protected:
 	bool tryIdsetCache(const VariantArray &keys, CondType condition, SortType sortId, std::function<bool(SelectKeyResult &)> selector,
@@ -47,6 +49,6 @@ protected:
 
 constexpr inline unsigned maxSelectivityPercentForIdset() noexcept { return 25u; }
 
-Index *IndexUnordered_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields);
+std::unique_ptr<Index> IndexUnordered_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields);
 
 }  // namespace reindexer

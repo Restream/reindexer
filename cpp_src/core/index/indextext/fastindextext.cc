@@ -17,8 +17,8 @@ using std::chrono::high_resolution_clock;
 using std::make_shared;
 
 template <typename T>
-Index *FastIndexText<T>::Clone() {
-	return new FastIndexText<T>(*this);
+std::unique_ptr<Index> FastIndexText<T>::Clone() {
+	return std::unique_ptr<Index>{new FastIndexText<T>(*this)};
 }
 
 template <typename T>
@@ -50,7 +50,7 @@ Variant FastIndexText<T>::Upsert(const Variant &key, IdType id) {
 }
 
 template <typename T>
-void FastIndexText<T>::Delete(const Variant &key, IdType id) {
+void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strHolder) {
 	this->isBuilt_ = false;
 	int delcnt = 0;
 	if (key.Type() == KeyValueNull) {
@@ -75,12 +75,18 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id) {
 			assert(keyIt->second.VDocID() < int(this->holder_.vdocs_.size()));
 			this->holder_.vdocs_[keyIt->second.VDocID()].keyEntry = nullptr;
 		}
-		this->idx_map.template erase<no_deep_clean>(keyIt);
+		if constexpr (is_str_map_v<T>) {
+			this->idx_map.template erase<StringMapEntryCleaner<false>>(
+				keyIt, {strHolder, this->KeyType() == KeyValueString && this->opts_.GetCollateMode() == CollateNone});
+		} else {
+			static_assert(is_payload_map_v<T>);
+			this->idx_map.template erase<no_deep_clean>(keyIt, strHolder);
+		}
 	} else {
 		this->addMemStat(keyIt);
 	}
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
-		IndexStore<typename T::key_type>::Delete(key, id);
+		IndexStore<typename T::key_type>::Delete(key, id, strHolder);
 	}
 	this->cache_ft_->Clear();
 }
@@ -282,12 +288,12 @@ void FastIndexText<T>::SetOpts(const IndexOpts &opts) {
 	this->holder_.synonyms_->SetConfig(&newCfg);
 }
 
-Index *FastIndexText_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields) {
+std::unique_ptr<Index> FastIndexText_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields) {
 	switch (idef.Type()) {
 		case IndexFastFT:
-			return new FastIndexText<unordered_str_map<FtKeyEntry>>(idef, payloadType, fields);
+			return std::unique_ptr<Index>{new FastIndexText<unordered_str_map<FtKeyEntry>>(idef, std::move(payloadType), fields)};
 		case IndexCompositeFastFT:
-			return new FastIndexText<unordered_payload_map<FtKeyEntry, true>>(idef, payloadType, fields);
+			return std::unique_ptr<Index>{new FastIndexText<unordered_payload_map<FtKeyEntry, true>>(idef, std::move(payloadType), fields)};
 		default:
 			abort();
 	}

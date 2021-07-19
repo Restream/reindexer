@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"strconv"
@@ -21,10 +20,10 @@ import (
 func init() {
 	http.Handle("/debug/cgo/pprof/heap", http.HandlerFunc(ProfileHeap))
 	http.Handle("/debug/cgo/pprof/cmdline", http.HandlerFunc(Cmdline))
-	http.Handle("/debug/cgo/pprof/profile", http.HandlerFunc(Profile))
 	http.Handle("/debug/cgo/pprof/symbol", http.HandlerFunc(Symbol))
 	http.Handle("/debug/cgo/symbolz", http.HandlerFunc(Symbol))
-	//	http.Handle("/debug/cgo/pprof/trace", http.HandlerFunc(Trace))
+	// CPU profiling for cgo doesn't work via gperf_tools library. Use go pprof and symbolizer with REINDEXER_CGOBACKTRACE instead
+	//http.Handle("/debug/cgo/pprof/profile", http.HandlerFunc(Profile))
 }
 
 // Cmdline responds with the running program's
@@ -44,46 +43,6 @@ func sleep(w http.ResponseWriter, d time.Duration) {
 	case <-time.After(d):
 	case <-clientGone:
 	}
-}
-
-// Profile responds with the pprof-formatted cpu profile.
-// The package initialization registers it as /debug/pprof/profile.
-func Profile(w http.ResponseWriter, r *http.Request) {
-	sec, _ := strconv.ParseInt(r.FormValue("seconds"), 10, 64)
-	if sec == 0 {
-		sec = 30
-	}
-
-	// Set Content Type assuming StartCPUProfile will work,
-	// because if it does it starts writing.
-	w.Header().Set("Content-Type", "application/octet-stream")
-	profileFile := "/tmp/cpuprofile"
-
-	profileFileC := C.CString(profileFile)
-	defer C.free(unsafe.Pointer(profileFileC))
-	if res := C.cgo_pprof_start_cpu_profile(profileFileC); res == 0 {
-		// StartCPUProfile failed, so no writes yet.
-		// Can change header back to text content
-		// and send error code.
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "Could not enable CPU profiling: %d\n", res)
-		return
-	}
-
-	sleep(w, time.Duration(sec)*time.Second)
-	C.cgo_pprof_stop_cpu_profile()
-
-	f, err := os.Open(profileFile)
-	if err != nil {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusInternalServerError)
-		fmt.Fprintf(w, "Could not read profile file")
-	}
-	defer f.Close()
-
-	b, _ := ioutil.ReadAll(f)
-	w.Write(b)
 }
 
 func ProfileHeap(w http.ResponseWriter, r *http.Request) {

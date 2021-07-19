@@ -23,6 +23,7 @@ ItemImplRawData &ItemImplRawData::operator=(ItemImplRawData &&other) noexcept {
 		sourceData_ = std::move(other.sourceData_);
 		precepts_ = std::move(other.precepts_);
 		holder_ = std::move(other.holder_);
+		keyStringsHolder_ = std::move(other.keyStringsHolder_);
 	}
 	return *this;
 }
@@ -31,7 +32,8 @@ ItemImplRawData::ItemImplRawData(ItemImplRawData &&other) noexcept
 	  tupleData_(std::move(other.tupleData_)),
 	  sourceData_(std::move(other.sourceData_)),
 	  precepts_(std::move(other.precepts_)),
-	  holder_(std::move(other.holder_)) {}
+	  holder_(std::move(other.holder_)),
+	  keyStringsHolder_(std::move(other.keyStringsHolder_)) {}
 
 ItemImpl &ItemImpl::operator=(ItemImpl &&other) noexcept {
 	if (&other != this) {
@@ -56,7 +58,7 @@ void ItemImpl::SetField(int field, const VariantArray &krs) {
 		if (!holder_) holder_.reset(new std::deque<std::string>);
 		for (auto &kr : krs) {
 			holder_->push_back(kr.As<string>());
-			krsCopy.push_back(Variant(p_string(&holder_->back())));
+			krsCopy.emplace_back(p_string{&holder_->back()});
 		}
 
 		GetPayload().Set(field, krsCopy, false);

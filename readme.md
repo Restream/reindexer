@@ -919,7 +919,7 @@ equal_position doesn't work with the following conditions: IS NULL, IS EMPTY and
 
 There are atomic functions, which executes under namespace lock, and therefore guarantees data consistency:
 
-- serial() - sequence of integer, useful for uniq ID generation.
+- serial() - sequence of integer, useful for auto-increment keys
 - now() - current time stamp, useful for data synchronization. It may have one of the following arguments:  msec, usec, nsec and sec. The “sec” argument is used by default.
 
 These functions can be passed to Upsert/Insert/Update in 3-rd and next arguments.
@@ -1130,6 +1130,8 @@ Another useful feature is debug print of processed Queries. To debug print queri
 
 ### Profiling
 
+#### Heap profiling
+
 Because reindexer core is written in C++ all calls to reindexer and their memory consumption are not visible for go profiler. To profile reindexer core there are cgo profiler available. cgo profiler now is part of reindexer, but it can be used with any another cgo code.
 
 Usage of cgo profiler is very similar with usage of [go profiler](https://golang.org/pkg/net/http/pprof/).
@@ -1154,6 +1156,36 @@ go func() {
 ```bash
 pprof -symbolize remote http://localhost:6060/debug/cgo/pprof/heap
 ```
+
+#### CPU profiling
+
+Internal reindexer's profiler is based on gperf_tools library and unable to get CPU profile via Go runtime. However, [go profiler](https://golang.org/pkg/net/http/pprof/) may be used with symbolizer to retrieve C++ CPU usage.
+
+1. Add import:
+
+```go
+import _ "net/http/pprof"
+```
+
+2. If your application is not already running an http server, you need to start one. Add "net/http" and "log" to your imports and the following code to your main function:
+
+```go
+go func() {
+	log.Println(http.ListenAndServe("localhost:6060", nil))
+}()
+```
+
+3. Run application with environment variable `REINDEXER_CGOBACKTRACE=1`
+4. Then use the pprof tool to get CPU profile:
+
+```bash
+pprof -symbolize remote http://localhost:6060/debug/pprof/profile?seconds=10
+```
+
+#### Known issues
+
+Due to internal Golang's specific it's not recommended to try to get CPU and heap profiles simultaneously, because it may cause deadlock inside the profiler.
+
 
 ## Integration with other program languages
 

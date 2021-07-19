@@ -122,7 +122,7 @@ protected:
 		}
 
 		for (auto it : res) {
-			Item ritem(it.GetItem());
+			Item ritem(it.GetItem(false));
 			std::string outBuf = "";
 			for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 				auto field = ritem[idx].Name();

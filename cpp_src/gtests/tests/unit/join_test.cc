@@ -121,7 +121,7 @@ TEST_F(JoinSelectsApi, InnerJoinTest) {
 
 	if (err.ok()) {
 		for (auto it : pureSelectRes) {
-			Item booksItem(it.GetItem());
+			Item booksItem(it.GetItem(false));
 			Variant authorIdKeyRef = booksItem[authorid_fk];
 
 			reindexer::QueryResults authorsSelectRes;
@@ -135,7 +135,7 @@ TEST_F(JoinSelectsApi, InnerJoinTest) {
 
 				FillQueryResultFromItem(booksItem, pureSelectRow);
 				for (auto jit : authorsSelectRes) {
-					Item authorsItem(jit.GetItem());
+					Item authorsItem(jit.GetItem(false));
 					FillQueryResultFromItem(authorsItem, pureSelectRow);
 				}
 			}
@@ -158,7 +158,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 
 	if (err.ok()) {
 		for (auto it : booksQueryRes) {
-			Item item(it.GetItem());
+			Item item(it.GetItem(false));
 			BookId bookId = item[bookid].Get<int>();
 			QueryResultRow& resultRow = pureSelectRows[bookId];
 			FillQueryResultFromItem(item, resultRow);
@@ -178,7 +178,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 		std::unordered_map<int, int> rowidsIndexes;
 		int i = 0;
 		for (auto rowIt : joinQueryRes) {
-			Item item(rowIt.GetItem());
+			Item item(rowIt.GetItem(false));
 			Variant authorIdKeyRef1 = item[authorid];
 			const reindexer::ItemRef& rowid = rowIt.GetItemRef();
 
@@ -213,7 +213,7 @@ TEST_F(JoinSelectsApi, LeftJoinTest) {
 				EXPECT_TRUE(itRowidIndex != rowidsIndexes.end());
 
 				if (itRowidIndex != rowidsIndexes.end()) {
-					Item item2((joinQueryRes.begin() + rowid).GetItem());
+					Item item2((joinQueryRes.begin() + rowid).GetItem(false));
 					Variant authorIdKeyRef2 = item2[authorid];
 					EXPECT_TRUE(authorIdKeyRef1 == authorIdKeyRef2);
 				}
@@ -242,7 +242,7 @@ TEST_F(JoinSelectsApi, OrInnerJoinTest) {
 
 	if (err.ok()) {
 		for (auto rowIt : queryRes) {
-			Item item(rowIt.GetItem());
+			Item item(rowIt.GetItem(false));
 			auto itemIt = rowIt.GetJoined();
 
 			reindexer::joins::JoinedFieldIterator authorIdIt = itemIt.at(authorsNsJoinIndex);
@@ -290,7 +290,7 @@ TEST_F(JoinSelectsApi, JoinTestSorting) {
 
 		Variant prevField;
 		for (auto rowIt : joinQueryRes) {
-			Item item = rowIt.GetItem();
+			Item item = rowIt.GetItem(false);
 			if (prevField.Type() != KeyValueNull) {
 				ASSERT_TRUE(prevField.Compare(item[age]) <= 0);
 			}
@@ -365,7 +365,7 @@ TEST_F(JoinSelectsApi, JoinTestSelectNonIndexedField) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1) << err.what();
 
-	Item theOnlyItem = qr[0].GetItem();
+	Item theOnlyItem = qr[0].GetItem(false);
 	VariantArray krefs = theOnlyItem[title];
 	ASSERT_TRUE(krefs.size() == 1);
 	ASSERT_TRUE(krefs[0].As<string>() == "Crime and Punishment");
@@ -566,7 +566,7 @@ TEST_F(JoinSelectsApi, TestMergeWithJoins) {
 	// in both parts of the query.
 	size_t rowId = 0;
 	for (auto it : qr) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		auto joined = it.GetJoined();
 		ASSERT_TRUE(joined.getJoinedFieldsCount() == 1);
 
@@ -578,14 +578,14 @@ TEST_F(JoinSelectsApi, TestMergeWithJoins) {
 		if (booksItem) {
 			Variant fkValue = item[authorid_fk];
 			for (auto jit : jqr) {
-				Item jItem = jit.GetItem();
+				Item jItem = jit.GetItem(false);
 				Variant value = jItem[authorid];
 				ASSERT_TRUE(value == fkValue);
 			}
 		} else {
 			Variant fkValue = item[locationid_fk];
 			for (auto jit : jqr) {
-				Item jItem = jit.GetItem();
+				Item jItem = jit.GetItem(false);
 				Variant value = jItem[locationid];
 				ASSERT_TRUE(value == fkValue);
 			}

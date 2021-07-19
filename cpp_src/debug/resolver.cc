@@ -34,6 +34,8 @@
 namespace reindexer {
 namespace debug {
 
+using namespace std::string_view_literals;
+
 TraceEntry::TraceEntry(TraceEntry &&other)
 	: funcName_(other.funcName_),
 	  objFile_(other.objFile_),
@@ -78,10 +80,13 @@ TraceEntry::TraceEntry(uintptr_t addr) {
 	baseAddr_ = uintptr_t(dl_info.dli_fbase);
 
 	int status;
-	if ((holder_ = abi::__cxa_demangle(dl_info.dli_sname, NULL, NULL, &status)) != 0)
+	if ((holder_ = abi::__cxa_demangle(dl_info.dli_sname, NULL, NULL, &status)) != 0) {
 		funcName_ = holder_;
-	else
+	} else if (dl_info.dli_sname) {
 		funcName_ = dl_info.dli_sname;
+	} else {
+		funcName_ = "<unresolved_function>"sv;
+	}
 #endif
 }
 
@@ -115,7 +120,7 @@ public:
 	bool Resolve(TraceEntry &te) override final {
 		backtrace_pcinfo(state_, te.addr_, callback, errorCallback, &te);
 		return true;
-	};
+	}
 
 protected:
 	bool init() {
@@ -128,8 +133,13 @@ protected:
 
 	static int callback(void *data, uintptr_t /*pc*/, const char *filename, int lineno, const char * /*function*/) {
 		TraceEntry *te = reinterpret_cast<TraceEntry *>(data);
-		te->srcFile_ = filename;
-		te->srcLine_ = lineno;
+		if (filename) {
+			te->srcFile_ = filename;
+			te->srcLine_ = lineno;
+		} else {
+			te->srcFile_ = "<unresolver_filename>"sv;
+			te->srcLine_ = 0;
+		}
 		return 0;
 	}
 

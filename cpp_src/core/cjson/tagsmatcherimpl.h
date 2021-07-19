@@ -12,13 +12,17 @@
 
 namespace reindexer {
 
-using std::string;
 using TagsPath = h_vector<int16_t, 6>;
 
-struct IndexedPathNode {
+class IndexedPathNode {
+	struct AllItemsType{};
+
+public:
+	static constexpr AllItemsType AllItems{};
 	IndexedPathNode() = default;
-	IndexedPathNode(int16_t _nameTag) : nameTag_(_nameTag) {}
-	IndexedPathNode(int16_t _nameTag, int32_t _index) : nameTag_(_nameTag), index_(_index) {}
+	IndexedPathNode(AllItemsType) noexcept : index_{ForAllItems} {}
+	IndexedPathNode(int16_t _nameTag) noexcept : nameTag_(_nameTag) {}
+	IndexedPathNode(int16_t _nameTag, int32_t _index) noexcept : nameTag_(_nameTag), index_(_index) {}
 	bool operator==(const IndexedPathNode &obj) const noexcept {
 		if (nameTag_ != obj.nameTag_) return false;
 		if (IsForAllItems() || obj.IsForAllItems()) return true;

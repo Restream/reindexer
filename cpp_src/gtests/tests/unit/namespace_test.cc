@@ -92,7 +92,7 @@ TEST_F(NsApi, UpsertWithPrecepts) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	for (auto it : res) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		for (auto idx = 1; idx < item.NumFields(); idx++) {
 			auto field = item[idx].Name();
 
@@ -139,7 +139,7 @@ TEST_F(NsApi, ReturnOfItemChange) {
 	err = rt.reindexer->Select("SELECT * FROM " + default_namespace + " WHERE " + idIdxName + "=" + std::to_string(idNum), res1);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(res1.Count(), 1);
-	Item selectedItem = res1.begin().GetItem();
+	Item selectedItem = res1.begin().GetItem(false);
 	CheckItemsEqual(item, selectedItem);
 
 	// Check Update
@@ -149,7 +149,7 @@ TEST_F(NsApi, ReturnOfItemChange) {
 	err = rt.reindexer->Select("SELECT * FROM " + default_namespace + " WHERE " + idIdxName + "=" + std::to_string(idNum), res2);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(res2.Count(), 1);
-	selectedItem = res2.begin().GetItem();
+	selectedItem = res2.begin().GetItem(false);
 	CheckItemsEqual(item, selectedItem);
 
 	// Check Delete
@@ -165,7 +165,7 @@ TEST_F(NsApi, ReturnOfItemChange) {
 	err = rt.reindexer->Select("SELECT * FROM " + default_namespace + " WHERE " + idIdxName + "=" + std::to_string(idNum), res3);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(res3.Count(), 1);
-	selectedItem = res3.begin().GetItem();
+	selectedItem = res3.begin().GetItem(false);
 	CheckItemsEqual(item, selectedItem);
 }
 
@@ -271,11 +271,11 @@ TEST_F(NsApi, QueryperfstatsNsDummyTest) {
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_TRUE(qr.Count() > 0) << "#queriesperfstats table is empty!";
 			for (size_t i = 0; i < qr.Count(); ++i) {
-				std::cout << qr[i].GetItem().GetJSON() << std::endl;
+				std::cout << qr[i].GetItem(false).GetJSON() << std::endl;
 			}
 		}
 		ASSERT_TRUE(qres.Count() == 1) << "Expected 1 row for this query, got " << qres.Count();
-		Item item = qres[0].GetItem();
+		Item item = qres[0].GetItem(false);
 		Variant val;
 		val = item["latency_stddev"];
 		performanceRes.latencyStddev = static_cast<double>(val);
@@ -330,7 +330,7 @@ TEST_F(NsApi, TestUpdateIndexedField) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	for (auto it : qrAll) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		Variant val = item[stringField];
 		ASSERT_TRUE(val.Type() == KeyValueString);
 		ASSERT_TRUE(val.As<string>() == "bingo!") << val.As<string>();
@@ -355,7 +355,7 @@ TEST_F(NsApi, TestUpdateNonindexedField) {
 	ASSERT_TRUE(qrAll.Count() == 500) << qrAll.Count();
 
 	for (auto it : qrAll) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		Variant val = item["nested.bonus"];
 		ASSERT_TRUE(val.Type() == KeyValueInt64);
 		ASSERT_TRUE(val.As<int64_t>() == 100500);
@@ -380,7 +380,7 @@ TEST_F(NsApi, TestUpdateSparseField) {
 	ASSERT_TRUE(qrAll.Count() == 500) << qrAll.Count();
 
 	for (auto it : qrAll) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		Variant val = item["sparse_field"];
 		ASSERT_TRUE(val.Type() == KeyValueInt64);
 		ASSERT_TRUE(val.As<int>() == 100500);
@@ -414,7 +414,7 @@ TEST_F(NsApi, TestUpdateTwoFields) {
 	for (auto it : qrUpdate) {
 		checkIfItemJSONValid(it);
 
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		Variant strField = item[stringField];
 		EXPECT_TRUE(strField.Type() == KeyValueString);
 		EXPECT_TRUE(strField.As<string>() == "Bingo!");
@@ -441,7 +441,7 @@ void updateArrayField(std::shared_ptr<reindexer::Reindexer> reindexer, const str
 	ASSERT_TRUE(qrAll.Count() == qrUpdate.Count()) << qrAll.Count();
 
 	for (auto it : qrAll) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		VariantArray val = item[updateFieldPath.c_str()];
 		if (values.empty()) {
 			ASSERT_TRUE(val.size() == 1) << val.size();
@@ -472,7 +472,7 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField2) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
 
-	Item item = qr[0].GetItem();
+	Item item = qr[0].GetItem(false);
 	std::string_view json = item.GetJSON();
 	size_t pos = json.find(R"("nested":{"bonus":[{"first":1,"second":2,"third":3}])");
 	ASSERT_TRUE(pos != std::string::npos) << "'nested.bonus' was not updated properly" << json;
@@ -488,7 +488,7 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField3) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
 
-	Item item = qr[0].GetItem();
+	Item item = qr[0].GetItem(false);
 	VariantArray val = item["nested.bonus"];
 	ASSERT_TRUE(val.size() == 4);
 
@@ -511,7 +511,7 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField4) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
 
-	Item item = qr[0].GetItem();
+	Item item = qr[0].GetItem(false);
 	std::string_view json = item.GetJSON();
 	size_t pos = json.find(R"("nested":{"bonus":[0])");
 	ASSERT_TRUE(pos != std::string::npos) << "'nested.bonus' was not updated properly" << json;
@@ -546,7 +546,7 @@ TEST_F(NsApi, TestUpdateIndexedArrayField2) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
 
-	Item item = qr[0].GetItem();
+	Item item = qr[0].GetItem(false);
 	std::string_view json = item.GetJSON();
 	size_t pos = json.find(R"("indexed_array_field":[77])");
 	ASSERT_TRUE(pos != std::string::npos) << "'indexed_array_field' was not updated properly" << json;
@@ -563,7 +563,7 @@ void addAndSetNonindexedField(std::shared_ptr<reindexer::Reindexer> reindexer, c
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	for (auto it : qrAll) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		Variant val = item[updateFieldPath.c_str()];
 		ASSERT_TRUE(val.Type() == KeyValueInt64);
 		ASSERT_TRUE(val.As<int64_t>() == 777);
@@ -618,7 +618,7 @@ void setAndCheckArrayItem(std::shared_ptr<reindexer::Reindexer> reindexer, const
 	// 2) objects[2].prices[*]: i = 2, j = IndexValueType::NotSet
 	// etc.
 	for (auto it : qrAll) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		checkIfItemJSONValid(it);
 		VariantArray values = item[jsonPath.c_str()];
 		if (i == j && i == IndexValueType::NotSet) {
@@ -678,7 +678,7 @@ TEST_F(NsApi, TestAddAndSetArrayField3) {
 
 	// 4. Make sure each item's indexed_array_field[0] is of type Int and equal to 777
 	for (auto it : qrUpdate) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		checkIfItemJSONValid(it);
 		VariantArray values = item[indexedArrayField];
 		ASSERT_TRUE(values[0].Type() == KeyValueInt);
@@ -701,7 +701,7 @@ TEST_F(NsApi, TestAddAndSetArrayField4) {
 
 	// 4. Make sure all items of indexed_array_field are of type Int and set to 777
 	for (auto it : qrUpdate) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		checkIfItemJSONValid(it);
 		VariantArray values = item[indexedArrayField];
 		ASSERT_TRUE(values.size() == 9);
@@ -736,7 +736,7 @@ void DropArrayItem(std::shared_ptr<reindexer::Reindexer> reindexer, const string
 	// it should decrease).
 	for (auto it : qrAll) {
 		checkIfItemJSONValid(it);
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		VariantArray values = item[jsonPath.c_str()];
 		if (i == IndexValueType::NotSet && j == IndexValueType::NotSet) {
 			ASSERT_TRUE(values.size() == 0) << values.size();
@@ -802,7 +802,7 @@ TEST_F(NsApi, SetArrayFieldWithSql) {
 
 	// 4. Make sure all items of array nested.nested_array.prices are equal to 777 and of type Int
 	for (auto it : qrUpdate) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		VariantArray values = item["nested.nested_array.prices"];
 		for (int i = 0; i < kElements; ++i) {
 			ASSERT_TRUE(values[kElements + i].As<int>() == 777);
@@ -828,7 +828,7 @@ TEST_F(NsApi, DropArrayFieldWithSql) {
 
 	// 4. Check if items were really removed
 	for (auto it : qrUpdate) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		VariantArray values = item["nested.nested_array.prices"];
 		ASSERT_TRUE(values.size() == kElements * 2);
 		checkIfItemJSONValid(it);
@@ -852,7 +852,7 @@ TEST_F(NsApi, ExtendArrayFromTopWithSql) {
 
 	// Check if these items were really added to array_field
 	for (auto it : qrUpdate) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		checkIfItemJSONValid(it);
 		VariantArray values = item["array_field"];
 		ASSERT_TRUE(values.size() == kElements * 2);
@@ -879,7 +879,7 @@ TEST_F(NsApi, AppendToArrayWithSql) {
 
 	// 4. Make sure all items of array have proper values
 	for (auto it : qrUpdate) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		checkIfItemJSONValid(it);
 		VariantArray values = item["array_field"];
 		int i = 0;
@@ -913,7 +913,7 @@ TEST_F(NsApi, ExtendArrayWithExpressions) {
 
 	// Check if array_field was modified properly
 	for (auto it : qrUpdate) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		checkIfItemJSONValid(it);
 		VariantArray values = item["array_field"];
 		ASSERT_TRUE(values.size() == kElements * 3 + 9 + 1);
@@ -949,7 +949,7 @@ TEST_F(NsApi, UpdateObjectsArray) {
 
 	// 4. Make sure nested.nested_array[1] is set to a new value properly
 	for (auto it : qrUpdate) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		checkIfItemJSONValid(it);
 		ASSERT_TRUE(item.GetJSON().find(R"({"id":1,"name":"modified","prices":[4,5,6]})") != string::npos);
 	}
@@ -970,7 +970,7 @@ TEST_F(NsApi, UpdateObjectsArray2) {
 
 	// 4. Make sure all items of nested.nested_array are set to a new value correctly
 	for (auto it : qrUpdate) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		checkIfItemJSONValid(it);
 		ASSERT_TRUE(item.GetJSON().find(
 						R"("nested_array":[{"ein":1,"zwei":2,"drei":3},{"ein":1,"zwei":2,"drei":3},{"ein":1,"zwei":2,"drei":3}]})") !=
@@ -993,7 +993,7 @@ TEST_F(NsApi, UpdateObjectsArray3) {
 
 	// 4. Make sure all items of nested.nested_array are set to a new value correctly
 	for (auto it : qrUpdate) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		checkIfItemJSONValid(it);
 		ASSERT_TRUE(item.GetJSON().find(
 						R"("nested_array":[{"ein":1,"zwei":2,"drei":3},{"ein":1,"zwei":2,"drei":3},{"ein":1,"zwei":2,"drei":3}]})") !=
@@ -1017,7 +1017,7 @@ TEST_F(NsApi, AccessForIndexedArrayItem) {
 	for (auto it : qr) {
 		checkIfItemJSONValid(it);
 
-		reindexer::Item item = it.GetItem();
+		reindexer::Item item = it.GetItem(false);
 
 		Variant value1 = item["indexed_array_field[0]"];
 		ASSERT_TRUE(value1.Type() == KeyValueInt);
@@ -1066,7 +1066,7 @@ TEST_F(NsApi, UpdateComplexArrayItem) {
 	for (auto it : qr) {
 		checkIfItemJSONValid(it);
 
-		reindexer::Item item = it.GetItem();
+		reindexer::Item item = it.GetItem(false);
 
 		Variant value = item["objects[0].more[1].array[1]"];
 		ASSERT_TRUE(value.Type() == KeyValueInt64);
@@ -1094,7 +1094,7 @@ TEST_F(NsApi, CheckIndexedArrayItem) {
 	for (auto it : qr) {
 		checkIfItemJSONValid(it);
 
-		reindexer::Item item = it.GetItem();
+		reindexer::Item item = it.GetItem(false);
 
 		Variant value = item["objects[0].more[1].array[1]"];
 		ASSERT_TRUE(value.Type() == KeyValueInt64);
@@ -1132,7 +1132,7 @@ void checkFieldConversion(std::shared_ptr<reindexer::Reindexer> reindexer, const
 		ASSERT_TRUE(qrAll.Count() == qrUpdate.Count()) << qrAll.Count();
 
 		for (auto it : qrAll) {
-			Item item = it.GetItem();
+			Item item = it.GetItem(false);
 			VariantArray val = item[updateFieldPath.c_str()];
 			ASSERT_TRUE(val.size() == updatedValue.size());
 			for (const Variant &v : val) {
@@ -1274,7 +1274,7 @@ TEST_F(NsApi, TestUpdatePkFieldNoConditions) {
 
 	int i = 1;
 	for (auto &it : qr) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		Variant intFieldVal = item[idIdxName];
 		ASSERT_TRUE(static_cast<int>(intFieldVal) == i++);
 	}
@@ -1290,7 +1290,7 @@ TEST_F(NsApi, TestUpdateIndexArrayWithNull) {
 	ASSERT_TRUE(qr.Count() == 1);
 
 	for (auto &it : qr) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		VariantArray fieldVal = item[indexedArrayField];
 		ASSERT_TRUE(fieldVal.empty());
 	}
@@ -1306,7 +1306,7 @@ TEST_F(NsApi, TestUpdateNonIndexFieldWithNull) {
 	ASSERT_TRUE(qr.Count() == 1);
 
 	for (auto &it : qr) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		Variant fieldVal = item["extra"];
 		ASSERT_TRUE(fieldVal.Type() == KeyValueNull);
 	}
@@ -1330,7 +1330,7 @@ TEST_F(NsApi, TestUpdateEmptyArrayField) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1);
 
-	Item item = qr[0].GetItem();
+	Item item = qr[0].GetItem(false);
 	Variant idFieldVal = item[idIdxName];
 	ASSERT_TRUE(static_cast<int>(idFieldVal) == 1);
 
@@ -1357,7 +1357,7 @@ TEST_F(NsApi, TestUpdateObjectFieldWithScalar) {
 
 	// Check in the loop that all the updated fields have correct values
 	for (auto it : qr) {
-		reindexer::Item item = it.GetItem();
+		reindexer::Item item = it.GetItem(false);
 
 		Variant intVal = item["int_field"];
 		ASSERT_TRUE(intVal.Type() == KeyValueInt);
@@ -1397,7 +1397,7 @@ TEST_F(NsApi, DISABLED_TestUpdateEmptyIndexedField) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr2.Count() == 1);
 	for (auto it : qr2) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 
 		Variant val = item[emptyField];
 		ASSERT_TRUE(val.As<string>() == "NEW GENERATION");
@@ -1423,7 +1423,7 @@ TEST_F(NsApi, TestDropField) {
 	ASSERT_TRUE(qr.Count() == 10) << qr.Count();
 
 	for (auto it : qr) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		VariantArray val = item["extra"];
 		EXPECT_TRUE(val.empty());
 		EXPECT_TRUE(item.GetJSON().find("extra") == string::npos);
@@ -1435,7 +1435,7 @@ TEST_F(NsApi, TestDropField) {
 	ASSERT_TRUE(qr2.Count() == 5);
 
 	for (auto it : qr2) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		VariantArray val = item["nested.bonus"];
 		EXPECT_TRUE(val.empty());
 		EXPECT_TRUE(item.GetJSON().find("nested.bonus") == string::npos);
@@ -1449,7 +1449,7 @@ TEST_F(NsApi, TestDropField) {
 	err = rt.reindexer->Select("update test_namespace drop nested2 where id >= 1030 and id <= 1040;", qr4);
 	ASSERT_TRUE(err.ok()) << err.what();
 	for (auto it : qr4) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		EXPECT_TRUE(item.GetJSON().find("nested2") == string::npos);
 	}
 }
@@ -1468,7 +1468,7 @@ TEST_F(NsApi, TestUpdateFieldWithFunction) {
 
 	int i = 1;
 	for (auto &it : qr) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		Variant intFieldVal = item[intField];
 		Variant extraFieldVal = item["extra"];
 		Variant timeFieldVal = item["nested.timeField"];
@@ -1492,7 +1492,7 @@ TEST_F(NsApi, TestUpdateFieldWithExpressions) {
 
 	int i = 1;
 	for (auto &it : qr) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		Variant intFieldVal = item[intField];
 		Variant extraFieldVal = item["extra"];
 		Variant timeFieldVal = item["nested.timeField"];
@@ -1685,7 +1685,6 @@ TEST_F(NsApi, MsgPackEncodingTest) {
 	}
 
 	QueryResults qr;
-
 	int i = 0;
 	size_t length = wrSer1.Len();
 	size_t offset = 0;
@@ -1696,16 +1695,12 @@ TEST_F(NsApi, MsgPackEncodingTest) {
 		Error err = item.FromMsgPack(std::string_view(reinterpret_cast<const char *>(wrSer1.Buf()), wrSer1.Len()), offset);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = rt.reindexer->Update(default_namespace, item);
+		err = rt.reindexer->Update(default_namespace, item, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		string json(item.GetJSON());
 		ASSERT_TRUE(json == items[i++]);
-
-		qr.AddItem(item, true, false);
 	}
-
-	qr.lockResults();
 
 	reindexer::WrSerializer wrSer3;
 	for (size_t i = 0; i < qr.Count(); ++i) {

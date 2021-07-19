@@ -258,7 +258,7 @@ public:
 			ser << "Sizes different: expected size " << expectedValues.size() << ", obtained size " << qr.Count() << '\n';
 		} else {
 			for (size_t i = 0; i < expectedValues.size(); ++i) {
-				Item item(qr[i].GetItem());
+				Item item(qr[i].GetItem(false));
 				const Variant fieldValue = item[fieldName];
 				if (fieldValue != expectedValues[i]) {
 					ser << "Field " << fieldName << " of item " << i << " different: expected ";
@@ -278,7 +278,7 @@ public:
 			ser << "\nObtained values:\n";
 			for (size_t i = 0; i < qr.Count(); ++i) {
 				if (i != 0) ser << ", ";
-				Item item(qr[i].GetItem());
+				Item item(qr[i].GetItem(false));
 				const Variant fieldValue = item[fieldName];
 				fieldValue.Dump(ser);
 			}
@@ -302,7 +302,7 @@ public:
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
 		for (size_t i = 0; i < qr.Count(); ++i) {
-			Item itemr(qr[i].GetItem());
+			Item itemr(qr[i].GetItem(false));
 
 			auto pk = getPkString(itemr, ns);
 			EXPECT_TRUE(pks.insert(pk).second) << "Duplicated primary key: " + pk;
@@ -627,8 +627,8 @@ protected:
 		const VariantArray fieldValues = item[joinedSelector.LeftIndexName()];
 		for (const Variant& fieldValue : fieldValues) {
 			for (auto it : joinedSelector.QueryResults()) {
-				result =
-					compareValues(joinedSelector.Condition(), fieldValue, it.GetItem()[joinedSelector.RightIndexName()], opts.collateOpts_);
+				result = compareValues(joinedSelector.Condition(), fieldValue, it.GetItem(false)[joinedSelector.RightIndexName()],
+									   opts.collateOpts_);
 				if (result) break;
 			}
 			if (result) break;
@@ -1670,7 +1670,7 @@ protected:
 		std::unordered_map<std::string, int> singlefieldFacetMap;
 		std::map<int, int> arrayFacet;
 		for (auto it : checkQr) {
-			Item item(it.GetItem());
+			Item item(it.GetItem(false));
 			yearSum += item[kFieldNameYear].Get<int>();
 			++multifieldFacet[MultifieldFacetItem{string(item[kFieldNameName].Get<std::string_view>()), item[kFieldNameYear].Get<int>()}];
 			++singlefieldFacetMap[string(item[kFieldNameName].Get<std::string_view>())];
@@ -1701,8 +1701,8 @@ protected:
 		EXPECT_EQ(lhs.Count(), rhs.Count());
 		if (lhs.Count() == rhs.Count()) {
 			for (size_t i = 0; i < lhs.Count(); ++i) {
-				Item ritem1(rhs[i].GetItem());
-				Item ritem2(lhs[i].GetItem());
+				Item ritem1(rhs[i].GetItem(false));
+				Item ritem2(lhs[i].GetItem(false));
 				EXPECT_EQ(ritem1.NumFields(), ritem2.NumFields());
 				if (ritem1.NumFields() == ritem2.NumFields()) {
 					for (int idx = 1; idx < ritem1.NumFields(); ++idx) {
@@ -2094,7 +2094,7 @@ protected:
 		if (qr.Count() == 0) return;
 
 		TestCout() << "Sort order or last items:" << std::endl;
-		Item rdummy(qr[0].GetItem());
+		Item rdummy(qr[0].GetItem(false));
 		boldOn();
 		for (size_t idx = 0; idx < query.sortingEntries_.size(); idx++) {
 			TestCout() << rdummy[query.sortingEntries_[idx].expression].Name() << " ";
@@ -2105,7 +2105,7 @@ protected:
 		int firstItem = itemIndex - itemsToShow;
 		if (firstItem < 0) firstItem = 0;
 		for (int i = firstItem; i <= itemIndex; ++i) {
-			Item item(qr[i].GetItem());
+			Item item(qr[i].GetItem(false));
 			if (i == itemIndex) boldOn();
 			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
 				TestCout() << item[query.sortingEntries_[j].expression].As<string>() << " ";
@@ -2120,7 +2120,7 @@ protected:
 		if (firstItem >= count) firstItem = count - 1;
 		if (lastItem > count) lastItem = count;
 		for (int i = firstItem; i < lastItem; ++i) {
-			Item item(qr[i].GetItem());
+			Item item(qr[i].GetItem(false));
 			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
 				TestCout() << item[query.sortingEntries_[j].expression].As<string>() << " ";
 			}

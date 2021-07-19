@@ -469,25 +469,41 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 		item.SetPrecepts(precepts);
 		if (preceptsCount) sendItemBack = true;
 	}
-	switch (mode) {
-		case ModeUpsert:
-			err = db.WithTimeout(execTimeout).Upsert(ns, item);
-			break;
-		case ModeInsert:
-			err = db.WithTimeout(execTimeout).Insert(ns, item);
-			break;
-		case ModeUpdate:
-			err = db.WithTimeout(execTimeout).Update(ns, item);
-			break;
-		case ModeDelete:
-			err = db.WithTimeout(execTimeout).Delete(ns, item);
-			break;
-	}
-	if (!err.ok()) {
-		return err;
-	}
 	QueryResults qres;
-	qres.AddItem(item, sendItemBack);
+	if (sendItemBack) {
+		switch (mode) {
+			case ModeUpsert:
+				err = db.WithTimeout(execTimeout).Upsert(ns, item, qres);
+				break;
+			case ModeInsert:
+				err = db.WithTimeout(execTimeout).Insert(ns, item, qres);
+				break;
+			case ModeUpdate:
+				err = db.WithTimeout(execTimeout).Update(ns, item, qres);
+				break;
+			case ModeDelete:
+				err = db.WithTimeout(execTimeout).Delete(ns, item, qres);
+				break;
+		}
+		if (!err.ok()) return err;
+	} else {
+		switch (mode) {
+			case ModeUpsert:
+				err = db.WithTimeout(execTimeout).Upsert(ns, item);
+				break;
+			case ModeInsert:
+				err = db.WithTimeout(execTimeout).Insert(ns, item);
+				break;
+			case ModeUpdate:
+				err = db.WithTimeout(execTimeout).Update(ns, item);
+				break;
+			case ModeDelete:
+				err = db.WithTimeout(execTimeout).Delete(ns, item);
+				break;
+		}
+		if (!err.ok()) return err;
+		qres.AddItem(item);
+	}
 	int32_t ptVers = -1;
 	ResultFetchOpts opts;
 	if (tmUpdated) {
@@ -608,7 +624,7 @@ QueryResults &RPCServer::getQueryResults(cproto::Context &ctx, int &id) {
 			}
 		}
 
-		if (data->results.size() > cproto::kMaxConcurentQueries) throw Error(errLogic, "Too many paralell queries");
+		if (data->results.size() > cproto::kMaxConcurentQueries) throw Error(errLogic, "Too many parallel queries");
 		id = data->results.size();
 		data->results.push_back({QueryResults(), true});
 	}

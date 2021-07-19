@@ -53,6 +53,7 @@ ItemModifier::ItemModifier(const h_vector<UpdateEntry, 0> &updateEntries, Namesp
 }
 
 void ItemModifier::Modify(IdType itemId, const NsContext &ctx) {
+	assert(ctx.noLock);
 	PayloadValue &pv = ns_.items_[itemId];
 	Payload pl(ns_.payloadType_, pv);
 	pv.Clone(pl.RealSize());
@@ -75,7 +76,7 @@ void ItemModifier::Modify(IdType itemId, const NsContext &ctx) {
 		if (field.details().mode == FieldModeSetJson) {
 			modifyCJSON(pv, field, values, ctx);
 		} else {
-			modifyField(itemId, field, pl, values);
+			modifyField(itemId, field, pl, values, ctx);
 		}
 	}
 
@@ -86,10 +87,7 @@ void ItemModifier::modifyCJSON(PayloadValue &pv, FieldData &field, VariantArray 
 	ItemImpl itemimpl(ns_.payloadType_, pv, ns_.tagsMatcher_);
 	itemimpl.ModifyField(field.tagspath(), values, field.details().mode);
 
-	NsContext nsCtx{ctx.rdxContext};
-	nsCtx.NoLock();
-
-	Item item = ns_.NewItem(nsCtx);
+	Item item = ns_.NewItem(ctx);
 	Error err = item.FromCJSON(itemimpl.GetCJSON(true));
 	if (!err.ok()) throw err;
 
@@ -110,8 +108,9 @@ void ItemModifier::modifyCJSON(PayloadValue &pv, FieldData &field, VariantArray 
 	Payload plNew = impl->GetPayload();
 	plData.Clone(pl.RealSize());
 
+	auto strHolder = ns_.StrHolder(ctx);
 	for (int i = ns_.indexes_.firstCompositePos(); i < ns_.indexes_.totalSize(); ++i) {
-		ns_.indexes_[i]->Delete(Variant(plData), id);
+		ns_.indexes_[i]->Delete(Variant(plData), id, *strHolder);
 	}
 
 	assert(ns_.indexes_.firstCompositePos() != 0);
@@ -147,7 +146,7 @@ void ItemModifier::modifyCJSON(PayloadValue &pv, FieldData &field, VariantArray 
 		} else {
 			pl.Get(fieldIdx, ns_.krefs, index.Opts().IsArray());
 		}
-		index.Delete(ns_.krefs, id);
+		index.Delete(ns_.krefs, id, *strHolder);
 
 		ns_.krefs.resize(0);
 		index.Upsert(ns_.krefs, ns_.skrefs, id);
@@ -165,7 +164,7 @@ void ItemModifier::modifyCJSON(PayloadValue &pv, FieldData &field, VariantArray 
 	ns_.markUpdated();
 }
 
-void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, VariantArray &values) {
+void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, VariantArray &values, const NsContext &ctx) {
 	Index &index = *(ns_.indexes_[field.index()]);
 	if (field.isIndex() && !index.Opts().IsSparse() && (field.details().mode == FieldModeDrop)) {
 		throw Error(errLogic, "It's only possible to drop sparse or non-index fields via UPDATE statement!");
@@ -186,12 +185,13 @@ void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, Var
 		for (const Variant &key : values) key.EnsureUTF8();
 	}
 
+	auto strHolder = ns_.StrHolder(ctx);
 	for (int i = ns_.indexes_.firstCompositePos(); i < ns_.indexes_.totalSize(); ++i) {
-		ns_.indexes_[i]->Delete(Variant(ns_.items_[itemId]), itemId);
+		ns_.indexes_[i]->Delete(Variant(ns_.items_[itemId]), itemId, *strHolder);
 	}
 
 	if (field.isIndex()) {
-		modifyIndexValues(itemId, field, values, pl);
+		modifyIndexValues(itemId, field, values, pl, ctx);
 	}
 
 	for (int i = ns_.indexes_.firstCompositePos(); i < ns_.indexes_.totalSize(); ++i) {
@@ -202,7 +202,7 @@ void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, Var
 		ItemImpl item(ns_.payloadType_, *(pl.Value()), ns_.tagsMatcher_);
 		Variant oldTupleValue = item.GetField(0);
 		oldTupleValue.EnsureHold();
-		ns_.indexes_[0]->Delete(oldTupleValue, itemId);
+		ns_.indexes_[0]->Delete(oldTupleValue, itemId, *strHolder);
 		item.ModifyField(field.tagspath(), values, field.details().mode);
 		Variant tupleValue = ns_.indexes_[0]->Upsert(item.GetField(0), itemId);
 		pl.Set(0, {tupleValue});
@@ -210,7 +210,7 @@ void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, Var
 	}
 }
 
-void ItemModifier::modifyIndexValues(IdType itemId, const FieldData &field, VariantArray &values, Payload &pl) {
+void ItemModifier::modifyIndexValues(IdType itemId, const FieldData &field, VariantArray &values, Payload &pl, const NsContext &ctx) {
 	Index &index = *(ns_.indexes_[field.index()]);
 	if (values.IsNullValue() && !index.Opts().IsArray()) {
 		throw Error(errParams, "Non-array index fields cannot be set to null!");
@@ -219,6 +219,7 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData &field, Vari
 	if (index.Opts().IsArray() && values.IsArrayValue() && isArrayItem) {
 		throw Error(errParams, "Array items are supposed to be updated with a single value, not an array");
 	}
+	auto strHolder = ns_.StrHolder(ctx);
 	if (index.Opts().IsArray() && !values.IsArrayValue() && !values.IsNullValue()) {
 		if (values.empty()) {
 			throw Error(errParams, "Cannot update array item with an empty value");
@@ -229,7 +230,7 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData &field, Vari
 		if (field.tagspath().back().IsForAllItems()) {
 			ns_.skrefs = pl.GetIndexedArrayData(field.tagspath(), offset, length);
 			if (!ns_.skrefs.empty()) {
-				index.Delete(ns_.skrefs, itemId);
+				index.Delete(ns_.skrefs, itemId, *strHolder);
 			}
 			if (!index.Opts().IsSparse()) {
 				for (int i = offset; i < offset + length; ++i) {
@@ -245,7 +246,7 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData &field, Vari
 			ns_.skrefs = pl.GetIndexedArrayData(arrayPath, offset, length);
 			if (field.arrayIndex() < length) {
 				if (!ns_.skrefs.empty()) {
-					index.Delete(ns_.skrefs.front(), itemId);
+					index.Delete(ns_.skrefs.front(), itemId, *strHolder);
 				}
 				if (!index.Opts().IsSparse()) {
 					pl.Set(field.index(), offset, ns_.krefs.front());
@@ -261,7 +262,7 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData &field, Vari
 			pl.Get(field.index(), ns_.skrefs, true);
 		}
 		if (!ns_.skrefs.empty()) {
-			index.Delete(ns_.skrefs, itemId);
+			index.Delete(ns_.skrefs, itemId, *strHolder);
 		}
 		ns_.krefs.resize(0);
 		ns_.krefs.reserve(values.size());

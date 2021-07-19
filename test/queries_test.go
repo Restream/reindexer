@@ -444,7 +444,7 @@ func TestQueries(t *testing.T) {
 
 		CheckTestItemsJsonQueries()
 
-		CheckAggregateQueries()
+		CheckAggregateQueries(t)
 
 		CheckTestItemsQueries(t, testCaseWithCommonIndexes)
 		CheckTestItemsSQLQueries(t)
@@ -544,7 +544,7 @@ func (f CompositeFacetResult) Less(i, j int) bool {
 	return f[i].Count < f[j].Count
 }
 
-func CheckAggregateQueries() {
+func CheckAggregateQueries(t *testing.T) {
 
 	facetLimit := 100
 	facetOffset := 10
@@ -558,7 +558,7 @@ func CheckAggregateQueries() {
 	q.AggregateMax("age")
 	q.AggregateFacet("company_name", "rate").Limit(facetLimit).Offset(facetOffset).Sort("count", false).Sort("company_name", true).Sort("rate", false)
 	q.AggregateFacet("packages")
-	it := q.ExecCtx(ctx)
+	it := q.ExecCtx(t, ctx)
 	cancel()
 	if it.Error() != nil {
 		panic(it.Error())
@@ -566,7 +566,7 @@ func CheckAggregateQueries() {
 	defer it.Close()
 
 	qcheck := DB.Query("test_items")
-	res, err := qcheck.Exec().FetchAll()
+	res, err := qcheck.Exec(t).FetchAll()
 	if err != nil {
 		panic(err)
 	}
@@ -1266,7 +1266,7 @@ func TestCanceledSelectQuery(t *testing.T) {
 		panic(fmt.Errorf("Canceled select request was executed"))
 	}
 
-	it := newTestQuery(DB, "test_items_cancel").Where("year", reindexer.GE, 2016).Or().OpenBracket().Where("RATE", reindexer.EQ, 1.1).Or().Where("company_name", reindexer.LIKE, likePattern).CloseBracket().Where("age_limit", reindexer.LE, int64(50)).ExecCtx(ctx)
+	it := newTestQuery(DB, "test_items_cancel").Where("year", reindexer.GE, 2016).Or().OpenBracket().Where("RATE", reindexer.EQ, 1.1).Or().Where("company_name", reindexer.LIKE, likePattern).CloseBracket().Where("age_limit", reindexer.LE, int64(50)).ExecCtx(t, ctx)
 	defer it.Close()
 	if err != context.Canceled {
 		panic(fmt.Errorf("Canceled select request was executed"))
@@ -1488,7 +1488,7 @@ func TestEqualPosition(t *testing.T) {
 		Where("items_array.space_id", reindexer.EQ, "space_0").
 		Where("items_array.value", reindexer.EQ, 0).
 		EqualPosition("items_array.space_id", "items_array.value").
-		MustExec()
+		MustExec(t)
 	assert.Equal(t, len(expectedIds), it.Count())
 	for it.Next() {
 		assert.True(t, expectedIds[it.Object().(*TestItemEqualPosition).ID])
@@ -1505,7 +1505,7 @@ func TestEqualPosition(t *testing.T) {
 		Where("items_array.value", reindexer.EQ, 1).
 		WhereBool("test_flag", reindexer.EQ, false).
 		EqualPosition("items_array.space_id", "items_array.value").
-		MustExec()
+		MustExec(t)
 	it.Close()
 	assert.Equal(t, len(expectedIds), it.Count())
 	for it.Next() {

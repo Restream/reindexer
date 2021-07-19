@@ -64,7 +64,7 @@ public:
 	Error Status() { return status_; }
 	/// Get internal ID of item
 	/// @return ID of item
-	int GetID() { return id_; }
+	int GetID() const noexcept { return id_; }
 	/// Get internal version of item
 	/// @return version of item
 	int NumFields();

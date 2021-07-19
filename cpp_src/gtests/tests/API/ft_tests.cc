@@ -33,7 +33,7 @@ TEST_F(FTApi, CompositeSelect) {
 
 		PrintQueryResults("nm1", res);
 		for (auto it : res) {
-			Item ritem(it.GetItem());
+			Item ritem(it.GetItem(false));
 			for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 				auto field = ritem[idx].Name();
 				if (field == "id") continue;
@@ -70,7 +70,7 @@ TEST_F(FTApi, CompositeSelectWithFields) {
 
 			PrintQueryResults("nm1", res);
 			for (auto it : res) {
-				Item ritem(it.GetItem());
+				Item ritem(it.GetItem(false));
 				for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 					auto curField = ritem[idx].Name();
 					if (curField != field) continue;
@@ -105,7 +105,7 @@ TEST_F(FTApi, SelectWithEscaping) {
 	EXPECT_TRUE(res.Count() == 1);
 
 	for (auto it : res) {
-		Item ritem(it.GetItem());
+		Item ritem(it.GetItem(false));
 		string val = ritem["ft1"].As<string>();
 		EXPECT_TRUE(val == "Go to !-hell+hell+hell!!!");
 	}
@@ -544,7 +544,7 @@ TEST_F(FTApi, Stress) {
 				}
 
 				for (auto it : res) {
-					Item ritem(it.GetItem());
+					Item ritem(it.GetItem(false));
 					if (ritem["ft1"].As<string>() == phrase[j]) {
 						found = true;
 					}
@@ -597,7 +597,7 @@ TEST_F(FTApi, Unique) {
 				auto res = StressSelect(data[j]);
 				if (res.Count() != 1) {
 					for (auto it : res) {
-						Item ritem(it.GetItem());
+						Item ritem(it.GetItem(false));
 					}
 					abort();
 				}
@@ -796,17 +796,17 @@ TEST_F(FTApi, SelectTranslitWithComma) {
 
 	auto qr = SimpleSelect("@ft1 [kt,jgtxrf");
 	EXPECT_EQ(qr.Count(), 1);
-	auto item = qr[0].GetItem();
+	auto item = qr[0].GetItem(false);
 	EXPECT_EQ(item["ft1"].As<string>(), "!хлебопечка!");
 
 	qr = SimpleSelect("@ft1 \\'ktrnhjy");
 	EXPECT_EQ(qr.Count(), 1);
-	item = qr[0].GetItem();
+	item = qr[0].GetItem(false);
 	EXPECT_EQ(item["ft1"].As<string>(), "!электрон!");
 
 	qr = SimpleSelect("@ft1 vfn\\'");
 	EXPECT_EQ(qr.Count(), 1);
-	item = qr[0].GetItem();
+	item = qr[0].GetItem(false);
 	EXPECT_EQ(item["ft1"].As<string>(), "!матэ!");
 }
 

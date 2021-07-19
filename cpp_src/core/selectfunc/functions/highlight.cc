@@ -5,7 +5,7 @@
 #include "core/selectfunc/ctx/ftctx.h"
 namespace reindexer {
 
-bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct &func) {
+bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct &func, std::vector<key_string> &stringsHolder) {
 	if (func.funcArgs.size() < 2) throw Error(errParams, "Invalid highlight params need minimum 2 - have %d", func.funcArgs.size());
 
 	if (!func.ctx || func.ctx->type != BaseFunctionCtx::kFtCtx) return false;
@@ -30,7 +30,7 @@ bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 	auto &va = *pva;
 
 	string result_string;
-	result_string.reserve(result_string.size() + va.size() * (func.funcArgs[0].size() + func.funcArgs[1].size()));
+	result_string.reserve(data->size() + va.size() * (func.funcArgs[0].size() + func.funcArgs[1].size()));
 	result_string = *data;
 
 	int offset = 0;
@@ -50,13 +50,11 @@ bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 		offset += func.funcArgs[1].size();
 	}
 
-	key_string_release(const_cast<string *>(data));
-	auto str = make_key_string(result_string);
-	key_string_add_ref(str.get());
+	stringsHolder.emplace_back(make_key_string(result_string));
 	res.Value().Clone();
 
 	if (func.tagsPath.empty()) {
-		pl.Set(func.field, VariantArray{Variant{str}});
+		pl.Set(func.field, VariantArray{Variant{stringsHolder.back()}});
 	} else {
 		throw Error(errConflict, "SetByJsonPath is not implemented yet!");
 	}

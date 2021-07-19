@@ -14,6 +14,7 @@ namespace reindexer {
 
 class TagsMatcher;
 class WrSerializer;
+class StringsHolder;
 
 template <typename T>
 class PayloadIface {
@@ -111,6 +112,8 @@ public:
 	// Release strings
 	void ReleaseStrings();
 	void ReleaseStrings(int field);
+	void MoveStrings(int field, StringsHolder &dest);
+	void CopyStrings(std::vector<key_string> &dest);
 
 	// Item values' string for printing
 	std::string Dump() const;
@@ -124,6 +127,8 @@ private:
 
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
 	T CopyWithRemovedFields(PayloadType t);
+	template <typename StrHolder>
+	void copyOrMoveStrings(int field, StrHolder &dest, bool copy);
 
 protected:
 	// Array of elements types , not owning

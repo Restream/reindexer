@@ -10,10 +10,15 @@ namespace reindexer {
 Item::FieldRef::FieldRef(int field, ItemImpl *itemImpl) : itemImpl_(itemImpl), field_(field) {}
 Item::FieldRef::FieldRef(std::string_view jsonPath, ItemImpl *itemImpl) : itemImpl_(itemImpl), jsonPath_(jsonPath), field_(-1) {}
 
-Item::Item(Item &&other) noexcept : impl_(other.impl_), status_(std::move(other.status_)), id_(other.id_) { other.impl_ = nullptr; }
-
 Item &Item::operator=(Item &&other) noexcept {
 	if (&other != this) {
+		if (impl_) {
+			auto ns = impl_->GetNamespace();
+			if (ns) {
+				ns->ToPool(impl_);
+				impl_ = nullptr;
+			}
+		}
 		delete impl_;
 		impl_ = other.impl_;
 		status_ = std::move(other.status_);

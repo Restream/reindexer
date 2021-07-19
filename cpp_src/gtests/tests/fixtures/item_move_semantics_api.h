@@ -68,7 +68,7 @@ protected:
 		EXPECT_TRUE(int(qres.Count()) == (itemsCount - 1)) << (itemsCount - 1) << " items upserted, but selected only " << qres.Count();
 
 		for (auto it : qres) {
-			Item item(it.GetItem());
+			Item item(it.GetItem(false));
 			std::string_view jsonRead(item.GetJSON());
 
 			int itemId = item[pkField].Get<int>();

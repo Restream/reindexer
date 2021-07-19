@@ -116,9 +116,10 @@ TEST(SyncCoroRx, TestSyncCoroRx) {
 
 TEST(SyncCoroRx, TestSyncCoroRxNThread) {
 	// test for inserting data in many thread
-	reindexer::fs::RmDirAll("/tmp/TestCoroRxNThread");
+	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/TestSyncCoroRxNThread");
+	reindexer::fs::RmDirAll(kTestDbPath);
 	ServerControl server;
-	server.InitServer(0, 8999, 9888, "/tmp/TestSyncCoroRxNThread", "db", true);
+	server.InitServer(0, 8999, 9888, kTestDbPath, "db", true);
 	ReplicationConfigTest config("master");
 	server.Get()->MakeMaster(config);
 	reindexer::client::SyncCoroReindexer client;
@@ -157,9 +158,10 @@ TEST(SyncCoroRx, TestSyncCoroRxNThread) {
 
 TEST(SyncCoroRx, DISABLED_TestCoroRxNCoroutine) {
 	// for comparing synchcororeindexer client and single-threaded coro client
-	reindexer::fs::RmDirAll("/tmp/TestCoroRx");
+	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/TestCoroRxNCoroutine");
+	reindexer::fs::RmDirAll(kTestDbPath);
 	ServerControl server;
-	server.InitServer(0, 8999, 9888, "/tmp/TestCoroRx", "db", true);
+	server.InitServer(0, 8999, 9888, kTestDbPath, "db", true);
 	ReplicationConfigTest config("master");
 	server.Get()->MakeMaster(config);
 

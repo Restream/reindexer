@@ -78,7 +78,7 @@ func TestRaceConditions(t *testing.T) {
 					q.LeftJoin(qj3, "pricesx").On("location", reindexer.LT, "location").Or().On("price_id", reindexer.SET, "id")
 				}
 
-				it := q.ExecCtx(ctx)
+				it := q.ExecCtx(t, ctx)
 				_ = it.TotalCount()
 				for it.Next() {
 					_ = it.Object().(*TestItem)
@@ -199,7 +199,7 @@ func TestRaceConditionsTx(t *testing.T) {
 					q.LeftJoin(qj3, "pricesx").On("location", reindexer.LT, "location").Or().On("price_id", reindexer.SET, "id")
 				}
 
-				it := q.ExecCtx(ctx)
+				it := q.ExecCtx(t, ctx)
 				_ = it.TotalCount()
 				for it.Next() {
 					_ = it.Object().(*TestItem)

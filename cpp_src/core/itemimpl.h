@@ -15,7 +15,7 @@ using std::vector;
 namespace reindexer {
 
 struct ItemImplRawData {
-	ItemImplRawData(PayloadValue v) : payloadValue_(v) {}
+	ItemImplRawData(PayloadValue v) : payloadValue_(std::move(v)) {}
 	ItemImplRawData() {}
 	ItemImplRawData(const ItemImplRawData &) = delete;
 	ItemImplRawData(ItemImplRawData &&) noexcept;
@@ -27,6 +27,7 @@ struct ItemImplRawData {
 	std::unique_ptr<char[]> sourceData_;
 	vector<string> precepts_;
 	std::unique_ptr<std::deque<std::string>> holder_;
+	std::unique_ptr<std::vector<key_string>> keyStringsHolder_;
 };
 
 class Namespace;
@@ -53,8 +54,8 @@ public:
 		  pkFields_(pkFields),
 		  schema_(std::move(schema)) {}
 
-	ItemImpl(PayloadType type, PayloadValue v, const TagsMatcher &tagsMatcher)
-		: ItemImplRawData(v), payloadType_(type), tagsMatcher_(tagsMatcher) {
+	ItemImpl(PayloadType type, PayloadValue v, const TagsMatcher &tagsMatcher, std::shared_ptr<const Schema> schema = {})
+		: ItemImplRawData(std::move(v)), payloadType_(type), tagsMatcher_(tagsMatcher), schema_{std::move(schema)} {
 		tagsMatcher_.clearUpdated();
 	}
 
@@ -107,6 +108,7 @@ public:
 		precepts_.clear();
 		cjson_ = std::string_view();
 		holder_.reset();
+		keyStringsHolder_.reset();
 		sourceData_.reset();
 		tupleData_.reset();
 		ser_ = WrSerializer();
@@ -116,7 +118,7 @@ public:
 
 		unsafe_ = false;
 		ns_.reset();
-		realValue_ = PayloadValue();
+		realValue_.Free();
 	}
 	void SetNamespace(std::shared_ptr<Namespace> ns) { ns_ = std::move(ns); }
 	std::shared_ptr<Namespace> GetNamespace() { return ns_; }

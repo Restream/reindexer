@@ -5,9 +5,6 @@
 
 #include "base_fixture.h"
 
-using std::vector;
-using std::string;
-
 class ApiTvSimple : protected BaseFixture {
 public:
 	virtual ~ApiTvSimple() {}
@@ -29,10 +26,12 @@ public:
 
 protected:
 	virtual Item MakeItem();
+	Item MakeStrItem();
 
 protected:
 	void WarmUpIndexes(State& state);
 
+	void StringsSelect(State& state);
 	void GetByID(State& state);
 	void GetEqInt(State& state);
 	void GetEqArrayInt(State& state);
@@ -78,4 +77,5 @@ private:
 	vector<vector<int>> packages_;
 	vector<vector<int>> priceIDs_;
 	reindexer::WrSerializer wrSer_;
+	std::string stringSelectNs_{"string_select_ns"};
 };

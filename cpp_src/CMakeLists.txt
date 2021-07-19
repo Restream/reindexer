@@ -28,7 +28,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "3.2.1")
+set (REINDEXER_VERSION_DEFAULT "3.2.2")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -99,7 +99,8 @@ file (
 )
 
 set (CONTEXT_ASM_DIR "${REINDEXER_SOURCE_PATH}/coroutine/context/asm")
-list(FILTER SRCS EXCLUDE REGEX "${CONTEXT_ASM_DIR}/*")
+string(REGEX REPLACE "([][+.*()^])" "\\\\\\1" ESCAPED_CONTEXT_ASM_DIR "${REINDEXER_SOURCE_PATH}/coroutine/context/asm")
+list(FILTER SRCS EXCLUDE REGEX "${ESCAPED_CONTEXT_ASM_DIR}/*")
 
 include (TargetArch)
 target_architecture(COMPILER_TARGET_ARCH)
@@ -204,7 +205,6 @@ add_library(${TARGET} STATIC ${HDRS} ${SRCS} ${VENDORS})
 add_definitions(-DREINDEX_CORE_BUILD=1)
 
 
-
 # add_definitions(-DREINDEX_FT_EXTRA_DEBUG=1)
 
 add_subdirectory(server/contrib)
@@ -236,12 +236,18 @@ endif ()
 
 # snappy
 ########
-find_package(Snappy)
+if (NOT WITH_TSAN)
+  find_package(Snappy)
+endif()
 if (SNAPPY_FOUND)
   include_directories(SYSTEM ${SNAPPY_INCLUDE_DIR})
   list(APPEND REINDEXER_LIBRARIES ${SNAPPY_LIBRARIES})
- else ()
-  message (STATUS "Snappy not found. Will download it")
+else ()
+  if (WITH_TSAN)
+    message (STATUS "Snappy will be downloaded from Github to avoid false-positive warnings from TSAN")
+  else()
+    message (STATUS "Snappy not found. Will download it")
+  endif()
   ExternalProject_Add(
     snappy_lib
     GIT_REPOSITORY "https://github.com/google/snappy.git"
@@ -308,12 +314,18 @@ if(GPERFTOOLS_TCMALLOC AND NOT WIN32)
   # shared version of leveldb can conflict with tcmalloc, so force static version of leveldb, if tcmalloc enabled
   set (LevelDB_NAMES libleveldb.a)
 endif()
-find_library(LevelDB_LIBRARY NAMES ${LevelDB_NAMES} leveldb HINTS $ENV{LEVELDB_ROOT}/lib)
-find_path(LevelDB_INCLUDE_DIR NAMES leveldb/db.h HINTS $ENV{LEVELDB_ROOT}/include /opt/local/include /usr/local/include /usr/include)
+if (NOT WITH_TSAN)
+  find_library(LevelDB_LIBRARY NAMES ${LevelDB_NAMES} leveldb HINTS $ENV{LEVELDB_ROOT}/lib)
+  find_path(LevelDB_INCLUDE_DIR NAMES leveldb/db.h HINTS $ENV{LEVELDB_ROOT}/include /opt/local/include /usr/local/include /usr/include)
+endif()
 
-if (NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR)
-  # Leveldb not found. Download it
-  message (STATUS "LevelDB not found. Will download it")
+if (NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR OR WITH_TSAN)
+  if (WITH_TSAN)
+    message (STATUS "LevelDB will be downloaded from Github to avoid false-positive warnings from TSAN")
+  else()
+    # Leveldb not found. Download it
+    message (STATUS "LevelDB not found. Will download it")
+  endif()
   ExternalProject_Add(
     leveldb_lib
     GIT_REPOSITORY "https://github.com/restream/leveldb.git"
@@ -582,6 +594,8 @@ if (NOT WIN32)
           get_filename_component(lib ${lib} NAME_WE)
           string(REGEX REPLACE "^lib" "" lib ${lib})
           list(APPEND flibs " -l${lib}")
+        else ()
+          list(APPEND flibs " -l${lib}")
         endif()
       endif ()
     endforeach(lib)
@@ -614,7 +628,7 @@ if (NOT WIN32)
     "core/rdxcontext.h" "core/activity_context.h"
     "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" "core/transaction.h"
     "core/query/query.h" "core/query/queryentry.h" "core/queryresults/queryresults.h" "core/indexdef.h" "core/queryresults/aggregationresult.h"
-    "core/queryresults/itemref.h"
+    "core/queryresults/itemref.h" "core/namespace/stringsholder.h" "core/keyvalue/key_string.h"
     "core/expressiontree.h" "core/lsn.h"
     "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/span.h"
     "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h"
@@ -638,6 +652,17 @@ if (NOT WIN32)
 
   generate_libs_list("${REINDEXER_LIBRARIES}" libs)
   string(REPLACE ";" "" libs "${libs}")
+
+  set(linkdirs "")
+  foreach (lib ${REINDEXER_LIBRARIES})
+    get_filename_component(lib ${lib} DIRECTORY)
+    if (NOT ${lib} STREQUAL "")
+      list(FIND linkdirs ${lib} index)
+      if (NOT ${index} GREATER -1)
+        list(APPEND linkdirs ${lib})
+      endif()
+    endif()
+  endforeach(lib)
 
   configure_file (
     "${PROJECT_SOURCE_DIR}/libreindexer.pc.in"
@@ -663,6 +688,7 @@ if (NOT WIN32)
   unset (libdir)
   unset (includedir)
   unset (libs)
+  unset (linkdirs)
 
   install(TARGETS ${TARGET}
       RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

@@ -33,7 +33,7 @@ func TestBasicCheckItemsTtlExpired(t *testing.T) {
 
 	time.Sleep(3)
 
-	results, err := DB.Query("test_items_with_ttl").Exec().FetchAll()
+	results, err := DB.Query("test_items_with_ttl").Exec(t).FetchAll()
 	if err != nil {
 		panic(err)
 	}

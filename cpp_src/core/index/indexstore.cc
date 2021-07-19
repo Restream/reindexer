@@ -7,44 +7,42 @@
 namespace reindexer {
 
 template <>
-IndexStore<Point>::IndexStore(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields)
-	: Index(idef, payloadType, fields) {
+IndexStore<Point>::IndexStore(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields)
+	: Index(idef, std::move(payloadType), fields) {
 	keyType_ = selectKeyType_ = KeyValueDouble;
 	opts_.Array(true);
 }
 
-struct StrDeepClean {
-	void operator()(unordered_str_map<int>::value_type &v) const { v.first = key_string(); }
-};
-
 template <>
-void IndexStore<key_string>::Delete(const Variant &key, IdType id) {
+void IndexStore<key_string>::Delete(const Variant &key, IdType id, StringsHolder &strHolder) {
 	if (key.Type() == KeyValueNull) return;
 	auto keyIt = str_map.find(std::string_view(key));
 	// assertf(keyIt != str_map.end(), "Delete unexists key from index '%s' id=%d", name_, id);
 	if (keyIt == str_map.end()) return;
 	if (keyIt->second) keyIt->second--;
 	if (!keyIt->second) {
-		memStat_.dataSize -= sizeof(unordered_str_map<int>::value_type) + sizeof(*keyIt->first.get()) + keyIt->first->heap_size();
-		str_map.template erase<StrDeepClean>(keyIt);
+		const auto strSize = sizeof(*keyIt->first.get()) + keyIt->first->heap_size();
+		memStat_.dataSize -= sizeof(unordered_str_map<int>::value_type) + strSize;
+		strHolder.Add(std::move(keyIt->first), strSize);
+		str_map.template erase<no_deep_clean>(keyIt);
 	}
 
 	(void)id;
 }
 template <typename T>
-void IndexStore<T>::Delete(const Variant & /*key*/, IdType /* id */) {}
+void IndexStore<T>::Delete(const Variant & /*key*/, IdType /* id */, StringsHolder &) {}
 
 template <typename T>
-void IndexStore<T>::Delete(const VariantArray &keys, IdType id) {
+void IndexStore<T>::Delete(const VariantArray &keys, IdType id, StringsHolder &strHolder) {
 	if (keys.empty()) {
-		Delete(Variant{}, id);
+		Delete(Variant{}, id, strHolder);
 	} else {
-		for (const auto &key : keys) Delete(key, id);
+		for (const auto &key : keys) Delete(key, id, strHolder);
 	}
 }
 
 template <>
-void IndexStore<Point>::Delete(const VariantArray & /*keys*/, IdType /*id*/) {
+void IndexStore<Point>::Delete(const VariantArray & /*keys*/, IdType /*id*/, StringsHolder &) {
 	assert(0);
 }
 
@@ -113,8 +111,9 @@ SelectKeyResults IndexStore<T>::SelectKey(const VariantArray &keys, CondType con
 }
 
 template <typename T>
-Index *IndexStore<T>::Clone() {
-	return new IndexStore<T>(*this);
+std::unique_ptr<Index> IndexStore<T>::Clone() {
+	std::unique_ptr<Index> ret{new IndexStore<T>(*this)};
+	return ret;
 }
 
 template <typename T>
@@ -126,23 +125,28 @@ IndexMemStat IndexStore<T>::GetMemStat() {
 	return ret;
 }
 
-Index *IndexStore_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields) {
+std::unique_ptr<Index> IndexStore_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields) {
 	switch (idef.Type()) {
 		case IndexBool:
-			return new IndexStore<bool>(idef, payloadType, fields);
+			return std::unique_ptr<Index>{new IndexStore<bool>(idef, std::move(payloadType), fields)};
 		case IndexIntStore:
-			return new IndexStore<int>(idef, payloadType, fields);
+			return std::unique_ptr<Index>{new IndexStore<int>(idef, std::move(payloadType), fields)};
 		case IndexInt64Store:
-			return new IndexStore<int64_t>(idef, payloadType, fields);
+			return std::unique_ptr<Index>{new IndexStore<int64_t>(idef, std::move(payloadType), fields)};
 		case IndexDoubleStore:
-			return new IndexStore<double>(idef, payloadType, fields);
+			return std::unique_ptr<Index>{new IndexStore<double>(idef, std::move(payloadType), fields)};
 		case IndexStrStore:
-			return new IndexStore<key_string>(idef, payloadType, fields);
+			return std::unique_ptr<Index>{new IndexStore<key_string>(idef, std::move(payloadType), fields)};
 		default:
 			abort();
 	}
 }
 
+template class IndexStore<bool>;
+template class IndexStore<int>;
+template class IndexStore<int64_t>;
+template class IndexStore<double>;
+template class IndexStore<key_string>;
 template class IndexStore<PayloadValue>;
 template class IndexStore<Point>;
 

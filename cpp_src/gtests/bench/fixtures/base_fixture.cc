@@ -69,7 +69,7 @@ void BaseFixture::WaitForOptimization() {
 		auto e = db_->Select(q, res);
 		assert(e.ok());
 		assert(res.Count() == 1);
-		auto item = res[0].GetItem();
+		auto item = res[0].GetItem(false);
 		if (item["optimization_completed"].As<bool>() == true) {
 			break;
 		}

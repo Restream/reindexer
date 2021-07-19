@@ -12,7 +12,7 @@ Reindexer has builtin full text search engine. This document describes usage of 
 - [Examples of text queris](#examples-of-text-queris)
 - [Natural language processing](#natural-language-processing)
 - [Merging queries results](#merging-queries-results)
-- [Using select fucntions](#using-select-functions)
+- [Using select functions](#using-select-functions)
 - [Typos algorithm](#typos-algorithm)
 - [Performance and memory usage](#performance-and-memory-usage)
 - [Configuration](#configuration)
@@ -159,7 +159,7 @@ It is possible to merge multiple queries results and sort final result by releva
 		}
 	}
 ```
-## Using select fucntions
+## Using select functions
 It is possible to use select functions to process result data.
 For now you can use snippet and highlight
 You can not put [,)\0] symbols in functions params

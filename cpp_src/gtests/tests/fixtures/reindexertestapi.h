@@ -70,7 +70,7 @@ public:
 		}
 
 		for (auto it : res) {
-			ItemType ritem(it.GetItem());
+			ItemType ritem(it.GetItem(false));
 			std::string outBuf = "";
 			for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 				outBuf += "\t";

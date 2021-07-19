@@ -32,6 +32,10 @@ Error Reindexer::Insert(std::string_view nsName, Item& item) { return impl_->Ins
 Error Reindexer::Update(std::string_view nsName, Item& item) { return impl_->Update(nsName, item, ctx_); }
 Error Reindexer::Upsert(std::string_view nsName, Item& item) { return impl_->Upsert(nsName, item, ctx_); }
 Error Reindexer::Delete(std::string_view nsName, Item& item) { return impl_->Delete(nsName, item, ctx_); }
+Error Reindexer::Insert(std::string_view nsName, Item& item, QueryResults& qr) { return impl_->Insert(nsName, item, qr, ctx_); }
+Error Reindexer::Update(std::string_view nsName, Item& item, QueryResults& qr) { return impl_->Update(nsName, item, qr, ctx_); }
+Error Reindexer::Upsert(std::string_view nsName, Item& item, QueryResults& qr) { return impl_->Upsert(nsName, item, qr, ctx_); }
+Error Reindexer::Delete(std::string_view nsName, Item& item, QueryResults& qr) { return impl_->Delete(nsName, item, qr, ctx_); }
 Item Reindexer::NewItem(std::string_view nsName) { return impl_->NewItem(nsName, ctx_); }
 Transaction Reindexer::NewTransaction(std::string_view nsName) { return impl_->NewTransaction(nsName, ctx_); }
 Error Reindexer::CommitTransaction(Transaction& tr, QueryResults& result) { return impl_->CommitTransaction(tr, result, ctx_); }

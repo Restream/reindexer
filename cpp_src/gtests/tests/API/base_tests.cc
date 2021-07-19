@@ -488,6 +488,140 @@ TEST_F(ReindexerApi, NewItem) {
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 }
 
+TEST_F(ReindexerApi, GetItemFromQueryResults) {
+	constexpr size_t kItemsCount = 10;
+	initializeDefaultNs();
+	std::vector<std::pair<int, std::string>> data;
+	while (data.size() < kItemsCount) {
+		Item item(rt.reindexer->NewItem(default_namespace));
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		data.emplace_back(data.size(), RandString());
+		item["id"] = data.back().first;
+		item["value"] = data.back().second;
+		auto err = rt.reindexer->Insert(default_namespace, item);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+	reindexer::QueryResults qr;
+	auto err = rt.reindexer->Select(Query(default_namespace).Sort("id", false), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), kItemsCount);
+	// items in QueryResults are valid after the ns is destroyed
+	err = rt.reindexer->TruncateNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->DropNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	size_t i = 0;
+	for (auto it = qr.begin(), end = qr.end(); it != end; ++it, ++i) {
+		ASSERT_LT(i, data.size());
+		auto item = it.GetItem();
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		EXPECT_EQ(item["id"].As<int>(), data[i].first);
+		EXPECT_EQ(item["value"].As<std::string>(), data[i].second);
+	}
+
+	qr.Clear();
+	data.clear();
+	initializeDefaultNs();
+	{
+		Item item(rt.reindexer->NewItem(default_namespace));
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		data.emplace_back(data.size(), RandString());
+		item["id"] = data.back().first;
+		item["value"] = data.back().second;
+		err = rt.reindexer->Insert(default_namespace, item, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), data.size());
+
+		item = rt.reindexer->NewItem(default_namespace);
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		data.emplace_back(data.size(), RandString());
+		item["id"] = data.back().first;
+		item["value"] = data.back().second;
+		err = rt.reindexer->Upsert(default_namespace, item, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), data.size());
+
+		item = rt.reindexer->NewItem(default_namespace);
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		data.emplace_back(data.back().first, RandString());
+		item["id"] = data.back().first;
+		item["value"] = data.back().second;
+		err = rt.reindexer->Upsert(default_namespace, item, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), data.size());
+
+		item = rt.reindexer->NewItem(default_namespace);
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		data.emplace_back(data.size(), RandString());
+		item["id"] = data.back().first;
+		item["value"] = data.back().second;
+		err = rt.reindexer->Insert(default_namespace, item, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), data.size());
+
+		item = rt.reindexer->NewItem(default_namespace);
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		data.emplace_back(data.back().first, RandString());
+		item["id"] = data.back().first;
+		item["value"] = data.back().second;
+		err = rt.reindexer->Update(default_namespace, item, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), data.size());
+
+		item = rt.reindexer->NewItem(default_namespace);
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		data.emplace_back(data.back());
+		item["id"] = data.back().first;
+		item["value"] = RandString();
+		err = rt.reindexer->Delete(default_namespace, item, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), data.size());
+
+		item = rt.reindexer->NewItem(default_namespace);
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		item["id"] = static_cast<int>(data.size());
+		item["value"] = RandString();
+		err = rt.reindexer->Update(default_namespace, item, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), data.size());
+
+		item = rt.reindexer->NewItem(default_namespace);
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		item["id"] = static_cast<int>(data.size());
+		item["value"] = RandString();
+		err = rt.reindexer->Delete(default_namespace, item, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), data.size());
+	}
+	err = rt.reindexer->TruncateNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->DropNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	ASSERT_EQ(qr.Count(), 6);
+	ASSERT_EQ(qr.Count(), data.size());
+	i = 0;
+	for (auto it = qr.begin(), end = qr.end(); it != end; ++it, ++i) {
+		ASSERT_LT(i, data.size());
+		auto item = it.GetItem();
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		EXPECT_EQ(item["id"].As<int>(), data[i].first);
+		EXPECT_EQ(item["value"].As<std::string>(), data[i].second);
+	}
+}
+
 TEST_F(ReindexerApi, NewItem_CaseInsensitiveCheck) {
 	int idVal = 1000;
 	string valueVal = "value";
@@ -539,7 +673,7 @@ TEST_F(ReindexerApi, Insert) {
 	ASSERT_EQ(qr.Count(), 1);
 
 	// check item consist and check case insensitive access to field by name
-	Item selItem = qr.begin().GetItem();
+	Item selItem = qr.begin().GetItem(false);
 	ASSERT_NO_THROW(ASSERT_EQ(selItem["id"].As<int>(), 1234));
 	ASSERT_NO_THROW(ASSERT_EQ(selItem["value"].As<string>(), "value"));
 }
@@ -574,7 +708,7 @@ TEST_F(ReindexerApi, WithTimeoutInterface) {
 	ASSERT_EQ(qr.Count(), 1);
 
 	// check item consist and check case insensitive access to field by name
-	Item selItem = qr.begin().GetItem();
+	Item selItem = qr.begin().GetItem(false);
 	ASSERT_NO_THROW(ASSERT_EQ(selItem["id"].As<int>(), 1234));
 	ASSERT_NO_THROW(ASSERT_EQ(selItem["value"].As<string>(), "value"));
 
@@ -650,7 +784,7 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 
 	vector<Variant> lastValues(query.sortingEntries_.size());
 	for (size_t i = 0; i < qr.Count(); ++i) {
-		Item item = qr[i].GetItem();
+		Item item = qr[i].GetItem(false);
 
 		std::vector<int> cmpRes(query.sortingEntries_.size());
 		std::fill(cmpRes.begin(), cmpRes.end(), -1);
@@ -731,7 +865,7 @@ TEST_F(ReindexerApi, SortByMultipleColumnsWithLimits) {
 
 	const std::vector<int> properRes = {5, 6, 7};
 	for (size_t i = 0; i < qr.Count(); ++i) {
-		Item item = qr[i].GetItem();
+		Item item = qr[i].GetItem(false);
 		Variant kr = item["f2"];
 		EXPECT_TRUE(static_cast<int>(kr) == properRes[i]);
 	}
@@ -807,7 +941,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 
 	std::deque<int> selectedIntValues;
 	for (auto it : sortByIntQr) {
-		Item item(it.GetItem());
+		Item item(it.GetItem(false));
 		int value = item["valueInt"].Get<int>();
 		selectedIntValues.push_back(value);
 	}
@@ -835,7 +969,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 	auto collectQrStringFieldValues = [](const QueryResults& qr, const char* fieldName, vector<string>& selectedStrValues) {
 		selectedStrValues.clear();
 		for (auto it : qr) {
-			Item item(it.GetItem());
+			Item item(it.GetItem(false));
 			selectedStrValues.push_back(item[fieldName].As<string>());
 		}
 	};
@@ -1209,7 +1343,7 @@ TEST_F(ReindexerApi, ContextCancelingTest) {
 	err = rt.reindexer->Select(Query(default_namespace), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.Count(), 1);
-	Item selItem = qr.begin().GetItem();
+	Item selItem = qr.begin().GetItem(false);
 	ASSERT_NO_THROW(ASSERT_EQ(selItem["id"].As<int>(), 1234));
 	ASSERT_NO_THROW(ASSERT_EQ(selItem["value"].As<string>(), "value"));
 	qr.Clear();
@@ -1220,7 +1354,7 @@ TEST_F(ReindexerApi, ContextCancelingTest) {
 	err = rt.reindexer->Select(Query(default_namespace), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.Count(), 1);
-	selItem = qr.begin().GetItem();
+	selItem = qr.begin().GetItem(false);
 	ASSERT_NO_THROW(ASSERT_EQ(selItem["id"].As<int>(), 1234));
 	ASSERT_NO_THROW(ASSERT_EQ(selItem["value"].As<string>(), "value"));
 	qr.Clear();
@@ -1316,47 +1450,47 @@ TEST_F(ReindexerApi, SchemaSuggestions) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	// clang-format off
-    const std::string jsonschema = R"xxx(
-    {
-      "required": [
-        "Countries",
-        "Nest_fake",
-        "nested"
-      ],
-      "properties": {
-        "Countries": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "Nest_fake": {
-          "type": "number"
-        },
-        "nested": {
-          "required": [
-            "Name",
-            "Naame",
-            "Age"
-          ],
-          "properties": {
-            "Name": {
-              "type": "string"
-            },
-            "Naame": {
-              "type": "string"
-            },
-            "Age": {
-              "type": "integer"
-            }
-          },
-          "additionalProperties": false,
-          "type": "object"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object"
-    })xxx";
+	const std::string jsonschema = R"xxx(
+	{
+	  "required": [
+		"Countries",
+		"Nest_fake",
+		"nested"
+	  ],
+	  "properties": {
+		"Countries": {
+		  "items": {
+			"type": "string"
+		  },
+		  "type": "array"
+		},
+		"Nest_fake": {
+		  "type": "number"
+		},
+		"nested": {
+		  "required": [
+			"Name",
+			"Naame",
+			"Age"
+		  ],
+		  "properties": {
+			"Name": {
+			  "type": "string"
+			},
+			"Naame": {
+			  "type": "string"
+			},
+			"Age": {
+			  "type": "integer"
+			}
+		  },
+		  "additionalProperties": false,
+		  "type": "object"
+		}
+	  },
+	  "additionalProperties": false,
+	  "type": "object"
+	})xxx";
 	// clang-format on
 
 	err = rt.reindexer->SetSchema(default_namespace, jsonschema);
@@ -1484,7 +1618,7 @@ TEST_F(ReindexerApi, IntToStringIndexUpdate) {
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	for (auto it : qr) {
-		Item item = it.GetItem();
+		Item item = it.GetItem(false);
 		Variant v = item[kFieldNumeric];
 		EXPECT_TRUE(v.Type() == KeyValueInt) << v.Type();
 	}

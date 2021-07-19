@@ -8,21 +8,22 @@ namespace reindexer {
 template <typename T>
 class IndexStore : public Index {
 public:
-	IndexStore(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields) : Index(idef, payloadType, fields) {
+	IndexStore(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields) : Index(idef, std::move(payloadType), fields) {
 		static T a;
 		keyType_ = selectKeyType_ = Variant(a).Type();
 	}
 
 	Variant Upsert(const Variant &key, IdType id) override;
 	void Upsert(VariantArray &result, const VariantArray &keys, IdType id) override;
-	void Delete(const Variant &key, IdType id) override;
-	void Delete(const VariantArray &keys, IdType id) override;
+	void Delete(const Variant &key, IdType id, StringsHolder &) override;
+	void Delete(const VariantArray &keys, IdType id, StringsHolder &) override;
 	SelectKeyResults SelectKey(const VariantArray &keys, CondType condition, SortType stype, Index::SelectOpts res_type,
 							   BaseFunctionCtx::Ptr ctx, const RdxContext &) override;
 	void Commit() override;
 	void UpdateSortedIds(const UpdateSortedContext & /*ctx*/) override {}
-	Index *Clone() override;
+	std::unique_ptr<Index> Clone() override;
 	IndexMemStat GetMemStat() override;
+	bool HoldsStrings() const noexcept override { return std::is_same_v<T, key_string>; }
 
 protected:
 	unordered_str_map<int> str_map;
@@ -32,8 +33,8 @@ protected:
 };
 
 template <>
-IndexStore<Point>::IndexStore(const IndexDef &, const PayloadType, const FieldsSet &);
+IndexStore<Point>::IndexStore(const IndexDef &, PayloadType, const FieldsSet &);
 
-Index *IndexStore_New(const IndexDef &idef, const PayloadType payloadType, const FieldsSet &fields_);
+std::unique_ptr<Index> IndexStore_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields_);
 
 }  // namespace reindexer

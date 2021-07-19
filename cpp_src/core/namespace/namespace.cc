@@ -145,10 +145,10 @@ void Namespace::doRename(Namespace::Ptr dst, const std::string& newName, const s
 		if (!status.ok()) {
 			throw status;
 		}
-		if (srcNs.repl_.temporary) {
-			srcNs.repl_.temporary = false;
-			srcNs.saveReplStateToStorage();
-		}
+	}
+	if (srcNs.repl_.temporary) {
+		srcNs.repl_.temporary = false;
+		srcNs.saveReplStateToStorage();
 	}
 }
 

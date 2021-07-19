@@ -96,7 +96,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 		status = db->Select(Query(string(kPerfstatsNs)), qr);
 		if (status.ok() && qr.Count()) {
 			for (auto it = qr.begin(); it != qr.end(); ++it) {
-				auto item = it.GetItem();
+				auto item = it.GetItem(false);
 				std::string nsName = item["name"].As<std::string>();
 				constexpr auto kSelectQueryType = "select"sv;
 				constexpr auto kUpdateQueryType = "update"sv;
@@ -110,7 +110,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 		status = db->Select(Query(string(kMemstatsNs)), qr);
 		if (status.ok() && qr.Count()) {
 			for (auto it = qr.begin(); it != qr.end(); ++it) {
-				auto item = it.GetItem();
+				auto item = it.GetItem(false);
 				auto nsName = item["name"].As<std::string>();
 				prometheus_->RegisterCachesSize(dbName, nsName, item["total.cache_size"].As<int64_t>());
 				prometheus_->RegisterIndexesSize(dbName, nsName, item["total.indexes_size"].As<int64_t>());

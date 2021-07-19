@@ -27,7 +27,7 @@ public:
 	class iterator {
 	public:
 		iterator& operator++();
-		size_t GetId() const { return size_ * block_size + offset_ - 1; }
+		size_t GetId() const noexcept { return size_ * block_size + offset_ - 1; }
 
 		pointer operator->() {
 			if (current_) {

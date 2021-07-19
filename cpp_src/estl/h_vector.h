@@ -113,7 +113,10 @@ public:
 	bool operator!=(const h_vector& other) const noexcept { return !operator==(other); }
 
 	void clear() {
-		resize(0);
+		if constexpr (!std::is_trivially_destructible<T>::value) {
+			for (size_type i = 0; i < size_; i++) ptr()[i].~T();
+		}
+		size_ = 0;
 		if (!is_hdata()) operator delete(e_.data_);
 		is_hdata_ = 1;
 	}
@@ -160,10 +163,12 @@ public:
 
 	void resize(size_type sz) {
 		grow(sz);
-		if (!reindexer::is_trivially_default_constructible<T>::value)
+		if constexpr (!reindexer::is_trivially_default_constructible<T>::value) {
 			for (size_type i = size_; i < sz; i++) new (ptr() + i) T();
-		if (!std::is_trivially_destructible<T>::value)
+		}
+		if constexpr (!std::is_trivially_destructible<T>::value) {
 			for (size_type i = sz; i < size_; i++) ptr()[i].~T();
+		}
 		size_ = sz;
 	}
 	void reserve(size_type sz) {
@@ -262,11 +267,15 @@ public:
 	}
 	iterator erase(const_iterator first, const_iterator last) {
 		size_type i = first - ptr();
-		auto cnt = last - first;
+		const auto cnt = last - first;
 		assert(i <= size());
 
 		std::move(begin() + i + cnt, end(), begin() + i);
-		resize(size_ - (last - first));
+		const auto newSize = size_ - cnt;
+		if constexpr (!std::is_trivially_destructible<T>::value) {
+			for (size_type i = newSize; i < size_; i++) ptr()[i].~T();
+		}
+		size_ = newSize;
 		return begin() + i;
 	}
 	void shrink_to_fit() {
@@ -286,6 +295,7 @@ public:
 	}
 
 	bool is_hdata() const noexcept { return is_hdata_; }
+
 protected:
 	pointer ptr() noexcept { return is_hdata() ? reinterpret_cast<pointer>(hdata_) : e_.data_; }
 	const_pointer ptr() const noexcept { return is_hdata() ? reinterpret_cast<const_pointer>(hdata_) : e_.data_; }

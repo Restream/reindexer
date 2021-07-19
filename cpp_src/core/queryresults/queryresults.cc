@@ -10,6 +10,25 @@
 
 namespace reindexer {
 
+void QueryResults::AddNamespace(std::shared_ptr<NamespaceImpl> ns, const NsContext &ctx) {
+	assert(ctx.noLock);
+	const NamespaceImpl *nsPtr = ns.get();
+	auto strHolder = ns->StrHolder(ctx);
+	const auto it =
+		std::find_if(nsData_.cbegin(), nsData_.cend(), [nsPtr](const NsDataHolder &nsData) { return nsData.ns.get() == nsPtr; });
+	if (it != nsData_.cend()) {
+		assert(it->strHolder.get() == strHolder.get());
+		return;
+	}
+	nsData_.emplace_back(std::move(ns), std::move(strHolder));
+}
+
+void QueryResults::RemoveNamespace(const NamespaceImpl *ns) {
+	const auto it = std::find_if(nsData_.begin(), nsData_.end(), [ns](const NsDataHolder &nsData) { return nsData.ns.get() == ns; });
+	assert(it != nsData_.end());
+	nsData_.erase(it);
+}
+
 struct QueryResults::Context {
 	Context() {}
 	Context(PayloadType type, TagsMatcher tagsMatcher, const FieldsSet &fieldsFilter, std::shared_ptr<const Schema> schema)
@@ -35,10 +54,11 @@ QueryResults::QueryResults(QueryResults &&obj)
 	  needOutputRank(obj.needOutputRank),
 	  ctxs(std::move(obj.ctxs)),
 	  explainResults(std::move(obj.explainResults)),
-	  lockedResults_(obj.lockedResults_),
 	  items_(std::move(obj.items_)),
 	  holdActivity_(obj.holdActivity_),
-	  noActivity_(0) {
+	  noActivity_(0),
+	  nsData_(std::move(obj.nsData_)),
+	  stringsHolder_(std::move(obj.stringsHolder_)) {
 	if (holdActivity_) {
 		new (&activityCtx_) RdxActivityContext(std::move(obj.activityCtx_));
 		obj.activityCtx_.~RdxActivityContext();
@@ -50,7 +70,6 @@ QueryResults::QueryResults(const ItemRefVector::const_iterator &begin, const Ite
 	: items_(begin, end), holdActivity_(false), noActivity_(0) {}
 QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	if (this != &obj) {
-		unlockResults();
 		items_ = std::move(obj.items_);
 		assert(!obj.items_.size());
 		joined_ = std::move(obj.joined_);
@@ -60,83 +79,29 @@ QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 		needOutputRank = obj.needOutputRank;
 		ctxs = std::move(obj.ctxs);
 		nonCacheableData = std::move(obj.nonCacheableData);
-		lockedResults_ = std::move(obj.lockedResults_);
 		explainResults = std::move(obj.explainResults);
 		if (holdActivity_) activityCtx_.~RdxActivityContext();
 		holdActivity_ = obj.holdActivity_;
+		nsData_ = std::move(obj.nsData_);
+		stringsHolder_ = std::move(obj.stringsHolder_);
 		if (holdActivity_) {
 			new (&activityCtx_) RdxActivityContext(std::move(obj.activityCtx_));
 			obj.activityCtx_.~RdxActivityContext();
 			obj.holdActivity_ = false;
 		}
-		obj.lockedResults_ = false;
 	}
 	return *this;
 }
 
 QueryResults::~QueryResults() {
-	unlockResults();
 	if (holdActivity_) activityCtx_.~RdxActivityContext();
 }
 
 void QueryResults::Clear() { *this = QueryResults(); }
 
-void QueryResults::Erase(ItemRefVector::iterator start, ItemRefVector::iterator finish) {
-	assert(!lockedResults_);
-	items_.erase(start, finish);
-}
+void QueryResults::Erase(ItemRefVector::iterator start, ItemRefVector::iterator finish) { items_.erase(start, finish); }
 
-void QueryResults::lockItem(ItemRef &itemref, size_t joinedNs, bool lock) {
-	if (!itemref.Value().IsFree() && !itemref.Raw()) {
-		assert(ctxs.size() > joinedNs);
-		Payload pl(ctxs[joinedNs].type_, itemref.Value());
-		if (lock)
-			pl.AddRefStrings();
-		else
-			pl.ReleaseStrings();
-	}
-}
-
-void QueryResults::lockResults() { lockResults(true); }
-void QueryResults::unlockResults() { lockResults(false); }
-
-void QueryResults::lockResults(bool lock) {
-	if (!lock && !lockedResults_) return;
-	if (lock) assert(!lockedResults_);
-	for (size_t i = 0; i < items_.size(); ++i) {
-		uint16_t mainNsID = items_[i].Nsid();
-		lockItem(items_[i], mainNsID, lock);
-		if (joined_.empty()) continue;
-		Iterator itemIt{this, int(i), errOK};
-		auto joinIt = itemIt.GetJoined();
-		if (joinIt.getJoinedItemsCount() == 0) continue;
-		size_t joinedNs = GetJoinedNsCtxIndex(mainNsID);
-		for (auto fieldIt = joinIt.begin(); fieldIt != joinIt.end(); ++fieldIt, ++joinedNs) {
-			for (int j = 0; j < fieldIt.ItemsCount(); ++j) lockItem(fieldIt[j], joinedNs, lock);
-		}
-	}
-	lockedResults_ = lock;
-}
-
-void QueryResults::Add(const ItemRef &i) {
-	items_.push_back(i);
-
-	if (!lockedResults_) return;
-
-	if (!i.Value().IsFree() && !i.Raw()) {
-		assert(ctxs.size() > items_.back().Nsid());
-		Payload(ctxs[items_.back().Nsid()].type_, items_.back().Value()).AddRefStrings();
-	}
-}
-
-void QueryResults::Add(const ItemRef &itemref, const PayloadType &pt) {
-	items_.push_back(itemref);
-
-	if (!lockedResults_) return;
-	if (!itemref.Value().IsFree() && !itemref.Raw()) {
-		Payload(pt, items_.back().Value()).AddRefStrings();
-	}
-}
+void QueryResults::Add(const ItemRef &i) { items_.push_back(i); }
 
 void QueryResults::Dump() const {
 	string buf;
@@ -363,7 +328,7 @@ std::string_view QueryResults::Iterator::GetRaw() const {
 	return std::string_view(reinterpret_cast<char *>(itemRef.Value().Ptr()), itemRef.Value().GetCapacity());
 }
 
-Item QueryResults::Iterator::GetItem() {
+Item QueryResults::Iterator::GetItem(bool enableHold) {
 	auto &itemRef = qr_->items_[idx_];
 
 	assert(qr_->ctxs.size() > itemRef.Nsid());
@@ -373,9 +338,13 @@ Item QueryResults::Iterator::GetItem() {
 		return Item(Error(errNotFound, "Item not found"));
 	}
 
-	PayloadValue v(itemRef.Value());
+	auto item = Item(new ItemImpl(ctx.type_, itemRef.Value(), ctx.tagsMatcher_, ctx.schema_));
+	item.impl_->payloadValue_.Clone();
+	if (enableHold) {
+		if (!item.impl_->keyStringsHolder_) item.impl_->keyStringsHolder_.reset(new std::vector<key_string>);
+		Payload{ctx.type_, item.impl_->payloadValue_}.CopyStrings(*(item.impl_->keyStringsHolder_));
+	}
 
-	auto item = Item(new ItemImpl(ctx.type_, v, ctx.tagsMatcher_));
 	item.setID(itemRef.Id());
 	return item;
 }
@@ -392,15 +361,20 @@ QueryResults::Iterator &QueryResults::Iterator::operator+(int val) {
 bool QueryResults::Iterator::operator!=(const Iterator &other) const { return idx_ != other.idx_; }
 bool QueryResults::Iterator::operator==(const Iterator &other) const { return idx_ == other.idx_; }
 
-void QueryResults::AddItem(Item &item, bool withData, bool singleValue) {
+void QueryResults::AddItem(Item &item, bool withData, bool enableHold) {
 	auto ritem = item.impl_;
 	if (item.GetID() != -1) {
 		if (ctxs.empty()) {
-			ctxs.push_back(Context(ritem->Type(), ritem->tagsMatcher(), FieldsSet(), item.impl_->GetSchema()));
+			ctxs.push_back(Context(ritem->Type(), ritem->tagsMatcher(), FieldsSet(), ritem->GetSchema()));
 		}
-		Add(ItemRef(item.GetID(), withData ? ritem->RealValue() : PayloadValue()));
-		if (withData && singleValue) {
-			lockResults();
+		Add(ItemRef(item.GetID(), withData ? (ritem->RealValue().IsFree() ? ritem->Value() : ritem->RealValue()) : PayloadValue()));
+		if (withData && enableHold) {
+			if (auto ns{ritem->GetNamespace()}; ns) {
+				Payload{ns->ns_->payloadType_, items_.back().Value()}.CopyStrings(stringsHolder_);
+			} else {
+				assert(ctxs.size() == 1);
+				Payload{ctxs.back().type_, items_.back().Value()}.CopyStrings(stringsHolder_);
+			}
 		}
 	}
 }

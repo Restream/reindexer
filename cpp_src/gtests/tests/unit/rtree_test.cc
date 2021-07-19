@@ -310,7 +310,7 @@ TEST_F(ReindexerApi, EmptyRTreeSparseValues) {
 		err = rt.reindexer->Select(Query(default_namespace).Where("id", CondEq, Variant(int(13))), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(qr.Count() == 1);
-		Item item = qr[0].GetItem();
+		Item item = qr[0].GetItem(false);
 		Variant idVal = item["id"];
 		ASSERT_TRUE(static_cast<int>(idVal) == 13);
 		Variant idPoint1 = item["point1"];
