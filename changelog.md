@@ -12,7 +12,7 @@
 - [fea] Added the ability to create PK during the Namespace creation
 - [fix] Removed incorrect functions of editing and deleting items on the SQL result page
 - [fix] Fixed the issue with the "Top-up" button
-- [fix] Fixed the 'Desc' sorting on Statistics -> Grid
+- [fix] Fixed the 'Desc' sorting on Statistics => Grid
 - [fix] Fixed the issue with losing a namespace focus during tabs changing
 - [fix] Performed yarn upgrade
 - [fix] Fixed the issue with the sorting params keeping 
