@@ -3,7 +3,6 @@
 #include "tools/errors.h"
 
 namespace reindexer {
-void IdSetPlain::Commit() {}
 
 void IdSet::Commit() {
 	if (!size() && set_) {

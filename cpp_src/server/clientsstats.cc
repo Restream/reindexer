@@ -26,12 +26,12 @@ void ClientsStats::GetClientInfo(std::vector<reindexer::ClientStat>& datas) {
 			d.txCount = c.second.txStats->txCount.load();
 		}
 		d.updatesPusher = c.second.updatesPusher;
-		d.dbName = c.second.dbName;
-		d.ip = c.second.ip;
-		d.userName = c.second.userName;
-		d.userRights = c.second.userRights;
-		d.clientVersion = c.second.clientVersion;
-		d.appName = c.second.appName;
+		reindexer::deepCopy(d.dbName, c.second.dbName);
+		reindexer::deepCopy(d.ip, c.second.ip);
+		reindexer::deepCopy(d.userName, c.second.userName);
+		reindexer::deepCopy(d.userRights, c.second.userRights);
+		reindexer::deepCopy(d.clientVersion, c.second.clientVersion);
+		reindexer::deepCopy(d.appName, c.second.appName);
 		datas.emplace_back(std::move(d));
 	}
 }

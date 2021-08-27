@@ -170,9 +170,11 @@ void IndexUnordered<T>::delMemStat(typename T::iterator it) {
 template <typename T>
 Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id) {
 	// reset cache
-	if (cache_) cache_.reset();
 	if (key.Type() == KeyValueNull) {
-		this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_);
+		if (this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_)) {
+			if (cache_) cache_.reset();
+			this->isBuilt_ = false;
+		}
 		// Return invalid ref
 		return Variant();
 	}
@@ -184,7 +186,10 @@ Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id) {
 		delMemStat(keyIt);
 	}
 
-	keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_);
+	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_)) {
+		if (cache_) cache_.reset();
+		this->isBuilt_ = false;
+	}
 	this->tracker_.markUpdated(this->idx_map, keyIt);
 
 	addMemStat(keyIt);
@@ -198,11 +203,12 @@ Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id) {
 
 template <typename T>
 void IndexUnordered<T>::Delete(const Variant &key, IdType id, StringsHolder &strHolder) {
-	if (cache_) cache_.reset();
 	int delcnt = 0;
 	if (key.Type() == KeyValueNull) {
 		delcnt = this->empty_ids_.Unsorted().Erase(id);
 		assert(delcnt);
+		this->isBuilt_ = false;
+		if (cache_) cache_.reset();
 		return;
 	}
 
@@ -212,6 +218,8 @@ void IndexUnordered<T>::Delete(const Variant &key, IdType id, StringsHolder &str
 	delMemStat(keyIt);
 	delcnt = keyIt->second.Unsorted().Erase(id);
 	(void)delcnt;
+	this->isBuilt_ = false;
+	if (cache_) cache_.reset();
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
 	assertf(this->opts_.IsArray() || this->Opts().IsSparse() || delcnt, "Delete unexists id from index '%s' id=%d,key=%s (%s)", this->name_,
 			id, key.As<string>(this->payloadType_, this->fields_), Variant(keyIt->first).As<string>(this->payloadType_, this->fields_));

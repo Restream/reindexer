@@ -66,8 +66,6 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArra
 		Upsert(Variant{}, id);
 		return;
 	}
-	// reset cache
-	if (this->cache_) this->cache_.reset();
 	const Point point = static_cast<Point>(keys);
 	typename Map::iterator keyIt = this->idx_map.find(point);
 	if (keyIt == this->idx_map.end()) {
@@ -76,7 +74,11 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArra
 		this->delMemStat(keyIt);
 	}
 
-	keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_);
+	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_)) {
+		this->isBuilt_ = false;
+		// reset cache
+		if (this->cache_) this->cache_.reset();
+	}
 	this->tracker_.markUpdated(this->idx_map, keyIt);
 
 	this->addMemStat(keyIt);
@@ -90,11 +92,12 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const Varia
 	if (keys.empty() || keys.IsNullValue()) {
 		return Delete(Variant{}, id, strHolder);
 	}
-	if (this->cache_) this->cache_.reset();
 	int delcnt = 0;
 	const Point point = static_cast<Point>(keys);
 	typename Map::iterator keyIt = this->idx_map.find(point);
 	if (keyIt == this->idx_map.end()) return;
+	if (this->cache_) this->cache_.reset();
+	this->isBuilt_ = false;
 
 	this->delMemStat(keyIt);
 	delcnt = keyIt->second.Unsorted().Erase(id);

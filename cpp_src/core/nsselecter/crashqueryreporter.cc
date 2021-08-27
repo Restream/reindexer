@@ -11,16 +11,21 @@ struct QueryDebugContext {
 	SelectCtx *selectCtx = nullptr;
 	std::atomic<int> *nsOptimizationState = nullptr;
 	ExplainCalc *explainCalc = nullptr;
+	std::atomic_bool *nsLockerState = nullptr;
+	StringsHolder *nsStrHolder = nullptr;
 };
 
 thread_local QueryDebugContext g_queryDebugCtx;
 
-ActiveQueryScope::ActiveQueryScope(SelectCtx &ctx, std::atomic<int> &nsOptimizationState, ExplainCalc &explainCalc)
+ActiveQueryScope::ActiveQueryScope(SelectCtx &ctx, std::atomic<int> &nsOptimizationState, ExplainCalc &explainCalc,
+								   std::atomic_bool &nsLockerState, StringsHolder *strHolder)
 	: mainQuery_(ctx.preResult == nullptr) {
 	if (mainQuery_) {
 		g_queryDebugCtx.selectCtx = &ctx;
 		g_queryDebugCtx.nsOptimizationState = &nsOptimizationState;
 		g_queryDebugCtx.explainCalc = &explainCalc;
+		g_queryDebugCtx.nsLockerState = &nsLockerState;
+		g_queryDebugCtx.nsStrHolder = strHolder;
 	}
 }
 ActiveQueryScope::~ActiveQueryScope() {
@@ -28,6 +33,8 @@ ActiveQueryScope::~ActiveQueryScope() {
 		g_queryDebugCtx.selectCtx = nullptr;
 		g_queryDebugCtx.nsOptimizationState = nullptr;
 		g_queryDebugCtx.explainCalc = nullptr;
+		g_queryDebugCtx.nsLockerState = nullptr;
+		g_queryDebugCtx.nsStrHolder = nullptr;
 	}
 }
 
@@ -36,10 +43,8 @@ static std::string_view nsOptimizationStateName(int state) {
 	switch (state) {
 		case NamespaceImpl::NotOptimized:
 			return "Not optimized"sv;
-		case NamespaceImpl::OptimizingIndexes:
-			return "Optimizing indexes"sv;
-		case NamespaceImpl::OptimizingSortOrders:
-			return "Optimizing sort orders"sv;
+		case NamespaceImpl::OptimizedPartially:
+			return "Optimized Partially"sv;
 		case NamespaceImpl::OptimizationCompleted:
 			return "Optimization completed"sv;
 		default:
@@ -53,6 +58,27 @@ void PrintCrashedQuery(std::ostream &out) {
 	out << "*** Current query dump ***" << std::endl;
 	out << " Query:    " << g_queryDebugCtx.selectCtx->query.GetSQL() << std::endl;
 	out << " NS state: " << nsOptimizationStateName(g_queryDebugCtx.nsOptimizationState->load()) << std::endl;
+	out << " NS.locker state: ";
+	if (g_queryDebugCtx.nsLockerState->load()) {
+		out << " readonly";
+	} else {
+		out << " regular";
+	}
+	out << std::endl;
+	out << " NS.strHolder state: [" << std::endl;
+	out << " memstat = " << g_queryDebugCtx.nsStrHolder->MemStat() << std::endl;
+	out << " holds indexes = " << std::boolalpha << g_queryDebugCtx.nsStrHolder->HoldsIndexes() << std::endl;
+	if (g_queryDebugCtx.nsStrHolder->HoldsIndexes()) {
+		const auto &indexes = g_queryDebugCtx.nsStrHolder->Indexes();
+		out << " indexes.size = " << indexes.size() << std::endl;
+		out << " indexes = [";
+		for (size_t i = 0; i < indexes.size(); ++i) {
+			if (i) out << " ";
+			out << indexes[i]->Name();
+		}
+		out << "]" << std::endl;
+	}
+	out << "]" << std::endl;
 	out << " Explain:  " << g_queryDebugCtx.explainCalc->GetJSON() << std::endl;
 }
 

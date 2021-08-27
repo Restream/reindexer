@@ -6,10 +6,6 @@
 #include "base_fixture.h"
 #include "helpers.h"
 
-using std::vector;
-using std::string;
-using std::wstring;
-
 class FullText : protected BaseFixture {
 public:
 	virtual ~FullText() {}
@@ -51,6 +47,9 @@ protected:
 
 	void BuildStepFastIndex(State& state);
 
+	void InitForAlternatingUpdatesAndSelects(State&);
+	void AlternatingUpdatesAndSelects(benchmark::State&);
+
 protected:
 	string CreatePhrase();
 
@@ -67,9 +66,11 @@ protected:
 protected:
 	vector<string> words_;
 	vector<string> countries_;
+	std::vector<std::string> values_;
 
 private:
 	const string letters = "abcdefghijklmnopqrstuvwxyz";
+	const char* alternatingNs_ = "FtAlternatingUpdatesAndSelects";
 
 	size_t raw_data_sz_ = 0;
 };

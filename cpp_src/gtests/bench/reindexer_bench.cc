@@ -4,8 +4,8 @@
 
 #include "api_tv_composite.h"
 #include "api_tv_simple.h"
-#include "join_items.h"
 #include "geometry.h"
+#include "join_items.h"
 #include "tools/reporter.h"
 
 #include "tools/fsops.h"

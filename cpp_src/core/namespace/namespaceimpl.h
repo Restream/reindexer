@@ -89,10 +89,10 @@ protected:
 			for (IdType i = 0; i < IdType(ns_.items_.size()); i++)
 				ids2Sorts_.push_back(ns_.items_[i].IsFree() ? SortIdUnexists : SortIdUnfilled);
 		}
-		int getSortedIdxCount() const override { return sorted_indexes_; }
-		SortType getCurSortId() const override { return curSortId_; }
-		const vector<SortType> &ids2Sorts() const override { return ids2Sorts_; }
-		vector<SortType> &ids2Sorts() override { return ids2Sorts_; }
+		int getSortedIdxCount() const noexcept override { return sorted_indexes_; }
+		SortType getCurSortId() const noexcept override { return curSortId_; }
+		const vector<SortType> &ids2Sorts() const noexcept override { return ids2Sorts_; }
+		vector<SortType> &ids2Sorts() noexcept override { return ids2Sorts_; }
 
 	protected:
 		const NamespaceImpl &ns_;
@@ -133,7 +133,7 @@ protected:
 	};
 
 public:
-	enum OptimizationState : int { NotOptimized, OptimizingIndexes, OptimizingSortOrders, OptimizationCompleted };
+	enum OptimizationState : int { NotOptimized, OptimizedPartially, OptimizationCompleted };
 
 	typedef shared_ptr<NamespaceImpl> Ptr;
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Namespace>;
@@ -247,6 +247,7 @@ protected:
 			return lck;
 		}
 		void MarkReadOnly() { readonly_.store(true, std::memory_order_release); }
+		std::atomic_bool &IsReadOnly() { return readonly_; }
 
 	private:
 		mutable Mutex mtx_;
@@ -264,10 +265,9 @@ protected:
 	void saveReplStateToStorage();
 	void loadReplStateFromStorage();
 
-	void fillWAL();
 	void initWAL(int64_t minLSN, int64_t maxLSN);
 
-	void markUpdated();
+	void markUpdated(bool forceOptimizeAllIndexes);
 	void doUpsert(ItemImpl *ritem, IdType id, bool doUpdate);
 	void modifyItem(Item &item, const NsContext &, int mode = ModeUpsert);
 	void updateTagsMatcherFromItem(ItemImpl *ritem);
@@ -319,7 +319,7 @@ protected:
 	Locker::WLockT wLock(const RdxContext &ctx) const { return locker_.WLock(ctx); }
 	Locker::RLockT rLock(const RdxContext &ctx) const { return locker_.RLock(ctx); }
 
-	bool SortOrdersBuilt() const { return optimizationState_ == OptimizationState::OptimizationCompleted; }
+	bool SortOrdersBuilt() const noexcept { return optimizationState_.load(std::memory_order_acquire) == OptimizationCompleted; }
 
 	IndexesStorage indexes_;
 	fast_hash_map<string, int, nocase_hash_str, nocase_equal_str> indexesNames_;
@@ -385,7 +385,7 @@ private:
 	std::atomic<int64_t> lastSelectTime_;
 
 	sync_pool<ItemImpl, 1024> pool_;
-	std::atomic<bool> cancelCommit_;
+	std::atomic<int32_t> cancelCommitCnt_{0};
 	std::atomic<int64_t> lastUpdateTime_;
 
 	std::atomic<uint32_t> itemsCount_ = {0};
@@ -396,7 +396,7 @@ private:
 	std::atomic<bool> serverIdChanged_;
 	size_t itemsDataSize_ = 0;
 
-	std::atomic<int> optimizationState_ = {OptimizationState::NotOptimized};
+	std::atomic<int> optimizationState_{OptimizationState::NotOptimized};
 	StringsHolderPtr strHolder_;
 	std::deque<StringsHolderPtr> strHoldersWaitingToBeDeleted_;
 };

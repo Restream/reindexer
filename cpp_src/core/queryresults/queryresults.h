@@ -130,11 +130,7 @@ protected:
 private:
 	void encodeJSON(int idx, WrSerializer &ser) const;
 	ItemRefVector items_;
-	bool holdActivity_ = false;
-	union {
-		int noActivity_;
-		RdxActivityContext activityCtx_;
-	};
+	std::optional<RdxActivityContext> activityCtx_;
 	friend InternalRdxContext;
 	friend SelectFunctionsHolder;
 	struct NsDataHolder {

@@ -4,6 +4,7 @@
 #include <cassert>
 #include <chrono>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -24,7 +25,7 @@ struct Activity {
 	enum State : unsigned { InProgress = 0, WaitLock, Sending, IndexesLookup, SelectLoop } state;
 	std::string_view description;
 	void GetJSON(WrSerializer&) const;
-	static std::string_view DescribeState(State);
+	static std::string_view DescribeState(State) noexcept;
 };
 
 class RdxActivityContext;
@@ -35,7 +36,7 @@ public:
 	void Unregister(const RdxActivityContext*);
 	void Reregister(const RdxActivityContext* oldCtx, const RdxActivityContext* newCtx);
 	std::vector<Activity> List();
-	bool ActivityForIpConnection(int id, Activity& act);
+	std::optional<std::string> QueryForIpConnection(int id);
 
 private:
 	std::mutex mtx_;
@@ -101,6 +102,7 @@ public:
 	RdxActivityContext(const RdxActivityContext&) = delete;
 	RdxActivityContext& operator=(const RdxActivityContext&) = delete;
 	RdxActivityContext& operator=(RdxActivityContext&&) = delete;
+	const std::string& Query() const noexcept { return data_.query; }
 
 	/// returning value of these functions should be assined to a local variable which will be destroyed after the waiting work complete
 	/// lifetime of the local variable should not exceed of the activityContext's
@@ -108,7 +110,7 @@ public:
 	Ward BeforeIndexWork() { return Ward(this, Activity::IndexesLookup); }
 	Ward BeforeSelectLoop() { return Ward(this, Activity::SelectLoop); }
 
-	bool CheckConnectionId(int connectionId) const { return (data_.connectionId == connectionId); }
+	bool CheckConnectionId(int connectionId) const noexcept { return data_.connectionId == connectionId; }
 
 private:
 	static unsigned serializeState(MutexMark);

@@ -80,7 +80,7 @@ void ItemModifier::Modify(IdType itemId, const NsContext &ctx) {
 		}
 	}
 
-	ns_.markUpdated();
+	ns_.markUpdated(false);
 }
 
 void ItemModifier::modifyCJSON(PayloadValue &pv, FieldData &field, VariantArray &values, const NsContext &ctx) {
@@ -146,6 +146,7 @@ void ItemModifier::modifyCJSON(PayloadValue &pv, FieldData &field, VariantArray 
 		} else {
 			pl.Get(fieldIdx, ns_.krefs, index.Opts().IsArray());
 		}
+		if (ns_.krefs == ns_.skrefs) continue;
 		index.Delete(ns_.krefs, id, *strHolder);
 
 		ns_.krefs.resize(0);
@@ -161,7 +162,7 @@ void ItemModifier::modifyCJSON(PayloadValue &pv, FieldData &field, VariantArray 
 	}
 	impl->RealValue() = pv;
 
-	ns_.markUpdated();
+	ns_.markUpdated(false);
 }
 
 void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, VariantArray &values, const NsContext &ctx) {

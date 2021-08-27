@@ -1,3 +1,30 @@
+# Version 3.2.3 (27.08.2021)
+## Core
+- [fix] Fixed indexes for client stats
+- [fix] Fixed optimization cancelling for concurrent queries
+- [fix] Do not rebuild composite indexes after update
+- [fix] Removed TSAN suppressions for tests
+
+## Face
+- [fea] Added tooltips to Grid columns
+- [fea] Changed the DB Config menu position
+- [fix] Fixed the issue with an empty table appearing on the Query result page after another query applying
+- [fea] Added the ability to create PK during the Namespace creation
+- [fix] Removed incorrect functions of editing and deleting items on the SQL result page
+- [fix] Fixed the issue with the "Top-up" button
+- [fix] Fixed the 'Desc' sorting on Statistics -> Grid
+- [fix] Fixed the issue with losing a namespace focus during tabs changing
+- [fix] Performed yarn upgrade
+- [fix] Fixed the issue with the sorting params keeping 
+- [fix] Fixed the issue with case sensitive field names during the grid building
+- [fix] Fixed the issue with slow 3g in the Namespace list
+- [fix] Fixed the "Default stop words" option on the "Add index" form
+- [fix] Fixed the issue with the full-text config and full-text synonyms definition config areas on the "Add index" form
+- [fix] Fixed the table settings displaying 
+- [fix] Fixed the converting from timestamp to human-readable date
+- [fix] Fixed issues appeared after the bootstrap upgrade 
+- [fix] Fixed the issue with the grid building appeared for indexes with multiple JSON paths
+
 # Version 3.2.2 (16.07.2021)
 ## Core
 - [fea] Optimize string refs counting for wide-range queries

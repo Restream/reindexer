@@ -1,7 +1,7 @@
-
 #pragma once
 
 #include "indexunordered.h"
+
 namespace reindexer {
 
 template <typename T>
@@ -18,7 +18,7 @@ public:
 	void MakeSortOrders(UpdateSortedContext &ctx) override;
 	IndexIterator::Ptr CreateIterator() const override;
 	std::unique_ptr<Index> Clone() override;
-	bool IsOrdered() const override;
+	bool IsOrdered() const noexcept override { return true; }
 };
 
 std::unique_ptr<Index> IndexOrdered_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields);

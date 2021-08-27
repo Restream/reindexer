@@ -24,12 +24,18 @@ jobs:
         include:
           - os: ubuntu-latest
             sanitizer: ASAN
-#         - os: ubuntu-latest
-#           sanitizer: TSAN
+            cc: gcc-10
+            cxx: g++-10
+          - os: ubuntu-latest
+            sanitizer: TSAN
+            cc: gcc-10
+            cxx: g++-10
       fail-fast: false
     runs-on: ${{matrix.os}}
     env:
       OS: ${{matrix.os}}
+      CC: ${{matrix.cc}}
+      CXX: ${{matrix.cxx}}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -40,6 +46,7 @@ jobs:
           if [[ $OS == ubuntu* ]]; then
             sudo ./dependencies.sh
             ./.github/workflows/install_grpc.sh
+            ./.github/workflows/install_gtest_parallel.sh
           else
             ./dependencies.sh
           fi
@@ -73,21 +80,27 @@ jobs:
         include:
           - os: ubuntu-latest
             sanitizer: ASAN
+            cc: gcc-10
+            cxx: g++-10
             test: 'C++'
           - os: ubuntu-latest
             sanitizer: ASAN
             test: 'GO'
 #         - os: ubuntu-latest
 #           sanitizer: TSAN
+#           cc: gcc-10
+#           cxx: g++-10
 #           test: 'C++'
-#         - os: ubuntu-latest
-#           sanitizer: TSAN
-#           test: 'GO'
+          - os: ubuntu-latest
+            sanitizer: TSAN
+            test: 'GO'
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: build
     if: always()
     env:
+      CC: ${{matrix.cc}}
+      CXX: ${{matrix.cxx}}
       TEST: ${{matrix.test}}
     steps:
       - name: Checkout repository
@@ -116,6 +129,8 @@ jobs:
               ln -s `pwd` /Users/runner/go/src/github.com/restream/reindexer
             fi
             go mod init github.com/restream/reindexer
+          elif [[ $OS == ubuntu* ]]; then
+            ./.github/workflows/install_gtest_parallel.sh
           fi
       - name: Tests
         run: |

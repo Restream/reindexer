@@ -15,7 +15,7 @@ namespace reindexer {
 const char *stemLangs[] = {"en", "ru", "nl", "fin", "de", "da", "fr", "it", "hu", "no", "pt", "ro", "es", "sv", "tr", nullptr};
 
 template <typename T>
-IndexText<T>::IndexText(const IndexText<T> &other) : IndexUnordered<T>(other), cache_ft_(new FtIdSetCache), isBuilt_(false) {
+IndexText<T>::IndexText(const IndexText<T> &other) : IndexUnordered<T>(other), cache_ft_(new FtIdSetCache) {
 	initSearchers();
 }
 // Generic implemetation for string index
@@ -113,11 +113,11 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 	dsl.parse(keys[0].As<string>());
 
 	smart_lock<Mutex> lck(mtx_, rdxCtx);
-	if (!isBuilt_) {
+	if (!this->isBuilt_) {
 		// non atomic upgrade mutex to unique
 		lck.unlock();
 		lck = smart_lock<Mutex>(mtx_, rdxCtx, true);
-		if (!isBuilt_) {
+		if (!this->isBuilt_) {
 			CommitFulltext();
 			need_put = false;
 		}

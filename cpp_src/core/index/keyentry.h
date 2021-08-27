@@ -7,23 +7,21 @@
 
 namespace reindexer {
 
-using std::vector;
-
 class UpdateSortedContext {
 public:
-	virtual ~UpdateSortedContext() {}
-	virtual int getSortedIdxCount() const = 0;
-	virtual SortType getCurSortId() const = 0;
-	virtual const vector<SortType>& ids2Sorts() const = 0;
-	virtual vector<SortType>& ids2Sorts() = 0;
+	virtual ~UpdateSortedContext() = default;
+	virtual int getSortedIdxCount() const noexcept = 0;
+	virtual SortType getCurSortId() const noexcept = 0;
+	virtual const std::vector<SortType>& ids2Sorts() const noexcept = 0;
+	virtual std::vector<SortType>& ids2Sorts() noexcept = 0;
 };
 
 template <typename IdSetT>
 class KeyEntry {
 public:
-	IdSetT& Unsorted() { return ids_; }
-	const IdSetT& Unsorted() const { return ids_; }
-	IdSetRef Sorted(unsigned sortId) const {
+	IdSetT& Unsorted() noexcept { return ids_; }
+	const IdSetT& Unsorted() const noexcept { return ids_; }
+	IdSetRef Sorted(unsigned sortId) const noexcept {
 		assertf(ids_.capacity() >= (sortId + 1) * ids_.size(), "error ids_.capacity()=%d,sortId=%d,ids_.size()=%d", ids_.capacity(), sortId,
 				ids_.size());
 		return IdSetRef(ids_.data() + sortId * ids_.size(), ids_.size());

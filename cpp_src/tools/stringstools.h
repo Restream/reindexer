@@ -126,4 +126,9 @@ struct hash_str {
 	size_t operator()(const string& hs) const { return collateHash(hs, CollateNone); }
 };
 
+inline void deepCopy(std::string& dst, const std::string& src) {
+	dst.resize(src.size());
+	std::memcpy(&dst[0], &src[0], src.size());
+}
+
 }  // namespace reindexer

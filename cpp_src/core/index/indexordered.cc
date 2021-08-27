@@ -9,9 +9,11 @@ namespace reindexer {
 
 template <typename T>
 Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id) {
-	if (this->cache_) this->cache_.reset();
 	if (key.Type() == KeyValueNull) {
-		this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_);
+		if (this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_)) {
+			if (this->cache_) this->cache_.reset();
+			this->isBuilt_ = false;
+		}
 		// Return invalid ref
 		return Variant();
 	}
@@ -23,7 +25,10 @@ Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id) {
 	else
 		this->delMemStat(keyIt);
 
-	keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_);
+	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_)) {
+		this->isBuilt_ = false;
+		if (this->cache_) this->cache_.reset();
+	}
 	this->tracker_.markUpdated(this->idx_map, keyIt);
 	this->addMemStat(keyIt);
 
@@ -181,11 +186,6 @@ void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext &ctx) {
 template <typename T>
 std::unique_ptr<Index> IndexOrdered<T>::Clone() {
 	return std::unique_ptr<Index>{new IndexOrdered<T>(*this)};
-}
-
-template <typename T>
-bool IndexOrdered<T>::IsOrdered() const {
-	return true;
 }
 
 template <typename T>

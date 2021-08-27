@@ -105,6 +105,10 @@ void FullText::RegisterAllCases() {
 	Register("Fast2SuffixMatchSteps", &FullText::Fast2SuffixMatch, this)->Unit(benchmark::kMicrosecond);
 	Register("Fast1TypoWordMatchSteps", &FullText::Fast1TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
 	Register("Fast2TypoWordMatchSteps", &FullText::Fast2TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("InitForAlternatingUpdatesAndSelects", &FullText::InitForAlternatingUpdatesAndSelects, this)
+		->Iterations(1)
+		->Unit(benchmark::kMicrosecond);
+	Register("AlternatingUpdatesAndSelects", &FullText::AlternatingUpdatesAndSelects, this)->Unit(benchmark::kMicrosecond);
 }
 
 std::string FullText::RandString() {
@@ -571,4 +575,62 @@ vector<std::string> FullText::GetRandomCountries(size_t cnt) {
 		result.emplace_back(countries_.at(random<size_t>(0, countries_.size() - 1)));
 	}
 	return result;
+}
+
+void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
+	constexpr int kNsSize = 100'000;
+	AllocsTracker allocsTracker(state, printFlags);
+	for (auto _ : state) {
+		NamespaceDef nsDef{alternatingNs_};
+		nsDef.AddIndex("id", "hash", "int", IndexOpts().PK())
+			.AddIndex("search", "text", "string", IndexOpts())
+			.AddIndex("rand", "hash", "int", IndexOpts());
+		auto err = db_->AddNamespace(nsDef);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		values_.clear();
+		values_.reserve(kNsSize);
+		for (int i = 0; i < kNsSize; ++i) {
+			values_.push_back(RandString());
+			auto item = db_->NewItem(alternatingNs_);
+			item["id"] = i;
+			item["search"] = values_.back();
+			item["rand"] = rand();
+			if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+			err = db_->Insert(alternatingNs_, item);
+			if (!err.ok()) state.SkipWithError(err.what().c_str());
+		}
+	}
+
+	auto err = db_->Commit(alternatingNs_);
+	if (!err.ok()) state.SkipWithError(err.what().c_str());
+
+	// Init index build
+	Query q(alternatingNs_);
+	q.Where("search", CondEq, values_[random<size_t>(0, values_.size() - 1)]);
+	QueryResults qres;
+	err = db_->Select(q, qres);
+	if (!err.ok()) state.SkipWithError(err.what().c_str());
+}
+
+void FullText::AlternatingUpdatesAndSelects(benchmark::State& state) {
+	AllocsTracker allocsTracker(state, printFlags);
+	for (auto _ : state) {
+		state.PauseTiming();
+		const int i = random<int>(0, values_.size() - 1);
+		auto item = db_->NewItem(alternatingNs_);
+		item.Unsafe(false);
+		item["id"] = i;
+		item["search"] = values_[i];
+		item["rand"] = rand();
+		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+		auto err = db_->Update(alternatingNs_, item);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+
+		Query q(alternatingNs_);
+		q.Where("search", CondEq, values_[random<size_t>(0, values_.size() - 1)]);
+		QueryResults qres;
+		state.ResumeTiming();
+		err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
 }

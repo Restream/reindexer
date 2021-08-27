@@ -1,5 +1,6 @@
 #include "namespace.h"
 #include "core/storage/storagefactory.h"
+#include "tools/flagguard.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
 
@@ -24,11 +25,11 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 			calc.LockHit();
 			logPrintf(LogTrace, "Namespace::CommitTransaction creating copy for (%s)", ns->name_);
 			hasCopy_.store(true, std::memory_order_release);
-			ns->cancelCommit_ = true;  // -V519
+			CounterGuardAIR32 cg(ns->cancelCommitCnt_);
 			try {
-				auto lck = ns->rLock(ctx);
+				auto rlck = ns->rLock(ctx);
 				auto storageLock = ns->locker_.StorageLock();
-				ns->cancelCommit_ = false;	// -V519
+				cg.Reset();
 				nsCopy_.reset(new NamespaceImpl(*ns));
 				nsCopyCalc.HitManualy();
 				nsCopy_->CommitTransaction(tx, result, NsContext(ctx).NoLock());

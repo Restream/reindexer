@@ -59,7 +59,8 @@ public:
 	virtual void UpdateSortedIds(const UpdateSortedContext& ctx) = 0;
 	virtual size_t Size() const { return 0; }
 	virtual std::unique_ptr<Index> Clone() = 0;
-	virtual bool IsOrdered() const { return false; }
+	virtual bool IsOrdered() const noexcept { return false; }
+	virtual bool IsFulltext() const noexcept { return false; }
 	virtual IndexMemStat GetMemStat() = 0;
 	virtual int64_t GetTTLValue() const { return 0; }
 	virtual IndexIterator::Ptr CreateIterator() const { return nullptr; }
@@ -94,6 +95,8 @@ public:
 	}
 	virtual bool HoldsStrings() const noexcept = 0;
 	virtual void ClearCache() {}
+	virtual bool IsBuilt() const noexcept { return isBuilt_; }
+	virtual void MarkBuilt() noexcept { isBuilt_ = true; }
 
 protected:
 	// Index type. Can be one of enum IndexType
@@ -117,6 +120,7 @@ protected:
 	KeyValueType selectKeyType_ = KeyValueUndefined;
 	// Count of sorted indexes in namespace to resereve additional space in idsets
 	int sortedIdxCount_ = 0;
+	bool isBuilt_{false};
 };
 
 }  // namespace reindexer

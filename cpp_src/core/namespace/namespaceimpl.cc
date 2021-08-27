@@ -85,7 +85,7 @@ NamespaceImpl::NamespaceImpl(const NamespaceImpl &src)
 	  observers_{src.observers_},
 	  storageOpts_{src.storageOpts_},
 	  lastSelectTime_{0},
-	  cancelCommit_{false},
+	  cancelCommitCnt_{0},
 	  lastUpdateTime_{src.lastUpdateTime_.load(std::memory_order_acquire)},
 	  itemsCount_{static_cast<uint32_t>(items_.size())},
 	  itemsCapacity_{static_cast<uint32_t>(items_.capacity())},
@@ -96,8 +96,9 @@ NamespaceImpl::NamespaceImpl(const NamespaceImpl &src)
 	  strHolder_{makeStringsHolder()} {
 	for (auto &idxIt : src.indexes_) indexes_.push_back(idxIt->Clone());
 
-	markUpdated();
-	logPrintf(LogTrace, "Namespace::CopyContentsFrom (%s)", name_);
+	markUpdated(true);
+	logPrintf(LogInfo, "Namespace::CopyContentsFrom (%s).Workers: %d, timeout: %d", name_, config_.optimizationSortWorkers,
+			  config_.optimizationTimeout);
 }
 
 NamespaceImpl::NamespaceImpl(const string &name, UpdatesObservers &observers)
@@ -111,9 +112,9 @@ NamespaceImpl::NamespaceImpl(const string &name, UpdatesObservers &observers)
 	  enablePerfCounters_(false),
 	  wal_(config_.walSize),
 	  observers_(&observers),
-	  lastSelectTime_(0),
-	  cancelCommit_(false),
-	  lastUpdateTime_(0),
+	  lastSelectTime_{0},
+	  cancelCommitCnt_{0},
+	  lastUpdateTime_{0},
 	  nsIsLoading_(false),
 	  serverIdChanged_(false),
 	  strHolder_{makeStringsHolder()} {
@@ -127,6 +128,9 @@ NamespaceImpl::NamespaceImpl(const string &name, UpdatesObservers &observers)
 	IndexDef tupleIndexDef(kTupleName, {}, IndexStrStore, IndexOpts());
 	addIndex(tupleIndexDef);
 	updateSelectTime();
+
+	logPrintf(LogInfo, "Namespace::Construct (%s).Workers: %d, timeout: %d", name_, config_.optimizationSortWorkers,
+			  config_.optimizationTimeout);
 }
 
 NamespaceImpl::~NamespaceImpl() {
@@ -137,6 +141,7 @@ NamespaceImpl::~NamespaceImpl() {
 		(void)strHldr;
 	}
 	assert(strHolder_.unique());
+	assert(cancelCommitCnt_.load() == 0);
 #endif
 	logPrintf(LogTrace, "Namespace::~Namespace (%s), %d items", name_, items_.size());
 }
@@ -151,6 +156,12 @@ void NamespaceImpl::OnConfigUpdated(DBConfigProvider &configProvider, const RdxC
 	auto wlck = wLock(ctx);
 
 	const bool needReoptimizeIndexes = (config_.optimizationSortWorkers == 0) != (configData.optimizationSortWorkers == 0);
+	if (config_.optimizationSortWorkers != configData.optimizationSortWorkers ||
+		config_.optimizationTimeout != configData.optimizationTimeout) {
+		logPrintf(LogInfo, "[%s] Setting new index optimization config. Workers: %d->%d, timeout: %d->%d", name_,
+				  config_.optimizationSortWorkers, configData.optimizationSortWorkers, config_.optimizationTimeout,
+				  configData.optimizationSortWorkers);
+	}
 	config_ = configData;
 	storageOpts_.LazyLoad(configData.lazyLoad);
 	storageOpts_.noQueryIdleThresholdSec = configData.noQueryIdleThreshold;
@@ -306,7 +317,7 @@ void NamespaceImpl::updateItems(PayloadType oldPlType, const FieldsSet &changedF
 		repl_.dataHash ^= Payload(payloadType_, plCurr).GetHash();
 		itemsDataSize_ += plCurr.GetCapacity() + sizeof(PayloadValue::dataHeader);
 	}
-	markUpdated();
+	markUpdated(false);
 	if (errCount != 0) {
 		logPrintf(LogError, "Can't update indexes of %d items in namespace %s: %s", errCount, name_, lastErr.what());
 	}
@@ -708,9 +719,9 @@ void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsCon
 	Locker::WLockT wlck;
 
 	if (!ctx.noLock) {
-		cancelCommit_ = true;
+		CounterGuardAIR32 cg(cancelCommitCnt_);
 		wlck = wLock(ctx.rdxContext);
-		cancelCommit_ = false;
+		cg.Reset();
 	}
 	calc.LockHit();
 
@@ -833,9 +844,9 @@ void NamespaceImpl::Delete(Item &item, const NsContext &ctx) {
 	Locker::WLockT wlck;
 
 	if (!ctx.noLock) {
-		cancelCommit_ = true;
+		CounterGuardAIR32 cg(cancelCommitCnt_);
 		wlck = wLock(ctx.rdxContext);
-		cancelCommit_ = false;
+		cg.Reset();
 	}
 	calc.LockHit();
 
@@ -925,7 +936,7 @@ void NamespaceImpl::doDelete(IdType id) {
 		free_.resize(0);
 		items_.resize(0);
 	}
-	markUpdated();
+	markUpdated(true);
 }
 
 void NamespaceImpl::Delete(const Query &q, QueryResults &result, const NsContext &ctx) {
@@ -933,9 +944,9 @@ void NamespaceImpl::Delete(const Query &q, QueryResults &result, const NsContext
 
 	Locker::WLockT wlck;
 	if (!ctx.noLock) {
-		cancelCommit_ = true;
+		CounterGuardAIR32 cg(cancelCommitCnt_);
 		wlck = wLock(ctx.rdxContext);
-		cancelCommit_ = false;
+		cg.Reset();
 	}
 	calc.LockHit();
 
@@ -985,9 +996,9 @@ void NamespaceImpl::Truncate(const NsContext &ctx) {
 
 	Locker::WLockT wlck;
 	if (!ctx.noLock) {
-		cancelCommit_ = true;
+		CounterGuardAIR32 cg(cancelCommitCnt_);
 		wlck = wLock(ctx.rdxContext);
-		cancelCommit_ = false;
+		cg.Reset();
 	}
 	calc.LockHit();
 
@@ -1028,7 +1039,7 @@ void NamespaceImpl::Truncate(const NsContext &ctx) {
 
 	lsn_t lsn(wal_.Add(wrec), serverId_);
 	if (!ctx.rdxContext.fromReplication_) repl_.lastSelfLSN = lsn;
-	markUpdated();
+	markUpdated(true);
 	if (!repl_.temporary)
 		observers_->OnWALUpdate(LSNPair(lsn, ctx.rdxContext.fromReplication_ ? ctx.rdxContext.LSNs_.originLSN_ : lsn), name_, wrec);
 	if (!ctx.rdxContext.fromReplication_) setReplLSNs(LSNPair(lsn_t(), lsn));
@@ -1107,9 +1118,9 @@ void NamespaceImpl::CommitTransaction(Transaction &tx, QueryResults &result, NsC
 	Locker::WLockT wlck;
 	if (!ctx.noLock) {
 		PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
-		cancelCommit_ = true;  // -V519
+		CounterGuardAIR32 cg(cancelCommitCnt_);
 		wlck = wLock(ctx.rdxContext);
-		cancelCommit_ = false;	// -V519
+		cg.Reset();
 		calc.LockHit();
 	}
 
@@ -1205,6 +1216,7 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 			} else {
 				pl.Get(field, krefs, index.Opts().IsArray());
 			}
+			if (krefs == skrefs) continue;
 			index.Delete(krefs, id, *strHolder_);
 		}
 		// Put value to index
@@ -1227,9 +1239,9 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 }
 
 Error NamespaceImpl::ReplaceTagsMatcher(const TagsMatcher &tm, const RdxContext &ctx) {
-	cancelCommit_ = true;
+	CounterGuardAIR32 cg(cancelCommitCnt_);
 	auto wlck = wLock(ctx);
-	cancelCommit_ = false;	// -V519
+	cg.Reset();
 	if (items_.size() || !repl_.replicatorEnabled) {
 		return Error(errParams, "Unable to replace tags matcher for %s. Items count: %d, replication flag: %d", name_, items_.size(),
 					 repl_.replicatorEnabled);
@@ -1260,8 +1272,7 @@ void NamespaceImpl::updateTagsMatcherFromItem(ItemImpl *ritem) {
 			throw Error(errLogic, "Could not insert item. TagsMatcher was not merged.");
 		ritem->tagsMatcher() = tagsMatcher_;
 		ritem->tagsMatcher().setUpdated();
-	}
-	if (ritem->tagsMatcher().isUpdated()) {
+	} else if (ritem->tagsMatcher().isUpdated()) {
 		ritem->tagsMatcher() = tagsMatcher_;
 		ritem->tagsMatcher().setUpdated();
 	}
@@ -1274,9 +1285,9 @@ void NamespaceImpl::modifyItem(Item &item, const NsContext &ctx, int mode) {
 	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
 
 	if (!ctx.noLock) {
-		cancelCommit_ = true;  // -V519
+		CounterGuardAIR32 cg(cancelCommitCnt_);
 		wlck = wLock(ctx.rdxContext);
-		cancelCommit_ = false;	// -V519
+		cg.Reset();
 	}
 	calc.LockHit();
 
@@ -1328,7 +1339,7 @@ void NamespaceImpl::modifyItem(Item &item, const NsContext &ctx, int mode) {
 									 item.impl_, mode, ctx.inTransaction);
 	}
 	if (!ctx.rdxContext.fromReplication_) setReplLSNs(LSNPair(lsn_t(), lsn));
-	markUpdated();
+	markUpdated(!exists);
 }
 
 // find id by PK. NOT THREAD SAFE!
@@ -1359,10 +1370,11 @@ pair<IdType, bool> NamespaceImpl::findByPK(ItemImpl *ritem, const RdxContext &ct
 }
 
 void NamespaceImpl::optimizeIndexes(const NsContext &ctx) {
+	static const auto kHardwareConcurrency = std::thread::hardware_concurrency();
 	// This is read lock only atomics based implementation of rebuild indexes
 	// If optimizationState_ == OptimizationCompleted is true, then indexes are completely built.
 	// In this case reset optimizationState_ and/or any idset's and sort orders builds are allowed only protected by write lock
-	if (optimizationState_ == OptimizationCompleted) return;
+	if (optimizationState_.load(std::memory_order_relaxed) == OptimizationCompleted) return;
 	int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 	auto lastUpdateTime = lastUpdateTime_.load(std::memory_order_acquire);
 
@@ -1380,8 +1392,9 @@ void NamespaceImpl::optimizeIndexes(const NsContext &ctx) {
 		return;
 	}
 
-	if (optimizationState_ == OptimizationCompleted || cancelCommit_) return;
-	optimizationState_ = OptimizingIndexes;
+	const auto optState{optimizationState_.load(std::memory_order_acquire)};
+	if (optState == OptimizationCompleted || cancelCommitCnt_.load(std::memory_order_relaxed)) return;
+	const bool forceBuildAllIndexes = optState == NotOptimized;
 
 	logPrintf(LogTrace, "Namespace::optimizeIndexes(%s) enter", name_);
 	assert(indexes_.firstCompositePos() != 0);
@@ -1391,45 +1404,61 @@ void NamespaceImpl::optimizeIndexes(const NsContext &ctx) {
 		PerfStatCalculatorMT calc(indexes_[field]->GetCommitPerfCounter(), enablePerfCounters_);
 		calc.LockHit();
 		indexes_[field]->Commit();
-	} while (++field != indexes_.firstCompositePos() && !cancelCommit_);
+	} while (++field != indexes_.firstCompositePos() && !cancelCommitCnt_.load(std::memory_order_relaxed));
 
 	// Update sort orders and sort_id for each index
-	optimizationState_ = OptimizingSortOrders;
-
-	int i = 1;
-	int maxIndexWorkers = std::min(int(std::thread::hardware_concurrency()), config_.optimizationSortWorkers);
+	size_t currentSortId = 1;
+	const size_t maxIndexWorkers = kHardwareConcurrency
+									   ? std::min<size_t>(std::thread::hardware_concurrency(), config_.optimizationSortWorkers)
+									   : config_.optimizationSortWorkers;
 	for (auto &idxIt : indexes_) {
 		if (idxIt->IsOrdered() && maxIndexWorkers != 0) {
-			NSUpdateSortedContext sortCtx(*this, i++);
+			NSUpdateSortedContext sortCtx(*this, currentSortId++);
+			const bool forceBuildAll = forceBuildAllIndexes || idxIt->IsBuilt() || idxIt->SortId() != currentSortId;
 			idxIt->MakeSortOrders(sortCtx);
 			// Build in multiple threads
 			std::unique_ptr<thread[]> thrs(new thread[maxIndexWorkers]);
-			auto indexes = &this->indexes_;
-
-			for (int i = 0; i < maxIndexWorkers; i++) {
-				thrs[i] = std::thread(
-					[&](int i) {
-						for (int j = i; j < int(indexes->size()) && !cancelCommit_; j += maxIndexWorkers)
-							indexes->at(j)->UpdateSortedIds(sortCtx);
-					},
-					i);
+			for (size_t i = 0; i < maxIndexWorkers; i++) {
+				thrs[i] = std::thread([&, i]() {
+					for (size_t j = i; j < this->indexes_.size() && !cancelCommitCnt_.load(std::memory_order_relaxed);
+						 j += maxIndexWorkers) {
+						auto &idx = this->indexes_[j];
+						if (forceBuildAll || !idx->IsBuilt()) {
+							idx->UpdateSortedIds(sortCtx);
+						}
+					}
+				});
 			}
-			for (int i = 0; i < maxIndexWorkers; i++) thrs[i].join();
+			for (size_t i = 0; i < maxIndexWorkers; i++) thrs[i].join();
 		}
-		if (cancelCommit_) break;
+		if (cancelCommitCnt_.load(std::memory_order_relaxed)) break;
 	}
-	optimizationState_ = (!cancelCommit_ && maxIndexWorkers) ? OptimizationCompleted : NotOptimized;
-	if (!cancelCommit_) {
+	if (maxIndexWorkers && !cancelCommitCnt_.load(std::memory_order_relaxed)) {
+		optimizationState_.store(OptimizationCompleted, std::memory_order_release);
+		for (auto &idxIt : indexes_) {
+			if (!idxIt->IsFulltext()) {
+				idxIt->MarkBuilt();
+			}
+		}
+	}
+	if (cancelCommitCnt_.load(std::memory_order_relaxed)) {
+		logPrintf(LogTrace, "Namespace::optimizeIndexes(%s) done", name_);
+	} else {
 		lastUpdateTime_.store(0, std::memory_order_release);
+		logPrintf(LogTrace, "Namespace::optimizeIndexes(%s) was cancelled by concurent update", name_);
 	}
-	logPrintf(LogTrace, "Namespace::optimizeIndexes(%s) leave %s", name_, cancelCommit_ ? "(cancelled by concurent update)" : "");
 }
 
-void NamespaceImpl::markUpdated() {
+void NamespaceImpl::markUpdated(bool forceOptimizeAllIndexes) {
 	using namespace std::string_view_literals;
 	itemsCount_.store(items_.size(), std::memory_order_relaxed);
 	itemsCapacity_.store(items_.capacity(), std::memory_order_relaxed);
-	optimizationState_.store(NotOptimized);
+	if (forceOptimizeAllIndexes) {
+		optimizationState_.store(NotOptimized);
+	} else {
+		int expected{OptimizationCompleted};
+		optimizationState_.compare_exchange_strong(expected, OptimizedPartially);
+	}
 	queryCache_->Clear();
 	joinCache_->Clear();
 	lastUpdateTime_.store(
@@ -1914,7 +1943,7 @@ void NamespaceImpl::LoadFromStorage(const RdxContext &ctx) {
 		unflushedCount_.fetch_add(1, std::memory_order_release);
 	}
 
-	markUpdated();
+	markUpdated(true);
 }
 
 void NamespaceImpl::initWAL(int64_t minLSN, int64_t maxLSN) {
@@ -2165,7 +2194,7 @@ int NamespaceImpl::getSortedIdxCount() const {
 void NamespaceImpl::updateSortedIdxCount() {
 	int sortedIdxCount = getSortedIdxCount();
 	for (auto &idx : indexes_) idx->SetSortedIdxCount(sortedIdxCount);
-	markUpdated();
+	markUpdated(true);
 }
 
 IdType NamespaceImpl::createItem(size_t realSize) {

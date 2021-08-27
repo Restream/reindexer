@@ -24,7 +24,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	}
 
 	ExplainCalc explain(ctx.query.explain_ || ctx.query.debugLevel >= LogInfo);
-	ActiveQueryScope queryScope(ctx, ns_->optimizationState_, explain);
+	ActiveQueryScope queryScope(ctx, ns_->optimizationState_, explain, ns_->locker_.IsReadOnly(), ns_->strHolder_.get());
 
 	explain.StartTiming();
 

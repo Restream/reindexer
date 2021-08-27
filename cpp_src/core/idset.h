@@ -43,15 +43,19 @@ public:
 		Unordered  // Just add id, commit and erase is impossible
 	};
 
-	void Add(IdType id, EditMode editMode, int sortedIdxCount) {
+	bool Add(IdType id, EditMode editMode, int sortedIdxCount) {
 		grow((size() + 1) * (sortedIdxCount + 1));
 		if (editMode == Unordered) {
 			push_back(id);
-			return;
+			return true;
 		}
 
 		auto pos = std::lower_bound(begin(), end(), id);
-		if ((pos == end() || *pos != id)) base_idset::insert(pos, id);
+		if ((pos == end() || *pos != id)) {
+			base_idset::insert(pos, id);
+			return true;
+		}
+		return false;
 	}
 
 	int Erase(IdType id) {
@@ -60,12 +64,12 @@ public:
 		return d.second - d.first;
 	}
 
-	void Commit();
-	bool IsCommited() const { return true; }
-	bool IsEmpty() const { return empty(); }
-	size_t Size() const { return size(); }
-	size_t BTreeSize() const { return 0; }
-	const base_idsetset *BTree() const { return nullptr; }
+	void Commit() const noexcept {}
+	bool IsCommited() const noexcept { return true; }
+	bool IsEmpty() const noexcept { return empty(); }
+	size_t Size() const noexcept { return size(); }
+	size_t BTreeSize() const noexcept { return 0; }
+	const base_idsetset *BTree() const noexcept { return nullptr; }
 	void ReserveForSorted(int sortedIdxCount) { reserve(size() * (sortedIdxCount + 1)); }
 	string Dump();
 };
@@ -98,30 +102,32 @@ public:
 		}
 		return *this;
 	}
-	void Add(IdType id, EditMode editMode, int sortedIdxCount) {
+	bool Add(IdType id, EditMode editMode, int sortedIdxCount) {
 		// Reserve extra space for sort orders data
 		grow(((set_ ? set_->size() : size()) + 1) * (sortedIdxCount + 1));
 
 		if (editMode == Unordered) {
 			assert(!set_);
 			push_back(id);
-			return;
+			return true;
 		}
 
 		if (int(size()) >= kMaxPlainIdsetSize && !set_ && editMode == Auto) {
 			set_.reset(new base_idsetset);
 			set_->insert(begin(), end());
-			usingBtree_ = true;
-			resize(0);
 		}
 
 		if (!set_) {
 			auto pos = std::lower_bound(begin(), end(), id);
-			if ((pos == end() || *pos != id)) base_idset::insert(pos, id);
+			if ((pos == end() || *pos != id)) {
+				base_idset::insert(pos, id);
+				return true;
+			}
+			return false;
 		} else {
 			resize(0);
-			set_->insert(id);
 			usingBtree_ = true;
+			return set_->insert(id).second;
 		}
 	}
 

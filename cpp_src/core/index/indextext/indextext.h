@@ -13,7 +13,6 @@
 #include "fieldsgetter.h"
 
 namespace reindexer {
-using std::unique_ptr;
 
 template <typename T>
 class IndexText : public IndexUnordered<T> {
@@ -22,7 +21,7 @@ class IndexText : public IndexUnordered<T> {
 public:
 	IndexText(const IndexText<T>& other);
 	IndexText(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields)
-		: IndexUnordered<T>(idef, std::move(payloadType), fields), cache_ft_(new FtIdSetCache), isBuilt_(false) {
+		: IndexUnordered<T>(idef, std::move(payloadType), fields), cache_ft_(new FtIdSetCache) {
 		this->selectKeyType_ = KeyValueString;
 		initSearchers();
 	}
@@ -35,7 +34,7 @@ public:
 	void Commit() override final;
 	void CommitFulltext() override final {
 		commitFulltextImpl();
-		isBuilt_ = true;
+		this->isBuilt_ = true;
 	}
 	void SetSortedIdxCount(int) override final {}
 	bool RequireWarmupOnNsCopy() const noexcept override final { return cfg_ && cfg_->enableWarmupOnNsCopy; }
@@ -43,6 +42,8 @@ public:
 		Base::ClearCache();
 		cache_ft_.reset();
 	}
+	void MarkBuilt() noexcept override { assert(0); }
+	bool IsFulltext() const noexcept override { return true; }
 
 protected:
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::IndexText>;
@@ -54,10 +55,9 @@ protected:
 
 	shared_ptr<FtIdSetCache> cache_ft_;
 	fast_hash_map<string, int> ftFields_;
-	unique_ptr<BaseFTConfig> cfg_;
+	std::unique_ptr<BaseFTConfig> cfg_;
 	DataHolder holder_;
 	Mutex mtx_;
-	bool isBuilt_;
 };
 
 }  // namespace reindexer

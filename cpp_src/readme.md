@@ -10,11 +10,27 @@ Reindexer is fast. Up to 5x times faster, than mongodb, and 10x times than elast
 
 ## Docker image
 
+### Container startup
+
 The simplest way to get reindexer, is pulling & run docker image from [dockerhub](https://hub.docker.com/r/reindexer/reindexer/)
 
 ```bash
 docker run -p9088:9088 -p6534:6534 -it reindexer/reindexer
 ```
+
+### Container configuration
+
+While using docker, you may pass reindexer server config options via envinronment variables:
+
+- `RX_DATABASE` - path to reindexer's storage. Default value is `/db`.
+- `RX_CORELOG` - path to core log file (or `none` to disable core logging). Default value is `stdout`.
+- `RX_HTTPLOG` - path to http log file (or `none` to disable http logging). Default value is `stdout`.
+- `RX_RPCLOG` - path to rpc log file (or `none` to disable rpc logging). Default value is `stdout`.
+- `RX_SERVERLOG` - path to server log file (or `none` to disable server logging). Default value is `stdout`.
+- `RX_LOGLEVEL` - log level for core logs (may be `info`, `trace`, `warning` or `error`). Default value is `info`.
+- `RX_PPROF` - if RX_PPROF is not empty, enables pprof api. Disabled by default.
+- `RX_SECURITY` - if RX_SECURITY is not empty, enables authorization. Disabled by default.
+- `RX_PROMETHEUS` - if RX_PROMETHEUS is not empty, enables prometheus metrics. Disabled by default.
 
 ## OSX brew
 
@@ -29,8 +45,8 @@ brew install reindexer
 
 ```bash
 yum install -y epel-release yum-utils
-rpm --import http://repo.reindexer.org/RX-KEY.GPG
-yum-config-manager --add-repo  http://repo.reindexer.org/<distro>/x86_64/
+rpm --import https://repo.reindexer.io/RX-KEY.GPG
+yum-config-manager --add-repo  https://repo.reindexer.io/<distro>/x86_64/
 yum update
 yum install reindexer-server
 ```
@@ -40,8 +56,8 @@ Available distros: `centos-7`,`centos-8`,`fedora-30`,`fedora-31`,
 ## Ubuntu/Debian
 
 ```bash
-curl http://repo.reindexer.org/RX-KEY.GPG | apt-key add
-echo "deb http://repo.reindexer.org/<distro> /" >> /etc/apt/sources.list
+curl https://repo.reindexer.io/RX-KEY.GPG | apt-key add
+echo "deb https://repo.reindexer.io/<distro> /" >> /etc/apt/sources.list
 apt update
 apt install reindexer-server
 ```
@@ -50,7 +66,7 @@ Available distros: `debian-buster`, `ubuntu-bionic`, `ubuntu-focal`
 
 ## Windows
 
-Download and install [64 bit](http://www.reindexer.org/dist/reindexer_server-win64.exe) or [32 bit](http://www.reindexer.org/dist/reindexer_server-win32.exe)
+Download and install [64 bit](https://repo.reindexer.io/win/64/) or [32 bit](https://repo.reindexer.io/win/32/)
 
 ## Installing from sources
 

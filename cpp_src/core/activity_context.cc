@@ -2,6 +2,7 @@
 #include <iomanip>
 #include <sstream>
 #include "cjson/jsonbuilder.h"
+#include "tools/stringstools.h"
 
 namespace reindexer {
 
@@ -40,20 +41,21 @@ std::vector<Activity> ActivityContainer::List() {
 	return ret;
 }
 
-bool ActivityContainer::ActivityForIpConnection(int id, Activity& act) {
+std::optional<std::string> ActivityContainer::QueryForIpConnection(int id) {
 	std::unique_lock<std::mutex> lck(mtx_);
 
 	for (const RdxActivityContext* ctx : cont_) {
 		if (ctx->CheckConnectionId(id)) {
-			act = *ctx;
-			return true;
+			std::string ret;
+			deepCopy(ret, ctx->Query());
+			return ret;
 		}
 	}
 
-	return false;
+	return std::nullopt;
 }
 
-std::string_view Activity::DescribeState(State st) {
+std::string_view Activity::DescribeState(State st) noexcept {
 	switch (st) {
 		case InProgress:
 			return "in_progress";

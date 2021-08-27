@@ -8,10 +8,10 @@
 #include "core/iclientsstats.h"
 #include "core/index/index.h"
 #include "core/itemimpl.h"
-#include "core/namespacedef.h"
 #include "core/nsselecter/crashqueryreporter.h"
 #include "core/query/sql/sqlsuggester.h"
 #include "core/selectfunc/selectfunc.h"
+#include "defnsconfigs.h"
 #include "estl/contexted_locks.h"
 #include "queryresults/joinresults.h"
 #include "replicator/replicator.h"
@@ -33,13 +33,6 @@ using namespace std::string_view_literals;
 
 namespace reindexer {
 
-constexpr char kPerfStatsNamespace[] = "#perfstats";
-constexpr char kQueriesPerfStatsNamespace[] = "#queriesperfstats";
-constexpr char kMemStatsNamespace[] = "#memstats";
-constexpr char kNamespacesNamespace[] = "#namespaces";
-constexpr char kConfigNamespace[] = "#config";
-constexpr char kActivityStatsNamespace[] = "#activitystats";
-constexpr char kClientsStatsNamespace[] = "#clientsstats";
 constexpr char kStoragePlaceholderFilename[] = ".reindexer.storage";
 constexpr char kReplicationConfFilename[] = "replication.conf";
 
@@ -1152,114 +1145,10 @@ void ReindexerImpl::backgroundRoutine() {
 }
 
 void ReindexerImpl::createSystemNamespaces() {
-	AddNamespace(NamespaceDef(kConfigNamespace, StorageOpts().Enabled().CreateIfMissing().DropOnFileFormatError())
-					 .AddIndex("type", "hash", "string", IndexOpts().PK()));
-
-	AddNamespace(NamespaceDef(kPerfStatsNamespace, StorageOpts())
-					 .AddIndex("name", "hash", "string", IndexOpts().PK())
-					 .AddIndex("updates.total_queries_count", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("updates.total_avg_latency_us", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("updates.last_sec_qps", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("updates.last_sec_avg_latency_us", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("selects.total_queries_count", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("selects.total_avg_latency_us", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("selects.last_sec_qps", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("selects.last_sec_avg_latency_us", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("transactions.total_count", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("transactions.total_copy_count", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("transactions.avg_steps_count", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("transactions.avg_prepare_time_us", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("transactions.avg_commit_time_us", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("transactions.avg_copy_time_us", "-", "int64", IndexOpts().Dense()));
-
-	AddNamespace(NamespaceDef(kActivityStatsNamespace, StorageOpts())
-					 .AddIndex("query_id", "hash", "int", IndexOpts().PK())
-					 .AddIndex("client", "-", "string", IndexOpts().Dense())
-					 .AddIndex("query", "-", "string", IndexOpts().Dense())
-					 .AddIndex("query_start", "-", "string", IndexOpts().Dense())
-					 .AddIndex("blocked", "-", "bool", IndexOpts().Dense())
-					 .AddIndex("description", "-", "string", IndexOpts().Sparse()));
-
-	AddNamespace(NamespaceDef(kQueriesPerfStatsNamespace, StorageOpts())
-					 .AddIndex("query", "hash", "string", IndexOpts().PK())
-					 .AddIndex("total_queries_count", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("total_avg_latency_us", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("total_avg_lock_time_us", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("last_sec_qps", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("last_sec_avg_latency_us", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("last_sec_avg_lock_time_us", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("latency_stddev", "-", "double", IndexOpts().Dense()));
-
-	AddNamespace(NamespaceDef(kNamespacesNamespace, StorageOpts()).AddIndex("name", "hash", "string", IndexOpts().PK()));
-
-	AddNamespace(NamespaceDef(kPerfStatsNamespace, StorageOpts()).AddIndex("name", "hash", "string", IndexOpts().PK()));
-
-	AddNamespace(NamespaceDef(kMemStatsNamespace, StorageOpts())
-					 .AddIndex("name", "hash", "string", IndexOpts().PK())
-					 .AddIndex("items_count", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("data_size", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("total.data_size", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("total.indexes_size", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("total.cache_size", "-", "int64", IndexOpts().Dense()));
-
-	AddNamespace(NamespaceDef(kClientsStatsNamespace, StorageOpts())
-					 .AddIndex("connection_id", "hash", "int", IndexOpts().PK())
-					 .AddIndex("ip", "-", "string", IndexOpts().Dense())
-					 .AddIndex("user_name", "-", "string", IndexOpts().Dense())
-					 .AddIndex("user_rights", "-", "string", IndexOpts().Dense())
-					 .AddIndex("db_name", "-", "string", IndexOpts().Dense())
-					 .AddIndex("current_activity", "-", "string", IndexOpts().Dense())
-					 .AddIndex("start_time", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("send_bytes", "-", "int64", IndexOpts().Dense())
-					 .AddIndex("recv_bytes", "-", "int64", IndexOpts().Dense()));
+	for (const auto& nsDef : kSystemNsDefs) {
+		AddNamespace(nsDef);
+	}
 }
-
-std::vector<string> defDBConfig = {
-	R"json({
-		"type":"profiling", 
-		"profiling":{
-            "queriesperfstats":false,
-			"queries_threshold_us":10,
-			"perfstats":false,
-			"memstats":true,
-			"activitystats":false
-		}
-	})json",
-	R"json({
-        "type":"namespaces",
-        "namespaces":[
-            {
-				"namespace":"*",
-                "log_level":"none",
-				"lazyload":false,
-				"unload_idle_threshold":0,
-				"join_cache_mode":"off",
-				"start_copy_policy_tx_size":10000,
-				"copy_policy_multiplier":5,
-				"tx_size_to_always_copy":100000,
-				"optimization_timeout_ms":800,
-				"optimization_sort_workers":4,
-				"wal_size":4000000
-			}
-    	]
-	})json",
-	R"json({
-        "type":"replication",
-        "replication":{
-			"role":"none",
-			"master_dsn":"cproto://127.0.0.1:6534/db",
-			"cluster_id":2,
-			"force_sync_on_logic_error": false,
-			"force_sync_on_wrong_data_hash": false,
-			"namespaces":[]
-		}
-    })json",
-	R"json({
-        "type":"action",
-        "action":{
-			"command":""
-		}
-    })json"};
 
 Error ReindexerImpl::InitSystemNamespaces() {
 	createSystemNamespaces();
@@ -1271,7 +1160,7 @@ Error ReindexerImpl::InitSystemNamespaces() {
 	bool hasReplicatorConfig = false;
 	if (results.Count() == 0) {
 		// Set default config
-		for (const auto& conf : defDBConfig) {
+		for (const auto& conf : kDefDBConfig) {
 			if (!hasReplicatorConfig) {
 				gason::JsonParser parser;
 				gason::JsonNode configJson = parser.Parse(std::string_view(conf));
@@ -1504,9 +1393,9 @@ void ReindexerImpl::syncSystemNamespaces(std::string_view sysNsName, std::string
 			items.reserve(clientInf.size());
 			for (auto& i : clientInf) {
 				ser.Reset();
-				Activity activ;
-				bool isExist = activities_.ActivityForIpConnection(i.connectionId, activ);
-				if (isExist) i.currentActivity = activ.query;
+				if (auto query = activities_.QueryForIpConnection(i.connectionId); query) {
+					i.currentActivity = std::move(*query);
+				}
 				for (auto obsIt = observers.begin(); obsIt != observers.end(); ++obsIt) {
 					if (obsIt->ptr == i.updatesPusher) {
 						i.isSubscribed = true;
@@ -1607,7 +1496,7 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, vector<string>& namesp
 		ser << "oneof item {\n";
 		for (auto& ns : nses) {
 			obj.Field(ns.nsName, ns.nsNumber, FieldProps{KeyValueTuple, false, false, false, ns.objName});
-		};
+		}
 		ser << "}\n";
 	});
 

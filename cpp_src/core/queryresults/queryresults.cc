@@ -43,8 +43,8 @@ struct QueryResults::Context {
 static_assert(QueryResults::kSizeofContext >= sizeof(QueryResults::Context),
 			  "QueryResults::kSizeofContext should >=  sizeof(QueryResults::Context)");
 
-QueryResults::QueryResults(std::initializer_list<ItemRef> l) : items_(l), holdActivity_(false), noActivity_(0) {}
-QueryResults::QueryResults(int /*flags*/) : holdActivity_(false), noActivity_(0) {}
+QueryResults::QueryResults(std::initializer_list<ItemRef> l) : items_(l) {}
+QueryResults::QueryResults(int /*flags*/) {}
 QueryResults::QueryResults(QueryResults &&obj)
 	: joined_(std::move(obj.joined_)),
 	  aggregationResults(std::move(obj.aggregationResults)),
@@ -55,19 +55,12 @@ QueryResults::QueryResults(QueryResults &&obj)
 	  ctxs(std::move(obj.ctxs)),
 	  explainResults(std::move(obj.explainResults)),
 	  items_(std::move(obj.items_)),
-	  holdActivity_(obj.holdActivity_),
-	  noActivity_(0),
+	  activityCtx_(std::move(obj.activityCtx_)),
 	  nsData_(std::move(obj.nsData_)),
-	  stringsHolder_(std::move(obj.stringsHolder_)) {
-	if (holdActivity_) {
-		new (&activityCtx_) RdxActivityContext(std::move(obj.activityCtx_));
-		obj.activityCtx_.~RdxActivityContext();
-		obj.holdActivity_ = false;
-	}
-}
+	  stringsHolder_(std::move(obj.stringsHolder_)) {}
 
-QueryResults::QueryResults(const ItemRefVector::const_iterator &begin, const ItemRefVector::const_iterator &end)
-	: items_(begin, end), holdActivity_(false), noActivity_(0) {}
+QueryResults::QueryResults(const ItemRefVector::const_iterator &begin, const ItemRefVector::const_iterator &end) : items_(begin, end) {}
+
 QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	if (this != &obj) {
 		items_ = std::move(obj.items_);
@@ -80,22 +73,18 @@ QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 		ctxs = std::move(obj.ctxs);
 		nonCacheableData = std::move(obj.nonCacheableData);
 		explainResults = std::move(obj.explainResults);
-		if (holdActivity_) activityCtx_.~RdxActivityContext();
-		holdActivity_ = obj.holdActivity_;
 		nsData_ = std::move(obj.nsData_);
 		stringsHolder_ = std::move(obj.stringsHolder_);
-		if (holdActivity_) {
-			new (&activityCtx_) RdxActivityContext(std::move(obj.activityCtx_));
-			obj.activityCtx_.~RdxActivityContext();
-			obj.holdActivity_ = false;
+		activityCtx_.reset();
+		if (obj.activityCtx_) {
+			activityCtx_.emplace(std::move(*obj.activityCtx_));
+			obj.activityCtx_.reset();
 		}
 	}
 	return *this;
 }
 
-QueryResults::~QueryResults() {
-	if (holdActivity_) activityCtx_.~RdxActivityContext();
-}
+QueryResults::~QueryResults() = default;
 
 void QueryResults::Clear() { *this = QueryResults(); }
 
