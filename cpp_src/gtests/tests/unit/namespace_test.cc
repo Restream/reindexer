@@ -320,8 +320,7 @@ TEST_F(NsApi, TestUpdateIndexedField) {
 	FillDefaultNamespace();
 
 	QueryResults qrUpdate;
-	Query updateQuery =
-		std::move(Query(default_namespace).Where(intField, CondGe, Variant(static_cast<int>(500))).Set(stringField, "bingo!"));
+	Query updateQuery{Query(default_namespace).Where(intField, CondGe, Variant(static_cast<int>(500))).Set(stringField, "bingo!")};
 	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
 
@@ -343,8 +342,7 @@ TEST_F(NsApi, TestUpdateNonindexedField) {
 	AddUnindexedData();
 
 	QueryResults qrUpdate;
-	Query updateQuery =
-		std::move(Query(default_namespace).Where("id", CondGe, Variant("1500")).Set("nested.bonus", static_cast<int>(100500)));
+	Query updateQuery{Query(default_namespace).Where("id", CondGe, Variant("1500")).Set("nested.bonus", static_cast<int>(100500))};
 	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qrUpdate.Count() == 500) << qrUpdate.Count();
@@ -368,8 +366,7 @@ TEST_F(NsApi, TestUpdateSparseField) {
 	AddUnindexedData();
 
 	QueryResults qrUpdate;
-	Query updateQuery =
-		std::move(Query(default_namespace).Where("id", CondGe, Variant("1500")).Set("sparse_field", static_cast<int>(100500)));
+	Query updateQuery{Query(default_namespace).Where("id", CondGe, Variant("1500")).Set("sparse_field", static_cast<int>(100500))};
 	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qrUpdate.Count() == 500) << qrUpdate.Count();
@@ -388,7 +385,7 @@ TEST_F(NsApi, TestUpdateSparseField) {
 	}
 }
 
-// Test of the currious case: https://github.com/restream/reindexer/-/issues/697
+// Test of the currious case: https://git.itv.restr.im/itv-backend/reindexer/-/issues/697
 // Updating entire object field and some indexed field at once.
 TEST_F(NsApi, TestUpdateTwoFields) {
 	// Set and fill Database
@@ -430,7 +427,7 @@ TEST_F(NsApi, TestUpdateTwoFields) {
 void updateArrayField(std::shared_ptr<reindexer::Reindexer> reindexer, const string &ns, const string &updateFieldPath,
 					  const VariantArray &values) {
 	QueryResults qrUpdate;
-	Query updateQuery = std::move(Query(ns).Where("id", CondGe, Variant("500")).Set(updateFieldPath, values));
+	Query updateQuery{Query(ns).Where("id", CondGe, Variant("500")).Set(updateFieldPath, values)};
 	Error err = reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qrUpdate.Count() > 0) << qrUpdate.Count();
@@ -541,7 +538,7 @@ TEST_F(NsApi, TestUpdateIndexedArrayField2) {
 	VariantArray value;
 	value.emplace_back(static_cast<int>(77));
 	value.MarkArray();
-	Query q = std::move(Query(default_namespace).Where(idIdxName, CondEq, static_cast<int>(1000)).Set(indexedArrayField, std::move(value)));
+	Query q{Query(default_namespace).Where(idIdxName, CondEq, static_cast<int>(1000)).Set(indexedArrayField, std::move(value))};
 	Error err = rt.reindexer->Update(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
@@ -554,7 +551,7 @@ TEST_F(NsApi, TestUpdateIndexedArrayField2) {
 
 void addAndSetNonindexedField(std::shared_ptr<reindexer::Reindexer> reindexer, const string &ns, const string &updateFieldPath) {
 	QueryResults qrUpdate;
-	Query updateQuery = std::move(Query(ns).Where("nested.bonus", CondGe, Variant(500)).Set(updateFieldPath, static_cast<int64_t>(777)));
+	Query updateQuery{Query(ns).Where("nested.bonus", CondGe, Variant(500)).Set(updateFieldPath, static_cast<int64_t>(777))};
 	Error err = reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
 
@@ -593,7 +590,7 @@ void setAndCheckArrayItem(std::shared_ptr<reindexer::Reindexer> reindexer, const
 						  const string &jsonPath, int i = IndexValueType::NotSet, int j = IndexValueType::NotSet) {
 	// Set array item to 777
 	QueryResults qrUpdate;
-	Query updateQuery = std::move(Query(ns).Where("nested.bonus", CondGe, Variant(500)).Set(fullItemPath, static_cast<int64_t>(777)));
+	Query updateQuery{Query(ns).Where("nested.bonus", CondGe, Variant(500)).Set(fullItemPath, static_cast<int64_t>(777))};
 	Error err = reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
 
@@ -671,8 +668,8 @@ TEST_F(NsApi, TestAddAndSetArrayField3) {
 
 	// 3. Set array item(s) value to 777 and check if it was set properly
 	QueryResults qrUpdate;
-	Query updateQuery = std::move(
-		Query(default_namespace).Where("nested.bonus", CondGe, Variant(500)).Set("indexed_array_field[0]", static_cast<int>(777)));
+	Query updateQuery{
+		Query(default_namespace).Where("nested.bonus", CondGe, Variant(500)).Set("indexed_array_field[0]", static_cast<int>(777))};
 	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
 
@@ -694,8 +691,8 @@ TEST_F(NsApi, TestAddAndSetArrayField4) {
 
 	// 3. Set array item(s) value to 777 and check if it was set properly
 	QueryResults qrUpdate;
-	Query updateQuery = std::move(
-		Query(default_namespace).Where("nested.bonus", CondGe, Variant(500)).Set("indexed_array_field[*]", static_cast<int>(777)));
+	Query updateQuery{
+		Query(default_namespace).Where("nested.bonus", CondGe, Variant(500)).Set("indexed_array_field[*]", static_cast<int>(777))};
 	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
 
@@ -716,7 +713,7 @@ void DropArrayItem(std::shared_ptr<reindexer::Reindexer> reindexer, const string
 				   int i = IndexValueType::NotSet, int j = IndexValueType::NotSet) {
 	// Drop item(s) with name = fullItemPath
 	QueryResults qrUpdate;
-	Query updateQuery = std::move(Query(ns).Where("nested.bonus", CondGe, Variant(500)).Drop(fullItemPath));
+	Query updateQuery{Query(ns).Where("nested.bonus", CondGe, Variant(500)).Drop(fullItemPath)};
 	Error err = reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
 
@@ -1112,7 +1109,7 @@ TEST_F(NsApi, CheckIndexedArrayItem) {
 
 void checkFieldConversion(std::shared_ptr<reindexer::Reindexer> reindexer, const string &ns, const string &updateFieldPath,
 						  const VariantArray &newValue, const VariantArray &updatedValue, KeyValueType sourceType, bool expectFail) {
-	const Query selectQuery = std::move(Query(ns).Where("id", CondGe, Variant("500")));
+	const Query selectQuery{Query(ns).Where("id", CondGe, Variant("500"))};
 	QueryResults qrUpdate;
 	Query updateQuery = selectQuery;
 	updateQuery.Set(updateFieldPath, newValue);
@@ -1339,7 +1336,7 @@ TEST_F(NsApi, TestUpdateEmptyArrayField) {
 }
 
 // Update 2 fields with one query in this order: object field, ordinary field of type String
-// https://github.com/restream/reindexer/-/tree/issue_777
+// https://git.itv.restr.im/itv-backend/reindexer/-/tree/issue_777
 TEST_F(NsApi, TestUpdateObjectFieldWithScalar) {
 	// Define namespace's schema and fill with data
 	DefineDefaultNamespace();

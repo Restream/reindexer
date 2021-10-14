@@ -2,12 +2,13 @@
 
 #include <algorithm>
 #include <variant>
-#include "core/cjson/tagsmatcher.h"
+#include "core/cjson/tagspath.h"
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
 
 namespace reindexer {
 
+class TagsMatcher;
 static constexpr int maxIndexes = 64;
 
 using base_fields_set = h_vector<int8_t, 6>;
@@ -21,12 +22,7 @@ public:
 	using base_fields_set::size;
 	using base_fields_set::empty;
 	using base_fields_set::operator[];
-	FieldsSet(const TagsMatcher &tagsMatcher, const h_vector<string, 1> &fields) : mask_(0) {
-		static_assert(std::numeric_limits<decltype(mask_)>::digits >= maxIndexes, "mask_ needs to provide 'maxIndexes' bits or more");
-		for (const string &str : fields) {
-			tagsPaths_.emplace_back(tagsMatcher.path2tag(str));
-		}
-	}
+	FieldsSet(const TagsMatcher &, const h_vector<string, 1> &fields);
 	FieldsSet(std::initializer_list<int> l) : mask_(0) {
 		for (auto f : l) push_back(f);
 	}
@@ -151,7 +147,7 @@ protected:
 	}
 
 	uint64_t mask_ = 0;
-	vector<FieldsPath> tagsPaths_;
+	std::vector<FieldsPath> tagsPaths_;
 	/// Json paths to non indexed fields.
 	/// Necessary only for composite full text
 	/// indexes. There is a connection with

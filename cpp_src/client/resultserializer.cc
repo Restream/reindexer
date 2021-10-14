@@ -1,4 +1,5 @@
 #include "resultserializer.h"
+#include "core/payload/payloadtypeimpl.h"
 #include "vendor/msgpack/msgpack.h"
 
 namespace reindexer {

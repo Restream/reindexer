@@ -25,7 +25,7 @@ TEST_F(MsgPackCprotoApi, AggregationSelectTest) {
 	ASSERT_TRUE(distinct.fields[0] == kFieldId);
 	std::unordered_set<int> found;
 	for (size_t i = 0; i < distinct.distincts.size(); ++i) {
-		found.insert(reindexer::stoi(distinct.distincts[i]));
+		found.insert(reindexer::stoi(distinct.distincts[i].As<string>(distinct.payloadType, distinct.distinctsFields)));
 	}
 	ASSERT_EQ(distinct.distincts.size(), found.size());
 

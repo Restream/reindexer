@@ -40,6 +40,7 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("Query2CondLeftJoinTotal", &ApiTvSimple::Query2CondLeftJoinTotal, this);
 	Register("Query2CondLeftJoinCachedTotal", &ApiTvSimple::Query2CondLeftJoinCachedTotal, this);
 	Register("Query0CondInnerJoinUnlimit", &ApiTvSimple::Query0CondInnerJoinUnlimit, this);
+	Register("Query0CondInnerJoinUnlimitLowSelectivity", &ApiTvSimple::Query0CondInnerJoinUnlimitLowSelectivity, this);
 	Register("Query0CondInnerJoinPreResultStoreValues", &ApiTvSimple::Query0CondInnerJoinPreResultStoreValues, this);
 	Register("Query2CondInnerJoin", &ApiTvSimple::Query2CondInnerJoin, this);
 	Register("Query2CondInnerJoinTotal", &ApiTvSimple::Query2CondInnerJoinTotal, this);
@@ -119,6 +120,44 @@ Error ApiTvSimple::Initialize() {
 		if (!err.ok()) return err;
 	}
 	err = db_->Commit(stringSelectNs_);
+	if (!err.ok()) return err;
+
+	NamespaceDef mainNsDef{innerJoinLowSelectivityMainNs_};
+	mainNsDef.AddIndex("id", "hash", "int", IndexOpts().PK())
+		.AddIndex("field", "hash", "int", IndexOpts());
+	err = db_->AddNamespace(mainNsDef);
+	if (!err.ok()) return err;
+	NamespaceDef rightNsDef{innerJoinLowSelectivityRightNs_};
+	rightNsDef.AddIndex("id", "hash", "int", IndexOpts().PK())
+		.AddIndex("field", "hash", "int", IndexOpts());
+	err = db_->AddNamespace(rightNsDef);
+	if (!err.ok()) return err;
+
+	for (size_t i = 0; i < 1000000; ++i) {
+		Item mItem = db_->NewItem(mainNsDef.name);
+		if (!mItem.Status().ok()) return mItem.Status();
+		mItem.Unsafe();
+		wrSer_.Reset();
+		reindexer::JsonBuilder bld(wrSer_);
+		bld.Put("id", i);
+		bld.Put("field", i);
+		bld.End();
+		mItem.FromJSON(wrSer_.Slice());
+		err = db_->Insert(mainNsDef.name, mItem);
+		if (!err.ok()) return err;
+
+		Item rItem = db_->NewItem(rightNsDef.name);
+		if (!rItem.Status().ok()) return rItem.Status();
+		rItem.Unsafe();
+		wrSer_.Reset();
+		reindexer::JsonBuilder bld2(wrSer_);
+		bld2.Put("id", i);
+		bld2.Put("field", i);
+		bld2.End();
+		rItem.FromJSON(wrSer_.Slice());
+		err = db_->Insert(rightNsDef.name, rItem);
+		if (!err.ok()) return err;
+	}
 	return err;
 }
 
@@ -398,7 +437,7 @@ void ApiTvSimple::Query2CondLeftJoin(benchmark::State& state) {
 			.Sort("year", false)
 			.Where("genre", CondEq, 5)
 			.Where("year", CondRange, {2010, 2016})
-			.LeftJoin("price_id", "id", CondSet, q4join);
+			.LeftJoin("price_id", "id", CondSet, std::move(q4join));
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -418,7 +457,7 @@ void ApiTvSimple::Query2CondLeftJoinTotal(benchmark::State& state) {
 			.Sort("year", false)
 			.Where("genre", CondEq, 5)
 			.Where("year", CondRange, {2010, 2016})
-			.LeftJoin("price_id", "id", CondSet, q4join)
+			.LeftJoin("price_id", "id", CondSet, std::move(q4join))
 			.ReqTotal();
 
 		QueryResults qres;
@@ -439,7 +478,7 @@ void ApiTvSimple::Query2CondLeftJoinCachedTotal(benchmark::State& state) {
 			.Sort("year", false)
 			.Where("genre", CondEq, 5)
 			.Where("year", CondRange, {2010, 2016})
-			.LeftJoin("price_id", "id", CondSet, q4join)
+			.LeftJoin("price_id", "id", CondSet, std::move(q4join))
 			.CachedTotal();
 
 		QueryResults qres;
@@ -457,7 +496,21 @@ void ApiTvSimple::Query0CondInnerJoinUnlimit(benchmark::State& state) {
 
 		q4join.Where("device", CondEq, "ottstb").Where("location", CondEq, "mos");
 
-		q.InnerJoin("price_id", "id", CondSet, q4join);
+		q.InnerJoin("price_id", "id", CondSet, std::move(q4join));
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvSimple::Query0CondInnerJoinUnlimitLowSelectivity(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {
+		Query q4join(innerJoinLowSelectivityRightNs_);
+		q4join.Where("id", CondLe, 250);
+		Query q(innerJoinLowSelectivityMainNs_);
+		q.InnerJoin("id", "id", CondEq, std::move(q4join)).ReqTotal();
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -477,7 +530,7 @@ void ApiTvSimple::Query2CondInnerJoin(benchmark::State& state) {
 			.Sort("year", false)
 			.Where("genre", CondEq, 5)
 			.Where("year", CondRange, {2010, 2016})
-			.InnerJoin("price_id", "id", CondSet, q4join);
+			.InnerJoin("price_id", "id", CondSet, std::move(q4join));
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -551,7 +604,7 @@ void ApiTvSimple::Query2CondInnerJoinTotal(benchmark::State& state) {
 			.Sort("year", false)
 			.Where("genre", CondEq, 5)
 			.Where("year", CondRange, {2010, 2016})
-			.InnerJoin("price_id", "id", CondSet, q4join)
+			.InnerJoin("price_id", "id", CondSet, std::move(q4join))
 			.ReqTotal();
 
 		QueryResults qres;
@@ -572,7 +625,7 @@ void ApiTvSimple::Query2CondInnerJoinCachedTotal(benchmark::State& state) {
 			.Sort("year", false)
 			.Where("genre", CondEq, 5)
 			.Where("year", CondRange, {2010, 2016})
-			.InnerJoin("price_id", "id", CondSet, q4join)
+			.InnerJoin("price_id", "id", CondSet, std::move(q4join))
 			.CachedTotal();
 
 		QueryResults qres;

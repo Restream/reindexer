@@ -3,7 +3,7 @@
 /* ELF size: 32 or 64 */
 #if defined(__x86_64__) || defined(__aarch64__) || defined(__mips64) || defined(_ARCH_PPC64)
 #define BACKTRACE_ELF_SIZE 64
-#elif defined(__i386__) || defined(__arm__) || defined(__mips__) || defined(_ARCH_PPC)
+#elif defined(__i386__) || defined(__arm__) || defined(__mips__) || defined(_ARCH_PPC) || defined(__E2K__) || defined(__LCC__)
 #define BACKTRACE_ELF_SIZE 32
 #else
 #error BACKTRACE_ELF_SIZE unknown

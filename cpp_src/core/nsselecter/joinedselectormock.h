@@ -15,20 +15,15 @@ private:
 
 class JoinedSelectorMock {
 public:
-	JoinedSelectorMock(const reindexer::Query& q, std::string_view rIdx, std::string_view lIdx, CondType cond) noexcept
-		: query_{q}, rightIndex_{rIdx}, leftIndex_{lIdx}, condition_{cond}, qr_{} {}
-	const reindexer::Query& Query() const noexcept { return query_; }
-	std::string_view RightNsName() const noexcept { return query_._namespace; }
-	const std::string& RightIndexName() const noexcept { return rightIndex_; }
-	const std::string& LeftIndexName() const noexcept { return leftIndex_; }
-	CondType Condition() const noexcept { return condition_; }
+	JoinedSelectorMock(JoinType jt, reindexer::JoinedQuery q) : query_{std::move(q)}, qr_{}, joinType_{jt} {}
+	const reindexer::JoinedQuery& JoinQuery() const noexcept { return query_; }
+	const std::string& RightNsName() const noexcept { return query_._namespace; }
 	reindexer::QueryResults& QueryResults() noexcept { return qr_; }
 	const reindexer::QueryResults& QueryResults() const noexcept { return qr_; }
+	JoinType Type() const noexcept { return joinType_; }
 
 private:
-	const reindexer::Query& query_;
-	std::string rightIndex_;
-	std::string leftIndex_;
-	CondType condition_;
+	reindexer::JoinedQuery query_;
 	reindexer::QueryResults qr_;
+	JoinType joinType_;
 };

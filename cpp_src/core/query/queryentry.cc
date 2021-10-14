@@ -116,9 +116,9 @@ bool UpdateEntry::operator==(const UpdateEntry &obj) const {
 
 bool UpdateEntry::operator!=(const UpdateEntry &obj) const { return !operator==(obj); }
 
-bool QueryJoinEntry::operator==(const QueryJoinEntry &obj) const {
+bool QueryJoinEntry::operator==(const QueryJoinEntry &obj) const noexcept {
 	if (op_ != obj.op_) return false;
-	if (condition_ != obj.condition_) return false;
+	if (static_cast<unsigned>(condition_) != obj.condition_) return false;
 	if (index_ != obj.index_) return false;
 	if (joinIndex_ != obj.joinIndex_) return false;
 	if (idxNo != obj.idxNo) return false;
@@ -140,28 +140,6 @@ bool SortingEntry::operator==(const SortingEntry &obj) const {
 }
 
 bool SortingEntry::operator!=(const SortingEntry &obj) const { return !operator==(obj); }
-
-const char *condNames[] = {"IS NOT NULL", "=", "<", "<=", ">", ">=", "RANGE", "IN", "ALLSET", "IS NULL", "LIKE"};
-
-string QueryEntry::Dump() const {
-	string result;
-	if (distinct) {
-		result = "Distinct index: " + index;
-	} else {
-		result = index + ' ';
-
-		if (condition < sizeof(condNames) / sizeof(condNames[0])) result += string(condNames[condition]) + " ";
-
-		bool severalValues = (values.size() > 1);
-		if (severalValues) result += "(";
-		for (auto &v : values) {
-			if (&v != &*values.begin()) result += ",";
-			result += "'" + v.As<string>() + "'";
-		}
-		result += (severalValues) ? ") " : " ";
-	}
-	return result;
-}
 
 bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator end, const ConstPayload &pl, TagsMatcher &tagsMatcher) {
 	assert(begin != end && begin->operation != OpOr);

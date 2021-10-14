@@ -15,12 +15,12 @@ using std::vector;
 namespace reindexer {
 
 struct ItemImplRawData {
+	ItemImplRawData() = default;
 	ItemImplRawData(PayloadValue v) : payloadValue_(std::move(v)) {}
-	ItemImplRawData() {}
 	ItemImplRawData(const ItemImplRawData &) = delete;
-	ItemImplRawData(ItemImplRawData &&) noexcept;
+	ItemImplRawData(ItemImplRawData &&) = default;
 	ItemImplRawData &operator=(const ItemImplRawData &) = delete;
-	ItemImplRawData &operator=(ItemImplRawData &&) noexcept;
+	ItemImplRawData &operator=(ItemImplRawData &&) = default;
 
 	PayloadValue payloadValue_;
 	std::unique_ptr<uint8_t[]> tupleData_;
@@ -61,8 +61,8 @@ public:
 
 	ItemImpl(const ItemImpl &) = delete;
 	ItemImpl(ItemImpl &&) = default;
+	ItemImpl &operator=(ItemImpl &&) = default;
 	ItemImpl &operator=(const ItemImpl &) = delete;
-	ItemImpl &operator=(ItemImpl &&) noexcept;
 
 	void ModifyField(std::string_view jsonPath, const VariantArray &keys, IndexExpressionEvaluator ev, FieldModifyMode mode);
 	void ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &keys, FieldModifyMode mode);

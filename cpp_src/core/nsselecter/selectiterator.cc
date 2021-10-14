@@ -273,7 +273,7 @@ void SelectIterator::AppendAndBind(SelectKeyResult &other, PayloadType type, int
 double SelectIterator::Cost(int expectedIterations) const {
 	if (type_ == UnbuiltSortOrdersIndex) return -1;
 	if (forcedFirst_) return -GetMaxIterations();
-	double result = joinIndexes.size() * static_cast<double>(std::numeric_limits<float>::max());
+	double result{0.0};
 	if (!comparators_.empty()) {
 		result += expectedIterations + 1;
 	} else if (empty()) {
@@ -326,7 +326,7 @@ const char *SelectIterator::TypeName() const {
 }
 
 string SelectIterator::Dump() const {
-	string ret = string(TypeName()) + "(";
+	string ret = name + ' ' + string(TypeName()) + "(";
 
 	for (auto &it : *this) {
 		if (it.useBtree_) ret += "btree;";

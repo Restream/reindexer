@@ -90,9 +90,9 @@ TEST_F(BtreeIdsetsApi, SortByIntField) {
 
 TEST_F(BtreeIdsetsApi, JoinSimpleNs) {
 	QueryResults qr;
-	Query joinedNs = std::move(Query(joinedNsName).Where(kFieldThree, CondGt, Variant(static_cast<int>(9000))).Sort(kFieldThree, false));
+	Query joinedNs{Query(joinedNsName).Where(kFieldThree, CondGt, Variant(static_cast<int>(9000))).Sort(kFieldThree, false)};
 	Error err = rt.reindexer->Select(
-		Query(default_namespace, 0, 3000).InnerJoin(kFieldId, kFieldIdFk, CondEq, joinedNs).Sort(kFieldTwo, false), qr);
+		Query(default_namespace, 0, 3000).InnerJoin(kFieldId, kFieldIdFk, CondEq, std::move(joinedNs)).Sort(kFieldTwo, false), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	Variant prevFieldTwo;

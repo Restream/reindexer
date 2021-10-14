@@ -2,6 +2,9 @@
 
 #include <string>
 #include <string_view>
+#include "core/keyvalue/variant.h"
+#include "core/payload/fieldsset.h"
+#include "core/payload/payloadtype.h"
 #include "core/type_consts.h"
 #include "estl/h_vector.h"
 #include "estl/span.h"
@@ -57,7 +60,9 @@ struct AggregationResult {
 	h_vector<std::string, 1> fields;
 	double value = 0;
 	std::vector<FacetResult> facets;
-	std::vector<std::string> distincts;
+	VariantArray distincts;
+	FieldsSet distinctsFields;
+	PayloadType payloadType;
 
 	static AggType strToAggType(std::string_view type);
 	static std::string_view aggTypeToStr(AggType type);
@@ -102,7 +107,9 @@ struct AggregationResult {
 
 		if (!distincts.empty()) {
 			auto distinctsArray = builder.Array(parametersFields.Distincts(), distincts.size());
-			for (const std::string &v : distincts) distinctsArray.Put(0, v);
+			for (const Variant &v : distincts) {
+				distinctsArray.Put(0, v.As<string>(payloadType, distinctsFields));
+			}
 		}
 
 		auto fieldsArray = builder.Array(parametersFields.Fields(), fields.size());

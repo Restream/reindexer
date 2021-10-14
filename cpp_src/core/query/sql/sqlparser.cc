@@ -4,6 +4,7 @@
 #include "core/keyvalue/key_string.h"
 #include "core/query/query.h"
 #include "core/queryresults/aggregationresult.h"
+#include "core/type_consts_helpers.h"
 #include "sqltokentype.h"
 #include "vendor/gason/gason.h"
 
@@ -983,6 +984,8 @@ void SQLParser::parseJoinEntries(tokenizer &parser, const string &mainNs, Joined
 		} else if (ns2 == mainNs && ns1 == jquery._namespace) {
 			je.index_ = idx2;
 			je.joinIndex_ = idx1;
+			je.condition_ = InvertJoinCondition(je.condition_);
+			je.reverseNamespacesOrder = true;
 		} else {
 			throw Error(errParseSQL, "Unexpected tables with ON statement: ('%s' and '%s') but expected ('%s' and '%s'), %s", ns1, ns2,
 						mainNs, jquery._namespace, parser.where());
@@ -1016,4 +1019,5 @@ CondType SQLParser::getCondType(std::string_view cond) {
 	}
 	throw Error(errParseSQL, "Expected condition operator, but found '%s' in query", cond);
 }
+
 }  // namespace reindexer

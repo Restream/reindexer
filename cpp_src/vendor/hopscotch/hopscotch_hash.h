@@ -825,7 +825,7 @@ public:
 		}
 
 		for (; first != last; ++first) {
-			insert(*first);
+			(void)insert(*first);
 		}
 	}
 

@@ -82,9 +82,15 @@ Error CommandsExecutor<DBInterface>::FromFile(std::istream& in) {
 }
 
 template <typename DBInterface>
-typename CommandsExecutor<DBInterface>::Status CommandsExecutor<DBInterface>::getStatus() {
+typename CommandsExecutor<DBInterface>::Status CommandsExecutor<DBInterface>::GetStatus() {
 	std::lock_guard<std::mutex> lck(mtx_);
 	return status_;
+}
+
+template <typename DBInterface>
+void CommandsExecutor<DBInterface>::setStatus(CommandsExecutor::Status&& status) {
+	std::lock_guard<std::mutex> lck(mtx_);
+	status_ = std::move(status);
 }
 
 template <typename DBInterface>
@@ -138,7 +144,7 @@ Error CommandsExecutor<DBInterface>::fromFileImpl(std::istream& in) {
 	}
 
 	std::string line;
-	while (std::getline(in, line)) {
+	while (GetStatus().running && std::getline(in, line)) {
 		if (reindexer::checkIfStartsWith("\\upsert ", line) || reindexer::checkIfStartsWith("\\delete ", line)) {
 			try {
 				cmdCh.push(line);
@@ -164,6 +170,11 @@ reindexer::Error CommandsExecutor<DBInterface>::execCommand(IExecutorsCommand& c
 	curCmd_ = &cmd;
 	cmdAsync_.send();
 	condVar_.wait(lck_, [&cmd] { return cmd.IsExecuted(); });
+	auto status = cmd.Status();
+	lck_.unlock();
+	if (!GetStatus().running && status.ok() && executorThr_.joinable()) {
+		executorThr_.join();
+	}
 	return cmd.Status();
 }
 
@@ -233,12 +244,12 @@ Error CommandsExecutor<DBInterface>::runImpl(const string& dsn, Args&&... args) 
 		loop_.run();
 	};
 
-	status_ = Status();
+	setStatus(Status());
 	executorThr_ = std::thread(std::bind(fn, std::cref(dsn), std::forward<Args>(args)...));
-	auto status = getStatus();
+	auto status = GetStatus();
 	while (!status.running && status.err.ok()) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		status = getStatus();
+		status = GetStatus();
 	}
 	if (!status.err.ok()) {
 		executorThr_.join();
@@ -538,7 +549,7 @@ Error CommandsExecutor<DBInterface>::commandSelect(const string& command) {
 						assert(agg.fields.size() == 1);
 						output_() << "Distinct (" << agg.fields.front() << ")" << std::endl;
 						for (auto& v : agg.distincts) {
-							output_() << v << std::endl;
+							output_() << v.template As<string>(agg.payloadType, agg.distinctsFields) << std::endl;
 						}
 						output_() << "Returned " << agg.distincts.size() << " values" << std::endl;
 						break;
@@ -824,7 +835,8 @@ Error CommandsExecutor<DBInterface>::commandHelp(const string& command) {
 
 template <typename DBInterface>
 Error CommandsExecutor<DBInterface>::commandQuit(const string&) {
-	stopCh_.close();
+	stop(true);
+	setStatus(Status());
 	return errOK;
 }
 
@@ -1043,7 +1055,13 @@ std::function<void(std::chrono::system_clock::time_point)> CommandsExecutor<rein
 		reindexer::net::ev::dynamic_loop loop;
 		loop.spawn([this, &loop, deadline, &count, &errCount] {
 			reindexer::client::CoroReindexer rx;
-			rx.Connect(getCurrentDsn(true), loop);
+			const auto dsn = getCurrentDsn(true);
+			auto err = rx.Connect(dsn, loop);
+			if (!err.ok()) {
+				output_() << "[bench] Unable to connect with provided DSN '" << dsn << "': " << err.what() << std::endl;
+				rx.Stop();
+				return;
+			}
 			auto selectFn = [&rx, deadline, &count, &errCount](wait_group& wg) {
 				reindexer::coroutine::wait_group_guard wgg(wg);
 				for (; std::chrono::system_clock::now() < deadline; ++count) {

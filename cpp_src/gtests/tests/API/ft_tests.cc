@@ -478,7 +478,7 @@ TEST_F(FTApi, HugeNumberToWordsSelect2) {
 		"+один +октиллион +сто +двадцать +семь +септиллионов +триста +сорок +три +секстиллиона +сто +двадцать +один +квинтиллион +пятьсот "
 		"+двадцать +один +квадриллион +девятьсот +шесть +триллионов +пятьсот +двадцать +два +миллиарда +сто +восемьдесят +миллионов "
 		"+четыреста +восемь +тысяч +четыреста +сорок";
-	Query q = std::move(Query("nm1").Where("ft3", CondEq, searchWord));
+	Query q{Query("nm1").Where("ft3", CondEq, searchWord)};
 	Error err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	// Make sure it has found absolutely nothing

@@ -108,14 +108,14 @@ bool JoinedSelector::Process(IdType rowId, int nsId, ConstPayload payload, bool 
 }
 
 template <bool byJsonPath>
-void JoinedSelector::readValuesFromRightNs(VariantArray &values, const Index &leftIndex, int rightIdxNo,
+void JoinedSelector::readValuesFromRightNs(VariantArray &values, const Index &leftIndex, [[maybe_unused]] int rightIdxNo,
 										   const std::string &rightIndex) const {
 	const KeyValueType leftIndexType = leftIndex.SelectKeyType();
 	for (IdType rowId : preResult_->ids) {
 		if (rightNs_->items_[rowId].IsFree()) continue;
 		const ConstPayload pl{rightNs_->payloadType_, rightNs_->items_[rowId]};
 		VariantArray buffer;
-		if (byJsonPath) {
+		if constexpr (byJsonPath) {
 			pl.GetByJsonPath(rightIndex, rightNs_->tagsMatcher_, buffer, leftIndexType);
 		} else {
 			pl.Get(rightIdxNo, buffer);
@@ -125,14 +125,14 @@ void JoinedSelector::readValuesFromRightNs(VariantArray &values, const Index &le
 }
 
 template <bool byJsonPath>
-void JoinedSelector::readValuesFromPreResult(VariantArray &values, const Index &leftIndex, int rightIdxNo,
+void JoinedSelector::readValuesFromPreResult(VariantArray &values, const Index &leftIndex, [[maybe_unused]] int rightIdxNo,
 											 const std::string &rightIndex) const {
 	const KeyValueType leftIndexType = leftIndex.SelectKeyType();
 	for (const ItemRef &item : preResult_->values) {
 		assert(!item.Value().IsFree());
 		const ConstPayload pl{preResult_->values.payloadType, item.Value()};
 		VariantArray buffer;
-		if (byJsonPath) {
+		if constexpr (byJsonPath) {
 			pl.GetByJsonPath(rightIndex, preResult_->values.tagsMatcher, buffer, leftIndexType);
 		} else {
 			pl.Get(rightIdxNo, buffer);

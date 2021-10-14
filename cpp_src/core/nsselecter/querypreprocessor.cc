@@ -5,6 +5,7 @@
 #include "core/nsselecter/selectiteratorcontainer.h"
 #include "core/nsselecter/sortexpression.h"
 #include "core/payload/fieldsset.h"
+#include "nsselecter.h"
 
 namespace reindexer {
 
@@ -250,7 +251,7 @@ bool QueryPreprocessor::mergeQueryEntries(size_t lhs, size_t rhs) {
 		VariantArray setValues;
 		setValues.reserve(std::min(lqe->values.size(), rqe.values.size()));
 		std::set_intersection(lqe->values.begin(), lqe->values.end(), rqe.values.begin(), rqe.values.end(), std::back_inserter(setValues));
-		if (!container_[lhs].Holds<QueryEntry>()) {
+		if (container_[lhs].IsRef()) {
 			container_[lhs].SetValue(static_cast<const QueryEntry &>(*lqe));
 			lqe = &container_[lhs].Value();
 		}
@@ -260,7 +261,7 @@ bool QueryPreprocessor::mergeQueryEntries(size_t lhs, size_t rhs) {
 		return true;
 	} else if (rqe.condition == CondAny) {
 		if (!lqe->distinct && rqe.distinct) {
-			if (!container_[lhs].Holds<QueryEntry>()) {
+			if (container_[lhs].IsRef()) {
 				container_[lhs].SetValue(static_cast<const QueryEntry &>(*lqe));
 				lqe = &container_[lhs].Value();
 			}
@@ -269,10 +270,10 @@ bool QueryPreprocessor::mergeQueryEntries(size_t lhs, size_t rhs) {
 		return true;
 	} else if (lqe->condition == CondAny) {
 		rqe.distinct |= lqe->distinct;
-		if (container_[rhs].Holds<QueryEntry>()) {
-			container_[lhs].SetValue(std::move(rqe));
-		} else {
+		if (container_[rhs].IsRef()) {
 			container_[lhs].SetValue(const_cast<const QueryEntry &>(rqe));
+		} else {
+			container_[lhs].SetValue(std::move(rqe));
 		}
 		return true;
 	}
@@ -305,6 +306,118 @@ void QueryPreprocessor::AddDistinctEntries(const h_vector<Aggregator, 4> &aggreg
 		qe.distinct = true;
 		Append(wasAdded ? OpOr : OpAnd, std::move(qe));
 		wasAdded = true;
+	}
+}
+
+void QueryPreprocessor::injectConditionsFromJoins(size_t from, size_t to, JoinedSelectors &js, const RdxContext &rdxCtx) {
+	for (size_t cur = from; cur < to; cur = Next(cur)) {
+		if (!IsValue(cur)) {
+			injectConditionsFromJoins(cur + 1, Next(cur), js, rdxCtx);
+			continue;
+		}
+		const QueryEntry &entry = container_[cur].Value();
+		if (entry.joinIndex == QueryEntry::kNoJoins) continue;
+		assert(static_cast<int>(js.size()) > entry.joinIndex);
+		JoinedSelector &joinedSelector = js[entry.joinIndex];
+		assert(joinedSelector.Type() == InnerJoin || joinedSelector.Type() == OrInnerJoin);
+		const auto &joinEntries = joinedSelector.JoinQuery().joinEntries_;
+		if (joinedSelector.PreResult()->dataMode != JoinPreResult::ModeValues) {
+			bool foundANDOrOR = false;
+			for (const auto &je : joinEntries) {
+				if (je.op_ != OpNot) {
+					foundANDOrOR = true;
+					break;
+				}
+			}
+			if (!foundANDOrOR) continue;
+			OpType op = GetOperation(cur);
+			if (joinedSelector.Type() == OrInnerJoin) {
+				if (op == OpNot) throw Error(errParams, "OR INNER JOIN with operation NOT");
+				op = OpOr;
+				joinedSelector.SetType(InnerJoin);
+			}
+			SetOperation(OpAnd, cur);
+			EncloseInBracket(cur, cur + 1, op);
+			++cur;
+			size_t count = 0;
+			for (const auto &joinEntry : joinEntries) {
+				if (joinEntry.op_ == OpNot) continue;
+				Query query{joinedSelector.JoinQuery()};
+				query.count = UINT_MAX;
+				query.start = 0;
+				query.sortingEntries_.clear();
+				query.forcedSortOrder_.clear();
+				query.aggregations_.clear();
+
+				switch (joinEntry.condition_) {
+					case CondEq:
+					case CondSet:
+						query.Distinct(joinEntry.joinIndex_);
+						break;
+					case CondLt:
+					case CondLe:
+						query.Aggregate(AggMax, {joinEntry.joinIndex_});
+						break;
+					case CondGt:
+					case CondGe:
+						query.Aggregate(AggMin, {joinEntry.joinIndex_});
+						break;
+					default:
+						throw Error(errParams, "Unsupported condition in ON statment: %s", CondTypeToStr(joinEntry.condition_));
+				}
+				SelectCtx ctx{query};
+				QueryResults qr;
+				joinedSelector.RightNs()->Select(qr, ctx, rdxCtx);
+				assert(qr.aggregationResults.size() == 1);
+				QueryEntry newEntry;
+				newEntry.index = joinEntry.index_;
+				if (!ns_.getIndexByName(newEntry.index, newEntry.idxNo)) {
+					newEntry.idxNo = IndexValueType::SetByJsonPath;
+				}
+				switch (joinEntry.condition_) {
+					case CondEq:
+					case CondSet: {
+						assert(qr.aggregationResults[0].type == AggDistinct);
+						newEntry.condition = CondSet;
+						newEntry.values.reserve(qr.aggregationResults[0].distincts.size());
+						assert(qr.aggregationResults[0].distinctsFields.size() == 1);
+						const auto field = qr.aggregationResults[0].distinctsFields[0];
+						for (Variant &distValue : qr.aggregationResults[0].distincts) {
+							if (distValue.Type() == KeyValueComposite) {
+								ConstPayload pl(qr.aggregationResults[0].payloadType, distValue.operator const PayloadValue &());
+								VariantArray v;
+								if (field == IndexValueType::SetByJsonPath) {
+									assert(qr.aggregationResults[0].distinctsFields.getTagsPathsLength() == 1);
+									pl.GetByJsonPath(qr.aggregationResults[0].distinctsFields.getTagsPath(0), v, KeyValueUndefined);
+								} else {
+									pl.Get(field, v);
+								}
+								assert(v.size() == 1);
+								newEntry.values.emplace_back(std::move(v[0]));
+							} else {
+								newEntry.values.emplace_back(std::move(distValue));
+							}
+						}
+						break;
+					}
+					case CondLt:
+					case CondLe:
+					case CondGt:
+					case CondGe:
+						newEntry.condition = joinEntry.condition_;
+						newEntry.values.emplace_back(qr.aggregationResults[0].value);
+						break;
+					default:
+						throw Error(errParams, "Unsupported condition in ON statment: %s", CondTypeToStr(joinEntry.condition_));
+				}
+				Insert(cur, joinEntry.op_, std::move(newEntry));
+				++cur;
+				++count;
+			}
+			EncloseInBracket(cur - count, cur, OpAnd);
+			++cur;
+			to += count + 2;
+		}
 	}
 }
 

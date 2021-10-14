@@ -16,39 +16,6 @@ using std::move;
 
 namespace reindexer {
 
-ItemImplRawData &ItemImplRawData::operator=(ItemImplRawData &&other) noexcept {
-	if (&other != this) {
-		payloadValue_ = std::move(other.payloadValue_);
-		tupleData_ = std::move(other.tupleData_);
-		sourceData_ = std::move(other.sourceData_);
-		precepts_ = std::move(other.precepts_);
-		holder_ = std::move(other.holder_);
-		keyStringsHolder_ = std::move(other.keyStringsHolder_);
-	}
-	return *this;
-}
-ItemImplRawData::ItemImplRawData(ItemImplRawData &&other) noexcept
-	: payloadValue_(std::move(other.payloadValue_)),
-	  tupleData_(std::move(other.tupleData_)),
-	  sourceData_(std::move(other.sourceData_)),
-	  precepts_(std::move(other.precepts_)),
-	  holder_(std::move(other.holder_)),
-	  keyStringsHolder_(std::move(other.keyStringsHolder_)) {}
-
-ItemImpl &ItemImpl::operator=(ItemImpl &&other) noexcept {
-	if (&other != this) {
-		ItemImplRawData::operator=(std::move(other));
-		payloadType_ = std::move(other.payloadType_);
-		tagsMatcher_ = std::move(other.tagsMatcher_);
-		ser_ = std::move(other.ser_);
-		unsafe_ = other.unsafe_;
-		cjson_ = std::move(other.cjson_);
-		ns_ = std::move(other.ns_);
-		msgPackDecoder_ = std::move(other.msgPackDecoder_);
-	}
-	return *this;
-}
-
 void ItemImpl::SetField(int field, const VariantArray &krs) {
 	cjson_ = std::string_view();
 	payloadValue_.Clone();

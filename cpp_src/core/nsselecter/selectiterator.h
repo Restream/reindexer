@@ -127,7 +127,6 @@ public:
 
 	bool distinct = false;
 	string name;
-	h_vector<int, 1> joinIndexes;
 
 protected:
 	// Iterates to a next item of result

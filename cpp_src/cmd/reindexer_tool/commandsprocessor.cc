@@ -85,7 +85,7 @@ bool CommandsProcessor<DBInterface>::interactive() {
 	std::string prompt = "\x1b[1;32mReindexer\x1b[0m> ";
 
 	// main repl loop
-	for (;;) {
+	while (executor_.GetStatus().running) {
 		char const* input = nullptr;
 		do {
 			input = rx.input(prompt);
@@ -107,7 +107,7 @@ bool CommandsProcessor<DBInterface>::interactive() {
 #else
 	std::string prompt = "Reindexer> ";
 	// main repl loop
-	while (!terminate_) {
+	while (executor_.GetStatus().running) {
 		std::string command;
 		std::cout << prompt;
 		if (!std::getline(std::cin, command)) break;
@@ -153,7 +153,10 @@ bool CommandsProcessor<DBInterface>::Run(const std::string& command) {
 
 template <typename DBInterface>
 Error CommandsProcessor<DBInterface>::stop() {
-	return executor_.Stop();
+	if (executor_.GetStatus().running) {
+		return executor_.Stop();
+	}
+	return Error();
 }
 
 template class CommandsProcessor<reindexer::client::CoroReindexer>;

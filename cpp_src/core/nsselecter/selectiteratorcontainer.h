@@ -11,18 +11,34 @@ struct SelectCtx;
 class RdxContext;
 class JoinedSelector;
 
-class SelectIteratorContainer : public ExpressionTree<OpType, Bracket, 2, SelectIterator> {
-	using Base = ExpressionTree<OpType, Bracket, 2, SelectIterator>;
+struct JoinSelectIterator {
+	size_t joinIndex;
+	double Cost() const noexcept { return std::numeric_limits<float>::max(); }
+	void Dump(WrSerializer &, const std::vector<JoinedSelector> &) const;
+};
+
+struct SelectIteratorsBracket : private Bracket {
+	using Bracket::Bracket;
+	using Bracket::Size;
+	using Bracket::Append;
+	void CopyPayloadFrom(const SelectIteratorsBracket &) const noexcept {}
+	bool haveJoins = false;
+};
+
+class SelectIteratorContainer : public ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator> {
+	using Base = ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator>;
 
 public:
 	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx *ctx = nullptr)
 		: pt_(pt), ctx_(ctx), maxIterations_(std::numeric_limits<int>::max()), wasZeroIterations_(false) {}
 
-	void ForEachIterator(const std::function<void(const SelectIterator &)> &func) const { ExecuteAppropriateForEach(func); }
-	void ForEachIterator(const std::function<void(SelectIterator &)> &func) { ExecuteAppropriateForEach(func); }
-	const SelectIterator &operator[](size_t i) const {
+	const SelectIterator &GetSelectIterator(size_t i) const {
 		assert(i < container_.size());
 		return container_[i].Value();
+	}
+	const JoinSelectIterator &GetJoinSelectIterator(size_t i) const {
+		assert(i < container_.size());
+		return container_[i].Value<JoinSelectIterator>();
 	}
 
 	void SortByCost(int expectedIterations);
@@ -37,7 +53,14 @@ public:
 	template <bool reverse, bool hasComparators>
 	bool Process(PayloadValue &, bool *finish, IdType *rowId, IdType, bool match);
 
-	bool IsIterator(size_t i) const { return IsValue(i); }
+	bool IsSelectIterator(size_t i) const noexcept {
+		assert(i < Size());
+		return container_[i].HoldsOrReferTo<SelectIterator>();
+	}
+	bool IsJoinIterator(size_t i) const noexcept {
+		assert(i < container_.size());
+		return container_[i].HoldsOrReferTo<JoinSelectIterator>();
+	}
 	void ExplainJSON(int iters, JsonBuilder &builder, const vector<JoinedSelector> *js) const {
 		explainJSON(cbegin(), cend(), iters, builder, js);
 	}
@@ -48,6 +71,7 @@ public:
 		wasZeroIterations_ = false;
 	}
 	int GetMaxIterations(bool withZero = false) { return (withZero && wasZeroIterations_) ? 0 : maxIterations_; }
+	std::string Dump() const;
 
 private:
 	void sortByCost(span<unsigned> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations);
@@ -58,16 +82,19 @@ private:
 	// Check idset must be 1st
 	static void checkFirstQuery(Container &);
 	template <bool reverse, bool hasComparators>
-	bool checkIfSatisfyCondition(SelectIterator &, PayloadValue &, bool *finish, IdType rowId, IdType properRowId, bool match);
+	bool checkIfSatisfyCondition(SelectIterator &, PayloadValue &, bool *finish, IdType rowId, IdType properRowId);
+	bool checkIfSatisfyCondition(JoinSelectIterator &, PayloadValue &, IdType properRowId, bool match);
 	template <bool reverse, bool hasComparators>
 	bool checkIfSatisfyAllConditions(iterator begin, iterator end, PayloadValue &, bool *finish, IdType rowId, IdType properRowId,
 									 bool match);
-	static void explainJSON(const_iterator it, const_iterator to, int iters, JsonBuilder &builder, const vector<JoinedSelector> *);
+	static std::string explainJSON(const_iterator it, const_iterator to, int iters, JsonBuilder &builder, const vector<JoinedSelector> *);
 	template <bool reverse>
 	static IdType next(const_iterator, IdType from);
 	template <bool reverse>
 	static IdType getNextItemId(const_iterator begin, const_iterator end, IdType from);
 	static bool isIdset(const_iterator it, const_iterator end);
+	static bool markBracketsHavingJoins(iterator begin, iterator end) noexcept;
+	bool haveJoins(size_t i) const noexcept;
 
 	SelectKeyResults processQueryEntry(const QueryEntry &qe, const NamespaceImpl &ns, StrictMode strictMode);
 	SelectKeyResults processQueryEntry(const QueryEntry &qe, bool enableSortIndexOptimize, const NamespaceImpl &ns, unsigned sortId,
@@ -78,7 +105,6 @@ private:
 								  bool isIndexSparse, bool nonIndexField);
 	void processEqualPositions(const std::multimap<unsigned, EqualPosition> &equalPositions, size_t begin, size_t end,
 							   const NamespaceImpl &ns, const QueryEntries &queries);
-	bool processJoins(SelectIterator &it, const ConstPayload &pl, IdType properRowId, bool match);
 
 	/// @return end() if empty or last opened bracket is empty
 	iterator lastAppendedOrClosed() {
@@ -89,6 +115,7 @@ private:
 		while (++i2 != e) i = i2;
 		return i;
 	}
+	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JoinedSelector> &, WrSerializer &);
 
 	PayloadType pt_;
 	SelectCtx *ctx_;

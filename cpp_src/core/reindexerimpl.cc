@@ -11,6 +11,7 @@
 #include "core/nsselecter/crashqueryreporter.h"
 #include "core/query/sql/sqlsuggester.h"
 #include "core/selectfunc/selectfunc.h"
+#include "core/type_consts_helpers.h"
 #include "defnsconfigs.h"
 #include "estl/contexted_locks.h"
 #include "queryresults/joinresults.h"
@@ -807,7 +808,7 @@ struct ReindexerImpl::QueryResultsContext {
 
 bool ReindexerImpl::isPreResultValuesModeOptimizationAvailable(const Query& jItemQ, const NamespaceImpl::Ptr& jns) {
 	bool result = true;
-	jItemQ.entries.ForEachEntry([&jns, &result](const QueryEntry& qe) {
+	jItemQ.entries.ExecuteAppropriateForEach([&jns, &result](const QueryEntry& qe) {
 		if (qe.idxNo >= 0) {
 			assert(jns->indexes_.size() > static_cast<size_t>(qe.idxNo));
 			const IndexType indexType = jns->indexes_[qe.idxNo]->Type();
@@ -831,7 +832,6 @@ void ReindexerImpl::prepareJoinResults(const Query& q, QueryResults& result) {
 		result.joined_.resize(1 + q.mergeQueries_.size());
 	}
 }
-
 template <typename T>
 JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResults& result, NsLocker<T>& locks, SelectFunctionsHolder& func,
 													  vector<QueryResultsContext>& queryResultsContexts, const RdxContext& rdxCtx) {
@@ -864,7 +864,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 			if (!jns->getIndexByName(je.joinIndex_, joinIdx)) {
 				joinIdx = IndexValueType::SetByJsonPath;
 			}
-			QueryEntry qe(je.condition_, je.joinIndex_, joinIdx);
+			QueryEntry qe(InvertJoinCondition(je.condition_), je.joinIndex_, joinIdx);
 			if (!ns->getIndexByName(je.index_, const_cast<QueryJoinEntry&>(je).idxNo)) {
 				const_cast<QueryJoinEntry&>(je).idxNo = IndexValueType::SetByJsonPath;
 			}
@@ -901,15 +901,15 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 
 		result.AddNamespace(jns, {rdxCtx, true});
 		if (preResult->dataMode == JoinPreResult::ModeValues) {
-			jItemQ.entries.ForEachEntry([&jns](QueryEntry& qe) {
+			jItemQ.entries.ExecuteAppropriateForEach([&jns](QueryEntry& qe) {
 				if (jns->indexes_[qe.idxNo]->Opts().IsSparse()) qe.idxNo = IndexValueType::SetByJsonPath;
 			});
 			if (!preResult->values.Locked()) preResult->values.Lock();	// If not from cache
 			locks.Delete(jns);
 			jns.reset();
 		}
-		joinedSelectors.push_back({jq.joinType, ns, std::move(jns), std::move(joinRes), std::move(jItemQ), result, jq, preResult,
-								   joinedFieldIdx, func, joinedSelectorsCount, rdxCtx});
+		joinedSelectors.emplace_back(jq.joinType, ns, std::move(jns), std::move(joinRes), std::move(jItemQ), result, jq, preResult,
+									 joinedFieldIdx, func, joinedSelectorsCount, rdxCtx);
 		ThrowOnCancel(rdxCtx);
 	}
 	return joinedSelectors;

@@ -74,7 +74,7 @@ void ItemModifier::Modify(IdType itemId, const NsContext &ctx) {
 							 [&ev, &pv, &field](std::string_view expression) { return ev.Evaluate(expression, pv, field.name()); });
 
 		if (field.details().mode == FieldModeSetJson) {
-			modifyCJSON(pv, field, values, ctx);
+			modifyCJSON(pv, itemId, field, values, ctx);
 		} else {
 			modifyField(itemId, field, pl, values, ctx);
 		}
@@ -83,28 +83,30 @@ void ItemModifier::Modify(IdType itemId, const NsContext &ctx) {
 	ns_.markUpdated(false);
 }
 
-void ItemModifier::modifyCJSON(PayloadValue &pv, FieldData &field, VariantArray &values, const NsContext &ctx) {
+void ItemModifier::modifyCJSON(PayloadValue &pv, IdType id, FieldData &field, VariantArray &values, const NsContext &ctx) {
+	PayloadValue &plData = ns_.items_[id];
+	Payload pl(ns_.payloadType_, plData);
+	VariantArray cjsonKref;
+	pl.Get(0, cjsonKref);
+	cjsonCache_.Reset();
+	if (cjsonKref.size() > 0) {
+		Variant v = cjsonKref.front();
+		if (v.Type() == KeyValueString) {
+			cjsonCache_.Assign(std::string_view(p_string(v)));
+		}
+	}
+
 	ItemImpl itemimpl(ns_.payloadType_, pv, ns_.tagsMatcher_);
 	itemimpl.ModifyField(field.tagspath(), values, field.details().mode);
 
 	Item item = ns_.NewItem(ctx);
 	Error err = item.FromCJSON(itemimpl.GetCJSON(true));
 	if (!err.ok()) throw err;
-
+	item.setID(id);
 	ItemImpl *impl = item.impl_;
 	ns_.setFieldsBasedOnPrecepts(impl);
 	ns_.updateTagsMatcherFromItem(impl);
 
-	auto originalItem = ns_.findByPK(impl, ctx.rdxContext);
-	if (!originalItem.second) {
-		item.setID(-1);
-		return;
-	}
-	IdType id = originalItem.first;
-	item.setID(id);
-
-	auto &plData = ns_.items_[id];
-	Payload pl(ns_.payloadType_, plData);
 	Payload plNew = impl->GetPayload();
 	plData.Clone(pl.RealSize());
 
@@ -137,17 +139,21 @@ void ItemModifier::modifyCJSON(PayloadValue &pv, FieldData &field, VariantArray 
 			for (auto &key : ns_.skrefs) key.EnsureUTF8();
 		}
 
-		if (isIndexSparse) {
-			try {
-				pl.GetByJsonPath(index.Fields().getTagsPath(0), ns_.krefs, index.KeyType());
-			} catch (const Error &) {
-				ns_.krefs.resize(0);
-			}
+		if ((fieldIdx == 0) && (cjsonCache_.Size() > 0)) {
+			index.Delete(Variant(cjsonCache_.Get()), id, *strHolder);
 		} else {
-			pl.Get(fieldIdx, ns_.krefs, index.Opts().IsArray());
+			if (isIndexSparse) {
+				try {
+					pl.GetByJsonPath(index.Fields().getTagsPath(0), ns_.krefs, index.KeyType());
+				} catch (const Error &) {
+					ns_.krefs.resize(0);
+				}
+			} else {
+				pl.Get(fieldIdx, ns_.krefs, index.Opts().IsArray());
+			}
+			if (ns_.krefs == ns_.skrefs) continue;
+			index.Delete(ns_.krefs, id, *strHolder);
 		}
-		if (ns_.krefs == ns_.skrefs) continue;
-		index.Delete(ns_.krefs, id, *strHolder);
 
 		ns_.krefs.resize(0);
 		index.Upsert(ns_.krefs, ns_.skrefs, id);
@@ -158,11 +164,10 @@ void ItemModifier::modifyCJSON(PayloadValue &pv, FieldData &field, VariantArray 
 	} while (++fieldIdx != borderIdx);
 
 	for (int i = ns_.indexes_.firstCompositePos(); i < ns_.indexes_.totalSize(); ++i) {
-		ns_.indexes_[i]->Upsert(Variant(plData), id);
+		ns_.indexes_[i]->Upsert(Variant(pv), id);
 	}
-	impl->RealValue() = pv;
 
-	ns_.markUpdated(false);
+	impl->RealValue() = pv;
 }
 
 void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, VariantArray &values, const NsContext &ctx) {
@@ -173,7 +178,7 @@ void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, Var
 
 	assert(!index.Opts().IsSparse() || (index.Opts().IsSparse() && index.Fields().getTagsPathsLength() > 0));
 	if (field.isIndex() && !index.Opts().IsArray() && values.IsArrayValue()) {
-		throw Error(errLogic, "It's not possible to Update single index fields with arrays!");
+		throw Error(errParams, "It's not possible to Update single index fields with arrays!");
 	}
 
 	if (index.Opts().IsSparse()) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
 #include "core/query/query.h"
 #include "estl/h_vector.h"
@@ -40,14 +41,33 @@ private:
 		int arrayIndex_;
 		bool isIndex_;
 	};
+	struct CJsonCache {
+		CJsonCache() = default;
+		void Assign(std::string_view str) {
+			if (data_.capacity() < DefaultCJsonSize) {
+				data_.reserve(DefaultCJsonSize);
+			}
+			data_.assign(str.begin(), str.end());
+			cjson_ = std::string_view(&data_[0], str.size());
+		}
+		p_string Get() const { return p_string(&cjson_); }
+		void Reset() { cjson_ = {nullptr, 0}; }
+		int Size() const { return cjson_.length(); }
+
+	private:
+		enum { DefaultCJsonSize = 4096 };
+		std::vector<char> data_;
+		std::string_view cjson_;
+	};
 
 	void modifyField(IdType itemId, FieldData &field, Payload &pl, VariantArray &values, const NsContext &);
-	void modifyCJSON(PayloadValue &pv, FieldData &field, VariantArray &values, const NsContext &);
+	void modifyCJSON(PayloadValue &pv, IdType itemId, FieldData &field, VariantArray &values, const NsContext &);
 	void modifyIndexValues(IdType itemId, const FieldData &field, VariantArray &values, Payload &pl, const NsContext &);
 
 	NamespaceImpl &ns_;
 	const h_vector<UpdateEntry, 0> &updateEntries_;
 	vector<FieldData> fieldsToModify_;
+	CJsonCache cjsonCache_;
 };
 
 }  // namespace reindexer

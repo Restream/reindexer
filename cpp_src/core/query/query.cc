@@ -49,7 +49,7 @@ Error Query::FromJSON(const string &dsl) { return dsl::Parse(dsl, *this); }
 
 string Query::GetJSON() const { return dsl::toDsl(*this); }
 
-Query &Query::SetObject(std::string field, VariantArray value, bool hasExpressions) {
+Query &Query::SetObject(std::string field, VariantArray value, bool hasExpressions) & {
 	for (auto &it : value) {
 		if (it.Type() != KeyValueString) {
 			throw Error(errLogic, "Unexpected variant type in SetObject: %s. Expecting KeyValueString with JSON-content",
@@ -410,19 +410,64 @@ void Query::Deserialize(Serializer &ser) {
 	}
 }
 
-Query &Query::Join(JoinType joinType, const string &index, const string &joinIndex, CondType cond, OpType op, const Query &qr) {
+Query &Query::Join(JoinType joinType, const string &index, const string &joinIndex, CondType cond, OpType op, Query &&qr) & {
 	QueryJoinEntry joinEntry;
 	joinEntry.op_ = op;
 	joinEntry.condition_ = cond;
 	joinEntry.index_ = index;
 	joinEntry.joinIndex_ = joinIndex;
-	joinQueries_.emplace_back(qr);
-	joinQueries_.back().joinType = joinType;
-	joinQueries_.back().joinEntries_.push_back(joinEntry);
+	joinQueries_.emplace_back(joinType, std::move(qr));
+	joinQueries_.back().joinEntries_.emplace_back(std::move(joinEntry));
 	if (joinType != JoinType::LeftJoin) {
 		entries.Append((joinType == JoinType::InnerJoin) ? OpType::OpAnd : OpType::OpOr, QueryEntry(joinQueries_.size() - 1));
 	}
 	return *this;
+}
+
+Query &Query::Join(JoinType joinType, const string &index, const string &joinIndex, CondType cond, OpType op, const Query &qr) & {
+	QueryJoinEntry joinEntry;
+	joinEntry.op_ = op;
+	joinEntry.condition_ = cond;
+	joinEntry.index_ = index;
+	joinEntry.joinIndex_ = joinIndex;
+	joinQueries_.emplace_back(joinType, qr);
+	joinQueries_.back().joinEntries_.emplace_back(std::move(joinEntry));
+	if (joinType != JoinType::LeftJoin) {
+		entries.Append((joinType == JoinType::InnerJoin) ? OpType::OpAnd : OpType::OpOr, QueryEntry(joinQueries_.size() - 1));
+	}
+	return *this;
+}
+
+Query::OnHelper Query::Join(JoinType joinType, Query &&q) & {
+	joinQueries_.emplace_back(joinType, std::move(q));
+	if (joinType != JoinType::LeftJoin) {
+		entries.Append((joinType == JoinType::InnerJoin) ? OpType::OpAnd : OpType::OpOr, QueryEntry(joinQueries_.size() - 1));
+	}
+	return {*this, joinQueries_.back()};
+}
+
+Query::OnHelper Query::Join(JoinType joinType, const Query &q) & {
+	joinQueries_.emplace_back(joinType, q);
+	if (joinType != JoinType::LeftJoin) {
+		entries.Append((joinType == JoinType::InnerJoin) ? OpType::OpAnd : OpType::OpOr, QueryEntry(joinQueries_.size() - 1));
+	}
+	return {*this, joinQueries_.back()};
+}
+
+Query::OnHelperR Query::Join(JoinType joinType, Query &&q) && {
+	joinQueries_.emplace_back(joinType, std::move(q));
+	if (joinType != JoinType::LeftJoin) {
+		entries.Append((joinType == JoinType::InnerJoin) ? OpType::OpAnd : OpType::OpOr, QueryEntry(joinQueries_.size() - 1));
+	}
+	return {std::move(*this), joinQueries_.back()};
+}
+
+Query::OnHelperR Query::Join(JoinType joinType, const Query &q) && {
+	joinQueries_.emplace_back(joinType, q);
+	if (joinType != JoinType::LeftJoin) {
+		entries.Append((joinType == JoinType::InnerJoin) ? OpType::OpAnd : OpType::OpOr, QueryEntry(joinQueries_.size() - 1));
+	}
+	return {std::move(*this), joinQueries_.back()};
 }
 
 void Query::WalkNested(bool withSelf, bool withMerged, std::function<void(const Query &q)> visitor) const {

@@ -3,6 +3,7 @@
 #include "aggregator.h"
 #include "core/query/queryentry.h"
 #include "estl/h_vector.h"
+#include "joinedselector.h"
 
 namespace reindexer {
 
@@ -45,7 +46,11 @@ public:
 	unsigned Count() const noexcept { return count_; }
 	bool MoreThanOneEvaluation() const noexcept { return queryEntryAddedByForcedSortOptimization_; }
 	bool AvailableSelectBySortIndex() const noexcept { return !queryEntryAddedByForcedSortOptimization_ || !forcedStage(); }
+	void InjectConditionsFromJoins(JoinedSelectors &js, const RdxContext &rdxCtx) {
+		injectConditionsFromJoins(0, container_.size(), js, rdxCtx);
+	}
 	using QueryEntries::Size;
+	using QueryEntries::Dump;
 
 private:
 	bool forcedStage() const noexcept { return evaluationsCount_ == (desc_ ? 1 : 0); }
@@ -57,6 +62,7 @@ private:
 	void convertWhereValues(QueryEntries::iterator begin, QueryEntries::iterator end) const;
 	void convertWhereValues(QueryEntry *) const;
 	const Index *findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end) const;
+	void injectConditionsFromJoins(size_t from, size_t to, JoinedSelectors &, const RdxContext &);
 
 	NamespaceImpl &ns_;
 	StrictMode strictMode_;

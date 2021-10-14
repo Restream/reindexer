@@ -28,7 +28,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "3.2.3")
+set (REINDEXER_VERSION_DEFAULT "3.2.4")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -41,9 +41,22 @@ project(reindexer)
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake/modules )
 include (CheckLinkerFlag)
 
+include (TargetArch)
+target_architecture(COMPILER_TARGET_ARCH)
+
 # Configure compile options
 string( REPLACE "-DNDEBUG" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
-string( REPLACE "-g" "-g1" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
+if (NOT ${COMPILER_TARGET_ARCH} STREQUAL "e2k")
+    string(REPLACE "-g" "-g1" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
+else()
+    string(REPLACE "-g" "-g0" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
+    string(REPLACE "-O2" "-O3" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+endif()
+
+if (${COMPILER_TARGET_ARCH} STREQUAL "e2k")
+  add_definitions(-D__E2K__)
+  add_definitions(-D__LCC__)
+endif()
 
 if (NOT MSVC AND NOT APPLE)
   check_linker_flag (-gz cxx_linker_supports_gz)
@@ -58,7 +71,11 @@ if (MSVC)
   set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -SAFESEH:NO")
 else()
   set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Werror")
-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wall -Wextra -Werror -Wold-style-cast")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wall -Wextra -Werror -Wold-style-cast -fexceptions")
+  if (${COMPILER_TARGET_ARCH} STREQUAL "e2k")
+    set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -gline -fverbose-asm")
+    set (CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-parameter")
+  endif()
 endif ()
 
 set (EXTRA_FLAGS "")
@@ -98,12 +115,9 @@ file (
   ${REINDEXER_SOURCE_PATH}/coroutine/*
 )
 
-set (CONTEXT_ASM_DIR "${REINDEXER_SOURCE_PATH}/coroutine/context/asm")
-string(REGEX REPLACE "([][+.*()^])" "\\\\\\1" ESCAPED_CONTEXT_ASM_DIR "${REINDEXER_SOURCE_PATH}/coroutine/context/asm")
-list(FILTER SRCS EXCLUDE REGEX "${ESCAPED_CONTEXT_ASM_DIR}/*")
-
-include (TargetArch)
-target_architecture(COMPILER_TARGET_ARCH)
+string(REGEX REPLACE "([][+.*()^])" "\\\\\\1" BASE_CORO_CONTEXT_DIR "${REINDEXER_SOURCE_PATH}/vendor/koishi")
+set (CONTEXT_ASM_DIR "${BASE_CORO_CONTEXT_DIR}/fcontext/asm")
+list(FILTER SRCS EXCLUDE REGEX "${BASE_CORO_CONTEXT_DIR}/.*" )
 
 if ( UNIX )
   enable_language(ASM)
@@ -152,7 +166,7 @@ if ( UNIX )
             ${CONTEXT_ASM_DIR}/jump_i386_sysv_elf_gas.S
             ${CONTEXT_ASM_DIR}/make_i386_sysv_elf_gas.S
             )
-    else ()
+    elseif (NOT ${COMPILER_TARGET_ARCH} STREQUAL "e2k")
         message (FATAL_ERROR "Unsupported Linux-platform architecture: ${COMPILER_TARGET_ARCH}. Unable to chose context sources")
     endif ()
   endif ()
@@ -199,6 +213,34 @@ include_directories(${REINDEXER_SOURCE_PATH}/vendor)
 
 set (MSGPACK_INCLUDE_PATH ${REINDEXER_SOURCE_PATH}/vendor/msgpack)
 include_directories(${MSGPACK_INCLUDE_PATH})
+
+set (KOISHI_PATH ${REINDEXER_SOURCE_PATH}/vendor/koishi)
+if (CMAKE_GENERATOR MATCHES "Visual Studio")
+  add_definitions("-DKOISHI_THREAD_LOCAL=__declspec(thread)")
+else()
+  add_definitions(-DKOISHI_THREAD_LOCAL=_Thread_local)
+endif()
+add_definitions(-DKOISHI_HAVE_MMAP)
+add_definitions(-DKOISHI_MAP_ANONYMOUS=MAP_ANONYMOUS)
+add_definitions(-DKOISHI_HAVE_SYSCONF)
+add_definitions(-DKOISHI_SC_PAGE_SIZE=_SC_PAGE_SIZE)
+add_definitions(-DKOISHI_HAVE_GETPAGESIZE)
+add_definitions(-DKOISHI_HAVE_ALIGNED_ALLOC)
+add_definitions(-DKOISHI_HAVE_POSIX_MEMALIGN)
+add_definitions(-DBUILDING_KOISHI)
+add_definitions(-DFCONTEXT_CALL=)
+include_directories(${KOISHI_PATH}/include)
+
+list(APPEND SRCS ${KOISHI_PATH}/include/koishi.h
+        ${KOISHI_PATH}/fiber.h
+        ${KOISHI_PATH}/stack_alloc.c
+        ${KOISHI_PATH}/stack_alloc.h
+)
+if (${COMPILER_TARGET_ARCH} STREQUAL "e2k")
+  list(APPEND SRCS ${KOISHI_PATH}/ucontext_e2k/ucontext_e2k.c)
+else()
+  list(APPEND SRCS ${KOISHI_PATH}/fcontext/fcontext.c ${KOISHI_PATH}/fcontext/fcontext.hpp)
+endif()
 
 list(APPEND REINDEXER_LIBRARIES reindexer)
 add_library(${TARGET} STATIC ${HDRS} ${SRCS} ${VENDORS})
@@ -625,16 +667,16 @@ if (NOT WIN32)
     "tools/errors.h" "tools/serializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h"
     "core/reindexer.h" "core/type_consts.h" "core/item.h" "core/payload/payloadvalue.h" "core/payload/payloadiface.h" "core/indexopts.h"
     "core/namespacedef.h" "core/keyvalue/variant.h" "core/keyvalue/geometry.h" "core/sortingprioritiestable.h"
-    "core/rdxcontext.h" "core/activity_context.h"
-    "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" "core/transaction.h"
+    "core/rdxcontext.h" "core/activity_context.h" "core/type_consts_helpers.h" "core/payload/fieldsset.h" "core/payload/payloadtype.h"
+    "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" "core/transaction.h" "core/payload/payloadfieldtype.h"
     "core/query/query.h" "core/query/queryentry.h" "core/queryresults/queryresults.h" "core/indexdef.h" "core/queryresults/aggregationresult.h"
     "core/queryresults/itemref.h" "core/namespace/stringsholder.h" "core/keyvalue/key_string.h"
-    "core/expressiontree.h" "core/lsn.h"
+    "core/expressiontree.h" "core/lsn.h" "core/cjson/tagspath.h" "estl/cow.h"
     "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/span.h"
     "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h"
     "client/internalrdxcontext.h" "client/transaction.h"
     "client/cororeindexer.h" "client/coroqueryresults.h" "client/corotransaction.h"
-    "net/ev/ev.h" "coroutine/coroutine.h" "coroutine/channel.h" "coroutine/waitgroup.h" "coroutine/context/fcontext.hpp"
+    "net/ev/ev.h" "vendor/koishi/include/koishi.h" "coroutine/coroutine.h" "coroutine/channel.h" "coroutine/waitgroup.h"
     "debug/backtrace.h" "debug/allocdebug.h" "debug/resolver.h" "vendor/gason/gason.h"
   )
 

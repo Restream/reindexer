@@ -106,7 +106,7 @@ TEST_F(ReindexerApi, SelectByJsonPath) {
 
 	QueryResults qr1;
 	Variant strValueToFind("str_pk1");
-	Query query1 = std::move(Query(default_namespace).Where("nested.string", CondEq, strValueToFind));
+	Query query1{Query(default_namespace).Where("nested.string", CondEq, strValueToFind)};
 	err = rt.reindexer->Select(query1, qr1);
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_TRUE(qr1.Count() == 1);
@@ -117,7 +117,7 @@ TEST_F(ReindexerApi, SelectByJsonPath) {
 
 	QueryResults qr2;
 	Variant intValueToFind(static_cast<int64_t>(5));
-	Query query2 = std::move(Query(default_namespace).Where("nested.int", CondGe, intValueToFind));
+	Query query2{Query(default_namespace).Where("nested.int", CondGe, intValueToFind)};
 	err = rt.reindexer->Select(query2, qr2);
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_TRUE(qr2.Count() == 10);
@@ -132,7 +132,7 @@ TEST_F(ReindexerApi, SelectByJsonPath) {
 
 	QueryResults qr3;
 	Variant arrayItemToFind(static_cast<int64_t>(2));
-	Query query3 = std::move(Query(default_namespace).Where("nested.intarray", CondGe, arrayItemToFind));
+	Query query3{Query(default_namespace).Where("nested.intarray", CondGe, arrayItemToFind)};
 	err = rt.reindexer->Select(query3, qr3);
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_TRUE(qr3.Count() == 15);
@@ -181,7 +181,7 @@ TEST_F(ReindexerApi, CompositeFTSelectByJsonPath) {
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	QueryResults qr;
-	Query query = std::move(Query(default_namespace).Where("composite_ft", CondEq, "name2"));
+	Query query{Query(default_namespace).Where("composite_ft", CondEq, "name2")};
 	err = rt.reindexer->Select(query, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_TRUE(qr.Count() == 1);

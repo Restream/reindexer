@@ -6,8 +6,6 @@
 
 #pragma once
 
-#include <cstddef>
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -19,10 +17,10 @@ typedef void* fcontext_t;
  * @fctx    the from-context
  * @data    the passed user private data
  */
-struct transfer_t {
-	fcontext_t fctx;
-	void* data;
-};
+typedef struct transfer_t {
+    fcontext_t fctx;
+    void* data;
+} transfer_t;
 
 /*! the context entry function type
  *
@@ -39,7 +37,7 @@ typedef void (*context_func_t)(transfer_t from);
  */
 transfer_t jump_fcontext(fcontext_t const to, void* vp);
 
-/*! make context from the given stack space and the callback function
+/*! make context from the given the stack space and the callback function
  *
  * @param sp     the stack data
  * @param size   the stack size
@@ -47,7 +45,7 @@ transfer_t jump_fcontext(fcontext_t const to, void* vp);
  *
  * @return              the context pointer
  */
-fcontext_t make_fcontext(void* sp, std::size_t size, context_func_t fn);
+fcontext_t make_fcontext(void* sp, size_t size, context_func_t fn);
 
 #ifdef __cplusplus
 }

@@ -51,6 +51,7 @@ protected:
 	void Query2CondLeftJoinTotal(State& state);
 	void Query2CondLeftJoinCachedTotal(State& state);
 	void Query0CondInnerJoinUnlimit(State& state);
+	void Query0CondInnerJoinUnlimitLowSelectivity(State& state);
 	void Query0CondInnerJoinPreResultStoreValues(benchmark::State& state);
 	void Query2CondInnerJoin(State& state);
 	void Query2CondInnerJoinTotal(State& state);
@@ -78,4 +79,6 @@ private:
 	vector<vector<int>> priceIDs_;
 	reindexer::WrSerializer wrSer_;
 	std::string stringSelectNs_{"string_select_ns"};
+	std::string innerJoinLowSelectivityMainNs_{"inner_join_low_selectivity_main_ns"};
+	std::string innerJoinLowSelectivityRightNs_{"inner_join_low_selectivity_right_ns"};
 };

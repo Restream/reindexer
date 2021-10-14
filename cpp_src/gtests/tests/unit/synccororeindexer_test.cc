@@ -168,9 +168,10 @@ TEST(SyncCoroRx, DISABLED_TestCoroRxNCoroutine) {
 	std::chrono::system_clock::time_point t1 = std::chrono::system_clock::now();
 
 	reindexer::net::ev::dynamic_loop loop;
-	auto insert = [&loop]() {
+	auto insert = [&loop]() noexcept {
 		reindexer::client::CoroReindexer rx;
-		rx.Connect("cproto://127.0.0.1:8999/db", loop);
+		auto err = rx.Connect("cproto://127.0.0.1:8999/db", loop);
+		ASSERT_TRUE(err.ok()) << err.what();
 		rx.OpenNamespace("ns_c");
 		reindexer::IndexDef indDef("id", "hash", "int", IndexOpts().PK());
 		rx.AddIndex("ns_c", indDef);
@@ -183,7 +184,7 @@ TEST(SyncCoroRx, DISABLED_TestCoroRxNCoroutine) {
 			for (int i = from; i < from + count; i++) {
 				reindexer::client::Item item = rx.NewItem("ns_c");
 				std::string json = R"#({"id":)#" + std::to_string(i) + R"#(, "val":)#" + "\"aaaaaaaaaaaaaaa \"" + R"#(})#";
-				reindexer::Error err = item.FromJSON(json);
+				auto err = item.FromJSON(json);
 				ASSERT_TRUE(err.ok()) << err.what();
 				rx.Upsert("ns_c", item);
 			}

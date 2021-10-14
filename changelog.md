@@ -1,3 +1,26 @@
+# Version 3.2.4 (14.10.2021)
+## Core
+- [fix] Fix memory leak in SetObject for non-index fields
+- [fea] Optimize join queries with filters in both main and joined query
+- [fix] Fix join queries SQL serialization
+- [fix] Fix join queries with '<', '<=', '>' and '>=" operators in join condition
+
+## Reindexer tool
+- [fix] Fix \quit command
+
+## Face
+- [fea] Changed position of the Config menu for Namespaces
+- [fix] Changed the log level input with selector
+- [fea] Added the possibility to keep synonyms with spaces
+- [fix] Removed excess requests in the tutorial
+- [fix] Fixed the message popup position
+- [fea] Changed the first item in the list view with namespace_<pk_name>_<pk_value>
+- [fix] Fixed the set of columns on Statistics after forwarding from a Namespace
+- [fix] Fixed the displaying of the enabled columns on Statistics -> Performance
+- [fix] Fixed the format of the "start-time" value on the index page
+- [fix] Fixed the scroll that appeared on the SQL page after enabling the disabled columns
+- [fix] Fixed the long-name issue in the popup of the namespace deleting
+
 # Version 3.2.3 (27.08.2021)
 ## Core
 - [fix] Fixed indexes for client stats
@@ -12,7 +35,7 @@
 - [fea] Added the ability to create PK during the Namespace creation
 - [fix] Removed incorrect functions of editing and deleting items on the SQL result page
 - [fix] Fixed the issue with the "Top-up" button
-- [fix] Fixed the 'Desc' sorting on Statistics => Grid
+- [fix] Fixed the 'Desc' sorting on Statistics -> Grid
 - [fix] Fixed the issue with losing a namespace focus during tabs changing
 - [fix] Performed yarn upgrade
 - [fix] Fixed the issue with the sorting params keeping 

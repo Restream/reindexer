@@ -432,6 +432,7 @@ void parseMergeQueries(JsonValue& mergeQueries, Query& query) {
 		checkJsonValueType(merged, "Merged", JSON_OBJECT);
 		JoinedQuery qmerged;
 		parse(merged, qmerged);
+		qmerged.joinType = Merge;
 		query.mergeQueries_.emplace_back(std::move(qmerged));
 	}
 }

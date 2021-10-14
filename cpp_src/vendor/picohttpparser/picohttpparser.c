@@ -104,7 +104,7 @@ static const char *token_char_map = "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\
 static const char *findchar_fast(const char *buf, const char *buf_end, const char *ranges, size_t ranges_size, int *found)
 {
     *found = 0;
-#if __SSE4_2__
+#if __SSE4_2__ && !defined(__E2K__)
     if (likely(buf_end - buf >= 16)) {
         __m128i ranges16 = _mm_loadu_si128((const __m128i *)ranges);
 

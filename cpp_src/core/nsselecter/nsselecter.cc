@@ -50,6 +50,9 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 								   ? const_cast<QueryEntries *>(&ctx.query.entries)->MakeLazyCopy()
 								   : QueryEntries{ctx.query.entries},
 							   ctx.query, ns_, ctx.reqMatchedOnceFlag);
+	if (ctx.joinedSelectors) {
+		qPreproc.InjectConditionsFromJoins(*ctx.joinedSelectors, rdxCtx);
+	}
 	auto aggregators = getAggregators(ctx.query);
 	qPreproc.AddDistinctEntries(aggregators);
 	const bool aggregationsOnly = aggregators.size() > 1 || (aggregators.size() == 1 && aggregators[0].Type() != AggDistinct);
@@ -192,14 +195,12 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 			if (!isFt && maxIterations > kMinIterationsForInnerJoinOptimization) {
 				for (size_t i = 0, size = qres.Size(); i < size; i = qres.Next(i)) {
 					// for optimization use only isolated InnerJoin
-					if (qres.GetOperation(i) == OpAnd && qres.IsValue(i) &&
+					if (qres.GetOperation(i) == OpAnd && qres.IsJoinIterator(i) &&
 						(qres.Next(i) >= size || qres.GetOperation(qres.Next(i)) != OpOr)) {
-						const SelectIterator &selectIter = qres[i];
-						if (selectIter.empty() && selectIter.comparators_.empty() && selectIter.joinIndexes.size() == 1) {
-							assert(ctx.joinedSelectors && ctx.joinedSelectors->size() > size_t(selectIter.joinIndexes[0]));
-							(*ctx.joinedSelectors)[selectIter.joinIndexes[0]].AppendSelectIteratorOfJoinIndexData(
-								qres, &maxIterations, ctx.sortingContext.sortId(), fnc_, rdxCtx);
-						}
+						const JoinSelectIterator &jIter = qres.Get<JoinSelectIterator>(i);
+						assert(ctx.joinedSelectors && ctx.joinedSelectors->size() > jIter.joinIndex);
+						JoinedSelector &js = (*ctx.joinedSelectors)[jIter.joinIndex];
+						js.AppendSelectIteratorOfJoinIndexData(qres, &maxIterations, ctx.sortingContext.sortId(), fnc_, rdxCtx);
 					}
 				}
 			}
@@ -208,7 +209,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		bool reverse = !isFt && ctx.sortingContext.sortIndex() && ctx.sortingContext.entries[0].data->desc;
 
 		bool hasComparators = false;
-		qres.ForEachIterator([&hasComparators](const SelectIterator &it) {
+		qres.ExecuteAppropriateForEach([&hasComparators](const SelectIterator &it) {
 			if (it.comparators_.size()) hasComparators = true;
 		});
 
@@ -239,7 +240,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		qres.CheckFirstQuery();
 
 		// Rewing all results iterators
-		qres.ForEachIterator([reverse](SelectIterator &it) { it.Start(reverse); });
+		qres.ExecuteAppropriateForEach([reverse](SelectIterator &it) { it.Start(reverse); });
 
 		// Let iterators choose most effecive algorith
 		assert(qres.Size());
@@ -248,7 +249,8 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		explain.AddPostprocessTime();
 
 		// do not calc total by loop, if we have only 1 condition with 1 idset
-		lctx.calcTotal = needCalcTotal && (hasComparators || qPreproc.MoreThanOneEvaluation() || qres.Size() > 1 || qres[0].size() > 1);
+		lctx.calcTotal = needCalcTotal &&
+						 (hasComparators || qPreproc.MoreThanOneEvaluation() || qres.Size() > 1 || qres.GetSelectIterator(0).size() > 1);
 
 		if (reverse && hasComparators && aggregationsOnly) selectLoop<true, true, true>(lctx, result, rdxCtx);
 		if (!reverse && hasComparators && aggregationsOnly) selectLoop<false, true, true>(lctx, result, rdxCtx);
@@ -262,7 +264,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		// Get total count for simple query with 1 condition and 1 idset
 		if (needCalcTotal && !lctx.calcTotal) {
 			if (!ctx.query.entries.Empty()) {
-				result.totalCount = qres[0].GetMaxIterations();
+				result.totalCount = qres.GetSelectIterator(0).GetMaxIterations();
 			} else {
 				result.totalCount = ns_->items_.size() - ns_->free_.size();
 			}
@@ -319,7 +321,9 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 			result.explainResults = explain.GetJSON();
 		}
 	}
-	if (ctx.query.debugLevel >= LogTrace) result.Dump();
+	if (ctx.query.debugLevel >= LogTrace) {
+		logPrintf(LogInfo, "Query returned: [%s]; total=%d", result.Dump(), result.totalCount);
+	}
 
 	if (needPutCachedTotal) {
 		logPrintf(LogTrace, "[%s] put totalCount value into query cache: %d ", ns_->name_, result.totalCount);
@@ -590,8 +594,8 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 	}
 
 	// reserve queryresults, if we have only 1 condition with 1 idset
-	if (qres.Size() == 1 && qres.IsIterator(0) && qres[0].size() == 1) {
-		unsigned reserve = std::min(unsigned(qres[0].GetMaxIterations()), ctx.count);
+	if (qres.Size() == 1 && qres.IsSelectIterator(0) && qres.GetSelectIterator(0).size() == 1) {
+		unsigned reserve = std::min(unsigned(qres.GetSelectIterator(0).GetMaxIterations()), ctx.count);
 		if (sctx.preResult && sctx.preResult->dataMode == JoinPreResult::ModeValues) {
 			sctx.preResult->values.reserve(initCount + reserve);
 		} else {
@@ -610,7 +614,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 
 	// TODO: nested conditions support. Like (A  OR B OR C) AND (X OR Z)
 	assert(!qres.Empty());
-	assert(qres.IsIterator(0));
+	assert(qres.IsSelectIterator(0));
 	SelectIterator &firstIterator = qres.begin()->Value();
 	IdType rowId = firstIterator.Val();
 	while (firstIterator.Next(rowId) && !finish) {
@@ -636,7 +640,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 			// Exclude last sets of id from each query result, so duplicated keys will
 			// be removed
 			for (auto &it : qres) {
-				if (it.IsLeaf() && it.Value().distinct) {
+				if (it.HoldsOrReferTo<SelectIterator>() && it.Value().distinct) {
 					it.Value().ExcludeLastSet(pv, rowId, properRowId);
 				}
 			}
@@ -949,9 +953,7 @@ void NsSelecter::prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, b
 				StrictMode strictMode;
 				const JoinedSelectors &joinedSelectors;
 			} lCtx{false, strictMode, joinedSelectors};
-			expr.ExecuteAppropriateForEach<SortExprFuncs::Index, JoinedIndex, Rank, DistanceFromPoint, DistanceJoinedIndexFromPoint,
-										   DistanceBetweenIndexes, DistanceBetweenIndexAndJoinedIndex, DistanceBetweenJoinedIndexes,
-										   DistanceBetweenJoinedIndexesSameNs>(
+			expr.ExecuteAppropriateForEach(
 				[this, &lCtx](SortExprFuncs::Index &exprIndex) {
 					prepareSortIndex(exprIndex.column, exprIndex.index, lCtx.skipSortingEntry, lCtx.strictMode);
 				},
@@ -1011,7 +1013,7 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 
 	size_t costNormal = ns_->items_.size() - ns_->free_.size();
 
-	qentries.ForEachEntry([this, &ctx, &rdxCtx, &costNormal](const QueryEntry &qe) {
+	qentries.ExecuteAppropriateForEach([this, &ctx, &rdxCtx, &costNormal](const QueryEntry &qe) {
 		if (qe.idxNo < 0 || qe.idxNo == ctx.sortingContext.uncommitedIndex) return;
 		if (costNormal == 0) return;
 
@@ -1038,7 +1040,7 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 	costNormal *= 2;
 	if (costNormal < costOptimized) {
 		costOptimized = costNormal + 1;
-		qentries.ForEachEntry([this, &ctx, &rdxCtx, &costOptimized](const QueryEntry &qe) {
+		qentries.ExecuteAppropriateForEach([this, &ctx, &rdxCtx, &costOptimized](const QueryEntry &qe) {
 			if (qe.idxNo < 0 || qe.idxNo != ctx.sortingContext.uncommitedIndex) return;
 
 			Index::SelectOpts opts;

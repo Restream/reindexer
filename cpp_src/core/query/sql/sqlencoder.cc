@@ -2,6 +2,7 @@
 #include "core/keyvalue/geometry.h"
 #include "core/nsselecter/sortexpression.h"
 #include "core/queryresults/aggregationresult.h"
+#include "core/type_consts_helpers.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -64,8 +65,6 @@ static WrSerializer &stringToSql(const std::string &str, WrSerializer &ser) {
 
 SQLEncoder::SQLEncoder(const Query &q) : query_(q) {}
 
-extern const char *condNames[];
-
 void SQLEncoder::DumpSingleJoinQuery(size_t idx, WrSerializer &ser, bool stripArgs) const {
 	assert(idx < query_.joinQueries_.size());
 	const auto &jq = query_.joinQueries_[idx];
@@ -80,9 +79,14 @@ void SQLEncoder::DumpSingleJoinQuery(size_t idx, WrSerializer &ser, bool stripAr
 	if (jq.joinEntries_.size() != 1) ser << "(";
 	for (auto &e : jq.joinEntries_) {
 		if (&e != &*jq.joinEntries_.begin()) {
-			ser << ((e.op_ == OpOr) ? " OR " : " AND ");
+			ser << ' ' << e.op_ << ' ';
 		}
-		ser << jq._namespace << '.' << e.joinIndex_ << ' ' << condNames[e.condition_] << ' ' << query_._namespace << '.' << e.index_;
+		if (e.reverseNamespacesOrder) {
+			ser << jq._namespace << '.' << e.joinIndex_ << ' ' << InvertJoinCondition(e.condition_) << ' ' << query_._namespace << '.'
+				<< e.index_;
+		} else {
+			ser << query_._namespace << '.' << e.index_ << ' ' << e.condition_ << ' ' << jq._namespace << '.' << e.joinIndex_;
+		}
 	}
 	if (jq.joinEntries_.size() != 1) ser << ')';
 }
@@ -257,7 +261,6 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 	return ser;
 }
 
-extern const char *condNames[];
 const char *opNames[] = {"-", "OR", "AND", "AND NOT"};
 
 void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntries::const_iterator to, WrSerializer &ser,
@@ -305,7 +308,7 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 				} else {
 					indexToSql(entry.index, ser);
 
-					ser << ' ' << condNames[entry.condition] << ' ';
+					ser << ' ' << entry.condition << ' ';
 					if (entry.condition == CondEmpty || entry.condition == CondAny) {
 					} else if (stripArgs) {
 						ser << '?';

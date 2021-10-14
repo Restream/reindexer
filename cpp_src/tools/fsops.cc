@@ -14,12 +14,10 @@ namespace reindexer {
 namespace fs {
 
 int MkDirAll(const string &path) {
-	char tmp[0x1000], *p = nullptr;
-	size_t len;
+	std::string tmpStr = path;
+	char *p = nullptr, *tmp = tmpStr.data();
 	int err;
-
-	snprintf(tmp, sizeof(tmp), "%s", path.c_str());
-	len = strlen(tmp);
+	const auto len = tmpStr.size();
 	if (tmp[len - 1] == '/' || tmp[len - 1] == '\\') tmp[len - 1] = 0;
 	for (p = tmp + 1; *p; p++) {
 		if (*p == '/' || *p == '\\') {

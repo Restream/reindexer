@@ -171,26 +171,22 @@ TEST_F(QueriesApi, ForcedSortOffsetTest) {
 		const bool desc = rand() % 2;
 		// Single column sort
 		auto expectedResults = ForcedSortOffsetTestExpectedResults(offset, limit, desc, forcedSortOrder, First);
-		ExecuteAndVerify(forcedSortOffsetNs,
-						 Query(forcedSortOffsetNs).Sort(kFieldNameColumnHash, desc, forcedSortOrder).Offset(offset).Limit(limit),
+		ExecuteAndVerify(Query(forcedSortOffsetNs).Sort(kFieldNameColumnHash, desc, forcedSortOrder).Offset(offset).Limit(limit),
 						 kFieldNameColumnHash, expectedResults);
 		expectedResults = ForcedSortOffsetTestExpectedResults(offset, limit, desc, forcedSortOrder, Second);
-		ExecuteAndVerify(forcedSortOffsetNs,
-						 Query(forcedSortOffsetNs).Sort(kFieldNameColumnTree, desc, forcedSortOrder).Offset(offset).Limit(limit),
+		ExecuteAndVerify(Query(forcedSortOffsetNs).Sort(kFieldNameColumnTree, desc, forcedSortOrder).Offset(offset).Limit(limit),
 						 kFieldNameColumnTree, expectedResults);
 		// Multicolumn sort
 		const bool desc2 = rand() % 2;
 		auto expectedResultsMult = ForcedSortOffsetTestExpectedResults(offset, limit, desc, desc2, forcedSortOrder, First);
-		ExecuteAndVerify(forcedSortOffsetNs,
-						 Query(forcedSortOffsetNs)
+		ExecuteAndVerify(Query(forcedSortOffsetNs)
 							 .Sort(kFieldNameColumnHash, desc, forcedSortOrder)
 							 .Sort(kFieldNameColumnTree, desc2)
 							 .Offset(offset)
 							 .Limit(limit),
 						 kFieldNameColumnHash, expectedResultsMult.first, kFieldNameColumnTree, expectedResultsMult.second);
 		expectedResultsMult = ForcedSortOffsetTestExpectedResults(offset, limit, desc, desc2, forcedSortOrder, Second);
-		ExecuteAndVerify(forcedSortOffsetNs,
-						 Query(forcedSortOffsetNs)
+		ExecuteAndVerify(Query(forcedSortOffsetNs)
 							 .Sort(kFieldNameColumnTree, desc2, forcedSortOrder)
 							 .Sort(kFieldNameColumnHash, desc)
 							 .Offset(offset)
@@ -214,7 +210,7 @@ TEST_F(QueriesApi, StrictModeTest) {
 		qr.Clear();
 		err = rt.reindexer->Select(query.Strict(StrictModeNone), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
-		Verify(testSimpleNs, qr, Query(testSimpleNs));
+		Verify(qr, Query(testSimpleNs));
 		qr.Clear();
 	}
 
@@ -229,5 +225,58 @@ TEST_F(QueriesApi, StrictModeTest) {
 		err = rt.reindexer->Select(query.Strict(StrictModeNone), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
+	}
+}
+
+TEST_F(QueriesApi, SQLLeftJoinSerialize) {
+	const char* condNames[] = {"IS NOT NULL", "=", "<", "<=", ">", ">=", "RANGE", "IN", "ALLSET", "IS NULL", "LIKE"};
+	const std::string sqlTemplate = "SELECT * FROM tleft LEFT JOIN tright ON %s.%s %s %s.%s";
+
+	const std::string tLeft = "tleft";
+	const std::string tRight = "tright";
+	const std::string iLeft = "ileft";
+	const std::string iRight = "iright";
+
+	auto createQuery = [&sqlTemplate, &condNames](const std::string& leftTable, const std::string& rightTable, const std::string& leftIndex,
+												  const std::string& rightIndex, CondType t) -> std::string {
+		return fmt::sprintf(sqlTemplate, leftTable, leftIndex, condNames[t], rightTable, rightIndex);
+	};
+
+	std::vector<std::pair<CondType, CondType>> conditions = {{CondLe, CondGe}, {CondGe, CondLe}, {CondLt, CondGt}, {CondGt, CondLt}};
+
+	for (auto& c : conditions) {
+		try {
+			reindexer::Query q(tLeft);
+			reindexer::Query qr(tRight);
+			q.LeftJoin(iLeft, iRight, c.first, qr);
+
+			{
+				std::string sqlQCmp = createQuery(tLeft, tRight, iLeft, iRight, c.first);
+				reindexer::WrSerializer wrSer;
+				q.GetSQL(wrSer);
+				ASSERT_EQ(sqlQCmp, std::string(wrSer.c_str()));
+			}
+
+			{
+				Query qSql;
+				std::string sqlQ = createQuery(tLeft, tRight, iLeft, iRight, c.first);
+				qSql.FromSQL(sqlQ);
+
+				reindexer::WrSerializer wrSer;
+				qSql.GetSQL(wrSer);
+				ASSERT_EQ(sqlQ, std::string(wrSer.c_str()));
+			}
+			{
+				Query qSql;
+				std::string sqlQ = createQuery(tRight, tLeft, iRight, iLeft, c.second);
+				qSql.FromSQL(sqlQ);
+				ASSERT_EQ(q.GetJSON(), qSql.GetJSON());
+				reindexer::WrSerializer wrSer;
+				qSql.GetSQL(wrSer);
+				ASSERT_EQ(sqlQ, std::string(wrSer.c_str()));
+			}
+		} catch (const Error& e) {
+			ASSERT_TRUE(e.ok()) << e.what();
+		}
 	}
 }

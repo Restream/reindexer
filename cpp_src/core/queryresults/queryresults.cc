@@ -92,7 +92,7 @@ void QueryResults::Erase(ItemRefVector::iterator start, ItemRefVector::iterator 
 
 void QueryResults::Add(const ItemRef &i) { items_.push_back(i); }
 
-void QueryResults::Dump() const {
+std::string QueryResults::Dump() const {
 	string buf;
 	for (size_t i = 0; i < items_.size(); ++i) {
 		if (&items_[i] != &*items_.begin()) buf += ",";
@@ -112,8 +112,7 @@ void QueryResults::Dump() const {
 			buf += "]";
 		}
 	}
-
-	logPrintf(LogInfo, "Query returned: [%s]; total=%d", buf, this->totalCount);
+	return buf;
 }
 
 h_vector<std::string_view, 1> QueryResults::GetNamespaces() const {

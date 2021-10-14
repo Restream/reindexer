@@ -1,22 +1,12 @@
 #pragma once
 
-#include <assert.h>
+#include "vendor/koishi/include/koishi.h"
 #include <algorithm>
+#include <cassert>
 #include <cstdint>
 #include <functional>
+#include <utility>
 #include <vector>
-
-#include "context/fcontext.hpp"
-
-#if defined(REINDEX_WITH_TSAN)
-#if defined(__GNUC__) && !defined(__clang__) && !defined(__INTEL_COMPILER) && __GNUC__ >= 10
-// Enable tsan fiber annotation for GCC >= 10.0
-#define REINDEX_WITH_TSAN_FIBERS
-#elif defined(__clang__) && defined(__clang_major__) && __clang_major__ >= 10
-// Enable tsan fiber annotation for Clang >= 10.0
-#define REINDEX_WITH_TSAN_FIBERS
-#endif
-#endif	// defined(REINDEX_WITH_TSAN)
 
 namespace reindexer {
 namespace coroutine {
@@ -25,32 +15,8 @@ using routine_t = uint32_t;
 
 constexpr size_t k_default_stack_limit = 128 * 1024;
 
-/// @class Base class for coroutine and ordinator, which holds current execution context
-struct ctx_owner {
-	fcontext_t ctx_{nullptr};
-
-#ifdef REINDEX_WITH_TSAN_FIBERS
-	void *tsan_fiber_{nullptr};
-#endif	// REINDEX_WITH_TSAN_FIBERS
-
-	ctx_owner() = default;
-	virtual ~ctx_owner() = default;
-
-#ifdef REINDEX_WITH_TSAN_FIBERS
-	ctx_owner(ctx_owner &&o) : ctx_(o.ctx_), tsan_fiber_(o.tsan_fiber_) { o.tsan_fiber_ = nullptr; }
-	ctx_owner &operator=(ctx_owner &&o) {
-		if (this != &o) {
-			ctx_ = o.ctx_;
-			tsan_fiber_ = o.tsan_fiber_;
-			o.tsan_fiber_ = nullptr;
-		}
-		return *this;
-	}
-#endif	// REINDEX_WITH_TSAN_FIBERS
-};
-
-/// @class Some kind of a coroutines scheduler. Exists as a singleton with thread_local storage duration.
-class ordinator : public ctx_owner {
+/// @class Some kind of a coroutines scheduler. Exists as a singletone with thread_local storage duration.
+class ordinator {
 public:
 	using cmpl_cb_t = std::function<void(routine_t)>;
 
@@ -62,10 +28,10 @@ public:
 	static ordinator &instance() noexcept;
 
 	/// Create new coroutine in current thread
-	/// @param f - Function, that will be executed in this coroutine
+	/// @param function - Function, that will be executed in this coroutine
 	/// @param stack_size - Coroutine's stack size
 	/// @returns New routine's id
-	routine_t create(std::function<void()> f, size_t stack_size);
+	routine_t create(std::function<void()> function, size_t stack_size);
 	/// Resume coroutine with specified id. Returns error if coroutine doesn't exist.
 	/// Does nothing if this couroutine is already running.
 	/// Current coroutine becomes "parent" to the resumed one
@@ -78,11 +44,13 @@ public:
 	/// @returns - current couroutine id
 	routine_t current() const noexcept { return current_; }
 	/// Add callback on coroutine completion for dynamic_loop object
+	/// @param cb - callback
 	/// @return true, if callback was not not set before and was successfully set now
-	bool set_loop_completion_callback(cmpl_cb_t) noexcept;
+	bool set_loop_completion_callback(cmpl_cb_t cb) noexcept;
 	/// Add callback that will be called after coroutine finalization
+	/// @param cb - callback
 	/// @return callback unique ID that should to be used for its further removal
-	int64_t add_completion_callback(cmpl_cb_t);
+	int64_t add_completion_callback(cmpl_cb_t cb);
 	/// Remove dynamic_loop callback on coroutine complete
 	/// @return true if callback was set previously
 	bool remove_loop_completion_callback() noexcept;
@@ -94,20 +62,23 @@ public:
 	/// @return New storage size
 	size_t shrink_storage() noexcept;
 	/// Entry point for each new coroutine
-	void entry(transfer_t from);
+	void entry();
 
 private:
 	/// @class Holds coroutine's data such as stack and state
-	class routine : public ctx_owner {
+	class routine {
 	public:
 		routine() noexcept = default;
-#ifdef REINDEX_WITH_TSAN_FIBERS
 		~routine();
-#endif	// REINDEX_WITH_TSAN_FIBERS
-		routine(std::function<void()> f, size_t stack_size) noexcept : func(std::move(f)), stack_size_(stack_size) { assert(stack_size_); }
 		routine(const routine &) = delete;
-		routine(routine &&) = default;
-		routine &operator=(routine &&) = default;
+		routine(routine &&other) noexcept;
+		routine(std::function<void()> _func, koishi_coroutine_t *fiber, size_t stack_size) noexcept
+			: func(std::move(_func)), fiber_(fiber), stack_size_(stack_size), is_empty_(true) {
+			assert(stack_size_);
+			assert(fiber_);
+		}
+		routine &operator=(const routine &) = delete;
+		routine &operator=(routine &&) = delete;
 
 		/// Check if coroutine is already finished it's execution and ready to be cleared
 		/// @returns true - if coroutine is finalized, false - if couroutine is still in progress
@@ -116,32 +87,27 @@ private:
 		void finalize() noexcept;
 		/// Deallocate coroutines stack
 		void clear() noexcept;
-		/// Allocate coroutine's stack and create execution context on it
-		/// Couroutine has to be empty to call this method
-		void create_ctx();
 		/// Check if coroutine has allocated stack
 		/// @returns true - if stack is empty; false - if stack is allocated
-		bool is_empty() const noexcept { return stack_.empty(); }
+		bool is_empty() const noexcept { return is_empty_; }
+		/// Allocate coroutine's stack and create execution context on it
+		/// Couroutine has to be empty to call this method
+		void create_fiber();
 		/// Reuse finalized coroutine with new func
 		/// @param _func - New coroutine's func
-		void reuse(std::function<void()> _func, size_t stack_size = 0) noexcept {
-			assert(is_finalized());
-			assert(is_empty());
-			func = std::move(_func);
-			if (stack_size) {
-				stack_size_ = stack_size;
-			}
-			finalized_ = false;
-		}
-		/// Check if current stack is still inside of allocated array
-		/// @return true if stack size is fine
-		bool validate_stack() const noexcept;
+		/// @param new_stack_size - New coroutines stack size
+		void reuse(std::function<void()> _func, size_t new_stack_size) noexcept;
+		/// Resume coroutine
+		void resume() { koishi_resume(fiber_, nullptr); }
+		/// Check, that coroutine ended work
+		bool is_dead() const { return koishi_state(fiber_) == KOISHI_DEAD; }
 
 		std::function<void()> func;
 
 	private:
-		std::vector<char> stack_;
+		koishi_coroutine_t *fiber_ = nullptr;
 		size_t stack_size_ = k_default_stack_limit;
+		bool is_empty_ = true;
 		bool finalized_ = false;
 	};
 
@@ -153,6 +119,7 @@ private:
 
 	/// Private constructor to create singletone object
 	ordinator();
+	~ordinator();
 
 	/// Add "parent" coroutine to coroutines call stack.
 	/// If new "parent" has id == 0, than the stack will be cleared, because main routine is unable to call suspend anyway
@@ -166,38 +133,40 @@ private:
 	void remove_from_call_stack(routine_t id) noexcept;
 	/// Clear last finalized coroutine
 	void clear_finalized();
-	/// Switches context to "parent's" couroutine context taken from call stack
-	/// @param from_rt - data which will be passed to "parent" coroutine. (usually it's a pointer to current coroutine)
-	/// @return context data
-	transfer_t jump_to_parent(void *from_rt) noexcept;
 
 	routine_t current_;
 	std::vector<routine> routines_;
-	/// List of routines_ indexes, which are occupied by empty routine objects
-	std::vector<routine_t> indexes_;
 	/// Stack, which contains sequence of coroutines switches. Ordiantor pushes new id in this stack on each resume()-call
 	/// and pops top id on each suspend()-call.
 	/// This stack allows to get coroutine's id to switch to after suspend or entry exit
 	std::vector<routine_t> rt_call_stack_;
+	/// List of routines_ indexes, which are occupied by empty routine objects
+	std::vector<routine_t> finalized_indexes_;
 	/// completion callback for dynamic_loop, which will be called after coroutine's finalization
 	cmpl_cb_t loop_completion_callback_;
-	/// completion callbacks, which will be called after coroutines finalization
+	/// Vector with completion callbacks, which will be called on each coroutne's finalization
 	std::vector<cmpl_cb_data> completion_callbacks_;
 };
 
-/// Wrappers for ordinator's public methods
+/// Wrapper for corresponding ordinator's method
 inline routine_t create(std::function<void()> f, size_t stack_size = k_default_stack_limit) {
 	return ordinator::instance().create(std::move(f), stack_size);
 }
+/// Wrapper for corresponding ordinator's method
 inline int resume(routine_t id) { return ordinator::instance().resume(id); }
+/// Wrapper for corresponding ordinator's method
 inline void suspend() { ordinator::instance().suspend(); }
+/// Wrapper for corresponding ordinator's method
 inline routine_t current() noexcept { return ordinator::instance().current(); }
 inline bool set_loop_completion_callback(ordinator::cmpl_cb_t cb) {
 	return ordinator::instance().set_loop_completion_callback(std::move(cb));
 }
+/// Wrapper for corresponding ordinator's method
 inline int64_t add_completion_callback(ordinator::cmpl_cb_t cb) { return ordinator::instance().add_completion_callback(std::move(cb)); }
+/// Wrapper for corresponding ordinator's method
 inline bool remove_loop_completion_callback() noexcept { return ordinator::instance().remove_loop_completion_callback(); }
-inline int remove_completion_callback(int64_t id) { return ordinator::instance().remove_completion_callback(id); }
+inline int remove_completion_callback(int64_t id) noexcept { return ordinator::instance().remove_completion_callback(id); }
+/// Wrapper for corresponding ordinator's method
 inline size_t shrink_storage() noexcept { return ordinator::instance().shrink_storage(); }
 
 }  // namespace coroutine

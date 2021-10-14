@@ -99,7 +99,7 @@ int main(int argc, char** argv) {
 #elif defined(__mc68000__) || \
     defined(__pnacl__) || defined(__native_client__)
 #undef DOUBLE_CONVERSION_CORRECT_DOUBLE_OPERATIONS
-#elif defined(_M_IX86) || defined(__i386__) || defined(__i386)
+#elif defined(_M_IX86) || defined(__i386__) || defined(__i386) || defined(__E2K__) || defined(__LCC__)
 #if defined(_WIN32)
 // Windows uses a 64bit wide floating point stack.
 #define DOUBLE_CONVERSION_CORRECT_DOUBLE_OPERATIONS 1

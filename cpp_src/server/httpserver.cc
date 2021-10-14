@@ -91,7 +91,7 @@ int HTTPServer::GetSQLQuery(http::Context &ctx) {
 
 	auto ret = execSqlQueryByType(sqlQuery, res, ctx);
 	if (!ret.ok()) {
-		return status(ctx, http::HttpStatus(http::StatusInternalServerError, ret.what()));
+		return status(ctx, http::HttpStatus(ret));
 	}
 	return queryResults(ctx, res, true, limit, offset);
 }

@@ -20,7 +20,7 @@ void ExplainCalc::LogDump(int logLevel) {
 
 	if (logLevel >= LogTrace) {
 		if (selectors_) {
-			selectors_->ForEachIterator([this](const SelectIterator &s) {
+			selectors_->ExecuteAppropriateForEach([this](const SelectIterator &s) {
 				logPrintf(LogInfo, "%s: %d idsets, %d comparators, cost %g, matched %d, %s", s.name, s.size(), s.comparators_.size(),
 						  s.Cost(iters_), s.GetMatchedCount(), s.Dump());
 			});
@@ -54,9 +54,23 @@ static const char *joinTypeName(JoinType type) {
 	}
 }
 
-static void addToJSON(JsonBuilder &builder, const JoinedSelector &js) {
+static const char *opName(OpType op, bool first = true) {
+	switch (op) {
+		case OpAnd:
+			return first ? "" : "and ";
+		case OpOr:
+			return "or ";
+		case OpNot:
+			return "not ";
+		default:
+			abort();
+	}
+}
+
+static std::string addToJSON(JsonBuilder &builder, const JoinedSelector &js, OpType op = OpAnd) {
 	auto jsonSel = builder.Object();
-	jsonSel.Put("field", joinTypeName(js.Type()) + js.RightNsName());
+	const std::string name{joinTypeName(js.Type()) + js.RightNsName()};
+	jsonSel.Put("field", opName(op) + name);
 	jsonSel.Put("matched", js.Matched());
 	jsonSel.Put("selects_count", js.Called());
 	jsonSel.Put("join_select_total", ExplainCalc::To_us(js.PreResult()->selectTime));
@@ -91,6 +105,7 @@ static void addToJSON(JsonBuilder &builder, const JoinedSelector &js) {
 		default:
 			break;
 	}
+	return name;
 }
 
 string ExplainCalc::GetJSON() {
@@ -125,49 +140,44 @@ string ExplainCalc::GetJSON() {
 	return string(ser.Slice());
 }
 
-void SelectIteratorContainer::explainJSON(const_iterator it, const_iterator end, int iters, JsonBuilder &builder,
-										  const JoinedSelectors *jselectors) {
-	for (; it != end; ++it) {
-		if (it->IsLeaf()) {
-			const SelectIterator &siter = it->Value();
-			if (jselectors && !siter.joinIndexes.empty()) {
-				const size_t jIdx = siter.joinIndexes[0];
-				assert(jIdx < jselectors->size());
-				if ((*jselectors)[jIdx].Type() == JoinType::InnerJoin) {
-					addToJSON(builder, (*jselectors)[jIdx]);
-				}
-			}
-			if (!siter.name.empty() || siter.joinIndexes.empty()) {
+std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_iterator end, int iters, JsonBuilder &builder,
+												 const JoinedSelectors *jselectors) {
+	std::string name{"("};
+	for (const_iterator it = begin; it != end; ++it) {
+		if (it != begin) name += " ";
+		it->InvokeAppropriate<void>(
+			[&](const SelectIteratorsBracket &) {
 				auto jsonSel = builder.Object();
-				bool isScanIterator = bool(siter.name == "-scan");
+				auto jsonSelArr = jsonSel.Array("selectors");
+				const std::string brName{explainJSON(it.cbegin(), it.cend(), iters, jsonSelArr, jselectors)};
+				jsonSelArr.End();
+				jsonSel.Put("field", opName(it->operation) + brName);
+				name += opName(it->operation, it == begin) + brName;
+			},
+			[&](const SelectIterator &siter) {
+				auto jsonSel = builder.Object();
+				const bool isScanIterator = bool(siter.name == "-scan");
 				if (!isScanIterator) {
-					jsonSel.Put("field", (it->operation == OpNot ? "not " : "") + siter.name);
 					jsonSel.Put("keys", siter.size());
 					jsonSel.Put("comparators", siter.comparators_.size());
 					jsonSel.Put("cost", siter.Cost(iters));
 				} else {
 					jsonSel.Put("items", siter.GetMaxIterations());
 				}
+				jsonSel.Put("field", opName(it->operation) + siter.name);
 				jsonSel.Put("matched", siter.GetMatchedCount());
 				jsonSel.Put("method", isScanIterator || siter.comparators_.size() ? "scan" : "index");
 				jsonSel.Put("type", siter.TypeName());
-			}
-			if (jselectors) {
-				for (size_t i = 0; i < siter.joinIndexes.size(); ++i) {
-					const size_t jIdx = siter.joinIndexes[i];
-					assert(jIdx < jselectors->size());
-					if (((*jselectors)[jIdx].Type() == JoinType::InnerJoin && i != 0) ||
-						(*jselectors)[jIdx].Type() == JoinType::OrInnerJoin) {
-						addToJSON(builder, (*jselectors)[jIdx]);
-					}
-				}
-			}
-		} else {
-			auto jsonSel = builder.Object();
-			auto jsonSelArr = jsonSel.Array("selectors");
-			explainJSON(it.cbegin(), it.cend(), iters, jsonSelArr, jselectors);
-		}
+				name += opName(it->operation, it == begin) + siter.name;
+			},
+			[&](const JoinSelectIterator &jiter) {
+				assert(jiter.joinIndex < jselectors->size());
+				const std::string jName{addToJSON(builder, (*jselectors)[jiter.joinIndex], it->operation)};
+				name += opName(it->operation, it == begin) + jName;
+			});
 	}
+	name += ")";
+	return name;
 }
 
 ExplainCalc::Duration ExplainCalc::lap() {

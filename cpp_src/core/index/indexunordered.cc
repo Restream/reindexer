@@ -75,9 +75,8 @@ template <typename T>
 bool IndexUnordered<T>::HoldsStrings() const noexcept {
 	if constexpr (is_payload_map_v<T>) {
 		return idx_map.have_str_fields();
-	} else {
-		return is_str_map_v<T>;
 	}
+	return is_str_map_v<T>;
 }
 
 template <typename T>

@@ -1,7 +1,7 @@
 # Reindexer
 
 [![GoDoc](https://godoc.org/github.com/Restream/reindexer?status.svg)](https://godoc.org/github.com/Restream/reindexer)
-[![Build Status](https://travis-ci.org/Restream/reindexer.svg?branch=master)](https://travis-ci.org/Restream/reindexer)
+[![Build Status](https://github.com/Restream/reindexer/workflows/build/badge.svg?branch=master)](https://github.com/Restream/reindexer/actions)
 [![Build Status](https://ci.appveyor.com/api/projects/status/yonpih8vx3acaj86?svg=true)](https://ci.appveyor.com/project/olegator77/reindexer)
 
 **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.

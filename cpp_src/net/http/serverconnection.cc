@@ -70,7 +70,8 @@ void ServerConnection::handleRequest(Request &req) {
 		}
 	} catch (const Error &status) {
 		if (!writer.IsRespSent()) {
-			setJsonStatus(ctx, false, StatusInternalServerError, status.what());
+			HttpStatus httpStatus(status);
+			setJsonStatus(ctx, false, httpStatus.code, httpStatus.what);
 		}
 	}
 	router_.log(ctx);

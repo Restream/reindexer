@@ -52,9 +52,10 @@ public:
 	Error Stop();
 	Error Process(const std::string& command);
 	Error FromFile(std::istream& in);
+	Status GetStatus();
 
 protected:
-	Status getStatus();
+	void setStatus(Status&& status);
 	Error fromFileImpl(std::istream& in);
 	Error execCommand(IExecutorsCommand& cmd);
 	template <typename... Args>
@@ -208,7 +209,7 @@ protected:
          Creates new database.
          )help"}
     };
-	// clang-format on
+    // clang-format on
 
 	reindexer::net::ev::dynamic_loop loop_;
 	CancelContext cancelCtx_;

@@ -7,6 +7,7 @@
 namespace reindexer {
 
 void SelectIteratorContainer::SortByCost(int expectedIterations) {
+	markBracketsHavingJoins(begin(), end());
 	thread_local h_vector<unsigned, 16> indexes;
 	thread_local h_vector<double, 16> costs;
 	if (indexes.size() < container_.size()) {
@@ -33,29 +34,30 @@ void SelectIteratorContainer::SortByCost(int expectedIterations) {
 }
 
 void SelectIteratorContainer::sortByCost(span<unsigned> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations) {
-	for (size_t cur = from, next; cur < to; cur = next) {
+	for (unsigned cur = from, next; cur < to; cur = next) {
 		next = cur + Size(indexes[cur]);
-		if (!IsValue(indexes[cur])) {
+		if (!IsSelectIterator(indexes[cur])) {
 			sortByCost(indexes, costs, cur + 1, next, expectedIterations);
-			if (next < to && GetOperation(indexes[next]) == OpOr && IsValue(indexes[next]) && (*this)[indexes[next]].distinct) {
-				throw Error(errQueryExec, "OR operator between bracket and distinct query");
+			if (next < to && GetOperation(indexes[next]) == OpOr && IsSelectIterator(indexes[next]) &&
+				GetSelectIterator(indexes[next]).distinct) {
+				throw Error(errQueryExec, "OR operator between distinct query and bracket or join");
 			}
 		} else if (next < to && GetOperation(indexes[next]) == OpOr) {
-			if (IsValue(indexes[next])) {
-				if ((*this)[indexes[cur]].distinct != (*this)[indexes[next]].distinct) {
+			if (IsSelectIterator(indexes[next])) {
+				if (GetSelectIterator(indexes[cur]).distinct != GetSelectIterator(indexes[next]).distinct) {
 					throw Error(errQueryExec, "OR operator between distinct and non distinct queries");
 				}
 			} else {
-				if ((*this)[indexes[cur]].distinct) {
-					throw Error(errQueryExec, "OR operator between distinct query and bracket");
+				if (GetSelectIterator(indexes[cur]).distinct) {
+					throw Error(errQueryExec, "OR operator between distinct query and bracket or join");
 				}
 			}
 		}
 	}
-	for (size_t cur = from, next; cur < to; cur = next) {
+	for (unsigned cur = from, next; cur < to; cur = next) {
 		next = cur + Size(indexes[cur]);
 		const double cst = fullCost(indexes, cur, from, to, expectedIterations);
-		for (size_t j = cur; j < next; ++j) {
+		for (unsigned j = cur; j < next; ++j) {
 			costs[indexes[j]] = cst;
 		}
 	}
@@ -63,40 +65,64 @@ void SelectIteratorContainer::sortByCost(span<unsigned> indexes, span<double> co
 	moveJoinsToTheBeginingOfORs(indexes, from, to);
 }
 
+bool SelectIteratorContainer::markBracketsHavingJoins(iterator begin, iterator end) noexcept {
+	bool result = false;
+	for (iterator it = begin; it != end; ++it) {
+		result = it->InvokeAppropriate<bool>(
+					 [it](SelectIteratorsBracket &b) { return (b.haveJoins = markBracketsHavingJoins(it.begin(), it.end())); },
+					 [](SelectIterator &) { return false; }, [](JoinSelectIterator &) { return true; }) ||
+				 result;
+	}
+	return result;
+}
+
+bool SelectIteratorContainer::haveJoins(size_t i) const noexcept {
+	return container_[i].InvokeAppropriate<bool>([](const SelectIteratorsBracket &b) { return b.haveJoins; },
+												 [](const SelectIterator &) { return false; },
+												 [](const JoinSelectIterator &) { return true; });
+}
+
 void SelectIteratorContainer::moveJoinsToTheBeginingOfORs(span<unsigned> indexes, unsigned from, unsigned to) {
-	size_t firstNotJoin = from;
-	for (size_t cur = from, next; cur < to; cur = next) {
-		next = cur + Size(indexes[cur]);
+	thread_local h_vector<unsigned, 16> buffer;
+	buffer.resize(indexes.size());
+	unsigned firstNotJoin = from;
+	for (unsigned cur = from, next; cur < to; cur = next) {
+		const unsigned curSize = Size(indexes[cur]);
+		next = cur + curSize;
 		if (GetOperation(indexes[cur]) != OpOr) {
 			firstNotJoin = cur;
-		} else if (IsValue(indexes[cur]) && !(*this)[indexes[cur]].joinIndexes.empty()) {
-			while (firstNotJoin < cur && (GetOperation(firstNotJoin) == OpNot ||
-										  (IsValue(indexes[firstNotJoin]) && !(*this)[indexes[firstNotJoin]].joinIndexes.empty()))) {
+		} else if (haveJoins(indexes[cur])) {
+			while (firstNotJoin < cur && (GetOperation(indexes[firstNotJoin]) == OpNot || haveJoins(indexes[firstNotJoin]))) {
 				firstNotJoin += Size(indexes[firstNotJoin]);
 			}
 			if (firstNotJoin < cur) {
 				SetOperation(GetOperation(indexes[firstNotJoin]), indexes[cur]);
 				SetOperation(OpOr, indexes[firstNotJoin]);
-				size_t tmp = indexes[cur];
-				for (size_t i = cur; i > firstNotJoin; --i) indexes[i] = indexes[i - 1];
-				indexes[firstNotJoin] = tmp;
+				if (IsJoinIterator(indexes[cur])) {
+					unsigned tmp = indexes[cur];
+					for (unsigned i = cur; i > firstNotJoin; --i) indexes[i] = indexes[i - 1];
+					indexes[firstNotJoin] = tmp;
+				} else {
+					memcpy(&buffer[0], &indexes[cur], sizeof(unsigned) * curSize);
+					for (unsigned i = cur - 1; i >= firstNotJoin; --i) indexes[i + curSize] = indexes[i];
+					memcpy(&indexes[firstNotJoin], &buffer[0], sizeof(unsigned) * curSize);
+				}
 			}
-			++firstNotJoin;
+			firstNotJoin += curSize;
 		}
 	}
 }
 
 double SelectIteratorContainer::cost(span<unsigned> indexes, unsigned cur, int expectedIterations) const {
-	if (IsValue(indexes[cur])) {
-		return (*this)[indexes[cur]].Cost(expectedIterations);
-	} else {
-		return cost(indexes, cur + 1, cur + Size(indexes[cur]), expectedIterations);
-	}
+	return container_[indexes[cur]].InvokeAppropriate<double>(
+		[&](const SelectIteratorsBracket &) { return cost(indexes, cur + 1, cur + Size(indexes[cur]), expectedIterations); },
+		[expectedIterations](const SelectIterator &sit) { return sit.Cost(expectedIterations); },
+		[](const JoinSelectIterator &jit) { return jit.Cost(); });
 }
 
 double SelectIteratorContainer::cost(span<unsigned> indexes, unsigned from, unsigned to, int expectedIterations) const {
 	double result = 0.0;
-	for (size_t cur = from; cur < to; cur += Size(indexes[cur])) {
+	for (unsigned cur = from; cur < to; cur += Size(indexes[cur])) {
 		result += cost(indexes, cur, expectedIterations);
 	}
 	return result;
@@ -104,7 +130,7 @@ double SelectIteratorContainer::cost(span<unsigned> indexes, unsigned from, unsi
 
 double SelectIteratorContainer::fullCost(span<unsigned> indexes, unsigned cur, unsigned from, unsigned to, int expectedIterations) const {
 	double result = 0.0;
-	for (size_t i = from; i <= cur; i += Size(indexes[i])) {
+	for (unsigned i = from; i <= cur; i += Size(indexes[i])) {
 		if (GetOperation(indexes[i]) != OpOr) from = i;
 	}
 	for (; from <= cur || (from < to && GetOperation(indexes[from]) == OpOr); from += Size(indexes[from])) {
@@ -114,8 +140,7 @@ double SelectIteratorContainer::fullCost(span<unsigned> indexes, unsigned cur, u
 }
 
 bool SelectIteratorContainer::isIdset(const_iterator it, const_iterator end) {
-	return it->operation == OpAnd && it->IsLeaf() && it->Value().comparators_.empty() &&
-		   it->Value().joinIndexes.empty() &&  // !it->Value().empty() &&
+	return it->operation == OpAnd && it->HoldsOrReferTo<SelectIterator>() && it->Value().comparators_.empty() &&  // !it->Value().empty() &&
 		   (++it == end || it->operation != OpOr);
 }
 
@@ -146,9 +171,12 @@ void SelectIteratorContainer::CheckFirstQuery() {
 // Let iterators choose most effective algorithm
 void SelectIteratorContainer::SetExpectMaxIterations(int expectedIterations) {
 	assert(!Empty());
-	assert(IsIterator(0));
+	assert(IsValue(0));
 	for (Container::iterator it = container_.begin() + 1; it != container_.end(); ++it) {
-		if (it->IsLeaf()) it->Value().SetExpectMaxIterations(expectedIterations);
+		if (it->HoldsOrReferTo<SelectIterator>()) {
+			if (it->IsRef()) it->SetValue(it->Value());
+			it->Value().SetExpectMaxIterations(expectedIterations);
+		}
 	}
 }
 
@@ -219,30 +247,17 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 }
 
 void SelectIteratorContainer::processJoinEntry(const QueryEntry &qe, OpType op) {
-	bool newIterator = false;
-	switch (op) {
-		case OpAnd:
-		case OpNot: {
-			newIterator = true;
-		} break;
-		case OpOr: {
-			const iterator node = lastAppendedOrClosed();
-			if (node == this->end()) throw Error(errQueryExec, "OR operator in first condition or after left join");
-			if (node->IsLeaf()) {
-				if (node->IsRef()) {
-					node->SetValue(node->Value());
-				}
-				node->Value().joinIndexes.push_back(qe.joinIndex);
-			} else {
-				newIterator = true;
-			}
-		} break;
+	auto &js = (*ctx_->joinedSelectors)[qe.joinIndex];
+	if (js.JoinQuery().joinEntries_.empty()) throw Error(errQueryExec, "Join without ON conditions");
+	if (js.JoinQuery().joinEntries_[0].op_ == OpOr) throw Error(errQueryExec, "The first ON condition cannot have OR operation");
+	if (js.Type() != InnerJoin && js.Type() != OrInnerJoin) throw Error(errLogic, "Not INNER JOIN in QueryEntry");
+	if (js.Type() == OrInnerJoin) {
+		if (op == OpNot) throw Error(errQueryExec, "NOT operator with or_inner_join");
+		js.SetType(InnerJoin);
+		op = OpOr;
 	}
-	if (newIterator) {
-		SelectIterator it;
-		it.joinIndexes.push_back(qe.joinIndex);
-		Append(op, it);
-	}
+	if (op == OpOr && lastAppendedOrClosed() == this->end()) throw Error(errQueryExec, "OR operator in first condition or after left join");
+	Append(op, JoinSelectIterator{static_cast<size_t>(qe.joinIndex)});
 }
 
 void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectResults, OpType op, const NamespaceImpl &ns,
@@ -252,7 +267,7 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectR
 			case OpOr: {
 				const iterator last = lastAppendedOrClosed();
 				if (last == this->end()) throw Error(errQueryExec, "OR operator in first condition or after left join ");
-				if (last->IsLeaf() && !last->Value().distinct) {
+				if (last->HoldsOrReferTo<SelectIterator>() && !last->Value().distinct) {
 					if (last->IsRef()) {
 						last->SetValue(last->Value());
 					}
@@ -264,13 +279,14 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectR
 					}
 					it.name += " or " + qe.index;
 					break;
-				}  // else fallthrough
-			}	   // fallthrough
+				}
+			}
+				[[fallthrough]];
 			case OpNot:
 			case OpAnd:
 				Append(op, SelectIterator(res, qe.distinct, qe.index, isIndexFt));
 				if (!nonIndexField && !isIndexSparse) {
-					// last appended is always a leaf
+					// last appended is always a SelectIterator
 					const auto lastAppendedIt = lastAppendedOrClosed();
 					if (lastAppendedIt->IsRef()) {
 						lastAppendedIt->SetValue(lastAppendedIt->Value());
@@ -288,7 +304,7 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectR
 				throw Error(errQueryExec, "Unknown operator (code %d) in condition", op);
 		}
 		if (isIndexFt) {
-			// last appended is always a leaf
+			// last appended is always a SelectIterator
 			lastAppendedOrClosed()->Value().SetUnsorted();
 		}
 	}
@@ -380,47 +396,27 @@ void SelectIteratorContainer::PrepareIteratorsForSelectLoop(const QueryEntries &
 	processEqualPositions(equalPositions, begin, end, ns, queries);
 }
 
-bool SelectIteratorContainer::processJoins(SelectIterator &it, const ConstPayload &pl, IdType rowId, bool match) {
-	bool joinResult = false;
-	for (size_t i = 0; i < it.joinIndexes.size(); ++i) {
-		auto &joinedSelector = (*ctx_->joinedSelectors)[it.joinIndexes[i]];
-		switch (joinedSelector.Type()) {
-			case JoinType::InnerJoin:
-				assert(i == 0);
-				joinResult = joinedSelector.Process(rowId, ctx_->nsid, pl, match);
-				break;
-			case JoinType::OrInnerJoin:
-				joinResult |= joinedSelector.Process(rowId, ctx_->nsid, pl, match);
-				break;
-			default:
-				break;
-		}
-	}
-	return joinResult;
-}
-
 template <bool reverse, bool hasComparators>
-bool SelectIteratorContainer::checkIfSatisfyCondition(SelectIterator &it, PayloadValue &pv, bool *finish, IdType rowId, IdType properRowId,
-													  bool match) {
-	bool result = true;
-	const bool pureJoinIterator = (it.empty() && it.comparators_.empty() && !it.joinIndexes.empty());
-	if (!pureJoinIterator && (!hasComparators || !it.TryCompare(pv, properRowId))) {
+bool SelectIteratorContainer::checkIfSatisfyCondition(SelectIterator &it, PayloadValue &pv, bool *finish, IdType rowId,
+													  IdType properRowId) {
+	if (!hasComparators || !it.TryCompare(pv, properRowId)) {
 		while (((reverse && it.Val() > rowId) || (!reverse && it.Val() < rowId)) && it.Next(rowId)) {
 		}
 		if (it.End()) {
 			*finish = true;
-			result = false;
+			return false;
 		} else if ((reverse && it.Val() < rowId) || (!reverse && it.Val() > rowId)) {
-			result = false;
+			return false;
 		}
 	}
-	if (!it.joinIndexes.empty()) {
-		assert(ctx_->joinedSelectors);
-		ConstPayload pl(*pt_, pv);
-		const bool joinResult = processJoins(it, pl, properRowId, match);
-		result = (result && !pureJoinIterator) || joinResult;
-	}
-	return result;
+	return true;
+}
+
+bool SelectIteratorContainer::checkIfSatisfyCondition(JoinSelectIterator &it, PayloadValue &pv, IdType properRowId, bool match) {
+	assert(ctx_->joinedSelectors);
+	ConstPayload pl(*pt_, pv);
+	auto &joinedSelector = (*ctx_->joinedSelectors)[it.joinIndex];
+	return joinedSelector.Process(properRowId, ctx_->nsid, pl, match);
 }
 
 template <bool reverse, bool hasComparators>
@@ -432,18 +428,24 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 		if (it->operation == OpOr) {
 			// no short-circuit evaluation for TRUE OR JOIN
 			// suggest that all JOINs in chain of OR ... OR ... OR ... OR will be before all not JOINs (see SortByCost)
-			if (result && (!it->IsLeaf() || it->Value().joinIndexes.empty())) continue;
+			if (result) {
+				// check what it does not holds join
+				if (it->InvokeAppropriate<bool>([](const SelectIteratorsBracket &b) { return !b.haveJoins; },
+												[](const SelectIterator &) { return true; },
+												[](const JoinSelectIterator &) { return false; }))
+					continue;
+			}
 		} else {
 			if (!result) break;
 		}
 		bool lastFinish = false;
-		bool lastResult;
-		if (it->IsLeaf()) {
-			lastResult = checkIfSatisfyCondition<reverse, hasComparators>(it->Value(), pv, &lastFinish, rowId, properRowId, match);
-		} else {
-			lastResult =
-				checkIfSatisfyAllConditions<reverse, hasComparators>(it.begin(), it.end(), pv, &lastFinish, rowId, properRowId, match);
-		}
+		const bool lastResult = it->InvokeAppropriate<bool>(
+			[&](SelectIteratorsBracket &) {
+				return checkIfSatisfyAllConditions<reverse, hasComparators>(it.begin(), it.end(), pv, &lastFinish, rowId, properRowId,
+																			match);
+			},
+			[&](SelectIterator &sit) { return checkIfSatisfyCondition<reverse, hasComparators>(sit, pv, &lastFinish, rowId, properRowId); },
+			[&](JoinSelectIterator &jit) { return checkIfSatisfyCondition(jit, pv, properRowId, match); });
 		if (it->operation == OpOr) {
 			result |= lastResult;
 			currentFinish &= (!result && lastFinish);
@@ -461,15 +463,15 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 
 template <bool reverse>
 IdType SelectIteratorContainer::next(const_iterator it, IdType from) {
-	if (it->IsLeaf()) {
-		const SelectIterator &siter = it->Value();
-		if (siter.comparators_.size() || siter.joinIndexes.size() || siter.End()) return from;
-		if (reverse && siter.Val() < from) return siter.Val() + 1;
-		if (!reverse && siter.Val() > from) return siter.Val() - 1;
-		return from;
-	} else {
-		return getNextItemId<reverse>(it.cbegin(), it.cend(), from);
-	}
+	return it->InvokeAppropriate<IdType>(
+		[it, from](const SelectIteratorsBracket &) { return getNextItemId<reverse>(it.cbegin(), it.cend(), from); },
+		[from](const SelectIterator &sit) {
+			if (sit.comparators_.size() || sit.End()) return from;
+			if (reverse && sit.Val() < from) return sit.Val() + 1;
+			if (!reverse && sit.Val() > from) return sit.Val() - 1;
+			return from;
+		},
+		[from](const JoinSelectIterator &) { return from; });
 }
 
 template <bool reverse>
@@ -510,5 +512,53 @@ template bool SelectIteratorContainer::Process<false, false>(PayloadValue &, boo
 template bool SelectIteratorContainer::Process<false, true>(PayloadValue &, bool *, IdType *, IdType, bool);
 template bool SelectIteratorContainer::Process<true, false>(PayloadValue &, bool *, IdType *, IdType, bool);
 template bool SelectIteratorContainer::Process<true, true>(PayloadValue &, bool *, IdType *, IdType, bool);
+
+std::string SelectIteratorContainer::Dump() const {
+	WrSerializer ser;
+	dump(0, cbegin(), cend(), *ctx_->joinedSelectors, ser);
+	return std::string{ser.Slice()};
+}
+
+void SelectIteratorContainer::dump(size_t level, const_iterator begin, const_iterator end,
+								   const std::vector<JoinedSelector> &joinedSelectors, WrSerializer &ser) {
+	for (const_iterator it = begin; it != end; ++it) {
+		for (size_t i = 0; i < level; ++i) {
+			ser << "   ";
+		}
+		if (it != begin || it->operation != OpAnd) {
+			ser << it->operation << ' ';
+		}
+		it->InvokeAppropriate<void>(
+			[&](const SelectIteratorsBracket &) {
+				ser << "(\n";
+				dump(level + 1, it.cbegin(), it.cend(), joinedSelectors, ser);
+				for (size_t i = 0; i < level; ++i) {
+					ser << "   ";
+				}
+				ser << ")\n";
+			},
+			[&ser](const SelectIterator &sit) { ser << sit.Dump() << '\n'; },
+			[&ser, &joinedSelectors](const JoinSelectIterator &jit) {
+				jit.Dump(ser, joinedSelectors);
+				ser << '\n';
+			});
+	}
+}
+
+void JoinSelectIterator::Dump(WrSerializer &ser, const std::vector<JoinedSelector> &joinedSelectors) const {
+	const auto &js = joinedSelectors.at(joinIndex);
+	const auto &q = js.JoinQuery();
+	ser << js.Type() << " (" << q.GetSQL() << ") ON ";
+	ser << '(';
+	for (const auto &jqe : q.joinEntries_) {
+		if (&jqe != &q.joinEntries_.front()) {
+			ser << ' ' << jqe.op_ << ' ';
+		} else {
+			assert(jqe.op_ == OpAnd);
+		}
+		ser << q._namespace << '.' << jqe.joinIndex_ << ' ' << jqe.condition_ << ' ' << jqe.index_;
+	}
+	ser << ')';
+}
 
 }  // namespace reindexer

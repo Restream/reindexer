@@ -1,6 +1,9 @@
 #include "payloadtype.h"
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/variant.h"
+#include "payloadtypeimpl.h"
+#include "tools/serializer.h"
+
 namespace reindexer {
 
 size_t PayloadTypeImpl::TotalSize() const {
@@ -155,5 +158,24 @@ void PayloadTypeImpl::deserialize(Serializer &ser) {
 		fields_.push_back(ft);
 	}
 }
+
+PayloadType::PayloadType(const string &name, std::initializer_list<PayloadFieldType> fields)
+	: shared_cow_ptr<PayloadTypeImpl>(make_intrusive<intrusive_atomic_rc_wrapper<PayloadTypeImpl>>(name, fields)) {}
+PayloadType::PayloadType(const PayloadTypeImpl &impl)
+	: shared_cow_ptr<PayloadTypeImpl>(make_intrusive<intrusive_atomic_rc_wrapper<PayloadTypeImpl>>(impl)) {}
+PayloadType::~PayloadType() = default;
+const PayloadFieldType &PayloadType::Field(int field) const { return get()->Field(field); }
+const string &PayloadType::Name() const { return get()->Name(); }
+void PayloadType::SetName(const string &name) { clone()->SetName(name); }
+int PayloadType::NumFields() const { return get()->NumFields(); }
+void PayloadType::Add(PayloadFieldType f) { clone()->Add(f); }
+bool PayloadType::Drop(std::string_view field) { return clone()->Drop(field); }
+int PayloadType::FieldByName(std::string_view field) const { return get()->FieldByName(field); }
+bool PayloadType::FieldByName(std::string_view name, int &field) const { return get()->FieldByName(name, field); }
+bool PayloadType::Contains(std::string_view field) const { return get()->Contains(field); }
+int PayloadType::FieldByJsonPath(std::string_view jsonPath) const { return get()->FieldByJsonPath(jsonPath); }
+const vector<int> &PayloadType::StrFields() const { return get()->StrFields(); }
+size_t PayloadType::TotalSize() const { return get()->TotalSize(); }
+std::string PayloadType::ToString() const { return get()->ToString(); }
 
 }  // namespace reindexer

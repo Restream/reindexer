@@ -1,3 +1,5 @@
+name: build
+
 on: push
 jobs:
   build-windows:
@@ -128,14 +130,18 @@ jobs:
               mkdir -p /Users/runner/go/src/github.com/restream/
               ln -s `pwd` /Users/runner/go/src/github.com/restream/reindexer
             fi
-            go mod init github.com/restream/reindexer
+            go get gopkg.in/yaml.v2
+            go get github.com/stretchr/testify/assert
+            go get github.com/golang/snappy
+            go get github.com/iancoleman/orderedmap
+            go get github.com/hashicorp/golang-lru
           elif [[ $OS == ubuntu* ]]; then
             ./.github/workflows/install_gtest_parallel.sh
           fi
       - name: Tests
         run: |
           if [[ $TEST == 'GO' ]]; then
-            go test -timeuot 60m ./test/...  -bench . -benchmem -benchtime 100ms -seedcount 50000
+            go test -timeout 60m ./test/... -bench . -benchmem -benchtime 100ms -seedcount 50000
           else
             cd build
             ctest --verbose

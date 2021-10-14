@@ -400,10 +400,11 @@ TEST_F(RPCClientTestApi, CoroStatus) {
 		reindexer::client::CoroReindexer rx;
 		reindexer::client::ConnectOpts opts;
 		opts.CreateDBIfMissing();
-		rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/db1", loop, opts);
+		auto err = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/db1", loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
 		for (size_t i = 0; i < 5; ++i) {
 			StartServer();
-			auto err = rx.Status();
+			err = rx.Status();
 			ASSERT_TRUE(err.ok()) << err.what();
 			StopServer();
 			loop.sleep(std::chrono::milliseconds(20));	// Allow reading coroutine to handle disconnect

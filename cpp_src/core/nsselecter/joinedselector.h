@@ -57,6 +57,7 @@ namespace SortExprFuncs {
 struct DistanceBetweenJoinedIndexesSameNs;
 }  // namespace SortExprFuncs
 class NsSelecter;
+class QueryPreprocessor;
 
 class JoinedSelector {
 	friend SortExpression;
@@ -89,14 +90,17 @@ public:
 	JoinedSelector &operator=(const JoinedSelector &) = delete;
 
 	bool Process(IdType, int nsId, ConstPayload, bool match);
-	JoinType Type() const { return joinType_; }
-	const string &RightNsName() const { return itemQuery_._namespace; }
-	int Called() const { return called_; }
-	int Matched() const { return matched_; }
+	JoinType Type() const noexcept { return joinType_; }
+	void SetType(JoinType type) noexcept { joinType_ = type; }
+	const string &RightNsName() const noexcept { return itemQuery_._namespace; }
+	const JoinedQuery &JoinQuery() const noexcept { return joinQuery_; }
+	int Called() const noexcept { return called_; }
+	int Matched() const noexcept { return matched_; }
 	void AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer &, int *maxIterations, unsigned sortId, SelectFunction::Ptr,
 											 const RdxContext &);
-	static constexpr int MaxIterationsForPreResultStoreValuesOptimization() { return 200; }
-	JoinPreResult::CPtr PreResult() const { return preResult_; }
+	static constexpr int MaxIterationsForPreResultStoreValuesOptimization() noexcept { return 200; }
+	JoinPreResult::CPtr PreResult() const noexcept { return preResult_; }
+	const std::shared_ptr<NamespaceImpl> &RightNs() const noexcept { return rightNs_; }
 
 private:
 	template <bool byJsonPath>
@@ -121,5 +125,6 @@ private:
 	const RdxContext &rdxCtx_;
 	bool optimized_;
 };
+using JoinedSelectors = vector<JoinedSelector>;
 
 }  // namespace reindexer

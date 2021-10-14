@@ -10,6 +10,27 @@ import (
 	"github.com/restream/reindexer/bindings"
 )
 
+type ExplainSelector struct {
+	// Field or index name
+	Field string `json:"field"`
+	// Method, used to process condition
+	Method string `json:"method"`
+	// Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching
+	Keys int `json:"keys"`
+	// Count of comparators used, for this selector
+	Comparators int `json:"comparators"`
+	// Cost expectation of this selector
+	Cost float64 `json:"cost"`
+	// Count of processed documents, matched this selector
+	Matched int `json:"matched"`
+	// Count of scanned documents by this selector
+	Items int `json:"items"`
+	// Preselect in joined namespace execution explainings
+	ExplainPreselect *ExplainResults `json:"explain_preselect,omitempty"`
+	// One of selects in joined namespace execution explainings
+	ExplainSelect *ExplainResults `json:"explain_select,omitempty"`
+	Selectors []ExplainSelector `json:"selectors,omitempty"`
+}
 // ExplainResults presents query plan
 type ExplainResults struct {
 	// Total query execution time
@@ -29,26 +50,7 @@ type ExplainResults struct {
 	// Optimization of sort by uncompleted index has been performed
 	SortByUncommittedIndex bool `json:"sort_by_uncommitted_index"`
 	// Filter selectors, used to proccess query conditions
-	Selectors []struct {
-		// Field or index name
-		Field string `json:"field"`
-		// Method, used to process condition
-		Method string `json:"method"`
-		// Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching
-		Keys int `json:"keys"`
-		// Count of comparators used, for this selector
-		Comparators int `json:"comparators"`
-		// Cost expectation of this selector
-		Cost float64 `json:"cost"`
-		// Count of processed documents, matched this selector
-		Matched int `json:"matched"`
-		// Count of scanned documents by this selector
-		Items int `json:"items"`
-		// Preselect in joined namespace execution explainings
-		ExplainPreselect *ExplainResults `json:"explain_preselect,omitempty"`
-		// One of selects in joined namespace execution explainings
-		ExplainSelect *ExplainResults `json:"explain_select,omitempty"`
-	} `json:"selectors"`
+	Selectors []ExplainSelector `json:"selectors"`
 }
 
 func errIterator(err error) *Iterator {

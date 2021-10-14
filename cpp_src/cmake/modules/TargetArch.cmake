@@ -44,6 +44,8 @@ set(archdetect_c_code "
     #else
         #error cmake_ARCH ppc
     #endif
+#elif defined(__LCC__) || defined(__E2K__) \\
+    #error cmake_ARCH e2k 
 #endif
 #error cmake_ARCH unknown
 ")

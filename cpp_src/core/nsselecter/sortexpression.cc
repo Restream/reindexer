@@ -10,7 +10,7 @@
 
 namespace {
 
-static void throwParseError(const std::string_view sortExpr, char const * const pos, const std::string_view message) {
+static void throwParseError(const std::string_view sortExpr, char const* const pos, const std::string_view message) {
 	throw reindexer::Error(errParams, "'%s' is not valid sort expression. Parser failed at position %d.%s%s", sortExpr,
 						   pos - sortExpr.data(), message.empty() ? "" : " ", message);
 }
@@ -78,12 +78,12 @@ VariantArray SortExpression::getJoinedFieldValues(IdType rowId, const joins::Nam
 
 bool SortExpression::ByIndexField() const {
 	static constexpr SortExpressionOperation noOperation;
-	return Size() == 1 && IsValue(0) && container_[0].Holds<SortExprFuncs::Index>() && GetOperation(0) == noOperation;
+	return Size() == 1 && container_[0].HoldsOrReferTo<SortExprFuncs::Index>() && GetOperation(0) == noOperation;
 }
 
 bool SortExpression::ByJoinedIndexField() const {
 	static constexpr SortExpressionOperation noOperation;
-	return Size() == 1 && IsValue(0) && container_[0].Holds<JoinedIndex>() && GetOperation(0) == noOperation;
+	return Size() == 1 && container_[0].HoldsOrReferTo<JoinedIndex>() && GetOperation(0) == noOperation;
 }
 
 double SortExprFuncs::Index::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
@@ -180,7 +180,8 @@ struct ParseIndexNameResult {
 };
 
 template <typename T>
-static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std::vector<T>& joinedSelectors, const std::string_view fullExpr) {
+static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std::vector<T>& joinedSelectors,
+											  const std::string_view fullExpr) {
 	static const std::set<char> allowedSymbolsInIndexName{
 		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
 		'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
@@ -258,7 +259,8 @@ static Point parsePoint(std::string_view& expr, std::string_view funcName, const
 }
 
 template <typename T, typename SkipSW>
-void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>& joinedSelectors, std::string_view const fullExpr, const ArithmeticOpType op, const bool negative, const SkipSW& skipSpaces) {
+void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>& joinedSelectors, std::string_view const fullExpr,
+								   const ArithmeticOpType op, const bool negative, const SkipSW& skipSpaces) {
 	skipSpaces();
 	const auto parsedIndexName1 = parseIndexName(expr, joinedSelectors, fullExpr);
 	skipSpaces();
@@ -330,7 +332,8 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 }
 
 template <typename T>
-std::string_view SortExpression::parse(std::string_view expr, bool* containIndexOrFunction, std::string_view const fullExpr, const std::vector<T>& joinedSelectors) {
+std::string_view SortExpression::parse(std::string_view expr, bool* containIndexOrFunction, std::string_view const fullExpr,
+									   const std::vector<T>& joinedSelectors) {
 	using namespace double_conversion;
 	static const StringToDoubleConverter converter{StringToDoubleConverter::ALLOW_TRAILING_JUNK |
 													   StringToDoubleConverter::ALLOW_TRAILING_SPACES |
@@ -461,7 +464,7 @@ double SortExpression::calculate(const_iterator it, const_iterator end, IdType r
 	assert(it->operation.op == OpPlus);
 	double result = 0.0;
 	for (; it != end; ++it) {
-		double value = it->CalculateAppropriate<double>(
+		double value = it->InvokeAppropriate<double>(
 			[&pv, &tagsMatcher, it, proc, rowId, &joinedResults, &js](const SortExpressionBracket& b) {
 				const double res = calculate(it.cbegin(), it.cend(), rowId, pv, joinedResults, js, proc, tagsMatcher);
 				return (b.IsAbs() && res < 0) ? -res : res;
@@ -524,7 +527,7 @@ void SortExpression::dump(const_iterator begin, const_iterator end, WrSerializer
 			ser << ' ';
 		}
 		if (it->operation.negative) ser << "(-";
-		it->CalculateAppropriate<void>(
+		it->InvokeAppropriate<void>(
 			[&it, &ser](const SortExpressionBracket& b) {
 				ser << (b.IsAbs() ? "ABS(" : "(");
 				dump(it.cbegin(), it.cend(), ser);

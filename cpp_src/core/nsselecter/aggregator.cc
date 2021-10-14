@@ -230,7 +230,7 @@ Aggregator::Aggregator(const PayloadType &payloadType, const FieldsSet &fields, 
 }
 
 template <typename FacetMap, typename... Args>
-static void fillFacetResult(std::vector<FacetResult> &result, const FacetMap &facets, size_t offset, size_t limit, const Args &... args) {
+static void fillFacetResult(std::vector<FacetResult> &result, const FacetMap &facets, size_t offset, size_t limit, const Args &...args) {
 	if (offset >= static_cast<size_t>(facets.size())) return;
 	result.reserve(std::min(limit, facets.size() - offset));
 	const auto &comparator = facets.key_comp();
@@ -274,8 +274,11 @@ AggregationResult Aggregator::GetResult() const {
 			break;
 		case AggDistinct:
 			assert(distincts_);
+			ret.payloadType = payloadType_;
+			ret.distinctsFields = fields_;
+			ret.distincts.reserve(distincts_->size());
 			for (const Variant &value : *distincts_) {
-				ret.distincts.push_back(value.As<string>(payloadType_, fields_));
+				ret.distincts.push_back(value);
 			}
 			break;
 		default:

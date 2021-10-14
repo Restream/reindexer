@@ -19,11 +19,11 @@ protected:
 	using QueryResultRow = std::map<FieldName, reindexer::VariantArray>;
 	using QueryResultRows = std::map<BookId, QueryResultRow>;
 
-	void SetUp() override {
+	void Init(const std::string& dbName = "/tmp/join_test/") {
 		Error err;
 
-		reindexer::fs::RmDirAll("/tmp/join_test/");
-		err = rt.reindexer->Connect("builtin:///tmp/join_test/");
+		reindexer::fs::RmDirAll(dbName);
+		err = rt.reindexer->Connect("builtin://" + dbName);
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		err = rt.reindexer->OpenNamespace(authors_namespace);
@@ -63,6 +63,8 @@ protected:
 		FillBooksNamespace(0, 10000);
 		FillAuthorsNamespace(10);
 	}
+
+	void SetUp() override { Init(); }
 
 	void FillLocationsNamespace() {
 		for (size_t i = 0; i < locations.size(); ++i) {
