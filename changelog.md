@@ -1,3 +1,7 @@
+# Version 3.2.5 (30.10.2021)
+## Build
+- [fix] Fix building in directories, containing dots (also fixes homebrew installation)
+
 # Version 3.2.4 (14.10.2021)
 ## Core
 - [fix] Fix memory leak in SetObject for non-index fields
